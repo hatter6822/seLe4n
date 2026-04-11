@@ -1,3 +1,51 @@
+## v0.27.2 — WS-AH Phase AH1: Critical IPC Dispatch Correctness
+
+Phase AH1 of WS-AH Pre-Release Comprehensive Audit Remediation. Fixes the two
+most security-critical dispatch path issues: the checked `.send` path silently
+dropping capability transfer (H-01/HIGH) and the device-memory execute
+permission validation gap (M-01/MEDIUM). 5 sub-tasks (AH1-A through AH1-E).
+Gate: `lake build` + `test_smoke.sh` + `test_full.sh`. Zero sorry/axiom.
+
+### Changes
+
+- **AH1-A** (H-01 fix): `endpointSendDualChecked` now delegates to
+  `endpointSendDualWithCaps` (with capability transfer) instead of
+  `endpointSendDual` (without). Three new parameters added: `endpointRights`,
+  `senderCspaceRoot`, `receiverSlotBase`. Return type changed from
+  `Kernel Unit` to `Kernel CapTransferSummary`. Checked `.send` path now
+  performs IPC capability transfer on rendezvous, matching the unchecked path.
+- **AH1-B** (H-01 fix): Updated `dispatchWithCapChecked` `.send` arm in
+  API.lean to pass `cap.rights`, `gate.cspaceRoot`, and `decoded.capRecvSlot`
+  to the updated `endpointSendDualChecked`.
+- **AH1-C** (H-01 fix): Updated 8 theorems across 3 files:
+  - `endpointSendDualChecked_eq_endpointSendDualWithCaps_when_allowed` (renamed
+    from `*_eq_endpointSendDual_*`): equivalence with new WithCaps target
+  - `endpointSendDualChecked_flowDenied`: added 3 new parameters
+  - `endpointSendDualChecked_denied_preserves_state`: existential updated to
+    `CapTransferSummary × SystemState`
+  - `enforcement_sufficiency_endpointSendDual`: disjunction updated for WithCaps
+  - `enforcementSoundness_endpointSendDualChecked`: added 3 params + result
+  - `checkedDispatch_flowDenied_preserves_state`: conjunct 1 updated
+  - `enforcementBridge_to_NonInterferenceStep`: conjunct 1 updated
+  - `endpointSendDualChecked_NI`: updated to use WithCaps projection hypothesis
+- **AH1-D** (M-01 fix): Wired `validateVSpaceMapPermsForMemoryKind` into the
+  `.vspaceMap` dispatch arm in `dispatchCapabilityOnly`. Device regions with
+  execute permission now return `.error .policyDenied` before reaching the
+  map operation. Updated `dispatchWithCap_vspaceMap_delegates` theorem to
+  reflect the two-step validation.
+- **AH1-E** (H-01 fix): Updated 10 call sites across 3 test files
+  (`MainTraceHarness.lean`, `InformationFlowSuite.lean`, `TraceSequenceProbe.lean`)
+  to pass the new parameters with `default` values (test messages have no caps).
+  Updated match patterns from `(.ok ((), st'))` to `(.ok (_, st'))` where needed
+  for `CapTransferSummary` return type.
+
+### Infrastructure
+
+- Regenerated `docs/codebase_map.json` with updated metrics
+- Documentation: WORKSTREAM_HISTORY.md, CHANGELOG.md, SELE4N_SPEC.md updated
+
+---
+
 ## v0.27.1 — WS-AG Phase AG10: Documentation + Closure
 
 Phase AG10 of WS-AG H3 Hardware Binding Audit Remediation. Closes the H3

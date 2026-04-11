@@ -456,10 +456,10 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
       objects := st1.objects.insert demoEndpoint (.endpoint {})
         |>.insert ⟨31⟩ (.endpoint {})
     }
-  match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint ⟨1⟩ .empty stMultiEndpoint with
+  match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint ⟨1⟩ .empty default default default stMultiEndpoint with
   | .error err => IO.println s!"[SST-033] multi-endpoint send A error: {reprStr err}"
   | .ok (_, stEp1) =>
-      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.defaultLabelingContext ⟨31⟩ ⟨12⟩ .empty stEp1 with
+      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.defaultLabelingContext ⟨31⟩ ⟨12⟩ .empty default default default stEp1 with
       | .error err => IO.println s!"[SST-034] multi-endpoint send B error: {reprStr err}"
       | .ok (_, stEp2) =>
           match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ stEp2 with
@@ -597,12 +597,12 @@ private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemSta
               match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ st3 with
                   | .error err => IO.println s!"[LEP-022] endpoint await-receive error: {reprStr err}"
                   | .ok (_, st6) =>
-                      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint ⟨1⟩ .empty st6 with
+                      match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint ⟨1⟩ .empty default default default st6 with
                       | .error err => IO.println s!"[LEP-023] endpoint handshake send error: {reprStr err}"
                       | .ok (_, st7) =>
                           IO.println "[LEP-024] handshake send matched waiting receiver"
                           -- Sender blocks (no receiver waiting), then receiver dequeues
-                          match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint ⟨1⟩ .empty st7 with
+                          match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint ⟨1⟩ .empty default default default st7 with
                           | .error err => IO.println s!"[LEP-025] endpoint send #1 error: {reprStr err}"
                           | .ok (_, st8) =>
                               IO.println "[LEP-026] queued sender on endpoint"
@@ -631,7 +631,7 @@ private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemSta
   -- T7-B: Post-mutation invariant check after IPC handshake chain
   match SeLe4n.Kernel.endpointReceiveDual demoEndpoint ⟨12⟩ st1 with
   | .ok (_, stIpcMut1) =>
-    match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint ⟨1⟩ .empty stIpcMut1 with
+    match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.defaultLabelingContext demoEndpoint ⟨1⟩ .empty default default default stIpcMut1 with
     | .ok (_, stIpcMut2) => checkInvariants counter "post-ipc-handshake-chain-mutated" stIpcMut2
     | .error _ => pure ()
   | .error _ => pure ()
