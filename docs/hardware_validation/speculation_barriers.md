@@ -53,8 +53,9 @@ pub fn csdb() {
 
 ### SB (Speculation Barrier)
 
-Available as `barriers::sb()`. Uses DSB SY + ISB as portable fallback
-(the `SB` hint encoding may not be recognized by all assemblers).
+Available as `barriers::sb()`. Emits the `SB` hint instruction encoding
+(`0xD503233F`, ARM ARM C6.2.245). On cores without FEAT_SB, the encoding
+executes as NOP. Cortex-A76 supports FEAT_SB natively.
 
 ### FEAT_CSV2 Verification
 

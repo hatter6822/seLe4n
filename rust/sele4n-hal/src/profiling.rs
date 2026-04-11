@@ -112,6 +112,11 @@ impl LatencyStats {
     }
 
     /// Record a single latency measurement.
+    ///
+    /// Uses saturating arithmetic for `sum` to prevent silent wraparound.
+    /// If saturation occurs, `mean()` returns a pessimistic (inflated) value
+    /// rather than garbage — the saturation condition is detectable via
+    /// `sum == u64::MAX`.
     #[inline(always)]
     pub fn record(&mut self, latency: u64) {
         if latency < self.min {
@@ -120,7 +125,7 @@ impl LatencyStats {
         if latency > self.max {
             self.max = latency;
         }
-        self.sum = self.sum.wrapping_add(latency);
+        self.sum = self.sum.saturating_add(latency);
         self.count += 1;
     }
 

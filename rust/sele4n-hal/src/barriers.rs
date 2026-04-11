@@ -129,7 +129,7 @@ pub fn csdb() {
 /// the barrier. Stronger than CSDB but may have higher performance impact.
 /// Use in paths where CSDB's conditional dependency model is insufficient.
 ///
-/// Available on Cortex-A76 (FEAT_SB, ARMv8.5-A).
+/// Available on Cortex-A76 (FEAT_SB, mandatory from ARMv8.5-A).
 ///
 /// ARM ARM C6.2.245: SB — Speculation Barrier.
 #[inline(always)]
@@ -140,11 +140,10 @@ pub fn sb() {
         // stopping speculative execution. Does not affect memory, stack, or
         // flags. Always safe at any EL. (ARM ARM C6.2.245)
         //
-        // Encoding: SB is available as a hint instruction on ARMv8.5+.
-        // On older cores, it executes as NOP. We use the DSB SY; ISB
-        // sequence as the portable fallback — the hint encoding (0xD503233F)
-        // may not be recognized by all assemblers.
-        unsafe { core::arch::asm!("dsb sy", "isb", options(nostack, preserves_flags)) }
+        // Encoding: SB is hint instruction #7, encoding 0xD503233F.
+        // Cortex-A76 supports FEAT_SB. On cores without FEAT_SB the
+        // encoding executes as NOP (ARM ARM C6.2.245).
+        unsafe { core::arch::asm!(".inst 0xD503233F", options(nostack, preserves_flags)) }
     }
 }
 
