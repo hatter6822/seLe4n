@@ -43,3 +43,4 @@ pub mod tlb;
 pub mod cache;
 pub mod mmio;
 pub mod ffi;
+pub mod profiling;

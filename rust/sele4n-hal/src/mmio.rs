@@ -1,3 +1,6 @@
+// Alignment checks use `addr % N == 0` for Rust 1.82 compatibility.
+// `is_multiple_of()` was stabilized in Rust 1.85.
+#![allow(clippy::manual_is_multiple_of)]
 //! MMIO Volatile Read/Write Primitives for ARMv8-A.
 //!
 //! AG7-C: Provides generic volatile memory access functions for hardware

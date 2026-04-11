@@ -21,7 +21,7 @@ developed with this target in mind.
 | **H0** | Architecture-neutral semantics and proofs | **Complete** | M1–M7, WS-B..E |
 | **H1** | Architecture-boundary interfaces and adapters | **Complete** | M6 |
 | **H2** | Audit-driven proof deepening | **Complete** (WS-F1..F8, all findings closed) | Close CRIT/HIGH findings |
-| **H3** | Platform binding — Raspberry Pi 5 hardware | **AG8 complete** (integration + model closure) | ~~WS-F1..F4~~ (done) |
+| **H3** | Platform binding — Raspberry Pi 5 hardware | **AG9 complete** (testing + validation) | ~~WS-F1..F4~~ (done) |
 | **H4** | Evidence convergence — connect proofs to platform | Planned | H3 complete |
 
 ### H2 — Proof deepening (critical gaps resolved)
@@ -149,8 +149,17 @@ provides the organizational infrastructure for hardware binding:
 - **BCM2712 validation (S6-G):** All RPi5 address constants cross-referenced
   against BCM2712 documentation and ARM specifications. Validation results
   documented in Board.lean.
+- **Testing + Validation (AG9):** QEMU integration testing
+  (`scripts/test_qemu.sh`), hardware constant cross-check
+  (`scripts/test_hw_crosscheck.sh` validating Board.lean constants against
+  physical RPi5), WCRT empirical measurement via PMU cycle counter
+  (`profiling.rs`), Badge Nat↔UInt64 overflow validation (22 Lean + 7 Rust
+  tests), ARMv8 speculation barriers (CSDB/SB for Spectre v1/v2,
+  `has_feat_csv2()` for Spectre v2 hardware check), and full RPi5 test suite
+  orchestration (`scripts/test_hw_full.sh`). Hardware validation documentation
+  at `docs/hardware_validation/`.
 
-**Remaining H3 work** (AG8 complete, AG9–AG10 remaining):
+**Remaining H3 work** (AG9 complete, AG10 remaining):
 
 1. ~~Populate RPi5 runtime contract with hardware-validated predicates.~~ **DONE** (WS-H15b).
 2. ~~Implement ARMv8 multi-level page table walk as a `VSpaceBackend` instance.~~ **DONE** (AG6-A/B/C/D: 4-level page table walk, shadow refinement, VSpaceBackend instance).
@@ -158,7 +167,7 @@ provides the organizational infrastructure for hardware binding:
 4. ~~Bind timer adapter to ARM Generic Timer (CNTPCT_EL0).~~ **DONE** (AG5-D/E: timer driver + `timerTick` binding).
 5. ~~Define boot sequence as a verified initial state construction.~~ **DONE** (AG4-E: boot.S/boot.rs assembly→Rust boot sequence).
 6. ~~Implement DTB parsing in `DeviceTree.fromDtb`.~~ **DONE** (X4-A/B/C: full FDT node traversal, GIC discovery, timer extraction).
-7. AG9: Testing + Validation (planned).
+7. ~~AG9: Testing + Validation.~~ **DONE** (v0.27.0: QEMU integration, hardware cross-check, WCRT profiling, Badge overflow validation, speculation barriers, full RPi5 test suite).
 8. AG10: Documentation + Closure (planned).
 
 ### H4 — Planned: evidence convergence

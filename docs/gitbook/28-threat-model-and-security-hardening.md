@@ -62,6 +62,28 @@ Hardening is validated by standard test gates:
 ./scripts/test_full.sh    # + Tier 3: invariant surface anchors (checks SHA-pinning, threat-model symbols)
 ```
 
+### Hardware speculation mitigation (AG9-F)
+
+The HAL crate (`sele4n-hal`) includes ARMv8-A speculation barriers for
+Cortex-A76 (BCM2712) Spectre v1/v2 mitigation:
+
+| Barrier | Purpose | Deployment sites |
+|---------|---------|------------------|
+| **CSDB** (Conditional Speculation Dependency Barrier) | Prevents speculative execution past bounds checks | Exception class dispatch (`trap.rs`), GIC INTID validation (`gic.rs`), `speculation_safe_bound_check` generic helper |
+| **SB** (Speculation Barrier) | Full speculation fence via DSB SY + ISB | Available as `barriers::sb()` for critical permission checks |
+| **FEAT_CSV2** | Hardware branch predictor hardening | `has_feat_csv2()` reads `ID_AA64PFR0_EL1[59:56]` to verify Cortex-A76 CSV2 support |
+
+The `speculation_safe_bound_check(index, bound)` helper provides a
+CSDB-guarded bounds check for array accesses on speculative-execution-capable
+hardware, following the ARM recommended mitigation pattern for Spectre v1.
+
+PMU cycle counting infrastructure (`profiling.rs`) uses PMCCNTR_EL0 for WCRT
+empirical validation, with `LatencyStats` accumulator for min/max/mean
+profiling on physical hardware.
+
+See [`docs/hardware_validation/speculation_barriers.md`](../hardware_validation/speculation_barriers.md)
+for the full AG9-F security hardening report.
+
 ### Security advisories
 
 See [`docs/SECURITY_ADVISORY.md`](../SECURITY_ADVISORY.md) for documented

@@ -159,6 +159,8 @@ Docs-sync checks compare only the stable subset so branch/merge-only churn does 
 - `scripts/test_tier3_invariant_surface.sh`
 - `scripts/test_tier4_nightly_candidates.sh`
 - umbrella runners: `test_fast.sh`, `test_smoke.sh`, `test_full.sh`, `test_nightly.sh`
+- hardware validation (AG9): `test_qemu.sh`, `test_hw_crosscheck.sh`, `test_hw_full.sh`
+- hardware validation docs: `docs/hardware_validation/` (5 reports)
 
 ## 3. M6 closeout (all completed)
 

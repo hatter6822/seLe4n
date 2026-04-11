@@ -63,7 +63,7 @@ model integration, testing, and documentation.
 | AG6 | Memory management (ARMv8) | 9 | FINDING-03, H3-ARCH-01/02/03/04, H3-RUST-05/06 | Page table walk on QEMU |
 | AG7 | FFI bridge + proof hooks | 6 | FINDING-02, P-07, H3-RUST-03/07/08, H3-PROOF-02 | Lean ↔ Rust FFI works |
 | AG8 | Integration + model closure | 7 | I-01, F-S05, H3-IPC-01, H3-ARCH-07/08, H3-PROOF-03/05 | `test_full.sh` passes |
-| AG9 | Testing + validation | 7 | H3-PLAT-07, H3-SCHED-03/05, H3-IPC-03, security hardening | Tests pass on hardware |
+| AG9 | Testing + validation — **COMPLETE** (v0.27.0) | 7 | H3-PLAT-07, H3-SCHED-03/05, H3-IPC-03, security hardening | Tests pass on hardware |
 | AG10 | Documentation + closure | 7 | FINDING-05/07, doc sync, spec update | `test_full.sh` + doc sync |
 
 **Estimated scope**: ~4,500–6,000 new lines of Lean, ~2,500–3,500 new lines of
@@ -1975,7 +1975,7 @@ acyclicity but the donation chain specifically handles the PIP propagation path.
 
 ---
 
-### Phase AG9 — Testing + Validation
+### Phase AG9 — Testing + Validation — **COMPLETE** (v0.27.0)
 
 **Goal**: Validate the H3 implementation on QEMU and real hardware.
 
@@ -1983,6 +1983,15 @@ acyclicity but the donation chain specifically handles the PIP propagation path.
 **Gate**: All tests pass on QEMU. Hardware cross-check verified.
 Full test suite passes on RPi5 hardware.
 **Estimated scope**: ~300–500 lines of test code, plus test execution.
+
+**Result**: 7 sub-tasks (AG9-A through AG9-G) implemented. QEMU integration
+testing (`test_qemu.sh`), BCM2712 hardware constant cross-check script
+(`test_hw_crosscheck.sh`), WCRT PMU profiling infrastructure
+(`profiling.rs`), RunQueue cache benchmarking docs, Badge Nat↔UInt64 overflow
+validation (22 Lean + 7 Rust tests), ARMv8-A speculation barriers (CSDB/SB
+for Spectre v1/v2 + FEAT_CSV2 verification), 5-phase hardware test
+orchestration (`test_hw_full.sh`). 362 Rust tests pass, 0 clippy warnings.
+Zero sorry/axiom.
 
 #### AG9-A: QEMU Integration Testing (New)
 

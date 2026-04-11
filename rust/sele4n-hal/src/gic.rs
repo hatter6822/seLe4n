@@ -284,6 +284,9 @@ pub fn init_gic() {
 /// the INTID and should handle the interrupt (e.g., reprogram timer,
 /// signal notification). Spurious interrupts are silently dropped.
 ///
+/// AG9-F: CSDB after INTID bounds check prevents speculative dispatch
+/// of out-of-range interrupt IDs (Spectre v1 mitigation).
+///
 /// Returns `true` if a real (non-spurious) interrupt was handled.
 pub fn dispatch_irq<F: FnOnce(u32)>(handler: F) -> bool {
     let intid = acknowledge_irq(GICC_BASE);
@@ -291,6 +294,11 @@ pub fn dispatch_irq<F: FnOnce(u32)>(handler: F) -> bool {
     if is_spurious(intid) {
         return false;
     }
+
+    // AG9-F: CSDB ensures the non-spurious check result is resolved
+    // before dispatching. Prevents speculative execution with an
+    // attacker-controlled INTID value.
+    crate::barriers::csdb();
 
     handler(intid);
 
