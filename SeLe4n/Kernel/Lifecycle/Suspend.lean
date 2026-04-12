@@ -159,13 +159,26 @@ def suspendThread (st : SystemState) (tid : SeLe4n.ThreadId)
       let st := PriorityInheritance.revertPriorityInheritance st tid
       -- G2: Cancel IPC blocking
       let st := cancelIpcBlocking st tid tcb
-      -- AF5-H (AF-28): Re-lookup is necessary because `cancelIpcBlocking`
-      -- modifies the TCB via `clearTcbIpcFields`, which updates `ipcState`,
-      -- `queuePrev`, `queueNext`, and `queuePPrev`. The `schedContextBinding`
-      -- field is NOT modified — `clearTcbIpcFields` uses record-with syntax
-      -- that preserves all unmentioned fields (structurally guaranteed).
-      -- Re-lookup is defensive against future IPC cleanup changes and ensures
-      -- `cancelDonation` sees the post-cleanup TCB state.
+      -- AI2-D (M-20) / AF5-H (AF-28): Re-lookup is necessary because
+      -- `cancelIpcBlocking` modifies the TCB via `clearTcbIpcFields`, which
+      -- updates `ipcState`, `queuePrev`, `queueNext`, and `queuePPrev`.
+      -- The `schedContextBinding` field is NOT modified — `clearTcbIpcFields`
+      -- uses record-with syntax that preserves all unmentioned fields
+      -- (structurally guaranteed).
+      --
+      -- H3-ATOMICITY: Between `cancelIpcBlocking` (G2) and the re-lookup
+      -- below, a transient window exists where the TCB has been partially
+      -- cleaned (IPC fields cleared) but `schedContextBinding` metadata has
+      -- not yet been processed by `cancelDonation` (G3). In the sequential
+      -- model this is safe: no other operation can observe the intermediate
+      -- state between G2 and G3. On hardware, this entire G2→G3→G4→G5→G6
+      -- sequence MUST execute atomically with interrupts disabled to prevent
+      -- an ISR from observing the partially-cleaned TCB. The Rust HAL's
+      -- `with_interrupts_disabled` (interrupts.rs) provides this guarantee.
+      --
+      -- Defensive re-lookup ensures `cancelDonation` sees the post-IPC-cleanup
+      -- TCB state, guarding against future changes to `cancelIpcBlocking` that
+      -- might modify additional TCB fields.
       let tcb' := match st.objects[tid.toObjId]? with
         | some (.tcb t) => t | _ => tcb
       -- G3: Cancel donation

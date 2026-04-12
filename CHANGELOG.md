@@ -1,3 +1,51 @@
+## v0.27.8 — WS-AI Phase AI2: Interrupt & Architecture Safety
+
+Phase AI2 of WS-AI Post-Audit Comprehensive Remediation. Fixes architecture-layer
+issues affecting correctness on hardware: missing EOI on interrupt error path,
+silent shadow/HW divergence in VSpaceARMv8 unmapPage, missing TLB flush
+enforcement for ASID reuse, and transient metadata inconsistency in suspendThread.
+5 sub-tasks (AI2-A through AI2-E). Gate: `lake build` (256 jobs) +
+`test_smoke.sh` + `test_full.sh`. Zero sorry/axiom.
+
+### Changes
+
+- **AI2-A** (H-03/HIGH): Fixed missing EOI on interrupt dispatch error path in
+  `InterruptDispatch.lean`. `interruptDispatchSequence` now always sends
+  `endOfInterrupt` regardless of handler outcome, preventing GIC lockup on real
+  hardware. Error path changed from `.error e` to `.ok ((), endOfInterrupt st intId)`.
+  New theorem `interruptDispatchSequence_always_ok` proves the dispatch sequence
+  always returns `.ok`. Matches Linux's unconditional EOI pattern.
+- **AI2-B** (M-14/MEDIUM): Surfaced error on VSpaceARMv8 `unmapPage` HW walk
+  failure. Added `VSpaceWalkError` type (`shadowUnmapFailed`, `walkFailedAtLevel`)
+  in `VSpaceARMv8.lean`. Changed `ARMv8VSpace.unmapPage` return type from
+  `Option ARMv8VSpace` to `Except VSpaceWalkError ARMv8VSpace`. Three wildcard
+  arms that silently succeeded with shadow-only updates now return level-specific
+  errors. VSpaceBackend instance preserved via `unmapPageOpt` adapter. Theorems
+  `unmapPage_preserves_asid` and `unmapPage_shadow_eq` updated to `.ok` matching.
+- **AI2-C** (M-15/MEDIUM): Added TLB flush enforcement for ASID reuse in
+  `AsidManager.lean`. Free-list reuse path now sets `requiresFlush := true`
+  (was `false`), forcing callers to perform TLB flush via `adapterFlushTlbByAsid`
+  before reusing an ASID. New `asidAllocRequiresFlush` predicate and 3 theorems:
+  `allocate_reuse_requires_flush` (free-list reuse requires flush),
+  `allocate_rollover_requires_flush` (rollover requires flush),
+  `allocate_fresh_no_flush` (fresh bump allocation is safe without flush).
+- **AI2-D** (M-20/MEDIUM): Documented transient metadata inconsistency window
+  in `suspendThread` (Suspend.lean). Added H3-ATOMICITY annotation documenting
+  that the G2→G3→G4→G5→G6 sequence must execute atomically with interrupts
+  disabled on hardware. Cross-references Rust HAL's `with_interrupts_disabled`.
+- **AI2-E**: Phase gate — `lake build` (256 jobs), `test_smoke.sh`,
+  `test_full.sh` all pass. Version sync verified.
+
+### Infrastructure
+
+- New `VSpaceWalkError` inductive type for architecture-layer error reporting
+- New `asidAllocRequiresFlush` predicate + 3 theorems for type-level flush enforcement
+- `interruptDispatchSequence_always_ok` theorem for interrupt dispatch correctness
+- Codebase map regenerated
+- Version bumped to 0.27.8 across 15 version-bearing files
+
+---
+
 ## v0.27.7 — WS-AI Phase AI1: Rust ABI & Trap Correctness
 
 Phase AI1 of WS-AI Post-Audit Comprehensive Remediation. Fixes all Rust-side

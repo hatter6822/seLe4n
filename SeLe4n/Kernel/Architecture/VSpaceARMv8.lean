@@ -185,10 +185,21 @@ def ARMv8VSpace.mapPage (vs : ARMv8VSpace) (va : VAddr) (pa : PAddr)
 -- AG6-C-iv: unmapPage
 -- ============================================================================
 
-/-- Unmap a virtual address. Updates both hardware page table and shadow. -/
-def ARMv8VSpace.unmapPage (vs : ARMv8VSpace) (va : VAddr) : Option ARMv8VSpace :=
+/-- AI2-B (M-14): Error type for VSpace hardware walk failures.
+    Distinguishes shadow-level failures from hardware page-table walk failures
+    at specific levels. This prevents silent shadow/HW divergence. -/
+inductive VSpaceWalkError where
+  | shadowUnmapFailed  : VSpaceWalkError
+  | walkFailedAtLevel  : PageTableLevel → VSpaceWalkError
+  deriving DecidableEq, Repr
+
+/-- Unmap a virtual address. Updates both hardware page table and shadow.
+    AI2-B (M-14): Returns `Except VSpaceWalkError` to surface HW walk failures
+    instead of silently succeeding with shadow-only updates. -/
+def ARMv8VSpace.unmapPage (vs : ARMv8VSpace) (va : VAddr)
+    : Except VSpaceWalkError ARMv8VSpace :=
   match vs.shadow.unmapPage va with
-  | none => none
+  | none => .error .shadowUnmapFailed
   | some shadow' =>
     let d0 := readDescriptor vs.pageTableMemory vs.ttbr (l0Index va) .l0
     match d0 with
@@ -200,10 +211,10 @@ def ARMv8VSpace.unmapPage (vs : ARMv8VSpace) (va : VAddr) : Option ARMv8VSpace :
         match d2 with
         | .table l3base =>
           let mem' := writeDescriptor vs.pageTableMemory l3base (l3Index va) .invalid
-          some { vs with pageTableMemory := mem', shadow := shadow' }
-        | _ => some { vs with shadow := shadow' }
-      | _ => some { vs with shadow := shadow' }
-    | _ => some { vs with shadow := shadow' }
+          .ok { vs with pageTableMemory := mem', shadow := shadow' }
+        | _ => .error (.walkFailedAtLevel .l2)
+      | _ => .error (.walkFailedAtLevel .l1)
+    | _ => .error (.walkFailedAtLevel .l0)
 
 -- ============================================================================
 -- AG6-C-v: VSpaceBackend proof obligations
@@ -224,15 +235,20 @@ theorem ARMv8VSpace.mapPage_preserves_asid
         · exact absurd hMap (by simp)
         · have := Option.some.inj hMap; subst this; rfl
 
-/-- unmapPage preserves the ASID. -/
+/-- unmapPage preserves the ASID (AI2-B: updated for Except return). -/
 theorem ARMv8VSpace.unmapPage_preserves_asid
     (vs vs' : ARMv8VSpace) (va : VAddr)
-    (hUnmap : vs.unmapPage va = some vs') : vs'.asid = vs.asid := by
+    (hUnmap : vs.unmapPage va = .ok vs') : vs'.asid = vs.asid := by
   simp only [unmapPage] at hUnmap
   split at hUnmap
-  · exact absurd hUnmap (by simp)
-  · split at hUnmap <;> (try split at hUnmap) <;> (try split at hUnmap) <;>
-      (have := Option.some.inj hUnmap; subst this; rfl)
+  · simp at hUnmap
+  · split at hUnmap
+    · split at hUnmap
+      · split at hUnmap
+        · simp only [Except.ok.injEq] at hUnmap; subst hUnmap; rfl
+        · simp at hUnmap
+      · simp at hUnmap
+    · simp at hUnmap
 
 /-- mapPage updates the shadow via VSpaceRoot.mapPage. -/
 theorem ARMv8VSpace.mapPage_shadow_eq
@@ -252,18 +268,23 @@ theorem ARMv8VSpace.mapPage_shadow_eq
         · have := Option.some.inj hMap; subst this
           exact ⟨shadow', hShadow, rfl⟩
 
-/-- unmapPage updates the shadow via VSpaceRoot.unmapPage. -/
+/-- unmapPage updates the shadow via VSpaceRoot.unmapPage (AI2-B: Except). -/
 theorem ARMv8VSpace.unmapPage_shadow_eq
     (vs vs' : ARMv8VSpace) (va : VAddr)
-    (hUnmap : vs.unmapPage va = some vs') :
+    (hUnmap : vs.unmapPage va = .ok vs') :
     ∃ shadow', vs.shadow.unmapPage va = some shadow' ∧ vs'.shadow = shadow' := by
   simp only [unmapPage] at hUnmap
   split at hUnmap
-  · exact absurd hUnmap (by simp)
+  · simp at hUnmap
   · rename_i shadow' hShadow
     refine ⟨shadow', hShadow, ?_⟩
-    split at hUnmap <;> (try split at hUnmap) <;> (try split at hUnmap) <;>
-      (have := Option.some.inj hUnmap; subst this; rfl)
+    split at hUnmap
+    · split at hUnmap
+      · split at hUnmap
+        · simp only [Except.ok.injEq] at hUnmap; subst hUnmap; rfl
+        · simp at hUnmap
+      · simp at hUnmap
+    · simp at hUnmap
 
 -- ============================================================================
 -- AG6-C-v: VSpaceBackend instance
@@ -274,17 +295,33 @@ theorem ARMv8VSpace.unmapPage_shadow_eq
     The `rootWF` predicate requires `shadow.mappings.invExtK` (the kernel-level
     RHTable invariant). The hardware walk is exposed separately via
     `hwLookupPage` with a refinement theorem (AG6-D). -/
+-- AI2-B: Helper to convert ARMv8VSpace.unmapPage (Except) to Option for
+-- VSpaceBackend typeclass contract compatibility.
+private def ARMv8VSpace.unmapPageOpt (vs : ARMv8VSpace) (va : VAddr)
+    : Option ARMv8VSpace :=
+  match vs.unmapPage va with
+  | .ok v => some v
+  | .error _ => none
+
+private theorem ARMv8VSpace.unmapPageOpt_some_iff_ok (vs vs' : ARMv8VSpace) (va : VAddr) :
+    vs.unmapPageOpt va = some vs' ↔ vs.unmapPage va = .ok vs' := by
+  simp only [unmapPageOpt]
+  cases vs.unmapPage va with
+  | ok v => simp
+  | error e => simp
+
 instance armv8VSpaceBackend : VSpaceBackend ARMv8VSpace where
   mapPage := fun vs va pa perms => vs.mapPage va pa perms
-  unmapPage := fun vs va => vs.unmapPage va
+  unmapPage := fun vs va => vs.unmapPageOpt va
   lookupPage := fun vs va => vs.shadow.lookup va
   lookupAddr := fun vs va => vs.shadow.lookupAddr va
   rootAsid := fun vs => vs.asid
   rootWF := fun vs => vs.shadow.mappings.invExtK ∧ vs.asid = vs.shadow.asid
   mapPage_preserves_asid := fun vs vs' va pa perms hMap =>
     ARMv8VSpace.mapPage_preserves_asid vs vs' va pa perms hMap
-  unmapPage_preserves_asid := fun vs vs' va hUnmap =>
-    ARMv8VSpace.unmapPage_preserves_asid vs vs' va hUnmap
+  unmapPage_preserves_asid := fun vs vs' va hUnmap => by
+    rw [ARMv8VSpace.unmapPageOpt_some_iff_ok] at hUnmap
+    exact ARMv8VSpace.unmapPage_preserves_asid vs vs' va hUnmap
   lookup_after_map := fun vs vs' va pa perms hWf hMap => by
     obtain ⟨shadow', hShadow, hEq⟩ := ARMv8VSpace.mapPage_shadow_eq vs vs' va pa perms hMap
     simp only [hEq]
@@ -296,11 +333,13 @@ instance armv8VSpaceBackend : VSpaceBackend ARMv8VSpace where
     exact VSpaceRoot.lookup_mapPage_ne vs.shadow shadow' va va' pa perms hNe
       (SeLe4n.Kernel.RobinHood.RHTable.invExtK_invExt hWf.1) hShadow
   lookup_after_unmap := fun vs vs' va hWf hUnmap => by
+    rw [ARMv8VSpace.unmapPageOpt_some_iff_ok] at hUnmap
     obtain ⟨shadow', hShadow, hEq⟩ := ARMv8VSpace.unmapPage_shadow_eq vs vs' va hUnmap
     simp only [hEq]
     exact VSpaceRoot.lookup_unmapPage_eq_none vs.shadow shadow' va
       (SeLe4n.Kernel.RobinHood.RHTable.invExtK_invExt hWf.1) hShadow
   lookup_unmap_other := fun vs vs' va va' hWf hNe hUnmap => by
+    rw [ARMv8VSpace.unmapPageOpt_some_iff_ok] at hUnmap
     obtain ⟨shadow', hShadow, hEq⟩ := ARMv8VSpace.unmapPage_shadow_eq vs vs' va hUnmap
     simp only [hEq]
     exact VSpaceRoot.lookup_unmapPage_ne vs.shadow shadow' va va' hNe hWf.1 hShadow

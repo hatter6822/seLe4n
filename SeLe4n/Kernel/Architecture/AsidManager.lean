@@ -89,11 +89,17 @@ structure AsidAllocResult where
     all ASIDs are active (should not happen with < 65536 VSpaces). -/
 def AsidPool.allocate (pool : AsidPool) : Option AsidAllocResult :=
   -- Strategy 1: Reuse from free list
+  -- AI2-C (M-15): Free-list ASIDs were previously active in the current
+  -- generation. The TLB may still contain stale entries from the prior owner.
+  -- Setting requiresFlush := true forces callers to perform a TLB flush
+  -- (via `adapterFlushTlbByAsid` from TlbModel.lean) before the reused ASID
+  -- is safe for a new VSpace. This eliminates the window where stale TLB
+  -- entries from the previous owner could be hit by the new VSpace.
   match pool.freeList with
   | asid :: rest =>
     some { asid := asid
            pool := { pool with freeList := rest, activeCount := pool.activeCount + 1 }
-           requiresFlush := false }
+           requiresFlush := true }
   | [] =>
     -- Guard: all ASIDs exhausted (should not happen with < 65536 VSpaces)
     if pool.activeCount ≥ maxAsidValue then
@@ -235,5 +241,62 @@ theorem asidPoolUnique_free
     asidPoolUnique (activeAsids.filter (· != freedAsid)) := by
   unfold asidPoolUnique at *
   exact hUnique.filter _
+
+-- ============================================================================
+-- AI2-C (M-15): TLB flush obligation predicates
+-- ============================================================================
+
+/-- AI2-C (M-15): Predicate asserting that a TLB flush is required after ASID
+    allocation. Callers must discharge this obligation by performing a
+    TLB flush (via `adapterFlushTlbByAsid` or `adapterFlushTlb`) before
+    using the allocated ASID for a new VSpace.
+
+    This predicate captures the type-level requirement that the TLB flush
+    is not just a boolean flag check but a proof obligation that must be
+    satisfied in the allocation protocol. -/
+def asidAllocRequiresFlush (result : AsidAllocResult) : Prop :=
+  result.requiresFlush = true
+
+/-- AI2-C: All ASID allocation paths that reuse ASIDs require a TLB flush.
+    Both free-list reuse and rollover set `requiresFlush := true`.
+    Only fresh bump allocation (which has never been in the TLB) is safe
+    without a flush. -/
+theorem AsidPool.allocate_reuse_requires_flush
+    (pool : AsidPool) (result : AsidAllocResult)
+    (hAlloc : pool.allocate = some result)
+    (hFreeList : pool.freeList ≠ []) :
+    asidAllocRequiresFlush result := by
+  unfold asidAllocRequiresFlush
+  simp only [allocate] at hAlloc
+  cases hFL : pool.freeList with
+  | nil => exact absurd hFL hFreeList
+  | cons hd tl =>
+    simp only [hFL, Option.some.injEq] at hAlloc
+    subst hAlloc; rfl
+
+/-- AI2-C: Rollover allocation always requires a TLB flush. -/
+theorem AsidPool.allocate_rollover_requires_flush
+    (pool : AsidPool) (result : AsidAllocResult)
+    (hAlloc : pool.allocate = some result)
+    (hEmptyFreeList : pool.freeList = [])
+    (hAtBound : ¬(pool.nextAsid < maxAsidValue))
+    (hNotExhausted : ¬(pool.activeCount ≥ maxAsidValue)) :
+    asidAllocRequiresFlush result := by
+  unfold asidAllocRequiresFlush allocate at *
+  simp only [hEmptyFreeList, if_neg hNotExhausted, if_neg hAtBound] at hAlloc
+  have := Option.some.inj hAlloc; subst this; rfl
+
+/-- AI2-C: Fresh bump allocation does not require a TLB flush. The ASID
+    has never been assigned to any VSpace, so no stale TLB entries exist. -/
+theorem AsidPool.allocate_fresh_no_flush
+    (pool : AsidPool) (result : AsidAllocResult)
+    (hAlloc : pool.allocate = some result)
+    (hEmptyFreeList : pool.freeList = [])
+    (hFresh : pool.nextAsid < maxAsidValue)
+    (hNotExhausted : ¬(pool.activeCount ≥ maxAsidValue)) :
+    ¬asidAllocRequiresFlush result := by
+  unfold asidAllocRequiresFlush allocate at *
+  simp only [hEmptyFreeList, if_neg hNotExhausted, if_pos hFresh] at hAlloc
+  have := Option.some.inj hAlloc; subst this; simp
 
 end SeLe4n.Kernel.Architecture
