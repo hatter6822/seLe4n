@@ -34,7 +34,13 @@ pub extern "C" fn ffi_timer_read_counter() -> u64 {
 /// Reprogram the timer comparator for the next tick interval.
 ///
 /// Sets CNTP_CVAL_EL0 = current counter + stored interval, then increments
-/// the tick counter. Called from the timer interrupt handler path.
+/// the tick counter. Called from the Lean kernel's timer tick handler.
+///
+/// AI1-C/M-26: This is the **canonical** tick accounting path. The IRQ handler
+/// (`trap.rs::handle_irq`) only re-arms the hardware timer; it does NOT
+/// increment the tick count. All tick accounting flows through this FFI
+/// entry point, which the Lean kernel controls.
+///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTimerReprogram`
 #[no_mangle]
 pub extern "C" fn ffi_timer_reprogram() {

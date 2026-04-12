@@ -130,9 +130,9 @@ ARM Architecture Reference Manual.
 | `cpu` | CPU instructions | `wfe`, `wfi`, `nop`, `eret`, `current_core_id` |
 | `barriers` | Memory barriers | `dmb_ish/sy`, `dsb_ish/sy`, `isb` |
 | `registers` | System register I/O | `read_sysreg!`/`write_sysreg!` macros, 11 typed accessors |
-| `uart` | PL011 UART driver | `Uart` struct, `kprint!`/`kprintln!` macros, 0xFE201000 base |
+| `uart` | PL011 UART driver | `Uart` struct, `kprint!`/`kprintln!` macros, 0xFE201000 base, `UartLock` spinlock (AI1-D) |
 | `mmu` | MMU configuration | MAIR/TCR/TTBR/SCTLR, identity-mapped L1 boot tables |
-| `trap` | Exception dispatch | `TrapFrame` (272 bytes), ESR EC routing, SVC/IRQ/SError handlers |
+| `trap` | Exception dispatch | `TrapFrame` (272 bytes), ESR EC routing, SVC/IRQ/SError handlers, `error_code` constants (AI1-A/B) |
 | `boot` | Boot sequence | `_start` → BSS zero → stack → UART → MMU → VBAR → idle |
 | `gic` | GIC-400 constants | Stub — full driver in AG5 |
 | `timer` | ARM timer constants | Stub — full driver in AG5 |

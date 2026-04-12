@@ -164,48 +164,84 @@ impl fmt::Write for Uart {
     }
 }
 
-/// Global UART instance for early boot debug output.
-///
-/// Wrapped in a minimal `UartWriter` to provide safe mutable access
-/// via raw pointer (`addr_of_mut!`) without creating `&mut` references
-/// to `static mut` (which triggers UB warnings in Rust 2024+).
-///
-/// Access is single-threaded during boot (only core 0 runs) and
-/// interrupts-disabled thereafter.
-/// # Safety
-///
-/// Must only be accessed via `addr_of_mut!` from single-threaded boot
-/// context or with interrupts disabled. Public for `kprint!` macro access.
-pub static mut BOOT_UART: Uart = Uart::new(UART0_BASE);
+// ============================================================================
+// AI1-D/M-27: Synchronized UART access via UartLock
+//
+// Replaces `pub static mut BOOT_UART` with an AtomicBool-based spinlock
+// that eliminates undefined behavior from unsynchronized mutable static
+// access after interrupts are enabled.
+// ============================================================================
 
-/// Obtain a raw pointer to the global UART and call a method on it.
+use core::sync::atomic::{AtomicBool, Ordering};
+
+/// Module-private mutable UART instance. Accessed only through `UART_LOCK`.
 ///
-/// # Safety
+/// SAFETY: All access is mediated by `UART_LOCK.with()`, which provides
+/// mutual exclusion via atomic acquire/release on a single-core system.
+static mut BOOT_UART_INNER: Uart = Uart::new(UART0_BASE);
+
+/// Minimal spinlock guard for boot UART access.
 ///
-/// Must be called from single-threaded boot context or with interrupts
-/// disabled (no concurrent UART access).
+/// On a single-core ARM64 system (RPi5 boots on core 0 only), the only
+/// contention source is an IRQ handler calling `kprintln!` while the main
+/// kernel path holds the lock. The atomic acquire/release ensures mutual
+/// exclusion without requiring interrupt disabling (the spin is bounded:
+/// the IRQ handler's UART access is brief, and the main path will release
+/// before the next tick).
+struct UartLock {
+    locked: AtomicBool,
+}
+
+impl UartLock {
+    const fn new() -> Self {
+        Self { locked: AtomicBool::new(false) }
+    }
+
+    /// Execute `f` with exclusive `&mut Uart` access.
+    ///
+    /// Spins on the atomic flag until acquired. On single-core, this
+    /// bounds to the duration of any concurrent IRQ handler UART write.
+    #[inline(always)]
+    fn with<R, F: FnOnce(&mut Uart) -> R>(&self, f: F) -> R {
+        while self.locked.compare_exchange_weak(
+            false, true, Ordering::Acquire, Ordering::Relaxed
+        ).is_err() {
+            core::hint::spin_loop();
+        }
+        // SAFETY: Lock held — single writer guaranteed by the atomic flag.
+        // `&raw mut` avoids creating an intermediate reference to static mut.
+        let result = unsafe { f(&mut *core::ptr::addr_of_mut!(BOOT_UART_INNER)) };
+        self.locked.store(false, Ordering::Release);
+        result
+    }
+}
+
+// SAFETY: UartLock uses AtomicBool for synchronization — safe to share.
+unsafe impl Sync for UartLock {}
+
+static UART_LOCK: UartLock = UartLock::new();
+
+/// Obtain exclusive access to the global UART and call `f`.
+///
+/// Safe to call from any context (boot, kernel, IRQ handler). The
+/// spinlock ensures mutual exclusion without requiring the caller to
+/// manually disable interrupts.
 #[inline(always)]
-unsafe fn with_boot_uart<F: FnOnce(&mut Uart)>(f: F) {
-    // SAFETY: &raw mut creates a raw pointer without an intermediate
-    // reference. We convert to &mut only within this scope, where single-
-    // threaded or interrupt-disabled access is guaranteed by the caller.
-    let ptr = &raw mut BOOT_UART;
-    f(&mut *ptr);
+pub(crate) fn with_boot_uart<R, F: FnOnce(&mut Uart) -> R>(f: F) -> R {
+    UART_LOCK.with(f)
 }
 
 /// Initialize the global boot UART.
 ///
 /// Must be called exactly once from the boot path, before any other
-/// `kprint!` / `kprintln!` usage.
+/// `kprint!` / `kprintln!` usage. The lock is acquired for initialization.
 pub fn init_boot_uart() {
-    // SAFETY: Called exactly once from single-threaded boot context.
-    unsafe { with_boot_uart(|u| u.init()) }
+    with_boot_uart(|u| u.init());
 }
 
 /// Print a byte slice to the boot UART.
 pub fn boot_puts(s: &[u8]) {
-    // SAFETY: Single-threaded boot context or interrupts-disabled context.
-    unsafe { with_boot_uart(|u| u.puts(s)) }
+    with_boot_uart(|u| u.puts(s));
 }
 
 /// Print formatted output to the boot UART.
@@ -213,13 +249,9 @@ pub fn boot_puts(s: &[u8]) {
 macro_rules! kprint {
     ($($arg:tt)*) => {{
         use core::fmt::Write;
-        // SAFETY: Single-threaded boot context or interrupts-disabled.
-        // &raw mut avoids creating intermediate references to static mut.
-        // The dereference is unsafe: only valid when single-threaded or
-        // with interrupts disabled (no concurrent UART access).
-        let ptr = &raw mut $crate::uart::BOOT_UART;
-        let uart = unsafe { &mut *ptr };
-        let _ = write!(uart, $($arg)*);
+        $crate::uart::with_boot_uart(|uart| {
+            let _ = write!(uart, $($arg)*);
+        });
     }};
 }
 

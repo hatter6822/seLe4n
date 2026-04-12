@@ -535,6 +535,15 @@ with 16 entries (4 types × 4 execution states) and a trap frame
 (`sele4n-hal/src/trap.rs`) that saves/restores all 31 general-purpose registers
 plus SP, ELR_EL1, and SPSR_EL1 (272-byte `TrapFrame`).
 
+**AI1-A/AI1-B (v0.27.7)**: The Rust exception handler error codes now match the
+Lean model exactly. Alignment faults (`PC_ALIGN`, `SP_ALIGN`) and unknown
+exceptions return discriminant 45 (`UserException`), matching
+`ExceptionModel.lean:175-177`. The SVC handler returns `NotImplemented` (17)
+as a pre-FFI stub, signaling that syscall dispatch is not yet wired to the Lean
+kernel (pending WS-V/AG10 FFI bridge activation). Named constants in `trap.rs`
+(`error_code::VM_FAULT`, `USER_EXCEPTION`, `NOT_IMPLEMENTED`) replace bare
+numeric literals for cross-reference clarity.
+
 #### 6.5.2 Interrupt Dispatch
 
 The GIC-400 interrupt dispatch model
@@ -571,6 +580,13 @@ bridges abstract timer ticks to the ARM Generic Timer:
 
 The Rust timer driver (`sele4n-hal/src/timer.rs`) uses system register
 accessors and counter-relative reprogramming for evenly-spaced interrupts.
+
+**AI1-C (v0.27.7)**: The timer tick accounting path has been unified. The IRQ
+handler (`trap.rs::handle_irq`) only re-arms the hardware timer via
+`reprogram_timer()`. Tick counting is performed exclusively by
+`ffi_timer_reprogram()` (`ffi.rs`), which the Lean kernel controls. This
+eliminates the M-26 dual-path bug where both the IRQ handler and FFI bridge
+incremented the tick count, causing double-counting on hardware.
 
 #### 6.5.4 Memory Management (ARMv8)
 
@@ -614,6 +630,13 @@ Production `AdapterProofHooks` (`rpi5ProductionAdapterProofHooks` in
 `Platform/RPi5/ProofHooks.lean`) provides substantive preservation proofs
 for all 4 adapter paths. The `proofLayerInvariantBundle` (11 conjuncts)
 and `ipcInvariantFull` (15 conjuncts) are preserved through the FFI boundary.
+
+**AI1-D (v0.27.7)**: The `BOOT_UART` global in `sele4n-hal/src/uart.rs` is now
+synchronized via an `AtomicBool`-based `UartLock` spinlock, eliminating the
+M-27 unsafe `static mut` that produced undefined behavior after interrupts were
+enabled. All UART access (including `kprint!` macro and FFI `ffi_uart_putc`)
+flows through the lock. The original `pub static mut BOOT_UART` has been
+replaced with module-private `BOOT_UART_INNER` guarded by `UART_LOCK`.
 
 #### 6.5.6 Architecture Gap: TPIDR_EL0 / TLS (L-13)
 

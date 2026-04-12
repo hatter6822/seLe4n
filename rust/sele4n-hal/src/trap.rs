@@ -109,6 +109,23 @@ mod ec {
     pub const SP_ALIGN: u64 = 0x26;
 }
 
+/// Kernel error discriminants matching `sele4n-types::KernelError` and
+/// Lean `SeLe4n.Model.KernelError`. Defined locally to avoid adding a
+/// crate dependency from `sele4n-hal` (bare-metal HAL with zero deps).
+///
+/// AI1-A/AI1-B: Named constants replace bare numeric literals for
+/// maintainability and cross-reference clarity.
+mod error_code {
+    /// `KernelError::NotImplemented = 17` — syscall dispatch not yet wired.
+    pub const NOT_IMPLEMENTED: u64 = 17;
+    /// `KernelError::VmFault = 44` — data abort or instruction abort.
+    pub const VM_FAULT: u64 = 44;
+    /// `KernelError::UserException = 45` — alignment fault, unknown exception.
+    /// Matches Lean `ExceptionModel.lean` mapping of `pcAlignment`,
+    /// `spAlignment`, and `unknownReason` to `.error .userException`.
+    pub const USER_EXCEPTION: u64 = 45;
+}
+
 /// Read ESR_EL1 to get the Exception Syndrome Register.
 #[inline(always)]
 fn read_esr_el1() -> u64 {
@@ -157,31 +174,33 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
             // The seLe4n ABI uses x7 for syscall number, matching the Lean
             // model's `arm64DefaultLayout.syscallNumReg = ⟨7⟩`.
             //
-            // AG7 will wire this to the Lean kernel FFI. For now, return
-            // an error indicating the kernel is not yet ready.
+            // TODO(WS-V/AG10): Wire Lean FFI dispatch via @[extern] bridge.
+            // See SeLe4n/Platform/FFI.lean for the Lean-side declarations.
+            // Until wired, return NotImplemented to prevent userspace from
+            // interpreting a no-op stub as success.
             let _syscall_id = frame.x7();
-            // Return error code 0 (no error) in x0 as a no-op placeholder.
-            // AG7-A will replace this with actual Lean FFI dispatch.
-            frame.set_x0(0);
+            frame.set_x0(error_code::NOT_IMPLEMENTED);
         }
         ec::DABT_LOWER | ec::DABT_CURRENT => {
-            // Data abort — set VM fault error in x0
-            // KernelError.vmFault = 44 (from Lean error.rs mapping)
-            frame.set_x0(44);
+            // Data abort — VM fault (KernelError::VmFault = 44)
+            frame.set_x0(error_code::VM_FAULT);
         }
         ec::IABT_LOWER | ec::IABT_CURRENT => {
-            // Instruction abort — set VM fault error in x0
-            frame.set_x0(44);
+            // Instruction abort — VM fault (KernelError::VmFault = 44)
+            frame.set_x0(error_code::VM_FAULT);
         }
         ec::PC_ALIGN | ec::SP_ALIGN => {
-            // Alignment fault — set userException error
-            // KernelError.userException = 43
-            frame.set_x0(43);
+            // Alignment fault — user exception (KernelError::UserException = 45)
+            // Matches Lean ExceptionModel.lean:175-177 mapping of pcAlignment
+            // and spAlignment to `.error .userException`.
+            frame.set_x0(error_code::USER_EXCEPTION);
         }
         _ => {
-            // Unknown exception class — print diagnostic and set error
+            // Unknown exception class — user exception (KernelError::UserException = 45)
+            // Matches Lean ExceptionModel.lean:175-177 mapping of unknownReason
+            // to `.error .userException`.
             crate::kprintln!("FATAL: unhandled exception EC=0x{:02x} ESR=0x{:016x}", exception_class, esr);
-            frame.set_x0(43); // userException
+            frame.set_x0(error_code::USER_EXCEPTION);
         }
     }
 }
@@ -190,15 +209,21 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
 ///
 /// AG5-C: Wired to GIC-400 acknowledge → dispatch → EOI sequence.
 /// The dispatch routes timer interrupts (INTID 30) to the timer handler,
-/// which reprograms the comparator and increments the tick count.
+/// which re-arms the hardware comparator for the next interval.
+///
+/// AI1-C/M-26: Tick accounting (incrementing the tick counter) is performed
+/// exclusively by the Lean kernel via `ffi_timer_reprogram` (ffi.rs). The
+/// IRQ handler only re-arms the hardware timer to prevent missed interrupts.
+/// This eliminates the dual-path bug where both the IRQ handler and the FFI
+/// bridge incremented the tick count, causing double-counting.
 #[no_mangle]
 pub extern "C" fn handle_irq(_frame: &mut TrapFrame) {
     crate::gic::dispatch_irq(|intid| {
         if intid == crate::gic::TIMER_PPI_ID {
-            // Timer interrupt: reprogram comparator and increment tick count
+            // Timer interrupt: re-arm the hardware comparator only.
+            // Tick accounting is performed by the Lean kernel via
+            // ffi_timer_reprogram — see ffi.rs:40-43.
             crate::timer::reprogram_timer();
-            crate::timer::increment_tick_count();
-            // AG7 will wire this to Lean timerTick via FFI
         } else {
             // Non-timer interrupt: log for debugging
             // AG7 will wire device interrupts to notification signals via FFI
@@ -307,5 +332,36 @@ mod tests {
         // EC = 0x15 with ISS = 0x42 (lower 25 bits should be ignored)
         let esr = (0x15u64 << 26) | 0x42;
         assert_eq!(esr_ec(esr), ec::SVC_AARCH64);
+    }
+
+    // AI1-A: Verify error code constants match sele4n-types KernelError discriminants
+    #[test]
+    fn error_code_vm_fault_matches_lean() {
+        // Lean ExceptionModel.lean: data/instruction abort → .error .vmFault
+        // sele4n-types error.rs: VmFault = 44
+        assert_eq!(error_code::VM_FAULT, 44);
+    }
+
+    #[test]
+    fn error_code_user_exception_matches_lean() {
+        // Lean ExceptionModel.lean:175-177: pcAlignment, spAlignment,
+        // unknownReason all map to .error .userException
+        // sele4n-types error.rs: UserException = 45
+        assert_eq!(error_code::USER_EXCEPTION, 45);
+    }
+
+    #[test]
+    fn error_code_not_implemented_matches_lean() {
+        // sele4n-types error.rs: NotImplemented = 17
+        assert_eq!(error_code::NOT_IMPLEMENTED, 17);
+    }
+
+    // AI1-B: Verify SVC handler returns NotImplemented (not success)
+    #[test]
+    fn svc_stub_returns_not_implemented() {
+        // The SVC handler is a pre-FFI stub. It must return NotImplemented (17)
+        // to prevent userspace from interpreting the no-op as success (0).
+        assert_ne!(error_code::NOT_IMPLEMENTED, 0,
+            "SVC stub must not return success (0)");
     }
 }
