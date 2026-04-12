@@ -1174,6 +1174,38 @@ theorem objectIndexSetSync_contains_of_mem
     st.objectIndexSet.contains id = true :=
   (hSync id).mpr hMem
 
+/-- TPI-D1: objectIndexSet tracks all object IDs that exist in the objects HashMap. -/
+def objectIndexSetComplete (st : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId), st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true
+
+/-- TPI-D1: storeObject preserves objectIndexSetComplete. -/
+theorem storeObject_preserves_objectIndexSetComplete
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hObjInv : st.objects.invExt)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hComplete : objectIndexSetComplete st)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    objectIndexSetComplete st' := by
+  unfold storeObject at hStore; cases hStore
+  intro oid hNe
+  simp only at hNe ⊢
+  by_cases hEq : (id == oid) = true
+  · have hIdEq : id = oid := eq_of_beq hEq
+    rw [← hIdEq]; exact RHSet.contains_insert_self st.objectIndexSet id hObjSetInv
+  · rw [RHSet.contains_insert_ne st.objectIndexSet id oid hEq hObjSetInv]
+    apply hComplete
+    rwa [show (st.objects.insert id obj)[oid]? = st.objects[oid]? from
+      RHTable.getElem?_insert_ne st.objects id oid obj hEq hObjInv] at hNe
+
+/-- TPI-D1: storeObject preserves objectIndexSet.table.invExt. -/
+theorem storeObject_preserves_objectIndexSet_invExt
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.objectIndexSet.table.invExt := by
+  unfold storeObject at hStore; cases hStore
+  exact RHSet.insert_preserves_invExt st.objectIndexSet id hObjSetInv
+
 theorem storeObject_updates_objectTypeMeta
     (st st' : SystemState)
     (oid : SeLe4n.ObjId)

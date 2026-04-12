@@ -529,6 +529,32 @@ theorem ensureRunnable_preserves_objects
   · rfl
   · split <;> rfl
 
+/-- TPI-D1: ensureRunnable preserves objectIndexSet (only modifies scheduler). -/
+theorem ensureRunnable_preserves_objectIndexSet
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (ensureRunnable st tid).objectIndexSet = st.objectIndexSet := by
+  unfold ensureRunnable
+  split
+  · rfl
+  · split <;> rfl
+
+/-- TPI-D1: ensureRunnable preserves objectIndexSetComplete. -/
+theorem ensureRunnable_preserves_objectIndexSetComplete
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hComplete : objectIndexSetComplete st) :
+    objectIndexSetComplete (ensureRunnable st tid) := by
+  intro oid hNe
+  rw [ensureRunnable_preserves_objectIndexSet st tid]
+  apply hComplete
+  rwa [ensureRunnable_preserves_objects st tid] at hNe
+
+/-- TPI-D1: ensureRunnable preserves objectIndexSet.table.invExt. -/
+theorem ensureRunnable_preserves_objectIndexSet_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hInv : st.objectIndexSet.table.invExt) :
+    (ensureRunnable st tid).objectIndexSet.table.invExt := by
+  rw [ensureRunnable_preserves_objectIndexSet st tid]; exact hInv
+
 /-- WS-E3/H-09: `storeTcbIpcState` does not modify the scheduler. -/
 theorem storeTcbIpcState_scheduler_eq
     (st st' : SystemState)

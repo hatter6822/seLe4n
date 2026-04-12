@@ -2024,14 +2024,18 @@ theorem endpointReplyRecv_preserves_projection
             intro ep' tailTid hEp' hTail; rw [hObjsMid] at hEp'
             exact hRecvQueueTailHigh ep' tailTid hEp' hTail
           -- AI4-A/TPI-D-NI-2: objectIndexSet completeness for intermediate state.
+          have hIdxReply := storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete
+              st stReply replyTarget _ _ hObjInv hObjSetInv hIdxComplete hStore
           have hIdxMid : ∀ oid,
               (ensureRunnable stReply replyTarget).objects[oid]? ≠ none →
-              (ensureRunnable stReply replyTarget).objectIndexSet.contains oid = true := by
-            sorry -- TPI-D1 objectIndexSetComplete for ensureRunnable∘storeTcbIpcStateAndMessage
+              (ensureRunnable stReply replyTarget).objectIndexSet.contains oid = true :=
+            ensureRunnable_preserves_objectIndexSetComplete stReply replyTarget hIdxReply
+          have hObjSetInvReply := storeTcbIpcStateAndMessage_preserves_objectIndexSet_invExt
+              st stReply replyTarget _ _ hObjSetInv hStore
           rw [endpointReceiveDual_preserves_projection ctx observer endpointId replierReceiver
               (ensureRunnable stReply replyTarget) st' senderId hEndpointHigh hReceiverHigh
               hReceiverObjHigh hCoherent hSQHH_mid hSQNH_mid hRQTH_mid hObjInvEns hIdxMid
-              (by sorry) -- TPI-D1 objectIndexSet.table.invExt for intermediate state
+              (ensureRunnable_preserves_objectIndexSet_invExt stReply replyTarget hObjSetInvReply)
               hRecv,
               hProjEns, hProjReply]
     | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnCall _ =>
