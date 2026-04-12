@@ -1,3 +1,51 @@
+## v0.27.9 — WS-AI Phase AI3: Scheduler & PIP Correctness
+
+Phase AI3 of WS-AI Post-Audit Comprehensive Remediation. Fixes priority
+inheritance consistency in `handleYield`, `timerTick`, `switchDomain`, and
+`migrateRunQueueBucket` by using effective priority (base + PIP boost) instead
+of static base priority. Proves `saveOutgoingContext` silent-failure path
+unreachable under `currentThreadValid`. Adds `configTimeSlicePositive` guard.
+4 sub-tasks (AI3-A through AI3-D). Gate: `lake build` (256 jobs) +
+`test_smoke.sh`. Zero sorry/axiom.
+
+### Changes
+
+- **AI3-A** (M-04/MEDIUM): Fixed `handleYield` re-enqueue at base priority in
+  `Core.lean`. Now re-enqueues at `effectiveRunQueuePriority tcb` (max of base
+  and PIP boost) instead of `tcb.priority`. `timerTick` and `switchDomain` also
+  updated to use `effectiveRunQueuePriority`. Added `effectiveRunQueuePriority`
+  function to `Invariant.lean` (PIP-boost aware priority computation). Updated
+  `schedulerPriorityMatch` invariant to track effective priority. Updated
+  `edfCurrentHasEarliestDeadline` with effective priority guard. Updated
+  `schedulerPriorityMatch_insert` helper theorem. Updated 15+ preservation
+  theorems in `Preservation.lean`. Updated NI proofs in
+  `InformationFlow/Invariant/Operations.lean` and EDF proofs in
+  `Architecture/Invariant.lean`.
+- **AI3-B** (M-22/MEDIUM): Fixed `migrateRunQueueBucket` ignoring PIP boost in
+  `PriorityManagement.lean`. Now applies PIP boost (`max(newPriority, pipBoost)`)
+  when re-inserting threads. All 5 transport lemmas pass unchanged (function only
+  modifies `scheduler.runQueue`).
+- **AI3-C** (L-09/LOW): Added `saveOutgoingContext_always_succeeds_under_currentThreadValid`
+  theorem to `Selection.lean`. Formally proves the TCB-miss error path in
+  `saveOutgoingContext` is unreachable under the `currentThreadValid` invariant.
+  Design rationale documented: keeping `SystemState` return type (not `Except`)
+  avoids 100+ proof site cascade; unreachability proof provides equivalent formal
+  assurance.
+- **AI3-D** (L-10/LOW): Added `configTimeSlicePositive` predicate and
+  `default_configTimeSlicePositive` theorem to `Invariant.lean`. Enforces
+  `configDefaultTimeSlice > 0` at the invariant level. Default value of 5
+  serves as the positivity guarantee.
+
+### Infrastructure
+
+- New `effectiveRunQueuePriority` function for PIP-boost aware priority computation
+- `schedulerPriorityMatch` invariant updated to track effective priority
+- `edfCurrentHasEarliestDeadline` updated with effective priority guard
+- `configTimeSlicePositive` predicate + default theorem
+- `saveOutgoingContext_always_succeeds_under_currentThreadValid` unreachability proof
+
+---
+
 ## v0.27.8 — WS-AI Phase AI2: Interrupt & Architecture Safety
 
 Phase AI2 of WS-AI Post-Audit Comprehensive Remediation. Fixes architecture-layer

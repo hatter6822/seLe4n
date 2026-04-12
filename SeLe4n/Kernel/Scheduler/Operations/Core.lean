@@ -85,14 +85,15 @@ theorem saveOutgoingContext_tcb_fields
       tcb'.domain = tcb.domain ∧
       tcb'.priority = tcb.priority ∧
       tcb'.deadline = tcb.deadline ∧
-      tcb'.timeSlice = tcb.timeSlice := by
+      tcb'.timeSlice = tcb.timeSlice ∧
+      tcb'.pipBoost = tcb.pipBoost := by
   unfold saveOutgoingContext
   cases hCur : st.scheduler.current with
-  | none => exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
+  | none => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl⟩
   | some outTid =>
       dsimp only
       cases hOut : st.objects[outTid.toObjId]? with
-      | none => exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
+      | none => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl⟩
       | some outObj =>
           cases outObj with
           | tcb outTcb =>
@@ -103,14 +104,14 @@ theorem saveOutgoingContext_tcb_fields
                 have hEq' := beq_iff_eq.mp hEq
                 subst hEq'
                 rw [hOut] at h; cases h
-                exact ⟨_, rfl, rfl, rfl, rfl, rfl⟩
-              · simp [hEq]; exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
-          | endpoint _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
-          | notification _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
-          | cnode _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
-          | vspaceRoot _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
-          | untyped _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
-          | schedContext _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl⟩
+                exact ⟨_, rfl, rfl, rfl, rfl, rfl, rfl⟩
+              · simp [hEq]; exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl⟩
+          | endpoint _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl⟩
+          | notification _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl⟩
+          | cnode _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl⟩
+          | vspaceRoot _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl⟩
+          | untyped _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl⟩
+          | schedContext _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- When `st.objects[oid]?` is not a TCB (i.e., `none` or a non-TCB object),
 `saveOutgoingContext` preserves the lookup unchanged. This is because the only
@@ -328,17 +329,12 @@ def handleYield : Kernel Unit :=
     | some tid =>
         match st.objects[tid.toObjId]? with
         | some (.tcb tcb) =>
-            -- WS-H12b: re-enqueue at back of priority bucket, then schedule
-            -- AF1-H (AE3-E/S-03): Re-enqueues at tcb.priority (static base), not
-            -- effective priority. Intentional: yield surrenders the current timeslice
-            -- and moves the thread to the back of its priority band. PIP boost
-            -- determines scheduling ORDER at selection time (via
-            -- `chooseBestRunnableEffective`) but not yield POSITION — a boosted
-            -- thread yields from its base band, not its boosted position. The
-            -- 48-proof-site debt for effective-priority insertion is tracked but
-            -- yield semantics make this a non-bug: the thread re-enters the queue
-            -- at the priority it was originally assigned.
-            let rq' := (st.scheduler.runQueue.insert tid tcb.priority).rotateToBack tid
+            -- AI3-A (M-04): Re-enqueues at effective priority (base + PIP boost).
+            -- This ensures PIP-boosted threads retain elevated scheduling band
+            -- after yield, preventing priority inversion. Uses
+            -- `effectiveRunQueuePriority` (Invariant.lean) for direct alignment
+            -- with the `schedulerPriorityMatch` invariant.
+            let rq' := (st.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
             let st' := { st with scheduler := { st.scheduler with runQueue := rq' } }
             schedule st'
         | _ => .error .schedulerInvariantViolation
@@ -387,13 +383,11 @@ def timerTick : Kernel Unit :=
               let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
               let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb'), machine := tick st.machine }
               -- WS-H12b: re-enqueue current thread before schedule.
-              -- V5-M (L-SCH-2): The re-enqueue uses `tcb.priority` (pre-reset
-              -- value) rather than reading from the updated TCB. This is correct
-              -- because `timerTick` only modifies `timeSlice` — priority is
-              -- immutable during a tick. The pre-reset TCB and post-reset TCB
-              -- have identical `priority` fields, so using either is equivalent.
+              -- AI3-A (M-04): Re-enqueue at effective priority (base + PIP boost).
+              -- Uses `effectiveRunQueuePriority tcb` which depends only on TCB fields
+              -- (priority, pipBoost). These fields are immutable during a tick.
               let st'' := { st' with scheduler := { st'.scheduler with
-                  runQueue := st'.scheduler.runQueue.insert tid tcb.priority } }
+                  runQueue := st'.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb) } }
               schedule st''
             else
               -- Time-slice not expired: decrement and continue
@@ -769,13 +763,15 @@ def switchDomain : Kernel Unit :=
         | some entry =>
             -- U-M39: Save outgoing context before clearing current
             let stSaved := saveOutgoingContext st
-            -- WS-H12b: re-enqueue current thread before domain switch
-            -- All reads use st (not stSaved) to keep scheduler computation identical
+            -- WS-H12b/AI3-A: re-enqueue current thread before domain switch
+            -- at effective priority (base + PIP boost).
+            -- All reads use st (not stSaved) to keep scheduler computation identical.
             let rq' := match st.scheduler.current with
               | none => st.scheduler.runQueue
               | some tid =>
                   match st.objects[tid.toObjId]? with
-                  | some (.tcb tcb) => st.scheduler.runQueue.insert tid tcb.priority
+                  | some (.tcb tcb) =>
+                      st.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb)
                   | _ => st.scheduler.runQueue
             let sched' := { st.scheduler with
               runQueue := rq'

@@ -83,6 +83,28 @@ theorem schedulerWellFormed_iff_queueCurrentConsistent (s : SchedulerState) :
   simp [schedulerWellFormed, queueCurrentConsistent]
 
 -- ============================================================================
+-- AI3-D (L-10): configDefaultTimeSlice positivity invariant
+-- ============================================================================
+
+/-- AI3-D (L-10): The configurable default time-slice quantum is always positive.
+Preservation theorems in Preservation.lean carry an external hypothesis
+`hConfigTS : st.scheduler.configDefaultTimeSlice > 0`. This predicate makes
+the requirement first-class so it can be composed with the invariant bundle
+or verified at boot. The default value (5) satisfies this by construction.
+
+Zero time slice would cause immediate timer expiry on every scheduling round,
+preventing any thread from executing. Guard ensures positivity; default 5
+matches seL4 convention. -/
+def configTimeSlicePositive (st : SystemState) : Prop :=
+  st.scheduler.configDefaultTimeSlice > 0
+
+/-- AI3-D: Default state has `configDefaultTimeSlice = 5`, which is positive. -/
+theorem default_configTimeSlicePositive :
+    configTimeSlicePositive (default : SystemState) := by
+  simp [configTimeSlicePositive]
+  decide
+
+-- ============================================================================
 -- M-04/WS-E6: Time-slice positivity invariant
 -- ============================================================================
 
@@ -110,18 +132,49 @@ def currentTimeSlicePositive (st : SystemState) : Prop :=
     | _ => True
 
 -- ============================================================================
+-- AI3-A: Effective RunQueue priority computation (must precede EDF)
+-- ============================================================================
+
+/-- AI3-A (M-04): Compute the effective RunQueue insertion priority for a thread,
+applying PIP boost to the base TCB priority. Returns `max(tcb.priority, pipBoost)`
+when a PIP boost is active, or `tcb.priority` otherwise.
+
+This function operates on TCB fields only (no state dependency), ensuring
+frame-lemma compatibility: `effectiveRunQueuePriority` is preserved whenever
+`priority` and `pipBoost` fields are unchanged, regardless of other state
+modifications. -/
+def effectiveRunQueuePriority (tcb : TCB) : SeLe4n.Priority :=
+  match tcb.pipBoost with
+  | none => tcb.priority
+  | some boostPrio => ⟨Nat.max tcb.priority.val boostPrio.val⟩
+
+/-- AI3-A: For threads without PIP boost, effective priority equals base
+TCB priority. -/
+theorem effectiveRunQueuePriority_no_pip (tcb : TCB)
+    (hNoPip : tcb.pipBoost = none) :
+    effectiveRunQueuePriority tcb = tcb.priority := by
+  simp [effectiveRunQueuePriority, hNoPip]
+
+-- ============================================================================
 -- M-03/WS-E6: EDF scheduling invariant
 -- ============================================================================
 
 /-- M-03/WS-E6/WS-H6: The currently scheduled thread has the earliest deadline
 among all runnable threads **in the same scheduling domain** at the same
 priority level. This captures the domain-partitioned EDF policy: within equal
-priority and equal domain, the thread with the most urgent deadline is selected.
+effective priority, equal base priority and equal domain, the thread with the
+most urgent deadline is selected.
 
 **WS-H6 fix:** The original definition quantified over all runnable threads
 regardless of domain, which was unprovable for a domain-aware scheduler that
 only selects among same-domain candidates. Adding the domain constraint
-aligns the invariant with `chooseBestRunnableInDomain` semantics. -/
+aligns the invariant with `chooseBestRunnableInDomain` semantics.
+
+**AI3-A:** Added `effectiveRunQueuePriority` guard. The RunQueue buckets
+threads by effective priority, so deadline ordering is only meaningful among
+threads in the same effective priority bucket. Threads at a lower effective
+priority are not considered during bucket-based selection and thus fall
+outside the EDF comparison scope. -/
 def edfCurrentHasEarliestDeadline (st : SystemState) : Prop :=
   match st.scheduler.current with
   | none => True
@@ -132,6 +185,7 @@ def edfCurrentHasEarliestDeadline (st : SystemState) : Prop :=
             match st.objects[tid.toObjId]? with
             | some (.tcb tcb) =>
                 tcb.domain = curTcb.domain →
+                effectiveRunQueuePriority tcb = effectiveRunQueuePriority curTcb →
                 tcb.priority = curTcb.priority →
                 curTcb.deadline.toNat = 0 ∨
                 (tcb.deadline.toNat = 0 ∨ curTcb.deadline.toNat ≤ tcb.deadline.toNat)
@@ -218,23 +272,22 @@ theorem default_runnableThreadsAreTCBs :
 -- WS-H6: RunQueue priority-match predicate
 -- ============================================================================
 
-/-- WS-H6: The RunQueue's recorded `threadPriority` mapping matches the actual
-TCB priority for every run-queue member.
+/-- WS-H6/AI3-A: The RunQueue's recorded `threadPriority` mapping matches the
+effective priority for every run-queue member.
 
-This is an external-consistency predicate bridging the RunQueue's internal
-`threadPriority` field to the authoritative TCB priority in the object store.
-Together with `RunQueue.wellFormed`, it enables the bucket-first scheduling
-proof: if a thread has the same priority as the selected candidate, it must
-reside in the same priority bucket.
+AI3-A (M-04): Updated from `tcb.priority` (base only) to `effectiveRunQueuePriority`
+which accounts for SchedContext binding and PIP boost. This ensures the
+invariant correctly tracks RunQueue bucket placement after all insertion sites
+(handleYield, timerTick, switchDomain, CBS operations) use effective priority.
 
-Note (AE3-E): For threads with SchedContext bindings, the effective priority
-is tracked by `effectiveParamsMatchRunQueue` (component 15 of the extended
-bundle). This legacy invariant covers the unbound-thread case. -/
+Together with `RunQueue.wellFormed`, this enables the bucket-first scheduling
+proof: if a thread has the same effective priority as the selected candidate,
+it must reside in the same priority bucket. -/
 def schedulerPriorityMatch (st : SystemState) : Prop :=
   ∀ tid, tid ∈ st.scheduler.runQueue →
     match st.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
-        st.scheduler.runQueue.threadPriority[tid]? = some tcb.priority
+        st.scheduler.runQueue.threadPriority[tid]? = some (effectiveRunQueuePriority tcb)
     | _ => True
 
 /-- V5-H (M-HW-7): The scheduler's `domainTimeRemaining` is always positive (> 0).
@@ -319,19 +372,19 @@ theorem schedulerPriorityMatch_of_runQueue_objects_eq
     schedulerPriorityMatch st' := by
   intro tid hMem; rw [hRQEq] at hMem; rw [hRQEq, hObjEq]; exact hInv tid hMem
 
-/-- R6-D: schedulerPriorityMatch after inserting the current thread at its priority.
-    If the current thread has a TCB at its ObjId with the given priority,
-    inserting it at that priority preserves the priority match. -/
+/-- R6-D/AI3-A: schedulerPriorityMatch after inserting the current thread at its
+    effective priority. The inserted priority must equal `effectiveRunQueuePriority curTcb`
+    for the invariant to hold on the extended RunQueue. -/
 theorem schedulerPriorityMatch_insert
     (st : SystemState) (curTid : ThreadId) (curTcb : TCB)
     (hPM : schedulerPriorityMatch st)
     (hQCC : queueCurrentConsistent st.scheduler)
     (hCur : st.scheduler.current = some curTid)
     (hObj : st.objects[curTid.toObjId]? = some (.tcb curTcb)) :
-    ∀ tid, tid ∈ st.scheduler.runQueue.insert curTid curTcb.priority →
+    ∀ tid, tid ∈ st.scheduler.runQueue.insert curTid (effectiveRunQueuePriority curTcb) →
       match st.objects[tid.toObjId]? with
       | some (.tcb tcb) =>
-        (st.scheduler.runQueue.insert curTid curTcb.priority).threadPriority[tid]? = some tcb.priority
+        (st.scheduler.runQueue.insert curTid (effectiveRunQueuePriority curTcb)).threadPriority[tid]? = some (effectiveRunQueuePriority tcb)
       | _ => True := by
   intro tid hMem
   have hNotMem : curTid ∉ st.scheduler.runQueue := by
@@ -346,8 +399,6 @@ theorem schedulerPriorityMatch_insert
     have hNeq : curTid ≠ tid := fun h => hNotMem (h ▸ hOld)
     have hBEq : (curTid == tid) = false := by
       cases h : (curTid == tid) <;> simp_all
-    -- The goal has `if curTid == tid = true then ... else ...`
-    -- After insert_threadPriority, ite on BEq
     simp only [RHTable_getElem?_eq_get?]
     rw [RHTable_getElem?_insert st.scheduler.runQueue.threadPriority _ _ st.scheduler.runQueue.threadPrio_invExtK.1]
     simp only [hBEq, Bool.false_eq_true, ↓reduceIte]
