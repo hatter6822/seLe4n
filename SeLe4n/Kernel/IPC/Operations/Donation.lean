@@ -183,21 +183,10 @@ def applyReplyDonation (st : SystemState) (replier : SeLe4n.ThreadId)
 -- Z7-E: Pre-receive donation cleanup
 -- ============================================================================
 
-/-- Z7-E: Clean up stale donation before a server blocks on receive.
-
-If the receiver has a `.donated` binding from a previous call that was never
-replied to (abnormal path), return the SchedContext to the original owner
-before blocking. Otherwise, return the state unchanged. -/
-def cleanupPreReceiveDonation (st : SystemState) (receiver : SeLe4n.ThreadId) : SystemState :=
-  match lookupTcb st receiver with
-  | none => st
-  | some recvTcb =>
-    match recvTcb.schedContextBinding with
-    | .donated scId originalOwner =>
-      match returnDonatedSchedContext st receiver scId originalOwner with
-      | .error _ => st
-      | .ok st' => st'
-    | _ => st
+-- AI4-A (M-01): `cleanupPreReceiveDonation` moved to Endpoint.lean to break
+-- the import cycle (Donation.lean → Transport.lean → Endpoint.lean).
+-- The function is now available via transitive imports in Transport.lean.
+-- Definition: SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 
 -- ============================================================================
 -- Z7: Donation-aware IPC operation wrappers

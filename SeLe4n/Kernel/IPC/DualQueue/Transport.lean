@@ -1670,6 +1670,9 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
                       | .ok st4 => .ok (sender, st4)
                       | .error e => .error e
         | none =>
+            -- AI4-A (M-01): Clean up stale donated SchedContext from a
+            -- prior unanswered call before blocking on receive.
+            let st := cleanupPreReceiveDonation st receiver
             match endpointQueueEnqueue endpointId true receiver st with
             | .error e => .error e
             | .ok st' =>

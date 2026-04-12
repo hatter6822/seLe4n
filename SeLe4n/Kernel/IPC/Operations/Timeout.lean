@@ -109,10 +109,10 @@ sets `timedOut := true` and resets ipcState to `.ready`.
 AG8-A: Detection uses explicit `tcb.timedOut ∧ tcb.ipcState = .ready` check,
 replacing the fragile sentinel pattern (gpr x0 = 0xFFFFFFFF).
 
-The `endpointId` parameter is reserved for future validation (confirming the
-timeout applies to the expected endpoint). It is not currently used. -/
+AI4-C (L-05): The previously unused `endpointId` parameter has been removed.
+If future validation is needed, it can be re-added with actual usage. -/
 def timeoutAwareReceive
-    (_endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (receiver : SeLe4n.ThreadId)
     : Kernel IpcTimeoutResult :=
   fun st =>
     match lookupTcb st receiver with

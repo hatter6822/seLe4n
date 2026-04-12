@@ -49,6 +49,13 @@ namespace SeLe4n.Platform
 
 open SeLe4n
 
+/-- AI4-B (M-09): Error type for FDT node parsing, distinguishing fuel
+exhaustion from structural DTB malformation. -/
+inductive DeviceTreeParseError where
+  | fuelExhausted  : DeviceTreeParseError
+  | malformedBlob  : DeviceTreeParseError
+  deriving Repr, BEq
+
 /-- S6-F: A peripheral device entry in the device tree.
     Describes a single MMIO-mapped hardware peripheral. -/
 structure DeviceEntry where
@@ -616,9 +623,14 @@ def FdtNode.compatibleString (node : FdtNode) : Option String :=
     malformed DTB data. The W4-B bounds-checked helpers (`readBE32`,
     `readCString`) are used throughout. -/
 def parseFdtNodes (blob : ByteArray) (hdr : FdtHeader)
-    (fuel : Nat := 2000) : Option (List FdtNode) :=
+    (fuel : Nat := 2000) : Except DeviceTreeParseError (List FdtNode) :=
+  -- AI4-B (M-09): Map internal Option result to typed Except error.
+  -- The internal helpers use Option for partial-result pattern matching;
+  -- only the top-level boundary distinguishes fuel exhaustion from success.
   let result := go blob hdr.offDtStruct.toNat hdr.offDtStrings.toNat fuel
-  result.map (·.1)
+  match result with
+  | some (nodes, _) => .ok nodes
+  | none => .error .fuelExhausted
 where
   /-- Parse nodes at the current level. Returns parsed nodes and the
       offset past the last consumed token, or `none` on malformed input. -/
@@ -845,12 +857,14 @@ def DeviceTree.fromDtbFull (blob : ByteArray) (physicalAddressWidth : Nat := 48)
       memoryMap := memRegions
     }
     -- X4-A/B/C: Parse full FDT node tree for device discovery
-    -- AF3-A2: `none` from parseFdtNodes indicates fuel exhaustion or malformed
-    -- DTB. Empty fallback is safe: downstream extractors return their own
-    -- `none`/defaults when expected nodes are missing.
+    -- AI4-B (M-09): parseFdtNodes now returns Except DeviceTreeParseError.
+    -- Fuel exhaustion and malformed blob are distinguishable. Empty fallback
+    -- is preserved: downstream extractors return their own `none`/defaults
+    -- when expected nodes are missing.
     let nodes := match parseFdtNodes blob hdr with
-      | some ns => ns
-      | none => []
+      | .ok ns => ns
+      | .error .fuelExhausted => []
+      | .error _ => []
     some {
       platformName := s!"DTB-parsed (version {hdr.version.toNat})"
       machineConfig := config

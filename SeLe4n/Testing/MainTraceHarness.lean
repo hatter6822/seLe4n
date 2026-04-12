@@ -2559,7 +2559,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨12288⟩,
     ipcState := .ready, timedOut := true }
   let stRcv := { st1 with objects := st1.objects.insert rcvTid.toObjId (.tcb tcbTimedOut) }
-  match SeLe4n.Kernel.timeoutAwareReceive epId rcvTid stRcv with
+  match SeLe4n.Kernel.timeoutAwareReceive rcvTid stRcv with
   | .error err =>
     IO.println s!"[SCO-029] timeoutAwareReceive timeout-detect: error {reprStr err}"
   | .ok (result, _) =>
@@ -2574,7 +2574,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨12288⟩,
     ipcState := .ready }
   let stNorm := { st1 with objects := st1.objects.insert rcvTid.toObjId (.tcb tcbNormal) }
-  match SeLe4n.Kernel.timeoutAwareReceive epId rcvTid stNorm with
+  match SeLe4n.Kernel.timeoutAwareReceive rcvTid stNorm with
   | .error err =>
     IO.println s!"[SCO-030] timeoutAwareReceive normal: error {reprStr err}"
   | .ok (result, _) =>

@@ -1164,4 +1164,1065 @@ def ipcInvariantFull (st : SystemState) : Prop :=
   passiveServerIdle st ∧ donationBudgetTransfer st ∧
   uniqueWaiters st
 
+-- ============================================================================
+-- AI4-A (M-01): Frame lemmas for cleanupPreReceiveDonation
+--
+-- cleanupPreReceiveDonation only modifies schedContextBinding on TCBs and
+-- boundThread on a SchedContext, via returnDonatedSchedContext. In 3 of 4
+-- branches it returns st unchanged. These frame lemmas establish that the
+-- cleanup is transparent to all IPC and scheduler invariants.
+-- ============================================================================
+
+/-- AI4-A: cleanupPreReceiveDonation preserves scheduler state. -/
+theorem cleanupPreReceiveDonation_scheduler_eq
+    (st : SystemState) (receiver : SeLe4n.ThreadId) :
+    (cleanupPreReceiveDonation st receiver).scheduler = st.scheduler := by
+  unfold cleanupPreReceiveDonation
+  cases hTcb : lookupTcb st receiver with
+  | none => rfl
+  | some recvTcb =>
+    simp only []
+    cases recvTcb.schedContextBinding with
+    | unbound => rfl
+    | bound _ => rfl
+    | donated scId originalOwner =>
+      simp only []
+      cases hReturn : returnDonatedSchedContext st receiver scId originalOwner with
+      | error _ => rfl
+      | ok st' => exact returnDonatedSchedContext_scheduler_eq st st' receiver scId originalOwner hReturn
+
+/-- AI4-A: cleanupPreReceiveDonation preserves objects.invExt. -/
+theorem cleanupPreReceiveDonation_preserves_objects_invExt
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) :
+    (cleanupPreReceiveDonation st receiver).objects.invExt := by
+  unfold cleanupPreReceiveDonation
+  cases hTcb : lookupTcb st receiver with
+  | none => exact hObjInv
+  | some recvTcb =>
+    simp only []
+    cases recvTcb.schedContextBinding with
+    | unbound => exact hObjInv
+    | bound _ => exact hObjInv
+    | donated scId originalOwner =>
+      simp only []
+      cases hReturn : returnDonatedSchedContext st receiver scId originalOwner with
+      | error _ => exact hObjInv
+      | ok st' =>
+        -- returnDonatedSchedContext does 3 storeObject calls + scThreadIndex update
+        unfold returnDonatedSchedContext at hReturn
+        revert hReturn
+        cases hObj : st.objects[scId.toObjId]? with
+        | none => intro h; cases h
+        | some obj => cases obj with
+          | schedContext sc =>
+            simp only []
+            cases hS1 : storeObject scId.toObjId _ st with
+            | error _ => intro h; cases h
+            | ok p1 =>
+              simp only []
+              have hInv1 := storeObject_preserves_objects_invExt st p1.2 scId.toObjId _ hObjInv hS1
+              cases hL1 : lookupTcb p1.2 originalOwner with
+              | none => intro h; cases h
+              | some _ =>
+                simp only []
+                cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+                | error _ => intro h; cases h
+                | ok p2 =>
+                  simp only []
+                  have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2
+                  cases hL2 : lookupTcb p2.2 receiver with
+                  | none => intro h; cases h
+                  | some _ =>
+                    simp only []
+                    cases hS3 : storeObject receiver.toObjId _ p2.2 with
+                    | error _ => intro h; cases h
+                    | ok p3 =>
+                      simp only [Except.ok.injEq]
+                      intro hEq; subst hEq
+                      have hInv3 := storeObject_preserves_objects_invExt p2.2 p3.2 receiver.toObjId _ hInv2 hS3
+                      -- scThreadIndex update doesn't affect objects
+                      exact hInv3
+          | _ => simp only []; intro h; cases h
+
+-- Helper: common proof pattern for cleanupPreReceiveDonation frame lemmas.
+-- 3 of 4 branches return st unchanged. The donated+ok branch delegates to
+-- returnDonatedSchedContext which only modifies TCB schedContextBinding and
+-- SchedContext boundThread — transparent to all IPC/scheduler invariants.
+theorem cleanupPreReceiveDonation_frame_helper
+    {P : SystemState → Prop}
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hInv : P st)
+    (hReturn : ∀ (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+      (st' : SystemState),
+      returnDonatedSchedContext st receiver scId originalOwner = .ok st' → P st') :
+    P (cleanupPreReceiveDonation st receiver) := by
+  unfold cleanupPreReceiveDonation
+  cases lookupTcb st receiver with
+  | none => exact hInv
+  | some recvTcb =>
+    simp only []
+    cases recvTcb.schedContextBinding with
+    | unbound => exact hInv
+    | bound _ => exact hInv
+    | donated scId originalOwner =>
+      simp only []
+      cases hRet : returnDonatedSchedContext st receiver scId originalOwner with
+      | error _ => exact hInv
+      | ok st' => exact hReturn scId originalOwner st' hRet
+
+-- Helper: returnDonatedSchedContext only stores TCB/SchedContext objects.
+-- For any invariant quantified over non-TCB/non-SchedContext objects (endpoints,
+-- notifications), the invariant is trivially preserved because those objects
+-- are unchanged by storeObject on different-typed ObjIds.
+-- This is proven via storeObject's insert semantics on the RHTable.
+
+/-- AI4-A: returnDonatedSchedContext preserves objects.invExt. -/
+private theorem returnDonatedSchedContext_preserves_objects_invExt
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    st'.objects.invExt := by
+  unfold returnDonatedSchedContext at h
+  revert h
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj => cases obj with
+    | schedContext sc =>
+      simp only []
+      cases hS1 : storeObject scId.toObjId _ st with
+      | error _ => intro h; cases h
+      | ok p1 =>
+        simp only []
+        have hInv1 := storeObject_preserves_objects_invExt st p1.2 scId.toObjId _ hObjInv hS1
+        cases hL1 : lookupTcb p1.2 originalOwner with
+        | none => intro h; cases h
+        | some _ =>
+          simp only []
+          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+          | error _ => intro h; cases h
+          | ok p2 =>
+            simp only []
+            have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2
+            cases hL2 : lookupTcb p2.2 serverTid with
+            | none => intro h; cases h
+            | some _ =>
+              simp only []
+              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+              | error _ => intro h; cases h
+              | ok p3 =>
+                simp only [Except.ok.injEq]
+                intro hEq; subst hEq
+                exact storeObject_preserves_objects_invExt p2.2 p3.2 serverTid.toObjId _ hInv2 hS3
+    | _ => simp only []; intro h; cases h
+
+/-- AI4-A: Backward transport — notifications are unchanged by returnDonatedSchedContext.
+returnDonatedSchedContext stores 1 SchedContext + 2 TCBs. A notification in the
+post-state must have been in the pre-state because storeObject on non-notification
+ObjIds cannot create notification objects. -/
+theorem returnDonatedSchedContext_notification_backward
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st')
+    (oid : SeLe4n.ObjId) (ntfn : Notification)
+    (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
+    st.objects[oid]? = some (.notification ntfn) := by
+  unfold returnDonatedSchedContext at h
+  revert h
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj => cases obj with
+    | schedContext sc =>
+      simp only []
+      cases hS1 : storeObject scId.toObjId _ st with
+      | error _ => intro h; cases h
+      | ok p1 =>
+        simp only []
+        have hInv1 := storeObject_preserves_objects_invExt st p1.2 scId.toObjId _ hObjInv hS1
+        cases hL1 : lookupTcb p1.2 originalOwner with
+        | none => intro h; cases h
+        | some _ =>
+          simp only []
+          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+          | error _ => intro h; cases h
+          | ok p2 =>
+            simp only []
+            have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2
+            cases hL2 : lookupTcb p2.2 serverTid with
+            | none => intro h; cases h
+            | some _ =>
+              simp only []
+              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+              | error _ => intro h; cases h
+              | ok p3 =>
+                simp only [Except.ok.injEq]
+                intro hEq
+                have hInv3 := storeObject_preserves_objects_invExt p2.2 p3.2 serverTid.toObjId _ hInv2 hS3
+                -- st'.objects = p3.2.objects (scThreadIndex with-update doesn't affect objects)
+                rw [← hEq] at hNtfn
+                -- hNtfn now references p3.2.objects (via the with-update)
+                -- Step 3: backward through storeObject serverTid
+                have hNtfn2 : p2.2.objects[oid]? = some (.notification ntfn) := by
+                  by_cases hEq3 : oid = serverTid.toObjId
+                  · subst hEq3; unfold storeObject at hS3; cases hS3
+                    simp only [RHTable_getElem?_eq_get?] at hNtfn
+                    rw [RHTable_getElem?_insert p2.2.objects _ _ hInv2] at hNtfn
+                    simp at hNtfn
+                  · exact (storeObject_objects_ne p2.2 p3.2 serverTid.toObjId oid _ hEq3 hInv2 hS3).symm ▸ hNtfn
+                -- Step 2: backward through storeObject originalOwner
+                have hNtfn1 : p1.2.objects[oid]? = some (.notification ntfn) := by
+                  by_cases hEq2 : oid = originalOwner.toObjId
+                  · subst hEq2; unfold storeObject at hS2; cases hS2
+                    simp only [RHTable_getElem?_eq_get?] at hNtfn2
+                    rw [RHTable_getElem?_insert p1.2.objects _ _ hInv1] at hNtfn2
+                    simp at hNtfn2
+                  · exact (storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId oid _ hEq2 hInv1 hS2).symm ▸ hNtfn2
+                -- Step 1: backward through storeObject scId
+                by_cases hEq1 : oid = scId.toObjId
+                · subst hEq1; unfold storeObject at hS1; cases hS1
+                  simp only [RHTable_getElem?_eq_get?] at hNtfn1
+                  rw [RHTable_getElem?_insert st.objects _ _ hObjInv] at hNtfn1
+                  simp at hNtfn1
+                · exact (storeObject_objects_ne st p1.2 scId.toObjId oid _ hEq1 hObjInv hS1).symm ▸ hNtfn1
+    | _ => simp only []; intro h; cases h
+
+/-- AI4-A: TCB forward transport through cleanupPreReceiveDonation.
+If a TCB exists at `tid.toObjId` in `st`, some TCB still exists there after cleanup.
+The cleanup stores TCBs at receiver/owner ObjIds (preserving TCB-ness) and a
+SchedContext at scId.toObjId. For any `tid` whose ObjId is distinct from all three
+(or equals a TCB-stored target), a TCB still exists. -/
+theorem cleanupPreReceiveDonation_tcb_forward
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (tid : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hTcb : ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb)) :
+    ∃ tcb', (cleanupPreReceiveDonation st receiver).objects[tid.toObjId]? = some (.tcb tcb') := by
+  unfold cleanupPreReceiveDonation
+  cases hLookup : lookupTcb st receiver with
+  | none => exact hTcb
+  | some recvTcb =>
+    simp only []
+    cases recvTcb.schedContextBinding with
+    | unbound => exact hTcb
+    | bound _ => exact hTcb
+    | donated scId originalOwner =>
+      simp only []
+      cases hReturn : returnDonatedSchedContext st receiver scId originalOwner with
+      | error _ => exact hTcb
+      | ok st' =>
+        -- returnDonatedSchedContext stores: SchedContext at scId, TCB at owner, TCB at receiver
+        -- For any tid whose ObjId differs from scId.toObjId, the object is either
+        -- unchanged (ne all 3) or replaced with a TCB (= owner or receiver).
+        unfold returnDonatedSchedContext at hReturn
+        revert hReturn
+        cases hObj : st.objects[scId.toObjId]? with
+        | none => intro h; cases h
+        | some obj => cases obj with
+          | schedContext sc =>
+            simp only []
+            cases hS1 : storeObject scId.toObjId _ st with
+            | error _ => intro h; cases h
+            | ok p1 =>
+              simp only []
+              have hInv1 := storeObject_preserves_objects_invExt st p1.2 scId.toObjId _ hObjInv hS1
+              cases hL1 : lookupTcb p1.2 originalOwner with
+              | none => intro h; cases h
+              | some clientTcb =>
+                simp only []
+                cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+                | error _ => intro h; cases h
+                | ok p2 =>
+                  simp only []
+                  have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2
+                  cases hL2 : lookupTcb p2.2 receiver with
+                  | none => intro h; cases h
+                  | some serverTcb =>
+                    simp only []
+                    cases hS3 : storeObject receiver.toObjId _ p2.2 with
+                    | error _ => intro h; cases h
+                    | ok p3 =>
+                      simp only [Except.ok.injEq]
+                      intro hEq
+                      -- Chain forward through 3 storeObject calls.
+                      -- The goal references st' which = { p3.2 with scThreadIndex := ... }.
+                      -- Since objects is unchanged by the scThreadIndex with-update,
+                      -- st'.objects = p3.2.objects.
+                      rcases hTcb with ⟨tcb, hTcbLookup⟩
+                      suffices ∃ tcb', p3.2.objects[tid.toObjId]? = some (.tcb tcb') by
+                        rw [← hEq]; exact this
+                      -- Case analysis: does tid.toObjId match any stored target?
+                      by_cases h3 : tid.toObjId = receiver.toObjId
+                      · -- S3 stores .tcb at receiver.toObjId → TCB exists
+                        rw [h3]; exact ⟨_, storeObject_objects_eq' p2.2 receiver.toObjId _ p3 hInv2 hS3⟩
+                      · by_cases h2 : tid.toObjId = originalOwner.toObjId
+                        · -- S2 stores .tcb at originalOwner.toObjId, S3 preserves it
+                          rw [h2]
+                          have hNe3' : originalOwner.toObjId ≠ receiver.toObjId := by rw [← h2]; exact h3
+                          have hPres3 := storeObject_objects_ne p2.2 p3.2 receiver.toObjId originalOwner.toObjId _ hNe3' hInv2 hS3
+                          rw [hPres3]; exact ⟨_, storeObject_objects_eq' p1.2 originalOwner.toObjId _ p2 hInv1 hS2⟩
+                        · -- tid differs from receiver and originalOwner
+                          have hNe3 := storeObject_objects_ne p2.2 p3.2 receiver.toObjId tid.toObjId _ h3 hInv2 hS3
+                          have hNe2 := storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId tid.toObjId _ h2 hInv1 hS2
+                          by_cases h1 : tid.toObjId = scId.toObjId
+                          · -- contradiction: hTcbLookup + hObj
+                            exfalso; rw [h1] at hTcbLookup; rw [hObj] at hTcbLookup; cases hTcbLookup
+                          · -- tid differs from all 3 → object unchanged
+                            have hNe1 := storeObject_objects_ne st p1.2 scId.toObjId tid.toObjId _ h1 hObjInv hS1
+                            rw [hNe3, hNe2, hNe1]; exact ⟨tcb, hTcbLookup⟩
+          | _ => simp only []; intro h; cases h
+
+/-- AI4-A: TCB ipcState backward transport through cleanupPreReceiveDonation.
+If a TCB exists in the cleaned state, there's a TCB in the original state with
+the same ipcState. This holds because cleanupPreReceiveDonation only modifies
+schedContextBinding, not ipcState. -/
+theorem cleanupPreReceiveDonation_tcb_ipcState_backward
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (tid : SeLe4n.ThreadId) (tcb' : TCB)
+    (hTcb' : (cleanupPreReceiveDonation st receiver).objects[tid.toObjId]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
+  unfold cleanupPreReceiveDonation at hTcb'
+  cases hLookup : lookupTcb st receiver with
+  | none => simp only [hLookup] at hTcb'; exact ⟨tcb', hTcb', rfl⟩
+  | some recvTcb =>
+    simp only [hLookup] at hTcb'
+    cases hBinding : recvTcb.schedContextBinding with
+    | unbound => simp only [hBinding] at hTcb'; exact ⟨tcb', hTcb', rfl⟩
+    | bound _ => simp only [hBinding] at hTcb'; exact ⟨tcb', hTcb', rfl⟩
+    | donated scId originalOwner =>
+      simp only [hBinding] at hTcb'
+      cases hReturn : returnDonatedSchedContext st receiver scId originalOwner with
+      | error _ => simp only [hReturn] at hTcb'; exact ⟨tcb', hTcb', rfl⟩
+      | ok st' =>
+        simp only [hReturn] at hTcb'
+        -- Chain backward through 3 storeObject calls in returnDonatedSchedContext.
+        unfold returnDonatedSchedContext at hReturn
+        revert hReturn
+        cases hObj : st.objects[scId.toObjId]? with
+        | none => intro h; cases h
+        | some obj => cases obj with
+          | schedContext sc =>
+            simp only []
+            cases hS1 : storeObject scId.toObjId _ st with
+            | error _ => intro h; cases h
+            | ok p1 =>
+              simp only []
+              have hInv1 := storeObject_preserves_objects_invExt st p1.2 scId.toObjId _ hObjInv hS1
+              cases hL1 : lookupTcb p1.2 originalOwner with
+              | none => intro h; cases h
+              | some clientTcb =>
+                simp only []
+                cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+                | error _ => intro h; cases h
+                | ok p2 =>
+                  simp only []
+                  have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2
+                  cases hL2 : lookupTcb p2.2 receiver with
+                  | none => intro h; cases h
+                  | some serverTcb =>
+                    simp only []
+                    cases hS3 : storeObject receiver.toObjId _ p2.2 with
+                    | error _ => intro h; cases h
+                    | ok p3 =>
+                      simp only [Except.ok.injEq]
+                      intro hEq
+                      -- hTcb' references st'.objects = p3.2.objects (scThreadIndex update doesn't affect objects)
+                      rw [← hEq] at hTcb'
+                      -- Step 3: backward through storeObject receiver.toObjId (.tcb serverTcb')
+                      have hTcb2 : ∃ tcb2, p2.2.objects[tid.toObjId]? = some (.tcb tcb2) ∧ tcb2.ipcState = tcb'.ipcState := by
+                        by_cases hEq3 : tid.toObjId = receiver.toObjId
+                        · rw [hEq3] at hTcb' ⊢; unfold storeObject at hS3; cases hS3
+                          simp only [RHTable_getElem?_eq_get?] at hTcb'
+                          rw [RHTable_getElem?_insert p2.2.objects _ _ hInv2] at hTcb'
+                          simp at hTcb'; obtain ⟨rfl⟩ := hTcb'
+                          -- The stored TCB is { serverTcb with schedContextBinding := .unbound }
+                          -- so ipcState is preserved. Extract serverTcb from lookupTcb.
+                          have hServerObj := lookupTcb_some_objects p2.2 receiver serverTcb hL2
+                          exact ⟨serverTcb, hServerObj, rfl⟩
+                        · exact ⟨tcb', (storeObject_objects_ne p2.2 p3.2 receiver.toObjId tid.toObjId _ hEq3 hInv2 hS3).symm ▸ hTcb', rfl⟩
+                      -- Step 2: backward through storeObject originalOwner.toObjId (.tcb clientTcb')
+                      obtain ⟨tcb2, hTcb2Obj, hIpc2⟩ := hTcb2
+                      have hTcb1 : ∃ tcb1, p1.2.objects[tid.toObjId]? = some (.tcb tcb1) ∧ tcb1.ipcState = tcb2.ipcState := by
+                        by_cases hEq2 : tid.toObjId = originalOwner.toObjId
+                        · rw [hEq2] at hTcb2Obj ⊢; unfold storeObject at hS2; cases hS2
+                          simp only [RHTable_getElem?_eq_get?] at hTcb2Obj
+                          rw [RHTable_getElem?_insert p1.2.objects _ _ hInv1] at hTcb2Obj
+                          simp at hTcb2Obj; obtain ⟨rfl⟩ := hTcb2Obj
+                          have hClientObj := lookupTcb_some_objects p1.2 originalOwner clientTcb hL1
+                          exact ⟨clientTcb, hClientObj, rfl⟩
+                        · exact ⟨tcb2, (storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId tid.toObjId _ hEq2 hInv1 hS2).symm ▸ hTcb2Obj, rfl⟩
+                      -- Step 1: backward through storeObject scId.toObjId (.schedContext sc')
+                      obtain ⟨tcb1, hTcb1Obj, hIpc1⟩ := hTcb1
+                      by_cases hEq1 : tid.toObjId = scId.toObjId
+                      · -- contradiction: storeObject stored a SchedContext, but we have a TCB
+                        rw [hEq1] at hTcb1Obj; unfold storeObject at hS1; cases hS1
+                        simp only [RHTable_getElem?_eq_get?] at hTcb1Obj
+                        rw [RHTable_getElem?_insert st.objects _ _ hObjInv] at hTcb1Obj
+                        simp at hTcb1Obj
+                      · have hPres1 := storeObject_objects_ne st p1.2 scId.toObjId tid.toObjId _ hEq1 hObjInv hS1
+                        rw [hPres1] at hTcb1Obj
+                        exact ⟨tcb1, hTcb1Obj, by rw [hIpc1, hIpc2]⟩
+          | _ => simp only []; intro h; cases h
+
+/-- AI4-A: Backward transport — endpoints are unchanged by returnDonatedSchedContext.
+returnDonatedSchedContext stores 1 SchedContext + 2 TCBs. An endpoint in the
+post-state must have been in the pre-state because storeObject on non-endpoint
+ObjIds cannot create endpoint objects. -/
+theorem returnDonatedSchedContext_endpoint_backward
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st')
+    (oid : SeLe4n.ObjId) (ep : Endpoint)
+    (hEp : st'.objects[oid]? = some (.endpoint ep)) :
+    st.objects[oid]? = some (.endpoint ep) := by
+  unfold returnDonatedSchedContext at h
+  revert h
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj => cases obj with
+    | schedContext sc =>
+      simp only []
+      cases hS1 : storeObject scId.toObjId _ st with
+      | error _ => intro h; cases h
+      | ok p1 =>
+        simp only []
+        have hInv1 := storeObject_preserves_objects_invExt st p1.2 scId.toObjId _ hObjInv hS1
+        cases hL1 : lookupTcb p1.2 originalOwner with
+        | none => intro h; cases h
+        | some _ =>
+          simp only []
+          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+          | error _ => intro h; cases h
+          | ok p2 =>
+            simp only []
+            have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2
+            cases hL2 : lookupTcb p2.2 serverTid with
+            | none => intro h; cases h
+            | some _ =>
+              simp only []
+              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+              | error _ => intro h; cases h
+              | ok p3 =>
+                simp only [Except.ok.injEq]
+                intro hEq
+                rw [← hEq] at hEp
+                -- Step 3: backward through storeObject serverTid (.tcb ...)
+                have hEp2 : p2.2.objects[oid]? = some (.endpoint ep) := by
+                  by_cases hEq3 : oid = serverTid.toObjId
+                  · subst hEq3; unfold storeObject at hS3; cases hS3
+                    simp only [RHTable_getElem?_eq_get?] at hEp
+                    rw [RHTable_getElem?_insert p2.2.objects _ _ hInv2] at hEp
+                    simp at hEp
+                  · exact (storeObject_objects_ne p2.2 p3.2 serverTid.toObjId oid _ hEq3 hInv2 hS3).symm ▸ hEp
+                -- Step 2: backward through storeObject originalOwner (.tcb ...)
+                have hEp1 : p1.2.objects[oid]? = some (.endpoint ep) := by
+                  by_cases hEq2 : oid = originalOwner.toObjId
+                  · subst hEq2; unfold storeObject at hS2; cases hS2
+                    simp only [RHTable_getElem?_eq_get?] at hEp2
+                    rw [RHTable_getElem?_insert p1.2.objects _ _ hInv1] at hEp2
+                    simp at hEp2
+                  · exact (storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId oid _ hEq2 hInv1 hS2).symm ▸ hEp2
+                -- Step 1: backward through storeObject scId (.schedContext ...)
+                by_cases hEq1 : oid = scId.toObjId
+                · subst hEq1; unfold storeObject at hS1; cases hS1
+                  simp only [RHTable_getElem?_eq_get?] at hEp1
+                  rw [RHTable_getElem?_insert st.objects _ _ hObjInv] at hEp1
+                  simp at hEp1
+                · exact (storeObject_objects_ne st p1.2 scId.toObjId oid _ hEq1 hObjInv hS1).symm ▸ hEp1
+    | _ => simp only []; intro h; cases h
+
+/-- AI4-A: Endpoint backward transport through cleanupPreReceiveDonation.
+If an endpoint exists at oid in the cleaned state, it existed identically in
+the original state. This holds because cleanupPreReceiveDonation only stores
+TCB and SchedContext objects. -/
+theorem cleanupPreReceiveDonation_endpoint_backward
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (oid : SeLe4n.ObjId) (ep : Endpoint)
+    (hEp : (cleanupPreReceiveDonation st receiver).objects[oid]? = some (.endpoint ep)) :
+    st.objects[oid]? = some (.endpoint ep) := by
+  exact cleanupPreReceiveDonation_frame_helper (P := fun s => s.objects[oid]? = some (.endpoint ep) → st.objects[oid]? = some (.endpoint ep))
+    st receiver (fun h => h)
+    (fun scId originalOwner st' hRet hEp' =>
+      returnDonatedSchedContext_endpoint_backward st st' receiver scId originalOwner hObjInv hRet oid ep hEp')
+    hEp
+
+/-- AI4-A: Backward transport — CNodes are unchanged by returnDonatedSchedContext.
+returnDonatedSchedContext stores 1 SchedContext + 2 TCBs. A CNode in the
+post-state must have been in the pre-state. -/
+theorem returnDonatedSchedContext_cnode_backward
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st')
+    (oid : SeLe4n.ObjId) (cn : CNode)
+    (hCn : st'.objects[oid]? = some (.cnode cn)) :
+    st.objects[oid]? = some (.cnode cn) := by
+  unfold returnDonatedSchedContext at h
+  revert h
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj => cases obj with
+    | schedContext sc =>
+      simp only []
+      cases hS1 : storeObject scId.toObjId _ st with
+      | error _ => intro h; cases h
+      | ok p1 =>
+        simp only []
+        have hInv1 := storeObject_preserves_objects_invExt st p1.2 scId.toObjId _ hObjInv hS1
+        cases hL1 : lookupTcb p1.2 originalOwner with
+        | none => intro h; cases h
+        | some _ =>
+          simp only []
+          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+          | error _ => intro h; cases h
+          | ok p2 =>
+            simp only []
+            have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2
+            cases hL2 : lookupTcb p2.2 serverTid with
+            | none => intro h; cases h
+            | some _ =>
+              simp only []
+              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+              | error _ => intro h; cases h
+              | ok p3 =>
+                simp only [Except.ok.injEq]
+                intro hEq
+                rw [← hEq] at hCn
+                have hCn2 : p2.2.objects[oid]? = some (.cnode cn) := by
+                  by_cases hEq3 : oid = serverTid.toObjId
+                  · subst hEq3; unfold storeObject at hS3; cases hS3
+                    simp only [RHTable_getElem?_eq_get?] at hCn
+                    rw [RHTable_getElem?_insert p2.2.objects _ _ hInv2] at hCn
+                    simp at hCn
+                  · exact (storeObject_objects_ne p2.2 p3.2 serverTid.toObjId oid _ hEq3 hInv2 hS3).symm ▸ hCn
+                have hCn1 : p1.2.objects[oid]? = some (.cnode cn) := by
+                  by_cases hEq2 : oid = originalOwner.toObjId
+                  · subst hEq2; unfold storeObject at hS2; cases hS2
+                    simp only [RHTable_getElem?_eq_get?] at hCn2
+                    rw [RHTable_getElem?_insert p1.2.objects _ _ hInv1] at hCn2
+                    simp at hCn2
+                  · exact (storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId oid _ hEq2 hInv1 hS2).symm ▸ hCn2
+                by_cases hEq1 : oid = scId.toObjId
+                · subst hEq1; unfold storeObject at hS1; cases hS1
+                  simp only [RHTable_getElem?_eq_get?] at hCn1
+                  rw [RHTable_getElem?_insert st.objects _ _ hObjInv] at hCn1
+                  simp at hCn1
+                · exact (storeObject_objects_ne st p1.2 scId.toObjId oid _ hEq1 hObjInv hS1).symm ▸ hCn1
+    | _ => simp only []; intro h; cases h
+
+/-- AI4-A: Forward transport — endpoints in pre-state exist identically in post-state
+of returnDonatedSchedContext. Since the function only stores TCB/SchedContext objects,
+endpoint objects at any ObjId are unchanged. -/
+theorem returnDonatedSchedContext_endpoint_forward
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st')
+    (oid : SeLe4n.ObjId) (ep : Endpoint)
+    (hEp : st.objects[oid]? = some (.endpoint ep)) :
+    st'.objects[oid]? = some (.endpoint ep) := by
+  unfold returnDonatedSchedContext at h
+  revert h
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj => cases obj with
+    | schedContext sc =>
+      simp only []
+      cases hS1 : storeObject scId.toObjId _ st with
+      | error _ => intro h; cases h
+      | ok p1 =>
+        simp only []
+        have hInv1 := storeObject_preserves_objects_invExt st p1.2 scId.toObjId _ hObjInv hS1
+        cases hL1 : lookupTcb p1.2 originalOwner with
+        | none => intro h; cases h
+        | some _ =>
+          simp only []
+          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+          | error _ => intro h; cases h
+          | ok p2 =>
+            simp only []
+            have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2
+            cases hL2 : lookupTcb p2.2 serverTid with
+            | none => intro h; cases h
+            | some _ =>
+              simp only []
+              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+              | error _ => intro h; cases h
+              | ok p3 =>
+                simp only [Except.ok.injEq]
+                intro hEq; rw [← hEq]
+                -- Step 1: forward through storeObject scId (.schedContext ...)
+                have hEp1 : p1.2.objects[oid]? = some (.endpoint ep) := by
+                  by_cases hEq1 : oid = scId.toObjId
+                  · subst hEq1; rw [hEp] at hObj; cases hObj
+                  · exact (storeObject_objects_ne st p1.2 scId.toObjId oid _ hEq1 hObjInv hS1) ▸ hEp
+                -- Step 2: forward through storeObject originalOwner (.tcb ...)
+                have hNe2 : oid ≠ originalOwner.toObjId := by
+                  intro hEq2; rw [hEq2] at hEp1
+                  have hStored := storeObject_objects_eq' p1.2 originalOwner.toObjId _ p2 hInv1 hS2
+                  -- storeObject_objects_ne shows p1 object = p2 object at ne ids, but here they are equal
+                  -- The store wrote .tcb at this id, so p1 lookup must be compatible.
+                  -- Actually, p1 has .endpoint at originalOwner.toObjId (from hEp1), but lookupTcb
+                  -- succeeded on p1 at originalOwner, meaning p1.objects[originalOwner.toObjId]? = some (.tcb ...)
+                  -- Contradiction with hEp1
+                  have hTcbObj := lookupTcb_some_objects p1.2 originalOwner _ hL1
+                  rw [hTcbObj] at hEp1; cases hEp1
+                have hEp2 : p2.2.objects[oid]? = some (.endpoint ep) :=
+                  (storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId oid _ hNe2 hInv1 hS2) ▸ hEp1
+                -- Step 3: forward through storeObject serverTid (.tcb ...)
+                have hNe3 : oid ≠ serverTid.toObjId := by
+                  intro hEq3; rw [hEq3] at hEp2
+                  have hTcbObj := lookupTcb_some_objects p2.2 serverTid _ hL2
+                  rw [hTcbObj] at hEp2; cases hEp2
+                exact (storeObject_objects_ne p2.2 p3.2 serverTid.toObjId oid _ hNe3 hInv2 hS3) ▸ hEp2
+    | _ => simp only []; intro h; cases h
+
+/-- AI4-A: Forward transport — endpoints in pre-state exist identically in the
+cleaned state after cleanupPreReceiveDonation. -/
+theorem cleanupPreReceiveDonation_endpoint_forward
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (oid : SeLe4n.ObjId) (ep : Endpoint)
+    (hEp : st.objects[oid]? = some (.endpoint ep)) :
+    (cleanupPreReceiveDonation st receiver).objects[oid]? = some (.endpoint ep) := by
+  exact cleanupPreReceiveDonation_frame_helper
+    (P := fun s => s.objects[oid]? = some (.endpoint ep))
+    st receiver hEp
+    (fun scId originalOwner st' hRet =>
+      returnDonatedSchedContext_endpoint_forward st st' receiver scId originalOwner hObjInv hRet oid ep hEp)
+
+/-- AI4-A: TCB backward transport through returnDonatedSchedContext for queue fields.
+If a TCB exists in the post-state, there's a TCB in the pre-state with the same
+queueNext, queuePrev, ipcState, and pendingMessage. Only schedContextBinding may differ. -/
+theorem returnDonatedSchedContext_tcb_queue_backward
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st')
+    (tid : SeLe4n.ObjId) (tcb' : TCB)
+    (hTcb' : st'.objects[tid]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[tid]? = some (.tcb tcb) ∧
+      tcb.queueNext = tcb'.queueNext ∧ tcb.queuePrev = tcb'.queuePrev ∧
+      tcb.ipcState = tcb'.ipcState ∧ tcb.pendingMessage = tcb'.pendingMessage := by
+  unfold returnDonatedSchedContext at h
+  revert h
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj => cases obj with
+    | schedContext sc =>
+      simp only []
+      cases hS1 : storeObject scId.toObjId _ st with
+      | error _ => intro h; cases h
+      | ok p1 =>
+        simp only []
+        have hInv1 := storeObject_preserves_objects_invExt st p1.2 scId.toObjId _ hObjInv hS1
+        cases hL1 : lookupTcb p1.2 originalOwner with
+        | none => intro h; cases h
+        | some clientTcb =>
+          simp only []
+          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+          | error _ => intro h; cases h
+          | ok p2 =>
+            simp only []
+            have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2
+            cases hL2 : lookupTcb p2.2 serverTid with
+            | none => intro h; cases h
+            | some serverTcb =>
+              simp only []
+              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+              | error _ => intro h; cases h
+              | ok p3 =>
+                simp only [Except.ok.injEq]
+                intro hEq; rw [← hEq] at hTcb'
+                -- Step 3: backward through storeObject serverTid (.tcb serverTcb')
+                have hTcb2 : ∃ tcb2, p2.2.objects[tid]? = some (.tcb tcb2) ∧
+                    tcb2.queueNext = tcb'.queueNext ∧ tcb2.queuePrev = tcb'.queuePrev ∧
+                    tcb2.ipcState = tcb'.ipcState ∧ tcb2.pendingMessage = tcb'.pendingMessage := by
+                  by_cases hEq3 : tid = serverTid.toObjId
+                  · subst hEq3; unfold storeObject at hS3; cases hS3
+                    simp only [RHTable_getElem?_eq_get?] at hTcb'
+                    rw [RHTable_getElem?_insert p2.2.objects _ _ hInv2] at hTcb'
+                    simp at hTcb'; obtain ⟨rfl⟩ := hTcb'
+                    have hSO := lookupTcb_some_objects p2.2 serverTid serverTcb hL2
+                    exact ⟨serverTcb, hSO, rfl, rfl, rfl, rfl⟩
+                  · exact ⟨tcb', (storeObject_objects_ne p2.2 p3.2 serverTid.toObjId tid _ hEq3 hInv2 hS3).symm ▸ hTcb', rfl, rfl, rfl, rfl⟩
+                -- Step 2: backward through storeObject originalOwner (.tcb clientTcb')
+                obtain ⟨tcb2, hTcb2Obj, hQN2, hQP2, hIpc2, hMsg2⟩ := hTcb2
+                have hTcb1 : ∃ tcb1, p1.2.objects[tid]? = some (.tcb tcb1) ∧
+                    tcb1.queueNext = tcb2.queueNext ∧ tcb1.queuePrev = tcb2.queuePrev ∧
+                    tcb1.ipcState = tcb2.ipcState ∧ tcb1.pendingMessage = tcb2.pendingMessage := by
+                  by_cases hEq2 : tid = originalOwner.toObjId
+                  · subst hEq2; unfold storeObject at hS2; cases hS2
+                    simp only [RHTable_getElem?_eq_get?] at hTcb2Obj
+                    rw [RHTable_getElem?_insert p1.2.objects _ _ hInv1] at hTcb2Obj
+                    simp at hTcb2Obj; obtain ⟨rfl⟩ := hTcb2Obj
+                    have hCO := lookupTcb_some_objects p1.2 originalOwner clientTcb hL1
+                    exact ⟨clientTcb, hCO, rfl, rfl, rfl, rfl⟩
+                  · exact ⟨tcb2, (storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId tid _ hEq2 hInv1 hS2).symm ▸ hTcb2Obj, rfl, rfl, rfl, rfl⟩
+                -- Step 1: backward through storeObject scId (.schedContext ...)
+                obtain ⟨tcb1, hTcb1Obj, hQN1, hQP1, hIpc1, hMsg1⟩ := hTcb1
+                by_cases hEq1 : tid = scId.toObjId
+                · subst hEq1; unfold storeObject at hS1; cases hS1
+                  simp only [RHTable_getElem?_eq_get?] at hTcb1Obj
+                  rw [RHTable_getElem?_insert st.objects _ _ hObjInv] at hTcb1Obj
+                  simp at hTcb1Obj
+                · have hPres1 := storeObject_objects_ne st p1.2 scId.toObjId tid _ hEq1 hObjInv hS1
+                  rw [hPres1] at hTcb1Obj
+                  exact ⟨tcb1, hTcb1Obj, by rw [hQN1, hQN2], by rw [hQP1, hQP2], by rw [hIpc1, hIpc2], by rw [hMsg1, hMsg2]⟩
+    | _ => simp only []; intro h; cases h
+
+/-- AI4-A: TCB forward transport through returnDonatedSchedContext for queue fields.
+If a TCB exists in the pre-state, there's a TCB in the post-state with the same
+queueNext, queuePrev, ipcState, and pendingMessage. -/
+theorem returnDonatedSchedContext_tcb_queue_forward
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner = .ok st')
+    (tid : SeLe4n.ObjId) (tcb : TCB)
+    (hTcb : st.objects[tid]? = some (.tcb tcb)) :
+    ∃ tcb', st'.objects[tid]? = some (.tcb tcb') ∧
+      tcb'.queueNext = tcb.queueNext ∧ tcb'.queuePrev = tcb.queuePrev ∧
+      tcb'.ipcState = tcb.ipcState ∧ tcb'.pendingMessage = tcb.pendingMessage := by
+  unfold returnDonatedSchedContext at h
+  revert h
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj => cases obj with
+    | schedContext sc =>
+      simp only []
+      cases hS1 : storeObject scId.toObjId _ st with
+      | error _ => intro h; cases h
+      | ok p1 =>
+        simp only []
+        have hInv1 := storeObject_preserves_objects_invExt st p1.2 scId.toObjId _ hObjInv hS1
+        cases hL1 : lookupTcb p1.2 originalOwner with
+        | none => intro h; cases h
+        | some clientTcb =>
+          simp only []
+          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+          | error _ => intro h; cases h
+          | ok p2 =>
+            simp only []
+            have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2
+            cases hL2 : lookupTcb p2.2 serverTid with
+            | none => intro h; cases h
+            | some serverTcb =>
+              simp only []
+              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+              | error _ => intro h; cases h
+              | ok p3 =>
+                simp only [Except.ok.injEq]
+                intro hEq; rw [← hEq]
+                -- Step 1: forward through storeObject scId (.schedContext ...)
+                have hTcb1 : ∃ tcb1, p1.2.objects[tid]? = some (.tcb tcb1) ∧
+                    tcb1.queueNext = tcb.queueNext ∧ tcb1.queuePrev = tcb.queuePrev ∧
+                    tcb1.ipcState = tcb.ipcState ∧ tcb1.pendingMessage = tcb.pendingMessage := by
+                  by_cases hEq1 : tid = scId.toObjId
+                  · subst hEq1; rw [hTcb] at hObj; cases hObj
+                  · exact ⟨tcb, (storeObject_objects_ne st p1.2 scId.toObjId tid _ hEq1 hObjInv hS1) ▸ hTcb, rfl, rfl, rfl, rfl⟩
+                -- Step 2: forward through storeObject originalOwner (.tcb clientTcb')
+                obtain ⟨tcb1, hTcb1Obj, hQN1, hQP1, hIpc1, hMsg1⟩ := hTcb1
+                have hTcb2 : ∃ tcb2, p2.2.objects[tid]? = some (.tcb tcb2) ∧
+                    tcb2.queueNext = tcb1.queueNext ∧ tcb2.queuePrev = tcb1.queuePrev ∧
+                    tcb2.ipcState = tcb1.ipcState ∧ tcb2.pendingMessage = tcb1.pendingMessage := by
+                  by_cases hEq2 : tid = originalOwner.toObjId
+                  · subst hEq2; unfold storeObject at hS2; cases hS2
+                    simp only [RHTable_getElem?_eq_get?]
+                    rw [RHTable_getElem?_insert p1.2.objects _ _ hInv1]
+                    simp
+                    -- The stored TCB is { clientTcb with schedContextBinding := .bound scId }
+                    -- clientTcb was looked up from p1.2, so it preserves queue fields relative to tcb1
+                    have hCO := lookupTcb_some_objects p1.2 originalOwner clientTcb hL1
+                    rw [hCO] at hTcb1Obj; cases hTcb1Obj
+                    exact ⟨rfl, rfl, rfl, rfl⟩
+                  · exact ⟨tcb1, (storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId tid _ hEq2 hInv1 hS2) ▸ hTcb1Obj, rfl, rfl, rfl, rfl⟩
+                -- Step 3: forward through storeObject serverTid (.tcb serverTcb')
+                obtain ⟨tcb2, hTcb2Obj, hQN2, hQP2, hIpc2, hMsg2⟩ := hTcb2
+                by_cases hEq3 : tid = serverTid.toObjId
+                · subst hEq3; unfold storeObject at hS3; cases hS3
+                  simp only [RHTable_getElem?_eq_get?]
+                  rw [RHTable_getElem?_insert p2.2.objects _ _ hInv2]
+                  simp
+                  have hSO := lookupTcb_some_objects p2.2 serverTid serverTcb hL2
+                  rw [hSO] at hTcb2Obj; cases hTcb2Obj
+                  exact ⟨by rw [hQN2, hQN1], by rw [hQP2, hQP1], by rw [hIpc2, hIpc1], by rw [hMsg2, hMsg1]⟩
+                · have hPres3 := storeObject_objects_ne p2.2 p3.2 serverTid.toObjId tid _ hEq3 hInv2 hS3
+                  rw [hPres3]
+                  exact ⟨tcb2, hTcb2Obj, by rw [hQN2, hQN1], by rw [hQP2, hQP1], by rw [hIpc2, hIpc1], by rw [hMsg2, hMsg1]⟩
+    | _ => simp only []; intro h; cases h
+
+/-- AI4-A: cleanupPreReceiveDonation preserves allPendingMessagesBounded.
+The invariant quantifies over TCBs and their pendingMessage field, which is
+unchanged by returnDonatedSchedContext (only schedContextBinding is modified). -/
+theorem cleanupPreReceiveDonation_preserves_allPendingMessagesBounded
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hInv : allPendingMessagesBounded st) :
+    allPendingMessagesBounded (cleanupPreReceiveDonation st receiver) := by
+  exact cleanupPreReceiveDonation_frame_helper st receiver hInv
+    fun scId originalOwner st' hRet => by
+      intro tid tcb' msg hTcb' hMsg'
+      obtain ⟨tcb, hTcb, _, _, _, hMsgEq⟩ :=
+        returnDonatedSchedContext_tcb_queue_backward st st' receiver scId originalOwner hObjInv hRet
+          tid.toObjId tcb' hTcb'
+      rw [← hMsgEq] at hMsg'
+      exact hInv tid tcb msg hTcb hMsg'
+
+/-- AI4-A: cleanupPreReceiveDonation preserves badgeWellFormed.
+The invariant quantifies over notifications and CNodes, neither of which is
+modified by returnDonatedSchedContext. -/
+theorem cleanupPreReceiveDonation_preserves_badgeWellFormed
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hInv : badgeWellFormed st) :
+    badgeWellFormed (cleanupPreReceiveDonation st receiver) := by
+  exact cleanupPreReceiveDonation_frame_helper st receiver hInv
+    fun scId originalOwner st' hRet => by
+      constructor
+      · -- notificationBadgesWellFormed: notifications are unchanged
+        intro oid ntfn badge hNtfn hBadge
+        have hNtfnPre := returnDonatedSchedContext_notification_backward st st' receiver scId originalOwner hObjInv hRet oid ntfn hNtfn
+        exact hInv.1 oid ntfn badge hNtfnPre hBadge
+      · -- capabilityBadgesWellFormed: CNodes are unchanged
+        intro oid cn slot cap badge hCn hLookup hBadge
+        -- CNodes are neither TCBs nor SchedContexts, so unchanged through storeObject
+        -- We need backward transport for CNode objects — identical pattern to endpoint
+        -- Since returnDonatedSchedContext only stores TCBs and SchedContexts,
+        -- CNode objects are unchanged. Use the notification backward pattern.
+        -- Actually, we can use the general backward fact: any non-TCB non-SchedContext
+        -- object in st' was in st.
+        exact hInv.2 oid cn slot cap badge
+          (returnDonatedSchedContext_cnode_backward st st' receiver scId originalOwner hObjInv hRet oid cn hCn)
+          hLookup hBadge
+
+/-- AI4-A: cleanupPreReceiveDonation preserves waitingThreadsPendingMessageNone.
+The invariant quantifies over TCBs checking ipcState and pendingMessage, both
+unchanged by returnDonatedSchedContext (only schedContextBinding is modified). -/
+theorem cleanupPreReceiveDonation_preserves_waitingThreadsPendingMessageNone
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hInv : waitingThreadsPendingMessageNone st) :
+    waitingThreadsPendingMessageNone (cleanupPreReceiveDonation st receiver) := by
+  exact cleanupPreReceiveDonation_frame_helper st receiver hInv
+    fun scId originalOwner st' hRet => by
+      intro tid tcb' hTcb'
+      obtain ⟨tcb, hTcb, _, _, hIpcEq, hMsgEq⟩ :=
+        returnDonatedSchedContext_tcb_queue_backward st st' receiver scId originalOwner hObjInv hRet
+          tid.toObjId tcb' hTcb'
+      have hPre := hInv tid tcb hTcb
+      rw [← hIpcEq, ← hMsgEq]; exact hPre
+
+/-- AI4-A: cleanupPreReceiveDonation preserves ipcStateQueueConsistent.
+The invariant quantifies over TCBs (checking ipcState) and requires endpoint
+existence. Both TCB ipcState and endpoint objects are unchanged. -/
+theorem cleanupPreReceiveDonation_preserves_ipcStateQueueConsistent
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hInv : ipcStateQueueConsistent st) :
+    ipcStateQueueConsistent (cleanupPreReceiveDonation st receiver) := by
+  exact cleanupPreReceiveDonation_frame_helper st receiver hInv
+    fun scId originalOwner st' hRet => by
+      intro tid tcb' hTcb'
+      obtain ⟨tcb, hTcb, _, _, hIpcEq, _⟩ :=
+        returnDonatedSchedContext_tcb_queue_backward st st' receiver scId originalOwner hObjInv hRet
+          tid.toObjId tcb' hTcb'
+      have hPre := hInv tid tcb hTcb
+      rw [← hIpcEq]
+      -- For each blocking ipcState case, transport the endpoint existence forward
+      cases hIpc : tcb.ipcState with
+      | blockedOnSend epId =>
+        simp only [hIpc] at hPre
+        obtain ⟨ep, hEp⟩ := hPre
+        exact ⟨ep, returnDonatedSchedContext_endpoint_forward st st' receiver scId originalOwner hObjInv hRet epId ep hEp⟩
+      | blockedOnReceive epId =>
+        simp only [hIpc] at hPre
+        obtain ⟨ep, hEp⟩ := hPre
+        exact ⟨ep, returnDonatedSchedContext_endpoint_forward st st' receiver scId originalOwner hObjInv hRet epId ep hEp⟩
+      | blockedOnCall epId =>
+        simp only [hIpc] at hPre
+        obtain ⟨ep, hEp⟩ := hPre
+        exact ⟨ep, returnDonatedSchedContext_endpoint_forward st st' receiver scId originalOwner hObjInv hRet epId ep hEp⟩
+      | _ => trivial
+
+/-- AI4-A: QueueNextPath transfer: a QueueNextPath in st' implies one in st,
+when st' comes from returnDonatedSchedContext (TCB queueNext is preserved). -/
+private theorem QueueNextPath_backward_of_returnDonatedSchedContext
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hRet : returnDonatedSchedContext st serverTid scId originalOwner = .ok st')
+    (a b : SeLe4n.ThreadId)
+    (hPath : QueueNextPath st' a b) :
+    QueueNextPath st a b := by
+  induction hPath with
+  | single src dst tcb' hObj' hNext' =>
+    obtain ⟨tcb, hObj, hQN, _, _, _⟩ :=
+      returnDonatedSchedContext_tcb_queue_backward st st' serverTid scId originalOwner hObjInv hRet
+        src.toObjId tcb' hObj'
+    exact .single src dst tcb hObj (hQN ▸ hNext')
+  | cons src mid tgt tcb' hObj' hNext' _ ih =>
+    obtain ⟨tcb, hObj, hQN, _, _, _⟩ :=
+      returnDonatedSchedContext_tcb_queue_backward st st' serverTid scId originalOwner hObjInv hRet
+        src.toObjId tcb' hObj'
+    exact .cons src mid tgt tcb hObj (hQN ▸ hNext') ih
+
+/-- AI4-A: cleanupPreReceiveDonation preserves dualQueueSystemInvariant.
+Endpoint objects and TCB queue fields (queueNext, queuePrev) are unchanged. -/
+theorem cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hInv : dualQueueSystemInvariant st) :
+    dualQueueSystemInvariant (cleanupPreReceiveDonation st receiver) := by
+  exact cleanupPreReceiveDonation_frame_helper st receiver hInv
+    fun scId originalOwner st' hRet => by
+      obtain ⟨hDQWF, hLink, hAcyc⟩ := hInv
+      refine ⟨?_, ?_, ?_⟩
+      · -- dualQueueEndpointWellFormed for all endpoints in st'
+        intro epId ep hEp'
+        have hEpPre := returnDonatedSchedContext_endpoint_backward st st' receiver scId originalOwner hObjInv hRet epId ep hEp'
+        have hDQ := hDQWF epId ep hEpPre
+        unfold dualQueueEndpointWellFormed at hDQ ⊢
+        simp only [hEp'] at ⊢
+        simp only [hEpPre] at hDQ
+        -- hDQ : intrusiveQueueWellFormed ep.sendQ st ∧ intrusiveQueueWellFormed ep.receiveQ st
+        -- Goal: intrusiveQueueWellFormed ep.sendQ st' ∧ intrusiveQueueWellFormed ep.receiveQ st'
+        -- Transport each via TCB queue forward
+        have transportQ : ∀ (q : IntrusiveQueue),
+            intrusiveQueueWellFormed q st → intrusiveQueueWellFormed q st' := by
+          intro q ⟨hEmpty, hHead, hTail⟩
+          refine ⟨hEmpty, ?_, ?_⟩
+          · intro hd hHd
+            obtain ⟨tcb, hTcb, hPrev⟩ := hHead hd hHd
+            obtain ⟨tcb', hTcb', _, hQP', _, _⟩ :=
+              returnDonatedSchedContext_tcb_queue_forward st st' receiver scId originalOwner hObjInv hRet
+                hd.toObjId tcb hTcb
+            exact ⟨tcb', hTcb', hQP' ▸ hPrev⟩
+          · intro tl hTl
+            obtain ⟨tcb, hTcb, hNext⟩ := hTail tl hTl
+            obtain ⟨tcb', hTcb', hQN', _, _, _⟩ :=
+              returnDonatedSchedContext_tcb_queue_forward st st' receiver scId originalOwner hObjInv hRet
+                tl.toObjId tcb hTcb
+            exact ⟨tcb', hTcb', hQN' ▸ hNext⟩
+        exact ⟨transportQ _ hDQ.1, transportQ _ hDQ.2⟩
+      · -- tcbQueueLinkIntegrity in st'
+        obtain ⟨hFwd, hRev⟩ := hLink
+        constructor
+        · -- Forward: a.queueNext = some b ⟹ b exists ∧ b.queuePrev = some a
+          intro a tcbA' hTcbA' b hNext'
+          obtain ⟨tcbA, hTcbA, hQNA, _, _, _⟩ :=
+            returnDonatedSchedContext_tcb_queue_backward st st' receiver scId originalOwner hObjInv hRet
+              a.toObjId tcbA' hTcbA'
+          obtain ⟨tcbB, hTcbB, hPrev⟩ := hFwd a tcbA hTcbA b (hQNA ▸ hNext')
+          obtain ⟨tcbB', hTcbB', _, hQPB', _, _⟩ :=
+            returnDonatedSchedContext_tcb_queue_forward st st' receiver scId originalOwner hObjInv hRet
+              b.toObjId tcbB hTcbB
+          exact ⟨tcbB', hTcbB', hQPB' ▸ hPrev⟩
+        · -- Reverse: b.queuePrev = some a ⟹ a exists ∧ a.queueNext = some b
+          intro b tcbB' hTcbB' a hPrev'
+          obtain ⟨tcbB, hTcbB, _, hQPB, _, _⟩ :=
+            returnDonatedSchedContext_tcb_queue_backward st st' receiver scId originalOwner hObjInv hRet
+              b.toObjId tcbB' hTcbB'
+          obtain ⟨tcbA, hTcbA, hNext⟩ := hRev b tcbB hTcbB a (hQPB ▸ hPrev')
+          obtain ⟨tcbA', hTcbA', hQNA', _, _, _⟩ :=
+            returnDonatedSchedContext_tcb_queue_forward st st' receiver scId originalOwner hObjInv hRet
+              a.toObjId tcbA hTcbA
+          exact ⟨tcbA', hTcbA', hQNA' ▸ hNext⟩
+      · -- tcbQueueChainAcyclic in st'
+        intro tid hPath'
+        exact hAcyc tid
+          (QueueNextPath_backward_of_returnDonatedSchedContext st st' receiver scId originalOwner hObjInv hRet tid tid hPath')
+
+/-- AI4-A: cleanupPreReceiveDonation preserves endpointQueueNoDup. -/
+theorem cleanupPreReceiveDonation_preserves_endpointQueueNoDup
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hInv : endpointQueueNoDup st) :
+    endpointQueueNoDup (cleanupPreReceiveDonation st receiver) := by
+  exact cleanupPreReceiveDonation_frame_helper st receiver hInv
+    fun scId originalOwner st' hRet => by
+      intro oid ep hEp'
+      have hEpPre := returnDonatedSchedContext_endpoint_backward st st' receiver scId originalOwner hObjInv hRet oid ep hEp'
+      obtain ⟨hNoSelf, hDisjoint⟩ := hInv oid ep hEpPre
+      constructor
+      · -- No self-loops: for all TCBs in st', queueNext ≠ some tid
+        intro tid tcb' hTcb'
+        obtain ⟨tcb, hTcb, hQN, _, _, _⟩ :=
+          returnDonatedSchedContext_tcb_queue_backward st st' receiver scId originalOwner hObjInv hRet
+            tid.toObjId tcb' hTcb'
+        rw [← hQN]; exact hNoSelf tid tcb hTcb
+      · -- Disjointness unchanged since endpoint queues are unchanged
+        exact hDisjoint
+
+/-- AI4-A: cleanupPreReceiveDonation preserves ipcStateQueueMembershipConsistent. -/
+theorem cleanupPreReceiveDonation_preserves_ipcStateQueueMembershipConsistent
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hInv : ipcStateQueueMembershipConsistent st) :
+    ipcStateQueueMembershipConsistent (cleanupPreReceiveDonation st receiver) := by
+  exact cleanupPreReceiveDonation_frame_helper st receiver hInv
+    fun scId originalOwner st' hRet => by
+      intro tid tcb' hTcb'
+      obtain ⟨tcb, hTcb, hQN, _, hIpc, _⟩ :=
+        returnDonatedSchedContext_tcb_queue_backward st st' receiver scId originalOwner hObjInv hRet
+          tid.toObjId tcb' hTcb'
+      have hPre := hInv tid tcb hTcb
+      rw [← hIpc]
+      cases hIpcCase : tcb.ipcState with
+      | blockedOnSend epId =>
+        simp only [hIpcCase] at hPre
+        obtain ⟨ep, hEp, hReach⟩ := hPre
+        exact ⟨ep,
+          returnDonatedSchedContext_endpoint_forward st st' receiver scId originalOwner hObjInv hRet epId ep hEp,
+          hReach.elim
+            (fun hHead => .inl hHead)
+            (fun ⟨prev, prevTcb, hPrevTcb, hPrevNext⟩ =>
+              .inr ⟨prev, by
+                obtain ⟨prevTcb', hPrevTcb', hQN', _, _, _⟩ :=
+                  returnDonatedSchedContext_tcb_queue_forward st st' receiver scId originalOwner hObjInv hRet
+                    prev.toObjId prevTcb hPrevTcb
+                exact ⟨prevTcb', hPrevTcb', hQN' ▸ hPrevNext⟩⟩)⟩
+      | blockedOnReceive epId =>
+        simp only [hIpcCase] at hPre
+        obtain ⟨ep, hEp, hReach⟩ := hPre
+        exact ⟨ep,
+          returnDonatedSchedContext_endpoint_forward st st' receiver scId originalOwner hObjInv hRet epId ep hEp,
+          hReach.elim
+            (fun hHead => .inl hHead)
+            (fun ⟨prev, prevTcb, hPrevTcb, hPrevNext⟩ =>
+              .inr ⟨prev, by
+                obtain ⟨prevTcb', hPrevTcb', hQN', _, _, _⟩ :=
+                  returnDonatedSchedContext_tcb_queue_forward st st' receiver scId originalOwner hObjInv hRet
+                    prev.toObjId prevTcb hPrevTcb
+                exact ⟨prevTcb', hPrevTcb', hQN' ▸ hPrevNext⟩⟩)⟩
+      | blockedOnCall epId =>
+        simp only [hIpcCase] at hPre
+        obtain ⟨ep, hEp, hReach⟩ := hPre
+        exact ⟨ep,
+          returnDonatedSchedContext_endpoint_forward st st' receiver scId originalOwner hObjInv hRet epId ep hEp,
+          hReach.elim
+            (fun hHead => .inl hHead)
+            (fun ⟨prev, prevTcb, hPrevTcb, hPrevNext⟩ =>
+              .inr ⟨prev, by
+                obtain ⟨prevTcb', hPrevTcb', hQN', _, _, _⟩ :=
+                  returnDonatedSchedContext_tcb_queue_forward st st' receiver scId originalOwner hObjInv hRet
+                    prev.toObjId prevTcb hPrevTcb
+                exact ⟨prevTcb', hPrevTcb', hQN' ▸ hPrevNext⟩⟩)⟩
+      | _ => trivial
+
+/-- AI4-A: cleanupPreReceiveDonation preserves dualQueueEndpointWellFormed. -/
+theorem cleanupPreReceiveDonation_preserves_dualQueueEndpointWellFormed
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hDQSI : dualQueueSystemInvariant st)
+    (epId : SeLe4n.ObjId)
+    (ep : Endpoint)
+    (hEp : (cleanupPreReceiveDonation st receiver).objects[epId]? = some (.endpoint ep)) :
+    dualQueueEndpointWellFormed epId (cleanupPreReceiveDonation st receiver) :=
+  (cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant st receiver hObjInv hDQSI).1 epId ep hEp
+
 end SeLe4n.Kernel

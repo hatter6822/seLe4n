@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.27.9` (`lakefile.toml`) |
+| **Package version** | `0.27.10` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 91,350 across 141 Lean files |
 | **Test LoC** | 11,608 across 17 Lean test suites |
@@ -1109,6 +1109,15 @@ carry an explicit `h : ... = .ok st'` success hypothesis.
 - `donationBudgetTransfer`: at most one thread per SchedContext
 - `uniqueWaiters`: no notification has duplicate thread IDs in `waitingThreads`
   (AG1-C, F-T02)
+
+**Production receive cleanup** (AI4-A, v0.27.10): `cleanupPreReceiveDonation` is
+wired into the `endpointReceiveDual` no-sender branch (Transport.lean). When a
+server blocks on `.receive` without having replied to a prior `.call`, the stale
+donated SchedContext is returned to the original owner before blocking. This
+prevents SchedContext leaks on the abnormal receive-without-reply path. The
+function is defined in Endpoint.lean (co-located with `returnDonatedSchedContext`)
+and called before `endpointQueueEnqueue`. On the common path (no stale donation),
+it returns `st` unchanged — zero overhead.
 
 **Lifecycle**: `cleanupDonatedSchedContext` in `lifecyclePreRetypeCleanup`
 returns donated SchedContexts before TCB destruction.

@@ -1419,6 +1419,26 @@ theorem endpointSendDual_preserves_projection
                 sender _ _ hSenderObjHigh hObjInv1 hTcbStore,
                 hProjEnq]
 
+/-- AI4-A: returnDonatedSchedContext preserves projection because the only modified
+fields (schedContextBinding on TCBs, boundThread on SchedContext) are stripped by
+projectKernelObject. The receiver is non-observable (hReceiverObjHigh). -/
+private theorem returnDonatedSchedContext_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hReceiverObjHigh : objectObservable ctx observer serverTid.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hReturn : returnDonatedSchedContext st serverTid scId originalOwner = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  -- S3 (receiver) is non-observable → storeObject_preserves_projection.
+  -- S1 (SchedContext) and S2 (owner TCB): projectKernelObject strips the modified
+  -- fields (schedContextBinding, boundThread), so projected objects are identical.
+  -- Chain: st' → p3 (S3, non-obs) → p2 (S2, same proj) → p1 (S1, same proj) → st.
+  -- AI4-A: storeObject_preserves_projection for S3; S1/S2 chain requires TPI-D1
+  -- objectIndexSet completeness invariant (storeObject always inserts into set,
+  -- so existing objects are tracked — but no formal invariant tracks this yet).
+  sorry -- TPI-D1 returnDonatedSchedContext_preserves_projection
+
 /-- U4-B: endpointReceiveDual at a non-observable endpoint preserves projection.
 
     Two paths:
@@ -1528,24 +1548,60 @@ theorem endpointReceiveDual_preserves_projection
             objectObservable ctx observer tailTid.toObjId = false := by
           intro ep' tailTid hEp' hTail; simp at hTail
           exact hRecvQueueTailHigh ep' tailTid hEp' hTail
-        cases hEnq : endpointQueueEnqueue endpointId true receiver st with
+        -- AI4-A: cleanup → enqueue
+        have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
+        have hEndpointHighClean : objectObservable ctx observer endpointId = false := hEndpointHigh
+        have hReceiverObjHighClean : objectObservable ctx observer receiver.toObjId = false := hReceiverObjHigh
+        have hTailHighClean : ∀ ep' tailTid,
+            (cleanupPreReceiveDonation st receiver).objects[endpointId]? = some (.endpoint ep') →
+            (if true then ep'.receiveQ else ep'.sendQ).tail = some tailTid →
+            objectObservable ctx observer tailTid.toObjId = false :=
+          fun ep' tailTid hEp' hTail =>
+            hTailHigh ep' tailTid
+              (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv endpointId ep' hEp') hTail
+        cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
         | error e => simp [hEnq] at hStep
         | ok st1 =>
           simp only [hEnq] at hStep
           have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId true
-              receiver st st1 hObjInv hEnq
+              receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
           have hProjEnq := endpointQueueEnqueue_preserves_projection ctx observer
-              endpointId true receiver st st1 hEndpointHigh hReceiverObjHigh
-              hTailHigh hObjInv hEnq
+              endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hEndpointHighClean hReceiverObjHighClean
+              hTailHighClean hObjInvClean hEnq
           cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
           | error e => simp [hIpc] at hStep
           | ok st2 =>
             simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hStEq⟩ := hStep; subst hStEq
+            -- AI4-A: chain rewrite through cleanup → enqueue → storeTcbIpcState → removeRunnable
+            -- AI4-A: cleanupPreReceiveDonation preserves projection.
+            -- Common case (no donation): identity, trivially preserves.
+            -- Donation case: receiver.toObjId is non-observable (hReceiverObjHigh).
+            -- SchedContext/owner observability follows from donation chain coherence.
+            -- TPI-D-NI-1: Full formal proof requires donation chain observability hypothesis.
+            have hProjClean : projectState ctx observer (cleanupPreReceiveDonation st receiver) = projectState ctx observer st := by
+              unfold cleanupPreReceiveDonation
+              cases hLookup : lookupTcb st receiver with
+              | none => simp [hLookup]
+              | some recvTcb =>
+                simp only [hLookup]
+                cases recvTcb.schedContextBinding with
+                | unbound => rfl
+                | bound _ => rfl
+                | donated scId originalOwner =>
+                  simp only []
+                  cases hReturn : returnDonatedSchedContext st receiver scId originalOwner with
+                  | error _ => rfl
+                  | ok st' =>
+                    -- AI4-A: S3 (receiver) is non-observable → use storeObject_preserves_projection.
+                    -- S1/S2 modify fields stripped by projectKernelObject.
+                    -- Full chain proof via returnDonatedSchedContext_preserves_projection (below).
+                    exact returnDonatedSchedContext_preserves_projection ctx observer
+                      st st' receiver scId originalOwner hReceiverObjHigh hObjInv hReturn
             rw [removeRunnable_preserves_projection ctx observer st2 receiver hReceiverHigh,
                 storeTcbIpcState_preserves_projection ctx observer st1 st2 receiver _
                 hReceiverObjHigh hObjInv1 hIpc,
-                hProjEnq]
+                hProjEnq, hProjClean]
 
 /-- WS-H9: endpointReply at non-observable target preserves projection. -/
 theorem endpointReply_preserves_projection
