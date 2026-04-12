@@ -12,8 +12,9 @@ unreachable under `currentThreadValid`. Adds `configTimeSlicePositive` guard.
 
 - **AI3-A** (M-04/MEDIUM): Fixed `handleYield` re-enqueue at base priority in
   `Core.lean`. Now re-enqueues at `effectiveRunQueuePriority tcb` (max of base
-  and PIP boost) instead of `tcb.priority`. `timerTick` and `switchDomain` also
-  updated to use `effectiveRunQueuePriority`. Added `effectiveRunQueuePriority`
+  and PIP boost) instead of `tcb.priority`. All non-CBS insertion sites updated:
+  `timerTick`, `switchDomain`, `timerTickBudget` (unbound path), and
+  `handleYieldWithBudget` (unbound + fallback paths). Added `effectiveRunQueuePriority`
   function to `Invariant.lean` (PIP-boost aware priority computation). Updated
   `schedulerPriorityMatch` invariant to track effective priority. Updated
   `edfCurrentHasEarliestDeadline` with effective priority guard. Updated

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-scheduler-audit-yMA16",
-      "commit_sha": "8aa863f5f939972759938f596fc38fb5b6d74217",
-      "tree_sha": "0d7b9b85f7ac66b844c96151ab30baaf327c16ce",
-      "committed_at_utc": "2026-04-12T16:30:43+00:00"
+      "commit_sha": "72a39854a4d350cf412d791cd6ef9b14db2fab81",
+      "tree_sha": "dd33b242e0ab91aa8bf394da0fbf6961f4925a54",
+      "committed_at_utc": "2026-04-12T16:42:21+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "35a9e222010f12e0eabe1a9c81377e719ca94a1dac3f4a940f46812ae328c9f9"
+    "source_digest": "f3e30ebd75be2a107a025eb9791e9254235ec9f9caf035b4a8e8ace487f381f3"
   },
   "summary": {
     "module_count": 158,
@@ -27,7 +27,7 @@
     "version": "0.27.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 92020,
+    "production_loc": 92025,
     "test_files": 17,
     "test_loc": 11610,
     "proved_theorem_lemma_decls": 2745,
@@ -36640,7 +36640,7 @@
         {
           "kind": "def",
           "name": "schedulerPriorityMatch",
-          "line": 286,
+          "line": 291,
           "called": [
             "SystemState",
             "effectiveRunQueuePriority",
@@ -36650,7 +36650,7 @@
         {
           "kind": "def",
           "name": "domainTimeRemainingPositive",
-          "line": 306,
+          "line": 311,
           "called": [
             "SystemState"
           ]
@@ -36658,7 +36658,7 @@
         {
           "kind": "def",
           "name": "domainScheduleEntriesPositive",
-          "line": 314,
+          "line": 319,
           "called": [
             "SystemState"
           ]
@@ -36666,7 +36666,7 @@
         {
           "kind": "theorem",
           "name": "default_domainScheduleEntriesPositive",
-          "line": 318,
+          "line": 323,
           "called": [
             "SystemState",
             "default",
@@ -36676,7 +36676,7 @@
         {
           "kind": "def",
           "name": "schedulerInvariantBundleFull",
-          "line": 333,
+          "line": 338,
           "called": [
             "SystemState",
             "contextMatchesCurrent",
@@ -36693,7 +36693,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_base",
-          "line": 341,
+          "line": 346,
           "called": [
             "SystemState",
             "schedulerInvariantBundle",
@@ -36703,7 +36703,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_contextMatchesCurrent",
-          "line": 346,
+          "line": 351,
           "called": [
             "SystemState",
             "contextMatchesCurrent",
@@ -36713,7 +36713,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_priorityMatch",
-          "line": 351,
+          "line": 356,
           "called": [
             "SystemState",
             "schedulerInvariantBundleFull",
@@ -36723,7 +36723,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_domainTimeRemainingPositive",
-          "line": 356,
+          "line": 361,
           "called": [
             "SystemState",
             "domainTimeRemainingPositive",
@@ -36733,7 +36733,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_domainScheduleEntriesPositive",
-          "line": 361,
+          "line": 366,
           "called": [
             "SystemState",
             "domainScheduleEntriesPositive",
@@ -36743,7 +36743,7 @@
         {
           "kind": "theorem",
           "name": "schedulerPriorityMatch_of_runQueue_objects_eq",
-          "line": 367,
+          "line": 372,
           "called": [
             "SystemState",
             "schedulerPriorityMatch"
@@ -36752,7 +36752,7 @@
         {
           "kind": "theorem",
           "name": "schedulerPriorityMatch_insert",
-          "line": 378,
+          "line": 383,
           "called": [
             "RHTable_getElem",
             "SystemState",
@@ -36772,7 +36772,7 @@
         {
           "kind": "def",
           "name": "budgetPositive",
-          "line": 423,
+          "line": 428,
           "called": [
             "SystemState",
             "runnable",
@@ -36783,7 +36783,7 @@
         {
           "kind": "theorem",
           "name": "default_budgetPositive",
-          "line": 436,
+          "line": 441,
           "called": [
             "SystemState",
             "budgetPositive",
@@ -36794,7 +36794,7 @@
         {
           "kind": "def",
           "name": "currentBudgetPositive",
-          "line": 450,
+          "line": 455,
           "called": [
             "SystemState",
             "none",
@@ -36805,7 +36805,7 @@
         {
           "kind": "theorem",
           "name": "default_currentBudgetPositive",
-          "line": 465,
+          "line": 470,
           "called": [
             "SystemState",
             "currentBudgetPositive",
@@ -36815,7 +36815,7 @@
         {
           "kind": "def",
           "name": "schedContextsWellFormed",
-          "line": 476,
+          "line": 481,
           "called": [
             "ObjId",
             "SchedContext",
@@ -36826,7 +36826,7 @@
         {
           "kind": "theorem",
           "name": "default_schedContextsWellFormed",
-          "line": 484,
+          "line": 489,
           "called": [
             "RHTable.getElem",
             "SystemState",
@@ -36840,7 +36840,7 @@
         {
           "kind": "def",
           "name": "replenishQueueValid",
-          "line": 499,
+          "line": 504,
           "called": [
             "SystemState",
             "replenishQueueSizeConsistent",
@@ -36850,7 +36850,7 @@
         {
           "kind": "theorem",
           "name": "default_replenishQueueValid",
-          "line": 504,
+          "line": 509,
           "called": [
             "SystemState",
             "default",
@@ -36862,7 +36862,7 @@
         {
           "kind": "def",
           "name": "schedContextBindingConsistent",
-          "line": 519,
+          "line": 524,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -36876,7 +36876,7 @@
         {
           "kind": "theorem",
           "name": "default_schedContextBindingConsistent",
-          "line": 533,
+          "line": 538,
           "called": [
             "RHTable.getElem",
             "SystemState",
@@ -36892,7 +36892,7 @@
         {
           "kind": "def",
           "name": "effectiveParamsMatchRunQueue",
-          "line": 555,
+          "line": 560,
           "called": [
             "SystemState",
             "scId",
@@ -36902,7 +36902,7 @@
         {
           "kind": "theorem",
           "name": "default_effectiveParamsMatchRunQueue",
-          "line": 570,
+          "line": 575,
           "called": [
             "RHSet.contains_empty",
             "SystemState",
@@ -36915,7 +36915,7 @@
         {
           "kind": "def",
           "name": "boundThreadDomainConsistent",
-          "line": 587,
+          "line": 592,
           "called": [
             "KernelObject",
             "SchedContextId",
@@ -36928,7 +36928,7 @@
         {
           "kind": "theorem",
           "name": "default_boundThreadDomainConsistent",
-          "line": 598,
+          "line": 603,
           "called": [
             "RHTable.getElem",
             "SystemState",
@@ -36942,7 +36942,7 @@
         {
           "kind": "def",
           "name": "schedulerInvariantBundleExtended",
-          "line": 615,
+          "line": 620,
           "called": [
             "SystemState",
             "boundThreadDomainConsistent",
@@ -36958,7 +36958,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_full",
-          "line": 623,
+          "line": 628,
           "called": [
             "SystemState",
             "schedulerInvariantBundleExtended",
@@ -36968,7 +36968,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_budgetPositive",
-          "line": 628,
+          "line": 633,
           "called": [
             "SystemState",
             "budgetPositive",
@@ -36978,7 +36978,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_currentBudgetPositive",
-          "line": 633,
+          "line": 638,
           "called": [
             "SystemState",
             "currentBudgetPositive",
@@ -36988,7 +36988,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_schedContextsWellFormed",
-          "line": 638,
+          "line": 643,
           "called": [
             "SystemState",
             "schedContextsWellFormed",
@@ -36998,7 +36998,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_replenishQueueValid",
-          "line": 643,
+          "line": 648,
           "called": [
             "SystemState",
             "replenishQueueValid",
@@ -37008,7 +37008,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_schedContextBindingConsistent",
-          "line": 648,
+          "line": 653,
           "called": [
             "SystemState",
             "schedContextBindingConsistent",
@@ -37018,7 +37018,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_effectiveParamsMatchRunQueue",
-          "line": 653,
+          "line": 658,
           "called": [
             "SystemState",
             "effectiveParamsMatchRunQueue",
@@ -37028,7 +37028,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_boundThreadDomainConsistent",
-          "line": 658,
+          "line": 663,
           "called": [
             "Kernel",
             "SystemState",

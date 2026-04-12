@@ -276,9 +276,14 @@ theorem default_runnableThreadsAreTCBs :
 effective priority for every run-queue member.
 
 AI3-A (M-04): Updated from `tcb.priority` (base only) to `effectiveRunQueuePriority`
-which accounts for SchedContext binding and PIP boost. This ensures the
-invariant correctly tracks RunQueue bucket placement after all insertion sites
-(handleYield, timerTick, switchDomain, CBS operations) use effective priority.
+which accounts for PIP boost (`max(tcb.priority, pipBoost)`). This ensures
+PIP-boosted threads retain elevated RunQueue bucket placement after yield,
+timer tick, or domain switch.
+
+For SchedContext-bound threads, the base priority component still uses
+`tcb.priority` (not `sc.priority`). SchedContext priority resolution is tracked
+separately by `effectiveParamsMatchRunQueue` (extended bundle component 15),
+and CBS paths use `resolveInsertPriority` which handles SchedContext resolution.
 
 Together with `RunQueue.wellFormed`, this enables the bucket-first scheduling
 proof: if a thread has the same effective priority as the selected candidate,
