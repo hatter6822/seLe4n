@@ -197,6 +197,20 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- X5-I (L-6): Confirmed v0.22.17 audit — register stripping is sound at
       -- the logical level. The projection model intentionally abstracts away
       -- architectural register state for NI purposes.
+      -- M-07/AH5-A: Security analysis — pendingMessage visibility in NI projection.
+      -- `pendingMessage` is technically visible in the projection (not stripped
+      -- like `registerContext`). However, cross-domain information leakage via
+      -- `pendingMessage` is unreachable under the NI invariant conjunction:
+      --
+      -- 1. `runnableThreadIpcReady`: observable threads are in `.ready` IPC state,
+      --    meaning they have no pending message from a cross-domain sender.
+      -- 2. `currentNotEndpointQueueHead`: the current thread is not in any endpoint
+      --    queue, preventing it from receiving cross-domain messages while observable.
+      -- 3. Domain scheduling: only threads in the current domain are observable,
+      --    and IPC messages across domains require a domain switch.
+      --
+      -- A formal proof that these invariants make `pendingMessage` exposure
+      -- unreachable is tracked for WS-V (non-interference refinement).
       .tcb { tcb with registerContext := default }
   | other => other
 

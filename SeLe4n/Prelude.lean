@@ -503,6 +503,22 @@ def machineWordMax : Nat := 2 ^ machineWordBits
 theorem isWord64Dec_iff (n : Nat) : isWord64Dec n = true ↔ isWord64 n := by
   simp [isWord64Dec, isWord64]
 
+-- L-11/AH5-C: Badge constructor safety analysis.
+-- `Badge.mk n` with `n ≥ 2^64` produces an invalid badge (exceeds UInt64
+-- word size). This is by design — Lean's Nat is unbounded, and `Badge` wraps
+-- a Nat for proof convenience.
+--
+-- Safety layers:
+-- 1. `Badge.valid` predicate: `b.val < 2^64` — used in proof obligations
+-- 2. `Badge.ofNatMasked`: truncates to word size at construction
+-- 3. `cspaceMint` (Operations.lean): uses masked badge from decoded syscall
+-- 4. IPC message delivery: badge comes from stored Capability (already masked)
+-- 5. Rust ABI: `Badge` is `u64` — hardware truncation at FFI boundary
+--
+-- Risk: only internal test code can construct `Badge.mk (2^64)` directly.
+-- No user-facing syscall path bypasses `ofNatMasked` or `cspaceMint`.
+-- BadgeOverflowSuite.lean (AG9-E) validates round-trip Nat↔UInt64 safety.
+
 /-- Endpoint or notification badge value.
     WS-F5/D1a: Values are logically bounded to `machineWordBits` (64) bits.
     The `valid` predicate asserts word-boundedness; `ofNatMasked` enforces it

@@ -639,6 +639,7 @@ Cross-subsystem consistency between lifecycle, service, and IPC subsystems:
     - `crossSubsystemInvariant_objects_change_bridge` — core bridge for 30 in-place mutation operations: frame-preserves `registryDependencyConsistent` and `serviceGraphInvariant` (services/objectIndex unchanged); takes caller-provided post-state proofs for 6 objects-reading predicates
     - `crossSubsystemInvariant_retype_bridge` — retype bridge for 3 lifecycle operations that grow `objectIndex`: uses `serviceGraphInvariant_monotone` instead of `serviceGraphInvariant_frame`
     - 7 IPC bridges, 7 Scheduler/Lifecycle bridges (`schedule`, `handleYield`, `timerTick`, `switchDomain`, `scheduleDomain`, `suspendThread`, `resumeThread`), 7 Capability bridges (`cspaceMint`/`Copy`/`Move`/`Mutate`/`InsertSlot`/`DeleteSlot`/`Revoke`), 4 SchedContext bridges, 2 Priority bridges, 2 VSpace bridges, 1 IPC buffer bridge, 3 Lifecycle retype bridges
+  - **AH5-C (M-08)**: Composition coverage assessment documented — 10 predicates yield 45 pairwise analyses; remaining gap scenarios (IPC queue ↔ service registry, capability revocation ↔ service lifecycle); full formal composition proof deferred to WS-V
 
 ## 9.2 S5-G/H: Page-alignment check for VSpace-bound retype (S5 complete)
 
@@ -1100,7 +1101,9 @@ backward-preservation and frame lemmas.
 **F-22 — CNode slot filtering** (`Projection.lean`):
 
 - `capTargetObservable` — observability gate for `.object`, `.cnodeSlot`, `.replyCap` targets,
-- `projectKernelObject` — redacts high-domain capability slot contents from CNodes,
+- `projectKernelObject` — redacts high-domain capability slot contents from CNodes.
+  **AH5-A (M-07)**: `pendingMessage` NI visibility analysis documented — unreachable
+  under `runnableThreadIpcReady` + `currentNotEndpointQueueHead` + domain scheduling,
 - `projectKernelObject_idempotent` — safety: double-filtering is idempotent (WS-G5: reformulated to slot-level lookup equality for `Std.HashMap` compatibility),
 - `projectKernelObject_objectType` — safety: filtering preserves object type.
 
@@ -2041,6 +2044,8 @@ normalization to convert between `[k]?` and `.get?` notations.
 - `bootSafeObject` — 6-conjunct boot-safety predicate per object (Z9: extended
   from 5 conjuncts by adding SchedContext `schedContextWellFormed` requirement
   alongside the existing TCB, CNode, VSpaceRoot, Endpoint, Notification checks).
+  **AH5-A (M-04)**: VSpaceRoot exclusion design rationale documented — ASID
+  manager dependency at boot, integration timeline for WS-V.
 - `bootFromPlatform` — folds IRQs then objects over empty `IntermediateState`.
 - `bootFromPlatform_valid` — master validity: all 4 invariant witnesses hold
   after boot.

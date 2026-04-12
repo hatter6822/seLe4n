@@ -527,7 +527,21 @@ structure TCB where
   /-- D2-A: Maximum Controlled Priority (MCP) ceiling. The maximum priority this
       thread can assign to other threads (or itself) via `setPriority`. seL4
       convention: `setPriority newPrio` requires `newPrio ≤ caller.mcp`.
-      Default is maximum priority (0xFF = no restriction). -/
+      Default is maximum priority (0xFF = no restriction).
+
+      L-12/AH5-C: **Design rationale — maximally permissive MCP default**.
+      Default `0xFF` (255) allows any priority to be assigned without MCP
+      restriction. This is safe because `setPriorityOp` (PriorityManagement.lean)
+      enforces `newPrio ≤ caller.mcp` at the operation level — the target's own
+      MCP is irrelevant to the authority check.
+
+      seL4 divergence: seL4 uses a restrictive default (0), requiring explicit
+      MCP elevation before priority assignment. seLe4n's permissive default
+      simplifies boot configuration: all threads can be assigned any priority
+      without a separate MCP initialization step.
+
+      Production recommendation: set explicit MCP values during system
+      initialization to enforce least-privilege priority assignment. -/
   maxControlledPriority : SeLe4n.Priority := ⟨0xFF⟩
   /-- D4-A: Priority Inheritance Protocol boost. When `some p`, the thread's
       effective scheduling priority is boosted to at least `p` regardless of
