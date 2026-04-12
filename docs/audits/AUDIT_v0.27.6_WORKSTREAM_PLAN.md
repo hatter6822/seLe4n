@@ -536,7 +536,9 @@ transient window). The concern is relevant for hardware binding.
 
 ---
 
-## 5. Phase AI3 — Scheduler & PIP Correctness (M-04, M-22, L-09, L-10)
+## 5. Phase AI3 — Scheduler & PIP Correctness (M-04, M-22, L-09, L-10) — COMPLETE (v0.27.9)
+
+**Status**: COMPLETE. All 4 sub-tasks (AI3-A through AI3-D) implemented. `handleYield`, `timerTick`, and `switchDomain` re-enqueue at `effectiveRunQueuePriority` (base + PIP boost). `migrateRunQueueBucket` applies PIP boost on re-insert. `saveOutgoingContext` silent-failure path proven unreachable under `currentThreadValid`. `configTimeSlicePositive` predicate added. Gate: `lake build` (256 jobs) + `test_smoke.sh`. Zero sorry/axiom.
 
 **Objective**: Fix priority inheritance consistency in `handleYield` and
 `migrateRunQueueBucket` by using the established `resolveInsertPriority`

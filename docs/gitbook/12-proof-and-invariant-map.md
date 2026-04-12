@@ -108,7 +108,7 @@ Data structure:
 Bundle level:
 
 - `schedulerInvariantBundle` (alias over `kernelInvariant`)
-- `schedulerInvariantBundleFull` (9-conjunct: `schedulerInvariantBundle ∧ timeSlicePositive ∧ currentTimeSlicePositive ∧ edfCurrentHasEarliestDeadline ∧ contextMatchesCurrent ∧ runnableThreadsAreTCBs ∧ schedulerPriorityMatch ∧ domainTimeRemainingPositive ∧ domainScheduleEntriesPositive`, R6-D/L-12/V5-H/X2-A)
+- `schedulerInvariantBundleFull` (9-conjunct: `schedulerInvariantBundle ∧ timeSlicePositive ∧ currentTimeSlicePositive ∧ edfCurrentHasEarliestDeadline ∧ contextMatchesCurrent ∧ runnableThreadsAreTCBs ∧ schedulerPriorityMatch ∧ domainTimeRemainingPositive ∧ domainScheduleEntriesPositive`, R6-D/L-12/V5-H/X2-A). AI3-A: `schedulerPriorityMatch` now tracks `effectiveRunQueuePriority` (base + PIP boost) instead of static `tcb.priority`. `edfCurrentHasEarliestDeadline` updated with effective priority guard. `handleYield`, `timerTick`, and `switchDomain` all re-enqueue at effective priority via `effectiveRunQueuePriority`.
 - `schedulerInvariantBundleExtended` (16-conjunct: `schedulerInvariantBundleFull ∧ budgetPositive ∧ currentBudgetPositive ∧ schedContextsWellFormed ∧ replenishQueueValid ∧ schedContextBindingConsistent ∧ effectiveParamsMatchRunQueue ∧ boundThreadDomainConsistent`, Z4/AE3-A)
 
 Extraction theorems:
@@ -1278,7 +1278,7 @@ closing gaps where invariants were defined but not composed into the top-level p
 
 | Bundle | Change | Effect |
 |---|---|---|
-| `schedulerInvariantBundleFull` | Extended from 4 to 7 conjuncts (+ `contextMatchesCurrent` WS-H12e, + `runnableThreadsAreTCBs` WS-F6/D3, + `schedulerPriorityMatch` R6-D/L-12) | Machine registers match current thread's saved context; all runnable threads are valid TCBs; RunQueue priority index matches TCB priority |
+| `schedulerInvariantBundleFull` | Extended from 4 to 7 conjuncts (+ `contextMatchesCurrent` WS-H12e, + `runnableThreadsAreTCBs` WS-F6/D3, + `schedulerPriorityMatch` R6-D/L-12); AI3-A: `schedulerPriorityMatch` updated to track `effectiveRunQueuePriority` (base + PIP boost); `edfCurrentHasEarliestDeadline` updated with effective priority guard | Machine registers match current thread's saved context; all runnable threads are valid TCBs; RunQueue priority index matches effective priority (base + PIP boost) |
 | `coreIpcInvariantBundle` | Upgraded from `ipcInvariant` to `ipcInvariantFull` (15-conjunct, AG1-C: +`uniqueWaiters`) | `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, `waitingThreadsPendingMessageNone`, and `uniqueWaiters` now composed into cross-subsystem proof surface |
 | `ipcSchedulerCouplingInvariantBundle` | Extended from 2 to 4 conjuncts (+ `contextMatchesCurrent`, `currentThreadDequeueCoherent`) | Running thread dequeue coherence and context consistency compose through IPC-scheduler boundary |
 | `proofLayerInvariantBundle` | Uses `schedulerInvariantBundleFull` instead of `schedulerInvariantBundle`; extended from 9 to 11 conjuncts (Z9: + `schedulerInvariantBundleExtended`, AG7-D: + `notificationWaiterConsistent`) | Top-level proof surface includes all 7 scheduler conjuncts plus full CBS scheduler extension and notification-waiter consistency |

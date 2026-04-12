@@ -1004,7 +1004,7 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
     | none => trivial
     | some obj =>
       cases obj with
-      | tcb _ => intro _ _; left; exact hDeadline
+      | tcb _ => intro _ _ _; left; exact hDeadline
       | _ => trivial
   -- Compose the 11-tuple
   refine ⟨?_, ?_, ?_, ?_, by exact hLife, ?_,

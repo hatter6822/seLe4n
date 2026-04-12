@@ -333,6 +333,15 @@ when SchedContext lookup fails is safe because:
   | none => (basePrio, dl)
   | some boostPrio => (⟨Nat.max basePrio.val boostPrio.val⟩, dl)
 
+/-- AI3-A: For unbound threads without PIP boost, the full effective priority
+resolution `(resolveEffectivePrioDeadline st tcb).1` equals the simpler
+`effectiveRunQueuePriority tcb` from Invariant.lean. -/
+theorem effectiveRunQueuePriority_eq_resolve_unbound (st : SystemState) (tcb : TCB)
+    (hUnbound : tcb.schedContextBinding = .unbound) :
+    effectiveRunQueuePriority tcb = (resolveEffectivePrioDeadline st tcb).1 := by
+  simp [effectiveRunQueuePriority, resolveEffectivePrioDeadline, hUnbound]
+  cases tcb.pipBoost <;> simp_all
+
 /-- AG1-A: Resolve the effective insertion priority for RunQueue re-enqueue.
 
 When a thread is re-inserted into the RunQueue (budget refill, yield, bind),
@@ -501,6 +510,33 @@ def saveOutgoingContextChecked (st : SystemState) : SystemState × Bool :=
           let obj := KernelObject.tcb { outTcb with registerContext := st.machine.regs }
           ({ st with objects := st.objects.insert outTid.toObjId obj }, true)
       | _ => (st, false)
+
+/-- AI3-C (L-09): Under `currentThreadValid`, `saveOutgoingContext` always succeeds.
+The silent-return-on-TCB-miss path (line 495) is unreachable because
+`currentThreadValid` guarantees the current thread resolves to a TCB.
+
+This theorem formally proves the unreachability, making the design decision
+explicit: the unchecked variant is safe under invariants, and the checked
+variant (`saveOutgoingContextChecked`) provides defense-in-depth at API
+boundaries.
+
+Design rationale for keeping `SystemState` return type (not `Except`):
+- 20+ preservation theorems unfold `saveOutgoingContext` by name
+- Changing to `Except` would require cascading updates through `schedule`,
+  `scheduleEffective`, `switchDomain`, and all their callers (~100 proof sites)
+- The unreachability proof below provides equivalent formal assurance
+- `saveOutgoingContextChecked` at API boundaries catches any invariant violation -/
+theorem saveOutgoingContext_always_succeeds_under_currentThreadValid
+    (st : SystemState)
+    (hCTV : currentThreadValid st) :
+    (saveOutgoingContextChecked st).2 = true := by
+  unfold saveOutgoingContextChecked currentThreadValid at *
+  cases hCur : st.scheduler.current with
+  | none => rfl
+  | some outTid =>
+    simp only [hCur] at hCTV
+    obtain ⟨tcb, hTcb⟩ := hCTV
+    simp only [hTcb]
 
 /-- V5-D: The checked variant agrees with the unchecked variant on the state component. -/
 theorem saveOutgoingContextChecked_fst_eq (st : SystemState) :

@@ -97,12 +97,26 @@ def updatePrioritySource (st : SystemState) (tid : SeLe4n.ThreadId)
     | _ => st  -- SchedContext missing — no-op (consistency violation)
 
 /-- Helper: if a thread is in the run queue, remove it and re-insert at
-the new priority. This maintains correct run queue bucket placement. -/
+the effective priority (new base priority with PIP boost applied). This
+maintains correct run queue bucket placement.
+
+AI3-B (M-22): The insertion priority accounts for PIP boost. When a thread
+has an active `pipBoost`, the RunQueue placement uses
+`max(newPriority, pipBoost)` to ensure PIP-boosted threads retain elevated
+scheduling band after priority changes. Without this, a `setPriorityOp` on
+a PIP-boosted thread would drop it to the new base priority, causing
+priority inversion for the entire blocking chain. -/
 def migrateRunQueueBucket (st : SystemState) (tid : SeLe4n.ThreadId)
     (newPriority : SeLe4n.Priority) : SystemState :=
   if tid ∈ st.scheduler.runQueue then
     let rq := st.scheduler.runQueue.remove tid
-    let rq := rq.insert tid newPriority
+    -- AI3-B (M-22): Apply PIP boost to new priority
+    let effectivePrio := match st.objects[tid.toObjId]? with
+      | some (.tcb tcb) => match tcb.pipBoost with
+        | none => newPriority
+        | some boostPrio => ⟨Nat.max newPriority.val boostPrio.val⟩
+      | _ => newPriority  -- defensive fallback: no TCB found
+    let rq := rq.insert tid effectivePrio
     { st with scheduler := { st.scheduler with runQueue := rq } }
   else
     st
