@@ -28,11 +28,12 @@ syscall handler, dual timer reprogram, and unsafe UART static. 5 sub-tasks
   IRQ handler and FFI bridge fire.
 - **AI1-D** (M-27/MEDIUM): Made `BOOT_UART` safe with spinlock synchronization.
   Replaced `pub static mut BOOT_UART` (uart.rs) with `AtomicBool`-based
-  `UartLock` — minimal IRQ-safe spinlock using `core::sync::atomic`. Updated
-  `with_boot_uart()`, `init_boot_uart()`, `boot_puts()`, and `kprint!` macro
-  to use lock-mediated access. `BOOT_UART_INNER` is now module-private.
-  Eliminates undefined behavior from unsynchronized mutable static access after
-  interrupts are enabled.
+  `UartLock` — IRQ-safe spinlock that disables interrupts before acquiring the
+  lock and restores them after release, preventing IRQ-handler deadlock on
+  single-core systems. Updated `with_boot_uart()`, `init_boot_uart()`,
+  `boot_puts()`, and `kprint!` macro to use lock-mediated access.
+  `BOOT_UART_INNER` is now module-private. Eliminates undefined behavior from
+  unsynchronized mutable static access after interrupts are enabled.
 - **AI1-E**: Phase gate — `cargo test --workspace` (366 tests pass),
   `cargo clippy --workspace` (0 warnings), `test_smoke.sh` passes.
 

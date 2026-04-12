@@ -180,14 +180,19 @@ use core::sync::atomic::{AtomicBool, Ordering};
 /// mutual exclusion via atomic acquire/release on a single-core system.
 static mut BOOT_UART_INNER: Uart = Uart::new(UART0_BASE);
 
-/// Minimal spinlock guard for boot UART access.
+/// Minimal IRQ-safe spinlock guard for boot UART access.
 ///
 /// On a single-core ARM64 system (RPi5 boots on core 0 only), the only
 /// contention source is an IRQ handler calling `kprintln!` while the main
-/// kernel path holds the lock. The atomic acquire/release ensures mutual
-/// exclusion without requiring interrupt disabling (the spin is bounded:
-/// the IRQ handler's UART access is brief, and the main path will release
-/// before the next tick).
+/// kernel path holds the lock. Without interrupt masking, this would
+/// deadlock: the IRQ preempts the lock holder, spins forever, and the
+/// holder never resumes to release. The lock therefore disables interrupts
+/// for the duration of the critical section, matching the plan's
+/// "IRQ-safe lock" requirement.
+///
+/// On non-aarch64 (test hosts), interrupt disable/restore are no-ops,
+/// so the lock degrades to a plain atomic spinlock — correct for
+/// single-threaded test execution.
 struct UartLock {
     locked: AtomicBool,
 }
@@ -199,19 +204,24 @@ impl UartLock {
 
     /// Execute `f` with exclusive `&mut Uart` access.
     ///
-    /// Spins on the atomic flag until acquired. On single-core, this
-    /// bounds to the duration of any concurrent IRQ handler UART write.
+    /// Disables interrupts before acquiring the lock and restores them
+    /// after release, preventing IRQ-handler deadlock on single-core.
     #[inline(always)]
     fn with<R, F: FnOnce(&mut Uart) -> R>(&self, f: F) -> R {
+        // Disable interrupts BEFORE acquiring the lock to prevent an IRQ
+        // handler from preempting us mid-acquisition and deadlocking.
+        let saved_daif = crate::interrupts::disable_interrupts();
         while self.locked.compare_exchange_weak(
             false, true, Ordering::Acquire, Ordering::Relaxed
         ).is_err() {
             core::hint::spin_loop();
         }
-        // SAFETY: Lock held — single writer guaranteed by the atomic flag.
-        // `&raw mut` avoids creating an intermediate reference to static mut.
+        // SAFETY: Lock held + interrupts disabled — single writer guaranteed.
+        // `core::ptr::addr_of_mut!` avoids creating an intermediate reference
+        // to static mut.
         let result = unsafe { f(&mut *core::ptr::addr_of_mut!(BOOT_UART_INNER)) };
         self.locked.store(false, Ordering::Release);
+        crate::interrupts::restore_interrupts(saved_daif);
         result
     }
 }

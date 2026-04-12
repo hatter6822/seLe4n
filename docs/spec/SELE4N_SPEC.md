@@ -632,11 +632,13 @@ for all 4 adapter paths. The `proofLayerInvariantBundle` (11 conjuncts)
 and `ipcInvariantFull` (15 conjuncts) are preserved through the FFI boundary.
 
 **AI1-D (v0.27.7)**: The `BOOT_UART` global in `sele4n-hal/src/uart.rs` is now
-synchronized via an `AtomicBool`-based `UartLock` spinlock, eliminating the
-M-27 unsafe `static mut` that produced undefined behavior after interrupts were
-enabled. All UART access (including `kprint!` macro and FFI `ffi_uart_putc`)
-flows through the lock. The original `pub static mut BOOT_UART` has been
-replaced with module-private `BOOT_UART_INNER` guarded by `UART_LOCK`.
+synchronized via an `AtomicBool`-based `UartLock` spinlock, which disables
+interrupts before acquiring the lock and restores them after release, preventing
+IRQ-handler deadlock on single-core systems. This eliminates the M-27 unsafe
+`static mut` that produced undefined behavior after interrupts were enabled. All
+UART access (including `kprint!` macro and FFI `ffi_uart_putc`) flows through
+the lock. The original `pub static mut BOOT_UART` has been replaced with
+module-private `BOOT_UART_INNER` guarded by `UART_LOCK`.
 
 #### 6.5.6 Architecture Gap: TPIDR_EL0 / TLS (L-13)
 
