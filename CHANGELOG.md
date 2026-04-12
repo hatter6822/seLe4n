@@ -1,3 +1,41 @@
+## v0.27.5 — WS-AH Phase AH4: Version Consistency & CI Automation
+
+Phase AH4 of WS-AH Pre-Release Comprehensive Audit Remediation. Synchronizes
+all version-bearing files to match the canonical `lakefile.toml` version (H-02/HIGH)
+and adds automated CI enforcement to prevent future version drift. 6 sub-tasks
+(AH4-A through AH4-F). Gate: `cargo test --workspace` + `test_smoke.sh` +
+`check_version_sync.sh`. Zero sorry/axiom.
+
+### Changes
+
+- **AH4-A** (H-02 fix): Updated `KERNEL_VERSION` in `rust/sele4n-hal/src/boot.rs`
+  from `0.26.8` to `0.27.5` — UART boot banner now prints the correct version.
+  Updated Rust workspace version in `rust/Cargo.toml` from `0.27.1` to `0.27.5`
+  (propagates to all 4 crates via workspace inheritance).
+- **AH4-B**: Updated CLAUDE.md project description version reference from
+  `0.26.9` to `0.27.5`.
+- **AH4-C**: Updated `docs/spec/SELE4N_SPEC.md` "Package version" table entry
+  from `0.27.0` to `0.27.5`.
+- **AH4-D**: Updated all 10 i18n README version badges from `0.26.6` to `0.27.5`
+  (ar, de, es, fr, hi, ja, ko, pt-BR, ru, zh-CN).
+- **AH4-E**: Created `scripts/check_version_sync.sh` — CI-safe shell script
+  that validates 15 version-bearing files (Rust HAL, Cargo workspace, spec,
+  CLAUDE.md, 10 i18n READMEs) against the canonical `lakefile.toml` version.
+  Follows project style (GPL header, `set -euo pipefail`, `SCRIPT_DIR`/
+  `REPO_ROOT` pattern).
+- **AH4-F**: Integrated `check_version_sync.sh` into Tier 0 hygiene
+  (`scripts/test_tier0_hygiene.sh`) via `run_check "HYGIENE"` — version
+  sync is now enforced on every PR and push to main.
+
+### Infrastructure
+
+- New file: `scripts/check_version_sync.sh`
+- Version bump: `lakefile.toml` 0.27.4 → 0.27.5
+- Main `README.md` badge updated to 0.27.5
+- GitBook version references updated
+
+---
+
 ## v0.27.4 — WS-AH Phase AH3: Capability, Architecture & Decode Hardening
 
 Phase AH3 of WS-AH Pre-Release Comprehensive Audit Remediation. Fixes

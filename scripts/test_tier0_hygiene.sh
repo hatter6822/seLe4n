@@ -97,6 +97,9 @@ fi
 # means a rename or deletion would produce 404s on the project website.
 run_check "HYGIENE" "${SCRIPT_DIR}/check_website_links.sh"
 
+# AH4-F: Version sync — validate all version-bearing files match lakefile.toml.
+run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
+
 run_check "HYGIENE" python3 -m unittest scripts.tests.test_generate_codebase_map
 
 # WS-I1/R-03: Scenario registry validation — every fixture ID must be in the registry and vice versa.

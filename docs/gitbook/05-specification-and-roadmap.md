@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.27.1` |
+| Version | `0.27.5` |
 | Lean toolchain | `v4.28.0` |
 | Production LoC | 91,466 across 141 Lean files |
 | Test LoC | 11,608 across 17 suites |
 | Proved declarations | 2,725 theorem/lemma declarations (zero sorry/axiom) |
 | Latest audit | [`AUDIT_COMPREHENSIVE_v0.23.21`](../dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
-| Active workstream | **WS-AH IN PROGRESS** (v0.27.2–). Pre-Release Comprehensive Audit Remediation — AH1 COMPLETE (v0.27.2, Critical IPC Dispatch), AH2 COMPLETE (v0.27.3, IPC Donation Safety & Boot Pipeline). Prior: WS-AG PORTFOLIO COMPLETE (v0.26.0–v0.27.1, H3 Hardware Binding, 10 phases, 67 sub-tasks). **Next: WS-V (multi-core SMP).** |
+| Active workstream | **WS-AH IN PROGRESS** (v0.27.2–). Pre-Release Comprehensive Audit Remediation — AH1 COMPLETE (v0.27.2, Critical IPC Dispatch), AH2 COMPLETE (v0.27.3, IPC Donation Safety & Boot Pipeline), AH3 COMPLETE (v0.27.4, Capability, Architecture & Decode Hardening), AH4 COMPLETE (v0.27.5, Version Consistency & CI Automation). Prior: WS-AG PORTFOLIO COMPLETE (v0.26.0–v0.27.1, H3 Hardware Binding, 10 phases, 67 sub-tasks). **Next: WS-V (multi-core SMP).** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
