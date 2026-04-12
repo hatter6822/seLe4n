@@ -39,8 +39,8 @@ findings, already-tracked deferrals, and confirmed-correct design decisions.
 | AI6 | Documentation & Proof Gaps | 7 | M-02..M-25, L-02, L-15, L-24 | `test_full.sh` + doc sync |
 | AI7 | Testing, Closure & Final Gate | 6 | L-17, L-26, fixture sync | `test_full.sh` + `cargo test` |
 
-**Estimated scope**: ~450–650 lines Lean (functions, theorems, test sites),
-~120–180 lines Rust, ~200–350 lines documentation.
+**Estimated scope**: ~620–850 lines Lean (functions, theorems, frame lemmas,
+test sites), ~150 lines Rust, ~250 lines documentation.
 
 **Total sub-tasks**: 37 (across 7 phases)
 
@@ -234,26 +234,93 @@ documents the integration point.
 
 **Finding**: M-27 — `pub static mut BOOT_UART` with no synchronization
 **File**: `rust/sele4n-hal/src/uart.rs`, line 179
-**Type**: Atomic fix
+**Type**: Multi-step fix (4 sub-steps)
 
-**Atomic steps**:
+Current state:
+- Line 179: `pub static mut BOOT_UART: Uart = Uart::new(UART0_BASE)`
+- Lines 188-194: `with_boot_uart()` helper wraps unsafe access via `&raw mut`
+- Lines 200-203: `init_boot_uart()` called once from `boot.rs:23`
+- Lines 213-223: `kprint!` macro accesses via raw pointer dereference
+- No `SpinLock` or `Mutex` type exists in the crate (zero dependencies)
+- Only file referencing `BOOT_UART` is `uart.rs` itself
 
-1. **Read**: uart.rs lines 170-230.
-2. **Replace `static mut`**: Change from `pub static mut BOOT_UART` to a
-   `static BOOT_UART: SpinLock<Option<Uart>>` pattern using a minimal
-   spinlock (or `core::sync::atomic` flag + unsafe block with documented
-   single-writer invariant). If a `SpinLock` type already exists in the
-   crate, use it. Otherwise, use the lightweight pattern:
-   ```rust
-   use core::sync::atomic::{AtomicBool, Ordering};
-   static BOOT_UART_LOCK: AtomicBool = AtomicBool::new(false);
-   static mut BOOT_UART_INNER: Option<Uart> = None;
-   ```
-3. **Update `kprint!` macro**: Modify line 220 to acquire the lock before
-   accessing the UART.
-4. **Restrict visibility**: Change from `pub` to `pub(crate)` to limit the
-   blast radius.
-5. **Build**: `cargo test -p sele4n-hal` + `cargo clippy -p sele4n-hal`
+**Sub-step AI1-D-1: Implement minimal spinlock guard**
+
+Since `sele4n-hal` has zero external dependencies (bare-metal, `#![no_std]`),
+implement a lightweight IRQ-safe lock using `AtomicBool`:
+
+```rust
+use core::sync::atomic::{AtomicBool, Ordering};
+
+/// Minimal IRQ-safe spinlock for boot UART access.
+/// Safety: Disables interrupts during critical section to prevent
+/// deadlock from nested IRQ handlers accessing the UART.
+struct UartLock {
+    locked: AtomicBool,
+}
+
+impl UartLock {
+    const fn new() -> Self {
+        Self { locked: AtomicBool::new(false) }
+    }
+
+    fn with<R>(&self, f: impl FnOnce(&mut Uart) -> R) -> R {
+        // Spin-acquire (single-core: interrupt handler is the only contender)
+        while self.locked.compare_exchange_weak(
+            false, true, Ordering::Acquire, Ordering::Relaxed
+        ).is_err() {
+            core::hint::spin_loop();
+        }
+        // SAFETY: Lock held, single writer guaranteed
+        let result = unsafe { f(&mut *core::ptr::addr_of_mut!(BOOT_UART_INNER)) };
+        self.locked.store(false, Ordering::Release);
+        result
+    }
+}
+
+static UART_LOCK: UartLock = UartLock::new();
+static mut BOOT_UART_INNER: Uart = Uart::new(UART0_BASE);
+```
+
+**Sub-step AI1-D-2: Update `with_boot_uart()` and `init_boot_uart()`**
+
+Replace the existing `with_boot_uart()` (lines 188-194) to use the lock:
+```rust
+pub(crate) fn with_boot_uart<R>(f: impl FnOnce(&mut Uart) -> R) -> R {
+    UART_LOCK.with(f)
+}
+```
+
+Update `init_boot_uart()` to use the lock for initialization:
+```rust
+pub fn init_boot_uart() {
+    UART_LOCK.with(|uart| uart.init());
+}
+```
+
+**Sub-step AI1-D-3: Update `kprint!` macro**
+
+The macro (line 220) currently uses unsafe raw pointer access. Change to
+use `with_boot_uart`:
+```rust
+macro_rules! kprint {
+    ($($arg:tt)*) => ({
+        use core::fmt::Write;
+        crate::uart::with_boot_uart(|uart| {
+            let _ = write!(uart, $($arg)*);
+        });
+    });
+}
+```
+
+**Sub-step AI1-D-4: Restrict visibility and clean up**
+
+- Change `BOOT_UART_INNER` from `pub` to module-private (it's accessed
+  only through `with_boot_uart` and the lock).
+- Verify `boot.rs:23` calls `init_boot_uart()` (unchanged — init function
+  signature is preserved).
+
+Build: `cargo test -p sele4n-hal` + `cargo clippy -p sele4n-hal`
 
 #### AI1-E: Phase AI1 gate verification
 
@@ -315,27 +382,84 @@ the interrupt active in the GIC, making the kernel deaf to that IRQ line.
 
 **Finding**: M-14 — `unmapPage` silently succeeds when hardware walk fails
 **File**: `SeLe4n/Kernel/Architecture/VSpaceARMv8.lean`, lines 189-206
-**Type**: Multi-step fix
+**Type**: Multi-step fix (4 sub-steps)
 
-The current implementation updates shadow state even when `readDescriptor`
-returns a non-table entry (indicating the HW walk failed to reach the target
-level). This can cause shadow/HW divergence.
+The current implementation has 4 match arms after `readDescriptor` calls at
+levels L0, L1, L2. Only the innermost arm (L2 → `.table l3base`) writes the
+`.invalid` descriptor to hardware memory. The other 3 wildcard arms
+(`| _ => some { vs with shadow := shadow' }`) silently succeed after updating
+only the shadow — creating shadow/HW divergence.
 
-**Atomic steps**:
+Current function structure:
+```lean
+def ARMv8VSpace.unmapPage (vs : ARMv8VSpace) (va : VAddr) : Option ARMv8VSpace :=
+  match vs.shadow.unmapPage va with
+  | none => none                               -- Shadow unmap failed → propagate
+  | some shadow' =>
+    let d0 := readDescriptor vs.pageTableMemory vs.ttbr (l0Index va) .l0
+    match d0 with
+    | .table l1base =>                          -- L0 success
+      let d1 := readDescriptor vs.pageTableMemory l1base (l1Index va) .l1
+      match d1 with
+      | .table l2base =>                        -- L1 success
+        let d2 := readDescriptor vs.pageTableMemory l2base (l2Index va) .l2
+        match d2 with
+        | .table l3base =>                      -- L2 success → write .invalid
+          let mem' := writeDescriptor vs.pageTableMemory l3base (l3Index va) .invalid
+          some { vs with pageTableMemory := mem', shadow := shadow' }
+        | _ => some { vs with shadow := shadow' }  -- L2 walk fail → BUG
+      | _ => some { vs with shadow := shadow' }    -- L1 walk fail → BUG
+    | _ => some { vs with shadow := shadow' }      -- L0 walk fail → BUG
+```
 
-1. **Read**: VSpaceARMv8.lean lines 180-210.
-2. **Change return type**: Change `unmapPage` return from `Option ARMv8VSpace`
-   to `Except VSpaceError ARMv8VSpace` (or use the existing error type).
-3. **Add error on walk failure**: When `readDescriptor` returns a non-table
-   entry at intermediate levels (L1, L2), return `.error .walkFailed` instead
-   of silently proceeding with shadow-only update.
-4. **Preserve shadow-only update on L3 success**: The final level (L3) should
-   still update the shadow when the descriptor matches.
-5. **Update callers**: Check if any caller of `unmapPage` needs to handle
-   the new error type.
-6. **Update preservation theorems**: Any VSpaceARMv8 theorem referencing
-   `unmapPage` may need `Except` unwrapping.
-7. **Build module**: `lake build SeLe4n.Kernel.Architecture.VSpaceARMv8`
+**Sub-step AI2-B-1: Change return type to `Except`**
+
+No `VSpaceError` type exists in the Architecture modules. Define one:
+```lean
+inductive VSpaceWalkError where
+  | shadowUnmapFailed  : VSpaceWalkError
+  | walkFailedAtLevel  : PageTableLevel → VSpaceWalkError
+```
+
+Change the function signature from `Option ARMv8VSpace` to
+`Except VSpaceWalkError ARMv8VSpace`. Change the shadow-unmap failure
+(currently `none`) to `.error .shadowUnmapFailed`.
+
+**Sub-step AI2-B-2: Replace wildcard arms with errors**
+
+Change the 3 wildcard arms:
+```lean
+-- Was: | _ => some { vs with shadow := shadow' }
+-- L0 failure:
+| _ => .error (.walkFailedAtLevel .l0)
+-- L1 failure:
+| _ => .error (.walkFailedAtLevel .l1)
+-- L2 failure:
+| _ => .error (.walkFailedAtLevel .l2)
+```
+The success path becomes `.ok { vs with pageTableMemory := mem', shadow := shadow' }`.
+
+**Sub-step AI2-B-3: Update callers (4 sites)**
+
+| Location | Current Usage | Update |
+|----------|--------------|--------|
+| VSpaceARMv8.lean:279 — VSpaceBackend instance `unmapPage` delegation | Calls `ARMv8VSpace.unmapPage` and returns `Option` | Wrap with `match ... \| .ok v => some v \| .error _ => none` to preserve `VSpaceBackend` typeclass contract (which uses `Option`). The error is still surfaced at the `VSpaceBackend` level as `none` but the ARMv8 layer now distinguishes failure causes. |
+| VSpaceARMv8.lean:287 — `unmapPage_preserves_asid` theorem | References `unmapPage` in statement | Add `Except` unwrapping: change `match unmapPage vs va with \| some vs' => ...` to `match unmapPage vs va with \| .ok vs' => ...`. |
+| VSpaceARMv8.lean:299, 304 — shadow sync proofs | Same pattern as above | Same `Except` unwrapping. |
+
+**Sub-step AI2-B-4: Update 3 local theorems**
+
+| Theorem | Line | Change |
+|---------|------|--------|
+| `unmapPage_preserves_asid` | ~228 | Replace `Option` matching with `Except` matching in hypothesis and conclusion. The proof body likely uses `unfold unmapPage; simp` — after the change, `simp` must reduce through `Except` constructors instead of `Option`. |
+| `unmapPage_shadow_eq` | ~256 | Same pattern change. The key insight: the `.ok` branch preserves the same shadow relationship, so the proof structure survives. |
+| `lookupPage_refines` / `vspaceProperty_transfer` | Used transitively | These may reference `unmapPage` indirectly via the VSpaceBackend instance. Since the instance wrapper converts back to `Option`, these theorems should be unaffected. |
+
+Build verification:
+```bash
+lake build SeLe4n.Kernel.Architecture.VSpaceARMv8
+lake build SeLe4n.Kernel.Architecture.VSpaceInvariant  # transitive dependents
+```
 
 #### AI2-C: Add type-level TLB flush witness for ASID reuse (M-15)
 
@@ -435,102 +559,281 @@ Currently: `st.scheduler.runQueue.insert tid tcb.priority` uses `tcb.priority`
 already computes effective priority (max of base and PIP boost) and is used
 at 5 other insertion sites.
 
-**Atomic steps**:
+Current function:
+```lean
+def handleYield : Kernel Unit :=
+  fun st =>
+    match st.scheduler.current with
+    | none => .error .invalidArgument
+    | some tid =>
+        match st.objects[tid.toObjId]? with
+        | some (.tcb tcb) =>
+            let rq' := (st.scheduler.runQueue.insert tid tcb.priority).rotateToBack tid
+            let st' := { st with scheduler := { st.scheduler with runQueue := rq' } }
+            schedule st'
+        | _ => .error .schedulerInvariantViolation
+```
 
-1. **Read**: Core.lean lines 315-345, Selection.lean lines 340-355.
-2. **Replace priority source**: Change line 341 from:
-   ```lean
-   let rq' := (st.scheduler.runQueue.insert tid tcb.priority).rotateToBack tid
-   ```
-   to:
-   ```lean
-   let effectivePrio := (resolveEffectivePrioDeadline st tcb).1
-   let rq' := (st.scheduler.runQueue.insert tid effectivePrio).rotateToBack tid
-   ```
-   This requires `resolveEffectivePrioDeadline` to be accessible. It is
-   defined in `Selection.lean` which is imported by `Core.lean` via
-   `Operations.lean`.
-3. **Update comment**: Replace the "intentional" comment (lines 332-340)
-   with: "Re-enqueues at effective priority (max of base priority and PIP
-   boost). This ensures PIP-boosted threads maintain their elevated priority
-   band after yield, preventing priority inversion."
-4. **Update preservation theorem**: `handleYield_scheduler_eq` or any
-   theorem that depends on the specific priority used for insertion may need
-   adjustment. Check `Preservation.lean` for `handleYield` references.
-5. **Build module**: `lake build SeLe4n.Kernel.Scheduler.Operations.Core`
-6. **Build preservation**: `lake build SeLe4n.Kernel.Scheduler.Operations.Preservation`
+Established pattern (from `refillSchedContextFIFO`, Core.lean:460-461):
+```lean
+runQueue := refilled.scheduler.runQueue.insert tid (resolveInsertPriority refilled tid sc)
+```
+
+**Sub-step AI3-A-1: Replace priority source in `handleYield`**
+
+Change Core.lean line 341 from:
+```lean
+let rq' := (st.scheduler.runQueue.insert tid tcb.priority).rotateToBack tid
+```
+to:
+```lean
+let effectivePrio := (resolveEffectivePrioDeadline st tcb).1
+let rq' := (st.scheduler.runQueue.insert tid effectivePrio).rotateToBack tid
+```
+
+`resolveEffectivePrioDeadline` (Selection.lean:323-349) is already imported
+by Core.lean via the Operations hub. It computes
+`max(basePriority, tcb.pipBoost.getD 0)`.
+
+**Sub-step AI3-A-2: Update comment block**
+
+Replace the AF1-H "intentional" comment (lines 332-340) with:
+```
+-- AI3-A (M-04): Re-enqueues at effective priority (max of base and PIP
+-- boost). This ensures PIP-boosted threads retain elevated scheduling
+-- band after yield, preventing priority inversion. Pattern matches
+-- resolveInsertPriority usage at 5 other insertion sites (AG1-A).
+```
+
+**Sub-step AI3-A-3: Update 15 preservation theorems in Preservation.lean**
+
+The following theorems reference `handleYield` and may depend on the
+specific priority value used for insertion. Each must be checked:
+
+| # | Theorem | Line | Likely Impact |
+|---|---------|------|--------------|
+| 1 | `handleYield_preserves_queueCurrentConsistent` | 359 | Low — checks current ∉ runQueue, not priority |
+| 2 | `handleYield_preserves_wellFormed` | 379 | **Medium** — may unfold `insert` and check bucket structure |
+| 3 | `handleYield_preserves_runQueueUnique` | 400 | Low — uniqueness is priority-independent |
+| 4 | `handleYield_preserves_currentThreadValid` | 431 | Low — checks TCB existence, not priority |
+| 5 | `handleYield_preserves_currentThreadInActiveDomain` | 454 | Low — domain check, not priority |
+| 6 | `handleYield_preserves_schedulerInvariantBundle` | 501 | **Medium** — composes sub-invariants |
+| 7 | `handleYield_preserves_timeSlicePositive` | 911 | Low — time-slice field, not priority |
+| 8 | `handleYield_preserves_currentTimeSlicePositive` | 1165 | Low — same |
+| 9 | `handleYield_preserves_runnableThreadsAreTCBs` | 1484 | Low — TCB existence |
+| 10 | `handleYield_preserves_domainTimeRemainingPositive` | 1774 | Low — domain time |
+| 11 | `handleYield_preserves_domainSchedule` | 1949 | Low — domain schedule |
+| 12 | `handleYield_preserves_edfCurrentHasEarliestDeadline` | 2423 | **High** — EDF ordering depends on priority |
+| 13 | `handleYield_preserves_contextMatchesCurrent` | 2681 | Low — register context |
+| 14 | `handleYield_preserves_schedulerPriorityMatch` | 2925 | **High** — directly checks priority consistency |
+| 15 | `handleYield_preserves_schedulerInvariantBundleFull` | 3112 | **Medium** — full bundle composition |
+
+**Strategy**: Theorems marked **High** require proof body changes. The
+key change: where proofs previously assumed `insert tid tcb.priority`,
+they must now handle `insert tid (resolveEffectivePrioDeadline st tcb).1`.
+Since 5 other insertion sites already use this pattern, the proof
+structure for effective-priority insertion is established. The `simp
+[resolveEffectivePrioDeadline]` tactic should reduce the new expression.
+
+**Sub-step AI3-A-4: Update API.lean caller**
+
+`handleYield` is called from `handleYieldChecked` (API.lean:156). Since
+`handleYield` does not change its function signature (still `Kernel Unit`),
+the caller needs no update. Verify: `lake build SeLe4n.Kernel.API`
+
+**Sub-step AI3-A-5: Build verification**
+```bash
+lake build SeLe4n.Kernel.Scheduler.Operations.Core
+lake build SeLe4n.Kernel.Scheduler.Operations.Preservation
+lake build SeLe4n.Kernel.API
+```
 
 #### AI3-B: Use effective priority in `migrateRunQueueBucket` (M-22)
 
 **Finding**: M-22 — `migrateRunQueueBucket` ignores PIP boost
-**File**: `SeLe4n/Kernel/SchedContext/PriorityManagement.lean`, lines 99-108
-**Type**: Multi-step fix
+**File**: `SeLe4n/Kernel/SchedContext/PriorityManagement.lean`, lines 101-108
+**Type**: Multi-step fix (4 sub-steps)
 
-Currently: `rq.insert tid newPriority` uses the raw `newPriority` argument
-without considering PIP boost.
+Current function:
+```lean
+def migrateRunQueueBucket (st : SystemState) (tid : SeLe4n.ThreadId)
+    (newPriority : SeLe4n.Priority) : SystemState :=
+  if tid ∈ st.scheduler.runQueue then
+    let rq := st.scheduler.runQueue.remove tid
+    let rq := rq.insert tid newPriority
+    { st with scheduler := { st.scheduler with runQueue := rq } }
+  else st
+```
 
-**Atomic steps**:
+Already takes `SystemState`, so has access to TCB data. The TCB
+`pipBoost` field is `Option SeLe4n.Priority := none` (Types.lean:552).
 
-1. **Read**: PriorityManagement.lean lines 90-115.
-2. **Add state parameter**: `migrateRunQueueBucket` currently takes only
-   the RunQueue, tid, and newPriority. Add a `st : SystemState` parameter
-   (or the TCB directly) to access `pipBoost`.
-3. **Compute effective priority**:
-   ```lean
-   let effectivePrio := max newPriority (tcb.pipBoost.getD 0)
-   let rq := rq.insert tid effectivePrio
-   ```
-   Or use `resolveInsertPriority st tid sc` if a SchedContext is available.
-4. **Update callers**: `setPriorityOp` and `setMCPriorityOp` call
-   `migrateRunQueueBucket`. They must pass the additional state parameter.
-5. **Update preservation theorems**: Check
-   `PriorityPreservation.lean` for `migrateRunQueueBucket` references.
-6. **Build**: `lake build SeLe4n.Kernel.SchedContext.PriorityManagement`
-7. **Build**: `lake build SeLe4n.Kernel.SchedContext.Invariant.PriorityPreservation`
+**Sub-step AI3-B-1: Add PIP-aware priority computation**
+
+Add a TCB lookup to resolve effective priority. Change the function body:
+```lean
+def migrateRunQueueBucket (st : SystemState) (tid : SeLe4n.ThreadId)
+    (newPriority : SeLe4n.Priority) : SystemState :=
+  if tid ∈ st.scheduler.runQueue then
+    let rq := st.scheduler.runQueue.remove tid
+    -- AI3-B (M-22): Apply PIP boost to new priority
+    let effectivePrio := match st.objects[tid.toObjId]? with
+      | some (.tcb tcb) => max newPriority (tcb.pipBoost.getD 0)
+      | _ => newPriority  -- defensive fallback
+    let rq := rq.insert tid effectivePrio
+    { st with scheduler := { st.scheduler with runQueue := rq } }
+  else st
+```
+
+No signature change — callers (`setPriorityOp`, `setMCPriorityOp`) are
+unaffected. The change is internal to the function body only.
+
+**Sub-step AI3-B-2: Update 5 transport lemmas in PriorityPreservation.lean**
+
+| # | Theorem | Line | Impact |
+|---|---------|------|--------|
+| 1 | `migrateRunQueueBucket_objects_eq` | 52 | **None** — proves objects field unchanged; new code only modifies scheduler |
+| 2 | `migrateRunQueueBucket_serviceRegistry_eq` | 57 | **None** — same reasoning |
+| 3 | `migrateRunQueueBucket_lifecycle_eq` | 62 | **None** — same reasoning |
+| 4 | `migrateRunQueueBucket_irqHandlers_eq` | 96 | **None** — same reasoning |
+| 5 | `migrateRunQueueBucket_machine_eq` | 101 | **None** — same reasoning |
+
+All 5 theorems prove that `migrateRunQueueBucket` preserves fields
+*outside* the scheduler. Since the new code still only modifies
+`st.scheduler.runQueue`, these proofs should survive unchanged. The
+proofs likely use `unfold migrateRunQueueBucket; simp [*]` which
+will still close because the struct-with only touches `scheduler`.
+
+**Sub-step AI3-B-3: Verify callers unchanged**
+
+`setPriorityOp` (line ~130) and `setMCPriorityOp` (line ~170) call
+`migrateRunQueueBucket st tid newPriority`. Since the signature is
+unchanged, no caller updates are needed.
+
+**Sub-step AI3-B-4: Build verification**
+```bash
+lake build SeLe4n.Kernel.SchedContext.PriorityManagement
+lake build SeLe4n.Kernel.SchedContext.Invariant.PriorityPreservation
+```
 
 #### AI3-C: Add `Except` return to `saveOutgoingContext` (L-09)
 
 **Finding**: L-09 — `saveOutgoingContext` silently returns state on TCB miss
 **File**: `SeLe4n/Kernel/Scheduler/Operations/Selection.lean`, lines 478-486
-**Type**: Atomic fix
+**Type**: Multi-step fix (3 sub-steps)
 
-The function returns the unchanged state when TCB lookup fails. The comment
-documents this as "unreachable under currentThreadValid invariant," but
-silent failure hides invariant violations during development.
+Current function:
+```lean
+def saveOutgoingContext (st : SystemState) : SystemState :=
+  match st.scheduler.current with
+  | none => st                                   -- No current thread
+  | some outTid =>
+      match st.objects[outTid.toObjId]? with
+      | some (.tcb outTcb) =>                    -- Save registers to TCB
+          let obj := KernelObject.tcb { outTcb with registerContext := st.machine.regs }
+          { st with objects := st.objects.insert outTid.toObjId obj }
+      | _ => st                                  -- BUG: silent failure
+```
 
-**Atomic steps**:
+A checked variant `saveOutgoingContextChecked` already exists
+(Selection.lean:495-503) returning `SystemState × Bool`. The unchecked
+variant is used by 5 internal call sites in Core.lean.
 
-1. **Read**: Selection.lean lines 472-490.
-2. **Change return type**: From `SystemState` to `Except KernelError SystemState`.
-3. **Return error on miss**: Replace the silent `st` return with
-   `.error .invalidThread` on TCB lookup failure.
-4. **Update callers**: `saveOutgoingContext` is called from context switch
-   paths. Update callers to propagate or handle the error.
-5. **Build**: `lake build SeLe4n.Kernel.Scheduler.Operations.Selection`
+**Sub-step AI3-C-1: Change return type and error paths**
+
+Change `saveOutgoingContext` from `SystemState` to
+`Except KernelError SystemState`:
+```lean
+def saveOutgoingContext (st : SystemState) : Except KernelError SystemState :=
+  match st.scheduler.current with
+  | none => .ok st                               -- No current thread (valid)
+  | some outTid =>
+      match st.objects[outTid.toObjId]? with
+      | some (.tcb outTcb) =>
+          let obj := KernelObject.tcb { outTcb with registerContext := st.machine.regs }
+          .ok { st with objects := st.objects.insert outTid.toObjId obj }
+      | _ => .error .schedulerInvariantViolation  -- Surfaces violation
+```
+
+**Sub-step AI3-C-2: Update 5 callers in Core.lean**
+
+All callers currently use `let stSaved := saveOutgoingContext st'`. Each
+must be updated to propagate the error:
+
+| # | Location | Context | Update |
+|---|----------|---------|--------|
+| 1 | Core.lean:287 | `schedule`, idle branch | `match saveOutgoingContext st' with \| .error e => .error e \| .ok stSaved => ...` |
+| 2 | Core.lean:296 | `schedule`, dispatch branch | Same pattern |
+| 3 | Core.lean:613 | `scheduleEffective`, idle | Same pattern |
+| 4 | Core.lean:619 | `scheduleEffective`, dispatch | Same pattern |
+| 5 | Core.lean:771 | `switchDomain` | Same pattern |
+
+Each is a mechanical transformation: `let x := f y` becomes
+`match f y with | .error e => .error e | .ok x => ...`. Since all
+callers already return `Kernel Unit` (which is `SystemState → Except ...`),
+error propagation integrates naturally.
+
+**Sub-step AI3-C-3: Update 16 theorems**
+
+Key theorems to check (Selection.lean + Preservation.lean + others):
+- `saveOutgoingContext_scheduler` — proves scheduler field unchanged
+- `saveOutgoingContext_preserves_tcb` — proves TCB fields preserved
+- `saveOutgoingContext_preserves_objects_invExt` — invariant extension
+- `schedulerPriorityMatch_of_saveOutgoingContext` — priority consistency
+- 12 additional transport lemmas
+
+**Strategy**: All theorems that previously had conclusion
+`saveOutgoingContext st = st'` must change to
+`saveOutgoingContext st = .ok st'`. Proofs that unfold the definition
+will encounter `Except` constructors; `simp` should close them since
+the success path is structurally identical. Theorems about the
+failure path don't exist yet (the failure was previously invisible).
+
+Build:
+```bash
+lake build SeLe4n.Kernel.Scheduler.Operations.Selection
+lake build SeLe4n.Kernel.Scheduler.Operations.Core
+lake build SeLe4n.Kernel.Scheduler.Operations.Preservation
+```
 
 #### AI3-D: Enforce `configDefaultTimeSlice` positivity (L-10)
 
 **Finding**: L-10 — `configDefaultTimeSlice` positivity not enforced
-**File**: `SeLe4n/Kernel/Scheduler/Operations/Core.lean` or
-`SeLe4n/Model/Object/Types.lean` (wherever the config field is defined)
-**Type**: Atomic fix
+**File**: `SeLe4n/Model/State.lean` (field in `SchedulerState` struct)
+**Type**: Atomic fix (2 sub-steps)
 
-A zero time slice would cause immediate timer expiry on every schedule,
-effectively preventing any thread from executing.
+`configDefaultTimeSlice` is a `Nat` field in `SchedulerState` with
+default value `5`. Preservation theorems in Preservation.lean already
+require the hypothesis `hConfigTS : st.scheduler.configDefaultTimeSlice > 0`
+(13 occurrences). The gap: the definition permits zero, so the hypothesis
+must be externally maintained.
 
-**Atomic steps**:
+**Sub-step AI3-D-1: Add positivity invariant predicate**
 
-1. **Find definition**: Search for `configDefaultTimeSlice` to locate its
-   type declaration.
-2. **Add guard**: Either:
-   - Change the type from `Nat` to `Nat` with a runtime check at
-     assignment (e.g., `if ts == 0 then defaultTimeSlice else ts`), or
-   - Use `Pos` type (requires more invasive changes), or
-   - Add a `configDefaultTimeSlice_pos` theorem stating `0 < configDefaultTimeSlice`
-     as an invariant predicate.
-3. **Recommended approach**: Add a runtime guard at the single assignment
-   point, plus a documentation comment noting the positivity requirement.
-4. **Build**: Build the module containing the definition.
+Add to the scheduler invariant bundle (or as a standalone predicate):
+```lean
+def configTimeSlicePositive (st : SystemState) : Prop :=
+  st.scheduler.configDefaultTimeSlice > 0
+```
+
+Add this as a predicate to `schedulerInvariantBundle` (if not already
+present — verify against the current bundle definition).
+
+**Sub-step AI3-D-2: Add runtime guard at assignment**
+
+Find where `configDefaultTimeSlice` is set (boot sequence, platform
+config). Add a guard:
+```lean
+let ts := if config.defaultTimeSlice == 0 then 5 else config.defaultTimeSlice
+```
+
+This ensures the invariant holds by construction. Document:
+```
+-- AI3-D (L-10): Zero time slice would cause immediate timer expiry.
+-- Guard ensures positivity; default 5 matches seL4 convention.
+```
+
+Build: `lake build SeLe4n.Model.State`
 
 #### AI3-E: Phase AI3 gate verification
 
@@ -561,103 +864,254 @@ reporting, and clean up the unused parameter in `timeoutAwareReceive`.
 from production API dispatch
 **Files**: `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (insertion point),
 `SeLe4n/Kernel/API.lean` (dispatch verification)
-**Type**: Multi-step fix
+**Type**: Multi-step fix (5 sub-steps) — **highest-complexity task in AI4**
 
 The abnormal path: a server does `.receive` without replying to a prior
 `.call`. The donated SchedContext from the prior call remains bound to the
-server. `cleanupPreReceiveDonation` checks for this condition and returns
-the SchedContext to the original owner.
+server with `.donated` binding. `cleanupPreReceiveDonation` checks for
+this condition and returns the SchedContext to the original owner.
 
-**Insertion point**: The pure receive path in `endpointReceiveDual`
-(Transport.lean), specifically the branch where no sender is waiting and
-the receiver is about to block. This is the exact point where the server
-transitions from "processing a prior call" to "waiting for a new message."
+Function to wire (Donation.lean:186-200):
+```lean
+def cleanupPreReceiveDonation (st : SystemState) (receiver : ThreadId) : SystemState :=
+  match lookupTcb st receiver with
+  | none => st
+  | some recvTcb =>
+    match recvTcb.schedContextBinding with
+    | .donated scId originalOwner =>
+      match returnDonatedSchedContext st receiver scId originalOwner with
+      | .error _ => st    -- Defensive: return unchanged on error
+      | .ok st' => st'
+    | _ => st             -- No donation to clean up
+```
 
-**Atomic steps**:
+Return type is `SystemState` (pure, not monadic). On the common path
+(no stale donation), it returns `st` unchanged — zero overhead.
 
-1. **Read**: Transport.lean — find the `endpointReceiveDual` function and
-   locate the "no sender waiting" branch where the receiver is enqueued.
-2. **Insert cleanup**: Before the receiver is enqueued into the wait queue,
-   call `cleanupPreReceiveDonation`:
-   ```lean
-   -- AI4-A (M-01): Clean up any donated SchedContext from a prior
-   -- unanswered call before blocking on receive.
-   let st_cleaned := cleanupPreReceiveDonation st receiver
-   ```
-   Then use `st_cleaned` instead of `st` for the subsequent enqueue
-   operation.
-3. **Verify import**: Confirm `cleanupPreReceiveDonation` is accessible.
-   It is defined in `Donation.lean`. Check if Transport.lean imports the
-   Donation module (directly or transitively via the IPC Operations hub).
-   If not, add the import.
-4. **Update preservation theorems**: Any theorem about `endpointReceiveDual`
-   that tracks state equality may need to account for the cleanup step.
-   Check `EndpointPreservation.lean` and `Structural.lean` for relevant
-   theorems.
-5. **Build**:
-   ```bash
-   lake build SeLe4n.Kernel.IPC.DualQueue.Transport
-   lake build SeLe4n.Kernel.IPC.Invariant.EndpointPreservation
-   ```
+**Insertion point** (Transport.lean:1672-1678):
+```lean
+        | none =>           -- No sender waiting → receiver blocks
+            match endpointQueueEnqueue endpointId true receiver st with
+            | .error e => .error e
+            | .ok st' =>
+                match storeTcbIpcState st' receiver (.blockedOnReceive endpointId) with
+                | .error e => .error e
+                | .ok st'' => .ok (receiver, removeRunnable st'' receiver)
+```
+
+**Sub-step AI4-A-1: Add import for Donation module**
+
+Transport.lean currently imports only `SeLe4n.Kernel.IPC.DualQueue.Core`.
+Core imports `SeLe4n.Kernel.IPC.Operations` which includes all Operations
+submodules. **However**, the transitive import chain must be verified:
+- Core.lean → check if it imports Operations hub
+- If not: add `import SeLe4n.Kernel.IPC.Operations.Donation` to
+  Transport.lean directly
+
+**Sub-step AI4-A-2: Insert cleanup call at line 1672**
+
+Change the no-sender branch:
+```lean
+        | none =>
+            -- AI4-A (M-01): Clean up stale donated SchedContext from a
+            -- prior unanswered call before blocking on receive.
+            let st := cleanupPreReceiveDonation st receiver
+            match endpointQueueEnqueue endpointId true receiver st with
+            | .error e => .error e
+            | .ok st' =>
+                match storeTcbIpcState st' receiver (.blockedOnReceive endpointId) with
+                | .error e => .error e
+                | .ok st'' => .ok (receiver, removeRunnable st'' receiver)
+```
+
+The `let st := ...` shadowing is intentional — it replaces the original
+`st` with the cleaned-up version for all subsequent operations. On the
+common path (no stale donation), `cleanupPreReceiveDonation` returns `st`
+unchanged, so the semantics are identical.
+
+**Sub-step AI4-A-3: Update preservation theorems (16 affected)**
+
+The cleanup call modifies state before `endpointQueueEnqueue`. Every
+theorem that proves properties of `endpointReceiveDual` in the no-sender
+branch must now account for the intermediate `cleanupPreReceiveDonation`
+step. The theorems split into two groups:
+
+**Group 1: EndpointPreservation.lean (5 theorems)**
+
+| # | Theorem | Line |
+|---|---------|------|
+| 1 | `endpointReceiveDual_preserves_ipcInvariant` | 789 |
+| 2 | `endpointReceiveDual_preserves_schedulerInvariantBundle` | 867 |
+| 3 | `endpointReceiveDual_preserves_ipcSchedulerContractPredicates` | 1039 |
+| 4 | `endpointReceiveDual_preserves_objects_invExt` | 1463 |
+| 5 | `endpointReceiveDualWithCaps_preserves_ipcInvariant` | 1586 |
+
+**Group 2: Structural.lean (11 theorems)**
+
+| # | Theorem | Line |
+|---|---------|------|
+| 6 | `endpointReceiveDual_sender_exists` | 102 |
+| 7 | `endpointReceiveDual_preserves_dualQueueSystemInvariant` | 1902 |
+| 8 | `endpointReceiveDual_preserves_allPendingMessagesBounded` | 3315 |
+| 9 | `endpointReceiveDual_preserves_badgeWellFormed` | 3402 |
+| 10 | `endpointReceiveDual_preserves_endpointQueueNoDup` | 3915 |
+| 11 | `endpointReceiveDual_preserves_ipcStateQueueMembershipConsistent` | 4333 |
+| 12 | `endpointReceiveDual_preserves_ipcInvariantFull` | 4782 |
+| 13 | `endpointReceiveDualWithCaps_preserves_ipcInvariantFull` | 4921 |
+| 14 | `endpointReceiveDual_preserves_ipcStateQueueConsistent` | 5292 |
+| 15 | `endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant` | 5870 |
+| 16 | `endpointReceiveDual_preserves_waitingThreadsPendingMessageNone` | 7167 |
+
+**Strategy for theorem updates**: Each theorem must handle the new
+intermediate state. The key insight: `cleanupPreReceiveDonation` only
+modifies `schedContextBinding` on the receiver's TCB (and potentially
+the original owner's TCB). It does NOT modify:
+- Endpoint state or queue structure
+- IPC state of any thread other than the receiver
+- Objects other than 2 TCBs and 1 SchedContext
+
+Therefore, most invariant preservation proofs can use a **frame lemma**
+approach: prove that `cleanupPreReceiveDonation` preserves each
+sub-invariant independently, then compose with the existing proofs.
+
+**Recommended**: Before attempting all 16 theorems, first create a
+`cleanupPreReceiveDonation` frame lemma suite:
+```lean
+theorem cleanupPreReceiveDonation_preserves_endpointQueues ...
+theorem cleanupPreReceiveDonation_preserves_ipcState_non_receiver ...
+theorem cleanupPreReceiveDonation_preserves_pendingMessages ...
+```
+
+These frame lemmas establish that the cleanup is "transparent" to
+endpoint/IPC invariants, allowing the 16 existing proofs to compose
+with the cleanup step via `calc` or transitivity.
+
+**Sub-step AI4-A-4: Verify `endpointReceiveDualWithCaps` path**
+
+`endpointReceiveDualWithCaps` (DualQueue/WithCaps.lean) wraps
+`endpointReceiveDual`. If the wrapper delegates to the same no-sender
+branch, the cleanup is automatically included. Verify this. If
+`WithCaps` has its own no-sender branch, the cleanup must be duplicated
+or the branch must be refactored to share code.
+
+**Sub-step AI4-A-5: Build verification**
+```bash
+lake build SeLe4n.Kernel.IPC.DualQueue.Transport
+lake build SeLe4n.Kernel.IPC.Invariant.EndpointPreservation
+lake build SeLe4n.Kernel.IPC.Invariant.Structural
+lake build SeLe4n.Kernel.IPC.Invariant.CallReplyRecv
+```
 
 #### AI4-B: Surface DTB parser fuel exhaustion as distinct error (M-09)
 
 **Finding**: M-09 — DTB parser fuel=2000 silently drops peripherals
-**File**: `SeLe4n/Platform/DeviceTree.lean`, lines 619-627
-**Type**: Atomic fix
+**File**: `SeLe4n/Platform/DeviceTree.lean`, lines 618-627
+**Type**: Multi-step fix (3 sub-steps)
 
-The parser returns `none` on fuel exhaustion, which is indistinguishable
-from "no valid DTB" or "parse error." Callers cannot tell if peripherals
-were silently dropped.
+Current function signature:
+```lean
+def parseFdtNodes (blob : ByteArray) (hdr : FdtHeader)
+    (fuel : Nat := 2000) : Option (List FdtNode)
+```
 
-**Atomic steps**:
+Fuel-exhaustion branch (lines 627, 658): `| 0 => none`
 
-1. **Read**: DeviceTree.lean lines 610-635.
-2. **Change return type**: The parsing function currently returns
-   `Option DeviceTree`. Change to `Except DeviceTreeError DeviceTree` where:
-   ```lean
-   inductive DeviceTreeError where
-     | fuelExhausted : DeviceTreeError
-     | malformedBlob : DeviceTreeError
-     | emptyTree : DeviceTreeError
-   ```
-   Or, if adding a new error type is too invasive, change the fuel-exhaustion
-   path to return a specific sentinel that callers can distinguish:
-   ```lean
-   | 0 => .error .fuelExhausted  -- was: none
-   ```
-3. **Update callers**: Check all callers of the parsing function. The main
-   caller is `bootFromPlatform` which should log or propagate the fuel
-   exhaustion warning.
-4. **Consider increasing fuel**: 2000 may be insufficient for complex DTBs.
-   Document the fuel value as a function of expected DTB complexity and
-   add a comment noting the RPi5 DTB is well under 2000 nodes.
-5. **Build**: `lake build SeLe4n.Platform.DeviceTree`
+The sole caller is `DeviceTree.fromDtbFull` (line 851), which silently
+falls back to empty list on `none`:
+```lean
+let nodes := match parseFdtNodes blob hdr with
+  | some ns => ns
+  | none => []    -- Silent fallback — fuel exhaustion indistinguishable from no nodes
+```
+
+No error types currently exist in DeviceTree.lean. All functions use
+`Option` exclusively.
+
+**Sub-step AI4-B-1: Define `DeviceTreeParseError` type**
+
+Add near the top of DeviceTree.lean (after imports):
+```lean
+inductive DeviceTreeParseError where
+  | fuelExhausted  : DeviceTreeParseError
+  | malformedBlob  : DeviceTreeParseError
+  deriving Repr, BEq
+```
+
+**Sub-step AI4-B-2: Change `parseFdtNodes` return type**
+
+Change from `Option (List FdtNode)` to
+`Except DeviceTreeParseError (List FdtNode)`:
+- Fuel exhaustion: `| 0 => .error .fuelExhausted`
+- Success: `| fuel + 1 => ... .ok nodes`
+- The recursive `go` helper and `parseNodeContents` helper both need
+  the same return type change (they also return `none` on fuel=0).
+
+**Sub-step AI4-B-3: Update sole caller in `fromDtbFull`**
+
+Change line 851 from:
+```lean
+let nodes := match parseFdtNodes blob hdr with
+  | some ns => ns
+  | none => []
+```
+to:
+```lean
+let nodes := match parseFdtNodes blob hdr with
+  | .ok ns => ns
+  | .error .fuelExhausted => []  -- AI4-B: Log warning, use partial results
+  | .error _ => []               -- Malformed blob: empty fallback
+```
+
+**Note**: The fallback behavior is preserved (empty list), but the error
+is now distinguishable. A future enhancement can propagate the error
+to `bootFromPlatformWithWarnings` to surface fuel exhaustion in the
+boot warning log. The one existing theorem
+(`parseFdtHeader_fromDtbFull_some`, line ~873) references header parsing,
+not node parsing, and should be unaffected.
+
+Build: `lake build SeLe4n.Platform.DeviceTree`
 
 #### AI4-C: Remove unused `_endpointId` parameter from `timeoutAwareReceive` (L-05)
 
 **Finding**: L-05 — `timeoutAwareReceive` has unused `_endpointId` parameter
 **File**: `SeLe4n/Kernel/IPC/Operations/Timeout.lean`, lines 114-115
-**Type**: Atomic fix
+**Type**: Atomic fix (low-risk, 3 update sites)
 
-The underscore prefix explicitly marks this as unused. The comment "reserved
-for future validation" has been present since the function was created.
-Since no future validation has materialized across multiple workstreams,
-remove the parameter to clean up the API surface.
+Current function:
+```lean
+def timeoutAwareReceive
+    (_endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    : Kernel IpcTimeoutResult :=
+  fun st =>
+    match lookupTcb st receiver with
+    | none => .error .objectNotFound
+    | some tcb =>
+      if tcb.timedOut ∧ tcb.ipcState = .ready then
+        let tcb' := { tcb with timedOut := false }
+        match storeObject receiver.toObjId (.tcb tcb') st with
+        | .error e => .error e
+        | .ok ((), st') => .ok (.timedOut, st')
+      else
+        match tcb.pendingMessage with
+        | some msg => .ok (.completed msg, st)
+        | none => .error .endpointQueueEmpty
+```
 
-**Atomic steps**:
+**Update sites** (total: 3):
 
-1. **Read**: Timeout.lean lines 110-120.
-2. **Remove parameter**: Delete `(_endpointId : SeLe4n.ObjId)` from the
-   function signature.
-3. **Update callers**: Search for all call sites of `timeoutAwareReceive`
-   and remove the endpoint ID argument. Expected callers: API.lean dispatch
-   paths and test suites.
-4. **Update theorems**: Any theorem referencing `timeoutAwareReceive` in its
-   statement must have the parameter removed from the universally quantified
-   variables.
-5. **Build**: `lake build SeLe4n.Kernel.IPC.Operations.Timeout`
-6. **Build callers**: `lake build SeLe4n.Kernel.API`
+| # | File | Line | Argument to Remove |
+|---|------|------|--------------------|
+| 1 | Definition | Timeout.lean:114 | `(_endpointId : SeLe4n.ObjId)` param |
+| 2 | Test call | MainTraceHarness.lean:2562 | `epId` first argument |
+| 3 | Test call | MainTraceHarness.lean:2577 | `epId` first argument |
+
+**No theorems reference `timeoutAwareReceive`** — no theorem updates needed.
+No API.lean callers exist (the function is test-only currently).
+
+**Steps**:
+1. Remove parameter from signature (Timeout.lean:114).
+2. Remove `epId` argument from 2 test call sites.
+3. Build: `lake build SeLe4n.Kernel.IPC.Operations.Timeout`
 
 #### AI4-D: Phase AI4 gate verification
 
@@ -688,112 +1142,203 @@ and IRQ ranges. Add a runtime guard for the insecure `defaultLabelingContext`.
 **Finding**: H-01 — Simulation boot contract is vacuously `True` for all 4
 predicates
 **File**: `SeLe4n/Platform/Sim/BootContract.lean`, lines 23-36
-**Type**: Multi-step fix
+**Type**: Multi-step fix (3 sub-steps)
 
-All 4 predicates (`objectTypeMetadataConsistent`, `capabilityRefMetadataConsistent`,
-`objectStoreNonEmpty`, `irqRangeValid`) are `True`. This means simulation
-tests never validate that the boot sequence produces a well-formed initial
-state.
+The `BootBoundaryContract` structure (Assumptions.lean:24-33) has 4 fields:
+```lean
+structure BootBoundaryContract where
+  objectTypeMetadataConsistent : Prop
+  capabilityRefMetadataConsistent : Prop
+  objectStoreNonEmpty : Prop := True
+  irqRangeValid : Prop := True
+```
 
-**Atomic steps**:
+The RPi5 boot contract (RPi5/BootContract.lean:48-54) uses:
+- `objectTypeMetadataConsistent := (default : SystemState).objects.size = 0`
+- `capabilityRefMetadataConsistent := (default : SystemState).lifecycle.capabilityRefs.size = 0`
 
-1. **Read**: BootContract.lean lines 20-50.
-2. **Read RPi5 boot contract**: Read `RPi5/BootContract.lean` to understand
-   the substantive predicate patterns used for the production platform.
-3. **Replace predicates**: Change from `True` to substantive checks that
-   mirror the RPi5 contract structure:
-   ```lean
-   def simBootContract : BootContract where
-     objectTypeMetadataConsistent := fun st =>
-       -- Every object in the store has a valid type discriminant
-       st.objects.values.all (fun obj => obj.isWellTyped)
-     capabilityRefMetadataConsistent := fun st =>
-       -- Every capability reference points to an existing object
-       st.capabilityRefsValid
-     objectStoreNonEmpty := fun st =>
-       -- At least one object exists (idle thread, root CNode)
-       ¬st.objects.isEmpty
-     irqRangeValid := fun st =>
-       -- IRQ table entries reference valid handler objects
-       st.irqTable.all (fun entry => entry.handler ∈ st.objects.keys)
-   ```
-   **Note**: The exact predicate implementations depend on available
-   decidable predicates in `State.lean` and `InvariantChecks.lean`. Use
-   the `stateInvariantChecksFor` helper functions that already exist in
-   `InvariantChecks.lean` as building blocks.
-4. **Verify simulation tests still pass**: The existing test suites construct
-   state via `buildChecked` which should satisfy these predicates. If any
-   test fails, the test was relying on invalid state — fix the test.
-5. **Build**: `lake build SeLe4n.Platform.Sim.BootContract`
+Available decidable predicates in InvariantChecks.lean (lines 78-88):
+- `schedulerQueueCurrentConsistentB`, `schedulerRunQueueUniqueB`
+- `currentThreadValidB`, `currentThreadInActiveDomainB`
+- `notificationQueueWellFormedB`, `endpointDualQueueWellFormedB`
+
+Importers of `Sim.BootContract` or `Sim.Contract`: `SeLe4n.lean`,
+`Platform/Sim/Contract.lean`.
+
+**Sub-step AI5-A-1: Design substantive predicates**
+
+Replace vacuous `True` with lightweight but meaningful checks. The
+simulation state builder constructs state from scratch, so predicates
+should validate the *output* of `buildChecked`:
+
+```lean
+def simBootContract : BootBoundaryContract where
+  -- AI5-A (H-01): Substantive predicates replacing vacuous True
+  objectTypeMetadataConsistent :=
+    -- Default initial state has no objects (builder adds them)
+    (default : SystemState).objects.size = 0
+  capabilityRefMetadataConsistent :=
+    -- Default initial state has no capability references
+    (default : SystemState).lifecycle.capabilityRefs.size = 0
+  objectStoreNonEmpty :=
+    -- After build, at least 1 object exists (strengthened from True)
+    True  -- Note: This predicate is about the contract *structure*, not
+          -- post-build state. See Sub-step AI5-A-2 for runtime check.
+  irqRangeValid :=
+    -- Simulation IRQ table is initially empty (valid by construction)
+    (default : SystemState).irqHandlers.size = 0
+```
+
+**Design rationale**: The predicates validate *initial* (default) state
+properties. The RPi5 pattern proves these hold for `default : SystemState`.
+Post-build validation is handled by `buildChecked` which verifies
+invariants after state construction.
+
+**Sub-step AI5-A-2: Add post-build boot invariant check**
+
+Add a runtime check in the simulation contract that exercises
+`InvariantChecks` predicates after boot:
+```lean
+def simBootPostBuildCheck (st : SystemState) : Bool :=
+  schedulerQueueCurrentConsistentB st &&
+  endpointDualQueueWellFormedB st &&
+  notificationQueueWellFormedB st
+```
+
+Wire this into the `simRuntimeContractSubstantive` or the contract's
+post-build hook.
+
+**Sub-step AI5-A-3: Build and verify tests**
+
+```bash
+lake build SeLe4n.Platform.Sim.BootContract
+lake build SeLe4n.Platform.Sim.Contract
+./scripts/test_smoke.sh
+```
 
 #### AI5-B: Create substantive simulation interrupt contract (H-02)
 
 **Finding**: H-02 — Simulation interrupt contract accepts ALL IRQs
 **File**: `SeLe4n/Platform/Sim/BootContract.lean`, lines 42-48
-**Type**: Multi-step fix
+**Type**: Multi-step fix (3 sub-steps)
 
-`irqLineSupported := fun _ => True` and `irqHandlerMapped := fun _ _ => True`
-means any IRQ number is accepted, hiding validation bugs.
+The `InterruptBoundaryContract` structure (Assumptions.lean:44-53) has 4
+fields: 2 predicates + 2 decidable instances:
+```lean
+structure InterruptBoundaryContract where
+  irqLineSupported : SeLe4n.Irq → Prop
+  irqHandlerMapped : SystemState → SeLe4n.Irq → Prop
+  irqLineSupportedDecidable : ∀ irq, Decidable (irqLineSupported irq)
+  irqHandlerMappedDecidable : ∀ st irq, Decidable (irqHandlerMapped st irq)
+```
 
-**Atomic steps**:
+RPi5 pattern (RPi5/BootContract.lean:87-95):
+- `irqLineSupported := fun irq => irq.toNat < gicSpiCount + 32`
+- `irqHandlerMapped := fun st irq => irq.toNat < gicSpiCount + 32 → st.irqHandlers[irq]? ≠ none`
 
-1. **Read**: BootContract.lean lines 38-50 (interrupt contract section).
-2. **Define valid IRQ range**: For simulation, restrict to a bounded range
-   matching the BCM2712 GIC-400 (0–223, matching `InterruptId := Fin 224`):
-   ```lean
-   def simInterruptContract : InterruptContract where
-     irqLineSupported := fun irq => irq < 224
-     irqHandlerMapped := fun irq st =>
-       -- Handler is mapped if the IRQ table has an entry for this line
-       st.irqTable.contains irq
-   ```
-3. **Update callers**: Verify `simBootAndInterruptContract` composition
-   still type-checks.
-4. **Update tests**: If any test deliberately sends out-of-range IRQs
-   (e.g., IRQ 999), it should now get a validation error instead of silent
-   acceptance. Update expectations accordingly.
-5. **Build**: `lake build SeLe4n.Platform.Sim.BootContract`
+**Sub-step AI5-B-1: Define bounded IRQ range predicate**
+
+```lean
+def simInterruptContract : InterruptBoundaryContract where
+  -- AI5-B (H-02): Restrict to GIC-400 INTID range (0–223)
+  irqLineSupported := fun irq => irq.toNat < 224
+  irqHandlerMapped := fun st irq =>
+    irq.toNat < 224 → st.irqHandlers[irq]? ≠ none
+  irqLineSupportedDecidable := fun irq => inferInstance
+  irqHandlerMappedDecidable := fun st irq => inferInstance
+```
+
+**Sub-step AI5-B-2: Verify decidability**
+
+The `Decidable` instances must discharge. `irq.toNat < 224` is decidable
+via `Nat.decLt`. The handler mapping predicate `P → Q` requires both `P`
+and `Q` to be decidable — `Nat.decLt` for the antecedent and
+`Option.decidableNeNone` (or similar) for the consequent. If
+`inferInstance` fails, provide explicit instances.
+
+**Sub-step AI5-B-3: Update tests and build**
+
+Search for test code that creates interrupt scenarios with out-of-range
+IRQ numbers. Update expectations if any test sends IRQ ≥ 224.
+
+Build: `lake build SeLe4n.Platform.Sim.BootContract`
 
 #### AI5-C: Add runtime guard for `defaultLabelingContext` (M-19)
 
 **Finding**: M-19 — `defaultLabelingContext` defeats all security
 **File**: `SeLe4n/Kernel/InformationFlow/Policy.lean`, lines 215-226
-**Type**: Multi-step fix
+**Type**: Multi-step fix (3 sub-steps)
 
-The `defaultLabelingContext` assigns `publicLabel` to all entities, which is
-correct for testing but dangerous for production deployment. The codebase
-already has `defaultLabelingContext_insecure` proving this is insecure.
-However, there is no runtime guard preventing accidental deployment.
+Current definition:
+```lean
+def defaultLabelingContext : LabelingContext :=
+  { objectLabelOf  := fun _ => SecurityLabel.publicLabel
+    threadLabelOf  := fun _ => SecurityLabel.publicLabel
+    endpointLabelOf := fun _ => SecurityLabel.publicLabel
+    serviceLabelOf := fun _ => SecurityLabel.publicLabel }
+```
 
-**Atomic steps**:
+Already proven insecure via `defaultLabelingContext_insecure` (line 240)
+and `defaultLabelingContext_all_threads_observable` (line 250).
 
-1. **Read**: Policy.lean lines 210-260.
-2. **Add deployment guard predicate**: Create a function that checks whether
-   a `LabelingContext` is the insecure default:
-   ```lean
-   def isInsecureDefaultContext (ctx : LabelingContext) : Bool :=
-     -- Check if all labels are public (the signature of the insecure default)
-     ctx.threadLabelOf (ThreadId.ofNat 0) == publicLabel &&
-     ctx.objectLabelOf (ObjId.ofNat 0) == publicLabel
-   ```
-3. **Add assertion to checked dispatch**: In `dispatchWithCapChecked`
-   (API.lean), add an early check:
-   ```lean
-   -- AI5-C (M-19): Guard against insecure default labeling context
-   if isInsecureDefaultContext ctx then
-     .error .insecureLabelingContext
-   ```
-   **Alternative (less invasive)**: Add a `LabelingContextValid` check to
-   the boot sequence that logs a warning when the default context is used.
-   This approach is preferred because it doesn't add runtime overhead to
-   every syscall.
-4. **Recommended approach**: Add the guard at boot time in
-   `bootFromPlatform` or the platform contract. The `LabelingContextValid`
-   predicate already exists and is documented as a "deployment requirement"
-   (Composition.lean:753). Wire it into the simulation platform's boot
-   validation so that tests exercising information flow must provide a
-   proper labeling context.
-5. **Build**: `lake build SeLe4n.Kernel.InformationFlow.Policy`
+Callers of `defaultLabelingContext` (10 sites — all in tests):
+- `MainTraceHarness.lean`: lines 459, 462, 563, 566, 600, 605, 634, 1803
+- `InformationFlowSuite.lean`: line 947
+- `TraceSequenceProbe.lean`: line 187
+
+`dispatchWithCapChecked` (API.lean:814-816) takes `ctx : LabelingContext`
+as its first parameter. It delegates to enforcement wrappers that check
+`securityFlowsTo`.
+
+`LabelingContextValid` (Composition.lean:708-719) is a `Prop` structure
+with `∀` quantifiers — **not decidable** over infinite domains.
+
+**Sub-step AI5-C-1: Create decidable insecurity detector**
+
+Add to Policy.lean:
+```lean
+/-- AI5-C (M-19): Detect the insecure default labeling context.
+    Checks sentinel labels at ID 0 — sufficient because the default
+    assigns publicLabel to ALL entities uniformly. -/
+def isInsecureDefaultContext (ctx : LabelingContext) : Bool :=
+  ctx.threadLabelOf (ThreadId.ofNat 0) == SecurityLabel.publicLabel &&
+  ctx.objectLabelOf (ObjId.ofNat 0) == SecurityLabel.publicLabel &&
+  ctx.endpointLabelOf (ObjId.ofNat 0) == SecurityLabel.publicLabel
+```
+
+**Sub-step AI5-C-2: Wire guard into checked dispatch entry**
+
+The guard should fire once at the `syscallEntryChecked` level, not on
+every individual operation. Add to `syscallEntryChecked` in API.lean
+(the top-level checked dispatch entry point):
+```lean
+-- AI5-C (M-19): Reject insecure default labeling context in checked mode
+if isInsecureDefaultContext ctx then
+  .error .invalidArgument  -- Use existing error; no new KernelError variant needed
+else ...
+```
+
+**Impact on tests**: All 10 test sites use `defaultLabelingContext`. Tests
+that exercise `syscallEntryChecked` will now fail. These tests must be
+updated to provide a non-default labeling context with at least one
+non-public label. Create a test helper:
+```lean
+def testLabelingContext : LabelingContext :=
+  { objectLabelOf  := fun oid => if oid.toNat == 0 then .high else .publicLabel
+    threadLabelOf  := fun tid => if tid.toNat == 0 then .high else .publicLabel
+    endpointLabelOf := fun _ => .publicLabel
+    serviceLabelOf := fun _ => .publicLabel }
+```
+
+Tests that specifically test flow-allowed semantics should use this
+context, which allows most flows but is not the insecure default.
+
+**Sub-step AI5-C-3: Build and verify**
+```bash
+lake build SeLe4n.Kernel.InformationFlow.Policy
+lake build SeLe4n.Kernel.API
+./scripts/test_smoke.sh  # Will fail until test sites updated
+```
 
 #### AI5-D: Update test suites for new contracts (H-01, H-02)
 
@@ -1075,15 +1620,20 @@ parallel. The strict partition means no merge conflicts between phases.
 
 ### 10.3 Estimated Scope per Phase
 
-| Phase | New/Modified Lines | Files Touched | Complexity |
-|-------|-------------------|---------------|------------|
-| AI1 | ~120 Rust | 3-4 | Medium (unsafe code, synchronization) |
-| AI2 | ~80 Lean | 4 | Medium (Except type changes, theorem updates) |
-| AI3 | ~100 Lean | 3-4 | Medium (PIP-aware insertion, preservation theorems) |
-| AI4 | ~90 Lean | 3-4 | Medium (production path change, import wiring) |
-| AI5 | ~80 Lean | 2-3 | Medium (substantive predicate design) |
-| AI6 | ~250 documentation | 15-20 | Low (comments and spec text only) |
-| AI7 | ~80 mixed | 8-12 | Low (fixture sync, version bump) |
+| Phase | New/Modified Lines | Files Touched | Complexity | Key Bottleneck |
+|-------|-------------------|---------------|------------|----------------|
+| AI1 | ~150 Rust | 3 | Medium | AI1-D: spinlock impl in no_std |
+| AI2 | ~120 Lean | 4-5 | Medium-High | AI2-B: 3 theorem updates for Except |
+| AI3 | ~200 Lean + proofs | 5-7 | **High** | AI3-A: 15 preservation theorems |
+| AI4 | ~180 Lean + proofs | 5-8 | **High** | AI4-A: 16 IPC theorems + frame lemmas |
+| AI5 | ~120 Lean + tests | 4-6 | Medium | AI5-C: 10 test site updates |
+| AI6 | ~250 documentation | 15-20 | Low | Batch comment insertion |
+| AI7 | ~80 mixed | 8-12 | Low | Fixture diff |
+
+**Critical path**: AI3 and AI4 are the highest-complexity phases due to
+preservation theorem cascades. Each requires careful proof-chain analysis
+before implementation. Start these phases first despite being parallelizable
+with AI1/AI2/AI5.
 
 ---
 
@@ -1093,11 +1643,13 @@ parallel. The strict partition means no merge conflicts between phases.
 
 | Sub-task | Risk | Mitigation |
 |----------|------|------------|
-| AI1-D (UART sync) | Changing `static mut` to synchronized access may break bare-metal boot sequence if lock is not available at early init. | Use a two-phase pattern: raw access during pre-interrupt boot, locked access after GIC init. Test boot sequence in QEMU. |
-| AI2-A (EOI fix) | Changing error semantics of `interruptDispatchSequence` may break preservation theorems that depend on the error path not modifying state. | Read all theorems referencing `interruptDispatchSequence` before modifying. The recommended fix (EOI + return success) avoids state-on-error issues. |
-| AI3-A (handleYield PIP) | Changing insertion priority may break the `handleYield` preservation theorem and any theorem that assumes base-priority insertion. | Check `Preservation.lean` for all `handleYield` references. The fix pattern matches 5 existing sites that use `resolveInsertPriority`, so the preservation proof structure is established. |
-| AI4-A (cleanupPreReceive) | Inserting a cleanup call into `endpointReceiveDual` changes the state transition semantics. All 15 IPC invariant conjuncts must still be preserved. | The cleanup function (`cleanupPreReceiveDonation`) is already tested. Run `test_full.sh` after this change. Check `EndpointPreservation.lean` and `Structural.lean`. |
-| AI5-A (boot contract) | Substantive predicates may cause existing test suites to fail if test state construction doesn't satisfy the new invariants. | Design predicates conservatively. Use `buildChecked` as the reference — any state it produces should satisfy the new contracts. |
+| AI1-D (UART sync) | Changing `static mut` to synchronized access may break bare-metal boot sequence if `AtomicBool` isn't available at early init. | Implement the `UartLock` using `core::sync::atomic` (always available in `#![no_std]`). Init through the lock wrapper. Test boot sequence output via existing UART tests. |
+| AI2-A (EOI fix) | Changing `interruptDispatchSequence` error path from `.error e` to `.ok ((), endOfInterrupt st intId)` changes observable return semantics. | The recommended fix returns `.ok` — callers that matched on `.error` will now get `.ok`. Verify all callers of `interruptDispatchSequence` (likely only `ExceptionModel.lean`). |
+| AI2-B (unmapPage) | Changing return type from `Option` to `Except` ripples through 3 local theorems and the VSpaceBackend instance. | The VSpaceBackend wrapper converts back to `Option`, isolating the Except change to VSpaceARMv8 module. Only 3 local theorems need `Except` matching updates. |
+| AI3-A (handleYield PIP) | **15 preservation theorems** in Preservation.lean reference `handleYield`. Theorems #12 and #14 (EDF ordering, priority match) directly depend on the insertion priority value. | Start with the 2 high-impact theorems. The proof pattern for effective-priority insertion is established at 5 other sites. If `simp [resolveEffectivePrioDeadline]` doesn't close, manually unfold and case-split on `pipBoost`. |
+| AI3-C (saveOutgoing) | Changing return type to `Except` ripples through **5 callers in Core.lean** and **16 theorems** across Selection/Preservation. | Mechanical transformation: `let x := f y` → `match f y with \| .ok x => ... \| .error e => .error e`. All callers already return `Kernel Unit` (Except-compatible). |
+| AI4-A (cleanupPreReceive) | **Highest-complexity task**: Inserting a state-modifying call into `endpointReceiveDual` affects **16 IPC theorems** across EndpointPreservation + Structural (7591+ lines). | **Mitigation**: Build frame lemmas for `cleanupPreReceiveDonation` first (proving it preserves endpoint queues, IPC state, pending messages). These frame lemmas compose with existing proofs via transitivity. The cleanup only modifies `schedContextBinding` on ≤2 TCBs — structurally orthogonal to most IPC invariants. |
+| AI5-C (labeling guard) | Adding a guard to `syscallEntryChecked` that rejects `defaultLabelingContext` will break **10 test call sites** that use the insecure default. | Create a `testLabelingContext` helper with one non-public label. Update all 10 test sites mechanically. Tests that specifically test flow-denial semantics are unaffected (they already use custom contexts). |
 
 ### 11.2 Low-Risk Sub-tasks
 
@@ -1105,6 +1657,18 @@ All documentation-only changes (AI6-A through AI6-F) and metadata changes
 (AI7-D, AI7-E) are low risk. They do not affect behavior, proofs, or
 compilation. The primary risk is documentation drift, mitigated by the
 `test_full.sh` gate which checks documentation anchors.
+
+### 11.3 Recommended Execution Priority
+
+Given the risk and complexity analysis, the recommended execution order
+within the parallel AI1–AI5 band is:
+
+1. **AI4-A first** (cleanupPreReceiveDonation) — highest theorem count,
+   start frame lemmas early to unblock the rest of AI4.
+2. **AI3-A next** (handleYield PIP) — 15 theorems, but established pattern.
+3. **AI1-A/B/C** (Rust trap fixes) — atomic, low cascade risk.
+4. **AI2-A/B** (EOI + unmapPage) — moderate, localized to architecture.
+5. **AI5-A/B/C** (contracts) — medium, primarily test-site updates.
 
 ---
 
@@ -1180,12 +1744,14 @@ compilation. The primary risk is documentation drift, mitigated by the
 | Phase | Lean Files | Rust Files | Doc Files | Scripts |
 |-------|-----------|------------|-----------|---------|
 | AI1 | — | `trap.rs`, `ffi.rs`, `uart.rs` | — | — |
-| AI2 | `InterruptDispatch.lean`, `VSpaceARMv8.lean`, `AsidManager.lean`, `Suspend.lean` | — | — | — |
-| AI3 | `Core.lean`, `Selection.lean`, `PriorityManagement.lean`, `Preservation.lean`, `PriorityPreservation.lean` | — | — | — |
-| AI4 | `Transport.lean`, `DeviceTree.lean`, `Timeout.lean`, `API.lean`, `EndpointPreservation.lean` | — | — | — |
-| AI5 | `BootContract.lean`, `Policy.lean`, test suites | — | — | — |
+| AI2 | `InterruptDispatch.lean`, `VSpaceARMv8.lean`, `AsidManager.lean`, `Suspend.lean`, `VSpaceInvariant.lean` | — | — | — |
+| AI3 | `Core.lean`, `Selection.lean`, `PriorityManagement.lean`, `Preservation.lean`, `PriorityPreservation.lean`, `State.lean` | — | — | — |
+| AI4 | `Transport.lean`, `Donation.lean`*, `DeviceTree.lean`, `Timeout.lean`, `EndpointPreservation.lean`, `Structural.lean`, `MainTraceHarness.lean` | — | — | — |
+| AI5 | `BootContract.lean`, `Policy.lean`, `API.lean`, `MainTraceHarness.lean`, `InformationFlowSuite.lean`, `TraceSequenceProbe.lean` | — | — | — |
 | AI6 | `API.lean`†, `RunQueue.lean`†, `BlockingGraph.lean`†, `BandExhaustion.lean`†, `WCRT.lean`†, `Boot.lean`†, `DeviceTree.lean`†, `MmioAdapter.lean`†, `VSpace.lean`†, `CacheModel.lean`†, `Adapter.lean`†, `Structures.lean`†, `State.lean`†, `RuntimeContract.lean`† | — | `SELE4N_SPEC.md` | — |
 | AI7 | `Budget.lean`†, `Operations.lean`, fixtures | `boot.rs`, `Cargo.toml` | `CHANGELOG.md`, `WORKSTREAM_HISTORY.md`, `CLAUDE.md`, READMEs | `check_version_sync.sh` |
+
+\* = import addition only
 
 † = documentation-only changes (comments, no behavioral modification)
 
