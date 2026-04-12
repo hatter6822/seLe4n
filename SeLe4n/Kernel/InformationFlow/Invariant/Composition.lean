@@ -450,13 +450,19 @@ theorem step_preserves_projection
     exact endpointReply_preserves_projection ctx observer replier target msg st st' hTH hTOH hObjInv hOp
   | endpointReceiveDualHigh eid recv send hEH hRH hROH hCo hOp hSQHH hSQNH hRQTH =>
     exact endpointReceiveDual_preserves_projection ctx observer eid recv st st' send
-      hEH hRH hROH hCo hSQHH hSQNH hRQTH hObjInv hOp
+      hEH hRH hROH hCo hSQHH hSQNH hRQTH hObjInv
+      (by sorry) -- TPI-D1 objectIndexSetComplete
+      (by sorry) -- TPI-D1 objectIndexSet.table.invExt
+      hOp
   | endpointCallHigh eid caller msg hEH hCH hCOH hCo hOp hRQHH hRQNH hSQTH =>
     exact endpointCall_preserves_projection ctx observer eid caller msg st st'
       hEH hCH hCOH hCo hRQHH hRQNH hSQTH hObjInv hOp
   | endpointReplyRecvHigh eid recv target rmsg hEH hRH hROH hRTH hRTOH hCo hOp hSQHH hSQNH hRQTH =>
     exact endpointReplyRecv_preserves_projection ctx observer eid recv target rmsg st st'
-      hEH hRH hROH hRTH hRTOH hCo hSQHH hSQNH hRQTH hObjInv hOp
+      hEH hRH hROH hRTH hRTOH hCo hSQHH hSQNH hRQTH hObjInv
+      (by sorry) -- TPI-D1 objectIndexSetComplete
+      (by sorry) -- TPI-D1 objectIndexSet.table.invExt
+      hOp
   | storeObjectHigh oid obj hOH hOp =>
     exact storeObject_preserves_projection ctx observer st st' oid obj hOH hObjInv hOp
   | setCurrentThread tid hTidH hCurH hOp =>
