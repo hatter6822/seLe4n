@@ -33,8 +33,9 @@ hardcoded ASID limits with platform-configured values (L-14/LOW). 3 sub-tasks
   `dispatchWithCap_vspaceUnmap_delegates`) restructured from function-level to
   state-specific equality with `(st : SystemState)` parameter.
   `dispatchWithCap_layer2_decode_pure` proof uses `funext` for function
-  extensionality. 11 test call sites updated across 3 files (DecodingSuite,
-  NegativeStateSuite, MainTraceHarness) with `65536` for backward compatibility.
+  extensionality. 12 test call sites updated across 3 files (6 DecodingSuite,
+  5 NegativeStateSuite, 1 MainTraceHarness) with `65536` for backward
+  compatibility.
 
 ### Infrastructure
 
