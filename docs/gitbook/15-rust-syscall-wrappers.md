@@ -134,8 +134,8 @@ ARM Architecture Reference Manual.
 | `mmu` | MMU configuration | MAIR/TCR/TTBR/SCTLR, identity-mapped L1 boot tables |
 | `trap` | Exception dispatch | `TrapFrame` (272 bytes), ESR EC routing, SVC/IRQ/SError handlers, `error_code` constants (AI1-A/B) |
 | `boot` | Boot sequence | `_start` → BSS zero → stack → UART → MMU → VBAR → idle |
-| `gic` | GIC-400 constants | Stub — full driver in AG5 |
-| `timer` | ARM timer constants | Stub — full driver in AG5 |
+| `gic` | GIC-400 driver | Distributor + CPU interface init, acknowledge/dispatch/EOI, `dispatch_irq<F>()` (AG5) |
+| `timer` | ARM Generic Timer | 54 MHz counter, 1000 Hz tick, `reprogram_timer()`, `increment_tick_count()` (AG5) |
 
 Assembly files: `boot.S` (entry point), `vectors.S` (exception vector table),
 `trap.S` (context save/restore). Linker script: `link.ld` (0x80000 entry).
