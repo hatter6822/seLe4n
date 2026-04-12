@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-codebase-audit-VRq9j",
-      "commit_sha": "fdabb98a80edaf79b6dfff32bc06406a59b9f9de",
-      "tree_sha": "2622a9b075a694e37502d3aa30256d3e17054fe8",
-      "committed_at_utc": "2026-04-11T21:48:35-04:00"
+      "branch": "claude/review-codebase-audit-CYpW0",
+      "commit_sha": "5cf84b758de2b679c6ee8b794d29f75d669f3c3d",
+      "tree_sha": "73181ca043067572dd84d0a2935e57dc87ab7527",
+      "committed_at_utc": "2026-04-12T06:56:37+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "2e33ad6c7118a0bd108e57f64877322f658863de4c628f9500f885a4f15c2081"
+    "source_digest": "86606ffd51a47ee87c43885b5c3fbb3c358443a894b56c7f9a091f4ccdc95c1d"
   },
   "summary": {
     "module_count": 158,
-    "declaration_count": 4980
+    "declaration_count": 4988
   },
   "readme_sync": {
-    "version": "0.27.6",
+    "version": "0.27.8",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 91768,
+    "production_loc": 91901,
     "test_files": 17,
     "test_loc": 11610,
-    "proved_theorem_lemma_decls": 2736,
+    "proved_theorem_lemma_decls": 2741,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -1342,7 +1342,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.AsidManager",
       "path": "SeLe4n/Kernel/Architecture/AsidManager.lean",
-      "declaration_count": 15,
+      "declaration_count": 19,
       "declarations": [
         {
           "kind": "namespace",
@@ -1384,7 +1384,7 @@
         {
           "kind": "def",
           "name": "AsidPool.allocate",
-          "line": 90,
+          "line": 91,
           "called": [
             "AsidAllocResult",
             "AsidPool",
@@ -1395,7 +1395,7 @@
         {
           "kind": "def",
           "name": "AsidPool.free",
-          "line": 118,
+          "line": 125,
           "called": [
             "ASID",
             "AsidPool"
@@ -1404,7 +1404,7 @@
         {
           "kind": "def",
           "name": "AsidPool.wellFormed",
-          "line": 131,
+          "line": 138,
           "called": [
             "AsidPool",
             "maxAsidValue"
@@ -1413,7 +1413,7 @@
         {
           "kind": "theorem",
           "name": "AsidPool.initial_wellFormed",
-          "line": 137,
+          "line": 144,
           "called": [
             "initial",
             "maxAsidValue",
@@ -1423,7 +1423,7 @@
         {
           "kind": "theorem",
           "name": "AsidPool.allocate_preserves_wellFormed",
-          "line": 142,
+          "line": 149,
           "called": [
             "AsidAllocResult",
             "AsidPool",
@@ -1435,7 +1435,7 @@
         {
           "kind": "theorem",
           "name": "AsidPool.allocate_asid_valid",
-          "line": 176,
+          "line": 183,
           "called": [
             "AsidAllocResult",
             "AsidPool",
@@ -1447,7 +1447,7 @@
         {
           "kind": "def",
           "name": "asidPoolUnique",
-          "line": 215,
+          "line": 222,
           "called": [
             "ASID"
           ]
@@ -1455,7 +1455,7 @@
         {
           "kind": "theorem",
           "name": "asidPoolUnique_empty",
-          "line": 219,
+          "line": 226,
           "called": [
             "asidPoolUnique"
           ]
@@ -1463,7 +1463,7 @@
         {
           "kind": "theorem",
           "name": "asidPoolUnique_allocate_fresh",
-          "line": 223,
+          "line": 230,
           "called": [
             "ASID",
             "asidPoolUnique"
@@ -1472,11 +1472,54 @@
         {
           "kind": "theorem",
           "name": "asidPoolUnique_free",
-          "line": 232,
+          "line": 239,
           "called": [
             "ASID",
             "asidPoolUnique",
             "filter"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "asidAllocRequiresFlush",
+          "line": 258,
+          "called": [
+            "AsidAllocResult"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "AsidPool.allocate_reuse_requires_flush",
+          "line": 265,
+          "called": [
+            "AsidAllocResult",
+            "AsidPool",
+            "allocate",
+            "asidAllocRequiresFlush"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "AsidPool.allocate_rollover_requires_flush",
+          "line": 279,
+          "called": [
+            "AsidAllocResult",
+            "AsidPool",
+            "allocate",
+            "asidAllocRequiresFlush",
+            "maxAsidValue"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "AsidPool.allocate_fresh_no_flush",
+          "line": 292,
+          "called": [
+            "AsidAllocResult",
+            "AsidPool",
+            "allocate",
+            "asidAllocRequiresFlush",
+            "maxAsidValue"
           ]
         }
       ]
@@ -2148,7 +2191,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.InterruptDispatch",
       "path": "SeLe4n/Kernel/Architecture/InterruptDispatch.lean",
-      "declaration_count": 14,
+      "declaration_count": 15,
       "declarations": [
         {
           "kind": "namespace",
@@ -2227,7 +2270,7 @@
         {
           "kind": "theorem",
           "name": "interruptDispatchSequence_spurious",
-          "line": 141,
+          "line": 144,
           "called": [
             "SystemState",
             "acknowledgeInterrupt",
@@ -2238,7 +2281,7 @@
         {
           "kind": "theorem",
           "name": "endOfInterrupt_eq",
-          "line": 147,
+          "line": 150,
           "called": [
             "InterruptId",
             "SystemState",
@@ -2248,7 +2291,7 @@
         {
           "kind": "theorem",
           "name": "handleInterrupt_unmapped",
-          "line": 151,
+          "line": 154,
           "called": [
             "InterruptId",
             "Irq",
@@ -2259,9 +2302,22 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "interruptDispatchSequence_always_ok",
+          "line": 164,
+          "called": [
+            "SystemState",
+            "acknowledgeInterrupt",
+            "endOfInterrupt",
+            "handleInterrupt",
+            "interruptDispatchSequence",
+            "none"
+          ]
+        },
+        {
           "kind": "def",
           "name": "timerInterruptHandler",
-          "line": 179,
+          "line": 196,
           "called": [
             "Kernel",
             "timerTick"
@@ -2270,7 +2326,7 @@
         {
           "kind": "theorem",
           "name": "timerInterruptHandler_eq_timerTick",
-          "line": 185,
+          "line": 202,
           "called": [
             "timerInterruptHandler",
             "timerTick"
@@ -2279,7 +2335,7 @@
         {
           "kind": "theorem",
           "name": "handleInterrupt_timer",
-          "line": 190,
+          "line": 207,
           "called": [
             "SystemState",
             "handleInterrupt",
@@ -6269,7 +6325,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.VSpaceARMv8",
       "path": "SeLe4n/Kernel/Architecture/VSpaceARMv8.lean",
-      "declaration_count": 23,
+      "declaration_count": 26,
       "declarations": [
         {
           "kind": "namespace",
@@ -6427,12 +6483,21 @@
           ]
         },
         {
+          "kind": "inductive",
+          "name": "VSpaceWalkError",
+          "line": 191,
+          "called": [
+            "PageTableLevel"
+          ]
+        },
+        {
           "kind": "def",
           "name": "ARMv8VSpace.unmapPage",
-          "line": 189,
+          "line": 199,
           "called": [
             "ARMv8VSpace",
             "VAddr",
+            "VSpaceWalkError",
             "l0Index",
             "l1Index",
             "l2Index",
@@ -6445,7 +6510,7 @@
         {
           "kind": "theorem",
           "name": "ARMv8VSpace.mapPage_preserves_asid",
-          "line": 213,
+          "line": 224,
           "called": [
             "ARMv8VSpace",
             "PAddr",
@@ -6457,7 +6522,7 @@
         {
           "kind": "theorem",
           "name": "ARMv8VSpace.unmapPage_preserves_asid",
-          "line": 228,
+          "line": 239,
           "called": [
             "ARMv8VSpace",
             "VAddr",
@@ -6467,7 +6532,7 @@
         {
           "kind": "theorem",
           "name": "ARMv8VSpace.mapPage_shadow_eq",
-          "line": 238,
+          "line": 254,
           "called": [
             "ARMv8VSpace",
             "PAddr",
@@ -6479,7 +6544,7 @@
         {
           "kind": "theorem",
           "name": "ARMv8VSpace.unmapPage_shadow_eq",
-          "line": 256,
+          "line": 272,
           "called": [
             "ARMv8VSpace",
             "VAddr",
@@ -6487,13 +6552,36 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "ARMv8VSpace.unmapPageOpt",
+          "line": 300,
+          "called": [
+            "ARMv8VSpace",
+            "VAddr",
+            "none",
+            "unmapPage"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ARMv8VSpace.unmapPageOpt_some_iff_ok",
+          "line": 306,
+          "called": [
+            "ARMv8VSpace",
+            "VAddr",
+            "unmapPage",
+            "unmapPageOpt"
+          ]
+        },
+        {
           "kind": "instance",
           "name": "armv8VSpaceBackend",
-          "line": 277,
+          "line": 313,
           "called": [
             "ARMv8VSpace",
             "ARMv8VSpace.mapPage_preserves_asid",
             "ARMv8VSpace.mapPage_shadow_eq",
+            "ARMv8VSpace.unmapPageOpt_some_iff_ok",
             "ARMv8VSpace.unmapPage_preserves_asid",
             "ARMv8VSpace.unmapPage_shadow_eq",
             "RHTable.invExtK_invExt",
@@ -6508,13 +6596,14 @@
             "mapPage",
             "mapPage_preserves_asid",
             "unmapPage",
+            "unmapPageOpt",
             "unmapPage_preserves_asid"
           ]
         },
         {
           "kind": "def",
           "name": "simulationRelation",
-          "line": 326,
+          "line": 365,
           "called": [
             "ARMv8VSpace",
             "hwLookupPage",
@@ -6524,7 +6613,7 @@
         {
           "kind": "theorem",
           "name": "hwLookupPage_refines",
-          "line": 330,
+          "line": 369,
           "called": [
             "ARMv8VSpace",
             "VAddr",
@@ -6536,7 +6625,7 @@
         {
           "kind": "theorem",
           "name": "hwLookupAddr_refines",
-          "line": 335,
+          "line": 374,
           "called": [
             "ARMv8VSpace",
             "ARMv8VSpace.hwLookupAddr",
@@ -6549,7 +6638,7 @@
         {
           "kind": "theorem",
           "name": "vspaceProperty_transfer",
-          "line": 342,
+          "line": 381,
           "called": [
             "ARMv8VSpace",
             "PAddr",
@@ -30409,7 +30498,7 @@
         {
           "kind": "def",
           "name": "resumeThread",
-          "line": 204,
+          "line": 217,
           "called": [
             "KernelError",
             "SystemState",

@@ -323,7 +323,7 @@ determinism. See `Service/Operations.lean` for the full design rationale.
     `decode_layer2_roundtrip_all` composed conjunction. Zero sorry/axiom.
 - `SeLe4n/Kernel/Architecture/IpcBufferValidation.lean` — D3: `setIPCBufferOp` with VSpace bounds checking, page permission validation, determinism and frame lemmas.
 - `SeLe4n/Kernel/Architecture/ExceptionModel.lean` — AG3-C/F: ARM64 exception types (synchronous/irq/fiq/serror), ESR_EL1 classification, exception dispatch routing SVC→`syscallEntry`. AG5-G: interrupt-disabled region atomicity proofs (`saveOutgoingContext`, `restoreIncomingContext`, `setCurrentThread`, `interruptDispatchSequence` preservation of `interruptsEnabled`).
-- `SeLe4n/Kernel/Architecture/InterruptDispatch.lean` — AG3-D: GIC-400 interrupt dispatch model (`InterruptId := Fin 224`, `acknowledgeInterrupt`/`endOfInterrupt`/`handleInterrupt`/`interruptDispatchSequence`). AG5-E: `timerInterruptHandler`, `handleInterrupt_timer` theorem.
+- `SeLe4n/Kernel/Architecture/InterruptDispatch.lean` — AG3-D: GIC-400 interrupt dispatch model (`InterruptId := Fin 224`, `acknowledgeInterrupt`/`endOfInterrupt`/`handleInterrupt`/`interruptDispatchSequence`). AG5-E: `timerInterruptHandler`, `handleInterrupt_timer` theorem. AI2-A: EOI always sent on error path; `interruptDispatchSequence_always_ok` theorem.
 - `SeLe4n/Kernel/Architecture/TimerModel.lean` — AG3-E: Hardware timer model (54 MHz RPi5, monotonicity proof). AG5-E: `TimerInterruptBinding` structure with `handleTimerInterrupt`, 4 preservation theorems.
 - `SeLe4n/Kernel/Architecture/Invariant.lean`
   - `proofLayerInvariantBundle` connecting adapter assumptions to theorem-layer invariants,

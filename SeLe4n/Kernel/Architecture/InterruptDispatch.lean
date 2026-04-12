@@ -101,10 +101,10 @@ def endOfInterrupt (_st : SystemState) (_intId : InterruptId) : SystemState :=
       badges are configured per-IRQ-handler at bind time. This simplification
       is sufficient for the abstract model; the hardware binding phase (AG5)
       will add per-handler badge configuration.
-    - On error, EOI is skipped in `interruptDispatchSequence`. On real
-      hardware, the interrupt would remain active until a subsequent EOI.
-      The hardware binding phase must ensure EOI is always written,
-      potentially in a `finally`-style cleanup. -/
+    - AI2-A (H-03): EOI is always sent regardless of handler outcome to
+      prevent GIC lockup. Handler errors are non-fatal — the interrupt was
+      acknowledged and EOI must complete the cycle. This matches Linux's
+      unconditional EOI pattern. -/
 def handleInterrupt (st : SystemState) (intId : InterruptId) :
     Except KernelError (Unit × SystemState) :=
   if intId = timerInterruptId then
@@ -131,7 +131,10 @@ def interruptDispatchSequence (st : SystemState) (rawIntId : Nat) :
   | some intId =>
     match handleInterrupt st intId with
     | .ok ((), st') => .ok ((), endOfInterrupt st' intId)
-    | .error e => .error e
+    | .error _ =>
+      -- AI2-A (H-03): EOI must always fire to prevent GIC lockup.
+      -- Handler errors are non-fatal — the interrupt was acknowledged.
+      .ok ((), endOfInterrupt st intId)
 
 -- ============================================================================
 -- AG3-D-vi: Preservation theorems
@@ -154,6 +157,20 @@ theorem handleInterrupt_unmapped (st : SystemState) (intId : InterruptId)
     handleInterrupt st intId = .error .invalidIrq := by
   unfold handleInterrupt
   simp [hNotTimer, hNoHandler]
+
+/-- AI2-A (H-03): `interruptDispatchSequence` always succeeds.
+    EOI is sent unconditionally — handler errors are absorbed. This prevents
+    GIC lockup on real hardware by ensuring the interrupt cycle completes. -/
+theorem interruptDispatchSequence_always_ok (st : SystemState) (rawIntId : Nat) :
+    ∃ st', interruptDispatchSequence st rawIntId = .ok ((), st') := by
+  simp only [interruptDispatchSequence]
+  cases hAck : acknowledgeInterrupt rawIntId with
+  | none => exact ⟨st, rfl⟩
+  | some intId =>
+    simp only []
+    cases hHandle : handleInterrupt st intId with
+    | ok val => exact ⟨endOfInterrupt val.2 intId, by simp⟩
+    | error e => exact ⟨endOfInterrupt st intId, by simp⟩
 
 -- ============================================================================
 -- AG5-E: Timer interrupt handler (model-level binding)
