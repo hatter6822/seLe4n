@@ -942,7 +942,23 @@ theorem bootFromPlatform_cdtNodeSlot_eq (config : PlatformConfig) :
     preconditions for a freshly-booted state. During boot, there are no
     scheduler queues, no CDT edges, no service registrations, and no
     ASID mappings. Objects must satisfy IPC, queue, and structural
-    constraints for the full 10-component `proofLayerInvariantBundle`. -/
+    constraints for the full 10-component `proofLayerInvariantBundle`.
+
+    M-04/AH5-A: **Design rationale — VSpaceRoot exclusion**. VSpaceRoots are
+    excluded from `bootSafeObject` because ASID table registration
+    (`asidTable.insert asid id` in `storeObject`) requires a fully initialized
+    ASID manager, which is not available during the builder-phase boot sequence.
+    The boot pipeline constructs an `IntermediateState` that does not yet
+    contain ASID pool infrastructure.
+
+    **Tradeoff**: All address spaces must be configured post-boot via `vspaceMap`
+    syscalls. This prevents pre-populating address space mappings during boot.
+
+    **Integration timeline**: VSpaceRoot boot support is planned for WS-V when
+    the ASID manager is wired into the `IntermediateState` builder operations.
+    The `AsidManager` type and `asidPoolUnique` invariant (AsidManager.lean)
+    provide the foundation — the missing piece is builder-phase ASID pool
+    integration. -/
 def bootSafeObject (obj : KernelObject) : Prop :=
   -- Endpoints must have empty queues (no thread references)
   (∀ ep, obj = .endpoint ep →

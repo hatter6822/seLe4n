@@ -1,3 +1,50 @@
+## v0.27.6 — WS-AH Phase AH5: Documentation, Testing & Closure
+
+Phase AH5 of WS-AH Pre-Release Comprehensive Audit Remediation. Documents all
+findings requiring specification or code-comment updates (M-04, M-05, M-06, M-07,
+M-08, L-11, L-12, L-13), synchronizes all project documentation, and passes the
+full test gate. 6 sub-tasks (AH5-A through AH5-F). WS-AH PORTFOLIO COMPLETE.
+Gate: `test_full.sh` + `cargo test --workspace` + documentation sync. Zero sorry/axiom.
+
+### Changes
+
+- **AH5-A** (M-04, M-07): Design-rationale documentation in source code.
+  M-04: VSpaceRoot boot exclusion rationale added to `bootSafeObject` doc comment
+  in `Platform/Boot.lean` — explains ASID manager dependency, tradeoff, and WS-V
+  integration timeline. M-07: `pendingMessage` NI visibility analysis added to
+  `projectKernelObject` TCB case in `InformationFlow/Projection.lean` — explains
+  unreachability under `runnableThreadIpcReady`, `currentNotEndpointQueueHead`,
+  and domain scheduling invariants.
+- **AH5-B** (M-05, M-06, L-13): Specification-level documentation in
+  `docs/spec/SELE4N_SPEC.md`. M-05: Platform Testing Limitations section (6.6) —
+  simulation contract `True` propositions, RPi5 `registerContextStable` 6-condition
+  gap, recommendation for `Sim.Restrictive` contract. M-06: CNode Intermediate
+  Rights Divergence section (8.10.3) — `resolveCapAddress` skips intermediate
+  `Read` rights, impact analysis, U-M25 reference. L-13: TPIDR_EL0 / TLS Gap
+  section (6.5.6) — `RegisterFile` scope, integration timeline, `TrapFrame`
+  space note.
+- **AH5-C** (M-08, L-11, L-12): Defense-in-depth documentation in source code.
+  M-08: Cross-subsystem composition coverage assessment in
+  `Kernel/CrossSubsystem.lean` — 10-predicate, 45-pairwise analysis, remaining
+  gap scenarios, WS-V deferral. L-11: Badge constructor safety analysis in
+  `Prelude.lean` — 5 safety layers from `Badge.valid` to Rust ABI truncation.
+  L-12: `maxControlledPriority` default rationale in `Model/Object/Types.lean` —
+  seL4 divergence, `setPriorityOp` MCP enforcement, production recommendation.
+- **AH5-D**: Test fixture verification — trace output matches expected fixture
+  (documentation-only changes do not affect trace output).
+- **AH5-E**: Full documentation synchronization — CHANGELOG, WORKSTREAM_HISTORY,
+  DEVELOPMENT, README, CLAUDE.md, CLAIM_EVIDENCE_INDEX, SELE4N_SPEC, GitBook.
+- **AH5-F**: Final gate — `test_full.sh` + `cargo test --workspace` + sorry/axiom
+  scan + version sync + website link check.
+
+### Infrastructure
+
+- Version bump: `lakefile.toml` 0.27.5 → 0.27.6
+- All 15 version-bearing files synchronized to 0.27.6
+- WS-AH portfolio marked COMPLETE in all documentation surfaces
+
+---
+
 ## v0.27.5 — WS-AH Phase AH4: Version Consistency & CI Automation
 
 Phase AH4 of WS-AH Pre-Release Comprehensive Audit Remediation. Synchronizes

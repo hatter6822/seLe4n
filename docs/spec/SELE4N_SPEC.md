@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.27.5` (`lakefile.toml`) |
+| **Package version** | `0.27.6` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 91,350 across 141 Lean files |
 | **Test LoC** | 11,608 across 17 Lean test suites |
@@ -615,6 +615,36 @@ Production `AdapterProofHooks` (`rpi5ProductionAdapterProofHooks` in
 for all 4 adapter paths. The `proofLayerInvariantBundle` (11 conjuncts)
 and `ipcInvariantFull` (15 conjuncts) are preserved through the FFI boundary.
 
+#### 6.5.6 Architecture Gap: TPIDR_EL0 / TLS (L-13)
+
+`RegisterFile` (Prelude.lean) models GPRs (x0-x30), PC, and SP only.
+The ARM64 `TPIDR_EL0` register (thread-local storage pointer) is not
+modeled. This register is required for user-space TLS support (e.g.,
+`__thread` variables, Go runtime, Rust `thread_local!`).
+
+**Integration timeline**: TPIDR_EL0 modeling is planned for a future
+AG-phase when user-space binary loading and context switching of system
+registers are implemented. The `TrapFrame` in `sele4n-hal` (272 bytes)
+already has space for system register state; the Lean model needs a
+corresponding `RegisterFile` extension.
+
+### 6.6 Platform Testing Limitations (M-05)
+
+The simulation platform contract (`Sim/Contract.lean`) uses permissive
+`True` propositions for all runtime and boot obligations. This is by design
+— simulation enables fast iteration and test execution without hardware.
+
+**Limitations**:
+- The RPi5 `registerContextStable` check (6 conditions: stack alignment,
+  PC kernel range, budget positivity, SP mapped, return address valid,
+  TLS pointer valid) is NOT exercisable under simulation
+- Cache coherency model proofs (`CacheModel.lean`) are trivially satisfied
+- Interrupt disable/enable semantics are sequential-model approximations
+
+**Recommendation**: Use the `Sim.Restrictive` contract for property
+validation (it imposes some structural constraints). For production-
+representative testing, use the RPi5 contract (`RPi5/Contract.lean`).
+
 ---
 
 ## 7. Acceptance Expectations
@@ -876,6 +906,24 @@ behavior on ARM64).
 **Fix**: The `.vspaceMap` dispatch in `dispatchCapabilityOnly` now calls
 `validateVSpaceMapPermsForMemoryKind` after decode and before mapping. Device
 regions with `perms.execute = true` return `.error .policyDenied`.
+
+### 8.10.3 seL4 Divergence: CNode Intermediate Rights (M-06)
+
+`resolveCapAddress` (Operations.lean:85-128) does NOT check `Read` rights
+on intermediate CNode capabilities during multi-level CSpace traversal.
+This diverges from seL4, which requires `Read` on each intermediate CNode.
+
+**Impact**: A thread with only `Write` right on an intermediate CNode can
+still resolve capabilities through it, broadening the access path. However,
+no additional *operations* become accessible — rights are still checked at
+the leaf capability by the individual operation handler.
+
+**Rationale**: seLe4n uses a single-resolution-per-syscall model where each
+syscall resolves exactly one capability path. The intermediate rights check
+in seL4 guards against multi-hop traversals that could bypass CNode access
+control; in seLe4n's flat model, this guard is redundant.
+
+**Source annotation**: U-M25 (Operations.lean).
 
 ### 8.11 buildChecked Runtime Invariant Validation (WS-T Phase T7)
 

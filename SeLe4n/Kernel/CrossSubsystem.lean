@@ -291,7 +291,22 @@ def schedContextRunQueueConsistent (st : SystemState) : Prop :=
     AE5-C (SVC-04): Extended from 8 to 9 predicates with `registryInterfaceValid`,
     closing the gap where cross-subsystem coverage omitted interface validity.
     AF1-B3: Extended from 9 to 10 predicates with `blockingAcyclic`,
-    integrating the PIP blocking graph acyclicity assumption. -/
+    integrating the PIP blocking graph acyclicity assumption.
+
+    M-08/AH5-C: **Cross-subsystem composition coverage assessment**.
+    Current: 10 predicates in `crossSubsystemInvariant`, yielding 45 pairwise
+    disjointness analyses (10 choose 2). Coverage:
+      - Frame lemmas: ALL 33 kernel operations that modify `objects` have per-
+        operation frame lemmas (AD4 portfolio, 2+33 bridge lemmas).
+      - Pairwise disjointness: most pairs are structurally disjoint (different
+        fields: scheduler vs objects vs cdt). Remaining gap scenarios:
+        (1) IPC queue membership ↔ service registry endpoint tracking
+        (2) Capability revocation ↔ service endpoint lifecycle
+      - Assessment: no known concrete violation. The gap is theoretical —
+        frame lemmas ensure each operation preserves all 10 predicates
+        individually. The missing piece is a formal proof that ALL 10
+        predicates compose correctly under arbitrary interleaving of all 33
+        operations (exponential combinatorics, deferred to WS-V). -/
 def crossSubsystemInvariant (st : SystemState) : Prop :=
   registryEndpointValid st ∧
   registryInterfaceValid st ∧  -- AE5-C (SVC-04): Added
