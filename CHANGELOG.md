@@ -22,7 +22,11 @@ removes unused `_endpointId` parameter from `timeoutAwareReceive`. 4 sub-tasks
   `cleanupPreReceiveDonation_tcb_ipcState_backward`,
   `cleanupPreReceiveDonation_frame_helper`. Updated 16+ preservation theorems
   in EndpointPreservation.lean, Structural.lean, and
-  InformationFlow/Invariant/Operations.lean.
+  InformationFlow/Invariant/Operations.lean. Extended `projectKernelObject`
+  (Projection.lean) to strip `schedContextBinding` and `boundThread` for NI
+  transparency. Added `objectIndexSetComplete` predicate (State.lean) with
+  preservation through `storeObject`, `ensureRunnable`,
+  `storeTcbIpcStateAndMessage` for NI projection proof chain.
 - **AI4-B** (M-09/MEDIUM): DTB parser fuel exhaustion now returns typed
   `Except DeviceTreeParseError` instead of `Option`. Added
   `DeviceTreeParseError` inductive type with `.fuelExhausted` and
@@ -37,9 +41,10 @@ removes unused `_endpointId` parameter from `timeoutAwareReceive`. 4 sub-tasks
 
 ### Statistics
 
-- Files modified: 8 Lean files
-- Lines added: ~350 (frame lemmas, error type, documentation)
-- Lines removed: ~30 (unused parameter, moved function)
+- Files modified: 12 Lean files, 3 Rust files, 18 documentation files
+- Lines added: ~2,700 (frame lemmas, preservation proofs, NI projection,
+  objectIndexSetComplete invariant, error type, documentation)
+- Lines removed: ~470 (moved function, refactored proofs, old sorry stubs)
 - Sorry count: 0
 - Axiom count: 0
 
