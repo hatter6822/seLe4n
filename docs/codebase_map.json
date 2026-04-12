@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-codebase-audit-Ebx93",
-      "commit_sha": "cf3d923c9cbd62e3d0487af71e8da1624345436b",
-      "tree_sha": "fede3cc2e964122b4dd9e9f8d76557cd6e7080cf",
-      "committed_at_utc": "2026-04-11T19:02:24-04:00"
+      "branch": "claude/review-codebase-phase-ah4-OF19f",
+      "commit_sha": "2b78bb80c10d9331be3eec30a3233d35c04e4aaf",
+      "tree_sha": "d17953656592420474679bfb2431446964fdccb7",
+      "committed_at_utc": "2026-04-11T21:10:09-04:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 4980
   },
   "readme_sync": {
-    "version": "0.27.4",
+    "version": "0.27.5",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
     "production_loc": 91693,

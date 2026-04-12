@@ -5,10 +5,10 @@
 This GitBook is the long-form guide for seLe4n — a production-oriented microkernel written in Lean 4 with machine-checked proofs, targeting Raspberry Pi 5.
 
 ## Current project state
-- **Version:** 0.25.23 (Lean v4.28.0).
-- **Codebase metrics:** 86,106 production LoC across 133 files; 11,318 test LoC across 16 suites; 2,557 theorem/lemma declarations (zero sorry/axiom).
-- **Latest audit:** [`AUDIT_COMPREHENSIVE_v0.23.21`](../dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW).
-- **Active workstream:** **WS-AF Phase AF2 COMPLETE** (v0.25.23) — State & Model Hardening (7 sub-tasks). Prior: WS-AF AF1 (v0.25.22), WS-AE PORTFOLIO COMPLETE (v0.25.15–v0.25.21), WS-B through WS-AD complete (v0.9.0–v0.25.14).
+- **Version:** 0.27.5 (Lean v4.28.0).
+- **Codebase metrics:** 91,466 production LoC across 141 files; 11,608 test LoC across 17 suites; 2,725 theorem/lemma declarations (zero sorry/axiom).
+- **Latest audit:** [`AUDIT_v0.27.1_PRE_RELEASE_COMPREHENSIVE`](../audits/AUDIT_v0.27.1_PRE_RELEASE_COMPREHENSIVE.md) — full-kernel audit (2 HIGH, 11 MED, 17 LOW, 14 INFO).
+- **Active workstream:** **WS-AH Phase AH4 COMPLETE** (v0.27.5) — Version Consistency & CI Automation (H-02). Prior: AH3 (v0.27.4), AH2 (v0.27.3), AH1 (v0.27.2). WS-AG PORTFOLIO COMPLETE (v0.26.0–v0.27.1). WS-AF PORTFOLIO COMPLETE (v0.25.22–v0.25.27). WS-B through WS-AE complete (v0.9.0–v0.25.21).
 - **Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — complete portfolio record and roadmap.
 - **Hardware target:** Raspberry Pi 5 (ARM64).
 - **Metrics source of truth:** [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key). Cross-check with `./scripts/report_current_state.py`.
