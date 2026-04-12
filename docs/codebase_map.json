@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-ipc-hardening-K9jLw",
-      "commit_sha": "977b6172e154df9f189e620cfa20c3ba57da1c45",
-      "tree_sha": "0be4d407809dd65ab5ad2394916cb92c70d4affb",
-      "committed_at_utc": "2026-04-12T22:55:06+00:00"
+      "commit_sha": "71bdaaa4d75552f59a359d31647aa3d299816d56",
+      "tree_sha": "4dd8f114b9e06d78c80f2f266bae0370328606f2",
+      "committed_at_utc": "2026-04-12T23:12:17+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "cb8521ac7e6f11a67c2c7092260dc40bf40966dc5d93a287d7dc3a26dac4b75e"
+    "source_digest": "90aa337cccba5b0da04f52d424e244e695dc5e75626f277e1fd1b67a02d8fe72"
   },
   "summary": {
     "module_count": 158,

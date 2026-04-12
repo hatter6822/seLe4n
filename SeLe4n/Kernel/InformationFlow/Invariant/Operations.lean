@@ -1690,9 +1690,9 @@ theorem endpointReceiveDual_preserves_projection
             have hProjClean : projectState ctx observer (cleanupPreReceiveDonation st receiver) = projectState ctx observer st := by
               unfold cleanupPreReceiveDonation
               cases hLookup : lookupTcb st receiver with
-              | none => simp [hLookup]
+              | none => simp
               | some recvTcb =>
-                simp only [hLookup]
+                simp only []
                 cases recvTcb.schedContextBinding with
                 | unbound => rfl
                 | bound _ => rfl
