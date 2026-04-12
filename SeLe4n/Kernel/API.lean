@@ -459,7 +459,8 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
   | .vspaceMap =>
     some <| match cap.target with
     | .object _ =>
-        fun st => match decodeVSpaceMapArgs decoded with
+        -- AH3-C (L-14): Pass platform-configured maxASID to decode
+        fun st => match decodeVSpaceMapArgs decoded st.machine.maxASID with
         | .error e => .error e
         | .ok args =>
             -- AH1-D (M-01 fix): Validate permissions against memory kind before mapping.
@@ -474,7 +475,8 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
   | .vspaceUnmap =>
     some <| match cap.target with
     | .object _ =>
-        fun st => match decodeVSpaceUnmapArgs decoded with
+        -- AH3-C (L-14): Pass platform-configured maxASID to decode
+        fun st => match decodeVSpaceUnmapArgs decoded st.machine.maxASID with
         | .error e => .error e
         | .ok args =>
             Architecture.vspaceUnmapPageWithFlush args.asid args.vaddr st
@@ -1536,16 +1538,17 @@ theorem dispatchWithCap_vspaceMap_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.VSpaceMapArgs)
+    (st : SystemState)
     (hSyscall : decoded.syscallId = .vspaceMap)
     (hTarget : cap.target = .object objId)
-    (hDecode : decodeVSpaceMapArgs decoded = .ok args) :
-    dispatchWithCap decoded tid gate cap =
-      -- AH1-D: Dispatch now validates permissions against memory kind before mapping
-      fun st => match validateVSpaceMapPermsForMemoryKind args st.machine.memoryMap with
+    -- AH3-C: decode now takes st.machine.maxASID from the platform config
+    (hDecode : decodeVSpaceMapArgs decoded st.machine.maxASID = .ok args) :
+    dispatchWithCap decoded tid gate cap st =
+      (match validateVSpaceMapPermsForMemoryKind args st.machine.memoryMap with
         | .error e => .error e
         | .ok validatedArgs =>
             Architecture.vspaceMapPageCheckedWithFlushFromState validatedArgs.asid
-              validatedArgs.vaddr validatedArgs.paddr validatedArgs.perms st := by
+              validatedArgs.vaddr validatedArgs.paddr validatedArgs.perms st) := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 /-- WS-K-D/S6-A: When vspaceUnmap dispatch succeeds, `vspaceUnmapPageWithFlush` is
@@ -1555,11 +1558,13 @@ theorem dispatchWithCap_vspaceUnmap_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
     (args : Architecture.SyscallArgDecode.VSpaceUnmapArgs)
+    (st : SystemState)
     (hSyscall : decoded.syscallId = .vspaceUnmap)
     (hTarget : cap.target = .object objId)
-    (hDecode : decodeVSpaceUnmapArgs decoded = .ok args) :
-    dispatchWithCap decoded tid gate cap =
-      Architecture.vspaceUnmapPageWithFlush args.asid args.vaddr := by
+    -- AH3-C: decode now takes st.machine.maxASID from the platform config
+    (hDecode : decodeVSpaceUnmapArgs decoded st.machine.maxASID = .ok args) :
+    dispatchWithCap decoded tid gate cap st =
+      Architecture.vspaceUnmapPageWithFlush args.asid args.vaddr st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 -- ============================================================================
@@ -1823,12 +1828,14 @@ theorem dispatchWithCap_layer2_decode_pure
     (decodeCSpaceMoveArgs d₁ = decodeCSpaceMoveArgs d₂) ∧
     (decodeCSpaceDeleteArgs d₁ = decodeCSpaceDeleteArgs d₂) ∧
     (decodeLifecycleRetypeArgs d₁ = decodeLifecycleRetypeArgs d₂) ∧
+    -- AH3-C: These are now function equalities (parameterized by maxASID)
     (decodeVSpaceMapArgs d₁ = decodeVSpaceMapArgs d₂) ∧
     (decodeVSpaceUnmapArgs d₁ = decodeVSpaceUnmapArgs d₂) := by
-  simp only [decodeCSpaceMintArgs, decodeCSpaceCopyArgs, decodeCSpaceMoveArgs,
-    decodeCSpaceDeleteArgs, decodeLifecycleRetypeArgs, decodeVSpaceMapArgs,
-    decodeVSpaceUnmapArgs, requireMsgReg, hRegs]
-  trivial
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;>
+    (try simp only [decodeCSpaceMintArgs, decodeCSpaceCopyArgs, decodeCSpaceMoveArgs,
+      decodeCSpaceDeleteArgs, decodeLifecycleRetypeArgs, requireMsgReg, hRegs]) <;>
+    (try funext maxASID; simp only [decodeVSpaceMapArgs, decodeVSpaceUnmapArgs,
+      requireMsgReg, hRegs])
 
 /-- WS-K-F4: Composition verification — `syscallEntry_preserves_proofLayerInvariantBundle`
 composes decode purity (no state change), read-only cap lookup (state unchanged),

@@ -198,15 +198,16 @@ def decodeLifecycleRetypeArgs (decoded : SyscallDecodeResult)
     (undefined permission bits set — U5-E/U-M07: decode error, not policy).
     U2-B/U-H06: Validates VAddr lies within ARM64 48-bit canonical range.
     Returns `addressOutOfBounds` for VAddr ≥ 2^48. -/
-def decodeVSpaceMapArgs (decoded : SyscallDecodeResult)
+def decodeVSpaceMapArgs (decoded : SyscallDecodeResult) (maxASID : Nat)
     : Except KernelError VSpaceMapArgs := do
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   let r2 ← requireMsgReg decoded.msgRegs 2
   let r3 ← requireMsgReg decoded.msgRegs 3
-  -- U2-G/U-H08: Validate ASID within 16-bit range (ARM64 standard: maxASID = 65536)
+  -- U2-G/U-H08: Validate ASID within platform-configured range
+  -- AH3-C (L-14): Parameterized — callers pass `st.machine.maxASID`
   let asid := ASID.ofNat r0.val
-  if !asid.isValidForConfig 65536 then .error .asidNotBound
+  if !asid.isValidForConfig maxASID then .error .asidNotBound
   else
   -- U2-B/U-H06: Validate VAddr lies within ARM64 48-bit canonical address range
   let vaddr := VAddr.ofNat r1.val
@@ -225,13 +226,14 @@ def decodeVSpaceMapArgs (decoded : SyscallDecodeResult)
 
 /-- Decode VSpace unmap arguments from message registers.
     Requires 2 message registers (asid, vaddr). -/
-def decodeVSpaceUnmapArgs (decoded : SyscallDecodeResult)
+def decodeVSpaceUnmapArgs (decoded : SyscallDecodeResult) (maxASID : Nat)
     : Except KernelError VSpaceUnmapArgs := do
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
-  -- U2-G/U-H08: Validate ASID within 16-bit range
+  -- U2-G/U-H08: Validate ASID within platform-configured range
+  -- AH3-C (L-14): Parameterized — callers pass `st.machine.maxASID`
   let asid := ASID.ofNat r0.val
-  if !asid.isValidForConfig 65536 then .error .asidNotBound
+  if !asid.isValidForConfig maxASID then .error .asidNotBound
   else
   -- AE4-B (U-26/ARCH-03): Validate VAddr canonical for consistency with
   -- decodeVSpaceMapArgs. Non-canonical addresses fault on ARM64 hardware;
@@ -437,9 +439,9 @@ theorem decodeLifecycleRetypeArgs_error_of_invalid_type (d : SyscallDecodeResult
     dif_pos (show 2 < d.msgRegs.size by omega), hTag]
 
 /-- T6-C/D: VSpace map decode fails if fewer than 4 message registers. -/
-theorem decodeVSpaceMapArgs_error_of_insufficient_regs (d : SyscallDecodeResult)
+theorem decodeVSpaceMapArgs_error_of_insufficient_regs (d : SyscallDecodeResult) (maxASID : Nat)
     (h : d.msgRegs.size < 4) :
-    ∃ e, decodeVSpaceMapArgs d = .error e := by
+    ∃ e, decodeVSpaceMapArgs d maxASID = .error e := by
   refine ⟨.invalidMessageInfo, ?_⟩
   simp only [decodeVSpaceMapArgs, bind, Except.bind]
   by_cases h0 : 0 < d.msgRegs.size
@@ -454,10 +456,10 @@ theorem decodeVSpaceMapArgs_error_of_insufficient_regs (d : SyscallDecodeResult)
   · rw [requireMsgReg_unfold_err _ _ h0]
 
 /-- U2-B: VSpace map decode fails if VAddr is non-canonical (≥ 2^48). -/
-theorem decodeVSpaceMapArgs_error_of_noncanonical_vaddr (d : SyscallDecodeResult)
+theorem decodeVSpaceMapArgs_error_of_noncanonical_vaddr (d : SyscallDecodeResult) (maxASID : Nat)
     (hSize : 4 ≤ d.msgRegs.size)
     (hVAddr : (VAddr.ofNat d.msgRegs[1].val).isCanonical = false) :
-    ∃ e, decodeVSpaceMapArgs d = .error e := by
+    ∃ e, decodeVSpaceMapArgs d maxASID = .error e := by
   simp only [decodeVSpaceMapArgs, bind, Except.bind,
     requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
     dif_pos (show 1 < d.msgRegs.size by omega),
@@ -470,10 +472,10 @@ theorem decodeVSpaceMapArgs_error_of_noncanonical_vaddr (d : SyscallDecodeResult
     exact ⟨.addressOutOfBounds, by simp [hVAddr]⟩
 
 /-- T6-D/M-ARCH-1: VSpace map decode fails if the permissions word is invalid (≥ 32). -/
-theorem decodeVSpaceMapArgs_error_of_invalid_perms (d : SyscallDecodeResult)
+theorem decodeVSpaceMapArgs_error_of_invalid_perms (d : SyscallDecodeResult) (maxASID : Nat)
     (hSize : 4 ≤ d.msgRegs.size)
     (hPerms : PagePermissions.ofNat? d.msgRegs[3].val = none) :
-    ∃ e, decodeVSpaceMapArgs d = .error e := by
+    ∃ e, decodeVSpaceMapArgs d maxASID = .error e := by
   simp only [decodeVSpaceMapArgs, bind, Except.bind,
     requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
     dif_pos (show 1 < d.msgRegs.size by omega),
@@ -493,13 +495,13 @@ theorem decodeVSpaceMapArgs_error_of_invalid_perms (d : SyscallDecodeResult)
     ASID is invalid, VAddr is non-canonical, or the permissions word is invalid.
     Four failure modes:
     1. `msgRegs.size < 4` → `requireMsgReg` returns error
-    2. ASID (msgRegs[0]) ≥ 65536 → asidNotBound
+    2. ASID (msgRegs[0]) ≥ maxASID → asidNotBound
     3. VAddr (msgRegs[1]) ≥ 2^48 → addressOutOfBounds
     4. `msgRegs.size ≥ 4`, ASID valid, VAddr canonical, but `PagePermissions.ofNat?` returns none → invalidSyscallArgument (X5-E) -/
-theorem decodeVSpaceMapArgs_error_iff (d : SyscallDecodeResult) :
-    (∃ e, decodeVSpaceMapArgs d = .error e) ↔
+theorem decodeVSpaceMapArgs_error_iff (d : SyscallDecodeResult) (maxASID : Nat) :
+    (∃ e, decodeVSpaceMapArgs d maxASID = .error e) ↔
     (d.msgRegs.size < 4 ∨
-     (∃ (h : 3 < d.msgRegs.size), (ASID.ofNat (d.msgRegs[0]'(by omega)).val).isValidForConfig 65536 = false) ∨
+     (∃ (h : 3 < d.msgRegs.size), (ASID.ofNat (d.msgRegs[0]'(by omega)).val).isValidForConfig maxASID = false) ∨
      (∃ (h : 3 < d.msgRegs.size), (VAddr.ofNat (d.msgRegs[1]'(by omega)).val).isCanonical = false) ∨
      (∃ (h : 3 < d.msgRegs.size), PagePermissions.ofNat? (d.msgRegs[3]'h).val = none)) := by
   constructor
@@ -518,7 +520,7 @@ theorem decodeVSpaceMapArgs_error_iff (d : SyscallDecodeResult) :
         right; left
         exact ⟨h3, by
           simp only [Bool.not_eq_true'] at hAsidInvalid
-          cases hc : (ASID.ofNat d.msgRegs[0].val).isValidForConfig 65536
+          cases hc : (ASID.ofNat d.msgRegs[0].val).isValidForConfig maxASID
           · rfl
           · rw [hc] at hAsidInvalid; simp at hAsidInvalid⟩
       · -- ASID valid → check VAddr
@@ -541,7 +543,7 @@ theorem decodeVSpaceMapArgs_error_iff (d : SyscallDecodeResult) :
               assumption⟩
   · intro h
     match h with
-    | .inl hLt => exact decodeVSpaceMapArgs_error_of_insufficient_regs d hLt
+    | .inl hLt => exact decodeVSpaceMapArgs_error_of_insufficient_regs d maxASID hLt
     | .inr (.inl ⟨h3, hAsid⟩) =>
       exact ⟨.asidNotBound, by
         simp only [decodeVSpaceMapArgs, bind, Except.bind,
@@ -549,22 +551,22 @@ theorem decodeVSpaceMapArgs_error_iff (d : SyscallDecodeResult) :
           dif_pos (show 1 < d.msgRegs.size by omega),
           dif_pos (show 2 < d.msgRegs.size by omega),
           dif_pos (show 3 < d.msgRegs.size by omega)]
-        have : (!(ASID.ofNat d.msgRegs[0].val).isValidForConfig 65536) = true := by
+        have : (!(ASID.ofNat d.msgRegs[0].val).isValidForConfig maxASID) = true := by
           rw [hAsid]; rfl
         simp [this]⟩
     | .inr (.inr (.inl ⟨h3, hVAddr⟩)) =>
-      exact decodeVSpaceMapArgs_error_of_noncanonical_vaddr d (by omega) hVAddr
+      exact decodeVSpaceMapArgs_error_of_noncanonical_vaddr d maxASID (by omega) hVAddr
     | .inr (.inr (.inr ⟨h3, hPerms⟩)) =>
-      exact decodeVSpaceMapArgs_error_of_invalid_perms d (by omega) hPerms
+      exact decodeVSpaceMapArgs_error_of_invalid_perms d maxASID (by omega) hPerms
 
 /-- AE4-B: VSpace unmap decode fails iff fewer than 2 message registers,
     ASID invalid, or VAddr non-canonical. -/
-theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) :
-    (∃ e, decodeVSpaceUnmapArgs d = .error e) ↔
+theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) (maxASID : Nat) :
+    (∃ e, decodeVSpaceUnmapArgs d maxASID = .error e) ↔
     (d.msgRegs.size < 2 ∨
-     (∃ (h : 1 < d.msgRegs.size), (ASID.ofNat (d.msgRegs[0]'(by omega)).val).isValidForConfig 65536 = false) ∨
+     (∃ (h : 1 < d.msgRegs.size), (ASID.ofNat (d.msgRegs[0]'(by omega)).val).isValidForConfig maxASID = false) ∨
      (∃ (h : 1 < d.msgRegs.size),
-       (ASID.ofNat (d.msgRegs[0]'(by omega)).val).isValidForConfig 65536 = true ∧
+       (ASID.ofNat (d.msgRegs[0]'(by omega)).val).isValidForConfig maxASID = true ∧
        (VAddr.ofNat (d.msgRegs[1]'(by omega)).val).isCanonical = false)) := by
   constructor
   · intro ⟨e, he⟩
@@ -575,9 +577,9 @@ theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) :
         requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
         dif_pos (show 1 < d.msgRegs.size by omega)] at he
       -- Branch on ASID validity
-      by_cases hAsid : (ASID.ofNat d.msgRegs[0].val).isValidForConfig 65536 = true
+      by_cases hAsid : (ASID.ofNat d.msgRegs[0].val).isValidForConfig maxASID = true
       · -- ASID valid
-        have hAsidBool : (!(ASID.ofNat d.msgRegs[0].val).isValidForConfig 65536) = false := by
+        have hAsidBool : (!(ASID.ofNat d.msgRegs[0].val).isValidForConfig maxASID) = false := by
           rw [hAsid]; rfl
         simp only [hAsidBool, Bool.false_eq_true, ↓reduceIte] at he
         -- Branch on VAddr canonicity
@@ -596,7 +598,7 @@ theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) :
       · -- ASID invalid
         right; left
         exact ⟨h1, by
-          cases hc : (ASID.ofNat d.msgRegs[0].val).isValidForConfig 65536
+          cases hc : (ASID.ofNat d.msgRegs[0].val).isValidForConfig maxASID
           · rfl
           · exact absurd hc hAsid⟩
   · intro h
@@ -613,7 +615,7 @@ theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) :
         simp only [decodeVSpaceUnmapArgs, bind, Except.bind,
           requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
           dif_pos (show 1 < d.msgRegs.size by omega)]
-        have : (!(ASID.ofNat d.msgRegs[0].val).isValidForConfig 65536) = true := by
+        have : (!(ASID.ofNat d.msgRegs[0].val).isValidForConfig maxASID) = true := by
           rw [hAsid]; rfl
         simp [this]⟩
     | .inr (.inr ⟨h1, hAsidOk, hVAddr⟩) =>
@@ -621,7 +623,7 @@ theorem decodeVSpaceUnmapArgs_error_iff (d : SyscallDecodeResult) :
         simp only [decodeVSpaceUnmapArgs, bind, Except.bind,
           requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
           dif_pos (show 1 < d.msgRegs.size by omega)]
-        have hAsidTrue : (!(ASID.ofNat d.msgRegs[0].val).isValidForConfig 65536) = false := by
+        have hAsidTrue : (!(ASID.ofNat d.msgRegs[0].val).isValidForConfig maxASID) = false := by
           rw [hAsidOk]; rfl
         have hVAddrFalse : (!(VAddr.ofNat d.msgRegs[1].val).isCanonical) = true := by
           rw [hVAddr]; rfl
@@ -695,19 +697,19 @@ private theorem pagePermissions_ofNat?_toNat (p : PagePermissions)
   simp [PagePermissions.ofNat?, hLt, hWxRt]
 
 /-- U2-B/U2-G/V4-K: Round-trip requires VAddr is canonical (within 48-bit range),
-    ASID is valid for config 65536, and permissions are W^X compliant.
+    ASID is valid for the platform-configured maxASID, and permissions are W^X compliant.
     V4-K: W^X compliance is now enforced at decode time by `ofNat?`. -/
-theorem decodeVSpaceMapArgs_roundtrip (args : VSpaceMapArgs)
-    (hAsid : args.asid.isValidForConfig 65536 = true)
+theorem decodeVSpaceMapArgs_roundtrip (args : VSpaceMapArgs) (maxASID : Nat)
+    (hAsid : args.asid.isValidForConfig maxASID = true)
     (hVAddr : args.vaddr.isCanonical = true)
     (hWx : args.perms.wxCompliant = true) :
-    decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs args)) = .ok args := by
+    decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs args)) maxASID = .ok args := by
   rcases args with ⟨a, v, p, perms⟩
-  show decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs ⟨a, v, p, perms⟩)) = .ok ⟨a, v, p, perms⟩
+  show decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs ⟨a, v, p, perms⟩)) maxASID = .ok ⟨a, v, p, perms⟩
   -- U2-G: The ASID validity check needs to pass; derive that from hAsid
-  have hAsidValid : (ASID.ofNat a.toNat).isValidForConfig 65536 = true := by
+  have hAsidValid : (ASID.ofNat a.toNat).isValidForConfig maxASID = true := by
     simp only [ASID.ofNat, ASID.toNat]; exact hAsid
-  have hAsidNotFalse : (!(ASID.ofNat a.toNat).isValidForConfig 65536) = false := by
+  have hAsidNotFalse : (!(ASID.ofNat a.toNat).isValidForConfig maxASID) = false := by
     rw [hAsidValid]; rfl
   -- U2-B: The VAddr canonical check needs to pass; derive that from hVAddr
   have hCanon : (VAddr.ofNat v.toNat).isCanonical = true := by
@@ -715,7 +717,7 @@ theorem decodeVSpaceMapArgs_roundtrip (args : VSpaceMapArgs)
   have hNotCanonFalse : (!(VAddr.ofNat v.toNat).isCanonical) = false := by
     rw [hCanon]; rfl
   rcases perms with ⟨r, w, e, u, c⟩
-  have hA : a.isValidForConfig 65536 = true := hAsid
+  have hA : a.isValidForConfig maxASID = true := hAsid
   have hV : v.isCanonical = true := hVAddr
   -- V4-K: W^X cases (write=true, execute=true) are excluded by hWx
   cases r <;> cases w <;> cases e <;> cases u <;> cases c <;>
@@ -725,12 +727,12 @@ theorem decodeVSpaceMapArgs_roundtrip (args : VSpaceMapArgs)
       ASID.ofNat_toNat, VAddr.ofNat_toNat, PAddr.ofNat_toNat, pure, Except.pure]
 
 /-- Round-trip: encoding then decoding VSpaceUnmapArgs recovers the original.
-    U2-G: Requires ASID is valid for config 65536.
+    U2-G: Requires ASID is valid for the platform-configured maxASID.
     AE4-B: Requires VAddr is canonical. -/
-theorem decodeVSpaceUnmapArgs_roundtrip (args : VSpaceUnmapArgs)
-    (hAsid : args.asid.isValidForConfig 65536 = true)
+theorem decodeVSpaceUnmapArgs_roundtrip (args : VSpaceUnmapArgs) (maxASID : Nat)
+    (hAsid : args.asid.isValidForConfig maxASID = true)
     (hVAddr : args.vaddr.isCanonical = true) :
-    decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) = .ok args := by
+    decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) maxASID = .ok args := by
   rcases args with ⟨a, v⟩
   simp [decodeVSpaceUnmapArgs, encodeVSpaceUnmapArgs, stubDecoded,
     bind, Except.bind, requireMsgReg, ASID.ofNat_toNat, VAddr.ofNat_toNat,
@@ -1048,18 +1050,18 @@ theorem decodeReplyRecvArgs_roundtrip (args : ReplyRecvArgs) :
     CSpaceMintArgs additionally requires rights validity for lossless roundtrip
     through `AccessRightSet.ofNat`. Parallel to `decode_components_roundtrip`
     in `RegisterDecode.lean`. -/
-theorem decode_layer2_roundtrip_all :
+theorem decode_layer2_roundtrip_all (maxASID : Nat) :
     (∀ args, args.rights.valid → args.badge.valid →
       decodeCSpaceMintArgs (stubDecoded (encodeCSpaceMintArgs args)) = .ok args) ∧
     (∀ args, decodeCSpaceCopyArgs (stubDecoded (encodeCSpaceCopyArgs args)) = .ok args) ∧
     (∀ args, decodeCSpaceMoveArgs (stubDecoded (encodeCSpaceMoveArgs args)) = .ok args) ∧
     (∀ args, decodeCSpaceDeleteArgs (stubDecoded (encodeCSpaceDeleteArgs args)) = .ok args) ∧
     (∀ args, decodeLifecycleRetypeArgs (stubDecoded (encodeLifecycleRetypeArgs args)) = .ok args) ∧
-    (∀ args, args.asid.isValidForConfig 65536 = true → args.vaddr.isCanonical = true →
+    (∀ args, args.asid.isValidForConfig maxASID = true → args.vaddr.isCanonical = true →
       args.perms.wxCompliant = true →
-      decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs args)) = .ok args) ∧
-    (∀ args, args.asid.isValidForConfig 65536 = true → args.vaddr.isCanonical = true →
-      decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) = .ok args) ∧
+      decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs args)) maxASID = .ok args) ∧
+    (∀ args, args.asid.isValidForConfig maxASID = true → args.vaddr.isCanonical = true →
+      decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) maxASID = .ok args) ∧
     (∀ args, decodeServiceRegisterArgs (stubDecoded (encodeServiceRegisterArgs args)) = .ok args) ∧
     (∀ args, decodeServiceRevokeArgs (stubDecoded (encodeServiceRevokeArgs args)) = .ok args) ∧
     (∀ args, args.badge.valid →
@@ -1074,8 +1076,8 @@ theorem decode_layer2_roundtrip_all :
    decodeCSpaceMoveArgs_roundtrip,
    decodeCSpaceDeleteArgs_roundtrip,
    decodeLifecycleRetypeArgs_roundtrip,
-   fun args hA hV hWx => decodeVSpaceMapArgs_roundtrip args hA hV hWx,
-   fun args hA hV => decodeVSpaceUnmapArgs_roundtrip args hA hV,
+   fun args hA hV hWx => decodeVSpaceMapArgs_roundtrip args maxASID hA hV hWx,
+   fun args hA hV => decodeVSpaceUnmapArgs_roundtrip args maxASID hA hV,
    decodeServiceRegisterArgs_roundtrip,
    decodeServiceRevokeArgs_roundtrip,
    fun args h => decodeNotificationSignalArgs_roundtrip args h,

@@ -1663,7 +1663,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
     syscallId := .vspaceMap
     msgRegs := #[⟨10⟩, ⟨4096⟩, ⟨8192⟩, ⟨1⟩]  -- asid=10, vaddr=4096, paddr=8192, perms=1(read)
   }
-  match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs vspaceDecoded with
+  match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeVSpaceMapArgs vspaceDecoded 65536 with
   | .error e => IO.println s!"[KSD-005] vspaceMap decode error: {reprStr e}"
   | .ok mapArgs =>
     -- S6-A/T6-C: perms are now typed as PagePermissions (validated at decode)

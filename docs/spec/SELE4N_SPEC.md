@@ -139,7 +139,7 @@ security model while introducing improvements that the Lean 4 proof framework en
 | **IPC queuing** | Intrusive linked list | Dual-queue model (`sendQ`/`receiveQ`) with O(1) arbitrary removal; `blockedOnCall` state for call/reply semantics; reply-target scoping for confused-deputy prevention; formal `dualQueueSystemInvariant` with doubly-linked integrity (WS-H5) |
 | **Information flow** | Binary high/low partition | Parameterized N-domain labels with per-endpoint flow policies |
 | **Scheduling** | Priority-based round-robin | Priority + EDF scheduling with dequeue-on-dispatch semantics, per-TCB register context with inline context switch, and domain-aware partitioning |
-| **Revocation** | Silent error swallowing | Strict variant (`cspaceRevokeCdtStrict`) reporting first failure with context |
+| **Revocation** | Silent error swallowing | Strict variant (`cspaceRevokeCdtStrict`) reporting first failure with context; CDT node preserved on slot deletion failure (AH3-A) |
 | **Syscall boundary** *(WS-J1-A/B/C/D completed; WS-V V2 complete)* | C code extracts args from registers | Typed register wrappers (J1-A) + total decode layer with `RegisterDecode.lean`, complete round-trip proof surface for all 3 decode components (`decodeCapPtr_roundtrip`, `decodeSyscallId_roundtrip`, `decodeMsgInfo_roundtrip` with bitwise `Nat.testBit` extensionality, plus composite `decode_components_roundtrip`), determinism proof, and error exclusivity (J1-B) + `syscallEntry` register-sourced entry point with capability-gated dispatch to all 17 kernel operations (13 original + `notificationSignal`/`notificationWait`/`replyRecv` added in V2), soundness theorems (J1-C) + invariant preservation and NI coverage for decode/dispatch path with `registerDecodeConsistent` predicate and 2 new `NonInterferenceStep` constructors (J1-D); `MessageInfo` label field bounded to 20 bits (seL4 convention, V2-E/V2-H); cap transfer slot base configurable via `capRecvSlot` (V2-F/V2-G) |
 
 These are not abstract research extensions — they are design decisions that will be
@@ -307,7 +307,10 @@ the TCB's `ipcBuffer` field. The operation is wired into `dispatchWithCap`
 equivalent (`frozenSetIPCBuffer`). Validation correctness theorems prove that
 successful validation implies alignment and mapped-writable guarantees.
 Frame preservation is trivial since `ipcBuffer` is not referenced by any
-scheduler, IPC, cross-subsystem, or capability invariant predicate.
+scheduler, IPC, cross-subsystem, or capability invariant predicate. As of
+AH3-B (v0.27.4), the TCB update delegates to `storeObject` — ensuring
+consistency with the canonical object storage path and eliminating manual
+struct-with replication.
 
 **D4 (v0.25.0):** Priority Inheritance Protocol is now fully implemented.
 A deterministic PIP temporarily elevates a server thread's effective scheduling
