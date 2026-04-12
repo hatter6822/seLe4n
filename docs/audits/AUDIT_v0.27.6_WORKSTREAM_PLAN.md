@@ -14,16 +14,16 @@
 The v0.27.6 Comprehensive Pre-Release Audit examined all 159 Lean files
 (~90,000 lines) and 48 Rust files (~7,500 lines). It identified 60 findings
 (5 HIGH, 27 MEDIUM, 28 LOW). This workstream plan addresses all actionable
-findings through 7 phases with 37 sub-tasks, after filtering out erroneous
-findings, already-tracked deferrals, and confirmed-correct design decisions.
+findings through 7 phases with 37 sub-tasks, after filtering out 4 erroneous
+findings, 6 already-tracked deferrals, and 12 confirmed-correct design decisions.
 
 ### 1.1 Finding Disposition Summary
 
 | Disposition | Count | Details |
 |-------------|-------|---------|
 | **Actionable (code change)** | 22 | H-01, H-02, H-03, H-04, H-05, M-01, M-04, M-09, M-14, M-15, M-19, M-20, M-22, M-26, M-27, L-05, L-09, L-10, L-15, L-17, L-24, L-26 |
-| **Documentation-only** | 15 | M-02, M-03, M-07, M-08, M-10, M-11, M-13, M-16, M-17, M-18, M-21, M-23, M-24, M-25, L-02 |
-| **Erroneous / refuted** | 5 | M-05, M-12, L-06, L-13, L-28 |
+| **Documentation-only** | 16 | M-02, M-03, M-07, M-08, M-10, M-11, M-13, M-16, M-17, M-18, M-21, M-23, M-24, M-25, L-02, L-13 |
+| **Erroneous / refuted** | 4 | M-05, M-12, L-06, L-28 |
 | **No-action (confirmed correct)** | 12 | M-06, L-01, L-03, L-04, L-07, L-08, L-11, L-12, L-14, L-16, L-19, L-22 |
 | **Deferred (WS-V / hardware)** | 6 | L-18, L-20, L-21, L-23, L-25, L-27 |
 
@@ -52,14 +52,13 @@ Every finding from the baseline audit was independently re-verified against
 source code before inclusion in this plan. This section classifies each finding
 and provides the verification rationale.
 
-### 2.1 Erroneous / Refuted Findings (5)
+### 2.1 Erroneous / Refuted Findings (4)
 
 | Finding | Audit Severity | Actual | Rationale |
 |---------|---------------|--------|-----------|
 | M-05 | MEDIUM | **ERRONEOUS** | `timeoutBlockedThreads` does NOT discard per-thread timeout errors. Return type is `SystemState × List (ThreadId × KernelError)` (Core.lean:505). Errors are explicitly collected via `errs ++ [(tid, e)]` (line 519). This was fixed in AG1-B. The audit finding is factually incorrect. |
 | M-12 | MEDIUM | **ERRONEOUS** | `resolveCapAddress` intermediate CNode read-right skipping is a **documented deliberate design divergence** from seL4 (Operations.lean:85-92, U-M25 annotation). Rights are enforced at the operation layer via `capHasRight` guards at each callsite (`cspaceMint`, `cspaceCopy`, etc.), covering all access paths. This is an architectural design decision, not a vulnerability. |
 | L-06 | LOW | **ERRONEOUS** | CDT acyclicity is NOT externalized for expanding operations. Grep for `retype.*acyclicity` returns no results. Acyclicity proofs for retype remain internal via `edgeWellFounded` and `freshChild_not_reachable` bridge (AE4-C/U-18). |
-| L-13 | LOW | **ERRONEOUS** | `schedContextBind` DOES check thread state. Precondition checks at line 142-144 verify the TCB is `.unbound` before binding. The audit claim that "doesn't check thread state" is factually wrong. |
 | L-28 | LOW | **ERRONEOUS** | StateBuilder DOES check IPC/SchedContext/CDT invariants. `InvariantChecks.stateInvariantChecksFor` (lines 321-363) includes endpoint dual-queue validation, notification queue/state checks, CDT childMap/parentMap consistency, and blocked-thread runability checks. |
 
 ### 2.2 No-Action Findings (12)
@@ -140,6 +139,7 @@ are needed.
 | M-24 | Document `eventuallyExits` externalized hypothesis scope (BandExhaustion.lean:34-43). Note unbound-thread limitation and required external progress assumption. | AI6 |
 | M-25 | Document WCRT theorem externalized hypotheses (WCRT.lean:167-187): `hDomainActiveRunnable` and `hBandProgress`. Note these encode runtime properties not mechanically derivable. | AI6 |
 | L-02 | Document `allTablesInvExtK` 17-deep tuple projection fragility (State.lean:344) and named-extractor mitigation (Builder.lean:30-116). Cross-reference AF-26 tuple projection documentation. | AI6 |
+| L-13 | Document `schedContextBind` thread-state gap: lines 142-144 check `tcb.schedContextBinding` (binding state: `.unbound`/`.bound`/`.donated`) but NOT the thread's operational state (`ipcState`, scheduler state). Binding a thread mid-IPC-operation is permitted by design (matches seL4 MCS semantics where binding is independent of execution state). Add design-rationale comment noting this is intentional. | AI6 |
 
 ---
 
@@ -240,7 +240,7 @@ Current state:
 - Line 179: `pub static mut BOOT_UART: Uart = Uart::new(UART0_BASE)`
 - Lines 188-194: `with_boot_uart()` helper wraps unsafe access via `&raw mut`
 - Lines 200-203: `init_boot_uart()` called once from `boot.rs:23`
-- Lines 213-223: `kprint!` macro accesses via raw pointer dereference
+- Line 213: `kprint!` macro accesses via raw pointer dereference
 - No `SpinLock` or `Mutex` type exists in the crate (zero dependencies)
 - Only file referencing `BOOT_UART` is `uart.rs` itself
 
@@ -614,10 +614,10 @@ specific priority value used for insertion. Each must be checked:
 |---|---------|------|--------------|
 | 1 | `handleYield_preserves_queueCurrentConsistent` | 359 | Low — checks current ∉ runQueue, not priority |
 | 2 | `handleYield_preserves_wellFormed` | 379 | **Medium** — may unfold `insert` and check bucket structure |
-| 3 | `handleYield_preserves_runQueueUnique` | 400 | Low — uniqueness is priority-independent |
-| 4 | `handleYield_preserves_currentThreadValid` | 431 | Low — checks TCB existence, not priority |
-| 5 | `handleYield_preserves_currentThreadInActiveDomain` | 454 | Low — domain check, not priority |
-| 6 | `handleYield_preserves_schedulerInvariantBundle` | 501 | **Medium** — composes sub-invariants |
+| 3 | `handleYield_preserves_runQueueUnique` | 396 | Low — uniqueness is priority-independent |
+| 4 | `handleYield_preserves_currentThreadValid` | 428 | Low — checks TCB existence, not priority |
+| 5 | `handleYield_preserves_currentThreadInActiveDomain` | 451 | Low — domain check, not priority |
+| 6 | `handleYield_preserves_schedulerInvariantBundle` | 497 | **Medium** — composes sub-invariants |
 | 7 | `handleYield_preserves_timeSlicePositive` | 911 | Low — time-slice field, not priority |
 | 8 | `handleYield_preserves_currentTimeSlicePositive` | 1165 | Low — same |
 | 9 | `handleYield_preserves_runnableThreadsAreTCBs` | 1484 | Low — TCB existence |
@@ -1144,7 +1144,7 @@ predicates
 **File**: `SeLe4n/Platform/Sim/BootContract.lean`, lines 23-36
 **Type**: Multi-step fix (3 sub-steps)
 
-The `BootBoundaryContract` structure (Assumptions.lean:24-33) has 4 fields:
+The `BootBoundaryContract` structure (Assumptions.lean:27-33) has 4 fields:
 ```lean
 structure BootBoundaryContract where
   objectTypeMetadataConsistent : Prop
@@ -1222,7 +1222,7 @@ lake build SeLe4n.Platform.Sim.Contract
 **File**: `SeLe4n/Platform/Sim/BootContract.lean`, lines 42-48
 **Type**: Multi-step fix (3 sub-steps)
 
-The `InterruptBoundaryContract` structure (Assumptions.lean:44-53) has 4
+The `InterruptBoundaryContract` structure (Assumptions.lean:49-53) has 4
 fields: 2 predicates + 2 decidable instances:
 ```lean
 structure InterruptBoundaryContract where
@@ -1430,15 +1430,16 @@ files. No behavioral changes.
 | M-17 | `Adapter.lean:136-140` | Add note: "Context switch does not model TLB/ASID maintenance. ASID switching is performed by VSpace operations (VSpaceBackend.lean) independently. Atomic TLB+ASID+context switch coordination deferred to WS-V." |
 | M-18 | `Adapter.lean` or `Invariant.lean` | Add note: "Cross-module composition gap: per-subsystem invariant preservation is proven independently (TLB consistency, cache coherency, page table WF). Relational composition theorem (proving TLB + cache + page table maintain simultaneous coherency through compound operations) deferred to WS-V." |
 
-#### AI6-D: Model & capability documentation batch (M-21, L-02)
+#### AI6-D: Model, capability & SchedContext documentation batch (M-21, L-02, L-13)
 
-**Findings**: 2 model-layer documentation items
+**Findings**: 3 model/SchedContext-layer documentation items
 **Type**: Documentation-only batch
 
 | Finding | File | Action |
 |---------|------|--------|
 | M-21 | `Structures.lean:2234-2246` | Verify existing scope note is sufficient. Add cross-reference: "See TPI-DOC for full fuel sufficiency formal bridge (deferred to WS-V). Current proof covers direct children (depth 1) only. `edgeWellFounded` provides the inductive foundation for the full proof." |
 | L-02 | `State.lean:344` | Add note: "`allTablesInvExtK` 17-deep tuple projection is structurally fragile but stable under the current invariant bundle. Named extractors (Builder.lean:30-116) provide maintainable access. See AF-26 for design rationale." |
+| L-13 | `SchedContext/Operations.lean:142-144` | Add design-rationale comment: "`schedContextBind` checks `tcb.schedContextBinding` (binding state: `.unbound`) but not the thread's operational state (`ipcState`, scheduler state). This matches seL4 MCS semantics where SchedContext binding is independent of thread execution state — binding can occur while a thread is blocked, ready, or in any other operational state. Operational safety is ensured by the SchedContext invariant bundle, not by per-bind state checks." |
 
 #### AI6-E: Fix stale documentation references (L-15, L-24)
 
@@ -1720,7 +1721,7 @@ within the parallel AI1–AI5 band is:
 | L-10 | LOW | Actionable | AI3 | configDefaultTimeSlice no positivity |
 | L-11 | LOW | No-action | — | Not a silent no-op |
 | L-12 | LOW | No-action | — | Oldest-first truncation correct |
-| L-13 | LOW | **Erroneous** | — | Thread state IS checked |
+| L-13 | LOW | Doc-only | AI6 | Binding state checked, not thread operational state |
 | L-14 | LOW | No-action | — | Object count bound conservative |
 | L-15 | LOW | Actionable | AI6 | Stale maxBlockingDepth reference |
 | L-16 | LOW | No-action | — | 8× bound documented (AF4-F) |
@@ -1748,7 +1749,7 @@ within the parallel AI1–AI5 band is:
 | AI3 | `Core.lean`, `Selection.lean`, `PriorityManagement.lean`, `Preservation.lean`, `PriorityPreservation.lean`, `State.lean` | — | — | — |
 | AI4 | `Transport.lean`, `Donation.lean`*, `DeviceTree.lean`, `Timeout.lean`, `EndpointPreservation.lean`, `Structural.lean`, `MainTraceHarness.lean` | — | — | — |
 | AI5 | `BootContract.lean`, `Policy.lean`, `API.lean`, `MainTraceHarness.lean`, `InformationFlowSuite.lean`, `TraceSequenceProbe.lean` | — | — | — |
-| AI6 | `API.lean`†, `RunQueue.lean`†, `BlockingGraph.lean`†, `BandExhaustion.lean`†, `WCRT.lean`†, `Boot.lean`†, `DeviceTree.lean`†, `MmioAdapter.lean`†, `VSpace.lean`†, `CacheModel.lean`†, `Adapter.lean`†, `Structures.lean`†, `State.lean`†, `RuntimeContract.lean`† | — | `SELE4N_SPEC.md` | — |
+| AI6 | `API.lean`†, `RunQueue.lean`†, `BlockingGraph.lean`†, `BandExhaustion.lean`†, `WCRT.lean`†, `Boot.lean`†, `DeviceTree.lean`†, `MmioAdapter.lean`†, `VSpace.lean`†, `CacheModel.lean`†, `Adapter.lean`†, `Structures.lean`†, `State.lean`†, `RuntimeContract.lean`†, `SchedContext/Operations.lean`† | — | `SELE4N_SPEC.md` | — |
 | AI7 | `Budget.lean`†, `Operations.lean`, fixtures | `boot.rs`, `Cargo.toml` | `CHANGELOG.md`, `WORKSTREAM_HISTORY.md`, `CLAUDE.md`, READMEs | `check_version_sync.sh` |
 
 \* = import addition only
