@@ -1,3 +1,53 @@
+## v0.27.10 — WS-AI Phase AI4: IPC & SchedContext Hardening
+
+Phase AI4 of WS-AI Post-Audit Comprehensive Remediation. Wires
+`cleanupPreReceiveDonation` into the production receive path to prevent
+SchedContext leaks, surfaces DTB parser fuel exhaustion as a typed error, and
+removes unused `_endpointId` parameter from `timeoutAwareReceive`. 4 sub-tasks
+(AI4-A through AI4-D). Gate: `lake build` + `test_smoke.sh`. Zero sorry/axiom.
+
+### Changes
+
+- **AI4-A** (M-01/MEDIUM): Wired `cleanupPreReceiveDonation` into the
+  `endpointReceiveDual` no-sender branch (Transport.lean:1674). When a server
+  blocks on `.receive` without replying to a prior `.call`, the stale donated
+  SchedContext is returned to the original owner before blocking. Moved
+  `cleanupPreReceiveDonation` from Donation.lean to Endpoint.lean to break
+  import cycle (Donation → Transport → Core → Operations → Endpoint). Created
+  frame lemma suite in Defs.lean: `cleanupPreReceiveDonation_scheduler_eq`,
+  `cleanupPreReceiveDonation_preserves_objects_invExt`,
+  `returnDonatedSchedContext_notification_backward`,
+  `returnDonatedSchedContext_endpoint_backward`,
+  `cleanupPreReceiveDonation_tcb_forward`,
+  `cleanupPreReceiveDonation_tcb_ipcState_backward`,
+  `cleanupPreReceiveDonation_frame_helper`. Updated 16+ preservation theorems
+  in EndpointPreservation.lean, Structural.lean, and
+  InformationFlow/Invariant/Operations.lean. Extended `projectKernelObject`
+  (Projection.lean) to strip `schedContextBinding` and `boundThread` for NI
+  transparency. Added `objectIndexSetComplete` predicate (State.lean) with
+  preservation through `storeObject`, `ensureRunnable`,
+  `storeTcbIpcStateAndMessage` for NI projection proof chain.
+- **AI4-B** (M-09/MEDIUM): DTB parser fuel exhaustion now returns typed
+  `Except DeviceTreeParseError` instead of `Option`. Added
+  `DeviceTreeParseError` inductive type with `.fuelExhausted` and
+  `.malformedBlob` variants. `parseFdtNodes` return type changed from
+  `Option (List FdtNode)` to `Except DeviceTreeParseError (List FdtNode)`.
+  Internal `go`/`parseNodeContents` helpers remain `Option` (partial-result
+  pattern). Sole caller `fromDtbFull` updated with typed error matching.
+  Existing `parseFdtHeader_fromDtbFull_some` theorem unaffected.
+- **AI4-C** (L-05/LOW): Removed unused `_endpointId : SeLe4n.ObjId` parameter
+  from `timeoutAwareReceive` (Timeout.lean:114). Updated 2 test call sites in
+  MainTraceHarness.lean. No theorems affected (function is test-only).
+
+### Statistics
+
+- Files modified: 12 Lean files, 3 Rust files, 18 documentation files
+- Lines added: ~2,700 (frame lemmas, preservation proofs, NI projection,
+  objectIndexSetComplete invariant, error type, documentation)
+- Lines removed: ~470 (moved function, refactored proofs, old sorry stubs)
+- Sorry count: 0
+- Axiom count: 0
+
 ## v0.27.9 — WS-AI Phase AI3: Scheduler & PIP Correctness
 
 Phase AI3 of WS-AI Post-Audit Comprehensive Remediation. Fixes priority

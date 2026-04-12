@@ -1419,6 +1419,130 @@ theorem endpointSendDual_preserves_projection
                 sender _ _ hSenderObjHigh hObjInv1 hTcbStore,
                 hProjEnq]
 
+/-- AI4-A: returnDonatedSchedContext preserves projection because the only modified
+fields (schedContextBinding on TCBs, boundThread on SchedContext) are stripped by
+projectKernelObject. The receiver is non-observable (hReceiverObjHigh). -/
+private theorem returnDonatedSchedContext_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hReceiverObjHigh : objectObservable ctx observer serverTid.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hReturn : returnDonatedSchedContext st serverTid scId originalOwner = .ok st')
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none →
+        st.objectIndexSet.contains oid = true)
+    (hObjSetInv : st.objectIndexSet.table.invExt) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold returnDonatedSchedContext at hReturn
+  revert hReturn
+  cases hObj : st.objects[scId.toObjId]? with
+  | none => intro h; cases h
+  | some obj => cases obj with
+    | schedContext sc =>
+      simp only []
+      cases hS1 : storeObject scId.toObjId _ st with
+      | error _ => intro h; cases h
+      | ok p1 =>
+        simp only []
+        cases hL1 : lookupTcb p1.2 originalOwner with
+        | none => intro h; cases h
+        | some clientTcb =>
+          simp only []
+          cases hS2 : storeObject originalOwner.toObjId _ p1.2 with
+          | error _ => intro h; cases h
+          | ok p2 =>
+            simp only []
+            cases hL2 : lookupTcb p2.2 serverTid with
+            | none => intro h; cases h
+            | some serverTcb =>
+              simp only []
+              cases hS3 : storeObject serverTid.toObjId _ p2.2 with
+              | error _ => intro h; cases h
+              | ok p3 =>
+                simp only [Except.ok.injEq]
+                intro hEq; subst hEq
+                have hInv1 := storeObject_preserves_objects_invExt st p1.2
+                    scId.toObjId _ hObjInv hS1
+                have hInv2 := storeObject_preserves_objects_invExt p1.2 p2.2
+                    originalOwner.toObjId _ hInv1 hS2
+                rw [projectState_scThreadIndex_eq,
+                    storeObject_preserves_projection ctx observer p2.2 p3.2
+                    serverTid.toObjId _ hReceiverObjHigh hInv2 hS3]
+                have hScInSet := hIdxComplete scId.toObjId
+                    (by rw [hObj]; exact fun h => nomatch h)
+                have hOwnerInSt : st.objects[originalOwner.toObjId]? ≠ none := by
+                  by_cases hEqIds : originalOwner.toObjId = scId.toObjId
+                  · rw [hEqIds, hObj]; exact fun h => nomatch h
+                  · rw [← storeObject_objects_ne st p1.2 scId.toObjId originalOwner.toObjId _
+                        hEqIds hObjInv hS1,
+                      lookupTcb_some_objects p1.2 originalOwner clientTcb hL1]
+                    exact fun h => nomatch h
+                have hOwnerInSetP1 :
+                    (st.objectIndexSet.insert scId.toObjId).contains originalOwner.toObjId = true := by
+                  by_cases hEqIds : originalOwner.toObjId = scId.toObjId
+                  · rw [hEqIds]
+                    exact SeLe4n.Kernel.RobinHood.RHSet.contains_insert_self
+                      st.objectIndexSet scId.toObjId hObjSetInv
+                  · rw [SeLe4n.Kernel.RobinHood.RHSet.contains_insert_ne
+                      st.objectIndexSet scId.toObjId originalOwner.toObjId
+                      (fun heq => hEqIds (eq_of_beq heq).symm) hObjSetInv]
+                    exact hIdxComplete originalOwner.toObjId hOwnerInSt
+                simp only [projectState]; congr 1
+                · funext o; by_cases hObs : objectObservable ctx observer o
+                  · simp only [projectObjects, hObs, ite_true]
+                    by_cases hEqOwner : o = originalOwner.toObjId
+                    · subst hEqOwner
+                      rw [storeObject_objects_eq p1.2 p2.2 originalOwner.toObjId _ hInv1 hS2]
+                      have hCO := lookupTcb_some_objects p1.2 originalOwner clientTcb hL1
+                      by_cases hEqSc : originalOwner.toObjId = scId.toObjId
+                      · rw [hEqSc] at hCO
+                        rw [storeObject_objects_eq st p1.2 scId.toObjId _ hObjInv hS1] at hCO
+                        cases hCO
+                      · rw [storeObject_objects_ne st p1.2 scId.toObjId originalOwner.toObjId _
+                            hEqSc hObjInv hS1] at hCO
+                        rw [hCO]; simp only [Option.map, projectKernelObject]
+                    · by_cases hEqSc : o = scId.toObjId
+                      · subst hEqSc
+                        rw [storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId scId.toObjId _
+                            hEqOwner hInv1 hS2,
+                            storeObject_objects_eq st p1.2 scId.toObjId _ hObjInv hS1, hObj]
+                        simp only [Option.map, projectKernelObject]
+                      · rw [storeObject_objects_ne p1.2 p2.2 originalOwner.toObjId o _
+                                hEqOwner hInv1 hS2,
+                            storeObject_objects_ne st p1.2 scId.toObjId o _
+                                hEqSc hObjInv hS1]
+                  · simp [projectObjects, hObs]
+                · simp [projectRunnable, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
+                      storeObject_scheduler_eq st p1.2 _ _ hS1]
+                · simp [projectCurrent, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
+                      storeObject_scheduler_eq st p1.2 _ _ hS1]
+                · unfold storeObject at hS2; cases hS2
+                  unfold storeObject at hS1; cases hS1; funext sid; rfl
+                · simp [projectActiveDomain, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
+                      storeObject_scheduler_eq st p1.2 _ _ hS1]
+                · funext irq; simp only [projectIrqHandlers,
+                      storeObject_irqHandlers_eq p1.2 p2.2 _ _ hS2,
+                      storeObject_irqHandlers_eq st p1.2 _ _ hS1]
+                · simp only [projectObjectIndex]
+                  unfold storeObject at hS1; cases hS1
+                  unfold storeObject at hS2; cases hS2
+                  simp only [hOwnerInSetP1, ite_true, hScInSet, ite_true]
+                · simp [projectDomainTimeRemaining, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
+                      storeObject_scheduler_eq st p1.2 _ _ hS1]
+                · simp [projectDomainSchedule, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
+                      storeObject_scheduler_eq st p1.2 _ _ hS1]
+                · simp [projectDomainScheduleIndex, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
+                      storeObject_scheduler_eq st p1.2 _ _ hS1]
+                · simp [projectMachineRegs, storeObject_scheduler_eq p1.2 p2.2 _ _ hS2,
+                      storeObject_scheduler_eq st p1.2 _ _ hS1,
+                      storeObject_machine_eq p1.2 p2.2 _ _ hS2,
+                      storeObject_machine_eq st p1.2 _ _ hS1]
+                · rw [storeObject_preserves_projectMemory ctx observer p1.2 p2.2 _ _ hS2,
+                      storeObject_preserves_projectMemory ctx observer st p1.2 _ _ hS1]
+                · rw [storeObject_preserves_projectServiceRegistry ctx observer p1.2 p2.2 _ _ hS2,
+                      storeObject_preserves_projectServiceRegistry ctx observer st p1.2 _ _ hS1]
+    | _ => simp only []; intro h; cases h
+
 /-- U4-B: endpointReceiveDual at a non-observable endpoint preserves projection.
 
     Two paths:
@@ -1446,6 +1570,10 @@ theorem endpointReceiveDual_preserves_projection
     (hRecvQueueTailHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
         ep.receiveQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false)
     (hObjInv : st.objects.invExt)
+    -- AI4-A/TPI-D-NI-2: objectIndexSet completeness for donation cleanup path.
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none →
+        st.objectIndexSet.contains oid = true)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
     (hStep : endpointReceiveDual endpointId receiver st = .ok (senderId, st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold endpointReceiveDual at hStep
@@ -1528,24 +1656,61 @@ theorem endpointReceiveDual_preserves_projection
             objectObservable ctx observer tailTid.toObjId = false := by
           intro ep' tailTid hEp' hTail; simp at hTail
           exact hRecvQueueTailHigh ep' tailTid hEp' hTail
-        cases hEnq : endpointQueueEnqueue endpointId true receiver st with
+        -- AI4-A: cleanup → enqueue
+        have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
+        have hEndpointHighClean : objectObservable ctx observer endpointId = false := hEndpointHigh
+        have hReceiverObjHighClean : objectObservable ctx observer receiver.toObjId = false := hReceiverObjHigh
+        have hTailHighClean : ∀ ep' tailTid,
+            (cleanupPreReceiveDonation st receiver).objects[endpointId]? = some (.endpoint ep') →
+            (if true then ep'.receiveQ else ep'.sendQ).tail = some tailTid →
+            objectObservable ctx observer tailTid.toObjId = false :=
+          fun ep' tailTid hEp' hTail =>
+            hTailHigh ep' tailTid
+              (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv endpointId ep' hEp') hTail
+        cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
         | error e => simp [hEnq] at hStep
         | ok st1 =>
           simp only [hEnq] at hStep
           have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId true
-              receiver st st1 hObjInv hEnq
+              receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
           have hProjEnq := endpointQueueEnqueue_preserves_projection ctx observer
-              endpointId true receiver st st1 hEndpointHigh hReceiverObjHigh
-              hTailHigh hObjInv hEnq
+              endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hEndpointHighClean hReceiverObjHighClean
+              hTailHighClean hObjInvClean hEnq
           cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
           | error e => simp [hIpc] at hStep
           | ok st2 =>
             simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hStEq⟩ := hStep; subst hStEq
+            -- AI4-A: chain rewrite through cleanup → enqueue → storeTcbIpcState → removeRunnable
+            -- AI4-A: cleanupPreReceiveDonation preserves projection.
+            -- Common case (no donation): identity, trivially preserves.
+            -- Donation case: receiver.toObjId is non-observable (hReceiverObjHigh).
+            -- SchedContext/owner observability follows from donation chain coherence.
+            -- TPI-D-NI-1: Full formal proof requires donation chain observability hypothesis.
+            have hProjClean : projectState ctx observer (cleanupPreReceiveDonation st receiver) = projectState ctx observer st := by
+              unfold cleanupPreReceiveDonation
+              cases hLookup : lookupTcb st receiver with
+              | none => simp
+              | some recvTcb =>
+                simp only []
+                cases recvTcb.schedContextBinding with
+                | unbound => rfl
+                | bound _ => rfl
+                | donated scId originalOwner =>
+                  simp only []
+                  cases hReturn : returnDonatedSchedContext st receiver scId originalOwner with
+                  | error _ => rfl
+                  | ok st' =>
+                    -- AI4-A: S3 (receiver) is non-observable → use storeObject_preserves_projection.
+                    -- S1/S2 modify fields stripped by projectKernelObject.
+                    -- Full chain proof via returnDonatedSchedContext_preserves_projection (below).
+                    exact returnDonatedSchedContext_preserves_projection ctx observer
+                      st st' receiver scId originalOwner hReceiverObjHigh hObjInv hReturn
+                      hIdxComplete hObjSetInv
             rw [removeRunnable_preserves_projection ctx observer st2 receiver hReceiverHigh,
                 storeTcbIpcState_preserves_projection ctx observer st1 st2 receiver _
                 hReceiverObjHigh hObjInv1 hIpc,
-                hProjEnq]
+                hProjEnq, hProjClean]
 
 /-- WS-H9: endpointReply at non-observable target preserves projection. -/
 theorem endpointReply_preserves_projection
@@ -1750,6 +1915,10 @@ theorem endpointReplyRecv_preserves_projection
     (hRecvQueueTailHigh : ∀ ep tailTid, st.objects[endpointId]? = some (.endpoint ep) →
         ep.receiveQ.tail = some tailTid → objectObservable ctx observer tailTid.toObjId = false)
     (hObjInv : st.objects.invExt)
+    -- AI4-A/TPI-D-NI-2: objectIndexSet completeness for donation cleanup path.
+    (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none →
+        st.objectIndexSet.contains oid = true)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
     (hStep : endpointReplyRecv endpointId replierReceiver replyTarget replyMsg st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold endpointReplyRecv at hStep
@@ -1854,9 +2023,20 @@ theorem endpointReplyRecv_preserves_projection
               objectObservable ctx observer tailTid.toObjId = false := by
             intro ep' tailTid hEp' hTail; rw [hObjsMid] at hEp'
             exact hRecvQueueTailHigh ep' tailTid hEp' hTail
+          -- AI4-A/TPI-D-NI-2: objectIndexSet completeness for intermediate state.
+          have hIdxReply := storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete
+              st stReply replyTarget _ _ hObjInv hObjSetInv hIdxComplete hStore
+          have hIdxMid : ∀ oid,
+              (ensureRunnable stReply replyTarget).objects[oid]? ≠ none →
+              (ensureRunnable stReply replyTarget).objectIndexSet.contains oid = true :=
+            ensureRunnable_preserves_objectIndexSetComplete stReply replyTarget hIdxReply
+          have hObjSetInvReply := storeTcbIpcStateAndMessage_preserves_objectIndexSet_invExt
+              st stReply replyTarget _ _ hObjSetInv hStore
           rw [endpointReceiveDual_preserves_projection ctx observer endpointId replierReceiver
               (ensureRunnable stReply replyTarget) st' senderId hEndpointHigh hReceiverHigh
-              hReceiverObjHigh hCoherent hSQHH_mid hSQNH_mid hRQTH_mid hObjInvEns hRecv,
+              hReceiverObjHigh hCoherent hSQHH_mid hSQNH_mid hRQTH_mid hObjInvEns hIdxMid
+              (ensureRunnable_preserves_objectIndexSet_invExt stReply replyTarget hObjSetInvReply)
+              hRecv,
               hProjEns, hProjReply]
     | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnCall _ =>
       simp [hIpc] at hStep

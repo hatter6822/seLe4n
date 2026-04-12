@@ -546,6 +546,46 @@ theorem storeTcbIpcStateAndMessage_preserves_objects_invExt
       have := Except.ok.inj hStep; subst this
       exact storeObject_preserves_objects_invExt st pair.2 tid.toObjId _ hObjInv hStore
 
+/-- TPI-D1: storeTcbIpcStateAndMessage preserves objectIndexSetComplete. -/
+theorem storeTcbIpcStateAndMessage_preserves_objectIndexSetComplete
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hComplete : objectIndexSetComplete st)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
+    objectIndexSetComplete st' := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have := Except.ok.inj hStep; subst this
+      exact storeObject_preserves_objectIndexSetComplete st pair.2 tid.toObjId _ hObjInv hObjSetInv hComplete hStore
+
+/-- TPI-D1: storeTcbIpcStateAndMessage preserves objectIndexSet.table.invExt. -/
+theorem storeTcbIpcStateAndMessage_preserves_objectIndexSet_invExt
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
+    st'.objectIndexSet.table.invExt := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have := Except.ok.inj hStep; subst this
+      exact storeObject_preserves_objectIndexSet_invExt st pair.2 tid.toObjId _ hObjSetInv hStore
+
 /-- `storeTcbIpcState` preserves `objects.invExt`. -/
 theorem storeTcbIpcState_preserves_objects_invExt
     (st st' : SystemState) (tid : SeLe4n.ThreadId)

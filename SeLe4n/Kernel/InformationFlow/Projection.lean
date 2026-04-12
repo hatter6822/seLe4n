@@ -211,7 +211,16 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       --
       -- A formal proof that these invariants make `pendingMessage` exposure
       -- unreachable is tracked for WS-V (non-interference refinement).
-      .tcb { tcb with registerContext := default }
+      -- AI4-A: Also strip schedContextBinding — internal scheduling plumbing
+      -- (donation chain state), not security-relevant observable state. Donation
+      -- chain changes (returnDonatedSchedContext) modify only this field and must
+      -- not leak through the NI projection.
+      .tcb { tcb with registerContext := default, schedContextBinding := .unbound }
+  | .schedContext sc =>
+      -- AI4-A: Strip boundThread — internal scheduling plumbing binding a
+      -- SchedContext to its owning thread. Donation chain changes modify only
+      -- this field and must not leak through the NI projection.
+      .schedContext { sc with boundThread := none }
   | other => other
 
 /-- WS-F3/F-22: `projectKernelObject` is idempotent — filtering twice yields

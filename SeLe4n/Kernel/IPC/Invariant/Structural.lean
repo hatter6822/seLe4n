@@ -1982,9 +1982,35 @@ theorem endpointReceiveDual_preserves_dualQueueSystemInvariant
                     (storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
                       pair.2.2 st2 pair.1 .ready none hObjInv1 hStore hInv1))
       | none =>
-        -- Path B: enqueue receiver, block
+        -- Path B: cleanup → enqueue receiver, block
+        -- AI4-A: cleanupPreReceiveDonation preserves all preconditions because
+        -- endpoint objects are unchanged (only TCB schedContextBinding + SchedContext modified).
+        have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
+        -- AI4-A-SORRY: dualQueueSystemInvariant, hFreshReceiver, hRecvTailFresh preserved
+        have hInvClean : dualQueueSystemInvariant (cleanupPreReceiveDonation st receiver) :=
+          cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant st receiver hObjInv hInv
+        have hFreshReceiverClean : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+            (cleanupPreReceiveDonation st receiver).objects[epId]? = some (.endpoint ep) →
+            ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
+            ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver :=
+          fun epId ep hEp =>
+            hFreshReceiver epId ep (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv epId ep hEp)
+        have hRecvTailFreshClean : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+            (cleanupPreReceiveDonation st receiver).objects[endpointId]? = some (.endpoint ep) →
+            ep.receiveQ.tail = some tailTid →
+            ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+              (cleanupPreReceiveDonation st receiver).objects[epId']? = some (.endpoint ep') →
+              (epId' ≠ endpointId →
+                ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+              (epId' = endpointId →
+                ep'.sendQ.tail ≠ some tailTid) :=
+          fun ep tailTid hEp hTail epId' ep' hEp' =>
+            hRecvTailFresh ep tailTid
+              (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv endpointId ep hEp) hTail
+              epId' ep'
+              (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv epId' ep' hEp')
         simp only [hHead] at hStep
-        cases hEnq : endpointQueueEnqueue endpointId true receiver st with
+        cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
         | error e => simp [hEnq] at hStep
         | ok st1 =>
           simp only [hEnq] at hStep
@@ -1993,9 +2019,9 @@ theorem endpointReceiveDual_preserves_dualQueueSystemInvariant
           | ok st2 =>
             simp only [hStore] at hStep; rcases hStep with ⟨-, rfl⟩
             have hInv1 := endpointQueueEnqueue_preserves_dualQueueSystemInvariant
-              endpointId true receiver st st1 hEnq hInv hObjInv hFreshReceiver hRecvTailFresh
+              endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hEnq hInvClean hObjInvClean hFreshReceiverClean hRecvTailFreshClean
             have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt
-              endpointId true receiver st st1 hObjInv hEnq
+              endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
             exact removeRunnable_preserves_dualQueueSystemInvariant _ _
               (storeTcbIpcState_preserves_dualQueueSystemInvariant st1 st2 receiver _ hObjInv1 hStore hInv1)
 
@@ -3380,15 +3406,18 @@ theorem endpointReceiveDual_preserves_allPendingMessagesBounded
                 exact storeTcbPendingMessage_preserves_allPendingMessagesBounded
                   _ st4 receiver _ hSenderMsgBounded hObjInv3 hPend hInv3
       | none =>
+        -- AI4-A: cleanupPreReceiveDonation before enqueue
+        have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
+        have hInvClean := cleanupPreReceiveDonation_preserves_allPendingMessagesBounded st receiver hObjInv hInv
         simp only [hHead] at hStep
-        cases hEnq : endpointQueueEnqueue endpointId true receiver st with
+        cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
         | error e => simp [hEnq] at hStep
         | ok st1 =>
           simp only [hEnq] at hStep
           have hInv1 := endpointQueueEnqueue_preserves_allPendingMessagesBounded
-            endpointId true receiver st st1 hObjInv hEnq hInv
+            endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq hInvClean
           have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt
-            endpointId true receiver st st1 hObjInv hEnq
+            endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
           cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
           | error e => simp [hIpc] at hStep
           | ok st2 =>
@@ -3459,15 +3488,18 @@ theorem endpointReceiveDual_preserves_badgeWellFormed
                 obtain ⟨_, hEq⟩ := hStep; subst hEq
                 exact storeTcbPendingMessage_preserves_badgeWellFormed _ st4 receiver _ hInv3 hObjInv3 hPend
       | none =>
+        -- AI4-A: cleanupPreReceiveDonation before enqueue
+        have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
+        have hInvClean := cleanupPreReceiveDonation_preserves_badgeWellFormed st receiver hObjInv hInv
         simp only [hHead] at hStep
-        cases hEnq : endpointQueueEnqueue endpointId true receiver st with
+        cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
         | error e => simp [hEnq] at hStep
         | ok st1 =>
           simp only [hEnq] at hStep
           have hInv1 := endpointQueueEnqueue_preserves_badgeWellFormed
-            endpointId true receiver st st1 hObjInv hEnq hInv
+            endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq hInvClean
           have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt
-            endpointId true receiver st st1 hObjInv hEnq
+            endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
           cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
           | error e => simp [hIpc] at hStep
           | ok st2 =>
@@ -3982,21 +4014,46 @@ theorem endpointReceiveDual_preserves_endpointQueueNoDup
                 obtain ⟨_, rfl⟩ := hStep
                 exact storeTcbPendingMessage_preserves_endpointQueueNoDup _ _ receiver _ hNoDupR hObjInvR hPend
       | none =>
-        -- Block path: Enqueue receiveQ + storeTcbIpcState + removeRunnable
-        cases hEnq : endpointQueueEnqueue endpointId true receiver st with
+        -- Block path: cleanup → Enqueue receiveQ + storeTcbIpcState + removeRunnable
+        -- AI4-A: cleanupPreReceiveDonation before enqueue
+        have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
+        have hInvClean := cleanupPreReceiveDonation_preserves_endpointQueueNoDup st receiver hObjInv hInv
+        have hDQSIClean := cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant st receiver hObjInv hDQSI
+        have hFreshReceiverClean : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+            (cleanupPreReceiveDonation st receiver).objects[epId]? = some (.endpoint ep) →
+            ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
+            ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver :=
+          fun epId ep hEp =>
+            hFreshReceiver epId ep (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv epId ep hEp)
+        have hRecvTailFreshClean : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+            (cleanupPreReceiveDonation st receiver).objects[endpointId]? = some (.endpoint ep) →
+            ep.receiveQ.tail = some tailTid →
+            ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+              (cleanupPreReceiveDonation st receiver).objects[epId']? = some (.endpoint ep') →
+              (epId' ≠ endpointId →
+                ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+              (epId' = endpointId →
+                ep'.sendQ.tail ≠ some tailTid) :=
+          fun ep tailTid hEp hTail epId' ep' hEp' =>
+            hRecvTailFresh ep tailTid
+              (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv endpointId ep hEp) hTail
+              epId' ep'
+              (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv epId' ep' hEp')
+        have hObjClean := cleanupPreReceiveDonation_endpoint_forward st receiver hObjInv endpointId ep hObj
+        cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
         | error e => simp [hHead, hEnq] at hStep
         | ok st1 =>
           simp only [hHead, hEnq] at hStep
-          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver st st1 hObjInv hEnq
+          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
           have hDQSI1 := endpointQueueEnqueue_preserves_dualQueueSystemInvariant
-            endpointId true receiver st st1 hEnq hDQSI hObjInv hFreshReceiver hRecvTailFresh
+            endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hEnq hDQSIClean hObjInvClean hFreshReceiverClean hRecvTailFreshClean
           cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
           | error e => simp [hIpc] at hStep
           | ok st2 =>
             simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, rfl⟩ := hStep
-            have hNoDup1 := endpointQueueEnqueue_preserves_endpointQueueNoDup endpointId true receiver st st1 hInv hDQSI1 hObjInv
-              (fun ep' hEp' => by simp only [↓reduceIte]; rw [hEp'] at hObj; cases hObj; exact hHead) hEnq
+            have hNoDup1 := endpointQueueEnqueue_preserves_endpointQueueNoDup endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hInvClean hDQSI1 hObjInvClean
+              (fun ep' hEp' => by simp only [↓reduceIte]; rw [hEp'] at hObjClean; cases hObjClean; exact hHead) hEnq
             exact removeRunnable_preserves_endpointQueueNoDup _ _ <|
               storeTcbIpcState_preserves_endpointQueueNoDup st1 st2 receiver _ hNoDup1 hObjInv1 hIpc
 
@@ -4422,24 +4479,50 @@ theorem endpointReceiveDual_preserves_ipcStateQueueMembershipConsistent
                 exact storeTcbPendingMessage_preserves_ipcStateQueueMembershipConsistent
                   _ _ receiver _ hV3JR hObjInvR hPend
       | none =>
-        -- BLOCK PATH: Enqueue(receiveQ) + storeTcbIpcState(.blockedOnReceive) + removeRunnable
-        cases hEnq : endpointQueueEnqueue endpointId true receiver st with
+        -- BLOCK PATH: cleanup → Enqueue(receiveQ) + storeTcbIpcState(.blockedOnReceive) + removeRunnable
+        -- AI4-A: cleanupPreReceiveDonation before enqueue
+        have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
+        have hInvClean := cleanupPreReceiveDonation_preserves_ipcStateQueueMembershipConsistent st receiver hObjInv hInv
+        have hDQSIClean := cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant st receiver hObjInv hDQSI
+        have hObjClean := cleanupPreReceiveDonation_endpoint_forward st receiver hObjInv endpointId ep hObj
+        have hDQWFClean := cleanupPreReceiveDonation_preserves_dualQueueEndpointWellFormed st receiver hObjInv hDQSI endpointId ep hObjClean
+        have hFreshReceiverClean : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+            (cleanupPreReceiveDonation st receiver).objects[epId]? = some (.endpoint ep) →
+            ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
+            ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver :=
+          fun epId ep hEp =>
+            hFreshReceiver epId ep (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv epId ep hEp)
+        have hRecvTailFreshClean : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
+            (cleanupPreReceiveDonation st receiver).objects[endpointId]? = some (.endpoint ep) →
+            ep.receiveQ.tail = some tailTid →
+            ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
+              (cleanupPreReceiveDonation st receiver).objects[epId']? = some (.endpoint ep') →
+              (epId' ≠ endpointId →
+                ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
+              (epId' = endpointId →
+                ep'.sendQ.tail ≠ some tailTid) :=
+          fun ep tailTid hEp hTail epId' ep' hEp' =>
+            hRecvTailFresh ep tailTid
+              (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv endpointId ep hEp) hTail
+              epId' ep'
+              (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv epId' ep' hEp')
+        cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
         | error e => simp [hHead, hEnq] at hStep
         | ok st1 =>
           simp only [hHead, hEnq] at hStep
           have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt
-            endpointId true receiver st st1 hObjInv hEnq
+            endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
           have hV3J1 := endpointQueueEnqueue_preserves_ipcStateQueueMembershipConsistent
-            endpointId true receiver st st1 hInv hObjInv hDQWF hEnq
+            endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hInvClean hObjInvClean hDQWFClean hEnq
           have hDQSI1 := endpointQueueEnqueue_preserves_dualQueueSystemInvariant
-            endpointId true receiver st st1 hEnq hDQSI hObjInv hFreshReceiver hRecvTailFresh
-          have hNotTail : ∀ ep', st.objects[endpointId]? = some (.endpoint ep') →
+            endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hEnq hDQSIClean hObjInvClean hFreshReceiverClean hRecvTailFreshClean
+          have hNotTail : ∀ ep', (cleanupPreReceiveDonation st receiver).objects[endpointId]? = some (.endpoint ep') →
               (if true then ep'.receiveQ else ep'.sendQ).tail ≠ some receiver := by
             intro ep' hEp'
-            rw [hObj] at hEp'; cases hEp'
-            exact (hFreshReceiver endpointId ep hObj).2.2.2
+            rw [hObjClean] at hEp'; cases hEp'
+            exact (hFreshReceiverClean endpointId ep hObjClean).2.2.2
           have hReach := endpointQueueEnqueue_thread_reachable
-            endpointId true receiver st st1 hObjInv hNotTail hEnq
+            endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hNotTail hEnq
           cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
           | error e => simp [hIpc] at hStep
           | ok st2 =>
@@ -4447,12 +4530,12 @@ theorem endpointReceiveDual_preserves_ipcStateQueueMembershipConsistent
             obtain ⟨_, rfl⟩ := hStep
             have hNeRecvEp : endpointId ≠ receiver.toObjId := by
               intro h; unfold endpointQueueEnqueue at hEnq
-              rw [hObj] at hEnq; simp only at hEnq
-              cases hL : lookupTcb st receiver with
+              rw [hObjClean] at hEnq; simp only at hEnq
+              cases hL : lookupTcb (cleanupPreReceiveDonation st receiver) receiver with
               | none => simp [hL] at hEnq
               | some tcb =>
-                have := lookupTcb_some_objects st receiver tcb hL
-                rw [← h, hObj] at this; cases this
+                have := lookupTcb_some_objects (cleanupPreReceiveDonation st receiver) receiver tcb hL
+                rw [← h, hObjClean] at this; cases this
             exact removeRunnable_preserves_ipcStateQueueMembershipConsistent st2 receiver <|
               storeTcbIpcState_general_preserves_ipcStateQueueMembershipConsistent
                 st1 st2 receiver (.blockedOnReceive endpointId) hV3J1 hObjInv1 hIpc
@@ -5352,7 +5435,11 @@ theorem endpointReceiveDual_preserves_ipcStateQueueConsistent
                   (ensureRunnable_preserves_ipcStateQueueConsistent _ _
                     (storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hObjInvPop hMsg hInvPop trivial))
       | none =>
-        cases hEnq : endpointQueueEnqueue endpointId true receiver st with
+        -- AI4-A: cleanupPreReceiveDonation before enqueue
+        have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
+        have hInvClean := cleanupPreReceiveDonation_preserves_ipcStateQueueConsistent st receiver hObjInv hInv
+        have hObjClean := cleanupPreReceiveDonation_endpoint_forward st receiver hObjInv endpointId ep hObj
+        cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
         | error e => simp [hHead, hEnq] at hStep
         | ok st1 =>
           simp only [hHead, hEnq] at hStep
@@ -5362,12 +5449,12 @@ theorem endpointReceiveDual_preserves_ipcStateQueueConsistent
             simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨_, hEq⟩ := hStep; subst hEq
             have hObjInvEnqR : st1.objects.invExt :=
-              endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver st st1 hObjInv hEnq
+              endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
             exact removeRunnable_preserves_ipcStateQueueConsistent _ _ <|
               storeTcbIpcState_preserves_ipcStateQueueConsistent _ _ _ _ hObjInvEnqR hIpc
-                (endpointQueueEnqueue_preserves_ipcStateQueueConsistent endpointId true receiver st st1
-                  hObjInv hEnq hInv)
-                (endpointQueueEnqueue_endpoint_forward _ _ receiver st st1 endpointId ep hObjInv hEnq hObj)
+                (endpointQueueEnqueue_preserves_ipcStateQueueConsistent endpointId true receiver (cleanupPreReceiveDonation st receiver) st1
+                  hObjInvClean hEnq hInvClean)
+                (endpointQueueEnqueue_endpoint_forward _ _ receiver (cleanupPreReceiveDonation st receiver) st1 endpointId ep hObjInvClean hEnq hObjClean)
 
 /-- WS-L3/L3-C3: endpointReply preserves ipcStateQueueConsistent.
 Reply sets target from blockedOnReply to .ready (removes obligation),
@@ -7310,15 +7397,45 @@ theorem endpointReceiveDual_preserves_waitingThreadsPendingMessageNone
                     | _ => trivial)
               | error _ => simp
       | none =>
-        -- Block path: enqueue → storeTcbIpcState(.blockedOnReceive) → removeRunnable
-        cases hEnq : endpointQueueEnqueue endpointId true receiver st with
+        -- Block path: cleanup → enqueue → storeTcbIpcState(.blockedOnReceive) → removeRunnable
+        -- AI4-A: cleanupPreReceiveDonation before enqueue
+        have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
+        have hInvClean := cleanupPreReceiveDonation_preserves_waitingThreadsPendingMessageNone st receiver hObjInv hInv
+        have hReceiverMsgClean : ∀ tcb, lookupTcb (cleanupPreReceiveDonation st receiver) receiver = some tcb → tcb.pendingMessage = none := by
+          -- AI4-A: cleanupPreReceiveDonation preserves pendingMessage on all TCBs.
+          -- Backward transport through returnDonatedSchedContext which only modifies
+          -- schedContextBinding, not pendingMessage.
+          intro tcb' hLookup'
+          have hTcb' := lookupTcb_some_objects _ _ _ hLookup'
+          -- Backward transport of pendingMessage through cleanupPreReceiveDonation
+          have hBack := cleanupPreReceiveDonation_frame_helper
+            (P := fun s => s.objects[receiver.toObjId]? = some (.tcb tcb') →
+              ∃ tcb₀, st.objects[receiver.toObjId]? = some (.tcb tcb₀) ∧
+                tcb₀.pendingMessage = tcb'.pendingMessage)
+            st receiver (fun h => ⟨tcb', h, rfl⟩)
+            (fun scId owner st₁ hRet hTcb₁ => by
+              obtain ⟨tcb₀, hTcb₀, _, _, _, hMsg₀⟩ :=
+                returnDonatedSchedContext_tcb_queue_backward st st₁ receiver scId owner hObjInv hRet
+                  receiver.toObjId tcb' hTcb₁
+              exact ⟨tcb₀, hTcb₀, hMsg₀⟩)
+            hTcb'
+          obtain ⟨tcb₀, hTcb₀, hMsg₀⟩ := hBack
+          -- Reconstruct lookupTcb for original state
+          have hNotRes : ¬receiver.isReserved = true := by
+            intro hRes; simp [lookupTcb, hRes] at hLookup'
+          have hOrig : lookupTcb st receiver = some tcb₀ := by
+            unfold lookupTcb; simp [hNotRes]; split
+            next t hObj => rw [hTcb₀] at hObj; cases hObj; rfl
+            next hNone => rw [hTcb₀] at hNone; simp at hNone
+          rw [← hMsg₀]; exact hReceiverMsg tcb₀ hOrig
+        cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
         | error e => simp [hHead, hEnq] at hStep
         | ok st1 =>
           simp only [hHead, hEnq] at hStep
           have hObjInvEnq := endpointQueueEnqueue_preserves_objects_invExt
-            endpointId true receiver st st1 hObjInv hEnq
+            endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
           have hInvEnq := endpointQueueEnqueue_preserves_waitingThreadsPendingMessageNone
-            endpointId true receiver st st1 hObjInv hInv hEnq
+            endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hInvClean hEnq
           cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
           | error e => simp [hIpc] at hStep
           | ok st2 =>
@@ -7339,13 +7456,13 @@ theorem endpointReceiveDual_preserves_waitingThreadsPendingMessageNone
                     all_goals simp at hLk₂
                 -- Use backward pendingMessage lemma through endpointQueueEnqueue
                 obtain ⟨preTcb₂, hPreTcb₂, hMsgEq⟩ := endpointQueueEnqueue_tcb_pendingMessage_backward
-                  endpointId true receiver st st1 receiver tcb₂ hObjInv hEnq hObjLk₂
-                -- Connect to hReceiverMsg: preTcb₂.pendingMessage = none
-                have hPreLk₂ : lookupTcb st receiver = some preTcb₂ := by
+                  endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 receiver tcb₂ hObjInvClean hEnq hObjLk₂
+                -- Connect to hReceiverMsgClean: preTcb₂.pendingMessage = none
+                have hPreLk₂ : lookupTcb (cleanupPreReceiveDonation st receiver) receiver = some preTcb₂ := by
                   unfold lookupTcb; simp [hNotRes₂]; split
                   next t hObj => rw [hPreTcb₂] at hObj; cases hObj; rfl
                   next hNone => rw [hPreTcb₂] at hNone; simp at hNone
-                rw [← hMsgEq]; exact hReceiverMsg preTcb₂ hPreLk₂)
+                rw [← hMsgEq]; exact hReceiverMsgClean preTcb₂ hPreLk₂)
             exact removeRunnable_preserves_waitingThreadsPendingMessageNone _ _ hInv2
 
 -- ============================================================================
