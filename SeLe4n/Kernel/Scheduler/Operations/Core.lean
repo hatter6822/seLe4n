@@ -541,8 +541,9 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
       let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
       let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb'),
                            machine := tick st.machine }
+      -- AI3-A (M-04): Re-enqueue at effective priority (base + PIP boost).
       let st'' := { st' with scheduler := { st'.scheduler with
-          runQueue := st'.scheduler.runQueue.insert tid tcb.priority } }
+          runQueue := st'.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb) } }
       .ok (st'', true)
     else
       let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
@@ -678,8 +679,8 @@ def handleYieldWithBudget : Kernel Unit :=
       | some (.tcb tcb) =>
         match tcb.schedContextBinding with
         | .unbound =>
-          -- Legacy yield: re-enqueue at back of priority bucket
-          let rq' := (st.scheduler.runQueue.insert tid tcb.priority).rotateToBack tid
+          -- AI3-A (M-04): Legacy yield with effective priority (base + PIP boost)
+          let rq' := (st.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
           let st' := { st with scheduler := { st.scheduler with runQueue := rq' } }
           scheduleEffective st'
         | .bound scId | .donated scId _ =>
@@ -702,7 +703,8 @@ def handleYieldWithBudget : Kernel Unit :=
             scheduleEffective st''
           | _ =>
             -- SchedContext not found — fall back to legacy yield
-            let rq' := (st.scheduler.runQueue.insert tid tcb.priority).rotateToBack tid
+            -- AI3-A (M-04): Use effective priority (base + PIP boost)
+            let rq' := (st.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
             let st' := { st with scheduler := { st.scheduler with runQueue := rq' } }
             scheduleEffective st'
       | _ => .error .schedulerInvariantViolation

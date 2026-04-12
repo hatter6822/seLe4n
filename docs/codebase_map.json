@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-scheduler-audit-yMA16",
-      "commit_sha": "f41c9ba1d4e77497fb6644ddcf91425854203d13",
-      "tree_sha": "c7453acf5cb4709d8d4eb507688eedec7a075114",
-      "committed_at_utc": "2026-04-12T11:16:11-04:00"
+      "commit_sha": "8aa863f5f939972759938f596fc38fb5b6d74217",
+      "tree_sha": "0d7b9b85f7ac66b844c96151ab30baaf327c16ce",
+      "committed_at_utc": "2026-04-12T16:30:43+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "23900eba0472883c3141b5ceb9853b3747e9cfe5659c9a24591ac2a1d4f49591"
+    "source_digest": "35a9e222010f12e0eabe1a9c81377e719ca94a1dac3f4a940f46812ae328c9f9"
   },
   "summary": {
     "module_count": 158,
@@ -27,7 +27,7 @@
     "version": "0.27.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 92018,
+    "production_loc": 92020,
     "test_files": 17,
     "test_loc": 11610,
     "proved_theorem_lemma_decls": 2745,
@@ -38228,6 +38228,7 @@
             "ThreadId",
             "cbsUpdateDeadline",
             "consumeBudget",
+            "effectiveRunQueuePriority",
             "insert",
             "resolveInsertPriority",
             "scId",
@@ -38240,7 +38241,7 @@
         {
           "kind": "def",
           "name": "scheduleEffective",
-          "line": 602,
+          "line": 603,
           "called": [
             "Kernel",
             "chooseThreadEffective",
@@ -38255,7 +38256,7 @@
         {
           "kind": "def",
           "name": "timerTickWithBudget",
-          "line": 636,
+          "line": 637,
           "called": [
             "Kernel",
             "none",
@@ -38269,10 +38270,11 @@
         {
           "kind": "def",
           "name": "handleYieldWithBudget",
-          "line": 672,
+          "line": 673,
           "called": [
             "Budget",
             "Kernel",
+            "effectiveRunQueuePriority",
             "insert",
             "none",
             "resolveInsertPriority",
@@ -38287,7 +38289,7 @@
         {
           "kind": "def",
           "name": "chooseThreadInDomain",
-          "line": 718,
+          "line": 720,
           "called": [
             "Kernel",
             "ThreadId",
@@ -38297,7 +38299,7 @@
         {
           "kind": "def",
           "name": "switchDomain",
-          "line": 747,
+          "line": 749,
           "called": [
             "Kernel",
             "effectiveRunQueuePriority",
@@ -38311,7 +38313,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_index_in_bounds",
-          "line": 788,
+          "line": 790,
           "called": [
             "DomainScheduleEntry",
             "schedule"
@@ -38320,7 +38322,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_index_lookup_isSome",
-          "line": 800,
+          "line": 802,
           "called": [
             "DomainScheduleEntry",
             "getElem",
@@ -38331,7 +38333,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_objects_invExt",
-          "line": 810,
+          "line": 812,
           "called": [
             "SystemState",
             "invExt",
@@ -38342,7 +38344,7 @@
         {
           "kind": "def",
           "name": "scheduleDomain",
-          "line": 826,
+          "line": 828,
           "called": [
             "Kernel",
             "schedule",
@@ -38352,7 +38354,7 @@
         {
           "kind": "def",
           "name": "inferThreadState",
-          "line": 848,
+          "line": 850,
           "called": [
             "SystemState",
             "TCB",
@@ -38363,7 +38365,7 @@
         {
           "kind": "def",
           "name": "syncThreadStates",
-          "line": 863,
+          "line": 865,
           "called": [
             "SystemState",
             "fold",
@@ -38375,7 +38377,7 @@
         {
           "kind": "def",
           "name": "threadStateConsistent",
-          "line": 875,
+          "line": 877,
           "called": [
             "Kernel",
             "ObjId",

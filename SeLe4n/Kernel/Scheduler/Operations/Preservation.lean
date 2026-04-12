@@ -1153,7 +1153,7 @@ private theorem schedule_preserves_currentTimeSlicePositive
                         simp only [currentTimeSlicePositive]
                         obtain ⟨tcb', hTcb', _, _, _, hTSEq, _hPipEq⟩ :=
                           saveOutgoingContext_tcb_fields stChoose tid.toObjId tcb hObj hObjInvC
-                        simp only [hTcb', currentTimeSlicePositive]; rw [hTSEq]; exact hTidTS
+                        simp only [hTcb']; rw [hTSEq]; exact hTidTS
                       · have hOk' : ¬(stChoose.scheduler.runQueue.contains tid = true ∧
                             tcb.domain = stChoose.scheduler.activeDomain) := by
                           simpa [RunQueue.mem_iff_contains] using hOk
