@@ -34,6 +34,11 @@ WS-AE Phase AE1 complete. Phase AE2 complete. Phase AE3 complete. Phase AE4 comp
 WS-AF Phase AF1 complete. Phase AF2 complete. Phase AF3 complete. Phase AF4 complete. Phase AF5 complete. Phase AF6 complete. **WS-AF PORTFOLIO COMPLETE.**
 WS-AG Phase AG1 complete. Phase AG2 complete. Phase AG2 Audit complete. Phase AG3 complete. Phase AG4 complete. Phase AG5 complete. Phase AG6 complete. Phase AG7 complete. Phase AG8 complete. Phase AG9 complete. Phase AG10 complete. **WS-AG PORTFOLIO COMPLETE.**
 WS-AH Phase AH1 complete. Phase AH2 complete. Phase AH3 complete. Phase AH4 complete. Phase AH5 complete. **WS-AH PORTFOLIO COMPLETE.**
+WS-AI Phase AI1 complete.
+
+### WS-AI: Post-Audit Comprehensive Remediation (IN PROGRESS)
+
+- **Phase AI1 COMPLETE** (v0.27.7): Rust ABI & Trap Correctness — 5 sub-tasks (AI1-A through AI1-E). AI1-A (H-05/HIGH): Fixed exception error codes in `trap.rs` from discriminant 43 (`AlignmentError`) to 45 (`UserException`) for alignment and unknown exceptions — aligns with Lean `ExceptionModel.lean:175-177` mapping of `pcAlignment`, `spAlignment`, `unknownReason` to `.error .userException`. Added `error_code` module with named constants replacing bare numeric literals. AI1-B (H-04/HIGH): SVC handler stub now returns `NOT_IMPLEMENTED` (17) instead of success (0) — prevents userspace from interpreting no-op as success; TODO marker for WS-V/AG10 FFI wiring. AI1-C (M-26/MEDIUM): Eliminated dual timer reprogram path — removed `increment_tick_count()` from `handle_irq()` in `trap.rs`; canonical tick accounting path is `ffi_timer_reprogram()` in `ffi.rs` which calls both `reprogram_timer()` and `increment_tick_count()`. AI1-D (M-27/MEDIUM): Made `BOOT_UART` safe with `AtomicBool`-based `UartLock` spinlock (disables interrupts before acquiring, restores after release, preventing IRQ-handler deadlock on single-core) — replaced `pub static mut BOOT_UART` with module-private `BOOT_UART_INNER` + `UART_LOCK`; updated `with_boot_uart()`, `init_boot_uart()`, `boot_puts()`, `kprint!` macro for synchronized access; eliminates UB after interrupts enabled. Gate: `cargo test --workspace` (366 tests) + `cargo clippy --workspace` (0 warnings) + `test_smoke.sh`. Zero sorry/axiom. See `docs/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md`
 
 ### WS-AH: Pre-Release Comprehensive Audit Remediation (PORTFOLIO COMPLETE)
 

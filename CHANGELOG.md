@@ -1,3 +1,49 @@
+## v0.27.7 — WS-AI Phase AI1: Rust ABI & Trap Correctness
+
+Phase AI1 of WS-AI Post-Audit Comprehensive Remediation. Fixes all Rust-side
+defects affecting the Lean–Rust ABI contract: wrong exception error codes, no-op
+syscall handler, dual timer reprogram, and unsafe UART static. 5 sub-tasks
+(AI1-A through AI1-E). Gate: `cargo test --workspace` (366 tests) +
+`cargo clippy --workspace` (0 warnings). Zero sorry/axiom.
+
+### Changes
+
+- **AI1-A** (H-05/HIGH): Fixed exception error codes in `rust/sele4n-hal/src/trap.rs`.
+  Alignment (PC_ALIGN, SP_ALIGN) and unknown exception handlers now return
+  discriminant 45 (`UserException`) instead of 43 (`AlignmentError`). Aligns Rust
+  trap handler with Lean `ExceptionModel.lean:175-177` mapping of `pcAlignment`,
+  `spAlignment`, and `unknownReason` to `.error .userException`. Added `error_code`
+  module with named constants (`VM_FAULT`, `USER_EXCEPTION`, `NOT_IMPLEMENTED`)
+  replacing bare numeric literals for maintainability.
+- **AI1-B** (H-04/HIGH): Updated SVC handler stub in `rust/sele4n-hal/src/trap.rs`.
+  Changed return value from 0 (success) to `error_code::NOT_IMPLEMENTED` (17),
+  preventing userspace from interpreting the no-op stub as success. Added TODO
+  marker for WS-V/AG10 FFI wiring. Added tests verifying error code constants
+  match `sele4n-types::KernelError` discriminants.
+- **AI1-C** (M-26/MEDIUM): Eliminated dual timer reprogram path. Removed
+  `increment_tick_count()` call from `handle_irq()` in `trap.rs` — canonical
+  tick-increment path is `ffi_timer_reprogram()` (ffi.rs) which calls both
+  `reprogram_timer()` and `increment_tick_count()`. IRQ handler now only
+  re-arms the hardware timer. Prevents double-counting of ticks when both the
+  IRQ handler and FFI bridge fire.
+- **AI1-D** (M-27/MEDIUM): Made `BOOT_UART` safe with spinlock synchronization.
+  Replaced `pub static mut BOOT_UART` (uart.rs) with `AtomicBool`-based
+  `UartLock` — IRQ-safe spinlock that disables interrupts before acquiring the
+  lock and restores them after release, preventing IRQ-handler deadlock on
+  single-core systems. Updated `with_boot_uart()`, `init_boot_uart()`,
+  `boot_puts()`, and `kprint!` macro to use lock-mediated access.
+  `BOOT_UART_INNER` is now module-private. Eliminates undefined behavior from
+  unsynchronized mutable static access after interrupts are enabled.
+- **AI1-E**: Phase gate — `cargo test --workspace` (366 tests pass),
+  `cargo clippy --workspace` (0 warnings), `test_smoke.sh` passes.
+
+### Infrastructure
+
+- 4 new unit tests in trap.rs (error code verification, SVC stub assertion)
+- All Lean smoke tests continue to pass (no Lean changes in this phase)
+
+---
+
 ## v0.27.6 — WS-AH Phase AH5: Documentation, Testing & Closure
 
 Phase AH5 of WS-AH Pre-Release Comprehensive Audit Remediation. Documents all
