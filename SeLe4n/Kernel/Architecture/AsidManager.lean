@@ -80,8 +80,9 @@ structure AsidAllocResult where
 /-- Allocate an ASID from the pool.
 
     Strategy:
-    1. If the free list is non-empty, reuse a freed ASID (no flush needed)
-    2. Otherwise, bump `nextAsid` and return the fresh ASID
+    1. If the free list is non-empty, reuse a freed ASID (flush required —
+       stale TLB entries from prior owner must be invalidated)
+    2. Otherwise, bump `nextAsid` and return the fresh ASID (no flush needed)
     3. If `nextAsid` wraps around to `maxAsidValue`, rollover:
        increment generation, reset `nextAsid`, and require a full TLB flush
 

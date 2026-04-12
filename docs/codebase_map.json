@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-codebase-audit-CYpW0",
-      "commit_sha": "add7ef5a180d7b3ca98ca34ee5aa59b17ff87291",
-      "tree_sha": "5fca6018ca58cc098818eef1343460c3750af7e9",
-      "committed_at_utc": "2026-04-12T02:20:36-04:00"
+      "commit_sha": "5cf84b758de2b679c6ee8b794d29f75d669f3c3d",
+      "tree_sha": "73181ca043067572dd84d0a2935e57dc87ab7527",
+      "committed_at_utc": "2026-04-12T06:56:37+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "cad8d7c159715b44b123f4e82829acf36c6e27f9fd20b690252d5c4ff2a5526d"
+    "source_digest": "86606ffd51a47ee87c43885b5c3fbb3c358443a894b56c7f9a091f4ccdc95c1d"
   },
   "summary": {
     "module_count": 158,
@@ -27,7 +27,7 @@
     "version": "0.27.8",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 91900,
+    "production_loc": 91901,
     "test_files": 17,
     "test_loc": 11610,
     "proved_theorem_lemma_decls": 2741,
@@ -1384,7 +1384,7 @@
         {
           "kind": "def",
           "name": "AsidPool.allocate",
-          "line": 90,
+          "line": 91,
           "called": [
             "AsidAllocResult",
             "AsidPool",
@@ -1395,7 +1395,7 @@
         {
           "kind": "def",
           "name": "AsidPool.free",
-          "line": 124,
+          "line": 125,
           "called": [
             "ASID",
             "AsidPool"
@@ -1404,7 +1404,7 @@
         {
           "kind": "def",
           "name": "AsidPool.wellFormed",
-          "line": 137,
+          "line": 138,
           "called": [
             "AsidPool",
             "maxAsidValue"
@@ -1413,7 +1413,7 @@
         {
           "kind": "theorem",
           "name": "AsidPool.initial_wellFormed",
-          "line": 143,
+          "line": 144,
           "called": [
             "initial",
             "maxAsidValue",
@@ -1423,7 +1423,7 @@
         {
           "kind": "theorem",
           "name": "AsidPool.allocate_preserves_wellFormed",
-          "line": 148,
+          "line": 149,
           "called": [
             "AsidAllocResult",
             "AsidPool",
@@ -1435,7 +1435,7 @@
         {
           "kind": "theorem",
           "name": "AsidPool.allocate_asid_valid",
-          "line": 182,
+          "line": 183,
           "called": [
             "AsidAllocResult",
             "AsidPool",
@@ -1447,7 +1447,7 @@
         {
           "kind": "def",
           "name": "asidPoolUnique",
-          "line": 221,
+          "line": 222,
           "called": [
             "ASID"
           ]
@@ -1455,7 +1455,7 @@
         {
           "kind": "theorem",
           "name": "asidPoolUnique_empty",
-          "line": 225,
+          "line": 226,
           "called": [
             "asidPoolUnique"
           ]
@@ -1463,7 +1463,7 @@
         {
           "kind": "theorem",
           "name": "asidPoolUnique_allocate_fresh",
-          "line": 229,
+          "line": 230,
           "called": [
             "ASID",
             "asidPoolUnique"
@@ -1472,7 +1472,7 @@
         {
           "kind": "theorem",
           "name": "asidPoolUnique_free",
-          "line": 238,
+          "line": 239,
           "called": [
             "ASID",
             "asidPoolUnique",
@@ -1482,7 +1482,7 @@
         {
           "kind": "def",
           "name": "asidAllocRequiresFlush",
-          "line": 257,
+          "line": 258,
           "called": [
             "AsidAllocResult"
           ]
@@ -1490,7 +1490,7 @@
         {
           "kind": "theorem",
           "name": "AsidPool.allocate_reuse_requires_flush",
-          "line": 264,
+          "line": 265,
           "called": [
             "AsidAllocResult",
             "AsidPool",
@@ -1501,7 +1501,7 @@
         {
           "kind": "theorem",
           "name": "AsidPool.allocate_rollover_requires_flush",
-          "line": 278,
+          "line": 279,
           "called": [
             "AsidAllocResult",
             "AsidPool",
@@ -1513,7 +1513,7 @@
         {
           "kind": "theorem",
           "name": "AsidPool.allocate_fresh_no_flush",
-          "line": 291,
+          "line": 292,
           "called": [
             "AsidAllocResult",
             "AsidPool",
