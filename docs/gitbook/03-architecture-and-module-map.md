@@ -169,7 +169,7 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - `Operations/Core.lean` — core transitions (`schedule`, `handleYield`, `timerTick`).
   - `Operations/Preservation.lean` — scheduler invariant preservation theorems.
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/` — D4: Priority Inheritance Protocol (WS-AB, v0.24.8–v0.25.0):
-  - `BlockingGraph.lean` — blocking relation, chain walk, `blockingChainAcyclic`, `blockingDepthBound`.
+  - `BlockingGraph.lean` — blocking relation, chain walk, `blockingAcyclic`, chain depth bounded by `objectIndex.length`.
   - `Compute.lean` — `computeMaxWaiterPriority`.
   - `Propagate.lean` — `updatePipBoost`, `propagatePriorityInheritance`, `revertPriorityInheritance`.
   - `Preservation.lean` — 16 frame lemmas (scheduler, IPC, cross-subsystem).

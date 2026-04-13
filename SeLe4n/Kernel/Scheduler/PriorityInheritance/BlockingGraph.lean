@@ -63,10 +63,8 @@ and recurse. Terminates when fuel exhausted or thread not in blockedOnReply.
   so the chain length is bounded by the number of threads, which is bounded
   by `objectIndex.length`. AF1-B integrates `blockingAcyclic` into
   `crossSubsystemInvariant` (CrossSubsystem.lean) as the 10th predicate.
-- AI6-E (L-15): The chain length is bounded by `objectIndex.length` (the
-  fuel parameter default). No separate depth constant is defined — the bound
-  follows directly from `blockingAcyclic` ensuring each chain step visits a
-  distinct thread, giving at most `objectIndex.length` steps.
+  AI6-E (L-15): No separate depth constant (e.g., `maxBlockingDepth`) is
+  defined — the `objectIndex.length` fuel default is the sole bound.
 
 **Truncation behavior**: If fuel reaches 0, returns `[]` (silent truncation).
 Under the `blockingAcyclic` invariant this never happens — fuel is always

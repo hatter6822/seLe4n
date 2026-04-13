@@ -416,8 +416,8 @@ Returns the resolved capabilities as an array. -/
    capabilities and returns only valid ones in the IPC buffer.
 
    **AI6-A (M-02) — Spec cross-reference**: See `docs/spec/SELE4N_SPEC.md`
-   §8.7 "IPC Extra Capability Resolution" for the normative specification of
-   silent-drop semantics, including the seL4 reference C kernel equivalence. -/
+   §8.10.4 "IPC Extra Capability Resolution — Silent-Drop Semantics" for the
+   normative specification, including the seL4 reference C kernel equivalence. -/
 private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
     (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
     (st : SystemState) : Array Capability :=

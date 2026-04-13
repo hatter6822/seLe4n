@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-audit-plan-8zMQr",
-      "commit_sha": "31898dba31b33895f85c43df55ff3fafe6680928",
-      "tree_sha": "89d9be3695bbba099e6cd6c6c55e3aa5bb057b90",
-      "committed_at_utc": "2026-04-12T20:54:30-04:00"
+      "commit_sha": "7a0db9287e56786f87b34e28e6f778136c46b03f",
+      "tree_sha": "c7216497e78c68cedc123020f977e47b3ea40674",
+      "committed_at_utc": "2026-04-13T01:20:32+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "2d383cebc3c91e0cf4e5f71021577569049e1e5e640bbb00f4cb9759cd00e01e"
+    "source_digest": "d07d951a5e58fe9005568da811153bfaee5e14192a7d4dabb125b93b53de9300"
   },
   "summary": {
     "module_count": 158,
@@ -27,7 +27,7 @@
     "version": "0.27.11",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 93813,
+    "production_loc": 93811,
     "test_files": 17,
     "test_loc": 11616,
     "proved_theorem_lemma_decls": 2780,
@@ -41280,7 +41280,7 @@
         {
           "kind": "def",
           "name": "blockingChain",
-          "line": 88,
+          "line": 86,
           "called": [
             "SystemState",
             "ThreadId",
@@ -41290,7 +41290,7 @@
         {
           "kind": "def",
           "name": "chainContains",
-          "line": 105,
+          "line": 103,
           "called": [
             "ThreadId"
           ]
@@ -41298,7 +41298,7 @@
         {
           "kind": "def",
           "name": "blockingGraphEdges",
-          "line": 109,
+          "line": 107,
           "called": [
             "SystemState",
             "ThreadId",
@@ -41308,7 +41308,7 @@
         {
           "kind": "def",
           "name": "blockingAcyclic",
-          "line": 128,
+          "line": 126,
           "called": [
             "SystemState",
             "ThreadId",
@@ -41318,7 +41318,7 @@
         {
           "kind": "theorem",
           "name": "blockingChain_acyclic",
-          "line": 134,
+          "line": 132,
           "called": [
             "SystemState",
             "ThreadId",
@@ -41329,7 +41329,7 @@
         {
           "kind": "def",
           "name": "blockingServer",
-          "line": 140,
+          "line": 138,
           "called": [
             "SystemState",
             "ThreadId",
@@ -41340,7 +41340,7 @@
         {
           "kind": "theorem",
           "name": "blockingChain_step",
-          "line": 155,
+          "line": 153,
           "called": [
             "SystemState",
             "ThreadId",
@@ -41353,7 +41353,7 @@
         {
           "kind": "theorem",
           "name": "blockingChain_congr",
-          "line": 185,
+          "line": 183,
           "called": [
             "SystemState",
             "ThreadId",
@@ -41367,7 +41367,7 @@
         {
           "kind": "theorem",
           "name": "blockingAcyclic_frame",
-          "line": 200,
+          "line": 198,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -41378,7 +41378,7 @@
         {
           "kind": "theorem",
           "name": "blockingChain_length_le_fuel",
-          "line": 217,
+          "line": 215,
           "called": [
             "SystemState",
             "ThreadId",
@@ -41391,7 +41391,7 @@
         {
           "kind": "theorem",
           "name": "blockingChain_bounded",
-          "line": 245,
+          "line": 243,
           "called": [
             "SystemState",
             "ThreadId",
@@ -41402,7 +41402,7 @@
         {
           "kind": "def",
           "name": "countTCBs",
-          "line": 250,
+          "line": 248,
           "called": [
             "SystemState"
           ]

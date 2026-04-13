@@ -1257,13 +1257,15 @@ kernel invariants:
 2. **`hBandProgress`** (M-25): Once the domain is active and the thread is
    runnable, higher-priority thread preemption completes within the CBS budget
    bound `N × (B + P)`. This depends on CBS admission control and the
-   `eventuallyExits` hypothesis.
+   `eventuallyExits` hypothesis (below).
 
-3. **`eventuallyExits`** (M-24): For CBS-bound threads, this should follow
-   from budget finiteness (`consumeBudget` monotonic decrease). For unbound
-   threads, this is NOT satisfiable without an external progress assumption
-   (e.g., all threads eventually block, yield, or complete). Deriving this
-   from CBS budget finiteness for bound threads is future work.
+**Sub-dependency — `eventuallyExits`** (M-24): `hBandProgress` internally
+relies on `eventuallyExits`, which asserts that every higher-priority thread
+eventually leaves the run queue. For CBS-bound threads, this should follow
+from budget finiteness (`consumeBudget` monotonic decrease). For unbound
+threads, this is NOT satisfiable without an external progress assumption
+(e.g., all threads eventually block, yield, or complete). Deriving this
+from CBS budget finiteness for bound threads is future work.
 
 **Deployment obligation**: These hypotheses are deployment-time validation
 requirements. Deployers must verify them for their specific workload and
