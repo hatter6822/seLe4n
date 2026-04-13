@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.27.11` (`lakefile.toml`) |
+| **Package version** | `0.28.0` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 91,350 across 141 Lean files |
-| **Test LoC** | 11,608 across 17 Lean test suites |
-| **Proved declarations** | 2,725 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 93,837 across 141 Lean files |
+| **Test LoC** | 11,616 across 17 Lean test suites |
+| **Proved declarations** | 2,780 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Latest audit** | [`AUDIT_v0.25.3_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.25.3_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (0 CRIT, 3 HIGH, 9 MED, 14 LOW). All actionable findings remediated via WS-AC. |
-| **Active workstream** | **WS-AG PORTFOLIO COMPLETE** (v0.26.0–v0.27.1). H3 Hardware Binding Audit Remediation — 10 phases (AG1–AG10), 67 sub-tasks. HAL crate, GIC-400 driver, ARM Generic Timer, ARMv8 page tables, ASID manager, FFI bridge, exception/interrupt models, cache coherency, QEMU testing, speculation barriers, documentation closure. Plan: [`AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md). Prior: WS-AF (v0.25.22–v0.25.27), WS-AE–WS-B. **Next: WS-V (multi-core SMP).** |
+| **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
+| **Active workstream** | **WS-AI PORTFOLIO COMPLETE** (v0.27.7–v0.28.0). Post-Audit Comprehensive Remediation — 7 phases (AI1–AI7), 37 sub-tasks. Rust ABI fixes, interrupt safety, scheduler/PIP correctness, IPC hardening, platform safety, documentation, testing & closure. Plan: [`AUDIT_v0.27.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md). Prior: WS-AH (v0.27.2–v0.27.6), WS-AG (v0.26.0–v0.27.1), WS-AF–WS-B. **Next: WS-V (multi-core SMP).** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

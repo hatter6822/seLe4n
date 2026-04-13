@@ -465,7 +465,14 @@ Deterministic branch contract for M4-A step 2:
 2. lifecycle metadata for the target id must agree with object-store type (`illegalState` otherwise),
 3. authority slot lookup must succeed,
 4. authority must satisfy `lifecycleRetypeAuthority` (`illegalAuthority` otherwise),
-5. object store + lifecycle object-type metadata are updated atomically on success. -/
+5. object store + lifecycle object-type metadata are updated atomically on success.
+
+L-26: Public for proof accessibility. Not part of the kernel API.
+Referenced by 13+ files across subsystem invariants, cross-subsystem composition
+(`CrossSubsystem.lean`), information flow proofs (`Invariant/Operations.lean`,
+`Invariant/Composition.lean`), and test suites. `protected` is infeasible due to
+the breadth of the proof chain. All production retype callers must use
+`lifecycleRetypeWithCleanup` or `lifecycleRetypeDirectWithCleanup`. -/
 def lifecycleRetypeObject
     (authority : CSpaceAddr)
     (target : SeLe4n.ObjId)

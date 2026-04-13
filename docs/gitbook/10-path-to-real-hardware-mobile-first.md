@@ -39,12 +39,15 @@ user-space-to-kernel boundary that H3 will bind to hardware registers.
 
 ### H3 — In progress: Raspberry Pi 5 binding
 
-**WS-AI Phase AI2 (Interrupt & Architecture Safety) is complete.** 5 sub-tasks
-harden the architecture layer for hardware correctness: unconditional EOI on
-interrupt dispatch error path (prevents GIC lockup), `VSpaceWalkError` type for
-`unmapPage` HW walk failures (prevents silent shadow/HW divergence), TLB flush
-enforcement for ASID reuse (eliminates stale TLB entries), and `suspendThread`
-atomicity documentation for interrupt-disabled execution.
+**WS-AI Portfolio COMPLETE (v0.28.0).** 7 phases, 37 sub-tasks addressing all
+60 findings from the v0.27.6 comprehensive audit (5 HIGH, 27 MEDIUM, 28 LOW).
+Key fixes: unconditional EOI on interrupt dispatch (AI2-A), `handleYield`
+PIP-aware re-enqueue (AI3-A), SchedContext donation leak prevention (AI4-A),
+substantive simulation contracts (AI5-A/B), insecure labeling context guard
+(AI5-C), Rust trap error codes (AI1-A), UART synchronization (AI1-D).
+Phase AI7 performed final closure: CBS truncation tolerance documentation
+(L-17), `lifecycleRetypeObject` visibility rationale (L-26), fixture
+verification, version bump to 0.28.0, and full regression gate.
 
 **Phase AG8 (Integration + Model Closure) is complete.** 7 sub-tasks close
 remaining Lean model gaps: timeout sentinel → `timedOut : Bool` TCB field

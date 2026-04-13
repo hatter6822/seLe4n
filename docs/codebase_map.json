@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-audit-plan-8zMQr",
-      "commit_sha": "7a0db9287e56786f87b34e28e6f778136c46b03f",
-      "tree_sha": "c7216497e78c68cedc123020f977e47b3ea40674",
-      "committed_at_utc": "2026-04-13T01:20:32+00:00"
+      "branch": "claude/review-codebase-audit-A74VK",
+      "commit_sha": "9f91604564025826ad391721b5e4c7019bbdfe11",
+      "tree_sha": "a8491042a96fe215cf15211d0d7bd2495f0851ff",
+      "committed_at_utc": "2026-04-13T02:32:34+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d07d951a5e58fe9005568da811153bfaee5e14192a7d4dabb125b93b53de9300"
+    "source_digest": "e1b1713c030db191cfe50b18809cc2280065da04e9526ad84f2b9c356e250dc1"
   },
   "summary": {
     "module_count": 158,
     "declaration_count": 5034
   },
   "readme_sync": {
-    "version": "0.27.11",
+    "version": "0.28.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 93811,
+    "production_loc": 93837,
     "test_files": 17,
     "test_loc": 11616,
     "proved_theorem_lemma_decls": 2780,
@@ -30517,7 +30517,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeObject",
-          "line": 469,
+          "line": 476,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -30533,7 +30533,7 @@
         {
           "kind": "def",
           "name": "lifecycleRevokeDeleteRetype",
-          "line": 506,
+          "line": 513,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -30548,7 +30548,7 @@
         {
           "kind": "def",
           "name": "objectTypeAllocSize",
-          "line": 534,
+          "line": 541,
           "called": [
             "KernelObjectType"
           ]
@@ -30556,7 +30556,7 @@
         {
           "kind": "def",
           "name": "requiresPageAlignment",
-          "line": 547,
+          "line": 554,
           "called": [
             "KernelObjectType"
           ]
@@ -30564,7 +30564,7 @@
         {
           "kind": "def",
           "name": "allocationBasePageAligned",
-          "line": 554,
+          "line": 561,
           "called": [
             "UntypedObject",
             "toNat"
@@ -30573,7 +30573,7 @@
         {
           "kind": "def",
           "name": "scrubObjectMemory",
-          "line": 578,
+          "line": 585,
           "called": [
             "KernelObjectType",
             "ObjId",
@@ -30588,7 +30588,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_objects_eq",
-          "line": 585,
+          "line": 592,
           "called": [
             "KernelObjectType",
             "ObjId",
@@ -30599,7 +30599,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_scheduler_eq",
-          "line": 590,
+          "line": 597,
           "called": [
             "KernelObjectType",
             "ObjId",
@@ -30610,7 +30610,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_lifecycle_eq",
-          "line": 595,
+          "line": 602,
           "called": [
             "KernelObjectType",
             "ObjId",
@@ -30621,7 +30621,7 @@
         {
           "kind": "theorem",
           "name": "scrubObjectMemory_establishes_memoryZeroed",
-          "line": 601,
+          "line": 608,
           "called": [
             "KernelObjectType",
             "ObjId",
@@ -30638,7 +30638,7 @@
         {
           "kind": "def",
           "name": "retypeFromUntyped",
-          "line": 632,
+          "line": 639,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -30659,7 +30659,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_capacity_gated",
-          "line": 696,
+          "line": 703,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -30673,7 +30673,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_ok_decompose",
-          "line": 722,
+          "line": 729,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -30693,7 +30693,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_error_typeMismatch",
-          "line": 847,
+          "line": 854,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -30705,7 +30705,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_error_allocSizeTooSmall",
-          "line": 866,
+          "line": 873,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -30721,7 +30721,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_error_regionExhausted",
-          "line": 892,
+          "line": 899,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -30744,7 +30744,7 @@
         {
           "kind": "theorem",
           "name": "lifecycle_storeObject_objects_eq",
-          "line": 929,
+          "line": 936,
           "called": [
             "KernelObject",
             "ObjId",
@@ -30757,7 +30757,7 @@
         {
           "kind": "theorem",
           "name": "lifecycle_storeObject_objects_ne",
-          "line": 938,
+          "line": 945,
           "called": [
             "KernelObject",
             "ObjId",
@@ -30770,7 +30770,7 @@
         {
           "kind": "theorem",
           "name": "lifecycle_storeObject_scheduler_eq",
-          "line": 948,
+          "line": 955,
           "called": [
             "KernelObject",
             "ObjId",
@@ -30782,7 +30782,7 @@
         {
           "kind": "theorem",
           "name": "cspaceLookupSlot_ok_state_eq",
-          "line": 956,
+          "line": 963,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -30795,7 +30795,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_as_storeObject",
-          "line": 975,
+          "line": 982,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -30813,7 +30813,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_lookup_preserved_ne",
-          "line": 1006,
+          "line": 1013,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -30828,7 +30828,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_runnable_membership",
-          "line": 1019,
+          "line": 1026,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -30844,7 +30844,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_ok_not_runnable_membership",
-          "line": 1034,
+          "line": 1041,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -30860,7 +30860,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_error_illegalState",
-          "line": 1049,
+          "line": 1056,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -30873,7 +30873,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_error_illegalAuthority",
-          "line": 1060,
+          "line": 1067,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -30889,7 +30889,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeObject_success_updates_object",
-          "line": 1075,
+          "line": 1082,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -30910,7 +30910,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_error_authority_cleanup_alias",
-          "line": 1105,
+          "line": 1112,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -30922,7 +30922,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_ok_implies_authority_ne_cleanup",
-          "line": 1115,
+          "line": 1122,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -30935,7 +30935,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRevokeDeleteRetype_ok_implies_staged_steps",
-          "line": 1128,
+          "line": 1135,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -30951,7 +30951,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeWithCleanup",
-          "line": 1200,
+          "line": 1207,
           "called": [
             "CSpaceAddr",
             "Kernel",
@@ -30968,7 +30968,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWithCleanup_ok_runnable_no_dangling",
-          "line": 1221,
+          "line": 1228,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -30988,7 +30988,7 @@
         {
           "kind": "def",
           "name": "objectOfTypeTag",
-          "line": 1263,
+          "line": 1270,
           "called": [
             "KernelError",
             "KernelObject",
@@ -31000,7 +31000,7 @@
         {
           "kind": "def",
           "name": "objectOfKernelType",
-          "line": 1296,
+          "line": 1303,
           "called": [
             "KernelObject",
             "KernelObjectType",
@@ -31013,7 +31013,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeDirect",
-          "line": 1351,
+          "line": 1358,
           "called": [
             "Capability",
             "Kernel",
@@ -31028,7 +31028,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeDirectWithCleanup",
-          "line": 1382,
+          "line": 1389,
           "called": [
             "Capability",
             "Kernel",
@@ -35478,7 +35478,7 @@
         {
           "kind": "def",
           "name": "admissionCheck",
-          "line": 213,
+          "line": 224,
           "called": [
             "Kernel",
             "SchedContext",
@@ -36890,23 +36890,6 @@
         {
           "kind": "def",
           "name": "utilization",
-          "line": 93,
-          "called": [
-            "Bandwidth"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "exceeds",
-          "line": 96,
-          "called": [
-            "Bandwidth",
-            "utilization"
-          ]
-        },
-        {
-          "kind": "instance",
-          "name": "<anonymous:instance:101>",
           "line": 101,
           "called": [
             "Bandwidth"
@@ -36914,14 +36897,31 @@
         },
         {
           "kind": "def",
+          "name": "exceeds",
+          "line": 104,
+          "called": [
+            "Bandwidth",
+            "utilization"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:109>",
+          "line": 109,
+          "called": [
+            "Bandwidth"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "maxReplenishments",
-          "line": 111,
+          "line": 119,
           "called": []
         },
         {
           "kind": "structure",
           "name": "ReplenishmentEntry",
-          "line": 115,
+          "line": 123,
           "called": [
             "Budget"
           ]
@@ -36929,21 +36929,21 @@
         {
           "kind": "namespace",
           "name": "ReplenishmentEntry",
-          "line": 120,
+          "line": 128,
           "called": []
         },
         {
           "kind": "def",
           "name": "isEligible",
-          "line": 122,
+          "line": 130,
           "called": [
             "ReplenishmentEntry"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:127>",
-          "line": 127,
+          "name": "<anonymous:instance:135>",
+          "line": 135,
           "called": [
             "ReplenishmentEntry"
           ]
@@ -36951,7 +36951,7 @@
         {
           "kind": "structure",
           "name": "SchedContext",
-          "line": 147,
+          "line": 155,
           "called": [
             "Budget",
             "Deadline",
@@ -36968,13 +36968,13 @@
         {
           "kind": "namespace",
           "name": "SchedContext",
-          "line": 165,
+          "line": 173,
           "called": []
         },
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 169,
+          "line": 177,
           "called": [
             "SchedContext",
             "isPositive",
@@ -36984,7 +36984,7 @@
         {
           "kind": "def",
           "name": "bandwidth",
-          "line": 180,
+          "line": 188,
           "called": [
             "Bandwidth",
             "SchedContext"
@@ -36993,7 +36993,7 @@
         {
           "kind": "def",
           "name": "utilizationPerMille",
-          "line": 184,
+          "line": 192,
           "called": [
             "SchedContext",
             "utilization"
@@ -37002,7 +37002,7 @@
         {
           "kind": "def",
           "name": "empty",
-          "line": 193,
+          "line": 201,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -37013,8 +37013,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:203>",
-          "line": 203,
+          "name": "<anonymous:instance:211>",
+          "line": 211,
           "called": [
             "SchedContext",
             "default",
@@ -37024,7 +37024,7 @@
         {
           "kind": "def",
           "name": "mkChecked",
-          "line": 208,
+          "line": 216,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -37035,7 +37035,7 @@
         {
           "kind": "inductive",
           "name": "SchedContextBinding",
-          "line": 234,
+          "line": 242,
           "called": [
             "SchedContextId",
             "ThreadId",
@@ -37045,13 +37045,13 @@
         {
           "kind": "namespace",
           "name": "SchedContextBinding",
-          "line": 240,
+          "line": 248,
           "called": []
         },
         {
           "kind": "def",
           "name": "scId",
-          "line": 243,
+          "line": 251,
           "called": [
             "SchedContextBinding",
             "SchedContextId",
@@ -37061,15 +37061,15 @@
         {
           "kind": "def",
           "name": "isBound",
-          "line": 249,
+          "line": 257,
           "called": [
             "SchedContextBinding"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:255>",
-          "line": 255,
+          "name": "<anonymous:instance:263>",
+          "line": 263,
           "called": [
             "SchedContextBinding",
             "default"
@@ -37077,16 +37077,16 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:258>",
-          "line": 258,
+          "name": "<anonymous:instance:266>",
+          "line": 266,
           "called": [
             "SchedContextBinding"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:271>",
-          "line": 271,
+          "name": "<anonymous:instance:279>",
+          "line": 279,
           "called": [
             "Kernel",
             "SchedContext",

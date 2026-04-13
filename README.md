@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.27.6-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.28.0-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -85,11 +85,11 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.27.4` |
+| **Version** | `0.28.0` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 91,693 across 141 files |
-| **Test Lean LoC** | 11,610 across 17 test suites |
-| **Proved declarations** | 2,736 theorem/lemma declarations (zero sorry/axiom) |
+| **Production Lean LoC** | 93,837 across 141 files |
+| **Test Lean LoC** | 11,616 across 17 test suites |
+| **Proved declarations** | 2,780 theorem/lemma declarations (zero sorry/axiom) |
 | **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 48 source files |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) — single-core (core 0), SMP deferred to WS-V |
 | **Hardware binding** | **H3 COMPLETE** (WS-AG AG1–AG10): HAL, GIC-400, timer, ARMv8 page tables, FFI bridge, QEMU boot |
