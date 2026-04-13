@@ -1,3 +1,57 @@
+## v0.28.0 — WS-AI Phase AI7: Testing, Closure & Final Gate
+
+Phase AI7 of WS-AI Post-Audit Comprehensive Remediation. Final closure phase
+addressing 2 remaining LOW findings (L-17, L-26), verifying test fixtures,
+bumping version to 0.28.0, and performing full regression gate. Also includes
+the v0.27.12 AI6 documentation-only changes (no separate version bump was
+applied for AI6). WS-AI portfolio (7 phases, 37 sub-tasks) is now COMPLETE.
+Gate: `test_full.sh` + `cargo test --workspace` + `check_version_sync.sh`.
+Zero sorry/axiom.
+
+### Changes
+
+- **AI7-A** (L-17/LOW): Documented CBS admission truncation tolerance in
+  `Types.lean` (`Bandwidth.utilization`) and `Budget.lean` (`admissionCheck`).
+  Integer division `budget * 1000 / period` truncates down; per-context error
+  bounded by 1 per-mille. For RPi5 at 54 MHz with typical 1–100 ms periods,
+  per-context error ≤ 0.1 ms; aggregate ≤ 6.4% for ≤ 64 contexts. Design
+  rationale documented: truncation-down matches seL4 MCS behavior, preferring
+  admission over rejection at the margin. Per-context budget bounds hold
+  regardless of admission precision.
+- **AI7-B** (L-26/LOW): Documented `lifecycleRetypeObject` public visibility
+  rationale in `Lifecycle/Operations.lean`. Function is referenced by 13+
+  files across subsystem invariants, cross-subsystem composition
+  (`CrossSubsystem.lean`), information flow proofs, and test suites. Marking
+  `protected` is infeasible. Explicit L-26 annotation added: "Public for proof
+  accessibility. Not part of the kernel API."
+- **AI7-C**: Fixture verification — `lake exe sele4n` trace output (225 lines)
+  matches `tests/fixtures/main_trace_smoke.expected` exactly. No fixture update
+  needed.
+- **AI7-D**: Version bump from 0.27.11 to 0.28.0 across 16 files: `lakefile.toml`,
+  `rust/Cargo.toml`, `rust/sele4n-hal/src/boot.rs`, `CLAUDE.md`,
+  `docs/spec/SELE4N_SPEC.md`, `README.md`, and 10 i18n README badges.
+  `check_version_sync.sh` passes.
+- **AI7-E**: WORKSTREAM_HISTORY.md updated with AI7 entry; WS-AI marked
+  PORTFOLIO COMPLETE (7 phases, 37 sub-tasks, v0.27.7–v0.28.0).
+- **AI7-F**: CLAUDE.md active workstream context updated with AI7 completion.
+
+### AI6 Changes (included in v0.28.0)
+
+- **AI6-A** through **AI6-F**: Documentation & Proof Gaps — 7 sub-tasks
+  addressing 16 documentation-only findings (M-02, M-03, M-07, M-08, M-10,
+  M-11, M-13, M-16, M-17, M-18, M-21, M-23, M-24, M-25, L-02, L-13) and
+  2 stale reference fixes (L-15, L-24). 4 new SELE4N_SPEC.md sections added
+  (§8.10.4, §8.14.1, §8.14.2, §8.14.3). See WORKSTREAM_HISTORY.md for
+  full details.
+
+### Statistics
+
+- Files modified: 20 (2 Lean, 16 version/badge files, 2 documentation)
+- Lines added: ~140 (documentation, changelog, version references)
+- Lines removed: ~20 (old version strings)
+- Sorry count: 0
+- Axiom count: 0
+
 ## v0.27.11 — WS-AI Phase AI5: Platform & Simulation Safety
 
 Phase AI5 of WS-AI Post-Audit Comprehensive Remediation. Replaces
