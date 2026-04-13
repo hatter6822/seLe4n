@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.27.10` (`lakefile.toml`) |
+| **Package version** | `0.27.11` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 91,350 across 141 Lean files |
 | **Test LoC** | 11,608 across 17 Lean test suites |
@@ -655,11 +655,18 @@ corresponding `RegisterFile` extension.
 
 ### 6.6 Platform Testing Limitations (M-05)
 
-The simulation platform contract (`Sim/Contract.lean`) uses permissive
-`True` propositions for all runtime and boot obligations. This is by design
-— simulation enables fast iteration and test execution without hardware.
+The simulation platform contract (`Sim/Contract.lean`) uses a permissive
+runtime contract (`True` for register context stability and memory access)
+but substantive boot and interrupt contracts (AI5-A/B, v0.27.11).
 
-**Limitations**:
+**Boot contract** (`simBootContract`): Validates empty initial object store
+and empty capability reference table — matching the RPi5 production pattern.
+
+**Interrupt contract** (`simInterruptContract`): Restricts supported IRQs
+to GIC-400 INTID range 0–223, with handler mapping required for supported
+lines — matching the RPi5 production pattern.
+
+**Remaining limitations**:
 - The RPi5 `registerContextStable` check (6 conditions: stack alignment,
   PC kernel range, budget positivity, SP mapped, return address valid,
   TLS pointer valid) is NOT exercisable under simulation
@@ -669,6 +676,22 @@ The simulation platform contract (`Sim/Contract.lean`) uses permissive
 **Recommendation**: Use the `Sim.Restrictive` contract for property
 validation (it imposes some structural constraints). For production-
 representative testing, use the RPi5 contract (`RPi5/Contract.lean`).
+
+### 6.7 Insecure Default Labeling Context Guard (M-19)
+
+The `defaultLabelingContext` assigns `publicLabel` to all entities, defeating
+all information-flow enforcement. This is formally proven insecure by
+`defaultLabelingContext_insecure` and `defaultLabelingContext_all_threads_observable`.
+
+**Runtime guard** (AI5-C, v0.27.11): `syscallEntryChecked` rejects contexts
+detected as insecure by `isInsecureDefaultContext`, returning `.error .policyDenied`.
+The detector checks sentinel labels at ID 0 across all four entity classes
+(threads, objects, endpoints, services) in O(1) time.
+
+**Test helper**: `testLabelingContext` assigns `kernelTrusted` to ID 0 entities,
+passing the guard while remaining structurally valid for test execution. Test
+harnesses should use this context instead of `defaultLabelingContext` when
+exercising `syscallEntryChecked`.
 
 ---
 
@@ -1110,7 +1133,7 @@ carry an explicit `h : ... = .ok st'` success hypothesis.
 - `uniqueWaiters`: no notification has duplicate thread IDs in `waitingThreads`
   (AG1-C, F-T02)
 
-**Production receive cleanup** (AI4-A, v0.27.10): `cleanupPreReceiveDonation` is
+**Production receive cleanup** (AI4-A, v0.27.11): `cleanupPreReceiveDonation` is
 wired into the `endpointReceiveDual` no-sender branch (Transport.lean). When a
 server blocks on `.receive` without having replied to a prior `.call`, the stale
 donated SchedContext is returned to the original owner before blocking. This

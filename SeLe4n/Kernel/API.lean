@@ -1028,6 +1028,12 @@ def dispatchSyscallChecked (ctx : LabelingContext)
     information-flow enforcement. All cross-domain operations are gated by
     `securityFlowsTo` before execution.
 
+    AI5-C (M-19): Rejects the insecure `defaultLabelingContext` at the entry
+    point. The `isInsecureDefaultContext` detector fires once per syscall entry,
+    returning `.policyDenied` if the labeling context assigns `publicLabel` to
+    all four entity classes. This prevents accidental deployment with a context
+    that defeats all information-flow enforcement.
+
     This is the recommended entry point for production systems with
     information-flow policies. The unchecked `syscallEntry` remains
     available for trusted kernel paths and backward compatibility. -/
@@ -1035,6 +1041,9 @@ def syscallEntryChecked (ctx : LabelingContext)
     (layout : SeLe4n.SyscallRegisterLayout)
     (regCount : Nat := 32) : Kernel Unit :=
   fun st =>
+    -- AI5-C (M-19): Reject insecure default labeling context in checked mode
+    if isInsecureDefaultContext ctx then .error .policyDenied
+    else
     match st.scheduler.current with
     | none => .error .illegalState
     | some tid =>

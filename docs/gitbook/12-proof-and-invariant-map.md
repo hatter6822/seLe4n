@@ -1492,6 +1492,20 @@ Introduces the seL4-style capability-gated syscall entry pattern:
     contract.
   - Substantive proof hooks in `Platform/Sim/ProofHooks.lean` for the restrictive
     simulation variant.
+- **Simulation boot & interrupt contracts** (`Platform/Sim/BootContract.lean` — AI5-A/B):
+  - `simBootContract` — substantive predicates validating empty initial object store
+    and empty capability reference table (mirrors RPi5 pattern). Correctness proofs:
+    `simBootContract_objectType_holds`, `simBootContract_capabilityRef_holds`.
+  - `simInterruptContract` — GIC-400 range-bounded IRQ predicates (`irq.toNat < 224`),
+    with handler mapping requirement for supported IRQs. `simMaxIrqId := 224`.
+- **Insecure labeling context guard** (`InformationFlow/Policy.lean` — AI5-C):
+  - `isInsecureDefaultContext` — O(1) sentinel-based detector checking all four
+    entity classes at ID 0. Proven correct for both default (insecure) and test
+    (secure) contexts.
+  - `testLabelingContext` — test-only labeling context assigning `kernelTrusted` to
+    ID 0 entities; passes the insecurity guard.
+  - Guard wired into `syscallEntryChecked` (API.lean): rejects insecure labeling
+    contexts with `.error .policyDenied`.
 
 ### Testing (WS-H15e)
 

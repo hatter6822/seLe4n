@@ -255,6 +255,67 @@ theorem defaultLabelingContext_all_threads_observable :
   simp [defaultLabelingContext, SecurityLabel.publicLabel, securityFlowsTo,
         confidentialityFlowsTo, integrityFlowsTo]
 
+-- ============================================================================
+-- AI5-C (M-19): Insecure default labeling context runtime guard
+-- ============================================================================
+
+/-- AI5-C (M-19): Detect the insecure default labeling context at runtime.
+
+    Checks sentinel labels at ID 0 for all four entity classes — sufficient
+    because `defaultLabelingContext` assigns `publicLabel` to ALL entities
+    uniformly. Any labeling context that assigns `publicLabel` at all four
+    sentinels matches the insecure pattern.
+
+    This is a lightweight O(1) check, not a full verification of all mappings.
+    A truly secure context may still assign `publicLabel` to some entities;
+    this detector catches the specific pattern where *all* entity classes
+    use `publicLabel` uniformly (the `defaultLabelingContext` pattern). -/
+def isInsecureDefaultContext (ctx : LabelingContext) : Bool :=
+  ctx.threadLabelOf (SeLe4n.ThreadId.ofNat 0) == SecurityLabel.publicLabel &&
+  ctx.objectLabelOf (SeLe4n.ObjId.ofNat 0) == SecurityLabel.publicLabel &&
+  ctx.endpointLabelOf (SeLe4n.ObjId.ofNat 0) == SecurityLabel.publicLabel &&
+  ctx.serviceLabelOf (ServiceId.ofNat 0) == SecurityLabel.publicLabel
+
+/-- AI5-C (M-19): The detector correctly identifies the default labeling context
+    as insecure. -/
+theorem isInsecureDefaultContext_defaultLabelingContext :
+    isInsecureDefaultContext defaultLabelingContext = true := by
+  simp [isInsecureDefaultContext, defaultLabelingContext,
+        SecurityLabel.publicLabel]
+
+/-- AI5-C (M-19): Test-only labeling context that assigns a non-public label to
+    entity ID 0, defeating the insecurity detector while remaining structurally
+    valid for test execution.
+
+    This context assigns `kernelTrusted` (high confidentiality, trusted integrity)
+    to thread 0, object 0, endpoint 0, and service 0. All other entities receive
+    `publicLabel`, matching the default context for IDs ≥ 1.
+
+    Test harnesses should use this context instead of `defaultLabelingContext`
+    when exercising checked dispatch paths (`syscallEntryChecked`). -/
+def testLabelingContext : LabelingContext :=
+  {
+    objectLabelOf := fun oid =>
+      if oid.toNat == 0 then SecurityLabel.kernelTrusted
+      else SecurityLabel.publicLabel
+    threadLabelOf := fun tid =>
+      if tid.toNat == 0 then SecurityLabel.kernelTrusted
+      else SecurityLabel.publicLabel
+    endpointLabelOf := fun oid =>
+      if oid.toNat == 0 then SecurityLabel.kernelTrusted
+      else SecurityLabel.publicLabel
+    serviceLabelOf := fun sid =>
+      if sid.toNat == 0 then SecurityLabel.kernelTrusted
+      else SecurityLabel.publicLabel
+  }
+
+/-- AI5-C (M-19): The test labeling context is NOT detected as insecure. -/
+theorem isInsecureDefaultContext_testLabelingContext :
+    isInsecureDefaultContext testLabelingContext = false := by
+  simp [isInsecureDefaultContext, testLabelingContext,
+        SecurityLabel.kernelTrusted, SecurityLabel.publicLabel]
+  decide
+
 theorem confidentialityFlowsTo_refl (c : Confidentiality) :
     confidentialityFlowsTo c c = true := by
   cases c <;> rfl

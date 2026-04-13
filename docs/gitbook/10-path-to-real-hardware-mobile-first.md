@@ -119,7 +119,9 @@ provides the organizational infrastructure for hardware binding:
 - **`ExtendedBootBoundaryContract`** — adds entry exception level, MMU state,
   device tree location, entry point, and stack pointer to the base boot contract.
 - **Simulation platform** (`Platform/Sim/`) — `SimPlatform` with permissive
-  contracts for trace harness and test execution.
+  runtime contract for trace harness and test execution. Boot contract validates
+  empty initial object store and capability refs (AI5-A). Interrupt contract
+  restricts IRQs to GIC-400 INTID range 0–223 (AI5-B).
 - **RPi5 platform contracts** (`Platform/RPi5/`) — BCM2712 memory map, GIC-400
   base addresses, ARM Generic Timer frequency, PL011 UART address, ARM64
   machine config (64-bit registers, 48-bit VA, 44-bit PA, 4 KiB pages,
