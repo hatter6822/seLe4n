@@ -63,8 +63,8 @@ and recurse. Terminates when fuel exhausted or thread not in blockedOnReply.
   so the chain length is bounded by the number of threads, which is bounded
   by `objectIndex.length`. AF1-B integrates `blockingAcyclic` into
   `crossSubsystemInvariant` (CrossSubsystem.lean) as the 10th predicate.
-- The `blockingDepthBound` theorem (below) further proves the chain is bounded
-  by `maxBlockingDepth` (= 32), which is always ≤ `objectIndex.length`.
+  AI6-E (L-15): No separate depth constant (e.g., `maxBlockingDepth`) is
+  defined — the `objectIndex.length` fuel default is the sole bound.
 
 **Truncation behavior**: If fuel reaches 0, returns `[]` (silent truncation).
 Under the `blockingAcyclic` invariant this never happens — fuel is always
@@ -75,7 +75,14 @@ priority boosts until the cycle is broken by an IPC completion or timeout.
 **Invariant dependency**: `blockingAcyclic` is the critical safety property,
 integrated into `crossSubsystemInvariant` (CrossSubsystem.lean) as the 10th
 predicate (AF1-B). Without it, this function's correctness guarantee degrades
-from "complete chain walk" to "prefix of chain up to fuel limit". -/
+from "complete chain walk" to "prefix of chain up to fuel limit".
+
+**AI6-A (M-23) — Cycle behavior**: Under a cyclic blocking graph (invariant
+violation), PIP propagation stops at the cycle boundary. Threads in the cycle
+retain stale priority boosts until the cycle is broken by IPC completion or
+timeout. This is conservative (not unsound): stale boosts cause over-promotion,
+not under-promotion, so no priority inversion results. Formal cycle detection
+and removal is deferred to WS-V. -/
 def blockingChain (st : SystemState) (tid : ThreadId) (fuel : Nat := st.objectIndex.length)
     : List ThreadId :=
   match fuel with

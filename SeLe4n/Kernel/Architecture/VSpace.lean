@@ -57,7 +57,13 @@ def resolveAsidRoot (st : SystemState) (asid : SeLe4n.ASID) : Option (SeLe4n.Obj
     from runtime state). The syscall dispatch path (API.lean) wires through the
     state-aware variant, so all user-facing operations enforce the platform-specific
     bound. Direct use of `physicalAddressBound` is appropriate only in model-level
-    theorems where the concrete platform is irrelevant. -/
+    theorems where the concrete platform is irrelevant.
+
+    AI6-C (M-13): `physicalAddressBound` (2^52) is the proof-layer default
+    only. Internal helpers that use this constant do not need platform-specific
+    bounds because they are never called directly from user-facing dispatch.
+    Production dispatch always routes through `st.machine.physicalAddressWidth`,
+    which resolves to the platform's actual PA width (e.g., 44 for BCM2712). -/
 def physicalAddressBound : Nat := 2^52
 
 /-- U2-D/U-H07: Platform-specific physical address bound derived from `MachineConfig`.

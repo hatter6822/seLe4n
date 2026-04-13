@@ -347,7 +347,14 @@ def isDeviceAddress (addr : PAddr) : Bool :=
     abstract model returns `st.machine.memory addr` but the real hardware
     may return a different value on each read. Proofs must use `MmioSafe`
     or restrict to `¬ inMmioRegion rpi5MmioRegionDescs addr` to avoid
-    unsound reasoning about device registers. -/
+    unsound reasoning about device registers.
+
+    **AI6-B (M-10) — Sequential model limitation**: This function returns
+    `st.machine.memory addr` (RAM semantics). The sequential model does
+    not capture volatile register behavior — real hardware device registers
+    may return different values on successive reads (status bits, FIFO data,
+    interrupt acknowledgment). Hardware binding (WS-V/AG10) must substitute
+    actual MMIO reads via FFI (`@[extern]` bridge to Rust HAL `mmio.rs`). -/
 def mmioRead (addr : PAddr) : Kernel UInt8 :=
   fun st =>
     if isDeviceAddress addr then

@@ -132,7 +132,15 @@ theorem adapterReadMemory_error_unsupportedBinding
     **Design note**: This replaces the individual `writeRegisterState` approach
     for context switches. Individual register writes break `contextMatchesCurrent`
     because the register file is partially updated while `scheduler.current`
-    still points to the old thread. The atomic operation eliminates this window. -/
+    still points to the old thread. The atomic operation eliminates this window.
+
+    **AI6-C (M-17) — TLB/ASID maintenance gap**: This context switch operation
+    does not model TLB invalidation or ASID switching. On hardware, switching
+    between threads in different address spaces requires ASID-tagged TLB
+    management to prevent stale translation entries. ASID switching is performed
+    by VSpace operations (`VSpaceBackend` / `VSpaceARMv8.lean`) independently
+    of the context switch path. Atomic TLB + ASID + register context switch
+    coordination is deferred to WS-V hardware binding. -/
 def contextSwitchState (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile)
     (st : SystemState) : SystemState :=
   { st with

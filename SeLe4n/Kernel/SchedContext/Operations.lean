@@ -139,7 +139,15 @@ def schedContextBind (scId : ObjId) (threadId : ThreadId) : Kernel Unit :=
           -- by SchedContext domain.
           if tcb.domain != sc.domain then .error .invalidArgument
           else
-          -- Z5-G1: Precondition check — TCB must be unbound
+          -- Z5-G1: Precondition check — TCB must be unbound.
+          -- AI6-D (L-13): `schedContextBind` checks `tcb.schedContextBinding`
+          -- (binding state: `.unbound`) but NOT the thread's operational state
+          -- (`ipcState`, scheduler state). This matches seL4 MCS semantics
+          -- where SchedContext binding is independent of thread execution
+          -- state — binding can occur while a thread is blocked, ready, or in
+          -- any other operational state. Operational safety is ensured by the
+          -- SchedContext invariant bundle (Invariant/Defs.lean), not by
+          -- per-bind state checks.
           match tcb.schedContextBinding with
           | .unbound =>
             -- Z5-G2: Bidirectional binding

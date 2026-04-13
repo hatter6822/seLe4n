@@ -36,6 +36,18 @@ The error-case preservation theorems are trivially true (the state is unchanged 
 error). The success-path theorems are substantive: they prove that adapter transitions
 satisfying the `RuntimeBoundaryContract` and `AdapterProofHooks` obligations preserve
 the composed invariant bundle over genuinely changed state.
+
+**AI6-C (M-18) — Cross-module composition gap**: Per-subsystem invariant
+preservation is proven independently: TLB consistency (`tlbConsistent`),
+cache coherency (`CacheModel.lean`), page table well-formedness
+(`VSpaceInvariant.lean`), and ASID uniqueness (`AsidManager.lean`). The
+relational composition theorem — proving that TLB + cache + page table
+maintain *simultaneous* coherency through compound operations (e.g., a page
+table update followed by TLB flush followed by I-cache invalidation) — is
+not yet proven. Per-subsystem preservation suffices for the sequential model
+where operations are atomic. The relational composition theorem is deferred
+to WS-V hardware binding where non-atomic multi-step cache/TLB maintenance
+sequences require cross-subsystem coherency proofs.
 -/
 
 namespace SeLe4n.Kernel.Architecture

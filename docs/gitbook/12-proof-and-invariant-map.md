@@ -2612,7 +2612,9 @@ by construction (field defaults to `none`).
 **Blocking graph model** (`PriorityInheritance/BlockingGraph.lean`):
 - `blockedOnThread`: direct blocking via `blockedOnReply _ (some server)`
 - `waitersOf`: all direct waiters (fold over objectIndex)
-- `blockingChain`: fuel-bounded transitive upward walk
+- `blockingChain`: fuel-bounded transitive upward walk (fuel defaults to
+  `objectIndex.length`; AI6/L-15: no separate depth constant — the bound
+  follows from `blockingAcyclic` ensuring each step visits a distinct thread)
 - `blockingAcyclic`: system-level acyclicity invariant
 - `blockingChain_length_le_fuel`: chain depth ≤ fuel (≤ objectIndex.length)
 
@@ -2680,6 +2682,14 @@ counting functions, `bucketPosition`.
   fewer competitors). Full inductive proof over thread list with Bool condition
   monotonicity.
 - `pip_enhanced_wcrt_le_base`: PIP-boosted WCRT ≤ base WCRT.
+
+**Externalized hypotheses (AI6/M-24/M-25)**: `bounded_scheduling_latency_exists`
+requires `hDomainActiveRunnable` and `hBandProgress` — these are deployment
+obligations encoding runtime properties (domain scheduler liveness, band
+exhaustion ordering) that are not mechanically derivable from kernel invariants.
+The `eventuallyExits` predicate (BandExhaustion.lean) is externalized for
+unbound threads; CBS-bound thread derivation from budget finiteness is future
+work. See `docs/spec/SELE4N_SPEC.md` §8.14.1 for full specification.
 
 **Test coverage**: 58 surface anchor tests in `tests/LivenessSuite.lean`.
 

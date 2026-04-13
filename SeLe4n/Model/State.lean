@@ -340,7 +340,17 @@ def setDomainScheduleChecked (st : SystemState) (schedule : List DomainScheduleE
 /-- Q2-J: Predicate asserting that every RHTable and RHSet in the system state
 satisfies the Robin Hood invariant extension (WF ∧ distCorrect ∧ noDupKeys ∧
 probeChainDominant). This is the global well-formedness condition for the
-builder-phase state representation. -/
+builder-phase state representation.
+
+AI6-D (L-02): This predicate uses a 17-deep conjunction (∧-chain) over all
+RHTable/RHSet instances in the state. Tuple projection (e.g., `h.2.2.1`) is
+structurally fragile — adding a new table field shifts all subsequent
+projection indices. Named extractors (Builder.lean:30-116) provide
+maintainable access to individual conjuncts without positional dependence.
+See AF-26 for design rationale on the projection vs. named-extractor
+tradeoff. The conjunction depth is stable under the current invariant
+bundle and only changes when new RHTable/RHSet fields are added to
+SystemState or its sub-structures. -/
 def SystemState.allTablesInvExtK (st : SystemState) : Prop :=
   -- SystemState direct fields
   st.objects.invExtK ∧

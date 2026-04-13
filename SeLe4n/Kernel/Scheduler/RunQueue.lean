@@ -43,7 +43,10 @@ structure RunQueue where
   /-- AF-40: Cached thread count. Maintained by `insert` (+1) and `remove` (-1)
       to avoid O(n) `flat.length` traversals. Invariant: `size = flat.length`
       (structurally maintained, not proof-enforced). Used for capacity checks
-      and diagnostic reporting — not referenced by scheduling selection. -/
+      and diagnostic reporting — not referenced by scheduling selection.
+      AI6-A (M-03): Proof-linking `size` to `flat.length` via a formal
+      invariant predicate is deferred — zero functional benefit since
+      scheduling selection uses `flat` directly, not `size`. -/
   size : Nat
   maxPriority : Option Priority
   /-- WS-G4: Structural invariant — every flat-list entry is in the HashSet.
