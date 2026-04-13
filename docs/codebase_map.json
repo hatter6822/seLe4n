@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-codebase-audit-A74VK",
-      "commit_sha": "f7875f810390bcacfe044db7be60abf3d7dadc66",
-      "tree_sha": "d1f293c3e9fbf8a5992c7b0b097e5a55ddd24615",
-      "committed_at_utc": "2026-04-12T22:15:14-04:00"
+      "commit_sha": "9f91604564025826ad391721b5e4c7019bbdfe11",
+      "tree_sha": "a8491042a96fe215cf15211d0d7bd2495f0851ff",
+      "committed_at_utc": "2026-04-13T02:32:34+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "505ed1de021e33bebaa46477be50409456e2a8a06bef3fbe36cb5d9770833b04"
+    "source_digest": "e1b1713c030db191cfe50b18809cc2280065da04e9526ad84f2b9c356e250dc1"
   },
   "summary": {
     "module_count": 158,
@@ -27,7 +27,7 @@
     "version": "0.28.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 93838,
+    "production_loc": 93837,
     "test_files": 17,
     "test_loc": 11616,
     "proved_theorem_lemma_decls": 2780,
@@ -35478,7 +35478,7 @@
         {
           "kind": "def",
           "name": "admissionCheck",
-          "line": 225,
+          "line": 224,
           "called": [
             "Kernel",
             "SchedContext",

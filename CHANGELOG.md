@@ -46,9 +46,9 @@ Zero sorry/axiom.
 
 ### Statistics
 
-- Files modified: 20 (2 Lean, 16 version/badge files, 2 documentation)
-- Lines added: ~140 (documentation, changelog, version references)
-- Lines removed: ~20 (old version strings)
+- Files modified: 26+ (3 Lean, 3 Rust/Cargo, 16 version/badge files, 6 documentation/gitbook)
+- Lines added: ~210 (documentation, changelog, version references, codebase map)
+- Lines removed: ~120 (old version strings, old doc comments, codebase map reformat)
 - Sorry count: 0
 - Axiom count: 0
 

@@ -84,10 +84,12 @@ Key recent completions:
 10 phases (AG1–AG10), 67 sub-tasks. HAL crate, GIC-400, ARM Generic Timer,
 ARMv8 page tables, FFI bridge, QEMU testing, documentation closure.
 
-**WS-AH IN PROGRESS** (v0.27.2–): Pre-Release Comprehensive Audit Remediation.
-Phase AH1 COMPLETE (v0.27.2): Critical IPC Dispatch Correctness (H-01, M-01).
-Phase AH2 COMPLETE (v0.27.3): IPC Donation Safety & Boot Pipeline (M-02, M-03,
-L-02, L-16).
+**WS-AH PORTFOLIO COMPLETE** (v0.27.2–v0.27.6): Pre-Release Comprehensive Audit
+Remediation — 5 phases (AH1–AH5), 27 sub-tasks.
+
+**WS-AI PORTFOLIO COMPLETE** (v0.27.7–v0.28.0): Post-Audit Comprehensive
+Remediation — 7 phases (AI1–AI7), 37 sub-tasks. All 60 findings from the
+v0.27.6 audit addressed (5 HIGH, 27 MEDIUM, 28 LOW).
 
 **Next major milestone**: WS-V — multi-core SMP, FrozenOps production promotion.
 
