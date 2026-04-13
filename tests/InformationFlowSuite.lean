@@ -953,6 +953,12 @@ def runInformationFlowChecks : IO Unit := do
     (SeLe4n.Kernel.securityFlowsTo (defaultCtx.objectLabelOf ⟨0⟩)
                      (defaultCtx.objectLabelOf ⟨999⟩) = true)
 
+  -- AI5-C (M-19): Verify isInsecureDefaultContext runtime detector
+  expect "AI5-C: isInsecureDefaultContext detects default context"
+    (SeLe4n.Kernel.isInsecureDefaultContext defaultCtx = true)
+  expect "AI5-C: isInsecureDefaultContext rejects test context"
+    (SeLe4n.Kernel.isInsecureDefaultContext SeLe4n.Kernel.testLabelingContext = false)
+
   IO.println "V6-K default labeling context insecurity verified"
 
   -- V6-L: Extended boundary matches canonical

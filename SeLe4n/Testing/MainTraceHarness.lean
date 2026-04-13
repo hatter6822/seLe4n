@@ -1800,7 +1800,8 @@ private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) 
     IO.println s!"[PIP-003] A3 send first msgReg=42: {firstMsgOk}"
 
   -- A4: Full checked dispatch via syscallEntryChecked
-  let ctx := SeLe4n.Kernel.defaultLabelingContext
+  -- AI5-C (M-19): Use testLabelingContext to bypass insecurity guard
+  let ctx := SeLe4n.Kernel.testLabelingContext
   match SeLe4n.Kernel.syscallEntryChecked ctx SeLe4n.arm64DefaultLayout 32 stPipe with
   | .error e => IO.println s!"[PIP-004] A4 syscallEntryChecked error: {reprStr e}"
   | .ok (_, stChecked) =>

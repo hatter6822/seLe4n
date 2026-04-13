@@ -1,3 +1,49 @@
+## v0.27.11 — WS-AI Phase AI5: Platform & Simulation Safety
+
+Phase AI5 of WS-AI Post-Audit Comprehensive Remediation. Replaces
+vacuously-true simulation boot and interrupt contracts with substantive
+predicates that validate initial-state properties and restrict IRQ ranges.
+Adds a runtime guard in `syscallEntryChecked` that rejects the insecure
+`defaultLabelingContext`, preventing accidental deployment with a labeling
+context that defeats all information-flow enforcement. 3 findings addressed
+(H-01, H-02, M-19). Gate: `lake build` + `test_smoke.sh` + `test_full.sh`.
+Zero sorry/axiom.
+
+### Changes
+
+- **AI5-A** (H-01/HIGH): Replaced vacuously-true simulation boot contract
+  predicates with substantive checks mirroring the RPi5 pattern.
+  `objectTypeMetadataConsistent` now validates that the default object store
+  is empty; `capabilityRefMetadataConsistent` validates that the default
+  capability reference table is empty. Added correctness proofs:
+  `simBootContract_objectType_holds` and `simBootContract_capabilityRef_holds`
+  (both proven by `rfl`). Added imports for `Model.State` and
+  `RobinHood.Bridge` to `BootContract.lean`.
+- **AI5-B** (H-02/HIGH): Replaced accept-all simulation interrupt contract
+  (`irqLineSupported := fun _ => True`) with GIC-400 range-bounded predicates.
+  `irqLineSupported` now restricts to INTIDs 0–223 (`irq.toNat < 224`).
+  `irqHandlerMapped` requires handler registration for supported IRQs only.
+  Defined `simMaxIrqId := 224` constant matching the RPi5 production range.
+  Decidable instances discharge via `infer_instance`.
+- **AI5-C** (M-19/MEDIUM): Added `isInsecureDefaultContext` runtime detector
+  (Policy.lean) that checks sentinel labels at ID 0 across all four entity
+  classes. Proven correct: `isInsecureDefaultContext_defaultLabelingContext`
+  (detects the insecure default) and `isInsecureDefaultContext_testLabelingContext`
+  (does not flag the secure test context). Created `testLabelingContext`
+  helper assigning `kernelTrusted` to ID 0 entities. Wired guard into
+  `syscallEntryChecked` (API.lean): returns `.error .policyDenied` if the
+  labeling context is detected as insecure. Updated `MainTraceHarness.lean`
+  PIP-004 test to use `testLabelingContext`. Added 2 detector verification
+  tests to `InformationFlowSuite.lean`.
+
+### Statistics
+
+- Files modified: 5 Lean files, 1 generated JSON file
+- Lines added: ~120 (substantive predicates, proofs, detector, guard, tests)
+- Lines removed: ~20 (vacuous True predicates, old comments)
+- Sorry count: 0
+- Axiom count: 0
+
 ## v0.27.10 — WS-AI Phase AI4: IPC & SchedContext Hardening
 
 Phase AI4 of WS-AI Post-Audit Comprehensive Remediation. Wires

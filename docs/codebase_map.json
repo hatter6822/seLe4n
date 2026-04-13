@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/audit-ipc-hardening-K9jLw",
-      "commit_sha": "71bdaaa4d75552f59a359d31647aa3d299816d56",
-      "tree_sha": "4dd8f114b9e06d78c80f2f266bae0370328606f2",
-      "committed_at_utc": "2026-04-12T23:12:17+00:00"
+      "branch": "claude/phase-ai5-safety-1kStt",
+      "commit_sha": "671fe9ffce071c832cf322f288cee404fd9df279",
+      "tree_sha": "1ada9b2b9cefe0cf19ed9aded0c307793bc6d00b",
+      "committed_at_utc": "2026-04-12T19:58:18-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "90aa337cccba5b0da04f52d424e244e695dc5e75626f277e1fd1b67a02d8fe72"
+    "source_digest": "380667f69552f227d0c6d1e53e6c0f3f60d860fa571f6e93e032990ae681280f"
   },
   "summary": {
     "module_count": 158,
-    "declaration_count": 5027
+    "declaration_count": 5034
   },
   "readme_sync": {
-    "version": "0.27.10",
+    "version": "0.27.11",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 93567,
+    "production_loc": 93690,
     "test_files": 17,
-    "test_loc": 11610,
-    "proved_theorem_lemma_decls": 2776,
+    "test_loc": 11616,
+    "proved_theorem_lemma_decls": 2780,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -393,13 +393,14 @@
         {
           "kind": "def",
           "name": "syscallEntryChecked",
-          "line": 1034,
+          "line": 1040,
           "called": [
             "Kernel",
             "LabelingContext",
             "SyscallRegisterLayout",
             "decodeSyscallArgs",
             "dispatchSyscallChecked",
+            "isInsecureDefaultContext",
             "lookupThreadRegisterContext",
             "none"
           ]
@@ -407,21 +408,6 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_cspaceDelete_eq_unchecked",
-          "line": 1064,
-          "called": [
-            "Capability",
-            "LabelingContext",
-            "SyscallDecodeResult",
-            "SyscallGate",
-            "ThreadId",
-            "dispatchCapabilityOnly",
-            "dispatchWithCap",
-            "dispatchWithCapChecked"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "checkedDispatch_lifecycleRetype_eq_unchecked",
           "line": 1073,
           "called": [
             "Capability",
@@ -436,7 +422,7 @@
         },
         {
           "kind": "theorem",
-          "name": "checkedDispatch_vspaceMap_eq_unchecked",
+          "name": "checkedDispatch_lifecycleRetype_eq_unchecked",
           "line": 1082,
           "called": [
             "Capability",
@@ -451,7 +437,7 @@
         },
         {
           "kind": "theorem",
-          "name": "checkedDispatch_vspaceUnmap_eq_unchecked",
+          "name": "checkedDispatch_vspaceMap_eq_unchecked",
           "line": 1091,
           "called": [
             "Capability",
@@ -466,7 +452,7 @@
         },
         {
           "kind": "theorem",
-          "name": "checkedDispatch_serviceRevoke_eq_unchecked",
+          "name": "checkedDispatch_vspaceUnmap_eq_unchecked",
           "line": 1100,
           "called": [
             "Capability",
@@ -481,7 +467,7 @@
         },
         {
           "kind": "theorem",
-          "name": "checkedDispatch_serviceQuery_eq_unchecked",
+          "name": "checkedDispatch_serviceRevoke_eq_unchecked",
           "line": 1109,
           "called": [
             "Capability",
@@ -496,8 +482,23 @@
         },
         {
           "kind": "theorem",
-          "name": "checkedDispatch_schedContextConfigure_eq_unchecked",
+          "name": "checkedDispatch_serviceQuery_eq_unchecked",
           "line": 1118,
+          "called": [
+            "Capability",
+            "LabelingContext",
+            "SyscallDecodeResult",
+            "SyscallGate",
+            "ThreadId",
+            "dispatchCapabilityOnly",
+            "dispatchWithCap",
+            "dispatchWithCapChecked"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "checkedDispatch_schedContextConfigure_eq_unchecked",
+          "line": 1127,
           "called": [
             "Capability",
             "LabelingContext",
@@ -513,7 +514,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_schedContextBind_eq_unchecked",
-          "line": 1127,
+          "line": 1136,
           "called": [
             "Capability",
             "LabelingContext",
@@ -529,7 +530,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_schedContextUnbind_eq_unchecked",
-          "line": 1136,
+          "line": 1145,
           "called": [
             "Capability",
             "LabelingContext",
@@ -545,21 +546,6 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_tcbSuspend_eq_unchecked",
-          "line": 1145,
-          "called": [
-            "Capability",
-            "LabelingContext",
-            "SyscallDecodeResult",
-            "SyscallGate",
-            "ThreadId",
-            "dispatchCapabilityOnly",
-            "dispatchWithCap",
-            "dispatchWithCapChecked"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "checkedDispatch_tcbResume_eq_unchecked",
           "line": 1154,
           "called": [
             "Capability",
@@ -574,7 +560,7 @@
         },
         {
           "kind": "theorem",
-          "name": "checkedDispatch_tcbSetPriority_eq_unchecked",
+          "name": "checkedDispatch_tcbResume_eq_unchecked",
           "line": 1163,
           "called": [
             "Capability",
@@ -589,7 +575,7 @@
         },
         {
           "kind": "theorem",
-          "name": "checkedDispatch_tcbSetMCPriority_eq_unchecked",
+          "name": "checkedDispatch_tcbSetPriority_eq_unchecked",
           "line": 1172,
           "called": [
             "Capability",
@@ -604,7 +590,7 @@
         },
         {
           "kind": "theorem",
-          "name": "checkedDispatch_tcbSetIPCBuffer_eq_unchecked",
+          "name": "checkedDispatch_tcbSetMCPriority_eq_unchecked",
           "line": 1181,
           "called": [
             "Capability",
@@ -619,8 +605,23 @@
         },
         {
           "kind": "theorem",
+          "name": "checkedDispatch_tcbSetIPCBuffer_eq_unchecked",
+          "line": 1190,
+          "called": [
+            "Capability",
+            "LabelingContext",
+            "SyscallDecodeResult",
+            "SyscallGate",
+            "ThreadId",
+            "dispatchCapabilityOnly",
+            "dispatchWithCap",
+            "dispatchWithCapChecked"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "checkedDispatch_capabilityOnly_eq_unchecked",
-          "line": 1200,
+          "line": 1209,
           "called": [
             "Capability",
             "LabelingContext",
@@ -638,7 +639,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_wildcard_unreachable",
-          "line": 1243,
+          "line": 1252,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -654,7 +655,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCapChecked_wildcard_unreachable",
-          "line": 1261,
+          "line": 1270,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -670,7 +671,7 @@
         {
           "kind": "def",
           "name": "dispatchSyscall",
-          "line": 1283,
+          "line": 1292,
           "called": [
             "Kernel",
             "SyscallDecodeResult",
@@ -686,7 +687,7 @@
         {
           "kind": "def",
           "name": "syscallEntry",
-          "line": 1312,
+          "line": 1321,
           "called": [
             "Kernel",
             "SyscallRegisterLayout",
@@ -699,7 +700,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_requires_valid_decode",
-          "line": 1332,
+          "line": 1341,
           "called": [
             "SyscallRegisterLayout",
             "SystemState",
@@ -711,7 +712,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscall_requires_right",
-          "line": 1360,
+          "line": 1369,
           "called": [
             "SyscallDecodeResult",
             "SystemState",
@@ -729,7 +730,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_implies_capability_held",
-          "line": 1399,
+          "line": 1408,
           "called": [
             "SyscallRegisterLayout",
             "SystemState",
@@ -747,7 +748,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_state_unchanged",
-          "line": 1434,
+          "line": 1443,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -758,7 +759,7 @@
         {
           "kind": "theorem",
           "name": "syscallRequiredRight_total",
-          "line": 1444,
+          "line": 1453,
           "called": [
             "SyscallId",
             "syscallRequiredRight"
@@ -767,7 +768,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceMint_delegates",
-          "line": 1454,
+          "line": 1463,
           "called": [
             "Badge",
             "CSpaceAddr",
@@ -789,7 +790,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceCopy_delegates",
-          "line": 1471,
+          "line": 1480,
           "called": [
             "CSpaceAddr",
             "CSpaceCopyArgs",
@@ -808,7 +809,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceMove_delegates",
-          "line": 1486,
+          "line": 1495,
           "called": [
             "CSpaceAddr",
             "CSpaceMoveArgs",
@@ -827,7 +828,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceDelete_delegates",
-          "line": 1501,
+          "line": 1510,
           "called": [
             "CSpaceAddr",
             "CSpaceDeleteArgs",
@@ -846,7 +847,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_lifecycleRetype_delegates",
-          "line": 1520,
+          "line": 1529,
           "called": [
             "Capability",
             "LifecycleRetypeArgs",
@@ -865,7 +866,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceMap_delegates",
-          "line": 1537,
+          "line": 1546,
           "called": [
             "Capability",
             "ObjId",
@@ -884,7 +885,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceUnmap_delegates",
-          "line": 1557,
+          "line": 1566,
           "called": [
             "Capability",
             "ObjId",
@@ -902,7 +903,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_send_uses_withCaps",
-          "line": 1576,
+          "line": 1585,
           "called": [
             "Capability",
             "IpcMessage",
@@ -921,7 +922,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_call_uses_withCaps",
-          "line": 1595,
+          "line": 1604,
           "called": [
             "Capability",
             "IpcMessage",
@@ -943,7 +944,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_reply_populates_msg",
-          "line": 1626,
+          "line": 1635,
           "called": [
             "Capability",
             "SyscallDecodeResult",
@@ -958,7 +959,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_state",
-          "line": 1642,
+          "line": 1651,
           "called": [
             "Capability",
             "SyscallGate",
@@ -970,7 +971,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_preserves_proofLayerInvariantBundle",
-          "line": 1651,
+          "line": 1660,
           "called": [
             "KernelError",
             "SyscallRegisterLayout",
@@ -982,7 +983,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_proofLayerInvariantBundle",
-          "line": 1661,
+          "line": 1670,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -995,7 +996,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_proofLayerInvariantBundle",
-          "line": 1678,
+          "line": 1687,
           "called": [
             "SyscallRegisterLayout",
             "SystemState",
@@ -1008,7 +1009,7 @@
         {
           "kind": "theorem",
           "name": "decodeSyscallArgs_preserves_lowEquivalent",
-          "line": 1708,
+          "line": 1717,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1019,7 +1020,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_projection",
-          "line": 1717,
+          "line": 1726,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1034,7 +1035,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_lowEquivalent",
-          "line": 1728,
+          "line": 1737,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1049,7 +1050,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_projection",
-          "line": 1743,
+          "line": 1752,
           "called": [
             "Capability",
             "IfObserver",
@@ -1064,7 +1065,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_projection",
-          "line": 1758,
+          "line": 1767,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1079,7 +1080,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_yields_NI_step",
-          "line": 1781,
+          "line": 1790,
           "called": [
             "IfObserver",
             "KernelError",
@@ -1093,7 +1094,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_success_yields_NI_step",
-          "line": 1796,
+          "line": 1805,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1110,7 +1111,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_layer2_decode_pure",
-          "line": 1824,
+          "line": 1833,
           "called": [
             "SyscallDecodeResult",
             "decodeCSpaceCopyArgs",
@@ -1126,7 +1127,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_preservation_composition_witness",
-          "line": 1852,
+          "line": 1861,
           "called": [
             "dispatchSyscall",
             "proofLayerInvariantBundle",
@@ -1137,7 +1138,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscallChecked_preserves_projection",
-          "line": 1889,
+          "line": 1898,
           "called": [
             "Capability",
             "IfObserver",
@@ -28005,7 +28006,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Policy",
       "path": "SeLe4n/Kernel/InformationFlow/Policy.lean",
-      "declaration_count": 92,
+      "declaration_count": 96,
       "declarations": [
         {
           "kind": "namespace",
@@ -28185,9 +28186,51 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "isInsecureDefaultContext",
+          "line": 273,
+          "called": [
+            "LabelingContext",
+            "ofNat",
+            "publicLabel"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "isInsecureDefaultContext_defaultLabelingContext",
+          "line": 281,
+          "called": [
+            "defaultLabelingContext",
+            "isInsecureDefaultContext",
+            "publicLabel"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "testLabelingContext",
+          "line": 296,
+          "called": [
+            "LabelingContext",
+            "kernelTrusted",
+            "publicLabel",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "isInsecureDefaultContext_testLabelingContext",
+          "line": 313,
+          "called": [
+            "isInsecureDefaultContext",
+            "kernelTrusted",
+            "publicLabel",
+            "testLabelingContext"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "confidentialityFlowsTo_refl",
-          "line": 258,
+          "line": 319,
           "called": [
             "Confidentiality",
             "confidentialityFlowsTo"
@@ -28196,7 +28239,7 @@
         {
           "kind": "theorem",
           "name": "integrityFlowsTo_refl",
-          "line": 262,
+          "line": 323,
           "called": [
             "Integrity",
             "integrityFlowsTo"
@@ -28205,7 +28248,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_refl",
-          "line": 266,
+          "line": 327,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo_refl",
@@ -28216,7 +28259,7 @@
         {
           "kind": "theorem",
           "name": "confidentialityFlowsTo_trans",
-          "line": 272,
+          "line": 333,
           "called": [
             "Confidentiality",
             "confidentialityFlowsTo"
@@ -28225,7 +28268,7 @@
         {
           "kind": "theorem",
           "name": "integrityFlowsTo_trans",
-          "line": 279,
+          "line": 340,
           "called": [
             "Integrity",
             "integrityFlowsTo"
@@ -28234,7 +28277,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_trans",
-          "line": 286,
+          "line": 347,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo_trans",
@@ -28245,7 +28288,7 @@
         {
           "kind": "theorem",
           "name": "confidentialityFlowsTo_antisymm",
-          "line": 308,
+          "line": 369,
           "called": [
             "Confidentiality",
             "confidentialityFlowsTo"
@@ -28254,7 +28297,7 @@
         {
           "kind": "theorem",
           "name": "integrityFlowsTo_antisymm",
-          "line": 315,
+          "line": 376,
           "called": [
             "Integrity",
             "integrityFlowsTo"
@@ -28263,7 +28306,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_antisymm",
-          "line": 323,
+          "line": 384,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo_antisymm",
@@ -28273,8 +28316,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:341>",
-          "line": 341,
+          "name": "<anonymous:instance:402>",
+          "line": 402,
           "called": [
             "securityFlowsTo"
           ]
@@ -28282,7 +28325,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_lattice_verified",
-          "line": 346,
+          "line": 407,
           "called": [
             "kernelTrusted",
             "publicLabel",
@@ -28292,13 +28335,13 @@
         {
           "kind": "structure",
           "name": "SecurityDomain",
-          "line": 380,
+          "line": 441,
           "called": []
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:385>",
-          "line": 385,
+          "name": "<anonymous:instance:446>",
+          "line": 446,
           "called": [
             "SecurityDomain"
           ]
@@ -28306,13 +28349,13 @@
         {
           "kind": "namespace",
           "name": "SecurityDomain",
-          "line": 388,
+          "line": 449,
           "called": []
         },
         {
           "kind": "def",
           "name": "lowest",
-          "line": 391,
+          "line": 452,
           "called": [
             "SecurityDomain"
           ]
@@ -28320,7 +28363,7 @@
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 394,
+          "line": 455,
           "called": [
             "SecurityDomain"
           ]
@@ -28328,15 +28371,15 @@
         {
           "kind": "def",
           "name": "toNat",
-          "line": 397,
+          "line": 458,
           "called": [
             "SecurityDomain"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:399>",
-          "line": 399,
+          "name": "<anonymous:instance:460>",
+          "line": 460,
           "called": [
             "SecurityDomain"
           ]
@@ -28344,7 +28387,7 @@
         {
           "kind": "theorem",
           "name": "toNat_ofNat",
-          "line": 403,
+          "line": 464,
           "called": [
             "ofNat",
             "toNat"
@@ -28353,7 +28396,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 405,
+          "line": 466,
           "called": [
             "SecurityDomain",
             "ofNat",
@@ -28363,7 +28406,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_injective",
-          "line": 407,
+          "line": 468,
           "called": [
             "ofNat"
           ]
@@ -28371,31 +28414,31 @@
         {
           "kind": "theorem",
           "name": "ext",
-          "line": 410,
+          "line": 471,
           "called": [
             "SecurityDomain"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:416>",
-          "line": 416,
+          "name": "<anonymous:instance:477>",
+          "line": 477,
           "called": [
             "SecurityDomain"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:418>",
-          "line": 418,
+          "name": "<anonymous:instance:479>",
+          "line": 479,
           "called": [
             "SecurityDomain"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:422>",
-          "line": 422,
+          "name": "<anonymous:instance:483>",
+          "line": 483,
           "called": [
             "SecurityDomain"
           ]
@@ -28403,7 +28446,7 @@
         {
           "kind": "structure",
           "name": "DomainFlowPolicy",
-          "line": 430,
+          "line": 491,
           "called": [
             "SecurityDomain"
           ]
@@ -28411,13 +28454,13 @@
         {
           "kind": "namespace",
           "name": "DomainFlowPolicy",
-          "line": 433,
+          "line": 494,
           "called": []
         },
         {
           "kind": "def",
           "name": "isReflexive",
-          "line": 436,
+          "line": 497,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -28426,7 +28469,7 @@
         {
           "kind": "def",
           "name": "isTransitive",
-          "line": 440,
+          "line": 501,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -28435,7 +28478,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 445,
+          "line": 506,
           "called": [
             "DomainFlowPolicy",
             "isReflexive",
@@ -28445,7 +28488,7 @@
         {
           "kind": "def",
           "name": "allowAll",
-          "line": 449,
+          "line": 510,
           "called": [
             "DomainFlowPolicy"
           ]
@@ -28453,7 +28496,7 @@
         {
           "kind": "def",
           "name": "linearOrder",
-          "line": 454,
+          "line": 515,
           "called": [
             "DomainFlowPolicy"
           ]
@@ -28461,7 +28504,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_reflexive",
-          "line": 463,
+          "line": 524,
           "called": [
             "isReflexive"
           ]
@@ -28469,7 +28512,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_transitive",
-          "line": 467,
+          "line": 528,
           "called": [
             "isTransitive"
           ]
@@ -28477,7 +28520,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_wellFormed",
-          "line": 471,
+          "line": 532,
           "called": [
             "allowAll_reflexive",
             "allowAll_transitive",
@@ -28487,7 +28530,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_reflexive",
-          "line": 475,
+          "line": 536,
           "called": [
             "isReflexive",
             "linearOrder"
@@ -28496,7 +28539,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_transitive",
-          "line": 479,
+          "line": 540,
           "called": [
             "isTransitive",
             "linearOrder"
@@ -28505,7 +28548,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_wellFormed",
-          "line": 485,
+          "line": 546,
           "called": [
             "linearOrder_reflexive",
             "linearOrder_transitive",
@@ -28515,7 +28558,7 @@
         {
           "kind": "def",
           "name": "domainFlowsTo",
-          "line": 493,
+          "line": 554,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -28524,7 +28567,7 @@
         {
           "kind": "theorem",
           "name": "domainFlowsTo_refl",
-          "line": 496,
+          "line": 557,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain",
@@ -28535,7 +28578,7 @@
         {
           "kind": "theorem",
           "name": "domainFlowsTo_trans",
-          "line": 502,
+          "line": 563,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain",
@@ -28546,7 +28589,7 @@
         {
           "kind": "structure",
           "name": "GenericLabelingContext",
-          "line": 516,
+          "line": 577,
           "called": [
             "DomainFlowPolicy",
             "ObjId",
@@ -28558,7 +28601,7 @@
         {
           "kind": "def",
           "name": "genericFlowCheck",
-          "line": 525,
+          "line": 586,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -28568,7 +28611,7 @@
         {
           "kind": "structure",
           "name": "EndpointFlowPolicy",
-          "line": 538,
+          "line": 599,
           "called": [
             "DomainFlowPolicy",
             "ObjId"
@@ -28577,7 +28620,7 @@
         {
           "kind": "def",
           "name": "endpointFlowCheck",
-          "line": 543,
+          "line": 604,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -28592,7 +28635,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_fallback",
-          "line": 553,
+          "line": 614,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -28607,7 +28650,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_override",
-          "line": 564,
+          "line": 625,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -28622,7 +28665,7 @@
         {
           "kind": "def",
           "name": "embedLegacyLabel",
-          "line": 589,
+          "line": 650,
           "called": [
             "SecurityDomain",
             "SecurityLabel"
@@ -28631,7 +28674,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_public",
-          "line": 597,
+          "line": 658,
           "called": [
             "embedLegacyLabel",
             "publicLabel"
@@ -28640,7 +28683,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_kernelTrusted",
-          "line": 601,
+          "line": 662,
           "called": [
             "embedLegacyLabel",
             "kernelTrusted"
@@ -28649,7 +28692,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_preserves_flow",
-          "line": 606,
+          "line": 667,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo",
@@ -28662,7 +28705,7 @@
         {
           "kind": "def",
           "name": "liftLegacyContext",
-          "line": 620,
+          "line": 681,
           "called": [
             "GenericLabelingContext",
             "LabelingContext",
@@ -28673,7 +28716,7 @@
         {
           "kind": "theorem",
           "name": "securityLattice_reflexive",
-          "line": 656,
+          "line": 717,
           "called": [
             "SecurityLabel",
             "securityFlowsTo",
@@ -28683,7 +28726,7 @@
         {
           "kind": "theorem",
           "name": "securityLattice_transitive",
-          "line": 659,
+          "line": 720,
           "called": [
             "SecurityLabel",
             "securityFlowsTo",
@@ -28693,7 +28736,7 @@
         {
           "kind": "structure",
           "name": "DeclassificationEvent",
-          "line": 678,
+          "line": 739,
           "called": [
             "ObjId",
             "SecurityDomain"
@@ -28702,7 +28745,7 @@
         {
           "kind": "abbrev",
           "name": "DeclassificationAuditLog",
-          "line": 698,
+          "line": 759,
           "called": [
             "DeclassificationEvent"
           ]
@@ -28710,7 +28753,7 @@
         {
           "kind": "def",
           "name": "recordDeclassification",
-          "line": 701,
+          "line": 762,
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent"
@@ -28719,7 +28762,7 @@
         {
           "kind": "theorem",
           "name": "recordDeclassification_preserves_existing",
-          "line": 707,
+          "line": 768,
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent",
@@ -28729,7 +28772,7 @@
         {
           "kind": "theorem",
           "name": "recordDeclassification_contains_new",
-          "line": 714,
+          "line": 775,
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent",
@@ -28739,7 +28782,7 @@
         {
           "kind": "theorem",
           "name": "recordDeclassification_length",
-          "line": 720,
+          "line": 781,
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent",
@@ -28749,7 +28792,7 @@
         {
           "kind": "structure",
           "name": "DeclassificationPolicy",
-          "line": 754,
+          "line": 815,
           "called": [
             "SecurityDomain"
           ]
@@ -28757,13 +28800,13 @@
         {
           "kind": "namespace",
           "name": "DeclassificationPolicy",
-          "line": 757,
+          "line": 818,
           "called": []
         },
         {
           "kind": "def",
           "name": "none",
-          "line": 760,
+          "line": 821,
           "called": [
             "DeclassificationPolicy"
           ]
@@ -28771,7 +28814,7 @@
         {
           "kind": "def",
           "name": "isDeclassificationAuthorized",
-          "line": 766,
+          "line": 827,
           "called": [
             "DeclassificationPolicy",
             "DomainFlowPolicy",
@@ -28781,7 +28824,7 @@
         {
           "kind": "theorem",
           "name": "isDeclassificationAuthorized_not_reflexive",
-          "line": 774,
+          "line": 835,
           "called": [
             "DeclassificationPolicy",
             "DomainFlowPolicy",
@@ -28793,7 +28836,7 @@
         {
           "kind": "def",
           "name": "endpointFlowPolicyWellFormed",
-          "line": 799,
+          "line": 860,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -28803,7 +28846,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowPolicyWellFormed_no_overrides",
-          "line": 807,
+          "line": 868,
           "called": [
             "DomainFlowPolicy",
             "endpointFlowPolicyWellFormed",
@@ -28814,7 +28857,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_reflexive",
-          "line": 818,
+          "line": 879,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -28831,7 +28874,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_transitive",
-          "line": 834,
+          "line": 895,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -28848,7 +28891,7 @@
         {
           "kind": "def",
           "name": "endpointPolicyRestricted",
-          "line": 865,
+          "line": 926,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -28859,7 +28902,7 @@
         {
           "kind": "theorem",
           "name": "endpointPolicyRestricted_no_overrides",
-          "line": 876,
+          "line": 937,
           "called": [
             "DomainFlowPolicy",
             "endpointPolicyRestricted",
@@ -28869,7 +28912,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_restricted_subset",
-          "line": 883,
+          "line": 944,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -55661,30 +55704,66 @@
     {
       "module": "SeLe4n.Platform.Sim.BootContract",
       "path": "SeLe4n/Platform/Sim/BootContract.lean",
-      "declaration_count": 3,
+      "declaration_count": 6,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Sim",
-          "line": 19,
+          "line": 38,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "simMaxIrqId",
+          "line": 48,
           "called": []
         },
         {
           "kind": "def",
           "name": "simBootContract",
-          "line": 31,
+          "line": 61,
           "called": [
             "BootBoundaryContract",
+            "SystemState",
             "capabilityRefMetadataConsistent",
-            "objectTypeMetadataConsistent"
+            "default",
+            "objectTypeMetadataConsistent",
+            "size"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "simBootContract_objectType_holds",
+          "line": 71,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "RHTable",
+            "objectTypeMetadataConsistent",
+            "size"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "simBootContract_capabilityRef_holds",
+          "line": 78,
+          "called": [
+            "CapTarget",
+            "RHTable",
+            "SlotRef",
+            "capabilityRefMetadataConsistent",
+            "size"
           ]
         },
         {
           "kind": "def",
           "name": "simInterruptContract",
-          "line": 42,
+          "line": 92,
           "called": [
-            "InterruptBoundaryContract"
+            "InterruptBoundaryContract",
+            "none",
+            "simMaxIrqId",
+            "toNat"
           ]
         }
       ]
@@ -59763,7 +59842,6 @@
             "buildChecked",
             "decode",
             "decodeSyscallArgs",
-            "defaultLabelingContext",
             "empty",
             "invariant",
             "isEmpty",
@@ -59775,6 +59853,7 @@
             "syncThreadStates",
             "syscallEntry",
             "syscallEntryChecked",
+            "testLabelingContext",
             "toNat",
             "withCurrent",
             "withLifecycleObjectType",
@@ -59785,7 +59864,7 @@
         {
           "kind": "def",
           "name": "runCspaceMoveTrace",
-          "line": 1842,
+          "line": 1843,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -59810,7 +59889,7 @@
         {
           "kind": "def",
           "name": "runReplyRecvRoundtripTrace",
-          "line": 1899,
+          "line": 1900,
           "called": [
             "IpcMessage",
             "KernelObject",
@@ -59829,7 +59908,7 @@
         {
           "kind": "def",
           "name": "runEndpointLifecycleTrace",
-          "line": 1983,
+          "line": 1984,
           "called": [
             "CSpaceAddr",
             "IpcMessage",
@@ -59855,7 +59934,7 @@
         {
           "kind": "def",
           "name": "runMultiEndpointInterleavingTrace",
-          "line": 2081,
+          "line": 2082,
           "called": [
             "IpcMessage",
             "KernelObject",
@@ -59876,7 +59955,7 @@
         {
           "kind": "def",
           "name": "runSchedContextOpsTrace",
-          "line": 2165,
+          "line": 2166,
           "called": [
             "KernelObject",
             "ObjId",
@@ -59907,7 +59986,7 @@
         {
           "kind": "def",
           "name": "runTimeoutEndpointTrace",
-          "line": 2443,
+          "line": 2444,
           "called": [
             "Endpoint",
             "ObjId",
@@ -59933,7 +60012,7 @@
         {
           "kind": "def",
           "name": "runDonationTrace",
-          "line": 2729,
+          "line": 2730,
           "called": [
             "KernelObject",
             "SchedContext",
@@ -59956,7 +60035,7 @@
         {
           "kind": "def",
           "name": "runBudgetLifecycleTrace",
-          "line": 2858,
+          "line": 2859,
           "called": [
             "KernelObject",
             "ObjId",
@@ -59980,7 +60059,7 @@
         {
           "kind": "def",
           "name": "runMainTraceFrom",
-          "line": 2915,
+          "line": 2916,
           "called": [
             "SystemState",
             "assertStateInvariantsFor",
@@ -60024,7 +60103,7 @@
         {
           "kind": "def",
           "name": "buildParameterizedTopology",
-          "line": 2964,
+          "line": 2965,
           "called": [
             "Capability",
             "KernelObject",
@@ -60049,7 +60128,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologyCheck",
-          "line": 3015,
+          "line": 3016,
           "called": [
             "ServiceId",
             "buildParameterizedTopology",
@@ -60064,7 +60143,7 @@
         {
           "kind": "def",
           "name": "runParameterizedTopologies",
-          "line": 3030,
+          "line": 3031,
           "called": [
             "runParameterizedTopologyCheck"
           ]
@@ -60072,7 +60151,7 @@
         {
           "kind": "def",
           "name": "runRustXvalVectors",
-          "line": 3041,
+          "line": 3042,
           "called": [
             "CSpaceMintArgs",
             "MessageInfo",
@@ -60103,7 +60182,7 @@
         {
           "kind": "def",
           "name": "runMainTrace",
-          "line": 3114,
+          "line": 3115,
           "called": [
             "assertStateInvariantsFor",
             "bootstrapInvariantObjectIds",
@@ -62383,6 +62462,7 @@
             "genericFlowCheck",
             "insert",
             "integrityFlowsTo",
+            "isInsecureDefaultContext",
             "kernelOperationNiConstructor",
             "linearOrder",
             "noStaleEndpointQueueReferences_fields",
@@ -62406,6 +62486,7 @@
             "securityFlowsTo",
             "serviceGraphInvariant_fields",
             "size",
+            "testLabelingContext",
             "throw",
             "withCurrent",
             "withIrqHandler",
@@ -62417,7 +62498,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 969,
+          "line": 975,
           "called": [
             "runInformationFlowChecks"
           ]
