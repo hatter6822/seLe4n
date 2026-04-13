@@ -32,13 +32,14 @@ Zero sorry/axiom.
   (does not flag the secure test context). Created `testLabelingContext`
   helper assigning `kernelTrusted` to ID 0 entities. Wired guard into
   `syscallEntryChecked` (API.lean): returns `.error .policyDenied` if the
-  labeling context is detected as insecure. Updated `MainTraceHarness.lean`
-  PIP-004 test to use `testLabelingContext`. Added 2 detector verification
-  tests to `InformationFlowSuite.lean`.
+  labeling context is detected as insecure. Migrated all 8
+  `defaultLabelingContext` operational call sites in `MainTraceHarness.lean`
+  and 1 in `TraceSequenceProbe.lean` to `testLabelingContext`. Added 2
+  detector verification tests to `InformationFlowSuite.lean`.
 
 ### Statistics
 
-- Files modified: 5 Lean files, 1 generated JSON file
+- Files modified: 6 Lean files, 1 test file, 1 generated JSON file
 - Lines added: ~120 (substantive predicates, proofs, detector, guard, tests)
 - Lines removed: ~20 (vacuous True predicates, old comments)
 - Sorry count: 0

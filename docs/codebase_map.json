@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/phase-ai5-safety-1kStt",
-      "commit_sha": "671fe9ffce071c832cf322f288cee404fd9df279",
-      "tree_sha": "1ada9b2b9cefe0cf19ed9aded0c307793bc6d00b",
-      "committed_at_utc": "2026-04-12T19:58:18-04:00"
+      "commit_sha": "4de1aa911512784beef55bc02d655766fe34ead9",
+      "tree_sha": "406baeab9006785971a780b88133dbcebc841f70",
+      "committed_at_utc": "2026-04-13T00:25:41+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "380667f69552f227d0c6d1e53e6c0f3f60d860fa571f6e93e032990ae681280f"
+    "source_digest": "5829dd12b538da995e3cafa66eacfd779d40637869b17b146681858921933422"
   },
   "summary": {
     "module_count": 158,
@@ -59464,7 +59464,6 @@
             "checkInvariants",
             "cspaceLookupPath",
             "default",
-            "defaultLabelingContext",
             "demoEndpoint",
             "empty",
             "endpointReceiveDual",
@@ -59495,6 +59494,7 @@
             "svcDb",
             "svcDenied",
             "svcMissingBacking",
+            "testLabelingContext",
             "toNat"
           ]
         },
@@ -59509,7 +59509,6 @@
             "cspaceLookupSlot",
             "cspaceMintChecked",
             "default",
-            "defaultLabelingContext",
             "demoEndpoint",
             "demoNotification",
             "empty",
@@ -59530,7 +59529,8 @@
             "ofNat",
             "pure",
             "rootSlot",
-            "siblingSlot"
+            "siblingSlot",
+            "testLabelingContext"
           ]
         },
         {
@@ -66644,7 +66644,6 @@
             "cspaceCopy",
             "cspaceLookupSlot",
             "default",
-            "defaultLabelingContext",
             "empty",
             "endpointReceiveDual",
             "endpointSendDualChecked",
@@ -66655,6 +66654,7 @@
             "probeEndpointId",
             "probeNotificationId",
             "schedule",
+            "testLabelingContext",
             "toNat",
             "toObjId"
           ]

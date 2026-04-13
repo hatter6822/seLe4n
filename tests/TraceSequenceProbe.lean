@@ -184,7 +184,7 @@ def stepOp (op : ProbeOp) (tid : SeLe4n.ThreadId) (st : SystemState) : StepOutco
   -- WS-G7: migrated to dual-queue operations
   | .send =>
       if threadBlocked == true then .expectedFailure .endpointStateMismatch
-      else match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.defaultLabelingContext probeEndpointId tid .empty default default default st with
+      else match SeLe4n.Kernel.endpointSendDualChecked SeLe4n.Kernel.testLabelingContext probeEndpointId tid .empty default default default st with
       | .ok (_, st') => .mutated st'
       | .error err => classifyError .send err
   -- Y3-D: capCopy replaces duplicate awaitReceive (LOW-07), exercising CSpace
