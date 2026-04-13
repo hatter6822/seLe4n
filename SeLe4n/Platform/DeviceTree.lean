@@ -142,7 +142,13 @@ def DeviceTree.fromBoardConstants
 
     AF3-F (AF-42): Stub — always returns `none`. Use `fromDtbFull` for
     actual DTB parsing. Wiring this entry point to `fromDtbFull` or
-    deprecating in favor of `fromDtbParsed` is deferred to WS-V. -/
+    deprecating in favor of `fromDtbParsed` is deferred to WS-V.
+
+    AI6-B (M-08): H3 DTB parsing placeholder. This stub exists for backward
+    compatibility with callers that import `DeviceTree.lean` and reference
+    `fromDtb`. The production parsing path is `fromDtbFull` which returns
+    `Except DeviceTreeParseError (List FdtNode)` with fuel-exhaustion
+    reporting (AI4-B). -/
 def DeviceTree.fromDtb (_blob : ByteArray) : Option DeviceTree :=
   none  -- Stub: use `fromDtbFull` for actual DTB parsing
 

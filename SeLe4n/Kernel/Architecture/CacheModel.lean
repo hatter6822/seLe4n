@@ -281,7 +281,16 @@ only on `icInvalidateAll` (which unconditionally sets all I-cache lines to
 the D-cache writes back to memory before the I-cache refetches, but this
 D→memory→I relationship is not captured in the current 3-state model (see
 module header "Non-modeled aspects"). The composed statement documents the
-required protocol even though the formal proof only uses the IC IALLU step. -/
+required protocol even though the formal proof only uses the IC IALLU step.
+
+**AI6-C (M-16) — Hardware protocol requirement**: For self-modifying code
+safety on ARMv8-A, the D-cache → I-cache pipeline ordering requires the
+full sequence: DC CVAU (clean D-cache to PoU) → DSB ISH (ensure writeback
+completes) → IC IVAU (invalidate I-cache by VA) → DSB ISH → ISB. The
+abstract model's `dcCleanInvalidate` + `icInvalidateAll` composition does
+not capture the DSB barriers that ensure memory visibility ordering between
+the two cache hierarchies. Hardware binding must insert explicit barriers
+(see `rust/sele4n-hal/src/cache.rs`). -/
 theorem pageTableUpdate_icache_coherent (cs : CacheState) (ptAddr : SeLe4n.PAddr) :
     icacheCoherent (icInvalidateAll (dcCleanInvalidate cs ptAddr)) := by
   exact icInvalidateAll_coherent _

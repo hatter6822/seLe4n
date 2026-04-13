@@ -163,7 +163,21 @@ This is the proper existential liveness statement. It composes:
 2. Band exhaustion: all higher-priority threads preempted within `N × (B + P)` steps
 3. FIFO progress: target thread reaches head and is selected
 
-The proof requires the trace to be sufficiently long and valid. -/
+The proof requires the trace to be sufficiently long and valid.
+
+**AI6-A (M-25) — Externalized hypotheses**: `hDomainActiveRunnable` and
+`hBandProgress` encode runtime properties that are not mechanically derivable
+from kernel invariants. They are **deployment obligations**, not kernel
+invariants:
+- `hDomainActiveRunnable`: requires the domain scheduler to eventually activate
+  the target domain with the thread still runnable. This depends on domain
+  schedule configuration and thread behavior (not entering a permanent block).
+- `hBandProgress`: requires that once the domain is active and the thread is
+  runnable, higher-priority thread preemption completes within the CBS budget
+  bound. This depends on CBS admission control and the `eventuallyExits`
+  hypothesis (see `BandExhaustion.lean`).
+Deployers must validate these properties for their specific workload and
+domain schedule configuration. -/
 theorem bounded_scheduling_latency_exists
     (st : SystemState) (tid : ThreadId)
     (trace : SchedulerTrace)

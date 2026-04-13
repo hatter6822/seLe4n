@@ -41,7 +41,14 @@ but never derived from kernel invariants in the current codebase.
   (e.g., all threads eventually block, yield, or complete).
 
 Future work: derive `eventuallyExits` from CBS budget finiteness for bound
-threads, connecting `consumeBudget` monotonic decrease to run queue removal. -/
+threads, connecting `consumeBudget` monotonic decrease to run queue removal.
+
+**AI6-A (M-24) — Deployment scope**: `eventuallyExits` is externalized for
+unbound threads because no kernel mechanism guarantees their termination.
+Deployers must provide an external progress assumption (e.g., all threads
+eventually block, yield, or complete) as a scheduling liveness guarantee.
+See `WCRT.lean:bounded_scheduling_latency_exists` for integration into the
+WCRT bound theorem, where `hBandProgress` subsumes this hypothesis. -/
 def eventuallyExits (trace : SchedulerTrace) (tid : ThreadId) (startIdx : Nat) : Prop :=
   ∃ k, k > startIdx ∧ match traceStateAt trace k with
     | some st => st.scheduler.runQueue.contains tid = false ∧

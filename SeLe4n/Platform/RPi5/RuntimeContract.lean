@@ -26,9 +26,14 @@ encodes the hardware assumptions that the abstract kernel model relies on:
 
 ## Status
 
-H3-prep stub. The predicates are well-typed and decidable but not yet
-validated against actual hardware behavior. Full hardware validation is
-part of the H4 evidence-convergence workstream.
+AI6-E (L-24): Substantive runtime contract implementing 6-condition register
+consistency checks: (1) register-context match, (2) dequeue-on-dispatch
+readiness, (3) time-slice positivity, (4) IPC readiness, (5) EDF
+compatibility, and (6) budget sufficiency validation. These predicates
+are well-typed and decidable, enabling non-vacuous `AdapterProofHooks`
+for both `preserveWriteRegister` and `preserveContextSwitch` on the
+production contract. Full hardware validation against actual RPi5 behavior
+is part of the H4 evidence-convergence workstream (WS-V/AG10).
 -/
 
 namespace SeLe4n.Platform.RPi5

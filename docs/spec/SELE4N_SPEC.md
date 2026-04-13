@@ -973,6 +973,24 @@ control; in seLe4n's flat model, this guard is redundant.
 
 **Source annotation**: U-M25 (Operations.lean).
 
+### 8.10.4 IPC Extra Capability Resolution — Silent-Drop Semantics (AI6 / M-02)
+
+`resolveExtraCaps` (API.lean) resolves sender-specified capability addresses
+to actual capabilities for IPC transfer. Capabilities that fail resolution
+(invalid CPtr, missing slot, empty slot) are **silently dropped** — the
+returned array contains only successfully resolved capabilities.
+
+**seL4 equivalence**: This matches the seL4 C kernel's `lookupExtraCaps`
+behavior, which silently discards unresolvable capabilities and returns
+only valid ones in the IPC buffer. The receiver observes fewer extra caps
+than the sender specified; the count is available via `MessageInfo.extraCaps`.
+
+**Security**: No information leak — failed resolutions produce no observable
+side effect. The receiver can detect drops by comparing the resolved count
+against the sender's declared count.
+
+**Source**: API.lean:409-416, inline comment AC3-D / API-01.
+
 ### 8.11 buildChecked Runtime Invariant Validation (WS-T Phase T7)
 
 All test states use `BootstrapBuilder.buildChecked` instead of `build`:
@@ -1224,6 +1242,66 @@ inversion theorem.
 
 **Evidence**: 58 surface anchor tests in `tests/LivenessSuite.lean`. Zero
 sorry/axiom.
+
+### 8.14.1 WCRT Externalized Hypotheses (AI6 / M-24, M-25)
+
+The WCRT theorem `bounded_scheduling_latency_exists` requires two externalized
+hypotheses that encode runtime properties not mechanically derivable from
+kernel invariants:
+
+1. **`hDomainActiveRunnable`** (M-25): The domain scheduler eventually
+   activates the target domain with the thread still runnable. This depends on
+   domain schedule configuration (all domains receiving non-zero time) and
+   thread behavior (not entering a permanent block before domain activation).
+
+2. **`hBandProgress`** (M-25): Once the domain is active and the thread is
+   runnable, higher-priority thread preemption completes within the CBS budget
+   bound `N × (B + P)`. This depends on CBS admission control and the
+   `eventuallyExits` hypothesis.
+
+3. **`eventuallyExits`** (M-24): For CBS-bound threads, this should follow
+   from budget finiteness (`consumeBudget` monotonic decrease). For unbound
+   threads, this is NOT satisfiable without an external progress assumption
+   (e.g., all threads eventually block, yield, or complete). Deriving this
+   from CBS budget finiteness for bound threads is future work.
+
+**Deployment obligation**: These hypotheses are deployment-time validation
+requirements. Deployers must verify them for their specific workload and
+domain schedule configuration. The kernel provides the mechanism; the
+deployment provides the guarantee.
+
+**Source**: WCRT.lean:167-187, BandExhaustion.lean:34-43.
+
+### 8.14.2 Boot Invariant Bridge Scope (AI6 / M-07)
+
+`bootToRuntime_invariantBridge_empty` (Boot.lean) proves that the full
+10-component `proofLayerInvariantBundle` holds after booting with an empty
+`PlatformConfig`. For non-empty configs (real hardware with IRQ tables,
+pre-allocated objects), the full bundle is NOT proven to hold.
+
+The checked boot path `bootFromPlatformChecked` validates per-object
+well-formedness and uniqueness, but does not compose them into the full
+runtime invariant bundle. The general-config bridge requires a `bootSafe`
+predicate and is deferred to WS-V hardware binding.
+
+**Source**: Boot.lean:497-519.
+
+### 8.14.3 MMIO Model Limitations (AI6 / M-10)
+
+The `mmioRead` function (RPi5/MmioAdapter.lean) returns `st.machine.memory addr`
+(RAM semantics) for device addresses. The sequential model does not capture
+volatile register behavior:
+
+- **Status registers**: May change between reads (interrupt pending bits, DMA
+  completion flags).
+- **FIFO registers**: Return different data on each read (UART RX data).
+- **Write-one-to-clear registers**: Side effects not modeled in abstract store.
+
+Proofs must use `MmioSafe` or restrict to non-device addresses to avoid
+unsound reasoning. Hardware binding (WS-V/AG10) must substitute actual MMIO
+reads via the FFI bridge to Rust HAL (`mmio.rs`).
+
+**Source**: RPi5/MmioAdapter.lean:336-356.
 
 ---
 

@@ -2242,7 +2242,15 @@ node appears in the result.  Combined with the existing BFS monotonicity
 lemmas, this reduces the transitive closure to a queue-exhaustion argument
 on acyclic CDTs.  The complete transitive closure proof (connecting
 `CdtChildReachable` depth to BFS fuel bounds) is deferred to the
-hardware-binding phase where concrete CDT size bounds are available. -/
+hardware-binding phase where concrete CDT size bounds are available.
+
+AI6-D (M-21): See TPI-DOC for full fuel sufficiency formal bridge
+(deferred to WS-V). `edgeWellFounded` (Capability/Invariant/Defs.lean)
+provides the inductive well-foundedness foundation: CDT edges form a
+well-founded relation on `CdtNodeId`, ensuring termination of any
+traversal. The depth-1 proof here is the base case; the inductive step
+connecting `CdtChildReachable` transitivity to BFS fuel bounds requires
+composing `edgeWellFounded` with the U4-N positional queue lemmas. -/
 theorem descendantsOf_fuel_sufficiency
     (cdt : CapDerivationTree) (root : CdtNodeId)
     (c : CdtNodeId) (hChild : c ∈ cdt.childrenOf root)

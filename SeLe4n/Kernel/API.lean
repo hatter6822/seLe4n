@@ -413,7 +413,11 @@ Returns the resolved capabilities as an array. -/
    the actual resolved count against the expected count from the original
    `MessageInfo.extraCaps` to detect drops. This is seL4-compatible behavior:
    `lookupExtraCaps` in the C kernel also silently discards unresolvable
-   capabilities and returns only valid ones in the IPC buffer. -/
+   capabilities and returns only valid ones in the IPC buffer.
+
+   **AI6-A (M-02) — Spec cross-reference**: See `docs/spec/SELE4N_SPEC.md`
+   §8.7 "IPC Extra Capability Resolution" for the normative specification of
+   silent-drop semantics, including the seL4 reference C kernel equivalence. -/
 private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
     (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
     (st : SystemState) : Array Capability :=

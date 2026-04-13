@@ -95,7 +95,7 @@ guarantees that depend on the SchedContext infrastructure from WS-Z.
 - **D1** (v0.24.0–v0.24.2): Thread suspension/resumption — `suspendThread`/`resumeThread` with run-queue cleanup, transport lemmas.
 - **D2** (v0.24.3–v0.24.5): Priority management — `setPriorityOp`/`setMCPriorityOp` with MCP authority validation, run-queue migration, `authority_nonEscalation`.
 - **D3** (v0.24.6–v0.24.7): IPC buffer configuration — `setIPCBufferOp` with VSpace bounds checking.
-- **D4** (v0.24.8–v0.25.0): Priority Inheritance Protocol — `BlockingGraph`, `blockingChainAcyclic`, `blockingDepthBound`, transitive propagation, `wcrt_parametric_bound`.
+- **D4** (v0.24.8–v0.25.0): Priority Inheritance Protocol — `BlockingGraph`, `blockingAcyclic`, chain depth bounded by `objectIndex.length` (AI6/L-15), transitive propagation, `wcrt_parametric_bound`.
 - **D5** (v0.25.0–v0.25.1): Bounded Latency Theorem — WCRT = D×L_max + N×(B+P) across 7 liveness modules (TimerTick, Replenishment, Yield, BandExhaustion, DomainRotation, WCRT).
 - **D6** (v0.25.2–v0.25.5): API surface integration — 5 deferred operations in kernel API, enforcement boundary 25→30, Rust ABI sync (SyscallId 25, KernelError 44).
 

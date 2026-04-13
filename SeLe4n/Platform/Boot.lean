@@ -516,7 +516,14 @@ theorem bootToRuntime_invariantBridge_empty :
    (a) Prove `bootToRuntime_invariantBridge` for arbitrary well-formed
        PlatformConfig, or
    (b) Add a post-boot runtime invariant validation pass that asserts all
-       10 invariants hold before enabling syscall dispatch. -/
+       10 invariants hold before enabling syscall dispatch.
+
+   AI6-B (M-07): Proven for empty PlatformConfig only. General config
+   bridge requires a `bootSafe` predicate ensuring per-object well-formedness
+   and inter-object consistency (endpoint queue references, CDT edges, etc.).
+   The `bootFromPlatformChecked` variant (Boot.lean:370) validates structural
+   per-object constraints but does not compose them into the full runtime
+   invariant bundle. -/
 
 -- ============================================================================
 -- V4-A1: Builder Operation × Invariant Component Interaction Matrix
@@ -944,7 +951,7 @@ theorem bootFromPlatform_cdtNodeSlot_eq (config : PlatformConfig) :
     ASID mappings. Objects must satisfy IPC, queue, and structural
     constraints for the full 10-component `proofLayerInvariantBundle`.
 
-    M-04/AH5-A: **Design rationale — VSpaceRoot exclusion**. VSpaceRoots are
+    M-04/AH5-A/AI6-B(M-11): **Design rationale — VSpaceRoot exclusion**. VSpaceRoots are
     excluded from `bootSafeObject` because ASID table registration
     (`asidTable.insert asid id` in `storeObject`) requires a fully initialized
     ASID manager, which is not available during the builder-phase boot sequence.
