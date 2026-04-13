@@ -2,7 +2,7 @@
 
 **Created**: 2026-04-12
 **Baseline version**: 0.27.6
-**Baseline audit**: `docs/audits/AUDIT_v0.27.6_COMPREHENSIVE.md` (5 HIGH, 27 MEDIUM, 28 LOW)
+**Baseline audit**: `docs/dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md` (5 HIGH, 27 MEDIUM, 28 LOW)
 **Prior portfolios**: WS-AH (COMPLETE), WS-AG (COMPLETE), WS-AF (COMPLETE), WS-AE (COMPLETE), WS-AD (COMPLETE), WS-AC (COMPLETE), WS-AB (COMPLETE), WS-AA (COMPLETE) — see `docs/WORKSTREAM_HISTORY.md`
 **Hardware target**: Raspberry Pi 5 (ARM64)
 **Constraint**: Zero sorry/axiom. All phases must pass `lake build` + `test_smoke.sh` at minimum.

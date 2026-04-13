@@ -7,7 +7,7 @@ This GitBook is the long-form guide for seLe4n — a production-oriented microke
 ## Current project state
 - **Version:** 0.28.0 (Lean v4.28.0).
 - **Codebase metrics:** 93,837 production LoC across 141 files; 11,616 test LoC across 17 suites; 2,780 theorem/lemma declarations (zero sorry/axiom).
-- **Latest audit:** [`AUDIT_v0.27.6_COMPREHENSIVE`](../audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel audit (5 HIGH, 27 MED, 28 LOW). All findings remediated via WS-AI.
+- **Latest audit:** [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel audit (5 HIGH, 27 MED, 28 LOW). All findings remediated via WS-AI.
 - **Active workstream:** **WS-AI PORTFOLIO COMPLETE** (v0.27.7–v0.28.0) — Post-Audit Comprehensive Remediation, 7 phases (AI1–AI7), 37 sub-tasks. Prior: WS-AH (v0.27.2–v0.27.6), WS-AG (v0.26.0–v0.27.1), WS-AF (v0.25.22–v0.25.27). WS-B through WS-AE complete (v0.9.0–v0.25.21).
 - **Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) — complete portfolio record and roadmap.
 - **Hardware target:** Raspberry Pi 5 (ARM64).
