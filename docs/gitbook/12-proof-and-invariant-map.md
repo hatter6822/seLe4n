@@ -450,7 +450,7 @@ Helper lemmas: `storeTcbQueueLinks_noprevnext_preserves_linkInteg`, `storeTcbQue
 
 Bundle level:
 
-- `ipcInvariantFull` (15-conjunct: `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded ∧ badgeWellFormed ∧ waitingThreadsPendingMessageNone ∧ endpointQueueNoDup ∧ ipcStateQueueMembershipConsistent ∧ queueNextBlockingConsistent ∧ queueHeadBlockedConsistent ∧ blockedThreadTimeoutConsistent ∧ donationChainAcyclic ∧ donationOwnerValid ∧ passiveServerIdle ∧ donationBudgetTransfer ∧ uniqueWaiters`, WS-H12c + WS-H12d + WS-F5 + V3-G6 + V3-K + V3-J + V3-J-cross + Z6-J + Z7-F/G/H/I + AG1-C)
+- `ipcInvariantFull` (16-conjunct: `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded ∧ badgeWellFormed ∧ waitingThreadsPendingMessageNone ∧ endpointQueueNoDup ∧ ipcStateQueueMembershipConsistent ∧ queueNextBlockingConsistent ∧ queueHeadBlockedConsistent ∧ blockedThreadTimeoutConsistent ∧ donationChainAcyclic ∧ donationOwnerValid ∧ passiveServerIdle ∧ donationBudgetTransfer ∧ uniqueWaiters ∧ blockedOnReplyHasTarget`, WS-H12c + WS-H12d + WS-F5 + V3-G6 + V3-K + V3-J + V3-J-cross + Z6-J + Z7-F/G/H/I + AG1-C + AJ1-B)
 - `badgeWellFormed` (WS-F5/D1d): `notificationBadgesWellFormed ∧ capabilityBadgesWellFormed` — all badge values in notification pending badges and capability slots satisfy word-boundedness
 
 Cross-subsystem composition (WS-H12e + WS-F5):
@@ -1280,7 +1280,7 @@ closing gaps where invariants were defined but not composed into the top-level p
 | Bundle | Change | Effect |
 |---|---|---|
 | `schedulerInvariantBundleFull` | Extended from 4 to 7 conjuncts (+ `contextMatchesCurrent` WS-H12e, + `runnableThreadsAreTCBs` WS-F6/D3, + `schedulerPriorityMatch` R6-D/L-12); AI3-A: `schedulerPriorityMatch` updated to track `effectiveRunQueuePriority` (base + PIP boost); `edfCurrentHasEarliestDeadline` updated with effective priority guard | Machine registers match current thread's saved context; all runnable threads are valid TCBs; RunQueue priority index matches effective priority (base + PIP boost) |
-| `coreIpcInvariantBundle` | Upgraded from `ipcInvariant` to `ipcInvariantFull` (15-conjunct, AG1-C: +`uniqueWaiters`) | `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, `waitingThreadsPendingMessageNone`, and `uniqueWaiters` now composed into cross-subsystem proof surface |
+| `coreIpcInvariantBundle` | Upgraded from `ipcInvariant` to `ipcInvariantFull` (16-conjunct, AJ1-B: +`blockedOnReplyHasTarget`) | `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, `waitingThreadsPendingMessageNone`, and `uniqueWaiters` now composed into cross-subsystem proof surface |
 | `ipcSchedulerCouplingInvariantBundle` | Extended from 2 to 4 conjuncts (+ `contextMatchesCurrent`, `currentThreadDequeueCoherent`) | Running thread dequeue coherence and context consistency compose through IPC-scheduler boundary |
 | `proofLayerInvariantBundle` | Uses `schedulerInvariantBundleFull` instead of `schedulerInvariantBundle`; extended from 9 to 11 conjuncts (Z9: + `schedulerInvariantBundleExtended`, AG7-D: + `notificationWaiterConsistent`) | Top-level proof surface includes all 7 scheduler conjuncts plus full CBS scheduler extension and notification-waiter consistency |
 

@@ -17,11 +17,15 @@ removal (L-02), and error asymmetry documentation (L-18). Gate: `lake build`
   callers (`lifecycleRetypeWithCleanup`, `lifecycleRetypeDirectWithCleanup`,
   `suspendThread`) updated to handle `Except`. 6 preservation theorems updated
   to conditional postconditions. Test harness updated with graceful fallback.
-- **AJ1-B** (M-04/MEDIUM): Added `blockedOnReplyHasTarget` predicate proving
-  every thread in `blockedOnReply` state has `replyTarget = some _`. All
+- **AJ1-B** (M-04/MEDIUM): Added `blockedOnReplyHasTarget` predicate and
+  integrated as 16th conjunct of `ipcInvariantFull`. Proves every thread in
+  `blockedOnReply` state has `replyTarget = some _`. Cascaded to 13 preservation
+  theorems (10 Structural.lean, 3 Architecture/Invariant.lean), default state
+  proof, compositional theorem, `coreIpcInvariantBundle` accessor theorems in
+  `Capability/Invariant/Preservation.lean`, and boot invariant proof. All
   production paths (`endpointCall`, `endpointReceiveDual`) create `blockedOnReply`
   with explicit receiver — the `none => true` authorization branch in
-  `endpointReply`/`endpointReplyRecv` is unreachable under the IPC invariant.
+  `endpointReply`/`endpointReplyRecv` is unreachable under the invariant.
   Cross-reference annotations added at both authorization check sites.
 - **AJ1-C** (M-02/MEDIUM): `endpointQueuePopHead_returns_head` theorem (already
   in `IPC/Invariant/Defs.lean`) formally links pre-inspected receiver to dequeued

@@ -1827,24 +1827,14 @@ def endpointReplyRecv
 -- AJ1-B (M-04): blockedOnReply replyTarget unreachability documentation
 -- ============================================================================
 
-/-- AJ1-B (M-04): `blockedOnReplyHasTarget` — invariant predicate asserting
-that every thread in `blockedOnReply` state has `replyTarget = some _`.
-
-This invariant holds because ALL production paths that create `blockedOnReply`
-set an explicit `replyTarget`:
-- `endpointCall` (Transport.lean line 1737): `.blockedOnReply endpointId (some receiver)`
-- `endpointReceiveDual` call path (Transport.lean line 1655): `.blockedOnReply endpointId (some receiver)`
-
-No other production operation constructs a `blockedOnReply` IPC state. The
-`replyTarget = none` branch in `endpointReply` (line 1779) is therefore dead
-under the IPC invariant — any thread reaching `blockedOnReply` entered via one
-of the two paths above, both of which record the receiver's ThreadId. -/
-def blockedOnReplyHasTarget (st : SystemState) : Prop :=
-  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (endpointId : SeLe4n.ObjId)
-    (replyTarget : Option SeLe4n.ThreadId),
-    st.objects[tid.toObjId]? = some (.tcb tcb) →
-    tcb.ipcState = .blockedOnReply endpointId replyTarget →
-    replyTarget.isSome
+-- AJ1-B (M-04): `blockedOnReplyHasTarget` predicate is now defined in
+-- `IPC/Invariant/Defs.lean` and integrated as the 16th conjunct of
+-- `ipcInvariantFull`. See Defs.lean for the formal definition.
+--
+-- The invariant holds because ALL production paths that create `blockedOnReply`
+-- set an explicit `replyTarget`:
+-- - `endpointCall` (line 1737): `.blockedOnReply endpointId (some receiver)`
+-- - `endpointReceiveDual` call path (line 1655): `.blockedOnReply endpointId (some receiver)`
 
 -- AJ1-C (M-02): Pre-send receiver linking. The theorem
 -- `endpointQueuePopHead_returns_head` (IPC/Invariant/Defs.lean) proves that

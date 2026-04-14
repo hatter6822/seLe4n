@@ -551,6 +551,17 @@ theorem not_mem_waitingThreads_of_ipcState_ne
 def uniqueWaiters (st : SystemState) : Prop :=
   ∀ (oid : SeLe4n.ObjId) (ntfn : Notification), st.objects[oid]? = some (KernelObject.notification ntfn) → ntfn.waitingThreads.Nodup
 
+/-- AJ1-B (M-04): Every thread in `blockedOnReply` state has an explicit
+`replyTarget`. All production paths (`endpointCall`, `endpointReceiveDual`)
+create `blockedOnReply` with `some receiver`, making the `none` authorization
+branch in `endpointReply` unreachable under this invariant. -/
+def blockedOnReplyHasTarget (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (endpointId : SeLe4n.ObjId)
+    (replyTarget : Option SeLe4n.ThreadId),
+    st.objects[tid.toObjId]? = some (.tcb tcb) →
+    tcb.ipcState = .blockedOnReply endpointId replyTarget →
+    replyTarget.isSome
+
 /-- WS-G7/F-P11: notificationWait preserves uniqueWaiters.
 Now requires `notificationWaiterConsistent` to bridge the TCB ipcState
 duplicate check to list non-membership. -/
@@ -1141,10 +1152,10 @@ theorem donationBudgetTransfer_of_no_shared
   simp [this, SchedContextBinding.scId?] at hB1
 
 -- ============================================================================
--- Full IPC invariant bundle (15 conjuncts)
+-- Full IPC invariant bundle (16 conjuncts)
 -- ============================================================================
 
-/-- Full IPC invariant: conjunction of all fifteen IPC sub-invariants.
+/-- Full IPC invariant: conjunction of all sixteen IPC sub-invariants.
 
 Z7 extends the bundle with 4 donation invariants:
 - `donationChainAcyclic`: no circular donation chains
@@ -1153,7 +1164,10 @@ Z7 extends the bundle with 4 donation invariants:
 - `donationBudgetTransfer`: at most one thread per SchedContext
 
 AG1-C adds `uniqueWaiters` as the 15th conjunct:
-- `uniqueWaiters`: notification waiting thread lists have no duplicates -/
+- `uniqueWaiters`: notification waiting thread lists have no duplicates
+
+AJ1-B adds `blockedOnReplyHasTarget` as the 16th conjunct:
+- `blockedOnReplyHasTarget`: every blockedOnReply thread has replyTarget = some _ -/
 def ipcInvariantFull (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
   badgeWellFormed st ∧ waitingThreadsPendingMessageNone st ∧
@@ -1162,7 +1176,8 @@ def ipcInvariantFull (st : SystemState) : Prop :=
   blockedThreadTimeoutConsistent st ∧
   donationChainAcyclic st ∧ donationOwnerValid st ∧
   passiveServerIdle st ∧ donationBudgetTransfer st ∧
-  uniqueWaiters st
+  uniqueWaiters st ∧
+  blockedOnReplyHasTarget st
 
 -- ============================================================================
 -- AI4-A (M-01): Frame lemmas for cleanupPreReceiveDonation
