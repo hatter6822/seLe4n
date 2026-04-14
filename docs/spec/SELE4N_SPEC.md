@@ -1161,7 +1161,9 @@ and called before `endpointQueueEnqueue`. On the common path (no stale donation)
 it returns `st` unchanged — zero overhead.
 
 **Lifecycle**: `cleanupDonatedSchedContext` in `lifecyclePreRetypeCleanup`
-returns donated SchedContexts before TCB destruction.
+returns donated SchedContexts before TCB destruction. AJ1-A (M-14): errors from
+`returnDonatedSchedContext` are propagated (not silently swallowed), preventing
+retype from proceeding with dangling SchedContext references.
 
 **Defense-in-depth**: `donateSchedContext` validates `sc.boundThread = some
 clientTid` before transferring ownership.

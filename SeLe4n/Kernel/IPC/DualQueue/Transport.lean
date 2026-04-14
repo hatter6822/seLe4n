@@ -1836,7 +1836,7 @@ set an explicit `replyTarget`:
 - `endpointReceiveDual` call path (Transport.lean line 1655): `.blockedOnReply endpointId (some receiver)`
 
 No other production operation constructs a `blockedOnReply` IPC state. The
-`replyTarget = none` branch in `endpointReply` (line 1775) is therefore dead
+`replyTarget = none` branch in `endpointReply` (line 1779) is therefore dead
 under the IPC invariant — any thread reaching `blockedOnReply` entered via one
 of the two paths above, both of which record the receiver's ThreadId. -/
 def blockedOnReplyHasTarget (st : SystemState) : Prop :=

@@ -108,7 +108,7 @@ def endpointSendDualWithCaps
                 let grantRight := endpointRights.mem .grant
                 ipcUnwrapCaps msg senderCspaceRoot recvRoot receiverSlotBase grantRight st'
               | none =>
-                -- AJ1-F (L-18): Asymmetric with receive path (line 139), which returns
+                -- AJ1-F (L-18): Asymmetric with receive path (line 153), which returns
                 -- `.error .invalidCapability` for missing CSpace root. The asymmetry is
                 -- intentional: on the send side, a missing receiver CSpace root means the
                 -- receiver cannot accept capabilities, but the message payload (registers +
