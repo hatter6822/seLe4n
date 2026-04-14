@@ -61,20 +61,21 @@ and `.donated` cases. For `.bound`, the scheduler is modified (AE3-C: replenish
 queue cleanup) — the runQueue and current fields are preserved but
 replenishQueue may differ. -/
 theorem cancelDonation_scheduler_runQueue_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
-    (cancelDonation st tid tcb).scheduler.runQueue = st.scheduler.runQueue ∧
-    (cancelDonation st tid tcb).scheduler.current = st.scheduler.current := by
-  unfold cancelDonation
-  split
-  · exact ⟨rfl, rfl⟩
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (h : cancelDonation st tid tcb = .ok st') :
+    st'.scheduler.runQueue = st.scheduler.runQueue ∧
+    st'.scheduler.current = st.scheduler.current := by
+  simp only [cancelDonation] at h
+  split at h
+  · injection h with h; subst h; exact ⟨rfl, rfl⟩
   · -- .bound case: replenish queue removed but runQueue/current unchanged
-    dsimp only []
+    injection h with h; subst h
     constructor
     · split <;> (split <;> rfl)
     · split <;> (split <;> rfl)
   · -- .donated case
-    have h := cleanupDonatedSchedContext_scheduler_eq st tid
-    exact ⟨congrArg SchedulerState.runQueue h, congrArg SchedulerState.current h⟩
+    have hSched := cleanupDonatedSchedContext_scheduler_eq st st' tid h
+    exact ⟨congrArg SchedulerState.runQueue hSched, congrArg SchedulerState.current hSched⟩
 
 /-- D1-I: clearPendingState only modifies `objects`, preserving the scheduler. -/
 theorem clearPendingState_scheduler_eq
@@ -161,40 +162,34 @@ private theorem returnDonatedSchedContext_serviceRegistry_eq
                 exact h3.trans (h2.trans h1)
     | _ => simp only []; intro h; cases h
 
-/-- Helper: cleanupDonatedSchedContext preserves serviceRegistry. -/
+/-- Helper / AJ1-A (M-14): cleanupDonatedSchedContext preserves serviceRegistry
+(conditional on success). -/
 private theorem cleanupDonatedSchedContext_serviceRegistry_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (cleanupDonatedSchedContext st tid).serviceRegistry = st.serviceRegistry := by
-  unfold cleanupDonatedSchedContext
-  cases lookupTcb st tid with
-  | none => rfl
-  | some tcb =>
-    simp only []
-    cases tcb.schedContextBinding with
-    | unbound => rfl
-    | bound _ => rfl
-    | donated scId owner =>
-      simp only []
-      cases hReturn : returnDonatedSchedContext st tid scId owner with
-      | error _ => rfl
-      | ok st' => exact returnDonatedSchedContext_serviceRegistry_eq st st' tid scId owner hReturn
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (h : cleanupDonatedSchedContext st tid = .ok st') :
+    st'.serviceRegistry = st.serviceRegistry := by
+  simp only [cleanupDonatedSchedContext] at h
+  split at h
+  · injection h with h; subst h; rfl
+  · split at h <;> first
+      | (injection h with h; subst h; rfl)
+      | exact returnDonatedSchedContext_serviceRegistry_eq st st' tid _ _ h
 
-/-- D1-I: cancelDonation preserves serviceRegistry. -/
+/-- D1-I / AJ1-A (M-14): cancelDonation preserves serviceRegistry
+(conditional on success). -/
 theorem cancelDonation_serviceRegistry_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
-    (cancelDonation st tid tcb).serviceRegistry = st.serviceRegistry := by
-  unfold cancelDonation
-  split
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (h : cancelDonation st tid tcb = .ok st') :
+    st'.serviceRegistry = st.serviceRegistry := by
+  simp only [cancelDonation] at h
+  split at h
   · -- .unbound
-    rfl
+    injection h with h; subst h; rfl
   · -- .bound scId: two nested matches, all branches preserve serviceRegistry
-    -- The let-bound st1 is one of { st with objects := ... } or st itself.
-    -- In either case st1.serviceRegistry = st.serviceRegistry.
-    -- The final result is { st1 with objects := ... } or st1, both preserving serviceRegistry.
-    dsimp only []
+    injection h with h; subst h
     split <;> (split <;> rfl)
   · -- .donated: delegate to cleanupDonatedSchedContext
-    exact cleanupDonatedSchedContext_serviceRegistry_eq st tid
+    exact cleanupDonatedSchedContext_serviceRegistry_eq st st' tid h
 
 -- ============================================================================
 -- D1-I: Transport lemmas — lifecycle preservation

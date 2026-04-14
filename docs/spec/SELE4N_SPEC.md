@@ -629,7 +629,7 @@ functions mapping Lean kernel operations to Rust HAL implementations:
 Production `AdapterProofHooks` (`rpi5ProductionAdapterProofHooks` in
 `Platform/RPi5/ProofHooks.lean`) provides substantive preservation proofs
 for all 4 adapter paths. The `proofLayerInvariantBundle` (11 conjuncts)
-and `ipcInvariantFull` (15 conjuncts) are preserved through the FFI boundary.
+and `ipcInvariantFull` (16 conjuncts) are preserved through the FFI boundary.
 
 **AI1-D (v0.27.7)**: The `BOOT_UART` global in `sele4n-hal/src/uart.rs` is now
 synchronized via an `AtomicBool`-based `UartLock` spinlock, which disables
@@ -1141,7 +1141,7 @@ instead of being silently swallowed. All 7 call sites in `API.lean` and
 `applyReplyDonation_machine_eq`, `applyCallDonation_preserves_projection`)
 carry an explicit `h : ... = .ok st'` success hypothesis.
 
-**Invariants** (`ipcInvariantFull` extended from 10 to 15 conjuncts):
+**Invariants** (`ipcInvariantFull` extended from 10 to 16 conjuncts):
 - `donationChainAcyclic`: no circular donation chains (A→B and B→A)
 - `donationOwnerValid`: donated bindings reference valid objects with
   bidirectional consistency (`sc.boundThread = some server`,
@@ -1161,7 +1161,9 @@ and called before `endpointQueueEnqueue`. On the common path (no stale donation)
 it returns `st` unchanged — zero overhead.
 
 **Lifecycle**: `cleanupDonatedSchedContext` in `lifecyclePreRetypeCleanup`
-returns donated SchedContexts before TCB destruction.
+returns donated SchedContexts before TCB destruction. AJ1-A (M-14): errors from
+`returnDonatedSchedContext` are propagated (not silently swallowed), preventing
+retype from proceeding with dangling SchedContext references.
 
 **Defense-in-depth**: `donateSchedContext` validates `sc.boundThread = some
 clientTid` before transferring ownership.

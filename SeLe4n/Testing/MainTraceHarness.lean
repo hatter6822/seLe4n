@@ -2836,7 +2836,8 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let stCleanup := { st1 with
     objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
       serverTid.toObjId serverDonated).insert scId.toObjId (.schedContext scDonated) }
-  let stCleaned := SeLe4n.Kernel.cleanupDonatedSchedContext stCleanup serverTid
+  let stCleaned := match SeLe4n.Kernel.cleanupDonatedSchedContext stCleanup serverTid with
+    | .ok s => s | .error _ => stCleanup
   let callerRecovered := match stCleaned.objects[callerTid.toObjId]? with
     | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scId
     | _ => false

@@ -1171,9 +1171,9 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   have hLifeBundle : lifecycleInvariantBundle (bootFromPlatform config).state :=
     lifecycleInvariantBundle_of_metadata_consistent _
       (bootFromPlatform config).hLifecycleConsistent
-  -- 3. ipcInvariantFull (15 sub-components, AG1-C: +uniqueWaiters)
+  -- 3. ipcInvariantFull (16 sub-components, AJ1-B: +blockedOnReplyHasTarget)
   have hIpcFull : ipcInvariantFull (bootFromPlatform config).state := by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- ipcInvariant: notifications well-formed
       intro oid ntfn hObj
       have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
@@ -1277,6 +1277,10 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       intro oid ntfn hObj
       have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
       rw [hNtfn.2.1]; exact .nil
+    · -- AJ1-B: blockedOnReplyHasTarget (boot TCBs have ipcState = .ready)
+      intro tid tcb _ _ hObj hIpc
+      have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
+      rw [hTcb.2.1] at hIpc; cases hIpc
   -- 4. ipcSchedulerCouplingInvariantBundle
   have hCouplingBundle : ipcSchedulerCouplingInvariantBundle
       (bootFromPlatform config).state := by
