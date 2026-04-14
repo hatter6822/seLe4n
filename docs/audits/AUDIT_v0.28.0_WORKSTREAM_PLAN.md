@@ -187,22 +187,73 @@ Every non-informational finding is classified into one of four dispositions:
 returns `SystemState` and silently swallows `returnDonatedSchedContext` errors.
 When retype destroys a TCB, a failed cleanup leaves the SchedContext's
 `boundThread` pointing to the destroyed TCB — a dangling reference.
+`returnDonatedSchedContext` (Endpoint.lean:233-266) can fail at 6 points
+(3 lookup failures → `.objectNotFound`, 3 `storeObject` failures).
 
-**Fix:**
-1. Change return type from `SystemState` to `Except KernelError SystemState`.
-2. Propagate the `.error` case to callers instead of returning `st` unchanged.
-3. Update callers in `Lifecycle/Operations.lean` (`lifecycleRetypeObject` or
-   `cleanupBeforeRetype`) to handle the error — either propagate further or
-   fail the retype.
-4. Update any preservation theorems that reference `cleanupDonatedSchedContext`
-   to use conditional postconditions (match on `.ok st'`).
+**Caller chain (verified):**
+- `cleanupDonatedSchedContext` ← `lifecyclePreRetypeCleanup` (Operations.lean:347)
+  ← `lifecycleRetypeWithCleanup` (Operations.lean:1207, already returns `Kernel`)
+  ← `lifecycleRetypeDirectWithCleanup` (Operations.lean:1389, already returns `Kernel`)
+- `cleanupDonatedSchedContext` ← `cancelDonation` (Suspend.lean:92)
+  ← `suspendThread` (Suspend.lean:150, already returns `Except`)
+- `cleanupDonatedSchedContext` ← test harness (MainTraceHarness.lean:2839)
+
+**Decomposed steps:**
+
+**Step 1 — Signature change (Operations.lean:122):**
+Change `cleanupDonatedSchedContext` return type from `SystemState` to
+`Except KernelError SystemState`. Replace `| .error _ => st` with
+`| .error e => .error e`. Wrap the non-donated/not-found branches with
+`.ok st`. Pattern: identical to WS-AH2 `applyCallDonation` conversion.
+
+**Step 2 — Cascade to `lifecyclePreRetypeCleanup` (Operations.lean:343):**
+Change return type from `SystemState` to `Except KernelError SystemState`.
+The `.tcb` branch (line 347) `cleanupDonatedSchedContext st tcb.tid` now
+returns `Except`; wrap non-TCB branches with `.ok st`.
+
+**Step 3 — Cascade to `cancelDonation` (Suspend.lean:92):**
+Change return type from `SystemState` to `Except KernelError SystemState`.
+The `.donated` branch (line 115-116) propagates; wrap `.unbound`/`.bound`
+branches with `.ok st`.
+
+**Step 4 — Upstream callers absorb `Except`:**
+- `lifecycleRetypeWithCleanup` (Operations.lean:1207): already returns
+  `Kernel Unit`; change `let stClean := lifecyclePreRetypeCleanup ...` to
+  `match lifecyclePreRetypeCleanup ... with | .ok s => ... | .error e => .error e`.
+- `lifecycleRetypeDirectWithCleanup` (Operations.lean:1389): same pattern.
+- `suspendThread` (Suspend.lean:150): already returns `Except`; change
+  `let st := cancelDonation ...` to `match cancelDonation ... with ...`.
+
+**Step 5 — Update 6 preservation theorems to conditional postconditions:**
+1. `cleanupDonatedSchedContext_scheduler_eq` (Operations.lean:134) →
+   `∀ st', cleanupDonatedSchedContext st tid = .ok st' → st'.scheduler = st.scheduler`
+2. `cleanupDonatedSchedContext_serviceRegistry_eq` (SuspendPreservation.lean:165)
+   → same conditional pattern.
+3. `cancelDonation_scheduler_runQueue_eq` (SuspendPreservation.lean:63) →
+   conditional, delegating to theorem 1 in the `.donated` branch.
+4. `cancelDonation_serviceRegistry_eq` (SuspendPreservation.lean:183) →
+   same cascade from theorem 2.
+5. `lifecyclePreRetypeCleanup_flat_subset` (Operations.lean:408) →
+   conditional on `.ok` result.
+6. `lifecycleRetypeWithCleanup_ok_runnable_no_dangling` (Operations.lean:1228)
+   → conditional on `lifecyclePreRetypeCleanup` returning `.ok`.
+
+**Step 6 — Update test harness (MainTraceHarness.lean:2839):**
+Change `let stCleaned := cleanupDonatedSchedContext stCleanup serverTid` to
+pattern match: `let stCleaned := match cleanupDonatedSchedContext stCleanup
+serverTid with | .ok s => s | .error _ => stCleanup`. Verify fixture at
+`main_trace_smoke.expected:209` still matches.
+
+**Note:** `CrossSubsystem.lean:1369` mentions `cleanupDonatedSchedContext` in
+a docstring only — no proof dependency, no code change needed (verified).
 
 **Files:**
-- `SeLe4n/Kernel/Lifecycle/Operations.lean` — return type change + caller update
-- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` — frame lemmas
-- `SeLe4n/Kernel/CrossSubsystem.lean` — if bridge lemmas reference this
+- `SeLe4n/Kernel/Lifecycle/Operations.lean` — steps 1, 2, 4, 5
+- `SeLe4n/Kernel/Lifecycle/Suspend.lean` — steps 3, 4
+- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` — step 5
+- `SeLe4n/Testing/MainTraceHarness.lean` — step 6
 
-**Estimated scope:** ~40 lines changed, ~20 lines new preservation lemmas
+**Estimated scope:** ~30 lines changed + ~25 lines proof updates + ~5 lines test
 
 ### AJ1-B: Reply Authorization Unreachability Proof (M-04/MEDIUM)
 
@@ -253,31 +304,65 @@ dequeued.
 **Estimated scope:** ~25 lines new theorem + ~6 lines annotations
 
 
-### AJ1-D: Reply/ReplyRecv Structural Equivalence Theorem (M-01/MEDIUM)
+### AJ1-D: Reply/ReplyRecv Conditional Equivalence Theorems (M-01/MEDIUM)
 
-**Problem:** The unchecked `.reply` path (API.lean:672-679) delegates to
-`endpointReplyWithDonation` which handles donation return and PIP revert
-internally. The checked `.reply` path (API.lean:882-897) calls
-`endpointReplyChecked`, then `applyReplyDonation`, then
-`revertPriorityInheritance` as separate steps. The existing structural
-equivalence theorems (API.lean:1077-1200) cover 14 capability-only arms but
-NOT `.reply` or `.replyRecv`. This asymmetry is unverified.
+**Problem:** The unchecked `.reply` (API.lean:673-679) delegates to
+`endpointReplyWithDonation` which bundles `endpointReply` →
+`applyReplyDonation` → `revertPriorityInheritance` internally. The checked
+`.reply` (API.lean:882-897) calls `endpointReplyChecked` (which gates on
+`securityFlowsTo` then calls `endpointReply`), then manually inlines
+`applyReplyDonation` and `revertPriorityInheritance`. The 14 existing
+structural equivalence theorems (API.lean:1077-1200) only cover capability-
+only arms via the shared `dispatchCapabilityOnly` helper. No equivalence
+theorem exists for `.reply` or `.replyRecv`.
 
-**Fix:**
-1. Add theorem `dispatchReply_equivalence`: prove that the checked `.reply`
-   path produces the same post-state as the unchecked path (modulo NI policy
-   enforcement). This may require decomposing `endpointReplyWithDonation` into
-   its constituent steps and showing equivalence.
-2. Add theorem `dispatchReplyRecv_equivalence` for the `.replyRecv` arm.
-3. If full equivalence is not feasible (checked path adds NI enforcement
-   that changes observable behavior), document the precise semantic
-   difference with a rationale annotation.
+**Key insight from code analysis:** When the information flow policy allows
+the operation, both paths execute the **identical** sequence of state
+transformations. The only difference is that the checked path adds a
+`securityFlowsTo` guard (one check for `.reply`, two for `.replyRecv`).
+This makes **conditional** equivalence provable (conditioned on flow-allowed),
+following the pattern established by `endpointSendDualChecked_eq_...` in
+`InformationFlow/Enforcement/Wrappers.lean:76-101`.
+
+**Decomposed steps:**
+
+**Step 1 — `endpointReplyWithDonation` decomposition lemma:**
+Add a lemma in `Donation.lean` proving `endpointReplyWithDonation` is
+equivalent to the three-step sequence:
+`endpointReply ∘ applyReplyDonation ∘ revertPriorityInheritance`.
+This is a definitional unfolding — provable by `rfl` or `simp`.
+
+**Step 2 — `.reply` conditional equivalence (API.lean):**
+```
+theorem checkedDispatch_reply_eq_unchecked_when_allowed
+    (hSyscall : decoded.syscallId = .reply)
+    (hCap : cap.target = .replyCap targetTid)
+    (hFlow : securityFlowsTo replierLabel targetLabel = true) :
+    dispatchWithCapChecked ctx decoded tid gate cap =
+    dispatchWithCap decoded tid gate cap
+```
+Proof strategy: unfold `dispatchWithCapChecked`, `dispatchWithCap`,
+`endpointReplyChecked`, and `endpointReplyWithDonation`. The flow guard
+simplifies to `if true then ...` by hypothesis. Both sides reduce to the
+identical reply → donation → PIP sequence. Use `simp` and `split`.
+
+**Step 3 — `endpointReplyRecvWithDonation` decomposition lemma:**
+Same pattern as step 1 for the replyRecv bundled operation.
+
+**Step 4 — `.replyRecv` conditional equivalence (API.lean):**
+Same pattern as step 2, with two flow hypotheses (reply leg + receive leg).
+`endpointReplyRecvChecked` gates on TWO `securityFlowsTo` checks.
+
+**Step 5 — Integrate into aggregate theorem:**
+Extend the `checkedDispatch_capabilityOnly_eq_unchecked` aggregate (line 1213)
+with the two new conditional equivalence results, or create a new aggregate
+`checkedDispatch_ipc_eq_unchecked_when_allowed`.
 
 **Files:**
-- `SeLe4n/Kernel/API.lean` — 2 new theorems (or 2 documented rationale blocks)
-- `SeLe4n/Kernel/IPC/Operations/Donation.lean` — helper lemmas if needed
+- `SeLe4n/Kernel/IPC/Operations/Donation.lean` — decomposition lemmas (steps 1, 3)
+- `SeLe4n/Kernel/API.lean` — 2 conditional equivalence theorems (steps 2, 4, 5)
 
-**Estimated scope:** ~60 lines (theorems or documentation)
+**Estimated scope:** ~80 lines (2 decomposition lemmas + 2 equivalence theorems)
 
 ### AJ1-E: Remove Dead `endpointQueuePopHeadFresh` (L-02/LOW)
 
@@ -343,54 +428,95 @@ invariant/preservation files
 `AccessRightSet.mk 999` with invalid high bits beyond the 5-bit range (read,
 write, grant, grantReply, revoke). While membership queries only test bits 0-4,
 the `union` operation propagates invalid bits. `CapDerivationTree.mk` is
-already private, showing the pattern exists in the codebase.
+already private (Structures.lean:941), showing the pattern exists.
 
-**Fix:**
-1. Add `private` to the `AccessRightSet` structure's `mk` constructor:
-   `structure AccessRightSet where private mk :: bits : Nat`.
-2. Add smart constructors: `AccessRightSet.ofBits (n : Nat) : AccessRightSet :=
-   ⟨n &&& 0x1F⟩` (masks to 5 bits).
-3. Update all call sites that currently use `AccessRightSet.mk` directly.
-   Search for `.mk` and `⟨...⟩` constructor syntax on `AccessRightSet`.
-4. Update test suites that construct `AccessRightSet` values.
+**Scope analysis (verified):** **Zero external call sites** use `AccessRightSet.mk`
+directly. All 210+ external construction sites already use safe constructors:
+`ofList` (~210 sites in tests/harness), `ofNat` (4 sites in SyscallArgDecode,
+the production decode boundary), plus `empty`, `singleton`, `mk_checked`,
+`union`, `inter` — all defined inside `namespace AccessRightSet` (Types.lean:
+100-305) and thus unaffected by `private mk`. The only direct `.mk` reference
+is `congrArg AccessRightSet.mk` at line 127 (inside the namespace, still works).
+
+**Fix (1 line + 1 potential fix):**
+1. Change `structure AccessRightSet where` to
+   `structure AccessRightSet where private mk ::` (Types.lean:96).
+2. If `deriving Inhabited` (line 98) fails with private `mk`, replace with
+   manual instance: `instance : Inhabited AccessRightSet := ⟨AccessRightSet.empty⟩`
+   inside the namespace. (CDT uses `Repr` only, no `Inhabited`, so this is the
+   one difference to verify.)
+3. No smart constructor needed — `ofNat`, `ofList`, `mk_checked` already exist.
+4. Build-verify with `lake build SeLe4n.Model.Object.Types`.
 
 **Files:**
-- `SeLe4n/Model/Object/Types.lean` — private constructor + smart constructor
-- All files constructing `AccessRightSet` directly (search required)
-- Test suites using `AccessRightSet.mk`
+- `SeLe4n/Model/Object/Types.lean` — 1-2 lines changed
 
-**Estimated scope:** ~15 lines changed in Types.lean + call site updates
+**Estimated scope:** 1-2 lines changed, zero call site updates
 
 ### AJ2-B: Strip `pipBoost` from NI Projection (M-11/MEDIUM)
 
-**Problem:** `projectKernelObject` (Projection.lean:216-218) strips
+**Problem:** `projectKernelObject` (Projection.lean:218) strips
 `registerContext` and `schedContextBinding` from TCBs but does NOT strip
-`pipBoost`. A cross-domain PIP boost reflects which thread holds a Reply on
-behalf of a higher-priority client, potentially leaking timing information
-about blocking relationships across security domains.
+`pipBoost`. A cross-domain PIP boost reflects blocking relationships,
+potentially leaking timing information across security domains.
 
-**Fix:**
-1. Add `pipBoost := none` to the TCB projection in `projectKernelObject`:
-   `.tcb { tcb with registerContext := default, schedContextBinding := .unbound,
-   pipBoost := none }`.
-2. Update `projectKernelObject_strips_register_context` and any related
-   projection lemmas to account for the additional field stripping.
-3. Update NI preservation theorems that depend on projection equality —
-   the `pipBoost` field must now be shown irrelevant to projection in
-   `InformationFlow/Invariant/Operations.lean`.
-4. Verify all NI proofs still compile by building `SeLe4n.Kernel.InformationFlow`.
+**Scope analysis (verified):** The change is **lower risk than initially
+assessed**. Two proof patterns exist in the NI subsystem:
+
+1. **Non-observable target pattern** (~25 of ~51 theorems): The operation
+   modifies objects at a non-observable ObjId. Proofs use
+   `storeObject_preserves_projection` without ever unfolding
+   `projectKernelObject`. These are **completely unaffected**.
+
+2. **Observable target, field-stripping pattern** (5 specific proof sites):
+   The operation modifies an observable TCB and the proof unfolds
+   `projectKernelObject` via `simp`. These 5 sites (Operations.lean lines
+   396, 438, 517, 1503, 1509) modify `registerContext` or
+   `schedContextBinding` — NOT `pipBoost`. Both pre-state and post-state
+   TCBs share the same `pipBoost` value, so projecting to `pipBoost := none`
+   on both sides preserves equality. **Should auto-close with `simp`.**
+
+The existing PIP NI proofs (`updatePipBoost_preserves_projection`,
+`propagatePIP_preserves_projection`, `revertPIP_preserves_projection`) all
+use the non-observable-target pattern — they never unfold projection on the
+modified TCB. `pipBoost` has **zero** references in NI proof terms (only 1
+in a docstring comment at Operations.lean:2675).
+
+**Decomposed steps:**
+
+**Step 1 — Modify projection (Projection.lean:218):**
+Change `.tcb { tcb with registerContext := default, schedContextBinding := .unbound }`
+to `.tcb { tcb with registerContext := default, schedContextBinding := .unbound, pipBoost := none }`.
+
+**Step 2 — Verify structural theorems (Projection.lean):**
+Check `projectKernelObject_idempotent` (line 234) — second application
+of projection should produce same result (pipBoost already none after first).
+The `trivial` dispatch should still work. Check `projectKernelObject_objectType`
+(line 249) — tag extraction, unaffected by field values.
+
+**Step 3 — Build-verify Operations.lean:**
+Run `lake build SeLe4n.Kernel.InformationFlow.Invariant.Operations`.
+The 5 proof sites using `simp only [..., projectKernelObject]` should
+auto-close because both sides share the same `pipBoost` before projection.
+If any site fails, the fix is adding `pipBoost` to the simp context.
+
+**Step 4 — Build-verify Composition.lean:**
+Run `lake build SeLe4n.Kernel.InformationFlow.Invariant.Composition`.
+`step_preserves_projection` delegates to per-operation proofs from step 3.
+
+**Step 5 — Full NI subsystem build:**
+Run `lake build SeLe4n.Kernel.InformationFlow` to verify no cascading breaks.
 
 **Files:**
-- `SeLe4n/Kernel/InformationFlow/Projection.lean` — add `pipBoost := none`
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` — proof updates
-- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` — helper updates
+- `SeLe4n/Kernel/InformationFlow/Projection.lean` — 1 line changed
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` — verify (0-5 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` — verify (likely 0)
 
-**Risk:** This change affects all 35 NI operation proofs. Each proof that
-currently reasons about TCB projection must be verified to not depend on
-`pipBoost` visibility. If any proof breaks, it indicates a genuine NI gap
-that the audit correctly identified.
+**Risk (revised):** Low-to-moderate. The `pipBoost` stripping follows the
+exact same pattern as the `schedContextBinding` stripping (added in AI4-A).
+If any proof breaks, it indicates a genuine cross-domain PIP information leak.
 
-**Estimated scope:** ~5 lines in Projection.lean + ~50-100 lines proof updates
+**Estimated scope:** 1 line changed + 0-5 lines proof adjustments
 
 ### AJ2-C: Strengthen `isInsecureDefaultContext` (M-12/MEDIUM)
 
@@ -399,29 +525,64 @@ sentinel entity ID 0 across four entity classes. A labeling context assigning
 non-public labels to ID 0 but `publicLabel` to all other entities passes this
 check while being functionally insecure.
 
-**Fix:**
-1. Extend the sentinel check to sample additional entity IDs. Add checks for
-   IDs 1, 2, and 3 in each class — if ANY sampled entity has `publicLabel`,
-   flag the context as insecure. This catches contexts that are "mostly public"
-   while keeping the O(1) nature (fixed number of probes).
-2. Add documentation clearly stating the check is a heuristic sentinel, not a
-   comprehensive security validation. The `LabelingContextValid` deployment
-   requirement (enforced at boot) is the real security gate; this is a
-   defense-in-depth runtime check.
-3. Add `isInsecureDefaultContext_soundness` documentation noting the false-
-   negative rate and the design rationale for O(1) checking.
+**Callers (verified):** Only 2 — `syscallEntryChecked` (API.lean:1049, the
+production entry point) and test assertions (InformationFlowSuite.lean:958).
 
-**Alternative considered:** Full iteration over all entities would provide
-complete coverage but would change the O(1) guarantee to O(n) and
-potentially impact syscall entry latency. The sentinel approach is the right
-tradeoff for a runtime guard that supplements the boot-time validation.
+**Existing theorems:** Only 2 — `isInsecureDefaultContext_defaultLabelingContext`
+(returns `true` for default) and `isInsecureDefaultContext_testLabelingContext`
+(returns `false` for test context). No false-negative characterization exists.
+
+**Decomposed steps:**
+
+**Step 1 — Extend sentinel probes (Policy.lean:273-277):**
+Change from single-ID probe to multi-probe across IDs `[0, 1, 42]`:
+```
+def isInsecureDefaultContext (ctx : LabelingContext) : Bool :=
+  [0, 1, 42].all (fun n =>
+    ctx.threadLabelOf (.ofNat n) == SecurityLabel.publicLabel &&
+    ctx.objectLabelOf (.ofNat n) == SecurityLabel.publicLabel &&
+    ctx.endpointLabelOf (.ofNat n) == SecurityLabel.publicLabel &&
+    ctx.serviceLabelOf (.ofNat n) == SecurityLabel.publicLabel)
+```
+This remains O(k) with k=3 (12 label lookups total), negligible overhead per
+syscall entry. Raises evasion bar: attacker must assign non-public labels to
+IDs 0, 1, AND 42 across all four entity classes.
+
+**Step 2 — Update existing proofs (Policy.lean:281, 313):**
+`isInsecureDefaultContext_defaultLabelingContext` must still prove `true` for
+`defaultLabelingContext` (which assigns `publicLabel` to ALL IDs — the multi-
+probe just checks more of them, all still public). Should close by `decide`.
+`isInsecureDefaultContext_testLabelingContext` assigns `kernelTrusted` to ID 0
+— the probe at ID 0 returns non-public, so `all` returns `false`. Still `false`.
+
+**Step 3 — Add false-negative characterization theorem:**
+```
+theorem isInsecureDefaultContext_false_implies_nontrivial
+    (ctx : LabelingContext)
+    (h : isInsecureDefaultContext ctx = false) :
+    ∃ n ∈ [0, 1, 42],
+      ctx.threadLabelOf (.ofNat n) ≠ SecurityLabel.publicLabel ∨
+      ctx.objectLabelOf (.ofNat n) ≠ SecurityLabel.publicLabel ∨
+      ctx.endpointLabelOf (.ofNat n) ≠ SecurityLabel.publicLabel ∨
+      ctx.serviceLabelOf (.ofNat n) ≠ SecurityLabel.publicLabel
+```
+This makes machine-checked what the heuristic guarantees: when the check
+passes (`false`), at least one probed entity in at least one class has a
+non-public label. Zero runtime cost — purely a proof artifact.
+
+**Step 4 — Add documentation annotation (Policy.lean):**
+Document that this is a defense-in-depth O(k) heuristic. The real security
+gate is `LabelingContextValid` (enforced at boot via
+`labelingContextValid_is_deployment_requirement` in Composition.lean:727).
+
+**Step 5 — Update test (InformationFlowSuite.lean:958):**
+Verify existing assertions still hold with multi-probe logic.
 
 **Files:**
-- `SeLe4n/Kernel/InformationFlow/Policy.lean` — extend sentinel probes
-- `SeLe4n/Kernel/API.lean` — no change (already calls `isInsecureDefaultContext`)
-- Test sites — update `testLabelingContext` expected results if needed
+- `SeLe4n/Kernel/InformationFlow/Policy.lean` — steps 1-4
+- `tests/InformationFlowSuite.lean` — step 5
 
-**Estimated scope:** ~20 lines changed + ~10 lines documentation
+**Estimated scope:** ~20 lines changed + ~15 lines new theorem + ~5 lines docs
 
 ### AJ2-D: ThreadId/SchedContextId Namespace Disjointness Invariant (M-09/MEDIUM)
 
@@ -475,23 +636,38 @@ returns `some dt` (success). Callers cannot distinguish "no devices" from
 "parse failed." On a real DTB with many nodes, the kernel boots with empty
 peripheral data (zero GIC addresses, zero timer frequency).
 
-**Fix:**
-1. Change `fromDtbFull` return type from `Option DeviceTree` to
-   `Except DeviceTreeParseError DeviceTree`.
-2. On `parseFdtNodes` returning `.error e`, propagate: `return .error e`.
-3. On `parseFdtNodes` returning `.ok nodes`, continue to build the DeviceTree
-   and return `.ok dt`.
-4. Update all callers of `fromDtbFull`:
-   - `Platform/Boot.lean` (`bootFromPlatform` or `bootFromPlatformChecked`)
-   - Any test suite calling `fromDtbFull`
-5. Update preservation lemmas if any reference `fromDtbFull` output.
+**Scope analysis (verified):** **Extremely localized.** Only 3 items need
+updating, ALL in `DeviceTree.lean`. Boot.lean does NOT call `fromDtbFull`
+(verified — RPi5 uses `fromBoardConstants`, Sim uses empty configs). No test
+suites call any `fromDtb*` function. `DeviceTreeParseError` already exists
+(added in AI4-B) with `.fuelExhausted` and `.malformedBlob` variants.
+
+**Decomposed steps:**
+
+**Step 1 — Change `fromDtbFull` return type (DeviceTree.lean:849):**
+Change from `Option DeviceTree` to `Except DeviceTreeParseError DeviceTree`.
+The function currently uses `do` notation with `Option` monad (via `←` for
+`parseAndValidateFdtHeader` and `findMemoryRegProperty` which return `Option`).
+Convert early returns: `let hdr ← parseAndValidateFdtHeader blob` becomes
+`let some hdr := parseAndValidateFdtHeader blob | return .error .malformedBlob`.
+The `if memRegions.isEmpty then none` becomes
+`if memRegions.isEmpty then return .error .malformedBlob`. The key change:
+replace `| .error .fuelExhausted => []` with `| .error e => return .error e`.
+
+**Step 2 — Update `fromDtbParsed` alias (DeviceTree.lean:884-885):**
+This `abbrev` inherits the return type from `fromDtbFull`. Its type
+annotation (if explicit) updates automatically. Verify compilation.
+
+**Step 3 — Update correctness theorem (DeviceTree.lean:893-903):**
+`parseFdtHeader_fromDtbFull_some` currently states
+`∃ dt, DeviceTree.fromDtbFull blob = some dt`. Change to
+`∃ dt, DeviceTree.fromDtbFull blob = .ok dt`. The proof body uses
+`simp only [DeviceTree.fromDtbFull, ...]` — update the expected constructor.
 
 **Files:**
-- `SeLe4n/Platform/DeviceTree.lean` — return type change + error propagation
-- `SeLe4n/Platform/Boot.lean` — caller update
-- Test suites — caller updates
+- `SeLe4n/Platform/DeviceTree.lean` — all 3 steps (single file)
 
-**Estimated scope:** ~15 lines changed + ~10 lines caller updates
+**Estimated scope:** ~20 lines changed in one file, zero external callers
 
 ### AJ3-B: Fix DTB PA Width Default (M-18/MEDIUM)
 
@@ -526,28 +702,62 @@ prevents silent misconfiguration on new platforms.
 
 ### AJ3-C: Wire `bootSafe` Validation into `bootFromPlatformChecked` (M-16/MEDIUM)
 
-**Problem:** `bootToRuntime_invariantBridge_empty` (Boot.lean:497) proves the
-full 10-component `proofLayerInvariantBundle` only for empty `PlatformConfig`.
-For non-empty configs, the general bridge requires `config.bootSafe`. But
-`bootFromPlatformChecked` validates `wellFormed` without checking `bootSafe`.
-A malformed config could produce a state violating kernel invariants.
+**Problem:** `bootFromPlatformChecked` (Boot.lean:368-375) validates
+`PlatformConfig.wellFormed` (uniqueness of IRQ/object IDs) but NOT
+`PlatformConfig.bootSafe` (object-level semantic safety). A config with unique
+IDs but invalid object states (e.g., endpoint with non-empty queues pointing
+to nonexistent threads, TCB with `ipcState != .ready`) would pass the checked
+boot path yet violate kernel invariants.
 
-**Fix:**
-1. Add `bootSafe` as a required field of `PlatformConfig` or as an additional
-   validation predicate in `bootFromPlatformChecked`.
-2. If `bootSafe` is a `Prop` (proof obligation), require callers to supply
-   evidence: `bootFromPlatformChecked (config : PlatformConfig)
-   (hSafe : config.bootSafe) : ...`.
-3. If this is too restrictive for the simulation path (where `bootSafe` may
-   be trivially true), add a `bootSafe := True` default that simulation
-   overrides explicitly, and document the obligation.
-4. Update `bootFromPlatformChecked` to check/require `bootSafe`.
+**Context (verified):** A general boot invariant bridge theorem
+(`bootFromPlatform_proofLayerInvariantBundle_general`, Boot.lean:1085)
+already proves the full 10-component invariant bundle for ANY config where
+`config.bootSafe` holds. `bootSafeObject` (Boot.lean:969) is a 6-conjunct
+`Prop` checking endpoint queues empty, notifications idle, CNode depth/badge
+validity, TCB clean boot state, VSpaceRoot exclusion, and SchedContext
+well-formedness. The gap: `wellFormed` checks uniqueness, `bootSafe` checks
+semantic safety — they are orthogonal.
+
+**Key challenge:** `bootSafe` is a `Prop`, not a `Bool`. It contains universal
+quantifiers and references `schedContextWellFormed` (itself a `Prop`). Two
+approaches exist.
+
+**Decomposed steps (recommended approach: decidable runtime check):**
+
+**Step 1 — Create `bootSafeObjectCheck` Bool mirror (Boot.lean):**
+Define a `Bool`-valued function mirroring each `bootSafeObject` conjunct:
+- Endpoints: check `sendQ.head == none && sendQ.tail == none && ...`
+- Notifications: check `idle == true && waitingThreads.isEmpty && ...`
+- CNodes: check `depth ≤ maxCSpaceDepth && ...`
+- TCBs: check `pendingMessage.isNone && ipcState == .ready && ...`
+- VSpaceRoots: return `false` (categorically excluded)
+- SchedContexts: check `boundThread.isNone && ...`
+
+**Step 2 — Prove soundness bridge (Boot.lean):**
+```
+theorem bootSafeObjectCheck_sound (obj : KernelObject) :
+    bootSafeObjectCheck obj = true → bootSafeObject obj
+```
+Each conjunct maps to a `Bool` equality, provable by case analysis.
+
+**Step 3 — Wire into `bootFromPlatformChecked` (Boot.lean:368-375):**
+Add `config.initialObjects.all (fun entry => bootSafeObjectCheck entry.obj)`
+to the `if` guard alongside `config.wellFormed`. On failure, return
+`.error "boot: object fails bootSafe check"`.
+
+**Step 4 — Verify empty-config path:**
+For empty configs (`initialObjects := []`), `all` returns `true` vacuously.
+No impact on simulation or test paths using empty configs.
+
+**Step 5 — Verify OperationChainSuite (tests/OperationChainSuite.lean:1628):**
+This is the main non-empty config test exerciser. Check that its hand-built
+objects pass `bootSafeObjectCheck`. If not, fix the test config.
 
 **Files:**
-- `SeLe4n/Platform/Boot.lean` — add bootSafe requirement
-- Sim/RPi5 contract files — supply bootSafe evidence
+- `SeLe4n/Platform/Boot.lean` — steps 1-3 (~40 lines new)
+- `tests/OperationChainSuite.lean` — step 5 (verify/fix)
 
-**Estimated scope:** ~20 lines changed
+**Estimated scope:** ~40 lines new (Bool mirror + soundness + wiring)
 
 ### AJ3-D: BootBoundaryContract Substantive Defaults (M-19/MEDIUM)
 
@@ -661,29 +871,82 @@ genuine functional correctness assurance and is useful for downstream proofs.
 
 **Problem:** Both `vspaceMapPageWithFlush` and `vspaceUnmapPageWithFlush`
 (VSpace.lean:174-194) flush the ENTIRE TLB via `adapterFlushTlb` after every
-map/unmap operation. On RPi5 with multiple address spaces, this invalidates
-all TLB entries across all ASIDs. Targeted `tlbFlushByASID` and
-`tlbFlushByPage` functions exist with proofs in TlbModel.lean but are not
-wired into the production VSpace operations.
+map/unmap. On RPi5 with multiple address spaces, this invalidates ALL entries.
+Targeted flush functions and proofs already exist in TlbModel.lean.
 
-**Fix:**
-1. Change `vspaceMapPageWithFlush` to use `adapterFlushTlbByPage vaddr`
-   instead of `adapterFlushTlb st'.tlb`. After a single page mapping,
-   only that page's TLB entry needs invalidation.
-2. Change `vspaceUnmapPageWithFlush` similarly.
-3. Update the `TlbState` manipulation to use `tlbFlushByPage` from
-   `TlbModel.lean` instead of `tlbFlushAll`.
-4. Verify that `tlbFlushByPage` preserves `tlbConsistent` (should be proven
-   in TlbModel.lean already via `tlbFlushByPage_preserves_consistency` or
-   equivalent).
-5. Update VSpace invariant proofs that depend on the full-flush semantics.
+**Scope analysis (verified):** The code change is trivial (swap function name
+in 2 lines), but the **proof burden is the main challenge**. Current proofs
+reduce to `tlbConsistent_empty` (trivially consistent after full flush). With
+targeted flush, the TLB retains entries, so proofs must show retained entries
+are still consistent. This requires new frame lemmas.
+
+**Available infrastructure (TlbModel.lean):**
+- `adapterFlushTlbByVAddr (tlb asid vaddr)` — filters matching entries
+- `adapterFlushTlbByVAddr_preserves_tlbConsistent` (line 142)
+- `adapterFlushTlbByVAddr_removes_matching` (line 152)
+- `adapterFlushTlbByVAddr_preserves_other` (line 163)
+- Hardware-adapter wrappers: `adapterFlushTlbByVAddrHw` (line 279)
+- Composition: `cross_asid_tlb_isolation` (line 200)
+- Migration roadmap documented at VSpace.lean:347-381
+
+**Both `WithFlush` functions already have `asid` and `vaddr` parameters,**
+so no signature change is needed — just swap the internal flush call.
+
+**Decomposed steps:**
+
+**Step 1 — Add other-lookup frame lemmas (VSpace.lean or TlbModel.lean):**
+These are the gating proofs that do not currently exist:
+```
+theorem vspaceMapPage_preserves_other_lookups
+    (h : (asid', vaddr') ≠ (asid, vaddr)) :
+    vspaceRoot_lookup st' asid' vaddr' = vspaceRoot_lookup st asid' vaddr'
+```
+Prove that `vspaceMapPage` at `(asid, vaddr)` does not change lookups at
+other addresses. This follows from `RHTable.insert` leaving other keys
+unchanged (HashMap property).
+```
+theorem vspaceUnmapPage_preserves_other_lookups
+    (h : (asid', vaddr') ≠ (asid, vaddr)) :
+    vspaceRoot_lookup st' asid' vaddr' = vspaceRoot_lookup st asid' vaddr'
+```
+Same pattern for `vspaceUnmapPage`.
+
+**Step 2 — Swap flush calls (VSpace.lean:180, 194):**
+- `vspaceMapPageWithFlush`: change `adapterFlushTlb st'.tlb` to
+  `adapterFlushTlbByVAddr st'.tlb asid vaddr`.
+- `vspaceUnmapPageWithFlush`: same change.
+
+**Step 3 — Update TLB consistency proofs (TlbModel.lean:223-252):**
+The existing `vspaceMapPageWithFlush_preserves_tlbConsistent` currently
+reduces to `tlbConsistent_empty`. Replace with:
+- For map: the new mapping at `(asid, vaddr)` is consistent with the
+  post-map page table (from the map postcondition); all retained entries
+  (not matching `(asid, vaddr)`) were already consistent and their page
+  table entries are unchanged (from step 1 frame lemma).
+- For unmap: the removed mapping has no TLB entry (flushed); retained
+  entries unchanged (from step 1 frame lemma).
+
+**Step 4 — Verify 3 checked wrapper variants (VSpace.lean:198-227):**
+`vspaceMapPageCheckedWithFlush`, `vspaceMapPageCheckedWithFlushPlatform`,
+`vspaceMapPageCheckedWithFlushFromState` all delegate to
+`vspaceMapPageWithFlush`. They are transparent wrappers — no changes needed
+if the inner function's type is preserved.
+
+**Step 5 — Verify VSpaceInvariant.lean is unaffected:**
+VSpace invariant proofs are about page table correctness (W^X, mapping
+consistency), not TLB state. Verified: zero references to `adapterFlushTlb`
+in VSpaceInvariant.lean. **No changes needed.**
 
 **Files:**
-- `SeLe4n/Kernel/Architecture/VSpace.lean` — use targeted flush
-- `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` — proof updates
-- `SeLe4n/Kernel/Architecture/TlbModel.lean` — verify bridge lemmas exist
+- `SeLe4n/Kernel/Architecture/VSpace.lean` — step 1 frame lemmas + step 2
+- `SeLe4n/Kernel/Architecture/TlbModel.lean` — step 3 proof updates
 
-**Estimated scope:** ~20 lines changed + ~15 lines proof updates
+**Risk:** Medium. Step 1 (frame lemmas) is new proof work over `VSpaceRoot`
+HashMap. If the HashMap proofs are difficult, the frame lemma could be stated
+as a documented proof obligation with a `TPI-DOC` annotation, deferring the
+formal proof to WS-V while still making the code change.
+
+**Estimated scope:** ~30 lines new frame lemmas + ~20 lines proof updates + 2 lines code
 
 ### AJ4-C: Add Physical Address Bounds to IPC Buffer Validation (L-06/LOW)
 
@@ -1026,73 +1289,100 @@ AJ4-C and AJ4-D modify different subsystems and are independent.
 
 ### 10.3 Recommended Execution Sequence
 
-For a single-agent serial execution:
+For a single-agent serial execution (optimized for quick wins first):
 
 ```
-AJ1-A → AJ1-B → AJ1-C → AJ1-D → AJ1-E → AJ1-F   (IPC correctness)
-AJ5-A → AJ5-B → AJ5-C → AJ5-D                      (Rust HAL, fast wins)
-AJ2-A → AJ2-B → AJ2-C → AJ2-D                      (Security hardening)
-AJ3-A → AJ3-B → AJ3-C → AJ3-D → AJ3-E → AJ3-F    (Platform/boot)
-AJ4-A → AJ4-B → AJ4-C → AJ4-D                      (Architecture)
-AJ6-A → AJ6-B → AJ6-C → AJ6-D → AJ6-E → AJ6-F    (Closure)
+# Quick wins — very low risk, build confidence
+AJ2-A → AJ5-A → AJ5-D → AJ1-E → AJ3-F             (1-4 lines each)
+
+# Low risk — localized changes
+AJ5-B → AJ5-C → AJ3-A → AJ3-B → AJ2-B             (well-understood patterns)
+
+# Medium risk — new proofs and type cascades
+AJ1-A → AJ1-B → AJ1-C → AJ2-C → AJ2-D → AJ3-E    (moderate scope)
+AJ1-D → AJ3-C → AJ3-D → AJ4-A → AJ4-C → AJ4-D    (medium scope)
+AJ1-F → AJ4-B                                        (highest new proof work)
+
+# Closure
+AJ6-A → AJ6-B → AJ6-C → AJ6-D → AJ6-E → AJ6-F    (documentation + gate)
 ```
 
-Rationale: IPC correctness first (highest impact), then Rust HAL (fast, low
-risk), then security hardening, platform, architecture, and documentation last.
+Rationale: Start with very-low-risk items (1-2 line changes, zero proof
+impact) to establish momentum and verify the build pipeline. Progress to
+localized changes with well-understood patterns. Save the highest proof-work
+items (AJ4-B targeted TLB frame lemmas, AJ1-D conditional equivalence) for
+when the surrounding infrastructure is stable.
 
 For parallel execution with 3 agents:
 
 ```
-Agent 1: AJ1 (IPC) → AJ3 (Platform) → AJ6-A/B/C/D
-Agent 2: AJ2 (Security) → AJ4 (Architecture) → AJ6-E
-Agent 3: AJ5 (Rust HAL) → AJ6-F (final gate)
+Agent 1 (Lean core): AJ1 (IPC) → AJ3 (Platform) → AJ6-A/B/C/D
+Agent 2 (Lean security+arch): AJ2 (Security) → AJ4 (Architecture) → AJ6-E
+Agent 3 (Rust + closure): AJ5 (Rust HAL) → AJ6-F (final gate)
 ```
+
+Agent 1 and Agent 2 modify disjoint Lean file sets. Agent 3 works entirely
+in the Rust workspace. This partitioning guarantees zero file conflicts.
 
 ---
 
 ## 11. Risk Assessment
 
-### 11.1 High-Risk Sub-Tasks
+### 11.1 Risk Tiers (Revised After Codebase Research)
+
+**Tier 1 — Medium risk (new proof work required):**
 
 | Sub-Task | Risk | Mitigation |
 |----------|------|------------|
-| AJ2-B (pipBoost NI) | Touches all 35 NI proofs | Build `SeLe4n.Kernel.InformationFlow` after change; if proofs break, they reveal genuine NI gaps |
-| AJ1-A (cleanup error) | Changes return type propagation chain | Follow pattern from AH2-A/B (applyCallDonation Except change) |
-| AJ3-A (fromDtbFull) | Changes return type used by boot | Follow pattern from AI4-B (parseFdtNodes Except change) |
-| AJ2-A (private mk) | May break many call sites | Search-and-replace with smart constructor |
+| AJ4-B (targeted TLB) | New frame lemmas over VSpaceRoot HashMap | Lemmas can be stated as TPI-DOC if HashMap proofs are difficult |
+| AJ1-A (cleanup error) | 6 preservation theorems → conditional postconditions | Follow established WS-AH2 pattern (applyCallDonation conversion) |
+| AJ3-C (bootSafe) | New Bool mirror of Prop-valued predicate | Each sub-predicate mirrors to decidable Bool check |
+| AJ1-D (reply equiv) | Conditional equivalence over 4-5 definition levels | Follow Wrappers.lean pattern (endpointSendDualChecked equivalence) |
 
-### 11.2 Low-Risk Sub-Tasks
+**Tier 2 — Low risk (localized changes, well-understood patterns):**
 
-| Sub-Task | Risk Level | Notes |
-|----------|------------|-------|
-| AJ1-E (remove dead code) | Very low | No callers to break |
-| AJ5-A (debug→assert) | Very low | 4 lines, same semantics in debug builds |
-| AJ5-D (pub→pub(crate)) | Very low | 1 line, crate-internal only |
-| AJ3-F (remove stub) | Very low | Dead code removal |
-| AJ6-* (documentation) | Very low | No code changes |
+| Sub-Task | Risk | Notes |
+|----------|------|-------|
+| AJ2-B (pipBoost NI) | Only ~5 of ~51 NI proofs unfold projection on TCBs; should auto-close with `simp` | Revised down from "highest risk" after code analysis |
+| AJ2-C (sentinel check) | Multi-probe is additive; existing proofs close by `decide` | |
+| AJ3-A (fromDtbFull) | Single file, zero external callers, pattern from AI4-B | Revised down: Boot.lean is NOT a caller |
 
-### 11.3 Proof Fragility Concerns
+**Tier 3 — Very low risk (1-2 line changes, no proof impact):**
 
-Several sub-tasks modify types or function signatures that could trigger
-cascading proof breakage:
+| Sub-Task | Risk | Notes |
+|----------|------|-------|
+| AJ2-A (private mk) | Zero external call sites (all use safe constructors) | Revised down from "may break many sites" |
+| AJ1-E (remove dead code) | No callers to break | |
+| AJ5-A (debug→assert) | 4 lines, same semantics in debug builds | |
+| AJ5-D (pub→pub(crate)) | 1 line, crate-internal only | |
+| AJ3-F (remove stub) | Dead code removal | |
+| AJ6-* (documentation) | No code changes | |
 
-1. **AJ1-A** (cleanupDonatedSchedContext return type): Follow the established
-   pattern from WS-AH Phase AH2 where `applyCallDonation` and
-   `applyReplyDonation` were converted from `SystemState` to
-   `Except KernelError SystemState`. The proof update pattern is well-
-   understood.
+### 11.2 Proof Fragility Concerns (Revised)
 
-2. **AJ2-B** (pipBoost in projection): This is the highest-risk change. The
-   NI projection function is used by all 35 operation NI proofs. Adding
-   `pipBoost := none` to the projection may require updating each proof to
-   show that `pipBoost` changes are irrelevant to the security domain being
-   projected. If ANY proof cannot be updated, it indicates a genuine
-   cross-domain PIP information leak.
+Research revealed the proof burden is more concentrated than initially feared:
 
-3. **AJ2-A** (AccessRightSet private mk): The smart constructor
-   `AccessRightSet.ofBits` masks to 5 bits. Existing code that creates
-   valid `AccessRightSet` values via `⟨bits⟩` syntax will need to use
-   `AccessRightSet.ofBits bits`. This is a mechanical search-and-replace.
+1. **AJ1-A** (6 preservation theorems): Well-understood pattern from WS-AH2.
+   The cascade is contained: `cleanupDonatedSchedContext` → 2 intermediate
+   callers → 3 upstream callers that already return `Except`. Theorems switch
+   from `f st = ...` to `∀ st', f st = .ok st' → ...`.
+
+2. **AJ2-B** (5 specific proof sites): Most NI proofs (~45 of ~51) use the
+   non-observable-target pattern and never unfold `projectKernelObject`. Only
+   5 sites in Operations.lean unfold projection on TCBs, and all operate on
+   fields OTHER than `pipBoost`. Both sides share the same `pipBoost` before
+   projection, so `simp` closes the goal.
+
+3. **AJ4-B** (2 new frame lemmas): The genuinely new proof work. The
+   `vspaceMapPage_preserves_other_lookups` and
+   `vspaceUnmapPage_preserves_other_lookups` lemmas must be proven from
+   scratch over the `VSpaceRoot` HashMap. This is tractable (HashMap `insert`
+   preserves other keys) but requires understanding the VSpace abstraction.
+
+4. **AJ3-C** (Bool mirror soundness): The `bootSafeObjectCheck_sound` theorem
+   requires case analysis on `KernelObject` constructors with ~6 sub-cases.
+   Each sub-case maps a `Bool` equality to a `Prop` conjunction. Mechanical
+   but involves ~40 lines of proof.
 
 ---
 
