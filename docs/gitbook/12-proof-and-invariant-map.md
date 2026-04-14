@@ -630,6 +630,7 @@ Cross-subsystem consistency between lifecycle, service, and IPC subsystems:
   - `noStaleNotificationWaitReferences` — every ThreadId in notification `waitingThreads` has a live TCB (T5-H)
   - `registryDependencyConsistent` — every dependency edge references a registered service
   - `registryInterfaceValid` — every registered service has its interfaces in the interface registry (AE5-C/SVC-04)
+  - `typedIdDisjointness` — documents that each ObjId maps to at most one `KernelObject` variant (trivially true by RHTable function property; AJ2-D/M-09). Companion theorem `retypeFromUntyped_childId_fresh` proves allocation freshness.
   - `crossSubsystemInvariant` — composed 10-predicate bundle added to `proofLayerInvariantBundle` (T5-J: extended from 3-tuple, U4-G: serviceGraphInvariant added, Z9: added `schedContextStoreConsistent`, `schedContextNotDualBound`, `schedContextRunQueueConsistent`, AE5-C: added `registryInterfaceValid`, AF1-B: added `blockingAcyclic`). **AG1-F**: 10 decidable runtime checks (full coverage) composed into `checkCrossSubsystemInvariant` and integrated into test harness `checkInvariants`: `checkRegistryEndpointValid`, `checkRegistryInterfaceValid`, `checkRegistryDependencyConsistent`, `checkNoStaleEndpointQueueRefs`, `checkNoStaleNotificationWaitRefs`, `checkServiceGraphInvariant`, `checkSchedContextStoreConsistent`, `checkSchedContextNotDualBound`, `checkSchedContextRunQueueConsistent`, `checkBlockingAcyclic`.
   - **X3-C/X3-D (v0.22.20)**: 10 predicate interaction pairs fully covered:
     - 6 disjoint pairs with field-disjointness witnesses (V6-A3)
@@ -1103,6 +1104,8 @@ backward-preservation and frame lemmas.
 
 - `capTargetObservable` — observability gate for `.object`, `.cnodeSlot`, `.replyCap` targets,
 - `projectKernelObject` — redacts high-domain capability slot contents from CNodes.
+  TCB projection strips `registerContext`, `schedContextBinding`, and `pipBoost`
+  (AJ2-B/M-11: pipBoost stripped to prevent cross-domain timing leakage).
   **AH5-A (M-07)**: `pendingMessage` NI visibility analysis documented — unreachable
   under `runnableThreadIpcReady` + `currentNotEndpointQueueHead` + domain scheduling,
 - `projectKernelObject_idempotent` — safety: double-filtering is idempotent (WS-G5: reformulated to slot-level lookup equality for `Std.HashMap` compatibility),

@@ -746,8 +746,9 @@ The Lean model bridges abstract `Nat` semantics to 64-bit hardware:
 
 - **Register values**: `RegValue` wraps `Nat` with `isWord64` validity predicate.
 - **Badges**: `Badge.ofNatMasked` masks to `2^64` at construction, proven valid.
-- **Access rights**: `AccessRightSet.ofNat` masks to `2^5` (5-bit field).
-  `AccessRightSet.ofList` proven valid (`ofList_valid`, T2-A/H-1).
+- **Access rights**: `AccessRightSet.mk` constructor is `private` (AJ2-A/M-10);
+  external construction via `ofNat` (masked to 5-bit), `ofList`, `singleton`,
+  `empty`, or `mk_checked` (proof-carrying). Proven valid (`ofList_valid`, T2-A/H-1).
 - **IPC messages**: `IpcMessage.registers` uses `Array RegValue` (typed values).
 - **CPtr resolution**: `resolveSlot` masks input to 64 bits before guard extraction.
 - **CNode guard bounds**: `CNode.guardBounded` predicate (`guardValue < 2^guardWidth`)

@@ -263,6 +263,38 @@ def schedContextRunQueueConsistent (st : SystemState) : Prop :=
         ∃ sc, st.objects[scId.toObjId]? = some (.schedContext sc) ∧
           sc.budgetRemaining.val > 0
 
+-- ============================================================================
+-- AJ2-D (M-09): typedIdDisjointness predicate
+-- ============================================================================
+
+/-- AJ2-D (M-09): Typed ID namespace disjointness — the object store maps each
+    ObjId to at most one `KernelObject` variant. This is structurally guaranteed
+    by the `RHTable` (functional map: `ObjId → Option KernelObject`), so the
+    predicate is trivially true. Its purpose is to document that `ThreadId.toObjId`
+    and `SchedContextId.toObjId` (both identity mappings to the same `ObjId`
+    namespace in `Prelude.lean`) cannot cause type confusion: the same ObjId
+    can hold at most one object, and the caller pattern-matches on the variant
+    (`.tcb`, `.schedContext`) after lookup.
+
+    Allocation freshness (`retypeFromUntyped_childId_fresh` in
+    `Lifecycle/Operations.lean`) ensures new objects are created at previously
+    unoccupied ObjIds, preventing variant replacement without explicit
+    destroy-then-reallocate. -/
+def typedIdDisjointness (st : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (obj : KernelObject),
+    st.objects[oid]? = some obj →
+    ∀ (obj' : KernelObject),
+      st.objects[oid]? = some obj' → obj = obj'
+
+/-- AJ2-D: `typedIdDisjointness` holds trivially — the object store is a
+    function, so `st.objects[oid]? = some obj` and `st.objects[oid]? = some obj'`
+    immediately imply `obj = obj'` by injectivity. -/
+theorem typedIdDisjointness_trivial (st : SystemState) :
+    typedIdDisjointness st := by
+  intro oid obj h obj' h'
+  rw [h] at h'
+  exact Option.some.inj h'
+
 /-- R4-E.1 + T5-J + U4-G + Z9-D + AE5-C: Cross-subsystem invariant composing
     registry endpoint validity, interface validity, dependency consistency,
     stale queue reference exclusion, notification wait-list reference validity,

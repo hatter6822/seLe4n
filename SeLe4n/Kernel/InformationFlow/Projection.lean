@@ -215,7 +215,11 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- (donation chain state), not security-relevant observable state. Donation
       -- chain changes (returnDonatedSchedContext) modify only this field and must
       -- not leak through the NI projection.
-      .tcb { tcb with registerContext := default, schedContextBinding := .unbound }
+      -- AJ2-B (M-11): Strip pipBoost — cross-domain PIP boost reflects blocking
+      -- relationships and could leak timing information across security domains.
+      -- A thread's effective priority boost is an internal scheduling detail,
+      -- not a security-relevant observable property.
+      .tcb { tcb with registerContext := default, schedContextBinding := .unbound, pipBoost := none }
   | .schedContext sc =>
       -- AI4-A: Strip boundThread — internal scheduling plumbing binding a
       -- SchedContext to its owning thread. Donation chain changes modify only

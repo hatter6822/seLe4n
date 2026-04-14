@@ -730,6 +730,43 @@ theorem retypeFromUntyped_capacity_gated
     | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ =>
       simp at hOk
 
+/-- AJ2-D (M-09): Allocation freshness — if `retypeFromUntyped` succeeds, the
+    `childId` was NOT in the object store before allocation. This is the formal
+    foundation for typed ID namespace disjointness: since every new object
+    (`.tcb`, `.schedContext`, etc.) is created at a previously-empty ObjId,
+    two different typed IDs (e.g., `ThreadId(5)` and `SchedContextId(5)`) cannot
+    simultaneously reference valid objects — the object store maps each ObjId
+    to exactly one `KernelObject` variant by construction.
+
+    The guard at line 664 (`st.objects[childId]?.isSome`) rejects allocation
+    when the ObjId is already occupied, ensuring all new allocations are fresh. -/
+theorem retypeFromUntyped_childId_fresh
+    (authority : CSpaceAddr)
+    (untypedId childId : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (allocSize : Nat)
+    (st st' : SystemState)
+    (hOk : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
+    st.objects[childId]?.isSome = false := by
+  unfold retypeFromUntyped at hOk
+  cases h1 : st.objects[untypedId]? with
+  | none => simp [h1] at hOk
+  | some obj =>
+    simp [h1] at hOk
+    cases obj with
+    | untyped ut =>
+      simp at hOk
+      split at hOk
+      · simp at hOk
+      · split at hOk
+        · simp at hOk
+        · -- childId collision guard
+          cases hColl : st.objects[childId]?.isSome
+          · rfl
+          · simp [hColl] at hOk
+    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | schedContext _ =>
+      simp at hOk
+
 /-- WS-F2: Decomposition of a successful `retypeFromUntyped` into constituent steps.
 S5-G: The alignment check is an additional error guard (returns `allocationMisaligned`
 for VSpace/CNode objects on unaligned bases); it does not affect the decomposition
