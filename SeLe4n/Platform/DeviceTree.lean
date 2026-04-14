@@ -370,8 +370,8 @@ theorem classifyAddress_found (addr : PAddr) (pm : List MemoryRegion) (r : Memor
 -- Callers must explicitly specify the PA width for their platform to prevent
 -- silent misconfiguration (RPi5 BCM2712 = 44-bit, not 48-bit).
 def DeviceTree.fromDtbWithRegions (blob : ByteArray)
-    (memoryRegBytes : Option ByteArray := none)
-    (physicalAddressWidth : Nat) : Option DeviceTree := do
+    (physicalAddressWidth : Nat)
+    (memoryRegBytes : Option ByteArray := none) : Option DeviceTree := do
   let hdr ← parseAndValidateFdtHeader blob
   let memRegions := match memoryRegBytes with
     | some regBlob => fdtRegionsToMemoryRegions (extractMemoryRegions regBlob)

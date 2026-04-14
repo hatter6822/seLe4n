@@ -264,7 +264,7 @@ removes unused `_endpointId` parameter from `timeoutAwareReceive`. 4 sub-tasks
   `Option (List FdtNode)` to `Except DeviceTreeParseError (List FdtNode)`.
   Internal `go`/`parseNodeContents` helpers remain `Option` (partial-result
   pattern). Sole caller `fromDtbFull` updated with typed error matching.
-  Existing `parseFdtHeader_fromDtbFull_some` theorem unaffected.
+  Existing correctness theorem updated (renamed to `parseFdtHeader_fromDtbFull_ok` in AJ3-A).
 - **AI4-C** (L-05/LOW): Removed unused `_endpointId : SeLe4n.ObjId` parameter
   from `timeoutAwareReceive` (Timeout.lean:114). Updated 2 test call sites in
   MainTraceHarness.lean. No theorems affected (function is test-only).
