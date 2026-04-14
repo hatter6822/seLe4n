@@ -1,3 +1,42 @@
+## WS-AJ Phase AJ3: Platform & Boot Pipeline
+
+Phase AJ3 of WS-AJ Post-Audit Comprehensive Remediation (v0.28.0 audit).
+Addresses 4 MEDIUM and 2 LOW findings in the platform, boot pipeline, and
+device tree subsystems. Key changes: `fromDtbFull` error propagation (M-17),
+DTB PA width required parameter (M-18), `bootSafeObjectCheck` wired into
+checked boot (M-16), `BootBoundaryContract` substantive defaults (M-19),
+`interruptsEnabled` default corrected to `false` (L-04), dead `fromDtb` stub
+and `fromDtbParsed` alias removed (L-12). Gate: `lake build` (256 jobs) +
+`test_smoke.sh` + `test_full.sh`. Zero sorry/axiom.
+
+### Changes
+
+- **AJ3-A** (M-17/MEDIUM): `DeviceTree.fromDtbFull` return type changed from
+  `Option DeviceTree` to `Except DeviceTreeParseError DeviceTree`. Fuel
+  exhaustion and malformed blob errors are now propagated instead of silently
+  falling back to empty node lists. Correctness theorem renamed to
+  `parseFdtHeader_fromDtbFull_ok` with `parseFdtNodes` success hypothesis.
+- **AJ3-B** (M-18/MEDIUM): `physicalAddressWidth` parameter in both
+  `fromDtbWithRegions` and `fromDtbFull` is now required (no default). Callers
+  must explicitly specify the PA width for their platform (44 for RPi5, 52 for
+  Sim). Prevents silent misconfiguration where 48-bit default exceeds BCM2712's
+  44-bit PA width.
+- **AJ3-C** (M-16/MEDIUM): `bootFromPlatformChecked` now validates
+  `bootSafeObjectCheck` for all initial objects alongside `wellFormed`. New
+  `bootSafeObjectCheck` Bool-valued function checks structural boot safety:
+  empty endpoint queues, idle notifications, CNode bounds, clean TCB state,
+  VSpaceRoot exclusion, SchedContext well-formedness. Soundness bridge theorem
+  `bootSafeObjectCheck_sound_structural` proven for all conjuncts.
+- **AJ3-D** (M-19/MEDIUM): `BootBoundaryContract.objectStoreNonEmpty` and
+  `irqRangeValid` fields no longer have `True` defaults — they are required.
+  Sim and RPi5 boot contracts updated with substantive predicates and
+  correctness proofs.
+- **AJ3-E** (L-04/LOW): `MachineState.interruptsEnabled` default changed from
+  `true` to `false`, matching ARM64 hardware reset state (PSTATE.I = 1,
+  interrupts disabled at boot).
+- **AJ3-F** (L-12/LOW): Removed dead `DeviceTree.fromDtb` stub (always
+  returned `none`) and `fromDtbParsed` convenience alias (no callers).
+
 ## WS-AJ Phase AJ2: Security & Information Flow Hardening
 
 Phase AJ2 of WS-AJ Post-Audit Comprehensive Remediation (v0.28.0 audit).

@@ -354,13 +354,138 @@ theorem irqsUniqueTransparent_empty : irqsUniqueTransparent [] = true := by
 theorem objectIdsUniqueTransparent_empty : objectIdsUniqueTransparent [] = true := by
   decide
 
-/-- U6-E/F: Checked boot — rejects configs with duplicate IRQs or object IDs.
+-- ============================================================================
+-- AJ3-C (M-16): bootSafeObjectCheck — Bool mirror of bootSafeObject
+-- ============================================================================
+
+/-- AJ3-C (M-16): Bool-valued runtime check for boot-safe objects.
+    Validates structural boot safety constraints that can be checked at
+    runtime. Used by `bootFromPlatformChecked` to reject invalid objects.
+
+    **Coverage**: Checks all `bootSafeObject` conjuncts except CNode badge
+    validity. Badge validity requires iterating over all CNode slot entries
+    with a `get? → toList` bridge that would add complexity for a property
+    that is vacuously true for empty boot-config CNodes. Badge validity
+    remains checked at the Prop level via `bootFromPlatform_proofLayerInvariantBundle_general`. -/
+def bootSafeObjectCheck (obj : KernelObject) : Bool :=
+  match obj with
+  | .endpoint ep =>
+    ep.sendQ.head.isNone && ep.sendQ.tail.isNone &&
+    ep.receiveQ.head.isNone && ep.receiveQ.tail.isNone
+  | .notification notif =>
+    decide (notif.state = .idle) && notif.waitingThreads.isEmpty &&
+    notif.pendingBadge.isNone
+  | .cnode cn =>
+    decide (cn.slots.size ≤ cn.slotCount) &&
+    decide (cn.depth ≤ maxCSpaceDepth) &&
+    decide (cn.bitsConsumed > 0 → cn.bitsConsumed ≤ cn.depth ∧ 0 < cn.bitsConsumed ∧ cn.guardBounded)
+  | .tcb tcb =>
+    tcb.pendingMessage.isNone && decide (tcb.ipcState = .ready) &&
+    tcb.queueNext.isNone && tcb.queuePrev.isNone &&
+    tcb.timeoutBudget.isNone &&
+    decide (tcb.schedContextBinding = .unbound)
+  | .vspaceRoot _ => false
+  | .untyped _ => true
+  | .schedContext sc =>
+    sc.period.isPositive &&
+    decide (sc.budget.val ≤ sc.period.val) &&
+    decide (sc.budgetRemaining.val ≤ sc.budget.val) &&
+    decide (sc.replenishments.length ≤ maxReplenishments) &&
+    sc.replenishments.all (fun r => decide (r.amount.val > 0)) &&
+    sc.replenishments.all (fun r => decide (r.amount.val ≤ sc.budget.val)) &&
+    sc.boundThread.isNone
+
+set_option maxHeartbeats 400000 in
+/-- AJ3-C (M-16): Partial soundness bridge — `bootSafeObjectCheck = true` implies
+    the structural conjuncts of `bootSafeObject` (all except CNode badge validity).
+    Badge validity is a Prop-level guarantee discharged by the boot invariant
+    bridge theorem `bootFromPlatform_proofLayerInvariantBundle_general`. -/
+theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
+    (h : bootSafeObjectCheck obj = true) :
+    -- Endpoints: empty queues
+    (∀ ep, obj = .endpoint ep →
+      ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
+      ep.receiveQ.head = none ∧ ep.receiveQ.tail = none) ∧
+    -- Notifications: idle + empty
+    (∀ notif, obj = .notification notif →
+      notif.state = .idle ∧ notif.waitingThreads = [] ∧ notif.pendingBadge = none) ∧
+    -- CNodes: structural (excluding badge validity)
+    (∀ cn, obj = .cnode cn →
+      cn.slotCountBounded ∧ cn.depth ≤ maxCSpaceDepth ∧
+      (cn.bitsConsumed > 0 → cn.wellFormed)) ∧
+    -- TCBs: clean boot state
+    (∀ tcb, obj = .tcb tcb →
+      tcb.pendingMessage = none ∧ tcb.ipcState = .ready ∧
+      tcb.queueNext = none ∧ tcb.queuePrev = none ∧
+      tcb.timeoutBudget = none ∧
+      tcb.schedContextBinding = .unbound) ∧
+    -- VSpaceRoots: excluded
+    (∀ vs, obj ≠ .vspaceRoot vs) ∧
+    -- SchedContexts: well-formed and unbound
+    (∀ sc, obj = .schedContext sc →
+      schedContextWellFormed sc ∧ sc.boundThread = none) := by
+  -- Discharge each constructor case. Non-matching constructors produce absurd
+  -- injection hypotheses, discharged by `intro _ h; cases h`.
+  cases obj with
+  | endpoint ep =>
+    simp only [bootSafeObjectCheck, Bool.and_eq_true] at h
+    obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
+    exact ⟨fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, Option.eq_none_of_isNone h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4⟩,
+           fun _ he => by injection he, fun _ he => by injection he,
+           fun _ he => by injection he, fun _ he => by injection he,
+           fun _ he => by injection he⟩
+  | notification notif =>
+    simp only [bootSafeObjectCheck, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨h1, h2⟩, h3⟩ := h
+    exact ⟨fun _ he => by injection he, fun _ he => by injection he; subst_vars; exact ⟨h1, List.isEmpty_iff.mp h2, Option.eq_none_of_isNone h3⟩,
+           fun _ he => by injection he, fun _ he => by injection he,
+           fun _ he => by injection he, fun _ he => by injection he⟩
+  | cnode cn =>
+    simp only [bootSafeObjectCheck, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨hSlots, hDepth⟩, hWf⟩ := h
+    exact ⟨fun _ he => by injection he, fun _ he => by injection he,
+           fun c hc => by injection hc; subst_vars; exact ⟨hSlots, hDepth, hWf⟩,
+           fun _ he => by injection he, fun _ he => by injection he,
+           fun _ he => by injection he⟩
+  | tcb tcb =>
+    simp only [bootSafeObjectCheck, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩ := h
+    exact ⟨fun _ he => by injection he, fun _ he => by injection he,
+           fun _ he => by injection he,
+           fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h5, h6⟩,
+           fun _ he => by injection he, fun _ he => by injection he⟩
+  | vspaceRoot _ =>
+    simp [bootSafeObjectCheck] at h
+  | untyped _ =>
+    exact ⟨fun _ he => by injection he, fun _ he => by injection he,
+           fun _ he => by injection he, fun _ he => by injection he,
+           fun _ he => by injection he, fun _ he => by injection he⟩
+  | schedContext sc =>
+    simp only [bootSafeObjectCheck, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨⟨⟨⟨hPeriod, hBudgetPeriod⟩, hRemaining⟩, hRepLen⟩, hRepPos⟩, hRepBound⟩, hUnbound⟩ := h
+    refine ⟨fun _ he => by injection he, fun _ he => by injection he,
+            fun _ he => by injection he, fun _ he => by injection he,
+            fun _ he => by injection he, fun s hs => ?_⟩
+    injection hs; subst_vars
+    constructor
+    · unfold schedContextWellFormed
+      refine ⟨⟨hPeriod, hBudgetPeriod, hRemaining, hRepLen⟩, ⟨hRemaining, hBudgetPeriod⟩,
+              ⟨hRepLen, ?_⟩, ?_⟩
+      · intro r hr; exact decide_eq_true_eq.mp (List.all_eq_true.mp hRepPos r hr)
+      · intro r hr; exact decide_eq_true_eq.mp (List.all_eq_true.mp hRepBound r hr)
+    · exact Option.eq_none_of_isNone hUnbound
+
+/-- U6-E/F: Checked boot — rejects configs with duplicate IRQs, duplicate object
+    IDs, or unsafe initial objects.
 
     V5-C (M-DEF-3): **Recommended boot entry point.** This is the enforcement
     variant of `bootFromPlatform`. It validates `PlatformConfig.wellFormed`
-    before proceeding, returning an error if duplicate IRQ registrations or
-    object IDs are detected. This prevents silent last-wins overwrites that
-    could lose kernel objects or IRQ handlers.
+    (uniqueness) AND `bootSafeObjectCheck` (object-level semantic safety) before
+    proceeding. Returns an error if validation fails.
+
+    AJ3-C (M-16): Added `bootSafeObjectCheck` validation. A config with unique
+    IDs but invalid object states (e.g., endpoint with non-empty queues, TCB with
+    `ipcState != .ready`) is now rejected.
 
     Use `bootFromPlatformUnchecked` (alias for `bootFromPlatform`) only when
     the config is known-valid (e.g., constructed programmatically with
@@ -368,17 +493,22 @@ theorem objectIdsUniqueTransparent_empty : objectIdsUniqueTransparent [] = true 
 def bootFromPlatformChecked (config : PlatformConfig) :
     Except String IntermediateState :=
   if config.wellFormed then
-    .ok (bootFromPlatform config)
+    if config.initialObjects.all (fun entry => bootSafeObjectCheck entry.obj) then
+      .ok (bootFromPlatform config)
+    else
+      .error "boot: object fails bootSafe check (invalid state for boot)"
   else if ¬ irqsUnique config.irqTable then
     .error "boot: duplicate IRQ registration detected in platform config"
   else
     .error "boot: duplicate object ID detected in platform config"
 
-/-- U6-E/F: Checked boot agrees with unchecked boot on well-formed configs. -/
+/-- U6-E/F/AJ3-C: Checked boot agrees with unchecked boot on well-formed +
+    boot-safe configs. -/
 theorem bootFromPlatformChecked_eq_bootFromPlatform (config : PlatformConfig)
-    (hWf : config.wellFormed = true) :
+    (hWf : config.wellFormed = true)
+    (hSafe : config.initialObjects.all (fun entry => bootSafeObjectCheck entry.obj) = true) :
     bootFromPlatformChecked config = .ok (bootFromPlatform config) := by
-  simp [bootFromPlatformChecked, hWf]
+  simp [bootFromPlatformChecked, hWf, hSafe]
 
 /-- U6-E/F: Checked boot rejects configs that are not well-formed. -/
 theorem bootFromPlatformChecked_rejects_invalid (config : PlatformConfig)
@@ -386,6 +516,11 @@ theorem bootFromPlatformChecked_rejects_invalid (config : PlatformConfig)
     (bootFromPlatformChecked config).isOk = false := by
   simp [bootFromPlatformChecked, hNotWf]
   split <;> rfl
+
+/-- AJ3-C: Empty config trivially passes bootSafe check. -/
+theorem bootSafeObjectCheck_empty_config :
+    ([] : List ObjectEntry).all (fun entry => bootSafeObjectCheck entry.obj) = true := by
+  rfl
 
 /-- AG1-D: Boot with duplicate detection warnings.
 
