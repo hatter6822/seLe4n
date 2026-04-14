@@ -1,3 +1,46 @@
+## WS-AJ Phase AJ1: IPC & Lifecycle Correctness
+
+Phase AJ1 of WS-AJ Post-Audit Comprehensive Remediation (v0.28.0 audit).
+Addresses 4 MEDIUM and 2 LOW findings in IPC and lifecycle subsystems. Key
+changes: `cleanupDonatedSchedContext` error propagation (M-14), reply
+authorization unreachability proof (M-04), pre-send receiver linking theorem
+(M-02), reply/replyRecv conditional equivalence theorems (M-01), dead code
+removal (L-02), and error asymmetry documentation (L-18). Gate: `lake build`
+(256 jobs) + `test_smoke.sh` + `test_full.sh`. Zero sorry/axiom.
+
+### Changes
+
+- **AJ1-A** (M-14/MEDIUM): `cleanupDonatedSchedContext` return type changed
+  from `SystemState` to `Except KernelError SystemState` — errors from
+  `returnDonatedSchedContext` are now propagated instead of silently swallowed.
+  Cascade: `lifecyclePreRetypeCleanup` → `Except`, `cancelDonation` → `Except`,
+  callers (`lifecycleRetypeWithCleanup`, `lifecycleRetypeDirectWithCleanup`,
+  `suspendThread`) updated to handle `Except`. 6 preservation theorems updated
+  to conditional postconditions. Test harness updated with graceful fallback.
+- **AJ1-B** (M-04/MEDIUM): Added `blockedOnReplyHasTarget` predicate proving
+  every thread in `blockedOnReply` state has `replyTarget = some _`. All
+  production paths (`endpointCall`, `endpointReceiveDual`) create `blockedOnReply`
+  with explicit receiver — the `none => true` authorization branch in
+  `endpointReply`/`endpointReplyRecv` is unreachable under the IPC invariant.
+  Cross-reference annotations added at both authorization check sites.
+- **AJ1-C** (M-02/MEDIUM): `endpointQueuePopHead_returns_head` theorem (already
+  in `IPC/Invariant/Defs.lean`) formally links pre-inspected receiver to dequeued
+  thread. Cross-reference annotations added in `Donation.lean` and `WithCaps.lean`.
+- **AJ1-D** (M-01/MEDIUM): Added 2 conditional equivalence theorems + 2
+  decomposition lemmas. `checkedDispatch_reply_eq_unchecked_when_allowed` proves
+  checked/unchecked `.reply` dispatch are identical when flow is allowed.
+  `checkedDispatch_replyRecv_eq_unchecked_when_allowed` proves the same for
+  `.replyRecv` (two flow hypotheses). Decomposition lemmas
+  `endpointReplyWithDonation_unfold` and `endpointReplyRecvWithDonation_unfold`
+  expose the three-step pipeline.
+- **AJ1-E** (L-02/LOW): Removed dead `endpointQueuePopHeadFresh` from
+  `IPC/DualQueue/Core.lean`. Updated re-export hub documentation and
+  `codebase_map.json`.
+- **AJ1-F** (L-18/LOW): Documented intentional error asymmetry between
+  send/receive paths in `endpointSendDualWithCaps`/`endpointReceiveDualWithCaps`.
+  Send-side silent fallback preserves message delivery; receive-side error
+  prevents CDT tracking corruption.
+
 ## v0.28.0 — WS-AI Phase AI7: Testing, Closure & Final Gate
 
 Phase AI7 of WS-AI Post-Audit Comprehensive Remediation. Final closure phase

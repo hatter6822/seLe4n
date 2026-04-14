@@ -15,7 +15,7 @@ import SeLe4n.Kernel.IPC.Operations.Timeout
 
 Decomposed into:
 - **Core**: Dual-queue endpoint operations (storeTcbQueueLinks, endpointQueuePopHead,
-  endpointQueuePopHeadFresh, endpointQueueEnqueue, endpointQueueRemove).
+  endpointQueueEnqueue, endpointQueueRemove).
 - **Transport**: Transport lemmas proving scheduler/object/endpoint/notification
   backward preservation for all dual-queue primitives.
 - **Timeout**: Z6 timeout-driven IPC unblocking (timeoutThread, timeoutAwareReceive).

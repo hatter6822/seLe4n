@@ -81,7 +81,10 @@ def endpointSendDualWithCaps
     (senderCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) : Kernel CapTransferSummary :=
   fun st =>
-    -- Check if a receiver is waiting BEFORE the send
+    -- Check if a receiver is waiting BEFORE the send.
+    -- AJ1-C (M-02): `endpointQueuePopHead_returns_head` proves the pre-inspected
+    -- receiver matches the thread actually dequeued, ensuring capability transfer
+    -- targets the correct thread.
     let hasReceiver := match st.objects[endpointId]? with
       | some (.endpoint ep) => ep.receiveQ.head.isSome
       | _ => false
@@ -104,7 +107,18 @@ def endpointSendDualWithCaps
               | some recvRoot =>
                 let grantRight := endpointRights.mem .grant
                 ipcUnwrapCaps msg senderCspaceRoot recvRoot receiverSlotBase grantRight st'
-              | none => .ok ({ results := #[] }, st')
+              | none =>
+                -- AJ1-F (L-18): Asymmetric with receive path (line 139), which returns
+                -- `.error .invalidCapability` for missing CSpace root. The asymmetry is
+                -- intentional: on the send side, a missing receiver CSpace root means the
+                -- receiver cannot accept capabilities, but the message payload (registers +
+                -- badge) has already been delivered successfully by `endpointSendDual`. The
+                -- send operation succeeds with empty cap results — capabilities are optional
+                -- extras, not required for message delivery. On the receive side, a missing
+                -- sender CSpace root indicates the sender's CSpace was destroyed between
+                -- enqueue and dequeue — an inconsistent state that warrants an explicit error
+                -- to prevent CDT tracking corruption.
+                .ok ({ results := #[] }, st')
             | none => .ok ({ results := #[] }, st')
           | _ => .ok ({ results := #[] }, st')
 

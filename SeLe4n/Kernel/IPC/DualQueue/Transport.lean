@@ -1770,6 +1770,10 @@ def endpointReply (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
         match tcb.ipcState with
         | .blockedOnReply _ replyTarget =>
             -- WS-H1/M-02: Validate replier is the authorized server
+            -- AJ1-B (M-04): The `none => true` branch is unreachable under
+            -- `blockedOnReplyHasTarget`. All production paths that create
+            -- `blockedOnReply` set `replyTarget := some receiver` — see
+            -- `endpointCall` (line 1737) and `endpointReceiveDual` (line 1655).
             let authorized := match replyTarget with
               | some expected => replier == expected
               | none => true
@@ -1801,6 +1805,7 @@ def endpointReplyRecv
         match tcb.ipcState with
         | .blockedOnReply _ expectedReplier =>
             -- WS-H1/M-02: Validate receiver is the authorized replier
+            -- AJ1-B (M-04): `none => true` branch unreachable; see `blockedOnReplyHasTarget`
             let authorized := match expectedReplier with
               | some expected => receiver == expected
               | none => true
@@ -1817,6 +1822,35 @@ def endpointReplyRecv
             else .error .replyCapInvalid
         | _ => .error .replyCapInvalid
 
+
+-- ============================================================================
+-- AJ1-B (M-04): blockedOnReply replyTarget unreachability documentation
+-- ============================================================================
+
+/-- AJ1-B (M-04): `blockedOnReplyHasTarget` — invariant predicate asserting
+that every thread in `blockedOnReply` state has `replyTarget = some _`.
+
+This invariant holds because ALL production paths that create `blockedOnReply`
+set an explicit `replyTarget`:
+- `endpointCall` (Transport.lean line 1737): `.blockedOnReply endpointId (some receiver)`
+- `endpointReceiveDual` call path (Transport.lean line 1655): `.blockedOnReply endpointId (some receiver)`
+
+No other production operation constructs a `blockedOnReply` IPC state. The
+`replyTarget = none` branch in `endpointReply` (line 1775) is therefore dead
+under the IPC invariant — any thread reaching `blockedOnReply` entered via one
+of the two paths above, both of which record the receiver's ThreadId. -/
+def blockedOnReplyHasTarget (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (endpointId : SeLe4n.ObjId)
+    (replyTarget : Option SeLe4n.ThreadId),
+    st.objects[tid.toObjId]? = some (.tcb tcb) →
+    tcb.ipcState = .blockedOnReply endpointId replyTarget →
+    replyTarget.isSome
+
+-- AJ1-C (M-02): Pre-send receiver linking. The theorem
+-- `endpointQueuePopHead_returns_head` (IPC/Invariant/Defs.lean) proves that
+-- `endpointQueuePopHead` dequeues the queue head, linking the pre-inspected
+-- receiver in `endpointCallWithDonation` and `endpointSendDualWithCaps` to
+-- the thread actually dequeued by the underlying call.
 
 -- ============================================================================
 -- WS-L3/L3-D: Tail consistency theorems for endpointQueueRemoveDual

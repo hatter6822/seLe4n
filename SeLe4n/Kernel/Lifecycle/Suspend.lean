@@ -85,14 +85,15 @@ def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
 -- D1-D: cancelDonation
 -- ============================================================================
 
-/-- D1-D: Cancel any SchedContext donation for a thread being suspended.
-If `.donated`, return to original owner via `cleanupDonatedSchedContext`.
-If `.bound`, unbind the SchedContext. If `.unbound`, no-op.
-Postcondition: the thread's `schedContextBinding = .unbound`. -/
+/-- D1-D / AJ1-A (M-14): Cancel any SchedContext donation for a thread being
+suspended. If `.donated`, return to original owner via
+`cleanupDonatedSchedContext`. If `.bound`, unbind the SchedContext. If
+`.unbound`, no-op. Returns `Except` to propagate cleanup errors from the
+`.donated` path — a failed return would leave dangling SchedContext refs. -/
 def cancelDonation (st : SystemState) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) : SystemState :=
+    (tcb : TCB) : Except KernelError SystemState :=
   match tcb.schedContextBinding with
-  | .unbound => st
+  | .unbound => .ok st
   | .bound scId =>
     -- Unbind: clear the SchedContext's boundThread and deactivate (AE3-B/U-15)
     let st1 : SystemState := match st.objects[scId.toObjId]? with
@@ -107,11 +108,11 @@ def cancelDonation (st : SystemState) (tid : SeLe4n.ThreadId)
     let st2 := { st2 with scThreadIndex :=
       (scThreadIndexRemove st2.scThreadIndex scId tid) }
     -- Clear TCB binding
-    match (st2.objects[tid.toObjId]? : Option KernelObject) with
+    .ok (match (st2.objects[tid.toObjId]? : Option KernelObject) with
     | some (.tcb tcb') =>
       let tcb'' := { tcb' with schedContextBinding := .unbound }
       { st2 with objects := st2.objects.insert tid.toObjId (.tcb tcb'') }
-    | _ => st2
+    | _ => st2)
   | .donated _ _ =>
     cleanupDonatedSchedContext st tid
 
@@ -181,8 +182,10 @@ def suspendThread (st : SystemState) (tid : SeLe4n.ThreadId)
       -- might modify additional TCB fields.
       let tcb' := match st.objects[tid.toObjId]? with
         | some (.tcb t) => t | _ => tcb
-      -- G3: Cancel donation
-      let st := _root_.SeLe4n.Kernel.Lifecycle.Suspend.cancelDonation st tid tcb'
+      -- G3: Cancel donation (AJ1-A/M-14: propagate cleanup errors)
+      match _root_.SeLe4n.Kernel.Lifecycle.Suspend.cancelDonation st tid tcb' with
+      | .error e => .error e
+      | .ok st =>
       -- G4: Remove from run queue
       let st := removeRunnable st tid
       -- G5: Clear pending state

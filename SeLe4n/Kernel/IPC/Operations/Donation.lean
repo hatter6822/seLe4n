@@ -203,7 +203,10 @@ def endpointCallWithDonation
     (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (msg : IpcMessage) : Kernel Unit :=
   fun st =>
-    -- Pre-check: determine receiver before endpointCall pops it
+    -- Pre-check: determine receiver before endpointCall pops it.
+    -- AJ1-C (M-02): `endpointQueuePopHead_returns_head` proves the pre-inspected
+    -- receiver matches the thread actually dequeued by endpointCall, ensuring
+    -- donation targets the correct thread.
     let maybeReceiver := match st.objects[endpointId]? with
       | some (.endpoint ep) => ep.receiveQ.head
       | _ => none
@@ -269,6 +272,44 @@ def endpointReplyRecvWithDonation
       | .ok st'' =>
         -- D4-M: Revert PIP for the reply portion
         .ok ((), PriorityInheritance.revertPriorityInheritance st'' receiver)
+
+-- ============================================================================
+-- AJ1-D (M-01): Decomposition lemmas for donation-aware wrappers
+-- ============================================================================
+
+/-- AJ1-D (M-01): `endpointReplyWithDonation` decomposes into the three-step
+sequence: `endpointReply` → `applyReplyDonation` → `revertPriorityInheritance`.
+This is a definitional unfolding — the wrapper is syntactic sugar for the
+three-step pipeline. The `dispatchWithCapChecked` `.reply` arm manually inlines
+this same three-step sequence (via `endpointReplyChecked` + inline donation +
+inline PIP revert), making the two paths structurally identical when the
+information flow check passes. -/
+theorem endpointReplyWithDonation_unfold
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (st : SystemState) :
+    endpointReplyWithDonation replier target msg st =
+    (match endpointReply replier target msg st with
+     | .error e => .error e
+     | .ok ((), st') =>
+       match applyReplyDonation st' replier with
+       | .error e => .error e
+       | .ok st'' =>
+         .ok ((), PriorityInheritance.revertPriorityInheritance st'' replier)) := by
+  rfl
+
+/-- AJ1-D (M-01): `endpointReplyRecvWithDonation` decomposes into:
+`endpointReplyRecv` → `applyReplyDonation` → `revertPriorityInheritance`. -/
+theorem endpointReplyRecvWithDonation_unfold
+    (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
+    (msg : IpcMessage) (st : SystemState) :
+    endpointReplyRecvWithDonation endpointId receiver replyTarget msg st =
+    (match endpointReplyRecv endpointId receiver replyTarget msg st with
+     | .error e => .error e
+     | .ok ((), st') =>
+       match applyReplyDonation st' receiver with
+       | .error e => .error e
+       | .ok st'' =>
+         .ok ((), PriorityInheritance.revertPriorityInheritance st'' receiver)) := by
+  rfl
 
 -- ============================================================================
 -- Z7-J/K: Donation operation structural theorems

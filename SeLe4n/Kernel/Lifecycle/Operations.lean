@@ -116,37 +116,34 @@ def removeFromAllNotificationWaitLists (st : SystemState) (tid : SeLe4n.ThreadId
       { acc with objects := acc.objects.insert oid (.notification notif') }
     | _ => acc
 
-/-- Z7-P: Return donated SchedContext before destroying a thread.
+/-- Z7-P / AJ1-A (M-14): Return donated SchedContext before destroying a thread.
 If the thread has `.donated` binding, return the SchedContext to the original
-owner. Otherwise, return the state unchanged. Only modifies `objects`. -/
-def cleanupDonatedSchedContext (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+owner. Otherwise, return the state unchanged. Only modifies `objects`.
+Returns `Except` to propagate `returnDonatedSchedContext` errors — a failed
+cleanup would leave the SchedContext's `boundThread` pointing to a destroyed
+TCB (dangling reference). -/
+def cleanupDonatedSchedContext (st : SystemState) (tid : SeLe4n.ThreadId)
+    : Except KernelError SystemState :=
   match lookupTcb st tid with
-  | none => st
+  | none => .ok st
   | some tcb =>
     match tcb.schedContextBinding with
     | .donated scId originalOwner =>
-      match returnDonatedSchedContext st tid scId originalOwner with
-      | .error _ => st
-      | .ok st' => st'
-    | _ => st
+      returnDonatedSchedContext st tid scId originalOwner
+    | _ => .ok st
 
-/-- Z7-P: cleanupDonatedSchedContext preserves the scheduler. -/
+/-- Z7-P / AJ1-A (M-14): cleanupDonatedSchedContext preserves the scheduler
+(conditional on success). -/
 theorem cleanupDonatedSchedContext_scheduler_eq
-    (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (cleanupDonatedSchedContext st tid).scheduler = st.scheduler := by
-  unfold cleanupDonatedSchedContext
-  cases lookupTcb st tid with
-  | none => rfl
-  | some tcb =>
-    simp only []
-    cases hBinding : tcb.schedContextBinding with
-    | unbound => rfl
-    | bound _ => rfl
-    | donated scId originalOwner =>
-      simp only []
-      cases hReturn : returnDonatedSchedContext st tid scId originalOwner with
-      | error _ => rfl
-      | ok st' => exact returnDonatedSchedContext_scheduler_eq st st' tid scId originalOwner hReturn
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (h : cleanupDonatedSchedContext st tid = .ok st') :
+    st'.scheduler = st.scheduler := by
+  simp only [cleanupDonatedSchedContext] at h
+  split at h
+  · injection h with h; subst h; rfl
+  · split at h <;> first
+      | (injection h with h; subst h; rfl)
+      | exact returnDonatedSchedContext_scheduler_eq st st' tid _ _ h
 
 
 /-- WS-H2/H-05, R4-A.3 (M-12): Clean up external references to a TCB being retyped away.
@@ -341,11 +338,14 @@ theorem detachCNodeSlots_lifecycle_eq
     - If the current object is a CNode being replaced by a non-CNode: detach
       CDT slot mappings to prevent orphaned derivation tree references. -/
 def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
-    (currentObj newObj : KernelObject) : SystemState :=
-  -- Z7-P: Return donated SchedContext before destroying TCB
-  let st := match currentObj with
+    (currentObj newObj : KernelObject) : Except KernelError SystemState :=
+  -- Z7-P / AJ1-A (M-14): Return donated SchedContext before destroying TCB.
+  -- Error propagated — failed cleanup would leave dangling SchedContext refs.
+  match (match currentObj with
     | .tcb tcb => cleanupDonatedSchedContext st tcb.tid
-    | _ => st
+    | _ => .ok st) with
+  | .error e => .error e
+  | .ok st =>
   -- S-05/PERF-O1: Remove thread from scThreadIndex before destroying TCB.
   -- cleanupDonatedSchedContext handles .donated (via returnDonatedSchedContext);
   -- this handles .bound TCBs being retyped without prior suspension.
@@ -366,9 +366,9 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
   match currentObj with
   | .cnode cn =>
     match newObj with
-    | .cnode _ => st  -- CNode → CNode: no CDT cleanup needed
-    | _ => detachCNodeSlots st target cn
-  | _ => st
+    | .cnode _ => .ok st  -- CNode → CNode: no CDT cleanup needed
+    | _ => .ok (detachCNodeSlots st target cn)
+  | _ => .ok st
 
 
 
@@ -404,43 +404,51 @@ private theorem cleanupTcbReferences_scheduler_eq_removeRunnable
   exact removeFromAllEndpointQueues_scheduler_eq (removeRunnable st tid) tid
 
 /-- Pre-retype cleanup flat list subset: any element in the post-cleanup flat
-    list was in the pre-cleanup flat list. -/
+    list was in the pre-cleanup flat list. AJ1-A (M-14): conditional on `.ok`. -/
 private theorem lifecyclePreRetypeCleanup_flat_subset
-    (st : SystemState) (target : SeLe4n.ObjId)
+    (st stClean : SystemState) (target : SeLe4n.ObjId)
     (currentObj newObj : KernelObject) (x : SeLe4n.ThreadId)
-    (h : x ∈ (lifecyclePreRetypeCleanup st target currentObj newObj).scheduler.runQueue.flat) :
+    (hOk : lifecyclePreRetypeCleanup st target currentObj newObj = .ok stClean)
+    (h : x ∈ stClean.scheduler.runQueue.flat) :
     x ∈ st.scheduler.runQueue.flat := by
-  unfold lifecyclePreRetypeCleanup at h
   cases currentObj with
   | tcb tcb =>
-    simp only [] at h
-    -- cleanupDonatedSchedContext preserves scheduler, so we can rewrite through it
-    have hDonSched : (cleanupDonatedSchedContext st tcb.tid).scheduler = st.scheduler :=
-      cleanupDonatedSchedContext_scheduler_eq st tcb.tid
-    -- S-05/PERF-O1: scThreadIndex cleanup preserves scheduler (both branches)
-    have hScIdxSched : (match tcb.schedContextBinding with
-      | .bound scId => { cleanupDonatedSchedContext st tcb.tid with scThreadIndex :=
-          (scThreadIndexRemove (cleanupDonatedSchedContext st tcb.tid).scThreadIndex scId tcb.tid) }
-      | _ => cleanupDonatedSchedContext st tcb.tid).scheduler =
-        (cleanupDonatedSchedContext st tcb.tid).scheduler := by
-      cases tcb.schedContextBinding <;> rfl
-    rw [cleanupTcbReferences_scheduler_eq_removeRunnable] at h
-    unfold removeRunnable at h; rw [hScIdxSched, hDonSched] at h; simp only [] at h
-    exact (List.mem_filter.mp h).1
+    -- Unfold with known currentObj = .tcb tcb
+    simp only [lifecyclePreRetypeCleanup] at hOk
+    -- Inner match reduces to cleanupDonatedSchedContext st tcb.tid
+    -- Outer match dispatches on the result
+    cases hDon : cleanupDonatedSchedContext st tcb.tid with
+    | error e => rw [hDon] at hOk; contradiction
+    | ok stDon =>
+      rw [hDon] at hOk
+      have hDonSched : stDon.scheduler = st.scheduler :=
+        cleanupDonatedSchedContext_scheduler_eq st stDon tcb.tid hDon
+      injection hOk with hOk; subst hOk
+      -- S-05/PERF-O1: scThreadIndex cleanup preserves scheduler (both branches)
+      have hScIdxSched : (match tcb.schedContextBinding with
+        | .bound scId => { stDon with scThreadIndex :=
+            (scThreadIndexRemove stDon.scThreadIndex scId tcb.tid) }
+        | _ => stDon).scheduler = stDon.scheduler := by
+        cases tcb.schedContextBinding <;> rfl
+      rw [cleanupTcbReferences_scheduler_eq_removeRunnable] at h
+      unfold removeRunnable at h; rw [hScIdxSched, hDonSched] at h; simp only [] at h
+      exact (List.mem_filter.mp h).1
   | cnode cn =>
-    simp only [] at h
-    cases newObj <;> simp only [] at h
-    all_goals first
-      | exact h
-      | (have hSched := detachCNodeSlots_scheduler_eq st target cn
+    simp only [lifecyclePreRetypeCleanup] at hOk
+    cases newObj <;> (simp only [] at hOk; first
+      | (injection hOk with hOk; subst hOk; exact h)
+      | (injection hOk with hOk; subst hOk;
+         have hSched := detachCNodeSlots_scheduler_eq st target cn;
          rw [show (detachCNodeSlots st target cn).scheduler.runQueue.flat =
-               st.scheduler.runQueue.flat from by rw [hSched]] at h
-         exact h)
+               st.scheduler.runQueue.flat from by rw [hSched]] at h;
+         exact h))
   | endpoint _ =>
-    simp only [] at h
-    rw [cleanupEndpointServiceRegistrations_scheduler_eq] at h
-    exact h
-  | notification _ | vspaceRoot _ | untyped _ | schedContext _ => exact h
+    simp only [lifecyclePreRetypeCleanup] at hOk
+    injection hOk with hOk; subst hOk
+    rw [cleanupEndpointServiceRegistrations_scheduler_eq] at h; exact h
+  | notification _ | vspaceRoot _ | untyped _ | schedContext _ =>
+    simp only [lifecyclePreRetypeCleanup] at hOk
+    injection hOk with hOk; subst hOk; exact h
 
 /-- **Internal building block — callers should use `lifecycleRetypeWithCleanup` instead.**
 
@@ -1216,10 +1224,13 @@ def lifecycleRetypeWithCleanup
       match st.objects[target]? with
       | none => lifecycleRetypeObject authority target newObj st
       | some currentObj =>
-          let stClean := lifecyclePreRetypeCleanup st target currentObj newObj
-          -- S6-C: Scrub backing memory before retype to prevent info leakage
-          let stScrubbed := scrubObjectMemory stClean target currentObj.objectType
-          lifecycleRetypeObject authority target newObj stScrubbed
+          -- AJ1-A (M-14): Propagate cleanup errors instead of silently ignoring
+          match lifecyclePreRetypeCleanup st target currentObj newObj with
+          | .error e => .error e
+          | .ok stClean =>
+            -- S6-C: Scrub backing memory before retype to prevent info leakage
+            let stScrubbed := scrubObjectMemory stClean target currentObj.objectType
+            lifecycleRetypeObject authority target newObj stScrubbed
 
 /-- WS-H2/H-05/S6-C: After a TCB retype via the safe wrapper, the old ThreadId is
     not in the run queue.  This is the key safety property required by H-05.
@@ -1241,19 +1252,28 @@ theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
   · contradiction
   · rename_i hWF
     simp only [hObj] at hStep
-    -- hStep now has lifecycleRetypeObject on the scrubbed+cleaned state
-    rcases lifecycleRetypeObject_ok_as_storeObject _ st' authority target newObj hStep with
-      ⟨_, _, _, _, _, _, hStore⟩
-    have hSchedEq : st'.scheduler =
-        (scrubObjectMemory (lifecyclePreRetypeCleanup st target (.tcb tcb) newObj)
-          target (KernelObject.tcb tcb).objectType).scheduler :=
-      lifecycle_storeObject_scheduler_eq _ st' target newObj hStore
-    rw [hSchedEq, scrubObjectMemory_scheduler_eq]
-    unfold lifecyclePreRetypeCleanup
-    simp only []
-    -- S-05/PERF-O1: cleanupTcbReferences_removes_from_runnable is polymorphic in
-    -- the input state; use _ to let Lean unify with the scThreadIndex-cleaned state
-    exact cleanupTcbReferences_removes_from_runnable _ tcb.tid
+    -- AJ1-A (M-14): lifecyclePreRetypeCleanup now returns Except; extract .ok
+    cases hClean : lifecyclePreRetypeCleanup st target (.tcb tcb) newObj with
+    | error e => rw [hClean] at hStep; contradiction
+    | ok stClean =>
+      rw [hClean] at hStep; simp only [] at hStep
+      -- hStep now has lifecycleRetypeObject on the scrubbed+cleaned state
+      rcases lifecycleRetypeObject_ok_as_storeObject _ st' authority target newObj hStep with
+        ⟨_, _, _, _, _, _, hStore⟩
+      have hSchedEq : st'.scheduler =
+          (scrubObjectMemory stClean target (KernelObject.tcb tcb).objectType).scheduler :=
+        lifecycle_storeObject_scheduler_eq _ st' target newObj hStore
+      rw [hSchedEq, scrubObjectMemory_scheduler_eq]
+      -- Extract intermediate state from lifecyclePreRetypeCleanup
+      simp only [lifecyclePreRetypeCleanup] at hClean
+      cases hDon : cleanupDonatedSchedContext st tcb.tid with
+      | error e => rw [hDon] at hClean; simp at hClean
+      | ok stDon =>
+        rw [hDon] at hClean; simp only [] at hClean
+        injection hClean with hClean; subst hClean
+        -- S-05/PERF-O1: cleanupTcbReferences_removes_from_runnable is polymorphic in
+        -- the input state; use _ to let Lean unify with the scThreadIndex-cleaned state
+        exact cleanupTcbReferences_removes_from_runnable _ tcb.tid
 
 -- ============================================================================
 -- WS-K-D: Lifecycle syscall dispatch helpers
@@ -1397,8 +1417,11 @@ def lifecycleRetypeDirectWithCleanup
       match st.objects[target]? with
       | none => lifecycleRetypeDirect authCap target newObj st
       | some currentObj =>
-          let stClean := lifecyclePreRetypeCleanup st target currentObj newObj
-          let stScrubbed := scrubObjectMemory stClean target currentObj.objectType
-          lifecycleRetypeDirect authCap target newObj stScrubbed
+          -- AJ1-A (M-14): Propagate cleanup errors instead of silently ignoring
+          match lifecyclePreRetypeCleanup st target currentObj newObj with
+          | .error e => .error e
+          | .ok stClean =>
+            let stScrubbed := scrubObjectMemory stClean target currentObj.objectType
+            lifecycleRetypeDirect authCap target newObj stScrubbed
 
 end SeLe4n.Kernel

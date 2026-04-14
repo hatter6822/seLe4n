@@ -2508,10 +2508,16 @@ scheduling parameters, and enforce admission control.
   `checkedDispatch_schedContextUnbind_eq_unchecked`.
 - `checkedDispatch_capabilityOnly_eq_unchecked` extended (6→9 disjuncts).
 - `dispatchWithCap_wildcard_unreachable` updated (17→25 variants).
+- AJ1-D (M-01): 2 conditional equivalence theorems for IPC arms:
+  `checkedDispatch_reply_eq_unchecked_when_allowed` (`.reply`, 1 flow hypothesis),
+  `checkedDispatch_replyRecv_eq_unchecked_when_allowed` (`.replyRecv`, 2 flow hypotheses).
+  Decomposition lemmas: `endpointReplyWithDonation_unfold`,
+  `endpointReplyRecvWithDonation_unfold`.
 
 **Information-flow enforcement**: SchedContext operations are capability-only
 (no cross-domain flows). Routed through `dispatchCapabilityOnly` shared path.
-Structural equivalence between checked and unchecked dispatch proven.
+Structural equivalence between checked and unchecked dispatch proven. Reply and
+replyRecv arms have conditional equivalence theorems (AJ1-D).
 
 **FrozenOps coverage**: 3 SchedContext `frozenOpCoverage` arms updated to `true`
 (Z8-H: frozen operations added). `frozenOpCoverage_count` increased from 12 to 15.

@@ -1233,6 +1233,83 @@ theorem checkedDispatch_capabilityOnly_eq_unchecked
     simp [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, h]
 
 -- ============================================================================
+-- AJ1-D (M-01): Reply/ReplyRecv conditional equivalence theorems
+-- ============================================================================
+
+/-- AJ1-D (M-01): When the information flow policy allows the reply, checked
+and unchecked `.reply` dispatch produce identical results. The checked path
+(`endpointReplyChecked`) gates on `securityFlowsTo replierLabel targetLabel`;
+when this condition holds, both paths execute the identical three-step sequence:
+`endpointReply` → `applyReplyDonation` → `revertPriorityInheritance`.
+
+This is a conditional equivalence: unlike the capability-only arms which are
+structurally identical (unconditional), `.reply` requires the flow hypothesis.
+The unchecked path bundles these steps in `endpointReplyWithDonation`; the
+checked path inlines them after `endpointReplyChecked`. -/
+theorem checkedDispatch_reply_eq_unchecked_when_allowed
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .reply)
+    (targetTid : SeLe4n.ThreadId)
+    (hCap : cap.target = .replyCap targetTid)
+    (hFlow : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf targetTid) = true)
+    : ∀ (st : SystemState),
+    dispatchWithCapChecked ctx decoded tid gate cap st =
+    dispatchWithCap decoded tid gate cap st := by
+  -- Both sides reduce to `endpointReply → applyReplyDonation → revertPIP` when flow allows.
+  intro st
+  -- Unfold both dispatch to reach the .reply arm with .replyCap targetTid
+  -- dispatchCapabilityOnly returns `none` for .reply (not capability-only),
+  -- so the match falls through to the explicit .reply arm.
+  simp only [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall, hCap]
+  -- Both sides now have endpointReply-based pipelines. Unfold checked wrapper.
+  simp only [endpointReplyChecked, hFlow, ite_true]
+  -- RHS is endpointReplyWithDonation applied to st — definitionally equal to LHS
+  rfl
+
+/-- AJ1-D (M-01): When the information flow policy allows both legs (reply +
+receive), checked and unchecked `.replyRecv` dispatch produce identical results.
+The checked path (`endpointReplyRecvChecked`) gates on TWO `securityFlowsTo`
+checks: (1) receiver → replyTarget (reply leg), (2) endpoint → receiver
+(receive leg). When both hold, both paths execute: `endpointReplyRecv` →
+`applyReplyDonation` → `revertPriorityInheritance`. -/
+theorem checkedDispatch_replyRecv_eq_unchecked_when_allowed
+    (ctx : LabelingContext) (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (gate : SyscallGate) (cap : Capability)
+    (hSyscall : decoded.syscallId = .replyRecv)
+    (epId : SeLe4n.ObjId)
+    (hCap : cap.target = .object epId)
+    (args : ReplyRecvArgs)
+    (hDecode : decodeReplyRecvArgs decoded = .ok args)
+    (hFlowReply : securityFlowsTo (ctx.threadLabelOf tid) (ctx.threadLabelOf args.replyTarget) = true)
+    (hFlowRecv : securityFlowsTo (ctx.endpointLabelOf epId) (ctx.threadLabelOf tid) = true)
+    (st : SystemState) :
+    dispatchWithCapChecked ctx decoded tid gate cap st =
+    dispatchWithCap decoded tid gate cap st := by
+  simp only [dispatchWithCapChecked, dispatchWithCap, dispatchCapabilityOnly, hSyscall, hCap, hDecode]
+  -- Unfold checked wrapper with flow guards, and unchecked wrapper
+  simp only [endpointReplyRecvChecked, hFlowReply, hFlowRecv, ite_true]
+  -- The unchecked path wraps the result in `match ... with | .error e => .error e | .ok ((), st') => .ok ((), st')`
+  -- which is identity. The checked path doesn't have this wrapper.
+  -- Collapse by cases on the shared inner expression.
+  -- The RHS still has endpointReplyRecvWithDonation wrapped in identity match.
+  -- Unfold endpointReplyRecvWithDonation, then the identity match collapses.
+  simp only [endpointReplyRecvWithDonation]
+  -- Now both sides match on endpointReplyRecv. The RHS has an extra wrapper
+  -- `match ... with | .error e => .error e | .ok ((), st') => .ok ((), st')`.
+  -- Collapse by cases on the shared inner expression.
+  cases endpointReplyRecv epId tid args.replyTarget
+    { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
+      caps := #[], badge := cap.badge } st with
+  | error => rfl
+  | ok p =>
+    obtain ⟨⟨⟩, s⟩ := p
+    simp only []
+    cases applyReplyDonation s tid with
+    | error => rfl
+    | ok => rfl
+
+-- ============================================================================
 -- W2-C (MED-04): dispatchWithCap wildcard arm unreachability
 -- ============================================================================
 

@@ -244,7 +244,13 @@ and adding `_fromTcb` variants for `storeTcbIpcState`/`storeTcbIpcStateAndMessag
 convenience wrapper returning the post-state TCB with cleared queue links,
 avoiding the stale-snapshot footgun (F-02). Staleness annotations added at all
 call sites. CapTransfer module docstring enhanced with F-03 error-to-noSlot
-conversion documentation.
+conversion documentation. **Note**: `endpointQueuePopHeadFresh` was removed
+in WS-AJ/AJ1-E (L-02) as dead code — never adopted by any caller.
+
+**WS-AJ/AJ1 IPC & lifecycle correctness** (v0.28.0 audit): `cleanupDonatedSchedContext`
+error propagation (M-14), `blockedOnReplyHasTarget` invariant predicate (M-04),
+pre-send receiver linking cross-references (M-02), reply/replyRecv conditional
+equivalence theorems (M-01), error asymmetry documentation (L-18).
 
 ### Lifecycle subsystem
 
