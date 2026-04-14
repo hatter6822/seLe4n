@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-security-workstream-avnAs",
-      "commit_sha": "5c2671aa54d6e8120c838fae7d2cfbeddc0a966e",
-      "tree_sha": "00feba6300e4501b33ec07655a1a5e2224234ad8",
-      "committed_at_utc": "2026-04-14T11:02:57-04:00"
+      "commit_sha": "a5298c265b5a13acc7feede1b6802e3352bb0a49",
+      "tree_sha": "e362cad27ac8644b8e302f5d74c88e81a22809ef",
+      "committed_at_utc": "2026-04-14T15:37:06+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "e0a718c5e1c1cb5efd7855b45cdcb3fdabb38d8dd4c4d40362948cd4bf98a995"
+    "source_digest": "4f6086fa36b633f01ffc0fafb4bf2cde8f5c1395ac2b460a6aa6f1883c8efead"
   },
   "summary": {
     "module_count": 158,
@@ -27,7 +27,7 @@
     "version": "0.28.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 94198,
+    "production_loc": 94204,
     "test_files": 17,
     "test_loc": 11616,
     "proved_theorem_lemma_decls": 2790,
@@ -28324,7 +28324,7 @@
         {
           "kind": "def",
           "name": "isInsecureDefaultContext",
-          "line": 286,
+          "line": 292,
           "called": [
             "LabelingContext",
             "insecureProbe"
@@ -28333,7 +28333,7 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_defaultLabelingContext",
-          "line": 292,
+          "line": 298,
           "called": [
             "defaultLabelingContext",
             "insecureProbe",
@@ -28344,7 +28344,7 @@
         {
           "kind": "def",
           "name": "testLabelingContext",
-          "line": 307,
+          "line": 313,
           "called": [
             "LabelingContext",
             "kernelTrusted",
@@ -28355,7 +28355,7 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_testLabelingContext",
-          "line": 326,
+          "line": 332,
           "called": [
             "ObjId.toNat_ofNat",
             "ServiceId.toNat_ofNat",
@@ -28370,7 +28370,7 @@
         {
           "kind": "theorem",
           "name": "insecureProbe_false_to_nonpublic",
-          "line": 334,
+          "line": 340,
           "called": [
             "LabelingContext",
             "insecureProbe",
@@ -28381,7 +28381,7 @@
         {
           "kind": "theorem",
           "name": "isInsecureDefaultContext_false_implies_nontrivial",
-          "line": 357,
+          "line": 363,
           "called": [
             "LabelingContext",
             "insecureProbe",
@@ -28394,7 +28394,7 @@
         {
           "kind": "theorem",
           "name": "confidentialityFlowsTo_refl",
-          "line": 376,
+          "line": 382,
           "called": [
             "Confidentiality",
             "confidentialityFlowsTo"
@@ -28403,7 +28403,7 @@
         {
           "kind": "theorem",
           "name": "integrityFlowsTo_refl",
-          "line": 380,
+          "line": 386,
           "called": [
             "Integrity",
             "integrityFlowsTo"
@@ -28412,7 +28412,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_refl",
-          "line": 384,
+          "line": 390,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo_refl",
@@ -28423,7 +28423,7 @@
         {
           "kind": "theorem",
           "name": "confidentialityFlowsTo_trans",
-          "line": 390,
+          "line": 396,
           "called": [
             "Confidentiality",
             "confidentialityFlowsTo"
@@ -28432,7 +28432,7 @@
         {
           "kind": "theorem",
           "name": "integrityFlowsTo_trans",
-          "line": 397,
+          "line": 403,
           "called": [
             "Integrity",
             "integrityFlowsTo"
@@ -28441,7 +28441,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_trans",
-          "line": 404,
+          "line": 410,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo_trans",
@@ -28452,7 +28452,7 @@
         {
           "kind": "theorem",
           "name": "confidentialityFlowsTo_antisymm",
-          "line": 426,
+          "line": 432,
           "called": [
             "Confidentiality",
             "confidentialityFlowsTo"
@@ -28461,7 +28461,7 @@
         {
           "kind": "theorem",
           "name": "integrityFlowsTo_antisymm",
-          "line": 433,
+          "line": 439,
           "called": [
             "Integrity",
             "integrityFlowsTo"
@@ -28470,7 +28470,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_antisymm",
-          "line": 441,
+          "line": 447,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo_antisymm",
@@ -28480,8 +28480,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:459>",
-          "line": 459,
+          "name": "<anonymous:instance:465>",
+          "line": 465,
           "called": [
             "securityFlowsTo"
           ]
@@ -28489,7 +28489,7 @@
         {
           "kind": "theorem",
           "name": "securityFlowsTo_lattice_verified",
-          "line": 464,
+          "line": 470,
           "called": [
             "kernelTrusted",
             "publicLabel",
@@ -28499,13 +28499,13 @@
         {
           "kind": "structure",
           "name": "SecurityDomain",
-          "line": 498,
+          "line": 504,
           "called": []
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:503>",
-          "line": 503,
+          "name": "<anonymous:instance:509>",
+          "line": 509,
           "called": [
             "SecurityDomain"
           ]
@@ -28513,13 +28513,13 @@
         {
           "kind": "namespace",
           "name": "SecurityDomain",
-          "line": 506,
+          "line": 512,
           "called": []
         },
         {
           "kind": "def",
           "name": "lowest",
-          "line": 509,
+          "line": 515,
           "called": [
             "SecurityDomain"
           ]
@@ -28527,7 +28527,7 @@
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 512,
+          "line": 518,
           "called": [
             "SecurityDomain"
           ]
@@ -28535,15 +28535,15 @@
         {
           "kind": "def",
           "name": "toNat",
-          "line": 515,
+          "line": 521,
           "called": [
             "SecurityDomain"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:517>",
-          "line": 517,
+          "name": "<anonymous:instance:523>",
+          "line": 523,
           "called": [
             "SecurityDomain"
           ]
@@ -28551,7 +28551,7 @@
         {
           "kind": "theorem",
           "name": "toNat_ofNat",
-          "line": 521,
+          "line": 527,
           "called": [
             "ofNat",
             "toNat"
@@ -28560,7 +28560,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 523,
+          "line": 529,
           "called": [
             "SecurityDomain",
             "ofNat",
@@ -28570,7 +28570,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_injective",
-          "line": 525,
+          "line": 531,
           "called": [
             "ofNat"
           ]
@@ -28578,23 +28578,7 @@
         {
           "kind": "theorem",
           "name": "ext",
-          "line": 528,
-          "called": [
-            "SecurityDomain"
-          ]
-        },
-        {
-          "kind": "instance",
-          "name": "<anonymous:instance:534>",
           "line": 534,
-          "called": [
-            "SecurityDomain"
-          ]
-        },
-        {
-          "kind": "instance",
-          "name": "<anonymous:instance:536>",
-          "line": 536,
           "called": [
             "SecurityDomain"
           ]
@@ -28608,9 +28592,25 @@
           ]
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:542>",
+          "line": 542,
+          "called": [
+            "SecurityDomain"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:546>",
+          "line": 546,
+          "called": [
+            "SecurityDomain"
+          ]
+        },
+        {
           "kind": "structure",
           "name": "DomainFlowPolicy",
-          "line": 548,
+          "line": 554,
           "called": [
             "SecurityDomain"
           ]
@@ -28618,13 +28618,13 @@
         {
           "kind": "namespace",
           "name": "DomainFlowPolicy",
-          "line": 551,
+          "line": 557,
           "called": []
         },
         {
           "kind": "def",
           "name": "isReflexive",
-          "line": 554,
+          "line": 560,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -28633,7 +28633,7 @@
         {
           "kind": "def",
           "name": "isTransitive",
-          "line": 558,
+          "line": 564,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -28642,7 +28642,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 563,
+          "line": 569,
           "called": [
             "DomainFlowPolicy",
             "isReflexive",
@@ -28652,7 +28652,7 @@
         {
           "kind": "def",
           "name": "allowAll",
-          "line": 567,
+          "line": 573,
           "called": [
             "DomainFlowPolicy"
           ]
@@ -28660,7 +28660,7 @@
         {
           "kind": "def",
           "name": "linearOrder",
-          "line": 572,
+          "line": 578,
           "called": [
             "DomainFlowPolicy"
           ]
@@ -28668,7 +28668,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_reflexive",
-          "line": 581,
+          "line": 587,
           "called": [
             "isReflexive"
           ]
@@ -28676,7 +28676,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_transitive",
-          "line": 585,
+          "line": 591,
           "called": [
             "isTransitive"
           ]
@@ -28684,7 +28684,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.allowAll_wellFormed",
-          "line": 589,
+          "line": 595,
           "called": [
             "allowAll_reflexive",
             "allowAll_transitive",
@@ -28694,7 +28694,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_reflexive",
-          "line": 593,
+          "line": 599,
           "called": [
             "isReflexive",
             "linearOrder"
@@ -28703,7 +28703,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_transitive",
-          "line": 597,
+          "line": 603,
           "called": [
             "isTransitive",
             "linearOrder"
@@ -28712,7 +28712,7 @@
         {
           "kind": "theorem",
           "name": "DomainFlowPolicy.linearOrder_wellFormed",
-          "line": 603,
+          "line": 609,
           "called": [
             "linearOrder_reflexive",
             "linearOrder_transitive",
@@ -28722,7 +28722,7 @@
         {
           "kind": "def",
           "name": "domainFlowsTo",
-          "line": 611,
+          "line": 617,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain"
@@ -28731,7 +28731,7 @@
         {
           "kind": "theorem",
           "name": "domainFlowsTo_refl",
-          "line": 614,
+          "line": 620,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain",
@@ -28742,7 +28742,7 @@
         {
           "kind": "theorem",
           "name": "domainFlowsTo_trans",
-          "line": 620,
+          "line": 626,
           "called": [
             "DomainFlowPolicy",
             "SecurityDomain",
@@ -28753,7 +28753,7 @@
         {
           "kind": "structure",
           "name": "GenericLabelingContext",
-          "line": 634,
+          "line": 640,
           "called": [
             "DomainFlowPolicy",
             "ObjId",
@@ -28765,7 +28765,7 @@
         {
           "kind": "def",
           "name": "genericFlowCheck",
-          "line": 643,
+          "line": 649,
           "called": [
             "GenericLabelingContext",
             "SecurityDomain",
@@ -28775,7 +28775,7 @@
         {
           "kind": "structure",
           "name": "EndpointFlowPolicy",
-          "line": 656,
+          "line": 662,
           "called": [
             "DomainFlowPolicy",
             "ObjId"
@@ -28784,7 +28784,7 @@
         {
           "kind": "def",
           "name": "endpointFlowCheck",
-          "line": 661,
+          "line": 667,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -28799,7 +28799,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_fallback",
-          "line": 671,
+          "line": 677,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -28814,7 +28814,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_override",
-          "line": 682,
+          "line": 688,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -28829,7 +28829,7 @@
         {
           "kind": "def",
           "name": "embedLegacyLabel",
-          "line": 707,
+          "line": 713,
           "called": [
             "SecurityDomain",
             "SecurityLabel"
@@ -28838,7 +28838,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_public",
-          "line": 715,
+          "line": 721,
           "called": [
             "embedLegacyLabel",
             "publicLabel"
@@ -28847,7 +28847,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_kernelTrusted",
-          "line": 719,
+          "line": 725,
           "called": [
             "embedLegacyLabel",
             "kernelTrusted"
@@ -28856,7 +28856,7 @@
         {
           "kind": "theorem",
           "name": "embedLegacyLabel_preserves_flow",
-          "line": 724,
+          "line": 730,
           "called": [
             "SecurityLabel",
             "confidentialityFlowsTo",
@@ -28869,7 +28869,7 @@
         {
           "kind": "def",
           "name": "liftLegacyContext",
-          "line": 738,
+          "line": 744,
           "called": [
             "GenericLabelingContext",
             "LabelingContext",
@@ -28880,7 +28880,7 @@
         {
           "kind": "theorem",
           "name": "securityLattice_reflexive",
-          "line": 774,
+          "line": 780,
           "called": [
             "SecurityLabel",
             "securityFlowsTo",
@@ -28890,7 +28890,7 @@
         {
           "kind": "theorem",
           "name": "securityLattice_transitive",
-          "line": 777,
+          "line": 783,
           "called": [
             "SecurityLabel",
             "securityFlowsTo",
@@ -28900,7 +28900,7 @@
         {
           "kind": "structure",
           "name": "DeclassificationEvent",
-          "line": 796,
+          "line": 802,
           "called": [
             "ObjId",
             "SecurityDomain"
@@ -28909,7 +28909,7 @@
         {
           "kind": "abbrev",
           "name": "DeclassificationAuditLog",
-          "line": 816,
+          "line": 822,
           "called": [
             "DeclassificationEvent"
           ]
@@ -28917,7 +28917,7 @@
         {
           "kind": "def",
           "name": "recordDeclassification",
-          "line": 819,
+          "line": 825,
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent"
@@ -28926,7 +28926,7 @@
         {
           "kind": "theorem",
           "name": "recordDeclassification_preserves_existing",
-          "line": 825,
+          "line": 831,
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent",
@@ -28936,7 +28936,7 @@
         {
           "kind": "theorem",
           "name": "recordDeclassification_contains_new",
-          "line": 832,
+          "line": 838,
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent",
@@ -28946,7 +28946,7 @@
         {
           "kind": "theorem",
           "name": "recordDeclassification_length",
-          "line": 838,
+          "line": 844,
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent",
@@ -28956,7 +28956,7 @@
         {
           "kind": "structure",
           "name": "DeclassificationPolicy",
-          "line": 872,
+          "line": 878,
           "called": [
             "SecurityDomain"
           ]
@@ -28964,13 +28964,13 @@
         {
           "kind": "namespace",
           "name": "DeclassificationPolicy",
-          "line": 875,
+          "line": 881,
           "called": []
         },
         {
           "kind": "def",
           "name": "none",
-          "line": 878,
+          "line": 884,
           "called": [
             "DeclassificationPolicy"
           ]
@@ -28978,7 +28978,7 @@
         {
           "kind": "def",
           "name": "isDeclassificationAuthorized",
-          "line": 884,
+          "line": 890,
           "called": [
             "DeclassificationPolicy",
             "DomainFlowPolicy",
@@ -28988,7 +28988,7 @@
         {
           "kind": "theorem",
           "name": "isDeclassificationAuthorized_not_reflexive",
-          "line": 892,
+          "line": 898,
           "called": [
             "DeclassificationPolicy",
             "DomainFlowPolicy",
@@ -29000,7 +29000,7 @@
         {
           "kind": "def",
           "name": "endpointFlowPolicyWellFormed",
-          "line": 917,
+          "line": 923,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -29010,7 +29010,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowPolicyWellFormed_no_overrides",
-          "line": 925,
+          "line": 931,
           "called": [
             "DomainFlowPolicy",
             "endpointFlowPolicyWellFormed",
@@ -29021,7 +29021,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_reflexive",
-          "line": 936,
+          "line": 942,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -29038,7 +29038,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_transitive",
-          "line": 952,
+          "line": 958,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",
@@ -29055,7 +29055,7 @@
         {
           "kind": "def",
           "name": "endpointPolicyRestricted",
-          "line": 983,
+          "line": 989,
           "called": [
             "DomainFlowPolicy",
             "EndpointFlowPolicy",
@@ -29066,7 +29066,7 @@
         {
           "kind": "theorem",
           "name": "endpointPolicyRestricted_no_overrides",
-          "line": 994,
+          "line": 1000,
           "called": [
             "DomainFlowPolicy",
             "endpointPolicyRestricted",
@@ -29076,7 +29076,7 @@
         {
           "kind": "theorem",
           "name": "endpointFlowCheck_restricted_subset",
-          "line": 1001,
+          "line": 1007,
           "called": [
             "EndpointFlowPolicy",
             "GenericLabelingContext",

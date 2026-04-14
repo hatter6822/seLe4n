@@ -26,9 +26,9 @@ Zero sorry/axiom.
   information across security domains. All 51+ NI proofs pass unchanged —
   `pipBoost` follows the same non-observable-target proof pattern.
 - **AJ2-C** (M-12/MEDIUM): `isInsecureDefaultContext` strengthened from single-
-  ID (ID 0) probe to multi-probe across sentinel IDs `[0, 1, 42]`. Raises
-  evasion bar: attacker must assign non-public labels to IDs 0, 1, AND 42
-  across all four entity classes. Private `insecureProbe` helper for clean
+  ID (ID 0) probe to multi-probe across sentinel IDs `[0, 1, 42]`. Widens
+  sampling window: three independent ID samples must all show all-public
+  labels before flagging as insecure. Private `insecureProbe` helper for clean
   Bool case analysis. New `insecureProbe_false_to_nonpublic` helper + 
   `isInsecureDefaultContext_false_implies_nontrivial` characterization theorem.
   Existing soundness/rejection theorems updated. O(k) with k=3 (12 lookups).

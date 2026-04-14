@@ -276,8 +276,14 @@ theorem defaultLabelingContext_all_threads_observable :
     `defaultLabelingContext`.
 
     AJ2-C strengthens the original single-ID (ID 0) probe to a multi-probe,
-    raising the evasion bar: an attacker would need to assign non-public labels
-    to IDs 0, 1, AND 42 across all four entity classes to bypass the check.
+    widening the sampling window: the check now requires all-public labels at
+    three distinct IDs before flagging a context as insecure. A context that
+    assigns non-public labels at any one of the probed IDs (e.g., only at ID 0
+    — the `testLabelingContext` pattern) will not be flagged, as that is
+    sufficient evidence of non-default labeling. The conjunction (`&&`) means
+    evasion requires changing only one probed ID, but detection coverage is
+    broader: three independent samples of the ID space must all exhibit the
+    insecure pattern before the heuristic fires.
 
     This remains O(k) with k=3 (12 label lookups total), negligible overhead per
     syscall entry. The real security gate is `LabelingContextValid` (enforced at
