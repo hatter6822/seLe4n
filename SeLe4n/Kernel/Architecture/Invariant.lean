@@ -883,7 +883,7 @@ theorem writeRegisterState_preserves_proofLayerInvariantBundle
 -- ============================================================================
 
 /-- AG7-D: `ipcInvariantFull` is preserved through `contextSwitchState`.
-    All 15 conjuncts depend only on `st.objects` except `passiveServerIdle`
+    All 16 conjuncts depend only on `st.objects` except `passiveServerIdle`
     which also references `scheduler.current` and `scheduler.runQueue`.
     `passiveServerIdle` transfers because the old current thread (if any) has
     `ipcState = .ready` (from `currentThreadIpcReady`), satisfying the
