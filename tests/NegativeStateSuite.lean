@@ -2035,7 +2035,7 @@ def runWSKGChecks : IO Unit := do
   let mintAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := ⟨0⟩ }
   let dstAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := ⟨1⟩ }
   expectErr "K-G-NEG-05 cspaceMint CNode not found"
-    (SeLe4n.Kernel.cspaceMint mintAddr dstAddr ⟨0⟩ none noCnodeState)
+    (SeLe4n.Kernel.cspaceMint mintAddr dstAddr AccessRightSet.empty none noCnodeState)
     .objectNotFound
 
   -- K-G-NEG-06: cspaceCopy fails — source slot empty (invalidCapability)

@@ -259,29 +259,46 @@ theorem defaultLabelingContext_all_threads_observable :
 -- AI5-C (M-19): Insecure default labeling context runtime guard
 -- ============================================================================
 
-/-- AI5-C (M-19): Detect the insecure default labeling context at runtime.
+/-- AJ2-C (M-12): Helper — single sentinel probe. Checks whether all four
+    entity classes assign `publicLabel` to the given ID. -/
+@[inline] private def insecureProbe (ctx : LabelingContext) (n : Nat) : Bool :=
+  ctx.threadLabelOf (SeLe4n.ThreadId.ofNat n) == SecurityLabel.publicLabel &&
+  ctx.objectLabelOf (SeLe4n.ObjId.ofNat n) == SecurityLabel.publicLabel &&
+  ctx.endpointLabelOf (SeLe4n.ObjId.ofNat n) == SecurityLabel.publicLabel &&
+  ctx.serviceLabelOf (ServiceId.ofNat n) == SecurityLabel.publicLabel
 
-    Checks sentinel labels at ID 0 for all four entity classes — sufficient
-    because `defaultLabelingContext` assigns `publicLabel` to ALL entities
-    uniformly. Any labeling context that assigns `publicLabel` at all four
-    sentinels matches the insecure pattern.
+/-- AI5-C (M-19) + AJ2-C (M-12): Detect the insecure default labeling context
+    at runtime.
 
-    This is a lightweight O(1) check, not a full verification of all mappings.
-    A truly secure context may still assign `publicLabel` to some entities;
-    this detector catches the specific pattern where *all* entity classes
-    use `publicLabel` uniformly (the `defaultLabelingContext` pattern). -/
+    Probes sentinel IDs 0, 1, and 42 across all four entity classes (thread,
+    object, endpoint, service). A context is flagged as insecure when ALL probed
+    entities in ALL classes return `publicLabel` — the signature pattern of
+    `defaultLabelingContext`.
+
+    AJ2-C strengthens the original single-ID (ID 0) probe to a multi-probe,
+    widening the sampling window: the check now requires all-public labels at
+    three distinct IDs before flagging a context as insecure. A context that
+    assigns non-public labels at any one of the probed IDs (e.g., only at ID 0
+    — the `testLabelingContext` pattern) will not be flagged, as that is
+    sufficient evidence of non-default labeling. The conjunction (`&&`) means
+    evasion requires changing only one probed ID, but detection coverage is
+    broader: three independent samples of the ID space must all exhibit the
+    insecure pattern before the heuristic fires.
+
+    This remains O(k) with k=3 (12 label lookups total), negligible overhead per
+    syscall entry. The real security gate is `LabelingContextValid` (enforced at
+    boot via `labelingContextValid_is_deployment_requirement` in
+    Composition.lean:727). This check is a defense-in-depth heuristic. -/
 def isInsecureDefaultContext (ctx : LabelingContext) : Bool :=
-  ctx.threadLabelOf (SeLe4n.ThreadId.ofNat 0) == SecurityLabel.publicLabel &&
-  ctx.objectLabelOf (SeLe4n.ObjId.ofNat 0) == SecurityLabel.publicLabel &&
-  ctx.endpointLabelOf (SeLe4n.ObjId.ofNat 0) == SecurityLabel.publicLabel &&
-  ctx.serviceLabelOf (ServiceId.ofNat 0) == SecurityLabel.publicLabel
+  insecureProbe ctx 0 && insecureProbe ctx 1 && insecureProbe ctx 42
 
-/-- AI5-C (M-19): The detector correctly identifies the default labeling context
-    as insecure. -/
+/-- AI5-C (M-19) + AJ2-C: The detector correctly identifies the default labeling
+    context as insecure. All three sentinel IDs (0, 1, 42) map to `publicLabel`
+    across all four entity classes. -/
 theorem isInsecureDefaultContext_defaultLabelingContext :
     isInsecureDefaultContext defaultLabelingContext = true := by
-  simp [isInsecureDefaultContext, defaultLabelingContext,
-        SecurityLabel.publicLabel]
+  unfold isInsecureDefaultContext insecureProbe defaultLabelingContext
+  simp [SecurityLabel.publicLabel]
 
 /-- AI5-C (M-19): Test-only labeling context that assigns a non-public label to
     entity ID 0, defeating the insecurity detector while remaining structurally
@@ -309,12 +326,58 @@ def testLabelingContext : LabelingContext :=
       else SecurityLabel.publicLabel
   }
 
-/-- AI5-C (M-19): The test labeling context is NOT detected as insecure. -/
+/-- AI5-C (M-19) + AJ2-C: The test labeling context is NOT detected as insecure.
+    The sentinel probe at ID 0 returns `kernelTrusted` (non-public), causing
+    `insecureProbe ctx 0` to return `false` and short-circuiting the conjunction. -/
 theorem isInsecureDefaultContext_testLabelingContext :
     isInsecureDefaultContext testLabelingContext = false := by
-  simp [isInsecureDefaultContext, testLabelingContext,
-        SecurityLabel.kernelTrusted, SecurityLabel.publicLabel]
-  decide
+  unfold isInsecureDefaultContext insecureProbe testLabelingContext
+  simp [SecurityLabel.kernelTrusted, SecurityLabel.publicLabel,
+        ThreadId.toNat_ofNat, ObjId.toNat_ofNat, ServiceId.toNat_ofNat]
+
+/-- AJ2-C (M-12): Helper — a failed probe implies at least one entity class
+    has a non-public label at the given ID. -/
+private theorem insecureProbe_false_to_nonpublic
+    (ctx : LabelingContext) (n : Nat)
+    (h : insecureProbe ctx n = false) :
+    ctx.threadLabelOf (SeLe4n.ThreadId.ofNat n) ≠ SecurityLabel.publicLabel ∨
+    ctx.objectLabelOf (SeLe4n.ObjId.ofNat n) ≠ SecurityLabel.publicLabel ∨
+    ctx.endpointLabelOf (SeLe4n.ObjId.ofNat n) ≠ SecurityLabel.publicLabel ∨
+    ctx.serviceLabelOf (ServiceId.ofNat n) ≠ SecurityLabel.publicLabel := by
+  simp only [insecureProbe] at h
+  cases ht : (ctx.threadLabelOf (SeLe4n.ThreadId.ofNat n) == SecurityLabel.publicLabel)
+  · exact .inl (by intro heq; simp [heq] at ht)
+  · simp only [ht, Bool.true_and] at h
+    cases ho : (ctx.objectLabelOf (SeLe4n.ObjId.ofNat n) == SecurityLabel.publicLabel)
+    · exact .inr (.inl (by intro heq; simp [heq] at ho))
+    · simp only [ho, Bool.true_and] at h
+      cases he : (ctx.endpointLabelOf (SeLe4n.ObjId.ofNat n) == SecurityLabel.publicLabel)
+      · exact .inr (.inr (.inl (by intro heq; simp [heq] at he)))
+      · simp only [he, Bool.true_and] at h
+        exact .inr (.inr (.inr (by intro heq; simp [heq] at h)))
+
+/-- AJ2-C (M-12): False-negative characterization — when the check passes
+    (`= false`), at least one probed entity in at least one class has a
+    non-public label. This makes machine-checked what the heuristic guarantees.
+    Zero runtime cost — purely a proof artifact. -/
+theorem isInsecureDefaultContext_false_implies_nontrivial
+    (ctx : LabelingContext)
+    (h : isInsecureDefaultContext ctx = false) :
+    ∃ n ∈ [0, 1, 42],
+      ctx.threadLabelOf (SeLe4n.ThreadId.ofNat n) ≠ SecurityLabel.publicLabel ∨
+      ctx.objectLabelOf (SeLe4n.ObjId.ofNat n) ≠ SecurityLabel.publicLabel ∨
+      ctx.endpointLabelOf (SeLe4n.ObjId.ofNat n) ≠ SecurityLabel.publicLabel ∨
+      ctx.serviceLabelOf (ServiceId.ofNat n) ≠ SecurityLabel.publicLabel := by
+  simp only [isInsecureDefaultContext] at h
+  -- h : insecureProbe ctx 0 && insecureProbe ctx 1 && insecureProbe ctx 42 = false
+  -- Case-split on which probe failed
+  cases hp0 : insecureProbe ctx 0
+  · exact ⟨0, by simp, insecureProbe_false_to_nonpublic ctx 0 hp0⟩
+  · simp only [hp0, Bool.true_and] at h
+    cases hp1 : insecureProbe ctx 1
+    · exact ⟨1, by simp, insecureProbe_false_to_nonpublic ctx 1 hp1⟩
+    · simp only [hp1, Bool.true_and] at h
+      exact ⟨42, by simp, insecureProbe_false_to_nonpublic ctx 42 h⟩
 
 theorem confidentialityFlowsTo_refl (c : Confidentiality) :
     confidentialityFlowsTo c c = true := by

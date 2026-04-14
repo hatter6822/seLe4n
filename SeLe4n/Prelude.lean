@@ -125,7 +125,15 @@ or type verification. Callers **must** verify the returned `ObjId` references a
 TCB by pattern-matching on `.tcb tcb` after the object store lookup. Failure to
 check the object kind after `toObjId` would allow a thread ID to alias a non-TCB
 object, violating type safety. The checked variant `toObjIdChecked` additionally
-rejects the sentinel value (ID 0). -/
+rejects the sentinel value (ID 0).
+
+**AJ2-D (M-09): Namespace disjointness.** This identity mapping shares the
+`ObjId` namespace with `SchedContextId.toObjId` — both map their `.val` to the
+same `ObjId` space. A `ThreadId(5)` and `SchedContextId(5)` produce the same
+`ObjId(5)`. The object store (a functional map) prevents aliasing: each ObjId
+maps to exactly one `KernelObject` variant. `retypeFromUntyped_childId_fresh`
+(Lifecycle/Operations.lean) ensures all new allocations target fresh ObjIds.
+See `typedIdDisjointness` (CrossSubsystem.lean) for the formal statement. -/
 @[inline] def toObjId (id : ThreadId) : ObjId := ObjId.ofNat id.toNat
 
 instance : ToString ThreadId where
@@ -366,7 +374,13 @@ namespace SchedContextId
 @[inline] def ofNat (n : Nat) : SchedContextId := ⟨n⟩
 @[inline] def toNat (id : SchedContextId) : Nat := id.val
 
-/-- Convert SchedContextId to ObjId for object store lookups. -/
+/-- Convert SchedContextId to ObjId for object store lookups.
+
+    AJ2-D (M-09): Shares the `ObjId` namespace with `ThreadId.toObjId` —
+    both use identity mappings. The object store's functional-map property
+    guarantees that each ObjId maps to at most one `KernelObject` variant,
+    preventing type confusion. See `typedIdDisjointness` (CrossSubsystem.lean)
+    and `retypeFromUntyped_childId_fresh` (Lifecycle/Operations.lean). -/
 @[inline] def toObjId (id : SchedContextId) : ObjId := ObjId.ofNat id.toNat
 
 /-- Convert ObjId to SchedContextId. -/

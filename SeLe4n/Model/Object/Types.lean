@@ -93,11 +93,21 @@ any order are structurally equal.
   operand's validity (AND clears high bits), `subset_sound` (subset implies
   per-right inclusion via `Nat.testBit_and`), `mem_bit_bounded` (membership
   tests bounded to bits 0..4). -/
+-- AJ2-A (M-10): Constructor is private — external code cannot write
+-- `AccessRightSet.mk 999` to bypass the 5-bit valid predicate. All public
+-- construction goes through `ofNat` (masked), `ofList`, `singleton`, `empty`,
+-- or `mk_checked` (proof-carrying). Pattern established by `CapDerivationTree`
+-- (Structures.lean:941).
 structure AccessRightSet where
+  private mk ::
   bits : Nat
-deriving DecidableEq, Repr, Inhabited
+deriving DecidableEq, Repr
 
 namespace AccessRightSet
+
+-- AJ2-A (M-10): Manual Inhabited instance — `deriving Inhabited` requires public
+-- constructor. Uses `empty` (bits = 0) as the canonical default.
+instance : Inhabited AccessRightSet := ⟨⟨0⟩⟩
 
 /-- S1-G: Maximum valid bitmask value — 5 access rights use bits 0..4,
     so valid values are in `[0, 2^5)`. -/

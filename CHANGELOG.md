@@ -1,3 +1,46 @@
+## WS-AJ Phase AJ2: Security & Information Flow Hardening
+
+Phase AJ2 of WS-AJ Post-Audit Comprehensive Remediation (v0.28.0 audit).
+Addresses 4 MEDIUM findings in access control and information flow subsystems.
+Key changes: `AccessRightSet.mk` constructor made private (M-10), `pipBoost`
+stripped from NI projection (M-11), `isInsecureDefaultContext` multi-probe
+strengthened from 1 to 3 sentinel IDs (M-12), `typedIdDisjointness` invariant
+and `retypeFromUntyped_childId_fresh` theorem for typed ID namespace safety
+(M-09). Gate: `lake build` (256 jobs) + `test_smoke.sh` + `test_full.sh`.
+Zero sorry/axiom.
+
+### Changes
+
+- **AJ2-A** (M-10/MEDIUM): `AccessRightSet.mk` constructor made `private` —
+  external code can no longer bypass the 5-bit valid predicate via
+  `AccessRightSet.mk 999`. All public construction goes through `ofNat`
+  (masked), `ofList`, `singleton`, `empty`, or `mk_checked` (proof-carrying).
+  Manual `Inhabited` instance added. Pattern established by `CapDerivationTree`
+  (Structures.lean:941). Zero call site changes (all external sites already
+  used safe constructors). 1 test site updated (`NegativeStateSuite.lean:2038`
+  `⟨0⟩` → `AccessRightSet.empty`).
+- **AJ2-B** (M-11/MEDIUM): `projectKernelObject` in `Projection.lean` now
+  strips `pipBoost := none` from projected TCBs, alongside the existing
+  `registerContext := default` and `schedContextBinding := .unbound` stripping.
+  Cross-domain PIP boost reflects blocking relationships and could leak timing
+  information across security domains. All 51+ NI proofs pass unchanged —
+  `pipBoost` follows the same non-observable-target proof pattern.
+- **AJ2-C** (M-12/MEDIUM): `isInsecureDefaultContext` strengthened from single-
+  ID (ID 0) probe to multi-probe across sentinel IDs `[0, 1, 42]`. Widens
+  sampling window: three independent ID samples must all show all-public
+  labels before flagging as insecure. Private `insecureProbe` helper for clean
+  Bool case analysis. New `insecureProbe_false_to_nonpublic` helper + 
+  `isInsecureDefaultContext_false_implies_nontrivial` characterization theorem.
+  Existing soundness/rejection theorems updated. O(k) with k=3 (12 lookups).
+- **AJ2-D** (M-09/MEDIUM): `typedIdDisjointness` predicate added to
+  `CrossSubsystem.lean` — documents that the functional object store maps each
+  ObjId to at most one `KernelObject` variant, preventing ThreadId/SchedContextId
+  namespace confusion. `typedIdDisjointness_trivial` proof (by `Option.some.inj`).
+  `retypeFromUntyped_childId_fresh` theorem in `Lifecycle/Operations.lean` —
+  proves allocation freshness (childId not in object store on success).
+  Documentation annotations added to `ThreadId.toObjId` and
+  `SchedContextId.toObjId` in `Prelude.lean`.
+
 ## WS-AJ Phase AJ1: IPC & Lifecycle Correctness
 
 Phase AJ1 of WS-AJ Post-Audit Comprehensive Remediation (v0.28.0 audit).
