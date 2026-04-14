@@ -1285,11 +1285,18 @@ deployment provides the guarantee.
 pre-allocated objects), the full bundle is NOT proven to hold.
 
 The checked boot path `bootFromPlatformChecked` validates per-object
-well-formedness and uniqueness, but does not compose them into the full
-runtime invariant bundle. The general-config bridge requires a `bootSafe`
-predicate and is deferred to WS-V hardware binding.
+well-formedness (uniqueness via `wellFormed`) AND structural boot safety
+(via `bootSafeObjectCheck`, added in AJ3-C). The `bootSafeObjectCheck`
+Bool-valued function verifies empty endpoint queues, idle notifications,
+CNode bounds, clean TCB state, VSpaceRoot exclusion, and SchedContext
+well-formedness. A soundness bridge theorem
+`bootSafeObjectCheck_sound_structural` proves the Bool check implies the
+structural conjuncts of `bootSafeObject` (all except CNode badge validity).
+The full `bootFromPlatform_proofLayerInvariantBundle_general` theorem
+composes `bootSafe` with boot preservation to discharge the complete
+10-component invariant bundle.
 
-**Source**: Boot.lean:497-519.
+**Source**: Boot.lean.
 
 ### 8.14.3 MMIO Model Limitations (AI6 / M-10)
 

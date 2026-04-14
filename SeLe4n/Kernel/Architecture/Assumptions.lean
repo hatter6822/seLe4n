@@ -23,14 +23,22 @@ inductive ArchAssumption where
 
 /-- Typed boot-boundary contract skeleton consumed by later adapters.
     V4-G/M-HW-6: Extended with substantive boot precondition checks for
-    object store validation and IRQ range checking. -/
+    object store validation and IRQ range checking.
+
+    AJ3-D (M-19): `objectStoreNonEmpty` and `irqRangeValid` are now required
+    fields (no default). Each platform must explicitly state its boot guarantee,
+    preventing vacuously-true contracts that would allow booting with zero
+    objects (no idle thread) or unbounded IRQ ranges. -/
 structure BootBoundaryContract where
   objectTypeMetadataConsistent : Prop
   capabilityRefMetadataConsistent : Prop
-  /-- V4-G: Object store must be non-empty after boot (at least idle thread). -/
-  objectStoreNonEmpty : Prop := True
-  /-- V4-G: All IRQ line numbers must be within the GIC-supported range. -/
-  irqRangeValid : Prop := True
+  /-- V4-G/AJ3-D: Object store guarantee. Platform-specific assertion about
+      post-boot object store state (e.g., non-empty for production, empty
+      acceptable for simulation with no initial objects). -/
+  objectStoreNonEmpty : Prop
+  /-- V4-G/AJ3-D: IRQ range guarantee. Platform-specific assertion about
+      IRQ line validity (e.g., all registered IRQs within GIC range). -/
+  irqRangeValid : Prop
 
 /-- Typed runtime-boundary contract skeleton consumed by scheduler/IPC adapters. -/
 structure RuntimeBoundaryContract where

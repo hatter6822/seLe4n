@@ -2278,11 +2278,10 @@ trust boundary specification.
 **Device tree abstraction** (`Platform/DeviceTree.lean`):
 - `DeviceTree` structure — platform-independent board configuration.
 - `DeviceTree.fromBoardConstants` — static construction from hardcoded constants.
-- `DeviceTree.fromDtb` — stub (AF3-F/AF-42: always returns `none`, deferred to WS-V).
-- `DeviceTree.fromDtbFull` — full FDT parsing pipeline with `parseFdtNodes`.
-- `parseFdtNodes` — FDT structure block traversal (AF3-A: fuel exhaustion returns `none`).
+- `DeviceTree.fromDtbFull` — full FDT parsing pipeline returning `Except DeviceTreeParseError DeviceTree` (AJ3-A: errors propagated; AJ3-B: `physicalAddressWidth` required parameter).
+- `parseFdtNodes` — FDT structure block traversal (AI4-B: fuel exhaustion returns `.error .fuelExhausted`).
 - `extractPeripherals` — peripheral device extraction (AF3-D: 2-level depth, sufficient for RPi5).
-- `parseFdtHeader_fromDtbFull_some` — correctness: valid header + memory node implies `some`.
+- `parseFdtHeader_fromDtbFull_ok` — correctness: valid header + memory node + parse success implies `.ok` (AJ3-A).
 - `rpi5DeviceTree` — RPi5 instance with validation proof (`rpi5DeviceTree_valid`).
 
 **IPC Buffer Configuration** (`Architecture/IpcBufferValidation.lean`, D3):

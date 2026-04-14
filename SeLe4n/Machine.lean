@@ -395,13 +395,15 @@ structure MachineState where
   registerCount : Nat := 32
   /-- AG3-G: ARM64 system registers (exception, MMU configuration). -/
   systemRegisters : SystemRegisterFile := default
-  /-- AG5-G: Interrupt state — models PSTATE.I (IRQ mask bit).
+  /-- AG5-G/AJ3-E (L-04): Interrupt state — models PSTATE.I (IRQ mask bit).
       `true` = interrupts enabled (PSTATE.I = 0, IRQ unmasked).
       `false` = interrupts disabled (PSTATE.I = 1, IRQ masked).
-      On ARM64, exception entry automatically sets PSTATE.I = 1 (disabled).
+      On ARM64, the CPU boots with PSTATE.I = 1 (interrupts disabled).
+      Default is `false` to match hardware reset state. The boot sequence
+      explicitly enables interrupts after GIC initialization.
       The kernel runs with interrupts disabled throughout; this field models
       the DAIF register state manipulated by `sele4n-hal/src/interrupts.rs`. -/
-  interruptsEnabled : Bool := true
+  interruptsEnabled : Bool := false
 
 instance : Inhabited MachineState where
   default := { regs := default, memory := (fun _ => 0), timer := 0 }

@@ -34,8 +34,8 @@ an abstraction layer so that:
 1. **Static validation**: `DeviceTree.fromBoardConstants` constructs a
    `DeviceTree` from hardcoded constants, enabling compile-time consistency
    checks.
-2. **Future DTB parsing**: `DeviceTree.fromDtb` (stub) will construct a
-   `DeviceTree` from a raw DTB byte array, enabling runtime discovery.
+2. **DTB parsing**: `DeviceTree.fromDtbFull` constructs a `DeviceTree`
+   from a raw DTB byte array, enabling runtime discovery.
 3. **Platform-independent kernel**: The kernel operates on `DeviceTree`
    values, not platform-specific constants.
 
@@ -129,28 +129,9 @@ def DeviceTree.fromBoardConstants
     timerFrequencyHz := timerHz
     debugUartBase := uartBase }
 
-/-- V4-M4/S6-F/W4-D: Construct a `DeviceTree` from a raw device tree blob byte array.
-    Stub — returns `none`. Production DTB parsing is provided by
-    `DeviceTree.fromDtbFull` (defined below after parsing infrastructure).
-
-    This declaration exists for forward compatibility — callers that import
-    `DeviceTree.lean` can reference `fromDtb`. For actual DTB parsing, use
-    `fromDtbFull` or `fromDtbParsed` directly.
-
-    W4-D (LOW-02): Removed stale `@[implemented_by]` comment. No such
-    attribute exists; `fromDtbFull` is a separate function, not an override.
-
-    AF3-F (AF-42): Stub — always returns `none`. Use `fromDtbFull` for
-    actual DTB parsing. Wiring this entry point to `fromDtbFull` or
-    deprecating in favor of `fromDtbParsed` is deferred to WS-V.
-
-    AI6-B (M-08): H3 DTB parsing placeholder. This stub exists for backward
-    compatibility with callers that import `DeviceTree.lean` and reference
-    `fromDtb`. The production parsing path is `fromDtbFull` which returns
-    `Except DeviceTreeParseError (List FdtNode)` with fuel-exhaustion
-    reporting (AI4-B). -/
-def DeviceTree.fromDtb (_blob : ByteArray) : Option DeviceTree :=
-  none  -- Stub: use `fromDtbFull` for actual DTB parsing
+-- AJ3-F (L-12): Removed dead `DeviceTree.fromDtb` stub that unconditionally
+-- returned `none`. Production DTB parsing is `DeviceTree.fromDtbFull`.
+-- Also removed `fromDtbParsed` convenience alias (no callers).
 
 -- ============================================================================
 -- T6-M/M-ARCH-2: DTB parsing foundation
@@ -385,16 +366,18 @@ theorem classifyAddress_found (addr : PAddr) (pm : List MemoryRegion) (r : Memor
 
     Full FDT structure block traversal (node/property iteration, string table
     lookup, `/chosen` and `/cpus` nodes) is deferred to WS-U. -/
+-- AJ3-B (M-18): `physicalAddressWidth` is now a required parameter (no default).
+-- Callers must explicitly specify the PA width for their platform to prevent
+-- silent misconfiguration (RPi5 BCM2712 = 44-bit, not 48-bit).
 def DeviceTree.fromDtbWithRegions (blob : ByteArray)
-    (memoryRegBytes : Option ByteArray := none)
-    (physicalAddressWidth : Nat := 48) : Option DeviceTree := do
+    (physicalAddressWidth : Nat)
+    (memoryRegBytes : Option ByteArray := none) : Option DeviceTree := do
   let hdr ← parseAndValidateFdtHeader blob
   let memRegions := match memoryRegBytes with
     | some regBlob => fdtRegionsToMemoryRegions (extractMemoryRegions regBlob)
     | none => []
-  -- U2-E/U-H07: physicalAddressWidth is now parameterized (default 48).
-  -- BCM2712 (RPi5) should pass 44. Callers should derive this from the DTB
-  -- or board-specific constants rather than relying on the default.
+  -- AJ3-B (M-18): physicalAddressWidth is a required parameter — callers must
+  -- pass the platform-specific value (e.g., 44 for RPi5 BCM2712, 52 for Sim).
   let config : MachineConfig := {
     registerWidth := 64
     virtualAddressWidth := 48
@@ -844,62 +827,68 @@ def extractPeripherals (nodes : List FdtNode) : List DeviceEntry :=
     6. X4-C: Extracts timer frequency from `/timer` node
     7. Constructs a `DeviceTree` from all parsed data
 
-    Returns `none` if the DTB is malformed, has no valid header, or contains
-    no `/memory` node with a `reg` property. -/
-def DeviceTree.fromDtbFull (blob : ByteArray) (physicalAddressWidth : Nat := 48)
-    : Option DeviceTree := do
-  let hdr ← parseAndValidateFdtHeader blob
-  let searchResult ← findMemoryRegProperty blob hdr
-  let memRegions := fdtRegionsToMemoryRegions
-    (extractMemoryRegions searchResult.regPropertyBytes)
-  if memRegions.isEmpty then none  -- /memory node had empty reg property
-  else
-    let config : MachineConfig := {
-      registerWidth := 64
-      virtualAddressWidth := 48
-      physicalAddressWidth := physicalAddressWidth
-      pageSize := 4096
-      maxASID := 65536
-      memoryMap := memRegions
-    }
-    -- X4-A/B/C: Parse full FDT node tree for device discovery
-    -- AI4-B (M-09): parseFdtNodes now returns Except DeviceTreeParseError.
-    -- Fuel exhaustion and malformed blob are distinguishable. Empty fallback
-    -- is preserved: downstream extractors return their own `none`/defaults
-    -- when expected nodes are missing.
-    let nodes := match parseFdtNodes blob hdr with
-      | .ok ns => ns
-      | .error .fuelExhausted => []
-      | .error _ => []
-    some {
-      platformName := s!"DTB-parsed (version {hdr.version.toNat})"
-      machineConfig := config
-      peripherals := extractPeripherals nodes
-      interruptController := extractInterruptController nodes
-      timerFrequencyHz := extractTimerFrequency nodes
-    }
+    Returns `.error .malformedBlob` if the DTB is malformed, has no valid
+    header, or contains no `/memory` node with a `reg` property.
 
-/-- V4-M4: Convenience alias mapping `fromDtb` to the full parsing pipeline.
-    Callers that want full FDT traversal should use `fromDtbFull` directly. -/
-abbrev DeviceTree.fromDtbParsed (blob : ByteArray) : Option DeviceTree :=
-  DeviceTree.fromDtbFull blob
+    AJ3-A (M-17): Now returns `Except DeviceTreeParseError DeviceTree` instead
+    of `Option DeviceTree`. Fuel exhaustion and malformed blob errors are
+    propagated to callers instead of silently falling back to empty node lists.
+    This prevents the kernel from booting with missing peripheral data. -/
+-- AJ3-B (M-18): `physicalAddressWidth` is now a required parameter (no default).
+def DeviceTree.fromDtbFull (blob : ByteArray) (physicalAddressWidth : Nat)
+    : Except DeviceTreeParseError DeviceTree :=
+  match parseAndValidateFdtHeader blob with
+  | none => .error .malformedBlob
+  | some hdr =>
+    match findMemoryRegProperty blob hdr with
+    | none => .error .malformedBlob
+    | some searchResult =>
+      let memRegions := fdtRegionsToMemoryRegions
+        (extractMemoryRegions searchResult.regPropertyBytes)
+      if memRegions.isEmpty then .error .malformedBlob
+      else
+        let config : MachineConfig := {
+          registerWidth := 64
+          virtualAddressWidth := 48
+          physicalAddressWidth := physicalAddressWidth
+          pageSize := 4096
+          maxASID := 65536
+          memoryMap := memRegions
+        }
+        -- X4-A/B/C: Parse full FDT node tree for device discovery
+        -- AI4-B (M-09): parseFdtNodes returns Except DeviceTreeParseError.
+        -- AJ3-A (M-17): Errors are now propagated instead of silently swallowed.
+        match parseFdtNodes blob hdr with
+        | .ok nodes =>
+          .ok {
+            platformName := s!"DTB-parsed (version {hdr.version.toNat})"
+            machineConfig := config
+            peripherals := extractPeripherals nodes
+            interruptController := extractInterruptController nodes
+            timerFrequencyHz := extractTimerFrequency nodes
+          }
+        | .error e => .error e
+
+-- AJ3-F (L-12): Removed `fromDtbParsed` convenience alias (no callers).
+-- Use `DeviceTree.fromDtbFull` directly.
 
 -- ============================================================================
 -- V4-M5/L-PLAT-1: Correctness theorems
 -- ============================================================================
 
-/-- V4-M5: If a blob has valid FDT magic, version, and a `/memory` node with
-    a `reg` property, `fromDtbFull` returns `some`. -/
-theorem parseFdtHeader_fromDtbFull_some (blob : ByteArray)
+/-- V4-M5/AJ3-A: If a blob has valid FDT magic, version, a `/memory` node with
+    a `reg` property, and `parseFdtNodes` succeeds, `fromDtbFull` returns `.ok`. -/
+theorem parseFdtHeader_fromDtbFull_ok (blob : ByteArray)
+    (physicalAddressWidth : Nat)
     (hdr : FdtHeader)
     (hValid : parseAndValidateFdtHeader blob = some hdr)
     (result : FdtSearchResult)
     (hSearch : findMemoryRegProperty blob hdr = some result)
-    (hNonEmpty : (fdtRegionsToMemoryRegions (extractMemoryRegions result.regPropertyBytes)).isEmpty = false) :
-    ∃ dt, DeviceTree.fromDtbFull blob = some dt := by
-  simp only [DeviceTree.fromDtbFull, hValid, hSearch, bind, Option.bind]
-  cases h : (fdtRegionsToMemoryRegions (extractMemoryRegions result.regPropertyBytes)).isEmpty
-  · exact ⟨_, rfl⟩
-  · simp [h] at hNonEmpty
+    (hNonEmpty : (fdtRegionsToMemoryRegions (extractMemoryRegions result.regPropertyBytes)).isEmpty = false)
+    (nodes : List FdtNode)
+    (hNodes : parseFdtNodes blob hdr = .ok nodes) :
+    ∃ dt, DeviceTree.fromDtbFull blob physicalAddressWidth = .ok dt := by
+  unfold DeviceTree.fromDtbFull
+  simp [hValid, hSearch, hNonEmpty, hNodes]
 
 end SeLe4n.Platform
