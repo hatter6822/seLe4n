@@ -1013,7 +1013,7 @@ is used before proper configuration.
 
 ### AJ5-A: Promote MMIO Alignment to Runtime `assert!` (M-20/MEDIUM)
 
-**Problem:** All four MMIO functions in `mmio.rs` (lines 41, 63, 83, 103) use
+**Problem:** All four MMIO functions in `mmio.rs` (lines 41, 63, 83, 104) use
 `debug_assert!` for alignment checks. In release builds, these are stripped.
 Unaligned Device memory accesses on ARM64 cause a synchronous Data Abort
 fault with no prior warning.
