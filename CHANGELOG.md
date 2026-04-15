@@ -1,4 +1,55 @@
-## WS-AJ Phase AJ3: Platform & Boot Pipeline
+## v0.28.4 — WS-AJ Phase AJ4: Architecture Model Correctness
+
+Phase AJ4 of WS-AJ Post-Audit Comprehensive Remediation (v0.28.0 audit).
+Addresses 2 MEDIUM and 2 LOW findings in architecture model correctness,
+TLB flush optimization, IPC buffer validation, and lifecycle initialization.
+Key changes: tautological `pageTableWalk_deterministic` replaced with genuine
+structural correctness theorems (M-07), full-TLB flush replaced with targeted
+per-(ASID,VAddr) flush in VSpace operations (M-06), physical address bounds
+check added to IPC buffer validation (L-06), and TCB placeholder IDs replaced
+with named sentinels (L-09). Gate: `lake build` (256 jobs) + `test_smoke.sh`
++ `test_full.sh`. Zero sorry/axiom.
+
+### Changes
+
+- **AJ4-A** (M-07/MEDIUM): Deleted tautological `pageTableWalk_deterministic`
+  (trivially true for any pure Lean function — proved nothing about page table
+  walks). Replaced with two genuine theorems: `pageTableWalk_fault_on_non_table_l0`
+  proves translation fault when L0 entry is not a table descriptor (ARM64
+  architectural requirement); `pageTableWalkPerms_wx_bridge` composes the walk
+  with W^X compliance transfer from hardware attributes to abstract
+  `PagePermissions`, leveraging `hwDescriptor_wxCompliant_bridge`.
+- **AJ4-B** (M-06/MEDIUM): Replaced full-TLB invalidation (`adapterFlushTlb`)
+  with targeted per-(ASID,VAddr) flush (`adapterFlushTlbByVAddr`) in both
+  `vspaceMapPageWithFlush` and `vspaceUnmapPageWithFlush`. Reduces TLB pressure
+  on multi-address-space workloads — only the modified entry is invalidated.
+  Added frame lemmas proving entries not matching `(asid, vaddr)` remain
+  TLB-consistent: `vspaceMapPage_entry_consistent_frame` (HashMap insert frame
+  via `getElem?_insert_ne`), `vspaceUnmapPage_entry_consistent_frame` (HashMap
+  erase frame via `getElem?_erase_ne`). Helper `resolveAsidRoot_some_facts`
+  extracts ASID table + object store facts from successful resolves.
+  `vspaceMapPage_tlb_eq` and `vspaceUnmapPage_tlb_eq` prove page table
+  operations do not modify the TLB. TLB consistency preservation theorems
+  (`vspaceMapPageWithFlush_preserves_tlbConsistent`,
+  `vspaceUnmapPageWithFlush_preserves_tlbConsistent`) updated with full proofs
+  using the frame lemmas.
+- **AJ4-C** (L-06/LOW): Added physical address bounds check (step 7) to
+  `validateIpcBufferAddress`. After the write-permission check, the mapped PA
+  is validated against `2^st.machine.physicalAddressWidth`. Prevents IPC buffers
+  from referencing PAs outside the valid range (e.g., > 2^44 on RPi5 BCM2712).
+  `validateIpcBufferAddress_implies_mapped_writable` postcondition extended to
+  include PA bounds guarantee. `frozenSetIPCBuffer` updated with matching PA
+  bounds check for frozen/production validation consistency. Validation pipeline
+  updated from 5-step to 7-step in documentation.
+- **AJ4-D** (L-09/LOW): Replaced raw `ofNat 0` placeholder IDs in
+  `objectOfTypeTag` and `objectOfKernelType` TCB branches with named sentinels:
+  `ThreadId.sentinel`, `ObjId.sentinel` for `tid`/`cspaceRoot`/`vspaceRoot`,
+  `SchedContextId.sentinel` for SchedContext creation. Follows H-06/WS-E3
+  convention (ID 0 reserved system-wide). Added `TCB.isUnconfigured` boolean
+  predicate checking all three sentinel fields. Non-reference defaults
+  (`priority`, `domain`, `ipcBuffer`) correctly remain at `ofNat 0`.
+
+## v0.28.3 — WS-AJ Phase AJ3: Platform & Boot Pipeline
 
 Phase AJ3 of WS-AJ Post-Audit Comprehensive Remediation (v0.28.0 audit).
 Addresses 4 MEDIUM and 2 LOW findings in the platform, boot pipeline, and
@@ -37,7 +88,7 @@ and `fromDtbParsed` alias removed (L-12). Gate: `lake build` (256 jobs) +
 - **AJ3-F** (L-12/LOW): Removed dead `DeviceTree.fromDtb` stub (always
   returned `none`) and `fromDtbParsed` convenience alias (no callers).
 
-## WS-AJ Phase AJ2: Security & Information Flow Hardening
+## v0.28.2 — WS-AJ Phase AJ2: Security & Information Flow Hardening
 
 Phase AJ2 of WS-AJ Post-Audit Comprehensive Remediation (v0.28.0 audit).
 Addresses 4 MEDIUM findings in access control and information flow subsystems.
@@ -80,7 +131,7 @@ Zero sorry/axiom.
   Documentation annotations added to `ThreadId.toObjId` and
   `SchedContextId.toObjId` in `Prelude.lean`.
 
-## WS-AJ Phase AJ1: IPC & Lifecycle Correctness
+## v0.28.1 — WS-AJ Phase AJ1: IPC & Lifecycle Correctness
 
 Phase AJ1 of WS-AJ Post-Audit Comprehensive Remediation (v0.28.0 audit).
 Addresses 4 MEDIUM and 2 LOW findings in IPC and lifecycle subsystems. Key

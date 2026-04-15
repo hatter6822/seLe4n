@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.28.0` (`lakefile.toml`) |
+| **Package version** | `0.28.4` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 93,837 across 141 Lean files |
 | **Test LoC** | 11,616 across 17 Lean test suites |
 | **Proved declarations** | 2,780 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
-| **Active workstream** | **WS-AI PORTFOLIO COMPLETE** (v0.27.7–v0.28.0). Post-Audit Comprehensive Remediation — 7 phases (AI1–AI7), 37 sub-tasks. Rust ABI fixes, interrupt safety, scheduler/PIP correctness, IPC hardening, platform safety, documentation, testing & closure. Plan: [`AUDIT_v0.27.6_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md). Prior: WS-AH (v0.27.2–v0.27.6), WS-AG (v0.26.0–v0.27.1), WS-AF–WS-B. **Next: WS-V (multi-core SMP).** |
+| **Active workstream** | **WS-AJ Phases AJ1–AJ4 COMPLETE** (v0.28.1–v0.28.4). Post-Audit Comprehensive Remediation (v0.28.0 audit) — 4 of 6 phases, 20 sub-tasks. IPC/lifecycle correctness, security hardening, platform/boot pipeline, architecture model correctness. Plan: [`AUDIT_v0.28.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md). Prior: WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG–WS-B. **Next: WS-AJ Phase AJ5 (Rust HAL) → AJ6 (Closure).** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -299,9 +299,10 @@ prove authority non-escalation (`setPriority_authority_bounded`,
 serviceRegistry, and lifecycle field preservation.
 
 **D3 (v0.24.2):** IPC buffer configuration is now fully implemented.
-`setIPCBufferOp` validates the buffer address through a 5-step pipeline
+`setIPCBufferOp` validates the buffer address through a 7-step pipeline
 (alignment to 512 bytes, canonical address check, VSpace root validity,
-mapping existence via VSpaceRoot.lookup, write permission) before updating
+mapping existence via VSpaceRoot.lookup, write permission, physical address
+bounds check against `2^physicalAddressWidth` — AJ4-C) before updating
 the TCB's `ipcBuffer` field. The operation is wired into `dispatchWithCap`
 (`SyscallId.tcbSetIPCBuffer`) as a capability-only arm with a frozen-phase
 equivalent (`frozenSetIPCBuffer`). Validation correctness theorems prove that
@@ -602,7 +603,8 @@ provides a formal model of the 4-level translation table structure:
 - **W^X enforcement**: `hwDescriptor_wxCompliant_bridge` bridges hardware
   descriptor AP/UXN/PXN bits to the abstract VSpace W^X invariant
 - **Walk**: `pageTableWalk` uses structural recursion (no fuel) with
-  `pageTableWalk_deterministic` proof
+  `pageTableWalk_fault_on_non_table_l0` (L0 fault condition) and
+  `pageTableWalkPerms_wx_bridge` (W^X compliance transfer) proofs
 
 The VSpace ARMv8 instance (`VSpaceARMv8.lean`, AG6-C/D) provides the
 `VSpaceBackend` typeclass implementation using a shadow `VSpaceRoot` with
@@ -875,9 +877,11 @@ All production VSpace operations must use TLB-flushing variants to ensure
 hardware TLB consistency:
 
 - **`vspaceMapPageCheckedWithFlush`**: Production path for mapping pages.
-  Performs W^X checks, bounds validation, and TLB flush after insertion.
+  Performs W^X checks, bounds validation, and targeted per-(ASID,VAddr) TLB
+  flush after insertion (AJ4-B). Only the modified TLB entry is invalidated;
+  other cached translations are preserved for performance.
 - **`vspaceUnmapPageWithFlush`**: Production path for unmapping pages.
-  Flushes the TLB entry after removal.
+  Targeted per-(ASID,VAddr) TLB flush after removal (AJ4-B).
 - **Internal helpers**: The unflushed `vspaceMapPage`/`vspaceUnmapPage` are
   internal proof decomposition helpers only. They carry explicit warnings
   against direct use in production paths.

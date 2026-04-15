@@ -35,7 +35,7 @@ WS-AF Phase AF1 complete. Phase AF2 complete. Phase AF3 complete. Phase AF4 comp
 WS-AG Phase AG1 complete. Phase AG2 complete. Phase AG2 Audit complete. Phase AG3 complete. Phase AG4 complete. Phase AG5 complete. Phase AG6 complete. Phase AG7 complete. Phase AG8 complete. Phase AG9 complete. Phase AG10 complete. **WS-AG PORTFOLIO COMPLETE.**
 WS-AH Phase AH1 complete. Phase AH2 complete. Phase AH3 complete. Phase AH4 complete. Phase AH5 complete. **WS-AH PORTFOLIO COMPLETE.**
 WS-AI Phase AI1 complete. Phase AI2 complete. Phase AI3 complete. Phase AI4 complete. Phase AI5 complete. Phase AI6 complete. Phase AI7 complete. **WS-AI PORTFOLIO COMPLETE.**
-WS-AJ Phase AJ1 complete. Phase AJ2 complete. Phase AJ3 complete.
+WS-AJ Phase AJ1 complete (v0.28.1). Phase AJ2 complete (v0.28.2). Phase AJ3 complete (v0.28.3). Phase AJ4 complete (v0.28.4).
 
 ### WS-AJ: Post-Audit Comprehensive Remediation (v0.28.0 Audit)
 
