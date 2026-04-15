@@ -415,16 +415,23 @@ def pageTableWalk (mem : Memory) (ttbr : PAddr) (va : VAddr)
   | _ => none  -- L0 entry not a valid table → translation fault
 
 -- ============================================================================
--- AG6-B-iv: Determinism proof
+-- AG6-B-iv: Structural correctness theorems (AJ4-A / M-07)
 -- ============================================================================
 
-/-- `pageTableWalk` is a total, deterministic function — for any input, there
-    is exactly one result. This holds trivially because `pageTableWalk` is a
-    pure function with all `match` arms covered. -/
-theorem pageTableWalk_deterministic (mem : Memory) (ttbr : PAddr) (va : VAddr) :
-    ∃ result, pageTableWalk mem ttbr va = result ∧
-    ∀ result', pageTableWalk mem ttbr va = result' → result' = result :=
-  ⟨_, rfl, fun _ h => h.symm⟩
+/-- AJ4-A (M-07): `pageTableWalk` returns `none` (translation fault) when the
+    L0 descriptor is not a table entry.  ARM64 requires L0 entries to be table
+    descriptors pointing to L1 tables — block/page/invalid at L0 is a fault.
+
+    Replaces the former tautological `pageTableWalk_deterministic` (which was
+    trivially true for any pure Lean function) with a genuine structural
+    correctness property. -/
+theorem pageTableWalk_fault_on_non_table_l0 (mem : Memory) (ttbr : PAddr) (va : VAddr)
+    (h : ∀ addr, readDescriptor mem ttbr (l0Index va) .l0 ≠ .table addr) :
+    pageTableWalk mem ttbr va = none := by
+  unfold pageTableWalk
+  cases hd : readDescriptor mem ttbr (l0Index va) .l0 with
+  | table addr => exact absurd hd (h addr)
+  | _ => rfl
 
 /-- Page table walk with permissions: wraps `pageTableWalk` to return
     `(PAddr × PagePermissions)` by converting hardware attributes. -/
@@ -432,5 +439,20 @@ def pageTableWalkPerms (mem : Memory) (ttbr : PAddr) (va : VAddr)
     : Option (PAddr × PagePermissions) :=
   (pageTableWalk mem ttbr va).map fun (pa, attrs) =>
     (pa, toPagePermissions attrs)
+
+/-- AJ4-A (M-07): When `pageTableWalkPerms` succeeds, the returned permissions
+    are W^X compliant provided the terminal hardware descriptor's attributes
+    satisfy W^X compliance.  This bridges the hardware page table walk to the
+    abstract `PagePermissions.wxCompliant` security property, composing
+    `pageTableWalk` with `hwDescriptor_wxCompliant_bridge`. -/
+theorem pageTableWalkPerms_wx_bridge (mem : Memory) (ttbr : PAddr) (va : VAddr)
+    (pa : PAddr) (attrs : PageAttributes)
+    (hWalk : pageTableWalk mem ttbr va = some (pa, attrs))
+    (hWx : (attrs.pxn = false ∨ attrs.uxn = false) → attrs.ap.isReadOnly = true) :
+    ∃ perms, pageTableWalkPerms mem ttbr va = some (pa, perms) ∧
+    PagePermissions.wxCompliant perms = true := by
+  refine ⟨toPagePermissions attrs, ?_, hwDescriptor_wxCompliant_bridge attrs hWx⟩
+  unfold pageTableWalkPerms
+  simp [hWalk, Option.map]
 
 end SeLe4n.Kernel.Architecture

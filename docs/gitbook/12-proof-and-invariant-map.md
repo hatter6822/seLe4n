@@ -700,7 +700,7 @@ TLB/cache maintenance model (`TlbModel.lean`, WS-H11/H-10):
 - `adapterFlushTlbByVAddr` — per-(ASID,VAddr) invalidation (ARM64 `TLBI VAE1`)
 - `tlbConsistent` — invariant: all TLB entries match current page tables
 - R7-A: `TlbState` integrated into `SystemState`; `tlbConsistent` added to `proofLayerInvariantBundle`
-- `vspaceMapPageWithFlush`, `vspaceUnmapPageWithFlush` — composed page-table + TLB-flush operations
+- `vspaceMapPageWithFlush`, `vspaceUnmapPageWithFlush` — composed page-table + targeted per-(ASID,VAddr) TLB-flush operations (AJ4-B)
 - 13 TLB theorems: `tlbConsistent_empty`, `adapterFlushTlb_restores_tlbConsistent`, `adapterFlushTlbByAsid_preserves_tlbConsistent`, `vspaceMapPage_then_flush_preserves_tlbConsistent`, `vspaceUnmapPage_then_flush_preserves_tlbConsistent`, `adapterFlushTlbByAsid_removes_matching`, `adapterFlushTlbByAsid_preserves_other`, `adapterFlushTlbByVAddr_preserves_tlbConsistent`, `adapterFlushTlbByVAddr_removes_matching`, `cross_asid_tlb_isolation`, `vspaceMapPageWithFlush_preserves_tlbConsistent`, `vspaceUnmapPageWithFlush_preserves_tlbConsistent`, `tlbConsistent_of_objects_eq`
 
 Cache coherency model (`CacheModel.lean`, AG8-B):
@@ -2285,11 +2285,11 @@ trust boundary specification.
 - `rpi5DeviceTree` — RPi5 instance with validation proof (`rpi5DeviceTree_valid`).
 
 **IPC Buffer Configuration** (`Architecture/IpcBufferValidation.lean`, D3):
-- `validateIpcBufferAddress` — 5-step validation pipeline (alignment → canonical → VSpace root → mapping → write permission).
+- `validateIpcBufferAddress` — 7-step validation pipeline (alignment → canonical → VSpace root → mapping → write permission → PA bounds).
 - `setIPCBufferOp` — validate then update `tcb.ipcBuffer`.
 - `validateIpcBufferAddress_implies_aligned` — success implies `addr % 512 = 0`.
 - `validateIpcBufferAddress_implies_canonical` — success implies `addr < 2^48`.
-- `validateIpcBufferAddress_implies_mapped_writable` — success implies VSpace mapping with write permission.
+- `validateIpcBufferAddress_implies_mapped_writable` — success implies VSpace mapping with write permission and PA within `2^physicalAddressWidth`.
 - `setIPCBufferOp_scheduler_eq` — scheduler state preserved.
 - `setIPCBufferOp_serviceRegistry_eq` — service registry preserved.
 - `setIPCBufferOp_irqHandlers_eq` — IRQ handlers preserved.

@@ -162,36 +162,48 @@ def vspaceLookup (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel SeLe4n.PAd
 -- R7-A.3/M-17: TLB-flushing VSpace operations
 -- ============================================================================
 
-/-- R7-A.3/M-17/S6-A: **Production entry point** — VSpace map with integrated TLB flush.
+/-- R7-A.3/M-17/S6-A: **Production entry point** — VSpace map with targeted TLB flush.
 
-    Composes page table insertion with a full TLB flush, ensuring `tlbConsistent`
-    is preserved through the combined operation. All production dispatch paths
-    (syscall API, platform adapters) must use this function or
-    `vspaceMapPageCheckedWithFlush`.
+    AJ4-B (M-06): Composes page table insertion with a per-(ASID, VAddr) targeted
+    TLB flush. Only TLB entries matching `(asid, vaddr)` are invalidated; all other
+    cached translations are preserved. This replaces the former full-TLB flush
+    (`adapterFlushTlb`) with `adapterFlushTlbByVAddr`, reducing TLB pressure on
+    multi-address-space workloads.
 
-    The core `vspaceMapPage` is retained as an internal proof decomposition
-    helper — it operates on page tables only and does not touch the TLB. -/
+    Correctness: `vspaceMapPage` only modifies the VSpaceRoot bound to `asid`, and
+    only inserts a mapping at `vaddr`. The targeted flush removes any stale TLB
+    entries at `(asid, vaddr)`. Remaining TLB entries are unaffected because:
+    - Entries for other ASIDs resolve to unmodified VSpaceRoots
+    - Entries for the same ASID but different VAddr resolve to the same VSpaceRoot
+      whose other mappings are preserved by HashMap insert frame (`getElem?_insert_ne`)
+
+    All production dispatch paths (syscall API, platform adapters) must use this
+    function or `vspaceMapPageCheckedWithFlush`. -/
 def vspaceMapPageWithFlush (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
     (perms : PagePermissions := PagePermissions.readOnly) : Kernel Unit :=
   fun st =>
     match vspaceMapPage asid vaddr paddr perms st with
     | .error e => .error e
     | .ok ((), st') =>
-        .ok ((), { st' with tlb := adapterFlushTlb st'.tlb })
+        .ok ((), { st' with tlb := adapterFlushTlbByVAddr st'.tlb asid vaddr })
 
-/-- R7-A.3/M-17/S6-A: **Production entry point** — VSpace unmap with integrated TLB flush.
+/-- R7-A.3/M-17/S6-A: **Production entry point** — VSpace unmap with targeted TLB flush.
 
-    Composes page table removal with a full TLB invalidation. After unmapping a
-    virtual address, all TLB entries are cleared, preventing use-after-unmap
-    attacks on hardware. A full flush is conservative but simple; hardware
-    platforms may refine to per-ASID or per-VAddr flushes via
-    `adapterFlushTlbByVAddr`. -/
+    AJ4-B (M-06): Composes page table removal with a per-(ASID, VAddr) targeted
+    TLB invalidation. After unmapping a virtual address, only TLB entries matching
+    `(asid, vaddr)` are cleared, preventing use-after-unmap attacks while preserving
+    other cached translations. This replaces the former full-TLB flush.
+
+    Correctness: `vspaceUnmapPage` only modifies the VSpaceRoot bound to `asid`, and
+    only erases the mapping at `vaddr`. The targeted flush removes any stale TLB
+    entries at `(asid, vaddr)`. Remaining entries are unaffected by HashMap erase
+    frame (`getElem?_erase_ne`). -/
 def vspaceUnmapPageWithFlush (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) : Kernel Unit :=
   fun st =>
     match vspaceUnmapPage asid vaddr st with
     | .error e => .error e
     | .ok ((), st') =>
-        .ok ((), { st' with tlb := adapterFlushTlb st'.tlb })
+        .ok ((), { st' with tlb := adapterFlushTlbByVAddr st'.tlb asid vaddr })
 
 /-- R7-A.3/M-17/S6-A: **Production entry point** — address-bounds-checked map with TLB flush.
 This is the recommended entry point for user-space-initiated VSpace map operations. -/
@@ -344,40 +356,274 @@ theorem resolveAsidRoot_of_asidTable_entry
 -- ============================================================================
 
 -- ============================================================================
--- AE4-G (U-27/A-T01): H3 Preparation — Targeted TLB Flush Composition
+-- AJ4-B (M-06): Frame lemmas for targeted TLB flush correctness
 -- ============================================================================
 
-/- **H3 Preparation: Targeted TLB Flush Composition (U-27/A-T01)**
+/-- AJ4-B: `vspaceMapPage` does not modify the TLB — page table changes are
+    decoupled from TLB state. The TLB is only modified by the subsequent flush
+    in `vspaceMapPageWithFlush`. -/
+theorem vspaceMapPage_tlb_eq
+    (st st' : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (hStep : vspaceMapPage asid vaddr paddr perms st = .ok ((), st')) :
+    st'.tlb = st.tlb := by
+  unfold vspaceMapPage at hStep
+  cases hRes : resolveAsidRoot st asid with
+  | none => rw [hRes] at hStep; simp at hStep
+  | some val =>
+    obtain ⟨rootId, root⟩ := val
+    rw [hRes] at hStep; simp at hStep
+    split at hStep
+    · simp at hStep
+    · cases hMap : root.mapPage vaddr paddr perms with
+      | none => rw [hMap] at hStep; simp at hStep
+      | some root' =>
+        rw [hMap] at hStep; simp at hStep
+        unfold storeObject at hStep; cases hStep
+        rfl
 
-When transitioning from full flush (`adapterFlushTlb`) to targeted
-flush (`adapterFlushTlbByAsid`, `adapterFlushTlbByVAddr`) for H3
-hardware binding, the following composition theorems are required:
+/-- AJ4-B: `vspaceUnmapPage` does not modify the TLB. -/
+theorem vspaceUnmapPage_tlb_eq
+    (st st' : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (hStep : vspaceUnmapPage asid vaddr st = .ok ((), st')) :
+    st'.tlb = st.tlb := by
+  unfold vspaceUnmapPage at hStep
+  cases hRes : resolveAsidRoot st asid with
+  | none => rw [hRes] at hStep; simp at hStep
+  | some val =>
+    obtain ⟨rootId, root⟩ := val
+    rw [hRes] at hStep; simp at hStep
+    cases hUnmap : root.unmapPage vaddr with
+    | none => rw [hUnmap] at hStep; simp at hStep
+    | some root' =>
+      rw [hUnmap] at hStep; simp at hStep
+      unfold storeObject at hStep; cases hStep
+      rfl
 
-1. `targetedFlushByAsid_sufficient`: prove that flushing only the
-   modified ASID is sufficient for VSpace map/unmap correctness.
-   Building block: `adapterFlushTlbByAsid_preserves_tlbConsistent`
-   (TlbModel.lean).
+/-- AJ4-B helper: Extract all facts from a successful `resolveAsidRoot`. -/
+private theorem resolveAsidRoot_some_facts
+    (st : SystemState) (asid : SeLe4n.ASID) (rootId : SeLe4n.ObjId) (root : VSpaceRoot)
+    (h : resolveAsidRoot st asid = some (rootId, root)) :
+    st.asidTable[asid]? = some rootId ∧
+    st.objects[rootId]? = some (.vspaceRoot root) ∧
+    root.asid = asid := by
+  unfold resolveAsidRoot at h
+  cases hA : st.asidTable[asid]? with
+  | none => simp [hA] at h
+  | some oid =>
+    simp [hA] at h
+    cases hO : st.objects[oid]? with
+    | none => simp [hO] at h
+    | some obj =>
+      cases obj with
+      | vspaceRoot root' =>
+        simp [hO] at h
+        obtain ⟨hEq, hId, hRoot⟩ := h
+        subst hId; subst hRoot
+        exact ⟨rfl, hO, hEq⟩
+      | _ => simp [hO] at h
 
-2. `targetedFlushByVAddr_sufficient`: prove that flushing only the
-   modified VAddr within an ASID preserves VSpace invariants.
-   Building block: `adapterFlushTlbByVAddr_preserves_tlbConsistent`
-   (TlbModel.lean).
+/-- AJ4-B (M-06): After `vspaceMapPage`, any TLB entry not matching `(asid, vaddr)`
+    remains consistent with the post-state.
 
-3. `targetedFlush_crossAsid_isolation`: prove that targeted flush
-   does not affect other ASIDs. Building block:
-   `cross_asid_tlb_isolation` (TlbModel.lean).
+    Proof strategy:
+    - Different ASID: the entry resolves to the same or a vacuously-true root
+    - Same ASID, different VAddr: lookup is preserved by HashMap insert frame -/
+theorem vspaceMapPage_entry_consistent_frame
+    (st stMid : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (hStep : vspaceMapPage asid vaddr paddr perms st = .ok ((), stMid))
+    (hObjK : st.objects.invExtK) (hAsidK : st.asidTable.invExtK)
+    (hMappingsWF : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot),
+      st.objects[oid]? = some (.vspaceRoot root) → root.mappings.invExt)
+    (entry : TlbEntry)
+    (hNotMatch : ¬(entry.asid = asid ∧ entry.vaddr = vaddr))
+    (hConsistPre : ∀ rootId root,
+      resolveAsidRoot st entry.asid = some (rootId, root) →
+      VSpaceRoot.lookup root entry.vaddr = some (entry.paddr, entry.perms)) :
+    ∀ rootId root,
+      resolveAsidRoot stMid entry.asid = some (rootId, root) →
+      VSpaceRoot.lookup root entry.vaddr = some (entry.paddr, entry.perms) := by
+  -- Extract intermediate values from vspaceMapPage
+  unfold vspaceMapPage at hStep
+  cases hRes : resolveAsidRoot st asid with
+  | none => rw [hRes] at hStep; simp at hStep
+  | some val =>
+    obtain ⟨rootId₀, root₀⟩ := val
+    have ⟨hAsidTbl, hObjRoot, hRootAsidEq⟩ := resolveAsidRoot_some_facts st asid rootId₀ root₀ hRes
+    rw [hRes] at hStep; simp at hStep
+    split at hStep
+    · simp at hStep
+    · rename_i hWx
+      cases hMapPage : root₀.mapPage vaddr paddr perms with
+      | none => rw [hMapPage] at hStep; simp at hStep
+      | some root' =>
+        rw [hMapPage] at hStep; simp at hStep
+        -- hStep : storeObject rootId₀ (.vspaceRoot root') st = .ok ((), stMid)
+        have hRoot'Asid : root'.asid = asid := by
+          unfold VSpaceRoot.mapPage at hMapPage
+          split at hMapPage <;> simp at hMapPage
+          subst hMapPage; exact hRootAsidEq
+        have hStoreObjSelf := storeObject_objects_eq st stMid rootId₀
+          (KernelObject.vspaceRoot root') hObjK.1 hStep
+        have hAsidInv : (match st.objects[rootId₀]? with
+            | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
+            | _ => st.asidTable).invExt := by
+          rw [hObjRoot]; exact st.asidTable.erase_preserves_invExt root₀.asid
+            hAsidK.1 hAsidK.2.1
+        intro rid r hResolveMid
+        by_cases hAsidEq : entry.asid = asid
+        · -- Same ASID, different vaddr
+          subst hAsidEq
+          have hVaddrNe : entry.vaddr ≠ vaddr := fun h => hNotMatch ⟨rfl, h⟩
+          have hResolvePost : resolveAsidRoot stMid entry.asid = some (rootId₀, root') := by
+            apply resolveAsidRoot_of_asidTable_entry
+            · rw [← hRoot'Asid]
+              exact storeObject_asidTable_vspaceRoot st stMid rootId₀ root' hAsidInv hStep
+            · exact hStoreObjSelf
+            · exact hRoot'Asid
+          rw [hResolvePost] at hResolveMid
+          simp at hResolveMid; obtain ⟨_, hr⟩ := hResolveMid; subst hr
+          -- root'.lookup entry.vaddr = root₀.lookup entry.vaddr (HashMap insert frame)
+          have hLookupFrame : root'.lookup entry.vaddr = root₀.lookup entry.vaddr := by
+            simp only [VSpaceRoot.lookup, VSpaceRoot.mapPage] at hMapPage ⊢
+            split at hMapPage
+            · simp at hMapPage
+            · simp at hMapPage; subst hMapPage
+              simp only [RHTable_getElem?_eq_get?]
+              exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _
+                (by intro h; exact hVaddrNe (eq_of_beq h).symm)
+                (hMappingsWF rootId₀ root₀ hObjRoot)
+          rw [hLookupFrame]
+          exact hConsistPre rootId₀ root₀ hRes
+        · -- Different ASID: prove resolveAsidRoot stMid = resolveAsidRoot st
+          have hNeAsid : entry.asid ≠ root'.asid := fun h => hAsidEq (h.trans hRoot'Asid)
+          -- Show ASID table lookup is preserved
+          have hAsidPreserved : stMid.asidTable[entry.asid]? = st.asidTable[entry.asid]? := by
+            have hMid := storeObject_asidTable_vspaceRoot_ne st stMid rootId₀
+              root' entry.asid hNeAsid hAsidInv hStep
+            simp [hObjRoot] at hMid
+            rw [hMid, hRootAsidEq]
+            exact st.asidTable.getElem?_erase_ne_K asid entry.asid
+              (by intro h; exact hAsidEq (eq_of_beq h).symm) hAsidK
+          -- Show resolveAsidRoot is preserved for different ASIDs
+          have hResolveEq : resolveAsidRoot stMid entry.asid = resolveAsidRoot st entry.asid := by
+            simp only [resolveAsidRoot]; rw [hAsidPreserved]
+            cases hEntryLookup : st.asidTable[entry.asid]? with
+            | none => rfl
+            | some oid =>
+              simp only
+              by_cases hOidEq : oid = rootId₀
+              · subst hOidEq
+                rw [hStoreObjSelf, hObjRoot]
+                simp only
+                have h1 : ¬(root'.asid = entry.asid) := by rw [hRoot'Asid]; exact fun h => hAsidEq h.symm
+                have h2 : ¬(root₀.asid = entry.asid) := by rw [hRootAsidEq]; exact fun h => hAsidEq h.symm
+                simp [h1, h2]
+              · rw [storeObject_objects_ne st stMid rootId₀ oid
+                  (KernelObject.vspaceRoot root') hOidEq hObjK.1 hStep]
+          rw [hResolveEq] at hResolveMid
+          exact hConsistPre rid r hResolveMid
 
-Current status: All production paths (`vspaceMapPageCheckedWithFlush`,
-`vspaceUnmapPageWithFlush`) use full TLB flush via `adapterFlushTlb`.
-Targeted variants exist in TlbModel.lean but are not yet wired into
-the production VSpace operations. The full flush is conservative but
-correct; targeted flush is a performance optimization for hardware.
+/-- After `vspaceUnmapPage`, any TLB entry not matching `(asid, vaddr)`
+    remains consistent with the post-state.
 
-The transition to targeted flush requires:
-- Proof that per-ASID flush is sufficient when only one ASID is modified
-- Proof that per-VAddr flush is sufficient when only one mapping changes
-- Integration of `adapterFlushTlbByAsid` into `vspaceMapPageWithFlush`
-  and `vspaceUnmapPageWithFlush` with updated correctness proofs
-- Performance benchmarking on RPi5 to validate the optimization -/
+    Proof strategy (analogous to `vspaceMapPage_entry_consistent_frame`):
+    - Different ASID: the entry resolves to the same or a vacuously-true root
+    - Same ASID, different VAddr: lookup is preserved by HashMap erase frame -/
+theorem vspaceUnmapPage_entry_consistent_frame
+    (st stMid : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (hStep : vspaceUnmapPage asid vaddr st = .ok ((), stMid))
+    (hObjK : st.objects.invExtK) (hAsidK : st.asidTable.invExtK)
+    (hMappingsWF : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot),
+      st.objects[oid]? = some (.vspaceRoot root) → root.mappings.invExt)
+    (hMappingsSize : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot),
+      st.objects[oid]? = some (.vspaceRoot root) → root.mappings.size < root.mappings.capacity)
+    (entry : TlbEntry)
+    (hNotMatch : ¬(entry.asid = asid ∧ entry.vaddr = vaddr))
+    (hConsistPre : ∀ rootId root,
+      resolveAsidRoot st entry.asid = some (rootId, root) →
+      VSpaceRoot.lookup root entry.vaddr = some (entry.paddr, entry.perms)) :
+    ∀ rootId root,
+      resolveAsidRoot stMid entry.asid = some (rootId, root) →
+      VSpaceRoot.lookup root entry.vaddr = some (entry.paddr, entry.perms) := by
+  -- Extract intermediate values from vspaceUnmapPage
+  unfold vspaceUnmapPage at hStep
+  cases hRes : resolveAsidRoot st asid with
+  | none => rw [hRes] at hStep; simp at hStep
+  | some val =>
+    obtain ⟨rootId₀, root₀⟩ := val
+    have ⟨hAsidTbl, hObjRoot, hRootAsidEq⟩ := resolveAsidRoot_some_facts st asid rootId₀ root₀ hRes
+    rw [hRes] at hStep; simp at hStep
+    cases hUnmapPage : root₀.unmapPage vaddr with
+    | none => rw [hUnmapPage] at hStep; simp at hStep
+    | some root' =>
+      rw [hUnmapPage] at hStep; simp at hStep
+      -- hStep : storeObject rootId₀ (.vspaceRoot root') st = .ok ((), stMid)
+      have hRoot'Asid : root'.asid = asid := by
+        unfold VSpaceRoot.unmapPage at hUnmapPage
+        split at hUnmapPage <;> simp at hUnmapPage
+        subst hUnmapPage; exact hRootAsidEq
+      have hStoreObjSelf := storeObject_objects_eq st stMid rootId₀
+        (KernelObject.vspaceRoot root') hObjK.1 hStep
+      have hAsidInv : (match st.objects[rootId₀]? with
+          | some (.vspaceRoot oldRoot) => st.asidTable.erase oldRoot.asid
+          | _ => st.asidTable).invExt := by
+        rw [hObjRoot]; exact st.asidTable.erase_preserves_invExt root₀.asid
+          hAsidK.1 hAsidK.2.1
+      intro rid r hResolveMid
+      by_cases hAsidEq : entry.asid = asid
+      · -- Same ASID, different vaddr
+        subst hAsidEq
+        have hVaddrNe : entry.vaddr ≠ vaddr := fun h => hNotMatch ⟨rfl, h⟩
+        have hResolvePost : resolveAsidRoot stMid entry.asid = some (rootId₀, root') := by
+          apply resolveAsidRoot_of_asidTable_entry
+          · rw [← hRoot'Asid]
+            exact storeObject_asidTable_vspaceRoot st stMid rootId₀ root' hAsidInv hStep
+          · exact hStoreObjSelf
+          · exact hRoot'Asid
+        rw [hResolvePost] at hResolveMid
+        simp at hResolveMid; obtain ⟨_, hr⟩ := hResolveMid; subst hr
+        -- root'.lookup entry.vaddr = root₀.lookup entry.vaddr (HashMap erase frame)
+        have hLookupFrame : root'.lookup entry.vaddr = root₀.lookup entry.vaddr := by
+          simp only [VSpaceRoot.lookup, VSpaceRoot.unmapPage] at hUnmapPage ⊢
+          split at hUnmapPage
+          · simp at hUnmapPage
+          · simp at hUnmapPage; subst hUnmapPage
+            simp only [RHTable_getElem?_eq_get?]
+            exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne _ _ _
+              (by intro h; exact hVaddrNe (eq_of_beq h).symm)
+              (hMappingsWF rootId₀ root₀ hObjRoot)
+              (hMappingsSize rootId₀ root₀ hObjRoot)
+        rw [hLookupFrame]
+        exact hConsistPre rootId₀ root₀ hRes
+      · -- Different ASID: prove resolveAsidRoot stMid = resolveAsidRoot st
+        have hNeAsid : entry.asid ≠ root'.asid := fun h => hAsidEq (h.trans hRoot'Asid)
+        -- Show ASID table lookup is preserved
+        have hAsidPreserved : stMid.asidTable[entry.asid]? = st.asidTable[entry.asid]? := by
+          have hMid := storeObject_asidTable_vspaceRoot_ne st stMid rootId₀
+            root' entry.asid hNeAsid hAsidInv hStep
+          simp [hObjRoot] at hMid
+          rw [hMid, hRootAsidEq]
+          exact st.asidTable.getElem?_erase_ne_K asid entry.asid
+            (by intro h; exact hAsidEq (eq_of_beq h).symm) hAsidK
+        -- Show resolveAsidRoot is preserved for different ASIDs
+        have hResolveEq : resolveAsidRoot stMid entry.asid = resolveAsidRoot st entry.asid := by
+          simp only [resolveAsidRoot]; rw [hAsidPreserved]
+          cases hEntryLookup : st.asidTable[entry.asid]? with
+          | none => rfl
+          | some oid =>
+            simp only
+            by_cases hOidEq : oid = rootId₀
+            · subst hOidEq
+              rw [hStoreObjSelf, hObjRoot]
+              simp only
+              have h1 : ¬(root'.asid = entry.asid) := by rw [hRoot'Asid]; exact fun h => hAsidEq h.symm
+              have h2 : ¬(root₀.asid = entry.asid) := by rw [hRootAsidEq]; exact fun h => hAsidEq h.symm
+              simp [h1, h2]
+            · rw [storeObject_objects_ne st stMid rootId₀ oid
+                (KernelObject.vspaceRoot root') hOidEq hObjK.1 hStep]
+        rw [hResolveEq] at hResolveMid
+        exact hConsistPre rid r hResolveMid
 
 end SeLe4n.Kernel.Architecture

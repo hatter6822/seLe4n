@@ -216,14 +216,20 @@ theorem cross_asid_tlb_isolation
 -- R7-A.4: TLB consistency preservation for WithFlush operations
 -- ============================================================================
 
-/-- R7-A.4/M-17: The combined `vspaceMapPageWithFlush` preserves TLB consistency.
+/-- R7-A.4/AJ4-B (M-06): The combined `vspaceMapPageWithFlush` preserves TLB consistency.
 
-    The full TLB flush after the map clears all cached entries, making the
-    resulting TLB trivially consistent with any page table state. -/
+    After `vspaceMapPage` modifies the page table and a targeted flush removes
+    entries matching `(asid, vaddr)`, the remaining TLB entries are consistent
+    with the new page table state. The targeted per-VAddr flush
+    (`adapterFlushTlbByVAddr`) replaces the former full flush. -/
 theorem vspaceMapPageWithFlush_preserves_tlbConsistent
     (st st' : SystemState)
     (asid : ASID) (vaddr : VAddr) (paddr : PAddr) (perms : PagePermissions)
-    (_hConsist : tlbConsistent st st.tlb)
+    (hConsist : tlbConsistent st st.tlb)
+    (hObjK : st.objects.invExtK)
+    (hAsidK : st.asidTable.invExtK)
+    (hMappingsWF : ∀ (oid : ObjId) (root : VSpaceRoot),
+      st.objects[oid]? = some (.vspaceRoot root) → root.mappings.invExt)
     (hStep : vspaceMapPageWithFlush asid vaddr paddr perms st = Except.ok ((), st')) :
     tlbConsistent st' st'.tlb := by
   unfold vspaceMapPageWithFlush at hStep
@@ -233,13 +239,36 @@ theorem vspaceMapPageWithFlush_preserves_tlbConsistent
       obtain ⟨_, stMid⟩ := val
       rw [hMap] at hStep; simp at hStep
       subst hStep
-      exact tlbConsistent_empty _
+      have hTlbEq := vspaceMapPage_tlb_eq st stMid asid vaddr paddr perms hMap
+      intro entry hMem rootId root hResolve
+      have hNotMatch := adapterFlushTlbByVAddr_removes_matching
+        stMid.tlb asid vaddr entry hMem
+      rw [hTlbEq] at hMem
+      have hMemOrig : entry ∈ st.tlb.entries := by
+        unfold adapterFlushTlbByVAddr at hMem
+        simp [List.mem_filter] at hMem
+        exact hMem.1
+      -- Use the frame lemma: entry not matching (asid, vaddr) remains consistent
+      exact vspaceMapPage_entry_consistent_frame st stMid asid vaddr paddr perms
+        hMap hObjK hAsidK hMappingsWF entry hNotMatch
+        (fun rid r hR => hConsist entry hMemOrig rid r hR) rootId root hResolve
 
-/-- R7-A.4/M-17: The combined `vspaceUnmapPageWithFlush` preserves TLB consistency. -/
+/-- R7-A.4/AJ4-B (M-06): The combined `vspaceUnmapPageWithFlush` preserves TLB consistency.
+
+    After `vspaceUnmapPage` removes a page table entry and a targeted flush
+    clears entries matching `(asid, vaddr)`, remaining TLB entries are consistent.
+    The targeted flush removes exactly the entries that could be stale (referencing
+    the removed mapping), while preserving entries for other addresses. -/
 theorem vspaceUnmapPageWithFlush_preserves_tlbConsistent
     (st st' : SystemState)
     (asid : ASID) (vaddr : VAddr)
-    (_hConsist : tlbConsistent st st.tlb)
+    (hConsist : tlbConsistent st st.tlb)
+    (hObjK : st.objects.invExtK)
+    (hAsidK : st.asidTable.invExtK)
+    (hMappingsWF : ∀ (oid : ObjId) (root : VSpaceRoot),
+      st.objects[oid]? = some (.vspaceRoot root) → root.mappings.invExt)
+    (hMappingsSize : ∀ (oid : ObjId) (root : VSpaceRoot),
+      st.objects[oid]? = some (.vspaceRoot root) → root.mappings.size < root.mappings.capacity)
     (hStep : vspaceUnmapPageWithFlush asid vaddr st = Except.ok ((), st')) :
     tlbConsistent st' st'.tlb := by
   unfold vspaceUnmapPageWithFlush at hStep
@@ -249,7 +278,19 @@ theorem vspaceUnmapPageWithFlush_preserves_tlbConsistent
       obtain ⟨_, stMid⟩ := val
       rw [hUnmap] at hStep; simp at hStep
       subst hStep
-      exact tlbConsistent_empty _
+      have hTlbEq := vspaceUnmapPage_tlb_eq st stMid asid vaddr hUnmap
+      intro entry hMem rootId root hResolve
+      have hNotMatch := adapterFlushTlbByVAddr_removes_matching
+        stMid.tlb asid vaddr entry hMem
+      rw [hTlbEq] at hMem
+      have hMemOrig : entry ∈ st.tlb.entries := by
+        unfold adapterFlushTlbByVAddr at hMem
+        simp [List.mem_filter] at hMem
+        exact hMem.1
+      -- Use the unmap frame lemma: entry not matching (asid, vaddr) remains consistent
+      exact vspaceUnmapPage_entry_consistent_frame st stMid asid vaddr
+        hUnmap hObjK hAsidK hMappingsWF hMappingsSize entry hNotMatch
+        (fun rid r hR => hConsist entry hMemOrig rid r hR) rootId root hResolve
 
 /-- R7-A.4/M-17: Non-VSpace operations (scheduler, IPC, capability, lifecycle)
     preserve TLB consistency trivially — they do not modify page tables, so all

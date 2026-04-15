@@ -595,6 +595,14 @@ instance : BEq TCB where
     a.pipBoost == b.pipBoost &&
     a.timedOut == b.timedOut
 
+/-- AJ4-D (L-09): Detect sentinel-initialized (unconfigured) TCBs.
+    Returns `true` if the TCB's identity or address-space references use
+    reserved sentinel values (ID 0), indicating the TCB was freshly created
+    by `objectOfTypeTag`/`objectOfKernelType` and has not been configured
+    via `threadConfigureOp`. Unconfigured TCBs must NOT be scheduled. -/
+@[inline] def TCB.isUnconfigured (tcb : TCB) : Bool :=
+  tcb.tid.isReserved || tcb.cspaceRoot.isReserved || tcb.vspaceRoot.isReserved
+
 /-- U2-N/U-M17: Negative `LawfulBEq` witness for `TCB`.
     `BEq TCB` is field-wise comparison including `registerContext : RegisterFile`.
     Since `RegisterFile.BEq` is not lawful (see `RegisterFile.not_lawfulBEq`),

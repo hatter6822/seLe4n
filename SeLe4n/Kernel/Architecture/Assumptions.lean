@@ -192,9 +192,10 @@ transition between privilege levels.
 Models the ARMv8-A 4-level page table structure: `PageTableLevel` (L0–L3),
 `PageTableDescriptor` (invalid/block/table/page), `PageAttributes` (W^X
 permissions, shareability, access flag). `pageTableWalk` performs a structural
-recursion walk (no fuel required). `pageTableWalk_deterministic` proves the walk
-is a total function. `hwDescriptor_wxCompliant_bridge` bridges hardware
-descriptor W^X compliance to the abstract VSpace W^X invariant.
+recursion walk (no fuel required). `pageTableWalk_fault_on_non_table_l0` proves
+translation faults on invalid L0 entries. `pageTableWalkPerms_wx_bridge`
+composes the walk with W^X compliance transfer. `hwDescriptor_wxCompliant_bridge`
+bridges hardware descriptor W^X compliance to the abstract VSpace W^X invariant.
 
 ### AG6-C/D: VSpace ARMv8 Instance (`VSpaceARMv8.lean`)
 

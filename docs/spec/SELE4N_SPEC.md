@@ -299,9 +299,10 @@ prove authority non-escalation (`setPriority_authority_bounded`,
 serviceRegistry, and lifecycle field preservation.
 
 **D3 (v0.24.2):** IPC buffer configuration is now fully implemented.
-`setIPCBufferOp` validates the buffer address through a 5-step pipeline
+`setIPCBufferOp` validates the buffer address through a 7-step pipeline
 (alignment to 512 bytes, canonical address check, VSpace root validity,
-mapping existence via VSpaceRoot.lookup, write permission) before updating
+mapping existence via VSpaceRoot.lookup, write permission, physical address
+bounds check against `2^physicalAddressWidth` — AJ4-C) before updating
 the TCB's `ipcBuffer` field. The operation is wired into `dispatchWithCap`
 (`SyscallId.tcbSetIPCBuffer`) as a capability-only arm with a frozen-phase
 equivalent (`frozenSetIPCBuffer`). Validation correctness theorems prove that
@@ -602,7 +603,8 @@ provides a formal model of the 4-level translation table structure:
 - **W^X enforcement**: `hwDescriptor_wxCompliant_bridge` bridges hardware
   descriptor AP/UXN/PXN bits to the abstract VSpace W^X invariant
 - **Walk**: `pageTableWalk` uses structural recursion (no fuel) with
-  `pageTableWalk_deterministic` proof
+  `pageTableWalk_fault_on_non_table_l0` (L0 fault condition) and
+  `pageTableWalkPerms_wx_bridge` (W^X compliance transfer) proofs
 
 The VSpace ARMv8 instance (`VSpaceARMv8.lean`, AG6-C/D) provides the
 `VSpaceBackend` typeclass implementation using a shadow `VSpaceRoot` with
@@ -875,9 +877,11 @@ All production VSpace operations must use TLB-flushing variants to ensure
 hardware TLB consistency:
 
 - **`vspaceMapPageCheckedWithFlush`**: Production path for mapping pages.
-  Performs W^X checks, bounds validation, and TLB flush after insertion.
+  Performs W^X checks, bounds validation, and targeted per-(ASID,VAddr) TLB
+  flush after insertion (AJ4-B). Only the modified TLB entry is invalidated;
+  other cached translations are preserved for performance.
 - **`vspaceUnmapPageWithFlush`**: Production path for unmapping pages.
-  Flushes the TLB entry after removal.
+  Targeted per-(ASID,VAddr) TLB flush after removal (AJ4-B).
 - **Internal helpers**: The unflushed `vspaceMapPage`/`vspaceUnmapPage` are
   internal proof decomposition helpers only. They carry explicit warnings
   against direct use in production paths.

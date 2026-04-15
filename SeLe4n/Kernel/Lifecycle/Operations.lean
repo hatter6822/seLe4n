@@ -1323,16 +1323,22 @@ Tag encoding follows `KernelObjectType` ordinal order:
 
 The size hint is used only for untyped objects (as `regionSize`); other types
 ignore it. All constructed objects use field defaults — the retype operation
-creates an identity; subsequent operations configure the object. -/
+creates an identity; subsequent operations configure the object.
+
+**AJ4-D (L-09): Sentinel-initialized placeholder IDs.** TCB reference fields
+(`tid`, `cspaceRoot`, `vspaceRoot`) use the reserved sentinel value (ID 0)
+from the H-06/WS-E3 convention. These IDs do not alias real kernel objects
+because ID 0 is reserved system-wide. Callers MUST configure these fields
+via `threadConfigureOp` before scheduling the thread. -/
 def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
     : Except KernelError KernelObject :=
   match typeTag with
   | 0 => .ok (.tcb {
-      tid := SeLe4n.ThreadId.ofNat 0
+      tid := SeLe4n.ThreadId.sentinel       -- AJ4-D: reserved sentinel (H-06)
       priority := SeLe4n.Priority.ofNat 0
       domain := SeLe4n.DomainId.ofNat 0
-      cspaceRoot := SeLe4n.ObjId.ofNat 0
-      vspaceRoot := SeLe4n.ObjId.ofNat 0
+      cspaceRoot := SeLe4n.ObjId.sentinel    -- AJ4-D: reserved sentinel (H-06)
+      vspaceRoot := SeLe4n.ObjId.sentinel    -- AJ4-D: reserved sentinel (H-06)
       ipcBuffer := SeLe4n.VAddr.ofNat 0
     })
   | 1 => .ok (.endpoint { sendQ := {}, receiveQ := {} })
@@ -1356,15 +1362,18 @@ def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
   | _ + 6 => .error .invalidTypeTag
 
 /-- R7-E/L-10: Typed version of `objectOfTypeTag` that takes `KernelObjectType` directly.
-    Eliminates the invalid-tag error path since the type is already validated. -/
+    Eliminates the invalid-tag error path since the type is already validated.
+
+    **AJ4-D (L-09):** Same sentinel-initialization convention as `objectOfTypeTag`.
+    See that function's docstring for the H-06/WS-E3 sentinel rationale. -/
 def objectOfKernelType (objType : KernelObjectType) (sizeHint : Nat) : KernelObject :=
   match objType with
   | .tcb => .tcb {
-      tid := SeLe4n.ThreadId.ofNat 0
+      tid := SeLe4n.ThreadId.sentinel       -- AJ4-D: reserved sentinel (H-06)
       priority := SeLe4n.Priority.ofNat 0
       domain := SeLe4n.DomainId.ofNat 0
-      cspaceRoot := SeLe4n.ObjId.ofNat 0
-      vspaceRoot := SeLe4n.ObjId.ofNat 0
+      cspaceRoot := SeLe4n.ObjId.sentinel    -- AJ4-D: reserved sentinel (H-06)
+      vspaceRoot := SeLe4n.ObjId.sentinel    -- AJ4-D: reserved sentinel (H-06)
       ipcBuffer := SeLe4n.VAddr.ofNat 0
     }
   | .endpoint => .endpoint { sendQ := {}, receiveQ := {} }
@@ -1385,7 +1394,7 @@ def objectOfKernelType (objType : KernelObjectType) (sizeHint : Nat) : KernelObj
       children := [],
       isDevice := false
     }
-  | .schedContext => .schedContext (SeLe4n.Kernel.SchedContext.empty ⟨0⟩)
+  | .schedContext => .schedContext (SeLe4n.Kernel.SchedContext.empty SeLe4n.SchedContextId.sentinel)
 
 -- ============================================================================
 -- WS-K-D: lifecycleRetypeDirect — pre-resolved authority variant

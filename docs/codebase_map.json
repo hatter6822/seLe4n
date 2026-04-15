@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/complete-phase-aj3-pipeline-ByRPK",
-      "commit_sha": "ec1a486a1ce8773d20f123bc029b2f640c70b96b",
-      "tree_sha": "c767bd0bcb020cae57f334651230e413a2333233",
-      "committed_at_utc": "2026-04-14T17:12:07+00:00"
+      "branch": "claude/complete-phase-aj4-J4O8Z",
+      "commit_sha": "678b22969ddee8799f4e0065f217e3034b6d9751",
+      "tree_sha": "7c094a1ca0c1cabb688df1afc1958acb0f8e335f",
+      "committed_at_utc": "2026-04-14T17:27:01-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "89cba34ed0152c6998ec3aa9bd5b20fbde8369fad85145d2a87229071dc1a2b9"
+    "source_digest": "62ab081b0fb1493e4835d2451df04ef290efc868813e7c92e33d828d85b7637b"
   },
   "summary": {
     "module_count": 158,
-    "declaration_count": 5052
+    "declaration_count": 5059
   },
   "readme_sync": {
     "version": "0.28.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 94378,
+    "production_loc": 94721,
     "test_files": 17,
     "test_loc": 11616,
-    "proved_theorem_lemma_decls": 2796,
+    "proved_theorem_lemma_decls": 2802,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -3263,7 +3263,7 @@
         {
           "kind": "def",
           "name": "validateIpcBufferAddress",
-          "line": 55,
+          "line": 61,
           "called": [
             "KernelError",
             "SystemState",
@@ -3280,7 +3280,7 @@
         {
           "kind": "def",
           "name": "setIPCBufferOp",
-          "line": 92,
+          "line": 101,
           "called": [
             "KernelError",
             "SystemState",
@@ -3294,7 +3294,7 @@
         {
           "kind": "theorem",
           "name": "validateIpcBufferAddress_implies_aligned",
-          "line": 114,
+          "line": 123,
           "called": [
             "SystemState",
             "ThreadId",
@@ -3307,7 +3307,7 @@
         {
           "kind": "theorem",
           "name": "validateIpcBufferAddress_implies_canonical",
-          "line": 126,
+          "line": 135,
           "called": [
             "SystemState",
             "ThreadId",
@@ -3319,12 +3319,13 @@
         {
           "kind": "theorem",
           "name": "validateIpcBufferAddress_implies_mapped_writable",
-          "line": 139,
+          "line": 148,
           "called": [
             "SystemState",
             "ThreadId",
             "VAddr",
             "lookup",
+            "toNat",
             "toObjId",
             "validateIpcBufferAddress"
           ]
@@ -3332,7 +3333,7 @@
         {
           "kind": "theorem",
           "name": "ipcBuffer_within_page",
-          "line": 175,
+          "line": 191,
           "called": [
             "VAddr",
             "ipcBufferAlignment",
@@ -3342,7 +3343,7 @@
         {
           "kind": "theorem",
           "name": "setIPCBufferOp_success_shape",
-          "line": 188,
+          "line": 204,
           "called": [
             "SystemState",
             "ThreadId",
@@ -3355,7 +3356,7 @@
         {
           "kind": "theorem",
           "name": "setIPCBufferOp_scheduler_eq",
-          "line": 204,
+          "line": 220,
           "called": [
             "SystemState",
             "ThreadId",
@@ -3366,7 +3367,7 @@
         {
           "kind": "theorem",
           "name": "setIPCBufferOp_serviceRegistry_eq",
-          "line": 216,
+          "line": 232,
           "called": [
             "SystemState",
             "ThreadId",
@@ -3377,7 +3378,7 @@
         {
           "kind": "theorem",
           "name": "setIPCBufferOp_irqHandlers_eq",
-          "line": 228,
+          "line": 244,
           "called": [
             "SystemState",
             "ThreadId",
@@ -3388,7 +3389,7 @@
         {
           "kind": "theorem",
           "name": "setIPCBufferOp_machine_eq",
-          "line": 240,
+          "line": 256,
           "called": [
             "SystemState",
             "ThreadId",
@@ -3400,7 +3401,7 @@
         {
           "kind": "theorem",
           "name": "setIPCBufferOp_asidTable_eq",
-          "line": 255,
+          "line": 271,
           "called": [
             "SystemState",
             "ThreadId",
@@ -3412,7 +3413,7 @@
         {
           "kind": "theorem",
           "name": "setIPCBufferOp_capabilityRefs_cleaned",
-          "line": 273,
+          "line": 289,
           "called": [
             "SystemState",
             "ThreadId",
@@ -3426,7 +3427,7 @@
         {
           "kind": "theorem",
           "name": "setIPCBufferOp_deterministic",
-          "line": 288,
+          "line": 304,
           "called": [
             "SystemState",
             "ThreadId",
@@ -3439,7 +3440,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.PageTable",
       "path": "SeLe4n/Kernel/Architecture/PageTable.lean",
-      "declaration_count": 43,
+      "declaration_count": 44,
       "declarations": [
         {
           "kind": "namespace",
@@ -3824,20 +3825,23 @@
         },
         {
           "kind": "theorem",
-          "name": "pageTableWalk_deterministic",
-          "line": 424,
+          "name": "pageTableWalk_fault_on_non_table_l0",
+          "line": 428,
           "called": [
             "Memory",
             "PAddr",
             "VAddr",
+            "l0Index",
             "mem",
-            "pageTableWalk"
+            "none",
+            "pageTableWalk",
+            "readDescriptor"
           ]
         },
         {
           "kind": "def",
           "name": "pageTableWalkPerms",
-          "line": 431,
+          "line": 438,
           "called": [
             "Memory",
             "PAddr",
@@ -3845,6 +3849,24 @@
             "VAddr",
             "mem",
             "pageTableWalk",
+            "toPagePermissions"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pageTableWalkPerms_wx_bridge",
+          "line": 448,
+          "called": [
+            "Memory",
+            "PAddr",
+            "PageAttributes",
+            "PagePermissions.wxCompliant",
+            "VAddr",
+            "hwDescriptor_wxCompliant_bridge",
+            "isReadOnly",
+            "mem",
+            "pageTableWalk",
+            "pageTableWalkPerms",
             "toPagePermissions"
           ]
         }
@@ -5868,37 +5890,52 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageWithFlush_preserves_tlbConsistent",
-          "line": 223,
+          "line": 225,
           "called": [
             "ASID",
+            "ObjId",
             "PAddr",
             "PagePermissions",
             "SystemState",
             "VAddr",
+            "VSpaceRoot",
+            "adapterFlushTlbByVAddr",
+            "adapterFlushTlbByVAddr_removes_matching",
+            "invExt",
+            "invExtK",
             "tlbConsistent",
-            "tlbConsistent_empty",
             "vspaceMapPage",
-            "vspaceMapPageWithFlush"
+            "vspaceMapPageWithFlush",
+            "vspaceMapPage_entry_consistent_frame",
+            "vspaceMapPage_tlb_eq"
           ]
         },
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithFlush_preserves_tlbConsistent",
-          "line": 239,
+          "line": 262,
           "called": [
             "ASID",
+            "ObjId",
             "SystemState",
             "VAddr",
+            "VSpaceRoot",
+            "adapterFlushTlbByVAddr",
+            "adapterFlushTlbByVAddr_removes_matching",
+            "invExt",
+            "invExtK",
+            "size",
             "tlbConsistent",
-            "tlbConsistent_empty",
             "vspaceUnmapPage",
-            "vspaceUnmapPageWithFlush"
+            "vspaceUnmapPageWithFlush",
+            "vspaceUnmapPage_entry_consistent_frame",
+            "vspaceUnmapPage_tlb_eq"
           ]
         },
         {
           "kind": "theorem",
           "name": "tlbConsistent_of_objects_eq",
-          "line": 260,
+          "line": 301,
           "called": [
             "SystemState",
             "resolveAsidRoot",
@@ -5908,7 +5945,7 @@
         {
           "kind": "def",
           "name": "adapterFlushTlbHw",
-          "line": 282,
+          "line": 323,
           "called": [
             "SystemState",
             "adapterFlushTlb"
@@ -5917,7 +5954,7 @@
         {
           "kind": "def",
           "name": "adapterFlushTlbByAsidHw",
-          "line": 287,
+          "line": 328,
           "called": [
             "ASID",
             "SystemState",
@@ -5927,7 +5964,7 @@
         {
           "kind": "def",
           "name": "adapterFlushTlbByVAddrHw",
-          "line": 292,
+          "line": 333,
           "called": [
             "ASID",
             "SystemState",
@@ -5938,7 +5975,7 @@
         {
           "kind": "theorem",
           "name": "hardwareFlushAll_equiv_modelFlush",
-          "line": 296,
+          "line": 337,
           "called": [
             "TlbState",
             "TlbState.empty",
@@ -5948,7 +5985,7 @@
         {
           "kind": "theorem",
           "name": "hardwareFlushByAsid_equiv_modelFlush",
-          "line": 301,
+          "line": 342,
           "called": [
             "ASID",
             "TlbState",
@@ -5959,7 +5996,7 @@
         {
           "kind": "theorem",
           "name": "hardwareFlushByVAddr_equiv_modelFlush",
-          "line": 307,
+          "line": 348,
           "called": [
             "ASID",
             "TlbState",
@@ -5971,7 +6008,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbHw_preserves_tlbConsistent",
-          "line": 313,
+          "line": 354,
           "called": [
             "SystemState",
             "adapterFlushTlbHw",
@@ -5982,7 +6019,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbByAsidHw_preserves_tlbConsistent",
-          "line": 319,
+          "line": 360,
           "called": [
             "ASID",
             "SystemState",
@@ -5994,7 +6031,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbByVAddrHw_preserves_tlbConsistent",
-          "line": 326,
+          "line": 367,
           "called": [
             "ASID",
             "SystemState",
@@ -6007,7 +6044,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_fullFlush_preserves_tlbConsistent",
-          "line": 341,
+          "line": 382,
           "called": [
             "ASID",
             "SystemState",
@@ -6021,7 +6058,7 @@
         {
           "kind": "def",
           "name": "tlbBarrierComplete",
-          "line": 357,
+          "line": 398,
           "called": [
             "SystemState"
           ]
@@ -6029,7 +6066,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbHw_barrier_complete",
-          "line": 366,
+          "line": 407,
           "called": [
             "SystemState",
             "adapterFlushTlbHw",
@@ -6039,7 +6076,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbByAsidHw_barrier_complete",
-          "line": 371,
+          "line": 412,
           "called": [
             "ASID",
             "SystemState",
@@ -6050,7 +6087,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbByVAddrHw_barrier_complete",
-          "line": 376,
+          "line": 417,
           "called": [
             "ASID",
             "SystemState",
@@ -6062,7 +6099,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbHw_safe",
-          "line": 383,
+          "line": 424,
           "called": [
             "SystemState",
             "adapterFlushTlbHw",
@@ -6077,7 +6114,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.VSpace",
       "path": "SeLe4n/Kernel/Architecture/VSpace.lean",
-      "declaration_count": 24,
+      "declaration_count": 29,
       "declarations": [
         {
           "kind": "namespace",
@@ -6214,7 +6251,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageWithFlush",
-          "line": 174,
+          "line": 182,
           "called": [
             "ASID",
             "Kernel",
@@ -6222,26 +6259,26 @@
             "PagePermissions",
             "PagePermissions.readOnly",
             "VAddr",
-            "adapterFlushTlb",
+            "adapterFlushTlbByVAddr",
             "vspaceMapPage"
           ]
         },
         {
           "kind": "def",
           "name": "vspaceUnmapPageWithFlush",
-          "line": 189,
+          "line": 201,
           "called": [
             "ASID",
             "Kernel",
             "VAddr",
-            "adapterFlushTlb",
+            "adapterFlushTlbByVAddr",
             "vspaceUnmapPage"
           ]
         },
         {
           "kind": "def",
           "name": "vspaceMapPageCheckedWithFlush",
-          "line": 198,
+          "line": 210,
           "called": [
             "ASID",
             "Kernel",
@@ -6258,7 +6295,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageCheckedWithFlushPlatform",
-          "line": 210,
+          "line": 222,
           "called": [
             "ASID",
             "Kernel",
@@ -6277,7 +6314,7 @@
         {
           "kind": "def",
           "name": "vspaceMapPageCheckedWithFlushFromState",
-          "line": 222,
+          "line": 234,
           "called": [
             "ASID",
             "Kernel",
@@ -6293,7 +6330,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithFlush_default_is_readOnly",
-          "line": 242,
+          "line": 254,
           "called": [
             "PagePermissions.readOnly",
             "wxCompliant"
@@ -6302,7 +6339,7 @@
         {
           "kind": "def",
           "name": "tlbFlushByASID",
-          "line": 253,
+          "line": 265,
           "called": [
             "ASID",
             "Kernel",
@@ -6312,7 +6349,7 @@
         {
           "kind": "def",
           "name": "tlbFlushByPage",
-          "line": 260,
+          "line": 272,
           "called": [
             "ASID",
             "Kernel",
@@ -6323,7 +6360,7 @@
         {
           "kind": "theorem",
           "name": "tlbFlushByASID_state_frame",
-          "line": 264,
+          "line": 276,
           "called": [
             "ASID",
             "SystemState",
@@ -6333,7 +6370,7 @@
         {
           "kind": "theorem",
           "name": "tlbFlushByPage_state_frame",
-          "line": 272,
+          "line": 284,
           "called": [
             "ASID",
             "SystemState",
@@ -6344,7 +6381,7 @@
         {
           "kind": "def",
           "name": "vspaceAsidRootsUnique",
-          "line": 285,
+          "line": 297,
           "called": [
             "ObjId",
             "SystemState",
@@ -6354,7 +6391,7 @@
         {
           "kind": "theorem",
           "name": "resolveAsidRoot_some_implies_obj",
-          "line": 294,
+          "line": 306,
           "called": [
             "ASID",
             "ObjId",
@@ -6367,13 +6404,123 @@
         {
           "kind": "theorem",
           "name": "resolveAsidRoot_of_asidTable_entry",
-          "line": 332,
+          "line": 344,
           "called": [
             "ASID",
             "ObjId",
             "SystemState",
             "VSpaceRoot",
             "resolveAsidRoot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceMapPage_tlb_eq",
+          "line": 365,
+          "called": [
+            "ASID",
+            "PAddr",
+            "PagePermissions",
+            "SystemState",
+            "VAddr",
+            "mapPage",
+            "none",
+            "resolveAsidRoot",
+            "storeObject",
+            "vspaceMapPage"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceUnmapPage_tlb_eq",
+          "line": 386,
+          "called": [
+            "ASID",
+            "SystemState",
+            "VAddr",
+            "none",
+            "resolveAsidRoot",
+            "storeObject",
+            "unmapPage",
+            "vspaceUnmapPage"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "resolveAsidRoot_some_facts",
+          "line": 404,
+          "called": [
+            "ASID",
+            "ObjId",
+            "SystemState",
+            "VSpaceRoot",
+            "none",
+            "resolveAsidRoot"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceMapPage_entry_consistent_frame",
+          "line": 432,
+          "called": [
+            "ASID",
+            "ObjId",
+            "PAddr",
+            "PagePermissions",
+            "RHTable.getElem",
+            "RHTable_getElem",
+            "SystemState",
+            "TlbEntry",
+            "VAddr",
+            "VSpaceRoot",
+            "erase",
+            "erase_preserves_invExt",
+            "getElem",
+            "invExt",
+            "invExtK",
+            "lookup",
+            "mapPage",
+            "none",
+            "resolveAsidRoot",
+            "resolveAsidRoot_of_asidTable_entry",
+            "resolveAsidRoot_some_facts",
+            "storeObject_asidTable_vspaceRoot",
+            "storeObject_asidTable_vspaceRoot_ne",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne",
+            "vspaceMapPage"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceUnmapPage_entry_consistent_frame",
+          "line": 534,
+          "called": [
+            "ASID",
+            "ObjId",
+            "RHTable.getElem",
+            "RHTable_getElem",
+            "SystemState",
+            "TlbEntry",
+            "VAddr",
+            "VSpaceRoot",
+            "erase",
+            "erase_preserves_invExt",
+            "getElem",
+            "invExt",
+            "invExtK",
+            "lookup",
+            "none",
+            "resolveAsidRoot",
+            "resolveAsidRoot_of_asidTable_entry",
+            "resolveAsidRoot_some_facts",
+            "size",
+            "storeObject_asidTable_vspaceRoot",
+            "storeObject_asidTable_vspaceRoot_ne",
+            "storeObject_objects_eq",
+            "storeObject_objects_ne",
+            "unmapPage",
+            "vspaceUnmapPage"
           ]
         }
       ]
@@ -31160,32 +31307,34 @@
         {
           "kind": "def",
           "name": "objectOfTypeTag",
-          "line": 1327,
+          "line": 1333,
           "called": [
             "KernelError",
             "KernelObject",
             "RHTable.empty",
             "none",
-            "ofNat"
+            "ofNat",
+            "sentinel"
           ]
         },
         {
           "kind": "def",
           "name": "objectOfKernelType",
-          "line": 1360,
+          "line": 1369,
           "called": [
             "KernelObject",
             "KernelObjectType",
             "RHTable.empty",
             "empty",
             "none",
-            "ofNat"
+            "ofNat",
+            "sentinel"
           ]
         },
         {
           "kind": "def",
           "name": "lifecycleRetypeDirect",
-          "line": 1415,
+          "line": 1424,
           "called": [
             "Capability",
             "Kernel",
@@ -31200,7 +31349,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeDirectWithCleanup",
-          "line": 1446,
+          "line": 1455,
           "called": [
             "Capability",
             "Kernel",
@@ -49812,7 +49961,7 @@
     {
       "module": "SeLe4n.Model.Object.Types",
       "path": "SeLe4n/Model/Object/Types.lean",
-      "declaration_count": 123,
+      "declaration_count": 124,
       "declarations": [
         {
           "kind": "namespace",
@@ -50405,9 +50554,18 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "TCB.isUnconfigured",
+          "line": 603,
+          "called": [
+            "TCB",
+            "isReserved"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "TCB.not_lawfulBEq",
-          "line": 603,
+          "line": 611,
           "called": [
             "ObjId",
             "RegName",
@@ -50420,7 +50578,7 @@
         {
           "kind": "structure",
           "name": "IntrusiveQueue",
-          "line": 628,
+          "line": 636,
           "called": [
             "ThreadId",
             "none"
@@ -50429,7 +50587,7 @@
         {
           "kind": "structure",
           "name": "Endpoint",
-          "line": 639,
+          "line": 647,
           "called": [
             "IntrusiveQueue"
           ]
@@ -50437,13 +50595,13 @@
         {
           "kind": "inductive",
           "name": "NotificationState",
-          "line": 644,
+          "line": 652,
           "called": []
         },
         {
           "kind": "structure",
           "name": "Notification",
-          "line": 679,
+          "line": 687,
           "called": [
             "Badge",
             "NotificationState",
@@ -50454,7 +50612,7 @@
         {
           "kind": "structure",
           "name": "CNode",
-          "line": 703,
+          "line": 711,
           "called": [
             "Capability",
             "RHTable",
@@ -50464,13 +50622,13 @@
         {
           "kind": "def",
           "name": "maxCSpaceDepth",
-          "line": 712,
+          "line": 720,
           "called": []
         },
         {
           "kind": "structure",
           "name": "UntypedChild",
-          "line": 717,
+          "line": 725,
           "called": [
             "ObjId",
             "size"
@@ -50479,7 +50637,7 @@
         {
           "kind": "structure",
           "name": "UntypedObject",
-          "line": 732,
+          "line": 740,
           "called": [
             "PAddr",
             "UntypedChild"
@@ -50488,13 +50646,13 @@
         {
           "kind": "namespace",
           "name": "UntypedObject",
-          "line": 748,
+          "line": 756,
           "called": []
         },
         {
           "kind": "def",
           "name": "freeSpace",
-          "line": 751,
+          "line": 759,
           "called": [
             "UntypedObject"
           ]
@@ -50502,7 +50660,7 @@
         {
           "kind": "def",
           "name": "canAllocate",
-          "line": 755,
+          "line": 763,
           "called": [
             "UntypedObject",
             "size"
@@ -50511,7 +50669,7 @@
         {
           "kind": "def",
           "name": "allocate",
-          "line": 766,
+          "line": 774,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -50523,7 +50681,7 @@
         {
           "kind": "def",
           "name": "reset",
-          "line": 778,
+          "line": 786,
           "called": [
             "UntypedObject"
           ]
@@ -50531,7 +50689,7 @@
         {
           "kind": "def",
           "name": "watermarkValid",
-          "line": 782,
+          "line": 790,
           "called": [
             "UntypedObject"
           ]
@@ -50539,7 +50697,7 @@
         {
           "kind": "def",
           "name": "childrenWithinWatermark",
-          "line": 786,
+          "line": 794,
           "called": [
             "UntypedObject",
             "size"
@@ -50548,7 +50706,7 @@
         {
           "kind": "def",
           "name": "childrenNonOverlap",
-          "line": 790,
+          "line": 798,
           "called": [
             "UntypedObject",
             "size"
@@ -50557,7 +50715,7 @@
         {
           "kind": "def",
           "name": "childrenUniqueIds",
-          "line": 795,
+          "line": 803,
           "called": [
             "UntypedObject"
           ]
@@ -50565,7 +50723,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 800,
+          "line": 808,
           "called": [
             "UntypedObject",
             "childrenNonOverlap",
@@ -50577,7 +50735,7 @@
         {
           "kind": "theorem",
           "name": "empty_watermarkValid",
-          "line": 804,
+          "line": 812,
           "called": [
             "PAddr",
             "size",
@@ -50587,7 +50745,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenWithinWatermark",
-          "line": 808,
+          "line": 816,
           "called": [
             "PAddr",
             "childrenWithinWatermark",
@@ -50597,7 +50755,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenNonOverlap",
-          "line": 813,
+          "line": 821,
           "called": [
             "PAddr",
             "childrenNonOverlap",
@@ -50607,7 +50765,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenUniqueIds",
-          "line": 818,
+          "line": 826,
           "called": [
             "PAddr",
             "childrenUniqueIds",
@@ -50617,7 +50775,7 @@
         {
           "kind": "theorem",
           "name": "empty_wellFormed",
-          "line": 823,
+          "line": 831,
           "called": [
             "PAddr",
             "empty_childrenNonOverlap",
@@ -50631,7 +50789,7 @@
         {
           "kind": "theorem",
           "name": "canAllocate_implies_fits",
-          "line": 829,
+          "line": 837,
           "called": [
             "UntypedObject",
             "canAllocate",
@@ -50641,7 +50799,7 @@
         {
           "kind": "theorem",
           "name": "allocate_some_iff",
-          "line": 836,
+          "line": 844,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -50653,7 +50811,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_advance",
-          "line": 855,
+          "line": 863,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -50665,7 +50823,7 @@
         {
           "kind": "theorem",
           "name": "allocate_offset_eq_watermark",
-          "line": 864,
+          "line": 872,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -50677,7 +50835,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_monotone",
-          "line": 871,
+          "line": 879,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -50689,7 +50847,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_watermarkValid",
-          "line": 878,
+          "line": 886,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -50703,7 +50861,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_region",
-          "line": 889,
+          "line": 897,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -50715,7 +50873,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenWithinWatermark",
-          "line": 900,
+          "line": 908,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -50728,7 +50886,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenNonOverlap",
-          "line": 918,
+          "line": 926,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -50742,7 +50900,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenUniqueIds",
-          "line": 940,
+          "line": 948,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -50755,7 +50913,7 @@
         {
           "kind": "theorem",
           "name": "reset_watermarkValid",
-          "line": 959,
+          "line": 967,
           "called": [
             "UntypedObject",
             "reset",
@@ -50765,7 +50923,7 @@
         {
           "kind": "theorem",
           "name": "reset_wellFormed",
-          "line": 963,
+          "line": 971,
           "called": [
             "UntypedObject",
             "reset",
@@ -50776,7 +50934,7 @@
         {
           "kind": "inductive",
           "name": "SyscallId",
-          "line": 978,
+          "line": 986,
           "called": [
             "cspaceCopy",
             "cspaceMint",
@@ -50791,13 +50949,13 @@
         {
           "kind": "namespace",
           "name": "SyscallId",
-          "line": 1006,
+          "line": 1014,
           "called": []
         },
         {
           "kind": "def",
           "name": "toNat",
-          "line": 1010,
+          "line": 1018,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -50813,13 +50971,13 @@
         {
           "kind": "def",
           "name": "count",
-          "line": 1038,
+          "line": 1046,
           "called": []
         },
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 1042,
+          "line": 1050,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -50835,8 +50993,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1070>",
-          "line": 1070,
+          "name": "<anonymous:instance:1078>",
+          "line": 1078,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -50852,7 +51010,7 @@
         {
           "kind": "def",
           "name": "all",
-          "line": 1102,
+          "line": 1110,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -50868,7 +51026,7 @@
         {
           "kind": "theorem",
           "name": "all_length",
-          "line": 1114,
+          "line": 1122,
           "called": [
             "count"
           ]
@@ -50876,7 +51034,7 @@
         {
           "kind": "theorem",
           "name": "all_complete",
-          "line": 1117,
+          "line": 1125,
           "called": [
             "SyscallId",
             "all"
@@ -50885,7 +51043,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 1121,
+          "line": 1129,
           "called": [
             "SyscallId",
             "ofNat",
@@ -50895,7 +51053,7 @@
         {
           "kind": "theorem",
           "name": "toNat_ofNat",
-          "line": 1133,
+          "line": 1141,
           "called": [
             "SyscallId",
             "ofNat",
@@ -50905,7 +51063,7 @@
         {
           "kind": "theorem",
           "name": "toNat_injective",
-          "line": 1145,
+          "line": 1153,
           "called": [
             "SyscallId",
             "ofNat_toNat",
@@ -50915,25 +51073,25 @@
         {
           "kind": "structure",
           "name": "MessageInfo",
-          "line": 1159,
+          "line": 1167,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "MessageInfo",
-          "line": 1165,
+          "line": 1173,
           "called": []
         },
         {
           "kind": "def",
           "name": "maxLabel",
-          "line": 1170,
+          "line": 1178,
           "called": []
         },
         {
           "kind": "def",
           "name": "encode",
-          "line": 1178,
+          "line": 1186,
           "called": [
             "MessageInfo"
           ]
@@ -50941,7 +51099,7 @@
         {
           "kind": "def",
           "name": "decode",
-          "line": 1184,
+          "line": 1192,
           "called": [
             "MessageInfo",
             "maxExtraCaps",
@@ -50952,8 +51110,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1193>",
-          "line": 1193,
+          "name": "<anonymous:instance:1201>",
+          "line": 1201,
           "called": [
             "MessageInfo"
           ]
@@ -50961,25 +51119,25 @@
         {
           "kind": "theorem",
           "name": "and_mask_127",
-          "line": 1202,
+          "line": 1210,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "shift7_and_mask_3",
-          "line": 1227,
+          "line": 1235,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "shift9_extracts_label",
-          "line": 1259,
+          "line": 1267,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "encode_decode_roundtrip",
-          "line": 1288,
+          "line": 1296,
           "called": [
             "MessageInfo",
             "and_mask_127",
@@ -50995,7 +51153,7 @@
         {
           "kind": "structure",
           "name": "SyscallDecodeResult",
-          "line": 1313,
+          "line": 1321,
           "called": [
             "CPtr",
             "MessageInfo",

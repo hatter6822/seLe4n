@@ -38,18 +38,24 @@ open SeLe4n.Model
 
 /-- D3-D: Validate an IPC buffer address for a given thread.
 
-Six-step validation pipeline:
+Seven-step validation pipeline:
 1. Alignment: `addr.toNat % ipcBufferAlignment = 0`
 2. Canonical address: `addr.toNat < VAddr.canonicalBound` (ARM64 48-bit VA)
 3. Cross-page safety: guaranteed by step 1 — see `ipcBuffer_within_page`
 4. VSpace root validity: thread's `vspaceRoot` resolves to a VSpaceRoot object
 5. Mapping check: address is mapped in the thread's VSpace
 6. Write permission: mapped page has `write = true`
+7. Physical address bounds: mapped PA within `2^physicalAddressWidth` (AJ4-C)
 
 AE4-H (U-32/A-IB01): Cross-page boundary safety is guaranteed by the
 alignment check (step 1): since `ipcBufferAlignment = 512` divides the
 ARM64 page size (4096), any 512-byte-aligned buffer of ≤512 bytes fits
 entirely within a single 4KB page. See `ipcBuffer_within_page` below.
+
+AJ4-C (L-06): Step 7 checks the physical address returned by the VSpace
+lookup against the platform's physical address width from `MachineState`.
+Without this check, a mapped VA could theoretically reference a PA outside
+the valid physical memory range (e.g., > 2^44 on RPi5 BCM2712).
 
 Returns `.error` with appropriate error code on any failure. -/
 def validateIpcBufferAddress (st : SystemState) (tid : ThreadId)
@@ -67,10 +73,13 @@ def validateIpcBufferAddress (st : SystemState) (tid : ThreadId)
       | some (.vspaceRoot root) =>
         -- Step 4: Mapping check via VSpaceRoot.lookup
         match root.lookup addr with
-        | some (_, perms) =>
+        | some (paddr, perms) =>
           -- Step 5: Write permission check
-          if perms.write then .ok ()
-          else .error .translationFault
+          if !perms.write then .error .translationFault
+          -- Step 6: Physical address bounds check (AJ4-C / L-06)
+          else if !(paddr.toNat < 2^st.machine.physicalAddressWidth) then
+            .error .addressOutOfBounds
+          else .ok ()
         | none => .error .translationFault
       | _ => .error .invalidArgument
     | _ => .error .objectNotFound
@@ -135,7 +144,7 @@ theorem validateIpcBufferAddress_implies_canonical
     · simp_all
 
 /-- D3-G: If validation succeeds, the address is mapped in the thread's VSpace
-    with write permission. -/
+    with write permission and the physical address is within bounds. -/
 theorem validateIpcBufferAddress_implies_mapped_writable
     (st : SystemState) (tid : ThreadId) (addr : VAddr)
     (hOk : validateIpcBufferAddress st tid addr = .ok ()) :
@@ -143,7 +152,8 @@ theorem validateIpcBufferAddress_implies_mapped_writable
       st.objects[tid.toObjId]? = some (.tcb tcb) ∧
       st.objects[tcb.vspaceRoot]? = some (.vspaceRoot root) ∧
       root.lookup addr = some (paddr, perms) ∧
-      perms.write = true := by
+      perms.write = true ∧
+      paddr.toNat < 2^st.machine.physicalAddressWidth := by
   unfold validateIpcBufferAddress at hOk
   split at hOk
   · contradiction
@@ -157,8 +167,14 @@ theorem validateIpcBufferAddress_implies_mapped_writable
           split at hOk
           · rename_i hLookup
             split at hOk
-            · exact ⟨_, _, _, _, hTcb, hVs, hLookup, by assumption⟩
             · contradiction
+            · rename_i hWrite
+              split at hOk
+              · contradiction
+              · rename_i hPA
+                simp only [Bool.not_eq_true, Bool.not_eq_false'] at hWrite hPA
+                exact ⟨_, _, _, _, hTcb, hVs, hLookup,
+                  by simp_all, by simp_all [decide_eq_true_eq]⟩
           · contradiction
         · contradiction
       · contradiction
