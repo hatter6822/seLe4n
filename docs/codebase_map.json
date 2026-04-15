@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/complete-phase-aj4-J4O8Z",
-      "commit_sha": "2f26315331f21f9afc47c13448b513edc52148dc",
-      "tree_sha": "1f52243f2adf28ba949016edc9bec840b7a56ae0",
-      "committed_at_utc": "2026-04-15T00:24:20+00:00"
+      "commit_sha": "a4dd96a3ce677a0ed6c2bc2d5cafdb7cdbb2ce7d",
+      "tree_sha": "614c8c12460152c6300e12d5de47c849aba9a6b9",
+      "committed_at_utc": "2026-04-15T00:31:48+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 5059
   },
   "readme_sync": {
-    "version": "0.28.0",
+    "version": "0.28.4",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
     "production_loc": 94728,
