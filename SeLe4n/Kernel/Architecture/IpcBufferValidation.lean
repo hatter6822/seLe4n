@@ -68,15 +68,15 @@ def validateIpcBufferAddress (st : SystemState) (tid : ThreadId)
     -- Look up the thread's TCB
     match st.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
-      -- Step 3: VSpace root validity
+      -- Step 4: VSpace root validity
       match st.objects[tcb.vspaceRoot]? with
       | some (.vspaceRoot root) =>
-        -- Step 4: Mapping check via VSpaceRoot.lookup
+        -- Step 5: Mapping check via VSpaceRoot.lookup
         match root.lookup addr with
         | some (paddr, perms) =>
-          -- Step 5: Write permission check
+          -- Step 6: Write permission check
           if !perms.write then .error .translationFault
-          -- Step 6: Physical address bounds check (AJ4-C / L-06)
+          -- Step 7: Physical address bounds check (AJ4-C / L-06)
           else if !(paddr.toNat < 2^st.machine.physicalAddressWidth) then
             .error .addressOutOfBounds
           else .ok ()

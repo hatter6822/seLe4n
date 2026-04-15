@@ -856,8 +856,12 @@ def frozenSetMCPriority (callerTid targetTid : SeLe4n.ThreadId)
 -- ============================================================================
 
 /-- D3-I: Frozen-phase setIPCBuffer. Validates alignment, canonical address,
-VSpace mapping with write permission, then updates the target TCB's ipcBuffer.
-Mirrors `setIPCBufferOp` in frozen state using FrozenMap lookups. -/
+VSpace mapping with write permission and PA bounds, then updates the target
+TCB's ipcBuffer. Mirrors `setIPCBufferOp` in frozen state using FrozenMap
+lookups.
+
+AJ4-C (L-06): Step 7 (PA bounds check) mirrors `validateIpcBufferAddress`
+step 7, ensuring consistency between frozen and production validation paths. -/
 def frozenSetIPCBuffer (targetTid : SeLe4n.ThreadId)
     (addr : SeLe4n.VAddr) : FrozenKernel Unit :=
   fun st =>
@@ -869,19 +873,22 @@ def frozenSetIPCBuffer (targetTid : SeLe4n.ThreadId)
       match frozenLookupTcb st targetTid with
       | none => .error .objectNotFound
       | some tcb =>
-        -- Step 3: VSpace root validity (frozen VSpaceRoot)
+        -- Step 4: VSpace root validity (frozen VSpaceRoot)
         match st.objects.get? tcb.vspaceRoot with
         | some (.vspaceRoot vsr) =>
-          -- Step 4: Mapping check via FrozenMap
+          -- Step 5: Mapping check via FrozenMap
           match vsr.mappings.get? addr with
-          | some (_, perms) =>
-            -- Step 5: Write permission check
-            if perms.write then
+          | some (paddr, perms) =>
+            -- Step 6: Write permission check
+            if !perms.write then .error .translationFault
+            -- Step 7: Physical address bounds check (AJ4-C / L-06)
+            else if !(paddr.toNat < 2^st.machine.physicalAddressWidth) then
+              .error .addressOutOfBounds
+            else
               let tcb' := { tcb with ipcBuffer := addr }
               match st.objects.set targetTid.toObjId (.tcb tcb') with
               | some objs => .ok ((), { st with objects := objs })
               | none => .error .objectNotFound
-            else .error .translationFault
           | none => .error .translationFault
         | _ => .error .invalidArgument
 

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/complete-phase-aj4-J4O8Z",
-      "commit_sha": "678b22969ddee8799f4e0065f217e3034b6d9751",
-      "tree_sha": "7c094a1ca0c1cabb688df1afc1958acb0f8e335f",
-      "committed_at_utc": "2026-04-14T17:27:01-04:00"
+      "commit_sha": "2f26315331f21f9afc47c13448b513edc52148dc",
+      "tree_sha": "1f52243f2adf28ba949016edc9bec840b7a56ae0",
+      "committed_at_utc": "2026-04-15T00:24:20+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "62ab081b0fb1493e4835d2451df04ef290efc868813e7c92e33d828d85b7637b"
+    "source_digest": "ff938b22b45c3940989102759c52375721467f0a6475e1e1b1ceb455ef1b373c"
   },
   "summary": {
     "module_count": 158,
@@ -27,7 +27,7 @@
     "version": "0.28.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 94721,
+    "production_loc": 94728,
     "test_files": 17,
     "test_loc": 11616,
     "proved_theorem_lemma_decls": 2802,
@@ -14017,7 +14017,7 @@
         {
           "kind": "def",
           "name": "frozenSetIPCBuffer",
-          "line": 861,
+          "line": 865,
           "called": [
             "FrozenKernel",
             "ThreadId",
@@ -14035,7 +14035,7 @@
         {
           "kind": "def",
           "name": "frozenOpCoverage",
-          "line": 900,
+          "line": 907,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -14051,7 +14051,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpCoverage_count",
-          "line": 930,
+          "line": 937,
           "called": [
             "cspaceCopy",
             "cspaceMint",
@@ -14068,7 +14068,7 @@
         {
           "kind": "theorem",
           "name": "frozenOpCoverage_exhaustive",
-          "line": 942,
+          "line": 949,
           "called": [
             "SyscallId",
             "frozenOpCoverage"
