@@ -21,6 +21,25 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
+/// AJ5-C/L-14: Timer initialization error.
+///
+/// Returned by `init_timer` when parameters are invalid. A kernel function
+/// should not panic on invalid input — `Result` gives the boot sequence the
+/// opportunity to log and halt gracefully rather than crashing silently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TimerError {
+    /// The requested tick rate was zero, which would cause division by zero.
+    ZeroTickHz,
+}
+
+impl core::fmt::Display for TimerError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            TimerError::ZeroTickHz => write!(f, "tick_hz must be > 0 to avoid division by zero"),
+        }
+    }
+}
+
 /// Counter frequency on RPi5: 54 MHz crystal.
 /// Matches Lean `rpi5TimerConfig.counterFrequencyHz`.
 pub const COUNTER_FREQ_HZ: u32 = 54_000_000;
@@ -125,8 +144,16 @@ pub fn is_timer_pending() -> bool {
 /// # Arguments
 ///
 /// * `tick_hz` — Desired tick rate in Hz (e.g., 1000 for 1ms ticks)
-pub fn init_timer(tick_hz: u32) {
-    assert!(tick_hz > 0, "tick_hz must be > 0 to avoid division by zero");
+///
+/// # Errors
+///
+/// Returns `Err(TimerError::ZeroTickHz)` if `tick_hz` is zero. AJ5-C/L-14:
+/// replaced `assert!` panic with recoverable error — the boot sequence can
+/// log and halt gracefully instead of crashing silently.
+pub fn init_timer(tick_hz: u32) -> Result<(), TimerError> {
+    if tick_hz == 0 {
+        return Err(TimerError::ZeroTickHz);
+    }
 
     let freq = read_frequency();
     // Use compile-time constant if frequency register returns 0 (non-aarch64)
@@ -144,6 +171,8 @@ pub fn init_timer(tick_hz: u32) {
 
     // Reset tick counter
     TICK_COUNT.store(0, Ordering::Relaxed);
+
+    Ok(())
 }
 
 /// Reprogram the timer comparator for the next tick.
@@ -176,7 +205,12 @@ pub fn reprogram_timer() {
 /// Increment the tick counter. Called from the timer interrupt handler.
 ///
 /// Returns the new tick count.
-pub fn increment_tick_count() -> u64 {
+///
+/// AJ5-D/L-15: Restricted to `pub(crate)` — only called from `ffi.rs`
+/// (`ffi_timer_reprogram`). External crates must not increment the tick
+/// counter directly, as double-counting would corrupt the Lean model's
+/// `MachineState.timer` shadow.
+pub(crate) fn increment_tick_count() -> u64 {
     TICK_COUNT.fetch_add(1, Ordering::Relaxed) + 1
 }
 
@@ -249,14 +283,14 @@ mod tests {
     fn init_timer_stores_interval() {
         // On non-aarch64, read_frequency returns 0 so fallback to COUNTER_FREQ_HZ.
         // 54000000 / 1000 = 54000
-        init_timer(1000);
+        init_timer(1000).unwrap();
         assert_eq!(TIMER_INTERVAL.load(Ordering::Relaxed), 54_000);
         assert_eq!(get_tick_count(), 0);
     }
 
     #[test]
     fn init_timer_100hz_interval() {
-        init_timer(100);
+        init_timer(100).unwrap();
         assert_eq!(TIMER_INTERVAL.load(Ordering::Relaxed), 540_000);
     }
 
@@ -274,9 +308,9 @@ mod tests {
         reprogram_timer();
     }
 
+    // AJ5-C/L-14: init_timer(0) now returns Err instead of panicking.
     #[test]
-    #[should_panic(expected = "tick_hz must be > 0")]
-    fn init_timer_zero_hz_panics() {
-        init_timer(0);
+    fn init_timer_zero_hz_returns_error() {
+        assert_eq!(init_timer(0), Err(TimerError::ZeroTickHz));
     }
 }

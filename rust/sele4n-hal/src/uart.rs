@@ -172,13 +172,23 @@ impl fmt::Write for Uart {
 // access after interrupts are enabled.
 // ============================================================================
 
+use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-/// Module-private mutable UART instance. Accessed only through `UART_LOCK`.
+/// AJ5-B/M-21: Wrapper providing `Sync` for `UnsafeCell<Uart>`.
 ///
-/// SAFETY: All access is mediated by `UART_LOCK.with()`, which provides
-/// mutual exclusion via atomic acquire/release on a single-core system.
-static mut BOOT_UART_INNER: Uart = Uart::new(UART0_BASE);
+/// `static mut` is deprecated in future Rust editions and technically unsound
+/// under aliasing rules. This wrapper uses `UnsafeCell` instead, with `Sync`
+/// safety guaranteed by the `UART_LOCK` spinlock that mediates all access.
+struct UartInner(UnsafeCell<Uart>);
+
+// SAFETY: All access to `UartInner.0` is mediated by `UART_LOCK.with()`,
+// which provides mutual exclusion via atomic acquire/release with interrupt
+// masking on a single-core system.
+unsafe impl Sync for UartInner {}
+
+/// Module-private mutable UART instance. Accessed only through `UART_LOCK`.
+static BOOT_UART_INNER: UartInner = UartInner(UnsafeCell::new(Uart::new(UART0_BASE)));
 
 /// Minimal IRQ-safe spinlock guard for boot UART access.
 ///
@@ -217,9 +227,8 @@ impl UartLock {
             core::hint::spin_loop();
         }
         // SAFETY: Lock held + interrupts disabled — single writer guaranteed.
-        // `core::ptr::addr_of_mut!` avoids creating an intermediate reference
-        // to static mut.
-        let result = unsafe { f(&mut *core::ptr::addr_of_mut!(BOOT_UART_INNER)) };
+        // AJ5-B/M-21: Access via UnsafeCell::get() instead of static mut.
+        let result = unsafe { f(&mut *BOOT_UART_INNER.0.get()) };
         self.locked.store(false, Ordering::Release);
         crate::interrupts::restore_interrupts(saved_daif);
         result
