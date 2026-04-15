@@ -49,7 +49,15 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
     crate::kprintln!("[boot] GIC-400 initialized (distributor + CPU interface)");
 
     crate::kprintln!("[boot] Initializing timer (1000 Hz)...");
-    crate::timer::init_timer(crate::timer::DEFAULT_TICK_HZ);
+    // AJ5-C/L-14: init_timer now returns Result — on failure, log the error
+    // and halt via idle_loop since the kernel cannot function without a timer.
+    match crate::timer::init_timer(crate::timer::DEFAULT_TICK_HZ) {
+        Ok(()) => {}
+        Err(e) => {
+            crate::kprintln!("[boot] FATAL: timer init failed: {:?}", e);
+            idle_loop();
+        }
+    }
     crate::kprintln!("[boot] Timer initialized (54 MHz counter, 1ms ticks)");
 
     // Enable IRQ delivery now that GIC and timer are configured

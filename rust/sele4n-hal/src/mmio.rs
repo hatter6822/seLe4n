@@ -16,8 +16,10 @@
 //!
 //! ## Alignment
 //!
-//! Debug builds include alignment assertions. On release builds, alignment
-//! is the caller's responsibility (hardware may fault on unaligned MMIO).
+//! AJ5-A/M-20: All functions use runtime `assert!` (not `debug_assert!`) for
+//! alignment checks. On ARM64, unaligned Device memory accesses cause a
+//! synchronous Data Abort fault. The single modulo check per MMIO operation
+//! is negligible compared to the volatile memory access that follows.
 //!
 //! ## Bridge to Lean model
 //!
@@ -38,7 +40,7 @@
 /// Device-nGnRnE or Device-nGnRE in the page tables.
 #[inline(always)]
 pub fn mmio_read32(addr: usize) -> u32 {
-    debug_assert!(addr % 4 == 0, "MMIO read32: address {:#x} not 4-byte aligned", addr);
+    assert!(addr % 4 == 0, "MMIO read32: address {:#x} not 4-byte aligned", addr);
     #[cfg(target_arch = "aarch64")]
     {
         // SAFETY: The caller provides a valid MMIO address within a mapped device
@@ -60,7 +62,7 @@ pub fn mmio_read32(addr: usize) -> u32 {
 /// * `val` - Value to write
 #[inline(always)]
 pub fn mmio_write32(addr: usize, val: u32) {
-    debug_assert!(addr % 4 == 0, "MMIO write32: address {:#x} not 4-byte aligned", addr);
+    assert!(addr % 4 == 0, "MMIO write32: address {:#x} not 4-byte aligned", addr);
     #[cfg(target_arch = "aarch64")]
     {
         // SAFETY: The caller provides a valid MMIO address within a mapped device
@@ -80,7 +82,7 @@ pub fn mmio_write32(addr: usize, val: u32) {
 /// * `addr` - Physical address of the MMIO register (must be 8-byte aligned)
 #[inline(always)]
 pub fn mmio_read64(addr: usize) -> u64 {
-    debug_assert!(addr % 8 == 0, "MMIO read64: address {:#x} not 8-byte aligned", addr);
+    assert!(addr % 8 == 0, "MMIO read64: address {:#x} not 8-byte aligned", addr);
     #[cfg(target_arch = "aarch64")]
     {
         // SAFETY: The caller provides a valid 8-byte-aligned MMIO address.
@@ -101,7 +103,7 @@ pub fn mmio_read64(addr: usize) -> u64 {
 /// * `val` - Value to write
 #[inline(always)]
 pub fn mmio_write64(addr: usize, val: u64) {
-    debug_assert!(addr % 8 == 0, "MMIO write64: address {:#x} not 8-byte aligned", addr);
+    assert!(addr % 8 == 0, "MMIO write64: address {:#x} not 8-byte aligned", addr);
     #[cfg(target_arch = "aarch64")]
     {
         // SAFETY: The caller provides a valid 8-byte-aligned MMIO address.
@@ -159,28 +161,30 @@ mod tests {
         assert_eq!(mmio_read64(0x100), 0);
     }
 
+    // AJ5-A/M-20: Alignment checks are now runtime assert! (not debug_assert!),
+    // so these tests pass in both debug and release builds.
+
     #[test]
     #[should_panic(expected = "not 4-byte aligned")]
-    fn mmio_read32_unaligned_panics_debug() {
-        // In debug mode, unaligned access should panic
+    fn mmio_read32_unaligned_panics() {
         mmio_read32(0x1001);
     }
 
     #[test]
     #[should_panic(expected = "not 4-byte aligned")]
-    fn mmio_write32_unaligned_panics_debug() {
+    fn mmio_write32_unaligned_panics() {
         mmio_write32(0x1001, 0);
     }
 
     #[test]
     #[should_panic(expected = "not 8-byte aligned")]
-    fn mmio_read64_unaligned_panics_debug() {
+    fn mmio_read64_unaligned_panics() {
         mmio_read64(0x1001);
     }
 
     #[test]
     #[should_panic(expected = "not 8-byte aligned")]
-    fn mmio_write64_unaligned_panics_debug() {
+    fn mmio_write64_unaligned_panics() {
         mmio_write64(0x1001, 0);
     }
 }
