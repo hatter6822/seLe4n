@@ -313,4 +313,35 @@ mod tests {
     fn init_timer_zero_hz_returns_error() {
         assert_eq!(init_timer(0), Err(TimerError::ZeroTickHz));
     }
+
+    #[test]
+    fn timer_error_display() {
+        use core::fmt::Write;
+        let err = TimerError::ZeroTickHz;
+        // no_std-compatible fixed-size buffer for Display test
+        struct FmtBuf {
+            buf: [u8; 128],
+            pos: usize,
+        }
+        impl FmtBuf {
+            fn new() -> Self { Self { buf: [0u8; 128], pos: 0 } }
+            fn as_str(&self) -> &str {
+                core::str::from_utf8(&self.buf[..self.pos]).unwrap()
+            }
+        }
+        impl Write for FmtBuf {
+            fn write_str(&mut self, s: &str) -> core::fmt::Result {
+                let bytes = s.as_bytes();
+                let end = self.pos + bytes.len();
+                if end > self.buf.len() { return Err(core::fmt::Error); }
+                self.buf[self.pos..end].copy_from_slice(bytes);
+                self.pos = end;
+                Ok(())
+            }
+        }
+        let mut buf = FmtBuf::new();
+        write!(buf, "{}", err).unwrap();
+        assert!(buf.as_str().contains("tick_hz must be > 0"),
+            "Display output was: {}", buf.as_str());
+    }
 }
