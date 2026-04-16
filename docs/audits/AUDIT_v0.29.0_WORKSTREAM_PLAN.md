@@ -47,8 +47,8 @@ Each sub-task in this plan follows one of three granularity tiers:
 - **Atomic** — a single commit-sized change, typically ≤50 LOC. Most
   LOW-tier items and simple MEDIUM items. Examples: AK1-G (mark
   `ipcUnwrapCapsLoop` private), AK3-H (add `countsPerTickPositive`).
-- **Decomposed** — broken into 3–8 numbered sub-steps (e.g., AK2-A.1,
-  AK2-A.2, …). Each sub-step is independently committable with its own
+- **Decomposed** — broken into 3–8 numbered sub-steps (e.g., AK3-A.1,
+  AK3-A.2, …). Each sub-step is independently committable with its own
   acceptance criterion. Examples: AK3-A (ASID rollover) 8 sub-steps;
   AK5-D (MMU enable) 5 sub-steps.
 - **Batched** — grouped LOW-tier items handled in a single commit with
@@ -570,28 +570,43 @@ into the TCB-priority bucket but selection looks it up at SC priority —
 `chooseBestInBucketEffective` misses it, and the bucket becomes a starvation
 pit.
 
-**Sites (verified):**
-- `Operations/Core.lean:337` — `handleYield` re-enqueue before reschedule.
+**Sites (verified via grep against current source):**
+- `Operations/Core.lean:337` — `handleYield` re-enqueue before reschedule
+  (uses `effectiveRunQueuePriority tcb` — INCORRECT for SC-bound).
 - `Operations/Core.lean:390` — `timerTick` preemption (time-slice-expired
-  branch, `tcb.timeSlice ≤ 1`).
-- `Operations/Core.lean:776` — `switchDomain` unbound fallback branch.
+  branch, `tcb.timeSlice ≤ 1`) — INCORRECT for SC-bound.
+- `Operations/Core.lean:546` — `timerTickBudget` (budget-exhausted
+  fallback, `.unbound` branch at line 540–546) — INCORRECT for SC-bound.
+- `Operations/Core.lean:776` — `switchDomain` unbound fallback branch —
+  INCORRECT for SC-bound.
 
-**Note:** `timerTickBudget` at `:546` is already correct — verified that it
-calls `resolveInsertPriority` in the SC-aware branch.
+**Correct sites (already using `resolveInsertPriority`, no change needed):**
+- `Operations/Core.lean:455` — `processReplenishmentsDue` (SC-aware).
+- `Operations/Core.lean:575` — `timerTickBudget` SC-bound refill branch.
+- `Operations/Core.lean:701` — `handleYieldWithBudget` SC-bound branch.
+
+**Intentionally-unchanged sites (semantically correct — unbound fallback):**
+- `Operations/Core.lean:683` — `handleYieldWithBudget` `.unbound` arm
+  (thread has no SchedContext, so TCB priority is canonical — no fix
+  required).
+- `Operations/Core.lean:707` — `handleYieldWithBudget` SC-not-found
+  defensive branch (invariant-violation path, falls through safely).
 
 **Steps:**
 
-1. For each of the three sites, replace
+1. For each of the four sites (`:337`, `:390`, `:546`, `:776`), replace
    `rq.insert tid (effectiveRunQueuePriority tcb)` with a match on
    `getSchedContext st tid`:
    - If bound to `sc`: `rq.insert tid (resolveInsertPriority st tid sc)`.
    - If unbound: `rq.insert tid (effectiveRunQueuePriority tcb)` (keeps
      current behavior — matches `resolveEffectivePrioDeadline` unbound arm).
-2. Prove `handleYield_respects_effective_priority`,
-   `timerTick_respects_effective_priority`,
-   `switchDomain_respects_effective_priority` bridge lemmas asserting
-   `priorityOf(runQueue.lookup tid) = (resolveEffectivePrioDeadline st tcb).1`.
-3. Update `Preservation.lean` theorems for each of the three ops
+2. Prove four bridge lemmas asserting
+   `priorityOf(runQueue.lookup tid) = (resolveEffectivePrioDeadline st tcb).1`:
+   - `handleYield_respects_effective_priority`
+   - `timerTick_respects_effective_priority`
+   - `timerTickBudget_unbound_respects_effective_priority`
+   - `switchDomain_respects_effective_priority`
+3. Update `Preservation.lean` theorems for each of the four ops
    (`handleYield_preserves_schedulerPriorityMatch`, etc.) — no semantic
    change under `schedContextBindingConsistent`.
 
@@ -781,7 +796,7 @@ indicated by `⇐`. Steps can run in parallel where no dependency exists.
 #### AK2-K.1: Derive `hBandProgress` from CBS budget finiteness
 
 **Dependency:** none (can start first).
-**File:** `SeLe4n/Kernel/Liveness/BandExhaustion.lean`.
+**File:** `SeLe4n/Kernel/Scheduler/Liveness/BandExhaustion.lean`.
 **Estimated net LOC:** ~200.
 
 **Atomic work units:**
@@ -822,7 +837,7 @@ theorem statement; `band_progress_from_cbs` discharges it. Build passes.
 #### AK2-K.2: Derive `hDomainActiveRunnable` from schedule invariant
 
 **Dependency:** AK2-K.1 (shares `domainActive` lemma vocabulary).
-**File:** `SeLe4n/Kernel/Liveness/WCRT.lean` + small extension to
+**File:** `SeLe4n/Kernel/Scheduler/Liveness/WCRT.lean` + small extension to
 `SeLe4n/Kernel/Scheduler/Invariant.lean`.
 **Estimated net LOC:** ~150.
 
@@ -861,7 +876,7 @@ follow-up sub-task AK2-K.2.b.cascade to be landed incrementally.
 #### AK2-K.3: Structural PIP Bound (S-H02)
 
 **Dependency:** none for AK2-K.3.a–b; AK2-K.3.c requires AK2-K.3.a.
-**File:** `SeLe4n/Kernel/PriorityInheritance/BoundedInversion.lean` +
+**File:** `SeLe4n/Kernel/Scheduler/PriorityInheritance/BoundedInversion.lean` +
 extension to `BlockingGraph.lean`.
 **Estimated net LOC:** ~250.
 
@@ -902,7 +917,7 @@ is operationally meaningful (≤ host TCB count, not ≤ every object).
 
 **Dependency:** AK2-K.1 + AK2-K.2 + AK2-K.3 (this is the documentation
 closure step).
-**Files:** `SeLe4n/Kernel/Liveness/WCRT.lean` docstring, `docs/spec/
+**Files:** `SeLe4n/Kernel/Scheduler/Liveness/WCRT.lean` docstring, `docs/spec/
 SELE4N_SPEC.md` §5 (Scheduler/WCRT).
 **Estimated net LOC:** ~50 (docs) + 10 (Lean comment block).
 
@@ -1023,7 +1038,7 @@ in `AsidManager.lean`, plus ~80 LOC cascade across consumer sites.
 
 #### AK3-A.1: Add `activeSet` field to `AsidPool`
 
-**File:** `SeLe4n/Kernel/Architecture/AsidManager.lean:40-60` (struct def).
+**File:** `SeLe4n/Kernel/Architecture/AsidManager.lean:58-63` (struct def).
 **Estimated LOC:** +10 / -0.
 **Dependency:** none.
 
@@ -1031,13 +1046,23 @@ in `AsidManager.lean`, plus ~80 LOC cascade across consumer sites.
 
 ```lean
 structure AsidPool where
-  nextAsid      : Nat
-  freeList      : List ASID
-  activeSet     : HashSet ASID       -- NEW
-  activeCount   : Nat                -- retained for Inhabited default + fast cardinality
-  generation    : Nat
-  deriving Repr, Inhabited
+  nextAsid    : Nat
+  generation  : Nat
+  freeList    : List ASID
+  activeSet   : Std.HashSet ASID    -- NEW — ground truth for liveness
+  activeCount : Nat                 -- retained; invariant: = activeSet.size
+  deriving Repr
+
+-- The existing `deriving Inhabited` cannot apply automatically because
+-- `Std.HashSet` has no default `Inhabited` instance. Provide one manually:
+instance : Inhabited AsidPool where
+  default := ⟨0, 0, [], Std.HashSet.empty, 0⟩
 ```
+
+Field order matches the existing definition (`nextAsid`, `generation`,
+`freeList`, `activeCount`) with `activeSet` inserted between `freeList`
+and `activeCount`. `{ pool with ... }` call sites are unaffected by
+insertion-point ordering.
 
 **Invariant mapping:** `activeCount = activeSet.size` (old scalar now
 derived). Existing `activeCount` accessor remains for fast access; new
@@ -1270,7 +1295,7 @@ unenforced.
 **Atomic work unit:**
 
 ```lean
-def fromPagePermissions (perms : PagePermissions) : Option HwPageAttributes :=
+def fromPagePermissions (perms : PagePermissions) : Option PageAttributes :=
   -- L3 W^X gate: reject W+X at encode time
   if perms.write && perms.execute then
     none
@@ -1287,7 +1312,7 @@ def fromPagePermissions (perms : PagePermissions) : Option HwPageAttributes :=
 
 ```lean
 theorem fromPagePermissions_wx_excludes_W_and_X
-    (perms : PagePermissions) (hw : HwPageAttributes) :
+    (perms : PagePermissions) (hw : PageAttributes) :
     fromPagePermissions perms = some hw →
     ¬ (perms.write ∧ perms.execute)
 ```
@@ -1400,7 +1425,7 @@ all five enforcement points.
 
 **Overall acceptance criteria (AK3-B):**
 
-- [ ] `fromPagePermissions : PagePermissions → Option HwPageAttributes`
+- [ ] `fromPagePermissions : PagePermissions → Option PageAttributes`
       returns `none` on W+X.
 - [ ] `VSpaceRoot.mapPage` rejects W+X.
 - [ ] `ARMv8VSpace.mapPage` rejects W+X.
@@ -2255,6 +2280,14 @@ walker after SCTLR.C=1.
 Boot-path correctness is safety-critical. Each sub-step lands as a
 separate commit with QEMU validation, so a regression is isolable.
 
+**Coordination with AK5-E:** AK5-D and AK5-E both edit `enable_mmu`.
+Recommended ordering: land AK5-E.1–E.4 first (`PageTableCell` wrapper
+migration), then AK5-D.1–D.5 on top of the migrated base. The AK5-D.2
+code example below writes `core::ptr::addr_of!(BOOT_L1_TABLE) as usize`
+as a pre-AK5-E transitional form; after AK5-E lands, replace with
+`BOOT_L1_TABLE.pa()` in a trivial follow-up. If AK5-D lands first,
+AK5-E.2's migration re-touches the code inserted by AK5-D.2.
+
 ---
 
 #### AK5-D.1: Page-table D-cache clean helper
@@ -2294,8 +2327,8 @@ mock DC CVAC counter.
 #### AK5-D.2: Insert pre-TTBR TLB invalidation
 
 **File:** `rust/sele4n-hal/src/mmu.rs:162-181`.
-**Estimated LOC:** +15 / -0.
-**Dependency:** AK5-D.1.
+**Estimated LOC:** +15 / -5.
+**Dependency:** AK5-D.1; transitively AK5-C (for `compute_sctlr_el1_bitmap`).
 
 **Atomic work unit:** Restructure `enable_mmu`:
 
@@ -2307,7 +2340,9 @@ pub unsafe fn enable_mmu() {
     crate::barriers::isb();
 
     // Step 2: Clean page-table pages to Point of Coherency so walker sees them
-    let pt_start = core::ptr::addr_of!(BOOT_L1_TABLE) as usize;
+    //         (uses `&raw const` matching the rest of the HAL; after AK5-E.2
+    //          migration this becomes `BOOT_L1_TABLE.pa()`)
+    let pt_start = (&raw const BOOT_L1_TABLE) as usize;
     let pt_size  = core::mem::size_of_val(&BOOT_L1_TABLE);
     unsafe { crate::cache::clean_pagetable_range(pt_start, pt_size); }
 
@@ -2532,7 +2567,7 @@ mis-aligned boot images.
 
 #### AK5-E.4: Remove unused `.bss.page_tables` section
 
-**File:** `rust/sele4n-hal/linker.ld` + `mmu.rs`.
+**File:** `rust/sele4n-hal/link.ld` + `mmu.rs`.
 **Estimated LOC:** -10.
 **Dependency:** AK5-E.2.
 
@@ -2626,7 +2661,7 @@ entry using it.
     stp x2,  x3,  [sp, #16]
     ...
     stp x28, x29, [sp, #224]
-    str x30,      [sp, #240]       // x30 alone; 248 unused (padding)
+    str x30,      [sp, #240]       // x30 at 240-247; SP_EL0 next at 248
     mrs x0,  sp_el0
     str x0,       [sp, #248]
     mrs x0,  elr_el1
@@ -3425,8 +3460,14 @@ inductive ObjectKind where
 structure ObjId where
   val  : Nat
   kind : ObjectKind := .unknown   -- default preserves backward compat
-  deriving Repr, DecidableEq
+  deriving DecidableEq, Repr, Inhabited
 ```
+
+**Note on `Inhabited`:** `deriving Inhabited` for a struct with default
+field values produces an `Inhabited` instance that uses those defaults.
+`default : ObjId` continues to produce `⟨0, .unknown⟩` — matching the
+prior sentinel convention. Existing `Inhabited ObjId` uses (e.g.,
+`default` in fixture builders) remain compatible.
 
 **Acceptance:** `ObjId` struct compiles; existing `ObjId ⟨n⟩` syntax
 still works (defaults to `.unknown`).
