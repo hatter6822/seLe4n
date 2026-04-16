@@ -874,6 +874,10 @@ def cspaceRevokeCdt (addr : CSpaceAddr) : Kernel Unit :=
         match SystemState.lookupCdtNodeOfSlot stLocal addr with
         | none => .ok ((), stLocal)
         | some rootNode =>
+            -- AJ-L10: `descendantsOf` materializes the full descendant list before
+            -- folding. For deep CDT trees this is a performance concern (O(n) allocation),
+            -- not a correctness issue. A streaming/iterator-based approach is deferred
+            -- to WS-V (performance optimization phase).
             let descendants := stLocal.cdt.descendantsOf rootNode
             let result := descendants.foldl (fun acc node =>
               match acc with

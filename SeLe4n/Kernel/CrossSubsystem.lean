@@ -130,9 +130,9 @@ theorem collectQueueMembers_none (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe
 --   Formalizing requires a `QueueNextPath` inductive bridge that connects
 --   the path predicate to `queueNext` field traversal. This is the sole
 --   remaining TPI-DOC item for the IPC subsystem.
--- TPI-DOC: fuel-sufficiency formal connection to `tcbQueueChainAcyclic` deferred.
--- Closure requires connecting `QueueNextPath` (inductive path predicate) to
--- `queueNext` field traversal in `collectQueueMembers`. See INFO-06.
+-- TPI-DOC / AJ-L08: fuel-sufficiency formal connection to `tcbQueueChainAcyclic`
+-- deferred to WS-V. Closure requires connecting `QueueNextPath` (inductive path
+-- predicate) to `queueNext` field traversal in `collectQueueMembers`. See INFO-06.
 theorem collectQueueMembers_fuel_sufficiency_documented
     (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject)
     (start : Option SeLe4n.ThreadId) :

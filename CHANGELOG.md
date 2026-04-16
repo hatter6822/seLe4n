@@ -1,4 +1,80 @@
-## v0.28.4 — WS-AJ Phase AJ4: Architecture Model Correctness
+## v0.29.0 — WS-AJ Phase AJ6: Documentation, Testing & Closure
+
+Phase AJ6 of WS-AJ Post-Audit Comprehensive Remediation (v0.28.0 audit).
+Documentation, errata, and closure phase completing the WS-AJ portfolio.
+Addresses 3 HIGH (activation roadmaps), 5 MEDIUM (by-design documentation),
+and 11 LOW (erroneous/deferred/by-design documentation) findings.
+**WS-AJ PORTFOLIO COMPLETE** (6 phases, 30 sub-tasks, v0.28.1–v0.29.0).
+Gate: `test_full.sh` + `cargo test --workspace` + `check_version_sync.sh`.
+
+### Changes
+
+- **AJ6-A** (H-01, H-02, H-03): Hardware Integration Activation Roadmaps —
+  new §8.15 in `SELE4N_SPEC.md` documenting activation plans for 7 orphaned
+  architecture modules (H-01), budget-aware scheduler wiring (H-02), and FFI
+  bridge connection (H-03). All deferred to WS-V (AG10: Hardware Integration).
+  `DEVELOPMENT.md` updated with WS-AJ portfolio completion status.
+
+- **AJ6-B** (M-03/M-05/M-08/M-13/M-15/L-03/L-05/L-11/L-13/L-19): By-Design
+  Finding Documentation — 10 findings verified at code locations. M-05: added
+  AJ-M05 deferral tag to `VSpaceARMv8.lean` module header. M-08: added H-01
+  orphaned module cross-reference to `ExceptionModel.lean`. L-11: added PA
+  width divergence note to `Sim/Contract.lean` documenting intentional 52-bit
+  vs RPi5 44-bit difference. Remaining 7 findings confirmed with existing
+  documentation.
+
+- **AJ6-C** (L-01, L-17, audit metadata): Audit Errata — errata appendix
+  added to `AUDIT_v0.28.0_COMPREHENSIVE.md`. E-1: executive summary counts
+  corrected (55→52 total, 24M→21M). E-2: L-01 marked FALSE (preservation
+  proofs exist at `Selection.lean:459`). E-3: L-17 marked FALSE (queuePPrev
+  already cleared at `Operations.lean:326-329`).
+
+- **AJ6-D** (L-07/L-08/L-10/L-16): Deferred Finding Annotations — L-07:
+  `tlbBarrierComplete := True` H-01 scope annotation in `TlbModel.lean`. L-08:
+  `collectQueueMembers` fuel AJ tag in `CrossSubsystem.lean`. L-10:
+  `descendantsOf` materialization performance note in `Capability/Operations.lean`.
+  L-16: `extractBits` offset generality harmless note in `RadixTree/Core.lean`.
+
+- **AJ6-E**: Test Fixture Verification — 225 trace lines match
+  `main_trace_smoke.expected` (no changes from AJ1–AJ5). Documentation
+  synchronized across `README.md`, `SELE4N_SPEC.md`, `DEVELOPMENT.md`,
+  `CLAIM_EVIDENCE_INDEX.md`, `WORKSTREAM_HISTORY.md`, `CHANGELOG.md`,
+  `CLAUDE.md`, `codebase_map.json`, 10 i18n READMEs.
+
+- **AJ6-F**: Version bump 0.28.4 → 0.29.0 across 15 version-bearing files.
+  `check_version_sync.sh` passes.
+
+## v0.28.4 — WS-AJ Phases AJ4+AJ5: Architecture Model Correctness + Rust HAL Hardening
+
+Phase AJ4 and AJ5 of WS-AJ Post-Audit Comprehensive Remediation (v0.28.0 audit).
+
+### Phase AJ5: Rust HAL Hardening
+
+4 sub-tasks (AJ5-A through AJ5-D) addressing 2 MEDIUM and 2 LOW findings.
+
+- **AJ5-A** (M-20/MEDIUM): All four MMIO functions (`mmio_read32`,
+  `mmio_write32`, `mmio_read64`, `mmio_write64`) promoted from `debug_assert!`
+  to runtime `assert!` for alignment checks — unaligned Device memory accesses
+  on ARM64 cause synchronous Data Abort; runtime cost negligible vs volatile
+  MMIO access.
+
+- **AJ5-B** (M-21/MEDIUM): Migrated `static mut BOOT_UART_INNER` to safe
+  `UnsafeCell<Uart>` wrapped in `UartInner` newtype with manual `Sync` impl —
+  eliminates `static mut` (deprecated in future Rust editions, technically
+  unsound under aliasing rules); `UART_LOCK` spinlock unchanged.
+
+- **AJ5-C** (L-14/LOW): `init_timer` return type changed from `()` to
+  `Result<(), TimerError>` — `TimerError::ZeroTickHz` replaces `assert!` panic;
+  boot sequence handles error with log + halt; `Display` impl for error messages.
+
+- **AJ5-D** (L-15/LOW): `increment_tick_count` visibility restricted from `pub`
+  to `pub(crate)` — only called from `ffi.rs` (`ffi_timer_reprogram`); prevents
+  external double-counting that would corrupt Lean model's `MachineState.timer`
+  shadow.
+
+Gate: `cargo test --workspace` (367 tests) + `cargo clippy --workspace` (0 warnings).
+
+### Phase AJ4: Architecture Model Correctness
 
 Phase AJ4 of WS-AJ Post-Audit Comprehensive Remediation (v0.28.0 audit).
 Addresses 2 MEDIUM and 2 LOW findings in architecture model correctness,

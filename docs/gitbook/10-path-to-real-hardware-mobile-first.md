@@ -39,13 +39,15 @@ user-space-to-kernel boundary that H3 will bind to hardware registers.
 
 ### H3 — In progress: Raspberry Pi 5 binding
 
-**WS-AJ Phases AJ1–AJ5 COMPLETE (v0.28.1–v0.28.4).** Post-audit remediation
-of the v0.28.0 comprehensive audit. AJ1: IPC & Lifecycle Correctness (6
-sub-tasks). AJ2: Security & Information Flow Hardening (4 sub-tasks). AJ3:
-Platform & Boot Pipeline (6 sub-tasks). AJ4: Architecture Model Correctness
-(4 sub-tasks). AJ5: Rust HAL Hardening (4 sub-tasks) — MMIO runtime alignment
-assertions, `UnsafeCell`-based UART static, `init_timer` Result return type,
-`increment_tick_count` visibility restriction.
+**WS-AJ PORTFOLIO COMPLETE (v0.28.1–v0.29.0).** Post-audit remediation
+of the v0.28.0 comprehensive audit — 6 phases (AJ1–AJ6), 30 sub-tasks.
+AJ1: IPC & Lifecycle Correctness (6 sub-tasks). AJ2: Security & Information
+Flow Hardening (4 sub-tasks). AJ3: Platform & Boot Pipeline (6 sub-tasks).
+AJ4: Architecture Model Correctness (4 sub-tasks). AJ5: Rust HAL Hardening
+(4 sub-tasks). AJ6: Documentation, Testing & Closure (6 sub-tasks) —
+Hardware Integration Roadmap §8.15 (H-01/H-02/H-03 activation plans),
+by-design annotations, audit errata, deferred annotations, version bump
+to v0.29.0.
 
 **WS-AI Portfolio COMPLETE (v0.28.0).** 7 phases, 37 sub-tasks addressing all
 60 findings from the v0.27.6 comprehensive audit (5 HIGH, 27 MEDIUM, 28 LOW).

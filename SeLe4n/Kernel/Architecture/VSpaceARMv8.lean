@@ -39,6 +39,13 @@ Following the standard refinement pattern (cf. CertiKOS, seL4 proof):
 
 This design enables fully-proven proofs for the VSpaceBackend instance while
 keeping the hardware walk implementation separate for the FFI bridge.
+
+**AJ-M05 / H-01 scope:** The full VSpaceARMv8 refinement proofs
+(`lookupPage_refines`, `vspaceProperty_transfer`) are proven against the
+shadow HashMap model. End-to-end proofs against hardware page table walks
+require the module to be integrated into the main kernel execution path
+(currently orphaned — see §8.15.1 of SELE4N_SPEC.md for the activation
+roadmap). Deferred to WS-V (AG10: Hardware Integration).
 -/
 
 namespace SeLe4n.Kernel.Architecture
