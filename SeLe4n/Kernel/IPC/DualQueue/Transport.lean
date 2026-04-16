@@ -1649,33 +1649,29 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
                   (senderTcb.pendingMessage, match senderTcb.ipcState with
                     | .blockedOnCall _ => true
                     | _ => false)
-                -- AK1-D (I-M02 / MEDIUM): Receiver's ipcState preservation.
-                -- The `waitingThreadsPendingMessageNone` invariant is
-                -- preserved on the rendezvous handshake via the
-                -- `hReceiverNotBlocked` deployment obligation of
-                -- `endpointReceiveDual_preserves_waitingThreadsPendingMessageNone`
-                -- (see `IPC/Invariant/Structural.lean:7226`). That
-                -- obligation holds structurally for all kernel call-sites:
-                -- the receiver calling `endpointReceiveDual` is the current
-                -- running thread, which by the scheduler's
-                -- `currentThreadIpcReady` invariant has `ipcState = .ready`
-                -- (not `.blockedOnReceive` / `.blockedOnNotification`).
-                -- `endpointReplyRecv` similarly sets `replyTarget := .ready`
-                -- before invoking `endpointReceiveDual receiver ensureRunnable`,
-                -- leaving `receiver`'s ipcState unchanged at `.ready`.
-                -- An operational `storeTcbIpcStateAndMessage receiver .ready
-                -- senderMsg` fix would require cascading rewrites across
-                -- ~20 preservation proofs (AK10-D proof-engineering closure);
-                -- the invariant obligation closes the finding at the NI
-                -- preservation layer without that overhead.
+                -- AK1-D (I-M02 / MEDIUM): Atomic receiver (ipcState,
+                -- pendingMessage) update. The `waitingThreadsPendingMessageNone`
+                -- invariant requires any `.blockedOnReceive` /
+                -- `.blockedOnNotification` thread to have `pendingMessage =
+                -- none`. If the receiver entered this rendezvous path in a
+                -- stale `.blockedOnReceive` state (a defensively-handled case
+                -- that the kernel's `currentThreadIpcReady` invariant
+                -- structurally excludes, but which we no longer need to
+                -- rely on), writing `senderMsg` into `pendingMessage` while
+                -- leaving the stale ipcState would violate the invariant.
+                -- `storeTcbIpcStateAndMessage _ .ready senderMsg` atomically
+                -- sets both fields, yielding a post-state where the receiver
+                -- is `.ready` (ipcState is unconstrained by
+                -- `waitingThreadsPendingMessageNone`). Fail-closed by
+                -- construction.
                 if senderWasCall then
                   -- Call path: sender transitions to blockedOnReply, NOT ready
                   match storeTcbIpcStateAndMessage st' sender
                       (.blockedOnReply endpointId (some receiver)) none with
                   | .error e => .error e
                   | .ok st'' =>
-                      -- WS-F1: Deliver message to receiver's TCB.
-                      match storeTcbPendingMessage st'' receiver senderMsg with
+                      -- AK1-D: Atomic (ipcState := .ready, pendingMessage := senderMsg).
+                      match storeTcbIpcStateAndMessage st'' receiver .ready senderMsg with
                       | .ok st''' => .ok (sender, st''')
                       | .error e => .error e
                 else
@@ -1684,8 +1680,8 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
                   | .error e => .error e
                   | .ok st'' =>
                       let st''' := ensureRunnable st'' sender
-                      -- WS-F1: Deliver message to receiver's TCB.
-                      match storeTcbPendingMessage st''' receiver senderMsg with
+                      -- AK1-D: Atomic (ipcState := .ready, pendingMessage := senderMsg).
+                      match storeTcbIpcStateAndMessage st''' receiver .ready senderMsg with
                       | .ok st4 => .ok (sender, st4)
                       | .error e => .error e
         | none =>
