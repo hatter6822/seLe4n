@@ -478,6 +478,27 @@ theorem storeTcbPendingMessage_notification_backward
         rw [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hStore] at hNtfn; cases hNtfn
   · rw [storeTcbPendingMessage_preserves_objects_ne st st' tid msg oid hEq hObjInv hStep] at hNtfn; exact hNtfn
 
+/-- AK1-D: storeTcbIpcStateAndMessage forward-preserves TCB existence.
+    Mirrors `storeTcbPendingMessage_tcb_forward`: a TCB at any `oid` in the
+    pre-state still has a TCB at `oid` in the post-state. Used by
+    rendezvous-handshake preservation proofs that forward the current
+    thread's TCB witness through the receiver-side store. -/
+theorem storeTcbIpcStateAndMessage_tcb_forward
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (oid : SeLe4n.ObjId) (tcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
+    (hTcb : st.objects[oid]? = some (.tcb tcb)) :
+    ∃ tcb', st'.objects[oid]? = some (.tcb tcb') := by
+  by_cases hEq : oid = tid.toObjId
+  · subst hEq
+    exact storeTcbIpcStateAndMessage_tcb_exists_at_target st st' tid ipc msg
+      hObjInv hStep ⟨tcb, hTcb⟩
+  · exact ⟨tcb, by
+      rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg oid hEq hObjInv hStep]
+      exact hTcb⟩
+
 /-- WS-F1: storeTcbPendingMessage forward-preserves TCB existence. -/
 theorem storeTcbPendingMessage_tcb_forward
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (msg : Option IpcMessage)

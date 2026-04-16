@@ -772,9 +772,10 @@ theorem endpointReceiveDual_preserves_ipcInvariant
                 storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInvPop hMsg
               have hInv2 := storeTcbIpcStateAndMessage_preserves_ipcInvariant pair.2.2 st2 pair.1 (.blockedOnReply endpointId (some receiver)) none hInv1 hObjInvPop hMsg
               revert hStep
-              cases hPend : storeTcbPendingMessage st2 receiver _ with
+              -- AK1-D: atomic (.ready, senderMsg) receiver update
+              cases hPend : storeTcbIpcStateAndMessage st2 receiver .ready _ with
               | ok st4 =>
-                exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸ storeTcbPendingMessage_preserves_ipcInvariant _ _ receiver _ hInv2 hObjInvMsg hPend
+                exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸ storeTcbIpcStateAndMessage_preserves_ipcInvariant _ _ receiver _ _ hInv2 hObjInvMsg hPend
               | error _ => simp
           | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
             -- senderWasCall = false, send path
@@ -791,9 +792,10 @@ theorem endpointReceiveDual_preserves_ipcInvariant
               have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by
                 rwa [ensureRunnable_preserves_objects]
               revert hStep
-              cases hPend : storeTcbPendingMessage (ensureRunnable st2 pair.1) receiver _ with
+              -- AK1-D: atomic (.ready, senderMsg) receiver update
+              cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) receiver .ready _ with
               | ok st4 =>
-                exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸ storeTcbPendingMessage_preserves_ipcInvariant _ _ receiver _ hInv3 hObjInvEns hPend
+                exact fun h => (Prod.mk.inj (Except.ok.inj h)).2 ▸ storeTcbIpcStateAndMessage_preserves_ipcInvariant _ _ receiver _ _ hInv3 hObjInvEns hPend
               | error _ => simp
       | none =>
         -- AI4-A: Blocking: cleanup → Enqueue → storeTcbIpcState → removeRunnable
@@ -872,10 +874,11 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
               have hSchedMsg := storeTcbIpcStateAndMessage_scheduler_eq pair.2.2 st2 pair.1 (.blockedOnReply endpointId (some receiver)) none hMsg
               have hSchedEq : st2.scheduler = st.scheduler := hSchedMsg.trans hSchedPop
               revert hStep
-              cases hPend : storeTcbPendingMessage st2 receiver _ with
+              -- AK1-D: atomic (.ready, senderMsg) receiver update
+              cases hPend : storeTcbIpcStateAndMessage st2 receiver .ready _ with
               | ok st4 =>
                 intro h; have h_eq := (Prod.mk.inj (Except.ok.inj h)).2; subst h_eq
-                have hSchedPend := storeTcbPendingMessage_scheduler_eq _ _ receiver _ hPend
+                have hSchedPend := storeTcbIpcStateAndMessage_scheduler_eq _ _ receiver _ _ hPend
                 refine ⟨?_, ?_, ?_⟩
                 · rw [queueCurrentConsistent]; rw [queueCurrentConsistent] at hQCC; rwa [hSchedPend, hSchedEq]
                 · show st4.scheduler.runnable.Nodup
@@ -892,9 +895,9 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                     · have hTargetTcb : ∃ t, pair.2.2.objects[pair.1.toObjId]? = some (.tcb t) := hNeTid ▸ ⟨tcb1, hTcb1⟩
                       have htgt := storeTcbIpcStateAndMessage_tcb_exists_at_target pair.2.2 st2 pair.1 (.blockedOnReply endpointId (some receiver)) none hObjInv1 hMsg hTargetTcb
                       obtain ⟨tcb_tgt, htcb_tgt⟩ := htgt
-                      exact storeTcbPendingMessage_tcb_forward _ _ receiver _ x.toObjId tcb_tgt hObjInvMsg hPend (by rwa [← hNeTid] at htcb_tgt)
+                      exact storeTcbIpcStateAndMessage_tcb_forward _ _ receiver _ _ x.toObjId tcb_tgt hObjInvMsg hPend (by rwa [← hNeTid] at htcb_tgt)
                     · have h1 := (storeTcbIpcStateAndMessage_preserves_objects_ne pair.2.2 st2 pair.1 (.blockedOnReply endpointId (some receiver)) none x.toObjId hNeTid hObjInv1 hMsg) ▸ hTcb1
-                      exact storeTcbPendingMessage_tcb_forward _ _ receiver _ x.toObjId tcb1 hObjInvMsg hPend h1
+                      exact storeTcbIpcStateAndMessage_tcb_forward _ _ receiver _ _ x.toObjId tcb1 hObjInvMsg hPend h1
               | error _ => simp
           | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
             -- senderWasCall = false, send path
@@ -939,11 +942,12 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
               have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by
                 rwa [ensureRunnable_preserves_objects]
               revert hStep
-              cases hPend : storeTcbPendingMessage (ensureRunnable st2 pair.1) receiver _ with
+              -- AK1-D: atomic (.ready, senderMsg) receiver update
+              cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) receiver .ready _ with
               | ok st4 =>
                 intro h; have h_eq := (Prod.mk.inj (Except.ok.inj h)).2; subst h_eq
                 rcases hInvER with ⟨hQCC', hRQU', hCTV'⟩
-                have hSchedPend := storeTcbPendingMessage_scheduler_eq _ _ receiver _ hPend
+                have hSchedPend := storeTcbIpcStateAndMessage_scheduler_eq _ _ receiver _ _ hPend
                 refine ⟨?_, ?_, ?_⟩
                 · rw [queueCurrentConsistent]; rw [queueCurrentConsistent] at hQCC'; rwa [hSchedPend]
                 · show st4.scheduler.runnable.Nodup
@@ -954,7 +958,7 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                   | some x =>
                     simp only []
                     have ⟨tcbX, hTcbX⟩ : ∃ tcb', (ensureRunnable st2 pair.1).objects[x.toObjId]? = some (.tcb tcb') := by simp [currentThreadValid, hCurr] at hCTV'; exact hCTV'
-                    exact storeTcbPendingMessage_tcb_forward _ _ receiver _ x.toObjId tcbX hObjInvEns hPend hTcbX
+                    exact storeTcbIpcStateAndMessage_tcb_forward _ _ receiver _ _ x.toObjId tcbX hObjInvEns hPend hTcbX
               | error _ => simp
       | none =>
         -- AI4-A: Blocking: cleanup → Enqueue → storeTcbIpcState → removeRunnable
@@ -1019,6 +1023,76 @@ theorem endpointReceiveDual_preserves_schedulerInvariantBundle
                     obtain ⟨tcb1, hTcb1⟩ := endpointQueueEnqueue_tcb_forward endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 x.toObjId tcbClean hObjInvClean hEnq hTcbClean'
                     have hNeTid : x.toObjId ≠ receiver.toObjId := fun h => hEq' (threadId_toObjId_injective h)
                     exact ⟨tcb1, (storeTcbIpcState_preserves_objects_ne st1 st2 receiver _ x.toObjId hNeTid hObjInvEnq hIpc) ▸ hTcb1⟩
+
+/-- AK1-D (I-M02): Specialised contracts-preservation lemma for a `.ready`
+    write. Unlike `contracts_of_same_scheduler_ipcState`, this helper does
+    not require the target's ipcState to be preserved — the target is set
+    to `.ready`, which satisfies `runnableThreadIpcReady` and vacuously
+    satisfies every `blockedOn*NotRunnable` predicate. For non-target tids,
+    ipcState IS preserved (witnessed by `storeTcbIpcStateAndMessage_preserves_objects_ne`).
+
+    Used by `endpointReceiveDual_preserves_ipcSchedulerContractPredicates`
+    to discharge the post-rendezvous receiver-side `storeTcbIpcStateAndMessage
+    receiver .ready senderMsg` transition without requiring the
+    `_tcb_ipcState_backward` lemma (which would be false at the target). -/
+theorem storeTcbIpcStateAndMessage_ready_preserves_ipcSchedulerContractPredicates
+    (st st' : SystemState) (target : SeLe4n.ThreadId) (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st target .ready msg = .ok st')
+    (hContract : ipcSchedulerContractPredicates st) :
+    ipcSchedulerContractPredicates st' := by
+  rcases hContract with ⟨hReady, hBlockSend, hBlockRecv, hBlockCall, hBlockReply, hBlockNotif⟩
+  have hSched := storeTcbIpcStateAndMessage_scheduler_eq st st' target .ready msg hStep
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · -- runnableThreadIpcReady
+    intro tid tcb' hTcb' hRun'
+    by_cases hEq : tid.toObjId = target.toObjId
+    · -- Target tid: post-state ipcState is .ready (forced by the store).
+      exact storeTcbIpcStateAndMessage_ipcState_eq st st' target .ready msg hObjInv hStep tcb' (hEq ▸ hTcb')
+    · -- Non-target tid: ipcState preserved; pre-state hypothesis applies.
+      have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st' target .ready msg tid.toObjId hEq hObjInv hStep).symm.trans hTcb'
+      exact hReady tid tcb' hTcbPre (show tid ∈ st.scheduler.runnable by rwa [← hSched])
+  · -- blockedOnSendNotRunnable
+    intro tid tcb' eid hTcb' hIpcState'
+    by_cases hEq : tid.toObjId = target.toObjId
+    · -- Target ipcState is .ready, cannot be .blockedOnSend
+      have := storeTcbIpcStateAndMessage_ipcState_eq st st' target .ready msg hObjInv hStep tcb' (hEq ▸ hTcb')
+      rw [this] at hIpcState'; cases hIpcState'
+    · have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st' target .ready msg tid.toObjId hEq hObjInv hStep).symm.trans hTcb'
+      have := hBlockSend tid tcb' eid hTcbPre hIpcState'
+      intro hRun'; exact this (show tid ∈ st.scheduler.runnable by rwa [← hSched])
+  · -- blockedOnReceiveNotRunnable
+    intro tid tcb' eid hTcb' hIpcState'
+    by_cases hEq : tid.toObjId = target.toObjId
+    · have := storeTcbIpcStateAndMessage_ipcState_eq st st' target .ready msg hObjInv hStep tcb' (hEq ▸ hTcb')
+      rw [this] at hIpcState'; cases hIpcState'
+    · have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st' target .ready msg tid.toObjId hEq hObjInv hStep).symm.trans hTcb'
+      have := hBlockRecv tid tcb' eid hTcbPre hIpcState'
+      intro hRun'; exact this (show tid ∈ st.scheduler.runnable by rwa [← hSched])
+  · -- blockedOnCallNotRunnable
+    intro tid tcb' eid hTcb' hIpcState'
+    by_cases hEq : tid.toObjId = target.toObjId
+    · have := storeTcbIpcStateAndMessage_ipcState_eq st st' target .ready msg hObjInv hStep tcb' (hEq ▸ hTcb')
+      rw [this] at hIpcState'; cases hIpcState'
+    · have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st' target .ready msg tid.toObjId hEq hObjInv hStep).symm.trans hTcb'
+      have := hBlockCall tid tcb' eid hTcbPre hIpcState'
+      intro hRun'; exact this (show tid ∈ st.scheduler.runnable by rwa [← hSched])
+  · -- blockedOnReplyNotRunnable
+    intro tid tcb' eid rt hTcb' hIpcState'
+    by_cases hEq : tid.toObjId = target.toObjId
+    · have := storeTcbIpcStateAndMessage_ipcState_eq st st' target .ready msg hObjInv hStep tcb' (hEq ▸ hTcb')
+      rw [this] at hIpcState'; cases hIpcState'
+    · have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st' target .ready msg tid.toObjId hEq hObjInv hStep).symm.trans hTcb'
+      have := hBlockReply tid tcb' eid rt hTcbPre hIpcState'
+      intro hRun'; exact this (show tid ∈ st.scheduler.runnable by rwa [← hSched])
+  · -- blockedOnNotificationNotRunnable
+    intro tid tcb' nid hTcb' hIpcState'
+    by_cases hEq : tid.toObjId = target.toObjId
+    · have := storeTcbIpcStateAndMessage_ipcState_eq st st' target .ready msg hObjInv hStep tcb' (hEq ▸ hTcb')
+      rw [this] at hIpcState'; cases hIpcState'
+    · have hTcbPre := (storeTcbIpcStateAndMessage_preserves_objects_ne st st' target .ready msg tid.toObjId hEq hObjInv hStep).symm.trans hTcb'
+      have := hBlockNotif tid tcb' nid hTcbPre hIpcState'
+      intro hRun'; exact this (show tid ∈ st.scheduler.runnable by rwa [← hSched])
 
 /-- WS-F1/TPI-D08: endpointReceiveDual preserves ipcSchedulerContractPredicates. -/
 theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
@@ -1124,13 +1198,12 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
                       exact hBlockNotif' tid tcb' nid hTcbPre hIpcState' (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
                 -- storeTcbPendingMessage preserves contracts
                 revert hStep
-                cases hPend : storeTcbPendingMessage st2 receiver _ with
+                -- AK1-D: atomic (.ready, senderMsg) receiver update
+                cases hPend : storeTcbIpcStateAndMessage st2 receiver .ready _ with
                 | ok st4 =>
                   intro h; have h_eq := (Prod.mk.inj (Except.ok.inj h)).2; subst h_eq
-                  have hSchedPend := storeTcbPendingMessage_scheduler_eq _ st4 receiver _ hPend
-                  exact contracts_of_same_scheduler_ipcState _ st4 hSchedPend
-                    (fun tid tcb'' hTcb'' => storeTcbPendingMessage_tcb_ipcState_backward _ st4 receiver _ tid tcb'' hObjInvMsg hPend hTcb'')
-                    hContractSt2
+                  exact storeTcbIpcStateAndMessage_ready_preserves_ipcSchedulerContractPredicates
+                    _ _ receiver _ hObjInvMsg hPend hContractSt2
                 | error _ => simp
             | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
               -- senderWasCall = false, send path
@@ -1208,13 +1281,12 @@ theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates
                       · exact hBlockNotif' tid tcb' nid hTcbPre hIpcState' (show tid ∈ pair.2.2.scheduler.runnable by rwa [← hSchedMsg])
                       · exact absurd hEq hNeTid
                 revert hStep
-                cases hPend : storeTcbPendingMessage (ensureRunnable st2 pair.1) receiver _ with
+                -- AK1-D: atomic (.ready, senderMsg) receiver update
+                cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) receiver .ready _ with
                 | ok st4 =>
                   intro h; have h_eq := (Prod.mk.inj (Except.ok.inj h)).2; subst h_eq
-                  have hSchedPend := storeTcbPendingMessage_scheduler_eq _ st4 receiver _ hPend
-                  exact contracts_of_same_scheduler_ipcState _ st4 hSchedPend
-                    (fun tid tcb'' hTcb'' => storeTcbPendingMessage_tcb_ipcState_backward _ st4 receiver _ tid tcb'' hObjInvEns2 hPend hTcb'')
-                    hContractER
+                  exact storeTcbIpcStateAndMessage_ready_preserves_ipcSchedulerContractPredicates
+                    _ _ receiver _ hObjInvEns2 hPend hContractER
                 | error _ => simp
       | none =>
         -- AI4-A: Blocking: cleanup → Enqueue → storeTcbIpcState(.blockedOnReceive) → removeRunnable
@@ -1493,11 +1565,12 @@ theorem endpointReceiveDual_preserves_objects_invExt
               have hObjInvMsg : st2.objects.invExt :=
                 storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ none hObjInvPop hMsg
               revert hStep
-              cases hPend : storeTcbPendingMessage st2 receiver _ with
+              -- AK1-D: atomic (.ready, senderMsg) receiver update
+              cases hPend : storeTcbIpcStateAndMessage st2 receiver .ready _ with
               | ok st4 =>
                 intro h
                 have h_eq := (Prod.mk.inj (Except.ok.inj h)).2; subst h_eq
-                exact storeTcbPendingMessage_preserves_objects_invExt st2 _ receiver _ hObjInvMsg hPend
+                exact storeTcbIpcStateAndMessage_preserves_objects_invExt st2 _ receiver _ _ hObjInvMsg hPend
               | error _ => simp
           | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
             simp only [hSenderIpc] at hStep
@@ -1510,11 +1583,12 @@ theorem endpointReceiveDual_preserves_objects_invExt
               have hObjInvEns : (ensureRunnable st2 pair.1).objects.invExt := by
                 rwa [ensureRunnable_preserves_objects]
               revert hStep
-              cases hPend : storeTcbPendingMessage (ensureRunnable st2 pair.1) receiver _ with
+              -- AK1-D: atomic (.ready, senderMsg) receiver update
+              cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) receiver .ready _ with
               | ok st4 =>
                 intro h
                 have h_eq := (Prod.mk.inj (Except.ok.inj h)).2; subst h_eq
-                exact storeTcbPendingMessage_preserves_objects_invExt (ensureRunnable st2 pair.1) _ receiver _ hObjInvEns hPend
+                exact storeTcbIpcStateAndMessage_preserves_objects_invExt (ensureRunnable st2 pair.1) _ receiver _ _ hObjInvEns hPend
               | error _ => simp
       | none =>
         -- AI4-A: cleanup → Enqueue → storeTcbIpcState → removeRunnable
