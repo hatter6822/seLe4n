@@ -49,14 +49,31 @@ Gate: `lake build` (256 jobs) + `test_smoke.sh` + `test_full.sh` + zero
   restructuring; documented inline in `endpointReceiveDual` and
   `endpointCall`.
 
-- **AK1-D** (I-M02 / MEDIUM): `endpointReceiveDual` handshake path
-  receiver ipcState documented as invariant-enforced. The receiver
-  calling `endpointReceiveDual` is the current running thread (ipcState
-  `.ready` or `.blockedOnReply _ _`); no thread with ipcState ∈
-  {`.blockedOnReceive`, `.blockedOnNotification`} reaches this branch.
-  The 5th IPC invariant `waitingThreadsPendingMessageNone` is preserved
-  by construction; formal witness in
-  `endpointReceiveDual_preserves_waitingThreadsPendingMessageNone`.
+- **AK1-D** (I-M02 / MEDIUM): `endpointReceiveDual` rendezvous-handshake
+  path now atomically updates the receiver's ipcState to `.ready`
+  alongside `pendingMessage := senderMsg` via
+  `storeTcbIpcStateAndMessage receiver .ready senderMsg`. Previously,
+  only `pendingMessage` was written; this could violate the 5th IPC
+  invariant `waitingThreadsPendingMessageNone` if the receiver entered
+  in a stale `.blockedOnReceive` state. Cascaded through:
+  (1) 4 preservation theorems in `EndpointPreservation.lean` (8 sites);
+  (2) 7 preservation theorems in `Structural.lean` (14 sites);
+  (3) 1 NI theorem in `InformationFlow/Invariant/Operations.lean` (2 sites).
+  New helpers added:
+  - `storeTcbIpcStateAndMessage_tcb_forward` (`SchedulerLemmas.lean:482`):
+    forward-preserves TCB existence at any ObjId.
+  - `storeTcbIpcStateAndMessage_ready_preserves_ipcSchedulerContractPredicates`
+    (`EndpointPreservation.lean`): specialised contracts preservation
+    for `.ready` writes. Unlike the generic
+    `contracts_of_same_scheduler_ipcState`, does not require per-tid
+    ipcState preservation — target receives `.ready` (satisfies
+    `runnableThreadIpcReady`, vacuously satisfies `blockedOn*NotRunnable`);
+    non-target ipcState preserved via `_preserves_objects_ne`.
+  Dead-hypothesis prune: `endpointReceiveDual_preserves_waitingThreadsPendingMessageNone`
+  dropped the `hReceiverNotBlocked` hypothesis — now vacuous because
+  `.ready` is unconstrained by the invariant. Caller in
+  `endpointReplyRecv_preserves_waitingThreadsPendingMessageNone` updated
+  to match.
 
 - **AK1-E** (I-M03 / MEDIUM): `ensureRunnable` in `IPC/Operations/Endpoint.lean`
   now uses PIP-effective priority (`ipcEffectiveRunQueuePriority`,

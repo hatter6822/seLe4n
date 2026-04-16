@@ -2349,9 +2349,9 @@ theorem donationOwnerValid_excludes_self_donation
       tracked in the audit errata).
 
     The explicit hypothesis `hDonatedSucceeds` packages that obligation at
-    the lemma boundary, making the claim sorry-free AND making the
-    dependence on the (still-being-discharged) storeObject chain lemma
-    visible at call sites. In practice, the hypothesis is trivially
+    the lemma boundary (no placeholder proof), making the dependence on
+    the (still-being-discharged) storeObject chain lemma visible at call
+    sites. In practice, the hypothesis is trivially
     satisfied at `endpointReceiveDual`'s call site because the kernel only
     ever reaches this path with non-reserved thread IDs (enforced by the
     retype pipeline at `Lifecycle/Operations.lean:retypeFromUntyped`) and
