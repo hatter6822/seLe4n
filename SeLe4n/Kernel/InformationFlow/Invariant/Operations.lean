@@ -1619,13 +1619,14 @@ theorem endpointReceiveDual_preserves_projection
                   sender _ _ hObjInv1 hIpc
               have hProjIpc := storeTcbIpcStateAndMessage_preserves_projection ctx observer
                   st1 st2 sender _ _ hSenderObjHigh hObjInv1 hIpc
-              cases hPend : storeTcbPendingMessage st2 receiver senderTcb.pendingMessage with
+              -- AK1-D: atomic (.ready, senderMsg) receiver update
+              cases hPend : storeTcbIpcStateAndMessage st2 receiver .ready senderTcb.pendingMessage with
               | error e => simp [hPend] at hStep
               | ok st3 =>
                 simp only [hPend] at hStep
                 have hStEq := (Prod.mk.inj (Except.ok.inj hStep)).2; subst hStEq
-                rw [storeTcbPendingMessage_preserves_projection ctx observer st2 st3
-                    receiver _ hReceiverObjHigh hObjInv2 hPend,
+                rw [storeTcbIpcStateAndMessage_preserves_projection ctx observer st2 st3
+                    receiver .ready _ hReceiverObjHigh hObjInv2 hPend,
                     hProjIpc, hProjPop]
           · -- Send path: sender → ready, ensureRunnable, then deliver message to receiver
             cases hIpc : storeTcbIpcStateAndMessage st1 sender .ready none with
@@ -1639,14 +1640,15 @@ theorem endpointReceiveDual_preserves_projection
               have hProjEns := ensureRunnable_preserves_projection ctx observer st2 sender hSenderHigh
               have hObjInvEns : (ensureRunnable st2 sender).objects.invExt := by
                 rw [ensureRunnable_preserves_objects]; exact hObjInv2
-              cases hPend : storeTcbPendingMessage (ensureRunnable st2 sender) receiver
+              -- AK1-D: atomic (.ready, senderMsg) receiver update
+              cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 sender) receiver .ready
                   senderTcb.pendingMessage with
               | error e => simp [hPend] at hStep
               | ok st3 =>
                 simp only [hPend] at hStep
                 have hStEq := (Prod.mk.inj (Except.ok.inj hStep)).2; subst hStEq
-                rw [storeTcbPendingMessage_preserves_projection ctx observer
-                    (ensureRunnable st2 sender) st3 receiver _ hReceiverObjHigh hObjInvEns hPend,
+                rw [storeTcbIpcStateAndMessage_preserves_projection ctx observer
+                    (ensureRunnable st2 sender) st3 receiver .ready _ hReceiverObjHigh hObjInvEns hPend,
                     hProjEns, hProjIpc, hProjPop]
       | none =>
         -- Path 2: No sender — Enqueue receiver + storeTcbIpcState + removeRunnable
