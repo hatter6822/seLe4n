@@ -1649,38 +1649,25 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
                   (senderTcb.pendingMessage, match senderTcb.ipcState with
                     | .blockedOnCall _ => true
                     | _ => false)
-                -- AK1-D (I-M02): Receiver's ipcState remains unchanged through
-                -- the rendezvous path (the receiver is the current running
-                -- thread calling `endpointReceiveDual`, so its ipcState is
-                -- `.ready` or `.blockedOnReply _ _` from a prior
-                -- `endpointReplyRecv`). The 5th IPC invariant
-                -- `waitingThreadsPendingMessageNone` holds because no thread
-                -- with ipcState ∈ {.blockedOnReceive, .blockedOnNotification}
-                -- ever executes code that reaches this rendezvous branch —
-                -- such a thread is dequeued by `endpointSendDual`, not by
-                -- itself calling `endpointReceiveDual`. This is formally
-                -- witnessed by the preservation proofs in
-                -- `IPC/Invariant/Structural.lean`
-                -- (`endpointReceiveDual_preserves_waitingThreadsPendingMessageNone`).
-                -- AK1-C (I-M01): The caller's `pendingMessage` at `.blockedOnReply`
-                -- transition. At this point, the `msg` has been atomically
-                -- transferred to the receiver's pendingMessage. The caller's
-                -- own `pendingMessage` field was never populated with `msg` on
-                -- the rendezvous path (contrast with the no-sender path below,
-                -- where the caller's TCB.pendingMessage is set via
-                -- `storeTcbIpcStateAndMessage`). Hence the caller's
-                -- pendingMessage remains whatever it was pre-call — under
-                -- `waitingThreadsPendingMessageNone` combined with the fact that
-                -- the caller is currently running (ipcState = .ready), there is
-                -- no structural invariant violation. A protocol regression
-                -- causing a caller to enter `endpointCall` with
-                -- `pendingMessage := some _` is an out-of-scope case; an
-                -- explicit `storeTcbPendingMessage caller none` here would be
-                -- belt-and-suspenders but would cascade through ~12
-                -- preservation proofs. Tracked as AK1-C/TPI-AK1C for a future
-                -- refactor after the overall IPC preservation surface is
-                -- restructured to absorb incremental TCB mutations more
-                -- cheaply.
+                -- AK1-D (I-M02 / MEDIUM): Receiver's ipcState preservation.
+                -- The `waitingThreadsPendingMessageNone` invariant is
+                -- preserved on the rendezvous handshake via the
+                -- `hReceiverNotBlocked` deployment obligation of
+                -- `endpointReceiveDual_preserves_waitingThreadsPendingMessageNone`
+                -- (see `IPC/Invariant/Structural.lean:7226`). That
+                -- obligation holds structurally for all kernel call-sites:
+                -- the receiver calling `endpointReceiveDual` is the current
+                -- running thread, which by the scheduler's
+                -- `currentThreadIpcReady` invariant has `ipcState = .ready`
+                -- (not `.blockedOnReceive` / `.blockedOnNotification`).
+                -- `endpointReplyRecv` similarly sets `replyTarget := .ready`
+                -- before invoking `endpointReceiveDual receiver ensureRunnable`,
+                -- leaving `receiver`'s ipcState unchanged at `.ready`.
+                -- An operational `storeTcbIpcStateAndMessage receiver .ready
+                -- senderMsg` fix would require cascading rewrites across
+                -- ~20 preservation proofs (AK10-D proof-engineering closure);
+                -- the invariant obligation closes the finding at the NI
+                -- preservation layer without that overhead.
                 if senderWasCall then
                   -- Call path: sender transitions to blockedOnReply, NOT ready
                   match storeTcbIpcStateAndMessage st' sender
@@ -1775,11 +1762,16 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                 | .ok st'' =>
                     let st''' := ensureRunnable st'' receiver
                     -- WS-H1/M-02: Caller blocks waiting for reply; record receiver as replyTarget
-                    -- AK1-C (I-M01): See comment in `endpointReceiveDual`
-                    -- rendezvous path above. The caller's pendingMessage was
-                    -- never populated with `msg` on this rendezvous path, so
-                    -- there is no stale-state leak under invariants.
-                    match storeTcbIpcState st''' caller (.blockedOnReply endpointId (some receiver)) with
+                    -- AK1-C (I-M01 / MEDIUM): Atomically clear caller's
+                    -- `pendingMessage` when transitioning to `.blockedOnReply`.
+                    -- Without this, a caller entering `endpointCall` with a
+                    -- stale `pendingMessage := some _` (e.g., from a prior
+                    -- unanswered operation) would retain it through the
+                    -- blocking transition, violating fail-closed semantics.
+                    -- Uses `storeTcbIpcStateAndMessage _ _ none` to set both
+                    -- `ipcState` and `pendingMessage` in a single store.
+                    match storeTcbIpcStateAndMessage st''' caller
+                        (.blockedOnReply endpointId (some receiver)) none with
                     | .error e => .error e
                     | .ok st4 => .ok ((), removeRunnable st4 caller)
         | none =>

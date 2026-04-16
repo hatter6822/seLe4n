@@ -2187,15 +2187,16 @@ theorem endpointCall_preserves_dualQueueSystemInvariant
             have hObjInvEns2 : (ensureRunnable st2 pair.1).objects.invExt :=
               ensureRunnable_preserves_objects st2 pair.1 ▸ hObjInvSt2
             have hInv3 := ensureRunnable_preserves_dualQueueSystemInvariant st2 pair.1 hInv2
-            cases hStore2 : storeTcbIpcState (ensureRunnable st2 pair.1) caller
-                (.blockedOnReply endpointId (some pair.1)) with
+            -- AK1-C (I-M01): storeTcbIpcStateAndMessage atomically clears caller's pendingMessage
+            cases hStore2 : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) caller
+                (.blockedOnReply endpointId (some pair.1)) none with
             | error e => simp [hStore2] at hStep
             | ok st3 =>
               simp only [hStore2, Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               exact removeRunnable_preserves_dualQueueSystemInvariant _ _
-                (storeTcbIpcState_preserves_dualQueueSystemInvariant
-                  (ensureRunnable st2 pair.1) st3 caller _ hObjInvEns2 hStore2 hInv3)
+                (storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
+                  (ensureRunnable st2 pair.1) st3 caller _ none hObjInvEns2 hStore2 hInv3)
       | none =>
         -- Path B: enqueue caller, store message, block
         simp only [hHead] at hStep
@@ -3550,14 +3551,16 @@ theorem endpointCall_preserves_allPendingMessagesBounded
             have hInv3 := ensureRunnable_preserves_allPendingMessagesBounded st2 receiver hInv2
             have hObjInv3 : (ensureRunnable st2 receiver).objects.invExt := by
               rw [ensureRunnable_preserves_objects]; exact hObjInv2
-            cases hIpc : storeTcbIpcState (ensureRunnable st2 receiver) caller (.blockedOnReply endpointId (some receiver)) with
+            -- AK1-C (I-M01): storeTcbIpcStateAndMessage atomically clears caller's pendingMessage
+            cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 receiver) caller (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hIpc] at hStep
             | ok st4 =>
               simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               exact removeRunnable_preserves_allPendingMessagesBounded st4 caller
-                (storeTcbIpcState_preserves_allPendingMessagesBounded
-                  _ st4 caller _ hObjInv3 hIpc hInv3)
+                (storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded
+                  _ st4 caller _ none (fun _ h => by cases h)
+                  hObjInv3 hIpc hInv3)
       | none =>
         simp only [hHead] at hStep
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
@@ -3620,13 +3623,14 @@ theorem endpointCall_preserves_badgeWellFormed
             have hInv3 := ensureRunnable_preserves_badgeWellFormed st2 receiver hInv2
             have hObjInv3 : (ensureRunnable st2 receiver).objects.invExt := by
               rw [ensureRunnable_preserves_objects]; exact hObjInv2
-            cases hIpc : storeTcbIpcState (ensureRunnable st2 receiver) caller (.blockedOnReply endpointId (some receiver)) with
+            -- AK1-C (I-M01): storeTcbIpcStateAndMessage atomically clears caller's pendingMessage
+            cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 receiver) caller (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hIpc] at hStep
             | ok st4 =>
               simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hEq⟩ := hStep; subst hEq
               exact removeRunnable_preserves_badgeWellFormed st4 caller
-                (storeTcbIpcState_preserves_badgeWellFormed _ st4 caller _ hInv3 hObjInv3 hIpc)
+                (storeTcbIpcStateAndMessage_preserves_badgeWellFormed _ st4 caller _ none hInv3 hObjInv3 hIpc)
       | none =>
         simp only [hHead] at hStep
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
@@ -4085,13 +4089,14 @@ theorem endpointCall_preserves_endpointQueueNoDup
             have hObjInvE : (ensureRunnable st2 pair.1).objects.invExt :=
                 ensureRunnable_preserves_objects st2 pair.1 ▸ hObjInv2
             have hNoDupE := ensureRunnable_preserves_endpointQueueNoDup st2 pair.1 hNoDup2
-            cases hIpc : storeTcbIpcState (ensureRunnable st2 pair.1) caller (.blockedOnReply endpointId (some pair.1)) with
+            -- AK1-C (I-M01): storeTcbIpcStateAndMessage atomically clears caller's pendingMessage
+            cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) caller (.blockedOnReply endpointId (some pair.1)) none with
             | error e => simp [hIpc] at hStep
             | ok st3 =>
               simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, rfl⟩ := hStep
               exact removeRunnable_preserves_endpointQueueNoDup _ _ <|
-                storeTcbIpcState_preserves_endpointQueueNoDup _ st3 caller _ hNoDupE hObjInvE hIpc
+                storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup _ st3 caller _ none hNoDupE hObjInvE hIpc
       | none =>
         -- Block path: Enqueue + storeTcbIpcStateAndMessage + removeRunnable
         cases hEnq : endpointQueueEnqueue endpointId false caller st with
@@ -4606,14 +4611,15 @@ theorem endpointCall_preserves_ipcStateQueueMembershipConsistent
             have hObjInvE : (ensureRunnable st2 pair.1).objects.invExt :=
               ensureRunnable_preserves_objects st2 pair.1 ▸ hObjInv2
             have hV3JE := ensureRunnable_preserves_ipcStateQueueMembershipConsistent st2 pair.1 hV3J2
-            cases hIpc : storeTcbIpcState (ensureRunnable st2 pair.1) caller (.blockedOnReply endpointId (some pair.1)) with
+            -- AK1-C (I-M01): storeTcbIpcStateAndMessage atomically clears caller's pendingMessage
+            cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 pair.1) caller (.blockedOnReply endpointId (some pair.1)) none with
             | error e => simp [hIpc] at hStep
             | ok st3 =>
               simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, rfl⟩ := hStep
               exact removeRunnable_preserves_ipcStateQueueMembershipConsistent _ caller <|
-                storeTcbIpcState_preserves_ipcStateQueueMembershipConsistent
-                  _ _ caller _ hV3JE hObjInvE
+                storeTcbIpcStateAndMessage_preserves_ipcStateQueueMembershipConsistent
+                  _ _ caller _ none hV3JE hObjInvE
                   (fun _ h => absurd h (by simp))
                   (fun _ h => absurd h (by simp))
                   (fun _ h => absurd h (by simp)) hIpc
@@ -5675,13 +5681,14 @@ theorem endpointCall_preserves_ipcStateQueueConsistent
             have hObjInvPop := endpointQueuePopHead_preserves_objects_invExt endpointId true st stPop receiver _tcb hObjInv hPop
             have hObjInvMsg := storeTcbIpcStateAndMessage_preserves_objects_invExt stPop st2 receiver _ _ hObjInvPop hMsg
             have hObjInvEns := ensureRunnable_preserves_objects st2 receiver ▸ hObjInvMsg
-            cases hIpc : storeTcbIpcState (ensureRunnable st2 receiver) caller (.blockedOnReply endpointId (some receiver)) with
+            -- AK1-C (I-M01): storeTcbIpcStateAndMessage atomically clears caller's pendingMessage
+            cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 receiver) caller (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hIpc] at hStep
             | ok st3 =>
               simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, rfl⟩ := hStep
               exact removeRunnable_preserves_ipcStateQueueConsistent _ _ <|
-                storeTcbIpcState_preserves_ipcStateQueueConsistent _ _ _ _ hObjInvEns hIpc
+                storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ none hObjInvEns hIpc
                   (ensureRunnable_preserves_ipcStateQueueConsistent _ _ <|
                     storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hObjInvPop hMsg
                       (endpointQueuePopHead_preserves_ipcStateQueueConsistent endpointId true st stPop receiver _tcb
@@ -7489,15 +7496,16 @@ theorem endpointCall_preserves_waitingThreadsPendingMessageNone
                 have hInvEns := ensureRunnable_preserves_waitingThreadsPendingMessageNone st1 pair.1 hInv1
                 have hObjInvEns : (ensureRunnable st1 pair.1).objects.invExt := by
                   rwa [ensureRunnable_preserves_objects]
-                cases hIpc : storeTcbIpcState (ensureRunnable st1 pair.1) caller
-                    (.blockedOnReply endpointId (some pair.1)) with
+                -- AK1-C (I-M01): storeTcbIpcStateAndMessage atomically clears caller's pendingMessage
+                cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st1 pair.1) caller
+                    (.blockedOnReply endpointId (some pair.1)) none with
                 | error e => simp [hIpc] at hStep
                 | ok st2 =>
                   simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
                   obtain ⟨_, hEq⟩ := hStep; subst hEq
-                  have hInv2 := storeTcbIpcState_preserves_waitingThreadsPendingMessageNone
-                    _ st2 caller (.blockedOnReply endpointId (some pair.1))
-                    hObjInvEns hIpc hInvEns (by intro _ _; trivial)
+                  have hInv2 := storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone
+                    _ st2 caller (.blockedOnReply endpointId (some pair.1)) none
+                    hObjInvEns hIpc hInvEns trivial
                   exact removeRunnable_preserves_waitingThreadsPendingMessageNone _ _ hInv2
           | none =>
             -- Block path: enqueue + storeTcbIpcStateAndMessage(.blockedOnCall) + removeRunnable

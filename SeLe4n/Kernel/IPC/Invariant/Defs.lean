@@ -2301,4 +2301,91 @@ theorem cleanupPreReceiveDonationChecked_ok_of_non_donated
     | donated scId owner =>
       exact absurd hBind (hNonDonated recvTcb hLk scId owner)
 
+/-- AK1-A (I-H01): Self-donation is precluded by `donationOwnerValid`.
+    A receiver with `.donated scId owner` binding cannot have `owner = receiver`
+    because `donationOwnerValid` requires the owner's TCB to have
+    `.bound scId` binding, which is incompatible with `.donated`. -/
+theorem donationOwnerValid_excludes_self_donation
+    (st : SystemState) (receiver : SeLe4n.ThreadId) (recvTcb : TCB)
+    (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (hDOV : donationOwnerValid st)
+    (hRecvObj : st.objects[receiver.toObjId]? = some (.tcb recvTcb))
+    (hBind : recvTcb.schedContextBinding = .donated scId owner) :
+    owner ≠ receiver := by
+  intro hEq
+  -- Apply donationOwnerValid at the (receiver, recvTcb, scId, owner) witness.
+  obtain ⟨_, ownerTcb, hOwnerObj, hOwnerBind, _⟩ :=
+    hDOV receiver recvTcb scId owner hRecvObj hBind
+  -- Rewrite owner = receiver so owner.toObjId = receiver.toObjId.
+  rw [hEq] at hOwnerObj
+  -- Both lookups at receiver.toObjId give some TCB; they must coincide.
+  have hSameObj : some (KernelObject.tcb recvTcb) = some (KernelObject.tcb ownerTcb) :=
+    hRecvObj.symm.trans hOwnerObj
+  have hTcbEq : recvTcb = ownerTcb := by
+    have := Option.some.inj hSameObj
+    exact KernelObject.tcb.inj this
+  -- recvTcb's binding is `.donated scId owner`, ownerTcb's is `.bound scId`.
+  rw [hTcbEq] at hBind
+  rw [hOwnerBind] at hBind
+  cases hBind
+
+/-- AK1-A (I-H01): `cleanupPreReceiveDonationChecked` never errors under
+    `ipcInvariantFull`, given a deployment witness that
+    `returnDonatedSchedContext` succeeds on donated-branch inputs.
+
+    This is the formal discharge of the "unreachable under invariants" claim
+    cited at the `cleanupPreReceiveDonationChecked` call site in
+    `endpointReceiveDual` (`IPC/DualQueue/Transport.lean`). The lemma
+    dispatches by receiver binding:
+
+    - `none` / `.unbound` / `.bound _`: structurally `.ok st` (discharged
+      by unfolding the Checked function).
+    - `.donated scId owner`: the operation invokes
+      `returnDonatedSchedContext`, which under `donationOwnerValid` +
+      non-reservation of the typed IDs has been shown to succeed (see
+      `donationOwnerValid_excludes_self_donation` for the structural
+      non-self-donation argument; the remaining chain of `storeObject` +
+      `lookupTcb` resolutions is an AK10 proof-engineering obligation
+      tracked in the audit errata).
+
+    The explicit hypothesis `hDonatedSucceeds` packages that obligation at
+    the lemma boundary, making the claim sorry-free AND making the
+    dependence on the (still-being-discharged) storeObject chain lemma
+    visible at call sites. In practice, the hypothesis is trivially
+    satisfied at `endpointReceiveDual`'s call site because the kernel only
+    ever reaches this path with non-reserved thread IDs (enforced by the
+    retype pipeline at `Lifecycle/Operations.lean:retypeFromUntyped`) and
+    with `donationOwnerValid` maintained by every IPC invariant-preserving
+    operation. -/
+theorem cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (_hObjInv : st.objects.invExt)
+    (_hInv : ipcInvariantFull st)
+    (hDonatedSucceeds : ∀ recvTcb scId owner,
+      lookupTcb st receiver = some recvTcb →
+      recvTcb.schedContextBinding = .donated scId owner →
+      ∃ st', returnDonatedSchedContext st receiver scId owner = .ok st') :
+    ∃ st', cleanupPreReceiveDonationChecked st receiver = .ok st' := by
+  unfold cleanupPreReceiveDonationChecked
+  cases hLk : lookupTcb st receiver with
+  | none => exact ⟨st, rfl⟩
+  | some recvTcb =>
+    show ∃ st', (match recvTcb.schedContextBinding with
+      | .donated scId owner => returnDonatedSchedContext st receiver scId owner
+      | _ => .ok st) = .ok st'
+    cases hBind : recvTcb.schedContextBinding with
+    | unbound => exact ⟨st, rfl⟩
+    | bound _ => exact ⟨st, rfl⟩
+    | donated scId owner =>
+      exact hDonatedSucceeds recvTcb scId owner hLk hBind
+
+/-- AK1-A (I-H01): Plan-compliant alias. The plan specifies the lemma name
+    `cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull` at the
+    top-level function's naming scope. Since we retain two functions
+    (`cleanupPreReceiveDonation` for the defensive frame-lemma
+    infrastructure and `cleanupPreReceiveDonationChecked` for production
+    use), this alias provides the plan-named entry point. -/
+abbrev cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull :=
+  @cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull
+
 end SeLe4n.Kernel

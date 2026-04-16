@@ -1862,15 +1862,16 @@ theorem endpointCall_preserves_projection
             have hProjEns := ensureRunnable_preserves_projection ctx observer st2 receiver hRecvHigh
             have hObjInvEns : (ensureRunnable st2 receiver).objects.invExt := by
               rw [ensureRunnable_preserves_objects]; exact hObjInv2
-            cases hIpc : storeTcbIpcState (ensureRunnable st2 receiver) caller
-                (.blockedOnReply endpointId (some receiver)) with
+            -- AK1-C (I-M01): storeTcbIpcStateAndMessage atomically clears caller's pendingMessage
+            cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 receiver) caller
+                (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hIpc] at hStep
             | ok st3 =>
               simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hStEq⟩ := hStep; subst hStEq
               rw [removeRunnable_preserves_projection ctx observer st3 caller hCallerHigh,
-                  storeTcbIpcState_preserves_projection ctx observer (ensureRunnable st2 receiver)
-                  st3 caller _ hCallerObjHigh hObjInvEns hIpc,
+                  storeTcbIpcStateAndMessage_preserves_projection ctx observer (ensureRunnable st2 receiver)
+                  st3 caller _ _ hCallerObjHigh hObjInvEns hIpc,
                   hProjEns, hProjTcb, hProjPop]
       | none =>
         -- Path 2: No receiver — Enqueue caller + storeTcbIpcStateAndMessage + removeRunnable
