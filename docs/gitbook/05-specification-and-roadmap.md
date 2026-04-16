@@ -13,13 +13,13 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 
 | Attribute | Value |
 |-----------|-------|
-| Version | `0.28.0` |
+| Version | `0.29.0` |
 | Lean toolchain | `v4.28.0` |
-| Production LoC | 93,837 across 141 Lean files |
+| Production LoC | 94,762 across 141 Lean files |
 | Test LoC | 11,616 across 17 suites |
-| Proved declarations | 2,780 theorem/lemma declarations (zero sorry/axiom) |
-| Latest audit | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All findings remediated via WS-AI. |
-| Active workstream | **WS-AI PORTFOLIO COMPLETE** (v0.27.7–v0.28.0). Post-Audit Comprehensive Remediation — 7 phases (AI1–AI7), 37 sub-tasks. Prior: WS-AH (v0.27.2–v0.27.6), WS-AG (v0.26.0–v0.27.1, 10 phases, 67 sub-tasks), WS-AF–WS-B. **Next: WS-V (multi-core SMP).** |
+| Proved declarations | 2,802 theorem/lemma declarations (zero sorry/axiom) |
+| Latest audit | [`AUDIT_v0.28.0_COMPREHENSIVE`](../audits/AUDIT_v0.28.0_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (3 HIGH, 21 MED, 19 LOW). All findings remediated via WS-AJ (6 phases, 30 sub-tasks). |
+| Active workstream | **WS-AJ PORTFOLIO COMPLETE** (v0.28.1–v0.29.0). Post-Audit Comprehensive Remediation (v0.28.0 audit) — 6 phases (AJ1–AJ6), 30 sub-tasks. Prior: WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG (v0.26.0–v0.27.1, 10 phases, 67 sub-tasks), WS-AF–WS-B. **Next: WS-V (AG10: Hardware Integration).** |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 
