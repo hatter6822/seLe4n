@@ -148,6 +148,23 @@ def ipcUnwrapCaps
       ipcUnwrapCapsLoop msg.caps senderCspaceRoot receiverCspaceRoot
         0 receiverSlotBase #[] msg.caps.size st
 
+/-- AK1-G (I-M05): Static assertion that the production call site in
+    `ipcUnwrapCaps` invokes `ipcUnwrapCapsLoop` with `idx := 0` and
+    `accResults := #[]`. This Lean-level check formalises the plan's
+    "only called with idx = 0" contract by spelling out the exact
+    argument shape the loop receives at its single non-proof call site.
+    If future refactors break this invariant (e.g., introducing a second
+    caller with a non-zero `idx`), this assertion will fail to compile,
+    surfacing the contract violation at build time. -/
+example
+    (msg : IpcMessage) (senderCspaceRoot receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (st : SystemState) :
+    ipcUnwrapCaps msg senderCspaceRoot receiverCspaceRoot receiverSlotBase true st =
+      ipcUnwrapCapsLoop msg.caps senderCspaceRoot receiverCspaceRoot
+        0 receiverSlotBase #[] msg.caps.size st := by
+  unfold ipcUnwrapCaps
+  simp
+
 theorem ipcUnwrapCapsLoop_preserves_scheduler
     (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)
     (idx : Nat) (nextBase : SeLe4n.Slot) (accResults : Array CapTransferResult)

@@ -191,6 +191,15 @@ theorem blockingServer_isSome_iff_blockedOnReply_some
   · rintro ⟨tcb, epId, server, hObj, hIpc⟩
     simp only [blockingServer, hObj, hIpc, Option.isSome_some]
 
+/-- AK1-F (I-M04): Plan-named alias for the biconditional characterisation
+    of `blockingServer`. The plan's nomenclature `pipBoost_attached_only_on_reply_blocked`
+    captures the intent — PIP boost propagation (via `propagatePipBoost`
+    walking the blocking graph) only follows chains anchored at a
+    `.blockedOnReply _ (some server)` waiter. This alias makes the
+    plan-suggested name callable. -/
+abbrev pipBoost_attached_only_on_reply_blocked :=
+  @blockingServer_isSome_iff_blockedOnReply_some
+
 /-- AK1-F (I-M04): Specialized corollary — if `blockingServer st tid = some server`,
     then `tid` is in state `.blockedOnReply endpointId (some server)` for some
     endpoint. Used by `timeoutThread` to argue the PIP-revert call path is

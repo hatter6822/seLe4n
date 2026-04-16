@@ -2329,6 +2329,119 @@ theorem donationOwnerValid_excludes_self_donation
   rw [hOwnerBind] at hBind
   cases hBind
 
+/-- AK1-A (I-H01): Type-disjointness — `SchedContext` at scId cannot alias
+    any TCB object. If `donationOwnerValid` yields a SchedContext at scId
+    and a TCB at tid, then `scId.toObjId ≠ tid.toObjId` (different
+    `KernelObject` constructors at the same ObjId would contradict
+    `Option.some.inj`). Used by `returnDonatedSchedContext_ok_under_invariants`
+    to thread TCB lookups through the SchedContext store. -/
+theorem schedContext_ne_tcb_at_objId
+    (st : SystemState) (scId : SeLe4n.SchedContextId) (tid : SeLe4n.ThreadId)
+    (sc : SchedContext) (tcb : TCB)
+    (hSc : st.objects[scId.toObjId]? = some (.schedContext sc))
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb)) :
+    scId.toObjId ≠ tid.toObjId := by
+  intro heq
+  rw [heq] at hSc
+  rw [hSc] at hTcb
+  cases hTcb
+
+/-- AK1-A (I-H01): `returnDonatedSchedContext` succeeds under
+    `donationOwnerValid` combined with non-reservation of the participant
+    thread IDs. This is the structural unreachability proof for the three
+    internal error branches in `returnDonatedSchedContext`:
+
+    (1) Missing SchedContext at `scId.toObjId` — excluded by
+        `donationOwnerValid`'s SchedContext witness.
+    (2) Missing owner TCB (step 2 lookupTcb) — excluded by owner TCB
+        witness + SchedContext/TCB type-disjointness + owner non-reservation.
+    (3) Missing server TCB (step 3 lookupTcb) — excluded by receiver TCB
+        witness (derived from `lookupTcb st receiver = some recvTcb`) + the
+        chain of stores preserving TCB existence at distinct ObjIds +
+        receiver non-reservation.
+
+    All three `storeObject` calls are unconditional `.ok` (see
+    `Model/State.lean:531`). -/
+theorem returnDonatedSchedContext_ok_under_invariants
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (recvTcb : TCB) (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hDOV : donationOwnerValid st)
+    (hLk : lookupTcb st receiver = some recvTcb)
+    (hBind : recvTcb.schedContextBinding = .donated scId owner)
+    (hRecvNotRes : ¬receiver.isReserved = true)
+    (hOwnerNotRes : ¬owner.isReserved = true) :
+    ∃ st', returnDonatedSchedContext st receiver scId owner = .ok st' := by
+  -- Recover hypotheses from donationOwnerValid.
+  have hRecvObj : st.objects[receiver.toObjId]? = some (.tcb recvTcb) :=
+    lookupTcb_some_objects st receiver recvTcb hLk
+  obtain ⟨⟨sc, hScObj, _⟩, ownerTcb, hOwnerObj, _, _⟩ :=
+    hDOV receiver recvTcb scId owner hRecvObj hBind
+  -- Type-disjointness of SchedContext vs TCB objIds.
+  have hScNeOwner : scId.toObjId ≠ owner.toObjId :=
+    schedContext_ne_tcb_at_objId st scId owner sc ownerTcb hScObj hOwnerObj
+  have hScNeRecv : scId.toObjId ≠ receiver.toObjId :=
+    schedContext_ne_tcb_at_objId st scId receiver sc recvTcb hScObj hRecvObj
+  -- owner ≠ receiver (self-donation excluded).
+  have hOwnerNeRecv : owner ≠ receiver :=
+    donationOwnerValid_excludes_self_donation st receiver recvTcb scId owner
+      hDOV hRecvObj hBind
+  have hOwnerObjIdNeRecv : owner.toObjId ≠ receiver.toObjId := by
+    intro heq; exact hOwnerNeRecv (SeLe4n.ThreadId.toObjId_injective _ _ heq)
+  -- Unfold and thread through 3 storeObject + 2 lookupTcb steps.
+  unfold returnDonatedSchedContext
+  rw [hScObj]
+  -- Step 1: storeObject scId (.schedContext sc'). Unconditional .ok.
+  simp only []
+  generalize hS1 : storeObject scId.toObjId
+      (.schedContext { sc with boundThread := some owner }) st = result1
+  match result1, hS1 with
+  | .ok pair1, hS1 =>
+    -- After step 1: invExt preserved, owner/receiver objects unchanged (ne scId.toObjId).
+    have hInv1 : pair1.2.objects.invExt :=
+      storeObject_preserves_objects_invExt st pair1.2 scId.toObjId _ hObjInv hS1
+    have hOwnerObj1 : pair1.2.objects[owner.toObjId]? = some (.tcb ownerTcb) := by
+      rw [storeObject_objects_ne st pair1.2 scId.toObjId owner.toObjId _ hScNeOwner.symm hObjInv hS1]
+      exact hOwnerObj
+    have hRecvObj1 : pair1.2.objects[receiver.toObjId]? = some (.tcb recvTcb) := by
+      rw [storeObject_objects_ne st pair1.2 scId.toObjId receiver.toObjId _ hScNeRecv.symm hObjInv hS1]
+      exact hRecvObj
+    -- Step 2: lookupTcb pair1.2 owner = some ownerTcb.
+    have hOwnerNotResEq : owner.isReserved = false :=
+      Bool.eq_false_iff.mpr hOwnerNotRes
+    have hLkOwner1 : lookupTcb pair1.2 owner = some ownerTcb := by
+      unfold lookupTcb
+      rw [hOwnerNotResEq]
+      simp only [Bool.false_eq_true, if_false]
+      rw [hOwnerObj1]
+    simp only [hLkOwner1]
+    -- storeObject owner.toObjId (.tcb clientTcb'). Unconditional .ok.
+    generalize hS2 : storeObject owner.toObjId
+        (.tcb { ownerTcb with schedContextBinding := .bound scId }) pair1.2 = result2
+    match result2, hS2 with
+    | .ok pair2, hS2 =>
+      have hInv2 : pair2.2.objects.invExt :=
+        storeObject_preserves_objects_invExt pair1.2 pair2.2 owner.toObjId _ hInv1 hS2
+      have hRecvObj2 : pair2.2.objects[receiver.toObjId]? = some (.tcb recvTcb) := by
+        rw [storeObject_objects_ne pair1.2 pair2.2 owner.toObjId receiver.toObjId _ hOwnerObjIdNeRecv.symm hInv1 hS2]
+        exact hRecvObj1
+      -- Step 3: lookupTcb pair2.2 receiver = some recvTcb.
+      have hRecvNotResEq : receiver.isReserved = false :=
+        Bool.eq_false_iff.mpr hRecvNotRes
+      have hLkRecv2 : lookupTcb pair2.2 receiver = some recvTcb := by
+        unfold lookupTcb
+        rw [hRecvNotResEq]
+        simp only [Bool.false_eq_true, if_false]
+        rw [hRecvObj2]
+      simp only [hLkRecv2]
+      -- storeObject receiver.toObjId (.tcb serverTcb'). Unconditional .ok.
+      generalize hS3 : storeObject receiver.toObjId
+          (.tcb { recvTcb with schedContextBinding := .unbound }) pair2.2 = result3
+      match result3, hS3 with
+      | .ok pair3, hS3 =>
+        simp only []
+        exact ⟨_, rfl⟩
+
 /-- AK1-A (I-H01): `cleanupPreReceiveDonationChecked` never errors under
     `ipcInvariantFull`, given a deployment witness that
     `returnDonatedSchedContext` succeeds on donated-branch inputs.
@@ -2359,13 +2472,16 @@ theorem donationOwnerValid_excludes_self_donation
     operation. -/
 theorem cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull
     (st : SystemState) (receiver : SeLe4n.ThreadId)
-    (_hObjInv : st.objects.invExt)
-    (_hInv : ipcInvariantFull st)
-    (hDonatedSucceeds : ∀ recvTcb scId owner,
+    (hObjInv : st.objects.invExt)
+    (hInv : ipcInvariantFull st)
+    (hRecvNotRes : ¬receiver.isReserved = true)
+    (hOwnerNotRes : ∀ recvTcb scId owner,
       lookupTcb st receiver = some recvTcb →
       recvTcb.schedContextBinding = .donated scId owner →
-      ∃ st', returnDonatedSchedContext st receiver scId owner = .ok st') :
+      ¬owner.isReserved = true) :
     ∃ st', cleanupPreReceiveDonationChecked st receiver = .ok st' := by
+  -- Extract donationOwnerValid from the 12-conjunct ipcInvariantFull.
+  have hDOV : donationOwnerValid st := hInv.2.2.2.2.2.2.2.2.2.2.2.1
   unfold cleanupPreReceiveDonationChecked
   cases hLk : lookupTcb st receiver with
   | none => exact ⟨st, rfl⟩
@@ -2377,7 +2493,10 @@ theorem cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull
     | unbound => exact ⟨st, rfl⟩
     | bound _ => exact ⟨st, rfl⟩
     | donated scId owner =>
-      exact hDonatedSucceeds recvTcb scId owner hLk hBind
+      -- Derive donated-path success from donationOwnerValid + non-reservation.
+      exact returnDonatedSchedContext_ok_under_invariants
+        st receiver recvTcb scId owner hObjInv hDOV hLk hBind hRecvNotRes
+        (hOwnerNotRes recvTcb scId owner hLk hBind)
 
 /-- AK1-A (I-H01): Plan-compliant alias. The plan specifies the lemma name
     `cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull` at the

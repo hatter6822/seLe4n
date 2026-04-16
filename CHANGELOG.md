@@ -18,10 +18,19 @@ Gate: `lake build` (256 jobs) + `test_smoke.sh` + `test_full.sh` + zero
   `returnDonatedSchedContext` failures propagate as kernel errors
   instead of being silently absorbed. Bridge lemma
   `cleanupPreReceiveDonationChecked_ok_eq_cleanup` discharges
-  coincidence with the defensive fallback on `.ok` results. Partial
-  unreachability lemma `cleanupPreReceiveDonationChecked_ok_of_non_donated`
-  covers the non-donated path; full donated-path unreachability under
-  `donationOwnerValid` deferred to AK10 proof-engineering closure.
+  coincidence with the defensive fallback on `.ok` results. Post-audit
+  strengthening: `returnDonatedSchedContext_ok_under_invariants` fully
+  proves the donated-path success under `donationOwnerValid` +
+  non-reservation (three sequential `storeObject` + two `lookupTcb`
+  steps machine-verified via type-disjointness of SchedContext/TCB
+  ObjIds and `donationOwnerValid_excludes_self_donation`). Supporting
+  `schedContext_ne_tcb_at_objId` type-disjointness helper added.
+  `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull`
+  now DERIVES donated-path success directly from `ipcInvariantFull`
+  (via `donationOwnerValid` extraction) rather than requiring a
+  separate caller-supplied witness. Only non-reservation remains as an
+  explicit hypothesis — the kernel deployment invariant that typed
+  thread IDs are non-sentinel.
   Preservation cascade (13 theorems) updated in
   `Invariant/Defs.lean` / `EndpointPreservation.lean` / `Structural.lean`
   / `InformationFlow/Invariant/Operations.lean` via outer-case-split
@@ -39,15 +48,18 @@ Gate: `lake build` (256 jobs) + `test_smoke.sh` + `test_full.sh` + zero
   (returns `.error`, contradicting `hStep : .ok _`).
 
 - **AK1-C** (I-M01 / MEDIUM): `endpointCall` caller-side `pendingMessage`
-  documented as invariant-enforced. On the rendezvous path, the caller's
-  `pendingMessage` is never populated with the outbound message (the
-  message is atomically transferred to the receiver via
-  `storeTcbIpcStateAndMessage receiver .ready (some msg)`). The caller's
-  `pendingMessage` remains unchanged; under `waitingThreadsPendingMessageNone`
-  this is safe because the caller is running (ipcState = .ready).
-  Operational clearing deferred to AK10 after IPC preservation surface
-  restructuring; documented inline in `endpointReceiveDual` and
-  `endpointCall`.
+  now atomically cleared on the rendezvous path via
+  `storeTcbIpcStateAndMessage st''' caller (.blockedOnReply endpointId (some receiver)) none`
+  (`IPC/DualQueue/Transport.lean:1769`). Previously used `storeTcbIpcState`
+  which left `pendingMessage` untouched — a caller entering `endpointCall`
+  with a stale `pendingMessage := some _` (e.g., from a prior unanswered
+  operation) would retain it through the blocking transition into
+  `.blockedOnReply`, violating fail-closed semantics. The atomic update
+  ensures both fields transition together. Preservation cascade (5
+  theorems in `Invariant/CallReplyRecv.lean` covering ipcInvariant,
+  schedulerInvariantBundle, ipcSchedulerContractPredicates,
+  objects_invExt, projection) updated with the AndMessage variant plus
+  `.ready` contract specializations.
 
 - **AK1-D** (I-M02 / MEDIUM): `endpointReceiveDual` rendezvous-handshake
   path now atomically updates the receiver's ipcState to `.ready`
@@ -100,6 +112,8 @@ Gate: `lake build` (256 jobs) + `test_smoke.sh` + `test_full.sh` + zero
     corollary making the discriminant formally precise for
     `timeoutThread`'s PIP-revert dispatch (only reply-blocked threads
     have a blocking server to propagate revert through).
+  Post-audit: `pipBoost_attached_only_on_reply_blocked` abbrev alias
+  exposes the plan-named symbol so reviewers can find it directly.
 
 - **AK1-G** (I-M05 / MEDIUM): `ipcUnwrapCapsLoop` in
   `IPC/Operations/CapTransfer.lean` annotated as internal recursion
@@ -107,7 +121,12 @@ Gate: `lake build` (256 jobs) + `test_smoke.sh` + `test_full.sh` + zero
   theorems (`ipcUnwrapCapsLoop_preserves_*`) are referenced externally
   in `DualQueue/WithCaps.lean` and `Capability/Invariant/Preservation.lean`.
   Static invariant "only called with `idx := 0` from `ipcUnwrapCaps`"
-  documented with a verification grep pattern.
+  documented with a verification grep pattern. Post-audit: added an
+  `example`-level build-time assertion verifying the exact production
+  call shape (`ipcUnwrapCapsLoop msg.caps senderCspaceRoot
+  receiverCspaceRoot 0 receiverSlotBase #[] msg.caps.size st`) — if a
+  future refactor introduces a non-zero `idx` caller the assertion
+  will fail to compile.
 
 - **AK1-H** (I-M06 / MEDIUM): Composition lemma
   `endpointQueueRemove_succeeds_under_forwardBackward` added to
@@ -130,7 +149,11 @@ Gate: `lake build` (256 jobs) + `test_smoke.sh` + `test_full.sh` + zero
   regression test added to `tests/InformationFlowSuite.lean`
   asserting consistent outcome for `ipcUnwrapCaps` with a non-CNode
   receiver root (the shared subroutine invoked by both
-  send-path and receive-path cap-transfer logic).
+  send-path and receive-path cap-transfer logic). Post-audit: test
+  strengthened with a second scenario that explicitly triggers the
+  `lookupCspaceRoot = none` branch via TCB splice-out, asserting the
+  symmetric `.error .invalidCapability` arm shape between
+  `endpointSendDualWithCaps` and `endpointReceiveDualWithCaps`.
 
 - **AK1-J** (I-L1..I-L6, IPC INFO): LOW-tier IPC batch documentation
   added as a single docblock at the top of `IPC/Operations/Endpoint.lean`

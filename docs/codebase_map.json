@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/complete-ipc-fail-closed-phase-tm5L7",
-      "commit_sha": "a335f8e6d8753cec0d2717d3e6223ba1a8830421",
-      "tree_sha": "ca6ff13cbb57bc8fb48ee01dc9d921721e871147",
-      "committed_at_utc": "2026-04-16T21:56:24+00:00"
+      "commit_sha": "c32317652c902bacb24ba20516d68b6b0dce2724",
+      "tree_sha": "e53dfd82e4471e05c6c124802b33c8fa88ae9987",
+      "committed_at_utc": "2026-04-16T22:35:02+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "1e5784131902d64e398e486a5cab600c43381f12738d498e13b66d823b709e57"
+    "source_digest": "30d596978c21666f3d7fae3626217482c4ba5d538c4812610f8f4755837d902e"
   },
   "summary": {
     "module_count": 158,
-    "declaration_count": 5077
+    "declaration_count": 5081
   },
   "readme_sync": {
     "version": "0.29.1",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 95384,
+    "production_loc": 95529,
     "test_files": 17,
-    "test_loc": 11670,
-    "proved_theorem_lemma_decls": 2817,
+    "test_loc": 11709,
+    "proved_theorem_lemma_decls": 2819,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -15621,7 +15621,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.Defs",
       "path": "SeLe4n/Kernel/IPC/Invariant/Defs.lean",
-      "declaration_count": 99,
+      "declaration_count": 101,
       "declarations": [
         {
           "kind": "namespace",
@@ -16983,24 +16983,66 @@
         },
         {
           "kind": "theorem",
+          "name": "schedContext_ne_tcb_at_objId",
+          "line": 2338,
+          "called": [
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "scId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "returnDonatedSchedContext_ok_under_invariants",
+          "line": 2365,
+          "called": [
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "ThreadId.toObjId_injective",
+            "donationOwnerValid",
+            "donationOwnerValid_excludes_self_donation",
+            "invExt",
+            "isReserved",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "returnDonatedSchedContext",
+            "scId",
+            "schedContext_ne_tcb_at_objId",
+            "storeObject",
+            "storeObject_objects_ne",
+            "storeObject_preserves_objects_invExt",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull",
-          "line": 2360,
+          "line": 2473,
           "called": [
             "SystemState",
             "ThreadId",
             "cleanupPreReceiveDonationChecked",
+            "donationOwnerValid",
             "invExt",
             "ipcInvariantFull",
+            "isReserved",
             "lookupTcb",
             "none",
             "returnDonatedSchedContext",
+            "returnDonatedSchedContext_ok_under_invariants",
             "scId"
           ]
         },
         {
           "kind": "abbrev",
           "name": "cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull",
-          "line": 2388,
+          "line": 2507,
           "called": [
             "Kernel",
             "cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull"
@@ -22545,7 +22587,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Operations.CapTransfer",
       "path": "SeLe4n/Kernel/IPC/Operations/CapTransfer.lean",
-      "declaration_count": 20,
+      "declaration_count": 21,
       "declarations": [
         {
           "kind": "namespace",
@@ -22597,9 +22639,23 @@
           ]
         },
         {
+          "kind": "example",
+          "name": "<anonymous:example:159>",
+          "line": 159,
+          "called": [
+            "IpcMessage",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "ipcUnwrapCaps",
+            "ipcUnwrapCapsLoop",
+            "size"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_scheduler",
-          "line": 151,
+          "line": 168,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -22619,7 +22675,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_scheduler",
-          "line": 184,
+          "line": 201,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -22633,7 +22689,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_services",
-          "line": 197,
+          "line": 214,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -22653,7 +22709,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_services",
-          "line": 230,
+          "line": 247,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -22667,7 +22723,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_objects_ne",
-          "line": 243,
+          "line": 260,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -22689,7 +22745,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_objects_ne",
-          "line": 281,
+          "line": 298,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -22704,7 +22760,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_ntfn_objects",
-          "line": 295,
+          "line": 312,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -22727,7 +22783,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_ntfn_objects",
-          "line": 336,
+          "line": 353,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -22743,7 +22799,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_receiverRoot_not_ntfn",
-          "line": 351,
+          "line": 368,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -22765,7 +22821,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_ep_objects",
-          "line": 388,
+          "line": 405,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -22788,7 +22844,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_ep_objects",
-          "line": 427,
+          "line": 444,
           "called": [
             "CapTransferSummary",
             "Endpoint",
@@ -22804,7 +22860,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_tcb_objects",
-          "line": 442,
+          "line": 459,
           "called": [
             "CapTransferResult",
             "CapTransferSummary",
@@ -22827,7 +22883,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_tcb_objects",
-          "line": 481,
+          "line": 498,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -22843,7 +22899,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCapsLoop_preserves_cnode_at_root",
-          "line": 499,
+          "line": 516,
           "called": [
             "CNode",
             "CapTransferResult",
@@ -22866,7 +22922,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_preserves_cnode_at_root",
-          "line": 539,
+          "line": 556,
           "called": [
             "CNode",
             "CapTransferSummary",
@@ -22882,7 +22938,7 @@
         {
           "kind": "theorem",
           "name": "ipcUnwrapCaps_receiverRoot_not_ntfn",
-          "line": 557,
+          "line": 574,
           "called": [
             "CapTransferSummary",
             "IpcMessage",
@@ -41774,7 +41830,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.PriorityInheritance.BlockingGraph",
       "path": "SeLe4n/Kernel/Scheduler/PriorityInheritance/BlockingGraph.lean",
-      "declaration_count": 18,
+      "declaration_count": 19,
       "declarations": [
         {
           "kind": "namespace",
@@ -41889,9 +41945,17 @@
           ]
         },
         {
+          "kind": "abbrev",
+          "name": "pipBoost_attached_only_on_reply_blocked",
+          "line": 200,
+          "called": [
+            "blockingServer_isSome_iff_blockedOnReply_some"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "blockingServer_some_implies_blockedOnReply",
-          "line": 198,
+          "line": 207,
           "called": [
             "ObjId",
             "SystemState",
@@ -41905,7 +41969,7 @@
         {
           "kind": "theorem",
           "name": "blockingChain_step",
-          "line": 234,
+          "line": 243,
           "called": [
             "SystemState",
             "ThreadId",
@@ -41918,7 +41982,7 @@
         {
           "kind": "theorem",
           "name": "blockingChain_congr",
-          "line": 264,
+          "line": 273,
           "called": [
             "SystemState",
             "ThreadId",
@@ -41932,7 +41996,7 @@
         {
           "kind": "theorem",
           "name": "blockingAcyclic_frame",
-          "line": 279,
+          "line": 288,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -41943,7 +42007,7 @@
         {
           "kind": "theorem",
           "name": "blockingChain_length_le_fuel",
-          "line": 296,
+          "line": 305,
           "called": [
             "SystemState",
             "ThreadId",
@@ -41956,7 +42020,7 @@
         {
           "kind": "theorem",
           "name": "blockingChain_bounded",
-          "line": 324,
+          "line": 333,
           "called": [
             "SystemState",
             "ThreadId",
@@ -41967,7 +42031,7 @@
         {
           "kind": "def",
           "name": "countTCBs",
-          "line": 329,
+          "line": 338,
           "called": [
             "SystemState"
           ]
@@ -63082,6 +63146,8 @@
             "ServiceGraphEntry",
             "ServiceId",
             "SlotRef",
+            "SystemState",
+            "ThreadId",
             "admin",
             "all",
             "allowAll",
@@ -63108,6 +63174,7 @@
             "endpointSendDualChecked",
             "enforcementBoundary",
             "enforcementBoundaryExtended",
+            "erase",
             "expect",
             "fieldsDisjoint",
             "filter",
@@ -63118,6 +63185,7 @@
             "isInsecureDefaultContext",
             "kernelOperationNiConstructor",
             "linearOrder",
+            "lookupCspaceRoot",
             "noStaleEndpointQueueReferences_fields",
             "noStaleNotificationWaitReferences_fields",
             "none",
@@ -63142,6 +63210,7 @@
             "size",
             "testLabelingContext",
             "throw",
+            "toObjId",
             "withCurrent",
             "withIrqHandler",
             "withObject",
@@ -63152,7 +63221,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1029,
+          "line": 1068,
           "called": [
             "runInformationFlowChecks"
           ]
