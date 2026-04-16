@@ -81,14 +81,25 @@ Gate: `lake build` (256 jobs) + `test_smoke.sh` + `test_full.sh` + zero
   avoid circular import) instead of base `tcb.priority`. Fixes the wake
   path (notification signal, endpoint rendezvous, reply wake) landing
   a PIP-boosted server in the wrong RunQueue bucket until the next
-  scheduler tick. Matches AI3-A pattern for yield/timer/switch.
+  scheduler tick. Matches AI3-A pattern for yield/timer/switch. Three
+  new correctness lemmas:
+  - `ensureRunnable_inserts_at_effective_priority` — explicit witness of
+    the bucket used for insertion.
+  - `ensureRunnable_honors_pipBoost` — corollary specialising to PIP-boost threads.
+  - `notificationSignal_respects_pipBoost` — the notification wake path
+    places the woken waiter in the post-state runQueue (composable with
+    `ensureRunnable_inserts_at_effective_priority` for the bucket witness).
 
 - **AK1-F** (I-M04 / MEDIUM): `timeoutThread` PIP-revert call-state gap
-  documented. The revert path only handles `.blockedOnReply _ (some
-  serverId)` because `pipBoost.isSome → tcb.ipcState = .blockedOnReply _
-  _` under the `propagatePipBoost` frame lemma bundle. Non-reply states
-  never have a PIP boost. Fragility note added to
-  `IPC/Operations/Timeout.lean` pointing to `BlockingGraph.lean`.
+  documented AND formalised. Two new theorems in
+  `Scheduler/PriorityInheritance/BlockingGraph.lean`:
+  - `blockingServer_isSome_iff_blockedOnReply_some` — biconditional
+    characterisation of `blockingServer`'s result as structurally
+    identical to the `.blockedOnReply _ (some _)` ipcState form.
+  - `blockingServer_some_implies_blockedOnReply` — specialised
+    corollary making the discriminant formally precise for
+    `timeoutThread`'s PIP-revert dispatch (only reply-blocked threads
+    have a blocking server to propagate revert through).
 
 - **AK1-G** (I-M05 / MEDIUM): `ipcUnwrapCapsLoop` in
   `IPC/Operations/CapTransfer.lean` annotated as internal recursion
@@ -102,10 +113,12 @@ Gate: `lake build` (256 jobs) + `test_smoke.sh` + `test_full.sh` + zero
   `endpointQueueRemove_succeeds_under_forwardBackward` added to
   `IPC/DualQueue/Core.lean`. Formalizes the "defensive fallback is
   unreachable" claim: whenever endpoint + TCB both exist,
-  `endpointQueueRemove` returns `.ok _`. Discharged directly by the
-  operational definition of `endpointQueueRemove` (the guard arms match
-  endpoint + lookupTcb lookups whose results propagate the lookup via
-  `.error .objectNotFound`).
+  `endpointQueueRemove` returns `.ok _`. Composed at the `timeoutThread`
+  call site via the new `timeoutThread_succeeds_under_preconditions`
+  theorem (`IPC/Operations/Timeout.lean`), formally closing the
+  chain from `endpointQueueRemove`'s unreachability lemmas (Core.lean:
+  `queueRemove_predecessor_exists` / `queueRemove_successor_exists`) up
+  through the timer-tick path's dispatcher.
 
 - **AK1-I** (I-M07 / MEDIUM, NI L-1): `endpointSendDualWithCaps` missing
   receiver-CSpace-root path in `IPC/DualQueue/WithCaps.lean` now fails
@@ -113,7 +126,11 @@ Gate: `lake build` (256 jobs) + `test_smoke.sh` + `test_full.sh` + zero
   `endpointReceiveDualWithCaps`. The prior asymmetric `.ok (empty, st')`
   branch was an NI distinguisher — send and receive observed different
   result shapes for the same structural fault. Preservation proofs
-  updated (2 files) to discharge the `.error` arm vacuously.
+  updated (2 files) to discharge the `.error` arm vacuously. NI
+  regression test added to `tests/InformationFlowSuite.lean`
+  asserting consistent outcome for `ipcUnwrapCaps` with a non-CNode
+  receiver root (the shared subroutine invoked by both
+  send-path and receive-path cap-transfer logic).
 
 - **AK1-J** (I-L1..I-L6, IPC INFO): LOW-tier IPC batch documentation
   added as a single docblock at the top of `IPC/Operations/Endpoint.lean`

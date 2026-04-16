@@ -571,6 +571,10 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
+-- AK1-E (I-M03): `notificationSignal_respects_pipBoost` correctness lemma
+-- is defined in `IPC/Operations/SchedulerLemmas.lean` (downstream of this
+-- file), where it can use `ensureRunnable_mem_self`.
+
 /-- Wait on a notification: consume pending badge or block the caller.
 
 WS-G7/F-P11: Duplicate-wait check uses O(1) TCB ipcState lookup instead of

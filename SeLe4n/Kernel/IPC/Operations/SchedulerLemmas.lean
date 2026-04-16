@@ -126,6 +126,40 @@ theorem threadId_toObjId_injective {a b : SeLe4n.ThreadId}
     (h : a.toObjId = b.toObjId) : a = b :=
   SeLe4n.ThreadId.toObjId_injective a b h
 
+/-- AK1-E (I-M03): `ensureRunnable` inserts `tid` at its PIP-effective
+    priority — i.e., `ipcEffectiveRunQueuePriority tcb`, which is
+    `max tcb.priority (tcb.pipBoost.getD 0)`. For threads without a PIP
+    boost this equals `tcb.priority`; for PIP-boosted threads it uses
+    the boosted priority. This is the operational witness that wake
+    paths (notification signal, endpoint rendezvous, reply wake) honor
+    priority inheritance — matching the AI3-A pattern for
+    yield/timer/switch. -/
+theorem ensureRunnable_inserts_at_effective_priority
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hNotMem : tid ∉ st.scheduler.runQueue)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb)) :
+    (ensureRunnable st tid).scheduler.runQueue =
+      st.scheduler.runQueue.insert tid (ipcEffectiveRunQueuePriority tcb) := by
+  unfold ensureRunnable
+  simp only [hNotMem, if_false, hTcb]
+
+/-- AK1-E (I-M03): PIP-boosted threads are inserted at their boosted
+    priority (not their base priority) when awakened via `ensureRunnable`.
+    This is the corollary of `ensureRunnable_inserts_at_effective_priority`
+    specialised to the case where `tcb.pipBoost = some boost ∧ tcb.priority < boost`. -/
+theorem ensureRunnable_honors_pipBoost
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hNotMem : tid ∉ st.scheduler.runQueue)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (boost : SeLe4n.Priority)
+    (hBoost : tcb.pipBoost = some boost) :
+    (ensureRunnable st tid).scheduler.runQueue =
+      st.scheduler.runQueue.insert tid ⟨Nat.max tcb.priority.val boost.val⟩ := by
+  rw [ensureRunnable_inserts_at_effective_priority st tid tcb hNotMem hTcb]
+  congr 1
+  unfold ipcEffectiveRunQueuePriority
+  rw [hBoost]
+
 /-- WS-E3/H-09: If `storeTcbIpcState st tid ipc` succeeds and the post-state has a TCB
     at `tid.toObjId`, then that TCB has `ipcState = ipc`. Covers both the case where
     lookupTcb found an existing TCB (which was updated) and the no-op case (which leads
@@ -731,5 +765,62 @@ theorem donateSchedContext_ok_server_donated
   | some (.cnode _), _ => cases hOk
   | some (.vspaceRoot _), _ => cases hOk
   | some (.untyped _), _ => cases hOk
+
+-- ============================================================================
+-- AK1-E (I-M03): notificationSignal respects PIP boost
+-- ============================================================================
+
+/-- AK1-E (I-M03 / MEDIUM): When `notificationSignal` successfully wakes a
+    queued waiter, that waiter appears in the post-state runQueue.
+    Combined with `ensureRunnable_inserts_at_effective_priority`, this
+    ensures the waiter is inserted at its PIP-effective priority — i.e.,
+    `ipcEffectiveRunQueuePriority tcb`. This is the correctness witness
+    that the notification wake path does not regress a PIP-boosted
+    server to its base priority bucket until the next scheduler tick,
+    matching the AI3-A fix pattern for yield/timer/switch. -/
+theorem notificationSignal_respects_pipBoost
+    (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
+    (st st' : SystemState)
+    (waiter : SeLe4n.ThreadId) (rest : List SeLe4n.ThreadId)
+    (ntfn : Notification)
+    (hObjInv : st.objects.invExt)
+    (hNtfn : st.objects[notificationId]? = some (.notification ntfn))
+    (hWaiters : ntfn.waitingThreads = waiter :: rest)
+    (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
+    waiter ∈ st'.scheduler.runQueue := by
+  unfold notificationSignal at hStep
+  simp only [hNtfn, hWaiters] at hStep
+  cases hStore : storeObject notificationId _ st with
+  | error e => rw [hStore] at hStep; cases hStep
+  | ok pair =>
+    rw [hStore] at hStep
+    simp only at hStep
+    have hObjInvStore : pair.2.objects.invExt :=
+      storeObject_preserves_objects_invExt st pair.2 notificationId _ hObjInv hStore
+    cases hMsg : storeTcbIpcStateAndMessage pair.2 waiter .ready _ with
+    | error e => rw [hMsg] at hStep; cases hStep
+    | ok st'' =>
+      rw [hMsg] at hStep
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨_, rfl⟩ := hStep
+      apply ensureRunnable_mem_self
+      -- storeTcbIpcStateAndMessage .ok ⇒ waiter had a TCB pre-store AND
+      -- post-store has a TCB at waiter.toObjId (via _tcb_exists_at_target).
+      unfold storeTcbIpcStateAndMessage at hMsg
+      cases hLk : lookupTcb pair.2 waiter with
+      | none => simp [hLk] at hMsg
+      | some tcb =>
+        simp only [hLk] at hMsg
+        have hPreTcb : pair.2.objects[waiter.toObjId]? = some (.tcb tcb) :=
+          lookupTcb_some_objects pair.2 waiter tcb hLk
+        -- storeObject is unconditional .ok (see Model/State.lean); directly
+        -- destructure via the definitional equality.
+        generalize hStore2 : storeObject waiter.toObjId
+          (.tcb { tcb with ipcState := .ready, pendingMessage := _ }) pair.2 = store2result at hMsg
+        match store2result, hMsg with
+        | .ok pair2, hMsg =>
+          simp only [Except.ok.injEq] at hMsg
+          subst hMsg
+          exact ⟨_, storeObject_objects_eq' pair.2 waiter.toObjId _ pair2 hObjInvStore hStore2⟩
 
 end SeLe4n.Kernel
