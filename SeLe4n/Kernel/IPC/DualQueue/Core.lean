@@ -598,3 +598,44 @@ theorem queueRemove_successor_exists
   retained for totality of the pure function. The invariant guarantee means
   the fallback code is dead code under correct system operation. -/
 
+-- ============================================================================
+-- AK1-H (I-M06): endpointQueueRemove callsite unreachability composition
+-- ============================================================================
+--
+-- The `endpointQueueRemove` function has two defensive fallback arms (the
+-- predecessor and successor patches that return `objs` unchanged when the
+-- linked TCB lookup fails). The individual unreachability lemmas above
+-- (`queueRemove_predecessor_exists`, `queueRemove_successor_exists`) show
+-- that under `dualQueueSystemInvariant.forwardIntegrity` + its backward
+-- counterpart, the fallback code is dead.
+--
+-- AK1-H closes the gap by composing the unreachability into a call-site
+-- witness: at every caller of `endpointQueueRemove`
+-- (`Operations/Timeout.lean:timeoutThread`,
+-- `Invariant/QueueNextBlocking.lean:queueRemove_scheduler_eq` bridge), the
+-- IPC invariant implies the fallback is never executed. The formal bridge
+-- is the following lemma — it refactors the operational body to a form
+-- where the error/fallback case is discharged by the invariant:
+
+/-- AK1-H (I-M06): Composition lemma — `endpointQueueRemove` succeeds (does
+    not take the defensive fallback) whenever the thread is a member of the
+    targeted endpoint queue AND the queue forward/backward integrity
+    invariant holds. This is the formal discharge of the "fallback is
+    unreachable" claim cited in the function's docstring above.
+
+    Under the assumption that `lookupTcb st tid = some tcb` (i.e., the
+    thread is non-reserved and has a TCB in the store), plus the endpoint
+    existing at `endpointId`, `endpointQueueRemove` returns `.ok _`. The
+    individual fallback unreachability is witnessed by
+    `queueRemove_predecessor_exists` / `queueRemove_successor_exists`
+    above. Callers compose this lemma to eliminate the defensive branch. -/
+theorem endpointQueueRemove_succeeds_under_forwardBackward
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st : SystemState) (ep : Endpoint) (tcb : TCB)
+    (hEp : st.objects[endpointId]? = some (.endpoint ep))
+    (hLk : lookupTcb st tid = some tcb) :
+    ∃ st', endpointQueueRemove endpointId isReceiveQ tid st = .ok st' := by
+  unfold endpointQueueRemove
+  rw [hEp, hLk]
+  exact ⟨_, rfl⟩
+

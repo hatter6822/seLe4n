@@ -56,6 +56,33 @@ or `blockedOnReply`) on the endpoint identified by `endpointId`. The sole caller
 `none` for non-blocking states. Calling this on a non-blocked thread would
 incorrectly reset its state and write the timeout error code.
 
+**AK1-F (I-M04) — PIP revert call-state invariant:** The PIP revert path
+(`maybeBlockingServer` / `revertPriorityInheritance`) only handles the
+`.blockedOnReply _ (some serverId)` case. This is correct because:
+
+(i) `pipBoost.isSome` is established only by `propagatePipBoost` in
+    `Scheduler.PriorityInheritance.Propagate`, which is called exclusively
+    from the reply-blocking chain construction (when a client enters
+    `.blockedOnReply` via `endpointCall` / `endpointSendDualChecked`'s
+    handshake branch). No other IPC state produces a PIP boost.
+
+(ii) Under `ipcInvariantFull`, the implication `tcb.pipBoost.isSome →
+     ∃ ep rt, tcb.ipcState = .blockedOnReply ep rt` holds. This is the
+     frame-lemma bundle `propagatePipBoost_*` in
+     `PriorityInheritance/Preservation.lean`.
+
+(iii) Therefore, clients with `.blockedOnSend` / `.blockedOnReceive` /
+      `.blockedOnNotification` / `.blockedOnCall` never have a PIP boost to
+      revert — the other arms of `timeoutThread`'s `match maybeBlockingServer`
+      discriminator's `none` branch are correct by invariant.
+
+This relationship is fragile in the sense that any future change that adds
+PIP boosting outside the reply-chain (e.g., dynamic priority inheritance
+for notification wait queues) would require extending the revert logic
+here. The invariant is pin-pointed by
+`blockingGraph_pipBoost_implies_blockedOnReply` (D4; see
+`Scheduler/PriorityInheritance/BlockingGraph.lean`).
+
 Returns updated state or error if endpoint/thread lookup fails. -/
 def timeoutThread
     (endpointId : SeLe4n.ObjId)

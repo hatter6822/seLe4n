@@ -562,6 +562,25 @@ def blockedOnReplyHasTarget (st : SystemState) : Prop :=
     tcb.ipcState = .blockedOnReply endpointId replyTarget →
     replyTarget.isSome
 
+/-- AK1-B (I-H02): Soundness bridge for the fail-closed reply guard.
+Under `blockedOnReplyHasTarget`, any `.blockedOnReply` state always has an
+explicit target. This theorem is the formal discharge of the claim that the
+new `none => .error .replyCapInvalid` arm in `endpointReply`/`endpointReplyRecv`
+does not change behavior on invariant-satisfying states — the `none` arm is
+unreachable. -/
+theorem blockedOnReplyHasTarget_implies_some_replyTarget
+    (st : SystemState)
+    (hInv : blockedOnReplyHasTarget st)
+    (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (endpointId : SeLe4n.ObjId) (replyTarget : Option SeLe4n.ThreadId)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hIpc : tcb.ipcState = .blockedOnReply endpointId replyTarget) :
+    ∃ t, replyTarget = some t := by
+  have h := hInv tid tcb endpointId replyTarget hTcb hIpc
+  cases replyTarget with
+  | none => simp at h
+  | some t => exact ⟨t, rfl⟩
+
 /-- WS-G7/F-P11: notificationWait preserves uniqueWaiters.
 Now requires `notificationWaiterConsistent` to bridge the TCB ipcState
 duplicate check to list non-membership. -/
@@ -2239,5 +2258,47 @@ theorem cleanupPreReceiveDonation_preserves_dualQueueEndpointWellFormed
     (hEp : (cleanupPreReceiveDonation st receiver).objects[epId]? = some (.endpoint ep)) :
     dualQueueEndpointWellFormed epId (cleanupPreReceiveDonation st receiver) :=
   (cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant st receiver hObjInv hDQSI).1 epId ep hEp
+
+-- ============================================================================
+-- AK1-A (I-H01): Unreachability of the error branch — non-donated path
+-- ============================================================================
+--
+-- The `Checked` variant's `.error` arm is unreachable when the receiver is
+-- not currently holding a donated SchedContext. This is the common case:
+-- the cleanup path only does real work if the receiver has a stale donated
+-- binding from an unanswered call, which is an abnormal flow. For the
+-- `.unbound` / `.bound _` paths, the Checked variant returns `.ok st`
+-- unconditionally and so never errors.
+--
+-- The full unreachability proof on the donated path requires threading
+-- `donationOwnerValid` (which guarantees SchedContext + owner TCB presence)
+-- together with typed-ID disjointness + reserved-ID absence invariants. This
+-- is a separate proof obligation tracked in the AK1-J batch and discharged
+-- incrementally as the donation invariant suite evolves. For this phase, the
+-- code-level error propagation is the primary deliverable; the donated-path
+-- unreachability is a proof-engineering refinement that does not affect
+-- operational correctness (the fail-closed behavior is preserved in either
+-- case).
+
+/-- AK1-A (I-H01): `cleanupPreReceiveDonationChecked` never errors when the
+    receiver's binding is `.unbound` or `.bound _` (the common paths). The
+    donated-path case is handled by the broader invariant chain. -/
+theorem cleanupPreReceiveDonationChecked_ok_of_non_donated
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hNonDonated : ∀ recvTcb, lookupTcb st receiver = some recvTcb →
+      ∀ scId owner, recvTcb.schedContextBinding ≠ .donated scId owner) :
+    ∃ st', cleanupPreReceiveDonationChecked st receiver = .ok st' := by
+  unfold cleanupPreReceiveDonationChecked
+  cases hLk : lookupTcb st receiver with
+  | none => exact ⟨st, rfl⟩
+  | some recvTcb =>
+    show ∃ st', (match recvTcb.schedContextBinding with
+      | .donated scId owner => returnDonatedSchedContext st receiver scId owner
+      | _ => .ok st) = .ok st'
+    cases hBind : recvTcb.schedContextBinding with
+    | unbound => exact ⟨st, rfl⟩
+    | bound _ => exact ⟨st, rfl⟩
+    | donated scId owner =>
+      exact absurd hBind (hNonDonated recvTcb hLk scId owner)
 
 end SeLe4n.Kernel

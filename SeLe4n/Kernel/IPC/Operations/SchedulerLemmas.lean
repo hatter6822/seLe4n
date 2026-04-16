@@ -95,7 +95,7 @@ theorem ensureRunnable_runnable_mem_old
   · rename_i hNotMem
     split
     · rename_i tcb hTcb
-      show x ∈ (st.scheduler.runQueue.insert tid tcb.priority).toList
+      show x ∈ (st.scheduler.runQueue.insert tid (ipcEffectiveRunQueuePriority tcb)).toList
       rw [RunQueue.toList_insert_not_mem _ _ _ hNotMem]
       exact List.mem_append_left _ hMem
     · exact hMem
@@ -110,7 +110,7 @@ theorem ensureRunnable_nodup
   · rename_i hNotMem
     split
     · rename_i tcb hTcb
-      show (st.scheduler.runQueue.insert tid tcb.priority).toList.Nodup
+      show (st.scheduler.runQueue.insert tid (ipcEffectiveRunQueuePriority tcb)).toList.Nodup
       rw [RunQueue.toList_insert_not_mem _ _ _ hNotMem]
       have hNotFlat : tid ∉ st.scheduler.runnable :=
         RunQueue.not_mem_toList_of_not_mem _ _ hNotMem

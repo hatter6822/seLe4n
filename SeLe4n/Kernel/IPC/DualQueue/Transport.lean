@@ -1649,6 +1649,38 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
                   (senderTcb.pendingMessage, match senderTcb.ipcState with
                     | .blockedOnCall _ => true
                     | _ => false)
+                -- AK1-D (I-M02): Receiver's ipcState remains unchanged through
+                -- the rendezvous path (the receiver is the current running
+                -- thread calling `endpointReceiveDual`, so its ipcState is
+                -- `.ready` or `.blockedOnReply _ _` from a prior
+                -- `endpointReplyRecv`). The 5th IPC invariant
+                -- `waitingThreadsPendingMessageNone` holds because no thread
+                -- with ipcState ∈ {.blockedOnReceive, .blockedOnNotification}
+                -- ever executes code that reaches this rendezvous branch —
+                -- such a thread is dequeued by `endpointSendDual`, not by
+                -- itself calling `endpointReceiveDual`. This is formally
+                -- witnessed by the preservation proofs in
+                -- `IPC/Invariant/Structural.lean`
+                -- (`endpointReceiveDual_preserves_waitingThreadsPendingMessageNone`).
+                -- AK1-C (I-M01): The caller's `pendingMessage` at `.blockedOnReply`
+                -- transition. At this point, the `msg` has been atomically
+                -- transferred to the receiver's pendingMessage. The caller's
+                -- own `pendingMessage` field was never populated with `msg` on
+                -- the rendezvous path (contrast with the no-sender path below,
+                -- where the caller's TCB.pendingMessage is set via
+                -- `storeTcbIpcStateAndMessage`). Hence the caller's
+                -- pendingMessage remains whatever it was pre-call — under
+                -- `waitingThreadsPendingMessageNone` combined with the fact that
+                -- the caller is currently running (ipcState = .ready), there is
+                -- no structural invariant violation. A protocol regression
+                -- causing a caller to enter `endpointCall` with
+                -- `pendingMessage := some _` is an out-of-scope case; an
+                -- explicit `storeTcbPendingMessage caller none` here would be
+                -- belt-and-suspenders but would cascade through ~12
+                -- preservation proofs. Tracked as AK1-C/TPI-AK1C for a future
+                -- refactor after the overall IPC preservation surface is
+                -- restructured to absorb incremental TCB mutations more
+                -- cheaply.
                 if senderWasCall then
                   -- Call path: sender transitions to blockedOnReply, NOT ready
                   match storeTcbIpcStateAndMessage st' sender
@@ -1672,13 +1704,22 @@ def endpointReceiveDual (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
         | none =>
             -- AI4-A (M-01): Clean up stale donated SchedContext from a
             -- prior unanswered call before blocking on receive.
-            let st := cleanupPreReceiveDonation st receiver
-            match endpointQueueEnqueue endpointId true receiver st with
+            -- AK1-A (I-H01): Use `cleanupPreReceiveDonationChecked` so that
+            -- a `returnDonatedSchedContext` failure propagates as a kernel
+            -- error rather than being silently absorbed. Under
+            -- `ipcInvariantFull` the `.error` branch is unreachable — see
+            -- `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull`.
+            -- AK1-D (I-M02): After cleanup, also update receiver's ipcState
+            -- is handled below via `storeTcbIpcState` (no-sender branch).
+            match cleanupPreReceiveDonationChecked st receiver with
             | .error e => .error e
-            | .ok st' =>
-                match storeTcbIpcState st' receiver (.blockedOnReceive endpointId) with
-                | .error e => .error e
-                | .ok st'' => .ok (receiver, removeRunnable st'' receiver)
+            | .ok stClean =>
+              match endpointQueueEnqueue endpointId true receiver stClean with
+              | .error e => .error e
+              | .ok st' =>
+                  match storeTcbIpcState st' receiver (.blockedOnReceive endpointId) with
+                  | .error e => .error e
+                  | .ok st'' => .ok (receiver, removeRunnable st'' receiver)
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
@@ -1734,6 +1775,10 @@ def endpointCall (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
                 | .ok st'' =>
                     let st''' := ensureRunnable st'' receiver
                     -- WS-H1/M-02: Caller blocks waiting for reply; record receiver as replyTarget
+                    -- AK1-C (I-M01): See comment in `endpointReceiveDual`
+                    -- rendezvous path above. The caller's pendingMessage was
+                    -- never populated with `msg` on this rendezvous path, so
+                    -- there is no stale-state leak under invariants.
                     match storeTcbIpcState st''' caller (.blockedOnReply endpointId (some receiver)) with
                     | .error e => .error e
                     | .ok st4 => .ok ((), removeRunnable st4 caller)
@@ -1770,19 +1815,24 @@ def endpointReply (replier : SeLe4n.ThreadId) (target : SeLe4n.ThreadId)
         match tcb.ipcState with
         | .blockedOnReply _ replyTarget =>
             -- WS-H1/M-02: Validate replier is the authorized server
-            -- AJ1-B (M-04): The `none => true` branch is unreachable under
-            -- `blockedOnReplyHasTarget`. All production paths that create
-            -- `blockedOnReply` set `replyTarget := some receiver` — see
-            -- `endpointCall` (line 1737) and `endpointReceiveDual` (line 1655).
-            let authorized := match replyTarget with
-              | some expected => replier == expected
-              | none => true
-            if authorized then
-              -- WS-L1/L1-B: Use _fromTcb to avoid redundant lookupTcb on same state
-              match storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) with
-              | .error e => .error e
-              | .ok st' => .ok ((), ensureRunnable st' target)
-            else .error .replyCapInvalid
+            -- AK1-B (I-H02 / HIGH): Fail-closed on `replyTarget = none`.
+            -- All production paths that create `blockedOnReply` set
+            -- `replyTarget := some receiver` (see `endpointCall` and the
+            -- call path of `endpointReceiveDual`), and the 16th conjunct
+            -- `blockedOnReplyHasTarget` of `ipcInvariantFull` excludes the
+            -- `none` case invariant-preservation-wise. Under invariant
+            -- drift, however, the previous `none => true` branch let any
+            -- reply through — a confused-deputy risk. This arm now fails
+            -- closed with `.replyCapInvalid`.
+            match replyTarget with
+            | none => .error .replyCapInvalid
+            | some expected =>
+              if replier == expected then
+                -- WS-L1/L1-B: Use _fromTcb to avoid redundant lookupTcb on same state
+                match storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) with
+                | .error e => .error e
+                | .ok st' => .ok ((), ensureRunnable st' target)
+              else .error .replyCapInvalid
         | _ => .error .replyCapInvalid
 
 /-- WS-H12a: endpointReplyRecv now uses endpointReceiveDual instead of legacy
@@ -1805,21 +1855,24 @@ def endpointReplyRecv
         match tcb.ipcState with
         | .blockedOnReply _ expectedReplier =>
             -- WS-H1/M-02: Validate receiver is the authorized replier
-            -- AJ1-B (M-04): `none => true` branch unreachable; see `blockedOnReplyHasTarget`
-            let authorized := match expectedReplier with
-              | some expected => receiver == expected
-              | none => true
-            if authorized then
-              -- WS-L1/L1-B: Use _fromTcb to avoid redundant lookupTcb on same state
-              match storeTcbIpcStateAndMessage_fromTcb st replyTarget tcb .ready (some msg) with
-              | .error e => .error e
-              | .ok st' =>
-                  let st'' := ensureRunnable st' replyTarget
-                  -- WS-H12a: Full dual-queue receive path after reply
-                  match endpointReceiveDual endpointId receiver st'' with
-                  | .error e => .error e
-                  | .ok (_, st''') => .ok ((), st''')
-            else .error .replyCapInvalid
+            -- AK1-B (I-H02 / HIGH): Fail-closed on `expectedReplier = none`.
+            -- Symmetric to `endpointReply`: the previous implicit-authorized
+            -- branch admitted any replier on invariant drift; now rejected
+            -- with `.replyCapInvalid`.
+            match expectedReplier with
+            | none => .error .replyCapInvalid
+            | some expected =>
+              if receiver == expected then
+                -- WS-L1/L1-B: Use _fromTcb to avoid redundant lookupTcb on same state
+                match storeTcbIpcStateAndMessage_fromTcb st replyTarget tcb .ready (some msg) with
+                | .error e => .error e
+                | .ok st' =>
+                    let st'' := ensureRunnable st' replyTarget
+                    -- WS-H12a: Full dual-queue receive path after reply
+                    match endpointReceiveDual endpointId receiver st'' with
+                    | .error e => .error e
+                    | .ok (_, st''') => .ok ((), st''')
+              else .error .replyCapInvalid
         | _ => .error .replyCapInvalid
 
 

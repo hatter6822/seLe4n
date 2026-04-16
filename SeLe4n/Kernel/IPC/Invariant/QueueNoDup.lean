@@ -401,9 +401,11 @@ theorem endpointReply_preserves_endpointQueueNoDup
         cases hIpc : tcb.ipcState with
         | blockedOnReply epId replyTarget =>
           simp only [hIpc] at hStep
-          -- Handle authorization check (match on replyTarget, then if)
-          split at hStep
-          · -- replyTarget = some expected
+          -- AK1-B (I-H02): Fail-closed on replyTarget = none
+          cases replyTarget with
+          | none => simp at hStep
+          | some expected =>
+            simp only at hStep
             split at hStep
             · -- authorized path
               generalize hMsg : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = rMsg at hStep
@@ -415,15 +417,6 @@ theorem endpointReply_preserves_endpointQueueNoDup
                   storeTcbIpcStateAndMessage_fromTcb_preserves_endpointQueueNoDup
                     st st1 target tcb .ready (some msg) hInv hObjInv hLookup hMsg
             · simp at hStep
-          · -- replyTarget = none (authorized = true)
-            generalize hMsg : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = rMsg at hStep
-            cases rMsg with
-            | error e => simp at hStep
-            | ok st1 =>
-              simp at hStep; obtain ⟨_, rfl⟩ := hStep
-              exact ensureRunnable_preserves_endpointQueueNoDup _ _ <|
-                storeTcbIpcStateAndMessage_fromTcb_preserves_endpointQueueNoDup
-                  st st1 target tcb .ready (some msg) hInv hObjInv hLookup hMsg
         | _ => simp [hIpc] at hStep
 
 -- ============================================================================

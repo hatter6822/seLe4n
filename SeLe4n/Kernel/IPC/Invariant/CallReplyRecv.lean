@@ -533,14 +533,18 @@ theorem endpointReplyRecv_preserves_ipcInvariant
     cases hIpc : tcb.ipcState with
     | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnCall _ =>
       simp [hIpc] at hStep
-    | blockedOnReply _ _ =>
+    | blockedOnReply _ expectedReplier =>
       simp only [hIpc] at hStep
       -- Helper: given st1 from storeTcbIpcStateAndMessage, prove via endpointReceiveDual
       suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
           (∀ stR, endpointReceiveDual endpointId receiver (ensureRunnable st1 replyTarget) = .ok stR →
             ipcInvariant stR.2) by
-        split at hStep
-        · split at hStep
+        -- AK1-B (I-H02): Fail-closed on expectedReplier = none
+        cases expectedReplier with
+        | none => simp at hStep
+        | some expected =>
+          simp only at hStep
+          split at hStep
           · revert hStep
             cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
             | error e => simp
@@ -553,17 +557,6 @@ theorem endpointReplyRecv_preserves_ipcInvariant
                 intro ⟨_, hEq⟩; subst hEq
                 exact this st1 hMsg result hRecv
           · simp_all
-        · dsimp only at hStep; revert hStep
-          cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
-          | error e => simp
-          | ok st1 =>
-            simp only []
-            cases hRecv : endpointReceiveDual endpointId receiver (ensureRunnable st1 replyTarget) with
-            | error e => simp
-            | ok result =>
-              simp only [ite_true, Except.ok.injEq, Prod.mk.injEq]
-              intro ⟨_, hEq⟩; subst hEq
-              exact this st1 hMsg result hRecv
       intro st1 hMsg stR hRecv
       have hInv1 := storeTcbIpcStateAndMessage_preserves_ipcInvariant st st1 replyTarget .ready (some msg) hInv hObjInv hMsg
       have hInv2 : ipcInvariant (ensureRunnable st1 replyTarget) :=
@@ -598,13 +591,17 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
     cases hIpc : tcb.ipcState with
     | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnCall _ =>
       simp [hIpc] at hStep
-    | blockedOnReply _ _ =>
+    | blockedOnReply _ expectedReplier =>
       simp only [hIpc] at hStep
       suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
           (∀ stR, endpointReceiveDual endpointId receiver (ensureRunnable st1 replyTarget) = .ok stR →
             schedulerInvariantBundle stR.2) by
-        split at hStep
-        · split at hStep
+        -- AK1-B (I-H02): Fail-closed on expectedReplier = none
+        cases expectedReplier with
+        | none => simp at hStep
+        | some expected =>
+          simp only at hStep
+          split at hStep
           · revert hStep
             cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
             | error e => simp
@@ -617,17 +614,6 @@ theorem endpointReplyRecv_preserves_schedulerInvariantBundle
                 intro ⟨_, hEq⟩; subst hEq
                 exact this st1 hMsg result hRecv
           · simp_all
-        · dsimp only at hStep; revert hStep
-          cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
-          | error e => simp
-          | ok st1 =>
-            simp only []
-            cases hRecv : endpointReceiveDual endpointId receiver (ensureRunnable st1 replyTarget) with
-            | error e => simp
-            | ok result =>
-              simp only [ite_true, Except.ok.injEq, Prod.mk.injEq]
-              intro ⟨_, hEq⟩; subst hEq
-              exact this st1 hMsg result hRecv
       intro st1 hMsg stR hRecv
       rcases hInv with ⟨hQCC, hRQU, hCTV⟩
       have hSchedEq := storeTcbIpcStateAndMessage_scheduler_eq st st1 replyTarget .ready (some msg) hMsg
@@ -711,13 +697,17 @@ theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates
     cases hIpc : tcb.ipcState with
     | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnNotification _ | blockedOnCall _ =>
       simp [hIpc] at hStep
-    | blockedOnReply _ _ =>
+    | blockedOnReply _ expectedReplier =>
       simp only [hIpc] at hStep
       suffices ∀ st1, storeTcbIpcStateAndMessage st replyTarget .ready (some msg) = .ok st1 →
           (∀ stR, endpointReceiveDual endpointId receiver (ensureRunnable st1 replyTarget) = .ok stR →
             ipcSchedulerContractPredicates stR.2) by
-        split at hStep
-        · split at hStep
+        -- AK1-B (I-H02): Fail-closed on expectedReplier = none
+        cases expectedReplier with
+        | none => simp at hStep
+        | some expected =>
+          simp only at hStep
+          split at hStep
           · revert hStep
             cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
             | error e => simp
@@ -730,17 +720,6 @@ theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates
                 intro ⟨_, hEq⟩; subst hEq
                 exact this st1 hMsg result hRecv
           · simp_all
-        · dsimp only at hStep; revert hStep
-          cases hMsg : storeTcbIpcStateAndMessage st replyTarget .ready (some msg) with
-          | error e => simp
-          | ok st1 =>
-            simp only []
-            cases hRecv : endpointReceiveDual endpointId receiver (ensureRunnable st1 replyTarget) with
-            | error e => simp
-            | ok result =>
-              simp only [ite_true, Except.ok.injEq, Prod.mk.injEq]
-              intro ⟨_, hEq⟩; subst hEq
-              exact this st1 hMsg result hRecv
       intro st1 hMsg stR hRecv
       have hSchedEq := storeTcbIpcStateAndMessage_scheduler_eq st st1 replyTarget .ready (some msg) hMsg
       have hContractMid : ipcSchedulerContractPredicates (ensureRunnable st1 replyTarget) := by
@@ -845,15 +824,17 @@ theorem endpointReply_preserves_ipcSchedulerContractPredicates
     | blockedOnReceive _ => simp [hIpc] at hStep
     | blockedOnNotification _ => simp [hIpc] at hStep
     | blockedOnCall _ => simp [hIpc] at hStep
-    | blockedOnReply epId _ =>
+    | blockedOnReply epId replyTarget =>
       simp only [hIpc] at hStep
-      -- WS-H1/M-02: Branch on replyTarget (authorized replier check)
+      -- AK1-B (I-H02): Fail-closed on replyTarget = none
       -- Both branches share identical 5-conjunct proof after authorization resolves.
       -- Helper: given st1 from storeTcbIpcStateAndMessage, prove the 5 conjuncts.
       suffices ∀ st1, storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st1 →
           ipcSchedulerContractPredicates (ensureRunnable st1 target) by
-        split at hStep
-        · -- some expected: if replier == expected
+        cases replyTarget with
+        | none => simp at hStep
+        | some expected =>
+          simp only at hStep
           split at hStep
           · -- authorized = true
             revert hStep
@@ -865,15 +846,6 @@ theorem endpointReply_preserves_ipcSchedulerContractPredicates
               exact this st1 hMsg
           · -- authorized = false
             simp_all
-        · -- none: no replyTarget constraint
-          dsimp only at hStep
-          revert hStep
-          cases hMsg : storeTcbIpcStateAndMessage st target .ready (some msg) with
-          | error e => simp
-          | ok st1 =>
-            simp only [ite_true, Except.ok.injEq, Prod.mk.injEq]
-            intro ⟨_, hEq⟩; subst hEq
-            exact this st1 hMsg
       -- Shared proof body
       intro st1 hMsg
       have hSchedEq := storeTcbIpcStateAndMessage_scheduler_eq st st1 target .ready (some msg) hMsg

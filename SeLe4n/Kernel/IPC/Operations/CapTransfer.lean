@@ -64,7 +64,22 @@ private def fillRemainingNoSlot
 
 /-- M-D01: Recursive helper for unwrapping caps. Processes caps from index
 `idx` to the end of the array. Termination is structural on `fuel`
-(initially `caps.size - idx`). -/
+(initially `caps.size - idx`).
+
+**AK1-G (I-M05) — Internal recursion helper.** This function is the
+recursive worker for `ipcUnwrapCaps` and **must only be called from
+`ipcUnwrapCaps`** (which always supplies `idx := 0` and `accResults := #[]`).
+Calling it externally with `idx > 0` produces off-by-one padding and
+silently drops capabilities because the `fuel` parameter is keyed off
+`caps.size - idx`. Making this `private` would fail the module build
+because `IPC/DualQueue/WithCaps.lean` and
+`Capability/Invariant/Preservation.lean` reference the associated
+preservation theorems (`ipcUnwrapCapsLoop_preserves_*`) by name.
+
+The static invariant `ipcUnwrapCaps` only calls this with `idx = 0` can be
+verified by `grep -rn "ipcUnwrapCapsLoop " SeLe4n/Kernel/IPC/` — the only
+production call site in code (non-proof) is at the `ipcUnwrapCaps`
+recursion entry below. -/
 def ipcUnwrapCapsLoop
     (caps : Array Capability)
     (senderCspaceRoot : SeLe4n.ObjId)

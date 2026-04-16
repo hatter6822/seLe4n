@@ -330,7 +330,7 @@ theorem ensureRunnable_preserves_projection
       | tcb tcb =>
           show projectState ctx observer
               { st with scheduler := { st.scheduler with
-                  runQueue := st.scheduler.runQueue.insert tid tcb.priority } } =
+                  runQueue := st.scheduler.runQueue.insert tid (ipcEffectiveRunQueuePriority tcb) } } =
               projectState ctx observer st
           simp only [projectState]; congr 1
           · -- projectRunnable
