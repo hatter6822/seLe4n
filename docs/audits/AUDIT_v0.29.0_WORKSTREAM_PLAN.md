@@ -5,8 +5,9 @@
 **Version:** 0.29.0 → 1.0.0 (pre-release)
 **Workstream ID:** WS-AK
 **Phases:** 10 (AK1–AK10)
-**Total sub-tasks:** 109
+**Total sub-tasks:** 109 phase-level + 62 atomic work units under 11 complex tasks = **171 committable units**
 **Target release:** seLe4n v1.0.0 (first major release, RPi5 first-silicon bring-up)
+**Estimated calendar time:** 12–16 weeks with parallel execution lanes
 
 ---
 
@@ -31,6 +32,68 @@
 17. Out-of-Scope
 18. Rationale for Phase Structure
 19. Notes on Proof-Engineering Approach
+20. Execution Scheduling & Work-Unit Ordering
+21. Quick-Reference Cheat Sheet
+
+*(The following two reference sections appear BEFORE §1 for easy navigation
+during implementation; they are numbered 0.A and 0.B conceptually.)*
+
+---
+
+## 0.A. Sub-Task Granularity Legend
+
+Each sub-task in this plan follows one of three granularity tiers:
+
+- **Atomic** — a single commit-sized change, typically ≤50 LOC. Most
+  LOW-tier items and simple MEDIUM items. Examples: AK1-G (mark
+  `ipcUnwrapCapsLoop` private), AK3-H (add `countsPerTickPositive`).
+- **Decomposed** — broken into 3–8 numbered sub-steps (e.g., AK2-A.1,
+  AK2-A.2, …). Each sub-step is independently committable with its own
+  acceptance criterion. Examples: AK3-A (ASID rollover) 8 sub-steps;
+  AK5-D (MMU enable) 5 sub-steps.
+- **Batched** — grouped LOW-tier items handled in a single commit with
+  bullet-per-item rationale. Example: AK1-J, AK2-L, AK3-M.
+
+**Format conventions for decomposed sub-tasks:**
+
+Every decomposed sub-task specifies:
+
+1. **Files** touched (absolute paths).
+2. **Estimated net LOC** (`+added / -removed`).
+3. **Dependency** — sub-tasks that must land first (`none` if independent).
+4. **Atomic work unit** — the actual change, often with Lean/Rust code
+   block.
+5. **Acceptance** — concrete condition signaling completion.
+
+Sub-tasks with zero dependencies can land in parallel; sub-tasks with a
+named dependency must land after that dependency's commit.
+
+---
+
+## 0.B. Complex-Task Decomposition Index
+
+The following sub-tasks were identified as high-complexity during planning
+and have been explicitly decomposed into atomic work units. They represent
+the longest critical paths in the workstream and should be scheduled first
+within their respective phases to allow early identification of scope
+overruns.
+
+| Sub-task | Atoms | Total LOC | Critical path |
+|----------|-------|-----------|---------------|
+| AK2-K (WCRT proof-schema closure) | 5 (K.1–K.5) | ~600 | S-H01, S-H02 |
+| AK3-A (ASID rollover correctness) | 8 (A.1–A.8) | ~260 | A-C01 CRITICAL |
+| AK3-B (W^X four-layer defense) | 6 (B.1–B.6) | ~100 | A-H01 HIGH |
+| AK3-C (GIC EOI differentiation) | 5 (C.1–C.5) | ~200 | A-H02 HIGH |
+| AK4-A (IPC-buffer merge) | 8 (A.1–A.8) | ~300 | R-ABI-C01 CRITICAL |
+| AK5-D (MMU enable sequence) | 5 (D.1–D.5) | ~145 | R-HAL-H02 HIGH |
+| AK5-E (BOOT_L1_TABLE safe sync) | 4 (E.1–E.4) | ~80 | R-HAL-H01 HIGH |
+| AK5-F (TrapFrame ESR/FAR) | 6 (F.1–F.6) | ~110 | R-HAL-H04 HIGH |
+| AK6-F (`dispatchCapabilityOnly` composition) | 6 (F.1–F.6) | ~170 | NI-H02 HIGH |
+| AK7-E (ValidId subtypes) | 4 (E.1–E.4) | ~140 | F-M03 MEDIUM |
+| AK7-F (ObjKind discriminator) | 5 (F.1–F.5) | ~145 | F-M04 MEDIUM |
+
+Total atomic sub-steps: 62. Each has isolable acceptance criteria; any
+single sub-step can be reverted without destabilizing the phase.
 
 ---
 
@@ -89,7 +152,7 @@ subsystem affinity, minimizing cross-phase file contention:
 | AK8 | Capability/Lifecycle/Service + Data Structures | 11M + 21L = 32 | 11 |
 | AK9 | Platform, Boot, DTB, MMIO | 2H + 7M + 13L = 22 | 8 |
 | AK10 | LOW-tier cleanup, Testing, Documentation, Closure | Residual L + errata | 12 |
-| **Total** | — | **2C + 23H + 76M + 101L = 202** (audit sums to 201) | **109** |
+| **Total** | — | **2C + 23H + 76M + 101L = 202** (audit sums to 201) | **109** top-level + **62** atomic = **171** |
 
 **Total disposition:** See §3 for the full finding disposition matrix.
 Approximately 147 findings are FIXED in code, 38 DOCUMENTED (by-design or
@@ -709,40 +772,205 @@ domain-schedule non-emptiness, and blocking-chain acyclicity under
 
 **Decomposed steps (partial closure — what is achievable in AK2):**
 
-1. **AK2-K.1: Derive `hBandProgress` from CBS budget finiteness.** Prove
-   `band_progress_from_cbs :
-     ∀ band, domainActive st band → cbs_bandwidth_bounded st → ∃ tick, band_consumed st tick band`
-   using `consumeBudget_budgetRemaining_le` (already proven). Estimated
-   ~200 lines in `Liveness/BandExhaustion.lean`.
+Each sub-step below is a separately-committable work unit with explicit
+preconditions, outputs, LOC estimate, and acceptance criterion. Dependencies
+indicated by `⇐`. Steps can run in parallel where no dependency exists.
 
-2. **AK2-K.2: Derive `hDomainActiveRunnable` from schedule invariant.** Use
-   `scheduleDomain` + `domainScheduleEntriesPositive` + `runQueueNonEmpty`
-   conjunct to derive `∃ tid, runnable st tid ∧ domainOf tid = currentDomain`.
-   Estimated ~150 lines in `Liveness/WCRT.lean`.
+---
 
-3. **AK2-K.3: Structural PIP bound (S-H02).** Replace fuel bound with
-   `pip_bounded_inversion_structural :
-     blockingAcyclic st → chainDepth ≤ distinct_reply_blocked_tcbs`
-   where `distinct_reply_blocked_tcbs` counts unique TCBs in `.blockedOnReply`
-   state. This is finite because `objectIndex` is finite. Requires proving
-   the chain is injective on TCB IDs under `blockingAcyclic`. Estimated ~250
-   lines in `BoundedInversion.lean`.
+#### AK2-K.1: Derive `hBandProgress` from CBS budget finiteness
 
-4. **AK2-K.4: Remaining `eventuallyExits` hypothesis.** Derive from WS-M
-   (meta-level liveness assumption that no thread remains in `.blockedOnReply`
-   indefinitely). This remains an externalized hypothesis **by design** —
-   WCRT cannot be proven without an assumption that replies eventually
-   complete. Document this clearly in `WCRT.lean` and `SELE4N_SPEC.md`.
+**Dependency:** none (can start first).
+**File:** `SeLe4n/Kernel/Liveness/BandExhaustion.lean`.
+**Estimated net LOC:** ~200.
 
-5. **If AK2-K.1/K.2/K.3 exceed 1200 cumulative lines of new proof**, split
-   into a follow-up phase AK2.5 to be executed after AK2 baseline lands.
+**Atomic work units:**
 
-**Acceptance criteria (AK2-K):**
-- `hBandProgress` and `hDomainActiveRunnable` are no longer caller-supplied
-  hypotheses; derived internally from invariants.
-- `pip_bounded_inversion` bound is `distinct_reply_blocked_tcbs`, not fuel.
-- `eventuallyExits` remains externalized but is **explicitly documented as
-  the sole remaining WCRT assumption**, with seL4 correspondence.
+- **AK2-K.1.a (supporting lemma — 30 LOC):**
+  Prove `band_consumes_positive_progress :
+    ∀ st band, domainActive st band → consumedInTick st band > 0 ∨
+    st.scheduler.runQueueByBand[band] = []`.
+  Uses `consumeBudget_budgetRemaining_le` (exists). This lemma says
+  "either the band made progress, or the band's queue is empty."
+- **AK2-K.1.b (aggregation — 40 LOC):**
+  Prove `band_total_consumption_monotone :
+    ∀ st st' band, reachable st st' → totalConsumedInBand st band ≤ totalConsumedInBand st' band`.
+  By induction on transition steps.
+- **AK2-K.1.c (finite-sum bound — 50 LOC):**
+  Prove `cbs_single_band_finite :
+    cbs_bandwidth_bounded st →
+    ∀ band window, totalConsumedInBand st window band ≤ budget_of_band band × ⌈window/period_of_band band⌉`.
+  Uses AK6-I `cbs_bandwidth_bounded_tight` (note: cross-phase dependency —
+  see AK6-I must be committed before AK2-K.1.c or use the loose 8× bound
+  from existing `cbs_bandwidth_bounded`).
+- **AK2-K.1.d (existence — 50 LOC):**
+  Prove `band_progress_from_cbs :
+    domainActive st band → cbs_bandwidth_bounded st →
+    ∃ tick ≤ budget_of_band band, band_consumed st tick band`.
+  Combine AK2-K.1.a and AK2-K.1.c.
+- **AK2-K.1.e (substitution into WCRT — 30 LOC):**
+  Replace `hBandProgress` hypothesis in `bounded_scheduling_latency_exists`
+  with an invocation of `band_progress_from_cbs`. Add
+  `cbs_bandwidth_bounded` to the theorem's hypotheses (this is an
+  invariant, so discharged by `apiInvariantBundle`).
+
+**Acceptance:** `hBandProgress` is no longer a free variable in the WCRT
+theorem statement; `band_progress_from_cbs` discharges it. Build passes.
+
+---
+
+#### AK2-K.2: Derive `hDomainActiveRunnable` from schedule invariant
+
+**Dependency:** AK2-K.1 (shares `domainActive` lemma vocabulary).
+**File:** `SeLe4n/Kernel/Liveness/WCRT.lean` + small extension to
+`SeLe4n/Kernel/Scheduler/Invariant.lean`.
+**Estimated net LOC:** ~150.
+
+**Atomic work units:**
+
+- **AK2-K.2.a (invariant addition — 20 LOC):**
+  Add `domainRunQueueNonEmptyWhenActive : Prop` to
+  `schedulerInvariantBundleExtended`:
+  `∀ dom, domainActive st dom → st.scheduler.runQueueByDomain[dom].nonEmpty`.
+  This is enforced at boot and preserved by all scheduler ops (already
+  implicit; now explicit).
+- **AK2-K.2.b (preservation across 35+ ops — 80 LOC):**
+  For each scheduler-modifying op, add a `*_preserves_domainRunQueueNonEmpty`
+  lemma. Pattern-match: ops that only re-enqueue or reschedule preserve
+  trivially; ops that dequeue (dispatch) must re-prove using the
+  `blockedOnReply`/`runnable` bookkeeping.
+- **AK2-K.2.c (derivation — 30 LOC):**
+  Prove `hDomainActiveRunnable_from_invariant :
+    apiInvariantBundle st → domainActive st dom →
+    ∃ tid, runnable st tid ∧ domainOf tid = dom`.
+  Composition of AK2-K.2.a + existing `runQueueMembership` lemma.
+- **AK2-K.2.d (substitution — 20 LOC):**
+  Replace `hDomainActiveRunnable` hypothesis in WCRT theorem with
+  `hDomainActiveRunnable_from_invariant`.
+
+**Acceptance:** `hDomainActiveRunnable` is no longer free; derived from
+`apiInvariantBundle` + `domainActive`. Build passes. All 35+ preservation
+theorems re-prove (expected: most are by `simp`).
+
+**Risk mitigation:** If AK2-K.2.b cascade exceeds 200 LOC (i.e., more than
+10 non-trivial preservation proofs required), split the cascade into a
+follow-up sub-task AK2-K.2.b.cascade to be landed incrementally.
+
+---
+
+#### AK2-K.3: Structural PIP Bound (S-H02)
+
+**Dependency:** none for AK2-K.3.a–b; AK2-K.3.c requires AK2-K.3.a.
+**File:** `SeLe4n/Kernel/PriorityInheritance/BoundedInversion.lean` +
+extension to `BlockingGraph.lean`.
+**Estimated net LOC:** ~250.
+
+**Atomic work units:**
+
+- **AK2-K.3.a (injective-chain lemma — 80 LOC):**
+  Prove `blocking_chain_injective :
+    blockingAcyclic st → ∀ chain ∈ blockingChainsOf st,
+    chain.toList.Nodup`.
+  The existing `blockingAcyclic` (10th conjunct of
+  `crossSubsystemInvariant`) suffices — acyclicity implies no repeats
+  in any simple path. Proof by induction on chain length with
+  contradiction on cycle.
+- **AK2-K.3.b (finite-set bound — 40 LOC):**
+  Prove `distinct_reply_blocked_tcbs_finite :
+    apiInvariantBundle st → (distinctReplyBlockedTcbs st).length ≤
+    st.objects.size`. Immediate from `objects` being a HashMap with
+  finite size.
+- **AK2-K.3.c (structural bound — 80 LOC):**
+  Prove `pip_bounded_inversion_structural :
+    apiInvariantBundle st →
+    ∀ chain ∈ blockingChainsOf st,
+    chain.depth ≤ distinct_reply_blocked_tcbs st`.
+  Combine AK2-K.3.a (Nodup) + AK2-K.3.b (finite host set).
+- **AK2-K.3.d (replace fuel bound — 50 LOC):**
+  Rewrite `pip_bounded_inversion` in `BoundedInversion.lean:39-43` to
+  use AK2-K.3.c. Existing `chainDepth × wcrt` bound becomes
+  `distinct_reply_blocked_tcbs × wcrt_per_link`. Update `WCRT.lean`
+  consumer.
+
+**Acceptance:** `pip_bounded_inversion` cites a structural bound, not
+fuel. Bound is `distinct_reply_blocked_tcbs × wcrt_per_link`. The bound
+is operationally meaningful (≤ host TCB count, not ≤ every object).
+
+---
+
+#### AK2-K.4: Document `eventuallyExits` Residual Hypothesis
+
+**Dependency:** AK2-K.1 + AK2-K.2 + AK2-K.3 (this is the documentation
+closure step).
+**Files:** `SeLe4n/Kernel/Liveness/WCRT.lean` docstring, `docs/spec/
+SELE4N_SPEC.md` §5 (Scheduler/WCRT).
+**Estimated net LOC:** ~50 (docs) + 10 (Lean comment block).
+
+**Atomic work units:**
+
+- **AK2-K.4.a (Lean docstring — 10 LOC comment):**
+  At `bounded_scheduling_latency_exists`, add a comment block:
+  ```
+  /--
+  WCRT = D·L_max + N·(B+P) where:
+  - D, L_max, N, B, P are derived from apiInvariantBundle (AK2-K.1, K.2, K.3).
+  - `eventuallyExits` is the sole residual hypothesis; it asserts that no
+    thread remains in `.blockedOnReply` indefinitely (i.e., every reply
+    eventually completes). This is a LIVENESS assumption about upward
+    protocols; it cannot be established inside the kernel because the
+    kernel cannot reason about servers' internal progress.
+  - seL4 correspondence: this is the "eventual progress" axiom in seL4
+    MCS specification (Klein et al., §4.5).
+  -/
+  ```
+- **AK2-K.4.b (SELE4N_SPEC update — 40 LOC new section):**
+  Add §5.7 "WCRT residual hypotheses" documenting `eventuallyExits`
+  scope and seL4 correspondence.
+
+**Acceptance:** The WCRT theorem statement and SELE4N_SPEC.md together
+make the `eventuallyExits` scope unambiguous. Any reviewer can locate
+the residual hypothesis and its justification.
+
+---
+
+#### AK2-K.5: Budget Overrun Contingency
+
+**Trigger:** cumulative AK2-K.1 + K.2 + K.3 exceeds 1200 LOC.
+
+**Action:**
+
+1. **Split:** land AK2-K.1 + AK2-K.4 as "AK2-K baseline" in v0.29.2.
+2. **Defer:** AK2-K.2 and AK2-K.3 to a follow-up **AK2.5** sub-workstream
+   landing in v0.29.3 — keeps WS-AK phase gate clean.
+3. **Communication:** update this plan with a note reflecting the split
+   and document the deferral in `CHANGELOG.md`.
+4. **WCRT claim in §5:** during the split window, `hBandProgress` is
+   derived but `hDomainActiveRunnable` remains external — document this
+   in SELE4N_SPEC.md §5.7 as a transient state.
+
+**Trigger criteria (clear go/no-go):**
+
+| Condition | Decision |
+|-----------|----------|
+| AK2-K.1 ≤ 250 LOC, AK2-K.2.b preservation cascade ≤ 10 non-trivial proofs, AK2-K.3.a ≤ 100 LOC | Proceed full K.1+K.2+K.3 in v0.29.2 |
+| AK2-K.1 ≤ 250 LOC, AK2-K.2.b preservation cascade > 10 non-trivial proofs | Land K.1+K.3 in v0.29.2; K.2 in AK2.5 |
+| AK2-K.1 > 250 LOC (unlikely — lemma is straightforward) | Land K.1 alone + doc update in v0.29.2; K.2+K.3 in AK2.5 |
+| AK2-K.3.a reveals gap in `blockingAcyclic` coverage | Escalate — not a scope issue; `blockingAcyclic` is a prerequisite invariant |
+
+---
+
+**Overall acceptance criteria (AK2-K):**
+
+- [ ] `hBandProgress` and `hDomainActiveRunnable` are no longer free
+  hypotheses; derived internally from invariants (AK2-K.1, AK2-K.2).
+- [ ] `pip_bounded_inversion` bound is structural, not fuel (AK2-K.3).
+- [ ] `eventuallyExits` remains externalized but is **explicitly
+  documented as the sole remaining WCRT assumption**, with seL4
+  correspondence (AK2-K.4).
+- [ ] WCRT theorem statement is operationally meaningful at release —
+  reviewers can see exactly what the kernel proves vs. assumes.
+- [ ] Regression: existing WCRT callers continue to type-check (the
+  hypothesis list changes but the conclusion is the same).
 
 ### AK2-L: LOW-tier Scheduler Batch (S-L13..S-L18)
 
@@ -788,30 +1016,233 @@ allocation and VSpace B's first context switch.
 
 **Decomposed steps:**
 
-1. **Add `activeSet : HashSet ASID` to `AsidPool`** (replace or supplement
-   `activeCount : Nat`).
-2. **`allocate` correctness:** on rollover, scan `activeSet` for a free
-   value in `[1, maxAsidValue)`. If none found, return `none` (exhaustion).
-   If found, insert into `activeSet`, bump `generation`, set
-   `requiresFlush := true`.
-3. **`free` correctness:** remove from `activeSet`; prepend to `freeList`.
-4. **Invariants:**
-   - `AsidPool.wellFormed`: `freeList.toSet ⊆ activeSet`, `activeSet.size
-     ≤ maxAsidValue`.
-   - `asidPoolUnique_preserved_by_allocate`: prove formally that
-     `allocate pool = some result → result.asid ∉ pool.activeSet`.
-5. **Hardware side (coordinate with AK5-F):** `tlb::tlbi_asid` on free
-   list reuse (AI2-C already does this). Generation bump at rollover also
-   triggers `tlb::tlbi_vmalle1` via `requiresFlush`.
-6. **Proof update:** `asidPoolUnique` is now preserved by `allocate` rather
-   than deferred to caller integration layer.
+Each sub-step is a committable work unit. Total estimated LOC: +180 / -20
+in `AsidManager.lean`, plus ~80 LOC cascade across consumer sites.
 
-**Acceptance criteria:**
-- No rollover can return a currently-active ASID.
-- `asidPoolUnique` is an internal `AsidPool` invariant, not a caller
-  obligation.
-- Exhaustion (`allocate → none`) is reachable only when `activeSet.size =
-  maxAsidValue - 1`.
+---
+
+#### AK3-A.1: Add `activeSet` field to `AsidPool`
+
+**File:** `SeLe4n/Kernel/Architecture/AsidManager.lean:40-60` (struct def).
+**Estimated LOC:** +10 / -0.
+**Dependency:** none.
+
+**Atomic work unit:**
+
+```lean
+structure AsidPool where
+  nextAsid      : Nat
+  freeList      : List ASID
+  activeSet     : HashSet ASID       -- NEW
+  activeCount   : Nat                -- retained for Inhabited default + fast cardinality
+  generation    : Nat
+  deriving Repr, Inhabited
+```
+
+**Invariant mapping:** `activeCount = activeSet.size` (old scalar now
+derived). Existing `activeCount` accessor remains for fast access; new
+`activeSet` is the ground truth.
+
+**Acceptance:** struct compiles; all existing construction sites
+(including boot) provide `activeSet := ∅` defaulted via `Inhabited`.
+
+---
+
+#### AK3-A.2: Update `allocate` rollover to search `activeSet`
+
+**File:** `AsidManager.lean:91-122`.
+**Estimated LOC:** +60 / -10.
+**Dependency:** AK3-A.1.
+
+**Atomic work unit:** Replace the unconditional `ASID.mk 1` rollover
+branch with a linear scan over `[1, maxAsidValue)` filtered by
+`activeSet.contains` absence:
+
+```lean
+-- Rollover — search for first genuinely free ASID in [1, maxAsidValue)
+else
+  match (List.range (maxAsidValue - 1)).find? (fun i => ¬ pool.activeSet.contains (ASID.mk (i + 1))) with
+  | some i =>
+    let asid := ASID.mk (i + 1)
+    some { asid := asid
+           pool := { pool with
+             nextAsid   := maxAsidValue  -- stays saturated; rollover succeeded once
+             generation := pool.generation + 1
+             activeSet  := pool.activeSet.insert asid
+             activeCount := pool.activeCount + 1 }
+           requiresFlush := true }
+  | none =>
+    none  -- exhaustion — all maxAsidValue-1 ASIDs are active
+```
+
+**Correctness argument:** when `find?` returns `some i`, the selected
+ASID is guaranteed NOT in `activeSet`. Insertion plus `requiresFlush`
+ensures hardware TLB is cleaned before reuse.
+
+**Acceptance:** `allocate` never returns an ASID present in `activeSet`
+pre-call. Existing tests that trigger rollover must be updated.
+
+---
+
+#### AK3-A.3: Update `allocate` bump path to track `activeSet`
+
+**File:** `AsidManager.lean:108-114` (bump-allocator branch).
+**Estimated LOC:** +3 / -0.
+**Dependency:** AK3-A.1.
+
+**Atomic work unit:** Add `activeSet := pool.activeSet.insert (ASID.mk
+pool.nextAsid)` to the pool update; and same for free-list reuse branch.
+
+**Acceptance:** every successful `allocate` return path inserts into
+`activeSet`. Covered by AK3-A.5 invariant.
+
+---
+
+#### AK3-A.4: Update `free` to remove from `activeSet`
+
+**File:** `AsidManager.lean:124-128`.
+**Estimated LOC:** +2 / -0.
+**Dependency:** AK3-A.1.
+
+**Atomic work unit:**
+
+```lean
+def AsidPool.free (pool : AsidPool) (asid : ASID) : AsidPool :=
+  { pool with
+    freeList    := asid :: pool.freeList
+    activeSet   := pool.activeSet.erase asid         -- NEW
+    activeCount := pool.activeCount - 1 }
+```
+
+**Acceptance:** `free` undoes the `activeSet` mutation from `allocate`.
+
+---
+
+#### AK3-A.5: Prove `AsidPool.wellFormed` + preservation
+
+**File:** `AsidManager.lean` new proofs.
+**Estimated LOC:** ~60 LOC proofs.
+**Dependency:** AK3-A.1, AK3-A.2, AK3-A.3, AK3-A.4.
+
+**Atomic work unit:** Prove the following theorems:
+
+```lean
+def AsidPool.wellFormed (pool : AsidPool) : Prop :=
+  (∀ asid ∈ pool.freeList, asid ∉ pool.activeSet) ∧
+  pool.activeCount = pool.activeSet.size ∧
+  pool.activeSet.size ≤ maxAsidValue - 1 ∧
+  (∀ asid ∈ pool.activeSet, 1 ≤ asid.val ∧ asid.val < maxAsidValue)
+```
+
+**Theorems to prove:**
+
+- `AsidPool.empty.wellFormed` — trivial (empty set + zero count).
+- `AsidPool.allocate_wellFormed :
+    pool.wellFormed → allocate pool = some res → res.pool.wellFormed`.
+- `AsidPool.free_wellFormed :
+    pool.wellFormed → asid ∈ pool.activeSet → (free pool asid).wellFormed`.
+- `asidPoolUnique_preserved_by_allocate :
+    pool.wellFormed → allocate pool = some res → res.asid ∉ pool.activeSet`.
+
+**Acceptance:** all four theorems proven with no `sorry`.
+
+---
+
+#### AK3-A.6: Update consumer sites
+
+**Files:** grep for `.allocate` / `.free` across Kernel/Lifecycle,
+Kernel/Architecture, Platform/Boot.
+**Estimated LOC:** ~40 across 4–6 call sites.
+**Dependency:** AK3-A.5 (so consumers can rely on preservation).
+
+**Atomic work units:** Each consumer site:
+
+- Propagate `activeSet` through pool updates (should be automatic if
+  `{ pool with ... }` syntax is used consistently).
+- Add preservation proof `myOp_preserves_AsidPool_wellFormed` where the
+  operation mutates the pool.
+
+**Acceptance:** every consumer of `AsidPool.allocate`/`free` discharges
+`wellFormed` preservation.
+
+---
+
+#### AK3-A.7: Hardware-side coordination note (AK5 HAL cross-reference)
+
+**File:** `AsidManager.lean` header comment.
+**Estimated LOC:** +20 LOC comment.
+**Dependency:** AK3-A.5.
+
+**Atomic work unit:** Add a comment block at top of `AsidManager.lean`
+documenting the TLB-maintenance contract:
+
+```
+/-- AsidPool TLB-maintenance contract:
+    1. On `allocate`, if `requiresFlush := true`, the HAL must invoke
+       `tlb::tlbi_asid(returned_asid)` before the new ASID is loaded
+       into TTBR0. Enforced by AI2-C.
+    2. On rollover (generation bump), the HAL must additionally invoke
+       `tlb::tlbi_vmalle1` to flush all EL1 translations with the old
+       generation (covered by AK3-D generation bump + AK5-D MMU enable
+       discipline).
+    3. On `free`, no TLB flush is required at the kernel level — the
+       ASID is returned to the free-list; hardware entries will be
+       invalidated on reuse per (1).
+-/
+```
+
+**Acceptance:** Rust HAL AG5/AK5 work has a single-source-of-truth
+reference point for TLB-maintenance discipline. AK5 HAL-side tlbi_asid
+calls (already in `rust/sele4n-hal/src/tlb.rs` from AI2-C / AG6-F) match
+the contract in this header.
+
+---
+
+#### AK3-A.8: Add regression test suite
+
+**File:** `tests/AsidPoolSuite.lean` (new file).
+**Estimated LOC:** ~200 (20 tests × ~10 LOC each).
+**Dependency:** AK3-A.5.
+
+**Test scenarios:**
+
+- T01: fresh pool → allocate 65534 ASIDs sequentially → no rollover.
+- T02: fresh pool → allocate 65534 → free 1 → allocate again → gets the
+  freed one from `freeList`.
+- T03: allocate 65534 → free all → activeSet empty.
+- T04: allocate to saturation → 65535th allocate rolls over → returns a
+  genuinely free ASID.
+- T05: allocate to saturation + no frees → 65535th allocate returns
+  `none` (exhaustion).
+- T06: rollover → new ASID's `generation` bumped.
+- T07: rollover with one active → the active ASID is NOT selected.
+- T08: `free` same ASID twice → second `free` is idempotent on
+  `activeSet` (document behavior; may choose to `assert!` instead).
+- T09: allocate-free interleaving smoke.
+- T10: invariant preservation under arbitrary sequences (property test
+  with 100 random sequences).
+
+**Acceptance:** all tests pass; added to `test_full.sh`.
+
+---
+
+**Overall acceptance criteria (AK3-A):**
+
+- [ ] `allocate` provably never returns a currently-active ASID.
+- [ ] `AsidPool.wellFormed` is preserved by `allocate` and `free`.
+- [ ] `asidPoolUnique` is an internal pool invariant, not a caller
+      obligation.
+- [ ] Exhaustion (`allocate → none`) is reachable exactly when
+      `activeSet.size = maxAsidValue - 1`.
+- [ ] Regression suite `AsidPoolSuite.lean` green (AK3-A.8).
+- [ ] AK5 HAL `rust/sele4n-hal/src/tlb.rs` tlbi_asid calls match the
+      contract documented in AK3-A.7 header comment.
+
+**Rollback plan:** single commit per sub-step (AK3-A.1 through AK3-A.8);
+any can be reverted independently. If AK3-A.2 rollover search proves
+pathological (e.g., O(n) in tight loops), fall back to generation-only
+strategy with `assert!` that `activeCount < maxAsidValue - 1` at the
+cost of lower ASID reuse efficiency.
 
 ### AK3-B: W^X at All VSpace Layers (A-H01, A-M03 / HIGH + MEDIUM)
 
@@ -823,21 +1254,161 @@ under `execute=true, write=true, user=true` produces `ap=.rwAll, uxn=false`
 
 **Remediation:** Four-layer defense-in-depth.
 
-1. **Layer 1 (backend typeclass):** `VSpaceBackend.mapPage` requires
-   `perms.wxCompliant = true` as a precondition; `ARMv8VSpace.mapPage`
-   adds `if !perms.wxCompliant then none` at entry.
-2. **Layer 2 (`VSpaceRoot.mapPage`):** same `wxCompliant` gate at entry.
-3. **Layer 3 (`fromPagePermissions`):** change signature to
-   `Option HwPageAttributes` returning `none` on W^X violation, OR emit
-   an `.execute-never` forced variant. Preferred: return `none` to fail
-   closed.
-4. **Layer 4 (Rust HAL SCTLR):** see AK5-C (WXN=1).
+Each layer is independently committable. Sub-steps land in bottom-up order
+so that when the final wrapper-level gate (L1) is removed, lower layers
+have already caught violations — no regression window where W^X is
+unenforced.
 
-**Proof updates:**
-- `vspaceMapPage_preserves_wxExclusiveInvariant` — already exists; add
-  `ARMv8VSpace_mapPage_preserves_wxExclusiveInvariant` and
-  `VSpaceRoot_mapPage_preserves_wxExclusiveInvariant`.
-- Add `fromPagePermissions_wx_excludes_W_and_X` lemma.
+---
+
+#### AK3-B.1: Layer 3 — `fromPagePermissions` fails closed on W+X
+
+**File:** `SeLe4n/Kernel/Architecture/VSpaceARMv8.lean:137-149`.
+**Estimated LOC:** +15 / -5.
+**Dependency:** none (innermost layer, land first).
+
+**Atomic work unit:**
+
+```lean
+def fromPagePermissions (perms : PagePermissions) : Option HwPageAttributes :=
+  -- L3 W^X gate: reject W+X at encode time
+  if perms.write && perms.execute then
+    none
+  else
+    some {
+      ap  := computeAP perms,
+      uxn := !perms.execute || !perms.user,
+      pxn := !perms.execute,
+      -- ... other attrs
+    }
+```
+
+**Theorem to prove:**
+
+```lean
+theorem fromPagePermissions_wx_excludes_W_and_X
+    (perms : PagePermissions) (hw : HwPageAttributes) :
+    fromPagePermissions perms = some hw →
+    ¬ (perms.write ∧ perms.execute)
+```
+
+**Acceptance:** every consumer of `fromPagePermissions` now receives an
+`Option` and handles `none` as `.error .wxViolation`.
+
+---
+
+#### AK3-B.2: Layer 2 — `VSpaceRoot.mapPage` W^X gate
+
+**File:** `SeLe4n/Kernel/Architecture/VSpace.lean` (`mapPage` in the
+VSpaceRoot structure; currently lives near line 80-100, confirm grep).
+**Estimated LOC:** +8 / -0.
+**Dependency:** AK3-B.1 (shared gate predicate).
+
+**Atomic work unit:**
+
+```lean
+def VSpaceRoot.mapPage (root : VSpaceRoot) (vaddr : VAddr) (paddr : PAddr)
+    (perms : PagePermissions) : Option VSpaceRoot :=
+  -- L2 W^X gate
+  if !perms.wxCompliant then none
+  else ... (existing logic)
+```
+
+**Theorem:** `VSpaceRoot_mapPage_preserves_wxExclusiveInvariant`.
+
+**Acceptance:** direct `VSpaceRoot.mapPage` callers cannot install W+X.
+
+---
+
+#### AK3-B.3: Layer 1 — `ARMv8VSpace.mapPage` W^X gate
+
+**File:** `SeLe4n/Kernel/Architecture/VSpaceARMv8.lean:169-189`.
+**Estimated LOC:** +8 / -0.
+**Dependency:** AK3-B.1 (uses `fromPagePermissions` returning `Option`).
+
+**Atomic work unit:**
+
+```lean
+def ARMv8VSpace.mapPage (arm : ARMv8VSpace) (vaddr : VAddr) (paddr : PAddr)
+    (perms : PagePermissions) : Option ARMv8VSpace :=
+  -- L1 W^X gate (layer-typeclass enforcement)
+  if !perms.wxCompliant then none
+  else do
+    let hwAttrs ← fromPagePermissions perms  -- L3 gate composes
+    let newShadow ← arm.shadow.mapPage vaddr paddr perms  -- L2 gate
+    pure { arm with shadow := newShadow, ... }
+```
+
+**Theorem:** `ARMv8VSpace_mapPage_preserves_wxExclusiveInvariant`.
+
+**Acceptance:** backend typeclass instance cannot bypass W^X.
+
+---
+
+#### AK3-B.4: Layer 0 — `vspaceMapPage` wrapper (existing, verify)
+
+**File:** `SeLe4n/Kernel/Architecture/VSpace.lean:101`.
+**Estimated LOC:** 0 (verify only; already enforced since AJ4-A).
+
+**Atomic work unit:** Confirm `vspaceMapPage` wrapper still includes W^X
+gate; confirm its theorem `vspaceMapPage_preserves_wxExclusiveInvariant`
+re-proves cleanly after AK3-B.1–B.3 changes.
+
+**Acceptance:** wrapper gate retained; composition with L1-L3 means any
+one of the four gates (wrapper, backend, VSpaceRoot, encode) suffices.
+
+---
+
+#### AK3-B.5: Prove composition theorem
+
+**File:** `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean`.
+**Estimated LOC:** ~60.
+**Dependency:** AK3-B.1, B.2, B.3, B.4.
+
+**Atomic work unit:** Prove
+
+```lean
+theorem wxInvariant_fourLayer_defense :
+  ∀ (st : SystemState) (op : VSpaceOp),
+    wxExclusiveInvariant st →
+    applyVSpaceOp op st = .ok st' →
+    wxExclusiveInvariant st'
+```
+
+where `op` is any of the four entry points (wrapper, backend, VSpaceRoot,
+direct encode). Each layer's preservation theorem discharges one case.
+
+**Acceptance:** A single invariant theorem covers all four layers; removal
+of any single layer would still leave three others enforcing.
+
+---
+
+#### AK3-B.6: Coordinate with AK5-C (SCTLR.WXN)
+
+**File:** This plan §8 AK5-C.
+**Cross-reference update:**
+
+- AK5-C sets SCTLR.WXN=1 in Rust HAL (hardware-layer defense).
+- AK3-B.1–B.5 establishes model-level defense.
+- Together: 5 independent W^X gates (L0 wrapper, L1 backend, L2 VSpaceRoot,
+  L3 encode, L4 hardware SCTLR.WXN) — defense depth.
+
+**Acceptance:** `docs/spec/SELE4N_SPEC.md` §6.2 (memory protection) lists
+all five enforcement points.
+
+---
+
+**Overall acceptance criteria (AK3-B):**
+
+- [ ] `fromPagePermissions : PagePermissions → Option HwPageAttributes`
+      returns `none` on W+X.
+- [ ] `VSpaceRoot.mapPage` rejects W+X.
+- [ ] `ARMv8VSpace.mapPage` rejects W+X.
+- [ ] `vspaceMapPage` wrapper continues to reject W+X (no regression).
+- [ ] `wxInvariant_fourLayer_defense` proven.
+- [ ] SCTLR.WXN=1 (AK5-C) provides hardware-level backup.
+- [ ] Regression test: attempt direct `ARMv8VSpace.mapPage` with W+X
+      permission returns `none`; likewise for `VSpaceRoot.mapPage`.
 
 ### AK3-C: GIC EOI Differentiation (A-H02 / HIGH)
 
@@ -846,18 +1417,179 @@ none` is treated as spurious and skips EOI. INTIDs 224-1019 (valid hardware
 range) that fail acknowledge due to errata or SMP races get no EOI → GIC
 lockup.
 
-**Steps:**
+**Decomposed steps:**
 
-1. Change `acknowledgeInterrupt` to return
-   `Except AckError (InterruptId × Priority)` where
-   `AckError := spurious | outOfRange | erratum`.
-2. Distinguish:
-   - `≥ 1020`: `.error .spurious` → skip EOI (correct per GIC spec).
-   - `224-1019` with `none` acknowledge: `.error .outOfRange` → **emit EOI**.
-   - Handler failure: `.error .erratum` → emit EOI (already AI2-A).
-3. Update `interruptDispatchSequence_always_ok` to
-   `interruptDispatchSequence_always_eoi_unless_spurious`.
-4. Rust HAL `gic.rs` tracks this distinction (see AK5-F).
+Each sub-step is a separately-committable work unit. Estimated total LOC:
++120 / -40 across Lean + Rust HAL.
+
+---
+
+#### AK3-C.1: Define `AckError` and change `acknowledgeInterrupt` signature
+
+**File:** `SeLe4n/Kernel/Architecture/InterruptDispatch.lean:70-95`.
+**Estimated LOC:** +25 / -10.
+**Dependency:** none.
+
+**Atomic work unit:**
+
+```lean
+inductive AckError where
+  | spurious       -- INTID ≥ 1020 per GIC spec — no EOI
+  | outOfRange     -- INTID ∈ [224, 1019] but `acknowledge = none` — emit EOI
+  | erratum        -- INTID valid but handler failed — emit EOI (AI2-A)
+  deriving Repr, DecidableEq
+
+def acknowledgeInterrupt (st : SystemState)
+    : Except AckError (InterruptId × Priority × SystemState) :=
+  ... (existing logic refactored to return Except)
+```
+
+**Caller API:** `acknowledgeInterrupt` now returns `Except` — no more
+`Option`.
+
+**Acceptance:** type-checks; three distinct error cases clearly
+distinguishable from success.
+
+---
+
+#### AK3-C.2: Refactor `interruptDispatchSequence` with EOI discipline
+
+**File:** `InterruptDispatch.lean:127-137`.
+**Estimated LOC:** +40 / -25.
+**Dependency:** AK3-C.1.
+
+**Atomic work unit:**
+
+```lean
+def interruptDispatchSequence (st : SystemState) : Except KernelError SystemState := do
+  match acknowledgeInterrupt st with
+  | .ok (intid, prio, st') =>
+    match handleInterrupt intid prio st' with
+    | .ok st'' => endOfInterrupt intid st''         -- normal path
+    | .error _ => endOfInterrupt intid st'          -- handler failure (erratum): still EOI
+  | .error .spurious    => .ok st                   -- skip EOI per GIC spec
+  | .error .outOfRange  => endOfInterrupt lastIntid st  -- emit EOI for 224-1019 out-of-range
+  | .error .erratum     => endOfInterrupt lastIntid st  -- emit EOI on erratum
+```
+
+**Subtlety:** `outOfRange`/`erratum` paths need a `lastIntid` — either
+the HAL provides the IAR-read INTID alongside the error, or the GIC
+driver tracks the last ack'd INTID in state. Preferred: extend `AckError`
+to carry the `InterruptId` in the `outOfRange` and `erratum` variants.
+
+Revise:
+```lean
+inductive AckError where
+  | spurious                               -- no EOI
+  | outOfRange   (intid : InterruptId)     -- emit EOI for this INTID
+  | erratum      (intid : InterruptId)     -- emit EOI for this INTID
+```
+
+**Acceptance:** every non-`.spurious` error path emits EOI.
+
+---
+
+#### AK3-C.3: Prove `always_eoi_unless_spurious` theorem
+
+**File:** `InterruptDispatch.lean` + extension.
+**Estimated LOC:** ~40 LOC proof.
+**Dependency:** AK3-C.2.
+
+**Atomic work unit:**
+
+```lean
+theorem interruptDispatchSequence_always_eoi_unless_spurious
+    (st : SystemState) :
+    interruptDispatchSequence st = .ok st' →
+    (acknowledgeInterrupt st = .error .spurious) ∨
+    (∃ intid, eoiEmitted intid st st') :=
+  by
+    intro h; unfold interruptDispatchSequence at h;
+    split_ifs ...
+    (case analysis on acknowledge result — 4 branches)
+```
+
+where `eoiEmitted intid st st' : Prop` asserts that `endOfInterrupt
+intid` was invoked in the transition (modeled via the `eoiPending`
+field from AK3-L, if that field exists; else modeled operationally).
+
+**Acceptance:** Theorem proven without `sorry`; replaces prior
+`interruptDispatchSequence_always_ok`.
+
+---
+
+#### AK3-C.4: Rust HAL `gic.rs` alignment
+
+**File:** `rust/sele4n-hal/src/gic.rs:280-320`.
+**Estimated LOC:** +30 / -5.
+**Dependency:** AK3-C.1 (for error variant parity).
+
+**Atomic work unit:** Mirror the three-way distinction in Rust:
+
+```rust
+pub enum AckResult {
+    Handled(u32),           // intid acknowledged normally
+    Spurious,               // intid >= 1020; no EOI
+    OutOfRange(u32),        // intid in 224..=1019 but IAR returned 0 or unmapped
+}
+
+pub fn acknowledge_interrupt() -> AckResult {
+    let iar = mmio_read32(GICC_IAR);
+    let intid = iar & 0x3FF;
+    if intid >= 1020 {
+        AckResult::Spurious
+    } else if !is_registered(intid) {
+        AckResult::OutOfRange(intid)
+    } else {
+        AckResult::Handled(intid)
+    }
+}
+
+pub fn dispatch_and_eoi<F: FnOnce(u32)>(handler: F) {
+    match acknowledge_interrupt() {
+        AckResult::Handled(intid) => { handler(intid); end_of_interrupt(intid); }
+        AckResult::OutOfRange(intid) => { kprintln!("IRQ: out-of-range INTID {}", intid); end_of_interrupt(intid); }
+        AckResult::Spurious => {} // per GIC spec
+    }
+}
+```
+
+**Coordination with AK5-B:** the scope-exit guard ensuring EOI always
+fires on panic composes with this three-way distinction — the guard
+runs for all non-spurious paths.
+
+**Acceptance:** `cargo test --workspace` passes; `dispatch_and_eoi`
+invariant matches Lean `interruptDispatchSequence_always_eoi_unless_spurious`.
+
+---
+
+#### AK3-C.5: Regression test for out-of-range EOI
+
+**File:** `tests/InterruptDispatchSuite.lean` (extend).
+**Estimated LOC:** ~60 LOC (6 tests).
+**Dependency:** AK3-C.3.
+
+**Test scenarios:**
+
+- T01: INTID = 30 (PPI, registered) → Handled → EOI emitted.
+- T02: INTID = 500 (SPI, unregistered) → OutOfRange → EOI emitted.
+- T03: INTID = 1020 → Spurious → no EOI.
+- T04: INTID = 1023 → Spurious → no EOI.
+- T05: Handler for registered INTID errors → erratum path → EOI emitted.
+- T06: Sequence of 3 OutOfRange → 3 EOIs emitted (no lockup).
+
+**Acceptance:** all six pass; trace fixture updated if surface changes.
+
+---
+
+**Overall acceptance criteria (AK3-C):**
+
+- [ ] `AckError` distinguishes spurious / outOfRange / erratum.
+- [ ] `interruptDispatchSequence_always_eoi_unless_spurious` proven.
+- [ ] Rust `gic.rs` `AckResult` matches Lean variants.
+- [ ] Regression suite covers all three error paths.
+- [ ] No GIC-lockup path remains accessible via hardware errata or SMP
+      race.
 
 ### AK3-D: ASID Generation Bump on Reuse (A-H03 / HIGH)
 
@@ -871,7 +1603,9 @@ tracking via generation is broken.
    `requiresFlush := true`).
 2. Update `asid_reuse_bumps_generation` correctness lemma.
 3. Propagate to Rust HAL: `tlb::tlbi_asid` invocation now keyed off
-   generation+ASID tuple (AK5-F).
+   generation+ASID tuple (coordinates with existing `rust/sele4n-hal/
+   src/tlb.rs` — no new AK5 sub-task needed; HAL side already flushes
+   per ASID in AI2-C/AG6-F implementation).
 
 ### AK3-E: `decodeVSpaceMapArgs` PA Bounds (A-M01 / MEDIUM)
 
@@ -1047,31 +1781,258 @@ encode MR[4] into IPC buffer. No merge step in `decodeSyscallArgs`.
 
 **Decomposed steps:**
 
-1. **Extend `SyscallDecodeResult`:** change `msgRegs : Array UInt64` to
-   include both inline regs and IPC-buffer merged values.
-2. **Extend `decodeSyscallArgs` in `RegisterDecode.lean:109-125`:** after
-   reading inline regs from `layout.msgRegs`, if
-   `msgInfo.length > layout.msgRegs.size`, read additional regs from the
-   receiver TCB's IPC buffer (`tcb.ipcBufferPtr → ipcBuffer.mrs`) at
-   positions `layout.msgRegs.size .. msgInfo.length - 1`.
-3. **Add `ipcBufferRead` helper:** resolves thread's IPC buffer via
-   `getIpcBufferForThread` (exists) and reads `mrs[idx]`.
-4. **Handle missing IPC buffer:** if `msgInfo.length > 4` and no IPC
-   buffer mapped, return `.error .invalidMessageInfo` (matches seL4).
-5. **Round-trip theorems:**
-   - `decodeServiceRegisterArgs_succeeds_on_5arg_encoded` — new theorem
-     asserting 5-arg encoded message decodes correctly.
-   - Update `decodeServiceRegisterArgs_error_iff` — now errors iff
-     `msgInfo.length < 5` OR IPC-buffer inaccessible.
-   - Same for `decodeSchedContextConfigureArgs`.
-6. **Preservation:** `decodeSyscallArgs_preserves_state` — unchanged
-   (decode remains read-only).
+Each sub-step is a separately-committable work unit. Total LOC estimate:
++180 / -40 Lean + ~15 LOC Rust verification.
 
-**Risk:** `decodeSyscallArgs` becoming stateful-read (IPC buffer lookup)
-affects NI projection. Audit: `decodeSyscallArgs` is invoked in
-`syscallEntryChecked` (see `API.lean`); the IPC buffer belongs to the
-calling thread (same domain) — no cross-domain read. Add
-`decodeSyscallArgs_reads_only_caller_ipcBuffer` lemma.
+---
+
+#### AK4-A.1: Add `ipcBufferRead` helper
+
+**File:** `SeLe4n/Kernel/Architecture/RegisterDecode.lean` (new helper
+section) or a new module `SeLe4n/Kernel/Architecture/IpcBufferRead.lean`.
+**Estimated LOC:** +40.
+**Dependency:** none.
+
+**Atomic work unit:**
+
+```lean
+/-- Read a single message register from a thread's IPC buffer overflow
+    area. Returns `.error .noIpcBuffer` if the thread has no IPC buffer
+    mapped, `.error .ipcBufferReadFault` on memory-access failure. -/
+def ipcBufferReadMr (st : SystemState) (tid : ThreadId) (idx : Nat)
+    : Except IpcBufferReadError UInt64 := do
+  let tcb ← lookupTcbOr st tid .threadNotFound
+  match tcb.ipcBufferPtr with
+  | none => .error .noIpcBuffer
+  | some vaddr =>
+    let paddr ← resolveIpcBufferVAddr st tid vaddr (.error .ipcBufferVAddrUnmapped)
+    readUInt64 st.machine (paddr + (8 * idx))
+```
+
+**Theorem:** `ipcBufferReadMr_preserves_state :
+  ∀ st tid idx val, ipcBufferReadMr st tid idx = .ok val → stateUnchanged st`.
+
+**Acceptance:** helper type-checks; read-only proven.
+
+---
+
+#### AK4-A.2: Extend `SyscallDecodeResult` structure
+
+**File:** `SeLe4n/Kernel/Architecture/RegisterDecode.lean:80-100`.
+**Estimated LOC:** +5.
+**Dependency:** none.
+
+**Atomic work unit:**
+
+```lean
+structure SyscallDecodeResult where
+  syscallId : SyscallId
+  capPtr    : CPtr
+  msgInfo   : MessageInfo
+  msgRegs   : Array UInt64          -- Now includes inline + overflow merged
+  -- Metadata for debugging / NI proofs
+  inlineCount : Nat                 -- NEW: count of regs from inline GPRs
+  overflowCount : Nat               -- NEW: count of regs read from IPC buffer
+  deriving Repr
+```
+
+**Acceptance:** existing `msgRegs.size = inlineCount + overflowCount`
+invariant.
+
+---
+
+#### AK4-A.3: Extend `decodeSyscallArgs` with IPC-buffer merge
+
+**File:** `RegisterDecode.lean:109-125`.
+**Estimated LOC:** +50 / -10.
+**Dependency:** AK4-A.1, AK4-A.2.
+
+**Atomic work unit:**
+
+```lean
+def decodeSyscallArgs (st : SystemState) (rf : RegisterFile) (tid : ThreadId)
+    (layout : SyscallRegisterLayout) : Except KernelError SyscallDecodeResult := do
+  let syscallId := rf.get layout.syscallNumReg
+  let capPtr    := CPtr.ofUInt64 (rf.get layout.capPtrReg)
+  let msgInfo   ← MessageInfo.decode (rf.get layout.msgInfoReg)
+  -- Inline regs from GPRs
+  let inline := layout.msgRegs.map (fun r => rf.get r)
+  let inlineCount := inline.size
+  -- Determine overflow length
+  let totalLen := msgInfo.length
+  if totalLen ≤ inlineCount then
+    pure { syscallId, capPtr, msgInfo, msgRegs := inline[:totalLen],
+           inlineCount := totalLen, overflowCount := 0 }
+  else
+    -- Merge IPC buffer overflow slots
+    let overflowNeeded := totalLen - inlineCount
+    let mut overflow := Array.empty
+    for i in [:overflowNeeded] do
+      let val ← ipcBufferReadMr st tid (inlineCount + i)
+        |>.mapError fun _ => .invalidMessageInfo
+      overflow := overflow.push val
+    pure { syscallId, capPtr, msgInfo, msgRegs := inline ++ overflow,
+           inlineCount, overflowCount := overflowNeeded }
+```
+
+**Error handling:** `ipcBufferReadMr` failures map to `.invalidMessageInfo`
+(matches seL4 behavior — caller sees a single error kind, not a
+classification of why the read failed).
+
+**Acceptance:** type-checks; existing callers still compile.
+
+---
+
+#### AK4-A.4: Round-trip theorems for the two affected syscalls
+
+**File:** `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`.
+**Estimated LOC:** ~60.
+**Dependency:** AK4-A.3.
+
+**New theorems:**
+
+```lean
+theorem decodeServiceRegisterArgs_succeeds_on_5arg_encoded
+    (st : SystemState) (tid : ThreadId) (args : ServiceRegisterArgs)
+    (rf : RegisterFile) (ipcBuf : IpcBuffer)
+    (hEncoded : ipcBuf.mrs[0] = args.requiresGrant.toUInt64 ∧
+                rf.get ⟨2⟩ = args.interfaceId.toUInt64 ∧
+                rf.get ⟨3⟩ = args.methodCount.toUInt64 ∧
+                rf.get ⟨4⟩ = args.maxMessageSize.toUInt64 ∧
+                rf.get ⟨5⟩ = args.maxResponseSize.toUInt64)
+    (hBuffer : thread tid has ipcBuffer ipcBuf) :
+    decodeSyscallArgs st rf tid arm64DefaultLayout = .ok decoded →
+    decodeServiceRegisterArgs decoded = .ok args
+```
+
+**Update existing `_error_iff` theorems:**
+
+```lean
+theorem decodeServiceRegisterArgs_error_iff
+    (decoded : SyscallDecodeResult) :
+    (∃ err, decodeServiceRegisterArgs decoded = .error err) ↔
+    decoded.msgRegs.size < 5
+```
+
+(unchanged semantically; decode error iff insufficient regs — but now
+`msgRegs.size` accounts for inline + overflow.)
+
+Analogous theorems for `decodeSchedContextConfigureArgs`.
+
+**Acceptance:** all theorems proven; no `sorry`.
+
+---
+
+#### AK4-A.5: NI-preservation lemma for IPC-buffer read
+
+**File:** `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean`.
+**Estimated LOC:** ~40.
+**Dependency:** AK4-A.3.
+
+**Atomic work unit:**
+
+```lean
+theorem decodeSyscallArgs_reads_only_caller_ipcBuffer
+    (st : SystemState) (rf : RegisterFile) (tid : ThreadId) (layout : SyscallRegisterLayout)
+    (domain : SecurityDomain) (hCaller : domainOf st tid = domain) :
+    decodeSyscallArgs st rf tid layout = .ok decoded →
+    -- decode reads only caller's IPC buffer — no cross-domain read
+    ∀ otherTid, otherTid ≠ tid →
+      decodeReadFootprint decoded ∩ ipcBufferFootprint otherTid st = ∅
+```
+
+Plus the NI projection lemma:
+
+```lean
+theorem decodeSyscallArgs_preserves_projection
+    (domain : SecurityDomain) (st : SystemState) (rf : RegisterFile) (tid : ThreadId) :
+    domainOf st tid = domain →
+    decodeSyscallArgs st rf tid layout = .ok decoded →
+    projectKernelState domain st = projectKernelState domain st
+-- trivially true; decode is read-only
+```
+
+**Acceptance:** NI proven; no cross-domain leak via IPC-buffer read.
+
+---
+
+#### AK4-A.6: Update `syscallEntryChecked` caller
+
+**File:** `SeLe4n/Kernel/API.lean` (single call site of
+`decodeSyscallArgs`).
+**Estimated LOC:** +10 / -5.
+**Dependency:** AK4-A.3.
+
+**Atomic work unit:** Pass `tid` (the caller's ThreadId) to
+`decodeSyscallArgs`. Already required since the decode depends on the
+caller's IPC buffer.
+
+**Acceptance:** `syscallEntryChecked` compiles; per-op dispatch
+unchanged.
+
+---
+
+#### AK4-A.7: Regression and end-to-end test
+
+**File:** `tests/DecodingSuite.lean` (extend; AK4-A.7 is a prerequisite
+for AK4-G end-to-end suite).
+**Estimated LOC:** ~80.
+**Dependency:** AK4-A.4.
+
+**Test scenarios:**
+
+- T01: 4-arg syscall (e.g., `setPriority`) decodes from inline regs only
+  — `overflowCount = 0`.
+- T02: `service_register` with 5 args: 4 inline + 1 overflow (from IPC
+  buffer) → decodes correctly.
+- T03: `sched_context_configure` same pattern.
+- T04: 5-arg syscall but no IPC buffer mapped → `.invalidMessageInfo`.
+- T05: 5-arg syscall with IPC buffer mapped but unreadable (corrupted) →
+  `.invalidMessageInfo`.
+- T06: 4-arg syscall with `msgInfo.length = 0` → ignores registers →
+  `msgRegs.size = 0`.
+
+**Acceptance:** all pass; trace fixture updated if necessary.
+
+---
+
+#### AK4-A.8: Documentation in SELE4N_SPEC.md
+
+**File:** `docs/spec/SELE4N_SPEC.md` §8 (ABI).
+**Estimated LOC:** +40 docs.
+**Dependency:** AK4-A.4.
+
+**Documentation:** Add §8.10.5 "IPC buffer overflow merge for syscall
+args" documenting:
+
+- `arm64DefaultLayout` provides 4 inline msgRegs.
+- Syscalls with `msgInfo.length > 4` trigger IPC-buffer merge.
+- Merge reads `ipcBuffer.mrs[inlineCount..msgInfo.length)`.
+- Failure modes: no IPC buffer, unmapped VAddr, unreadable PAddr → all
+  surface as `.invalidMessageInfo`.
+
+**Acceptance:** spec describes the behavior an external implementer can
+match.
+
+---
+
+**Overall acceptance criteria (AK4-A):**
+
+- [ ] `decodeSyscallArgs` merges IPC-buffer overflow for
+      `msgInfo.length > 4`.
+- [ ] `service_register` and `sched_context_configure` decode
+      successfully from Rust-encoded messages (verified via AK4-G
+      integration test).
+- [ ] Round-trip theorems proven for both 5-arg syscalls.
+- [ ] No NI regression: IPC-buffer read scope is caller's own buffer.
+- [ ] Missing/unreadable IPC buffer surfaces as
+      `.invalidMessageInfo` (single error kind, matches seL4).
+- [ ] Regression suite green.
+
+**Risk analysis:** the primary risk is NI leakage via stateful decode.
+Mitigated by AK4-A.5 explicit non-leakage lemma plus the observation
+that IPC buffers are per-thread (same domain as caller by definition
+of NI).
 
 ### AK4-B: Lean/Rust Validation Alignment — `service_register` (R-ABI-H02 / HIGH)
 
@@ -1285,22 +2246,181 @@ four-layer W^X enforcement (wrapper, backend, descriptor encode, HW SCTLR).
 
 **Problem:** `mmu.rs:162-181`. `enable_mmu` writes TTBR then DSB ISH + ISB
 + SCTLR without (a) `tlbi vmalle1` to invalidate stale translations, (b)
-D-cache clean of page-table pages.
+D-cache clean of page-table pages. On a cold boot from reset with caches
+initially disabled, stale cache lines above the L1 page will race the
+walker after SCTLR.C=1.
 
-**Steps:**
+**Decomposed steps:**
 
-1. Before TTBR write, invoke:
-   ```rust
-   cache::clean_range(&raw const BOOT_L1_TABLE as usize,
-                      core::mem::size_of::<BootL1Table>());
-   cache::dsb_ish();
-   tlb::tlbi_vmalle1();
-   cache::dsb_ish();
-   cache::isb();
-   ```
-2. Verify ordering per ARMv8-A D8.11.
-3. Update `enable_mmu` SAFETY comment enumerating the pre-conditions.
-4. Add QEMU-level boot test to verify clean boot.
+Boot-path correctness is safety-critical. Each sub-step lands as a
+separate commit with QEMU validation, so a regression is isolable.
+
+---
+
+#### AK5-D.1: Page-table D-cache clean helper
+
+**File:** `rust/sele4n-hal/src/cache.rs` (extend).
+**Estimated LOC:** +20.
+**Dependency:** none.
+
+**Atomic work unit:**
+
+```rust
+/// Clean a contiguous range of addresses by VA to the Point of Coherency.
+///
+/// Issues `dc cvac` for every cache line and a trailing DSB ISH to ensure
+/// all cleans complete before dependent operations.
+///
+/// SAFETY: caller must ensure `addr..addr+len` is mapped and in RAM.
+pub unsafe fn clean_pagetable_range(addr: usize, len: usize) {
+    let line_size = dcache_line_size();
+    let end = addr + len;
+    let mut cur = addr & !(line_size - 1);
+    while cur < end {
+        unsafe {
+            core::arch::asm!("dc cvac, {}", in(reg) cur, options(nostack, preserves_flags));
+        }
+        cur += line_size;
+    }
+    crate::barriers::dsb_ish();
+}
+```
+
+**Acceptance:** helper compiles; unit test verifies range coverage via
+mock DC CVAC counter.
+
+---
+
+#### AK5-D.2: Insert pre-TTBR TLB invalidation
+
+**File:** `rust/sele4n-hal/src/mmu.rs:162-181`.
+**Estimated LOC:** +15 / -0.
+**Dependency:** AK5-D.1.
+
+**Atomic work unit:** Restructure `enable_mmu`:
+
+```rust
+pub unsafe fn enable_mmu() {
+    // Step 1: Invalidate stale TLB entries (cold reset / warm-reset safety)
+    crate::tlb::tlbi_vmalle1();
+    crate::barriers::dsb_ish();
+    crate::barriers::isb();
+
+    // Step 2: Clean page-table pages to Point of Coherency so walker sees them
+    let pt_start = core::ptr::addr_of!(BOOT_L1_TABLE) as usize;
+    let pt_size  = core::mem::size_of_val(&BOOT_L1_TABLE);
+    unsafe { crate::cache::clean_pagetable_range(pt_start, pt_size); }
+
+    // Step 3: Program TTBR and configuration registers
+    write_ttbr0_el1(pt_start as u64 & !0x1);   // clear CnP bit (AK5-E mask)
+    write_tcr_el1(TCR_EL1_VALUE);
+    write_mair_el1(MAIR_EL1_VALUE);
+
+    // Step 4: DSB ISH + ISB serialize config writes
+    crate::barriers::dsb_ish();
+    crate::barriers::isb();
+
+    // Step 5: Enable MMU + caches (SCTLR — AK5-C sets WXN/SA/EOS here)
+    let sctlr = compute_sctlr_el1_bitmap();
+    write_sctlr_el1(sctlr);
+
+    // Step 6: ISB after SCTLR per ARMv8-A D8.11
+    crate::barriers::isb();
+}
+```
+
+**Acceptance:** boot traces match ARMv8-A D8.11 reference sequence.
+
+---
+
+#### AK5-D.3: Document the sequence in SAFETY comment
+
+**File:** `rust/sele4n-hal/src/mmu.rs` (near `enable_mmu`).
+**Estimated LOC:** +30 comment.
+**Dependency:** AK5-D.2.
+
+**Atomic work unit:** Comment:
+
+```rust
+/// SAFETY: caller must ensure (all six bullets hold before invocation):
+///
+/// 1. CPU is at EL1 (MMU can only be enabled from EL1).
+/// 2. IRQs are DISABLED (DAIF.I == 1).
+/// 3. `BOOT_L1_TABLE` has been initialized with identity-map L1 block
+///    descriptors for all accessible RAM/MMIO regions (AK5-E).
+/// 4. This function is called exactly ONCE per core during boot (no
+///    re-entry).
+/// 5. No other core is touching `BOOT_L1_TABLE` or TTBR0_EL1 concurrently
+///    (SMP-unready; this kernel boots one core per AK5-I).
+/// 6. Caches and MMU are currently DISABLED (SCTLR.M/C/I == 0); this is
+///    the reset state for ARMv8 (ARM-ARM D.7.2).
+///
+/// SEQUENCE:
+/// - TLBI VMALLE1 (invalidate stale entries from prior boot / warm reset)
+/// - DC CVAC of page-table range (walker must see committed descriptors)
+/// - Program TTBR/TCR/MAIR
+/// - DSB ISH + ISB (serialize config writes)
+/// - Enable MMU + caches via SCTLR with full bitmap (AK5-C)
+/// - ISB (serialize SCTLR write per ARM-ARM D8.11)
+```
+
+**Acceptance:** comment presents a precondition list any reviewer can
+audit.
+
+---
+
+#### AK5-D.4: Unit-test MMU enable sequence ordering
+
+**File:** `rust/sele4n-hal/src/mmu.rs` under `#[cfg(test)]`.
+**Estimated LOC:** +60 test.
+**Dependency:** AK5-D.2.
+
+**Atomic work unit:** With a mock `Instrumentation` that records
+TLBI/DC/DSB/ISB/MSR emissions, assert `enable_mmu` emits:
+
+1. `tlbi vmalle1`
+2. `dsb ish` (×1)
+3. `isb` (×1)
+4. At least N × `dc cvac` (N = pt_size / line_size)
+5. `dsb ish` (×1) — after DC CVAC
+6. `msr ttbr0_el1`
+7. `msr tcr_el1`
+8. `msr mair_el1`
+9. `dsb ish` (×1)
+10. `isb` (×1)
+11. `msr sctlr_el1`
+12. `isb` (×1)
+
+**Acceptance:** sequence test passes. This serves as a regression test
+for future refactors.
+
+---
+
+#### AK5-D.5: QEMU boot smoke test
+
+**File:** `scripts/test_qemu.sh` (extend).
+**Estimated LOC:** +20.
+**Dependency:** AK5-D.2.
+
+**Atomic work unit:** Add a test case that boots the kernel under
+QEMU-aarch64 with `-cpu cortex-a76 -machine virt` and verifies:
+
+- Boot banner prints (UART functional after MMU enable).
+- 5-second kernel-idle without panic/lockup.
+- Exits cleanly on `semihosting` SYS_EXIT.
+
+**Acceptance:** QEMU boot runs end-to-end; stored transcript matches
+expected in `tests/qemu_boot.expected`.
+
+---
+
+**Overall acceptance criteria (AK5-D):**
+
+- [ ] `enable_mmu` invokes TLBI VMALLE1 before TTBR write.
+- [ ] Page-table D-cache clean occurs before MMU enable.
+- [ ] Sequence ordering verified by unit test.
+- [ ] QEMU boot smoke test green.
+- [ ] SAFETY comment precondition list visible to all reviewers.
 
 ### AK5-E: `BOOT_L1_TABLE` Safe Sync (R-HAL-H01, R-HAL-M03 / HIGH + MEDIUM)
 
@@ -1308,56 +2428,327 @@ D-cache clean of page-table pages.
 in-future-editions, technically unsound). `mmu.rs:165` TTBR conversion
 uses `&raw const` cast without BAADDR mask.
 
-**Steps:**
+**Decomposed steps:**
 
-1. Wrap in `PageTableCell(UnsafeCell<BootL1Table>); unsafe impl Sync for
-   PageTableCell {}` mirroring AJ5-B `UartInner`/`UartLock` pattern.
-2. Provide `BOOT_L1_TABLE.with_inner_mut(|table| ...)` accessor with
-   interrupts-disabled precondition.
-3. TTBR conversion: compute PA with explicit `& 0xFFFF_FFFF_FFFE` mask
-   (clear low bit which is TnSZ/CnP). Add boot-time assert:
-   `assert!(pt_pa != 0 && pt_pa < 1 << physical_addr_width)`.
-4. Add `debug_assert!(pt_pa & 0xFFF == 0)` — L1 table must be 4KiB-aligned.
-5. Remove the unused `.bss.page_tables` link-section if still unused
-   after this refactor.
+---
+
+#### AK5-E.1: Define `PageTableCell` wrapper
+
+**File:** `rust/sele4n-hal/src/mmu.rs` (new section near line 100-115).
+**Estimated LOC:** +40.
+**Dependency:** none.
+
+**Atomic work unit:**
+
+```rust
+/// Interior-mutable wrapper around the boot L1 page table.
+///
+/// We cannot use `Mutex` because the mutex itself requires the MMU to be
+/// enabled (for atomic CAS) and we are initializing the MMU here. Instead
+/// we rely on the single-threaded boot invariant (AK5-D SAFETY bullet 5)
+/// plus interrupts-disabled precondition for mutating accesses.
+#[repr(align(4096))]
+pub struct PageTableCell {
+    inner: UnsafeCell<BootL1Table>,
+}
+
+// SAFETY: boot sequence is single-threaded; mutation is gated by
+// interrupts-disabled precondition in `with_inner_mut`.
+unsafe impl Sync for PageTableCell {}
+
+impl PageTableCell {
+    const fn new(table: BootL1Table) -> Self {
+        Self { inner: UnsafeCell::new(table) }
+    }
+
+    /// SAFETY: caller must ensure:
+    /// - single-threaded context (boot or interrupts-disabled window)
+    /// - MMU is disabled, OR TTBR is re-programmed atomically after
+    ///   mutation via subsequent `enable_mmu`.
+    pub unsafe fn with_inner_mut<F, R>(&self, f: F) -> R
+    where F: FnOnce(&mut BootL1Table) -> R,
+    {
+        let ptr = self.inner.get();
+        f(unsafe { &mut *ptr })
+    }
+
+    /// Physical address of the table (identity-mapped during boot).
+    pub fn pa(&self) -> usize {
+        self.inner.get() as usize
+    }
+}
+```
+
+**Acceptance:** wrapper compiles; existing `static mut BOOT_L1_TABLE`
+declaration replaced with `static BOOT_L1_TABLE: PageTableCell = ...`.
+
+---
+
+#### AK5-E.2: Migrate call sites
+
+**File:** `rust/sele4n-hal/src/mmu.rs` (init_pagetables + enable_mmu).
+**Estimated LOC:** +20 / -15.
+**Dependency:** AK5-E.1.
+
+**Atomic work unit:** Replace all `unsafe { BOOT_L1_TABLE[i] = ... }`
+with `unsafe { BOOT_L1_TABLE.with_inner_mut(|t| t[i] = ...) }`. Replace
+`&raw const BOOT_L1_TABLE as u64` with `BOOT_L1_TABLE.pa() as u64`.
+
+**Acceptance:** zero `static mut` references in `mmu.rs`;
+`cargo clippy --workspace -- -D warnings` passes.
+
+---
+
+#### AK5-E.3: TTBR BAADDR mask + boot asserts
+
+**File:** `rust/sele4n-hal/src/mmu.rs` (`enable_mmu` TTBR write).
+**Estimated LOC:** +10.
+**Dependency:** AK5-E.1.
+
+**Atomic work unit:**
+
+```rust
+let pt_pa_raw = BOOT_L1_TABLE.pa();
+
+// Assert: L1 table is 4 KiB aligned (required by ARMv8 TTBR0_EL1 BAADDR).
+debug_assert!(pt_pa_raw & 0xFFF == 0,
+              "BOOT_L1_TABLE not 4 KiB-aligned: 0x{:x}", pt_pa_raw);
+
+// Assert: page-table PA is within platform's physical address window
+// (RPi5 BCM2712: 44-bit PA per AJ3-B).
+debug_assert!(pt_pa_raw != 0 && pt_pa_raw < (1usize << 44),
+              "BOOT_L1_TABLE PA out of range: 0x{:x}", pt_pa_raw);
+
+// Mask to BAADDR field: bits [47:12] on ARMv8 (clear CnP bit 0 + reserved).
+let ttbr_baaddr = (pt_pa_raw as u64) & 0x0000_FFFF_FFFF_F000;
+
+write_ttbr0_el1(ttbr_baaddr);
+```
+
+**Acceptance:** TTBR gets the correct BAADDR; debug asserts catch
+mis-aligned boot images.
+
+---
+
+#### AK5-E.4: Remove unused `.bss.page_tables` section
+
+**File:** `rust/sele4n-hal/linker.ld` + `mmu.rs`.
+**Estimated LOC:** -10.
+**Dependency:** AK5-E.2.
+
+**Atomic work unit:** After AK5-E.2 migration, verify the
+`.bss.page_tables` section is no longer referenced; remove from linker
+script.
+
+**Acceptance:** `grep -r page_tables rust/` returns no matches; link
+succeeds.
+
+---
+
+**Overall acceptance criteria (AK5-E):**
+
+- [ ] No `static mut` in `mmu.rs`.
+- [ ] `PageTableCell` wraps `BOOT_L1_TABLE`.
+- [ ] TTBR BAADDR mask applied.
+- [ ] Boot asserts catch misalignment / out-of-range PA.
+- [ ] `.bss.page_tables` cleanly removed.
+- [ ] `cargo test --workspace` + `cargo clippy --workspace -- -D warnings`
+      pass.
 
 ### AK5-F: TrapFrame ESR/FAR Save (R-HAL-H04 / HIGH)
 
 **Problem:** `trap.S:154-157, 162-166` + `trap.rs`. `TrapFrame` saves
 272 bytes (GPRs + ELR/SPSR/SP_EL0) but does NOT save ESR_EL1 or FAR_EL1.
-CLAUDE.md scope list contradicts actual implementation.
+`handle_synchronous_exception` reads them live — correct for outer
+exception, STALE on nested exception (e.g., SError during another
+trap's handler). CLAUDE.md scope list documents 288-byte layout.
 
-**Decision:** Add ESR_EL1 and FAR_EL1 to TrapFrame (mirror CLAUDE.md
-documentation). Extend TrapFrame to 288 bytes (16 B added: 8 B ESR + 8 B
-FAR, 16-byte aligned).
+**Decision:** Add ESR_EL1 and FAR_EL1 to TrapFrame. Extend to 288 bytes
+(16 B added: 8 B ESR + 8 B FAR — 16-byte aligned maintained).
 
-**Steps:**
+**Decomposed steps:**
 
-1. In `trap.rs`, extend `TrapFrame` struct:
-   ```rust
-   #[repr(C)]
-   pub struct TrapFrame {
-       pub gprs: [u64; 31],
-       pub sp_el0: u64,
-       pub elr_el1: u64,
-       pub spsr_el1: u64,
-       pub esr_el1: u64,    // NEW
-       pub far_el1: u64,    // NEW
-   }
-   ```
-2. Update `TRAP_FRAME_SIZE = 288`.
-3. Update `const _: () = assert!(TRAP_FRAME_SIZE == 288)`.
-4. In `trap.S:save_context`, add:
-   ```asm
-   mrs x0, esr_el1
-   str x0, [sp, #272]
-   mrs x0, far_el1
-   str x0, [sp, #280]
-   ```
-   Adjust stack-decrement and restore logic.
-5. Update `handle_synchronous_exception` to read `frame.esr_el1` /
-   `frame.far_el1` instead of live `mrs`.
-6. Update size assertion tests.
+Layout change touches both Rust and assembly; risk of stack-decrement
+mismatch. Each sub-step is committable and testable.
+
+---
+
+#### AK5-F.1: Update Rust `TrapFrame` struct
+
+**File:** `rust/sele4n-hal/src/trap.rs:18-25`.
+**Estimated LOC:** +10 / -2.
+**Dependency:** none.
+
+**Atomic work unit:**
+
+```rust
+#[repr(C, align(16))]
+pub struct TrapFrame {
+    pub gprs: [u64; 31],   // x0..x30 — 248 B, offsets 0..247
+    pub sp_el0: u64,       //          offset 248
+    pub elr_el1: u64,      //          offset 256
+    pub spsr_el1: u64,     //          offset 264
+    pub esr_el1: u64,      // NEW —   offset 272
+    pub far_el1: u64,      // NEW —   offset 280
+}                          //          total   288 B, 16-B aligned
+
+pub const TRAP_FRAME_SIZE: usize = 288;
+```
+
+**Compile-time asserts:**
+
+```rust
+const _: () = assert!(TRAP_FRAME_SIZE == 288);
+const _: () = assert!(core::mem::size_of::<TrapFrame>() == 288);
+const _: () = assert!(core::mem::align_of::<TrapFrame>() == 16);
+const _: () = assert!(core::mem::offset_of!(TrapFrame, esr_el1) == 272);
+const _: () = assert!(core::mem::offset_of!(TrapFrame, far_el1) == 280);
+```
+
+**Acceptance:** `cargo check --workspace` passes; size/offset asserts
+hold at compile time.
+
+---
+
+#### AK5-F.2: Update `trap.S` save path
+
+**File:** `rust/sele4n-hal/src/trap.S:save_context` macro + each vector
+entry using it.
+**Estimated LOC:** +8 / -4 assembly.
+**Dependency:** AK5-F.1.
+
+**Atomic work unit:** Stack-decrement from 272 → 288:
+
+```asm
+.macro save_context
+    sub sp, sp, #288               // was: #272 — extend by 16 B
+    stp x0,  x1,  [sp, #0]
+    stp x2,  x3,  [sp, #16]
+    ...
+    stp x28, x29, [sp, #224]
+    str x30,      [sp, #240]       // x30 alone; 248 unused (padding)
+    mrs x0,  sp_el0
+    str x0,       [sp, #248]
+    mrs x0,  elr_el1
+    str x0,       [sp, #256]
+    mrs x0,  spsr_el1
+    str x0,       [sp, #264]
+    mrs x0,  esr_el1               // NEW
+    str x0,       [sp, #272]       // NEW
+    mrs x0,  far_el1               // NEW
+    str x0,       [sp, #280]       // NEW
+.endm
+```
+
+**Restore path:** symmetric — restore through offset 264 (SPSR_EL1),
+then `add sp, sp, #288`. ESR/FAR are READ-ONLY in the frame; not
+restored to hardware.
+
+**Acceptance:** `cargo build --workspace --target aarch64-unknown-none`
+succeeds; hand-verified stack-layout diagram matches AK5-F.1 struct.
+
+---
+
+#### AK5-F.3: Update exception handler to read from frame
+
+**File:** `rust/sele4n-hal/src/trap.rs:handle_synchronous_exception`.
+**Estimated LOC:** +4 / -4.
+**Dependency:** AK5-F.1, AK5-F.2.
+
+**Atomic work unit:** Replace live `mrs esr_el1` / `mrs far_el1`
+reads with frame field accesses:
+
+```rust
+pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
+    let esr = frame.esr_el1;        // was: let esr = read_esr_el1();
+    let far = frame.far_el1;        // was: let far = read_far_el1();
+
+    // Classify based on ESR.EC (exception class)
+    match ESR::classify(esr) {
+        ESR::SVC(num) => handle_svc(frame, num),
+        ESR::DataAbort => handle_data_abort(frame, esr, far),
+        ESR::InsnAbort => handle_insn_abort(frame, esr, far),
+        // ...
+    }
+}
+```
+
+**Rationale:** nested exception can mutate live ESR/FAR; the frame
+snapshot captured at exception entry is the source of truth.
+
+**Acceptance:** exception handler compiles; no `read_esr_el1` /
+`read_far_el1` calls in handler body.
+
+---
+
+#### AK5-F.4: Compile-time layout assertions in Lean model
+
+**File:** `SeLe4n/Kernel/Architecture/ExceptionModel.lean` (extend).
+**Estimated LOC:** +15.
+**Dependency:** AK5-F.1.
+
+**Atomic work unit:** Add documentation constant
+
+```lean
+def trapFrameLayout : TrapFrameLayout := {
+  size := 288
+  gprsOffset := 0
+  sp_el0_offset := 248
+  elr_el1_offset := 256
+  spsr_el1_offset := 264
+  esr_el1_offset := 272       -- NEW
+  far_el1_offset := 280       -- NEW
+}
+```
+
+This is metadata-only (Lean model doesn't execute the layout); it
+documents the contract for the Rust `TrapFrame`.
+
+**Acceptance:** metadata exists; cross-referenced from CLAUDE.md
+"scope" section.
+
+---
+
+#### AK5-F.5: CLAUDE.md scope list correction
+
+**File:** `CLAUDE.md` (if the scope list explicitly names 272/288).
+**Estimated LOC:** +2 / -2 doc.
+**Dependency:** AK5-F.1.
+
+**Atomic work unit:** Update the scope list to reflect 288 B and include
+`esr_el1`, `far_el1` in the TrapFrame description.
+
+**Acceptance:** documentation and code agree.
+
+---
+
+#### AK5-F.6: Regression test
+
+**File:** `rust/sele4n-hal/src/trap.rs` under `#[cfg(test)]`.
+**Estimated LOC:** +40.
+**Dependency:** AK5-F.1, AK5-F.2.
+
+**Test scenarios:**
+
+- T01: Synthesize a `TrapFrame` with `esr_el1 = 0xDEAD_BEEF` +
+  `far_el1 = 0x1234_5678`; assert struct reads them back.
+- T02: Offset sanity: `offset_of!(TrapFrame, esr_el1) == 272`.
+- T03: Size sanity: `size_of::<TrapFrame>() == 288`.
+- T04: Simulated nested-exception scenario: outer handler captures ESR;
+  inner handler's ESR write doesn't clobber outer frame.
+
+**Acceptance:** all pass; trap-frame invariants documented.
+
+---
+
+**Overall acceptance criteria (AK5-F):**
+
+- [ ] `TrapFrame` is 288 bytes, 16-B aligned.
+- [ ] ESR_EL1 and FAR_EL1 saved on exception entry.
+- [ ] Handler reads from frame, not live registers.
+- [ ] Compile-time size/offset asserts enforce layout.
+- [ ] CLAUDE.md scope list matches code.
+- [ ] Regression test green.
 
 ### AK5-G: GIC Uses Crate MMIO (R-HAL-M04 / MEDIUM)
 
@@ -1562,19 +2953,176 @@ as insufficient.
 `hProj` caller hypothesis is required for `dispatchCapabilityOnly` arms;
 no internal composition theorem discharges it.
 
-**Steps:**
+**Decomposed steps:**
 
-1. In `Operations.lean`, compose
-   `dispatchCapabilityOnly_preserves_projection :
-     ∀ domain, apiInvariantBundle st → dispatchCapabilityOnly args st = .ok st' →
-     projectKernelState domain st' = projectKernelState domain st`
-   by case-splitting on `args` and invoking the 11 individual
-   `*_preserves_projection` theorems (suspend, resume, setPriority,
-   setMCPriority, setIPCBuffer, schedContextConfigure, schedContextBind,
-   schedContextUnbind, vspaceMapPage, vspaceUnmapPage, revokeService).
-2. Wire into `syscallDispatchHigh` — remove `hProj` hypothesis, invoke
-   the composition theorem internally.
-3. Update API bridge `syscallEntry_success_yields_NI_step` accordingly.
+This is the release-critical NI closure. 11 per-op proofs already exist;
+composition is mostly mechanical but requires careful invariant-bundle
+propagation.
+
+---
+
+#### AK6-F.1: Audit and catalog per-op preservation theorems
+
+**File:** `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean`.
+**Estimated LOC:** 0 (audit); ~30 LOC if any gaps need filling.
+**Dependency:** none.
+
+**Atomic work unit:** For each of the 11 arms below, confirm that
+`<op>_preserves_projection` exists and has the signature:
+
+```lean
+theorem <op>_preserves_projection
+    (domain : SecurityDomain) (st : SystemState) (st' : SystemState) (args : <Args>) :
+    apiInvariantBundle st →
+    <op> args st = .ok st' →
+    projectKernelState domain st' = projectKernelState domain st
+```
+
+The 11 arms:
+
+| # | Arm | Source file | Expected theorem |
+|---|-----|-------------|------------------|
+| 1 | `suspendThread` | Lifecycle/Suspend.lean | `suspendThread_preserves_projection` |
+| 2 | `resumeThread` | Lifecycle/Suspend.lean | `resumeThread_preserves_projection` |
+| 3 | `setPriorityOp` | SchedContext/PriorityManagement.lean | `setPriorityOp_preserves_projection` |
+| 4 | `setMCPriorityOp` | SchedContext/PriorityManagement.lean | `setMCPriorityOp_preserves_projection` |
+| 5 | `setIPCBufferOp` | Architecture/IpcBufferValidation.lean | `setIPCBufferOp_preserves_projection` |
+| 6 | `schedContextConfigure` | SchedContext/Operations.lean | `schedContextConfigure_preserves_projection` |
+| 7 | `schedContextBind` | SchedContext/Operations.lean | `schedContextBind_preserves_projection` |
+| 8 | `schedContextUnbind` | SchedContext/Operations.lean | `schedContextUnbind_preserves_projection` |
+| 9 | `vspaceMapPage` | Architecture/VSpace.lean | `vspaceMapPage_preserves_projection` |
+| 10 | `vspaceUnmapPage` | Architecture/VSpace.lean | `vspaceUnmapPage_preserves_projection` |
+| 11 | `revokeService` | Service/Operations.lean | `revokeService_preserves_projection` |
+
+**Deliverable:** a markdown table in this sub-task's commit message
+listing file:line for each theorem. If any are missing, escalate to
+AK6-F.2 as a sub-task (should not happen — audit claims all 11 exist).
+
+**Acceptance:** all 11 theorems found and cataloged; any gaps fixed
+with dedicated prove commits before AK6-F.3.
+
+---
+
+#### AK6-F.2: Fill any gaps (contingency)
+
+**Dependency:** AK6-F.1 reveals gaps.
+**Estimated LOC:** ~50 per missing theorem.
+
+**Atomic work unit:** For each missing theorem, prove preservation
+using the existing pattern (frame lemmas + projection extensionality).
+
+**Acceptance:** all 11 per-op theorems exist and are proven.
+
+---
+
+#### AK6-F.3: Prove `dispatchCapabilityOnly_preserves_projection`
+
+**File:** `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean`.
+**Estimated LOC:** ~80 (one match-arm per operation, each ~7 LOC).
+**Dependency:** AK6-F.1 (all 11 per-op theorems exist).
+
+**Atomic work unit:**
+
+```lean
+theorem dispatchCapabilityOnly_preserves_projection
+    (domain : SecurityDomain) (st st' : SystemState) (args : CapabilityOnlyArgs) :
+    apiInvariantBundle st →
+    dispatchCapabilityOnly args st = .ok st' →
+    projectKernelState domain st' = projectKernelState domain st := by
+  intro hInv hDispatch
+  unfold dispatchCapabilityOnly at hDispatch
+  cases args with
+  | suspend tid =>
+    exact suspendThread_preserves_projection domain st st' tid hInv hDispatch
+  | resume tid =>
+    exact resumeThread_preserves_projection ...
+  | setPriority args =>
+    exact setPriorityOp_preserves_projection ...
+  | setMCPriority args =>
+    exact setMCPriorityOp_preserves_projection ...
+  -- ... 7 more arms
+  | revokeService sid =>
+    exact revokeService_preserves_projection domain st st' sid hInv hDispatch
+```
+
+Each arm delegates to the pre-existing per-op proof. Composition is
+mechanical; mostly type-elaboration work.
+
+**Acceptance:** theorem proven; `lake build SeLe4n.Kernel.InformationFlow.
+Invariant.Operations` succeeds with no `sorry`.
+
+---
+
+#### AK6-F.4: Remove `hProj` from `syscallDispatchHigh` integration
+
+**File:** `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean:295-299`.
+**Estimated LOC:** +30 / -20.
+**Dependency:** AK6-F.3.
+
+**Atomic work unit:** Replace the caller-supplied `hProj` hypothesis
+with an internal invocation of
+`dispatchCapabilityOnly_preserves_projection`:
+
+```lean
+-- BEFORE:
+def syscallDispatchHigh (args : DispatchArgs) (st st' : SystemState)
+    (hInv : apiInvariantBundle st) (hDispatch : ...)
+    (hProj : projectKernelState domain st' = projectKernelState domain st)
+    : NIStep ...
+
+-- AFTER:
+def syscallDispatchHigh (args : DispatchArgs) (st st' : SystemState)
+    (hInv : apiInvariantBundle st) (hDispatch : ...)
+    : NIStep :=
+  let hProj := dispatchCapabilityOnly_preserves_projection domain st st' args hInv hDispatch
+  ...
+```
+
+**Acceptance:** `hProj` no longer free; callers of
+`syscallDispatchHigh` no longer required to supply projection
+hypothesis.
+
+---
+
+#### AK6-F.5: Update `API.lean:syscallEntry_success_yields_NI_step`
+
+**File:** `SeLe4n/Kernel/API.lean:1886-1898`.
+**Estimated LOC:** +10 / -15.
+**Dependency:** AK6-F.4.
+
+**Atomic work unit:** Remove the `hDispatchProj` argument and its
+propagation; the lemma now calls `syscallDispatchHigh` without
+supplying projection hypothesis.
+
+**Acceptance:** API bridge theorem re-proves cleanly; `hDispatchProj`
+parameter removed from public signature.
+
+---
+
+#### AK6-F.6: Cascade to NI regression tests
+
+**File:** `tests/InformationFlowSuite.lean` (update).
+**Estimated LOC:** ~30 / -20.
+**Dependency:** AK6-F.5.
+
+**Atomic work unit:** Update any test scenarios that currently supply
+`hDispatchProj` via `rfl` or explicit proof — they should now need
+fewer hypotheses. Verify the test suite still builds.
+
+**Acceptance:** NI regression suite green.
+
+---
+
+**Overall acceptance criteria (AK6-F):**
+
+- [ ] All 11 per-op `*_preserves_projection` theorems confirmed in place.
+- [ ] `dispatchCapabilityOnly_preserves_projection` proven as a single
+      composed theorem.
+- [ ] `syscallDispatchHigh` no longer requires caller-supplied `hProj`.
+- [ ] `API.lean:syscallEntry_success_yields_NI_step` re-proves cleanly.
+- [ ] `tests/InformationFlowSuite.lean` passes.
+- [ ] Release-grade NI claim: syscallDispatchHigh internally discharges
+      projection preservation for all arms.
 
 ### AK6-G: Projection Strips `pendingMessage` + `timedOut` (NI-M01 / MEDIUM)
 
@@ -1743,17 +3291,104 @@ ID take `ValidObjId`, those that tolerate sentinels take `ObjId`.
 Phase AK7 introduces the subtype; downstream migration tracked as
 AK7-E.cascade (incremental, not blocking v1.0).
 
-**Steps (AK7 baseline):**
+**Decomposed steps (AK7 baseline — subtype introduction only):**
 
-1. Add `ValidObjId`, `ValidThreadId`, etc. subtypes with sentinel
-   exclusion witness.
-2. Provide `ObjId.toValid : (o : ObjId) → o ≠ .sentinel → ValidObjId`.
-3. Add `ObjId.validOfInvariant : apiInvariantBundle st →
-   st.objects.get? o = some _ → ValidObjId` — proves validity from
-   kernel invariant.
-4. Migrate ≤10 highest-risk entry points (kernel syscall handlers) to
-   take `ValidObjId` (e.g., `suspendThread`, `resumeThread`).
-5. Incremental migration tracked in AK7-E.cascade for v1.1.
+The full migration is multi-release (v1.0 baseline + v1.1 cascade). This
+phase adds the subtype and migrates ≤10 highest-risk kernel entry points.
+
+---
+
+#### AK7-E.1: Add `Valid*Id` subtypes
+
+**File:** `SeLe4n/Prelude.lean` (near line 150-500 where typed IDs live).
+**Estimated LOC:** ~60.
+**Dependency:** none.
+
+**Atomic work unit:**
+
+```lean
+abbrev ValidObjId := { o : ObjId // o ≠ ObjId.sentinel }
+abbrev ValidThreadId := { t : ThreadId // t ≠ ThreadId.sentinel }
+abbrev ValidSchedContextId := { s : SchedContextId // s ≠ SchedContextId.sentinel }
+abbrev ValidCPtr := { c : CPtr // c ≠ CPtr.null }
+
+namespace ObjId
+  def toValid (o : ObjId) (h : o ≠ sentinel) : ValidObjId := ⟨o, h⟩
+  def ofValid (v : ValidObjId) : ObjId := v.val
+end ObjId
+
+-- Analogous for ThreadId, SchedContextId, CPtr.
+```
+
+**Acceptance:** subtypes type-check; conversion functions compile.
+
+---
+
+#### AK7-E.2: Invariant-backed validity extraction
+
+**File:** `SeLe4n/Prelude.lean`.
+**Estimated LOC:** ~30 (3 lemmas × ~10 LOC).
+**Dependency:** AK7-E.1.
+
+**Atomic work unit:**
+
+```lean
+theorem ObjId.validOfLookup
+    (st : SystemState) (o : ObjId)
+    (hLookup : st.objects.get? o = some _) :
+    o ≠ ObjId.sentinel
+-- (Analogous for ThreadId via objects.get? + .tcb variant,
+--  SchedContextId via objects.get? + .schedContext variant.)
+```
+
+**Rationale:** if an object exists at `o`, then `o` must not be the
+sentinel — rules out spurious lookups.
+
+**Acceptance:** lemmas proven; available for consumer migration.
+
+---
+
+#### AK7-E.3: Migrate 10 highest-risk syscall handlers
+
+**Files:** per-op handler entry points in `API.lean`, `Lifecycle/
+Suspend.lean`, `SchedContext/PriorityManagement.lean`, `SchedContext/
+Operations.lean`, `Architecture/IpcBufferValidation.lean`.
+**Estimated LOC:** ~5 per handler × 10 = 50.
+**Dependency:** AK7-E.1, AK7-E.2.
+
+**Atomic work unit:** For each of the 10 handlers:
+
+- `suspendThread`, `resumeThread`, `setPriorityOp`, `setMCPriorityOp`,
+  `setIPCBufferOp`, `schedContextConfigure`, `schedContextBind`,
+  `schedContextUnbind`, `vspaceMapPage`, `vspaceUnmapPage`.
+
+Change the signature to take `ValidThreadId` / `ValidSchedContextId` /
+`ValidObjId` where appropriate; invoke `validOfLookup` at the decode
+boundary.
+
+**Acceptance:** handlers refuse sentinel IDs at the type level; decode
+boundary extracts validity witness.
+
+---
+
+#### AK7-E.4: Cascade tracking document
+
+**File:** `docs/audits/AUDIT_v0.29.0_DEFERRED.md` (created in AK10-J).
+**Estimated LOC:** 0 in this phase; deferred entry.
+**Dependency:** AK7-E.3.
+
+**Atomic work unit:** Add entry to `DEFERRED.md`:
+
+> **AK7-E.cascade — v1.1 ValidId migration.** Remaining ~300 call
+> sites using raw `ObjId`/`ThreadId`/`SchedContextId` to migrate to
+> `ValidObjId` etc. Not blocking v1.0 because the 10 syscall-entry
+> migrations in AK7-E.3 cover the caller-exposed attack surface;
+> in-kernel propagation of raw IDs remains safe under
+> `apiInvariantBundle`.
+
+**Acceptance:** cascade is tracked and scoped.
+
+---
 
 ### AK7-F: Phantom-Tag `ObjId` Across Wrappers (F-M04 / MEDIUM — continues AK7-E)
 
@@ -1761,27 +3396,144 @@ AK7-E.cascade (incremental, not blocking v1.0).
 SchedContextId ⟨5⟩.toObjId`. Disjointness relies on pattern-match
 discipline.
 
-**Remediation path (phased):**
+**Remediation path (phased):** Introduce `ObjKind` discriminator with
+`.unknown` default, prove per-wrapper disjointness, track cascade.
 
-1. **Phase AK7 baseline:** Add `ObjKind` discriminator to `ObjId`:
-   ```lean
-   structure ObjId where
-     val : Nat
-     kind : ObjectKind  -- NEW
-   ```
-   With default `kind := .unknown` for legacy compatibility.
-2. **`ThreadId.toObjId`** returns `ObjId { val, kind := .thread }`.
-3. **`SchedContextId.toObjId`** returns `ObjId { val, kind := .schedContext }`.
-4. **Prove** `thread_schedContext_disjoint :
-     (ThreadId.ofNat n).toObjId ≠ (SchedContextId.ofNat n).toObjId`.
-5. Migration to discriminated lookups in `objects.get?` tracked as
-   AK7-F.cascade for v1.1.
+---
 
-**Baseline risk:** Adding a field to `ObjId` affects ≥300 proofs. If the
-cascade is too invasive, defer to v1.1 and document as a known gap.
-Decision criterion: if AK7-E/F combined migrate cleanly (≤300 lines of
-downstream proof fixes), land both; otherwise land AK7-E baseline only
-and defer AK7-F to a follow-up.
+#### AK7-F.1: Add `ObjectKind` discriminator
+
+**File:** `SeLe4n/Prelude.lean` (near ObjId definition).
+**Estimated LOC:** +30.
+**Dependency:** none.
+
+**Atomic work unit:**
+
+```lean
+inductive ObjectKind where
+  | unknown       -- legacy compatibility default
+  | thread
+  | schedContext
+  | endpoint
+  | notification
+  | cnode
+  | vspaceRoot
+  | untyped
+  | service
+  deriving Repr, DecidableEq, Inhabited
+
+structure ObjId where
+  val  : Nat
+  kind : ObjectKind := .unknown   -- default preserves backward compat
+  deriving Repr, DecidableEq
+```
+
+**Acceptance:** `ObjId` struct compiles; existing `ObjId ⟨n⟩` syntax
+still works (defaults to `.unknown`).
+
+---
+
+#### AK7-F.2: Specialize `*.toObjId` methods
+
+**File:** `SeLe4n/Prelude.lean`.
+**Estimated LOC:** +20 / -10.
+**Dependency:** AK7-F.1.
+
+**Atomic work unit:**
+
+```lean
+def ThreadId.toObjId (t : ThreadId) : ObjId :=
+  { val := t.val, kind := .thread }
+
+def SchedContextId.toObjId (s : SchedContextId) : ObjId :=
+  { val := s.val, kind := .schedContext }
+
+-- Analogous for endpoint/notification/cnode/vspaceRoot/untyped/service.
+```
+
+**Acceptance:** all `toObjId` methods tag appropriately.
+
+---
+
+#### AK7-F.3: Prove disjointness theorems
+
+**File:** `SeLe4n/Prelude.lean` (+ a separate `PreludeDisjointness.lean`
+if the size exceeds 200 LOC).
+**Estimated LOC:** ~80 (7 × 7 pairs, with symmetry → 21 essential).
+**Dependency:** AK7-F.2.
+
+**Atomic work unit:**
+
+```lean
+theorem thread_schedContext_disjoint (t : ThreadId) (s : SchedContextId) :
+    t.toObjId ≠ s.toObjId := by
+  simp [ThreadId.toObjId, SchedContextId.toObjId, ObjId.mk.injEq]
+  intro; exact ObjectKind.noConfusion
+```
+
+(Analogous for each pair of distinct kinds.)
+
+**Acceptance:** `typedIdDisjointness` is no longer trivial (DS-L10);
+disjointness is a structural consequence of the discriminator field.
+
+---
+
+#### AK7-F.4: Backward-compat constructor retention
+
+**File:** `SeLe4n/Prelude.lean`.
+**Estimated LOC:** +15.
+**Dependency:** AK7-F.1.
+
+**Atomic work unit:** Keep `ObjId.ofNat (n : Nat) : ObjId := { val := n,
+kind := .unknown }` as the legacy-compatible constructor. Document that
+`.unknown` is used when the caller doesn't know the kind (decode
+boundary).
+
+**Acceptance:** existing code using `ObjId.ofNat n` or `ObjId ⟨n⟩`
+syntax continues to compile without changes.
+
+---
+
+#### AK7-F.5: Cascade tracking
+
+**File:** `docs/audits/AUDIT_v0.29.0_DEFERRED.md`.
+**Estimated LOC:** doc entry.
+**Dependency:** AK7-F.3.
+
+**Atomic work unit:** Add entry:
+
+> **AK7-F.cascade — v1.1 ObjKind-aware lookup migration.** Replace
+> `objects.get? (obj.toObjId)` with `objects.getKinded? obj` that
+> verifies the stored object's `kind` matches the query's `kind`. ~300
+> call sites. Not blocking v1.0 because AJ2-D non-escalation proof
+> already covers the attack surface at runtime.
+
+**Acceptance:** cascade scoped and tracked.
+
+---
+
+**Overall acceptance criteria (AK7-E + AK7-F baseline):**
+
+- [ ] `Valid*Id` subtypes defined.
+- [ ] `ObjectKind` discriminator added to `ObjId`; 9 variants.
+- [ ] Per-wrapper `.toObjId` methods tag correctly.
+- [ ] Disjointness theorems for all 21 kind-pair combinations.
+- [ ] 10 highest-risk syscall handlers accept `Valid*Id`.
+- [ ] Backward-compat constructors retained.
+- [ ] AK7-E.cascade and AK7-F.cascade tracked in DEFERRED.md for v1.1.
+
+**Risk mitigation:** If AK7-F.1 struct-field addition cascades beyond
+300 proofs, freeze AK7-F at the baseline (struct + disjointness) and
+defer ALL consumer migration to v1.1. The baseline alone eliminates
+the silent-aliasing footgun cited in F-M04 because no code currently
+constructs `ObjId` with a non-default `kind`; only the `toObjId`
+methods do, and disjointness holds structurally.
+
+**Decision criterion (at implementation time):**
+- If AK7-F.1 + AK7-F.2 + AK7-F.3 land in ≤200 LOC (+ test/doc), proceed
+  with AK7-F.4 and ship v1.0 with discriminator + baseline disjointness.
+- If proof cascade exceeds 300 LOC, split: land struct + disjointness
+  only; defer `.toObjId` method updates to v1.1 cascade.
 
 ### AK7-G: Non-Lawful BEq Narrow-Scope (F-M05 / MEDIUM)
 
@@ -2680,6 +4432,247 @@ provide templates:
 - Preservation theorems without postconditions (empty goals).
 - Large-scale refactors beyond what the finding demands (CLAUDE.md §
   Tone and style).
+
+---
+
+## 20. Execution Scheduling & Work-Unit Ordering
+
+This section provides a concrete ordering for landing sub-tasks within
+each phase. Sub-tasks within a phase can run in parallel where
+dependencies allow; the ordering below is a proven-safe sequential
+schedule.
+
+### 20.1 Per-Phase Execution Order
+
+**Phase AK1 (IPC):** AK1-A → AK1-B → AK1-C → AK1-D → AK1-E → AK1-F →
+AK1-G → AK1-H → AK1-I → AK1-J (LOW batch).
+
+**Phase AK2 (Scheduler/PIP/WCRT):**
+- Parallel lane 1: AK2-A → AK2-B (behavioral fixes)
+- Parallel lane 2: AK2-C → AK2-D → AK2-E → AK2-F → AK2-G (smaller fixes)
+- Parallel lane 3: AK2-K.1 → AK2-K.2 → AK2-K.3 → AK2-K.4 (WCRT cascade)
+- Merge: AK2-H → AK2-I → AK2-J → AK2-L (LOW batch)
+
+**Phase AK3 (Architecture):**
+- Critical path: AK3-A.1 → A.2 → A.3 → A.4 → A.5 → A.6 → A.7 → A.8
+  (ASID rollover — serial dependencies).
+- Parallel: AK3-B.1 → B.2/B.3 (parallel) → B.4 (verify) → B.5 → B.6.
+- Parallel: AK3-C.1 → C.2 → C.3 → C.4 → C.5.
+- Independent: AK3-D, AK3-E, AK3-F, AK3-G, AK3-H, AK3-I (doc), AK3-J,
+  AK3-K (doc), AK3-L, AK3-M (LOW batch).
+
+**Phase AK4 (ABI):** AK4-A.1 → A.2 → A.3 → A.4/A.5 (parallel) → A.6 →
+A.7 → A.8 → AK4-B → AK4-C → AK4-D → AK4-E → AK4-F → AK4-G (depends on
+A.7) → AK4-H (LOW batch).
+
+**Phase AK5 (Rust HAL):**
+- **Must-first:** AK5-A (`panic=abort` workspace profile) — a
+  prerequisite for AK5-B.
+- Parallel after A: AK5-B, AK5-C, AK5-D.1..D.5, AK5-E.1..E.4,
+  AK5-F.1..F.6.
+- AK5-G, AK5-H (parallel with D/E).
+- AK5-I, AK5-J, AK5-K, AK5-L, AK5-M.
+- AK5-N (LOW batch).
+
+**Phase AK6 (NI + SchedContext):**
+- AK6-A → AK6-B → AK6-C (SC correctness serial — they touch the same
+  configure op).
+- Parallel: AK6-D, AK6-G, AK6-H, AK6-I.
+- AK6-E → AK6-F.1 → F.2 (if needed) → F.3 → F.4 → F.5 → F.6 (NI
+  composition — serial).
+- AK6-J (LOW batch).
+
+**Phase AK7 (Foundational):**
+- AK7-A → AK7-B (frozen-state hardening, serial).
+- Parallel: AK7-C, AK7-D, AK7-G, AK7-H, AK7-I, AK7-J.
+- AK7-E.1 → E.2 → E.3 → E.4 (ValidId baseline, serial).
+- AK7-F.1 → F.2 → F.3 → F.4 → F.5 (ObjKind baseline, serial — only if
+  AK7-F decision at E.3-conclusion is "go").
+- AK7-K (LOW batch).
+
+**Phase AK8 (Capability / DS):** AK8-A → AK8-B → AK8-C → AK8-D → AK8-E
+→ AK8-F → AK8-G → AK8-H → AK8-I → AK8-J → AK8-K.
+
+**Phase AK9 (Platform):** AK9-A → AK9-B → AK9-C → AK9-D → AK9-E → AK9-F
+→ AK9-G → AK9-H.
+
+**Phase AK10 (Closure):** AK10-A → B → C → D → E → F → G → H → I → J →
+K → L (serial by nature — each depends on prior phase completion).
+
+### 20.2 Critical Path Analysis
+
+The longest serial dependency chain across the entire workstream:
+
+```
+AK3-A.1 → A.2 → A.3 → A.4 → A.5 → A.6 → A.7 → A.8   (ASID rollover, 8 steps)
+AK3-B.1 → B.2 → B.3 → B.4 → B.5 → B.6               (W^X, 6 steps)
+AK3-C.1 → C.2 → C.3 → C.4 → C.5                     (EOI, 5 steps)
+AK5-A → AK5-B                                       (panic=abort → EOI guard, 2)
+AK4-A.1 → … → A.8                                   (IPC-buffer merge, 8)
+AK5-D.1 → D.5                                       (MMU enable, 5)
+AK10-K → AK10-L                                     (final gate, 2)
+```
+
+**Total critical-path sub-steps:** ~36 serial steps (≈ 36 working days
+at 1 sub-step/day, or ≈ 18 days at 2 sub-steps/day, assuming parallel
+lanes saturate other bandwidth).
+
+**Minimum calendar time (pessimistic):** 8 weeks from first AK1 commit
+to AK10-L merge.
+
+**Realistic estimate:** 12–16 weeks with parallel lanes + review +
+integration testing.
+
+### 20.3 Escape Valves
+
+Each phase has one "escape valve" that can be used if scope overruns:
+
+| Phase | Escape valve | Consequence |
+|-------|--------------|-------------|
+| AK1 | Defer AK1-F (doc-only) to AK10 | None |
+| AK2 | Defer AK2-K.2/K.3 to AK2.5 | Partial WCRT closure at v1.0; documented |
+| AK3 | Defer AK3-G, I, K to WS-V | Barrier composition remains deferred (already scoped) |
+| AK4 | Defer AK4-G integration test | Unit tests still cover R-ABI-C01 |
+| AK5 | Defer AK5-M to WS-V | Minor documentation debt |
+| AK6 | Defer AK6-I tight bound | CBS bandwidth claim remains 8× loose |
+| AK7 | Defer AK7-F entirely to v1.1 | Silent wrapper aliasing remains; AJ2-D proof covers attack surface |
+| AK8 | Defer AK8-J to post-1.0 | RHTable BEq documentation debt |
+| AK9 | Defer AK9-H LOW batch to AK10 | None |
+| AK10 | No escape — closure is mandatory | — |
+
+### 20.4 Parallelization Opportunities
+
+These sub-tasks have no file contention and can run in parallel:
+
+- AK3-E (decodeVSpaceMap PA) || AK3-F (IpcBuffer end-PA) || AK3-J
+  (schedContextConfigure decode) — three distinct decode functions.
+- AK5-G (GIC MMIO) || AK5-H (UART MMIO) || AK5-I (MPIDR) — three
+  distinct HAL modules.
+- AK6-G (projection strips) || AK6-H (default labeling) — different
+  files.
+- AK7-C through AK7-J — all independent.
+
+With 2–3 implementers, critical-path time reduces by ~40%.
+
+---
+
+## 21. Quick-Reference Cheat Sheet
+
+### 21.1 CRITICAL Fixes at a Glance
+
+| ID | Fix | Phase | Time estimate |
+|----|-----|-------|---------------|
+| A-C01 | ASID `activeSet` tracking | AK3-A | 8 sub-steps × ~0.5 day = 4 days |
+| R-ABI-C01 | IPC-buffer merge into `msgRegs` | AK4-A | 8 sub-steps × ~0.5 day = 4 days |
+
+### 21.2 HIGH Fixes at a Glance
+
+| ID | Phase | Sub-task(s) | Effort |
+|----|-------|-------------|--------|
+| F-H01, F-H02 | AK7 | AK7-A, AK7-B | Medium |
+| S-H01, S-H02 | AK2 | AK2-K.1-K.4 | Large |
+| S-H03 | AK2 | AK2-A | Medium |
+| S-H04 | AK2 | AK2-B | Medium |
+| I-H01 | AK1 | AK1-A | Medium |
+| I-H02 | AK1 | AK1-B | Medium |
+| A-H01, A-M03 | AK3 | AK3-B.1-B.6 | Medium |
+| A-H02 | AK3 | AK3-C.1-C.5 | Medium |
+| A-H03 | AK3 | AK3-D | Small |
+| NI-H01 | AK6 | AK6-E | Small |
+| NI-H02 | AK6 | AK6-F.1-F.6 | Medium |
+| SC-H01 | AK6 | AK6-A | Small |
+| P-H01 | AK9 | AK9-A | Medium |
+| P-H02 | AK9 | AK9-B | Small |
+| R-HAL-H01..H05 | AK5 | AK5-B, E, C, D, F | Large (all decomposed) |
+| R-ABI-H01, H02 | AK4 | AK4-C, AK4-B | Small |
+
+### 21.3 Per-Phase Build Commands
+
+```bash
+# During phase AK1 (IPC):
+lake build SeLe4n.Kernel.IPC.DualQueue.Transport
+lake build SeLe4n.Kernel.IPC.Operations.Endpoint
+lake build SeLe4n.Kernel.IPC.Invariant.Defs
+./scripts/test_smoke.sh
+
+# During phase AK2 (Scheduler):
+lake build SeLe4n.Kernel.Scheduler.Operations.Core
+lake build SeLe4n.Kernel.Scheduler.Operations.Preservation
+lake build SeLe4n.Kernel.Liveness.WCRT
+./scripts/test_full.sh  # theorem changes
+
+# During phase AK3 (Architecture):
+lake build SeLe4n.Kernel.Architecture.AsidManager
+lake build SeLe4n.Kernel.Architecture.VSpaceARMv8
+lake build SeLe4n.Kernel.Architecture.InterruptDispatch
+./scripts/test_full.sh
+
+# During phase AK4 (ABI):
+lake build SeLe4n.Kernel.Architecture.RegisterDecode
+lake build SeLe4n.Kernel.Architecture.SyscallArgDecode
+cd rust && cargo test --workspace
+cd rust && cargo clippy --workspace -- -D warnings
+
+# During phase AK5 (Rust HAL):
+cd rust && cargo test --workspace
+cd rust && cargo clippy --workspace -- -D warnings
+./scripts/test_qemu.sh  # after AK5-D
+
+# During phase AK6 (NI):
+lake build SeLe4n.Kernel.InformationFlow.Invariant.Operations
+lake build SeLe4n.Kernel.InformationFlow.Invariant.Composition
+lake build SeLe4n.Kernel.SchedContext.Operations
+./scripts/test_full.sh
+
+# During phase AK7 (Foundational):
+lake build SeLe4n.Prelude
+lake build SeLe4n.Model.FrozenState
+lake build SeLe4n.Model.FreezeProofs
+./scripts/test_full.sh
+
+# Final gate (AK10):
+./scripts/test_tier0_hygiene.sh
+./scripts/test_full.sh
+cd rust && cargo test --workspace
+cd rust && cargo clippy --workspace -- -D warnings
+./scripts/check_version_sync.sh
+./scripts/check_website_links.sh
+diff <(lake exe sele4n) tests/fixtures/main_trace_smoke.expected
+```
+
+### 21.4 Inventory of New Files Created by WS-AK
+
+- `tests/AbiRoundtripSuite.lean` (AK4-G)
+- `tests/AsidPoolSuite.lean` (AK3-A.8)
+- `tests/NiProjectionSuite.lean` extension (AK6-G)
+- `tests/WcrtSuite.lean` extension (AK2-K)
+- `tests/McmuHardeningSuite.lean` (AK3-B)
+- `tests/InterruptDispatchSuite.lean` extension (AK3-C.5)
+- `docs/audits/AUDIT_v0.29.0_ERRATA.md` (AK10-D)
+- `docs/audits/AUDIT_v0.29.0_DEFERRED.md` (AK10-J)
+- Possibly: `SeLe4n/Kernel/Architecture/IpcBufferRead.lean` (AK4-A.1,
+  if factored out)
+- `scripts/test_abi_roundtrip.sh` (AK4-G)
+
+Total new files: ~10.
+
+### 21.5 Version-Bearing File Inventory (AK10-C)
+
+15 files tracked by `scripts/check_version_sync.sh`:
+
+1. `lakefile.toml`
+2. `rust/Cargo.toml` (workspace version)
+3. `rust/sele4n-types/Cargo.toml`
+4. `rust/sele4n-abi/Cargo.toml`
+5. `rust/sele4n-sys/Cargo.toml`
+6. `rust/sele4n-hal/Cargo.toml`
+7. `rust/sele4n-hal/src/boot.rs` (`KERNEL_VERSION`)
+8. `CLAUDE.md`
+9. `docs/spec/SELE4N_SPEC.md`
+10. `README.md`
+11. `README_zh-CN.md` + 9 other i18n variants
+
+Any new version-bearing file must be added to the manifest.
 
 ---
 
