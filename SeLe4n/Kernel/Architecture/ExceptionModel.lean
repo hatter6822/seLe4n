@@ -35,6 +35,15 @@ exceptions to the appropriate handler.
 
 Models ARM64 privilege levels EL0 (user) and EL1 (kernel). The exception
 dispatch path sets the appropriate level on entry/exit.
+
+## AJ-M08 / H-01: Orphaned Module Status
+
+This module is implemented and proven but not yet imported into the main
+kernel execution path. The `dispatchException` function routes SVC
+instructions to `syscallEntry` (API.lean), but an import cycle prevents
+direct integration (ExceptionModel imports API, which cannot import
+ExceptionModel back). See §8.15.1 of SELE4N_SPEC.md for the activation
+roadmap. Deferred to WS-V (AG10: Hardware Integration).
 -/
 
 namespace SeLe4n.Kernel.Architecture

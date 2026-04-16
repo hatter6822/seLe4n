@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.28.4` (`lakefile.toml`) |
+| **Package version** | `0.29.0` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 93,837 across 141 Lean files |
+| **Production LoC** | 94,762 across 141 Lean files |
 | **Test LoC** | 11,616 across 17 Lean test suites |
-| **Proved declarations** | 2,780 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 2,802 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
-| **Active workstream** | **WS-AJ Phases AJ1–AJ4 COMPLETE** (v0.28.1–v0.28.4). Post-Audit Comprehensive Remediation (v0.28.0 audit) — 4 of 6 phases, 20 sub-tasks. IPC/lifecycle correctness, security hardening, platform/boot pipeline, architecture model correctness. Plan: [`AUDIT_v0.28.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md). Prior: WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG–WS-B. **Next: WS-AJ Phase AJ5 (Rust HAL) → AJ6 (Closure).** |
+| **Active workstream** | **WS-AJ PORTFOLIO COMPLETE** (v0.28.1–v0.29.0). Post-Audit Comprehensive Remediation (v0.28.0 audit) — 6 phases, 30 sub-tasks. IPC/lifecycle correctness, security hardening, platform/boot pipeline, architecture model correctness, Rust HAL hardening, documentation/testing/closure. Plan: [`AUDIT_v0.28.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md). Prior: WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG–WS-B. **Next: WS-V (AG10: Hardware Integration).** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -1318,6 +1318,77 @@ unsound reasoning. Hardware binding (WS-V/AG10) must substitute actual MMIO
 reads via the FFI bridge to Rust HAL (`mmio.rs`).
 
 **Source**: RPi5/MmioAdapter.lean:336-356.
+
+### 8.15 Hardware Integration Roadmap (AJ6-A / H-01, H-02, H-03)
+
+The v0.28.0 comprehensive audit identified three HIGH findings concerning
+orphaned architecture modules, inactive budget-aware scheduling, and an
+unwired FFI bridge. All three are pre-hardware deployment requirements
+deferred to **WS-V (AG10: Hardware Integration)**. This section documents
+the activation plans.
+
+#### 8.15.1 Architecture Module Integration (H-01)
+
+Seven architecture modules are implemented and proven but not yet imported
+into the main kernel execution path:
+
+1. `ExceptionModel.lean` — ARM64 exception classification and dispatch
+2. `InterruptDispatch.lean` — GIC-400 acknowledge→handle→EOI sequence
+3. `TimerModel.lean` — Hardware timer binding (54 MHz RPi5)
+4. `VSpaceARMv8.lean` — ARMv8 page table shadow with refinement proofs
+5. `AsidManager.lean` — ASID pool allocator with uniqueness proof
+6. `CacheModel.lean` — D-cache/I-cache coherency model
+7. `PageTable.lean` — ARMv8 4-level page table walk with W^X bridge
+
+**Activation steps:**
+1. Create `Architecture/HardwareIntegration.lean` hub module importing all 7.
+2. Wire `ExceptionModel.dispatchException` into the syscall entry path
+   (requires resolving the ExceptionModel→API.lean→ExceptionModel import
+   cycle via an interface abstraction or mutual import refactoring).
+3. Connect `VSpaceARMv8` as RPi5-specific `VSpaceBackend` instance via
+   conditional platform selection.
+4. Import `AsidManager` into VSpace subsystem for ASID allocation.
+5. Import `TimerModel` into scheduler timer tick path.
+6. Import `CacheModel` into Architecture invariant bundle.
+7. Add `ArchitectureHardwareSuite.lean` test suite for all 7 modules.
+
+**Dependency:** Resolving the import cycle between ExceptionModel and
+API.lean is the gating prerequisite before integration is possible.
+
+#### 8.15.2 Budget-Aware Scheduler Activation (H-02)
+
+The CBS budget engine (`SchedContext/Budget.lean`), replenishment queue
+(`SchedContext/ReplenishQueue.lean`), and budget-aware scheduler operations
+(`scheduleEffective`, `handleYieldWithBudget`, `timerTickWithBudget`) are
+implemented with invariants but not yet wired into the checked API dispatch
+path. The current checked wrappers call the non-budget-aware variants.
+
+**Activation steps:**
+1. Update `API.lean` checked wrappers: `scheduleChecked` calls
+   `scheduleEffective`, `handleYieldChecked` calls `handleYieldWithBudget`,
+   `timerTickChecked` calls `timerTickWithBudget`.
+2. Add preservation theorems for all three budget-aware operations in
+   `Scheduler/Operations/Preservation.lean`.
+3. Update NI proofs for the new operation semantics.
+4. Add `SchedulerBudgetSuite.lean` test suite exercising CBS enforcement,
+   budget consumption, replenishment queue, and timeout-on-budget-expiry.
+
+**Dependency:** Preservation proofs must be complete before activation.
+
+#### 8.15.3 FFI Bridge Wiring (H-03)
+
+`FFI.lean` declares 17 `@[extern]` Lean functions mapping to Rust HAL
+(`sele4n-hal/src/ffi.rs`). These declarations exist but are not imported
+by any module in the production build chain.
+
+**Activation steps:**
+1. Import `FFI.lean` from hardware-specific Architecture modules (or create
+   `Platform/HardwareBindings.lean` that selectively imports FFI).
+2. Create typeclass-based dispatch that selects FFI-backed implementations
+   vs pure-function models based on platform configuration.
+3. Verify all 17 FFI function signatures still match `sele4n-hal/src/ffi.rs`.
+
+**Dependency:** Requires H-01 (orphaned modules integrated first).
 
 ---
 

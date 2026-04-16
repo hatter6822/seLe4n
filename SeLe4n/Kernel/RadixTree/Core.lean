@@ -28,7 +28,11 @@ open SeLe4n.Model
 -- ============================================================================
 
 /-- Extract `width` bits starting at bit position `offset` from `n`.
-Returns a value in `[0, 2^width)`. When `width = 0`, returns `0`. -/
+Returns a value in `[0, 2^width)`. When `width = 0`, returns `0`.
+AJ-L16: The `offset` parameter is more general than current callers require
+(all pass `offset = 0`). This generality is harmless and costs nothing at
+runtime; it avoids a future breaking change if multi-level radix trees are
+introduced. No action required. -/
 @[inline] def extractBits (n : Nat) (offset : Nat) (width : Nat) : Nat :=
   (n >>> offset) % (2 ^ width)
 

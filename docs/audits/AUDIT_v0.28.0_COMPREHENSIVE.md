@@ -887,3 +887,35 @@ sharing between agents to provide independent assessment.
 **Agents deployed:** 9 parallel audit agents + 1 cross-cutting analysis
 **Total audit duration:** ~10 minutes wall time
 **Methodology:** Line-by-line review with automated cross-cutting scans
+
+---
+
+## Appendix: Errata (AJ6-C)
+
+The following corrections were identified during independent verification of
+audit findings against the codebase (see §2 of `AUDIT_v0.28.0_WORKSTREAM_PLAN.md`):
+
+### E-1: Executive Summary Count Error
+
+The executive summary states "55 findings (24 Medium)" but the finding table
+lists 52 entries: 3 HIGH + 21 MEDIUM + 19 LOW + 9 INFO = 52. The correct
+totals are **52 findings with 21 Medium**.
+
+### E-2: L-01 — FALSE Finding
+
+**Claim:** `chooseThreadEffective` lacks preservation proofs.
+**Correction:** `chooseThreadEffective_preserves_state` is proven in
+`Scheduler/Operations/Selection.lean:459` and re-exported in
+`Preservation.lean:3435` as `chooseThreadEffective_state_unchanged`. The
+function is read-only (returns a `ThreadId` selection without modifying
+state), so "preservation" is state equality, which is proven. **No action
+required.**
+
+### E-3: L-17 — FALSE Finding
+
+**Claim:** `frozenQueuePopHead` leaves stale `queuePPrev` on the new head.
+**Correction:** This was already fixed prior to the audit.
+`FrozenOps/Operations.lean:326-329` shows the dequeued TCB is cleaned with
+`{ headTcb with queuePrev := none, queueNext := none, queuePPrev := none }`.
+The `queuePPrev` field is explicitly cleared (U-H01 annotation). **No action
+required.**

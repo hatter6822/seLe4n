@@ -399,7 +399,12 @@ def tlbBarrierComplete (_st : SystemState) : Prop :=
   -- The barrier ensures TLB invalidation is visible to all cores and the
   -- pipeline is synchronized. In the abstract model, this is captured by
   -- the fact that the TLB state has been updated atomically.
-  True  -- Trivially satisfied in the abstract model; hardware enforces via DSB+ISB
+  -- AJ-L07 / H-01 scope: Trivially `True` in the abstract sequential model
+  -- because TLB updates are atomic. On hardware, DSB ISH + ISB after every TLBI
+  -- ensures barrier completion. A substantive predicate (e.g., checking that
+  -- the TLB state matches post-flush expectations) is deferred to WS-V (AG10)
+  -- when the FFI bridge connects the Lean model to actual TLB maintenance.
+  True
 
 /-- AG6-G: After any hardware TLB flush, the barrier sequence is complete.
     This holds trivially in the abstract model because TLB updates are atomic.
