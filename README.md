@@ -231,3 +231,14 @@ workstream (WS-AG) are complete. The full history is in
 **WS-V**: Multi-core SMP support, FrozenOps production promotion, CDT fuel
 sufficiency proofs, and donation chain formal bridge. Prior audits and milestone
 closeouts are archived in [`docs/dev_history/`](docs/dev_history/README.md).
+
+## License and third-party attributions
+
+seLe4n itself is licensed under the GNU General Public License v3.0 or later
+(GPLv3+); see [`LICENSE`](LICENSE) for the full text. Third-party build
+dependencies (`cc`, `find-msvc-tools`, `shlex`, all dual-licensed
+`MIT OR Apache-2.0`) are used under the MIT option; their upstream copyright
+and permission notices are reproduced verbatim in
+[`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md). No runtime-linked
+third-party code is present in the kernel binary — the HAL is `#![no_std]`
+and uses only `core::*`.

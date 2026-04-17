@@ -19,6 +19,7 @@
 
 # ── Repository root files ────────────────────────────────────────────
 LICENSE
+THIRD_PARTY_LICENSES.md
 .gitignore
 Main.lean
 CONTRIBUTING.md

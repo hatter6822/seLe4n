@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/rust-hal-boot-hardening-LFNSr",
-      "commit_sha": "762a21f47c2e6f899f43e99f23e1caea13a3cb4d",
-      "tree_sha": "30d7ae569a8f3fa2548a31b542bc8c4bbc19aa0b",
-      "committed_at_utc": "2026-04-17T19:16:53+00:00"
+      "commit_sha": "762fdbb3f6580e6e630977f0e5e14ec7813e72dd",
+      "tree_sha": "0ece223286f6894994b0df658350649a475f4f18",
+      "committed_at_utc": "2026-04-17T19:34:41+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 5247
   },
   "readme_sync": {
-    "version": "0.29.6",
+    "version": "0.29.7",
     "lean_toolchain": "v4.28.0",
     "production_files": 142,
     "production_loc": 97606,

@@ -1,3 +1,80 @@
+## v0.29.7 — Third-party attribution (MIT/Apache-2.0 compliance)
+
+Adds the upstream-required attribution text for the three MIT-or-Apache-2.0
+build dependencies the seLe4n Rust workspace consumes (`cc`,
+`find-msvc-tools`, `shlex`), closing a licensing-compliance gap that the
+v0.29.6 audit did not catch. No code changes; the runtime kernel binary
+remains `#![no_std]` with zero third-party crates linked in.
+
+Gate: `scripts/check_version_sync.sh` + `scripts/check_website_links.sh` +
+`cargo test --workspace` (408 tests) + `cargo clippy --workspace
+-- -D warnings` (0 warnings) + `lake build` + `test_smoke.sh` + zero
+`sorry`/`axiom`.
+
+### Rationale
+
+MIT and Apache-2.0 are both GPL-3.0-compatible per the Free Software
+Foundation, so the combined distribution may be governed by GPLv3+.
+However, MIT's permission notice and Apache-2.0 § 4(c)'s attribution
+clause persist across relicensing: the upstream copyright notices MUST be
+preserved in the source distribution of any derivative work. The prior
+releases (v0.29.5 and v0.29.6) omitted these notices — this release
+remedies that.
+
+### Changes
+
+- **New file: `THIRD_PARTY_LICENSES.md`** at the repository root. Contains
+  a verbatim reproduction of the upstream `LICENSE-MIT` text for each
+  build dependency, plus crate version, upstream repository, SPDX license
+  identifier, role in seLe4n, and contributor attribution (for `shlex`).
+  Explicitly notes that none of the crates ships an upstream `NOTICE`
+  file, so no Apache-2.0 § 4(d) propagation text is required at this
+  version.
+- **README.md**: new "License and third-party attributions" section
+  linking to both `LICENSE` and `THIRD_PARTY_LICENSES.md`, and recording
+  the runtime-TCB composition invariant (no third-party crates linked
+  into the kernel binary).
+- **CLAUDE.md**: new "Third-party attribution" section documenting the
+  maintenance rules for the attribution file — when to update it (every
+  new runtime dep; every version bump; every new upstream NOTICE file)
+  and the preference for hand-written minimal code over adding crates.
+- **docs/spec/SELE4N_SPEC.md**: new §12 "Licensing and Third-Party
+  Attribution" with a crate-by-crate table and the rationale for
+  preferring `core::ptr::{read,write}_volatile` over the deprecated
+  `mmio` crate or the newer `safe-mmio` dependency graph — minimal TCB
+  is a spec-level constraint.
+- **scripts/website_link_manifest.txt**: `THIRD_PARTY_LICENSES.md` added
+  to the protected-paths list so it cannot be renamed without website-
+  repo coordination.
+
+### Tests
+
+- `cargo test --workspace`: 408 passing (unchanged from v0.29.6).
+- `cargo clippy --workspace -- -D warnings`: 0 warnings.
+- `scripts/check_version_sync.sh`: PASS (15-file version-sync matrix).
+- `scripts/check_website_links.sh`: PASS (incl. new `THIRD_PARTY_LICENSES.md`).
+- `test_smoke.sh` + tier-0 hygiene: all PASS.
+- Zero `sorry`/`axiom`.
+
+### Verifying the attribution text
+
+To re-verify the MIT notices reproduced in `THIRD_PARTY_LICENSES.md`
+against your local Cargo cache:
+
+```bash
+cd rust && cargo fetch
+for c in cc-1.2.59 find-msvc-tools-0.1.9 shlex-1.3.0; do
+  diff \
+    <(grep -A 999 "^${c%-*}\$" ../THIRD_PARTY_LICENSES.md | awk '/^```$/{n++; next} n==1') \
+    ~/.cargo/registry/src/*/"$c"/LICENSE-MIT
+done
+```
+
+(Exact diff output depends on markdown heading-level differences; the
+command confirms the MIT body text is byte-identical to upstream.)
+
+---
+
 ## v0.29.6 — WS-AK Phase AK5 audit remediation
 
 End-to-end post-implementation audit of Phase AK5 (v0.29.5). Two

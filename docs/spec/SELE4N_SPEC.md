@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.29.6` (`lakefile.toml`) |
+| **Package version** | `0.29.7` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 95,528 across 141 Lean files |
 | **Test LoC** | 11,709 across 17 Lean test suites |
@@ -537,7 +537,7 @@ with 16 entries (4 types × 4 execution states) and a trap frame
 plus SP_EL0, ELR_EL1, SPSR_EL1, ESR_EL1, and FAR_EL1 (288-byte `TrapFrame`;
 16-byte aligned).
 
-**AK5-F (v0.29.6)**: The TrapFrame grew from 272 → 288 bytes to include
+**AK5-F (v0.29.7)**: The TrapFrame grew from 272 → 288 bytes to include
 read-only snapshots of `ESR_EL1` (offset 272) and `FAR_EL1` (offset 280).
 `handle_synchronous_exception` reads these from the frame, not the live
 registers — nested exceptions (SError during data-abort handling, etc.)
@@ -557,7 +557,7 @@ numeric literals for cross-reference clarity.
 
 #### 6.5.0 Panic Discipline (AK5-A)
 
-**Added in v0.29.6**: the `rust/Cargo.toml` workspace manifest sets
+**Added in v0.29.7**: the `rust/Cargo.toml` workspace manifest sets
 `panic = "abort"` for both `[profile.dev]` and `[profile.release]`.
 The default `panic = "unwind"` is undefined behavior across `extern "C"`
 boundaries and requires a landing-pad implementation the bare-metal HAL
@@ -1587,3 +1587,48 @@ Deployers requiring service-layer information-flow isolation must analyze
 service-layer flows independently of kernel NI guarantees. See
 [`docs/DEPLOYMENT_GUIDE.md`](../DEPLOYMENT_GUIDE.md) Section 3 for deployment
 implications.
+
+## 12. Licensing and Third-Party Attribution
+
+seLe4n is distributed under the GNU General Public License v3.0 or later
+(GPLv3+), as stated in [`LICENSE`](../../LICENSE). Every Lean source file,
+Rust source file, and assembly file carries an SPDX-compatible copyright
+header identifying the project license.
+
+### 12.1 Runtime TCB composition
+
+The final kernel binary contains **no third-party Rust crates**. Every
+crate in the runtime dependency tree (`sele4n-types`, `sele4n-abi`,
+`sele4n-sys`, `sele4n-hal`) is `#![no_std]` and authored entirely within
+this repository. Hardware access in the HAL uses `core::ptr::read_volatile`
+and `core::ptr::write_volatile` directly rather than any third-party MMIO
+crate (e.g., the deprecated `mmio` crate or the newer `safe-mmio`). This
+keeps the trusted computing base minimal and under unified GPLv3+
+governance.
+
+### 12.2 Build-time dependencies
+
+A small number of external crates are required at **build time only** to
+assemble the ARM64 boot assembly files (`boot.S`, `vectors.S`, `trap.S`)
+via `rust/sele4n-hal/build.rs`:
+
+| Crate             | Version | License              | Role                                                 |
+|-------------------|---------|----------------------|------------------------------------------------------|
+| `cc`              | 1.2.59  | `MIT OR Apache-2.0`  | Invokes the C toolchain to assemble `*.S` files.     |
+| `find-msvc-tools` | 0.1.9   | `MIT OR Apache-2.0`  | Transitive dep of `cc`; inactive on non-Windows.     |
+| `shlex`           | 1.3.0   | `MIT OR Apache-2.0`  | Transitive dep of `cc`; POSIX shell-word splitting.  |
+
+Both MIT and Apache-2.0 are GPL-3.0-compatible per the Free Software
+Foundation. seLe4n consumes each crate under the MIT option; the verbatim
+upstream copyright and permission notices (plus contributor lists for
+`shlex`) are reproduced in
+[`THIRD_PARTY_LICENSES.md`](../../THIRD_PARTY_LICENSES.md) at the
+repository root. Apache-2.0 § 4(d) requires propagation of any upstream
+`NOTICE` file; as of the versions listed above, none of the three crates
+ships a `NOTICE` file, so no additional text is required by that clause.
+
+When upgrading any of these crates, the PR must re-check the upstream
+`LICENSE-MIT` for authorship or copyright changes and re-check for a new
+`NOTICE` file. The `scripts/website_link_manifest.txt` file tracks
+`THIRD_PARTY_LICENSES.md` as a protected path so the file cannot be
+renamed without website-repo coordination.
