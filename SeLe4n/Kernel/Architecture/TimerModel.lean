@@ -34,9 +34,16 @@ hardware behavior.
 
 namespace SeLe4n.Kernel.Architecture
 
-/-- AG3-E: Hardware timer configuration parameters.
+/-- AG3-E / AK3-H: Hardware timer configuration parameters.
     Captures the architectural constants needed to map between hardware
-    counter values and model timer ticks. -/
+    counter values and model timer ticks.
+
+    AK3-H (A-M05 / MEDIUM): Enforces `countsPerTick > 0` via a separate
+    well-formedness predicate (`countsPerTickPositive`) and boot guard.
+    A zero-count configuration (e.g., if `counterFrequencyHz * tickIntervalNs
+    < 10^9` due to underprovisioned DT) would cause `countsPerTick` to
+    round down to 0, leading to division-by-zero on `hardwareTimerToModelTick`
+    and a boot-time wedge. -/
 structure HardwareTimerConfig where
   /-- Counter frequency in Hz (e.g., 54000000 for RPi5 at 54 MHz). -/
   counterFrequencyHz : Nat
@@ -110,6 +117,41 @@ def rpi5TimerConfig : HardwareTimerConfig where
 /-- AG3-E: RPi5 timer produces 54000 counter increments per tick. -/
 theorem rpi5TimerConfig_countsPerTick :
     rpi5TimerConfig.countsPerTick = 54000 := by decide
+
+-- ============================================================================
+-- AK3-H (A-M05 / MEDIUM): Timer `countsPerTick` positivity
+-- ============================================================================
+
+namespace HardwareTimerConfig
+
+/-- AK3-H (A-M05 / MEDIUM): `countsPerTick` well-formedness.
+    A timer configuration is "positive" iff its `countsPerTick` is strictly
+    positive; this prevents division-by-zero in `hardwareTimerToModelTick`
+    and other tick arithmetic. Violated only when
+    `counterFrequencyHz * tickIntervalNs < 10^9` (e.g., DT says 1 kHz with
+    1 ns tick → 1*1/10^9 = 0). -/
+def countsPerTickPositive (cfg : HardwareTimerConfig) : Prop :=
+  cfg.countsPerTick > 0
+
+/-- AK3-H: Decidable runtime check — boot code uses this to reject malformed
+    configurations before committing them to `MachineState`. -/
+@[inline] def countsPerTickPositiveCheck (cfg : HardwareTimerConfig) : Bool :=
+  decide (cfg.countsPerTick > 0)
+
+theorem countsPerTickPositive_iff_check (cfg : HardwareTimerConfig) :
+    cfg.countsPerTickPositive ↔ cfg.countsPerTickPositiveCheck = true := by
+  unfold countsPerTickPositive countsPerTickPositiveCheck
+  simp [decide_eq_true_eq]
+
+end HardwareTimerConfig
+
+/-- AK3-H (A-M05 / MEDIUM): RPi5 hardware timer configuration satisfies
+    the `countsPerTick > 0` well-formedness predicate (54000 > 0). -/
+theorem rpi5TimerConfig_countsPerTickPositive :
+    rpi5TimerConfig.countsPerTickPositive := by
+  unfold HardwareTimerConfig.countsPerTickPositive
+  rw [rpi5TimerConfig_countsPerTick]
+  decide
 
 -- ============================================================================
 -- AG5-E: Timer interrupt → timerTick binding

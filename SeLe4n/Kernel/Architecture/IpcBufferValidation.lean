@@ -77,7 +77,16 @@ def validateIpcBufferAddress (st : SystemState) (tid : ThreadId)
           -- Step 6: Write permission check
           if !perms.write then .error .translationFault
           -- Step 7: Physical address bounds check (AJ4-C / L-06)
-          else if !(paddr.toNat < 2^st.machine.physicalAddressWidth) then
+          --
+          -- AK3-F (A-M02 / MEDIUM): Check the END of the IPC buffer fits
+          -- within the platform's physical address range, not just the start.
+          -- An IPC buffer occupies `[paddr, paddr + ipcBufferAlignment)` (512
+          -- bytes, by AE4-H / `ipcBuffer_within_page`). Without end-PA
+          -- validation, a buffer starting at `2^width − 256` would pass the
+          -- start-PA check but extend past the PA window into address
+          -- space that's undefined on hardware.
+          else if !(paddr.toNat + ipcBufferAlignment ≤
+                    2^st.machine.physicalAddressWidth) then
             .error .addressOutOfBounds
           else .ok ()
         | none => .error .translationFault
@@ -143,8 +152,14 @@ theorem validateIpcBufferAddress_implies_canonical
     · simp at hOk
     · simp_all
 
-/-- D3-G: If validation succeeds, the address is mapped in the thread's VSpace
-    with write permission and the physical address is within bounds. -/
+/-- D3-G / AK3-F: If validation succeeds, the address is mapped in the
+    thread's VSpace with write permission and the ENTIRE IPC buffer
+    (`[paddr, paddr + ipcBufferAlignment)`) fits within the platform's
+    physical address range.
+
+    AK3-F (A-M02 / MEDIUM): Strengthened from `paddr.toNat < 2^width` to
+    `paddr.toNat + ipcBufferAlignment ≤ 2^width` so every byte accessed by
+    the kernel IPC subsystem is within valid PA space. -/
 theorem validateIpcBufferAddress_implies_mapped_writable
     (st : SystemState) (tid : ThreadId) (addr : VAddr)
     (hOk : validateIpcBufferAddress st tid addr = .ok ()) :
@@ -153,7 +168,7 @@ theorem validateIpcBufferAddress_implies_mapped_writable
       st.objects[tcb.vspaceRoot]? = some (.vspaceRoot root) ∧
       root.lookup addr = some (paddr, perms) ∧
       perms.write = true ∧
-      paddr.toNat < 2^st.machine.physicalAddressWidth := by
+      paddr.toNat + ipcBufferAlignment ≤ 2^st.machine.physicalAddressWidth := by
   unfold validateIpcBufferAddress at hOk
   split at hOk
   · contradiction

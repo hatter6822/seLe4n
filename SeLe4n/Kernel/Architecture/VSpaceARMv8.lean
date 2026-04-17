@@ -57,6 +57,35 @@ open SeLe4n.Model
 -- AG6-C-i: ARMv8VSpace structure and bump allocator
 -- ============================================================================
 
+/-!
+## AK3-K (A-M08, A-M09 / MEDIUM — DEFER+DOC): MMU / Device-memory ordering
+
+The `simulationRelation` (below) and `ensureTable` (below) implicitly
+assume that the ARMv8-A hardware page-table walker sees the same memory
+state as `pageTableMemory` in the shadow model. On real hardware this
+assumption is invalid without:
+
+  1. `dsb ishst` after writing each page-table descriptor — ensures the
+     write is visible to the hardware walker before the MMU observes it.
+  2. `dc cvac` + `dsb ish` on freshly-allocated page-table pages — the
+     `ensureTable` path zero-pages allocate storage but does not clean
+     D-cache to point-of-coherency, so the walker can see stale cache
+     lines on multi-core systems.
+  3. `isb` before resuming execution at a mapping affected by the
+     descriptor update — forces the pipeline to re-fetch translations.
+
+The proof layer defines these barrier tokens (see AK3-G
+`CacheBarrierKind` and `Platform.RPi5.MmioAdapter.BarrierKind`) but
+does not yet prove that every `mapPage`/`unmapPage` path composes them.
+Full state-machine binding to the Rust HAL (`rust/sele4n-hal/src/tlb.rs`
+and `cache.rs`) is scheduled for WS-V (H3 hardware integration).
+
+Disposition: DEFER-WITH-ROADMAP. The Rust HAL already emits the required
+barriers in `tlb.rs` (AG6-F) and `cache.rs` (AG6-F/AG8-B); the proof-layer
+obligation will compose them via the AK3-G/K predicate family once the
+FFI round-trip is closed in WS-V.
+-/
+
 /-- Simple bump allocator for page table pages (4KiB aligned).
     Used during page table construction to allocate intermediate table pages.
     Reclamation deferred to future optimization. -/
@@ -133,20 +162,51 @@ def ARMv8VSpace.hwLookupAddr (vs : ARMv8VSpace) (va : VAddr) : Option PAddr :=
 -- AG6-C-iii: mapPage with table creation
 -- ============================================================================
 
-/-- Convert abstract `PagePermissions` to hardware `PageAttributes`. -/
-def fromPagePermissions (perms : PagePermissions) : PageAttributes :=
-  { attrIndex  := if perms.cacheable then ⟨0, by omega⟩ else ⟨2, by omega⟩
-    ap         := if perms.write then
-                    if perms.user then .rwAll else .rwEL1
-                  else
-                    if perms.user then .roAll else .roEL1
-    sh         := .innerShareable
-    af         := true
-    pxn        := !perms.execute || perms.user
-    uxn        := !perms.execute || !perms.user
-    contiguous := false
-    dirty      := perms.write
-  }
+/-- AK3-B (A-H01 / HIGH): Convert abstract `PagePermissions` to hardware
+    `PageAttributes`, failing closed on W+X combinations.
+
+    W+X (writable + executable) is always rejected at encode time — this is
+    the innermost (L3) layer of the four-layer W^X defense-in-depth pipeline:
+
+      L0 `vspaceMapPage` wrapper      — rejects W+X before resolution
+      L1 `ARMv8VSpace.mapPage`        — rejects W+X before descriptor write
+      L2 `VSpaceRoot.mapPage`         — rejects W+X before HashMap insert
+      L3 `fromPagePermissions`        — rejects W+X at hardware encode
+      L4 SCTLR.WXN = 1 (AK5-C)        — hardware-level enforcement
+
+    Returning `Option PageAttributes` forces callers to handle the W+X
+    rejection explicitly. -/
+def fromPagePermissions (perms : PagePermissions) : Option PageAttributes :=
+  -- AK3-B.1: Fail closed on W+X (defense-in-depth layer 3)
+  if perms.write && perms.execute then
+    none
+  else
+    some
+      { attrIndex  := if perms.cacheable then ⟨0, by omega⟩ else ⟨2, by omega⟩
+        ap         := if perms.write then
+                        if perms.user then .rwAll else .rwEL1
+                      else
+                        if perms.user then .roAll else .roEL1
+        sh         := .innerShareable
+        af         := true
+        pxn        := !perms.execute || perms.user
+        uxn        := !perms.execute || !perms.user
+        contiguous := false
+        dirty      := perms.write
+      }
+
+/-- AK3-B.1: Successful `fromPagePermissions` excludes W+X. -/
+theorem fromPagePermissions_wx_excludes_W_and_X
+    (perms : PagePermissions) (hw : PageAttributes)
+    (h : fromPagePermissions perms = some hw) :
+    ¬ (perms.write = true ∧ perms.execute = true) := by
+  unfold fromPagePermissions at h
+  split at h
+  · simp at h
+  · rename_i hNot
+    intro ⟨hw', hx⟩
+    apply hNot
+    simp [hw', hx]
 
 /-- Ensure a table entry exists at the given level, creating one if needed. -/
 private def ensureTable (mem : Memory) (alloc : BumpAllocator) (tableBase : PAddr)
@@ -164,29 +224,43 @@ private def ensureTable (mem : Memory) (alloc : BumpAllocator) (tableBase : PAdd
       some (mem'', alloc', newPage)
   | _ => none
 
-/-- Map a virtual address to a physical address with given permissions.
+/-- AK3-B (A-H01 / HIGH): Map a virtual address to a physical address
+    with given permissions. W^X-compliant permissions required.
+
+    Four-layer W^X defense:
+    - L1 (this function) rejects W+X at VSpaceBackend entry
+    - L2 delegates to `vs.shadow.mapPage` which ALSO rejects W+X
+    - L3 calls `fromPagePermissions` which returns `none` on W+X
+    - All three layers must reject independently (defense-in-depth)
+
     Updates both the hardware page table and the shadow HashMap. -/
 def ARMv8VSpace.mapPage (vs : ARMv8VSpace) (va : VAddr) (pa : PAddr)
     (perms : PagePermissions) : Option ARMv8VSpace :=
-  -- Shadow conflict check (also prevents hardware overwrite)
-  match vs.shadow.mapPage va pa perms with
-  | none => none
-  | some shadow' =>
-    match ensureTable vs.pageTableMemory vs.allocator vs.ttbr (l0Index va) .l0 with
+  -- AK3-B.3: L1 W^X gate — reject before any state mutation
+  if !perms.wxCompliant then none
+  else
+    -- Shadow conflict check (also prevents hardware overwrite)
+    match vs.shadow.mapPage va pa perms with
     | none => none
-    | some (mem1, alloc1, l1base) =>
-      match ensureTable mem1 alloc1 l1base (l1Index va) .l1 with
+    | some shadow' =>
+      match ensureTable vs.pageTableMemory vs.allocator vs.ttbr (l0Index va) .l0 with
       | none => none
-      | some (mem2, alloc2, l2base) =>
-        match ensureTable mem2 alloc2 l2base (l2Index va) .l2 with
+      | some (mem1, alloc1, l1base) =>
+        match ensureTable mem1 alloc1 l1base (l1Index va) .l1 with
         | none => none
-        | some (mem3, alloc3, l3base) =>
-          let attrs := fromPagePermissions perms
-          let mem4 := writeDescriptor mem3 l3base (l3Index va) (.page pa attrs)
-          some { vs with
-            pageTableMemory := mem4
-            allocator := alloc3
-            shadow := shadow' }
+        | some (mem2, alloc2, l2base) =>
+          match ensureTable mem2 alloc2 l2base (l2Index va) .l2 with
+          | none => none
+          | some (mem3, alloc3, l3base) =>
+            -- AK3-B.1: L3 gate — fromPagePermissions returns Option
+            match fromPagePermissions perms with
+            | none => none
+            | some attrs =>
+              let mem4 := writeDescriptor mem3 l3base (l3Index va) (.page pa attrs)
+              some { vs with
+                pageTableMemory := mem4
+                allocator := alloc3
+                shadow := shadow' }
 
 -- ============================================================================
 -- AG6-C-iv: unmapPage
@@ -227,20 +301,26 @@ def ARMv8VSpace.unmapPage (vs : ARMv8VSpace) (va : VAddr)
 -- AG6-C-v: VSpaceBackend proof obligations
 -- ============================================================================
 
-/-- mapPage preserves the ASID. -/
+/-- mapPage preserves the ASID. AK3-B: adds wxCompliant guard case. -/
 theorem ARMv8VSpace.mapPage_preserves_asid
     (vs vs' : ARMv8VSpace) (va : VAddr) (pa : PAddr) (perms : PagePermissions)
     (hMap : vs.mapPage va pa perms = some vs') : vs'.asid = vs.asid := by
   simp only [mapPage] at hMap
   split at hMap
-  · exact absurd hMap (by simp)
+  · -- AK3-B.3: !perms.wxCompliant case
+    exact absurd hMap (by simp)
   · split at hMap
     · exact absurd hMap (by simp)
     · split at hMap
       · exact absurd hMap (by simp)
       · split at hMap
         · exact absurd hMap (by simp)
-        · have := Option.some.inj hMap; subst this; rfl
+        · split at hMap
+          · exact absurd hMap (by simp)
+          · split at hMap
+            · -- AK3-B.1: fromPagePermissions = none case
+              exact absurd hMap (by simp)
+            · have := Option.some.inj hMap; subst this; rfl
 
 /-- unmapPage preserves the ASID (AI2-B: updated for Except return). -/
 theorem ARMv8VSpace.unmapPage_preserves_asid
@@ -257,23 +337,30 @@ theorem ARMv8VSpace.unmapPage_preserves_asid
       · simp at hUnmap
     · simp at hUnmap
 
-/-- mapPage updates the shadow via VSpaceRoot.mapPage. -/
+/-- mapPage updates the shadow via VSpaceRoot.mapPage. AK3-B: accounts for
+    wxCompliant and fromPagePermissions guards. -/
 theorem ARMv8VSpace.mapPage_shadow_eq
     (vs vs' : ARMv8VSpace) (va : VAddr) (pa : PAddr) (perms : PagePermissions)
     (hMap : vs.mapPage va pa perms = some vs') :
     ∃ shadow', vs.shadow.mapPage va pa perms = some shadow' ∧ vs'.shadow = shadow' := by
   simp only [mapPage] at hMap
   split at hMap
-  · exact absurd hMap (by simp)
-  · rename_i shadow' hShadow
-    split at hMap
+  · -- AK3-B.3: !perms.wxCompliant
+    exact absurd hMap (by simp)
+  · split at hMap
     · exact absurd hMap (by simp)
-    · split at hMap
+    · rename_i shadow' hShadow
+      split at hMap
       · exact absurd hMap (by simp)
       · split at hMap
         · exact absurd hMap (by simp)
-        · have := Option.some.inj hMap; subst this
-          exact ⟨shadow', hShadow, rfl⟩
+        · split at hMap
+          · exact absurd hMap (by simp)
+          · split at hMap
+            · -- AK3-B.1: fromPagePermissions = none
+              exact absurd hMap (by simp)
+            · have := Option.some.inj hMap; subst this
+              exact ⟨shadow', hShadow, rfl⟩
 
 /-- unmapPage updates the shadow via VSpaceRoot.unmapPage (AI2-B: Except). -/
 theorem ARMv8VSpace.unmapPage_shadow_eq

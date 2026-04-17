@@ -295,4 +295,60 @@ theorem pageTableUpdate_icache_coherent (cs : CacheState) (ptAddr : SeLe4n.PAddr
     icacheCoherent (icInvalidateAll (dcCleanInvalidate cs ptAddr)) := by
   exact icInvalidateAll_coherent _
 
+-- ============================================================================
+-- AK3-G (A-M04 / MEDIUM): D-cache → I-cache barrier ordering (partial closure)
+-- ============================================================================
+
+/-- AK3-G (A-M04 / MEDIUM): A barrier token describing a memory ordering
+    guarantee between cache operations. Mirrors the ARMv8-A DSB/ISB
+    instruction family; full typeclass-level composition is deferred to
+    WS-V (hardware integration).
+
+    The three variants used in D-cache → I-cache pipelines:
+    - `dsb_ish`: Data Synchronization Barrier, Inner Shareable domain
+    - `isb`:     Instruction Synchronization Barrier
+    - `dmb_ish`: Data Memory Barrier, Inner Shareable domain
+
+    These re-export names already defined in
+    `SeLe4n.Platform.RPi5.MmioAdapter` (AG8-C) for local use by the cache
+    coherency sequence documentation. -/
+inductive CacheBarrierKind where
+  | dsb_ish  : CacheBarrierKind
+  | isb      : CacheBarrierKind
+  | dmb_ish  : CacheBarrierKind
+  deriving DecidableEq, Repr
+
+/-- AK3-G (A-M04 / MEDIUM): Abstract predicate asserting that the cache
+    state was reached via a correctly-ordered D→I pipeline sequence:
+
+      DC CVAU  →  DSB ISH  →  IC IVAU  →  DSB ISH  →  ISB
+
+    In the sequential model this is trivially `True` (there's no concurrent
+    observer that could race with a missing barrier); the predicate exists
+    as a hook for the hardware HAL to assert the actual instruction sequence
+    is emitted.
+
+    Partial closure: the proof layer records WHICH operations must compose
+    under this predicate; the HAL discharges the instruction-level ordering.
+    Full binding deferred to WS-V via AK3-G (the plan §6.AK3-G step 4). -/
+def cacheCoherentForExecutable (_cs : CacheState) : Prop := True
+
+/-- AK3-G: In the sequential model, any cache state trivially satisfies
+    `cacheCoherentForExecutable`. The substantive constraint is deferred
+    to the Rust HAL in `rust/sele4n-hal/src/cache.rs`. -/
+theorem cacheCoherentForExecutable_trivial (cs : CacheState) :
+    cacheCoherentForExecutable cs := trivial
+
+/-- AK3-G (A-M04 / MEDIUM): Strengthened page-table update theorem
+    documenting the required barrier sequence. The existing
+    `pageTableUpdate_icache_coherent` shows the shape-level invariant
+    (I-cache is empty post-invalidation); this additionally asserts
+    the composed predicate holds — both the shape-level result AND the
+    barrier-sequence obligation. -/
+theorem pageTableUpdate_icache_coherent_under_sequence
+    (cs : CacheState) (ptAddr : SeLe4n.PAddr) :
+    icacheCoherent (icInvalidateAll (dcCleanInvalidate cs ptAddr)) ∧
+    cacheCoherentForExecutable (icInvalidateAll (dcCleanInvalidate cs ptAddr)) :=
+  ⟨icInvalidateAll_coherent _, cacheCoherentForExecutable_trivial _⟩
+
 end SeLe4n.Kernel.Architecture

@@ -881,8 +881,12 @@ def frozenSetIPCBuffer (targetTid : SeLe4n.ThreadId)
           | some (paddr, perms) =>
             -- Step 6: Write permission check
             if !perms.write then .error .translationFault
-            -- Step 7: Physical address bounds check (AJ4-C / L-06)
-            else if !(paddr.toNat < 2^st.machine.physicalAddressWidth) then
+            -- Step 7: Physical address bounds check (AJ4-C / L-06 + AK3-F)
+            -- AK3-F (A-M02): Check end-PA, not just start-PA, so the entire
+            -- `[paddr, paddr + ipcBufferAlignment)` IPC buffer fits within
+            -- the platform's PA range. Mirror `validateIpcBufferAddress`.
+            else if !(paddr.toNat + SeLe4n.ipcBufferAlignment ≤
+                      2^st.machine.physicalAddressWidth) then
               .error .addressOutOfBounds
             else
               let tcb' := { tcb with ipcBuffer := addr }

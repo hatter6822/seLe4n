@@ -404,6 +404,17 @@ structure MachineState where
       The kernel runs with interrupts disabled throughout; this field models
       the DAIF register state manipulated by `sele4n-hal/src/interrupts.rs`. -/
   interruptsEnabled : Bool := false
+  /-- AK3-L (A-M10 / MEDIUM): Audit trail for pending EOI writes.
+      Each entry is an INTID that has been acknowledged but for which
+      `endOfInterrupt` has not yet been invoked. The proof-layer invariant
+      `kernelExit_eoiPending_empty` asserts this set is empty at every
+      kernel-exit point — detecting missing EOIs at the model layer before
+      they cause GIC lockup on hardware.
+
+      Modeled as a `List Nat` of raw INTID values (to accommodate both
+      in-range and out-of-range INTIDs from AK3-C's `AckError.outOfRange`).
+      An empty list is the initial and kernel-exit steady state. -/
+  eoiPending : List Nat := []
 
 instance : Inhabited MachineState where
   default := { regs := default, memory := (fun _ => 0), timer := 0 }

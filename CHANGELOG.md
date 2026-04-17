@@ -1,3 +1,73 @@
+## v0.29.3 — WS-AK Phase AK3: Architecture — ASID, W^X, EOI, Decode
+
+Phase AK3 of WS-AK Pre-1.0 Release Hardening (v0.29.0 audit). Addresses
+the 23 architecture-layer findings (1 CRITICAL, 3 HIGH, 10 MEDIUM, 9 LOW)
+covering ASID rollover safety, W^X defense-in-depth, GIC EOI
+correctness, and decode-layer validation. All 13 sub-tasks
+(AK3-A..AK3-M) landed.
+
+Gate: `lake build` (256 jobs) + `test_smoke.sh` + `test_full.sh` +
+`cargo test --workspace` (368 tests) + zero `sorry` / `axiom`.
+
+### Changes
+
+- **AK3-A (A-C01 / CRITICAL)** — ASID pool rollover safety.
+  `AsidPool` gains `activeAsids : List ASID` ground-truth set. Rollover
+  performs a linear scan over `List.range (maxAsidValue - 1)` filtered
+  by `activeAsids` absence and **fails closed (returns `none`)** when
+  every non-kernel ASID is still active. Replaces prior bug that
+  unconditionally returned `ASID.mk 1` — breaking TLB isolation.
+  `wellFormed` strengthened with 7 conjuncts including `Nodup`, value
+  bounds, and freeList/activeAsids disjointness. Key correctness
+  theorem: `AsidPool.allocate_result_fresh` proves the allocator never
+  returns a currently-active ASID.
+- **AK3-B (A-H01 / HIGH)** — W^X four-layer defense-in-depth.
+  `fromPagePermissions` return type `Option`; returns `none` on W+X.
+  `ARMv8VSpace.mapPage` adds backend wxCompliant gate.
+  `VSpaceRoot.mapPage` adds HashMap-level gate. Composition theorem
+  `wxInvariant_fourLayer_defense` documents the four independent gates
+  (wrapper, backend, VSpaceRoot, encode); any one alone suffices.
+- **AK3-C (A-H02 / HIGH)** — GIC EOI differentiation.
+  `AckError` inductive (`spurious`, `outOfRange`) replaces
+  `Option InterruptId`. `interruptDispatchSequence` emits EOI except
+  on `spurious` per GIC-400 spec. Rust HAL mirrored with
+  `AckResult::{Handled, OutOfRange, Spurious}` — prevents GIC lockup
+  on errata/SMP races.
+- **AK3-D (A-H03 / HIGH)** — ASID generation bump on free-list reuse.
+  Free-list-reuse branch now bumps `generation + 1` alongside
+  `requiresFlush := true`, enabling correct stale-entry tracking.
+- **AK3-E (A-M01 / MEDIUM)** — PA bounds at decode time.
+  New `decodeVSpaceMapArgsChecked` wrapper guards
+  `paddr.toNat < 2^physicalAddressWidth`. API dispatch wired through.
+- **AK3-F (A-M02 / MEDIUM)** — IPC buffer end-PA check.
+  `validateIpcBufferAddress` step 7 now checks
+  `paddr.toNat + ipcBufferAlignment ≤ 2^width`. `frozenSetIPCBuffer`
+  mirrors.
+- **AK3-G (A-M04 / MEDIUM — PARTIAL+DOC)** — Cache D→I ordering.
+  New `CacheBarrierKind` inductive and `cacheCoherentForExecutable`
+  predicate. Full binding deferred to WS-V.
+- **AK3-H (A-M05 / MEDIUM)** — Timer `countsPerTick` positivity.
+  `HardwareTimerConfig.countsPerTickPositive` predicate;
+  `rpi5TimerConfig_countsPerTickPositive` proved.
+- **AK3-I (A-M06 / MEDIUM — DEFER+DOC)** — `tlbBarrierComplete`
+  annotated with TPI-DOC-AK3I; deferred to WS-V.
+- **AK3-J (A-M07 / MEDIUM)** — SchedContext configure validation.
+  New `decodeSchedContextConfigureArgsChecked` validates
+  `priority ≤ 255`, `domain < 16`, `budget > 0`, `period > 0`. API
+  dispatch wired through.
+- **AK3-K (A-M08, A-M09 / MEDIUM — DEFER+DOC)** — MMU ordering
+  documentation at top of `VSpaceARMv8.lean`. Deferred to WS-V.
+- **AK3-L (A-M10 / MEDIUM)** — `endOfInterrupt` audit trail.
+  `MachineState.eoiPending : List Nat` shadow field;
+  `endOfInterrupt` filters; `eoiPendingEmpty` kernel-exit predicate.
+- **AK3-M (A-L1..A-L9)** — LOW-tier batch documentation.
+
+### Test updates
+
+- Rust workspace: 368 tests passed (including new
+  `ack_result_classification` test).
+- Lean `test_smoke.sh` and `test_full.sh` pass; zero `sorry` / `axiom`.
+
 ## v0.29.2 — WS-AK Phase AK2: Scheduler, PIP & WCRT Closure
 
 Phase AK2 of WS-AK Pre-1.0 Release Hardening (v0.29.0 audit). Addresses

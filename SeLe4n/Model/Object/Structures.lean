@@ -153,10 +153,15 @@ def lookupAddr (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) : Option SeLe4n.PAddr 
 
 /-- WS-G6/F-P05: O(1) amortized page mapping via `HashMap.insert`.
 Returns `none` if a mapping for `vaddr` already exists (conflict).
-WS-H11: Accepts permissions alongside the physical address. -/
+WS-H11: Accepts permissions alongside the physical address.
+AK3-B (A-H01): Additionally rejects W+X permission combinations as a
+defense-in-depth layer — if upstream callers forget to check W^X before
+calling `mapPage`, this layer still prevents installation of a writable +
+executable page into the VSpace root. -/
 def mapPage (root : VSpaceRoot) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
     (perms : PagePermissions := PagePermissions.readOnly) : Option VSpaceRoot :=
-  match root.mappings[vaddr]? with
+  if !perms.wxCompliant then none
+  else match root.mappings[vaddr]? with
   | some _ => none
   | none => some { root with mappings := root.mappings.insert vaddr (paddr, perms) }
 
@@ -218,13 +223,17 @@ theorem lookup_mapPage_eq
     (hMap : root.mapPage vaddr paddr perms = some root') :
     root'.lookup vaddr = some (paddr, perms) := by
   unfold mapPage at hMap
-  cases hLookup : root.mappings[vaddr]? with
-  | some p => simp [hLookup] at hMap
-  | none =>
-      simp [hLookup] at hMap
-      cases hMap
-      simp only [lookup]
-      exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self root.mappings vaddr (paddr, perms) hExt
+  split at hMap
+  · -- AK3-B: !perms.wxCompliant case — none, contradiction
+    simp at hMap
+  · cases hLookup : root.mappings[vaddr]? with
+    | some p => simp [hLookup] at hMap
+    | none =>
+        simp [hLookup] at hMap
+        cases hMap
+        simp only [lookup]
+        exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self
+          root.mappings vaddr (paddr, perms) hExt
 
 /-- WS-H11: After mapping vaddr→paddr with default perms, lookupAddr returns paddr.
 Requires `invExt` for RHTable correctness. -/
@@ -247,10 +256,12 @@ theorem mapPage_asid_eq
     (hMap : root.mapPage vaddr paddr perms = some root') :
     root'.asid = root.asid := by
   unfold mapPage at hMap
-  cases hLookup : root.mappings[vaddr]? with
-  | some _ => simp [hLookup] at hMap
-  | none =>
-      simp [hLookup] at hMap; cases hMap; rfl
+  split at hMap
+  · simp at hMap
+  · cases hLookup : root.mappings[vaddr]? with
+    | some _ => simp [hLookup] at hMap
+    | none =>
+        simp [hLookup] at hMap; cases hMap; rfl
 
 /-- F-08 helper: `unmapPage` preserves the VSpace root ASID. -/
 theorem unmapPage_asid_eq
@@ -333,13 +344,15 @@ theorem lookup_mapPage_ne
     (hMap : root.mapPage vaddr paddr perms = some root') :
     root'.lookup vaddr' = root.lookup vaddr' := by
   unfold mapPage at hMap
-  cases hLookup : root.mappings[vaddr]? with
-  | some _ => simp [hLookup] at hMap
-  | none =>
-      simp [hLookup] at hMap; cases hMap
-      simp only [lookup]
-      exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne root.mappings vaddr vaddr'
-        (paddr, perms) (fun h => hNe (eq_of_beq h)) hExt
+  split at hMap
+  · simp at hMap
+  · cases hLookup : root.mappings[vaddr]? with
+    | some _ => simp [hLookup] at hMap
+    | none =>
+        simp [hLookup] at hMap; cases hMap
+        simp only [lookup]
+        exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne root.mappings vaddr vaddr'
+          (paddr, perms) (fun h => hNe (eq_of_beq h)) hExt
 
 /-- TPI-001 helper: unmapPage at vaddr does not affect lookup of a different vaddr'.
 Maps to `RHTable.getElem?_erase_ne_K` with the inequality hypothesis.
