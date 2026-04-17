@@ -110,12 +110,19 @@ def migrateRunQueueBucket (st : SystemState) (tid : SeLe4n.ThreadId)
     (newPriority : SeLe4n.Priority) : SystemState :=
   if tid ∈ st.scheduler.runQueue then
     let rq := st.scheduler.runQueue.remove tid
-    -- AI3-B (M-22): Apply PIP boost to new priority
+    -- AI3-B (M-22): Apply PIP boost to new priority.
+    -- AK2-J (S-M08): The defensive fallback (TCB missing — unreachable under
+    -- `runnableThreadsAreTCBs`) now takes the max of `newPriority` and the
+    -- RunQueue's cached priority for `tid`. Any PIP boost previously recorded
+    -- in the RunQueue is therefore preserved rather than silently erased.
     let effectivePrio := match st.objects[tid.toObjId]? with
       | some (.tcb tcb) => match tcb.pipBoost with
         | none => newPriority
         | some boostPrio => ⟨Nat.max newPriority.val boostPrio.val⟩
-      | _ => newPriority  -- defensive fallback: no TCB found
+      | _ =>
+        match st.scheduler.runQueue.threadPriority[tid]? with
+        | some rqPrio => ⟨Nat.max newPriority.val rqPrio.val⟩
+        | none => newPriority
     let rq := rq.insert tid effectivePrio
     { st with scheduler := { st.scheduler with runQueue := rq } }
   else

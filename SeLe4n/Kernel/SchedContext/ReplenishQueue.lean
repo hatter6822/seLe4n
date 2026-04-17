@@ -58,13 +58,20 @@ namespace ReplenishQueue
 
 /-- Insert a SchedContextId at the correct sorted position by eligibility time.
 Maintains ascending order. O(n) where n = number of entries. Typically n < 64
-(bounded by number of active SchedContexts). -/
+(bounded by number of active SchedContexts).
+
+AK2-F (S-M04): The comparator uses STRICT `<` (rather than `≤`) so that ties
+(`eligibleAt = hTime`) place the new entry AFTER existing equal-time entries.
+Combined with the prefix-split `splitDue`, this guarantees FIFO processing for
+replenishments that become eligible in the same tick — the earlier `insert`
+wins in preemption order. Without this, equal-eligibility entries were
+processed in LIFO order, violating CBS fairness under contention. -/
 def insertSorted (entries : List (SchedContextId × Nat)) (scId : SchedContextId)
     (eligibleAt : Nat) : List (SchedContextId × Nat) :=
   match entries with
   | [] => [(scId, eligibleAt)]
   | (hId, hTime) :: tail =>
-    if eligibleAt ≤ hTime then
+    if eligibleAt < hTime then
       (scId, eligibleAt) :: (hId, hTime) :: tail
     else
       (hId, hTime) :: insertSorted tail scId eligibleAt
@@ -278,17 +285,18 @@ theorem insertSorted_preserves_sorted
     obtain ⟨hId, hTime⟩ := hd
     unfold ReplenishQueue.insertSorted
     split
-    case isTrue hle =>
-      -- eligibleAt ≤ hTime: new element goes before head
-      exact pairwiseSortedBy_cons h (by intro e he; cases he; exact hle)
-    case isFalse hgt =>
-      -- eligibleAt > hTime: recurse into tail
-      have hlt : hTime < eligibleAt := Nat.lt_of_not_le hgt
+    case isTrue hlt =>
+      -- AK2-F: eligibleAt < hTime ⇒ eligibleAt ≤ hTime for the sorted predicate.
+      exact pairwiseSortedBy_cons h
+        (by intro e he; cases he; exact Nat.le_of_lt hlt)
+    case isFalse hge =>
+      -- AK2-F: ¬(eligibleAt < hTime) ⇒ hTime ≤ eligibleAt.
+      have hle : hTime ≤ eligibleAt := Nat.le_of_not_lt hge
       have htail_sorted : pairwiseSortedBy tail := pairwiseSortedBy_tail h
       have ih_result := ih htail_sorted
       -- Cons (hId, hTime) onto sorted insertSorted result
       exact pairwiseSortedBy_cons ih_result
-        (insertSorted_head_time_ge (Nat.le_of_lt hlt) (pairwiseSortedBy_head_le_all h))
+        (insertSorted_head_time_ge hle (pairwiseSortedBy_head_le_all h))
 
 theorem insert_preserves_sorted {rq : ReplenishQueue} {scId : SchedContextId}
     {eligibleAt : Nat} (h : replenishQueueSorted rq) :

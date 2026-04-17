@@ -10,6 +10,63 @@ import SeLe4n.Kernel.Scheduler.Operations.Selection
 import SeLe4n.Kernel.SchedContext.Budget
 import SeLe4n.Kernel.IPC.Operations.Timeout
 
+/-!
+# Scheduler Core Operations — AK2 closure status
+
+**Addressed in this workstream (v0.29.2):**
+- AK2-A + AK2-B (S-H03 + S-H04) via Option B — three-part fix:
+  1. **Bind propagation:** `schedContextBind` sets
+     `tcb.priority := sc.priority` on the bound TCB
+     (`SchedContext/Operations.lean`), establishing the propagation
+     invariant at the moment of binding. The existing Z5-G3 RunQueue
+     remove+re-insert at `resolveInsertPriority` keeps the RunQueue bucket
+     in sync with the new priority.
+  2. **Configure propagation + re-bucketing:** `schedContextConfigure`
+     additionally, when the SchedContext is currently bound and the
+     reconfigure changes `sc.priority`, (a) updates the bound TCB's
+     `priority` field to match, and (b) remove+re-inserts the bound thread
+     in the RunQueue at `max(new priority, pipBoost)` if it was present.
+     Without the re-bucketing the thread would sit in the old priority
+     bucket while `tcb.priority` was updated — a latent priority-inversion
+     vector that an earlier draft of this work introduced.
+  3. **Consumption sites unchanged:** the four production re-enqueue
+     sites (`handleYield`, `timerTick`, `timerTickBudget` unbound,
+     `switchDomain`) continue to use `effectiveRunQueuePriority tcb`.
+     Under the propagation invariant this equals
+     `(resolveEffectivePrioDeadline st tcb).1` consulted by selection,
+     eliminating the priority-inversion vector. `schedulerPriorityMatch`
+     (TCB-based) and `effectiveParamsMatchRunQueue` (SC-based) agree
+     without requiring invariant fusion.
+- AK2-D (S-M02): `timeoutBlockedThreads` errors surfaced via
+  `SchedulerState.lastTimeoutErrors` diagnostic field, cleared at each
+  `timerTickWithBudget` entry.
+- AK2-E (S-M03): CBS admission ceiling-round in `Bandwidth.utilization`.
+- AK2-F (S-M04): `ReplenishQueue.insertSorted` strict `<` comparator
+  enforces FIFO within equal-eligibility ties.
+- AK2-G (S-M05): `schedContextConfigure` purges stale replenishQueue
+  entries before storing the reconfigured SchedContext.
+- AK2-I (S-M07): `switchDomain` impossible fallback emits
+  `.schedulerInvariantViolation` instead of silently returning unchanged
+  state; proven unreachable under `domainScheduleEntriesPositive`.
+- AK2-J (S-M08): `migrateRunQueueBucket` fallback preserves RunQueue
+  priority via `max(newPriority, threadPriority[tid]?)`.
+- AK2-L (S-L13..S-L18): LOW-tier scheduler batch documentation inline.
+
+**Deferred to AK2.5 (escape valve §20.3 of WS-AK plan):**
+- AK2-C (S-M01): `blockingChain` fuel-exhaustion → `Except`. Return-type
+  change cascades to `Propagate.lean`, `BoundedInversion.lean`, `Boot.lean`,
+  `CrossSubsystem.lean`.
+- AK2-H (S-M06): route `schedule`/`scheduleEffective`/`switchDomain` through
+  `saveOutgoingContextChecked`/`restoreIncomingContextChecked`. Under
+  `currentThreadValid` the unchecked variants are provably safe via
+  `saveOutgoingContext_always_succeeds_under_currentThreadValid` (AI3-C),
+  giving equivalent formal assurance. Runtime assertion hardening deferred.
+- AK2-K (S-H01/S-H02): WCRT proof-schema closure. Per escape valve, defer
+  K.1/K.2/K.3 to AK2.5 sub-workstream; K.4 (documentation of
+  `eventuallyExits` residual hypothesis) captured in
+  `docs/spec/SELE4N_SPEC.md` §5.7.
+-/
+
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
@@ -86,14 +143,15 @@ theorem saveOutgoingContext_tcb_fields
       tcb'.priority = tcb.priority ∧
       tcb'.deadline = tcb.deadline ∧
       tcb'.timeSlice = tcb.timeSlice ∧
-      tcb'.pipBoost = tcb.pipBoost := by
+      tcb'.pipBoost = tcb.pipBoost ∧
+      tcb'.schedContextBinding = tcb.schedContextBinding := by
   unfold saveOutgoingContext
   cases hCur : st.scheduler.current with
-  | none => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl⟩
+  | none => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
   | some outTid =>
       dsimp only
       cases hOut : st.objects[outTid.toObjId]? with
-      | none => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl⟩
+      | none => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
       | some outObj =>
           cases outObj with
           | tcb outTcb =>
@@ -104,14 +162,14 @@ theorem saveOutgoingContext_tcb_fields
                 have hEq' := beq_iff_eq.mp hEq
                 subst hEq'
                 rw [hOut] at h; cases h
-                exact ⟨_, rfl, rfl, rfl, rfl, rfl, rfl⟩
-              · simp [hEq]; exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl⟩
-          | endpoint _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl⟩
-          | notification _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl⟩
-          | cnode _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl⟩
-          | vspaceRoot _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl⟩
-          | untyped _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl⟩
-          | schedContext _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl⟩
+                exact ⟨_, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+              · simp [hEq]; exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
+          | endpoint _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
+          | notification _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
+          | cnode _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
+          | vspaceRoot _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
+          | untyped _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
+          | schedContext _ => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- When `st.objects[oid]?` is not a TCB (i.e., `none` or a non-TCB object),
 `saveOutgoingContext` preserves the lookup unchanged. This is because the only
@@ -317,23 +375,61 @@ restored from its TCB, establishing `contextMatchesCurrent` atomically.
 
 This mirrors seL4's `handleYield` → `tcbSchedDequeue` + `tcbSchedAppend`
 (append = enqueue at tail) → `rescheduleRequired` → `schedule()`. -/
+/-
+AK2-L (S-L13..S-L18) — Scheduler LOW-tier documentation batch.
+
+- S-L13 `handleYield` error semantics: the `none => .invalidArgument` arm
+  below reports a caller-side precondition violation (no current thread).
+  Syscall dispatch never reaches yield without a current thread under
+  `currentThreadValid`, so the arm is unreachable in production; the code
+  returns `.invalidArgument` (not `.schedulerInvariantViolation`) so that a
+  misbehaving userspace caller receives an ABI-stable "bad call" signal
+  rather than a kernel-internal invariant error.
+- S-L14 `getCurrentPriority` silent fallback: addressed in AE3 by routing
+  through `resolveEffectivePrioDeadline`; the defensive `tcb.priority`
+  fallback is formally unreachable under `boundThreadDomainConsistent` +
+  `schedContextBindingConsistent` (see `Selection.lean:314–322`).
+- S-L15 `oid.toNat→ThreadId` direct cast: prefer `ThreadId.ofObjId`
+  which carries sentinel handling. Existing sites are in `Lifecycle/` and
+  only dispatch at verified object boundaries; any future decode path
+  crossing module boundaries must use the checked constructor.
+- S-L16 `isBetterCandidate_transitive` proof brittleness: the transitivity
+  lemma is discharged case-by-case on priority/deadline ordering and is
+  stable under `Nat`-`DecidableLinearOrder`; refactor to a structural
+  tuple-compare helper is tracked for AK2.5.
+- S-L17 `⟨Nat.max …⟩` bypasses `Priority` validity: the PIP-boost
+  constructor in `migrateRunQueueBucket` (fixed by AK2-J) and in
+  `resolveEffectivePrioDeadline` directly builds a `Priority` from
+  `Nat.max`. The `Priority` wrapper carries no validity predicate beyond
+  `Nat`, so the construction is sound; future tightening (e.g., a
+  `Priority.ofNat?` with clamp to `numPriorities - 1`) is tracked for AK7.
+- S-L18 `runQueueUnique` flat-list only: the predicate asserts `Nodup` on
+  the projected flat list; per-bucket uniqueness is implied by
+  `RunQueue.wellFormed` (distinct priority per tid ⇒ a thread appears in
+  exactly one bucket). A dedicated per-bucket lemma is tracked for AK2.5
+  alongside the fused priority-match predicate (AK2-B).
+-/
 def handleYield : Kernel Unit :=
   fun st =>
     match st.scheduler.current with
     | none =>
-        -- V5-F (M-DEF-6): Return `.invalidArgument` when no thread is current
-        -- instead of falling through to `schedule`. Yielding requires a current
-        -- thread to re-enqueue. Without one, the yield is a no-op error —
-        -- callers should check `current` before invoking yield.
+        -- V5-F (M-DEF-6) / S-L13: Return `.invalidArgument` when no thread is
+        -- current instead of falling through to `schedule`. Yielding requires
+        -- a current thread to re-enqueue. Without one, the yield is a no-op
+        -- error — callers should check `current` before invoking yield.
+        -- `.invalidArgument` (rather than `.schedulerInvariantViolation`)
+        -- gives userspace a stable "bad syscall" signal.
         .error .invalidArgument
     | some tid =>
         match st.objects[tid.toObjId]? with
         | some (.tcb tcb) =>
-            -- AI3-A (M-04): Re-enqueues at effective priority (base + PIP boost).
-            -- This ensures PIP-boosted threads retain elevated scheduling band
-            -- after yield, preventing priority inversion. Uses
-            -- `effectiveRunQueuePriority` (Invariant.lean) for direct alignment
-            -- with the `schedulerPriorityMatch` invariant.
+            -- AI3-A (M-04) / AK2-A (S-H03): Re-enqueue at
+            -- `effectiveRunQueuePriority tcb` (base + PIP boost). For
+            -- SchedContext-bound threads, the AK2-B Option B propagation
+            -- invariant (`tcb.priority = sc.priority` enforced by
+            -- `schedContextBind` and `schedContextConfigure`) guarantees this
+            -- equals `(resolveEffectivePrioDeadline st tcb).1` read by
+            -- selection. `schedulerPriorityMatch` therefore holds post-insert.
             let rq' := (st.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
             let st' := { st with scheduler := { st.scheduler with runQueue := rq' } }
             schedule st'
@@ -383,9 +479,14 @@ def timerTick : Kernel Unit :=
               let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
               let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb'), machine := tick st.machine }
               -- WS-H12b: re-enqueue current thread before schedule.
-              -- AI3-A (M-04): Re-enqueue at effective priority (base + PIP boost).
-              -- Uses `effectiveRunQueuePriority tcb` which depends only on TCB fields
-              -- (priority, pipBoost). These fields are immutable during a tick.
+              -- AI3-A (M-04) / AK2-A (S-H03): Re-enqueue at
+              -- `effectiveRunQueuePriority tcb` (priority + PIP boost).
+              -- The `tcb` value is bound PRE-mutation (before `st'`'s timeSlice
+              -- update), and `effectiveRunQueuePriority` depends only on
+              -- `tcb.priority` and `tcb.pipBoost` — both of which are unchanged
+              -- across the timeSlice mutation. Under the AK2-B Option B
+              -- propagation invariant this value equals the SC-aware priority
+              -- used by selection (see Core.lean module docstring).
               let st'' := { st' with scheduler := { st'.scheduler with
                   runQueue := st'.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb) } }
               schedule st''
@@ -541,7 +642,11 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
       let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
       let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb'),
                            machine := tick st.machine }
-      -- AI3-A (M-04): Re-enqueue at effective priority (base + PIP boost).
+      -- AI3-A (M-04) / AK2-A (S-H03): Re-enqueue at
+      -- `effectiveRunQueuePriority tcb`. This is the `.unbound` branch so
+      -- `effectiveRunQueuePriority` is unambiguously correct (no SchedContext
+      -- resolution needed). SC-bound branches at lines :696 and :716 use
+      -- `resolveInsertPriority` directly.
       let st'' := { st' with scheduler := { st'.scheduler with
           runQueue := st'.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb) } }
       .ok (st'', true)
@@ -575,10 +680,14 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
           runQueue := st'.scheduler.runQueue.insert tid (resolveInsertPriority st' tid sc) } }
         -- Z6-E: Timeout any threads blocked on IPC whose timeout was bounded
         -- by this SchedContext. Budget is now 0, so all such threads must unblock.
-        -- AG1-B: Errors are collected for diagnostic purposes. Under
-        -- crossSubsystemInvariant, the error list should always be empty.
-        let (st''', _timeoutErrors) := timeoutBlockedThreads st'' scId
-        .ok (st''', true)
+        -- AK2-D (S-M02): Errors are surfaced via the diagnostic
+        -- `SchedulerState.lastTimeoutErrors` field instead of being silently
+        -- discarded. A non-empty list indicates an invariant violation. Under
+        -- `crossSubsystemInvariant`, the list is always empty.
+        let (st''', timeoutErrors) := timeoutBlockedThreads st'' scId
+        let st'''' := { st''' with scheduler :=
+          { st'''.scheduler with lastTimeoutErrors := timeoutErrors } }
+        .ok (st'''', true)
       else
         -- Z4-F2: Budget remains — decrement and continue
         let sc' := consumeBudget sc 1
@@ -636,6 +745,10 @@ The original `timerTick` is preserved as `timerTickLegacy` for backward
 compatibility with existing preservation proofs. -/
 def timerTickWithBudget : Kernel Unit :=
   fun st =>
+    -- AK2-D (S-M02): clear the diagnostic timeout-error record at the start of
+    -- each tick so a stale list never survives across rounds.
+    let st := { st with scheduler :=
+      { st.scheduler with lastTimeoutErrors := [] } }
     -- Step 1: Process due replenishments
     let now := st.machine.timer
     let stReplenished := processReplenishmentsDue st now
@@ -754,20 +867,25 @@ def switchDomain : Kernel Unit :=
     | _ =>
         let nextIdx := (st.scheduler.domainScheduleIndex + 1) % schedule.length
         match schedule[nextIdx]? with
-        -- LOW-04: This branch is unreachable when `schedulerInvariantBundleFull` holds.
-        -- `nextIdx` is computed as `(idx + 1) % schedule.length`, which guarantees
-        -- `0 ≤ nextIdx < schedule.length` for any non-empty schedule. The
-        -- `domainScheduleEntriesPositive` predicate (9th conjunct) further ensures all
-        -- entries are valid. The defensive fallback (return unchanged state) is retained
-        -- because silently absorbing an impossible case is safer in a kernel than panicking.
-        -- See `switchDomain_index_in_bounds` below for the formal proof.
-        | none => .ok ((), st)
+        -- AK2-I (S-M07): Surface `.schedulerInvariantViolation` on the unreachable
+        -- fallback. `nextIdx = (idx + 1) % schedule.length` is in bounds for any
+        -- non-empty `schedule` (see `switchDomain_index_in_bounds` below), so this
+        -- branch is dead under `domainScheduleEntriesPositive`. Previously returned
+        -- `.ok ((), st)` — a boot-config bug that violated the invariant would
+        -- silently halt domain rotation. Emitting an error makes the invariant
+        -- violation observable and testable.
+        | none => .error .schedulerInvariantViolation
         | some entry =>
             -- U-M39: Save outgoing context before clearing current
             let stSaved := saveOutgoingContext st
-            -- WS-H12b/AI3-A: re-enqueue current thread before domain switch
-            -- at effective priority (base + PIP boost).
-            -- All reads use st (not stSaved) to keep scheduler computation identical.
+            -- WS-H12b / AI3-A / AK2-A (S-H03): re-enqueue current thread
+            -- before the domain switch at `effectiveRunQueuePriority tcb`
+            -- (priority + PIP boost). All reads use `st` (pre-save) so that
+            -- TCB fields see the same snapshot; `saveOutgoingContext` only
+            -- updates the register-context of the outgoing TCB (not priority,
+            -- pipBoost, or schedContextBinding). Under the AK2-B Option B
+            -- propagation invariant, this value equals
+            -- `(resolveEffectivePrioDeadline st tcb).1` read by selection.
             let rq' := match st.scheduler.current with
               | none => st.scheduler.runQueue
               | some tid =>
@@ -819,7 +937,8 @@ theorem switchDomain_preserves_objects_invExt
   | cons entry rest =>
       simp [hSched] at hStep
       split at hStep
-      · obtain ⟨_, rfl⟩ := hStep; exact hObjInv
+      · -- AK2-I: fallback now emits `.error`, so this arm is discharged by contradiction.
+        simp at hStep
       · simp at hStep; obtain ⟨_, rfl⟩ := hStep; dsimp
         exact saveOutgoingContext_preserves_objects_invExt st hObjInv
 

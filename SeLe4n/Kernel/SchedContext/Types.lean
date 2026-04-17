@@ -91,15 +91,15 @@ namespace Bandwidth
 @[inline] def isValid (bw : Bandwidth) : Bool := bw.period > 0
 /-- Utilization in per-mille (parts per thousand).
 
-**L-17 truncation bound**: Integer division truncates down, so each context's
-utilization is underestimated by at most `period / 1000` time units (equivalently,
-at most 1 per-mille). For RPi5 at 54 MHz with typical periods (1–100 ms),
-the per-context error is at most 0.1 ms — negligible relative to CBS budget
-granularity. Aggregate over-admission across `n` contexts is bounded by
-`n * period / 1000` time units. This is standard CBS practice; per-context
-budget bounds (`budgetWithinBounds`) hold regardless of admission precision. -/
+AK2-E (S-M03): Uses CEILING-ROUND division to guarantee over-admission is
+impossible. For any positive `period`, `(budget * 1000 + period - 1) / period`
+equals `⌈budget * 1000 / period⌉`. Each context's utilization is now upper-
+bounded, not lower-bounded, so the admission sum also upper-bounds the true
+bandwidth. Admission acceptance (`sum ≤ 1000`) therefore strictly implies the
+real bandwidth fraction is ≤ 1, eliminating the prior aggregate 6.4% over-
+admission window on 64-context deployments. -/
 @[inline] def utilization (bw : Bandwidth) : Nat :=
-  if bw.period > 0 then bw.budget * 1000 / bw.period else 0
+  if bw.period > 0 then (bw.budget * 1000 + bw.period - 1) / bw.period else 0
 /-- Check if this bandwidth exceeds another. -/
 @[inline] def exceeds (a b : Bandwidth) : Bool :=
   a.utilization > b.utilization

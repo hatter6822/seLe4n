@@ -357,6 +357,36 @@ If the TCB lookup fails (invariant violation — unreachable under
   | some (.tcb tcb) => (resolveEffectivePrioDeadline st tcb).1
   | _ => sc.priority  -- defensive fallback
 
+section
+set_option linter.unusedSimpArgs false
+
+/-- AK2-A/AK2-B bridge: `effectiveBucketPriority` (SC-aware) equals
+`(resolveEffectivePrioDeadline st tcb).1`, the priority selection actually
+reads. Under the AK2-B Option B propagation invariant
+(`tcb.priority = sc.priority` for bound threads), both also equal
+`effectiveRunQueuePriority tcb`. This bridge is retained for the deferred
+AK2.5 Option A fusion. -/
+theorem effectiveBucketPriority_eq_resolveEffective
+    (st : SystemState) (tcb : TCB) :
+    effectiveBucketPriority st tcb = (resolveEffectivePrioDeadline st tcb).1 := by
+  unfold effectiveBucketPriority resolveEffectivePrioDeadline
+  cases hBind : tcb.schedContextBinding with
+  | unbound =>
+    simp only [hBind]
+    cases tcb.pipBoost <;> rfl
+  | bound scId =>
+    simp only [hBind]
+    cases hSc : (st.objects[scId.toObjId]? : Option KernelObject) with
+    | none => cases tcb.pipBoost <;> rfl
+    | some obj => cases obj <;> (cases tcb.pipBoost <;> rfl)
+  | donated scId owner =>
+    simp only [hBind]
+    cases hSc : (st.objects[scId.toObjId]? : Option KernelObject) with
+    | none => cases tcb.pipBoost <;> rfl
+    | some obj => cases obj <;> (cases tcb.pipBoost <;> rfl)
+
+end
+
 /-- Z4-D/E: SchedContext-aware three-level scheduling selection.
 
 Extends `chooseBestRunnableBy` with two SchedContext enhancements:

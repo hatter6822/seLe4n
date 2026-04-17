@@ -123,6 +123,14 @@ structure SchedulerState where
       SchedContext's budget becomes eligible for refill. Sorted by eligibility
       time for O(1) peek and O(k) prefix split on timer tick. -/
   replenishQueue : SeLe4n.Kernel.ReplenishQueue := SeLe4n.Kernel.ReplenishQueue.empty
+  /-- AK2-D (S-M02): Diagnostic-only record of per-thread timeout errors
+      collected during the most recent `timeoutBlockedThreads` run. A non-empty
+      list indicates an invariant violation was observed (e.g., a TCB in the
+      per-SchedContext index that could not be looked up in the object store).
+      Under `crossSubsystemInvariant` the list is always empty. The field is
+      cleared at the start of each timer tick so stale diagnostics never
+      survive across rounds. -/
+  lastTimeoutErrors : List (SeLe4n.ThreadId × KernelError) := []
   deriving Repr
 
 /-- WS-G4: Compatibility alias — `runnable` projects to the flat list maintained
