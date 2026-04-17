@@ -123,12 +123,16 @@ def schedContextConfigure (scId : ObjId) (budget period priority deadline domain
           let stCleaned := { st with scheduler :=
             { st.scheduler with replenishQueue := cleanedQueue } }
           -- AK2-B option B (S-H04): if the SchedContext is currently bound to a
-          -- thread and the configure changes the SC priority, propagate the new
-          -- priority into the bound TCB's `priority` field and migrate its
-          -- RunQueue bucket if present. This preserves the post-bind invariant
-          -- `tcb.priority = sc.priority` established by `schedContextBind`,
-          -- keeping `schedulerPriorityMatch` and `effectiveParamsMatchRunQueue`
-          -- jointly satisfiable.
+          -- thread and configure changes the SC priority, propagate the new
+          -- priority into the bound TCB's `priority` field AND re-bucket the
+          -- thread in the RunQueue if present (so `schedulerPriorityMatch`'s
+          -- `threadPriority[tid]? = effectiveRunQueuePriority tcb` continues to
+          -- hold under the new TCB priority). Without the RunQueue migration
+          -- the thread would remain in the old priority bucket while
+          -- `tcb.priority` was updated — a latent priority-inversion vector.
+          -- We preserve any existing `pipBoost` by re-inserting at
+          -- `max(new priority, pipBoost)`, matching `migrateRunQueueBucket`
+          -- in `PriorityManagement.lean`.
           match storeObject scId (KernelObject.schedContext updated) stCleaned with
           | .error e => .error e
           | .ok ((), stStored) =>
@@ -138,11 +142,23 @@ def schedContextConfigure (scId : ObjId) (budget period priority deadline domain
               match (stStored.objects[boundTid.toObjId]? : Option KernelObject) with
               | some (KernelObject.tcb boundTcb) =>
                 if boundTcb.priority.val = priority then
-                  .ok ((), stStored)  -- already consistent
+                  .ok ((), stStored)  -- already consistent: no propagation needed
                 else
-                  let boundTcb2 : TCB := { boundTcb with priority := ⟨priority⟩ }
-                  let stProp : SystemState := { stStored with
+                  let newPri : SeLe4n.Priority := ⟨priority⟩
+                  let boundTcb2 : TCB := { boundTcb with priority := newPri }
+                  let stWithTcb : SystemState := { stStored with
                     objects := stStored.objects.insert boundTid.toObjId (KernelObject.tcb boundTcb2) }
+                  -- AK2-B follow-up: re-bucket in RunQueue to match new priority.
+                  let effectivePri : SeLe4n.Priority := match boundTcb.pipBoost with
+                    | none => newPri
+                    | some boostPri => ⟨Nat.max priority boostPri.val⟩
+                  let stProp : SystemState :=
+                    if boundTid ∈ stWithTcb.scheduler.runQueue then
+                      let rqRemoved := stWithTcb.scheduler.runQueue.remove boundTid
+                      let rqInserted := rqRemoved.insert boundTid effectivePri
+                      { stWithTcb with scheduler :=
+                        { stWithTcb.scheduler with runQueue := rqInserted } }
+                    else stWithTcb
                   .ok ((), stProp)
               | _ => .ok ((), stStored)  -- bound thread's TCB missing: leave as-is
         else

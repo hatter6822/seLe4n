@@ -14,16 +14,29 @@ import SeLe4n.Kernel.IPC.Operations.Timeout
 # Scheduler Core Operations — AK2 closure status
 
 **Addressed in this workstream (v0.29.2):**
-- AK2-A + AK2-B (S-H03 + S-H04) via Option B:
-  `schedContextBind` and `schedContextConfigure` propagate `sc.priority →
-  tcb.priority` into the bound TCB (`SchedContext/Operations.lean`). Under
-  this propagation invariant, `effectiveRunQueuePriority tcb = max(tcb.
-  priority, pipBoost) = max(sc.priority, pipBoost) =
-  (resolveEffectivePrioDeadline st tcb).1` for every bound thread. The four
-  production sites (`handleYield`, `timerTick`, `timerTickBudget` unbound,
-  `switchDomain`) therefore produce the same bucket as selection consults,
-  eliminating the priority-inversion vector. `schedulerPriorityMatch` and
-  `effectiveParamsMatchRunQueue` agree without requiring fusion.
+- AK2-A + AK2-B (S-H03 + S-H04) via Option B — three-part fix:
+  1. **Bind propagation:** `schedContextBind` sets
+     `tcb.priority := sc.priority` on the bound TCB
+     (`SchedContext/Operations.lean`), establishing the propagation
+     invariant at the moment of binding. The existing Z5-G3 RunQueue
+     remove+re-insert at `resolveInsertPriority` keeps the RunQueue bucket
+     in sync with the new priority.
+  2. **Configure propagation + re-bucketing:** `schedContextConfigure`
+     additionally, when the SchedContext is currently bound and the
+     reconfigure changes `sc.priority`, (a) updates the bound TCB's
+     `priority` field to match, and (b) remove+re-inserts the bound thread
+     in the RunQueue at `max(new priority, pipBoost)` if it was present.
+     Without the re-bucketing the thread would sit in the old priority
+     bucket while `tcb.priority` was updated — a latent priority-inversion
+     vector that an earlier draft of this work introduced.
+  3. **Consumption sites unchanged:** the four production re-enqueue
+     sites (`handleYield`, `timerTick`, `timerTickBudget` unbound,
+     `switchDomain`) continue to use `effectiveRunQueuePriority tcb`.
+     Under the propagation invariant this equals
+     `(resolveEffectivePrioDeadline st tcb).1` consulted by selection,
+     eliminating the priority-inversion vector. `schedulerPriorityMatch`
+     (TCB-based) and `effectiveParamsMatchRunQueue` (SC-based) agree
+     without requiring invariant fusion.
 - AK2-D (S-M02): `timeoutBlockedThreads` errors surfaced via
   `SchedulerState.lastTimeoutErrors` diagnostic field, cleared at each
   `timerTickWithBudget` entry.
@@ -410,12 +423,13 @@ def handleYield : Kernel Unit :=
     | some tid =>
         match st.objects[tid.toObjId]? with
         | some (.tcb tcb) =>
-            -- AK2-A (S-H03): Re-enqueue at SC-aware effective priority via
-            -- `insertPriorityForThread`. For SchedContext-bound threads this
-            -- resolves through the SchedContext (matching
-            -- `resolveEffectivePrioDeadline` used by selection). For unbound
-            -- threads this equals `effectiveRunQueuePriority tcb`. The fused
-            -- `schedulerPriorityMatch` invariant asserts this exact value.
+            -- AI3-A (M-04) / AK2-A (S-H03): Re-enqueue at
+            -- `effectiveRunQueuePriority tcb` (base + PIP boost). For
+            -- SchedContext-bound threads, the AK2-B Option B propagation
+            -- invariant (`tcb.priority = sc.priority` enforced by
+            -- `schedContextBind` and `schedContextConfigure`) guarantees this
+            -- equals `(resolveEffectivePrioDeadline st tcb).1` read by
+            -- selection. `schedulerPriorityMatch` therefore holds post-insert.
             let rq' := (st.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb)).rotateToBack tid
             let st' := { st with scheduler := { st.scheduler with runQueue := rq' } }
             schedule st'
@@ -465,11 +479,14 @@ def timerTick : Kernel Unit :=
               let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
               let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb'), machine := tick st.machine }
               -- WS-H12b: re-enqueue current thread before schedule.
-              -- AK2-A (S-H03): Re-enqueue at SC-aware effective priority via
-              -- `insertPriorityForThread`. Resolution uses the PRE-mutation
-              -- state `st` because `st'` differs only in the updated timeSlice
-              -- (not priority/pipBoost/schedContextBinding, which are the
-              -- inputs to `insertPriorityForThread`).
+              -- AI3-A (M-04) / AK2-A (S-H03): Re-enqueue at
+              -- `effectiveRunQueuePriority tcb` (priority + PIP boost).
+              -- The `tcb` value is bound PRE-mutation (before `st'`'s timeSlice
+              -- update), and `effectiveRunQueuePriority` depends only on
+              -- `tcb.priority` and `tcb.pipBoost` — both of which are unchanged
+              -- across the timeSlice mutation. Under the AK2-B Option B
+              -- propagation invariant this value equals the SC-aware priority
+              -- used by selection (see Core.lean module docstring).
               let st'' := { st' with scheduler := { st'.scheduler with
                   runQueue := st'.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb) } }
               schedule st''
@@ -625,10 +642,11 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
       let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
       let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb'),
                            machine := tick st.machine }
-      -- AK2-A (S-H03): Re-enqueue at SC-aware effective priority via
-      -- `insertPriorityForThread`. The `.unbound` branch means this reduces
-      -- to `effectiveRunQueuePriority tcb`, preserving prior behavior for
-      -- threads with no SchedContext binding.
+      -- AI3-A (M-04) / AK2-A (S-H03): Re-enqueue at
+      -- `effectiveRunQueuePriority tcb`. This is the `.unbound` branch so
+      -- `effectiveRunQueuePriority` is unambiguously correct (no SchedContext
+      -- resolution needed). SC-bound branches at lines :696 and :716 use
+      -- `resolveInsertPriority` directly.
       let st'' := { st' with scheduler := { st'.scheduler with
           runQueue := st'.scheduler.runQueue.insert tid (effectiveRunQueuePriority tcb) } }
       .ok (st'', true)
@@ -860,12 +878,14 @@ def switchDomain : Kernel Unit :=
         | some entry =>
             -- U-M39: Save outgoing context before clearing current
             let stSaved := saveOutgoingContext st
-            -- WS-H12b/AK2-A (S-H03): re-enqueue current thread before domain
-            -- switch at SC-aware effective priority via
-            -- `insertPriorityForThread`. All reads use `st` (pre-save) so that
-            -- the SchedContext lookup and TCB fields see the same snapshot;
-            -- `saveOutgoingContext` only updates the register-context of the
-            -- outgoing TCB (not priority, pipBoost, or schedContextBinding).
+            -- WS-H12b / AI3-A / AK2-A (S-H03): re-enqueue current thread
+            -- before the domain switch at `effectiveRunQueuePriority tcb`
+            -- (priority + PIP boost). All reads use `st` (pre-save) so that
+            -- TCB fields see the same snapshot; `saveOutgoingContext` only
+            -- updates the register-context of the outgoing TCB (not priority,
+            -- pipBoost, or schedContextBinding). Under the AK2-B Option B
+            -- propagation invariant, this value equals
+            -- `(resolveEffectivePrioDeadline st tcb).1` read by selection.
             let rq' := match st.scheduler.current with
               | none => st.scheduler.runQueue
               | some tid =>

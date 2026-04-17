@@ -375,6 +375,164 @@ private def pm015_frozenSetMCPriority : IO Unit := do
     | _ => throw <| IO.userError "PM-015 frozen TCB not found"
   | .error e => throw <| IO.userError s!"PM-015 frozen setMCPriority should succeed, got {repr e}"
 
+-- =============================================================================
+-- AK2-B: Option B priority propagation regression tests
+-- =============================================================================
+
+/-- AK2-B-01: `schedContextBind` propagates `sc.priority` into `tcb.priority`. -/
+private def pm_ak2b_01_bindPropagatesPriority : IO Unit := do
+  let targetTid : SeLe4n.ThreadId := ⟨42⟩
+  let scObjId : SeLe4n.ObjId := ⟨100⟩
+  let scId : SeLe4n.SchedContextId := ⟨100⟩
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
+    priority := ⟨77⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := ⟨100⟩, boundThread := none
+  }
+  let st := mkState [
+    (targetTid.toObjId, .tcb (mkTcb 42 (prio := 10) (mcp := 200))),
+    (scObjId, .schedContext sc)
+  ]
+  match SeLe4n.Kernel.SchedContextOps.schedContextBind scObjId targetTid st with
+  | .ok ((), st') =>
+    match st'.objects[targetTid.toObjId]? with
+    | some (.tcb tcb) =>
+      expect "AK2-B-01 tcb.priority propagated from sc.priority (10 -> 77)"
+        (tcb.priority == ⟨77⟩)
+    | _ => throw <| IO.userError "AK2-B-01 bound TCB not found"
+  | .error e =>
+    throw <| IO.userError s!"AK2-B-01 schedContextBind failed: {repr e}"
+
+/-- AK2-B-02: `schedContextConfigure` on already-bound SchedContext
+propagates the new priority into the bound TCB. -/
+private def pm_ak2b_02_configurePropagatesPriority : IO Unit := do
+  let targetTid : SeLe4n.ThreadId := ⟨42⟩
+  let scObjId : SeLe4n.ObjId := ⟨100⟩
+  let scId : SeLe4n.SchedContextId := ⟨100⟩
+  -- Pre-state: sc.priority = 50, tcb.priority = 50 (after bind)
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
+    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := ⟨100⟩, boundThread := some targetTid
+  }
+  let st := mkState [
+    (targetTid.toObjId, .tcb (mkTcb 42 (prio := 50) (mcp := 200)
+      (binding := .bound scId))),
+    (scObjId, .schedContext sc)
+  ]
+  -- Reconfigure to sc.priority = 123
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure scObjId 100 200 123 0 0 st with
+  | .ok ((), st') =>
+    match st'.objects[targetTid.toObjId]? with
+    | some (.tcb tcb) =>
+      expect "AK2-B-02 tcb.priority propagated from new sc.priority (50 -> 123)"
+        (tcb.priority == ⟨123⟩)
+    | _ => throw <| IO.userError "AK2-B-02 bound TCB not found"
+    match st'.objects[scObjId]? with
+    | some (.schedContext sc') =>
+      expect "AK2-B-02 sc.priority updated to 123" (sc'.priority == ⟨123⟩)
+    | _ => throw <| IO.userError "AK2-B-02 SC not found"
+  | .error e =>
+    throw <| IO.userError s!"AK2-B-02 schedContextConfigure failed: {repr e}"
+
+/-- AK2-B-03: `schedContextConfigure` re-buckets the bound thread in the
+RunQueue when SC priority changes. Prior to this test the configure path
+left the thread in its old bucket, violating `schedulerPriorityMatch`. -/
+private def pm_ak2b_03_configureRebucketsBoundThread : IO Unit := do
+  let targetTid : SeLe4n.ThreadId := ⟨42⟩
+  let scObjId : SeLe4n.ObjId := ⟨100⟩
+  let scId : SeLe4n.SchedContextId := ⟨100⟩
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
+    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := ⟨100⟩, boundThread := some targetTid
+  }
+  let stBase := mkState [
+    (targetTid.toObjId, .tcb (mkTcb 42 (prio := 50) (mcp := 200)
+      (binding := .bound scId))),
+    (scObjId, .schedContext sc)
+  ]
+  -- Insert the bound thread into the RunQueue at its current priority 50.
+  let st : SystemState := { stBase with scheduler :=
+    { stBase.scheduler with
+      runQueue := stBase.scheduler.runQueue.insert targetTid ⟨50⟩ } }
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure scObjId 100 200 123 0 0 st with
+  | .ok ((), st') =>
+    -- After reconfigure, the RunQueue's cached priority for this thread
+    -- must match the new priority (123), not the old (50).
+    match st'.scheduler.runQueue.threadPriority[targetTid]? with
+    | some prio =>
+      expect "AK2-B-03 RunQueue bucket migrated to new priority (50 -> 123)"
+        (prio == ⟨123⟩)
+    | none =>
+        throw <| IO.userError
+          "AK2-B-03 RunQueue missing thread after reconfigure (thread was present before)"
+  | .error e =>
+    throw <| IO.userError s!"AK2-B-03 schedContextConfigure failed: {repr e}"
+
+-- =============================================================================
+-- AK2-E: CBS admission ceiling-round regression
+-- =============================================================================
+
+/-- AK2-E-01: `Bandwidth.utilization` is ceiling-round for a non-divisible
+ratio. For `budget = 1`, `period = 3`: `1 * 1000 / 3 = 333` (truncation)
+but `(1 * 1000 + 3 - 1) / 3 = 334` (ceiling). Verifies admission slightly
+over-estimates rather than under-estimates. -/
+private def pm_ak2e_01_utilizationCeiling : IO Unit := do
+  let bw : SeLe4n.Kernel.Bandwidth := { budget := 1, period := 3 }
+  expect "AK2-E-01 utilization uses ceiling-round (expected 334, got truncation 333 would fail)"
+    (bw.utilization == 334)
+
+/-- AK2-E-02: Ceiling-round is an upper bound — for exact ratios it equals
+the truncated result. For `budget = 1`, `period = 2`: `1 * 1000 / 2 = 500`
+both truncation and ceiling (no rounding needed). -/
+private def pm_ak2e_02_utilizationExact : IO Unit := do
+  let bw : SeLe4n.Kernel.Bandwidth := { budget := 1, period := 2 }
+  expect "AK2-E-02 utilization for exact ratio (500)" (bw.utilization == 500)
+
+/-- AK2-E-03: Period 0 returns 0 (invalid bandwidth guard unchanged). -/
+private def pm_ak2e_03_utilizationZeroPeriod : IO Unit := do
+  let bw : SeLe4n.Kernel.Bandwidth := { budget := 5, period := 0 }
+  expect "AK2-E-03 utilization is 0 when period is 0" (bw.utilization == 0)
+
+-- =============================================================================
+-- AK2-F: ReplenishQueue strict < comparator regression (FIFO within tie)
+-- =============================================================================
+
+/-- AK2-F-01: Two replenishments at the SAME eligibility time — the first
+inserted appears BEFORE the second in the queue (FIFO). Prior to AK2-F
+the `≤` comparator placed the later insertion first (LIFO). -/
+private def pm_ak2f_01_replenishFifoOnTie : IO Unit := do
+  let sc1 : SeLe4n.SchedContextId := ⟨101⟩
+  let sc2 : SeLe4n.SchedContextId := ⟨102⟩
+  let q0 : SeLe4n.Kernel.ReplenishQueue := SeLe4n.Kernel.ReplenishQueue.empty
+  -- Insert sc1 first, then sc2 at the same eligibility time (100).
+  let q1 := q0.insert sc1 100
+  let q2 := q1.insert sc2 100
+  match q2.entries with
+  | (firstId, firstTime) :: (secondId, secondTime) :: [] =>
+    expect "AK2-F-01 first entry eligibility time is 100" (firstTime == 100)
+    expect "AK2-F-01 second entry eligibility time is 100" (secondTime == 100)
+    expect "AK2-F-01 sc1 (first-inserted) is at position 0 (FIFO)"
+      (firstId == sc1)
+    expect "AK2-F-01 sc2 (second-inserted) is at position 1 (FIFO)"
+      (secondId == sc2)
+  | _ =>
+      throw <| IO.userError
+        s!"AK2-F-01 unexpected queue shape: {repr q2.entries}"
+
+/-- AK2-F-02: Insertion maintains sorted order across distinct times. -/
+private def pm_ak2f_02_replenishSortedAcrossTimes : IO Unit := do
+  let sc1 : SeLe4n.SchedContextId := ⟨201⟩
+  let sc2 : SeLe4n.SchedContextId := ⟨202⟩
+  let sc3 : SeLe4n.SchedContextId := ⟨203⟩
+  let q0 : SeLe4n.Kernel.ReplenishQueue := SeLe4n.Kernel.ReplenishQueue.empty
+  -- Insert out of order: sc3@300, sc1@100, sc2@200.
+  let q := ((q0.insert sc3 300).insert sc1 100).insert sc2 200
+  let times := q.entries.map Prod.snd
+  expect "AK2-F-02 queue sorted ascending by eligibility time"
+    (times == [100, 200, 300])
+
 end SeLe4n.Testing.PriorityManagementSuite
 
 open SeLe4n.Testing.PriorityManagementSuite in
@@ -403,4 +561,15 @@ def main : IO Unit := do
   pm013_frozenSetPriority
   pm014_frozenSetPriorityAboveMCP
   pm015_frozenSetMCPriority
-  IO.println "=== All D2 priority management tests passed (16 tests) ==="
+  IO.println "--- AK2-B: Option B priority propagation ---"
+  pm_ak2b_01_bindPropagatesPriority
+  pm_ak2b_02_configurePropagatesPriority
+  pm_ak2b_03_configureRebucketsBoundThread
+  IO.println "--- AK2-E: CBS admission ceiling-round ---"
+  pm_ak2e_01_utilizationCeiling
+  pm_ak2e_02_utilizationExact
+  pm_ak2e_03_utilizationZeroPeriod
+  IO.println "--- AK2-F: ReplenishQueue FIFO within tie ---"
+  pm_ak2f_01_replenishFifoOnTie
+  pm_ak2f_02_replenishSortedAcrossTimes
+  IO.println "=== All D2 priority management tests passed (24 tests) ==="

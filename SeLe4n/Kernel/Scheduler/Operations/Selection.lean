@@ -357,46 +357,19 @@ If the TCB lookup fails (invariant violation — unreachable under
   | some (.tcb tcb) => (resolveEffectivePrioDeadline st tcb).1
   | _ => sc.priority  -- defensive fallback
 
-/-- AK2-A/AK2-B (S-H03/S-H04): SC-aware insertion-priority helper for the four
-production re-enqueue sites (`handleYield`, `timerTick`, `timerTickBudget`
-unbound branch, `switchDomain`). Delegates to `effectiveBucketPriority` from
-`Invariant.lean` so that selection and insertion AGREE on a single priority
-definition. This is the canonical insertion priority for the fused
-`schedulerPriorityMatch` invariant. -/
-@[inline] def insertPriorityForThread (_st : SystemState) (_tid : SeLe4n.ThreadId)
-    (tcb : TCB) : SeLe4n.Priority :=
-  effectiveBucketPriority _st tcb
-
-/-- AK2-A: By definition, `insertPriorityForThread` equals the
-fused-invariant helper `effectiveBucketPriority`. -/
-@[simp] theorem insertPriorityForThread_eq_effectiveBucketPriority
-    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) :
-    insertPriorityForThread st tid tcb = effectiveBucketPriority st tcb := rfl
-
-/-- AK2-A: For unbound threads, `insertPriorityForThread` equals
-`effectiveRunQueuePriority tcb`. -/
-@[simp] theorem insertPriorityForThread_of_unbound
-    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hUnbound : tcb.schedContextBinding = .unbound) :
-    insertPriorityForThread st tid tcb = effectiveRunQueuePriority tcb := by
-  simp [insertPriorityForThread, effectiveBucketPriority_of_unbound _ _ hUnbound]
-
 section
 set_option linter.unusedSimpArgs false
 
-/-- AK2-A: Bridge to `resolveEffectivePrioDeadline`. When the thread's TCB is
-in the store, `insertPriorityForThread` agrees with
-`(resolveEffectivePrioDeadline st tcb).1`. This is the key equivalence that
-lets selection and insertion agree.
-
-The `simp only [hBind]` applications below are required to reduce the outer
-match on `tcb.schedContextBinding`; the linter flags them as "unused" because
-the simp-call produces no simp lemma rewrite once the match is reduced. We
-silence the linter locally. -/
-theorem insertPriorityForThread_eq_resolveEffective
-    (st : SystemState) (_tid : SeLe4n.ThreadId) (tcb : TCB) :
-    insertPriorityForThread st _tid tcb = (resolveEffectivePrioDeadline st tcb).1 := by
-  unfold insertPriorityForThread effectiveBucketPriority resolveEffectivePrioDeadline
+/-- AK2-A/AK2-B bridge: `effectiveBucketPriority` (SC-aware) equals
+`(resolveEffectivePrioDeadline st tcb).1`, the priority selection actually
+reads. Under the AK2-B Option B propagation invariant
+(`tcb.priority = sc.priority` for bound threads), both also equal
+`effectiveRunQueuePriority tcb`. This bridge is retained for the deferred
+AK2.5 Option A fusion. -/
+theorem effectiveBucketPriority_eq_resolveEffective
+    (st : SystemState) (tcb : TCB) :
+    effectiveBucketPriority st tcb = (resolveEffectivePrioDeadline st tcb).1 := by
+  unfold effectiveBucketPriority resolveEffectivePrioDeadline
   cases hBind : tcb.schedContextBinding with
   | unbound =>
     simp only [hBind]

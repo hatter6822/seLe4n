@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/complete-phase-ak2-closure-rhJPz",
-      "commit_sha": "ab3c919b2713cd1f76b80fff6f78da679d6c4e60",
-      "tree_sha": "1c1a3aabeadd6548aca5380a9cacc6bb19868440",
-      "committed_at_utc": "2026-04-16T21:09:12-04:00"
+      "commit_sha": "45b951d6418ee152d0e86e084db588d89f6c75c1",
+      "tree_sha": "355caf45d48184b43538a7a3e9ed637e9594301a",
+      "committed_at_utc": "2026-04-17T02:51:02+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ae4fc5b15cb3f1b9e1f32727dc9f19e771b38a092ccc75bcc613c22d4b9b3c47"
+    "source_digest": "f37e1d99716346c9d33439c476323b47c017f8c90969e1f25a86cadbf220757a"
   },
   "summary": {
     "module_count": 158,
-    "declaration_count": 5096
+    "declaration_count": 5101
   },
   "readme_sync": {
-    "version": "0.29.1",
+    "version": "0.29.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 96027,
+    "production_loc": 96036,
     "test_files": 17,
-    "test_loc": 11709,
-    "proved_theorem_lemma_decls": 2831,
+    "test_loc": 11878,
+    "proved_theorem_lemma_decls": 2829,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -36779,6 +36779,7 @@
             "Kernel",
             "KernelObject",
             "ObjId",
+            "Priority",
             "SchedContext",
             "SchedContextId",
             "SystemState",
@@ -36797,7 +36798,7 @@
         {
           "kind": "def",
           "name": "schedContextBind",
-          "line": 162,
+          "line": 178,
           "called": [
             "Kernel",
             "KernelObject",
@@ -36816,7 +36817,7 @@
         {
           "kind": "def",
           "name": "schedContextUnbind",
-          "line": 239,
+          "line": 255,
           "called": [
             "Kernel",
             "KernelObject",
@@ -36834,7 +36835,7 @@
         {
           "kind": "def",
           "name": "schedContextYieldTo",
-          "line": 307,
+          "line": 323,
           "called": [
             "KernelObject",
             "SchedContextId",
@@ -39296,13 +39297,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 57,
+          "line": 70,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_scheduler",
-          "line": 63,
+          "line": 76,
           "called": [
             "SystemState",
             "none",
@@ -39313,7 +39314,7 @@
         {
           "kind": "theorem",
           "name": "restoreIncomingContext_scheduler",
-          "line": 75,
+          "line": 88,
           "called": [
             "SystemState",
             "ThreadId",
@@ -39325,7 +39326,7 @@
         {
           "kind": "theorem",
           "name": "restoreIncomingContext_objects",
-          "line": 84,
+          "line": 97,
           "called": [
             "SystemState",
             "ThreadId",
@@ -39337,7 +39338,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_preserves_tcb",
-          "line": 96,
+          "line": 109,
           "called": [
             "ObjId",
             "RHTable_getElem",
@@ -39352,7 +39353,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_tcb_fields",
-          "line": 124,
+          "line": 137,
           "called": [
             "ObjId",
             "RHTable_getElem",
@@ -39367,7 +39368,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_preserves_non_tcb_lookup",
-          "line": 165,
+          "line": 178,
           "called": [
             "ObjId",
             "RHTable_getElem",
@@ -39381,7 +39382,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_preserves_timeSlicePositive",
-          "line": 197,
+          "line": 210,
           "called": [
             "RHTable_getElem",
             "SystemState",
@@ -39397,7 +39398,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_preserves_objects_invExt",
-          "line": 232,
+          "line": 245,
           "called": [
             "RHTable_insert_preserves_invExt",
             "SystemState",
@@ -39410,7 +39411,7 @@
         {
           "kind": "theorem",
           "name": "restoreIncomingContext_preserves_timeSlicePositive",
-          "line": 251,
+          "line": 264,
           "called": [
             "SystemState",
             "ThreadId",
@@ -39424,7 +39425,7 @@
         {
           "kind": "theorem",
           "name": "restoreIncomingContext_establishes_context",
-          "line": 262,
+          "line": 275,
           "called": [
             "SystemState",
             "TCB",
@@ -39436,7 +39437,7 @@
         {
           "kind": "theorem",
           "name": "restoreIncomingContext_machine_no_tcb",
-          "line": 270,
+          "line": 283,
           "called": [
             "SystemState",
             "ThreadId",
@@ -39448,7 +39449,7 @@
         {
           "kind": "def",
           "name": "schedule",
-          "line": 327,
+          "line": 340,
           "called": [
             "Kernel",
             "chooseThread",
@@ -39463,7 +39464,7 @@
         {
           "kind": "def",
           "name": "handleYield",
-          "line": 399,
+          "line": 412,
           "called": [
             "Kernel",
             "effectiveRunQueuePriority",
@@ -39477,13 +39478,13 @@
         {
           "kind": "def",
           "name": "defaultTimeSlice",
-          "line": 433,
+          "line": 447,
           "called": []
         },
         {
           "kind": "def",
           "name": "timerTick",
-          "line": 451,
+          "line": 465,
           "called": [
             "Kernel",
             "effectiveRunQueuePriority",
@@ -39497,7 +39498,7 @@
         {
           "kind": "def",
           "name": "popDueReplenishments",
-          "line": 489,
+          "line": 506,
           "called": [
             "ReplenishQueue",
             "SchedContextId",
@@ -39508,7 +39509,7 @@
         {
           "kind": "def",
           "name": "refillSchedContext",
-          "line": 497,
+          "line": 514,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -39522,7 +39523,7 @@
         {
           "kind": "def",
           "name": "processReplenishmentsDue",
-          "line": 518,
+          "line": 535,
           "called": [
             "SystemState",
             "insert",
@@ -39539,7 +39540,7 @@
         {
           "kind": "def",
           "name": "tcbBlockingInfo",
-          "line": 551,
+          "line": 568,
           "called": [
             "ObjId",
             "TCB",
@@ -39549,7 +39550,7 @@
         {
           "kind": "def",
           "name": "timeoutBlockedThreads",
-          "line": 582,
+          "line": 599,
           "called": [
             "KernelError",
             "KernelObject",
@@ -39566,7 +39567,7 @@
         {
           "kind": "def",
           "name": "timerTickBudget",
-          "line": 617,
+          "line": 634,
           "called": [
             "Budget",
             "KernelError",
@@ -39588,7 +39589,7 @@
         {
           "kind": "def",
           "name": "scheduleEffective",
-          "line": 694,
+          "line": 712,
           "called": [
             "Kernel",
             "chooseThreadEffective",
@@ -39603,7 +39604,7 @@
         {
           "kind": "def",
           "name": "timerTickWithBudget",
-          "line": 728,
+          "line": 746,
           "called": [
             "Kernel",
             "none",
@@ -39617,7 +39618,7 @@
         {
           "kind": "def",
           "name": "handleYieldWithBudget",
-          "line": 768,
+          "line": 786,
           "called": [
             "Budget",
             "Kernel",
@@ -39636,7 +39637,7 @@
         {
           "kind": "def",
           "name": "chooseThreadInDomain",
-          "line": 815,
+          "line": 833,
           "called": [
             "Kernel",
             "ThreadId",
@@ -39646,7 +39647,7 @@
         {
           "kind": "def",
           "name": "switchDomain",
-          "line": 844,
+          "line": 862,
           "called": [
             "Kernel",
             "effectiveRunQueuePriority",
@@ -39660,7 +39661,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_index_in_bounds",
-          "line": 888,
+          "line": 908,
           "called": [
             "DomainScheduleEntry",
             "schedule"
@@ -39669,7 +39670,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_index_lookup_isSome",
-          "line": 900,
+          "line": 920,
           "called": [
             "DomainScheduleEntry",
             "getElem",
@@ -39680,7 +39681,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_objects_invExt",
-          "line": 910,
+          "line": 930,
           "called": [
             "SystemState",
             "invExt",
@@ -39691,7 +39692,7 @@
         {
           "kind": "def",
           "name": "scheduleDomain",
-          "line": 927,
+          "line": 947,
           "called": [
             "Kernel",
             "schedule",
@@ -39701,7 +39702,7 @@
         {
           "kind": "def",
           "name": "inferThreadState",
-          "line": 949,
+          "line": 969,
           "called": [
             "SystemState",
             "TCB",
@@ -39712,7 +39713,7 @@
         {
           "kind": "def",
           "name": "syncThreadStates",
-          "line": 964,
+          "line": 984,
           "called": [
             "SystemState",
             "fold",
@@ -39724,7 +39725,7 @@
         {
           "kind": "def",
           "name": "threadStateConsistent",
-          "line": 976,
+          "line": 996,
           "called": [
             "Kernel",
             "ObjId",
@@ -41542,7 +41543,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.Selection",
       "path": "SeLe4n/Kernel/Scheduler/Operations/Selection.lean",
-      "declaration_count": 37,
+      "declaration_count": 34,
       "declarations": [
         {
           "kind": "namespace",
@@ -41777,59 +41778,20 @@
           ]
         },
         {
-          "kind": "def",
-          "name": "insertPriorityForThread",
-          "line": 366,
-          "called": [
-            "Priority",
-            "SystemState",
-            "TCB",
-            "ThreadId",
-            "effectiveBucketPriority"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "insertPriorityForThread_eq_effectiveBucketPriority",
-          "line": 372,
-          "called": [
-            "SystemState",
-            "TCB",
-            "ThreadId",
-            "effectiveBucketPriority",
-            "insertPriorityForThread"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "insertPriorityForThread_of_unbound",
-          "line": 378,
-          "called": [
-            "SystemState",
-            "TCB",
-            "ThreadId",
-            "effectiveBucketPriority_of_unbound",
-            "effectiveRunQueuePriority",
-            "insertPriorityForThread"
-          ]
-        },
-        {
           "kind": "section",
-          "name": "<anonymous:section:384>",
-          "line": 384,
+          "name": "<anonymous:section:360>",
+          "line": 360,
           "called": []
         },
         {
           "kind": "theorem",
-          "name": "insertPriorityForThread_eq_resolveEffective",
-          "line": 396,
+          "name": "effectiveBucketPriority_eq_resolveEffective",
+          "line": 369,
           "called": [
             "KernelObject",
             "SystemState",
             "TCB",
-            "ThreadId",
             "effectiveBucketPriority",
-            "insertPriorityForThread",
             "none",
             "resolveEffectivePrioDeadline",
             "scId",
@@ -41839,7 +41801,7 @@
         {
           "kind": "def",
           "name": "chooseBestRunnableEffective",
-          "line": 427,
+          "line": 400,
           "called": [
             "Deadline",
             "KernelError",
@@ -41859,7 +41821,7 @@
         {
           "kind": "def",
           "name": "chooseBestRunnableInDomainEffective",
-          "line": 454,
+          "line": 427,
           "called": [
             "Deadline",
             "DomainId",
@@ -41874,7 +41836,7 @@
         {
           "kind": "def",
           "name": "chooseBestInBucketEffective",
-          "line": 466,
+          "line": 439,
           "called": [
             "Deadline",
             "DomainId",
@@ -41892,7 +41854,7 @@
         {
           "kind": "def",
           "name": "chooseThread",
-          "line": 494,
+          "line": 467,
           "called": [
             "Kernel",
             "ThreadId",
@@ -41904,7 +41866,7 @@
         {
           "kind": "def",
           "name": "chooseThreadEffective",
-          "line": 508,
+          "line": 481,
           "called": [
             "Kernel",
             "ThreadId",
@@ -41915,7 +41877,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadEffective_preserves_state",
-          "line": 516,
+          "line": 489,
           "called": [
             "SystemState",
             "ThreadId",
@@ -41927,7 +41889,7 @@
         {
           "kind": "def",
           "name": "saveOutgoingContext",
-          "line": 544,
+          "line": 517,
           "called": [
             "SystemState",
             "insert",
@@ -41938,7 +41900,7 @@
         {
           "kind": "def",
           "name": "saveOutgoingContextChecked",
-          "line": 561,
+          "line": 534,
           "called": [
             "SystemState",
             "insert",
@@ -41949,7 +41911,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_always_succeeds_under_currentThreadValid",
-          "line": 586,
+          "line": 559,
           "called": [
             "SystemState",
             "currentThreadValid",
@@ -41960,7 +41922,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContextChecked_fst_eq",
-          "line": 599,
+          "line": 572,
           "called": [
             "SystemState",
             "none",
@@ -41972,7 +41934,7 @@
         {
           "kind": "def",
           "name": "restoreIncomingContext",
-          "line": 617,
+          "line": 590,
           "called": [
             "SystemState",
             "ThreadId",
@@ -41982,7 +41944,7 @@
         {
           "kind": "def",
           "name": "restoreIncomingContextChecked",
-          "line": 628,
+          "line": 601,
           "called": [
             "SystemState",
             "ThreadId",
@@ -41992,7 +41954,7 @@
         {
           "kind": "theorem",
           "name": "restoreIncomingContextChecked_fst_eq",
-          "line": 636,
+          "line": 609,
           "called": [
             "SystemState",
             "ThreadId",
@@ -42005,7 +41967,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableEffective_unbound_equiv",
-          "line": 647,
+          "line": 620,
           "called": [
             "Deadline",
             "Priority",
@@ -66136,7 +66098,7 @@
     {
       "module": "tests.PriorityManagementSuite",
       "path": "tests/PriorityManagementSuite.lean",
-      "declaration_count": 23,
+      "declaration_count": 31,
       "declarations": [
         {
           "kind": "namespace",
@@ -66433,8 +66395,121 @@
         },
         {
           "kind": "def",
+          "name": "pm_ak2b_01_bindPropagatesPriority",
+          "line": 383,
+          "called": [
+            "ObjId",
+            "SchedContext",
+            "SchedContextId",
+            "ThreadId",
+            "expect",
+            "mkState",
+            "mkTcb",
+            "none",
+            "scId",
+            "schedContextBind",
+            "throw",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pm_ak2b_02_configurePropagatesPriority",
+          "line": 408,
+          "called": [
+            "ObjId",
+            "SchedContext",
+            "SchedContextId",
+            "ThreadId",
+            "expect",
+            "mkState",
+            "mkTcb",
+            "scId",
+            "schedContextConfigure",
+            "throw",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pm_ak2b_03_configureRebucketsBoundThread",
+          "line": 441,
+          "called": [
+            "ObjId",
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "expect",
+            "insert",
+            "mkState",
+            "mkTcb",
+            "none",
+            "scId",
+            "schedContextConfigure",
+            "throw",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pm_ak2e_01_utilizationCeiling",
+          "line": 481,
+          "called": [
+            "Bandwidth",
+            "expect",
+            "utilization"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pm_ak2e_02_utilizationExact",
+          "line": 489,
+          "called": [
+            "Bandwidth",
+            "expect",
+            "utilization"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pm_ak2e_03_utilizationZeroPeriod",
+          "line": 494,
+          "called": [
+            "Bandwidth",
+            "expect",
+            "utilization"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pm_ak2f_01_replenishFifoOnTie",
+          "line": 505,
+          "called": [
+            "ReplenishQueue",
+            "SchedContextId",
+            "empty",
+            "expect",
+            "insert",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pm_ak2f_02_replenishSortedAcrossTimes",
+          "line": 525,
+          "called": [
+            "ReplenishQueue",
+            "SchedContextId",
+            "empty",
+            "expect",
+            "insert"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 381,
+          "line": 539,
           "called": [
             "pm001_setPriorityWithinMCP",
             "pm002_setPriorityAtMCP",
@@ -66451,7 +66526,15 @@
             "pm012_selfSetPriority",
             "pm013_frozenSetPriority",
             "pm014_frozenSetPriorityAboveMCP",
-            "pm015_frozenSetMCPriority"
+            "pm015_frozenSetMCPriority",
+            "pm_ak2b_01_bindPropagatesPriority",
+            "pm_ak2b_02_configurePropagatesPriority",
+            "pm_ak2b_03_configureRebucketsBoundThread",
+            "pm_ak2e_01_utilizationCeiling",
+            "pm_ak2e_02_utilizationExact",
+            "pm_ak2e_03_utilizationZeroPeriod",
+            "pm_ak2f_01_replenishFifoOnTie",
+            "pm_ak2f_02_replenishSortedAcrossTimes"
           ]
         }
       ]

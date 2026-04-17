@@ -99,6 +99,36 @@ Gate: `lake build` (256 jobs) + `test_smoke.sh` + `test_full.sh` + zero
 path changes at scheduler re-enqueue sites produce the same priority
 under the Option B propagation invariant.
 
+### Post-audit follow-up (same v0.29.2 release)
+
+A comprehensive review of the initial AK2 implementation uncovered:
+
+- **CRITICAL (fixed):** `schedContextConfigure`'s Option B propagation
+  updated the bound TCB's `priority` field but did NOT re-bucket the
+  thread in the RunQueue when its priority changed — a latent
+  priority-inversion vector exactly equivalent to S-H03 on the
+  reconfigure path. The configure flow now, in addition to updating
+  `tcb.priority`, performs a RunQueue `remove` + re-insert at
+  `max(new priority, pipBoost)` if the bound thread was present,
+  mirroring the existing Z5-G3 behavior in `schedContextBind`.
+- **Dead code pruned:** `insertPriorityForThread`,
+  `insertPriorityForThread_eq_effectiveBucketPriority`,
+  `insertPriorityForThread_of_unbound`, and
+  `insertPriorityForThread_eq_resolveEffective` were defined in
+  `Selection.lean` but never called. Four comments in `Core.lean`
+  falsely claimed the production re-enqueue sites used this helper.
+  The unused helpers were removed; a kept bridge theorem
+  `effectiveBucketPriority_eq_resolveEffective` is retained as the
+  AK2.5 Option A utility. The comments at the four sites now correctly
+  describe the `effectiveRunQueuePriority` + Option B propagation flow.
+- **Regression tests added** (`tests/PriorityManagementSuite.lean`):
+  - `AK2-B-01`: `schedContextBind` propagates `sc.priority → tcb.priority`.
+  - `AK2-B-02`: `schedContextConfigure` on a bound SC propagates.
+  - `AK2-B-03`: `schedContextConfigure` re-buckets the bound thread in
+    the RunQueue (this test would have failed on the pre-fix code).
+  - `AK2-E-01..03`: ceiling-round utilization for inexact/exact/zero cases.
+  - `AK2-F-01..02`: ReplenishQueue FIFO on tie + sort order preservation.
+
 ## v0.29.1 — WS-AK Phase AK1: IPC Fail-Closed & Rendezvous State
 
 Phase AK1 of WS-AK Pre-1.0 Release Hardening (v0.29.0 audit). Addresses
