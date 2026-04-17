@@ -4,7 +4,7 @@
 //! kernel model exactly:
 //!
 //! - **15 newtype identifiers**: `ObjId`, `ThreadId`, `CPtr`, `Slot`,
-//!   `SchedContextId`, etc. (AK4-C / R-ABI-L2 — `SchedContextId` added in v0.29.7).
+//!   `SchedContextId`, etc. (AK4-C / R-ABI-L2 — `SchedContextId` added in v0.29.8).
 //! - **`KernelError`**: 50-variant error enum matching `SeLe4n.Model.KernelError`
 //!   (49 kernel variants at discriminants 0–48, plus `UnknownKernelError` sentinel at 255)
 //! - **`AccessRight` / `AccessRights`**: Capability rights with bitmask operations
@@ -13,6 +13,25 @@
 //! # Safety
 //!
 //! This crate contains zero `unsafe` code.
+//!
+//! # Example
+//!
+//! ```
+//! use sele4n_types::{ThreadId, AccessRights, AccessRight};
+//!
+//! // Newtype identifiers wrap raw u64 with strong typing.
+//! let tid = ThreadId::from(42u64);
+//! assert_eq!(tid.raw(), 42);
+//! assert!(!tid.is_reserved());
+//! assert!(ThreadId::SENTINEL.is_reserved());
+//!
+//! // Access rights are a 5-bit mask with a functional (immutable) API.
+//! let read_write = AccessRights::READ.union(AccessRights::WRITE);
+//! assert!(read_write.contains(AccessRight::Read));
+//! assert!(read_write.contains(AccessRight::Write));
+//! assert!(!read_write.contains(AccessRight::Grant));
+//! assert!(read_write.is_subset_of(&AccessRights::ALL));
+//! ```
 
 #![no_std]
 #![deny(unsafe_code)]

@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.29.7` (`lakefile.toml`) |
+| **Package version** | `0.29.8` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 95,528 across 141 Lean files |
 | **Test LoC** | 11,709 across 17 Lean test suites |
@@ -537,7 +537,7 @@ with 16 entries (4 types × 4 execution states) and a trap frame
 plus SP_EL0, ELR_EL1, SPSR_EL1, ESR_EL1, and FAR_EL1 (288-byte `TrapFrame`;
 16-byte aligned).
 
-**AK5-F (v0.29.7)**: The TrapFrame grew from 272 → 288 bytes to include
+**AK5-F (v0.29.8)**: The TrapFrame grew from 272 → 288 bytes to include
 read-only snapshots of `ESR_EL1` (offset 272) and `FAR_EL1` (offset 280).
 `handle_synchronous_exception` reads these from the frame, not the live
 registers — nested exceptions (SError during data-abort handling, etc.)
@@ -557,7 +557,7 @@ numeric literals for cross-reference clarity.
 
 #### 6.5.0 Panic Discipline (AK5-A)
 
-**Added in v0.29.7**: the `rust/Cargo.toml` workspace manifest sets
+**Added in v0.29.8**: the `rust/Cargo.toml` workspace manifest sets
 `panic = "abort"` for both `[profile.dev]` and `[profile.release]`.
 The default `panic = "unwind"` is undefined behavior across `extern "C"`
 boundaries and requires a landing-pad implementation the bare-metal HAL

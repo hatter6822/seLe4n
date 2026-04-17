@@ -1,3 +1,86 @@
+## v0.29.8 — Doctest coverage audit
+
+Audit-follow-up: the previous release's `cargo test --workspace` output
+surfaced four "running X tests / 0 passed" lines (one per crate's
+`Doc-tests` run) that looked superficially suspicious. Investigation
+confirmed the lines were doctest runs where every example was marked
+`ignore` or the crate had no `///` code blocks — functionally correct,
+but hiding the fact that no doctest was ever being compile- or
+run-checked. This release makes every doctest either **execute and pass**
+or at minimum **compile-check**, so no test binary ever reports zero
+useful results again.
+
+Gate: `cargo test --workspace` (408 unit + 7 doctests = 415 passing, 0
+failed, 0 ignored) + `cargo clippy --workspace -- -D warnings` (0
+warnings) + `lake build` + `test_smoke.sh` + `check_version_sync.sh` +
+zero `sorry`/`axiom`.
+
+### Findings
+
+| Doctest                                                            | Before   | After          | Reason                                            |
+|--------------------------------------------------------------------|----------|----------------|---------------------------------------------------|
+| `sele4n-abi/ipc_buffer.rs::IpcBuffer` (line 47)                    | `ignore` | **runs**       | Plain API demo; made runnable with asserts.       |
+| `sele4n-hal/barriers.rs::csdb` (line 106)                          | `ignore` | **compile**    | Pseudocode pattern — `no_run` + concrete `# use`. |
+| `sele4n-hal/barriers.rs::speculation_safe_bound_check` (line 163)  | `ignore` | **compile**    | Same pattern.                                     |
+| `sele4n-hal/interrupts.rs::with_interrupts_disabled` (line 77)     | `ignore` | **compile**    | Stub `fn do_atomic_work()` added to make typecheck.|
+| `sele4n-hal/profiling.rs` module (line 14)                         | `ignore` | **compile**    | Stub `fn do_work()` + explicit `use`.             |
+| `sele4n-sys/lib.rs` crate (line 31 — NEW)                          | none     | **runs**       | `Cap<Endpoint, FullRights>` → `to_read_only` demo.|
+| `sele4n-types/lib.rs` crate (line 19 — NEW)                        | none     | **runs**       | `ThreadId`/`AccessRights` API demo with asserts.  |
+
+### Rationale for `no_run` vs `ignore` on the HAL doctests
+
+The four HAL examples are shape demonstrations of an API pattern
+(speculation-barrier guard, critical section, cycle-counter loop). They
+reference hardware instructions (`csdb`, `dsb`, `dc cvac`, system-register
+reads) whose execution on an `x86_64` host is either a no-op or trivial.
+Upgrading them from `ignore` to `no_run`:
+
+1. forces the Rust compiler to typecheck every signature and import, so
+   any future breaking change to `csdb()`, `speculation_safe_bound_check`,
+   `with_interrupts_disabled`, `LatencyStats::new`, or `read_cycle_counter`
+   immediately fails `cargo test --doc`;
+2. keeps the documented pattern legible (no runtime-only stub code in
+   the hot path) by introducing minimal `#`-hidden `use` lines and stub
+   fns that don't clutter the rendered rustdoc.
+
+The alternative of making them fully runnable would have required either
+`cfg(not(target_arch = "aarch64"))` no-op shims inside the doctest or
+moving the example to a real `#[test]` — both are heavier than the
+regression value of `no_run`.
+
+### New crate-level doctests
+
+`sele4n-types` and `sele4n-sys` previously had no `///` code blocks at
+all, producing `running 0 tests` output that looked like a misconfigured
+test binary even though it was truthful. Both crates now have a
+`lib.rs`-level example that:
+
+- `sele4n-types`: demonstrates `ThreadId::from(42)`, `.raw()`,
+  `SENTINEL`, and the `AccessRights::READ.union(WRITE).contains(...)`
+  functional API.
+- `sele4n-sys`: demonstrates `Cap<Endpoint, FullRights>::from_cptr(...)`
+  and the compile-time-safe `to_read_only()` downcast.
+
+Both use only `const fn` constructors and in-process assertions — no
+`svc #0` fires, so the doctests run cleanly on every host.
+
+### Tests
+
+- Unit tests: 94 + 93 + 154 + 13 + 54 = **408 passing** (unchanged).
+- Doctests: 1 + 4 + 1 + 1 = **7 passing** (was 0 passing + 5 ignored +
+  0 tests in 2 crates).
+- Combined workspace total: **415 passing, 0 failed, 0 ignored**.
+- Clippy: 0 warnings.
+- `lake build` + `test_smoke.sh` + tier-0 hygiene: all PASS.
+- Zero `sorry`/`axiom`.
+
+### Version
+
+- 0.29.7 → 0.29.8 across 15 version-bearing files, verified by
+  `scripts/check_version_sync.sh`.
+
+---
+
 ## v0.29.7 — Third-party attribution (MIT/Apache-2.0 compliance)
 
 Adds the upstream-required attribution text for the three MIT-or-Apache-2.0
