@@ -385,9 +385,13 @@ fn xval_017_ipc_buffer_overflow_roundtrip() {
     buf.set_mr(119, 0xBBBB).unwrap();
     assert_eq!(buf.get_mr(4).unwrap(), 0xAAAA);
     assert_eq!(buf.get_mr(119).unwrap(), 0xBBBB);
-    // Inline indices return false (not written to buffer)
-    assert_eq!(buf.set_mr(0, 42), Ok(false));
-    assert_eq!(buf.set_mr(3, 42), Ok(false));
+    // AK4-F (R-ABI-M04): Inline indices now return `Err(InvalidArgument)`
+    // for symmetry with `get_mr`. Legacy `Ok(false)` semantics available
+    // via `set_mr_overflow`.
+    assert_eq!(buf.set_mr(0, 42), Err(sele4n_types::KernelError::InvalidArgument));
+    assert_eq!(buf.set_mr(3, 42), Err(sele4n_types::KernelError::InvalidArgument));
+    assert_eq!(buf.set_mr_overflow(0, 42), Ok(()));
+    assert_eq!(buf.set_mr_overflow(3, 42), Ok(()));
 }
 
 /// RUST-XVAL-018: IPC buffer bounds enforcement.
@@ -1122,7 +1126,9 @@ fn aa1f_sched_context_configure_roundtrip() {
 #[test]
 fn aa1f_sched_context_bind_roundtrip() {
     use sele4n_abi::args::sched_context::SchedContextBindArgs;
-    let args = SchedContextBindArgs { thread_id: 42 };
+    use sele4n_types::ThreadId;
+    // AK4-C (R-ABI-H01): `thread_id` is typed `ThreadId` (was raw `u64`).
+    let args = SchedContextBindArgs { thread_id: ThreadId::from(42u64) };
     let encoded = args.encode();
     let decoded = SchedContextBindArgs::decode(&encoded).unwrap();
     assert_eq!(decoded, args);
@@ -1432,9 +1438,12 @@ fn ag2a_invalid_domains_rejected() {
 /// AG2-B: sele4n-sys SchedContext wrapper module exists and exports all 3 operations.
 #[test]
 fn ag2b_sys_sched_context_module_exports() {
+    use sele4n_types::ThreadId;
     let _configure: fn(CPtr, u64, u64, u64, u64, u64, &mut IpcBuffer) -> KernelResult<SyscallResponse> =
         sele4n_sys::sched_context::sched_context_configure;
-    let _bind: fn(CPtr, u64) -> KernelResult<SyscallResponse> =
+    // AK4-C: `sched_context_bind` now takes a typed `ThreadId`, matching the
+    // Lean `SchedContextBindArgs.threadId : ThreadId` signature.
+    let _bind: fn(CPtr, ThreadId) -> KernelResult<SyscallResponse> =
         sele4n_sys::sched_context::sched_context_bind;
     let _unbind: fn(CPtr) -> KernelResult<SyscallResponse> =
         sele4n_sys::sched_context::sched_context_unbind;

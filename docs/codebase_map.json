@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-codebase-audit-2thHs",
-      "commit_sha": "b0c37e63c4b433e347e65842b2de05b019c4edda",
-      "tree_sha": "bac057264d55e22cbbe2dfaaf9b815b0fab9ab73",
-      "committed_at_utc": "2026-04-17T06:08:16+00:00"
+      "branch": "claude/review-codebase-audit-ueS5k",
+      "commit_sha": "16d6f5310c81da84d62ed503f70eacf1c141cf8b",
+      "tree_sha": "ff6b58abf5b24960376cd30674419d4842e59dd2",
+      "committed_at_utc": "2026-04-17T15:19:23+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "2563d9ee1bdcb6adfa3fb89d0faf465faa281d57879cc2902cb25669b00f2e5a"
+    "source_digest": "5e272160288166c48e8cbeae4bb2d6fab23715822a28de04e47b8061b4992e58"
   },
   "summary": {
-    "module_count": 162,
-    "declaration_count": 5190
+    "module_count": 164,
+    "declaration_count": 5241
   },
   "readme_sync": {
-    "version": "0.29.3",
+    "version": "0.29.4",
     "lean_toolchain": "v4.28.0",
-    "production_files": 141,
-    "production_loc": 96953,
-    "test_files": 21,
-    "test_loc": 12529,
-    "proved_theorem_lemma_decls": 2852,
+    "production_files": 142,
+    "production_loc": 97515,
+    "test_files": 22,
+    "test_loc": 13098,
+    "proved_theorem_lemma_decls": 2868,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -398,7 +398,7 @@
             "Kernel",
             "LabelingContext",
             "SyscallRegisterLayout",
-            "decodeSyscallArgs",
+            "decodeSyscallArgsFromState",
             "dispatchSyscallChecked",
             "isInsecureDefaultContext",
             "lookupThreadRegisterContext",
@@ -408,7 +408,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_cspaceDelete_eq_unchecked",
-          "line": 1085,
+          "line": 1089,
           "called": [
             "Capability",
             "LabelingContext",
@@ -423,7 +423,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_lifecycleRetype_eq_unchecked",
-          "line": 1094,
+          "line": 1098,
           "called": [
             "Capability",
             "LabelingContext",
@@ -438,7 +438,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_vspaceMap_eq_unchecked",
-          "line": 1103,
+          "line": 1107,
           "called": [
             "Capability",
             "LabelingContext",
@@ -453,7 +453,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_vspaceUnmap_eq_unchecked",
-          "line": 1112,
+          "line": 1116,
           "called": [
             "Capability",
             "LabelingContext",
@@ -468,7 +468,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_serviceRevoke_eq_unchecked",
-          "line": 1121,
+          "line": 1125,
           "called": [
             "Capability",
             "LabelingContext",
@@ -483,7 +483,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_serviceQuery_eq_unchecked",
-          "line": 1130,
+          "line": 1134,
           "called": [
             "Capability",
             "LabelingContext",
@@ -498,7 +498,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_schedContextConfigure_eq_unchecked",
-          "line": 1139,
+          "line": 1143,
           "called": [
             "Capability",
             "LabelingContext",
@@ -514,7 +514,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_schedContextBind_eq_unchecked",
-          "line": 1148,
+          "line": 1152,
           "called": [
             "Capability",
             "LabelingContext",
@@ -530,7 +530,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_schedContextUnbind_eq_unchecked",
-          "line": 1157,
+          "line": 1161,
           "called": [
             "Capability",
             "LabelingContext",
@@ -546,7 +546,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_tcbSuspend_eq_unchecked",
-          "line": 1166,
+          "line": 1170,
           "called": [
             "Capability",
             "LabelingContext",
@@ -561,7 +561,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_tcbResume_eq_unchecked",
-          "line": 1175,
+          "line": 1179,
           "called": [
             "Capability",
             "LabelingContext",
@@ -576,7 +576,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_tcbSetPriority_eq_unchecked",
-          "line": 1184,
+          "line": 1188,
           "called": [
             "Capability",
             "LabelingContext",
@@ -591,7 +591,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_tcbSetMCPriority_eq_unchecked",
-          "line": 1193,
+          "line": 1197,
           "called": [
             "Capability",
             "LabelingContext",
@@ -606,7 +606,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_tcbSetIPCBuffer_eq_unchecked",
-          "line": 1202,
+          "line": 1206,
           "called": [
             "Capability",
             "LabelingContext",
@@ -621,7 +621,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_capabilityOnly_eq_unchecked",
-          "line": 1221,
+          "line": 1225,
           "called": [
             "Capability",
             "LabelingContext",
@@ -639,7 +639,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_reply_eq_unchecked_when_allowed",
-          "line": 1257,
+          "line": 1261,
           "called": [
             "Capability",
             "LabelingContext",
@@ -657,7 +657,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_replyRecv_eq_unchecked_when_allowed",
-          "line": 1284,
+          "line": 1288,
           "called": [
             "Capability",
             "LabelingContext",
@@ -682,7 +682,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_wildcard_unreachable",
-          "line": 1341,
+          "line": 1345,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -698,7 +698,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCapChecked_wildcard_unreachable",
-          "line": 1359,
+          "line": 1363,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -714,7 +714,7 @@
         {
           "kind": "def",
           "name": "dispatchSyscall",
-          "line": 1381,
+          "line": 1385,
           "called": [
             "Kernel",
             "SyscallDecodeResult",
@@ -730,11 +730,11 @@
         {
           "kind": "def",
           "name": "syscallEntry",
-          "line": 1410,
+          "line": 1417,
           "called": [
             "Kernel",
             "SyscallRegisterLayout",
-            "decodeSyscallArgs",
+            "decodeSyscallArgsFromState",
             "dispatchSyscall",
             "lookupThreadRegisterContext",
             "none"
@@ -743,11 +743,11 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_requires_valid_decode",
-          "line": 1430,
+          "line": 1440,
           "called": [
             "SyscallRegisterLayout",
             "SystemState",
-            "decodeSyscallArgs",
+            "decodeSyscallArgsFromState",
             "lookupThreadRegisterContext",
             "syscallEntry"
           ]
@@ -755,7 +755,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscall_requires_right",
-          "line": 1458,
+          "line": 1469,
           "called": [
             "SyscallDecodeResult",
             "SystemState",
@@ -773,11 +773,11 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_implies_capability_held",
-          "line": 1497,
+          "line": 1508,
           "called": [
             "SyscallRegisterLayout",
             "SystemState",
-            "decodeSyscallArgs",
+            "decodeSyscallArgsFromState",
             "dispatchSyscall_requires_right",
             "hasRight",
             "lookupSlotCap",
@@ -791,7 +791,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_state_unchanged",
-          "line": 1532,
+          "line": 1544,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -802,7 +802,7 @@
         {
           "kind": "theorem",
           "name": "syscallRequiredRight_total",
-          "line": 1542,
+          "line": 1554,
           "called": [
             "SyscallId",
             "syscallRequiredRight"
@@ -811,7 +811,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceMint_delegates",
-          "line": 1552,
+          "line": 1564,
           "called": [
             "Badge",
             "CSpaceAddr",
@@ -833,7 +833,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceCopy_delegates",
-          "line": 1569,
+          "line": 1581,
           "called": [
             "CSpaceAddr",
             "CSpaceCopyArgs",
@@ -852,7 +852,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceMove_delegates",
-          "line": 1584,
+          "line": 1596,
           "called": [
             "CSpaceAddr",
             "CSpaceMoveArgs",
@@ -871,7 +871,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceDelete_delegates",
-          "line": 1599,
+          "line": 1611,
           "called": [
             "CSpaceAddr",
             "CSpaceDeleteArgs",
@@ -890,7 +890,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_lifecycleRetype_delegates",
-          "line": 1618,
+          "line": 1630,
           "called": [
             "Capability",
             "LifecycleRetypeArgs",
@@ -909,7 +909,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceMap_delegates",
-          "line": 1638,
+          "line": 1650,
           "called": [
             "Capability",
             "ObjId",
@@ -928,7 +928,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceUnmap_delegates",
-          "line": 1659,
+          "line": 1671,
           "called": [
             "Capability",
             "ObjId",
@@ -946,7 +946,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_send_uses_withCaps",
-          "line": 1678,
+          "line": 1690,
           "called": [
             "Capability",
             "IpcMessage",
@@ -965,7 +965,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_call_uses_withCaps",
-          "line": 1697,
+          "line": 1709,
           "called": [
             "Capability",
             "IpcMessage",
@@ -987,7 +987,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_reply_populates_msg",
-          "line": 1728,
+          "line": 1740,
           "called": [
             "Capability",
             "SyscallDecodeResult",
@@ -1002,7 +1002,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_state",
-          "line": 1744,
+          "line": 1756,
           "called": [
             "Capability",
             "SyscallGate",
@@ -1014,7 +1014,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_preserves_proofLayerInvariantBundle",
-          "line": 1753,
+          "line": 1765,
           "called": [
             "KernelError",
             "SyscallRegisterLayout",
@@ -1026,7 +1026,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_proofLayerInvariantBundle",
-          "line": 1763,
+          "line": 1775,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -1039,7 +1039,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_proofLayerInvariantBundle",
-          "line": 1780,
+          "line": 1792,
           "called": [
             "SyscallRegisterLayout",
             "SystemState",
@@ -1052,7 +1052,7 @@
         {
           "kind": "theorem",
           "name": "decodeSyscallArgs_preserves_lowEquivalent",
-          "line": 1810,
+          "line": 1822,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1063,7 +1063,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_projection",
-          "line": 1819,
+          "line": 1831,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1078,7 +1078,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_lowEquivalent",
-          "line": 1830,
+          "line": 1842,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1093,7 +1093,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_projection",
-          "line": 1845,
+          "line": 1857,
           "called": [
             "Capability",
             "IfObserver",
@@ -1108,7 +1108,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_projection",
-          "line": 1860,
+          "line": 1872,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1123,7 +1123,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_yields_NI_step",
-          "line": 1883,
+          "line": 1895,
           "called": [
             "IfObserver",
             "KernelError",
@@ -1137,7 +1137,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_success_yields_NI_step",
-          "line": 1898,
+          "line": 1910,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1154,7 +1154,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_layer2_decode_pure",
-          "line": 1926,
+          "line": 1938,
           "called": [
             "SyscallDecodeResult",
             "decodeCSpaceCopyArgs",
@@ -1170,7 +1170,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_preservation_composition_witness",
-          "line": 1954,
+          "line": 1966,
           "called": [
             "dispatchSyscall",
             "proofLayerInvariantBundle",
@@ -1181,7 +1181,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscallChecked_preserves_projection",
-          "line": 1991,
+          "line": 2003,
           "called": [
             "Capability",
             "IfObserver",
@@ -3456,6 +3456,99 @@
       ]
     },
     {
+      "module": "SeLe4n.Kernel.Architecture.IpcBufferRead",
+      "path": "SeLe4n/Kernel/Architecture/IpcBufferRead.lean",
+      "declaration_count": 8,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Architecture.IpcBufferRead",
+          "line": 47,
+          "called": []
+        },
+        {
+          "kind": "inductive",
+          "name": "IpcBufferReadError",
+          "line": 60,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "maxOverflowSlots",
+          "line": 74,
+          "called": [
+            "maxMessageRegisters"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ipcBufferReadMr",
+          "line": 98,
+          "called": [
+            "IpcBufferReadError",
+            "SystemState",
+            "ThreadId",
+            "VAddr",
+            "lookup",
+            "maxOverflowSlots",
+            "none",
+            "ofNat",
+            "readUInt64",
+            "toNat",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcBufferReadMr_out_of_range",
+          "line": 116,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "ipcBufferReadMr",
+            "maxOverflowSlots"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcBufferReadMr_ok_bound",
+          "line": 126,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "ipcBufferReadMr",
+            "maxOverflowSlots"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcBufferReadMr_ok_implies_tcb",
+          "line": 137,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "ipcBufferReadMr",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcBufferReadMr_reads_only_caller_tcb",
+          "line": 155,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "bind",
+            "ipcBufferReadMr",
+            "maxOverflowSlots",
+            "none",
+            "toObjId"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Kernel.Architecture.IpcBufferValidation",
       "path": "SeLe4n/Kernel/Architecture/IpcBufferValidation.lean",
       "declaration_count": 15,
@@ -4082,18 +4175,18 @@
     {
       "module": "SeLe4n.Kernel.Architecture.RegisterDecode",
       "path": "SeLe4n/Kernel/Architecture/RegisterDecode.lean",
-      "declaration_count": 26,
+      "declaration_count": 35,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Architecture.RegisterDecode",
-          "line": 30,
+          "line": 31,
           "called": []
         },
         {
           "kind": "def",
           "name": "encodeCapPtr",
-          "line": 40,
+          "line": 41,
           "called": [
             "CPtr",
             "RegValue",
@@ -4103,7 +4196,7 @@
         {
           "kind": "def",
           "name": "encodeMsgInfo",
-          "line": 43,
+          "line": 44,
           "called": [
             "MessageInfo",
             "RegValue",
@@ -4113,7 +4206,7 @@
         {
           "kind": "def",
           "name": "encodeSyscallId",
-          "line": 46,
+          "line": 47,
           "called": [
             "RegValue",
             "SyscallId",
@@ -4123,7 +4216,7 @@
         {
           "kind": "def",
           "name": "extractMessageRegisters",
-          "line": 61,
+          "line": 62,
           "called": [
             "MessageInfo",
             "RegValue",
@@ -4135,7 +4228,7 @@
         {
           "kind": "def",
           "name": "decodeCapPtr",
-          "line": 78,
+          "line": 79,
           "called": [
             "CPtr",
             "KernelError",
@@ -4147,7 +4240,7 @@
         {
           "kind": "def",
           "name": "decodeMsgInfo",
-          "line": 85,
+          "line": 86,
           "called": [
             "KernelError",
             "MessageInfo",
@@ -4159,7 +4252,7 @@
         {
           "kind": "def",
           "name": "decodeSyscallId",
-          "line": 92,
+          "line": 93,
           "called": [
             "KernelError",
             "RegValue",
@@ -4171,7 +4264,7 @@
         {
           "kind": "def",
           "name": "validateRegBound",
-          "line": 99,
+          "line": 100,
           "called": [
             "KernelError",
             "RegName"
@@ -4180,7 +4273,7 @@
         {
           "kind": "def",
           "name": "decodeSyscallArgs",
-          "line": 109,
+          "line": 110,
           "called": [
             "KernelError",
             "RegisterFile",
@@ -4191,13 +4284,33 @@
             "decodeSyscallId",
             "pure",
             "readReg",
+            "size",
             "validateRegBound"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "decodeSyscallArgsFromState",
+          "line": 159,
+          "called": [
+            "KernelError",
+            "RegValue",
+            "RegisterFile",
+            "SyscallDecodeResult",
+            "SyscallRegisterLayout",
+            "SystemState",
+            "ThreadId",
+            "decodeSyscallArgs",
+            "ipcBufferReadMr",
+            "pure",
+            "size",
+            "toNat"
           ]
         },
         {
           "kind": "theorem",
           "name": "decodeCapPtr_roundtrip",
-          "line": 137,
+          "line": 203,
           "called": [
             "CPtr",
             "decodeCapPtr",
@@ -4212,7 +4325,7 @@
         {
           "kind": "theorem",
           "name": "decodeSyscallId_roundtrip",
-          "line": 144,
+          "line": 210,
           "called": [
             "SyscallId",
             "decodeSyscallId",
@@ -4223,7 +4336,7 @@
         {
           "kind": "theorem",
           "name": "decodeMsgInfo_roundtrip",
-          "line": 152,
+          "line": 218,
           "called": [
             "MessageInfo",
             "decodeMsgInfo",
@@ -4237,7 +4350,7 @@
         {
           "kind": "theorem",
           "name": "decode_components_roundtrip",
-          "line": 165,
+          "line": 231,
           "called": [
             "SyscallDecodeResult",
             "decodeCapPtr",
@@ -4259,7 +4372,7 @@
         {
           "kind": "theorem",
           "name": "extractMessageRegisters_length",
-          "line": 184,
+          "line": 250,
           "called": [
             "MessageInfo",
             "RegValue",
@@ -4271,7 +4384,7 @@
         {
           "kind": "theorem",
           "name": "extractMessageRegisters_ipc_bounded",
-          "line": 193,
+          "line": 259,
           "called": [
             "Badge",
             "MessageInfo",
@@ -4286,7 +4399,7 @@
         {
           "kind": "theorem",
           "name": "extractMessageRegisters_roundtrip",
-          "line": 207,
+          "line": 273,
           "called": [
             "MessageInfo",
             "RegValue",
@@ -4299,7 +4412,7 @@
         {
           "kind": "theorem",
           "name": "decodeSyscallId_error_iff",
-          "line": 225,
+          "line": 291,
           "called": [
             "RegValue",
             "decodeSyscallId",
@@ -4310,7 +4423,7 @@
         {
           "kind": "theorem",
           "name": "decodeMsgInfo_error_iff",
-          "line": 234,
+          "line": 300,
           "called": [
             "RegValue",
             "decode",
@@ -4321,7 +4434,7 @@
         {
           "kind": "theorem",
           "name": "decodeCapPtr_ok_iff",
-          "line": 243,
+          "line": 309,
           "called": [
             "RegValue",
             "decodeCapPtr",
@@ -4332,7 +4445,7 @@
         {
           "kind": "theorem",
           "name": "decodeCapPtr_ok_of_word64",
-          "line": 251,
+          "line": 317,
           "called": [
             "RegValue",
             "decodeCapPtr",
@@ -4343,7 +4456,7 @@
         {
           "kind": "theorem",
           "name": "validateRegBound_ok_iff",
-          "line": 256,
+          "line": 322,
           "called": [
             "RegName",
             "validateRegBound"
@@ -4352,7 +4465,7 @@
         {
           "kind": "theorem",
           "name": "validateRegBound_error_iff",
-          "line": 264,
+          "line": 330,
           "called": [
             "RegName",
             "validateRegBound"
@@ -4361,7 +4474,7 @@
         {
           "kind": "theorem",
           "name": "list_mapM_except_length",
-          "line": 276,
+          "line": 342,
           "called": [
             "bind",
             "pure"
@@ -4370,7 +4483,7 @@
         {
           "kind": "theorem",
           "name": "array_mapM_except_size",
-          "line": 301,
+          "line": 367,
           "called": [
             "list_mapM_except_length",
             "size",
@@ -4380,7 +4493,7 @@
         {
           "kind": "theorem",
           "name": "decodeMsgRegs_length",
-          "line": 316,
+          "line": 382,
           "called": [
             "RegisterFile",
             "SyscallDecodeResult",
@@ -4391,13 +4504,140 @@
             "pure",
             "size"
           ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeSyscallArgsFromState_base_error_propagates",
+          "line": 420,
+          "called": [
+            "KernelError",
+            "RegisterFile",
+            "SyscallRegisterLayout",
+            "SystemState",
+            "ThreadId",
+            "bind",
+            "decodeSyscallArgs",
+            "decodeSyscallArgsFromState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeSyscallArgsFromState_ok_implies_base_ok",
+          "line": 431,
+          "called": [
+            "RegisterFile",
+            "SyscallDecodeResult",
+            "SyscallRegisterLayout",
+            "SystemState",
+            "ThreadId",
+            "bind",
+            "decodeSyscallArgs",
+            "decodeSyscallArgsFromState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeSyscallArgsFromState_header_preserved",
+          "line": 447,
+          "called": [
+            "RegisterFile",
+            "SyscallDecodeResult",
+            "SyscallRegisterLayout",
+            "SystemState",
+            "ThreadId",
+            "bind",
+            "decodeSyscallArgs",
+            "decodeSyscallArgsFromState",
+            "pure"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeSyscallArgsFromState_capAddr_eq",
+          "line": 468,
+          "called": [
+            "RegisterFile",
+            "SyscallDecodeResult",
+            "SyscallRegisterLayout",
+            "SystemState",
+            "ThreadId",
+            "decodeSyscallArgs",
+            "decodeSyscallArgsFromState",
+            "decodeSyscallArgsFromState_header_preserved"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeSyscallArgsFromState_msgInfo_eq",
+          "line": 479,
+          "called": [
+            "RegisterFile",
+            "SyscallDecodeResult",
+            "SyscallRegisterLayout",
+            "SystemState",
+            "ThreadId",
+            "decodeSyscallArgs",
+            "decodeSyscallArgsFromState",
+            "decodeSyscallArgsFromState_header_preserved"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeSyscallArgsFromState_syscallId_eq",
+          "line": 490,
+          "called": [
+            "RegisterFile",
+            "SyscallDecodeResult",
+            "SyscallRegisterLayout",
+            "SystemState",
+            "ThreadId",
+            "decodeSyscallArgs",
+            "decodeSyscallArgsFromState",
+            "decodeSyscallArgsFromState_header_preserved"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeSyscallArgsFromState_reads_only_caller",
+          "line": 512,
+          "called": [
+            "ObjId",
+            "RegisterFile",
+            "SyscallRegisterLayout",
+            "SystemState",
+            "ThreadId",
+            "bind",
+            "decodeSyscallArgsFromState",
+            "ipcBufferReadMr",
+            "ipcBufferReadMr_reads_only_caller_tcb",
+            "none",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeSyscallArgsFromState_size_invariant",
+          "line": 540,
+          "called": [
+            "RegisterFile",
+            "SyscallDecodeResult",
+            "SyscallRegisterLayout",
+            "SystemState",
+            "ThreadId",
+            "bind",
+            "decodeSyscallArgs",
+            "decodeSyscallArgsFromState",
+            "list_mapM_except_length",
+            "pure",
+            "size"
+          ]
         }
       ]
     },
     {
       "module": "SeLe4n.Kernel.Architecture.SyscallArgDecode",
       "path": "SeLe4n/Kernel/Architecture/SyscallArgDecode.lean",
-      "declaration_count": 119,
+      "declaration_count": 125,
       "declarations": [
         {
           "kind": "namespace",
@@ -4502,7 +4742,7 @@
         {
           "kind": "def",
           "name": "decodeCSpaceMintArgs",
-          "line": 140,
+          "line": 146,
           "called": [
             "CSpaceMintArgs",
             "KernelError",
@@ -4516,7 +4756,7 @@
         {
           "kind": "def",
           "name": "decodeCSpaceCopyArgs",
-          "line": 153,
+          "line": 161,
           "called": [
             "CSpaceCopyArgs",
             "KernelError",
@@ -4529,7 +4769,7 @@
         {
           "kind": "def",
           "name": "decodeCSpaceMoveArgs",
-          "line": 161,
+          "line": 169,
           "called": [
             "CSpaceMoveArgs",
             "KernelError",
@@ -4542,7 +4782,7 @@
         {
           "kind": "def",
           "name": "decodeCSpaceDeleteArgs",
-          "line": 169,
+          "line": 177,
           "called": [
             "CSpaceDeleteArgs",
             "KernelError",
@@ -4555,7 +4795,7 @@
         {
           "kind": "def",
           "name": "decodeLifecycleRetypeArgs",
-          "line": 182,
+          "line": 190,
           "called": [
             "KernelError",
             "LifecycleRetypeArgs",
@@ -4570,7 +4810,7 @@
         {
           "kind": "def",
           "name": "decodeVSpaceMapArgs",
-          "line": 201,
+          "line": 209,
           "called": [
             "KernelError",
             "PagePermissions.ofNat",
@@ -4587,7 +4827,7 @@
         {
           "kind": "def",
           "name": "decodeVSpaceMapArgsChecked",
-          "line": 236,
+          "line": 244,
           "called": [
             "KernelError",
             "SyscallDecodeResult",
@@ -4600,7 +4840,7 @@
         {
           "kind": "theorem",
           "name": "decodeVSpaceMapArgsChecked_paddr_bounded",
-          "line": 243,
+          "line": 251,
           "called": [
             "SyscallDecodeResult",
             "VSpaceMapArgs",
@@ -4614,7 +4854,7 @@
         {
           "kind": "theorem",
           "name": "decodeVSpaceMapArgsChecked_eq_of_bounded",
-          "line": 262,
+          "line": 270,
           "called": [
             "SyscallDecodeResult",
             "VSpaceMapArgs",
@@ -4628,7 +4868,7 @@
         {
           "kind": "def",
           "name": "decodeVSpaceUnmapArgs",
-          "line": 274,
+          "line": 282,
           "called": [
             "KernelError",
             "SyscallDecodeResult",
@@ -4643,7 +4883,7 @@
         {
           "kind": "def",
           "name": "validateVSpaceMapPermsForMemoryKind",
-          "line": 303,
+          "line": 311,
           "called": [
             "KernelError",
             "MemoryRegion",
@@ -4654,7 +4894,7 @@
         {
           "kind": "theorem",
           "name": "validateVSpaceMapPermsForMemoryKind_device_noexec",
-          "line": 315,
+          "line": 323,
           "called": [
             "MemoryRegion",
             "VSpaceMapArgs",
@@ -4665,7 +4905,7 @@
         {
           "kind": "def",
           "name": "encodeCSpaceMintArgs",
-          "line": 329,
+          "line": 337,
           "called": [
             "CSpaceMintArgs",
             "RegValue",
@@ -4675,7 +4915,7 @@
         {
           "kind": "def",
           "name": "encodeCSpaceCopyArgs",
-          "line": 334,
+          "line": 342,
           "called": [
             "CSpaceCopyArgs",
             "RegValue",
@@ -4685,7 +4925,7 @@
         {
           "kind": "def",
           "name": "encodeCSpaceMoveArgs",
-          "line": 339,
+          "line": 347,
           "called": [
             "CSpaceMoveArgs",
             "RegValue",
@@ -4695,7 +4935,7 @@
         {
           "kind": "def",
           "name": "encodeCSpaceDeleteArgs",
-          "line": 344,
+          "line": 352,
           "called": [
             "CSpaceDeleteArgs",
             "RegValue",
@@ -4705,7 +4945,7 @@
         {
           "kind": "def",
           "name": "encodeLifecycleRetypeArgs",
-          "line": 349,
+          "line": 357,
           "called": [
             "LifecycleRetypeArgs",
             "RegValue",
@@ -4716,7 +4956,7 @@
         {
           "kind": "def",
           "name": "encodeVSpaceMapArgs",
-          "line": 354,
+          "line": 362,
           "called": [
             "RegValue",
             "VSpaceMapArgs",
@@ -4726,7 +4966,7 @@
         {
           "kind": "def",
           "name": "encodeVSpaceUnmapArgs",
-          "line": 359,
+          "line": 367,
           "called": [
             "RegValue",
             "VSpaceUnmapArgs",
@@ -4736,7 +4976,7 @@
         {
           "kind": "theorem",
           "name": "requireMsgReg_unfold_ok",
-          "line": 367,
+          "line": 375,
           "called": [
             "RegValue",
             "requireMsgReg",
@@ -4746,7 +4986,7 @@
         {
           "kind": "theorem",
           "name": "requireMsgReg_unfold_err",
-          "line": 370,
+          "line": 378,
           "called": [
             "RegValue",
             "requireMsgReg",
@@ -4755,14 +4995,12 @@
         },
         {
           "kind": "theorem",
-          "name": "decodeCSpaceMintArgs_error_iff",
-          "line": 374,
+          "name": "decodeCSpaceMintArgs_error_of_insufficient_regs",
+          "line": 384,
           "called": [
             "SyscallDecodeResult",
             "bind",
             "decodeCSpaceMintArgs",
-            "pure",
-            "requireMsgReg",
             "requireMsgReg_unfold_err",
             "requireMsgReg_unfold_ok",
             "size"
@@ -4770,8 +5008,35 @@
         },
         {
           "kind": "theorem",
+          "name": "decodeCSpaceMintArgs_error_of_invalid_rights",
+          "line": 402,
+          "called": [
+            "SyscallDecodeResult",
+            "bind",
+            "decodeCSpaceMintArgs",
+            "requireMsgReg",
+            "size"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeCSpaceMintArgs_error_iff",
+          "line": 416,
+          "called": [
+            "SyscallDecodeResult",
+            "bind",
+            "decodeCSpaceMintArgs",
+            "decodeCSpaceMintArgs_error_of_insufficient_regs",
+            "decodeCSpaceMintArgs_error_of_invalid_rights",
+            "pure",
+            "requireMsgReg",
+            "size"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "decodeCSpaceCopyArgs_error_iff",
-          "line": 403,
+          "line": 444,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -4786,7 +5051,7 @@
         {
           "kind": "theorem",
           "name": "decodeCSpaceMoveArgs_error_iff",
-          "line": 424,
+          "line": 465,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -4801,7 +5066,7 @@
         {
           "kind": "theorem",
           "name": "decodeCSpaceDeleteArgs_error_iff",
-          "line": 445,
+          "line": 486,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -4815,7 +5080,7 @@
         {
           "kind": "theorem",
           "name": "decodeLifecycleRetypeArgs_error_of_insufficient_regs",
-          "line": 462,
+          "line": 503,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -4828,7 +5093,7 @@
         {
           "kind": "theorem",
           "name": "decodeLifecycleRetypeArgs_error_of_invalid_type",
-          "line": 476,
+          "line": 517,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -4842,7 +5107,7 @@
         {
           "kind": "theorem",
           "name": "decodeVSpaceMapArgs_error_of_insufficient_regs",
-          "line": 487,
+          "line": 528,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -4855,7 +5120,7 @@
         {
           "kind": "theorem",
           "name": "decodeVSpaceMapArgs_error_of_noncanonical_vaddr",
-          "line": 504,
+          "line": 545,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -4869,7 +5134,7 @@
         {
           "kind": "theorem",
           "name": "decodeVSpaceMapArgs_error_of_invalid_perms",
-          "line": 520,
+          "line": 561,
           "called": [
             "PagePermissions.ofNat",
             "SyscallDecodeResult",
@@ -4883,7 +5148,7 @@
         {
           "kind": "theorem",
           "name": "decodeVSpaceMapArgs_error_iff",
-          "line": 546,
+          "line": 587,
           "called": [
             "PagePermissions.ofNat",
             "SyscallDecodeResult",
@@ -4903,7 +5168,7 @@
         {
           "kind": "theorem",
           "name": "decodeVSpaceUnmapArgs_error_iff",
-          "line": 609,
+          "line": 650,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -4920,7 +5185,7 @@
         {
           "kind": "def",
           "name": "stubDecoded",
-          "line": 683,
+          "line": 724,
           "called": [
             "RegValue",
             "SyscallDecodeResult",
@@ -4930,14 +5195,18 @@
         {
           "kind": "theorem",
           "name": "decodeCSpaceMintArgs_roundtrip",
-          "line": 694,
+          "line": 735,
           "called": [
+            "Badge",
             "CSpaceMintArgs",
+            "KernelError",
             "decodeCSpaceMintArgs",
             "encodeCSpaceMintArgs",
+            "isWord5_of_valid",
             "machineWordBits",
             "machineWordMax",
             "ofNat",
+            "ofNatMasked",
             "ofNat_idempotent",
             "stubDecoded",
             "toNat",
@@ -4947,7 +5216,7 @@
         {
           "kind": "theorem",
           "name": "decodeCSpaceCopyArgs_roundtrip",
-          "line": 705,
+          "line": 765,
           "called": [
             "CSpaceCopyArgs",
             "decodeCSpaceCopyArgs",
@@ -4958,7 +5227,7 @@
         {
           "kind": "theorem",
           "name": "decodeCSpaceMoveArgs_roundtrip",
-          "line": 710,
+          "line": 770,
           "called": [
             "CSpaceMoveArgs",
             "decodeCSpaceMoveArgs",
@@ -4969,7 +5238,7 @@
         {
           "kind": "theorem",
           "name": "decodeCSpaceDeleteArgs_roundtrip",
-          "line": 715,
+          "line": 775,
           "called": [
             "CSpaceDeleteArgs",
             "decodeCSpaceDeleteArgs",
@@ -4980,7 +5249,7 @@
         {
           "kind": "theorem",
           "name": "decodeLifecycleRetypeArgs_roundtrip",
-          "line": 722,
+          "line": 782,
           "called": [
             "LifecycleRetypeArgs",
             "decodeLifecycleRetypeArgs",
@@ -4993,7 +5262,7 @@
         {
           "kind": "theorem",
           "name": "pagePermissions_toNat_lt_32",
-          "line": 731,
+          "line": 791,
           "called": [
             "PagePermissions",
             "toNat"
@@ -5002,7 +5271,7 @@
         {
           "kind": "theorem",
           "name": "pagePermissions_ofNat",
-          "line": 736,
+          "line": 796,
           "called": [
             "PagePermissions",
             "PagePermissions.ofNat",
@@ -5015,7 +5284,7 @@
         {
           "kind": "theorem",
           "name": "decodeVSpaceMapArgs_roundtrip",
-          "line": 747,
+          "line": 807,
           "called": [
             "ASID.ofNat_toNat",
             "PAddr.ofNat_toNat",
@@ -5040,7 +5309,7 @@
         {
           "kind": "theorem",
           "name": "decodeVSpaceUnmapArgs_roundtrip",
-          "line": 777,
+          "line": 837,
           "called": [
             "ASID.ofNat_toNat",
             "VAddr.ofNat_toNat",
@@ -5058,7 +5327,7 @@
         {
           "kind": "structure",
           "name": "ServiceRegisterArgs",
-          "line": 793,
+          "line": 853,
           "called": [
             "InterfaceId"
           ]
@@ -5066,7 +5335,7 @@
         {
           "kind": "structure",
           "name": "ServiceRevokeArgs",
-          "line": 803,
+          "line": 863,
           "called": [
             "ServiceId"
           ]
@@ -5074,26 +5343,40 @@
         {
           "kind": "structure",
           "name": "ServiceQueryArgs",
-          "line": 810,
+          "line": 870,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "serviceMaxMethodCount",
+          "line": 879,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "serviceMaxMessageSize",
+          "line": 884,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeServiceRegisterArgs",
-          "line": 820,
+          "line": 898,
           "called": [
             "KernelError",
             "ServiceRegisterArgs",
             "SyscallDecodeResult",
             "ofNat",
             "pure",
-            "requireMsgReg"
+            "requireMsgReg",
+            "serviceMaxMessageSize",
+            "serviceMaxMethodCount"
           ]
         },
         {
           "kind": "def",
           "name": "decodeServiceRevokeArgs",
-          "line": 835,
+          "line": 919,
           "called": [
             "KernelError",
             "ServiceRevokeArgs",
@@ -5105,7 +5388,7 @@
         {
           "kind": "def",
           "name": "encodeServiceRegisterArgs",
-          "line": 846,
+          "line": 930,
           "called": [
             "RegValue",
             "ServiceRegisterArgs",
@@ -5115,7 +5398,7 @@
         {
           "kind": "def",
           "name": "encodeServiceRevokeArgs",
-          "line": 852,
+          "line": 936,
           "called": [
             "RegValue",
             "ServiceRevokeArgs",
@@ -5124,14 +5407,12 @@
         },
         {
           "kind": "theorem",
-          "name": "decodeServiceRegisterArgs_error_iff",
-          "line": 860,
+          "name": "decodeServiceRegisterArgs_error_of_insufficient_regs",
+          "line": 946,
           "called": [
             "SyscallDecodeResult",
             "bind",
             "decodeServiceRegisterArgs",
-            "pure",
-            "requireMsgReg",
             "requireMsgReg_unfold_err",
             "requireMsgReg_unfold_ok",
             "size"
@@ -5139,8 +5420,35 @@
         },
         {
           "kind": "theorem",
+          "name": "decodeServiceRegisterArgs_error_of_methodCount_too_large",
+          "line": 966,
+          "called": [
+            "SyscallDecodeResult",
+            "bind",
+            "decodeServiceRegisterArgs",
+            "requireMsgReg",
+            "serviceMaxMethodCount",
+            "size"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeServiceRegisterArgs_error_of_invalid_grant",
+          "line": 979,
+          "called": [
+            "SyscallDecodeResult",
+            "bind",
+            "decodeServiceRegisterArgs",
+            "requireMsgReg",
+            "serviceMaxMessageSize",
+            "serviceMaxMethodCount",
+            "size"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "decodeServiceRevokeArgs_error_iff",
-          "line": 893,
+          "line": 998,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -5154,7 +5462,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRegisterArgs_roundtrip",
-          "line": 914,
+          "line": 1021,
           "called": [
             "ServiceRegisterArgs",
             "bind",
@@ -5163,6 +5471,8 @@
             "ofNat",
             "pure",
             "requireMsgReg",
+            "serviceMaxMessageSize",
+            "serviceMaxMethodCount",
             "stubDecoded",
             "toNat"
           ]
@@ -5170,7 +5480,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRevokeArgs_roundtrip",
-          "line": 923,
+          "line": 1037,
           "called": [
             "ServiceRevokeArgs",
             "decodeServiceRevokeArgs",
@@ -5181,7 +5491,7 @@
         {
           "kind": "structure",
           "name": "NotificationSignalArgs",
-          "line": 934,
+          "line": 1048,
           "called": [
             "Badge"
           ]
@@ -5189,13 +5499,13 @@
         {
           "kind": "structure",
           "name": "NotificationWaitArgs",
-          "line": 941,
+          "line": 1055,
           "called": []
         },
         {
           "kind": "structure",
           "name": "ReplyRecvArgs",
-          "line": 948,
+          "line": 1062,
           "called": [
             "ThreadId"
           ]
@@ -5203,7 +5513,7 @@
         {
           "kind": "def",
           "name": "decodeNotificationSignalArgs",
-          "line": 954,
+          "line": 1068,
           "called": [
             "KernelError",
             "NotificationSignalArgs",
@@ -5216,7 +5526,7 @@
         {
           "kind": "def",
           "name": "decodeNotificationWaitArgs",
-          "line": 960,
+          "line": 1074,
           "called": [
             "KernelError",
             "NotificationWaitArgs",
@@ -5227,7 +5537,7 @@
         {
           "kind": "def",
           "name": "decodeReplyRecvArgs",
-          "line": 966,
+          "line": 1080,
           "called": [
             "KernelError",
             "ReplyRecvArgs",
@@ -5240,25 +5550,25 @@
         {
           "kind": "structure",
           "name": "SchedContextConfigureArgs",
-          "line": 978,
+          "line": 1092,
           "called": []
         },
         {
           "kind": "structure",
           "name": "SchedContextBindArgs",
-          "line": 988,
+          "line": 1102,
           "called": []
         },
         {
           "kind": "structure",
           "name": "SchedContextUnbindArgs",
-          "line": 994,
+          "line": 1108,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeSchedContextConfigureArgs",
-          "line": 1003,
+          "line": 1117,
           "called": [
             "KernelError",
             "SchedContextConfigureArgs",
@@ -5270,7 +5580,7 @@
         {
           "kind": "def",
           "name": "decodeSchedContextConfigureArgsChecked",
-          "line": 1026,
+          "line": 1140,
           "called": [
             "KernelError",
             "SchedContextConfigureArgs",
@@ -5282,7 +5592,7 @@
         {
           "kind": "theorem",
           "name": "decodeSchedContextConfigureArgsChecked_invariants",
-          "line": 1036,
+          "line": 1150,
           "called": [
             "SchedContextConfigureArgs",
             "SyscallDecodeResult",
@@ -5295,7 +5605,7 @@
         {
           "kind": "def",
           "name": "decodeSchedContextBindArgs",
-          "line": 1065,
+          "line": 1179,
           "called": [
             "KernelError",
             "SchedContextBindArgs",
@@ -5307,7 +5617,7 @@
         {
           "kind": "def",
           "name": "decodeSchedContextUnbindArgs",
-          "line": 1071,
+          "line": 1185,
           "called": [
             "KernelError",
             "SchedContextUnbindArgs",
@@ -5318,7 +5628,7 @@
         {
           "kind": "def",
           "name": "encodeSchedContextConfigureArgs",
-          "line": 1080,
+          "line": 1194,
           "called": [
             "RegValue",
             "SchedContextConfigureArgs"
@@ -5327,7 +5637,7 @@
         {
           "kind": "def",
           "name": "encodeSchedContextBindArgs",
-          "line": 1084,
+          "line": 1198,
           "called": [
             "RegValue",
             "SchedContextBindArgs"
@@ -5336,7 +5646,7 @@
         {
           "kind": "def",
           "name": "encodeSchedContextUnbindArgs",
-          "line": 1088,
+          "line": 1202,
           "called": [
             "RegValue",
             "SchedContextUnbindArgs"
@@ -5345,7 +5655,7 @@
         {
           "kind": "theorem",
           "name": "decodeSchedContextConfigureArgs_roundtrip",
-          "line": 1096,
+          "line": 1210,
           "called": [
             "SchedContextConfigureArgs",
             "decodeSchedContextConfigureArgs",
@@ -5356,7 +5666,7 @@
         {
           "kind": "theorem",
           "name": "decodeSchedContextBindArgs_roundtrip",
-          "line": 1101,
+          "line": 1215,
           "called": [
             "SchedContextBindArgs",
             "decodeSchedContextBindArgs",
@@ -5367,7 +5677,7 @@
         {
           "kind": "theorem",
           "name": "decodeSchedContextUnbindArgs_roundtrip",
-          "line": 1106,
+          "line": 1220,
           "called": [
             "SchedContextUnbindArgs",
             "decodeSchedContextUnbindArgs",
@@ -5378,7 +5688,7 @@
         {
           "kind": "def",
           "name": "encodeNotificationSignalArgs",
-          "line": 1111,
+          "line": 1225,
           "called": [
             "NotificationSignalArgs",
             "RegValue"
@@ -5387,7 +5697,7 @@
         {
           "kind": "def",
           "name": "encodeNotificationWaitArgs",
-          "line": 1115,
+          "line": 1229,
           "called": [
             "NotificationWaitArgs",
             "RegValue"
@@ -5396,7 +5706,7 @@
         {
           "kind": "def",
           "name": "encodeReplyRecvArgs",
-          "line": 1119,
+          "line": 1233,
           "called": [
             "RegValue",
             "ReplyRecvArgs",
@@ -5406,7 +5716,7 @@
         {
           "kind": "theorem",
           "name": "decodeNotificationSignalArgs_roundtrip",
-          "line": 1124,
+          "line": 1238,
           "called": [
             "Badge.ofNatMasked_toNat",
             "NotificationSignalArgs",
@@ -5422,7 +5732,7 @@
         {
           "kind": "theorem",
           "name": "decodeNotificationWaitArgs_roundtrip",
-          "line": 1133,
+          "line": 1247,
           "called": [
             "NotificationWaitArgs",
             "decodeNotificationWaitArgs",
@@ -5433,7 +5743,7 @@
         {
           "kind": "theorem",
           "name": "decodeReplyRecvArgs_roundtrip",
-          "line": 1138,
+          "line": 1252,
           "called": [
             "ReplyRecvArgs",
             "decodeReplyRecvArgs",
@@ -5444,7 +5754,7 @@
         {
           "kind": "theorem",
           "name": "decode_layer2_roundtrip_all",
-          "line": 1148,
+          "line": 1262,
           "called": [
             "decodeCSpaceCopyArgs",
             "decodeCSpaceCopyArgs_roundtrip",
@@ -5493,6 +5803,8 @@
             "encodeVSpaceUnmapArgs",
             "isCanonical",
             "isValidForConfig",
+            "serviceMaxMessageSize",
+            "serviceMaxMethodCount",
             "stubDecoded",
             "valid",
             "wxCompliant"
@@ -5501,7 +5813,7 @@
         {
           "kind": "theorem",
           "name": "decodeNotificationSignalArgs_error_iff",
-          "line": 1186,
+          "line": 1304,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -5515,7 +5827,7 @@
         {
           "kind": "theorem",
           "name": "decodeReplyRecvArgs_error_iff",
-          "line": 1203,
+          "line": 1321,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -5529,7 +5841,7 @@
         {
           "kind": "theorem",
           "name": "decodeSchedContextConfigureArgs_error_iff",
-          "line": 1224,
+          "line": 1342,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -5544,7 +5856,7 @@
         {
           "kind": "theorem",
           "name": "decodeSchedContextBindArgs_error_iff",
-          "line": 1257,
+          "line": 1375,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -5558,7 +5870,7 @@
         {
           "kind": "theorem",
           "name": "decodeSchedContextUnbindArgs_error_iff",
-          "line": 1274,
+          "line": 1392,
           "called": [
             "SyscallDecodeResult",
             "decodeSchedContextUnbindArgs",
@@ -5568,7 +5880,7 @@
         {
           "kind": "def",
           "name": "decodeExtraCapAddrs",
-          "line": 1294,
+          "line": 1412,
           "called": [
             "CPtr",
             "SyscallDecodeResult",
@@ -5579,7 +5891,7 @@
         {
           "kind": "theorem",
           "name": "arm64_regCount_valid",
-          "line": 1315,
+          "line": 1433,
           "called": [
             "arm64GPRCount"
           ]
@@ -5587,7 +5899,7 @@
         {
           "kind": "theorem",
           "name": "machineConfig_registerCount_default_eq_arm64GPRCount",
-          "line": 1322,
+          "line": 1440,
           "called": [
             "MachineConfig",
             "arm64GPRCount"
@@ -5596,19 +5908,19 @@
         {
           "kind": "structure",
           "name": "SuspendArgs",
-          "line": 1335,
+          "line": 1453,
           "called": []
         },
         {
           "kind": "structure",
           "name": "ResumeArgs",
-          "line": 1341,
+          "line": 1459,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeSuspendArgs",
-          "line": 1345,
+          "line": 1463,
           "called": [
             "KernelError",
             "SuspendArgs",
@@ -5619,7 +5931,7 @@
         {
           "kind": "def",
           "name": "decodeResumeArgs",
-          "line": 1350,
+          "line": 1468,
           "called": [
             "KernelError",
             "ResumeArgs",
@@ -5630,7 +5942,7 @@
         {
           "kind": "def",
           "name": "encodeSuspendArgs",
-          "line": 1355,
+          "line": 1473,
           "called": [
             "RegValue",
             "SuspendArgs"
@@ -5639,7 +5951,7 @@
         {
           "kind": "def",
           "name": "encodeResumeArgs",
-          "line": 1358,
+          "line": 1476,
           "called": [
             "RegValue",
             "ResumeArgs"
@@ -5648,7 +5960,7 @@
         {
           "kind": "theorem",
           "name": "decodeSuspendArgs_roundtrip",
-          "line": 1361,
+          "line": 1479,
           "called": [
             "SuspendArgs",
             "decodeSuspendArgs",
@@ -5659,7 +5971,7 @@
         {
           "kind": "theorem",
           "name": "decodeResumeArgs_roundtrip",
-          "line": 1366,
+          "line": 1484,
           "called": [
             "ResumeArgs",
             "decodeResumeArgs",
@@ -5670,19 +5982,19 @@
         {
           "kind": "structure",
           "name": "SetPriorityArgs",
-          "line": 1377,
+          "line": 1495,
           "called": []
         },
         {
           "kind": "structure",
           "name": "SetMCPriorityArgs",
-          "line": 1384,
+          "line": 1502,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeSetPriorityArgs",
-          "line": 1395,
+          "line": 1513,
           "called": [
             "KernelError",
             "SetPriorityArgs",
@@ -5694,7 +6006,7 @@
         {
           "kind": "def",
           "name": "decodeSetMCPriorityArgs",
-          "line": 1404,
+          "line": 1522,
           "called": [
             "KernelError",
             "SetMCPriorityArgs",
@@ -5706,7 +6018,7 @@
         {
           "kind": "def",
           "name": "encodeSetPriorityArgs",
-          "line": 1415,
+          "line": 1533,
           "called": [
             "RegValue",
             "SetPriorityArgs"
@@ -5715,7 +6027,7 @@
         {
           "kind": "def",
           "name": "encodeSetMCPriorityArgs",
-          "line": 1419,
+          "line": 1537,
           "called": [
             "RegValue",
             "SetMCPriorityArgs"
@@ -5724,7 +6036,7 @@
         {
           "kind": "theorem",
           "name": "decodeSetPriorityArgs_roundtrip",
-          "line": 1427,
+          "line": 1545,
           "called": [
             "SetPriorityArgs",
             "bind",
@@ -5738,7 +6050,7 @@
         {
           "kind": "theorem",
           "name": "decodeSetMCPriorityArgs_roundtrip",
-          "line": 1433,
+          "line": 1551,
           "called": [
             "SetMCPriorityArgs",
             "bind",
@@ -5752,7 +6064,7 @@
         {
           "kind": "structure",
           "name": "SetIPCBufferArgs",
-          "line": 1446,
+          "line": 1564,
           "called": [
             "VAddr"
           ]
@@ -5760,7 +6072,7 @@
         {
           "kind": "def",
           "name": "decodeSetIPCBufferArgs",
-          "line": 1453,
+          "line": 1571,
           "called": [
             "KernelError",
             "SetIPCBufferArgs",
@@ -5775,7 +6087,7 @@
         {
           "kind": "def",
           "name": "encodeSetIPCBufferArgs",
-          "line": 1461,
+          "line": 1579,
           "called": [
             "RegValue",
             "SetIPCBufferArgs",
@@ -5785,7 +6097,7 @@
         {
           "kind": "theorem",
           "name": "decodeSetIPCBufferArgs_roundtrip",
-          "line": 1469,
+          "line": 1587,
           "called": [
             "SetIPCBufferArgs",
             "bind",
@@ -61710,6 +62022,267 @@
       ]
     },
     {
+      "module": "tests.AbiRoundtripSuite",
+      "path": "tests/AbiRoundtripSuite.lean",
+      "declaration_count": 18,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.AbiRoundtripSuite",
+          "line": 41,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "tag",
+          "line": 43,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "expect",
+          "line": 45,
+          "called": [
+            "expectCond",
+            "tag"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "encodeLittleEndian",
+          "line": 50,
+          "called": [
+            "pure"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "buildAbiState",
+          "line": 61,
+          "called": [
+            "Memory",
+            "ObjId",
+            "PAddr",
+            "RHTable.ofList",
+            "RegName",
+            "RegValue",
+            "SystemState",
+            "ThreadId",
+            "VAddr",
+            "VSpaceRoot",
+            "build",
+            "cnodeId",
+            "empty",
+            "encodeLittleEndian",
+            "mem",
+            "ofNat",
+            "pure",
+            "size",
+            "toNat",
+            "toObjId",
+            "withCurrent",
+            "withLifecycleObjectType",
+            "withObject",
+            "withRunnable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "regsOf",
+          "line": 115,
+          "called": [
+            "RegisterFile",
+            "SystemState",
+            "ThreadId",
+            "default",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "t01_service_register_full_abi",
+          "line": 123,
+          "called": [
+            "ThreadId",
+            "arm64DefaultLayout",
+            "buildAbiState",
+            "decode",
+            "decodeServiceRegisterArgs",
+            "decodeSyscallArgsFromState",
+            "expect",
+            "regsOf",
+            "size",
+            "throw",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "t02_service_register_bounds_rejected",
+          "line": 150,
+          "called": [
+            "ThreadId",
+            "arm64DefaultLayout",
+            "buildAbiState",
+            "decodeServiceRegisterArgs",
+            "decodeSyscallArgsFromState",
+            "expect",
+            "regsOf",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "t03_sched_context_configure_full_abi",
+          "line": 171,
+          "called": [
+            "ThreadId",
+            "arm64DefaultLayout",
+            "buildAbiState",
+            "decode",
+            "decodeSchedContextConfigureArgs",
+            "decodeSyscallArgsFromState",
+            "expect",
+            "regsOf",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "t04_sc_configure_domain_rejected",
+          "line": 196,
+          "called": [
+            "ThreadId",
+            "arm64DefaultLayout",
+            "buildAbiState",
+            "decodeSchedContextConfigureArgsChecked",
+            "decodeSyscallArgsFromState",
+            "expect",
+            "regsOf",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "t05_cspace_mint_no_overflow",
+          "line": 215,
+          "called": [
+            "ThreadId",
+            "arm64DefaultLayout",
+            "buildAbiState",
+            "decode",
+            "decodeCSpaceMintArgs",
+            "decodeSyscallArgsFromState",
+            "expect",
+            "regsOf",
+            "throw",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "t06_cspace_mint_rights_rejected",
+          "line": 238,
+          "called": [
+            "ThreadId",
+            "arm64DefaultLayout",
+            "buildAbiState",
+            "decodeCSpaceMintArgs",
+            "decodeSyscallArgsFromState",
+            "expect",
+            "regsOf",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "t07_cspace_copy_minimal",
+          "line": 259,
+          "called": [
+            "ThreadId",
+            "arm64DefaultLayout",
+            "buildAbiState",
+            "decode",
+            "decodeCSpaceCopyArgs",
+            "decodeSyscallArgsFromState",
+            "expect",
+            "regsOf",
+            "throw",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "t08_size_invariant_across_syscalls",
+          "line": 281,
+          "called": [
+            "ThreadId",
+            "arm64DefaultLayout",
+            "buildAbiState",
+            "decodeSyscallArgsFromState",
+            "expect",
+            "regsOf",
+            "size",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "t09_service_register_grant_strict",
+          "line": 306,
+          "called": [
+            "ThreadId",
+            "arm64DefaultLayout",
+            "buildAbiState",
+            "decodeServiceRegisterArgs",
+            "decodeSyscallArgsFromState",
+            "expect",
+            "regsOf",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "t10_unknown_tid_fails",
+          "line": 330,
+          "called": [
+            "ThreadId",
+            "arm64DefaultLayout",
+            "buildAbiState",
+            "decodeSyscallArgsFromState",
+            "expect",
+            "regsOf",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runAll",
+          "line": 347,
+          "called": [
+            "t01_service_register_full_abi",
+            "t02_service_register_bounds_rejected",
+            "t03_sched_context_configure_full_abi",
+            "t04_sc_configure_domain_rejected",
+            "t05_cspace_mint_no_overflow",
+            "t06_cspace_mint_rights_rejected",
+            "t07_cspace_copy_minimal",
+            "t08_size_invariant_across_syscalls",
+            "t09_service_register_grant_strict",
+            "t10_unknown_tid_fails"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 363,
+          "called": [
+            "runAll"
+          ]
+        }
+      ]
+    },
+    {
       "module": "tests.AsidPoolSuite",
       "path": "tests/AsidPoolSuite.lean",
       "declaration_count": 12,
@@ -62305,24 +62878,24 @@
     {
       "module": "tests.DecodingSuite",
       "path": "tests/DecodingSuite.lean",
-      "declaration_count": 49,
+      "declaration_count": 59,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.DecodingSuite",
-          "line": 32,
+          "line": 35,
           "called": []
         },
         {
           "kind": "def",
           "name": "tag",
-          "line": 34,
+          "line": 37,
           "called": []
         },
         {
           "kind": "def",
           "name": "expect",
-          "line": 36,
+          "line": 39,
           "called": [
             "expectCond",
             "tag"
@@ -62331,19 +62904,19 @@
         {
           "kind": "def",
           "name": "isOkEq",
-          "line": 40,
+          "line": 43,
           "called": []
         },
         {
           "kind": "def",
           "name": "isErrEq",
-          "line": 46,
+          "line": 49,
           "called": []
         },
         {
           "kind": "def",
           "name": "rd001_decodeSyscallIdValid",
-          "line": 56,
+          "line": 59,
           "called": [
             "decodeSyscallId",
             "expect",
@@ -62353,7 +62926,7 @@
         {
           "kind": "def",
           "name": "rd002_decodeSyscallIdInvalid",
-          "line": 68,
+          "line": 71,
           "called": [
             "decodeSyscallId",
             "expect",
@@ -62363,7 +62936,7 @@
         {
           "kind": "def",
           "name": "rd003_decodeSyscallIdBoundary",
-          "line": 77,
+          "line": 80,
           "called": [
             "decodeSyscallId",
             "expect"
@@ -62372,7 +62945,7 @@
         {
           "kind": "def",
           "name": "rd004_decodeMsgInfoValid",
-          "line": 84,
+          "line": 87,
           "called": [
             "MessageInfo",
             "decodeMsgInfo",
@@ -62384,7 +62957,7 @@
         {
           "kind": "def",
           "name": "rd005_decodeMsgInfoOverflow",
-          "line": 91,
+          "line": 94,
           "called": [
             "MessageInfo",
             "decodeMsgInfo",
@@ -62396,7 +62969,7 @@
         {
           "kind": "def",
           "name": "rd006_decodeCapPtrValid",
-          "line": 104,
+          "line": 107,
           "called": [
             "decodeCapPtr",
             "expect",
@@ -62407,7 +62980,7 @@
         {
           "kind": "def",
           "name": "rd007_decodeCapPtrOutOfRange",
-          "line": 113,
+          "line": 116,
           "called": [
             "decodeCapPtr",
             "expect",
@@ -62417,7 +62990,7 @@
         {
           "kind": "def",
           "name": "rd008_validateRegBound",
-          "line": 119,
+          "line": 122,
           "called": [
             "expect",
             "isErrEq",
@@ -62427,7 +63000,7 @@
         {
           "kind": "def",
           "name": "rd009_decodeSyscallArgsIntegration",
-          "line": 134,
+          "line": 137,
           "called": [
             "MessageInfo",
             "RegisterFile",
@@ -62448,7 +63021,7 @@
         {
           "kind": "def",
           "name": "rd010_decodeSyscallArgsInsufficientRegs",
-          "line": 162,
+          "line": 165,
           "called": [
             "RegisterFile",
             "arm64DefaultLayout",
@@ -62460,7 +63033,7 @@
         {
           "kind": "def",
           "name": "rd011_extractMessageRegisters",
-          "line": 169,
+          "line": 172,
           "called": [
             "MessageInfo",
             "RegValue",
@@ -62472,7 +63045,7 @@
         {
           "kind": "def",
           "name": "runRegisterDecodeTests",
-          "line": 185,
+          "line": 188,
           "called": [
             "rd001_decodeSyscallIdValid",
             "rd002_decodeSyscallIdInvalid",
@@ -62490,7 +63063,7 @@
         {
           "kind": "def",
           "name": "mkStub",
-          "line": 204,
+          "line": 207,
           "called": [
             "RegValue",
             "SyscallDecodeResult",
@@ -62500,7 +63073,7 @@
         {
           "kind": "def",
           "name": "sad001_cspaceMint",
-          "line": 213,
+          "line": 216,
           "called": [
             "decodeCSpaceMintArgs",
             "expect",
@@ -62511,7 +63084,7 @@
         {
           "kind": "def",
           "name": "sad002_cspaceMintInsufficient",
-          "line": 225,
+          "line": 228,
           "called": [
             "decodeCSpaceMintArgs",
             "expect",
@@ -62521,7 +63094,7 @@
         {
           "kind": "def",
           "name": "sad003_cspaceCopy",
-          "line": 231,
+          "line": 234,
           "called": [
             "decodeCSpaceCopyArgs",
             "expect",
@@ -62532,7 +63105,7 @@
         {
           "kind": "def",
           "name": "sad004_cspaceMove",
-          "line": 242,
+          "line": 245,
           "called": [
             "decodeCSpaceMoveArgs",
             "expect",
@@ -62542,7 +63115,7 @@
         {
           "kind": "def",
           "name": "sad005_cspaceDelete",
-          "line": 248,
+          "line": 251,
           "called": [
             "decodeCSpaceDeleteArgs",
             "expect",
@@ -62552,7 +63125,7 @@
         {
           "kind": "def",
           "name": "sad006_lifecycleRetype",
-          "line": 259,
+          "line": 262,
           "called": [
             "decodeLifecycleRetypeArgs",
             "expect",
@@ -62562,7 +63135,7 @@
         {
           "kind": "def",
           "name": "sad007_lifecycleRetypeInvalidType",
-          "line": 266,
+          "line": 269,
           "called": [
             "decodeLifecycleRetypeArgs",
             "expect",
@@ -62572,7 +63145,7 @@
         {
           "kind": "def",
           "name": "sad008_vspaceMap",
-          "line": 274,
+          "line": 277,
           "called": [
             "decodeVSpaceMapArgs",
             "expect",
@@ -62582,7 +63155,7 @@
         {
           "kind": "def",
           "name": "sad009_vspaceMapInvalidAsid",
-          "line": 282,
+          "line": 285,
           "called": [
             "decodeVSpaceMapArgs",
             "expect",
@@ -62592,7 +63165,7 @@
         {
           "kind": "def",
           "name": "sad010_vspaceMapNonCanonical",
-          "line": 288,
+          "line": 291,
           "called": [
             "decodeVSpaceMapArgs",
             "expect",
@@ -62602,7 +63175,7 @@
         {
           "kind": "def",
           "name": "sad011_vspaceMapInvalidPerms",
-          "line": 294,
+          "line": 297,
           "called": [
             "decodeVSpaceMapArgs",
             "expect",
@@ -62612,7 +63185,7 @@
         {
           "kind": "def",
           "name": "sad012_vspaceUnmap",
-          "line": 300,
+          "line": 303,
           "called": [
             "decodeVSpaceUnmapArgs",
             "expect",
@@ -62622,7 +63195,7 @@
         {
           "kind": "def",
           "name": "sad013_notificationSignal",
-          "line": 311,
+          "line": 314,
           "called": [
             "decodeNotificationSignalArgs",
             "expect",
@@ -62632,7 +63205,7 @@
         {
           "kind": "def",
           "name": "sad014_notificationWait",
-          "line": 317,
+          "line": 320,
           "called": [
             "decodeNotificationWaitArgs",
             "expect",
@@ -62642,7 +63215,7 @@
         {
           "kind": "def",
           "name": "sad015_replyRecv",
-          "line": 323,
+          "line": 326,
           "called": [
             "decodeReplyRecvArgs",
             "expect",
@@ -62652,7 +63225,7 @@
         {
           "kind": "def",
           "name": "sad016_schedContextConfigure",
-          "line": 334,
+          "line": 337,
           "called": [
             "decodeSchedContextConfigureArgs",
             "expect",
@@ -62662,7 +63235,7 @@
         {
           "kind": "def",
           "name": "sad017_schedContextConfigureInsufficient",
-          "line": 346,
+          "line": 349,
           "called": [
             "decodeSchedContextConfigureArgs",
             "expect",
@@ -62672,7 +63245,7 @@
         {
           "kind": "def",
           "name": "sad018_schedContextBind",
-          "line": 352,
+          "line": 355,
           "called": [
             "decodeSchedContextBindArgs",
             "expect",
@@ -62682,7 +63255,7 @@
         {
           "kind": "def",
           "name": "sad019_schedContextUnbind",
-          "line": 361,
+          "line": 364,
           "called": [
             "decodeSchedContextUnbindArgs",
             "expect",
@@ -62692,7 +63265,7 @@
         {
           "kind": "def",
           "name": "sad020_suspendResume",
-          "line": 369,
+          "line": 372,
           "called": [
             "decodeResumeArgs",
             "decodeSuspendArgs",
@@ -62703,7 +63276,7 @@
         {
           "kind": "def",
           "name": "sad021_setPriority",
-          "line": 377,
+          "line": 380,
           "called": [
             "decodeSetPriorityArgs",
             "expect",
@@ -62713,7 +63286,7 @@
         {
           "kind": "def",
           "name": "sad022_setMCPriority",
-          "line": 394,
+          "line": 397,
           "called": [
             "decodeSetMCPriorityArgs",
             "expect",
@@ -62723,7 +63296,7 @@
         {
           "kind": "def",
           "name": "sad023_setIPCBuffer",
-          "line": 404,
+          "line": 407,
           "called": [
             "decodeSetIPCBufferArgs",
             "expect",
@@ -62733,7 +63306,7 @@
         {
           "kind": "def",
           "name": "sad024_serviceRegister",
-          "line": 417,
+          "line": 420,
           "called": [
             "decodeServiceRegisterArgs",
             "expect",
@@ -62743,7 +63316,17 @@
         {
           "kind": "def",
           "name": "sad025_serviceRegisterInsufficient",
-          "line": 428,
+          "line": 431,
+          "called": [
+            "decodeServiceRegisterArgs",
+            "expect",
+            "mkStub"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sad025ak4b_serviceRegisterBoundsRejected",
+          "line": 438,
           "called": [
             "decodeServiceRegisterArgs",
             "expect",
@@ -62753,7 +63336,7 @@
         {
           "kind": "def",
           "name": "sad026_serviceRevoke",
-          "line": 434,
+          "line": 457,
           "called": [
             "decodeServiceRevokeArgs",
             "expect",
@@ -62763,7 +63346,7 @@
         {
           "kind": "def",
           "name": "sad027_noArgDecoders",
-          "line": 445,
+          "line": 468,
           "called": [
             "decodeNotificationWaitArgs",
             "decodeResumeArgs",
@@ -62776,7 +63359,7 @@
         {
           "kind": "def",
           "name": "sad028_validateVSpaceMapPermsDeviceExec",
-          "line": 453,
+          "line": 476,
           "called": [
             "MemoryRegion",
             "VSpaceMapArgs",
@@ -62789,7 +63372,7 @@
         {
           "kind": "def",
           "name": "sad029_decodeExtraCapAddrs",
-          "line": 477,
+          "line": 500,
           "called": [
             "SyscallDecodeResult",
             "decodeExtraCapAddrs",
@@ -62801,8 +63384,151 @@
         },
         {
           "kind": "def",
+          "name": "buildIpcDecodeState",
+          "line": 530,
+          "called": [
+            "ObjId",
+            "PAddr",
+            "PagePermissions",
+            "RHTable",
+            "RHTable.ofList",
+            "RegName",
+            "RegValue",
+            "SystemState",
+            "ThreadId",
+            "VAddr",
+            "VSpaceRoot",
+            "build",
+            "cnodeId",
+            "empty",
+            "toObjId",
+            "withCurrent",
+            "withLifecycleObjectType",
+            "withObject",
+            "withRunnable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ak4a01_shortPathNoOverflow",
+          "line": 579,
+          "called": [
+            "RegisterFile",
+            "ThreadId",
+            "arm64DefaultLayout",
+            "buildIpcDecodeState",
+            "decodeSyscallArgsFromState",
+            "default",
+            "expect",
+            "size",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ak4a02_serviceRegisterOverflow",
+          "line": 597,
+          "called": [
+            "RegisterFile",
+            "ThreadId",
+            "arm64DefaultLayout",
+            "buildIpcDecodeState",
+            "decodeSyscallArgsFromState",
+            "default",
+            "expect",
+            "size",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ak4a03_scConfigureUnmappedFails",
+          "line": 618,
+          "called": [
+            "RegisterFile",
+            "ThreadId",
+            "arm64DefaultLayout",
+            "buildIpcDecodeState",
+            "decodeSyscallArgsFromState",
+            "default",
+            "expect",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ak4a04_lengthZeroIgnoresIpcBuffer",
+          "line": 635,
+          "called": [
+            "RegisterFile",
+            "ThreadId",
+            "arm64DefaultLayout",
+            "buildIpcDecodeState",
+            "decodeSyscallArgsFromState",
+            "default",
+            "expect",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ak4a05_ipcBufferOutOfRange",
+          "line": 653,
+          "called": [
+            "ThreadId",
+            "buildIpcDecodeState",
+            "expect",
+            "ipcBufferReadMr",
+            "maxOverflowSlots"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ak4a06_sizeInvariant",
+          "line": 664,
+          "called": [
+            "RegisterFile",
+            "ThreadId",
+            "arm64DefaultLayout",
+            "buildIpcDecodeState",
+            "decodeSyscallArgsFromState",
+            "default",
+            "expect",
+            "size",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ak4a07_legacyBackwardCompat",
+          "line": 680,
+          "called": [
+            "RegName",
+            "RegValue",
+            "RegisterFile",
+            "arm64DefaultLayout",
+            "decodeSyscallArgs",
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runAk4aTests",
+          "line": 692,
+          "called": [
+            "ak4a01_shortPathNoOverflow",
+            "ak4a02_serviceRegisterOverflow",
+            "ak4a03_scConfigureUnmappedFails",
+            "ak4a04_lengthZeroIgnoresIpcBuffer",
+            "ak4a05_ipcBufferOutOfRange",
+            "ak4a06_sizeInvariant",
+            "ak4a07_legacyBackwardCompat"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runSyscallArgDecodeTests",
-          "line": 498,
+          "line": 702,
           "called": [
             "sad001_cspaceMint",
             "sad002_cspaceMintInsufficient",
@@ -62829,6 +63555,7 @@
             "sad023_setIPCBuffer",
             "sad024_serviceRegister",
             "sad025_serviceRegisterInsufficient",
+            "sad025ak4b_serviceRegisterBoundsRejected",
             "sad026_serviceRevoke",
             "sad027_noArgDecoders",
             "sad028_validateVSpaceMapPermsDeviceExec",
@@ -62838,8 +63565,9 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 541,
+          "line": 746,
           "called": [
+            "runAk4aTests",
             "runRegisterDecodeTests",
             "runSyscallArgDecodeTests"
           ]

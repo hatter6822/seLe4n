@@ -37,6 +37,11 @@ pub unsafe fn raw_syscall(regs: &mut [u64; 7]) {
     // kernel during the exception. This includes x8-x18, x29, x30, NZCV,
     // and all SIMD/FP registers. The explicit `inout`/`in`/`lateout`
     // operands for x0-x7 take precedence over the clobber set.
+    // AK4-H (R-ABI-L5): `lateout("x6") _` is redundant here — `clobber_abi("C")`
+    // already declares x0..x18 as caller-saved per AAPCS64, so x6 is implicitly
+    // clobbered. We keep the explicit annotation for readability: it makes the
+    // kernel's use of x6 as a scratch register visible at the call site. Removing
+    // it is a no-op codegen-wise.
     core::arch::asm!(
         "svc #0",
         inout("x0") regs[0],

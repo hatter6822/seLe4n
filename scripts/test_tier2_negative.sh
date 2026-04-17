@@ -54,5 +54,8 @@ run_check "TRACE" lake exe interrupt_dispatch_suite
 run_check "TRACE" lake exe wx_defense_suite
 # AK3-E + AK3-J: decode validation regression suite.
 run_check "TRACE" lake exe decode_validation_suite
+# AK4-G (R-ABI-C01): End-to-end ABI round-trip suite —
+# simulates Rust encoder, verifies Lean decode succeeds for all 5-arg syscalls.
+run_check "TRACE" lake exe abi_roundtrip_suite
 
 finalize_report

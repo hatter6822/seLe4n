@@ -15,9 +15,12 @@ use sele4n_abi::args::service::*;
 /// inline (x2–x5). The 5th value (`requires_grant`) is written to the
 /// IPC buffer's overflow slot 0 (message register index 4).
 ///
-/// The kernel reads `msgRegs[4]` via `requireMsgReg decoded.msgRegs 4`,
-/// which falls through to the IPC buffer when the inline array has only
-/// 4 entries.
+/// AK4-A (R-ABI-C01): The kernel merges the IPC-buffer overflow into
+/// `msgRegs` via `decodeSyscallArgsFromState` (RegisterDecode.lean),
+/// which reads `ipcBufferReadMr 0` when `msgInfo.length > 4`. The
+/// per-syscall decoder `decodeServiceRegisterArgs` then consumes
+/// `msgRegs[4]` (the merged `requires_grant` value) via `requireMsgReg`,
+/// and AK4-B strict validation rejects values ≥ 2.
 #[inline]
 pub fn service_register(
     endpoint_cap: CPtr,

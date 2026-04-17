@@ -8,7 +8,9 @@
 
 import SeLe4n.Kernel.Architecture.RegisterDecode
 import SeLe4n.Kernel.Architecture.SyscallArgDecode
+import SeLe4n.Kernel.Architecture.IpcBufferRead
 import SeLe4n.Testing.Helpers
+import SeLe4n.Testing.StateBuilder
 
 /-! # T-03/AC6-A: Dedicated Decoding Suite
 
@@ -27,6 +29,7 @@ open SeLe4n
 open SeLe4n.Model
 open SeLe4n.Kernel.Architecture.RegisterDecode
 open SeLe4n.Kernel.Architecture.SyscallArgDecode
+open SeLe4n.Kernel.Architecture.IpcBufferRead
 open SeLe4n.Testing
 
 namespace SeLe4n.Testing.DecodingSuite
@@ -430,6 +433,26 @@ private def sad025_serviceRegisterInsufficient : IO Unit := do
   let result := decodeServiceRegisterArgs stub
   expect "SAD-025a serviceRegister insufficient" (!result.isOk)
 
+/-- SAD-025-AK4B: decodeServiceRegisterArgs — AK4-B tightened validation.
+    methodCount > MAX_METHOD_COUNT (1024) rejected with invalidArgument. -/
+private def sad025ak4b_serviceRegisterBoundsRejected : IO Unit := do
+  let stubMc := mkStub #[⟨1⟩, ⟨1025⟩, ⟨256⟩, ⟨256⟩, ⟨0⟩]
+  expect "SAD-025-AK4B a methodCount>1024 rejected"
+    (!(decodeServiceRegisterArgs stubMc).isOk)
+  let stubMms := mkStub #[⟨1⟩, ⟨10⟩, ⟨961⟩, ⟨256⟩, ⟨0⟩]
+  expect "SAD-025-AK4B b maxMessageSize>960 rejected"
+    (!(decodeServiceRegisterArgs stubMms).isOk)
+  let stubMrs := mkStub #[⟨1⟩, ⟨10⟩, ⟨256⟩, ⟨961⟩, ⟨0⟩]
+  expect "SAD-025-AK4B c maxResponseSize>960 rejected"
+    (!(decodeServiceRegisterArgs stubMrs).isOk)
+  let stubGrant := mkStub #[⟨1⟩, ⟨10⟩, ⟨256⟩, ⟨256⟩, ⟨2⟩]
+  expect "SAD-025-AK4B d requiresGrant>=2 rejected"
+    (!(decodeServiceRegisterArgs stubGrant).isOk)
+  -- Boundary valid (at max)
+  let stubOk := mkStub #[⟨1⟩, ⟨1024⟩, ⟨960⟩, ⟨960⟩, ⟨1⟩]
+  expect "SAD-025-AK4B e boundary valid"
+    (decodeServiceRegisterArgs stubOk).isOk
+
 /-- SAD-026: decodeServiceRevokeArgs — valid and insufficient. -/
 private def sad026_serviceRevoke : IO Unit := do
   let stub := mkStub #[⟨7⟩]
@@ -495,6 +518,187 @@ private def sad029_decodeExtraCapAddrs : IO Unit := do
   let capsShort := decodeExtraCapAddrs stubShort
   expect "SAD-029d truncated to 1" (capsShort.size == 1)
 
+-- ============================================================================
+-- AK4-A.7 (R-ABI-C01): IPC-buffer overflow merge regression tests
+-- ============================================================================
+
+/-- Helper: build a minimal SystemState with a TCB whose registers encode the
+    given syscall and whose IPC buffer resolves to PA=0 in a well-formed
+    VSpaceRoot. Memory is the default (zero-initialized).
+    When `mapIpcBuffer = false`, the VSpaceRoot contains no mapping, so
+    `ipcBufferReadMr` returns `.ipcBufferVAddrUnmapped`. -/
+private def buildIpcDecodeState
+    (syscallNum : Nat) (msgLen : Nat) (msgRegs : Array SeLe4n.RegValue)
+    (ipcBufferVA : SeLe4n.VAddr := ⟨0x10000⟩)
+    (ipcBufferPA : SeLe4n.PAddr := ⟨0x20000⟩)
+    (mapIpcBuffer : Bool := true) : SeLe4n.Model.SystemState :=
+  let tid : SeLe4n.ThreadId := ⟨800⟩
+  let cnodeId : SeLe4n.ObjId := ⟨801⟩
+  let vsId : SeLe4n.ObjId := ⟨802⟩
+  -- Construct MessageInfo word: bits 0..6 = length, bits 7..8 = extraCaps, bits 9+ = label
+  let msgInfoRaw := msgLen
+  let regFile : SeLe4n.RegName → SeLe4n.RegValue := fun r =>
+    if r.val == 0 then ⟨0⟩                -- capPtr
+    else if r.val == 1 then ⟨msgInfoRaw⟩  -- msgInfo
+    else if r.val == 7 then ⟨syscallNum⟩  -- syscallId
+    else if r.val == 2 then msgRegs[0]? |>.getD ⟨0⟩
+    else if r.val == 3 then msgRegs[1]? |>.getD ⟨0⟩
+    else if r.val == 4 then msgRegs[2]? |>.getD ⟨0⟩
+    else if r.val == 5 then msgRegs[3]? |>.getD ⟨0⟩
+    else ⟨0⟩
+  let mappings : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr
+                   (SeLe4n.PAddr × SeLe4n.Model.PagePermissions) :=
+    if mapIpcBuffer then
+      SeLe4n.Kernel.RobinHood.RHTable.ofList
+        [(ipcBufferVA, (ipcBufferPA, { read := true, write := true }))]
+    else
+      SeLe4n.Kernel.RobinHood.RHTable.ofList []
+  let vsRoot : SeLe4n.Model.VSpaceRoot :=
+    { asid := ⟨1⟩, mappings := mappings }
+  let builder := BootstrapBuilder.empty
+    |>.withObject tid.toObjId (.tcb {
+        tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
+        cspaceRoot := cnodeId, vspaceRoot := vsId,
+        ipcBuffer := ipcBufferVA, ipcState := .ready,
+        registerContext := { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩, gpr := regFile }
+    })
+    |>.withObject cnodeId (.cnode {
+        depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList []
+    })
+    |>.withObject vsId (.vspaceRoot vsRoot)
+    |>.withLifecycleObjectType tid.toObjId .tcb
+    |>.withLifecycleObjectType cnodeId .cnode
+    |>.withLifecycleObjectType vsId .vspaceRoot
+    |>.withRunnable []
+    |>.withCurrent (some tid)
+  builder.build
+
+/-- AK4-A-T01: 4-arg syscall (setPriority) decodes from inline regs —
+    `overflowCount = 0` for `msgInfo.length = 1`. -/
+private def ak4a01_shortPathNoOverflow : IO Unit := do
+  let st := buildIpcDecodeState 21 1 #[⟨128⟩, ⟨0⟩, ⟨0⟩, ⟨0⟩]
+  let tid : SeLe4n.ThreadId := ⟨800⟩
+  let regs : SeLe4n.RegisterFile :=
+    match st.objects[tid.toObjId]? with
+    | some (.tcb tcb) => tcb.registerContext
+    | _ => default
+  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
+          regs 32 with
+  | .ok decoded =>
+    expect "AK4-A-T01a ok" true
+    expect "AK4-A-T01b overflowCount=0" (decoded.overflowCount == 0)
+    expect "AK4-A-T01c msgRegs populated" (decoded.msgRegs.size ≥ 1)
+  | .error _ => expect "AK4-A-T01 decode failed" false
+
+/-- AK4-A-T02: 5-arg serviceRegister merges MR[4] from IPC buffer.
+    IPC-buffer memory is zero (default), so MR[4] = 0. Verifies that
+    `overflowCount = 1` after merge. -/
+private def ak4a02_serviceRegisterOverflow : IO Unit := do
+  -- serviceRegister = syscallId 11, msgLen 5
+  let st := buildIpcDecodeState 11 5 #[⟨1⟩, ⟨10⟩, ⟨256⟩, ⟨256⟩]
+  let tid : SeLe4n.ThreadId := ⟨800⟩
+  let regs : SeLe4n.RegisterFile :=
+    match st.objects[tid.toObjId]? with
+    | some (.tcb tcb) => tcb.registerContext
+    | _ => default
+  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
+          regs 32 with
+  | .ok decoded =>
+    expect "AK4-A-T02a decoded ok" true
+    expect "AK4-A-T02b overflowCount=1" (decoded.overflowCount == 1)
+    expect "AK4-A-T02c inlineCount=4" (decoded.inlineCount == 4)
+    expect "AK4-A-T02d msgRegs.size=5" (decoded.msgRegs.size == 5)
+    expect "AK4-A-T02e msgRegs[4].val=0" (decoded.msgRegs[4]!.val == 0)
+  | .error _ => expect "AK4-A-T02 decode failed" false
+
+/-- AK4-A-T03: 5-arg schedContextConfigure with unmapped VA → fails with
+    `.invalidMessageInfo`. Uses an IPC buffer address that is NOT in the
+    VSpaceRoot mapping table. -/
+private def ak4a03_scConfigureUnmappedFails : IO Unit := do
+  -- Build a state where the IPC buffer VA is NOT mapped
+  let st := buildIpcDecodeState 17 5 #[⟨1000⟩, ⟨5000⟩, ⟨128⟩, ⟨10000⟩]
+              (mapIpcBuffer := false)
+  let tid : SeLe4n.ThreadId := ⟨800⟩
+  let regs : SeLe4n.RegisterFile :=
+    match st.objects[tid.toObjId]? with
+    | some (.tcb tcb) => tcb.registerContext
+    | _ => default
+  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
+          regs 32 with
+  | .ok _ => expect "AK4-A-T03 unexpected success" false
+  | .error e =>
+    expect "AK4-A-T03a invalidMessageInfo" (e == .invalidMessageInfo)
+
+/-- AK4-A-T04: 5-arg syscall with msgLen=0 → ignores IPC buffer → succeeds
+    with inlineCount = msgRegs.size = 4, overflowCount = 0. -/
+private def ak4a04_lengthZeroIgnoresIpcBuffer : IO Unit := do
+  let st := buildIpcDecodeState 11 0 #[⟨1⟩, ⟨10⟩, ⟨256⟩, ⟨256⟩]
+              (mapIpcBuffer := false)
+  let tid : SeLe4n.ThreadId := ⟨800⟩
+  let regs : SeLe4n.RegisterFile :=
+    match st.objects[tid.toObjId]? with
+    | some (.tcb tcb) => tcb.registerContext
+    | _ => default
+  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
+          regs 32 with
+  | .ok decoded =>
+    expect "AK4-A-T04a ok" true
+    expect "AK4-A-T04b overflowCount=0" (decoded.overflowCount == 0)
+    expect "AK4-A-T04c inlineCount=4" (decoded.inlineCount == 4)
+  | .error _ => expect "AK4-A-T04 decode failed" false
+
+/-- AK4-A-T05: `ipcBufferReadMr` bounds check — idx = maxOverflowSlots returns
+    `.overflowIndexOutOfRange`. -/
+private def ak4a05_ipcBufferOutOfRange : IO Unit := do
+  let st := buildIpcDecodeState 11 5 #[⟨0⟩, ⟨0⟩, ⟨0⟩, ⟨0⟩]
+  let tid : SeLe4n.ThreadId := ⟨800⟩
+  let r := ipcBufferReadMr st tid SeLe4n.Kernel.Architecture.IpcBufferRead.maxOverflowSlots
+  match r with
+  | .ok _ => expect "AK4-A-T05 unexpected success" false
+  | .error e => expect "AK4-A-T05a out-of-range rejected"
+                        (e == .overflowIndexOutOfRange)
+
+/-- AK4-A-T06: Size invariant — successful decode with overflow gives
+    `msgRegs.size = inlineCount + overflowCount`. -/
+private def ak4a06_sizeInvariant : IO Unit := do
+  let st := buildIpcDecodeState 11 5 #[⟨1⟩, ⟨10⟩, ⟨256⟩, ⟨256⟩]
+  let tid : SeLe4n.ThreadId := ⟨800⟩
+  let regs : SeLe4n.RegisterFile :=
+    match st.objects[tid.toObjId]? with
+    | some (.tcb tcb) => tcb.registerContext
+    | _ => default
+  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
+          regs 32 with
+  | .ok decoded =>
+    expect "AK4-A-T06a size invariant"
+      (decoded.msgRegs.size == decoded.inlineCount + decoded.overflowCount)
+  | .error _ => expect "AK4-A-T06 decode failed" false
+
+/-- AK4-A-T07: Legacy `decodeSyscallArgs` still produces inlineCount = 4,
+    overflowCount = 0 — backward compatibility preserved. -/
+private def ak4a07_legacyBackwardCompat : IO Unit := do
+  let regFile : SeLe4n.RegName → SeLe4n.RegValue := fun r =>
+    if r.val == 7 then ⟨4⟩ else ⟨0⟩  -- syscallId=4 (cspaceMint)
+  let rf : SeLe4n.RegisterFile := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := regFile }
+  match decodeSyscallArgs SeLe4n.arm64DefaultLayout rf 32 with
+  | .ok decoded =>
+    expect "AK4-A-T07a legacy ok" true
+    expect "AK4-A-T07b legacy inlineCount=4" (decoded.inlineCount == 4)
+    expect "AK4-A-T07c legacy overflowCount=0" (decoded.overflowCount == 0)
+  | .error _ => expect "AK4-A-T07 legacy failed" false
+
+/-- Run AK4-A IPC-buffer merge regression tests. -/
+private def runAk4aTests : IO Unit := do
+  IO.println "--- AK4-A: IPC-buffer merge (R-ABI-C01) ---"
+  ak4a01_shortPathNoOverflow
+  ak4a02_serviceRegisterOverflow
+  ak4a03_scConfigureUnmappedFails
+  ak4a04_lengthZeroIgnoresIpcBuffer
+  ak4a05_ipcBufferOutOfRange
+  ak4a06_sizeInvariant
+  ak4a07_legacyBackwardCompat
+
 private def runSyscallArgDecodeTests : IO Unit := do
   IO.println "--- Layer 2: SyscallArgDecode ---"
   -- CSpace
@@ -529,6 +733,7 @@ private def runSyscallArgDecodeTests : IO Unit := do
   -- Service
   sad024_serviceRegister
   sad025_serviceRegisterInsufficient
+  sad025ak4b_serviceRegisterBoundsRejected
   sad026_serviceRevoke
   -- Edge cases
   sad027_noArgDecoders
@@ -539,7 +744,8 @@ private def runSyscallArgDecodeTests : IO Unit := do
 end SeLe4n.Testing.DecodingSuite
 
 def main : IO Unit := do
-  IO.println "=== DecodingSuite (T-03/AC6-A) ==="
+  IO.println "=== DecodingSuite (T-03/AC6-A, AK4-A) ==="
   SeLe4n.Testing.DecodingSuite.runRegisterDecodeTests
   SeLe4n.Testing.DecodingSuite.runSyscallArgDecodeTests
-  IO.println "=== DecodingSuite PASSED (40 tests) ==="
+  SeLe4n.Testing.DecodingSuite.runAk4aTests
+  IO.println "=== DecodingSuite PASSED (48 test cases / 109 assertions) ==="

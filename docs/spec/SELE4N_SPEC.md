@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.29.3` (`lakefile.toml`) |
+| **Package version** | `0.29.4` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 95,528 across 141 Lean files |
 | **Test LoC** | 11,709 across 17 Lean test suites |
@@ -995,6 +995,63 @@ side effect. The receiver can detect drops by comparing the resolved count
 against the sender's declared count.
 
 **Source**: API.lean:409-416, inline comment AC3-D / API-01.
+
+### 8.10.5 IPC Buffer Overflow Merge for Syscall Arguments (AK4 / R-ABI-C01)
+
+The ARM64 default register layout (`SeLe4n.arm64DefaultLayout`) provides
+four inline message-register positions — `x2`, `x3`, `x4`, `x5`. Syscalls
+whose `MessageInfo.length > 4` encode the additional message registers into
+the caller's IPC buffer (a per-thread virtual memory region whose base VA
+is stored in `TCB.ipcBuffer`). The kernel decode step merges the overflow
+into the `msgRegs` array before per-syscall argument decode runs.
+
+**Two affected syscalls in the v0.29 ABI:**
+
+| Syscall ID | Name | Arg count | Inline regs | Overflow regs |
+|------------|------|-----------|-------------|---------------|
+| 11 | `serviceRegister` | 5 | `x2..x5` | `MR[4]` |
+| 17 | `schedContextConfigure` | 5 | `x2..x5` | `MR[4]` |
+
+**Decode pipeline:**
+
+1. Register-only decode (`decodeSyscallArgs`) populates `msgRegs` from
+   the inline GPR positions (`x2..x5` = 4 entries on ARM64).
+2. State-aware wrapper (`decodeSyscallArgsFromState`) inspects
+   `msgInfo.length`:
+   - If `length ≤ 4`, no overflow is consulted. `inlineCount = 4`,
+     `overflowCount = 0`.
+   - If `length > 4`, `length − 4` additional slots are read via
+     `ipcBufferReadMr` from the caller's IPC buffer. The overflow results
+     are appended to `msgRegs` and `overflowCount = length − 4`.
+
+**IPC-buffer layout:** The thread's IPC buffer starts at
+`tcb.ipcBuffer : VAddr`; overflow slot `i` (0-indexed) lives at byte
+offset `i * 8`. This mirrors `rust/sele4n-abi/src/ipc_buffer.rs`
+(`OVERFLOW_SLOTS = 116`, each slot is `u64`).
+
+**Failure modes — all collapse to `KernelError.invalidMessageInfo`**
+(matches seL4 behaviour: the caller sees a single error kind regardless of
+classification):
+
+| Internal `IpcBufferReadError` | User-visible error |
+|-------------------------------|---------------------|
+| `threadNotFound` | `.invalidMessageInfo` |
+| `vspaceRootInvalid` | `.invalidMessageInfo` |
+| `ipcBufferVAddrUnmapped` | `.invalidMessageInfo` |
+| `overflowIndexOutOfRange` | `.invalidMessageInfo` |
+
+**Read-only / NI:** `ipcBufferReadMr` and `decodeSyscallArgsFromState`
+never modify `SystemState`. Every IPC-buffer read is parameterised by the
+caller's `ThreadId`; no other thread's state is consulted. This guarantees
+that a 5-arg syscall cannot leak cross-domain data through the overflow
+channel.
+
+**Source**:
+- `SeLe4n/Kernel/Architecture/IpcBufferRead.lean` —
+  `ipcBufferReadMr`, `IpcBufferReadError`.
+- `SeLe4n/Kernel/Architecture/RegisterDecode.lean` —
+  `decodeSyscallArgsFromState`.
+- `SeLe4n/Kernel/API.lean` — `syscallEntry`, `syscallEntryChecked`.
 
 ### 8.11 buildChecked Runtime Invariant Validation (WS-T Phase T7)
 

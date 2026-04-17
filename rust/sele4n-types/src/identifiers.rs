@@ -339,6 +339,59 @@ impl RegValue {
 impl From<u64> for RegValue { #[inline] fn from(v: u64) -> Self { Self(v) } }
 impl From<RegValue> for u64 { #[inline] fn from(r: RegValue) -> u64 { r.0 } }
 
+/// AK4-C (R-ABI-H01 / HIGH): Scheduling-context identifier.
+///
+/// Mirrors the Lean `SeLe4n.Kernel.SchedContextId` newtype (Prelude.lean).
+/// Value `0` is the sentinel (unbound / invalid) — matches Lean
+/// `SchedContextId.sentinel` introduced in AF-22.
+///
+/// **Usage:** Passed between user-space and the kernel whenever a syscall
+/// references a first-class `SchedContext` object (e.g., `schedContextBind`,
+/// `schedContextUnbind`, `schedContextConfigure`). Prefer this typed wrapper
+/// over raw `u64` in ABI argument structures.
+///
+/// Lean: `SeLe4n.Kernel.SchedContextId` (Prelude.lean).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(transparent)]
+pub struct SchedContextId(pub(crate) u64);
+
+impl SchedContextId {
+    /// The sentinel (invalid / unbound) scheduling-context identifier.
+    /// Matches Lean `SchedContextId.sentinel` (value 0).
+    pub const SENTINEL: Self = Self(0);
+
+    /// Returns the raw inner value.
+    #[inline]
+    pub const fn raw(&self) -> u64 { self.0 }
+
+    /// Returns `true` if this is the reserved sentinel value.
+    #[inline]
+    pub const fn is_reserved(&self) -> bool { self.0 == 0 }
+
+    /// Returns `true` if this is a valid (non-sentinel) identifier.
+    #[inline]
+    pub const fn is_valid(&self) -> bool { self.0 != 0 }
+
+    /// AK4-C: Construct a typed `SchedContextId`, rejecting the sentinel value.
+    /// Use this in argument-decode positions where a caller-supplied value
+    /// must refer to an allocated scheduling context.
+    ///
+    /// Returns `None` for `value == 0` (sentinel).
+    #[inline]
+    pub const fn new(value: u64) -> Option<Self> {
+        if value == 0 { None } else { Some(Self(value)) }
+    }
+
+    /// Convert to the underlying object identifier (the kernel stores
+    /// scheduling contexts in the shared object store alongside other
+    /// kernel objects). Lean mirror: `SchedContextId.toObjId`.
+    #[inline]
+    pub const fn to_obj_id(&self) -> ObjId { ObjId(self.0) }
+}
+
+impl From<u64> for SchedContextId { #[inline] fn from(v: u64) -> Self { Self(v) } }
+impl From<SchedContextId> for u64 { #[inline] fn from(s: SchedContextId) -> u64 { s.0 } }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -468,5 +521,34 @@ mod tests {
         let val = 0xDEAD_BEEF_CAFE_BABEu64;
         let b = Badge::from(val);
         assert_eq!(b.raw(), val);
+    }
+
+    // ── AK4-C (R-ABI-H01): SchedContextId newtype ─────────────────────
+    #[test]
+    fn sched_context_id_size_is_8_bytes() {
+        assert_eq!(core::mem::size_of::<SchedContextId>(), 8);
+    }
+
+    #[test]
+    fn sched_context_id_sentinel_is_reserved() {
+        assert!(SchedContextId::SENTINEL.is_reserved());
+        assert_eq!(SchedContextId::SENTINEL.raw(), 0);
+    }
+
+    #[test]
+    fn sched_context_id_new_rejects_sentinel() {
+        assert_eq!(SchedContextId::new(0), None);
+        assert_eq!(SchedContextId::new(42).map(|s| s.raw()), Some(42));
+    }
+
+    #[test]
+    fn sched_context_id_to_obj_id_preserves_value() {
+        let sc = SchedContextId::from(42u64);
+        assert_eq!(sc.to_obj_id(), ObjId(42));
+    }
+
+    #[test]
+    fn sched_context_id_from_u64_roundtrip() {
+        assert_eq!(u64::from(SchedContextId::from(42u64)), 42u64);
     }
 }

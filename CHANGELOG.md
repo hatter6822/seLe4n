@@ -1,3 +1,102 @@
+## v0.29.4 — WS-AK Phase AK4: ABI Bridge — Decode, Types, Validation
+
+Phase AK4 of WS-AK Pre-1.0 Release Hardening (v0.29.0 audit). Closes the
+critical R-ABI-C01 finding — two production syscalls (`serviceRegister`
+and `schedContextConfigure`) were previously un-callable because the Lean
+kernel could not consume the IPC-buffer overflow encoding emitted by the
+Rust ABI. Implements 8 of the 8 planned sub-tasks plus the LOW-tier batch.
+
+Gate: `lake build` (260 jobs) + `test_smoke.sh` + `test_full.sh` +
+`cargo test --workspace` (376 tests) + zero `sorry` / `axiom`.
+
+### Changes
+
+- **AK4-A (R-ABI-C01 / CRITICAL)** — IPC-buffer merge into `msgRegs`.
+  New module `SeLe4n/Kernel/Architecture/IpcBufferRead.lean` provides
+  `ipcBufferReadMr` (pure, read-only). `decodeSyscallArgsFromState`
+  merges IPC-buffer overflow slots into `msgRegs` when
+  `msgInfo.length > 4`. `SyscallDecodeResult` gains `inlineCount`
+  and `overflowCount` fields maintaining the invariant
+  `msgRegs.size = inlineCount + overflowCount`. `syscallEntry` and
+  `syscallEntryChecked` switch to the state-aware decoder. Failure
+  modes (missing TCB, unmapped VAddr, corrupted PA, out-of-range
+  index) collapse to `.invalidMessageInfo` matching seL4 convention.
+  7 regression tests in `tests/DecodingSuite.lean` cover short/long
+  paths, unmapped-VA rejection, and size invariant. Documented in
+  `docs/spec/SELE4N_SPEC.md` §8.10.5.
+- **AK4-B (R-ABI-H02 / HIGH)** — `decodeServiceRegisterArgs`
+  validation tightened to match Rust-side constants:
+  `methodCount ≤ serviceMaxMethodCount (1024)`,
+  `maxMessageSize ≤ serviceMaxMessageSize (960)`,
+  `maxResponseSize ≤ serviceMaxMessageSize`,
+  `requiresGrant ∈ {0, 1}` (strict boolean parsing). New theorems
+  `decodeServiceRegisterArgs_error_of_methodCount_too_large`,
+  `_error_of_invalid_grant`, `_error_of_insufficient_regs`.
+- **AK4-C (R-ABI-H01 / HIGH)** — `SchedContextId` newtype in Rust.
+  New `#[repr(transparent)] pub struct SchedContextId(pub(crate) u64)`
+  in `rust/sele4n-types/src/identifiers.rs` with `SENTINEL` constant,
+  `new()` rejecting sentinel, `to_obj_id()` projection. 5 unit tests.
+  `SchedContextBindArgs.thread_id` and `sele4n-sys::sched_context_bind`
+  refactored from raw `u64` to typed `ThreadId`. Crate docstring
+  updated to "15 newtype identifiers" (R-ABI-L2 closure).
+- **AK4-D (R-ABI-M01 / MEDIUM)** — `SchedContextConfigureArgs`
+  validation already aligned via AK3-J. Verified Rust constants
+  (`MAX_PRIORITY = 255`, `MAX_DOMAIN = 15`) match Lean
+  `numDomainsVal = 16`. No code change.
+- **AK4-E (R-ABI-M02 / MEDIUM)** — `decodeCSpaceMintArgs` now rejects
+  `rights > 0x1F` with `.invalidArgument`; matches Rust-side
+  `CSpaceMintArgs::decode`. Legacy `decodeCSpaceMintArgs_error_iff`
+  theorem preserved with extended disjunction. VSpace `PagePerms`
+  validation was already fail-closed via `PagePermissions.ofNat?`.
+- **AK4-F (R-ABI-M04 / MEDIUM)** — `IpcBuffer::set_mr` symmetry with
+  `get_mr`. `set_mr(0..3)` now returns `Err(InvalidArgument)` matching
+  `get_mr`. New `set_mr_overflow` preserves the legacy overflow-only
+  write semantics. 3 new Rust unit tests + conformance test update
+  (xval_017).
+- **AK4-G (NEW)** — End-to-end ABI round-trip integration suite.
+  `tests/AbiRoundtripSuite.lean` simulates the Rust encoder (including
+  IPC-buffer overflow layout) and verifies Lean decode succeeds for
+  all 5-arg syscalls. 8 scenarios × 25 assertions. Wired into
+  `test_tier2_negative.sh` and exposed via
+  `scripts/test_abi_roundtrip.sh`. Closes audit §9.6 testing gap.
+- **AK4-H (R-ABI-L1..L8)** — LOW-tier batch documentation. L1
+  (lifecycle type-tag list), L2 (docstring count, addressed in AK4-C),
+  L3 (RegValue export intent), L4 (ServiceQueryArgs marker), L5
+  (`lateout("x6")` AAPCS64 redundancy noted), L6 (constants
+  duplication deferred to WS-V), L7 (`CPtr::NULL` vs `SENTINEL`),
+  L8 (`Hash` derive safety via `#[repr(transparent)]`). All annotated
+  centrally in `sele4n-types/src/lib.rs` with cross-references.
+
+### Files changed
+
+- `SeLe4n/Kernel/Architecture/IpcBufferRead.lean` (NEW, ~130 LOC)
+- `SeLe4n/Kernel/Architecture/RegisterDecode.lean`
+  (+`decodeSyscallArgsFromState`, +4 theorems, +1 import)
+- `SeLe4n/Model/Object/Types.lean` (extend `SyscallDecodeResult`)
+- `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`
+  (tighten decodeServiceRegisterArgs + decodeCSpaceMintArgs;
+  +`serviceMaxMethodCount`, +`serviceMaxMessageSize`)
+- `SeLe4n/Kernel/API.lean` (switch 2 entry points to
+  `decodeSyscallArgsFromState`, update 2 theorem signatures)
+- `rust/sele4n-types/src/identifiers.rs`
+  (+SchedContextId, +5 tests, +AK4-H docstring block)
+- `rust/sele4n-abi/src/args/sched_context.rs` (typed ThreadId)
+- `rust/sele4n-abi/src/args/service.rs` (bounds already present)
+- `rust/sele4n-abi/src/ipc_buffer.rs`
+  (set_mr signature change, +set_mr_overflow, +3 tests)
+- `rust/sele4n-abi/src/trap.rs` (R-ABI-L5 annotation)
+- `rust/sele4n-abi/src/args/lifecycle.rs` (R-ABI-L1 docstring)
+- `rust/sele4n-sys/src/sched_context.rs` (typed ThreadId)
+- `rust/sele4n-abi/tests/conformance.rs` (update ABI symmetry tests)
+- `tests/DecodingSuite.lean` (+7 AK4-A + 1 AK4-B regression tests)
+- `tests/AbiRoundtripSuite.lean` (NEW, ~220 LOC)
+- `docs/spec/SELE4N_SPEC.md` (+§8.10.5)
+- `lakefile.toml` (+ `[[lean_exe]] abi_roundtrip_suite`)
+- `scripts/test_abi_roundtrip.sh` (NEW)
+- `scripts/test_tier2_negative.sh` (+ `abi_roundtrip_suite` run)
+
+Zero `sorry`, zero `axiom`.
+
 ## v0.29.3 — WS-AK Phase AK3: Architecture — ASID, W^X, EOI, Decode
 
 Phase AK3 of WS-AK Pre-1.0 Release Hardening (v0.29.0 audit). Addresses

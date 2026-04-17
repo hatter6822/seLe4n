@@ -1328,4 +1328,18 @@ structure SyscallDecodeResult where
       preserves backward compatibility. Production deployments should
       extract this from the receiver's IPC buffer or syscall arguments. -/
   capRecvSlot  : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
+  /-- AK4-A.2 (R-ABI-C01): Number of message registers populated from inline
+      GPRs (x2..x5 on ARM64 → 4). Both decoders
+      (`decodeSyscallArgs`, `decodeSyscallArgsFromState`) set this to
+      `layout.msgRegs.size` — the platform's inline register count (4 for
+      `arm64DefaultLayout`) — on every successful decode. Combined
+      invariant: `msgRegs.size = inlineCount + overflowCount`. -/
+  inlineCount  : Nat := 0
+  /-- AK4-A.2 (R-ABI-C01): Number of message registers read from the caller's
+      IPC-buffer overflow area. Zero for all syscalls whose
+      `msgInfo.length ≤ layout.msgRegs.size` and for the legacy
+      `decodeSyscallArgs` path; equal to `msgInfo.length - layout.msgRegs.size`
+      on the `decodeSyscallArgsFromState` overflow branch (e.g., 1 for the
+      5-arg syscalls `serviceRegister` and `schedContextConfigure`). -/
+  overflowCount : Nat := 0
   deriving Repr, DecidableEq

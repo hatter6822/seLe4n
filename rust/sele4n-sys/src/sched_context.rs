@@ -4,7 +4,7 @@
 //! `apiSchedContextBind`, `apiSchedContextUnbind`. Added in WS-Z Phase Z5.
 //! All require `.write` right on the target SchedContext capability.
 
-use sele4n_types::{CPtr, KernelResult, SyscallId};
+use sele4n_types::{CPtr, KernelResult, SyscallId, ThreadId};
 use sele4n_abi::{MessageInfo, SyscallRequest, SyscallResponse, IpcBuffer, invoke_syscall};
 use sele4n_abi::args::sched_context::*;
 
@@ -20,9 +20,11 @@ use sele4n_abi::args::sched_context::*;
 /// inline (x2–x5). The 5th value (`domain`) is written to the IPC buffer's
 /// overflow slot 0 (message register index 4).
 ///
-/// The kernel reads `msgRegs[4]` via `requireMsgReg decoded.msgRegs 4`
-/// (SyscallArgDecode.lean:962), which falls through to the IPC buffer when
-/// the inline array has only 4 entries.
+/// AK4-A (R-ABI-C01): The kernel merges the IPC-buffer overflow into
+/// `msgRegs` via `decodeSyscallArgsFromState` (RegisterDecode.lean),
+/// which reads `ipcBufferReadMr 0` when `msgInfo.length > 4`. The
+/// per-syscall decoder `decodeSchedContextConfigureArgs` then consumes
+/// `msgRegs[4]` (the merged `domain` value) via `requireMsgReg`.
 #[inline]
 pub fn sched_context_configure(
     sc_cap: CPtr,
@@ -46,6 +48,8 @@ pub fn sched_context_configure(
     //   budget=msgRegs[0], period=msgRegs[1], priority=msgRegs[2],
     //   deadline=msgRegs[3], domain=msgRegs[4]
     // With 4 inline registers (x2-x5), msgRegs[4] requires IPC buffer.
+    // AK4-F (R-ABI-M04): `set_mr(4)` now returns `Ok(())` on success
+    // (was `Ok(true)` / `Ok(false)`); overflow-slot write only.
     buf.set_mr(4, encoded[4])?;
     invoke_syscall(SyscallRequest {
         cap_addr: sc_cap,
@@ -62,7 +66,7 @@ pub fn sched_context_configure(
 #[inline]
 pub fn sched_context_bind(
     sc_cap: CPtr,
-    thread_id: u64,
+    thread_id: ThreadId,
 ) -> KernelResult<SyscallResponse> {
     let args = SchedContextBindArgs { thread_id };
     let encoded = args.encode();

@@ -4,7 +4,7 @@
 //! Three capability-controlled operations for scheduling context management
 //! added in WS-Z Phase Z5.
 
-use sele4n_types::{KernelError, KernelResult};
+use sele4n_types::{KernelError, KernelResult, ThreadId};
 
 /// Maximum configurable priority value (8-bit, matching Lean scheduler).
 pub const MAX_PRIORITY: u64 = 255;
@@ -55,21 +55,24 @@ impl SchedContextConfigureArgs {
 /// Arguments for `schedContextBind` (syscall 18).
 /// Register mapping: regs[0]=threadId.
 ///
+/// AK4-C (R-ABI-H01): `thread_id` is now typed as `ThreadId` (was raw `u64`)
+/// so compile-time checks prevent accidental cross-typed-id confusion.
+///
 /// Lean: `SchedContextBindArgs` (SyscallArgDecode.lean:904–906)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SchedContextBindArgs {
-    pub thread_id: u64,
+    pub thread_id: ThreadId,
 }
 
 impl SchedContextBindArgs {
     pub const fn encode(&self) -> [u64; 1] {
-        [self.thread_id]
+        [self.thread_id.raw()]
     }
 
     /// Decode from message registers. Requires 1 register.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.is_empty() { return Err(KernelError::InvalidMessageInfo); }
-        Ok(Self { thread_id: regs[0] })
+        Ok(Self { thread_id: ThreadId::from(regs[0]) })
     }
 }
 
@@ -140,7 +143,7 @@ mod tests {
 
     #[test]
     fn bind_roundtrip() {
-        let args = SchedContextBindArgs { thread_id: 42 };
+        let args = SchedContextBindArgs { thread_id: ThreadId::from(42u64) };
         assert_eq!(SchedContextBindArgs::decode(&args.encode()).unwrap(), args);
     }
 

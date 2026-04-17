@@ -12,6 +12,10 @@ use super::type_tag::TypeTag;
 ///
 /// V1-C (M-RS-1): `new_type` is now `TypeTag` (validated enum) rather than
 /// raw `u64`, preventing invalid type tag values from reaching kernel logic.
+///
+/// AK4-H (R-ABI-L1): `TypeTag` currently accepts 7 values:
+/// `0=Tcb, 1=Endpoint, 2=Notification, 3=CNode, 4=VSpaceRoot,
+/// 5=Untyped, 6=SchedContext`. See `type_tag.rs::TypeTag::from_u64`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LifecycleRetypeArgs {
     pub target_obj: ObjId,
