@@ -1062,7 +1062,11 @@ def syscallEntryChecked (ctx : LabelingContext)
       match lookupThreadRegisterContext tid st with
       | .error e => .error e
       | .ok (regs, _) =>
-        match decodeSyscallArgs layout regs regCount with
+        -- AK4-A.6 (R-ABI-C01): Use state-aware decode so 5-arg syscalls
+        -- (`serviceRegister`, `schedContextConfigure`) merge IPC-buffer
+        -- overflow registers into `msgRegs` per seL4 convention.
+        match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+                st tid layout regs regCount with
         | .error e => .error e
         | .ok decoded =>
           dispatchSyscallChecked ctx decoded tid st
@@ -1416,7 +1420,10 @@ def syscallEntry (layout : SeLe4n.SyscallRegisterLayout)
       match lookupThreadRegisterContext tid st with
       | .error e => .error e
       | .ok (regs, _) =>
-        match decodeSyscallArgs layout regs regCount with
+        -- AK4-A.6 (R-ABI-C01): Use state-aware decode so 5-arg syscalls
+        -- merge IPC-buffer overflow registers into `msgRegs`.
+        match SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+                st tid layout regs regCount with
         | .error e => .error e
         | .ok decoded =>
           dispatchSyscall decoded tid st
@@ -1425,8 +1432,8 @@ def syscallEntry (layout : SeLe4n.SyscallRegisterLayout)
 -- WS-J1-C: Soundness theorems
 -- ============================================================================
 
-/-- WS-J1-C: If `syscallEntry` succeeds, the register values decoded
-successfully — i.e., `decodeSyscallArgs` returned `.ok`. -/
+/-- WS-J1-C / AK4-A.6: If `syscallEntry` succeeds, the state-aware register
+    decode (including IPC-buffer overflow merge) returned `.ok`. -/
 theorem syscallEntry_requires_valid_decode
     (layout : SeLe4n.SyscallRegisterLayout) (regCount : Nat)
     (st : SystemState) (st' : SystemState)
@@ -1434,7 +1441,8 @@ theorem syscallEntry_requires_valid_decode
     ∃ tid regs decoded,
       st.scheduler.current = some tid ∧
       lookupThreadRegisterContext tid st = .ok (regs, st) ∧
-      decodeSyscallArgs layout regs regCount = .ok decoded := by
+      SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+        st tid layout regs regCount = .ok decoded := by
   unfold syscallEntry at hOk
   split at hOk
   · simp at hOk
@@ -1501,7 +1509,8 @@ theorem syscallEntry_implies_capability_held
     ∃ tid regs decoded,
       st.scheduler.current = some tid ∧
       lookupThreadRegisterContext tid st = .ok (regs, st) ∧
-      decodeSyscallArgs layout regs regCount = .ok decoded ∧
+      SeLe4n.Kernel.Architecture.RegisterDecode.decodeSyscallArgsFromState
+        st tid layout regs regCount = .ok decoded ∧
       ∃ tcb, (SystemState.objects st)[tid.toObjId]? = some (KernelObject.tcb tcb) ∧
         ∃ rootCn, (SystemState.objects st)[tcb.cspaceRoot]? = some (KernelObject.cnode rootCn) ∧
           ∃ cap ref,

@@ -78,25 +78,44 @@ impl IpcBuffer {
 
     /// Set a message register by absolute index (0..120).
     ///
-    /// - Indices 0–3: returns `Ok(false)` — caller must place these in
-    ///   `SyscallRequest.msg_regs` (inline ARM64 registers x2–x5).
-    /// - Indices 4–119: writes to the overflow buffer, returns `Ok(true)`.
+    /// AK4-F (R-ABI-M04 / MEDIUM): The historical `set_mr` returned
+    /// `Ok(false)` for indices 0..3, which was asymmetric with
+    /// [`get_mr`](Self::get_mr) (which returns `Err(InvalidArgument)` for
+    /// those indices). `set_mr` now returns `Err(InvalidArgument)` for
+    /// indices 0..3 so the two APIs have matching error semantics.
+    ///
+    /// - Indices 0–3: returns `Err(InvalidArgument)` — inline registers
+    ///   live in `SyscallRequest.msg_regs`, not in the buffer.
+    /// - Indices 4–119: writes to the overflow buffer, returns `Ok(())`.
     /// - Index ≥ 120: returns `Err(IpcMessageTooLarge)`.
     ///
-    /// **W6-H (LOW-2): API asymmetry note.** `set_mr(0..3)` returns `Ok(false)`
-    /// (informational no-op) while [`get_mr`](Self::get_mr)`(0..3)` returns
-    /// `Err(InvalidArgument)`. This is intentional: `set_mr` is a *write*
-    /// hint telling the caller "use `SyscallRequest.msg_regs` instead" without
-    /// failing, while `get_mr` is a *read* that cannot return a value (those
-    /// registers are not stored in the buffer). Both are safe — no data is
-    /// lost or corrupted in either case.
+    /// For callers that explicitly want the legacy overflow-only write,
+    /// use [`set_mr_overflow`](Self::set_mr_overflow).
     #[inline]
-    pub fn set_mr(&mut self, index: usize, value: u64) -> Result<bool, KernelError> {
+    pub fn set_mr(&mut self, index: usize, value: u64) -> Result<(), KernelError> {
         if index < INLINE_REGS {
-            Ok(false)
+            Err(KernelError::InvalidArgument)
         } else if index < MAX_MSG_REGS {
             self.msg[index - INLINE_REGS] = value;
-            Ok(true)
+            Ok(())
+        } else {
+            Err(KernelError::IpcMessageTooLarge)
+        }
+    }
+
+    /// AK4-F (R-ABI-M04): Explicit overflow-only write. Unlike `set_mr`,
+    /// this accepts indices 0..3 as a no-op (returns `Ok(())` without
+    /// touching the buffer, since inline registers are not stored here).
+    /// Kept for callers that formerly relied on the "pretend-write" branch
+    /// of the legacy `set_mr` API — primarily internal sele4n-sys
+    /// wrappers that mirror the full 120-register message.
+    #[inline]
+    pub fn set_mr_overflow(&mut self, index: usize, value: u64) -> Result<(), KernelError> {
+        if index < INLINE_REGS {
+            Ok(())
+        } else if index < MAX_MSG_REGS {
+            self.msg[index - INLINE_REGS] = value;
+            Ok(())
         } else {
             Err(KernelError::IpcMessageTooLarge)
         }
@@ -158,11 +177,24 @@ mod tests {
         assert_eq!(buf.caps_or_badges, [0; 3]);
     }
 
+    // AK4-F (R-ABI-M04): `set_mr(0..3)` now returns `Err(InvalidArgument)`
+    // for symmetry with `get_mr`. Use `set_mr_overflow` for the legacy
+    // no-op-on-inline-index behaviour.
     #[test]
-    fn set_mr_inline_returns_false() {
+    fn set_mr_inline_returns_error() {
         let mut buf = IpcBuffer::new();
         for i in 0..4 {
-            assert_eq!(buf.set_mr(i, 42), Ok(false));
+            assert_eq!(buf.set_mr(i, 42), Err(KernelError::InvalidArgument));
+        }
+        // Buffer should be untouched
+        assert!(buf.msg.iter().all(|&v| v == 0));
+    }
+
+    #[test]
+    fn set_mr_overflow_inline_noop() {
+        let mut buf = IpcBuffer::new();
+        for i in 0..4 {
+            assert_eq!(buf.set_mr_overflow(i, 42), Ok(()));
         }
         // Buffer should be untouched
         assert!(buf.msg.iter().all(|&v| v == 0));
@@ -171,16 +203,24 @@ mod tests {
     #[test]
     fn set_get_overflow() {
         let mut buf = IpcBuffer::new();
-        assert_eq!(buf.set_mr(4, 0xAABB), Ok(true));
-        assert_eq!(buf.set_mr(119, 0xCCDD), Ok(true));
+        assert_eq!(buf.set_mr(4, 0xAABB), Ok(()));
+        assert_eq!(buf.set_mr(119, 0xCCDD), Ok(()));
         assert_eq!(buf.get_mr(4), Ok(0xAABB));
         assert_eq!(buf.get_mr(119), Ok(0xCCDD));
+    }
+
+    #[test]
+    fn set_mr_overflow_writes_buffer() {
+        let mut buf = IpcBuffer::new();
+        assert_eq!(buf.set_mr_overflow(5, 0x1234), Ok(()));
+        assert_eq!(buf.get_mr(5), Ok(0x1234));
     }
 
     #[test]
     fn out_of_bounds() {
         let mut buf = IpcBuffer::new();
         assert_eq!(buf.set_mr(120, 1), Err(KernelError::IpcMessageTooLarge));
+        assert_eq!(buf.set_mr_overflow(120, 1), Err(KernelError::IpcMessageTooLarge));
         assert_eq!(buf.get_mr(120), Err(KernelError::IpcMessageTooLarge));
     }
 
@@ -201,5 +241,16 @@ mod tests {
         buf.clear_msg();
         assert_eq!(buf.get_mr(4), Ok(0));
         assert_eq!(buf.get_mr(50), Ok(0));
+    }
+
+    // AK4-F (R-ABI-M04): Explicit symmetry check — `set_mr(i) = Err(_)`
+    // for inline indices iff `get_mr(i) = Err(_)`.
+    #[test]
+    fn set_get_error_symmetry_inline() {
+        let mut buf = IpcBuffer::new();
+        for i in 0..INLINE_REGS {
+            assert!(buf.set_mr(i, 0).is_err());
+            assert!(buf.get_mr(i).is_err());
+        }
     }
 }

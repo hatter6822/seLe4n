@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.29.3"
+version = "0.29.4"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -111,3 +111,8 @@ root = "tests.WxDefenseSuite"
 [[lean_exe]]
 name = "decode_validation_suite"
 root = "tests.DecodeValidationSuite"
+
+# AK4-G: End-to-end ABI round-trip integration suite
+[[lean_exe]]
+name = "abi_roundtrip_suite"
+root = "tests.AbiRoundtripSuite"

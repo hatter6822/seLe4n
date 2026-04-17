@@ -136,17 +136,25 @@ structure VSpaceUnmapArgs where
 -- ============================================================================
 
 /-- Decode CSpace mint arguments from message registers.
-    Requires 4 message registers (srcSlot, dstSlot, rights, badge). -/
+    Requires 4 message registers (srcSlot, dstSlot, rights, badge).
+
+    AK4-E (R-ABI-M02 / MEDIUM): Tightened validation to match Rust-side
+    `sele4n-abi/src/args/cspace.rs`: reject `rights > 0x1F` with
+    `.invalidArgument` at the decode boundary. The underlying
+    `AccessRightSet.ofNat` still performs defensive masking for any
+    in-kernel users, but the ABI entry point now fails closed. -/
 def decodeCSpaceMintArgs (decoded : SyscallDecodeResult)
     : Except KernelError CSpaceMintArgs := do
   let r0 ← requireMsgReg decoded.msgRegs 0
   let r1 ← requireMsgReg decoded.msgRegs 1
   let r2 ← requireMsgReg decoded.msgRegs 2
   let r3 ← requireMsgReg decoded.msgRegs 3
-  pure { srcSlot := Slot.ofNat r0.val
-         dstSlot := Slot.ofNat r1.val
-         rights  := AccessRightSet.ofNat r2.val  -- Mask to valid 5-bit range at decode boundary
-         badge   := Badge.ofNatMasked r3.val }
+  if r2.val > 0x1F then .error .invalidArgument
+  else
+    pure { srcSlot := Slot.ofNat r0.val
+           dstSlot := Slot.ofNat r1.val
+           rights  := AccessRightSet.ofNat r2.val
+           badge   := Badge.ofNatMasked r3.val }
 
 /-- Decode CSpace copy arguments from message registers.
     Requires 2 message registers (srcSlot, dstSlot). -/
@@ -370,34 +378,67 @@ private theorem requireMsgReg_unfold_ok (regs : Array RegValue) (idx : Nat) (h :
 private theorem requireMsgReg_unfold_err (regs : Array RegValue) (idx : Nat) (h : ¬(idx < regs.size)) :
     requireMsgReg regs idx = .error .invalidMessageInfo := by simp [requireMsgReg, dif_neg h]
 
-/-- CSpace mint decode fails iff fewer than 4 message registers. -/
+/-- AK4-E: CSpace mint decode fails when msgRegs are insufficient. The
+    tightened decoder additionally rejects `rights > 0x1F` — use
+    `decodeCSpaceMintArgs_error_of_invalid_rights` for that mode. -/
+theorem decodeCSpaceMintArgs_error_of_insufficient_regs
+    (d : SyscallDecodeResult) (h : d.msgRegs.size < 4) :
+    ∃ e, decodeCSpaceMintArgs d = .error e := by
+  refine ⟨.invalidMessageInfo, ?_⟩
+  simp only [decodeCSpaceMintArgs, bind, Except.bind]
+  by_cases h0 : 0 < d.msgRegs.size
+  · rw [requireMsgReg_unfold_ok _ _ h0]; simp
+    by_cases h1 : 1 < d.msgRegs.size
+    · rw [requireMsgReg_unfold_ok _ _ h1]; simp
+      by_cases h2 : 2 < d.msgRegs.size
+      · rw [requireMsgReg_unfold_ok _ _ h2]; simp
+        rw [requireMsgReg_unfold_err _ _ (by omega)]
+      · rw [requireMsgReg_unfold_err _ _ h2]
+    · rw [requireMsgReg_unfold_err _ _ h1]
+  · rw [requireMsgReg_unfold_err _ _ h0]
+
+/-- AK4-E: CSpace mint decode rejects `rights > 0x1F` with
+    `.invalidArgument`, matching Rust-side validation. -/
+theorem decodeCSpaceMintArgs_error_of_invalid_rights
+    (d : SyscallDecodeResult) (hSize : 4 ≤ d.msgRegs.size)
+    (hRights : d.msgRegs[2].val > 0x1F) :
+    decodeCSpaceMintArgs d = .error .invalidArgument := by
+  simp only [decodeCSpaceMintArgs, bind, Except.bind,
+    requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
+    dif_pos (show 1 < d.msgRegs.size by omega),
+    dif_pos (show 2 < d.msgRegs.size by omega),
+    dif_pos (show 3 < d.msgRegs.size by omega)]
+  simp [hRights]
+
+/-- AK4-E: CSpace mint decode fails iff fewer than 4 message registers OR
+    the rights field exceeds 0x1F. The legacy-named theorem is preserved
+    for invariant-surface checks, now expressing the enlarged failure set. -/
 theorem decodeCSpaceMintArgs_error_iff (d : SyscallDecodeResult) :
-    (∃ e, decodeCSpaceMintArgs d = .error e) ↔ d.msgRegs.size < 4 := by
+    (∃ e, decodeCSpaceMintArgs d = .error e) ↔
+    (d.msgRegs.size < 4 ∨
+     (∃ (h : 3 < d.msgRegs.size), (d.msgRegs[2]'(by omega)).val > 0x1F)) := by
   constructor
   · intro ⟨e, he⟩
     by_cases hlt : d.msgRegs.size < 4
-    · exact hlt
-    · exfalso
-      simp only [decodeCSpaceMintArgs, bind, Except.bind,
-        requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
-        dif_pos (show 1 < d.msgRegs.size by omega),
-        dif_pos (show 2 < d.msgRegs.size by omega),
-        dif_pos (show 3 < d.msgRegs.size by omega),
-        pure, Except.pure] at he
-      nomatch he
+    · exact .inl hlt
+    · have h3 : 3 < d.msgRegs.size := by omega
+      by_cases hGt : d.msgRegs[2].val > 0x1F
+      · right; exact ⟨h3, hGt⟩
+      · exfalso
+        simp only [decodeCSpaceMintArgs, bind, Except.bind,
+          requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
+          dif_pos (show 1 < d.msgRegs.size by omega),
+          dif_pos (show 2 < d.msgRegs.size by omega),
+          dif_pos (show 3 < d.msgRegs.size by omega), hGt,
+          if_false, pure, Except.pure] at he
+        nomatch he
   · intro h
-    refine ⟨.invalidMessageInfo, ?_⟩
-    simp only [decodeCSpaceMintArgs, bind, Except.bind]
-    by_cases h0 : 0 < d.msgRegs.size
-    · rw [requireMsgReg_unfold_ok _ _ h0]; simp
-      by_cases h1 : 1 < d.msgRegs.size
-      · rw [requireMsgReg_unfold_ok _ _ h1]; simp
-        by_cases h2 : 2 < d.msgRegs.size
-        · rw [requireMsgReg_unfold_ok _ _ h2]; simp
-          rw [requireMsgReg_unfold_err _ _ (by omega)]
-        · rw [requireMsgReg_unfold_err _ _ h2]
-      · rw [requireMsgReg_unfold_err _ _ h1]
-    · rw [requireMsgReg_unfold_err _ _ h0]
+    match h with
+    | .inl hLt =>
+      exact decodeCSpaceMintArgs_error_of_insufficient_regs d hLt
+    | .inr ⟨h3, hGt⟩ =>
+      exact ⟨.invalidArgument,
+        decodeCSpaceMintArgs_error_of_invalid_rights d (by omega) hGt⟩
 
 /-- CSpace copy decode fails iff fewer than 2 message registers. -/
 theorem decodeCSpaceCopyArgs_error_iff (d : SyscallDecodeResult) :
@@ -698,7 +739,26 @@ theorem decodeCSpaceMintArgs_roundtrip (args : CSpaceMintArgs)
   simp only [Badge.valid, machineWordMax, machineWordBits] at hBadge
   have hModBadge : bv % 18446744073709551616 = bv := Nat.mod_eq_of_lt hBadge
   have hModRights : AccessRightSet.ofNat r.bits = r := AccessRightSet.ofNat_idempotent r hRights
-  show Except.ok (⟨Slot.ofNat s.toNat, Slot.ofNat d.toNat, AccessRightSet.ofNat r.bits, ⟨bv % 18446744073709551616⟩⟩ : CSpaceMintArgs) = Except.ok ⟨s, d, r, ⟨bv⟩⟩
+  -- AK4-E: rights.valid (`r.bits < 32`) implies `¬ (r.bits > 31)`.
+  have hRightsLt : r.bits < 32 :=
+    AccessRightSet.isWord5_of_valid r hRights
+  have hRightsBound : ¬ r.bits > 31 := by omega
+  have := hModRights; have := hModBadge; have := hRightsBound
+  -- Pre-AK4-E body produced the goal
+  -- `Except.ok (⟨Slot.ofNat s.toNat, Slot.ofNat d.toNat, AccessRightSet.ofNat r.bits, ⟨bv % 2^64⟩⟩) = ...`.
+  -- AK4-E adds a guarding `if r2.val > 31 then error else ok ...` that
+  -- evaluates to the `else` branch via `hRightsBound`.
+  show (if (r.bits > 31) then (Except.error KernelError.invalidArgument
+                                  : Except KernelError CSpaceMintArgs)
+        else Except.ok (⟨Slot.ofNat s.toNat, Slot.ofNat d.toNat,
+                          AccessRightSet.ofNat r.bits,
+                          Badge.ofNatMasked ({val := bv} : Badge).toNat⟩
+                         : CSpaceMintArgs))
+        = Except.ok ⟨s, d, r, ⟨bv⟩⟩
+  rw [if_neg hRightsBound]
+  show Except.ok (⟨Slot.ofNat s.toNat, Slot.ofNat d.toNat,
+                     AccessRightSet.ofNat r.bits, ⟨bv % 18446744073709551616⟩⟩
+                    : CSpaceMintArgs) = Except.ok ⟨s, d, r, ⟨bv⟩⟩
   simp only [Slot.ofNat, Slot.toNat, hModRights, hModBadge]
 
 /-- Round-trip: encoding then decoding CSpaceCopyArgs recovers the original. -/
@@ -814,9 +874,27 @@ structure ServiceQueryArgs where
 -- WS-Q1-D: Service decode functions
 -- ============================================================================
 
+/-- AK4-B (R-ABI-H02 / HIGH): Maximum method count for a service registration,
+    matching `MAX_METHOD_COUNT = 1024` in `rust/sele4n-abi/src/args/service.rs`. -/
+def serviceMaxMethodCount : Nat := 1024
+
+/-- AK4-B (R-ABI-H02 / HIGH): Maximum IPC message size in bytes for service
+    registration, matching `MAX_SERVICE_MESSAGE_SIZE = 960` (= 120 registers ×
+    8 bytes). Applies to both `maxMessageSize` and `maxResponseSize`. -/
+def serviceMaxMessageSize : Nat := 120 * 8
+
 /-- Decode service register arguments from message registers.
     Requires 5 message registers (interfaceId, methodCount, maxMessageSize,
-    maxResponseSize, requiresGrant). -/
+    maxResponseSize, requiresGrant).
+
+    AK4-B (R-ABI-H02 / HIGH): Tightened validation to match Rust-side
+    `sele4n-abi/src/args/service.rs:decode`:
+    - `r4` (`requiresGrant`) must be `0` or `1`; any other value fails closed.
+    - `r1` (`methodCount`) must be ≤ `serviceMaxMethodCount` (1024).
+    - `r2` (`maxMessageSize`) must be ≤ `serviceMaxMessageSize` (960).
+    - `r3` (`maxResponseSize`) must be ≤ `serviceMaxMessageSize` (960).
+    Kernel is the authoritative validator — the tightening prevents any
+    Rust-validated-but-Lean-accepted divergence. -/
 def decodeServiceRegisterArgs (decoded : SyscallDecodeResult)
     : Except KernelError ServiceRegisterArgs := do
   let r0 ← requireMsgReg decoded.msgRegs 0
@@ -824,11 +902,17 @@ def decodeServiceRegisterArgs (decoded : SyscallDecodeResult)
   let r2 ← requireMsgReg decoded.msgRegs 2
   let r3 ← requireMsgReg decoded.msgRegs 3
   let r4 ← requireMsgReg decoded.msgRegs 4
-  pure { interfaceId    := InterfaceId.ofNat r0.val
-         methodCount    := r1.val
-         maxMessageSize := r2.val
-         maxResponseSize := r3.val
-         requiresGrant  := r4.val != 0 }
+  -- AK4-B: bounds validation (matches Rust ABI constants).
+  if r1.val > serviceMaxMethodCount then .error .invalidArgument
+  else if r2.val > serviceMaxMessageSize then .error .invalidArgument
+  else if r3.val > serviceMaxMessageSize then .error .invalidArgument
+  else if r4.val ≥ 2 then .error .invalidMessageInfo
+  else
+    pure { interfaceId    := InterfaceId.ofNat r0.val
+           methodCount    := r1.val
+           maxMessageSize := r2.val
+           maxResponseSize := r3.val
+           requiresGrant  := r4.val == 1 }
 
 /-- Decode service revoke arguments from message registers.
     Requires 1 message register (serviceId). -/
@@ -856,38 +940,61 @@ def decodeServiceRevokeArgs (decoded : SyscallDecodeResult)
 -- WS-Q1-D: Service error-exclusivity theorems
 -- ============================================================================
 
-/-- Service register decode fails iff fewer than 5 message registers. -/
-theorem decodeServiceRegisterArgs_error_iff (d : SyscallDecodeResult) :
-    (∃ e, decodeServiceRegisterArgs d = .error e) ↔ d.msgRegs.size < 5 := by
-  constructor
-  · intro ⟨e, he⟩
-    by_cases hlt : d.msgRegs.size < 5
-    · exact hlt
-    · exfalso
-      simp only [decodeServiceRegisterArgs, bind, Except.bind,
-        requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
-        dif_pos (show 1 < d.msgRegs.size by omega),
-        dif_pos (show 2 < d.msgRegs.size by omega),
-        dif_pos (show 3 < d.msgRegs.size by omega),
-        dif_pos (show 4 < d.msgRegs.size by omega),
-        pure, Except.pure] at he
-      nomatch he
-  · intro h
-    refine ⟨.invalidMessageInfo, ?_⟩
-    simp only [decodeServiceRegisterArgs, bind, Except.bind]
-    by_cases h0 : 0 < d.msgRegs.size
-    · rw [requireMsgReg_unfold_ok _ _ h0]; simp
-      by_cases h1 : 1 < d.msgRegs.size
-      · rw [requireMsgReg_unfold_ok _ _ h1]; simp
-        by_cases h2 : 2 < d.msgRegs.size
-        · rw [requireMsgReg_unfold_ok _ _ h2]; simp
-          by_cases h3 : 3 < d.msgRegs.size
-          · rw [requireMsgReg_unfold_ok _ _ h3]; simp
-            rw [requireMsgReg_unfold_err _ _ (by omega)]
-          · rw [requireMsgReg_unfold_err _ _ h3]
-        · rw [requireMsgReg_unfold_err _ _ h2]
-      · rw [requireMsgReg_unfold_err _ _ h1]
-    · rw [requireMsgReg_unfold_err _ _ h0]
+/-- AK4-B: Service register decode fails when msgRegs are insufficient OR
+    when any argument exceeds its validated bound. This supersedes the legacy
+    `size < 5`-only iff. -/
+theorem decodeServiceRegisterArgs_error_of_insufficient_regs
+    (d : SyscallDecodeResult) (h : d.msgRegs.size < 5) :
+    ∃ e, decodeServiceRegisterArgs d = .error e := by
+  refine ⟨.invalidMessageInfo, ?_⟩
+  simp only [decodeServiceRegisterArgs, bind, Except.bind]
+  by_cases h0 : 0 < d.msgRegs.size
+  · rw [requireMsgReg_unfold_ok _ _ h0]; simp
+    by_cases h1 : 1 < d.msgRegs.size
+    · rw [requireMsgReg_unfold_ok _ _ h1]; simp
+      by_cases h2 : 2 < d.msgRegs.size
+      · rw [requireMsgReg_unfold_ok _ _ h2]; simp
+        by_cases h3 : 3 < d.msgRegs.size
+        · rw [requireMsgReg_unfold_ok _ _ h3]; simp
+          rw [requireMsgReg_unfold_err _ _ (by omega)]
+        · rw [requireMsgReg_unfold_err _ _ h3]
+      · rw [requireMsgReg_unfold_err _ _ h2]
+    · rw [requireMsgReg_unfold_err _ _ h1]
+  · rw [requireMsgReg_unfold_err _ _ h0]
+
+/-- AK4-B: Out-of-range `methodCount` fails closed. -/
+theorem decodeServiceRegisterArgs_error_of_methodCount_too_large
+    (d : SyscallDecodeResult) (hSize : 5 ≤ d.msgRegs.size)
+    (hMc : d.msgRegs[1].val > serviceMaxMethodCount) :
+    decodeServiceRegisterArgs d = .error .invalidArgument := by
+  simp only [decodeServiceRegisterArgs, bind, Except.bind,
+    requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
+    dif_pos (show 1 < d.msgRegs.size by omega),
+    dif_pos (show 2 < d.msgRegs.size by omega),
+    dif_pos (show 3 < d.msgRegs.size by omega),
+    dif_pos (show 4 < d.msgRegs.size by omega)]
+  have : decide (d.msgRegs[1].val > serviceMaxMethodCount) = true := by
+    simp [hMc]
+  simp [hMc]
+
+/-- AK4-B: Out-of-range `requiresGrant` fails closed. -/
+theorem decodeServiceRegisterArgs_error_of_invalid_grant
+    (d : SyscallDecodeResult) (hSize : 5 ≤ d.msgRegs.size)
+    (hMc : d.msgRegs[1].val ≤ serviceMaxMethodCount)
+    (hMms : d.msgRegs[2].val ≤ serviceMaxMessageSize)
+    (hMrs : d.msgRegs[3].val ≤ serviceMaxMessageSize)
+    (hGrant : d.msgRegs[4].val ≥ 2) :
+    decodeServiceRegisterArgs d = .error .invalidMessageInfo := by
+  simp only [decodeServiceRegisterArgs, bind, Except.bind,
+    requireMsgReg, dif_pos (show 0 < d.msgRegs.size by omega),
+    dif_pos (show 1 < d.msgRegs.size by omega),
+    dif_pos (show 2 < d.msgRegs.size by omega),
+    dif_pos (show 3 < d.msgRegs.size by omega),
+    dif_pos (show 4 < d.msgRegs.size by omega)]
+  have hMcFalse : ¬ d.msgRegs[1].val > serviceMaxMethodCount := Nat.not_lt.mpr hMc
+  have hMmsFalse : ¬ d.msgRegs[2].val > serviceMaxMessageSize := Nat.not_lt.mpr hMms
+  have hMrsFalse : ¬ d.msgRegs[3].val > serviceMaxMessageSize := Nat.not_lt.mpr hMrs
+  simp [hMcFalse, hMmsFalse, hMrsFalse, hGrant]
 
 /-- Service revoke decode fails iff fewer than 1 message register. -/
 theorem decodeServiceRevokeArgs_error_iff (d : SyscallDecodeResult) :
@@ -910,14 +1017,23 @@ theorem decodeServiceRevokeArgs_error_iff (d : SyscallDecodeResult) :
 -- WS-Q1-D: Service round-trip theorems
 -- ============================================================================
 
-/-- Round-trip: encoding then decoding ServiceRegisterArgs recovers the original. -/
-theorem decodeServiceRegisterArgs_roundtrip (args : ServiceRegisterArgs) :
+/-- Round-trip: encoding then decoding ServiceRegisterArgs recovers the original.
+    AK4-B (R-ABI-H02): Requires bounds preconditions matching the validated
+    range — the tightened decoder rejects values outside these bounds. -/
+theorem decodeServiceRegisterArgs_roundtrip (args : ServiceRegisterArgs)
+    (hMc : args.methodCount ≤ serviceMaxMethodCount)
+    (hMms : args.maxMessageSize ≤ serviceMaxMessageSize)
+    (hMrs : args.maxResponseSize ≤ serviceMaxMessageSize) :
     decodeServiceRegisterArgs (stubDecoded (encodeServiceRegisterArgs args)) = .ok args := by
   rcases args with ⟨iid, mc, mms, mrs, rg⟩
-  simp [decodeServiceRegisterArgs, encodeServiceRegisterArgs, stubDecoded,
+  have hMcFalse : ¬ serviceMaxMethodCount < mc := Nat.not_lt.mpr hMc
+  have hMmsFalse : ¬ serviceMaxMessageSize < mms := Nat.not_lt.mpr hMms
+  have hMrsFalse : ¬ serviceMaxMessageSize < mrs := Nat.not_lt.mpr hMrs
+  simp only [decodeServiceRegisterArgs, encodeServiceRegisterArgs, stubDecoded,
         requireMsgReg, bind, Except.bind, pure, Except.pure,
         InterfaceId.ofNat, InterfaceId.toNat]
-  cases rg <;> simp
+  cases rg <;>
+    simp [hMcFalse, hMmsFalse, hMrsFalse]
 
 /-- Round-trip: encoding then decoding ServiceRevokeArgs recovers the original. -/
 theorem decodeServiceRevokeArgs_roundtrip (args : ServiceRevokeArgs) :
@@ -1157,7 +1273,11 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
       decodeVSpaceMapArgs (stubDecoded (encodeVSpaceMapArgs args)) maxASID = .ok args) ∧
     (∀ args, args.asid.isValidForConfig maxASID = true → args.vaddr.isCanonical = true →
       decodeVSpaceUnmapArgs (stubDecoded (encodeVSpaceUnmapArgs args)) maxASID = .ok args) ∧
-    (∀ args, decodeServiceRegisterArgs (stubDecoded (encodeServiceRegisterArgs args)) = .ok args) ∧
+    (∀ args,
+      args.methodCount ≤ serviceMaxMethodCount →
+      args.maxMessageSize ≤ serviceMaxMessageSize →
+      args.maxResponseSize ≤ serviceMaxMessageSize →
+      decodeServiceRegisterArgs (stubDecoded (encodeServiceRegisterArgs args)) = .ok args) ∧
     (∀ args, decodeServiceRevokeArgs (stubDecoded (encodeServiceRevokeArgs args)) = .ok args) ∧
     (∀ args, args.badge.valid →
       decodeNotificationSignalArgs (stubDecoded (encodeNotificationSignalArgs args)) = .ok args) ∧
@@ -1173,7 +1293,7 @@ theorem decode_layer2_roundtrip_all (maxASID : Nat) :
    decodeLifecycleRetypeArgs_roundtrip,
    fun args hA hV hWx => decodeVSpaceMapArgs_roundtrip args maxASID hA hV hWx,
    fun args hA hV => decodeVSpaceUnmapArgs_roundtrip args maxASID hA hV,
-   decodeServiceRegisterArgs_roundtrip,
+   fun args hMc hMms hMrs => decodeServiceRegisterArgs_roundtrip args hMc hMms hMrs,
    decodeServiceRevokeArgs_roundtrip,
    fun args h => decodeNotificationSignalArgs_roundtrip args h,
    decodeNotificationWaitArgs_roundtrip,
