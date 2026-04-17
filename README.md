@@ -85,7 +85,7 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.29.1` |
+| **Version** | `0.29.2` |
 | **Lean toolchain** | `v4.28.0` |
 | **Production Lean LoC** | 95,528 across 141 files |
 | **Test Lean LoC** | 11,709 across 17 test suites |
