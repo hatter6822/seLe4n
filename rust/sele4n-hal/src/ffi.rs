@@ -33,9 +33,10 @@
 //! with a clear diagnostic rather than silently producing UB at runtime.
 //!
 //! Note: cargo test still uses `panic = "unwind"` on stable so
-//! `#[should_panic]` tests work — the guard below uses
-//! `cfg(not(panic = "abort"))` so only non-abort configurations fail.
-//! During `cargo test` the `test` cfg is set and the guard is bypassed.
+//! `#[should_panic]` tests work. The guard below is gated on
+//! `not(debug_assertions)` so it ONLY fires in release builds — test and
+//! dev builds (which both have `debug_assertions = true`) bypass it even
+//! when compiled with unwind.
 
 // AK5-M compile-time guard:
 //

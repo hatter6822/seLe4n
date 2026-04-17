@@ -188,4 +188,9 @@ __el1_irq_entry:
 __el1_serror_entry:
     save_context
     bl      handle_serror
+    // AK5-K (R-HAL-M12): handle_serror is declared `-> !` (never returns)
+    // so this restore_context is formally dead. It stays as a defensive
+    // fall-through: if a future refactor ever relaxes the signature, the
+    // kernel still terminates via ERET rather than racing off the end of
+    // the section.
     restore_context

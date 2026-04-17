@@ -1,3 +1,95 @@
+## v0.29.6 — WS-AK Phase AK5 audit remediation
+
+End-to-end post-implementation audit of Phase AK5 (v0.29.5). Two
+material correctness findings, two documentation accuracy findings, and
+supplementary test/theorem strengthening. No API surface changes; the
+workstream scope (HAL boot hardening) is unchanged.
+
+Gate: `cargo test --workspace` (408 tests) + `cargo clippy --workspace
+-- -D warnings` (0 warnings) + `lake build` + `test_smoke.sh` +
+`test_full.sh` + zero `sorry`/`axiom`.
+
+### Correctness fixes
+
+- **AK5-C audit (R-HAL-H03 follow-up)** — `compute_sctlr_el1_bitmap`
+  was missing **RES1 bit 20**. The original implementation set RES1
+  bits 4/7/8/11/22/23/28/29 but omitted bit 20, which is architecturally
+  RES1 on ARMv8.0-A SCTLR_EL1 (and IESB on ARMv8.2-A+). Setting a RES1
+  bit to 0 is reserved behavior per ARM ARM. Cross-referenced against
+  Linux's `SCTLR_EL1_RES1` macro (bits 11|20|22|28|29). Fix adds
+  `RES1_BIT20` constant and includes it in the bitmap. New regression
+  tests: `sctlr_bitmap_linux_res1_subset_matches`,
+  `sctlr_bitmap_excludes_optional_bits`. Existing
+  `sctlr_bitmap_res1_bits_are_set` test extended to cover bit 20.
+- **AK5-E hardening** — added three compile-time `assert!` checks to
+  `rust/sele4n-hal/src/mmu.rs` locking `PageTableCell` and
+  `BootL1Table` at 4 KiB alignment and `512 × 8 = 4096` bytes. If a
+  future refactor ever drops `#[repr(align(4096))]` the build fails.
+
+### Documentation fixes (post-audit)
+
+- **AK5-B doc correction** — the `EoiGuard` doc comment and one
+  companion test incorrectly claimed Drop runs on the panic path under
+  `panic = "abort"`. Per the Rust reference
+  (<https://doc.rust-lang.org/cargo/reference/profiles.html#panic>), on
+  `panic = "abort"` destructors are NOT run when panic terminates the
+  process. The correct semantics are: normal-return / early-return /
+  `break` always run Drop → EOI fires; panic under `abort` halts the
+  kernel (correct response to an invariant violation per AK5-A). The
+  misleading test `eoi_guard_is_zero_cost_for_abort_path` is replaced
+  by a proper unwind-path regression pair:
+  `eoi_guard_panic_propagates_while_drop_records` (`#[should_panic]`)
+  and `eoi_guard_unwind_counter_visible_after_panic` which together
+  prove Drop fires on the test-profile unwind path.
+- **AK5-M doc correction** — the FFI panic-discipline commentary said
+  the compile-time guard was bypassed via `cfg(test)`; the actual guard
+  is `cfg(all(not(panic = "abort"), not(debug_assertions)))`. Docs now
+  match code.
+- **AK5-K SError entries** — both `__el0_serror_entry` and
+  `__el1_serror_entry` have `restore_context` after `bl handle_serror`.
+  With `handle_serror: -> !` this is formally dead code. Added defensive
+  comment explaining the intentional safety fall-through (preserves
+  ERET path if the signature is ever relaxed by accident).
+
+### Lean model strengthening
+
+- `SeLe4n/Kernel/Architecture/ExceptionModel.lean` adds two stronger
+  sanity theorems for `trapFrameLayout`:
+  - `trapFrameLayout_exact_fit` — proves every field occupies exactly
+    the 8-byte gap to the next (no hidden padding).
+  - `trapFrameLayout_size_16_aligned` — proves the 288-byte total is
+    16-byte aligned, matching Rust's `#[repr(C, align(16))]` on
+    `TrapFrame`.
+  The original `trapFrameLayout_offsets_monotone` is preserved as a
+  weaker but sometimes-useful property.
+
+### Dependency audit
+
+Workspace build dependencies inspected — only external Rust crate is
+`cc v1.2.59` (a build-dep for assembling `boot.S`/`vectors.S`/`trap.S`)
+with transitive `find-msvc-tools v0.1.9` and `shlex v1.3.0`. All are
+MIT OR Apache-2.0 licensed (GPL-compatible for our runtime artifacts),
+actively maintained by rust-lang-nursery or upstream, and not
+deprecated. `shlex` v1.3.0 incorporates the RUSTSEC-2024-0006 fix.
+Direct `core::ptr::read_volatile`/`write_volatile` usage in
+`rust/sele4n-hal/src/mmio.rs` deliberately avoids the deprecated `mmio`
+crate and the newer `safe-mmio` dependency graph (which would pull
+`zerocopy` et al.) — minimal attack surface is preferred for a
+microkernel HAL and matches the Linux/seL4 convention.
+
+### Tests
+
+- HAL unit tests: 151 → 154 (+3 AK5-C audit tests).
+- Workspace total: 405 → 408 tests, all passing.
+- Clippy: 0 warnings (`-D warnings` gate).
+- `lake build` (104+ jobs incl. strengthened `ExceptionModel.lean`
+  theorems).
+- `test_smoke.sh`, `test_full.sh`, `test_tier0_hygiene.sh` all PASS.
+- Fixture diff against `tests/fixtures/main_trace_smoke.expected`: clean.
+- Zero sorry/axiom.
+
+---
+
 ## v0.29.5 — WS-AK Phase AK5: Rust HAL Boot Hardening
 
 Phase AK5 of WS-AK Pre-1.0 Release Hardening (v0.29.0 audit). Hardens the

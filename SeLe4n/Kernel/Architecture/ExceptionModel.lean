@@ -159,10 +159,32 @@ theorem trapFrameLayout_offsets_monotone :
     trapFrameLayout.far_el1_offset + 8 ≤ trapFrameLayout.size := by
   decide
 
+/-- AK5-F.4: EXACT-fit theorem — the declared offsets use the full 288
+    bytes without gaps. Each header field (SP_EL0, ELR_EL1, SPSR_EL1,
+    ESR_EL1, FAR_EL1) occupies 8 bytes; the GPR array occupies
+    `31 × 8 = 248` bytes starting at offset 0. Any introduction of a
+    hidden gap (e.g., someone re-adding `A` padding for a 16-byte-aligned
+    field) would fail this theorem. -/
+theorem trapFrameLayout_exact_fit :
+    trapFrameLayout.gprsOffset = 0 ∧
+    trapFrameLayout.sp_el0_offset = trapFrameLayout.gprsOffset + 31 * 8 ∧
+    trapFrameLayout.elr_el1_offset = trapFrameLayout.sp_el0_offset + 8 ∧
+    trapFrameLayout.spsr_el1_offset = trapFrameLayout.elr_el1_offset + 8 ∧
+    trapFrameLayout.esr_el1_offset = trapFrameLayout.spsr_el1_offset + 8 ∧
+    trapFrameLayout.far_el1_offset = trapFrameLayout.esr_el1_offset + 8 ∧
+    trapFrameLayout.size = trapFrameLayout.far_el1_offset + 8 := by
+  decide
+
 /-- AK5-F.4: AK5-F extended the trap frame by exactly 16 bytes (two
     `UInt64` fields: ESR_EL1 + FAR_EL1). Historical size was 272. -/
 theorem trapFrameLayout_extended_by_16 :
     trapFrameLayout.size = 272 + 16 := by decide
+
+/-- AK5-F.4: The trap frame is 16-byte aligned (matches Rust
+    `#[repr(C, align(16))]` on `TrapFrame`) — ensures stack-discipline
+    compatibility with AArch64's 16-byte SP alignment requirement. -/
+theorem trapFrameLayout_size_16_aligned :
+    trapFrameLayout.size % 16 = 0 := by decide
 
 -- ============================================================================
 -- AG3-F (H3-ARCH-05): Exception Level Model

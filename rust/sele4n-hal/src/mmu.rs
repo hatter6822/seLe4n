@@ -130,6 +130,11 @@ mod sctlr_bits {
     pub const EOS:  u64 = 1 << 11;  // Exception Exit Serialization (EL1, RES1)
     pub const I:    u64 = 1 << 12;  // Instruction cache enable
     pub const WXN:  u64 = 1 << 19;  // Write permission implies XN (HW W^X)
+    /// Bit 20 — architecturally RES1 on ARMv8.0-A; defined as IESB (Implicit
+    /// Error Synchronization Barrier) in ARMv8.2-A+. Cortex-A76 implements
+    /// ARMv8.2, so setting this to 1 also enables the implicit ESB on
+    /// exception entry/exit — a defensive hardening for fault containment.
+    pub const RES1_BIT20: u64 = 1 << 20;
     pub const EIS:  u64 = 1 << 22;  // Exception Entry Serialization (EL1, RES1)
     pub const SPAN: u64 = 1 << 23;  // Set Privileged Access Never on exception (RES1)
     #[allow(dead_code)]
@@ -154,6 +159,7 @@ mod sctlr_bits {
 /// | 11   | EOS   | 1     | Exception-exit serialization (RES1)                  |
 /// | 12   | I     | 1     | Enable I-cache                                       |
 /// | 19   | WXN   | 1     | **HW W^X** — writable regions are non-executable     |
+/// | 20   | -     | 1     | RES1 on v8.0-A; IESB on v8.2-A+ (Cortex-A76)         |
 /// | 22   | EIS   | 1     | Exception-entry serialization (RES1)                 |
 /// | 23   | SPAN  | 1     | RES1 (seLe4n does not use FEAT_PAN)                  |
 /// | 28   | TSCXT | 1     | RES1                                                 |
@@ -173,10 +179,12 @@ pub const fn compute_sctlr_el1_bitmap() -> u64 {
     use sctlr_bits::*;
     // Active functional bits.
     let functional = M | C | I | SA | WXN | EOS | EIS;
-    // Reserved-1 bits per ARM ARM D17.2.120 (ARMv8.0-A SCTLR_EL1):
-    // bits 4 (SA0), 7 (ITD), 8 (SED), 11 (EOS — already in functional),
-    // 22 (EIS — already in functional), 23 (SPAN), 28 (TSCXT), 29.
-    let res1 = SA0 | ITD | SED | SPAN | TSCXT | RES1_BIT29;
+    // Reserved-1 bits per ARM ARM D17.2.120 (ARMv8.0-A SCTLR_EL1).
+    // Linux's `SCTLR_EL1_RES1` macro uses bits 11, 20, 22, 28, 29; seL4
+    // adds 23 (SPAN) when PAN is not supported, and 4 (SA0), 7 (ITD), 8
+    // (SED) are RES1 when AArch32 EL0 is absent (Cortex-A76 is
+    // AArch64-only for EL0 in seLe4n).
+    let res1 = SA0 | ITD | SED | RES1_BIT20 | SPAN | TSCXT | RES1_BIT29;
     functional | res1
 }
 
@@ -266,6 +274,13 @@ impl PageTableCell {
 /// Boot L1 page table — safe `PageTableCell` wrapping a zero-initialized
 /// `BootL1Table`. Replaces `static mut BOOT_L1_TABLE` per AK5-E.
 static BOOT_L1_TABLE: PageTableCell = PageTableCell::new(BootL1Table::new());
+
+// AK5-E / AK5-D: compile-time enforcement of the TTBR BAADDR alignment
+// contract. If either invariant is ever violated (linker bug, struct
+// refactor losing `#[repr(align(4096))]`, etc.) the build fails loudly.
+const _: () = assert!(core::mem::align_of::<PageTableCell>() == 4096);
+const _: () = assert!(core::mem::align_of::<BootL1Table>() == 4096);
+const _: () = assert!(core::mem::size_of::<BootL1Table>() == L1_ENTRIES * 8);
 
 /// Build identity-mapped L1 page tables for boot.
 ///
@@ -538,12 +553,41 @@ mod tests {
     #[test]
     fn sctlr_bitmap_res1_bits_are_set() {
         // AK5-C: Reserved-1 bits per ARM ARM D17.2.120 must all be 1.
-        // Bits 4, 7, 11, 22, 23, 28, 29 are RES1 on ARMv8.0-A SCTLR_EL1.
+        // Bits 4, 7, 8, 11, 20, 22, 23, 28, 29 are RES1 on ARMv8.0-A
+        // SCTLR_EL1 (Linux `SCTLR_EL1_RES1` core set = {11, 20, 22, 28,
+        // 29}; additional RES1 bits when AArch32 EL0 and PAN absent:
+        // {4, 7, 8, 23}).
         let sctlr = compute_sctlr_el1_bitmap();
-        for bit in [4u32, 7, 11, 22, 23, 28, 29] {
+        for bit in [4u32, 7, 8, 11, 20, 22, 23, 28, 29] {
             assert_ne!(sctlr & (1u64 << bit), 0,
                 "RES1 bit {bit} is zero in SCTLR bitmap");
         }
+    }
+
+    #[test]
+    fn sctlr_bitmap_linux_res1_subset_matches() {
+        // AK5-C cross-check: the minimal RES1 set used by the Linux
+        // kernel (arch/arm64/include/asm/sysreg.h SCTLR_EL1_RES1) must
+        // be a strict subset of our bitmap.
+        let sctlr = compute_sctlr_el1_bitmap();
+        const LINUX_RES1: u64 =
+            (1u64 << 11) | (1u64 << 20) | (1u64 << 22) | (1u64 << 28) | (1u64 << 29);
+        assert_eq!(sctlr & LINUX_RES1, LINUX_RES1,
+            "SCTLR bitmap missing a Linux SCTLR_EL1_RES1 bit");
+    }
+
+    #[test]
+    fn sctlr_bitmap_excludes_optional_bits() {
+        // AK5-C: verify we do NOT set optional bits that would change
+        // functional behavior unintentionally.
+        let sctlr = compute_sctlr_el1_bitmap();
+        // A (bit 1) — we intentionally leave alignment checks off to
+        // avoid false faults on kernel unaligned byte sequences.
+        assert_eq!(sctlr & (1 << 1), 0, "A unexpectedly set");
+        // EE (bit 25) — must be 0 (little-endian).
+        assert_eq!(sctlr & (1 << 25), 0, "EE (EL1 big-endian) unexpectedly set");
+        // E0E (bit 24) — must be 0 (EL0 little-endian).
+        assert_eq!(sctlr & (1 << 24), 0, "E0E (EL0 big-endian) unexpectedly set");
     }
 
     #[test]
