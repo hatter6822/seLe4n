@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-codebase-audit-ueS5k",
-      "commit_sha": "16d6f5310c81da84d62ed503f70eacf1c141cf8b",
-      "tree_sha": "ff6b58abf5b24960376cd30674419d4842e59dd2",
-      "committed_at_utc": "2026-04-17T15:19:23+00:00"
+      "branch": "claude/rust-hal-boot-hardening-LFNSr",
+      "commit_sha": "72330f4e29cd4c3a74c32aa986810a5d44d3bfbd",
+      "tree_sha": "8b7a984f82760206d0aa25ba2bb646867bad9088",
+      "committed_at_utc": "2026-04-17T14:37:57-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5e272160288166c48e8cbeae4bb2d6fab23715822a28de04e47b8061b4992e58"
+    "source_digest": "1804b669513b8fcffaec18620287f64889678b09120042327ac43d4332358cc5"
   },
   "summary": {
     "module_count": 164,
-    "declaration_count": 5241
+    "declaration_count": 5245
   },
   "readme_sync": {
-    "version": "0.29.4",
+    "version": "0.29.5",
     "lean_toolchain": "v4.28.0",
     "production_files": 142,
-    "production_loc": 97515,
+    "production_loc": 97584,
     "test_files": 22,
     "test_loc": 13098,
-    "proved_theorem_lemma_decls": 2868,
+    "proved_theorem_lemma_decls": 2870,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -2049,7 +2049,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.ExceptionModel",
       "path": "SeLe4n/Kernel/Architecture/ExceptionModel.lean",
-      "declaration_count": 30,
+      "declaration_count": 34,
       "declarations": [
         {
           "kind": "namespace",
@@ -2082,15 +2082,48 @@
           "called": []
         },
         {
+          "kind": "structure",
+          "name": "TrapFrameLayout",
+          "line": 115,
+          "called": [
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "trapFrameLayout",
+          "line": 141,
+          "called": [
+            "TrapFrameLayout",
+            "size"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "trapFrameLayout_offsets_monotone",
+          "line": 153,
+          "called": [
+            "size"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "trapFrameLayout_extended_by_16",
+          "line": 164,
+          "called": [
+            "size"
+          ]
+        },
+        {
           "kind": "inductive",
           "name": "ExceptionLevel",
-          "line": 104,
+          "line": 173,
           "called": []
         },
         {
           "kind": "def",
           "name": "exceptionLevelFromSpsr",
-          "line": 112,
+          "line": 181,
           "called": [
             "ExceptionLevel"
           ]
@@ -2098,7 +2131,7 @@
         {
           "kind": "def",
           "name": "exceptionLevelFromSource",
-          "line": 119,
+          "line": 188,
           "called": [
             "ExceptionLevel",
             "ExceptionSource"
@@ -2107,7 +2140,7 @@
         {
           "kind": "def",
           "name": "canAccessSystemRegisters",
-          "line": 127,
+          "line": 196,
           "called": [
             "ExceptionLevel"
           ]
@@ -2115,7 +2148,7 @@
         {
           "kind": "def",
           "name": "canExecutePrivileged",
-          "line": 133,
+          "line": 202,
           "called": [
             "ExceptionLevel"
           ]
@@ -2123,13 +2156,13 @@
         {
           "kind": "def",
           "name": "extractExceptionClass",
-          "line": 144,
+          "line": 213,
           "called": []
         },
         {
           "kind": "def",
           "name": "classifySynchronousException",
-          "line": 155,
+          "line": 224,
           "called": [
             "ExceptionContext",
             "SynchronousExceptionClass",
@@ -2139,7 +2172,7 @@
         {
           "kind": "theorem",
           "name": "classifySynchronousException_total",
-          "line": 165,
+          "line": 234,
           "called": [
             "ExceptionContext",
             "classifySynchronousException"
@@ -2148,7 +2181,7 @@
         {
           "kind": "def",
           "name": "dispatchSynchronousException",
-          "line": 178,
+          "line": 247,
           "called": [
             "ExceptionContext",
             "KernelError",
@@ -2161,7 +2194,7 @@
         {
           "kind": "def",
           "name": "dispatchException",
-          "line": 195,
+          "line": 264,
           "called": [
             "ExceptionContext",
             "ExceptionType",
@@ -2174,7 +2207,7 @@
         {
           "kind": "theorem",
           "name": "dispatchException_fiq",
-          "line": 209,
+          "line": 278,
           "called": [
             "ExceptionContext",
             "SystemState",
@@ -2184,7 +2217,7 @@
         {
           "kind": "theorem",
           "name": "dispatchException_serror",
-          "line": 213,
+          "line": 282,
           "called": [
             "ExceptionContext",
             "SystemState",
@@ -2194,7 +2227,7 @@
         {
           "kind": "theorem",
           "name": "dispatchException_svc",
-          "line": 217,
+          "line": 286,
           "called": [
             "ExceptionContext",
             "SystemState",
@@ -2208,7 +2241,7 @@
         {
           "kind": "theorem",
           "name": "dispatchException_irq",
-          "line": 224,
+          "line": 293,
           "called": [
             "ExceptionContext",
             "SystemState",
@@ -2219,7 +2252,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSynchronousException_dataAbort",
-          "line": 229,
+          "line": 298,
           "called": [
             "ExceptionContext",
             "SystemState",
@@ -2230,7 +2263,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSynchronousException_instrAbort",
-          "line": 236,
+          "line": 305,
           "called": [
             "ExceptionContext",
             "SystemState",
@@ -2241,7 +2274,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_preserves_interruptsEnabled",
-          "line": 282,
+          "line": 351,
           "called": [
             "SystemState",
             "saveOutgoingContext"
@@ -2250,7 +2283,7 @@
         {
           "kind": "theorem",
           "name": "restoreIncomingContext_preserves_interruptsEnabled",
-          "line": 291,
+          "line": 360,
           "called": [
             "SystemState",
             "ThreadId",
@@ -2260,7 +2293,7 @@
         {
           "kind": "theorem",
           "name": "setCurrentThread_preserves_interruptsEnabled",
-          "line": 300,
+          "line": 369,
           "called": [
             "SystemState",
             "ThreadId",
@@ -2270,7 +2303,7 @@
         {
           "kind": "theorem",
           "name": "interruptDispatchSequence_preserves_interruptsEnabled_spurious",
-          "line": 310,
+          "line": 379,
           "called": [
             "SystemState",
             "interruptDispatchSequence",
@@ -2281,7 +2314,7 @@
         {
           "kind": "theorem",
           "name": "chooseThread_preserves_interruptsEnabled",
-          "line": 321,
+          "line": 390,
           "called": [
             "SystemState",
             "chooseThread"
@@ -2290,7 +2323,7 @@
         {
           "kind": "theorem",
           "name": "setCurrentThread_preserves_ie",
-          "line": 330,
+          "line": 399,
           "called": [
             "SystemState",
             "ThreadId",
@@ -2300,7 +2333,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_interruptsEnabled",
-          "line": 340,
+          "line": 409,
           "called": [
             "SystemState",
             "chooseThread_preserves_interruptsEnabled",
@@ -2315,7 +2348,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_interruptsEnabled",
-          "line": 374,
+          "line": 443,
           "called": [
             "SystemState",
             "schedule_preserves_interruptsEnabled",
@@ -2326,7 +2359,7 @@
         {
           "kind": "theorem",
           "name": "handleInterrupt_timer_preserves_interruptsEnabled",
-          "line": 397,
+          "line": 466,
           "called": [
             "SystemState",
             "handleInterrupt",

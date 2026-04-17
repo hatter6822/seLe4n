@@ -61,24 +61,22 @@ impl Uart {
     }
 
     /// Read a 32-bit register at the given offset from UART base.
-    #[allow(unsafe_code)]
+    ///
+    /// AK5-H (R-HAL-M05 / MEDIUM): routes through `crate::mmio::mmio_read32`
+    /// so accesses go through the AJ5-A alignment asserts. PL011 registers
+    /// are 32-bit / 4-byte-aligned so the assert is a no-op on valid offsets;
+    /// it catches programmer errors (mis-computed offsets) at first access.
     #[inline(always)]
     fn read_reg(&self, offset: usize) -> u32 {
-        // SAFETY: Reading from a MMIO register at a known-valid PL011 offset.
-        // The base address is validated at construction time by the caller.
-        // Volatile read ensures the compiler does not elide or reorder the access.
-        // (ARM PrimeCell UART PL011 TRM, Chapter 3: Programmers Model)
-        unsafe { core::ptr::read_volatile((self.base + offset) as *const u32) }
+        crate::mmio::mmio_read32(self.base + offset)
     }
 
     /// Write a 32-bit register at the given offset from UART base.
-    #[allow(unsafe_code)]
+    ///
+    /// AK5-H: same routing rationale as `read_reg`.
     #[inline(always)]
     fn write_reg(&self, offset: usize, val: u32) {
-        // SAFETY: Writing to a MMIO register at a known-valid PL011 offset.
-        // Volatile write ensures the compiler does not elide or reorder the access.
-        // (ARM PrimeCell UART PL011 TRM, Chapter 3: Programmers Model)
-        unsafe { core::ptr::write_volatile((self.base + offset) as *mut u32, val) }
+        crate::mmio::mmio_write32(self.base + offset, val);
     }
 
     /// Initialize the UART: disable, set baud rate (115200 8N1), enable.
@@ -91,7 +89,16 @@ impl Uart {
     }
 
     /// Initialize UART with a specific baud rate.
+    ///
+    /// # Panics
+    ///
+    /// AK5-K (R-HAL-M10 / MEDIUM): `baud == 0` would cause division by zero
+    /// in the baud-rate divisor computation. We assert rather than silently
+    /// returning because the boot UART must be functional for any kernel
+    /// diagnostic output — a silent no-op init would leave subsequent
+    /// `kprintln!` calls hanging on a disabled UART.
     pub fn init_with_baud(&self, baud: u32) {
+        assert!(baud > 0, "UART baud rate must be > 0");
         // Disable UART while configuring
         self.write_reg(regs::UARTCR, 0);
 
@@ -331,5 +338,16 @@ mod tests {
         assert_eq!(flags::TXFF, 1 << 5);
         assert_eq!(flags::RXFE, 1 << 4);
         assert_eq!(flags::BUSY, 1 << 3);
+    }
+
+    // AK5-K (R-HAL-M10): init_with_baud(0) panics instead of silently
+    // misconfiguring the UART. We cannot exercise it directly because
+    // constructing a Uart with a valid base then issuing MMIO is a no-op
+    // on non-aarch64; but we can still trigger the assertion.
+    #[test]
+    #[should_panic(expected = "UART baud rate must be > 0")]
+    fn init_with_zero_baud_panics() {
+        let uart = Uart::new(UART0_BASE);
+        uart.init_with_baud(0);
     }
 }

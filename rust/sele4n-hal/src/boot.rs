@@ -8,7 +8,7 @@
 //! Phase 4: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.29.4";
+const KERNEL_VERSION: &str = "0.29.5";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
@@ -49,12 +49,15 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
     crate::kprintln!("[boot] GIC-400 initialized (distributor + CPU interface)");
 
     crate::kprintln!("[boot] Initializing timer (1000 Hz)...");
-    // AJ5-C/L-14: init_timer now returns Result — on failure, log the error
-    // and halt via idle_loop since the kernel cannot function without a timer.
+    // AJ5-C/L-14 + AK5-J/AK5-L: init_timer returns Result — on failure,
+    // log the error and halt via idle_loop since the kernel cannot function
+    // without a timer. The error set now includes `CntfrqNotProgrammed`
+    // (AK5-J) for the "firmware failed to program CNTFRQ_EL0" case, which
+    // would have silently fallen back to 54 MHz on real hardware.
     match crate::timer::init_timer(crate::timer::DEFAULT_TICK_HZ) {
         Ok(()) => {}
         Err(e) => {
-            crate::kprintln!("[boot] FATAL: timer init failed: {:?}", e);
+            crate::kprintln!("[boot] FATAL: timer init failed: {}", e);
             idle_loop();
         }
     }

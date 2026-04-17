@@ -17,6 +17,44 @@
 //!
 //! All functions wrap safe or internally-unsafe HAL operations. The `extern "C"`
 //! ABI ensures stable calling convention for Lean FFI linkage.
+//!
+//! ## Panic discipline (AK5-M / R-HAL-M11)
+//!
+//! The workspace `Cargo.toml` sets `panic = "abort"` for `dev` and `release`
+//! profiles (AK5-A). Any panic crossing an `extern "C"` boundary is therefore
+//! a deterministic abort — NOT undefined behavior. A panic in any FFI
+//! entry point here halts the kernel, which is the correct behavior for
+//! invariant violations: a corrupted kernel state is safer to stop than to
+//! continue with unpredictable behavior.
+//!
+//! The compile-time guard below enforces that the `panic = "abort"`
+//! workspace policy remains in effect. If a downstream user ever tries to
+//! re-enable unwinding for a release or dev build, the compile will fail
+//! with a clear diagnostic rather than silently producing UB at runtime.
+//!
+//! Note: cargo test still uses `panic = "unwind"` on stable so
+//! `#[should_panic]` tests work — the guard below uses
+//! `cfg(not(panic = "abort"))` so only non-abort configurations fail.
+//! During `cargo test` the `test` cfg is set and the guard is bypassed.
+
+// AK5-M compile-time guard:
+//
+// `cfg(panic = "abort")` is true only when the *currently-compiling* profile
+// has `panic = "abort"` — which the workspace `Cargo.toml` sets for dev and
+// release but CANNOT set for `cargo test` (Rust's stable test harness forces
+// unwind so `#[should_panic]` works). We therefore pair the check with
+// `not(debug_assertions)` so the guard fires ONLY in release builds that
+// attempt to opt back into unwinding, while allowing `cargo test` (which
+// compiles every crate with `debug_assertions = true`) to proceed.
+//
+// In practice: if anyone ever edits Cargo.toml to remove `panic = "abort"`
+// from `[profile.release]`, this fires with the actionable message below.
+#[cfg(all(not(panic = "abort"), not(debug_assertions)))]
+compile_error!(
+    "seLe4n HAL requires panic = \"abort\" for release profiles. \
+     See rust/Cargo.toml [profile.release] and AK5-A in \
+     docs/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md."
+);
 
 // ============================================================================
 // AG7-A-i: Timer + GIC FFI exports

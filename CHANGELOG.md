@@ -1,3 +1,107 @@
+## v0.29.5 — WS-AK Phase AK5: Rust HAL Boot Hardening
+
+Phase AK5 of WS-AK Pre-1.0 Release Hardening (v0.29.0 audit). Hardens the
+ARM64 HAL for first silicon by fixing five HIGH boot-correctness issues
+(MMU maintenance, TrapFrame layout, EOI-always, SCTLR bitmap, safe static),
+twelve MEDIUM issues (MMIO routing, multi-cluster MPIDR, CNTFRQ validation,
+etc.), and sixteen LOW annotations. 14 of 14 planned sub-tasks complete.
+
+Gate: `cargo test --workspace` (405 tests) + `cargo clippy --workspace
+-- -D warnings` (0 warnings) + `lake build` + `test_smoke.sh` +
+`test_full.sh` + zero `sorry`/`axiom`.
+
+### Changes
+
+- **AK5-A (R-HAL-M01/M11 / MEDIUM — PREREQ)** — `rust/Cargo.toml`
+  gains `[profile.dev] panic = "abort"` and `[profile.release]
+  panic = "abort"`. Panics in `no_std` / `extern "C"` code now
+  deterministically abort the kernel instead of invoking UB. The
+  test profile keeps stable's forced unwind so `#[should_panic]`
+  tests in `mmio.rs` (alignment) and `uart.rs` (baud=0) still work.
+- **AK5-B (R-HAL-H05 / HIGH)** — `gic::dispatch_irq` restructured
+  around an `EoiGuard` scope-exit helper (`Drop`-based). EOI now
+  fires unconditionally for both `Handled` and `OutOfRange` INTIDs,
+  on every scope exit including the abort path. Closes the handler-
+  panic → GIC deadlock hole. Spurious INTIDs still receive no EOI
+  per GIC-400 spec.
+- **AK5-C (R-HAL-H03 / HIGH)** — New `compute_sctlr_el1_bitmap()`
+  writes the full SCTLR_EL1 bitmap (`M|C|I|SA|SA0|WXN|EOS|EIS` +
+  ARM ARM D17.2.120 RES1 bits 7/8/23/28/29). HW W^X (WXN=1) is the
+  fourth layer of the seLe4n W^X defense (alongside AK3-B wrapper,
+  backend, and descriptor encode). SP-alignment and exception
+  entry/exit serialization are enabled atomically with the MMU.
+  Replaces the read-modify-write of the reset value.
+- **AK5-D (R-HAL-H02 / HIGH)** — `enable_mmu` follows ARM ARM D8.11
+  ordering: `tlbi vmalle1` (stale-entry flush) → `dc cvac` over
+  `BOOT_L1_TABLE` (clean to PoC) → TCR/MAIR/TTBR program → DSB ISH +
+  ISB → SCTLR write with AK5-C bitmap → ISB. New helper
+  `cache::clean_pagetable_range(addr, len)` (unsafe, DSB-terminated).
+- **AK5-E (R-HAL-H01/M03 / HIGH+MEDIUM)** — `static mut BOOT_L1_TABLE`
+  replaced by `static BOOT_L1_TABLE: PageTableCell` wrapping
+  `UnsafeCell<BootL1Table>`. TTBR write applies `TTBR_BAADDR_MASK
+  = 0x0000_FFFF_FFFF_F000` to the PA, clearing CnP and reserved low
+  bits. Debug asserts catch 4 KiB mis-alignment and 44-bit PA
+  overflow. Unused `.bss.page_tables` linker section removed.
+- **AK5-F (R-HAL-H04 / HIGH)** — `TrapFrame` extended from 272 →
+  288 bytes. New `esr_el1` (offset 272) and `far_el1` (offset 280)
+  fields capture a stable snapshot at exception entry;
+  `handle_synchronous_exception` reads from the frame instead of
+  live MRS. `trap.S::save_context` stores them; `restore_context`
+  skips them (read-only). Compile-time `offset_of!` asserts lock
+  the layout. Lean-side `trapFrameLayout : TrapFrameLayout`
+  metadata added in `ExceptionModel.lean` with two sanity theorems.
+- **AK5-G (R-HAL-M04 / MEDIUM)** — `gic.rs` drops local MMIO helpers
+  and routes through `crate::mmio::{mmio_read32, mmio_write32}` so
+  the AJ5-A alignment asserts cover GIC accesses.
+- **AK5-H (R-HAL-M05 / MEDIUM)** — `Uart::{read,write}_reg` routes
+  through `crate::mmio::*` for the same alignment coverage.
+- **AK5-I (R-HAL-M02/M09 / MEDIUM)** — `boot.S` core-0 gate and
+  `cpu::current_core_id` mask MPIDR with `MPIDR_CORE_ID_MASK =
+  0x00FFFFFF` covering Aff0|Aff1|Aff2. Strictly supersedes the prior
+  Aff0-only check which aliased secondary-cluster core-0 to the boot
+  core on BCM2712.
+- **AK5-J (R-HAL-M07 / MEDIUM)** — `TimerError::CntfrqNotProgrammed`
+  variant added. `init_timer` on aarch64 fails fast when
+  CNTFRQ_EL0 reads 0, instead of silently falling back to the 54 MHz
+  constant. Non-aarch64 test hosts still fall back so unit tests
+  exercise the validation logic without a real counter.
+- **AK5-K (R-HAL-M06/M08/M10/M12 / MEDIUM)** — Spectre-v1 CSDB doc
+  note at `gic::dispatch_irq` future table-lookup point;
+  `cache::cache_range` zero-length path emits DSB ISH for a stable
+  fence; `uart::init_with_baud` `assert!(baud > 0)`;
+  `handle_serror` signature now `-> !`.
+- **AK5-L** — `boot::rust_boot_main` timer-init error branch uses
+  `Display` formatting (was `{:?}`) so the new
+  `CntfrqNotProgrammed` variant prints its actionable message.
+- **AK5-M (R-HAL-M11 / MEDIUM)** — `ffi.rs` module doc block
+  documents the panic=abort discipline;
+  `#[cfg(all(not(panic = "abort"), not(debug_assertions)))]
+  compile_error!` guards release builds against accidental unwind
+  re-enable.
+- **AK5-N (R-HAL-L1..L16 / LOW)** — LOW-tier batch documentation:
+  `lib.rs` top-of-file block cross-references every L-n finding to
+  its resolution site; `boot.S` documents secondary-core wake-storm
+  risk; `vectors.S` annotates SP0 vectors as unreachable.
+
+### Lean model
+
+- `SeLe4n/Kernel/Architecture/ExceptionModel.lean` gains
+  `TrapFrameLayout` + `trapFrameLayout` metadata matching the
+  Rust-side 288-byte layout, plus `trapFrameLayout_offsets_monotone`
+  and `trapFrameLayout_extended_by_16` sanity theorems.
+
+### Tests
+
+- HAL unit tests: 122 → 151 (added AK5-C SCTLR bitmap, AK5-D/E
+  PageTableCell/BAADDR, AK5-F ESR/FAR snapshot + nested-exception,
+  AK5-B EOI guard, AK5-I MPIDR mask, AK5-J CNTFRQ error, AK5-K
+  uart-baud-0, AK5-D clean_pagetable_range).
+- Workspace total: 376 → 405 tests, all passing.
+- Clippy: 0 warnings (`-D warnings` gate).
+- `lake build` (104+ jobs) incl. new `ExceptionModel.lean` metadata.
+
+---
+
 ## v0.29.4 — WS-AK Phase AK4: ABI Bridge — Decode, Types, Validation
 
 Phase AK4 of WS-AK Pre-1.0 Release Hardening (v0.29.0 audit). Closes the

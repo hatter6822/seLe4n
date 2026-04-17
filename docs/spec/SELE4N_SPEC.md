@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.29.4` (`lakefile.toml`) |
+| **Package version** | `0.29.5` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 95,528 across 141 Lean files |
 | **Test LoC** | 11,709 across 17 Lean test suites |
@@ -534,9 +534,19 @@ AG3-C) defines the hardware exception dispatch path:
 The Rust HAL implements the exception vector table (`sele4n-hal/src/vectors.S`)
 with 16 entries (4 types × 4 execution states) and a trap frame
 (`sele4n-hal/src/trap.rs`) that saves/restores all 31 general-purpose registers
-plus SP, ELR_EL1, and SPSR_EL1 (272-byte `TrapFrame`).
+plus SP_EL0, ELR_EL1, SPSR_EL1, ESR_EL1, and FAR_EL1 (288-byte `TrapFrame`;
+16-byte aligned).
 
-**AI1-A/AI1-B (v0.27.7)**: The Rust exception handler error codes now match the
+**AK5-F (v0.29.5)**: The TrapFrame grew from 272 → 288 bytes to include
+read-only snapshots of `ESR_EL1` (offset 272) and `FAR_EL1` (offset 280).
+`handle_synchronous_exception` reads these from the frame, not the live
+registers — nested exceptions (SError during data-abort handling, etc.)
+would otherwise mutate the live registers before the outer handler
+inspected them. Compile-time `offset_of!` asserts in `trap.rs` lock the
+layout; the Lean-side `trapFrameLayout` in `ExceptionModel.lean`
+(`TrapFrameLayout` structure) documents the binary contract.
+
+**AI1-A/AI1-B (v0.27.7)**: The Rust exception handler error codes match the
 Lean model exactly. Alignment faults (`PC_ALIGN`, `SP_ALIGN`) and unknown
 exceptions return discriminant 45 (`UserException`), matching
 `ExceptionModel.lean:175-177`. The SVC handler returns `NotImplemented` (17)
@@ -544,6 +554,33 @@ as a pre-FFI stub, signaling that syscall dispatch is not yet wired to the Lean
 kernel (pending WS-V/AG10 FFI bridge activation). Named constants in `trap.rs`
 (`error_code::VM_FAULT`, `USER_EXCEPTION`, `NOT_IMPLEMENTED`) replace bare
 numeric literals for cross-reference clarity.
+
+#### 6.5.0 Panic Discipline (AK5-A)
+
+**Added in v0.29.5**: the `rust/Cargo.toml` workspace manifest sets
+`panic = "abort"` for both `[profile.dev]` and `[profile.release]`.
+The default `panic = "unwind"` is undefined behavior across `extern "C"`
+boundaries and requires a landing-pad implementation the bare-metal HAL
+does not provide. Under `panic = "abort"`:
+
+- A panic in any Rust HAL function calls the platform abort handler
+  (which the kernel implements as an infinite `wfe` loop via
+  `cpu::wfe()`), stopping the kernel deterministically. This is the
+  correct behavior for invariant violations — halting is safer than
+  continuing with corrupted state.
+- The `EoiGuard` introduced in AK5-B relies on this discipline to
+  guarantee that the GIC end-of-interrupt fires even when a handler
+  panics: the compiler inserts the `Drop` call on the unwinding /
+  aborting scope exit before control reaches the abort handler.
+- `ffi.rs` carries a `#[cfg(all(not(panic = "abort")), not(debug_assertions))]
+  compile_error!` guard so a future maintainer cannot accidentally
+  re-enable unwinding on a release build.
+
+The `[profile.test]` panic setting is intentionally omitted: Rust's
+stable test harness requires unwind semantics for `#[should_panic]` tests
+(the MMIO alignment and UART baud=0 regression tests use this).
+`cargo test` therefore compiles every crate with unwind, while
+`cargo build` / `cargo build --release` uses abort.
 
 #### 6.5.2 Interrupt Dispatch
 

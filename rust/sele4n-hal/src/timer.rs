@@ -21,21 +21,30 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-/// AJ5-C/L-14: Timer initialization error.
+/// AJ5-C/L-14 + AK5-J: Timer initialization error.
 ///
-/// Returned by `init_timer` when parameters are invalid. A kernel function
-/// should not panic on invalid input — `Result` gives the boot sequence the
-/// opportunity to log and halt gracefully rather than crashing silently.
+/// Returned by `init_timer` when parameters or hardware state are invalid.
+/// A kernel function should not panic on invalid input — `Result` gives the
+/// boot sequence the opportunity to log and halt gracefully rather than
+/// crashing silently (or worse, silently falling back to a wrong frequency).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimerError {
     /// The requested tick rate was zero, which would cause division by zero.
     ZeroTickHz,
+    /// AK5-J (R-HAL-M07): `CNTFRQ_EL0` reads 0 — firmware failed to program
+    /// the counter frequency. Previously we silently fell back to the RPi5
+    /// constant (54 MHz), but on real hardware a zero CNTFRQ means either
+    /// (a) firmware misconfiguration that must be diagnosed, or (b) the
+    /// core is not the one we expect. Failing fast surfaces the bug.
+    CntfrqNotProgrammed,
 }
 
 impl core::fmt::Display for TimerError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             TimerError::ZeroTickHz => write!(f, "tick_hz must be > 0 to avoid division by zero"),
+            TimerError::CntfrqNotProgrammed => write!(f,
+                "CNTFRQ_EL0 read as 0 — firmware must program the timer frequency before kernel entry"),
         }
     }
 }
@@ -155,9 +164,25 @@ pub fn init_timer(tick_hz: u32) -> Result<(), TimerError> {
         return Err(TimerError::ZeroTickHz);
     }
 
+    // AK5-J (R-HAL-M07 / MEDIUM): On aarch64, a CNTFRQ_EL0 value of 0 means
+    // firmware did not program the timer frequency — fail the boot rather
+    // than silently computing a wrong interval with the default constant.
+    //
+    // On non-aarch64 test hosts, `read_frequency()` returns 0 because the
+    // stub has no real counter; fall back to `COUNTER_FREQ_HZ` so unit
+    // tests exercising the post-validation logic still run. This is safe
+    // because the test profile cannot mis-program a real RPi5.
     let freq = read_frequency();
-    // Use compile-time constant if frequency register returns 0 (non-aarch64)
-    let effective_freq = if freq == 0 { COUNTER_FREQ_HZ } else { freq };
+    let effective_freq = if cfg!(target_arch = "aarch64") {
+        if freq == 0 {
+            return Err(TimerError::CntfrqNotProgrammed);
+        }
+        freq
+    } else if freq == 0 {
+        COUNTER_FREQ_HZ
+    } else {
+        freq
+    };
     let interval = (effective_freq / tick_hz) as u64;
 
     TIMER_INTERVAL.store(interval, Ordering::Relaxed);
@@ -312,6 +337,37 @@ mod tests {
     #[test]
     fn init_timer_zero_hz_returns_error() {
         assert_eq!(init_timer(0), Err(TimerError::ZeroTickHz));
+    }
+
+    // AK5-J (R-HAL-M07): CNTFRQ_EL0 == 0 on aarch64 must fail the boot.
+    // On non-aarch64 test hosts we fall back to COUNTER_FREQ_HZ so the
+    // test exercises the error type surface without needing a real CPU.
+    #[test]
+    fn timer_error_cntfrq_not_programmed_distinct() {
+        let a = TimerError::ZeroTickHz;
+        let b = TimerError::CntfrqNotProgrammed;
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn timer_error_cntfrq_display_mentions_firmware() {
+        use core::fmt::Write;
+        struct Buf { data: [u8; 256], pos: usize }
+        impl Write for Buf {
+            fn write_str(&mut self, s: &str) -> core::fmt::Result {
+                let b = s.as_bytes();
+                let end = self.pos + b.len();
+                if end > self.data.len() { return Err(core::fmt::Error); }
+                self.data[self.pos..end].copy_from_slice(b);
+                self.pos = end;
+                Ok(())
+            }
+        }
+        let mut buf = Buf { data: [0; 256], pos: 0 };
+        write!(buf, "{}", TimerError::CntfrqNotProgrammed).unwrap();
+        let s = core::str::from_utf8(&buf.data[..buf.pos]).unwrap();
+        assert!(s.contains("CNTFRQ") && s.contains("firmware"),
+            "Display missing key phrase: {s}");
     }
 
     #[test]

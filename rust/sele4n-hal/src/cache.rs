@@ -148,7 +148,13 @@ pub fn ic_ialluis() {
 /// * `start` - Start address (will be rounded down to cache line boundary)
 /// * `end` - End address (exclusive)
 pub fn cache_range(op: fn(u64), start: u64, end: u64) {
+    // AK5-K (R-HAL-M08 / MEDIUM): Always emit DSB ISH — even on an empty
+    // range — so callers can rely on `cache_range` as a stable memory
+    // ordering point regardless of whether `start >= end`. The previous
+    // early return skipped the barrier, which could surprise callers that
+    // used `cache_range(..., ptr, ptr)` as a zero-length "fence".
     if start >= end {
+        barriers::dsb_ish();
         return;
     }
     let aligned_start = start & !(CACHE_LINE_SIZE - 1);
@@ -177,6 +183,49 @@ pub fn clean_range(start: u64, end: u64) {
 /// CAUTION: Discards dirty data. Only use when dirty data loss is acceptable.
 pub fn invalidate_range(start: u64, end: u64) {
     cache_range(dc_ivac, start, end);
+}
+
+/// AK5-D.1: Clean a contiguous range of addresses by VA to the Point of
+/// Coherency.
+///
+/// Issues `dc cvac` for every cache line and a trailing DSB ISH to ensure
+/// all cleans complete before any dependent operation (typically a TTBR or
+/// SCTLR write). Used to clean boot page-table pages so the MMU walker
+/// sees committed descriptors at MMU-enable time.
+///
+/// # Safety
+///
+/// Caller must ensure `addr..addr+len` is mapped and in RAM (cleanable —
+/// device memory is not cacheable, so `dc cvac` there is a no-op but the
+/// virtual address must still be a valid MMIO region or a mapped RAM page).
+pub unsafe fn clean_pagetable_range(addr: usize, len: usize) {
+    if len == 0 {
+        // AK5-K (R-HAL-M08): Even for empty ranges, emit DSB ISH so the
+        // caller can rely on a stable memory ordering point regardless of
+        // range size.
+        barriers::dsb_ish();
+        return;
+    }
+    let line = CACHE_LINE_SIZE as usize;
+    let end = addr.saturating_add(len);
+    let mut cur = addr & !(line - 1);
+    while cur < end {
+        // SAFETY: dc cvac on a cleanable VA is always safe — it writes back
+        // dirty data without invalidating. Caller guarantees the range is
+        // a valid mapped region. (ARM ARM C6.2.61)
+        #[cfg(target_arch = "aarch64")]
+        unsafe {
+            core::arch::asm!(
+                "dc cvac, {0}",
+                in(reg) cur,
+                options(nostack, preserves_flags)
+            );
+        }
+        #[cfg(not(target_arch = "aarch64"))]
+        let _ = cur;
+        cur = cur.saturating_add(line);
+    }
+    barriers::dsb_ish();
 }
 
 // ===========================================================================
@@ -228,6 +277,24 @@ mod tests {
         // Should not panic on empty range
         cache_range(dc_civac, 0x2000, 0x1000);
         cache_range(dc_civac, 0x1000, 0x1000);
+    }
+
+    #[test]
+    fn test_clean_pagetable_range_empty() {
+        // AK5-D.1/AK5-K: empty range still emits DSB ISH (no panic on host).
+        unsafe { clean_pagetable_range(0x1000, 0); }
+    }
+
+    #[test]
+    fn test_clean_pagetable_range_aligned_page() {
+        // 4 KiB page at a 64-byte-aligned address: 64 lines cleaned.
+        unsafe { clean_pagetable_range(0x1000, 4096); }
+    }
+
+    #[test]
+    fn test_clean_pagetable_range_unaligned_start() {
+        // Start not cache-line aligned: rounded down to line boundary.
+        unsafe { clean_pagetable_range(0x1020, 128); }
     }
 
     #[test]
