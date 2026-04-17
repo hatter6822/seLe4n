@@ -2443,8 +2443,8 @@ theorem returnDonatedSchedContext_ok_under_invariants
         exact ⟨_, rfl⟩
 
 /-- AK1-A (I-H01): `cleanupPreReceiveDonationChecked` never errors under
-    `ipcInvariantFull`, given a deployment witness that
-    `returnDonatedSchedContext` succeeds on donated-branch inputs.
+    `ipcInvariantFull` combined with non-reservation of the participant
+    thread IDs.
 
     This is the formal discharge of the "unreachable under invariants" claim
     cited at the `cleanupPreReceiveDonationChecked` call site in
@@ -2455,21 +2455,20 @@ theorem returnDonatedSchedContext_ok_under_invariants
       by unfolding the Checked function).
     - `.donated scId owner`: the operation invokes
       `returnDonatedSchedContext`, which under `donationOwnerValid` +
-      non-reservation of the typed IDs has been shown to succeed (see
-      `donationOwnerValid_excludes_self_donation` for the structural
-      non-self-donation argument; the remaining chain of `storeObject` +
-      `lookupTcb` resolutions is an AK10 proof-engineering obligation
-      tracked in the audit errata).
+      non-reservation is fully machine-verified by
+      `returnDonatedSchedContext_ok_under_invariants` above (three sequential
+      `storeObject` + two `lookupTcb` steps threaded via SchedContext/TCB
+      type-disjointness — `schedContext_ne_tcb_at_objId` — and
+      `donationOwnerValid_excludes_self_donation`).
 
-    The explicit hypothesis `hDonatedSucceeds` packages that obligation at
-    the lemma boundary (no placeholder proof), making the dependence on
-    the (still-being-discharged) storeObject chain lemma visible at call
-    sites. In practice, the hypothesis is trivially
-    satisfied at `endpointReceiveDual`'s call site because the kernel only
-    ever reaches this path with non-reserved thread IDs (enforced by the
-    retype pipeline at `Lifecycle/Operations.lean:retypeFromUntyped`) and
-    with `donationOwnerValid` maintained by every IPC invariant-preserving
-    operation. -/
+    The only remaining hypotheses are `hObjInv` (witness that
+    `st.objects.invExt` holds — already a cross-subsystem invariant),
+    `hInv` (the full IPC invariant from which `donationOwnerValid` is
+    extracted via `.2.2.2.2.2.2.2.2.2.2.2.1`), and non-reservation of the
+    participant thread IDs, which is enforced kernel-wide by the retype
+    pipeline (`Lifecycle/Operations.lean:retypeFromUntyped` rejects
+    sentinel/reserved IDs). All production call paths satisfy these
+    preconditions. -/
 theorem cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull
     (st : SystemState) (receiver : SeLe4n.ThreadId)
     (hObjInv : st.objects.invExt)

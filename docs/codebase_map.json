@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/complete-ipc-fail-closed-phase-tm5L7",
-      "commit_sha": "c32317652c902bacb24ba20516d68b6b0dce2724",
-      "tree_sha": "e53dfd82e4471e05c6c124802b33c8fa88ae9987",
-      "committed_at_utc": "2026-04-16T22:35:02+00:00"
+      "commit_sha": "809d300627a9e27f125a795119bd22e7c1224ae4",
+      "tree_sha": "3b98cecbfe4f531726f1bd684692ccf4a82f5545",
+      "committed_at_utc": "2026-04-16T22:57:39+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "30d596978c21666f3d7fae3626217482c4ba5d538c4812610f8f4755837d902e"
+    "source_digest": "4dee6038612a233de71784b47cdff908188d799ae5085ef399fc556d61fb66e5"
   },
   "summary": {
     "module_count": 158,
@@ -27,7 +27,7 @@
     "version": "0.29.1",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 95529,
+    "production_loc": 95528,
     "test_files": 17,
     "test_loc": 11709,
     "proved_theorem_lemma_decls": 2819,
@@ -17023,7 +17023,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull",
-          "line": 2473,
+          "line": 2472,
           "called": [
             "SystemState",
             "ThreadId",
@@ -17042,7 +17042,7 @@
         {
           "kind": "abbrev",
           "name": "cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull",
-          "line": 2507,
+          "line": 2506,
           "called": [
             "Kernel",
             "cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull"
