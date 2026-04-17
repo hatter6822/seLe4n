@@ -1,6 +1,6 @@
 # Testing and CI
 
-Current stage context: **WS-AK Phase AK1 COMPLETE (v0.29.1). Testing tiers enforce regression protection and evidence continuity across 95,528 production LoC, 11,709 test LoC, and 2,819 proved declarations.**
+Current stage context: **WS-AK Phase AK3 COMPLETE (v0.29.3). Testing tiers enforce regression protection and evidence continuity across ~97k production LoC, ~12k test LoC (including AK3 regression suites — AsidPool, InterruptDispatch, W^X defense, decode validation), and ~2,830 proved declarations.**
 
 ## Tier model
 

@@ -278,32 +278,85 @@ pub fn init_gic() {
     init_cpu_interface(GICC_BASE);
 }
 
+/// BCM2712 (RPi5) supported INTID count. INTIDs in `[MAX_SUPPORTED, 1020)`
+/// are within the GIC-400 architecture but unsupported on this hardware;
+/// they can surface due to errata or SMP races and must still receive EOI
+/// to prevent GIC lockup.
+///
+/// AK3-C.4: Aligns with Lean `InterruptDispatch.lean` `InterruptId := Fin 224`.
+pub const MAX_SUPPORTED_INTID: u32 = 224;
+
+/// AK3-C.4 (A-H02 / HIGH): GIC acknowledge result — three-way distinction
+/// matching the Lean model's `AckError` inductive:
+/// - `Handled(intid)`:    valid INTID ∈ [0, 224) — dispatch + EOI
+/// - `OutOfRange(intid)`: INTID ∈ [224, 1020) — **EOI required**, no dispatch
+/// - `Spurious`:          INTID ≥ 1020 — no EOI per GIC-400 spec
+///
+/// This replaces the earlier `is_spurious` binary check which conflated
+/// out-of-range INTIDs with spurious ones, causing GIC lockup on errata.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum AckResult {
+    /// INTID is within supported range; dispatch the handler and EOI.
+    Handled(u32),
+    /// INTID ∈ [224, 1020) — unsupported on BCM2712 but legal on GIC-400.
+    /// The caller MUST emit EOI with this raw value to complete the
+    /// interrupt cycle.
+    OutOfRange(u32),
+    /// INTID ≥ 1020 — spurious per GIC spec; no EOI required.
+    Spurious,
+}
+
+/// AK3-C.4 (A-H02 / HIGH): Acknowledge and classify an interrupt.
+#[inline(always)]
+pub fn acknowledge_irq_classified(base: usize) -> AckResult {
+    let intid = acknowledge_irq(base);
+    if intid >= SPURIOUS_THRESHOLD {
+        AckResult::Spurious
+    } else if intid >= MAX_SUPPORTED_INTID {
+        AckResult::OutOfRange(intid)
+    } else {
+        AckResult::Handled(intid)
+    }
+}
+
 /// Handle an IRQ from the GIC: acknowledge → dispatch → EOI.
 ///
 /// Called from `handle_irq` in trap.rs. The dispatch callback receives
 /// the INTID and should handle the interrupt (e.g., reprogram timer,
-/// signal notification). Spurious interrupts are silently dropped.
+/// signal notification).
 ///
-/// AG9-F: CSDB after INTID bounds check prevents speculative dispatch
-/// of out-of-range interrupt IDs (Spectre v1 mitigation).
+/// AG9-F: CSDB after INTID classification prevents speculative dispatch
+/// of attacker-controlled INTID values (Spectre v1 mitigation).
 ///
-/// Returns `true` if a real (non-spurious) interrupt was handled.
+/// AK3-C.4 (A-H02 / HIGH): Now distinguishes three failure modes:
+/// - Handled INTIDs: dispatch + EOI (normal path)
+/// - OutOfRange INTIDs: **EOI but no dispatch** (prevents GIC lockup on
+///   errata or SMP races delivering INTID ∈ [224, 1020))
+/// - Spurious INTIDs (≥ 1020): no EOI per GIC-400 spec
+///
+/// Returns `true` if a real (non-spurious) interrupt was acknowledged;
+/// this includes both handled and out-of-range cases because both
+/// participate in the interrupt lifecycle (IAR read + EOI).
 pub fn dispatch_irq<F: FnOnce(u32)>(handler: F) -> bool {
-    let intid = acknowledge_irq(GICC_BASE);
-
-    if is_spurious(intid) {
-        return false;
+    match acknowledge_irq_classified(GICC_BASE) {
+        AckResult::Spurious => false,
+        AckResult::Handled(intid) => {
+            // AG9-F: Speculation barrier resolves the classification
+            // check before dispatching attacker-influenced INTIDs.
+            crate::barriers::csdb();
+            handler(intid);
+            end_of_interrupt(GICC_BASE, intid);
+            true
+        }
+        AckResult::OutOfRange(intid) => {
+            // AK3-C.4: EOI must fire for out-of-range INTIDs to close
+            // the interrupt cycle; no handler dispatch because the
+            // INTID is unsupported on this platform.
+            crate::barriers::csdb();
+            end_of_interrupt(GICC_BASE, intid);
+            true
+        }
     }
-
-    // AG9-F: CSDB ensures the non-spurious check result is resolved
-    // before dispatching. Prevents speculative execution with an
-    // attacker-controlled INTID value.
-    crate::barriers::csdb();
-
-    handler(intid);
-
-    end_of_interrupt(GICC_BASE, intid);
-    true
 }
 
 // ============================================================================
@@ -384,6 +437,30 @@ mod tests {
         // Test the spurious path explicitly:
         assert!(is_spurious(1023));
         assert!(!is_spurious(0));
+    }
+
+    #[test]
+    fn ack_result_classification() {
+        // AK3-C.4: Three-way classification matches Lean AckError:
+        // INTID 30 (timer PPI) → Handled
+        // INTID 500 (unsupported on BCM2712) → OutOfRange
+        // INTID 1020/1023 (special) → Spurious
+        let classify = |raw: u32| -> AckResult {
+            if raw >= SPURIOUS_THRESHOLD {
+                AckResult::Spurious
+            } else if raw >= MAX_SUPPORTED_INTID {
+                AckResult::OutOfRange(raw)
+            } else {
+                AckResult::Handled(raw)
+            }
+        };
+        assert_eq!(classify(30), AckResult::Handled(30));
+        assert_eq!(classify(223), AckResult::Handled(223));
+        assert_eq!(classify(224), AckResult::OutOfRange(224));
+        assert_eq!(classify(500), AckResult::OutOfRange(500));
+        assert_eq!(classify(1019), AckResult::OutOfRange(1019));
+        assert_eq!(classify(1020), AckResult::Spurious);
+        assert_eq!(classify(1023), AckResult::Spurious);
     }
 
     #[test]

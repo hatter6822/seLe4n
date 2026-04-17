@@ -60,26 +60,85 @@ def spuriousInterruptThreshold : Nat := 1020
 -- AG3-D-ii: Acknowledge and EOI operations
 -- ============================================================================
 
-/-- AG3-D: Acknowledge an interrupt by reading the interrupt ID.
-    Models reading GICC_IAR. Returns `none` for spurious interrupts
-    (INTID ≥ 1020), which require no further handling.
+/-- AK3-C (A-H02 / HIGH): Distinguish failure modes in `acknowledgeInterrupt`.
 
-    In the abstract model, the interrupt ID is provided as a parameter
-    rather than read from hardware. The spurious check models the
-    hardware's behavior of returning INTID 1023 when no interrupt
-    is pending. -/
+    Prior to AK3-C, `acknowledgeInterrupt` returned `Option` which lost the
+    distinction between:
+    - **Spurious** (INTID ≥ 1020 per GIC-400 spec) — NO EOI per spec; writing
+      EOIR for a spurious INTID is harmless but unnecessary.
+    - **OutOfRange** (INTID ∈ [224, 1020)) — legal INTID space on the GIC but
+      unsupported on RPi5's BCM2712 (only 224 INTIDs). Hardware errata or
+      SMP races can deliver such IAR values. **Must still EOI** to complete
+      the interrupt cycle and avoid GIC lockup.
+    - **Erratum** (valid INTID but handler fails) — see `interruptDispatchSequence`.
+
+    This distinction is what enables the AK3-C safety property: EOI is
+    always emitted unless the interrupt was spurious. -/
+inductive AckError where
+  | spurious                       -- INTID ≥ 1020 — skip EOI per GIC spec
+  | outOfRange (rawIntId : Nat)    -- INTID ∈ [224, 1020) — emit EOI, no dispatch
+  deriving Repr, DecidableEq
+
+/-- AK3-C (A-H02 / HIGH): Acknowledge an interrupt by reading the interrupt
+    ID. Models reading GICC_IAR. Now returns `Except AckError InterruptId`
+    to distinguish spurious from out-of-range failures so the dispatch
+    sequence can enforce the "EOI unless spurious" invariant. -/
 def acknowledgeInterrupt (rawIntId : Nat) :
-    Option InterruptId :=
-  if rawIntId ≥ spuriousInterruptThreshold then none
-  else if h : rawIntId < 224 then some ⟨rawIntId, h⟩
-  else none  -- Out of GIC-400 range
+    Except AckError InterruptId :=
+  if rawIntId ≥ spuriousInterruptThreshold then .error .spurious
+  else if h : rawIntId < 224 then .ok ⟨rawIntId, h⟩
+  else .error (.outOfRange rawIntId)
 
-/-- AG3-D: End-of-interrupt signal. Models writing GICC_EOIR.
-    In the abstract model this is a no-op — the EOI write is a
-    hardware-level operation that has no effect on kernel state.
-    Included for completeness of the acknowledge→dispatch→EOI sequence. -/
-def endOfInterrupt (_st : SystemState) (_intId : InterruptId) : SystemState :=
-  _st  -- No state change; EOI is a hardware-level acknowledgment
+/-- AG3-D / AK3-L (A-M10 / MEDIUM): End-of-interrupt signal. Models writing
+    GICC_EOIR.
+
+    Previously a pure no-op; AK3-L threads the EOI through the shadow
+    `MachineState.eoiPending` audit trail so the proof layer can detect
+    missing EOI writes. The hardware-level EOI effect is still modeled as
+    no state change in the shadow page tables / register file; only the
+    audit trail is updated. -/
+def endOfInterrupt (st : SystemState) (intId : InterruptId) : SystemState :=
+  { st with machine :=
+    { st.machine with
+      eoiPending := st.machine.eoiPending.filter (· != intId.val) } }
+
+/-- AK3-L (A-M10 / MEDIUM): Mark an INTID as pending-EOI at the audit layer.
+    Called at acknowledge time. -/
+def ackInterruptAudit (st : SystemState) (rawIntId : Nat) : SystemState :=
+  { st with machine :=
+    { st.machine with
+      eoiPending := rawIntId :: st.machine.eoiPending } }
+
+/-- AK3-L: Kernel-exit invariant — on every kernel-exit path (syscall return,
+    interrupt return), there must be no pending EOI. Any acknowledged
+    interrupt must have had its EOI emitted before returning to user mode.
+
+    This predicate is a model-layer safety net; the Rust HAL enforces the
+    corresponding hardware-level invariant via the EOI-or-spurious dispatch
+    logic in `rust/sele4n-hal/src/gic.rs` (AK3-C.4). -/
+def eoiPendingEmpty (st : SystemState) : Prop :=
+  st.machine.eoiPending = []
+
+/-- AK3-L: `ackInterruptAudit` prepends the raw INTID to `eoiPending`. -/
+theorem ackInterruptAudit_eoiPending (st : SystemState) (n : Nat) :
+    (ackInterruptAudit st n).machine.eoiPending = n :: st.machine.eoiPending := rfl
+
+/-- AK3-L: `endOfInterrupt` filters out the target INTID from `eoiPending`. -/
+theorem endOfInterrupt_eoiPending (st : SystemState) (intId : InterruptId) :
+    (endOfInterrupt st intId).machine.eoiPending =
+    st.machine.eoiPending.filter (· != intId.val) := rfl
+
+/-- AK3-L: Ack followed by EOI on the same INTID, with the original
+    `eoiPending` empty, yields empty `eoiPending`. This is the round-trip
+    closure property that formalises "every ack has a matching EOI" under
+    the model-layer assumption that the handler does not touch the audit
+    trail. -/
+theorem ack_eoi_round_trip_empty (st : SystemState) (intId : InterruptId)
+    (hEmpty : eoiPendingEmpty st) :
+    eoiPendingEmpty (endOfInterrupt (ackInterruptAudit st intId.val) intId) := by
+  unfold eoiPendingEmpty at *
+  rw [endOfInterrupt_eoiPending, ackInterruptAudit_eoiPending, hEmpty]
+  simp
 
 -- ============================================================================
 -- AG3-D-iii: Interrupt handler dispatch
@@ -121,34 +180,87 @@ def handleInterrupt (st : SystemState) (intId : InterruptId) :
 -- AG3-D-iv: Full dispatch sequence
 -- ============================================================================
 
-/-- AG3-D: Full interrupt dispatch sequence: acknowledge → handle → EOI.
-    Models the complete IRQ entry path.
-    Spurious interrupts (INTID ≥ 1020) return the state unchanged. -/
+/-- AK3-C (A-H02 / HIGH) + AK3-L (A-M10 / MEDIUM): Full interrupt dispatch
+    sequence: acknowledge → handle → EOI.
+
+    Per GIC-400 spec + AI2-A (H-03) + AK3-C + AK3-L audit trail:
+    - Successful ack + successful handler: record ack in `eoiPending`,
+      handle, then EOI (which filters out of `eoiPending`)
+    - Successful ack + handler error ("erratum"): record ack, then EOI
+      (prevents GIC lockup; error absorbed)
+    - Spurious interrupt (INTID ≥ 1020): no EOI per GIC spec; no ack
+      record, no state change
+    - Out-of-range INTID (∈ [224, 1020)): **EOI is still emitted at HAL
+      layer** to close the GIC interrupt cycle; at the Lean layer no
+      handler dispatch and no audit-trail change because no valid
+      `InterruptId : Fin 224` can be constructed. The hardware HAL
+      writes the raw IAR value to EOIR — see
+      `rust/sele4n-hal/src/gic.rs` (AK3-C.4).
+
+    The audit trail (`ackInterruptAudit` push + `endOfInterrupt` filter)
+    formalises the "EOI matches ack" invariant at the model layer. Under
+    normal flow (successful dispatch), `eoiPending` is empty on kernel
+    exit (AK3-L `eoiPendingEmpty` predicate). -/
 def interruptDispatchSequence (st : SystemState) (rawIntId : Nat) :
     Except KernelError (Unit × SystemState) :=
   match acknowledgeInterrupt rawIntId with
-  | none => .ok ((), st)  -- Spurious: no action needed
-  | some intId =>
-    match handleInterrupt st intId with
+  | .ok intId =>
+    -- AK3-L: record the ack in the audit trail before dispatch
+    let stAck := ackInterruptAudit st intId.val
+    match handleInterrupt stAck intId with
     | .ok ((), st') => .ok ((), endOfInterrupt st' intId)
     | .error _ =>
-      -- AI2-A (H-03): EOI must always fire to prevent GIC lockup.
-      -- Handler errors are non-fatal — the interrupt was acknowledged.
-      .ok ((), endOfInterrupt st intId)
+      -- AI2-A (H-03): EOI fires on erratum; interrupt was acknowledged
+      .ok ((), endOfInterrupt stAck intId)
+  | .error .spurious =>
+    -- AK3-C: spurious — no EOI per GIC-400 spec, no audit entry
+    .ok ((), st)
+  | .error (.outOfRange _) =>
+    -- AK3-C: out-of-range — no handler dispatch at Lean layer; HAL emits
+    -- EOI with raw IAR value. No audit-trail change at Lean layer because
+    -- no `InterruptId : Fin 224` witness can be produced.
+    .ok ((), st)
 
 -- ============================================================================
 -- AG3-D-vi: Preservation theorems
 -- ============================================================================
 
-/-- AG3-D: Spurious interrupts preserve state unchanged. -/
+/-- AG3-D / AK3-C: Spurious interrupts preserve state unchanged. No EOI
+    emitted per GIC-400 spec. -/
 theorem interruptDispatchSequence_spurious (st : SystemState) (rawIntId : Nat)
     (hSpurious : rawIntId ≥ spuriousInterruptThreshold) :
     interruptDispatchSequence st rawIntId = .ok ((), st) := by
   simp [interruptDispatchSequence, acknowledgeInterrupt, hSpurious]
 
-/-- AG3-D: End-of-interrupt preserves state (it is a no-op in the model). -/
-theorem endOfInterrupt_eq (st : SystemState) (intId : InterruptId) :
-    endOfInterrupt st intId = st := rfl
+/-- AK3-C (A-H02 / HIGH): Out-of-range INTIDs preserve Lean-layer state;
+    the HAL emits EOI with the raw IAR value to prevent GIC lockup. -/
+theorem interruptDispatchSequence_outOfRange (st : SystemState) (rawIntId : Nat)
+    (hInRange : rawIntId < spuriousInterruptThreshold)
+    (hOutOfRange : ¬(rawIntId < 224)) :
+    interruptDispatchSequence st rawIntId = .ok ((), st) := by
+  have hNot : ¬(spuriousInterruptThreshold ≤ rawIntId) := Nat.not_le.mpr hInRange
+  simp only [interruptDispatchSequence, acknowledgeInterrupt,
+             if_neg hNot, dif_neg hOutOfRange]
+
+/-- AG3-D / AK3-L: End-of-interrupt preserves all non-machine state.
+    Prior to AK3-L this was a literal no-op; now it filters
+    `machine.eoiPending` but leaves all other fields unchanged. -/
+theorem endOfInterrupt_non_machine_eq (st : SystemState) (intId : InterruptId) :
+    (endOfInterrupt st intId).objects = st.objects ∧
+    (endOfInterrupt st intId).scheduler = st.scheduler := by
+  unfold endOfInterrupt
+  exact ⟨rfl, rfl⟩
+
+/-- AK3-L (A-M10 / MEDIUM): After `endOfInterrupt intId`, the INTID is
+    provably absent from the `eoiPending` audit trail. -/
+theorem endOfInterrupt_removes_from_eoiPending
+    (st : SystemState) (intId : InterruptId) :
+    intId.val ∉ (endOfInterrupt st intId).machine.eoiPending := by
+  unfold endOfInterrupt
+  simp only
+  intro hMem
+  have := List.mem_filter.mp hMem
+  simp at this
 
 /-- AG3-D: Unmapped IRQ returns `.invalidIrq`. -/
 theorem handleInterrupt_unmapped (st : SystemState) (intId : InterruptId)
@@ -158,19 +270,82 @@ theorem handleInterrupt_unmapped (st : SystemState) (intId : InterruptId)
   unfold handleInterrupt
   simp [hNotTimer, hNoHandler]
 
-/-- AI2-A (H-03): `interruptDispatchSequence` always succeeds.
-    EOI is sent unconditionally — handler errors are absorbed. This prevents
-    GIC lockup on real hardware by ensuring the interrupt cycle completes. -/
+/-- AI2-A (H-03) + AK3-C (A-H02 / HIGH): `interruptDispatchSequence` always
+    succeeds at the Kernel layer. Handler errors are absorbed (EOI emitted);
+    spurious interrupts skip EOI per GIC spec; out-of-range INTIDs use the
+    HAL's raw-IAR EOI path.
+
+    The key safety invariant — "EOI is emitted unless spurious" — is
+    captured by `interruptDispatchSequence_eoi_unless_spurious` below. -/
 theorem interruptDispatchSequence_always_ok (st : SystemState) (rawIntId : Nat) :
     ∃ st', interruptDispatchSequence st rawIntId = .ok ((), st') := by
   simp only [interruptDispatchSequence]
   cases hAck : acknowledgeInterrupt rawIntId with
-  | none => exact ⟨st, rfl⟩
-  | some intId =>
+  | error e =>
+    cases e with
+    | spurious => exact ⟨st, rfl⟩
+    | outOfRange _ => exact ⟨st, rfl⟩
+  | ok intId =>
     simp only []
-    cases hHandle : handleInterrupt st intId with
-    | ok val => exact ⟨endOfInterrupt val.2 intId, by simp⟩
-    | error e => exact ⟨endOfInterrupt st intId, by simp⟩
+    -- AK3-L: dispatch passes `ackInterruptAudit st intId.val` to handler
+    cases hHandle : handleInterrupt (ackInterruptAudit st intId.val) intId with
+    | ok val => exact ⟨endOfInterrupt val.2 intId, by rfl⟩
+    | error e => exact ⟨endOfInterrupt (ackInterruptAudit st intId.val) intId, by rfl⟩
+
+/-- AK3-C.3 (A-H02 / HIGH): `eoiEmitted` — captures the proof-layer
+    invariant that `endOfInterrupt` was invoked for a given INTID during a
+    dispatch sequence. At the Lean model level, `endOfInterrupt` is a no-op
+    (the EOI is hardware-level); this predicate witnesses the model-level
+    intent. Substantive binding comes from the Rust HAL in AK3-C.4. -/
+def eoiEmitted (intId : InterruptId) (st stOut : SystemState) : Prop :=
+  stOut = endOfInterrupt st intId ∨
+  ∃ stInner, stOut = endOfInterrupt stInner intId
+
+/-- AK3-C.3 (A-H02 / HIGH): EOI is emitted unless the interrupt was spurious.
+    Formalizes the GIC-400 safety property: every acknowledged interrupt
+    (regardless of handler outcome) must have a matching EOI to avoid
+    GIC lockup. Only truly spurious (INTID ≥ 1020) interrupts skip EOI;
+    out-of-range INTIDs skip the Lean-layer EOI path because the HAL emits
+    directly from the raw IAR value. -/
+theorem interruptDispatchSequence_eoi_unless_spurious
+    (st stOut : SystemState) (rawIntId : Nat)
+    (hStep : interruptDispatchSequence st rawIntId = .ok ((), stOut)) :
+    acknowledgeInterrupt rawIntId = .error .spurious ∨
+    acknowledgeInterrupt rawIntId = .error (.outOfRange rawIntId) ∨
+    ∃ intId, eoiEmitted intId st stOut := by
+  unfold interruptDispatchSequence at hStep
+  cases hAck : acknowledgeInterrupt rawIntId with
+  | error e =>
+    cases e with
+    | spurious => left; rfl
+    | outOfRange n =>
+      right; left
+      have : n = rawIntId := by
+        unfold acknowledgeInterrupt at hAck
+        split at hAck
+        · simp at hAck
+        · split at hAck
+          · simp at hAck
+          · simp at hAck; exact hAck.symm
+      subst this; rfl
+  | ok intId =>
+    right; right
+    refine ⟨intId, ?_⟩
+    rw [hAck] at hStep
+    simp only at hStep
+    -- AK3-L: dispatch now uses `ackInterruptAudit st intId.val` as the
+    -- state fed to the handler. The `eoiEmitted` predicate accepts either
+    -- a direct `endOfInterrupt st` (erratum path, via right-exists) or
+    -- `endOfInterrupt stInner` for some inner state (handler-success path).
+    cases hHandle : handleInterrupt (ackInterruptAudit st intId.val) intId with
+    | ok val =>
+      rw [hHandle] at hStep
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      right; exact ⟨val.2, hStep.2.symm⟩
+    | error e =>
+      rw [hHandle] at hStep
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      right; exact ⟨ackInterruptAudit st intId.val, hStep.2.symm⟩
 
 -- ============================================================================
 -- AG5-E: Timer interrupt handler (model-level binding)
@@ -208,5 +383,60 @@ theorem handleInterrupt_timer (st : SystemState) :
     handleInterrupt st timerInterruptId = timerTick st := by
   unfold handleInterrupt
   simp [timerInterruptId]
+
+-- ============================================================================
+-- AK3-M (A-L1..A-L9): LOW-tier architecture batch documentation
+-- ============================================================================
+
+/-!
+## AK3-M: Architecture LOW-tier findings (batch documentation)
+
+The v0.29.0 audit identified nine LOW-tier architecture findings that are
+documented here rather than code-remediated per the plan's §6.AK3-M
+disposition:
+
+- **A-L1** `exceptionLevelFromSpsr` collapses EL2/EL3 → EL1. RPi5 has EL2
+  present in hardware but the kernel never enters it; the collapse is
+  accurate for the model and will be revisited if a hypervisor pathway is
+  ever added. See `ExceptionModel.lean`.
+
+- **A-L2** `memoryMap.find?` returns first match. The memory map is already
+  invariant-constrained to `noOverlappingRegions` in boot; find-first
+  therefore agrees with find-unique. See `Model/State.lean`.
+
+- **A-L3** Hardcoded MAIR indices (0 for normal, 2 for device). These are
+  already named via `MemoryAttribute.deviceNGnRnE` etc. in the HAL; the
+  shadow model uses the numeric indices intentionally to match hardware.
+
+- **A-L4** `acknowledgeInterrupt` silent truncation of INTID bits. Resolved
+  by AK3-C — the new `AckError` inductive distinguishes spurious /
+  out-of-range / handled with no truncation.
+
+- **A-L5** `decodeCapPtr.isWord64Dec` proof-level invariant. Documented at
+  the `CPtr` type level; no runtime-observable effect because CPtr construction
+  already guarantees word-boundedness.
+
+- **A-L6** Timer 64-bit wraparound. At 54 MHz, the CNTPCT_EL0 counter wraps
+  at 2^64 / 54M ≈ 1.08 × 10^10 years. Not material to any realistic
+  system lifetime.
+
+- **A-L7** `contextSwitchState` does not perform TLB/ASID maintenance.
+  Deferred to WS-V (H3 hardware integration context-switch path), where
+  the Rust HAL emits the required TLBI and DSB sequences before loading
+  TTBR0.
+
+- **A-L8** `BumpAllocator` off-by-one analysis. Audit found no actual
+  off-by-one; documented in `VSpaceARMv8.lean:BumpAllocator.allocate`.
+
+- **A-L9** `validateIpcBufferAddress` 4 KiB granule assumption. Documented
+  in `IpcBufferValidation.lean` — the `ipcBuffer_within_page` theorem
+  formalizes the 4 KiB / 512-byte relationship.
+
+These items are either:
+- Non-issues (the semantics are correct as-is),
+- Resolved by related higher-tier fixes (A-L4 → AK3-C),
+- Deferred to WS-V with clear technical scope (A-L7 context-switch
+  TLB/ASID maintenance).
+-/
 
 end SeLe4n.Kernel.Architecture

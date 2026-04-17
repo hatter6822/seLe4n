@@ -238,16 +238,19 @@ theorem vspaceUnmapPage_error_translationFault_preserves_vspaceInvariantBundle
 -- ============================================================================
 
 /-- After a successful `mapPage`, the new root's mappings equal
-    the old root's mappings with the new entry inserted. -/
+    the old root's mappings with the new entry inserted. AK3-B: also
+    discharges the wxCompliant guard branch. -/
 private theorem VSpaceRoot.mapPage_mappings_insert
     (root root' : VSpaceRoot) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
     (perms : PagePermissions)
     (hMap : root.mapPage vaddr paddr perms = some root') :
     root'.mappings = root.mappings.insert vaddr (paddr, perms) := by
   unfold VSpaceRoot.mapPage at hMap
-  cases hOld : root.mappings[vaddr]? with
-  | some _ => simp [hOld] at hMap
-  | none => simp [hOld] at hMap; cases hMap; rfl
+  split at hMap
+  · simp at hMap  -- AK3-B: !perms.wxCompliant case
+  · cases hOld : root.mappings[vaddr]? with
+    | some _ => simp [hOld] at hMap
+    | none => simp [hOld] at hMap; cases hMap; rfl
 
 /-- After a successful `unmapPage`, the new root's mappings equal
     the old root's mappings with the target entry erased. -/
@@ -946,4 +949,83 @@ theorem vspaceUnmapPage_resolveAsidRoot_agreement
               (hAsidEq ▸ hTablePost) hObjEq hAsidEq
           exact ⟨rootId, root', hResolve'⟩
 
+-- ============================================================================
+-- AK3-B.5 (A-H01 / HIGH): W^X four-layer defense composition theorem
+-- ============================================================================
+
+/-- AK3-B.5: Any successful `VSpaceRoot.mapPage` provably has W^X-compliant
+    permissions. This is the propositional expression of the fact that the
+    L2 (VSpaceRoot.mapPage) gate rejects W+X before mutating the HashMap. -/
+theorem VSpaceRoot_mapPage_wxCompliant
+    (root root' : VSpaceRoot) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions)
+    (hMap : root.mapPage vaddr paddr perms = some root') :
+    perms.wxCompliant = true := by
+  unfold VSpaceRoot.mapPage at hMap
+  split at hMap
+  · simp at hMap  -- !wxCompliant → none, contradiction
+  · rename_i hWx
+    -- !(!perms.wxCompliant) → perms.wxCompliant = true
+    cases h : perms.wxCompliant
+    · simp [h] at hWx
+    · rfl
+
+/-- AK3-B.5 (A-H01 / HIGH): W^X is provable at the wrapper layer.
+    Any successful `vspaceMapPage` transition required W+X-free permissions
+    because the L0 wrapper explicitly guards on `perms.wxCompliant`. -/
+theorem vspaceMapPage_wxCompliant_of_ok
+    (st st' : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (hStep : vspaceMapPage asid vaddr paddr perms st = .ok ((), st')) :
+    perms.wxCompliant = true := by
+  unfold vspaceMapPage at hStep
+  cases hRes : resolveAsidRoot st asid with
+  | none => simp [hRes] at hStep
+  | some pair =>
+    rcases pair with ⟨rootId, root₀⟩
+    rw [hRes] at hStep; simp only at hStep
+    split at hStep
+    · simp at hStep
+    · rename_i hWx
+      cases h : perms.wxCompliant
+      · simp [h] at hWx
+      · rfl
+
+/-- AK3-B.5 (A-H01 / HIGH): Four-layer W^X defense composition.
+    `vspaceMapPage` preserves `wxExclusiveInvariant` via defense-in-depth
+    across four independent gates:
+
+    - L0 `vspaceMapPage` wrapper (`VSpace.lean:101`) — explicit wxCompliant
+    - L1 `ARMv8VSpace.mapPage` backend — independent wxCompliant gate (AK3-B.3)
+    - L2 `VSpaceRoot.mapPage` — rejects W+X at HashMap level (AK3-B.2)
+    - L3 `fromPagePermissions` — returns `none` on W+X at HW encode (AK3-B.1)
+
+    Each gate alone suffices to prevent a W+X mapping from entering the
+    system. AK5-C adds L4 (SCTLR.WXN) at hardware-level as a fifth defense.
+
+    Preservation delegates to the comprehensive bundle theorem; this
+    statement documents the defense-in-depth architecture established by
+    AK3-B. -/
+theorem wxInvariant_fourLayer_defense
+    (st st' : SystemState) (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (paddr : SeLe4n.PAddr) (perms : PagePermissions)
+    (hInv : vspaceInvariantBundle st)
+    (hBound : paddr.toNat < 2^52)
+    (hCanonical : vaddr.isCanonical)
+    (hObjInv : st.objects.invExt)
+    (hAsidInv : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot),
+      st.objects[oid]? = some (.vspaceRoot root) →
+      (st.asidTable.erase root.asid).invExt)
+    (hAsidK : st.asidTable.invExtK)
+    (hMappingsWF : ∀ (oid : SeLe4n.ObjId) (root : VSpaceRoot),
+      st.objects[oid]? = some (.vspaceRoot root) → root.mappings.invExt)
+    (hStep : vspaceMapPage asid vaddr paddr perms st = .ok ((), st')) :
+    wxExclusiveInvariant st' := by
+  have hBundle := vspaceMapPage_success_preserves_vspaceInvariantBundle
+    st st' asid vaddr paddr perms hInv hBound hCanonical hObjInv
+    hAsidInv hAsidK hMappingsWF hStep
+  -- wxExclusiveInvariant is the 4th conjunct of vspaceInvariantBundle
+  exact hBundle.2.2.2.1
+
 end SeLe4n.Kernel.Architecture
+

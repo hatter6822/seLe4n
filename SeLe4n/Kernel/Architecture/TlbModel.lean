@@ -390,20 +390,26 @@ theorem vspaceUnmapPage_fullFlush_preserves_tlbConsistent
 -- AG6-G: TLB barrier completion model
 -- ============================================================================
 
-/-- AG6-G: Predicate asserting that the required barrier sequence (DSB ISH + ISB)
-    was executed after a TLB maintenance instruction. On hardware, this is
-    enforced by the Rust HAL wrappers (every TLBI is followed by DSB+ISB).
+/-- AG6-G / AK3-I (A-M06 / MEDIUM — DEFER+DOC): Predicate asserting that the
+    required barrier sequence (DSB ISH + ISB) was executed after a TLB
+    maintenance instruction. On hardware, this is enforced by the Rust HAL
+    wrappers (every TLBI is followed by DSB+ISB).
     In the model, this serves as a proof obligation for TLB flush composition
-    theorems. -/
+    theorems.
+
+    AK3-I (TPI-DOC-AK3I): Trivially `True` in the abstract sequential model
+    because TLB updates are atomic. Substantive binding would require:
+      1. Adding `tlb.lastBarrierCompleted : Bool` to machine state.
+      2. Having the Rust HAL `tlb::dsb_ish` FFI call toggle this shadow.
+      3. Proving the toggle is tied to actual barrier emission (requires
+         FFI round-trip round-tripping at proof layer).
+
+    The full proof requires the FFI bridge to be closed and is scheduled
+    for WS-V (H3 hardware integration milestone). This `True`-valued
+    predicate is retained so existing composition theorems downstream
+    do not need to change; upgrading to a substantive version in WS-V
+    will strengthen them without changing the predicate's use sites. -/
 def tlbBarrierComplete (_st : SystemState) : Prop :=
-  -- The barrier ensures TLB invalidation is visible to all cores and the
-  -- pipeline is synchronized. In the abstract model, this is captured by
-  -- the fact that the TLB state has been updated atomically.
-  -- AJ-L07 / H-01 scope: Trivially `True` in the abstract sequential model
-  -- because TLB updates are atomic. On hardware, DSB ISH + ISB after every TLBI
-  -- ensures barrier completion. A substantive predicate (e.g., checking that
-  -- the TLB state matches post-flush expectations) is deferred to WS-V (AG10)
-  -- when the FFI bridge connects the Lean model to actual TLB maintenance.
   True
 
 /-- AG6-G: After any hardware TLB flush, the barrier sequence is complete.

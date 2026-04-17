@@ -224,6 +224,51 @@ def decodeVSpaceMapArgs (decoded : SyscallDecodeResult) (maxASID : Nat)
     -- X5-E/M-11: Use `invalidSyscallArgument` for syscall-specific decode context.
     | none => .error .invalidSyscallArgument
 
+/-- AK3-E (A-M01 / MEDIUM): Defense-in-depth wrapper adding a PA bounds check
+    to the VSpace map decode. Callers pass `2^st.machine.physicalAddressWidth`
+    as `maxPA`; any PA at or above the bound is rejected at decode time.
+
+    The underlying `decodeVSpaceMapArgs` is unchanged; the downstream
+    production path (`vspaceMapPageCheckedWithFlushFromState`) also performs
+    this check — this wrapper enforces it one layer earlier, preventing
+    invalid PAs from entering `VSpaceMapArgs` that flow through model-level
+    analyses. -/
+def decodeVSpaceMapArgsChecked (decoded : SyscallDecodeResult)
+    (maxASID : Nat) (maxPA : Nat) : Except KernelError VSpaceMapArgs := do
+  let args ← decodeVSpaceMapArgs decoded maxASID
+  if args.paddr.toNat ≥ maxPA then .error .addressOutOfBounds
+  else pure args
+
+/-- AK3-E: A successful checked decode produces a PA within bounds. -/
+theorem decodeVSpaceMapArgsChecked_paddr_bounded
+    (d : SyscallDecodeResult) (maxASID maxPA : Nat) (args : VSpaceMapArgs)
+    (hOk : decodeVSpaceMapArgsChecked d maxASID maxPA = .ok args) :
+    args.paddr.toNat < maxPA := by
+  unfold decodeVSpaceMapArgsChecked at hOk
+  simp only [bind, Except.bind] at hOk
+  cases hInner : decodeVSpaceMapArgs d maxASID with
+  | error e => rw [hInner] at hOk; simp at hOk
+  | ok a =>
+    rw [hInner] at hOk; simp only at hOk
+    split at hOk
+    · simp at hOk
+    · rename_i hGe
+      simp only [pure, Except.pure, Except.ok.injEq] at hOk
+      subst hOk
+      exact Nat.not_le.mp hGe
+
+/-- AK3-E: The checked decode agrees with the base decode when the PA bound
+    is satisfied. -/
+theorem decodeVSpaceMapArgsChecked_eq_of_bounded
+    (d : SyscallDecodeResult) (maxASID maxPA : Nat) (args : VSpaceMapArgs)
+    (hBase : decodeVSpaceMapArgs d maxASID = .ok args)
+    (hPA : args.paddr.toNat < maxPA) :
+    decodeVSpaceMapArgsChecked d maxASID maxPA = .ok args := by
+  unfold decodeVSpaceMapArgsChecked
+  simp only [bind, Except.bind, hBase]
+  have : ¬(args.paddr.toNat ≥ maxPA) := Nat.not_le.mpr hPA
+  simp [this, pure, Except.pure]
+
 /-- Decode VSpace unmap arguments from message registers.
     Requires 2 message registers (asid, vaddr). -/
 def decodeVSpaceUnmapArgs (decoded : SyscallDecodeResult) (maxASID : Nat)
@@ -964,6 +1009,56 @@ def decodeSchedContextConfigureArgs (decoded : SyscallDecodeResult)
   let r4 ← requireMsgReg decoded.msgRegs 4
   pure { budget := r0.val, period := r1.val, priority := r2.val,
          deadline := r3.val, domain := r4.val }
+
+/-- AK3-J (A-M07 / MEDIUM): Validation wrapper that rejects configurations
+    violating core CBS/scheduler invariants before reaching the scheduler
+    subsystem. Mirror of AK3-E's `decodeVSpaceMapArgsChecked` pattern.
+
+    Checks:
+    - priority ≤ 255   (fits in `Priority` type)
+    - domain < 16      (fits in `numDomains`)
+    - budget > 0       (non-degenerate CBS server; also closes SC-H01 part)
+    - period > 0       (CBS replenishment math requires positive period)
+
+    Rejects violations with `.invalidArgument`. The underlying
+    `decodeSchedContextConfigureArgs` remains unchanged so existing error
+    theorems and round-trip proofs are preserved. -/
+def decodeSchedContextConfigureArgsChecked (decoded : SyscallDecodeResult)
+    : Except KernelError SchedContextConfigureArgs := do
+  let args ← decodeSchedContextConfigureArgs decoded
+  if args.priority > 255 then .error .invalidArgument
+  else if args.domain ≥ 16 then .error .invalidArgument
+  else if args.budget = 0 then .error .invalidArgument
+  else if args.period = 0 then .error .invalidArgument
+  else pure args
+
+/-- AK3-J: A successful checked configure decode satisfies all CBS invariants. -/
+theorem decodeSchedContextConfigureArgsChecked_invariants
+    (d : SyscallDecodeResult) (args : SchedContextConfigureArgs)
+    (hOk : decodeSchedContextConfigureArgsChecked d = .ok args) :
+    args.priority ≤ 255 ∧ args.domain < 16 ∧ args.budget > 0 ∧ args.period > 0 := by
+  unfold decodeSchedContextConfigureArgsChecked at hOk
+  simp only [bind, Except.bind] at hOk
+  cases hInner : decodeSchedContextConfigureArgs d with
+  | error e => rw [hInner] at hOk; simp at hOk
+  | ok a =>
+    rw [hInner] at hOk; simp only at hOk
+    split at hOk
+    · simp at hOk
+    · split at hOk
+      · simp at hOk
+      · split at hOk
+        · simp at hOk
+        · split at hOk
+          · simp at hOk
+          · rename_i hP hD hB hPer
+            simp only [pure, Except.pure, Except.ok.injEq] at hOk
+            subst hOk
+            refine ⟨?_, ?_, ?_, ?_⟩
+            · exact Nat.not_lt.mp hP
+            · exact Nat.not_le.mp hD
+            · omega
+            · omega
 
 /-- Z5-B: Decode schedContextBind arguments from message registers.
     Requires 1 message register (threadId). -/

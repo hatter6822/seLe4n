@@ -464,17 +464,22 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
     some <| match cap.target with
     | .object _ =>
         -- AH3-C (L-14): Pass platform-configured maxASID to decode
-        fun st => match decodeVSpaceMapArgs decoded st.machine.maxASID with
-        | .error e => .error e
-        | .ok args =>
-            -- AH1-D (M-01 fix): Validate permissions against memory kind before mapping.
-            -- Device regions must not receive execute permission (undefined on ARM64).
-            match validateVSpaceMapPermsForMemoryKind args st.machine.memoryMap with
-            | .error e => .error e
-            | .ok validatedArgs =>
-                -- X2-E: Use state-aware PA bounds (reads physicalAddressWidth from machine state)
-                Architecture.vspaceMapPageCheckedWithFlushFromState validatedArgs.asid
-                  validatedArgs.vaddr validatedArgs.paddr validatedArgs.perms st
+        -- AK3-E (A-M01 / MEDIUM): Use `decodeVSpaceMapArgsChecked` which adds a
+        -- decode-time PA bounds check (defense-in-depth; the downstream
+        -- `vspaceMapPageCheckedWithFlushFromState` PA check still holds).
+        fun st =>
+          match decodeVSpaceMapArgsChecked decoded st.machine.maxASID
+                  (2^st.machine.physicalAddressWidth) with
+          | .error e => .error e
+          | .ok args =>
+              -- AH1-D (M-01 fix): Validate permissions against memory kind before mapping.
+              -- Device regions must not receive execute permission (undefined on ARM64).
+              match validateVSpaceMapPermsForMemoryKind args st.machine.memoryMap with
+              | .error e => .error e
+              | .ok validatedArgs =>
+                  -- X2-E: Use state-aware PA bounds (reads physicalAddressWidth from machine state)
+                  Architecture.vspaceMapPageCheckedWithFlushFromState validatedArgs.asid
+                    validatedArgs.vaddr validatedArgs.paddr validatedArgs.perms st
     | _ => fun _ => .error .invalidCapability
   | .vspaceUnmap =>
     some <| match cap.target with
@@ -501,10 +506,13 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- Z5-J: SchedContext configure — decode args, validate, configure
+  -- AK3-J (A-M07 / MEDIUM): Use `decodeSchedContextConfigureArgsChecked` to
+  -- enforce priority ≤ 255, domain < 16, budget > 0, period > 0 at decode
+  -- time (prevents malformed CBS servers before scheduler subsystem).
   | .schedContextConfigure =>
     some <| match cap.target with
     | .object scId =>
-      fun st => match decodeSchedContextConfigureArgs decoded with
+      fun st => match decodeSchedContextConfigureArgsChecked decoded with
       | .error e => .error e
       | .ok args =>
           SchedContextOps.schedContextConfigure scId args.budget args.period
@@ -1623,7 +1631,10 @@ theorem dispatchWithCap_lifecycleRetype_delegates
 vaddr, paddr, and validated permissions.  The state-aware variant reads
 `physicalAddressWidth` from `SystemState.machine` for platform-specific PA
 bounds enforcement.
-T6-C: Permissions are now typed as `PagePermissions` (validated at decode). -/
+T6-C: Permissions are now typed as `PagePermissions` (validated at decode).
+AK3-E (A-M01 / MEDIUM): dispatch now uses `decodeVSpaceMapArgsChecked` which
+additionally validates PA bounds at decode time; the hypothesis requires
+the checked decode to succeed (which implies `args.paddr.toNat < 2^physicalAddressWidth`). -/
 theorem dispatchWithCap_vspaceMap_delegates
     (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
     (cap : Capability) (objId : SeLe4n.ObjId)
@@ -1631,8 +1642,9 @@ theorem dispatchWithCap_vspaceMap_delegates
     (st : SystemState)
     (hSyscall : decoded.syscallId = .vspaceMap)
     (hTarget : cap.target = .object objId)
-    -- AH3-C: decode now takes st.machine.maxASID from the platform config
-    (hDecode : decodeVSpaceMapArgs decoded st.machine.maxASID = .ok args) :
+    -- AK3-E: decode now uses `decodeVSpaceMapArgsChecked`
+    (hDecode : decodeVSpaceMapArgsChecked decoded st.machine.maxASID
+                 (2^st.machine.physicalAddressWidth) = .ok args) :
     dispatchWithCap decoded tid gate cap st =
       (match validateVSpaceMapPermsForMemoryKind args st.machine.memoryMap with
         | .error e => .error e

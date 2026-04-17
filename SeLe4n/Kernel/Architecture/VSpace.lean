@@ -462,8 +462,11 @@ theorem vspaceMapPage_entry_consistent_frame
         -- hStep : storeObject rootId₀ (.vspaceRoot root') st = .ok ((), stMid)
         have hRoot'Asid : root'.asid = asid := by
           unfold VSpaceRoot.mapPage at hMapPage
-          split at hMapPage <;> simp at hMapPage
-          subst hMapPage; exact hRootAsidEq
+          split at hMapPage
+          · simp at hMapPage  -- AK3-B: !perms.wxCompliant case
+          · split at hMapPage
+            · simp at hMapPage  -- already-mapped case
+            · simp at hMapPage; subst hMapPage; exact hRootAsidEq
         have hStoreObjSelf := storeObject_objects_eq st stMid rootId₀
           (KernelObject.vspaceRoot root') hObjK.1 hStep
         have hAsidInv : (match st.objects[rootId₀]? with
@@ -488,12 +491,14 @@ theorem vspaceMapPage_entry_consistent_frame
           have hLookupFrame : root'.lookup entry.vaddr = root₀.lookup entry.vaddr := by
             simp only [VSpaceRoot.lookup, VSpaceRoot.mapPage] at hMapPage ⊢
             split at hMapPage
-            · simp at hMapPage
-            · simp at hMapPage; subst hMapPage
-              simp only [RHTable_getElem?_eq_get?]
-              exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _
-                (by intro h; exact hVaddrNe (eq_of_beq h).symm)
-                (hMappingsWF rootId₀ root₀ hObjRoot)
+            · simp at hMapPage  -- AK3-B: !perms.wxCompliant case
+            · split at hMapPage
+              · simp at hMapPage
+              · simp at hMapPage; subst hMapPage
+                simp only [RHTable_getElem?_eq_get?]
+                exact SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _
+                  (by intro h; exact hVaddrNe (eq_of_beq h).symm)
+                  (hMappingsWF rootId₀ root₀ hObjRoot)
           rw [hLookupFrame]
           exact hConsistPre rootId₀ root₀ hRes
         · -- Different ASID: prove resolveAsidRoot stMid = resolveAsidRoot st
