@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-codebase-audit-2thHs",
-      "commit_sha": "e4e797cf8731d5dad1cdf3f3c43a5795d682b783",
-      "tree_sha": "197a9b8ba509b655bc49c55bc3fc0208c2dc3859",
-      "committed_at_utc": "2026-04-16T23:21:38-04:00"
+      "commit_sha": "b0c37e63c4b433e347e65842b2de05b019c4edda",
+      "tree_sha": "bac057264d55e22cbbe2dfaaf9b815b0fab9ab73",
+      "committed_at_utc": "2026-04-17T06:08:16+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ee5c32bd6fd98a14301fcaf0875c91389704168dcaae64261bfe70538a694e69"
+    "source_digest": "2563d9ee1bdcb6adfa3fb89d0faf465faa281d57879cc2902cb25669b00f2e5a"
   },
   "summary": {
-    "module_count": 158,
-    "declaration_count": 5132
+    "module_count": 162,
+    "declaration_count": 5190
   },
   "readme_sync": {
     "version": "0.29.3",
     "lean_toolchain": "v4.28.0",
     "production_files": 141,
-    "production_loc": 96878,
-    "test_files": 17,
-    "test_loc": 11878,
-    "proved_theorem_lemma_decls": 2848,
+    "production_loc": 96953,
+    "test_files": 21,
+    "test_loc": 12529,
+    "proved_theorem_lemma_decls": 2852,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -1391,27 +1391,27 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Architecture",
-          "line": 39,
+          "line": 62,
           "called": []
         },
         {
           "kind": "def",
           "name": "maxAsidValue",
-          "line": 51,
+          "line": 74,
           "called": []
         },
         {
           "kind": "structure",
           "name": "AsidPool",
-          "line": 74,
+          "line": 97,
           "called": [
             "ASID"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:82>",
-          "line": 82,
+          "name": "<anonymous:instance:105>",
+          "line": 105,
           "called": [
             "AsidPool",
             "default"
@@ -1420,7 +1420,7 @@
         {
           "kind": "def",
           "name": "AsidPool.initial",
-          "line": 86,
+          "line": 109,
           "called": [
             "AsidPool"
           ]
@@ -1428,7 +1428,7 @@
         {
           "kind": "structure",
           "name": "AsidAllocResult",
-          "line": 95,
+          "line": 118,
           "called": [
             "ASID",
             "AsidPool"
@@ -1437,7 +1437,7 @@
         {
           "kind": "def",
           "name": "AsidPool.allocate",
-          "line": 112,
+          "line": 135,
           "called": [
             "AsidAllocResult",
             "AsidPool",
@@ -1448,7 +1448,7 @@
         {
           "kind": "def",
           "name": "AsidPool.free",
-          "line": 166,
+          "line": 189,
           "called": [
             "ASID",
             "AsidPool",
@@ -1458,7 +1458,7 @@
         {
           "kind": "def",
           "name": "AsidPool.wellFormed",
-          "line": 190,
+          "line": 213,
           "called": [
             "AsidPool",
             "maxAsidValue"
@@ -1467,7 +1467,7 @@
         {
           "kind": "theorem",
           "name": "AsidPool.initial_wellFormed",
-          "line": 200,
+          "line": 223,
           "called": [
             "initial",
             "maxAsidValue",
@@ -1477,7 +1477,7 @@
         {
           "kind": "theorem",
           "name": "AsidPool.wellFormed_active_valid",
-          "line": 205,
+          "line": 228,
           "called": [
             "AsidPool",
             "maxAsidValue",
@@ -1487,7 +1487,7 @@
         {
           "kind": "theorem",
           "name": "AsidPool.wellFormed_free_valid",
-          "line": 213,
+          "line": 236,
           "called": [
             "AsidPool",
             "maxAsidValue",
@@ -1497,7 +1497,7 @@
         {
           "kind": "theorem",
           "name": "AsidPool.allocate_asid_valid",
-          "line": 222,
+          "line": 245,
           "called": [
             "AsidAllocResult",
             "AsidPool",
@@ -1510,7 +1510,7 @@
         {
           "kind": "theorem",
           "name": "AsidPool.allocate_preserves_wellFormed",
-          "line": 257,
+          "line": 280,
           "called": [
             "AsidAllocResult",
             "AsidPool",
@@ -1522,7 +1522,7 @@
         {
           "kind": "def",
           "name": "asidPoolUnique",
-          "line": 350,
+          "line": 371,
           "called": [
             "ASID"
           ]
@@ -1530,7 +1530,7 @@
         {
           "kind": "theorem",
           "name": "asidPoolUnique_empty",
-          "line": 354,
+          "line": 375,
           "called": [
             "asidPoolUnique"
           ]
@@ -1538,7 +1538,7 @@
         {
           "kind": "theorem",
           "name": "asidPoolUnique_allocate_fresh",
-          "line": 358,
+          "line": 379,
           "called": [
             "ASID",
             "asidPoolUnique"
@@ -1547,7 +1547,7 @@
         {
           "kind": "theorem",
           "name": "asidPoolUnique_free",
-          "line": 367,
+          "line": 388,
           "called": [
             "ASID",
             "asidPoolUnique",
@@ -1557,7 +1557,7 @@
         {
           "kind": "def",
           "name": "asidAllocRequiresFlush",
-          "line": 386,
+          "line": 407,
           "called": [
             "AsidAllocResult"
           ]
@@ -1565,7 +1565,7 @@
         {
           "kind": "theorem",
           "name": "AsidPool.allocate_reuse_requires_flush",
-          "line": 393,
+          "line": 414,
           "called": [
             "AsidAllocResult",
             "AsidPool",
@@ -1576,7 +1576,7 @@
         {
           "kind": "theorem",
           "name": "AsidPool.allocate_rollover_requires_flush",
-          "line": 409,
+          "line": 430,
           "called": [
             "AsidAllocResult",
             "AsidPool",
@@ -1588,7 +1588,7 @@
         {
           "kind": "theorem",
           "name": "AsidPool.allocate_fresh_no_flush",
-          "line": 424,
+          "line": 445,
           "called": [
             "AsidAllocResult",
             "AsidPool",
@@ -1600,7 +1600,7 @@
         {
           "kind": "theorem",
           "name": "AsidPool.allocate_result_fresh",
-          "line": 441,
+          "line": 462,
           "called": [
             "AsidAllocResult",
             "AsidPool",
@@ -1611,7 +1611,7 @@
         {
           "kind": "theorem",
           "name": "asidPoolUnique_preserved_by_allocate",
-          "line": 471,
+          "line": 492,
           "called": [
             "AsidAllocResult",
             "AsidPool",
@@ -1624,7 +1624,7 @@
         {
           "kind": "theorem",
           "name": "AsidPool.free_preserves_wellFormed",
-          "line": 485,
+          "line": 506,
           "called": [
             "ASID",
             "AsidPool",
@@ -2340,7 +2340,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.InterruptDispatch",
       "path": "SeLe4n/Kernel/Architecture/InterruptDispatch.lean",
-      "declaration_count": 22,
+      "declaration_count": 25,
       "declarations": [
         {
           "kind": "namespace",
@@ -2411,9 +2411,43 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "ackInterruptAudit_eoiPending",
+          "line": 123,
+          "called": [
+            "SystemState",
+            "ackInterruptAudit"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endOfInterrupt_eoiPending",
+          "line": 127,
+          "called": [
+            "InterruptId",
+            "SystemState",
+            "endOfInterrupt",
+            "filter"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ack_eoi_round_trip_empty",
+          "line": 136,
+          "called": [
+            "InterruptId",
+            "SystemState",
+            "ackInterruptAudit",
+            "ackInterruptAudit_eoiPending",
+            "endOfInterrupt",
+            "endOfInterrupt_eoiPending",
+            "eoiPendingEmpty"
+          ]
+        },
+        {
           "kind": "def",
           "name": "handleInterrupt",
-          "line": 146,
+          "line": 167,
           "called": [
             "InterruptId",
             "Irq",
@@ -2429,10 +2463,11 @@
         {
           "kind": "def",
           "name": "interruptDispatchSequence",
-          "line": 174,
+          "line": 204,
           "called": [
             "KernelError",
             "SystemState",
+            "ackInterruptAudit",
             "acknowledgeInterrupt",
             "endOfInterrupt",
             "handleInterrupt"
@@ -2441,7 +2476,7 @@
         {
           "kind": "theorem",
           "name": "interruptDispatchSequence_spurious",
-          "line": 198,
+          "line": 230,
           "called": [
             "SystemState",
             "acknowledgeInterrupt",
@@ -2452,7 +2487,7 @@
         {
           "kind": "theorem",
           "name": "interruptDispatchSequence_outOfRange",
-          "line": 205,
+          "line": 237,
           "called": [
             "SystemState",
             "acknowledgeInterrupt",
@@ -2463,7 +2498,7 @@
         {
           "kind": "theorem",
           "name": "endOfInterrupt_non_machine_eq",
-          "line": 216,
+          "line": 248,
           "called": [
             "InterruptId",
             "SystemState",
@@ -2473,7 +2508,7 @@
         {
           "kind": "theorem",
           "name": "endOfInterrupt_removes_from_eoiPending",
-          "line": 224,
+          "line": 256,
           "called": [
             "InterruptId",
             "SystemState",
@@ -2483,7 +2518,7 @@
         {
           "kind": "theorem",
           "name": "handleInterrupt_unmapped",
-          "line": 234,
+          "line": 266,
           "called": [
             "InterruptId",
             "Irq",
@@ -2496,9 +2531,10 @@
         {
           "kind": "theorem",
           "name": "interruptDispatchSequence_always_ok",
-          "line": 248,
+          "line": 280,
           "called": [
             "SystemState",
+            "ackInterruptAudit",
             "acknowledgeInterrupt",
             "endOfInterrupt",
             "handleInterrupt",
@@ -2508,7 +2544,7 @@
         {
           "kind": "def",
           "name": "eoiEmitted",
-          "line": 267,
+          "line": 300,
           "called": [
             "InterruptId",
             "SystemState",
@@ -2518,9 +2554,10 @@
         {
           "kind": "theorem",
           "name": "interruptDispatchSequence_eoi_unless_spurious",
-          "line": 275,
+          "line": 310,
           "called": [
             "SystemState",
+            "ackInterruptAudit",
             "acknowledgeInterrupt",
             "eoiEmitted",
             "handleInterrupt",
@@ -2530,7 +2567,7 @@
         {
           "kind": "def",
           "name": "timerInterruptHandler",
-          "line": 333,
+          "line": 371,
           "called": [
             "Kernel",
             "timerTick"
@@ -2539,7 +2576,7 @@
         {
           "kind": "theorem",
           "name": "timerInterruptHandler_eq_timerTick",
-          "line": 339,
+          "line": 377,
           "called": [
             "timerInterruptHandler",
             "timerTick"
@@ -2548,7 +2585,7 @@
         {
           "kind": "theorem",
           "name": "handleInterrupt_timer",
-          "line": 344,
+          "line": 382,
           "called": [
             "SystemState",
             "handleInterrupt",
@@ -5767,7 +5804,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.TimerModel",
       "path": "SeLe4n/Kernel/Architecture/TimerModel.lean",
-      "declaration_count": 25,
+      "declaration_count": 27,
       "declarations": [
         {
           "kind": "namespace",
@@ -5910,9 +5947,28 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "bootTimerConfigValid",
+          "line": 165,
+          "called": [
+            "HardwareTimerConfig",
+            "countsPerTickPositive"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5TimerConfig_bootValid",
+          "line": 169,
+          "called": [
+            "bootTimerConfigValid",
+            "rpi5TimerConfig",
+            "rpi5TimerConfig_countsPerTickPositive"
+          ]
+        },
+        {
           "kind": "structure",
           "name": "TimerInterruptBinding",
-          "line": 171,
+          "line": 187,
           "called": [
             "HardwareTimerConfig",
             "config"
@@ -5921,13 +5977,13 @@
         {
           "kind": "namespace",
           "name": "TimerInterruptBinding",
-          "line": 178,
+          "line": 194,
           "called": []
         },
         {
           "kind": "def",
           "name": "handleTimerInterrupt",
-          "line": 185,
+          "line": 201,
           "called": [
             "TimerInterruptBinding",
             "config",
@@ -5937,7 +5993,7 @@
         {
           "kind": "theorem",
           "name": "handleTimerInterrupt_incrementsTickCount",
-          "line": 191,
+          "line": 207,
           "called": [
             "TimerInterruptBinding",
             "handleTimerInterrupt"
@@ -5946,7 +6002,7 @@
         {
           "kind": "theorem",
           "name": "handleTimerInterrupt_advancesComparator",
-          "line": 195,
+          "line": 211,
           "called": [
             "TimerInterruptBinding",
             "countsPerTick",
@@ -5956,7 +6012,7 @@
         {
           "kind": "theorem",
           "name": "handleTimerInterrupt_preservesFrequency",
-          "line": 200,
+          "line": 216,
           "called": [
             "TimerInterruptBinding",
             "handleTimerInterrupt"
@@ -5965,7 +6021,7 @@
         {
           "kind": "theorem",
           "name": "handleTimerInterrupt_preservesInterval",
-          "line": 205,
+          "line": 221,
           "called": [
             "TimerInterruptBinding",
             "handleTimerInterrupt"
@@ -5974,7 +6030,7 @@
         {
           "kind": "def",
           "name": "rpi5TimerBinding",
-          "line": 212,
+          "line": 228,
           "called": [
             "TimerInterruptBinding",
             "config",
@@ -61654,6 +61710,160 @@
       ]
     },
     {
+      "module": "tests.AsidPoolSuite",
+      "path": "tests/AsidPoolSuite.lean",
+      "declaration_count": 12,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.AsidPool",
+          "line": 34,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "test_t01_initial_bump",
+          "line": 38,
+          "called": [
+            "AsidPool.initial",
+            "allocate",
+            "expectCond",
+            "none",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t02_freelist_reuse",
+          "line": 51,
+          "called": [
+            "AsidPool.initial",
+            "allocate",
+            "expectCond",
+            "free",
+            "none",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t03_free_removes",
+          "line": 69,
+          "called": [
+            "AsidPool.initial",
+            "allocate",
+            "expectCond",
+            "free",
+            "isEmpty",
+            "none",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t04_rollover_picks_free_asid",
+          "line": 95,
+          "called": [
+            "AsidPool",
+            "allocate",
+            "expectCond",
+            "maxAsidValue",
+            "none",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t05_rollover_fail_closed",
+          "line": 128,
+          "called": [
+            "ASID",
+            "AsidPool",
+            "all",
+            "allocate",
+            "maxAsidValue",
+            "none",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t06_bump_distinct",
+          "line": 147,
+          "called": [
+            "AsidPool.initial",
+            "allocate",
+            "expectCond",
+            "none",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t07_allocate_free_cycle",
+          "line": 161,
+          "called": [
+            "AsidPool.initial",
+            "allocate",
+            "expectCond",
+            "free",
+            "none",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t08_free_nodup",
+          "line": 176,
+          "called": [
+            "AsidPool.initial",
+            "allocate",
+            "expectCond",
+            "free",
+            "none",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t09_smoke_interleaving",
+          "line": 190,
+          "called": [
+            "AsidPool.initial",
+            "allocate",
+            "expectCond",
+            "free",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runAllTests",
+          "line": 203,
+          "called": [
+            "AsidPool",
+            "test_t01_initial_bump",
+            "test_t02_freelist_reuse",
+            "test_t03_free_removes",
+            "test_t04_rollover_picks_free_asid",
+            "test_t05_rollover_fail_closed",
+            "test_t06_bump_distinct",
+            "test_t07_allocate_free_cycle",
+            "test_t08_free_nodup",
+            "test_t09_smoke_interleaving"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 220,
+          "called": [
+            "runAllTests"
+          ]
+        }
+      ]
+    },
+    {
       "module": "tests.BadgeOverflowSuite",
       "path": "tests/BadgeOverflowSuite.lean",
       "declaration_count": 26,
@@ -61948,6 +62158,146 @@
             "bov020_identitySmall",
             "bov021_isWord64Consistency",
             "bov022_validityMatchesWord64"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "tests.DecodeValidationSuite",
+      "path": "tests/DecodeValidationSuite.lean",
+      "declaration_count": 13,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.DecodeValidation",
+          "line": 30,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "stubOf",
+          "line": 33,
+          "called": [
+            "SyscallDecodeResult",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t01_checked_rejects_high_pa",
+          "line": 41,
+          "called": [
+            "decodeVSpaceMapArgsChecked",
+            "stubOf",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t02_checked_accepts_low_pa",
+          "line": 55,
+          "called": [
+            "decodeVSpaceMapArgsChecked",
+            "expectCond",
+            "stubOf",
+            "throw",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t03_checked_boundary_rejected",
+          "line": 66,
+          "called": [
+            "decodeVSpaceMapArgsChecked",
+            "stubOf",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t04_sc_rejects_high_priority",
+          "line": 77,
+          "called": [
+            "decodeSchedContextConfigureArgsChecked",
+            "stubOf",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t05_sc_rejects_high_domain",
+          "line": 87,
+          "called": [
+            "decodeSchedContextConfigureArgsChecked",
+            "stubOf",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t06_sc_rejects_zero_budget",
+          "line": 96,
+          "called": [
+            "decodeSchedContextConfigureArgsChecked",
+            "stubOf",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t07_sc_rejects_zero_period",
+          "line": 105,
+          "called": [
+            "decodeSchedContextConfigureArgsChecked",
+            "stubOf",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t08_sc_accepts_valid",
+          "line": 114,
+          "called": [
+            "decodeSchedContextConfigureArgsChecked",
+            "expectCond",
+            "stubOf",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t09_sc_boundary_accepted",
+          "line": 127,
+          "called": [
+            "decodeSchedContextConfigureArgsChecked",
+            "expectCond",
+            "stubOf",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runAllTests",
+          "line": 137,
+          "called": [
+            "test_t01_checked_rejects_high_pa",
+            "test_t02_checked_accepts_low_pa",
+            "test_t03_checked_boundary_rejected",
+            "test_t04_sc_rejects_high_priority",
+            "test_t05_sc_rejects_high_domain",
+            "test_t06_sc_rejects_zero_budget",
+            "test_t07_sc_rejects_zero_period",
+            "test_t08_sc_accepts_valid",
+            "test_t09_sc_boundary_accepted"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 154,
+          "called": [
+            "runAllTests"
           ]
         }
       ]
@@ -63739,6 +64089,153 @@
       ]
     },
     {
+      "module": "tests.InterruptDispatchSuite",
+      "path": "tests/InterruptDispatchSuite.lean",
+      "declaration_count": 13,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.InterruptDispatch",
+          "line": 29,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "test_t01_ack_spurious",
+          "line": 33,
+          "called": [
+            "acknowledgeInterrupt",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t02_ack_out_of_range",
+          "line": 44,
+          "called": [
+            "acknowledgeInterrupt",
+            "expectCond",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t03_ack_handled",
+          "line": 54,
+          "called": [
+            "acknowledgeInterrupt",
+            "expectCond",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t04_ack_boundary_spurious",
+          "line": 62,
+          "called": [
+            "acknowledgeInterrupt",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t05_ack_boundary_handled",
+          "line": 70,
+          "called": [
+            "acknowledgeInterrupt",
+            "expectCond",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t06_ack_audit_push",
+          "line": 78,
+          "called": [
+            "SystemState",
+            "ackInterruptAudit",
+            "default",
+            "expectCond"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t07_eoi_drains",
+          "line": 85,
+          "called": [
+            "InterruptId",
+            "SystemState",
+            "ackInterruptAudit",
+            "default",
+            "endOfInterrupt",
+            "expectCond"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t08_round_trip_empty",
+          "line": 95,
+          "called": [
+            "InterruptId",
+            "SystemState",
+            "ackInterruptAudit",
+            "default",
+            "endOfInterrupt",
+            "expectCond"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t09_dispatch_spurious_no_state_change",
+          "line": 107,
+          "called": [
+            "SystemState",
+            "default",
+            "expectCond",
+            "interruptDispatchSequence",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t10_dispatch_out_of_range",
+          "line": 118,
+          "called": [
+            "SystemState",
+            "default",
+            "expectCond",
+            "interruptDispatchSequence",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runAllTests",
+          "line": 128,
+          "called": [
+            "test_t01_ack_spurious",
+            "test_t02_ack_out_of_range",
+            "test_t03_ack_handled",
+            "test_t04_ack_boundary_spurious",
+            "test_t05_ack_boundary_handled",
+            "test_t06_ack_audit_push",
+            "test_t07_eoi_drains",
+            "test_t08_round_trip_empty",
+            "test_t09_dispatch_spurious_no_state_change",
+            "test_t10_dispatch_out_of_range"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 146,
+          "called": [
+            "runAllTests"
+          ]
+        }
+      ]
+    },
+    {
       "module": "tests.IpcBufferSuite",
       "path": "tests/IpcBufferSuite.lean",
       "declaration_count": 28,
@@ -64623,6 +65120,7 @@
             "expectErr",
             "expectOkSt",
             "lookup",
+            "roPerms",
             "throw",
             "toNat",
             "valid",
@@ -64632,7 +65130,8 @@
             "vspaceMapPageWithFlush",
             "vspaceUnmapPage",
             "withLifecycleObjectType",
-            "withObject"
+            "withObject",
+            "wxPerms"
           ]
         },
         {
@@ -64790,7 +65289,8 @@
             "vspaceUnmapPage",
             "withLifecycleObjectType",
             "withObject",
-            "withService"
+            "withService",
+            "wxPerms"
           ]
         },
         {
@@ -65318,6 +65818,8 @@
             "expect",
             "expectErr",
             "expectOkSt",
+            "roPerms",
+            "rwPerms",
             "vspaceLookup",
             "vspaceLookupFull",
             "vspaceMapPageWithFlush",
@@ -68418,6 +68920,165 @@
             "tph014a_frozenSchedule",
             "tph014b_frozenYield",
             "tph014c_scheduleNoEligible"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "tests.WxDefenseSuite",
+      "path": "tests/WxDefenseSuite.lean",
+      "declaration_count": 15,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.WxDefense",
+          "line": 34,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "wxPerms",
+          "line": 37,
+          "called": [
+            "PagePermissions"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "roPerms",
+          "line": 41,
+          "called": [
+            "PagePermissions",
+            "PagePermissions.readOnly"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rwPerms",
+          "line": 44,
+          "called": [
+            "PagePermissions"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rxPerms",
+          "line": 48,
+          "called": [
+            "PagePermissions"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t01_L3_rejects_wx",
+          "line": 52,
+          "called": [
+            "fromPagePermissions",
+            "none",
+            "throw",
+            "wxPerms"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t02_L3_accepts_ro",
+          "line": 60,
+          "called": [
+            "fromPagePermissions",
+            "none",
+            "roPerms",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t03_L3_accepts_rw",
+          "line": 68,
+          "called": [
+            "fromPagePermissions",
+            "none",
+            "rwPerms",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t04_L3_accepts_rx",
+          "line": 76,
+          "called": [
+            "fromPagePermissions",
+            "none",
+            "rxPerms",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t05_L2_rejects_wx",
+          "line": 84,
+          "called": [
+            "VSpaceRoot",
+            "default",
+            "mapPage",
+            "none",
+            "ofNat",
+            "throw",
+            "wxPerms"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t06_L2_accepts_rw",
+          "line": 94,
+          "called": [
+            "VSpaceRoot",
+            "default",
+            "mapPage",
+            "none",
+            "ofNat",
+            "rwPerms",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t07_wxCompliant_W_and_X_false",
+          "line": 104,
+          "called": [
+            "expectCond",
+            "wxCompliant"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t08_wxCompliant_R_alone_true",
+          "line": 109,
+          "called": [
+            "expectCond",
+            "wxCompliant"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runAllTests",
+          "line": 115,
+          "called": [
+            "test_t01_L3_rejects_wx",
+            "test_t02_L3_accepts_ro",
+            "test_t03_L3_accepts_rw",
+            "test_t04_L3_accepts_rx",
+            "test_t05_L2_rejects_wx",
+            "test_t06_L2_accepts_rw",
+            "test_t07_wxCompliant_W_and_X_false",
+            "test_t08_wxCompliant_R_alone_true"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 131,
+          "called": [
+            "runAllTests"
           ]
         }
       ]

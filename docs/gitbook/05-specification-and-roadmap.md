@@ -18,8 +18,8 @@ machine-checked proofs, improving on seL4 architecture. First hardware target:
 | Production LoC | 95,528 across 141 Lean files |
 | Test LoC | 11,709 across 17 suites |
 | Proved declarations | 2,819 theorem/lemma declarations (zero sorry/axiom) |
-| Latest audit | [`AUDIT_v0.29.0_COMPREHENSIVE`](../audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — pre-1.0 full-kernel audit (2 CRITICAL, 23 HIGH, ~76 MED, ~101 LOW). WS-AK Phase AK1 complete (v0.29.1); remaining phases AK2–AK10 target v1.0.0. |
-| Active workstream | **WS-AK Phase AK1 COMPLETE** (v0.29.1). Pre-1.0 Release Hardening (v0.29.0 audit) — Phase AK1: IPC Fail-Closed & Rendezvous State (10 sub-tasks AK1-A through AK1-J; 2 HIGH, 7 MEDIUM, 6 LOW). Prior: **WS-AJ PORTFOLIO COMPLETE** (v0.28.1–v0.29.0), WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG (v0.26.0–v0.27.1, 10 phases, 67 sub-tasks), WS-AF–WS-B. **Next:** AK2 (Scheduler, PIP & WCRT Closure) through AK10 (Testing, Documentation & Closure); then WS-V (AG10: Hardware Integration). |
+| Latest audit | [`AUDIT_v0.29.0_COMPREHENSIVE`](../audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — pre-1.0 full-kernel audit (2 CRITICAL, 23 HIGH, ~76 MED, ~101 LOW). WS-AK Phases AK1–AK3 complete (v0.29.1–v0.29.3); remaining phases AK4–AK10 target v1.0.0. |
+| Active workstream | **WS-AK Phase AK3 COMPLETE** (v0.29.3). Pre-1.0 Release Hardening (v0.29.0 audit) — Phase AK3: Architecture — ASID, W^X, EOI, Decode (13 sub-tasks AK3-A through AK3-M; 1 CRITICAL, 3 HIGH, 10 MEDIUM, 9 LOW). Key fixes: AK3-A (A-C01 CRITICAL) AsidPool fail-closed rollover; AK3-B (A-H01 HIGH) W^X four-layer defense; AK3-C (A-H02 HIGH) GIC EOI differentiation. Prior: AK2 (v0.29.2), AK1 (v0.29.1), **WS-AJ PORTFOLIO COMPLETE** (v0.28.1–v0.29.0), WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG (v0.26.0–v0.27.1, 10 phases, 67 sub-tasks), WS-AF–WS-B. **Next:** AK4 (ABI Bridge) through AK10 (Testing, Documentation & Closure); then WS-V (AG10: Hardware Integration). |
 | Workstream history | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | Metrics source of truth | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 

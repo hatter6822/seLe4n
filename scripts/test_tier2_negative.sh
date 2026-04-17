@@ -46,5 +46,13 @@ run_check "TRACE" lake exe liveness_suite
 run_check "TRACE" lake exe decoding_suite
 # AG9-E: Badge overflow hardware validation test suite.
 run_check "TRACE" lake exe badge_overflow_suite
+# AK3-A.8 (A-C01 CRITICAL): AsidPool rollover regression suite.
+run_check "TRACE" lake exe asid_pool_suite
+# AK3-C.5 + AK3-L: InterruptDispatch regression suite.
+run_check "TRACE" lake exe interrupt_dispatch_suite
+# AK3-B: W^X four-layer defense regression suite.
+run_check "TRACE" lake exe wx_defense_suite
+# AK3-E + AK3-J: decode validation regression suite.
+run_check "TRACE" lake exe decode_validation_suite
 
 finalize_report

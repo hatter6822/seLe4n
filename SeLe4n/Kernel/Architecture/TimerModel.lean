@@ -153,6 +153,22 @@ theorem rpi5TimerConfig_countsPerTickPositive :
   rw [rpi5TimerConfig_countsPerTick]
   decide
 
+/-- AK3-H (A-M05 / MEDIUM): Boot-time assertion for a timer configuration.
+    Intended usage: a future `PlatformConfig.timerConfig : Option
+    HardwareTimerConfig` field would be validated at boot via this
+    predicate; current production code uses the module-constant
+    `rpi5TimerConfig` which already satisfies the predicate (proven by
+    `rpi5TimerConfig_countsPerTickPositive`).
+
+    Runtime check pattern for future callers:
+    `if cfg.countsPerTickPositiveCheck then ... else .error .invalidArgument`. -/
+def bootTimerConfigValid (cfg : HardwareTimerConfig) : Prop :=
+  cfg.countsPerTickPositive
+
+/-- AK3-H: The default RPi5 config passes the boot validity check. -/
+theorem rpi5TimerConfig_bootValid : bootTimerConfigValid rpi5TimerConfig :=
+  rpi5TimerConfig_countsPerTickPositive
+
 -- ============================================================================
 -- AG5-E: Timer interrupt → timerTick binding
 -- ============================================================================

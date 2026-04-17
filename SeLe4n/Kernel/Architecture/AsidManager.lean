@@ -9,7 +9,7 @@
 import SeLe4n.Model.State
 
 /-!
-# ASID Generation and Management (AG6-H / H3-ARCH-04)
+# ASID Generation and Management (AG6-H / H3-ARCH-04 / AK3-A)
 
 Implements ASID (Address Space Identifier) allocation for ARMv8-A on RPi5.
 ASIDs tag TLB entries, enabling per-address-space TLB partitioning without
@@ -17,18 +17,41 @@ full flushes on context switch.
 
 ## Design
 
-- `AsidPool`: Bump allocator with rollover. Tracks the next ASID to allocate
-  and a generation counter for tracking rollover events.
-- On ASID rollover (all ASIDs exhausted), the generation increments and a
-  full TLB flush is required to eliminate stale entries from the prior generation.
-- RPi5: 16-bit ASID (maxAsid = 65536) from BCM2712 / Cortex-A76.
+- `AsidPool`: Bump allocator with **fail-closed** rollover. Tracks the next
+  ASID to allocate, a generation counter, a free list of returned ASIDs, and
+  — after AK3-A — a ground-truth `activeAsids` set used to prove that
+  rollover never returns a currently-active ASID.
+- On ASID rollover (bump frontier saturated), a linear scan over
+  `[1, maxAsidValue)` selects the first ASID not in `activeAsids`; if every
+  non-kernel ASID is active, `allocate` returns `none` (fail closed).
+  The generation counter increments alongside `requiresFlush := true`.
+- Free-list reuse (AK3-D) additionally bumps the generation so downstream
+  stale-entry tracking correctly distinguishes old owner's entries from the
+  new owner's.
+- RPi5: 16-bit ASID (`maxAsidValue = 65536`) from BCM2712 / Cortex-A76.
 
 ## Uniqueness Invariant
 
-`asidPoolUnique`: No two active VSpaces share the same ASID. Maintained by:
-1. Sequential allocation (bump) ensures freshness within a generation
-2. Full TLB flush on rollover ensures no stale translations survive
-3. Freed ASIDs are tracked for reuse (free list)
+`asidPoolUnique`: No two active VSpaces share the same ASID. Maintained by
+(AK3-A, formally proven in this file):
+
+1. `AsidPool.allocate_result_fresh` — the returned ASID is provably not in
+   the pre-call `activeAsids` set. Holds for all three allocation strategies
+   (bump uses `val < nextAsid`, rollover uses `List.find?` witness,
+   free-list reuse uses `freeList/activeAsids` disjointness).
+2. `AsidPool.allocate_preserves_wellFormed` — the 7-conjunct `wellFormed`
+   predicate including `activeAsids.Nodup` is preserved by every allocation.
+3. `AsidPool.free_preserves_wellFormed` — `free` uses `List.erase` and
+   preserves all invariants.
+
+## AK3-A / A-C01 CRITICAL FIX
+
+Prior to AK3-A the rollover branch unconditionally returned `ASID.mk 1`
+irrespective of whether ASID 1 was still bound to a live VSpaceRoot —
+breaking TLB isolation the moment VSpace A context-switched back in after
+VSpace B was assigned the colliding ASID 1. AK3-A eliminates this class of
+bug via the ground-truth `activeAsids` set and the `allocate_result_fresh`
+theorem.
 
 ## References
 
@@ -340,13 +363,11 @@ theorem AsidPool.allocate_preserves_wellFormed
 /-- ASID uniqueness: no two distinct active VSpaces share the same ASID.
     This is the core security property for TLB isolation.
 
-    Design note: the freshness precondition (`hFresh : newAsid ∉ activeAsids`)
-    in `asidPoolUnique_allocate_fresh` is the caller's responsibility. The
-    bump allocator guarantees freshness within a generation (monotonically
-    increasing nextAsid), and rollover is protected by a full TLB flush
-    (`requiresFlush = true`). Formal connection between `AsidPool.allocate`
-    and the freshness property is deferred to the kernel integration layer
-    (AG8) which tracks the active ASID set alongside the pool. -/
+    AK3-A closes this property formally: `AsidPool.allocate_result_fresh`
+    proves the returned ASID is never in the pre-call `activeAsids` set,
+    and `asidPoolUnique_preserved_by_allocate` lifts this to `Nodup`
+    preservation. Prior to AK3-A the freshness precondition was a caller
+    obligation; it is now a proven consequence of `wellFormed`. -/
 def asidPoolUnique (activeAsids : List ASID) : Prop :=
   activeAsids.Nodup
 
