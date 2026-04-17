@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.29.0` (`lakefile.toml`) |
+| **Package version** | `0.29.1` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 94,762 across 141 Lean files |
-| **Test LoC** | 11,616 across 17 Lean test suites |
-| **Proved declarations** | 2,802 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 95,528 across 141 Lean files |
+| **Test LoC** | 11,709 across 17 Lean test suites |
+| **Proved declarations** | 2,819 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
 | **Active workstream** | **WS-AJ PORTFOLIO COMPLETE** (v0.28.1–v0.29.0). Post-Audit Comprehensive Remediation (v0.28.0 audit) — 6 phases, 30 sub-tasks. IPC/lifecycle correctness, security hardening, platform/boot pipeline, architecture model correctness, Rust HAL hardening, documentation/testing/closure. Plan: [`AUDIT_v0.28.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md). Prior: WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG–WS-B. **Next: WS-V (AG10: Hardware Integration).** |

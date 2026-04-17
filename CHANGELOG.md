@@ -1,3 +1,171 @@
+## v0.29.1 — WS-AK Phase AK1: IPC Fail-Closed & Rendezvous State
+
+Phase AK1 of WS-AK Pre-1.0 Release Hardening (v0.29.0 audit). Addresses
+the IPC fail-closed defaults, reply-target soundness, PIP wake-path
+correctness, and cap-transfer NI symmetry findings from the v0.29.0
+comprehensive audit. 10 sub-tasks (AK1-A through AK1-J) covering 2 HIGH,
+7 MEDIUM, 6 LOW findings.
+
+Gate: `lake build` (256 jobs) + `test_smoke.sh` + `test_full.sh` + zero
+`sorry` / `axiom` / `native_decide`.
+
+### Changes
+
+- **AK1-A** (I-H01 / HIGH): Added `cleanupPreReceiveDonationChecked`
+  error-propagating variant of `cleanupPreReceiveDonation` in
+  `IPC/Operations/Endpoint.lean`. The `endpointReceiveDual` no-sender
+  blocking path now calls the checked variant so that
+  `returnDonatedSchedContext` failures propagate as kernel errors
+  instead of being silently absorbed. Bridge lemma
+  `cleanupPreReceiveDonationChecked_ok_eq_cleanup` discharges
+  coincidence with the defensive fallback on `.ok` results. Post-audit
+  strengthening: `returnDonatedSchedContext_ok_under_invariants` fully
+  proves the donated-path success under `donationOwnerValid` +
+  non-reservation (three sequential `storeObject` + two `lookupTcb`
+  steps machine-verified via type-disjointness of SchedContext/TCB
+  ObjIds and `donationOwnerValid_excludes_self_donation`). Supporting
+  `schedContext_ne_tcb_at_objId` type-disjointness helper added.
+  `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull`
+  now DERIVES donated-path success directly from `ipcInvariantFull`
+  (via `donationOwnerValid` extraction) rather than requiring a
+  separate caller-supplied witness. Only non-reservation remains as an
+  explicit hypothesis — the kernel deployment invariant that typed
+  thread IDs are non-sentinel.
+  Preservation cascade (13 theorems) updated in
+  `Invariant/Defs.lean` / `EndpointPreservation.lean` / `Structural.lean`
+  / `InformationFlow/Invariant/Operations.lean` via outer-case-split
+  on the Checked variant + bridge to defensive-variant frame lemmas.
+
+- **AK1-B** (I-H02 / HIGH): `endpointReply` and `endpointReplyRecv`
+  (`IPC/DualQueue/Transport.lean`) now fail closed with
+  `.replyCapInvalid` on `replyTarget = none` / `expectedReplier = none`.
+  The previous `none => authorized := true` branch admitted any replier
+  on invariant drift — a confused-deputy risk. Soundness bridge
+  `blockedOnReplyHasTarget_implies_some_replyTarget` added to
+  `Invariant/Defs.lean` discharges "no behavior change on paths
+  satisfying `ipcInvariantFull`". Preservation proofs in 5 files updated
+  to case-split on `replyTarget` first; the `none` arm is now vacuous
+  (returns `.error`, contradicting `hStep : .ok _`).
+
+- **AK1-C** (I-M01 / MEDIUM): `endpointCall` caller-side `pendingMessage`
+  now atomically cleared on the rendezvous path via
+  `storeTcbIpcStateAndMessage st''' caller (.blockedOnReply endpointId (some receiver)) none`
+  (`IPC/DualQueue/Transport.lean:1769`). Previously used `storeTcbIpcState`
+  which left `pendingMessage` untouched — a caller entering `endpointCall`
+  with a stale `pendingMessage := some _` (e.g., from a prior unanswered
+  operation) would retain it through the blocking transition into
+  `.blockedOnReply`, violating fail-closed semantics. The atomic update
+  ensures both fields transition together. Preservation cascade (5
+  theorems in `Invariant/CallReplyRecv.lean` covering ipcInvariant,
+  schedulerInvariantBundle, ipcSchedulerContractPredicates,
+  objects_invExt, projection) updated with the AndMessage variant plus
+  `.ready` contract specializations.
+
+- **AK1-D** (I-M02 / MEDIUM): `endpointReceiveDual` rendezvous-handshake
+  path now atomically updates the receiver's ipcState to `.ready`
+  alongside `pendingMessage := senderMsg` via
+  `storeTcbIpcStateAndMessage receiver .ready senderMsg`. Previously,
+  only `pendingMessage` was written; this could violate the 5th IPC
+  invariant `waitingThreadsPendingMessageNone` if the receiver entered
+  in a stale `.blockedOnReceive` state. Cascaded through:
+  (1) 4 preservation theorems in `EndpointPreservation.lean` (8 sites);
+  (2) 7 preservation theorems in `Structural.lean` (14 sites);
+  (3) 1 NI theorem in `InformationFlow/Invariant/Operations.lean` (2 sites).
+  New helpers added:
+  - `storeTcbIpcStateAndMessage_tcb_forward` (`SchedulerLemmas.lean:482`):
+    forward-preserves TCB existence at any ObjId.
+  - `storeTcbIpcStateAndMessage_ready_preserves_ipcSchedulerContractPredicates`
+    (`EndpointPreservation.lean`): specialised contracts preservation
+    for `.ready` writes. Unlike the generic
+    `contracts_of_same_scheduler_ipcState`, does not require per-tid
+    ipcState preservation — target receives `.ready` (satisfies
+    `runnableThreadIpcReady`, vacuously satisfies `blockedOn*NotRunnable`);
+    non-target ipcState preserved via `_preserves_objects_ne`.
+  Dead-hypothesis prune: `endpointReceiveDual_preserves_waitingThreadsPendingMessageNone`
+  dropped the `hReceiverNotBlocked` hypothesis — now vacuous because
+  `.ready` is unconstrained by the invariant. Caller in
+  `endpointReplyRecv_preserves_waitingThreadsPendingMessageNone` updated
+  to match.
+
+- **AK1-E** (I-M03 / MEDIUM): `ensureRunnable` in `IPC/Operations/Endpoint.lean`
+  now uses PIP-effective priority (`ipcEffectiveRunQueuePriority`,
+  inlined from `Scheduler/Invariant.lean:effectiveRunQueuePriority` to
+  avoid circular import) instead of base `tcb.priority`. Fixes the wake
+  path (notification signal, endpoint rendezvous, reply wake) landing
+  a PIP-boosted server in the wrong RunQueue bucket until the next
+  scheduler tick. Matches AI3-A pattern for yield/timer/switch. Three
+  new correctness lemmas:
+  - `ensureRunnable_inserts_at_effective_priority` — explicit witness of
+    the bucket used for insertion.
+  - `ensureRunnable_honors_pipBoost` — corollary specialising to PIP-boost threads.
+  - `notificationSignal_respects_pipBoost` — the notification wake path
+    places the woken waiter in the post-state runQueue (composable with
+    `ensureRunnable_inserts_at_effective_priority` for the bucket witness).
+
+- **AK1-F** (I-M04 / MEDIUM): `timeoutThread` PIP-revert call-state gap
+  documented AND formalised. Two new theorems in
+  `Scheduler/PriorityInheritance/BlockingGraph.lean`:
+  - `blockingServer_isSome_iff_blockedOnReply_some` — biconditional
+    characterisation of `blockingServer`'s result as structurally
+    identical to the `.blockedOnReply _ (some _)` ipcState form.
+  - `blockingServer_some_implies_blockedOnReply` — specialised
+    corollary making the discriminant formally precise for
+    `timeoutThread`'s PIP-revert dispatch (only reply-blocked threads
+    have a blocking server to propagate revert through).
+  Post-audit: `pipBoost_attached_only_on_reply_blocked` abbrev alias
+  exposes the plan-named symbol so reviewers can find it directly.
+
+- **AK1-G** (I-M05 / MEDIUM): `ipcUnwrapCapsLoop` in
+  `IPC/Operations/CapTransfer.lean` annotated as internal recursion
+  helper. Full `private` modifier not possible because preservation
+  theorems (`ipcUnwrapCapsLoop_preserves_*`) are referenced externally
+  in `DualQueue/WithCaps.lean` and `Capability/Invariant/Preservation.lean`.
+  Static invariant "only called with `idx := 0` from `ipcUnwrapCaps`"
+  documented with a verification grep pattern. Post-audit: added an
+  `example`-level build-time assertion verifying the exact production
+  call shape (`ipcUnwrapCapsLoop msg.caps senderCspaceRoot
+  receiverCspaceRoot 0 receiverSlotBase #[] msg.caps.size st`) — if a
+  future refactor introduces a non-zero `idx` caller the assertion
+  will fail to compile.
+
+- **AK1-H** (I-M06 / MEDIUM): Composition lemma
+  `endpointQueueRemove_succeeds_under_forwardBackward` added to
+  `IPC/DualQueue/Core.lean`. Formalizes the "defensive fallback is
+  unreachable" claim: whenever endpoint + TCB both exist,
+  `endpointQueueRemove` returns `.ok _`. Composed at the `timeoutThread`
+  call site via the new `timeoutThread_succeeds_under_preconditions`
+  theorem (`IPC/Operations/Timeout.lean`), formally closing the
+  chain from `endpointQueueRemove`'s unreachability lemmas (Core.lean:
+  `queueRemove_predecessor_exists` / `queueRemove_successor_exists`) up
+  through the timer-tick path's dispatcher.
+
+- **AK1-I** (I-M07 / MEDIUM, NI L-1): `endpointSendDualWithCaps` missing
+  receiver-CSpace-root path in `IPC/DualQueue/WithCaps.lean` now fails
+  closed with `.error .invalidCapability` matching
+  `endpointReceiveDualWithCaps`. The prior asymmetric `.ok (empty, st')`
+  branch was an NI distinguisher — send and receive observed different
+  result shapes for the same structural fault. Preservation proofs
+  updated (2 files) to discharge the `.error` arm vacuously. NI
+  regression test added to `tests/InformationFlowSuite.lean`
+  asserting consistent outcome for `ipcUnwrapCaps` with a non-CNode
+  receiver root (the shared subroutine invoked by both
+  send-path and receive-path cap-transfer logic). Post-audit: test
+  strengthened with a second scenario that explicitly triggers the
+  `lookupCspaceRoot = none` branch via TCB splice-out, asserting the
+  symmetric `.error .invalidCapability` arm shape between
+  `endpointSendDualWithCaps` and `endpointReceiveDualWithCaps`.
+
+- **AK1-J** (I-L1..I-L6, IPC INFO): LOW-tier IPC batch documentation
+  added as a single docblock at the top of `IPC/Operations/Endpoint.lean`
+  covering donation defensive branches, stale `.timedOut` reachability,
+  reply-path badge handling, `Badge.bor` safety, replenish-queue leave
+  semantics, and the `ipcInvariant` rename / `.endpointQueueEmpty`
+  error-variant cleanup deferrals to AK10.
+
+- **Test**: `MainTraceHarness.lean` CIC-010 scenario updated to provide
+  explicit `replyTarget := some replierTid`, matching the fail-closed
+  AK1-B semantics. Trace fixture unchanged (70/71 → 71/71 lines match).
+
 ## v0.29.0 — WS-AJ Phase AJ6: Documentation, Testing & Closure
 
 Phase AJ6 of WS-AJ Post-Audit Comprehensive Remediation (v0.28.0 audit).

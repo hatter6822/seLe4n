@@ -1274,14 +1274,15 @@ theorem endpointReply_preserves_capabilityInvariantBundle
       | blockedOnReceive _ => simp [hIpc] at hStep
       | blockedOnNotification _ => simp [hIpc] at hStep
       | blockedOnCall _ => simp [hIpc] at hStep
-      | blockedOnReply epId _ =>
+      | blockedOnReply epId replyTarget =>
           simp only [hIpc] at hStep
-          -- WS-H1/M-02: replyTarget validation — both branches dispatch to
-          -- capabilityInvariantBundle_of_storeTcbAndEnsureRunnable.
+          -- AK1-B (I-H02): Fail-closed on replyTarget = none
           suffices ∀ st1, storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st1 →
               capabilityInvariantBundle (ensureRunnable st1 target) by
-            split at hStep
-            · -- some expected: if replier == expected
+            cases replyTarget with
+            | none => simp at hStep
+            | some expected =>
+              simp only at hStep
               split at hStep
               · -- authorized = true
                 revert hStep
@@ -1293,15 +1294,6 @@ theorem endpointReply_preserves_capabilityInvariantBundle
                     exact this st1 hTcb
               · -- authorized = false
                 simp_all
-            · -- none: no replyTarget constraint
-              dsimp only at hStep
-              revert hStep
-              cases hTcb : storeTcbIpcStateAndMessage st target .ready (some msg) with
-              | error e => simp
-              | ok st1 =>
-                  simp only [ite_true, Except.ok.injEq, Prod.mk.injEq]
-                  intro ⟨_, hStEq⟩; subst hStEq
-                  exact this st1 hTcb
           -- Dispatch to extracted lemma
           intro st1 hTcb
           exact capabilityInvariantBundle_of_storeTcbAndEnsureRunnable

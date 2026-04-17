@@ -56,6 +56,33 @@ or `blockedOnReply`) on the endpoint identified by `endpointId`. The sole caller
 `none` for non-blocking states. Calling this on a non-blocked thread would
 incorrectly reset its state and write the timeout error code.
 
+**AK1-F (I-M04) — PIP revert call-state invariant:** The PIP revert path
+(`maybeBlockingServer` / `revertPriorityInheritance`) only handles the
+`.blockedOnReply _ (some serverId)` case. This is correct because:
+
+(i) `pipBoost.isSome` is established only by `propagatePipBoost` in
+    `Scheduler.PriorityInheritance.Propagate`, which is called exclusively
+    from the reply-blocking chain construction (when a client enters
+    `.blockedOnReply` via `endpointCall` / `endpointSendDualChecked`'s
+    handshake branch). No other IPC state produces a PIP boost.
+
+(ii) Under `ipcInvariantFull`, the implication `tcb.pipBoost.isSome →
+     ∃ ep rt, tcb.ipcState = .blockedOnReply ep rt` holds. This is the
+     frame-lemma bundle `propagatePipBoost_*` in
+     `PriorityInheritance/Preservation.lean`.
+
+(iii) Therefore, clients with `.blockedOnSend` / `.blockedOnReceive` /
+      `.blockedOnNotification` / `.blockedOnCall` never have a PIP boost to
+      revert — the other arms of `timeoutThread`'s `match maybeBlockingServer`
+      discriminator's `none` branch are correct by invariant.
+
+This relationship is fragile in the sense that any future change that adds
+PIP boosting outside the reply-chain (e.g., dynamic priority inheritance
+for notification wait queues) would require extending the revert logic
+here. The invariant is pin-pointed by
+`blockingGraph_pipBoost_implies_blockedOnReply` (D4; see
+`Scheduler/PriorityInheritance/BlockingGraph.lean`).
+
 Returns updated state or error if endpoint/thread lookup fails. -/
 def timeoutThread
     (endpointId : SeLe4n.ObjId)
@@ -98,6 +125,66 @@ def timeoutThread
         | some serverId =>
           .ok (PriorityInheritance.revertPriorityInheritance st3 serverId)
         | none => .ok st3
+
+/-- AK1-H (I-M06): Composition — `timeoutThread` succeeds whenever the
+    caller has witnessed that (i) an endpoint exists at `endpointId`, and
+    (ii) a TCB exists at `tid.toObjId` (non-reserved `tid`). These
+    preconditions are established by `timeoutBlockedThreads`'s outer
+    guards (`st.scThreadIndex[scId]?` lookup + `tcbBlockingInfo` +
+    endpoint-member derivation from `tcb.ipcState`).
+
+    This formally closes the gap between `endpointQueueRemove`'s
+    unreachability lemmas (`queueRemove_predecessor_exists` /
+    `queueRemove_successor_exists`) and the operational call site in the
+    timer-tick path. With this composition in hand, the
+    `| .error e => (st', errs ++ [(tid, e)])` branch at
+    `Scheduler/Operations/Core.lean:513` is formally dead under valid
+    invariant state.
+
+    Note: `lookupTcb pair.2 tid` succeeds after `endpointQueueRemove`
+    because the operation only modifies queue links and tail/head
+    pointers; the TCB at `tid.toObjId` is still present (with cleared
+    links). `storeObject` is unconditional `.ok`. Therefore the three
+    explicit error branches inside `timeoutThread` are all unreachable
+    under the preconditions. -/
+theorem timeoutThread_succeeds_under_preconditions
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st : SystemState) (ep : Endpoint) (tcb : TCB)
+    (hEp : st.objects[endpointId]? = some (.endpoint ep))
+    (hLk : lookupTcb st tid = some tcb)
+    (hLk1 : ∀ st1, endpointQueueRemove endpointId isReceiveQ tid st = .ok st1 →
+      ∃ tcb1, lookupTcb st1 tid = some tcb1) :
+    ∃ st', timeoutThread endpointId isReceiveQ tid st = .ok st' := by
+  -- Destructure the first step via the AK1-H endpointQueueRemove composition.
+  obtain ⟨st1, hRemove⟩ :=
+    endpointQueueRemove_succeeds_under_forwardBackward endpointId isReceiveQ tid st ep tcb hEp hLk
+  unfold timeoutThread
+  rw [hRemove]
+  -- Discharge lookupTcb st1 via the `hLk1` hypothesis supplied by the caller.
+  -- Under `crossSubsystemInvariant`, the caller can produce this witness
+  -- because `endpointQueueRemove` preserves TCB existence at `tid.toObjId`
+  -- (only clears queue links). See
+  -- `endpointQueueRemove_tcb_forward` in `IPC/Invariant/*` for the formal
+  -- discharge that makes `hLk1` trivially provable at call sites.
+  obtain ⟨tcb1, hLk1'⟩ := hLk1 st1 hRemove
+  simp only [hLk1']
+  -- Remaining steps are unconditional: storeObject returns .ok, match is total.
+  -- Destructure the storeObject step (unconditional .ok).
+  cases hStore : storeObject tid.toObjId (.tcb _) st1 with
+  | ok pair =>
+    cases hBS : tcb1.ipcState with
+    | blockedOnReply epId rt =>
+      cases rt with
+      | some serverId => exact ⟨_, rfl⟩
+      | none => exact ⟨_, rfl⟩
+    | ready => exact ⟨_, rfl⟩
+    | blockedOnSend _ => exact ⟨_, rfl⟩
+    | blockedOnReceive _ => exact ⟨_, rfl⟩
+    | blockedOnCall _ => exact ⟨_, rfl⟩
+    | blockedOnNotification _ => exact ⟨_, rfl⟩
+  | error e =>
+    -- storeObject is unconditional .ok (Model/State.lean).
+    exfalso; unfold storeObject at hStore; cases hStore
 
 /-- Z6-I: Timeout-aware receive wrapper.
 

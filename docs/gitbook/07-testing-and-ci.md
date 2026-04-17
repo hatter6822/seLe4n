@@ -1,6 +1,6 @@
 # Testing and CI
 
-Current stage context: **WS-AI PORTFOLIO COMPLETE (v0.27.7–v0.28.0). Testing tiers enforce regression protection and evidence continuity across 93,837+ production LoC, 11,616+ test LoC, and 2,780+ proved declarations.**
+Current stage context: **WS-AK Phase AK1 COMPLETE (v0.29.1). Testing tiers enforce regression protection and evidence continuity across 95,528 production LoC, 11,709 test LoC, and 2,819 proved declarations.**
 
 ## Tier model
 

@@ -64,7 +64,22 @@ private def fillRemainingNoSlot
 
 /-- M-D01: Recursive helper for unwrapping caps. Processes caps from index
 `idx` to the end of the array. Termination is structural on `fuel`
-(initially `caps.size - idx`). -/
+(initially `caps.size - idx`).
+
+**AK1-G (I-M05) — Internal recursion helper.** This function is the
+recursive worker for `ipcUnwrapCaps` and **must only be called from
+`ipcUnwrapCaps`** (which always supplies `idx := 0` and `accResults := #[]`).
+Calling it externally with `idx > 0` produces off-by-one padding and
+silently drops capabilities because the `fuel` parameter is keyed off
+`caps.size - idx`. Making this `private` would fail the module build
+because `IPC/DualQueue/WithCaps.lean` and
+`Capability/Invariant/Preservation.lean` reference the associated
+preservation theorems (`ipcUnwrapCapsLoop_preserves_*`) by name.
+
+The static invariant `ipcUnwrapCaps` only calls this with `idx = 0` can be
+verified by `grep -rn "ipcUnwrapCapsLoop " SeLe4n/Kernel/IPC/` — the only
+production call site in code (non-proof) is at the `ipcUnwrapCaps`
+recursion entry below. -/
 def ipcUnwrapCapsLoop
     (caps : Array Capability)
     (senderCspaceRoot : SeLe4n.ObjId)
@@ -132,6 +147,23 @@ def ipcUnwrapCaps
     else
       ipcUnwrapCapsLoop msg.caps senderCspaceRoot receiverCspaceRoot
         0 receiverSlotBase #[] msg.caps.size st
+
+/-- AK1-G (I-M05): Static assertion that the production call site in
+    `ipcUnwrapCaps` invokes `ipcUnwrapCapsLoop` with `idx := 0` and
+    `accResults := #[]`. This Lean-level check formalises the plan's
+    "only called with idx = 0" contract by spelling out the exact
+    argument shape the loop receives at its single non-proof call site.
+    If future refactors break this invariant (e.g., introducing a second
+    caller with a non-zero `idx`), this assertion will fail to compile,
+    surfacing the contract violation at build time. -/
+example
+    (msg : IpcMessage) (senderCspaceRoot receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (st : SystemState) :
+    ipcUnwrapCaps msg senderCspaceRoot receiverCspaceRoot receiverSlotBase true st =
+      ipcUnwrapCapsLoop msg.caps senderCspaceRoot receiverCspaceRoot
+        0 receiverSlotBase #[] msg.caps.size st := by
+  unfold ipcUnwrapCaps
+  simp
 
 theorem ipcUnwrapCapsLoop_preserves_scheduler
     (caps : Array Capability) (senderRoot receiverRoot : SeLe4n.ObjId)

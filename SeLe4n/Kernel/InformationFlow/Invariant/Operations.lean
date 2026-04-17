@@ -1619,13 +1619,14 @@ theorem endpointReceiveDual_preserves_projection
                   sender _ _ hObjInv1 hIpc
               have hProjIpc := storeTcbIpcStateAndMessage_preserves_projection ctx observer
                   st1 st2 sender _ _ hSenderObjHigh hObjInv1 hIpc
-              cases hPend : storeTcbPendingMessage st2 receiver senderTcb.pendingMessage with
+              -- AK1-D: atomic (.ready, senderMsg) receiver update
+              cases hPend : storeTcbIpcStateAndMessage st2 receiver .ready senderTcb.pendingMessage with
               | error e => simp [hPend] at hStep
               | ok st3 =>
                 simp only [hPend] at hStep
                 have hStEq := (Prod.mk.inj (Except.ok.inj hStep)).2; subst hStEq
-                rw [storeTcbPendingMessage_preserves_projection ctx observer st2 st3
-                    receiver _ hReceiverObjHigh hObjInv2 hPend,
+                rw [storeTcbIpcStateAndMessage_preserves_projection ctx observer st2 st3
+                    receiver .ready _ hReceiverObjHigh hObjInv2 hPend,
                     hProjIpc, hProjPop]
           · -- Send path: sender → ready, ensureRunnable, then deliver message to receiver
             cases hIpc : storeTcbIpcStateAndMessage st1 sender .ready none with
@@ -1639,14 +1640,15 @@ theorem endpointReceiveDual_preserves_projection
               have hProjEns := ensureRunnable_preserves_projection ctx observer st2 sender hSenderHigh
               have hObjInvEns : (ensureRunnable st2 sender).objects.invExt := by
                 rw [ensureRunnable_preserves_objects]; exact hObjInv2
-              cases hPend : storeTcbPendingMessage (ensureRunnable st2 sender) receiver
+              -- AK1-D: atomic (.ready, senderMsg) receiver update
+              cases hPend : storeTcbIpcStateAndMessage (ensureRunnable st2 sender) receiver .ready
                   senderTcb.pendingMessage with
               | error e => simp [hPend] at hStep
               | ok st3 =>
                 simp only [hPend] at hStep
                 have hStEq := (Prod.mk.inj (Except.ok.inj hStep)).2; subst hStEq
-                rw [storeTcbPendingMessage_preserves_projection ctx observer
-                    (ensureRunnable st2 sender) st3 receiver _ hReceiverObjHigh hObjInvEns hPend,
+                rw [storeTcbIpcStateAndMessage_preserves_projection ctx observer
+                    (ensureRunnable st2 sender) st3 receiver .ready _ hReceiverObjHigh hObjInvEns hPend,
                     hProjEns, hProjIpc, hProjPop]
       | none =>
         -- Path 2: No sender — Enqueue receiver + storeTcbIpcState + removeRunnable
@@ -1657,60 +1659,68 @@ theorem endpointReceiveDual_preserves_projection
           intro ep' tailTid hEp' hTail; simp at hTail
           exact hRecvQueueTailHigh ep' tailTid hEp' hTail
         -- AI4-A: cleanup → enqueue
-        have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
-        have hEndpointHighClean : objectObservable ctx observer endpointId = false := hEndpointHigh
-        have hReceiverObjHighClean : objectObservable ctx observer receiver.toObjId = false := hReceiverObjHigh
-        have hTailHighClean : ∀ ep' tailTid,
-            (cleanupPreReceiveDonation st receiver).objects[endpointId]? = some (.endpoint ep') →
-            (if true then ep'.receiveQ else ep'.sendQ).tail = some tailTid →
-            objectObservable ctx observer tailTid.toObjId = false :=
-          fun ep' tailTid hEp' hTail =>
-            hTailHigh ep' tailTid
-              (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv endpointId ep' hEp') hTail
-        cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
-        | error e => simp [hEnq] at hStep
-        | ok st1 =>
-          simp only [hEnq] at hStep
-          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId true
-              receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
-          have hProjEnq := endpointQueueEnqueue_preserves_projection ctx observer
-              endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hEndpointHighClean hReceiverObjHighClean
-              hTailHighClean hObjInvClean hEnq
-          cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
-          | error e => simp [hIpc] at hStep
-          | ok st2 =>
-            simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
-            obtain ⟨_, hStEq⟩ := hStep; subst hStEq
-            -- AI4-A: chain rewrite through cleanup → enqueue → storeTcbIpcState → removeRunnable
-            -- AI4-A: cleanupPreReceiveDonation preserves projection.
-            -- Common case (no donation): identity, trivially preserves.
-            -- Donation case: receiver.toObjId is non-observable (hReceiverObjHigh).
-            -- SchedContext/owner observability follows from donation chain coherence.
-            -- TPI-D-NI-1: Full formal proof requires donation chain observability hypothesis.
-            have hProjClean : projectState ctx observer (cleanupPreReceiveDonation st receiver) = projectState ctx observer st := by
-              unfold cleanupPreReceiveDonation
-              cases hLookup : lookupTcb st receiver with
-              | none => simp
-              | some recvTcb =>
-                simp only []
-                cases recvTcb.schedContextBinding with
-                | unbound => rfl
-                | bound _ => rfl
-                | donated scId originalOwner =>
+        -- AK1-A (I-H01): Destructure checked variant, bridge to defensive form.
+        cases hChecked : cleanupPreReceiveDonationChecked st receiver with
+        | error _ => simp [hChecked] at hStep
+        | ok stClean =>
+          have hBridge : stClean = cleanupPreReceiveDonation st receiver :=
+            (cleanupPreReceiveDonationChecked_ok_eq_cleanup st stClean receiver hChecked).symm
+          simp only [hChecked] at hStep
+          rw [hBridge] at hStep
+          have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
+          have hEndpointHighClean : objectObservable ctx observer endpointId = false := hEndpointHigh
+          have hReceiverObjHighClean : objectObservable ctx observer receiver.toObjId = false := hReceiverObjHigh
+          have hTailHighClean : ∀ ep' tailTid,
+              (cleanupPreReceiveDonation st receiver).objects[endpointId]? = some (.endpoint ep') →
+              (if true then ep'.receiveQ else ep'.sendQ).tail = some tailTid →
+              objectObservable ctx observer tailTid.toObjId = false :=
+            fun ep' tailTid hEp' hTail =>
+              hTailHigh ep' tailTid
+                (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv endpointId ep' hEp') hTail
+          cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
+          | error e => simp [hEnq] at hStep
+          | ok st1 =>
+            simp only [hEnq] at hStep
+            have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId true
+                receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
+            have hProjEnq := endpointQueueEnqueue_preserves_projection ctx observer
+                endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hEndpointHighClean hReceiverObjHighClean
+                hTailHighClean hObjInvClean hEnq
+            cases hIpc : storeTcbIpcState st1 receiver (.blockedOnReceive endpointId) with
+            | error e => simp [hIpc] at hStep
+            | ok st2 =>
+              simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hStEq⟩ := hStep; subst hStEq
+              -- AI4-A: chain rewrite through cleanup → enqueue → storeTcbIpcState → removeRunnable
+              -- AI4-A: cleanupPreReceiveDonation preserves projection.
+              -- Common case (no donation): identity, trivially preserves.
+              -- Donation case: receiver.toObjId is non-observable (hReceiverObjHigh).
+              -- SchedContext/owner observability follows from donation chain coherence.
+              -- TPI-D-NI-1: Full formal proof requires donation chain observability hypothesis.
+              have hProjClean : projectState ctx observer (cleanupPreReceiveDonation st receiver) = projectState ctx observer st := by
+                unfold cleanupPreReceiveDonation
+                cases hLookup : lookupTcb st receiver with
+                | none => simp
+                | some recvTcb =>
                   simp only []
-                  cases hReturn : returnDonatedSchedContext st receiver scId originalOwner with
-                  | error _ => rfl
-                  | ok st' =>
-                    -- AI4-A: S3 (receiver) is non-observable → use storeObject_preserves_projection.
-                    -- S1/S2 modify fields stripped by projectKernelObject.
-                    -- Full chain proof via returnDonatedSchedContext_preserves_projection (below).
-                    exact returnDonatedSchedContext_preserves_projection ctx observer
-                      st st' receiver scId originalOwner hReceiverObjHigh hObjInv hReturn
-                      hIdxComplete hObjSetInv
-            rw [removeRunnable_preserves_projection ctx observer st2 receiver hReceiverHigh,
-                storeTcbIpcState_preserves_projection ctx observer st1 st2 receiver _
-                hReceiverObjHigh hObjInv1 hIpc,
-                hProjEnq, hProjClean]
+                  cases recvTcb.schedContextBinding with
+                  | unbound => rfl
+                  | bound _ => rfl
+                  | donated scId originalOwner =>
+                    simp only []
+                    cases hReturn : returnDonatedSchedContext st receiver scId originalOwner with
+                    | error _ => rfl
+                    | ok st' =>
+                      -- AI4-A: S3 (receiver) is non-observable → use storeObject_preserves_projection.
+                      -- S1/S2 modify fields stripped by projectKernelObject.
+                      -- Full chain proof via returnDonatedSchedContext_preserves_projection (below).
+                      exact returnDonatedSchedContext_preserves_projection ctx observer
+                        st st' receiver scId originalOwner hReceiverObjHigh hObjInv hReturn
+                        hIdxComplete hObjSetInv
+              rw [removeRunnable_preserves_projection ctx observer st2 receiver hReceiverHigh,
+                  storeTcbIpcState_preserves_projection ctx observer st1 st2 receiver _
+                  hReceiverObjHigh hObjInv1 hIpc,
+                  hProjEnq, hProjClean]
 
 /-- WS-H9: endpointReply at non-observable target preserves projection. -/
 theorem endpointReply_preserves_projection
@@ -1735,15 +1745,20 @@ theorem endpointReply_preserves_projection
     rw [storeTcbIpcStateAndMessage_fromTcb_eq hLookup] at hStep
     cases hIpc : tcb.ipcState with
     | blockedOnReply ep replyTarget =>
-      -- Resolve ipcState match and storeTcbIpcStateAndMessage in hStep
+      -- AK1-B (I-H02): Fail-closed on replyTarget = none
+      simp only [hIpc] at hStep
+      cases hRt : replyTarget with
+      | none => simp [hRt] at hStep
+      | some expected =>
+      simp only [hRt] at hStep
       cases hStore : storeTcbIpcStateAndMessage st target .ready (some msg) with
       | error e =>
-        exfalso; simp only [hIpc, hStore] at hStep
-        revert hStep; split <;> split <;> simp
+        exfalso; simp only [hStore] at hStep
+        revert hStep; split <;> simp
       | ok stMid =>
         have hEq : st' = ensureRunnable stMid target := by
-          simp only [hIpc, hStore] at hStep
-          revert hStep; split <;> (try split) <;> simp <;> exact Eq.symm
+          simp only [hStore] at hStep
+          revert hStep; split <;> simp <;> exact Eq.symm
         rw [hEq,
             ensureRunnable_preserves_projection ctx observer stMid target hTargetHigh,
             storeTcbIpcStateAndMessage_preserves_projection ctx observer st stMid target _ _ hTargetObjHigh hObjInv hStore]
@@ -1849,15 +1864,16 @@ theorem endpointCall_preserves_projection
             have hProjEns := ensureRunnable_preserves_projection ctx observer st2 receiver hRecvHigh
             have hObjInvEns : (ensureRunnable st2 receiver).objects.invExt := by
               rw [ensureRunnable_preserves_objects]; exact hObjInv2
-            cases hIpc : storeTcbIpcState (ensureRunnable st2 receiver) caller
-                (.blockedOnReply endpointId (some receiver)) with
+            -- AK1-C (I-M01): storeTcbIpcStateAndMessage atomically clears caller's pendingMessage
+            cases hIpc : storeTcbIpcStateAndMessage (ensureRunnable st2 receiver) caller
+                (.blockedOnReply endpointId (some receiver)) none with
             | error e => simp [hIpc] at hStep
             | ok st3 =>
               simp only [hIpc, Except.ok.injEq, Prod.mk.injEq] at hStep
               obtain ⟨_, hStEq⟩ := hStep; subst hStEq
               rw [removeRunnable_preserves_projection ctx observer st3 caller hCallerHigh,
-                  storeTcbIpcState_preserves_projection ctx observer (ensureRunnable st2 receiver)
-                  st3 caller _ hCallerObjHigh hObjInvEns hIpc,
+                  storeTcbIpcStateAndMessage_preserves_projection ctx observer (ensureRunnable st2 receiver)
+                  st3 caller _ _ hCallerObjHigh hObjInvEns hIpc,
                   hProjEns, hProjTcb, hProjPop]
       | none =>
         -- Path 2: No receiver — Enqueue caller + storeTcbIpcStateAndMessage + removeRunnable
@@ -1935,21 +1951,27 @@ theorem endpointReplyRecv_preserves_projection
     -- Case split on ipcState
     cases hIpc : tcb.ipcState with
     | blockedOnReply ep expectedReplier =>
+      -- AK1-B (I-H02): Fail-closed on expectedReplier = none
+      simp only [hIpc] at hStep
+      cases hExp : expectedReplier with
+      | none => simp [hExp] at hStep
+      | some expected =>
+      simp only [hExp] at hStep
       cases hStore : storeTcbIpcStateAndMessage st replyTarget .ready (some replyMsg) with
       | error e =>
-        exfalso; simp only [hIpc, hStore] at hStep
-        revert hStep; split <;> split <;> simp
+        exfalso; simp only [hStore] at hStep
+        revert hStep; split <;> simp
       | ok stReply =>
-        simp only [hIpc, hStore] at hStep
+        simp only [hStore] at hStep
         -- Case-split endpointReceiveDual to extract the final state
         cases hRecv : endpointReceiveDual endpointId replierReceiver
             (ensureRunnable stReply replyTarget) with
         | error e =>
-          exfalso; revert hStep; rw [hRecv]; split <;> (try split) <;> simp
+          exfalso; revert hStep; rw [hRecv]; split <;> simp
         | ok pair =>
           obtain ⟨senderId, stFinal⟩ := pair
           have hStEq : st' = stFinal := by
-            revert hStep; rw [hRecv]; split <;> (try split) <;> simp <;> exact Eq.symm
+            revert hStep; rw [hRecv]; split <;> simp <;> exact Eq.symm
           subst hStEq
           have hObjInvReply := storeTcbIpcStateAndMessage_preserves_objects_invExt st stReply
               replyTarget _ _ hObjInv hStore

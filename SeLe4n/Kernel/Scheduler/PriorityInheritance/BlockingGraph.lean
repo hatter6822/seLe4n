@@ -144,6 +144,96 @@ def blockingServer (st : SystemState) (tid : ThreadId) : Option ThreadId :=
   | _ => none
 
 -- ============================================================================
+-- AK1-F (I-M04): PIP-boost / reply-blocked relation
+-- ============================================================================
+
+/-- AK1-F (I-M04 / MEDIUM): `blockingServer` returns `some _` IFF the thread's
+    `ipcState` is `.blockedOnReply _ (some _)`. This is the structural
+    characterization used by `timeoutThread` in `IPC/Operations/Timeout.lean`
+    to decide whether to call `revertPriorityInheritance` — only threads
+    on a reply-blocking chain have a blocking server to propagate PIP revert
+    through.
+
+    The `timeoutThread` PIP-revert path handles only `.blockedOnReply`
+    (with `some serverId`). This lemma makes the discriminant formally
+    precise: any thread *not* in `.blockedOnReply _ (some _)` has
+    `blockingServer = none`, so no server to revert. -/
+theorem blockingServer_isSome_iff_blockedOnReply_some
+    (st : SystemState) (tid : ThreadId) :
+    (blockingServer st tid).isSome ↔
+    ∃ (tcb : TCB) (epId : SeLe4n.ObjId) (server : ThreadId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+      tcb.ipcState = .blockedOnReply epId (some server) := by
+  constructor
+  · intro hSome
+    unfold blockingServer at hSome
+    cases hObj : st.objects[tid.toObjId]? with
+    | none => rw [hObj] at hSome; simp at hSome
+    | some obj =>
+      rw [hObj] at hSome
+      cases obj with
+      | tcb tcb =>
+        simp only at hSome
+        cases hIpc : tcb.ipcState with
+        | blockedOnReply epId rt =>
+          rw [hIpc] at hSome
+          cases rt with
+          | none => simp at hSome
+          | some server =>
+            -- cases hObj rewrote the goal's `st.objects[tid.toObjId]?` to `some (.tcb tcb)`
+            exact ⟨tcb, epId, server, rfl, hIpc⟩
+        | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _
+          | blockedOnNotification _ =>
+          rw [hIpc] at hSome; simp at hSome
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
+        | schedContext _ =>
+        simp at hSome
+  · rintro ⟨tcb, epId, server, hObj, hIpc⟩
+    simp only [blockingServer, hObj, hIpc, Option.isSome_some]
+
+/-- AK1-F (I-M04): Plan-named alias for the biconditional characterisation
+    of `blockingServer`. The plan's nomenclature `pipBoost_attached_only_on_reply_blocked`
+    captures the intent — PIP boost propagation (via `propagatePipBoost`
+    walking the blocking graph) only follows chains anchored at a
+    `.blockedOnReply _ (some server)` waiter. This alias makes the
+    plan-suggested name callable. -/
+abbrev pipBoost_attached_only_on_reply_blocked :=
+  @blockingServer_isSome_iff_blockedOnReply_some
+
+/-- AK1-F (I-M04): Specialized corollary — if `blockingServer st tid = some server`,
+    then `tid` is in state `.blockedOnReply endpointId (some server)` for some
+    endpoint. Used by `timeoutThread` to argue the PIP-revert call path is
+    structurally identified by ipcState. -/
+theorem blockingServer_some_implies_blockedOnReply
+    (st : SystemState) (tid server : ThreadId)
+    (h : blockingServer st tid = some server) :
+    ∃ (tcb : TCB) (epId : SeLe4n.ObjId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+      tcb.ipcState = .blockedOnReply epId (some server) := by
+  unfold blockingServer at h
+  cases hObj : st.objects[tid.toObjId]? with
+  | none => rw [hObj] at h; simp at h
+  | some obj =>
+    rw [hObj] at h
+    cases obj with
+    | tcb tcb =>
+      simp only at h
+      cases hIpc : tcb.ipcState with
+      | blockedOnReply epId rt =>
+        rw [hIpc] at h
+        cases rt with
+        | none => simp at h
+        | some server' =>
+          simp only [Option.some.injEq] at h
+          subst h
+          -- The cases on `st.objects[tid.toObjId]?` rewrote it to `some (.tcb tcb)` in the goal.
+          exact ⟨tcb, epId, rfl, hIpc⟩
+      | ready | blockedOnSend _ | blockedOnReceive _ | blockedOnCall _
+        | blockedOnNotification _ => rw [hIpc] at h; simp at h
+    | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
+      | schedContext _ => simp at h
+
+-- ============================================================================
 -- AF1-B5: Blocking graph frame lemmas
 -- ============================================================================
 

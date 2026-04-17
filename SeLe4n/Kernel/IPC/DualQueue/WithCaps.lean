@@ -108,17 +108,19 @@ def endpointSendDualWithCaps
                 let grantRight := endpointRights.mem .grant
                 ipcUnwrapCaps msg senderCspaceRoot recvRoot receiverSlotBase grantRight st'
               | none =>
-                -- AJ1-F (L-18): Asymmetric with receive path (line 153), which returns
-                -- `.error .invalidCapability` for missing CSpace root. The asymmetry is
-                -- intentional: on the send side, a missing receiver CSpace root means the
-                -- receiver cannot accept capabilities, but the message payload (registers +
-                -- badge) has already been delivered successfully by `endpointSendDual`. The
-                -- send operation succeeds with empty cap results — capabilities are optional
-                -- extras, not required for message delivery. On the receive side, a missing
-                -- sender CSpace root indicates the sender's CSpace was destroyed between
-                -- enqueue and dequeue — an inconsistent state that warrants an explicit error
-                -- to prevent CDT tracking corruption.
-                .ok ({ results := #[] }, st')
+                -- AK1-I (I-M07 / MEDIUM, NI L-1): Symmetric with the receive
+                -- path below. Previous behavior returned `.ok ({ results := #[] }, st')`
+                -- — a silent success on missing receiver CSpace root. This
+                -- asymmetry was an NI distinguisher: send and receive
+                -- observed different kernel-result shapes for the same
+                -- structural fault, giving a per-domain covert channel.
+                -- Now both paths fail closed with `.invalidCapability`,
+                -- preserving NI symmetry. The message payload itself was
+                -- already delivered by `endpointSendDual` at line above;
+                -- the `.error` indicates the capability-transfer side
+                -- channel failed and allows the caller to surface a clean
+                -- protocol-level error.
+                .error .invalidCapability
             | none => .ok ({ results := #[] }, st')
           | _ => .ok ({ results := #[] }, st')
 

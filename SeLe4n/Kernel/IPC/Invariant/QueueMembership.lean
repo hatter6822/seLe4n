@@ -561,8 +561,11 @@ theorem endpointReply_preserves_ipcStateQueueMembershipConsistent
         cases hIpc : tcb.ipcState with
         | blockedOnReply epId replyTarget =>
           simp only [hIpc] at hStep
-          split at hStep
-          · -- replyTarget = some expected
+          -- AK1-B (I-H02): Outer match on replyTarget now fails closed on .none
+          cases replyTarget with
+          | none => simp at hStep
+          | some expected =>
+            simp only at hStep
             split at hStep
             · generalize hMsg : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = rMsg at hStep
               cases rMsg with
@@ -575,17 +578,6 @@ theorem endpointReply_preserves_ipcStateQueueMembershipConsistent
                     (fun epId => by intro h; cases h) (fun epId => by intro h; cases h)
                     (fun epId => by intro h; cases h) hMsg
             · simp at hStep
-          · -- replyTarget = none
-            generalize hMsg : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = rMsg at hStep
-            cases rMsg with
-            | error e => simp at hStep
-            | ok st1 =>
-              simp at hStep; obtain ⟨_, rfl⟩ := hStep
-              exact ensureRunnable_preserves_ipcStateQueueMembershipConsistent _ _ <|
-                storeTcbIpcStateAndMessage_fromTcb_preserves_ipcStateQueueMembershipConsistent
-                  st st1 target tcb .ready (some msg) hInv hObjInv hLookup
-                  (fun epId => by intro h; cases h) (fun epId => by intro h; cases h)
-                  (fun epId => by intro h; cases h) hMsg
         | _ => simp [hIpc] at hStep
 
 -- ============================================================================

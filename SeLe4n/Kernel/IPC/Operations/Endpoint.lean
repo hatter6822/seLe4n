@@ -12,6 +12,75 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
+/-! # AK1-J (I-L1..I-L6, IPC INFO): IPC LOW-tier batch documentation
+
+This batched docblock consolidates the LOW-tier IPC findings from the
+v0.29.0 audit (AK1-J in the WS-AK plan). Each bullet references the
+finding ID, the affected site, and the remediation applied.
+
+- **I-L1 — `donateSchedContext` unproven-unreachable defensive branch.**
+  `IPC/Operations/Donation.lean:80–82` routes through an error-propagating
+  call to `donateSchedContext` which itself has an internal `| .error _ =>`
+  branch that is unreachable under `donationOwnerValid` +
+  `boundThreadConsistent`. The error propagation added in AH2-A preserves
+  operational correctness; a formal unreachability lemma is tracked as
+  part of the AK10 proof-engineering closure (see
+  `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull`
+  in `IPC/Invariant/Defs.lean` for the analogous pattern).
+
+- **I-L2 — `timeoutAwareReceive` stale `.timedOut` reachability.**
+  `IPC/Operations/Timeout.lean:114–128`. The `tcb.timedOut ∧ ipcState =
+  .ready` check can report a stale timeout if the scheduler ticked twice
+  before the thread was rescheduled. Under the `timedOutInvariant` —
+  every timedOut=true TCB must have `ipcState = .ready` and an empty
+  `pendingMessage` — this is a correct fixed-point and the thread will
+  observe the timeout deterministically on the next receive attempt.
+  No behavior change required.
+
+- **I-L3 — `endpointCallWithDonation` `popHead_returns_head` external
+  composition.** `endpointQueuePopHead_returns_head` (defined in
+  `IPC/Invariant/Defs.lean`) is referenced across both
+  `endpointCallWithDonation` (Operations/Donation.lean) and
+  `endpointSendDualWithCaps` (DualQueue/WithCaps.lean) without a local
+  composition wrapper. The theorem is non-fragile (invariant-independent)
+  so inlining its composition is not required; cross-file use is
+  idiomatic.
+
+- **I-L4 — Reply-path badge handling deferred-work marker.** Reply messages do not carry
+  a badge per seL4 semantics (the badge is a property of the endpoint
+  capability used on send, not reply). No badge field is stored on the
+  reply path; the `IpcMessage.badge` field is `none` in all reply paths.
+  Closed as matching seL4 spec — no deferred-work marker required.
+
+- **I-L5 — `notificationSignal.Badge.bor` unbounded-Nat accumulation.**
+  `IPC/Operations/Endpoint.lean:notificationSignal` uses `Badge.bor`
+  for pending-badge accumulation. `Badge.bor` is defined in
+  `Prelude.lean` and preserves the 64-bit mask via the
+  `bor_valid` theorem (see AC3/I-04). Hardware-binding (WS-V/H3) masks
+  the result to `2^64 - 1` at the platform boundary. Safety documented
+  at the `notificationSignal` definition site.
+
+- **I-L6 — `returnDonatedSchedContext` leaves client in replenish queue.**
+  After a SchedContext is returned to the original owner, the client's
+  `isActive := false` field is reset, causing the replenish-queue
+  processor (`SchedContext/ReplenishQueue.lean:popDue`) to filter it out
+  naturally. No explicit removal is required; this is benign.
+
+- **IPC INFO — `ipcInvariant` rename to `notificationInvariantSystem`.**
+  Deferred to AK10 as part of broader naming cleanup. The current name
+  is correct in scope (notification well-formedness), but "notification
+  invariant" would be clearer. Deprecation shim deferred to minimize
+  cross-subsystem churn in the v1.0 release.
+
+- **IPC INFO — `.endpointQueueEmpty` error misuse at AH2-G site.**
+  `IPC/Operations/Timeout.lean:timeoutAwareReceive:138` returns
+  `.endpointQueueEmpty` for a missing `pendingMessage` on a non-timed-out
+  receive. Semantically this is "IPC state violation" rather than an
+  empty queue; `.invalidIpcState` would be more accurate. Replaced via a
+  cross-reference (no error-variant rename in AK1 scope — replaced in
+  AK10 documentation closure).
+-/
+
 /-- WS-G4/F-P02: O(1) amortized remove via RunQueue. -/
 def removeRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   { st with
@@ -22,8 +91,23 @@ def removeRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
       }
   }
 
+/-- AK1-E (I-M03): Inlined PIP-effective priority. Duplicated from
+`Scheduler/Invariant.lean:146` (`effectiveRunQueuePriority`) to avoid a
+circular import (Scheduler.Invariant → ... → Endpoint). When a TCB has a
+PIP boost (from priority inheritance), the RunQueue must insert at the
+boosted priority to preserve priority-inversion bounds; otherwise the
+boosted thread lands in the wrong priority bucket until the next
+scheduler tick. -/
+@[inline] def ipcEffectiveRunQueuePriority (tcb : TCB) : SeLe4n.Priority :=
+  match tcb.pipBoost with
+  | none => tcb.priority
+  | some boost => ⟨Nat.max tcb.priority.val boost.val⟩
+
 /-- WS-G4/F-P02: O(1) amortized insert via RunQueue.
-    Priority defaults to 0 when TCB priority is not yet modelled. -/
+    AK1-E (I-M03): Priority is computed via `ipcEffectiveRunQueuePriority`
+    to honor PIP boost on wake paths (notification signal, endpoint
+    rendezvous, reply wake). Matches the yield/timer/switch convention
+    established in AI3-A. -/
 def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   if tid ∈ st.scheduler.runQueue then
     st
@@ -33,7 +117,7 @@ def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
         { st with
             scheduler := {
               st.scheduler with
-                runQueue := st.scheduler.runQueue.insert tid tcb.priority
+                runQueue := st.scheduler.runQueue.insert tid (ipcEffectiveRunQueuePriority tcb)
             }
         }
     | _ => st
@@ -286,7 +370,16 @@ before blocking. Otherwise, return the state unchanged.
 Moved from Donation.lean to Endpoint.lean to break the import cycle
 (Donation.lean → Transport.lean → Core.lean → Operations.lean → Endpoint.lean).
 This placement allows Transport.lean to call the function via its transitive
-import chain. -/
+import chain.
+
+AK1-A (I-H01): This is the defensive-fallback variant that absorbs any
+`returnDonatedSchedContext` error by returning `st` unchanged. It is retained
+for backward compatibility with the existing frame-lemma infrastructure in
+`IPC/Invariant/Defs.lean`. Production code (`endpointReceiveDual`) must use
+`cleanupPreReceiveDonationChecked` below to propagate errors per the
+codebase's error-propagation policy (AJ1-A / AI4-A). Under `ipcInvariantFull`
+the `.error` branch is unreachable — see
+`cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull`. -/
 def cleanupPreReceiveDonation (st : SystemState) (receiver : SeLe4n.ThreadId) : SystemState :=
   match lookupTcb st receiver with
   | none => st
@@ -294,9 +387,74 @@ def cleanupPreReceiveDonation (st : SystemState) (receiver : SeLe4n.ThreadId) : 
     match recvTcb.schedContextBinding with
     | .donated scId originalOwner =>
       match returnDonatedSchedContext st receiver scId originalOwner with
-      | .error _ => st    -- Defensive: return unchanged on error
+      | .error _ => st    -- Defensive fallback (used by frame lemmas only)
       | .ok st' => st'
     | _ => st             -- No donation to clean up
+
+/-- AK1-A (I-H01 / HIGH): Error-propagating variant of `cleanupPreReceiveDonation`.
+
+Production code (the `endpointReceiveDual` no-sender blocking path) uses this
+variant so that a `returnDonatedSchedContext` failure surfaces as a kernel
+error rather than being silently absorbed. The defensive-fallback
+`cleanupPreReceiveDonation` is retained as a SystemState-returning helper so
+that the existing frame-lemma/preservation-theorem infrastructure in
+`IPC/Invariant/Defs.lean` / `EndpointPreservation.lean` / `Structural.lean`
+continues to compose unchanged; a `.ok` result here coincides pointwise with
+the defensive variant (see `cleanupPreReceiveDonationChecked_ok_eq_cleanup`
+below).
+
+Under `ipcInvariantFull`, the `.error` branch is formally unreachable because
+the only internal failure paths inside `returnDonatedSchedContext` require
+either a missing SchedContext/TCB or a mistyped object, all of which are
+excluded by `donationOwnerValid` + `boundThreadConsistent` + `objects.invExt`.
+This is discharged in
+`cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull`. -/
+def cleanupPreReceiveDonationChecked
+    (st : SystemState) (receiver : SeLe4n.ThreadId) : Except KernelError SystemState :=
+  match lookupTcb st receiver with
+  | none => .ok st
+  | some recvTcb =>
+    match recvTcb.schedContextBinding with
+    | .donated scId originalOwner =>
+      returnDonatedSchedContext st receiver scId originalOwner
+    | _ => .ok st             -- No donation to clean up
+
+/-- AK1-A (I-H01): Bridge between the `Checked` variant and the defensive
+fallback. On `.ok`, both variants return the same state. -/
+theorem cleanupPreReceiveDonationChecked_ok_eq_cleanup
+    (st st' : SystemState) (receiver : SeLe4n.ThreadId)
+    (h : cleanupPreReceiveDonationChecked st receiver = .ok st') :
+    cleanupPreReceiveDonation st receiver = st' := by
+  unfold cleanupPreReceiveDonationChecked at h
+  unfold cleanupPreReceiveDonation
+  cases hLk : lookupTcb st receiver with
+  | none =>
+    simp only [hLk] at h ⊢
+    exact Except.ok.inj h
+  | some recvTcb =>
+    simp only [hLk] at h ⊢
+    cases hBind : recvTcb.schedContextBinding with
+    | unbound =>
+      simp only [hBind] at h ⊢
+      exact Except.ok.inj h
+    | bound _ =>
+      simp only [hBind] at h ⊢
+      exact Except.ok.inj h
+    | donated scId owner =>
+      simp only [hBind] at h ⊢
+      cases hRet : returnDonatedSchedContext st receiver scId owner with
+      | error e => rw [hRet] at h; cases h
+      | ok st'' =>
+        simp only [hRet] at h ⊢
+        exact Except.ok.inj h
+
+/-- AK1-A (I-H01): Symmetric bridge — on `.ok`, `cleanupPreReceiveDonation`
+and the `Checked` variant agree. -/
+theorem cleanupPreReceiveDonation_eq_cleanupChecked_ok
+    (st st' : SystemState) (receiver : SeLe4n.ThreadId)
+    (h : cleanupPreReceiveDonationChecked st receiver = .ok st') :
+    st' = cleanupPreReceiveDonation st receiver :=
+  (cleanupPreReceiveDonationChecked_ok_eq_cleanup st st' receiver h).symm
 
 /-- Z7: storeObject preserves the scheduler field. -/
 private theorem storeObject_scheduler_eq_z7 (st : SystemState) (oid : SeLe4n.ObjId)
@@ -412,6 +570,10 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
             storeObject notificationId (.notification ntfn') st
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
+
+-- AK1-E (I-M03): `notificationSignal_respects_pipBoost` correctness lemma
+-- is defined in `IPC/Operations/SchedulerLemmas.lean` (downstream of this
+-- file), where it can use `ensureRunnable_mem_self`.
 
 /-- Wait on a notification: consume pending badge or block the caller.
 

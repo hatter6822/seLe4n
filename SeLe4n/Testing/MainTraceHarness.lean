@@ -678,16 +678,20 @@ private def runCapabilityIpcTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
   checkInvariants counter "post-cspaceCopy-dualQueue-send" st1
   -- M-12: Reply operation
   -- Create a state with a thread blocked on reply
+  -- AK1-B (I-H02): Reply now fails closed on `replyTarget = none`. All
+  -- production paths set `replyTarget := some receiver`; test preserves
+  -- the happy-path semantics by providing the explicit replier.
   let replyTarget : SeLe4n.ThreadId := ⟨1⟩
+  let replierTid : SeLe4n.ThreadId := ⟨2⟩
   let replyTcb : KernelObject := .tcb {
     tid := replyTarget, priority := ⟨100⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
-    ipcState := .blockedOnReply demoEndpoint }
+    ipcState := .blockedOnReply demoEndpoint (some replierTid) }
   let replySched := { st1.scheduler with
     runQueue := st1.scheduler.runQueue.remove replyTarget }
   let stReply : SystemState := { st1 with objects := st1.objects.insert replyTarget.toObjId replyTcb, scheduler := replySched }
-  -- WS-H1/M-02: endpointReply now requires a replier; replyTarget has none constraint so any replier works
-  match SeLe4n.Kernel.endpointReply (SeLe4n.ThreadId.ofNat 2) replyTarget .empty stReply with
+  -- WS-H1/M-02: endpointReply now requires a replier that matches replyTarget.
+  match SeLe4n.Kernel.endpointReply replierTid replyTarget .empty stReply with
   | .error err => IO.println s!"[CIC-009] endpointReply error: {reprStr err}"
   | .ok (_, stReplied) =>
       let unblocked := stReplied.scheduler.runnable.any (· == replyTarget)
