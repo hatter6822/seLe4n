@@ -1,3 +1,359 @@
+## v0.29.8 — Doctest coverage audit
+
+Audit-follow-up: the previous release's `cargo test --workspace` output
+surfaced four "running X tests / 0 passed" lines (one per crate's
+`Doc-tests` run) that looked superficially suspicious. Investigation
+confirmed the lines were doctest runs where every example was marked
+`ignore` or the crate had no `///` code blocks — functionally correct,
+but hiding the fact that no doctest was ever being compile- or
+run-checked. This release makes every doctest either **execute and pass**
+or at minimum **compile-check**, so no test binary ever reports zero
+useful results again.
+
+Gate: `cargo test --workspace` (408 unit + 7 doctests = 415 passing, 0
+failed, 0 ignored) + `cargo clippy --workspace -- -D warnings` (0
+warnings) + `lake build` + `test_smoke.sh` + `check_version_sync.sh` +
+zero `sorry`/`axiom`.
+
+### Findings
+
+| Doctest                                                            | Before   | After          | Reason                                            |
+|--------------------------------------------------------------------|----------|----------------|---------------------------------------------------|
+| `sele4n-abi/ipc_buffer.rs::IpcBuffer` (line 47)                    | `ignore` | **runs**       | Plain API demo; made runnable with asserts.       |
+| `sele4n-hal/barriers.rs::csdb` (line 106)                          | `ignore` | **compile**    | Pseudocode pattern — `no_run` + concrete `# use`. |
+| `sele4n-hal/barriers.rs::speculation_safe_bound_check` (line 163)  | `ignore` | **compile**    | Same pattern.                                     |
+| `sele4n-hal/interrupts.rs::with_interrupts_disabled` (line 77)     | `ignore` | **compile**    | Stub `fn do_atomic_work()` added to make typecheck.|
+| `sele4n-hal/profiling.rs` module (line 14)                         | `ignore` | **compile**    | Stub `fn do_work()` + explicit `use`.             |
+| `sele4n-sys/lib.rs` crate (line 31 — NEW)                          | none     | **runs**       | `Cap<Endpoint, FullRights>` → `to_read_only` demo.|
+| `sele4n-types/lib.rs` crate (line 19 — NEW)                        | none     | **runs**       | `ThreadId`/`AccessRights` API demo with asserts.  |
+
+### Rationale for `no_run` vs `ignore` on the HAL doctests
+
+The four HAL examples are shape demonstrations of an API pattern
+(speculation-barrier guard, critical section, cycle-counter loop). They
+reference hardware instructions (`csdb`, `dsb`, `dc cvac`, system-register
+reads) whose execution on an `x86_64` host is either a no-op or trivial.
+Upgrading them from `ignore` to `no_run`:
+
+1. forces the Rust compiler to typecheck every signature and import, so
+   any future breaking change to `csdb()`, `speculation_safe_bound_check`,
+   `with_interrupts_disabled`, `LatencyStats::new`, or `read_cycle_counter`
+   immediately fails `cargo test --doc`;
+2. keeps the documented pattern legible (no runtime-only stub code in
+   the hot path) by introducing minimal `#`-hidden `use` lines and stub
+   fns that don't clutter the rendered rustdoc.
+
+The alternative of making them fully runnable would have required either
+`cfg(not(target_arch = "aarch64"))` no-op shims inside the doctest or
+moving the example to a real `#[test]` — both are heavier than the
+regression value of `no_run`.
+
+### New crate-level doctests
+
+`sele4n-types` and `sele4n-sys` previously had no `///` code blocks at
+all, producing `running 0 tests` output that looked like a misconfigured
+test binary even though it was truthful. Both crates now have a
+`lib.rs`-level example that:
+
+- `sele4n-types`: demonstrates `ThreadId::from(42)`, `.raw()`,
+  `SENTINEL`, and the `AccessRights::READ.union(WRITE).contains(...)`
+  functional API.
+- `sele4n-sys`: demonstrates `Cap<Endpoint, FullRights>::from_cptr(...)`
+  and the compile-time-safe `to_read_only()` downcast.
+
+Both use only `const fn` constructors and in-process assertions — no
+`svc #0` fires, so the doctests run cleanly on every host.
+
+### Tests
+
+- Unit tests: 94 + 93 + 154 + 13 + 54 = **408 passing** (unchanged).
+- Doctests: 1 + 4 + 1 + 1 = **7 passing** (was 0 passing + 5 ignored +
+  0 tests in 2 crates).
+- Combined workspace total: **415 passing, 0 failed, 0 ignored**.
+- Clippy: 0 warnings.
+- `lake build` + `test_smoke.sh` + tier-0 hygiene: all PASS.
+- Zero `sorry`/`axiom`.
+
+### Version
+
+- 0.29.7 → 0.29.8 across 15 version-bearing files, verified by
+  `scripts/check_version_sync.sh`.
+
+---
+
+## v0.29.7 — Third-party attribution (MIT/Apache-2.0 compliance)
+
+Adds the upstream-required attribution text for the three MIT-or-Apache-2.0
+build dependencies the seLe4n Rust workspace consumes (`cc`,
+`find-msvc-tools`, `shlex`), closing a licensing-compliance gap that the
+v0.29.6 audit did not catch. No code changes; the runtime kernel binary
+remains `#![no_std]` with zero third-party crates linked in.
+
+Gate: `scripts/check_version_sync.sh` + `scripts/check_website_links.sh` +
+`cargo test --workspace` (408 tests) + `cargo clippy --workspace
+-- -D warnings` (0 warnings) + `lake build` + `test_smoke.sh` + zero
+`sorry`/`axiom`.
+
+### Rationale
+
+MIT and Apache-2.0 are both GPL-3.0-compatible per the Free Software
+Foundation, so the combined distribution may be governed by GPLv3+.
+However, MIT's permission notice and Apache-2.0 § 4(c)'s attribution
+clause persist across relicensing: the upstream copyright notices MUST be
+preserved in the source distribution of any derivative work. The prior
+releases (v0.29.5 and v0.29.6) omitted these notices — this release
+remedies that.
+
+### Changes
+
+- **New file: `THIRD_PARTY_LICENSES.md`** at the repository root. Contains
+  a verbatim reproduction of the upstream `LICENSE-MIT` text for each
+  build dependency, plus crate version, upstream repository, SPDX license
+  identifier, role in seLe4n, and contributor attribution (for `shlex`).
+  Explicitly notes that none of the crates ships an upstream `NOTICE`
+  file, so no Apache-2.0 § 4(d) propagation text is required at this
+  version.
+- **README.md**: new "License and third-party attributions" section
+  linking to both `LICENSE` and `THIRD_PARTY_LICENSES.md`, and recording
+  the runtime-TCB composition invariant (no third-party crates linked
+  into the kernel binary).
+- **CLAUDE.md**: new "Third-party attribution" section documenting the
+  maintenance rules for the attribution file — when to update it (every
+  new runtime dep; every version bump; every new upstream NOTICE file)
+  and the preference for hand-written minimal code over adding crates.
+- **docs/spec/SELE4N_SPEC.md**: new §12 "Licensing and Third-Party
+  Attribution" with a crate-by-crate table and the rationale for
+  preferring `core::ptr::{read,write}_volatile` over the deprecated
+  `mmio` crate or the newer `safe-mmio` dependency graph — minimal TCB
+  is a spec-level constraint.
+- **scripts/website_link_manifest.txt**: `THIRD_PARTY_LICENSES.md` added
+  to the protected-paths list so it cannot be renamed without website-
+  repo coordination.
+
+### Tests
+
+- `cargo test --workspace`: 408 passing (unchanged from v0.29.6).
+- `cargo clippy --workspace -- -D warnings`: 0 warnings.
+- `scripts/check_version_sync.sh`: PASS (15-file version-sync matrix).
+- `scripts/check_website_links.sh`: PASS (incl. new `THIRD_PARTY_LICENSES.md`).
+- `test_smoke.sh` + tier-0 hygiene: all PASS.
+- Zero `sorry`/`axiom`.
+
+### Verifying the attribution text
+
+To re-verify the MIT notices reproduced in `THIRD_PARTY_LICENSES.md`
+against your local Cargo cache:
+
+```bash
+cd rust && cargo fetch
+for c in cc-1.2.59 find-msvc-tools-0.1.9 shlex-1.3.0; do
+  diff \
+    <(grep -A 999 "^${c%-*}\$" ../THIRD_PARTY_LICENSES.md | awk '/^```$/{n++; next} n==1') \
+    ~/.cargo/registry/src/*/"$c"/LICENSE-MIT
+done
+```
+
+(Exact diff output depends on markdown heading-level differences; the
+command confirms the MIT body text is byte-identical to upstream.)
+
+---
+
+## v0.29.6 — WS-AK Phase AK5 audit remediation
+
+End-to-end post-implementation audit of Phase AK5 (v0.29.5). Two
+material correctness findings, two documentation accuracy findings, and
+supplementary test/theorem strengthening. No API surface changes; the
+workstream scope (HAL boot hardening) is unchanged.
+
+Gate: `cargo test --workspace` (408 tests) + `cargo clippy --workspace
+-- -D warnings` (0 warnings) + `lake build` + `test_smoke.sh` +
+`test_full.sh` + zero `sorry`/`axiom`.
+
+### Correctness fixes
+
+- **AK5-C audit (R-HAL-H03 follow-up)** — `compute_sctlr_el1_bitmap`
+  was missing **RES1 bit 20**. The original implementation set RES1
+  bits 4/7/8/11/22/23/28/29 but omitted bit 20, which is architecturally
+  RES1 on ARMv8.0-A SCTLR_EL1 (and IESB on ARMv8.2-A+). Setting a RES1
+  bit to 0 is reserved behavior per ARM ARM. Cross-referenced against
+  Linux's `SCTLR_EL1_RES1` macro (bits 11|20|22|28|29). Fix adds
+  `RES1_BIT20` constant and includes it in the bitmap. New regression
+  tests: `sctlr_bitmap_linux_res1_subset_matches`,
+  `sctlr_bitmap_excludes_optional_bits`. Existing
+  `sctlr_bitmap_res1_bits_are_set` test extended to cover bit 20.
+- **AK5-E hardening** — added three compile-time `assert!` checks to
+  `rust/sele4n-hal/src/mmu.rs` locking `PageTableCell` and
+  `BootL1Table` at 4 KiB alignment and `512 × 8 = 4096` bytes. If a
+  future refactor ever drops `#[repr(align(4096))]` the build fails.
+
+### Documentation fixes (post-audit)
+
+- **AK5-B doc correction** — the `EoiGuard` doc comment and one
+  companion test incorrectly claimed Drop runs on the panic path under
+  `panic = "abort"`. Per the Rust reference
+  (<https://doc.rust-lang.org/cargo/reference/profiles.html#panic>), on
+  `panic = "abort"` destructors are NOT run when panic terminates the
+  process. The correct semantics are: normal-return / early-return /
+  `break` always run Drop → EOI fires; panic under `abort` halts the
+  kernel (correct response to an invariant violation per AK5-A). The
+  misleading test `eoi_guard_is_zero_cost_for_abort_path` is replaced
+  by a proper unwind-path regression pair:
+  `eoi_guard_panic_propagates_while_drop_records` (`#[should_panic]`)
+  and `eoi_guard_unwind_counter_visible_after_panic` which together
+  prove Drop fires on the test-profile unwind path.
+- **AK5-M doc correction** — the FFI panic-discipline commentary said
+  the compile-time guard was bypassed via `cfg(test)`; the actual guard
+  is `cfg(all(not(panic = "abort"), not(debug_assertions)))`. Docs now
+  match code.
+- **AK5-K SError entries** — both `__el0_serror_entry` and
+  `__el1_serror_entry` have `restore_context` after `bl handle_serror`.
+  With `handle_serror: -> !` this is formally dead code. Added defensive
+  comment explaining the intentional safety fall-through (preserves
+  ERET path if the signature is ever relaxed by accident).
+
+### Lean model strengthening
+
+- `SeLe4n/Kernel/Architecture/ExceptionModel.lean` adds two stronger
+  sanity theorems for `trapFrameLayout`:
+  - `trapFrameLayout_exact_fit` — proves every field occupies exactly
+    the 8-byte gap to the next (no hidden padding).
+  - `trapFrameLayout_size_16_aligned` — proves the 288-byte total is
+    16-byte aligned, matching Rust's `#[repr(C, align(16))]` on
+    `TrapFrame`.
+  The original `trapFrameLayout_offsets_monotone` is preserved as a
+  weaker but sometimes-useful property.
+
+### Dependency audit
+
+Workspace build dependencies inspected — only external Rust crate is
+`cc v1.2.59` (a build-dep for assembling `boot.S`/`vectors.S`/`trap.S`)
+with transitive `find-msvc-tools v0.1.9` and `shlex v1.3.0`. All are
+MIT OR Apache-2.0 licensed (GPL-compatible for our runtime artifacts),
+actively maintained by rust-lang-nursery or upstream, and not
+deprecated. `shlex` v1.3.0 incorporates the RUSTSEC-2024-0006 fix.
+Direct `core::ptr::read_volatile`/`write_volatile` usage in
+`rust/sele4n-hal/src/mmio.rs` deliberately avoids the deprecated `mmio`
+crate and the newer `safe-mmio` dependency graph (which would pull
+`zerocopy` et al.) — minimal attack surface is preferred for a
+microkernel HAL and matches the Linux/seL4 convention.
+
+### Tests
+
+- HAL unit tests: 151 → 154 (+3 AK5-C audit tests).
+- Workspace total: 405 → 408 tests, all passing.
+- Clippy: 0 warnings (`-D warnings` gate).
+- `lake build` (104+ jobs incl. strengthened `ExceptionModel.lean`
+  theorems).
+- `test_smoke.sh`, `test_full.sh`, `test_tier0_hygiene.sh` all PASS.
+- Fixture diff against `tests/fixtures/main_trace_smoke.expected`: clean.
+- Zero sorry/axiom.
+
+---
+
+## v0.29.5 — WS-AK Phase AK5: Rust HAL Boot Hardening
+
+Phase AK5 of WS-AK Pre-1.0 Release Hardening (v0.29.0 audit). Hardens the
+ARM64 HAL for first silicon by fixing five HIGH boot-correctness issues
+(MMU maintenance, TrapFrame layout, EOI-always, SCTLR bitmap, safe static),
+twelve MEDIUM issues (MMIO routing, multi-cluster MPIDR, CNTFRQ validation,
+etc.), and sixteen LOW annotations. 14 of 14 planned sub-tasks complete.
+
+Gate: `cargo test --workspace` (405 tests) + `cargo clippy --workspace
+-- -D warnings` (0 warnings) + `lake build` + `test_smoke.sh` +
+`test_full.sh` + zero `sorry`/`axiom`.
+
+### Changes
+
+- **AK5-A (R-HAL-M01/M11 / MEDIUM — PREREQ)** — `rust/Cargo.toml`
+  gains `[profile.dev] panic = "abort"` and `[profile.release]
+  panic = "abort"`. Panics in `no_std` / `extern "C"` code now
+  deterministically abort the kernel instead of invoking UB. The
+  test profile keeps stable's forced unwind so `#[should_panic]`
+  tests in `mmio.rs` (alignment) and `uart.rs` (baud=0) still work.
+- **AK5-B (R-HAL-H05 / HIGH)** — `gic::dispatch_irq` restructured
+  around an `EoiGuard` scope-exit helper (`Drop`-based). EOI now
+  fires unconditionally for both `Handled` and `OutOfRange` INTIDs,
+  on every scope exit including the abort path. Closes the handler-
+  panic → GIC deadlock hole. Spurious INTIDs still receive no EOI
+  per GIC-400 spec.
+- **AK5-C (R-HAL-H03 / HIGH)** — New `compute_sctlr_el1_bitmap()`
+  writes the full SCTLR_EL1 bitmap (`M|C|I|SA|SA0|WXN|EOS|EIS` +
+  ARM ARM D17.2.120 RES1 bits 7/8/23/28/29). HW W^X (WXN=1) is the
+  fourth layer of the seLe4n W^X defense (alongside AK3-B wrapper,
+  backend, and descriptor encode). SP-alignment and exception
+  entry/exit serialization are enabled atomically with the MMU.
+  Replaces the read-modify-write of the reset value.
+- **AK5-D (R-HAL-H02 / HIGH)** — `enable_mmu` follows ARM ARM D8.11
+  ordering: `tlbi vmalle1` (stale-entry flush) → `dc cvac` over
+  `BOOT_L1_TABLE` (clean to PoC) → TCR/MAIR/TTBR program → DSB ISH +
+  ISB → SCTLR write with AK5-C bitmap → ISB. New helper
+  `cache::clean_pagetable_range(addr, len)` (unsafe, DSB-terminated).
+- **AK5-E (R-HAL-H01/M03 / HIGH+MEDIUM)** — `static mut BOOT_L1_TABLE`
+  replaced by `static BOOT_L1_TABLE: PageTableCell` wrapping
+  `UnsafeCell<BootL1Table>`. TTBR write applies `TTBR_BAADDR_MASK
+  = 0x0000_FFFF_FFFF_F000` to the PA, clearing CnP and reserved low
+  bits. Debug asserts catch 4 KiB mis-alignment and 44-bit PA
+  overflow. Unused `.bss.page_tables` linker section removed.
+- **AK5-F (R-HAL-H04 / HIGH)** — `TrapFrame` extended from 272 →
+  288 bytes. New `esr_el1` (offset 272) and `far_el1` (offset 280)
+  fields capture a stable snapshot at exception entry;
+  `handle_synchronous_exception` reads from the frame instead of
+  live MRS. `trap.S::save_context` stores them; `restore_context`
+  skips them (read-only). Compile-time `offset_of!` asserts lock
+  the layout. Lean-side `trapFrameLayout : TrapFrameLayout`
+  metadata added in `ExceptionModel.lean` with two sanity theorems.
+- **AK5-G (R-HAL-M04 / MEDIUM)** — `gic.rs` drops local MMIO helpers
+  and routes through `crate::mmio::{mmio_read32, mmio_write32}` so
+  the AJ5-A alignment asserts cover GIC accesses.
+- **AK5-H (R-HAL-M05 / MEDIUM)** — `Uart::{read,write}_reg` routes
+  through `crate::mmio::*` for the same alignment coverage.
+- **AK5-I (R-HAL-M02/M09 / MEDIUM)** — `boot.S` core-0 gate and
+  `cpu::current_core_id` mask MPIDR with `MPIDR_CORE_ID_MASK =
+  0x00FFFFFF` covering Aff0|Aff1|Aff2. Strictly supersedes the prior
+  Aff0-only check which aliased secondary-cluster core-0 to the boot
+  core on BCM2712.
+- **AK5-J (R-HAL-M07 / MEDIUM)** — `TimerError::CntfrqNotProgrammed`
+  variant added. `init_timer` on aarch64 fails fast when
+  CNTFRQ_EL0 reads 0, instead of silently falling back to the 54 MHz
+  constant. Non-aarch64 test hosts still fall back so unit tests
+  exercise the validation logic without a real counter.
+- **AK5-K (R-HAL-M06/M08/M10/M12 / MEDIUM)** — Spectre-v1 CSDB doc
+  note at `gic::dispatch_irq` future table-lookup point;
+  `cache::cache_range` zero-length path emits DSB ISH for a stable
+  fence; `uart::init_with_baud` `assert!(baud > 0)`;
+  `handle_serror` signature now `-> !`.
+- **AK5-L** — `boot::rust_boot_main` timer-init error branch uses
+  `Display` formatting (was `{:?}`) so the new
+  `CntfrqNotProgrammed` variant prints its actionable message.
+- **AK5-M (R-HAL-M11 / MEDIUM)** — `ffi.rs` module doc block
+  documents the panic=abort discipline;
+  `#[cfg(all(not(panic = "abort"), not(debug_assertions)))]
+  compile_error!` guards release builds against accidental unwind
+  re-enable.
+- **AK5-N (R-HAL-L1..L16 / LOW)** — LOW-tier batch documentation:
+  `lib.rs` top-of-file block cross-references every L-n finding to
+  its resolution site; `boot.S` documents secondary-core wake-storm
+  risk; `vectors.S` annotates SP0 vectors as unreachable.
+
+### Lean model
+
+- `SeLe4n/Kernel/Architecture/ExceptionModel.lean` gains
+  `TrapFrameLayout` + `trapFrameLayout` metadata matching the
+  Rust-side 288-byte layout, plus `trapFrameLayout_offsets_monotone`
+  and `trapFrameLayout_extended_by_16` sanity theorems.
+
+### Tests
+
+- HAL unit tests: 122 → 151 (added AK5-C SCTLR bitmap, AK5-D/E
+  PageTableCell/BAADDR, AK5-F ESR/FAR snapshot + nested-exception,
+  AK5-B EOI guard, AK5-I MPIDR mask, AK5-J CNTFRQ error, AK5-K
+  uart-baud-0, AK5-D clean_pagetable_range).
+- Workspace total: 376 → 405 tests, all passing.
+- Clippy: 0 warnings (`-D warnings` gate).
+- `lake build` (104+ jobs) incl. new `ExceptionModel.lean` metadata.
+
+---
+
 ## v0.29.4 — WS-AK Phase AK4: ABI Bridge — Decode, Types, Validation
 
 Phase AK4 of WS-AK Pre-1.0 Release Hardening (v0.29.0 audit). Closes the

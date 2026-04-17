@@ -4,7 +4,7 @@
 // a TrapFrame on the kernel stack, calls the appropriate Rust handler, then
 // restores context and returns via ERET.
 //
-// TrapFrame layout (272 bytes, must match trap.rs TrapFrame):
+// TrapFrame layout (288 bytes, must match trap.rs TrapFrame):
 //   Offset   0: x0-x1   (stp pair)
 //   Offset  16: x2-x3
 //   Offset  32: x4-x5
@@ -24,6 +24,8 @@
 //   Offset 248: SP_EL0
 //   Offset 256: ELR_EL1
 //   Offset 264: SPSR_EL1
+//   Offset 272: ESR_EL1  (AK5-F — snapshot at entry)
+//   Offset 280: FAR_EL1  (AK5-F — snapshot at entry)
 
 .section .text
 
@@ -34,8 +36,9 @@
 // Post-condition: SP points to TrapFrame base, x0 = SP (frame pointer)
 // =========================================================================
 .macro save_context
-    // Allocate TrapFrame on stack (272 bytes, 16-byte aligned → 272)
-    sub     sp, sp, #272
+    // AK5-F: Allocate TrapFrame on stack (288 bytes, 16-byte aligned).
+    // Previously 272; extended by 16 bytes to hold ESR_EL1 + FAR_EL1.
+    sub     sp, sp, #288
 
     // Save x0-x29 in pairs
     stp     x0,  x1,  [sp, #0]
@@ -69,6 +72,15 @@
     mrs     x0, spsr_el1
     str     x0, [sp, #264]
 
+    // AK5-F: Snapshot ESR_EL1 at offset 272. Handlers read this instead
+    // of the live register so nested exceptions cannot corrupt the value.
+    mrs     x0, esr_el1
+    str     x0, [sp, #272]
+
+    // AK5-F: Snapshot FAR_EL1 at offset 280. Same rationale as ESR.
+    mrs     x0, far_el1
+    str     x0, [sp, #280]
+
     // x0 = pointer to TrapFrame (first argument to Rust handler)
     mov     x0, sp
 .endm
@@ -80,6 +92,10 @@
 // Post-condition: Returns to ELR_EL1 with restored PSTATE from SPSR_EL1
 // =========================================================================
 .macro restore_context
+    // AK5-F: ESR_EL1 and FAR_EL1 are read-only in the TrapFrame (snapshot
+    // at entry). They are NOT restored to hardware on exception return —
+    // ELR/SPSR alone control the return path. Skip offsets 272/280.
+
     // Restore SPSR_EL1
     ldr     x0, [sp, #264]
     msr     spsr_el1, x0
@@ -112,8 +128,8 @@
     ldp     x2,  x3,  [sp, #16]
     ldp     x0,  x1,  [sp, #0]
 
-    // Deallocate TrapFrame
-    add     sp, sp, #272
+    // AK5-F: Deallocate TrapFrame — 288 bytes (was 272).
+    add     sp, sp, #288
 
     // Return from exception — restores PC from ELR, PSTATE from SPSR
     eret
@@ -172,4 +188,9 @@ __el1_irq_entry:
 __el1_serror_entry:
     save_context
     bl      handle_serror
+    // AK5-K (R-HAL-M12): handle_serror is declared `-> !` (never returns)
+    // so this restore_context is formally dead. It stays as a defensive
+    // fall-through: if a future refactor ever relaxes the signature, the
+    // kernel still terminates via ERET rather than racing off the end of
+    // the section.
     restore_context

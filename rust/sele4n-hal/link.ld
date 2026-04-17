@@ -53,13 +53,11 @@ SECTIONS
         __bss_end = .;
     } > RAM
 
-    /* Boot page tables — 4096-byte aligned for ARMv8 TTBR requirements */
-    .bss.page_tables (NOLOAD) : ALIGN(4096) {
-        __page_tables_start = .;
-        *(.bss.page_tables)
-        . = ALIGN(4096);
-        __page_tables_end = .;
-    } > RAM
+    /* AK5-E.4: Boot page tables live inside `.bss` now (the `PageTableCell`
+     * wrapper is declared `static` with `repr(align(4096))`), so the
+     * dedicated `.bss.page_tables` section is no longer required. The
+     * linker places `BOOT_L1_TABLE` at a 4 KiB-aligned offset inside
+     * `.bss` which satisfies the ARMv8 TTBR BAADDR alignment. */
 
     /* Kernel stack — 64 KiB, 16-byte aligned (AArch64 SP requirement) */
     .stack (NOLOAD) : ALIGN(16) {

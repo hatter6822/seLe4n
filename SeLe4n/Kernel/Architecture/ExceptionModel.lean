@@ -95,6 +95,97 @@ structure ExceptionContext where
   far : UInt64
   deriving Repr, DecidableEq
 
+/-! ## AK5-F.4: TrapFrame layout contract (model side)
+
+The Rust HAL's `TrapFrame` (rust/sele4n-hal/src/trap.rs) carries a saved
+snapshot of the ARM64 register state across the exception boundary. AK5-F
+extended the layout from 272 to 288 bytes to include read-only snapshots of
+`ESR_EL1` (offset 272) and `FAR_EL1` (offset 280) so nested exceptions can
+no longer corrupt the outer handler's syndrome view.
+
+The `trapFrameLayout` structure below is metadata only — Lean does not
+execute the layout — but it documents the binary contract the Rust side
+must uphold. Any future schema change to `TrapFrame` must update this
+structure and the corresponding `#[repr(C, align(16))] TrapFrame` struct in
+lockstep; the Rust compile-time `offset_of!` asserts in `trap.rs` provide
+the machine-checked enforcement on the Rust side. -/
+
+/-- AK5-F.4: Contract for the offsets of each logical field inside the
+    Rust HAL `TrapFrame`. Units are bytes. -/
+structure TrapFrameLayout where
+  /-- Total size of the trap frame in bytes. -/
+  size : Nat
+  /-- Offset of the general-purpose register file (x0..x30). -/
+  gprsOffset : Nat
+  /-- Offset of the saved `SP_EL0`. -/
+  sp_el0_offset : Nat
+  /-- Offset of the saved `ELR_EL1`. -/
+  elr_el1_offset : Nat
+  /-- Offset of the saved `SPSR_EL1`. -/
+  spsr_el1_offset : Nat
+  /-- AK5-F: Offset of the `ESR_EL1` snapshot (NEW, was not in the layout
+      before AK5-F). -/
+  esr_el1_offset : Nat
+  /-- AK5-F: Offset of the `FAR_EL1` snapshot (NEW, was not in the layout
+      before AK5-F). -/
+  far_el1_offset : Nat
+  deriving Repr, DecidableEq
+
+/-- AK5-F.4: The Rust `TrapFrame` layout contract (288-byte, 16-byte-
+    aligned) the HAL upholds.
+
+    Rust-side enforcement: `const _: () = assert!(...)` in
+    `rust/sele4n-hal/src/trap.rs` checks each offset at compile time.
+    Changing any offset here requires the corresponding Rust assertion
+    to be updated or the build breaks. -/
+def trapFrameLayout : TrapFrameLayout :=
+  { size := 288
+    gprsOffset := 0
+    sp_el0_offset := 248
+    elr_el1_offset := 256
+    spsr_el1_offset := 264
+    esr_el1_offset := 272
+    far_el1_offset := 280 }
+
+/-- AK5-F.4: Sanity theorem that the declared offsets are consistent with
+    the total size — each field occupies the byte range up to the next
+    field's offset, and the final field fits inside the total size. -/
+theorem trapFrameLayout_offsets_monotone :
+    trapFrameLayout.gprsOffset ≤ trapFrameLayout.sp_el0_offset ∧
+    trapFrameLayout.sp_el0_offset ≤ trapFrameLayout.elr_el1_offset ∧
+    trapFrameLayout.elr_el1_offset ≤ trapFrameLayout.spsr_el1_offset ∧
+    trapFrameLayout.spsr_el1_offset ≤ trapFrameLayout.esr_el1_offset ∧
+    trapFrameLayout.esr_el1_offset ≤ trapFrameLayout.far_el1_offset ∧
+    trapFrameLayout.far_el1_offset + 8 ≤ trapFrameLayout.size := by
+  decide
+
+/-- AK5-F.4: EXACT-fit theorem — the declared offsets use the full 288
+    bytes without gaps. Each header field (SP_EL0, ELR_EL1, SPSR_EL1,
+    ESR_EL1, FAR_EL1) occupies 8 bytes; the GPR array occupies
+    `31 × 8 = 248` bytes starting at offset 0. Any introduction of a
+    hidden gap (e.g., someone re-adding `A` padding for a 16-byte-aligned
+    field) would fail this theorem. -/
+theorem trapFrameLayout_exact_fit :
+    trapFrameLayout.gprsOffset = 0 ∧
+    trapFrameLayout.sp_el0_offset = trapFrameLayout.gprsOffset + 31 * 8 ∧
+    trapFrameLayout.elr_el1_offset = trapFrameLayout.sp_el0_offset + 8 ∧
+    trapFrameLayout.spsr_el1_offset = trapFrameLayout.elr_el1_offset + 8 ∧
+    trapFrameLayout.esr_el1_offset = trapFrameLayout.spsr_el1_offset + 8 ∧
+    trapFrameLayout.far_el1_offset = trapFrameLayout.esr_el1_offset + 8 ∧
+    trapFrameLayout.size = trapFrameLayout.far_el1_offset + 8 := by
+  decide
+
+/-- AK5-F.4: AK5-F extended the trap frame by exactly 16 bytes (two
+    `UInt64` fields: ESR_EL1 + FAR_EL1). Historical size was 272. -/
+theorem trapFrameLayout_extended_by_16 :
+    trapFrameLayout.size = 272 + 16 := by decide
+
+/-- AK5-F.4: The trap frame is 16-byte aligned (matches Rust
+    `#[repr(C, align(16))]` on `TrapFrame`) — ensures stack-discipline
+    compatibility with AArch64's 16-byte SP alignment requirement. -/
+theorem trapFrameLayout_size_16_aligned :
+    trapFrameLayout.size % 16 = 0 := by decide
+
 -- ============================================================================
 -- AG3-F (H3-ARCH-05): Exception Level Model
 -- ============================================================================

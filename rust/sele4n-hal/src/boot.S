@@ -18,11 +18,27 @@
 
 _start:
     // =====================================================================
-    // Step 1: Core ID check — only core 0 proceeds
+    // Step 1: Core ID check — only cluster-0 core-0 proceeds
+    //
+    // AK5-I (R-HAL-M02 / MEDIUM): Mask Aff0|Aff1|Aff2 = bits [23:0]. A
+    // core whose cluster ID is non-zero but whose per-cluster core number
+    // is 0 (e.g., {Aff1=1, Aff0=0} on symmetric BCM2712, or {Aff2=1,
+    // Aff0=0} on an asymmetric variant) would previously pass this check
+    // because only Aff0 was examined. BCM2712's exact mapping is not
+    // fully documented, so we mask all three low-affinity fields — this
+    // is strictly more conservative than either Aff1-only or Aff2-only
+    // masks and is the safe default.
+    //
+    // Mask 0x00FFFFFF = bits [23:0]. Bits 24 (MT) and 30 (U) are
+    // INTENTIONALLY excluded — they are not part of the core identifier.
+    // Mirrors `cpu::MPIDR_CORE_ID_MASK`.
     // =====================================================================
-    mrs     x1, mpidr_el1           // Read Multiprocessor Affinity Register
-    and     x1, x1, #0xFF          // Extract Aff0 (core number within cluster)
-    cbnz    x1, .L_secondary_spin  // If not core 0, park
+    mrs     x1, mpidr_el1
+    // AArch64 immediate encoding cannot fit 0xFFFFFF directly; build it.
+    mov     x2, #0xFFFF
+    movk    x2, #0xFF, lsl #16
+    and     x1, x1, x2              // x1 = MPIDR & 0x00FFFFFF
+    cbnz    x1, .L_secondary_spin   // If not cluster 0 core 0, park
 
     // =====================================================================
     // Step 2: Save DTB pointer (x0) in callee-saved register
@@ -78,6 +94,13 @@ _start:
 // Secondary cores enter a low-power WFE loop. Multi-core support (SMP) is
 // deferred to WS-V. To wake a secondary core, write to a mailbox and issue
 // SEV.
+//
+// AK5-N (R-HAL-L9 / R-HAL-L16): Wake-storm risk is latent because the
+// current kernel never issues SEV; any future WFE-aware spinlock must
+// ensure secondary cores gate on a mailbox value before exiting WFE so a
+// spurious SEV (or SEVL) does not cause all secondary cores to race into
+// boot simultaneously. Documented here until WS-V adds the proper SMP
+// bring-up with a per-core parking mailbox.
 // =========================================================================
 .L_secondary_spin:
     wfe

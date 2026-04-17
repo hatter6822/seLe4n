@@ -11,15 +11,18 @@
 //!
 //! ## Usage
 //!
-//! ```ignore
-//! let stats = LatencyStats::new();
+//! ```no_run
+//! use sele4n_hal::profiling::{LatencyStats, read_cycle_counter};
+//! # fn do_work() {}
+//! let mut stats = LatencyStats::new();
 //! for _ in 0..10_000 {
 //!     let start = read_cycle_counter();
 //!     do_work();
 //!     let end = read_cycle_counter();
 //!     stats.record(end - start);
 //! }
-//! // stats now contains min, max, mean, p99, p99.9
+//! // `stats` now contains min, max, mean (p99 / p99.9 not tracked —
+//! // `LatencyStats` records a single-pass summary, not the full sample).
 //! ```
 
 use core::sync::atomic::{AtomicU64, Ordering};

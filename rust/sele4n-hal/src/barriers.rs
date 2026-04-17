@@ -103,10 +103,13 @@ pub fn isb() {
 /// Place CSDB after bounds checks that guard security-critical array
 /// indexing or pointer dereferencing:
 ///
-/// ```ignore
+/// ```no_run
+/// # use sele4n_hal::barriers::csdb;
+/// # let array: &[u32] = &[1, 2, 3];
+/// # let index: usize = 0;
 /// if index < array.len() {
 ///     csdb();  // Speculation cannot bypass the bounds check
-///     let val = array[index];
+///     let _val = array[index];
 /// }
 /// ```
 ///
@@ -160,10 +163,13 @@ pub fn sb() {
 ///
 /// # Usage
 ///
-/// ```ignore
+/// ```no_run
+/// # use sele4n_hal::barriers::speculation_safe_bound_check;
+/// # let table: &[u32] = &[10, 20, 30];
+/// # let user_index: usize = 0;
 /// if speculation_safe_bound_check(user_index, table.len()) {
-///     // CSDB has fired — speculative execution respects the bound
-///     let entry = table[user_index];
+///     // CSDB has fired — speculative execution respects the bound.
+///     let _entry = table[user_index];
 /// }
 /// ```
 #[inline(always)]

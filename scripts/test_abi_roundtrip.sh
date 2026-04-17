@@ -6,7 +6,7 @@
 # that every 5-arg syscall decodes successfully via the Lean kernel's
 # `decodeSyscallArgsFromState`.
 #
-# Hooked into `test_full.sh`. Added in v0.29.4 (WS-AK / Phase AK4).
+# Hooked into `test_full.sh`. Added in v0.29.8 (WS-AK / Phase AK4).
 
 set -euo pipefail
 

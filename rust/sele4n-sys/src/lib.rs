@@ -20,6 +20,27 @@
 //!
 //! This crate contains zero `unsafe` code. All unsafe operations are
 //! confined to `sele4n_abi::trap::raw_syscall`.
+//!
+//! # Example
+//!
+//! Capability handles are phantom-typed so the type system prevents passing
+//! a TCB capability where an endpoint was expected. Construction is a plain
+//! `const fn`; the actual syscall (`svc #0`) only fires when an operation
+//! method is invoked.
+//!
+//! ```
+//! use sele4n_sys::cap::{Cap, Endpoint, FullRights, ReadOnly};
+//! use sele4n_types::CPtr;
+//!
+//! // Bind a CPtr to an endpoint with full rights.
+//! let ep: Cap<Endpoint, FullRights> = Cap::from_cptr(CPtr::from(7u64));
+//! assert_eq!(ep.cptr(), CPtr::from(7u64));
+//!
+//! // Derive a read-only view of the same endpoint — rights-monotonic at
+//! // compile time (no downgrade of `ReadOnly` to `FullRights` possible).
+//! let ro: Cap<Endpoint, ReadOnly> = ep.to_read_only().unwrap();
+//! assert_eq!(ro.cptr(), CPtr::from(7u64));
+//! ```
 
 #![no_std]
 #![deny(unsafe_code)]

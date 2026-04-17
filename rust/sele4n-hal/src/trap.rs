@@ -7,13 +7,21 @@
 /// Saved CPU context during an exception.
 ///
 /// Layout must match the assembly save/restore macros in `trap.S`:
-/// - GPRs x0-x30 at offsets 0..248
+/// - GPRs x0-x30 at offsets 0..248 (31 × 8 B)
 /// - SP_EL0 at offset 248
 /// - ELR_EL1 at offset 256
 /// - SPSR_EL1 at offset 264
+/// - ESR_EL1 at offset 272 (AK5-F — read-only snapshot at exception entry)
+/// - FAR_EL1 at offset 280 (AK5-F — read-only snapshot at exception entry)
 ///
-/// Total size: 34 × 8 = 272 bytes.
-#[repr(C)]
+/// Total size: 36 × 8 = 288 bytes, 16-byte aligned.
+///
+/// AK5-F (R-HAL-H04 / HIGH): ESR_EL1 and FAR_EL1 are saved at exception
+/// entry so that handlers read a STABLE snapshot rather than the live
+/// register. A nested exception (e.g., SError during data-abort handling)
+/// would otherwise mutate the live ESR/FAR before the outer handler reads
+/// them, producing incorrect classification and fault-address reports.
+#[repr(C, align(16))]
 pub struct TrapFrame {
     /// General-purpose registers x0-x30 (31 registers).
     pub gprs: [u64; 31],
@@ -23,13 +31,27 @@ pub struct TrapFrame {
     pub elr_el1: u64,
     /// Saved Program Status Register — saved PSTATE.
     pub spsr_el1: u64,
+    /// AK5-F: Exception Syndrome Register snapshot at trap entry.
+    /// Written by `trap.S:save_context`, READ-ONLY from Rust.
+    pub esr_el1: u64,
+    /// AK5-F: Fault Address Register snapshot at trap entry.
+    /// Written by `trap.S:save_context`, READ-ONLY from Rust.
+    pub far_el1: u64,
 }
 
 /// Size of TrapFrame in bytes (for assembly offset calculations).
+/// AK5-F: 288 bytes (was 272 pre-AK5-F).
 pub const TRAP_FRAME_SIZE: usize = core::mem::size_of::<TrapFrame>();
 
-// Compile-time assertion that TrapFrame is exactly 272 bytes.
-const _: () = assert!(TRAP_FRAME_SIZE == 272);
+// Compile-time layout assertions (AK5-F).
+const _: () = assert!(TRAP_FRAME_SIZE == 288);
+const _: () = assert!(core::mem::align_of::<TrapFrame>() == 16);
+const _: () = assert!(core::mem::offset_of!(TrapFrame, gprs) == 0);
+const _: () = assert!(core::mem::offset_of!(TrapFrame, sp_el0) == 248);
+const _: () = assert!(core::mem::offset_of!(TrapFrame, elr_el1) == 256);
+const _: () = assert!(core::mem::offset_of!(TrapFrame, spsr_el1) == 264);
+const _: () = assert!(core::mem::offset_of!(TrapFrame, esr_el1) == 272);
+const _: () = assert!(core::mem::offset_of!(TrapFrame, far_el1) == 280);
 
 impl TrapFrame {
     /// ABI register accessors matching the seLe4n syscall convention:
@@ -126,24 +148,6 @@ mod error_code {
     pub const USER_EXCEPTION: u64 = 45;
 }
 
-/// Read ESR_EL1 to get the Exception Syndrome Register.
-#[inline(always)]
-fn read_esr_el1() -> u64 {
-    #[cfg(target_arch = "aarch64")]
-    {
-        // SAFETY: Reading ESR_EL1 at EL1 is always safe; it's a read-only
-        // register that captures the syndrome of the most recent exception.
-        // (ARM ARM D17.2.40)
-        let val: u64;
-        unsafe {
-            core::arch::asm!("mrs {}, esr_el1", out(reg) val, options(nomem, nostack, preserves_flags));
-        }
-        val
-    }
-    #[cfg(not(target_arch = "aarch64"))]
-    0
-}
-
 /// Extract the Exception Class from ESR_EL1.
 #[inline(always)]
 fn esr_ec(esr: u64) -> u64 {
@@ -159,9 +163,14 @@ fn esr_ec(esr: u64) -> u64 {
 ///
 /// AG9-F: CSDB after ESR classification prevents speculative execution of
 /// the wrong handler branch (Spectre v1 mitigation for exception dispatch).
+///
+/// AK5-F (R-HAL-H04 / HIGH): ESR and FAR are read from the saved TrapFrame,
+/// not from the live registers. This keeps the classification stable under
+/// nested exceptions — a SError or second data-abort during fault handling
+/// would otherwise mutate the live ESR/FAR before we inspected them.
 #[no_mangle]
 pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
-    let esr = read_esr_el1();
+    let esr = frame.esr_el1;
     let exception_class = esr_ec(esr);
 
     // AG9-F: CSDB after reading the exception class ensures speculative
@@ -234,9 +243,17 @@ pub extern "C" fn handle_irq(_frame: &mut TrapFrame) {
 
 /// SError handler — called from assembly on system error exceptions.
 ///
-/// SErrors are typically unrecoverable hardware errors. Log and halt.
+/// SErrors are typically unrecoverable hardware errors (DRAM parity error,
+/// system-level interconnect fault, etc.). Log and halt permanently.
+///
+/// AK5-K (R-HAL-M12 / MEDIUM): Return type is `-> !` to communicate the
+/// never-return guarantee to the compiler. The assembly vectors in
+/// `trap.S::__el0_serror_entry` / `__el1_serror_entry` rely on this:
+/// `restore_context` is unreachable code after the call because the
+/// SError path terminates the kernel. Marking `!` also lets the optimizer
+/// drop the unreachable restore.
 #[no_mangle]
-pub extern "C" fn handle_serror(_frame: &mut TrapFrame) {
+pub extern "C" fn handle_serror(_frame: &mut TrapFrame) -> ! {
     crate::kprintln!("FATAL: SError exception");
     loop {
         crate::cpu::wfe();
@@ -247,29 +264,46 @@ pub extern "C" fn handle_serror(_frame: &mut TrapFrame) {
 mod tests {
     use super::*;
 
-    #[test]
-    fn trap_frame_size_is_272_bytes() {
-        assert_eq!(TRAP_FRAME_SIZE, 272);
-        assert_eq!(core::mem::size_of::<TrapFrame>(), 272);
-    }
-
-    #[test]
-    fn trap_frame_field_offsets() {
-        // Verify field offsets match assembly save_context/restore_context macros
-        assert_eq!(core::mem::offset_of!(TrapFrame, gprs), 0);
-        assert_eq!(core::mem::offset_of!(TrapFrame, sp_el0), 248);
-        assert_eq!(core::mem::offset_of!(TrapFrame, elr_el1), 256);
-        assert_eq!(core::mem::offset_of!(TrapFrame, spsr_el1), 264);
-    }
-
-    #[test]
-    fn trap_frame_gpr_accessors() {
-        let mut frame = TrapFrame {
+    /// AK5-F test helper: construct a zero-initialized TrapFrame.
+    fn zero_frame() -> TrapFrame {
+        TrapFrame {
             gprs: [0; 31],
             sp_el0: 0,
             elr_el1: 0,
             spsr_el1: 0,
-        };
+            esr_el1: 0,
+            far_el1: 0,
+        }
+    }
+
+    #[test]
+    fn trap_frame_size_is_288_bytes() {
+        // AK5-F: TrapFrame grew from 272 to 288 (added ESR_EL1 + FAR_EL1).
+        assert_eq!(TRAP_FRAME_SIZE, 288);
+        assert_eq!(core::mem::size_of::<TrapFrame>(), 288);
+    }
+
+    #[test]
+    fn trap_frame_alignment_is_16() {
+        // AK5-F: TrapFrame is 16-byte aligned for AArch64 SP discipline.
+        assert_eq!(core::mem::align_of::<TrapFrame>(), 16);
+    }
+
+    #[test]
+    fn trap_frame_field_offsets() {
+        // Verify field offsets match assembly save_context/restore_context macros.
+        assert_eq!(core::mem::offset_of!(TrapFrame, gprs), 0);
+        assert_eq!(core::mem::offset_of!(TrapFrame, sp_el0), 248);
+        assert_eq!(core::mem::offset_of!(TrapFrame, elr_el1), 256);
+        assert_eq!(core::mem::offset_of!(TrapFrame, spsr_el1), 264);
+        // AK5-F: ESR + FAR snapshot offsets.
+        assert_eq!(core::mem::offset_of!(TrapFrame, esr_el1), 272);
+        assert_eq!(core::mem::offset_of!(TrapFrame, far_el1), 280);
+    }
+
+    #[test]
+    fn trap_frame_gpr_accessors() {
+        let mut frame = zero_frame();
 
         // Set ABI registers
         frame.gprs[0] = 0xCAFE;
@@ -291,17 +325,70 @@ mod tests {
 
     #[test]
     fn trap_frame_setters() {
-        let mut frame = TrapFrame {
-            gprs: [0; 31],
-            sp_el0: 0,
-            elr_el1: 0,
-            spsr_el1: 0,
-        };
-
+        let mut frame = zero_frame();
         frame.set_x0(42);
         frame.set_x1(99);
         assert_eq!(frame.gprs[0], 42);
         assert_eq!(frame.gprs[1], 99);
+    }
+
+    // ========================================================================
+    // AK5-F: ESR/FAR snapshot semantics
+    // ========================================================================
+
+    #[test]
+    fn trap_frame_esr_far_roundtrip() {
+        // T01 (AK5-F.6): Synthesize a frame with known ESR + FAR; assert the
+        // handler-side accessors read them back.
+        let mut frame = zero_frame();
+        frame.esr_el1 = 0xDEAD_BEEF;
+        frame.far_el1 = 0x1234_5678;
+        assert_eq!(frame.esr_el1, 0xDEAD_BEEF);
+        assert_eq!(frame.far_el1, 0x1234_5678);
+    }
+
+    #[test]
+    fn handle_sync_reads_esr_from_frame() {
+        // AK5-F.3: handler uses `frame.esr_el1` not `mrs esr_el1`. Put an
+        // SVC ESR into the frame and verify the SVC-arm is taken (x0 ends
+        // up = NOT_IMPLEMENTED).
+        let mut frame = zero_frame();
+        frame.esr_el1 = (ec::SVC_AARCH64 << 26) | 0x42; // lower bits ignored
+        handle_synchronous_exception(&mut frame);
+        assert_eq!(frame.x0(), error_code::NOT_IMPLEMENTED);
+    }
+
+    #[test]
+    fn handle_sync_data_abort_via_frame() {
+        // AK5-F.3: DABT from lower EL is classified from frame ESR, not
+        // from live register — proves the handler is not reading live mrs.
+        let mut frame = zero_frame();
+        frame.esr_el1 = ec::DABT_LOWER << 26;
+        frame.far_el1 = 0xFFFF_0000_DEAD_0000;
+        handle_synchronous_exception(&mut frame);
+        assert_eq!(frame.x0(), error_code::VM_FAULT);
+        // FAR is preserved in the frame (not mutated by the handler).
+        assert_eq!(frame.far_el1, 0xFFFF_0000_DEAD_0000);
+    }
+
+    #[test]
+    fn nested_exception_does_not_clobber_frame_esr() {
+        // T04 (AK5-F.6): An outer handler reads its frame's ESR; simulating a
+        // subsequent trap (by constructing a second frame) does not mutate
+        // the first frame's snapshot.
+        let mut outer = zero_frame();
+        outer.esr_el1 = ec::DABT_LOWER << 26;
+        outer.far_el1 = 0xAAAA;
+
+        // Simulate nested: inner frame with different ESR/FAR.
+        let mut inner = zero_frame();
+        inner.esr_el1 = ec::IABT_CURRENT << 26;
+        inner.far_el1 = 0xBBBB;
+        handle_synchronous_exception(&mut inner);
+
+        // The outer frame remains untouched.
+        assert_eq!(outer.esr_el1, ec::DABT_LOWER << 26);
+        assert_eq!(outer.far_el1, 0xAAAA);
     }
 
     #[test]

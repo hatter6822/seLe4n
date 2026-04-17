@@ -44,11 +44,14 @@ pub const MAX_CAPS: usize = 3;
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```
+/// use sele4n_abi::ipc_buffer::IpcBuffer;
 /// let mut buf = IpcBuffer::new();
-/// // Write overflow register 4 (index 0 in buffer)
+/// // Write overflow register 4 (index 0 in buffer).
 /// buf.set_mr(4, 0xDEAD).unwrap();
-/// // Inline registers 0–3 go via SyscallRequest.msg_regs
+/// assert_eq!(buf.get_mr(4).unwrap(), 0xDEAD);
+/// // Inline registers 0–3 are carried via `SyscallRequest.msg_regs`,
+/// // not through this buffer.
 /// ```
 #[repr(C)]
 #[derive(Clone)]

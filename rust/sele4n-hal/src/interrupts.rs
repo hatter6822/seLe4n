@@ -74,12 +74,15 @@ pub fn enable_irq() {
 ///
 /// # Usage
 ///
-/// ```ignore
+/// ```no_run
+/// # use sele4n_hal::interrupts::with_interrupts_disabled;
+/// # fn do_atomic_work() -> u64 { 42 }
 /// let result = with_interrupts_disabled(|| {
 ///     // Critical section: scheduler transitions, PIP propagation,
-///     // endpoint queue mutations, donation chain operations
+///     // endpoint queue mutations, donation chain operations.
 ///     do_atomic_work()
 /// });
+/// assert_eq!(result, 42);
 /// ```
 #[inline(always)]
 pub fn with_interrupts_disabled<F: FnOnce() -> R, R>(f: F) -> R {
