@@ -205,22 +205,19 @@ def cbsBudgetCheck (sc : SchedContext) (currentTime : Nat)
 existing SchedContexts would exceed total utilization of 1000 per-mille
 (100% bandwidth). Uses integer arithmetic only.
 
-**L-17 truncation tolerance**: `utilizationPerMille` uses integer division
-(`budget * 1000 / period`), which truncates down. Each context's utilization
-is underestimated by at most 1 per-mille (~0.1%). With `n` active contexts,
-the aggregate error is at most `n` per-mille.
+**AK2-E (S-M03) — ceiling-round admission**: `utilizationPerMille` now uses
+ceiling-round division `(budget * 1000 + period - 1) / period`. This provides
+an over-estimate of each context's true utilization, ensuring admission never
+accepts a workload that would actually exceed 100% bandwidth.
 
-**RPi5 impact**: At 54 MHz with typical periods (1–100 ms), the per-context
-admission error is at most `period / 1000` time units (≤ 0.1 ms per context).
-For practical deployments with ≤ 64 contexts, the total over-admission is
-bounded by 64 per-mille (6.4%), well within the standard CBS tolerance.
-Per-context budget bounds (`budgetWithinBounds`) hold regardless of admission
-control precision, so marginal over-admission cannot cause budget overrun.
+The prior truncation-down approach admitted up to ~6.4% aggregate over-
+utilization at 64 contexts, which is unacceptable for safety-critical RT
+workloads. Ceiling-round trades near-boundary rejections (admitting at most
+~99.9% utilization instead of exactly 100%) for a hard upper bound, matching
+the CBS isolation guarantee expected by `cbs_bandwidth_bounded`.
 
-**Design choice**: Rounding up (`(budget * 1000 + period - 1) / period`)
-would eliminate under-counting but may over-reject near-capacity workloads.
-The current truncation-down approach is standard CBS practice, matching the
-seL4 MCS kernel behavior and preferring admission over rejection at the margin. -/
+Per-context budget bounds (`budgetWithinBounds`) hold independently of
+admission precision. See `docs/spec/SELE4N_SPEC.md` §5.4 for details. -/
 def admissionCheck (existing : List SchedContext) (candidate : SchedContext)
     : Bool :=
   let existingUtil := existing.foldl (fun acc sc => acc + sc.utilizationPerMille) 0

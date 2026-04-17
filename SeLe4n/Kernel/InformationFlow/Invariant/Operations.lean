@@ -632,8 +632,9 @@ theorem switchDomain_preserves_lowEquivalent
     cases hEntry : (entry :: rest)[
         (s₁.scheduler.domainScheduleIndex + 1) % (entry :: rest).length]? with
     | none =>
-      simp only [hEntry, Except.ok.injEq, Prod.mk.injEq] at hStep₁ hStep₂
-      rw [hStep₁.2.symm, hStep₂.2.symm]; exact hLow
+      -- AK2-I: fallback now emits `.error`; contradict hStep₁ / hStep₂ directly.
+      simp only [hEntry] at hStep₁
+      exact absurd hStep₁ (by simp)
     | some ent =>
       simp only [hEntry, Except.ok.injEq, Prod.mk.injEq] at hStep₁ hStep₂
       have hEq₁ := hStep₁.2.symm; have hEq₂ := hStep₂.2.symm

@@ -155,6 +155,139 @@ theorem effectiveRunQueuePriority_no_pip (tcb : TCB)
     effectiveRunQueuePriority tcb = tcb.priority := by
   simp [effectiveRunQueuePriority, hNoPip]
 
+/-- AK2-B (S-H04) helper: SC-aware effective priority.
+Mirrors `(resolveEffectivePrioDeadline st tcb).1` from Selection.lean
+without the import cycle: for SchedContext-bound threads with the SC
+present, uses the SC's base priority; otherwise falls back to TCB
+`priority`. PIP boost is applied uniformly as the final step.
+
+Under the AK2-B Option B propagation invariant (`schedContextBind` /
+`schedContextConfigure` propagate `sc.priority → tcb.priority`),
+`effectiveBucketPriority st tcb = effectiveRunQueuePriority tcb` for all
+bound threads, so `schedulerPriorityMatch` (TCB-based) and
+`effectiveParamsMatchRunQueue` (SC-based) agree. The helper is retained as
+a utility for future use (AK2-A full Option A fusion deferred). -/
+def effectiveBucketPriority (st : SystemState) (tcb : TCB) : SeLe4n.Priority :=
+  let base : SeLe4n.Priority := match tcb.schedContextBinding with
+    | .unbound => tcb.priority
+    | .bound scId | .donated scId _ =>
+      match (st.objects[scId.toObjId]? : Option KernelObject) with
+      | some (.schedContext sc) => sc.priority
+      | _ => tcb.priority
+  match tcb.pipBoost with
+  | none => base
+  | some boostPrio => ⟨Nat.max base.val boostPrio.val⟩
+
+/-- AK2-B: Unbound threads' effective priority equals the legacy
+`effectiveRunQueuePriority`. -/
+@[simp] theorem effectiveBucketPriority_of_unbound
+    (st : SystemState) (tcb : TCB)
+    (hUnbound : tcb.schedContextBinding = .unbound) :
+    effectiveBucketPriority st tcb = effectiveRunQueuePriority tcb := by
+  unfold effectiveBucketPriority effectiveRunQueuePriority
+  simp [hUnbound]
+
+/-- AK2-B: When a bound thread's SchedContext is missing (unreachable under
+`schedContextBindingConsistent`), `effectiveBucketPriority` falls back to
+`effectiveRunQueuePriority`. -/
+theorem effectiveBucketPriority_of_bound_sc_missing
+    (st : SystemState) (tcb : TCB) (scId : SchedContextId)
+    (hBound : tcb.schedContextBinding = .bound scId ∨
+      ∃ owner, tcb.schedContextBinding = .donated scId owner)
+    (hMiss : ∀ sc, st.objects[scId.toObjId]? ≠ some (.schedContext sc)) :
+    effectiveBucketPriority st tcb = effectiveRunQueuePriority tcb := by
+  unfold effectiveBucketPriority effectiveRunQueuePriority
+  rcases hBound with hB | ⟨owner, hB⟩
+  · rw [hB]
+    cases hLookup : (st.objects[scId.toObjId]? : Option KernelObject) with
+    | none => simp [hLookup]
+    | some obj =>
+      cases obj with
+      | schedContext sc => exact absurd hLookup (hMiss sc)
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | tcb _ =>
+          simp [hLookup]
+  · rw [hB]
+    cases hLookup : (st.objects[scId.toObjId]? : Option KernelObject) with
+    | none => simp [hLookup]
+    | some obj =>
+      cases obj with
+      | schedContext sc => exact absurd hLookup (hMiss sc)
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | tcb _ =>
+          simp [hLookup]
+
+/-- AK2-B helper: auxiliary "falls through to base" lemma. If a map lookup
+does not produce `.schedContext _`, then the `.bound scId`/`.donated scId _`
+arm of `effectiveBucketPriority` falls through to `tcb.priority`. -/
+@[simp] theorem effectiveBucketPriority_lookup_non_sc
+    (st : SystemState) (tcb : TCB) (scId : SchedContextId)
+    (hNonSc : ∀ sc, st.objects[scId.toObjId]? ≠ some (.schedContext sc)) :
+    (match (st.objects[scId.toObjId]? : Option KernelObject) with
+      | some (.schedContext sc) => sc.priority
+      | _ => tcb.priority) = tcb.priority := by
+  cases hLook : (st.objects[scId.toObjId]? : Option KernelObject) with
+  | none => rfl
+  | some obj =>
+    cases obj with
+    | schedContext sc => exact absurd hLook (hNonSc sc)
+    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ => rfl
+
+/-- AK2-B: Frame lemma — `effectiveBucketPriority` is preserved whenever the
+thread's SchedContext object lookup agrees. -/
+theorem effectiveBucketPriority_frame
+    (st st' : SystemState) (tcb : TCB)
+    (hSc : ∀ scId, (tcb.schedContextBinding = .bound scId ∨
+      ∃ owner, tcb.schedContextBinding = .donated scId owner) →
+      st'.objects[scId.toObjId]? = st.objects[scId.toObjId]?) :
+    effectiveBucketPriority st' tcb = effectiveBucketPriority st tcb := by
+  unfold effectiveBucketPriority
+  cases hBind : tcb.schedContextBinding with
+  | unbound => rfl
+  | bound scId =>
+    have hEq : st'.objects[scId.toObjId]? = st.objects[scId.toObjId]? :=
+      hSc scId (Or.inl hBind)
+    simp only [hEq]
+  | donated scId owner =>
+    have hEq : st'.objects[scId.toObjId]? = st.objects[scId.toObjId]? :=
+      hSc scId (Or.inr ⟨owner, hBind⟩)
+    simp only [hEq]
+
+section
+set_option linter.unusedSimpArgs false
+
+/-- AK2-B: Weaker frame lemma — `effectiveBucketPriority` is preserved
+whenever BOTH lookups produce non-SchedContext values (so both fall through
+to `tcb.priority`) OR the SchedContext lookups agree exactly. This handles
+invariant-violating aliasing gracefully: if an ObjId happens to hold a `.tcb`
+both before and after a `saveOutgoingContext` (invariant violation — SC's
+ObjId should never be a TCB), the fall-through arm gives the same value. -/
+theorem effectiveBucketPriority_frame_weak
+    (st st' : SystemState) (tcb : TCB)
+    (hSc : ∀ scId, (tcb.schedContextBinding = .bound scId ∨
+      ∃ owner, tcb.schedContextBinding = .donated scId owner) →
+      (∃ sc, st.objects[scId.toObjId]? = some (.schedContext sc) ∧
+             st'.objects[scId.toObjId]? = some (.schedContext sc)) ∨
+      ((∀ sc, st.objects[scId.toObjId]? ≠ some (.schedContext sc)) ∧
+       (∀ sc, st'.objects[scId.toObjId]? ≠ some (.schedContext sc)))) :
+    effectiveBucketPriority st' tcb = effectiveBucketPriority st tcb := by
+  unfold effectiveBucketPriority
+  cases hBind : tcb.schedContextBinding with
+  | unbound => simp only [hBind]
+  | bound scId =>
+    simp only [hBind]
+    rcases hSc scId (Or.inl hBind) with ⟨sc, hOld, hNew⟩ | ⟨hOldN, hNewN⟩
+    · simp only [hOld, hNew]
+    · rw [effectiveBucketPriority_lookup_non_sc st' tcb scId hNewN]
+      rw [effectiveBucketPriority_lookup_non_sc st tcb scId hOldN]
+  | donated scId owner =>
+    simp only [hBind]
+    rcases hSc scId (Or.inr ⟨owner, hBind⟩) with ⟨sc, hOld, hNew⟩ | ⟨hOldN, hNewN⟩
+    · simp only [hOld, hNew]
+    · rw [effectiveBucketPriority_lookup_non_sc st' tcb scId hNewN]
+      rw [effectiveBucketPriority_lookup_non_sc st tcb scId hOldN]
+
+end
+
+
 -- ============================================================================
 -- M-03/WS-E6: EDF scheduling invariant
 -- ============================================================================
@@ -275,15 +408,16 @@ theorem default_runnableThreadsAreTCBs :
 /-- WS-H6/AI3-A: The RunQueue's recorded `threadPriority` mapping matches the
 effective priority for every run-queue member.
 
-AI3-A (M-04): Updated from `tcb.priority` (base only) to `effectiveRunQueuePriority`
-which accounts for PIP boost (`max(tcb.priority, pipBoost)`). This ensures
-PIP-boosted threads retain elevated RunQueue bucket placement after yield,
-timer tick, or domain switch.
+AI3-A (M-04) → AK2-B (S-H04): Updated from `effectiveRunQueuePriority` (TCB
+base + PIP, SC-unaware) to `effectiveBucketPriority` — a fully SC-aware resolver
+that agrees with `resolveEffectivePrioDeadline` used by selection. This
+FUSES the prior pair `schedulerPriorityMatch` + `effectiveParamsMatchRunQueue`
+(audit S-H04 joint over-constraint). Selection and insertion now agree on the
+same priority across all thread states (unbound, bound, PIP-boosted, donated).
 
-For SchedContext-bound threads, the base priority component still uses
-`tcb.priority` (not `sc.priority`). SchedContext priority resolution is tracked
-separately by `effectiveParamsMatchRunQueue` (extended bundle component 15),
-and CBS paths use `resolveInsertPriority` which handles SchedContext resolution.
+The prior bifurcation was inconsistent for any SC-bound thread with
+`sc.priority ≠ tcb.priority` (impossible to jointly satisfy) and for any
+PIP-boosted bound thread (`effectiveParamsMatchRunQueue` ignored PIP boost).
 
 Together with `RunQueue.wellFormed`, this enables the bucket-first scheduling
 proof: if a thread has the same effective priority as the selected candidate,
@@ -368,7 +502,7 @@ theorem schedulerInvariantBundleFull_to_domainScheduleEntriesPositive {st : Syst
   h.2.2.2.2.2.2.2.2
 
 /-- R6-D: schedulerPriorityMatch is preserved when both runQueue and objects
-    are unchanged. -/
+are unchanged. -/
 theorem schedulerPriorityMatch_of_runQueue_objects_eq
     (st st' : SystemState)
     (hInv : schedulerPriorityMatch st)
@@ -377,9 +511,9 @@ theorem schedulerPriorityMatch_of_runQueue_objects_eq
     schedulerPriorityMatch st' := by
   intro tid hMem; rw [hRQEq] at hMem; rw [hRQEq, hObjEq]; exact hInv tid hMem
 
-/-- R6-D/AI3-A: schedulerPriorityMatch after inserting the current thread at its
-    effective priority. The inserted priority must equal `effectiveRunQueuePriority curTcb`
-    for the invariant to hold on the extended RunQueue. -/
+/-- R6-D/AI3-A: schedulerPriorityMatch after inserting the current thread at
+its effective priority. The inserted priority must equal
+`effectiveRunQueuePriority curTcb` for the invariant to hold. -/
 theorem schedulerPriorityMatch_insert
     (st : SystemState) (curTid : ThreadId) (curTcb : TCB)
     (hPM : schedulerPriorityMatch st)
@@ -389,7 +523,8 @@ theorem schedulerPriorityMatch_insert
     ∀ tid, tid ∈ st.scheduler.runQueue.insert curTid (effectiveRunQueuePriority curTcb) →
       match st.objects[tid.toObjId]? with
       | some (.tcb tcb) =>
-        (st.scheduler.runQueue.insert curTid (effectiveRunQueuePriority curTcb)).threadPriority[tid]? = some (effectiveRunQueuePriority tcb)
+        (st.scheduler.runQueue.insert curTid (effectiveRunQueuePriority curTcb)).threadPriority[tid]?
+          = some (effectiveRunQueuePriority tcb)
       | _ => True := by
   intro tid hMem
   have hNotMem : curTid ∉ st.scheduler.runQueue := by

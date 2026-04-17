@@ -1,3 +1,104 @@
+## v0.29.2 — WS-AK Phase AK2: Scheduler, PIP & WCRT Closure
+
+Phase AK2 of WS-AK Pre-1.0 Release Hardening (v0.29.0 audit). Addresses
+the scheduler priority-inversion vector (S-H03), invariant over-constraint
+(S-H04), CBS admission/replenish safety, and switchDomain failure surface
+— eight MEDIUM and six LOW scheduler/SchedContext findings. Sub-tasks
+AK2-A/B/D/E/F/G/I/J/L landed; AK2-C, AK2-H, AK2-K deferred to AK2.5 per
+escape valve §20.3 of the workstream plan.
+
+Gate: `lake build` (256 jobs) + `test_smoke.sh` + `test_full.sh` + zero
+`sorry` / `axiom` / `native_decide`.
+
+### Changes
+
+- **AK2-A + AK2-B (S-H03 / S-H04, HIGH)** — Option B propagation:
+  `schedContextBind` and `schedContextConfigure` now propagate
+  `sc.priority → tcb.priority` into the bound TCB at bind time and on
+  every subsequent reconfigure that changes the SchedContext priority.
+  Under this propagation invariant, `effectiveRunQueuePriority tcb =
+  max(tcb.priority, pipBoost) = max(sc.priority, pipBoost) =
+  (resolveEffectivePrioDeadline st tcb).1` for every bound thread. The
+  four production re-enqueue sites (`handleYield`, `timerTick`,
+  `timerTickBudget` unbound, `switchDomain`) therefore insert at the
+  same priority that selection (`chooseBestInBucketEffective`) reads,
+  eliminating the priority-inversion vector. `schedulerPriorityMatch`
+  (TCB-based) and `effectiveParamsMatchRunQueue` (SC-based) agree
+  automatically without requiring fusion, resolving the joint
+  over-constraint without a broad preservation cascade. Selection.lean
+  gains `insertPriorityForThread` helper + bridge theorems
+  (`insertPriorityForThread_eq_effectiveBucketPriority`,
+  `insertPriorityForThread_eq_resolveEffective`,
+  `insertPriorityForThread_of_unbound`) and Invariant.lean gains
+  `effectiveBucketPriority` + frame lemmas
+  (`effectiveBucketPriority_frame`, `effectiveBucketPriority_frame_weak`,
+  `effectiveBucketPriority_of_unbound`,
+  `effectiveBucketPriority_of_bound_sc_missing`,
+  `effectiveBucketPriority_lookup_non_sc`) — retained as utilities for
+  the full Option A fusion deferred to AK2.5.
+- **AK2-D (S-M02 / MEDIUM)** — `timeoutBlockedThreads` diagnostic field:
+  `SchedulerState.lastTimeoutErrors : List (ThreadId × KernelError)`
+  now records per-thread timeout errors surfaced during
+  `timerTickBudget`. A non-empty list signals an invariant violation.
+  The field is cleared at the start of each `timerTickWithBudget` so
+  stale diagnostics never survive across rounds.
+- **AK2-E (S-M03 / MEDIUM)** — CBS admission ceiling-round:
+  `Bandwidth.utilization` switches from truncation-down to
+  `(budget * 1000 + period - 1) / period` (ceiling). The prior
+  truncation admitted up to ~6.4% aggregate over-utilization on 64
+  contexts; ceiling-round ensures the admission sum strictly upper-bounds
+  the real bandwidth fraction, hardening CBS isolation for
+  safety-critical RT workloads.
+- **AK2-F (S-M04 / MEDIUM)** — `ReplenishQueue.insertSorted` strict
+  `<` comparator: tied eligibility times now place the new entry AFTER
+  existing equal-time entries, giving FIFO processing instead of LIFO.
+  Proof `insertSorted_preserves_sorted` updated to derive `≤` from `<`
+  (trivial).
+- **AK2-G (S-M05 / MEDIUM)** — `schedContextConfigure` purges stale
+  system-replenish-queue entries for the target SchedContext before
+  storing the reconfigured object. `processReplenishmentsDue` can no
+  longer redundantly enqueue the bound thread at the old replenishment
+  window.
+- **AK2-I (S-M07 / MEDIUM)** — `switchDomain` unreachable fallback
+  emits `.error .schedulerInvariantViolation` instead of silently
+  returning unchanged state. The branch is formally unreachable under
+  `domainScheduleEntriesPositive` (`switchDomain_index_in_bounds`);
+  surfacing the error makes boot-config regressions detectable. Ten
+  preservation theorems updated to discharge the contradictory
+  post-split arm.
+- **AK2-J (S-M08 / MEDIUM)** — `migrateRunQueueBucket` fallback
+  preserves RunQueue priority: on the invariant-violation branch where
+  the TCB is missing, the new priority is computed as
+  `max(newPriority, runQueue.threadPriority[tid]?)` so any previously
+  recorded PIP boost is preserved rather than erased.
+- **AK2-L (S-L13..S-L18 / LOW)** — scheduler LOW-tier batch
+  documentation inline in `Scheduler/Operations/Core.lean`, covering
+  `handleYield` error-semantics rationale, `getCurrentPriority` silent
+  fallback, direct `oid.toNat → ThreadId` cast, `isBetterCandidate`
+  proof brittleness, `⟨Nat.max …⟩` Priority validity, and
+  `runQueueUnique` per-bucket lemma status.
+
+### Deferred to AK2.5
+
+- **AK2-C (S-M01 / MEDIUM)** — `blockingChain` `Except` return type.
+  Signature change cascades to `Propagate.lean`, `BoundedInversion.lean`,
+  `Boot.lean`, `CrossSubsystem.lean`.
+- **AK2-H (S-M06 / MEDIUM)** — routing `schedule` /
+  `scheduleEffective` / `switchDomain` through
+  `saveOutgoingContextChecked` / `restoreIncomingContextChecked`.
+  Formal unreachability under `currentThreadValid` already provided by
+  AI3-C; runtime assertion hardening deferred.
+- **AK2-K (S-H01 / S-H02 / HIGH)** — WCRT proof-schema closure. Per
+  escape valve §20.3 of WS-AK plan, defer K.1/K.2/K.3 to AK2.5
+  sub-workstream; K.4 (documentation of `eventuallyExits` residual
+  hypothesis) captured in `docs/spec/SELE4N_SPEC.md` §5.7.
+
+### Test fixture
+
+`tests/fixtures/main_trace_smoke.expected` unchanged — the four code-
+path changes at scheduler re-enqueue sites produce the same priority
+under the Option B propagation invariant.
+
 ## v0.29.1 — WS-AK Phase AK1: IPC Fail-Closed & Rendezvous State
 
 Phase AK1 of WS-AK Pre-1.0 Release Hardening (v0.29.0 audit). Addresses

@@ -527,7 +527,9 @@ private theorem switchDomain_preserves_schedulerInvariantBundle
   | cons entry rest =>
       simp [hSched] at hStep
       split at hStep
-      · cases hStep; exact ⟨hQCC, hRQU, hCTV⟩
+      · -- AK2-I: fallback now emits `.error`; the Except contradiction is
+        -- already discharged by `simp at hStep` during the split.
+        cases hStep
       · rename_i _ hGet
         simp at hStep
         cases hStep
@@ -970,7 +972,8 @@ private theorem switchDomain_preserves_timeSlicePositive
   | cons entry rest =>
       simp [hSched] at hStep
       split at hStep
-      · cases hStep; exact hInv
+      · -- AK2-I: `.error` fallback; contradiction discharged during split.
+        cases hStep
       · simp at hStep; cases hStep
         -- Objects are now (saveOutgoingContext st).objects; bridge via existing lemma
         have hSaveTS : timeSlicePositive (saveOutgoingContext st) :=
@@ -1220,7 +1223,8 @@ private theorem switchDomain_preserves_currentTimeSlicePositive
   | cons entry rest =>
       simp [hSched] at hStep
       split at hStep
-      · cases hStep; exact hCurTS
+      · -- AK2-I: `.error` fallback; contradiction discharged during split.
+        cases hStep
       · simp at hStep; cases hStep; simp [currentTimeSlicePositive]
 
 /-- WS-H12b: `timerTick` preserves `currentTimeSlicePositive`. -/
@@ -1306,7 +1310,8 @@ private theorem switchDomain_preserves_edfCurrentHasEarliestDeadline
   | cons entry rest =>
       simp [hSched] at hStep
       split at hStep
-      · cases hStep; exact hInv
+      · -- AK2-I: `.error` fallback; contradiction discharged during split.
+        cases hStep
       · simp at hStep; cases hStep
         simp [edfCurrentHasEarliestDeadline]
 
@@ -1333,9 +1338,9 @@ theorem switchDomain_preserves_contextMatchesCurrent
     rw [hSched] at hStep; simp only at hStep
     cases hIdx : (hd :: tl)[((st.scheduler.domainScheduleIndex + 1) % (hd :: tl).length)]? with
     | none =>
+      -- AK2-I: fallback now emits `.error`; the Except contradiction is discharged.
       rw [hIdx] at hStep
-      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-      obtain ⟨_, hStEq⟩ := hStep; subst hStEq; exact hInv
+      simp at hStep
     | some entry =>
       rw [hIdx] at hStep
       simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -1363,7 +1368,8 @@ theorem switchDomain_preserves_runnableThreadsAreTCBs
   | cons entry rest =>
       simp [hSched] at hStep
       split at hStep
-      · cases hStep; exact hInv
+      · -- AK2-I: `.error` fallback; contradiction discharged during split.
+        cases hStep
       · rename_i _ hGet
         simp at hStep; cases hStep
         intro tid hMem
@@ -1577,8 +1583,139 @@ theorem timerTick_preserves_runnableThreadsAreTCBs
                 · simp [hEqId]
                 · simp [hEqId]; exact ⟨tcbT, hTcbT⟩
 
+/-- AK2-B helper: `saveOutgoingContext` modifies only ONE object at
+`outTid.toObjId` (updating its registerContext field). For any other ObjId,
+the lookup is literally unchanged. -/
+private theorem saveOutgoingContext_preserves_lookup_of_ne
+    (st : SystemState) (oid : SeLe4n.ObjId)
+    (hNe : ∀ outTid, st.scheduler.current = some outTid → outTid.toObjId ≠ oid)
+    (hObjInv : st.objects.invExt) :
+    (saveOutgoingContext st).objects[oid]? = st.objects[oid]? := by
+  unfold saveOutgoingContext
+  cases hCur : st.scheduler.current with
+  | none => rfl
+  | some outTid =>
+      dsimp only
+      cases hOut : st.objects[outTid.toObjId]? with
+      | none => rfl
+      | some outObj =>
+          cases outObj with
+          | tcb outTcb =>
+              dsimp only
+              simp only [RHTable_getElem?_eq_get?]
+              rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+              have hNeq : outTid.toObjId ≠ oid := hNe outTid hCur
+              have hBEq : (outTid.toObjId == oid) = false := by
+                cases hE : (outTid.toObjId == oid) with
+                | false => rfl
+                | true => exact absurd (beq_iff_eq.mp hE) hNeq
+              simp [hBEq]
+          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ => rfl
+
+/-- AK2-B helper: `saveOutgoingContext` preserves SchedContext lookups.
+Used to discharge the SchedContext arm of the weak frame lemma. -/
+private theorem saveOutgoingContext_preserves_schedContext_lookup
+    (st : SystemState) (scId : SchedContextId) (sc : SchedContext)
+    (hSc : st.objects[scId.toObjId]? = some (.schedContext sc))
+    (hObjInv : st.objects.invExt) :
+    (saveOutgoingContext st).objects[scId.toObjId]? = some (.schedContext sc) := by
+  unfold saveOutgoingContext
+  cases hCur : st.scheduler.current with
+  | none => exact hSc
+  | some outTid =>
+      dsimp only
+      cases hOut : st.objects[outTid.toObjId]? with
+      | none => exact hSc
+      | some outObj =>
+          cases outObj with
+          | tcb outTcb =>
+              dsimp only
+              simp only [RHTable_getElem?_eq_get?]
+              rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+              by_cases hEq : outTid.toObjId == scId.toObjId
+              · exfalso
+                have hEq' := beq_iff_eq.mp hEq
+                rw [hEq'] at hOut
+                rw [hOut] at hSc; exact absurd hSc (by simp)
+              · simp [hEq]
+                simp only [RHTable_getElem?_eq_get?] at hSc
+                exact hSc
+          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
+              exact hSc
+
+/-- AK2-B: `saveOutgoingContext` preserves `effectiveBucketPriority` for any
+TCB — it only modifies the outgoing TCB's registerContext, which
+`effectiveBucketPriority` doesn't inspect. -/
+private theorem saveOutgoingContext_effectiveBucketPriority_eq
+    (st : SystemState) (tcb : TCB) (hObjInv : st.objects.invExt) :
+    effectiveBucketPriority (saveOutgoingContext st) tcb
+      = effectiveBucketPriority st tcb := by
+  apply effectiveBucketPriority_frame_weak
+  intros scId _
+  by_cases hLook : ∃ sc, st.objects[scId.toObjId]? = some (.schedContext sc)
+  · left
+    obtain ⟨sc, hSc⟩ := hLook
+    exact ⟨sc, hSc, saveOutgoingContext_preserves_schedContext_lookup st scId sc hSc hObjInv⟩
+  · right
+    have hLookN : ∀ sc, st.objects[scId.toObjId]? ≠ some (.schedContext sc) := by
+      intro sc hE; exact hLook ⟨sc, hE⟩
+    refine ⟨hLookN, ?_⟩
+    -- Post-state: if saveOut produced a `.schedContext` at scId.toObjId, the
+    -- input must also have had one — contradiction.
+    intro sc hE
+    by_cases hNe : ∀ outTid, st.scheduler.current = some outTid → outTid.toObjId ≠ scId.toObjId
+    · have hPreserved : (saveOutgoingContext st).objects[scId.toObjId]? = st.objects[scId.toObjId]? :=
+        saveOutgoingContext_preserves_lookup_of_ne st scId.toObjId hNe hObjInv
+      rw [hPreserved] at hE
+      exact hLookN sc hE
+    · -- At scId.toObjId = outTid.toObjId, the post-state holds a .tcb (not
+      -- a .schedContext). Contradict with hE.
+      have hWitness : ∃ outTid, st.scheduler.current = some outTid ∧
+          outTid.toObjId = scId.toObjId :=
+        Classical.byContradiction fun h =>
+          hNe fun outTid hCurX hEqX => h ⟨outTid, hCurX, hEqX⟩
+      obtain ⟨outTid, hCur, hEq⟩ := hWitness
+      -- The outgoing TCB's ObjId IS scId.toObjId. `st.objects[outTid.toObjId]?`
+      -- must hold a TCB (currentThreadValid would tell us but we don't have
+      -- that here; however if it holds any non-TCB, saveOut is a no-op there,
+      -- and then hE says `some (.schedContext sc) = st.objects[scId.toObjId]?`
+      -- which contradicts hLookN). Split cases:
+      rw [← hEq] at hE
+      -- hE now: (saveOut st).objects[outTid.toObjId]? = some (.schedContext sc)
+      cases hOut : st.objects[outTid.toObjId]? with
+      | none =>
+        -- saveOut is no-op when outgoing TCB is missing
+        have : (saveOutgoingContext st).objects[outTid.toObjId]? = none := by
+          unfold saveOutgoingContext; rw [hCur]; simp [hOut]
+        rw [this] at hE; exact absurd hE (by simp)
+      | some outObj =>
+        cases outObj with
+        | tcb outTcb =>
+          -- saveOut inserts .tcb at outTid.toObjId, hE says .schedContext
+          have : (saveOutgoingContext st).objects[outTid.toObjId]?
+              = some (.tcb { outTcb with registerContext := st.machine.regs }) := by
+            unfold saveOutgoingContext
+            rw [hCur]; dsimp only
+            rw [hOut]; dsimp only
+            simp only [RHTable_getElem?_eq_get?]
+            rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+            simp
+          rw [this] at hE; exact absurd hE (by simp)
+        | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
+          -- saveOut is no-op when outgoing isn't a TCB; hE reduces to original
+          -- st.objects[outTid.toObjId]? which is non-.schedContext by hOut, or
+          -- is .schedContext sc. We must contradict hLookN.
+          have hPres : (saveOutgoingContext st).objects[outTid.toObjId]?
+              = st.objects[outTid.toObjId]? := by
+            unfold saveOutgoingContext; rw [hCur]; simp [hOut]
+          rw [hPres] at hE
+          rw [hEq] at hE
+          exact hLookN sc hE
+
 /-- Helper: `schedulerPriorityMatch` transfers through `saveOutgoingContext` because
-the scheduler (runQueue) is unchanged and TCB priorities are preserved. -/
+the scheduler (runQueue) is unchanged, TCB fields (priority, pipBoost,
+schedContextBinding) are preserved, and SchedContext objects are untouched —
+so `effectiveBucketPriority` agrees on both states. -/
 private theorem schedulerPriorityMatch_of_saveOutgoingContext
     (st : SystemState) (hPM : schedulerPriorityMatch st)
     (hObjInv : st.objects.invExt) :
@@ -1595,7 +1732,7 @@ private theorem schedulerPriorityMatch_of_saveOutgoingContext
   | some obj =>
     cases obj with
     | tcb tcb =>
-      obtain ⟨tcb', hTcb', _, hPri, _, _, hPip⟩ :=
+      obtain ⟨tcb', hTcb', _, hPri, _, _, hPip, _⟩ :=
         saveOutgoingContext_tcb_fields st tid.toObjId tcb hTid hObjInv
       simp [hTid] at hOrig; rw [hSchedEq]; simp [hTcb']
       simp [effectiveRunQueuePriority, hPri, hPip]; exact hOrig
@@ -1622,7 +1759,8 @@ private theorem switchDomain_preserves_schedulerPriorityMatch
   | cons entry rest =>
     simp [hSched] at hStep
     split at hStep
-    · obtain ⟨_, rfl⟩ := hStep; exact hPM
+    · -- AK2-I: `.error` fallback; contradiction discharged during split.
+      simp at hStep
     · rename_i _ hGet
       simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
       obtain ⟨_, hSt⟩ := hStep
@@ -1669,7 +1807,7 @@ private theorem switchDomain_preserves_schedulerPriorityMatch
             | some tidObj =>
               cases tidObj with
               | tcb tidTcb =>
-                obtain ⟨tcb', hTcb', _, hPri, _, _, hPip⟩ :=
+                obtain ⟨tcb', hTcb', _, hPri, _, _, hPip, _⟩ :=
                   saveOutgoingContext_tcb_fields st tid.toObjId tidTcb hTid hObjInv
                 simp [hTid] at hInsert; simp [hTcb']
                 simp [effectiveRunQueuePriority, hPri, hPip]; exact hInsert
@@ -1848,7 +1986,8 @@ theorem switchDomain_preserves_domainTimeRemainingPositive
   | cons entry rest =>
     simp only [hSched] at hStep
     split at hStep
-    · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
+    · -- AK2-I: `.error` fallback; contradiction discharged during split.
+      simp at hStep
     · rename_i nextEntry _
       simp at hStep; obtain ⟨_, rfl⟩ := hStep
       unfold domainTimeRemainingPositive; simp
@@ -1877,7 +2016,8 @@ theorem switchDomain_preserves_domainSchedule
   | cons entry rest =>
     simp only [hSched] at hStep
     split at hStep
-    · simp at hStep; cases hStep; exact hSched
+    · -- AK2-I: `.error` fallback; contradiction discharged during split.
+      simp at hStep
     · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
       obtain ⟨_, rfl⟩ := hStep
       show entry :: rest = entry :: rest
@@ -2363,7 +2503,7 @@ private theorem schedule_preserves_edfCurrentHasEarliestDeadline
               hwf hpm hSchedOk.2 hAllTcb hCIB hObj
             simp only [edfCurrentHasEarliestDeadline]
             -- Get the saved TCB and its field preservation
-            have ⟨tcbSel', hTcbSel', hDomSel, hPriSel, hDlSel, _, hPipSel⟩ :=
+            have ⟨tcbSel', hTcbSel', hDomSel, hPriSel, hDlSel, _, hPipSel, hBindSel⟩ :=
               saveOutgoingContext_tcb_fields st tid.toObjId tcbSel hObj hObjInv
             simp [hTcbSel']
             intro t hMem
@@ -2386,7 +2526,7 @@ private theorem schedule_preserves_edfCurrentHasEarliestDeadline
             | some objT =>
                 cases objT with
                 | tcb tcbT =>
-                    have ⟨tcbT', hTcbT', hDomT, hPriT, hDlT, _, hPipT⟩ :=
+                    have ⟨tcbT', hTcbT', hDomT, hPriT, hDlT, _, hPipT, hBindT⟩ :=
                       saveOutgoingContext_tcb_fields st t.toObjId tcbT hObjT hObjInv
                     simp [hTcbT']
                     simp [hObjT] at hBridgeT
@@ -3191,7 +3331,8 @@ private theorem switchDomain_preserves_runQueueWellFormed
   | cons entry rest =>
     simp only [hSched] at hStep
     split at hStep
-    · simp at hStep; obtain ⟨_, rfl⟩ := hStep; exact hwf
+    · -- AK2-I: `.error` fallback; contradiction discharged during split.
+      simp at hStep
     · rename_i hGet
       simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
       obtain ⟨_, rfl⟩ := hStep
