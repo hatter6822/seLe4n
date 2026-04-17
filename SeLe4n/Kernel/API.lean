@@ -1404,13 +1404,16 @@ def dispatchSyscall (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) : Ke
 /-- WS-J1-C: Top-level register-sourced syscall entry point.
 
 Reads the current thread's register file, decodes raw register values into
-typed kernel references, and dispatches to the appropriate kernel operation.
-This is the single authoritative user-space → kernel transition boundary.
+typed kernel references (merging IPC-buffer overflow for 5+ arg syscalls via
+`decodeSyscallArgsFromState` — AK4-A), and dispatches to the appropriate
+kernel operation. This is the single authoritative user-space → kernel
+transition boundary.
 
 The `regCount` parameter (default 32 for ARM64) should match
 `MachineConfig.registerCount` of the active platform binding. It is used by
-`decodeSyscallArgs` to validate that all layout register indices are within
-architectural bounds. -/
+`decodeSyscallArgs` (the legacy register-only decoder that
+`decodeSyscallArgsFromState` wraps) to validate that all layout register
+indices are within architectural bounds. -/
 def syscallEntry (layout : SeLe4n.SyscallRegisterLayout)
     (regCount : Nat := 32) : Kernel Unit :=
   fun st =>

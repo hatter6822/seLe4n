@@ -497,6 +497,43 @@ theorem decodeSyscallArgsFromState_syscallId_eq
   (decodeSyscallArgsFromState_header_preserved
     st tid layout regs regCount decoded base hBase hOk).2.2
 
+/-- AK4-A.5 (NI): The decode wrapper's read scope on `SystemState` is
+    exclusively what `ipcBufferReadMr` consults for each `tid`. If two
+    states agree on the caller's TCB (via `tid.toObjId`), the caller's
+    VSpaceRoot object, and the full memory function, the decode result
+    is identical.
+
+    This is the top-level NI witness for Phase AK4 — it lifts the
+    `ipcBufferReadMr_reads_only_caller_tcb` witness from `IpcBufferRead.lean`
+    to the decode wrapper consumed by `syscallEntry` /
+    `syscallEntryChecked`. Together with the fact that `decodeSyscallArgs`
+    depends only on `regs`, this proves the decode path has no
+    cross-domain channel beyond the caller's own thread state. -/
+theorem decodeSyscallArgsFromState_reads_only_caller
+    (st st' : SystemState) (tid : ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    (hTcb  : st'.objects[tid.toObjId]? = st.objects[tid.toObjId]?)
+    (hVs   : ∀ vs : SeLe4n.ObjId,
+              (st.objects[tid.toObjId]?).bind
+                 (fun o => match o with | .tcb t => some t.vspaceRoot | _ => none)
+                 = some vs →
+              st'.objects[vs]? = st.objects[vs]?)
+    (hMem  : st'.machine.memory = st.machine.memory) :
+    decodeSyscallArgsFromState st' tid layout regs regCount
+      = decodeSyscallArgsFromState st tid layout regs regCount := by
+  -- The only places where `decodeSyscallArgsFromState` reads `SystemState`
+  -- are via `ipcBufferReadMr st tid i` calls inside the overflow branch.
+  -- Rewriting each such call to use `st` instead of `st'` makes the two
+  -- expressions definitionally equal.
+  have hRead : ∀ i,
+      SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr st' tid i
+        = SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr st tid i := by
+    intro i
+    exact SeLe4n.Kernel.Architecture.IpcBufferRead.ipcBufferReadMr_reads_only_caller_tcb
+            st st' tid i hTcb hVs hMem
+  unfold decodeSyscallArgsFromState
+  simp only [hRead]
+
 /-- AK4-A.4: Size invariant — `msgRegs.size = inlineCount + overflowCount`
     on any successful state-aware decode. This is the downstream contract
     required by per-syscall argument decoders using `requireMsgReg`. -/

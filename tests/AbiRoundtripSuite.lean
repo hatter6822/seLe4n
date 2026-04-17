@@ -299,6 +299,51 @@ private def t08_size_invariant_across_syscalls : IO Unit := do
   | .error _ =>
     throw <| IO.userError "T08 cspaceMint decode failed"
 
+/-- AK4-G-T09: serviceRegister with `requires_grant = 2` (neither 0 nor 1) →
+    rejected with `.invalidMessageInfo` (AK4-B strict boolean parsing on the
+    overflow MR[4] slot). Exercises the full state-aware decode + bounds
+    validation path end-to-end. -/
+private def t09_service_register_grant_strict : IO Unit := do
+  let syscallId := 11
+  let msgLen := 5
+  let inline : Array UInt64 := #[7, 10, 256, 128]
+  let overflow : Array UInt64 := #[2]  -- requires_grant=2 → reject
+  let st := buildAbiState syscallId msgLen inline overflow
+  let tid : SeLe4n.ThreadId := ⟨900⟩
+  match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
+          (regsOf st tid) 32 with
+  | .error _ =>
+    throw <| IO.userError "T09 base decode unexpectedly failed"
+  | .ok decoded =>
+    match decodeServiceRegisterArgs decoded with
+    | .error .invalidMessageInfo =>
+      expect "T09a requires_grant=2 rejected" true
+    | .error e =>
+      throw <| IO.userError s!"T09 expected invalidMessageInfo, got {toString e}"
+    | .ok _ =>
+      throw <| IO.userError "T09 expected error, got ok"
+
+/-- AK4-G-T10: `ipcBufferReadMr` failure-to-decode when the thread ID lookup
+    fails. Uses a `tid` that does not exist in the object store — the helper
+    returns `.threadNotFound`, which the wrapper collapses to
+    `.invalidMessageInfo` on the 5-arg overflow path. -/
+private def t10_unknown_tid_fails : IO Unit := do
+  let syscallId := 11
+  let msgLen := 5
+  let inline : Array UInt64 := #[7, 10, 256, 128]
+  let overflow : Array UInt64 := #[0]
+  let st := buildAbiState syscallId msgLen inline overflow
+  -- Use a non-existent tid for the decode call
+  let bogusTid : SeLe4n.ThreadId := ⟨9999⟩
+  match decodeSyscallArgsFromState st bogusTid SeLe4n.arm64DefaultLayout
+          (regsOf st ⟨900⟩) 32 with
+  | .error .invalidMessageInfo =>
+    expect "T10a unknown tid rejected" true
+  | .error e =>
+    throw <| IO.userError s!"T10 expected invalidMessageInfo, got {toString e}"
+  | .ok _ =>
+    throw <| IO.userError "T10 expected error, got ok"
+
 private def runAll : IO Unit := do
   IO.println "=== AbiRoundtripSuite (AK4-G) ==="
   t01_service_register_full_abi
@@ -309,7 +354,9 @@ private def runAll : IO Unit := do
   t06_cspace_mint_rights_rejected
   t07_cspace_copy_minimal
   t08_size_invariant_across_syscalls
-  IO.println "=== AbiRoundtripSuite PASSED (8 scenarios / 25 assertions) ==="
+  t09_service_register_grant_strict
+  t10_unknown_tid_fails
+  IO.println "=== AbiRoundtripSuite PASSED (10 scenarios / 27 assertions) ==="
 
 end SeLe4n.Testing.AbiRoundtripSuite
 
