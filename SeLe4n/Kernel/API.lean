@@ -1978,43 +1978,48 @@ theorem dispatchWithCap_preservation_composition_witness :
 -- AK6-F (NI-H02): Composed projection preservation for dispatchCapabilityOnly
 -- ============================================================================
 
-/-- AK6-F (NI-H02): Composed projection preservation for the capability-only
-    dispatch path. Historically, callers of `syscallDispatchHigh` (Composition.lean)
-    had to supply an `hProj` hypothesis discharging projection preservation
-    externally — there was no internal theorem composing the per-arm proofs.
-    This theorem closes that gap structurally by:
+/-- AK6-F (NI-H02): Compositional bridge for projection preservation over the
+    capability-only dispatch path. This theorem provides the structural hook
+    that composes any per-arm preservation witness into a single conclusion
+    on the outer `dispatchCapabilityOnly`. Concretely:
 
-    1. Unwrapping the `Option (Kernel Unit)` returned by `dispatchCapabilityOnly`,
-    2. Taking a single uniform per-arm hypothesis `hArmProj` that witnesses
-       projection preservation for whichever arm actually ran,
-    3. Composing the two into a single preservation conclusion.
+    - Input: `hArmProj` — a per-arm preservation witness parameterised by the
+      kernel operation that `dispatchCapabilityOnly` returns. The caller
+      supplies one such witness, obtained by case-analysis on
+      `decoded.syscallId` plus `cap.target`, and discharges it using
+      existing per-op `_preserves_projection` theorems in
+      `InformationFlow/Invariant/Operations.lean` or
+      `storeObject_preserves_projection` at a non-observable cap target.
+    - Output: projection preservation over `dispatchCapabilityOnly decoded
+      cap tid = some kop, kop st = .ok ((), st')`.
 
-    `hArmProj` is the per-arm preservation witness — a single ∀-statement that
-    the caller discharges by case-analysis on `decoded.syscallId`. For each arm,
-    the discharge appeals to an existing per-op projection theorem from
-    `InformationFlow/Invariant/Operations.lean`:
+    **Partial-closure status (v0.29.9):** This is a structural bridge —
+    `hArmProj` is still an externally-supplied hypothesis. The audit's
+    ideal full closure (AK6-F.3 in the workstream plan) would case-split
+    on `decoded.syscallId` inside this theorem and discharge each of the
+    11 cap-only arms directly, eliminating the `hArmProj` parameter. That
+    full closure requires adding `_preserves_projection` theorems for
+    arms that currently lack them (`schedContextConfigure/Bind/Unbind`,
+    `tcbSuspend/Resume`, `serviceRevoke` via the service orchestrator,
+    `lifecycleRetype` via `lifecycleRetypeDirectWithCleanup`). Tracked as
+    AK6-F.2/F.3 continuation work; safe to ship the structural bridge
+    meanwhile because every caller was already proving projection
+    preservation at the dispatch-entry level — this theorem just centralises
+    the composition.
+
+    **Per-arm discharge table** (for callers constructing `hArmProj`):
 
     | Arm | Discharge |
     |-----|-----------|
-    | `.cspaceDelete` | `cspaceDeleteSlot_preserves_projection` |
-    | `.lifecycleRetype` | `lifecycleRevokeDeleteRetype_preserves_projection` (extends to retype path via frame composition) |
-    | `.vspaceMap` | `vspaceMapPage_preserves_projection` |
-    | `.vspaceUnmap` | `vspaceUnmapPage_preserves_projection` |
-    | `.serviceRevoke` | `cspaceRevoke_preserves_projection` (service revoke lifts to cspace revoke) |
-    | `.serviceQuery` | read-only (state unchanged) |
-    | `.schedContextConfigure/Bind/Unbind` | `storeObject_preserves_projection` at non-observable SchedContext target |
+    | `.cspaceDelete` | `cspaceDeleteSlot_preserves_projection` (Operations.lean:906) |
+    | `.lifecycleRetype` | compose with `lifecycleRevokeDeleteRetype_preserves_projection` (line 2391) via `lifecycleRetypeDirectWithCleanup` frame |
+    | `.vspaceMap` | `vspaceMapPage_preserves_projection` (line 690); requires `hRootHigh` via ASID resolution |
+    | `.vspaceUnmap` | `vspaceUnmapPage_preserves_projection` (line 734) |
+    | `.serviceRevoke` | reduces to `cspaceRevoke_preserves_projection` (line 937) through the orchestrator |
+    | `.serviceQuery` | read-only (`lookupServiceByCap` does not mutate state) |
+    | `.schedContextConfigure/Bind/Unbind` | `storeObject_preserves_projection` at non-observable SchedContext target + TCB/RunQueue field preservation |
     | `.tcbSuspend/Resume` | `storeObject_preserves_projection` at non-observable TCB target |
-
-    The per-arm proofs exist OR reduce to `storeObject_preserves_projection` at a
-    non-observable cap target. This theorem's role is to make the composition
-    **explicit**: it's no longer an implicit caller obligation on `syscallDispatchHigh`,
-    and an auditor can see the composition is closed.
-
-    Remaining cleanup tracked under AK6-F.2–F.6 in the workstream plan:
-    the SchedContext/Suspend per-op theorems can be extracted as dedicated
-    `*_preserves_projection` lemmas for reuse outside the cap-only path. Their
-    absence does not affect the composition here — each reduces to
-    `storeObject_preserves_projection`. -/
+    -/
 theorem dispatchCapabilityOnly_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (decoded : SyscallDecodeResult) (cap : Capability) (tid : SeLe4n.ThreadId)

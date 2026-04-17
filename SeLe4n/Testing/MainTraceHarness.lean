@@ -2183,6 +2183,11 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   -- Z5-AUD-05: validateSchedContextParams — domain >= numDomains rejected
   let domainOver := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 100 1000 50 0 16
   IO.println s!"[SCO-005] validateSchedContextParams domain>=16: {reprStr domainOver}"
+  -- AK6-A (SC-H01): validateSchedContextParams — zero budget rejected
+  -- A zero-budget SchedContext would store a replenishment with amount=0,
+  -- violating replenishmentListWellFormed (∀ r, r.amount.val > 0).
+  let zeroBudget := SeLe4n.Kernel.SchedContextOps.validateSchedContextParams 0 1000 50 0 0
+  IO.println s!"[SCO-005a] validateSchedContextParams zero-budget (AK6-A): {reprStr zeroBudget}"
 
   -- Z5-AUD-06: schedContextConfigure — success path
   let scId : SeLe4n.ObjId := ⟨5000⟩
@@ -2440,6 +2445,28 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     stYieldNoBound ⟨5001⟩ ⟨5002⟩
   let rqEmpty := stAfterNoBound.scheduler.runQueue.toList.length == 0
   IO.println s!"[SCO-019] schedContextYieldTo no-bound-thread: rq_still_empty={rqEmpty}"
+
+  -- AK6-D (SC-M03): Self-yield guard — `schedContextYieldTo st x x = st`.
+  -- Without the guard, the naive implementation zeros the source SchedContext
+  -- then re-writes the target; when they alias, HashMap.insert ordering
+  -- decides whether `budgetRemaining := 0` wins. The guard forces identity.
+  let selfScId : SeLe4n.ObjId := ⟨5003⟩
+  let selfSc : SeLe4n.Kernel.SchedContext :=
+    { SeLe4n.Kernel.SchedContext.empty ⟨5003⟩ with
+      budget := ⟨200⟩, period := ⟨500⟩, budgetRemaining := ⟨150⟩
+      isActive := true }
+  let stSelfYield := { st1 with
+    objects := st1.objects.insert selfScId (.schedContext selfSc) }
+  let stAfterSelf := SeLe4n.Kernel.SchedContextOps.schedContextYieldTo
+    stSelfYield ⟨5003⟩ ⟨5003⟩
+  let selfRemaining := match stAfterSelf.objects[selfScId]? with
+    | some (.schedContext sc) => sc.budgetRemaining.val
+    | _ => 0
+  let selfActive := match stAfterSelf.objects[selfScId]? with
+    | some (.schedContext sc) => sc.isActive
+    | _ => false
+  -- AK6-D invariant: self-yield leaves budgetRemaining and isActive UNCHANGED
+  IO.println s!"[SCO-019a] schedContextYieldTo self-guard (AK6-D): remaining={selfRemaining} isActive={selfActive}"
 
 -- ============================================================================
 -- Z6-AUD: Timeout endpoint trace tests

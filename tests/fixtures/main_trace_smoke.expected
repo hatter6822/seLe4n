@@ -170,6 +170,7 @@
 [SCO-003] validateSchedContextParams budget>period: Except.error (SeLe4n.Model.KernelError.invalidArgument)
 [SCO-004] validateSchedContextParams priority>max: Except.error (SeLe4n.Model.KernelError.invalidArgument)
 [SCO-005] validateSchedContextParams domain>=16: Except.error (SeLe4n.Model.KernelError.invalidArgument)
+[SCO-005a] validateSchedContextParams zero-budget (AK6-A): Except.error (SeLe4n.Model.KernelError.invalidArgument)
 [SCO-006] schedContextConfigure success budget=100 period=1000
 [SCO-007] schedContextBind success: sc.boundThread=true tcb.bound=true
 [SCO-008] schedContextBind already-bound: SeLe4n.Model.KernelError.illegalState
@@ -184,6 +185,7 @@
 [SCO-017] admission-failure: admitted=false
 [SCO-018] schedContextBind tcb-already-bound: SeLe4n.Model.KernelError.illegalState
 [SCO-019] schedContextYieldTo no-bound-thread: rq_still_empty=true
+[SCO-019a] schedContextYieldTo self-guard (AK6-D): remaining=150 isActive=true
 [SCO-020] endpointQueueRemove head: newHead=tid2:true newTail=tid2:true
 [SCO-021] endpointQueueRemove not-found: SeLe4n.Model.KernelError.objectNotFound
 [SCO-022] endpointQueueRemove no-endpoint: SeLe4n.Model.KernelError.objectNotFound

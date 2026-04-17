@@ -626,7 +626,15 @@ def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
             priority := ⟨priority⟩
             deadline := ⟨deadline⟩
             domain := ⟨domain⟩
-            budgetRemaining := ⟨budget⟩ }
+            budgetRemaining := ⟨budget⟩
+            -- AK6-B/C parity (SC-M01/SC-M02): mirror the runtime
+            -- `schedContextConfigure` replenishment replacement so the
+            -- FROZEN variant does not leave stale replenishment entries
+            -- across reconfigures. The frozen timer is 0 at boot, so
+            -- the first eligibility aligns with `period`; any subsequent
+            -- reconfigure honors `timer + period` like the runtime path.
+            replenishments := [{ amount := ⟨budget⟩,
+                                 eligibleAt := 0 + period }] }
         -- Admission control: collect all SchedContexts from frozen store
         let allScs := st.objects.fold (init := []) fun acc _id obj =>
           match obj with

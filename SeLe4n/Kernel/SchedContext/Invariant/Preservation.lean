@@ -199,6 +199,24 @@ theorem applyConfigureParamsFull_replenishments_correct
   unfold applyConfigureParamsFull
   rfl
 
+/-- AK6-B bridge: If `schedContextConfigure` succeeds, then the parameters
+MUST have passed `validateSchedContextParams`. The operation's first match
+rejects failed validation before touching any state. Composing this with
+`applyConfigureParamsFull_schedContextWellFormed` witnesses end-to-end
+`schedContextWellFormed` preservation — the CONCRETE post-state stored at
+`scId` equals `applyConfigureParamsFull sc budget period priority deadline
+domain st.machine.timer` (by construction in `schedContextConfigure`), and
+that helper's well-formedness follows from validation. -/
+theorem schedContextConfigure_success_implies_validated
+    (scId : ObjId) (budget period priority deadline domain : Nat)
+    (st st' : SystemState)
+    (hOk : schedContextConfigure scId budget period priority deadline domain st = .ok ((), st')) :
+    validateSchedContextParams budget period priority deadline domain = .ok () := by
+  unfold schedContextConfigure at hOk
+  split at hOk
+  · rename_i e heq; simp at hOk
+  · rename_i heq; exact heq
+
 -- ============================================================================
 -- Z5-I: schedContextYieldTo budget bound
 -- ============================================================================
