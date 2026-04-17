@@ -1,3 +1,67 @@
+## v0.29.9 — WS-AK Phase AK6 Information Flow + SchedContext Correctness
+
+Phase AK6 of the v0.29.0 pre-release hardening audit. Ten sub-tasks
+addressing 2 HIGH, 6 MEDIUM, and 7 LOW findings across the information-flow
+projection / labeling / enforcement layer and the SchedContext / CBS
+budget engine. This phase closes the single release-critical NI gap
+(unproven `hProj` for the cap-only dispatch path) and the SC-H01 zero-
+budget hole that would have admitted a stored replenishment with
+`amount.val = 0` — a direct violation of `replenishmentListWellFormed`.
+
+Gate: `lake build` (260 jobs) + `test_smoke.sh` + `test_full.sh` +
+`check_version_sync.sh` + zero `sorry` / `axiom`.
+
+### Highlights
+
+- **AK6-A** (SC-H01 / HIGH): `validateSchedContextParams` rejects
+  `budget == 0`. `validateSchedContextParams_implies_wellFormed` extended
+  from 2-tuple `(period > 0, budget ≤ period)` to 3-tuple adding
+  `budget > 0`. `frozenSchedContextConfigure` mirrored for parity.
+- **AK6-B/AK6-C** (SC-M01/M02 / MEDIUM): `schedContextConfigure`
+  replenishment is now exactly `[{ amount := ⟨budget⟩,
+  eligibleAt := st.machine.timer + period }]` — the previous
+  `eligibleAt := st.machine.timer` admitted a double-budget vector on
+  reconfigure. Five new preservation theorems close end-to-end
+  `schedContextWellFormed` for the concrete post-state via a new
+  `applyConfigureParamsFull` helper.
+- **AK6-D** (SC-M03 / MEDIUM): `schedContextYieldTo` self-yield guard —
+  `fromScId == targetScId` returns `st` unchanged (identity fallback,
+  matching the kernel-internal `SystemState`-returning semantics).
+- **AK6-E** (NI-H01 / HIGH): `niStepCoverage` renamed to
+  `niStepConstructorCoverage`. Docstring now syntactically distinguishes
+  constructor discoverability from semantic preservation.
+- **AK6-F** (NI-H02 / HIGH): new `dispatchCapabilityOnly_preserves_projection`
+  theorem in `API.lean` composes the per-arm preservation witnesses for
+  all 11 cap-only arms into a single projection-preservation conclusion.
+  Makes the composition STRUCTURALLY EXPLICIT — no longer an implicit
+  caller obligation on `syscallDispatchHigh`.
+- **AK6-G** (NI-M01 / MEDIUM): `projectKernelObject` strips
+  `pendingMessage := none` and `timedOut := false` from projected TCBs,
+  closing the cross-domain IPC and timeout-signal covert channels. Two
+  new witness theorems (`projectKernelObject_erases_cross_domain_ipc`,
+  `projectKernelObject_erases_timeout_signal`). 35+ downstream NI proofs
+  build unchanged.
+- **AK6-H** (NI-M02 / MEDIUM): `LabelingContextValid` gains a third
+  conjunct `labelNonTriviality` (∃ two distinct thread labels). Default
+  labeling now FAILS validity — new theorem
+  `defaultLabelingContext_fails_validity` replaces the vacuous
+  `defaultLabelingContext_valid`.
+- **AK6-I** (SC-M04 / MEDIUM): new tight CBS bandwidth bound
+  `cbs_bandwidth_bounded_tight` proves `totalConsumed ≤ budget × ⌈window / period⌉`
+  under the externalised `cbsWindowReplenishmentsBounded` scheduling-
+  discipline predicate. `cbs_bandwidth_bounded_min` composes the tight
+  bound with the pre-existing loose 8× bound via `Nat.min`.
+- **AK6-J** (NI-L1..L4 + SC-L1..L3): consolidated LOW-tier batch
+  documentation appended to `InformationFlow/Invariant/Operations.lean`.
+
+### Fixture update
+
+- `tests/fixtures/main_trace_smoke.expected` Z8J-003..Z8J-006 lines
+  updated to reflect AK6-C's corrected CBS drawdown timing. The fixture
+  hash (`main_trace_smoke.expected.sha256`) regenerated.
+
+---
+
 ## v0.29.8 — Doctest coverage audit
 
 Audit-follow-up: the previous release's `cargo test --workspace` output

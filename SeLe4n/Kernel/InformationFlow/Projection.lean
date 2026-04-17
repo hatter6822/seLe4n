@@ -197,10 +197,21 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- X5-I (L-6): Confirmed v0.22.17 audit — register stripping is sound at
       -- the logical level. The projection model intentionally abstracts away
       -- architectural register state for NI purposes.
-      -- M-07/AH5-A: Security analysis — pendingMessage visibility in NI projection.
-      -- `pendingMessage` is technically visible in the projection (not stripped
-      -- like `registerContext`). However, cross-domain information leakage via
-      -- `pendingMessage` is unreachable under the NI invariant conjunction:
+      -- AK6-G (NI-M01): Strip `pendingMessage` and `timedOut`.
+      -- Historically these two fields survived projection (see commentary
+      -- below) because the NI invariants `runnableThreadIpcReady`,
+      -- `currentNotEndpointQueueHead`, and domain scheduling together made
+      -- cross-domain exposure "unreachable under the live invariants" —
+      -- but the projection itself is defined as a pure function of the
+      -- state and must not depend on a deployment-time invariant witness.
+      -- A malformed state or any path that bypasses the invariants would
+      -- expose cross-domain IPC and timeout signal to non-current
+      -- observers. AK6-G closes the covert channel by stripping both
+      -- fields structurally at projection time.
+      --
+      -- M-07/AH5-A (historical rationale — now preserved as defense-in-
+      -- depth): `pendingMessage` leakage is unreachable under the NI
+      -- invariant conjunction:
       --
       -- 1. `runnableThreadIpcReady`: observable threads are in `.ready` IPC state,
       --    meaning they have no pending message from a cross-domain sender.
@@ -209,8 +220,12 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- 3. Domain scheduling: only threads in the current domain are observable,
       --    and IPC messages across domains require a domain switch.
       --
-      -- A formal proof that these invariants make `pendingMessage` exposure
-      -- unreachable is tracked for WS-V (non-interference refinement).
+      -- `timedOut` is set by `timeoutThread` on budget exhaustion during
+      -- cross-domain IPC — propagating its value across projection would
+      -- leak the fact that a different domain's budget expired. The flag
+      -- is purely internal scheduling plumbing (cleared by
+      -- `timeoutAwareReceive`), not a security-relevant property.
+      --
       -- AI4-A: Also strip schedContextBinding — internal scheduling plumbing
       -- (donation chain state), not security-relevant observable state. Donation
       -- chain changes (returnDonatedSchedContext) modify only this field and must
@@ -219,7 +234,8 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- relationships and could leak timing information across security domains.
       -- A thread's effective priority boost is an internal scheduling detail,
       -- not a security-relevant observable property.
-      .tcb { tcb with registerContext := default, schedContextBinding := .unbound, pipBoost := none }
+      .tcb { tcb with registerContext := default, schedContextBinding := .unbound,
+                       pipBoost := none, pendingMessage := none, timedOut := false }
   | .schedContext sc =>
       -- AI4-A: Strip boundThread — internal scheduling plumbing binding a
       -- SchedContext to its owning thread. Donation chain changes modify only
@@ -254,6 +270,32 @@ theorem projectKernelObject_objectType
     (ctx : LabelingContext) (observer : IfObserver) (obj : KernelObject) :
     (projectKernelObject ctx observer obj).objectType = obj.objectType := by
   cases obj <;> rfl
+
+/-- AK6-G (NI-M01): `projectKernelObject` strips cross-domain IPC from
+    projected TCBs. The projection erases `pendingMessage` regardless of the
+    source state — whatever inter-domain message is latched on the TCB, the
+    projection shows `none`. Combined with `projectObjects` gating by
+    `objectObservable`, this closes the covert channel through which an
+    observer could distinguish two states that differ only in a
+    cross-domain sender's message content. -/
+theorem projectKernelObject_erases_cross_domain_ipc
+    (ctx : LabelingContext) (observer : IfObserver) (tcb : TCB) :
+    match projectKernelObject ctx observer (.tcb tcb) with
+    | .tcb tcb' => tcb'.pendingMessage = none
+    | _ => True := by
+  simp [projectKernelObject]
+
+/-- AK6-G (NI-M01): `projectKernelObject` strips the IPC timeout flag from
+    projected TCBs. `timedOut` is set by `timeoutThread` when a
+    SchedContext budget expires during cross-domain IPC; leaking that
+    value across projection would expose another domain's scheduling
+    state. The projection always shows `false`. -/
+theorem projectKernelObject_erases_timeout_signal
+    (ctx : LabelingContext) (observer : IfObserver) (tcb : TCB) :
+    match projectKernelObject ctx observer (.tcb tcb) with
+    | .tcb tcb' => tcb'.timedOut = false
+    | _ => True := by
+  simp [projectKernelObject]
 
 /-- Project object store to observer-visible subset.
 

@@ -493,4 +493,85 @@ theorem cbs_bandwidth_bounded (sc : SchedContext)
       maxReplenishments * sc.budget.val :=
   totalConsumed_le_max_budget sc windowStart window hamounts hwf
 
+-- ============================================================================
+-- AK6-I (SC-M04): Tight CBS bandwidth bound
+-- ============================================================================
+
+/-- AK6-I (SC-M04): The CBS scheduling discipline predicate for a given
+    window. Under correct CBS scheduling, replenishments within the
+    window `[windowStart, windowStart + window)` are spaced at least one
+    period apart — so at most `⌈window / period⌉` fall inside. This
+    predicate EXTERNALIZES that scheduler-level assumption so the tight
+    bandwidth proof can discharge it locally from a caller-supplied
+    witness (e.g., the scheduler's liveness proof in `Liveness/WCRT.lean`).
+
+    The number of ceiling-divisions is encoded as `(window + period - 1) / period`
+    which equals `⌈window / period⌉` for `period > 0` and evaluates to `0`
+    when `window = 0` (vacuously holds).
+
+    NB: The predicate is ON the list itself — not a runtime check. A
+    deployer proves it at boot/schedule time and threads it through the
+    WCRT/bandwidth analyses. -/
+def cbsWindowReplenishmentsBounded (sc : SchedContext)
+    (windowStart window : Nat) : Prop :=
+  (sc.replenishments.filter (fun r =>
+      r.eligibleAt ≥ windowStart && r.eligibleAt < windowStart + window)).length ≤
+    (window + sc.period.val - 1) / sc.period.val
+
+/-- AK6-I (SC-M04): TIGHT CBS bandwidth bound. Given the scheduling
+    discipline (`cbsWindowReplenishmentsBounded`), total consumption within
+    a window of size `window` is bounded by
+    `budget × ⌈window / period⌉`.
+
+    This closes the documented 8× precision gap in `cbs_bandwidth_bounded`:
+    the loose bound (`≤ 8 × budget`) holds unconditionally from list
+    structure, while the tight bound (`≤ budget × ⌈window / period⌉`)
+    holds whenever the CBS scheduling discipline is observed. Both
+    bounds can be combined via `Nat.min`.
+
+    Admission-control caveat: the tight bound's utility depends on
+    actually discharging the discipline at deployment — the scheduler
+    liveness proof (Z4/D5) establishes it for well-configured systems;
+    see `docs/spec/SELE4N_SPEC.md` §5.4 for the admission-control
+    precision analysis. -/
+theorem cbs_bandwidth_bounded_tight (sc : SchedContext)
+    (windowStart window : Nat)
+    (hamounts : replenishmentAmountsBounded sc)
+    (hDiscipline : cbsWindowReplenishmentsBounded sc windowStart window) :
+    totalConsumed sc windowStart window ≤
+      sc.budget.val * ((window + sc.period.val - 1) / sc.period.val) := by
+  unfold totalConsumed
+  have hLen : (sc.replenishments.filter (fun r =>
+      r.eligibleAt ≥ windowStart && r.eligibleAt < windowStart + window)).length ≤
+      (window + sc.period.val - 1) / sc.period.val := hDiscipline
+  have hFilterAmounts : ∀ r ∈ sc.replenishments.filter (fun r =>
+      r.eligibleAt ≥ windowStart && r.eligibleAt < windowStart + window),
+      r.amount.val ≤ sc.budget.val := by
+    intro r hr
+    have hMem : r ∈ sc.replenishments := (List.mem_filter.mp hr).1
+    exact hamounts r hMem
+  calc sumReplenishments (sc.replenishments.filter _)
+      ≤ (sc.replenishments.filter _).length * sc.budget.val :=
+        sumReplenishments_le_count_mul_max _ sc.budget.val hFilterAmounts
+    _ ≤ ((window + sc.period.val - 1) / sc.period.val) * sc.budget.val :=
+        Nat.mul_le_mul_right _ hLen
+    _ = sc.budget.val * ((window + sc.period.val - 1) / sc.period.val) :=
+        Nat.mul_comm _ _
+
+/-- AK6-I (SC-M04): Corollary — when the scheduling discipline holds, the
+    effective bound is the minimum of the loose (list-structure) and tight
+    (period-scheduling) bounds. Applications should consume this corollary
+    when they can discharge `cbsWindowReplenishmentsBounded`. -/
+theorem cbs_bandwidth_bounded_min (sc : SchedContext)
+    (windowStart window : Nat)
+    (hamounts : replenishmentAmountsBounded sc)
+    (hwf : sc.wellFormed)
+    (hDiscipline : cbsWindowReplenishmentsBounded sc windowStart window) :
+    totalConsumed sc windowStart window ≤
+      Nat.min (maxReplenishments * sc.budget.val)
+              (sc.budget.val * ((window + sc.period.val - 1) / sc.period.val)) := by
+  exact Nat.le_min.mpr ⟨
+    cbs_bandwidth_bounded sc windowStart window hamounts hwf,
+    cbs_bandwidth_bounded_tight sc windowStart window hamounts hDiscipline ⟩
+
 end SeLe4n.Kernel

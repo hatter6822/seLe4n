@@ -35,6 +35,69 @@ The pattern for each is identical: all mutations happen at non-observable
 targets via `storeObject`, and CDT/lifecycle metadata is not part of
 `ObservableState`. The proofs compose `storeObject_preserves_projection`
 with CDT-specific frame lemmas.
+
+**AK6-J — LOW-tier NI batch (v0.29.9):**
+
+- **NI-L1** `endpointReplyChecked` flow-check assumes target == caller.
+  The `endpointReplyChecked` wrapper in `InformationFlow/Enforcement/Wrappers.lean`
+  checks `securityFlowsTo replierLabel targetLabel`. Under the reply-cap
+  invariant (`blockedOnReplyHasTarget`, AJ1-B), `replyTarget = replyCap.sender`;
+  the calling thread is the reply-cap holder; the `targetLabel` is therefore
+  the original sender's thread label. The check is semantically "flow from
+  the replier to the original sender" — this is the correct information-flow
+  direction for a reply (the returned value goes to the sender).
+
+- **NI-L2** `endpointReplyRecvChecked` non-atomicity: the combined operation
+  performs a `reply` followed by a `receive` on two separate endpoint caps.
+  Between the two primitive operations, another domain's interrupt or IPC
+  could occur. The flow check inspects both `replierLabel → targetLabel`
+  (reply half) and `callerLabel → endpointLabel` (recv half). A race between
+  the two halves cannot leak information because: (a) each half
+  independently gates its own flow check, and (b) projection preservation
+  applies to the combined final state (either half failing aborts).
+
+- **NI-L3** accepted U6-K covert channels: four scheduling-induced channels
+  remain accepted by design — (i) domain-schedule index exposure via
+  `projectActiveDomain` (scheduling transparency); (ii) domain time remaining
+  via `projectDomainTimeRemaining` (scheduling transparency); (iii) replenish
+  queue length through admission control latency; (iv) runnable queue length
+  via `projectRunnable` filtering (only cross-domain-observable threads are
+  filtered, but same-domain count is visible). These are documented in
+  `docs/spec/SELE4N_SPEC.md` §7.8 under "Accepted Covert Channels" — the
+  scheduling-transparency design trades off timing side channels against
+  auditability.
+
+- **NI-L4** `cspaceMintChecked_NI` takes `badge` as an opaque parameter —
+  any badge value is permitted because badge content is caller-supplied
+  (untrusted). The NI theorem does NOT need to hypothesize badge
+  well-formedness because `cspaceMintChecked` executes `cspaceMintWithCdt`
+  as a black box after the flow gate. Badge uniqueness / opacity is
+  enforced structurally in `Prelude.lean:Badge`, not in NI.
+
+**AK6-J — LOW-tier SC batch:**
+
+- **SC-L1** `processReplenishments` lump-sum cap (`SchedContext/Budget.lean:
+  154-158`) discards over-cap refills by virtue of `applyRefill` capping the
+  sum at `sc.budget.val`. This is DELIBERATE CBS semantics — a refill that
+  exceeds the configured budget is truncated; the discarded ticks are
+  structurally unrecoverable. This matches seL4 MCS behavior where a
+  SchedContext cannot accumulate budget beyond its configured ceiling.
+
+- **SC-L2** `ReplenishQueue.insert` (`SchedContext/ReplenishQueue.lean:
+  89-92`) permits duplicate `SchedContextId` entries by design — a
+  SchedContext may have multiple pending replenishments at distinct
+  eligibility times. Idempotence via "remove-before-insert" is the caller's
+  responsibility when needed (e.g., `schedContextConfigure` at
+  `Operations.lean:120` purges stale entries before inserting the fresh
+  post-reconfigure state). AK2-G wires the remove-before-insert at all
+  known stale-configuration sites.
+
+- **SC-L3** `getCurrentPriority` silent fallback: reading the current
+  thread's effective priority yields priority 0 if the thread has no TCB
+  or its SchedContext is missing. This fallback is a DEFENSIVE invariant-
+  depending read: under `schedulerPriorityMatch` + `currentThreadValid`
+  the fallback is unreachable. Cross-referenced with AE3-E/F documentation
+  on the invariant chain in `Scheduler/Operations/Core.lean`.
 -/
 
 -- ============================================================================

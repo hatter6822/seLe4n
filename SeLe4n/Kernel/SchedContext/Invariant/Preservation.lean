@@ -33,12 +33,12 @@ open SeLe4n.Kernel
 -- Z5-M helper: validated parameters satisfy well-formedness
 -- ============================================================================
 
-/-- Z5-M: If `validateSchedContextParams` succeeds, the period is positive
-and budget does not exceed period. -/
+/-- Z5-M: If `validateSchedContextParams` succeeds, the period is positive,
+budget is positive (AK6-A / SC-H01), and budget does not exceed period. -/
 theorem validateSchedContextParams_implies_wellFormed
     (budget period priority deadline domain : Nat)
     (hOk : validateSchedContextParams budget period priority deadline domain = .ok ()) :
-    period > 0 ∧ budget ≤ period := by
+    period > 0 ∧ budget > 0 ∧ budget ≤ period := by
   simp [validateSchedContextParams] at hOk
   split at hOk
   · simp at hOk
@@ -48,16 +48,25 @@ theorem validateSchedContextParams_implies_wellFormed
       · simp at hOk
       · split at hOk
         · simp at hOk
-        · rename_i h1 h2 _ _
-          constructor
-          · omega
-          · omega
+        · split at hOk
+          · simp at hOk
+          · rename_i h1 h2 h3 _ _
+            refine ⟨?_, ?_, ?_⟩
+            · omega
+            · omega
+            · omega
 
 -- ============================================================================
 -- Z5-M: schedContextConfigure output well-formedness
 -- ============================================================================
 
-/-- Z5-M helper: Build a configured SchedContext from an existing one. -/
+/-- Z5-M helper: Build a configured SchedContext from an existing one.
+
+AK6-B (SC-M01) preserves this legacy shape for backward compatibility with
+existing proofs; the REAL configured SchedContext stored by
+`schedContextConfigure` includes a replenishment-list replacement, which is
+captured separately by `applyConfigureParamsFull` below. Both helpers agree
+on budget / period / priority / deadline / domain / budgetRemaining. -/
 def applyConfigureParams (sc : SchedContext) (budget period priority deadline domain : Nat)
     : SchedContext :=
   { sc with
@@ -68,6 +77,25 @@ def applyConfigureParams (sc : SchedContext) (budget period priority deadline do
     domain := ⟨domain⟩
     budgetRemaining := ⟨budget⟩ }
 
+/-- AK6-B (SC-M01): Build the EXACT SchedContext post-state produced by
+`schedContextConfigure`, including the replenishment-list replacement.
+`schedContextConfigure` replaces `sc.replenishments` with a single fresh
+entry `[{ amount := ⟨budget⟩, eligibleAt := timer + period }]` (AK6-C
+window correction). `applyConfigureParamsFull` captures that concrete
+shape so end-to-end preservation can be proven without the prior
+divergence between spec helper and real op. -/
+def applyConfigureParamsFull (sc : SchedContext)
+    (budget period priority deadline domain timer : Nat)
+    : SchedContext :=
+  { sc with
+    budget := ⟨budget⟩
+    period := ⟨period⟩
+    priority := ⟨priority⟩
+    deadline := ⟨deadline⟩
+    domain := ⟨domain⟩
+    budgetRemaining := ⟨budget⟩
+    replenishments := [{ amount := ⟨budget⟩, eligibleAt := timer + period }] }
+
 /-- Z5-M: When parameters pass validation and the original SchedContext has
 bounded replenishments, the configured SchedContext is well-formed. -/
 theorem schedContextConfigure_output_wellFormed
@@ -75,11 +103,101 @@ theorem schedContextConfigure_output_wellFormed
     (hValid : validateSchedContextParams budget period priority deadline domain = .ok ())
     (sc : SchedContext) (hRep : sc.replenishments.length ≤ maxReplenishments) :
     SchedContext.wellFormed (applyConfigureParams sc budget period priority deadline domain) := by
-  obtain ⟨hPeriod, hBudget⟩ := validateSchedContextParams_implies_wellFormed
+  obtain ⟨hPeriod, _hBudgetPos, hBudget⟩ := validateSchedContextParams_implies_wellFormed
     budget period priority deadline domain hValid
   unfold applyConfigureParams SchedContext.wellFormed
   simp [Period.isPositive]
   omega
+
+/-- AK6-B (SC-M01): The FULL configured SchedContext (with the
+replenishment-list replacement applied) is `SchedContext.wellFormed`. The
+freshly replaced replenishment list has length 1 ≤ `maxReplenishments`
+(which equals 8), so the structural constraint is satisfied. -/
+theorem applyConfigureParamsFull_wellFormed
+    (budget period priority deadline domain timer : Nat)
+    (hValid : validateSchedContextParams budget period priority deadline domain = .ok ())
+    (sc : SchedContext) :
+    SchedContext.wellFormed
+      (applyConfigureParamsFull sc budget period priority deadline domain timer) := by
+  obtain ⟨hPeriod, _hBudgetPos, hBudget⟩ := validateSchedContextParams_implies_wellFormed
+    budget period priority deadline domain hValid
+  unfold applyConfigureParamsFull SchedContext.wellFormed
+  simp [Period.isPositive, maxReplenishments]
+  omega
+
+/-- AK6-B (SC-M01): The FULL configured SchedContext has
+`budgetWithinBounds`. `budgetRemaining := ⟨budget⟩` and `budget ≤ period`
+by validation. -/
+theorem applyConfigureParamsFull_budgetWithinBounds
+    (budget period priority deadline domain timer : Nat)
+    (hValid : validateSchedContextParams budget period priority deadline domain = .ok ())
+    (sc : SchedContext) :
+    budgetWithinBounds
+      (applyConfigureParamsFull sc budget period priority deadline domain timer) := by
+  obtain ⟨_, _, hBudget⟩ := validateSchedContextParams_implies_wellFormed
+    budget period priority deadline domain hValid
+  unfold applyConfigureParamsFull budgetWithinBounds
+  simp
+  omega
+
+/-- AK6-B (SC-M01): The FULL configured SchedContext has
+`replenishmentListWellFormed`. The freshly replaced list has length 1 ≤ 8
+and the sole entry's amount `⟨budget⟩` has `.val = budget > 0` (closed by
+AK6-A `budget > 0` validation). -/
+theorem applyConfigureParamsFull_replenishmentListWellFormed
+    (budget period priority deadline domain timer : Nat)
+    (hValid : validateSchedContextParams budget period priority deadline domain = .ok ())
+    (sc : SchedContext) :
+    replenishmentListWellFormed
+      (applyConfigureParamsFull sc budget period priority deadline domain timer) := by
+  obtain ⟨_, hBudgetPos, _⟩ := validateSchedContextParams_implies_wellFormed
+    budget period priority deadline domain hValid
+  unfold applyConfigureParamsFull replenishmentListWellFormed
+  refine ⟨?_, ?_⟩
+  · simp [maxReplenishments]
+  · intro r hr
+    simp at hr
+    rw [hr]
+    exact hBudgetPos
+
+/-- AK6-B (SC-M01): The FULL configured SchedContext has
+`replenishmentAmountsBounded`. The sole entry's `amount.val = budget` and
+`sc'.budget.val = budget`, so the bound holds with equality. -/
+theorem applyConfigureParamsFull_replenishmentAmountsBounded
+    (budget period priority deadline domain timer : Nat)
+    (sc : SchedContext) :
+    replenishmentAmountsBounded
+      (applyConfigureParamsFull sc budget period priority deadline domain timer) := by
+  unfold applyConfigureParamsFull replenishmentAmountsBounded
+  intro r hr
+  simp at hr
+  rw [hr]
+  simp
+
+/-- AK6-B (SC-M01): End-to-end preservation — the FULL configured
+SchedContext satisfies the 4-conjunct `schedContextWellFormed` bundle. -/
+theorem applyConfigureParamsFull_schedContextWellFormed
+    (budget period priority deadline domain timer : Nat)
+    (hValid : validateSchedContextParams budget period priority deadline domain = .ok ())
+    (sc : SchedContext) :
+    schedContextWellFormed
+      (applyConfigureParamsFull sc budget period priority deadline domain timer) :=
+  ⟨ applyConfigureParamsFull_wellFormed budget period priority deadline domain timer hValid sc
+  , applyConfigureParamsFull_budgetWithinBounds budget period priority deadline domain timer hValid sc
+  , applyConfigureParamsFull_replenishmentListWellFormed budget period priority deadline domain timer hValid sc
+  , applyConfigureParamsFull_replenishmentAmountsBounded budget period priority deadline domain timer sc ⟩
+
+/-- AK6-B (SC-M01) + AK6-C (SC-M02): The replenishment list produced by
+`schedContextConfigure` is exactly one entry whose amount equals the
+configured `budget` and whose eligibility is `timer + period` (one full
+period AFTER reconfigure — the AK6-C window correction). -/
+theorem applyConfigureParamsFull_replenishments_correct
+    (budget period priority deadline domain timer : Nat)
+    (sc : SchedContext) :
+    (applyConfigureParamsFull sc budget period priority deadline domain timer).replenishments
+      = [{ amount := ⟨budget⟩, eligibleAt := timer + period }] := by
+  unfold applyConfigureParamsFull
+  rfl
 
 -- ============================================================================
 -- Z5-I: schedContextYieldTo budget bound

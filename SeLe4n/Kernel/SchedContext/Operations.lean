@@ -45,12 +45,18 @@ def numDomainsVal : Nat := 16
 /-- Z5-F1: Validate SchedContext configuration parameters.
 Returns error if any parameter violates well-formedness constraints:
 - `period > 0` (required for CBS)
+- `budget > 0` (AK6-A / SC-H01: zero-budget rejection — a stored
+  replenishment with `amount.val = 0` would violate the
+  `replenishmentListWellFormed` invariant which forbids zero-amount
+  entries; also, a zero-budget SchedContext cannot make progress and
+  starves its bound thread)
 - `budget ≤ period` (cannot use more than 100% of a period)
 - `priority ≤ maxPriority` (within valid priority range)
 - `domain < numDomains` (within valid domain range) -/
 def validateSchedContextParams (budget period priority _deadline domain : Nat)
     : Except KernelError Unit :=
   if period == 0 then .error .invalidArgument
+  else if budget == 0 then .error .invalidArgument
   else if budget > period then .error .invalidArgument
   else if priority > maxPriorityVal then .error .invalidArgument
   else if domain ≥ numDomainsVal then .error .invalidArgument
@@ -114,7 +120,14 @@ def schedContextConfigure (scId : ObjId) (budget period priority deadline domain
             -- AE3-F/U-14: Reset replenishment list to a single fresh entry
             -- with the new budget amount. Prevents stale entries from prior
             -- configuration referencing outdated budget/period values.
-            replenishments := [{ amount := ⟨budget⟩, eligibleAt := st.machine.timer }] }
+            -- AK6-C (SC-M02): The fresh replenishment becomes eligible one
+            -- FULL period AFTER reconfigure (`timer + period.val`), not at
+            -- the current timer instant. Otherwise a reconfigured SC would
+            -- receive `budgetRemaining := budget` AND an immediately-eligible
+            -- replenishment of `amount := budget`, giving it two full budgets
+            -- per period and doubling its effective CBS bandwidth.
+            replenishments := [{ amount := ⟨budget⟩,
+                                 eligibleAt := st.machine.timer + period }] }
         if checkAdmission st updated (some scId) then
           -- AK2-G: purge stale system replenishQueue entries for this scId
           -- before storing the reconfigured object.
@@ -322,6 +335,15 @@ budget via `min`). Cross-subsystem invariant preservation is proven by
 `schedContextYieldTo_crossSubsystemInvariant_bridge` in CrossSubsystem.lean. -/
 def schedContextYieldTo (st : SystemState) (fromScId targetScId : SchedContextId)
     : SystemState :=
+  -- AK6-D (SC-M03): Self-yield guard. A yield to oneself is a no-op in any
+  -- defensible semantics, but the naive implementation zeros the source
+  -- SchedContext and then re-writes the target — when the two are the same
+  -- object the final `HashMap.insert` ordering decides the stored state
+  -- (`budgetRemaining := 0` wins with the current sequencing). Reject
+  -- self-transfer by returning the state unchanged. `schedContextYieldTo`
+  -- returns `SystemState` (not `Except`) because all failure paths are
+  -- kernel-internal identity fallbacks; self-yield joins that family.
+  if fromScId == targetScId then st else
   match (st.objects[fromScId.toObjId]? : Option KernelObject) with
   | some (KernelObject.schedContext fromSc) =>
     match (st.objects[targetScId.toObjId]? : Option KernelObject) with

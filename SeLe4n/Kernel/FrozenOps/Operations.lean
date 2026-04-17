@@ -610,7 +610,9 @@ def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
     (budget period priority deadline domain : Nat) : FrozenKernel Unit :=
   fun st =>
     -- Parameter validation (mirrors SchedContextOps.validateSchedContextParams)
+    -- AK6-A (SC-H01): reject zero-budget to preserve replenishmentListWellFormed.
     if period == 0 then .error .invalidArgument
+    else if budget == 0 then .error .invalidArgument
     else if budget > period then .error .invalidArgument
     else if priority > 255 then .error .invalidArgument
     else if domain ≥ 16 then .error .invalidArgument
