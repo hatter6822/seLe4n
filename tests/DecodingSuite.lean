@@ -748,4 +748,4 @@ def main : IO Unit := do
   SeLe4n.Testing.DecodingSuite.runRegisterDecodeTests
   SeLe4n.Testing.DecodingSuite.runSyscallArgDecodeTests
   SeLe4n.Testing.DecodingSuite.runAk4aTests
-  IO.println "=== DecodingSuite PASSED (57 tests) ==="
+  IO.println "=== DecodingSuite PASSED (48 test cases / 109 assertions) ==="

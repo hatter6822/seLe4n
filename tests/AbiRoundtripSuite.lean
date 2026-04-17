@@ -309,7 +309,7 @@ private def runAll : IO Unit := do
   t06_cspace_mint_rights_rejected
   t07_cspace_copy_minimal
   t08_size_invariant_across_syscalls
-  IO.println "=== AbiRoundtripSuite PASSED (8 scenarios) ==="
+  IO.println "=== AbiRoundtripSuite PASSED (8 scenarios / 25 assertions) ==="
 
 end SeLe4n.Testing.AbiRoundtripSuite
 

@@ -973,8 +973,6 @@ theorem decodeServiceRegisterArgs_error_of_methodCount_too_large
     dif_pos (show 2 < d.msgRegs.size by omega),
     dif_pos (show 3 < d.msgRegs.size by omega),
     dif_pos (show 4 < d.msgRegs.size by omega)]
-  have : decide (d.msgRegs[1].val > serviceMaxMethodCount) = true := by
-    simp [hMc]
   simp [hMc]
 
 /-- AK4-B: Out-of-range `requiresGrant` fails closed. -/

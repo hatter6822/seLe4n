@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-codebase-audit-ueS5k",
-      "commit_sha": "b77cec001c6ff3d90dafdf1502835b2200cfd8f5",
-      "tree_sha": "afb7641965644839dc26201d68418b0fe3033e68",
-      "committed_at_utc": "2026-04-17T02:43:08-04:00"
+      "commit_sha": "9b437642adfc363a473e54485700b1aafdbd7bc2",
+      "tree_sha": "d7ef2434adcf4feda039d9927149add40fe9fb15",
+      "committed_at_utc": "2026-04-17T14:46:52+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5f04cbf64633ff21f13d0952de264d89a1bcd3efccf1b720f309016a524d5282"
+    "source_digest": "e7bc8eca3b8351d5b548574a6ac40b18b81ee687ed64e06db9cf6957f0ba7450"
   },
   "summary": {
     "module_count": 164,
-    "declaration_count": 5235
+    "declaration_count": 5238
   },
   "readme_sync": {
     "version": "0.29.4",
     "lean_toolchain": "v4.28.0",
     "production_files": 142,
-    "production_loc": 97345,
+    "production_loc": 97472,
     "test_files": 22,
     "test_loc": 13051,
-    "proved_theorem_lemma_decls": 2864,
+    "proved_theorem_lemma_decls": 2867,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -3463,19 +3463,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Architecture.IpcBufferRead",
-          "line": 31,
+          "line": 47,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "IpcBufferReadError",
-          "line": 44,
+          "line": 60,
           "called": []
         },
         {
           "kind": "def",
           "name": "maxOverflowSlots",
-          "line": 58,
+          "line": 74,
           "called": [
             "maxMessageRegisters"
           ]
@@ -3483,7 +3483,7 @@
         {
           "kind": "def",
           "name": "ipcBufferReadMr",
-          "line": 80,
+          "line": 98,
           "called": [
             "IpcBufferReadError",
             "SystemState",
@@ -3500,29 +3500,19 @@
         },
         {
           "kind": "theorem",
-          "name": "ipcBufferReadMr_no_state_return",
-          "line": 100,
-          "called": [
-            "IpcBufferReadError",
-            "SystemState",
-            "ThreadId",
-            "ipcBufferReadMr"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "ipcBufferReadMr_deterministic",
-          "line": 107,
+          "name": "ipcBufferReadMr_out_of_range",
+          "line": 116,
           "called": [
             "SystemState",
             "ThreadId",
-            "ipcBufferReadMr"
+            "ipcBufferReadMr",
+            "maxOverflowSlots"
           ]
         },
         {
           "kind": "theorem",
           "name": "ipcBufferReadMr_ok_bound",
-          "line": 114,
+          "line": 126,
           "called": [
             "SystemState",
             "ThreadId",
@@ -3532,13 +3522,28 @@
         },
         {
           "kind": "theorem",
-          "name": "ipcBufferReadMr_out_of_range",
-          "line": 124,
+          "name": "ipcBufferReadMr_ok_implies_tcb",
+          "line": 137,
           "called": [
             "SystemState",
             "ThreadId",
             "ipcBufferReadMr",
-            "maxOverflowSlots"
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcBufferReadMr_reads_only_caller_tcb",
+          "line": 155,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "bind",
+            "ipcBufferReadMr",
+            "maxOverflowSlots",
+            "none",
+            "toObjId"
           ]
         }
       ]
@@ -4170,7 +4175,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.RegisterDecode",
       "path": "SeLe4n/Kernel/Architecture/RegisterDecode.lean",
-      "declaration_count": 31,
+      "declaration_count": 34,
       "declarations": [
         {
           "kind": "namespace",
@@ -4532,28 +4537,81 @@
         },
         {
           "kind": "theorem",
-          "name": "decodeSyscallArgsFromState_is_pure",
+          "name": "decodeSyscallArgsFromState_header_preserved",
           "line": 447,
           "called": [
-            "KernelError",
             "RegisterFile",
             "SyscallDecodeResult",
             "SyscallRegisterLayout",
             "SystemState",
             "ThreadId",
-            "decodeSyscallArgsFromState"
+            "bind",
+            "decodeSyscallArgs",
+            "decodeSyscallArgsFromState",
+            "pure"
           ]
         },
         {
           "kind": "theorem",
-          "name": "decodeSyscallArgsFromState_deterministic",
-          "line": 457,
+          "name": "decodeSyscallArgsFromState_capAddr_eq",
+          "line": 468,
           "called": [
             "RegisterFile",
+            "SyscallDecodeResult",
             "SyscallRegisterLayout",
             "SystemState",
             "ThreadId",
-            "decodeSyscallArgsFromState"
+            "decodeSyscallArgs",
+            "decodeSyscallArgsFromState",
+            "decodeSyscallArgsFromState_header_preserved"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeSyscallArgsFromState_msgInfo_eq",
+          "line": 479,
+          "called": [
+            "RegisterFile",
+            "SyscallDecodeResult",
+            "SyscallRegisterLayout",
+            "SystemState",
+            "ThreadId",
+            "decodeSyscallArgs",
+            "decodeSyscallArgsFromState",
+            "decodeSyscallArgsFromState_header_preserved"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeSyscallArgsFromState_syscallId_eq",
+          "line": 490,
+          "called": [
+            "RegisterFile",
+            "SyscallDecodeResult",
+            "SyscallRegisterLayout",
+            "SystemState",
+            "ThreadId",
+            "decodeSyscallArgs",
+            "decodeSyscallArgsFromState",
+            "decodeSyscallArgsFromState_header_preserved"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "decodeSyscallArgsFromState_size_invariant",
+          "line": 503,
+          "called": [
+            "RegisterFile",
+            "SyscallDecodeResult",
+            "SyscallRegisterLayout",
+            "SystemState",
+            "ThreadId",
+            "bind",
+            "decodeSyscallArgs",
+            "decodeSyscallArgsFromState",
+            "list_mapM_except_length",
+            "pure",
+            "size"
           ]
         }
       ]
@@ -5358,7 +5416,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRegisterArgs_error_of_invalid_grant",
-          "line": 981,
+          "line": 979,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -5372,7 +5430,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRevokeArgs_error_iff",
-          "line": 1000,
+          "line": 998,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -5386,7 +5444,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRegisterArgs_roundtrip",
-          "line": 1023,
+          "line": 1021,
           "called": [
             "ServiceRegisterArgs",
             "bind",
@@ -5404,7 +5462,7 @@
         {
           "kind": "theorem",
           "name": "decodeServiceRevokeArgs_roundtrip",
-          "line": 1039,
+          "line": 1037,
           "called": [
             "ServiceRevokeArgs",
             "decodeServiceRevokeArgs",
@@ -5415,7 +5473,7 @@
         {
           "kind": "structure",
           "name": "NotificationSignalArgs",
-          "line": 1050,
+          "line": 1048,
           "called": [
             "Badge"
           ]
@@ -5423,13 +5481,13 @@
         {
           "kind": "structure",
           "name": "NotificationWaitArgs",
-          "line": 1057,
+          "line": 1055,
           "called": []
         },
         {
           "kind": "structure",
           "name": "ReplyRecvArgs",
-          "line": 1064,
+          "line": 1062,
           "called": [
             "ThreadId"
           ]
@@ -5437,7 +5495,7 @@
         {
           "kind": "def",
           "name": "decodeNotificationSignalArgs",
-          "line": 1070,
+          "line": 1068,
           "called": [
             "KernelError",
             "NotificationSignalArgs",
@@ -5450,7 +5508,7 @@
         {
           "kind": "def",
           "name": "decodeNotificationWaitArgs",
-          "line": 1076,
+          "line": 1074,
           "called": [
             "KernelError",
             "NotificationWaitArgs",
@@ -5461,7 +5519,7 @@
         {
           "kind": "def",
           "name": "decodeReplyRecvArgs",
-          "line": 1082,
+          "line": 1080,
           "called": [
             "KernelError",
             "ReplyRecvArgs",
@@ -5474,25 +5532,25 @@
         {
           "kind": "structure",
           "name": "SchedContextConfigureArgs",
-          "line": 1094,
+          "line": 1092,
           "called": []
         },
         {
           "kind": "structure",
           "name": "SchedContextBindArgs",
-          "line": 1104,
+          "line": 1102,
           "called": []
         },
         {
           "kind": "structure",
           "name": "SchedContextUnbindArgs",
-          "line": 1110,
+          "line": 1108,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeSchedContextConfigureArgs",
-          "line": 1119,
+          "line": 1117,
           "called": [
             "KernelError",
             "SchedContextConfigureArgs",
@@ -5504,7 +5562,7 @@
         {
           "kind": "def",
           "name": "decodeSchedContextConfigureArgsChecked",
-          "line": 1142,
+          "line": 1140,
           "called": [
             "KernelError",
             "SchedContextConfigureArgs",
@@ -5516,7 +5574,7 @@
         {
           "kind": "theorem",
           "name": "decodeSchedContextConfigureArgsChecked_invariants",
-          "line": 1152,
+          "line": 1150,
           "called": [
             "SchedContextConfigureArgs",
             "SyscallDecodeResult",
@@ -5529,7 +5587,7 @@
         {
           "kind": "def",
           "name": "decodeSchedContextBindArgs",
-          "line": 1181,
+          "line": 1179,
           "called": [
             "KernelError",
             "SchedContextBindArgs",
@@ -5541,7 +5599,7 @@
         {
           "kind": "def",
           "name": "decodeSchedContextUnbindArgs",
-          "line": 1187,
+          "line": 1185,
           "called": [
             "KernelError",
             "SchedContextUnbindArgs",
@@ -5552,7 +5610,7 @@
         {
           "kind": "def",
           "name": "encodeSchedContextConfigureArgs",
-          "line": 1196,
+          "line": 1194,
           "called": [
             "RegValue",
             "SchedContextConfigureArgs"
@@ -5561,7 +5619,7 @@
         {
           "kind": "def",
           "name": "encodeSchedContextBindArgs",
-          "line": 1200,
+          "line": 1198,
           "called": [
             "RegValue",
             "SchedContextBindArgs"
@@ -5570,7 +5628,7 @@
         {
           "kind": "def",
           "name": "encodeSchedContextUnbindArgs",
-          "line": 1204,
+          "line": 1202,
           "called": [
             "RegValue",
             "SchedContextUnbindArgs"
@@ -5579,7 +5637,7 @@
         {
           "kind": "theorem",
           "name": "decodeSchedContextConfigureArgs_roundtrip",
-          "line": 1212,
+          "line": 1210,
           "called": [
             "SchedContextConfigureArgs",
             "decodeSchedContextConfigureArgs",
@@ -5590,7 +5648,7 @@
         {
           "kind": "theorem",
           "name": "decodeSchedContextBindArgs_roundtrip",
-          "line": 1217,
+          "line": 1215,
           "called": [
             "SchedContextBindArgs",
             "decodeSchedContextBindArgs",
@@ -5601,7 +5659,7 @@
         {
           "kind": "theorem",
           "name": "decodeSchedContextUnbindArgs_roundtrip",
-          "line": 1222,
+          "line": 1220,
           "called": [
             "SchedContextUnbindArgs",
             "decodeSchedContextUnbindArgs",
@@ -5612,7 +5670,7 @@
         {
           "kind": "def",
           "name": "encodeNotificationSignalArgs",
-          "line": 1227,
+          "line": 1225,
           "called": [
             "NotificationSignalArgs",
             "RegValue"
@@ -5621,7 +5679,7 @@
         {
           "kind": "def",
           "name": "encodeNotificationWaitArgs",
-          "line": 1231,
+          "line": 1229,
           "called": [
             "NotificationWaitArgs",
             "RegValue"
@@ -5630,7 +5688,7 @@
         {
           "kind": "def",
           "name": "encodeReplyRecvArgs",
-          "line": 1235,
+          "line": 1233,
           "called": [
             "RegValue",
             "ReplyRecvArgs",
@@ -5640,7 +5698,7 @@
         {
           "kind": "theorem",
           "name": "decodeNotificationSignalArgs_roundtrip",
-          "line": 1240,
+          "line": 1238,
           "called": [
             "Badge.ofNatMasked_toNat",
             "NotificationSignalArgs",
@@ -5656,7 +5714,7 @@
         {
           "kind": "theorem",
           "name": "decodeNotificationWaitArgs_roundtrip",
-          "line": 1249,
+          "line": 1247,
           "called": [
             "NotificationWaitArgs",
             "decodeNotificationWaitArgs",
@@ -5667,7 +5725,7 @@
         {
           "kind": "theorem",
           "name": "decodeReplyRecvArgs_roundtrip",
-          "line": 1254,
+          "line": 1252,
           "called": [
             "ReplyRecvArgs",
             "decodeReplyRecvArgs",
@@ -5678,7 +5736,7 @@
         {
           "kind": "theorem",
           "name": "decode_layer2_roundtrip_all",
-          "line": 1264,
+          "line": 1262,
           "called": [
             "decodeCSpaceCopyArgs",
             "decodeCSpaceCopyArgs_roundtrip",
@@ -5737,7 +5795,7 @@
         {
           "kind": "theorem",
           "name": "decodeNotificationSignalArgs_error_iff",
-          "line": 1306,
+          "line": 1304,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -5751,7 +5809,7 @@
         {
           "kind": "theorem",
           "name": "decodeReplyRecvArgs_error_iff",
-          "line": 1323,
+          "line": 1321,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -5765,7 +5823,7 @@
         {
           "kind": "theorem",
           "name": "decodeSchedContextConfigureArgs_error_iff",
-          "line": 1344,
+          "line": 1342,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -5780,7 +5838,7 @@
         {
           "kind": "theorem",
           "name": "decodeSchedContextBindArgs_error_iff",
-          "line": 1377,
+          "line": 1375,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -5794,7 +5852,7 @@
         {
           "kind": "theorem",
           "name": "decodeSchedContextUnbindArgs_error_iff",
-          "line": 1394,
+          "line": 1392,
           "called": [
             "SyscallDecodeResult",
             "decodeSchedContextUnbindArgs",
@@ -5804,7 +5862,7 @@
         {
           "kind": "def",
           "name": "decodeExtraCapAddrs",
-          "line": 1414,
+          "line": 1412,
           "called": [
             "CPtr",
             "SyscallDecodeResult",
@@ -5815,7 +5873,7 @@
         {
           "kind": "theorem",
           "name": "arm64_regCount_valid",
-          "line": 1435,
+          "line": 1433,
           "called": [
             "arm64GPRCount"
           ]
@@ -5823,7 +5881,7 @@
         {
           "kind": "theorem",
           "name": "machineConfig_registerCount_default_eq_arm64GPRCount",
-          "line": 1442,
+          "line": 1440,
           "called": [
             "MachineConfig",
             "arm64GPRCount"
@@ -5832,19 +5890,19 @@
         {
           "kind": "structure",
           "name": "SuspendArgs",
-          "line": 1455,
+          "line": 1453,
           "called": []
         },
         {
           "kind": "structure",
           "name": "ResumeArgs",
-          "line": 1461,
+          "line": 1459,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeSuspendArgs",
-          "line": 1465,
+          "line": 1463,
           "called": [
             "KernelError",
             "SuspendArgs",
@@ -5855,7 +5913,7 @@
         {
           "kind": "def",
           "name": "decodeResumeArgs",
-          "line": 1470,
+          "line": 1468,
           "called": [
             "KernelError",
             "ResumeArgs",
@@ -5866,7 +5924,7 @@
         {
           "kind": "def",
           "name": "encodeSuspendArgs",
-          "line": 1475,
+          "line": 1473,
           "called": [
             "RegValue",
             "SuspendArgs"
@@ -5875,7 +5933,7 @@
         {
           "kind": "def",
           "name": "encodeResumeArgs",
-          "line": 1478,
+          "line": 1476,
           "called": [
             "RegValue",
             "ResumeArgs"
@@ -5884,7 +5942,7 @@
         {
           "kind": "theorem",
           "name": "decodeSuspendArgs_roundtrip",
-          "line": 1481,
+          "line": 1479,
           "called": [
             "SuspendArgs",
             "decodeSuspendArgs",
@@ -5895,7 +5953,7 @@
         {
           "kind": "theorem",
           "name": "decodeResumeArgs_roundtrip",
-          "line": 1486,
+          "line": 1484,
           "called": [
             "ResumeArgs",
             "decodeResumeArgs",
@@ -5906,19 +5964,19 @@
         {
           "kind": "structure",
           "name": "SetPriorityArgs",
-          "line": 1497,
+          "line": 1495,
           "called": []
         },
         {
           "kind": "structure",
           "name": "SetMCPriorityArgs",
-          "line": 1504,
+          "line": 1502,
           "called": []
         },
         {
           "kind": "def",
           "name": "decodeSetPriorityArgs",
-          "line": 1515,
+          "line": 1513,
           "called": [
             "KernelError",
             "SetPriorityArgs",
@@ -5930,7 +5988,7 @@
         {
           "kind": "def",
           "name": "decodeSetMCPriorityArgs",
-          "line": 1524,
+          "line": 1522,
           "called": [
             "KernelError",
             "SetMCPriorityArgs",
@@ -5942,7 +6000,7 @@
         {
           "kind": "def",
           "name": "encodeSetPriorityArgs",
-          "line": 1535,
+          "line": 1533,
           "called": [
             "RegValue",
             "SetPriorityArgs"
@@ -5951,7 +6009,7 @@
         {
           "kind": "def",
           "name": "encodeSetMCPriorityArgs",
-          "line": 1539,
+          "line": 1537,
           "called": [
             "RegValue",
             "SetMCPriorityArgs"
@@ -5960,7 +6018,7 @@
         {
           "kind": "theorem",
           "name": "decodeSetPriorityArgs_roundtrip",
-          "line": 1547,
+          "line": 1545,
           "called": [
             "SetPriorityArgs",
             "bind",
@@ -5974,7 +6032,7 @@
         {
           "kind": "theorem",
           "name": "decodeSetMCPriorityArgs_roundtrip",
-          "line": 1553,
+          "line": 1551,
           "called": [
             "SetMCPriorityArgs",
             "bind",
@@ -5988,7 +6046,7 @@
         {
           "kind": "structure",
           "name": "SetIPCBufferArgs",
-          "line": 1566,
+          "line": 1564,
           "called": [
             "VAddr"
           ]
@@ -5996,7 +6054,7 @@
         {
           "kind": "def",
           "name": "decodeSetIPCBufferArgs",
-          "line": 1573,
+          "line": 1571,
           "called": [
             "KernelError",
             "SetIPCBufferArgs",
@@ -6011,7 +6069,7 @@
         {
           "kind": "def",
           "name": "encodeSetIPCBufferArgs",
-          "line": 1581,
+          "line": 1579,
           "called": [
             "RegValue",
             "SetIPCBufferArgs",
@@ -6021,7 +6079,7 @@
         {
           "kind": "theorem",
           "name": "decodeSetIPCBufferArgs_roundtrip",
-          "line": 1589,
+          "line": 1587,
           "called": [
             "SetIPCBufferArgs",
             "bind",

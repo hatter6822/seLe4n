@@ -307,7 +307,7 @@ determinism. See `Service/Operations.lean` for the full design rationale.
   - Cache coherency model: `CacheLineState` (invalid/clean/dirty), `CacheState`
     with D-cache/I-cache function fields. Operations: `dcClean`, `dcInvalidate`,
     `dcCleanInvalidate`, `icInvalidateAll`, `dcZeroByVA`. 17 preservation theorems.
-- `SeLe4n/Kernel/Architecture/RegisterDecode.lean` *(WS-J1-B v0.15.5; extended WS-K-A v0.16.0, WS-K-E v0.16.4, WS-K-F v0.16.5)*
+- `SeLe4n/Kernel/Architecture/RegisterDecode.lean` *(WS-J1-B v0.15.5; extended WS-K-A v0.16.0, WS-K-E v0.16.4, WS-K-F v0.16.5, AK4-A v0.29.4)*
   - Total, deterministic decode functions from raw register words to typed kernel
     references (`decodeCapPtr`, `decodeMsgInfo`, `decodeSyscallId`,
     `decodeSyscallArgs`), round-trip lemmas, determinism theorem.
@@ -319,6 +319,13 @@ determinism. See `Service/Operations.lean` for the full design rationale.
     `extractMessageRegisters_ipc_bounded`, `extractMessageRegisters_deterministic`.
   - WS-K-F: `extractMessageRegisters_roundtrip` closes layer-1 extraction
     round-trip gap.
+  - AK4-A (R-ABI-C01): `decodeSyscallArgsFromState` — state-aware wrapper
+    around `decodeSyscallArgs` that merges IPC-buffer overflow slots into
+    `msgRegs` when `msgInfo.length > inlineCount`. Substantive preservation
+    theorems: `decodeSyscallArgsFromState_header_preserved` (capAddr, msgInfo,
+    syscallId), `decodeSyscallArgsFromState_size_invariant` (msgRegs.size =
+    inlineCount + overflowCount). `syscallEntry` and `syscallEntryChecked`
+    switched to the state-aware decoder to unblock 5-arg syscalls.
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` *(WS-K-B v0.16.1; extended WS-K-F v0.16.5)*
   - Per-syscall typed argument decode layer (layer 2 of two-layer decode).
     7 argument structures (`CSpaceMintArgs`, `CSpaceCopyArgs`, `CSpaceMoveArgs`,
@@ -327,6 +334,7 @@ determinism. See `Service/Operations.lean` for the full design rationale.
     theorems, 7 error-exclusivity theorems.
   - WS-K-F: 7 encode functions, 7 round-trip theorems (`rcases + rfl`),
     `decode_layer2_roundtrip_all` composed conjunction. Zero sorry/axiom.
+- `SeLe4n/Kernel/Architecture/IpcBufferRead.lean` — AK4-A (R-ABI-C01, v0.29.4): pure read-only `ipcBufferReadMr` helper that resolves the caller's IPC-buffer VAddr through the thread's VSpace and returns the `UInt64` at overflow slot `idx`. All failure modes (missing TCB, missing VSpaceRoot, unmapped VAddr, out-of-range index) collapse into `KernelError.invalidMessageInfo` at the decode boundary. Used by `decodeSyscallArgsFromState` (RegisterDecode.lean) for the two production 5-arg syscalls (`serviceRegister`, `schedContextConfigure`). NI-safety witness: `ipcBufferReadMr_reads_only_caller_tcb` proves the read scope is exclusively the caller's own TCB + VSpace.
 - `SeLe4n/Kernel/Architecture/IpcBufferValidation.lean` — D3: `setIPCBufferOp` with VSpace bounds checking, page permission validation, determinism and frame lemmas.
 - `SeLe4n/Kernel/Architecture/ExceptionModel.lean` — AG3-C/F: ARM64 exception types (synchronous/irq/fiq/serror), ESR_EL1 classification, exception dispatch routing SVC→`syscallEntry`. AG5-G: interrupt-disabled region atomicity proofs (`saveOutgoingContext`, `restoreIncomingContext`, `setCurrentThread`, `interruptDispatchSequence` preservation of `interruptsEnabled`).
 - `SeLe4n/Kernel/Architecture/InterruptDispatch.lean` — AG3-D: GIC-400 interrupt dispatch model (`InterruptId := Fin 224`, `acknowledgeInterrupt`/`endOfInterrupt`/`handleInterrupt`/`interruptDispatchSequence`). AG5-E: `timerInterruptHandler`, `handleInterrupt_timer` theorem. AI2-A: EOI always sent on error path; `interruptDispatchSequence_always_ok` theorem.

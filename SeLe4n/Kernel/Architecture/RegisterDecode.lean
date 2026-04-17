@@ -440,27 +440,101 @@ theorem decodeSyscallArgsFromState_ok_implies_base_ok
   | error e => rw [hBase] at hOk; simp at hOk
   | ok base => exact ⟨base, rfl⟩
 
-/-- AK4-A.5 (NI): `decodeSyscallArgsFromState` is read-only on `SystemState`;
-    it never produces a modified state as output (the function return type is
-    `Except KernelError SyscallDecodeResult`, not `Kernel`). Therefore any two
-    low-equivalent states trivially remain low-equivalent after decode. -/
-theorem decodeSyscallArgsFromState_is_pure
+/-- AK4-A.4: Every successful state-aware decode preserves `capAddr`,
+    `msgInfo`, and `syscallId` from the base decode. The merge stage only
+    extends `msgRegs` and sets the count fields; the authoritative
+    register-word fields remain untouched. -/
+theorem decodeSyscallArgsFromState_header_preserved
     (st : SystemState) (tid : ThreadId)
-    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat) :
-    ∃ r : Except KernelError SyscallDecodeResult,
-      decodeSyscallArgsFromState st tid layout regs regCount = r :=
-  ⟨_, rfl⟩
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    (decoded base : SyscallDecodeResult)
+    (hBase : decodeSyscallArgs layout regs regCount = .ok base)
+    (hOk : decodeSyscallArgsFromState st tid layout regs regCount = .ok decoded) :
+    decoded.capAddr = base.capAddr ∧
+    decoded.msgInfo = base.msgInfo ∧
+    decoded.syscallId = base.syscallId := by
+  unfold decodeSyscallArgsFromState at hOk
+  rw [hBase] at hOk
+  simp only [bind, Except.bind] at hOk
+  split at hOk
+  · simp only [pure, Except.pure, Except.ok.injEq] at hOk
+    refine ⟨?_, ?_, ?_⟩ <;> (rw [← hOk])
+  · split at hOk
+    · simp at hOk
+    · simp only [pure, Except.pure, Except.ok.injEq] at hOk
+      refine ⟨?_, ?_, ?_⟩ <;> (rw [← hOk])
 
-/-- AK4-A.5 (NI): Determinism — two calls with identical inputs always
-    return identical results. Decode has no dependency on scheduler state
-    or observer domain. -/
-theorem decodeSyscallArgsFromState_deterministic
+/-- AK4-A.4: `capAddr` is preserved through IPC-buffer merge. -/
+theorem decodeSyscallArgsFromState_capAddr_eq
     (st : SystemState) (tid : ThreadId)
-    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat) :
-    ∀ r₁ r₂,
-      decodeSyscallArgsFromState st tid layout regs regCount = r₁ →
-      decodeSyscallArgsFromState st tid layout regs regCount = r₂ →
-      r₁ = r₂ := by
-  intro r₁ r₂ h₁ h₂; rw [← h₁, h₂]
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    (decoded base : SyscallDecodeResult)
+    (hBase : decodeSyscallArgs layout regs regCount = .ok base)
+    (hOk : decodeSyscallArgsFromState st tid layout regs regCount = .ok decoded) :
+    decoded.capAddr = base.capAddr :=
+  (decodeSyscallArgsFromState_header_preserved
+    st tid layout regs regCount decoded base hBase hOk).1
+
+/-- AK4-A.4: `msgInfo` is preserved through IPC-buffer merge. -/
+theorem decodeSyscallArgsFromState_msgInfo_eq
+    (st : SystemState) (tid : ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    (decoded base : SyscallDecodeResult)
+    (hBase : decodeSyscallArgs layout regs regCount = .ok base)
+    (hOk : decodeSyscallArgsFromState st tid layout regs regCount = .ok decoded) :
+    decoded.msgInfo = base.msgInfo :=
+  (decodeSyscallArgsFromState_header_preserved
+    st tid layout regs regCount decoded base hBase hOk).2.1
+
+/-- AK4-A.4: `syscallId` is preserved through IPC-buffer merge. -/
+theorem decodeSyscallArgsFromState_syscallId_eq
+    (st : SystemState) (tid : ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    (decoded base : SyscallDecodeResult)
+    (hBase : decodeSyscallArgs layout regs regCount = .ok base)
+    (hOk : decodeSyscallArgsFromState st tid layout regs regCount = .ok decoded) :
+    decoded.syscallId = base.syscallId :=
+  (decodeSyscallArgsFromState_header_preserved
+    st tid layout regs regCount decoded base hBase hOk).2.2
+
+/-- AK4-A.4: Size invariant — `msgRegs.size = inlineCount + overflowCount`
+    on any successful state-aware decode. This is the downstream contract
+    required by per-syscall argument decoders using `requireMsgReg`. -/
+theorem decodeSyscallArgsFromState_size_invariant
+    (st : SystemState) (tid : ThreadId)
+    (layout : SyscallRegisterLayout) (regs : RegisterFile) (regCount : Nat)
+    (decoded : SyscallDecodeResult)
+    (hOk : decodeSyscallArgsFromState st tid layout regs regCount = .ok decoded) :
+    decoded.msgRegs.size = decoded.inlineCount + decoded.overflowCount := by
+  unfold decodeSyscallArgsFromState at hOk
+  cases hBase : decodeSyscallArgs layout regs regCount with
+  | error e => rw [hBase] at hOk; simp [bind, Except.bind] at hOk
+  | ok base =>
+    rw [hBase] at hOk
+    simp only [bind, Except.bind] at hOk
+    split at hOk
+    · -- Short path
+      simp only [pure, Except.pure, Except.ok.injEq] at hOk
+      have h1 : decoded.msgRegs.size = base.msgRegs.size := by rw [← hOk]
+      have h2 : decoded.inlineCount = base.msgRegs.size := by rw [← hOk]
+      have h3 : decoded.overflowCount = 0 := by rw [← hOk]
+      rw [h1, h2, h3]; omega
+    · -- Overflow path
+      split at hOk
+      · simp at hOk
+      · rename_i overflowNats hOverflowOk
+        simp only [pure, Except.pure, Except.ok.injEq] at hOk
+        have hMapLen : overflowNats.length
+            = base.msgInfo.length - base.msgRegs.size := by
+          have h := list_mapM_except_length _ _ _ hOverflowOk
+          simpa [List.length_range] using h
+        have hSize : decoded.msgRegs.size
+            = base.msgRegs.size + overflowNats.length := by
+          rw [← hOk]
+          simp [Array.size_append, List.size_toArray, List.length_map]
+        have hInline : decoded.inlineCount = base.msgRegs.size := by rw [← hOk]
+        have hOver : decoded.overflowCount
+            = base.msgInfo.length - base.msgRegs.size := by rw [← hOk]
+        rw [hSize, hInline, hOver, hMapLen]
 
 end SeLe4n.Kernel.Architecture.RegisterDecode

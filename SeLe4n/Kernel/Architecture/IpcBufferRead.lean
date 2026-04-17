@@ -19,10 +19,26 @@ helper that resolves the caller's IPC-buffer virtual address through the
 thread's VSpace and returns the `UInt64` stored at overflow slot `idx`.
 
 **Key properties:**
-- `ipcBufferReadMr` never modifies `SystemState` (proved by `ipcBufferReadMr_preserves_state`).
+- `ipcBufferReadMr : SystemState → ThreadId → Nat → Except IpcBufferReadError UInt64`
+  is structurally read-only: the return type contains no `SystemState`, so
+  Lean's type system guarantees no state modification. The function reads the
+  TCB, the VSpace root, the mapping table, and the physical memory, but
+  never writes.
 - All failure modes surface as an abstract `IpcBufferReadError` that callers
   collapse into a single `KernelError.invalidMessageInfo` (matching seL4).
-- The read scope is the caller's own IPC buffer only — no cross-thread read.
+- The read scope is the caller's own IPC buffer only — every access is keyed
+  on the `tid` argument, with no iteration over the object index or other
+  threads' state. See `ipcBufferReadMr_reads_only_caller_tcb` for the
+  formal witness of this property.
+
+**Layout contract (matches `rust/sele4n-abi/src/ipc_buffer.rs`):**
+- `tcb.ipcBuffer` is the VAddr of the start of the overflow region.
+- Overflow slot `i` (0-indexed) occupies bytes `[i*8, i*8+8)` from that
+  base — i.e., MR[i+4] for the ARM64 4-inline-regs layout.
+- The first 64 overflow slots (= MR 4..67) are always within the same 4 KiB
+  page as the buffer base, regardless of `ipcBufferAlignment` (512 B). Slots
+  64..115 (MR 68..119) may straddle a page boundary; `root.lookup` is called
+  per-slot, so any unmapped page in that range is correctly rejected.
 
 **Dependencies:** `Model.State` (TCB + VSpaceRoot) and `Architecture.PageTable`
 (for the little-endian `readUInt64` byte assembly).
@@ -76,7 +92,9 @@ def maxOverflowSlots : Nat := maxMessageRegisters - 4
     - Unmapped IPC-buffer VAddr → `ipcBufferVAddrUnmapped`.
     - `idx ≥ maxOverflowSlots` → `overflowIndexOutOfRange`.
 
-    **Read-only:** proved by `ipcBufferReadMr_preserves_state`. -/
+    **Read-only:** structural — return type contains no `SystemState`, so
+    Lean's type system forbids state modification. See
+    `ipcBufferReadMr_reads_only_caller_tcb` for the NI witness. -/
 def ipcBufferReadMr (st : SystemState) (tid : ThreadId) (idx : Nat)
     : Except IpcBufferReadError UInt64 := do
   if idx ≥ maxOverflowSlots then
@@ -94,21 +112,15 @@ def ipcBufferReadMr (st : SystemState) (tid : ThreadId) (idx : Nat)
       | _ => .error .vspaceRootInvalid
     | _ => .error .threadNotFound
 
-/-- AK4-A.1 / AK4-A.5 (NI): `ipcBufferReadMr` is a pure function of
-    `SystemState`; it never constructs a new state. Callers compose this
-    with any `st` without introducing side effects. -/
-theorem ipcBufferReadMr_no_state_return (st : SystemState) (tid : ThreadId) (idx : Nat) :
-    ∃ (_ : Except IpcBufferReadError UInt64),
-      ipcBufferReadMr st tid idx = ipcBufferReadMr st tid idx :=
-  ⟨ipcBufferReadMr st tid idx, rfl⟩
-
-/-- AK4-A.1: Determinism — two calls with identical inputs return identical
-    results. -/
-theorem ipcBufferReadMr_deterministic
-    (st : SystemState) (tid : ThreadId) (idx : Nat) :
-    ∀ r₁ r₂, ipcBufferReadMr st tid idx = r₁ →
-             ipcBufferReadMr st tid idx = r₂ → r₁ = r₂ := by
-  intro r₁ r₂ h₁ h₂; rw [← h₁, h₂]
+/-- AK4-A.1: Out-of-range index — reads above `maxOverflowSlots` fail. -/
+theorem ipcBufferReadMr_out_of_range
+    (st : SystemState) (tid : ThreadId) (idx : Nat)
+    (hGe : idx ≥ maxOverflowSlots) :
+    ipcBufferReadMr st tid idx = .error .overflowIndexOutOfRange := by
+  unfold ipcBufferReadMr
+  split
+  · rfl
+  · omega
 
 /-- AK4-A.1: Bounds — a successful read implies `idx < maxOverflowSlots`. -/
 theorem ipcBufferReadMr_ok_bound
@@ -120,14 +132,57 @@ theorem ipcBufferReadMr_ok_bound
   · simp at hOk
   · omega
 
-/-- AK4-A.1: Out-of-range index — reads above `maxOverflowSlots` fail. -/
-theorem ipcBufferReadMr_out_of_range
-    (st : SystemState) (tid : ThreadId) (idx : Nat)
-    (hGe : idx ≥ maxOverflowSlots) :
-    ipcBufferReadMr st tid idx = .error .overflowIndexOutOfRange := by
+/-- AK4-A.1: A successful read implies the caller TCB exists in the object
+    store (substantive precondition — not a tautology). -/
+theorem ipcBufferReadMr_ok_implies_tcb
+    (st : SystemState) (tid : ThreadId) (idx : Nat) (val : UInt64)
+    (hOk : ipcBufferReadMr st tid idx = .ok val) :
+    ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) := by
+  unfold ipcBufferReadMr at hOk
+  split at hOk
+  · simp at hOk
+  · split at hOk
+    · rename_i _ tcb hTcb
+      exact ⟨tcb, hTcb⟩
+    · simp at hOk
+
+/-- AK4-A.5 (NI): The read scope is exclusively the caller's own state.
+    Formally, replacing any other thread's state (its TCB, or any object
+    that is neither the caller's TCB nor the caller's VSpaceRoot) does not
+    change the read result. This is the substantive NI property of
+    `ipcBufferReadMr` — the decode path has no cross-thread information
+    channel. -/
+theorem ipcBufferReadMr_reads_only_caller_tcb
+    (st st' : SystemState) (tid : ThreadId) (idx : Nat)
+    (hTcb  : st'.objects[tid.toObjId]? = st.objects[tid.toObjId]?)
+    (hVs   : ∀ vs : SeLe4n.ObjId,
+              (st.objects[tid.toObjId]?).bind
+                 (fun o => match o with | .tcb t => some t.vspaceRoot | _ => none)
+                 = some vs →
+              st'.objects[vs]? = st.objects[vs]?)
+    (hMem  : st'.machine.memory = st.machine.memory) :
+    ipcBufferReadMr st' tid idx = ipcBufferReadMr st tid idx := by
   unfold ipcBufferReadMr
-  split
-  · rfl
-  · omega
+  by_cases hBound : idx ≥ maxOverflowSlots
+  · simp [hBound]
+  · simp only [hBound, ↓reduceIte]
+    rw [hTcb]
+    -- After rewriting the TCB lookup, case-split on the result.
+    cases hT : st.objects[tid.toObjId]? with
+    | none => rfl
+    | some obj =>
+      cases obj with
+      | tcb tcb =>
+        -- The VSpaceRoot lookup must also agree; supply witness via hVs.
+        have hVsEq : st'.objects[tcb.vspaceRoot]? = st.objects[tcb.vspaceRoot]? := by
+          apply hVs
+          simp [hT]
+        simp only [hVsEq, hMem]
+      | endpoint _ => rfl
+      | notification _ => rfl
+      | cnode _ => rfl
+      | vspaceRoot _ => rfl
+      | untyped _ => rfl
+      | schedContext _ => rfl
 
 end SeLe4n.Kernel.Architecture.IpcBufferRead

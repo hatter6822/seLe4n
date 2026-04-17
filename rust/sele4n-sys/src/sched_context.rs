@@ -20,9 +20,11 @@ use sele4n_abi::args::sched_context::*;
 /// inline (x2–x5). The 5th value (`domain`) is written to the IPC buffer's
 /// overflow slot 0 (message register index 4).
 ///
-/// The kernel reads `msgRegs[4]` via `requireMsgReg decoded.msgRegs 4`
-/// (SyscallArgDecode.lean:962), which falls through to the IPC buffer when
-/// the inline array has only 4 entries.
+/// AK4-A (R-ABI-C01): The kernel merges the IPC-buffer overflow into
+/// `msgRegs` via `decodeSyscallArgsFromState` (RegisterDecode.lean),
+/// which reads `ipcBufferReadMr 0` when `msgInfo.length > 4`. The
+/// per-syscall decoder `decodeSchedContextConfigureArgs` then consumes
+/// `msgRegs[4]` (the merged `domain` value) via `requireMsgReg`.
 #[inline]
 pub fn sched_context_configure(
     sc_cap: CPtr,
