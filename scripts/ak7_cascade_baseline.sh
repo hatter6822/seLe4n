@@ -43,17 +43,32 @@ rg_count() {
     | awk -F: '{s+=$2} END {print s+0}'
 }
 
-echo "RAW_MATCH_TCB:$(rg_count 'some \(\.tcb')"
-echo "RAW_MATCH_SCHEDCTX:$(rg_count 'some \(\.schedContext')"
-echo "RAW_MATCH_ENDPOINT:$(rg_count 'some \(\.endpoint')"
-echo "RAW_MATCH_NOTIFICATION:$(rg_count 'some \(\.notification')"
-echo "RAW_MATCH_CNODE:$(rg_count 'some \(\.cnode')"
-echo "RAW_MATCH_VSPACEROOT:$(rg_count 'some \(\.vspaceRoot')"
-echo "RAW_MATCH_UNTYPED:$(rg_count 'some \(\.untyped')"
+# rg_count_excl_helpers — like rg_count but excludes files that by
+# definition contain the raw pattern (AL2-A helper definitions in
+# SeLe4n/Model/State.lean). Counted metrics using this exclusion reflect
+# only CALLER use of the raw pattern, which is what the cascade removes.
+rg_count_excl_helpers() {
+  rg -c "$1" -g '*.lean' \
+    -g '!SeLe4n/Model/State.lean' \
+    SeLe4n/ 2>/dev/null \
+    | awk -F: '{s+=$2} END {print s+0}'
+}
+
+# Excl-helpers variant: RAW_MATCH_* and RAW_LOOKUP_* metrics track
+# *caller* use of the raw pattern, not the helper-definition bodies
+# (which, by design, contain the pattern exactly once). `SeLe4n/Model/
+# State.lean` is excluded because it holds the AL2-A getX? definitions.
+echo "RAW_MATCH_TCB:$(rg_count_excl_helpers 'some \(\.tcb')"
+echo "RAW_MATCH_SCHEDCTX:$(rg_count_excl_helpers 'some \(\.schedContext')"
+echo "RAW_MATCH_ENDPOINT:$(rg_count_excl_helpers 'some \(\.endpoint')"
+echo "RAW_MATCH_NOTIFICATION:$(rg_count_excl_helpers 'some \(\.notification')"
+echo "RAW_MATCH_CNODE:$(rg_count_excl_helpers 'some \(\.cnode')"
+echo "RAW_MATCH_VSPACEROOT:$(rg_count_excl_helpers 'some \(\.vspaceRoot')"
+echo "RAW_MATCH_UNTYPED:$(rg_count_excl_helpers 'some \(\.untyped')"
 
 # --- Raw lookup patterns (target: decrease) ------------------------------
-echo "RAW_LOOKUP_TID:$(rg_count '\.get\? *tid\.toObjId|\[tid\.toObjId\]')"
-echo "RAW_LOOKUP_SCID:$(rg_count '\.get\? *scId\.toObjId|\[scId\.toObjId\]')"
+echo "RAW_LOOKUP_TID:$(rg_count_excl_helpers '\.get\? *tid\.toObjId|\[tid\.toObjId\]')"
+echo "RAW_LOOKUP_SCID:$(rg_count_excl_helpers '\.get\? *scId\.toObjId|\[scId\.toObjId\]')"
 
 # --- Helper adoption (target: increase) ----------------------------------
 echo "GETTCB_ADOPTION:$(rg_count 'getTcb\?')"
