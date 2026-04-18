@@ -196,11 +196,18 @@ theorem cspaceMint_preserves_capabilityInvariantBundle
       rcases pair with ⟨parent, st1⟩
       have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src parent hSrc
       subst st1
-      cases hMint : mintDerivedCap parent rights badge with
-      | error e => simp [hSrc, hMint] at hStep
+      -- AL1b (AK7-I.cascade): promote parent via toNonNull?; non-null derives from success.
+      have hNotNull : parent.isNull = false := by
+        by_cases h : parent.isNull
+        · exfalso; simp [Capability.toNonNull?, h, hSrc] at hStep
+        · exact Bool.not_eq_true _ |>.mp h
+      have hToNN : parent.toNonNull? = some ⟨parent, hNotNull⟩ :=
+        Capability.toNonNull?_of_not_null hNotNull
+      cases hMint : mintDerivedCap ⟨parent, hNotNull⟩ rights badge with
+      | error e => simp [hSrc, hToNN, hMint] at hStep
       | ok child =>
           have hInsert : cspaceInsertSlot dst child st = .ok ((), st') := by
-            simpa [hSrc, hMint] using hStep
+            simpa [hSrc, hToNN, hMint] using hStep
           exact cspaceInsertSlot_preserves_capabilityInvariantBundle st st' dst child hInv
             (fun cn hObj => hDstCapacity cn child hObj)
             (objects_invExt_of_capabilityInvariantBundle st hInv) hInsert
@@ -483,8 +490,15 @@ theorem cspaceCopy_preserves_capabilityInvariantBundle
       rcases pair with ⟨cap, st1⟩
       have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src cap hSrc
       subst st1
+      -- AL1b (AK7-I.cascade): promote cap via toNonNull?; .ok forces non-null.
+      have hNotNull : cap.isNull = false := by
+        by_cases h : cap.isNull
+        · exfalso; simp [Capability.toNonNull?, h, hSrc] at hStep
+        · exact Bool.not_eq_true _ |>.mp h
+      have hToNN : cap.toNonNull? = some ⟨cap, hNotNull⟩ :=
+        Capability.toNonNull?_of_not_null hNotNull
       cases hInsert : cspaceInsertSlot dst cap st with
-      | error e => simp [hSrc, hInsert] at hStep
+      | error e => simp [hSrc, hToNN, hInsert] at hStep
       | ok pair2 =>
           rcases pair2 with ⟨_, st2⟩
           have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2 dst cap hInv
@@ -495,7 +509,7 @@ theorem cspaceCopy_preserves_capabilityInvariantBundle
           | mk srcNode stSrc =>
               cases hEnsDst : SystemState.ensureCdtNodeForSlot stSrc dst with
               | mk dstNode stDst =>
-                  simp [hSrc, hInsert, hEnsSrc, hEnsDst] at hStep
+                  simp [hSrc, hToNN, hInsert, hEnsSrc, hEnsDst] at hStep
                   cases hStep
                   have hObjSrc : stSrc.objects = st2.objects := by
                     simpa [hEnsSrc] using SystemState.ensureCdtNodeForSlot_objects_eq st2 src
@@ -531,12 +545,19 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
       rcases pair with ⟨cap, st1⟩
       have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src cap hSrc
       subst st1
+      -- AL1b (AK7-I.cascade): promote cap via toNonNull?.
+      have hNotNull : cap.isNull = false := by
+        by_cases h : cap.isNull
+        · exfalso; simp [Capability.toNonNull?, h, hSrc] at hStep
+        · exact Bool.not_eq_true _ |>.mp h
+      have hToNN : cap.toNonNull? = some ⟨cap, hNotNull⟩ :=
+        Capability.toNonNull?_of_not_null hNotNull
       cases hInsert : cspaceInsertSlot dst cap st with
-      | error e => simp [hSrc, hInsert] at hStep
+      | error e => simp [hSrc, hToNN, hInsert] at hStep
       | ok pair2 =>
           rcases pair2 with ⟨_, st2⟩
           cases hDelete : cspaceDeleteSlotCore src st2 with
-          | error e => simp [hSrc, hInsert, hDelete] at hStep
+          | error e => simp [hSrc, hToNN, hInsert, hDelete] at hStep
           | ok pair3 =>
               rcases pair3 with ⟨_, st3⟩
               have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2 dst cap hInv
@@ -568,12 +589,12 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
               rcases hBundleSt3 with ⟨hU3, _, hBnd3, _, _, hDepth3, hObjInv3⟩
               cases hNode : SystemState.lookupCdtNodeOfSlot st2 src with
               | none =>
-                  simp [hSrc, hInsert, hDelete, hNode] at hStep
+                  simp [hSrc, hToNN, hInsert, hDelete, hNode] at hStep
                   cases hStep
                   exact ⟨hU3, cspaceLookupSound_of_cspaceSlotUnique _ hU3,
                     hBnd3, hCdtPost.1, hCdtPost.2, hDepth3, hObjInv3⟩
               | some srcNode =>
-                  simp [hSrc, hInsert, hDelete, hNode] at hStep
+                  simp [hSrc, hToNN, hInsert, hDelete, hNode] at hStep
                   cases hStep
                   have hObjEq : (SystemState.attachSlotToCdtNode st3 dst srcNode).objects = st3.objects :=
                     SystemState.attachSlotToCdtNode_objects_eq st3 dst srcNode
@@ -1845,7 +1866,15 @@ theorem cspaceMint_preserves_badgeWellFormed
     have hPairEq := cspaceLookupSlot_ok_state_eq st src pair.1 pair.2 hLookup
     subst hPairEq
     simp only [hLookup] at hStep
-    cases hMint : mintDerivedCap pair.1 rights badge with
+    -- AL1b (AK7-I.cascade): pair.1 promoted via toNonNull? under success.
+    have hNotNull : pair.1.isNull = false := by
+      by_cases h : pair.1.isNull
+      · exfalso; simp [Capability.toNonNull?, h] at hStep
+      · exact Bool.not_eq_true _ |>.mp h
+    have hToNN : pair.1.toNonNull? = some ⟨pair.1, hNotNull⟩ :=
+      Capability.toNonNull?_of_not_null hNotNull
+    simp only [hToNN] at hStep
+    cases hMint : mintDerivedCap ⟨pair.1, hNotNull⟩ rights badge with
     | error e => simp [hMint] at hStep
     | ok child =>
       simp only [hMint] at hStep
@@ -2197,12 +2226,18 @@ theorem cspaceMint_preserves_cdtMapsConsistent
       rcases pair with ⟨parent, st1⟩
       have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src parent hSrc
       subst st1
-      cases hMint : mintDerivedCap parent rights badge with
-      | error e => simp [hSrc, hMint] at hStep
+      -- AL1b (AK7-I.cascade): promote parent via toNonNull?.
+      have hNotNull : parent.isNull = false := by
+        by_cases h : parent.isNull
+        · exfalso; simp [Capability.toNonNull?, h, hSrc] at hStep
+        · exact Bool.not_eq_true _ |>.mp h
+      have hToNN : parent.toNonNull? = some ⟨parent, hNotNull⟩ :=
+        Capability.toNonNull?_of_not_null hNotNull
+      cases hMint : mintDerivedCap ⟨parent, hNotNull⟩ rights badge with
+      | error e => simp [hSrc, hToNN, hMint] at hStep
       | ok child =>
           have hInsert : cspaceInsertSlot dst child st = .ok ((), st') := by
-            simpa [hSrc, hMint] using hStep
-          -- cspaceInsertSlot only calls storeObject + storeCapabilityRef (CDT unchanged)
+            simpa [hSrc, hToNN, hMint] using hStep
           exact cspaceInsertSlot_preserves_cdtMapsConsistent st st' dst child hCon hInsert
 
 /-- S3-D: Core `cspaceDeleteSlotCore` preserves `cdtMapsConsistent`. -/

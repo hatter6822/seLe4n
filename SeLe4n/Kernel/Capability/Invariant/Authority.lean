@@ -304,17 +304,18 @@ theorem cspaceRevoke_preserves_source
                 exact (cspaceLookupSlot_ok_iff_lookupSlotCap st' addr parent).2 hCapFinal
 
 private theorem mintDerivedCap_attenuates
-    (parent child : Capability)
+    (parent : NonNullCap)
+    (child : Capability)
     (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
     (hMint : mintDerivedCap parent rights badge = .ok child) :
-    capAttenuates parent child := by
-  by_cases hSubset : rightsSubset rights parent.rights = true
+    capAttenuates parent.val child := by
+  by_cases hSubset : rightsSubset rights parent.val.rights = true
   · simp [mintDerivedCap, hSubset] at hMint
     cases hMint
     constructor
     · rfl
-    · exact rightsSubset_sound rights parent.rights hSubset
+    · exact rightsSubset_sound rights parent.val.rights hSubset
   · simp [mintDerivedCap, hSubset] at hMint
 
 -- ============================================================================
@@ -328,11 +329,12 @@ This is a direct consequence of `mintDerivedCap` checking `rightsSubset` before
 constructing the child capability and setting `child.target = parent.target`
 unconditionally. -/
 theorem mintDerivedCap_rights_attenuated_with_badge_override
-    (parent child : Capability)
+    (parent : NonNullCap)
+    (child : Capability)
     (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
     (hMint : mintDerivedCap parent rights badge = .ok child) :
-    ∀ right, right ∈ child.rights → right ∈ parent.rights := by
+    ∀ right, right ∈ child.rights → right ∈ parent.val.rights := by
   have hAtt := mintDerivedCap_attenuates parent child rights badge hMint
   exact hAtt.2
 
@@ -344,11 +346,12 @@ parent capability.
 This is the core F-06 safety property: badge is metadata that affects notification
 signaling semantics, not capability authority scope. -/
 theorem mintDerivedCap_target_preserved_with_badge_override
-    (parent child : Capability)
+    (parent : NonNullCap)
+    (child : Capability)
     (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
     (hMint : mintDerivedCap parent rights badge = .ok child) :
-    child.target = parent.target := by
+    child.target = parent.val.target := by
   have hAtt := mintDerivedCap_attenuates parent child rights badge hMint
   exact hAtt.1
 
@@ -371,13 +374,24 @@ theorem cspaceMint_child_attenuates
       rcases pair with ⟨parent, st1⟩
       have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src parent hSrc
       subst st1
-      cases hMint : mintDerivedCap parent rights badge with
-      | error e => simp [hSrc, hMint] at hStep
+      -- AL1b (AK7-I.cascade): cspaceMint promotes parent via `toNonNull?`.
+      -- From the `.ok` outcome we derive `parent.isNull = false` and thus
+      -- `toNonNull? = some ⟨parent, _⟩`. `mintDerivedCap` now takes NonNullCap.
+      have hNotNull : parent.isNull = false := by
+        by_cases h : parent.isNull
+        · exfalso; simp [Capability.toNonNull?, h, hSrc] at hStep
+        · exact Bool.not_eq_true _ |>.mp h
+      have hToNN : parent.toNonNull? = some ⟨parent, hNotNull⟩ :=
+        Capability.toNonNull?_of_not_null hNotNull
+      simp [hSrc, hToNN] at hStep
+      cases hMint : mintDerivedCap ⟨parent, hNotNull⟩ rights badge with
+      | error e => simp [hMint] at hStep
       | ok child =>
-          have hAtt : capAttenuates parent child :=
-            mintDerivedCap_attenuates parent child rights badge hMint
+          have hAtt : capAttenuates parent child := by
+            have := mintDerivedCap_attenuates ⟨parent, hNotNull⟩ child rights badge hMint
+            exact this
           have hInsert : cspaceInsertSlot dst child st = .ok ((), st') := by
-            simpa [hSrc, hMint] using hStep
+            simpa [hMint] using hStep
           refine ⟨parent, child, ?_, ?_, hAtt⟩
           · rfl
           · exact cspaceInsertSlot_lookup_eq st st' dst child hSlotUniq hObjInv hInsert
@@ -412,7 +426,7 @@ theorem cspaceMint_badge_override_safe
 /-- (H-03) `mintDerivedCap` propagates the explicitly provided badge to the
 derived capability when rights are sufficient. -/
 theorem mintDerivedCap_badge_propagated
-    (parent : Capability) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
+    (parent : NonNullCap) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
     (child : Capability)
     (hMint : mintDerivedCap parent rights badge = .ok child) :
     child.badge = badge := by
@@ -441,8 +455,15 @@ theorem cspaceMint_child_badge_preserved
       rcases pair with ⟨parent, st1⟩
       have hSt1 := cspaceLookupSlot_preserves_state st st1 src parent hSrc
       subst st1
-      simp [hSrc] at hStep
-      cases hMint : mintDerivedCap parent rights (some badge) with
+      -- AL1b (AK7-I.cascade): `toNonNull?` promotes parent under the `.ok` path.
+      have hNotNull : parent.isNull = false := by
+        by_cases h : parent.isNull
+        · exfalso; simp [Capability.toNonNull?, h, hSrc] at hStep
+        · exact Bool.not_eq_true _ |>.mp h
+      have hToNN : parent.toNonNull? = some ⟨parent, hNotNull⟩ :=
+        Capability.toNonNull?_of_not_null hNotNull
+      simp [hSrc, hToNN] at hStep
+      cases hMint : mintDerivedCap ⟨parent, hNotNull⟩ rights (some badge) with
       | error e => simp [hMint] at hStep
       | ok child =>
           simp [hMint] at hStep

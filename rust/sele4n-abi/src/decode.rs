@@ -36,8 +36,8 @@ pub fn decode_response(regs: [u64; 7]) -> KernelResult<SyscallResponse> {
         if regs[0] > u32::MAX as u64 {
             return Err(KernelError::InvalidSyscallNumber);
         }
-        // Kernel error codes are 0–49 (AL6/WS-AL: +InvalidObjectType at 49).
-        // AF6-A: Unrecognized codes (≥50, excluding sentinel 255) map to
+        // Kernel error codes are 0–50 (AL1b/WS-AL: +NullCapability at 50).
+        // AF6-A: Unrecognized codes (≥51, excluding sentinel 255) map to
         // UnknownKernelError — semantically correct fallback instead of
         // InvalidSyscallNumber which implies a different kind of protocol error.
         let err = KernelError::from_u32(regs[0] as u32)
@@ -103,9 +103,8 @@ mod tests {
 
     #[test]
     fn decode_unknown_error_code() {
-        // AL6 (WS-AL): 49 is InvalidObjectType after the AL6 extension.
-        // The previously-tested-unknown slot moves to 50.
-        let regs = [50, 0, 0, 0, 0, 0, 0];
+        // AL1b (WS-AL): 50 is NullCapability. The first unrecognized code is 51.
+        let regs = [51, 0, 0, 0, 0, 0, 0];
         assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
     }
 

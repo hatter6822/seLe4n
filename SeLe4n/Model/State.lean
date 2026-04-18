@@ -84,6 +84,16 @@ inductive KernelError where
   | invalidObjectType      -- AL6 (WS-AL / AK7-F.cascade): storeObjectKindChecked
                            -- rejects cross-variant overwrite (e.g., storing a
                            -- SchedContext at an ObjId that already holds a TCB).
+  | nullCapability         -- AL1b (WS-AL / AK7-I.cascade): capability operation
+                           -- rejected the `Capability.null` sentinel. Distinct
+                           -- from `invalidCapability` (which can mean "slot
+                           -- empty" or "cap target is not .object"); this
+                           -- specifically signals the seL4_CapNull convention
+                           -- (`.object` target with reserved ObjId AND empty
+                           -- rights). Produced by the `NonNullCap.ofCap?`
+                           -- type-level promotion failure path; the type
+                           -- system enforces the discipline at call sites
+                           -- that demand `NonNullCap` arguments.
   deriving Repr, DecidableEq
 
 /-- S2-A: Low-priority blanket `ToString` from `Repr`. Enables standard

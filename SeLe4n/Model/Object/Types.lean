@@ -412,6 +412,88 @@ theorem requireNotNull_some_not_null {cap cap' : Capability}
 
 end Capability
 
+-- ============================================================================
+-- AL1b (WS-AL / AK7-I.cascade): `NonNullCap` subtype for type-level null-cap
+-- rejection. Replaces the earlier runtime-guard approach (reverted because
+-- it overloaded `.invalidCapability`).
+-- ============================================================================
+
+/-- AL1b: Subtype witnessing that a capability is not the `seL4_CapNull`
+sentinel. Any function that takes `NonNullCap` as a formal argument is
+guaranteed by the Lean type system that no caller can feed it a null cap —
+construction of a `NonNullCap` requires a proof of `cap.isNull = false`.
+
+This is the *type-level* discipline counterpart to `ValidThreadId`
+(AK7-E baseline). Callers who need to convert a raw `Capability` must
+go through `Capability.toNonNull?`, which returns `Option NonNullCap`;
+on `none` the caller is forced to either propagate a `NullCapability`
+error or take a different path. -/
+abbrev NonNullCap := { cap : Capability // cap.isNull = false }
+
+namespace Capability
+
+/-- AL1b: Forget the non-null witness — project `NonNullCap` back to a
+raw `Capability`. -/
+@[inline] def ofNonNull (c : NonNullCap) : Capability := c.val
+
+/-- AL1b: Construct a `NonNullCap` when the caller has a
+`cap.isNull = false` witness in hand. Preferred for proof-carrying
+contexts where the non-null property is already established. -/
+@[inline] def toNonNull (cap : Capability) (h : cap.isNull = false) : NonNullCap :=
+  ⟨cap, h⟩
+
+/-- AL1b: Runtime-checked promotion. Returns `some ⟨cap, _⟩` when
+`cap.isNull = false` and `none` otherwise. This is the canonical way a
+runtime-discovered capability (e.g., the result of `cspaceLookupSlot`) is
+promoted to the non-null type before being passed into an operation that
+requires `NonNullCap`.
+
+Callers that receive `none` MUST produce `KernelError.nullCapability`
+(or propagate it) — the error code dedicated to this failure mode. -/
+@[inline] def toNonNull? (cap : Capability) : Option NonNullCap :=
+  if h : cap.isNull = false then some ⟨cap, h⟩ else none
+
+end Capability
+
+/-- AL1b: `toNonNull?` succeeds iff the capability is not null. -/
+theorem Capability.toNonNull?_isSome_iff (cap : Capability) :
+    (cap.toNonNull?).isSome = true ↔ cap.isNull = false := by
+  unfold Capability.toNonNull?
+  constructor
+  · intro h; split at h
+    · rename_i hNotNull; exact hNotNull
+    · cases h
+  · intro h; simp [h]
+
+/-- AL1b: `toNonNull?` rejects the canonical null cap. -/
+theorem Capability.toNonNull?_null : (Capability.null).toNonNull? = none := by
+  unfold Capability.toNonNull?
+  simp [null_isNull]
+
+/-- AL1b: Projecting a `NonNullCap` back via `ofNonNull` round-trips through
+`toNonNull?` — the result is `some` with the original cap. -/
+theorem Capability.toNonNull?_ofNonNull (c : NonNullCap) :
+    (Capability.ofNonNull c).toNonNull? = some c := by
+  unfold Capability.toNonNull? Capability.ofNonNull
+  simp [c.property]
+
+/-- AL1b: Bridge lemma — if `cap.isNull = false`, then `toNonNull?` returns
+`some ⟨cap, _⟩`. This is the canonical introduction pattern for callers who
+have established non-nullness externally. -/
+theorem Capability.toNonNull?_of_not_null
+    {cap : Capability} (h : cap.isNull = false) :
+    cap.toNonNull? = some ⟨cap, h⟩ := by
+  unfold Capability.toNonNull?
+  simp [h]
+
+/-- AL1b: Implicit coercion `NonNullCap → Capability` via the subtype's
+`.val` projection. Enables `nn.rights`, `nn.target`, `nn.badge` syntax on
+`NonNullCap` values without explicit `.val` or `Capability.ofNonNull`
+calls. The coercion is safe because the subtype projection is injective:
+two distinct `NonNullCap`s have distinct underlying capabilities. -/
+instance : CoeHead NonNullCap Capability where
+  coe := Subtype.val
+
 /-- WS-H12d/A-09: Maximum number of message registers per IPC message.
 Matches seL4's `seL4_MsgMaxLength` (120 words). -/
 def maxMessageRegisters : Nat := 120

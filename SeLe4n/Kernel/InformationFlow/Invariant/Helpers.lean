@@ -556,14 +556,29 @@ theorem cspaceMint_preserves_lowEquivalent
     ⟨parent₂, child₂, hLookup₂, _, _⟩
   unfold cspaceMint at hStep₁ hStep₂
   rw [hLookup₁] at hStep₁; rw [hLookup₂] at hStep₂
-  cases hMint₁ : mintDerivedCap parent₁ rights badge with
-  | error e => simp [hMint₁] at hStep₁
+  -- AL1b (AK7-I.cascade): promote parent₁/parent₂ via toNonNull? on both branches.
+  have hNotNull₁ : parent₁.isNull = false := by
+    by_cases h : parent₁.isNull
+    · exfalso; simp [Capability.toNonNull?, h] at hStep₁
+    · exact Bool.not_eq_true _ |>.mp h
+  have hNotNull₂ : parent₂.isNull = false := by
+    by_cases h : parent₂.isNull
+    · exfalso; simp [Capability.toNonNull?, h] at hStep₂
+    · exact Bool.not_eq_true _ |>.mp h
+  have hToNN₁ : parent₁.toNonNull? = some ⟨parent₁, hNotNull₁⟩ :=
+    Capability.toNonNull?_of_not_null hNotNull₁
+  have hToNN₂ : parent₂.toNonNull? = some ⟨parent₂, hNotNull₂⟩ :=
+    Capability.toNonNull?_of_not_null hNotNull₂
+  cases hMint₁ : mintDerivedCap ⟨parent₁, hNotNull₁⟩ rights badge with
+  | error e => simp [hToNN₁, hMint₁] at hStep₁
   | ok c₁ =>
-    cases hMint₂ : mintDerivedCap parent₂ rights badge with
-    | error e => simp [hMint₂] at hStep₂
+    cases hMint₂ : mintDerivedCap ⟨parent₂, hNotNull₂⟩ rights badge with
+    | error e => simp [hToNN₂, hMint₂] at hStep₂
     | ok c₂ =>
-      have hInsert₁ : cspaceInsertSlot dst c₁ s₁ = .ok ((), s₁') := by simpa [hMint₁] using hStep₁
-      have hInsert₂ : cspaceInsertSlot dst c₂ s₂ = .ok ((), s₂') := by simpa [hMint₂] using hStep₂
+      have hInsert₁ : cspaceInsertSlot dst c₁ s₁ = .ok ((), s₁') := by
+        simpa [hToNN₁, hMint₁] using hStep₁
+      have hInsert₂ : cspaceInsertSlot dst c₂ s₂ = .ok ((), s₂') := by
+        simpa [hToNN₂, hMint₂] using hStep₂
       have hObjLow := congrArg ObservableState.objects hLow
       have hRunLow := congrArg ObservableState.runnable hLow
       have hCurLow := congrArg ObservableState.current hLow

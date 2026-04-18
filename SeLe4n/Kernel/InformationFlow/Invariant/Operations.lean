@@ -1109,6 +1109,14 @@ theorem cspaceCopy_preserves_projection
     have hStEq := cspaceLookupSlot_preserves_state st stL src cap hLookup
     simp only [hLookup] at hStep
     rw [hStEq] at hStep
+    -- AL1b (AK7-I.cascade): promote cap via toNonNull? under success path.
+    have hNotNull : cap.isNull = false := by
+      by_cases h : cap.isNull
+      · exfalso; simp [Capability.toNonNull?, h] at hStep
+      · exact Bool.not_eq_true _ |>.mp h
+    have hToNN : cap.toNonNull? = some ⟨cap, hNotNull⟩ :=
+      Capability.toNonNull?_of_not_null hNotNull
+    simp only [hToNN] at hStep
     cases hInsert : cspaceInsertSlot dst cap st with
     | error e => simp [hInsert] at hStep
     | ok pair₂ =>
@@ -1157,6 +1165,14 @@ theorem cspaceMove_preserves_projection
     have hStEq := cspaceLookupSlot_preserves_state st stL src cap hLookup
     simp only [hLookup] at hStep
     rw [hStEq] at hStep
+    -- AL1b (AK7-I.cascade): promote cap via toNonNull?.
+    have hNotNull : cap.isNull = false := by
+      by_cases h : cap.isNull
+      · exfalso; simp [Capability.toNonNull?, h] at hStep
+      · exact Bool.not_eq_true _ |>.mp h
+    have hToNN : cap.toNonNull? = some ⟨cap, hNotNull⟩ :=
+      Capability.toNonNull?_of_not_null hNotNull
+    simp only [hToNN] at hStep
     cases hInsert : cspaceInsertSlot dst cap st with
     | error e => simp [hInsert] at hStep
     | ok pair₂ =>

@@ -12,6 +12,7 @@ import SeLe4n.Model.Object
 import SeLe4n.Model.State
 import SeLe4n.Model.FrozenState
 import SeLe4n.Model.FreezeProofs
+import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Testing.Helpers
 
 /-! # AK7 Regression Suite — Foundational Model
@@ -288,6 +289,107 @@ def ak7I_05_object_with_rights_not_null : IO Unit := do
       rights := AccessRightSet.singleton .read
       badge := none }
   expect "ak7I-05 sentinel obj w/ rights not null" (cap.isNull = false)
+
+-- ============================================================================
+-- AL1b (WS-AL / AK7-I.cascade): NonNullCap type-level discipline + end-to-end
+-- null-cap rejection at `cspaceMint` / `cspaceCopy` / `cspaceMove`.
+--
+-- These tests exercise the TYPE-LEVEL discipline introduced in AL1b:
+--   (a) `Capability.toNonNull?` returns `none` for `Capability.null` and
+--       `some ⟨cap, _⟩` for any non-null cap.
+--   (b) The three cspace operations promote their looked-up capability to
+--       `NonNullCap` via `toNonNull?`; failure produces the DEDICATED
+--       `.nullCapability` error code (discriminant 50), distinct from
+--       `.invalidCapability` (slot empty or non-object target).
+-- ============================================================================
+
+/-- AL1b-01: `Capability.null.toNonNull?` is `none`. -/
+def al1b_01_toNonNull_rejects_null : IO Unit := do
+  expect "al1b-01 toNonNull? rejects null" (Capability.null.toNonNull?.isNone)
+
+/-- AL1b-02: A non-null cap promotes to `NonNullCap` successfully. -/
+def al1b_02_toNonNull_accepts_nonnull : IO Unit := do
+  let cap : Capability :=
+    { target := .object ⟨42⟩, rights := AccessRightSet.empty, badge := none }
+  expect "al1b-02 toNonNull? accepts non-null" (cap.toNonNull?.isSome)
+
+/-- AL1b-03: Round-trip — `NonNullCap.val` → `toNonNull?` returns the same cap. -/
+def al1b_03_toNonNull_roundtrip : IO Unit := do
+  let cap : Capability :=
+    { target := .object ⟨42⟩, rights := AccessRightSet.empty, badge := none }
+  match cap.toNonNull? with
+  | none => throw <| IO.userError "al1b-03 unexpected none"
+  | some nn =>
+      let roundtripped := Capability.ofNonNull nn
+      unless roundtripped == cap do
+        throw <| IO.userError "al1b-03 round-trip drift"
+      expect "al1b-03 NonNullCap round-trip" true
+
+/-- Build a SystemState with `Capability.null` in slot 0 of a CNode for the
+AL1b end-to-end tests. -/
+private def al1bStateWithNullCapSlot : SystemState :=
+  let srcCnode : CNode := {
+    depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
+    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(⟨0⟩, Capability.null)] }
+  let dstCnode : CNode := {
+    depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
+    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList ([] : List (Slot × Capability)) }
+  let base : SystemState := default
+  let st1 : SystemState :=
+    { base with objects := base.objects.insert ⟨10⟩ (.cnode srcCnode) }
+  { st1 with objects := st1.objects.insert ⟨11⟩ (.cnode dstCnode) }
+
+/-- AL1b-04: `cspaceMint` from a null-cap source returns `.nullCapability`
+(type-level rejection via `toNonNull?` inside `cspaceMint` → `mintDerivedCap`
+signature requires `NonNullCap`). -/
+def al1b_04_mint_from_null_rejected : IO Unit := do
+  let st := al1bStateWithNullCapSlot
+  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨0⟩ }
+  let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := ⟨0⟩ }
+  let result := SeLe4n.Kernel.cspaceMint src dst AccessRightSet.empty none st
+  match result with
+  | .error .nullCapability =>
+      expect "al1b-04 mint from null → .nullCapability (type-level)" true
+  | .error e =>
+      throw <| IO.userError s!"al1b-04 wrong error: expected nullCapability, got {repr e}"
+  | .ok _ =>
+      throw <| IO.userError "al1b-04 mint from null should have been rejected"
+
+/-- AL1b-05: `cspaceCopy` from a null-cap source returns `.nullCapability`. -/
+def al1b_05_copy_from_null_rejected : IO Unit := do
+  let st := al1bStateWithNullCapSlot
+  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨0⟩ }
+  let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := ⟨0⟩ }
+  match SeLe4n.Kernel.cspaceCopy src dst st with
+  | .error .nullCapability =>
+      expect "al1b-05 copy from null → .nullCapability" true
+  | .error e =>
+      throw <| IO.userError s!"al1b-05 wrong error: expected nullCapability, got {repr e}"
+  | .ok _ =>
+      throw <| IO.userError "al1b-05 copy from null should have been rejected"
+
+/-- AL1b-06: `cspaceMove` from a null-cap source returns `.nullCapability`. -/
+def al1b_06_move_from_null_rejected : IO Unit := do
+  let st := al1bStateWithNullCapSlot
+  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨0⟩ }
+  let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := ⟨0⟩ }
+  match SeLe4n.Kernel.cspaceMove src dst st with
+  | .error .nullCapability =>
+      expect "al1b-06 move from null → .nullCapability" true
+  | .error e =>
+      throw <| IO.userError s!"al1b-06 wrong error: expected nullCapability, got {repr e}"
+  | .ok _ =>
+      throw <| IO.userError "al1b-06 move from null should have been rejected"
+
+/-- AL1b-07: Error-code distinctness — `.nullCapability` is NOT
+`.invalidCapability`. Confirms the fix for the prior bad design that
+overloaded `.invalidCapability` with three different failure modes. -/
+def al1b_07_nullCapability_distinct_from_invalidCapability : IO Unit := do
+  let e1 : KernelError := .nullCapability
+  let e2 : KernelError := .invalidCapability
+  unless !(e1 == e2) do
+    throw <| IO.userError "al1b-07 nullCapability and invalidCapability collided"
+  expect "al1b-07 .nullCapability ≠ .invalidCapability" true
 
 -- ============================================================================
 -- AL2-C (WS-AL / AK7-F.cascade): runtime coverage for the 5 per-variant
@@ -653,6 +755,14 @@ def main : IO Unit := do
   ak7I_03_require_not_null
   ak7I_04_cnodeSlot_not_null
   ak7I_05_object_with_rights_not_null
+  -- AL1b (WS-AL): NonNullCap type-level discipline + end-to-end cspace null-cap rejection
+  al1b_01_toNonNull_rejects_null
+  al1b_02_toNonNull_accepts_nonnull
+  al1b_03_toNonNull_roundtrip
+  al1b_04_mint_from_null_rejected
+  al1b_05_copy_from_null_rejected
+  al1b_06_move_from_null_rejected
+  al1b_07_nullCapability_distinct_from_invalidCapability
   -- AL2-C (WS-AL): kind-verified lookup helpers discriminate by variant
   al2C_01_getTcb_discriminates
   al2C_02_getSchedContext_discriminates

@@ -462,15 +462,15 @@ fn syscall_id_exhaustive_roundtrip() {
     assert!(SyscallId::from_u64(25).is_none());
 }
 
-/// Verify KernelError roundtrip for all 50 variants
-/// (AL6/WS-AL: InvalidObjectType at 49 extends AG3's range).
+/// Verify KernelError roundtrip for all 51 variants
+/// (AL1b/WS-AL: NullCapability at 50 extends AL6's range of 0..=49).
 #[test]
 fn kernel_error_exhaustive_roundtrip() {
-    for i in 0..=49u32 {
+    for i in 0..=50u32 {
         let err = KernelError::from_u32(i).expect(&format!("valid error for discriminant {i}"));
         assert_eq!(err as u32, i);
     }
-    assert!(KernelError::from_u32(50).is_none());
+    assert!(KernelError::from_u32(51).is_none());
 }
 
 /// Verify TypeTag roundtrip for all 7 variants (0–6, including SchedContext).
@@ -728,13 +728,13 @@ fn u3de_access_rights_ops_preserve_validity() {
 /// and that unknown discriminants return None (forward-compatible).
 #[test]
 fn u3f_kernel_error_non_exhaustive() {
-    // AL6 (WS-AL / AK7-F.cascade): 50 variants (0–49) roundtrip.
-    for i in 0..=49u32 {
+    // AL1b (WS-AL / AK7-I.cascade): 51 variants (0–50) roundtrip.
+    for i in 0..=50u32 {
         let e = KernelError::from_u32(i).unwrap();
         assert_eq!(e as u32, i);
     }
     // Future discriminants return None
-    assert!(KernelError::from_u32(50).is_none());
+    assert!(KernelError::from_u32(51).is_none());
     assert!(KernelError::from_u32(100).is_none());
     assert!(KernelError::from_u32(u32::MAX).is_none());
 }
@@ -788,14 +788,14 @@ fn v1a_decode_response_u64_overflow() {
     assert_eq!(decode_response(regs), Err(KernelError::InvalidSyscallNumber));
 }
 
-/// AF6-A + AL6: Unrecognized kernel error codes (≥50 after AL6 added
-/// InvalidObjectType at 49) map to UnknownKernelError.
+/// AF6-A + AL1b: Unrecognized kernel error codes (≥51 after AL1b added
+/// NullCapability at 50) map to UnknownKernelError.
 #[test]
 fn af6a_unknown_kernel_error_fallback() {
     use sele4n_abi::decode_response;
 
-    // Error code 50 — first unrecognized code after InvalidObjectType (49)
-    let regs = [50, 0, 0, 0, 0, 0, 0];
+    // Error code 51 — first unrecognized code after NullCapability (50)
+    let regs = [51, 0, 0, 0, 0, 0, 0];
     assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
 
     // Error code 100 — arbitrary unrecognized code
@@ -934,12 +934,12 @@ fn v1h_identifier_validation() {
 // W1 — Critical Rust ABI Fix conformance tests
 // ============================================================================
 
-/// W1-H / AA1 / AG3 / AL6: KernelError variant count matches Lean (50
-/// variants, 0-49 after AL6 added InvalidObjectType at 49).
+/// W1-H / AA1 / AG3 / AL6 / AL1b: KernelError variant count matches Lean
+/// (51 variants, 0-50 after AL1b added NullCapability at 50).
 /// Detects Lean-Rust enum divergence automatically.
 #[test]
 fn w1h_kernel_error_variant_count() {
-    const KERNEL_ERROR_COUNT: u32 = 50;
+    const KERNEL_ERROR_COUNT: u32 = 51;
     // All expected variants exist
     for i in 0..KERNEL_ERROR_COUNT {
         assert!(
@@ -1261,13 +1261,14 @@ fn aa1h_ipc_timeout_result() {
     assert_eq!(result.unwrap_err(), KernelError::IpcTimeout);
 }
 
-/// AA1-H-4/AG3 + AL6/WS-AL: Boundary — discriminant 50 is out of range
-/// (InvalidIrq at 48, InvalidObjectType at 49).
+/// AA1-H-4/AG3 + AL1b/WS-AL: Boundary — discriminant 51 is out of range
+/// (InvalidIrq at 48, InvalidObjectType at 49, NullCapability at 50).
 #[test]
 fn aa1h_error_boundary_after_invalid_irq() {
     assert!(KernelError::from_u32(48).is_some()); // InvalidIrq
     assert!(KernelError::from_u32(49).is_some()); // InvalidObjectType (AL6)
-    assert!(KernelError::from_u32(50).is_none());
+    assert!(KernelError::from_u32(50).is_some()); // NullCapability (AL1b)
+    assert!(KernelError::from_u32(51).is_none());
 }
 
 // --- D6: TCB operation conformance ---
