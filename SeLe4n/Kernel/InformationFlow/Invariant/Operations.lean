@@ -3138,4 +3138,272 @@ theorem vspaceUnmapPageWithFlush_preserves_projection
     rw [← hProj]
     rfl
 
+-- ============================================================================
+-- AK6-F Step 1: RunQueue modification frame lemmas (at high thread)
+-- ============================================================================
+
+/-- AK6-F Step 1 (helper): `scheduler.runQueue` is read by `projectState`
+    only through `scheduler.runnable` (an abbrev for `runQueue.toList`)
+    which is filtered by `threadObservable` in `projectRunnable`. All
+    other projections don't read runQueue. So modifying runQueue via
+    `remove tid` when `tid` is non-observable preserves projection — the
+    filtered toList is equal by `toList_filter_remove_neg`. -/
+theorem runQueue_remove_preserves_projection_at_high
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hTidHigh : threadObservable ctx observer tid = false) :
+    projectState ctx observer
+      { st with scheduler := { st.scheduler with
+          runQueue := st.scheduler.runQueue.remove tid } } =
+    projectState ctx observer st := by
+  -- Only projectRunnable reads scheduler.runQueue (via the runnable abbrev).
+  have hRun : projectRunnable ctx observer
+                { st with scheduler := { st.scheduler with
+                    runQueue := st.scheduler.runQueue.remove tid } } =
+              projectRunnable ctx observer st := by
+    simp only [projectRunnable, SchedulerState.runnable]
+    exact SeLe4n.Kernel.RunQueue.toList_filter_remove_neg
+      st.scheduler.runQueue tid (threadObservable ctx observer) hTidHigh
+  show (ObservableState.mk _ (projectRunnable ctx observer
+          { st with scheduler := { st.scheduler with
+              runQueue := st.scheduler.runQueue.remove tid } })
+          _ _ _ _ _ _ _ _ _ _ _) = _
+  rw [hRun]
+  rfl
+
+/-- AK6-F Step 1: Same as `runQueue_remove_preserves_projection_at_high`
+    for `insert` — uses `toList_filter_insert_neg'`. -/
+theorem runQueue_insert_preserves_projection_at_high
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority)
+    (hTidHigh : threadObservable ctx observer tid = false) :
+    projectState ctx observer
+      { st with scheduler := { st.scheduler with
+          runQueue := st.scheduler.runQueue.insert tid prio } } =
+    projectState ctx observer st := by
+  have hRun : projectRunnable ctx observer
+                { st with scheduler := { st.scheduler with
+                    runQueue := st.scheduler.runQueue.insert tid prio } } =
+              projectRunnable ctx observer st := by
+    simp only [projectRunnable, SchedulerState.runnable]
+    exact SeLe4n.Kernel.RunQueue.toList_filter_insert_neg'
+      st.scheduler.runQueue tid prio (threadObservable ctx observer) hTidHigh
+  show (ObservableState.mk _ (projectRunnable ctx observer
+          { st with scheduler := { st.scheduler with
+              runQueue := st.scheduler.runQueue.insert tid prio } })
+          _ _ _ _ _ _ _ _ _ _ _) = _
+  rw [hRun]
+  rfl
+
+/-- AK6-F Step 1 composed: modifying runQueue via remove+insert at a high
+    thread preserves projection. This chains the two frame lemmas. -/
+theorem runQueue_remove_insert_preserves_projection_at_high
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority)
+    (hTidHigh : threadObservable ctx observer tid = false) :
+    projectState ctx observer
+      { st with scheduler := { st.scheduler with
+          runQueue := (st.scheduler.runQueue.remove tid).insert tid prio } } =
+    projectState ctx observer st := by
+  -- Establish both states' projectRunnable equality via filter chain.
+  have hRun : projectRunnable ctx observer
+                { st with scheduler := { st.scheduler with
+                    runQueue := (st.scheduler.runQueue.remove tid).insert tid prio } } =
+              projectRunnable ctx observer st := by
+    simp only [projectRunnable, SchedulerState.runnable]
+    rw [SeLe4n.Kernel.RunQueue.toList_filter_insert_neg'
+         (st.scheduler.runQueue.remove tid) tid prio
+         (threadObservable ctx observer) hTidHigh]
+    exact SeLe4n.Kernel.RunQueue.toList_filter_remove_neg
+      st.scheduler.runQueue tid (threadObservable ctx observer) hTidHigh
+  show (ObservableState.mk _ (projectRunnable ctx observer
+          { st with scheduler := { st.scheduler with
+              runQueue := (st.scheduler.runQueue.remove tid).insert tid prio } })
+          _ _ _ _ _ _ _ _ _ _ _) = _
+  rw [hRun]
+  rfl
+
+-- ============================================================================
+-- AK6-F Step 2: migrateRunQueueBucket preservation
+-- ============================================================================
+
+/-- AK6-F Step 2: `migrateRunQueueBucket` preserves projection when the
+    target thread is non-observable. Either the thread is not in runQueue
+    (state unchanged) or it's removed and re-inserted at a computed
+    effective priority — both cases handled by the Step 1 frames. -/
+theorem migrateRunQueueBucket_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority)
+    (hTidHigh : threadObservable ctx observer tid = false) :
+    projectState ctx observer
+      (SchedContext.PriorityManagement.migrateRunQueueBucket st tid newPriority) =
+    projectState ctx observer st := by
+  unfold SchedContext.PriorityManagement.migrateRunQueueBucket
+  split
+  · -- tid ∈ runQueue: remove then insert
+    exact runQueue_remove_insert_preserves_projection_at_high ctx observer st tid _ hTidHigh
+  · -- tid ∉ runQueue: state unchanged
+    rfl
+
+-- ============================================================================
+-- AK6-F Step 3: setPriorityOp preservation
+-- ============================================================================
+
+/-- AK6-F Step 3: `setPriorityOp` preserves projection when the target TCB
+    and any bound/donated SchedContext are non-observable, under a
+    "schedule-branch preserves projection" witness supplied by the caller.
+
+    The caller supplies `hSchedProj` for the post-preemption path — if the
+    preemption-check fails, schedule isn't called and that witness is
+    unused. This keeps the hypothesis set small while allowing full
+    discharge. -/
+theorem setPriorityOp_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (callerTid targetTid : SeLe4n.ThreadId)
+    (newPriority : SeLe4n.Priority)
+    (hTargetThreadHigh : threadObservable ctx observer targetTid = false)
+    (hTargetObjHigh : objectObservable ctx observer targetTid.toObjId = false)
+    (hScHigh : ∀ targetTcb, (st.objects[targetTid.toObjId]? : Option KernelObject)
+                = some (.tcb targetTcb) →
+                ∀ scId, (targetTcb.schedContextBinding = SchedContextBinding.bound scId ∨
+                         ∃ donor, targetTcb.schedContextBinding = SchedContextBinding.donated scId donor) →
+                objectObservable ctx observer scId.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hSchedProj : ∀ stMid stFinal,
+                    projectState ctx observer stMid = projectState ctx observer st →
+                    schedule stMid = .ok ((), stFinal) →
+                    projectState ctx observer stFinal = projectState ctx observer st)
+    (hStep : SchedContext.PriorityManagement.setPriorityOp st callerTid targetTid newPriority
+              = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold SchedContext.PriorityManagement.setPriorityOp at hStep
+  split at hStep
+  · rename_i callerTcb hCaller
+    split at hStep
+    · simp at hStep  -- validation error
+    · split at hStep
+      · rename_i targetTcb hTarget
+        have hProj1 :
+            projectState ctx observer
+              (SchedContext.PriorityManagement.updatePrioritySource st targetTid targetTcb newPriority) =
+            projectState ctx observer st :=
+          updatePrioritySource_preserves_projection ctx observer st targetTid targetTcb
+            newPriority hTargetObjHigh (hScHigh targetTcb hTarget) hObjInv
+        have hProj2 :
+            projectState ctx observer
+              (SchedContext.PriorityManagement.migrateRunQueueBucket
+                (SchedContext.PriorityManagement.updatePrioritySource st targetTid targetTcb newPriority)
+                targetTid newPriority) =
+            projectState ctx observer st := by
+          rw [migrateRunQueueBucket_preserves_projection ctx observer _ targetTid newPriority
+               hTargetThreadHigh]
+          exact hProj1
+        simp only at hStep
+        by_cases hCond :
+            ((SchedContext.PriorityManagement.migrateRunQueueBucket
+                (SchedContext.PriorityManagement.updatePrioritySource st targetTid targetTcb newPriority)
+                targetTid newPriority).scheduler.current == some targetTid &&
+              decide (newPriority.val <
+                (SchedContext.PriorityManagement.getCurrentPriority st targetTcb).val)) = true
+        · -- schedule branch
+          rw [if_pos hCond] at hStep
+          split at hStep
+          · rename_i pair stFinal hSched
+            -- pair : Unit; stFinal : SystemState
+            simp only [Except.ok.injEq] at hStep
+            subst hStep
+            exact hSchedProj _ stFinal hProj2 hSched
+          · simp at hStep
+        · -- no-schedule branch
+          rw [if_neg hCond] at hStep
+          simp only [Except.ok.injEq] at hStep
+          subst hStep
+          exact hProj2
+      · simp at hStep  -- target not TCB
+  · simp at hStep  -- caller not TCB
+
+-- ============================================================================
+-- AK6-F Step 4: setMCPriorityOp preservation
+-- ============================================================================
+
+/-- AK6-F Step 4: `setMCPriorityOp` preserves projection. Structure mirrors
+    setPriorityOp: update target TCB's maxControlledPriority, then optionally
+    cap priority via updatePrioritySource + migrate + optional schedule. -/
+theorem setMCPriorityOp_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (callerTid targetTid : SeLe4n.ThreadId)
+    (newMCP : SeLe4n.Priority)
+    (hTargetThreadHigh : threadObservable ctx observer targetTid = false)
+    (hTargetObjHigh : objectObservable ctx observer targetTid.toObjId = false)
+    (hScHighForUpdated : ∀ targetTcb, (st.objects[targetTid.toObjId]? : Option KernelObject)
+                = some (.tcb targetTcb) →
+                ∀ scId,
+                  (({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding = SchedContextBinding.bound scId ∨
+                   ∃ donor, ({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding = SchedContextBinding.donated scId donor) →
+                objectObservable ctx observer scId.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hSchedProj : ∀ stMid stFinal,
+                    projectState ctx observer stMid = projectState ctx observer st →
+                    schedule stMid = .ok ((), stFinal) →
+                    projectState ctx observer stFinal = projectState ctx observer st)
+    (hStep : SchedContext.PriorityManagement.setMCPriorityOp st callerTid targetTid newMCP
+              = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold SchedContext.PriorityManagement.setMCPriorityOp at hStep
+  split at hStep
+  · rename_i callerTcb hCaller
+    split at hStep
+    · simp at hStep  -- validation error
+    · split at hStep
+      · rename_i targetTcb hTarget
+        -- The post-MCP-update state (after F2):
+        let targetTcb' : TCB := { targetTcb with maxControlledPriority := newMCP }
+        let stAfterMCP : SystemState :=
+          { st with objects := st.objects.insert targetTid.toObjId (.tcb targetTcb') }
+        have hStAfterMCP : projectState ctx observer stAfterMCP = projectState ctx observer st :=
+          objects_insert_preserves_projection_high ctx observer st targetTid.toObjId _
+            hTargetObjHigh hObjInv
+        have hObjInvMCP : stAfterMCP.objects.invExt :=
+          SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
+        simp only at hStep
+        split at hStep
+        · -- MCP cap branch: updatePrioritySource + migrate + optional schedule
+          have hProj1 :
+              projectState ctx observer
+                (SchedContext.PriorityManagement.updatePrioritySource
+                  stAfterMCP targetTid targetTcb' newMCP) =
+              projectState ctx observer st := by
+            rw [updatePrioritySource_preserves_projection ctx observer stAfterMCP targetTid
+                 targetTcb' newMCP hTargetObjHigh
+                 (fun scId hB => hScHighForUpdated targetTcb hTarget scId hB) hObjInvMCP]
+            exact hStAfterMCP
+          have hProj2 :
+              projectState ctx observer
+                (SchedContext.PriorityManagement.migrateRunQueueBucket
+                  (SchedContext.PriorityManagement.updatePrioritySource
+                    stAfterMCP targetTid targetTcb' newMCP)
+                  targetTid newMCP) =
+              projectState ctx observer st := by
+            rw [migrateRunQueueBucket_preserves_projection ctx observer _ targetTid newMCP
+                 hTargetThreadHigh]
+            exact hProj1
+          split at hStep
+          · -- current == some targetTid — schedule
+            split at hStep
+            · rename_i pair stFinal hSched
+              simp only [Except.ok.injEq] at hStep
+              subst hStep
+              exact hSchedProj _ stFinal hProj2 hSched
+            · simp at hStep
+          · -- current != some targetTid — no schedule
+            simp only [Except.ok.injEq] at hStep
+            subst hStep
+            exact hProj2
+        · -- no MCP cap
+          simp only [Except.ok.injEq] at hStep
+          subst hStep
+          exact hStAfterMCP
+      · simp at hStep
+  · simp at hStep
+
 
