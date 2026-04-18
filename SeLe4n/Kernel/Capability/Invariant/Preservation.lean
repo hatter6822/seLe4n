@@ -542,12 +542,17 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
       rcases pair with ⟨cap, st1⟩
       have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src cap hSrc
       subst st1
+      -- AL1-C (AK7-I.cascade): collapse the requireNotNull guard.
+      have hReqNN : cap.requireNotNull = some cap := by
+        by_cases hNull : cap.isNull
+        · exfalso; simp [Capability.requireNotNull, hNull, hSrc] at hStep
+        · simp [Capability.requireNotNull, hNull]
       cases hInsert : cspaceInsertSlot dst cap st with
-      | error e => simp [hSrc, hInsert] at hStep
+      | error e => simp [hSrc, hReqNN, hInsert] at hStep
       | ok pair2 =>
           rcases pair2 with ⟨_, st2⟩
           cases hDelete : cspaceDeleteSlotCore src st2 with
-          | error e => simp [hSrc, hInsert, hDelete] at hStep
+          | error e => simp [hSrc, hReqNN, hInsert, hDelete] at hStep
           | ok pair3 =>
               rcases pair3 with ⟨_, st3⟩
               have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2 dst cap hInv
@@ -579,12 +584,12 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
               rcases hBundleSt3 with ⟨hU3, _, hBnd3, _, _, hDepth3, hObjInv3⟩
               cases hNode : SystemState.lookupCdtNodeOfSlot st2 src with
               | none =>
-                  simp [hSrc, hInsert, hDelete, hNode] at hStep
+                  simp [hSrc, hReqNN, hInsert, hDelete, hNode] at hStep
                   cases hStep
                   exact ⟨hU3, cspaceLookupSound_of_cspaceSlotUnique _ hU3,
                     hBnd3, hCdtPost.1, hCdtPost.2, hDepth3, hObjInv3⟩
               | some srcNode =>
-                  simp [hSrc, hInsert, hDelete, hNode] at hStep
+                  simp [hSrc, hReqNN, hInsert, hDelete, hNode] at hStep
                   cases hStep
                   have hObjEq : (SystemState.attachSlotToCdtNode st3 dst srcNode).objects = st3.objects :=
                     SystemState.attachSlotToCdtNode_objects_eq st3 dst srcNode

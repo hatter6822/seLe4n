@@ -722,21 +722,28 @@ def cspaceMove (src dst : CSpaceAddr) : Kernel Unit :=
     match cspaceLookupSlot src st with
     | .error e => .error e
     | .ok (cap, st') =>
-        match cspaceInsertSlot dst cap st' with
-        | .error e => .error e
-        | .ok ((), st'') =>
-            let srcNode? := SystemState.lookupCdtNodeOfSlot st'' src
-            -- Use unchecked delete: move preserves CDT edges via
-            -- attachSlotToCdtNode, so children follow the capability.
-            match cspaceDeleteSlotCore src st'' with
+        -- AL1-C (AK7-I.cascade): reject null caps before mutation. A
+        -- moved null cap would consume a slot at the destination and
+        -- clear the source — both pointless but potentially observable
+        -- via CDT-edge churn; fail fast instead.
+        match cap.requireNotNull with
+        | none => .error .invalidCapability
+        | some cap' =>
+            match cspaceInsertSlot dst cap' st' with
             | .error e => .error e
-            | .ok ((), st''') =>
-                -- Node-stable CDT: move is a slot-pointer move + backpointer fixup.
-                match srcNode? with
-                | none => .ok ((), st''')
-                | some srcNode =>
-                    let stMoved := SystemState.attachSlotToCdtNode st''' dst srcNode
-                    .ok ((), stMoved)
+            | .ok ((), st'') =>
+                let srcNode? := SystemState.lookupCdtNodeOfSlot st'' src
+                -- Use unchecked delete: move preserves CDT edges via
+                -- attachSlotToCdtNode, so children follow the capability.
+                match cspaceDeleteSlotCore src st'' with
+                | .error e => .error e
+                | .ok ((), st''') =>
+                    -- Node-stable CDT: move is a slot-pointer move + backpointer fixup.
+                    match srcNode? with
+                    | none => .ok ((), st''')
+                    | some srcNode =>
+                        let stMoved := SystemState.attachSlotToCdtNode st''' dst srcNode
+                        .ok ((), stMoved)
 
 /-- WS-H13/A-21: `cspaceMove` error-path atomicity. On failure, no output
 state is produced — the `Except` error constructor carries only the error tag,

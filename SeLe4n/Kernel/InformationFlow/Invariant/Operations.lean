@@ -1163,6 +1163,12 @@ theorem cspaceMove_preserves_projection
     have hStEq := cspaceLookupSlot_preserves_state st stL src cap hLookup
     simp only [hLookup] at hStep
     rw [hStEq] at hStep
+    -- AL1-C (AK7-I.cascade): collapse the requireNotNull guard.
+    have hReqNN : cap.requireNotNull = some cap := by
+      by_cases hNull : cap.isNull
+      · exfalso; simp [Capability.requireNotNull, hNull] at hStep
+      · simp [Capability.requireNotNull, hNull]
+    simp only [hReqNN] at hStep
     cases hInsert : cspaceInsertSlot dst cap st with
     | error e => simp [hInsert] at hStep
     | ok pair₂ =>
