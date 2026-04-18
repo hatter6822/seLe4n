@@ -55,21 +55,28 @@ doc (Phase 3 HAL obligation documented at
 non-determinism); F-L14 `UntypedObject.allocateChecked` positive-size
 precondition.
 
-**Regression test suite.** New `tests/Ak7RegressionSuite.lean` with 33
+**Regression test suite.** New `tests/Ak7RegressionSuite.lean` with **38**
 runtime checks across all sub-tasks: AK7-A invExtK witness,
-AK7-B Full→ObjectsOnly implication, AK7-C bounds-checked memory
-(empty-map reject, RAM accept, device-region reject), AK7-D
-mkChecked bound rejection + wellFormed reflection,
-AK7-E Valid*Id.toValid? sentinel rejection,
-AK7-F KindedObjId disjointness across 8 non-unknown kinds,
-AK7-G TCB.ext existence,
-AK7-H freezeMap_wellFormed on empty + non-empty tables,
-AK7-I isNull + requireNotNull behavior,
+AK7-B Full→ObjectsOnly implication + `freeze_preserves_direct_invariants_full`
+on default intermediate state (substantive 30-conjunct witness), AK7-C
+bounds-checked memory (empty-map reject, RAM accept, device-region reject),
+AK7-D mkChecked bound rejection + wellFormed reflection, AK7-E
+Valid*Id.toValid? sentinel rejection, AK7-F KindedObjId disjointness
+across 8 non-unknown kinds, AK7-G TCB.ext existence, AK7-H
+freezeMap_wellFormed on empty + non-empty tables, AK7-I isNull +
+requireNotNull behavior including **edge cases** (cnodeSlot/replyCap
+variants NOT null; sentinel-object with non-empty rights NOT null),
 AK7-J ensureCdtNodeForSlotChecked counter-overflow rejection +
-noPhysicalFrameCollision_empty witness,
-AK7-K perms reverse round-trip on 8 sample inputs + CdtNodeId sentinel.
-Wired into `scripts/test_tier2_negative.sh` as `lake exe
-ak7_regression_suite`.
+noPhysicalFrameCollision_empty witness, AK7-K perms reverse round-trip
+on 8 sample inputs + CdtNodeId sentinel. Wired into
+`scripts/test_tier2_negative.sh` as `lake exe ak7_regression_suite`.
+
+**Deferred-items tracking.** New `docs/audits/AUDIT_v0.29.0_DEFERRED.md`
+formalises the AK7 cascade items for v1.1: `AK7-E.cascade` (Valid*Id
+consumer migration to 10 syscall entry points + ~290 internal call
+sites), `AK7-F.cascade` (KindedObjId kind-aware lookup migration across
+~300 sites), `AK7-I.cascade` (Capability.requireNotNull wiring at
+`cspaceInvoke`/`cspaceMint`/`cspaceCopy`).
 
 ### AK7-A (F-H01 / HIGH) — freezeMap capacity witness
 

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-ak7-workstream-QAUBL",
-      "commit_sha": "106ba3c6c1356f968ed1b062bd96b56a7df604ff",
-      "tree_sha": "f5608c52bac52ef9185ee32df7021de777461cab",
-      "committed_at_utc": "2026-04-18T06:41:49+00:00"
+      "commit_sha": "c42717c134375dea55f591bfee12ae25a1e5ee75",
+      "tree_sha": "e7e550b36122e2d28001f45864a5f546deffecaa",
+      "committed_at_utc": "2026-04-18T07:12:29+00:00"
     }
   },
   "source_sync": {
@@ -17,11 +17,11 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "fbe101d43530ea87fc1da1b2fa40c810db47344d39544d8c9d8122a173c106e4"
+    "source_digest": "d026f2a27ef9a3acef061678f7bcd3b1da74cc1b700a4b52c9c8f8cf60fff717"
   },
   "summary": {
     "module_count": 165,
-    "declaration_count": 5408
+    "declaration_count": 5411
   },
   "readme_sync": {
     "version": "0.29.13",
@@ -29,7 +29,7 @@
     "production_files": 142,
     "production_loc": 100103,
     "test_files": 23,
-    "test_loc": 13519,
+    "test_loc": 13556,
     "proved_theorem_lemma_decls": 2948,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -63867,7 +63867,7 @@
     {
       "module": "tests.Ak7RegressionSuite",
       "path": "tests/Ak7RegressionSuite.lean",
-      "declaration_count": 35,
+      "declaration_count": 38,
       "declarations": [
         {
           "kind": "namespace",
@@ -63932,8 +63932,21 @@
         },
         {
           "kind": "def",
+          "name": "ak7B_02_freeze_preserves_full_default",
+          "line": 92,
+          "called": [
+            "IntermediateState",
+            "apiInvariantBundle",
+            "apiInvariantBundle_default",
+            "expect",
+            "freeze_preserves_direct_invariants_full",
+            "mkEmptyIntermediateState"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "ak7C_01_empty_map_rejects",
-          "line": 94,
+          "line": 105,
           "called": [
             "MachineState",
             "PAddr",
@@ -63945,7 +63958,7 @@
         {
           "kind": "def",
           "name": "ak7C_02_readMemChecked_oor_none",
-          "line": 100,
+          "line": 111,
           "called": [
             "MachineState",
             "default",
@@ -63956,7 +63969,7 @@
         {
           "kind": "def",
           "name": "ak7C_03_writeMemChecked_oor_none",
-          "line": 105,
+          "line": 116,
           "called": [
             "MachineState",
             "default",
@@ -63967,7 +63980,7 @@
         {
           "kind": "def",
           "name": "ak7C_04_ram_region_accepts",
-          "line": 110,
+          "line": 121,
           "called": [
             "MachineState",
             "MemoryRegion",
@@ -63980,7 +63993,7 @@
         {
           "kind": "def",
           "name": "ak7C_05_device_region_rejected",
-          "line": 116,
+          "line": 127,
           "called": [
             "MachineState",
             "MemoryRegion",
@@ -63993,7 +64006,7 @@
         {
           "kind": "def",
           "name": "ak7D_01_mkChecked_accepts",
-          "line": 126,
+          "line": 137,
           "called": [
             "expect",
             "mkChecked"
@@ -64002,7 +64015,7 @@
         {
           "kind": "def",
           "name": "ak7D_02_mkChecked_rejects_length",
-          "line": 131,
+          "line": 142,
           "called": [
             "expect",
             "mkChecked"
@@ -64011,7 +64024,7 @@
         {
           "kind": "def",
           "name": "ak7D_03_mkChecked_rejects_extraCaps",
-          "line": 136,
+          "line": 147,
           "called": [
             "expect",
             "mkChecked"
@@ -64020,7 +64033,7 @@
         {
           "kind": "def",
           "name": "ak7D_04_mkChecked_rejects_label",
-          "line": 141,
+          "line": 152,
           "called": [
             "expect",
             "mkChecked"
@@ -64029,7 +64042,7 @@
         {
           "kind": "def",
           "name": "ak7D_05_mkChecked_boundary_maxLabel",
-          "line": 146,
+          "line": 157,
           "called": [
             "expect",
             "mkChecked"
@@ -64038,7 +64051,7 @@
         {
           "kind": "def",
           "name": "ak7D_06_wellFormed_sound",
-          "line": 151,
+          "line": 162,
           "called": [
             "MessageInfo",
             "expect",
@@ -64048,7 +64061,7 @@
         {
           "kind": "def",
           "name": "ak7E_01_toValid_rejects_sentinel",
-          "line": 160,
+          "line": 171,
           "called": [
             "expect",
             "sentinel",
@@ -64058,7 +64071,7 @@
         {
           "kind": "def",
           "name": "ak7E_02_toValid_accepts_nonsentinel",
-          "line": 165,
+          "line": 176,
           "called": [
             "expect",
             "toValid"
@@ -64067,7 +64080,7 @@
         {
           "kind": "def",
           "name": "ak7E_03_sc_toValid_rejects_sentinel",
-          "line": 170,
+          "line": 181,
           "called": [
             "expect",
             "sentinel",
@@ -64077,7 +64090,7 @@
         {
           "kind": "def",
           "name": "ak7E_04_cptr_toValid_rejects_null",
-          "line": 175,
+          "line": 186,
           "called": [
             "expect",
             "sentinel",
@@ -64087,7 +64100,7 @@
         {
           "kind": "def",
           "name": "ak7F_01_thread_sc_disjoint",
-          "line": 185,
+          "line": 196,
           "called": [
             "KindedObjId",
             "expect",
@@ -64098,7 +64111,7 @@
         {
           "kind": "def",
           "name": "ak7F_02_kinds_pairwise_distinct",
-          "line": 193,
+          "line": 204,
           "called": [
             "ObjectKind",
             "all",
@@ -64109,7 +64122,7 @@
         {
           "kind": "def",
           "name": "ak7G_01_tcb_ext_reflexive",
-          "line": 213,
+          "line": 224,
           "called": [
             "TCB.ext",
             "expect"
@@ -64118,7 +64131,7 @@
         {
           "kind": "def",
           "name": "ak7H_01_empty_wellFormed",
-          "line": 222,
+          "line": 233,
           "called": [
             "ObjId",
             "RHTable",
@@ -64132,7 +64145,7 @@
         {
           "kind": "def",
           "name": "ak7H_02_nonempty_wellFormed",
-          "line": 230,
+          "line": 241,
           "called": [
             "ObjId",
             "RHTable",
@@ -64147,7 +64160,7 @@
         {
           "kind": "def",
           "name": "ak7I_01_canonical_null",
-          "line": 242,
+          "line": 253,
           "called": [
             "expect",
             "isNull"
@@ -64156,7 +64169,7 @@
         {
           "kind": "def",
           "name": "ak7I_02_nonnull_cap",
-          "line": 246,
+          "line": 257,
           "called": [
             "Capability",
             "empty",
@@ -64168,7 +64181,7 @@
         {
           "kind": "def",
           "name": "ak7I_03_require_not_null",
-          "line": 252,
+          "line": 263,
           "called": [
             "Capability",
             "empty",
@@ -64179,8 +64192,33 @@
         },
         {
           "kind": "def",
+          "name": "ak7I_04_cnodeSlot_not_null",
+          "line": 272,
+          "called": [
+            "Capability",
+            "empty",
+            "expect",
+            "isNull",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ak7I_05_object_with_rights_not_null",
+          "line": 285,
+          "called": [
+            "Capability",
+            "expect",
+            "isNull",
+            "none",
+            "sentinel",
+            "singleton"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "ak7J_01_cdt_counter_overflow",
-          "line": 263,
+          "line": 297,
           "called": [
             "CdtNodeId",
             "SlotRef",
@@ -64193,7 +64231,7 @@
         {
           "kind": "def",
           "name": "ak7J_02_cdt_counter_ok",
-          "line": 274,
+          "line": 308,
           "called": [
             "CdtNodeId",
             "SlotRef",
@@ -64206,7 +64244,7 @@
         {
           "kind": "def",
           "name": "ak7J_03_vspace_no_collision",
-          "line": 282,
+          "line": 316,
           "called": [
             "expect",
             "noPhysicalFrameCollision_empty"
@@ -64215,7 +64253,7 @@
         {
           "kind": "def",
           "name": "ak7K_01_perms_roundtrip",
-          "line": 291,
+          "line": 325,
           "called": [
             "PagePermissions.ofNat",
             "PagePermissions.toNat",
@@ -64226,7 +64264,7 @@
         {
           "kind": "def",
           "name": "ak7K_02_cdt_sentinel",
-          "line": 301,
+          "line": 335,
           "called": [
             "expect",
             "isReserved",
@@ -64236,11 +64274,12 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 314,
+          "line": 348,
           "called": [
             "ak7A_01_empty_invExtK",
             "ak7A_02_singleton_invExtK",
             "ak7B_01_full_implies_objectsOnly",
+            "ak7B_02_freeze_preserves_full_default",
             "ak7C_01_empty_map_rejects",
             "ak7C_02_readMemChecked_oor_none",
             "ak7C_03_writeMemChecked_oor_none",
@@ -64264,6 +64303,8 @@
             "ak7I_01_canonical_null",
             "ak7I_02_nonnull_cap",
             "ak7I_03_require_not_null",
+            "ak7I_04_cnodeSlot_not_null",
+            "ak7I_05_object_with_rights_not_null",
             "ak7J_01_cdt_counter_overflow",
             "ak7J_02_cdt_counter_ok",
             "ak7J_03_vspace_no_collision",

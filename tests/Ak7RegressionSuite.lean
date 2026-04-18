@@ -86,6 +86,17 @@ def ak7B_01_full_implies_objectsOnly : IO Unit := do
   let _ := @Model.apiInvariantBundle_frozenDirectFull_implies_objectsOnly
   expect "ak7B-01 Full→ObjectsOnly implication" true
 
+/-- AK7-B-02: `freeze_preserves_direct_invariants_full` produces a
+`Full`-level witness for the default intermediate state — proving the
+30-conjunct predicate is realizable at freeze time. -/
+def ak7B_02_freeze_preserves_full_default : IO Unit := do
+  let ist : Model.IntermediateState := Model.mkEmptyIntermediateState
+  let hInv : SeLe4n.Kernel.apiInvariantBundle ist.state :=
+    SeLe4n.Kernel.apiInvariantBundle_default
+  let _ :=
+    Model.freeze_preserves_direct_invariants_full ist hInv
+  expect "ak7B-02 freeze_preserves_full on default" true
+
 -- ============================================================================
 -- AK7-C: Bounds-checked memory access
 -- ============================================================================
@@ -255,6 +266,29 @@ def ak7I_03_require_not_null : IO Unit := do
     { target := .object ⟨42⟩, rights := AccessRightSet.empty, badge := none }
   expect "ak7I-03b non-null accepted" (cap.requireNotNull.isSome)
 
+/-- AK7-I-04: `isNull` returns `false` for `cnodeSlot` and `replyCap`
+variants — only `.object` with reserved ObjId + empty rights counts as
+the canonical null cap. -/
+def ak7I_04_cnodeSlot_not_null : IO Unit := do
+  let cap : Capability :=
+    { target := .cnodeSlot ⟨0⟩ ⟨0⟩
+      rights := AccessRightSet.empty, badge := none }
+  expect "ak7I-04a cnodeSlot not null" (cap.isNull = false)
+  let reply : Capability :=
+    { target := .replyCap ⟨0⟩
+      rights := AccessRightSet.empty, badge := none }
+  expect "ak7I-04b replyCap not null" (reply.isNull = false)
+
+/-- AK7-I-05: `isNull` returns `false` when `.object` target has
+non-empty rights — the null predicate requires BOTH reserved ObjId AND
+zero rights. -/
+def ak7I_05_object_with_rights_not_null : IO Unit := do
+  let cap : Capability :=
+    { target := .object ObjId.sentinel
+      rights := AccessRightSet.singleton .read
+      badge := none }
+  expect "ak7I-05 sentinel obj w/ rights not null" (cap.isNull = false)
+
 -- ============================================================================
 -- AK7-J: Structural invariants
 -- ============================================================================
@@ -317,6 +351,7 @@ def main : IO Unit := do
   ak7A_02_singleton_invExtK
   -- AK7-B
   ak7B_01_full_implies_objectsOnly
+  ak7B_02_freeze_preserves_full_default
   -- AK7-C
   ak7C_01_empty_map_rejects
   ak7C_02_readMemChecked_oor_none
@@ -347,6 +382,8 @@ def main : IO Unit := do
   ak7I_01_canonical_null
   ak7I_02_nonnull_cap
   ak7I_03_require_not_null
+  ak7I_04_cnodeSlot_not_null
+  ak7I_05_object_with_rights_not_null
   -- AK7-J
   ak7J_01_cdt_counter_overflow
   ak7J_02_cdt_counter_ok
