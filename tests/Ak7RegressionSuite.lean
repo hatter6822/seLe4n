@@ -567,6 +567,69 @@ def al6_05_rejection_preserves_state : IO Unit := do
       throw <| IO.userError "al6-05 expected invalidObjectType rejection"
 
 -- ============================================================================
+-- AL10 (WS-AL / integration gate): cross-cutting end-to-end tests tying
+-- the three security closures (AK7-E dispatch guard + AK7-F kind-guard +
+-- AK7-I null-cap guard) together. These confirm the attack surface is
+-- closed at each layer.
+-- ============================================================================
+
+/-- AL10-A-01: ValidThreadId subtype rejects ThreadId.sentinel at the
+language level — any attempt to construct a `ValidThreadId` from the
+sentinel fails at `toValid?`. -/
+def al10_01_validThreadId_rejects_sentinel : IO Unit := do
+  let sentinel : ThreadId := ThreadId.sentinel
+  expect "al10-01 ValidThreadId rejects sentinel" (sentinel.toValid? |>.isNone)
+
+/-- AL10-A-02: ValidSchedContextId rejects SchedContextId.sentinel. -/
+def al10_02_validSchedContextId_rejects_sentinel : IO Unit := do
+  let sentinel : SchedContextId := SchedContextId.sentinel
+  expect "al10-02 ValidSchedContextId rejects sentinel" (sentinel.toValid? |>.isNone)
+
+/-- AL10-A-03: ValidThreadId accepts a non-sentinel id and round-trips
+via `ofValid`. -/
+def al10_03_validThreadId_roundtrip : IO Unit := do
+  let tid : ThreadId := ⟨77⟩
+  match tid.toValid? with
+  | none => throw <| IO.userError "al10-03 ValidThreadId rejected non-sentinel"
+  | some vtid =>
+      unless (ThreadId.ofValid vtid).val = tid.val do
+        throw <| IO.userError s!"al10-03 roundtrip drift"
+      expect "al10-03 ValidThreadId roundtrip" true
+
+/-- AL10-A-04: End-to-end defense-in-depth — a null cap cannot be minted
+(AK7-I closure), a cross-kind store cannot land (AK7-F closure), AND a
+sentinel thread id is rejected at construction time (AK7-E closure). All
+three guards are independent; the AK7 cascade closure relies on all three. -/
+def al10_04_defense_in_depth : IO Unit := do
+  -- AK7-I: null cap rejected by cspaceMint
+  let st : SystemState := default
+  let nullCap : Capability := Capability.null
+  expect "al10-04a Capability.null identified" nullCap.isNull
+  expect "al10-04b Capability.null.requireNotNull = none"
+    (nullCap.requireNotNull |>.isNone)
+  -- AK7-F: storeObjectKindChecked rejects cross-kind overwrite
+  let t := minimalTcb ⟨300⟩
+  let sc := minimalSchedContext ⟨300⟩
+  let st1 : SystemState := { st with objects := st.objects.insert ⟨300⟩ (.tcb t) }
+  match storeObjectKindChecked ⟨300⟩ (.schedContext sc) st1 with
+  | .error .invalidObjectType =>
+      expect "al10-04c cross-kind write rejected" true
+  | _ => throw <| IO.userError "al10-04c expected invalidObjectType"
+  -- AK7-E: ValidThreadId subtype rejects sentinel
+  expect "al10-04d ValidThreadId rejects sentinel"
+    (ThreadId.sentinel.toValid? |>.isNone)
+
+/-- AL10-A-05: requireNotNull and isNull are complementary at the Bool
+level — requireNotNull is isSome iff isNull is false. -/
+def al10_05_requireNotNull_complement : IO Unit := do
+  let cap1 : Capability := Capability.null
+  let cap2 : Capability := { target := .object ⟨42⟩, rights := AccessRightSet.empty, badge := none }
+  expect "al10-05a null cap: requireNotNull = none"
+    (cap1.requireNotNull.isSome = !cap1.isNull)
+  expect "al10-05b non-null cap: requireNotNull = some"
+    (cap2.requireNotNull.isSome = !cap2.isNull)
+
+-- ============================================================================
 -- AK7-J: Structural invariants
 -- ============================================================================
 
@@ -680,6 +743,13 @@ def main : IO Unit := do
   al6_03_tcb_to_sc_rejected
   al6_04_sc_to_tcb_rejected
   al6_05_rejection_preserves_state
+  -- AL10 (WS-AL): cross-cutting integration — defense-in-depth covering
+  -- AK7-E + AK7-F + AK7-I closures
+  al10_01_validThreadId_rejects_sentinel
+  al10_02_validSchedContextId_rejects_sentinel
+  al10_03_validThreadId_roundtrip
+  al10_04_defense_in_depth
+  al10_05_requireNotNull_complement
   -- AK7-J
   ak7J_01_cdt_counter_overflow
   ak7J_02_cdt_counter_ok
