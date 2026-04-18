@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-ak6-workstream-VM0m9",
-      "commit_sha": "440f7bc95d1f5e0e0fe4f5c6818cf64c3b2891f9",
-      "tree_sha": "57f95eba7eda06ceafe1779c101564df8b14c068",
-      "committed_at_utc": "2026-04-18T01:38:29+00:00"
+      "commit_sha": "eb1ccea93a17d7682293d03134290afeb05b5acd",
+      "tree_sha": "69f2b43dd5316e6b951029afe72021b506772026",
+      "committed_at_utc": "2026-04-18T03:01:16+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "68c8cda7cd72f273c2dffd9f385ede63e97be6399b936d85db05883230e8b3de"
+    "source_digest": "d5ae520a60ae3a2985908ea8c327400d6170da3d2c7963356583d6fe8eb613b8"
   },
   "summary": {
     "module_count": 164,
-    "declaration_count": 5274
+    "declaration_count": 5284
   },
   "readme_sync": {
-    "version": "0.29.10",
+    "version": "0.29.11",
     "lean_toolchain": "v4.28.0",
     "production_files": 142,
-    "production_loc": 98622,
+    "production_loc": 98905,
     "test_files": 22,
     "test_loc": 13098,
-    "proved_theorem_lemma_decls": 2897,
+    "proved_theorem_lemma_decls": 2908,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -1181,7 +1181,7 @@
         {
           "kind": "theorem",
           "name": "dispatchCapabilityOnly_preserves_projection",
-          "line": 2035,
+          "line": 2061,
           "called": [
             "Capability",
             "IfObserver",
@@ -1196,7 +1196,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscallChecked_preserves_projection",
-          "line": 2074,
+          "line": 2100,
           "called": [
             "Capability",
             "IfObserver",
@@ -27731,7 +27731,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Invariant.Operations",
       "path": "SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean",
-      "declaration_count": 85,
+      "declaration_count": 95,
       "declarations": [
         {
           "kind": "namespace",
@@ -29534,6 +29534,160 @@
             "toObjId",
             "updatePrioritySource",
             "updatePrioritySource_preserves_projection"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lookupServiceByCap_preserves_state",
+          "line": 3417,
+          "called": [
+            "ObjId",
+            "ServiceRegistration",
+            "SystemState",
+            "fold",
+            "lookupServiceByCap",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lookupServiceByCap_preserves_projection",
+          "line": 3435,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "ObjId",
+            "ServiceRegistration",
+            "SystemState",
+            "lookupServiceByCap",
+            "lookupServiceByCap_preserves_state",
+            "projectState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "revokeService_preserves_projection",
+          "line": 3464,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SchedulerState.runnable",
+            "ServiceId",
+            "SystemState",
+            "projectActiveDomain",
+            "projectCurrent",
+            "projectDomainSchedule",
+            "projectDomainScheduleIndex",
+            "projectDomainTimeRemaining",
+            "projectIrqHandlers",
+            "projectMachineRegs",
+            "projectMemory",
+            "projectObjectIndex",
+            "projectObjects",
+            "projectRunnable",
+            "projectServicePresence",
+            "projectServiceRegistry",
+            "projectState",
+            "removeDependenciesOf",
+            "revokeService"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextConfigure_preserves_projection",
+          "line": 3528,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "projectState",
+            "scId",
+            "schedContextConfigure"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextBind_preserves_projection",
+          "line": 3551,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "projectState",
+            "scId",
+            "schedContextBind"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextUnbind_preserves_projection",
+          "line": 3574,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "projectState",
+            "scId",
+            "schedContextUnbind"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lifecycleRetypeDirectWithCleanup_preserves_projection",
+          "line": 3596,
+          "called": [
+            "Capability",
+            "IfObserver",
+            "KernelObject",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "lifecycleRetypeDirectWithCleanup",
+            "projectState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelDonation_preserves_projection",
+          "line": 3618,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelDonation",
+            "projectState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "suspendThread_preserves_projection",
+          "line": 3642,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "ThreadId",
+            "projectState",
+            "suspendThread"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "resumeThread_preserves_projection",
+          "line": 3661,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "ThreadId",
+            "projectState",
+            "resumeThread"
           ]
         }
       ]

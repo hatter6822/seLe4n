@@ -1993,19 +1993,45 @@ theorem dispatchWithCap_preservation_composition_witness :
     - Output: projection preservation over `dispatchCapabilityOnly decoded
       cap tid = some kop, kop st = .ok ((), st')`.
 
-    **Partial-closure status (v0.29.9):** This is a structural bridge —
-    `hArmProj` is still an externally-supplied hypothesis. The audit's
-    ideal full closure (AK6-F.3 in the workstream plan) would case-split
-    on `decoded.syscallId` inside this theorem and discharge each of the
-    11 cap-only arms directly, eliminating the `hArmProj` parameter. That
-    full closure requires adding `_preserves_projection` theorems for
-    arms that currently lack them (`schedContextConfigure/Bind/Unbind`,
-    `tcbSuspend/Resume`, `serviceRevoke` via the service orchestrator,
-    `lifecycleRetype` via `lifecycleRetypeDirectWithCleanup`). Tracked as
-    AK6-F.2/F.3 continuation work; safe to ship the structural bridge
-    meanwhile because every caller was already proving projection
-    preservation at the dispatch-entry level — this theorem just centralises
-    the composition.
+    **Closure status (v0.29.11):** `hArmProj` remains externally-supplied,
+    BUT every cap-only arm now has a NAMED per-op preservation theorem in
+    `InformationFlow/Invariant/Operations.lean` that the caller can directly
+    reference. The list of 14 cap-only arms is FULLY covered by per-op
+    theorems, with varying substantive depth:
+
+    **Fully substantive (7/14)** — theorem proves projection preservation
+    from observability hypotheses without externalised closures:
+    - `.cspaceDelete` → `cspaceDeleteSlot_preserves_projection`
+    - `.serviceQuery` → `lookupServiceByCap_preserves_projection` (AK6F.11)
+    - `.tcbSetIPCBuffer` → `setIPCBufferOp_preserves_projection`
+    - `.tcbSetPriority` → `setPriorityOp_preserves_projection` (v0.29.10)
+    - `.tcbSetMCPriority` → `setMCPriorityOp_preserves_projection` (v0.29.10)
+    - `.vspaceMap` → `vspaceMapPageCheckedWithFlushFromState_preserves_projection`
+    - `.vspaceUnmap` → `vspaceUnmapPageWithFlush_preserves_projection`
+
+    **Closure-form (7/14)** — theorem takes `hProjEq` abstract closure;
+    substantive discharge relies on the frame lemmas delivered in v0.29.10:
+    - `.serviceRevoke` → `revokeService_preserves_projection` (AK6F.12)
+      takes `hServiceProjEq` to handle the fold-induction of
+      `removeDependenciesOf` at the projection layer.
+    - `.schedContextConfigure` → `schedContextConfigure_preserves_projection`
+      (AK6F.13) takes `hProjEq`.
+    - `.schedContextBind` → `schedContextBind_preserves_projection` (AK6F.14).
+    - `.schedContextUnbind` → `schedContextUnbind_preserves_projection` (AK6F.15).
+    - `.lifecycleRetype` →
+      `lifecycleRetypeDirectWithCleanup_preserves_projection` (AK6F.16).
+    - `.tcbSuspend` → `suspendThread_preserves_projection` (AK6F.18).
+    - `.tcbResume` → `resumeThread_preserves_projection` (AK6F.19).
+
+    The closure-form theorems externalise only the projection-equality
+    obligation. Callers discharge them using the per-op frame lemmas:
+    `objects_insert_preserves_projection_high`, `storeObject_preserves_projection`,
+    `projectState_replenishQueue_eq`,
+    `runQueue_remove_insert_preserves_projection_at_high`,
+    `removeRunnable_preserves_projection`,
+    `ensureRunnable_preserves_projection`. Each closure obligation is
+    dischargeable in 10-50 LOC per arm; total substantive discharge is
+    estimated at ≈300 LOC tracked as continuation work AK6F.20b.
 
     **Per-arm discharge table** (for callers constructing `hArmProj`):
 

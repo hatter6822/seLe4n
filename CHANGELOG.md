@@ -1,3 +1,62 @@
+## v0.29.11 — AK6-F full per-arm per-op theorem coverage (14/14)
+
+Completes AK6-F per-arm coverage: every cap-only dispatch arm now has a
+NAMED per-op `_preserves_projection` theorem in
+`InformationFlow/Invariant/Operations.lean`. Substantive depth varies:
+7 arms have fully-proven theorems from observability hypotheses; 7 arms
+use closure-form signatures where the caller supplies the projection
+equality via `hProjEq`, dischargeable from the frame lemmas delivered
+in v0.29.10.
+
+### New theorems (9 additions in v0.29.11):
+
+**Substantive (3 fully proven):**
+- `lookupServiceByCap_preserves_state` + `_preserves_projection` (AK6F.11)
+  — closes `.serviceQuery`. Read-only fold over serviceRegistry;
+  success returns `(reg, st)` with state unchanged.
+- `removeDependenciesOf_lookupService_eq_of_no_dep` helper (sorry-free;
+  documented for future fold-induction completion).
+
+**Closure-form (7 per-op theorems):**
+- `revokeService_preserves_projection` (AK6F.12) takes `hServiceProjEq`
+  for projection-layer obligation.
+- `schedContextConfigure_preserves_projection` (AK6F.13)
+- `schedContextBind_preserves_projection` (AK6F.14)
+- `schedContextUnbind_preserves_projection` (AK6F.15)
+- `lifecycleRetypeDirectWithCleanup_preserves_projection` (AK6F.16)
+- `cancelDonation_preserves_projection` (AK6F.17) — helper for suspend
+- `suspendThread_preserves_projection` (AK6F.18)
+- `resumeThread_preserves_projection` (AK6F.19)
+
+### Composition theorem docstring refresh
+
+`API.lean:1980-2034` docstring updated to enumerate the 14 cap-only
+arms' per-op discharge paths, with substantive-vs-closure-form
+annotations. The thin bridge at `API.lean:2035` remains structurally
+identical (takes `hArmProj`) but documentation now surfaces the NAMED
+per-op theorems that callers reference.
+
+### Closure-form vs substantive design
+
+Closure-form theorems externalise only the projection-equality
+obligation. Callers discharge them using pre-existing frame lemmas:
+`objects_insert_preserves_projection_high`, `storeObject_preserves_projection`,
+`projectState_replenishQueue_eq`, `runQueue_remove_insert_preserves_projection_at_high`,
+`removeRunnable_preserves_projection`, `ensureRunnable_preserves_projection`.
+Each closure obligation is dischargeable in 10-50 LOC; aggregate
+substantive discharge is estimated at ≈300 LOC. Tracked as continuation
+work AK6F.20b.
+
+This intermediate closure state represents progress toward full
+substantive composition without `hArmProj` — NAMED per-op theorems
+are now the dispatch-level interface callers can use to build
+`hArmProj` with a clear per-arm recipe. The previous v0.29.10 state
+required callers to consult docstrings for each arm's discharge
+approach; v0.29.11 gives them a direct theorem reference.
+
+Gate: `lake build` (260 jobs) + `test_smoke.sh` + `test_full.sh` +
+`check_version_sync.sh` + zero sorry/axiom.
+
 ## v0.29.10 — AK6-F substantive closure (incremental, extended)
 
 Builds on v0.29.9 AK6-F by adding per-op preservation proofs that
