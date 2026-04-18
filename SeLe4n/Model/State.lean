@@ -1351,6 +1351,41 @@ theorem getTcb?_none_of_endpoint (st : SystemState) (tid : SeLe4n.ThreadId)
     st.getTcb? tid = none := by
   simp [getTcb?, h]
 
+/-- AL2-B (audit remediation): If the store holds a Notification at
+`tid.toObjId`, the typed TCB helper returns `none`. -/
+theorem getTcb?_none_of_notification (st : SystemState) (tid : SeLe4n.ThreadId)
+    (n : Notification) (h : st.objects[tid.toObjId]? = some (.notification n)) :
+    st.getTcb? tid = none := by
+  simp [getTcb?, h]
+
+/-- AL2-B (audit remediation): If the store holds a CNode at
+`tid.toObjId`, the typed TCB helper returns `none`. -/
+theorem getTcb?_none_of_cnode (st : SystemState) (tid : SeLe4n.ThreadId)
+    (cn : CNode) (h : st.objects[tid.toObjId]? = some (.cnode cn)) :
+    st.getTcb? tid = none := by
+  simp [getTcb?, h]
+
+/-- AL2-B (audit remediation): If the store holds a VSpaceRoot at
+`tid.toObjId`, the typed TCB helper returns `none`. -/
+theorem getTcb?_none_of_vspaceRoot (st : SystemState) (tid : SeLe4n.ThreadId)
+    (vr : VSpaceRoot) (h : st.objects[tid.toObjId]? = some (.vspaceRoot vr)) :
+    st.getTcb? tid = none := by
+  simp [getTcb?, h]
+
+/-- AL2-B (audit remediation): If the store holds an UntypedObject at
+`tid.toObjId`, the typed TCB helper returns `none`. -/
+theorem getTcb?_none_of_untyped (st : SystemState) (tid : SeLe4n.ThreadId)
+    (ut : UntypedObject) (h : st.objects[tid.toObjId]? = some (.untyped ut)) :
+    st.getTcb? tid = none := by
+  simp [getTcb?, h]
+
+/-- AL2-B (audit remediation): If the store is empty at `tid.toObjId`,
+the typed TCB helper returns `none`. -/
+theorem getTcb?_none_of_absent (st : SystemState) (tid : SeLe4n.ThreadId)
+    (h : st.objects[tid.toObjId]? = none) :
+    st.getTcb? tid = none := by
+  simp [getTcb?, h]
+
 /-- AL2-B: If the store holds a TCB at `scId.toObjId`, the typed
 SchedContext helper returns `none`. -/
 theorem getSchedContext?_none_of_tcb (st : SystemState) (scId : SeLe4n.SchedContextId)
@@ -1408,6 +1443,83 @@ theorem getSchedContext?_eq_some_iff (st : SystemState) (scId : SeLe4n.SchedCont
   · rename_i hne; constructor
     · intro h; cases h
     · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
+/-- AL2-B (audit remediation): Unfolding lemma — `getEndpoint?` returns
+`some ep` iff the store holds exactly `KernelObject.endpoint ep` at
+`id`. -/
+theorem getEndpoint?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId) (ep : Endpoint) :
+    st.getEndpoint? id = some ep ↔ st.objects[id]? = some (.endpoint ep) := by
+  unfold getEndpoint?
+  split
+  · rename_i ep' heq; constructor
+    · intro h; cases h; exact heq
+    · intro h; rw [h] at heq; cases heq; rfl
+  · rename_i hne; constructor
+    · intro h; cases h
+    · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
+/-- AL2-B (audit remediation): Unfolding lemma — `getNotification?`
+returns `some n` iff the store holds exactly `KernelObject.notification
+n` at `id`. -/
+theorem getNotification?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId) (n : Notification) :
+    st.getNotification? id = some n ↔ st.objects[id]? = some (.notification n) := by
+  unfold getNotification?
+  split
+  · rename_i n' heq; constructor
+    · intro h; cases h; exact heq
+    · intro h; rw [h] at heq; cases heq; rfl
+  · rename_i hne; constructor
+    · intro h; cases h
+    · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
+/-- AL2-B (audit remediation): Unfolding lemma — `getUntyped?` returns
+`some ut` iff the store holds exactly `KernelObject.untyped ut` at
+`id`. -/
+theorem getUntyped?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId) (ut : UntypedObject) :
+    st.getUntyped? id = some ut ↔ st.objects[id]? = some (.untyped ut) := by
+  unfold getUntyped?
+  split
+  · rename_i ut' heq; constructor
+    · intro h; cases h; exact heq
+    · intro h; rw [h] at heq; cases heq; rfl
+  · rename_i hne; constructor
+    · intro h; cases h
+    · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
+/-- AL2-B (audit remediation): `getTcb?` returns `none` iff the stored
+object at `tid.toObjId` is either absent or is not of the `.tcb`
+variant. This is the complement of `getTcb?_eq_some_iff` and completes
+the characterization of the helper. -/
+theorem getTcb?_eq_none_iff (st : SystemState) (tid : SeLe4n.ThreadId) :
+    st.getTcb? tid = none ↔
+      st.objects[tid.toObjId]? = none ∨
+      (∃ obj, st.objects[tid.toObjId]? = some obj ∧ ∀ t, obj ≠ .tcb t) := by
+  unfold getTcb?
+  constructor
+  · intro h
+    split at h
+    · cases h
+    · rename_i hne
+      by_cases hObj : ∃ obj, st.objects[tid.toObjId]? = some obj
+      · rcases hObj with ⟨obj, hObj⟩
+        right
+        refine ⟨obj, hObj, ?_⟩
+        intro t heq
+        subst heq
+        exact hne t hObj
+      · left
+        cases hGet : st.objects[tid.toObjId]?
+        · rfl
+        · exact absurd ⟨_, hGet⟩ hObj
+  · intro h
+    match h with
+    | Or.inl hNone => simp [hNone]
+    | Or.inr ⟨obj, hSome, hNotTcb⟩ =>
+        rw [hSome]
+        split
+        · rename_i t hEq
+          exact absurd (Option.some.inj hEq) (hNotTcb t)
+        · rfl
 
 /-- Read a capability from a typed slot reference. -/
 def lookupSlotCap (st : SystemState) (ref : SlotRef) : Option Capability :=

@@ -445,6 +445,42 @@ def al2C_05_getUntyped_discriminates : IO Unit := do
   expect "al2C-05a getUntyped? returns some" (st.getUntyped? id |>.isSome)
   expect "al2C-05b getTcb? returns none" (st.getTcb? tid |>.isNone)
 
+/-- AL2-C-06 (audit remediation): getTcb? returns none on an absent id. -/
+def al2C_06_getTcb_none_when_absent : IO Unit := do
+  let tid : ThreadId := ⟨999⟩
+  let st : SystemState := default
+  expect "al2C-06 getTcb? on absent id returns none" (st.getTcb? tid |>.isNone)
+
+/-- AL2-C-07 (audit remediation): Round-trip — store a TCB, retrieve it,
+assert the retrieved value equals the stored one (via TCB.tid field). -/
+def al2C_07_getTcb_roundtrip : IO Unit := do
+  let tid : ThreadId := ⟨77⟩
+  let t := minimalTcb tid
+  let base : SystemState := default
+  let st : SystemState :=
+    { base with objects := base.objects.insert tid.toObjId (.tcb t) }
+  match st.getTcb? tid with
+  | none => throw <| IO.userError "al2C-07 getTcb? round-trip: helper returned none"
+  | some t' =>
+      unless t'.tid.val = tid.val do
+        throw <| IO.userError s!"al2C-07 wrong TCB retrieved: tid={t'.tid.val}"
+      expect "al2C-07 getTcb? round-trip" true
+
+/-- AL2-C-08 (audit remediation): Round-trip — store a SchedContext,
+retrieve it, assert the retrieved value's scId matches. -/
+def al2C_08_getSchedContext_roundtrip : IO Unit := do
+  let scId : SchedContextId := ⟨88⟩
+  let sc := minimalSchedContext scId
+  let base : SystemState := default
+  let st : SystemState :=
+    { base with objects := base.objects.insert scId.toObjId (.schedContext sc) }
+  match st.getSchedContext? scId with
+  | none => throw <| IO.userError "al2C-08 getSchedContext? round-trip: helper returned none"
+  | some sc' =>
+      unless sc'.scId.val = scId.val do
+        throw <| IO.userError s!"al2C-08 wrong SC retrieved: scId={sc'.scId.val}"
+      expect "al2C-08 getSchedContext? round-trip" true
+
 -- ============================================================================
 -- AK7-J: Structural invariants
 -- ============================================================================
@@ -550,6 +586,9 @@ def main : IO Unit := do
   al2C_03_getEndpoint_discriminates
   al2C_04_getNotification_discriminates
   al2C_05_getUntyped_discriminates
+  al2C_06_getTcb_none_when_absent
+  al2C_07_getTcb_roundtrip
+  al2C_08_getSchedContext_roundtrip
   -- AK7-J
   ak7J_01_cdt_counter_overflow
   ak7J_02_cdt_counter_ok
