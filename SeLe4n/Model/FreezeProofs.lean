@@ -1123,6 +1123,80 @@ theorem freeze_preserves_direct_invariants (ist : IntermediateState)
     apiInvariantBundle_frozenDirect (freeze ist) :=
   ⟨ist.state, hInv, fun oid => lookup_freeze_objects ist oid⟩
 
+-- ============================================================================
+-- AK7-B (F-H02 / HIGH): Extended frozen invariant coverage
+-- ============================================================================
+
+/-- AK7-B (F-H02): Alias for `apiInvariantBundle_frozenDirect` that makes
+the observational scope explicit — only the `objects.get?` projection is
+constrained to agree with the witness `SystemState`; scheduler, machine,
+TLB, service, IRQ, CDT, and lifecycle fields are not. Existing call sites
+that rely only on object-store identity should migrate to this alias to
+make the scope self-documenting. The original name is retained as a
+compatibility shim. -/
+def apiInvariantBundle_frozenDirectObjectsOnly (fst : FrozenSystemState) : Prop :=
+  apiInvariantBundle_frozenDirect fst
+
+/-- AK7-B (F-H02): `apiInvariantBundle_frozenDirect` is definitionally
+the "objects-only" variant. -/
+theorem apiInvariantBundle_frozenDirect_eq_objectsOnly (fst : FrozenSystemState) :
+    apiInvariantBundle_frozenDirect fst = apiInvariantBundle_frozenDirectObjectsOnly fst :=
+  rfl
+
+/-- AK7-B (F-H02 / HIGH): Strengthened frozen invariant that additionally
+requires field agreement on non-object state — machine, TLB, CDT edges,
+lifecycle metadata, and scheduler substructure. This closes the audit
+finding that non-`objects` mutations vacuously preserved
+`apiInvariantBundle_frozenDirect`: with the full variant, any change to
+machine state, TLB, CDT, or scheduler membership must be witnessed by a
+`SystemState` that also satisfies `apiInvariantBundle`. -/
+def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
+  ∃ (sst : SystemState),
+    SeLe4n.Kernel.apiInvariantBundle sst ∧
+    -- Objects projection (same as frozenDirect)
+    (∀ (oid : ObjId), (sst.objects.get? oid).map freezeObject = fst.objects.get? oid) ∧
+    -- AK7-B: Non-object fields — bitwise equality with the witness state
+    sst.machine = fst.machine ∧
+    sst.objectIndex = fst.objectIndex ∧
+    sst.tlb = fst.tlb ∧
+    sst.cdtNextNode = fst.cdtNextNode ∧
+    sst.cdt.edges = fst.cdtEdges ∧
+    sst.scheduler.current = fst.scheduler.current ∧
+    sst.scheduler.activeDomain = fst.scheduler.activeDomain ∧
+    sst.scheduler.domainTimeRemaining = fst.scheduler.domainTimeRemaining ∧
+    sst.scheduler.domainSchedule = fst.scheduler.domainSchedule ∧
+    sst.scheduler.domainScheduleIndex = fst.scheduler.domainScheduleIndex ∧
+    sst.scheduler.configDefaultTimeSlice = fst.scheduler.configDefaultTimeSlice
+
+/-- AK7-B (F-H02): The full variant implies the objects-only variant. -/
+theorem apiInvariantBundle_frozenDirectFull_implies_objectsOnly
+    (fst : FrozenSystemState) (h : apiInvariantBundle_frozenDirectFull fst) :
+    apiInvariantBundle_frozenDirectObjectsOnly fst := by
+  obtain ⟨sst, hInv, hObj, _⟩ := h
+  exact ⟨sst, hInv, hObj⟩
+
+/-- AK7-B (F-H02): At freeze time, the full frozen invariant holds whenever
+the source intermediate state's `apiInvariantBundle` holds. This is the
+direct counterpart to `freeze_preserves_direct_invariants`, but stronger
+— the resulting `FrozenSystemState` carries bitwise agreement on all
+non-object fields with the witness state. -/
+theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
+    (hInv : SeLe4n.Kernel.apiInvariantBundle ist.state) :
+    apiInvariantBundle_frozenDirectFull (freeze ist) := by
+  refine ⟨ist.state, hInv, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · exact fun oid => lookup_freeze_objects ist oid
+  · exact (freeze_preserves_machine ist).symm
+  · exact (freeze_preserves_objectIndex ist).symm
+  · exact (freeze_preserves_tlb ist).symm
+  · exact (freeze_preserves_cdtNextNode ist).symm
+  · exact (freeze_preserves_cdtEdges ist).symm
+  · exact (freeze_preserves_current ist).symm
+  · exact (freeze_preserves_activeDomain ist).symm
+  · rfl
+  · exact (freeze_preserves_domainSchedule ist).symm
+  · rfl
+  · exact (freeze_preserves_configDefaultTimeSlice ist).symm
+
 /-- R6-A.3: `FrozenMap.set` preserves the direct frozen invariant when the
     mutated object corresponds to a valid `SystemState` mutation.
 

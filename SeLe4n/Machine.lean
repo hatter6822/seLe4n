@@ -455,6 +455,87 @@ def readMem (ms : MachineState) (addr : PAddr) : UInt8 :=
 def writeMem (ms : MachineState) (addr : PAddr) (value : UInt8) : MachineState :=
   { ms with memory := fun a => if a = addr then value else ms.memory a }
 
+-- ============================================================================
+-- AK7-C (F-M01 / MEDIUM): Bounds-checked memory access helpers
+-- ============================================================================
+
+/-- AK7-C (F-M01): An address is in range of the declared memory map when it
+    falls within at least one RAM region and its PA fits in the configured
+    physical-address width.
+
+    Rationale: `readMem`/`writeMem` are total on `PAddr → UInt8` — they do
+    not consult `memoryMap` or `physicalAddressWidth` and therefore cannot
+    detect out-of-range accesses. Callers that enforce MMU contracts (kernel
+    deployed with a real hardware map) should route through
+    `readMemChecked`/`writeMemChecked`, which fail closed with `none` when
+    the address is outside the declared RAM window or exceeds the PA width.
+    This is a machine-level companion to
+    `RuntimeBoundaryContract.memoryAccessAllowed`; the contract adapter
+    continues to enforce the full state-level predicate, while these
+    helpers capture the sublety at the `MachineState` layer. -/
+@[inline] def MachineState.addrInRange (ms : MachineState) (addr : PAddr) : Bool :=
+  addr.toNat < 2 ^ ms.physicalAddressWidth &&
+  ms.memoryMap.any (fun r => r.kind == .ram && r.contains addr)
+
+/-- AK7-C (F-M01): Bounds-checked memory read. Returns `some byte` when the
+    address satisfies `addrInRange`, `none` otherwise. Designed for consumers
+    that want fail-closed semantics at the Lean model layer without altering
+    the total `readMem` API that drives the existing proof surface. -/
+def readMemChecked (ms : MachineState) (addr : PAddr) : Option UInt8 :=
+  if ms.addrInRange addr then some (ms.memory addr) else none
+
+/-- AK7-C (F-M01): Bounds-checked memory write. Returns `some ms'` when the
+    write is permitted by `addrInRange`, `none` otherwise. -/
+def writeMemChecked (ms : MachineState) (addr : PAddr) (value : UInt8) :
+    Option MachineState :=
+  if ms.addrInRange addr then some (writeMem ms addr value) else none
+
+/-- AK7-C: `readMemChecked` agrees with `readMem` on in-range addresses. -/
+theorem readMemChecked_eq_readMem_of_inRange
+    (ms : MachineState) (addr : PAddr) (h : ms.addrInRange addr = true) :
+    readMemChecked ms addr = some (readMem ms addr) := by
+  simp [readMemChecked, readMem, h]
+
+/-- AK7-C: `readMemChecked` returns `none` for out-of-range addresses. -/
+theorem readMemChecked_none_of_outRange
+    (ms : MachineState) (addr : PAddr) (h : ms.addrInRange addr = false) :
+    readMemChecked ms addr = none := by
+  simp [readMemChecked, h]
+
+/-- AK7-C: `writeMemChecked` delegates to `writeMem` on in-range addresses. -/
+theorem writeMemChecked_eq_writeMem_of_inRange
+    (ms : MachineState) (addr : PAddr) (value : UInt8)
+    (h : ms.addrInRange addr = true) :
+    writeMemChecked ms addr value = some (writeMem ms addr value) := by
+  simp [writeMemChecked, h]
+
+/-- AK7-C: `writeMemChecked` returns `none` for out-of-range addresses. -/
+theorem writeMemChecked_none_of_outRange
+    (ms : MachineState) (addr : PAddr) (value : UInt8)
+    (h : ms.addrInRange addr = false) :
+    writeMemChecked ms addr value = none := by
+  simp [writeMemChecked, h]
+
+/-- AK7-C: A successful `writeMemChecked` preserves all non-memory fields. -/
+theorem writeMemChecked_preserves_regs
+    (ms ms' : MachineState) (addr : PAddr) (value : UInt8)
+    (h : writeMemChecked ms addr value = some ms') :
+    ms'.regs = ms.regs := by
+  unfold writeMemChecked at h
+  split at h
+  · cases h; rfl
+  · cases h
+
+/-- AK7-C: A successful `writeMemChecked` preserves the timer. -/
+theorem writeMemChecked_preserves_timer
+    (ms ms' : MachineState) (addr : PAddr) (value : UInt8)
+    (h : writeMemChecked ms addr value = some ms') :
+    ms'.timer = ms.timer := by
+  unfold writeMemChecked at h
+  split at h
+  · cases h; rfl
+  · cases h
+
 def setPC (ms : MachineState) (pc : RegValue) : MachineState :=
   { ms with regs := { ms.regs with pc } }
 

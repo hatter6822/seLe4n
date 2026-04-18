@@ -172,12 +172,28 @@ structure LifecycleMetadata where
     On ARM64, the TLB caches `(ASID, VAddr, PAddr, PagePermissions)` tuples.
     Stale entries after page table modification are a security concern — the
     `tlbConsistent` invariant (in `TlbModel.lean`) enforces that all cached
-    entries match the current page tables. -/
+    entries match the current page tables.
+
+    AK7-J (F-M11 / MEDIUM): `asidGeneration` mirrors
+    `AsidManager.AsidPool.generation` (AK3-D), allowing stale entries to be
+    detected after an ASID is freed and re-allocated. When an ASID is
+    re-used, `AsidPool.generation` increments; the kernel rejects TLB
+    entries whose `asidGeneration` predates the current pool generation
+    rather than trusting stale hits. Default `0` preserves backward
+    compatibility; substantive ASID-generation bookkeeping is performed
+    by `AsidManager` / `adapterFlushTlbByAsid`. -/
 structure TlbEntry where
   asid : SeLe4n.ASID
   vaddr : SeLe4n.VAddr
   paddr : SeLe4n.PAddr
   perms : PagePermissions
+  /-- AK7-J (F-M11): Generation counter shadowing `AsidPool.generation` at
+      the time of TLB entry installation. Stale entries can be detected
+      by comparing `asidGeneration` against the current pool generation
+      — mismatches indicate the ASID was freed and reused after the entry
+      was cached. Default `0` preserves backward compatibility with
+      legacy TLB fixtures that predate AK7-J. -/
+  asidGeneration : Nat := 0
   deriving Repr, DecidableEq, BEq
 
 /-- R7-A.1/M-17: Abstract TLB state: a collection of cached translation entries.
@@ -496,6 +512,26 @@ theorem default_objectCount_le_maxObjects :
     objectCount_le_maxObjects (default : SystemState) := by
   unfold objectCount_le_maxObjects objectIndexBounded maxObjects
   simp [List.length]
+
+/-- AK7-J (F-M09): Advisory invariant — the CDT next-node counter
+(`cdtNextNode`) stays strictly below the advisory bound `maxCdtDepth`
+(shared with the CDT fuel bound defined in `Model/Object/Structures.lean`).
+
+Rationale: `ensureCdtNodeForSlot` increments `cdtNextNode` each time a
+fresh CDT node must be allocated for a slot. The abstract model uses
+unbounded `Nat`, but any hardware mapping to fixed-width CDT node ids
+risks silent ID reuse once the counter overflows the hardware width.
+Callers that expose CDT node identifiers to user space via capabilities
+should gate `ensureCdtNodeForSlot` by this predicate (or its decidable
+counterpart) to preserve uniqueness. -/
+def cdtNextNodeBounded (st : SystemState) : Prop :=
+  st.cdtNextNode.val < maxCdtDepth
+
+/-- AK7-J (F-M09): The default system state satisfies `cdtNextNodeBounded`. -/
+theorem default_cdtNextNodeBounded :
+    cdtNextNodeBounded (default : SystemState) := by
+  unfold cdtNextNodeBounded maxCdtDepth
+  decide
 
 /-- Replace the object stored at `id` with `obj`.
 

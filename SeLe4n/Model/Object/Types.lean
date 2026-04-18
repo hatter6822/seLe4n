@@ -338,6 +338,45 @@ namespace Capability
 def hasRight (cap : Capability) (right : AccessRight) : Bool :=
   cap.rights.mem right
 
+/-- AK7-I (F-M07 / MEDIUM): Null capability predicate.
+
+Returns `true` when the capability is sentinel-initialised — its target
+references the reserved `ObjId.sentinel` (value 0) and carries no access
+rights. This mirrors seL4's `seL4_CapNull` convention, which combines a
+null object reference with the empty rights set.
+
+**Callers:** Sensitive entry points (`cspaceInvoke`, `cspaceMint`,
+`cspaceCopy`) should reject null capabilities at the ABI boundary by
+combining `isNull cap = false` with the usual access-right checks. A null
+capability carrying bits in the target's `cnodeSlot`/`replyCap` arms is
+treated as non-null so that structural capability pointers survive the
+check. -/
+@[inline] def isNull (cap : Capability) : Bool :=
+  match cap.target with
+  | .object oid => oid.isReserved && cap.rights.bits = 0
+  | _           => false
+
+/-- AK7-I: Structural negation — a capability is NOT null when either its
+target is non-object, its object id is non-sentinel, or it carries any
+access right. The predicate is `Bool`-valued so callers can discharge it
+with `decide`. -/
+@[inline] def isNotNull (cap : Capability) : Bool := !cap.isNull
+
+/-- AK7-I: `isNotNull` reflects `!isNull`. -/
+theorem isNotNull_iff (cap : Capability) :
+    cap.isNotNull = true ↔ cap.isNull = false := by
+  simp [isNotNull]
+
+/-- AK7-I: Canonical null capability. Mirrors `seL4_CapNull` — target is
+`ObjId.sentinel`, rights set is empty, badge is `none`. Useful as a
+default/sentinel capability for CSpace slot initialisation. -/
+def null : Capability :=
+  { target := .object ObjId.sentinel, rights := AccessRightSet.empty, badge := none }
+
+/-- AK7-I: The canonical null capability satisfies `isNull`. -/
+theorem null_isNull : (Capability.null).isNull = true := by
+  simp [null, isNull, AccessRightSet.empty, ObjId.isReserved, ObjId.sentinel]
+
 end Capability
 
 /-- WS-H12d/A-09: Maximum number of message registers per IPC message.
@@ -628,6 +667,39 @@ theorem TCB.not_lawfulBEq : ¬ LawfulBEq TCB := by
   have hPropEq : t₁ = t₂ := hEq hBeq
   have hNeq : t₁.registerContext.gpr ⟨32⟩ ≠ t₂.registerContext.gpr ⟨32⟩ := by decide
   exact hNeq (by rw [hPropEq])
+
+/-- AK7-G (F-M05 / MEDIUM): Sanctioned extensionality lemma for `TCB`.
+
+Use this lemma instead of `==` in any proof that requires propositional
+equality of TCBs. `TCB.ext` requires each structural field to match —
+including the `registerContext : RegisterFile` function field — so the
+proof obligation covers the same surface as `a == b = true` but without
+the out-of-range-GPR trap that `TCB.not_lawfulBEq` exposes.
+
+Companion to `RegisterFile.ext` (Machine.lean). Together they close the
+proof gap cited in F-M05: non-lawful BEq remains available for test
+infrastructure, while proof-critical paths derive equality via explicit
+pointwise witnesses. -/
+theorem TCB.ext {a b : TCB}
+    (hTid : a.tid = b.tid) (hPrio : a.priority = b.priority) (hDom : a.domain = b.domain)
+    (hCsp : a.cspaceRoot = b.cspaceRoot) (hVsp : a.vspaceRoot = b.vspaceRoot)
+    (hBuf : a.ipcBuffer = b.ipcBuffer) (hIpc : a.ipcState = b.ipcState)
+    (hTs : a.threadState = b.threadState)
+    (hSlice : a.timeSlice = b.timeSlice) (hDeadline : a.deadline = b.deadline)
+    (hQPrev : a.queuePrev = b.queuePrev) (hQPPrev : a.queuePPrev = b.queuePPrev)
+    (hQNext : a.queueNext = b.queueNext) (hPend : a.pendingMessage = b.pendingMessage)
+    (hRC : a.registerContext = b.registerContext)
+    (hFh : a.faultHandler = b.faultHandler) (hBn : a.boundNotification = b.boundNotification)
+    (hSc : a.schedContextBinding = b.schedContextBinding)
+    (hTb : a.timeoutBudget = b.timeoutBudget)
+    (hMcp : a.maxControlledPriority = b.maxControlledPriority)
+    (hPip : a.pipBoost = b.pipBoost)
+    (hTo : a.timedOut = b.timedOut) :
+    a = b := by
+  cases a; cases b
+  simp at *
+  exact ⟨hTid, hPrio, hDom, hCsp, hVsp, hBuf, hIpc, hTs, hSlice, hDeadline,
+         hQPrev, hQPPrev, hQNext, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPip, hTo⟩
 
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 
@@ -1163,7 +1235,14 @@ end SyscallId
     Encodes the metadata carried in the message-info register (x1 on ARM64):
     - `length`: number of message registers used (0..120)
     - `extraCaps`: number of extra capabilities transferred (0..3)
-    - `label`: user-specified label/tag for message discrimination -/
+    - `label`: user-specified label/tag for message discrimination
+
+AK7-D (F-M02 / MEDIUM): The raw constructor `MessageInfo.mk` bypasses the
+`maxLabel` check and the `length`/`extraCaps` bounds. Construction sites
+should prefer `MessageInfo.mkChecked` (below), which returns `none` if any
+field exceeds its seL4 bound. `MessageInfo.mk` is retained for test
+fixtures and decode-path success branches where bounds are already
+established by context. -/
 structure MessageInfo where
   length    : Nat
   extraCaps : Nat
@@ -1176,6 +1255,46 @@ namespace MessageInfo
     `seL4_MessageInfo_t` label field width. The previous model allowed unbounded
     labels (55 bits), which diverged from seL4's 20-bit limit. -/
 def maxLabel : Nat := (1 <<< 20) - 1
+
+/-- AK7-D (F-M02 / MEDIUM): Checked constructor that validates each field
+against its seL4 bound before returning a `MessageInfo`.
+
+Enforces:
+- `length ≤ maxMessageRegisters` (120 registers)
+- `extraCaps ≤ maxExtraCaps` (3 extra capabilities)
+- `label ≤ maxLabel` (20-bit label, 2^20 − 1)
+
+Returns `none` on any bound violation, matching the behavior of the
+validating `decode` path. Prefer this over `MessageInfo.mk` anywhere the
+caller constructs a message info from unvalidated input (IPC send,
+service-register ABI, test fixtures crossing bound boundaries). -/
+@[inline] def mkChecked (length : Nat) (extraCaps : Nat) (label : Nat) :
+    Option MessageInfo :=
+  if length ≤ maxMessageRegisters ∧ extraCaps ≤ maxExtraCaps ∧ label ≤ maxLabel then
+    some { length, extraCaps, label }
+  else
+    none
+
+/-- AK7-D (F-M02): `mkChecked` returns `some` iff all bounds hold. -/
+theorem mkChecked_isSome_iff (length extraCaps label : Nat) :
+    (mkChecked length extraCaps label).isSome = true ↔
+    length ≤ maxMessageRegisters ∧ extraCaps ≤ maxExtraCaps ∧ label ≤ maxLabel := by
+  unfold mkChecked
+  by_cases h : length ≤ maxMessageRegisters ∧ extraCaps ≤ maxExtraCaps ∧ label ≤ maxLabel
+  · simp [h]
+  · simp [h]
+
+/-- AK7-D (F-M02): `mkChecked` output satisfies the bounds predicate. -/
+theorem mkChecked_bounded {length extraCaps label : Nat} {mi : MessageInfo}
+    (h : mkChecked length extraCaps label = some mi) :
+    mi.length ≤ maxMessageRegisters ∧ mi.extraCaps ≤ maxExtraCaps ∧
+    mi.label ≤ maxLabel := by
+  unfold mkChecked at h
+  split at h
+  · rename_i hAll
+    cases h
+    exact hAll
+  · cases h
 
 /-- Encode a MessageInfo into a single register word.
     Bit layout (seL4 convention):

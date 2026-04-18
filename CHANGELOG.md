@@ -1,3 +1,150 @@
+## v0.29.13 — AK7 Foundational Model (Prelude / Machine / Model)
+
+Pre-1.0 Release Hardening (v0.29.0 audit) — Phase AK7: Foundational
+Model (`Prelude.lean`, `Machine.lean`, `Model/*.lean`). 11 sub-tasks
+(AK7-A..AK7-K) addressing 2 HIGH, 11 MEDIUM, 15 LOW foundational
+findings. Zero sorry/axiom regressions.
+
+### AK7-A (F-H01 / HIGH) — freezeMap capacity witness
+
+`freezeMap_indexMap_invExtK` and `freezeMap_capacity_sufficient`
+theorems establish that for any source `RHTable`, `freezeMap` produces
+an index map satisfying the kernel-level `RHTable.invExtK` invariant
+(`invExt ∧ size < capacity ∧ 4 ≤ capacity`) regardless of any property
+of the source table. Witness is built from `RHTable.empty_invExtK`
+(seed at capacity 16) + `RHTable.insert_preserves_invExtK` via fold
+induction over `toList`. Closes the undocumented auto-grow
+invariant-transfer concern.
+
+### AK7-B (F-H02 / HIGH) — frozenDirect extended coverage
+
+- `apiInvariantBundle_frozenDirectObjectsOnly` aliases the legacy
+  predicate and makes the observational scope self-documenting.
+- `apiInvariantBundle_frozenDirectFull` adds 12 field-agreement
+  conjuncts for `machine`, `objectIndex`, `tlb`, `cdtNextNode`,
+  `cdtEdges`, `scheduler.{current, activeDomain, domainTimeRemaining,
+  domainSchedule, domainScheduleIndex, configDefaultTimeSlice}`.
+- `freeze_preserves_direct_invariants_full` witnesses full coverage at
+  freeze time.
+
+Non-object mutations can no longer vacuously preserve the bundle.
+
+### AK7-C (F-M01 / MEDIUM) — bounds-checked memory access
+
+`MachineState.addrInRange` predicate + `readMemChecked`/
+`writeMemChecked` bounds-checking variants consult `memoryMap` (RAM
+regions) and `physicalAddressWidth` cap. Total `readMem`/`writeMem`
+retained for existing proof surface; checked variants are preferred
+for deployments with a declared hardware map. Six frame theorems:
+`readMemChecked_eq_readMem_of_inRange`, `readMemChecked_none_of_outRange`,
+`writeMemChecked_{eq_writeMem_of_inRange, none_of_outRange,
+preserves_regs, preserves_timer}`.
+
+### AK7-D (F-M02 / F-L13 / MEDIUM + LOW) — MessageInfo.mkChecked
+
+`MessageInfo.mkChecked : Nat → Nat → Nat → Option MessageInfo`
+validates `length ≤ maxMessageRegisters`, `extraCaps ≤ maxExtraCaps`,
+`label ≤ maxLabel` at construction, returning `none` on any
+violation. Two witness theorems: `mkChecked_isSome_iff`,
+`mkChecked_bounded`. `MessageInfo.mk` flagged as TCB-internal in the
+structure docstring; construction sites should migrate.
+
+### AK7-E (F-M03 / MEDIUM — baseline)
+
+Sentinel-rejecting subtypes for typed identifiers:
+
+- `ValidObjId := { o : ObjId // o ≠ ObjId.sentinel }`
+- `ValidThreadId := { t : ThreadId // t ≠ ThreadId.sentinel }`
+- `ValidSchedContextId := { s : SchedContextId // s ≠ SchedContextId.sentinel }`
+- `ValidCPtr := { c : CPtr // c ≠ CPtr.sentinel }`
+
+Per-type `toValid`/`ofValid`/`toValid?` conversion API plus
+`ObjId.valid_of_ne_sentinel` and `ThreadId.toValid?_isSome_iff`
+bridges the subtype to the existing `valid`/`isReserved`
+predicates. Cascade migration of ~300 internal call sites tracked as
+`AK7-E.cascade` (post-1.0).
+
+### AK7-F (F-M04 / MEDIUM — baseline)
+
+- `ObjectKind` 9-variant enum: `unknown`, `thread`, `schedContext`,
+  `endpoint`, `notification`, `cnode`, `vspaceRoot`, `untyped`,
+  `service`.
+- `KindedObjId` parallel structure carrying `val + kind`.
+- `ThreadId.toKinded` and `SchedContextId.toKinded` tag canonically.
+- `KindedObjId.ne_of_kind_ne` + `ThreadId.toKinded_ne_schedContext_toKinded`
+  witness structural disjointness regardless of numeric value.
+
+Per plan §Risk mitigation, the baseline parallel-structure approach
+avoids the ~300-proof cascade a direct `ObjId` refactor would cause.
+Consumer migration tracked as `AK7-F.cascade` (post-1.0).
+
+### AK7-G (F-M05 / MEDIUM)
+
+`TCB.ext` sanctioned extensionality lemma covering all 22 TCB fields
+(including `registerContext : RegisterFile` via composition with
+`RegisterFile.ext`). Proof-critical paths can establish TCB equality
+without relying on the non-lawful `BEq TCB` instance. Complements the
+pre-existing `TCB.not_lawfulBEq` negative witness.
+
+### AK7-H (F-M06 / MEDIUM)
+
+`FrozenMap.wellFormed` advisory predicate:
+
+    ∀ k idx, indexMap.get? k = some idx → idx < data.size
+
+`FrozenMap.get?_some_of_wellFormed` corollary establishes that
+well-formed maps never silently fall through to `none`.
+
+### AK7-I (F-M07 / MEDIUM) — capability null predicate
+
+- `Capability.isNull`/`isNotNull`: seL4_CapNull convention
+  (`target := .object ObjId.sentinel ∧ rights.bits = 0`).
+- `Capability.null` canonical null-cap constant.
+- `Capability.null_isNull` witness.
+
+Enables fail-closed `isNotNull` checks at sensitive entry points
+(`cspaceInvoke`, `cspaceMint`, `cspaceCopy`).
+
+### AK7-J (F-M08..F-M11 / MEDIUM) — structural invariant predicates
+
+- F-M08: `PagePermissions.ofNat` masked-to-5-bits semantics documented
+  with explicit cross-reference to `ofNat?` validating variant.
+- F-M09: `cdtNextNodeBounded (st : SystemState) := st.cdtNextNode.val <
+  maxCdtDepth` advisory invariant + `default_cdtNextNodeBounded`
+  witness, gating `ensureCdtNodeForSlot` against hardware-width
+  overflow.
+- F-M10: `noPhysicalFrameCollision` physical-frame-uniqueness
+  predicate complementing the VA-side `noVirtualOverlap_trivial` +
+  `noPhysicalFrameCollision_empty` base-case witness.
+- F-M11: `TlbEntry.asidGeneration : Nat := 0` field mirrors
+  `AsidPool.generation` (AK3-D) enabling stale-entry detection after
+  ASID free/reuse.
+
+### AK7-K (F-L1..F-L15 / LOW)
+
+- F-L5: `PagePermissions.toNat_ofNat_roundtrip` reverse round-trip
+  (32-way case split via `omega`).
+- F-L15: `CdtNodeId.sentinel` + `isReserved` convention matching
+  `ObjId`/`ThreadId`/`ServiceId` pattern.
+- F-L2: Badge 64-bit seL4 compatibility cross-reference in
+  `Prelude.lean` docstring.
+- F-L9: 17-deep tuple projection refactor deferred to post-1.0 hygiene
+  pass per plan §14.3.
+
+### Gate
+
+- `lake build` (260 jobs)
+- `test_smoke.sh`
+- `test_full.sh`
+- `check_version_sync.sh` (all 14 files at 0.29.13)
+- `cargo test --workspace` (415 tests, 0 failed)
+- `cargo clippy --workspace -- -D warnings` (0 warnings)
+- Zero sorry/axiom
+
+See `docs/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` §10 (Phase AK7).
+
+---
+
 ## v0.29.12 — AK6-F audit remediation (honest tiering, frame lemmas, runtime tests)
 
 End-to-end audit of Phase AK6 (Information Flow + SchedContext
