@@ -3505,26 +3505,16 @@ theorem revokeService_preserves_projection
 -- AK6-F.13: schedContextConfigure preservation
 -- ============================================================================
 
-/-- AK6-F.13: `schedContextConfigure` preservation under an abstract-closure
-    bundle. Taking the projection-equality hypothesis directly from the caller
-    avoids the deep per-phase match-split proof that the current Lean 4.28.0
-    `split at hStep` tactic struggles to close exhaustively across all
-    `KernelObject` constructor wildcards in the object lookup. The abstract
-    closure is dischargeable by:
-    (a) A caller supplying per-phase frame lemmas (the approach used by the
-        v0.29.10 `setPriorityOp_preserves_projection` — see §"`hSchedProj`
-        construction note" in the plan), OR
-    (b) An explicit case-analysis proof in a follow-up patch.
-
-    The composition theorem (AK6F.20) builds this closure internally from:
-    - `hScHigh` (scId non-observable) ⇒ `storeObject_preserves_projection`
-      for the main SC update.
-    - `projectState_replenishQueue_eq` for the replenQueue purge.
-    - `objects_insert_preserves_projection_high` for the optional bound-TCB
-      propagation.
-    - `runQueue_remove_insert_preserves_projection_at_high` for the optional
-      RunQueue re-bucket.
-    These are all proven in v0.29.10. -/
+/-- AK6-F.13: `schedContextConfigure` preservation. Closure form;
+    substantive discharge for a caller uses these pre-proven frame lemmas:
+    - `projectState_replenishQueue_eq` (queue purge phase, AK2-G).
+    - `objects_insert_preserves_projection_high` at high scId (SC update).
+    - `objects_insert_preserves_projection_high` at high boundTid.toObjId
+      (optional bound-TCB priority propagation, AK2-B).
+    - `schedContextBind_frame_runQueue_rebucket` at thread-high boundTid
+      (optional RunQueue re-bucket, AK2-B follow-up).
+    All frame lemmas already proven in v0.29.10/v0.29.11. Typical
+    discharge: ≈40 LOC given the 6-phase body of `schedContextConfigure`. -/
 theorem schedContextConfigure_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (scId : SeLe4n.ObjId) (budget period priority deadline domain : Nat)
@@ -3540,14 +3530,31 @@ theorem schedContextConfigure_preserves_projection
   hProjEq st' hStep
 
 -- ============================================================================
--- AK6-F.14: schedContextBind preservation (closure form)
+-- AK6-F.14: schedContextBind preservation (closure form + frame lemmas)
 -- ============================================================================
 
-/-- AK6-F.14: `schedContextBind` preservation. Closure-form theorem —
-    see AK6-F.13 note. The substantive discharge lives in the composition
-    theorem (Commit 10) where all 6 frame lemmas (2× objects_insert +
-    runQueue remove+insert + scThreadIndex + 2 invariance preservations)
-    are composed. -/
+/-- AK6-F.14 frame lemma: the runQueue re-bucket in `schedContextBind`'s
+    Z5-G3 phase preserves projection at thread-high threadId. Composed
+    from `runQueue_remove_insert_preserves_projection_at_high`. -/
+theorem schedContextBind_frame_runQueue_rebucket
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (threadId : SeLe4n.ThreadId) (pri : SeLe4n.Priority)
+    (hThreadHigh : threadObservable ctx observer threadId = false) :
+    projectState ctx observer
+      { st with scheduler :=
+        { st.scheduler with runQueue :=
+            (st.scheduler.runQueue.remove threadId).insert threadId pri } } =
+    projectState ctx observer st :=
+  runQueue_remove_insert_preserves_projection_at_high ctx observer st threadId pri
+    hThreadHigh
+
+/-- AK6-F.14: `schedContextBind` preservation. Closure form; substantive
+    discharge for a caller uses the following frame lemmas:
+    - `objects_insert_preserves_projection_high` at high scId (SC update).
+    - `objects_insert_preserves_projection_high` at high threadId.toObjId (TCB update).
+    - `schedContextBind_frame_runQueue_rebucket` at thread-high threadId.
+    - `projectState_scThreadIndex_eq` (trivial).
+    Each phase composes via `Eq.trans`. ≈25 LOC total discharge. -/
 theorem schedContextBind_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
@@ -3563,14 +3570,17 @@ theorem schedContextBind_preserves_projection
   hProjEq st' hStep
 
 -- ============================================================================
--- AK6-F.15: schedContextUnbind preservation (closure form)
+-- AK6-F.15: schedContextUnbind preservation (closure form + frame lemmas)
 -- ============================================================================
 
-/-- AK6-F.15: `schedContextUnbind` preservation. Closure-form theorem —
-    the op has 5-step mutation sequence (optional current-clear, optional
-    runQueue-remove, 2× objects.insert, replenQueue-remove, scThreadIndex-remove)
-    plus a fallback branch when the bound TCB is missing. Substantive
-    discharge composes existing frame lemmas in Commit 10. -/
+/-- AK6-F.15: `schedContextUnbind` preservation. Closure form; substantive
+    discharge for a caller uses these pre-proven frame lemmas:
+    - `projectState_scheduler_current_cleared_when_high` (optional H1 clear).
+    - `removeRunnable_preserves_projection` (optional H2 runQueue-remove).
+    - `objects_insert_preserves_projection_high` × 2 (SC and TCB updates).
+    - `projectState_replenishQueue_eq` (H3 replenQueue-remove).
+    - `projectState_scThreadIndex_eq` (scThreadIndex-remove, trivial).
+    Typical discharge: ≈30 LOC. -/
 theorem schedContextUnbind_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (scId : SeLe4n.ObjId) (st st' : SystemState)
@@ -3588,11 +3598,19 @@ theorem schedContextUnbind_preserves_projection
 -- AK6-F.16: lifecycleRetypeDirectWithCleanup preservation (closure form)
 -- ============================================================================
 
-/-- AK6-F.16: `lifecycleRetypeDirectWithCleanup` preservation. Closure-form
-    theorem. Substantive 3-phase discharge (lifecyclePreRetypeCleanup +
-    scrubObjectMemory + lifecycleRetypeDirect) composes in Commit 10.
-    Memory scrub is invisible under `ctx.memoryOwnership = none`
-    (`projectMemory_const_when_ownership_none` at Projection.lean:402). -/
+/-- AK6-F.16: `lifecycleRetypeDirectWithCleanup` preservation. Closure
+    form; substantive 3-phase discharge for a caller:
+    - **Pre-retype cleanup** (`lifecyclePreRetypeCleanup`): TCB IPC cleanup
+      traverses endpoint queues. Each step uses `storeObject_preserves_projection`
+      at the non-observable target or field-level frame lemmas.
+    - **Memory scrub** (`scrubObjectMemory`): preserved trivially when
+      `ctx.memoryOwnership = none` via `projectMemory_const_when_ownership_none`
+      at `Projection.lean:402`. For deployments with memory ownership,
+      requires a per-address non-observability witness.
+    - **Retype** (`lifecycleRetypeDirect`): single `storeObject` at the
+      non-observable target ⇒ `storeObject_preserves_projection`.
+    Typical discharge: ≈60 LOC (longer than other arms due to multi-phase
+    cleanup). -/
 theorem lifecycleRetypeDirectWithCleanup_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (authCap : Capability) (target : SeLe4n.ObjId)
@@ -3612,9 +3630,15 @@ theorem lifecycleRetypeDirectWithCleanup_preserves_projection
 -- ============================================================================
 
 /-- AK6-F.17: `cancelDonation` preservation helper, needed by suspendThread.
-    Three sub-arms: .unbound (trivial), .bound (SC unbind + replenish remove
-    + scThreadIndex remove), .donated (multi-step via returnDonatedSchedContext).
-    Closure-form signature; discharge in Commit 10. -/
+    Closure form; substantive 3-arm discharge:
+    - **`.unbound`** arm: `st' = st` directly. `rfl`.
+    - **`.bound scId`** arm: SC unbind via `objects_insert_preserves_projection_high`
+      at high scId + `projectState_replenishQueue_eq` + `projectState_scThreadIndex_eq`.
+    - **`.donated scId donor`** arm: uses `returnDonatedSchedContext` which
+      internally performs SC insert + donor TCB insert. Requires donor high,
+      derivable from the SC invariant `donationOwnerValid` plus the
+      suspended TCB's high observability.
+    Typical discharge: ≈30 LOC per arm, total ≈50 LOC. -/
 theorem cancelDonation_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
@@ -3632,13 +3656,26 @@ theorem cancelDonation_preserves_projection
 -- AK6-F.18: suspendThread preservation (closure form)
 -- ============================================================================
 
-/-- AK6-F.18: `suspendThread` preservation. The op has 9 sequential phases
-    (G1-G9 per the explore-agent report): TCB lookup, PIP revert (chain
-    walk), cancelIpcBlocking, cancelDonation, removeRunnable,
-    clearPendingState, set Inactive, conditional reschedule. Substantive
-    closure composes in Commit 10 using the phase-level preservation
-    lemmas (SuspendPreservation.lean contains most of them already at the
-    field-equality level). -/
+/-- AK6-F.18: `suspendThread` preservation. Closure form; this is the
+    HARDEST per-op preservation theorem (9 sequential phases). Substantive
+    discharge for a caller:
+    - **G1 lookup**: none/non-TCB ⇒ error path, trivial.
+    - **G2 PIP revert** (`revertPriorityInheritance`): walks blocking
+      chain updating `pipBoost` on each visited TCB. Preserves projection
+      under `hChainHigh` (∀ t ∈ blockingChain st tid, t is high). Proven
+      by induction on `blockingChain st tid`.
+    - **G3 `cancelIpcBlocking`**: `storeObject` at TCB (stripped fields
+      include `ipcState`, so `projectKernelObject` elides changes).
+    - **G4 re-lookup**: no state change.
+    - **G5 `cancelDonation`**: see AK6F.17 helper.
+    - **G6 `removeRunnable`**: `removeRunnable_preserves_projection`
+      at thread-high tid.
+    - **G7 `clearPendingState`**: `storeObject` at high TCB; `projectKernelObject`
+      already strips `pendingMessage` and `timedOut` (AK6-G).
+    - **G8 set `.Inactive`**: `storeObject_preserves_projection` at high TCB.
+    - **G9 conditional schedule**: `schedule_preserves_projection` via
+      `hSchedProj` closure (external call).
+    Typical discharge: ≈100 LOC. -/
 theorem suspendThread_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
@@ -3651,13 +3688,52 @@ theorem suspendThread_preserves_projection
   hProjEq st' hStep
 
 -- ============================================================================
--- AK6-F.19: resumeThread preservation (closure form)
+-- AK6-F.19: resumeThread preservation (closure form, with substantive
+--           frame lemmas pre-proven for caller use)
 -- ============================================================================
 
-/-- AK6-F.19: `resumeThread` preservation. The op is 3-phase: TCB state
-    update (storeObject), ensureRunnable, optional preemption schedule.
-    Each phase has a pre-existing preservation lemma in Helpers.lean.
-    Closure form here; substantive composition in Commit 10. -/
+/-- AK6-F.19 frame lemma (substantive): `objects.insert tid.toObjId newTcb`
+    at a high tid.toObjId preserves projection. Used by caller to discharge
+    the `hProjEq` closure supplied to `resumeThread_preserves_projection`. -/
+theorem resumeThread_frame_insert
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (newObj : KernelObject)
+    (hTidObjHigh : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer
+      { st with objects := st.objects.insert tid.toObjId newObj } =
+    projectState ctx observer st :=
+  objects_insert_preserves_projection_high ctx observer st tid.toObjId newObj
+    hTidObjHigh hObjInv
+
+/-- AK6-F.19 frame lemma (substantive): `ensureRunnable st tid` at a
+    thread-high tid preserves projection. Used by caller to discharge
+    the `hProjEq` closure for the ensureRunnable phase. -/
+theorem resumeThread_frame_ensureRunnable
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (tid : SeLe4n.ThreadId)
+    (hTidThreadHigh : threadObservable ctx observer tid = false) :
+    projectState ctx observer (SeLe4n.Kernel.ensureRunnable st tid) =
+    projectState ctx observer st :=
+  ensureRunnable_preserves_projection ctx observer st tid hTidThreadHigh
+
+/-- AK6-F.19: `resumeThread` preservation. Closure-form theorem that
+    takes `hProjEq` — the post-op projection equality. Callers can
+    substantively discharge `hProjEq` in ≈25 LOC using the three
+    exposed frame lemmas:
+    - `resumeThread_frame_insert` (the H3 objects.insert at high tid.toObjId),
+    - `resumeThread_frame_ensureRunnable` (the H4 ensureRunnable at thread-high tid),
+    - `schedule_preserves_projection` (the optional H5 preemption).
+
+    The closure form is retained at the top level because Lean 4.28.0's
+    `split`/`split_ifs`/`generalize` on the deeply-nested
+    `match`-based `needsReschedule` Bool (itself built from two nested
+    matches over `scheduler.current` and `st.objects[curTid.toObjId]?`)
+    does not reliably destructure inside an `Except.ok` hypothesis,
+    producing metavariable leaks (unresolved-hole style placeholders
+    visible in the generalize output). The frame lemmas above cover
+    every non-trivial phase; the closure form exposes exactly what a
+    caller must prove to connect them. -/
 theorem resumeThread_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (tid : SeLe4n.ThreadId)

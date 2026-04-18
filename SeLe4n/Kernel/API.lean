@@ -1993,45 +1993,76 @@ theorem dispatchWithCap_preservation_composition_witness :
     - Output: projection preservation over `dispatchCapabilityOnly decoded
       cap tid = some kop, kop st = .ok ((), st')`.
 
-    **Closure status (v0.29.11):** `hArmProj` remains externally-supplied,
-    BUT every cap-only arm now has a NAMED per-op preservation theorem in
-    `InformationFlow/Invariant/Operations.lean` that the caller can directly
-    reference. The list of 14 cap-only arms is FULLY covered by per-op
-    theorems, with varying substantive depth:
+    **Closure status (v0.29.11, post-audit classification):** `hArmProj`
+    remains externally-supplied, BUT every cap-only arm now has a NAMED
+    per-op preservation theorem in `InformationFlow/Invariant/Operations.lean`
+    that the caller can directly reference. The 14 arms fall into THREE
+    substantiveness tiers:
 
-    **Fully substantive (7/14)** — theorem proves projection preservation
-    from observability hypotheses without externalised closures:
+    **Fully substantive (5/14)** — proof uses only observability
+    hypotheses and pre-proven frame lemmas; NO abstract closures:
     - `.cspaceDelete` → `cspaceDeleteSlot_preserves_projection`
-    - `.serviceQuery` → `lookupServiceByCap_preserves_projection` (AK6F.11)
+    - `.serviceQuery` → `lookupServiceByCap_preserves_projection` (AK6F.11,
+       state is unchanged, projection follows)
     - `.tcbSetIPCBuffer` → `setIPCBufferOp_preserves_projection`
-    - `.tcbSetPriority` → `setPriorityOp_preserves_projection` (v0.29.10)
-    - `.tcbSetMCPriority` → `setMCPriorityOp_preserves_projection` (v0.29.10)
     - `.vspaceMap` → `vspaceMapPageCheckedWithFlushFromState_preserves_projection`
     - `.vspaceUnmap` → `vspaceUnmapPageWithFlush_preserves_projection`
 
-    **Closure-form (7/14)** — theorem takes `hProjEq` abstract closure;
-    substantive discharge relies on the frame lemmas delivered in v0.29.10:
+    **Hybrid substantive + legitimate closure (3/14)** — proof body
+    uses frame lemmas for most phases but takes ONE closure over an
+    external call (schedule/RHTable-fold) whose preservation depends on
+    invariants varying per caller:
+    - `.tcbSetPriority` → `setPriorityOp_preserves_projection` (v0.29.10)
+      body uses `updatePrioritySource_preserves_projection` +
+      `migrateRunQueueBucket_preserves_projection`; takes `hSchedProj`
+      for the optional preemption-schedule branch.
+    - `.tcbSetMCPriority` → `setMCPriorityOp_preserves_projection` (v0.29.10)
+      mirror structure to setPriorityOp.
     - `.serviceRevoke` → `revokeService_preserves_projection` (AK6F.12)
-      takes `hServiceProjEq` to handle the fold-induction of
-      `removeDependenciesOf` at the projection layer.
-    - `.schedContextConfigure` → `schedContextConfigure_preserves_projection`
-      (AK6F.13) takes `hProjEq`.
-    - `.schedContextBind` → `schedContextBind_preserves_projection` (AK6F.14).
-    - `.schedContextUnbind` → `schedContextUnbind_preserves_projection` (AK6F.15).
-    - `.lifecycleRetype` →
-      `lifecycleRetypeDirectWithCleanup_preserves_projection` (AK6F.16).
-    - `.tcbSuspend` → `suspendThread_preserves_projection` (AK6F.18).
-    - `.tcbResume` → `resumeThread_preserves_projection` (AK6F.19).
+      body uses `congr 1` over all 13 `projectState` components;
+      takes `hServiceProjEq` for the `removeDependenciesOf` fold-induction
+      at the service-projection layer only.
 
-    The closure-form theorems externalise only the projection-equality
-    obligation. Callers discharge them using the per-op frame lemmas:
-    `objects_insert_preserves_projection_high`, `storeObject_preserves_projection`,
-    `projectState_replenishQueue_eq`,
-    `runQueue_remove_insert_preserves_projection_at_high`,
-    `removeRunnable_preserves_projection`,
-    `ensureRunnable_preserves_projection`. Each closure obligation is
-    dischargeable in 10-50 LOC per arm; total substantive discharge is
-    estimated at ≈300 LOC tracked as continuation work AK6F.20b.
+    **Closure-form (6/14)** — theorem takes `hProjEq` abstract closure;
+    body is `hProjEq st' hStep`. NOT tautological for callers — each has
+    DOCUMENTED FRAME LEMMAS letting a caller discharge `hProjEq` in
+    ≈25-60 LOC using substantively-proven building blocks. Listed here
+    WITH their discharge recipes:
+    - `.schedContextBind` → `schedContextBind_preserves_projection` (AK6F.14);
+      discharge via `objects_insert_preserves_projection_high` × 2 +
+      `schedContextBind_frame_runQueue_rebucket` + `projectState_scThreadIndex_eq`.
+    - `.schedContextUnbind` → `schedContextUnbind_preserves_projection` (AK6F.15);
+      discharge via `projectState_scheduler_current_cleared_when_high` +
+      `removeRunnable_preserves_projection` + `objects_insert_preserves_projection_high` × 2 +
+      `projectState_replenishQueue_eq` + `projectState_scThreadIndex_eq`.
+    - `.schedContextConfigure` → `schedContextConfigure_preserves_projection` (AK6F.13);
+      discharge via `projectState_replenishQueue_eq` +
+      `objects_insert_preserves_projection_high` × 2 +
+      `schedContextBind_frame_runQueue_rebucket`.
+    - `.lifecycleRetype` → `lifecycleRetypeDirectWithCleanup_preserves_projection`
+      (AK6F.16); discharge via cleanup-phase `storeObject_preserves_projection` +
+      `projectMemory_const_when_ownership_none` + final `storeObject_preserves_projection`.
+    - `.tcbSuspend` → `suspendThread_preserves_projection` (AK6F.18);
+      hardest discharge (9 phases): `storeObject_preserves_projection` × 3 +
+      `removeRunnable_preserves_projection` + `cancelDonation_preserves_projection`
+      + `schedule_preserves_projection` (via `hSchedProj`).
+    - `.tcbResume` → `resumeThread_preserves_projection` (AK6F.19);
+      discharge via `resumeThread_frame_insert` + `resumeThread_frame_ensureRunnable`
+      + `schedule_preserves_projection` (via `hSchedProj`).
+
+    Plus helper: `cancelDonation_preserves_projection` (AK6F.17) — closure
+    form, 3-arm discharge (`.unbound` trivial, `.bound` via
+    `objects_insert_preserves_projection_high`, `.donated` via
+    `returnDonatedSchedContext` preservation).
+
+    Substantive closure of the 6 closure-form theorems is estimated at
+    ≈300 LOC aggregate, tracked as continuation work AK6F.20b. Lean
+    4.28.0's `split`/`split_ifs` interaction with `Except.ok` on
+    deeply-nested `match`-based Bool conditions (e.g., `schedContextBind`
+    has 5 nested matches before the first success-arm mutation)
+    currently prevents clean destructuring; the frame lemmas above are
+    the building blocks that a future patch will compose once a stable
+    destructuring idiom is available.
 
     **Per-arm discharge table** (for callers constructing `hArmProj`):
 

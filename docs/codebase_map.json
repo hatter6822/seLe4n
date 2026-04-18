@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-ak6-workstream-VM0m9",
-      "commit_sha": "eb1ccea93a17d7682293d03134290afeb05b5acd",
-      "tree_sha": "69f2b43dd5316e6b951029afe72021b506772026",
-      "committed_at_utc": "2026-04-18T03:01:16+00:00"
+      "commit_sha": "5d1f75d4cf4e670bca25c6faccdfbb790eb02331",
+      "tree_sha": "7ba11f2c17c871504dfd8bd50555e3793f36d9b2",
+      "committed_at_utc": "2026-04-18T03:09:06+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d5ae520a60ae3a2985908ea8c327400d6170da3d2c7963356583d6fe8eb613b8"
+    "source_digest": "87728a28222ef3513506589684dcad24e34970b1bb1cb38263e04f8a58d7f74c"
   },
   "summary": {
     "module_count": 164,
-    "declaration_count": 5284
+    "declaration_count": 5287
   },
   "readme_sync": {
     "version": "0.29.11",
     "lean_toolchain": "v4.28.0",
     "production_files": 142,
-    "production_loc": 98905,
+    "production_loc": 99012,
     "test_files": 22,
-    "test_loc": 13098,
-    "proved_theorem_lemma_decls": 2908,
+    "test_loc": 13161,
+    "proved_theorem_lemma_decls": 2910,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -1181,7 +1181,7 @@
         {
           "kind": "theorem",
           "name": "dispatchCapabilityOnly_preserves_projection",
-          "line": 2061,
+          "line": 2092,
           "called": [
             "Capability",
             "IfObserver",
@@ -1196,7 +1196,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscallChecked_preserves_projection",
-          "line": 2100,
+          "line": 2131,
           "called": [
             "Capability",
             "IfObserver",
@@ -27731,7 +27731,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Invariant.Operations",
       "path": "SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean",
-      "declaration_count": 95,
+      "declaration_count": 98,
       "declarations": [
         {
           "kind": "namespace",
@@ -29595,7 +29595,7 @@
         {
           "kind": "theorem",
           "name": "schedContextConfigure_preserves_projection",
-          "line": 3528,
+          "line": 3518,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -29608,8 +29608,25 @@
         },
         {
           "kind": "theorem",
+          "name": "schedContextBind_frame_runQueue_rebucket",
+          "line": 3539,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "Priority",
+            "SystemState",
+            "ThreadId",
+            "insert",
+            "projectState",
+            "remove",
+            "runQueue_remove_insert_preserves_projection_at_high",
+            "threadObservable"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "schedContextBind_preserves_projection",
-          "line": 3551,
+          "line": 3558,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -29624,7 +29641,7 @@
         {
           "kind": "theorem",
           "name": "schedContextUnbind_preserves_projection",
-          "line": 3574,
+          "line": 3584,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -29638,7 +29655,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanup_preserves_projection",
-          "line": 3596,
+          "line": 3614,
           "called": [
             "Capability",
             "IfObserver",
@@ -29653,7 +29670,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonation_preserves_projection",
-          "line": 3618,
+          "line": 3642,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -29667,7 +29684,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_preserves_projection",
-          "line": 3642,
+          "line": 3679,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -29679,8 +29696,41 @@
         },
         {
           "kind": "theorem",
+          "name": "resumeThread_frame_insert",
+          "line": 3698,
+          "called": [
+            "IfObserver",
+            "KernelObject",
+            "LabelingContext",
+            "SystemState",
+            "ThreadId",
+            "insert",
+            "invExt",
+            "objectObservable",
+            "objects_insert_preserves_projection_high",
+            "projectState",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "resumeThread_frame_ensureRunnable",
+          "line": 3712,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "ThreadId",
+            "ensureRunnable",
+            "ensureRunnable_preserves_projection",
+            "projectState",
+            "threadObservable"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "resumeThread_preserves_projection",
-          "line": 3661,
+          "line": 3737,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -65356,6 +65406,7 @@
             "ServiceId",
             "SlotRef",
             "SystemState",
+            "TCB",
             "ThreadId",
             "admin",
             "all",
@@ -65402,6 +65453,7 @@
             "notificationSignalChecked",
             "ofList",
             "ofNat",
+            "projectKernelObject",
             "projectServicePresence",
             "projectState",
             "publicLabel",
@@ -65430,7 +65482,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1068,
+          "line": 1131,
           "called": [
             "runInformationFlowChecks"
           ]

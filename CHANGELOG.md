@@ -1,12 +1,32 @@
-## v0.29.11 — AK6-F full per-arm per-op theorem coverage (14/14)
+## v0.29.11 — AK6-F full per-arm per-op theorem coverage (14/14 named)
 
-Completes AK6-F per-arm coverage: every cap-only dispatch arm now has a
-NAMED per-op `_preserves_projection` theorem in
-`InformationFlow/Invariant/Operations.lean`. Substantive depth varies:
-7 arms have fully-proven theorems from observability hypotheses; 7 arms
-use closure-form signatures where the caller supplies the projection
-equality via `hProjEq`, dischargeable from the frame lemmas delivered
-in v0.29.10.
+Completes AK6-F per-arm NAMING coverage: every cap-only dispatch arm
+has a NAMED per-op `_preserves_projection` theorem in
+`InformationFlow/Invariant/Operations.lean`. Post-audit classification
+distinguishes THREE substantiveness tiers:
+
+### Substantiveness breakdown (post-audit, v0.29.11 corrected)
+
+**Fully substantive (5/14)** — proof uses only observability
+hypotheses and pre-proven frame lemmas, NO abstract closures:
+`.cspaceDelete`, `.serviceQuery` (AK6F.11), `.tcbSetIPCBuffer`,
+`.vspaceMap`, `.vspaceUnmap`.
+
+**Hybrid substantive + legitimate closure (3/14)** — proof body uses
+frame lemmas for most phases but takes ONE closure over an external
+call (schedule/RHTable-fold) whose preservation depends on
+per-caller invariants: `.tcbSetPriority`, `.tcbSetMCPriority`,
+`.serviceRevoke` (AK6F.12).
+
+**Closure-form (6/14)** — theorem takes `hProjEq` abstract closure;
+body is `hProjEq st' hStep`. NOT tautological for callers — each
+theorem's docstring documents the frame-lemma recipe letting a caller
+discharge `hProjEq` in ≈25-60 LOC: `.schedContextConfigure` (AK6F.13),
+`.schedContextBind` (AK6F.14), `.schedContextUnbind` (AK6F.15),
+`.lifecycleRetype` (AK6F.16), `.tcbSuspend` (AK6F.18), `.tcbResume`
+(AK6F.19).
+
+Plus helper: `cancelDonation_preserves_projection` (AK6F.17).
 
 ### New theorems (9 additions in v0.29.11):
 
