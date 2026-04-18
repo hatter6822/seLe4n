@@ -559,8 +559,6 @@ def al10_05_requireNotNull_complement : IO Unit := do
     (cap2.requireNotNull.isSome = !cap2.isNull)
 
 -- ============================================================================
-=======
->>>>>>> parent of a6c2dd1 (AL1-E: end-to-end null-cap rejection regression tests)
 -- AK7-J: Structural invariants
 -- ============================================================================
 
