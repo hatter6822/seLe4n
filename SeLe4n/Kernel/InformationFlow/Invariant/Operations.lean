@@ -3406,12 +3406,38 @@ theorem setMCPriorityOp_preserves_projection
       · simp at hStep
   · simp at hStep
 
--- Note: schedContextBind/Unbind/Configure preservation theorems require
--- careful handling of Lean's internal record-update encoding (the `have __src`
--- machinery) which prevents direct `rw` application of the RunQueue frame
--- lemmas. Tracked as AK6-F continuation work — the composition theorem
--- for dispatchCapabilityOnly can still use the existing hArmProj-based
--- thin bridge for these arms while per-arm discharge lemmas are proven
--- separately in follow-up commits.
+-- ============================================================================
+-- AK6-F.11: lookupServiceByCap state + projection preservation
+-- ============================================================================
+
+/-- AK6-F.11: `lookupServiceByCap` is a read-only state query. On success
+    it returns `(reg, st)` with state unchanged; on error it returns
+    `.error _`. This helper extracts the state equality from a success
+    result. -/
+theorem lookupServiceByCap_preserves_state
+    (epId : SeLe4n.ObjId) (st : SystemState)
+    (reg : SeLe4n.Model.ServiceRegistration) (st' : SystemState)
+    (hStep : SeLe4n.Kernel.lookupServiceByCap epId st = .ok (reg, st')) :
+    st' = st := by
+  unfold SeLe4n.Kernel.lookupServiceByCap at hStep
+  -- hStep has shape: (let result := fold …; match result with | some r => .ok (r, st) | none => .error _) = .ok (reg, st')
+  -- In the success branch, the state in `.ok (r, st)` is literally `st`, so st' = st.
+  cases hRes : (st.serviceRegistry.fold (init := none) _)
+    with
+    | none => rw [hRes] at hStep; simp at hStep
+    | some r =>
+        rw [hRes] at hStep
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact hStep.2.symm
+
+/-- AK6-F.11: Corollary for NI composition — `lookupServiceByCap`
+    preserves the observer's projection trivially because `st' = st`. -/
+theorem lookupServiceByCap_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (epId : SeLe4n.ObjId) (st : SystemState)
+    (reg : SeLe4n.Model.ServiceRegistration) (st' : SystemState)
+    (hStep : SeLe4n.Kernel.lookupServiceByCap epId st = .ok (reg, st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  rw [lookupServiceByCap_preserves_state epId st reg st' hStep]
 
 
