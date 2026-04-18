@@ -1324,6 +1324,91 @@ def getUntyped? (st : SystemState) (id : SeLe4n.ObjId) : Option UntypedObject :=
   | some (.untyped ut) => some ut
   | _                  => none
 
+-- ============================================================================
+-- AL2-B (WS-AL / AK7-F.cascade): kind-discrimination sanity lemmas.
+--
+-- Each lemma witnesses the property that if the stored object at `id`
+-- is a specific variant, every *other* typed helper returns `none` on
+-- the same id. These are the foundation for AL6's `storeObjectChecked`
+-- kind-guard and its composition into `crossSubsystemInvariant`.
+-- Proofs are single-line `simp` on the helper definition + the stored-
+-- object witness (mechanical by `rfl` after unfolding).
+-- ============================================================================
+
+/-- AL2-B: If the store holds a SchedContext at `tid.toObjId`, the typed
+TCB helper returns `none`. -/
+theorem getTcb?_none_of_schedContext (st : SystemState) (tid : SeLe4n.ThreadId)
+    (sc : SeLe4n.Kernel.SchedContext)
+    (h : st.objects[tid.toObjId]? = some (.schedContext sc)) :
+    st.getTcb? tid = none := by
+  simp [getTcb?, h]
+
+/-- AL2-B: If the store holds an Endpoint at `tid.toObjId`, the typed
+TCB helper returns `none`. -/
+theorem getTcb?_none_of_endpoint (st : SystemState) (tid : SeLe4n.ThreadId)
+    (ep : Endpoint)
+    (h : st.objects[tid.toObjId]? = some (.endpoint ep)) :
+    st.getTcb? tid = none := by
+  simp [getTcb?, h]
+
+/-- AL2-B: If the store holds a TCB at `scId.toObjId`, the typed
+SchedContext helper returns `none`. -/
+theorem getSchedContext?_none_of_tcb (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (t : TCB)
+    (h : st.objects[scId.toObjId]? = some (.tcb t)) :
+    st.getSchedContext? scId = none := by
+  simp [getSchedContext?, h]
+
+/-- AL2-B: If the store holds a TCB at `id`, the typed Endpoint helper
+returns `none`. -/
+theorem getEndpoint?_none_of_tcb (st : SystemState) (id : SeLe4n.ObjId)
+    (t : TCB) (h : st.objects[id]? = some (.tcb t)) :
+    st.getEndpoint? id = none := by
+  simp [getEndpoint?, h]
+
+/-- AL2-B: If the store holds a TCB at `id`, the typed Notification
+helper returns `none`. -/
+theorem getNotification?_none_of_tcb (st : SystemState) (id : SeLe4n.ObjId)
+    (t : TCB) (h : st.objects[id]? = some (.tcb t)) :
+    st.getNotification? id = none := by
+  simp [getNotification?, h]
+
+/-- AL2-B: If the store holds a TCB at `id`, the typed Untyped helper
+returns `none`. -/
+theorem getUntyped?_none_of_tcb (st : SystemState) (id : SeLe4n.ObjId)
+    (t : TCB) (h : st.objects[id]? = some (.tcb t)) :
+    st.getUntyped? id = none := by
+  simp [getUntyped?, h]
+
+/-- AL2-B: Unfolding lemma — `getTcb?` returns `some t` iff the store
+holds exactly `KernelObject.tcb t` at `tid.toObjId`. -/
+theorem getTcb?_eq_some_iff (st : SystemState) (tid : SeLe4n.ThreadId) (t : TCB) :
+    st.getTcb? tid = some t ↔ st.objects[tid.toObjId]? = some (.tcb t) := by
+  unfold getTcb?
+  split
+  · rename_i t' heq; constructor
+    · intro h; cases h; exact heq
+    · intro h; rw [h] at heq; cases heq; rfl
+  · rename_i hne; constructor
+    · intro h; cases h
+    · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
+/-- AL2-B: Unfolding lemma — `getSchedContext?` returns `some sc` iff
+the store holds exactly `KernelObject.schedContext sc` at
+`scId.toObjId`. -/
+theorem getSchedContext?_eq_some_iff (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (sc : SeLe4n.Kernel.SchedContext) :
+    st.getSchedContext? scId = some sc ↔
+      st.objects[scId.toObjId]? = some (.schedContext sc) := by
+  unfold getSchedContext?
+  split
+  · rename_i sc' heq; constructor
+    · intro h; cases h; exact heq
+    · intro h; rw [h] at heq; cases heq; rfl
+  · rename_i hne; constructor
+    · intro h; cases h
+    · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
 /-- Read a capability from a typed slot reference. -/
 def lookupSlotCap (st : SystemState) (ref : SlotRef) : Option Capability :=
   match lookupCNode st ref.cnode with
