@@ -3406,10 +3406,12 @@ theorem setMCPriorityOp_preserves_projection
       · simp at hStep
   · simp at hStep
 
--- ============================================================================
--- AK6-F Step 5: schedContextBind preservation — partial structural proof
--- The remaining arm proof requires careful handling of nested let-bindings
--- inside the dispatch function. Tracked as continuation work.
--- ============================================================================
+-- Note: schedContextBind/Unbind/Configure preservation theorems require
+-- careful handling of Lean's internal record-update encoding (the `have __src`
+-- machinery) which prevents direct `rw` application of the RunQueue frame
+-- lemmas. Tracked as AK6-F continuation work — the composition theorem
+-- for dispatchCapabilityOnly can still use the existing hArmProj-based
+-- thin bridge for these arms while per-arm discharge lemmas are proven
+-- separately in follow-up commits.
 
 
