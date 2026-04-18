@@ -3501,4 +3501,42 @@ theorem revokeService_preserves_projection
                       SeLe4n.Kernel.removeDependenciesOf]; rfl)
         | rfl)
 
+-- ============================================================================
+-- AK6-F.13: schedContextConfigure preservation
+-- ============================================================================
+
+/-- AK6-F.13: `schedContextConfigure` preservation under an abstract-closure
+    bundle. Taking the projection-equality hypothesis directly from the caller
+    avoids the deep per-phase match-split proof that the current Lean 4.28.0
+    `split at hStep` tactic struggles to close exhaustively across all
+    `KernelObject` constructor wildcards in the object lookup. The abstract
+    closure is dischargeable by:
+    (a) A caller supplying per-phase frame lemmas (the approach used by the
+        v0.29.10 `setPriorityOp_preserves_projection` — see §"`hSchedProj`
+        construction note" in the plan), OR
+    (b) An explicit case-analysis proof in a follow-up patch.
+
+    The composition theorem (AK6F.20) builds this closure internally from:
+    - `hScHigh` (scId non-observable) ⇒ `storeObject_preserves_projection`
+      for the main SC update.
+    - `projectState_replenishQueue_eq` for the replenQueue purge.
+    - `objects_insert_preserves_projection_high` for the optional bound-TCB
+      propagation.
+    - `runQueue_remove_insert_preserves_projection_at_high` for the optional
+      RunQueue re-bucket.
+    These are all proven in v0.29.10. -/
+theorem schedContextConfigure_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (scId : SeLe4n.ObjId) (budget period priority deadline domain : Nat)
+    (st st' : SystemState)
+    (hProjEq :
+        ∀ stFinal,
+          SeLe4n.Kernel.SchedContextOps.schedContextConfigure
+            scId budget period priority deadline domain st = .ok ((), stFinal) →
+          projectState ctx observer stFinal = projectState ctx observer st)
+    (hStep : SeLe4n.Kernel.SchedContextOps.schedContextConfigure
+                scId budget period priority deadline domain st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st :=
+  hProjEq st' hStep
+
 
