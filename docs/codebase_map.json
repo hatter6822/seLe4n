@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-ak6-workstream-VM0m9",
-      "commit_sha": "5d1f75d4cf4e670bca25c6faccdfbb790eb02331",
-      "tree_sha": "7ba11f2c17c871504dfd8bd50555e3793f36d9b2",
-      "committed_at_utc": "2026-04-18T03:09:06+00:00"
+      "commit_sha": "87c073eab2ba48339b7275603ac0a94a7c00e92f",
+      "tree_sha": "f91dec2ebab4290ddae6afb8fe1dbfa04567b035",
+      "committed_at_utc": "2026-04-18T03:54:41+00:00"
     }
   },
   "source_sync": {
@@ -17,14 +17,14 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "87728a28222ef3513506589684dcad24e34970b1bb1cb38263e04f8a58d7f74c"
+    "source_digest": "b642dd01c8e434df243c7c9f3cee2f38e8360152c8e53058c773eeecb3da32b9"
   },
   "summary": {
     "module_count": 164,
     "declaration_count": 5287
   },
   "readme_sync": {
-    "version": "0.29.11",
+    "version": "0.29.12",
     "lean_toolchain": "v4.28.0",
     "production_files": 142,
     "production_loc": 99012,

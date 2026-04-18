@@ -1,3 +1,94 @@
+## v0.29.12 — AK6-F audit remediation (honest tiering, frame lemmas, runtime tests)
+
+End-to-end audit of Phase AK6 (Information Flow + SchedContext
+Correctness) as delivered in v0.29.11. Four material findings
+addressed; zero sorry/axiom regressions.
+
+### Finding #1 (docstring accuracy): substantiveness tiering corrected
+
+v0.29.11 CHANGELOG + `API.lean` docstring claimed "7/14 fully
+substantive". Post-audit verification against actual proof bodies:
+
+- `setPriorityOp_preserves_projection` takes `hSchedProj` (external
+  `schedule` call closure) — NOT fully substantive.
+- `setMCPriorityOp_preserves_projection` — mirror of above, same caveat.
+- `revokeService_preserves_projection` takes `hServiceProjEq`
+  (projection-layer fold-induction closure).
+
+Corrected 3-tier classification (across CHANGELOG, CLAUDE.md,
+API.lean:1996-2067, docs/WORKSTREAM_HISTORY.md):
+- **5/14 truly substantive** (no closures): `.cspaceDelete`,
+  `.serviceQuery`, `.tcbSetIPCBuffer`, `.vspaceMap`, `.vspaceUnmap`.
+- **3/14 hybrid** (proof body substantive, ONE legitimate external
+  closure): `.tcbSetPriority`, `.tcbSetMCPriority`, `.serviceRevoke`.
+- **6/14 closure-form** with documented discharge recipes:
+  `.schedContextConfigure/Bind/Unbind`, `.lifecycleRetype`,
+  `.tcbSuspend/Resume`.
+
+### Finding #2 (actionable closure): frame lemmas exposed
+
+Added 3 named FRAME LEMMAS that provide substantively-proven building
+blocks a caller uses to discharge the `hProjEq` closure:
+
+- `resumeThread_frame_insert` — H3 `objects.insert tid.toObjId _` at
+  high tid.toObjId (composes `objects_insert_preserves_projection_high`).
+- `resumeThread_frame_ensureRunnable` — H4 `ensureRunnable st tid` at
+  thread-high tid (composes `ensureRunnable_preserves_projection`).
+- `schedContextBind_frame_runQueue_rebucket` — Z5-G3 runQueue
+  remove-then-insert at thread-high threadId (composes
+  `runQueue_remove_insert_preserves_projection_at_high`).
+
+Each of the 6 closure-form theorems' docstrings now enumerates the
+SPECIFIC pre-proven frame lemmas a caller composes to build `hProjEq`
+in ≈25-60 LOC. The closure-form tautology is thus converted to an
+ACTIONABLE API with documented discharge recipes.
+
+### Finding #3 (test coverage): AK6-G/H/I runtime tests
+
+v0.29.9 Phase AK6 audit delivered AK6-G (`projectKernelObject` strips
+`pendingMessage`/`timedOut`), AK6-H (`labelNonTriviality` rejects default
+context), and AK6-I (`cbs_bandwidth_bounded_tight` arithmetic), but
+none had runtime test coverage. Added 3 new runtime test groups to
+`tests/InformationFlowSuite.lean`:
+
+- AK6-G: Build TCB with `pendingMessage := some _` + `timedOut := true`;
+  verify `projectKernelObject` returns TCB with both fields stripped.
+- AK6-H: `isInsecureDefaultContext defaultLabelingContext = true`.
+- AK6-I: `100 * ⌈5000/1000⌉ = 500` arithmetic smoke-check.
+
+`lake exe information_flow_suite` now prints 4 new AK6-specific
+verification lines.
+
+### Finding #4 (doc drift): stale + misleading documentation
+
+Updated:
+- `CLAUDE.md` active-workstream bullet to reflect 3-tier classification.
+- `CHANGELOG.md` v0.29.11 block preserved verbatim; new v0.29.12 block.
+- `docs/WORKSTREAM_HISTORY.md` AK6-F entry rewritten with tiering.
+- `API.lean:1996-2067` docstring refreshed with discharge recipes.
+- `README.md` stale version badge (0.29.2) and table (0.29.1) both
+  bumped to 0.29.12 (not part of `check_version_sync.sh`'s scope).
+- `rust/Cargo.lock` refreshed via `cargo update -w`.
+
+### Verification
+
+- `lake build` (260 jobs) ✓
+- `test_smoke.sh` + `test_full.sh` ✓
+- `cargo test --workspace` (415 tests, 0 warnings) ✓
+- `lake exe information_flow_suite` (33+ checks including 4 new AK6) ✓
+- `check_version_sync.sh` ✓ (canonical 0.29.12 across all 14 tracked files)
+- `rg -n -w "axiom|sorry|TODO" SeLe4n Main.lean | grep -v TPI-D[0-9]` ✓ empty
+
+### Outstanding (AK6F.20b, tracked)
+
+Substantive discharge of the 6 closure-form theorems (~300 LOC
+aggregate) deferred. Blocker: Lean 4.28.0's `split`/`split_ifs` on
+deeply-nested `match`-based conditions inside `Except.ok` does not
+reliably destructure and generalize, producing metavariable leaks.
+Frame lemmas added in this audit are the building blocks a future
+substantive commit will compose once a stable destructuring idiom is
+available.
+
 ## v0.29.11 — AK6-F full per-arm per-op theorem coverage (14/14 named)
 
 Completes AK6-F per-arm NAMING coverage: every cap-only dispatch arm

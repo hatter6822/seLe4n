@@ -1993,7 +1993,7 @@ theorem dispatchWithCap_preservation_composition_witness :
     - Output: projection preservation over `dispatchCapabilityOnly decoded
       cap tid = some kop, kop st = .ok ((), st')`.
 
-    **Closure status (v0.29.11, post-audit classification):** `hArmProj`
+    **Closure status (v0.29.12, post-audit classification):** `hArmProj`
     remains externally-supplied, BUT every cap-only arm now has a NAMED
     per-op preservation theorem in `InformationFlow/Invariant/Operations.lean`
     that the caller can directly reference. The 14 arms fall into THREE
