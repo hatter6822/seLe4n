@@ -2011,15 +2011,27 @@ theorem dispatchWithCap_preservation_composition_witness :
 
     | Arm | Discharge |
     |-----|-----------|
-    | `.cspaceDelete` | `cspaceDeleteSlot_preserves_projection` (Operations.lean:906) |
-    | `.lifecycleRetype` | compose with `lifecycleRevokeDeleteRetype_preserves_projection` (line 2391) via `lifecycleRetypeDirectWithCleanup` frame |
-    | `.vspaceMap` | `vspaceMapPage_preserves_projection` (line 690); requires `hRootHigh` via ASID resolution |
-    | `.vspaceUnmap` | `vspaceUnmapPage_preserves_projection` (line 734) |
-    | `.serviceRevoke` | reduces to `cspaceRevoke_preserves_projection` (line 937) through the orchestrator |
+    | `.cspaceDelete` | `cspaceDeleteSlot_preserves_projection` (Operations.lean:969) |
+    | `.lifecycleRetype` | compose with `lifecycleRevokeDeleteRetype_preserves_projection` (Operations.lean:2454) via `lifecycleRetypeDirectWithCleanup` frame |
+    | `.vspaceMap` | `vspaceMapPage_preserves_projection` (Operations.lean:753); requires `hRootHigh` via ASID resolution |
+    | `.vspaceUnmap` | `vspaceUnmapPage_preserves_projection` (Operations.lean:797) |
+    | `.serviceRevoke` | reduces to `cspaceRevoke_preserves_projection` (Operations.lean:1000) through the orchestrator |
     | `.serviceQuery` | read-only (`lookupServiceByCap` does not mutate state) |
-    | `.schedContextConfigure/Bind/Unbind` | `storeObject_preserves_projection` at non-observable SchedContext target + TCB/RunQueue field preservation |
+    | `.schedContextConfigure/Bind/Unbind` | `storeObject_preserves_projection` / `objects_insert_preserves_projection_high` (Operations.lean) at non-observable SchedContext target + TCB/RunQueue field preservation |
+    | `.tcbSetIPCBuffer` | **`setIPCBufferOp_preserves_projection`** (Operations.lean — AK6-F.2b, v0.29.10) |
+    | `.tcbSetPriority/SetMCPriority` | `objects_insert_preserves_projection_high` at non-observable TCB/SC — uses the universal direct-insert frame lemma (Operations.lean — AK6-F Step A, v0.29.10) |
     | `.tcbSuspend/Resume` | `storeObject_preserves_projection` at non-observable TCB target |
-    -/
+
+    **New AK6-F building blocks in v0.29.10:**
+    - `objects_insert_preserves_projection_high` — universal direct-insert
+      frame lemma; enables discharge of every arm whose underlying op uses
+      `{ st with objects := st.objects.insert … }` instead of `storeObject`.
+    - `setIPCBufferOp_preserves_projection` — full per-op preservation for
+      the `.tcbSetIPCBuffer` arm.
+    - `projectState_replenishQueue_eq` and
+      `projectState_scheduler_current_cleared_when_high` — frame helpers
+      for scheduler-field mutations that don't affect projection
+      (`Projection.lean` — AK6-F.2a). -/
 theorem dispatchCapabilityOnly_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (decoded : SyscallDecodeResult) (cap : Capability) (tid : SeLe4n.ThreadId)

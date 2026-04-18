@@ -10,6 +10,14 @@ import SeLe4n.Kernel.InformationFlow.Invariant.Helpers
 import SeLe4n.Kernel.IPC.Operations.Donation
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Preservation
+-- AK6-F: Imports needed for per-op projection preservation theorems over
+-- the capability-only dispatch arms of the public API.
+import SeLe4n.Kernel.Architecture.IpcBufferValidation
+import SeLe4n.Kernel.SchedContext.PriorityManagement
+import SeLe4n.Kernel.SchedContext.Operations
+import SeLe4n.Kernel.Lifecycle.Suspend
+import SeLe4n.Kernel.Lifecycle.Operations
+import SeLe4n.Kernel.Service.Registry
 
 namespace SeLe4n.Kernel
 
@@ -2917,4 +2925,97 @@ theorem endpointReplyWithReversion_preserves_lowEquivalent
     (hProj₂ : projectState ctx observer s₂' = projectState ctx observer s₂) :
     lowEquivalent ctx observer s₁' s₂' := by
   unfold lowEquivalent; rw [hProj₁, hProj₂]; exact hLow
+
+-- ============================================================================
+-- AK6-F.2b: setIPCBufferOp preservation
+-- ============================================================================
+
+/-- AK6-F.2b (NI-H02): `setIPCBufferOp` preserves projection when the target
+    TCB is non-observable. The op delegates to `storeObject` after validation;
+    validation failures return the state unchanged.
+
+    Hypotheses:
+    - `hTcbHigh`: target TCB is non-observable.
+    - `hObjInv`: object store invariant.
+    - `hStep`: operation succeeded. -/
+theorem setIPCBufferOp_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (tid : SeLe4n.ThreadId) (addr : SeLe4n.VAddr)
+    (st st' : SystemState)
+    (hTcbHigh : objectObservable ctx observer tid.toObjId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : Architecture.IpcBufferValidation.setIPCBufferOp st tid addr = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold Architecture.IpcBufferValidation.setIPCBufferOp at hStep
+  cases hVal : Architecture.IpcBufferValidation.validateIpcBufferAddress st tid addr with
+  | error e => rw [hVal] at hStep; simp at hStep
+  | ok _ =>
+    rw [hVal] at hStep
+    cases hLook : (st.objects[tid.toObjId]? : Option KernelObject) with
+    | none => rw [hLook] at hStep; simp at hStep
+    | some obj =>
+      rw [hLook] at hStep
+      cases obj with
+      | tcb tcb =>
+        simp only at hStep
+        cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcBuffer := addr }) st with
+        | error e => rw [hStore] at hStep; simp at hStep
+        | ok pair =>
+          rw [hStore] at hStep
+          simp only [Except.ok.injEq] at hStep
+          subst hStep
+          exact storeObject_preserves_projection ctx observer st _ tid.toObjId _
+            hTcbHigh hObjInv hStore
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
+        simp at hStep
+
+-- ============================================================================
+-- AK6-F Step A: Universal direct-insert frame lemma
+-- ============================================================================
+
+/-- AK6-F (Step A): Direct `objects.insert` at a non-observable ID preserves
+    projection. This is the direct-insert analog of
+    `storeObject_preserves_projection` — used by ops that manipulate `.objects`
+    without going through the full `storeObject` pipeline (e.g.,
+    `updatePrioritySource`, `schedContextBind`, `suspendThread`'s per-phase
+    TCB updates).
+
+    Only `st.objects` differs between the two states; all other fields are
+    definitionally equal. Most projection components are therefore `rfl`;
+    only `projectObjects` needs the per-key analysis using
+    `RHTable.getElem?_insert_ne` at a different observable key. -/
+theorem objects_insert_preserves_projection_high
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hOidHigh : objectObservable ctx observer oid = false)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer
+      { st with objects := st.objects.insert oid obj } =
+    projectState ctx observer st := by
+  -- Only `projectObjects` reads `st.objects`. We show it equal separately;
+  -- all other components are definitionally equal.
+  have hProjObj : projectObjects ctx observer
+                    { st with objects := st.objects.insert oid obj } =
+                  projectObjects ctx observer st := by
+    funext o
+    simp only [projectObjects]
+    cases hObs : objectObservable ctx observer o with
+    | true =>
+      by_cases hEq : o = oid
+      · subst hEq; rw [hOidHigh] at hObs; exact absurd hObs (by simp)
+      · have hNeBeq : (oid == o) = false := by
+          match hMatch : oid == o with
+          | true => exact absurd (eq_of_beq hMatch).symm hEq
+          | false => rfl
+        simp only [RHTable_getElem?_eq_get?]
+        rw [RHTable_getElem?_insert st.objects oid obj hObjInv o]
+        simp [hNeBeq]
+    | false => rfl
+  -- All other projections don't read `st.objects` so they're defeq.
+  -- Use the full projectState expansion with ObservableState.mk constructor.
+  show (ObservableState.mk (projectObjects ctx observer
+                              { st with objects := st.objects.insert oid obj })
+          _ _ _ _ _ _ _ _ _ _ _ _) = _
+  rw [hProjObj]
+  rfl
 

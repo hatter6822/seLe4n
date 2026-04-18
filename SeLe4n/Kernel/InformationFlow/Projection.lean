@@ -558,6 +558,53 @@ theorem projectState_scThreadIndex_eq (ctx : LabelingContext) (observer : IfObse
     projectState ctx observer { st with scThreadIndex := idx } =
     projectState ctx observer st := by rfl
 
+/-- AK6-F.2a: Modifying `scheduler.replenishQueue` does not affect
+`projectState`. The CBS replenishment queue is a scheduler-internal
+ordering structure NOT included in the observable state projection, so
+mutations to it (including `ReplenishQueue.remove`, `popDue`, `insert`)
+are invisible to information-flow analysis. Used by
+`schedContextConfigure/Unbind` preservation. -/
+theorem projectState_replenishQueue_eq (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (rq : SeLe4n.Kernel.ReplenishQueue) :
+    projectState ctx observer
+      { st with scheduler := { st.scheduler with replenishQueue := rq } } =
+    projectState ctx observer st := by rfl
+
+/-- AK6-F.2a: Clearing `scheduler.current` when the previous current was
+non-observable preserves `projectCurrent`. `projectCurrent` returns
+`none` for non-observable current threads, and also `none` when
+`scheduler.current = none`. So when the previous current was already
+being projected as `none`, clearing it leaves the projection unchanged.
+
+This is the helper used by `schedContextUnbind` and `suspendThread` when
+they clear `current` before rescheduling. Only `projectCurrent` and
+`projectMachineRegs` read `scheduler.current`; both produce `none` when
+current is high or absent. -/
+theorem projectState_scheduler_current_cleared_when_high
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (hCurrHigh : ∀ t, st.scheduler.current = some t →
+                       threadObservable ctx observer t = false) :
+    projectState ctx observer
+      { st with scheduler := { st.scheduler with current := none } } =
+    projectState ctx observer st := by
+  -- Only projectCurrent and projectMachineRegs read scheduler.current.
+  have hCur : projectCurrent ctx observer
+                { st with scheduler := { st.scheduler with current := none } } =
+              projectCurrent ctx observer st := by
+    simp only [projectCurrent]
+    cases hSome : st.scheduler.current with
+    | none => rfl
+    | some tid => have := hCurrHigh tid hSome; simp [this]
+  have hMachine : projectMachineRegs ctx observer
+                    { st with scheduler := { st.scheduler with current := none } } =
+                  projectMachineRegs ctx observer st := by
+    simp only [projectMachineRegs]
+    cases hSome : st.scheduler.current with
+    | none => rfl
+    | some tid => have := hCurrHigh tid hSome; simp [this]
+  simp only [projectState]
+  congr 1 <;> first | rfl | exact hCur | exact hMachine
+
 /-- Two states are low-equivalent when their observer projections are equal. -/
 def lowEquivalent (ctx : LabelingContext) (observer : IfObserver) (s₁ s₂ : SystemState) : Prop :=
   projectState ctx observer s₁ = projectState ctx observer s₂

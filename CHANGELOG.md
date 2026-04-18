@@ -1,3 +1,40 @@
+## v0.29.10 — AK6-F substantive closure (incremental)
+
+Builds on v0.29.9 AK6-F by adding the first set of per-op preservation
+proofs that substantively discharge `dispatchCapabilityOnly`'s projection-
+preservation obligation for individual arms. Three new theorems form the
+foundation for further per-arm discharge work:
+
+1. **`objects_insert_preserves_projection_high`** — universal direct-
+   insert frame lemma: modifying only `st.objects` via `RHTable.insert`
+   at a non-observable ObjId preserves projection. This is the analog of
+   `storeObject_preserves_projection` for the many kernel operations
+   (`updatePrioritySource`, `schedContextBind`, etc.) that mutate the
+   object map directly rather than through the full `storeObject`
+   pipeline.
+
+2. **`setIPCBufferOp_preserves_projection`** — first full per-op
+   projection-preservation proof for a previously-undischarged cap-only
+   arm (`.tcbSetIPCBuffer`). Uses `storeObject_preserves_projection`
+   after validation.
+
+3. **Frame helpers in `Projection.lean`**:
+   - `projectState_replenishQueue_eq` — mutating only
+     `scheduler.replenishQueue` preserves projection.
+   - `projectState_scheduler_current_cleared_when_high` — clearing
+     `scheduler.current` when the previous current was non-observable
+     preserves projection.
+
+These additions set up the pattern (and provide the building blocks) for
+closing the remaining 13 cap-only arms in follow-up work. The
+`dispatchCapabilityOnly_preserves_projection` theorem's docstring is
+updated to reference the new building blocks and per-arm discharge table.
+
+Gate: `lake build` (260 jobs) + `test_smoke.sh` + `check_version_sync.sh`
++ zero `sorry` / `axiom`.
+
+---
+
 ## v0.29.9 — WS-AK Phase AK6 Information Flow + SchedContext Correctness
 
 Phase AK6 of the v0.29.0 pre-release hardening audit. Ten sub-tasks
