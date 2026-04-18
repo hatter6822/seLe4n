@@ -361,6 +361,91 @@ def al1E_03_move_from_null_rejected : IO Unit := do
       throw <| IO.userError "al1E-03 move from null should have failed"
 
 -- ============================================================================
+-- AL2-C (WS-AL / AK7-F.cascade): runtime coverage for the 5 per-variant
+-- getX? helpers. Each test stores a single KernelObject at a known ObjId
+-- and verifies (1) the matching typed helper returns `some`, (2) every
+-- other typed helper on the same id returns `none`.
+-- ============================================================================
+
+/-- Minimal TCB fixture for AL2-C tests. -/
+private def minimalTcb (tid : ThreadId) : TCB :=
+  { tid := tid
+    priority := ⟨0⟩
+    domain := ⟨0⟩
+    cspaceRoot := ⟨0⟩
+    vspaceRoot := ⟨0⟩
+    ipcBuffer := ⟨0⟩ }
+
+/-- Minimal SchedContext fixture for AL2-C tests. -/
+private def minimalSchedContext (scId : SchedContextId) : SeLe4n.Kernel.SchedContext :=
+  { scId := scId
+    budget := ⟨1⟩
+    period := ⟨10⟩
+    priority := ⟨0⟩
+    deadline := ⟨0⟩
+    domain := ⟨0⟩
+    budgetRemaining := ⟨1⟩ }
+
+/-- AL2-C-01: Store a TCB; verify getTcb? succeeds, getSchedContext? fails. -/
+def al2C_01_getTcb_discriminates : IO Unit := do
+  let tid : ThreadId := ⟨42⟩
+  let scId : SchedContextId := ⟨42⟩
+  let t := minimalTcb tid
+  let base : SystemState := default
+  let st : SystemState :=
+    { base with objects := base.objects.insert tid.toObjId (.tcb t) }
+  expect "al2C-01a getTcb? returns some" (st.getTcb? tid |>.isSome)
+  expect "al2C-01b getSchedContext? returns none" (st.getSchedContext? scId |>.isNone)
+
+/-- AL2-C-02: Store a SchedContext; verify getSchedContext? succeeds,
+getTcb? fails on the same id. -/
+def al2C_02_getSchedContext_discriminates : IO Unit := do
+  let tid : ThreadId := ⟨99⟩
+  let scId : SchedContextId := ⟨99⟩
+  let sc := minimalSchedContext scId
+  let base : SystemState := default
+  let st : SystemState :=
+    { base with objects := base.objects.insert scId.toObjId (.schedContext sc) }
+  expect "al2C-02a getSchedContext? returns some" (st.getSchedContext? scId |>.isSome)
+  expect "al2C-02b getTcb? returns none" (st.getTcb? tid |>.isNone)
+
+/-- AL2-C-03: Store an Endpoint; verify getEndpoint? succeeds, getTcb? and
+getNotification? fail. -/
+def al2C_03_getEndpoint_discriminates : IO Unit := do
+  let id : ObjId := ⟨40⟩
+  let tid : ThreadId := ⟨40⟩
+  let ep : Endpoint := {}
+  let base : SystemState := default
+  let st : SystemState :=
+    { base with objects := base.objects.insert id (.endpoint ep) }
+  expect "al2C-03a getEndpoint? returns some" (st.getEndpoint? id |>.isSome)
+  expect "al2C-03b getTcb? returns none" (st.getTcb? tid |>.isNone)
+  expect "al2C-03c getNotification? returns none" (st.getNotification? id |>.isNone)
+
+/-- AL2-C-04: Store a Notification; verify getNotification? succeeds,
+getEndpoint? fails. -/
+def al2C_04_getNotification_discriminates : IO Unit := do
+  let id : ObjId := ⟨50⟩
+  let ntfn : Notification := { state := .idle, waitingThreads := [] }
+  let base : SystemState := default
+  let st : SystemState :=
+    { base with objects := base.objects.insert id (.notification ntfn) }
+  expect "al2C-04a getNotification? returns some" (st.getNotification? id |>.isSome)
+  expect "al2C-04b getEndpoint? returns none" (st.getEndpoint? id |>.isNone)
+
+/-- AL2-C-05: Store an UntypedObject; verify getUntyped? succeeds,
+getTcb? fails. -/
+def al2C_05_getUntyped_discriminates : IO Unit := do
+  let id : ObjId := ⟨60⟩
+  let tid : ThreadId := ⟨60⟩
+  let ut : UntypedObject := { regionBase := ⟨0⟩, regionSize := 4096 }
+  let base : SystemState := default
+  let st : SystemState :=
+    { base with objects := base.objects.insert id (.untyped ut) }
+  expect "al2C-05a getUntyped? returns some" (st.getUntyped? id |>.isSome)
+  expect "al2C-05b getTcb? returns none" (st.getTcb? tid |>.isNone)
+
+-- ============================================================================
 -- AK7-J: Structural invariants
 -- ============================================================================
 
@@ -459,6 +544,12 @@ def main : IO Unit := do
   al1E_01_mint_from_null_rejected
   al1E_02_copy_from_null_rejected
   al1E_03_move_from_null_rejected
+  -- AL2-C (WS-AL): kind-verified lookup helpers discriminate by variant
+  al2C_01_getTcb_discriminates
+  al2C_02_getSchedContext_discriminates
+  al2C_03_getEndpoint_discriminates
+  al2C_04_getNotification_discriminates
+  al2C_05_getUntyped_discriminates
   -- AK7-J
   ak7J_01_cdt_counter_overflow
   ak7J_02_cdt_counter_ok
