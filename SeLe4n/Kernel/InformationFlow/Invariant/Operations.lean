@@ -3440,4 +3440,65 @@ theorem lookupServiceByCap_preserves_projection
     projectState ctx observer st' = projectState ctx observer st := by
   rw [lookupServiceByCap_preserves_state epId st reg st' hStep]
 
+-- ============================================================================
+-- AK6-F.12: revokeService preservation
+-- ============================================================================
+
+/-- AK6-F.12: `revokeService` preserves projection when the revoked
+    service is non-observable AND the projection-service-registry is
+    already extensionally preserved across the operation.
+
+    **Design note on hypothesis `hServiceProjEq`**: `revokeService` calls
+    `removeDependenciesOf` which performs an RHTable fold that may
+    rewrite entries at *other* keys (filtering the revoked sid from
+    their dependency lists). Proving general preservation of
+    `projectServiceRegistry` would require a fold-induction lemma at
+    the RHTable layer that is out of scope for AK6-F. Instead we take
+    the extensional equality as a hypothesis, to be discharged by the
+    caller under either (a) `LabelingContextValid.serviceDepClosure`
+    (no observable service depends on a non-observable one) or (b) a
+    future RHTable fold-extensionality theorem. This is identical in
+    spirit to the `hSchedProj` closure parameter used in
+    `setPriorityOp_preserves_projection` — it isolates a cleanly
+    externalised obligation at the projection layer. -/
+theorem revokeService_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (sid : SeLe4n.ServiceId) (st st' : SystemState)
+    (hServiceProjEq :
+        ∀ stFinal, (SeLe4n.Kernel.revokeService sid st = .ok ((), stFinal)) →
+        projectServicePresence ctx observer stFinal =
+          projectServicePresence ctx observer st ∧
+        projectServiceRegistry ctx observer stFinal =
+          projectServiceRegistry ctx observer st)
+    (hStep : SeLe4n.Kernel.revokeService sid st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  -- Extract projection equalities directly from the hypothesis using hStep.
+  have hProj := hServiceProjEq st' hStep
+  obtain ⟨hPresence, hRegistry⟩ := hProj
+  -- Now reason about the structure of st'.
+  unfold SeLe4n.Kernel.revokeService at hStep
+  split at hStep
+  · simp at hStep  -- not found: contradicts .ok
+  · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+    obtain ⟨_, hStEq⟩ := hStep
+    subst hStEq
+    -- st' = removeDependenciesOf { st with serviceRegistry := erase } sid
+    -- All non-service projection components are preserved because:
+    --   - serviceRegistry.erase only touches the serviceRegistry FIELD
+    --     (not in any projection)
+    --   - removeDependenciesOf preserves objects/scheduler/lifecycle/machine
+    --     (proven: removeDependenciesOf_objects_eq etc.)
+    simp only [projectState]
+    congr 1 <;>
+      (first
+        | exact hPresence
+        | exact hRegistry
+        | (simp only [projectObjects, projectRunnable, projectCurrent,
+                      projectActiveDomain, projectIrqHandlers, projectObjectIndex,
+                      projectDomainTimeRemaining, projectDomainSchedule,
+                      projectDomainScheduleIndex, projectMachineRegs,
+                      projectMemory, SchedulerState.runnable,
+                      SeLe4n.Kernel.removeDependenciesOf]; rfl)
+        | rfl)
+
 
