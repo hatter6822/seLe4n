@@ -670,6 +670,35 @@ theorem lookup_freeze_scThreadIndex (ist : IntermediateState) (k : SeLe4n.SchedC
     ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 -- ============================================================================
+-- AK7-B (F-H02 / HIGH): Lookup-equivalence for scheduler runQueue sub-maps
+-- ============================================================================
+
+/-- AK7-B: Lookup equivalence for `runQueue.byPriority` across freeze.
+Mirrors `lookup_freeze_serviceRegistry` for the scheduler priority-indexed
+thread queues. -/
+theorem lookup_freeze_byPriority (ist : IntermediateState) (p : SeLe4n.Priority) :
+    ist.state.scheduler.runQueue.byPriority.get? p =
+      (freeze ist).scheduler.byPriority.get? p := by
+  exact freezeMap_get?_eq ist.state.scheduler.runQueue.byPriority p
+    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.1.1
+
+/-- AK7-B: Lookup equivalence for `runQueue.threadPriority` across freeze. -/
+theorem lookup_freeze_threadPriority (ist : IntermediateState) (tid : SeLe4n.ThreadId) :
+    ist.state.scheduler.runQueue.threadPriority.get? tid =
+      (freeze ist).scheduler.threadPriority.get? tid := by
+  exact freezeMap_get?_eq ist.state.scheduler.runQueue.threadPriority tid
+    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.1.1
+
+/-- AK7-B: Lookup equivalence for `runQueue.membership` (RHSet) across freeze.
+`membership` wraps an underlying `RHTable κ Unit`; the freeze discards the
+set wrapper and keeps the table. -/
+theorem lookup_freeze_membership (ist : IntermediateState) (tid : SeLe4n.ThreadId) :
+    ist.state.scheduler.runQueue.membership.table.get? tid =
+      (freeze ist).scheduler.membership.get? tid := by
+  exact freezeMap_get?_eq ist.state.scheduler.runQueue.membership.table tid
+    ist.hAllTables.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1.1
+
+-- ============================================================================
 -- Q6-B: CNode Radix Lookup Equivalence
 -- ============================================================================
 
@@ -989,6 +1018,81 @@ theorem freezeMap_no_duplicates [BEq κ] [Hashable κ] [LawfulBEq κ]
       (rt.toList[i].1 == rt.toList[j].1) = true → i = j :=
   toList_noDupKeys rt hExt
 
+-- ============================================================================
+-- AK7-H (F-M06 / MEDIUM): freezeMap wellFormed preservation
+-- ============================================================================
+
+/-- AK7-H helper: The foldl in `freezeMap` only stores counter values that
+lie strictly below `entries.length`. Specifically, after folding over `l`
+starting from `(init, n)` with a well-formed `init` whose values are all
+`< n`, any value retrieved from the resulting indexMap is `< n + l.length`.
+
+The `init.invExt` hypothesis is threaded through the induction so that
+`RHTable.insert` preserves `invExt` and the lookup laws fire correctly. -/
+private theorem freezeMap_foldl_values_bounded [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (l : List (κ × ν)) :
+    ∀ (init : RHTable κ Nat) (n : Nat) (k : κ) (idx : Nat),
+      init.invExt →
+      (∀ k' idx', init.get? k' = some idx' → idx' < n) →
+      (l.foldl (fun (acc, i) (k, _) => (acc.insert k i, i + 1)) (init, n)).1.get? k = some idx →
+      idx < n + l.length := by
+  classical
+  induction l with
+  | nil =>
+    intro init n k idx _hExt hInitBound hGet
+    simp [List.foldl] at hGet
+    have : idx < n := hInitBound k idx hGet
+    simpa using this
+  | cons hd tl ih =>
+    intro init n k idx hExt hInitBound hGet
+    simp only [List.foldl] at hGet
+    -- After one insert step, the new init's bound is that values are < n + 1.
+    have hInsExt : (init.insert hd.1 n).invExt :=
+      init.insert_preserves_invExt hd.1 n hExt
+    have hNextBound : ∀ k' idx', (init.insert hd.1 n).get? k' = some idx' → idx' < n + 1 := by
+      intro k' idx' hGet'
+      by_cases hEq : (hd.1 == k') = true
+      · have hEq' : hd.1 = k' := eq_of_beq hEq
+        subst hEq'
+        rw [RHTable.getElem?_insert_self init hd.1 n hExt] at hGet'
+        cases hGet'; omega
+      · rw [RHTable.getElem?_insert_ne init hd.1 k' n hEq hExt] at hGet'
+        have := hInitBound k' idx' hGet'
+        omega
+    have hRec := ih (init.insert hd.1 n) (n + 1) k idx hInsExt hNextBound hGet
+    simp [List.length_cons]; omega
+
+/-- AK7-H (F-M06 / MEDIUM): `freezeMap rt` produces a well-formed FrozenMap —
+every index stored in the built `indexMap` is strictly less than the size
+of the data array. This is the preservation proof required by
+`FrozenMap.wellFormed`: `get?` can never silently fall through to `none`
+because of an out-of-bounds index.
+
+Proof: `data.size = toList.length` by `freezeMap_data_size`. The foldl
+that builds `indexMap` starts with an empty RHTable (which vacuously
+bounds all keys) and counter `0`, and at each insert puts the current
+counter value (strictly less than the current counter + remaining
+length). After folding `toList.length` entries, any stored value is
+`< 0 + toList.length = data.size`. -/
+theorem freezeMap_wellFormed [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (rt : RHTable κ ν) : (freezeMap rt).wellFormed := by
+  classical
+  intro k idx hGet
+  -- Unfold the frozen map and reduce to the foldl bound.
+  simp only [freezeMap] at hGet
+  simp only [freezeMap, List.size_toArray, List.length_map]
+  -- Initial RHTable.empty is vacuously bounded — it has no entries.
+  have hEmpty : (RHTable.empty 16 (by omega) : RHTable κ Nat).invExt :=
+    RHTable.empty_invExt 16 (by omega)
+  have hInitBound : ∀ k' idx',
+      (RHTable.empty 16 (by omega) : RHTable κ Nat).get? k' = some idx' → idx' < 0 := by
+    intro k' idx' hGetInit
+    rw [RHTable.getElem?_empty 16 (by omega) k'] at hGetInit
+    cases hGetInit
+  have := freezeMap_foldl_values_bounded rt.toList
+    (RHTable.empty 16 (by omega)) 0 k idx hEmpty hInitBound hGet
+  simpa using this
+
 /-- Q6-C5: Total coverage — every key present in the source table has a valid
 index in the frozen map's data array. -/
 theorem freezeMap_total_coverage [BEq κ] [Hashable κ] [LawfulBEq κ]
@@ -1144,18 +1248,74 @@ theorem apiInvariantBundle_frozenDirect_eq_objectsOnly (fst : FrozenSystemState)
   rfl
 
 /-- AK7-B (F-H02 / HIGH): Strengthened frozen invariant that additionally
-requires field agreement on non-object state — machine, TLB, CDT edges,
-lifecycle metadata, and scheduler substructure. This closes the audit
-finding that non-`objects` mutations vacuously preserved
-`apiInvariantBundle_frozenDirect`: with the full variant, any change to
-machine state, TLB, CDT, or scheduler membership must be witnessed by a
-`SystemState` that also satisfies `apiInvariantBundle`. -/
+requires lookup-equivalence on every `FrozenMap` field and bitwise
+equality on every non-map field. This closes the audit finding that
+non-`objects` mutations vacuously preserved `apiInvariantBundle_frozenDirect`.
+
+The conjuncts cover every field of `FrozenSystemState`:
+
+- **Map fields (lookup-equivalent via `freezeMap`):** `objects` (with
+  `freezeObject`), `irqHandlers`, `asidTable`, `serviceRegistry`,
+  `interfaceRegistry`, `services`, `cdtChildMap`, `cdtParentMap`,
+  `cdtSlotNode`, `cdtNodeSlot`, `objectTypes`, `capabilityRefs`,
+  `objectIndexSet`, `scThreadIndex`, plus scheduler sub-maps
+  (`byPriority`, `threadPriority`, `membership`).
+- **Bitwise non-map fields:** `machine`, `objectIndex`, `tlb`,
+  `cdtNextNode`, `cdtEdges`, `scheduler.{current, activeDomain,
+  domainTimeRemaining, domainSchedule, domainScheduleIndex,
+  configDefaultTimeSlice, replenishQueue}`.
+
+Any change to a field of `FrozenSystemState` that cannot be witnessed
+by a `SystemState` satisfying `apiInvariantBundle` now falsifies the
+predicate — closing the "vacuous preservation" hole cited in F-H02. -/
 def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
   ∃ (sst : SystemState),
     SeLe4n.Kernel.apiInvariantBundle sst ∧
-    -- Objects projection (same as frozenDirect)
+    -- --------------------------------------------------------------------
+    -- FrozenMap fields: lookup-equivalence
+    -- --------------------------------------------------------------------
+    -- Core object store (with per-object freeze)
     (∀ (oid : ObjId), (sst.objects.get? oid).map freezeObject = fst.objects.get? oid) ∧
-    -- AK7-B: Non-object fields — bitwise equality with the witness state
+    -- IRQ / ASID / service tables
+    (∀ (irq : SeLe4n.Irq),
+        sst.irqHandlers.get? irq = fst.irqHandlers.get? irq) ∧
+    (∀ (asid : SeLe4n.ASID),
+        sst.asidTable.get? asid = fst.asidTable.get? asid) ∧
+    (∀ (sid : ServiceId),
+        sst.serviceRegistry.get? sid = fst.serviceRegistry.get? sid) ∧
+    (∀ (iid : SeLe4n.InterfaceId),
+        sst.interfaceRegistry.get? iid = fst.interfaceRegistry.get? iid) ∧
+    (∀ (sid : ServiceId),
+        sst.services.get? sid = fst.services.get? sid) ∧
+    -- CDT maps (all four dual indices)
+    (∀ (k : CdtNodeId),
+        sst.cdt.childMap.get? k = fst.cdtChildMap.get? k) ∧
+    (∀ (k : CdtNodeId),
+        sst.cdt.parentMap.get? k = fst.cdtParentMap.get? k) ∧
+    (∀ (k : SlotRef),
+        sst.cdtSlotNode.get? k = fst.cdtSlotNode.get? k) ∧
+    (∀ (k : CdtNodeId),
+        sst.cdtNodeSlot.get? k = fst.cdtNodeSlot.get? k) ∧
+    -- Lifecycle metadata
+    (∀ (oid : ObjId),
+        sst.lifecycle.objectTypes.get? oid = fst.objectTypes.get? oid) ∧
+    (∀ (ref : SlotRef),
+        sst.lifecycle.capabilityRefs.get? ref = fst.capabilityRefs.get? ref) ∧
+    -- Shadow indices
+    (∀ (oid : ObjId),
+        sst.objectIndexSet.table.get? oid = fst.objectIndexSet.get? oid) ∧
+    (∀ (scId : SeLe4n.SchedContextId),
+        sst.scThreadIndex.get? scId = fst.scThreadIndex.get? scId) ∧
+    -- Scheduler sub-maps
+    (∀ (p : SeLe4n.Priority),
+        sst.scheduler.runQueue.byPriority.get? p = fst.scheduler.byPriority.get? p) ∧
+    (∀ (tid : SeLe4n.ThreadId),
+        sst.scheduler.runQueue.threadPriority.get? tid = fst.scheduler.threadPriority.get? tid) ∧
+    (∀ (tid : SeLe4n.ThreadId),
+        sst.scheduler.runQueue.membership.table.get? tid = fst.scheduler.membership.get? tid) ∧
+    -- --------------------------------------------------------------------
+    -- Non-map fields: bitwise equality
+    -- --------------------------------------------------------------------
     sst.machine = fst.machine ∧
     sst.objectIndex = fst.objectIndex ∧
     sst.tlb = fst.tlb ∧
@@ -1166,7 +1326,9 @@ def apiInvariantBundle_frozenDirectFull (fst : FrozenSystemState) : Prop :=
     sst.scheduler.domainTimeRemaining = fst.scheduler.domainTimeRemaining ∧
     sst.scheduler.domainSchedule = fst.scheduler.domainSchedule ∧
     sst.scheduler.domainScheduleIndex = fst.scheduler.domainScheduleIndex ∧
-    sst.scheduler.configDefaultTimeSlice = fst.scheduler.configDefaultTimeSlice
+    sst.scheduler.configDefaultTimeSlice = fst.scheduler.configDefaultTimeSlice ∧
+    sst.scheduler.replenishQueue.entries = fst.scheduler.replenishQueue.entries ∧
+    sst.scheduler.replenishQueue.size = fst.scheduler.replenishQueue.size
 
 /-- AK7-B (F-H02): The full variant implies the objects-only variant. -/
 theorem apiInvariantBundle_frozenDirectFull_implies_objectsOnly
@@ -1178,13 +1340,34 @@ theorem apiInvariantBundle_frozenDirectFull_implies_objectsOnly
 /-- AK7-B (F-H02): At freeze time, the full frozen invariant holds whenever
 the source intermediate state's `apiInvariantBundle` holds. This is the
 direct counterpart to `freeze_preserves_direct_invariants`, but stronger
-— the resulting `FrozenSystemState` carries bitwise agreement on all
-non-object fields with the witness state. -/
+— the resulting `FrozenSystemState` carries lookup-equivalence on every
+map field and bitwise agreement on every non-map field with the witness
+state. -/
 theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
     (hInv : SeLe4n.Kernel.apiInvariantBundle ist.state) :
     apiInvariantBundle_frozenDirectFull (freeze ist) := by
-  refine ⟨ist.state, hInv, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨ist.state, hInv,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+    ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  -- Map fields (17)
   · exact fun oid => lookup_freeze_objects ist oid
+  · exact fun irq => lookup_freeze_irqHandlers ist irq
+  · exact fun asid => lookup_freeze_asidTable ist asid
+  · exact fun sid => lookup_freeze_serviceRegistry ist sid
+  · exact fun iid => lookup_freeze_interfaceRegistry ist iid
+  · exact fun sid => lookup_freeze_services ist sid
+  · exact fun k => lookup_freeze_cdtChildMap ist k
+  · exact fun k => lookup_freeze_cdtParentMap ist k
+  · exact fun k => lookup_freeze_cdtSlotNode ist k
+  · exact fun k => lookup_freeze_cdtNodeSlot ist k
+  · exact fun oid => lookup_freeze_objectTypes ist oid
+  · exact fun ref => lookup_freeze_capabilityRefs ist ref
+  · exact fun oid => lookup_freeze_objectIndexSet ist oid
+  · exact fun scId => lookup_freeze_scThreadIndex ist scId
+  · exact fun p => lookup_freeze_byPriority ist p
+  · exact fun tid => lookup_freeze_threadPriority ist tid
+  · exact fun tid => lookup_freeze_membership ist tid
+  -- Non-map fields (13)
   · exact (freeze_preserves_machine ist).symm
   · exact (freeze_preserves_objectIndex ist).symm
   · exact (freeze_preserves_tlb ist).symm
@@ -1196,6 +1379,8 @@ theorem freeze_preserves_direct_invariants_full (ist : IntermediateState)
   · exact (freeze_preserves_domainSchedule ist).symm
   · rfl
   · exact (freeze_preserves_configDefaultTimeSlice ist).symm
+  · rfl
+  · rfl
 
 /-- R6-A.3: `FrozenMap.set` preserves the direct frozen invariant when the
     mutated object corresponds to a valid `SystemState` mutation.

@@ -1040,7 +1040,19 @@ theorem bootFromPlatform_machine_physicalAddressWidth (config : PlatformConfig) 
   rw [applyMachineConfig_physicalAddressWidth]
 
 /-- AH2-F: Non-config machine fields (regs, memory, timer, systemRegisters,
-    interruptsEnabled) are preserved from default after boot. -/
+    interruptsEnabled) are preserved from default after boot.
+
+    AK7-K (F-L4 / LOW) — boot interrupt-enable window: the Lean model's
+    `bootFromPlatform` does NOT enable interrupts. The default
+    `MachineState.interruptsEnabled = false` (AJ3-E) is preserved through
+    boot, matching ARM64 reset state. On real hardware the Rust HAL boot
+    sequence (`sele4n-hal/src/boot.rs` `rust_boot_main`) enables
+    interrupts in **Phase 3** (after GIC init + timer programming) via
+    `interrupts::enable_irq()`. Between MMU enable (Phase 1) and GIC init
+    (Phase 3) the kernel runs with IRQs masked — this is the
+    interrupt-enable window. `tests/InterruptDispatchSuite.lean` covers
+    the Lean-side interrupt path; the Phase 3 enable is a HAL-layer
+    obligation. -/
 theorem bootFromPlatform_machine_non_config_fields (config : PlatformConfig) :
     (bootFromPlatform config).state.machine.regs = (default : SystemState).machine.regs ∧
     (bootFromPlatform config).state.machine.memory = (default : SystemState).machine.memory ∧

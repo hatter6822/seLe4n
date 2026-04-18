@@ -116,3 +116,8 @@ root = "tests.DecodeValidationSuite"
 [[lean_exe]]
 name = "abi_roundtrip_suite"
 root = "tests.AbiRoundtripSuite"
+
+# AK7: Foundational Model regression suite
+[[lean_exe]]
+name = "ak7_regression_suite"
+root = "tests.Ak7RegressionSuite"

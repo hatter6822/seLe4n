@@ -1,9 +1,75 @@
-## v0.29.13 — AK7 Foundational Model (Prelude / Machine / Model)
+## v0.29.13 — AK7 Foundational Model + post-audit remediation
 
 Pre-1.0 Release Hardening (v0.29.0 audit) — Phase AK7: Foundational
 Model (`Prelude.lean`, `Machine.lean`, `Model/*.lean`). 11 sub-tasks
 (AK7-A..AK7-K) addressing 2 HIGH, 11 MEDIUM, 15 LOW foundational
-findings. Zero sorry/axiom regressions.
+findings. Zero sorry/axiom regressions. End-to-end post-audit
+remediation addresses 6 material gaps found between the initial
+implementation and the audit plan's intent.
+
+### Post-audit remediation (AK7 audit, this release)
+
+**(1) AK7-B coverage gap — HIGH.** Initial `apiInvariantBundle_frozenDirectFull`
+covered only 6 `FrozenSystemState` fields, leaving services, IRQs, CDT
+maps, and lifecycle metadata unconstrained — the very gap cited in F-H02.
+Remediation extended the predicate to a **30-conjunct** formulation
+covering every field of `FrozenSystemState`: 17 map-field
+lookup-equivalences + 13 non-map bitwise equalities. Added 3 new lookup
+theorems (`lookup_freeze_byPriority`, `lookup_freeze_threadPriority`,
+`lookup_freeze_membership`). `freeze_preserves_direct_invariants_full`
+discharges all 30 obligations at freeze time.
+
+**(2) AK7-H preservation gap — MEDIUM.** Initial `FrozenMap.wellFormed`
+was an advisory predicate with no proof that `freezeMap` produces a
+well-formed FrozenMap. Remediation added `freezeMap_wellFormed` theorem
+via a `freezeMap_foldl_values_bounded` helper that threads `invExt`
+through the fold and applies `getElem?_insert_self`/`getElem?_insert_ne`
+to bound stored counter values by `entries.length = data.size`.
+
+**(3) AK7-D privacy — MEDIUM.** `MessageInfo.mk` cannot be made
+`private` without breaking 20+ test/harness sites (anonymous
+`{ length := …, … }` constructor syntax). Remediation added
+`MessageInfo.wellFormed` Prop-level invariant + `decode_wellFormed`
+witness (decoded messages are always well-formed) + `mkChecked_wellFormed`
+witness. Production callers can verify the predicate at the ABI boundary
+without blocking anonymous construction.
+
+**(4) AK7-I gate — MEDIUM.** Initial implementation added
+`Capability.isNull` but did not provide an entry-point gate. Added
+`Capability.requireNotNull` helper + 3 correctness theorems
+(`requireNotNull_isSome_iff`, `requireNotNull_null`,
+`requireNotNull_some_not_null`). Consumer migration to `cspaceInvoke`/
+`cspaceMint`/`cspaceCopy` tracked as AK7-I.cascade.
+
+**(5) AK7-J F-M09 enforcement — MEDIUM.** Initial implementation added
+`cdtNextNodeBounded` advisory invariant but did not gate
+`ensureCdtNodeForSlot`. Added `ensureCdtNodeForSlotChecked` variant
+rejecting fresh allocations when `cdtNextNode.val + 1 ≥ maxCdtDepth`,
+plus 3 preservation theorems: `ensureCdtNodeForSlotChecked_preserves_bounded`,
+`_objects_eq`, `_eq_unchecked_of_allocated`.
+
+**(6) AK7-K low-tier gaps — LOW.** F-L4 boot interrupt-enable window
+doc (Phase 3 HAL obligation documented at
+`bootFromPlatform_machine_non_config_fields`); F-L10
+`DecidableEq KernelObject` rationale doc (RHTable hash-layout
+non-determinism); F-L14 `UntypedObject.allocateChecked` positive-size
+precondition.
+
+**Regression test suite.** New `tests/Ak7RegressionSuite.lean` with 33
+runtime checks across all sub-tasks: AK7-A invExtK witness,
+AK7-B Full→ObjectsOnly implication, AK7-C bounds-checked memory
+(empty-map reject, RAM accept, device-region reject), AK7-D
+mkChecked bound rejection + wellFormed reflection,
+AK7-E Valid*Id.toValid? sentinel rejection,
+AK7-F KindedObjId disjointness across 8 non-unknown kinds,
+AK7-G TCB.ext existence,
+AK7-H freezeMap_wellFormed on empty + non-empty tables,
+AK7-I isNull + requireNotNull behavior,
+AK7-J ensureCdtNodeForSlotChecked counter-overflow rejection +
+noPhysicalFrameCollision_empty witness,
+AK7-K perms reverse round-trip on 8 sample inputs + CdtNodeId sentinel.
+Wired into `scripts/test_tier2_negative.sh` as `lake exe
+ak7_regression_suite`.
 
 ### AK7-A (F-H01 / HIGH) — freezeMap capacity witness
 

@@ -1381,6 +1381,38 @@ def ensureCdtNodeForSlot (st : SystemState) (ref : SlotRef) : CdtNodeId × Syste
         }
       (node, st')
 
+/-- AK7-J (F-M09 / MEDIUM): Checked variant of `ensureCdtNodeForSlot`
+that preserves the `cdtNextNodeBounded` invariant (defined below at
+`SystemState.lean:526`).
+
+Fails with `none` when:
+1. A fresh node would be allocated, and
+2. The current `cdtNextNode.val` is already at or above `maxCdtDepth`.
+
+Returns `some (node, st')` in the non-allocating branch (slot already
+has a CDT node) and in the allocating branch when the new counter value
+still satisfies the advisory bound. `ensureCdtNodeForSlot` remains
+available for unchecked callers; production CDT entry points that must
+guarantee bounded hardware-id allocation should route through the
+checked variant. -/
+def ensureCdtNodeForSlotChecked (st : SystemState) (ref : SlotRef) :
+    Option (CdtNodeId × SystemState) :=
+  match st.cdtSlotNode[ref]? with
+  | some node => some (node, st)
+  | none =>
+      if st.cdtNextNode.val + 1 < maxCdtDepth then
+        let node := st.cdtNextNode
+        let st' :=
+          {
+            st with
+              cdtNextNode := ⟨node.val + 1⟩
+              cdtSlotNode := st.cdtSlotNode.insert ref node
+              cdtNodeSlot := st.cdtNodeSlot.insert node ref
+          }
+        some (node, st')
+      else
+        none
+
 
 theorem attachSlotToCdtNode_objects_eq (st : SystemState) (ref : SlotRef) (node : CdtNodeId) :
     (attachSlotToCdtNode st ref node).objects = st.objects := by
@@ -1395,6 +1427,52 @@ theorem ensureCdtNodeForSlot_objects_eq (st : SystemState) (ref : SlotRef) :
     (ensureCdtNodeForSlot st ref).snd.objects = st.objects := by
   unfold ensureCdtNodeForSlot
   split <;> rfl
+
+/-- AK7-J (F-M09 / MEDIUM): `ensureCdtNodeForSlotChecked` preserves the
+`cdtNextNodeBounded` invariant — whenever it returns `some (_, st')`,
+the post-state satisfies the bound.
+
+This is the preservation proof that makes the checked variant safe to
+use at CDT entry points when hardware-width id uniqueness must be
+preserved. -/
+theorem ensureCdtNodeForSlotChecked_preserves_bounded
+    (st : SystemState) (ref : SlotRef) (node : CdtNodeId) (st' : SystemState)
+    (hBound : cdtNextNodeBounded st)
+    (h : ensureCdtNodeForSlotChecked st ref = some (node, st')) :
+    cdtNextNodeBounded st' := by
+  unfold ensureCdtNodeForSlotChecked at h
+  split at h
+  · -- Already has a node — state unchanged
+    cases h; exact hBound
+  · -- Fresh allocation branch
+    split at h
+    · rename_i hCheck
+      cases h
+      simp [cdtNextNodeBounded] at *
+      exact hCheck
+    · cases h
+
+/-- AK7-J (F-M09): `ensureCdtNodeForSlotChecked` preserves the object store. -/
+theorem ensureCdtNodeForSlotChecked_objects_eq
+    (st : SystemState) (ref : SlotRef) (node : CdtNodeId) (st' : SystemState)
+    (h : ensureCdtNodeForSlotChecked st ref = some (node, st')) :
+    st'.objects = st.objects := by
+  unfold ensureCdtNodeForSlotChecked at h
+  split at h
+  · cases h; rfl
+  · split at h
+    · cases h; rfl
+    · cases h
+
+/-- AK7-J (F-M09): `ensureCdtNodeForSlotChecked` agrees with the unchecked
+variant whenever the invariant holds pre-call AND there's still a slot
+available. In the already-allocated branch the result matches unconditionally. -/
+theorem ensureCdtNodeForSlotChecked_eq_unchecked_of_allocated
+    (st : SystemState) (ref : SlotRef) (node : CdtNodeId)
+    (hLookup : st.cdtSlotNode[ref]? = some node) :
+    ensureCdtNodeForSlotChecked st ref = some (node, st) := by
+  unfold ensureCdtNodeForSlotChecked
+  rw [hLookup]
 
 /-- `lookupSlotCap` is determined entirely by the object store. -/
 theorem lookupSlotCap_eq_of_objects_eq

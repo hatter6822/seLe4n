@@ -2490,7 +2490,16 @@ end CapDerivationTree
 /-- WS-G5: `DecidableEq` removed from `KernelObject` because `CNode.slots` is
 `RHTable Slot Capability` which does not have a `DecidableEq` instance.
 `Repr` is retained for trace output. `BEq` is provided manually via entry-wise
-comparison for runtime test assertions. -/
+comparison for runtime test assertions.
+
+**AK7-K (F-L10 / LOW):** The missing `DecidableEq KernelObject` is by
+design — deriving it would cascade into deriving `DecidableEq` on
+`RHTable`, whose structural equality on `slots : Array (Option
+RHEntry)` would succeed but hide hash-layout non-determinism (two
+tables with the same logical contents but different probe sequences
+could compare unequal). The manual `BEq KernelObject` below is a
+pragmatic runtime-testing alias; proof-critical paths should use
+structural equality on per-variant projections (`TCB.ext`, etc.). -/
 inductive KernelObject where
   | tcb (t : TCB)
   | endpoint (e : Endpoint)

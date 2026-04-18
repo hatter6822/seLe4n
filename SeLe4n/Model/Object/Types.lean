@@ -377,6 +377,39 @@ def null : Capability :=
 theorem null_isNull : (Capability.null).isNull = true := by
   simp [null, isNull, AccessRightSet.empty, ObjId.isReserved, ObjId.sentinel]
 
+/-- AK7-I (F-M07 / MEDIUM): Fail-closed gate helper for capability-using
+entry points. Returns `some cap` when the capability is non-null, `none`
+otherwise. Callers at the syscall boundary (e.g., `cspaceInvoke`,
+`cspaceMint`, `cspaceCopy`) should chain through `requireNotNull` when
+accepting caller-supplied capabilities to reject `seL4_CapNull`-style
+sentinel caps early.
+
+This is an additive helper; existing code continues to compile. The
+integration obligation — routing all capability-using entry points
+through this gate — is tracked as AK7-I.cascade (post-1.0). -/
+@[inline] def requireNotNull (cap : Capability) : Option Capability :=
+  if cap.isNull then none else some cap
+
+/-- AK7-I: `requireNotNull` returns `some cap` iff the cap is not null. -/
+theorem requireNotNull_isSome_iff (cap : Capability) :
+    (cap.requireNotNull).isSome = true ↔ cap.isNull = false := by
+  unfold requireNotNull
+  cases h : cap.isNull <;> simp
+
+/-- AK7-I: `requireNotNull` rejects the canonical null cap. -/
+theorem requireNotNull_null : (Capability.null).requireNotNull = none := by
+  simp [requireNotNull, null_isNull]
+
+/-- AK7-I: The value returned by `requireNotNull` is not null. -/
+theorem requireNotNull_some_not_null {cap cap' : Capability}
+    (h : cap.requireNotNull = some cap') : cap'.isNull = false := by
+  unfold requireNotNull at h
+  split at h
+  · cases h
+  · rename_i hNotNull
+    cases h
+    simp [hNotNull]
+
 end Capability
 
 /-- WS-H12d/A-09: Maximum number of message registers per IPC message.
@@ -854,6 +887,28 @@ def allocate (ut : UntypedObject) (childId : SeLe4n.ObjId) (size : Nat) :
   else
     none
 
+/-- AK7-K (F-L14 / LOW): Allocation with an explicit positive-size
+precondition. `allocateChecked size h` rejects zero-size child
+allocations statically via the `h : size > 0` witness, in addition to
+the `canAllocate` watermark check performed by `allocate`.
+
+A zero-size child is not ill-formed in the abstract model (the
+watermark is unchanged, the child list gains an empty-extent entry),
+but it indicates a caller bug — no production syscall path allocates a
+zero-size object. The checked variant surfaces this at the type level,
+matching the F-L14 guard recommendation without breaking existing
+callers. -/
+def allocateChecked (ut : UntypedObject) (childId : SeLe4n.ObjId) (size : Nat)
+    (_hPos : size > 0) : Option (UntypedObject × Nat) :=
+  ut.allocate childId size
+
+/-- AK7-K (F-L14): `allocateChecked` agrees with `allocate` on positive
+sizes — it simply adds the positive-size proof obligation at the type
+level without changing the body. -/
+theorem allocateChecked_eq_allocate (ut : UntypedObject) (childId : SeLe4n.ObjId)
+    (size : Nat) (hPos : size > 0) :
+    ut.allocateChecked childId size hPos = ut.allocate childId size := rfl
+
 /-- Reset the untyped to its initial state (revoke all children). -/
 def reset (ut : UntypedObject) : UntypedObject :=
   { ut with watermark := 0, children := [] }
@@ -1296,6 +1351,31 @@ theorem mkChecked_bounded {length extraCaps label : Nat} {mi : MessageInfo}
     exact hAll
   · cases h
 
+/-- AK7-D (F-M02 / MEDIUM): Well-formedness predicate for a `MessageInfo`
+value — `length ≤ maxMessageRegisters ∧ extraCaps ≤ maxExtraCaps ∧
+label ≤ maxLabel`.
+
+Rationale: `MessageInfo.mk` (the anonymous-braces constructor
+`{ length := …, extraCaps := …, label := … }`) cannot be made `private`
+without breaking every production and test construction site. The
+`wellFormed` predicate is the Prop-level invariant that ABI dispatch and
+IPC delivery paths must establish before delivering a message. Values
+produced by `MessageInfo.decode` or `MessageInfo.mkChecked` satisfy
+`wellFormed` by construction; callers that accept arbitrary fields must
+verify the predicate explicitly. -/
+def wellFormed (mi : MessageInfo) : Prop :=
+  mi.length ≤ maxMessageRegisters ∧
+  mi.extraCaps ≤ maxExtraCaps ∧
+  mi.label ≤ maxLabel
+
+instance (mi : MessageInfo) : Decidable mi.wellFormed :=
+  inferInstanceAs (Decidable (_ ∧ _))
+
+/-- AK7-D (F-M02): Output of `mkChecked` is well-formed. -/
+theorem mkChecked_wellFormed {length extraCaps label : Nat} {mi : MessageInfo}
+    (h : mkChecked length extraCaps label = some mi) : mi.wellFormed :=
+  mkChecked_bounded h
+
 /-- Encode a MessageInfo into a single register word.
     Bit layout (seL4 convention):
     - bits  0..6  : length (7 bits, max 120)
@@ -1319,6 +1399,22 @@ theorem mkChecked_bounded {length extraCaps label : Nat} {mi : MessageInfo}
 
 instance : ToString MessageInfo where
   toString mi := s!"MessageInfo(len={mi.length}, caps={mi.extraCaps}, label={mi.label})"
+
+/-- AK7-D (F-M02): `decode` produces well-formed `MessageInfo` values —
+any `MessageInfo` surfaced from a raw register word satisfies all three
+seL4 bounds. -/
+theorem decode_wellFormed {w : Nat} {mi : MessageInfo}
+    (h : MessageInfo.decode w = some mi) : mi.wellFormed := by
+  unfold MessageInfo.decode at h
+  simp only at h
+  split at h
+  · rename_i hAll
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hAll
+    cases h
+    refine ⟨hAll.1.1, ?_, hAll.2⟩
+    show _ ≤ maxExtraCaps
+    exact hAll.1.2
+  · cases h
 
 -- ============================================================================
 -- Encode/decode round-trip proof (bitwise extraction lemmas)
