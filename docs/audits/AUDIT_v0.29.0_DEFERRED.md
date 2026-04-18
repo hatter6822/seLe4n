@@ -214,21 +214,53 @@ surfaces. The three `AK7-*.cascade` rows above are each marked
 | AK7-F   | WS-AL AL6        | storeObjectKindChecked   | 4d5cc8b               |
 | AK7-E   | WS-AL AL7        | dispatchCapabilityOnly   | c2cc60d               |
 
-Two residual hygiene items remain tracked for post-patch work:
+Four residual hygiene items remain tracked for post-patch work. All
+are **non-gating** — the three primary attack surfaces (mint/copy/move
+null-cap, object-store cross-variant overwrite, dispatch sentinel IDs)
+are already closed by AL1 / AL6 / AL7 structurally.
 
 - **AK7-E.hygiene**: tightening the 5+ Lifecycle / SchedContext /
   IpcBufferValidation handler signatures from raw `ThreadId` /
-  `SchedContextId` to the `Valid*Id` subtypes. Non-gating: AL7's
-  dispatch-boundary guards close the attack surface independently.
-- **AK7-F.hygiene**: migrating the 304 raw
-  `match st.objects[id]? with | some (.variant x) => ...` call sites
-  to use the AL2-A typed helpers. Non-gating: AL6's
-  `storeObjectKindChecked` closes the silent cross-variant overwrite
-  hole independently.
+  `SchedContextId` to the `Valid*Id` subtypes. AL7's dispatch-boundary
+  guards close the attack surface independently; handler signature
+  tightening is readability hygiene. Cascade size: ~240+ internal
+  call sites.
 
-Both hygiene items improve code readability and reduce long-term
-maintenance burden without affecting correctness; they are tracked for
-incremental landings after the v0.29.14 release.
+- **AK7-F.reader.hygiene**: migrating the 304 raw
+  `match st.objects[id]? with | some (.variant x) => ...` call sites
+  to use the AL2-A typed helpers (`getTcb?`, `getSchedContext?`,
+  `getEndpoint?`, `getNotification?`, `getUntyped?`). Reader-side
+  refactoring for readability. AL6's `storeObjectKindChecked` closes
+  the silent overwrite hole at the write-side independently.
+
+- **AK7-F.writer.hygiene** (NEW, surfaced by v0.29.14 post-delivery audit):
+  wiring `storeObjectKindChecked` at in-place `storeObject` call sites
+  where the caller's precondition guarantees same-kind updates (TCB
+  field updates, endpoint queue mutations, SchedContext budget
+  refills, etc.). Each wire-in reduces to `storeObject` via the
+  `storeObjectKindChecked_sameKind_eq_storeObject` theorem, so the
+  cascade is a no-op at proof level — but every preservation proof
+  that unfolds through `storeObject` must add the match-layer on the
+  wrapper body. Estimated ~50 in-place call sites across Scheduler /
+  IPC / SchedContext / Lifecycle. AL6-A's wrapper provides the
+  opt-in defense; universal adoption is the hygiene cascade.
+
+- **AL6-C.hygiene** (NEW, surfaced by v0.29.14 post-delivery audit):
+  completing the preservation proof for `lifecycleObjectTypeLockstep`
+  (in `SeLe4n/Kernel/CrossSubsystem.lean`). The invariant definition
+  and the semantic schema are committed; the `default` witness and the
+  two preservation theorems (`storeObject_preserves_*`,
+  `storeObjectKindChecked_preserves_*`) require threading the
+  `objects.invExt` and `lifecycle.objectTypes.invExt` preconditions
+  through the RHTable `getElem?_insert_{self,ne}` bridge lemmas.
+  Composing with the existing `storeObject` frame lemmas in
+  `Model/State.lean` discharges the obligation at ~50 LOC; the full
+  extension to `crossSubsystemInvariant` (13 conjuncts currently)
+  cascades to all downstream crossSubsystem preservation proofs.
+
+All four hygiene items improve code readability / defense-in-depth /
+proof-surface tightness without affecting correctness; they are
+tracked for incremental landings after the v0.29.14 release.
 
 ---
 
