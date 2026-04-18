@@ -1278,6 +1278,52 @@ def lookupCNode (st : SystemState) (id : SeLe4n.ObjId) : Option CNode :=
   | some (.cnode cn) => some cn
   | _ => none
 
+-- ============================================================================
+-- AL2-A (WS-AL / AK7-F.cascade): kind-verified lookup helpers
+--
+-- The AK7-F exploration showed 304 production call sites repeating the
+-- pattern `match st.objects[id]? with | some (.variant x) => ... | _ =>
+-- ...`. Only two variants had typed helpers (`lookupVSpaceRoot`,
+-- `lookupCNode`). The five helpers below close the gap so downstream
+-- phases (AL3-AL5) can migrate consumers uniformly.
+--
+-- Each helper unwraps the `KernelObject` tag on the same ObjId input
+-- and returns `Option <variant>`. If the stored object has a
+-- different variant, `none` is returned — this is the property that
+-- AL6 leverages to gate `storeObject` against cross-variant writes.
+-- ============================================================================
+
+/-- AL2-A: Read a TCB from the global object store. -/
+def getTcb? (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
+  match st.objects[tid.toObjId]? with
+  | some (.tcb t) => some t
+  | _             => none
+
+/-- AL2-A: Read a SchedContext from the global object store. -/
+def getSchedContext? (st : SystemState) (scId : SeLe4n.SchedContextId)
+    : Option SeLe4n.Kernel.SchedContext :=
+  match st.objects[scId.toObjId]? with
+  | some (.schedContext sc) => some sc
+  | _                       => none
+
+/-- AL2-A: Read an Endpoint from the global object store. -/
+def getEndpoint? (st : SystemState) (id : SeLe4n.ObjId) : Option Endpoint :=
+  match st.objects[id]? with
+  | some (.endpoint ep) => some ep
+  | _                   => none
+
+/-- AL2-A: Read a Notification from the global object store. -/
+def getNotification? (st : SystemState) (id : SeLe4n.ObjId) : Option Notification :=
+  match st.objects[id]? with
+  | some (.notification n) => some n
+  | _                      => none
+
+/-- AL2-A: Read an UntypedObject from the global object store. -/
+def getUntyped? (st : SystemState) (id : SeLe4n.ObjId) : Option UntypedObject :=
+  match st.objects[id]? with
+  | some (.untyped ut) => some ut
+  | _                  => none
+
 /-- Read a capability from a typed slot reference. -/
 def lookupSlotCap (st : SystemState) (ref : SlotRef) : Option Capability :=
   match lookupCNode st ref.cnode with
