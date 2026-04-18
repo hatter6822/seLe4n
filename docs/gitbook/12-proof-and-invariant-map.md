@@ -1017,7 +1017,10 @@ v0.13.5 gap closure (3 theorems + 1 bridge):
 - `endpointPolicyRestricted` — per-endpoint policy subset of global policy well-formedness (V6-G),
 - `DeclassificationEvent` structure with `authorizationBasis` field and `recordDeclassification` audit trail (V6-H),
 - `kernelOperationNiConstructor` — 35-variant operation→constructor mapping (V6-I),
-- `niStepCoverage_operational`, `niStepCoverage_injective`, `niStepCoverage_count` — NI coverage documentation (V6-I),
+- `niStepConstructorCoverage` (renamed from `niStepCoverage` in AK6-E /
+  NI-H01 to clarify scope — discoverability, not semantic preservation),
+  `niStepCoverage_operational`, `niStepCoverage_injective`,
+  `niStepCoverage_count` — NI coverage documentation (V6-I / AK6-E),
 - `acceptedCovertChannel_scheduling` — documented scheduling covert channel (V6-J),
 - `defaultLabelingContext_insecure` — warning that default labeling provides no security (V6-K),
 - `StateField` enum + 14 pairwise disjointness/overlap witnesses (10 disjoint + 4 non-disjoint) + `registryDependencyConsistent_frame`, `serviceGraphInvariant_frame`, and 3 new SchedContext frame lemmas (`schedContextStoreConsistent_frame`, `schedContextNotDualBound_frame`, `schedContextRunQueueConsistent_frame`) (V6-A, Z9),
@@ -2474,8 +2477,9 @@ scheduling parameters, and enforce admission control.
 - `SchedContextUnbindArgs` — 0 message registers. Trivial decode/encode.
 
 **Core operations** (`Kernel/SchedContext/Operations.lean`):
-- `validateSchedContextParams` — parameter validation: period > 0, budget ≤ period,
-  priority ≤ maxPriority, domain < numDomains.
+- `validateSchedContextParams` — parameter validation: period > 0, budget > 0
+  (AK6-A / SC-H01), budget ≤ period, priority ≤ maxPriority,
+  domain < numDomains.
 - `collectSchedContexts` — gather all SchedContext objects from object store
   (with `excludeId` parameter to prevent admission double-counting).
 - `checkAdmission` — bandwidth admission control (total utilization ≤ threshold).
@@ -2488,7 +2492,22 @@ scheduling parameters, and enforce admission control.
   + re-enqueue on budget restoration.
 
 **Preservation theorems** (`Kernel/SchedContext/Invariant/Preservation.lean`):
-- `validateSchedContextParams_implies_wellFormed` — period > 0 ∧ budget ≤ period.
+- `validateSchedContextParams_implies_wellFormed` — period > 0 ∧ budget > 0 ∧
+  budget ≤ period (AK6-A / SC-H01 strengthened).
+- `applyConfigureParamsFull_schedContextWellFormed` (AK6-B / SC-M01) — the
+  FULL configured SchedContext (with replenishment-list replacement
+  `[{ amount := ⟨budget⟩, eligibleAt := timer + period }]`) satisfies the
+  4-conjunct `schedContextWellFormed` bundle. Closes the end-to-end
+  preservation gap.
+- `applyConfigureParamsFull_replenishments_correct` (AK6-B/C) — the
+  replenishment list produced by `schedContextConfigure` is exactly one
+  entry whose eligibility is `timer + period` (AK6-C window correction
+  closes the SC-M02 double-budget vector on reconfigure).
+- `cbs_bandwidth_bounded_tight` (AK6-I / SC-M04) — tight bound
+  `totalConsumed ≤ budget × ⌈window / period⌉` under the
+  `cbsWindowReplenishmentsBounded` scheduling-discipline predicate.
+  `cbs_bandwidth_bounded_min` composes with the loose 8× bound via
+  `Nat.min`.
 - `schedContextConfigure_output_wellFormed` — configured SchedContext satisfies
   `SchedContext.wellFormed` when parameters pass validation and original has
   bounded replenishments.

@@ -610,7 +610,9 @@ def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
     (budget period priority deadline domain : Nat) : FrozenKernel Unit :=
   fun st =>
     -- Parameter validation (mirrors SchedContextOps.validateSchedContextParams)
+    -- AK6-A (SC-H01): reject zero-budget to preserve replenishmentListWellFormed.
     if period == 0 then .error .invalidArgument
+    else if budget == 0 then .error .invalidArgument
     else if budget > period then .error .invalidArgument
     else if priority > 255 then .error .invalidArgument
     else if domain ≥ 16 then .error .invalidArgument
@@ -624,7 +626,15 @@ def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
             priority := ⟨priority⟩
             deadline := ⟨deadline⟩
             domain := ⟨domain⟩
-            budgetRemaining := ⟨budget⟩ }
+            budgetRemaining := ⟨budget⟩
+            -- AK6-B/C parity (SC-M01/SC-M02): mirror the runtime
+            -- `schedContextConfigure` replenishment replacement so the
+            -- FROZEN variant does not leave stale replenishment entries
+            -- across reconfigures. The frozen timer is 0 at boot, so
+            -- the first eligibility aligns with `period`; any subsequent
+            -- reconfigure honors `timer + period` like the runtime path.
+            replenishments := [{ amount := ⟨budget⟩,
+                                 eligibleAt := 0 + period }] }
         -- Admission control: collect all SchedContexts from frozen store
         let allScs := st.objects.fold (init := []) fun acc _id obj =>
           match obj with

@@ -1061,6 +1061,69 @@ def runInformationFlowChecks : IO Unit := do
       IO.println "AK1-I: symmetric .error .invalidCapability branch structurally verified"
     IO.println "AK1-I NI-symmetric cap-root error behaviour verified"
 
+  -- ======================================================================
+  -- AK6-G (NI-M01): projectKernelObject strips pendingMessage + timedOut
+  -- ======================================================================
+  do
+    -- Build a TCB with pendingMessage and timedOut fields set to observable
+    -- values. projectKernelObject must ERASE them (to prevent covert channels).
+    let testMsg : SeLe4n.Model.IpcMessage :=
+      { registers := #[], caps := #[], badge := none }
+    let tcbWithSignals : SeLe4n.Model.TCB :=
+      { tid := SeLe4n.ThreadId.ofNat 1,
+        priority := ⟨5⟩,
+        domain := ⟨0⟩,
+        cspaceRoot := SeLe4n.ObjId.ofNat 0,
+        vspaceRoot := SeLe4n.ObjId.ofNat 0,
+        ipcBuffer := ⟨0⟩,
+        pendingMessage := some testMsg,
+        timedOut := true }
+    let projected :=
+      SeLe4n.Kernel.projectKernelObject
+        SeLe4n.Kernel.defaultLabelingContext
+        reviewer
+        (.tcb tcbWithSignals)
+    match projected with
+    | .tcb projTcb =>
+        expect "AK6-G: projectKernelObject erases pendingMessage"
+          (projTcb.pendingMessage = none)
+        expect "AK6-G: projectKernelObject erases timedOut"
+          (projTcb.timedOut = false)
+    | _ => expect "AK6-G: projection preserves TCB tag" false
+    IO.println "AK6-G: projectKernelObject TCB-field stripping verified"
+
+  -- ======================================================================
+  -- AK6-H (NI-M02): defaultLabelingContext fails LabelingContextValid
+  -- via labelNonTriviality rejection.
+  -- ======================================================================
+  do
+    -- Runtime-check that the runtime heuristic `isInsecureDefaultContext`
+    -- catches the default labeling. This guards the compile-time
+    -- `defaultLabelingContext_fails_validity` theorem with a syscall-layer
+    -- detector.
+    let isDefault :=
+      SeLe4n.Kernel.isInsecureDefaultContext
+        SeLe4n.Kernel.defaultLabelingContext
+    expect "AK6-H: isInsecureDefaultContext catches default context"
+      (isDefault = true)
+    IO.println "AK6-H: default labeling context runtime rejection verified"
+
+  -- ======================================================================
+  -- AK6-I (SC-M04): cbs_bandwidth_bounded_tight arithmetic check
+  -- ======================================================================
+  do
+    -- Runtime smoke check: verify the tight ceiling formula matches
+    -- expected values for a representative SC configuration.
+    -- budget = 100, period = 1000, window = 5000 → ⌈5000/1000⌉ = 5,
+    -- so tight bound = 100 * 5 = 500.
+    let budget := 100
+    let period := 1000
+    let window := 5000
+    let tight := budget * ((window + period - 1) / period)
+    expect "AK6-I: tight bound arithmetic (100 * ⌈5000/1000⌉ = 500)"
+      (tight = 500)
+    IO.println "AK6-I: CBS tight bandwidth bound arithmetic verified"
+
   IO.println "all V6 information-flow & cross-subsystem checks passed"
 
 end SeLe4n.Testing

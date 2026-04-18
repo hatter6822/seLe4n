@@ -170,6 +170,7 @@
 [SCO-003] validateSchedContextParams budget>period: Except.error (SeLe4n.Model.KernelError.invalidArgument)
 [SCO-004] validateSchedContextParams priority>max: Except.error (SeLe4n.Model.KernelError.invalidArgument)
 [SCO-005] validateSchedContextParams domain>=16: Except.error (SeLe4n.Model.KernelError.invalidArgument)
+[SCO-005a] validateSchedContextParams zero-budget (AK6-A): Except.error (SeLe4n.Model.KernelError.invalidArgument)
 [SCO-006] schedContextConfigure success budget=100 period=1000
 [SCO-007] schedContextBind success: sc.boundThread=true tcb.bound=true
 [SCO-008] schedContextBind already-bound: SeLe4n.Model.KernelError.illegalState
@@ -184,6 +185,7 @@
 [SCO-017] admission-failure: admitted=false
 [SCO-018] schedContextBind tcb-already-bound: SeLe4n.Model.KernelError.illegalState
 [SCO-019] schedContextYieldTo no-bound-thread: rq_still_empty=true
+[SCO-019a] schedContextYieldTo self-guard (AK6-D): remaining=150 isActive=true
 [SCO-020] endpointQueueRemove head: newHead=tid2:true newTail=tid2:true
 [SCO-021] endpointQueueRemove not-found: SeLe4n.Model.KernelError.objectNotFound
 [SCO-022] endpointQueueRemove no-endpoint: SeLe4n.Model.KernelError.objectNotFound
@@ -210,10 +212,10 @@
 [Z7D-008] cleanupPreReceiveDonation: caller_back=true
 [Z8J-001] SchedContext create+configure: budget=5 period=100 remaining=5
 [Z8J-002] SchedContext bind: bound=true
-[Z8J-003] budget after 1 tick: remaining=5 preempted=false
-[Z8J-004] budget after 4 ticks: remaining=2 preempted=false
-[Z8J-005] budget exhausted: remaining=1 preempted=false
-[Z8J-006] after replenishment: remaining=1 restored=true
+[Z8J-003] budget after 1 tick: remaining=4 preempted=false
+[Z8J-004] budget after 4 ticks: remaining=1 preempted=false
+[Z8J-005] budget exhausted: remaining=0 preempted=true
+[Z8J-006] after replenishment: remaining=5 restored=true
 [ITR-001] inter-transition invariant checks: 38 passed
 [PTY-001] parameterized topology ok: minimal (threads=1 prio=50 radix=4 asids=1 svcs=1)
 [PTY-001] parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)

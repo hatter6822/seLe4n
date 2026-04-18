@@ -736,19 +736,30 @@ structure LabelingContextValid (ctx : LabelingContext) : Prop where
   coherenceImpliesObjectHigh : ∀ (observer : IfObserver) (tid : SeLe4n.ThreadId),
     threadObservable ctx observer tid = false →
     objectObservable ctx observer tid.toObjId = false
+  /-- AK6-H (NI-M02): Non-triviality — the context must assign at least two
+      distinct thread labels. Without this clause, a "valid" context could
+      assign the same `publicLabel` to every entity (e.g., the default
+      labeling), making every flow trivially permitted and the NI guarantees
+      vacuous. A minimally secure deployment has at least two security
+      domains; this field witnesses that the context differentiates them.
+      See `defaultLabelingContext_fails_validity` for the concrete failure. -/
+  labelNonTriviality : ∃ (tid₁ tid₂ : SeLe4n.ThreadId),
+    ctx.threadLabelOf tid₁ ≠ ctx.threadLabelOf tid₂
 
-/-- V6-D: The default labeling context is trivially valid (all labels are
-    `publicLabel`, so all flows are permitted and coherence is automatic).
-    However, it provides no security — see `defaultLabelingContext_insecure`. -/
-theorem defaultLabelingContext_valid :
-    LabelingContextValid defaultLabelingContext := by
-  constructor
-  · intro _
-    simp [defaultLabelingContext, SecurityLabel.publicLabel, securityFlowsTo,
-          confidentialityFlowsTo, integrityFlowsTo]
-  · intro observer tid hThread
-    simp only [objectObservable, threadObservable, defaultLabelingContext] at hThread ⊢
-    exact hThread
+/-- V6-D / AK6-H (NI-M02): The default labeling context is **no longer**
+    `LabelingContextValid`. It satisfies the first two conjuncts (coherence
+    + flow derivation) but fails the non-triviality requirement: every
+    thread receives `publicLabel`, so no two thread labels differ and the
+    `labelNonTriviality` existential cannot be discharged. This rejection
+    is the point: a context with only one label gives NI no separation to
+    enforce. See `defaultLabelingContext_insecure` for the corresponding
+    semantic statement. -/
+theorem defaultLabelingContext_fails_validity :
+    ¬ LabelingContextValid defaultLabelingContext := by
+  intro hValid
+  obtain ⟨tid₁, tid₂, hNe⟩ := hValid.labelNonTriviality
+  apply hNe
+  simp [defaultLabelingContext]
 
 /-- V6-D: Under a valid labeling context, the thread-object coherence property
     used in `NonInterferenceStep` constructors is always available.
@@ -951,7 +962,7 @@ inductive KernelOperation where
 
 /-- U4-E: Compile-time assertion on the operation count. If a new variant is
     added to `KernelOperation`, this count must be updated, forcing a review
-    of `niStepCoverage` below. -/
+    of `niStepConstructorCoverage` below. -/
 theorem kernelOperation_count : (List.length
   [KernelOperation.chooseThread, .endpointSendDual, .cspaceMint,
    .cspaceRevoke, .lifecycleRetype, .lifecycleRevokeDeleteRetype,
@@ -972,21 +983,32 @@ theorem kernelOperation_count : (List.length
 -- U4-F / U-H10: NI step coverage theorem
 -- ============================================================================
 
-/-- U4-F (U-H10): Every `KernelOperation` variant has a witnessing
-    `NonInterferenceStep` constructor. This is proven by exhaustive match on
-    all 35 `KernelOperation` variants, each providing a concrete
-    `NonInterferenceStep` constructor.
+/-- U4-F (U-H10) / AK6-E (NI-H01): Every `KernelOperation` variant has a
+    witnessing `NonInterferenceStep` constructor. This theorem proves
+    **discoverability** — for each operation, there exists an NI-step
+    constructor that applies — NOT per-op semantic preservation. That is,
+    it witnesses constructor existence for the kernel-operation taxonomy,
+    not that each real op's semantics preserve observer projection.
+
+    AK6-E rename: formerly `niStepCoverage`. Renamed to
+    `niStepConstructorCoverage` to make the discoverability-vs-semantics
+    distinction syntactically explicit. Per-op SEMANTIC preservation is
+    proven in `Invariant/Operations.lean` (`*_preserves_projection`
+    family, ~20 theorems) and composed through
+    `dispatchCapabilityOnly_preserves_projection` (AK6-F) for the
+    capability-only dispatch arm — those are the release-grade NI
+    witnesses.
 
     If a new `KernelOperation` variant is added, the match becomes
     non-exhaustive and compilation fails — forcing the developer to add the
     corresponding `NonInterferenceStep` constructor and extend this proof.
 
     The proof uses `syscallDecodeError` as the universal witness (state
-    unchanged = trivially NI-preserving) — this demonstrates constructor
-    existence, not operational correspondence. Operational correspondence
-    is established by `step_preserves_projection` which handles all 35
-    constructors. -/
-theorem niStepCoverage
+    unchanged = trivially NI-preserving) — this is a statement about
+    CONSTRUCTOR EXISTENCE for every `KernelOperation`, not about any
+    specific op's semantics. See `step_preserves_projection` for the
+    operational correspondence that covers all 35 constructors. -/
+theorem niStepConstructorCoverage
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) :
     ∀ (_op : KernelOperation),

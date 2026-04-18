@@ -1975,6 +1975,134 @@ theorem dispatchWithCap_preservation_composition_witness :
     syscallEntry_preserves_proofLayerInvariantBundle layout regCount st st' hInv hOk hDP
 
 -- ============================================================================
+-- AK6-F (NI-H02): Composed projection preservation for dispatchCapabilityOnly
+-- ============================================================================
+
+/-- AK6-F (NI-H02): Compositional bridge for projection preservation over the
+    capability-only dispatch path. This theorem provides the structural hook
+    that composes any per-arm preservation witness into a single conclusion
+    on the outer `dispatchCapabilityOnly`. Concretely:
+
+    - Input: `hArmProj` — a per-arm preservation witness parameterised by the
+      kernel operation that `dispatchCapabilityOnly` returns. The caller
+      supplies one such witness, obtained by case-analysis on
+      `decoded.syscallId` plus `cap.target`, and discharges it using
+      existing per-op `_preserves_projection` theorems in
+      `InformationFlow/Invariant/Operations.lean` or
+      `storeObject_preserves_projection` at a non-observable cap target.
+    - Output: projection preservation over `dispatchCapabilityOnly decoded
+      cap tid = some kop, kop st = .ok ((), st')`.
+
+    **Closure status (v0.29.12, post-audit classification):** `hArmProj`
+    remains externally-supplied, BUT every cap-only arm now has a NAMED
+    per-op preservation theorem in `InformationFlow/Invariant/Operations.lean`
+    that the caller can directly reference. The 14 arms fall into THREE
+    substantiveness tiers:
+
+    **Fully substantive (5/14)** — proof uses only observability
+    hypotheses and pre-proven frame lemmas; NO abstract closures:
+    - `.cspaceDelete` → `cspaceDeleteSlot_preserves_projection`
+    - `.serviceQuery` → `lookupServiceByCap_preserves_projection` (AK6F.11,
+       state is unchanged, projection follows)
+    - `.tcbSetIPCBuffer` → `setIPCBufferOp_preserves_projection`
+    - `.vspaceMap` → `vspaceMapPageCheckedWithFlushFromState_preserves_projection`
+    - `.vspaceUnmap` → `vspaceUnmapPageWithFlush_preserves_projection`
+
+    **Hybrid substantive + legitimate closure (3/14)** — proof body
+    uses frame lemmas for most phases but takes ONE closure over an
+    external call (schedule/RHTable-fold) whose preservation depends on
+    invariants varying per caller:
+    - `.tcbSetPriority` → `setPriorityOp_preserves_projection` (v0.29.10)
+      body uses `updatePrioritySource_preserves_projection` +
+      `migrateRunQueueBucket_preserves_projection`; takes `hSchedProj`
+      for the optional preemption-schedule branch.
+    - `.tcbSetMCPriority` → `setMCPriorityOp_preserves_projection` (v0.29.10)
+      mirror structure to setPriorityOp.
+    - `.serviceRevoke` → `revokeService_preserves_projection` (AK6F.12)
+      body uses `congr 1` over all 13 `projectState` components;
+      takes `hServiceProjEq` for the `removeDependenciesOf` fold-induction
+      at the service-projection layer only.
+
+    **Closure-form (6/14)** — theorem takes `hProjEq` abstract closure;
+    body is `hProjEq st' hStep`. NOT tautological for callers — each has
+    DOCUMENTED FRAME LEMMAS letting a caller discharge `hProjEq` in
+    ≈25-60 LOC using substantively-proven building blocks. Listed here
+    WITH their discharge recipes:
+    - `.schedContextBind` → `schedContextBind_preserves_projection` (AK6F.14);
+      discharge via `objects_insert_preserves_projection_high` × 2 +
+      `schedContextBind_frame_runQueue_rebucket` + `projectState_scThreadIndex_eq`.
+    - `.schedContextUnbind` → `schedContextUnbind_preserves_projection` (AK6F.15);
+      discharge via `projectState_scheduler_current_cleared_when_high` +
+      `removeRunnable_preserves_projection` + `objects_insert_preserves_projection_high` × 2 +
+      `projectState_replenishQueue_eq` + `projectState_scThreadIndex_eq`.
+    - `.schedContextConfigure` → `schedContextConfigure_preserves_projection` (AK6F.13);
+      discharge via `projectState_replenishQueue_eq` +
+      `objects_insert_preserves_projection_high` × 2 +
+      `schedContextBind_frame_runQueue_rebucket`.
+    - `.lifecycleRetype` → `lifecycleRetypeDirectWithCleanup_preserves_projection`
+      (AK6F.16); discharge via cleanup-phase `storeObject_preserves_projection` +
+      `projectMemory_const_when_ownership_none` + final `storeObject_preserves_projection`.
+    - `.tcbSuspend` → `suspendThread_preserves_projection` (AK6F.18);
+      hardest discharge (9 phases): `storeObject_preserves_projection` × 3 +
+      `removeRunnable_preserves_projection` + `cancelDonation_preserves_projection`
+      + `schedule_preserves_projection` (via `hSchedProj`).
+    - `.tcbResume` → `resumeThread_preserves_projection` (AK6F.19);
+      discharge via `resumeThread_frame_insert` + `resumeThread_frame_ensureRunnable`
+      + `schedule_preserves_projection` (via `hSchedProj`).
+
+    Plus helper: `cancelDonation_preserves_projection` (AK6F.17) — closure
+    form, 3-arm discharge (`.unbound` trivial, `.bound` via
+    `objects_insert_preserves_projection_high`, `.donated` via
+    `returnDonatedSchedContext` preservation).
+
+    Substantive closure of the 6 closure-form theorems is estimated at
+    ≈300 LOC aggregate, tracked as continuation work AK6F.20b. Lean
+    4.28.0's `split`/`split_ifs` interaction with `Except.ok` on
+    deeply-nested `match`-based Bool conditions (e.g., `schedContextBind`
+    has 5 nested matches before the first success-arm mutation)
+    currently prevents clean destructuring; the frame lemmas above are
+    the building blocks that a future patch will compose once a stable
+    destructuring idiom is available.
+
+    **Per-arm discharge table** (for callers constructing `hArmProj`):
+
+    | Arm | Discharge |
+    |-----|-----------|
+    | `.cspaceDelete` | `cspaceDeleteSlot_preserves_projection` (Operations.lean:969) |
+    | `.lifecycleRetype` | compose with `lifecycleRevokeDeleteRetype_preserves_projection` (Operations.lean:2454) via `lifecycleRetypeDirectWithCleanup` frame |
+    | `.vspaceMap` | `vspaceMapPage_preserves_projection` (Operations.lean:753); requires `hRootHigh` via ASID resolution |
+    | `.vspaceUnmap` | `vspaceUnmapPage_preserves_projection` (Operations.lean:797) |
+    | `.serviceRevoke` | reduces to `cspaceRevoke_preserves_projection` (Operations.lean:1000) through the orchestrator |
+    | `.serviceQuery` | read-only (`lookupServiceByCap` does not mutate state) |
+    | `.schedContextConfigure/Bind/Unbind` | `storeObject_preserves_projection` / `objects_insert_preserves_projection_high` (Operations.lean) at non-observable SchedContext target + TCB/RunQueue field preservation |
+    | `.tcbSetIPCBuffer` | **`setIPCBufferOp_preserves_projection`** (Operations.lean — AK6-F.2b, v0.29.10) |
+    | `.tcbSetPriority/SetMCPriority` | `objects_insert_preserves_projection_high` at non-observable TCB/SC — uses the universal direct-insert frame lemma (Operations.lean — AK6-F Step A, v0.29.10) |
+    | `.tcbSuspend/Resume` | `storeObject_preserves_projection` at non-observable TCB target |
+
+    **New AK6-F building blocks in v0.29.10:**
+    - `objects_insert_preserves_projection_high` — universal direct-insert
+      frame lemma; enables discharge of every arm whose underlying op uses
+      `{ st with objects := st.objects.insert … }` instead of `storeObject`.
+    - `setIPCBufferOp_preserves_projection` — full per-op preservation for
+      the `.tcbSetIPCBuffer` arm.
+    - `projectState_replenishQueue_eq` and
+      `projectState_scheduler_current_cleared_when_high` — frame helpers
+      for scheduler-field mutations that don't affect projection
+      (`Projection.lean` — AK6-F.2a). -/
+theorem dispatchCapabilityOnly_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (decoded : SyscallDecodeResult) (cap : Capability) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (hArmProj : ∀ kop, dispatchCapabilityOnly decoded cap tid = some kop →
+                       kop st = .ok ((), st') →
+                       projectState ctx observer st' = projectState ctx observer st)
+    (hKop : ∃ kop, dispatchCapabilityOnly decoded cap tid = some kop ∧
+                    kop st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  obtain ⟨kop, hSome, hRun⟩ := hKop
+  exact hArmProj kop hSome hRun
+
+-- ============================================================================
 -- AE1-G3: Master dispatch NI theorem
 -- ============================================================================
 
