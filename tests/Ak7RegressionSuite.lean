@@ -482,6 +482,91 @@ def al2C_08_getSchedContext_roundtrip : IO Unit := do
       expect "al2C-08 getSchedContext? round-trip" true
 
 -- ============================================================================
+-- AL6 (WS-AL / AK7-F.cascade): storeObjectKindChecked kind-guard tests.
+-- Closes the silent cross-variant overwrite hole: a TCB stored at ObjId X
+-- cannot be silently replaced by a SchedContext via the checked wrapper.
+-- Fresh allocations (no pre-state object at the id) are accepted, matching
+-- `retypeFromUntyped_childId_fresh` semantics.
+-- ============================================================================
+
+/-- AL6-B-01: Fresh allocation path — `storeObjectKindChecked` on an absent
+id succeeds and stores the object. -/
+def al6_01_fresh_allocation_succeeds : IO Unit := do
+  let id : ObjId := ⟨200⟩
+  let base : SystemState := default
+  let t := minimalTcb ⟨200⟩
+  match storeObjectKindChecked id (.tcb t) base with
+  | .error e =>
+      throw <| IO.userError s!"al6-01 fresh allocation rejected: {repr e}"
+  | .ok (_, st') =>
+      expect "al6-01 fresh alloc succeeds" (st'.getTcb? ⟨200⟩ |>.isSome)
+
+/-- AL6-B-02: Same-kind overwrite — a TCB slot can be updated with another TCB. -/
+def al6_02_samekind_overwrite_succeeds : IO Unit := do
+  let id : ObjId := ⟨201⟩
+  let t1 := minimalTcb ⟨201⟩
+  let t2 := { minimalTcb ⟨201⟩ with priority := ⟨7⟩ }
+  let base : SystemState := default
+  let st1 : SystemState := { base with objects := base.objects.insert id (.tcb t1) }
+  match storeObjectKindChecked id (.tcb t2) st1 with
+  | .error e =>
+      throw <| IO.userError s!"al6-02 same-kind overwrite rejected: {repr e}"
+  | .ok (_, st') =>
+      match st'.getTcb? ⟨201⟩ with
+      | some t' =>
+          unless t'.priority.val = 7 do
+            throw <| IO.userError s!"al6-02 priority not updated (got {t'.priority.val})"
+          expect "al6-02 same-kind overwrite succeeds" true
+      | none =>
+          throw <| IO.userError "al6-02 post-state lost the TCB"
+
+/-- AL6-B-03: Cross-kind TCB→SchedContext is rejected with invalidObjectType. -/
+def al6_03_tcb_to_sc_rejected : IO Unit := do
+  let id : ObjId := ⟨202⟩
+  let t := minimalTcb ⟨202⟩
+  let sc := minimalSchedContext ⟨202⟩
+  let base : SystemState := default
+  let st1 : SystemState := { base with objects := base.objects.insert id (.tcb t) }
+  match storeObjectKindChecked id (.schedContext sc) st1 with
+  | .error .invalidObjectType =>
+      expect "al6-03 TCB->SC cross-kind rejected" true
+  | .error e =>
+      throw <| IO.userError s!"al6-03 wrong error: expected invalidObjectType, got {repr e}"
+  | .ok _ =>
+      throw <| IO.userError "al6-03 cross-kind write should have been rejected"
+
+/-- AL6-B-04: Cross-kind SchedContext→TCB is rejected with invalidObjectType
+(symmetric to AL6-03). -/
+def al6_04_sc_to_tcb_rejected : IO Unit := do
+  let id : ObjId := ⟨203⟩
+  let sc := minimalSchedContext ⟨203⟩
+  let t := minimalTcb ⟨203⟩
+  let base : SystemState := default
+  let st1 : SystemState := { base with objects := base.objects.insert id (.schedContext sc) }
+  match storeObjectKindChecked id (.tcb t) st1 with
+  | .error .invalidObjectType =>
+      expect "al6-04 SC->TCB cross-kind rejected" true
+  | .error e =>
+      throw <| IO.userError s!"al6-04 wrong error: expected invalidObjectType, got {repr e}"
+  | .ok _ =>
+      throw <| IO.userError "al6-04 cross-kind write should have been rejected"
+
+/-- AL6-B-05: State not mutated on rejection — the pre-state TCB survives
+a rejected cross-kind write. -/
+def al6_05_rejection_preserves_state : IO Unit := do
+  let id : ObjId := ⟨204⟩
+  let t := minimalTcb ⟨204⟩
+  let sc := minimalSchedContext ⟨204⟩
+  let base : SystemState := default
+  let st1 : SystemState := { base with objects := base.objects.insert id (.tcb t) }
+  match storeObjectKindChecked id (.schedContext sc) st1 with
+  | .error .invalidObjectType =>
+      -- st1 is unchanged — the original TCB is still there.
+      expect "al6-05 rejection preserves pre-state TCB" (st1.getTcb? ⟨204⟩ |>.isSome)
+  | _ =>
+      throw <| IO.userError "al6-05 expected invalidObjectType rejection"
+
+-- ============================================================================
 -- AK7-J: Structural invariants
 -- ============================================================================
 
@@ -589,6 +674,12 @@ def main : IO Unit := do
   al2C_06_getTcb_none_when_absent
   al2C_07_getTcb_roundtrip
   al2C_08_getSchedContext_roundtrip
+  -- AL6 (WS-AL): storeObjectKindChecked cross-variant rejection
+  al6_01_fresh_allocation_succeeds
+  al6_02_samekind_overwrite_succeeds
+  al6_03_tcb_to_sc_rejected
+  al6_04_sc_to_tcb_rejected
+  al6_05_rejection_preserves_state
   -- AK7-J
   ak7J_01_cdt_counter_overflow
   ak7J_02_cdt_counter_ok

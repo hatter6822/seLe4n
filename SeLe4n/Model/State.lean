@@ -81,6 +81,9 @@ inductive KernelError where
   | hardwareFault          -- AG3-C: SError (asynchronous external abort / hardware error)
   | notSupported           -- AG3-C: unsupported exception type (e.g., FIQ)
   | invalidIrq             -- AG3-D: interrupt ID not mapped in IRQ handler table
+  | invalidObjectType      -- AL6 (WS-AL / AK7-F.cascade): storeObjectKindChecked
+                           -- rejects cross-variant overwrite (e.g., storing a
+                           -- SchedContext at an ObjId that already holds a TCB).
   deriving Repr, DecidableEq
 
 /-- S2-A: Low-priority blanket `ToString` from `Repr`. Enables standard
@@ -680,6 +683,70 @@ theorem storeObjectChecked_headroom_eq_storeObject
     simp [Bool.and_eq_true] at hGuard
     omega
   · rfl
+
+-- ============================================================================
+-- AL6 (WS-AL / AK7-F.cascade): storeObject kind-guard wrapper.
+--
+-- The existing `storeObjectChecked` above is a capacity-only variant;
+-- it does not prevent a caller from overwriting a TCB stored at ObjId X
+-- with a SchedContext (or any other variant). AL6 adds a parallel
+-- `storeObjectKindChecked` wrapper that additionally rejects any write
+-- whose `KernelObject` variant disagrees with the variant already
+-- stored at the target id. Fresh allocations (`objects[id]? = none`)
+-- are accepted — the caller is assumed to hold a freshly-allocated
+-- ObjId, as enforced by `retypeFromUntyped_childId_fresh`.
+--
+-- Security impact: closes the silent cross-variant overwrite hole
+-- where `storeObject tid (.tcb t)` followed by
+-- `storeObject tid (.schedContext sc)` would change the stored kind
+-- without any invariant registering the change.
+-- ============================================================================
+
+/-- AL6-A (WS-AL / AK7-F.cascade): kind-checked variant of `storeObject`.
+Succeeds on a fresh id (pre-state has no object) OR when the pre-state
+object has the same `objectType` as the incoming one. Otherwise returns
+`.error .invalidObjectType`. Used by consumers that update an existing
+object in place and must not accidentally change its variant. Fresh
+allocations (boot, retype) continue to use `storeObject` directly. -/
+def storeObjectKindChecked (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
+  fun st =>
+    match st.objects[id]? with
+    | none => storeObject id obj st
+    | some existing =>
+        if existing.objectType = obj.objectType then
+          storeObject id obj st
+        else
+          .error .invalidObjectType
+
+/-- AL6-A: On a fresh id (no pre-state object), `storeObjectKindChecked`
+reduces to `storeObject`. -/
+theorem storeObjectKindChecked_fresh_eq_storeObject
+    (id : SeLe4n.ObjId) (obj : KernelObject) (st : SystemState)
+    (h : st.objects[id]? = none) :
+    storeObjectKindChecked id obj st = storeObject id obj st := by
+  unfold storeObjectKindChecked
+  simp [h]
+
+/-- AL6-A: When the pre-state object has the same `objectType` as the
+incoming one, `storeObjectKindChecked` reduces to `storeObject`. -/
+theorem storeObjectKindChecked_sameKind_eq_storeObject
+    (id : SeLe4n.ObjId) (obj existing : KernelObject) (st : SystemState)
+    (hExists : st.objects[id]? = some existing)
+    (hKind : existing.objectType = obj.objectType) :
+    storeObjectKindChecked id obj st = storeObject id obj st := by
+  unfold storeObjectKindChecked
+  rw [hExists]; simp [hKind]
+
+/-- AL6-A: Cross-variant writes are rejected. If the store already
+holds an object of a different variant, `storeObjectKindChecked`
+returns `.error .invalidObjectType` without mutating state. -/
+theorem storeObjectKindChecked_crossKind_rejected
+    (id : SeLe4n.ObjId) (obj existing : KernelObject) (st : SystemState)
+    (hExists : st.objects[id]? = some existing)
+    (hKindNe : existing.objectType ≠ obj.objectType) :
+    storeObjectKindChecked id obj st = .error .invalidObjectType := by
+  unfold storeObjectKindChecked
+  rw [hExists]; simp [hKindNe]
 
 -- ============================================================================
 -- AF2-A: Machine-checked storeObject capacity safety (AF-03)

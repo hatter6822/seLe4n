@@ -81,8 +81,11 @@ pub enum KernelError {
     NotSupported = 47,
     /// AG3-D: Unmapped interrupt received (no handler registered)
     InvalidIrq = 48,
+    /// AL6 (WS-AL / AK7-F.cascade): `storeObjectKindChecked` rejected a
+    /// cross-variant write to an existing object store entry.
+    InvalidObjectType = 49,
     /// AF6-A: Kernel returned an error code not recognized by this ABI version.
-    /// Discriminant 255 is a reserved sentinel outside the kernel range 0–48.
+    /// Discriminant 255 is a reserved sentinel outside the kernel range 0–49.
     UnknownKernelError = 255,
 }
 
@@ -139,6 +142,7 @@ impl KernelError {
             46 => Some(Self::HardwareFault),
             47 => Some(Self::NotSupported),
             48 => Some(Self::InvalidIrq),
+            49 => Some(Self::InvalidObjectType),
             255 => Some(Self::UnknownKernelError),
             _ => None,
         }
@@ -198,6 +202,7 @@ impl std::fmt::Display for KernelError {
             Self::HardwareFault => write!(f, "hardware fault"),
             Self::NotSupported => write!(f, "not supported"),
             Self::InvalidIrq => write!(f, "invalid IRQ"),
+            Self::InvalidObjectType => write!(f, "invalid object type"),
             Self::UnknownKernelError => write!(f, "unknown kernel error"),
         }
     }
@@ -212,8 +217,9 @@ mod tests {
 
     #[test]
     fn from_u32_roundtrip() {
-        // T1-H: All 49 variants (0-48) must roundtrip
-        for i in 0..=48u32 {
+        // AL6 (WS-AL / AK7-F.cascade): variants 0-49 must roundtrip after
+        // InvalidObjectType was added at discriminant 49.
+        for i in 0..=49u32 {
             let e = KernelError::from_u32(i).unwrap();
             assert_eq!(e as u32, i);
         }
@@ -222,7 +228,7 @@ mod tests {
     #[test]
     fn from_u32_out_of_range() {
         // T1-G: Discriminants in gaps and beyond range must return None
-        assert!(KernelError::from_u32(49).is_none());
+        assert!(KernelError::from_u32(50).is_none());
         assert!(KernelError::from_u32(254).is_none());
         // 255 is now UnknownKernelError (AF6-A sentinel)
         assert_eq!(KernelError::from_u32(255), Some(KernelError::UnknownKernelError));
@@ -249,6 +255,8 @@ mod tests {
         assert_eq!(KernelError::HardwareFault as u32, 46);
         assert_eq!(KernelError::NotSupported as u32, 47);
         assert_eq!(KernelError::InvalidIrq as u32, 48);
+        // AL6 (WS-AL / AK7-F.cascade): kind-check rejection
+        assert_eq!(KernelError::InvalidObjectType as u32, 49);
     }
 
     /// T1-H: Cross-validation — verify Lean-Rust enum correspondence
@@ -259,20 +267,22 @@ mod tests {
     ///   | allocationMisaligned    (37)
     #[test]
     fn lean_rust_correspondence() {
-        // Verify total variant count matches Lean (49 variants, 0-48)
-        let max_valid = 48u32;
+        // AL6 (WS-AL / AK7-F.cascade): 50 variants (0-49) — verify total
+        // variant count matches Lean.
+        let max_valid = 49u32;
         assert!(KernelError::from_u32(max_valid).is_some());
         assert!(KernelError::from_u32(max_valid + 1).is_none());
 
-        // Verify from_u32: unknown discriminants in the gap (49–254) return None
+        // Verify from_u32: unknown discriminants in the gap (50–254) return None
         assert!(KernelError::from_u32(100).is_none());
     }
 
-    /// T1-H: Discriminant ordering — kernel variants 0–48 are sequential
+    /// T1-H: Discriminant ordering — kernel variants 0–49 are sequential
+    /// (AL6 extended the range by adding InvalidObjectType at 49).
     #[test]
     fn discriminant_ordering() {
         let mut prev = None;
-        for i in 0..=48u32 {
+        for i in 0..=49u32 {
             let e = KernelError::from_u32(i);
             assert!(e.is_some(), "gap at discriminant {i}");
             if let Some(p) = prev {
@@ -283,12 +293,13 @@ mod tests {
     }
 
     /// AF6-A: UnknownKernelError sentinel at discriminant 255
+    /// (AL6: the 49 gap closed, so the None range starts at 50)
     #[test]
     fn unknown_kernel_error_sentinel() {
         assert_eq!(KernelError::UnknownKernelError as u32, 255);
         assert_eq!(KernelError::from_u32(255), Some(KernelError::UnknownKernelError));
-        // Gap between 48 and 255 is all None
-        for i in 49..255u32 {
+        // Gap between 49 and 255 is all None
+        for i in 50..255u32 {
             assert!(KernelError::from_u32(i).is_none(), "unexpected variant at {i}");
         }
     }
