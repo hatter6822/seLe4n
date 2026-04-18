@@ -568,17 +568,9 @@ def cspaceMint
     match cspaceLookupSlot src st with
     | .error e => .error e
     | .ok (parent, st') =>
-        -- AL1-A (AK7-I.cascade): reject null caps (sentinel target + empty
-        -- rights) before derivation. cspaceLookupSlot cannot distinguish
-        -- "slot empty" (returns .error .invalidCapability) from "slot holds
-        -- null cap" (returns .ok (Capability.null, …)); the guard below
-        -- closes that conflation.
-        match parent.requireNotNull with
-        | none => .error .invalidCapability
-        | some parent' =>
-            match mintDerivedCap parent' rights badge with
-            | .error e => .error e
-            | .ok child => cspaceInsertSlot dst child st'
+        match mintDerivedCap parent rights badge with
+        | .error e => .error e
+        | .ok child => cspaceInsertSlot dst child st'
 
 /-- U-H03: Check whether a CSpace slot has CDT children (derived capabilities).
 Returns `true` if the slot's CDT node has any children, indicating that
@@ -698,19 +690,13 @@ def cspaceCopy (src dst : CSpaceAddr) : Kernel Unit :=
     match cspaceLookupSlot src st with
     | .error e => .error e
     | .ok (cap, st') =>
-        -- AL1-B (AK7-I.cascade): reject null caps (sentinel target + empty
-        -- rights) before copy. Prevents silent propagation of
-        -- seL4_CapNull-style sentinels via `cspaceCopy`.
-        match cap.requireNotNull with
-        | none => .error .invalidCapability
-        | some cap' =>
-            match cspaceInsertSlot dst cap' st' with
-            | .error e => .error e
-            | .ok ((), st'') =>
-                let (srcNode, stSrc) := SystemState.ensureCdtNodeForSlot st'' src
-                let (dstNode, stDst) := SystemState.ensureCdtNodeForSlot stSrc dst
-                let cdt' := stDst.cdt.addEdge srcNode dstNode .copy
-                .ok ((), { stDst with cdt := cdt' })
+        match cspaceInsertSlot dst cap st' with
+        | .error e => .error e
+        | .ok ((), st'') =>
+            let (srcNode, stSrc) := SystemState.ensureCdtNodeForSlot st'' src
+            let (dstNode, stDst) := SystemState.ensureCdtNodeForSlot stSrc dst
+            let cdt' := stDst.cdt.addEdge srcNode dstNode .copy
+            .ok ((), { stDst with cdt := cdt' })
 
 /-- WS-E4/C-02: Move a capability from source to destination.
 
@@ -722,28 +708,21 @@ def cspaceMove (src dst : CSpaceAddr) : Kernel Unit :=
     match cspaceLookupSlot src st with
     | .error e => .error e
     | .ok (cap, st') =>
-        -- AL1-C (AK7-I.cascade): reject null caps before mutation. A
-        -- moved null cap would consume a slot at the destination and
-        -- clear the source — both pointless but potentially observable
-        -- via CDT-edge churn; fail fast instead.
-        match cap.requireNotNull with
-        | none => .error .invalidCapability
-        | some cap' =>
-            match cspaceInsertSlot dst cap' st' with
+        match cspaceInsertSlot dst cap st' with
+        | .error e => .error e
+        | .ok ((), st'') =>
+            let srcNode? := SystemState.lookupCdtNodeOfSlot st'' src
+            -- Use unchecked delete: move preserves CDT edges via
+            -- attachSlotToCdtNode, so children follow the capability.
+            match cspaceDeleteSlotCore src st'' with
             | .error e => .error e
-            | .ok ((), st'') =>
-                let srcNode? := SystemState.lookupCdtNodeOfSlot st'' src
-                -- Use unchecked delete: move preserves CDT edges via
-                -- attachSlotToCdtNode, so children follow the capability.
-                match cspaceDeleteSlotCore src st'' with
-                | .error e => .error e
-                | .ok ((), st''') =>
-                    -- Node-stable CDT: move is a slot-pointer move + backpointer fixup.
-                    match srcNode? with
-                    | none => .ok ((), st''')
-                    | some srcNode =>
-                        let stMoved := SystemState.attachSlotToCdtNode st''' dst srcNode
-                        .ok ((), stMoved)
+            | .ok ((), st''') =>
+                -- Node-stable CDT: move is a slot-pointer move + backpointer fixup.
+                match srcNode? with
+                | none => .ok ((), st''')
+                | some srcNode =>
+                    let stMoved := SystemState.attachSlotToCdtNode st''' dst srcNode
+                    .ok ((), stMoved)
 
 /-- WS-H13/A-21: `cspaceMove` error-path atomicity. On failure, no output
 state is produced — the `Except` error constructor carries only the error tag,

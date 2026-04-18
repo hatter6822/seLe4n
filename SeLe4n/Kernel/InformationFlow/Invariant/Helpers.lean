@@ -556,26 +556,14 @@ theorem cspaceMint_preserves_lowEquivalent
     ⟨parent₂, child₂, hLookup₂, _, _⟩
   unfold cspaceMint at hStep₁ hStep₂
   rw [hLookup₁] at hStep₁; rw [hLookup₂] at hStep₂
-  -- AL1-A/AL1-D.2 (AK7-I.cascade): collapse the requireNotNull guard on
-  -- both branches. Success of hStep_i implies parent_i is non-null.
-  have hReqNN₁ : parent₁.requireNotNull = some parent₁ := by
-    by_cases hNull : parent₁.isNull
-    · exfalso; simp [Capability.requireNotNull, hNull] at hStep₁
-    · simp [Capability.requireNotNull, hNull]
-  have hReqNN₂ : parent₂.requireNotNull = some parent₂ := by
-    by_cases hNull : parent₂.isNull
-    · exfalso; simp [Capability.requireNotNull, hNull] at hStep₂
-    · simp [Capability.requireNotNull, hNull]
   cases hMint₁ : mintDerivedCap parent₁ rights badge with
-  | error e => simp [hReqNN₁, hMint₁] at hStep₁
+  | error e => simp [hMint₁] at hStep₁
   | ok c₁ =>
     cases hMint₂ : mintDerivedCap parent₂ rights badge with
-    | error e => simp [hReqNN₂, hMint₂] at hStep₂
+    | error e => simp [hMint₂] at hStep₂
     | ok c₂ =>
-      have hInsert₁ : cspaceInsertSlot dst c₁ s₁ = .ok ((), s₁') := by
-        simpa [hReqNN₁, hMint₁] using hStep₁
-      have hInsert₂ : cspaceInsertSlot dst c₂ s₂ = .ok ((), s₂') := by
-        simpa [hReqNN₂, hMint₂] using hStep₂
+      have hInsert₁ : cspaceInsertSlot dst c₁ s₁ = .ok ((), s₁') := by simpa [hMint₁] using hStep₁
+      have hInsert₂ : cspaceInsertSlot dst c₂ s₂ = .ok ((), s₂') := by simpa [hMint₂] using hStep₂
       have hObjLow := congrArg ObservableState.objects hLow
       have hRunLow := congrArg ObservableState.runnable hLow
       have hCurLow := congrArg ObservableState.current hLow

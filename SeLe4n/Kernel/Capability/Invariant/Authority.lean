@@ -371,21 +371,13 @@ theorem cspaceMint_child_attenuates
       rcases pair with ⟨parent, st1⟩
       have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src parent hSrc
       subst st1
-      -- AL1-A/AL1-D.1 (AK7-I.cascade): collapse the requireNotNull guard.
-      -- The .ok outcome of hStep implies the guard passed, so parent is
-      -- non-null and requireNotNull reduces to some parent.
-      have hReqNN : parent.requireNotNull = some parent := by
-        by_cases hNull : parent.isNull
-        · exfalso
-          simp [Capability.requireNotNull, hNull, hSrc] at hStep
-        · simp [Capability.requireNotNull, hNull]
       cases hMint : mintDerivedCap parent rights badge with
-      | error e => simp [hSrc, hReqNN, hMint] at hStep
+      | error e => simp [hSrc, hMint] at hStep
       | ok child =>
           have hAtt : capAttenuates parent child :=
             mintDerivedCap_attenuates parent child rights badge hMint
           have hInsert : cspaceInsertSlot dst child st = .ok ((), st') := by
-            simpa [hSrc, hReqNN, hMint] using hStep
+            simpa [hSrc, hMint] using hStep
           refine ⟨parent, child, ?_, ?_, hAtt⟩
           · rfl
           · exact cspaceInsertSlot_lookup_eq st st' dst child hSlotUniq hObjInv hInsert
@@ -450,22 +442,6 @@ theorem cspaceMint_child_badge_preserved
       have hSt1 := cspaceLookupSlot_preserves_state st st1 src parent hSrc
       subst st1
       simp [hSrc] at hStep
-      -- AL1-A/AL1-D.1 (AK7-I.cascade): the new null-cap guard adds a
-      -- `parent.requireNotNull` match. Collapse it via the bridge lemma
-      -- so the existing mint-proof structure survives.
-      have hReqNN : parent.requireNotNull = some parent := by
-        unfold Capability.requireNotNull
-        -- We know the step succeeded, so parent cannot be null. Derive
-        -- from the hStep shape: if requireNotNull were none, hStep would
-        -- reduce to .error, contradicting the hypothesis that we're in
-        -- the .ok branch. But for the forward direction, this proof needs
-        -- the non-null property independently; we pull it from the
-        -- mint-success path below by case-splitting first.
-        by_cases hNull : parent.isNull
-        · exfalso
-          simp [Capability.requireNotNull, hNull] at hStep
-        · simp [hNull]
-      simp [hReqNN] at hStep
       cases hMint : mintDerivedCap parent rights (some badge) with
       | error e => simp [hMint] at hStep
       | ok child =>

@@ -360,16 +360,10 @@ theorem step_preserves_projection
     rcases cspaceMint_child_attenuates st st' src dst rights badge hSlotUniq hObjInv hOp with
       ⟨parent, child, hLookup, _, _⟩
     unfold cspaceMint at hOp; rw [hLookup] at hOp
-    -- AL1-A (AK7-I.cascade): collapse the requireNotNull guard.
-    have hReqNN : parent.requireNotNull = some parent := by
-      by_cases hNull : parent.isNull
-      · exfalso; simp [Capability.requireNotNull, hNull] at hOp
-      · simp [Capability.requireNotNull, hNull]
     cases hMint : mintDerivedCap parent rights badge with
-    | error e => simp [hReqNN, hMint] at hOp
+    | error e => simp [hMint] at hOp
     | ok c =>
-      have hInsert : cspaceInsertSlot dst c st = .ok ((), st') := by
-        simpa [hReqNN, hMint] using hOp
+      have hInsert : cspaceInsertSlot dst c st = .ok ((), st') := by simpa [hMint] using hOp
       simp only [projectState]; congr 1
       · funext oid; by_cases hObs : objectObservable ctx observer oid
         · simp [projectObjects, hObs]
