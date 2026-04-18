@@ -489,8 +489,13 @@ theorem cspaceCopy_preserves_capabilityInvariantBundle
       rcases pair with ⟨cap, st1⟩
       have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src cap hSrc
       subst st1
+      -- AL1-B (AK7-I.cascade): collapse the requireNotNull guard.
+      have hReqNN : cap.requireNotNull = some cap := by
+        by_cases hNull : cap.isNull
+        · exfalso; simp [Capability.requireNotNull, hNull, hSrc] at hStep
+        · simp [Capability.requireNotNull, hNull]
       cases hInsert : cspaceInsertSlot dst cap st with
-      | error e => simp [hSrc, hInsert] at hStep
+      | error e => simp [hSrc, hReqNN, hInsert] at hStep
       | ok pair2 =>
           rcases pair2 with ⟨_, st2⟩
           have hBundleSt2 := cspaceInsertSlot_preserves_capabilityInvariantBundle st st2 dst cap hInv
@@ -501,7 +506,7 @@ theorem cspaceCopy_preserves_capabilityInvariantBundle
           | mk srcNode stSrc =>
               cases hEnsDst : SystemState.ensureCdtNodeForSlot stSrc dst with
               | mk dstNode stDst =>
-                  simp [hSrc, hInsert, hEnsSrc, hEnsDst] at hStep
+                  simp [hSrc, hReqNN, hInsert, hEnsSrc, hEnsDst] at hStep
                   cases hStep
                   have hObjSrc : stSrc.objects = st2.objects := by
                     simpa [hEnsSrc] using SystemState.ensureCdtNodeForSlot_objects_eq st2 src

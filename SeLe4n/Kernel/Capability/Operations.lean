@@ -698,13 +698,19 @@ def cspaceCopy (src dst : CSpaceAddr) : Kernel Unit :=
     match cspaceLookupSlot src st with
     | .error e => .error e
     | .ok (cap, st') =>
-        match cspaceInsertSlot dst cap st' with
-        | .error e => .error e
-        | .ok ((), st'') =>
-            let (srcNode, stSrc) := SystemState.ensureCdtNodeForSlot st'' src
-            let (dstNode, stDst) := SystemState.ensureCdtNodeForSlot stSrc dst
-            let cdt' := stDst.cdt.addEdge srcNode dstNode .copy
-            .ok ((), { stDst with cdt := cdt' })
+        -- AL1-B (AK7-I.cascade): reject null caps (sentinel target + empty
+        -- rights) before copy. Prevents silent propagation of
+        -- seL4_CapNull-style sentinels via `cspaceCopy`.
+        match cap.requireNotNull with
+        | none => .error .invalidCapability
+        | some cap' =>
+            match cspaceInsertSlot dst cap' st' with
+            | .error e => .error e
+            | .ok ((), st'') =>
+                let (srcNode, stSrc) := SystemState.ensureCdtNodeForSlot st'' src
+                let (dstNode, stDst) := SystemState.ensureCdtNodeForSlot stSrc dst
+                let cdt' := stDst.cdt.addEdge srcNode dstNode .copy
+                .ok ((), { stDst with cdt := cdt' })
 
 /-- WS-E4/C-02: Move a capability from source to destination.
 
