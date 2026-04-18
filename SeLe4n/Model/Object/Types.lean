@@ -410,6 +410,17 @@ theorem requireNotNull_some_not_null {cap cap' : Capability}
     cases h
     simp [hNotNull]
 
+/-- AL1-D.1 (AK7-I.cascade): Bridge lemma — `requireNotNull` returns the
+input capability unchanged. Used by every preservation proof that
+unfolds through the null-guard introduced at `cspaceMint`, `cspaceCopy`,
+and `cspaceMove` in WS-AL phase AL1. -/
+theorem requireNotNull_some_eq {cap cap' : Capability}
+    (h : cap.requireNotNull = some cap') : cap' = cap := by
+  unfold requireNotNull at h
+  split at h
+  · cases h
+  · cases h; rfl
+
 end Capability
 
 /-- WS-H12d/A-09: Maximum number of message registers per IPC message.

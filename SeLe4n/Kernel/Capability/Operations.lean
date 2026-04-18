@@ -568,9 +568,17 @@ def cspaceMint
     match cspaceLookupSlot src st with
     | .error e => .error e
     | .ok (parent, st') =>
-        match mintDerivedCap parent rights badge with
-        | .error e => .error e
-        | .ok child => cspaceInsertSlot dst child st'
+        -- AL1-A (AK7-I.cascade): reject null caps (sentinel target + empty
+        -- rights) before derivation. cspaceLookupSlot cannot distinguish
+        -- "slot empty" (returns .error .invalidCapability) from "slot holds
+        -- null cap" (returns .ok (Capability.null, …)); the guard below
+        -- closes that conflation.
+        match parent.requireNotNull with
+        | none => .error .invalidCapability
+        | some parent' =>
+            match mintDerivedCap parent' rights badge with
+            | .error e => .error e
+            | .ok child => cspaceInsertSlot dst child st'
 
 /-- U-H03: Check whether a CSpace slot has CDT children (derived capabilities).
 Returns `true` if the slot's CDT node has any children, indicating that

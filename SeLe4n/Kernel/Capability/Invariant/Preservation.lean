@@ -196,11 +196,17 @@ theorem cspaceMint_preserves_capabilityInvariantBundle
       rcases pair with ⟨parent, st1⟩
       have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src parent hSrc
       subst st1
+      -- AL1-A/AL1-D.2 (AK7-I.cascade): collapse the requireNotNull guard.
+      have hReqNN : parent.requireNotNull = some parent := by
+        by_cases hNull : parent.isNull
+        · exfalso
+          simp [Capability.requireNotNull, hNull, hSrc] at hStep
+        · simp [Capability.requireNotNull, hNull]
       cases hMint : mintDerivedCap parent rights badge with
-      | error e => simp [hSrc, hMint] at hStep
+      | error e => simp [hSrc, hReqNN, hMint] at hStep
       | ok child =>
           have hInsert : cspaceInsertSlot dst child st = .ok ((), st') := by
-            simpa [hSrc, hMint] using hStep
+            simpa [hSrc, hReqNN, hMint] using hStep
           exact cspaceInsertSlot_preserves_capabilityInvariantBundle st st' dst child hInv
             (fun cn hObj => hDstCapacity cn child hObj)
             (objects_invExt_of_capabilityInvariantBundle st hInv) hInsert
@@ -1845,6 +1851,13 @@ theorem cspaceMint_preserves_badgeWellFormed
     have hPairEq := cspaceLookupSlot_ok_state_eq st src pair.1 pair.2 hLookup
     subst hPairEq
     simp only [hLookup] at hStep
+    -- AL1-A/AL1-D.3 (AK7-I.cascade): collapse the requireNotNull guard.
+    have hReqNN : pair.1.requireNotNull = some pair.1 := by
+      by_cases hNull : pair.1.isNull
+      · exfalso
+        simp [Capability.requireNotNull, hNull] at hStep
+      · simp [Capability.requireNotNull, hNull]
+    simp only [hReqNN] at hStep
     cases hMint : mintDerivedCap pair.1 rights badge with
     | error e => simp [hMint] at hStep
     | ok child =>
@@ -2197,11 +2210,17 @@ theorem cspaceMint_preserves_cdtMapsConsistent
       rcases pair with ⟨parent, st1⟩
       have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 src parent hSrc
       subst st1
+      -- AL1-A/AL1-D.4 (AK7-I.cascade): collapse the requireNotNull guard.
+      have hReqNN : parent.requireNotNull = some parent := by
+        by_cases hNull : parent.isNull
+        · exfalso
+          simp [Capability.requireNotNull, hNull, hSrc] at hStep
+        · simp [Capability.requireNotNull, hNull]
       cases hMint : mintDerivedCap parent rights badge with
-      | error e => simp [hSrc, hMint] at hStep
+      | error e => simp [hSrc, hReqNN, hMint] at hStep
       | ok child =>
           have hInsert : cspaceInsertSlot dst child st = .ok ((), st') := by
-            simpa [hSrc, hMint] using hStep
+            simpa [hSrc, hReqNN, hMint] using hStep
           -- cspaceInsertSlot only calls storeObject + storeCapabilityRef (CDT unchanged)
           exact cspaceInsertSlot_preserves_cdtMapsConsistent st st' dst child hCon hInsert
 
