@@ -3019,3 +3019,123 @@ theorem objects_insert_preserves_projection_high
   rw [hProjObj]
   rfl
 
+-- ============================================================================
+-- AK6-F.2c: updatePrioritySource + setPriorityOp preservation
+-- ============================================================================
+
+/-- AK6-F.2c (helper): `updatePrioritySource` modifies only `st.objects` via
+    direct insert, at either the target TCB (unbound case) or the bound/donated
+    SchedContext. When the relevant object is non-observable, projection is
+    preserved by `objects_insert_preserves_projection_high`. -/
+theorem updatePrioritySource_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (newPriority : SeLe4n.Priority)
+    (hTcbHigh : objectObservable ctx observer tid.toObjId = false)
+    (hScHigh : ∀ scId, (tcb.schedContextBinding = SchedContextBinding.bound scId ∨
+                         (∃ donor, tcb.schedContextBinding = SchedContextBinding.donated scId donor)) →
+                        objectObservable ctx observer scId.toObjId = false)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer
+      (SchedContext.PriorityManagement.updatePrioritySource st tid tcb newPriority) =
+    projectState ctx observer st := by
+  unfold SchedContext.PriorityManagement.updatePrioritySource
+  split
+  · -- .unbound
+    exact objects_insert_preserves_projection_high ctx observer st tid.toObjId _
+      hTcbHigh hObjInv
+  · -- .bound scId: match on st.objects[scId.toObjId]?
+    rename_i scId hBinding
+    split
+    · -- some (.schedContext sc) — apply frame lemma
+      have hSc : objectObservable ctx observer scId.toObjId = false :=
+        hScHigh scId (Or.inl hBinding)
+      exact objects_insert_preserves_projection_high ctx observer st scId.toObjId _
+        hSc hObjInv
+    · -- other: state unchanged
+      rfl
+  · -- .donated scId originalOwner: match on st.objects[scId.toObjId]?
+    rename_i scId originalOwner hBinding
+    split
+    · have hSc : objectObservable ctx observer scId.toObjId = false :=
+        hScHigh scId (Or.inr ⟨originalOwner, hBinding⟩)
+      exact objects_insert_preserves_projection_high ctx observer st scId.toObjId _
+        hSc hObjInv
+    · rfl
+
+-- ============================================================================
+-- AK6-F.2h/i: VSpace checked+flush wrappers preservation
+-- ============================================================================
+
+/-- AK6-F.2h: `vspaceMapPageCheckedWithFlushFromState` preserves projection
+    when the resolved VSpace root is non-observable. The "checked + flush"
+    variant adds a PA bounds check (error → state unchanged) and a
+    post-store TLB flush (TLB is not in `projectState`, so `rfl` suffices).
+    Delegates to the existing `vspaceMapPage_preserves_projection`. -/
+theorem vspaceMapPageCheckedWithFlushFromState_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr) (paddr : SeLe4n.PAddr)
+    (perms : PagePermissions)
+    (st st' : SystemState)
+    (hRootHigh : ∀ rootId root, Architecture.resolveAsidRoot st asid = some (rootId, root) →
+        objectObservable ctx observer rootId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : Architecture.vspaceMapPageCheckedWithFlushFromState asid vaddr paddr perms st
+              = .ok ((), st'))
+    (hDefault : perms = default) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold Architecture.vspaceMapPageCheckedWithFlushFromState at hStep
+  split at hStep
+  · simp at hStep
+  · split at hStep
+    · simp at hStep
+    · -- vspaceMapPageWithFlush call
+      unfold Architecture.vspaceMapPageWithFlush at hStep
+      cases hInner : Architecture.vspaceMapPage asid vaddr paddr perms st with
+      | error e => rw [hInner] at hStep; simp at hStep
+      | ok pair =>
+        rw [hInner] at hStep
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hStEq⟩ := hStep
+        subst hStEq
+        subst hDefault
+        -- Existing theorem: vspaceMapPage preserves projection
+        have hProj : projectState ctx observer pair.2 = projectState ctx observer st := by
+          obtain ⟨_, stInner⟩ := pair
+          exact vspaceMapPage_preserves_projection ctx observer asid vaddr paddr st stInner
+            hRootHigh hObjInv hInner
+        -- Adding TLB flush doesn't affect projection (TLB is not in projectState)
+        show projectState ctx observer { pair.2 with tlb := _ } = projectState ctx observer st
+        rw [← hProj]
+        rfl
+
+/-- AK6-F.2i: `vspaceUnmapPageWithFlush` preserves projection when the
+    resolved VSpace root is non-observable. Delegates to the existing
+    `vspaceUnmapPage_preserves_projection` and handles the TLB flush
+    frame (TLB not in `projectState`). -/
+theorem vspaceUnmapPageWithFlush_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (asid : SeLe4n.ASID) (vaddr : SeLe4n.VAddr)
+    (st st' : SystemState)
+    (hRootHigh : ∀ rootId root, Architecture.resolveAsidRoot st asid = some (rootId, root) →
+        objectObservable ctx observer rootId = false)
+    (hObjInv : st.objects.invExt)
+    (hStep : Architecture.vspaceUnmapPageWithFlush asid vaddr st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold Architecture.vspaceUnmapPageWithFlush at hStep
+  cases hInner : Architecture.vspaceUnmapPage asid vaddr st with
+  | error e => rw [hInner] at hStep; simp at hStep
+  | ok pair =>
+    rw [hInner] at hStep
+    simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+    obtain ⟨_, hStEq⟩ := hStep
+    subst hStEq
+    have hProj : projectState ctx observer pair.2 = projectState ctx observer st := by
+      obtain ⟨_, stInner⟩ := pair
+      exact vspaceUnmapPage_preserves_projection ctx observer asid vaddr st stInner
+        hRootHigh hObjInv hInner
+    show projectState ctx observer { pair.2 with tlb := _ } = projectState ctx observer st
+    rw [← hProj]
+    rfl
+
+

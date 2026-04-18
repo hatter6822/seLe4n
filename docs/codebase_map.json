@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-ak6-workstream-VM0m9",
-      "commit_sha": "22c17128db0d4ce4a3045e31f05c27ea6015654e",
-      "tree_sha": "8704ae64b67360b58e8fed6aefa31806bfcba311",
-      "committed_at_utc": "2026-04-17T23:06:59+00:00"
+      "commit_sha": "197acdf0bc1c28753f35760698825a324fd7cf68",
+      "tree_sha": "feb5b30d275d0ebfe73d51555b5edb6776dea519",
+      "committed_at_utc": "2026-04-18T00:39:03+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c71b73d586ec6b3cc0bbbc49c6f5faa88c1383de193d3ddb8d810d9259cf943f"
+    "source_digest": "f3cd0c7d95247e74fe5dc80168dac2813251b601b8f267da0873ba659e230b9c"
   },
   "summary": {
     "module_count": 164,
-    "declaration_count": 5265
+    "declaration_count": 5268
   },
   "readme_sync": {
     "version": "0.29.10",
     "lean_toolchain": "v4.28.0",
     "production_files": 142,
-    "production_loc": 98228,
+    "production_loc": 98348,
     "test_files": 22,
     "test_loc": 13098,
-    "proved_theorem_lemma_decls": 2888,
+    "proved_theorem_lemma_decls": 2891,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -27731,7 +27731,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Invariant.Operations",
       "path": "SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean",
-      "declaration_count": 76,
+      "declaration_count": 79,
       "declarations": [
         {
           "kind": "namespace",
@@ -29346,6 +29346,68 @@
             "objectObservable",
             "projectObjects",
             "projectState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updatePrioritySource_preserves_projection",
+          "line": 3030,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "Priority",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "invExt",
+            "objectObservable",
+            "objects_insert_preserves_projection_high",
+            "projectState",
+            "scId",
+            "toObjId",
+            "updatePrioritySource"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceMapPageCheckedWithFlushFromState_preserves_projection",
+          "line": 3075,
+          "called": [
+            "ASID",
+            "IfObserver",
+            "LabelingContext",
+            "PAddr",
+            "PagePermissions",
+            "SystemState",
+            "VAddr",
+            "default",
+            "invExt",
+            "objectObservable",
+            "projectState",
+            "resolveAsidRoot",
+            "vspaceMapPage",
+            "vspaceMapPageCheckedWithFlushFromState",
+            "vspaceMapPageWithFlush",
+            "vspaceMapPage_preserves_projection"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "vspaceUnmapPageWithFlush_preserves_projection",
+          "line": 3116,
+          "called": [
+            "ASID",
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "VAddr",
+            "invExt",
+            "objectObservable",
+            "projectState",
+            "resolveAsidRoot",
+            "vspaceUnmapPage",
+            "vspaceUnmapPageWithFlush",
+            "vspaceUnmapPage_preserves_projection"
           ]
         }
       ]

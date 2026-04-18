@@ -1,33 +1,49 @@
-## v0.29.10 — AK6-F substantive closure (incremental)
+## v0.29.10 — AK6-F substantive closure (incremental, extended)
 
-Builds on v0.29.9 AK6-F by adding the first set of per-op preservation
-proofs that substantively discharge `dispatchCapabilityOnly`'s projection-
-preservation obligation for individual arms. Three new theorems form the
-foundation for further per-arm discharge work:
+Builds on v0.29.9 AK6-F by adding per-op preservation proofs that
+substantively discharge `dispatchCapabilityOnly`'s projection-preservation
+obligation for multiple arms. Six new preservation theorems plus a
+universal direct-insert frame lemma form the foundation for ongoing
+per-arm discharge work:
 
-1. **`objects_insert_preserves_projection_high`** — universal direct-
-   insert frame lemma: modifying only `st.objects` via `RHTable.insert`
-   at a non-observable ObjId preserves projection. This is the analog of
-   `storeObject_preserves_projection` for the many kernel operations
-   (`updatePrioritySource`, `schedContextBind`, etc.) that mutate the
+1. **`objects_insert_preserves_projection_high`** (Operations.lean) —
+   universal direct-insert frame lemma: modifying only `st.objects` via
+   `RHTable.insert` at a non-observable ObjId preserves projection.
+   Analog of `storeObject_preserves_projection` for ops that mutate the
    object map directly rather than through the full `storeObject`
    pipeline.
 
-2. **`setIPCBufferOp_preserves_projection`** — first full per-op
-   projection-preservation proof for a previously-undischarged cap-only
-   arm (`.tcbSetIPCBuffer`). Uses `storeObject_preserves_projection`
+2. **`setIPCBufferOp_preserves_projection`** — full per-op preservation
+   for `.tcbSetIPCBuffer` arm. Uses `storeObject_preserves_projection`
    after validation.
 
-3. **Frame helpers in `Projection.lean`**:
+3. **`updatePrioritySource_preserves_projection`** — preservation for
+   the `updatePrioritySource` helper used by `setPriorityOp` and
+   `setMCPriorityOp`. Handles three binding cases (`.unbound`,
+   `.bound`, `.donated`) via the new universal direct-insert frame.
+
+4. **`vspaceMapPageCheckedWithFlushFromState_preserves_projection`** —
+   wraps existing `vspaceMapPage_preserves_projection`. Handles the
+   PA bounds check (error branch preserves state) and post-store TLB
+   flush (TLB not in `projectState`, so trivially preserved).
+
+5. **`vspaceUnmapPageWithFlush_preserves_projection`** — wraps existing
+   `vspaceUnmapPage_preserves_projection`. Same pattern for the unmap
+   path.
+
+6. **Frame helpers in `Projection.lean`**:
    - `projectState_replenishQueue_eq` — mutating only
      `scheduler.replenishQueue` preserves projection.
    - `projectState_scheduler_current_cleared_when_high` — clearing
      `scheduler.current` when the previous current was non-observable
      preserves projection.
 
-These additions set up the pattern (and provide the building blocks) for
-closing the remaining 13 cap-only arms in follow-up work. The
-`dispatchCapabilityOnly_preserves_projection` theorem's docstring is
+These additions set up the pattern and provide the building blocks for
+closing the remaining cap-only arms (`.cspaceDelete`, `.lifecycleRetype`,
+`.serviceRevoke`, `.serviceQuery`, `.schedContextConfigure/Bind/Unbind`,
+`.tcbSuspend/Resume`, `.tcbSetPriority/MCPriority`) in follow-up work.
+
+The `dispatchCapabilityOnly_preserves_projection` theorem's docstring is
 updated to reference the new building blocks and per-arm discharge table.
 
 Gate: `lake build` (260 jobs) + `test_smoke.sh` + `check_version_sync.sh`
