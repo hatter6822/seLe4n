@@ -12,7 +12,6 @@ import SeLe4n.Model.Object
 import SeLe4n.Model.State
 import SeLe4n.Model.FrozenState
 import SeLe4n.Model.FreezeProofs
-import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Testing.Helpers
 
 /-! # AK7 Regression Suite — Foundational Model
@@ -291,76 +290,6 @@ def ak7I_05_object_with_rights_not_null : IO Unit := do
   expect "ak7I-05 sentinel obj w/ rights not null" (cap.isNull = false)
 
 -- ============================================================================
--- AL1-E (AK7-I.cascade, WS-AL): end-to-end null-cap rejection at the
--- three cspace operations (mint / copy / move).
--- Builds a minimal CNode containing `Capability.null` at slot 0, then
--- invokes each operation from that slot and asserts `.invalidCapability`.
--- ============================================================================
-
-/-- Build a SystemState with a CNode at `cnodeId` whose slot 0 holds
-`Capability.null`. Also creates a second empty CNode at `dstCnodeId`
-for move/copy destinations. -/
-private def stateWithNullCapSlot : SystemState :=
-  let cnodeId : ObjId := ⟨10⟩
-  let dstCnodeId : ObjId := ⟨11⟩
-  let srcCnode : CNode := {
-    depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(⟨0⟩, Capability.null)] }
-  let dstCnode : CNode := {
-    depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList ([] : List (Slot × Capability)) }
-  let st0 : SystemState := default
-  let st1 := { st0 with
-    objects := st0.objects.insert cnodeId (.cnode srcCnode)
-  }
-  { st1 with
-    objects := st1.objects.insert dstCnodeId (.cnode dstCnode)
-  }
-
-/-- AL1-E-01 (AK7-I.cascade, WS-AL): `cspaceMint` rejects null-cap source. -/
-def al1E_01_mint_from_null_rejected : IO Unit := do
-  let st := stateWithNullCapSlot
-  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨0⟩ }
-  let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := ⟨0⟩ }
-  let result :=
-    SeLe4n.Kernel.cspaceMint src dst AccessRightSet.empty none st
-  match result with
-  | .error .invalidCapability =>
-      expect "al1E-01 mint rejects null cap" true
-  | .error e =>
-      throw <| IO.userError s!"al1E-01 wrong error: expected invalidCapability, got {repr e}"
-  | .ok _ =>
-      throw <| IO.userError "al1E-01 mint from null should have failed"
-
-/-- AL1-E-02 (AK7-I.cascade, WS-AL): `cspaceCopy` rejects null-cap source. -/
-def al1E_02_copy_from_null_rejected : IO Unit := do
-  let st := stateWithNullCapSlot
-  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨0⟩ }
-  let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := ⟨0⟩ }
-  let result := SeLe4n.Kernel.cspaceCopy src dst st
-  match result with
-  | .error .invalidCapability =>
-      expect "al1E-02 copy rejects null cap" true
-  | .error e =>
-      throw <| IO.userError s!"al1E-02 wrong error: expected invalidCapability, got {repr e}"
-  | .ok _ =>
-      throw <| IO.userError "al1E-02 copy from null should have failed"
-
-/-- AL1-E-03 (AK7-I.cascade, WS-AL): `cspaceMove` rejects null-cap source. -/
-def al1E_03_move_from_null_rejected : IO Unit := do
-  let st := stateWithNullCapSlot
-  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨0⟩ }
-  let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := ⟨0⟩ }
-  let result := SeLe4n.Kernel.cspaceMove src dst st
-  match result with
-  | .error .invalidCapability =>
-      expect "al1E-03 move rejects null cap" true
-  | .error e =>
-      throw <| IO.userError s!"al1E-03 wrong error: expected invalidCapability, got {repr e}"
-  | .ok _ =>
-      throw <| IO.userError "al1E-03 move from null should have failed"
-
--- ============================================================================
 -- AL2-C (WS-AL / AK7-F.cascade): runtime coverage for the 5 per-variant
 -- getX? helpers. Each test stores a single KernelObject at a known ObjId
 -- and verifies (1) the matching typed helper returns `some`, (2) every
@@ -630,6 +559,8 @@ def al10_05_requireNotNull_complement : IO Unit := do
     (cap2.requireNotNull.isSome = !cap2.isNull)
 
 -- ============================================================================
+=======
+>>>>>>> parent of a6c2dd1 (AL1-E: end-to-end null-cap rejection regression tests)
 -- AK7-J: Structural invariants
 -- ============================================================================
 
@@ -724,10 +655,6 @@ def main : IO Unit := do
   ak7I_03_require_not_null
   ak7I_04_cnodeSlot_not_null
   ak7I_05_object_with_rights_not_null
-  -- AL1-E (WS-AL): end-to-end null-cap rejection at cspace boundary
-  al1E_01_mint_from_null_rejected
-  al1E_02_copy_from_null_rejected
-  al1E_03_move_from_null_rejected
   -- AL2-C (WS-AL): kind-verified lookup helpers discriminate by variant
   al2C_01_getTcb_discriminates
   al2C_02_getSchedContext_discriminates

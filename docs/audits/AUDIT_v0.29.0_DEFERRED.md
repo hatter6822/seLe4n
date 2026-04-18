@@ -141,7 +141,7 @@ work as **AK7-F.hygiene** (non-gating).
 
 ---
 
-### AK7-I.cascade — `Capability.requireNotNull` consumer migration [RESOLVED v1.0.0 / WS-AL AL1]
+### AK7-I.cascade — `Capability.requireNotNull` consumer migration
 
 **Baseline (v0.29.13):** Predicate + gate helper defined in
 `Model/Object/Types.lean`:
@@ -152,53 +152,18 @@ work as **AK7-F.hygiene** (non-gating).
 - Correctness theorems (`requireNotNull_isSome_iff`, `requireNotNull_null`,
   `requireNotNull_some_not_null`)
 
-**Resolution (v1.0.0, WS-AL phase AL1):** Null-cap guard wired at the
-three capability-using entry points that previously accepted
-`Capability.null` without distinguishing it from a valid non-null cap.
+**Cascade (v1.1):** Route capability-using entry points through
+`requireNotNull` to reject `seL4_CapNull` sentinel caps at the ABI
+boundary:
 
-| Entry point | Guard sub-task | Commit |
-|-------------|----------------|--------|
-| `cspaceMint`   | AL1-A | e03d6d3 |
-| `cspaceCopy`   | AL1-B | c4d4462 |
-| `cspaceMove`   | AL1-C | ab7dc07 |
+- `cspaceInvoke` (`Capability/Operations.lean`)
+- `cspaceMint` (`Capability/Operations.lean`)
+- `cspaceCopy` (`Capability/Operations.lean`)
 
-**Note on `cspaceInvoke`:** The original DEFERRED listing referenced a
-`cspaceInvoke` operation. That operation does not exist in the
-codebase; the reference was a design aspiration. The three operations
-actually affected are mint/copy/move (all listed above).
-
-**Bridge lemma (AL1-D.1, committed in e03d6d3):**
-`Capability.requireNotNull_some_eq` (`Model/Object/Types.lean`) — if
-`cap.requireNotNull = some cap'`, then `cap' = cap`. Used by every
-downstream preservation proof that unfolds through the new match.
-
-**Preservation proofs patched:**
-- `Kernel/Capability/Invariant/Authority.lean` — `cspaceMint_attenuates`,
-  `cspaceMint_badge_stored`.
-- `Kernel/Capability/Invariant/Preservation.lean` —
-  `cspaceMint_preserves_capabilityInvariantBundle`,
-  `cspaceMint_preserves_badgeWellFormed`,
-  `cspaceMint_preserves_cdtMapsConsistent`,
-  `cspaceCopy_preserves_capabilityInvariantBundle`,
-  `cspaceMove_preserves_capabilityInvariantBundle`.
-- `Kernel/InformationFlow/Invariant/Helpers.lean` —
-  `cspaceMint_preserves_lowEquivalent`.
-- `Kernel/InformationFlow/Invariant/Operations.lean` —
-  `cspaceCopy_preserves_projection`,
-  `cspaceMove_preserves_projection`.
-- `Kernel/InformationFlow/Invariant/Composition.lean` —
-  `niStepInd` cspaceMint arm.
-
-**Regression coverage (AL1-E, commit a6c2dd1):** Three end-to-end
-tests in `tests/Ak7RegressionSuite.lean`
-(`al1E_01_mint_from_null_rejected`,
-`al1E_02_copy_from_null_rejected`,
-`al1E_03_move_from_null_rejected`) build a minimal state with
-`Capability.null` in slot 0 and assert `.error .invalidCapability` at
-each of the three operations. Suite size 38 → 41.
-
-**Gate:** `lake build` (260 jobs) + `ak7_regression_suite` (41 checks)
-+ `ak7_cascade_check_monotonic.sh` PASS + zero sorry/axiom.
+**Why deferred:** Wiring `requireNotNull` at every entry point cascades
+through capability-preservation proofs and alters error-propagation
+shapes. The predicate availability is sufficient for incremental
+adoption.
 
 ---
 
