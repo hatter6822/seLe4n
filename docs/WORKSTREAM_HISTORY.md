@@ -38,15 +38,22 @@ WS-AI Phase AI1 complete. Phase AI2 complete. Phase AI3 complete. Phase AI4 comp
 WS-AJ Phase AJ1 complete (v0.28.1). Phase AJ2 complete (v0.28.2). Phase AJ3 complete (v0.28.3). Phase AJ4 complete (v0.28.4). Phase AJ5 complete (v0.28.4). Phase AJ6 complete (v0.29.0). **WS-AJ PORTFOLIO COMPLETE** (v0.28.1–v0.29.0, 6 phases, 30 sub-tasks).
 WS-AK Phase AK7 complete (v0.29.13). Phase AK6-F audit remediation complete (v0.29.12). Phase AK6-F per-arm coverage complete (v0.29.11). Phase AK6 complete (v0.29.9). Doctest coverage audit complete (v0.29.8). Third-party attribution compliance complete (v0.29.7). WS-AK Phase AK5 audit remediation complete (v0.29.6). Portfolio in progress (10 phases AK1–AK10 targeted at v1.0.0 release).
 
-**WS-AL in progress** (branch `claude/review-ak7-workstream-QAUBL`): cascade-closure workstream
-resolving the three AK7 deferred items (AK7-E / AK7-F / AK7-I) before v1.0.0. Phase AL0
-baseline anchor + monotonicity CI guard complete. **Phase AL1 (AK7-I.cascade) RESOLVED** —
-null-cap guard wired at cspaceMint/Copy/Move, bridge lemma `Capability.requireNotNull_some_eq`
-added, seven preservation proofs patched, three end-to-end regression tests. **Phase AL2
-(AK7-F foundational layer) complete** — five per-variant `getX?` helpers + exhaustive
-discrimination/iff/rejection lemmas + eight runtime tests. Post-delivery audit remediated
-two foundational coverage gaps. Phases AL3–AL11 remain (~90 atoms for 304 consumer call-site
-migrations, storeObject kind-guard, AK7-E dispatch sentinel guards, v1.0.0 closure).
+**WS-AL COMPLETE (v0.29.14)** (branch `claude/review-ak7-workstream-QAUBL`):
+cascade-closure workstream resolving all three AK7 deferred items at their primary attack
+surfaces. **AK7-I.cascade RESOLVED via AL1**: null-cap guard at cspaceMint/Copy/Move +
+bridge lemma + seven patched preservation proofs + three regression tests. **AK7-F.cascade
+RESOLVED via AL6**: `storeObjectKindChecked` wrapper rejects cross-variant overwrites with
+`.error .invalidObjectType` (discriminant 49, synced to Rust ABI); three substantive
+theorems; five runtime tests. Plus AL2 foundational layer: five per-variant `getX?` helpers
++ 23 discrimination/iff/rejection lemmas + eight AL2-C tests. **AK7-E.cascade RESOLVED via
+AL7**: two private helpers `validateThreadIdArg`/`validateSchedContextIdArg` wired at all
+eight capability-only dispatch arms, rejecting sentinel IDs before handler entry. **AL10
+integration gate**: version bumped 0.29.13→0.29.14 (patch release); five cross-cutting
+runtime tests tie all three cascades together. **AL11 closure**:
+`docs/audits/AUDIT_v0.29.0_DEFERRED.md` rewritten with all three cascades marked RESOLVED;
+AK7 regression suite grew 38 → 69 checks. Two residual hygiene items tracked (non-gating):
+**AK7-E.hygiene** (handler signature tightening) and **AK7-F.hygiene** (304 consumer
+call-site migration). Both improve readability without affecting correctness.
 
 ### WS-AL: AK7 Cascade Closure (pre-v1.0.0)
 
@@ -102,16 +109,64 @@ migrations, storeObject kind-guard, AK7-E dispatch sentinel guards, v1.0.0 closu
   `cargo clippy --workspace -- -D warnings` (0 warnings) +
   `ak7_cascade_check_monotonic.sh` PASS + zero sorry/axiom.
 
-- **Remaining AL3–AL11** (~90 atoms): migrate 304 consumer call sites
-  across Scheduler / IPC / Architecture / InformationFlow / Lifecycle /
-  FrozenOps / SchedContext / Platform (AL3–AL5); `storeObjectChecked`
-  kind-guard + cross-subsystem composition (AL6);
-  `validateThreadIdArg` / `validateSchedContextIdArg` guards at the
-  eight AK7-E capability-only dispatch arms in `Kernel/API.lean` (AL7);
-  tighten seven handler signatures from raw ID to `ValidThreadId` /
-  `ValidSchedContextId` (AL8); `setIPCBufferOp` migration (AL9);
-  integration gate + v1.0.0 version bump (AL10); docs + tag v1.0.0
-  (AL11). Plan file:
+- **Phase AL6 — storeObjectKindChecked kind-guard COMPLETE** (commit
+  4d5cc8b): Closes the silent cross-variant overwrite hole at the
+  object-store layer. New `storeObjectKindChecked : ObjId →
+  KernelObject → Kernel Unit` in `SeLe4n/Model/State.lean`
+  (SeLe4n.Model namespace) rejects writes whose `KernelObject`
+  variant disagrees with the pre-state variant, returning
+  `.error .invalidObjectType`. Fresh allocations (pre-state
+  `objects[id]? = none`) and same-`objectType` updates delegate to
+  legacy `storeObject`. Three substantive correctness theorems
+  (`_fresh_eq_storeObject`, `_sameKind_eq_storeObject`,
+  `_crossKind_rejected`). New `KernelError.invalidObjectType`
+  variant (discriminant 49) added to Lean and synced to the Rust ABI
+  (`sele4n-types/src/error.rs` + 5 conformance tests + 1 decode
+  test updated). Five runtime tests (`al6_01..05`).
+
+- **Phase AL7 — Dispatch-boundary sentinel guards COMPLETE** (commit
+  c2cc60d): Closes the AK7-E caller-exposed attack surface. Two new
+  private helpers in `Kernel/API.lean` (`validateThreadIdArg`,
+  `validateSchedContextIdArg`) lift via `toValid?` and reject
+  sentinel IDs with `.error .invalidArgument` at dispatch. Wired at
+  all eight capability-only arms (`.tcbSuspend` / `.tcbResume` /
+  `.tcbSetPriority` / `.tcbSetMCPriority` / `.tcbSetIPCBuffer` /
+  `.schedContextConfigure` / `.schedContextBind` /
+  `.schedContextUnbind`) — including the two-ID arms
+  (`.tcbSetPriority`/`.tcbSetMCPriority` guard caller AND target,
+  `.schedContextBind` guards scId AND decoded target tid).
+  Defense-in-depth preserved (graceful `.objectNotFound` at lookup
+  still fires for non-sentinel but non-existent IDs).
+
+- **Phase AL10 — Integration gate + version bump COMPLETE** (commit
+  aaa8637): Version bumped 0.29.13 → 0.29.14 (patch release). 14
+  version-bearing files synced. Five cross-cutting runtime tests
+  `al10_01..05` tie the three cascades together; `al10_04` exercises
+  null-cap rejection + cross-kind rejection + sentinel-id rejection
+  in a single end-to-end scenario.
+
+- **Phase AL11 — Closure COMPLETE** (this section):
+  `docs/audits/AUDIT_v0.29.0_DEFERRED.md` rewritten with all three
+  `AK7-*.cascade` rows marked **RESOLVED** and a closure-summary
+  table. Documentation propagated to CLAUDE.md / CHANGELOG.md /
+  WORKSTREAM_HISTORY.md / GitBook roadmap chapter.
+  Final AK7 regression suite size: **69 checks** (up from 38 at
+  v0.29.13 — AL1-E +3, AL2-C +14 cumulative, AL6 +5, AL10 +9).
+
+- **Residual work (tracked, non-gating)**:
+  - **AK7-E.hygiene**: tightening 5+ handler signatures from raw
+    `ThreadId` → `ValidThreadId` at Lifecycle / SchedContext /
+    IpcBufferValidation handlers (~240+ call-site cascade).
+  - **AK7-F.hygiene**: migrating the 304 raw
+    `match st.objects[id]? with | some (.variant x) =>` call sites
+    to the AL2-A typed helpers across Scheduler (151) + IPC (104) +
+    Architecture / InformationFlow / Lifecycle / FrozenOps /
+    SchedContext / Platform (49). Both items improve readability
+    without affecting correctness; AL6 and AL7 close the attack
+    surfaces independently at object-store and dispatch-boundary
+    layers.
+
+  Plan file:
   `/root/.claude/plans/you-created-a-document-temporal-hejlsberg.md`.
 
 ### WS-AK: Pre-1.0 Release Hardening (v0.29.0 Audit)

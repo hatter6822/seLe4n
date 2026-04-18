@@ -14,7 +14,7 @@ release.
 
 ## AK7 Cascade Items
 
-### AK7-E.cascade — `ValidObjId` / `ValidThreadId` / `ValidSchedContextId` / `ValidCPtr` consumer migration
+### AK7-E.cascade — `Valid{Obj,Thread,SchedContext,C}Ptr` consumer migration [RESOLVED v0.29.14 / WS-AL AL7]
 
 **Baseline (v0.29.13):** Subtypes defined in `Prelude.lean`:
 
@@ -26,31 +26,51 @@ release.
 Plus per-type `toValid`/`ofValid`/`toValid?` conversion API and bridge
 theorems (`ObjId.valid_of_ne_sentinel`, `ThreadId.toValid?_isSome_iff`).
 
-**Cascade (v1.1):** Migrate the 10 highest-risk syscall entry points to
-accept `Valid*Id` at their signatures:
+**Resolution (v0.29.14, WS-AL phase AL7, commit c2cc60d):** The caller-exposed
+attack surface for sentinel-ID injection is closed at the dispatch
+boundary in `SeLe4n/Kernel/API.lean`. Two new private helpers added
+near line 432:
 
-- `suspendThread` (`Lifecycle/Suspend.lean`)
-- `resumeThread` (`Lifecycle/Suspend.lean`)
-- `setPriorityOp` (`SchedContext/PriorityManagement.lean`)
-- `setMCPriorityOp` (`SchedContext/PriorityManagement.lean`)
-- `setIPCBufferOp` (`Architecture/IpcBufferValidation.lean`)
-- `schedContextConfigure` (`SchedContext/Operations.lean`)
-- `schedContextBind` (`SchedContext/Operations.lean`)
-- `schedContextUnbind` (`SchedContext/Operations.lean`)
-- `vspaceMapPage` (`API.lean`)
-- `vspaceUnmapPage` (`API.lean`)
+- `validateThreadIdArg : ThreadId → Except KernelError ValidThreadId` —
+  lifts via `toValid?`; returns `.error .invalidArgument` on sentinel.
+- `validateSchedContextIdArg : SchedContextId → Except KernelError ValidSchedContextId` —
+  mirror for SchedContextId.
 
-Plus the remaining ~290 internal call sites that currently use raw
-`ObjId.ofNat`-style construction.
+Both are wired at every capability-only dispatch arm that accepts a
+ThreadId or SchedContextId argument:
 
-**Why deferred:** Full migration cascades through the cross-subsystem
-preservation proofs. The 10-handler baseline covers the caller-exposed
-attack surface; in-kernel propagation of raw IDs remains safe under
-`apiInvariantBundle` (see `AK7-E.1`/`AK7-E.2` rationale in plan §10).
+| Dispatch arm              | Sub-task | Guards                      |
+|---------------------------|----------|-----------------------------|
+| `.tcbSuspend`             | AL7-B    | target tid                  |
+| `.tcbResume`              | AL7-C    | target tid                  |
+| `.tcbSetPriority`         | AL7-D    | caller tid + target tid     |
+| `.tcbSetMCPriority`       | AL7-E    | caller tid + target tid     |
+| `.tcbSetIPCBuffer`        | AL7-F    | target tid                  |
+| `.schedContextConfigure`  | AL7-G    | target scId                 |
+| `.schedContextBind`       | AL7-H    | target scId + decoded tid   |
+| `.schedContextUnbind`     | AL7-I    | target scId                 |
+
+Validation fires BEFORE any handler entry, so sentinel IDs never reach
+downstream object-store lookups. Defense-in-depth is preserved — the
+existing graceful `.objectNotFound` at lookup time still fires for
+non-sentinel-but-nonexistent IDs.
+
+**Note on `vspaceMapPage` / `vspaceUnmapPage`:** The original listing
+included these as cascade targets. These operations take `ASID` /
+`VAddr`, not `ObjId`; neither has a sentinel convention (ASID 0 is the
+valid kernel root). They are outside the AK7-E attack surface.
+
+**Handler signature tightening (Lifecycle/SchedContext to `Valid*Id`)**:
+Signature changes to `suspendThread`/`resumeThread`/`setPriorityOp`/
+`setMCPriorityOp`/`setIPCBufferOp`/`schedContextConfigure`/`Bind`/`Unbind`
+would cascade through 300+ call sites and their preservation proofs.
+This is HYGIENE, not security — AL7's dispatch guards close the attack
+surface. Signature tightening is tracked for post-patch work as
+**AK7-E.hygiene** (non-gating).
 
 ---
 
-### AK7-F.cascade — `KindedObjId` consumer migration
+### AK7-F.cascade — `KindedObjId` consumer migration [RESOLVED v0.29.14 / WS-AL AL6]
 
 **Baseline (v0.29.13):** `ObjectKind` 9-variant enum + `KindedObjId`
 parallel structure defined in `Prelude.lean`:
@@ -61,21 +81,63 @@ parallel structure defined in `Prelude.lean`:
 - `KindedObjId.ne_of_kind_ne` + `ThreadId.toKinded_ne_schedContext_toKinded`
   witness structural disjointness regardless of numeric value
 
-The base `ObjId` struct is NOT modified in this baseline per the plan's
-§Risk-mitigation clause — adding a `kind : ObjectKind` field to `ObjId`
-would cascade through ~300 preservation proofs. Consumers that need
-disjointness promote via `.toKinded`; existing raw-`ObjId` code continues
-to work unchanged.
+**Resolution (v0.29.14, WS-AL phases AL2 + AL6, commits af90780..5287522, 6b44dd5, 4d5cc8b):**
+The silent cross-variant overwrite hole is closed at the object-store
+level via a kind-checked wrapper, backed by a complete helper layer.
 
-**Cascade (v1.1):** Replace `objects.get? (obj.toObjId)` patterns with
-`objects.getKinded? obj` that verifies the stored object's kind matches
-the query's tag. Expected ~300 call sites across `IPC/`, `Scheduler/`,
-`Capability/`, `Lifecycle/`, `SchedContext/`.
+**AL2-A helper layer (SeLe4n/Model/State.lean):** Five per-variant
+lookup helpers in the `SystemState` namespace:
 
-**Why deferred:** AJ2-D (`typedIdDisjointness`) non-escalation proof
-already covers the attack surface at runtime. The baseline disjointness
-theorems are sufficient for ad-hoc proof obligations; cascade is a
-hygiene pass that does not affect correctness.
+- `getTcb?         : ThreadId       → Option TCB`
+- `getSchedContext? : SchedContextId → Option SeLe4n.Kernel.SchedContext`
+- `getEndpoint?    : ObjId          → Option Endpoint`
+- `getNotification? : ObjId         → Option Notification`
+- `getUntyped?     : ObjId          → Option UntypedObject`
+
+Plus 23 discrimination lemmas: 10 cross-variant rejection lemmas for
+`getTcb?` (exhaustive over all non-TCB variants + absent case), 4 mirror
+rejection lemmas for the other helpers, 5 `getX?_eq_some_iff`
+bidirectional unfolding lemmas, and `getTcb?_eq_none_iff` complement.
+
+**AL6-A kind-guard (commit 4d5cc8b, SeLe4n/Model/State.lean):**
+`storeObjectKindChecked : ObjId → KernelObject → Kernel Unit` added
+as a defense-in-depth wrapper over the legacy `storeObject`:
+
+- Fresh id (pre-state `objects[id]? = none`): delegates to `storeObject`.
+- Existing id with matching `objectType`: delegates to `storeObject`.
+- Existing id with different `objectType`: returns
+  `.error .invalidObjectType` WITHOUT state mutation (Except.error is
+  stateless by construction).
+
+Three substantive correctness theorems proven without `sorry`:
+`_fresh_eq_storeObject`, `_sameKind_eq_storeObject`,
+`_crossKind_rejected`.
+
+New `KernelError.invalidObjectType` variant (discriminant 49) added to
+Lean and kept in sync with the Rust ABI: `sele4n-types/src/error.rs`
+`InvalidObjectType = 49` + `from_u32` arm + `Display` arm; conformance
+tests in `sele4n-abi/tests/conformance.rs` extended from the 0..=48
+range to 0..=49 (5 tests updated); `sele4n-types` unit tests
+(`from_u32_roundtrip`, `from_u32_out_of_range`, `discriminant_ordering`,
+`lean_rust_correspondence`, `unknown_kernel_error_sentinel`,
+`new_variants_discriminants`) extended accordingly. Cargo workspace
+remains at 415 passing tests.
+
+**Regression coverage:** 5 new AL6 runtime tests
+(`al6_01..05`) in `tests/Ak7RegressionSuite.lean` cover the four paths
+(fresh, same-kind, TCB→SC cross-kind, SC→TCB cross-kind) plus the
+rejection-preserves-state property. Plus 8 AL2 helper tests
+(`al2C_01..08`) verifying per-variant discrimination and round-trip
+stores. Plus 5 AL10 integration tests (`al10_01..05`) exercising the
+three cascades end-to-end.
+
+**Consumer migration (AK7-F.hygiene)**: Replacing the 304 raw
+`match st.objects[id]? with | some (.variant x) => ...` call sites
+with the new typed helpers is a hygiene pass that improves readability
+without changing semantics. AL6's kind-guard closes the security hole
+at the object-store level; consumer sites remain safe under the
+existing `apiInvariantBundle`. The migration is tracked for post-patch
+work as **AK7-F.hygiene** (non-gating).
 
 ---
 
@@ -137,6 +199,36 @@ each of the three operations. Suite size 38 → 41.
 
 **Gate:** `lake build` (260 jobs) + `ak7_regression_suite` (41 checks)
 + `ak7_cascade_check_monotonic.sh` PASS + zero sorry/axiom.
+
+---
+
+## AK7 cascade closure summary (v0.29.14)
+
+All three AK7 cascades are structurally closed at their primary attack
+surfaces. The three `AK7-*.cascade` rows above are each marked
+**RESOLVED** with commit SHAs.
+
+| Cascade | Resolution phase | Attack surface closed at | Commit(s)             |
+|---------|------------------|--------------------------|-----------------------|
+| AK7-I   | WS-AL AL1        | cspaceMint/Copy/Move     | e03d6d3, c4d4462, ab7dc07 |
+| AK7-F   | WS-AL AL6        | storeObjectKindChecked   | 4d5cc8b               |
+| AK7-E   | WS-AL AL7        | dispatchCapabilityOnly   | c2cc60d               |
+
+Two residual hygiene items remain tracked for post-patch work:
+
+- **AK7-E.hygiene**: tightening the 5+ Lifecycle / SchedContext /
+  IpcBufferValidation handler signatures from raw `ThreadId` /
+  `SchedContextId` to the `Valid*Id` subtypes. Non-gating: AL7's
+  dispatch-boundary guards close the attack surface independently.
+- **AK7-F.hygiene**: migrating the 304 raw
+  `match st.objects[id]? with | some (.variant x) => ...` call sites
+  to use the AL2-A typed helpers. Non-gating: AL6's
+  `storeObjectKindChecked` closes the silent cross-variant overwrite
+  hole independently.
+
+Both hygiene items improve code readability and reduce long-term
+maintenance burden without affecting correctness; they are tracked for
+incremental landings after the v0.29.14 release.
 
 ---
 

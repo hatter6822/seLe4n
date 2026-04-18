@@ -1,4 +1,159 @@
-## WS-AL in progress — AK7 cascade closure (pre-v1.0.0, branch `claude/review-ak7-workstream-QAUBL`)
+## v0.29.14 — WS-AL AK7 cascade closure (AK7-E / AK7-F / AK7-I RESOLVED)
+
+All three AK7 deferred cascades structurally resolved at their primary
+attack surfaces (branch `claude/review-ak7-workstream-QAUBL`). Zero
+sorry/axiom regressions. AK7 regression suite grew 38 → 69 checks.
+
+### The three cascades (all RESOLVED)
+
+| Cascade | Resolution phase | Attack surface closed at       | Commit(s)                             |
+|---------|------------------|--------------------------------|---------------------------------------|
+| AK7-I   | WS-AL AL1        | `cspaceMint/Copy/Move`         | e03d6d3, c4d4462, ab7dc07, a6c2dd1, 4a27c1c |
+| AK7-F   | WS-AL AL6        | `storeObjectKindChecked`       | 4d5cc8b (+ AL2 foundation af90780..5287522, 6b44dd5) |
+| AK7-E   | WS-AL AL7        | `dispatchCapabilityOnly` (API) | c2cc60d                               |
+
+### Phase AL6 — `storeObjectKindChecked` kind-guard (AK7-F.cascade, commit 4d5cc8b)
+
+Closes the silent cross-variant overwrite hole. Prior to this change,
+`storeObject tid (.tcb t)` followed by `storeObject tid
+(.schedContext sc)` would silently change the stored kind at the same
+`ObjId` with no invariant registering the change.
+
+- **New wrapper** in `SeLe4n/Model/State.lean` (SeLe4n.Model
+  namespace): `storeObjectKindChecked : ObjId → KernelObject →
+  Kernel Unit`. On fresh id (pre-state `objects[id]? = none`):
+  delegates to `storeObject`. On existing id with matching
+  `objectType`: delegates to `storeObject`. On existing id with
+  different `objectType`: returns `.error .invalidObjectType` without
+  state mutation (Except.error is stateless by construction).
+- **Three substantive correctness theorems**:
+  `storeObjectKindChecked_fresh_eq_storeObject`,
+  `storeObjectKindChecked_sameKind_eq_storeObject`,
+  `storeObjectKindChecked_crossKind_rejected`. All proven via
+  `unfold` + `simp [h]` / `rw [h]; simp [hKind]` — no `sorry`.
+- **New KernelError variant** `invalidObjectType` (discriminant 49)
+  added to `SeLe4n/Model/State.lean` and kept in sync with the Rust
+  ABI: `sele4n-types/src/error.rs` `InvalidObjectType = 49` variant +
+  `from_u32` arm + `Display` arm. 6 Rust tests updated from the
+  0..=48 range to 0..=49 (`from_u32_roundtrip`,
+  `from_u32_out_of_range`, `discriminant_ordering`,
+  `lean_rust_correspondence`, `unknown_kernel_error_sentinel`,
+  `new_variants_discriminants`). 3 conformance tests in
+  `sele4n-abi/tests/conformance.rs`
+  (`kernel_error_exhaustive_roundtrip`,
+  `af6a_unknown_kernel_error_fallback`,
+  `aa1h_error_boundary_after_invalid_irq`,
+  `u3f_kernel_error_non_exhaustive`,
+  `w1h_kernel_error_variant_count`) extended to the new range. 1
+  `decode::tests::decode_unknown_error_code` test migrated from code
+  49 → 50 as the first unrecognized code after AL6.
+- **5 new runtime tests** in `tests/Ak7RegressionSuite.lean`:
+  `al6_01_fresh_allocation_succeeds`,
+  `al6_02_samekind_overwrite_succeeds`,
+  `al6_03_tcb_to_sc_rejected`, `al6_04_sc_to_tcb_rejected`,
+  `al6_05_rejection_preserves_state`.
+
+### Phase AL7 — Dispatch-boundary sentinel guards (AK7-E.cascade, commit c2cc60d)
+
+Closes the caller-exposed attack surface for sentinel-ID injection
+at the 8 capability-only dispatch arms in `SeLe4n/Kernel/API.lean`.
+
+- **Two new private helpers** (near line 432), both `@[inline]`:
+  `validateThreadIdArg : ThreadId → Except KernelError ValidThreadId`
+  (returns `.error .invalidArgument` on `ThreadId.sentinel`) and
+  `validateSchedContextIdArg : SchedContextId → Except KernelError
+  ValidSchedContextId` (mirror for SchedContextId).
+- **Wired at every dispatch arm** via a guarding `match
+  validateThreadIdArg ... with | .error e => .error e | .ok _ => ...`
+  pattern that returns the ABI-level error BEFORE handler entry:
+
+  | Sub-task | Dispatch arm              | Guards                        |
+  |----------|---------------------------|-------------------------------|
+  | AL7-B    | `.tcbSuspend`             | target tid                    |
+  | AL7-C    | `.tcbResume`              | target tid                    |
+  | AL7-D    | `.tcbSetPriority`         | caller tid AND target tid     |
+  | AL7-E    | `.tcbSetMCPriority`       | caller tid AND target tid     |
+  | AL7-F    | `.tcbSetIPCBuffer`        | target tid                    |
+  | AL7-G    | `.schedContextConfigure`  | target scId                   |
+  | AL7-H    | `.schedContextBind`       | target scId AND decoded tid   |
+  | AL7-I    | `.schedContextUnbind`     | target scId                   |
+
+- **Wrapper transparency**: `dispatchCapabilityOnly` is called from
+  both `dispatchWithCap` (raw) and `dispatchWithCapChecked`
+  (NI-checked) — both paths now include AL7 guards without any
+  change to the wrappers themselves.
+- **Defense-in-depth preserved**: the pre-existing graceful
+  `.objectNotFound` at lookup time still fires for non-sentinel but
+  non-existent IDs. AL7 only closes the sentinel-ID case.
+
+### Phase AL10 — Integration gate + version bump (commit aaa8637)
+
+- **Version bumped 0.29.13 → 0.29.14** (patch release). 14
+  version-bearing files synced: `lakefile.toml`,
+  `rust/Cargo.toml` (+ `Cargo.lock`), `rust/sele4n-hal/src/boot.rs`
+  (`KERNEL_VERSION`), `docs/spec/SELE4N_SPEC.md`, `CLAUDE.md`, 10
+  i18n README badges (`docs/i18n/*/README.md`).
+  `check_version_sync.sh` PASS at 0.29.14.
+- **5 new cross-cutting runtime tests** in
+  `tests/Ak7RegressionSuite.lean` (`al10_01..05`):
+  `al10_01_validThreadId_rejects_sentinel`,
+  `al10_02_validSchedContextId_rejects_sentinel`,
+  `al10_03_validThreadId_roundtrip`,
+  `al10_04_defense_in_depth` (exercises all three cascades in one
+  scenario: null-cap identification, cross-kind store rejection,
+  sentinel-id rejection),
+  `al10_05_requireNotNull_complement` (Bool-level
+  `isNull`/`requireNotNull` consistency).
+- **Final suite size**: 69 checks (38 baseline + 31 WS-AL additions:
+  AL1-E +3, AL2-C +14 cumulative, AL6 +5, AL10 +9).
+
+### Phase AL11 — Closure (this commit)
+
+- **`docs/audits/AUDIT_v0.29.0_DEFERRED.md`** rewritten: all three
+  `AK7-*.cascade` rows marked **RESOLVED** with commit SHAs, proof-
+  surface bullet lists, and regression-coverage detail. New
+  "AK7 cascade closure summary" table at the end. Two residual
+  hygiene items (non-gating) documented: **AK7-E.hygiene**
+  (handler-signature tightening) and **AK7-F.hygiene** (304 call-site
+  consumer migration). Both improve readability without affecting
+  correctness; AL6 and AL7 close the attack surfaces independently.
+- **CLAUDE.md / CHANGELOG.md / WORKSTREAM_HISTORY.md / GitBook**:
+  active-workstream entries updated to reflect WS-AL completion.
+  `docs/codebase_map.json` regenerated for the AL2-B / AL6-A additions.
+
+### Gate at v0.29.14 tip
+
+- `lake build`: 260 jobs, 0 warnings, zero `sorry` / `axiom`.
+- `./scripts/test_smoke.sh` (Tier 0–2): PASS after
+  `docs/codebase_map.json` regeneration.
+- `./scripts/test_full.sh` (Tier 0–3 invariant anchors): PASS.
+- `./scripts/test_tier2_negative.sh`: 302 checks PASS.
+- `lake exe information_flow_suite`: 143 checks PASS.
+- `lake exe ak7_regression_suite`: **69 checks PASS**.
+- `lake exe operation_chain_suite`, `abi_roundtrip_suite`,
+  `priority_management_suite`, `decoding_suite`,
+  `badge_overflow_suite`: all PASS.
+- `cargo test --workspace`: 415 tests PASS across 9 crates.
+- `cargo clippy --workspace -- -D warnings`: 0 warnings.
+- `./scripts/ak7_cascade_check_monotonic.sh`: PASS.
+- `./scripts/check_version_sync.sh`: PASS at 0.29.14.
+- `./scripts/test_tier0_hygiene.sh`: PASS.
+
+**Residual work (tracked, non-gating for this release):**
+
+- **AK7-E.hygiene**: tightening 5+ handler signatures from raw
+  `ThreadId` → `ValidThreadId` at Lifecycle/SchedContext/
+  IpcBufferValidation handlers (~240+ call-site cascade).
+- **AK7-F.hygiene**: 304 raw kind-destructuring call-site migration
+  to the AL2-A typed helpers across Scheduler (151) + IPC (104) +
+  Architecture/InformationFlow/Lifecycle/FrozenOps/SchedContext/
+  Platform (49).
+
+Plan file: `/root/.claude/plans/you-created-a-document-temporal-hejlsberg.md`.
+
+---
+
+## WS-AL in progress — AK7 cascade closure (branch `claude/review-ak7-workstream-QAUBL`, superseded by v0.29.14 section above)
 
 WS-AL is the cascade-closure workstream that resolves the three AK7
 deferred items (AK7-E / AK7-F / AK7-I) before v1.0.0. Plan document
