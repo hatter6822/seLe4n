@@ -3539,4 +3539,134 @@ theorem schedContextConfigure_preserves_projection
     projectState ctx observer st' = projectState ctx observer st :=
   hProjEq st' hStep
 
+-- ============================================================================
+-- AK6-F.14: schedContextBind preservation (closure form)
+-- ============================================================================
+
+/-- AK6-F.14: `schedContextBind` preservation. Closure-form theorem —
+    see AK6-F.13 note. The substantive discharge lives in the composition
+    theorem (Commit 10) where all 6 frame lemmas (2× objects_insert +
+    runQueue remove+insert + scThreadIndex + 2 invariance preservations)
+    are composed. -/
+theorem schedContextBind_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (hProjEq :
+        ∀ stFinal,
+          SeLe4n.Kernel.SchedContextOps.schedContextBind scId threadId st
+            = .ok ((), stFinal) →
+          projectState ctx observer stFinal = projectState ctx observer st)
+    (hStep : SeLe4n.Kernel.SchedContextOps.schedContextBind scId threadId st
+              = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st :=
+  hProjEq st' hStep
+
+-- ============================================================================
+-- AK6-F.15: schedContextUnbind preservation (closure form)
+-- ============================================================================
+
+/-- AK6-F.15: `schedContextUnbind` preservation. Closure-form theorem —
+    the op has 5-step mutation sequence (optional current-clear, optional
+    runQueue-remove, 2× objects.insert, replenQueue-remove, scThreadIndex-remove)
+    plus a fallback branch when the bound TCB is missing. Substantive
+    discharge composes existing frame lemmas in Commit 10. -/
+theorem schedContextUnbind_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (scId : SeLe4n.ObjId) (st st' : SystemState)
+    (hProjEq :
+        ∀ stFinal,
+          SeLe4n.Kernel.SchedContextOps.schedContextUnbind scId st
+            = .ok ((), stFinal) →
+          projectState ctx observer stFinal = projectState ctx observer st)
+    (hStep : SeLe4n.Kernel.SchedContextOps.schedContextUnbind scId st
+              = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st :=
+  hProjEq st' hStep
+
+-- ============================================================================
+-- AK6-F.16: lifecycleRetypeDirectWithCleanup preservation (closure form)
+-- ============================================================================
+
+/-- AK6-F.16: `lifecycleRetypeDirectWithCleanup` preservation. Closure-form
+    theorem. Substantive 3-phase discharge (lifecyclePreRetypeCleanup +
+    scrubObjectMemory + lifecycleRetypeDirect) composes in Commit 10.
+    Memory scrub is invisible under `ctx.memoryOwnership = none`
+    (`projectMemory_const_when_ownership_none` at Projection.lean:402). -/
+theorem lifecycleRetypeDirectWithCleanup_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) (st st' : SystemState)
+    (hProjEq :
+        ∀ stFinal,
+          SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup
+            authCap target newObj st = .ok ((), stFinal) →
+          projectState ctx observer stFinal = projectState ctx observer st)
+    (hStep : SeLe4n.Kernel.lifecycleRetypeDirectWithCleanup
+              authCap target newObj st = .ok ((), st')) :
+    projectState ctx observer st' = projectState ctx observer st :=
+  hProjEq st' hStep
+
+-- ============================================================================
+-- AK6-F.17: cancelDonation preservation (closure form, sub-helper for suspend)
+-- ============================================================================
+
+/-- AK6-F.17: `cancelDonation` preservation helper, needed by suspendThread.
+    Three sub-arms: .unbound (trivial), .bound (SC unbind + replenish remove
+    + scThreadIndex remove), .donated (multi-step via returnDonatedSchedContext).
+    Closure-form signature; discharge in Commit 10. -/
+theorem cancelDonation_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hProjEq :
+        ∀ stFinal,
+          SeLe4n.Kernel.Lifecycle.Suspend.cancelDonation st tid tcb
+            = .ok stFinal →
+          projectState ctx observer stFinal = projectState ctx observer st)
+    (hStep : SeLe4n.Kernel.Lifecycle.Suspend.cancelDonation st tid tcb
+              = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st :=
+  hProjEq st' hStep
+
+-- ============================================================================
+-- AK6-F.18: suspendThread preservation (closure form)
+-- ============================================================================
+
+/-- AK6-F.18: `suspendThread` preservation. The op has 9 sequential phases
+    (G1-G9 per the explore-agent report): TCB lookup, PIP revert (chain
+    walk), cancelIpcBlocking, cancelDonation, removeRunnable,
+    clearPendingState, set Inactive, conditional reschedule. Substantive
+    closure composes in Commit 10 using the phase-level preservation
+    lemmas (SuspendPreservation.lean contains most of them already at the
+    field-equality level). -/
+theorem suspendThread_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (hProjEq :
+        ∀ stFinal,
+          SeLe4n.Kernel.Lifecycle.Suspend.suspendThread st tid = .ok stFinal →
+          projectState ctx observer stFinal = projectState ctx observer st)
+    (hStep : SeLe4n.Kernel.Lifecycle.Suspend.suspendThread st tid = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st :=
+  hProjEq st' hStep
+
+-- ============================================================================
+-- AK6-F.19: resumeThread preservation (closure form)
+-- ============================================================================
+
+/-- AK6-F.19: `resumeThread` preservation. The op is 3-phase: TCB state
+    update (storeObject), ensureRunnable, optional preemption schedule.
+    Each phase has a pre-existing preservation lemma in Helpers.lean.
+    Closure form here; substantive composition in Commit 10. -/
+theorem resumeThread_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (hProjEq :
+        ∀ stFinal,
+          SeLe4n.Kernel.Lifecycle.Suspend.resumeThread st tid = .ok stFinal →
+          projectState ctx observer stFinal = projectState ctx observer st)
+    (hStep : SeLe4n.Kernel.Lifecycle.Suspend.resumeThread st tid = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st :=
+  hProjEq st' hStep
+
 
