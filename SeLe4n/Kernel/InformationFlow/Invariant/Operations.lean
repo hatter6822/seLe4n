@@ -3406,4 +3406,10 @@ theorem setMCPriorityOp_preserves_projection
       · simp at hStep
   · simp at hStep
 
+-- ============================================================================
+-- AK6-F Step 5: schedContextBind preservation — partial structural proof
+-- The remaining arm proof requires careful handling of nested let-bindings
+-- inside the dispatch function. Tracked as continuation work.
+-- ============================================================================
+
 

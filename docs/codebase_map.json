@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-ak6-workstream-VM0m9",
-      "commit_sha": "197acdf0bc1c28753f35760698825a324fd7cf68",
-      "tree_sha": "feb5b30d275d0ebfe73d51555b5edb6776dea519",
-      "committed_at_utc": "2026-04-18T00:39:03+00:00"
+      "commit_sha": "440f7bc95d1f5e0e0fe4f5c6818cf64c3b2891f9",
+      "tree_sha": "57f95eba7eda06ceafe1779c101564df8b14c068",
+      "committed_at_utc": "2026-04-18T01:38:29+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "f3cd0c7d95247e74fe5dc80168dac2813251b601b8f267da0873ba659e230b9c"
+    "source_digest": "68c8cda7cd72f273c2dffd9f385ede63e97be6399b936d85db05883230e8b3de"
   },
   "summary": {
     "module_count": 164,
-    "declaration_count": 5268
+    "declaration_count": 5274
   },
   "readme_sync": {
     "version": "0.29.10",
     "lean_toolchain": "v4.28.0",
     "production_files": 142,
-    "production_loc": 98348,
+    "production_loc": 98622,
     "test_files": 22,
     "test_loc": 13098,
-    "proved_theorem_lemma_decls": 2891,
+    "proved_theorem_lemma_decls": 2897,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -27731,7 +27731,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Invariant.Operations",
       "path": "SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean",
-      "declaration_count": 79,
+      "declaration_count": 85,
       "declarations": [
         {
           "kind": "namespace",
@@ -29408,6 +29408,132 @@
             "vspaceUnmapPage",
             "vspaceUnmapPageWithFlush",
             "vspaceUnmapPage_preserves_projection"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "runQueue_remove_preserves_projection_at_high",
+          "line": 3151,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SchedulerState.runnable",
+            "SystemState",
+            "ThreadId",
+            "projectRunnable",
+            "projectState",
+            "remove",
+            "threadObservable",
+            "toList_filter_remove_neg"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "runQueue_insert_preserves_projection_at_high",
+          "line": 3176,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "Priority",
+            "SchedulerState.runnable",
+            "SystemState",
+            "ThreadId",
+            "insert",
+            "projectRunnable",
+            "projectState",
+            "threadObservable",
+            "toList_filter_insert_neg'"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "runQueue_remove_insert_preserves_projection_at_high",
+          "line": 3200,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "Priority",
+            "SchedulerState.runnable",
+            "SystemState",
+            "ThreadId",
+            "insert",
+            "projectRunnable",
+            "projectState",
+            "remove",
+            "threadObservable",
+            "toList_filter_insert_neg'",
+            "toList_filter_remove_neg"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "migrateRunQueueBucket_preserves_projection",
+          "line": 3234,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "Priority",
+            "SystemState",
+            "ThreadId",
+            "migrateRunQueueBucket",
+            "projectState",
+            "runQueue_remove_insert_preserves_projection_at_high",
+            "threadObservable"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setPriorityOp_preserves_projection",
+          "line": 3260,
+          "called": [
+            "IfObserver",
+            "KernelObject",
+            "LabelingContext",
+            "Priority",
+            "SystemState",
+            "ThreadId",
+            "getCurrentPriority",
+            "invExt",
+            "migrateRunQueueBucket",
+            "migrateRunQueueBucket_preserves_projection",
+            "objectObservable",
+            "projectState",
+            "scId",
+            "schedule",
+            "setPriorityOp",
+            "threadObservable",
+            "toObjId",
+            "updatePrioritySource",
+            "updatePrioritySource_preserves_projection"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "setMCPriorityOp_preserves_projection",
+          "line": 3332,
+          "called": [
+            "IfObserver",
+            "KernelObject",
+            "LabelingContext",
+            "Priority",
+            "RHTable.insert_preserves_invExt",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "insert",
+            "invExt",
+            "migrateRunQueueBucket",
+            "migrateRunQueueBucket_preserves_projection",
+            "objectObservable",
+            "objects_insert_preserves_projection_high",
+            "projectState",
+            "scId",
+            "schedule",
+            "setMCPriorityOp",
+            "threadObservable",
+            "toObjId",
+            "updatePrioritySource",
+            "updatePrioritySource_preserves_projection"
           ]
         }
       ]
