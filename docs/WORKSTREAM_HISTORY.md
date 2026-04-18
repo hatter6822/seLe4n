@@ -38,6 +38,82 @@ WS-AI Phase AI1 complete. Phase AI2 complete. Phase AI3 complete. Phase AI4 comp
 WS-AJ Phase AJ1 complete (v0.28.1). Phase AJ2 complete (v0.28.2). Phase AJ3 complete (v0.28.3). Phase AJ4 complete (v0.28.4). Phase AJ5 complete (v0.28.4). Phase AJ6 complete (v0.29.0). **WS-AJ PORTFOLIO COMPLETE** (v0.28.1–v0.29.0, 6 phases, 30 sub-tasks).
 WS-AK Phase AK7 complete (v0.29.13). Phase AK6-F audit remediation complete (v0.29.12). Phase AK6-F per-arm coverage complete (v0.29.11). Phase AK6 complete (v0.29.9). Doctest coverage audit complete (v0.29.8). Third-party attribution compliance complete (v0.29.7). WS-AK Phase AK5 audit remediation complete (v0.29.6). Portfolio in progress (10 phases AK1–AK10 targeted at v1.0.0 release).
 
+**WS-AL in progress** (branch `claude/review-ak7-workstream-QAUBL`): cascade-closure workstream
+resolving the three AK7 deferred items (AK7-E / AK7-F / AK7-I) before v1.0.0. Phase AL0
+baseline anchor + monotonicity CI guard complete. **Phase AL1 (AK7-I.cascade) RESOLVED** —
+null-cap guard wired at cspaceMint/Copy/Move, bridge lemma `Capability.requireNotNull_some_eq`
+added, seven preservation proofs patched, three end-to-end regression tests. **Phase AL2
+(AK7-F foundational layer) complete** — five per-variant `getX?` helpers + exhaustive
+discrimination/iff/rejection lemmas + eight runtime tests. Post-delivery audit remediated
+two foundational coverage gaps. Phases AL3–AL11 remain (~90 atoms for 304 consumer call-site
+migrations, storeObject kind-guard, AK7-E dispatch sentinel guards, v1.0.0 closure).
+
+### WS-AL: AK7 Cascade Closure (pre-v1.0.0)
+
+- **Phase AL0 — Baseline anchor COMPLETE** (commit ad3d26e on branch
+  `claude/review-ak7-workstream-QAUBL`): 17-metric baseline capture
+  script `scripts/ak7_cascade_baseline.sh`, captured baseline at
+  `docs/audits/AL0_baseline.txt`, regression check
+  `scripts/ak7_cascade_check_monotonic.sh`, CI wiring into
+  `scripts/test_tier0_hygiene.sh`. Enforces that every subsequent
+  WS-AL commit monotonically decreases raw kind-destructuring and
+  raw `toObjId` lookup counts while monotonically growing helper
+  adoption, sentinel-check dispatch, and null-cap guard counts.
+
+- **Phase AL1 — AK7-I.cascade RESOLVED** (5 commits e03d6d3 → 4a27c1c):
+  Closes the slot-empty/slot-has-null-cap conflation where
+  `cspaceLookupSlot` returned `some Capability.null` and the three
+  downstream operations propagated that null cap as if valid. AL1-A
+  adds the `parent.requireNotNull` guard at `cspaceMint`; AL1-B at
+  `cspaceCopy`; AL1-C at `cspaceMove`. Each returns
+  `.error .invalidCapability` on a null parent before mutation.
+  AL1-D.1 adds the bridge lemma `Capability.requireNotNull_some_eq`
+  used implicitly by seven patched preservation proofs
+  (`cspaceMint_attenuates`, `cspaceMint_badge_stored`, three
+  `_preserves_*` theorems in `Preservation.lean`,
+  `cspaceMint_preserves_lowEquivalent`, `cspaceCopy_preserves_projection`,
+  `cspaceMove_preserves_projection`, `niStepInd` cspaceMint arm).
+  Checked wrappers (`cspaceMintWithCdt`, `cspaceMintChecked`) inherit
+  the guard transparently. AL1-E adds three end-to-end regression
+  tests that build a state with `Capability.null` in CNode slot 0 and
+  assert `.error .invalidCapability`. AL1-F marks AK7-I.cascade as
+  **RESOLVED** in `docs/audits/AUDIT_v0.29.0_DEFERRED.md` and corrects
+  the original listing (which referenced a non-existent
+  `cspaceInvoke` operation).
+
+- **Phase AL2 — AK7-F foundational layer COMPLETE** (4 commits af90780
+  → 5287522, + audit remediation 6b44dd5): Five kind-verified lookup
+  helpers in `SeLe4n/Model/State.lean` SystemState namespace
+  (`getTcb?`, `getSchedContext?`, `getEndpoint?`, `getNotification?`,
+  `getUntyped?`) + exhaustive discrimination lemma set (10
+  cross-variant rejection lemmas for the most-called helper + 4
+  mirrors for the others) + 5 `getX?_eq_some_iff` bidirectional
+  unfolding lemmas + `getTcb?_eq_none_iff` complement + 8 runtime
+  tests. The AL0 baseline script updated to exclude the
+  helper-definition file from raw-pattern metric counts so the
+  monotonicity guard measures CALLER use, not helper-definition bodies.
+  Post-delivery audit remediated two foundational coverage gaps (3
+  missing iff lemmas + 4 missing getTcb? rejection lemmas + 3 new
+  round-trip runtime tests). Gate at AL2 tip: `lake build` (260 jobs,
+  0 warnings) + `test_smoke.sh` + `test_full.sh` +
+  `test_tier2_negative.sh` (302 checks) + `information_flow_suite`
+  (143 checks) + `ak7_regression_suite` (**55 checks**) +
+  `cargo test --workspace` (415 tests) +
+  `cargo clippy --workspace -- -D warnings` (0 warnings) +
+  `ak7_cascade_check_monotonic.sh` PASS + zero sorry/axiom.
+
+- **Remaining AL3–AL11** (~90 atoms): migrate 304 consumer call sites
+  across Scheduler / IPC / Architecture / InformationFlow / Lifecycle /
+  FrozenOps / SchedContext / Platform (AL3–AL5); `storeObjectChecked`
+  kind-guard + cross-subsystem composition (AL6);
+  `validateThreadIdArg` / `validateSchedContextIdArg` guards at the
+  eight AK7-E capability-only dispatch arms in `Kernel/API.lean` (AL7);
+  tighten seven handler signatures from raw ID to `ValidThreadId` /
+  `ValidSchedContextId` (AL8); `setIPCBufferOp` migration (AL9);
+  integration gate + v1.0.0 version bump (AL10); docs + tag v1.0.0
+  (AL11). Plan file:
+  `/root/.claude/plans/you-created-a-document-temporal-hejlsberg.md`.
+
 ### WS-AK: Pre-1.0 Release Hardening (v0.29.0 Audit)
 
 - **Phase AK7 audit remediation COMPLETE** (v0.29.13): End-to-end audit of the initial AK7 delivery. Six material gaps remediated with zero sorry/axiom regressions. **(1) AK7-B coverage** — initial `apiInvariantBundle_frozenDirectFull` covered only 6 fields; extended to a **30-conjunct** formulation covering every `FrozenSystemState` field (17 map-field lookup-equivalences + 13 non-map bitwise equalities) and added 3 new lookup theorems (`lookup_freeze_byPriority`/`_threadPriority`/`_membership`). **(2) AK7-H preservation** — added `freezeMap_wellFormed` theorem via `freezeMap_foldl_values_bounded` helper threading `invExt` through the fold (closes the "advisory-only" gap on `FrozenMap.wellFormed`). **(3) AK7-D privacy** — `MessageInfo.mk` cannot be made `private` without breaking 20+ test sites; added `MessageInfo.wellFormed` Prop-level invariant + `decode_wellFormed` + `mkChecked_wellFormed` witnesses. **(4) AK7-I gate** — added `Capability.requireNotNull` helper + 3 correctness theorems. **(5) AK7-J F-M09 enforcement** — added `ensureCdtNodeForSlotChecked` variant + 3 preservation theorems. **(6) AK7-K F-L batch** — F-L4 boot interrupt-enable window doc, F-L10 `DecidableEq KernelObject` rationale, F-L14 `UntypedObject.allocateChecked` positive-size precondition. **Regression suite** — new `tests/Ak7RegressionSuite.lean` with **38** runtime checks covering all sub-tasks including edge cases; wired into `test_tier2_negative.sh`. **Deferred-items tracking** — new `docs/audits/AUDIT_v0.29.0_DEFERRED.md` formalises AK7-E/F/I cascade migrations for v1.1. Gate: `lake build` (260 jobs) + `test_smoke.sh` + `test_full.sh` + `check_version_sync.sh` + `cargo test --workspace` (415 tests) + `lake exe ak7_regression_suite` (38 checks) + zero sorry/axiom.

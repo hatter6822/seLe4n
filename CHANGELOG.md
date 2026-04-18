@@ -1,3 +1,176 @@
+## WS-AL in progress — AK7 cascade closure (pre-v1.0.0, branch `claude/review-ak7-workstream-QAUBL`)
+
+WS-AL is the cascade-closure workstream that resolves the three AK7
+deferred items (AK7-E / AK7-F / AK7-I) before v1.0.0. Plan document
+`/root/.claude/plans/you-created-a-document-temporal-hejlsberg.md`
+decomposes the work into 12 phases and 110 committable atoms. Phases
+AL0–AL2 are complete (11 commits on branch); phases AL3–AL11 remain.
+
+### Phase AL0 — Baseline anchor + monotonicity CI guard (commit ad3d26e)
+
+- **AL0-A**: `scripts/ak7_cascade_baseline.sh` emits 17 `METRIC:VALUE`
+  lines capturing should-drop metrics (raw kind-destructuring and raw
+  `toObjId` lookups, `sorry`/`axiom` counts) and should-grow metrics
+  (kind-verified helper adoption, sentinel-check dispatch count,
+  `requireNotNull` gate count, AK7 suite size, build job count, cargo
+  test count).
+- **AL0-B**: `docs/audits/AL0_baseline.txt` captured at commit
+  ad3d26e; updated in 8ddd97e to exclude the AL2-A helper-definition
+  file (`SeLe4n/Model/State.lean`) from raw-pattern counts so the
+  metrics measure CALLER use of the raw pattern, not helper bodies
+  (which by design contain it once per variant).
+- **AL0-C**: `scripts/ak7_cascade_check_monotonic.sh` compares current
+  metrics against `AL0_baseline.txt`; should-drop metrics fail when
+  current > baseline, should-grow metrics fail when current < baseline.
+- **AL0-D**: Monotonicity guard wired into
+  `scripts/test_tier0_hygiene.sh` so every subsequent commit
+  regression-checks automatically.
+
+### Phase AL1 — AK7-I.cascade RESOLVED (commits e03d6d3, c4d4462, ab7dc07, a6c2dd1, 4a27c1c)
+
+**Closes the AK7-I cascade**: `Capability.requireNotNull` helper was
+introduced in v0.29.13 as a gate primitive but was not wired at any
+entry point. `cspaceLookupSlot` returns `some Capability.null` for a
+slot containing the `seL4_CapNull` sentinel (`.object ObjId.sentinel`
+with `rights.bits = 0`) and the three downstream operations
+(`cspaceMint` / `cspaceCopy` / `cspaceMove`) propagated that null cap
+as if valid — a correctness hole.
+
+- **AL1-A** (`cspaceMint` guard, `SeLe4n/Kernel/Capability/
+  Operations.lean:563`): After `cspaceLookupSlot src` returns
+  `.ok (parent, _)`, the new `parent.requireNotNull` match rejects
+  null parents with `.error .invalidCapability` before `mintDerivedCap`.
+- **AL1-B** (`cspaceCopy` guard, `:696`): same pattern, blocks
+  `Capability.null` from being silently copied into a new slot.
+- **AL1-C** (`cspaceMove` guard, `:720`): same pattern; prevents a
+  null cap from consuming a destination slot and clearing a source
+  (pointless but observable via CDT-edge churn).
+- **AL1-D.1** (bridge lemma, `SeLe4n/Model/Object/Types.lean`):
+  `Capability.requireNotNull_some_eq` — if `cap.requireNotNull = some
+  cap'`, then `cap' = cap`. Used implicitly by every downstream
+  preservation proof that unfolds through the new guard.
+- **Inline preservation-proof patches** (seven files): adapted via
+  the same `by_cases hNull : cap.isNull` pattern — in the `true`
+  branch, `exfalso` discharges the contradiction (the guard would
+  have fired, making `hStep` contradict its `.ok` hypothesis); in the
+  `false` branch, `requireNotNull` reduces definitionally to `some cap`.
+  Affected theorems: `cspaceMint_attenuates`, `cspaceMint_badge_stored`,
+  `cspaceMint_preserves_capabilityInvariantBundle`,
+  `cspaceMint_preserves_badgeWellFormed`,
+  `cspaceMint_preserves_cdtMapsConsistent`,
+  `cspaceCopy_preserves_capabilityInvariantBundle`,
+  `cspaceMove_preserves_capabilityInvariantBundle`,
+  `cspaceMint_preserves_lowEquivalent`,
+  `cspaceCopy_preserves_projection`,
+  `cspaceMove_preserves_projection`, and the `niStepInd` cspaceMint
+  arm in `InformationFlow/Invariant/Composition.lean`.
+- **Wrapper transparency**: `cspaceMintWithCdt` and `cspaceMintChecked`
+  treat `cspaceMint` opaquely (case-split on `.ok`/`.error`
+  result), so the new null-cap rejection propagates as `.error` through
+  the wrapper chain without any proof modification.
+- **AL1-E** (regression tests, `tests/Ak7RegressionSuite.lean`): three
+  end-to-end tests `al1E_01_mint_from_null_rejected`,
+  `al1E_02_copy_from_null_rejected`,
+  `al1E_03_move_from_null_rejected`. Each builds a minimal state with
+  `Capability.null` in CNode slot 0, invokes the corresponding cspace
+  operation, and pattern-matches on the result, rejecting anything
+  other than `.error .invalidCapability` with an explicit
+  `IO.userError`. Suite size 38 → 41 after AL1-E.
+- **AL1-F** (`docs/audits/AUDIT_v0.29.0_DEFERRED.md`): AK7-I.cascade row
+  marked **RESOLVED** with the four affected commit SHAs. Corrected
+  the original DEFERRED listing which referenced a `cspaceInvoke`
+  operation that does not exist in the codebase (the three actual
+  affected operations are mint/copy/move).
+
+### Phase AL2 — AK7-F foundational layer (commits af90780, 8ddd97e, 957d257, 5287522, 6b44dd5)
+
+**AK7-F baselines `ObjectKind` / `KindedObjId` remain unmodified.** AL2
+adds the *consumer-facing foundation* on which AL3–AL5 will migrate
+the 304 caller sites that currently repeat the pattern
+`match st.objects[id]? with | some (.variant x) => ... | _ => ...`.
+
+- **AL2-A** (helpers, `SeLe4n/Model/State.lean`): Five new kind-verified
+  lookup helpers in the `SystemState` namespace:
+  `getTcb? : ThreadId → Option TCB`,
+  `getSchedContext? : SchedContextId → Option SeLe4n.Kernel.SchedContext`,
+  `getEndpoint? : ObjId → Option Endpoint`,
+  `getNotification? : ObjId → Option Notification`,
+  `getUntyped? : ObjId → Option UntypedObject`. Each unwraps the
+  `KernelObject` constructor on the supplied id and returns `none`
+  when the stored object has a different variant — this is the
+  structural discriminator AL6 will compose into
+  `crossSubsystemInvariant` as a cross-variant store guard.
+- **AL2-B** (sanity lemmas + audit remediation): Ten cross-variant
+  rejection lemmas for `getTcb?` (schedContext / endpoint /
+  notification / cnode / vspaceRoot / untyped / absent — exhaustive
+  over all non-TCB `KernelObject` variants plus the absent case).
+  Four mirror rejection lemmas for the other helpers.
+  Five `getX?_eq_some_iff` bidirectional lemmas characterizing each
+  helper's forward and backward semantics, plus `getTcb?_eq_none_iff`
+  complement. All proofs are single-line `simp [helperDef, h]` or an
+  explicit `split` + `constructor` — no `sorry`.
+- **AL2-C** (runtime coverage, `tests/Ak7RegressionSuite.lean`): Eight
+  new tests `al2C_01..08`. Five cover per-variant discrimination (one
+  per helper variant), one covers the absent path, two cover
+  round-trip stores (TCB + SchedContext with field-level equality
+  check). Fixtures `minimalTcb` / `minimalSchedContext` construct
+  well-typed minimal instances. Suite size 41 → 55 across all AL2
+  commits.
+- **Metric-script fixup** (commit 8ddd97e): AL2-A initially regressed
+  the `RAW_LOOKUP_SCID` monotonicity metric (83 → 84) because the new
+  `getSchedContext?` helper body contains the canonical pattern by
+  design. Fixed by adding a `rg_count_excl_helpers` function that
+  excludes `SeLe4n/Model/State.lean` from the raw-pattern metrics —
+  the metrics now measure CALLER use of the raw pattern, not
+  helper-definition bodies. `docs/audits/AL0_baseline.txt`
+  regenerated under the new exclusion rules.
+- **Post-delivery audit** (commit 6b44dd5): found two foundational
+  coverage gaps — only 2 of 5 helpers had `_eq_some_iff` lemmas; only
+  2 of 6 rejection lemmas existed for `getTcb?`. Remediated with the
+  3 missing iff lemmas, 5 new getTcb? rejection lemmas (exhaustive),
+  `getTcb?_eq_none_iff` complement, and 3 new runtime tests
+  (`al2C_06..08`).
+
+### Remaining WS-AL work (AL3–AL11, ~90 atoms)
+
+- AL3–AL5: migrate 304 consumer call sites to the AL2-A helpers
+  across Scheduler (151), IPC (104), and remaining subsystems (49).
+- AL6: `storeObjectChecked` kind-guard + cross-subsystem composition
+  preventing silent cross-variant overwrites of the object store.
+- AL7: `validateThreadIdArg` / `validateSchedContextIdArg` guards at
+  the 8 AK7-E capability-only dispatch arms in `Kernel/API.lean`.
+- AL8: tighten 7 handler signatures from raw ID to `ValidThreadId` /
+  `ValidSchedContextId` (removing the graceful-lookup defense-in-depth
+  that AL7 subsumes).
+- AL9: `setIPCBufferOp` migration in `Architecture/IpcBufferValidation.lean`.
+- AL10: integration gate (new cross-cutting runtime tests, version
+  bump to 1.0.0).
+- AL11: closure — retire `docs/audits/AUDIT_v0.29.0_DEFERRED.md` as
+  `_RESOLVED.md`, update README/SPEC/GitBook, tag v1.0.0.
+
+### Gate at current tip (HEAD = 6b44dd5)
+
+- `lake build` — 260 jobs, 0 warnings, zero `sorry` / `axiom` in
+  `SeLe4n/` or `Main.lean`.
+- `./scripts/test_smoke.sh` (Tier 0–2) PASS after
+  `docs/codebase_map.json` regeneration.
+- `./scripts/test_full.sh` (Tier 0–3 including invariant surface anchors) PASS.
+- `./scripts/test_tier2_negative.sh` — 302 checks PASS.
+- `lake exe information_flow_suite` — 143 checks PASS.
+- `lake exe ak7_regression_suite` — **55 checks PASS** (AK7-A..K
+  full coverage plus WS-AL AL1-E + AL2-C additions).
+- `lake exe operation_chain_suite`, `abi_roundtrip_suite`,
+  `priority_management_suite`, `decoding_suite`,
+  `badge_overflow_suite` — all PASS.
+- `cargo test --workspace` — 415 tests PASS across 9 crates.
+- `cargo clippy --workspace -- -D warnings` — 0 warnings.
+- `./scripts/ak7_cascade_check_monotonic.sh` — PASS (no metric regressed).
+- `./scripts/test_tier0_hygiene.sh` — PASS (forbidden markers, code
+  hygiene, website-link manifest, version-sync, monotonicity guard,
+  scenario registry all green).
+
+---
+
 ## v0.29.13 — AK7 Foundational Model + post-audit remediation
 
 Pre-1.0 Release Hardening (v0.29.0 audit) — Phase AK7: Foundational
