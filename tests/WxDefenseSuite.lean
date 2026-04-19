@@ -52,7 +52,7 @@ def rxPerms : PagePermissions :=
 def test_t01_L3_rejects_wx : IO Unit := do
   match fromPagePermissions wxPerms with
   | none =>
-    IO.println "AK3-B.T01 check passed [L3 fromPagePermissions rejects W+X]"
+    IO.println "check passed [L3 fromPagePermissions rejects W+X]"
   | some _ =>
     throw <| IO.userError "T01: L3 accepted W+X permissions (security regression!)"
 
@@ -60,7 +60,7 @@ def test_t01_L3_rejects_wx : IO Unit := do
 def test_t02_L3_accepts_ro : IO Unit := do
   match fromPagePermissions roPerms with
   | some _ =>
-    IO.println "AK3-B.T02 check passed [L3 accepts read-only]"
+    IO.println "check passed [L3 accepts read-only]"
   | none =>
     throw <| IO.userError "T02: L3 rejected read-only permissions"
 
@@ -68,7 +68,7 @@ def test_t02_L3_accepts_ro : IO Unit := do
 def test_t03_L3_accepts_rw : IO Unit := do
   match fromPagePermissions rwPerms with
   | some _ =>
-    IO.println "AK3-B.T03 check passed [L3 accepts R+W]"
+    IO.println "check passed [L3 accepts R+W]"
   | none =>
     throw <| IO.userError "T03: L3 rejected R+W permissions"
 
@@ -76,7 +76,7 @@ def test_t03_L3_accepts_rw : IO Unit := do
 def test_t04_L3_accepts_rx : IO Unit := do
   match fromPagePermissions rxPerms with
   | some _ =>
-    IO.println "AK3-B.T04 check passed [L3 accepts R+X]"
+    IO.println "check passed [L3 accepts R+X]"
   | none =>
     throw <| IO.userError "T04: L3 rejected R+X permissions"
 
@@ -86,7 +86,7 @@ def test_t05_L2_rejects_wx : IO Unit := do
     { asid := SeLe4n.ASID.mk 1, mappings := default }
   match emptyRoot.mapPage (SeLe4n.VAddr.ofNat 0x1000) (SeLe4n.PAddr.ofNat 0x2000) wxPerms with
   | none =>
-    IO.println "AK3-B.T05 check passed [L2 VSpaceRoot.mapPage rejects W+X]"
+    IO.println "check passed [L2 VSpaceRoot.mapPage rejects W+X]"
   | some _ =>
     throw <| IO.userError "T05: L2 accepted W+X (security regression!)"
 
@@ -96,20 +96,20 @@ def test_t06_L2_accepts_rw : IO Unit := do
     { asid := SeLe4n.ASID.mk 1, mappings := default }
   match emptyRoot.mapPage (SeLe4n.VAddr.ofNat 0x1000) (SeLe4n.PAddr.ofNat 0x2000) rwPerms with
   | some _ =>
-    IO.println "AK3-B.T06 check passed [L2 accepts R+W]"
+    IO.println "check passed [L2 accepts R+W]"
   | none =>
     throw <| IO.userError "T06: L2 rejected R+W (wrongful rejection)"
 
 /-- T07: W^X compliance check on W+X perms value. -/
 def test_t07_wxCompliant_W_and_X_false : IO Unit := do
-  expectCond "AK3-B.T07" "W+X not wxCompliant"
+  expectCond "wx-defense" "W+X not wxCompliant"
     (wxPerms.wxCompliant == false)
 
 /-- T08: W^X compliance check on R+X and R+W. -/
 def test_t08_wxCompliant_R_alone_true : IO Unit := do
-  expectCond "AK3-B.T08" "R+W wxCompliant" (rwPerms.wxCompliant == true)
-  expectCond "AK3-B.T08" "R+X wxCompliant" (rxPerms.wxCompliant == true)
-  expectCond "AK3-B.T08" "readOnly wxCompliant" (roPerms.wxCompliant == true)
+  expectCond "wx-defense" "R+W wxCompliant" (rwPerms.wxCompliant == true)
+  expectCond "wx-defense" "R+X wxCompliant" (rxPerms.wxCompliant == true)
+  expectCond "wx-defense" "readOnly wxCompliant" (roPerms.wxCompliant == true)
 
 /-- Running entry. -/
 def runAllTests : IO Unit := do

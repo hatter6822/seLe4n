@@ -63,9 +63,9 @@ private def pm001_setPriorityWithinMCP : IO Unit := do
   | .ok st' =>
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
-      expect "PM-001 target priority updated to 80" (tcb.priority == ⟨80⟩)
-    | _ => throw <| IO.userError "PM-001 target TCB not found"
-  | .error e => throw <| IO.userError s!"PM-001 setPriority should succeed, got {repr e}"
+      expect "target priority updated to 80" (tcb.priority == ⟨80⟩)
+    | _ => throw <| IO.userError "target TCB not found"
+  | .error e => throw <| IO.userError s!"setPriority should succeed, got {repr e}"
 
 /-- PM-002: setPriority at exactly MCP boundary succeeds. -/
 private def pm002_setPriorityAtMCP : IO Unit := do
@@ -76,8 +76,8 @@ private def pm002_setPriorityAtMCP : IO Unit := do
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30)))
   ]
   match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨100⟩ with
-  | .ok _ => expect "PM-002 setPriority at MCP boundary succeeds" true
-  | .error e => throw <| IO.userError s!"PM-002 setPriority at MCP should succeed, got {repr e}"
+  | .ok _ => expect "setPriority at MCP boundary succeeds" true
+  | .error e => throw <| IO.userError s!"setPriority at MCP should succeed, got {repr e}"
 
 -- ============================================================================
 -- D2-M2: setPriorityOp — error cases
@@ -92,9 +92,9 @@ private def pm003_setPriorityAboveMCP : IO Unit := do
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30)))
   ]
   match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨101⟩ with
-  | .ok _ => throw <| IO.userError "PM-003 setPriority above MCP should fail"
+  | .ok _ => throw <| IO.userError "setPriority above MCP should fail"
   | .error e =>
-    expect "PM-003 error is illegalAuthority" (e == .illegalAuthority)
+    expect "error is illegalAuthority" (e == .illegalAuthority)
 
 /-- PM-004: setPriority with missing caller returns invalidArgument. -/
 private def pm004_setPriorityMissingCaller : IO Unit := do
@@ -102,9 +102,9 @@ private def pm004_setPriorityMissingCaller : IO Unit := do
   let targetTid : SeLe4n.ThreadId := ⟨2⟩
   let st := mkState [(⟨2⟩, .tcb (mkTcb 2 (prio := 30)))]
   match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
-  | .ok _ => throw <| IO.userError "PM-004 missing caller should fail"
+  | .ok _ => throw <| IO.userError "missing caller should fail"
   | .error e =>
-    expect "PM-004 error is invalidArgument" (e == .invalidArgument)
+    expect "error is invalidArgument" (e == .invalidArgument)
 
 /-- PM-005: setPriority with missing target returns invalidArgument. -/
 private def pm005_setPriorityMissingTarget : IO Unit := do
@@ -112,9 +112,9 @@ private def pm005_setPriorityMissingTarget : IO Unit := do
   let targetTid : SeLe4n.ThreadId := ⟨99⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 100)))]
   match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
-  | .ok _ => throw <| IO.userError "PM-005 missing target should fail"
+  | .ok _ => throw <| IO.userError "missing target should fail"
   | .error e =>
-    expect "PM-005 error is invalidArgument" (e == .invalidArgument)
+    expect "error is invalidArgument" (e == .invalidArgument)
 
 -- ============================================================================
 -- D2-M3: setMCPriorityOp tests
@@ -132,9 +132,9 @@ private def pm006_setMCPriorityWithinMCP : IO Unit := do
   | .ok st' =>
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
-      expect "PM-006 target MCP updated to 100" (tcb.maxControlledPriority == ⟨100⟩)
-    | _ => throw <| IO.userError "PM-006 target TCB not found"
-  | .error e => throw <| IO.userError s!"PM-006 setMCPriority should succeed, got {repr e}"
+      expect "target MCP updated to 100" (tcb.maxControlledPriority == ⟨100⟩)
+    | _ => throw <| IO.userError "target TCB not found"
+  | .error e => throw <| IO.userError s!"setMCPriority should succeed, got {repr e}"
 
 /-- PM-007: setMCPriority above caller's MCP returns illegalAuthority. -/
 private def pm007_setMCPriorityAboveMCP : IO Unit := do
@@ -145,9 +145,9 @@ private def pm007_setMCPriorityAboveMCP : IO Unit := do
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30) (mcp := 150)))
   ]
   match setMCPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨101⟩ with
-  | .ok _ => throw <| IO.userError "PM-007 setMCPriority above MCP should fail"
+  | .ok _ => throw <| IO.userError "setMCPriority above MCP should fail"
   | .error e =>
-    expect "PM-007 error is illegalAuthority" (e == .illegalAuthority)
+    expect "error is illegalAuthority" (e == .illegalAuthority)
 
 /-- PM-008: setMCPriority caps existing priority when new MCP < current priority. -/
 private def pm008_setMCPriorityCapsExisting : IO Unit := do
@@ -162,11 +162,11 @@ private def pm008_setMCPriorityCapsExisting : IO Unit := do
   | .ok st' =>
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
-      expect "PM-008 target MCP set to 50" (tcb.maxControlledPriority == ⟨50⟩)
+      expect "target MCP set to 50" (tcb.maxControlledPriority == ⟨50⟩)
       -- Priority should be capped: unbound thread priority updated in TCB
-      expect "PM-008 target priority capped to 50" (tcb.priority == ⟨50⟩)
-    | _ => throw <| IO.userError "PM-008 target TCB not found"
-  | .error e => throw <| IO.userError s!"PM-008 setMCPriority should succeed, got {repr e}"
+      expect "target priority capped to 50" (tcb.priority == ⟨50⟩)
+    | _ => throw <| IO.userError "target TCB not found"
+  | .error e => throw <| IO.userError s!"setMCPriority should succeed, got {repr e}"
 
 -- ============================================================================
 -- D2-M4: SchedContext binding tests
@@ -192,9 +192,9 @@ private def pm009_setPriorityBoundThread : IO Unit := do
     -- SchedContext priority should be updated
     match st'.objects[scId.toObjId]? with
     | some (.schedContext sc') =>
-      expect "PM-009 SchedContext priority updated to 80" (sc'.priority == ⟨80⟩)
-    | _ => throw <| IO.userError "PM-009 SchedContext not found"
-  | .error e => throw <| IO.userError s!"PM-009 setPriority bound should succeed, got {repr e}"
+      expect "SchedContext priority updated to 80" (sc'.priority == ⟨80⟩)
+    | _ => throw <| IO.userError "SchedContext not found"
+  | .error e => throw <| IO.userError s!"setPriority bound should succeed, got {repr e}"
 
 /-- PM-010: setPriority on unbound thread updates TCB priority directly. -/
 private def pm010_setPriorityUnboundThread : IO Unit := do
@@ -208,9 +208,9 @@ private def pm010_setPriorityUnboundThread : IO Unit := do
   | .ok st' =>
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
-      expect "PM-010 TCB priority updated to 60" (tcb.priority == ⟨60⟩)
-    | _ => throw <| IO.userError "PM-010 target TCB not found"
-  | .error e => throw <| IO.userError s!"PM-010 setPriority unbound should succeed, got {repr e}"
+      expect "TCB priority updated to 60" (tcb.priority == ⟨60⟩)
+    | _ => throw <| IO.userError "target TCB not found"
+  | .error e => throw <| IO.userError s!"setPriority unbound should succeed, got {repr e}"
 
 /-- PM-010b: setMCPriority caps priority on SchedContext-bound thread. -/
 private def pm010b_setMCPriorityCapsSchedContextBound : IO Unit := do
@@ -234,14 +234,14 @@ private def pm010b_setMCPriorityCapsSchedContextBound : IO Unit := do
     -- Verify MCP was updated on TCB
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
-      expect "PM-010b MCP updated to 50" (tcb.maxControlledPriority == ⟨50⟩)
-    | _ => throw <| IO.userError "PM-010b target TCB not found"
+      expect "MCP updated to 50" (tcb.maxControlledPriority == ⟨50⟩)
+    | _ => throw <| IO.userError "target TCB not found"
     -- Verify SchedContext priority was capped to 50
     match st'.objects[scId.toObjId]? with
     | some (.schedContext sc') =>
-      expect "PM-010b SchedContext priority capped to 50" (sc'.priority == ⟨50⟩)
-    | _ => throw <| IO.userError "PM-010b SchedContext not found after MCP cap"
-  | .error e => throw <| IO.userError s!"PM-010b setMCPriority bound cap should succeed, got {repr e}"
+      expect "SchedContext priority capped to 50" (sc'.priority == ⟨50⟩)
+    | _ => throw <| IO.userError "SchedContext not found after MCP cap"
+  | .error e => throw <| IO.userError s!"setMCPriority bound cap should succeed, got {repr e}"
 
 -- ============================================================================
 -- D2-M5: MCP authority transitivity
@@ -263,10 +263,10 @@ private def pm011_mcpTransitivity : IO Unit := do
   | .ok st' =>
     -- Step 2: B tries to set C's priority to 90 (above B's new MCP of 80) — should fail
     match setPriorityOp st' ⟨tidB, by decide⟩ ⟨tidC, by decide⟩ ⟨90⟩ with
-    | .ok _ => throw <| IO.userError "PM-011 B should not set priority above its MCP"
+    | .ok _ => throw <| IO.userError "B should not set priority above its MCP"
     | .error e =>
-      expect "PM-011 transitive MCP blocks escalation" (e == .illegalAuthority)
-  | .error e => throw <| IO.userError s!"PM-011 step 1 failed: {repr e}"
+      expect "transitive MCP blocks escalation" (e == .illegalAuthority)
+  | .error e => throw <| IO.userError s!"step 1 failed: {repr e}"
 
 -- ============================================================================
 -- D2-M6: Self-priority tests
@@ -282,9 +282,9 @@ private def pm012_selfSetPriority : IO Unit := do
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
-      expect "PM-012 self priority updated to 80" (tcb.priority == ⟨80⟩)
-    | _ => throw <| IO.userError "PM-012 TCB not found"
-  | .error e => throw <| IO.userError s!"PM-012 self setPriority should succeed, got {repr e}"
+      expect "self priority updated to 80" (tcb.priority == ⟨80⟩)
+    | _ => throw <| IO.userError "TCB not found"
+  | .error e => throw <| IO.userError s!"self setPriority should succeed, got {repr e}"
 
 -- ============================================================================
 -- D2-M7: Frozen operation tests
@@ -341,9 +341,9 @@ private def pm013_frozenSetPriority : IO Unit := do
   | .ok ((), fst') =>
     match fst'.objects.get? targetTid.toObjId with
     | some (.tcb tcb) =>
-      expect "PM-013 frozen priority updated to 80" (tcb.priority == ⟨80⟩)
-    | _ => throw <| IO.userError "PM-013 frozen TCB not found"
-  | .error e => throw <| IO.userError s!"PM-013 frozen setPriority should succeed, got {repr e}"
+      expect "frozen priority updated to 80" (tcb.priority == ⟨80⟩)
+    | _ => throw <| IO.userError "frozen TCB not found"
+  | .error e => throw <| IO.userError s!"frozen setPriority should succeed, got {repr e}"
 
 /-- PM-014: Frozen setPriority above MCP fails. -/
 private def pm014_frozenSetPriorityAboveMCP : IO Unit := do
@@ -354,9 +354,9 @@ private def pm014_frozenSetPriorityAboveMCP : IO Unit := do
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30)))
   ]
   match frozenSetPriority callerTid targetTid ⟨101⟩ fst with
-  | .ok _ => throw <| IO.userError "PM-014 frozen setPriority above MCP should fail"
+  | .ok _ => throw <| IO.userError "frozen setPriority above MCP should fail"
   | .error e =>
-    expect "PM-014 frozen error is illegalAuthority" (e == .illegalAuthority)
+    expect "frozen error is illegalAuthority" (e == .illegalAuthority)
 
 /-- PM-015: Frozen setMCPriority succeeds and caps priority. -/
 private def pm015_frozenSetMCPriority : IO Unit := do
@@ -370,10 +370,10 @@ private def pm015_frozenSetMCPriority : IO Unit := do
   | .ok ((), fst') =>
     match fst'.objects.get? targetTid.toObjId with
     | some (.tcb tcb) =>
-      expect "PM-015 frozen MCP set to 50" (tcb.maxControlledPriority == ⟨50⟩)
-      expect "PM-015 frozen priority capped to 50" (tcb.priority == ⟨50⟩)
-    | _ => throw <| IO.userError "PM-015 frozen TCB not found"
-  | .error e => throw <| IO.userError s!"PM-015 frozen setMCPriority should succeed, got {repr e}"
+      expect "frozen MCP set to 50" (tcb.maxControlledPriority == ⟨50⟩)
+      expect "frozen priority capped to 50" (tcb.priority == ⟨50⟩)
+    | _ => throw <| IO.userError "frozen TCB not found"
+  | .error e => throw <| IO.userError s!"frozen setMCPriority should succeed, got {repr e}"
 
 -- =============================================================================
 -- AK2-B: Option B priority propagation regression tests
@@ -397,11 +397,11 @@ private def pm_ak2b_01_bindPropagatesPriority : IO Unit := do
   | .ok ((), st') =>
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
-      expect "AK2-B-01 tcb.priority propagated from sc.priority (10 -> 77)"
+      expect "tcb.priority propagated from sc.priority (10 -> 77)"
         (tcb.priority == ⟨77⟩)
-    | _ => throw <| IO.userError "AK2-B-01 bound TCB not found"
+    | _ => throw <| IO.userError "bound TCB not found"
   | .error e =>
-    throw <| IO.userError s!"AK2-B-01 schedContextBind failed: {repr e}"
+    throw <| IO.userError s!"schedContextBind failed: {repr e}"
 
 /-- AK2-B-02: `schedContextConfigure` on already-bound SchedContext
 propagates the new priority into the bound TCB. -/
@@ -425,15 +425,15 @@ private def pm_ak2b_02_configurePropagatesPriority : IO Unit := do
   | .ok ((), st') =>
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
-      expect "AK2-B-02 tcb.priority propagated from new sc.priority (50 -> 123)"
+      expect "tcb.priority propagated from new sc.priority (50 -> 123)"
         (tcb.priority == ⟨123⟩)
-    | _ => throw <| IO.userError "AK2-B-02 bound TCB not found"
+    | _ => throw <| IO.userError "bound TCB not found"
     match st'.objects[scObjId]? with
     | some (.schedContext sc') =>
-      expect "AK2-B-02 sc.priority updated to 123" (sc'.priority == ⟨123⟩)
-    | _ => throw <| IO.userError "AK2-B-02 SC not found"
+      expect "sc.priority updated to 123" (sc'.priority == ⟨123⟩)
+    | _ => throw <| IO.userError "SC not found"
   | .error e =>
-    throw <| IO.userError s!"AK2-B-02 schedContextConfigure failed: {repr e}"
+    throw <| IO.userError s!"schedContextConfigure failed: {repr e}"
 
 /-- AK2-B-03: `schedContextConfigure` re-buckets the bound thread in the
 RunQueue when SC priority changes. Prior to this test the configure path
@@ -462,13 +462,13 @@ private def pm_ak2b_03_configureRebucketsBoundThread : IO Unit := do
     -- must match the new priority (123), not the old (50).
     match st'.scheduler.runQueue.threadPriority[targetTid]? with
     | some prio =>
-      expect "AK2-B-03 RunQueue bucket migrated to new priority (50 -> 123)"
+      expect "RunQueue bucket migrated to new priority (50 -> 123)"
         (prio == ⟨123⟩)
     | none =>
         throw <| IO.userError
-          "AK2-B-03 RunQueue missing thread after reconfigure (thread was present before)"
+          "RunQueue missing thread after reconfigure (thread was present before)"
   | .error e =>
-    throw <| IO.userError s!"AK2-B-03 schedContextConfigure failed: {repr e}"
+    throw <| IO.userError s!"schedContextConfigure failed: {repr e}"
 
 -- =============================================================================
 -- AK2-E: CBS admission ceiling-round regression
@@ -480,7 +480,7 @@ but `(1 * 1000 + 3 - 1) / 3 = 334` (ceiling). Verifies admission slightly
 over-estimates rather than under-estimates. -/
 private def pm_ak2e_01_utilizationCeiling : IO Unit := do
   let bw : SeLe4n.Kernel.Bandwidth := { budget := 1, period := 3 }
-  expect "AK2-E-01 utilization uses ceiling-round (expected 334, got truncation 333 would fail)"
+  expect "utilization uses ceiling-round (expected 334, got truncation 333 would fail)"
     (bw.utilization == 334)
 
 /-- AK2-E-02: Ceiling-round is an upper bound — for exact ratios it equals
@@ -488,12 +488,12 @@ the truncated result. For `budget = 1`, `period = 2`: `1 * 1000 / 2 = 500`
 both truncation and ceiling (no rounding needed). -/
 private def pm_ak2e_02_utilizationExact : IO Unit := do
   let bw : SeLe4n.Kernel.Bandwidth := { budget := 1, period := 2 }
-  expect "AK2-E-02 utilization for exact ratio (500)" (bw.utilization == 500)
+  expect "utilization for exact ratio (500)" (bw.utilization == 500)
 
 /-- AK2-E-03: Period 0 returns 0 (invalid bandwidth guard unchanged). -/
 private def pm_ak2e_03_utilizationZeroPeriod : IO Unit := do
   let bw : SeLe4n.Kernel.Bandwidth := { budget := 5, period := 0 }
-  expect "AK2-E-03 utilization is 0 when period is 0" (bw.utilization == 0)
+  expect "utilization is 0 when period is 0" (bw.utilization == 0)
 
 -- =============================================================================
 -- AK2-F: ReplenishQueue strict < comparator regression (FIFO within tie)
@@ -511,15 +511,15 @@ private def pm_ak2f_01_replenishFifoOnTie : IO Unit := do
   let q2 := q1.insert sc2 100
   match q2.entries with
   | (firstId, firstTime) :: (secondId, secondTime) :: [] =>
-    expect "AK2-F-01 first entry eligibility time is 100" (firstTime == 100)
-    expect "AK2-F-01 second entry eligibility time is 100" (secondTime == 100)
-    expect "AK2-F-01 sc1 (first-inserted) is at position 0 (FIFO)"
+    expect "first entry eligibility time is 100" (firstTime == 100)
+    expect "second entry eligibility time is 100" (secondTime == 100)
+    expect "sc1 (first-inserted) is at position 0 (FIFO)"
       (firstId == sc1)
-    expect "AK2-F-01 sc2 (second-inserted) is at position 1 (FIFO)"
+    expect "sc2 (second-inserted) is at position 1 (FIFO)"
       (secondId == sc2)
   | _ =>
       throw <| IO.userError
-        s!"AK2-F-01 unexpected queue shape: {repr q2.entries}"
+        s!"unexpected queue shape: {repr q2.entries}"
 
 /-- AK2-F-02: Insertion maintains sorted order across distinct times. -/
 private def pm_ak2f_02_replenishSortedAcrossTimes : IO Unit := do
@@ -530,7 +530,7 @@ private def pm_ak2f_02_replenishSortedAcrossTimes : IO Unit := do
   -- Insert out of order: sc3@300, sc1@100, sc2@200.
   let q := ((q0.insert sc3 300).insert sc1 100).insert sc2 200
   let times := q.entries.map Prod.snd
-  expect "AK2-F-02 queue sorted ascending by eligibility time"
+  expect "queue sorted ascending by eligibility time"
     (times == [100, 200, 300])
 
 end SeLe4n.Testing.PriorityManagementSuite

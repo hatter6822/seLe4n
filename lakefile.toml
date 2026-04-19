@@ -51,73 +51,75 @@ root = "tests.FrozenOpsSuite"
 name = "two_phase_arch_suite"
 root = "tests.TwoPhaseArchSuite"
 
-# T1-I (M-TST-1): Register OperationChainSuite as a lean_exe target
-# so it can be compiled and run via `lake exe operation_chain_suite`.
+# Operation-chain regression suite (compound syscall paths + CDT revocation).
 [[lean_exe]]
 name = "operation_chain_suite"
 root = "tests.OperationChainSuite"
 
-# D1: Suspend/Resume test suite
+# Thread lifecycle: suspend/resume operations.
 [[lean_exe]]
 name = "suspend_resume_suite"
 root = "tests.SuspendResumeSuite"
 
-# D2: Priority Management test suite
+# Priority-management operations (set priority / MC priority).
 [[lean_exe]]
 name = "priority_management_suite"
 root = "tests.PriorityManagementSuite"
 
-# D3: IPC Buffer Configuration test suite
+# IPC-buffer configuration operation.
 [[lean_exe]]
 name = "ipc_buffer_suite"
 root = "tests.IpcBufferSuite"
 
-# D4: Priority Inheritance Protocol test suite
+# Priority Inheritance Protocol regression suite.
 [[lean_exe]]
 name = "priority_inheritance_suite"
 root = "tests.PriorityInheritanceSuite"
 
-# D5: Bounded Latency / Liveness test suite
+# Bounded-latency / liveness invariant surface suite.
 [[lean_exe]]
 name = "liveness_suite"
 root = "tests.LivenessSuite"
 
-# T-03/AC6-A: Dedicated RegisterDecode + SyscallArgDecode test suite
+# Register + syscall-argument decode regression suite.
 [[lean_exe]]
 name = "decoding_suite"
 root = "tests.DecodingSuite"
 
-# AG9-E: Badge Overflow Hardware Validation test suite
+# Badge overflow ABI round-trip regression suite.
 [[lean_exe]]
 name = "badge_overflow_suite"
 root = "tests.BadgeOverflowSuite"
 
-# AK3-A.8: AsidPool regression suite (A-C01 CRITICAL)
+# ASID-pool allocator regression suite (rollover, free-list reuse,
+# generation bump, flush discipline).
 [[lean_exe]]
 name = "asid_pool_suite"
 root = "tests.AsidPoolSuite"
 
-# AK3-C.5 + AK3-L: Interrupt dispatch regression suite
+# Interrupt-dispatch regression suite (GIC-400 acknowledge → handle → EOI).
 [[lean_exe]]
 name = "interrupt_dispatch_suite"
 root = "tests.InterruptDispatchSuite"
 
-# AK3-B: W^X four-layer defense regression suite
+# W^X four-layer defense regression suite (wrapper, backend, VSpaceRoot,
+# encode; SCTLR.WXN as hardware-level 4th gate).
 [[lean_exe]]
 name = "wx_defense_suite"
 root = "tests.WxDefenseSuite"
 
-# AK3-E + AK3-J: Decode validation regression suite
+# Decode-path validation (bounds-checked VSpace map/unmap and
+# sched-context configure argument decoders).
 [[lean_exe]]
 name = "decode_validation_suite"
 root = "tests.DecodeValidationSuite"
 
-# AK4-G: End-to-end ABI round-trip integration suite
+# End-to-end ABI round-trip integration suite.
 [[lean_exe]]
 name = "abi_roundtrip_suite"
 root = "tests.AbiRoundtripSuite"
 
-# AK7: Foundational Model regression suite
+# Model integrity regression suite — kernel model type/kind/null discipline
 [[lean_exe]]
-name = "ak7_regression_suite"
-root = "tests.Ak7RegressionSuite"
+name = "model_integrity_suite"
+root = "tests.ModelIntegritySuite"

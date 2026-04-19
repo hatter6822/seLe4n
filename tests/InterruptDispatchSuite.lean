@@ -33,7 +33,7 @@ namespace SeLe4n.Testing.InterruptDispatch
 def test_t01_ack_spurious : IO Unit := do
   match acknowledgeInterrupt 1023 with
   | .error .spurious =>
-    IO.println "AK3-C.T01 check passed [spurious threshold]"
+    IO.println "check passed [spurious threshold]"
   | .error (.outOfRange _) =>
     throw <| IO.userError "T01: expected spurious, got outOfRange"
   | .ok _ =>
@@ -44,7 +44,7 @@ def test_t01_ack_spurious : IO Unit := do
 def test_t02_ack_out_of_range : IO Unit := do
   match acknowledgeInterrupt 500 with
   | .error (.outOfRange n) =>
-    expectCond "AK3-C.T02" "outOfRange carries raw INTID" (n == 500)
+    expectCond "interrupt-dispatch" "outOfRange carries raw INTID" (n == 500)
   | .error .spurious =>
     throw <| IO.userError "T02: expected outOfRange, got spurious"
   | .ok _ =>
@@ -54,7 +54,7 @@ def test_t02_ack_out_of_range : IO Unit := do
 def test_t03_ack_handled : IO Unit := do
   match acknowledgeInterrupt 30 with
   | .ok intId =>
-    expectCond "AK3-C.T03" "handled INTID value" (intId.val == 30)
+    expectCond "interrupt-dispatch" "handled INTID value" (intId.val == 30)
   | .error _ =>
     throw <| IO.userError "T03: expected .ok, got error"
 
@@ -62,7 +62,7 @@ def test_t03_ack_handled : IO Unit := do
 def test_t04_ack_boundary_spurious : IO Unit := do
   match acknowledgeInterrupt 1020 with
   | .error .spurious =>
-    IO.println "AK3-C.T04 check passed [1020 is spurious]"
+    IO.println "check passed [1020 is spurious]"
   | _ =>
     throw <| IO.userError "T04: expected spurious at 1020"
 
@@ -70,7 +70,7 @@ def test_t04_ack_boundary_spurious : IO Unit := do
 def test_t05_ack_boundary_handled : IO Unit := do
   match acknowledgeInterrupt 223 with
   | .ok intId =>
-    expectCond "AK3-C.T05" "223 is still handled" (intId.val == 223)
+    expectCond "interrupt-dispatch" "223 is still handled" (intId.val == 223)
   | _ =>
     throw <| IO.userError "T05: expected .ok at 223"
 
@@ -78,7 +78,7 @@ def test_t05_ack_boundary_handled : IO Unit := do
 def test_t06_ack_audit_push : IO Unit := do
   let st : SeLe4n.Model.SystemState := default
   let st' := ackInterruptAudit st 42
-  expectCond "AK3-L.T06" "eoiPending has ack entry"
+  expectCond "interrupt-dispatch" "eoiPending has ack entry"
     (st'.machine.eoiPending == [42])
 
 /-- T07: AK3-L — `endOfInterrupt` filters the INTID from `eoiPending`. -/
@@ -87,7 +87,7 @@ def test_t07_eoi_drains : IO Unit := do
   let intId : InterruptId := ⟨30, by omega⟩
   let stAck := ackInterruptAudit st intId.val
   let stEoi := endOfInterrupt stAck intId
-  expectCond "AK3-L.T07" "EOI removes from pending"
+  expectCond "interrupt-dispatch" "EOI removes from pending"
     (30 ∉ stEoi.machine.eoiPending)
 
 /-- T08: AK3-L — ack→EOI round trip with empty initial state → empty final
@@ -95,11 +95,11 @@ def test_t07_eoi_drains : IO Unit := do
 def test_t08_round_trip_empty : IO Unit := do
   let st : SeLe4n.Model.SystemState := default
   let intId : InterruptId := ⟨30, by omega⟩
-  expectCond "AK3-L.T08" "initial eoiPending empty"
+  expectCond "interrupt-dispatch" "initial eoiPending empty"
     (st.machine.eoiPending == [])
   let stAck := ackInterruptAudit st intId.val
   let stEoi := endOfInterrupt stAck intId
-  expectCond "AK3-L.T08" "round-trip preserves empty eoiPending"
+  expectCond "interrupt-dispatch" "round-trip preserves empty eoiPending"
     (stEoi.machine.eoiPending == [])
 
 /-- T09: AK3-C — `interruptDispatchSequence` for spurious returns state
@@ -108,7 +108,7 @@ def test_t09_dispatch_spurious_no_state_change : IO Unit := do
   let st : SeLe4n.Model.SystemState := default
   match interruptDispatchSequence st 1023 with
   | .ok ((), st') =>
-    expectCond "AK3-C.T09" "spurious: machine.eoiPending unchanged"
+    expectCond "interrupt-dispatch" "spurious: machine.eoiPending unchanged"
       (st'.machine.eoiPending == st.machine.eoiPending)
   | .error _ =>
     throw <| IO.userError "T09: dispatch of spurious returned error"
@@ -119,7 +119,7 @@ def test_t10_dispatch_out_of_range : IO Unit := do
   let st : SeLe4n.Model.SystemState := default
   match interruptDispatchSequence st 500 with
   | .ok ((), st') =>
-    expectCond "AK3-C.T10" "outOfRange: machine.eoiPending unchanged"
+    expectCond "interrupt-dispatch" "outOfRange: machine.eoiPending unchanged"
       (st'.machine.eoiPending == st.machine.eoiPending)
   | .error _ =>
     throw <| IO.userError "T10: dispatch of outOfRange returned error"

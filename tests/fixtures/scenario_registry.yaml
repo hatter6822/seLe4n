@@ -1,5 +1,5 @@
-# WS-I1/R-03: Scenario registry
-# Maps each scenario ID to its source location and subsystem.
+# Scenario registry — maps each trace/fixture scenario ID to its
+# source location and subsystem.
 # Validate with: python3 scripts/scenario_catalog.py validate-registry
 
 scenarios:

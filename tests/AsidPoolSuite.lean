@@ -40,11 +40,11 @@ def test_t01_initial_bump : IO Unit := do
   match pool.allocate with
   | none => throw <| IO.userError "T01: fresh pool allocate returned none"
   | some res =>
-    expectCond "AK3-A.T01" "asid = 1 (skip kernel 0)" (res.asid == SeLe4n.ASID.mk 1)
-    expectCond "AK3-A.T01" "requiresFlush = false (fresh bump)"
+    expectCond "asid-pool" "asid = 1 (skip kernel 0)" (res.asid == SeLe4n.ASID.mk 1)
+    expectCond "asid-pool" "requiresFlush = false (fresh bump)"
       (res.requiresFlush == false)
-    expectCond "AK3-A.T01" "new activeCount = 1" (res.pool.activeCount == 1)
-    expectCond "AK3-A.T01" "nextAsid advanced to 2" (res.pool.nextAsid == 2)
+    expectCond "asid-pool" "new activeCount = 1" (res.pool.activeCount == 1)
+    expectCond "asid-pool" "nextAsid advanced to 2" (res.pool.nextAsid == 2)
 
 /-- T02: After bump allocation + free, allocate again returns the freed
     ASID via free-list, with `requiresFlush = true` and generation bump. -/
@@ -58,11 +58,11 @@ def test_t02_freelist_reuse : IO Unit := do
     match pool2.allocate with
     | none => throw <| IO.userError "T02: reuse allocate returned none"
     | some res2 =>
-      expectCond "AK3-A.T02" "reused ASID == freed ASID"
+      expectCond "asid-pool" "reused ASID == freed ASID"
         (res2.asid == res1.asid)
-      expectCond "AK3-A.T02" "requiresFlush = true on reuse"
+      expectCond "asid-pool" "requiresFlush = true on reuse"
         (res2.requiresFlush == true)
-      expectCond "AK3-A.T02" "generation bumped on reuse (AK3-D)"
+      expectCond "asid-pool" "generation bumped on reuse"
         (res2.pool.generation > pool1.generation)
 
 /-- T03: `free` removes the ASID from `activeAsids`. -/
@@ -72,11 +72,11 @@ def test_t03_free_removes : IO Unit := do
   | none => throw <| IO.userError "T03: initial allocate returned none"
   | some res =>
     let poolAfterFree := res.pool.free res.asid
-    expectCond "AK3-A.T03" "activeAsids empty after free"
+    expectCond "asid-pool" "activeAsids empty after free"
       (poolAfterFree.activeAsids.isEmpty)
-    expectCond "AK3-A.T03" "activeCount = 0 after free"
+    expectCond "asid-pool" "activeCount = 0 after free"
       (poolAfterFree.activeCount == 0)
-    expectCond "AK3-A.T03" "freeList contains the freed ASID"
+    expectCond "asid-pool" "freeList contains the freed ASID"
       (res.asid ∈ poolAfterFree.freeList)
 
 /-- T04/T07: Saturated pool (`nextAsid = maxAsidValue`) with a single free
@@ -107,13 +107,13 @@ def test_t04_rollover_picks_free_asid : IO Unit := do
   match pool.allocate with
   | none => throw <| IO.userError "T04: rollover returned none when free ASIDs exist"
   | some res =>
-    expectCond "AK3-A.T04" "rollover avoids active ASID 1"
+    expectCond "asid-pool" "rollover avoids active ASID 1"
       (res.asid.val != 1)
-    expectCond "AK3-A.T04" "rollover returns ASID 2 (first free)"
+    expectCond "asid-pool" "rollover returns ASID 2 (first free)"
       (res.asid == SeLe4n.ASID.mk 2)
-    expectCond "AK3-A.T04" "requiresFlush = true on rollover"
+    expectCond "asid-pool" "requiresFlush = true on rollover"
       (res.requiresFlush == true)
-    expectCond "AK3-A.T04" "generation bumped on rollover"
+    expectCond "asid-pool" "generation bumped on rollover"
       (res.pool.generation == 1)
 
 /-- T05: Saturated pool with all non-kernel ASIDs active — rollover
@@ -139,7 +139,7 @@ def test_t05_rollover_fail_closed : IO Unit := do
       activeCount := activeAll.length }
   match pool.allocate with
   | none =>
-    IO.println "AK3-A.T05 check passed [rollover fail-closed]"
+    IO.println "check passed [rollover fail-closed]"
   | some res =>
     throw <| IO.userError s!"T05: rollover returned {res.asid.val} when all non-kernel ASIDs active (CRITICAL: A-C01 regression!)"
 
@@ -152,9 +152,9 @@ def test_t06_bump_distinct : IO Unit := do
     match res1.pool.allocate with
     | none => throw <| IO.userError "T06: second allocate returned none"
     | some res2 =>
-      expectCond "AK3-A.T06" "distinct ASIDs on bump"
+      expectCond "asid-pool" "distinct ASIDs on bump"
         (res1.asid.val != res2.asid.val)
-      expectCond "AK3-A.T06" "ASID values are 1, 2"
+      expectCond "asid-pool" "ASID values are 1, 2"
         (res1.asid.val == 1 && res2.asid.val == 2)
 
 /-- T07: Allocate-free-allocate round-trip retrieves the same ASID. -/
@@ -167,8 +167,8 @@ def test_t07_allocate_free_cycle : IO Unit := do
     match poolFreed.allocate with
     | none => throw <| IO.userError "T07: reallocate after free returned none"
     | some res2 =>
-      expectCond "AK3-A.T07" "reallocated ASID = original" (res2.asid == res1.asid)
-      expectCond "AK3-A.T07" "generation strictly greater after free-reuse"
+      expectCond "asid-pool" "reallocated ASID = original" (res2.asid == res1.asid)
+      expectCond "asid-pool" "generation strictly greater after free-reuse"
         (res2.pool.generation > res1.pool.generation)
 
 /-- T08: Allocate → free → free-list has exactly one entry matching freed
@@ -179,9 +179,9 @@ def test_t08_free_nodup : IO Unit := do
   | none => throw <| IO.userError "T08: allocate returned none"
   | some res =>
     let poolFreed := res.pool.free res.asid
-    expectCond "AK3-A.T08" "freeList has exactly 1 entry"
+    expectCond "asid-pool" "freeList has exactly 1 entry"
       (poolFreed.freeList.length == 1)
-    expectCond "AK3-A.T08" "freeList entry == freed ASID"
+    expectCond "asid-pool" "freeList entry == freed ASID"
       (poolFreed.freeList.head? == some res.asid)
 
 /-- T09: Allocate N threads, then rollover. The rollover branch triggers
@@ -194,9 +194,9 @@ def test_t09_smoke_interleaving : IO Unit := do
   let some r2 := r1.pool.allocate | throw <| IO.userError "T09 step 2 failed"
   let p3 := r2.pool.free r1.asid
   let some r3 := p3.allocate | throw <| IO.userError "T09 step 3 failed"
-  expectCond "AK3-A.T09" "post-free reallocate returns freed ASID"
+  expectCond "asid-pool" "post-free reallocate returns freed ASID"
     (r3.asid == r1.asid)
-  expectCond "AK3-A.T09" "post-free reallocate requires flush"
+  expectCond "asid-pool" "post-free reallocate requires flush"
     (r3.requiresFlush == true)
 
 /-- T10: Running entry — execute all nine scenarios. -/

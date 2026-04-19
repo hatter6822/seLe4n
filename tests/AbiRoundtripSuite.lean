@@ -130,20 +130,20 @@ private def t01_service_register_full_abi : IO Unit := do
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
           (regsOf st tid) 32 with
   | .error e =>
-    throw <| IO.userError s!"AK4-G-T01 decode failed: {toString e}"
+    throw <| IO.userError s!"decode failed: {toString e}"
   | .ok decoded =>
-    expect "T01a overflowCount=1" (decoded.overflowCount == 1)
-    expect "T01b msgRegs.size=5" (decoded.msgRegs.size == 5)
+    expect "overflowCount=1" (decoded.overflowCount == 1)
+    expect "msgRegs.size=5" (decoded.msgRegs.size == 5)
     -- Now run the per-syscall decoder
     match decodeServiceRegisterArgs decoded with
     | .error e =>
-      throw <| IO.userError s!"T01 per-syscall decode failed: {toString e}"
+      throw <| IO.userError s!"per-syscall decode failed: {toString e}"
     | .ok args =>
-      expect "T01c interfaceId=7" (args.interfaceId.toNat == 7)
-      expect "T01d methodCount=10" (args.methodCount == 10)
-      expect "T01e maxMessageSize=256" (args.maxMessageSize == 256)
-      expect "T01f maxResponseSize=128" (args.maxResponseSize == 128)
-      expect "T01g requiresGrant=true" args.requiresGrant
+      expect "interfaceId=7" (args.interfaceId.toNat == 7)
+      expect "methodCount=10" (args.methodCount == 10)
+      expect "maxMessageSize=256" (args.maxMessageSize == 256)
+      expect "maxResponseSize=128" (args.maxResponseSize == 128)
+      expect "requiresGrant=true" args.requiresGrant
 
 /-- AK4-G-T02: serviceRegister with methodCount > MAX → rejected.
     AK4-B tightened validation should fail the out-of-range methodCount. -/
@@ -157,15 +157,15 @@ private def t02_service_register_bounds_rejected : IO Unit := do
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
           (regsOf st tid) 32 with
   | .error _ =>
-    throw <| IO.userError "T02 base decode unexpectedly failed"
+    throw <| IO.userError "base decode unexpectedly failed"
   | .ok decoded =>
     match decodeServiceRegisterArgs decoded with
     | .error .invalidArgument =>
-      expect "T02a methodCount>MAX rejected" true
+      expect "methodCount>MAX rejected" true
     | .error e =>
-      throw <| IO.userError s!"T02 expected invalidArgument, got {toString e}"
+      throw <| IO.userError s!"expected invalidArgument, got {toString e}"
     | .ok _ =>
-      throw <| IO.userError "T02 expected error, got ok"
+      throw <| IO.userError "expected error, got ok"
 
 /-- AK4-G-T03: schedContextConfigure with 5 args — inline + 1 overflow. -/
 private def t03_sched_context_configure_full_abi : IO Unit := do
@@ -178,18 +178,18 @@ private def t03_sched_context_configure_full_abi : IO Unit := do
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
           (regsOf st tid) 32 with
   | .error e =>
-    throw <| IO.userError s!"AK4-G-T03 decode failed: {toString e}"
+    throw <| IO.userError s!"decode failed: {toString e}"
   | .ok decoded =>
-    expect "T03a overflowCount=1" (decoded.overflowCount == 1)
+    expect "overflowCount=1" (decoded.overflowCount == 1)
     match decodeSchedContextConfigureArgs decoded with
     | .error e =>
-      throw <| IO.userError s!"T03 per-syscall decode failed: {toString e}"
+      throw <| IO.userError s!"per-syscall decode failed: {toString e}"
     | .ok args =>
-      expect "T03b budget=1000" (args.budget == 1000)
-      expect "T03c period=10000" (args.period == 10000)
-      expect "T03d priority=128" (args.priority == 128)
-      expect "T03e deadline=5000" (args.deadline == 5000)
-      expect "T03f domain=3" (args.domain == 3)
+      expect "budget=1000" (args.budget == 1000)
+      expect "period=10000" (args.period == 10000)
+      expect "priority=128" (args.priority == 128)
+      expect "deadline=5000" (args.deadline == 5000)
+      expect "domain=3" (args.domain == 3)
 
 /-- AK4-G-T04: schedContextConfigure with domain > MAX → rejected.
     AK3-J / AK4-D tightened validation. -/
@@ -203,13 +203,13 @@ private def t04_sc_configure_domain_rejected : IO Unit := do
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
           (regsOf st tid) 32 with
   | .error _ =>
-    throw <| IO.userError "T04 base decode unexpectedly failed"
+    throw <| IO.userError "base decode unexpectedly failed"
   | .ok decoded =>
     match decodeSchedContextConfigureArgsChecked decoded with
     | .error _ =>
-      expect "T04a domain>MAX rejected" true
+      expect "domain>MAX rejected" true
     | .ok _ =>
-      throw <| IO.userError "T04 expected error, got ok"
+      throw <| IO.userError "expected error, got ok"
 
 /-- AK4-G-T05: cspaceMint (4-arg) — inline regs only, no overflow. -/
 private def t05_cspace_mint_no_overflow : IO Unit := do
@@ -222,16 +222,16 @@ private def t05_cspace_mint_no_overflow : IO Unit := do
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
           (regsOf st tid) 32 with
   | .error e =>
-    throw <| IO.userError s!"AK4-G-T05 decode failed: {toString e}"
+    throw <| IO.userError s!"decode failed: {toString e}"
   | .ok decoded =>
-    expect "T05a overflowCount=0" (decoded.overflowCount == 0)
+    expect "overflowCount=0" (decoded.overflowCount == 0)
     match decodeCSpaceMintArgs decoded with
     | .error e =>
-      throw <| IO.userError s!"T05 per-syscall decode failed: {toString e}"
+      throw <| IO.userError s!"per-syscall decode failed: {toString e}"
     | .ok args =>
-      expect "T05b srcSlot=10" (args.srcSlot.toNat == 10)
-      expect "T05c dstSlot=20" (args.dstSlot.toNat == 20)
-      expect "T05d badge=42" (args.badge.toNat == 42)
+      expect "srcSlot=10" (args.srcSlot.toNat == 10)
+      expect "dstSlot=20" (args.dstSlot.toNat == 20)
+      expect "badge=42" (args.badge.toNat == 42)
 
 /-- AK4-G-T06: cspaceMint with rights > 0x1F → rejected.
     AK4-E tightened validation. -/
@@ -245,15 +245,15 @@ private def t06_cspace_mint_rights_rejected : IO Unit := do
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
           (regsOf st tid) 32 with
   | .error _ =>
-    throw <| IO.userError "T06 base decode unexpectedly failed"
+    throw <| IO.userError "base decode unexpectedly failed"
   | .ok decoded =>
     match decodeCSpaceMintArgs decoded with
     | .error .invalidArgument =>
-      expect "T06a rights>0x1F rejected" true
+      expect "rights>0x1F rejected" true
     | .error e =>
-      throw <| IO.userError s!"T06 expected invalidArgument, got {toString e}"
+      throw <| IO.userError s!"expected invalidArgument, got {toString e}"
     | .ok _ =>
-      throw <| IO.userError "T06 expected error, got ok"
+      throw <| IO.userError "expected error, got ok"
 
 /-- AK4-G-T07: cspaceCopy (2-arg) — shortest inline path. -/
 private def t07_cspace_copy_minimal : IO Unit := do
@@ -266,15 +266,15 @@ private def t07_cspace_copy_minimal : IO Unit := do
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
           (regsOf st tid) 32 with
   | .error e =>
-    throw <| IO.userError s!"AK4-G-T07 decode failed: {toString e}"
+    throw <| IO.userError s!"decode failed: {toString e}"
   | .ok decoded =>
-    expect "T07a overflowCount=0" (decoded.overflowCount == 0)
+    expect "overflowCount=0" (decoded.overflowCount == 0)
     match decodeCSpaceCopyArgs decoded with
     | .error e =>
-      throw <| IO.userError s!"T07 per-syscall decode failed: {toString e}"
+      throw <| IO.userError s!"per-syscall decode failed: {toString e}"
     | .ok args =>
-      expect "T07b srcSlot=1" (args.srcSlot.toNat == 1)
-      expect "T07c dstSlot=2" (args.dstSlot.toNat == 2)
+      expect "srcSlot=1" (args.srcSlot.toNat == 1)
+      expect "dstSlot=2" (args.dstSlot.toNat == 2)
 
 /-- AK4-G-T08: size invariant — `msgRegs.size = inlineCount + overflowCount`
     across all decoded results. -/
@@ -285,19 +285,19 @@ private def t08_size_invariant_across_syscalls : IO Unit := do
   match decodeSyscallArgsFromState st1 tid SeLe4n.arm64DefaultLayout
           (regsOf st1 tid) 32 with
   | .ok d =>
-    expect "T08a size-invariant serviceRegister"
+    expect "size-invariant serviceRegister"
       (d.msgRegs.size == d.inlineCount + d.overflowCount)
   | .error _ =>
-    throw <| IO.userError "T08 serviceRegister decode failed"
+    throw <| IO.userError "serviceRegister decode failed"
   -- Check invariant for 4-arg cspaceMint
   let st2 := buildAbiState 4 4 #[10, 20, 0x07, 42] #[]
   match decodeSyscallArgsFromState st2 tid SeLe4n.arm64DefaultLayout
           (regsOf st2 tid) 32 with
   | .ok d =>
-    expect "T08b size-invariant cspaceMint"
+    expect "size-invariant cspaceMint"
       (d.msgRegs.size == d.inlineCount + d.overflowCount)
   | .error _ =>
-    throw <| IO.userError "T08 cspaceMint decode failed"
+    throw <| IO.userError "cspaceMint decode failed"
 
 /-- AK4-G-T09: serviceRegister with `requires_grant = 2` (neither 0 nor 1) →
     rejected with `.invalidMessageInfo` (AK4-B strict boolean parsing on the
@@ -313,15 +313,15 @@ private def t09_service_register_grant_strict : IO Unit := do
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
           (regsOf st tid) 32 with
   | .error _ =>
-    throw <| IO.userError "T09 base decode unexpectedly failed"
+    throw <| IO.userError "base decode unexpectedly failed"
   | .ok decoded =>
     match decodeServiceRegisterArgs decoded with
     | .error .invalidMessageInfo =>
-      expect "T09a requires_grant=2 rejected" true
+      expect "requires_grant=2 rejected" true
     | .error e =>
-      throw <| IO.userError s!"T09 expected invalidMessageInfo, got {toString e}"
+      throw <| IO.userError s!"expected invalidMessageInfo, got {toString e}"
     | .ok _ =>
-      throw <| IO.userError "T09 expected error, got ok"
+      throw <| IO.userError "expected error, got ok"
 
 /-- AK4-G-T10: `ipcBufferReadMr` failure-to-decode when the thread ID lookup
     fails. Uses a `tid` that does not exist in the object store — the helper
@@ -338,11 +338,11 @@ private def t10_unknown_tid_fails : IO Unit := do
   match decodeSyscallArgsFromState st bogusTid SeLe4n.arm64DefaultLayout
           (regsOf st ⟨900⟩) 32 with
   | .error .invalidMessageInfo =>
-    expect "T10a unknown tid rejected" true
+    expect "unknown tid rejected" true
   | .error e =>
-    throw <| IO.userError s!"T10 expected invalidMessageInfo, got {toString e}"
+    throw <| IO.userError s!"expected invalidMessageInfo, got {toString e}"
   | .ok _ =>
-    throw <| IO.userError "T10 expected error, got ok"
+    throw <| IO.userError "expected error, got ok"
 
 private def runAll : IO Unit := do
   IO.println "=== AbiRoundtripSuite (AK4-G) ==="

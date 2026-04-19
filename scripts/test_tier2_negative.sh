@@ -58,6 +58,6 @@ run_check "TRACE" lake exe decode_validation_suite
 # simulates Rust encoder, verifies Lean decode succeeds for all 5-arg syscalls.
 run_check "TRACE" lake exe abi_roundtrip_suite
 # AK7 (foundational model): 33 regression tests covering AK7-A..AK7-K.
-run_check "TRACE" lake exe ak7_regression_suite
+run_check "TRACE" lake exe model_integrity_suite
 
 finalize_report

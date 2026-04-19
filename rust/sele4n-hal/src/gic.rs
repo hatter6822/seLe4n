@@ -390,6 +390,9 @@ pub fn dispatch_irq<F: FnOnce(u32)>(handler: F) -> bool {
 // ============================================================================
 
 #[cfg(test)]
+extern crate std;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -509,93 +512,81 @@ mod tests {
     }
 
     // ========================================================================
-    // AK5-B: EoiGuard Drop semantics
+    // EoiGuard Drop semantics
+    //
+    // These tests verify that the `EoiGuard` RAII pattern fires its Drop
+    // hook on every exit path: normal return, early return, and unwind.
+    //
+    // Each test owns a LOCAL `AtomicU32` counter and a local guard type
+    // referencing it, so the tests are safe under `cargo test`'s default
+    // parallel execution.  (An earlier design shared a `static` counter
+    // across tests, which races when the harness runs the four tests
+    // concurrently.)
     // ========================================================================
 
     use core::sync::atomic::{AtomicU32, Ordering};
-    static DROP_EOI_COUNT: AtomicU32 = AtomicU32::new(0);
 
-    /// Mirror of `EoiGuard` that increments a counter instead of writing
-    /// MMIO. Verifies the RAII drop behavior independently of hardware.
-    struct TestEoiGuard;
-    impl Drop for TestEoiGuard {
+    /// Test-only mirror of `EoiGuard` that increments a caller-supplied
+    /// counter on Drop instead of writing the GIC end-of-interrupt MMIO.
+    /// Parameterised over a borrow of the counter so each test can use
+    /// its own local atomic, avoiding cross-test races.
+    struct LocalEoiGuard<'a>(&'a AtomicU32);
+    impl Drop for LocalEoiGuard<'_> {
         fn drop(&mut self) {
-            DROP_EOI_COUNT.fetch_add(1, Ordering::SeqCst);
+            self.0.fetch_add(1, Ordering::SeqCst);
         }
     }
 
     #[test]
     fn eoi_guard_fires_on_normal_return() {
-        // AK5-B: guard fires EOI on normal return from the closure scope.
-        DROP_EOI_COUNT.store(0, Ordering::SeqCst);
+        // Guard fires EOI on normal return from the enclosing scope.
+        let count = AtomicU32::new(0);
         {
-            let _g = TestEoiGuard;
+            let _g = LocalEoiGuard(&count);
             // Simulate a normal handler body.
             let _ = 42;
         }
-        assert_eq!(DROP_EOI_COUNT.load(Ordering::SeqCst), 1);
+        assert_eq!(count.load(Ordering::SeqCst), 1);
     }
 
     #[test]
     fn eoi_guard_fires_on_early_return() {
-        // AK5-B: guard fires even when the scope exits early.
-        DROP_EOI_COUNT.store(0, Ordering::SeqCst);
-        fn early_return() {
-            let _g = TestEoiGuard;
-            // Early return: guard's Drop still runs.
+        // Guard fires even when the scope exits via `return`.
+        let count = AtomicU32::new(0);
+        fn early_return(c: &AtomicU32) {
+            let _g = LocalEoiGuard(c);
             return;
         }
-        early_return();
-        assert_eq!(DROP_EOI_COUNT.load(Ordering::SeqCst), 1);
+        early_return(&count);
+        assert_eq!(count.load(Ordering::SeqCst), 1);
     }
 
-    // AK5-B: verify Drop semantics match the panic=unwind model as well.
+    // Verify Drop semantics match the panic=unwind model as well.
     //
-    // Under the production `panic = "abort"` profile (AK5-A), a handler
-    // panic aborts the kernel immediately WITHOUT running destructors, so
-    // the EOI is not issued on the panic path — this is the correct
-    // response to an invariant violation (the kernel halts before any
-    // code observes the GIC state again).
+    // Under the production `panic = "abort"` profile, a handler panic
+    // aborts the kernel immediately WITHOUT running destructors, so the
+    // EOI is not issued on the panic path — this is the correct response
+    // to an invariant violation (the kernel halts before any code
+    // observes the GIC state again).
     //
-    // Under the test profile (stable `cargo test` forces unwind even when
-    // the dev/release profile selects abort), Drop DOES run on unwind, so
-    // we can cross-check that the `EoiGuard` pattern correctly fires on
-    // the unwind path too. This test therefore provides regression
-    // coverage for the "unwind-capable" invocation shape — any future
-    // refactor that breaks the Drop wiring will be caught.
-    //
-    // `#[should_panic]` observes the panic via unwind; we leverage a
-    // thread-local-like atomic set DURING Drop. After the test frame
-    // unwinds, a second `#[test]` checks the counter atomic reflects
-    // that Drop ran. This avoids pulling in `std::panic::catch_unwind`
-    // and keeps the assertion side-effect-based.
+    // Under the test profile (stable `cargo test` forces unwind even
+    // when the dev/release profile selects abort), Drop DOES run on
+    // unwind, so we can cross-check that the `EoiGuard` pattern
+    // correctly fires on the unwind path too. This test therefore
+    // provides regression coverage for the "unwind-capable" invocation
+    // shape — any future refactor that breaks the Drop wiring will be
+    // caught.
     #[test]
-    #[should_panic(expected = "simulated handler panic")]
-    fn eoi_guard_panic_propagates_while_drop_records() {
-        // Pre-set counter so post-test we can detect the guard fired.
-        DROP_EOI_COUNT.store(0, Ordering::SeqCst);
-        let _g = TestEoiGuard;
-        panic!("simulated handler panic");
-        // Control never reaches here. On the unwind path (test profile),
-        // `_g`'s Drop fires and increments DROP_EOI_COUNT to 1 before
-        // the panic propagates out of this function.
-    }
-
-    #[test]
-    fn eoi_guard_unwind_counter_visible_after_panic() {
-        // Companion to `eoi_guard_panic_propagates_while_drop_records`:
-        // this test runs after it (test runner default ordering is
-        // alphabetical within a module) and checks that the guard's
-        // Drop actually fired during the companion's unwind.
-        //
-        // Note: Rust's test runner may parallelize or randomize; we
-        // therefore just assert the counter is in {0, 1}. A value of 1
-        // proves Drop ran. 0 is the neutral state used when this test
-        // runs before the companion. Both satisfy the invariant:
-        // "Drop behavior is consistent with scope semantics".
-        let count = DROP_EOI_COUNT.load(Ordering::SeqCst);
-        assert!(count <= 1,
-            "DROP_EOI_COUNT exceeded expected bounds: {count}");
+    fn eoi_guard_fires_on_unwind() {
+        let count = AtomicU32::new(0);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _g = LocalEoiGuard(&count);
+            panic!("simulated handler panic");
+        }));
+        assert!(result.is_err(), "catch_unwind should have caught the panic");
+        // Drop ran on the unwind path → counter = 1.
+        assert_eq!(count.load(Ordering::SeqCst), 1,
+            "EoiGuard Drop did not fire on unwind path");
     }
 
     #[test]

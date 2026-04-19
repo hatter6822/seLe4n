@@ -14,11 +14,11 @@ edition = "2021"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/hatter6822/seLe4n"
 
-# AK5-A (R-HAL-M01/R-HAL-M11): `panic = "abort"` is required for `no_std`
-# kernel builds — the default `panic = "unwind"` is UB across `extern "C"`
-# boundaries and requires a landing-pad implementation not present in the
-# bare-metal HAL. With abort, a panic calls `halt()` and stops the kernel,
-# which is the correct behavior for invariant violations.
+# `panic = "abort"` is required for `no_std` kernel builds — the
+# default `panic = "unwind"` is UB across `extern "C"` boundaries and
+# requires a landing-pad implementation not present in the bare-metal
+# HAL. With abort, a panic calls `halt()` and stops the kernel, which
+# is the correct behavior for invariant violations.
 #
 # Test profile intentionally omits `panic = "abort"`: Rust's stable test
 # harness requires unwind to drive `#[should_panic]` (e.g., the MMIO

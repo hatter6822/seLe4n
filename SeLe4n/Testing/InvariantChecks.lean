@@ -13,9 +13,8 @@ open SeLe4n.Model
 namespace SeLe4n.Testing
 
 private def lookupQueueTcbB (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb tcb) => some tcb
-  | _ => none
+  -- AK7-F.reader.hygiene: delegate to AL2-A typed helper.
+  st.getTcb? tid
 
 /-- V8-E: Fuel-bounded intrusive queue reachability check.
     Replaces `partial` with structural recursion on `fuel : Nat`.
@@ -87,9 +86,8 @@ private def currentThreadValidB (st : SystemState) : Bool :=
   match st.scheduler.current with
   | none => true
   | some tid =>
-      match st.objects[tid.toObjId]? with
-      | some (.tcb _) => true
-      | _ => false
+      -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
+      (st.getTcb? tid).isSome
 
 /-- V8-G7: ThreadState consistency check — every TCB's `threadState` field
 matches the inferred state from queue membership, IPC state, and scheduler.current.
@@ -102,12 +100,13 @@ runtime queues.  The check is intentionally a design-consistency assertion,
 not a divergence detector. -/
 private def threadStateConsistentChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
-    match (st.objects[oid]? : Option KernelObject) with
-    | some (.tcb tcb) =>
+    -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
+    match st.getTcb? ⟨oid.toNat⟩ with
+    | some tcb =>
         let expected := SeLe4n.Kernel.inferThreadState st ⟨oid.toNat⟩ tcb
         (s!"threadState consistent: oid={oid} actual={reprStr tcb.threadState} expected={reprStr expected}",
          tcb.threadState == expected) :: acc
-    | _ => acc) []
+    | none => acc) []
 
 /-- M-11 CSpace coherency: every CNode slot whose capability targets an object has that
 object present in the object store. -/
@@ -195,26 +194,28 @@ private def asidTableConsistencyChecks (objectIds : List SeLe4n.ObjId) (st : Sys
 Also checks children-within-watermark bounds. -/
 private def untypedWatermarkChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
-    match (st.objects[oid]? : Option KernelObject) with
-    | some (.untyped ut) =>
+    -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
+    match st.getUntyped? oid with
+    | some ut =>
         (s!"untyped watermark valid: oid={oid}", ut.watermark ≤ ut.regionSize) ::
         (s!"untyped children within watermark: oid={oid}",
           ut.children.all fun c => c.offset + c.size ≤ ut.watermark) :: acc
-    | _ => acc) []
+    | none => acc) []
 
 /-- WS-G7: Runtime check for `notificationWaiterConsistent`: for each notification
 object, every thread in the waiting list must have a TCB with
 `ipcState = .blockedOnNotification oid`. -/
 private def notificationWaiterConsistentChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
-    match (st.objects[oid]? : Option KernelObject) with
-    | some (.notification ntfn) =>
+    -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
+    match st.getNotification? oid with
+    | some ntfn =>
         ntfn.waitingThreads.foldr (fun tid inner =>
-          let ok := match st.objects[tid.toObjId]? with
-            | some (.tcb tcb) => tcb.ipcState == .blockedOnNotification oid
-            | _ => false
+          let ok := match st.getTcb? tid with
+            | some tcb => tcb.ipcState == .blockedOnNotification oid
+            | none => false
           (s!"notification waiter consistent: oid={oid} tid={tid.toNat}", ok) :: inner) acc
-    | _ => acc) []
+    | none => acc) []
 
 /-- WS-G4: RunQueue internal consistency — every thread in the membership set has
     a corresponding entry in `threadPriority`, and every `threadPriority` entry is
@@ -229,8 +230,9 @@ private def runQueueThreadPriorityConsistentB (st : SystemState) : Bool :=
 A blocked sender dispatched prematurely could cause message duplication or ordering violations. -/
 private def blockedOnSendNotRunnableChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
-    match (st.objects[oid]? : Option KernelObject) with
-    | some (.tcb tcb) =>
+    -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
+    match st.getTcb? ⟨oid.toNat⟩ with
+    | some tcb =>
         match tcb.ipcState with
         | .blockedOnSend _ =>
             let ok := !(tcb.tid ∈ st.scheduler.runnable)
@@ -239,14 +241,15 @@ private def blockedOnSendNotRunnableChecks (objectIds : List SeLe4n.ObjId) (st :
             let ok := !(tcb.tid ∈ st.scheduler.runnable)
             (s!"blockedOnCall not runnable: tid={tcb.tid.toNat}", ok) :: acc
         | _ => acc
-    | _ => acc) []
+    | none => acc) []
 
 /-- WS-F7/D1a: Threads blocked on endpoint receive must not appear in the runnable list.
 A blocked receiver dispatched prematurely could observe partial state. -/
 private def blockedOnReceiveNotRunnableChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
   objectIds.foldr (fun oid acc =>
-    match (st.objects[oid]? : Option KernelObject) with
-    | some (.tcb tcb) =>
+    -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
+    match st.getTcb? ⟨oid.toNat⟩ with
+    | some tcb =>
         match tcb.ipcState with
         | .blockedOnReceive _ =>
             let ok := !(tcb.tid ∈ st.scheduler.runnable)
@@ -258,7 +261,7 @@ private def blockedOnReceiveNotRunnableChecks (objectIds : List SeLe4n.ObjId) (s
             let ok := !(tcb.tid ∈ st.scheduler.runnable)
             (s!"blockedOnNotification not runnable: tid={tcb.tid.toNat}", ok) :: acc
         | _ => acc
-    | _ => acc) []
+    | none => acc) []
 
 /-- WS-F7/D1b: If a thread is currently dispatched, its TCB domain must match the
 scheduler's `activeDomain`. Violation would break domain-based temporal isolation. -/
@@ -266,18 +269,20 @@ private def currentThreadInActiveDomainB (st : SystemState) : Bool :=
   match st.scheduler.current with
   | none => true
   | some tid =>
-      match st.objects[tid.toObjId]? with
-      | some (.tcb tcb) => tcb.domain == st.scheduler.activeDomain
-      | _ => true  -- missing TCB caught by currentThreadValidB
+      -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
+      match st.getTcb? tid with
+      | some tcb => tcb.domain == st.scheduler.activeDomain
+      | none => true  -- missing TCB caught by currentThreadValidB
 
 /-- WS-F7/D1c: No thread appears in more than one notification `waitingThreads` list.
 A thread on two waiting lists could be double-woken, corrupting both notification
 objects' state machines. -/
 private def uniqueWaitersCheck (objectIds : List SeLe4n.ObjId) (st : SystemState) : List (String × Bool) :=
+  -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
   let allWaiters : List SeLe4n.ThreadId := objectIds.foldr (fun oid acc =>
-    match (st.objects[oid]? : Option KernelObject) with
-    | some (.notification ntfn) => ntfn.waitingThreads ++ acc
-    | _ => acc) []
+    match st.getNotification? oid with
+    | some ntfn => ntfn.waitingThreads ++ acc
+    | none => acc) []
   if allWaiters.isEmpty then []
   else
     let hasDuplicates := !allWaiters.Nodup
@@ -330,21 +335,25 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
   let runnableChecks : List (String × Bool) :=
     st.scheduler.runnable.map fun tid =>
       let label := s!"runnable thread resolves to ready TCB: tid={tid.toNat}"
+      -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
       let ok :=
-        match st.objects[tid.toObjId]? with
-        | some (.tcb tcb) => tcb.ipcState == .ready
-        | _ => false
+        match st.getTcb? tid with
+        | some tcb => tcb.ipcState == .ready
+        | none => false
       (label, ok)
   let endpointAndNotificationChecks : List (String × Bool) :=
+    -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
     objectIds.foldr (fun oid acc =>
-      match (st.objects[oid]? : Option KernelObject) with
-      | some (.endpoint ep) =>
+      match st.getEndpoint? oid with
+      | some ep =>
           (s!"endpoint dual-queue invariant: oid={oid}", endpointDualQueueWellFormedB st ep) ::
           (s!"endpoint intrusive sendQ invariant: oid={oid}", intrusiveQueueWellFormedB st ep.sendQ) ::
           (s!"endpoint intrusive receiveQ invariant: oid={oid}", intrusiveQueueWellFormedB st ep.receiveQ) :: acc
-      | some (.notification ntfn) =>
-          (s!"notification queue/state invariant: oid={oid}", notificationQueueWellFormedB ntfn) :: acc
-      | _ => acc) []
+      | none =>
+          match st.getNotification? oid with
+          | some ntfn =>
+              (s!"notification queue/state invariant: oid={oid}", notificationQueueWellFormedB ntfn) :: acc
+          | none => acc) []
   let fuel := objectIds.length + 256
   schedulerChecks ++ runnableChecks ++ endpointAndNotificationChecks
     ++ cspaceSlotCoherencyChecks objectIds st
@@ -423,39 +432,42 @@ private def collectQueueMembersB
   | 0, some _ => none
   | _, none => some []
   | fuel + 1, some tid =>
-    match st.objects[tid.toObjId]? with
-    | some (.tcb tcb) => (collectQueueMembersB st tcb.queueNext fuel).map (tid :: ·)
-    | _ => some [tid]
+    -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
+    match st.getTcb? tid with
+    | some tcb => (collectQueueMembersB st tcb.queueNext fuel).map (tid :: ·)
+    | none => some [tid]
 
 /-- AG1-F-i: Check noStaleEndpointQueueReferences — every thread ID in
 endpoint queues (head, tail, AND interior members) has a live TCB. -/
 private def checkNoStaleEndpointQueueRefs (st : SystemState) : Bool :=
   st.objectIndex.all fun oid =>
-    match st.objects[oid]? with
-    | some (.endpoint ep) =>
-      let checkTid := fun tid => st.objects[tid.toObjId]? != none
+    -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
+    match st.getEndpoint? oid with
+    | some ep =>
+      let checkTid := fun tid => (st.getTcb? tid).isSome
       let headTailOk :=
         (ep.sendQ.head.all checkTid) && (ep.sendQ.tail.all checkTid) &&
         (ep.receiveQ.head.all checkTid) && (ep.receiveQ.tail.all checkTid)
       -- T5-I: Interior member validation via queueNext traversal
       let fuel := st.objectIndex.length
       let sendInteriorOk := match collectQueueMembersB st ep.sendQ.head fuel with
-        | some members => members.all fun tid => st.objects[tid.toObjId]? != none
+        | some members => members.all fun tid => (st.getTcb? tid).isSome
         | none => false  -- fuel exhaustion signals invariant violation
       let recvInteriorOk := match collectQueueMembersB st ep.receiveQ.head fuel with
-        | some members => members.all fun tid => st.objects[tid.toObjId]? != none
+        | some members => members.all fun tid => (st.getTcb? tid).isSome
         | none => false
       headTailOk && sendInteriorOk && recvInteriorOk
-    | _ => true
+    | none => true
 
 /-- AG1-F-i: Check noStaleNotificationWaitReferences — every thread ID in
 notification waiting lists has a live TCB. -/
 private def checkNoStaleNotificationWaitRefs (st : SystemState) : Bool :=
   st.objectIndex.all fun oid =>
-    match st.objects[oid]? with
-    | some (.notification ntfn) =>
-      ntfn.waitingThreads.all fun tid => st.objects[tid.toObjId]? != none
-    | _ => true
+    -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
+    match st.getNotification? oid with
+    | some ntfn =>
+      ntfn.waitingThreads.all fun tid => (st.getTcb? tid).isSome
+    | none => true
 
 /-- AG1-F-ii: Check registryDependencyConsistent — every dependency edge in the
 service graph references a registered service. -/
@@ -468,26 +480,25 @@ private def checkRegistryDependencyConsistent (st : SystemState) : Bool :=
 by a TCB binding exists in the store. -/
 private def checkSchedContextStoreConsistent (st : SystemState) : Bool :=
   st.objectIndex.all fun oid =>
-    match st.objects[oid]? with
-    | some (.tcb tcb) =>
+    -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
+    match st.getTcb? ⟨oid.toNat⟩ with
+    | some tcb =>
       match tcb.schedContextBinding.scId? with
-      | some scId =>
-        match st.objects[scId.toObjId]? with
-        | some (.schedContext _) => true
-        | _ => false
+      | some scId => (st.getSchedContext? scId).isSome
       | none => true
-    | _ => true
+    | none => true
 
 /-- AG1-F-ii: Check schedContextNotDualBound — at most one thread references
 any given SchedContext. Uses a simple O(n²) pairwise check. -/
 private def checkSchedContextNotDualBound (st : SystemState) : Bool :=
+  -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
   let bindings := st.objectIndex.filterMap fun oid =>
-    match (st.objects[oid]? : Option KernelObject) with
-    | some (KernelObject.tcb tcb) =>
+    match st.getTcb? ⟨oid.toNat⟩ with
+    | some tcb =>
       match tcb.schedContextBinding.scId? with
       | some scId => some (oid, scId)
       | none => none
-    | _ => none
+    | none => none
   bindings.all fun (oid1, scId1) =>
     bindings.all fun (oid2, scId2) =>
       oid1 == oid2 || scId1 != scId2
@@ -496,23 +507,25 @@ private def checkSchedContextNotDualBound (st : SystemState) : Bool :=
 have a live SchedContext with positive budget. -/
 private def checkSchedContextRunQueueConsistent (st : SystemState) : Bool :=
   st.scheduler.runQueue.toList.all fun tid =>
-    match st.objects[tid.toObjId]? with
-    | some (.tcb tcb) =>
+    -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
+    match st.getTcb? tid with
+    | some tcb =>
       match tcb.schedContextBinding.scId? with
       | some scId =>
-        match st.objects[scId.toObjId]? with
-        | some (.schedContext sc) => sc.budgetRemaining.val > 0
-        | _ => false
+        match st.getSchedContext? scId with
+        | some sc => sc.budgetRemaining.val > 0
+        | none => false
       | none => true  -- unbound threads pass vacuously
-    | _ => false
+    | none => false
 
 /-- AG1-F-iii: Check blockingAcyclic via bounded cycle detection.
 Uses fuel = number of objects to bound the walk. -/
 private def checkBlockingAcyclic (st : SystemState) : Bool :=
   let fuel := st.objectIndex.length
   st.objectIndex.all fun oid =>
-    match st.objects[oid]? with
-    | some (.tcb tcb) =>
+    -- AK7-F.reader.hygiene: AL2-A typed helper adoption.
+    match st.getTcb? ⟨oid.toNat⟩ with
+    | some tcb =>
       match tcb.schedContextBinding with
       | .donated _ owner =>
         -- Walk the blocking chain from `owner`; if we see `oid` again, there's a cycle
@@ -523,15 +536,15 @@ private def checkBlockingAcyclic (st : SystemState) : Bool :=
           | steps + 1 =>
             if current ∈ visited then false  -- cycle detected
             else
-              match st.objects[current]? with
-              | some (.tcb tcb2) =>
+              match st.getTcb? ⟨current.toNat⟩ with
+              | some tcb2 =>
                 match tcb2.schedContextBinding with
                 | .donated _ owner2 => walk owner2.toObjId (current :: visited) steps
                 | _ => true  -- chain ends
-              | _ => true  -- chain ends
+              | none => true  -- chain ends
         walk owner.toObjId [oid] fuel
       | _ => true  -- not in a donation chain
-    | _ => true
+    | none => true
 
 /-- AG1-F audit: checkRegistryEndpointValid — every registered service's endpoint
 targets an existing kernel object. -/
@@ -566,6 +579,8 @@ For every populated ObjId, the stored object's `objectType` must match
 the recorded entry in `lifecycle.objectTypes`. Walks `objectIndex` once
 and compares each entry pair; `true` when all match. -/
 private def checkLifecycleObjectTypeLockstep (st : SystemState) : Bool :=
+  -- Leaves the generic `objects[oid]?` read here: the check is
+  -- variant-agnostic, so no typed helper would apply.
   st.objectIndex.all fun oid =>
     match st.objects[oid]? with
     | some obj =>

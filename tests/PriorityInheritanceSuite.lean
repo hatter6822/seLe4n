@@ -46,7 +46,7 @@ private def mkState (objs : List (ObjId × KernelObject))
 -- PIP-001: pipBoost field defaults to none
 private def pip001_defaultPipBoostNone : IO Unit := do
   let tcb := mkTcb 1
-  expect "PIP-001 pipBoost defaults to none" (tcb.pipBoost == none)
+  expect "pipBoost defaults to none" (tcb.pipBoost == none)
 
 -- PIP-002: effectivePriority with no pipBoost returns base priority
 private def pip002_effectivePriorityNoPip : IO Unit := do
@@ -54,8 +54,8 @@ private def pip002_effectivePriorityNoPip : IO Unit := do
   let tcb := mkTcb 1 (prio := 50)
   match effectivePriority st tcb with
   | some (prio, _, _) =>
-    expect "PIP-002 effective priority = base priority" (prio == ⟨50⟩)
-  | none => throw <| IO.userError "PIP-002 effectivePriority returned none"
+    expect "effective priority = base priority" (prio == ⟨50⟩)
+  | none => throw <| IO.userError "effectivePriority returned none"
 
 -- PIP-003: effectivePriority with pipBoost returns max(base, boost)
 private def pip003_effectivePriorityWithPip : IO Unit := do
@@ -63,8 +63,8 @@ private def pip003_effectivePriorityWithPip : IO Unit := do
   let tcb := mkTcb 1 (prio := 30) (pipBoost := some ⟨80⟩)
   match effectivePriority st tcb with
   | some (prio, _, _) =>
-    expect "PIP-003 effective priority = max(30, 80) = 80" (prio == ⟨80⟩)
-  | none => throw <| IO.userError "PIP-003 effectivePriority returned none"
+    expect "effective priority = max(30, 80) = 80" (prio == ⟨80⟩)
+  | none => throw <| IO.userError "effectivePriority returned none"
 
 -- PIP-004: effectivePriority with lower pipBoost keeps base
 private def pip004_effectivePriorityLowerPip : IO Unit := do
@@ -72,8 +72,8 @@ private def pip004_effectivePriorityLowerPip : IO Unit := do
   let tcb := mkTcb 1 (prio := 80) (pipBoost := some ⟨30⟩)
   match effectivePriority st tcb with
   | some (prio, _, _) =>
-    expect "PIP-004 effective priority = max(80, 30) = 80" (prio == ⟨80⟩)
-  | none => throw <| IO.userError "PIP-004 effectivePriority returned none"
+    expect "effective priority = max(80, 30) = 80" (prio == ⟨80⟩)
+  | none => throw <| IO.userError "effectivePriority returned none"
 
 -- PIP-005: waitersOf returns empty for thread with no waiters
 private def pip005_waitersOfEmpty : IO Unit := do
@@ -82,7 +82,7 @@ private def pip005_waitersOfEmpty : IO Unit := do
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30)))
   ]
   let waiters := waitersOf st ⟨1⟩
-  expect "PIP-005 no waiters for thread 1" (waiters.length == 0)
+  expect "no waiters for thread 1" (waiters.length == 0)
 
 -- PIP-006: waitersOf returns correct waiters
 private def pip006_waitersOfFound : IO Unit := do
@@ -93,7 +93,7 @@ private def pip006_waitersOfFound : IO Unit := do
       (state := .BlockedReply)))
   ]
   let waiters := waitersOf st ⟨1⟩
-  expect "PIP-006 thread 2 is a waiter of thread 1" (waiters.length == 1)
+  expect "thread 2 is a waiter of thread 1" (waiters.length == 1)
 
 -- PIP-007: computeMaxWaiterPriority returns highest waiter priority
 private def pip007_computeMaxWaiterPriority : IO Unit := do
@@ -108,8 +108,8 @@ private def pip007_computeMaxWaiterPriority : IO Unit := do
   ]
   match computeMaxWaiterPriority st ⟨1⟩ with
   | some prio =>
-    expect "PIP-007 max waiter priority = 80" (prio == ⟨80⟩)
-  | none => throw <| IO.userError "PIP-007 should find waiters"
+    expect "max waiter priority = 80" (prio == ⟨80⟩)
+  | none => throw <| IO.userError "should find waiters"
 
 -- PIP-008: updatePipBoost sets pipBoost correctly
 private def pip008_updatePipBoost : IO Unit := do
@@ -122,8 +122,8 @@ private def pip008_updatePipBoost : IO Unit := do
   let st' := updatePipBoost st ⟨1⟩
   match st'.objects[(⟨1⟩ : ObjId)]? with
   | some (.tcb tcb) =>
-    expect "PIP-008 pipBoost set to 80" (tcb.pipBoost == some ⟨80⟩)
-  | _ => throw <| IO.userError "PIP-008 TCB not found after updatePipBoost"
+    expect "pipBoost set to 80" (tcb.pipBoost == some ⟨80⟩)
+  | _ => throw <| IO.userError "TCB not found after updatePipBoost"
 
 -- PIP-009: blockingChain returns empty for non-blocked thread
 private def pip009_blockingChainEmpty : IO Unit := do
@@ -131,7 +131,7 @@ private def pip009_blockingChainEmpty : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (state := .Ready)))
   ]
   let chain := blockingChain st ⟨1⟩
-  expect "PIP-009 blocking chain empty for non-blocked thread" (chain.length == 0)
+  expect "blocking chain empty for non-blocked thread" (chain.length == 0)
 
 -- PIP-010: blockingChain follows blockedOnReply chain
 private def pip010_blockingChainFollows : IO Unit := do
@@ -145,7 +145,7 @@ private def pip010_blockingChainFollows : IO Unit := do
     (⟨3⟩, .tcb (mkTcb 3 (prio := 30) (state := .Ready)))
   ]
   let chain := blockingChain st ⟨1⟩
-  expect "PIP-010 chain from 1 has length 2" (chain.length == 2)
+  expect "chain from 1 has length 2" (chain.length == 2)
 
 -- PIP-011: propagatePriorityInheritance boosts transitive chain
 private def pip011_propagateTransitive : IO Unit := do
@@ -161,10 +161,10 @@ private def pip011_propagateTransitive : IO Unit := do
   let st' := propagatePriorityInheritance st ⟨2⟩
   match st'.objects[(⟨2⟩ : ObjId)]? with
   | some (.tcb tcb2) =>
-    expect "PIP-011 thread 2 pipBoost >= 80" (match tcb2.pipBoost with
+    expect "thread 2 pipBoost >= 80" (match tcb2.pipBoost with
       | some p => p.val >= 80
       | none => false)
-  | _ => throw <| IO.userError "PIP-011 thread 2 TCB not found"
+  | _ => throw <| IO.userError "thread 2 TCB not found"
 
 -- PIP-012: revertPriorityInheritance clears pipBoost when no waiters
 private def pip012_revertClearsPipBoost : IO Unit := do
@@ -174,8 +174,8 @@ private def pip012_revertClearsPipBoost : IO Unit := do
   let st' := revertPriorityInheritance st ⟨1⟩
   match st'.objects[(⟨1⟩ : ObjId)]? with
   | some (.tcb tcb) =>
-    expect "PIP-012 pipBoost cleared when no waiters" (tcb.pipBoost == none)
-  | _ => throw <| IO.userError "PIP-012 TCB not found after revert"
+    expect "pipBoost cleared when no waiters" (tcb.pipBoost == none)
+  | _ => throw <| IO.userError "TCB not found after revert"
 
 -- PIP-013: PIP does not affect threads outside blocking chain
 private def pip013_doesNotAffectOthers : IO Unit := do
@@ -189,8 +189,8 @@ private def pip013_doesNotAffectOthers : IO Unit := do
   let st' := propagatePriorityInheritance st ⟨1⟩
   match st'.objects[(⟨4⟩ : ObjId)]? with
   | some (.tcb tcb4) =>
-    expect "PIP-013 thread 4 unaffected" (tcb4.pipBoost == none)
-  | _ => throw <| IO.userError "PIP-013 thread 4 TCB not found"
+    expect "thread 4 unaffected" (tcb4.pipBoost == none)
+  | _ => throw <| IO.userError "thread 4 TCB not found"
 
 -- PIP-014: effectivePriority with SchedContext-bound thread and pipBoost
 private def pip014_effectivePrioritySchedContextBound : IO Unit := do
@@ -209,8 +209,8 @@ private def pip014_effectivePrioritySchedContextBound : IO Unit := do
   match effectivePriority st tcb with
   | some (prio, _, _) =>
     -- base = 40 (from SC), boost = 90, so max(40, 90) = 90
-    expect "PIP-014 SC-bound + pipBoost: max(40,90) = 90" (prio == ⟨90⟩)
-  | none => throw <| IO.userError "PIP-014 effectivePriority returned none"
+    expect "SC-bound + pipBoost: max(40,90) = 90" (prio == ⟨90⟩)
+  | none => throw <| IO.userError "effectivePriority returned none"
 
 -- PIP-015: blockingGraphEdges returns correct edges
 private def pip015_blockingGraphEdges : IO Unit := do
@@ -222,17 +222,17 @@ private def pip015_blockingGraphEdges : IO Unit := do
     (⟨3⟩, .tcb (mkTcb 3 (prio := 30) (state := .Ready)))
   ]
   let edges := blockingGraphEdges st
-  expect "PIP-015 exactly 1 blocking edge" (edges.length == 1)
+  expect "exactly 1 blocking edge" (edges.length == 1)
   match edges.head? with
   | some (waiter, server) =>
-    expect "PIP-015 edge is (1, 2)" (waiter == ⟨1⟩ && server == ⟨2⟩)
-  | none => throw <| IO.userError "PIP-015 no edges found"
+    expect "edge is (1, 2)" (waiter == ⟨1⟩ && server == ⟨2⟩)
+  | none => throw <| IO.userError "no edges found"
 
 -- PIP-016: chainContains helper works correctly
 private def pip016_chainContains : IO Unit := do
   let chain : List SeLe4n.ThreadId := [⟨2⟩, ⟨3⟩, ⟨4⟩]
-  expect "PIP-016 chain contains 3" (chainContains chain ⟨3⟩)
-  expect "PIP-016 chain does not contain 5" (!chainContains chain ⟨5⟩)
+  expect "chain contains 3" (chainContains chain ⟨3⟩)
+  expect "chain does not contain 5" (!chainContains chain ⟨5⟩)
 
 -- PIP-017: propagatePriorityInheritance preserves scheduler.current (frame)
 private def pip017_framePreservesCurrent : IO Unit := do
@@ -243,7 +243,7 @@ private def pip017_framePreservesCurrent : IO Unit := do
         (state := .BlockedReply))) ]
     (current := some ⟨1⟩)
   let st' := propagatePriorityInheritance st ⟨1⟩
-  expect "PIP-017 scheduler.current preserved" (st'.scheduler.current == some ⟨1⟩)
+  expect "scheduler.current preserved" (st'.scheduler.current == some ⟨1⟩)
 
 -- PIP-018: revertPriorityInheritance preserves machine state (frame)
 private def pip018_framePreservesMachine : IO Unit := do
@@ -252,7 +252,7 @@ private def pip018_framePreservesMachine : IO Unit := do
   ]
   let st' := revertPriorityInheritance st ⟨1⟩
   -- Machine state is preserved — verify via timer field (MachineState has no BEq)
-  expect "PIP-018 machine timer preserved" (st'.machine.timer == st.machine.timer)
+  expect "machine timer preserved" (st'.machine.timer == st.machine.timer)
 
 -- PIP-019: updatePipBoost with thread in run queue performs bucket migration
 private def pip019_runQueueBucketMigration : IO Unit := do
@@ -265,12 +265,12 @@ private def pip019_runQueueBucketMigration : IO Unit := do
     (runnable := [⟨1⟩])
   let st' := updatePipBoost st ⟨1⟩
   -- Thread 1 should still be in run queue (membership preserved)
-  expect "PIP-019 thread 1 still in run queue" (⟨1⟩ ∈ st'.scheduler.runQueue)
+  expect "thread 1 still in run queue" (⟨1⟩ ∈ st'.scheduler.runQueue)
   -- Check pipBoost was set
   match st'.objects[(⟨1⟩ : ObjId)]? with
   | some (.tcb tcb) =>
-    expect "PIP-019 pipBoost set to 80" (tcb.pipBoost == some ⟨80⟩)
-  | _ => throw <| IO.userError "PIP-019 TCB not found"
+    expect "pipBoost set to 80" (tcb.pipBoost == some ⟨80⟩)
+  | _ => throw <| IO.userError "TCB not found"
 
 -- PIP-020: Multiple waiters — computeMaxWaiterPriority picks highest
 private def pip020_multipleWaitersMax : IO Unit := do
@@ -288,8 +288,8 @@ private def pip020_multipleWaitersMax : IO Unit := do
   ]
   match computeMaxWaiterPriority st ⟨1⟩ with
   | some prio =>
-    expect "PIP-020 max of 3 waiters (40,90,60) = 90" (prio == ⟨90⟩)
-  | none => throw <| IO.userError "PIP-020 should find waiters"
+    expect "max of 3 waiters (40,90,60) = 90" (prio == ⟨90⟩)
+  | none => throw <| IO.userError "should find waiters"
 
 -- PIP-021: propagate with zero fuel is identity
 private def pip021_propagateZeroFuel : IO Unit := do
@@ -303,8 +303,8 @@ private def pip021_propagateZeroFuel : IO Unit := do
   -- With zero fuel, no propagation happens — pipBoost unchanged
   match st'.objects[(⟨1⟩ : ObjId)]? with
   | some (.tcb tcb) =>
-    expect "PIP-021 zero fuel = no change" (tcb.pipBoost == none)
-  | _ => throw <| IO.userError "PIP-021 TCB not found"
+    expect "zero fuel = no change" (tcb.pipBoost == none)
+  | _ => throw <| IO.userError "TCB not found"
 
 -- PIP-022: blockingServer returns correct server
 private def pip022_blockingServer : IO Unit := do
@@ -315,11 +315,11 @@ private def pip022_blockingServer : IO Unit := do
     (⟨2⟩, .tcb (mkTcb 2 (prio := 50) (state := .Ready)))
   ]
   match blockingServer st ⟨1⟩ with
-  | some server => expect "PIP-022 server of 1 is 2" (server == ⟨2⟩)
-  | none => throw <| IO.userError "PIP-022 should find blocking server"
+  | some server => expect "server of 1 is 2" (server == ⟨2⟩)
+  | none => throw <| IO.userError "should find blocking server"
   match blockingServer st ⟨2⟩ with
-  | some _ => throw <| IO.userError "PIP-022 thread 2 should have no server"
-  | none => expect "PIP-022 thread 2 has no server" true
+  | some _ => throw <| IO.userError "thread 2 should have no server"
+  | none => expect "thread 2 has no server" true
 
 end SeLe4n.Testing.PriorityInheritanceSuite
 

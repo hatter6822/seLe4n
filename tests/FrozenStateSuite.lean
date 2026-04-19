@@ -28,22 +28,22 @@ private def expect (label : String) (cond : Bool) : IO Unit := do
 /-- FS-001: Empty FrozenMap — get? returns none for any key -/
 private def fs001_emptyFrozenMap : IO Unit := do
   let fm : FrozenMap ObjId Nat := freezeMap (RHTable.empty 16)
-  expect "FS-001a empty frozen map get? returns none" (fm.get? ⟨0⟩ == none)
-  expect "FS-001b empty frozen map get? returns none for key 42" (fm.get? ⟨42⟩ == none)
-  expect "FS-001c empty frozen map size is 0" (fm.data.size == 0)
-  expect "FS-001d empty frozen map contains is false" (fm.contains ⟨0⟩ == false)
+  expect "empty frozen map get? returns none" (fm.get? ⟨0⟩ == none)
+  expect "empty frozen map get? returns none for key 42" (fm.get? ⟨42⟩ == none)
+  expect "empty frozen map size is 0" (fm.data.size == 0)
+  expect "empty frozen map contains is false" (fm.contains ⟨0⟩ == false)
 
 /-- FS-002: Single-entry FrozenMap — insert into RHTable, freeze, lookup -/
 private def fs002_singleEntry : IO Unit := do
   let rt := (RHTable.empty 16 : RHTable ObjId Nat).insert ⟨5⟩ 100
   let fm := freezeMap rt
   -- The frozen map should have 1 entry
-  expect "FS-002a frozen map data size is 1" (fm.data.size == 1)
+  expect "frozen map data size is 1" (fm.data.size == 1)
   -- Lookup should find the value
-  expect "FS-002b frozen map get? finds value" (fm.get? ⟨5⟩ == some 100)
+  expect "frozen map get? finds value" (fm.get? ⟨5⟩ == some 100)
   -- Missing key returns none
-  expect "FS-002c frozen map get? misses key" (fm.get? ⟨99⟩ == none)
-  expect "FS-002d frozen map contains works" (fm.contains ⟨5⟩ == true)
+  expect "frozen map get? misses key" (fm.get? ⟨99⟩ == none)
+  expect "frozen map contains works" (fm.contains ⟨5⟩ == true)
 
 /-- FS-003: Multi-entry FrozenMap — 3 entries, verify all lookups -/
 private def fs003_multiEntry : IO Unit := do
@@ -51,27 +51,27 @@ private def fs003_multiEntry : IO Unit := do
     |>.insert ⟨2⟩ 20
     |>.insert ⟨3⟩ 30
   let fm := freezeMap rt
-  expect "FS-003a data size is 3" (fm.data.size == 3)
-  expect "FS-003b get? key 1" (fm.get? ⟨1⟩ == some 10)
-  expect "FS-003c get? key 2" (fm.get? ⟨2⟩ == some 20)
-  expect "FS-003d get? key 3" (fm.get? ⟨3⟩ == some 30)
-  expect "FS-003e get? missing key" (fm.get? ⟨99⟩ == none)
+  expect "data size is 3" (fm.data.size == 3)
+  expect "get? key 1" (fm.get? ⟨1⟩ == some 10)
+  expect "get? key 2" (fm.get? ⟨2⟩ == some 20)
+  expect "get? key 3" (fm.get? ⟨3⟩ == some 30)
+  expect "get? missing key" (fm.get? ⟨99⟩ == none)
 
 /-- FS-004: FrozenMap.set — update existing value -/
 private def fs004_frozenMapSet : IO Unit := do
   let rt := (RHTable.empty 16 : RHTable ObjId Nat).insert ⟨7⟩ 42
   let fm := freezeMap rt
   match fm.set ⟨7⟩ 99 with
-  | none => throw <| IO.userError "FS-004a set should succeed"
+  | none => throw <| IO.userError "set should succeed"
   | some fm' =>
-    expect "FS-004a set updates value" (fm'.get? ⟨7⟩ == some 99)
-    expect "FS-004b set preserves size" (fm'.data.size == fm.data.size)
+    expect "set updates value" (fm'.get? ⟨7⟩ == some 99)
+    expect "set preserves size" (fm'.data.size == fm.data.size)
 
 /-- FS-005: FrozenMap.set — missing key returns none -/
 private def fs005_frozenMapSetMissing : IO Unit := do
   let rt := (RHTable.empty 16 : RHTable ObjId Nat).insert ⟨1⟩ 10
   let fm := freezeMap rt
-  expect "FS-005a set missing key returns none" (fm.set ⟨99⟩ 50 |>.isNone)
+  expect "set missing key returns none" (fm.set ⟨99⟩ 50 |>.isNone)
 
 /-- FS-006: FrozenSet — membership checks -/
 private def fs006_frozenSet : IO Unit := do
@@ -79,18 +79,18 @@ private def fs006_frozenSet : IO Unit := do
     |>.insert ⟨2⟩ ()
     |>.insert ⟨3⟩ ()
   let fs : FrozenSet ThreadId := freezeMap rt
-  expect "FS-006a frozen set member 1" (FrozenMap.contains fs ⟨1⟩ == true)
-  expect "FS-006b frozen set member 2" (FrozenMap.contains fs ⟨2⟩ == true)
-  expect "FS-006c frozen set non-member" (FrozenMap.contains fs ⟨99⟩ == false)
+  expect "frozen set member 1" (FrozenMap.contains fs ⟨1⟩ == true)
+  expect "frozen set member 2" (FrozenMap.contains fs ⟨2⟩ == true)
+  expect "frozen set non-member" (FrozenMap.contains fs ⟨99⟩ == false)
 
 /-- FS-007: FrozenMap.get? — retrieves entries by key -/
 private def fs007_frozenMapGet : IO Unit := do
   let rt := ((RHTable.empty 16 : RHTable ObjId Nat).insert ⟨1⟩ 10)
     |>.insert ⟨2⟩ 20
   let fm := freezeMap rt
-  expect "FS-007a get key 1" (fm.get? ⟨1⟩ == some 10)
-  expect "FS-007b get key 2" (fm.get? ⟨2⟩ == some 20)
-  expect "FS-007c get missing key" (fm.get? ⟨99⟩ == none)
+  expect "get key 1" (fm.get? ⟨1⟩ == some 10)
+  expect "get key 2" (fm.get? ⟨2⟩ == some 20)
+  expect "get missing key" (fm.get? ⟨99⟩ == none)
 
 -- ============================================================================
 -- Q5-T2: FrozenKernelObject Tests (3 scenarios)
@@ -103,7 +103,7 @@ private def fs008_freezeTcb : IO Unit := do
     { tid := tid, priority := ⟨10⟩, domain := ⟨0⟩
       cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := ⟨0⟩ }
   let frozen := freezeObject (.tcb tcb)
-  expect "FS-008a frozen TCB has correct type" (frozen.objectType == .tcb)
+  expect "frozen TCB has correct type" (frozen.objectType == .tcb)
 
 /-- FS-009: freezeObject converts CNode to FrozenCNode -/
 private def fs009_freezeCNode : IO Unit := do
@@ -116,16 +116,16 @@ private def fs009_freezeCNode : IO Unit := do
       radixWidth := 4
       slots := (RHTable.empty 16).insert ⟨3⟩ cap }
   let frozen := freezeObject (.cnode cn)
-  expect "FS-009a frozen CNode has correct type" (frozen.objectType == .cnode)
+  expect "frozen CNode has correct type" (frozen.objectType == .cnode)
   -- Verify the frozen CNode slots use CNodeRadix (flat array)
   match frozen with
   | .cnode fc =>
-    expect "FS-009b guard width preserved" (fc.guardWidth == 4)
-    expect "FS-009c guard value preserved" (fc.guardValue == 0)
-    expect "FS-009d radix width preserved" (fc.radixWidth == 4)
-    expect "FS-009e radix lookup finds cap" (fc.slots.lookup ⟨3⟩ == some cap)
-    expect "FS-009f radix lookup misses" (fc.slots.lookup ⟨7⟩ == none)
-  | _ => throw <| IO.userError "FS-009: expected FrozenCNode"
+    expect "guard width preserved" (fc.guardWidth == 4)
+    expect "guard value preserved" (fc.guardValue == 0)
+    expect "radix width preserved" (fc.radixWidth == 4)
+    expect "radix lookup finds cap" (fc.slots.lookup ⟨3⟩ == some cap)
+    expect "radix lookup misses" (fc.slots.lookup ⟨7⟩ == none)
+  | _ => throw <| IO.userError "expected FrozenCNode"
 
 /-- FS-010: freezeObject converts VSpaceRoot to FrozenVSpaceRoot -/
 private def fs010_freezeVSpaceRoot : IO Unit := do
@@ -135,12 +135,12 @@ private def fs010_freezeVSpaceRoot : IO Unit := do
     { asid := ⟨1⟩
       mappings := (RHTable.empty 16).insert ⟨0x1000⟩ (⟨0x2000⟩, perms) }
   let frozen := freezeObject (.vspaceRoot vs)
-  expect "FS-010a frozen VSpaceRoot type" (frozen.objectType == .vspaceRoot)
+  expect "frozen VSpaceRoot type" (frozen.objectType == .vspaceRoot)
   match frozen with
   | .vspaceRoot fvs =>
-    expect "FS-010b ASID preserved" (fvs.asid == ⟨1⟩)
-    expect "FS-010c mappings lookup works" (fvs.mappings.get? ⟨0x1000⟩ == some (⟨0x2000⟩, perms))
-  | _ => throw <| IO.userError "FS-010: expected FrozenVSpaceRoot"
+    expect "ASID preserved" (fvs.asid == ⟨1⟩)
+    expect "mappings lookup works" (fvs.mappings.get? ⟨0x1000⟩ == some (⟨0x2000⟩, perms))
+  | _ => throw <| IO.userError "expected FrozenVSpaceRoot"
 
 -- ============================================================================
 -- Q5-T3: Freeze Integration Tests (3 scenarios)
@@ -150,25 +150,25 @@ private def fs010_freezeVSpaceRoot : IO Unit := do
 private def fs011_freezeEmpty : IO Unit := do
   let ist := mkEmptyIntermediateState
   let fss := freeze ist
-  expect "FS-011a frozen objects data size 0" (fss.objects.data.size == 0)
-  expect "FS-011b frozen IRQ handlers empty" (fss.irqHandlers.data.size == 0)
-  expect "FS-011c frozen ASID table empty" (fss.asidTable.data.size == 0)
-  expect "FS-011d objectIndex empty" (fss.objectIndex.length == 0)
-  expect "FS-011e CDT edges empty" (fss.cdtEdges.length == 0)
-  expect "FS-011f objectIndexSet empty" (fss.objectIndexSet.data.size == 0)
-  expect "FS-011g scheduler current is none" (fss.scheduler.current == none)
-  expect "FS-011h scheduler byPriority empty" (fss.scheduler.byPriority.data.size == 0)
-  expect "FS-011i scheduler threadPriority empty" (fss.scheduler.threadPriority.data.size == 0)
+  expect "frozen objects data size 0" (fss.objects.data.size == 0)
+  expect "frozen IRQ handlers empty" (fss.irqHandlers.data.size == 0)
+  expect "frozen ASID table empty" (fss.asidTable.data.size == 0)
+  expect "objectIndex empty" (fss.objectIndex.length == 0)
+  expect "CDT edges empty" (fss.cdtEdges.length == 0)
+  expect "objectIndexSet empty" (fss.objectIndexSet.data.size == 0)
+  expect "scheduler current is none" (fss.scheduler.current == none)
+  expect "scheduler byPriority empty" (fss.scheduler.byPriority.data.size == 0)
+  expect "scheduler threadPriority empty" (fss.scheduler.threadPriority.data.size == 0)
 
 /-- FS-012: freeze deterministic — same input yields same output -/
 private def fs012_freezeDeterministic : IO Unit := do
   let ist := mkEmptyIntermediateState
   let fss1 := freeze ist
   let fss2 := freeze ist
-  expect "FS-012a same objects data size" (fss1.objects.data.size == fss2.objects.data.size)
-  expect "FS-012b same irq data size" (fss1.irqHandlers.data.size == fss2.irqHandlers.data.size)
-  expect "FS-012c same CDT edges" (fss1.cdtEdges == fss2.cdtEdges)
-  expect "FS-012d same objectIndex" (fss1.objectIndex == fss2.objectIndex)
+  expect "same objects data size" (fss1.objects.data.size == fss2.objects.data.size)
+  expect "same irq data size" (fss1.irqHandlers.data.size == fss2.irqHandlers.data.size)
+  expect "same CDT edges" (fss1.cdtEdges == fss2.cdtEdges)
+  expect "same objectIndex" (fss1.objectIndex == fss2.objectIndex)
 
 /-- FS-014: FrozenMap.set preserves data size -/
 private def fs014_frozenMapSetSize : IO Unit := do
@@ -177,11 +177,11 @@ private def fs014_frozenMapSetSize : IO Unit := do
   let fm := freezeMap rt
   let origSize := fm.data.size
   match fm.set ⟨1⟩ 99 with
-  | none => throw <| IO.userError "FS-014a set should succeed"
+  | none => throw <| IO.userError "set should succeed"
   | some fm' =>
-    expect "FS-014a set preserves data size" (fm'.data.size == origSize)
-    expect "FS-014b set updates value" (fm'.get? ⟨1⟩ == some 99)
-    expect "FS-014c set preserves other value" (fm'.get? ⟨2⟩ == some 20)
+    expect "set preserves data size" (fm'.data.size == origSize)
+    expect "set updates value" (fm'.get? ⟨1⟩ == some 99)
+    expect "set preserves other value" (fm'.get? ⟨2⟩ == some 20)
 
 /-- FS-015: freezeMap data size matches source entry count -/
 private def fs015_freezeMapDataSize : IO Unit := do
@@ -191,9 +191,9 @@ private def fs015_freezeMapDataSize : IO Unit := do
     |>.insert ⟨4⟩ 40
     |>.insert ⟨5⟩ 50
   let fm := freezeMap rt
-  expect "FS-015a data size is 5" (fm.data.size == 5)
+  expect "data size is 5" (fm.data.size == 5)
   -- Verify round-trip: all keys accessible
-  expect "FS-015b all 5 keys accessible" (
+  expect "all 5 keys accessible" (
     (fm.get? ⟨1⟩).isSome && (fm.get? ⟨2⟩).isSome && (fm.get? ⟨3⟩).isSome &&
     (fm.get? ⟨4⟩).isSome && (fm.get? ⟨5⟩).isSome)
 

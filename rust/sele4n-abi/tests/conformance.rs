@@ -526,7 +526,7 @@ fn page_perms_wx_enforcement() {
 /// Verify that encode(decode(x)) == x for boundary values and that
 /// encode returns error for labels >= 2^20.
 #[test]
-fn t3b_message_info_label_boundary_roundtrip() {
+fn message_info_label_boundary_roundtrip() {
     use sele4n_abi::message_info::MAX_LABEL;
 
     // Boundary value: label = 0 (minimum)
@@ -548,7 +548,7 @@ fn t3b_message_info_label_boundary_roundtrip() {
 
 /// V2-H: MessageInfo::new rejects oversized labels (U3-B: struct literals no longer possible).
 #[test]
-fn t3b_encode_syscall_rejects_oversized_label() {
+fn encode_syscall_rejects_oversized_label() {
     // U3-B: With private fields, invalid MessageInfo can no longer be constructed.
     // We verify the rejection happens at new() instead.
     assert_eq!(MessageInfo::new(0, 0, 1u64 << 20), Err(KernelError::InvalidMessageInfo));
@@ -556,7 +556,7 @@ fn t3b_encode_syscall_rejects_oversized_label() {
 
 /// T3-B: MessageInfo::new rejects oversized labels.
 #[test]
-fn t3b_message_info_new_rejects_oversized_label() {
+fn message_info_new_rejects_oversized_label() {
     use sele4n_abi::message_info::MAX_LABEL;
     assert!(MessageInfo::new(0, 0, MAX_LABEL).is_ok());
     assert_eq!(MessageInfo::new(0, 0, MAX_LABEL + 1), Err(KernelError::InvalidMessageInfo));
@@ -567,7 +567,7 @@ fn t3b_message_info_new_rejects_oversized_label() {
 /// Verify valid permission values roundtrip correctly and invalid values
 /// are rejected at decode.
 #[test]
-fn t3d_vspace_map_args_perms_roundtrip() {
+fn vspace_map_args_perms_roundtrip() {
     // All valid 5-bit values (0x00 through 0x1F) roundtrip correctly
     for perm_val in 0..=0x1Fu64 {
         let args = vspace::VSpaceMapArgs {
@@ -585,7 +585,7 @@ fn t3d_vspace_map_args_perms_roundtrip() {
 /// V1-F consistency: returns InvalidArgument (not InvalidMessageInfo)
 /// because the message structure is correct — the argument value is invalid.
 #[test]
-fn t3d_vspace_map_args_invalid_perms_rejected() {
+fn vspace_map_args_invalid_perms_rejected() {
     // 0x20 — first value outside 5-bit range
     assert_eq!(
         vspace::VSpaceMapArgs::decode(&[1, 0x1000, 0x2000, 0x20]),
@@ -610,7 +610,7 @@ fn t3d_vspace_map_args_invalid_perms_rejected() {
 /// Verify that regs[4] = 0 → false, regs[4] = 1 → true, and values
 /// 2, 0xFFFFFFFFFFFFFFFF are rejected.
 #[test]
-fn t3f_service_register_strict_bool() {
+fn service_register_strict_bool() {
     let base = [7u64, 5, 256, 128];
 
     // regs[4] = 0 → false
@@ -642,7 +642,7 @@ fn t3f_service_register_strict_bool() {
 
 /// T3-F: ServiceRegisterArgs roundtrip with strict bool.
 #[test]
-fn t3f_service_register_roundtrip_strict() {
+fn service_register_roundtrip_strict() {
     let args_true = service::ServiceRegisterArgs {
         interface_id: InterfaceId::from(7u64),
         method_count: 5,
@@ -672,7 +672,7 @@ fn t3f_service_register_roundtrip_strict() {
 /// `decode()`, both of which validate bounds. This test verifies the
 /// accessor methods return the values passed to `new()`.
 #[test]
-fn u3b_message_info_private_fields_accessors() {
+fn message_info_private_fields_accessors() {
     let mi = MessageInfo::new(42, 2, 0x1234).unwrap();
     assert_eq!(mi.length(), 42);
     assert_eq!(mi.extra_caps(), 2);
@@ -689,7 +689,7 @@ fn u3b_message_info_private_fields_accessors() {
 ///
 /// Valid values (0–31) succeed, invalid values (32–255) are rejected.
 #[test]
-fn u3de_access_rights_try_from_valid() {
+fn access_rights_try_from_valid() {
     for v in 0..=0x1Fu8 {
         let rights = AccessRights::try_from(v).unwrap();
         assert_eq!(rights.raw(), v);
@@ -700,7 +700,7 @@ fn u3de_access_rights_try_from_valid() {
 }
 
 #[test]
-fn u3de_access_rights_try_from_invalid() {
+fn access_rights_try_from_invalid() {
     for v in 0x20..=0xFFu8 {
         assert!(
             AccessRights::try_from(v).is_err(),
@@ -711,7 +711,7 @@ fn u3de_access_rights_try_from_invalid() {
 
 /// U3-D/E: AccessRights bitmask operations preserve validity.
 #[test]
-fn u3de_access_rights_ops_preserve_validity() {
+fn access_rights_ops_preserve_validity() {
     // Union of valid rights stays valid
     let rw = AccessRights::READ | AccessRights::WRITE;
     assert!(rw.raw() <= 0x1F);
@@ -727,7 +727,7 @@ fn u3de_access_rights_ops_preserve_validity() {
 /// This test validates that `from_u32` still works for all known variants
 /// and that unknown discriminants return None (forward-compatible).
 #[test]
-fn u3f_kernel_error_non_exhaustive() {
+fn kernel_error_non_exhaustive() {
     // AL1b (WS-AL / AK7-I.cascade): 51 variants (0–50) roundtrip.
     for i in 0..=50u32 {
         let e = KernelError::from_u32(i).unwrap();
@@ -741,7 +741,7 @@ fn u3f_kernel_error_non_exhaustive() {
 
 /// U3-G: RegisterFile safe bounds checking.
 #[test]
-fn u3g_register_file_bounds() {
+fn register_file_bounds() {
     use sele4n_abi::RegisterFile;
 
     let mut rf = RegisterFile::new();
@@ -760,7 +760,7 @@ fn u3g_register_file_bounds() {
 
 /// U3-I: IpcBuffer layout matches expected size and alignment.
 #[test]
-fn u3i_ipc_buffer_layout() {
+fn ipc_buffer_layout() {
     assert_eq!(core::mem::size_of::<IpcBuffer>(), 960);
     assert_eq!(core::mem::align_of::<IpcBuffer>(), 8);
 }
@@ -772,7 +772,7 @@ fn u3i_ipc_buffer_layout() {
 /// V1-A (H-RS-1): decode_response must reject u64 values exceeding u32::MAX.
 /// Without the range guard, 0x1_0000_0000 truncates to 0 (false success).
 #[test]
-fn v1a_decode_response_u64_overflow() {
+fn decode_response_u64_overflow() {
     use sele4n_abi::decode_response;
 
     // Value that would truncate to 0 (success) without guard
@@ -791,7 +791,7 @@ fn v1a_decode_response_u64_overflow() {
 /// AF6-A + AL1b: Unrecognized kernel error codes (≥51 after AL1b added
 /// NullCapability at 50) map to UnknownKernelError.
 #[test]
-fn af6a_unknown_kernel_error_fallback() {
+fn unknown_kernel_error_fallback() {
     use sele4n_abi::decode_response;
 
     // Error code 51 — first unrecognized code after NullCapability (50)
@@ -813,7 +813,7 @@ fn af6a_unknown_kernel_error_fallback() {
 
 /// V1-C (M-RS-1): LifecycleRetypeArgs rejects invalid type tags at decode.
 #[test]
-fn v1c_lifecycle_retype_invalid_type_tag() {
+fn lifecycle_retype_invalid_type_tag() {
     // Type tag 7 (first invalid, after SchedContext = 6)
     assert_eq!(
         lifecycle::LifecycleRetypeArgs::decode(&[42, 7, 0]),
@@ -834,7 +834,7 @@ fn v1c_lifecycle_retype_invalid_type_tag() {
 
 /// V1-E (M-RS-3): IpcBuffer.get_mr returns InvalidArgument for inline indices.
 #[test]
-fn v1e_ipc_buffer_inline_error_variant() {
+fn ipc_buffer_inline_error_variant() {
     let buf = IpcBuffer::new();
     for i in 0..4 {
         assert_eq!(buf.get_mr(i), Err(KernelError::InvalidArgument));
@@ -843,7 +843,7 @@ fn v1e_ipc_buffer_inline_error_variant() {
 
 /// V1-F (M-RS-4): CSpaceMintArgs decode returns InvalidArgument for invalid rights.
 #[test]
-fn v1f_cspace_mint_invalid_rights_error_variant() {
+fn cspace_mint_invalid_rights_error_variant() {
     assert_eq!(
         cspace::CSpaceMintArgs::decode(&[1, 2, 0x20, 42]),
         Err(KernelError::InvalidArgument)
@@ -856,7 +856,7 @@ fn v1f_cspace_mint_invalid_rights_error_variant() {
 
 /// V1-G (M-RS-5): PagePerms checked_bitor rejects W^X violations.
 #[test]
-fn v1g_page_perms_checked_bitor_wx() {
+fn page_perms_checked_bitor_wx() {
     use sele4n_abi::args::PagePerms;
 
     // Safe combinations
@@ -880,7 +880,7 @@ fn v1g_page_perms_checked_bitor_wx() {
 
 /// V1-I (L-RS-2): ServiceRegisterArgs rejects out-of-bounds method_count/message_size.
 #[test]
-fn v1i_service_register_bounds() {
+fn service_register_bounds() {
     use sele4n_abi::args::service::{MAX_METHOD_COUNT, MAX_SERVICE_MESSAGE_SIZE};
 
     // method_count too large
@@ -903,7 +903,7 @@ fn v1i_service_register_bounds() {
 
 /// V1-D (M-RS-2): MessageInfo::new_const is infallible for valid constants.
 #[test]
-fn v1d_message_info_new_const() {
+fn message_info_new_const() {
     let mi = MessageInfo::new_const(0, 0, 0);
     assert_eq!(mi.length(), 0);
     assert_eq!(mi.extra_caps(), 0);
@@ -917,7 +917,7 @@ fn v1d_message_info_new_const() {
 
 /// V1-H (M-RS-7): Identifier validation methods.
 #[test]
-fn v1h_identifier_validation() {
+fn identifier_validation() {
     use sele4n_types::{Slot, DomainId, Priority};
 
     assert!(Slot::from(0u64).is_valid());
@@ -938,7 +938,7 @@ fn v1h_identifier_validation() {
 /// (51 variants, 0-50 after AL1b added NullCapability at 50).
 /// Detects Lean-Rust enum divergence automatically.
 #[test]
-fn w1h_kernel_error_variant_count() {
+fn kernel_error_variant_count() {
     const KERNEL_ERROR_COUNT: u32 = 51;
     // All expected variants exist
     for i in 0..KERNEL_ERROR_COUNT {
@@ -956,7 +956,7 @@ fn w1h_kernel_error_variant_count() {
 
 /// W1-H / AA1 / D6: SyscallId variant count matches Lean (25 variants, 0-24).
 #[test]
-fn w1h_syscall_id_variant_count() {
+fn syscall_id_variant_count() {
     const SYSCALL_COUNT: u64 = 25;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
     for i in 0..SYSCALL_COUNT {
@@ -973,7 +973,7 @@ fn w1h_syscall_id_variant_count() {
 
 /// W1-H: Compile-time ABI constant assertions.
 #[test]
-fn w1h_abi_constants_match_lean() {
+fn abi_constants_match_lean() {
     use sele4n_abi::message_info::{MAX_LABEL, MAX_MSG_LENGTH, MAX_EXTRA_CAPS};
     assert_eq!(MAX_LABEL, 1_048_575, "MAX_LABEL must be 2^20 - 1");
     assert_eq!(MAX_MSG_LENGTH, 120, "MAX_MSG_LENGTH must be 120");
@@ -983,7 +983,7 @@ fn w1h_abi_constants_match_lean() {
 /// W1-F-1: notification_signal encodes SyscallId::NotificationSignal (14)
 /// and places badge in msg_regs[0].
 #[test]
-fn w1f_notification_signal_encoding() {
+fn notification_signal_encoding() {
     let badge_val: u64 = 0xCAFE_BABE;
     let req = SyscallRequest {
         cap_addr: CPtr::from(42u64),
@@ -998,7 +998,7 @@ fn w1f_notification_signal_encoding() {
 
 /// W1-F-1: notification_wait encodes SyscallId::NotificationWait (15).
 #[test]
-fn w1f_notification_wait_encoding() {
+fn notification_wait_encoding() {
     let req = SyscallRequest {
         cap_addr: CPtr::from(99u64),
         msg_info: MessageInfo::new(0, 0, 0).unwrap(),
@@ -1012,7 +1012,7 @@ fn w1f_notification_wait_encoding() {
 /// W1-F-1: endpoint_reply_recv encodes SyscallId::ReplyRecv (16)
 /// and places reply_target in msg_regs[0].
 #[test]
-fn w1f_endpoint_reply_recv_encoding() {
+fn endpoint_reply_recv_encoding() {
     let reply_target: u64 = 7;
     let req = SyscallRequest {
         cap_addr: CPtr::from(200u64),
@@ -1027,7 +1027,7 @@ fn w1f_endpoint_reply_recv_encoding() {
 
 /// W1-D: MmioUnaligned variant exists at discriminant 40.
 #[test]
-fn w1d_mmio_unaligned_variant() {
+fn mmio_unaligned_variant() {
     let err = KernelError::from_u32(40).unwrap();
     assert_eq!(err, KernelError::MmioUnaligned);
     assert_eq!(err as u32, 40);
@@ -1036,7 +1036,7 @@ fn w1d_mmio_unaligned_variant() {
 /// W1-E audit: endpoint_reply_recv places reply_target in MR[0] and user
 /// data in MR[1..3]. MessageInfo.length = user_length + 1 (for reply_target).
 #[test]
-fn w1e_endpoint_reply_recv_register_layout() {
+fn endpoint_reply_recv_register_layout() {
     // Simulate: user wants 2 registers of reply data + reply_target
     let reply_target: u64 = 7;
     let user_data_0: u64 = 0xAAAA;
@@ -1064,7 +1064,7 @@ fn w1e_endpoint_reply_recv_register_layout() {
 
 /// AA1-B-1: SchedContextConfigure roundtrip (discriminant 17).
 #[test]
-fn aa1b_sched_context_configure_discriminant() {
+fn sched_context_configure_discriminant() {
     let sid = SyscallId::from_u64(17).expect("SchedContextConfigure must exist");
     assert_eq!(sid, SyscallId::SchedContextConfigure);
     assert_eq!(sid.to_u64(), 17);
@@ -1072,7 +1072,7 @@ fn aa1b_sched_context_configure_discriminant() {
 
 /// AA1-B-2: SchedContextBind roundtrip (discriminant 18).
 #[test]
-fn aa1b_sched_context_bind_discriminant() {
+fn sched_context_bind_discriminant() {
     let sid = SyscallId::from_u64(18).expect("SchedContextBind must exist");
     assert_eq!(sid, SyscallId::SchedContextBind);
     assert_eq!(sid.to_u64(), 18);
@@ -1080,7 +1080,7 @@ fn aa1b_sched_context_bind_discriminant() {
 
 /// AA1-B-3: SchedContextUnbind roundtrip (discriminant 19).
 #[test]
-fn aa1b_sched_context_unbind_discriminant() {
+fn sched_context_unbind_discriminant() {
     let sid = SyscallId::from_u64(19).expect("SchedContextUnbind must exist");
     assert_eq!(sid, SyscallId::SchedContextUnbind);
     assert_eq!(sid.to_u64(), 19);
@@ -1089,7 +1089,7 @@ fn aa1b_sched_context_unbind_discriminant() {
 /// AA1-B-4/D6: Boundary — discriminant 20 is now TcbSuspend (D1), not out of range.
 /// SchedContext range ends at 19; D1/D2/D3 TCB ops occupy 20-24.
 #[test]
-fn aa1b_sched_context_boundary() {
+fn sched_context_boundary() {
     // SchedContextUnbind is the last SchedContext variant (19)
     assert_eq!(SyscallId::from_u64(19).unwrap(), SyscallId::SchedContextUnbind);
     // 20 is now TcbSuspend (D1), not out of range
@@ -1098,13 +1098,13 @@ fn aa1b_sched_context_boundary() {
 
 /// AA1-B-5: COUNT is updated to 20.
 #[test]
-fn aa1b_syscall_count_updated() {
+fn syscall_count_updated() {
     assert_eq!(SyscallId::COUNT, 25);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
 #[test]
-fn aa1b_sched_context_required_rights() {
+fn sched_context_required_rights() {
     use sele4n_types::rights::AccessRight;
     assert_eq!(SyscallId::SchedContextConfigure.required_right(), AccessRight::Write);
     assert_eq!(SyscallId::SchedContextBind.required_right(), AccessRight::Write);
@@ -1115,7 +1115,7 @@ fn aa1b_sched_context_required_rights() {
 
 /// AA1-F-1: SchedContextConfigureArgs encode/decode roundtrip.
 #[test]
-fn aa1f_sched_context_configure_roundtrip() {
+fn sched_context_configure_roundtrip() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
     let args = SchedContextConfigureArgs {
         budget: 1000, period: 5000, priority: 200, deadline: 10000, domain: 3,
@@ -1127,7 +1127,7 @@ fn aa1f_sched_context_configure_roundtrip() {
 
 /// AA1-F-2: SchedContextBindArgs encode/decode roundtrip.
 #[test]
-fn aa1f_sched_context_bind_roundtrip() {
+fn sched_context_bind_roundtrip() {
     use sele4n_abi::args::sched_context::SchedContextBindArgs;
     use sele4n_types::ThreadId;
     // AK4-C (R-ABI-H01): `thread_id` is typed `ThreadId` (was raw `u64`).
@@ -1139,21 +1139,21 @@ fn aa1f_sched_context_bind_roundtrip() {
 
 /// AA1-F-3: SchedContextUnbindArgs encode/decode roundtrip.
 #[test]
-fn aa1f_sched_context_unbind_roundtrip() {
+fn sched_context_unbind_roundtrip() {
     use sele4n_abi::args::sched_context::SchedContextUnbindArgs;
     assert_eq!(SchedContextUnbindArgs::decode(&[]).unwrap(), SchedContextUnbindArgs);
 }
 
 /// AA1-F-4: SchedContextConfigureArgs boundary — insufficient registers.
 #[test]
-fn aa1f_sched_context_configure_insufficient_regs() {
+fn sched_context_configure_insufficient_regs() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
     assert_eq!(SchedContextConfigureArgs::decode(&[1, 2, 3, 4]), Err(KernelError::InvalidMessageInfo));
 }
 
 /// AA1-F-5: SchedContextConfigureArgs boundary — invalid priority.
 #[test]
-fn aa1f_sched_context_configure_invalid_priority() {
+fn sched_context_configure_invalid_priority() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
     assert_eq!(
         SchedContextConfigureArgs::decode(&[1000, 5000, 256, 10000, 0]),
@@ -1163,7 +1163,7 @@ fn aa1f_sched_context_configure_invalid_priority() {
 
 /// AA1-F-6: SchedContextBindArgs boundary — empty registers.
 #[test]
-fn aa1f_sched_context_bind_insufficient_regs() {
+fn sched_context_bind_insufficient_regs() {
     use sele4n_abi::args::sched_context::SchedContextBindArgs;
     assert_eq!(SchedContextBindArgs::decode(&[]), Err(KernelError::InvalidMessageInfo));
 }
@@ -1171,7 +1171,7 @@ fn aa1f_sched_context_bind_insufficient_regs() {
 /// AA1-F-7: SchedContextConfigureArgs boundary — invalid domain.
 /// AG2-A: Domain 16 is first invalid (Lean numDomainsVal = 16, zero-indexed 0..=15).
 #[test]
-fn aa1f_sched_context_configure_invalid_domain() {
+fn sched_context_configure_invalid_domain() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
     // Domain 16 is the first invalid value
     assert_eq!(
@@ -1188,7 +1188,7 @@ fn aa1f_sched_context_configure_invalid_domain() {
 /// AA1-F-8: SchedContextConfigureArgs — max valid priority (255) and domain (15).
 /// AG2-A: Domain max updated from 255 to 15 to match Lean numDomainsVal = 16.
 #[test]
-fn aa1f_sched_context_configure_max_valid() {
+fn sched_context_configure_max_valid() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
     let args = SchedContextConfigureArgs::decode(&[1000, 5000, 255, 10000, 15]).unwrap();
     assert_eq!(args.priority, 255);
@@ -1200,7 +1200,7 @@ fn aa1f_sched_context_configure_max_valid() {
 
 /// AA1-F-9: SchedContextConfigureArgs — zero-valued fields accepted.
 #[test]
-fn aa1f_sched_context_configure_zero_values() {
+fn sched_context_configure_zero_values() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
     let args = SchedContextConfigureArgs::decode(&[0, 0, 0, 0, 0]).unwrap();
     assert_eq!(args.budget, 0);
@@ -1214,7 +1214,7 @@ fn aa1f_sched_context_configure_zero_values() {
 
 /// AA1-G-1: LifecycleRetypeArgs with TypeTag::SchedContext (discriminant 6).
 #[test]
-fn aa1g_lifecycle_retype_sched_context() {
+fn lifecycle_retype_sched_context() {
     let args = lifecycle::LifecycleRetypeArgs {
         target_obj: ObjId::from(42u64),
         new_type: TypeTag::SchedContext,
@@ -1228,7 +1228,7 @@ fn aa1g_lifecycle_retype_sched_context() {
 
 /// AA1-G-2: TypeTag boundary — 7 is first invalid value.
 #[test]
-fn aa1g_type_tag_boundary() {
+fn type_tag_boundary() {
     assert_eq!(TypeTag::from_u64(7), Err(KernelError::InvalidTypeTag));
     assert_eq!(TypeTag::from_u64(u64::MAX), Err(KernelError::InvalidTypeTag));
 }
@@ -1237,7 +1237,7 @@ fn aa1g_type_tag_boundary() {
 
 /// AA1-H-1: KernelError::IpcTimeout roundtrip (discriminant 42).
 #[test]
-fn aa1h_ipc_timeout_roundtrip() {
+fn ipc_timeout_roundtrip() {
     let err = KernelError::from_u32(42).expect("IpcTimeout must exist at discriminant 42");
     assert_eq!(err, KernelError::IpcTimeout);
     assert_eq!(err as u32, 42);
@@ -1245,7 +1245,7 @@ fn aa1h_ipc_timeout_roundtrip() {
 
 /// AA1-H-2: KernelError::IpcTimeout is distinct from all other variants.
 #[test]
-fn aa1h_ipc_timeout_distinct() {
+fn ipc_timeout_distinct() {
     let timeout = KernelError::IpcTimeout;
     for i in 0..42u32 {
         let other = KernelError::from_u32(i).unwrap();
@@ -1255,7 +1255,7 @@ fn aa1h_ipc_timeout_distinct() {
 
 /// AA1-H-3: KernelResult correctly wraps IpcTimeout.
 #[test]
-fn aa1h_ipc_timeout_result() {
+fn ipc_timeout_result() {
     let result: KernelResult<()> = Err(KernelError::IpcTimeout);
     assert!(result.is_err());
     assert_eq!(result.unwrap_err(), KernelError::IpcTimeout);
@@ -1264,7 +1264,7 @@ fn aa1h_ipc_timeout_result() {
 /// AA1-H-4/AG3 + AL1b/WS-AL: Boundary — discriminant 51 is out of range
 /// (InvalidIrq at 48, InvalidObjectType at 49, NullCapability at 50).
 #[test]
-fn aa1h_error_boundary_after_invalid_irq() {
+fn error_boundary_after_invalid_irq() {
     assert!(KernelError::from_u32(48).is_some()); // InvalidIrq
     assert!(KernelError::from_u32(49).is_some()); // InvalidObjectType (AL6)
     assert!(KernelError::from_u32(50).is_some()); // NullCapability (AL1b)
@@ -1275,7 +1275,7 @@ fn aa1h_error_boundary_after_invalid_irq() {
 
 /// D6-D1: TcbSuspend roundtrip (discriminant 20).
 #[test]
-fn d6_tcb_suspend_roundtrip() {
+fn tcb_suspend_roundtrip() {
     let sid = SyscallId::from_u64(20).expect("TcbSuspend must exist");
     assert_eq!(sid, SyscallId::TcbSuspend);
     assert_eq!(sid.to_u64(), 20);
@@ -1283,7 +1283,7 @@ fn d6_tcb_suspend_roundtrip() {
 
 /// D6-D1: TcbResume roundtrip (discriminant 21).
 #[test]
-fn d6_tcb_resume_roundtrip() {
+fn tcb_resume_roundtrip() {
     let sid = SyscallId::from_u64(21).expect("TcbResume must exist");
     assert_eq!(sid, SyscallId::TcbResume);
     assert_eq!(sid.to_u64(), 21);
@@ -1291,7 +1291,7 @@ fn d6_tcb_resume_roundtrip() {
 
 /// D6-D1: TcbSetPriority roundtrip (discriminant 22).
 #[test]
-fn d6_tcb_set_priority_roundtrip() {
+fn tcb_set_priority_roundtrip() {
     let sid = SyscallId::from_u64(22).expect("TcbSetPriority must exist");
     assert_eq!(sid, SyscallId::TcbSetPriority);
     assert_eq!(sid.to_u64(), 22);
@@ -1299,7 +1299,7 @@ fn d6_tcb_set_priority_roundtrip() {
 
 /// D6-D1: TcbSetMCPriority roundtrip (discriminant 23).
 #[test]
-fn d6_tcb_set_mcp_roundtrip() {
+fn tcb_set_mcp_roundtrip() {
     let sid = SyscallId::from_u64(23).expect("TcbSetMCPriority must exist");
     assert_eq!(sid, SyscallId::TcbSetMCPriority);
     assert_eq!(sid.to_u64(), 23);
@@ -1307,7 +1307,7 @@ fn d6_tcb_set_mcp_roundtrip() {
 
 /// D6-D1: TcbSetIPCBuffer roundtrip (discriminant 24).
 #[test]
-fn d6_tcb_set_ipc_buffer_roundtrip() {
+fn tcb_set_ipc_buffer_roundtrip() {
     let sid = SyscallId::from_u64(24).expect("TcbSetIPCBuffer must exist");
     assert_eq!(sid, SyscallId::TcbSetIPCBuffer);
     assert_eq!(sid.to_u64(), 24);
@@ -1315,7 +1315,7 @@ fn d6_tcb_set_ipc_buffer_roundtrip() {
 
 /// D6-D5: Boundary — discriminant 25 is out of range for SyscallId.
 #[test]
-fn d6_syscall_boundary() {
+fn syscall_boundary() {
     assert!(SyscallId::from_u64(24).is_some()); // Last valid
     assert!(SyscallId::from_u64(25).is_none()); // First invalid
     assert_eq!(SyscallId::COUNT, 25);
@@ -1323,7 +1323,7 @@ fn d6_syscall_boundary() {
 
 /// D6-D6: All TCB operations require Write access (API.lean:387-391).
 #[test]
-fn d6_tcb_ops_require_write() {
+fn tcb_ops_require_write() {
     assert_eq!(SyscallId::TcbSuspend.required_right(), AccessRight::Write);
     assert_eq!(SyscallId::TcbResume.required_right(), AccessRight::Write);
     assert_eq!(SyscallId::TcbSetPriority.required_right(), AccessRight::Write);
@@ -1333,7 +1333,7 @@ fn d6_tcb_ops_require_write() {
 
 /// D6-D3: AlignmentError roundtrip (discriminant 43).
 #[test]
-fn d6_alignment_error_roundtrip() {
+fn alignment_error_roundtrip() {
     let err = KernelError::from_u32(43).expect("AlignmentError must exist");
     assert_eq!(err, KernelError::AlignmentError);
     assert_eq!(err as u32, 43);
@@ -1341,7 +1341,7 @@ fn d6_alignment_error_roundtrip() {
 
 /// D6-F: TCB arg decode conformance.
 #[test]
-fn d6_tcb_args_roundtrip() {
+fn tcb_args_roundtrip() {
     use sele4n_abi::args::tcb::*;
 
     // D1: Suspend/Resume — no arguments
@@ -1361,7 +1361,7 @@ fn d6_tcb_args_roundtrip() {
 
 /// D6-F: TCB arg decode error paths.
 #[test]
-fn d6_tcb_args_errors() {
+fn tcb_args_errors() {
     use sele4n_abi::args::tcb::*;
 
     // D2: Priority out of range — Lean returns .invalidArgument (discriminant 39)
@@ -1379,7 +1379,7 @@ fn d6_tcb_args_errors() {
 
 /// D6-G: sele4n-sys TCB wrapper module exists and exports all 5 operations.
 #[test]
-fn d6_sys_tcb_module_exports() {
+fn sys_tcb_module_exports() {
     // Verify that the sele4n-sys crate re-exports the tcb module.
     // We can't invoke the actual syscalls (no kernel), but we verify the
     // function signatures exist by referencing them as fn pointers.
@@ -1396,14 +1396,14 @@ fn d6_sys_tcb_module_exports() {
 
 /// AG2-A-1: MAX_DOMAIN matches Lean numDomainsVal = 16 (zero-indexed 0..=15).
 #[test]
-fn ag2a_max_domain_matches_lean() {
+fn max_domain_matches_lean() {
     use sele4n_abi::args::sched_context::MAX_DOMAIN;
     assert_eq!(MAX_DOMAIN, 15, "MAX_DOMAIN must be 15 (Lean numDomainsVal = 16, zero-indexed)");
 }
 
 /// AG2-A-2: Domain 15 accepted, domain 16 rejected at decode boundary.
 #[test]
-fn ag2a_domain_boundary_validation() {
+fn domain_boundary_validation() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
 
     // Domain 15 (max valid) — accepted
@@ -1419,7 +1419,7 @@ fn ag2a_domain_boundary_validation() {
 
 /// AG2-A-3: All valid domain values (0..=15) accepted at decode.
 #[test]
-fn ag2a_all_valid_domains_accepted() {
+fn all_valid_domains_accepted() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
     for domain in 0..=15u64 {
         let result = SchedContextConfigureArgs::decode(&[1000, 5000, 128, 10000, domain]);
@@ -1430,7 +1430,7 @@ fn ag2a_all_valid_domains_accepted() {
 
 /// AG2-A-4: All invalid domain values (16..=255 and beyond) rejected at decode.
 #[test]
-fn ag2a_invalid_domains_rejected() {
+fn invalid_domains_rejected() {
     use sele4n_abi::args::sched_context::SchedContextConfigureArgs;
     for domain in [16u64, 17, 100, 255, 256, u64::MAX] {
         assert_eq!(
@@ -1443,7 +1443,7 @@ fn ag2a_invalid_domains_rejected() {
 
 /// AG2-B: sele4n-sys SchedContext wrapper module exists and exports all 3 operations.
 #[test]
-fn ag2b_sys_sched_context_module_exports() {
+fn sys_sched_context_module_exports() {
     use sele4n_types::ThreadId;
     let _configure: fn(CPtr, u64, u64, u64, u64, u64, &mut IpcBuffer) -> KernelResult<SyscallResponse> =
         sele4n_sys::sched_context::sched_context_configure;

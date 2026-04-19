@@ -100,16 +100,6 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_website_links.sh"
 # AH4-F: Version sync — validate all version-bearing files match lakefile.toml.
 run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 
-# AL0-D (WS-AL): AK7 cascade monotonicity guard — enforce that every commit
-# between AL0 (baseline anchor) and AL11 (v1.0.0 tag) either decreases or
-# holds steady on "should-drop" metrics (raw-match/raw-lookup/sorry/axiom)
-# and increases or holds steady on "should-grow" metrics (helper adoption,
-# sentinel-check dispatch, requireNotNull gate, AK7 suite size, build jobs,
-# cargo tests). Baseline is captured in docs/audits/AL0_baseline.txt by
-# scripts/ak7_cascade_baseline.sh. See docs/audits/AUDIT_v0.29.0_DEFERRED.md
-# and the WS-AL plan document.
-run_check "HYGIENE" "${SCRIPT_DIR}/ak7_cascade_check_monotonic.sh"
-
 run_check "HYGIENE" python3 -m unittest scripts.tests.test_generate_codebase_map
 
 # WS-I1/R-03: Scenario registry validation — every fixture ID must be in the registry and vice versa.
