@@ -453,20 +453,28 @@ theorem storeObjectKindChecked_preserves_lifecycleObjectTypeLockstep
     AF1-B3: Extended from 9 to 10 predicates with `blockingAcyclic`,
     integrating the PIP blocking graph acyclicity assumption.
 
+    AM4-A (WS-AM / AL6-C.hygiene): Extended from 10 to 11 predicates
+    with `lifecycleObjectTypeLockstep`, elevating the AL6-C
+    defense-in-depth predicate from a standalone lemma to a structural
+    cross-subsystem guarantee that every kernel entry/exit point can
+    rely on. The 11th conjunct is append-only at the END of the tuple,
+    so every existing projection theorem (which uses prefix-indexed
+    projections) continues to resolve without modification.
+
     M-08/AH5-C: **Cross-subsystem composition coverage assessment**.
-    Current: 10 predicates in `crossSubsystemInvariant`, yielding 45 pairwise
-    disjointness analyses (10 choose 2). Coverage:
-      - Frame lemmas: ALL 33 kernel operations that modify `objects` have per-
-        operation frame lemmas (AD4 portfolio, 2+33 bridge lemmas).
-      - Pairwise disjointness: most pairs are structurally disjoint (different
-        fields: scheduler vs objects vs cdt). Remaining gap scenarios:
+    Current: 11 predicates in `crossSubsystemInvariant`. Coverage:
+      - Frame lemmas: ALL 34 kernel operations that modify `objects` have
+        per-operation frame lemmas (AD4 portfolio + AM4-E cluster).
+      - Pairwise disjointness: most pairs are structurally disjoint
+        (different fields: scheduler vs objects vs cdt). Remaining gap
+        scenarios:
         (1) IPC queue membership ↔ service registry endpoint tracking
         (2) Capability revocation ↔ service endpoint lifecycle
       - Assessment: no known concrete violation. The gap is theoretical —
-        frame lemmas ensure each operation preserves all 10 predicates
-        individually. The missing piece is a formal proof that ALL 10
-        predicates compose correctly under arbitrary interleaving of all 33
-        operations (exponential combinatorics, deferred to WS-V). -/
+        frame lemmas ensure each operation preserves all 11 predicates
+        individually. The missing piece is a formal proof that ALL 11
+        predicates compose correctly under arbitrary interleaving of all
+        34 operations (exponential combinatorics, deferred to WS-V). -/
 def crossSubsystemInvariant (st : SystemState) : Prop :=
   registryEndpointValid st ∧
   registryInterfaceValid st ∧  -- AE5-C (SVC-04): Added
@@ -477,7 +485,8 @@ def crossSubsystemInvariant (st : SystemState) : Prop :=
   schedContextStoreConsistent st ∧
   schedContextNotDualBound st ∧
   schedContextRunQueueConsistent st ∧
-  PriorityInheritance.blockingAcyclic st  -- AF1-B3: 10th predicate
+  PriorityInheritance.blockingAcyclic st ∧  -- AF1-B3: 10th predicate
+  lifecycleObjectTypeLockstep st  -- AM4-A (WS-AM / AL6-C): 11th predicate
 
 /-- Z9-D: Projection — extract `schedContextStoreConsistent` from the bundle. -/
 theorem crossSubsystemInvariant_to_schedContextStoreConsistent
@@ -499,17 +508,27 @@ theorem crossSubsystemInvariant_to_registryInterfaceValid
     (st : SystemState) (h : crossSubsystemInvariant st) :
     registryInterfaceValid st := h.2.1
 
-/-- AF1-B3: Projection — extract `blockingAcyclic` from the bundle. -/
+/-- AF1-B3: Projection — extract `blockingAcyclic` from the bundle.
+AM4-A: after adding the 11th conjunct, `blockingAcyclic` sits inside
+a pair (it is no longer the last conjunct), so the projection gains a
+trailing `.1`. -/
 theorem crossSubsystemInvariant_to_blockingAcyclic
     (st : SystemState) (h : crossSubsystemInvariant st) :
-    PriorityInheritance.blockingAcyclic st := h.2.2.2.2.2.2.2.2.2
+    PriorityInheritance.blockingAcyclic st := h.2.2.2.2.2.2.2.2.2.1
 
-/-- R4-E.1 + T5-J + U4-G + Z9-D + AE5-C + AF1-B3: The default state satisfies
-    crossSubsystemInvariant. All 10 predicates hold vacuously because the empty
-    state has no objects. -/
+/-- AM4-B (WS-AM / AL6-C.hygiene): Projection — extract
+`lifecycleObjectTypeLockstep` from the bundle. Last conjunct of the
+11-tuple. -/
+theorem crossSubsystemInvariant_to_lifecycleObjectTypeLockstep
+    (st : SystemState) (h : crossSubsystemInvariant st) :
+    lifecycleObjectTypeLockstep st := h.2.2.2.2.2.2.2.2.2.2
+
+/-- R4-E.1 + T5-J + U4-G + Z9-D + AE5-C + AF1-B3 + AM4-C: The default
+    state satisfies crossSubsystemInvariant. All 11 predicates hold
+    vacuously because the empty state has no objects. -/
 theorem default_crossSubsystemInvariant :
     crossSubsystemInvariant (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · exact (default_registryInvariant).1
   · exact (default_registryInvariant).2
   · intro sid entry h
@@ -554,6 +573,8 @@ theorem default_crossSubsystemInvariant :
     have hChain : PriorityInheritance.blockingChain (default : SystemState) tid
         (default : SystemState).objectIndex.length = [] := by rw [hLen]; rfl
     rw [hChain] at hMem; simp at hMem
+  · -- AM4-C: lifecycleObjectTypeLockstep — empty-state witness reuses AM1-A.
+    exact default_lifecycleObjectTypeLockstep
 
 -- ============================================================================
 -- AE4-D (U-36/C-CAP06): Extended cross-subsystem composition with mint completeness
@@ -618,7 +639,8 @@ theorem crossSubsystemInvariant_composition_gap_documented
     schedContextStoreConsistent st ∧
     schedContextNotDualBound st ∧
     schedContextRunQueueConsistent st ∧
-    PriorityInheritance.blockingAcyclic st := id
+    PriorityInheritance.blockingAcyclic st ∧
+    lifecycleObjectTypeLockstep st := id
 
 -- ============================================================================
 -- W6-C: Cross-subsystem invariant composition note
@@ -1327,11 +1349,12 @@ theorem crossSubsystemInvariant_objects_frame
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
     (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hObjTypes : st'.lifecycle.objectTypes = st.lifecycle.objectTypes)
     (hRunnable : st'.scheduler.runnable = st.scheduler.runnable)
     (hInv : crossSubsystemInvariant st) :
     crossSubsystemInvariant st' := by
-  obtain ⟨h1, h1i, h2, h3, h4, h5, h6, h7, h8, h9⟩ := hInv
-  exact ⟨registryEndpointValid_frame st st' hSvcReg hObjects h1,
+  obtain ⟨h1, h1i, h2, h3, h4, h5, h6, h7, h8, h9, h10⟩ := hInv
+  refine ⟨registryEndpointValid_frame st st' hSvcReg hObjects h1,
          registryInterfaceValid_frame st st' hSvcReg hIfaceReg h1i,
          registryDependencyConsistent_frame st st' hServices h2,
          noStaleEndpointQueueReferences_frame st st' hObjects h3,
@@ -1341,7 +1364,12 @@ theorem crossSubsystemInvariant_objects_frame
          schedContextNotDualBound_frame st st' hObjects h7,
          schedContextRunQueueConsistent_frame st st' hRunnable hObjects h8,
          PriorityInheritance.blockingAcyclic_frame st st' h9
-           (fun tid => by simp [PriorityInheritance.blockingServer, hObjects]) hObjIdx⟩
+           (fun tid => by simp [PriorityInheritance.blockingServer, hObjects]) hObjIdx, ?_⟩
+  -- AM4-A: lifecycleObjectTypeLockstep frame-preserved.
+  intro oid obj hObj'
+  rw [hObjects] at hObj'
+  rw [hObjTypes]
+  exact h10 oid obj hObj'
 
 /-- X3-C (H-4): **Cross-subsystem invariant preservation under services-only changes.**
     When an operation preserves `objects`, `serviceRegistry`, and `objectIndex`
@@ -1354,13 +1382,14 @@ theorem crossSubsystemInvariant_services_change
     (hSvcReg : st'.serviceRegistry = st.serviceRegistry)
     (hIfaceReg : st'.interfaceRegistry = st.interfaceRegistry)
     (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hObjTypes : st'.lifecycle.objectTypes = st.lifecycle.objectTypes)
     (hRunnable : st'.scheduler.runnable = st.scheduler.runnable)
     (hInv : crossSubsystemInvariant st)
     (hDepConsistent : registryDependencyConsistent st')
     (hServiceGraph : serviceGraphInvariant st') :
     crossSubsystemInvariant st' := by
-  obtain ⟨h1, h1i, _, h3, h4, _, h6, h7, h8, h9⟩ := hInv
-  exact ⟨registryEndpointValid_frame st st' hSvcReg hObjects h1,
+  obtain ⟨h1, h1i, _, h3, h4, _, h6, h7, h8, h9, h10⟩ := hInv
+  refine ⟨registryEndpointValid_frame st st' hSvcReg hObjects h1,
          registryInterfaceValid_frame st st' hSvcReg hIfaceReg h1i,
          hDepConsistent,
          noStaleEndpointQueueReferences_frame st st' hObjects h3,
@@ -1370,7 +1399,12 @@ theorem crossSubsystemInvariant_services_change
          schedContextNotDualBound_frame st st' hObjects h7,
          schedContextRunQueueConsistent_frame st st' hRunnable hObjects h8,
          PriorityInheritance.blockingAcyclic_frame st st' h9
-           (fun tid => by simp [PriorityInheritance.blockingServer, hObjects]) hObjIdx⟩
+           (fun tid => by simp [PriorityInheritance.blockingServer, hObjects]) hObjIdx, ?_⟩
+  -- AM4-A: lifecycleObjectTypeLockstep frame-preserved by hObjects + hObjTypes.
+  intro oid obj hObj'
+  rw [hObjects] at hObj'
+  rw [hObjTypes]
+  exact h10 oid obj hObj'
 
 -- ============================================================================
 -- X3-D (H-4, part 2): Cross-subsystem composition tightness
@@ -1654,15 +1688,16 @@ theorem crossSubsystemInvariant_objects_change_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' := by
-  obtain ⟨_, h1i, h2, _, _, h5, _, _, _, _⟩ := hPre
+  obtain ⟨_, h1i, h2, _, _, h5, _, _, _, _, _⟩ := hPre
   exact ⟨hRegEpValid,
          registryInterfaceValid_frame st st' hSvcReg hIfaceReg h1i,
          registryDependencyConsistent_frame st st' hServices h2,
          hEndpointQ, hNotifWait,
          serviceGraphInvariant_frame st st' hServices hObjIdx h5,
-         hScStore, hScDual, hScRunQ, hBlockAcyclic⟩
+         hScStore, hScDual, hScRunQ, hBlockAcyclic, hLockstep⟩
 
 -- ============================================================================
 -- AD4-B: IPC operation cross-subsystem bridge lemmas
@@ -1686,10 +1721,11 @@ theorem ipcSend_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-B (F-08): `endpointReceiveDual` preserves `crossSubsystemInvariant`.
     IPC receive modifies TCB `ipcState`/`pendingMessage` and endpoint `receiveQ`
@@ -1709,10 +1745,11 @@ theorem ipcReceive_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-B (F-08): `endpointReply` preserves `crossSubsystemInvariant`.
     IPC reply modifies the target TCB's `ipcState` (unblocking from
@@ -1732,10 +1769,11 @@ theorem ipcReply_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-B (F-08): `endpointCall` preserves `crossSubsystemInvariant`.
     IPC call combines send + block-on-reply: modifies caller TCB `ipcState`
@@ -1756,10 +1794,11 @@ theorem ipcCall_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-B (F-08): `endpointReplyRecv` preserves `crossSubsystemInvariant`.
     IPC replyRecv combines reply + receive: unblocks the reply target, then
@@ -1780,10 +1819,11 @@ theorem ipcReplyRecv_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-B (F-08): `notificationSignal` preserves `crossSubsystemInvariant`.
     Notification signal modifies the notification object (badge accumulation
@@ -1804,10 +1844,11 @@ theorem notificationSignal_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-B (F-08): `notificationWait` preserves `crossSubsystemInvariant`.
     Notification wait either consumes a pending badge (modifying the notification
@@ -1828,10 +1869,11 @@ theorem notificationWait_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 -- ============================================================================
 -- AD4-C: Scheduler/Lifecycle operation cross-subsystem bridge lemmas
@@ -1857,10 +1899,11 @@ theorem schedule_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-C (F-08): `handleYield` preserves `crossSubsystemInvariant`.
     HandleYield re-enqueues the current thread at the back of its priority
@@ -1881,10 +1924,11 @@ theorem handleYield_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-C (F-08): `timerTick` preserves `crossSubsystemInvariant`.
     TimerTick decrements the current thread's time-slice within the TCB
@@ -1904,10 +1948,11 @@ theorem timerTick_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-C (F-08): `switchDomain` preserves `crossSubsystemInvariant`.
     Domain switch (M-05) saves the outgoing thread's register context via
@@ -1927,10 +1972,11 @@ theorem switchDomain_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-C (F-08): `scheduleDomain` preserves `crossSubsystemInvariant`.
     Domain scheduling (M-05) decrements the domain time remaining; on expiry,
@@ -1950,10 +1996,11 @@ theorem scheduleDomain_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-C (F-08): `suspendThread` preserves `crossSubsystemInvariant`.
     Thread suspension performs a multi-step cleanup sequence (D1-G): revert
@@ -1975,10 +2022,11 @@ theorem suspendThread_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-C (F-08): `resumeThread` preserves `crossSubsystemInvariant`.
     Thread resumption (D1-H) sets `threadState := .Ready`, `ipcState := .ready`,
@@ -1999,10 +2047,11 @@ theorem resumeThread_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 -- ============================================================================
 -- AD4: Retype bridge variant (objectIndex may grow)
@@ -2025,15 +2074,16 @@ theorem crossSubsystemInvariant_retype_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' := by
-  obtain ⟨_, h1i, h2, _, _, h5, _, _, _, _⟩ := hPre
+  obtain ⟨_, h1i, h2, _, _, h5, _, _, _, _, _⟩ := hPre
   exact ⟨hRegEpValid,
          registryInterfaceValid_frame st st' hSvcReg hIfaceReg h1i,
          registryDependencyConsistent_frame st st' hServices h2,
          hEndpointQ, hNotifWait,
          serviceGraphInvariant_monotone st st' hServices hObjIdxGrow h5,
-         hScStore, hScDual, hScRunQ, hBlockAcyclic⟩
+         hScStore, hScDual, hScRunQ, hBlockAcyclic, hLockstep⟩
 
 -- ============================================================================
 -- AD4-D: Capability operation cross-subsystem bridge lemmas
@@ -2057,10 +2107,11 @@ theorem cspaceMint_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-D (F-08): `cspaceCopy` preserves `crossSubsystemInvariant`.
     Capability copy duplicates a capability into a target CNode slot.
@@ -2078,10 +2129,11 @@ theorem cspaceCopy_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-D (F-08): `cspaceMove` preserves `crossSubsystemInvariant`.
     Capability move transfers a capability between CNode slots (insert + delete).
@@ -2099,10 +2151,11 @@ theorem cspaceMove_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-D (F-08): `cspaceMutate` preserves `crossSubsystemInvariant`.
     Capability mutate modifies a capability's badge within its CNode slot. -/
@@ -2119,10 +2172,11 @@ theorem cspaceMutate_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-D (F-08): `cspaceInsertSlot` preserves `crossSubsystemInvariant`.
     Inserts a capability into a specific CNode slot via `storeObject`. -/
@@ -2139,10 +2193,11 @@ theorem cspaceInsertSlot_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-D (F-08): `cspaceDeleteSlot` preserves `crossSubsystemInvariant`.
     Clears a CNode slot via `storeObject`. -/
@@ -2159,10 +2214,11 @@ theorem cspaceDeleteSlot_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-D (F-08): `cspaceRevoke` preserves `crossSubsystemInvariant`.
     Iterates over CDT children and deletes derived capabilities. May modify
@@ -2180,10 +2236,11 @@ theorem cspaceRevoke_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 -- ============================================================================
 -- AD4-E: SchedContext operation cross-subsystem bridge lemmas
@@ -2205,10 +2262,11 @@ theorem schedContextConfigure_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-E (F-08): `schedContextBind` preserves `crossSubsystemInvariant`.
     Updates SchedContext `boundThread` and TCB `schedContextBinding` fields
@@ -2227,10 +2285,11 @@ theorem schedContextBind_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-E (F-08): `schedContextUnbind` preserves `crossSubsystemInvariant`.
     Clears SchedContext `boundThread` and TCB `schedContextBinding` fields.
@@ -2248,10 +2307,11 @@ theorem schedContextUnbind_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-E (F-08): `schedContextYieldTo` preserves `crossSubsystemInvariant`.
     Transfers budget between SchedContexts. Modifies SchedContext objects
@@ -2270,10 +2330,11 @@ theorem schedContextYieldTo_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 -- ============================================================================
 -- AD4-F: Priority management cross-subsystem bridge lemmas
@@ -2296,10 +2357,11 @@ theorem setPriority_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-F (F-08): `setMCPriorityOp` preserves `crossSubsystemInvariant`.
     Updates TCB maximum controlled priority (MCP) and potentially effective
@@ -2318,10 +2380,11 @@ theorem setMCPriority_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 -- ============================================================================
 -- AD4-G: VSpace operation cross-subsystem bridge lemmas
@@ -2344,10 +2407,11 @@ theorem vspaceMapPage_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-G (F-08): `vspaceUnmapPage` preserves `crossSubsystemInvariant`.
     Removes a page mapping from a VSpaceRoot object via `storeObject`.
@@ -2365,10 +2429,11 @@ theorem vspaceUnmapPage_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 -- ============================================================================
 -- AD4-H: IPC buffer and remaining operation bridges
@@ -2393,10 +2458,11 @@ theorem setIPCBuffer_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 -- ============================================================================
 -- AD4-I: Lifecycle retype operation cross-subsystem bridge lemmas
@@ -2419,10 +2485,11 @@ theorem lifecycleRetype_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_retype_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdxGrow
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-I (F-08): `lifecycleRetypeWithCleanup` preserves `crossSubsystemInvariant`.
     Performs pre-retype cleanup (queue removal, service revocation, CDT detach)
@@ -2441,10 +2508,11 @@ theorem lifecycleRetypeWithCleanup_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_retype_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdxGrow
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 /-- AD4-I (F-08): `retypeFromUntyped` preserves `crossSubsystemInvariant`.
     Creates a child object from untyped memory via two `storeObject` calls
@@ -2463,10 +2531,11 @@ theorem retypeFromUntyped_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_retype_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdxGrow
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 -- ============================================================================
 -- AG5-F: Interrupt dispatch cross-subsystem bridge
@@ -2495,9 +2564,10 @@ theorem handleInterrupt_crossSubsystemInvariant_bridge
     (hScStore : schedContextStoreConsistent st')
     (hScDual : schedContextNotDualBound st')
     (hScRunQ : schedContextRunQueueConsistent st')
-    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st') :
+    (hBlockAcyclic : PriorityInheritance.blockingAcyclic st')
+    (hLockstep : lifecycleObjectTypeLockstep st') :
     crossSubsystemInvariant st' :=
   crossSubsystemInvariant_objects_change_bridge st st' hPre hServices hSvcReg hIfaceReg hObjIdx
-    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic
+    hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep
 
 end SeLe4n.Kernel

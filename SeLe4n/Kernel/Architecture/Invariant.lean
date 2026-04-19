@@ -750,13 +750,24 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
            by exact hR⟩
   -- vspaceInvariantBundle
   · exact advanceTimerState_preserves_vspaceInvariantBundle ticks st hVsp
-  -- crossSubsystemInvariant (T5-J + U4-G + Z9-D + AE5-C + AF1-B: 10 conjuncts)
-  · obtain ⟨h1, h1i, h2, h3, h4, h5, h6, h7, h8, h9⟩ := hCross
-    exact ⟨h1, h1i, h2, h3, h4, advanceTimerState_preserves_serviceGraphInvariant ticks st h5,
+  -- crossSubsystemInvariant (T5-J + U4-G + Z9-D + AE5-C + AF1-B + AM4-A: 11 conjuncts)
+  · obtain ⟨h1, h1i, h2, h3, h4, h5, h6, h7, h8, h9, h10⟩ := hCross
+    refine ⟨h1, h1i, h2, h3, h4, advanceTimerState_preserves_serviceGraphInvariant ticks st h5,
            h6, h7, h8,
            PriorityInheritance.blockingAcyclic_frame st (advanceTimerState ticks st) h9
              (fun _ => by simp [PriorityInheritance.blockingServer, advanceTimerState])
-             (by simp [advanceTimerState])⟩
+             (by simp [advanceTimerState]), ?_⟩
+    -- AM4-A: advanceTimerState preserves both `objects` and `lifecycle.objectTypes`,
+    -- so the lockstep invariant transports unchanged.
+    intro oid obj hObj'
+    have hObjEq : (advanceTimerState ticks st).objects = st.objects := by
+      simp [advanceTimerState]
+    have hTyEq : (advanceTimerState ticks st).lifecycle.objectTypes
+        = st.lifecycle.objectTypes := by
+      simp [advanceTimerState]
+    rw [hObjEq] at hObj'
+    rw [hTyEq]
+    exact h10 oid obj hObj'
 
 -- ============================================================================
 -- AG7-D: writeRegisterState preserves proofLayerInvariantBundle
@@ -857,11 +868,11 @@ theorem writeRegisterState_preserves_proofLayerInvariantBundle
     exact ⟨by exact hP, by exact hL,
            writeRegisterState_preserves_capabilityInvariantBundle reg value st hC,
            by exact hR⟩
-  -- crossSubsystemInvariant: objects/scheduler/services unchanged
-  · obtain ⟨h1, h1i, h2, h3, h4, h5, h6, h7, h8, h9⟩ := hCross
+  -- crossSubsystemInvariant: objects/scheduler/services unchanged (AM4-A: 11 conjuncts)
+  · obtain ⟨h1, h1i, h2, h3, h4, h5, h6, h7, h8, h9, h10⟩ := hCross
     have hSvcEq : (writeRegisterState reg value st).services = st.services := rfl
     refine ⟨by exact h1, by exact h1i, by exact h2, by exact h3, by exact h4, ?_,
-           by exact h6, by exact h7, by exact h8, ?_⟩
+           by exact h6, by exact h7, by exact h8, ?_, ?_⟩
     -- serviceGraphInvariant
     · obtain ⟨hAcyc, hBound⟩ := h5
       exact ⟨fun a hPath => hAcyc a (serviceNontrivialPath_of_services_eq hSvcEq hPath),
@@ -870,6 +881,15 @@ theorem writeRegisterState_preserves_proofLayerInvariantBundle
     · exact PriorityInheritance.blockingAcyclic_frame st (writeRegisterState reg value st) h9
         (fun _ => by simp [PriorityInheritance.blockingServer, writeRegisterState])
         (by simp [writeRegisterState])
+    -- AM4-A: lifecycleObjectTypeLockstep — writeRegisterState leaves
+    -- objects and lifecycle.objectTypes unchanged.
+    · intro oid obj hObj'
+      have hObjEq : (writeRegisterState reg value st).objects = st.objects := rfl
+      have hTyEq : (writeRegisterState reg value st).lifecycle.objectTypes
+          = st.lifecycle.objectTypes := rfl
+      rw [hObjEq] at hObj'
+      rw [hTyEq]
+      exact h10 oid obj hObj'
   -- schedulerInvariantBundleExtended: swap contextMatchesCurrent in inner Full
   · obtain ⟨⟨hBase, hTs, hCts, hEdf, _, hRunn, hPri, hDom, hDomE⟩,
             hBud, hCBud, hWf, hRq, hBind, hEff, hBound⟩ := hExt
@@ -1064,11 +1084,11 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
     exact ⟨by exact hP, by exact hL,
            ⟨by exact h1, by exact h2, by exact h3, by exact h4, by exact h5, by exact h6⟩,
            by exact hR⟩
-  -- 8. crossSubsystemInvariant: objects/services/serviceRegistry unchanged
-  · obtain ⟨h1, h1i, h2, h3, h4, h5, h6, h7, h8, h9⟩ := hCross
+  -- 8. crossSubsystemInvariant: objects/services/serviceRegistry unchanged (AM4-A: 11 conjuncts)
+  · obtain ⟨h1, h1i, h2, h3, h4, h5, h6, h7, h8, h9, h10⟩ := hCross
     have hSvcEq : (contextSwitchState newTid newRegs st).services = st.services := rfl
     refine ⟨by exact h1, by exact h1i, by exact h2, by exact h3, by exact h4, ?_,
-           by exact h6, by exact h7, by exact h8, ?_⟩
+           by exact h6, by exact h7, by exact h8, ?_, ?_⟩
     -- serviceGraphInvariant
     · obtain ⟨hAcyc, hBound⟩ := h5
       exact ⟨fun a hPath => hAcyc a (serviceNontrivialPath_of_services_eq hSvcEq hPath),
@@ -1077,6 +1097,14 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
     · exact PriorityInheritance.blockingAcyclic_frame st (contextSwitchState newTid newRegs st) h9
         (fun _ => by simp [PriorityInheritance.blockingServer, contextSwitchState])
         (by simp [contextSwitchState])
+    -- AM4-A: lifecycleObjectTypeLockstep
+    · intro oid obj hObj'
+      have hObjEq : (contextSwitchState newTid newRegs st).objects = st.objects := rfl
+      have hTyEq : (contextSwitchState newTid newRegs st).lifecycle.objectTypes
+          = st.lifecycle.objectTypes := rfl
+      rw [hObjEq] at hObj'
+      rw [hTyEq]
+      exact h10 oid obj hObj'
   -- 10. schedulerInvariantBundleExtended: rebuild with new current-thread predicates
   · obtain ⟨hFull, hBud, _, hWf, hRq, hBind, hEff, hBound⟩ := hExt
     obtain ⟨⟨_, hUniq, _⟩, hTs, _, _, _, hRunn, hPri, hDom, hDomE⟩ := hFull

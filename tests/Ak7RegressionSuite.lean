@@ -637,6 +637,58 @@ def am1_02_storeObject_updates_both_in_lockstep : IO Unit := do
       expect "am1-02 objects carries tcb" objOk
       expect "am1-02 objectTypes carries .tcb" tyOk
 
+/-- AM4-01: The default SystemState satisfies `crossSubsystemInvariant`
+including the new 11th conjunct (`lifecycleObjectTypeLockstep`). Uses
+the extended `default_crossSubsystemInvariant` theorem from AM4-C. -/
+def am4_01_default_bundle_has_lockstep : IO Unit := do
+  -- `default_crossSubsystemInvariant` is a Prop-level witness; the test
+  -- simply exists to ensure the extended 11-tuple shape type-checks.
+  -- We elaborate the projection explicitly so any future regression
+  -- that shrinks the bundle would be caught here.
+  let st : SystemState := default
+  let hBundle := SeLe4n.Kernel.default_crossSubsystemInvariant
+  let hLockstep : SeLe4n.Kernel.lifecycleObjectTypeLockstep st :=
+    SeLe4n.Kernel.crossSubsystemInvariant_to_lifecycleObjectTypeLockstep st hBundle
+  -- Exercise the projected witness via a probe — on the default state
+  -- every `objects[oid]?` is `none`, so the predicate holds vacuously.
+  let probe : ObjId := ⟨400⟩
+  expect "am4-01 lockstep projection exists" (st.objects[probe]?.isNone)
+  expect "am4-01 objectTypes also absent"
+    (st.lifecycle.objectTypes[probe]?.isNone)
+  -- Suppress unused-variable warnings.
+  let _ := hLockstep
+
+/-- AM4-02: `crossSubsystemInvariant_to_blockingAcyclic` still
+resolves correctly after the 11-tuple extension (the projection
+reindexes from `h.2.2.2.2.2.2.2.2.2` to `h.2.2.2.2.2.2.2.2.2.1`). -/
+def am4_02_blockingAcyclic_projection_reindex_ok : IO Unit := do
+  let st : SystemState := default
+  let hBundle := SeLe4n.Kernel.default_crossSubsystemInvariant
+  let hAcyc := SeLe4n.Kernel.crossSubsystemInvariant_to_blockingAcyclic st hBundle
+  -- Exercise: the projection type-checks at the new path.
+  let _ := hAcyc
+  expect "am4-02 blockingAcyclic projection reindexed" true
+
+/-- AM4-03: After storing a TCB in a seeded state that satisfies the
+extended bundle, the post-state also satisfies `lifecycleObjectTypeLockstep`
+via AM1-B. Runtime witness for the cross-subsystem transport. -/
+def am4_03_storeObject_preserves_lockstep_under_bundle : IO Unit := do
+  let id : ObjId := ⟨401⟩
+  let t := minimalTcb ⟨401⟩
+  let base : SystemState := default
+  match storeObject id (.tcb t) base with
+  | .error e => throw <| IO.userError s!"am4-03 storeObject error: {repr e}"
+  | .ok (_, st') =>
+      -- Both tables carry the new entry and match at `.tcb` / `.tcb`
+      -- respectively, confirming the predicate holds post-store.
+      let objOk : Bool :=
+        match st'.objects[id]? with | some (.tcb _) => true | _ => false
+      let tyOk : Bool :=
+        match st'.lifecycle.objectTypes[id]? with
+        | some .tcb => true | _ => false
+      expect "am4-03 post-storeObject objects has tcb" objOk
+      expect "am4-03 post-storeObject objectTypes has .tcb" tyOk
+
 /-- AM1-03: After a cross-kind rejection via `storeObjectKindChecked`,
 the pre-state object and its objectType entry remain consistent (the
 rejection leaves the state unchanged, so lockstep is preserved
@@ -850,6 +902,10 @@ def main : IO Unit := do
   am1_01_default_lockstep
   am1_02_storeObject_updates_both_in_lockstep
   am1_03_kindChecked_rejection_preserves_lockstep
+  -- AM4 (WS-AM): crossSubsystemInvariant 11th-conjunct integration
+  am4_01_default_bundle_has_lockstep
+  am4_02_blockingAcyclic_projection_reindex_ok
+  am4_03_storeObject_preserves_lockstep_under_bundle
   -- AL10 (WS-AL): cross-cutting integration — defense-in-depth covering
   -- AK7-E + AK7-F + AK7-I closures
   al10_01_validThreadId_rejects_sentinel
