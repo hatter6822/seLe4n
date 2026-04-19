@@ -38,9 +38,15 @@ done
 # `rg` enables regex by default — the `-E` short-flag is `--encoding` in
 # rg (not "extended regex" like grep); don't pass it.
 # Sums per-file counts into a single repo-wide total.
+#
+# rg exits 1 when no files match the pattern; under `set -euo pipefail`
+# that would kill the script. Capture rg's output with `|| true` so the
+# "no matches" exit does not abort the whole capture run; awk then emits
+# the canonical count of 0 from an empty input.
 rg_count() {
-  rg -c "$1" -g '*.lean' SeLe4n/ 2>/dev/null \
-    | awk -F: '{s+=$2} END {print s+0}'
+  local out
+  out=$(rg -c "$1" -g '*.lean' SeLe4n/ 2>/dev/null || true)
+  printf '%s\n' "${out}" | awk -F: '{s+=$2} END {print s+0}'
 }
 
 # rg_count_excl_helpers — like rg_count but excludes files that by
@@ -48,10 +54,11 @@ rg_count() {
 # SeLe4n/Model/State.lean). Counted metrics using this exclusion reflect
 # only CALLER use of the raw pattern, which is what the cascade removes.
 rg_count_excl_helpers() {
-  rg -c "$1" -g '*.lean' \
+  local out
+  out=$(rg -c "$1" -g '*.lean' \
     -g '!SeLe4n/Model/State.lean' \
-    SeLe4n/ 2>/dev/null \
-    | awk -F: '{s+=$2} END {print s+0}'
+    SeLe4n/ 2>/dev/null || true)
+  printf '%s\n' "${out}" | awk -F: '{s+=$2} END {print s+0}'
 }
 
 # Excl-helpers variant: RAW_MATCH_* and RAW_LOOKUP_* metrics track

@@ -57,7 +57,19 @@ jobs:
       - name: Install shellcheck and ripgrep
         run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck ripgrep
 
+      # Tier 0 hygiene only checks cheap rg-based monotonicity metrics.
+      # Lake build, the ak7 regression suite, and the Rust workspace tests
+      # already run in dedicated CI jobs (Tier 1, Tier 2, Rust ABI Tests) —
+      # re-running them inside the monotonicity baseline script would
+      # duplicate work and, on runners that ship cargo without the pinned
+      # Rust toolchain, fail at `cargo test` before the hygiene checks can
+      # finish. Opt out via the `AL0_SKIP_*` env vars the baseline script
+      # already documents; the monotonicity guard treats `SKIPPED` as a pass.
       - name: Run architecture-targeted fast gate
+        env:
+          AL0_SKIP_BUILD: '1'
+          AL0_SKIP_AK7: '1'
+          AL0_SKIP_CARGO: '1'
         run: ./scripts/ci_capture_timing.sh arm64-fast ./scripts/test_fast.sh
 
       - name: Upload CI telemetry (arm64 lane)
