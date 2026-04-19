@@ -45,7 +45,7 @@ def test_t01_checked_rejects_high_pa : IO Unit := do
   let stub := stubOf #[1, 0x1000, (2^44) + 1, 1]
   match decodeVSpaceMapArgsChecked stub maxASID maxPA with
   | .error .addressOutOfBounds =>
-    IO.println "AK3-E.T01 check passed [checked rejects PA ≥ 2^44]"
+    IO.println "check passed [checked rejects PA ≥ 2^44]"
   | .error e =>
     throw <| IO.userError s!"T01: expected addressOutOfBounds, got {toString e}"
   | .ok _ =>
@@ -58,7 +58,7 @@ def test_t02_checked_accepts_low_pa : IO Unit := do
   let stub := stubOf #[1, 0x1000, 0x2000, 1]
   match decodeVSpaceMapArgsChecked stub maxASID maxPA with
   | .ok args =>
-    expectCond "AK3-E.T02" "paddr in range" (args.paddr.toNat == 0x2000)
+    expectCond "decode-validation" "paddr in range" (args.paddr.toNat == 0x2000)
   | .error e =>
     throw <| IO.userError s!"T02: expected ok, got {toString e}"
 
@@ -69,7 +69,7 @@ def test_t03_checked_boundary_rejected : IO Unit := do
   let stub := stubOf #[1, 0x1000, 2^44, 1]
   match decodeVSpaceMapArgsChecked stub maxASID maxPA with
   | .error .addressOutOfBounds =>
-    IO.println "AK3-E.T03 check passed [PA = 2^44 rejected (≥ bound)]"
+    IO.println "check passed [PA = 2^44 rejected (≥ bound)]"
   | _ =>
     throw <| IO.userError "T03: expected addressOutOfBounds at boundary"
 
@@ -79,7 +79,7 @@ def test_t04_sc_rejects_high_priority : IO Unit := do
   let stub := stubOf #[1000, 10000, 256, 5000, 0]
   match decodeSchedContextConfigureArgsChecked stub with
   | .error .invalidArgument =>
-    IO.println "AK3-J.T04 check passed [priority > 255 rejected]"
+    IO.println "check passed [priority > 255 rejected]"
   | _ =>
     throw <| IO.userError "T04: expected invalidArgument for priority > 255"
 
@@ -88,7 +88,7 @@ def test_t05_sc_rejects_high_domain : IO Unit := do
   let stub := stubOf #[1000, 10000, 100, 5000, 16]
   match decodeSchedContextConfigureArgsChecked stub with
   | .error .invalidArgument =>
-    IO.println "AK3-J.T05 check passed [domain ≥ 16 rejected]"
+    IO.println "check passed [domain ≥ 16 rejected]"
   | _ =>
     throw <| IO.userError "T05: expected invalidArgument for domain ≥ 16"
 
@@ -97,7 +97,7 @@ def test_t06_sc_rejects_zero_budget : IO Unit := do
   let stub := stubOf #[0, 10000, 100, 5000, 0]
   match decodeSchedContextConfigureArgsChecked stub with
   | .error .invalidArgument =>
-    IO.println "AK3-J.T06 check passed [budget = 0 rejected]"
+    IO.println "check passed [budget = 0 rejected]"
   | _ =>
     throw <| IO.userError "T06: expected invalidArgument for budget = 0"
 
@@ -106,7 +106,7 @@ def test_t07_sc_rejects_zero_period : IO Unit := do
   let stub := stubOf #[1000, 0, 100, 5000, 0]
   match decodeSchedContextConfigureArgsChecked stub with
   | .error .invalidArgument =>
-    IO.println "AK3-J.T07 check passed [period = 0 rejected]"
+    IO.println "check passed [period = 0 rejected]"
   | _ =>
     throw <| IO.userError "T07: expected invalidArgument for period = 0"
 
@@ -116,10 +116,10 @@ def test_t08_sc_accepts_valid : IO Unit := do
   let stub := stubOf #[1000, 10000, 100, 5000, 1]
   match decodeSchedContextConfigureArgsChecked stub with
   | .ok args =>
-    expectCond "AK3-J.T08" "budget" (args.budget == 1000)
-    expectCond "AK3-J.T08" "period" (args.period == 10000)
-    expectCond "AK3-J.T08" "priority" (args.priority == 100)
-    expectCond "AK3-J.T08" "domain" (args.domain == 1)
+    expectCond "decode-validation" "budget" (args.budget == 1000)
+    expectCond "decode-validation" "period" (args.period == 10000)
+    expectCond "decode-validation" "priority" (args.priority == 100)
+    expectCond "decode-validation" "domain" (args.domain == 1)
   | .error e =>
     throw <| IO.userError s!"T08: expected ok, got {toString e}"
 
@@ -128,8 +128,8 @@ def test_t09_sc_boundary_accepted : IO Unit := do
   let stub := stubOf #[1, 1, 255, 0, 15]
   match decodeSchedContextConfigureArgsChecked stub with
   | .ok args =>
-    expectCond "AK3-J.T09" "priority boundary" (args.priority == 255)
-    expectCond "AK3-J.T09" "domain boundary" (args.domain == 15)
+    expectCond "decode-validation" "priority boundary" (args.priority == 255)
+    expectCond "decode-validation" "domain boundary" (args.domain == 15)
   | .error _ =>
     throw <| IO.userError "T09: expected ok at boundary"
 

@@ -9,11 +9,12 @@
 import SeLe4n.Kernel.Scheduler.Liveness
 
 /-!
-# D5-O: Liveness Suite — Invariant Surface Anchor Tests
+# Liveness Suite — Invariant Surface Anchor Tests
 
-Tier 3 invariant surface anchors for the bounded latency theorem (D5).
-These tests verify that key liveness theorems and definitions exist and
-have the expected types, anchoring the proof surface against regressions.
+Tier 3 invariant surface anchors for the bounded-latency (WCRT)
+theorem.  These tests verify that key liveness theorems and
+definitions exist and have the expected types, anchoring the proof
+surface against regressions.
 -/
 
 open SeLe4n.Kernel.Liveness
@@ -127,13 +128,13 @@ open SeLe4n.Model
 #check @pip_wcrt_integration
 
 -- ============================================================================
--- Surface anchor: D4 integration (from BoundedInversion)
+-- Surface anchor: Priority-inheritance bounded inversion
 -- ============================================================================
 
 #check @SeLe4n.Kernel.PriorityInheritance.pip_bounded_inversion
 
 -- ============================================================================
--- Surface anchor: AF1 — new theorems and renames
+-- Surface anchor: blockingChain/blockingAcyclic/pip_congruence theorems
 -- ============================================================================
 
 #check @SeLe4n.Kernel.PriorityInheritance.blockingChain_step
@@ -147,7 +148,7 @@ open SeLe4n.Model
 -- ============================================================================
 
 def main : IO Unit := do
-  IO.println "=== Liveness Suite (D5-O) ==="
+  IO.println "=== Liveness Suite ==="
   IO.println "  ✓ TraceModel types: SchedulerStep, SchedulerTrace, ValidTrace"
   IO.println "  ✓ Query predicates: selectedAt, runnableAt, budgetAvailableAt"
   IO.println "  ✓ Counting: countHigherOrEqual, maxBudgetInBand, maxPeriodInBand"
@@ -158,8 +159,8 @@ def main : IO Unit := do
   IO.println "  ✓ DomainRotation: domainRotationBound, maxDomainLength_ge_each"
   IO.println "  ✓ WCRT: WCRTHypotheses, wcrtBound_unfold"
   IO.println "  ✓ PIP: countHigherOrEqual_mono_threshold, pip_enhanced_wcrt_le_base"
-  IO.println "  ✓ D4 integration: pip_bounded_inversion"
-  IO.println "  ✓ AF1: blockingChain_step, blockingChain_congr, blockingAcyclic_frame"
-  IO.println "  ✓ AF1: pip_congruence, pip_revert_congruence, crossSubsystem projection"
+  IO.println "  ✓ Priority-inheritance bounded inversion"
+  IO.println "  ✓ blockingChain_step, blockingChain_congr, blockingAcyclic_frame"
+  IO.println "  ✓ pip_congruence, pip_revert_congruence, crossSubsystem projection"
   IO.println "=== All 63 surface anchors verified ==="
   return ()

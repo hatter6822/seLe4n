@@ -117,7 +117,7 @@ root = "tests.DecodeValidationSuite"
 name = "abi_roundtrip_suite"
 root = "tests.AbiRoundtripSuite"
 
-# AK7: Foundational Model regression suite
+# Model integrity regression suite — kernel model type/kind/null discipline
 [[lean_exe]]
-name = "ak7_regression_suite"
-root = "tests.Ak7RegressionSuite"
+name = "model_integrity_suite"
+root = "tests.ModelIntegritySuite"

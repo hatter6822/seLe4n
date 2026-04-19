@@ -297,28 +297,28 @@ def runInformationFlowChecks : IO Unit := do
   -- 3-domain linear order: domain 0 → domain 1 → domain 2
   let threeDomain := SeLe4n.Kernel.DomainFlowPolicy.linearOrder
 
-  expect "H-04 linear order: domain 0 flows to domain 1"
+  expect "linear order: domain 0 flows to domain 1"
     (SeLe4n.Kernel.domainFlowsTo threeDomain ⟨0⟩ ⟨1⟩)
 
-  expect "H-04 linear order: domain 1 flows to domain 2"
+  expect "linear order: domain 1 flows to domain 2"
     (SeLe4n.Kernel.domainFlowsTo threeDomain ⟨1⟩ ⟨2⟩)
 
-  expect "H-04 linear order: domain 0 flows to domain 2 (transitive)"
+  expect "linear order: domain 0 flows to domain 2 (transitive)"
     (SeLe4n.Kernel.domainFlowsTo threeDomain ⟨0⟩ ⟨2⟩)
 
-  expect "H-04 linear order: domain 2 cannot flow to domain 0"
+  expect "linear order: domain 2 cannot flow to domain 0"
     (!(SeLe4n.Kernel.domainFlowsTo threeDomain ⟨2⟩ ⟨0⟩))
 
-  expect "H-04 linear order: domain 2 cannot flow to domain 1"
+  expect "linear order: domain 2 cannot flow to domain 1"
     (!(SeLe4n.Kernel.domainFlowsTo threeDomain ⟨2⟩ ⟨1⟩))
 
-  expect "H-04 linear order: self-flow (reflexive)"
+  expect "linear order: self-flow (reflexive)"
     (SeLe4n.Kernel.domainFlowsTo threeDomain ⟨1⟩ ⟨1⟩)
 
   -- Test allowAll policy
   let allPolicy := SeLe4n.Kernel.DomainFlowPolicy.allowAll
 
-  expect "H-04 allowAll: any domain flows to any domain"
+  expect "allowAll: any domain flows to any domain"
     (SeLe4n.Kernel.domainFlowsTo allPolicy ⟨5⟩ ⟨0⟩ &&
      SeLe4n.Kernel.domainFlowsTo allPolicy ⟨0⟩ ⟨99⟩)
 
@@ -326,17 +326,17 @@ def runInformationFlowChecks : IO Unit := do
   let embeddedPublic := SeLe4n.Kernel.embedLegacyLabel publicLabel
   let embeddedSecret := SeLe4n.Kernel.embedLegacyLabel secretLabel
 
-  expect "H-04 legacy embedding: public maps to domain 0"
+  expect "legacy embedding: public maps to domain 0"
     (embeddedPublic.id = 0)
 
-  expect "H-04 legacy embedding: kernelTrusted maps to domain 3"
+  expect "legacy embedding: kernelTrusted maps to domain 3"
     (embeddedSecret.id = 3)
 
-  expect "H-04 legacy embedding: public→secret flow preserved under linearOrder"
+  expect "legacy embedding: public→secret flow preserved under linearOrder"
     (SeLe4n.Kernel.domainFlowsTo SeLe4n.Kernel.DomainFlowPolicy.linearOrder
       embeddedPublic embeddedSecret)
 
-  expect "H-04 legacy embedding: secret→public flow denied under linearOrder"
+  expect "legacy embedding: secret→public flow denied under linearOrder"
     (!(SeLe4n.Kernel.domainFlowsTo SeLe4n.Kernel.DomainFlowPolicy.linearOrder
       embeddedSecret embeddedPublic))
 
@@ -349,13 +349,13 @@ def runInformationFlowChecks : IO Unit := do
     serviceDomainOf := fun _ => ⟨0⟩
   }
 
-  expect "H-04 generic context: thread 1 (domain 0) → endpoint (domain 1)"
+  expect "generic context: thread 1 (domain 0) → endpoint (domain 1)"
     (SeLe4n.Kernel.genericFlowCheck genericCtx (genericCtx.threadDomainOf ⟨1⟩) (genericCtx.endpointDomainOf ⟨10⟩))
 
-  expect "H-04 generic context: thread 2 (domain 1) → endpoint (domain 1) (same domain)"
+  expect "generic context: thread 2 (domain 1) → endpoint (domain 1) (same domain)"
     (SeLe4n.Kernel.genericFlowCheck genericCtx (genericCtx.threadDomainOf ⟨2⟩) (genericCtx.endpointDomainOf ⟨10⟩))
 
-  expect "H-04 generic context: object 2 (domain 2) cannot flow to service (domain 0)"
+  expect "generic context: object 2 (domain 2) cannot flow to service (domain 0)"
     (!(SeLe4n.Kernel.genericFlowCheck genericCtx (genericCtx.objectDomainOf ⟨2⟩) (genericCtx.serviceDomainOf ⟨1⟩)))
 
   -- Test per-endpoint flow policy
@@ -365,40 +365,40 @@ def runInformationFlowChecks : IO Unit := do
   let epPolicy : SeLe4n.Kernel.EndpointFlowPolicy :=
     { endpointPolicy := fun eid => if eid = ⟨10⟩ then some customEndpointPolicy else none }
 
-  expect "H-04 per-endpoint: endpoint 10 has custom policy (same-domain only)"
+  expect "per-endpoint: endpoint 10 has custom policy (same-domain only)"
     (SeLe4n.Kernel.endpointFlowCheck genericCtx epPolicy ⟨10⟩ ⟨1⟩ ⟨1⟩ &&
      !(SeLe4n.Kernel.endpointFlowCheck genericCtx epPolicy ⟨10⟩ ⟨0⟩ ⟨1⟩))
 
-  expect "H-04 per-endpoint: endpoint 20 falls back to global policy"
+  expect "per-endpoint: endpoint 20 falls back to global policy"
     (SeLe4n.Kernel.endpointFlowCheck genericCtx epPolicy ⟨20⟩ ⟨0⟩ ⟨1⟩)
 
-  IO.println "WS-E5/H-04 parameterized domain lattice checks passed"
+  IO.println "parameterized domain lattice checks passed"
 
   -- =========================================================================
   -- WS-E5/M-07: Enforcement boundary classification checks
   -- =========================================================================
 
-  -- V2-B/C: Updated from 9 to 11 policy-gated (added notificationWaitChecked,
-  -- endpointReplyRecvChecked)
-  expect "M-07/Q1/U5/V2: enforcement boundary: 11 policy-gated operations defined"
+  -- 11 policy-gated ops: 9 original + notificationWaitChecked + endpointReplyRecvChecked
+  expect "enforcement boundary: 11 policy-gated operations defined"
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
       match c with | .policyGated _ => true | _ => false)).length == 11)
 
-  expect "M-07 enforcement boundary: capability-only operations defined"
+  expect "enforcement boundary: capability-only operations defined"
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
       match c with | .capabilityOnly _ => true | _ => false)).length > 0)
 
-  expect "M-07 enforcement boundary: read-only operations defined"
+  expect "enforcement boundary: read-only operations defined"
     ((SeLe4n.Kernel.enforcementBoundary.filter (fun c =>
       match c with | .readOnly _ => true | _ => false)).length > 0)
 
-  -- V2-B/C/Z8-M/D2/D3/AC4-D: Updated from 30 to 33 total classified operations
-  expect "M-07/U5/V2/Z8-M/D2/D3/AC4-D: enforcement boundary: total 33 classified operations"
+  -- 33 classified ops: 30 original + suspend/resume + setPriority + setMCPriority +
+  -- setIPCBuffer (priority/IPC-buffer ops added after the initial classification).
+  expect "enforcement boundary: total 33 classified operations"
     (SeLe4n.Kernel.enforcementBoundary.length == 33)
 
   -- Verify enforcement boundary: denied flows produce errors
   let deniedSendResult := SeLe4n.Kernel.endpointSendDualChecked secretSenderCtx ⟨10⟩ ⟨1⟩ testMsg default default default publicEndpointState
-  expect "M-07: enforcement boundary blocks cross-domain endpointSendDual"
+  expect "enforcement boundary blocks cross-domain endpointSendDual"
     (match deniedSendResult with
       | .error .flowDenied => true
       | _ => false)
@@ -406,13 +406,13 @@ def runInformationFlowChecks : IO Unit := do
   -- Verify that same-domain operations pass through unchecked
   let allowedSendResult := SeLe4n.Kernel.endpointSendDualChecked publicCtx ⟨10⟩ ⟨1⟩ testMsg default default default publicEndpointState
   let uncheckedSendResult := SeLe4n.Kernel.endpointSendDual ⟨10⟩ ⟨1⟩ testMsg publicEndpointState
-  expect "M-07: same-domain endpointSendDualChecked matches unchecked"
+  expect "same-domain endpointSendDualChecked matches unchecked"
     (match allowedSendResult, uncheckedSendResult with
       | .ok (_, s₁), .ok ((), s₂) => s₁.objects[(⟨10⟩ : SeLe4n.ObjId)]? == s₂.objects[(⟨10⟩ : SeLe4n.ObjId)]?
       | .error e₁, .error e₂ => e₁ = e₂
       | _, _ => false)
 
-  IO.println "WS-E5/M-07 enforcement boundary checks passed"
+  IO.println "enforcement boundary checks passed"
   IO.println "all WS-E5 information-flow maturity checks passed"
 
   -- =========================================================================
@@ -424,13 +424,13 @@ def runInformationFlowChecks : IO Unit := do
   let publicActiveDomain := publicProjection.activeDomain
   let adminActiveDomain := adminProjection.activeDomain
 
-  expect "WS-F3: activeDomain visible to public observer"
+  expect "activeDomain visible to public observer"
     (publicActiveDomain = sampleState.scheduler.activeDomain)
 
-  expect "WS-F3: activeDomain visible to admin observer"
+  expect "activeDomain visible to admin observer"
     (adminActiveDomain = sampleState.scheduler.activeDomain)
 
-  expect "WS-F3: activeDomain consistent across observers"
+  expect "activeDomain consistent across observers"
     (publicActiveDomain = adminActiveDomain)
 
   -- ---------- IRQ handler projection ----------
@@ -447,28 +447,28 @@ def runInformationFlowChecks : IO Unit := do
   let irqAdminProj := SeLe4n.Kernel.projectState sampleLabeling admin irqState
 
   -- Public observer sees IRQ 0 → oid 1 (public target)
-  expect "WS-F3: public observer sees IRQ handler to public object"
+  expect "public observer sees IRQ handler to public object"
     ((irqPublicProj.irqHandlers ⟨0⟩) = some ⟨1⟩)
 
   -- Public observer cannot see IRQ 1 → oid 2 (secret target)
-  expect "WS-F3: public observer cannot see IRQ handler to secret object"
+  expect "public observer cannot see IRQ handler to secret object"
     ((irqPublicProj.irqHandlers ⟨1⟩).isNone)
 
   -- Admin sees both IRQ handlers
-  expect "WS-F3: admin observer sees IRQ handler to public object"
+  expect "admin observer sees IRQ handler to public object"
     ((irqAdminProj.irqHandlers ⟨0⟩) = some ⟨1⟩)
 
-  expect "WS-F3: admin observer sees IRQ handler to secret object"
+  expect "admin observer sees IRQ handler to secret object"
     ((irqAdminProj.irqHandlers ⟨1⟩) = some ⟨2⟩)
 
   -- Unmapped IRQ returns none for both observers
-  expect "WS-F3: unmapped IRQ returns none for public observer"
+  expect "unmapped IRQ returns none for public observer"
     ((irqPublicProj.irqHandlers ⟨99⟩).isNone)
 
-  expect "WS-F3: unmapped IRQ returns none for admin observer"
+  expect "unmapped IRQ returns none for admin observer"
     ((irqAdminProj.irqHandlers ⟨99⟩).isNone)
 
-  IO.println "WS-F3 IRQ handler projection checks passed"
+  IO.println "IRQ handler projection checks passed"
 
   -- ---------- Object index projection ----------
   -- objectIndex is auto-built from builder objects list.
@@ -477,20 +477,20 @@ def runInformationFlowChecks : IO Unit := do
   let adminObjIndex := adminProjection.objectIndex
 
   -- Public observer sees only oid 1 in the object index
-  expect "WS-F3: public object index contains public oid"
+  expect "public object index contains public oid"
     (publicObjIndex.contains ⟨1⟩)
 
-  expect "WS-F3: public object index excludes secret oid"
+  expect "public object index excludes secret oid"
     (!publicObjIndex.contains ⟨2⟩)
 
   -- Admin sees both oids in the object index
-  expect "WS-F3: admin object index contains public oid"
+  expect "admin object index contains public oid"
     (adminObjIndex.contains ⟨1⟩)
 
-  expect "WS-F3: admin object index contains secret oid"
+  expect "admin object index contains secret oid"
     (adminObjIndex.contains ⟨2⟩)
 
-  IO.println "WS-F3 object index projection checks passed"
+  IO.println "object index projection checks passed"
 
   -- ---------- CNode slot filtering (F-22) ----------
   -- Build a CNode with caps targeting both public and secret objects.
@@ -519,35 +519,35 @@ def runInformationFlowChecks : IO Unit := do
   match cnodePublicProj.objects ⟨50⟩ with
   | some (.cnode cn) =>
     -- Slot 0 (target: public obj 1) should be present
-    expect "WS-F3/F-22: public observer sees cap slot targeting public object"
+    expect "public observer sees cap slot targeting public object"
       (cn.slots.contains ⟨0⟩)
     -- Slot 1 (target: secret obj 2) should be filtered out
-    expect "WS-F3/F-22: public observer cannot see cap slot targeting secret object"
+    expect "public observer cannot see cap slot targeting secret object"
       (!cn.slots.contains ⟨1⟩)
     -- Slot 2 (target: replyCap to public thread 1) should be present
-    expect "WS-F3/F-22: public observer sees reply cap to public thread"
+    expect "public observer sees reply cap to public thread"
       (cn.slots.contains ⟨2⟩)
     -- Verify slot count
-    expect "WS-F3/F-22: public observer sees exactly 2 of 3 slots"
+    expect "public observer sees exactly 2 of 3 slots"
       (cn.slots.size = 2)
   | _ =>
-    throw <| IO.userError "WS-F3/F-22: public observer should see CNode object at oid 50"
+    throw <| IO.userError "public observer should see CNode object at oid 50"
 
   -- Admin observer sees all slots (full clearance)
   match cnodeAdminProj.objects ⟨50⟩ with
   | some (.cnode cn) =>
-    expect "WS-F3/F-22: admin observer sees all 3 cap slots"
+    expect "admin observer sees all 3 cap slots"
       (cn.slots.size = 3)
   | _ =>
-    throw <| IO.userError "WS-F3/F-22: admin observer should see CNode object at oid 50"
+    throw <| IO.userError "admin observer should see CNode object at oid 50"
 
   -- Non-CNode objects pass through unchanged
   match cnodePublicProj.objects ⟨1⟩ with
   | some (.endpoint _) =>
-    expect "WS-F3/F-22: non-CNode object passes through unchanged"
+    expect "non-CNode object passes through unchanged"
       true
   | _ =>
-    throw <| IO.userError "WS-F3/F-22: endpoint at oid 1 should be visible to public observer"
+    throw <| IO.userError "endpoint at oid 1 should be visible to public observer"
 
   -- CNode slot filtering for .cnodeSlot target variant
   let cnodeSlotState :=
@@ -563,16 +563,16 @@ def runInformationFlowChecks : IO Unit := do
   let cnodeSlotProj := SeLe4n.Kernel.projectState cnodeLabeling reviewer cnodeSlotState
   match cnodeSlotProj.objects ⟨60⟩ with
   | some (.cnode cn) =>
-    expect "WS-F3/F-22: cnodeSlot target to public CNode is visible"
+    expect "cnodeSlot target to public CNode is visible"
       (cn.slots.contains ⟨0⟩)
-    expect "WS-F3/F-22: cnodeSlot target to secret CNode is filtered"
+    expect "cnodeSlot target to secret CNode is filtered"
       (!cn.slots.contains ⟨1⟩)
-    expect "WS-F3/F-22: cnodeSlot variant: exactly 1 of 2 slots visible"
+    expect "cnodeSlot variant: exactly 1 of 2 slots visible"
       (cn.slots.size = 1)
   | _ =>
-    throw <| IO.userError "WS-F3/F-22: CNode at oid 60 should be visible for cnodeSlot test"
+    throw <| IO.userError "CNode at oid 60 should be visible for cnodeSlot test"
 
-  IO.println "WS-F3/F-22 CNode slot filtering checks passed"
+  IO.println "CNode slot filtering checks passed"
 
   -- ---------- Full 7-field low-equivalence ----------
   -- Extend the distinct-state comparison to all 7 ObservableState fields.
@@ -587,10 +587,10 @@ def runInformationFlowChecks : IO Unit := do
     && irqMatch
     && publicProjectionSample.objectIndex = publicProjectionAlt.objectIndex
 
-  expect "WS-F3: full 7-field low-equivalence holds between distinct states"
+  expect "full 7-field low-equivalence holds between distinct states"
     fullLowEq7
 
-  IO.println "WS-F3 full 7-field low-equivalence check passed"
+  IO.println "full 7-field low-equivalence check passed"
 
   -- ---------- Q1: Service registry projection (serviceRestartChecked removed) ----------
   -- Build a state with a registered service for presence projection testing.
@@ -614,7 +614,7 @@ def runInformationFlowChecks : IO Unit := do
       serviceLabelOf := fun _ => publicLabel }
 
   let publicPresence := SeLe4n.Kernel.projectServicePresence sameDomainRegistryCtx reviewer registryState
-  expect "WS-F3/Q1: public observer sees registered service presence"
+  expect "public observer sees registered service presence"
     (publicPresence ⟨10⟩ = true)
 
   -- Cross-domain projection: public observer cannot see secret-domain service
@@ -625,10 +625,10 @@ def runInformationFlowChecks : IO Unit := do
       serviceLabelOf := fun sid => if sid = ⟨10⟩ then secretLabel else publicLabel }
 
   let hiddenPresence := SeLe4n.Kernel.projectServicePresence crossDomainRegistryCtx reviewer registryState
-  expect "WS-F3/Q1: public observer cannot see secret-domain service"
+  expect "public observer cannot see secret-domain service"
     (hiddenPresence ⟨10⟩ = false)
 
-  IO.println "WS-F3/Q1 service registry projection checks passed"
+  IO.println "service registry projection checks passed"
   IO.println "all WS-F3 information-flow completeness checks passed"
 
   -- ========================================================================
@@ -656,7 +656,7 @@ def runInformationFlowChecks : IO Unit := do
   let checkedSignal := SeLe4n.Kernel.notificationSignalChecked sameDomainNtfnCtx ⟨30⟩ ⟨1⟩ ⟨42⟩ ntfnState
   let uncheckedSignal := SeLe4n.Kernel.notificationSignal ⟨30⟩ ⟨42⟩ ntfnState
 
-  expect "WS-H8: same-domain notificationSignalChecked matches unchecked"
+  expect "same-domain notificationSignalChecked matches unchecked"
     (match checkedSignal, uncheckedSignal with
       | .ok ((), s₁), .ok ((), s₂) => s₁.objects[(⟨30⟩ : ObjId)]? == s₂.objects[(⟨30⟩ : ObjId)]?
       | .error e₁, .error e₂ => e₁ == e₂
@@ -670,12 +670,12 @@ def runInformationFlowChecks : IO Unit := do
       serviceLabelOf := fun _ => publicLabel }
 
   let deniedSignal := SeLe4n.Kernel.notificationSignalChecked crossDomainNtfnCtx ⟨30⟩ ⟨1⟩ ⟨42⟩ ntfnState
-  expect "WS-H8: cross-domain notificationSignalChecked returns flowDenied"
+  expect "cross-domain notificationSignalChecked returns flowDenied"
     (match deniedSignal with
       | .error .flowDenied => true
       | _ => false)
 
-  IO.println "WS-H8 notificationSignalChecked enforcement checks passed"
+  IO.println "notificationSignalChecked enforcement checks passed"
 
   -- WS-H8: cspaceCopyChecked tests
   let copySrcCNode := SeLe4n.Model.CNode.empty
@@ -696,7 +696,7 @@ def runInformationFlowChecks : IO Unit := do
   let checkedCopy := SeLe4n.Kernel.cspaceCopyChecked sameDomainNtfnCtx copySrc copyDst copyState
   let uncheckedCopy := SeLe4n.Kernel.cspaceCopy copySrc copyDst copyState
 
-  expect "WS-H8: same-domain cspaceCopyChecked matches unchecked"
+  expect "same-domain cspaceCopyChecked matches unchecked"
     (match checkedCopy, uncheckedCopy with
       | .ok ((), s₁), .ok ((), s₂) => s₁.objects[(⟨41⟩ : ObjId)]? == s₂.objects[(⟨41⟩ : ObjId)]?
       | .error e₁, .error e₂ => e₁ == e₂
@@ -710,21 +710,21 @@ def runInformationFlowChecks : IO Unit := do
       serviceLabelOf := fun _ => publicLabel }
 
   let deniedCopy := SeLe4n.Kernel.cspaceCopyChecked crossDomainCopyCtx copySrc copyDst copyState
-  expect "WS-H8: cross-domain cspaceCopyChecked returns flowDenied"
+  expect "cross-domain cspaceCopyChecked returns flowDenied"
     (match deniedCopy with
       | .error .flowDenied => true
       | _ => false)
 
-  IO.println "WS-H8 cspaceCopyChecked enforcement checks passed"
+  IO.println "cspaceCopyChecked enforcement checks passed"
 
   -- WS-H8: cspaceMoveChecked tests (same pattern)
   let deniedMove := SeLe4n.Kernel.cspaceMoveChecked crossDomainCopyCtx copySrc copyDst copyState
-  expect "WS-H8: cross-domain cspaceMoveChecked returns flowDenied"
+  expect "cross-domain cspaceMoveChecked returns flowDenied"
     (match deniedMove with
       | .error .flowDenied => true
       | _ => false)
 
-  IO.println "WS-H8 cspaceMoveChecked enforcement checks passed"
+  IO.println "cspaceMoveChecked enforcement checks passed"
 
   -- WS-H8: endpointReceiveDualChecked tests
   let recvEpState :=
@@ -740,7 +740,7 @@ def runInformationFlowChecks : IO Unit := do
       serviceLabelOf := fun _ => publicLabel }
 
   let deniedRecv := SeLe4n.Kernel.endpointReceiveDualChecked crossDomainRecvCtx ⟨50⟩ ⟨1⟩ recvEpState
-  expect "WS-H8: cross-domain endpointReceiveDualChecked returns flowDenied"
+  expect "cross-domain endpointReceiveDualChecked returns flowDenied"
     (match deniedRecv with
       | .error .flowDenied => true
       | _ => false)
@@ -748,22 +748,22 @@ def runInformationFlowChecks : IO Unit := do
   -- Same-domain receive should delegate to unchecked
   let sameDomainRecv := SeLe4n.Kernel.endpointReceiveDualChecked sameDomainNtfnCtx ⟨50⟩ ⟨1⟩ recvEpState
   let uncheckedRecv := SeLe4n.Kernel.endpointReceiveDual ⟨50⟩ ⟨1⟩ recvEpState
-  expect "WS-H8: same-domain endpointReceiveDualChecked matches unchecked"
+  expect "same-domain endpointReceiveDualChecked matches unchecked"
     (match sameDomainRecv, uncheckedRecv with
       | .ok (r₁, _), .ok (r₂, _) => r₁ = r₂
       | .error e₁, .error e₂ => e₁ = e₂
       | _, _ => false)
 
-  IO.println "WS-H8 endpointReceiveDualChecked enforcement checks passed"
+  IO.println "endpointReceiveDualChecked enforcement checks passed"
 
   -- WS-H8: Enforcement boundary classification check
   let extendedBoundary := SeLe4n.Kernel.enforcementBoundaryExtended
   let policyGatedCount := extendedBoundary.filter (fun e => match e with
     | .policyGated _ => true | _ => false) |>.length
-  expect "WS-H8/Q1/V6-L: enforcement boundary has 11 policy-gated ops"
+  expect "enforcement boundary has 11 policy-gated ops"
     (policyGatedCount = 11)
 
-  IO.println "WS-H8 enforcement boundary classification verified"
+  IO.println "enforcement boundary classification verified"
 
   -- WS-I3/R-08: declassification runtime checks
   let declassCtx : SeLe4n.Kernel.GenericLabelingContext :=
@@ -788,21 +788,21 @@ def runInformationFlowChecks : IO Unit := do
 
   let allowedDeclass :=
     SeLe4n.Kernel.declassifyStore declassCtx allowDecl ⟨2⟩ ⟨0⟩ ⟨902⟩ declassObj declassState
-  expect "WS-I3: declassify succeeds when normal flow denied and policy authorizes"
+  expect "declassify succeeds when normal flow denied and policy authorizes"
     (match allowedDeclass with
       | .ok ((), st') => st'.objects[(⟨902⟩ : SeLe4n.ObjId)]? == some declassObj
       | _ => false)
 
   let normalFlowAllowed :=
     SeLe4n.Kernel.declassifyStore declassCtx allowDecl ⟨0⟩ ⟨0⟩ ⟨902⟩ declassObj declassState
-  expect "WS-I3: declassify fails when normal flow is already allowed"
+  expect "declassify fails when normal flow is already allowed"
     (match normalFlowAllowed with
       | .error .flowDenied => true
       | _ => false)
 
   let policyDenied :=
     SeLe4n.Kernel.declassifyStore declassCtx denyDecl ⟨2⟩ ⟨0⟩ ⟨902⟩ declassObj declassState
-  expect "WS-I3: declassify fails when declassification policy denies"
+  expect "declassify fails when declassification policy denies"
     (match policyDenied with
       | .error .declassificationDenied => true
       | _ => false)
@@ -811,18 +811,18 @@ def runInformationFlowChecks : IO Unit := do
     { canDeclassify := fun src dst => src = ⟨2⟩ && dst = ⟨0⟩ }
   let triDenied := SeLe4n.Kernel.declassifyStore declassCtx triLevelAllow ⟨2⟩ ⟨0⟩ ⟨902⟩ declassObj declassState
   let triAllowed := SeLe4n.Kernel.declassifyStore declassCtx triLevelAllow ⟨0⟩ ⟨2⟩ ⟨902⟩ declassObj declassState
-  expect "WS-I3: 3-level lattice high→low denied without declassification"
+  expect "3-level lattice high→low denied without declassification"
     ((declassCtx.policy.canFlow ⟨2⟩ ⟨0⟩) = false)
-  expect "WS-I3: 3-level lattice high→low declassify succeeds when authorized"
+  expect "3-level lattice high→low declassify succeeds when authorized"
     (match triDenied with
       | .ok ((), st') => st'.objects[(⟨902⟩ : SeLe4n.ObjId)]? == some declassObj
       | _ => false)
-  expect "WS-I3: 3-level lattice low→high uses normal flow (declassify rejected)"
+  expect "3-level lattice low→high uses normal flow (declassify rejected)"
     (match triAllowed with
       | .error .flowDenied => true
       | _ => false)
 
-  IO.println "WS-I3 declassification checks passed"
+  IO.println "declassification checks passed"
 
   -- WS-H8/A-36: ObservableState domain timing metadata coverage
   -- Verify that projectState includes domain timing fields
@@ -836,14 +836,14 @@ def runInformationFlowChecks : IO Unit := do
   let projection := SeLe4n.Kernel.projectState sameDomainNtfnCtx
     { clearance := publicLabel } timingState
 
-  expect "WS-H8/A-36: domainTimeRemaining projected"
+  expect "domainTimeRemaining projected"
     (projection.domainTimeRemaining = 42)
-  expect "WS-H8/A-36: domainSchedule projected"
+  expect "domainSchedule projected"
     (projection.domainSchedule.length = 2)
-  expect "WS-H8/A-36: domainScheduleIndex projected"
+  expect "domainScheduleIndex projected"
     (projection.domainScheduleIndex = 1)
 
-  IO.println "WS-H8/A-36 domain timing metadata projection verified"
+  IO.println "domain timing metadata projection verified"
   IO.println "all WS-H8 information-flow enforcement checks passed"
 
   -- ========================================================================
@@ -851,63 +851,63 @@ def runInformationFlowChecks : IO Unit := do
   -- ========================================================================
 
   -- V6-A: Cross-subsystem field-disjointness
-  expect "V6-A: StateField enum has 16 variants"
+  expect "StateField enum has 16 variants"
     ([ SeLe4n.Kernel.StateField.machine, .objects, .objectIndex, .objectIndexSet,
        .services, .scheduler, .irqHandlers, .lifecycle,
        .asidTable, .interfaceRegistry, .serviceRegistry,
        .cdt, .cdtSlotNode, .cdtNodeSlot, .cdtNextNode, .tlb ].length = 16)
   -- AM4 audit remediation: field-set catalog extended from 10 to 11
   -- entries with `lifecycleObjectTypeLockstep_fields` (AL6-C / AM4).
-  expect "V6-A + AM4: crossSubsystemFieldSets has 11 entries"
+  expect "+ AM4: crossSubsystemFieldSets has 11 entries"
     (SeLe4n.Kernel.crossSubsystemFieldSets.length = 11)
   -- Verify disjointness witnesses compile and have expected values
-  expect "V6-A: regDepConsistent disjoint from staleEndpoint"
+  expect "regDepConsistent disjoint from staleEndpoint"
     (SeLe4n.Kernel.fieldsDisjoint SeLe4n.Kernel.registryDependencyConsistent_fields
                     SeLe4n.Kernel.noStaleEndpointQueueReferences_fields = true)
-  expect "V6-A: staleEndpoint shares staleNotification (objects overlap)"
+  expect "staleEndpoint shares staleNotification (objects overlap)"
     (SeLe4n.Kernel.fieldsDisjoint SeLe4n.Kernel.noStaleEndpointQueueReferences_fields
                     SeLe4n.Kernel.noStaleNotificationWaitReferences_fields = false)
-  expect "V6-A: regDepConsistent shares serviceGraph (services overlap)"
+  expect "regDepConsistent shares serviceGraph (services overlap)"
     (SeLe4n.Kernel.fieldsDisjoint SeLe4n.Kernel.registryDependencyConsistent_fields
                     SeLe4n.Kernel.serviceGraphInvariant_fields = false)
 
-  IO.println "V6-A cross-subsystem field-disjointness checks passed"
+  IO.println "cross-subsystem field-disjointness checks passed"
 
   -- V6-C: BIBA vs seLe4n integrity witness
-  expect "V6-C: seLe4n allows trusted→untrusted integrity flow"
+  expect "seLe4n allows trusted→untrusted integrity flow"
     (SeLe4n.Kernel.integrityFlowsTo .trusted .untrusted = true)
-  expect "V6-C: BIBA denies trusted→untrusted (no write-down in standalone)"
+  expect "BIBA denies trusted→untrusted (no write-down in standalone)"
     (SeLe4n.Kernel.bibaIntegrityFlowsTo .trusted .untrusted = false)
-  expect "V6-C: seLe4n denies untrusted→trusted"
+  expect "seLe4n denies untrusted→trusted"
     (SeLe4n.Kernel.integrityFlowsTo .untrusted .trusted = false)
-  expect "V6-C: BIBA allows untrusted→trusted (standalone)"
+  expect "BIBA allows untrusted→trusted (standalone)"
     (SeLe4n.Kernel.bibaIntegrityFlowsTo .untrusted .trusted = true)
 
-  IO.println "V6-C BIBA integrity comparison verified"
+  IO.println "BIBA integrity comparison verified"
 
   -- V6-E: serviceRegistry projection
   let svcRegProjection := SeLe4n.Kernel.projectState sameDomainNtfnCtx
     { clearance := publicLabel } (BootstrapBuilder.empty.buildChecked)
-  expect "V6-E: serviceRegistry field exists in projection"
+  expect "serviceRegistry field exists in projection"
     (svcRegProjection.serviceRegistry ⟨999⟩ == none)
 
-  IO.println "V6-E serviceRegistry projection verified"
+  IO.println "serviceRegistry projection verified"
 
   -- V6-F: Enforcement boundary completeness
   let boundary := SeLe4n.Kernel.enforcementBoundary
   let pgCount := boundary.filter (fun c => match c with | .policyGated _ => true | _ => false) |>.length
   let coCount := boundary.filter (fun c => match c with | .capabilityOnly _ => true | _ => false) |>.length
   let roCount := boundary.filter (fun c => match c with | .readOnly _ => true | _ => false) |>.length
-  expect "V6-F: enforcement boundary has 11 policy-gated"
+  expect "enforcement boundary has 11 policy-gated"
     (pgCount = 11)
-  expect "V6-F/Z8-M/D2/D3/AC4-D: enforcement boundary has 18 capability-only"
+  expect "enforcement boundary has 18 capability-only"
     (coCount = 18)
-  expect "V6-F: enforcement boundary has 4 read-only"
+  expect "enforcement boundary has 4 read-only"
     (roCount = 4)
-  expect "V6-F/Z8-M/D2/D3/AC4-D: enforcement boundary total is 33"
+  expect "enforcement boundary total is 33"
     (boundary.length = 33)
 
-  IO.println "V6-F enforcement boundary completeness verified"
+  IO.println "enforcement boundary completeness verified"
 
   -- V6-H: DeclassificationEvent audit trail
   let event : SeLe4n.Kernel.DeclassificationEvent :=
@@ -916,61 +916,61 @@ def runInformationFlowChecks : IO Unit := do
       timestamp := 1 }
   let emptyLog : SeLe4n.Kernel.DeclassificationAuditLog := []
   let log1 := SeLe4n.Kernel.recordDeclassification emptyLog event
-  expect "V6-H: recording to empty log yields length 1"
+  expect "recording to empty log yields length 1"
     (log1.length = 1)
-  expect "V6-H: recorded event is in log"
+  expect "recorded event is in log"
     (log1.contains event)
   let event2 : SeLe4n.Kernel.DeclassificationEvent :=
     { srcDomain := ⟨3⟩, dstDomain := ⟨1⟩, targetObject := ⟨903⟩,
       authorizationBasis := "system-integrator-override",
       timestamp := 2 }
   let log2 := SeLe4n.Kernel.recordDeclassification log1 event2
-  expect "V6-H: second record yields length 2"
+  expect "second record yields length 2"
     (log2.length = 2)
-  expect "V6-H: first event still present after second record"
+  expect "first event still present after second record"
     (log2.contains event)
-  expect "V6-H: second event present"
+  expect "second event present"
     (log2.contains event2)
-  expect "V6-H: authorizationBasis captured"
+  expect "authorizationBasis captured"
     (event.authorizationBasis == "DeclassificationPolicy.canDeclassify")
 
-  IO.println "V6-H declassification audit trail verified"
+  IO.println "declassification audit trail verified"
 
   -- V6-I: NI constructor mapping
-  expect "V6-I: kernelOperationNiConstructor is total (32 ops)"
+  expect "kernelOperationNiConstructor is total (32 ops)"
     ([ SeLe4n.Kernel.kernelOperationNiConstructor .chooseThread
      , SeLe4n.Kernel.kernelOperationNiConstructor .endpointSendDual
      , SeLe4n.Kernel.kernelOperationNiConstructor .cspaceMint
      , SeLe4n.Kernel.kernelOperationNiConstructor .registerServiceChecked
      ].length = 4)
 
-  IO.println "V6-I NI constructor mapping verified"
+  IO.println "NI constructor mapping verified"
 
   -- V6-K: Default labeling context insecurity
   let defaultCtx : SeLe4n.Kernel.LabelingContext := SeLe4n.Kernel.defaultLabelingContext
-  expect "V6-K: default context assigns publicLabel to objects"
+  expect "default context assigns publicLabel to objects"
     (defaultCtx.objectLabelOf ⟨0⟩ == publicLabel)
-  expect "V6-K: default context assigns publicLabel to threads"
+  expect "default context assigns publicLabel to threads"
     (defaultCtx.threadLabelOf ⟨0⟩ == publicLabel)
-  expect "V6-K: securityFlowsTo trivially true under default context"
+  expect "securityFlowsTo trivially true under default context"
     (SeLe4n.Kernel.securityFlowsTo (defaultCtx.objectLabelOf ⟨0⟩)
                      (defaultCtx.objectLabelOf ⟨999⟩) = true)
 
   -- AI5-C (M-19): Verify isInsecureDefaultContext runtime detector
-  expect "AI5-C: isInsecureDefaultContext detects default context"
+  expect "isInsecureDefaultContext detects default context"
     (SeLe4n.Kernel.isInsecureDefaultContext defaultCtx = true)
-  expect "AI5-C: isInsecureDefaultContext rejects test context"
+  expect "isInsecureDefaultContext rejects test context"
     (SeLe4n.Kernel.isInsecureDefaultContext SeLe4n.Kernel.testLabelingContext = false)
 
-  IO.println "V6-K default labeling context insecurity verified"
+  IO.println "default labeling context insecurity verified"
 
   -- V6-L: Extended boundary matches canonical
-  expect "V6-L/Z8-M/D2/D3/AC4-D: enforcementBoundaryExtended has 33 entries"
+  expect "enforcementBoundaryExtended has 33 entries"
     (SeLe4n.Kernel.enforcementBoundaryExtended.length = 33)
-  expect "V6-L: extended boundary matches canonical length"
+  expect "extended boundary matches canonical length"
     (SeLe4n.Kernel.enforcementBoundaryExtended.length = SeLe4n.Kernel.enforcementBoundary.length)
 
-  IO.println "V6-L extended enforcement boundary verified"
+  IO.println "extended enforcement boundary verified"
 
   -- AK1-I (I-M07 / MEDIUM, NI L-1): NI regression for symmetric cap-root error.
   -- Prior to AK1-I, `endpointSendDualWithCaps` returned `.ok ({results := #[]}, _)`
@@ -1012,7 +1012,7 @@ def runInformationFlowChecks : IO Unit := do
     let msgWithCaps : IpcMessage := { registers := #[], caps := #[cap1], badge := none }
     let result := SeLe4n.Kernel.ipcUnwrapCaps msgWithCaps senderCNode nonCNodeRoot
       (SeLe4n.Slot.ofNat 0) true st
-    expect "AK1-I: ipcUnwrapCaps with non-CNode root yields consistent outcome"
+    expect "ipcUnwrapCaps with non-CNode root yields consistent outcome"
       (match result with
        | .ok (summary, _) => summary.results.size = msgWithCaps.caps.size
        | .error _ => true)
@@ -1043,7 +1043,7 @@ def runInformationFlowChecks : IO Unit := do
         |>.buildChecked)
     -- Enqueue receiver via API.
     match SeLe4n.Kernel.endpointReceiveDual epId receiverTid baseSt with
-    | .error _ => expect "AK1-I: receive-enqueue setup should succeed" false
+    | .error _ => expect "receive-enqueue setup should succeed" false
     | .ok (_, stQueued) =>
       -- Splice out the receiver TCB (simulates missing-TCB structural fault).
       let stFaulty : SystemState := { stQueued with
@@ -1053,15 +1053,15 @@ def runInformationFlowChecks : IO Unit := do
       -- outcome, the cap-transfer `.error .invalidCapability` arm symmetry is
       -- the property under test — both code paths exercise the same arm shape.
       let lookupResult := SeLe4n.Kernel.lookupCspaceRoot stFaulty receiverTid
-      expect "AK1-I: lookupCspaceRoot returns none on missing-TCB peer"
+      expect "lookupCspaceRoot returns none on missing-TCB peer"
         (lookupResult = none)
       -- Verify both `endpointSendDualWithCaps` and `endpointReceiveDualWithCaps`
       -- are defined such that `lookupCspaceRoot = none` on the peer yields
       -- `.error .invalidCapability`. This is a code-structural assertion
       -- (the two operations share an identical `| none => .error .invalidCapability`
       -- arm in the source — see `IPC/DualQueue/WithCaps.lean:111, 152`).
-      IO.println "AK1-I: symmetric .error .invalidCapability branch structurally verified"
-    IO.println "AK1-I NI-symmetric cap-root error behaviour verified"
+      IO.println "symmetric .error .invalidCapability branch structurally verified"
+    IO.println "NI-symmetric cap-root error behaviour verified"
 
   -- ======================================================================
   -- AK6-G (NI-M01): projectKernelObject strips pendingMessage + timedOut
@@ -1087,12 +1087,12 @@ def runInformationFlowChecks : IO Unit := do
         (.tcb tcbWithSignals)
     match projected with
     | .tcb projTcb =>
-        expect "AK6-G: projectKernelObject erases pendingMessage"
+        expect "projectKernelObject erases pendingMessage"
           (projTcb.pendingMessage = none)
-        expect "AK6-G: projectKernelObject erases timedOut"
+        expect "projectKernelObject erases timedOut"
           (projTcb.timedOut = false)
-    | _ => expect "AK6-G: projection preserves TCB tag" false
-    IO.println "AK6-G: projectKernelObject TCB-field stripping verified"
+    | _ => expect "projection preserves TCB tag" false
+    IO.println "projectKernelObject TCB-field stripping verified"
 
   -- ======================================================================
   -- AK6-H (NI-M02): defaultLabelingContext fails LabelingContextValid
@@ -1106,9 +1106,9 @@ def runInformationFlowChecks : IO Unit := do
     let isDefault :=
       SeLe4n.Kernel.isInsecureDefaultContext
         SeLe4n.Kernel.defaultLabelingContext
-    expect "AK6-H: isInsecureDefaultContext catches default context"
+    expect "isInsecureDefaultContext catches default context"
       (isDefault = true)
-    IO.println "AK6-H: default labeling context runtime rejection verified"
+    IO.println "default labeling context runtime rejection verified"
 
   -- ======================================================================
   -- AK6-I (SC-M04): cbs_bandwidth_bounded_tight arithmetic check
@@ -1122,9 +1122,9 @@ def runInformationFlowChecks : IO Unit := do
     let period := 1000
     let window := 5000
     let tight := budget * ((window + period - 1) / period)
-    expect "AK6-I: tight bound arithmetic (100 * ⌈5000/1000⌉ = 500)"
+    expect "tight bound arithmetic (100 * ⌈5000/1000⌉ = 500)"
       (tight = 500)
-    IO.println "AK6-I: CBS tight bandwidth bound arithmetic verified"
+    IO.println "CBS tight bandwidth bound arithmetic verified"
 
   IO.println "all V6 information-flow & cross-subsystem checks passed"
 

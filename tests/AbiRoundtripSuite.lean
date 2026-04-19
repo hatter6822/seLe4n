@@ -130,7 +130,7 @@ private def t01_service_register_full_abi : IO Unit := do
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
           (regsOf st tid) 32 with
   | .error e =>
-    throw <| IO.userError s!"AK4-G-T01 decode failed: {toString e}"
+    throw <| IO.userError s!"decode failed: {toString e}"
   | .ok decoded =>
     expect "T01a overflowCount=1" (decoded.overflowCount == 1)
     expect "T01b msgRegs.size=5" (decoded.msgRegs.size == 5)
@@ -178,7 +178,7 @@ private def t03_sched_context_configure_full_abi : IO Unit := do
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
           (regsOf st tid) 32 with
   | .error e =>
-    throw <| IO.userError s!"AK4-G-T03 decode failed: {toString e}"
+    throw <| IO.userError s!"decode failed: {toString e}"
   | .ok decoded =>
     expect "T03a overflowCount=1" (decoded.overflowCount == 1)
     match decodeSchedContextConfigureArgs decoded with
@@ -222,7 +222,7 @@ private def t05_cspace_mint_no_overflow : IO Unit := do
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
           (regsOf st tid) 32 with
   | .error e =>
-    throw <| IO.userError s!"AK4-G-T05 decode failed: {toString e}"
+    throw <| IO.userError s!"decode failed: {toString e}"
   | .ok decoded =>
     expect "T05a overflowCount=0" (decoded.overflowCount == 0)
     match decodeCSpaceMintArgs decoded with
@@ -266,7 +266,7 @@ private def t07_cspace_copy_minimal : IO Unit := do
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
           (regsOf st tid) 32 with
   | .error e =>
-    throw <| IO.userError s!"AK4-G-T07 decode failed: {toString e}"
+    throw <| IO.userError s!"decode failed: {toString e}"
   | .ok decoded =>
     expect "T07a overflowCount=0" (decoded.overflowCount == 0)
     match decodeCSpaceCopyArgs decoded with

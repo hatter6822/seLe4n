@@ -586,10 +586,10 @@ private def ak4a01_shortPathNoOverflow : IO Unit := do
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
           regs 32 with
   | .ok decoded =>
-    expect "AK4-A-T01a ok" true
-    expect "AK4-A-T01b overflowCount=0" (decoded.overflowCount == 0)
-    expect "AK4-A-T01c msgRegs populated" (decoded.msgRegs.size ≥ 1)
-  | .error _ => expect "AK4-A-T01 decode failed" false
+    expect "ok" true
+    expect "overflowCount=0" (decoded.overflowCount == 0)
+    expect "msgRegs populated" (decoded.msgRegs.size ≥ 1)
+  | .error _ => expect "decode failed" false
 
 /-- AK4-A-T02: 5-arg serviceRegister merges MR[4] from IPC buffer.
     IPC-buffer memory is zero (default), so MR[4] = 0. Verifies that
@@ -605,12 +605,12 @@ private def ak4a02_serviceRegisterOverflow : IO Unit := do
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
           regs 32 with
   | .ok decoded =>
-    expect "AK4-A-T02a decoded ok" true
-    expect "AK4-A-T02b overflowCount=1" (decoded.overflowCount == 1)
-    expect "AK4-A-T02c inlineCount=4" (decoded.inlineCount == 4)
-    expect "AK4-A-T02d msgRegs.size=5" (decoded.msgRegs.size == 5)
-    expect "AK4-A-T02e msgRegs[4].val=0" (decoded.msgRegs[4]!.val == 0)
-  | .error _ => expect "AK4-A-T02 decode failed" false
+    expect "decoded ok" true
+    expect "overflowCount=1" (decoded.overflowCount == 1)
+    expect "inlineCount=4" (decoded.inlineCount == 4)
+    expect "msgRegs.size=5" (decoded.msgRegs.size == 5)
+    expect "msgRegs[4].val=0" (decoded.msgRegs[4]!.val == 0)
+  | .error _ => expect "decode failed" false
 
 /-- AK4-A-T03: 5-arg schedContextConfigure with unmapped VA → fails with
     `.invalidMessageInfo`. Uses an IPC buffer address that is NOT in the
@@ -626,9 +626,9 @@ private def ak4a03_scConfigureUnmappedFails : IO Unit := do
     | _ => default
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
           regs 32 with
-  | .ok _ => expect "AK4-A-T03 unexpected success" false
+  | .ok _ => expect "unexpected success" false
   | .error e =>
-    expect "AK4-A-T03a invalidMessageInfo" (e == .invalidMessageInfo)
+    expect "invalidMessageInfo" (e == .invalidMessageInfo)
 
 /-- AK4-A-T04: 5-arg syscall with msgLen=0 → ignores IPC buffer → succeeds
     with inlineCount = msgRegs.size = 4, overflowCount = 0. -/
@@ -643,10 +643,10 @@ private def ak4a04_lengthZeroIgnoresIpcBuffer : IO Unit := do
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
           regs 32 with
   | .ok decoded =>
-    expect "AK4-A-T04a ok" true
-    expect "AK4-A-T04b overflowCount=0" (decoded.overflowCount == 0)
-    expect "AK4-A-T04c inlineCount=4" (decoded.inlineCount == 4)
-  | .error _ => expect "AK4-A-T04 decode failed" false
+    expect "ok" true
+    expect "overflowCount=0" (decoded.overflowCount == 0)
+    expect "inlineCount=4" (decoded.inlineCount == 4)
+  | .error _ => expect "decode failed" false
 
 /-- AK4-A-T05: `ipcBufferReadMr` bounds check — idx = maxOverflowSlots returns
     `.overflowIndexOutOfRange`. -/
@@ -655,8 +655,8 @@ private def ak4a05_ipcBufferOutOfRange : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨800⟩
   let r := ipcBufferReadMr st tid SeLe4n.Kernel.Architecture.IpcBufferRead.maxOverflowSlots
   match r with
-  | .ok _ => expect "AK4-A-T05 unexpected success" false
-  | .error e => expect "AK4-A-T05a out-of-range rejected"
+  | .ok _ => expect "unexpected success" false
+  | .error e => expect "out-of-range rejected"
                         (e == .overflowIndexOutOfRange)
 
 /-- AK4-A-T06: Size invariant — successful decode with overflow gives
@@ -671,9 +671,9 @@ private def ak4a06_sizeInvariant : IO Unit := do
   match decodeSyscallArgsFromState st tid SeLe4n.arm64DefaultLayout
           regs 32 with
   | .ok decoded =>
-    expect "AK4-A-T06a size invariant"
+    expect "size invariant"
       (decoded.msgRegs.size == decoded.inlineCount + decoded.overflowCount)
-  | .error _ => expect "AK4-A-T06 decode failed" false
+  | .error _ => expect "decode failed" false
 
 /-- AK4-A-T07: Legacy `decodeSyscallArgs` still produces inlineCount = 4,
     overflowCount = 0 — backward compatibility preserved. -/
@@ -683,10 +683,10 @@ private def ak4a07_legacyBackwardCompat : IO Unit := do
   let rf : SeLe4n.RegisterFile := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := regFile }
   match decodeSyscallArgs SeLe4n.arm64DefaultLayout rf 32 with
   | .ok decoded =>
-    expect "AK4-A-T07a legacy ok" true
-    expect "AK4-A-T07b legacy inlineCount=4" (decoded.inlineCount == 4)
-    expect "AK4-A-T07c legacy overflowCount=0" (decoded.overflowCount == 0)
-  | .error _ => expect "AK4-A-T07 legacy failed" false
+    expect "legacy ok" true
+    expect "legacy inlineCount=4" (decoded.inlineCount == 4)
+    expect "legacy overflowCount=0" (decoded.overflowCount == 0)
+  | .error _ => expect "legacy failed" false
 
 /-- Run AK4-A IPC-buffer merge regression tests. -/
 private def runAk4aTests : IO Unit := do

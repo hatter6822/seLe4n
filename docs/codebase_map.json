@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-deferred-tasks-zXVoC",
-      "commit_sha": "67b21c7a9ad40792b59db79ac7bde0cf72b223fb",
-      "tree_sha": "49c44e1c3745e713eddbce89c4a4669480c0b4fa",
-      "committed_at_utc": "2026-04-19T19:22:21+00:00"
+      "commit_sha": "bfd2bc647e43488162230095ae510615eb811b73",
+      "tree_sha": "41573ddb17ce141d57b3a3af2dbfa2ed3f31e0b0",
+      "committed_at_utc": "2026-04-19T19:36:53+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "8d234f4977acf8349df9c99add4bad4eac2138b28c01316e5e51f1481fa0f290"
+    "source_digest": "633a4be9d459d3ce9d1ccc9a2e684b3e4f75f1e7793057555e18d970d241712d"
   },
   "summary": {
     "module_count": 165,
@@ -29,7 +29,7 @@
     "production_files": 142,
     "production_loc": 101067,
     "test_files": 23,
-    "test_loc": 14142,
+    "test_loc": 14144,
     "proved_theorem_lemma_decls": 2977,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -64483,997 +64483,6 @@
       ]
     },
     {
-      "module": "tests.Ak7RegressionSuite",
-      "path": "tests/Ak7RegressionSuite.lean",
-      "declaration_count": 74,
-      "declarations": [
-        {
-          "kind": "namespace",
-          "name": "SeLe4n.Testing.Ak7RegressionSuite",
-          "line": 50,
-          "called": []
-        },
-        {
-          "kind": "def",
-          "name": "tag",
-          "line": 52,
-          "called": []
-        },
-        {
-          "kind": "def",
-          "name": "expect",
-          "line": 54,
-          "called": [
-            "expectCond",
-            "tag"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7A_01_empty_invExtK",
-          "line": 63,
-          "called": [
-            "ObjId",
-            "RHTable",
-            "RHTable.empty",
-            "expect",
-            "freezeMap",
-            "freezeMap_indexMap_invExtK",
-            "invExtK",
-            "size"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7A_02_singleton_invExtK",
-          "line": 73,
-          "called": [
-            "ObjId",
-            "RHTable",
-            "RHTable.empty",
-            "expect",
-            "freezeMap",
-            "freezeMap_indexMap_invExtK",
-            "insert",
-            "invExtK",
-            "size"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7B_01_full_implies_objectsOnly",
-          "line": 88,
-          "called": [
-            "apiInvariantBundle_frozenDirectFull_implies_objectsOnly",
-            "expect"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7B_02_freeze_preserves_full_default",
-          "line": 95,
-          "called": [
-            "IntermediateState",
-            "apiInvariantBundle",
-            "apiInvariantBundle_default",
-            "expect",
-            "freeze_preserves_direct_invariants_full",
-            "mkEmptyIntermediateState"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7C_01_empty_map_rejects",
-          "line": 108,
-          "called": [
-            "MachineState",
-            "PAddr",
-            "addrInRange",
-            "default",
-            "expect"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7C_02_readMemChecked_oor_none",
-          "line": 114,
-          "called": [
-            "MachineState",
-            "default",
-            "expect",
-            "readMemChecked"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7C_03_writeMemChecked_oor_none",
-          "line": 119,
-          "called": [
-            "MachineState",
-            "default",
-            "expect",
-            "writeMemChecked"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7C_04_ram_region_accepts",
-          "line": 124,
-          "called": [
-            "MachineState",
-            "MemoryRegion",
-            "addrInRange",
-            "default",
-            "expect",
-            "size"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7C_05_device_region_rejected",
-          "line": 130,
-          "called": [
-            "MachineState",
-            "MemoryRegion",
-            "addrInRange",
-            "default",
-            "expect",
-            "size"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7D_01_mkChecked_accepts",
-          "line": 140,
-          "called": [
-            "expect",
-            "mkChecked"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7D_02_mkChecked_rejects_length",
-          "line": 145,
-          "called": [
-            "expect",
-            "mkChecked"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7D_03_mkChecked_rejects_extraCaps",
-          "line": 150,
-          "called": [
-            "expect",
-            "mkChecked"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7D_04_mkChecked_rejects_label",
-          "line": 155,
-          "called": [
-            "expect",
-            "mkChecked"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7D_05_mkChecked_boundary_maxLabel",
-          "line": 160,
-          "called": [
-            "expect",
-            "mkChecked"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7D_06_wellFormed_sound",
-          "line": 165,
-          "called": [
-            "MessageInfo",
-            "expect",
-            "wellFormed"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7E_01_toValid_rejects_sentinel",
-          "line": 174,
-          "called": [
-            "expect",
-            "sentinel",
-            "toValid"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7E_02_toValid_accepts_nonsentinel",
-          "line": 179,
-          "called": [
-            "expect",
-            "toValid"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7E_03_sc_toValid_rejects_sentinel",
-          "line": 184,
-          "called": [
-            "expect",
-            "sentinel",
-            "toValid"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7E_04_cptr_toValid_rejects_null",
-          "line": 189,
-          "called": [
-            "expect",
-            "sentinel",
-            "toValid"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7F_01_thread_sc_disjoint",
-          "line": 199,
-          "called": [
-            "KindedObjId",
-            "expect",
-            "ofNat",
-            "toKinded"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7F_02_kinds_pairwise_distinct",
-          "line": 207,
-          "called": [
-            "ObjectKind",
-            "all",
-            "expect",
-            "none"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7G_01_tcb_ext_reflexive",
-          "line": 227,
-          "called": [
-            "TCB.ext",
-            "expect"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7H_01_empty_wellFormed",
-          "line": 236,
-          "called": [
-            "ObjId",
-            "RHTable",
-            "RHTable.empty",
-            "expect",
-            "freezeMap",
-            "freezeMap_wellFormed",
-            "wellFormed"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7H_02_nonempty_wellFormed",
-          "line": 244,
-          "called": [
-            "ObjId",
-            "RHTable",
-            "RHTable.empty",
-            "expect",
-            "freezeMap",
-            "freezeMap_wellFormed",
-            "insert",
-            "wellFormed"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7I_01_canonical_null",
-          "line": 256,
-          "called": [
-            "expect",
-            "isNull"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7I_02_nonnull_cap",
-          "line": 260,
-          "called": [
-            "Capability",
-            "empty",
-            "expect",
-            "isNull",
-            "none"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7I_03_require_not_null",
-          "line": 266,
-          "called": [
-            "Capability",
-            "empty",
-            "expect",
-            "none",
-            "requireNotNull"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7I_04_cnodeSlot_not_null",
-          "line": 275,
-          "called": [
-            "Capability",
-            "empty",
-            "expect",
-            "isNull",
-            "none"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7I_05_object_with_rights_not_null",
-          "line": 288,
-          "called": [
-            "Capability",
-            "expect",
-            "isNull",
-            "none",
-            "sentinel",
-            "singleton"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al1b_01_toNonNull_rejects_null",
-          "line": 309,
-          "called": [
-            "expect",
-            "toNonNull"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al1b_02_toNonNull_accepts_nonnull",
-          "line": 313,
-          "called": [
-            "Capability",
-            "empty",
-            "expect",
-            "none",
-            "toNonNull"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al1b_03_toNonNull_roundtrip",
-          "line": 319,
-          "called": [
-            "Capability",
-            "empty",
-            "expect",
-            "none",
-            "ofNonNull",
-            "throw",
-            "toNonNull"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al1bStateWithNullCapSlot",
-          "line": 332,
-          "called": [
-            "CNode",
-            "Capability",
-            "RHTable.ofList",
-            "Slot",
-            "SystemState",
-            "default",
-            "insert",
-            "null"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al1b_04_mint_from_null_rejected",
-          "line": 347,
-          "called": [
-            "CSpaceAddr",
-            "al1bStateWithNullCapSlot",
-            "cspaceMint",
-            "empty",
-            "expect",
-            "none",
-            "throw"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al1b_05_copy_from_null_rejected",
-          "line": 361,
-          "called": [
-            "CSpaceAddr",
-            "al1bStateWithNullCapSlot",
-            "cspaceCopy",
-            "expect",
-            "throw"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al1b_06_move_from_null_rejected",
-          "line": 374,
-          "called": [
-            "CSpaceAddr",
-            "al1bStateWithNullCapSlot",
-            "cspaceMove",
-            "expect",
-            "throw"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al1b_07_nullCapability_distinct_from_invalidCapability",
-          "line": 389,
-          "called": [
-            "KernelError",
-            "expect",
-            "throw"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "minimalTcb",
-          "line": 404,
-          "called": [
-            "TCB",
-            "ThreadId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "minimalSchedContext",
-          "line": 413,
-          "called": [
-            "SchedContext",
-            "SchedContextId",
-            "scId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al2C_01_getTcb_discriminates",
-          "line": 423,
-          "called": [
-            "SchedContextId",
-            "SystemState",
-            "ThreadId",
-            "default",
-            "expect",
-            "getSchedContext",
-            "getTcb",
-            "insert",
-            "minimalTcb",
-            "scId",
-            "toObjId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al2C_02_getSchedContext_discriminates",
-          "line": 435,
-          "called": [
-            "SchedContextId",
-            "SystemState",
-            "ThreadId",
-            "default",
-            "expect",
-            "getSchedContext",
-            "getTcb",
-            "insert",
-            "minimalSchedContext",
-            "scId",
-            "toObjId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al2C_03_getEndpoint_discriminates",
-          "line": 447,
-          "called": [
-            "Endpoint",
-            "ObjId",
-            "SystemState",
-            "ThreadId",
-            "default",
-            "expect",
-            "getEndpoint",
-            "getNotification",
-            "getTcb",
-            "insert"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al2C_04_getNotification_discriminates",
-          "line": 460,
-          "called": [
-            "Notification",
-            "ObjId",
-            "SystemState",
-            "default",
-            "expect",
-            "getEndpoint",
-            "getNotification",
-            "insert"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al2C_05_getUntyped_discriminates",
-          "line": 471,
-          "called": [
-            "ObjId",
-            "SystemState",
-            "ThreadId",
-            "UntypedObject",
-            "default",
-            "expect",
-            "getTcb",
-            "getUntyped",
-            "insert"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al2C_06_getTcb_none_when_absent",
-          "line": 482,
-          "called": [
-            "SystemState",
-            "ThreadId",
-            "default",
-            "expect",
-            "getTcb"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al2C_07_getTcb_roundtrip",
-          "line": 489,
-          "called": [
-            "SystemState",
-            "TCB",
-            "ThreadId",
-            "default",
-            "expect",
-            "getTcb",
-            "insert",
-            "minimalTcb",
-            "none",
-            "throw",
-            "toObjId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al2C_08_getSchedContext_roundtrip",
-          "line": 504,
-          "called": [
-            "SchedContextId",
-            "SystemState",
-            "default",
-            "expect",
-            "getSchedContext",
-            "insert",
-            "minimalSchedContext",
-            "none",
-            "scId",
-            "throw",
-            "toObjId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al6_01_fresh_allocation_succeeds",
-          "line": 527,
-          "called": [
-            "ObjId",
-            "SystemState",
-            "default",
-            "expect",
-            "getTcb",
-            "minimalTcb",
-            "storeObjectKindChecked",
-            "throw"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al6_02_samekind_overwrite_succeeds",
-          "line": 538,
-          "called": [
-            "ObjId",
-            "SystemState",
-            "default",
-            "expect",
-            "getTcb",
-            "insert",
-            "minimalTcb",
-            "none",
-            "storeObjectKindChecked",
-            "throw"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al6_03_tcb_to_sc_rejected",
-          "line": 557,
-          "called": [
-            "ObjId",
-            "SystemState",
-            "default",
-            "expect",
-            "insert",
-            "minimalSchedContext",
-            "minimalTcb",
-            "storeObjectKindChecked",
-            "throw"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al6_04_sc_to_tcb_rejected",
-          "line": 573,
-          "called": [
-            "ObjId",
-            "SystemState",
-            "default",
-            "expect",
-            "insert",
-            "minimalSchedContext",
-            "minimalTcb",
-            "storeObjectKindChecked",
-            "throw"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al6_05_rejection_preserves_state",
-          "line": 589,
-          "called": [
-            "ObjId",
-            "SystemState",
-            "default",
-            "expect",
-            "getTcb",
-            "insert",
-            "minimalSchedContext",
-            "minimalTcb",
-            "storeObjectKindChecked",
-            "throw"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "am1_01_default_lockstep",
-          "line": 614,
-          "called": [
-            "ObjId",
-            "SystemState",
-            "default",
-            "expect"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "am1_02_storeObject_updates_both_in_lockstep",
-          "line": 624,
-          "called": [
-            "ObjId",
-            "SystemState",
-            "default",
-            "expect",
-            "minimalTcb",
-            "storeObject",
-            "throw"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "am4_01_default_bundle_has_lockstep",
-          "line": 645,
-          "called": [
-            "ObjId",
-            "SystemState",
-            "crossSubsystemInvariant_to_lifecycleObjectTypeLockstep",
-            "default",
-            "default_crossSubsystemInvariant",
-            "expect",
-            "lifecycleObjectTypeLockstep"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "am4_02_blockingAcyclic_projection_reindex_ok",
-          "line": 666,
-          "called": [
-            "SystemState",
-            "crossSubsystemInvariant_to_blockingAcyclic",
-            "default",
-            "default_crossSubsystemInvariant",
-            "expect"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "am4_04_runtime_check_covers_11_predicates",
-          "line": 679,
-          "called": [
-            "SystemState",
-            "checkCrossSubsystemInvariant",
-            "default",
-            "expect",
-            "none",
-            "throw"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "am4_05_runtime_check_detects_violation",
-          "line": 700,
-          "called": [
-            "ObjId",
-            "SystemState",
-            "checkCrossSubsystemInvariant",
-            "default",
-            "expect",
-            "insert",
-            "minimalTcb",
-            "none",
-            "throw"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "am4_03_storeObject_preserves_lockstep_under_bundle",
-          "line": 727,
-          "called": [
-            "ObjId",
-            "SystemState",
-            "default",
-            "expect",
-            "minimalTcb",
-            "storeObject",
-            "throw"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "am1_03_kindChecked_rejection_preserves_lockstep",
-          "line": 748,
-          "called": [
-            "ObjId",
-            "SystemState",
-            "default",
-            "expect",
-            "insert",
-            "minimalSchedContext",
-            "minimalTcb",
-            "storeObjectKindChecked",
-            "throw"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al10_01_validThreadId_rejects_sentinel",
-          "line": 782,
-          "called": [
-            "ThreadId",
-            "expect",
-            "sentinel",
-            "toValid"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al10_02_validSchedContextId_rejects_sentinel",
-          "line": 787,
-          "called": [
-            "SchedContextId",
-            "expect",
-            "sentinel",
-            "toValid"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al10_03_validThreadId_roundtrip",
-          "line": 793,
-          "called": [
-            "ThreadId",
-            "expect",
-            "none",
-            "ofValid",
-            "throw",
-            "toValid"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al10_04_defense_in_depth",
-          "line": 806,
-          "called": [
-            "Capability",
-            "SystemState",
-            "default",
-            "expect",
-            "insert",
-            "isNull",
-            "minimalSchedContext",
-            "minimalTcb",
-            "null",
-            "requireNotNull",
-            "storeObjectKindChecked",
-            "throw",
-            "toValid"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "al10_05_requireNotNull_complement",
-          "line": 827,
-          "called": [
-            "Capability",
-            "empty",
-            "expect",
-            "isNull",
-            "none",
-            "null"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7J_01_cdt_counter_overflow",
-          "line": 840,
-          "called": [
-            "CdtNodeId",
-            "SlotRef",
-            "SystemState",
-            "default",
-            "ensureCdtNodeForSlotChecked",
-            "expect"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7J_02_cdt_counter_ok",
-          "line": 851,
-          "called": [
-            "CdtNodeId",
-            "SlotRef",
-            "SystemState",
-            "default",
-            "ensureCdtNodeForSlotChecked",
-            "expect"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7J_03_vspace_no_collision",
-          "line": 859,
-          "called": [
-            "expect",
-            "noPhysicalFrameCollision_empty"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7K_01_perms_roundtrip",
-          "line": 868,
-          "called": [
-            "PagePermissions.ofNat",
-            "PagePermissions.toNat",
-            "expect",
-            "throw"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "ak7K_02_cdt_sentinel",
-          "line": 878,
-          "called": [
-            "expect",
-            "isReserved",
-            "ofNat"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "main",
-          "line": 891,
-          "called": [
-            "ak7A_01_empty_invExtK",
-            "ak7A_02_singleton_invExtK",
-            "ak7B_01_full_implies_objectsOnly",
-            "ak7B_02_freeze_preserves_full_default",
-            "ak7C_01_empty_map_rejects",
-            "ak7C_02_readMemChecked_oor_none",
-            "ak7C_03_writeMemChecked_oor_none",
-            "ak7C_04_ram_region_accepts",
-            "ak7C_05_device_region_rejected",
-            "ak7D_01_mkChecked_accepts",
-            "ak7D_02_mkChecked_rejects_length",
-            "ak7D_03_mkChecked_rejects_extraCaps",
-            "ak7D_04_mkChecked_rejects_label",
-            "ak7D_05_mkChecked_boundary_maxLabel",
-            "ak7D_06_wellFormed_sound",
-            "ak7E_01_toValid_rejects_sentinel",
-            "ak7E_02_toValid_accepts_nonsentinel",
-            "ak7E_03_sc_toValid_rejects_sentinel",
-            "ak7E_04_cptr_toValid_rejects_null",
-            "ak7F_01_thread_sc_disjoint",
-            "ak7F_02_kinds_pairwise_distinct",
-            "ak7G_01_tcb_ext_reflexive",
-            "ak7H_01_empty_wellFormed",
-            "ak7H_02_nonempty_wellFormed",
-            "ak7I_01_canonical_null",
-            "ak7I_02_nonnull_cap",
-            "ak7I_03_require_not_null",
-            "ak7I_04_cnodeSlot_not_null",
-            "ak7I_05_object_with_rights_not_null",
-            "ak7J_01_cdt_counter_overflow",
-            "ak7J_02_cdt_counter_ok",
-            "ak7J_03_vspace_no_collision",
-            "ak7K_01_perms_roundtrip",
-            "ak7K_02_cdt_sentinel",
-            "al10_01_validThreadId_rejects_sentinel",
-            "al10_02_validSchedContextId_rejects_sentinel",
-            "al10_03_validThreadId_roundtrip",
-            "al10_04_defense_in_depth",
-            "al10_05_requireNotNull_complement",
-            "al1b_01_toNonNull_rejects_null",
-            "al1b_02_toNonNull_accepts_nonnull",
-            "al1b_03_toNonNull_roundtrip",
-            "al1b_04_mint_from_null_rejected",
-            "al1b_05_copy_from_null_rejected",
-            "al1b_06_move_from_null_rejected",
-            "al1b_07_nullCapability_distinct_from_invalidCapability",
-            "al2C_01_getTcb_discriminates",
-            "al2C_02_getSchedContext_discriminates",
-            "al2C_03_getEndpoint_discriminates",
-            "al2C_04_getNotification_discriminates",
-            "al2C_05_getUntyped_discriminates",
-            "al2C_06_getTcb_none_when_absent",
-            "al2C_07_getTcb_roundtrip",
-            "al2C_08_getSchedContext_roundtrip",
-            "al6_01_fresh_allocation_succeeds",
-            "al6_02_samekind_overwrite_succeeds",
-            "al6_03_tcb_to_sc_rejected",
-            "al6_04_sc_to_tcb_rejected",
-            "al6_05_rejection_preserves_state",
-            "am1_01_default_lockstep",
-            "am1_02_storeObject_updates_both_in_lockstep",
-            "am1_03_kindChecked_rejection_preserves_lockstep",
-            "am4_01_default_bundle_has_lockstep",
-            "am4_02_blockingAcyclic_projection_reindex_ok",
-            "am4_03_storeObject_preserves_lockstep_under_bundle",
-            "am4_04_runtime_check_covers_11_predicates",
-            "am4_05_runtime_check_detects_violation"
-          ]
-        }
-      ]
-    },
-    {
       "module": "tests.AsidPoolSuite",
       "path": "tests/AsidPoolSuite.lean",
       "declaration_count": 12,
@@ -68552,8 +67561,999 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 149,
+          "line": 150,
           "called": []
+        }
+      ]
+    },
+    {
+      "module": "tests.ModelIntegritySuite",
+      "path": "tests/ModelIntegritySuite.lean",
+      "declaration_count": 74,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.ModelIntegritySuite",
+          "line": 51,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "tag",
+          "line": 53,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "expect",
+          "line": 55,
+          "called": [
+            "expectCond",
+            "tag"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "freezeMap_empty_invExtK",
+          "line": 64,
+          "called": [
+            "ObjId",
+            "RHTable",
+            "RHTable.empty",
+            "expect",
+            "freezeMap",
+            "freezeMap_indexMap_invExtK",
+            "invExtK",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "freezeMap_singleton_invExtK",
+          "line": 74,
+          "called": [
+            "ObjId",
+            "RHTable",
+            "RHTable.empty",
+            "expect",
+            "freezeMap",
+            "freezeMap_indexMap_invExtK",
+            "insert",
+            "invExtK",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "apiInvariantBundle_full_implies_objectsOnly",
+          "line": 89,
+          "called": [
+            "apiInvariantBundle_frozenDirectFull_implies_objectsOnly",
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "freeze_preserves_full_invariants_default",
+          "line": 96,
+          "called": [
+            "IntermediateState",
+            "apiInvariantBundle",
+            "apiInvariantBundle_default",
+            "expect",
+            "freeze_preserves_direct_invariants_full",
+            "mkEmptyIntermediateState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "addrInRange_empty_map_rejects",
+          "line": 109,
+          "called": [
+            "MachineState",
+            "PAddr",
+            "addrInRange",
+            "default",
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "readMemChecked_out_of_range_none",
+          "line": 115,
+          "called": [
+            "MachineState",
+            "default",
+            "expect",
+            "readMemChecked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "writeMemChecked_out_of_range_none",
+          "line": 120,
+          "called": [
+            "MachineState",
+            "default",
+            "expect",
+            "writeMemChecked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "addrInRange_ram_region_accepts",
+          "line": 125,
+          "called": [
+            "MachineState",
+            "MemoryRegion",
+            "addrInRange",
+            "default",
+            "expect",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "addrInRange_device_region_rejected",
+          "line": 131,
+          "called": [
+            "MachineState",
+            "MemoryRegion",
+            "addrInRange",
+            "default",
+            "expect",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "messageInfo_mkChecked_accepts_valid",
+          "line": 141,
+          "called": [
+            "expect",
+            "mkChecked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "messageInfo_mkChecked_rejects_oversize_length",
+          "line": 146,
+          "called": [
+            "expect",
+            "mkChecked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "messageInfo_mkChecked_rejects_oversize_extraCaps",
+          "line": 151,
+          "called": [
+            "expect",
+            "mkChecked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "messageInfo_mkChecked_rejects_oversize_label",
+          "line": 156,
+          "called": [
+            "expect",
+            "mkChecked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "messageInfo_mkChecked_accepts_maxLabel_boundary",
+          "line": 161,
+          "called": [
+            "expect",
+            "mkChecked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "messageInfo_wellFormed_sound",
+          "line": 166,
+          "called": [
+            "MessageInfo",
+            "expect",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "threadId_toValid_rejects_sentinel",
+          "line": 175,
+          "called": [
+            "expect",
+            "sentinel",
+            "toValid"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "threadId_toValid_accepts_nonsentinel",
+          "line": 180,
+          "called": [
+            "expect",
+            "toValid"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "schedContextId_toValid_rejects_sentinel",
+          "line": 185,
+          "called": [
+            "expect",
+            "sentinel",
+            "toValid"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cptr_toValid_rejects_null",
+          "line": 190,
+          "called": [
+            "expect",
+            "sentinel",
+            "toValid"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "kindedObjId_thread_schedContext_disjoint",
+          "line": 200,
+          "called": [
+            "KindedObjId",
+            "expect",
+            "ofNat",
+            "toKinded"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "objectKind_variants_pairwise_distinct",
+          "line": 208,
+          "called": [
+            "ObjectKind",
+            "all",
+            "expect",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tcb_ext_reflexive",
+          "line": 228,
+          "called": [
+            "TCB.ext",
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenMap_empty_wellFormed",
+          "line": 237,
+          "called": [
+            "ObjId",
+            "RHTable",
+            "RHTable.empty",
+            "expect",
+            "freezeMap",
+            "freezeMap_wellFormed",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "frozenMap_nonempty_wellFormed",
+          "line": 245,
+          "called": [
+            "ObjId",
+            "RHTable",
+            "RHTable.empty",
+            "expect",
+            "freezeMap",
+            "freezeMap_wellFormed",
+            "insert",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "capability_canonical_null",
+          "line": 257,
+          "called": [
+            "expect",
+            "isNull"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "capability_nonnull_cap",
+          "line": 261,
+          "called": [
+            "Capability",
+            "empty",
+            "expect",
+            "isNull",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "capability_requireNotNull_roundtrip",
+          "line": 267,
+          "called": [
+            "Capability",
+            "empty",
+            "expect",
+            "none",
+            "requireNotNull"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "capability_cnodeSlot_not_null",
+          "line": 276,
+          "called": [
+            "Capability",
+            "empty",
+            "expect",
+            "isNull",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "capability_object_with_rights_not_null",
+          "line": 289,
+          "called": [
+            "Capability",
+            "expect",
+            "isNull",
+            "none",
+            "sentinel",
+            "singleton"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "capability_toNonNull_rejects_null",
+          "line": 310,
+          "called": [
+            "expect",
+            "toNonNull"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "capability_toNonNull_accepts_nonnull",
+          "line": 314,
+          "called": [
+            "Capability",
+            "empty",
+            "expect",
+            "none",
+            "toNonNull"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "capability_toNonNull_roundtrip",
+          "line": 320,
+          "called": [
+            "Capability",
+            "empty",
+            "expect",
+            "none",
+            "ofNonNull",
+            "throw",
+            "toNonNull"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "al1bStateWithNullCapSlot",
+          "line": 333,
+          "called": [
+            "CNode",
+            "Capability",
+            "RHTable.ofList",
+            "Slot",
+            "SystemState",
+            "default",
+            "insert",
+            "null"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cspaceMint_from_null_rejected",
+          "line": 348,
+          "called": [
+            "CSpaceAddr",
+            "al1bStateWithNullCapSlot",
+            "cspaceMint",
+            "empty",
+            "expect",
+            "none",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cspaceCopy_from_null_rejected",
+          "line": 362,
+          "called": [
+            "CSpaceAddr",
+            "al1bStateWithNullCapSlot",
+            "cspaceCopy",
+            "expect",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cspaceMove_from_null_rejected",
+          "line": 375,
+          "called": [
+            "CSpaceAddr",
+            "al1bStateWithNullCapSlot",
+            "cspaceMove",
+            "expect",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "nullCapability_distinct_from_invalidCapability",
+          "line": 390,
+          "called": [
+            "KernelError",
+            "expect",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "minimalTcb",
+          "line": 405,
+          "called": [
+            "TCB",
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "minimalSchedContext",
+          "line": 414,
+          "called": [
+            "SchedContext",
+            "SchedContextId",
+            "scId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "getTcb_discriminates_variants",
+          "line": 424,
+          "called": [
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "default",
+            "expect",
+            "getSchedContext",
+            "getTcb",
+            "insert",
+            "minimalTcb",
+            "scId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "getSchedContext_discriminates_variants",
+          "line": 436,
+          "called": [
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "default",
+            "expect",
+            "getSchedContext",
+            "getTcb",
+            "insert",
+            "minimalSchedContext",
+            "scId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "getEndpoint_discriminates_variants",
+          "line": 448,
+          "called": [
+            "Endpoint",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "default",
+            "expect",
+            "getEndpoint",
+            "getNotification",
+            "getTcb",
+            "insert"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "getNotification_discriminates_variants",
+          "line": 461,
+          "called": [
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "default",
+            "expect",
+            "getEndpoint",
+            "getNotification",
+            "insert"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "getUntyped_discriminates_variants",
+          "line": 472,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "UntypedObject",
+            "default",
+            "expect",
+            "getTcb",
+            "getUntyped",
+            "insert"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "getTcb_none_when_absent",
+          "line": 483,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "default",
+            "expect",
+            "getTcb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "getTcb_roundtrip",
+          "line": 490,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "default",
+            "expect",
+            "getTcb",
+            "insert",
+            "minimalTcb",
+            "none",
+            "throw",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "getSchedContext_roundtrip",
+          "line": 505,
+          "called": [
+            "SchedContextId",
+            "SystemState",
+            "default",
+            "expect",
+            "getSchedContext",
+            "insert",
+            "minimalSchedContext",
+            "none",
+            "scId",
+            "throw",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "storeObjectKindChecked_fresh_allocation_succeeds",
+          "line": 528,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "default",
+            "expect",
+            "getTcb",
+            "minimalTcb",
+            "storeObjectKindChecked",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "storeObjectKindChecked_samekind_overwrite_succeeds",
+          "line": 539,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "default",
+            "expect",
+            "getTcb",
+            "insert",
+            "minimalTcb",
+            "none",
+            "storeObjectKindChecked",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "storeObjectKindChecked_tcb_to_schedContext_rejected",
+          "line": 558,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "default",
+            "expect",
+            "insert",
+            "minimalSchedContext",
+            "minimalTcb",
+            "storeObjectKindChecked",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "storeObjectKindChecked_schedContext_to_tcb_rejected",
+          "line": 574,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "default",
+            "expect",
+            "insert",
+            "minimalSchedContext",
+            "minimalTcb",
+            "storeObjectKindChecked",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "storeObjectKindChecked_rejection_preserves_state",
+          "line": 590,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "default",
+            "expect",
+            "getTcb",
+            "insert",
+            "minimalSchedContext",
+            "minimalTcb",
+            "storeObjectKindChecked",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "lifecycleObjectTypeLockstep_default",
+          "line": 615,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "default",
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "storeObject_updates_objects_and_objectTypes_in_lockstep",
+          "line": 625,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "default",
+            "expect",
+            "minimalTcb",
+            "storeObject",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "crossSubsystemInvariant_default_has_lockstep",
+          "line": 646,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "crossSubsystemInvariant_to_lifecycleObjectTypeLockstep",
+            "default",
+            "default_crossSubsystemInvariant",
+            "expect",
+            "lifecycleObjectTypeLockstep"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "blockingAcyclic_projection_reindex_ok",
+          "line": 667,
+          "called": [
+            "SystemState",
+            "crossSubsystemInvariant_to_blockingAcyclic",
+            "default",
+            "default_crossSubsystemInvariant",
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "checkCrossSubsystemInvariant_covers_all_predicates",
+          "line": 680,
+          "called": [
+            "SystemState",
+            "checkCrossSubsystemInvariant",
+            "default",
+            "expect",
+            "none",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "checkCrossSubsystemInvariant_detects_lockstep_violation",
+          "line": 701,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "checkCrossSubsystemInvariant",
+            "default",
+            "expect",
+            "insert",
+            "minimalTcb",
+            "none",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "storeObject_preserves_lockstep_under_crossSubsystemInvariant",
+          "line": 728,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "default",
+            "expect",
+            "minimalTcb",
+            "storeObject",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "storeObjectKindChecked_rejection_preserves_lockstep",
+          "line": 749,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "default",
+            "expect",
+            "insert",
+            "minimalSchedContext",
+            "minimalTcb",
+            "storeObjectKindChecked",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "integration_validThreadId_rejects_sentinel",
+          "line": 783,
+          "called": [
+            "ThreadId",
+            "expect",
+            "sentinel",
+            "toValid"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "integration_validSchedContextId_rejects_sentinel",
+          "line": 788,
+          "called": [
+            "SchedContextId",
+            "expect",
+            "sentinel",
+            "toValid"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "integration_validThreadId_roundtrip",
+          "line": 794,
+          "called": [
+            "ThreadId",
+            "expect",
+            "none",
+            "ofValid",
+            "throw",
+            "toValid"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "integration_null_cap_cross_kind_sentinel_rejected",
+          "line": 807,
+          "called": [
+            "Capability",
+            "SystemState",
+            "default",
+            "expect",
+            "insert",
+            "isNull",
+            "minimalSchedContext",
+            "minimalTcb",
+            "null",
+            "requireNotNull",
+            "storeObjectKindChecked",
+            "throw",
+            "toValid"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "requireNotNull_complement_on_null_and_nonnull",
+          "line": 828,
+          "called": [
+            "Capability",
+            "empty",
+            "expect",
+            "isNull",
+            "none",
+            "null"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ensureCdtNodeForSlotChecked_counter_overflow_rejected",
+          "line": 841,
+          "called": [
+            "CdtNodeId",
+            "SlotRef",
+            "SystemState",
+            "default",
+            "ensureCdtNodeForSlotChecked",
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ensureCdtNodeForSlotChecked_counter_ok",
+          "line": 852,
+          "called": [
+            "CdtNodeId",
+            "SlotRef",
+            "SystemState",
+            "default",
+            "ensureCdtNodeForSlotChecked",
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "vspaceRoot_noPhysicalFrameCollision_empty",
+          "line": 860,
+          "called": [
+            "expect",
+            "noPhysicalFrameCollision_empty"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "pagePermissions_toNat_ofNat_roundtrip",
+          "line": 869,
+          "called": [
+            "PagePermissions.ofNat",
+            "PagePermissions.toNat",
+            "expect",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "cdtNodeId_sentinel_isReserved",
+          "line": 879,
+          "called": [
+            "expect",
+            "isReserved",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 892,
+          "called": [
+            "addrInRange_device_region_rejected",
+            "addrInRange_empty_map_rejects",
+            "addrInRange_ram_region_accepts",
+            "apiInvariantBundle_full_implies_objectsOnly",
+            "blockingAcyclic_projection_reindex_ok",
+            "capability_canonical_null",
+            "capability_cnodeSlot_not_null",
+            "capability_nonnull_cap",
+            "capability_object_with_rights_not_null",
+            "capability_requireNotNull_roundtrip",
+            "capability_toNonNull_accepts_nonnull",
+            "capability_toNonNull_rejects_null",
+            "capability_toNonNull_roundtrip",
+            "cdtNodeId_sentinel_isReserved",
+            "checkCrossSubsystemInvariant_covers_all_predicates",
+            "checkCrossSubsystemInvariant_detects_lockstep_violation",
+            "cptr_toValid_rejects_null",
+            "crossSubsystemInvariant_default_has_lockstep",
+            "cspaceCopy_from_null_rejected",
+            "cspaceMint_from_null_rejected",
+            "cspaceMove_from_null_rejected",
+            "ensureCdtNodeForSlotChecked_counter_ok",
+            "ensureCdtNodeForSlotChecked_counter_overflow_rejected",
+            "freezeMap_empty_invExtK",
+            "freezeMap_singleton_invExtK",
+            "freeze_preserves_full_invariants_default",
+            "frozenMap_empty_wellFormed",
+            "frozenMap_nonempty_wellFormed",
+            "getEndpoint_discriminates_variants",
+            "getNotification_discriminates_variants",
+            "getSchedContext_discriminates_variants",
+            "getSchedContext_roundtrip",
+            "getTcb_discriminates_variants",
+            "getTcb_none_when_absent",
+            "getTcb_roundtrip",
+            "getUntyped_discriminates_variants",
+            "integration_null_cap_cross_kind_sentinel_rejected",
+            "integration_validSchedContextId_rejects_sentinel",
+            "integration_validThreadId_rejects_sentinel",
+            "integration_validThreadId_roundtrip",
+            "kindedObjId_thread_schedContext_disjoint",
+            "lifecycleObjectTypeLockstep_default",
+            "messageInfo_mkChecked_accepts_maxLabel_boundary",
+            "messageInfo_mkChecked_accepts_valid",
+            "messageInfo_mkChecked_rejects_oversize_extraCaps",
+            "messageInfo_mkChecked_rejects_oversize_label",
+            "messageInfo_mkChecked_rejects_oversize_length",
+            "messageInfo_wellFormed_sound",
+            "nullCapability_distinct_from_invalidCapability",
+            "objectKind_variants_pairwise_distinct",
+            "pagePermissions_toNat_ofNat_roundtrip",
+            "readMemChecked_out_of_range_none",
+            "requireNotNull_complement_on_null_and_nonnull",
+            "schedContextId_toValid_rejects_sentinel",
+            "storeObjectKindChecked_fresh_allocation_succeeds",
+            "storeObjectKindChecked_rejection_preserves_lockstep",
+            "storeObjectKindChecked_rejection_preserves_state",
+            "storeObjectKindChecked_samekind_overwrite_succeeds",
+            "storeObjectKindChecked_schedContext_to_tcb_rejected",
+            "storeObjectKindChecked_tcb_to_schedContext_rejected",
+            "storeObject_preserves_lockstep_under_crossSubsystemInvariant",
+            "storeObject_updates_objects_and_objectTypes_in_lockstep",
+            "tcb_ext_reflexive",
+            "threadId_toValid_accepts_nonsentinel",
+            "threadId_toValid_rejects_sentinel",
+            "vspaceRoot_noPhysicalFrameCollision_empty",
+            "writeMemChecked_out_of_range_none"
+          ]
         }
       ]
     },

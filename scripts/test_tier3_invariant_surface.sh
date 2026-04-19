@@ -605,12 +605,12 @@ run_check "INVARIANT" rg -n '^theorem cspaceMintChecked_NI' SeLe4n/Kernel/Inform
 # Composed NI framework (H-05):
 run_check "INVARIANT" rg -n '^inductive NonInterferenceStep' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_check "INVARIANT" rg -n '^theorem composedNonInterference_trace' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
-# WS-F3 test suite coverage:
-run_check "TRACE" rg -n 'WS-F3.*activeDomain' tests/InformationFlowSuite.lean
-run_check "TRACE" rg -n 'WS-F3.*IRQ handler' tests/InformationFlowSuite.lean
-run_check "TRACE" rg -n 'WS-F3/F-22.*CNode' tests/InformationFlowSuite.lean
-run_check "TRACE" rg -n 'Q1.*Service registry projection' tests/InformationFlowSuite.lean
-run_check "TRACE" rg -n 'WS-F3.*7-field low-equivalence' tests/InformationFlowSuite.lean
+# Information-flow test suite coverage anchors.
+run_check "TRACE" rg -n 'activeDomain visible' tests/InformationFlowSuite.lean
+run_check "TRACE" rg -n 'IRQ handler' tests/InformationFlowSuite.lean
+run_check "TRACE" rg -n 'CNode slot filtering' tests/InformationFlowSuite.lean
+run_check "TRACE" rg -n 'Service registry projection' tests/InformationFlowSuite.lean
+run_check "TRACE" rg -n '7-field low-equivalence' tests/InformationFlowSuite.lean
 
 # WS-F4 proof gap closure anchors — timerTick, cspaceMutate, cspaceRevoke, notification preservation.
 run_check "INVARIANT" rg -n '^theorem timerTick_preserves_schedulerInvariantBundle' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
