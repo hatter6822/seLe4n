@@ -14,6 +14,8 @@ import SeLe4n.Model.FrozenState
 import SeLe4n.Model.FreezeProofs
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Testing.Helpers
+import SeLe4n.Testing.InvariantChecks
+import SeLe4n.Kernel.CrossSubsystem
 
 /-! # AK7 Regression Suite — Foundational Model
 
@@ -669,6 +671,56 @@ def am4_02_blockingAcyclic_projection_reindex_ok : IO Unit := do
   let _ := hAcyc
   expect "am4-02 blockingAcyclic projection reindexed" true
 
+/-- AM4-04 (audit remediation): `checkCrossSubsystemInvariant` in
+`Testing/InvariantChecks.lean` runs all 11 predicate checks (extended
+from 10 in WS-AM audit remediation to cover the AL6-C lockstep
+predicate).  Guards against future regressions where the Prop-level
+bundle is extended but the boolean runtime check drifts out of sync. -/
+def am4_04_runtime_check_covers_11_predicates : IO Unit := do
+  let st : SystemState := default
+  let checks := SeLe4n.Testing.checkCrossSubsystemInvariant st
+  -- Must have exactly 11 entries (not 10).
+  expect "am4-04 runtime check list has 11 entries"
+    (checks.length = 11)
+  -- The new entry must be named and must pass on the default (empty) state.
+  let lockstepEntry := checks.find? (fun (n, _) =>
+    n = "crossSub:lifecycleObjectTypeLockstep")
+  match lockstepEntry with
+  | none =>
+    throw <| IO.userError "am4-04: lifecycleObjectTypeLockstep check missing"
+  | some (_, ok) =>
+    expect "am4-04 lockstep check passes on default state" ok
+
+/-- AM4-05 (audit remediation): The runtime checker actually detects
+a violation of the lockstep invariant — build a deliberately
+inconsistent state where `objects` carries a TCB but
+`lifecycle.objectTypes` records `.schedContext`, and confirm the
+runtime check returns `false` for the lockstep predicate (proving the
+checker is not vacuously passing). -/
+def am4_05_runtime_check_detects_violation : IO Unit := do
+  let id : ObjId := ⟨410⟩
+  let t := minimalTcb ⟨410⟩
+  let base : SystemState := default
+  -- Build a state with a TCB in objects but SchedContext tag in objectTypes
+  -- (contradiction — this state should fail lockstep).
+  let bad : SystemState :=
+    { base with
+        objects := base.objects.insert id (.tcb t)
+        objectIndex := id :: base.objectIndex
+        objectIndexSet := base.objectIndexSet.insert id
+        lifecycle := { base.lifecycle with
+          -- NOTE: .schedContext instead of .tcb — deliberately inconsistent.
+          objectTypes := base.lifecycle.objectTypes.insert id .schedContext } }
+  let checks := SeLe4n.Testing.checkCrossSubsystemInvariant bad
+  let lockstepEntry := checks.find? (fun (n, _) =>
+    n = "crossSub:lifecycleObjectTypeLockstep")
+  match lockstepEntry with
+  | none =>
+    throw <| IO.userError "am4-05: lifecycleObjectTypeLockstep check missing"
+  | some (_, ok) =>
+    -- ok must be FALSE because the state violates lockstep
+    expect "am4-05 lockstep violation detected" (!ok)
+
 /-- AM4-03: After storing a TCB in a seeded state that satisfies the
 extended bundle, the post-state also satisfies `lifecycleObjectTypeLockstep`
 via AM1-B. Runtime witness for the cross-subsystem transport. -/
@@ -906,6 +958,9 @@ def main : IO Unit := do
   am4_01_default_bundle_has_lockstep
   am4_02_blockingAcyclic_projection_reindex_ok
   am4_03_storeObject_preserves_lockstep_under_bundle
+  -- AM4 audit remediation: runtime check covers 11 predicates + detects violations
+  am4_04_runtime_check_covers_11_predicates
+  am4_05_runtime_check_detects_violation
   -- AL10 (WS-AL): cross-cutting integration — defense-in-depth covering
   -- AK7-E + AK7-F + AK7-I closures
   al10_01_validThreadId_rejects_sentinel

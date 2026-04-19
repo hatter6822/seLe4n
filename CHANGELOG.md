@@ -1,3 +1,75 @@
+## v0.30.0 — WS-AM post-delivery audit remediation
+
+End-to-end audit of the WS-AM delivery (AM1 + AM4) surfaced two
+material correctness gaps and a cluster of stale comments/counts.
+All remediated in the same v0.30.0 release.
+
+### AUDIT FINDING 1 (MATERIAL) — Runtime check coverage gap
+
+`SeLe4n/Testing/InvariantChecks.lean::checkCrossSubsystemInvariant`
+(the boolean runtime checker called from
+`assertCrossSubsystemInvariant` between every trace-harness
+transition) still iterated over only 10 predicates after AM4
+extended the Prop-level bundle to 11. The `main_trace_smoke` fixture
+therefore passed WITHOUT actually exercising the AL6-C lockstep
+predicate at runtime — a silent coverage gap.
+
+**Fix**: added `checkLifecycleObjectTypeLockstep` (walks
+`objectIndex`, compares each `objects[oid]?.objectType` against
+`lifecycle.objectTypes[oid]?`) and appended
+`"crossSub:lifecycleObjectTypeLockstep"` as the 11th entry of
+`checkCrossSubsystemInvariant`. Two new regression tests:
+
+- `am4_04_runtime_check_covers_11_predicates` asserts the list has
+  exactly 11 entries and the new entry is named correctly.
+- `am4_05_runtime_check_detects_violation` constructs a deliberately
+  inconsistent state (TCB in `objects` + `.schedContext` tag in
+  `objectTypes`) and asserts the lockstep check returns `false` —
+  confirming the runtime check is not vacuously passing.
+
+### AUDIT FINDING 2 (MATERIAL) — Field-set catalog + pairwise coverage
+
+`crossSubsystemFieldSets` still had 10 entries; the
+`crossSubsystemFieldSets_count : length = 10` theorem was stale; and
+`crossSubsystem_pairwise_coverage_complete` enumerated C(10,2) = 45
+pairs rather than the correct C(11,2) = 55.
+
+**Fix**:
+- Added `lifecycleObjectTypeLockstep_fields := [.objects, .lifecycle]`.
+- Extended `crossSubsystemFieldSets` to 11 entries.
+- Updated `crossSubsystemFieldSets_count` to `length = 11` (proven
+  by `rfl`).
+- Extended `crossSubsystem_pairwise_coverage_complete` to 18 disjoint
+  pairs (15 prior + 3 new: `lifecycleObjectTypeLockstep` is disjoint
+  from `registryInterfaceValid`, `registryDependencyConsistent`,
+  `serviceGraphInvariant`). The 37-shared-pair complement makes
+  18 + 37 = 55 = C(11,2).
+- Updated the existing `tests/InformationFlowSuite.lean` V6-A
+  runtime assertion from "10 entries" to "11 entries".
+
+### Stale comment cluster (non-material but misleading)
+
+Updated 5 in-code comment references to "10 predicates/10-predicate"
+in `SeLe4n/Kernel/CrossSubsystem.lean` (lines 50, 585, 608, 649,
+1436, 1609, 1685) and `SeLe4n/Kernel/Architecture/Invariant.lean`
+(line 521) to reflect the 11-predicate reality. Historical comments
+documenting past extensions (AF1-B3 "extended from 9 to 10") are
+preserved as chronicle.
+
+### Gate after audit remediation
+
+`lake build` (260 jobs, 0 warnings) + `test_tier0_hygiene.sh` PASS +
+`test_smoke.sh` PASS + `test_full.sh` PASS +
+`lake exe ak7_regression_suite` (**87 checks**, up from 84 —
+am4_04 +2 + am4_05 +1) + `cargo test --workspace` (415 tests,
+0 failed) + `cargo clippy --workspace -- -D warnings` (0 warnings) +
+`ak7_cascade_check_monotonic.sh` PASS (TEST_COUNT_AK7 84 → 87;
+LIFECYCLELOCKSTEP_REFS 63 → 79; all should-drop metrics hold) +
+`check_version_sync.sh` PASS at 0.30.0 + zero sorry / zero axiom.
+
+The WS-AM workstream is now CLOSED with both the structural
+integration (AM1+AM4) and the audit remediation landed in v0.30.0.
+
 ## v0.30.0 — WS-AM: AL6-C.hygiene closure via cross-subsystem integration
 
 Closes the last remaining correctness-impacting deferred item from the

@@ -47,7 +47,7 @@ modified.
 | `schedContextStoreConsistent` | Every SchedContext referenced by a TCB binding exists in the store (Z9-A) |
 | `schedContextNotDualBound` | At most one thread references any given SchedContext (Z9-B) |
 | `schedContextRunQueueConsistent` | Runnable SC-bound threads have live SC with positive budget (Z9-C) |
-| `crossSubsystemInvariant` | Composed 10-predicate bundle of all cross-subsystem predicates (Z9-D, AE5-C, AF1-B) |
+| `crossSubsystemInvariant` | Composed 11-predicate bundle of all cross-subsystem predicates (Z9-D, AE5-C, AF1-B, AM4/AL6-C) |
 -/
 
 namespace SeLe4n.Kernel
@@ -582,7 +582,7 @@ theorem default_crossSubsystemInvariant :
 
 /-- AE4-D (U-36/C-CAP06): Full cross-subsystem invariant with CDT mint completeness.
 
-Combines `crossSubsystemInvariant` (10 predicates) with
+Combines `crossSubsystemInvariant` (11 predicates after WS-AM AM4) with
 `capabilityInvariantBundleWithMintCompleteness` (standard bundle + mint completeness).
 This ensures CDT-based revocation via `cspaceRevokeCdt` is exhaustive at the
 composition layer without modifying the 60+ theorems that destructure the
@@ -605,7 +605,7 @@ theorem crossSubsystemInvariantWithCdtCoverage_to_capabilityBundle
 -- W2-B (H-1): Cross-subsystem invariant composition gap documentation
 -- ============================================================================
 
-/-- W2-B (H-1) + Z9-D + AE5-C + AF1-B: **Composition gap acknowledgment.** The 10-predicate
+/-- W2-B (H-1) + Z9-D + AE5-C + AF1-B + AM4/AL6-C: **Composition gap acknowledgment.** The 11-predicate
     conjunction `crossSubsystemInvariant` may not be the strongest composite
     invariant: there may exist cross-subsystem interference properties not
     captured by the individual predicates.
@@ -646,7 +646,7 @@ theorem crossSubsystemInvariant_composition_gap_documented
 -- W6-C: Cross-subsystem invariant composition note
 -- ============================================================================
 
-/- W6-C (L-6) + Z9-D + AE5-C + AF1-B: The canonical cross-subsystem invariant is the 10-predicate
+/- W6-C (L-6) + Z9-D + AE5-C + AF1-B + AM4/AL6-C: The canonical cross-subsystem invariant is the 11-predicate
    conjunction `crossSubsystemInvariant` above (extended from 5 in Z9-D).
    The previous parameterized predicate list (`crossSubsystemPredicates`) and
    its count witness have been removed — they duplicated the conjunction without
@@ -717,6 +717,13 @@ def schedContextRunQueueConsistent_fields : List StateField :=
     fields to build blocking chains and verify acyclicity. -/
 def blockingAcyclic_fields : List StateField :=
   [.objects]
+
+/-- AM4 audit remediation: `lifecycleObjectTypeLockstep` reads `objects`
+    and `lifecycle` (specifically `lifecycle.objectTypes`) — for every
+    populated ObjId, it asserts the stored object's `objectType` matches
+    the recorded lifecycle entry. -/
+def lifecycleObjectTypeLockstep_fields : List StateField :=
+  [.objects, .lifecycle]
 
 /-- V6-A3: Helper — two field lists are disjoint (no shared elements). -/
 def fieldsDisjoint (fs₁ fs₂ : List StateField) : Bool :=
@@ -900,8 +907,9 @@ theorem schedCtxRunQueue_shares_staleNotification :
     fieldsDisjoint schedContextRunQueueConsistent_fields
                    noStaleNotificationWaitReferences_fields = false := by decide
 
-/-- AC5-A + AF1-B2: Summary — complete pairwise analysis of all 10 cross-subsystem
-    predicates. C(10,2) = 45 pairs total: 15 disjoint + 30 shared.
+/-- AC5-A + AF1-B2 + AM4 audit remediation: Summary — complete pairwise
+    analysis of all 11 cross-subsystem predicates. C(11,2) = 55 pairs
+    total: 18 disjoint + 37 shared.
 
     Predicate                          Fields
     ─────────────────────────────────  ────────────────────────
@@ -915,13 +923,19 @@ theorem schedCtxRunQueue_shares_staleNotification :
     schedContextNotDualBound           objects
     schedContextRunQueueConsistent     scheduler, objects
     blockingAcyclic                    objects
+    lifecycleObjectTypeLockstep        objects, lifecycle
 
-    Disjoint pairs: predicates touching only {services, objectIndex, serviceRegistry,
-    interfaceRegistry} vs predicates touching only {objects, scheduler} have no
-    field overlap.
-    Shared pairs: any two predicates that both read `objects` share that field. -/
+    AM4 extension: `lifecycleObjectTypeLockstep` reads `objects` and
+    `lifecycle`. It is disjoint from the 3 predicates whose read-sets
+    are confined to {services, serviceRegistry, interfaceRegistry,
+    objectIndex} (registryInterfaceValid, registryDependencyConsistent,
+    serviceGraphInvariant) — contributing 3 new disjoint pairs. It is
+    SHARED with the 7 predicates that read `objects` (endpointValid,
+    staleEpQ, staleNtfnWait, scStoreConsistent, scNotDualBound,
+    scRunQueueConsistent, blockingAcyclic) — contributing 7 new shared
+    pairs. New total = 18 disjoint + 37 shared = 55 = C(11,2). -/
 theorem crossSubsystem_pairwise_coverage_complete :
-    -- 15 disjoint pairs (all evaluate to true)
+    -- 18 disjoint pairs (all evaluate to true)
     [ fieldsDisjoint registryDependencyConsistent_fields noStaleEndpointQueueReferences_fields
     , fieldsDisjoint registryDependencyConsistent_fields noStaleNotificationWaitReferences_fields
     , fieldsDisjoint serviceGraphInvariant_fields noStaleEndpointQueueReferences_fields
@@ -937,10 +951,13 @@ theorem crossSubsystem_pairwise_coverage_complete :
     , fieldsDisjoint blockingAcyclic_fields registryInterfaceValid_fields  -- AF1-B2
     , fieldsDisjoint blockingAcyclic_fields registryDependencyConsistent_fields  -- AF1-B2
     , fieldsDisjoint blockingAcyclic_fields serviceGraphInvariant_fields  -- AF1-B2
-    -- AF4-B: Replaced `native_decide` with `decide` to remove Lean runtime
-    -- evaluator from the TCB. The 15-element Bool list is small enough for
-    -- kernel-checked `decide` (coordinated with AF1-B 10-predicate count).
-    ].countP id = 15 := by decide
+    , fieldsDisjoint lifecycleObjectTypeLockstep_fields registryInterfaceValid_fields  -- AM4
+    , fieldsDisjoint lifecycleObjectTypeLockstep_fields registryDependencyConsistent_fields  -- AM4
+    , fieldsDisjoint lifecycleObjectTypeLockstep_fields serviceGraphInvariant_fields  -- AM4
+    -- AF4-B + AM4: Kernel-checked `decide` (native_decide forbidden in
+    -- production TCB). 18-element Bool list coordinated with AF1-B+AM4
+    -- 11-predicate count.
+    ].countP id = 18 := by decide
 
 -- ============================================================================
 -- W2-A (H-2): Operation modified-field sets
@@ -1099,7 +1116,9 @@ theorem fieldDisjointness_frameIndependence_documented :
                     registryEndpointValid_fields = true) := by
   exact ⟨by decide, by decide, by decide, by decide, by decide, by decide⟩
 
-/-- V6-A4 + Z9-E + AE5-C: All predicate field-sets mapped to the canonical list. -/
+/-- V6-A4 + Z9-E + AE5-C + AM4: All predicate field-sets mapped to the canonical list.
+    AM4 audit remediation extended the catalog from 10 to 11 entries with
+    `lifecycleObjectTypeLockstep_fields` (reads `objects` + `lifecycle`). -/
 def crossSubsystemFieldSets : List (String × List StateField) :=
   [ ("registryEndpointValid", registryEndpointValid_fields)
   , ("registryInterfaceValid", registryInterfaceValid_fields)  -- AE5-C
@@ -1110,11 +1129,13 @@ def crossSubsystemFieldSets : List (String × List StateField) :=
   , ("schedContextStoreConsistent", schedContextStoreConsistent_fields)
   , ("schedContextNotDualBound", schedContextNotDualBound_fields)
   , ("schedContextRunQueueConsistent", schedContextRunQueueConsistent_fields)
-  , ("blockingAcyclic", blockingAcyclic_fields) ]  -- AF1-B1
+  , ("blockingAcyclic", blockingAcyclic_fields)  -- AF1-B1
+  , ("lifecycleObjectTypeLockstep", lifecycleObjectTypeLockstep_fields) ]  -- AM4 audit remediation
 
-/-- V6-A4 + Z9-E + AE5-C + AF1-B1: Field-set count matches predicate count (10 predicates). -/
+/-- V6-A4 + Z9-E + AE5-C + AF1-B1 + AM4: Field-set count matches predicate
+    count (11 predicates since AM4 extension). -/
 theorem crossSubsystemFieldSets_count :
-    crossSubsystemFieldSets.length = 10 := by rfl
+    crossSubsystemFieldSets.length = 11 := by rfl
 
 /-- V6-A5: Frame lemma — if an operation preserves the `services` field,
     `registryDependencyConsistent` is preserved. This is the canonical
@@ -1412,7 +1433,8 @@ theorem crossSubsystemInvariant_services_change
 
 /-- X3-D (H-4) + Z9-D: **Cross-subsystem invariant composition tightness.**
 
-    The 10-predicate `crossSubsystemInvariant` conjunction has 45 predicate
+    The 11-predicate `crossSubsystemInvariant` conjunction (11 since WS-AM
+    AM4 added `lifecycleObjectTypeLockstep`) has C(11,2) = 55 predicate
     interaction pairs. The 3 new SchedContext predicates (Z9-A/B/C) all read
     `objects`, so they share with each other and with the existing objects-
     reading predicates. They are disjoint from `registryDependencyConsistent`
@@ -1585,8 +1607,9 @@ theorem threadCleanup_frame_preserves_schedContextPredicates
 
 Phase AD4 of the WS-AD pre-release audit remediation strengthens the
 cross-subsystem invariant composition by adding operation-specific bridge
-lemmas that connect per-subsystem preservation proofs to the full 10-predicate
-`crossSubsystemInvariant` bundle.
+lemmas that connect per-subsystem preservation proofs to the full
+11-predicate `crossSubsystemInvariant` bundle (11 since WS-AM AM4 added
+the `lifecycleObjectTypeLockstep` conjunct; AD4-era docs referenced 10).
 
 ### Coverage Matrix (AD4-A)
 
@@ -1655,13 +1678,14 @@ All operations preserve `services` and `serviceRegistry`.
 
 ### Bridge Pattern
 
-Each bridge lemma:
-1. Decomposes `crossSubsystemInvariant st` into 9 pre-state hypotheses
+Each bridge lemma (since WS-AM AM4 extension):
+1. Decomposes `crossSubsystemInvariant st` into 11 pre-state hypotheses
 2. Applies frame lemmas for `registryDependencyConsistent` (`services` unchanged)
    and `serviceGraphInvariant` (`services` + `objectIndex` unchanged)
-3. Takes caller-provided post-state proofs for the 7 objects-reading predicates
-   (including `blockingAcyclic`, AF1-B4)
-4. Reassembles the 10-predicate conjunction for `st'`
+3. Takes caller-provided post-state proofs for the 8 objects-reading
+   predicates (including `blockingAcyclic` AF1-B4 and `lifecycleObjectTypeLockstep`
+   AM4/AL6-C)
+4. Reassembles the 11-predicate conjunction for `st'`
 -/
 
 -- ============================================================================

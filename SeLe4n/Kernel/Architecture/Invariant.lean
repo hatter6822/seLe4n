@@ -518,7 +518,7 @@ theorem default_system_state_proofLayerInvariantBundle :
     · intro oid root v p perms hObj; exact default_objects_absurd hObj
     · intro oidA oidB rA rB hObjA; exact default_objects_absurd hObjA
     · intro oid root v p perms hObj; exact default_objects_absurd hObj
-  -- 8. crossSubsystemInvariant (R4-E + T5-J + Z9-D + AF1-B: 10 predicates)
+  -- 8. crossSubsystemInvariant (R4-E + T5-J + Z9-D + AF1-B + AM4/AL6-C: 11 predicates)
   · exact default_crossSubsystemInvariant
   -- 9. tlbConsistent (R7-A.2/M-17: empty TLB is trivially consistent)
   · exact tlbConsistent_empty (default : SystemState)
