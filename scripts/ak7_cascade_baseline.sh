@@ -82,7 +82,7 @@ echo "AXIOM_COUNT:$(rg_count '^axiom\s|\baxiom\s')"
 
 # --- Build health (target: increase or hold) -----------------------------
 if [[ "${AL0_SKIP_BUILD:-0}" != "1" ]] && command -v lake >/dev/null 2>&1; then
-  # shellcheck disable=SC1090
+  # shellcheck disable=SC1090,SC1091
   source "${HOME}/.elan/env" 2>/dev/null || true
   # Lake emits two possible outputs:
   #   1. incremental: no-op summary line "Build completed successfully (N jobs)."
