@@ -355,6 +355,74 @@ writes at write time; the invariant describes the reachable-state
 shape that callers can rely on at read time. -/
 theorem lifecycleObjectTypeLockstep_schema : True := trivial
 
+/-- AM1-A (WS-AM / AL6-C.hygiene): the default `SystemState` satisfies
+`lifecycleObjectTypeLockstep` vacuously because its `objects` table is
+empty, so the universal premise `st.objects[oid]? = some obj` is
+uninhabited for every `oid`. -/
+theorem default_lifecycleObjectTypeLockstep :
+    lifecycleObjectTypeLockstep (default : SystemState) := by
+  intro oid obj h
+  simp only [RHTable_getElem?_eq_get?] at h
+  have : (default : SystemState).objects.get? oid = none :=
+    SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) oid
+  simp [this] at h
+
+/-- AM1-B (WS-AM / AL6-C.hygiene): `storeObject` preserves the
+lockstep invariant. Both the `objects` and `lifecycle.objectTypes`
+tables are updated in a single transition with the same key `oid` and
+the matching `obj` / `obj.objectType`, so every post-state query is
+either (a) at the updated key, discharged by `getElem?_insert_self`
+twice, or (b) at an unaffected key, discharged by
+`getElem?_insert_ne` and the inductive invariant. -/
+theorem storeObject_preserves_lifecycleObjectTypeLockstep
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hLockstep : lifecycleObjectTypeLockstep st)
+    (hObjInv : st.objects.invExt)
+    (hObjTypesInv : st.lifecycle.objectTypes.invExt)
+    (hStep : storeObject oid obj st = .ok ((), st')) :
+    lifecycleObjectTypeLockstep st' := by
+  intro oid' obj' hObj'
+  unfold storeObject at hStep; cases hStep
+  simp only [RHTable_getElem?_eq_get?] at hObj' ⊢
+  by_cases hEq : oid' = oid
+  · subst hEq
+    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv] at hObj'
+    cases hObj'
+    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hObjTypesInv]
+  · have h1 : ¬((oid == oid') = true) := by
+      intro heq; exact hEq (eq_of_beq heq).symm
+    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ h1 hObjInv] at hObj'
+    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ h1 hObjTypesInv]
+    have := hLockstep oid' obj'
+    simp only [RHTable_getElem?_eq_get?] at this
+    exact this hObj'
+
+/-- AM1-C (WS-AM / AL6-C.hygiene): `storeObjectKindChecked` preserves
+the lockstep invariant. The wrapper's three branches reduce to:
+  * `none` (fresh allocation) — delegates to `storeObject`; use AM1-B.
+  * `some existing` with matching `objectType` — delegates to
+    `storeObject`; use AM1-B.
+  * `some existing` with differing `objectType` — returns `.error`;
+    contradicts the success hypothesis.
+-/
+theorem storeObjectKindChecked_preserves_lifecycleObjectTypeLockstep
+    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hLockstep : lifecycleObjectTypeLockstep st)
+    (hObjInv : st.objects.invExt)
+    (hObjTypesInv : st.lifecycle.objectTypes.invExt)
+    (hStep : storeObjectKindChecked oid obj st = .ok ((), st')) :
+    lifecycleObjectTypeLockstep st' := by
+  unfold storeObjectKindChecked at hStep
+  split at hStep
+  · -- none branch: wrapper = storeObject
+    exact storeObject_preserves_lifecycleObjectTypeLockstep
+      st st' oid obj hLockstep hObjInv hObjTypesInv hStep
+  · -- some branch: split on the kind guard
+    split at hStep
+    · exact storeObject_preserves_lifecycleObjectTypeLockstep
+        st st' oid obj hLockstep hObjInv hObjTypesInv hStep
+    · cases hStep
+
 /-- R4-E.1 + T5-J + U4-G + Z9-D + AE5-C: Cross-subsystem invariant composing
     registry endpoint validity, interface validity, dependency consistency,
     stale queue reference exclusion, notification wait-list reference validity,

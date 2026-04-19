@@ -598,6 +598,74 @@ def al6_05_rejection_preserves_state : IO Unit := do
       throw <| IO.userError "al6-05 expected invalidObjectType rejection"
 
 -- ============================================================================
+-- AM1 (WS-AM / AL6-C.hygiene): lifecycleObjectTypeLockstep preservation
+-- tests. These runtime witnesses complement the Prop-level theorems
+-- `default_lifecycleObjectTypeLockstep`,
+-- `storeObject_preserves_lifecycleObjectTypeLockstep`, and
+-- `storeObjectKindChecked_preserves_lifecycleObjectTypeLockstep` in
+-- `SeLe4n/Kernel/CrossSubsystem.lean`.
+-- ============================================================================
+
+/-- AM1-01: Default state satisfies the lockstep invariant — check that
+the objectTypes lookup agrees with the objects lookup on a probe id
+(both must be `none` on the empty default state). -/
+def am1_01_default_lockstep : IO Unit := do
+  let st : SystemState := default
+  let probe : ObjId := ⟨500⟩
+  let hObj := st.objects[probe]?
+  let hTy := st.lifecycle.objectTypes[probe]?
+  expect "am1-01 default objects empty" hObj.isNone
+  expect "am1-01 default objectTypes empty" hTy.isNone
+
+/-- AM1-02: After storing a TCB via `storeObject`, both `objects` and
+`lifecycle.objectTypes` carry the new id with matching type. -/
+def am1_02_storeObject_updates_both_in_lockstep : IO Unit := do
+  let id : ObjId := ⟨210⟩
+  let t := minimalTcb ⟨210⟩
+  let base : SystemState := default
+  match storeObject id (.tcb t) base with
+  | .error e => throw <| IO.userError s!"am1-02 storeObject error: {repr e}"
+  | .ok (_, st') =>
+      let objOk : Bool :=
+        match st'.objects[id]? with
+        | some (.tcb _) => true
+        | _ => false
+      let tyOk : Bool :=
+        match st'.lifecycle.objectTypes[id]? with
+        | some .tcb => true
+        | _ => false
+      expect "am1-02 objects carries tcb" objOk
+      expect "am1-02 objectTypes carries .tcb" tyOk
+
+/-- AM1-03: After a cross-kind rejection via `storeObjectKindChecked`,
+the pre-state object and its objectType entry remain consistent (the
+rejection leaves the state unchanged, so lockstep is preserved
+trivially). -/
+def am1_03_kindChecked_rejection_preserves_lockstep : IO Unit := do
+  let id : ObjId := ⟨211⟩
+  let t := minimalTcb ⟨211⟩
+  let sc := minimalSchedContext ⟨211⟩
+  let base : SystemState := default
+  -- Seed with a TCB and a matching objectTypes entry (simulates a valid
+  -- reachable state).
+  let seeded : SystemState :=
+    { base with
+        objects := base.objects.insert id (.tcb t)
+        lifecycle := { base.lifecycle with
+          objectTypes := base.lifecycle.objectTypes.insert id .tcb } }
+  match storeObjectKindChecked id (.schedContext sc) seeded with
+  | .error .invalidObjectType =>
+      -- Unchanged state still carries the original tcb + .thread type.
+      let stillTcb : Bool :=
+        match seeded.objects[id]? with | some (.tcb _) => true | _ => false
+      let stillThread : Bool :=
+        match seeded.lifecycle.objectTypes[id]? with
+        | some .tcb => true | _ => false
+      expect "am1-03 pre-state tcb retained" stillTcb
+      expect "am1-03 pre-state .tcb type retained" stillThread
+  | _ => throw <| IO.userError "am1-03 expected invalidObjectType rejection"
+
+-- ============================================================================
 -- AL10 (WS-AL / integration gate): cross-cutting end-to-end tests tying
 -- the three security closures (AK7-E dispatch guard + AK7-F kind-guard +
 -- AK7-I null-cap guard) together. These confirm the attack surface is
@@ -778,6 +846,10 @@ def main : IO Unit := do
   al6_03_tcb_to_sc_rejected
   al6_04_sc_to_tcb_rejected
   al6_05_rejection_preserves_state
+  -- AM1 (WS-AM): lifecycleObjectTypeLockstep runtime witnesses
+  am1_01_default_lockstep
+  am1_02_storeObject_updates_both_in_lockstep
+  am1_03_kindChecked_rejection_preserves_lockstep
   -- AL10 (WS-AL): cross-cutting integration — defense-in-depth covering
   -- AK7-E + AK7-F + AK7-I closures
   al10_01_validThreadId_rejects_sentinel
