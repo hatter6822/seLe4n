@@ -41,19 +41,19 @@ private def expect (label : String) (cond : Bool) : IO Unit :=
 /-- BOV-001: Zero badge round-trip. -/
 private def bov001_zeroRoundTrip : IO Unit := do
   let b := Badge.ofNatMasked 0
-  expect "BOV-001 zero round-trip" (b.toNat == 0)
+  expect "zero round-trip" (b.toNat == 0)
 
 /-- BOV-002: Small value round-trip. -/
 private def bov002_smallRoundTrip : IO Unit := do
   let b := Badge.ofNatMasked 42
-  expect "BOV-002 small=42 round-trip" (b.toNat == 42)
+  expect "small=42 round-trip" (b.toNat == 42)
 
 /-- BOV-003: Max valid badge round-trip (2^64 - 1). -/
 private def bov003_maxValidRoundTrip : IO Unit := do
   let maxVal := machineWordMax - 1  -- 2^64 - 1
   let b := Badge.ofNatMasked maxVal
-  expect "BOV-003 max valid round-trip" (b.toNat == maxVal)
-  expect "BOV-003 max valid is valid" b.isValid
+  expect "max valid round-trip" (b.toNat == maxVal)
+  expect "max valid is valid" b.isValid
 
 /-- BOV-004: Power-of-two round-trips. -/
 private def bov004_powerOfTwoRoundTrip : IO Unit := do
@@ -61,13 +61,13 @@ private def bov004_powerOfTwoRoundTrip : IO Unit := do
   for shift in [0, 16, 32, 48, 63] do
     let val := 1 <<< shift
     let b := Badge.ofNatMasked val
-    expect s!"BOV-004 2^{shift} round-trip" (b.toNat == val)
+    expect s!"2^{shift} round-trip" (b.toNat == val)
 
 /-- BOV-005: Arbitrary mid-range value round-trip. -/
 private def bov005_midRangeRoundTrip : IO Unit := do
   let val := 0xDEADBEEFCAFEBABE
   let b := Badge.ofNatMasked val
-  expect "BOV-005 mid-range round-trip" (b.toNat == val)
+  expect "mid-range round-trip" (b.toNat == val)
 
 -- ============================================================================
 -- BOV-006..009: Overflow/truncation behavior
@@ -76,23 +76,23 @@ private def bov005_midRangeRoundTrip : IO Unit := do
 /-- BOV-006: Value at 2^64 wraps to 0 via modulo. -/
 private def bov006_exactOverflow : IO Unit := do
   let b := Badge.ofNatMasked machineWordMax  -- 2^64
-  expect "BOV-006 2^64 wraps to 0" (b.toNat == 0)
+  expect "2^64 wraps to 0" (b.toNat == 0)
 
 /-- BOV-007: Value at 2^64 + 1 wraps to 1. -/
 private def bov007_overflowPlusOne : IO Unit := do
   let b := Badge.ofNatMasked (machineWordMax + 1)
-  expect "BOV-007 2^64+1 wraps to 1" (b.toNat == 1)
+  expect "2^64+1 wraps to 1" (b.toNat == 1)
 
 /-- BOV-008: Value at 2^65 wraps to 0. -/
 private def bov008_doubleOverflow : IO Unit := do
   let b := Badge.ofNatMasked (2 * machineWordMax)
-  expect "BOV-008 2^65 wraps to 0" (b.toNat == 0)
+  expect "2^65 wraps to 0" (b.toNat == 0)
 
 /-- BOV-009: Very large value truncation preserves low 64 bits. -/
 private def bov009_largeTruncation : IO Unit := do
   let large := machineWordMax * 3 + 42
   let b := Badge.ofNatMasked large
-  expect "BOV-009 large value mod 2^64 == 42" (b.toNat == 42)
+  expect "large value mod 2^64 == 42" (b.toNat == 42)
 
 -- ============================================================================
 -- BOV-010..014: Badge bitwise OR (bor) overflow semantics
@@ -103,16 +103,16 @@ private def bov010_borInRange : IO Unit := do
   let a := Badge.ofNatMasked 0xFF00
   let b := Badge.ofNatMasked 0x00FF
   let c := Badge.bor a b
-  expect "BOV-010 bor in-range" (c.toNat == 0xFFFF)
-  expect "BOV-010 bor valid" c.isValid
+  expect "bor in-range" (c.toNat == 0xFFFF)
+  expect "bor valid" c.isValid
 
 /-- BOV-011: bor with max valid badge. -/
 private def bov011_borMaxValid : IO Unit := do
   let a := Badge.ofNatMasked (machineWordMax - 1)  -- all bits set
   let b := Badge.ofNatMasked 1
   let c := Badge.bor a b
-  expect "BOV-011 bor with max" (c.toNat == machineWordMax - 1)
-  expect "BOV-011 bor max valid" c.isValid
+  expect "bor with max" (c.toNat == machineWordMax - 1)
+  expect "bor max valid" c.isValid
 
 /-- BOV-012: bor is commutative (runtime check). -/
 private def bov012_borCommutative : IO Unit := do
@@ -120,20 +120,20 @@ private def bov012_borCommutative : IO Unit := do
   let b := Badge.ofNatMasked 0x5555
   let ab := Badge.bor a b
   let ba := Badge.bor b a
-  expect "BOV-012 bor commutative" (ab.toNat == ba.toNat)
+  expect "bor commutative" (ab.toNat == ba.toNat)
 
 /-- BOV-013: bor is idempotent (runtime check). -/
 private def bov013_borIdempotent : IO Unit := do
   let a := Badge.ofNatMasked 0xBEEF
   let aa := Badge.bor a a
-  expect "BOV-013 bor idempotent" (aa.toNat == a.toNat)
+  expect "bor idempotent" (aa.toNat == a.toNat)
 
 /-- BOV-014: bor result always valid. -/
 private def bov014_borAlwaysValid : IO Unit := do
   let a := Badge.ofNatMasked (machineWordMax - 1)
   let b := Badge.ofNatMasked (machineWordMax - 1)
   let c := Badge.bor a b
-  expect "BOV-014 bor max|max valid" c.isValid
+  expect "bor max|max valid" c.isValid
 
 -- ============================================================================
 -- BOV-015..018: Boundary values
@@ -142,24 +142,24 @@ private def bov014_borAlwaysValid : IO Unit := do
 /-- BOV-015: Badge 0 is valid. -/
 private def bov015_zeroValid : IO Unit := do
   let b := Badge.ofNatMasked 0
-  expect "BOV-015 zero valid" b.isValid
+  expect "zero valid" b.isValid
 
 /-- BOV-016: Badge max-1 is valid. -/
 private def bov016_maxMinusOneValid : IO Unit := do
   let b := Badge.ofNatMasked (machineWordMax - 1)
-  expect "BOV-016 max-1 valid" b.isValid
+  expect "max-1 valid" b.isValid
 
 /-- BOV-017: Badge at machineWordMax wraps (not valid before mask). -/
 private def bov017_maxWraps : IO Unit := do
   let b := Badge.ofNatMasked machineWordMax
   -- After masking, value is 0 (valid)
-  expect "BOV-017 max wraps to 0" (b.toNat == 0)
-  expect "BOV-017 wrapped badge valid" b.isValid
+  expect "max wraps to 0" (b.toNat == 0)
+  expect "wrapped badge valid" b.isValid
 
 /-- BOV-018: machineWordBits is 64. -/
 private def bov018_machineWordBits : IO Unit := do
-  expect "BOV-018 machineWordBits=64" (machineWordBits == 64)
-  expect "BOV-018 machineWordMax=2^64" (machineWordMax == 2 ^ 64)
+  expect "machineWordBits=64" (machineWordBits == 64)
+  expect "machineWordMax=2^64" (machineWordMax == 2 ^ 64)
 
 -- ============================================================================
 -- BOV-019..022: Hardware register width cross-check theorems
@@ -170,28 +170,28 @@ private def bov019_roundTripTheorem : IO Unit := do
   -- Exercises Badge.toNat_ofNatMasked at runtime
   let n := 12345
   let rt := (Badge.ofNatMasked n).toNat
-  expect "BOV-019 toNat∘ofNatMasked = mod" (rt == n % machineWordMax)
+  expect "toNat∘ofNatMasked = mod" (rt == n % machineWordMax)
 
 /-- BOV-020: ofNatMasked identity for small values. -/
 private def bov020_identitySmall : IO Unit := do
   -- Small values: mod is identity
   for n in [0, 1, 100, 65535, 1000000] do
     let b := Badge.ofNatMasked n
-    expect s!"BOV-020 identity n={n}" (b.toNat == n)
+    expect s!"identity n={n}" (b.toNat == n)
 
 /-- BOV-021: isWord64 predicate consistency. -/
 private def bov021_isWord64Consistency : IO Unit := do
-  expect "BOV-021 isWord64 small" (isWord64Dec 42 == true)
-  expect "BOV-021 isWord64 max-1" (isWord64Dec (machineWordMax - 1) == true)
-  expect "BOV-021 !isWord64 max" (isWord64Dec machineWordMax == false)
-  expect "BOV-021 !isWord64 max+1" (isWord64Dec (machineWordMax + 1) == false)
+  expect "isWord64 small" (isWord64Dec 42 == true)
+  expect "isWord64 max-1" (isWord64Dec (machineWordMax - 1) == true)
+  expect "!isWord64 max" (isWord64Dec machineWordMax == false)
+  expect "!isWord64 max+1" (isWord64Dec (machineWordMax + 1) == false)
 
 /-- BOV-022: Badge validity matches isWord64. -/
 private def bov022_validityMatchesWord64 : IO Unit := do
   let b42 := Badge.ofNatMasked 42
-  expect "BOV-022 valid↔isWord64 small" (b42.isValid == isWord64Dec b42.toNat)
+  expect "valid↔isWord64 small" (b42.isValid == isWord64Dec b42.toNat)
   let bMax := Badge.ofNatMasked (machineWordMax - 1)
-  expect "BOV-022 valid↔isWord64 max-1" (bMax.isValid == isWord64Dec bMax.toNat)
+  expect "valid↔isWord64 max-1" (bMax.isValid == isWord64Dec bMax.toNat)
 
 end SeLe4n.Testing.BadgeOverflowSuite
 

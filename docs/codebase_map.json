@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-deferred-tasks-zXVoC",
-      "commit_sha": "bfd2bc647e43488162230095ae510615eb811b73",
-      "tree_sha": "41573ddb17ce141d57b3a3af2dbfa2ed3f31e0b0",
-      "committed_at_utc": "2026-04-19T19:36:53+00:00"
+      "commit_sha": "8d9e61fe8f0191b7a84c63e2bc1d30631f4a1a92",
+      "tree_sha": "8548a035892f094781464191cb4ee4e034e3d6d8",
+      "committed_at_utc": "2026-04-19T21:43:42+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "633a4be9d459d3ce9d1ccc9a2e684b3e4f75f1e7793057555e18d970d241712d"
+    "source_digest": "961287dddf9b71e2e1c198d266d04eac8f1425522c649907b5bef6d90c1d23fb"
   },
   "summary": {
     "module_count": 165,

@@ -59,36 +59,36 @@ private def isErrEq [DecidableEq ε] (r : Except ε α) (expected : ε) : Bool :
 private def rd001_decodeSyscallIdValid : IO Unit := do
   -- First valid: .send (0)
   let r0 := decodeSyscallId ⟨0⟩
-  expect "RD-001a send=0" (isOkEq r0 .send)
+  expect "send=0" (isOkEq r0 .send)
   -- Middle: .serviceRegister (11)
   let r11 := decodeSyscallId ⟨11⟩
-  expect "RD-001b serviceRegister=11" (isOkEq r11 .serviceRegister)
+  expect "serviceRegister=11" (isOkEq r11 .serviceRegister)
   -- Last valid: .tcbSetIPCBuffer (24)
   let r24 := decodeSyscallId ⟨24⟩
-  expect "RD-001c tcbSetIPCBuffer=24" (isOkEq r24 .tcbSetIPCBuffer)
+  expect "tcbSetIPCBuffer=24" (isOkEq r24 .tcbSetIPCBuffer)
 
 /-- RD-002: decodeSyscallId — invalid values. -/
 private def rd002_decodeSyscallIdInvalid : IO Unit := do
   -- First invalid: 25
   let r25 := decodeSyscallId ⟨25⟩
-  expect "RD-002a invalid=25" (isErrEq r25 .invalidSyscallNumber)
+  expect "invalid=25" (isErrEq r25 .invalidSyscallNumber)
   -- Large value
   let rLarge := decodeSyscallId ⟨999999⟩
-  expect "RD-002b invalid=999999" (isErrEq rLarge .invalidSyscallNumber)
+  expect "invalid=999999" (isErrEq rLarge .invalidSyscallNumber)
 
 /-- RD-003: decodeSyscallId — boundary edge 24/25. -/
 private def rd003_decodeSyscallIdBoundary : IO Unit := do
   let r24 := decodeSyscallId ⟨24⟩
   let r25 := decodeSyscallId ⟨25⟩
-  expect "RD-003a boundary=24 ok" (r24.isOk)
-  expect "RD-003b boundary=25 err" (!r25.isOk)
+  expect "boundary=24 ok" (r24.isOk)
+  expect "boundary=25 err" (!r25.isOk)
 
 /-- RD-004: decodeMsgInfo — valid round-trip. -/
 private def rd004_decodeMsgInfoValid : IO Unit := do
   let mi : MessageInfo := { length := 4, extraCaps := 2, label := 100 }
   let encoded := encodeMsgInfo mi
   let decoded := decodeMsgInfo encoded
-  expect "RD-004a round-trip" (isOkEq decoded mi)
+  expect "round-trip" (isOkEq decoded mi)
 
 /-- RD-005: decodeMsgInfo — boundary and overflow values. -/
 private def rd005_decodeMsgInfoOverflow : IO Unit := do
@@ -96,39 +96,39 @@ private def rd005_decodeMsgInfoOverflow : IO Unit := do
   let miBoundary : MessageInfo := { length := 120, extraCaps := 0, label := 0 }
   let encodedBoundary := encodeMsgInfo miBoundary
   let decodedBoundary := decodeMsgInfo encodedBoundary
-  expect "RD-005a boundary length=120 ok" (isOkEq decodedBoundary miBoundary)
+  expect "boundary length=120 ok" (isOkEq decodedBoundary miBoundary)
   -- Overflow: length=121 should fail
   -- length field is bits 0..6 (7 bits), extraCaps bits 7..8 (2 bits), label bits 9+
   let rawWithLength121 := 121  -- bits 0-6 = 121
   let result := decodeMsgInfo ⟨rawWithLength121⟩
-  expect "RD-005b overflow length" (!result.isOk)
+  expect "overflow length" (!result.isOk)
 
 /-- RD-006: decodeCapPtr — valid and boundary values. -/
 private def rd006_decodeCapPtrValid : IO Unit := do
   -- Small value
   let r := decodeCapPtr ⟨42⟩
-  expect "RD-006a small value" (isOkEq r (CPtr.ofNat 42))
+  expect "small value" (isOkEq r (CPtr.ofNat 42))
   -- Zero
   let r0 := decodeCapPtr ⟨0⟩
-  expect "RD-006b zero" (isOkEq r0 (CPtr.ofNat 0))
+  expect "zero" (isOkEq r0 (CPtr.ofNat 0))
 
 /-- RD-007: decodeCapPtr — out-of-range (> 2^64). -/
 private def rd007_decodeCapPtrOutOfRange : IO Unit := do
   -- Value exceeding 64-bit word
   let rHuge := decodeCapPtr ⟨2^64⟩
-  expect "RD-007a exceeds word64" (isErrEq rHuge .invalidCapPtr)
+  expect "exceeds word64" (isErrEq rHuge .invalidCapPtr)
 
 /-- RD-008: validateRegBound — valid and boundary values. -/
 private def rd008_validateRegBound : IO Unit := do
   -- Valid: index 0 within bound 32
   let r0 := validateRegBound ⟨0⟩ 32
-  expect "RD-008a idx=0 bound=32 ok" r0.isOk
+  expect "idx=0 bound=32 ok" r0.isOk
   -- Valid: last valid index (31)
   let r31 := validateRegBound ⟨31⟩ 32
-  expect "RD-008b idx=31 bound=32 ok" r31.isOk
+  expect "idx=31 bound=32 ok" r31.isOk
   -- Invalid: index 32 (at bound)
   let r32 := validateRegBound ⟨32⟩ 32
-  expect "RD-008c idx=32 bound=32 err" (isErrEq r32 .invalidRegister)
+  expect "idx=32 bound=32 err" (isErrEq r32 .invalidRegister)
 
 /-- RD-009: decodeSyscallArgs — full integration with arm64DefaultLayout.
     Populates a RegisterFile with valid values in the ARM64 convention
@@ -149,24 +149,24 @@ private def rd009_decodeSyscallArgsIntegration : IO Unit := do
     |> (writeReg · ⟨5⟩ ⟨400⟩)                                    -- x5 = msgReg3
     |> (writeReg · ⟨7⟩ (encodeSyscallId syscallVal))             -- x7 = syscallNum
   let result := decodeSyscallArgs arm64DefaultLayout rf 32
-  expect "RD-009a integration ok" result.isOk
+  expect "integration ok" result.isOk
   match result with
   | .ok dr =>
-    expect "RD-009b capAddr" (dr.capAddr.toNat == capPtrVal)
-    expect "RD-009c msgInfo length" (dr.msgInfo.length == 2)
-    expect "RD-009d msgInfo extraCaps" (dr.msgInfo.extraCaps == 1)
-    expect "RD-009e syscallId" (dr.syscallId == syscallVal)
-    expect "RD-009f msgRegs length" (dr.msgRegs.size == 4)
-    expect "RD-009g msgReg0" (dr.msgRegs[0]! == ⟨100⟩)
-    expect "RD-009h msgReg1" (dr.msgRegs[1]! == ⟨200⟩)
-  | .error _ => expect "RD-009 unexpected error" false
+    expect "capAddr" (dr.capAddr.toNat == capPtrVal)
+    expect "msgInfo length" (dr.msgInfo.length == 2)
+    expect "msgInfo extraCaps" (dr.msgInfo.extraCaps == 1)
+    expect "syscallId" (dr.syscallId == syscallVal)
+    expect "msgRegs length" (dr.msgRegs.size == 4)
+    expect "msgReg0" (dr.msgRegs[0]! == ⟨100⟩)
+    expect "msgReg1" (dr.msgRegs[1]! == ⟨200⟩)
+  | .error _ => expect "unexpected error" false
 
 /-- RD-010: decodeSyscallArgs — insufficient regCount rejects. -/
 private def rd010_decodeSyscallArgsInsufficientRegs : IO Unit := do
   let rf := (default : RegisterFile)
   -- regCount=5 means registers 0..4 are valid, but arm64DefaultLayout needs x7
   let result := decodeSyscallArgs arm64DefaultLayout rf 5
-  expect "RD-010a insufficient regs" (!result.isOk)
+  expect "insufficient regs" (!result.isOk)
 
 /-- RD-011: extractMessageRegisters — boundary and truncation behavior. -/
 private def rd011_extractMessageRegisters : IO Unit := do
@@ -174,16 +174,16 @@ private def rd011_extractMessageRegisters : IO Unit := do
   -- length=2: should extract only first 2 registers
   let mi2 : MessageInfo := { length := 2, extraCaps := 0, label := 0 }
   let r2 := extractMessageRegisters regs mi2
-  expect "RD-011a length=2 size" (r2.size == 2)
-  expect "RD-011b length=2 val0" (r2[0]! == ⟨10⟩)
+  expect "length=2 size" (r2.size == 2)
+  expect "length=2 val0" (r2[0]! == ⟨10⟩)
   -- length=120 (maxMessageRegisters): bounded by array size (4)
   let mi120 : MessageInfo := { length := 120, extraCaps := 0, label := 0 }
   let r120 := extractMessageRegisters regs mi120
-  expect "RD-011c length=120 capped at array size" (r120.size == 4)
+  expect "length=120 capped at array size" (r120.size == 4)
   -- length=0: should extract nothing
   let mi0 : MessageInfo := { length := 0, extraCaps := 0, label := 0 }
   let r0 := extractMessageRegisters regs mi0
-  expect "RD-011d length=0 empty" (r0.size == 0)
+  expect "length=0 empty" (r0.size == 0)
 
 private def runRegisterDecodeTests : IO Unit := do
   IO.println "--- Layer 1: RegisterDecode ---"

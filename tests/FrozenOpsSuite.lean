@@ -77,15 +77,15 @@ private def mkFrozenState (objs : List (ObjId × FrozenKernelObject))
 private def fo001_lookupExisting : IO Unit := do
   let fst := mkFrozenState [(⟨1⟩, .tcb (mkTcb 1))]
   match frozenLookupObject ⟨1⟩ fst with
-  | .ok (obj, _) => expect "FO-001 lookup found TCB" (obj.objectType == .tcb)
-  | .error _ => throw <| IO.userError "FO-001 lookup should succeed"
+  | .ok (obj, _) => expect "lookup found TCB" (obj.objectType == .tcb)
+  | .error _ => throw <| IO.userError "lookup should succeed"
 
 /-- FO-002: frozenLookupObject — missing object returns error -/
 private def fo002_lookupMissing : IO Unit := do
   let fst := mkFrozenState []
   match frozenLookupObject ⟨99⟩ fst with
-  | .ok _ => throw <| IO.userError "FO-002 should fail"
-  | .error e => expect "FO-002 missing → objectNotFound" (e == .objectNotFound)
+  | .ok _ => throw <| IO.userError "should fail"
+  | .error e => expect "missing → objectNotFound" (e == .objectNotFound)
 
 /-- FO-003: frozenStoreObject — update existing TCB -/
 private def fo003_storeObject : IO Unit := do
@@ -94,11 +94,11 @@ private def fo003_storeObject : IO Unit := do
   match frozenStoreObject ⟨1⟩ (.tcb tcb2) fst with
   | .ok ((), fst') =>
       match fst'.objects.get? ⟨1⟩ with
-      | some (.tcb t) => expect "FO-003a updated priority" (t.priority == ⟨5⟩)
-      | _ => throw <| IO.userError "FO-003a should find updated TCB"
-      expect "FO-003b scheduler preserved" (fst'.scheduler.current == fst.scheduler.current)
-      expect "FO-003c machine preserved" (fst'.machine.timer == fst.machine.timer)
-  | .error _ => throw <| IO.userError "FO-003 store should succeed"
+      | some (.tcb t) => expect "updated priority" (t.priority == ⟨5⟩)
+      | _ => throw <| IO.userError "should find updated TCB"
+      expect "scheduler preserved" (fst'.scheduler.current == fst.scheduler.current)
+      expect "machine preserved" (fst'.machine.timer == fst.machine.timer)
+  | .error _ => throw <| IO.userError "store should succeed"
 
 -- ============================================================================
 -- TPH-005: Frozen IPC Send/Receive
@@ -113,10 +113,10 @@ private def fo004_endpointReply : IO Unit := do
   | .ok ((), fst') =>
       match frozenLookupTcb fst' ⟨2⟩ with
       | some tcb =>
-          expect "FO-004a target unblocked" (tcb.ipcState == .ready)
-          expect "FO-004b message delivered" (tcb.pendingMessage.isSome)
-      | none => throw <| IO.userError "FO-004a target TCB missing"
-  | .error _ => throw <| IO.userError "FO-004 reply should succeed"
+          expect "target unblocked" (tcb.ipcState == .ready)
+          expect "message delivered" (tcb.pendingMessage.isSome)
+      | none => throw <| IO.userError "target TCB missing"
+  | .error _ => throw <| IO.userError "reply should succeed"
 
 /-- FO-005: frozenEndpointReply — wrong replier rejected -/
 private def fo005_replyWrongReplier : IO Unit := do
@@ -124,8 +124,8 @@ private def fo005_replyWrongReplier : IO Unit := do
   let fst := mkFrozenState [(⟨2⟩, .tcb callerTcb)]
   let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
   match frozenEndpointReply ⟨99⟩ ⟨2⟩ msg fst with
-  | .ok _ => throw <| IO.userError "FO-005 wrong replier should fail"
-  | .error e => expect "FO-005 wrong replier → replyCapInvalid" (e == .replyCapInvalid)
+  | .ok _ => throw <| IO.userError "wrong replier should fail"
+  | .error e => expect "wrong replier → replyCapInvalid" (e == .replyCapInvalid)
 
 -- ============================================================================
 -- TPH-006: Frozen Scheduler Tick
@@ -136,9 +136,9 @@ private def fo006_timerTickIdle : IO Unit := do
   let fst := { emptyFrozenState with scheduler := { emptyFrozenState.scheduler with current := none } }
   match frozenTimerTick fst with
   | .ok ((), fst') =>
-      expect "FO-006a timer advanced" (fst'.machine.timer == fst.machine.timer + 1)
-      expect "FO-006b still idle" (fst'.scheduler.current == none)
-  | .error _ => throw <| IO.userError "FO-006 timer tick should succeed"
+      expect "timer advanced" (fst'.machine.timer == fst.machine.timer + 1)
+      expect "still idle" (fst'.scheduler.current == none)
+  | .error _ => throw <| IO.userError "timer tick should succeed"
 
 -- ============================================================================
 -- TPH-007: Frozen CSpace Lookup (Radix O(1))
@@ -158,8 +158,8 @@ private def fo007_cspaceLookup : IO Unit := do
   -- Lookup slot 3 (CPtr with value 3)
   match frozenCspaceLookup fst ⟨3⟩ ⟨10⟩ with
   | .ok foundCap =>
-      expect "FO-007a found capability" (foundCap.target == .object ⟨42⟩)
-  | .error _ => throw <| IO.userError "FO-007 radix lookup should succeed"
+      expect "found capability" (foundCap.target == .object ⟨42⟩)
+  | .error _ => throw <| IO.userError "radix lookup should succeed"
 
 /-- FO-008: frozenCspaceLookup — missing slot returns error -/
 private def fo008_cspaceLookupMissing : IO Unit := do
@@ -167,8 +167,8 @@ private def fo008_cspaceLookupMissing : IO Unit := do
   let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
   let fst := mkFrozenState [(⟨10⟩, .cnode cn)]
   match frozenCspaceLookup fst ⟨5⟩ ⟨10⟩ with
-  | .ok _ => throw <| IO.userError "FO-008 should fail"
-  | .error e => expect "FO-008 empty slot → invalidCapability" (e == .invalidCapability)
+  | .ok _ => throw <| IO.userError "should fail"
+  | .error e => expect "empty slot → invalidCapability" (e == .invalidCapability)
 
 -- ============================================================================
 -- TPH-008: Frozen VSpace Resolve
@@ -185,15 +185,15 @@ private def fo009_vspaceLookup : IO Unit := do
     asidTable := freezeMap asidRt }
   match frozenVspaceLookup ⟨1⟩ ⟨0x1000⟩ fst with
   | .ok ((paddr, _perms), _) =>
-      expect "FO-009 resolved paddr" (paddr == ⟨0x2000⟩)
-  | .error _ => throw <| IO.userError "FO-009 vspace lookup should succeed"
+      expect "resolved paddr" (paddr == ⟨0x2000⟩)
+  | .error _ => throw <| IO.userError "vspace lookup should succeed"
 
 /-- FO-010: frozenVspaceLookup — unbound ASID returns error -/
 private def fo010_vspaceLookupMissing : IO Unit := do
   let fst := emptyFrozenState
   match frozenVspaceLookup ⟨99⟩ ⟨0x1000⟩ fst with
-  | .ok _ => throw <| IO.userError "FO-010 should fail"
-  | .error e => expect "FO-010 unbound ASID → asidNotBound" (e == .asidNotBound)
+  | .ok _ => throw <| IO.userError "should fail"
+  | .error e => expect "unbound ASID → asidNotBound" (e == .asidNotBound)
 
 -- ============================================================================
 -- TPH-009: Frozen Service Query
@@ -210,15 +210,15 @@ private def fo011_serviceLookup : IO Unit := do
   let regRt := (RHTable.empty 16 : RHTable ServiceId ServiceRegistration).insert ⟨1⟩ reg
   let fst := { emptyFrozenState with serviceRegistry := freezeMap regRt }
   match frozenLookupServiceByCap ⟨42⟩ fst with
-  | .ok (found, _) => expect "FO-011 found service" (found.sid == ⟨1⟩)
-  | .error _ => throw <| IO.userError "FO-011 service lookup should succeed"
+  | .ok (found, _) => expect "found service" (found.sid == ⟨1⟩)
+  | .error _ => throw <| IO.userError "service lookup should succeed"
 
 /-- FO-012: frozenLookupServiceByCap — missing service returns error -/
 private def fo012_serviceLookupMissing : IO Unit := do
   let fst := emptyFrozenState
   match frozenLookupServiceByCap ⟨99⟩ fst with
-  | .ok _ => throw <| IO.userError "FO-012 should fail"
-  | .error e => expect "FO-012 missing → objectNotFound" (e == .objectNotFound)
+  | .ok _ => throw <| IO.userError "should fail"
+  | .error e => expect "missing → objectNotFound" (e == .objectNotFound)
 
 -- ============================================================================
 -- TPH-013: Delete in Frozen (CSpace)
@@ -234,9 +234,9 @@ private def fo013_cspaceDelete : IO Unit := do
   | .ok ((), fst') =>
       -- After delete, lookup should fail
       match frozenCspaceLookup fst' ⟨3⟩ ⟨10⟩ with
-      | .ok _ => throw <| IO.userError "FO-013a deleted slot should be empty"
-      | .error e => expect "FO-013a deleted → invalidCapability" (e == .invalidCapability)
-  | .error _ => throw <| IO.userError "FO-013 delete should succeed"
+      | .ok _ => throw <| IO.userError "deleted slot should be empty"
+      | .error e => expect "deleted → invalidCapability" (e == .invalidCapability)
+  | .error _ => throw <| IO.userError "delete should succeed"
 
 -- ============================================================================
 -- TPH-014: Notification Signal/Wait
@@ -250,10 +250,10 @@ private def fo014_notificationSignal : IO Unit := do
   | .ok ((), fst') =>
       match fst'.objects.get? ⟨5⟩ with
       | some (.notification ntfn') =>
-          expect "FO-014a state is active" (ntfn'.state == .active)
-          expect "FO-014b badge accumulated" (ntfn'.pendingBadge.isSome)
-      | _ => throw <| IO.userError "FO-014a notification should exist"
-  | .error _ => throw <| IO.userError "FO-014 signal should succeed"
+          expect "state is active" (ntfn'.state == .active)
+          expect "badge accumulated" (ntfn'.pendingBadge.isSome)
+      | _ => throw <| IO.userError "notification should exist"
+  | .error _ => throw <| IO.userError "signal should succeed"
 
 /-- FO-015: frozenNotificationWait — consume pending badge -/
 private def fo015_notificationWait : IO Unit := do
@@ -262,8 +262,8 @@ private def fo015_notificationWait : IO Unit := do
   let fst := mkFrozenState [(⟨5⟩, .notification ntfn), (⟨2⟩, .tcb waiterTcb)]
   match frozenNotificationWait ⟨5⟩ ⟨2⟩ fst with
   | .ok (badge, _fst') =>
-      expect "FO-015a badge consumed" (badge == some (Badge.ofNatMasked 42))
-  | .error _ => throw <| IO.userError "FO-015 wait should succeed"
+      expect "badge consumed" (badge == some (Badge.ofNatMasked 42))
+  | .error _ => throw <| IO.userError "wait should succeed"
 
 -- ============================================================================
 -- T7-D/F: Frozen IPC Queue Enqueue Tests (M-FRZ-1/2/3 validation, L-P01)
@@ -280,16 +280,16 @@ private def fo016_sendEnqueuesSender : IO Unit := do
       -- Verify sender TCB is now blockedOnSend
       match frozenLookupTcb fst' ⟨3⟩ with
       | some tcb =>
-          expect "FO-016a sender blockedOnSend" (tcb.ipcState == .blockedOnSend ⟨10⟩)
-          expect "FO-016b sender has pending message" (tcb.pendingMessage.isSome)
-      | none => throw <| IO.userError "FO-016a sender TCB missing"
+          expect "sender blockedOnSend" (tcb.ipcState == .blockedOnSend ⟨10⟩)
+          expect "sender has pending message" (tcb.pendingMessage.isSome)
+      | none => throw <| IO.userError "sender TCB missing"
       -- Verify endpoint sendQ has the sender enqueued
       match fst'.objects.get? ⟨10⟩ with
       | some (.endpoint ep') =>
-          expect "FO-016c sendQ head is sender" (ep'.sendQ.head == some ⟨3⟩)
-          expect "FO-016d sendQ tail is sender" (ep'.sendQ.tail == some ⟨3⟩)
-      | _ => throw <| IO.userError "FO-016c endpoint missing"
-  | .error e => throw <| IO.userError s!"FO-016 send should succeed, got: {reprStr e}"
+          expect "sendQ head is sender" (ep'.sendQ.head == some ⟨3⟩)
+          expect "sendQ tail is sender" (ep'.sendQ.tail == some ⟨3⟩)
+      | _ => throw <| IO.userError "endpoint missing"
+  | .error e => throw <| IO.userError s!"send should succeed, got: {reprStr e}"
 
 /-- FO-017: frozenEndpointReceive — no sender, receiver is enqueued in receiveQ (M-FRZ-2) -/
 private def fo017_receiveEnqueuesReceiver : IO Unit := do
@@ -301,15 +301,15 @@ private def fo017_receiveEnqueuesReceiver : IO Unit := do
       -- Verify receiver TCB is now blockedOnReceive
       match frozenLookupTcb fst' ⟨4⟩ with
       | some tcb =>
-          expect "FO-017a receiver blockedOnReceive" (tcb.ipcState == .blockedOnReceive ⟨10⟩)
-      | none => throw <| IO.userError "FO-017a receiver TCB missing"
+          expect "receiver blockedOnReceive" (tcb.ipcState == .blockedOnReceive ⟨10⟩)
+      | none => throw <| IO.userError "receiver TCB missing"
       -- Verify endpoint receiveQ has the receiver enqueued
       match fst'.objects.get? ⟨10⟩ with
       | some (.endpoint ep') =>
-          expect "FO-017b receiveQ head is receiver" (ep'.receiveQ.head == some ⟨4⟩)
-          expect "FO-017c receiveQ tail is receiver" (ep'.receiveQ.tail == some ⟨4⟩)
-      | _ => throw <| IO.userError "FO-017b endpoint missing"
-  | .error e => throw <| IO.userError s!"FO-017 receive should succeed, got: {reprStr e}"
+          expect "receiveQ head is receiver" (ep'.receiveQ.head == some ⟨4⟩)
+          expect "receiveQ tail is receiver" (ep'.receiveQ.tail == some ⟨4⟩)
+      | _ => throw <| IO.userError "endpoint missing"
+  | .error e => throw <| IO.userError s!"receive should succeed, got: {reprStr e}"
 
 /-- FO-018: frozenEndpointCall — no receiver, caller enqueued in sendQ with blockedOnCall (M-FRZ-3) -/
 private def fo018_callEnqueuesCaller : IO Unit := do
@@ -322,16 +322,16 @@ private def fo018_callEnqueuesCaller : IO Unit := do
       -- Verify caller TCB is now blockedOnCall
       match frozenLookupTcb fst' ⟨5⟩ with
       | some tcb =>
-          expect "FO-018a caller blockedOnCall" (tcb.ipcState == .blockedOnCall ⟨10⟩)
-          expect "FO-018b caller has pending message" (tcb.pendingMessage.isSome)
-      | none => throw <| IO.userError "FO-018a caller TCB missing"
+          expect "caller blockedOnCall" (tcb.ipcState == .blockedOnCall ⟨10⟩)
+          expect "caller has pending message" (tcb.pendingMessage.isSome)
+      | none => throw <| IO.userError "caller TCB missing"
       -- Verify endpoint sendQ has the caller enqueued
       match fst'.objects.get? ⟨10⟩ with
       | some (.endpoint ep') =>
-          expect "FO-018c sendQ head is caller" (ep'.sendQ.head == some ⟨5⟩)
-          expect "FO-018d sendQ tail is caller" (ep'.sendQ.tail == some ⟨5⟩)
-      | _ => throw <| IO.userError "FO-018c endpoint missing"
-  | .error e => throw <| IO.userError s!"FO-018 call should succeed, got: {reprStr e}"
+          expect "sendQ head is caller" (ep'.sendQ.head == some ⟨5⟩)
+          expect "sendQ tail is caller" (ep'.sendQ.tail == some ⟨5⟩)
+      | _ => throw <| IO.userError "endpoint missing"
+  | .error e => throw <| IO.userError s!"call should succeed, got: {reprStr e}"
 
 /-- FO-019: frozenSchedule — select highest-priority thread as current (T7-D) -/
 private def fo019_frozenSchedule : IO Unit := do
@@ -362,9 +362,9 @@ private def fo019_frozenSchedule : IO Unit := do
   }
   match frozenSchedule st0 with
   | .ok (_, st1) =>
-    expect "FO-019: frozenSchedule selects highest priority" (st1.scheduler.current == some tid2)
+    expect "frozenSchedule selects highest priority" (st1.scheduler.current == some tid2)
     IO.println "frozen-ops check passed [FO-019: frozenSchedule]"
-  | .error e => throw <| IO.userError s!"FO-019 frozenSchedule failed: {reprStr e}"
+  | .error e => throw <| IO.userError s!"frozenSchedule failed: {reprStr e}"
 
 /-- FO-020: frozenCspaceMint — insert cap into frozen CNode slot (T7-D) -/
 private def fo020_frozenCspaceMint : IO Unit := do
@@ -382,10 +382,10 @@ private def fo020_frozenCspaceMint : IO Unit := do
     -- Verify slot 0 now has the cap
     match frozenCspaceLookup st1 ⟨0⟩ cnodeId with
     | .ok cap =>
-      expect "FO-020: frozenCspaceMint inserts cap" (cap.target == .object epId)
+      expect "frozenCspaceMint inserts cap" (cap.target == .object epId)
       IO.println "frozen-ops check passed [FO-020: frozenCspaceMint]"
-    | .error e => throw <| IO.userError s!"FO-020 lookup after mint failed: {reprStr e}"
-  | .error e => throw <| IO.userError s!"FO-020 frozenCspaceMint failed: {reprStr e}"
+    | .error e => throw <| IO.userError s!"lookup after mint failed: {reprStr e}"
+  | .error e => throw <| IO.userError s!"frozenCspaceMint failed: {reprStr e}"
 
 /-- FO-021: U-H01 regression — popped thread can be re-enqueued (multi-round IPC).
 After frozenQueuePopHead, queuePPrev must be cleared so frozenQueuePushTail
@@ -403,30 +403,30 @@ private def fo021_popThenPushRegression : IO Unit := do
   let msg1 : IpcMessage := { registers := #[⟨42⟩], caps := #[], badge := Badge.ofNatMasked 0 }
   -- Round 1: sender sends (no receiver waiting → enqueued in sendQ)
   match frozenEndpointSend ⟨10⟩ ⟨3⟩ msg1 fst with
-  | .error e => throw <| IO.userError s!"FO-021 round1 send failed: {reprStr e}"
+  | .error e => throw <| IO.userError s!"round1 send failed: {reprStr e}"
   | .ok ((), fst1) =>
   -- Round 1: receiver receives (pops sender from sendQ, delivers message)
   match frozenEndpointReceive ⟨10⟩ ⟨4⟩ fst1 with
-  | .error e => throw <| IO.userError s!"FO-021 round1 receive failed: {reprStr e}"
+  | .error e => throw <| IO.userError s!"round1 receive failed: {reprStr e}"
   | .ok (_, fst2) =>
   -- Verify sender was popped and queue links cleared (including queuePPrev)
   match frozenLookupTcb fst2 ⟨3⟩ with
-  | none => throw <| IO.userError "FO-021 sender TCB missing after receive"
+  | none => throw <| IO.userError "sender TCB missing after receive"
   | some tcb =>
-      expect "FO-021a sender queuePrev cleared" (tcb.queuePrev == none)
-      expect "FO-021b sender queueNext cleared" (tcb.queueNext == none)
-      expect "FO-021c sender queuePPrev cleared" (tcb.queuePPrev == none)
+      expect "sender queuePrev cleared" (tcb.queuePrev == none)
+      expect "sender queueNext cleared" (tcb.queueNext == none)
+      expect "sender queuePPrev cleared" (tcb.queuePPrev == none)
   -- Round 2: sender sends again (re-enqueue — must not fail with illegalState)
   let msg2 : IpcMessage := { registers := #[⟨99⟩], caps := #[], badge := Badge.ofNatMasked 0 }
   match frozenEndpointSend ⟨10⟩ ⟨3⟩ msg2 fst2 with
-  | .error e => throw <| IO.userError s!"FO-021 round2 re-send failed (U-H01 regression): {reprStr e}"
+  | .error e => throw <| IO.userError s!"round2 re-send failed (U-H01 regression): {reprStr e}"
   | .ok ((), fst3) =>
   -- Verify sender is enqueued again
   match frozenLookupTcb fst3 ⟨3⟩ with
-  | none => throw <| IO.userError "FO-021 sender TCB missing after re-send"
+  | none => throw <| IO.userError "sender TCB missing after re-send"
   | some tcb =>
-      expect "FO-021d sender re-enqueued (blockedOnSend)" (tcb.ipcState == .blockedOnSend ⟨10⟩)
-      expect "FO-021e sender has queuePPrev after re-enqueue" (tcb.queuePPrev.isSome)
+      expect "sender re-enqueued (blockedOnSend)" (tcb.ipcState == .blockedOnSend ⟨10⟩)
+      expect "sender has queuePPrev after re-enqueue" (tcb.queuePPrev.isSome)
   IO.println "frozen-ops check passed [FO-021: U-H01 pop-then-push regression]"
 
 end SeLe4n.Testing.FrozenOpsSuite

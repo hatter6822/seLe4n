@@ -101,10 +101,10 @@ private def mkFrozenState (objs : List (ObjId × FrozenKernelObject))
 private def tph001a_emptyBuilder : IO Unit := do
   let ist := mkEmptyIntermediateState
   -- Empty state must have allTablesInvExtK (proven at compile time)
-  expect "TPH-001a empty builder valid" true
+  expect "empty builder valid" true
   -- Empty state has no objects
-  expect "TPH-001b empty objects" (ist.state.objects.size == 0)
-  expect "TPH-001c empty IRQs" (ist.state.irqHandlers.size == 0)
+  expect "empty objects" (ist.state.objects.size == 0)
+  expect "empty IRQs" (ist.state.irqHandlers.size == 0)
 
 /-- TPH-001b: Builder.createObject inserts and preserves invariants. -/
 private def tph001b_builderPipeline : IO Unit := do
@@ -113,22 +113,22 @@ private def tph001b_builderPipeline : IO Unit := do
   let tcb1 := KernelObject.tcb (mkTcb 1 10 0)
   let ist1 := Builder.createObject ist ⟨1⟩ tcb1
     (fun _ h => nomatch h) (fun _ h => nomatch h)
-  expect "TPH-001d one object" (ist1.state.objects.size == 1)
-  expect "TPH-001e object findable" ((ist1.state.objects[(⟨1⟩ : ObjId)]?).isSome)
+  expect "one object" (ist1.state.objects.size == 1)
+  expect "object findable" ((ist1.state.objects[(⟨1⟩ : ObjId)]?).isSome)
   -- Create a second TCB
   let tcb2 := KernelObject.tcb (mkTcb 2 5 0)
   let ist2 := Builder.createObject ist1 ⟨2⟩ tcb2
     (fun _ h => nomatch h) (fun _ h => nomatch h)
-  expect "TPH-001f two objects" (ist2.state.objects.size == 2)
-  expect "TPH-001g both findable" ((ist2.state.objects[(⟨1⟩ : ObjId)]?).isSome &&
+  expect "two objects" (ist2.state.objects.size == 2)
+  expect "both findable" ((ist2.state.objects[(⟨1⟩ : ObjId)]?).isSome &&
     (ist2.state.objects[(⟨2⟩ : ObjId)]?).isSome)
 
 /-- TPH-001c: Builder.registerIrq preserves invariants. -/
 private def tph001c_builderIrq : IO Unit := do
   let ist := mkEmptyIntermediateState
   let ist' := Builder.registerIrq ist (SeLe4n.Irq.ofNat 3) ⟨100⟩
-  expect "TPH-001h IRQ registered" (Option.isSome (ist'.state.irqHandlers[(SeLe4n.Irq.ofNat 3)]?))
-  expect "TPH-001i IRQ table size 1" (ist'.state.irqHandlers.size == 1)
+  expect "IRQ registered" (Option.isSome (ist'.state.irqHandlers[(SeLe4n.Irq.ofNat 3)]?))
+  expect "IRQ table size 1" (ist'.state.irqHandlers.size == 1)
 
 -- ============================================================================
 -- TPH-003: Freeze Populated State — Full Pipeline Lookup Equivalence
@@ -149,20 +149,20 @@ private def tph003_freezePopulated : IO Unit := do
   -- Freeze
   let fss := freeze ist3
   -- Verify objects lookup equivalence
-  expect "TPH-003a frozen objects size 2" (fss.objects.data.size == 2)
-  expect "TPH-003b frozen obj 1 exists" (Option.isSome (fss.objects.get? ⟨1⟩))
-  expect "TPH-003c frozen obj 2 exists" (Option.isSome (fss.objects.get? ⟨2⟩))
-  expect "TPH-003d frozen obj 99 none" (Option.isNone (fss.objects.get? ⟨99⟩))
+  expect "frozen objects size 2" (fss.objects.data.size == 2)
+  expect "frozen obj 1 exists" (Option.isSome (fss.objects.get? ⟨1⟩))
+  expect "frozen obj 2 exists" (Option.isSome (fss.objects.get? ⟨2⟩))
+  expect "frozen obj 99 none" (Option.isNone (fss.objects.get? ⟨99⟩))
   -- Verify IRQ handler lookup equivalence
-  expect "TPH-003e frozen IRQ 7 exists" (Option.isSome (fss.irqHandlers.get? (SeLe4n.Irq.ofNat 7)))
-  expect "TPH-003f frozen IRQ 99 none" (Option.isNone (fss.irqHandlers.get? (SeLe4n.Irq.ofNat 99)))
+  expect "frozen IRQ 7 exists" (Option.isSome (fss.irqHandlers.get? (SeLe4n.Irq.ofNat 7)))
+  expect "frozen IRQ 99 none" (Option.isNone (fss.irqHandlers.get? (SeLe4n.Irq.ofNat 99)))
   -- Verify object types
   match fss.objects.get? ⟨1⟩ with
-  | some obj => expect "TPH-003g obj 1 is TCB" (FrozenKernelObject.objectType obj == .tcb)
-  | none => throw <| IO.userError "TPH-003g obj 1 missing"
+  | some obj => expect "obj 1 is TCB" (FrozenKernelObject.objectType obj == .tcb)
+  | none => throw <| IO.userError "obj 1 missing"
   match fss.objects.get? ⟨2⟩ with
-  | some obj => expect "TPH-003h obj 2 is endpoint" (FrozenKernelObject.objectType obj == .endpoint)
-  | none => throw <| IO.userError "TPH-003h obj 2 missing"
+  | some obj => expect "obj 2 is endpoint" (FrozenKernelObject.objectType obj == .endpoint)
+  | none => throw <| IO.userError "obj 2 missing"
 
 -- ============================================================================
 -- TPH-005: Frozen IPC Send/Receive (Full Transfer)
@@ -178,10 +178,10 @@ private def tph005a_sendBlocks : IO Unit := do
   | .ok ((), fst') =>
       match frozenLookupTcb fst' ⟨1⟩ with
       | some tcb =>
-          expect "TPH-005a sender blocked" (tcb.ipcState == .blockedOnSend ⟨10⟩)
-          expect "TPH-005b message pending" (tcb.pendingMessage.isSome)
-      | none => throw <| IO.userError "TPH-005a sender TCB missing"
-  | .error _ => throw <| IO.userError "TPH-005a send should succeed"
+          expect "sender blocked" (tcb.ipcState == .blockedOnSend ⟨10⟩)
+          expect "message pending" (tcb.pendingMessage.isSome)
+      | none => throw <| IO.userError "sender TCB missing"
+  | .error _ => throw <| IO.userError "send should succeed"
 
 /-- TPH-005b: Frozen endpoint receive — receiver blocks when no sender. -/
 private def tph005b_receiveBlocks : IO Unit := do
@@ -192,9 +192,9 @@ private def tph005b_receiveBlocks : IO Unit := do
   | .ok (_, fst') =>
       match frozenLookupTcb fst' ⟨2⟩ with
       | some tcb =>
-          expect "TPH-005c receiver blocked" (tcb.ipcState == .blockedOnReceive ⟨10⟩)
-      | none => throw <| IO.userError "TPH-005b receiver TCB missing"
-  | .error _ => throw <| IO.userError "TPH-005b receive should succeed"
+          expect "receiver blocked" (tcb.ipcState == .blockedOnReceive ⟨10⟩)
+      | none => throw <| IO.userError "receiver TCB missing"
+  | .error _ => throw <| IO.userError "receive should succeed"
 
 /-- TPH-005c: Frozen endpoint call — caller sends then blocks for reply. -/
 private def tph005c_callBlocksForReply : IO Unit := do
@@ -212,18 +212,18 @@ private def tph005c_callBlocksForReply : IO Unit := do
       -- Receiver should have been unblocked with the message
       match frozenLookupTcb fst' ⟨2⟩ with
       | some rTcb =>
-          expect "TPH-005d receiver unblocked" (rTcb.ipcState == .ready)
-          expect "TPH-005e receiver got message" (rTcb.pendingMessage.isSome)
-      | none => throw <| IO.userError "TPH-005d receiver TCB missing"
+          expect "receiver unblocked" (rTcb.ipcState == .ready)
+          expect "receiver got message" (rTcb.pendingMessage.isSome)
+      | none => throw <| IO.userError "receiver TCB missing"
       -- Caller should be blocked on reply
       match frozenLookupTcb fst' ⟨3⟩ with
       | some cTcb =>
-          expect "TPH-005f caller blocked on reply" (
+          expect "caller blocked on reply" (
             match cTcb.ipcState with
             | .blockedOnReply _ _ => true
             | _ => false)
-      | none => throw <| IO.userError "TPH-005f caller TCB missing"
-  | .error e => throw <| IO.userError s!"TPH-005c call should succeed: {toString e}"
+      | none => throw <| IO.userError "caller TCB missing"
+  | .error e => throw <| IO.userError s!"call should succeed: {toString e}"
 
 -- ============================================================================
 -- TPH-006: Frozen Scheduler Tick (Active Thread)
@@ -236,14 +236,14 @@ private def tph006a_timerTickActive : IO Unit := do
     scheduler := { emptyFrozenState.scheduler with current := some ⟨1⟩ } }
   match frozenTimerTick fst with
   | .ok ((), fst') =>
-      expect "TPH-006a timer advanced" (fst'.machine.timer == fst.machine.timer + 1)
+      expect "timer advanced" (fst'.machine.timer == fst.machine.timer + 1)
       -- Time slice should be decremented (3 → 2)
       match frozenLookupTcb fst' ⟨1⟩ with
       | some tcb =>
-          expect "TPH-006b time slice decremented" (tcb.timeSlice == 2)
-      | none => throw <| IO.userError "TPH-006b TCB missing after tick"
-      expect "TPH-006c current preserved" (fst'.scheduler.current == some ⟨1⟩)
-  | .error e => throw <| IO.userError s!"TPH-006a tick should succeed: {toString e}"
+          expect "time slice decremented" (tcb.timeSlice == 2)
+      | none => throw <| IO.userError "TCB missing after tick"
+      expect "current preserved" (fst'.scheduler.current == some ⟨1⟩)
+  | .error e => throw <| IO.userError s!"tick should succeed: {toString e}"
 
 /-- TPH-006b: Timer tick with expired time slice — preemption and reschedule. -/
 private def tph006b_timerTickExpiry : IO Unit := do
@@ -269,17 +269,17 @@ private def tph006b_timerTickExpiry : IO Unit := do
     } }
   match frozenTimerTick fst with
   | .ok ((), fst') =>
-      expect "TPH-006d timer advanced" (fst'.machine.timer == fst.machine.timer + 1)
+      expect "timer advanced" (fst'.machine.timer == fst.machine.timer + 1)
       -- After expiry: current was cleared, frozenSchedule ran.
       -- The thread's time slice was reset to configDefaultTimeSlice (5).
       match frozenLookupTcb fst' ⟨1⟩ with
       | some tcb =>
-          expect "TPH-006e time slice reset" (tcb.timeSlice == fst.scheduler.configDefaultTimeSlice)
-      | none => throw <| IO.userError "TPH-006e TCB missing after expiry"
+          expect "time slice reset" (tcb.timeSlice == fst.scheduler.configDefaultTimeSlice)
+      | none => throw <| IO.userError "TCB missing after expiry"
       -- frozenSchedule was called after clearing current. Thread 1 is the
       -- only eligible thread (domain 0, .ready), so it should be re-selected.
-      expect "TPH-006f thread re-selected" (fst'.scheduler.current == some ⟨1⟩)
-  | .error e => throw <| IO.userError s!"TPH-006b expiry should succeed: {toString e}"
+      expect "thread re-selected" (fst'.scheduler.current == some ⟨1⟩)
+  | .error e => throw <| IO.userError s!"expiry should succeed: {toString e}"
 
 /-- TPH-006c: Timer tick expiry with non-default configDefaultTimeSlice (MED-01
     semantic verification). Verifies that frozenTimerTick resets the time slice
@@ -309,10 +309,10 @@ private def tph006c_timerTickExpiryCustomConfig : IO Unit := do
       match frozenLookupTcb fst' ⟨1⟩ with
       | some tcb =>
           -- Must reset to 12 (the config value), NOT 5 (the old default)
-          expect "TPH-006g time slice reset to custom config" (tcb.timeSlice == 12)
-          expect "TPH-006h time slice uses config field" (tcb.timeSlice == fst.scheduler.configDefaultTimeSlice)
-      | none => throw <| IO.userError "TPH-006g TCB missing after expiry"
-  | .error e => throw <| IO.userError s!"TPH-006c custom config expiry should succeed: {toString e}"
+          expect "time slice reset to custom config" (tcb.timeSlice == 12)
+          expect "time slice uses config field" (tcb.timeSlice == fst.scheduler.configDefaultTimeSlice)
+      | none => throw <| IO.userError "TCB missing after expiry"
+  | .error e => throw <| IO.userError s!"custom config expiry should succeed: {toString e}"
 
 -- ============================================================================
 -- TPH-010: Commutativity Property
@@ -346,16 +346,16 @@ private def tph010_commutativity : IO Unit := do
   let objB := fssB'.objects.get? ⟨1⟩
 
   -- Both paths should yield the same object type and key properties
-  expect "TPH-010a both paths find object" (Option.isSome objA && Option.isSome objB)
+  expect "both paths find object" (Option.isSome objA && Option.isSome objB)
   match objA, objB with
   | some a, some b =>
-    expect "TPH-010b same object type" (FrozenKernelObject.objectType a == FrozenKernelObject.objectType b)
+    expect "same object type" (FrozenKernelObject.objectType a == FrozenKernelObject.objectType b)
     match a, b with
     | FrozenKernelObject.tcb ta, FrozenKernelObject.tcb tb =>
-      expect "TPH-010c same priority" (ta.priority == tb.priority)
-      expect "TPH-010d same time slice" (ta.timeSlice == tb.timeSlice)
-    | _, _ => throw <| IO.userError "TPH-010 expected TCBs"
-  | _, _ => throw <| IO.userError "TPH-010 both should find object"
+      expect "same priority" (ta.priority == tb.priority)
+      expect "same time slice" (ta.timeSlice == tb.timeSlice)
+    | _, _ => throw <| IO.userError "expected TCBs"
+  | _, _ => throw <| IO.userError "both should find object"
 
 -- ============================================================================
 -- TPH-012: Pre-Allocated Slot — Set None to Some in Frozen State
@@ -374,20 +374,20 @@ private def tph012_preallocatedSlot : IO Unit := do
     (⟨2⟩, .tcb (mkTcb 2 5 0)),
     (⟨3⟩, .endpoint { sendQ := {}, receiveQ := {} })]
   -- Verify pre-allocated slot exists
-  expect "TPH-012a slot exists" (fst.objects.get? ⟨1⟩ |>.isSome)
+  expect "slot exists" (fst.objects.get? ⟨1⟩ |>.isSome)
   -- "Retype": replace placeholder with real object via FrozenMap.set
   match fst.objects.set ⟨1⟩ (.tcb realTcb) with
   | some objects' =>
     let fst' := { fst with objects := objects' }
     match fst'.objects.get? ⟨1⟩ with
     | some (.tcb tcb) =>
-      expect "TPH-012b retyped priority" (tcb.priority == ⟨10⟩)
-      expect "TPH-012c retyped tid" (tcb.tid == ⟨1⟩)
-    | _ => throw <| IO.userError "TPH-012b expected TCB after retype"
+      expect "retyped priority" (tcb.priority == ⟨10⟩)
+      expect "retyped tid" (tcb.tid == ⟨1⟩)
+    | _ => throw <| IO.userError "expected TCB after retype"
     -- Other slots unaffected
-    expect "TPH-012d slot 2 preserved" (fst'.objects.get? ⟨2⟩ |>.isSome)
-    expect "TPH-012e slot 3 preserved" (fst'.objects.get? ⟨3⟩ |>.isSome)
-  | none => throw <| IO.userError "TPH-012a set should succeed"
+    expect "slot 2 preserved" (fst'.objects.get? ⟨2⟩ |>.isSome)
+    expect "slot 3 preserved" (fst'.objects.get? ⟨3⟩ |>.isSome)
+  | none => throw <| IO.userError "set should succeed"
 
 -- ============================================================================
 -- TPH-014: RunQueue Operations in Frozen State
@@ -420,8 +420,8 @@ private def tph014a_frozenSchedule : IO Unit := do
   match frozenSchedule fst with
   | .ok ((), fst') =>
       -- A thread should have been selected
-      expect "TPH-014a thread selected" (fst'.scheduler.current.isSome)
-  | .error e => throw <| IO.userError s!"TPH-014a schedule should succeed: {toString e}"
+      expect "thread selected" (fst'.scheduler.current.isSome)
+  | .error e => throw <| IO.userError s!"schedule should succeed: {toString e}"
 
 /-- TPH-014b: Frozen yield — re-enqueue current and reschedule. -/
 private def tph014b_frozenYield : IO Unit := do
@@ -447,8 +447,8 @@ private def tph014b_frozenYield : IO Unit := do
   | .ok ((), fst') =>
       -- After yield: current was cleared, then schedule picked a thread
       -- Thread 1 should be re-selected (only eligible thread)
-      expect "TPH-014b yield succeeded" true
-  | .error e => throw <| IO.userError s!"TPH-014b yield should succeed: {toString e}"
+      expect "yield succeeded" true
+  | .error e => throw <| IO.userError s!"yield should succeed: {toString e}"
 
 /-- TPH-014c: Frozen schedule with no eligible threads — current stays none. -/
 private def tph014c_scheduleNoEligible : IO Unit := do
@@ -473,8 +473,8 @@ private def tph014c_scheduleNoEligible : IO Unit := do
     } }
   match frozenSchedule fst with
   | .ok ((), fst') =>
-      expect "TPH-014c no thread selected" (fst'.scheduler.current == none)
-  | .error e => throw <| IO.userError s!"TPH-014c should succeed: {toString e}"
+      expect "no thread selected" (fst'.scheduler.current == none)
+  | .error e => throw <| IO.userError s!"should succeed: {toString e}"
 
 end SeLe4n.Testing.TwoPhaseArchSuite
 

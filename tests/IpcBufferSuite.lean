@@ -72,9 +72,9 @@ private def ib001_setIPCBufferValidAddress : IO Unit := do
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
-      expect "IB-001 ipcBuffer updated to 512" (tcb.ipcBuffer == ⟨512⟩)
-    | _ => throw <| IO.userError "IB-001 TCB not found after update"
-  | .error e => throw <| IO.userError s!"IB-001 setIPCBuffer should succeed, got {repr e}"
+      expect "ipcBuffer updated to 512" (tcb.ipcBuffer == ⟨512⟩)
+    | _ => throw <| IO.userError "TCB not found after update"
+  | .error e => throw <| IO.userError s!"setIPCBuffer should succeed, got {repr e}"
 
 /-- IB-002: setIPCBuffer with address 0 (trivially aligned, must be mapped). -/
 private def ib002_setIPCBufferZeroAddress : IO Unit := do
@@ -88,9 +88,9 @@ private def ib002_setIPCBufferZeroAddress : IO Unit := do
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
-      expect "IB-002 ipcBuffer set to 0" (tcb.ipcBuffer == ⟨0⟩)
-    | _ => throw <| IO.userError "IB-002 TCB not found"
-  | .error e => throw <| IO.userError s!"IB-002 setIPCBuffer at 0 should succeed, got {repr e}"
+      expect "ipcBuffer set to 0" (tcb.ipcBuffer == ⟨0⟩)
+    | _ => throw <| IO.userError "TCB not found"
+  | .error e => throw <| IO.userError s!"setIPCBuffer at 0 should succeed, got {repr e}"
 
 /-- IB-003: setIPCBuffer on running thread succeeds (no suspend required). -/
 private def ib003_setIPCBufferRunningThread : IO Unit := do
@@ -101,8 +101,8 @@ private def ib003_setIPCBufferRunningThread : IO Unit := do
     (⟨100⟩, .vspaceRoot vsRoot)
   ] (current := some ⟨1⟩)
   match setIPCBufferOp st ⟨tid, by decide⟩ ⟨1024⟩ with
-  | .ok _ => expect "IB-003 setIPCBuffer on running thread succeeds" true
-  | .error e => throw <| IO.userError s!"IB-003 should succeed on running thread, got {repr e}"
+  | .ok _ => expect "setIPCBuffer on running thread succeeds" true
+  | .error e => throw <| IO.userError s!"should succeed on running thread, got {repr e}"
 
 -- ============================================================================
 -- D3-J2: setIPCBufferOp error cases
@@ -117,8 +117,8 @@ private def ib004_unalignedAddress : IO Unit := do
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
   match setIPCBufferOp st ⟨tid, by decide⟩ ⟨100⟩ with
-  | .ok _ => throw <| IO.userError "IB-004 unaligned address should fail"
-  | .error e => expect "IB-004 unaligned returns alignmentError" (e == .alignmentError)
+  | .ok _ => throw <| IO.userError "unaligned address should fail"
+  | .error e => expect "unaligned returns alignmentError" (e == .alignmentError)
 
 /-- IB-005: Unmapped address returns translationFault. -/
 private def ib005_unmappedAddress : IO Unit := do
@@ -130,8 +130,8 @@ private def ib005_unmappedAddress : IO Unit := do
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
   match setIPCBufferOp st ⟨tid, by decide⟩ ⟨512⟩ with
-  | .ok _ => throw <| IO.userError "IB-005 unmapped address should fail"
-  | .error e => expect "IB-005 unmapped returns translationFault" (e == .translationFault)
+  | .ok _ => throw <| IO.userError "unmapped address should fail"
+  | .error e => expect "unmapped returns translationFault" (e == .translationFault)
 
 /-- IB-006: Address beyond canonical bound returns addressOutOfBounds. -/
 private def ib006_addressBeyondCanonical : IO Unit := do
@@ -145,8 +145,8 @@ private def ib006_addressBeyondCanonical : IO Unit := do
   -- Must also be aligned to 512
   let beyondCanonical := VAddr.canonicalBound
   match setIPCBufferOp st ⟨tid, by decide⟩ ⟨beyondCanonical⟩ with
-  | .ok _ => throw <| IO.userError "IB-006 beyond canonical should fail"
-  | .error e => expect "IB-006 beyond canonical returns addressOutOfBounds" (e == .addressOutOfBounds)
+  | .ok _ => throw <| IO.userError "beyond canonical should fail"
+  | .error e => expect "beyond canonical returns addressOutOfBounds" (e == .addressOutOfBounds)
 
 /-- IB-007: Read-only page returns translationFault. -/
 private def ib007_readOnlyPage : IO Unit := do
@@ -157,8 +157,8 @@ private def ib007_readOnlyPage : IO Unit := do
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
   match setIPCBufferOp st ⟨tid, by decide⟩ ⟨512⟩ with
-  | .ok _ => throw <| IO.userError "IB-007 read-only page should fail"
-  | .error e => expect "IB-007 read-only returns translationFault" (e == .translationFault)
+  | .ok _ => throw <| IO.userError "read-only page should fail"
+  | .error e => expect "read-only returns translationFault" (e == .translationFault)
 
 /-- IB-008: Missing thread returns objectNotFound. -/
 private def ib008_missingThread : IO Unit := do
@@ -168,8 +168,8 @@ private def ib008_missingThread : IO Unit := do
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
   match setIPCBufferOp st ⟨tid, by decide⟩ ⟨512⟩ with
-  | .ok _ => throw <| IO.userError "IB-008 missing thread should fail"
-  | .error e => expect "IB-008 missing thread returns objectNotFound" (e == .objectNotFound)
+  | .ok _ => throw <| IO.userError "missing thread should fail"
+  | .error e => expect "missing thread returns objectNotFound" (e == .objectNotFound)
 
 /-- IB-009: Invalid VSpace root returns invalidArgument. -/
 private def ib009_invalidVSpaceRoot : IO Unit := do
@@ -180,8 +180,8 @@ private def ib009_invalidVSpaceRoot : IO Unit := do
     (⟨100⟩, .endpoint {})
   ]
   match setIPCBufferOp st ⟨tid, by decide⟩ ⟨512⟩ with
-  | .ok _ => throw <| IO.userError "IB-009 invalid vspace root should fail"
-  | .error e => expect "IB-009 invalid vspace returns invalidArgument" (e == .invalidArgument)
+  | .ok _ => throw <| IO.userError "invalid vspace root should fail"
+  | .error e => expect "invalid vspace returns invalidArgument" (e == .invalidArgument)
 
 -- ============================================================================
 -- D3-J3: Field preservation
@@ -200,15 +200,15 @@ private def ib010_fieldPreservation : IO Unit := do
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) => do
-      expect "IB-010 priority preserved" (tcb.priority == origTcb.priority)
-      expect "IB-010 domain preserved" (tcb.domain == origTcb.domain)
-      expect "IB-010 vspaceRoot preserved" (tcb.vspaceRoot == origTcb.vspaceRoot)
-      expect "IB-010 cspaceRoot preserved" (tcb.cspaceRoot == origTcb.cspaceRoot)
-      expect "IB-010 threadState preserved" (tcb.threadState == origTcb.threadState)
-      expect "IB-010 ipcState preserved" (tcb.ipcState == origTcb.ipcState)
-      expect "IB-010 ipcBuffer updated" (tcb.ipcBuffer == ⟨1024⟩)
-    | _ => throw <| IO.userError "IB-010 TCB not found"
-  | .error e => throw <| IO.userError s!"IB-010 should succeed, got {repr e}"
+      expect "priority preserved" (tcb.priority == origTcb.priority)
+      expect "domain preserved" (tcb.domain == origTcb.domain)
+      expect "vspaceRoot preserved" (tcb.vspaceRoot == origTcb.vspaceRoot)
+      expect "cspaceRoot preserved" (tcb.cspaceRoot == origTcb.cspaceRoot)
+      expect "threadState preserved" (tcb.threadState == origTcb.threadState)
+      expect "ipcState preserved" (tcb.ipcState == origTcb.ipcState)
+      expect "ipcBuffer updated" (tcb.ipcBuffer == ⟨1024⟩)
+    | _ => throw <| IO.userError "TCB not found"
+  | .error e => throw <| IO.userError s!"should succeed, got {repr e}"
 
 -- ============================================================================
 -- D3-J4: Frozen operations
@@ -272,9 +272,9 @@ private def ib011_frozenSetIPCBuffer : IO Unit := do
   | .ok ((), fst') =>
     match fst'.objects.get? ⟨1⟩ with
     | some (.tcb tcb) =>
-      expect "IB-011 frozen ipcBuffer updated" (tcb.ipcBuffer == ⟨512⟩)
-    | _ => throw <| IO.userError "IB-011 frozen TCB not found"
-  | .error e => throw <| IO.userError s!"IB-011 frozen setIPCBuffer should succeed, got {repr e}"
+      expect "frozen ipcBuffer updated" (tcb.ipcBuffer == ⟨512⟩)
+    | _ => throw <| IO.userError "frozen TCB not found"
+  | .error e => throw <| IO.userError s!"frozen setIPCBuffer should succeed, got {repr e}"
 
 /-- IB-012: Frozen setIPCBuffer with unaligned address fails. -/
 private def ib012_frozenUnaligned : IO Unit := do
@@ -285,8 +285,8 @@ private def ib012_frozenUnaligned : IO Unit := do
     (⟨100⟩, .vspaceRoot fvs)
   ]
   match frozenSetIPCBuffer tid ⟨100⟩ fst with
-  | .ok _ => throw <| IO.userError "IB-012 frozen unaligned should fail"
-  | .error e => expect "IB-012 frozen unaligned returns alignmentError" (e == .alignmentError)
+  | .ok _ => throw <| IO.userError "frozen unaligned should fail"
+  | .error e => expect "frozen unaligned returns alignmentError" (e == .alignmentError)
 
 /-- IB-013: Frozen setIPCBuffer with read-only page fails. -/
 private def ib013_frozenReadOnly : IO Unit := do
@@ -297,8 +297,8 @@ private def ib013_frozenReadOnly : IO Unit := do
     (⟨100⟩, .vspaceRoot fvs)
   ]
   match frozenSetIPCBuffer tid ⟨512⟩ fst with
-  | .ok _ => throw <| IO.userError "IB-013 frozen read-only should fail"
-  | .error e => expect "IB-013 frozen read-only returns translationFault" (e == .translationFault)
+  | .ok _ => throw <| IO.userError "frozen read-only should fail"
+  | .error e => expect "frozen read-only returns translationFault" (e == .translationFault)
 
 /-- IB-014: Frozen setIPCBuffer with unmapped address fails. -/
 private def ib014_frozenUnmapped : IO Unit := do
@@ -309,16 +309,16 @@ private def ib014_frozenUnmapped : IO Unit := do
     (⟨100⟩, .vspaceRoot fvs)
   ]
   match frozenSetIPCBuffer tid ⟨512⟩ fst with
-  | .ok _ => throw <| IO.userError "IB-014 frozen unmapped should fail"
-  | .error e => expect "IB-014 frozen unmapped returns translationFault" (e == .translationFault)
+  | .ok _ => throw <| IO.userError "frozen unmapped should fail"
+  | .error e => expect "frozen unmapped returns translationFault" (e == .translationFault)
 
 /-- IB-015: Frozen setIPCBuffer with missing thread fails. -/
 private def ib015_frozenMissingThread : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨99⟩  -- nonexistent
   let fst := mkFrozenState []
   match frozenSetIPCBuffer tid ⟨512⟩ fst with
-  | .ok _ => throw <| IO.userError "IB-015 frozen missing thread should fail"
-  | .error e => expect "IB-015 frozen missing thread returns objectNotFound" (e == .objectNotFound)
+  | .ok _ => throw <| IO.userError "frozen missing thread should fail"
+  | .error e => expect "frozen missing thread returns objectNotFound" (e == .objectNotFound)
 
 /-- IB-016: Frozen setIPCBuffer with non-canonical address fails. -/
 private def ib016_frozenNonCanonical : IO Unit := do
@@ -330,8 +330,8 @@ private def ib016_frozenNonCanonical : IO Unit := do
   ]
   let beyondCanonical := VAddr.canonicalBound  -- 2^48, aligned to 512
   match frozenSetIPCBuffer tid ⟨beyondCanonical⟩ fst with
-  | .ok _ => throw <| IO.userError "IB-016 frozen non-canonical should fail"
-  | .error e => expect "IB-016 frozen non-canonical returns addressOutOfBounds" (e == .addressOutOfBounds)
+  | .ok _ => throw <| IO.userError "frozen non-canonical should fail"
+  | .error e => expect "frozen non-canonical returns addressOutOfBounds" (e == .addressOutOfBounds)
 
 /-- IB-017: Frozen setIPCBuffer with invalid VSpace root fails. -/
 private def ib017_frozenInvalidVSpaceRoot : IO Unit := do
@@ -341,8 +341,8 @@ private def ib017_frozenInvalidVSpaceRoot : IO Unit := do
     (⟨100⟩, .endpoint {})  -- Not a VSpaceRoot
   ]
   match frozenSetIPCBuffer tid ⟨512⟩ fst with
-  | .ok _ => throw <| IO.userError "IB-017 frozen invalid vspace root should fail"
-  | .error e => expect "IB-017 frozen invalid vspace returns invalidArgument" (e == .invalidArgument)
+  | .ok _ => throw <| IO.userError "frozen invalid vspace root should fail"
+  | .error e => expect "frozen invalid vspace returns invalidArgument" (e == .invalidArgument)
 
 end SeLe4n.Testing.IpcBufferSuite
 
