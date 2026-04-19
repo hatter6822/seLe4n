@@ -50,6 +50,13 @@ jobs:
       - name: Setup Lean toolchain
         run: ./scripts/setup_lean_env.sh
 
+      # Tier 0 hygiene uses `rg` (ripgrep) in marker scans and the AL0
+      # cascade-baseline script; install it here since it is not in the
+      # default ubuntu-24.04-arm image. shellcheck likewise absent from
+      # the ARM image — install it so Tier 0 hygiene runs shell lint.
+      - name: Install shellcheck and ripgrep
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck ripgrep
+
       - name: Run architecture-targeted fast gate
         run: ./scripts/ci_capture_timing.sh arm64-fast ./scripts/test_fast.sh
 

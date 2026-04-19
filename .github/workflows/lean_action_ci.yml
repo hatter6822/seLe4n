@@ -44,8 +44,10 @@ jobs:
 
       # AF6-F: Install shellcheck so Tier 0 hygiene runs shell lint instead of
       # skipping it. shellcheck is not in the default ubuntu-latest image.
-      - name: Install shellcheck
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+      # ripgrep is pre-installed on ubuntu-latest but not on ubuntu-24.04-arm;
+      # install it here defensively so both lanes share the same prereqs.
+      - name: Install shellcheck and ripgrep
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck ripgrep
 
       - name: Run fast gate
         run: ./scripts/ci_capture_timing.sh fast ./scripts/test_fast.sh
