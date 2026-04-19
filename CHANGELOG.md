@@ -1,3 +1,90 @@
+## v0.30.0 — WS-AM cascade continuation (AK7-F.reader hygiene first wave)
+
+Post-delivery continuation of the v0.30.0 release landing a first
+measurable wave of AK7-F.reader.hygiene migration at the testing
+infrastructure layer. Closes out the `AUDIT_v0.29.0_DEFERRED.md`
+tracking file: all three AK7 cascade items (AK7-E / AK7-F / AK7-I)
+and AL6-C.hygiene are RESOLVED; ongoing consumer migration is now
+tracked exclusively via the CI monotonicity metrics.
+
+### Reader hygiene migration — InvariantChecks.lean
+
+`SeLe4n/Testing/InvariantChecks.lean` converts 18 raw
+`match st.objects[id]? with | some (.variant x)` call sites to the
+AL2-A typed helpers in the `SystemState` namespace (`getTcb?`,
+`getSchedContext?`, `getEndpoint?`, `getNotification?`,
+`getUntyped?`). Sites touched span:
+
+- `lookupQueueTcbB` (now delegates to `st.getTcb?`)
+- `currentThreadValidB`, `currentThreadInActiveDomainB`
+- `threadStateConsistentChecks`
+- `untypedWatermarkChecks`, `notificationWaiterConsistentChecks`
+- `uniqueWaitersCheck`
+- `blockedOnSendNotRunnableChecks`,
+  `blockedOnReceiveNotRunnableChecks`
+- `stateInvariantChecksFor` (runnable + endpoint/notification iter)
+- `collectQueueMembersB`
+- `checkNoStaleEndpointQueueRefs`,
+  `checkNoStaleNotificationWaitRefs`
+- `checkSchedContextStoreConsistent`,
+  `checkSchedContextNotDualBound`,
+  `checkSchedContextRunQueueConsistent`
+- `checkBlockingAcyclic`
+
+No proof surface is touched — `InvariantChecks.lean` is testing
+infrastructure. The runtime semantics are preserved by construction
+(`getTcb? tid = match st.objects[tid.toObjId]? with | some (.tcb t) =>
+some t | _ => none`). The single variant-agnostic site
+(`checkLifecycleObjectTypeLockstep`, which matches `some obj`
+regardless of variant) retains its raw read with a doc note.
+
+### Baseline metric deltas (locked in at v0.30.0 tip)
+
+| Metric (direction)           | Prior | New | Delta |
+|------------------------------|-------|-----|-------|
+| `RAW_MATCH_TCB` (drop)       |   613 | 600 |  −13  |
+| `RAW_MATCH_ENDPOINT` (drop)  |   264 | 262 |   −2  |
+| `RAW_MATCH_NOTIFICATION`(drop)|   98 |  94 |   −4  |
+| `RAW_MATCH_UNTYPED` (drop)   |    18 |  17 |   −1  |
+| `RAW_LOOKUP_TID` (drop)      |   265 | 254 |  −11  |
+| `GETTCB_ADOPTION` (grow)     |    31 |  49 |  +18  |
+| `GETSCHEDCTX_ADOPTION`(grow) |     8 |  10 |   +2  |
+
+`docs/audits/AL0_baseline.txt` refreshed so every subsequent commit
+regression-checks against the post-AM7 floor via
+`scripts/ak7_cascade_check_monotonic.sh` (wired into
+`scripts/test_tier0_hygiene.sh`).
+
+### Deferred file retirement
+
+`docs/audits/AUDIT_v0.29.0_DEFERRED.md` is deleted. Its purpose —
+tracking the AK7-* cascade closures — is fulfilled: all four
+RESOLVED items (AK7-E, AK7-F, AK7-I, AL6-C.hygiene) are durably
+documented in `docs/WORKSTREAM_HISTORY.md` §WS-AM. The two
+continuation items (AK7-F.reader / AK7-F.writer) are now tracked
+exclusively via CI monotonicity (see `scripts/ak7_cascade_*`).
+
+### Archival moves
+
+- `docs/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` →
+  `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md`
+- `docs/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` →
+  `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md`
+
+References in `CLAUDE.md`, `docs/WORKSTREAM_HISTORY.md`,
+`docs/CLAIM_EVIDENCE_INDEX.md`, and `docs/DEVELOPMENT.md` updated
+to the new paths.
+
+### Gate (v0.30.0 tip)
+
+`lake build` (260 jobs, 0 warnings) + `test_smoke.sh` +
+`test_tier0_hygiene.sh` (includes `ak7_cascade_check_monotonic.sh`
++ `check_version_sync.sh` + `check_website_links.sh`) +
+`lake exe ak7_regression_suite` (**87 checks** — unchanged from
+AM5) + zero sorry/axiom in `SeLe4n/` or `Main.lean`.
+
+---
+
 ## v0.30.0 — WS-AM post-delivery audit remediation
 
 End-to-end audit of the WS-AM delivery (AM1 + AM4) surfaced two

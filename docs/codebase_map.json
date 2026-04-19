@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/plan-deferred-tasks-EZNLE",
-      "commit_sha": "31136018a8334396c69502918b5d72e93067e233",
-      "tree_sha": "21de7c37514a59c844e70fd2a2a073a8339ebb58",
-      "committed_at_utc": "2026-04-19T03:07:42+00:00"
+      "branch": "claude/review-deferred-tasks-zXVoC",
+      "commit_sha": "144affc4c5afeaa2400bf022ffc0caad5fdff9b0",
+      "tree_sha": "c78c307d037c486cc500e1bef860f4aa12e3430a",
+      "committed_at_utc": "2026-04-19T01:33:38-04:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ffc6f59323d4fc549fdabd213e4e21bfea8f2576a67b6c890996bcb8a76c159c"
+    "source_digest": "db1523e8525a4766135f4b6aada49002f02b78d795a7da67a09bfe2cbd6636d6"
   },
   "summary": {
     "module_count": 165,
@@ -27,7 +27,7 @@
     "version": "0.30.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 142,
-    "production_loc": 101053,
+    "production_loc": 101068,
     "test_files": 23,
     "test_loc": 14142,
     "proved_theorem_lemma_decls": 2977,
@@ -62438,14 +62438,13 @@
             "SystemState",
             "TCB",
             "ThreadId",
-            "none",
-            "toObjId"
+            "getTcb"
           ]
         },
         {
           "kind": "def",
           "name": "intrusiveQueueReachable",
-          "line": 24,
+          "line": 23,
           "called": [
             "QueuePPrev",
             "SystemState",
@@ -62457,7 +62456,7 @@
         {
           "kind": "def",
           "name": "intrusiveQueueWellFormedB",
-          "line": 54,
+          "line": 53,
           "called": [
             "IntrusiveQueue",
             "SystemState",
@@ -62469,7 +62468,7 @@
         {
           "kind": "def",
           "name": "endpointDualQueueWellFormedB",
-          "line": 69,
+          "line": 68,
           "called": [
             "Endpoint",
             "SystemState",
@@ -62479,7 +62478,7 @@
         {
           "kind": "def",
           "name": "notificationQueueWellFormedB",
-          "line": 72,
+          "line": 71,
           "called": [
             "Notification",
             "isEmpty"
@@ -62488,7 +62487,7 @@
         {
           "kind": "def",
           "name": "schedulerQueueCurrentConsistentB",
-          "line": 78,
+          "line": 77,
           "called": [
             "SystemState",
             "none",
@@ -62498,7 +62497,7 @@
         {
           "kind": "def",
           "name": "schedulerRunQueueUniqueB",
-          "line": 83,
+          "line": 82,
           "called": [
             "SystemState"
           ]
@@ -62506,29 +62505,30 @@
         {
           "kind": "def",
           "name": "currentThreadValidB",
-          "line": 86,
+          "line": 85,
           "called": [
             "SystemState",
-            "none",
-            "toObjId"
+            "getTcb",
+            "none"
           ]
         },
         {
           "kind": "def",
           "name": "threadStateConsistentChecks",
-          "line": 103,
+          "line": 101,
           "called": [
-            "KernelObject",
             "ObjId",
             "SystemState",
+            "getTcb",
             "inferThreadState",
+            "none",
             "toNat"
           ]
         },
         {
           "kind": "def",
           "name": "cspaceSlotCoherencyChecks",
-          "line": 114,
+          "line": 113,
           "called": [
             "KernelObject",
             "ObjId",
@@ -62540,7 +62540,7 @@
         {
           "kind": "def",
           "name": "capabilityRightsStructuralChecks",
-          "line": 130,
+          "line": 129,
           "called": [
             "KernelObject",
             "ObjId",
@@ -62553,7 +62553,7 @@
         {
           "kind": "def",
           "name": "lifecycleMetadataChecks",
-          "line": 143,
+          "line": 142,
           "called": [
             "ObjId",
             "SystemState",
@@ -62563,7 +62563,7 @@
         {
           "kind": "def",
           "name": "serviceGraphAcyclicityChecks",
-          "line": 152,
+          "line": 151,
           "called": [
             "ServiceId",
             "SystemState",
@@ -62576,7 +62576,7 @@
         {
           "kind": "def",
           "name": "vspaceAsidUniquenessChecks",
-          "line": 162,
+          "line": 161,
           "called": [
             "ASID",
             "KernelObject",
@@ -62591,7 +62591,7 @@
         {
           "kind": "def",
           "name": "asidTableConsistencyChecks",
-          "line": 173,
+          "line": 172,
           "called": [
             "KernelObject",
             "ObjId",
@@ -62603,12 +62603,13 @@
         {
           "kind": "def",
           "name": "untypedWatermarkChecks",
-          "line": 196,
+          "line": 195,
           "called": [
-            "KernelObject",
             "ObjId",
             "SystemState",
             "all",
+            "getUntyped",
+            "none",
             "size",
             "valid"
           ]
@@ -62618,17 +62619,18 @@
           "name": "notificationWaiterConsistentChecks",
           "line": 208,
           "called": [
-            "KernelObject",
             "ObjId",
             "SystemState",
-            "toNat",
-            "toObjId"
+            "getNotification",
+            "getTcb",
+            "none",
+            "toNat"
           ]
         },
         {
           "kind": "def",
           "name": "runQueueThreadPriorityConsistentB",
-          "line": 223,
+          "line": 224,
           "called": [
             "SystemState",
             "all"
@@ -62637,11 +62639,12 @@
         {
           "kind": "def",
           "name": "blockedOnSendNotRunnableChecks",
-          "line": 230,
+          "line": 231,
           "called": [
-            "KernelObject",
             "ObjId",
             "SystemState",
+            "getTcb",
+            "none",
             "runnable",
             "toNat"
           ]
@@ -62649,11 +62652,12 @@
         {
           "kind": "def",
           "name": "blockedOnReceiveNotRunnableChecks",
-          "line": 246,
+          "line": 248,
           "called": [
-            "KernelObject",
             "ObjId",
             "SystemState",
+            "getTcb",
+            "none",
             "runnable",
             "toNat"
           ]
@@ -62661,29 +62665,30 @@
         {
           "kind": "def",
           "name": "currentThreadInActiveDomainB",
-          "line": 265,
+          "line": 268,
           "called": [
             "SystemState",
-            "none",
-            "toObjId"
+            "getTcb",
+            "none"
           ]
         },
         {
           "kind": "def",
           "name": "uniqueWaitersCheck",
-          "line": 276,
+          "line": 280,
           "called": [
-            "KernelObject",
             "ObjId",
             "SystemState",
             "ThreadId",
-            "isEmpty"
+            "getNotification",
+            "isEmpty",
+            "none"
           ]
         },
         {
           "kind": "def",
           "name": "cdtChildMapConsistentCheck",
-          "line": 290,
+          "line": 295,
           "called": [
             "SystemState",
             "none"
@@ -62692,7 +62697,7 @@
         {
           "kind": "def",
           "name": "cdtParentMapConsistentCheck",
-          "line": 307,
+          "line": 312,
           "called": [
             "SystemState",
             "none"
@@ -62701,9 +62706,8 @@
         {
           "kind": "def",
           "name": "stateInvariantChecksFor",
-          "line": 321,
+          "line": 326,
           "called": [
-            "KernelObject",
             "ObjId",
             "ServiceId",
             "SystemState",
@@ -62718,9 +62722,13 @@
             "currentThreadInActiveDomainB",
             "currentThreadValidB",
             "endpointDualQueueWellFormedB",
+            "getEndpoint",
+            "getNotification",
+            "getTcb",
             "intrusiveQueueWellFormedB",
             "invariant",
             "lifecycleMetadataChecks",
+            "none",
             "notificationQueueWellFormedB",
             "notificationWaiterConsistentChecks",
             "runQueueThreadPriorityConsistentB",
@@ -62730,7 +62738,6 @@
             "serviceGraphAcyclicityChecks",
             "threadStateConsistentChecks",
             "toNat",
-            "toObjId",
             "uniqueWaitersCheck",
             "untypedWatermarkChecks",
             "vspaceAsidUniquenessChecks"
@@ -62739,7 +62746,7 @@
         {
           "kind": "def",
           "name": "stateInvariantChecks",
-          "line": 371,
+          "line": 380,
           "called": [
             "SystemState",
             "stateInvariantChecksFor"
@@ -62748,7 +62755,7 @@
         {
           "kind": "def",
           "name": "failedChecks",
-          "line": 374,
+          "line": 383,
           "called": [
             "none"
           ]
@@ -62756,7 +62763,7 @@
         {
           "kind": "def",
           "name": "assertStateInvariantsFor",
-          "line": 381,
+          "line": 390,
           "called": [
             "ObjId",
             "ServiceId",
@@ -62773,7 +62780,7 @@
         {
           "kind": "def",
           "name": "assertStateInvariants",
-          "line": 392,
+          "line": 401,
           "called": [
             "SystemState",
             "assertStateInvariantsFor"
@@ -62782,7 +62789,7 @@
         {
           "kind": "def",
           "name": "assertStateInvariantsWithoutSync",
-          "line": 399,
+          "line": 408,
           "called": [
             "ObjId",
             "ServiceId",
@@ -62798,41 +62805,43 @@
         {
           "kind": "def",
           "name": "collectQueueMembersB",
-          "line": 419,
+          "line": 428,
           "called": [
             "SystemState",
             "ThreadId",
-            "none",
-            "toObjId"
+            "getTcb",
+            "none"
           ]
         },
         {
           "kind": "def",
           "name": "checkNoStaleEndpointQueueRefs",
-          "line": 432,
+          "line": 442,
           "called": [
             "SystemState",
             "all",
             "collectQueueMembersB",
-            "none",
-            "toObjId"
+            "getEndpoint",
+            "getTcb",
+            "none"
           ]
         },
         {
           "kind": "def",
           "name": "checkNoStaleNotificationWaitRefs",
-          "line": 453,
+          "line": 464,
           "called": [
             "SystemState",
             "all",
-            "none",
-            "toObjId"
+            "getNotification",
+            "getTcb",
+            "none"
           ]
         },
         {
           "kind": "def",
           "name": "checkRegistryDependencyConsistent",
-          "line": 462,
+          "line": 474,
           "called": [
             "SystemState",
             "all",
@@ -62842,54 +62851,61 @@
         {
           "kind": "def",
           "name": "checkSchedContextStoreConsistent",
-          "line": 469,
+          "line": 481,
           "called": [
             "SystemState",
             "all",
+            "getSchedContext",
+            "getTcb",
             "none",
             "scId",
-            "toObjId"
+            "toNat"
           ]
         },
         {
           "kind": "def",
           "name": "checkSchedContextNotDualBound",
-          "line": 483,
+          "line": 493,
           "called": [
-            "KernelObject",
             "SystemState",
             "all",
+            "getTcb",
+            "none",
+            "scId",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "checkSchedContextRunQueueConsistent",
+          "line": 508,
+          "called": [
+            "SystemState",
+            "all",
+            "getSchedContext",
+            "getTcb",
             "none",
             "scId"
           ]
         },
         {
           "kind": "def",
-          "name": "checkSchedContextRunQueueConsistent",
-          "line": 497,
-          "called": [
-            "SystemState",
-            "all",
-            "none",
-            "scId",
-            "toObjId"
-          ]
-        },
-        {
-          "kind": "def",
           "name": "checkBlockingAcyclic",
-          "line": 511,
+          "line": 523,
           "called": [
             "ObjId",
             "SystemState",
             "all",
+            "getTcb",
+            "none",
+            "toNat",
             "toObjId"
           ]
         },
         {
           "kind": "def",
           "name": "checkRegistryEndpointValid",
-          "line": 538,
+          "line": 551,
           "called": [
             "SystemState",
             "all",
@@ -62899,7 +62915,7 @@
         {
           "kind": "def",
           "name": "checkRegistryInterfaceValid",
-          "line": 546,
+          "line": 559,
           "called": [
             "SystemState",
             "all",
@@ -62909,7 +62925,7 @@
         {
           "kind": "def",
           "name": "checkServiceGraphInvariant",
-          "line": 552,
+          "line": 565,
           "called": [
             "SystemState",
             "acyclic",
@@ -62923,7 +62939,7 @@
         {
           "kind": "def",
           "name": "checkLifecycleObjectTypeLockstep",
-          "line": 568,
+          "line": 581,
           "called": [
             "SystemState",
             "all",
@@ -62934,7 +62950,7 @@
         {
           "kind": "def",
           "name": "checkCrossSubsystemInvariant",
-          "line": 584,
+          "line": 599,
           "called": [
             "SystemState",
             "checkBlockingAcyclic",
@@ -62953,7 +62969,7 @@
         {
           "kind": "def",
           "name": "assertCrossSubsystemInvariant",
-          "line": 598,
+          "line": 613,
           "called": [
             "SystemState",
             "checkCrossSubsystemInvariant",
