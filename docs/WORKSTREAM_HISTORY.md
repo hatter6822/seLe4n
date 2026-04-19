@@ -40,20 +40,37 @@ WS-AK Phase AK7 complete (v0.29.13). Phase AK6-F audit remediation complete (v0.
 
 **WS-AL COMPLETE (v0.29.14)** (branch `claude/review-ak7-workstream-QAUBL`):
 cascade-closure workstream resolving all three AK7 deferred items at their primary attack
-surfaces. **AK7-I.cascade RESOLVED via AL1**: null-cap guard at cspaceMint/Copy/Move +
-bridge lemma + seven patched preservation proofs + three regression tests. **AK7-F.cascade
-RESOLVED via AL6**: `storeObjectKindChecked` wrapper rejects cross-variant overwrites with
-`.error .invalidObjectType` (discriminant 49, synced to Rust ABI); three substantive
-theorems; five runtime tests. Plus AL2 foundational layer: five per-variant `getX?` helpers
-+ 23 discrimination/iff/rejection lemmas + eight AL2-C tests. **AK7-E.cascade RESOLVED via
-AL7**: two private helpers `validateThreadIdArg`/`validateSchedContextIdArg` wired at all
-eight capability-only dispatch arms, rejecting sentinel IDs before handler entry. **AL10
-integration gate**: version bumped 0.29.13→0.29.14 (patch release); five cross-cutting
-runtime tests tie all three cascades together. **AL11 closure**:
-`docs/audits/AUDIT_v0.29.0_DEFERRED.md` rewritten with all three cascades marked RESOLVED;
-AK7 regression suite grew 38 → 69 checks. Two residual hygiene items tracked (non-gating):
-**AK7-E.hygiene** (handler signature tightening) and **AK7-F.hygiene** (304 consumer
-call-site migration). Both improve readability without affecting correctness.
+surfaces WITH COMPILE-TIME TYPE ENFORCEMENT (not just runtime checks).
+**AK7-I.cascade RESOLVED via AL1b** (commit 544a410, supersedes reverted AL1 runtime-guard
+approach that overloaded `.invalidCapability`): new `NonNullCap` subtype in
+`Model/Object/Types.lean`; `mintDerivedCap`'s signature tightened to `NonNullCap → …` so
+the Lean type system rejects any caller feeding a null cap; new `.nullCapability` error
+code (discriminant 50, synced to Rust ABI); `cspaceMint`/`Copy`/`Move` promote via
+`Capability.toNonNull?` with dedicated error on rejection; 14 preservation theorems
+patched via substantive `by_cases hNull + exfalso` pattern; 7 runtime tests
+(`al1b_01..07`) including a direct regression test that
+`.nullCapability ≠ .invalidCapability`.
+**AK7-F.cascade RESOLVED via AL6**: `storeObjectKindChecked` wrapper rejects cross-variant
+overwrites with `.error .invalidObjectType` (discriminant 49, synced to Rust ABI); three
+substantive theorems; five runtime tests. Plus AL2 foundational layer: five per-variant
+`getX?` helpers + 23 discrimination/iff/rejection lemmas + eight AL2-C tests.
+**AK7-E.cascade RESOLVED via AL7 + AL8** (AL8 commit db29d80 supersedes AL7's
+dispatch-only approach): all 8 capability-only handler signatures now take
+`ValidThreadId` / `ValidObjId` directly (`suspendThread`, `resumeThread`, `setIPCBufferOp`,
+`setPriorityOp`, `setMCPriorityOp`, `schedContextConfigure`, `schedContextBind`,
+`schedContextUnbind`); new `validateObjIdArg` dispatch helper; 8 NI-preservation theorems
++ 2 authority-bounded theorems + 9 IPC-buffer frame theorems signature-updated; test
+suites promoted via `⟨tid, by decide⟩` proof-carrying construction. Removing the
+sentinel / null-cap checks now produces an IMMEDIATE COMPILE ERROR — discipline is no
+longer a runtime-check convention but a type-system guarantee.
+**AL10 integration gate**: version bumped 0.29.13→0.29.14 (patch release).
+**AL11 closure**: `docs/audits/AUDIT_v0.29.0_DEFERRED.md` rewritten with all three
+cascades marked RESOLVED. AK7 regression suite grew 38 → **73 checks** (AL1b +7, AL2-C
++14 cumulative, AL6 +5, AL10 +9). Three residual hygiene items tracked (non-gating):
+**AK7-F.reader.hygiene** (304 consumer call-site migration to typed helpers),
+**AK7-F.writer.hygiene** (~50 in-place `storeObject` call sites → `storeObjectKindChecked`),
+**AL6-C.hygiene** (preservation proof for `lifecycleObjectTypeLockstep`). The previously
+tracked **AK7-E.hygiene** (handler signature tightening) is now RESOLVED via AL8.
 
 ### WS-AL: AK7 Cascade Closure (pre-v1.0.0)
 

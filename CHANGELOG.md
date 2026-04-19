@@ -1,3 +1,130 @@
+## v0.29.14 — WS-AL post-delivery amendment: AL1b + AL8 type-level redesign
+
+Supersedes the AL1 (reverted) and AL7 (superseded by AL8) runtime-guard
+approaches with compile-time type enforcement. Motivated by user feedback
+that AL1's error-code overloading of `.invalidCapability` was a shortcut
+reliant on proof-author discipline rather than type-system enforcement.
+
+### AL1b (commit 544a410) — AK7-I via NonNullCap
+
+- **Reverted AL1** (5 commits: e03d6d3, c4d4462, ab7dc07, a6c2dd1, 4a27c1c
+  → 5be46b7, 2034d13, d17b4b1) because the runtime guards produced
+  `.error .invalidCapability`, overloaded with "slot empty" and
+  "non-object target" outcomes.
+- **New `NonNullCap` subtype** in `Model/Object/Types.lean`:
+  `abbrev NonNullCap := { cap : Capability // cap.isNull = false }`
+  with `Capability.toNonNull`, `toNonNull?`, `ofNonNull` + three bridge
+  theorems (`toNonNull?_isSome_iff`, `toNonNull?_null`,
+  `toNonNull?_of_not_null`) + `CoeHead NonNullCap Capability` instance.
+- **`mintDerivedCap` signature tightened** from `Capability → …` to
+  `NonNullCap → …`. The Lean type system compile-rejects any caller
+  that tries to pass a raw `Capability`.
+- **New `KernelError.nullCapability` variant** (discriminant 50)
+  distinct from `.invalidCapability`. Rust `NullCapability = 50` +
+  `from_u32` + `Display` + 7 conformance-test updates + 6
+  `sele4n-types` unit-test updates (extending 0..=49 to 0..=50).
+- **cspaceMint/Copy/Move** promote via `cap.toNonNull?` and emit
+  `.error .nullCapability` on rejection.
+- **14 preservation theorems patched** using the substantive
+  `by_cases hNull + exfalso` pattern:
+  * `Capability/Invariant/Authority.lean` (6 theorems)
+  * `Capability/Invariant/Preservation.lean` (5 theorems)
+  * `InformationFlow/Invariant/Helpers.lean` (1)
+  * `InformationFlow/Invariant/Composition.lean` (1)
+  * `InformationFlow/Invariant/Operations.lean` (2)
+- **7 new runtime tests** (`al1b_01..07` in `tests/Ak7RegressionSuite.lean`)
+  including `al1b_07` which asserts `.nullCapability ≠ .invalidCapability`
+  as a regression test against reintroducing the overloading.
+
+### AL8 (commit db29d80) — AK7-E via type-level Valid*Id on all 8 handlers
+
+All 8 capability-only handler signatures tightened from raw ID types
+to `Valid*Id` subtypes:
+
+| Handler                  | Old signature                          | New signature                                 |
+|--------------------------|----------------------------------------|-----------------------------------------------|
+| `suspendThread`          | `SystemState → ThreadId → …`           | `SystemState → ValidThreadId → …`             |
+| `resumeThread`           | `SystemState → ThreadId → …`           | `SystemState → ValidThreadId → …`             |
+| `setIPCBufferOp`         | `SystemState → ThreadId → VAddr → …`   | `SystemState → ValidThreadId → VAddr → …`     |
+| `setPriorityOp`          | `ThreadId × ThreadId → Priority → …`   | `ValidThreadId × ValidThreadId → Priority → …`|
+| `setMCPriorityOp`        | `ThreadId × ThreadId → Priority → …`   | `ValidThreadId × ValidThreadId → Priority → …`|
+| `schedContextConfigure`  | `ObjId → Nat → Nat → … → Kernel Unit`  | `ValidObjId → Nat → Nat → … → Kernel Unit`    |
+| `schedContextBind`       | `ObjId → ThreadId → Kernel Unit`       | `ValidObjId → ValidThreadId → Kernel Unit`    |
+| `schedContextUnbind`     | `ObjId → Kernel Unit`                  | `ValidObjId → Kernel Unit`                    |
+
+- **New `validateObjIdArg`** helper in `Kernel/API.lean` (near line 464)
+  joins `validateThreadIdArg` and `validateSchedContextIdArg`. Used by
+  the 3 SchedContext dispatch arms whose handlers operate on `ObjId`.
+- **All 8 dispatch arms updated** to thread `Valid*Id` DIRECTLY into
+  the handler (no `| .ok _ =>` discard anymore).
+- **Preservation-proof cascade**: 8 NI `*_preserves_projection`
+  theorems in `InformationFlow/Invariant/Operations.lean` + 2
+  `*_authority_bounded` theorems in
+  `SchedContext/Invariant/PriorityPreservation.lean` + 9 frame
+  theorems in `Architecture/IpcBufferValidation.lean` — all
+  signatures updated to accept `Valid*Id` and their proof bodies
+  use `vtid.val` projections.
+- **Test-suite cascade**: `SuspendResumeSuite` (17 callers),
+  `PriorityManagementSuite` (12), `IpcBufferSuite` (10),
+  `NegativeStateSuite` Z8-L cluster (8), `MainTraceHarness` (11) all
+  promoted via `⟨tid, by decide⟩` / `⟨scId, by decide⟩` proof-carrying
+  construction.
+
+### Why type-level enforcement beats runtime-only guards
+
+Runtime-only (AL1 / AL7):
+- Rejection lives inside specific functions as `if` / `match` clauses.
+- A future contributor can remove the clause; build still succeeds.
+- Discipline relies on code review and regression tests.
+
+Type-level (AL1b / AL8):
+- Rejection is part of the function SIGNATURE (`NonNullCap`,
+  `ValidThreadId`, `ValidObjId`).
+- Construction of `NonNullCap`/`Valid*Id` requires a proof of
+  non-null / non-sentinel, obtained via `.toNonNull?` / `.toValid?`.
+- Removing the construction produces an IMMEDIATE type error at
+  compile time.
+- The Lean compiler, not code review, enforces the discipline.
+
+### Documentation updated
+
+- `docs/audits/AUDIT_v0.29.0_DEFERRED.md` — AK7-I section rewritten
+  (AL1b); AK7-E section updated (AL7 + AL8); closure-summary table
+  uses new commit SHAs; residual hygiene count 4 → 3 (AK7-E.hygiene
+  closed by AL8).
+- `CLAUDE.md` — new top-of-list WS-AL entry reflecting AL1b+AL8.
+- `CHANGELOG.md` — this section.
+- `docs/WORKSTREAM_HISTORY.md` — WS-AL summary updated.
+- `docs/gitbook/05-specification-and-roadmap.md` — active-workstream
+  row reflects AL1b+AL8.
+
+### Gate at AL8 tip
+
+- `lake build` (260 jobs, 0 warnings, zero sorry/axiom).
+- `./scripts/test_smoke.sh` / `test_full.sh` PASS.
+- `ak7_regression_suite`: **73 checks** PASS (38 baseline + AL1b +7
+  + AL2-C +14 + AL6 +5 + AL10 +9).
+- `lake exe suspend_resume_suite` (21) / `priority_management_suite`
+  (24) / `ipc_buffer_suite` (17) — all PASS.
+- `cargo test --workspace`: 415 tests PASS.
+- `cargo clippy --workspace -- -D warnings`: 0 warnings.
+- `ak7_cascade_check_monotonic.sh`: PASS.
+- `check_version_sync.sh`: PASS at 0.29.14.
+
+### Residual hygiene (tracked in DEFERRED.md)
+
+- **AK7-F.reader.hygiene**: 304 raw kind-destructuring call sites
+  → AL2-A typed helpers (readability).
+- **AK7-F.writer.hygiene**: ~50 in-place `storeObject` call sites
+  → `storeObjectKindChecked` (defense-in-depth).
+- **AL6-C.hygiene**: complete preservation proof for
+  `lifecycleObjectTypeLockstep`.
+
+All three are non-gating; the attack surfaces are closed by AL1b,
+AL6, and AL8 structurally at the type level.
+
+---
+
 ## v0.29.14 — WS-AL AK7 cascade closure (AK7-E / AK7-F / AK7-I RESOLVED)
 
 All three AK7 deferred cascades structurally resolved at their primary
