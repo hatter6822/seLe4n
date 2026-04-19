@@ -208,9 +208,9 @@ rejects failed validation before touching any state. Composing this with
 domain st.machine.timer` (by construction in `schedContextConfigure`), and
 that helper's well-formedness follows from validation. -/
 theorem schedContextConfigure_success_implies_validated
-    (scId : ObjId) (budget period priority deadline domain : Nat)
+    (vScId : ValidObjId) (budget period priority deadline domain : Nat)
     (st st' : SystemState)
-    (hOk : schedContextConfigure scId budget period priority deadline domain st = .ok ((), st')) :
+    (hOk : schedContextConfigure vScId budget period priority deadline domain st = .ok ((), st')) :
     validateSchedContextParams budget period priority deadline domain = .ok () := by
   unfold schedContextConfigure at hOk
   split at hOk

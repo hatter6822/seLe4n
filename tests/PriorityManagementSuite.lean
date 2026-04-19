@@ -59,7 +59,7 @@ private def pm001_setPriorityWithinMCP : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 100))),
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30)))
   ]
-  match setPriorityOp st callerTid targetTid ⟨80⟩ with
+  match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨80⟩ with
   | .ok st' =>
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
@@ -75,7 +75,7 @@ private def pm002_setPriorityAtMCP : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 100))),
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30)))
   ]
-  match setPriorityOp st callerTid targetTid ⟨100⟩ with
+  match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨100⟩ with
   | .ok _ => expect "PM-002 setPriority at MCP boundary succeeds" true
   | .error e => throw <| IO.userError s!"PM-002 setPriority at MCP should succeed, got {repr e}"
 
@@ -91,7 +91,7 @@ private def pm003_setPriorityAboveMCP : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 100))),
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30)))
   ]
-  match setPriorityOp st callerTid targetTid ⟨101⟩ with
+  match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨101⟩ with
   | .ok _ => throw <| IO.userError "PM-003 setPriority above MCP should fail"
   | .error e =>
     expect "PM-003 error is illegalAuthority" (e == .illegalAuthority)
@@ -101,7 +101,7 @@ private def pm004_setPriorityMissingCaller : IO Unit := do
   let callerTid : SeLe4n.ThreadId := ⟨99⟩
   let targetTid : SeLe4n.ThreadId := ⟨2⟩
   let st := mkState [(⟨2⟩, .tcb (mkTcb 2 (prio := 30)))]
-  match setPriorityOp st callerTid targetTid ⟨50⟩ with
+  match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
   | .ok _ => throw <| IO.userError "PM-004 missing caller should fail"
   | .error e =>
     expect "PM-004 error is invalidArgument" (e == .invalidArgument)
@@ -111,7 +111,7 @@ private def pm005_setPriorityMissingTarget : IO Unit := do
   let callerTid : SeLe4n.ThreadId := ⟨1⟩
   let targetTid : SeLe4n.ThreadId := ⟨99⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 100)))]
-  match setPriorityOp st callerTid targetTid ⟨50⟩ with
+  match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
   | .ok _ => throw <| IO.userError "PM-005 missing target should fail"
   | .error e =>
     expect "PM-005 error is invalidArgument" (e == .invalidArgument)
@@ -128,7 +128,7 @@ private def pm006_setMCPriorityWithinMCP : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30) (mcp := 150)))
   ]
-  match setMCPriorityOp st callerTid targetTid ⟨100⟩ with
+  match setMCPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨100⟩ with
   | .ok st' =>
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
@@ -144,7 +144,7 @@ private def pm007_setMCPriorityAboveMCP : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 100))),
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30) (mcp := 150)))
   ]
-  match setMCPriorityOp st callerTid targetTid ⟨101⟩ with
+  match setMCPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨101⟩ with
   | .ok _ => throw <| IO.userError "PM-007 setMCPriority above MCP should fail"
   | .error e =>
     expect "PM-007 error is illegalAuthority" (e == .illegalAuthority)
@@ -158,7 +158,7 @@ private def pm008_setMCPriorityCapsExisting : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
     (⟨2⟩, .tcb (mkTcb 2 (prio := 80) (mcp := 150)))
   ]
-  match setMCPriorityOp st callerTid targetTid ⟨50⟩ with
+  match setMCPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
   | .ok st' =>
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
@@ -187,7 +187,7 @@ private def pm009_setPriorityBoundThread : IO Unit := do
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30) (binding := .bound scId))),
     (scId.toObjId, .schedContext sc)
   ]
-  match setPriorityOp st callerTid targetTid ⟨80⟩ with
+  match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨80⟩ with
   | .ok st' =>
     -- SchedContext priority should be updated
     match st'.objects[scId.toObjId]? with
@@ -204,7 +204,7 @@ private def pm010_setPriorityUnboundThread : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30)))
   ]
-  match setPriorityOp st callerTid targetTid ⟨60⟩ with
+  match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨60⟩ with
   | .ok st' =>
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
@@ -229,7 +229,7 @@ private def pm010b_setMCPriorityCapsSchedContextBound : IO Unit := do
     (⟨2⟩, .tcb (mkTcb 2 (prio := 30) (mcp := 150) (binding := .bound scId))),
     (scId.toObjId, .schedContext sc)
   ]
-  match setMCPriorityOp st callerTid targetTid ⟨50⟩ with
+  match setMCPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
   | .ok st' =>
     -- Verify MCP was updated on TCB
     match st'.objects[targetTid.toObjId]? with
@@ -259,10 +259,10 @@ private def pm011_mcpTransitivity : IO Unit := do
     (⟨3⟩, .tcb (mkTcb 3 (prio := 20) (mcp := 200)))
   ]
   -- Step 1: A sets B's MCP to 80
-  match setMCPriorityOp st tidA tidB ⟨80⟩ with
+  match setMCPriorityOp st ⟨tidA, by decide⟩ ⟨tidB, by decide⟩ ⟨80⟩ with
   | .ok st' =>
     -- Step 2: B tries to set C's priority to 90 (above B's new MCP of 80) — should fail
-    match setPriorityOp st' tidB tidC ⟨90⟩ with
+    match setPriorityOp st' ⟨tidB, by decide⟩ ⟨tidC, by decide⟩ ⟨90⟩ with
     | .ok _ => throw <| IO.userError "PM-011 B should not set priority above its MCP"
     | .error e =>
       expect "PM-011 transitive MCP blocks escalation" (e == .illegalAuthority)
@@ -278,7 +278,7 @@ private def pm012_selfSetPriority : IO Unit := do
   let st := mkState [
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 100)))
   ]
-  match setPriorityOp st tid tid ⟨80⟩ with
+  match setPriorityOp st ⟨tid, by decide⟩ ⟨tid, by decide⟩ ⟨80⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
@@ -393,7 +393,7 @@ private def pm_ak2b_01_bindPropagatesPriority : IO Unit := do
     (targetTid.toObjId, .tcb (mkTcb 42 (prio := 10) (mcp := 200))),
     (scObjId, .schedContext sc)
   ]
-  match SeLe4n.Kernel.SchedContextOps.schedContextBind scObjId targetTid st with
+  match SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scObjId, by decide⟩ ⟨targetTid, by decide⟩ st with
   | .ok ((), st') =>
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
@@ -421,7 +421,7 @@ private def pm_ak2b_02_configurePropagatesPriority : IO Unit := do
     (scObjId, .schedContext sc)
   ]
   -- Reconfigure to sc.priority = 123
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure scObjId 100 200 123 0 0 st with
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 123 0 0 st with
   | .ok ((), st') =>
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
@@ -456,7 +456,7 @@ private def pm_ak2b_03_configureRebucketsBoundThread : IO Unit := do
   let st : SystemState := { stBase with scheduler :=
     { stBase.scheduler with
       runQueue := stBase.scheduler.runQueue.insert targetTid ⟨50⟩ } }
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure scObjId 100 200 123 0 0 st with
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 123 0 0 st with
   | .ok ((), st') =>
     -- After reconfigure, the RunQueue's cached priority for this thread
     -- must match the new priority (123), not the old (50).

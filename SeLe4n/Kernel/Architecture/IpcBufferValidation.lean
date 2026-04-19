@@ -106,20 +106,26 @@ Sequence:
 4. Store the updated TCB
 
 The thread does NOT need to be suspended — seL4 allows changing the IPC
-buffer of a running thread (the change takes effect on next IPC operation). -/
-def setIPCBufferOp (st : SystemState) (tid : ThreadId)
+buffer of a running thread (the change takes effect on next IPC operation).
+
+**AL8 (WS-AL / AK7-E.cascade) — Type-level validity discipline**: the
+`tid` parameter has type `ValidThreadId` to make sentinel-ID rejection
+non-bypassable at compile time. Uses `vtid.val` directly (no `let`
+binding) so `split at` tactics in preservation proofs can pattern-match
+the `Except` branches without going through a let-layer. -/
+def setIPCBufferOp (st : SystemState) (vtid : ValidThreadId)
     (addr : VAddr) : Except KernelError SystemState :=
-  match validateIpcBufferAddress st tid addr with
+  match validateIpcBufferAddress st vtid.val addr with
   | .error e => .error e
   | .ok () =>
-    match st.objects[tid.toObjId]? with
+    match st.objects[vtid.val.toObjId]? with
     | some (.tcb tcb) =>
       -- AH3-B (L-08): Delegate to `storeObject` instead of manual struct-with.
       -- `storeObject` handles objects/objectIndex/objectIndexSet/lifecycle/asidTable
       -- uniformly. For TCB-to-TCB updates, asidTable is a no-op and capabilityRefs
       -- filter is a no-op (TCBs are never CNodes), producing identical state.
       let tcb' := { tcb with ipcBuffer := addr }
-      match storeObject tid.toObjId (.tcb tcb') st with
+      match storeObject vtid.val.toObjId (.tcb tcb') st with
       | .ok ((), st') => .ok st'
       | .error e => .error e
     | _ => .error .objectNotFound
@@ -217,10 +223,10 @@ theorem ipcBuffer_within_page (addr : VAddr)
 
 /-- D3-F: Helper to extract the success branch of setIPCBufferOp. -/
 private theorem setIPCBufferOp_success_shape
-    (st st' : SystemState) (tid : ThreadId) (addr : VAddr)
-    (hOk : setIPCBufferOp st tid addr = .ok st') :
-    ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
-      validateIpcBufferAddress st tid addr = .ok () := by
+    (st st' : SystemState) (vtid : ValidThreadId) (addr : VAddr)
+    (hOk : setIPCBufferOp st vtid addr = .ok st') :
+    ∃ tcb, st.objects[vtid.val.toObjId]? = some (.tcb tcb) ∧
+      validateIpcBufferAddress st vtid.val addr = .ok () := by
   unfold setIPCBufferOp at hOk
   split at hOk
   · contradiction
@@ -233,8 +239,8 @@ private theorem setIPCBufferOp_success_shape
     The operation only modifies `objects`, `objectIndex`, `objectIndexSet`,
     and `lifecycle`; all other SystemState fields are untouched. -/
 theorem setIPCBufferOp_scheduler_eq
-    (st st' : SystemState) (tid : ThreadId) (addr : VAddr)
-    (hOk : setIPCBufferOp st tid addr = .ok st') :
+    (st st' : SystemState) (vtid : ValidThreadId) (addr : VAddr)
+    (hOk : setIPCBufferOp st vtid addr = .ok st') :
     st'.scheduler = st.scheduler := by
   unfold setIPCBufferOp at hOk
   split at hOk
@@ -245,8 +251,8 @@ theorem setIPCBufferOp_scheduler_eq
 
 /-- D3-F: `setIPCBufferOp` preserves the service registry. -/
 theorem setIPCBufferOp_serviceRegistry_eq
-    (st st' : SystemState) (tid : ThreadId) (addr : VAddr)
-    (hOk : setIPCBufferOp st tid addr = .ok st') :
+    (st st' : SystemState) (vtid : ValidThreadId) (addr : VAddr)
+    (hOk : setIPCBufferOp st vtid addr = .ok st') :
     st'.serviceRegistry = st.serviceRegistry := by
   unfold setIPCBufferOp at hOk
   split at hOk
@@ -257,8 +263,8 @@ theorem setIPCBufferOp_serviceRegistry_eq
 
 /-- D3-F: `setIPCBufferOp` preserves IRQ handlers. -/
 theorem setIPCBufferOp_irqHandlers_eq
-    (st st' : SystemState) (tid : ThreadId) (addr : VAddr)
-    (hOk : setIPCBufferOp st tid addr = .ok st') :
+    (st st' : SystemState) (vtid : ValidThreadId) (addr : VAddr)
+    (hOk : setIPCBufferOp st vtid addr = .ok st') :
     st'.irqHandlers = st.irqHandlers := by
   unfold setIPCBufferOp at hOk
   split at hOk
@@ -269,8 +275,8 @@ theorem setIPCBufferOp_irqHandlers_eq
 
 /-- D3-F: `setIPCBufferOp` preserves machine state. -/
 theorem setIPCBufferOp_machine_eq
-    (st st' : SystemState) (tid : ThreadId) (addr : VAddr)
-    (hOk : setIPCBufferOp st tid addr = .ok st') :
+    (st st' : SystemState) (vtid : ValidThreadId) (addr : VAddr)
+    (hOk : setIPCBufferOp st vtid addr = .ok st') :
     st'.machine = st.machine := by
   unfold setIPCBufferOp at hOk
   split at hOk
@@ -284,8 +290,8 @@ theorem setIPCBufferOp_machine_eq
     `storeObject`, the ASID table is preserved because TCBs are not VSpaceRoots
     (both the clear and set branches of `storeObject.asidTable` are no-ops). -/
 theorem setIPCBufferOp_asidTable_eq
-    (st st' : SystemState) (tid : ThreadId) (addr : VAddr)
-    (hOk : setIPCBufferOp st tid addr = .ok st') :
+    (st st' : SystemState) (vtid : ValidThreadId) (addr : VAddr)
+    (hOk : setIPCBufferOp st vtid addr = .ok st') :
     st'.asidTable = st.asidTable := by
   unfold setIPCBufferOp at hOk
   split at hOk
@@ -302,10 +308,10 @@ theorem setIPCBufferOp_asidTable_eq
     since TCBs are never CNodes — no `CapabilityRef` entries have `ref.cnode =
     tid.toObjId`. The filtered result is the canonical `storeObject` behavior. -/
 theorem setIPCBufferOp_capabilityRefs_cleaned
-    (st st' : SystemState) (tid : ThreadId) (addr : VAddr)
-    (hOk : setIPCBufferOp st tid addr = .ok st') :
+    (st st' : SystemState) (vtid : ValidThreadId) (addr : VAddr)
+    (hOk : setIPCBufferOp st vtid addr = .ok st') :
     st'.lifecycle.capabilityRefs =
-      st.lifecycle.capabilityRefs.filter (fun ref _ => decide (ref.cnode ≠ tid.toObjId)) := by
+      st.lifecycle.capabilityRefs.filter (fun ref _ => decide (ref.cnode ≠ vtid.val.toObjId)) := by
   unfold setIPCBufferOp at hOk
   split at hOk
   · contradiction
@@ -317,10 +323,10 @@ theorem setIPCBufferOp_capabilityRefs_cleaned
 /-- D3-F: `setIPCBufferOp` determinism — the operation is a pure function
     of its inputs. -/
 theorem setIPCBufferOp_deterministic
-    (st : SystemState) (tid : ThreadId) (addr : VAddr) :
+    (st : SystemState) (vtid : ValidThreadId) (addr : VAddr) :
     ∀ st₁ st₂,
-      setIPCBufferOp st tid addr = .ok st₁ →
-      setIPCBufferOp st tid addr = .ok st₂ →
+      setIPCBufferOp st vtid addr = .ok st₁ →
+      setIPCBufferOp st vtid addr = .ok st₂ →
       st₁ = st₂ := by
   intro st₁ st₂ h₁ h₂
   rw [h₁] at h₂

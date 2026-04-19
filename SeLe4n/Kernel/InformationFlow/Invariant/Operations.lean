@@ -2956,31 +2956,31 @@ theorem endpointReplyWithReversion_preserves_lowEquivalent
     - `hStep`: operation succeeded. -/
 theorem setIPCBufferOp_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
-    (tid : SeLe4n.ThreadId) (addr : SeLe4n.VAddr)
+    (vtid : SeLe4n.ValidThreadId) (addr : SeLe4n.VAddr)
     (st st' : SystemState)
-    (hTcbHigh : objectObservable ctx observer tid.toObjId = false)
+    (hTcbHigh : objectObservable ctx observer vtid.val.toObjId = false)
     (hObjInv : st.objects.invExt)
-    (hStep : Architecture.IpcBufferValidation.setIPCBufferOp st tid addr = .ok st') :
+    (hStep : Architecture.IpcBufferValidation.setIPCBufferOp st vtid addr = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold Architecture.IpcBufferValidation.setIPCBufferOp at hStep
-  cases hVal : Architecture.IpcBufferValidation.validateIpcBufferAddress st tid addr with
+  cases hVal : Architecture.IpcBufferValidation.validateIpcBufferAddress st vtid.val addr with
   | error e => rw [hVal] at hStep; simp at hStep
   | ok _ =>
     rw [hVal] at hStep
-    cases hLook : (st.objects[tid.toObjId]? : Option KernelObject) with
+    cases hLook : (st.objects[vtid.val.toObjId]? : Option KernelObject) with
     | none => rw [hLook] at hStep; simp at hStep
     | some obj =>
       rw [hLook] at hStep
       cases obj with
       | tcb tcb =>
         simp only at hStep
-        cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcBuffer := addr }) st with
+        cases hStore : storeObject vtid.val.toObjId (.tcb { tcb with ipcBuffer := addr }) st with
         | error e => rw [hStore] at hStep; simp at hStep
         | ok pair =>
           rw [hStore] at hStep
           simp only [Except.ok.injEq] at hStep
           subst hStep
-          exact storeObject_preserves_projection ctx observer st _ tid.toObjId _
+          exact storeObject_preserves_projection ctx observer st _ vtid.val.toObjId _
             hTcbHigh hObjInv hStore
       | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
         simp at hStep
@@ -3275,11 +3275,11 @@ theorem migrateRunQueueBucket_preserves_projection
     discharge. -/
 theorem setPriorityOp_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
-    (st st' : SystemState) (callerTid targetTid : SeLe4n.ThreadId)
+    (st st' : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
     (newPriority : SeLe4n.Priority)
-    (hTargetThreadHigh : threadObservable ctx observer targetTid = false)
-    (hTargetObjHigh : objectObservable ctx observer targetTid.toObjId = false)
-    (hScHigh : ∀ targetTcb, (st.objects[targetTid.toObjId]? : Option KernelObject)
+    (hTargetThreadHigh : threadObservable ctx observer vTargetTid.val = false)
+    (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
+    (hScHigh : ∀ targetTcb, (st.objects[vTargetTid.val.toObjId]? : Option KernelObject)
                 = some (.tcb targetTcb) →
                 ∀ scId, (targetTcb.schedContextBinding = SchedContextBinding.bound scId ∨
                          ∃ donor, targetTcb.schedContextBinding = SchedContextBinding.donated scId donor) →
@@ -3289,7 +3289,7 @@ theorem setPriorityOp_preserves_projection
                     projectState ctx observer stMid = projectState ctx observer st →
                     schedule stMid = .ok ((), stFinal) →
                     projectState ctx observer stFinal = projectState ctx observer st)
-    (hStep : SchedContext.PriorityManagement.setPriorityOp st callerTid targetTid newPriority
+    (hStep : SchedContext.PriorityManagement.setPriorityOp st vCallerTid vTargetTid newPriority
               = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold SchedContext.PriorityManagement.setPriorityOp at hStep
@@ -3301,24 +3301,24 @@ theorem setPriorityOp_preserves_projection
       · rename_i targetTcb hTarget
         have hProj1 :
             projectState ctx observer
-              (SchedContext.PriorityManagement.updatePrioritySource st targetTid targetTcb newPriority) =
+              (SchedContext.PriorityManagement.updatePrioritySource st vTargetTid.val targetTcb newPriority) =
             projectState ctx observer st :=
-          updatePrioritySource_preserves_projection ctx observer st targetTid targetTcb
+          updatePrioritySource_preserves_projection ctx observer st vTargetTid.val targetTcb
             newPriority hTargetObjHigh (hScHigh targetTcb hTarget) hObjInv
         have hProj2 :
             projectState ctx observer
               (SchedContext.PriorityManagement.migrateRunQueueBucket
-                (SchedContext.PriorityManagement.updatePrioritySource st targetTid targetTcb newPriority)
-                targetTid newPriority) =
+                (SchedContext.PriorityManagement.updatePrioritySource st vTargetTid.val targetTcb newPriority)
+                vTargetTid.val newPriority) =
             projectState ctx observer st := by
-          rw [migrateRunQueueBucket_preserves_projection ctx observer _ targetTid newPriority
+          rw [migrateRunQueueBucket_preserves_projection ctx observer _ vTargetTid.val newPriority
                hTargetThreadHigh]
           exact hProj1
         simp only at hStep
         by_cases hCond :
             ((SchedContext.PriorityManagement.migrateRunQueueBucket
-                (SchedContext.PriorityManagement.updatePrioritySource st targetTid targetTcb newPriority)
-                targetTid newPriority).scheduler.current == some targetTid &&
+                (SchedContext.PriorityManagement.updatePrioritySource st vTargetTid.val targetTcb newPriority)
+                vTargetTid.val newPriority).scheduler.current == some vTargetTid.val &&
               decide (newPriority.val <
                 (SchedContext.PriorityManagement.getCurrentPriority st targetTcb).val)) = true
         · -- schedule branch
@@ -3347,11 +3347,11 @@ theorem setPriorityOp_preserves_projection
     cap priority via updatePrioritySource + migrate + optional schedule. -/
 theorem setMCPriorityOp_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
-    (st st' : SystemState) (callerTid targetTid : SeLe4n.ThreadId)
+    (st st' : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
     (newMCP : SeLe4n.Priority)
-    (hTargetThreadHigh : threadObservable ctx observer targetTid = false)
-    (hTargetObjHigh : objectObservable ctx observer targetTid.toObjId = false)
-    (hScHighForUpdated : ∀ targetTcb, (st.objects[targetTid.toObjId]? : Option KernelObject)
+    (hTargetThreadHigh : threadObservable ctx observer vTargetTid.val = false)
+    (hTargetObjHigh : objectObservable ctx observer vTargetTid.val.toObjId = false)
+    (hScHighForUpdated : ∀ targetTcb, (st.objects[vTargetTid.val.toObjId]? : Option KernelObject)
                 = some (.tcb targetTcb) →
                 ∀ scId,
                   (({ targetTcb with maxControlledPriority := newMCP } : TCB).schedContextBinding = SchedContextBinding.bound scId ∨
@@ -3362,7 +3362,7 @@ theorem setMCPriorityOp_preserves_projection
                     projectState ctx observer stMid = projectState ctx observer st →
                     schedule stMid = .ok ((), stFinal) →
                     projectState ctx observer stFinal = projectState ctx observer st)
-    (hStep : SchedContext.PriorityManagement.setMCPriorityOp st callerTid targetTid newMCP
+    (hStep : SchedContext.PriorityManagement.setMCPriorityOp st vCallerTid vTargetTid newMCP
               = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold SchedContext.PriorityManagement.setMCPriorityOp at hStep
@@ -3375,9 +3375,9 @@ theorem setMCPriorityOp_preserves_projection
         -- The post-MCP-update state (after F2):
         let targetTcb' : TCB := { targetTcb with maxControlledPriority := newMCP }
         let stAfterMCP : SystemState :=
-          { st with objects := st.objects.insert targetTid.toObjId (.tcb targetTcb') }
+          { st with objects := st.objects.insert vTargetTid.val.toObjId (.tcb targetTcb') }
         have hStAfterMCP : projectState ctx observer stAfterMCP = projectState ctx observer st :=
-          objects_insert_preserves_projection_high ctx observer st targetTid.toObjId _
+          objects_insert_preserves_projection_high ctx observer st vTargetTid.val.toObjId _
             hTargetObjHigh hObjInv
         have hObjInvMCP : stAfterMCP.objects.invExt :=
           SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
@@ -3387,9 +3387,9 @@ theorem setMCPriorityOp_preserves_projection
           have hProj1 :
               projectState ctx observer
                 (SchedContext.PriorityManagement.updatePrioritySource
-                  stAfterMCP targetTid targetTcb' newMCP) =
+                  stAfterMCP vTargetTid.val targetTcb' newMCP) =
               projectState ctx observer st := by
-            rw [updatePrioritySource_preserves_projection ctx observer stAfterMCP targetTid
+            rw [updatePrioritySource_preserves_projection ctx observer stAfterMCP vTargetTid.val
                  targetTcb' newMCP hTargetObjHigh
                  (fun scId hB => hScHighForUpdated targetTcb hTarget scId hB) hObjInvMCP]
             exact hStAfterMCP
@@ -3397,21 +3397,21 @@ theorem setMCPriorityOp_preserves_projection
               projectState ctx observer
                 (SchedContext.PriorityManagement.migrateRunQueueBucket
                   (SchedContext.PriorityManagement.updatePrioritySource
-                    stAfterMCP targetTid targetTcb' newMCP)
-                  targetTid newMCP) =
+                    stAfterMCP vTargetTid.val targetTcb' newMCP)
+                  vTargetTid.val newMCP) =
               projectState ctx observer st := by
-            rw [migrateRunQueueBucket_preserves_projection ctx observer _ targetTid newMCP
+            rw [migrateRunQueueBucket_preserves_projection ctx observer _ vTargetTid.val newMCP
                  hTargetThreadHigh]
             exact hProj1
           split at hStep
-          · -- current == some targetTid — schedule
+          · -- current == some vTargetTid.val — schedule
             split at hStep
             · rename_i pair stFinal hSched
               simp only [Except.ok.injEq] at hStep
               subst hStep
               exact hSchedProj _ stFinal hProj2 hSched
             · simp at hStep
-          · -- current != some targetTid — no schedule
+          · -- current != some vTargetTid.val — no schedule
             simp only [Except.ok.injEq] at hStep
             subst hStep
             exact hProj2
@@ -3533,15 +3533,15 @@ theorem revokeService_preserves_projection
     discharge: ≈40 LOC given the 6-phase body of `schedContextConfigure`. -/
 theorem schedContextConfigure_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
-    (scId : SeLe4n.ObjId) (budget period priority deadline domain : Nat)
+    (vScId : SeLe4n.ValidObjId) (budget period priority deadline domain : Nat)
     (st st' : SystemState)
     (hProjEq :
         ∀ stFinal,
           SeLe4n.Kernel.SchedContextOps.schedContextConfigure
-            scId budget period priority deadline domain st = .ok ((), stFinal) →
+            vScId budget period priority deadline domain st = .ok ((), stFinal) →
           projectState ctx observer stFinal = projectState ctx observer st)
     (hStep : SeLe4n.Kernel.SchedContextOps.schedContextConfigure
-                scId budget period priority deadline domain st = .ok ((), st')) :
+                vScId budget period priority deadline domain st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st :=
   hProjEq st' hStep
 
@@ -3573,14 +3573,14 @@ theorem schedContextBind_frame_runQueue_rebucket
     Each phase composes via `Eq.trans`. ≈25 LOC total discharge. -/
 theorem schedContextBind_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
-    (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
+    (vScId : SeLe4n.ValidObjId) (vThreadId : SeLe4n.ValidThreadId)
     (st st' : SystemState)
     (hProjEq :
         ∀ stFinal,
-          SeLe4n.Kernel.SchedContextOps.schedContextBind scId threadId st
+          SeLe4n.Kernel.SchedContextOps.schedContextBind vScId vThreadId st
             = .ok ((), stFinal) →
           projectState ctx observer stFinal = projectState ctx observer st)
-    (hStep : SeLe4n.Kernel.SchedContextOps.schedContextBind scId threadId st
+    (hStep : SeLe4n.Kernel.SchedContextOps.schedContextBind vScId vThreadId st
               = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st :=
   hProjEq st' hStep
@@ -3599,13 +3599,13 @@ theorem schedContextBind_preserves_projection
     Typical discharge: ≈30 LOC. -/
 theorem schedContextUnbind_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
-    (scId : SeLe4n.ObjId) (st st' : SystemState)
+    (vScId : SeLe4n.ValidObjId) (st st' : SystemState)
     (hProjEq :
         ∀ stFinal,
-          SeLe4n.Kernel.SchedContextOps.schedContextUnbind scId st
+          SeLe4n.Kernel.SchedContextOps.schedContextUnbind vScId st
             = .ok ((), stFinal) →
           projectState ctx observer stFinal = projectState ctx observer st)
-    (hStep : SeLe4n.Kernel.SchedContextOps.schedContextUnbind scId st
+    (hStep : SeLe4n.Kernel.SchedContextOps.schedContextUnbind vScId st
               = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st :=
   hProjEq st' hStep
@@ -3694,12 +3694,12 @@ theorem cancelDonation_preserves_projection
     Typical discharge: ≈100 LOC. -/
 theorem suspendThread_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
-    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId)
     (hProjEq :
         ∀ stFinal,
-          SeLe4n.Kernel.Lifecycle.Suspend.suspendThread st tid = .ok stFinal →
+          SeLe4n.Kernel.Lifecycle.Suspend.suspendThread st vtid = .ok stFinal →
           projectState ctx observer stFinal = projectState ctx observer st)
-    (hStep : SeLe4n.Kernel.Lifecycle.Suspend.suspendThread st tid = .ok st') :
+    (hStep : SeLe4n.Kernel.Lifecycle.Suspend.suspendThread st vtid = .ok st') :
     projectState ctx observer st' = projectState ctx observer st :=
   hProjEq st' hStep
 
@@ -3752,12 +3752,12 @@ theorem resumeThread_frame_ensureRunnable
     caller must prove to connect them. -/
 theorem resumeThread_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
-    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState) (vtid : SeLe4n.ValidThreadId)
     (hProjEq :
         ∀ stFinal,
-          SeLe4n.Kernel.Lifecycle.Suspend.resumeThread st tid = .ok stFinal →
+          SeLe4n.Kernel.Lifecycle.Suspend.resumeThread st vtid = .ok stFinal →
           projectState ctx observer stFinal = projectState ctx observer st)
-    (hStep : SeLe4n.Kernel.Lifecycle.Suspend.resumeThread st tid = .ok st') :
+    (hStep : SeLe4n.Kernel.Lifecycle.Suspend.resumeThread st vtid = .ok st') :
     projectState ctx observer st' = projectState ctx observer st :=
   hProjEq st' hStep
 

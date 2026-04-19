@@ -138,26 +138,32 @@ Sequence:
 5. If target is current and priority decreased, trigger reschedule
 
 Returns `invalidArgument` if caller or target is not a TCB.
-Returns `illegalAuthority` if `newPriority > caller.maxControlledPriority`. -/
-def setPriorityOp (st : SystemState) (callerTid targetTid : SeLe4n.ThreadId)
+Returns `illegalAuthority` if `newPriority > caller.maxControlledPriority`.
+
+**AL8 (WS-AL / AK7-E.cascade) — Type-level validity discipline**: both
+`callerTid` and `targetTid` have type `ValidThreadId`. The Lean type
+system forbids any caller from feeding `ThreadId.sentinel` for either
+argument. Uses `vCallerTid.val` / `vTargetTid.val` directly in the body
+so `split at` tactics in preservation proofs work cleanly. -/
+def setPriorityOp (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
     (newPriority : SeLe4n.Priority) : Except KernelError SystemState :=
   -- E1: Caller TCB lookup + MCP authority check
-  match st.objects[callerTid.toObjId]? with
+  match st.objects[vCallerTid.val.toObjId]? with
   | some (.tcb callerTcb) =>
     match validatePriorityAuthority callerTcb newPriority with
     | .error e => .error e
     | .ok () =>
       -- E2: Target TCB lookup
-      match st.objects[targetTid.toObjId]? with
+      match st.objects[vTargetTid.val.toObjId]? with
       | some (.tcb targetTcb) =>
         -- E3: Update priority source (SchedContext or TCB)
         let oldPriority := getCurrentPriority st targetTcb
-        let st := updatePrioritySource st targetTid targetTcb newPriority
+        let st := updatePrioritySource st vTargetTid.val targetTcb newPriority
         -- E4: Run queue bucket migration
-        let st := migrateRunQueueBucket st targetTid newPriority
+        let st := migrateRunQueueBucket st vTargetTid.val newPriority
         -- E5: Conditional preemption check
         -- If target is current and priority decreased, reschedule
-        if st.scheduler.current == some targetTid &&
+        if st.scheduler.current == some vTargetTid.val &&
            newPriority.val < oldPriority.val then
           match schedule st with
           | .ok ((), st') => .ok st'
@@ -184,28 +190,31 @@ Sequence:
 4. If priority was capped and target is in run queue, perform bucket migration
 
 Returns `invalidArgument` if caller or target is not a TCB.
-Returns `illegalAuthority` if `newMCP > caller.maxControlledPriority`. -/
-def setMCPriorityOp (st : SystemState) (callerTid targetTid : SeLe4n.ThreadId)
+Returns `illegalAuthority` if `newMCP > caller.maxControlledPriority`.
+
+**AL8 (WS-AL / AK7-E.cascade)**: `callerTid` / `targetTid` are
+`ValidThreadId` for compile-time sentinel rejection. -/
+def setMCPriorityOp (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
     (newMCP : SeLe4n.Priority) : Except KernelError SystemState :=
   -- F1: Caller MCP authority validation (reuses validatePriorityAuthority for consistency)
-  match st.objects[callerTid.toObjId]? with
+  match st.objects[vCallerTid.val.toObjId]? with
   | some (.tcb callerTcb) =>
     match validatePriorityAuthority callerTcb newMCP with
     | .error e => .error e
     | .ok () =>
       -- F2: Target TCB lookup + MCP update
-      match st.objects[targetTid.toObjId]? with
+      match st.objects[vTargetTid.val.toObjId]? with
       | some (.tcb targetTcb) =>
         let targetTcb' := { targetTcb with maxControlledPriority := newMCP }
-        let st := { st with objects := st.objects.insert targetTid.toObjId (.tcb targetTcb') }
+        let st := { st with objects := st.objects.insert vTargetTid.val.toObjId (.tcb targetTcb') }
         -- F3: Priority capping — if current priority exceeds new MCP, cap it
         let currentPrio := getCurrentPriority st targetTcb'
         if currentPrio.val > newMCP.val then
           -- Cap priority to MCP ceiling
-          let st := updatePrioritySource st targetTid targetTcb' newMCP
+          let st := updatePrioritySource st vTargetTid.val targetTcb' newMCP
           -- F4: Run queue migration + preemption check for capped priority
-          let st := migrateRunQueueBucket st targetTid newMCP
-          if st.scheduler.current == some targetTid then
+          let st := migrateRunQueueBucket st vTargetTid.val newMCP
+          if st.scheduler.current == some vTargetTid.val then
             match schedule st with
             | .ok ((), st') => .ok st'
             | .error e => .error e

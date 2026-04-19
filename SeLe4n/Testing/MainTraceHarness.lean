@@ -2196,7 +2196,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     objects := st1.objects.insert scId scObj
     objectIndex := scId :: st1.objectIndex
     objectIndexSet := st1.objectIndexSet.insert scId }
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure scId 100 1000 50 0 0 stWithSc with
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 100 1000 50 0 0 stWithSc with
   | .error err =>
     IO.println s!"[SCO-006] schedContextConfigure success: error {reprStr err}"
   | .ok ((), stConfigured) =>
@@ -2212,7 +2212,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨50⟩, budgetRemaining := ⟨100⟩ }
   let stForBind := { st1 with
     objects := st1.objects.insert scId (.schedContext scForBind) }
-  match SeLe4n.Kernel.SchedContextOps.schedContextBind scId tid stForBind with
+  match SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scId, by decide⟩ ⟨tid, by decide⟩ stForBind with
   | .error err =>
     IO.println s!"[SCO-007] schedContextBind success: error {reprStr err}"
   | .ok ((), stBound) =>
@@ -2229,7 +2229,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     SeLe4n.Kernel.SchedContext.empty ⟨5000⟩ with boundThread := some ⟨99⟩ }
   let stAlreadyBound := { st1 with
     objects := st1.objects.insert scId (.schedContext scAlreadyBound) }
-  match SeLe4n.Kernel.SchedContextOps.schedContextBind scId ⟨2⟩ stAlreadyBound with
+  match SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scId, by decide⟩ ⟨⟨2⟩, by decide⟩ stAlreadyBound with
   | .error err => IO.println s!"[SCO-008] schedContextBind already-bound: {reprStr err}"
   | .ok _ => IO.println s!"[SCO-008] schedContextBind already-bound: unexpected success"
 
@@ -2244,7 +2244,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let stForUnbind := { st1 with
     objects := (st1.objects.insert scId (.schedContext scBoundForUnbind)).insert
       tid.toObjId tcbBoundForUnbind }
-  match SeLe4n.Kernel.SchedContextOps.schedContextUnbind scId stForUnbind with
+  match SeLe4n.Kernel.SchedContextOps.schedContextUnbind ⟨scId, by decide⟩ stForUnbind with
   | .error err =>
     IO.println s!"[SCO-009] schedContextUnbind success: error {reprStr err}"
   | .ok ((), stUnbound) =>
@@ -2260,7 +2260,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let scNotBound : SeLe4n.Kernel.SchedContext := SeLe4n.Kernel.SchedContext.empty ⟨5000⟩
   let stNotBound := { st1 with
     objects := st1.objects.insert scId (.schedContext scNotBound) }
-  match SeLe4n.Kernel.SchedContextOps.schedContextUnbind scId stNotBound with
+  match SeLe4n.Kernel.SchedContextOps.schedContextUnbind ⟨scId, by decide⟩ stNotBound with
   | .error err => IO.println s!"[SCO-010] schedContextUnbind not-bound: {reprStr err}"
   | .ok _ => IO.println s!"[SCO-010] schedContextUnbind not-bound: unexpected success"
 
@@ -2312,7 +2312,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     scheduler := { st1.scheduler with
       runQueue := mkRunQueue [tidRQ]   -- thread in RunQueue at default prio 0
       current := none } }
-  match SeLe4n.Kernel.SchedContextOps.schedContextBind scId tidRQ stForRQ with
+  match SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scId, by decide⟩ ⟨tidRQ, by decide⟩ stForRQ with
   | .error err =>
     IO.println s!"[SCO-013] schedContextBind runqueue-reinsert: error {reprStr err}"
   | .ok ((), stBoundRQ) =>
@@ -2337,7 +2337,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     objects := (st1.objects.insert scId (.schedContext scBoundCur)).insert
       tidCur.toObjId tcbBoundCur
     scheduler := { st1.scheduler with current := some tidCur } }
-  match SeLe4n.Kernel.SchedContextOps.schedContextUnbind scId stForCur with
+  match SeLe4n.Kernel.SchedContextOps.schedContextUnbind ⟨scId, by decide⟩ stForCur with
   | .error err =>
     IO.println s!"[SCO-014] schedContextUnbind current-thread: error {reprStr err}"
   | .ok ((), stUnboundCur) =>
@@ -2361,7 +2361,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     scheduler := { st1.scheduler with
       runQueue := mkRunQueue [tidInRQ]
       current := none } }
-  match SeLe4n.Kernel.SchedContextOps.schedContextUnbind scId stForRQUnbind with
+  match SeLe4n.Kernel.SchedContextOps.schedContextUnbind ⟨scId, by decide⟩ stForRQUnbind with
   | .error err =>
     IO.println s!"[SCO-015] schedContextUnbind runqueue-removal: error {reprStr err}"
   | .ok ((), stUnboundRQ) =>
@@ -2423,7 +2423,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let stBind2 := { st1 with
     objects := (st1.objects.insert scId (.schedContext scForBind2)).insert
       (SeLe4n.ThreadId.ofNat 1).toObjId tcbAlreadyBound }
-  match SeLe4n.Kernel.SchedContextOps.schedContextBind scId ⟨1⟩ stBind2 with
+  match SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scId, by decide⟩ ⟨⟨1⟩, by decide⟩ stBind2 with
   | .error err => IO.println s!"[SCO-018] schedContextBind tcb-already-bound: {reprStr err}"
   | .ok _ => IO.println s!"[SCO-018] schedContextBind tcb-already-bound: unexpected success"
 
@@ -2902,7 +2902,7 @@ private def runBudgetLifecycleTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     objects := (st1.objects.insert scId scObj).insert tid.toObjId (.tcb tcb0)
     objectIndex := scId :: tid.toObjId :: st1.objectIndex
     objectIndexSet := (st1.objectIndexSet.insert scId).insert tid.toObjId }
-  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure scId 5 100 50 0 0 stSetup with
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scId, by decide⟩ 5 100 50 0 0 stSetup with
   | .error err =>
     IO.println s!"[Z8J-001] SchedContext create+configure: error {reprStr err}"
   | .ok ((), stConfigured) =>
@@ -2912,7 +2912,7 @@ private def runBudgetLifecycleTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     | _ => IO.println s!"[Z8J-001] SchedContext create+configure: not found"
 
     -- Z8-J2: Bind thread to SchedContext, verify binding
-    match SeLe4n.Kernel.SchedContextOps.schedContextBind scId tid stConfigured with
+    match SeLe4n.Kernel.SchedContextOps.schedContextBind ⟨scId, by decide⟩ ⟨tid, by decide⟩ stConfigured with
     | .error err =>
       IO.println s!"[Z8J-002] SchedContext bind: error {reprStr err}"
     | .ok ((), stBound) =>

@@ -73,7 +73,7 @@ echo "RAW_LOOKUP_SCID:$(rg_count_excl_helpers '\.get\? *scId\.toObjId|\[scId\.to
 # --- Helper adoption (target: increase) ----------------------------------
 echo "GETTCB_ADOPTION:$(rg_count 'getTcb\?')"
 echo "GETSCHEDCTX_ADOPTION:$(rg_count 'getSchedContext\?')"
-echo "SENTINEL_CHECK_DISPATCH:$(rg -c 'validateThreadIdArg|validateSchedContextIdArg' SeLe4n/Kernel/API.lean 2>/dev/null || echo 0)"
+echo "SENTINEL_CHECK_DISPATCH:$(rg -c 'validateThreadIdArg|validateSchedContextIdArg|validateObjIdArg' SeLe4n/Kernel/API.lean 2>/dev/null || echo 0)"
 echo "REQUIRE_NOT_NULL_CSPACE:$(rg -c 'requireNotNull' SeLe4n/Kernel/Capability/Operations.lean 2>/dev/null || echo 0)"
 
 # --- Safety invariants (target: zero) ------------------------------------
