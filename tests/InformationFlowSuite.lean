@@ -856,8 +856,10 @@ def runInformationFlowChecks : IO Unit := do
        .services, .scheduler, .irqHandlers, .lifecycle,
        .asidTable, .interfaceRegistry, .serviceRegistry,
        .cdt, .cdtSlotNode, .cdtNodeSlot, .cdtNextNode, .tlb ].length = 16)
-  expect "V6-A: crossSubsystemFieldSets has 10 entries"
-    (SeLe4n.Kernel.crossSubsystemFieldSets.length = 10)
+  -- AM4 audit remediation: field-set catalog extended from 10 to 11
+  -- entries with `lifecycleObjectTypeLockstep_fields` (AL6-C / AM4).
+  expect "V6-A + AM4: crossSubsystemFieldSets has 11 entries"
+    (SeLe4n.Kernel.crossSubsystemFieldSets.length = 11)
   -- Verify disjointness witnesses compile and have expected values
   expect "V6-A: regDepConsistent disjoint from staleEndpoint"
     (SeLe4n.Kernel.fieldsDisjoint SeLe4n.Kernel.registryDependencyConsistent_fields

@@ -405,7 +405,12 @@ def assertStateInvariantsWithoutSync (label : String) (objectIds : List SeLe4n.O
     throw <| IO.userError s!"{label}: invariant checks failed (without sync): {reprStr failures}"
 
 -- ============================================================================
--- AG1-F: Runtime crossSubsystemInvariant checks (10 predicates)
+-- AG1-F + WS-AM AM4 audit remediation: Runtime crossSubsystemInvariant
+-- checks (11 predicates — extended in WS-AM AM4 to cover the AL6-C
+-- `lifecycleObjectTypeLockstep` 11th conjunct). Post-audit fix to close
+-- the trace-harness coverage gap surfaced by the WS-AM end-to-end audit:
+-- the Prop-level bundle was extended to 11 in AM4, but this boolean
+-- runtime checker had remained at 10 until this remediation.
 -- ============================================================================
 
 /-- AG1-F audit: Collect queue members by following queueNext pointers.
@@ -555,8 +560,27 @@ private def checkServiceGraphInvariant (st : SystemState) : Bool :=
   let bounded := st.services.size ≤ st.objectIndex.length
   acyclic && bounded
 
-/-- AG1-F-iv: Compose all 10 cross-subsystem predicate checks into a single
-boolean function. Returns `true` only if all checks pass. -/
+/-- AM4 audit remediation: Runtime check for the AL6-C
+`lifecycleObjectTypeLockstep` 11th conjunct of `crossSubsystemInvariant`.
+For every populated ObjId, the stored object's `objectType` must match
+the recorded entry in `lifecycle.objectTypes`. Walks `objectIndex` once
+and compares each entry pair; `true` when all match. -/
+private def checkLifecycleObjectTypeLockstep (st : SystemState) : Bool :=
+  st.objectIndex.all fun oid =>
+    match st.objects[oid]? with
+    | some obj =>
+      match st.lifecycle.objectTypes[oid]? with
+      | some ty => ty == obj.objectType
+      | none => false
+    | none => true
+
+/-- AG1-F-iv + WS-AM AM4 audit remediation: Compose all 11
+cross-subsystem predicate checks into a single boolean function.
+Returns `true` only if all 11 checks pass. The 11th check
+(`crossSub:lifecycleObjectTypeLockstep`) was added by the WS-AM
+post-delivery audit to close the gap where the Prop-level
+`crossSubsystemInvariant` had 11 conjuncts but this runtime check
+exercised only 10. -/
 def checkCrossSubsystemInvariant (st : SystemState) : List (String × Bool) :=
   [ ("crossSub:registryEndpointValid", checkRegistryEndpointValid st)
   , ("crossSub:registryInterfaceValid", checkRegistryInterfaceValid st)
@@ -567,7 +591,8 @@ def checkCrossSubsystemInvariant (st : SystemState) : List (String × Bool) :=
   , ("crossSub:schedContextStoreConsistent", checkSchedContextStoreConsistent st)
   , ("crossSub:schedContextNotDualBound", checkSchedContextNotDualBound st)
   , ("crossSub:schedContextRunQueueConsistent", checkSchedContextRunQueueConsistent st)
-  , ("crossSub:blockingAcyclic", checkBlockingAcyclic st) ]
+  , ("crossSub:blockingAcyclic", checkBlockingAcyclic st)
+  , ("crossSub:lifecycleObjectTypeLockstep", checkLifecycleObjectTypeLockstep st) ]
 
 /-- AG1-F-iv: Assert cross-subsystem invariants, throwing IO error on failure. -/
 def assertCrossSubsystemInvariant (label : String) (st : SystemState) : IO Unit := do

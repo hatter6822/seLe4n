@@ -1485,9 +1485,9 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     · intro oid root _ _ _ hObj; exact absurd hObj (hNoVSpace oid _)
     · intro oidA _ _ _ hObjA; exact absurd hObjA (hNoVSpace oidA _)
     · intro oid root _ _ _ hObj; exact absurd hObj (hNoVSpace oid _)
-  -- 8. crossSubsystemInvariant (Z9-D + AE5-C + AF1-B: 10 predicates)
+  -- 8. crossSubsystemInvariant (Z9-D + AE5-C + AF1-B + AM4-A: 11 predicates)
   have hCrossBundle : crossSubsystemInvariant (bootFromPlatform config).state := by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- registryEndpointValid
       intro sid reg hLookup; rw [hSvcR] at hLookup
       have : (default : SystemState).serviceRegistry[sid]? = none := by
@@ -1573,6 +1573,19 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
               simp [PriorityInheritance.blockingServer, hObj, hReady]
             | _ => simp [PriorityInheritance.blockingServer, hObj]
         simp [hServer] at hMem
+    · -- AM4-F (AL6-C.hygiene): lifecycleObjectTypeLockstep at boot.
+      -- `bootFromPlatform_lifecycleConsistent` already witnesses
+      -- `objectTypeMetadataConsistent`, which is semantically stronger
+      -- than (and directly implies) the lockstep predicate.
+      intro oid obj hObj
+      have hMeta := (bootFromPlatform_lifecycleConsistent config).1
+      -- objectTypeMetadataConsistent: ∀ oid, lookupObjectTypeMeta st oid
+      --   = (st.objects[oid]?).map KernelObject.objectType
+      -- With hObj : st.objects[oid]? = some obj, the RHS is
+      -- `some obj.objectType`, matching the lockstep goal.
+      have := hMeta oid
+      simp [SystemState.lookupObjectTypeMeta, hObj] at this
+      exact this
   -- 9. tlbConsistent
   have hTlbBundle : Architecture.tlbConsistent (bootFromPlatform config).state
       (bootFromPlatform config).state.tlb := by
