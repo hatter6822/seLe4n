@@ -16,7 +16,7 @@
 #   0 — all metrics emitted successfully
 #   1 — tool dependency missing (rg / lake / cargo)
 #
-# See docs/audits/AUDIT_v0.29.0_DEFERRED.md § "AK7 cascade resolution"
+# See docs/WORKSTREAM_HISTORY.md §WS-AM for the cascade-closure history
 # and the WS-AL workstream plan.
 
 set -euo pipefail

@@ -338,15 +338,14 @@ predicate. For every queried `oid`:
   to the pre-state, where the inductive invariant applies.
 
 The DEFAULT-state witness and the `storeObject` /
-`storeObjectKindChecked` preservation proofs require threading the
+`storeObjectKindChecked` preservation proofs thread the
 `objects.invExt` and `lifecycle.objectTypes.invExt` preconditions
 through the RHTable bridge lemmas. Callers that hold
 `crossSubsystemInvariant` can discharge these obligations by composing
 with the existing `storeObject` frame lemmas in `Model/State.lean`.
-The full composition lands with the global `crossSubsystemInvariant`
-extension to include this predicate — tracked as
-**AL6-C.hygiene** in `docs/audits/AUDIT_v0.29.0_DEFERRED.md`,
-post-patch.
+The predicate is the 11th conjunct of `crossSubsystemInvariant` —
+RESOLVED via WS-AM AM1 + AM4 (see `docs/WORKSTREAM_HISTORY.md` §WS-AM
+for the cascade-closure history).
 
 The invariant DEFINITION above is the semantic witness that AL6-A's
 `storeObjectKindChecked` enforces at the wrapper layer. Together they

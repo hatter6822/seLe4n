@@ -106,8 +106,8 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 # and increases or holds steady on "should-grow" metrics (helper adoption,
 # sentinel-check dispatch, requireNotNull gate, AK7 suite size, build jobs,
 # cargo tests). Baseline is captured in docs/audits/AL0_baseline.txt by
-# scripts/ak7_cascade_baseline.sh. See docs/audits/AUDIT_v0.29.0_DEFERRED.md
-# and the WS-AL plan document.
+# scripts/ak7_cascade_baseline.sh. See docs/WORKSTREAM_HISTORY.md §WS-AM
+# for the cascade-closure history and the WS-AL plan document.
 run_check "HYGIENE" "${SCRIPT_DIR}/ak7_cascade_check_monotonic.sh"
 
 run_check "HYGIENE" python3 -m unittest scripts.tests.test_generate_codebase_map
