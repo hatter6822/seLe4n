@@ -83,6 +83,17 @@ echo "GETSCHEDCTX_ADOPTION:$(rg_count 'getSchedContext\?')"
 echo "SENTINEL_CHECK_DISPATCH:$(rg -c 'validateThreadIdArg|validateSchedContextIdArg|validateObjIdArg' SeLe4n/Kernel/API.lean 2>/dev/null || echo 0)"
 echo "REQUIRE_NOT_NULL_CSPACE:$(rg -c 'requireNotNull' SeLe4n/Kernel/Capability/Operations.lean 2>/dev/null || echo 0)"
 
+# AM5-B (WS-AM): AK7-F.writer hygiene wrapper + AL6-C cross-subsystem
+# integration telemetry. Both metrics are should-grow —
+# `storeObjectKindChecked` is the AK7-F.writer.hygiene adoption target
+# (0 production call sites at v0.30.0 baseline; grows as AM2 lands),
+# and `lifecycleObjectTypeLockstep` references count every usage site
+# of the cross-subsystem 11th conjunct (default witness, bridge lemmas,
+# projection, preservation proofs). Growth indicates the cascade is
+# being consumed rather than left as a dead symbol.
+echo "STOREOBJECTCHECKED_ADOPTION:$(rg_count_excl_helpers 'storeObjectKindChecked')"
+echo "LIFECYCLELOCKSTEP_REFS:$(rg_count 'lifecycleObjectTypeLockstep')"
+
 # --- Safety invariants (target: zero) ------------------------------------
 echo "SORRY_COUNT:$(rg_count '\bsorry\b')"
 echo "AXIOM_COUNT:$(rg_count '^axiom\s|\baxiom\s')"

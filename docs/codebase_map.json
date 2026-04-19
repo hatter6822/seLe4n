@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/plan-deferred-tasks-EZNLE",
-      "commit_sha": "5e71ea864e2f06a2f614c1c8f2b1fcdbfcd8ffa7",
-      "tree_sha": "358176319a255df04d22399167ae9bacc4c2921e",
-      "committed_at_utc": "2026-04-19T02:40:43+00:00"
+      "commit_sha": "af4d43ee0a01f4949899dfd1b7096f82057e74cf",
+      "tree_sha": "65a3caf334a7c3845a7729e2a01b79c4a66db803",
+      "committed_at_utc": "2026-04-19T02:57:05+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 5490
   },
   "readme_sync": {
-    "version": "0.29.14",
+    "version": "0.30.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 142,
     "production_loc": 101004,

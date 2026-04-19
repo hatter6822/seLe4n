@@ -1,3 +1,90 @@
+## v0.30.0 — WS-AM: AL6-C.hygiene closure via cross-subsystem integration
+
+Closes the last remaining correctness-impacting deferred item from the
+v0.29.0 audit. `lifecycleObjectTypeLockstep` is elevated from a
+standalone predicate (AL6-C schema-only stub in v0.29.14) to the 11th
+conjunct of `crossSubsystemInvariant`, so every kernel entry/exit
+point now structurally carries the witness that `lifecycle.objectTypes`
+agrees with `objects` on every populated ObjId. This makes the
+AK7-F cross-variant overwrite hole closed at TWO layers
+simultaneously — (1) AL6-A's `storeObjectKindChecked` runtime guard
+and (2) AM4's invariant-layer guarantee.
+
+### AM1 — Standalone AL6-C preservation proofs (commit 5e71ea8)
+
+- **AM1-A** `default_lifecycleObjectTypeLockstep`: vacuous witness on
+  empty default state via `RHTable.getElem?_empty`.
+- **AM1-B** `storeObject_preserves_lifecycleObjectTypeLockstep`
+  (~28 LOC): every `storeObject` step updates both `objects` and
+  `lifecycle.objectTypes` with the same key and matching type, so the
+  predicate is preserved by `getElem?_insert_self`/`_insert_ne` case
+  split on the queried id.
+- **AM1-C** `storeObjectKindChecked_preserves_lifecycleObjectTypeLockstep`
+  (~14 LOC): the wrapper's three branches (none / same-kind / cross-
+  kind) all either delegate to AM1-B or contradict the success
+  hypothesis.
+- **AM1-D**: 3 new runtime tests (`am1_01..03`) witness default-state
+  lockstep, post-`storeObject` lockstep, and rejection-preserves-state.
+
+### AM4 — Cross-subsystem integration (commit af4d43e)
+
+- **AM4-A** `crossSubsystemInvariant` extended 10 → 11 conjuncts
+  (append at END so prefix-indexed projections are unaffected); the
+  one shifted projection (`_to_blockingAcyclic`) gains `.1` suffix.
+- **AM4-B** new projection
+  `crossSubsystemInvariant_to_lifecycleObjectTypeLockstep`.
+- **AM4-C** `default_crossSubsystemInvariant` gains 11th case via
+  AM1-A.
+- **AM4-D** 5 core bridges extended (`objects_change_bridge`,
+  `retype_bridge`, `objects_frame`, `services_change`,
+  `composition_gap_documented`). Two of them (`_objects_frame`,
+  `_services_change`) also take a new `hObjTypes` parameter.
+- **AM4-E** 34 per-operation bridge lemmas uniformly extended via
+  bulk `Edit replace_all` on the two canonical pattern shapes
+  (objects_change callers + retype callers) — IPC/Scheduler/Lifecycle/
+  Capability/SchedContext/Priority/VSpace/IPCBuffer/Retype/Interrupt.
+- **AM4-F** downstream callers: `Architecture/Invariant.lean`
+  (advanceTimerState, writeRegisterState, contextSwitchState) +
+  `Platform/Boot.lean` `bootFromPlatform_crossSubsystemInvariant`
+  (reuses `objectTypeMetadataConsistent` witness from
+  `bootFromPlatform_lifecycleConsistent`).
+- **AM4-G** 3 new runtime tests (`am4_01..03`).
+
+### AM5 — Baseline refresh + new metrics
+
+- `docs/audits/AL0_baseline.txt` refreshed to v0.30.0 equilibrium.
+  `TEST_COUNT_AK7` bumped 73 → 84.
+- Two new metrics added to the monotonicity guard:
+  `STOREOBJECTCHECKED_ADOPTION` (AK7-F.writer wrapper adoption,
+  floor 9) and `LIFECYCLELOCKSTEP_REFS` (AL6-C cross-subsystem
+  11th-conjunct references, floor 63).
+- Both added to `GROW_METRICS` in
+  `scripts/ak7_cascade_check_monotonic.sh`.
+
+### AM6 — Version bump + deferred-doc closure
+
+- Version bumped 0.29.14 → 0.30.0 across 15 version-bearing files
+  (`check_version_sync.sh` PASS).
+- `docs/audits/AUDIT_v0.29.0_DEFERRED.md` updated: AL6-C.hygiene row
+  marked **RESOLVED** with WS-AM commit SHAs; cascade-closure-summary
+  table gains a 4th row.
+- AK7-F.reader.hygiene + AK7-F.writer.hygiene remain tracked but
+  re-classified as "readability / defense-in-depth" (the correctness
+  guarantee is now carried by the structural invariant).
+
+### Gate at v0.30.0 tip
+
+`lake build` (260 jobs, 0 warnings) + `test_smoke.sh` PASS +
+`test_full.sh` PASS + `test_tier2_negative.sh` (302 checks) +
+`lake exe information_flow_suite` (143 checks) +
+`lake exe ak7_regression_suite` (**84 checks**, up from 73 —
+AM1-D +6 + AM4-G +5) + `lake exe operation_chain_suite` +
+`cargo test --workspace` (415 tests, 0 warnings) +
+`cargo clippy --workspace -- -D warnings` (0 warnings) +
+`ak7_cascade_check_monotonic.sh` PASS +
+`check_version_sync.sh` PASS at 0.30.0 +
+zero sorry/axiom in `SeLe4n/` or `Main.lean`.
+
 ## v0.29.14 — WS-AL post-delivery amendment: AL1b + AL8 type-level redesign
 
 Supersedes the AL1 (reverted) and AL7 (superseded by AL8) runtime-guard

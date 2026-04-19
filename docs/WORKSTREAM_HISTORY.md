@@ -18,6 +18,34 @@ previously spread across README.md, GitBook chapters, and audit plans.
 **Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
+
+## WS-AM — AK7 cascade hygiene closure (v0.30.0)
+
+**Status**: Phase AM1 + AM4 COMPLETE.  Phases AM2 (AK7-F.writer wrapper
+migration) + AM3 (AK7-F.reader helper migration) are non-gating
+readability / defense-in-depth work tracked in
+`docs/audits/AUDIT_v0.29.0_DEFERRED.md`.
+
+- **AM1** (commit 5e71ea8): standalone `lifecycleObjectTypeLockstep`
+  preservation proofs (default, storeObject, storeObjectKindChecked) +
+  3 runtime tests.
+- **AM4** (commit af4d43e): integrated `lifecycleObjectTypeLockstep`
+  as 11th conjunct of `crossSubsystemInvariant`.  Cascaded the
+  extension to 34 per-op bridge lemmas + 5 core bridges + 4 downstream
+  callers (Architecture/Invariant, Platform/Boot) + 3 runtime tests.
+- **AM5** (same commit as AM6): baseline refreshed to v0.30.0
+  equilibrium (TEST_COUNT_AK7 73 → 84); two new monotonicity metrics
+  (`STOREOBJECTCHECKED_ADOPTION`, `LIFECYCLELOCKSTEP_REFS`) wired into
+  the Tier 0 guard.
+- **AM6**: version bumped 0.29.14 → 0.30.0; deferred doc updated;
+  CHANGELOG + SPEC + GitBook regenerated.
+
+Closes **AL6-C.hygiene** — the final correctness-impacting item from
+the v0.29.0 audit. The two remaining hygiene items (AK7-F.reader, ~304
+call sites; AK7-F.writer, ~47 call sites) are pure readability /
+redundant-defense-in-depth with the structural invariant now in place.
+
+**Prior: WS-AL (v0.29.13–v0.29.14).**
 WS-V Phases V1 through V8 are complete. **WS-V PORTFOLIO COMPLETE.**
 WS-W Phases W1–W6 complete. **WS-W PORTFOLIO COMPLETE.**
 WS-X Phases X1–X5 complete. **WS-X PORTFOLIO COMPLETE.**

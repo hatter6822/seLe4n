@@ -58,8 +58,13 @@ RAW_MATCH_UNTYPED RAW_LOOKUP_TID RAW_LOOKUP_SCID
 SORRY_COUNT AXIOM_COUNT"
 
 # Should-grow: current value must be ≥ baseline value.
+# AM5-B (WS-AM): extended with STOREOBJECTCHECKED_ADOPTION (AK7-F.writer
+# wrapper adoption, grows as AM2 lands subsystem-by-subsystem) and
+# LIFECYCLELOCKSTEP_REFS (AL6-C cross-subsystem 11th-conjunct references,
+# locks the AM4 integration in place).
 GROW_METRICS="GETTCB_ADOPTION GETSCHEDCTX_ADOPTION
 SENTINEL_CHECK_DISPATCH REQUIRE_NOT_NULL_CSPACE
+STOREOBJECTCHECKED_ADOPTION LIFECYCLELOCKSTEP_REFS
 TEST_COUNT_AK7 LAKE_JOBS CARGO_TESTS"
 
 # --- Lookup helpers -----------------------------------------------------
