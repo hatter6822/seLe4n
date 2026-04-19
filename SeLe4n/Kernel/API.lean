@@ -429,6 +429,44 @@ private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
         | none => acc
         | some cap => acc.push cap) #[]
 
+/-- AL7-A (WS-AL / AK7-E.cascade): lift a raw `ThreadId` to `ValidThreadId`
+at the dispatch boundary. Returns `.error .invalidArgument` if the id
+is the reserved sentinel, otherwise `.ok` with the validated subtype.
+
+Usage pattern in `dispatchCapabilityOnly` arms:
+```
+match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+| .error e => .error e
+| .ok vtid => handler st vtid.val
+```
+The guard fires BEFORE any handler entry so sentinel IDs never reach
+downstream object-store lookups. Defense-in-depth (graceful
+`.objectNotFound` at lookup time) remains intact. -/
+@[inline] private def validateThreadIdArg (tid : SeLe4n.ThreadId) :
+    Except KernelError SeLe4n.ValidThreadId :=
+  match tid.toValid? with
+  | none => .error .invalidArgument
+  | some v => .ok v
+
+/-- AL7-A (WS-AL / AK7-E.cascade): lift a raw `SchedContextId` to
+`ValidSchedContextId` at the dispatch boundary. Mirrors
+`validateThreadIdArg`; rejects `SchedContextId.sentinel`. -/
+@[inline] private def validateSchedContextIdArg (scId : SeLe4n.SchedContextId) :
+    Except KernelError SeLe4n.ValidSchedContextId :=
+  match scId.toValid? with
+  | none => .error .invalidArgument
+  | some v => .ok v
+
+/-- AL8 (WS-AL / AK7-E.cascade): lift a raw `ObjId` to `ValidObjId`.
+Used by dispatch arms whose handlers operate on `ObjId` directly (e.g.,
+`schedContextConfigure` which does `st.objects[scId]?` rather than
+going through `SchedContextId.toObjId`). Rejects `ObjId.sentinel`. -/
+@[inline] private def validateObjIdArg (oid : SeLe4n.ObjId) :
+    Except KernelError SeLe4n.ValidObjId :=
+  match oid.toValid? with
+  | none => .error .invalidArgument
+  | some v => .ok v
+
 /-- V8-H/Z5-J/D1/AE1-A/AE1-B: Shared dispatch for capability-only syscalls — these 14 arms
 derive authority entirely from capability possession and require no
 information-flow checks. Both `dispatchWithCap` and `dispatchWithCapChecked`
@@ -515,8 +553,13 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       fun st => match decodeSchedContextConfigureArgsChecked decoded with
       | .error e => .error e
       | .ok args =>
-          SchedContextOps.schedContextConfigure scId args.budget args.period
-            args.priority args.deadline args.domain st
+          -- AL7-G / AL8 (WS-AL / AK7-E.cascade): type-level sentinel rejection
+          -- via ValidObjId signature on schedContextConfigure.
+          match validateObjIdArg scId with
+          | .error e => .error e
+          | .ok vScId =>
+              SchedContextOps.schedContextConfigure vScId args.budget args.period
+                args.priority args.deadline args.domain st
     | _ => fun _ => .error .invalidCapability
   -- Z5-J: SchedContext bind — decode threadId, bind thread to SchedContext
   | .schedContextBind =>
@@ -525,7 +568,15 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       fun st => match decodeSchedContextBindArgs decoded with
       | .error e => .error e
       | .ok args =>
-          SchedContextOps.schedContextBind scId (ThreadId.ofNat args.threadId) st
+          -- AL7-H / AL8 (WS-AL / AK7-E.cascade): type-level sentinel rejection
+          -- via ValidObjId + ValidThreadId signatures on schedContextBind.
+          match validateObjIdArg scId with
+          | .error e => .error e
+          | .ok vScId =>
+              match validateThreadIdArg (ThreadId.ofNat args.threadId) with
+              | .error e => .error e
+              | .ok vThreadId =>
+                  SchedContextOps.schedContextBind vScId vThreadId st
     | _ => fun _ => .error .invalidCapability
   -- Z5-J: SchedContext unbind — no extra args, SchedContext from cap target
   | .schedContextUnbind =>
@@ -533,7 +584,12 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
     | .object scId =>
       fun st => match decodeSchedContextUnbindArgs decoded with
       | .error e => .error e
-      | .ok _ => SchedContextOps.schedContextUnbind scId st
+      | .ok _ =>
+          -- AL7-I / AL8 (WS-AL / AK7-E.cascade): type-level sentinel rejection
+          -- via ValidObjId signature on schedContextUnbind.
+          match validateObjIdArg scId with
+          | .error e => .error e
+          | .ok vScId => SchedContextOps.schedContextUnbind vScId st
     | _ => fun _ => .error .invalidCapability
   -- D1: TCB suspend — target thread from capability
   | .tcbSuspend =>
@@ -542,9 +598,13 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       fun st => match decodeSuspendArgs decoded with
       | .error e => .error e
       | .ok _ =>
-        match Lifecycle.Suspend.suspendThread st (ThreadId.ofNat objId.toNat) with
-        | .ok st' => .ok ((), st')
+        -- AL7-B / AL8 (WS-AL / AK7-E.cascade): type-level sentinel rejection.
+        match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error e
+        | .ok vtid =>
+            match Lifecycle.Suspend.suspendThread st vtid with
+            | .ok st' => .ok ((), st')
+            | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- D1: TCB resume — target thread from capability
   | .tcbResume =>
@@ -553,9 +613,16 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       fun st => match decodeResumeArgs decoded with
       | .error e => .error e
       | .ok _ =>
-        match Lifecycle.Suspend.resumeThread st (ThreadId.ofNat objId.toNat) with
-        | .ok st' => .ok ((), st')
+        -- AL7-C / AL8 (WS-AL / AK7-E.cascade): type-level sentinel rejection.
+        -- `validateThreadIdArg` returns `ValidThreadId`; `resumeThread` now
+        -- ACCEPTS `ValidThreadId` — the type system forbids sentinel IDs
+        -- from reaching the handler. No runtime double-check needed.
+        match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error e
+        | .ok vtid =>
+            match Lifecycle.Suspend.resumeThread st vtid with
+            | .ok st' => .ok ((), st')
+            | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- AE1-A: D2-K TCB setPriority — priority from message register, target from capability
   -- Moved here from explicit dispatch arms to unify checked/unchecked paths (U-01 fix).
@@ -565,11 +632,19 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       fun st => match decodeSetPriorityArgs decoded with
       | .error e => .error e
       | .ok args =>
-        match SchedContext.PriorityManagement.setPriorityOp st tid
-            (ThreadId.ofNat objId.toNat)
-            (Priority.ofNat args.newPriority) with
-        | .ok st' => .ok ((), st')
+        -- AL7-D / AL8 (WS-AL / AK7-E.cascade): type-level sentinel rejection
+        -- via ValidThreadId signature on setPriorityOp.
+        match validateThreadIdArg tid with
         | .error e => .error e
+        | .ok vCallerTid =>
+            match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+            | .error e => .error e
+            | .ok vTargetTid =>
+                match SchedContext.PriorityManagement.setPriorityOp st
+                    vCallerTid vTargetTid
+                    (Priority.ofNat args.newPriority) with
+                | .ok st' => .ok ((), st')
+                | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- AE1-A: D2-K TCB setMCPriority — MCP from message register, target from capability
   | .tcbSetMCPriority =>
@@ -578,11 +653,19 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       fun st => match decodeSetMCPriorityArgs decoded with
       | .error e => .error e
       | .ok args =>
-        match SchedContext.PriorityManagement.setMCPriorityOp st tid
-            (ThreadId.ofNat objId.toNat)
-            (Priority.ofNat args.newMCP) with
-        | .ok st' => .ok ((), st')
+        -- AL7-E / AL8 (WS-AL / AK7-E.cascade): type-level sentinel rejection
+        -- via ValidThreadId signature on setMCPriorityOp.
+        match validateThreadIdArg tid with
         | .error e => .error e
+        | .ok vCallerTid =>
+            match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
+            | .error e => .error e
+            | .ok vTargetTid =>
+                match SchedContext.PriorityManagement.setMCPriorityOp st
+                    vCallerTid vTargetTid
+                    (Priority.ofNat args.newMCP) with
+                | .ok st' => .ok ((), st')
+                | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   -- AE1-B: D3-H TCB setIPCBuffer — buffer address from message register, target from capability
   -- Moved here from duplicate arms in both dispatch paths (U-06 fix).
@@ -592,10 +675,15 @@ private def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
       fun st => match decodeSetIPCBufferArgs decoded with
       | .error e => .error e
       | .ok args =>
-        match Architecture.IpcBufferValidation.setIPCBufferOp st
-            (ThreadId.ofNat objId.toNat) args.bufferAddr with
-        | .ok st' => .ok ((), st')
+        -- AL7-F / AL8 (WS-AL / AK7-E.cascade): type-level sentinel rejection
+        -- via ValidThreadId signature on setIPCBufferOp.
+        match validateThreadIdArg (ThreadId.ofNat objId.toNat) with
         | .error e => .error e
+        | .ok vtid =>
+            match Architecture.IpcBufferValidation.setIPCBufferOp st
+                vtid args.bufferAddr with
+            | .ok st' => .ok ((), st')
+            | .error e => .error e
     | _ => fun _ => .error .invalidCapability
   | _ => none
 

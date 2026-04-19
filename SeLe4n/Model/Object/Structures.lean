@@ -62,7 +62,18 @@ theorem PagePermissions.readOnly_wxCompliant : PagePermissions.readOnly.wxCompli
 /-- WS-K-D: Decode a raw `Nat` permissions word to `PagePermissions` using
 a bitfield layout: bit 0=read, 1=write, 2=execute, 3=user, 4=cacheable.
 Every `Nat` maps to a valid `PagePermissions` — W^X enforcement happens
-downstream in `vspaceMapPage`. -/
+downstream in `vspaceMapPage`.
+
+**AK7-J (F-M08 / MEDIUM) — masked-to-5-bits semantics:** `ofNat` is total
+and silently masks any bits ≥ 5 (e.g., `ofNat (2^10)` produces
+all-`false` permissions). This is intentional for proof ergonomics — the
+underlying bitfield layout defines only 5 permission bits. Callers that
+need to reject raw permission words with reserved bits set (bit ≥ 5)
+should use the validating companion `PagePermissions.ofNat?`, which
+returns `none` for `n ≥ 32` and for W^X-violating inputs. Production
+syscall decoders (e.g., `decodeVSpaceMapArgs`) route through `ofNat?` at
+the ABI boundary to surface `.invalidArgument` rather than producing a
+surprising silent downgrade. -/
 def PagePermissions.ofNat (n : Nat) : PagePermissions :=
   { read      := n &&& 1 != 0
     write     := n &&& 2 != 0
@@ -124,6 +135,27 @@ theorem PagePermissions.ofNat_toNat_roundtrip (p : PagePermissions) :
   cases p with
   | mk r w e u c =>
     cases r <;> cases w <;> cases e <;> cases u <;> cases c <;> decide
+
+/-- AK7-K (F-L5 / LOW): Reverse round-trip — decoding then re-encoding
+preserves the numeric value when the input lies in the 5-bit valid
+range. This completes the permission-encoding round-trip surface: the
+forward direction (`ofNat_toNat_roundtrip`) is already machine-checked,
+and this reverse lemma covers the opposite direction under the
+validity precondition. Values `n ≥ 32` lose their upper bits through
+`ofNat`'s masking (see `PagePermissions.ofNat?` for the strict reject
+variant). -/
+theorem PagePermissions.toNat_ofNat_roundtrip (n : Nat) (h : n < 32) :
+    PagePermissions.toNat (PagePermissions.ofNat n) = n := by
+  -- 5-bit exhaustive case analysis: enumerate n ∈ {0, 1, ..., 31}
+  have : n = 0 ∨ n = 1 ∨ n = 2 ∨ n = 3 ∨ n = 4 ∨ n = 5 ∨ n = 6 ∨ n = 7 ∨
+         n = 8 ∨ n = 9 ∨ n = 10 ∨ n = 11 ∨ n = 12 ∨ n = 13 ∨ n = 14 ∨ n = 15 ∨
+         n = 16 ∨ n = 17 ∨ n = 18 ∨ n = 19 ∨ n = 20 ∨ n = 21 ∨ n = 22 ∨ n = 23 ∨
+         n = 24 ∨ n = 25 ∨ n = 26 ∨ n = 27 ∨ n = 28 ∨ n = 29 ∨ n = 30 ∨ n = 31 := by
+    omega
+  rcases this with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+                   rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+                   rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
+                   rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
 
 /-- WS-G6/F-P05: Minimal VSpace root object: ASID identity plus flat virtual→physical mappings.
 
@@ -188,6 +220,38 @@ injection. This subsumes `noVirtualOverlap_empty`, `mapPage_noVirtualOverlap`,
 and `unmapPage_noVirtualOverlap`, which are retained for API compatibility. -/
 theorem noVirtualOverlap_trivial (root : VSpaceRoot) : noVirtualOverlap root := by
   intro v e₁ e₂ h₁ h₂; rw [h₁] at h₂; exact Option.some.inj h₂
+
+/-- AK7-J (F-M10 / MEDIUM): Physical-frame uniqueness — within a single
+VSpace root, two distinct virtual addresses never map to the same
+physical address.
+
+Rationale: `noVirtualOverlap_trivial` collapses trivially on functional
+maps (key uniqueness on the left), so it does not assert any structural
+property on the *physical* side of the mapping. `noPhysicalFrameCollision`
+closes the gap by asserting that the mappings table is injective on the
+physical-address projection — two distinct VAs that both resolve with
+`some (p, _)` share no PA.
+
+In `seLe4n` this predicate is not enforced structurally by the
+`RHTable` key set (the hash keys are VAddrs, not PAddrs). Kernel
+operations that wish to establish the invariant must verify it at the
+boundary — e.g., `vspaceMapPage` callers can check the PA is fresh
+before insertion. -/
+def noPhysicalFrameCollision (root : VSpaceRoot) : Prop :=
+  ∀ v₁ v₂ p perms₁ perms₂,
+    root.lookup v₁ = some (p, perms₁) →
+    root.lookup v₂ = some (p, perms₂) →
+    v₁ = v₂
+
+/-- AK7-J (F-M10): An empty VSpace trivially satisfies
+`noPhysicalFrameCollision` — no lookup ever returns `some`. -/
+theorem noPhysicalFrameCollision_empty (asid : SeLe4n.ASID) :
+    noPhysicalFrameCollision { asid := asid, mappings := {} } := by
+  intro v₁ _ _ _ _ h₁ _
+  have : ({} : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions))[v₁]?
+      = none :=
+    SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) v₁
+  simp [VSpaceRoot.lookup, this] at h₁
 
 /-- WS-G6: Empty mappings trivially satisfy no-virtual-overlap.
 Follows directly from `noVirtualOverlap_trivial` but retained for API compatibility. -/
@@ -903,6 +967,19 @@ namespace CdtNodeId
 
 instance : ToString CdtNodeId where
   toString id := toString id.toNat
+
+/-- AK7-K (F-L15 / LOW): Sentinel convention for `CdtNodeId`, mirroring
+the `ObjId`/`ThreadId`/`SchedContextId` pattern. Value `0` is reserved
+as the null/unallocated CDT node — `ensureCdtNodeForSlot` starts
+allocation at `0` and increments, so practical usage may or may not
+reserve `0`; callers that want a sentinel-first convention should begin
+`cdtNextNode` at `⟨1⟩`. Provided here as a vocabulary for future
+migration (AJ2-D-style disjointness). -/
+@[inline] def sentinel : CdtNodeId := ⟨0⟩
+
+/-- AK7-K (F-L15): Reserved predicate — `CdtNodeId` is reserved when its
+value is `0` (sentinel). -/
+@[inline] def isReserved (id : CdtNodeId) : Bool := id.val = 0
 
 end CdtNodeId
 
@@ -2413,7 +2490,16 @@ end CapDerivationTree
 /-- WS-G5: `DecidableEq` removed from `KernelObject` because `CNode.slots` is
 `RHTable Slot Capability` which does not have a `DecidableEq` instance.
 `Repr` is retained for trace output. `BEq` is provided manually via entry-wise
-comparison for runtime test assertions. -/
+comparison for runtime test assertions.
+
+**AK7-K (F-L10 / LOW):** The missing `DecidableEq KernelObject` is by
+design — deriving it would cascade into deriving `DecidableEq` on
+`RHTable`, whose structural equality on `slots : Array (Option
+RHEntry)` would succeed but hide hash-layout non-determinism (two
+tables with the same logical contents but different probe sequences
+could compare unequal). The manual `BEq KernelObject` below is a
+pragmatic runtime-testing alias; proof-critical paths should use
+structural equality on per-variant projections (`TCB.ext`, etc.). -/
 inductive KernelObject where
   | tcb (t : TCB)
   | endpoint (e : Endpoint)

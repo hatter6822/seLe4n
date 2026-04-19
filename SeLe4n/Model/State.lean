@@ -81,6 +81,19 @@ inductive KernelError where
   | hardwareFault          -- AG3-C: SError (asynchronous external abort / hardware error)
   | notSupported           -- AG3-C: unsupported exception type (e.g., FIQ)
   | invalidIrq             -- AG3-D: interrupt ID not mapped in IRQ handler table
+  | invalidObjectType      -- AL6 (WS-AL / AK7-F.cascade): storeObjectKindChecked
+                           -- rejects cross-variant overwrite (e.g., storing a
+                           -- SchedContext at an ObjId that already holds a TCB).
+  | nullCapability         -- AL1b (WS-AL / AK7-I.cascade): capability operation
+                           -- rejected the `Capability.null` sentinel. Distinct
+                           -- from `invalidCapability` (which can mean "slot
+                           -- empty" or "cap target is not .object"); this
+                           -- specifically signals the seL4_CapNull convention
+                           -- (`.object` target with reserved ObjId AND empty
+                           -- rights). Produced by the `NonNullCap.ofCap?`
+                           -- type-level promotion failure path; the type
+                           -- system enforces the discipline at call sites
+                           -- that demand `NonNullCap` arguments.
   deriving Repr, DecidableEq
 
 /-- S2-A: Low-priority blanket `ToString` from `Repr`. Enables standard
@@ -172,12 +185,28 @@ structure LifecycleMetadata where
     On ARM64, the TLB caches `(ASID, VAddr, PAddr, PagePermissions)` tuples.
     Stale entries after page table modification are a security concern — the
     `tlbConsistent` invariant (in `TlbModel.lean`) enforces that all cached
-    entries match the current page tables. -/
+    entries match the current page tables.
+
+    AK7-J (F-M11 / MEDIUM): `asidGeneration` mirrors
+    `AsidManager.AsidPool.generation` (AK3-D), allowing stale entries to be
+    detected after an ASID is freed and re-allocated. When an ASID is
+    re-used, `AsidPool.generation` increments; the kernel rejects TLB
+    entries whose `asidGeneration` predates the current pool generation
+    rather than trusting stale hits. Default `0` preserves backward
+    compatibility; substantive ASID-generation bookkeeping is performed
+    by `AsidManager` / `adapterFlushTlbByAsid`. -/
 structure TlbEntry where
   asid : SeLe4n.ASID
   vaddr : SeLe4n.VAddr
   paddr : SeLe4n.PAddr
   perms : PagePermissions
+  /-- AK7-J (F-M11): Generation counter shadowing `AsidPool.generation` at
+      the time of TLB entry installation. Stale entries can be detected
+      by comparing `asidGeneration` against the current pool generation
+      — mismatches indicate the ASID was freed and reused after the entry
+      was cached. Default `0` preserves backward compatibility with
+      legacy TLB fixtures that predate AK7-J. -/
+  asidGeneration : Nat := 0
   deriving Repr, DecidableEq, BEq
 
 /-- R7-A.1/M-17: Abstract TLB state: a collection of cached translation entries.
@@ -497,6 +526,26 @@ theorem default_objectCount_le_maxObjects :
   unfold objectCount_le_maxObjects objectIndexBounded maxObjects
   simp [List.length]
 
+/-- AK7-J (F-M09): Advisory invariant — the CDT next-node counter
+(`cdtNextNode`) stays strictly below the advisory bound `maxCdtDepth`
+(shared with the CDT fuel bound defined in `Model/Object/Structures.lean`).
+
+Rationale: `ensureCdtNodeForSlot` increments `cdtNextNode` each time a
+fresh CDT node must be allocated for a slot. The abstract model uses
+unbounded `Nat`, but any hardware mapping to fixed-width CDT node ids
+risks silent ID reuse once the counter overflows the hardware width.
+Callers that expose CDT node identifiers to user space via capabilities
+should gate `ensureCdtNodeForSlot` by this predicate (or its decidable
+counterpart) to preserve uniqueness. -/
+def cdtNextNodeBounded (st : SystemState) : Prop :=
+  st.cdtNextNode.val < maxCdtDepth
+
+/-- AK7-J (F-M09): The default system state satisfies `cdtNextNodeBounded`. -/
+theorem default_cdtNextNodeBounded :
+    cdtNextNodeBounded (default : SystemState) := by
+  unfold cdtNextNodeBounded maxCdtDepth
+  decide
+
 /-- Replace the object stored at `id` with `obj`.
 
 WS-G2/F-P01: Uses `HashMap.insert` instead of closure wrapping, eliminating
@@ -644,6 +693,70 @@ theorem storeObjectChecked_headroom_eq_storeObject
     simp [Bool.and_eq_true] at hGuard
     omega
   · rfl
+
+-- ============================================================================
+-- AL6 (WS-AL / AK7-F.cascade): storeObject kind-guard wrapper.
+--
+-- The existing `storeObjectChecked` above is a capacity-only variant;
+-- it does not prevent a caller from overwriting a TCB stored at ObjId X
+-- with a SchedContext (or any other variant). AL6 adds a parallel
+-- `storeObjectKindChecked` wrapper that additionally rejects any write
+-- whose `KernelObject` variant disagrees with the variant already
+-- stored at the target id. Fresh allocations (`objects[id]? = none`)
+-- are accepted — the caller is assumed to hold a freshly-allocated
+-- ObjId, as enforced by `retypeFromUntyped_childId_fresh`.
+--
+-- Security impact: closes the silent cross-variant overwrite hole
+-- where `storeObject tid (.tcb t)` followed by
+-- `storeObject tid (.schedContext sc)` would change the stored kind
+-- without any invariant registering the change.
+-- ============================================================================
+
+/-- AL6-A (WS-AL / AK7-F.cascade): kind-checked variant of `storeObject`.
+Succeeds on a fresh id (pre-state has no object) OR when the pre-state
+object has the same `objectType` as the incoming one. Otherwise returns
+`.error .invalidObjectType`. Used by consumers that update an existing
+object in place and must not accidentally change its variant. Fresh
+allocations (boot, retype) continue to use `storeObject` directly. -/
+def storeObjectKindChecked (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
+  fun st =>
+    match st.objects[id]? with
+    | none => storeObject id obj st
+    | some existing =>
+        if existing.objectType = obj.objectType then
+          storeObject id obj st
+        else
+          .error .invalidObjectType
+
+/-- AL6-A: On a fresh id (no pre-state object), `storeObjectKindChecked`
+reduces to `storeObject`. -/
+theorem storeObjectKindChecked_fresh_eq_storeObject
+    (id : SeLe4n.ObjId) (obj : KernelObject) (st : SystemState)
+    (h : st.objects[id]? = none) :
+    storeObjectKindChecked id obj st = storeObject id obj st := by
+  unfold storeObjectKindChecked
+  simp [h]
+
+/-- AL6-A: When the pre-state object has the same `objectType` as the
+incoming one, `storeObjectKindChecked` reduces to `storeObject`. -/
+theorem storeObjectKindChecked_sameKind_eq_storeObject
+    (id : SeLe4n.ObjId) (obj existing : KernelObject) (st : SystemState)
+    (hExists : st.objects[id]? = some existing)
+    (hKind : existing.objectType = obj.objectType) :
+    storeObjectKindChecked id obj st = storeObject id obj st := by
+  unfold storeObjectKindChecked
+  rw [hExists]; simp [hKind]
+
+/-- AL6-A: Cross-variant writes are rejected. If the store already
+holds an object of a different variant, `storeObjectKindChecked`
+returns `.error .invalidObjectType` without mutating state. -/
+theorem storeObjectKindChecked_crossKind_rejected
+    (id : SeLe4n.ObjId) (obj existing : KernelObject) (st : SystemState)
+    (hExists : st.objects[id]? = some existing)
+    (hKindNe : existing.objectType ≠ obj.objectType) :
+    storeObjectKindChecked id obj st = .error .invalidObjectType := by
+  unfold storeObjectKindChecked
+  rw [hExists]; simp [hKindNe]
 
 -- ============================================================================
 -- AF2-A: Machine-checked storeObject capacity safety (AF-03)
@@ -1242,6 +1355,249 @@ def lookupCNode (st : SystemState) (id : SeLe4n.ObjId) : Option CNode :=
   | some (.cnode cn) => some cn
   | _ => none
 
+-- ============================================================================
+-- AL2-A (WS-AL / AK7-F.cascade): kind-verified lookup helpers
+--
+-- The AK7-F exploration showed 304 production call sites repeating the
+-- pattern `match st.objects[id]? with | some (.variant x) => ... | _ =>
+-- ...`. Only two variants had typed helpers (`lookupVSpaceRoot`,
+-- `lookupCNode`). The five helpers below close the gap so downstream
+-- phases (AL3-AL5) can migrate consumers uniformly.
+--
+-- Each helper unwraps the `KernelObject` tag on the same ObjId input
+-- and returns `Option <variant>`. If the stored object has a
+-- different variant, `none` is returned — this is the property that
+-- AL6 leverages to gate `storeObject` against cross-variant writes.
+-- ============================================================================
+
+/-- AL2-A: Read a TCB from the global object store. -/
+def getTcb? (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
+  match st.objects[tid.toObjId]? with
+  | some (.tcb t) => some t
+  | _             => none
+
+/-- AL2-A: Read a SchedContext from the global object store. -/
+def getSchedContext? (st : SystemState) (scId : SeLe4n.SchedContextId)
+    : Option SeLe4n.Kernel.SchedContext :=
+  match st.objects[scId.toObjId]? with
+  | some (.schedContext sc) => some sc
+  | _                       => none
+
+/-- AL2-A: Read an Endpoint from the global object store. -/
+def getEndpoint? (st : SystemState) (id : SeLe4n.ObjId) : Option Endpoint :=
+  match st.objects[id]? with
+  | some (.endpoint ep) => some ep
+  | _                   => none
+
+/-- AL2-A: Read a Notification from the global object store. -/
+def getNotification? (st : SystemState) (id : SeLe4n.ObjId) : Option Notification :=
+  match st.objects[id]? with
+  | some (.notification n) => some n
+  | _                      => none
+
+/-- AL2-A: Read an UntypedObject from the global object store. -/
+def getUntyped? (st : SystemState) (id : SeLe4n.ObjId) : Option UntypedObject :=
+  match st.objects[id]? with
+  | some (.untyped ut) => some ut
+  | _                  => none
+
+-- ============================================================================
+-- AL2-B (WS-AL / AK7-F.cascade): kind-discrimination sanity lemmas.
+--
+-- Each lemma witnesses the property that if the stored object at `id`
+-- is a specific variant, every *other* typed helper returns `none` on
+-- the same id. These are the foundation for AL6's `storeObjectChecked`
+-- kind-guard and its composition into `crossSubsystemInvariant`.
+-- Proofs are single-line `simp` on the helper definition + the stored-
+-- object witness (mechanical by `rfl` after unfolding).
+-- ============================================================================
+
+/-- AL2-B: If the store holds a SchedContext at `tid.toObjId`, the typed
+TCB helper returns `none`. -/
+theorem getTcb?_none_of_schedContext (st : SystemState) (tid : SeLe4n.ThreadId)
+    (sc : SeLe4n.Kernel.SchedContext)
+    (h : st.objects[tid.toObjId]? = some (.schedContext sc)) :
+    st.getTcb? tid = none := by
+  simp [getTcb?, h]
+
+/-- AL2-B: If the store holds an Endpoint at `tid.toObjId`, the typed
+TCB helper returns `none`. -/
+theorem getTcb?_none_of_endpoint (st : SystemState) (tid : SeLe4n.ThreadId)
+    (ep : Endpoint)
+    (h : st.objects[tid.toObjId]? = some (.endpoint ep)) :
+    st.getTcb? tid = none := by
+  simp [getTcb?, h]
+
+/-- AL2-B (audit remediation): If the store holds a Notification at
+`tid.toObjId`, the typed TCB helper returns `none`. -/
+theorem getTcb?_none_of_notification (st : SystemState) (tid : SeLe4n.ThreadId)
+    (n : Notification) (h : st.objects[tid.toObjId]? = some (.notification n)) :
+    st.getTcb? tid = none := by
+  simp [getTcb?, h]
+
+/-- AL2-B (audit remediation): If the store holds a CNode at
+`tid.toObjId`, the typed TCB helper returns `none`. -/
+theorem getTcb?_none_of_cnode (st : SystemState) (tid : SeLe4n.ThreadId)
+    (cn : CNode) (h : st.objects[tid.toObjId]? = some (.cnode cn)) :
+    st.getTcb? tid = none := by
+  simp [getTcb?, h]
+
+/-- AL2-B (audit remediation): If the store holds a VSpaceRoot at
+`tid.toObjId`, the typed TCB helper returns `none`. -/
+theorem getTcb?_none_of_vspaceRoot (st : SystemState) (tid : SeLe4n.ThreadId)
+    (vr : VSpaceRoot) (h : st.objects[tid.toObjId]? = some (.vspaceRoot vr)) :
+    st.getTcb? tid = none := by
+  simp [getTcb?, h]
+
+/-- AL2-B (audit remediation): If the store holds an UntypedObject at
+`tid.toObjId`, the typed TCB helper returns `none`. -/
+theorem getTcb?_none_of_untyped (st : SystemState) (tid : SeLe4n.ThreadId)
+    (ut : UntypedObject) (h : st.objects[tid.toObjId]? = some (.untyped ut)) :
+    st.getTcb? tid = none := by
+  simp [getTcb?, h]
+
+/-- AL2-B (audit remediation): If the store is empty at `tid.toObjId`,
+the typed TCB helper returns `none`. -/
+theorem getTcb?_none_of_absent (st : SystemState) (tid : SeLe4n.ThreadId)
+    (h : st.objects[tid.toObjId]? = none) :
+    st.getTcb? tid = none := by
+  simp [getTcb?, h]
+
+/-- AL2-B: If the store holds a TCB at `scId.toObjId`, the typed
+SchedContext helper returns `none`. -/
+theorem getSchedContext?_none_of_tcb (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (t : TCB)
+    (h : st.objects[scId.toObjId]? = some (.tcb t)) :
+    st.getSchedContext? scId = none := by
+  simp [getSchedContext?, h]
+
+/-- AL2-B: If the store holds a TCB at `id`, the typed Endpoint helper
+returns `none`. -/
+theorem getEndpoint?_none_of_tcb (st : SystemState) (id : SeLe4n.ObjId)
+    (t : TCB) (h : st.objects[id]? = some (.tcb t)) :
+    st.getEndpoint? id = none := by
+  simp [getEndpoint?, h]
+
+/-- AL2-B: If the store holds a TCB at `id`, the typed Notification
+helper returns `none`. -/
+theorem getNotification?_none_of_tcb (st : SystemState) (id : SeLe4n.ObjId)
+    (t : TCB) (h : st.objects[id]? = some (.tcb t)) :
+    st.getNotification? id = none := by
+  simp [getNotification?, h]
+
+/-- AL2-B: If the store holds a TCB at `id`, the typed Untyped helper
+returns `none`. -/
+theorem getUntyped?_none_of_tcb (st : SystemState) (id : SeLe4n.ObjId)
+    (t : TCB) (h : st.objects[id]? = some (.tcb t)) :
+    st.getUntyped? id = none := by
+  simp [getUntyped?, h]
+
+/-- AL2-B: Unfolding lemma — `getTcb?` returns `some t` iff the store
+holds exactly `KernelObject.tcb t` at `tid.toObjId`. -/
+theorem getTcb?_eq_some_iff (st : SystemState) (tid : SeLe4n.ThreadId) (t : TCB) :
+    st.getTcb? tid = some t ↔ st.objects[tid.toObjId]? = some (.tcb t) := by
+  unfold getTcb?
+  split
+  · rename_i t' heq; constructor
+    · intro h; cases h; exact heq
+    · intro h; rw [h] at heq; cases heq; rfl
+  · rename_i hne; constructor
+    · intro h; cases h
+    · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
+/-- AL2-B: Unfolding lemma — `getSchedContext?` returns `some sc` iff
+the store holds exactly `KernelObject.schedContext sc` at
+`scId.toObjId`. -/
+theorem getSchedContext?_eq_some_iff (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (sc : SeLe4n.Kernel.SchedContext) :
+    st.getSchedContext? scId = some sc ↔
+      st.objects[scId.toObjId]? = some (.schedContext sc) := by
+  unfold getSchedContext?
+  split
+  · rename_i sc' heq; constructor
+    · intro h; cases h; exact heq
+    · intro h; rw [h] at heq; cases heq; rfl
+  · rename_i hne; constructor
+    · intro h; cases h
+    · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
+/-- AL2-B (audit remediation): Unfolding lemma — `getEndpoint?` returns
+`some ep` iff the store holds exactly `KernelObject.endpoint ep` at
+`id`. -/
+theorem getEndpoint?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId) (ep : Endpoint) :
+    st.getEndpoint? id = some ep ↔ st.objects[id]? = some (.endpoint ep) := by
+  unfold getEndpoint?
+  split
+  · rename_i ep' heq; constructor
+    · intro h; cases h; exact heq
+    · intro h; rw [h] at heq; cases heq; rfl
+  · rename_i hne; constructor
+    · intro h; cases h
+    · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
+/-- AL2-B (audit remediation): Unfolding lemma — `getNotification?`
+returns `some n` iff the store holds exactly `KernelObject.notification
+n` at `id`. -/
+theorem getNotification?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId) (n : Notification) :
+    st.getNotification? id = some n ↔ st.objects[id]? = some (.notification n) := by
+  unfold getNotification?
+  split
+  · rename_i n' heq; constructor
+    · intro h; cases h; exact heq
+    · intro h; rw [h] at heq; cases heq; rfl
+  · rename_i hne; constructor
+    · intro h; cases h
+    · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
+/-- AL2-B (audit remediation): Unfolding lemma — `getUntyped?` returns
+`some ut` iff the store holds exactly `KernelObject.untyped ut` at
+`id`. -/
+theorem getUntyped?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId) (ut : UntypedObject) :
+    st.getUntyped? id = some ut ↔ st.objects[id]? = some (.untyped ut) := by
+  unfold getUntyped?
+  split
+  · rename_i ut' heq; constructor
+    · intro h; cases h; exact heq
+    · intro h; rw [h] at heq; cases heq; rfl
+  · rename_i hne; constructor
+    · intro h; cases h
+    · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
+/-- AL2-B (audit remediation): `getTcb?` returns `none` iff the stored
+object at `tid.toObjId` is either absent or is not of the `.tcb`
+variant. This is the complement of `getTcb?_eq_some_iff` and completes
+the characterization of the helper. -/
+theorem getTcb?_eq_none_iff (st : SystemState) (tid : SeLe4n.ThreadId) :
+    st.getTcb? tid = none ↔
+      st.objects[tid.toObjId]? = none ∨
+      (∃ obj, st.objects[tid.toObjId]? = some obj ∧ ∀ t, obj ≠ .tcb t) := by
+  unfold getTcb?
+  constructor
+  · intro h
+    split at h
+    · cases h
+    · rename_i hne
+      by_cases hObj : ∃ obj, st.objects[tid.toObjId]? = some obj
+      · rcases hObj with ⟨obj, hObj⟩
+        right
+        refine ⟨obj, hObj, ?_⟩
+        intro t heq
+        subst heq
+        exact hne t hObj
+      · left
+        cases hGet : st.objects[tid.toObjId]?
+        · rfl
+        · exact absurd ⟨_, hGet⟩ hObj
+  · intro h
+    match h with
+    | Or.inl hNone => simp [hNone]
+    | Or.inr ⟨obj, hSome, hNotTcb⟩ =>
+        rw [hSome]
+        split
+        · rename_i t hEq
+          exact absurd (Option.some.inj hEq) (hNotTcb t)
+        · rfl
+
 /-- Read a capability from a typed slot reference. -/
 def lookupSlotCap (st : SystemState) (ref : SlotRef) : Option Capability :=
   match lookupCNode st ref.cnode with
@@ -1345,6 +1701,38 @@ def ensureCdtNodeForSlot (st : SystemState) (ref : SlotRef) : CdtNodeId × Syste
         }
       (node, st')
 
+/-- AK7-J (F-M09 / MEDIUM): Checked variant of `ensureCdtNodeForSlot`
+that preserves the `cdtNextNodeBounded` invariant (defined below at
+`SystemState.lean:526`).
+
+Fails with `none` when:
+1. A fresh node would be allocated, and
+2. The current `cdtNextNode.val` is already at or above `maxCdtDepth`.
+
+Returns `some (node, st')` in the non-allocating branch (slot already
+has a CDT node) and in the allocating branch when the new counter value
+still satisfies the advisory bound. `ensureCdtNodeForSlot` remains
+available for unchecked callers; production CDT entry points that must
+guarantee bounded hardware-id allocation should route through the
+checked variant. -/
+def ensureCdtNodeForSlotChecked (st : SystemState) (ref : SlotRef) :
+    Option (CdtNodeId × SystemState) :=
+  match st.cdtSlotNode[ref]? with
+  | some node => some (node, st)
+  | none =>
+      if st.cdtNextNode.val + 1 < maxCdtDepth then
+        let node := st.cdtNextNode
+        let st' :=
+          {
+            st with
+              cdtNextNode := ⟨node.val + 1⟩
+              cdtSlotNode := st.cdtSlotNode.insert ref node
+              cdtNodeSlot := st.cdtNodeSlot.insert node ref
+          }
+        some (node, st')
+      else
+        none
+
 
 theorem attachSlotToCdtNode_objects_eq (st : SystemState) (ref : SlotRef) (node : CdtNodeId) :
     (attachSlotToCdtNode st ref node).objects = st.objects := by
@@ -1359,6 +1747,52 @@ theorem ensureCdtNodeForSlot_objects_eq (st : SystemState) (ref : SlotRef) :
     (ensureCdtNodeForSlot st ref).snd.objects = st.objects := by
   unfold ensureCdtNodeForSlot
   split <;> rfl
+
+/-- AK7-J (F-M09 / MEDIUM): `ensureCdtNodeForSlotChecked` preserves the
+`cdtNextNodeBounded` invariant — whenever it returns `some (_, st')`,
+the post-state satisfies the bound.
+
+This is the preservation proof that makes the checked variant safe to
+use at CDT entry points when hardware-width id uniqueness must be
+preserved. -/
+theorem ensureCdtNodeForSlotChecked_preserves_bounded
+    (st : SystemState) (ref : SlotRef) (node : CdtNodeId) (st' : SystemState)
+    (hBound : cdtNextNodeBounded st)
+    (h : ensureCdtNodeForSlotChecked st ref = some (node, st')) :
+    cdtNextNodeBounded st' := by
+  unfold ensureCdtNodeForSlotChecked at h
+  split at h
+  · -- Already has a node — state unchanged
+    cases h; exact hBound
+  · -- Fresh allocation branch
+    split at h
+    · rename_i hCheck
+      cases h
+      simp [cdtNextNodeBounded] at *
+      exact hCheck
+    · cases h
+
+/-- AK7-J (F-M09): `ensureCdtNodeForSlotChecked` preserves the object store. -/
+theorem ensureCdtNodeForSlotChecked_objects_eq
+    (st : SystemState) (ref : SlotRef) (node : CdtNodeId) (st' : SystemState)
+    (h : ensureCdtNodeForSlotChecked st ref = some (node, st')) :
+    st'.objects = st.objects := by
+  unfold ensureCdtNodeForSlotChecked at h
+  split at h
+  · cases h; rfl
+  · split at h
+    · cases h; rfl
+    · cases h
+
+/-- AK7-J (F-M09): `ensureCdtNodeForSlotChecked` agrees with the unchecked
+variant whenever the invariant holds pre-call AND there's still a slot
+available. In the already-allocated branch the result matches unconditionally. -/
+theorem ensureCdtNodeForSlotChecked_eq_unchecked_of_allocated
+    (st : SystemState) (ref : SlotRef) (node : CdtNodeId)
+    (hLookup : st.cdtSlotNode[ref]? = some node) :
+    ensureCdtNodeForSlotChecked st ref = some (node, st) := by
+  unfold ensureCdtNodeForSlotChecked
+  rw [hLookup]
 
 /-- `lookupSlotCap` is determined entirely by the object store. -/
 theorem lookupSlotCap_eq_of_objects_eq

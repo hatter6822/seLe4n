@@ -147,9 +147,18 @@ transition to Inactive. If the suspended thread was the current thread,
 triggers a reschedule.
 
 Returns `invalidArgument` if the target is not a TCB, `invalidState` if
-the thread is already Inactive. -/
-def suspendThread (st : SystemState) (tid : SeLe4n.ThreadId)
+the thread is already Inactive.
+
+**AL8 (WS-AL / AK7-E.cascade) — Type-level validity discipline**: the
+`tid` parameter has type `ValidThreadId`. The Lean type system forbids
+any caller from feeding `ThreadId.sentinel` into this handler —
+construction of a `ValidThreadId` requires a `tid ≠ ThreadId.sentinel`
+witness. Enforcement moves from runtime dispatch-boundary checks to
+the compile-time type signature, making the discipline
+non-bypassable. -/
+def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     : Except KernelError SystemState :=
+  let tid : SeLe4n.ThreadId := vtid.val
   -- G1: TCB lookup + state validation
   match st.objects[tid.toObjId]? with
   | some (.tcb tcb) =>
@@ -216,9 +225,19 @@ and ipcState to ready, inserts into the run queue at the thread's priority,
 and triggers a reschedule if the resumed thread has higher priority than
 the current thread.
 
-Returns `invalidArgument` if not a TCB, `invalidState` if not Inactive. -/
-def resumeThread (st : SystemState) (tid : SeLe4n.ThreadId)
+Returns `invalidArgument` if not a TCB, `invalidState` if not Inactive.
+
+**AL8 (WS-AL / AK7-E.cascade) — Type-level validity discipline**: the
+`tid` parameter has type `ValidThreadId`, not raw `ThreadId`. The Lean
+type system forbids any caller from feeding `ThreadId.sentinel` into
+this handler — construction of a `ValidThreadId` requires the caller
+to produce a `tid ≠ ThreadId.sentinel` witness (via `ThreadId.toValid?`
+or `ThreadId.toValid`). This ELIMINATES the need for sentinel-checking
+at the dispatch boundary as a runtime guard; enforcement moves to the
+type signature, non-bypassable at compile time. -/
+def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     : Except KernelError SystemState :=
+  let tid : SeLe4n.ThreadId := vtid.val
   -- H1: TCB lookup
   match st.objects[tid.toObjId]? with
   | some (.tcb tcb) =>

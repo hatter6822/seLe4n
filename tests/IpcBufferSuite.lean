@@ -68,7 +68,7 @@ private def ib001_setIPCBufferValidAddress : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
-  match setIPCBufferOp st tid ⟨512⟩ with
+  match setIPCBufferOp st ⟨tid, by decide⟩ ⟨512⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
@@ -84,7 +84,7 @@ private def ib002_setIPCBufferZeroAddress : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
-  match setIPCBufferOp st tid ⟨0⟩ with
+  match setIPCBufferOp st ⟨tid, by decide⟩ ⟨0⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
@@ -100,7 +100,7 @@ private def ib003_setIPCBufferRunningThread : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1 (state := .Running))),
     (⟨100⟩, .vspaceRoot vsRoot)
   ] (current := some ⟨1⟩)
-  match setIPCBufferOp st tid ⟨1024⟩ with
+  match setIPCBufferOp st ⟨tid, by decide⟩ ⟨1024⟩ with
   | .ok _ => expect "IB-003 setIPCBuffer on running thread succeeds" true
   | .error e => throw <| IO.userError s!"IB-003 should succeed on running thread, got {repr e}"
 
@@ -116,7 +116,7 @@ private def ib004_unalignedAddress : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
-  match setIPCBufferOp st tid ⟨100⟩ with
+  match setIPCBufferOp st ⟨tid, by decide⟩ ⟨100⟩ with
   | .ok _ => throw <| IO.userError "IB-004 unaligned address should fail"
   | .error e => expect "IB-004 unaligned returns alignmentError" (e == .alignmentError)
 
@@ -129,7 +129,7 @@ private def ib005_unmappedAddress : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
-  match setIPCBufferOp st tid ⟨512⟩ with
+  match setIPCBufferOp st ⟨tid, by decide⟩ ⟨512⟩ with
   | .ok _ => throw <| IO.userError "IB-005 unmapped address should fail"
   | .error e => expect "IB-005 unmapped returns translationFault" (e == .translationFault)
 
@@ -144,7 +144,7 @@ private def ib006_addressBeyondCanonical : IO Unit := do
   -- 2^48 is beyond canonical bound (ARM64 48-bit VA space)
   -- Must also be aligned to 512
   let beyondCanonical := VAddr.canonicalBound
-  match setIPCBufferOp st tid ⟨beyondCanonical⟩ with
+  match setIPCBufferOp st ⟨tid, by decide⟩ ⟨beyondCanonical⟩ with
   | .ok _ => throw <| IO.userError "IB-006 beyond canonical should fail"
   | .error e => expect "IB-006 beyond canonical returns addressOutOfBounds" (e == .addressOutOfBounds)
 
@@ -156,7 +156,7 @@ private def ib007_readOnlyPage : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
-  match setIPCBufferOp st tid ⟨512⟩ with
+  match setIPCBufferOp st ⟨tid, by decide⟩ ⟨512⟩ with
   | .ok _ => throw <| IO.userError "IB-007 read-only page should fail"
   | .error e => expect "IB-007 read-only returns translationFault" (e == .translationFault)
 
@@ -167,7 +167,7 @@ private def ib008_missingThread : IO Unit := do
   let st := mkState [
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
-  match setIPCBufferOp st tid ⟨512⟩ with
+  match setIPCBufferOp st ⟨tid, by decide⟩ ⟨512⟩ with
   | .ok _ => throw <| IO.userError "IB-008 missing thread should fail"
   | .error e => expect "IB-008 missing thread returns objectNotFound" (e == .objectNotFound)
 
@@ -179,7 +179,7 @@ private def ib009_invalidVSpaceRoot : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .endpoint {})
   ]
-  match setIPCBufferOp st tid ⟨512⟩ with
+  match setIPCBufferOp st ⟨tid, by decide⟩ ⟨512⟩ with
   | .ok _ => throw <| IO.userError "IB-009 invalid vspace root should fail"
   | .error e => expect "IB-009 invalid vspace returns invalidArgument" (e == .invalidArgument)
 
@@ -196,7 +196,7 @@ private def ib010_fieldPreservation : IO Unit := do
     (⟨1⟩, .tcb origTcb),
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
-  match setIPCBufferOp st tid ⟨1024⟩ with
+  match setIPCBufferOp st ⟨tid, by decide⟩ ⟨1024⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) => do

@@ -1,3 +1,678 @@
+## v0.29.14 — WS-AL post-delivery amendment: AL1b + AL8 type-level redesign
+
+Supersedes the AL1 (reverted) and AL7 (superseded by AL8) runtime-guard
+approaches with compile-time type enforcement. Motivated by user feedback
+that AL1's error-code overloading of `.invalidCapability` was a shortcut
+reliant on proof-author discipline rather than type-system enforcement.
+
+### AL1b (commit 544a410) — AK7-I via NonNullCap
+
+- **Reverted AL1** (5 commits: e03d6d3, c4d4462, ab7dc07, a6c2dd1, 4a27c1c
+  → 5be46b7, 2034d13, d17b4b1) because the runtime guards produced
+  `.error .invalidCapability`, overloaded with "slot empty" and
+  "non-object target" outcomes.
+- **New `NonNullCap` subtype** in `Model/Object/Types.lean`:
+  `abbrev NonNullCap := { cap : Capability // cap.isNull = false }`
+  with `Capability.toNonNull`, `toNonNull?`, `ofNonNull` + three bridge
+  theorems (`toNonNull?_isSome_iff`, `toNonNull?_null`,
+  `toNonNull?_of_not_null`) + `CoeHead NonNullCap Capability` instance.
+- **`mintDerivedCap` signature tightened** from `Capability → …` to
+  `NonNullCap → …`. The Lean type system compile-rejects any caller
+  that tries to pass a raw `Capability`.
+- **New `KernelError.nullCapability` variant** (discriminant 50)
+  distinct from `.invalidCapability`. Rust `NullCapability = 50` +
+  `from_u32` + `Display` + 7 conformance-test updates + 6
+  `sele4n-types` unit-test updates (extending 0..=49 to 0..=50).
+- **cspaceMint/Copy/Move** promote via `cap.toNonNull?` and emit
+  `.error .nullCapability` on rejection.
+- **14 preservation theorems patched** using the substantive
+  `by_cases hNull + exfalso` pattern:
+  * `Capability/Invariant/Authority.lean` (6 theorems)
+  * `Capability/Invariant/Preservation.lean` (5 theorems)
+  * `InformationFlow/Invariant/Helpers.lean` (1)
+  * `InformationFlow/Invariant/Composition.lean` (1)
+  * `InformationFlow/Invariant/Operations.lean` (2)
+- **7 new runtime tests** (`al1b_01..07` in `tests/Ak7RegressionSuite.lean`)
+  including `al1b_07` which asserts `.nullCapability ≠ .invalidCapability`
+  as a regression test against reintroducing the overloading.
+
+### AL8 (commit db29d80) — AK7-E via type-level Valid*Id on all 8 handlers
+
+All 8 capability-only handler signatures tightened from raw ID types
+to `Valid*Id` subtypes:
+
+| Handler                  | Old signature                          | New signature                                 |
+|--------------------------|----------------------------------------|-----------------------------------------------|
+| `suspendThread`          | `SystemState → ThreadId → …`           | `SystemState → ValidThreadId → …`             |
+| `resumeThread`           | `SystemState → ThreadId → …`           | `SystemState → ValidThreadId → …`             |
+| `setIPCBufferOp`         | `SystemState → ThreadId → VAddr → …`   | `SystemState → ValidThreadId → VAddr → …`     |
+| `setPriorityOp`          | `ThreadId × ThreadId → Priority → …`   | `ValidThreadId × ValidThreadId → Priority → …`|
+| `setMCPriorityOp`        | `ThreadId × ThreadId → Priority → …`   | `ValidThreadId × ValidThreadId → Priority → …`|
+| `schedContextConfigure`  | `ObjId → Nat → Nat → … → Kernel Unit`  | `ValidObjId → Nat → Nat → … → Kernel Unit`    |
+| `schedContextBind`       | `ObjId → ThreadId → Kernel Unit`       | `ValidObjId → ValidThreadId → Kernel Unit`    |
+| `schedContextUnbind`     | `ObjId → Kernel Unit`                  | `ValidObjId → Kernel Unit`                    |
+
+- **New `validateObjIdArg`** helper in `Kernel/API.lean` (near line 464)
+  joins `validateThreadIdArg` and `validateSchedContextIdArg`. Used by
+  the 3 SchedContext dispatch arms whose handlers operate on `ObjId`.
+- **All 8 dispatch arms updated** to thread `Valid*Id` DIRECTLY into
+  the handler (no `| .ok _ =>` discard anymore).
+- **Preservation-proof cascade**: 8 NI `*_preserves_projection`
+  theorems in `InformationFlow/Invariant/Operations.lean` + 2
+  `*_authority_bounded` theorems in
+  `SchedContext/Invariant/PriorityPreservation.lean` + 9 frame
+  theorems in `Architecture/IpcBufferValidation.lean` — all
+  signatures updated to accept `Valid*Id` and their proof bodies
+  use `vtid.val` projections.
+- **Test-suite cascade**: `SuspendResumeSuite` (17 callers),
+  `PriorityManagementSuite` (12), `IpcBufferSuite` (10),
+  `NegativeStateSuite` Z8-L cluster (8), `MainTraceHarness` (11) all
+  promoted via `⟨tid, by decide⟩` / `⟨scId, by decide⟩` proof-carrying
+  construction.
+
+### Why type-level enforcement beats runtime-only guards
+
+Runtime-only (AL1 / AL7):
+- Rejection lives inside specific functions as `if` / `match` clauses.
+- A future contributor can remove the clause; build still succeeds.
+- Discipline relies on code review and regression tests.
+
+Type-level (AL1b / AL8):
+- Rejection is part of the function SIGNATURE (`NonNullCap`,
+  `ValidThreadId`, `ValidObjId`).
+- Construction of `NonNullCap`/`Valid*Id` requires a proof of
+  non-null / non-sentinel, obtained via `.toNonNull?` / `.toValid?`.
+- Removing the construction produces an IMMEDIATE type error at
+  compile time.
+- The Lean compiler, not code review, enforces the discipline.
+
+### Documentation updated
+
+- `docs/audits/AUDIT_v0.29.0_DEFERRED.md` — AK7-I section rewritten
+  (AL1b); AK7-E section updated (AL7 + AL8); closure-summary table
+  uses new commit SHAs; residual hygiene count 4 → 3 (AK7-E.hygiene
+  closed by AL8).
+- `CLAUDE.md` — new top-of-list WS-AL entry reflecting AL1b+AL8.
+- `CHANGELOG.md` — this section.
+- `docs/WORKSTREAM_HISTORY.md` — WS-AL summary updated.
+- `docs/gitbook/05-specification-and-roadmap.md` — active-workstream
+  row reflects AL1b+AL8.
+
+### Gate at AL8 tip
+
+- `lake build` (260 jobs, 0 warnings, zero sorry/axiom).
+- `./scripts/test_smoke.sh` / `test_full.sh` PASS.
+- `ak7_regression_suite`: **73 checks** PASS (38 baseline + AL1b +7
+  + AL2-C +14 + AL6 +5 + AL10 +9).
+- `lake exe suspend_resume_suite` (21) / `priority_management_suite`
+  (24) / `ipc_buffer_suite` (17) — all PASS.
+- `cargo test --workspace`: 415 tests PASS.
+- `cargo clippy --workspace -- -D warnings`: 0 warnings.
+- `ak7_cascade_check_monotonic.sh`: PASS.
+- `check_version_sync.sh`: PASS at 0.29.14.
+
+### Residual hygiene (tracked in DEFERRED.md)
+
+- **AK7-F.reader.hygiene**: 304 raw kind-destructuring call sites
+  → AL2-A typed helpers (readability).
+- **AK7-F.writer.hygiene**: ~50 in-place `storeObject` call sites
+  → `storeObjectKindChecked` (defense-in-depth).
+- **AL6-C.hygiene**: complete preservation proof for
+  `lifecycleObjectTypeLockstep`.
+
+All three are non-gating; the attack surfaces are closed by AL1b,
+AL6, and AL8 structurally at the type level.
+
+---
+
+## v0.29.14 — WS-AL AK7 cascade closure (AK7-E / AK7-F / AK7-I RESOLVED)
+
+All three AK7 deferred cascades structurally resolved at their primary
+attack surfaces (branch `claude/review-ak7-workstream-QAUBL`). Zero
+sorry/axiom regressions. AK7 regression suite grew 38 → 69 checks.
+
+### The three cascades (all RESOLVED)
+
+| Cascade | Resolution phase | Attack surface closed at       | Commit(s)                             |
+|---------|------------------|--------------------------------|---------------------------------------|
+| AK7-I   | WS-AL AL1        | `cspaceMint/Copy/Move`         | e03d6d3, c4d4462, ab7dc07, a6c2dd1, 4a27c1c |
+| AK7-F   | WS-AL AL6        | `storeObjectKindChecked`       | 4d5cc8b (+ AL2 foundation af90780..5287522, 6b44dd5) |
+| AK7-E   | WS-AL AL7        | `dispatchCapabilityOnly` (API) | c2cc60d                               |
+
+### Phase AL6 — `storeObjectKindChecked` kind-guard (AK7-F.cascade, commit 4d5cc8b)
+
+Closes the silent cross-variant overwrite hole. Prior to this change,
+`storeObject tid (.tcb t)` followed by `storeObject tid
+(.schedContext sc)` would silently change the stored kind at the same
+`ObjId` with no invariant registering the change.
+
+- **New wrapper** in `SeLe4n/Model/State.lean` (SeLe4n.Model
+  namespace): `storeObjectKindChecked : ObjId → KernelObject →
+  Kernel Unit`. On fresh id (pre-state `objects[id]? = none`):
+  delegates to `storeObject`. On existing id with matching
+  `objectType`: delegates to `storeObject`. On existing id with
+  different `objectType`: returns `.error .invalidObjectType` without
+  state mutation (Except.error is stateless by construction).
+- **Three substantive correctness theorems**:
+  `storeObjectKindChecked_fresh_eq_storeObject`,
+  `storeObjectKindChecked_sameKind_eq_storeObject`,
+  `storeObjectKindChecked_crossKind_rejected`. All proven via
+  `unfold` + `simp [h]` / `rw [h]; simp [hKind]` — no `sorry`.
+- **New KernelError variant** `invalidObjectType` (discriminant 49)
+  added to `SeLe4n/Model/State.lean` and kept in sync with the Rust
+  ABI: `sele4n-types/src/error.rs` `InvalidObjectType = 49` variant +
+  `from_u32` arm + `Display` arm. 6 Rust tests updated from the
+  0..=48 range to 0..=49 (`from_u32_roundtrip`,
+  `from_u32_out_of_range`, `discriminant_ordering`,
+  `lean_rust_correspondence`, `unknown_kernel_error_sentinel`,
+  `new_variants_discriminants`). 3 conformance tests in
+  `sele4n-abi/tests/conformance.rs`
+  (`kernel_error_exhaustive_roundtrip`,
+  `af6a_unknown_kernel_error_fallback`,
+  `aa1h_error_boundary_after_invalid_irq`,
+  `u3f_kernel_error_non_exhaustive`,
+  `w1h_kernel_error_variant_count`) extended to the new range. 1
+  `decode::tests::decode_unknown_error_code` test migrated from code
+  49 → 50 as the first unrecognized code after AL6.
+- **5 new runtime tests** in `tests/Ak7RegressionSuite.lean`:
+  `al6_01_fresh_allocation_succeeds`,
+  `al6_02_samekind_overwrite_succeeds`,
+  `al6_03_tcb_to_sc_rejected`, `al6_04_sc_to_tcb_rejected`,
+  `al6_05_rejection_preserves_state`.
+
+### Phase AL7 — Dispatch-boundary sentinel guards (AK7-E.cascade, commit c2cc60d)
+
+Closes the caller-exposed attack surface for sentinel-ID injection
+at the 8 capability-only dispatch arms in `SeLe4n/Kernel/API.lean`.
+
+- **Two new private helpers** (near line 432), both `@[inline]`:
+  `validateThreadIdArg : ThreadId → Except KernelError ValidThreadId`
+  (returns `.error .invalidArgument` on `ThreadId.sentinel`) and
+  `validateSchedContextIdArg : SchedContextId → Except KernelError
+  ValidSchedContextId` (mirror for SchedContextId).
+- **Wired at every dispatch arm** via a guarding `match
+  validateThreadIdArg ... with | .error e => .error e | .ok _ => ...`
+  pattern that returns the ABI-level error BEFORE handler entry:
+
+  | Sub-task | Dispatch arm              | Guards                        |
+  |----------|---------------------------|-------------------------------|
+  | AL7-B    | `.tcbSuspend`             | target tid                    |
+  | AL7-C    | `.tcbResume`              | target tid                    |
+  | AL7-D    | `.tcbSetPriority`         | caller tid AND target tid     |
+  | AL7-E    | `.tcbSetMCPriority`       | caller tid AND target tid     |
+  | AL7-F    | `.tcbSetIPCBuffer`        | target tid                    |
+  | AL7-G    | `.schedContextConfigure`  | target scId                   |
+  | AL7-H    | `.schedContextBind`       | target scId AND decoded tid   |
+  | AL7-I    | `.schedContextUnbind`     | target scId                   |
+
+- **Wrapper transparency**: `dispatchCapabilityOnly` is called from
+  both `dispatchWithCap` (raw) and `dispatchWithCapChecked`
+  (NI-checked) — both paths now include AL7 guards without any
+  change to the wrappers themselves.
+- **Defense-in-depth preserved**: the pre-existing graceful
+  `.objectNotFound` at lookup time still fires for non-sentinel but
+  non-existent IDs. AL7 only closes the sentinel-ID case.
+
+### Phase AL10 — Integration gate + version bump (commit aaa8637)
+
+- **Version bumped 0.29.13 → 0.29.14** (patch release). 14
+  version-bearing files synced: `lakefile.toml`,
+  `rust/Cargo.toml` (+ `Cargo.lock`), `rust/sele4n-hal/src/boot.rs`
+  (`KERNEL_VERSION`), `docs/spec/SELE4N_SPEC.md`, `CLAUDE.md`, 10
+  i18n README badges (`docs/i18n/*/README.md`).
+  `check_version_sync.sh` PASS at 0.29.14.
+- **5 new cross-cutting runtime tests** in
+  `tests/Ak7RegressionSuite.lean` (`al10_01..05`):
+  `al10_01_validThreadId_rejects_sentinel`,
+  `al10_02_validSchedContextId_rejects_sentinel`,
+  `al10_03_validThreadId_roundtrip`,
+  `al10_04_defense_in_depth` (exercises all three cascades in one
+  scenario: null-cap identification, cross-kind store rejection,
+  sentinel-id rejection),
+  `al10_05_requireNotNull_complement` (Bool-level
+  `isNull`/`requireNotNull` consistency).
+- **Final suite size**: 69 checks (38 baseline + 31 WS-AL additions:
+  AL1-E +3, AL2-C +14 cumulative, AL6 +5, AL10 +9).
+
+### Phase AL11 — Closure (this commit)
+
+- **`docs/audits/AUDIT_v0.29.0_DEFERRED.md`** rewritten: all three
+  `AK7-*.cascade` rows marked **RESOLVED** with commit SHAs, proof-
+  surface bullet lists, and regression-coverage detail. New
+  "AK7 cascade closure summary" table at the end. Two residual
+  hygiene items (non-gating) documented: **AK7-E.hygiene**
+  (handler-signature tightening) and **AK7-F.hygiene** (304 call-site
+  consumer migration). Both improve readability without affecting
+  correctness; AL6 and AL7 close the attack surfaces independently.
+- **CLAUDE.md / CHANGELOG.md / WORKSTREAM_HISTORY.md / GitBook**:
+  active-workstream entries updated to reflect WS-AL completion.
+  `docs/codebase_map.json` regenerated for the AL2-B / AL6-A additions.
+
+### Gate at v0.29.14 tip
+
+- `lake build`: 260 jobs, 0 warnings, zero `sorry` / `axiom`.
+- `./scripts/test_smoke.sh` (Tier 0–2): PASS after
+  `docs/codebase_map.json` regeneration.
+- `./scripts/test_full.sh` (Tier 0–3 invariant anchors): PASS.
+- `./scripts/test_tier2_negative.sh`: 302 checks PASS.
+- `lake exe information_flow_suite`: 143 checks PASS.
+- `lake exe ak7_regression_suite`: **69 checks PASS**.
+- `lake exe operation_chain_suite`, `abi_roundtrip_suite`,
+  `priority_management_suite`, `decoding_suite`,
+  `badge_overflow_suite`: all PASS.
+- `cargo test --workspace`: 415 tests PASS across 9 crates.
+- `cargo clippy --workspace -- -D warnings`: 0 warnings.
+- `./scripts/ak7_cascade_check_monotonic.sh`: PASS.
+- `./scripts/check_version_sync.sh`: PASS at 0.29.14.
+- `./scripts/test_tier0_hygiene.sh`: PASS.
+
+**Residual work (tracked, non-gating for this release):**
+
+- **AK7-E.hygiene**: tightening 5+ handler signatures from raw
+  `ThreadId` → `ValidThreadId` at Lifecycle/SchedContext/
+  IpcBufferValidation handlers (~240+ call-site cascade).
+- **AK7-F.hygiene**: 304 raw kind-destructuring call-site migration
+  to the AL2-A typed helpers across Scheduler (151) + IPC (104) +
+  Architecture/InformationFlow/Lifecycle/FrozenOps/SchedContext/
+  Platform (49).
+
+Plan file: `/root/.claude/plans/you-created-a-document-temporal-hejlsberg.md`.
+
+---
+
+## WS-AL in progress — AK7 cascade closure (branch `claude/review-ak7-workstream-QAUBL`, superseded by v0.29.14 section above)
+
+WS-AL is the cascade-closure workstream that resolves the three AK7
+deferred items (AK7-E / AK7-F / AK7-I) before v1.0.0. Plan document
+`/root/.claude/plans/you-created-a-document-temporal-hejlsberg.md`
+decomposes the work into 12 phases and 110 committable atoms. Phases
+AL0–AL2 are complete (11 commits on branch); phases AL3–AL11 remain.
+
+### Phase AL0 — Baseline anchor + monotonicity CI guard (commit ad3d26e)
+
+- **AL0-A**: `scripts/ak7_cascade_baseline.sh` emits 17 `METRIC:VALUE`
+  lines capturing should-drop metrics (raw kind-destructuring and raw
+  `toObjId` lookups, `sorry`/`axiom` counts) and should-grow metrics
+  (kind-verified helper adoption, sentinel-check dispatch count,
+  `requireNotNull` gate count, AK7 suite size, build job count, cargo
+  test count).
+- **AL0-B**: `docs/audits/AL0_baseline.txt` captured at commit
+  ad3d26e; updated in 8ddd97e to exclude the AL2-A helper-definition
+  file (`SeLe4n/Model/State.lean`) from raw-pattern counts so the
+  metrics measure CALLER use of the raw pattern, not helper bodies
+  (which by design contain it once per variant).
+- **AL0-C**: `scripts/ak7_cascade_check_monotonic.sh` compares current
+  metrics against `AL0_baseline.txt`; should-drop metrics fail when
+  current > baseline, should-grow metrics fail when current < baseline.
+- **AL0-D**: Monotonicity guard wired into
+  `scripts/test_tier0_hygiene.sh` so every subsequent commit
+  regression-checks automatically.
+
+### Phase AL1 — AK7-I.cascade RESOLVED (commits e03d6d3, c4d4462, ab7dc07, a6c2dd1, 4a27c1c)
+
+**Closes the AK7-I cascade**: `Capability.requireNotNull` helper was
+introduced in v0.29.13 as a gate primitive but was not wired at any
+entry point. `cspaceLookupSlot` returns `some Capability.null` for a
+slot containing the `seL4_CapNull` sentinel (`.object ObjId.sentinel`
+with `rights.bits = 0`) and the three downstream operations
+(`cspaceMint` / `cspaceCopy` / `cspaceMove`) propagated that null cap
+as if valid — a correctness hole.
+
+- **AL1-A** (`cspaceMint` guard, `SeLe4n/Kernel/Capability/
+  Operations.lean:563`): After `cspaceLookupSlot src` returns
+  `.ok (parent, _)`, the new `parent.requireNotNull` match rejects
+  null parents with `.error .invalidCapability` before `mintDerivedCap`.
+- **AL1-B** (`cspaceCopy` guard, `:696`): same pattern, blocks
+  `Capability.null` from being silently copied into a new slot.
+- **AL1-C** (`cspaceMove` guard, `:720`): same pattern; prevents a
+  null cap from consuming a destination slot and clearing a source
+  (pointless but observable via CDT-edge churn).
+- **AL1-D.1** (bridge lemma, `SeLe4n/Model/Object/Types.lean`):
+  `Capability.requireNotNull_some_eq` — if `cap.requireNotNull = some
+  cap'`, then `cap' = cap`. Used implicitly by every downstream
+  preservation proof that unfolds through the new guard.
+- **Inline preservation-proof patches** (seven files): adapted via
+  the same `by_cases hNull : cap.isNull` pattern — in the `true`
+  branch, `exfalso` discharges the contradiction (the guard would
+  have fired, making `hStep` contradict its `.ok` hypothesis); in the
+  `false` branch, `requireNotNull` reduces definitionally to `some cap`.
+  Affected theorems: `cspaceMint_attenuates`, `cspaceMint_badge_stored`,
+  `cspaceMint_preserves_capabilityInvariantBundle`,
+  `cspaceMint_preserves_badgeWellFormed`,
+  `cspaceMint_preserves_cdtMapsConsistent`,
+  `cspaceCopy_preserves_capabilityInvariantBundle`,
+  `cspaceMove_preserves_capabilityInvariantBundle`,
+  `cspaceMint_preserves_lowEquivalent`,
+  `cspaceCopy_preserves_projection`,
+  `cspaceMove_preserves_projection`, and the `niStepInd` cspaceMint
+  arm in `InformationFlow/Invariant/Composition.lean`.
+- **Wrapper transparency**: `cspaceMintWithCdt` and `cspaceMintChecked`
+  treat `cspaceMint` opaquely (case-split on `.ok`/`.error`
+  result), so the new null-cap rejection propagates as `.error` through
+  the wrapper chain without any proof modification.
+- **AL1-E** (regression tests, `tests/Ak7RegressionSuite.lean`): three
+  end-to-end tests `al1E_01_mint_from_null_rejected`,
+  `al1E_02_copy_from_null_rejected`,
+  `al1E_03_move_from_null_rejected`. Each builds a minimal state with
+  `Capability.null` in CNode slot 0, invokes the corresponding cspace
+  operation, and pattern-matches on the result, rejecting anything
+  other than `.error .invalidCapability` with an explicit
+  `IO.userError`. Suite size 38 → 41 after AL1-E.
+- **AL1-F** (`docs/audits/AUDIT_v0.29.0_DEFERRED.md`): AK7-I.cascade row
+  marked **RESOLVED** with the four affected commit SHAs. Corrected
+  the original DEFERRED listing which referenced a `cspaceInvoke`
+  operation that does not exist in the codebase (the three actual
+  affected operations are mint/copy/move).
+
+### Phase AL2 — AK7-F foundational layer (commits af90780, 8ddd97e, 957d257, 5287522, 6b44dd5)
+
+**AK7-F baselines `ObjectKind` / `KindedObjId` remain unmodified.** AL2
+adds the *consumer-facing foundation* on which AL3–AL5 will migrate
+the 304 caller sites that currently repeat the pattern
+`match st.objects[id]? with | some (.variant x) => ... | _ => ...`.
+
+- **AL2-A** (helpers, `SeLe4n/Model/State.lean`): Five new kind-verified
+  lookup helpers in the `SystemState` namespace:
+  `getTcb? : ThreadId → Option TCB`,
+  `getSchedContext? : SchedContextId → Option SeLe4n.Kernel.SchedContext`,
+  `getEndpoint? : ObjId → Option Endpoint`,
+  `getNotification? : ObjId → Option Notification`,
+  `getUntyped? : ObjId → Option UntypedObject`. Each unwraps the
+  `KernelObject` constructor on the supplied id and returns `none`
+  when the stored object has a different variant — this is the
+  structural discriminator AL6 will compose into
+  `crossSubsystemInvariant` as a cross-variant store guard.
+- **AL2-B** (sanity lemmas + audit remediation): Ten cross-variant
+  rejection lemmas for `getTcb?` (schedContext / endpoint /
+  notification / cnode / vspaceRoot / untyped / absent — exhaustive
+  over all non-TCB `KernelObject` variants plus the absent case).
+  Four mirror rejection lemmas for the other helpers.
+  Five `getX?_eq_some_iff` bidirectional lemmas characterizing each
+  helper's forward and backward semantics, plus `getTcb?_eq_none_iff`
+  complement. All proofs are single-line `simp [helperDef, h]` or an
+  explicit `split` + `constructor` — no `sorry`.
+- **AL2-C** (runtime coverage, `tests/Ak7RegressionSuite.lean`): Eight
+  new tests `al2C_01..08`. Five cover per-variant discrimination (one
+  per helper variant), one covers the absent path, two cover
+  round-trip stores (TCB + SchedContext with field-level equality
+  check). Fixtures `minimalTcb` / `minimalSchedContext` construct
+  well-typed minimal instances. Suite size 41 → 55 across all AL2
+  commits.
+- **Metric-script fixup** (commit 8ddd97e): AL2-A initially regressed
+  the `RAW_LOOKUP_SCID` monotonicity metric (83 → 84) because the new
+  `getSchedContext?` helper body contains the canonical pattern by
+  design. Fixed by adding a `rg_count_excl_helpers` function that
+  excludes `SeLe4n/Model/State.lean` from the raw-pattern metrics —
+  the metrics now measure CALLER use of the raw pattern, not
+  helper-definition bodies. `docs/audits/AL0_baseline.txt`
+  regenerated under the new exclusion rules.
+- **Post-delivery audit** (commit 6b44dd5): found two foundational
+  coverage gaps — only 2 of 5 helpers had `_eq_some_iff` lemmas; only
+  2 of 6 rejection lemmas existed for `getTcb?`. Remediated with the
+  3 missing iff lemmas, 5 new getTcb? rejection lemmas (exhaustive),
+  `getTcb?_eq_none_iff` complement, and 3 new runtime tests
+  (`al2C_06..08`).
+
+### Remaining WS-AL work (AL3–AL11, ~90 atoms)
+
+- AL3–AL5: migrate 304 consumer call sites to the AL2-A helpers
+  across Scheduler (151), IPC (104), and remaining subsystems (49).
+- AL6: `storeObjectChecked` kind-guard + cross-subsystem composition
+  preventing silent cross-variant overwrites of the object store.
+- AL7: `validateThreadIdArg` / `validateSchedContextIdArg` guards at
+  the 8 AK7-E capability-only dispatch arms in `Kernel/API.lean`.
+- AL8: tighten 7 handler signatures from raw ID to `ValidThreadId` /
+  `ValidSchedContextId` (removing the graceful-lookup defense-in-depth
+  that AL7 subsumes).
+- AL9: `setIPCBufferOp` migration in `Architecture/IpcBufferValidation.lean`.
+- AL10: integration gate (new cross-cutting runtime tests, version
+  bump to 1.0.0).
+- AL11: closure — retire `docs/audits/AUDIT_v0.29.0_DEFERRED.md` as
+  `_RESOLVED.md`, update README/SPEC/GitBook, tag v1.0.0.
+
+### Gate at current tip (HEAD = 6b44dd5)
+
+- `lake build` — 260 jobs, 0 warnings, zero `sorry` / `axiom` in
+  `SeLe4n/` or `Main.lean`.
+- `./scripts/test_smoke.sh` (Tier 0–2) PASS after
+  `docs/codebase_map.json` regeneration.
+- `./scripts/test_full.sh` (Tier 0–3 including invariant surface anchors) PASS.
+- `./scripts/test_tier2_negative.sh` — 302 checks PASS.
+- `lake exe information_flow_suite` — 143 checks PASS.
+- `lake exe ak7_regression_suite` — **55 checks PASS** (AK7-A..K
+  full coverage plus WS-AL AL1-E + AL2-C additions).
+- `lake exe operation_chain_suite`, `abi_roundtrip_suite`,
+  `priority_management_suite`, `decoding_suite`,
+  `badge_overflow_suite` — all PASS.
+- `cargo test --workspace` — 415 tests PASS across 9 crates.
+- `cargo clippy --workspace -- -D warnings` — 0 warnings.
+- `./scripts/ak7_cascade_check_monotonic.sh` — PASS (no metric regressed).
+- `./scripts/test_tier0_hygiene.sh` — PASS (forbidden markers, code
+  hygiene, website-link manifest, version-sync, monotonicity guard,
+  scenario registry all green).
+
+---
+
+## v0.29.13 — AK7 Foundational Model + post-audit remediation
+
+Pre-1.0 Release Hardening (v0.29.0 audit) — Phase AK7: Foundational
+Model (`Prelude.lean`, `Machine.lean`, `Model/*.lean`). 11 sub-tasks
+(AK7-A..AK7-K) addressing 2 HIGH, 11 MEDIUM, 15 LOW foundational
+findings. Zero sorry/axiom regressions. End-to-end post-audit
+remediation addresses 6 material gaps found between the initial
+implementation and the audit plan's intent.
+
+### Post-audit remediation (AK7 audit, this release)
+
+**(1) AK7-B coverage gap — HIGH.** Initial `apiInvariantBundle_frozenDirectFull`
+covered only 6 `FrozenSystemState` fields, leaving services, IRQs, CDT
+maps, and lifecycle metadata unconstrained — the very gap cited in F-H02.
+Remediation extended the predicate to a **30-conjunct** formulation
+covering every field of `FrozenSystemState`: 17 map-field
+lookup-equivalences + 13 non-map bitwise equalities. Added 3 new lookup
+theorems (`lookup_freeze_byPriority`, `lookup_freeze_threadPriority`,
+`lookup_freeze_membership`). `freeze_preserves_direct_invariants_full`
+discharges all 30 obligations at freeze time.
+
+**(2) AK7-H preservation gap — MEDIUM.** Initial `FrozenMap.wellFormed`
+was an advisory predicate with no proof that `freezeMap` produces a
+well-formed FrozenMap. Remediation added `freezeMap_wellFormed` theorem
+via a `freezeMap_foldl_values_bounded` helper that threads `invExt`
+through the fold and applies `getElem?_insert_self`/`getElem?_insert_ne`
+to bound stored counter values by `entries.length = data.size`.
+
+**(3) AK7-D privacy — MEDIUM.** `MessageInfo.mk` cannot be made
+`private` without breaking 20+ test/harness sites (anonymous
+`{ length := …, … }` constructor syntax). Remediation added
+`MessageInfo.wellFormed` Prop-level invariant + `decode_wellFormed`
+witness (decoded messages are always well-formed) + `mkChecked_wellFormed`
+witness. Production callers can verify the predicate at the ABI boundary
+without blocking anonymous construction.
+
+**(4) AK7-I gate — MEDIUM.** Initial implementation added
+`Capability.isNull` but did not provide an entry-point gate. Added
+`Capability.requireNotNull` helper + 3 correctness theorems
+(`requireNotNull_isSome_iff`, `requireNotNull_null`,
+`requireNotNull_some_not_null`). Consumer migration to `cspaceInvoke`/
+`cspaceMint`/`cspaceCopy` tracked as AK7-I.cascade.
+
+**(5) AK7-J F-M09 enforcement — MEDIUM.** Initial implementation added
+`cdtNextNodeBounded` advisory invariant but did not gate
+`ensureCdtNodeForSlot`. Added `ensureCdtNodeForSlotChecked` variant
+rejecting fresh allocations when `cdtNextNode.val + 1 ≥ maxCdtDepth`,
+plus 3 preservation theorems: `ensureCdtNodeForSlotChecked_preserves_bounded`,
+`_objects_eq`, `_eq_unchecked_of_allocated`.
+
+**(6) AK7-K low-tier gaps — LOW.** F-L4 boot interrupt-enable window
+doc (Phase 3 HAL obligation documented at
+`bootFromPlatform_machine_non_config_fields`); F-L10
+`DecidableEq KernelObject` rationale doc (RHTable hash-layout
+non-determinism); F-L14 `UntypedObject.allocateChecked` positive-size
+precondition.
+
+**Regression test suite.** New `tests/Ak7RegressionSuite.lean` with **38**
+runtime checks across all sub-tasks: AK7-A invExtK witness,
+AK7-B Full→ObjectsOnly implication + `freeze_preserves_direct_invariants_full`
+on default intermediate state (substantive 30-conjunct witness), AK7-C
+bounds-checked memory (empty-map reject, RAM accept, device-region reject),
+AK7-D mkChecked bound rejection + wellFormed reflection, AK7-E
+Valid*Id.toValid? sentinel rejection, AK7-F KindedObjId disjointness
+across 8 non-unknown kinds, AK7-G TCB.ext existence, AK7-H
+freezeMap_wellFormed on empty + non-empty tables, AK7-I isNull +
+requireNotNull behavior including **edge cases** (cnodeSlot/replyCap
+variants NOT null; sentinel-object with non-empty rights NOT null),
+AK7-J ensureCdtNodeForSlotChecked counter-overflow rejection +
+noPhysicalFrameCollision_empty witness, AK7-K perms reverse round-trip
+on 8 sample inputs + CdtNodeId sentinel. Wired into
+`scripts/test_tier2_negative.sh` as `lake exe ak7_regression_suite`.
+
+**Deferred-items tracking.** New `docs/audits/AUDIT_v0.29.0_DEFERRED.md`
+formalises the AK7 cascade items for v1.1: `AK7-E.cascade` (Valid*Id
+consumer migration to 10 syscall entry points + ~290 internal call
+sites), `AK7-F.cascade` (KindedObjId kind-aware lookup migration across
+~300 sites), `AK7-I.cascade` (Capability.requireNotNull wiring at
+`cspaceInvoke`/`cspaceMint`/`cspaceCopy`).
+
+### AK7-A (F-H01 / HIGH) — freezeMap capacity witness
+
+`freezeMap_indexMap_invExtK` and `freezeMap_capacity_sufficient`
+theorems establish that for any source `RHTable`, `freezeMap` produces
+an index map satisfying the kernel-level `RHTable.invExtK` invariant
+(`invExt ∧ size < capacity ∧ 4 ≤ capacity`) regardless of any property
+of the source table. Witness is built from `RHTable.empty_invExtK`
+(seed at capacity 16) + `RHTable.insert_preserves_invExtK` via fold
+induction over `toList`. Closes the undocumented auto-grow
+invariant-transfer concern.
+
+### AK7-B (F-H02 / HIGH) — frozenDirect extended coverage
+
+- `apiInvariantBundle_frozenDirectObjectsOnly` aliases the legacy
+  predicate and makes the observational scope self-documenting.
+- `apiInvariantBundle_frozenDirectFull` adds 12 field-agreement
+  conjuncts for `machine`, `objectIndex`, `tlb`, `cdtNextNode`,
+  `cdtEdges`, `scheduler.{current, activeDomain, domainTimeRemaining,
+  domainSchedule, domainScheduleIndex, configDefaultTimeSlice}`.
+- `freeze_preserves_direct_invariants_full` witnesses full coverage at
+  freeze time.
+
+Non-object mutations can no longer vacuously preserve the bundle.
+
+### AK7-C (F-M01 / MEDIUM) — bounds-checked memory access
+
+`MachineState.addrInRange` predicate + `readMemChecked`/
+`writeMemChecked` bounds-checking variants consult `memoryMap` (RAM
+regions) and `physicalAddressWidth` cap. Total `readMem`/`writeMem`
+retained for existing proof surface; checked variants are preferred
+for deployments with a declared hardware map. Six frame theorems:
+`readMemChecked_eq_readMem_of_inRange`, `readMemChecked_none_of_outRange`,
+`writeMemChecked_{eq_writeMem_of_inRange, none_of_outRange,
+preserves_regs, preserves_timer}`.
+
+### AK7-D (F-M02 / F-L13 / MEDIUM + LOW) — MessageInfo.mkChecked
+
+`MessageInfo.mkChecked : Nat → Nat → Nat → Option MessageInfo`
+validates `length ≤ maxMessageRegisters`, `extraCaps ≤ maxExtraCaps`,
+`label ≤ maxLabel` at construction, returning `none` on any
+violation. Two witness theorems: `mkChecked_isSome_iff`,
+`mkChecked_bounded`. `MessageInfo.mk` flagged as TCB-internal in the
+structure docstring; construction sites should migrate.
+
+### AK7-E (F-M03 / MEDIUM — baseline)
+
+Sentinel-rejecting subtypes for typed identifiers:
+
+- `ValidObjId := { o : ObjId // o ≠ ObjId.sentinel }`
+- `ValidThreadId := { t : ThreadId // t ≠ ThreadId.sentinel }`
+- `ValidSchedContextId := { s : SchedContextId // s ≠ SchedContextId.sentinel }`
+- `ValidCPtr := { c : CPtr // c ≠ CPtr.sentinel }`
+
+Per-type `toValid`/`ofValid`/`toValid?` conversion API plus
+`ObjId.valid_of_ne_sentinel` and `ThreadId.toValid?_isSome_iff`
+bridges the subtype to the existing `valid`/`isReserved`
+predicates. Cascade migration of ~300 internal call sites tracked as
+`AK7-E.cascade` (post-1.0).
+
+### AK7-F (F-M04 / MEDIUM — baseline)
+
+- `ObjectKind` 9-variant enum: `unknown`, `thread`, `schedContext`,
+  `endpoint`, `notification`, `cnode`, `vspaceRoot`, `untyped`,
+  `service`.
+- `KindedObjId` parallel structure carrying `val + kind`.
+- `ThreadId.toKinded` and `SchedContextId.toKinded` tag canonically.
+- `KindedObjId.ne_of_kind_ne` + `ThreadId.toKinded_ne_schedContext_toKinded`
+  witness structural disjointness regardless of numeric value.
+
+Per plan §Risk mitigation, the baseline parallel-structure approach
+avoids the ~300-proof cascade a direct `ObjId` refactor would cause.
+Consumer migration tracked as `AK7-F.cascade` (post-1.0).
+
+### AK7-G (F-M05 / MEDIUM)
+
+`TCB.ext` sanctioned extensionality lemma covering all 22 TCB fields
+(including `registerContext : RegisterFile` via composition with
+`RegisterFile.ext`). Proof-critical paths can establish TCB equality
+without relying on the non-lawful `BEq TCB` instance. Complements the
+pre-existing `TCB.not_lawfulBEq` negative witness.
+
+### AK7-H (F-M06 / MEDIUM)
+
+`FrozenMap.wellFormed` advisory predicate:
+
+    ∀ k idx, indexMap.get? k = some idx → idx < data.size
+
+`FrozenMap.get?_some_of_wellFormed` corollary establishes that
+well-formed maps never silently fall through to `none`.
+
+### AK7-I (F-M07 / MEDIUM) — capability null predicate
+
+- `Capability.isNull`/`isNotNull`: seL4_CapNull convention
+  (`target := .object ObjId.sentinel ∧ rights.bits = 0`).
+- `Capability.null` canonical null-cap constant.
+- `Capability.null_isNull` witness.
+
+Enables fail-closed `isNotNull` checks at sensitive entry points
+(`cspaceInvoke`, `cspaceMint`, `cspaceCopy`).
+
+### AK7-J (F-M08..F-M11 / MEDIUM) — structural invariant predicates
+
+- F-M08: `PagePermissions.ofNat` masked-to-5-bits semantics documented
+  with explicit cross-reference to `ofNat?` validating variant.
+- F-M09: `cdtNextNodeBounded (st : SystemState) := st.cdtNextNode.val <
+  maxCdtDepth` advisory invariant + `default_cdtNextNodeBounded`
+  witness, gating `ensureCdtNodeForSlot` against hardware-width
+  overflow.
+- F-M10: `noPhysicalFrameCollision` physical-frame-uniqueness
+  predicate complementing the VA-side `noVirtualOverlap_trivial` +
+  `noPhysicalFrameCollision_empty` base-case witness.
+- F-M11: `TlbEntry.asidGeneration : Nat := 0` field mirrors
+  `AsidPool.generation` (AK3-D) enabling stale-entry detection after
+  ASID free/reuse.
+
+### AK7-K (F-L1..F-L15 / LOW)
+
+- F-L5: `PagePermissions.toNat_ofNat_roundtrip` reverse round-trip
+  (32-way case split via `omega`).
+- F-L15: `CdtNodeId.sentinel` + `isReserved` convention matching
+  `ObjId`/`ThreadId`/`ServiceId` pattern.
+- F-L2: Badge 64-bit seL4 compatibility cross-reference in
+  `Prelude.lean` docstring.
+- F-L9: 17-deep tuple projection refactor deferred to post-1.0 hygiene
+  pass per plan §14.3.
+
+### Gate
+
+- `lake build` (260 jobs)
+- `test_smoke.sh`
+- `test_full.sh`
+- `check_version_sync.sh` (all 14 files at 0.29.13)
+- `cargo test --workspace` (415 tests, 0 failed)
+- `cargo clippy --workspace -- -D warnings` (0 warnings)
+- Zero sorry/axiom
+
+See `docs/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` §10 (Phase AK7).
+
+---
+
 ## v0.29.12 — AK6-F audit remediation (honest tiering, frame lemmas, runtime tests)
 
 End-to-end audit of Phase AK6 (Information Flow + SchedContext

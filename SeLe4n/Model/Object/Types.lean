@@ -338,7 +338,161 @@ namespace Capability
 def hasRight (cap : Capability) (right : AccessRight) : Bool :=
   cap.rights.mem right
 
+/-- AK7-I (F-M07 / MEDIUM): Null capability predicate.
+
+Returns `true` when the capability is sentinel-initialised — its target
+references the reserved `ObjId.sentinel` (value 0) and carries no access
+rights. This mirrors seL4's `seL4_CapNull` convention, which combines a
+null object reference with the empty rights set.
+
+**Callers:** Sensitive entry points (`cspaceInvoke`, `cspaceMint`,
+`cspaceCopy`) should reject null capabilities at the ABI boundary by
+combining `isNull cap = false` with the usual access-right checks. A null
+capability carrying bits in the target's `cnodeSlot`/`replyCap` arms is
+treated as non-null so that structural capability pointers survive the
+check. -/
+@[inline] def isNull (cap : Capability) : Bool :=
+  match cap.target with
+  | .object oid => oid.isReserved && cap.rights.bits = 0
+  | _           => false
+
+/-- AK7-I: Structural negation — a capability is NOT null when either its
+target is non-object, its object id is non-sentinel, or it carries any
+access right. The predicate is `Bool`-valued so callers can discharge it
+with `decide`. -/
+@[inline] def isNotNull (cap : Capability) : Bool := !cap.isNull
+
+/-- AK7-I: `isNotNull` reflects `!isNull`. -/
+theorem isNotNull_iff (cap : Capability) :
+    cap.isNotNull = true ↔ cap.isNull = false := by
+  simp [isNotNull]
+
+/-- AK7-I: Canonical null capability. Mirrors `seL4_CapNull` — target is
+`ObjId.sentinel`, rights set is empty, badge is `none`. Useful as a
+default/sentinel capability for CSpace slot initialisation. -/
+def null : Capability :=
+  { target := .object ObjId.sentinel, rights := AccessRightSet.empty, badge := none }
+
+/-- AK7-I: The canonical null capability satisfies `isNull`. -/
+theorem null_isNull : (Capability.null).isNull = true := by
+  simp [null, isNull, AccessRightSet.empty, ObjId.isReserved, ObjId.sentinel]
+
+/-- AK7-I (F-M07 / MEDIUM): Fail-closed gate helper for capability-using
+entry points. Returns `some cap` when the capability is non-null, `none`
+otherwise. Callers at the syscall boundary (e.g., `cspaceInvoke`,
+`cspaceMint`, `cspaceCopy`) should chain through `requireNotNull` when
+accepting caller-supplied capabilities to reject `seL4_CapNull`-style
+sentinel caps early.
+
+This is an additive helper; existing code continues to compile. The
+integration obligation — routing all capability-using entry points
+through this gate — is tracked as AK7-I.cascade (post-1.0). -/
+@[inline] def requireNotNull (cap : Capability) : Option Capability :=
+  if cap.isNull then none else some cap
+
+/-- AK7-I: `requireNotNull` returns `some cap` iff the cap is not null. -/
+theorem requireNotNull_isSome_iff (cap : Capability) :
+    (cap.requireNotNull).isSome = true ↔ cap.isNull = false := by
+  unfold requireNotNull
+  cases h : cap.isNull <;> simp
+
+/-- AK7-I: `requireNotNull` rejects the canonical null cap. -/
+theorem requireNotNull_null : (Capability.null).requireNotNull = none := by
+  simp [requireNotNull, null_isNull]
+
+/-- AK7-I: The value returned by `requireNotNull` is not null. -/
+theorem requireNotNull_some_not_null {cap cap' : Capability}
+    (h : cap.requireNotNull = some cap') : cap'.isNull = false := by
+  unfold requireNotNull at h
+  split at h
+  · cases h
+  · rename_i hNotNull
+    cases h
+    simp [hNotNull]
+
 end Capability
+
+-- ============================================================================
+-- AL1b (WS-AL / AK7-I.cascade): `NonNullCap` subtype for type-level null-cap
+-- rejection. Replaces the earlier runtime-guard approach (reverted because
+-- it overloaded `.invalidCapability`).
+-- ============================================================================
+
+/-- AL1b: Subtype witnessing that a capability is not the `seL4_CapNull`
+sentinel. Any function that takes `NonNullCap` as a formal argument is
+guaranteed by the Lean type system that no caller can feed it a null cap —
+construction of a `NonNullCap` requires a proof of `cap.isNull = false`.
+
+This is the *type-level* discipline counterpart to `ValidThreadId`
+(AK7-E baseline). Callers who need to convert a raw `Capability` must
+go through `Capability.toNonNull?`, which returns `Option NonNullCap`;
+on `none` the caller is forced to either propagate a `NullCapability`
+error or take a different path. -/
+abbrev NonNullCap := { cap : Capability // cap.isNull = false }
+
+namespace Capability
+
+/-- AL1b: Forget the non-null witness — project `NonNullCap` back to a
+raw `Capability`. -/
+@[inline] def ofNonNull (c : NonNullCap) : Capability := c.val
+
+/-- AL1b: Construct a `NonNullCap` when the caller has a
+`cap.isNull = false` witness in hand. Preferred for proof-carrying
+contexts where the non-null property is already established. -/
+@[inline] def toNonNull (cap : Capability) (h : cap.isNull = false) : NonNullCap :=
+  ⟨cap, h⟩
+
+/-- AL1b: Runtime-checked promotion. Returns `some ⟨cap, _⟩` when
+`cap.isNull = false` and `none` otherwise. This is the canonical way a
+runtime-discovered capability (e.g., the result of `cspaceLookupSlot`) is
+promoted to the non-null type before being passed into an operation that
+requires `NonNullCap`.
+
+Callers that receive `none` MUST produce `KernelError.nullCapability`
+(or propagate it) — the error code dedicated to this failure mode. -/
+@[inline] def toNonNull? (cap : Capability) : Option NonNullCap :=
+  if h : cap.isNull = false then some ⟨cap, h⟩ else none
+
+end Capability
+
+/-- AL1b: `toNonNull?` succeeds iff the capability is not null. -/
+theorem Capability.toNonNull?_isSome_iff (cap : Capability) :
+    (cap.toNonNull?).isSome = true ↔ cap.isNull = false := by
+  unfold Capability.toNonNull?
+  constructor
+  · intro h; split at h
+    · rename_i hNotNull; exact hNotNull
+    · cases h
+  · intro h; simp [h]
+
+/-- AL1b: `toNonNull?` rejects the canonical null cap. -/
+theorem Capability.toNonNull?_null : (Capability.null).toNonNull? = none := by
+  unfold Capability.toNonNull?
+  simp [null_isNull]
+
+/-- AL1b: Projecting a `NonNullCap` back via `ofNonNull` round-trips through
+`toNonNull?` — the result is `some` with the original cap. -/
+theorem Capability.toNonNull?_ofNonNull (c : NonNullCap) :
+    (Capability.ofNonNull c).toNonNull? = some c := by
+  unfold Capability.toNonNull? Capability.ofNonNull
+  simp [c.property]
+
+/-- AL1b: Bridge lemma — if `cap.isNull = false`, then `toNonNull?` returns
+`some ⟨cap, _⟩`. This is the canonical introduction pattern for callers who
+have established non-nullness externally. -/
+theorem Capability.toNonNull?_of_not_null
+    {cap : Capability} (h : cap.isNull = false) :
+    cap.toNonNull? = some ⟨cap, h⟩ := by
+  unfold Capability.toNonNull?
+  simp [h]
+
+/-- AL1b: Implicit coercion `NonNullCap → Capability` via the subtype's
+`.val` projection. Enables `nn.rights`, `nn.target`, `nn.badge` syntax on
+`NonNullCap` values without explicit `.val` or `Capability.ofNonNull`
+calls. The coercion is safe because the subtype projection is injective:
+two distinct `NonNullCap`s have distinct underlying capabilities. -/
+instance : CoeHead NonNullCap Capability where
+  coe := Subtype.val
 
 /-- WS-H12d/A-09: Maximum number of message registers per IPC message.
 Matches seL4's `seL4_MsgMaxLength` (120 words). -/
@@ -629,6 +783,39 @@ theorem TCB.not_lawfulBEq : ¬ LawfulBEq TCB := by
   have hNeq : t₁.registerContext.gpr ⟨32⟩ ≠ t₂.registerContext.gpr ⟨32⟩ := by decide
   exact hNeq (by rw [hPropEq])
 
+/-- AK7-G (F-M05 / MEDIUM): Sanctioned extensionality lemma for `TCB`.
+
+Use this lemma instead of `==` in any proof that requires propositional
+equality of TCBs. `TCB.ext` requires each structural field to match —
+including the `registerContext : RegisterFile` function field — so the
+proof obligation covers the same surface as `a == b = true` but without
+the out-of-range-GPR trap that `TCB.not_lawfulBEq` exposes.
+
+Companion to `RegisterFile.ext` (Machine.lean). Together they close the
+proof gap cited in F-M05: non-lawful BEq remains available for test
+infrastructure, while proof-critical paths derive equality via explicit
+pointwise witnesses. -/
+theorem TCB.ext {a b : TCB}
+    (hTid : a.tid = b.tid) (hPrio : a.priority = b.priority) (hDom : a.domain = b.domain)
+    (hCsp : a.cspaceRoot = b.cspaceRoot) (hVsp : a.vspaceRoot = b.vspaceRoot)
+    (hBuf : a.ipcBuffer = b.ipcBuffer) (hIpc : a.ipcState = b.ipcState)
+    (hTs : a.threadState = b.threadState)
+    (hSlice : a.timeSlice = b.timeSlice) (hDeadline : a.deadline = b.deadline)
+    (hQPrev : a.queuePrev = b.queuePrev) (hQPPrev : a.queuePPrev = b.queuePPrev)
+    (hQNext : a.queueNext = b.queueNext) (hPend : a.pendingMessage = b.pendingMessage)
+    (hRC : a.registerContext = b.registerContext)
+    (hFh : a.faultHandler = b.faultHandler) (hBn : a.boundNotification = b.boundNotification)
+    (hSc : a.schedContextBinding = b.schedContextBinding)
+    (hTb : a.timeoutBudget = b.timeoutBudget)
+    (hMcp : a.maxControlledPriority = b.maxControlledPriority)
+    (hPip : a.pipBoost = b.pipBoost)
+    (hTo : a.timedOut = b.timedOut) :
+    a = b := by
+  cases a; cases b
+  simp at *
+  exact ⟨hTid, hPrio, hDom, hCsp, hVsp, hBuf, hIpc, hTs, hSlice, hDeadline,
+         hQPrev, hQPPrev, hQNext, hPend, hRC, hFh, hBn, hSc, hTb, hMcp, hPip, hTo⟩
+
 /-- Intrusive FIFO queue metadata for endpoint wait queues.
 
 Queue membership links are stored in the waiting TCBs (`queuePrev`/`queueNext`).
@@ -781,6 +968,28 @@ def allocate (ut : UntypedObject) (childId : SeLe4n.ObjId) (size : Nat) :
     }, offset)
   else
     none
+
+/-- AK7-K (F-L14 / LOW): Allocation with an explicit positive-size
+precondition. `allocateChecked size h` rejects zero-size child
+allocations statically via the `h : size > 0` witness, in addition to
+the `canAllocate` watermark check performed by `allocate`.
+
+A zero-size child is not ill-formed in the abstract model (the
+watermark is unchanged, the child list gains an empty-extent entry),
+but it indicates a caller bug — no production syscall path allocates a
+zero-size object. The checked variant surfaces this at the type level,
+matching the F-L14 guard recommendation without breaking existing
+callers. -/
+def allocateChecked (ut : UntypedObject) (childId : SeLe4n.ObjId) (size : Nat)
+    (_hPos : size > 0) : Option (UntypedObject × Nat) :=
+  ut.allocate childId size
+
+/-- AK7-K (F-L14): `allocateChecked` agrees with `allocate` on positive
+sizes — it simply adds the positive-size proof obligation at the type
+level without changing the body. -/
+theorem allocateChecked_eq_allocate (ut : UntypedObject) (childId : SeLe4n.ObjId)
+    (size : Nat) (hPos : size > 0) :
+    ut.allocateChecked childId size hPos = ut.allocate childId size := rfl
 
 /-- Reset the untyped to its initial state (revoke all children). -/
 def reset (ut : UntypedObject) : UntypedObject :=
@@ -1163,7 +1372,14 @@ end SyscallId
     Encodes the metadata carried in the message-info register (x1 on ARM64):
     - `length`: number of message registers used (0..120)
     - `extraCaps`: number of extra capabilities transferred (0..3)
-    - `label`: user-specified label/tag for message discrimination -/
+    - `label`: user-specified label/tag for message discrimination
+
+AK7-D (F-M02 / MEDIUM): The raw constructor `MessageInfo.mk` bypasses the
+`maxLabel` check and the `length`/`extraCaps` bounds. Construction sites
+should prefer `MessageInfo.mkChecked` (below), which returns `none` if any
+field exceeds its seL4 bound. `MessageInfo.mk` is retained for test
+fixtures and decode-path success branches where bounds are already
+established by context. -/
 structure MessageInfo where
   length    : Nat
   extraCaps : Nat
@@ -1176,6 +1392,71 @@ namespace MessageInfo
     `seL4_MessageInfo_t` label field width. The previous model allowed unbounded
     labels (55 bits), which diverged from seL4's 20-bit limit. -/
 def maxLabel : Nat := (1 <<< 20) - 1
+
+/-- AK7-D (F-M02 / MEDIUM): Checked constructor that validates each field
+against its seL4 bound before returning a `MessageInfo`.
+
+Enforces:
+- `length ≤ maxMessageRegisters` (120 registers)
+- `extraCaps ≤ maxExtraCaps` (3 extra capabilities)
+- `label ≤ maxLabel` (20-bit label, 2^20 − 1)
+
+Returns `none` on any bound violation, matching the behavior of the
+validating `decode` path. Prefer this over `MessageInfo.mk` anywhere the
+caller constructs a message info from unvalidated input (IPC send,
+service-register ABI, test fixtures crossing bound boundaries). -/
+@[inline] def mkChecked (length : Nat) (extraCaps : Nat) (label : Nat) :
+    Option MessageInfo :=
+  if length ≤ maxMessageRegisters ∧ extraCaps ≤ maxExtraCaps ∧ label ≤ maxLabel then
+    some { length, extraCaps, label }
+  else
+    none
+
+/-- AK7-D (F-M02): `mkChecked` returns `some` iff all bounds hold. -/
+theorem mkChecked_isSome_iff (length extraCaps label : Nat) :
+    (mkChecked length extraCaps label).isSome = true ↔
+    length ≤ maxMessageRegisters ∧ extraCaps ≤ maxExtraCaps ∧ label ≤ maxLabel := by
+  unfold mkChecked
+  by_cases h : length ≤ maxMessageRegisters ∧ extraCaps ≤ maxExtraCaps ∧ label ≤ maxLabel
+  · simp [h]
+  · simp [h]
+
+/-- AK7-D (F-M02): `mkChecked` output satisfies the bounds predicate. -/
+theorem mkChecked_bounded {length extraCaps label : Nat} {mi : MessageInfo}
+    (h : mkChecked length extraCaps label = some mi) :
+    mi.length ≤ maxMessageRegisters ∧ mi.extraCaps ≤ maxExtraCaps ∧
+    mi.label ≤ maxLabel := by
+  unfold mkChecked at h
+  split at h
+  · rename_i hAll
+    cases h
+    exact hAll
+  · cases h
+
+/-- AK7-D (F-M02 / MEDIUM): Well-formedness predicate for a `MessageInfo`
+value — `length ≤ maxMessageRegisters ∧ extraCaps ≤ maxExtraCaps ∧
+label ≤ maxLabel`.
+
+Rationale: `MessageInfo.mk` (the anonymous-braces constructor
+`{ length := …, extraCaps := …, label := … }`) cannot be made `private`
+without breaking every production and test construction site. The
+`wellFormed` predicate is the Prop-level invariant that ABI dispatch and
+IPC delivery paths must establish before delivering a message. Values
+produced by `MessageInfo.decode` or `MessageInfo.mkChecked` satisfy
+`wellFormed` by construction; callers that accept arbitrary fields must
+verify the predicate explicitly. -/
+def wellFormed (mi : MessageInfo) : Prop :=
+  mi.length ≤ maxMessageRegisters ∧
+  mi.extraCaps ≤ maxExtraCaps ∧
+  mi.label ≤ maxLabel
+
+instance (mi : MessageInfo) : Decidable mi.wellFormed :=
+  inferInstanceAs (Decidable (_ ∧ _))
+
+/-- AK7-D (F-M02): Output of `mkChecked` is well-formed. -/
+theorem mkChecked_wellFormed {length extraCaps label : Nat} {mi : MessageInfo}
+    (h : mkChecked length extraCaps label = some mi) : mi.wellFormed :=
+  mkChecked_bounded h
 
 /-- Encode a MessageInfo into a single register word.
     Bit layout (seL4 convention):
@@ -1200,6 +1481,22 @@ def maxLabel : Nat := (1 <<< 20) - 1
 
 instance : ToString MessageInfo where
   toString mi := s!"MessageInfo(len={mi.length}, caps={mi.extraCaps}, label={mi.label})"
+
+/-- AK7-D (F-M02): `decode` produces well-formed `MessageInfo` values —
+any `MessageInfo` surfaced from a raw register word satisfies all three
+seL4 bounds. -/
+theorem decode_wellFormed {w : Nat} {mi : MessageInfo}
+    (h : MessageInfo.decode w = some mi) : mi.wellFormed := by
+  unfold MessageInfo.decode at h
+  simp only at h
+  split at h
+  · rename_i hAll
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hAll
+    cases h
+    refine ⟨hAll.1.1, ?_, hAll.2⟩
+    show _ ≤ maxExtraCaps
+    exact hAll.1.2
+  · cases h
 
 -- ============================================================================
 -- Encode/decode round-trip proof (bitwise extraction lemmas)

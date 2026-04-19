@@ -100,14 +100,18 @@ SchedContext reference the PRIOR budget/period and therefore become stale the
 moment the configure operation rewrites those fields. Without explicit removal,
 `processReplenishmentsDue` could re-enqueue the bound thread at the old
 replenishment window, violating CBS isolation. The `replenishQueue.remove`
-call is idempotent and preserves sort order. -/
-def schedContextConfigure (scId : ObjId) (budget period priority deadline domain : Nat)
+call is idempotent and preserves sort order.
+
+**AL8 (WS-AL / AK7-E.cascade) — Type-level validity discipline**: the
+`scId` parameter has type `ValidObjId`. The Lean type system forbids any
+caller from feeding `ObjId.sentinel` into this handler. -/
+def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline domain : Nat)
     : Kernel Unit :=
   fun st =>
     match validateSchedContextParams budget period priority deadline domain with
     | .error e => .error e
     | .ok () =>
-      match (st.objects[scId]? : Option KernelObject) with
+      match (st.objects[vScId.val]? : Option KernelObject) with
       | some (KernelObject.schedContext sc) =>
         let updated : SchedContext :=
           { sc with
@@ -128,10 +132,10 @@ def schedContextConfigure (scId : ObjId) (budget period priority deadline domain
             -- per period and doubling its effective CBS bandwidth.
             replenishments := [{ amount := ⟨budget⟩,
                                  eligibleAt := st.machine.timer + period }] }
-        if checkAdmission st updated (some scId) then
-          -- AK2-G: purge stale system replenishQueue entries for this scId
+        if checkAdmission st updated (some vScId.val) then
+          -- AK2-G: purge stale system replenishQueue entries for this vScId.val
           -- before storing the reconfigured object.
-          let scIdTyped : SchedContextId := ⟨scId.toNat⟩
+          let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
           let cleanedQueue := ReplenishQueue.remove st.scheduler.replenishQueue scIdTyped
           let stCleaned := { st with scheduler :=
             { st.scheduler with replenishQueue := cleanedQueue } }
@@ -146,7 +150,7 @@ def schedContextConfigure (scId : ObjId) (budget period priority deadline domain
           -- We preserve any existing `pipBoost` by re-inserting at
           -- `max(new priority, pipBoost)`, matching `migrateRunQueueBucket`
           -- in `PriorityManagement.lean`.
-          match storeObject scId (KernelObject.schedContext updated) stCleaned with
+          match storeObject vScId.val (KernelObject.schedContext updated) stCleaned with
           | .error e => .error e
           | .ok ((), stStored) =>
             match sc.boundThread with
@@ -187,15 +191,18 @@ def schedContextConfigure (scId : ObjId) (budget period priority deadline domain
 2. Set bidirectional binding (sc.boundThread, tcb.schedContextBinding)
 3. Write both updated objects to store
 4. If thread is in RunQueue, remove and re-insert at SchedContext priority
-   to maintain `effectiveParamsMatchRunQueue` invariant -/
-def schedContextBind (scId : ObjId) (threadId : ThreadId) : Kernel Unit :=
+   to maintain `effectiveParamsMatchRunQueue` invariant
+
+**AL8 (WS-AL / AK7-E.cascade)**: `scId` is `ValidObjId`, `threadId` is
+`ValidThreadId` for compile-time sentinel rejection on BOTH IDs. -/
+def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel Unit :=
   fun st =>
-    match (st.objects[scId]? : Option KernelObject) with
+    match (st.objects[vScId.val]? : Option KernelObject) with
     | some (KernelObject.schedContext sc) =>
       -- Z5-G1: Precondition check — SchedContext must not already have a bound thread
       if sc.boundThread.isSome then .error .illegalState
       else
-        match (st.objects[threadId.toObjId]? : Option KernelObject) with
+        match (st.objects[vThreadId.val.toObjId]? : Option KernelObject) with
         | some (KernelObject.tcb tcb) =>
           -- AE3-A/U-11: Domain consistency check — reject cross-domain binding.
           -- The domain filter (chooseBestRunnableInDomainEffective) uses tcb.domain
@@ -224,14 +231,14 @@ def schedContextBind (scId : ObjId) (threadId : ThreadId) : Kernel Unit :=
             -- extended bundle but no operation ever establishes the equality.
             -- Matches seL4 MCS where bind transfers scheduling authority from
             -- the TCB to its bound SchedContext.
-            let scIdTyped : SchedContextId := ⟨scId.toNat⟩
-            let updatedSc := { sc with boundThread := some threadId }
+            let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
+            let updatedSc := { sc with boundThread := some vThreadId.val }
             let updatedTcb := { tcb with
               schedContextBinding := SchedContextBinding.bound scIdTyped,
               priority := sc.priority }
             -- Write both updated objects
-            let st1 := { st with objects := st.objects.insert scId (KernelObject.schedContext updatedSc) }
-            let st2 := { st1 with objects := st1.objects.insert threadId.toObjId (KernelObject.tcb updatedTcb) }
+            let st1 := { st with objects := st.objects.insert vScId.val (KernelObject.schedContext updatedSc) }
+            let st2 := { st1 with objects := st1.objects.insert vThreadId.val.toObjId (KernelObject.tcb updatedTcb) }
             -- Z5-G3: If thread is in RunQueue, remove and re-insert at
             -- SchedContext-derived priority. Under dequeue-on-dispatch, only
             -- runnable-but-not-current threads are in the RunQueue. After bind,
@@ -240,14 +247,14 @@ def schedContextBind (scId : ObjId) (threadId : ThreadId) : Kernel Unit :=
             -- AE3-J/SC-09: Run queue insertion uses pre-update sc.priority.
             -- AG1-A: Now uses effective priority (base + PIP boost) to ensure
             -- PIP-boosted threads are placed in the correct bucket.
-            let st3 := if threadId ∈ st2.scheduler.runQueue then
-              let rqRemoved := st2.scheduler.runQueue.remove threadId
-              let rqInserted := rqRemoved.insert threadId (resolveInsertPriority st2 threadId sc)
+            let st3 := if vThreadId.val ∈ st2.scheduler.runQueue then
+              let rqRemoved := st2.scheduler.runQueue.remove vThreadId.val
+              let rqInserted := rqRemoved.insert vThreadId.val (resolveInsertPriority st2 vThreadId.val sc)
               { st2 with scheduler := { st2.scheduler with runQueue := rqInserted } }
             else st2
             -- S-05/PERF-O1: Add thread to per-SchedContext thread index
             let st4 := { st3 with scThreadIndex :=
-              (scThreadIndexAdd st3.scThreadIndex scIdTyped threadId) }
+              (scThreadIndexAdd st3.scThreadIndex scIdTyped vThreadId.val) }
             .ok ((), st4)
           | _ => .error .illegalState
         | _ => .error .objectNotFound
@@ -264,10 +271,13 @@ def schedContextBind (scId : ObjId) (threadId : ThreadId) : Kernel Unit :=
 3. (H2) If thread is in RunQueue, remove it (it will be re-enqueued at
    legacy TCB priority by the next schedule call if still runnable)
 4. Clear both sides of the bidirectional binding
-5. (H3) Remove SchedContext from replenish queue -/
-def schedContextUnbind (scId : ObjId) : Kernel Unit :=
+5. (H3) Remove SchedContext from replenish queue
+
+**AL8 (WS-AL / AK7-E.cascade)**: `scId` is `ValidObjId` for compile-time
+sentinel rejection. -/
+def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
   fun st =>
-    match (st.objects[scId]? : Option KernelObject) with
+    match (st.objects[vScId.val]? : Option KernelObject) with
     | some (KernelObject.schedContext sc) =>
       match sc.boundThread with
       | none => .error .illegalState
@@ -290,10 +300,10 @@ def schedContextUnbind (scId : ObjId) : Kernel Unit :=
           -- Z5-H2 cont: Clear both sides of the binding
           let updatedSc := { sc with boundThread := none, isActive := false }
           let updatedTcb := { tcb with schedContextBinding := SchedContextBinding.unbound }
-          let st2 := { st1 with objects := st1.objects.insert scId (KernelObject.schedContext updatedSc) }
+          let st2 := { st1 with objects := st1.objects.insert vScId.val (KernelObject.schedContext updatedSc) }
           let st3 := { st2 with objects := st2.objects.insert tid.toObjId (KernelObject.tcb updatedTcb) }
           -- Z5-H3: Remove SchedContext from replenish queue
-          let scIdTyped : SchedContextId := ⟨scId.toNat⟩
+          let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
           let cleanedQueue := ReplenishQueue.remove st3.scheduler.replenishQueue scIdTyped
           let st4 := { st3 with scheduler := { st3.scheduler with replenishQueue := cleanedQueue } }
           -- S-05/PERF-O1: Remove thread from per-SchedContext thread index
@@ -303,8 +313,8 @@ def schedContextUnbind (scId : ObjId) : Kernel Unit :=
         -- Bound thread's TCB not found — clear SC side anyway
         | _ =>
           let updatedSc := { sc with boundThread := none, isActive := false }
-          let st1 := { st with objects := st.objects.insert scId (KernelObject.schedContext updatedSc) }
-          let scIdTyped : SchedContextId := ⟨scId.toNat⟩
+          let st1 := { st with objects := st.objects.insert vScId.val (KernelObject.schedContext updatedSc) }
+          let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
           let cleanedQueue := ReplenishQueue.remove st1.scheduler.replenishQueue scIdTyped
           let st2 := { st1 with scheduler := { st1.scheduler with replenishQueue := cleanedQueue } }
           -- S-05/PERF-O1: Remove stale index entry even when TCB is missing

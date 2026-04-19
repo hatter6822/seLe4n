@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.29.12` (`lakefile.toml`) |
+| **Package version** | `0.29.14` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 95,528 across 141 Lean files |
 | **Test LoC** | 11,709 across 17 Lean test suites |
 | **Proved declarations** | 2,819 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
-| **Active workstream** | **WS-AJ PORTFOLIO COMPLETE** (v0.28.1–v0.29.0). Post-Audit Comprehensive Remediation (v0.28.0 audit) — 6 phases, 30 sub-tasks. IPC/lifecycle correctness, security hardening, platform/boot pipeline, architecture model correctness, Rust HAL hardening, documentation/testing/closure. Plan: [`AUDIT_v0.28.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md). Prior: WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG–WS-B. **Next: WS-V (AG10: Hardware Integration).** |
+| **Active workstream** | **WS-AK Phase AK7 COMPLETE** (v0.29.14). Pre-1.0 Release Hardening (v0.29.0 audit) — Phase AK7: Foundational Model (Prelude/Machine/Model). 11 sub-tasks (AK7-A..AK7-K) addressing 2 HIGH, 11 MEDIUM, 15 LOW foundational findings. Plan: [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) §10. Portfolio AK1..AK10 targeted at v1.0.0 release (AK1–AK7 complete; AK8–AK10 in progress). Prior: WS-AJ (v0.28.1–v0.29.0), WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG–WS-B. **Next: WS-AK Phase AK8 (Capability/Lifecycle/Data Structures).** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

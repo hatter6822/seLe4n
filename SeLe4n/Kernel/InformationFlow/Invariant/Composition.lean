@@ -360,10 +360,18 @@ theorem step_preserves_projection
     rcases cspaceMint_child_attenuates st st' src dst rights badge hSlotUniq hObjInv hOp with
       ⟨parent, child, hLookup, _, _⟩
     unfold cspaceMint at hOp; rw [hLookup] at hOp
-    cases hMint : mintDerivedCap parent rights badge with
-    | error e => simp [hMint] at hOp
+    -- AL1b (AK7-I.cascade): promote parent via toNonNull?.
+    have hNotNull : parent.isNull = false := by
+      by_cases h : parent.isNull
+      · exfalso; simp [Capability.toNonNull?, h] at hOp
+      · exact Bool.not_eq_true _ |>.mp h
+    have hToNN : parent.toNonNull? = some ⟨parent, hNotNull⟩ :=
+      Capability.toNonNull?_of_not_null hNotNull
+    cases hMint : mintDerivedCap ⟨parent, hNotNull⟩ rights badge with
+    | error e => simp [hToNN, hMint] at hOp
     | ok c =>
-      have hInsert : cspaceInsertSlot dst c st = .ok ((), st') := by simpa [hMint] using hOp
+      have hInsert : cspaceInsertSlot dst c st = .ok ((), st') := by
+        simpa [hToNN, hMint] using hOp
       simp only [projectState]; congr 1
       · funext oid; by_cases hObs : objectObservable ctx observer oid
         · simp [projectObjects, hObs]

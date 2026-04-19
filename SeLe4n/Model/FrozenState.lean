@@ -133,6 +133,27 @@ theorem FrozenMap.get?_none [BEq κ] [Hashable κ] [LawfulBEq κ]
   · rfl
   · rename_i idx hGet; rw [h] at hGet; cases hGet
 
+/-- AK7-H (F-M06 / MEDIUM): A `FrozenMap` is well-formed when every index
+stored in `indexMap` is within the bounds of `data`.
+
+`FrozenMap.get?` already performs a dynamic bounds check, so
+well-formedness is a liveness/observational property rather than a memory
+safety property — its purpose is to certify that `get?` never silently
+returns `none` for a key that the caller believes is present. -/
+def FrozenMap.wellFormed [BEq κ] [Hashable κ] [LawfulBEq κ] (fm : FrozenMap κ ν) : Prop :=
+  ∀ k idx, fm.indexMap.get? k = some idx → idx < fm.data.size
+
+/-- AK7-H: Well-formedness implies that a resolved index witnesses an
+in-range array slot, so `get?` necessarily succeeds. -/
+theorem FrozenMap.get?_some_of_wellFormed [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (fm : FrozenMap κ ν) (hWF : fm.wellFormed)
+    (k : κ) (idx : Nat) (hIdx : fm.indexMap.get? k = some idx) :
+    ∃ v, fm.get? k = some v := by
+  have hBound : idx < fm.data.size := hWF k idx hIdx
+  refine ⟨fm.data[idx], ?_⟩
+  unfold FrozenMap.get?
+  rw [hIdx]; simp [hBound]
+
 /-- Q5-A: `set` returns `none` for keys not in the frozen map. -/
 theorem FrozenMap.set_none [BEq κ] [Hashable κ] [LawfulBEq κ]
     (fm : FrozenMap κ ν) (k : κ) (v : ν) (h : fm.indexMap.get? k = none) :
@@ -482,6 +503,64 @@ private theorem toList_empty [BEq κ] [Hashable κ] [LawfulBEq κ] (cap : Nat) (
 theorem freezeMap_empty [BEq κ] [Hashable κ] [LawfulBEq κ] (cap : Nat) (hCapGe4 : 4 ≤ cap := by omega) :
     (freezeMap (RHTable.empty cap hCapGe4 : RHTable κ ν)).data.size = 0 := by
   rw [freezeMap_data_size, toList_empty]; simp
+
+-- ============================================================================
+-- AK7-A (F-H01 / HIGH): freezeMap capacity-sufficiency witness
+-- ============================================================================
+
+/-- AK7-A (F-H01 / HIGH): The built `indexMap` preserves the seeded RHTable
+size/capacity invariant `invExtK` through the freezeMap fold.
+
+`invExtK` bundles three facts: the external hash invariant (`invExt`),
+the size bound (`size < capacity`), and the minimum capacity
+(`4 ≤ capacity`). Because `freezeMap` seeds `indexMap` with
+`RHTable.empty 16` (which satisfies `invExtK` trivially) and only calls
+`RHTable.insert` — which preserves `invExtK` by
+`RHTable.insert_preserves_invExtK` — the fold terminates with a
+well-formed index map.
+
+This witness closes F-H01 by establishing that the frozen map inherits a
+concrete, machine-checked invariant rather than relying on an
+undocumented "auto-grow invariant transfer" from the source table. The
+source RHTable is never inspected for invariants — only its `toList` is
+iterated — so the output invariant is independent of the input's. -/
+theorem freezeMap_indexMap_invExtK [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (rt : RHTable κ ν) :
+    (freezeMap rt).indexMap.invExtK := by
+  classical
+  -- Unfold freezeMap and exhibit invExtK on the fold result.
+  simp only [freezeMap]
+  -- Start from the invExtK of RHTable.empty 16 and preserve through the fold.
+  have hInit : (RHTable.empty 16 (by omega) : RHTable κ Nat).invExtK :=
+    RHTable.empty_invExtK 16 (by omega)
+  -- Fold over the entry list, applying insert_preserves_invExtK at each step.
+  generalize hEntries : rt.toList = entries
+  clear hEntries
+  suffices hFold :
+      ∀ (l : List (κ × ν)) (acc : RHTable κ Nat) (n : Nat),
+        acc.invExtK →
+        (l.foldl (fun (acc, i) (k, _) => (acc.insert k i, i + 1)) (acc, n)).1.invExtK by
+    exact hFold entries (RHTable.empty 16 (by omega)) 0 hInit
+  intro l
+  induction l with
+  | nil => intro acc n h; simpa [List.foldl]
+  | cons hd tl ih =>
+    intro acc n h
+    simp only [List.foldl]
+    exact ih (acc.insert hd.1 n) (n + 1)
+      (RHTable.insert_preserves_invExtK acc hd.1 n h)
+
+/-- AK7-A (F-H01): A capacity-sufficiency witness for `freezeMap`. The
+frozen map's runtime `data` size equals the source `toList.length` (see
+`freezeMap_data_size`) and the `indexMap` satisfies `invExtK`. Together
+these establish that `freezeMap` produces a structurally well-formed
+frozen map without silently inheriting invariants from the source
+table. -/
+theorem freezeMap_capacity_sufficient [BEq κ] [Hashable κ] [LawfulBEq κ]
+    (rt : RHTable κ ν) :
+    (freezeMap rt).data.size = rt.toList.length ∧
+    (freezeMap rt).indexMap.invExtK :=
+  ⟨freezeMap_data_size rt, freezeMap_indexMap_invExtK rt⟩
 
 /-- Q5-C: `freezeObject` passes through TCB unchanged. -/
 theorem freezeObject_tcb_passthrough (t : TCB) :

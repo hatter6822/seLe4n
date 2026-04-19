@@ -50,7 +50,7 @@ private def mkState (objs : List (ObjId × KernelObject))
 private def sr001_suspendReady : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Ready))]
-  match suspendThread st tid with
+  match suspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
@@ -62,7 +62,7 @@ private def sr001_suspendReady : IO Unit := do
 private def sr002_suspendInactive : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Inactive))]
-  match suspendThread st tid with
+  match suspendThread st ⟨tid, by decide⟩ with
   | .ok _ => throw <| IO.userError "SR-002 should fail for Inactive thread"
   | .error e =>
     expect "SR-002 error is illegalState" (e == .illegalState)
@@ -71,7 +71,7 @@ private def sr002_suspendInactive : IO Unit := do
 private def sr003_suspendMissing : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨99⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Ready))]
-  match suspendThread st tid with
+  match suspendThread st ⟨tid, by decide⟩ with
   | .ok _ => throw <| IO.userError "SR-003 should fail for missing thread"
   | .error e =>
     expect "SR-003 error is invalidArgument" (e == .invalidArgument)
@@ -83,7 +83,7 @@ private def sr004_suspendClearsPending : IO Unit := do
     pendingMessage := some { registers := #[], caps := #[], badge := SeLe4n.Badge.mk 42 }
     timeoutBudget := some (SeLe4n.SchedContextId.ofNat 100) }
   let st := mkState [(⟨1⟩, .tcb tcb)]
-  match suspendThread st tid with
+  match suspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb') =>
@@ -102,7 +102,7 @@ private def sr004_suspendClearsPending : IO Unit := do
 private def sr005_resumeInactive : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Inactive))]
-  match resumeThread st tid with
+  match resumeThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
@@ -115,7 +115,7 @@ private def sr005_resumeInactive : IO Unit := do
 private def sr006_resumeReady : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Ready))]
-  match resumeThread st tid with
+  match resumeThread st ⟨tid, by decide⟩ with
   | .ok _ => throw <| IO.userError "SR-006 should fail for Ready thread"
   | .error e =>
     expect "SR-006 error is illegalState" (e == .illegalState)
@@ -124,7 +124,7 @@ private def sr006_resumeReady : IO Unit := do
 private def sr007_resumeMissing : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨99⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Inactive))]
-  match resumeThread st tid with
+  match resumeThread st ⟨tid, by decide⟩ with
   | .ok _ => throw <| IO.userError "SR-007 should fail for missing thread"
   | .error e =>
     expect "SR-007 error is invalidArgument" (e == .invalidArgument)
@@ -133,9 +133,9 @@ private def sr007_resumeMissing : IO Unit := do
 private def sr008_suspendResumeRoundtrip : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Ready))]
-  match suspendThread st tid with
+  match suspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
-    match resumeThread st' tid with
+    match resumeThread st' ⟨tid, by decide⟩ with
     | .ok st'' =>
       match st''.objects[tid.toObjId]? with
       | some (.tcb tcb) =>
@@ -232,7 +232,7 @@ private def sr012_suspendBlockedOnSend : IO Unit := do
     ipcState := .blockedOnSend epId
     threadState := .BlockedSend }
   let st := mkState [(⟨1⟩, .tcb tcb)]
-  match suspendThread st tid with
+  match suspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb') =>
@@ -249,7 +249,7 @@ private def sr013_suspendBlockedOnReceive : IO Unit := do
     ipcState := .blockedOnReceive epId
     threadState := .BlockedRecv }
   let st := mkState [(⟨1⟩, .tcb tcb)]
-  match suspendThread st tid with
+  match suspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb') =>
@@ -266,7 +266,7 @@ private def sr014_suspendBlockedOnCall : IO Unit := do
     ipcState := .blockedOnCall epId
     threadState := .BlockedCall }
   let st := mkState [(⟨1⟩, .tcb tcb)]
-  match suspendThread st tid with
+  match suspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb') =>
@@ -283,7 +283,7 @@ private def sr015_suspendBlockedOnReply : IO Unit := do
     ipcState := .blockedOnReply epId none
     threadState := .BlockedReply }
   let st := mkState [(⟨1⟩, .tcb tcb)]
-  match suspendThread st tid with
+  match suspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb') =>
@@ -300,7 +300,7 @@ private def sr016_suspendBlockedOnNotification : IO Unit := do
     ipcState := .blockedOnNotification notifId
     threadState := .BlockedNotif }
   let st := mkState [(⟨1⟩, .tcb tcb)]
-  match suspendThread st tid with
+  match suspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb') =>
@@ -323,7 +323,7 @@ private def sr017_suspendBoundSchedContext : IO Unit := do
     budgetRemaining := ⟨1000⟩, boundThread := some ⟨1⟩ }
   let tcb := { mkTcb 1 .Ready with schedContextBinding := .bound scId }
   let st := mkState [(⟨1⟩, .tcb tcb), (⟨50⟩, .schedContext sc)]
-  match suspendThread st tid with
+  match suspendThread st ⟨tid, by decide⟩ with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb') =>
@@ -342,7 +342,7 @@ private def sr018_suspendEndpoint : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let ep : Endpoint := {}
   let st := mkState [(⟨1⟩, .endpoint ep)]
-  match suspendThread st tid with
+  match suspendThread st ⟨tid, by decide⟩ with
   | .ok _ => throw <| IO.userError "SR-018 should fail for non-TCB"
   | .error e =>
     expect "SR-018 error is invalidArgument" (e == .invalidArgument)
@@ -352,7 +352,7 @@ private def sr019_resumeEndpoint : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let ep : Endpoint := {}
   let st := mkState [(⟨1⟩, .endpoint ep)]
-  match resumeThread st tid with
+  match resumeThread st ⟨tid, by decide⟩ with
   | .ok _ => throw <| IO.userError "SR-019 should fail for non-TCB"
   | .error e =>
     expect "SR-019 error is invalidArgument" (e == .invalidArgument)

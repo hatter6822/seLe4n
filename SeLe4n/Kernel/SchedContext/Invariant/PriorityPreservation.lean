@@ -119,11 +119,11 @@ theorem validatePriorityAuthority_ok_bounded
 /-- D2-J: After `setPriorityOp` succeeds, the new priority does not exceed
 the caller's MCP. Direct proof from the validation check in D2-D. -/
 theorem setPriority_authority_bounded
-    (st st' : SystemState) (callerTid targetTid : SeLe4n.ThreadId)
+    (st st' : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
     (newPriority : SeLe4n.Priority)
-    (hOk : setPriorityOp st callerTid targetTid newPriority = .ok st')
+    (hOk : setPriorityOp st vCallerTid vTargetTid newPriority = .ok st')
     (callerTcb : TCB)
-    (hCaller : st.objects[callerTid.toObjId]? = some (.tcb callerTcb)) :
+    (hCaller : st.objects[vCallerTid.val.toObjId]? = some (.tcb callerTcb)) :
     newPriority.val ≤ callerTcb.maxControlledPriority.val := by
   -- Reduce to the validatePriorityAuthority check
   have hVal := validatePriorityAuthority_ok_bounded callerTcb newPriority
@@ -138,11 +138,11 @@ theorem setPriority_authority_bounded
 /-- D2-J: After `setMCPriorityOp` succeeds, the new MCP does not exceed
 the caller's MCP. -/
 theorem setMCPriority_authority_bounded
-    (st st' : SystemState) (callerTid targetTid : SeLe4n.ThreadId)
+    (st st' : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
     (newMCP : SeLe4n.Priority)
-    (hOk : setMCPriorityOp st callerTid targetTid newMCP = .ok st')
+    (hOk : setMCPriorityOp st vCallerTid vTargetTid newMCP = .ok st')
     (callerTcb : TCB)
-    (hCaller : st.objects[callerTid.toObjId]? = some (.tcb callerTcb)) :
+    (hCaller : st.objects[vCallerTid.val.toObjId]? = some (.tcb callerTcb)) :
     newMCP.val ≤ callerTcb.maxControlledPriority.val := by
   -- Reduce to the validatePriorityAuthority check
   have hVal := validatePriorityAuthority_ok_bounded callerTcb newMCP

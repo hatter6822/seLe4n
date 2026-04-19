@@ -540,11 +540,20 @@ badge values are opaque identifiers set by the authority holder and delivered
 to the receiver on IPC. The receiver can distinguish senders by badge but cannot
 authenticate the badge itself — authentication relies on the capability
 derivation tree (CDT) tracking which entity minted the badge. Callers must
-not treat badge values as cryptographic authenticators. -/
-def mintDerivedCap (parent : Capability) (rights : AccessRightSet)
-    (badge : Option SeLe4n.Badge := parent.badge) : Except KernelError Capability :=
-  if rightsSubset rights parent.rights then
-    .ok { target := parent.target, rights := rights, badge := badge }
+not treat badge values as cryptographic authenticators.
+
+**AL1b (WS-AL / AK7-I.cascade) — Type-level non-null discipline**: the
+`parent` parameter has type `NonNullCap`, not `Capability`. The Lean
+type system forbids any caller from feeding a null cap into this
+function — construction of a `NonNullCap` requires the caller to
+produce a `cap.isNull = false` witness via `Capability.toNonNull?`
+(the `none` branch forces the caller to emit
+`KernelError.nullCapability` and short-circuit). The raw `Capability`
+field accessors are reached via `parent.val.<field>`. -/
+def mintDerivedCap (parent : NonNullCap) (rights : AccessRightSet)
+    (badge : Option SeLe4n.Badge := parent.val.badge) : Except KernelError Capability :=
+  if rightsSubset rights parent.val.rights then
+    .ok { target := parent.val.target, rights := rights, badge := badge }
   else
     .error .invalidCapability
 
@@ -568,9 +577,18 @@ def cspaceMint
     match cspaceLookupSlot src st with
     | .error e => .error e
     | .ok (parent, st') =>
-        match mintDerivedCap parent rights badge with
-        | .error e => .error e
-        | .ok child => cspaceInsertSlot dst child st'
+        -- AL1b (AK7-I.cascade): type-level non-null discipline. Promote the
+        -- looked-up parent cap to `NonNullCap` via `Capability.toNonNull?`.
+        -- On failure, emit the dedicated `.nullCapability` error (distinct
+        -- from `.invalidCapability`'s "slot empty" / "non-object target"
+        -- overloads). `mintDerivedCap`'s type signature REQUIRES
+        -- `NonNullCap` — the type system forbids bypass.
+        match parent.toNonNull? with
+        | none => .error .nullCapability
+        | some parentNN =>
+            match mintDerivedCap parentNN rights badge with
+            | .error e => .error e
+            | .ok child => cspaceInsertSlot dst child st'
 
 /-- U-H03: Check whether a CSpace slot has CDT children (derived capabilities).
 Returns `true` if the slot's CDT node has any children, indicating that
@@ -690,13 +708,21 @@ def cspaceCopy (src dst : CSpaceAddr) : Kernel Unit :=
     match cspaceLookupSlot src st with
     | .error e => .error e
     | .ok (cap, st') =>
-        match cspaceInsertSlot dst cap st' with
-        | .error e => .error e
-        | .ok ((), st'') =>
-            let (srcNode, stSrc) := SystemState.ensureCdtNodeForSlot st'' src
-            let (dstNode, stDst) := SystemState.ensureCdtNodeForSlot stSrc dst
-            let cdt' := stDst.cdt.addEdge srcNode dstNode .copy
-            .ok ((), { stDst with cdt := cdt' })
+        -- AL1b (AK7-I.cascade): type-level null-cap rejection. Promote the
+        -- looked-up cap to `NonNullCap`; `none` is `.error .nullCapability`
+        -- (distinct from `.invalidCapability`). A null cap cannot be
+        -- meaningfully copied — it would clutter CDT tracking and the
+        -- destination with an always-inert capability. Fail fast.
+        match cap.toNonNull? with
+        | none => .error .nullCapability
+        | some capNN =>
+            match cspaceInsertSlot dst capNN.val st' with
+            | .error e => .error e
+            | .ok ((), st'') =>
+                let (srcNode, stSrc) := SystemState.ensureCdtNodeForSlot st'' src
+                let (dstNode, stDst) := SystemState.ensureCdtNodeForSlot stSrc dst
+                let cdt' := stDst.cdt.addEdge srcNode dstNode .copy
+                .ok ((), { stDst with cdt := cdt' })
 
 /-- WS-E4/C-02: Move a capability from source to destination.
 
@@ -708,21 +734,28 @@ def cspaceMove (src dst : CSpaceAddr) : Kernel Unit :=
     match cspaceLookupSlot src st with
     | .error e => .error e
     | .ok (cap, st') =>
-        match cspaceInsertSlot dst cap st' with
-        | .error e => .error e
-        | .ok ((), st'') =>
-            let srcNode? := SystemState.lookupCdtNodeOfSlot st'' src
-            -- Use unchecked delete: move preserves CDT edges via
-            -- attachSlotToCdtNode, so children follow the capability.
-            match cspaceDeleteSlotCore src st'' with
+        -- AL1b (AK7-I.cascade): type-level null-cap rejection. A moved null
+        -- cap would clear the source and occupy the destination with a cap
+        -- that carries no authority — semantically a no-op but creates
+        -- CDT-edge churn. Fail with the distinct `.nullCapability` error.
+        match cap.toNonNull? with
+        | none => .error .nullCapability
+        | some capNN =>
+            match cspaceInsertSlot dst capNN.val st' with
             | .error e => .error e
-            | .ok ((), st''') =>
-                -- Node-stable CDT: move is a slot-pointer move + backpointer fixup.
-                match srcNode? with
-                | none => .ok ((), st''')
-                | some srcNode =>
-                    let stMoved := SystemState.attachSlotToCdtNode st''' dst srcNode
-                    .ok ((), stMoved)
+            | .ok ((), st'') =>
+                let srcNode? := SystemState.lookupCdtNodeOfSlot st'' src
+                -- Use unchecked delete: move preserves CDT edges via
+                -- attachSlotToCdtNode, so children follow the capability.
+                match cspaceDeleteSlotCore src st'' with
+                | .error e => .error e
+                | .ok ((), st''') =>
+                    -- Node-stable CDT: move is a slot-pointer move + backpointer fixup.
+                    match srcNode? with
+                    | none => .ok ((), st''')
+                    | some srcNode =>
+                        let stMoved := SystemState.attachSlotToCdtNode st''' dst srcNode
+                        .ok ((), stMoved)
 
 /-- WS-H13/A-21: `cspaceMove` error-path atomicity. On failure, no output
 state is produced — the `Except` error constructor carries only the error tag,

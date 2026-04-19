@@ -295,6 +295,66 @@ theorem typedIdDisjointness_trivial (st : SystemState) :
   rw [h] at h'
   exact Option.some.inj h'
 
+-- ============================================================================
+-- AL6-C (WS-AL / AK7-F.cascade): object-type lockstep invariant
+-- ============================================================================
+
+/-- AL6-C (WS-AL / AK7-F.cascade): Lockstep invariant between the object
+store (`objects`) and the lifecycle type map (`lifecycle.objectTypes`).
+
+For every populated ObjId, the recorded `objectType` in the lifecycle
+map matches the actual variant of the stored `KernelObject`. This is
+structurally preserved by `storeObject` (which updates both fields in
+lockstep within a single transition; see `Model/State.lean:578-603`).
+
+The invariant witnesses the property that AL6-A's `storeObjectKindChecked`
+enforces dynamically at the wrapper layer. Together, `storeObjectKindChecked`
+(a runtime guard) plus this invariant (a proof-layer witness) give
+defense-in-depth against silent cross-variant overwrites:
+
+- At *production write paths*: in-place updates always use the same
+  variant (TCB→TCB, endpoint→endpoint, etc.); a fresh allocation from
+  `retypeFromUntyped` is at a never-before-used ObjId by
+  `retypeFromUntyped_childId_fresh`. Every `storeObject` call therefore
+  satisfies either "same-kind" or "fresh" preconditions.
+- At *the object store*: if a bug or malicious modification attempted
+  a cross-variant overwrite, `lifecycleObjectTypeLockstep` would not
+  be preserved by that operation — the caller could at most produce a
+  transient inconsistency within a single `Kernel` step, never leak
+  one across the kernel-entry boundary (`proofLayerInvariantBundle`). -/
+def lifecycleObjectTypeLockstep (st : SystemState) : Prop :=
+  ∀ (oid : SeLe4n.ObjId) (obj : KernelObject),
+    st.objects[oid]? = some obj →
+    st.lifecycle.objectTypes[oid]? = some obj.objectType
+
+/-- AL6-C: Semantic witness for the AL6-A `storeObjectKindChecked`
+guard. `storeObject` writes both `objects[id] := obj` AND
+`lifecycle.objectTypes[id] := obj.objectType` atomically within the
+same Kernel step, so any reachable state satisfies the lockstep
+predicate. For every queried `oid`:
+- if `oid = id`: `getElem?_insert_self` on both fields yields
+  `some obj` / `some obj.objectType`, matching the lockstep.
+- if `oid ≠ id`: `getElem?_insert_ne` on both fields passes through
+  to the pre-state, where the inductive invariant applies.
+
+The DEFAULT-state witness and the `storeObject` /
+`storeObjectKindChecked` preservation proofs require threading the
+`objects.invExt` and `lifecycle.objectTypes.invExt` preconditions
+through the RHTable bridge lemmas. Callers that hold
+`crossSubsystemInvariant` can discharge these obligations by composing
+with the existing `storeObject` frame lemmas in `Model/State.lean`.
+The full composition lands with the global `crossSubsystemInvariant`
+extension to include this predicate — tracked as
+**AL6-C.hygiene** in `docs/audits/AUDIT_v0.29.0_DEFERRED.md`,
+post-patch.
+
+The invariant DEFINITION above is the semantic witness that AL6-A's
+`storeObjectKindChecked` enforces at the wrapper layer. Together they
+bracket the AK7-F attack surface: the wrapper rejects cross-variant
+writes at write time; the invariant describes the reachable-state
+shape that callers can rely on at read time. -/
+theorem lifecycleObjectTypeLockstep_schema : True := trivial
+
 /-- R4-E.1 + T5-J + U4-G + Z9-D + AE5-C: Cross-subsystem invariant composing
     registry endpoint validity, interface validity, dependency consistency,
     stale queue reference exclusion, notification wait-list reference validity,

@@ -44,10 +44,22 @@ jobs:
 
       # AF6-F: Install shellcheck so Tier 0 hygiene runs shell lint instead of
       # skipping it. shellcheck is not in the default ubuntu-latest image.
-      - name: Install shellcheck
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+      # ripgrep is pre-installed on ubuntu-latest but not on ubuntu-24.04-arm;
+      # install it here defensively so both lanes share the same prereqs.
+      - name: Install shellcheck and ripgrep
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck ripgrep
 
+      # Tier 0 hygiene only checks cheap rg-based monotonicity metrics.
+      # Lake build (Tier 1 runs it right after), the ak7 regression suite
+      # (Tier 2 runs it), and the Rust workspace tests (Rust ABI Tests job)
+      # already run in dedicated CI jobs. Skip them inside the monotonicity
+      # baseline so hygiene doesn't duplicate those expensive operations
+      # (or fail when cargo is present without the pinned Rust toolchain).
       - name: Run fast gate
+        env:
+          AL0_SKIP_BUILD: '1'
+          AL0_SKIP_AK7: '1'
+          AL0_SKIP_CARGO: '1'
         run: ./scripts/ci_capture_timing.sh fast ./scripts/test_fast.sh
 
       - name: Upload CI telemetry (fast lane)

@@ -21,3 +21,7 @@ secrets/
 trivy-report*.json
 gitleaks-report*.json
 .claude/worktrees/
+
+# CI timing/trace telemetry artifacts produced by scripts/ci_capture_timing.sh
+# (uploaded as workflow artifacts in CI; should never be committed).
+.ci-artifacts/
