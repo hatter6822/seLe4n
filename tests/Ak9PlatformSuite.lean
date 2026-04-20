@@ -268,6 +268,158 @@ def ak9g_03_withInterrupts_enables : IO Unit := do
     (ist.state.machine.interruptsEnabled = true)
 
 -- ============================================================================
+-- End-to-end: bootFromPlatformChecked wires AK9-C, AK9-F, AK9-G together
+-- ============================================================================
+
+/-- AK9-C (end-to-end): `bootFromPlatformChecked` REJECTS a config whose IRQ
+    handler references a non-existent ObjId. This exercises the full
+    production check chain, not just the predicate. -/
+def ak9ce_01_checked_boot_rejects_bad_irq : IO Unit := do
+  let cfg : PlatformConfig :=
+    { irqTable := [{ irq := ⟨1⟩, handler := ObjId.ofNat 99 }],
+      initialObjects := [] }
+  expect "AK9-CE-01 checked boot rejects bad IRQ"
+    (match bootFromPlatformChecked cfg with
+     | .error _ => true
+     | .ok _ => false)
+
+/-- AK9-C (end-to-end): `bootFromPlatformChecked` REJECTS when handler
+    ObjId resolves to a non-notification variant (TCB). -/
+def ak9ce_02_checked_boot_rejects_tcb_handler : IO Unit := do
+  let oid : ObjId := ObjId.ofNat 5
+  let cfg : PlatformConfig :=
+    { irqTable := [{ irq := ⟨1⟩, handler := oid }],
+      initialObjects := [mkTcbObjectEntry oid] }
+  expect "AK9-CE-02 checked boot rejects TCB handler"
+    (match bootFromPlatformChecked cfg with
+     | .error _ => true
+     | .ok _ => false)
+
+/-- AK9-F (end-to-end): `bootFromPlatformChecked` REJECTS a config whose
+    `machineConfig.physicalAddressWidth` exceeds 52. -/
+def ak9fe_01_checked_boot_rejects_pa_over_52 : IO Unit := do
+  let cfg : PlatformConfig :=
+    { irqTable := [], initialObjects := [],
+      machineConfig := { defaultMachineConfig with physicalAddressWidth := 64 } }
+  expect "AK9-FE-01 checked boot rejects PA width > 52"
+    (match bootFromPlatformChecked cfg with
+     | .error _ => true
+     | .ok _ => false)
+
+/-- AK9-F (end-to-end): `bootFromPlatformChecked` REJECTS a config with a
+    malformed MachineConfig (page size 0 fails `wellFormed`). -/
+def ak9fe_02_checked_boot_rejects_malformed_machine_config : IO Unit := do
+  let cfg : PlatformConfig :=
+    { irqTable := [], initialObjects := [],
+      machineConfig := { defaultMachineConfig with pageSize := 0 } }
+  expect "AK9-FE-02 checked boot rejects malformed MachineConfig"
+    (match bootFromPlatformChecked cfg with
+     | .error _ => true
+     | .ok _ => false)
+
+/-- AK9-G (end-to-end): `bootFromPlatformChecked` emits a state with
+    interrupts enabled on successful boot. -/
+def ak9ge_01_checked_boot_enables_interrupts : IO Unit := do
+  let cfg : PlatformConfig := { irqTable := [], initialObjects := [] }
+  let ok : Bool :=
+    match bootFromPlatformChecked cfg with
+    | .ok ist => ist.state.machine.interruptsEnabled
+    | .error _ => false
+  expect "AK9-GE-01 checked boot enables interrupts" ok
+
+-- ============================================================================
+-- AK9-A: mmioReadByte rename + backwards-compat alias
+-- ============================================================================
+
+/-- AK9-A: The primary `mmioReadByte` function accepts a valid UART address. -/
+def ak9a_05_mmioReadByte_accepts_uart : IO Unit := do
+  let addr : PAddr := uart0Base
+  let st : SystemState := default
+  expect "AK9-A-05 mmioReadByte accepts UART base"
+    (match mmioReadByte addr st with
+     | .ok _ => true
+     | _ => false)
+
+set_option linter.deprecated false in
+/-- AK9-A: Backwards-compat alias `mmioRead` produces the same outcome
+    shape (ok with a value) as `mmioReadByte` at a valid UART address. -/
+def ak9a_06_mmioRead_alias_matches_byte : IO Unit := do
+  let addr : PAddr := uart0Base
+  let st : SystemState := default
+  let aliasOk : Bool :=
+    match mmioRead addr st with | .ok _ => true | _ => false
+  let primaryOk : Bool :=
+    match mmioReadByte addr st with | .ok _ => true | _ => false
+  expect "AK9-A-06 mmioRead alias matches mmioReadByte"
+    (aliasOk == primaryOk)
+
+-- ============================================================================
+-- AK9-A: positive correctness theorems
+-- ============================================================================
+
+/-- AK9-A: `mmioRead32` produces a success outcome at a valid GIC-400
+    distributor address (the positive theorem existence witness is
+    exercised at runtime). -/
+def ak9a_07_mmioRead32_positive_success : IO Unit := do
+  let addr : PAddr := gicDistributorBase
+  let st : SystemState := default
+  expect "AK9-A-07 mmioRead32 positive success at GIC dist"
+    (match mmioRead32 addr st with
+     | .ok _ => true
+     | _ => false)
+
+/-- AK9-A: `mmioRead64` positive success at an 8-byte aligned GIC-CPU address. -/
+def ak9a_08_mmioRead64_positive_success : IO Unit := do
+  let addr : PAddr := gicCpuInterfaceBase  -- 0xFF842000 is 8-byte aligned
+  let st : SystemState := default
+  expect "AK9-A-08 mmioRead64 positive success at GIC CPU iface"
+    (match mmioRead64 addr st with
+     | .ok _ => true
+     | _ => false)
+
+-- ============================================================================
+-- AK9-H P-L2: readCStringChecked
+-- ============================================================================
+
+/-- AK9-H (P-L2): Out-of-bounds offset rejected with `.malformedBlob`. -/
+def ak9h_01_readCStringChecked_rejects_oob : IO Unit := do
+  let blob : ByteArray := ByteArray.mk #[0x41, 0x42, 0x00]  -- "AB\0"
+  let result := readCStringChecked blob 100 256
+  expect "AK9-H-01 readCStringChecked rejects OOB"
+    (match result with
+     | .error .malformedBlob => true
+     | _ => false)
+
+/-- AK9-H (P-L2): Fuel = 0 rejected with `.fuelExhausted`. -/
+def ak9h_02_readCStringChecked_rejects_fuel_zero : IO Unit := do
+  let blob : ByteArray := ByteArray.mk #[0x41, 0x42, 0x00]
+  let result := readCStringChecked blob 0 0
+  expect "AK9-H-02 readCStringChecked rejects fuel 0"
+    (match result with
+     | .error .fuelExhausted => true
+     | _ => false)
+
+/-- AK9-H (P-L2): Valid null-terminated string returns `.ok` with the string. -/
+def ak9h_03_readCStringChecked_ok : IO Unit := do
+  let blob : ByteArray := ByteArray.mk #[0x41, 0x42, 0x00, 0x00]  -- "AB\0\0"
+  let result := readCStringChecked blob 0 256
+  expect "AK9-H-03 readCStringChecked accepts valid string"
+    (match result with
+     | .ok (s, _) => s == "AB"
+     | _ => false)
+
+/-- AK9-H (P-L2): String without null terminator exhausts fuel. -/
+def ak9h_04_readCStringChecked_fuel_exhausted_on_unterminated : IO Unit := do
+  -- A blob with no null byte within the first 3 bytes and fuel=2 forces
+  -- the fuel to reach 0 before finding a terminator.
+  let blob : ByteArray := ByteArray.mk #[0x41, 0x42, 0x43]
+  let result := readCStringChecked blob 0 2
+  expect "AK9-H-04 readCStringChecked fuel exhausted on unterminated"
+    (match result with
+     | .error .fuelExhausted => true
+     | _ => false)
+
+-- ============================================================================
 -- Entry point
 -- ============================================================================
 
@@ -297,5 +449,21 @@ def main : IO Unit := do
   ak9g_01_enables_interrupts
   ak9g_02_default_disabled
   ak9g_03_withInterrupts_enables
+  -- End-to-end bootFromPlatformChecked chain
+  ak9ce_01_checked_boot_rejects_bad_irq
+  ak9ce_02_checked_boot_rejects_tcb_handler
+  ak9fe_01_checked_boot_rejects_pa_over_52
+  ak9fe_02_checked_boot_rejects_malformed_machine_config
+  ak9ge_01_checked_boot_enables_interrupts
+  -- AK9-A rename + positive correctness
+  ak9a_05_mmioReadByte_accepts_uart
+  ak9a_06_mmioRead_alias_matches_byte
+  ak9a_07_mmioRead32_positive_success
+  ak9a_08_mmioRead64_positive_success
+  -- AK9-H readCStringChecked
+  ak9h_01_readCStringChecked_rejects_oob
+  ak9h_02_readCStringChecked_rejects_fuel_zero
+  ak9h_03_readCStringChecked_ok
+  ak9h_04_readCStringChecked_fuel_exhausted_on_unterminated
   IO.println ""
   IO.println "=== All AK9 platform tests passed ==="

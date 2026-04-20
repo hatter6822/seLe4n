@@ -638,7 +638,26 @@ def bootFromPlatformChecked (config : PlatformConfig) :
       -- after the per-object bootSafe check so the error message identifies
       -- the specific misconfiguration.
       if irqHandlersReferenceNotifications config then
-        .ok (bootFromPlatform config)
+        -- AK9-F (P-M05): Validate MachineConfig well-formedness + PA width
+        -- bound (ARMv8 LPA max = 52). Prevents the production boot path
+        -- from silently accepting a malformed MachineConfig that would leave
+        -- the runtime in an inconsistent state (region overlap, non-power-of-
+        -- two page size, PA width > 52).
+        if config.machineConfig.wellFormed then
+          if config.machineConfig.physicalAddressWidth ≤ 52 then
+            -- AK9-G (P-M06): Enable interrupts at the end of the checked
+            -- boot path, mirroring the Rust HAL Phase-3 IRQ re-enable
+            -- after GIC + timer initialization. The runtime begins with
+            -- `interruptsEnabled = true`, matching post-HAL hardware
+            -- state. The raw `bootFromPlatform` pre-interrupts image is
+            -- still accessible (callers can inspect it by composing
+            -- `bootFromPlatform` directly) for negative-state or
+            -- boot-invariant-bridge contexts.
+            .ok (bootEnableInterruptsOp (bootFromPlatform config))
+          else
+            .error s!"boot: MachineConfig.physicalAddressWidth {config.machineConfig.physicalAddressWidth} > 52 (ARMv8 LPA max) (AK9-F / P-M05)"
+        else
+          .error "boot: MachineConfig fails well-formedness (AK9-F / P-M05)"
       else
         .error "boot: IRQ handler does not reference a notification object in initialObjects (AK9-C)"
     else
@@ -648,16 +667,28 @@ def bootFromPlatformChecked (config : PlatformConfig) :
   else
     .error "boot: duplicate object ID detected in platform config"
 
-/-- U6-E/F/AJ3-C/AK9-C: Checked boot agrees with unchecked boot on well-formed,
-    boot-safe, and IRQ-handler-valid configs. Extended with the AK9-C
-    precondition: every IRQ's handler ObjId must reference a notification in
-    `initialObjects`. -/
+/-- U6-E/F/AJ3-C/AK9-C/AK9-F/AK9-G: Checked boot agrees with
+    `bootFromPlatformWithInterrupts` on well-formed, boot-safe,
+    IRQ-handler-valid, MachineConfig-valid, PA-width-valid configs.
+
+    Precondition chain: `config.wellFormed` (AJ3-C)
+    ∧ all objects are boot-safe (AJ3-C)
+    ∧ every IRQ handler references a notification (AK9-C)
+    ∧ `config.machineConfig.wellFormed` (AK9-F / P-M05)
+    ∧ `config.machineConfig.physicalAddressWidth ≤ 52` (AK9-F / P-M05).
+
+    Conclusion now emits the post-interrupts state (AK9-G / P-M06) that
+    the production path produces — a behavioural change vs pre-AK9 where
+    interrupts stayed disabled. -/
 theorem bootFromPlatformChecked_eq_bootFromPlatform (config : PlatformConfig)
     (hWf : config.wellFormed = true)
     (hSafe : config.initialObjects.all (fun entry => bootSafeObjectCheck entry.obj) = true)
-    (hIrq : irqHandlersReferenceNotifications config = true) :
-    bootFromPlatformChecked config = .ok (bootFromPlatform config) := by
-  simp [bootFromPlatformChecked, hWf, hSafe, hIrq]
+    (hIrq : irqHandlersReferenceNotifications config = true)
+    (hMc : config.machineConfig.wellFormed = true)
+    (hPa : config.machineConfig.physicalAddressWidth ≤ 52) :
+    bootFromPlatformChecked config =
+      .ok (bootEnableInterruptsOp (bootFromPlatform config)) := by
+  simp [bootFromPlatformChecked, hWf, hSafe, hIrq, hMc, hPa]
 
 /-- AK9-C: Successful checked boot implies IRQ handlers reference notifications.
     If `bootFromPlatformChecked` returns `.ok`, the `irqHandlersReferenceNotifications`
@@ -671,6 +702,65 @@ theorem bootFromPlatformChecked_ok_implies_irqHandlersValid (config : PlatformCo
   · split at hOk
     · split at hOk
       · rename_i hIrq; exact hIrq
+      · cases hOk
+    · cases hOk
+  · split at hOk <;> cases hOk
+
+/-- AK9-F (P-M05): Successful checked boot implies `MachineConfig.wellFormed`. -/
+theorem bootFromPlatformChecked_ok_implies_machineConfigWellFormed
+    (config : PlatformConfig) (ist : IntermediateState)
+    (hOk : bootFromPlatformChecked config = .ok ist) :
+    config.machineConfig.wellFormed = true := by
+  unfold bootFromPlatformChecked at hOk
+  split at hOk
+  · split at hOk
+    · split at hOk
+      · split at hOk
+        · rename_i hMc
+          -- pull the Bool out of the if-condition
+          exact (by
+            rcases hMcB : config.machineConfig.wellFormed with _ | _
+            · simp [hMcB] at hMc
+            · rfl)
+        · cases hOk
+      · cases hOk
+    · cases hOk
+  · split at hOk <;> cases hOk
+
+/-- AK9-F (P-M05): Successful checked boot implies `physicalAddressWidth ≤ 52`. -/
+theorem bootFromPlatformChecked_ok_implies_physicalAddressWidth_bound
+    (config : PlatformConfig) (ist : IntermediateState)
+    (hOk : bootFromPlatformChecked config = .ok ist) :
+    config.machineConfig.physicalAddressWidth ≤ 52 := by
+  unfold bootFromPlatformChecked at hOk
+  split at hOk
+  · split at hOk
+    · split at hOk
+      · split at hOk
+        · split at hOk
+          · rename_i hPa; exact hPa
+          · cases hOk
+        · cases hOk
+      · cases hOk
+    · cases hOk
+  · split at hOk <;> cases hOk
+
+/-- AK9-G (P-M06): Successful checked boot produces a state with interrupts
+    enabled. Matches the post-HAL hardware state. -/
+theorem bootFromPlatformChecked_ok_interruptsEnabled (config : PlatformConfig)
+    (ist : IntermediateState)
+    (hOk : bootFromPlatformChecked config = .ok ist) :
+    ist.state.machine.interruptsEnabled = true := by
+  unfold bootFromPlatformChecked at hOk
+  split at hOk
+  · split at hOk
+    · split at hOk
+      · split at hOk
+        · split at hOk
+          · cases hOk
+            exact bootEnableInterruptsOp_interruptsEnabled _
+          · cases hOk
+        · cases hOk
       · cases hOk
     · cases hOk
   · split at hOk <;> cases hOk

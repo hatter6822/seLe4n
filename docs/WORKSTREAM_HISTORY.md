@@ -19,6 +19,66 @@ previously spread across README.md, GitBook chapters, and audit plans.
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 
+## WS-AK Phase AK9 audit remediation (v0.30.5)
+
+**Status**: COMPLETE. Deep end-to-end audit of the v0.30.4 Phase AK9
+delivery surfaced five gaps where the plan's intent was not fully
+honored at the production-path level. v0.30.5 closes each gap with
+substantive wiring rather than documentation-only patches.
+
+### Remediated gaps
+
+1. **AK9-A alias vs rename** — v0.30.4 added `mmioReadByte` as a thin
+   alias over `mmioRead`; the plan specified RENAME. Inverted: now
+   `mmioReadByte` is the primary definition and `mmioRead` is a
+   `@[deprecated]` alias. Three theorems renamed accordingly with
+   backward-compat aliases. Two new positive correctness theorems
+   (`mmioRead{32,64}_alignedAndBounded_within_region`) complete the
+   four-theorem-per-width contract.
+
+2. **AK9-F P-M05 validation not wired** — v0.30.4 defined
+   `applyMachineConfigChecked` but `bootFromPlatform` still called
+   unchecked `applyMachineConfig`. Remediation wires
+   `machineConfig.wellFormed` + `physicalAddressWidth ≤ 52` gates
+   directly into `bootFromPlatformChecked`, and adds two soundness
+   theorems (`_ok_implies_machineConfigWellFormed`,
+   `_ok_implies_physicalAddressWidth_bound`) exposing the
+   post-conditions.
+
+3. **AK9-G P-M06 interrupts-enable not wired** — v0.30.4 added
+   `bootFromPlatformWithInterrupts` but the plan specified "Invoke at
+   end of `bootFromPlatform` checked path." Remediation threads
+   `bootEnableInterruptsOp` through `bootFromPlatformChecked`'s
+   ok-branch so successful checked boots emit IRQs-enabled state. New
+   `bootFromPlatformChecked_ok_interruptsEnabled` theorem.
+
+4. **AK9-C no end-to-end rejection test** — v0.30.4 tested the
+   predicate `irqHandlersReferenceNotifications` directly but not the
+   full `bootFromPlatformChecked` chain. Added two end-to-end tests:
+   bad-ObjId handler and TCB-variant handler both produce `.error`.
+
+5. **AK9-H P-L2 readCString not upgraded** — v0.30.4 only documented
+   the fuel-collapse concern. Added `readCStringChecked` with
+   `Except DeviceTreeParseError (String × Nat)` return type
+   distinguishing `.malformedBlob` from `.fuelExhausted`. Two
+   correctness theorems + four runtime tests.
+
+### Test suite expansion
+
+`tests/Ak9PlatformSuite.lean`: 21 → 34 tests. New tests cover the
+end-to-end `bootFromPlatformChecked` chain (5), AK9-A rename and
+positive-success paths (4), and AK9-H `readCStringChecked` (4).
+
+### Gate
+
+- `lake build` (260 jobs, 0 warnings)
+- `test_smoke.sh` PASS, `test_full.sh` PASS
+- `lake exe ak9_platform_suite` 34/34 PASS
+- `cargo test --workspace` PASS; `cargo clippy -- -D warnings` 0 warnings
+- `check_version_sync.sh` PASS at 0.30.5 (15 files synced)
+- Fixture byte-identical to `tests/fixtures/main_trace_smoke.expected`
+- Zero `sorry` / `axiom` in `SeLe4n/` or `Main.lean`
+
 ## WS-AK Phase AK9 — Platform, Boot, DTB, MMIO (v0.30.4)
 
 **Status**: COMPLETE. Phase AK9 of the v0.29.0 pre-1.0 release hardening

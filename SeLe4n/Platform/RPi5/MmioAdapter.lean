@@ -333,13 +333,16 @@ def isDeviceAddress (addr : PAddr) : Bool :=
 -- T6-E: MMIO read/write operations in the kernel monad
 -- ============================================================================
 
-/-- U6-A/T6-E: MMIO byte read operation — **debug/UART only**.
+/-- AK9-A (P-H01) / U6-A / T6-E: MMIO byte read — **debug/UART only**.
 
-    AK9-A (P-H01): This byte-granularity read is retained for UART debug
-    paths (PL011 DR/FR registers read 1 byte at a time) and diagnostic
-    contexts. Hardware-facing GIC-400 / BCM2712 peripheral registers
-    require word- or doubleword-sized aligned reads — callers should use
-    `mmioRead32` / `mmioRead64` (defined below) for those.
+    This byte-granularity read is retained for UART debug paths (PL011
+    DR/FR registers read 1 byte at a time) and diagnostic contexts.
+    Hardware-facing GIC-400 / BCM2712 peripheral registers require
+    word- or doubleword-sized aligned reads — callers MUST use
+    `mmioRead32` / `mmioRead64` (defined below) for those. The naming
+    `mmioReadByte` (renamed from `mmioRead` in AK9-A) enforces this at
+    the call site: any code that reads for GIC/BCM2712 registers and
+    calls `mmioReadByte` is using the wrong function.
 
     For addresses in a declared `MmioRegionDesc` with non-RAM semantics,
     the read result is *modeled* as the current memory content but proofs
@@ -361,18 +364,20 @@ def isDeviceAddress (addr : PAddr) : Bool :=
     may return different values on successive reads (status bits, FIFO data,
     interrupt acknowledgment). Hardware binding (WS-V/AG10) must substitute
     actual MMIO reads via FFI (`@[extern]` bridge to Rust HAL `mmio.rs`). -/
-def mmioRead (addr : PAddr) : Kernel UInt8 :=
+def mmioReadByte (addr : PAddr) : Kernel UInt8 :=
   fun st =>
     if isDeviceAddress addr then
       .ok (st.machine.memory addr, st)
     else
       .error .policyDenied
 
-/-- AK9-A (P-H01): Byte-granularity MMIO read alias for debug/UART paths.
-    Delegates to `mmioRead`. Semantically identical — exposed under a
-    self-documenting name so production code sites can advertise whether
-    they intend debug byte-access or hardware word/doubleword access. -/
-@[inline] def mmioReadByte (addr : PAddr) : Kernel UInt8 := mmioRead addr
+/-- AK9-A backwards-compat alias: `mmioRead` delegates to `mmioReadByte`.
+    Prior releases exposed this 8-bit read as `mmioRead`; it is renamed
+    to `mmioReadByte` in v0.30.4 to make the byte-granularity intent
+    explicit at call sites. New code should use `mmioReadByte`
+    (or `mmioRead32` / `mmioRead64` for word-sized access). -/
+@[deprecated mmioReadByte (since := "0.30.4"), inline]
+def mmioRead (addr : PAddr) : Kernel UInt8 := mmioReadByte addr
 
 /-- U6-A/T6-E: MMIO write operation with formal abstraction boundary.
 
@@ -628,6 +633,27 @@ theorem mmioRead64_preserves_state (addr : PAddr) (st st' : SystemState) (v : UI
   · split at hOk
     · cases hOk; rfl
     · cases hOk
+
+/-- AK9-A: `mmioRead32` aligned AND region-locally bounded produces a
+    success outcome. Completes the read-side correctness triple alongside
+    `_rejects_unaligned`, `_rejects_out_of_region`, `_preserves_state`. -/
+theorem mmioRead32_alignedAndBounded_within_region
+    (addr : PAddr) (st : SystemState)
+    (hAligned : isAligned addr 4 = true)
+    (hInside : isDeviceRangeWithinRegion addr 4 = true) :
+    ∃ v, mmioRead32 addr st = .ok (v, st) := by
+  unfold mmioRead32
+  simp [hAligned, hInside]
+
+/-- AK9-A: `mmioRead64` aligned AND region-locally bounded produces a
+    success outcome. -/
+theorem mmioRead64_alignedAndBounded_within_region
+    (addr : PAddr) (st : SystemState)
+    (hAligned : isAligned addr 8 = true)
+    (hInside : isDeviceRangeWithinRegion addr 8 = true) :
+    ∃ v, mmioRead64 addr st = .ok (v, st) := by
+  unfold mmioRead64
+  simp [hAligned, hInside]
 -- ============================================================================
 
 -- ============================================================================
@@ -752,11 +778,18 @@ theorem mmioWrite64_rejects_unaligned (addr : PAddr) (val : UInt64) (st : System
 -- T6-E: Correctness properties
 -- ============================================================================
 
-/-- T6-E: MMIO read at a non-device address is rejected. -/
+/-- AK9-A / T6-E: MMIO byte read at a non-device address is rejected. -/
+theorem mmioReadByte_rejects_non_device (addr : PAddr) (st : SystemState)
+    (hNonDevice : isDeviceAddress addr = false) :
+    mmioReadByte addr st = .error .policyDenied := by
+  simp [mmioReadByte, hNonDevice]
+
+set_option linter.deprecated false in
+/-- T6-E: Backwards-compat alias theorem — `mmioRead` rejects non-device. -/
 theorem mmioRead_rejects_non_device (addr : PAddr) (st : SystemState)
     (hNonDevice : isDeviceAddress addr = false) :
-    mmioRead addr st = .error .policyDenied := by
-  simp [mmioRead, hNonDevice]
+    mmioRead addr st = .error .policyDenied :=
+  mmioReadByte_rejects_non_device addr st hNonDevice
 
 /-- T6-E: MMIO write at a non-device address is rejected. -/
 theorem mmioWrite_rejects_non_device (addr : PAddr) (val : UInt8) (st : SystemState)
@@ -764,14 +797,21 @@ theorem mmioWrite_rejects_non_device (addr : PAddr) (val : UInt8) (st : SystemSt
     mmioWrite addr val st = .error .policyDenied := by
   simp [mmioWrite, hNonDevice]
 
-/-- T6-E: MMIO read does not modify state. -/
-theorem mmioRead_preserves_state (addr : PAddr) (st st' : SystemState) (v : UInt8)
-    (hOk : mmioRead addr st = .ok (v, st')) :
+/-- AK9-A / T6-E: MMIO byte read does not modify state. -/
+theorem mmioReadByte_preserves_state (addr : PAddr) (st st' : SystemState) (v : UInt8)
+    (hOk : mmioReadByte addr st = .ok (v, st')) :
     st' = st := by
-  unfold mmioRead at hOk
+  unfold mmioReadByte at hOk
   split at hOk
   · cases hOk; rfl
   · cases hOk
+
+set_option linter.deprecated false in
+/-- T6-E: Backwards-compat alias theorem — `mmioRead` preserves state. -/
+theorem mmioRead_preserves_state (addr : PAddr) (st st' : SystemState) (v : UInt8)
+    (hOk : mmioRead addr st = .ok (v, st')) :
+    st' = st :=
+  mmioReadByte_preserves_state addr st st' v hOk
 
 /-- T6-E: MMIO write only modifies the target address. -/
 theorem mmioWrite_frame (addr : PAddr) (val : UInt8) (st st' : SystemState)
@@ -897,13 +937,22 @@ theorem mmioWrite64_frame (addr : PAddr) (val : UInt64) (st st' : SystemState)
 def notInMmioRegion (addr : PAddr) : Prop :=
   inMmioRegion rpi5MmioRegionDescs addr = false
 
-/-- U6-B: MMIO read at a non-MMIO address returns the memory function value,
-    and this result IS idempotent (safe for proofs to unfold). -/
-theorem mmioRead_nonMmio_safe (addr : PAddr) (st : SystemState)
+/-- U6-B / AK9-A: MMIO byte read at a non-MMIO address returns the memory
+    function value, and this result IS idempotent (safe for proofs to
+    unfold). Renamed from `mmioRead_nonMmio_safe` in AK9-A. -/
+theorem mmioReadByte_nonMmio_safe (addr : PAddr) (st : SystemState)
     (hDevice : isDeviceAddress addr = true)
     (_hNotMmio : notInMmioRegion addr) :
-    mmioRead addr st = .ok (st.machine.memory addr, st) := by
-  simp [mmioRead, hDevice]
+    mmioReadByte addr st = .ok (st.machine.memory addr, st) := by
+  simp [mmioReadByte, hDevice]
+
+set_option linter.deprecated false in
+/-- U6-B: Backwards-compat alias theorem. -/
+theorem mmioRead_nonMmio_safe (addr : PAddr) (st : SystemState)
+    (hDevice : isDeviceAddress addr = true)
+    (hNotMmio : notInMmioRegion addr) :
+    mmioRead addr st = .ok (st.machine.memory addr, st) :=
+  mmioReadByte_nonMmio_safe addr st hDevice hNotMmio
 
 /-- U6-B: For VSpace page-table walk proofs: any address in a page-mapped
     region that is not in an MMIO region can be read idempotently.

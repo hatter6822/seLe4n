@@ -1,3 +1,94 @@
+## v0.30.5 — WS-AK Phase AK9 audit remediation
+
+Deep end-to-end audit of the v0.30.4 Phase AK9 delivery surfaced five
+correctness / rigor gaps where the plan's intent was not fully honored.
+This release closes each gap with substantive wiring and additional
+regression tests (34 total, up from 21 at v0.30.4).
+
+### Gap 1 — AK9-A (P-H01): alias vs rename
+
+The plan specifies "**rename** `mmioRead` to `mmioReadByte`". v0.30.4
+added `mmioReadByte` as a thin `@[inline]` alias over the original
+`mmioRead`, so the primary definition kept the generic name. Remediation
+inverts the relationship: `mmioReadByte` is now the primary definition,
+and `mmioRead` is an `@[deprecated]` alias preserving backward compat
+for any out-of-tree references. Three supporting theorems
+(`mmioReadByte_rejects_non_device`, `mmioReadByte_preserves_state`,
+`mmioReadByte_nonMmio_safe`) carry the new primary name; the prior
+three theorems are retained as backwards-compat aliases. Two new
+positive correctness theorems for the width-specific reads
+(`mmioRead32_alignedAndBounded_within_region`,
+`mmioRead64_alignedAndBounded_within_region`) complete the
+four-theorem-per-width contract.
+
+### Gap 2 — AK9-F (P-M05): validation not in production path
+
+v0.30.4 defined `applyMachineConfigChecked` with `wellFormed` + PA-width
+gates but **no production caller invoked it**. `bootFromPlatform`
+continued to call the unchecked `applyMachineConfig` directly, so a
+malformed `MachineConfig` silently produced an inconsistent runtime
+state. Remediation wires the validation directly into
+`bootFromPlatformChecked`: two new gate-steps reject
+`config.machineConfig.wellFormed = false` and
+`config.machineConfig.physicalAddressWidth > 52` BEFORE constructing
+the `IntermediateState`. Two new soundness theorems
+(`bootFromPlatformChecked_ok_implies_machineConfigWellFormed`,
+`bootFromPlatformChecked_ok_implies_physicalAddressWidth_bound`)
+expose the post-conditions for downstream proofs.
+
+### Gap 3 — AK9-G (P-M06): interrupts-enable not in checked path
+
+The plan says "Invoke [`bootEnableInterruptsOp`] at end of
+`bootFromPlatform` checked path." v0.30.4 added a separate
+`bootFromPlatformWithInterrupts` convenience function but did NOT wire
+into `bootFromPlatformChecked`, so the production boot path still
+emitted an `interruptsEnabled = false` state. Remediation adds the
+`bootEnableInterruptsOp` step at the end of `bootFromPlatformChecked`
+so a successful checked boot now emits a post-HAL-Phase-3 state with
+interrupts enabled. New soundness theorem
+`bootFromPlatformChecked_ok_interruptsEnabled` formalizes the
+post-condition. The existing `bootFromPlatform` (unchecked path)
+keeps `interruptsEnabled = false` so negative-state and invariant-
+bridge tests continue to exercise reset-state semantics.
+
+### Gap 4 — AK9-C: no end-to-end rejection test
+
+v0.30.4 tested only `irqHandlersReferenceNotifications` at the
+predicate level. The plan requires "Add fixture exercising a
+mis-configured IRQ and verify **boot rejects**." — i.e., an end-to-end
+test calling `bootFromPlatformChecked` and confirming it returns
+`.error`. Two new tests (`ak9ce_01`, `ak9ce_02`) exercise the full
+production chain with a missing-ObjId handler and a TCB-variant
+handler respectively.
+
+### Gap 5 — AK9-H P-L2: readCString not upgraded to Except
+
+The plan says "`readCString` fuel 256 silent truncation — return
+`Except`." v0.30.4 only added documentation. Remediation adds
+`readCStringChecked : Except DeviceTreeParseError (String × Nat)` that
+distinguishes `.malformedBlob` (OOB / truncated) from `.fuelExhausted`
+(no null terminator within fuel). Legacy `readCString` Option variant
+retained for existing callers; new DTB paths should prefer the
+checked variant. Two correctness theorems (`_rejects_oob`,
+`_rejects_fuel_zero`) + four runtime tests cover the new behavior.
+
+### Test suite expansion
+
+`tests/Ak9PlatformSuite.lean` grew from 21 to 34 tests:
+- AK9-CE/FE/GE end-to-end chain tests (5)
+- AK9-A UART / alias / positive success (4)
+- AK9-H readCStringChecked (4)
+
+### Gate
+
+- `lake build` (260 jobs, 0 warnings)
+- `test_smoke.sh` PASS, `test_full.sh` PASS
+- `lake exe ak9_platform_suite` 34/34 PASS
+- `cargo test --workspace` PASS; `cargo clippy -- -D warnings` 0 warnings
+- `check_version_sync.sh` PASS at 0.30.5 (15 files synced)
+- `diff <(lake exe sele4n) tests/fixtures/main_trace_smoke.expected` — clean
+- Zero `sorry` / `axiom` in `SeLe4n/` or `Main.lean`
+
 ## v0.30.4 — WS-AK Phase AK9 (Platform / Boot / DTB / MMIO)
 
 Closes Phase AK9 of the v0.29.0 pre-1.0 release-hardening plan

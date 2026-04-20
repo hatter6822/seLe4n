@@ -485,7 +485,14 @@ theorem extractMemoryRegionsGeneral_entrySize_eq :
 
     V5-A (M-DEF-1): Uses `ByteArray.get?` instead of the panicking `get!`.
     W4-B (M-9): Explicit bounds check on initial offset rejects out-of-range
-    starting positions before entering the traversal loop. -/
+    starting positions before entering the traversal loop.
+
+    AK9-H (P-L2): The `Option` return type collapses "fuel exhausted"
+    and "out-of-bounds / malformed" into a single `none`. Legacy callers
+    that don't care to distinguish the two continue using this form;
+    new callers should prefer `readCStringChecked` (below) which
+    propagates a typed `DeviceTreeParseError` so that fuel-exhaustion
+    is a distinct signal from a malformed blob. -/
 def readCString (blob : ByteArray) (offset : Nat) (fuel : Nat := 256)
     : Option (String × Nat) :=
   if offset ≥ blob.size then none  -- W4-B: reject out-of-bounds start
@@ -506,6 +513,52 @@ where
           some (String.ofList acc.reverse, aligned)
         else
           go blob (offset + 1) fuel' (Char.ofNat byte.toNat :: acc)
+
+/-- AK9-H (P-L2): Checked variant of `readCString` that distinguishes
+    **fuel exhaustion** from **malformed / truncated blob**. Intended for
+    new DTB parsing paths that need error attribution. Shape mirrors the
+    legacy Option variant; the default fuel is unchanged at 256.
+
+    Error semantics:
+    - `.error .malformedBlob` — initial offset is out-of-bounds, or a
+      byte lookup inside the blob fails (should be unreachable given the
+      initial guard but kept for defense-in-depth).
+    - `.error .fuelExhausted` — 256 bytes (default) were consumed without
+      finding a null terminator. Callers may retry with a larger fuel
+      budget if the string is expected to be long. -/
+def readCStringChecked (blob : ByteArray) (offset : Nat) (fuel : Nat := 256)
+    : Except DeviceTreeParseError (String × Nat) :=
+  if offset ≥ blob.size then .error .malformedBlob
+  else go blob offset fuel []
+where
+  go (blob : ByteArray) (offset fuel : Nat) (acc : List Char)
+      : Except DeviceTreeParseError (String × Nat) :=
+    match fuel with
+    | 0 => .error .fuelExhausted
+    | fuel' + 1 =>
+      match blob.data[offset]? with
+      | none => .error .malformedBlob
+      | some byte =>
+        if byte == 0 then
+          let nextOffset := offset + 1
+          let aligned := ((nextOffset + 3) / 4) * 4
+          .ok (String.ofList acc.reverse, aligned)
+        else
+          go blob (offset + 1) fuel' (Char.ofNat byte.toNat :: acc)
+
+/-- AK9-H: `readCStringChecked` on an out-of-bounds initial offset rejects
+    with `.malformedBlob`. -/
+theorem readCStringChecked_rejects_oob (blob : ByteArray) (offset fuel : Nat)
+    (hOob : offset ≥ blob.size) :
+    readCStringChecked blob offset fuel = .error .malformedBlob := by
+  simp [readCStringChecked, hOob]
+
+/-- AK9-H: `readCStringChecked` with fuel = 0 rejects with `.fuelExhausted`
+    (assuming the initial offset is in range so the bounds-check passes). -/
+theorem readCStringChecked_rejects_fuel_zero (blob : ByteArray) (offset : Nat)
+    (hInRange : offset < blob.size) :
+    readCStringChecked blob offset 0 = .error .fuelExhausted := by
+  simp [readCStringChecked, Nat.not_le.mpr hInRange, readCStringChecked.go]
 
 /-- V4-M2/L-PLAT-1: Look up a property name in the FDT string table.
     Given the string table offset and a property's `nameoff`, reads the
