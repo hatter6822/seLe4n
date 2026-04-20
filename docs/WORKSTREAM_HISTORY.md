@@ -24,7 +24,7 @@ through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 **Audit:** [`docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md`](audits/AUDIT_v0.29.0_COMPREHENSIVE.md)
 **Plan:** [`docs/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md)
 **Errata:** [`docs/audits/AUDIT_v0.29.0_ERRATA.md`](audits/AUDIT_v0.29.0_ERRATA.md) (E-1..E-6)
-**Deferred:** [`docs/audits/AUDIT_v0.29.0_DEFERRED.md`](audits/AUDIT_v0.29.0_DEFERRED.md) (11 items → WS-V / post-1.0)
+**Deferred:** [`docs/audits/AUDIT_v0.29.0_DEFERRED.md`](audits/AUDIT_v0.29.0_DEFERRED.md) (11 items, all post-1.0 hardening candidates)
 
 **Phases:** 10 (AK1–AK10), 86 sub-tasks, 202 findings addressed
 (2 CRITICAL + 23 HIGH + 76 MEDIUM + 101 LOW).
@@ -81,10 +81,16 @@ through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
   machine-config application / DT `reg` search; `bootEnableInterruptsOp`;
   `readCStringChecked` distinguishes malformed from fuel-exhausted.
 - **AK10** (Testing, Documentation & Closure, v0.30.6): fixture verification,
-  documentation sync, audit errata, deferred tracking, version bump
-  (patch-only per maintainer direction: v1.0.0 release tag is a separate
-  manual maintainer action), residual LOW review, website manifest audit,
-  final regression gate.
+  documentation sync, audit errata, deferred tracking (11 items, all
+  recorded as "post-1.0 hardening candidates; no currently-active plan
+  file tracks them" — WS-V and AG10 are both closed workstreams and
+  cannot be used as deferral buckets), version bump (patch-only per
+  maintainer direction: v1.0.0 release tag is a separate manual
+  maintainer action), residual LOW review, website manifest audit,
+  dead-code removal (trap.S SError entries now `b .` after
+  `bl handle_serror` instead of the unreachable `restore_context`
+  macro, completing the R-HAL-M12 remediation per the audit's original
+  guidance), final regression gate.
 
 ### Gate at v0.30.6 tip
 

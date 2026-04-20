@@ -38,23 +38,39 @@ correctly identifies the behavioural requirement; no correction needed.
 
 ---
 
-## E-2 — R-HAL-M12 scope informational
+## E-2 — R-HAL-M12 dead-code removal (supersedes AK5-K's "defensive fall-through")
 
 **Audit text (excerpted from finding R-HAL-M12):**
 
 > "SError handlers return via ERET after `handle_serror` despite the
 > handler being `-> !`."
+>
+> *Remediation:* make signature `-> !` and `b .` after `bl` in asm.
 
-**Status:** **Finding stands. Scope clarification: documentation /
-type-hygiene only — no behavioural bug.**
+**Status:** **Finding RESOLVED. Dead-code removal landed in AK10.**
 
-**Clarification:** Under Rust's `-> !` divergent-return type, the
-post-call `ERET` in `rust/sele4n-hal/src/trap.S` (both
-`__el0_serror_entry` and `__el1_serror_entry`) is formally dead code.
-The handler body contains `loop { wfe() }`, so control never reaches
-the trailing `restore_context` + `ERET` sequence. The AK5-K resolution
-documents this as a defensive fall-through and an audit-hygiene marker;
-there is no reachable `ERET` on the SError path that could leak state.
+**Clarification:** AK5-K initially took half the remediation: it
+changed `handle_serror`'s signature from `-> ()` to `-> !`, but left
+the now-unreachable `restore_context` macro call after `bl
+handle_serror` in place and annotated it as a "defensive fall-through".
+
+AK10 completes the remediation per the audit's original guidance. Both
+`__el0_serror_entry` and `__el1_serror_entry` in
+`rust/sele4n-hal/src/trap.S` now branch to `b .` (branch-to-self
+infinite loop) after `bl handle_serror`. This:
+
+1. Deletes genuinely dead code from the kernel image (the optimizer
+   already dropped the unreachable `restore_context` under `-> !`,
+   but the source now matches reality).
+2. Provides a stronger defensive posture than the prior
+   `restore_context` fall-through: if the `-> !` divergence contract
+   were ever relaxed by a future refactor, the core halts in place
+   rather than attempting an `ERET` with an SError-corrupted context.
+
+`handle_serror` itself is unchanged — it still declares `-> !` and
+contains `loop { cpu::wfe() }`. The `b .` after the `bl` is only
+reachable in pathological paths; normal operation terminates inside
+`handle_serror` under WFE.
 
 ---
 

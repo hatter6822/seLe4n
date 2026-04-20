@@ -23,8 +23,9 @@ fixture required no update.
 - `README.md` and all 10 i18n README variants: version badge bumped
   0.30.5 → 0.30.6.
 - `docs/spec/SELE4N_SPEC.md`: package version + "Active workstream"
-  entry refreshed to record AK10 completion and point forward to
-  WS-V / AG10.
+  entry refreshed to record AK10 completion; deferred items are
+  tracked per-ID in `AUDIT_v0.29.0_DEFERRED.md` rather than routed to
+  a named successor workstream.
 - `CLAUDE.md`: project description version updated; "Active workstream
   context" prepended with the AK10 closure entry.
 - `docs/WORKSTREAM_HISTORY.md`: WS-AK portfolio summary entry with
@@ -51,8 +52,12 @@ New `docs/audits/AUDIT_v0.29.0_ERRATA.md` formalises six
 clarifications surfaced during AK1..AK9 implementation: (E-1) S-H03
 verification clarification — `resolveInsertPriority` vs
 `effectiveRunQueuePriority` agree under the post-AK2-A propagation
-invariant; (E-2) R-HAL-M12 scope informational — SError `ERET` is
-formally dead code under `-> !` + `loop { wfe() }`; (E-3) A-H01
+invariant; (E-2) R-HAL-M12 dead-code removal — `__el0_serror_entry`
+and `__el1_serror_entry` in `rust/sele4n-hal/src/trap.S` now branch to
+`b .` (infinite loop) after `bl handle_serror` instead of the
+unreachable `restore_context` macro, per the audit's original
+remediation "make signature `-> !` and `b .` after `bl` in asm";
+supersedes AK5-K's "defensive fall-through" annotation; (E-3) A-H01
 layering extends to three layers (wrapper + ARMv8 backend +
 `fromPagePermissions`) plus a fourth hardware-level gate
 (SCTLR.WXN via AK5-C); (E-4) R-HAL-H02 partial — DSB ISH + ISB were
@@ -95,14 +100,21 @@ New "WS-AK — Pre-1.0 Release Hardening (v0.29.1 → v0.30.6)" section in
 ### AK10-J — Deferred-items tracking
 
 New `docs/audits/AUDIT_v0.29.0_DEFERRED.md` formalises 11 deferred
-items → WS-V (hardware-binding integration): DEF-A-M04 TLB+cache
-composition, DEF-A-M06/AK3-I `tlbBarrierComplete`, DEF-A-M08/M09/AK3-K
+items. Seven are hardware-binding (DEF-A-M04 TLB+cache composition,
+DEF-A-M06/AK3-I `tlbBarrierComplete`, DEF-A-M08/M09/AK3-K
 MMU/Device-memory `BarrierKind`, DEF-C-M04 `suspendThread` atomicity
 Rust-side proof, DEF-P-L9 VSpaceRoot boot exclusion, DEF-R-HAL-L14
-SVC `_syscall_id` FFI wiring; plus post-1.0 hygiene: DEF-F-L9 17-deep
-tuple refactor, DEF-AK2-K.4 `eventuallyExits` (by design),
+SVC `_syscall_id` FFI wiring); four are proof-hygiene (DEF-F-L9
+17-deep tuple refactor, DEF-AK2-K.4 `eventuallyExits` (by design),
 DEF-AK7-E.cascade `ValidObjId` rollout, DEF-AK7-F.cascade `ObjKind`
-migration.
+migration. Every deferred row is recorded as a **post-1.0 hardening
+candidate; no currently-active plan file tracks it** (WS-V and AG10
+are both closed workstreams per `docs/WORKSTREAM_HISTORY.md` and
+cannot be reused as deferral buckets — an earlier revision of this
+file made that mistake; the final wording matches the convention
+established by the AK8 second-pass audit). Future workstreams picking
+any item up should reference the file by ID and update the row's
+disposition.
 
 ### Gate
 
@@ -121,8 +133,10 @@ WS-AK v0.29.0 audit remediation: **COMPLETE**. 10 phases (AK1..AK10),
 86 sub-tasks, 202 findings addressed. Prior workstreams: WS-AM
 (v0.30.0), WS-AL (v0.29.14), WS-AJ (v0.28.1..v0.29.0), WS-AI
 (v0.27.7..v0.28.0), WS-AH (v0.27.2..v0.27.6), WS-AG..WS-B.
-**Next workstream**: WS-V / AG10 hardware-binding integration — RPi5
-first-silicon bring-up, consuming AK3/AK5 outputs.
+**Next workstream**: none currently active. Deferred items are
+tracked per-ID in `docs/audits/AUDIT_v0.29.0_DEFERRED.md`; a future
+workstream picking any up should reference the file and update its
+row.
 
 ---
 
