@@ -1,3 +1,131 @@
+## v0.30.6 — WS-AK Phase AK10 (Testing, Documentation & Closure)
+
+Portfolio-closure phase for the WS-AK v0.29.0 audit remediation
+workstream. Per maintainer direction, the version bump is patch-only
+(v0.30.5 → v0.30.6); the v1.0.0 release-tag application is deferred to
+a separate manual maintainer action. The kernel is at release-candidate
+parity: every AK1..AK9 delivery has landed with gate-passing state;
+zero `sorry`/`axiom`/`native_decide` in production proof surface;
+fixture is byte-identical to the AK1..AK9 semantic changes having
+threaded through without perturbing observable trace.
+
+### AK10-A — Fixture verification
+
+`lake exe sele4n` output is byte-identical to
+`tests/fixtures/main_trace_smoke.expected` (227 lines). The AK1..AK9
+phases' observable semantic changes (AK1-D atomic `ipcState := .ready`,
+AK2-A priority re-enqueue, AK6-G projection strips) land at invariant
+layers that the trace harness does not exercise directly, so the
+fixture required no update.
+
+### AK10-B — Documentation synchronization
+
+- `README.md` and all 10 i18n README variants: version badge bumped
+  0.30.5 → 0.30.6.
+- `docs/spec/SELE4N_SPEC.md`: package version + "Active workstream"
+  entry refreshed to record AK10 completion and point forward to
+  WS-V / AG10.
+- `CLAUDE.md`: project description version updated; "Active workstream
+  context" prepended with the AK10 closure entry.
+- `docs/WORKSTREAM_HISTORY.md`: WS-AK portfolio summary entry with
+  10-phase breakdown, gate-state table, cross-references to
+  `AUDIT_v0.29.0_ERRATA.md` and `AUDIT_v0.29.0_DEFERRED.md`.
+- `docs/gitbook/` chapters (affected): `05-scheduler.md`,
+  `06-architecture.md`, `07-information-flow.md`, `08-abi.md`,
+  `12-proof-and-invariant-map.md` — synchronized to reflect the AK1..AK9
+  surface-level changes.
+- `docs/CLAIM_EVIDENCE_INDEX.md`: AK1..AK9 claim rows already present
+  from per-phase landings; no additional entries required.
+
+### AK10-C — Version bump 0.30.5 → 0.30.6
+
+Patch-only bump per maintainer direction. 15 version-bearing files
+synchronized: `lakefile.toml`, `rust/Cargo.toml` (workspace version),
+`rust/Cargo.lock` (auto-regenerated), `rust/sele4n-hal/src/boot.rs`
+(`KERNEL_VERSION`), `CLAUDE.md`, `docs/spec/SELE4N_SPEC.md`, 10 i18n
+README badges. `check_version_sync.sh` PASS.
+
+### AK10-D — Audit errata (E-1..E-6)
+
+New `docs/audits/AUDIT_v0.29.0_ERRATA.md` formalises six
+clarifications surfaced during AK1..AK9 implementation: (E-1) S-H03
+verification clarification — `resolveInsertPriority` vs
+`effectiveRunQueuePriority` agree under the post-AK2-A propagation
+invariant; (E-2) R-HAL-M12 scope informational — SError `ERET` is
+formally dead code under `-> !` + `loop { wfe() }`; (E-3) A-H01
+layering extends to three layers (wrapper + ARMv8 backend +
+`fromPagePermissions`) plus a fourth hardware-level gate
+(SCTLR.WXN via AK5-C); (E-4) R-HAL-H02 partial — DSB ISH + ISB were
+already present, what AK5-D added was `tlbi vmalle1` +
+D-cache clean of the PT pages; (E-5) NI-H02 structure — every per-op
+`*_preserves_projection` theorem existed, AK6-F adds the composition
+theorem; (E-6) finding-count arithmetic — correct totals are
+2 CRITICAL + 23 HIGH + 76 MEDIUM + 101 LOW = 202 findings (audit
+§2 summary's 68/108 subtotals use different category boundaries).
+
+### AK10-E — CLAUDE.md large-file list refresh
+
+Re-ranked modules after AK1..AK9 growth. Notable deltas:
+`InformationFlow/Invariant/Operations.lean` 2671 → 3768 (AK6-F/G/H
+per-op preservation + composition theorem), `CrossSubsystem.lean`
+2211 → 2839 (AK8-A `untypedRegionsDisjoint` + AM4 lockstep),
+`Model/Object/Structures.lean` 2454 → 2769 (AK8-A allocate bookkeeping),
+`Platform/Boot.lean` 1270 → 2074 (AK3/AK9 checked boot path),
+`Kernel/API.lean` 1895 → 2258 (AK6-F composition + AK7-E/F/I guards).
+
+### AK10-F — Residual LOW-tier batch
+
+All LOW findings handled in phase-local batches (AK1-J, AK2-L, AK3-M,
+AK4-H, AK5-N, AK6-J, AK7-K, AK8-K, AK9-H). Production proof surface
+verified clean: zero `sorry`, zero `axiom`, zero `native_decide`
+invocations (8 references in `SeLe4n/` are all in documentation
+comments or audit annotations).
+
+### AK10-G — Website link manifest audit
+
+`scripts/check_website_links.sh` PASS. No paths renamed or removed
+since v0.30.5; manifest and repo tree are consistent.
+
+### AK10-H — Workstream history portfolio entry
+
+New "WS-AK — Pre-1.0 Release Hardening (v0.29.1 → v0.30.6)" section in
+`docs/WORKSTREAM_HISTORY.md` summarises all 10 phases, 86 sub-tasks,
+202 findings. Cross-links the errata and deferred tracking files.
+
+### AK10-J — Deferred-items tracking
+
+New `docs/audits/AUDIT_v0.29.0_DEFERRED.md` formalises 11 deferred
+items → WS-V (hardware-binding integration): DEF-A-M04 TLB+cache
+composition, DEF-A-M06/AK3-I `tlbBarrierComplete`, DEF-A-M08/M09/AK3-K
+MMU/Device-memory `BarrierKind`, DEF-C-M04 `suspendThread` atomicity
+Rust-side proof, DEF-P-L9 VSpaceRoot boot exclusion, DEF-R-HAL-L14
+SVC `_syscall_id` FFI wiring; plus post-1.0 hygiene: DEF-F-L9 17-deep
+tuple refactor, DEF-AK2-K.4 `eventuallyExits` (by design),
+DEF-AK7-E.cascade `ValidObjId` rollout, DEF-AK7-F.cascade `ObjKind`
+migration.
+
+### Gate
+
+- `lake build` (260 jobs, 0 warnings)
+- `test_smoke.sh` PASS, `test_full.sh` PASS
+- `cargo test --workspace` PASS; `cargo clippy -- -D warnings` 0 warnings
+- `check_version_sync.sh` PASS at 0.30.6 (15 files synced)
+- `check_website_links.sh` PASS (manifest consistent)
+- `ak7_cascade_check_monotonic.sh` PASS
+- Fixture byte-identical to `tests/fixtures/main_trace_smoke.expected`
+- Zero `sorry` / `axiom` / `native_decide` in `SeLe4n/` or `Main.lean`
+
+### Portfolio status
+
+WS-AK v0.29.0 audit remediation: **COMPLETE**. 10 phases (AK1..AK10),
+86 sub-tasks, 202 findings addressed. Prior workstreams: WS-AM
+(v0.30.0), WS-AL (v0.29.14), WS-AJ (v0.28.1..v0.29.0), WS-AI
+(v0.27.7..v0.28.0), WS-AH (v0.27.2..v0.27.6), WS-AG..WS-B.
+**Next workstream**: WS-V / AG10 hardware-binding integration — RPi5
+first-silicon bring-up, consuming AK3/AK5 outputs.
+
+---
+
 ## v0.30.5 — WS-AK Phase AK9 audit remediation (+ second-pass polish)
 
 Deep end-to-end audit of the v0.30.4 Phase AK9 delivery surfaced five

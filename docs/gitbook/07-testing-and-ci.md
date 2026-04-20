@@ -1,6 +1,6 @@
 # Testing and CI
 
-Current stage context: **WS-AK Phase AK9 audit remediation COMPLETE (v0.30.5). Testing tiers enforce regression protection and evidence continuity across ~103k production LoC, ~15k test LoC (including AK3 regression suites — AsidPool, InterruptDispatch, W^X defense, decode validation — the AK4 end-to-end ABI round-trip suite, the AK7 foundational regression suite, the AK8 model integrity suite, and the AK9 platform regression suite `tests/Ak9PlatformSuite.lean` with 34 end-to-end checks on `bootFromPlatformChecked` / MMIO width-specific reads / DTB parsing / HAL-parity interrupts re-enable), and ~3,037 proved declarations.**
+Current stage context: **WS-AK Phase AK10 COMPLETE — PORTFOLIO CLOSED (v0.30.6). Testing tiers enforce regression protection and evidence continuity across ~103k production LoC, ~15k test LoC (including AK3 regression suites — AsidPool, InterruptDispatch, W^X defense, decode validation — the AK4 end-to-end ABI round-trip suite, the AK7 foundational regression suite, the AK8 model integrity suite, and the AK9 platform regression suite `tests/Ak9PlatformSuite.lean` with 34 end-to-end checks on `bootFromPlatformChecked` / MMIO width-specific reads / DTB parsing / HAL-parity interrupts re-enable), and ~3,045 proved declarations. AK10-A fixture verification confirms byte-identical match to `tests/fixtures/main_trace_smoke.expected` (227 lines — unchanged across AK1..AK9).**
 
 ## Tier model
 
