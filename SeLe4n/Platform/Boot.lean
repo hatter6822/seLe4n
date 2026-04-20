@@ -172,6 +172,36 @@ def applyMachineConfig (ist : IntermediateState) (config : MachineConfig) :
   hPerObjectMappings := ist.hPerObjectMappings
   hLifecycleConsistent := ist.hLifecycleConsistent
 
+/-- AK9-F (P-M05): Gated variant of `applyMachineConfig` that validates the
+    supplied `MachineConfig` BEFORE applying. Rejects configs that would
+    produce an inconsistent runtime state:
+
+    1. `MachineConfig.wellFormed` (Machine.lean) — positive region sizes,
+       pairwise non-overlap, page size a positive power of two, positive
+       widths, regions fitting within the PA space.
+    2. `config.physicalAddressWidth ≤ 52` (ARMv8 LPA maximum).
+    3. `config.pageSize` a positive power of two (subsumed by `wellFormed`
+       but explicit gate makes the invariant readable at call sites).
+
+    Returns `.error` with a descriptive message on failure. Successful
+    calls agree with `applyMachineConfig` (same state construction). -/
+def applyMachineConfigChecked (ist : IntermediateState) (config : MachineConfig) :
+    Except String IntermediateState :=
+  if !config.wellFormed then
+    .error "applyMachineConfig: MachineConfig fails well-formedness (AK9-F / P-M05)"
+  else if !(config.physicalAddressWidth ≤ 52) then
+    .error s!"applyMachineConfig: physicalAddressWidth {config.physicalAddressWidth} > 52 (ARMv8 LPA max) (AK9-F / P-M05)"
+  else
+    .ok (applyMachineConfig ist config)
+
+/-- AK9-F: Successful `applyMachineConfigChecked` agrees with unchecked. -/
+theorem applyMachineConfigChecked_eq_applyMachineConfig
+    (ist : IntermediateState) (config : MachineConfig)
+    (hWf : config.wellFormed = true)
+    (hPa : config.physicalAddressWidth ≤ 52) :
+    applyMachineConfigChecked ist config = .ok (applyMachineConfig ist config) := by
+  simp [applyMachineConfigChecked, hWf, hPa]
+
 /-- X2-D: `applyMachineConfig` preserves the scheduler state unchanged. -/
 theorem applyMachineConfig_scheduler_eq (ist : IntermediateState) (config : MachineConfig) :
     (applyMachineConfig ist config).state.scheduler = ist.state.scheduler := rfl
@@ -256,6 +286,91 @@ theorem applyMachineConfig_machine_fields (ist : IntermediateState) (config : Ma
     (applyMachineConfig ist config).state.machine.interruptsEnabled = ist.state.machine.interruptsEnabled :=
   ⟨rfl, rfl, rfl, rfl, rfl⟩
 
+-- ============================================================================
+-- AK9-G (P-M06): Interrupts Re-Enable Mirror (HAL Phase 3)
+-- ============================================================================
+
+/-- AK9-G (P-M06): Lean model mirror of the Rust HAL Phase-3 interrupt
+    re-enable step. The HAL boot sequence
+    (`sele4n-hal/src/boot.rs::rust_boot_main`) re-enables IRQs AFTER the
+    GIC-400 distributor / CPU interface / timer are fully programmed. The
+    Lean model's `MachineState.interruptsEnabled` default is `false` (per
+    AJ3-E), matching the ARM64 reset state — so without this step the Lean
+    trace would stay at `interruptsEnabled = false` indefinitely, diverging
+    from the post-boot hardware state.
+
+    This operation ONLY flips the `interruptsEnabled` flag; all other
+    machine-state and IntermediateState fields are preserved. It is a pure
+    function (no Kernel monad), intended to be composed in the boot
+    pipeline after GIC + timer setup in the full hardware path.
+
+    AI6-C (M-17) context: A full HAL-parity boot sequence additionally
+    issues TLB/ASID maintenance — recorded here as a post-1.0 hardening
+    candidate; no currently-active plan file tracks it. This step (AK9-G)
+    closes the smaller, isolable divergence identified by P-M06. -/
+def bootEnableInterruptsOp (ist : IntermediateState) : IntermediateState where
+  state := { ist.state with
+    machine := enableInterrupts ist.state.machine }
+  hAllTables := ist.hAllTables
+  hPerObjectSlots := ist.hPerObjectSlots
+  hPerObjectMappings := ist.hPerObjectMappings
+  hLifecycleConsistent := ist.hLifecycleConsistent
+
+/-- AK9-G: After `bootEnableInterruptsOp`, the machine reports IRQs enabled. -/
+theorem bootEnableInterruptsOp_interruptsEnabled (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.machine.interruptsEnabled = true := rfl
+
+/-- AK9-G: `bootEnableInterruptsOp` only modifies `interruptsEnabled`. -/
+theorem bootEnableInterruptsOp_machine_frame (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.machine.regs = ist.state.machine.regs ∧
+    (bootEnableInterruptsOp ist).state.machine.memory = ist.state.machine.memory ∧
+    (bootEnableInterruptsOp ist).state.machine.timer = ist.state.machine.timer ∧
+    (bootEnableInterruptsOp ist).state.machine.systemRegisters =
+      ist.state.machine.systemRegisters :=
+  ⟨rfl, rfl, rfl, rfl⟩
+
+/-- AK9-G: `bootEnableInterruptsOp` preserves non-machine state. -/
+theorem bootEnableInterruptsOp_objects_eq (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.objects = ist.state.objects := rfl
+
+/-- AK9-G: `bootEnableInterruptsOp` preserves scheduler. -/
+theorem bootEnableInterruptsOp_scheduler_eq (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.scheduler = ist.state.scheduler := rfl
+
+/-- AK9-G: `bootEnableInterruptsOp` preserves the lifecycle metadata. -/
+theorem bootEnableInterruptsOp_lifecycle_eq (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.lifecycle = ist.state.lifecycle := rfl
+
+/-- AK9-G: `bootEnableInterruptsOp` preserves the IRQ handler table. -/
+theorem bootEnableInterruptsOp_irqHandlers_eq (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.irqHandlers = ist.state.irqHandlers := rfl
+
+/-- AK9-G: `bootEnableInterruptsOp` preserves the service registry. -/
+theorem bootEnableInterruptsOp_serviceRegistry_eq (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.serviceRegistry = ist.state.serviceRegistry := rfl
+
+/-- AK9-G: `bootEnableInterruptsOp` preserves the ASID table. -/
+theorem bootEnableInterruptsOp_asidTable_eq (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.asidTable = ist.state.asidTable := rfl
+
+/-- AK9-G: `bootEnableInterruptsOp` preserves the TLB shadow. -/
+theorem bootEnableInterruptsOp_tlb_eq (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.tlb = ist.state.tlb := rfl
+
+/-- AK9-G: `bootEnableInterruptsOp` preserves the object index. -/
+theorem bootEnableInterruptsOp_objectIndex_eq (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.objectIndex = ist.state.objectIndex := rfl
+
+/-- AK9-G: `bootEnableInterruptsOp` preserves machine.physicalAddressWidth. -/
+theorem bootEnableInterruptsOp_physicalAddressWidth_eq (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.machine.physicalAddressWidth =
+      ist.state.machine.physicalAddressWidth := rfl
+
+/-- AK9-G: `bootEnableInterruptsOp` preserves machine.memoryMap. -/
+theorem bootEnableInterruptsOp_memoryMap_eq (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.machine.memoryMap =
+      ist.state.machine.memoryMap := rfl
+
 /-- Q3-C: Construct an `IntermediateState` from platform configuration.
 
 Starts from the empty state and applies:
@@ -291,6 +406,28 @@ def bootFromPlatform (config : PlatformConfig) : IntermediateState :=
     that exercises invalid-state scenarios (e.g., `NegativeStateSuite`). New
     boot paths should always use the checked variant. -/
 abbrev bootFromPlatformUnchecked := bootFromPlatform
+
+/-- AK9-G (P-M06): Full HAL-parity boot — `bootFromPlatform` followed by the
+    `bootEnableInterruptsOp` step that mirrors the Rust HAL Phase-3 IRQ
+    re-enable after GIC + timer initialization. The result has
+    `interruptsEnabled = true`, matching the post-boot hardware state.
+
+    The pre-interrupts boot continues to be available via `bootFromPlatform`
+    for contexts (negative-state tests, boot-invariant bridge proofs) that
+    specifically need the reset-state `interruptsEnabled = false`. -/
+def bootFromPlatformWithInterrupts (config : PlatformConfig) : IntermediateState :=
+  bootEnableInterruptsOp (bootFromPlatform config)
+
+/-- AK9-G: Full HAL-parity boot produces an IntermediateState with interrupts
+    enabled, matching the post-boot Rust HAL state. -/
+theorem bootFromPlatformWithInterrupts_interruptsEnabled (config : PlatformConfig) :
+    (bootFromPlatformWithInterrupts config).state.machine.interruptsEnabled = true := rfl
+
+/-- AK9-G: Non-machine state of `bootFromPlatformWithInterrupts` matches
+    `bootFromPlatform` (the interrupts step only flips the machine flag). -/
+theorem bootFromPlatformWithInterrupts_objects_eq (config : PlatformConfig) :
+    (bootFromPlatformWithInterrupts config).state.objects =
+    (bootFromPlatform config).state.objects := rfl
 
 /-- Q3-C: Boot from empty config yields the empty IntermediateState. -/
 theorem bootFromPlatform_empty :
@@ -475,6 +612,38 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
       · intro r hr; exact decide_eq_true_eq.mp (List.all_eq_true.mp hRepBound r hr)
     · exact Option.eq_none_of_isNone hUnbound
 
+-- ============================================================================
+-- AK9-C (P-M01): IRQ Handler Existence Validation
+-- ============================================================================
+
+/-- AK9-C (P-M01): Check that each declared `IrqEntry.handler` ObjId refers to
+    a **notification** object present in `PlatformConfig.initialObjects`.
+
+    The seL4 IRQ delivery model requires that the handler ObjId resolves to a
+    notification kernel object: the GIC dispatch sequence signals the bound
+    notification on interrupt delivery (`notificationSignal`), and user-space
+    drivers register via notification capabilities. A handler ObjId resolving
+    to any other kind (thread, endpoint, CNode, VSpaceRoot, SchedContext,
+    Untyped) would be a boot configuration error — the runtime dispatch
+    would fail or silently no-op on every interrupt.
+
+    Returns `true` iff every IRQ's `handler` ObjId appears in `initialObjects`
+    with variant `.notification _`. -/
+def irqHandlersReferenceNotifications (config : PlatformConfig) : Bool :=
+  config.irqTable.all fun irq =>
+    match config.initialObjects.find? (fun entry => entry.id == irq.handler) with
+    | some entry =>
+      match entry.obj with
+      | .notification _ => true
+      | _ => false
+    | none => false
+
+/-- AK9-C: Empty IRQ table trivially satisfies handler-reference check. -/
+theorem irqHandlersReferenceNotifications_empty_irqs
+    (objs : List ObjectEntry) :
+    irqHandlersReferenceNotifications { irqTable := [], initialObjects := objs } = true := by
+  unfold irqHandlersReferenceNotifications; rfl
+
 /-- U6-E/F: Checked boot — rejects configs with duplicate IRQs, duplicate object
     IDs, or unsafe initial objects.
 
@@ -487,6 +656,10 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
     IDs but invalid object states (e.g., endpoint with non-empty queues, TCB with
     `ipcState != .ready`) is now rejected.
 
+    AK9-C (P-M01): Added `irqHandlersReferenceNotifications` validation.
+    Every IRQ's handler ObjId must refer to a notification object in
+    `initialObjects`.
+
     Use `bootFromPlatformUnchecked` (alias for `bootFromPlatform`) only when
     the config is known-valid (e.g., constructed programmatically with
     uniqueness guarantees). All new boot paths should use this function. -/
@@ -494,7 +667,33 @@ def bootFromPlatformChecked (config : PlatformConfig) :
     Except String IntermediateState :=
   if config.wellFormed then
     if config.initialObjects.all (fun entry => bootSafeObjectCheck entry.obj) then
-      .ok (bootFromPlatform config)
+      -- AK9-C (P-M01): Validate that every IRQ handler ObjId references a
+      -- notification object in the config. This is verified as a final step
+      -- after the per-object bootSafe check so the error message identifies
+      -- the specific misconfiguration.
+      if irqHandlersReferenceNotifications config then
+        -- AK9-F (P-M05): Validate MachineConfig well-formedness + PA width
+        -- bound (ARMv8 LPA max = 52). Prevents the production boot path
+        -- from silently accepting a malformed MachineConfig that would leave
+        -- the runtime in an inconsistent state (region overlap, non-power-of-
+        -- two page size, PA width > 52).
+        if config.machineConfig.wellFormed then
+          if config.machineConfig.physicalAddressWidth ≤ 52 then
+            -- AK9-G (P-M06): Enable interrupts at the end of the checked
+            -- boot path, mirroring the Rust HAL Phase-3 IRQ re-enable
+            -- after GIC + timer initialization. The runtime begins with
+            -- `interruptsEnabled = true`, matching post-HAL hardware
+            -- state. The raw `bootFromPlatform` pre-interrupts image is
+            -- still accessible (callers can inspect it by composing
+            -- `bootFromPlatform` directly) for negative-state or
+            -- boot-invariant-bridge contexts.
+            .ok (bootEnableInterruptsOp (bootFromPlatform config))
+          else
+            .error s!"boot: MachineConfig.physicalAddressWidth {config.machineConfig.physicalAddressWidth} > 52 (ARMv8 LPA max) (AK9-F / P-M05)"
+        else
+          .error "boot: MachineConfig fails well-formedness (AK9-F / P-M05)"
+      else
+        .error "boot: IRQ handler does not reference a notification object in initialObjects (AK9-C)"
     else
       .error "boot: object fails bootSafe check (invalid state for boot)"
   else if ¬ irqsUnique config.irqTable then
@@ -502,13 +701,103 @@ def bootFromPlatformChecked (config : PlatformConfig) :
   else
     .error "boot: duplicate object ID detected in platform config"
 
-/-- U6-E/F/AJ3-C: Checked boot agrees with unchecked boot on well-formed +
-    boot-safe configs. -/
+/-- U6-E/F/AJ3-C/AK9-C/AK9-F/AK9-G: Checked boot agrees with
+    `bootFromPlatformWithInterrupts` on well-formed, boot-safe,
+    IRQ-handler-valid, MachineConfig-valid, PA-width-valid configs.
+
+    Precondition chain: `config.wellFormed` (AJ3-C)
+    ∧ all objects are boot-safe (AJ3-C)
+    ∧ every IRQ handler references a notification (AK9-C)
+    ∧ `config.machineConfig.wellFormed` (AK9-F / P-M05)
+    ∧ `config.machineConfig.physicalAddressWidth ≤ 52` (AK9-F / P-M05).
+
+    Conclusion now emits the post-interrupts state (AK9-G / P-M06) that
+    the production path produces — a behavioural change vs pre-AK9 where
+    interrupts stayed disabled. -/
 theorem bootFromPlatformChecked_eq_bootFromPlatform (config : PlatformConfig)
     (hWf : config.wellFormed = true)
-    (hSafe : config.initialObjects.all (fun entry => bootSafeObjectCheck entry.obj) = true) :
-    bootFromPlatformChecked config = .ok (bootFromPlatform config) := by
-  simp [bootFromPlatformChecked, hWf, hSafe]
+    (hSafe : config.initialObjects.all (fun entry => bootSafeObjectCheck entry.obj) = true)
+    (hIrq : irqHandlersReferenceNotifications config = true)
+    (hMc : config.machineConfig.wellFormed = true)
+    (hPa : config.machineConfig.physicalAddressWidth ≤ 52) :
+    bootFromPlatformChecked config =
+      .ok (bootEnableInterruptsOp (bootFromPlatform config)) := by
+  simp [bootFromPlatformChecked, hWf, hSafe, hIrq, hMc, hPa]
+
+/-- AK9-C: Successful checked boot implies IRQ handlers reference notifications.
+    If `bootFromPlatformChecked` returns `.ok`, the `irqHandlersReferenceNotifications`
+    predicate was true — a key witness for downstream interrupt dispatch proofs. -/
+theorem bootFromPlatformChecked_ok_implies_irqHandlersValid (config : PlatformConfig)
+    (ist : IntermediateState)
+    (hOk : bootFromPlatformChecked config = .ok ist) :
+    irqHandlersReferenceNotifications config = true := by
+  unfold bootFromPlatformChecked at hOk
+  split at hOk
+  · split at hOk
+    · split at hOk
+      · rename_i hIrq; exact hIrq
+      · cases hOk
+    · cases hOk
+  · split at hOk <;> cases hOk
+
+/-- AK9-F (P-M05): Successful checked boot implies `MachineConfig.wellFormed`. -/
+theorem bootFromPlatformChecked_ok_implies_machineConfigWellFormed
+    (config : PlatformConfig) (ist : IntermediateState)
+    (hOk : bootFromPlatformChecked config = .ok ist) :
+    config.machineConfig.wellFormed = true := by
+  unfold bootFromPlatformChecked at hOk
+  split at hOk
+  · split at hOk
+    · split at hOk
+      · split at hOk
+        · rename_i hMc
+          -- pull the Bool out of the if-condition
+          exact (by
+            rcases hMcB : config.machineConfig.wellFormed with _ | _
+            · simp [hMcB] at hMc
+            · rfl)
+        · cases hOk
+      · cases hOk
+    · cases hOk
+  · split at hOk <;> cases hOk
+
+/-- AK9-F (P-M05): Successful checked boot implies `physicalAddressWidth ≤ 52`. -/
+theorem bootFromPlatformChecked_ok_implies_physicalAddressWidth_bound
+    (config : PlatformConfig) (ist : IntermediateState)
+    (hOk : bootFromPlatformChecked config = .ok ist) :
+    config.machineConfig.physicalAddressWidth ≤ 52 := by
+  unfold bootFromPlatformChecked at hOk
+  split at hOk
+  · split at hOk
+    · split at hOk
+      · split at hOk
+        · split at hOk
+          · rename_i hPa; exact hPa
+          · cases hOk
+        · cases hOk
+      · cases hOk
+    · cases hOk
+  · split at hOk <;> cases hOk
+
+/-- AK9-G (P-M06): Successful checked boot produces a state with interrupts
+    enabled. Matches the post-HAL hardware state. -/
+theorem bootFromPlatformChecked_ok_interruptsEnabled (config : PlatformConfig)
+    (ist : IntermediateState)
+    (hOk : bootFromPlatformChecked config = .ok ist) :
+    ist.state.machine.interruptsEnabled = true := by
+  unfold bootFromPlatformChecked at hOk
+  split at hOk
+  · split at hOk
+    · split at hOk
+      · split at hOk
+        · split at hOk
+          · cases hOk
+            exact bootEnableInterruptsOp_interruptsEnabled _
+          · cases hOk
+        · cases hOk
+      · cases hOk
+    · cases hOk
+  · split at hOk <;> cases hOk
 
 /-- U6-E/F: Checked boot rejects configs that are not well-formed. -/
 theorem bootFromPlatformChecked_rejects_invalid (config : PlatformConfig)
@@ -521,6 +810,7 @@ theorem bootFromPlatformChecked_rejects_invalid (config : PlatformConfig)
 theorem bootSafeObjectCheck_empty_config :
     ([] : List ObjectEntry).all (fun entry => bootSafeObjectCheck entry.obj) = true := by
   rfl
+
 
 /-- AG1-D: Boot with duplicate detection warnings.
 
@@ -1040,7 +1330,8 @@ theorem bootFromPlatform_machine_physicalAddressWidth (config : PlatformConfig) 
   rw [applyMachineConfig_physicalAddressWidth]
 
 /-- AH2-F: Non-config machine fields (regs, memory, timer, systemRegisters,
-    interruptsEnabled) are preserved from default after boot.
+    interruptsEnabled) are preserved from default after `bootFromPlatform`
+    (the unchecked / pre-interrupts boot image).
 
     AK7-K (F-L4 / LOW) — boot interrupt-enable window: the Lean model's
     `bootFromPlatform` does NOT enable interrupts. The default
@@ -1051,8 +1342,16 @@ theorem bootFromPlatform_machine_physicalAddressWidth (config : PlatformConfig) 
     `interrupts::enable_irq()`. Between MMU enable (Phase 1) and GIC init
     (Phase 3) the kernel runs with IRQs masked — this is the
     interrupt-enable window. `tests/InterruptDispatchSuite.lean` covers
-    the Lean-side interrupt path; the Phase 3 enable is a HAL-layer
-    obligation. -/
+    the Lean-side interrupt path.
+
+    AK9-G (P-M06): The HAL Phase-3 enable is now MIRRORED in the Lean
+    model's checked boot path: `bootFromPlatformChecked` invokes
+    `bootEnableInterruptsOp` at the end of its ok-branch, so successful
+    checked boots emit `interruptsEnabled = true`. See
+    `bootFromPlatformChecked_ok_interruptsEnabled`. The plain
+    `bootFromPlatform` retains `interruptsEnabled = false` for
+    negative-state / boot-invariant-bridge contexts that need the
+    reset-state semantics. -/
 theorem bootFromPlatform_machine_non_config_fields (config : PlatformConfig) :
     (bootFromPlatform config).state.machine.regs = (default : SystemState).machine.regs ∧
     (bootFromPlatform config).state.machine.memory = (default : SystemState).machine.memory ∧

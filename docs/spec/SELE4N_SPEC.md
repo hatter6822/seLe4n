@@ -34,7 +34,7 @@ transition is an executable pure function. Every invariant is machine-checked �
 The project keeps four concerns in one engineering loop:
 
 1. deterministic transition semantics (executable pure functions),
-2. machine-checked invariant preservation (2,716 theorem/lemma declarations),
+2. machine-checked invariant preservation (3,045 theorem/lemma declarations),
 3. architectural improvements over seL4 where the proof framework enables them,
 4. milestone-oriented delivery toward production on **Raspberry Pi 5** (ARM64).
 
@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.30.3` (`lakefile.toml`) |
+| **Package version** | `0.30.5` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 95,528 across 141 Lean files |
-| **Test LoC** | 11,709 across 17 Lean test suites |
-| **Proved declarations** | 2,819 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 103,179 across 142 Lean files |
+| **Test LoC** | 14,890 across 24 Lean test suites |
+| **Proved declarations** | 3,045 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
-| **Active workstream** | **WS-AK Phase AK8 second-pass audit COMPLETE** (v0.30.3). Addresses two process-level issues surfaced by re-reading the Phase AK8 delivery: (1) eight deferral annotations incorrectly cited WS-V as a future-work bucket — WS-V was completed many releases ago; each annotation rephrased to "post-1.0 hardening candidate (no currently-active plan file tracks it)"; (2) `cspaceRevokeCdtTransactional` (AK8-B) shipped without regression tests — added three tests in `NegativeStateSuite` for atomic abort, successful apply, and empty-descendant-list validation. Predecessor: v0.30.2 closed the v0.30.1 delivery gap where `lifecycleRetype_crossSubsystemInvariant_bridge` plumbed `hUntypedDisj` as an input hypothesis but no theorem substantively proved `retypeFromUntyped` preserves the invariant. Remediation: invariant refined with direct-child-exclusion side conditions (so parent-child containment is expected and allowed); 4 new `allocate_*` bookkeeping lemmas; machine-checked `retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild` (covers all API-dispatch non-`.untyped` retype targets); API-path specialization via `retypeFromUntyped_objectOfKernelType_preserves_untypedRegionsDisjoint`; 7 new AK8-A regression tests in `ModelIntegritySuite`. Retype-to-untyped case recorded as post-1.0 hardening (unreachable under current `objectOfKernelType .untyped` semantics; no currently-active plan file tracks the full-coverage proof). Plan: [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) §11. Portfolio AK1..AK10 targeted at v1.0.0 release (AK1–AK8 complete; AK9–AK10 in progress). Prior: WS-AM (v0.30.0), WS-AJ (v0.28.1–v0.29.0), WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG–WS-B. **Next: WS-AK Phase AK9 (Platform, Boot, DTB, MMIO).** |
+| **Active workstream** | **WS-AK Phase AK9 audit remediation COMPLETE** (v0.30.5). Deep end-to-end audit of the v0.30.4 Phase AK9 delivery surfaced five gaps where the plan's intent was not fully honored at the production-path level. Closed: (1) **AK9-A alias → rename** — `mmioReadByte` is now the primary definition with `mmioRead` as `@[deprecated]` alias, completing the plan's rename directive; two new positive correctness theorems complete the four-theorem-per-width contract; (2) **AK9-F P-M05 validation wired into production** — `bootFromPlatformChecked` now gates on `machineConfig.wellFormed` + `physicalAddressWidth ≤ 52` BEFORE constructing the IntermediateState; two soundness theorems expose the post-conditions; (3) **AK9-G P-M06 interrupts-enable wired into checked path** — `bootFromPlatformChecked` now invokes `bootEnableInterruptsOp` at the end of the ok-branch per plan specification; new `_ok_interruptsEnabled` theorem; (4) **AK9-C end-to-end rejection tests** — two new tests exercise the full `bootFromPlatformChecked` chain with bad-ObjId and TCB-variant handlers; (5) **AK9-H P-L2 readCStringChecked** — new `Except DeviceTreeParseError (String × Nat)` variant distinguishes `.malformedBlob` from `.fuelExhausted`; two correctness theorems + four runtime tests. Test suite expanded from 21 to 34 tests. Predecessor v0.30.4 delivered Phase AK9 (8 sub-tasks AK9-A..AK9-H) addressing 2 HIGH, 7 MEDIUM, 13 LOW platform findings. Plan: [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) §12. Portfolio AK1..AK10 targeted at v1.0.0 release (AK1–AK9 complete; AK10 in progress). Prior: WS-AM (v0.30.0), WS-AJ (v0.28.1–v0.29.0), WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG–WS-B. **Next: WS-AK Phase AK10 (Testing, Documentation & Closure).** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |

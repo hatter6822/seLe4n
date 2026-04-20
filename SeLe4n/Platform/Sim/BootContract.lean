@@ -64,21 +64,30 @@ def simBootContract : BootBoundaryContract :=
       (default : SystemState).objects.size = 0
     capabilityRefMetadataConsistent :=
       (default : SystemState).lifecycle.capabilityRefs.size = 0
-    -- AJ3-D (M-19): Simulation starts with empty object store by design.
-    -- The state builder adds objects programmatically after boot. This is a
-    -- verifiable structural fact, not a vacuous `True`.
-    objectStoreNonEmpty :=
+    -- AJ3-D (M-19) / AK9-B (P-H02): Simulation starts with empty object
+    -- store by design. The state builder adds objects programmatically after
+    -- boot. Verifiable structural fact, not a vacuous `True`. Field was
+    -- previously named `objectStoreNonEmpty` — the name inverted its semantic
+    -- meaning. Renamed to `objectStoreEmptyAtBoot` per AK9-B.
+    objectStoreEmptyAtBoot :=
       (default : SystemState).objects.size = 0
     -- AJ3-D (M-19): Simulation IRQ range bounded by GIC-400 INTID space.
     irqRangeValid :=
       simMaxIrqId ≤ 1024
   }
 
-/-- AJ3-D: Simulation boot contract objectStoreNonEmpty holds. -/
-theorem simBootContract_objectStoreNonEmpty_holds :
-    simBootContract.objectStoreNonEmpty := by
+/-- AJ3-D / AK9-B: Simulation boot contract `objectStoreEmptyAtBoot` holds. -/
+theorem simBootContract_objectStoreEmptyAtBoot_holds :
+    simBootContract.objectStoreEmptyAtBoot := by
   show ({} : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject).size = 0
   rfl
+
+/-- AK9-B: Backwards-compat alias preserving the prior theorem name for any
+    out-of-tree references. Delegates to the renamed theorem. -/
+@[deprecated simBootContract_objectStoreEmptyAtBoot_holds (since := "0.30.4")]
+theorem simBootContract_objectStoreNonEmpty_holds :
+    simBootContract.objectStoreEmptyAtBoot :=
+  simBootContract_objectStoreEmptyAtBoot_holds
 
 /-- AJ3-D: Simulation boot contract irqRangeValid holds. -/
 theorem simBootContract_irqRangeValid_holds :

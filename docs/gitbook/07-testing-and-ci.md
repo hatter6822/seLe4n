@@ -1,6 +1,6 @@
 # Testing and CI
 
-Current stage context: **WS-AK Phase AK7 COMPLETE (v0.29.13). Testing tiers enforce regression protection and evidence continuity across ~97k production LoC, ~12k test LoC (including AK3 regression suites — AsidPool, InterruptDispatch, W^X defense, decode validation — the AK4 end-to-end ABI round-trip suite, and the v0.29.12 AK6-G/H/I runtime test additions to `tests/InformationFlowSuite.lean`), and ~2,830 proved declarations.**
+Current stage context: **WS-AK Phase AK9 audit remediation COMPLETE (v0.30.5). Testing tiers enforce regression protection and evidence continuity across ~103k production LoC, ~15k test LoC (including AK3 regression suites — AsidPool, InterruptDispatch, W^X defense, decode validation — the AK4 end-to-end ABI round-trip suite, the AK7 foundational regression suite, the AK8 model integrity suite, and the AK9 platform regression suite `tests/Ak9PlatformSuite.lean` with 34 end-to-end checks on `bootFromPlatformChecked` / MMIO width-specific reads / DTB parsing / HAL-parity interrupts re-enable), and ~3,037 proved declarations.**
 
 ## Tier model
 

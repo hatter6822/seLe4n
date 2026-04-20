@@ -25,17 +25,23 @@ inductive ArchAssumption where
     V4-G/M-HW-6: Extended with substantive boot precondition checks for
     object store validation and IRQ range checking.
 
-    AJ3-D (M-19): `objectStoreNonEmpty` and `irqRangeValid` are now required
+    AJ3-D (M-19): `objectStoreEmptyAtBoot` and `irqRangeValid` are now required
     fields (no default). Each platform must explicitly state its boot guarantee,
     preventing vacuously-true contracts that would allow booting with zero
-    objects (no idle thread) or unbounded IRQ ranges. -/
+    objects (no idle thread) or unbounded IRQ ranges.
+
+    AK9-B (P-H02): Renamed `objectStoreNonEmpty → objectStoreEmptyAtBoot`.
+    Both platform instantiations (Sim, RPi5) have always asserted
+    `(default : SystemState).objects.size = 0` — i.e., the object store is
+    EMPTY at boot time, populated subsequently by PlatformConfig. The prior
+    name inverted the semantic meaning and was a readability/spec hazard. -/
 structure BootBoundaryContract where
   objectTypeMetadataConsistent : Prop
   capabilityRefMetadataConsistent : Prop
-  /-- V4-G/AJ3-D: Object store guarantee. Platform-specific assertion about
-      post-boot object store state (e.g., non-empty for production, empty
-      acceptable for simulation with no initial objects). -/
-  objectStoreNonEmpty : Prop
+  /-- V4-G/AJ3-D/AK9-B: Object store state at boot. Platform-specific
+      assertion about initial object store size (typically empty: the boot
+      pipeline populates the store from `PlatformConfig.initialObjects`). -/
+  objectStoreEmptyAtBoot : Prop
   /-- V4-G/AJ3-D: IRQ range guarantee. Platform-specific assertion about
       IRQ line validity (e.g., all registered IRQs within GIC range). -/
   irqRangeValid : Prop

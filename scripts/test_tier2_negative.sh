@@ -59,5 +59,7 @@ run_check "TRACE" lake exe decode_validation_suite
 run_check "TRACE" lake exe abi_roundtrip_suite
 # AK7 (foundational model): 33 regression tests covering AK7-A..AK7-K.
 run_check "TRACE" lake exe model_integrity_suite
+# AK9 (platform / boot / DTB / MMIO): 21 regression tests covering AK9-A..AK9-H.
+run_check "TRACE" lake exe ak9_platform_suite
 
 finalize_report

@@ -19,6 +19,160 @@ previously spread across README.md, GitBook chapters, and audit plans.
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 
+## WS-AK Phase AK9 audit remediation (v0.30.5)
+
+**Status**: COMPLETE. Deep end-to-end audit of the v0.30.4 Phase AK9
+delivery surfaced five gaps where the plan's intent was not fully
+honored at the production-path level. v0.30.5 closes each gap with
+substantive wiring rather than documentation-only patches.
+
+### Remediated gaps
+
+1. **AK9-A alias vs rename** — v0.30.4 added `mmioReadByte` as a thin
+   alias over `mmioRead`; the plan specified RENAME. Inverted: now
+   `mmioReadByte` is the primary definition and `mmioRead` is a
+   `@[deprecated]` alias. Three theorems renamed accordingly with
+   backward-compat aliases. Two new positive correctness theorems
+   (`mmioRead{32,64}_alignedAndBounded_within_region`) complete the
+   four-theorem-per-width contract.
+
+2. **AK9-F P-M05 validation not wired** — v0.30.4 defined
+   `applyMachineConfigChecked` but `bootFromPlatform` still called
+   unchecked `applyMachineConfig`. Remediation wires
+   `machineConfig.wellFormed` + `physicalAddressWidth ≤ 52` gates
+   directly into `bootFromPlatformChecked`, and adds two soundness
+   theorems (`_ok_implies_machineConfigWellFormed`,
+   `_ok_implies_physicalAddressWidth_bound`) exposing the
+   post-conditions.
+
+3. **AK9-G P-M06 interrupts-enable not wired** — v0.30.4 added
+   `bootFromPlatformWithInterrupts` but the plan specified "Invoke at
+   end of `bootFromPlatform` checked path." Remediation threads
+   `bootEnableInterruptsOp` through `bootFromPlatformChecked`'s
+   ok-branch so successful checked boots emit IRQs-enabled state. New
+   `bootFromPlatformChecked_ok_interruptsEnabled` theorem.
+
+4. **AK9-C no end-to-end rejection test** — v0.30.4 tested the
+   predicate `irqHandlersReferenceNotifications` directly but not the
+   full `bootFromPlatformChecked` chain. Added two end-to-end tests:
+   bad-ObjId handler and TCB-variant handler both produce `.error`.
+
+5. **AK9-H P-L2 readCString not upgraded** — v0.30.4 only documented
+   the fuel-collapse concern. Added `readCStringChecked` with
+   `Except DeviceTreeParseError (String × Nat)` return type
+   distinguishing `.malformedBlob` from `.fuelExhausted`. Two
+   correctness theorems + four runtime tests.
+
+### Test suite expansion
+
+`tests/Ak9PlatformSuite.lean`: 21 → 34 tests. New tests cover the
+end-to-end `bootFromPlatformChecked` chain (5), AK9-A rename and
+positive-success paths (4), and AK9-H `readCStringChecked` (4).
+
+### Gate
+
+- `lake build` (260 jobs, 0 warnings)
+- `test_smoke.sh` PASS, `test_full.sh` PASS
+- `lake exe ak9_platform_suite` 34/34 PASS
+- `cargo test --workspace` PASS; `cargo clippy -- -D warnings` 0 warnings
+- `check_version_sync.sh` PASS at 0.30.5 (15 files synced)
+- Fixture byte-identical to `tests/fixtures/main_trace_smoke.expected`
+- Zero `sorry` / `axiom` in `SeLe4n/` or `Main.lean`
+
+## WS-AK Phase AK9 — Platform, Boot, DTB, MMIO (v0.30.4)
+
+**Status**: COMPLETE. Phase AK9 of the v0.29.0 pre-1.0 release hardening
+plan. Eight sub-tasks (AK9-A..AK9-H) addressing 2 HIGH, 7 MEDIUM, and
+13 LOW platform-layer findings from `AUDIT_v0.29.0_COMPREHENSIVE.md`.
+
+### AK9-A (P-H01 / HIGH) — Width-specific MMIO reads
+
+Introduces `mmioRead32` and `mmioRead64` with mandatory 4-byte / 8-byte
+alignment checks and region-local range validation. Hardware-facing
+GIC-400 / BCM2712 peripheral registers require word- or doubleword-sized
+aligned reads; misaligned access on ARM64 Device memory produces a
+synchronous Data Abort (ARM ARM § D7.2.44). The legacy byte-granularity
+`mmioRead` is retained under the self-documenting `mmioReadByte` alias
+for UART / debug contexts where 8-bit reads are correct (PL011 DR/FR).
+Four correctness theorems per width: `_rejects_unaligned`,
+`_rejects_out_of_region`, `_preserves_state`.
+
+### AK9-B (P-H02 / HIGH) — `objectStoreEmptyAtBoot` rename
+
+`BootBoundaryContract.objectStoreNonEmpty` asserted
+`(default : SystemState).objects.size = 0` in both Sim and RPi5
+instantiations — the field name was the OPPOSITE of its semantic meaning.
+Renamed to `objectStoreEmptyAtBoot` across `Assumptions.lean`,
+`Sim/BootContract.lean`, `RPi5/BootContract.lean`. Backwards-compat
+`@[deprecated]` theorem aliases preserve the prior identifier names.
+
+### AK9-C (P-M01 / MEDIUM) — IRQ handler existence validation
+
+New `irqHandlersReferenceNotifications : PlatformConfig → Bool` verifies
+that each declared `IrqEntry.handler` ObjId refers to a `.notification`
+object present in `initialObjects`. Wired into `bootFromPlatformChecked`
+as a third validation step after `wellFormed` and `bootSafeObjectCheck`.
+Soundness: `bootFromPlatformChecked_ok_implies_irqHandlersValid`.
+
+### AK9-D (P-M02 / MEDIUM) — Region-local MMIO range check
+
+`mmioWrite32` / `mmioWrite64` / `mmioWrite32W1C` previously validated
+endpoints independently — two addresses that happened to both be in
+device regions could be spliced at a region boundary. Replaced with
+`isDeviceRangeWithinRegion` which requires the ENTIRE N-byte range to
+lie within a SINGLE declared `.device` region. Positive correctness:
+`mmioWrite{32,64}_alignedAndBounded_within_region`; bridge lemma
+`isDeviceRangeWithinRegion_false_of_non_device` recovers prior
+per-endpoint rejection theorems.
+
+### AK9-E (P-M03 / MEDIUM) — `budgetSufficientCheck` fails closed
+
+`budgetSufficientCheck` returned `true` for `TCB.schedContextBinding =
+.bound scId` when the store resolved to a non-`.schedContext` variant
+or `none` — silently permissive. Now returns `false`. Dependent proof
+`registerContextStableCheck_budget` updated to discharge the new
+wrong-variant contradiction directly.
+
+### AK9-F (P-M04 / M05 / M07 / MEDIUM) — DTB + MachineConfig validation
+
+Three checked variants forcing explicit caller decisions:
+`classifyMemoryRegionChecked` (Option return, rejects empty map /
+unmapped), `applyMachineConfigChecked` (`MachineConfig.wellFormed` + PA
+width ≤ 52), `findMemoryRegPropertyChecked` (`Except
+DeviceTreeParseError`, DTB-sized fuel default). `DeviceTree.fromDtbFull`
+rewired through the checked property search.
+
+### AK9-G (P-M06 / MEDIUM) — Interrupts re-enable mirror
+
+New `bootEnableInterruptsOp` mirrors the Rust HAL Phase-3 IRQ re-enable
+after GIC + timer setup. `bootFromPlatformWithInterrupts` composes
+`bootFromPlatform` with the interrupt step. Default `bootFromPlatform`
+keeps IRQs disabled for negative-state / boot-invariant-bridge contexts.
+
+### AK9-H (P-L1..P-L13) — LOW-tier batch
+
+13-entry documentation block. P-L3, P-L7, P-L13 RESOLVED (covered by
+AK9-F, pre-existing `mmioRegionsPairwiseDisjointCheck`, AK9-D
+respectively). Remaining LOW items are documented as accepted
+single-core model gaps or recorded as post-1.0 hardening candidates
+(no currently-active plan file tracks them).
+
+### Regression test suite
+
+`tests/Ak9PlatformSuite.lean` — 21 tests wired into
+`test_tier2_negative.sh` as `ak9_platform_suite`.
+
+### Gate
+
+- `lake build` (260 jobs, 0 warnings)
+- `test_smoke.sh` PASS, `test_full.sh` PASS
+- `lake exe ak9_platform_suite` 21/21 PASS
+- `cargo test --workspace` PASS; `cargo clippy -- -D warnings` 0 warnings
+- `check_version_sync.sh` PASS at 0.30.4 (15 files synced)
+- Zero `sorry` / `axiom` in `SeLe4n/` or `Main.lean`
+
+Plan: [`docs/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) §12.
+
 ## WS-AK Phase AK8 second-pass audit (v0.30.3)
 
 **Status**: Second deep end-to-end audit COMPLETE. Addresses two
