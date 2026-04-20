@@ -611,7 +611,15 @@ scanned slots are occupied.
 
 The iteration is bounded by `limit` (typically `maxExtraCaps = 3`) rather
 than `2^radixWidth`, because we only need slots for the (at most 3) extra
-caps in the message. Termination is structural on `limit`. -/
+caps in the message. Termination is structural on `limit`.
+
+**AK8-F (WS-AK / C-M07) — Radix bound:** the previous signature allowed
+`limit + base.toNat ≥ 2^radixWidth`, returning slot indices outside the
+CNode's addressable range. Callers that need the radix-bound guarantee
+should invoke `findFirstEmptySlotChecked` (below) which additionally caps
+the scan to `2^radixWidth - base.toNat`, so the returned slot index is
+guaranteed to satisfy `s.toNat < 2^radixWidth` (witnessed by the
+`findFirstEmptySlotChecked_within_radix` theorem). -/
 def findFirstEmptySlot (cn : CNode) (base : SeLe4n.Slot)
     (limit : Nat) : Option SeLe4n.Slot :=
   match limit with
@@ -620,6 +628,58 @@ def findFirstEmptySlot (cn : CNode) (base : SeLe4n.Slot)
       match cn.lookup base with
       | none => some base
       | some _ => cn.findFirstEmptySlot (SeLe4n.Slot.ofNat (base.toNat + 1)) n
+
+/-- AK8-F (WS-AK / C-M07): Radix-bounded variant of `findFirstEmptySlot`.
+
+Caps the scan at `min limit (2^radixWidth - base.toNat)` so every returned
+slot index fits in the CNode's `radixWidth`-addressable range. Returns
+`none` if either the user-supplied `limit` or the radix window is
+exhausted before an empty slot is found, OR if `base.toNat ≥ 2^radixWidth`
+(in which case the scan window is zero-width).
+
+The `base ≥ 2^radixWidth` case can occur when callers pass `.slot { val := 0 }`
+(the zero slot) to a CNode with `radixWidth = 0` (a zero-sized CNode),
+or when they miscompute `base` from an external index; the zero-width
+window ensures no out-of-range slot is ever produced. -/
+def findFirstEmptySlotChecked (cn : CNode) (base : SeLe4n.Slot)
+    (limit : Nat) : Option SeLe4n.Slot :=
+  if base.toNat ≥ 2 ^ cn.radixWidth then none
+  else
+    cn.findFirstEmptySlot base (Nat.min limit (2 ^ cn.radixWidth - base.toNat))
+
+/-- AK8-F (C-M07): Helper — `findFirstEmptySlot` with `k` steps from `base`
+produces a slot index strictly less than `base + k`. -/
+private theorem findFirstEmptySlot_bounded
+    (cn : CNode) (base : SeLe4n.Slot) (k : Nat) (s : SeLe4n.Slot)
+    (hFind : cn.findFirstEmptySlot base k = some s) :
+    s.toNat < base.toNat + k := by
+  induction k generalizing base with
+  | zero => simp [findFirstEmptySlot] at hFind
+  | succ n ih =>
+    simp only [findFirstEmptySlot] at hFind
+    split at hFind
+    · cases hFind; omega
+    · have := ih _ hFind
+      simp only [SeLe4n.Slot.toNat_ofNat] at this
+      omega
+
+/-- AK8-F (C-M07): Soundness — if `findFirstEmptySlotChecked` returns
+`some s`, then `s.toNat < 2^radixWidth`. This is the radix containment
+guarantee: every slot index produced by the checked variant is
+addressable by the CNode's radix width. -/
+theorem findFirstEmptySlotChecked_within_radix
+    (cn : CNode) (base : SeLe4n.Slot) (limit : Nat) (s : SeLe4n.Slot)
+    (hFind : cn.findFirstEmptySlotChecked base limit = some s) :
+    s.toNat < 2 ^ cn.radixWidth := by
+  unfold findFirstEmptySlotChecked at hFind
+  split at hFind
+  · cases hFind
+  · rename_i hBaseLt
+    have hBaseLt' : base.toNat < 2 ^ cn.radixWidth := Nat.lt_of_not_le hBaseLt
+    have hScanBound : Nat.min limit (2 ^ cn.radixWidth - base.toNat)
+        ≤ 2 ^ cn.radixWidth - base.toNat := Nat.min_le_right _ _
+    have hReturnedInRange := findFirstEmptySlot_bounded cn base _ s hFind
+    omega
 
 /-- If findFirstEmptySlot returns `some s`, then `cn.lookup s = none`. -/
 theorem findFirstEmptySlot_spec

@@ -1111,6 +1111,62 @@ theorem allocate_preserves_region (ut ut' : UntypedObject) (childId : SeLe4n.Obj
   have hU := (Prod.mk.inj hEq).1
   subst hU; exact ⟨rfl, rfl⟩
 
+/-- AK8-A (WS-AK / C-M01): `allocate` extends the children list — every
+existing entry in `ut.children` is still present in `ut'.children`. Used
+by the cross-untyped disjointness preservation proof to transport
+child-exclusion hypotheses across the allocation step. -/
+theorem allocate_children_extends (ut ut' : UntypedObject)
+    (childId : SeLe4n.ObjId) (size offset : Nat)
+    (hAlloc : ut.allocate childId size = some (ut', offset)) :
+    ∀ c, c ∈ ut.children → c ∈ ut'.children := by
+  rw [allocate_some_iff] at hAlloc
+  rcases hAlloc with ⟨_, hEq⟩
+  have hU := (Prod.mk.inj hEq).1; subst hU
+  intro c hc; exact List.mem_cons_of_mem _ hc
+
+/-- AK8-A (WS-AK / C-M01): `allocate` places the new child at the head of
+the children list, with exact bookkeeping for `objId`, `offset`, and
+`size`. This is the key structural fact used by the retype preservation
+proof to show that the parent's post-state children list contains the
+new child (so the parent-child pair is excluded from disjointness). -/
+theorem allocate_children_new (ut ut' : UntypedObject)
+    (childId : SeLe4n.ObjId) (size offset : Nat)
+    (hAlloc : ut.allocate childId size = some (ut', offset)) :
+    { objId := childId, offset := ut.watermark, size := size : UntypedChild }
+      ∈ ut'.children := by
+  rw [allocate_some_iff] at hAlloc
+  rcases hAlloc with ⟨_, hEq⟩
+  have hU := (Prod.mk.inj hEq).1; subst hU
+  exact List.mem_cons_self ..
+
+/-- AK8-A (WS-AK / C-M01): `allocate`'s post-state `children` list equals
+the new child prepended onto the pre-state list. Combined with
+`allocate_children_extends`, this exhaustively characterizes the change
+to `children`. -/
+theorem allocate_children_eq (ut ut' : UntypedObject)
+    (childId : SeLe4n.ObjId) (size offset : Nat)
+    (hAlloc : ut.allocate childId size = some (ut', offset)) :
+    ut'.children =
+      { objId := childId, offset := ut.watermark, size := size }
+        :: ut.children := by
+  rw [allocate_some_iff] at hAlloc
+  rcases hAlloc with ⟨_, hEq⟩
+  have hU := (Prod.mk.inj hEq).1; subst hU; rfl
+
+/-- AK8-A (WS-AK / C-M01): A successful `allocate` witnesses that the
+requested size fits within the parent's region — the new child's
+`[parent.regionBase + offset, parent.regionBase + offset + size)` range
+lies entirely inside `[parent.regionBase, parent.regionBase + parent.regionSize)`. -/
+theorem allocate_child_fits_parent (ut ut' : UntypedObject)
+    (childId : SeLe4n.ObjId) (size offset : Nat)
+    (hAlloc : ut.allocate childId size = some (ut', offset)) :
+    offset + size ≤ ut.regionSize := by
+  rw [allocate_some_iff] at hAlloc
+  rcases hAlloc with ⟨hCan, hEq⟩
+  have hOffsetEq : offset = ut.watermark := (Prod.mk.inj hEq).2
+  have hFits := canAllocate_implies_fits ut size hCan
+  omega
+
 /-- WS-F2: A successful allocation preserves childrenWithinWatermark.
 Existing children are within the old watermark (≤ new watermark), and the new
 child occupies [old_watermark, old_watermark + size] = [old_watermark, new_watermark]. -/

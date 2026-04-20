@@ -1146,6 +1146,39 @@ def bootSafeObject (obj : KernelObject) : Prop :=
 def PlatformConfig.bootSafe (config : PlatformConfig) : Prop :=
   ∀ entry, entry ∈ config.initialObjects → bootSafeObject entry.obj
 
+/-- AK8-A (WS-AK / C-M01): Cross-untyped physical-region disjointness for
+boot configs. For any two distinct `.untyped` entries in `initialObjects`
+where **neither is a direct child of the other**, their physical ranges
+must not overlap.
+
+The `children` side-conditions mirror the runtime
+`Kernel.untypedRegionsDisjoint` invariant so a config-level witness
+transports cleanly to the runtime post-state. At boot, configurations
+typically list only top-level untypeds (no `children`), so the
+side-conditions are vacuous and this reduces to pairwise region
+disjointness across the whole untyped set — the case the audit §C-M01
+finding was motivating.
+
+This mirrors the existing `mmioRegionDisjointCheck` pattern (which validates
+MMIO region disjointness at boot) and is the config-level precondition that
+discharges the runtime `Kernel.untypedRegionsDisjoint` invariant. -/
+def PlatformConfig.untypedRegionsDisjoint (config : PlatformConfig) : Prop :=
+  ∀ (e₁ e₂ : ObjectEntry) (ut₁ ut₂ : UntypedObject),
+    e₁ ∈ config.initialObjects →
+    e₂ ∈ config.initialObjects →
+    e₁.id ≠ e₂.id →
+    e₁.obj = .untyped ut₁ →
+    e₂.obj = .untyped ut₂ →
+    (∀ c ∈ ut₁.children, c.objId ≠ e₂.id) →
+    (∀ c ∈ ut₂.children, c.objId ≠ e₁.id) →
+    ut₁.regionBase.val + ut₁.regionSize ≤ ut₂.regionBase.val ∨
+    ut₂.regionBase.val + ut₂.regionSize ≤ ut₁.regionBase.val
+
+/-- AK8-A: Empty config trivially satisfies `untypedRegionsDisjoint`. -/
+theorem PlatformConfig.untypedRegionsDisjoint_empty :
+    PlatformConfig.untypedRegionsDisjoint { irqTable := [], initialObjects := [] } := by
+  intro _ _ _ _ hMem _ _ _ _ _ _; exact absurd hMem (by simp)
+
 -- ============================================================================
 -- V4-A4b: Boot-safe object bridge — connect boot state objects to bootSafe
 -- ============================================================================
@@ -1196,6 +1229,79 @@ private theorem bootFromPlatform_objects_bootSafe
   · exact hSafe
 
 -- ============================================================================
+-- AK8-A (C-M01): Untyped-region reachability through boot fold
+-- ============================================================================
+
+/-- AK8-A: Reachability lemma — any object in the fold result either came from
+one of the entries or was in the base state. Proven by induction on the entry
+list, using `createObject_objects` to track each `insert`. -/
+private theorem foldObjects_objects_reachable
+    (objs : List ObjectEntry) :
+    ∀ (ist : IntermediateState) (oid : SeLe4n.ObjId) (obj : KernelObject),
+    (foldObjects objs ist).state.objects[oid]? = some obj →
+    (∃ e ∈ objs, e.id = oid ∧ e.obj = obj) ∨
+    ist.state.objects[oid]? = some obj := by
+  induction objs with
+  | nil => intro ist oid obj h; exact Or.inr h
+  | cons e rest ih =>
+    intro ist oid obj hLookup
+    have hInvExt : ist.state.objects.invExt := ist.hAllTables.1.1
+    rcases ih (createObject ist e.id e.obj e.hSlots e.hMappings) oid obj hLookup with
+      ⟨e', hMem, hId, hObj⟩ | hBase
+    · -- Entry e' is in rest; lift membership to (e :: rest)
+      exact Or.inl ⟨e', List.mem_cons_of_mem _ hMem, hId, hObj⟩
+    · -- Reached base via createObject; case-split on whether oid = e.id
+      simp only [createObject_objects, RHTable_getElem?_eq_get?] at hBase
+      by_cases hEq : e.id = oid
+      · subst hEq
+        rw [RHTable.getElem?_insert_self ist.state.objects e.id e.obj hInvExt] at hBase
+        cases hBase; exact Or.inl ⟨e, List.mem_cons_self .., rfl, rfl⟩
+      · have hNe : ¬((e.id == oid) = true) := by
+          intro heq; exact hEq (eq_of_beq heq)
+        rw [RHTable.getElem?_insert_ne ist.state.objects e.id oid e.obj hNe hInvExt] at hBase
+        exact Or.inr (by simp only [RHTable_getElem?_eq_get?]; exact hBase)
+
+/-- AK8-A: If the base-state has no untyped objects and the config satisfies
+`untypedRegionsDisjoint`, the post-boot object store satisfies the runtime
+`untypedRegionsDisjoint` invariant. Uses `foldObjects_objects_reachable` to
+trace each post-boot untyped back to its entry, then discharges via the
+config-level disjointness. -/
+private theorem bootFromPlatform_untypedRegionsDisjoint
+    (config : PlatformConfig)
+    (hUntypedDisj : config.untypedRegionsDisjoint) :
+    Kernel.untypedRegionsDisjoint (bootFromPlatform config).state := by
+  intro oid₁ oid₂ ut₁ ut₂ h₁ h₂ hNe hChildren₁ hChildren₂
+  unfold bootFromPlatform at h₁ h₂
+  -- Trace oid₁'s untyped back to initialObjects.
+  rcases foldObjects_objects_reachable config.initialObjects
+    (foldIrqs config.irqTable mkEmptyIntermediateState) oid₁ _ h₁ with
+    ⟨e₁, hMem₁, hId₁, hObj₁⟩ | hBase₁
+  · -- oid₁ came from entry e₁ ∈ initialObjects.
+    rcases foldObjects_objects_reachable config.initialObjects
+      (foldIrqs config.irqTable mkEmptyIntermediateState) oid₂ _ h₂ with
+      ⟨e₂, hMem₂, hId₂, hObj₂⟩ | hBase₂
+    · -- Both oid₁ and oid₂ from entries.
+      -- e₁.id = oid₁ ≠ oid₂ = e₂.id, so e₁.id ≠ e₂.id.
+      have hIdNe : e₁.id ≠ e₂.id := by rw [hId₁, hId₂]; exact hNe
+      -- Transport the children-exclusion hypotheses from post-boot ObjIds
+      -- (oid₁ / oid₂) to entry-level IDs (e₁.id / e₂.id) via hId₁ / hId₂.
+      have hChildrenE₁ : ∀ c ∈ ut₁.children, c.objId ≠ e₂.id := by
+        intro c hc; rw [hId₂]; exact hChildren₁ c hc
+      have hChildrenE₂ : ∀ c ∈ ut₂.children, c.objId ≠ e₁.id := by
+        intro c hc; rw [hId₁]; exact hChildren₂ c hc
+      exact hUntypedDisj e₁ e₂ ut₁ ut₂ hMem₁ hMem₂ hIdNe hObj₁ hObj₂ hChildrenE₁ hChildrenE₂
+    · -- oid₂ in foldIrqs base — but foldIrqs doesn't touch objects, and base is empty.
+      rw [foldIrqs_objects] at hBase₂
+      have hEmpty : mkEmptyIntermediateState.state.objects[oid₂]? = none := by
+        rw [mkEmpty_state_eq_default]; exact RHTable_get?_empty 16 (by omega)
+      rw [hEmpty] at hBase₂; exact absurd hBase₂ (by simp)
+  · -- oid₁ in foldIrqs base — impossible.
+    rw [foldIrqs_objects] at hBase₁
+    have hEmpty : mkEmptyIntermediateState.state.objects[oid₁]? = none := by
+      rw [mkEmpty_state_eq_default]; exact RHTable_get?_empty 16 (by omega)
+    rw [hEmpty] at hBase₁; exact absurd hBase₁ (by simp)
+
+-- ============================================================================
 -- V4-A8: Composition — proofLayerInvariantBundle for general configs
 -- ============================================================================
 
@@ -1230,7 +1336,8 @@ component to the already-proved `default_*` case.
     9. tlbConsistent — TLB is default (empty)
 -/
 theorem bootFromPlatform_proofLayerInvariantBundle_general
-    (config : PlatformConfig) (hSafe : config.bootSafe) :
+    (config : PlatformConfig) (hSafe : config.bootSafe)
+    (hUntypedDisj : config.untypedRegionsDisjoint) :
     Architecture.proofLayerInvariantBundle
       (bootFromPlatform config).state := by
   -- The post-boot state equals default on all fields that the 9 invariant
@@ -1485,9 +1592,9 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     · intro oid root _ _ _ hObj; exact absurd hObj (hNoVSpace oid _)
     · intro oidA _ _ _ hObjA; exact absurd hObjA (hNoVSpace oidA _)
     · intro oid root _ _ _ hObj; exact absurd hObj (hNoVSpace oid _)
-  -- 8. crossSubsystemInvariant (Z9-D + AE5-C + AF1-B + AM4-A: 11 predicates)
+  -- 8. crossSubsystemInvariant (Z9-D + AE5-C + AF1-B + AM4-A + AK8-A: 12 predicates)
   have hCrossBundle : crossSubsystemInvariant (bootFromPlatform config).state := by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- registryEndpointValid
       intro sid reg hLookup; rw [hSvcR] at hLookup
       have : (default : SystemState).serviceRegistry[sid]? = none := by
@@ -1586,6 +1693,11 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       have := hMeta oid
       simp [SystemState.lookupObjectTypeMeta, hObj] at this
       exact this
+    · -- AK8-A (C-M01): untypedRegionsDisjoint at boot.
+      -- Discharged via the config-level `untypedRegionsDisjoint` precondition
+      -- (passed as `hUntypedDisj`) plus the `foldObjects_objects_reachable`
+      -- lemma which traces every post-boot untyped back to its entry.
+      exact bootFromPlatform_untypedRegionsDisjoint config hUntypedDisj
   -- 9. tlbConsistent
   have hTlbBundle : Architecture.tlbConsistent (bootFromPlatform config).state
       (bootFromPlatform config).state.tlb := by
@@ -1646,14 +1758,18 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
 -- ============================================================================
 
 /-- V4-A9: End-to-end boot-to-runtime invariant bridge for general configs.
-    Composes V4-A8 (boot → proofLayerInvariantBundle) with freeze_preserves. -/
+    Composes V4-A8 (boot → proofLayerInvariantBundle) with freeze_preserves.
+
+    AK8-A: Requires the additional config-level precondition
+    `config.untypedRegionsDisjoint` to establish the 12th conjunct of
+    `crossSubsystemInvariant`. -/
 theorem bootToRuntime_invariantBridge_general (config : PlatformConfig)
-    (hSafe : config.bootSafe) :
+    (hSafe : config.bootSafe) (hUntypedDisj : config.untypedRegionsDisjoint) :
     let ist := bootFromPlatform config
     Architecture.proofLayerInvariantBundle ist.state ∧
     SeLe4n.Model.apiInvariantBundle_frozen (SeLe4n.Model.freeze ist) :=
-  ⟨bootFromPlatform_proofLayerInvariantBundle_general config hSafe,
+  ⟨bootFromPlatform_proofLayerInvariantBundle_general config hSafe hUntypedDisj,
    SeLe4n.Model.freeze_preserves_invariants _
-     (bootFromPlatform_proofLayerInvariantBundle_general config hSafe)⟩
+     (bootFromPlatform_proofLayerInvariantBundle_general config hSafe hUntypedDisj)⟩
 
 end SeLe4n.Platform.Boot

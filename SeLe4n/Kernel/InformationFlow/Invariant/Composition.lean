@@ -490,6 +490,10 @@ theorem step_preserves_projection
       have hStEq := cspaceLookupSlot_preserves_state st stL addr cap hL
       subst stL
       simp only [hL] at hOp
+      -- AK8-K (C-L2): null-cap guard discharged first.
+      by_cases hNull : cap.isNull
+      · simp [hNull] at hOp
+      simp only [hNull, Bool.false_eq_true, ↓reduceIte] at hOp
       split at hOp
       · -- rights subset: storeObject + storeCapabilityRef
         split at hOp

@@ -1,3 +1,208 @@
+## v0.30.3 — WS-AK Phase AK8 second-pass audit (terminology hygiene + AK8-B tests)
+
+Second deep end-to-end audit of the Phase AK8 delivery surfaced two
+process-level issues:
+
+### Terminology hygiene
+
+Deferral annotations in Phase AK8 code and docs incorrectly referenced
+**WS-V** as a future-work bucket. **WS-V** was completed many releases
+ago (see `docs/WORKSTREAM_HISTORY.md` §"WS-V workstream ... COMPLETE").
+Using a closed workstream as a deferral bucket is misleading. Eight
+references introduced by AK8 have been rephrased:
+
+- `SeLe4n/Kernel/Architecture/Invariant.lean` (3 refs) — retype-to-untyped
+  scope marker and inline comments.
+- `SeLe4n/Kernel/CrossSubsystem.lean` (1 ref) — `untypedRegionsDisjoint`
+  scope docstring.
+- `SeLe4n/Kernel/Capability/Operations.lean` (2 refs) — C-L3 and C-L9
+  LOW-tier batch entries.
+- `SeLe4n/Kernel/RobinHood/Bridge.lean` (3 refs) — DS-L2, DS-L5, DS-M04
+  LOW-tier batch entries.
+- `CLAUDE.md`, `docs/WORKSTREAM_HISTORY.md`, `docs/spec/SELE4N_SPEC.md`,
+  `CHANGELOG.md` — AK8 delivery / remediation entries.
+
+Each reference now states honestly: "recorded here as a post-1.0
+hardening candidate; no currently-active workstream plan file tracks
+it." Historical entries predating AK8 (genuine WS-V era references) are
+left unchanged.
+
+### AK8-B regression test coverage
+
+`cspaceRevokeCdtTransactional` shipped in v0.30.0 without regression
+tests. Three new tests in `tests/NegativeStateSuite.lean`:
+
+- Transactional variant aborts atomically with `.error .objectNotFound`
+  when a descendant's CNode is missing.
+- Transactional variant succeeds with `firstFailure = none` when all
+  descendants have valid CNodes.
+- `validateRevokeCdtDescendants` returns `.ok` on an empty descendant
+  list.
+
+All three pass in Tier 2 (`test_tier2_negative.sh`).
+
+### Gate
+
+- `lake build` (260 jobs, 0 warnings)
+- `test_smoke.sh` PASS + `test_full.sh` PASS
+- `cargo test --workspace` PASS, `cargo clippy -- -D warnings` 0 warnings
+- All suites PASS (including `NegativeStateSuite` with the 3 new AK8-B tests)
+- `check_version_sync.sh` PASS at 0.30.3 (15 files synced)
+- Zero `sorry` / `axiom` in `SeLe4n/` or `Main.lean`
+
+## v0.30.2 — WS-AK Phase AK8 audit remediation (untypedRegionsDisjoint preservation)
+
+Post-delivery end-to-end audit of the v0.30.1 Phase AK8 implementation
+surfaced one material gap: `lifecycleRetype_crossSubsystemInvariant_bridge`
+plumbed `hUntypedDisj : untypedRegionsDisjoint st'` as a hypothesis, but no
+theorem substantively proved that `retypeFromUntyped` actually preserves
+the invariant. This release closes that gap with machine-checked
+preservation proofs.
+
+### Invariant refinement
+
+- `untypedRegionsDisjoint` tightened to exclude DIRECT parent-child pairs
+  from the disjointness requirement. The `children` list on each
+  `UntypedObject` carries the ObjIds of its direct descendants; the
+  invariant's two new side-conditions (`∀ c ∈ ut₁.children, c.objId ≠ oid₂`
+  and the symmetric one) correctly permit the expected parent-child region
+  containment that retype produces, while still forcing top-level untypeds
+  to be pairwise disjoint. Boot-time configs satisfy the side-conditions
+  vacuously (no parent-child relationships at boot).
+- `PlatformConfig.untypedRegionsDisjoint` mirrors the refinement so
+  `bootFromPlatform_untypedRegionsDisjoint` remains a clean transport
+  from config-level precondition to runtime invariant.
+
+### New allocate bookkeeping lemmas
+
+- `UntypedObject.allocate_children_extends` — post-state `children` list
+  contains every pre-state entry.
+- `UntypedObject.allocate_children_new` — new child is at the head of the
+  post-state `children` list with exact `(objId, offset, size)` bookkeeping.
+- `UntypedObject.allocate_children_eq` — full structural characterization.
+- `UntypedObject.allocate_child_fits_parent` — the allocated sub-region
+  `[offset, offset + size)` lies inside the parent's region.
+
+### Substantive preservation proofs
+
+- `retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild` —
+  machine-checked preservation for the primary API dispatch path (retype
+  target is `.tcb`, `.endpoint`, `.notification`, `.cnode`, `.vspaceRoot`,
+  or `.schedContext`). Composes
+  `storeObject_sameRegion_untyped_preserves_untypedRegionsDisjoint` for
+  the parent-update step with
+  `storeObject_non_untyped_preserves_untypedRegionsDisjoint` for the
+  child-creation step.
+- `retypeFromUntyped_objectOfKernelType_preserves_untypedRegionsDisjoint`
+  — specialization for the actual API dispatch helper
+  `objectOfKernelType`, discharging the `hNotUntypedChild` hypothesis
+  from `objType ≠ .untyped` via a per-constructor case split.
+- `retypeFromUntyped_untypedRegionsDisjoint_retype_to_untyped_documented`
+  — TPI-DOC marker recording the retype-to-untyped case as post-1.0
+  hardening (not exercised by any existing test since
+  `objectOfKernelType .untyped` hardcodes `regionBase = 0`).
+
+### Regression tests
+
+Seven new runtime tests in `tests/ModelIntegritySuite.lean`:
+- `ak8a_01_default_satisfies_untypedRegionsDisjoint`
+- `ak8a_02_disjoint_untypeds_satisfy_predicate`
+- `ak8a_03_overlapping_untypeds_violate_predicate`
+- `ak8a_04_parent_child_containment_allowed`
+- `ak8a_05_allocate_children_extends`
+- `ak8a_06_allocate_preserves_region`
+- `ak8a_07_empty_config_disjoint`
+
+### Infrastructure
+
+- `Kernel/Architecture/Invariant.lean` gains `import
+  SeLe4n.Kernel.Lifecycle.Invariant` so retype preservation proofs can
+  reach the retype operation's decomposition lemma without creating
+  import cycles.
+
+### Gate
+
+- `lake build` (260 jobs, 0 warnings)
+- `test_smoke.sh` + `test_full.sh` PASS
+- `cargo test --workspace` + `cargo clippy -- -D warnings` PASS (0 warnings)
+- `priority_management_suite` 27/27 PASS
+- `model_integrity_suite` PASS (now includes 7 AK8-A audit regression tests)
+- `frozen_ops_suite` 21/21, `information_flow_suite`,
+  `operation_chain_suite`, `negative_state_suite` all PASS
+- `check_version_sync.sh` PASS (canonical 0.30.2, all 15 files match)
+- Zero `sorry` / `axiom` in `SeLe4n/` or `Main.lean`
+
+## v0.30.1 — WS-AK Phase AK8 (Capability / Lifecycle / Service + Data Structures)
+
+Phase AK8 of the pre-1.0 release hardening portfolio lands 11 sub-tasks
+(AK8-A..AK8-K) addressing the capability / lifecycle / service + data-
+structures subsystems from the v0.29.0 comprehensive audit. Findings
+closed: 7 MEDIUM (C-M01..C-M07), 4 MEDIUM (DS-M01..DS-M04), 21 LOW
+(C-L1..C-L10, DS-L1..DS-L11).
+
+### Correctness hardening
+
+- **AK8-A (C-M01)** — `untypedRegionsDisjoint` added as the 12th conjunct of
+  `crossSubsystemInvariant`. Boot-time precondition
+  `PlatformConfig.untypedRegionsDisjoint` transports to runtime via a new
+  `foldObjects_objects_reachable` reachability lemma. 34 per-op bridges +
+  2 core bridges + `_retype_bridge` cascaded with the new hypothesis.
+- **AK8-B (C-M02)** — `cspaceRevokeCdtTransactional` provides validate-then-
+  apply atomic revocation. Helper `validateRevokeCdtDescendants` pre-checks
+  every descendant's CNode is present; any failure rolls back the entire
+  transaction. The existing `cspaceRevokeCdtStrict` (best-effort partial
+  progress) remains available.
+- **AK8-C (C-M03)** — `resolveCapAddress` caller rights obligation formally
+  documented with `resolveCapAddress_caller_rights_obligation` marker.
+- **AK8-D (C-M05)** — Hardware priority ceiling (`maxHardwarePriority := 255`)
+  enforced in `validatePriorityAuthority`; `validatePriorityAuthority_bound`
+  soundness theorem; 3 new regression tests in `PriorityManagementSuite` (27
+  tests total, up from 24).
+- **AK8-E (C-M06)** — `getCurrentPriorityChecked` variant surfaces missing-
+  SchedContext case via `.error .objectNotFound`.
+- **AK8-F (C-M07)** — `findFirstEmptySlotChecked` caps scan at
+  `2^radixWidth - base.toNat`, guaranteeing the returned slot fits in the
+  CNode's radix range (`findFirstEmptySlotChecked_within_radix`).
+- **AK8-K (C-L1, C-L2)** — `cspaceMove` rejects self-moves with
+  `.illegalState`; `cspaceMutate` rejects `Capability.null` sentinel with
+  `.nullCapability`. Preservation proofs cascaded through Preservation.lean
+  and InformationFlow/Invariant/Composition.lean + Operations.lean.
+
+### Test-only hardening
+
+- **AK8-G (DS-M01)** — Kind-checked frozen-store wrappers
+  (`frozenStoreTcbChecked`, `frozenStoreEndpointChecked`,
+  `frozenStoreNotificationChecked`) reject cross-variant overwrites.
+- **AK8-H (DS-M02)** — `frozenSchedContextUnbind` rewritten as transactional
+  two-phase (validate-then-write), eliminating the half-mutated-state
+  failure mode.
+
+### Data structure hardening
+
+- **AK8-I (DS-M03)** — `freezeCNodeSlotsChecked : CNode → Option CNodeRadix`
+  returns `none` on phantom-key conditions.
+- **AK8-J (DS-M04)** — `RHTable.BEq` / `LawfulBEq` requirement documented
+  with `RHTable_BEq_requires_lawfulBEq_of_value` marker.
+
+### Documentation
+
+- File-header documentation blocks in `Kernel/Capability/Operations.lean`
+  (C-L1..C-L10 batch) and `Kernel/RobinHood/Bridge.lean` (DS-L1..DS-L11
+  batch) annotate residual LOW-tier findings with rationale / cross-
+  references / deferral scope.
+- `docs/WORKSTREAM_HISTORY.md` gains a new "WS-AK Phase AK8" section with
+  per-sub-task summaries.
+
+### Gate
+
+- `lake build` (260 jobs, 0 warnings)
+- `test_smoke.sh` PASS + `test_full.sh` PASS
+- `cargo test --workspace` PASS (all suites)
+- `priority_management_suite` 27/27 PASS (+3 AK8-D tests)
+- `model_integrity_suite`, `information_flow_suite`, `frozen_ops_suite`
+  (21/21), `operation_chain_suite`, `negative_state_suite` all PASS
+- Zero `sorry` / `axiom` in `SeLe4n/` or `Main.lean`
+
 ## v0.30.0 — WS-AM cascade continuation (AK7-F.reader hygiene first wave)
 
 Post-delivery continuation of the v0.30.0 release landing a first

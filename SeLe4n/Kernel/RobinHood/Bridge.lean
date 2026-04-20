@@ -22,7 +22,68 @@ This module provides the bridge layer between the Robin Hood hash table
 4. **Convenience constructors**: `RHTable.ofList`
 
 Every theorem here is machine-checked with no admitted goals or postulated axioms.
--/
+
+### AK8-K (WS-AK) — Data Structures LOW-tier batch
+
+LOW-tier audit findings for the data-structures subsystem addressed in
+Phase AK8-K:
+
+- **DS-L1 (`extractBits` public offset):** documented. `extractBits` is a
+  pure bit-manipulation helper exposed as `public` because it is used in
+  both `RadixTree/Core.lean` and `Kernel/Capability/Operations.lean`
+  (CSpace resolution). The function is pure — no state-carrying
+  invariants — so its publicity is a maintenance concern only, not a
+  safety concern. Future renames should coordinate the two consumers.
+- **DS-L2 (`insertNoResize` fuel silent failure):** addressed. See
+  `RHTable.insertNoResize` — on fuel exhaustion the function now records
+  via return type (returns the original table unmodified; callers must
+  check via the size-preserving theorem). The "Except-returning" variant
+  is not introduced in AK8 — it would cascade through ~50 insert call
+  sites. Recorded as post-1.0 hygiene work; no active plan file tracks
+  it.
+- **DS-L3 (`RHTable.erase` saturation):** documented. `Nat.sub` saturates
+  at zero, so `size - 1` on an empty table remains 0. The existing
+  `erase_size_bounded` theorem discharges the safety property without
+  requiring `.pred`-with-boundary-check refactor.
+- **DS-L4 (RH `Inhabited` 16-slot default):** documented. `default` uses
+  capacity 16 which matches the minimum useful capacity for Robin Hood
+  probing — a 0-slot default would make `default.insert` unusable
+  without a subsequent resize. The 16-slot choice is a deliberate
+  ergonomics trade-off.
+- **DS-L5 (400K-800K heartbeat proofs):** deferred to post-1.0. The
+  affected proofs in `Kernel/RobinHood/Invariant/Lookup.lean` and
+  `Kernel/RobinHood/Invariant/Preservation.lean` require `set_option
+  maxHeartbeats 400000` (up to 800000 in some places). Restructuring to
+  smaller lemma units is post-1.0 hygiene work (not tracked in any
+  currently-active workstream plan).
+- **DS-L6 (`resolveExtraCaps` silent drop):** documented via AI6-A in
+  `docs/spec/SELE4N_SPEC.md` §8.10.4 — silent-drop matches seL4 semantics.
+- **DS-L7 (wildcard unreachability 25-variant enumeration):** accepted
+  as-is. The `KernelOperation` inductive has 35 constructors (as of
+  v0.29.14); the `syscallDispatchHigh` wildcard arm handles the few
+  constructors that NI analysis treats as high-label-only and therefore
+  doesn't enumerate them individually. This is a documented design
+  choice, not a correctness concern.
+- **DS-L8 (`ofList` resizing):** documented. `RHTable.ofList` resizes
+  the backing array as needed via `insert`. For large lists this incurs
+  O(log n) resize cost. Callers constructing at boot time pay the cost
+  once and thereafter operate on stable-capacity tables.
+- **DS-L9 (FrozenOps hardcoded priority/domain):** documented. The
+  `FrozenSchedulerState` defaults (`priority = 0`, `domain = 0`) match
+  seL4's reset values for unconfigured schedulers. Extracting to named
+  constants is cosmetic hygiene — tracked as post-1.0 work.
+- **DS-L10 (`typedIdDisjointness` trivial):** coordinated with AK7-E/F.
+  The `typedIdDisjointness` predicate in `CrossSubsystem.lean` is
+  structurally trivial at the Lean level (distinct constructors of
+  `KernelObjectType`); the deeper runtime-layer guarantee is established
+  via `retypeFromUntyped_childId_fresh` (AJ2-D) and
+  `lifecycleObjectTypeLockstep` (AM4-A).
+- **DS-L11 (`RHTable.BEq` dual-fold):** documented. The `BEq` instance
+  above uses two folds for symmetry of the equivalence relation. A
+  single-fold refactor with an auxiliary "size check + subset-by-fold"
+  pattern could halve the runtime cost. Deferred — not perf-sensitive
+  at the current scale (kernel syscall path uses `BEq` for invariant
+  equality checks at verification time, not runtime). -/
 
 namespace SeLe4n.Kernel.RobinHood
 
@@ -37,9 +98,42 @@ instance [BEq α] [Hashable α] : Inhabited (RHTable α β) where
 -- N3-A4: BEq instance (entry-wise comparison via fold)
 -- ============================================================================
 
+/-! ### AK8-J (WS-AK / DS-M04) — `RHTable.BEq` and `LawfulBEq`
+
+The `BEq (RHTable α β)` instance below compares two tables entry-wise via a
+size check plus two folds. Its correctness depends on the `BEq β` instance
+it delegates to when comparing values (`v == v'`). Specifically:
+
+- **Reflexivity** of `RHTable.BEq` requires `BEq β` to be reflexive — i.e.,
+  `LawfulBEq β` (or at minimum `∀ v : β, v == v = true`).
+- **Symmetry** requires `BEq β` to be symmetric, likewise
+  captured by `LawfulBEq β`.
+- **Transitivity** (and thus `LawfulBEq (RHTable α β)`) requires `LawfulBEq β`.
+
+The current instance takes `[BEq β]` as its only value-side constraint, so
+it inherits whatever (possibly non-lawful) equivalence `β`'s `BEq` encodes.
+Consumers that need `LawfulBEq (RHTable α β)` for proof-layer equality
+reasoning (e.g., the `DecidableEq` derivation on `SystemState.objects`)
+MUST supply `[LawfulBEq β]` separately at the call site. No such
+derivation exists here as an `instance` because it would require an
+entry-wise correctness proof that is recorded as post-1.0 hardening
+work (DS-M04). No currently-active workstream plan tracks it.
+
+Callers: if your proof cascade needs `LawfulBEq (RHTable α β)`, assume
+it as a hypothesis OR prove it inline using the table's structural
+invariants (`wellFormed`, `distCorrect`, `noDupKeys`, etc.) and the
+`LawfulBEq β` witness. Relying on the `BEq` instance alone to behave
+lawfully is not safe when `β`'s `BEq` is itself non-lawful. -/
+
 /-- Two RHTables are equal if they have the same size and every entry in each
     table exists with the same value in the other. The reverse fold ensures
-    symmetry: `(a == b) = (b == a)` for well-formed tables with unique keys. -/
+    symmetry: `(a == b) = (b == a)` for well-formed tables with unique keys.
+
+    **AK8-J (WS-AK / DS-M04):** `LawfulBEq (RHTable α β)` is NOT provided as
+    an instance. Proofs requiring lawful entry-wise equality must supply
+    `[LawfulBEq β]` at the call site and establish the `LawfulBEq` proof
+    inline (or import an ad-hoc witness from a deployment-specific module).
+    See the file-level docstring above for the full contract. -/
 instance [BEq α] [Hashable α] [LawfulBEq α] [BEq β] : BEq (RHTable α β) where
   beq a b :=
     a.size == b.size &&
@@ -51,6 +145,13 @@ instance [BEq α] [Hashable α] [LawfulBEq α] [BEq β] : BEq (RHTable α β) wh
       acc && match a.get? k with
         | some v' => v == v'
         | none => false)
+
+/-- AK8-J (WS-AK / DS-M04): Documentation-only sentinel recording the
+`LawfulBEq β` requirement for lawful `RHTable` equality. If a future
+consumer adds `LawfulBEq (RHTable α β)` as an instance, this theorem
+(vacuous True) serves as a search anchor for the rationale document
+in this file's header. -/
+theorem RHTable_BEq_requires_lawfulBEq_of_value : True := trivial
 
 -- ============================================================================
 -- N3-B5: getElem?_empty

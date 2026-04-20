@@ -533,6 +533,52 @@ private def pm_ak2f_02_replenishSortedAcrossTimes : IO Unit := do
   expect "queue sorted ascending by eligibility time"
     (times == [100, 200, 300])
 
+-- ============================================================================
+-- AK8-D (WS-AK / C-M05): Hardware priority ceiling (maxHardwarePriority = 255)
+-- ============================================================================
+
+/-- AK8-D-01: `setPriorityOp` rejects a priority above `maxHardwarePriority`
+(256) with `.illegalAuthority`, even when the caller's MCP is set to a
+value exceeding the hardware ceiling. -/
+private def pm_ak8d_01_hardwarePriorityCeilingRejects : IO Unit := do
+  let callerTid : SeLe4n.ThreadId := ⟨1⟩
+  let targetTid : SeLe4n.ThreadId := ⟨2⟩
+  -- Caller MCP = 1000 (above hardware cap). Still must reject priority > 255.
+  let st := mkState [
+    (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 1000))),
+    (⟨2⟩, .tcb (mkTcb 2 (prio := 30)))
+  ]
+  match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨256⟩ with
+  | .ok _ => throw <| IO.userError "priority 256 above hardware ceiling should be rejected"
+  | .error e => expect "error is illegalAuthority" (e == .illegalAuthority)
+
+/-- AK8-D-02: `setPriorityOp` accepts priority exactly `maxHardwarePriority`
+(255) when the caller's MCP permits it. -/
+private def pm_ak8d_02_maxHardwarePriorityAccepts : IO Unit := do
+  let callerTid : SeLe4n.ThreadId := ⟨1⟩
+  let targetTid : SeLe4n.ThreadId := ⟨2⟩
+  let st := mkState [
+    (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 255))),
+    (⟨2⟩, .tcb (mkTcb 2 (prio := 30)))
+  ]
+  match setPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨255⟩ with
+  | .ok _ => expect "priority 255 (at ceiling) accepted" true
+  | .error e =>
+    throw <| IO.userError s!"priority 255 at hardware ceiling should succeed, got {repr e}"
+
+/-- AK8-D-03: `setMCPriorityOp` also rejects MCP values above
+`maxHardwarePriority`. -/
+private def pm_ak8d_03_setMCPriorityHardwareCeilingRejects : IO Unit := do
+  let callerTid : SeLe4n.ThreadId := ⟨1⟩
+  let targetTid : SeLe4n.ThreadId := ⟨2⟩
+  let st := mkState [
+    (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 1000))),
+    (⟨2⟩, .tcb (mkTcb 2 (prio := 30) (mcp := 100)))
+  ]
+  match setMCPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨500⟩ with
+  | .ok _ => throw <| IO.userError "MCP 500 above hardware ceiling should be rejected"
+  | .error e => expect "error is illegalAuthority" (e == .illegalAuthority)
+
 end SeLe4n.Testing.PriorityManagementSuite
 
 open SeLe4n.Testing.PriorityManagementSuite in
@@ -572,4 +618,8 @@ def main : IO Unit := do
   IO.println "--- AK2-F: ReplenishQueue FIFO within tie ---"
   pm_ak2f_01_replenishFifoOnTie
   pm_ak2f_02_replenishSortedAcrossTimes
-  IO.println "=== All D2 priority management tests passed (24 tests) ==="
+  IO.println "--- AK8-D: hardware priority ceiling ---"
+  pm_ak8d_01_hardwarePriorityCeilingRejects
+  pm_ak8d_02_maxHardwarePriorityAccepts
+  pm_ak8d_03_setMCPriorityHardwareCeilingRejects
+  IO.println "=== All D2 priority management tests passed (27 tests) ==="

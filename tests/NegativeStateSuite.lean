@@ -388,6 +388,77 @@ private def runNegativeChecks : IO Unit := do
   else
     throw <| IO.userError "cspaceRevokeCdtStrict should detach successful descendant slot mapping"
 
+  -- ===========================================================================
+  -- AK8-B (WS-AK / C-M02): cspaceRevokeCdtTransactional atomicity regression
+  -- ===========================================================================
+
+  -- Case 1: Transactional variant FAILS atomically when a descendant's CNode is
+  -- missing. The caller's state is preserved (transaction rolled back).
+  match SeLe4n.Kernel.cspaceRevokeCdtTransactional strictRootSlot strictSeed with
+  | .error .objectNotFound =>
+      IO.println "positive check passed [cspaceRevokeCdtTransactional aborts atomically on missing CNode]"
+  | .error e =>
+      throw <| IO.userError s!"cspaceRevokeCdtTransactional should fail with .objectNotFound, got {repr e}"
+  | .ok _ =>
+      throw <| IO.userError
+        "cspaceRevokeCdtTransactional should fail when descendant CNode is missing"
+
+  -- Case 2: Transactional variant SUCCEEDS when all descendants have valid CNodes
+  -- (construct a clean seed with both descendants pointing at valid CNodes).
+  let txRootNode : CdtNodeId := ⟨40⟩
+  let txChildNodeA : CdtNodeId := ⟨41⟩
+  let txChildNodeB : CdtNodeId := ⟨42⟩
+  let txRootSlot : SeLe4n.Kernel.CSpaceAddr :=
+    { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 10 }
+  let txChildSlotA : SeLe4n.Kernel.CSpaceAddr :=
+    { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 11 }
+  let txChildSlotB : SeLe4n.Kernel.CSpaceAddr :=
+    { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 12 }
+  let rootCap : Capability := {
+    target := .object endpointId,
+    rights := AccessRightSet.ofList [.read, .write, .grant, .retype],
+    badge := none
+  }
+  let txSeed : SeLe4n.Model.SystemState := {
+    baseState with
+      objects := baseState.objects.insert cnodeId (.cnode {
+        depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
+        slots := ((SeLe4n.Kernel.RobinHood.RHTable.empty 16
+          |>.insert txRootSlot.slot rootCap)
+          |>.insert txChildSlotA.slot rootCap)
+          |>.insert txChildSlotB.slot rootCap
+      })
+      cdt := baseState.cdt
+        |>.addEdge txRootNode txChildNodeA .copy
+        |>.addEdge txRootNode txChildNodeB .copy
+      cdtSlotNode := ((baseState.cdtSlotNode
+        |>.insert txRootSlot txRootNode)
+        |>.insert txChildSlotA txChildNodeA)
+        |>.insert txChildSlotB txChildNodeB
+      cdtNodeSlot := ((baseState.cdtNodeSlot
+        |>.insert txRootNode txRootSlot)
+        |>.insert txChildNodeA txChildSlotA)
+        |>.insert txChildNodeB txChildSlotB
+      cdtNextNode := ⟨43⟩
+  }
+  match SeLe4n.Kernel.cspaceRevokeCdtTransactional txRootSlot txSeed with
+  | .ok (report, _stFinal) =>
+      if report.firstFailure = none then
+        IO.println "positive check passed [cspaceRevokeCdtTransactional succeeds atomically, firstFailure=none]"
+      else
+        throw <| IO.userError
+          s!"cspaceRevokeCdtTransactional success path should have firstFailure=none, got {toString report.firstFailure}"
+  | .error e =>
+      throw <| IO.userError
+        s!"cspaceRevokeCdtTransactional should succeed with valid seed, got {repr e}"
+
+  -- Case 3: validateRevokeCdtDescendants returns .ok on empty input.
+  match SeLe4n.Kernel.validateRevokeCdtDescendants txSeed [] with
+  | .ok _ =>
+      IO.println "positive check passed [validateRevokeCdtDescendants empty list returns .ok]"
+  | .error _ =>
+      throw <| IO.userError "validateRevokeCdtDescendants should succeed on empty descendant list"
+
   expectErr "dual-queue receive on non-endpoint object"
     (SeLe4n.Kernel.endpointReceiveDual cnodeId (SeLe4n.ThreadId.ofNat 1) baseState)
     .invalidCapability

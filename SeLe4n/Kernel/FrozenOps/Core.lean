@@ -146,6 +146,94 @@ def frozenStoreNotification (nId : SeLe4n.ObjId) (n : Notification)
     : FrozenKernel Unit :=
   frozenStoreObject nId (.notification n)
 
+-- ============================================================================
+-- AK8-G (DS-M01): Variant-kind-checked frozen store wrappers
+-- ============================================================================
+
+/-! ### AK8-G (DS-M01) — Typing Disjointness for Frozen Stores
+
+`frozenStoreObject` delegates to `FrozenMap.set`, which overwrites the stored
+value at an existing key regardless of variant. A bug-injected (or fuzz-
+generated) call like `frozenStoreTcb tid (some TCB)` on a key that holds
+a `.schedContext` / `.endpoint` / `.notification` would silently corrupt
+the object store's variant discipline.
+
+The production invariant `lifecycleObjectTypeLockstep` (AM4/AL6-C) rules
+this out at the proof layer, but FrozenOps has no such invariant on its
+`FrozenSystemState`. This matters because FrozenOps is the test-only
+two-phase-architecture validation layer (W3-G / AG8-D) and a cross-variant
+overwrite would produce inconsistent frozen-state fixtures without an
+obvious failure mode.
+
+These `*Checked` wrappers pre-validate the variant at the target key via
+the corresponding `frozenLookup*` helper and return `.error .objectNotFound`
+on a kind mismatch (matching the `frozenStoreObject` error kind for
+consistency with the rest of the FrozenOps error surface).
+
+**Scope:** FrozenOps is TEST-ONLY (audit §7.7 — confirmed NOT in the
+production import chain). AK8-G is a hardening fix for the test surface.
+-/
+
+/-- AK8-G (DS-M01): Kind-checked TCB store. Rejects writes when the target
+key either does not exist or does not currently hold a `.tcb` variant. -/
+def frozenStoreTcbChecked (tid : SeLe4n.ThreadId) (tcb : TCB)
+    : FrozenKernel Unit :=
+  fun st =>
+    match frozenLookupTcb st tid with
+    | some _ => frozenStoreTcb tid tcb st
+    | none => .error .objectNotFound
+
+/-- AK8-G (DS-M01): Kind-checked endpoint store. -/
+def frozenStoreEndpointChecked (epId : SeLe4n.ObjId) (ep : Endpoint)
+    : FrozenKernel Unit :=
+  fun st =>
+    match frozenLookupEndpoint st epId with
+    | some _ => frozenStoreEndpoint epId ep st
+    | none => .error .objectNotFound
+
+/-- AK8-G (DS-M01): Kind-checked notification store. -/
+def frozenStoreNotificationChecked (nId : SeLe4n.ObjId) (n : Notification)
+    : FrozenKernel Unit :=
+  fun st =>
+    match frozenLookupNotification st nId with
+    | some _ => frozenStoreNotification nId n st
+    | none => .error .objectNotFound
+
+/-- AK8-G (DS-M01): Soundness — a successful `frozenStoreTcbChecked` call
+has the same post-state as the unchecked `frozenStoreTcb`. Allows proofs
+that reason about `frozenStoreTcb` to transport to the checked wrapper's
+success case. -/
+theorem frozenStoreTcbChecked_ok_eq_frozenStoreTcb
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (st st' : FrozenSystemState)
+    (hOk : frozenStoreTcbChecked tid tcb st = .ok ((), st')) :
+    frozenStoreTcb tid tcb st = .ok ((), st') := by
+  unfold frozenStoreTcbChecked at hOk
+  cases hLookup : frozenLookupTcb st tid with
+  | some _ => rw [hLookup] at hOk; exact hOk
+  | none => rw [hLookup] at hOk; cases hOk
+
+/-- AK8-G (DS-M01): Soundness — `frozenStoreEndpointChecked` success
+agreement with unchecked `frozenStoreEndpoint`. -/
+theorem frozenStoreEndpointChecked_ok_eq_frozenStoreEndpoint
+    (epId : SeLe4n.ObjId) (ep : Endpoint) (st st' : FrozenSystemState)
+    (hOk : frozenStoreEndpointChecked epId ep st = .ok ((), st')) :
+    frozenStoreEndpoint epId ep st = .ok ((), st') := by
+  unfold frozenStoreEndpointChecked at hOk
+  cases hLookup : frozenLookupEndpoint st epId with
+  | some _ => rw [hLookup] at hOk; exact hOk
+  | none => rw [hLookup] at hOk; cases hOk
+
+/-- AK8-G (DS-M01): Soundness — `frozenStoreNotificationChecked` success
+agreement with unchecked `frozenStoreNotification`. -/
+theorem frozenStoreNotificationChecked_ok_eq_frozenStoreNotification
+    (nId : SeLe4n.ObjId) (n : Notification) (st st' : FrozenSystemState)
+    (hOk : frozenStoreNotificationChecked nId n st = .ok ((), st')) :
+    frozenStoreNotification nId n st = .ok ((), st') := by
+  unfold frozenStoreNotificationChecked at hOk
+  cases hLookup : frozenLookupNotification st nId with
+  | some _ => rw [hLookup] at hOk; exact hOk
+  | none => rw [hLookup] at hOk; cases hOk
+
 /-- Q7-B: Store a TCB's IPC state in frozen state. -/
 def frozenStoreTcbIpcState (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
     (ipcState : ThreadIpcState) : Except KernelError FrozenSystemState :=
