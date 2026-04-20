@@ -118,8 +118,14 @@ else
 fi
 
 section "summary"
+# NOTE: use arithmetic test, not `${CHECK_MODE:+…}` — the latter expands
+# the alt-branch whenever CHECK_MODE is *set and non-empty*, which
+# includes the value `0`, so it would incorrectly print "(check)" even
+# in write-through mode.
+mode_label=""
+if (( CHECK_MODE )); then mode_label="(check) "; fi
 if (( overall_exit == 0 )); then
-  echo "  all steps ${CHECK_MODE:+(check) }passed"
+  echo "  all steps ${mode_label}passed"
   exit 0
 fi
 echo "  at least one step failed; see output above" >&2

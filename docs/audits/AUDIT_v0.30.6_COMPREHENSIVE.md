@@ -60,6 +60,8 @@ auditor then:
 
 ### 0.4 Finding count by severity
 
+Initial scoring, before the self-verification pass (§7.1):
+
 | Severity | Count |
 |----------|------:|
 | CRITICAL | **3** |
@@ -69,8 +71,25 @@ auditor then:
 | INFO     | **40** (verifications + strengths) |
 | **Total** | **196** |
 
-Three critical items, 24 high, all detailed in §1 (Executive Summary) and
-§2–§9 per subsystem.
+**Post-verification adjustments** (landed in the same PR as this audit):
+
+- **C-02** — RESOLVED in this commit (scripts shipped + plan archived).
+- **H-13** — file:line citation corrected (Badge is in `Prelude.lean`,
+  not `Model/Object/Types.lean`); underlying finding stands.
+- **H-20** — quantification corrected: ~14 of 51 `KernelError`
+  variants have test coverage (not "2 of 51"); severity HIGH retained
+  because the gap is still the dominant test debt.
+- **H-22** — downgraded HIGH → **LOW**: the initial "no `.sha256`
+  companion" claim was false — `main_trace_smoke.expected.sha256`
+  exists and is enforced by `test_tier2_trace.sh`. Only the two smaller
+  fixtures lack companions. Net HIGH count = **23** after the
+  downgrade.
+
+Post-verification, the actionable gate is:
+- **CRITICAL**: 2 (C-01, C-03) — C-02 resolved.
+- **HIGH**:    23.
+
+All findings retain their original ID for traceability.
 
 ---
 
@@ -81,10 +100,12 @@ Three critical items, 24 high, all detailed in §1 (Executive Summary) and
 #### C-01 — Stale "Latest audit" pointer in public README
 **File**: `README.md:96`
 **Severity**: CRITICAL — because this is the first thing integrators read.
-**Evidence**: line 96 currently renders as
+**Evidence**: line 96 currently renders as (displayed with a space
+between `]` and `(` so the repo's markdown-link checker does not try
+to resolve the quoted target from this file's location):
 
 ```
-| **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
+| **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`] (docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
 ```
 
 The current canonical audit is `docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md`
@@ -173,16 +194,16 @@ converts a convention into a mechanism.
 | H-10 | Foundation | `ThreadId.toObjId` and `SchedContextId.toObjId` share `ObjId` namespace via identity mapping; relies on implicit functional-map uniqueness invariant. | §2.6 |
 | H-11 | Foundation | `RegisterFile.BEq` is non-lawful; `LawfulBEq (RHTable α β)` instance is not provided even under `[LawfulBEq β]`. | §2.6 |
 | H-12 | Foundation | `Badge.ofNatMasked` computes bitwise OR on unbounded `Nat` before truncation; abstract model permits intermediates > 2^64. | §2.6 |
-| H-13 | Foundation | `Badge.mk` constructor is public; no private-mk discipline means external code can construct `Badge` bypassing `valid` predicate. | §2.6 |
+| H-13 | Foundation | `Badge.mk` constructor is public (Prelude.lean:548-550 defines `structure Badge where val : Nat`, no `private mk ::`); external code can construct `Badge` bypassing `valid`. | §2.6 |
 | H-14 | Platform | DTB fuel-exhaustion path had legacy silent-truncation callers; `findMemoryRegPropertyChecked` exists but legacy `Option` form is still reachable. | §2.7 |
 | H-15 | Platform | DTB `physicalAddressWidth` is now a required parameter — GOOD — but older pre-AJ3-B call sites need audit that no `:= 52` defaulting survives. | §2.7 |
 | H-16 | Platform | `budgetSufficientCheck` tightened (AK9-E); verify no other `_Check` predicates still default to `true` on missing bindings. | §2.7 |
 | H-17 | Rust | `uart::UartLock::with` performs `unsafe { f(&mut *BOOT_UART_INNER.0.get()) }` with a lifetime that is correct only because the spin-CAS guard is held; explicit SAFETY proof sketch is thin. | §2.8 |
 | H-18 | Rust | `boot.S:39` builds `MPIDR_CORE_ID_MASK = 0x00FFFFFF` via `mov`+`movk`; no compile-time `const _` assertion binds the Rust-side constant to the assembly literal. | §2.8 |
 | H-19 | Rust | `gic::dispatch_irq` uses `EoiGuard` (Drop-based EOI); under `panic = "abort"` Drop is **not** run, so a direct `panic!()` inside a handler body leaks the INTID as active. | §2.8 |
-| H-20 | Tests | `NegativeStateSuite.lean` exercises mainly `.objectNotFound` / `.invalidCapability`; the other ~49 `KernelError` variants have near-zero per-syscall rejection coverage. | §2.10 |
+| H-20 | Tests | Cross-test `KernelError` variant coverage is ~14 of 51 defined variants; `NegativeStateSuite.lean` itself covers 6. The remaining ~37 variants have zero per-syscall rejection coverage anywhere in the tree. | §2.10 |
 | H-21 | Tests | No timeout wrapper on any `lake exe …` invocation in `scripts/test_lib.sh`; a regression that hangs (e.g., infinite fuel loop) blocks CI indefinitely. | §2.10 |
-| H-22 | Tests | Fixture files have no byte-hash at commit time; a malicious or accidental edit to `tests/fixtures/*.expected` cannot be distinguished from a legitimate update. | §2.10 |
+| H-22 | Tests | *(downgraded after verification)* Partial fixture-hash coverage: `main_trace_smoke.expected.sha256` exists and is enforced by `test_tier2_trace.sh:49-55`, but `robin_hood_smoke.expected` and `two_phase_arch_smoke.expected` have no `.sha256` companions and no enforcement. | §2.10 |
 | H-23 | Tests | AK6-G/H/I tests are comment-delimited blocks inside `InformationFlowSuite.lean`, not named test functions — runtime harness cannot report "AK6-G FAIL" as an identifiable unit. | §2.10 |
 | H-24 | Docs | `rust/sele4n-hal/src/trap.rs:186` and `rust/sele4n-hal/src/lib.rs:89` carry active `TODO(WS-V/AG10)` markers for SVC→Lean FFI routing. Per `AUDIT_v0.29.0_DEFERRED.md` these are deferred, but the source comment references `WS-V`/`AG10` which `WORKSTREAM_HISTORY.md` documents as closed workstreams — the TODO's cross-reference target is stale. | §2.11 |
 
@@ -795,12 +816,22 @@ and deprecate the `Nat`-wrapped path for production code. The existing
 path can remain for proof convenience.
 
 **H-13 — `Badge.mk` public constructor bypass**
-`SeLe4n/Model/Object/Types.lean:548-614` — `Badge` is defined as a
-structure with a public `mk` constructor. The `valid : Prop` predicate
-is *advisory* — constructing `Badge.mk (2^64 + 1)` type-checks. The
-file notes that "only internal test code can construct `Badge.mk` (2^64)
-directly" but public visibility means anyone importing Prelude or
-Types can.
+`SeLe4n/Prelude.lean:548-550` defines `Badge` as:
+```lean
+structure Badge where
+  val : Nat
+deriving DecidableEq, Repr, Inhabited
+```
+No `private mk ::` discipline; the default constructor is public. The
+`valid : Prop` predicate is *advisory* — constructing `Badge.mk (2^64 + 1)`
+type-checks, and `Prelude.lean:1327` confirms `Badge.mk` is consumed in
+proofs (so it is reachable). The file comment at
+`Prelude.lean:532` itself documents the risk: *"only internal test code
+can construct `Badge.mk (2^64)` directly"* — but public visibility means
+any module importing `Prelude` can do the same.
+(Corrigendum: an earlier draft of this audit cited
+`Model/Object/Types.lean:548-614`; that file does not contain `Badge`.
+The correct location is `Prelude.lean`.)
 **Recommendation**: use Lean's private-mk discipline
 (`structure Badge where private mk ::`) and expose only
 `Badge.ofNatMasked` / `Badge.ofNat` / literal builders. Audit every
@@ -1032,22 +1063,34 @@ cross-referenced from a build-time assertion in `build.rs` that scans
 `boot.S` for the literal and fails on mismatch. Option (a) is strictly
 better because it makes drift impossible.
 
-**H-19 — `dispatch_irq` EoiGuard does not fire on direct `panic!()`**
+**H-19 — `dispatch_irq` EoiGuard semantics under `panic = "abort"`**
 `rust/sele4n-hal/src/gic.rs:362-386` — `EoiGuard` uses `Drop` to
-guarantee EOI on all scope exits. Under `panic = "abort"` (per
-AK5-A `Cargo.toml`) Drop handlers are **not** run on panic — only on
-normal return. If an IRQ handler body contains a direct `panic!()`,
-the INTID remains active on the GIC, starving subsequent interrupts.
-The guard protects against `.unwrap()`/`.expect()` because those abort
-before unwinding, but a hand-rolled `panic!("…")` in a handler body
-has no such protection.
-**Recommendation**: either (a) forbid direct `panic!()` in IRQ-handler
-code paths via a lint (`#[deny(clippy::panic)]` at handler-function
-granularity), or (b) change the EOI sequencing so EOI fires *before*
-handler invocation (the GIC-400 spec permits this for level-sensitive
-interrupts configured as edge-triggered via `ICFGR`). Option (b) is a
-larger change; option (a) is cheap. At minimum, document the constraint
-in a visible `SAFETY: handler contract` banner at `dispatch_irq`.
+guarantee EOI on all scope exits. Under `panic = "abort"` (per AK5-A
+`Cargo.toml`) Drop handlers are **not** run on panic — only on normal
+return. If an IRQ handler body contains a direct `panic!()`, the INTID
+remains active on the GIC.
+
+**Design-intent context (verified during audit):** `gic.rs:299-308`
+explicitly addresses this — *"A handler panic in this profile is a
+fatal-invariant abort by design: the kernel halts before any further
+guest code can execute, so a lingering active-state INTID in the GIC
+is moot — no other code path observes the GIC afterwards."* The
+behavior is therefore known and accepted, not an oversight. The
+finding is retained at HIGH because it still merits attention before
+v1.0: a HIL reviewer new to the codebase should see the constraint on
+handler authors (no direct `panic!`) surfaced at the `dispatch_irq`
+call-site docstring, not only inside `EoiGuard`'s docs.
+
+**Recommendation**: either (a) add a `#[deny(clippy::panic)]` at the
+IRQ-handler-function level so direct panics become compile errors
+(cheap, defense-in-depth even though the design already halts), or
+(b) migrate the ack→handle→EOI sequence to emit EOI *before* handler
+invocation (GIC-400 spec permits this for level-sensitive / edge-
+reconfigured interrupts via `ICFGR`). Option (a) costs nothing;
+option (b) is a larger change. At minimum, replicate the
+`EoiGuard`-doc paragraph into the `dispatch_irq` top-level comment so
+a reader does not need to chase the type definition to learn the
+constraint.
 
 **MEDIUM findings — Rust**
 
@@ -1149,21 +1192,30 @@ Scope: `tests/` (24 suites + harness + fixtures), `scripts/` (26 shell
 scripts), `.github/workflows/` (5 workflows), `SeLe4n/Testing/` (helpers
 + invariant checks).
 
-**H-20 — `NegativeStateSuite.lean` covers 2 of ~51 `KernelError` variants**
-`tests/NegativeStateSuite.lean` — the tests agent reports that the
-bulk of explicit error-variant matches target `.objectNotFound` and
-`.invalidCapability`. The other ~49 discriminants
-(`.untypedRegionExhausted`, `.revocationRequired`, `.asidNotBound`,
+**H-20 — Sparse `KernelError` variant coverage across the test suite**
+`SeLe4n/Model/State.lean:34-97` defines 51 `KernelError` variants. A
+repo-wide count of `.error .X` patterns across all files in `tests/`
+shows 14 distinct variants used in assertions:
+`.addressOutOfBounds`, `.declassificationDenied`, `.flowDenied`,
+`.illegalState`, `.invalidArgument`, `.invalidCapability`,
+`.invalidMessageInfo`, `.invalidObjectType`, `.ipcMessageTooLarge`,
+`.ipcMessageTooManyCaps`, `.mmioUnaligned`, `.nullCapability`,
+`.objectNotFound`, `.policyDenied`. The other **~37 variants** have
+zero per-syscall rejection coverage — including security-relevant
+ones like `.revocationRequired`, `.asidNotBound`,
 `.schedulerInvariantViolation`, `.alignmentError`, `.vmFault`,
-`.nullCapability`, `.invalidObjectType`, etc.) have near-zero per-syscall
-rejection coverage. The suite is 3 660 lines and covers many scenarios,
-but each error variant should have at least one per-syscall rejection
-test per direction (the `.error` shape from each syscall that can
-produce it).
+`.targetSlotOccupied`, `.cyclicDependency`, `.dependencyViolation`,
+`.replyCapInvalid`. `NegativeStateSuite.lean` (3 660 lines) is the
+primary error-path harness but exercises only 6 of the 51 variants
+(`.objectNotFound`, `.invalidCapability`, `.illegalState`,
+`.ipcMessageTooLarge`, `.ipcMessageTooManyCaps`,
+`.addressOutOfBounds`).
 **Recommendation**: build a cross-product matrix — rows = `SyscallId`,
 columns = `KernelError` variants, cells = "expected to produce this
 variant under condition X". For every populated cell, land a scenario
 test. This turns "we test error handling" into a falsifiable claim.
+An audit-deliverable target for v1.0 is ≥35 of 51 variants with at
+least one per-syscall rejection test.
 
 **H-21 — No timeout on `lake exe …` invocations**
 `scripts/test_lib.sh` — `run_check()` does not wrap test-executable
@@ -1176,16 +1228,28 @@ wrap every `lake exe …` with `timeout "${LEAN_TEST_TIMEOUT_MINS}m"`.
 Grant PASS only on exit 0; map `124` (timeout) to an explicit FAIL with
 a "possible runaway proof / scenario" hint.
 
-**H-22 — Fixtures lack byte-hash guard**
-`tests/fixtures/main_trace_smoke.expected` (227 lines),
-`robin_hood_smoke.expected`, `two_phase_arch_smoke.expected` — no
-`.sha256` companion files, no pre-commit hash validation. CLAUDE.md
-fixture-update rule says "update fixture only with rationale" — the
-rule is honored by convention, not mechanism.
-**Recommendation**: add `tests/fixtures/SHA256SUMS` updated by
-`scripts/pre-commit-lean-build.sh` when the fixture changes, and
-verified by CI. A fixture edit requires updating the hash, making the
-change visible in `git diff` even when the content change is small.
+**H-22 — Partial fixture-hash coverage** *(downgraded during verification)*
+
+**Correction**: the initial finding claimed *"no `.sha256` companion
+files, no pre-commit hash validation"*. That claim is **incorrect**:
+1. `tests/fixtures/main_trace_smoke.expected.sha256` exists (92 bytes,
+   contains the single line
+   `1ac8b48dd984c2e5e5a6b3ad7fcac8bc6ccf332fafd523f35952fbab0e716abd  main_trace_smoke.expected`).
+2. `scripts/test_tier2_trace.sh:49-55` enforces it with
+   `sha256sum -c` and emits a "Fixture drift detected" failure with
+   remediation instructions when the hash does not match.
+
+**Residual gap**: `tests/fixtures/robin_hood_smoke.expected` and
+`tests/fixtures/two_phase_arch_smoke.expected` have no `.sha256`
+companions and no enforcement step; a silent edit to either of those
+would pass CI. That gap is genuine but narrower than the original
+finding claimed, so H-22 is downgraded from HIGH to **LOW** for the
+v1.0 release gate.
+
+**Recommendation**: add `.sha256` companions for the two unhashed
+fixtures and extend the existing `sha256sum -c` pattern in the
+appropriate tier script. No new infrastructure is required — just
+reuse the pattern already in `test_tier2_trace.sh`.
 
 **H-23 — AK6 tests are comment-delimited blocks, not named tests**
 `tests/InformationFlowSuite.lean:1067-1114` — AK6-G/H/I tests are
@@ -1474,7 +1538,11 @@ protects against silent regression.
   CLAUDE.md AK10-A claim exactly).
 - `tests/fixtures/robin_hood_smoke.expected`: 16 lines, present.
 - `tests/fixtures/two_phase_arch_smoke.expected`: 9 lines, present.
-- (Byte-hash gating is H-22.)
+- `tests/fixtures/main_trace_smoke.expected.sha256`: hash companion
+  present and enforced by `scripts/test_tier2_trace.sh:49-55` via
+  `sha256sum -c`. Fixture drift produces a CI failure with an
+  explicit remediation command. (Only the two smaller fixtures lack
+  companions — see H-22 downgraded finding.)
 
 ---
 
@@ -1640,7 +1708,7 @@ several HIGHs do. Here is a prioritized gate:
 | 3 | C-03: pre-commit hook not auto-installed | 1–2 h | Sole local defense against sorry + unbuildable module commits. |
 | 4 | H-24 / RUST-M06: Stale `WS-V/AG10` TODO targets | 30 min | Audit trail for deferred work is broken. |
 | 5 | H-20: NegativeStateSuite error-variant coverage | 2–3 days | ~49 `KernelError` variants have no per-syscall rejection test. |
-| 6 | H-22: Fixture byte-hash guard | 2 h | Prevents silent fixture drift under concurrent edits. |
+| 6 | ~~H-22: Fixture byte-hash guard~~ | ~~2 h~~ | Downgraded to LOW during verification: infrastructure already exists; only two unhashed fixtures remain. Move to v1.0 cleanup list. |
 | 7 | H-21: `lake exe` timeout wrapper in CI | 1 h | CI hangs block review throughput. |
 | 8 | H-07: at least one closure-form projection theorem discharged substantively | 1–2 days | Establishes the template that closes the AK6F.20b tracking item. |
 

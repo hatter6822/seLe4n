@@ -42,11 +42,42 @@ TOP=0
 FORMAT="bullets"
 CHECK_MODE=0
 
+# require_value SWITCH VALUE — exits 2 with a clear message if VALUE is
+# missing or starts with `-` (i.e. probably the next flag).
+require_value() {
+  local switch="$1" val="${2-}"
+  if [[ -z "${val}" || "${val:0:1}" == "-" ]]; then
+    echo "ERROR: ${switch} requires a value" >&2
+    exit 2
+  fi
+}
+
+# require_nonneg_int SWITCH VALUE — rejects non-numeric / negative args.
+require_nonneg_int() {
+  local switch="$1" val="$2"
+  if [[ ! "${val}" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: ${switch} must be a non-negative integer (got: ${val})" >&2
+    exit 2
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --threshold) THRESHOLD="$2"; shift 2 ;;
-    --top)       TOP="$2"; shift 2 ;;
-    --format)    FORMAT="$2"; shift 2 ;;
+    --threshold)
+      require_value "--threshold" "${2-}"
+      require_nonneg_int "--threshold" "$2"
+      THRESHOLD="$2"; shift 2 ;;
+    --top)
+      require_value "--top" "${2-}"
+      require_nonneg_int "--top" "$2"
+      TOP="$2"; shift 2 ;;
+    --format)
+      require_value "--format" "${2-}"
+      case "$2" in
+        bullets|table) FORMAT="$2" ;;
+        *) echo "ERROR: --format must be 'bullets' or 'table' (got: $2)" >&2; exit 2 ;;
+      esac
+      shift 2 ;;
     --check)     CHECK_MODE=1; shift ;;
     -h|--help)
       sed -n '9,28p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -72,7 +103,12 @@ trap 'rm -f "${tmp_list}"' EXIT
   if (( lines >= THRESHOLD )); then
     printf '%d\t%s\n' "${lines}" "${path}"
   fi
-done | sort -rn > "${tmp_list}"
+done \
+  | LC_ALL=C sort -t $'\t' -k1,1rn -k2,2 > "${tmp_list}"
+# -t $'\t' forces TAB as field separator (robust to paths with spaces)
+# -k1,1rn: primary = line count descending (numeric)
+# -k2,2:   secondary = path ascending (byte order), gives deterministic
+#          output across runs and machines (LC_ALL=C pins locale).
 
 if (( TOP > 0 )); then
   head -n "${TOP}" "${tmp_list}" > "${tmp_list}.cut"
@@ -96,11 +132,16 @@ if (( CHECK_MODE == 0 )); then
 fi
 
 # --check: compare the bullets against the block in CLAUDE.md. The block
-# starts at the "Known large files" header and ends at the first blank
-# line that precedes a "## " heading or the end of the section.
+# starts at the "Known large files" header and ends at the first line
+# after the header that is not a bullet.
+[[ -f CLAUDE.md ]] || { echo "ERROR: CLAUDE.md not found; cannot --check" >&2; exit 2; }
 expected="$(awk '/^\*\*Known large files\*\*/ {want=1; next}
                 want && /^- `/ {print; next}
                 want && !/^- `/ {exit}' CLAUDE.md)"
+if [[ -z "${expected}" ]]; then
+  echo "ERROR: could not locate '**Known large files**' bullet block in CLAUDE.md" >&2
+  exit 2
+fi
 actual="$(render)"
 
 if [[ "${expected}" == "${actual}" ]]; then
