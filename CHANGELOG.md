@@ -1,4 +1,4 @@
-## v0.30.0 — WS-AK Phase AK8 (Capability / Lifecycle / Service + Data Structures)
+## v0.30.1 — WS-AK Phase AK8 (Capability / Lifecycle / Service + Data Structures)
 
 Phase AK8 of the pre-1.0 release hardening portfolio lands 11 sub-tasks
 (AK8-A..AK8-K) addressing the capability / lifecycle / service + data-

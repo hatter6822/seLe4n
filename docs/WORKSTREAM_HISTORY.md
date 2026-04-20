@@ -19,7 +19,7 @@ previously spread across README.md, GitBook chapters, and audit plans.
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 
-## WS-AK Phase AK8 — Capability / Lifecycle / Service + Data Structures (v0.30.0)
+## WS-AK Phase AK8 — Capability / Lifecycle / Service + Data Structures (v0.30.1)
 
 **Status**: Phase AK8 COMPLETE. Addresses the C-M01..C-M07, DS-M01..DS-M04,
 and 21 LOW-tier findings in the `AUDIT_v0.29.0_COMPREHENSIVE.md` audit.

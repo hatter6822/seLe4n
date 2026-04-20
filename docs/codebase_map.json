@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-codebase-audit-stKD8",
-      "commit_sha": "83da4369fa49ac2c20eee377e2cba6168d1983dd",
-      "tree_sha": "422f1cdd56a2a44754b1daa56315ec2d260cbfda",
-      "committed_at_utc": "2026-04-19T19:17:29-04:00"
+      "commit_sha": "6d22225a989948ab1959c49841cfba13e24008fc",
+      "tree_sha": "5ad966abf0a868742aa774033fae2ab9663bc8e6",
+      "committed_at_utc": "2026-04-20T00:50:06+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 5529
   },
   "readme_sync": {
-    "version": "0.30.0",
+    "version": "0.30.1",
     "lean_toolchain": "v4.28.0",
     "production_files": 142,
     "production_loc": 102040,
