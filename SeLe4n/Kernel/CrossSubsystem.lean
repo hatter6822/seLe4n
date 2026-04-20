@@ -457,12 +457,14 @@ grandparent/grandchild chains (retype → retype → retype) can produce
 multi-level containment overlap that is NOT captured by this direct-child
 exclusion. Under the current API dispatch
 (`objectOfKernelType .untyped` hardcodes `regionBase = 0`), retype-to-untyped
-is not exercised by the test suite. A richer invariant (transitive
-ancestor/descendant tracking via a CDT-style closure) is tracked as WS-V
-post-1.0 work; see
-`retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild` for
-the machine-checked non-`.untyped` retype preservation proof that covers
-every retype path currently exercised by the API.
+is not exercised by any test and the API dispatch never produces a
+well-formed child untyped anyway. A richer invariant (transitive
+ancestor/descendant tracking via a CDT-style closure) would be a
+standalone model-refinement effort; it is NOT part of the Phase AK8
+scope and is NOT tracked in any currently-active WS-AK plan file.
+See `retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild`
+for the machine-checked non-`.untyped` retype preservation proof that
+covers every retype path currently exercised by the API.
 
 **Boot establishment:** Boot is responsible for establishing this invariant by
 partitioning the platform's physical RAM map into non-overlapping untyped

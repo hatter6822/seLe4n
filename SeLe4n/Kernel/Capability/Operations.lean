@@ -23,9 +23,12 @@ findings for the capability subsystem that were addressed in Phase AK8-K.
   performing any mutation. See `cspaceMutate` docstring; preservation
   proofs cascade via `by_cases hNull : cap.isNull`.
 - **C-L3 (`ipcTransferSingleCap` CDT edge without sender-rights record):**
-  deferred to WS-V — requires extending `CdtEdgeKind` with a sender-rights
-  field and updating the 14 CDT-edge composition proofs. Out of scope for
-  Phase AK8 which targets baseline correctness without cascade.
+  not modified in AK8. Closing this LOW-tier finding would require
+  extending `CdtEdgeKind` with a sender-rights field and updating the
+  14 CDT-edge composition proofs. That refactor is larger than the
+  Phase AK8 LOW-tier batch budgets for any single item and is recorded
+  here as a post-1.0 hardening candidate; no concrete plan file tracks
+  it yet.
 - **C-L4 (`cleanupDonatedSchedContext` asymmetry):** handled inline by
   the AJ1-A + AH2-A/B cascade which aligned bound/donated cleanup
   error-propagation through `cleanupPreReceiveDonationChecked`.
@@ -47,8 +50,10 @@ findings for the capability subsystem that were addressed in Phase AK8-K.
 - **C-L9 (abstract object sizes vs seL4 RPi5):** documented in
   `docs/spec/SELE4N_SPEC.md` §6.3 "Object size abstractions". The Lean
   model uses abstract `objectTypeAllocSize` which does not bind
-  tightly to seL4's hardware-specific layout; tightening to seL4/ARM64
-  exact sizes is WS-V scope.
+  tightly to seL4's hardware-specific layout. Tightening to seL4/ARM64
+  exact sizes would be a model-refinement workstream in its own right
+  and is not part of the current AK8 scope; recorded here as a
+  post-1.0 hardening candidate.
 - **C-L10 (`cspaceDeleteSlotCore` dangling CDT edges):** audited. The
   invocation `detachSlotFromCdt` inside `cspaceDeleteSlotCore` (AH3-A)
   already removes the slot→node mapping; the CDT node itself is preserved

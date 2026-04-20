@@ -1,3 +1,55 @@
+## v0.30.3 — WS-AK Phase AK8 second-pass audit (terminology hygiene + AK8-B tests)
+
+Second deep end-to-end audit of the Phase AK8 delivery surfaced two
+process-level issues:
+
+### Terminology hygiene
+
+Deferral annotations in Phase AK8 code and docs incorrectly referenced
+**WS-V** as a future-work bucket. **WS-V** was completed many releases
+ago (see `docs/WORKSTREAM_HISTORY.md` §"WS-V workstream ... COMPLETE").
+Using a closed workstream as a deferral bucket is misleading. Eight
+references introduced by AK8 have been rephrased:
+
+- `SeLe4n/Kernel/Architecture/Invariant.lean` (3 refs) — retype-to-untyped
+  scope marker and inline comments.
+- `SeLe4n/Kernel/CrossSubsystem.lean` (1 ref) — `untypedRegionsDisjoint`
+  scope docstring.
+- `SeLe4n/Kernel/Capability/Operations.lean` (2 refs) — C-L3 and C-L9
+  LOW-tier batch entries.
+- `SeLe4n/Kernel/RobinHood/Bridge.lean` (3 refs) — DS-L2, DS-L5, DS-M04
+  LOW-tier batch entries.
+- `CLAUDE.md`, `docs/WORKSTREAM_HISTORY.md`, `docs/spec/SELE4N_SPEC.md`,
+  `CHANGELOG.md` — AK8 delivery / remediation entries.
+
+Each reference now states honestly: "recorded here as a post-1.0
+hardening candidate; no currently-active workstream plan file tracks
+it." Historical entries predating AK8 (genuine WS-V era references) are
+left unchanged.
+
+### AK8-B regression test coverage
+
+`cspaceRevokeCdtTransactional` shipped in v0.30.0 without regression
+tests. Three new tests in `tests/NegativeStateSuite.lean`:
+
+- Transactional variant aborts atomically with `.error .objectNotFound`
+  when a descendant's CNode is missing.
+- Transactional variant succeeds with `firstFailure = none` when all
+  descendants have valid CNodes.
+- `validateRevokeCdtDescendants` returns `.ok` on an empty descendant
+  list.
+
+All three pass in Tier 2 (`test_tier2_negative.sh`).
+
+### Gate
+
+- `lake build` (260 jobs, 0 warnings)
+- `test_smoke.sh` PASS + `test_full.sh` PASS
+- `cargo test --workspace` PASS, `cargo clippy -- -D warnings` 0 warnings
+- All suites PASS (including `NegativeStateSuite` with the 3 new AK8-B tests)
+- `check_version_sync.sh` PASS at 0.30.3 (15 files synced)
+- Zero `sorry` / `axiom` in `SeLe4n/` or `Main.lean`
+
 ## v0.30.2 — WS-AK Phase AK8 audit remediation (untypedRegionsDisjoint preservation)
 
 Post-delivery end-to-end audit of the v0.30.1 Phase AK8 implementation
@@ -46,8 +98,8 @@ preservation proofs.
   `objectOfKernelType`, discharging the `hNotUntypedChild` hypothesis
   from `objType ≠ .untyped` via a per-constructor case split.
 - `retypeFromUntyped_untypedRegionsDisjoint_retype_to_untyped_documented`
-  — TPI-DOC marker documenting the retype-to-untyped case (deferred to
-  WS-V; not exercised by any existing test since
+  — TPI-DOC marker recording the retype-to-untyped case as post-1.0
+  hardening (not exercised by any existing test since
   `objectOfKernelType .untyped` hardcodes `regionBase = 0`).
 
 ### Regression tests

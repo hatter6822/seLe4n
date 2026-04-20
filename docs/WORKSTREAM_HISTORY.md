@@ -19,6 +19,52 @@ previously spread across README.md, GitBook chapters, and audit plans.
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 
+## WS-AK Phase AK8 second-pass audit (v0.30.3)
+
+**Status**: Second deep end-to-end audit COMPLETE. Addresses two
+process-level issues surfaced by re-reading the Phase AK8 delivery.
+
+### Finding 1 — Terminology hygiene
+
+Eight deferral annotations introduced by AK8 incorrectly cited **WS-V**
+as a future-work bucket. WS-V was completed many releases ago (see the
+§"WS-V workstream ... COMPLETE" entry in this file). Using a closed
+workstream as a deferral bucket is misleading — each such annotation
+has been rephrased to state honestly "recorded here as a post-1.0
+hardening candidate; no currently-active plan file tracks it." Scope:
+
+- `SeLe4n/Kernel/Architecture/Invariant.lean` (retype-to-untyped scope
+  docs)
+- `SeLe4n/Kernel/CrossSubsystem.lean` (`untypedRegionsDisjoint`
+  transitive-chain scope docs)
+- `SeLe4n/Kernel/Capability/Operations.lean` (C-L3 `ipcTransferSingleCap`
+  CDT-edge sender-rights, C-L9 abstract object sizes vs seL4 RPi5)
+- `SeLe4n/Kernel/RobinHood/Bridge.lean` (DS-L2 `insertNoResize`
+  Except-variant, DS-L5 400K/800K heartbeat refactor, DS-M04 `LawfulBEq`
+  entry-wise proof)
+- `CLAUDE.md`, `docs/spec/SELE4N_SPEC.md`, `docs/WORKSTREAM_HISTORY.md`,
+  `CHANGELOG.md` (AK8 delivery + remediation entries)
+
+### Finding 2 — AK8-B test gap
+
+`cspaceRevokeCdtTransactional` (AK8-B, v0.30.0) shipped with no
+regression tests. The v0.30.3 remediation adds three tests in
+`tests/NegativeStateSuite.lean` covering:
+- atomic abort with `.error .objectNotFound` on a missing descendant CNode,
+- successful atomic apply with `firstFailure = none` on a well-formed seed,
+- `validateRevokeCdtDescendants` returning `.ok` on an empty list.
+
+### Gate (v0.30.3)
+
+- `lake build` 260 jobs, 0 warnings
+- `test_full.sh` PASS + `test_smoke.sh` PASS
+- `cargo test --workspace` + `cargo clippy -- -D warnings` PASS
+- `model_integrity_suite` PASS (7 AK8-A audit tests from v0.30.2 still
+  passing)
+- `NegativeStateSuite` PASS (+3 new AK8-B tests)
+- `check_version_sync.sh` PASS at 0.30.3
+- Zero `sorry` / `axiom`
+
 ## WS-AK Phase AK8 audit remediation — untypedRegionsDisjoint preservation (v0.30.2)
 
 **Status**: Post-delivery audit COMPLETE. Closes a material gap in the
@@ -59,11 +105,12 @@ never substantively discharged.
    `retypeFromUntyped_objectOfKernelType_preserves_untypedRegionsDisjoint`
    discharges `hNotUntypedChild` from the dispatch-layer `objType ≠ .untyped`
    side-condition via per-constructor case split.
-5. **Deferral marker:**
+5. **Scope marker:**
    `retypeFromUntyped_untypedRegionsDisjoint_retype_to_untyped_documented`
-   formalizes the retype-to-untyped deferral to WS-V with full context
-   on the `objectOfKernelType .untyped` `regionBase = 0` hardcoding
-   that makes this case unreachable under current API dispatch.
+   records the retype-to-untyped case as a post-1.0 hardening candidate
+   (no currently-active plan file tracks it). The current
+   `objectOfKernelType .untyped` hardcodes `regionBase = 0` which makes
+   this path unreachable under existing API dispatch anyway.
 6. **Regression tests:** 7 new tests in `ModelIntegritySuite` exercise
    every facet of the invariant refinement (default, disjoint siblings,
    overlapping violation detection, parent-child containment,

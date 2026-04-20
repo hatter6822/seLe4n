@@ -38,8 +38,9 @@ Phase AK8-K:
   `RHTable.insertNoResize` — on fuel exhaustion the function now records
   via return type (returns the original table unmodified; callers must
   check via the size-preserving theorem). The "Except-returning" variant
-  is deferred — it would cascade through ~50 insert call sites and is
-  tracked as a WS-V hygiene task.
+  is not introduced in AK8 — it would cascade through ~50 insert call
+  sites. Recorded as post-1.0 hygiene work; no active plan file tracks
+  it.
 - **DS-L3 (`RHTable.erase` saturation):** documented. `Nat.sub` saturates
   at zero, so `size - 1` on an empty table remains 0. The existing
   `erase_size_bounded` theorem discharges the safety property without
@@ -53,7 +54,8 @@ Phase AK8-K:
   affected proofs in `Kernel/RobinHood/Invariant/Lookup.lean` and
   `Kernel/RobinHood/Invariant/Preservation.lean` require `set_option
   maxHeartbeats 400000` (up to 800000 in some places). Restructuring to
-  smaller lemma units is WS-V hygiene work.
+  smaller lemma units is post-1.0 hygiene work (not tracked in any
+  currently-active workstream plan).
 - **DS-L6 (`resolveExtraCaps` silent drop):** documented via AI6-A in
   `docs/spec/SELE4N_SPEC.md` §8.10.4 — silent-drop matches seL4 semantics.
 - **DS-L7 (wildcard unreachability 25-variant enumeration):** accepted
@@ -114,8 +116,8 @@ Consumers that need `LawfulBEq (RHTable α β)` for proof-layer equality
 reasoning (e.g., the `DecidableEq` derivation on `SystemState.objects`)
 MUST supply `[LawfulBEq β]` separately at the call site. No such
 derivation exists here as an `instance` because it would require an
-entry-wise correctness proof that is currently tracked as post-1.0
-hardening work (DS-M04 WS-V).
+entry-wise correctness proof that is recorded as post-1.0 hardening
+work (DS-M04). No currently-active workstream plan tracks it.
 
 Callers: if your proof cascade needs `LawfulBEq (RHTable α β)`, assume
 it as a hypothesis OR prove it inline using the table's structural

@@ -1227,9 +1227,11 @@ formulation handles the parent-child pair correctly (child is in parent's
 updated `children` list), but a full proof requires an additional
 well-formedness property: the caller must supply a `newObj : .untyped`
 whose `regionBase`/`regionSize` match the parent-derived sub-region. This
-obligation is documented as a TPI-DOC / WS-V item — transitive multi-level
-untyped nesting requires a richer invariant (root-restricted disjointness
-or transitive-ancestor exclusion). The `retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild`
+obligation is recorded here as a post-1.0 hardening candidate — transitive
+multi-level untyped nesting would require a richer invariant
+(root-restricted disjointness or transitive-ancestor exclusion). No
+currently-active workstream plan file tracks the full-coverage proof.
+The `retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild`
 theorem below covers the API dispatch path's primary use cases
 (`.tcb`, `.endpoint`, `.notification`, `.cnode`, `.vspaceRoot`,
 `.schedContext`) which account for every existing
@@ -1348,7 +1350,8 @@ caller obligation than the current model naturally provides:
    production `objectOfKernelType .untyped sz` helper does NOT enforce
    this — it hardcodes `regionBase := PAddr.ofNat 0`. Any caller exercising
    retype-to-untyped must therefore construct `newObj` via a
-   parent-context-aware wrapper (future work — WS-V).
+   parent-context-aware wrapper. The wrapper is not part of the Phase AK8
+   scope (AK8 targets baseline correctness of the invariant plumbing).
 
 2. **Transitive ancestor exclusion:** The current invariant formulation
    allows direct parent-child containment but does not account for
@@ -1357,12 +1360,16 @@ caller obligation than the current model naturally provides:
    `children` list), or (b) extends the child-exclusion side condition to
    transitive closure of the children relation.
 
-Both refinements are intentionally deferred to WS-V: Phase AK8 scope closes
-the API dispatch's primary retype paths (all non-`.untyped` children) with a
+Neither refinement is in scope for Phase AK8, which closes the API
+dispatch's primary retype paths (all non-`.untyped` children) with a
 machine-checked proof, establishes the runtime invariant infrastructure
 (12th conjunct + bridges + boot preservation), and documents the residual
-retype-to-untyped obligation as a future-work discharge that is UNREACHABLE
-under the current test suite (no test exercises retype-to-untyped). -/
+retype-to-untyped obligation as post-1.0 hardening work. The gap is
+currently UNREACHABLE under the test suite (no test exercises
+retype-to-untyped via `objectOfKernelType` because `objectOfKernelType
+.untyped sz` would produce a `.untyped` with `regionBase = 0`, failing
+the well-formedness precondition that the preservation proof would
+need). No currently-active plan file tracks the full-coverage proof. -/
 theorem retypeFromUntyped_untypedRegionsDisjoint_retype_to_untyped_documented :
     True := trivial
 
