@@ -539,6 +539,10 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
     (hStep : cspaceMove src dst st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   unfold cspaceMove at hStep
+  -- AK8-K (C-L1): self-move early-reject guard discharged first.
+  by_cases hSelf : src = dst
+  · simp [hSelf] at hStep
+  simp [hSelf] at hStep
   cases hSrc : cspaceLookupSlot src st with
   | error e => simp [hSrc] at hStep
   | ok pair =>
@@ -696,8 +700,11 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
       rcases pair with ⟨cap, st1⟩
       have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 addr cap hLookup
       subst st1
+      -- AK8-K (C-L2): null-cap guard discharged first.
+      by_cases hNull : cap.isNull
+      · simp [hNull]
       by_cases hRights : rightsSubset rights cap.rights
-      · simp only [hRights, ite_true]
+      · simp only [hNull, Bool.false_eq_true, ↓reduceIte, hRights]
         cases hPre : st.objects[addr.cnode]? with
         | none => simp
         | some preObj =>
@@ -736,7 +743,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
                   rw [← hObjMid]; exact congrArg (·[cnodeId]?) hObjRef
                 rw [hFinal] at hObj
                 exact hUnique cnodeId cn hObj
-      · simp [hRights]
+      · simp [hNull, hRights]
   -- WS-H4: cspaceMutate goes through storeObject(CNode.insert) → storeCapabilityRef, same as insertSlot
   have ⟨hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩ :
       cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' ∧ st'.objects.invExt := by
@@ -746,8 +753,11 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
     | ok pair =>
       rcases pair with ⟨cap, st1⟩
       have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 addr cap hLookup2; subst st1
+      -- AK8-K (C-L2): null-cap guard discharged first.
+      by_cases hNull : cap.isNull
+      · simp [hLookup2, hNull] at hStep
       by_cases hRights : rightsSubset rights cap.rights
-      · simp only [hLookup2, hRights, ite_true] at hStep
+      · simp only [hLookup2, hNull, Bool.false_eq_true, ↓reduceIte, hRights] at hStep
         cases hPre : st.objects[addr.cnode]? with
         | none => simp_all
         | some preObj =>
@@ -1937,6 +1947,10 @@ theorem cspaceMutate_preserves_badgeWellFormed
     have hPairEq := cspaceLookupSlot_ok_state_eq st addr pair.1 pair.2 hLookup
     simp only [hLookup] at hStep
     rw [hPairEq] at hStep
+    -- AK8-K (C-L2): null-cap guard discharged first.
+    by_cases hNull : pair.1.isNull
+    · simp [hNull] at hStep
+    simp only [hNull, Bool.false_eq_true, ↓reduceIte] at hStep
     split at hStep
     · -- rights subset check passed
       cases hObj : st.objects[addr.cnode]? with

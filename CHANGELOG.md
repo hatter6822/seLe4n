@@ -1,3 +1,74 @@
+## v0.30.0 — WS-AK Phase AK8 (Capability / Lifecycle / Service + Data Structures)
+
+Phase AK8 of the pre-1.0 release hardening portfolio lands 11 sub-tasks
+(AK8-A..AK8-K) addressing the capability / lifecycle / service + data-
+structures subsystems from the v0.29.0 comprehensive audit. Findings
+closed: 7 MEDIUM (C-M01..C-M07), 4 MEDIUM (DS-M01..DS-M04), 21 LOW
+(C-L1..C-L10, DS-L1..DS-L11).
+
+### Correctness hardening
+
+- **AK8-A (C-M01)** — `untypedRegionsDisjoint` added as the 12th conjunct of
+  `crossSubsystemInvariant`. Boot-time precondition
+  `PlatformConfig.untypedRegionsDisjoint` transports to runtime via a new
+  `foldObjects_objects_reachable` reachability lemma. 34 per-op bridges +
+  2 core bridges + `_retype_bridge` cascaded with the new hypothesis.
+- **AK8-B (C-M02)** — `cspaceRevokeCdtTransactional` provides validate-then-
+  apply atomic revocation. Helper `validateRevokeCdtDescendants` pre-checks
+  every descendant's CNode is present; any failure rolls back the entire
+  transaction. The existing `cspaceRevokeCdtStrict` (best-effort partial
+  progress) remains available.
+- **AK8-C (C-M03)** — `resolveCapAddress` caller rights obligation formally
+  documented with `resolveCapAddress_caller_rights_obligation` marker.
+- **AK8-D (C-M05)** — Hardware priority ceiling (`maxHardwarePriority := 255`)
+  enforced in `validatePriorityAuthority`; `validatePriorityAuthority_bound`
+  soundness theorem; 3 new regression tests in `PriorityManagementSuite` (27
+  tests total, up from 24).
+- **AK8-E (C-M06)** — `getCurrentPriorityChecked` variant surfaces missing-
+  SchedContext case via `.error .objectNotFound`.
+- **AK8-F (C-M07)** — `findFirstEmptySlotChecked` caps scan at
+  `2^radixWidth - base.toNat`, guaranteeing the returned slot fits in the
+  CNode's radix range (`findFirstEmptySlotChecked_within_radix`).
+- **AK8-K (C-L1, C-L2)** — `cspaceMove` rejects self-moves with
+  `.illegalState`; `cspaceMutate` rejects `Capability.null` sentinel with
+  `.nullCapability`. Preservation proofs cascaded through Preservation.lean
+  and InformationFlow/Invariant/Composition.lean + Operations.lean.
+
+### Test-only hardening
+
+- **AK8-G (DS-M01)** — Kind-checked frozen-store wrappers
+  (`frozenStoreTcbChecked`, `frozenStoreEndpointChecked`,
+  `frozenStoreNotificationChecked`) reject cross-variant overwrites.
+- **AK8-H (DS-M02)** — `frozenSchedContextUnbind` rewritten as transactional
+  two-phase (validate-then-write), eliminating the half-mutated-state
+  failure mode.
+
+### Data structure hardening
+
+- **AK8-I (DS-M03)** — `freezeCNodeSlotsChecked : CNode → Option CNodeRadix`
+  returns `none` on phantom-key conditions.
+- **AK8-J (DS-M04)** — `RHTable.BEq` / `LawfulBEq` requirement documented
+  with `RHTable_BEq_requires_lawfulBEq_of_value` marker.
+
+### Documentation
+
+- File-header documentation blocks in `Kernel/Capability/Operations.lean`
+  (C-L1..C-L10 batch) and `Kernel/RobinHood/Bridge.lean` (DS-L1..DS-L11
+  batch) annotate residual LOW-tier findings with rationale / cross-
+  references / deferral scope.
+- `docs/WORKSTREAM_HISTORY.md` gains a new "WS-AK Phase AK8" section with
+  per-sub-task summaries.
+
+### Gate
+
+- `lake build` (260 jobs, 0 warnings)
+- `test_smoke.sh` PASS + `test_full.sh` PASS
+- `cargo test --workspace` PASS (all suites)
+- `priority_management_suite` 27/27 PASS (+3 AK8-D tests)
+- `model_integrity_suite`, `information_flow_suite`, `frozen_ops_suite`
+  (21/21), `operation_chain_suite`, `negative_state_suite` all PASS
+- Zero `sorry` / `axiom` in `SeLe4n/` or `Main.lean`
+
 ## v0.30.0 — WS-AM cascade continuation (AK7-F.reader hygiene first wave)
 
 Post-delivery continuation of the v0.30.0 release landing a first

@@ -44,13 +44,49 @@ open SeLe4n.Kernel
 -- D2-D: validatePriorityAuthority
 -- ============================================================================
 
+/-- AK8-D (WS-AK / C-M05): Hardware priority ceiling. Matches seL4 MCS and
+the `MAX_PRIORITY = 255` constant exposed by the Rust ABI (`sele4n-types`)
+and `decodeSchedContextConfigureArgsChecked` (AK3-J). Any priority value
+above this cap cannot be encoded into the platform's 8-bit priority register
+file and would be truncated at the ABI boundary — validation rejects it
+instead. -/
+def maxHardwarePriority : Nat := 255
+
 /-- D2-D: Validate that the caller has sufficient MCP authority to assign
 the given priority. Returns `illegalAuthority` if `targetPriority > caller.mcp`.
-This is the MCP ceiling check — the primary defense against priority escalation. -/
+This is the MCP ceiling check — the primary defense against priority escalation.
+
+**AK8-D (WS-AK / C-M05) — MCP bound rationale:** `maxControlledPriority` is
+an unbounded `Nat` in the Lean model. Standard seL4 MCS semantics allow a
+root task with `maxControlledPriority = ∞` to set arbitrary priority on any
+child; that matches the reference specification (seL4 Manual §5.2 —
+"Priorities and MCPs") and is a deliberate design choice rather than a bug.
+
+However, the ABI transport layer truncates priorities to 8 bits (matching
+ARM GIC-400 `IPRIORITYR` and seL4's `seL4_MaxPrio = 255`). To surface this
+truncation point explicitly at the model layer, we additionally validate
+`targetPriority ≤ maxHardwarePriority`. This produces the same
+`illegalAuthority` result as the MCP ceiling violation and matches the
+existing `decodeSchedContextConfigureArgsChecked` bound from AK3-J. -/
 def validatePriorityAuthority (callerTcb : TCB) (targetPriority : SeLe4n.Priority)
     : Except KernelError Unit :=
-  if targetPriority.val ≤ callerTcb.maxControlledPriority.val then .ok ()
+  if targetPriority.val > maxHardwarePriority then .error .illegalAuthority
+  else if targetPriority.val ≤ callerTcb.maxControlledPriority.val then .ok ()
   else .error .illegalAuthority
+
+/-- AK8-D (WS-AK / C-M05): Soundness — if `validatePriorityAuthority`
+succeeds, the target priority fits in the platform's 8-bit priority
+register width. This witnesses that every priority assigned via the
+priority-management API path is representable in hardware, independent of
+how the Lean-level `maxControlledPriority` is configured. -/
+theorem validatePriorityAuthority_bound
+    (callerTcb : TCB) (newPri : SeLe4n.Priority)
+    (h : validatePriorityAuthority callerTcb newPri = .ok ()) :
+    newPri.val ≤ maxHardwarePriority := by
+  unfold validatePriorityAuthority at h
+  by_cases hLt : newPri.val > maxHardwarePriority
+  · simp [hLt] at h
+  · exact Nat.le_of_not_lt hLt
 
 -- ============================================================================
 -- D2-E: setPriorityOp
@@ -64,7 +100,15 @@ SchedContext priority if bound/donated.
 `schedContextBindingConsistent` (Invariant/Defs.lean) to guarantee the
 referenced SchedContext exists. If it does not (invariant violation), the
 function defensively falls back to `tcb.priority`. This fallback path is
-dead code when system invariants hold. -/
+dead code when system invariants hold.
+
+**AK8-E (WS-AK / C-M06) — Error-surfacing variant**: this lookup-tolerant
+signature is preserved for backward compatibility and for proof contexts
+where the `schedContextBindingConsistent` invariant has already been
+established at the call site. Production dispatch paths should prefer
+`getCurrentPriorityChecked` (below), which surfaces the "bound to
+non-existent SchedContext" case as `.error .schedContextNotFound` rather
+than silently masking it. -/
 def getCurrentPriority (st : SystemState) (tcb : TCB)
     : SeLe4n.Priority :=
   match tcb.schedContextBinding with
@@ -73,6 +117,56 @@ def getCurrentPriority (st : SystemState) (tcb : TCB)
     match st.objects[scId.toObjId]? with
     | some (.schedContext sc) => sc.priority
     | _ => tcb.priority
+
+/-- AK8-E (WS-AK / C-M06): Error-surfacing variant of `getCurrentPriority`.
+
+Returns `.error .objectNotFound` if the TCB's `schedContextBinding` is
+`.bound scId` or `.donated scId _` but the referenced SchedContext is not
+present in the object store (indicating a `schedContextBindingConsistent`
+invariant violation). Returns `.ok sc.priority` when the binding resolves
+cleanly, and `.ok tcb.priority` for unbound threads.
+
+The error variant reuses `.objectNotFound` (rather than introducing a new
+`.schedContextNotFound` variant) to keep the Rust ABI discriminant range
+stable at 49 entries — the missing-binding scenario is a genuine
+"referenced object not in store" case and matches the semantics of the
+existing variant.
+
+This variant is the preferred entry point for production kernel-entry paths
+that read priority for a potentially-bound TCB (e.g., preemption checks in
+`setPriorityOp`/`setMCPriorityOp`). The untagged lookup-tolerant
+`getCurrentPriority` remains available for proof-layer code where the
+binding invariant is established as a precondition. -/
+def getCurrentPriorityChecked (st : SystemState) (tcb : TCB)
+    : Except KernelError SeLe4n.Priority :=
+  match tcb.schedContextBinding with
+  | .unbound => .ok tcb.priority
+  | .bound scId | .donated scId _ =>
+    match st.objects[scId.toObjId]? with
+    | some (.schedContext sc) => .ok sc.priority
+    | _ => .error .objectNotFound
+
+/-- AK8-E (C-M06): Soundness — when `getCurrentPriorityChecked` returns
+`.ok p`, the result matches the lookup-tolerant `getCurrentPriority`. This
+allows existing proofs that reason about `getCurrentPriority` to transport
+to the checked variant's success case. -/
+theorem getCurrentPriorityChecked_ok_eq_getCurrentPriority
+    (st : SystemState) (tcb : TCB) (p : SeLe4n.Priority)
+    (hOk : getCurrentPriorityChecked st tcb = .ok p) :
+    getCurrentPriority st tcb = p := by
+  unfold getCurrentPriorityChecked at hOk
+  unfold getCurrentPriority
+  split at hOk
+  · -- unbound branch
+    exact Except.ok.inj hOk
+  · -- bound branch
+    split at hOk
+    · exact Except.ok.inj hOk
+    · cases hOk
+  · -- donated branch
+    split at hOk
+    · exact Except.ok.inj hOk
+    · cases hOk
 
 /-- Helper: update the priority of a thread's scheduling source (SchedContext
 or TCB) and store the updated object. Returns the updated state.

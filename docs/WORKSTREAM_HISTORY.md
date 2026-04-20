@@ -19,6 +19,87 @@ previously spread across README.md, GitBook chapters, and audit plans.
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 
+## WS-AK Phase AK8 — Capability / Lifecycle / Service + Data Structures (v0.30.0)
+
+**Status**: Phase AK8 COMPLETE. Addresses the C-M01..C-M07, DS-M01..DS-M04,
+and 21 LOW-tier findings in the `AUDIT_v0.29.0_COMPREHENSIVE.md` audit.
+
+### Sub-tasks
+
+- **AK8-A (C-M01 / MEDIUM)**: Added `untypedRegionsDisjoint` invariant as
+  the 12th conjunct of `crossSubsystemInvariant`, closing the cross-untyped
+  physical-region overlap gap. Introduced `PlatformConfig.untypedRegionsDisjoint`
+  as a new boot-time precondition; `bootFromPlatform_proofLayerInvariantBundle_general`
+  now takes an additional `hUntypedDisj` hypothesis. Cascade: 34 per-op bridge
+  lemmas extended with `(hUntypedDisj : untypedRegionsDisjoint st')` parameter
+  + 2 core bridges (`crossSubsystemInvariant_objects_frame`/`_services_change`)
+  + `crossSubsystemInvariant_objects_change_bridge` + `_retype_bridge`.
+  Added `foldObjects_objects_reachable` helper for boot-time disjointness
+  transport from config to runtime state.
+- **AK8-B (C-M02 / MEDIUM)**: Added `cspaceRevokeCdtTransactional` with
+  validate-then-apply semantics. New `validateRevokeCdtDescendants` helper
+  checks every descendant's CNode presence BEFORE any state mutation; on
+  validation failure the transaction aborts with `.error`, preserving the
+  pre-transaction snapshot. The strict variant `cspaceRevokeCdtStrict`
+  remains available for best-effort partial-progress semantics.
+- **AK8-C (C-M03 / MEDIUM)**: Added formal caller rights obligation
+  documentation at `resolveCapAddress` plus
+  `resolveCapAddress_caller_rights_obligation` marker theorem. Callers
+  must enforce required capability rights at the entry-level capability
+  BEFORE invoking; intermediate-level rights are not re-checked during
+  multi-level CSpace traversal.
+- **AK8-D (C-M05 / MEDIUM)**: Added `maxHardwarePriority := 255` constant
+  and extended `validatePriorityAuthority` to reject priorities above the
+  hardware ceiling with `.illegalAuthority`. Proved
+  `validatePriorityAuthority_bound` soundness theorem. Three new
+  regression tests in `PriorityManagementSuite` (27 total, up from 24).
+- **AK8-E (C-M06 / MEDIUM)**: Added `getCurrentPriorityChecked` variant
+  returning `Except KernelError Priority` with `.error .objectNotFound`
+  on missing SchedContext. Existing `getCurrentPriority` retained for
+  proof-layer contexts where `schedContextBindingConsistent` is
+  established upstream. Soundness bridged via
+  `getCurrentPriorityChecked_ok_eq_getCurrentPriority`.
+- **AK8-F (C-M07 / MEDIUM)**: Added `findFirstEmptySlotChecked` which caps
+  the scan at `min limit (2^radixWidth - base.toNat)`. Proved
+  `findFirstEmptySlotChecked_within_radix` soundness: every returned slot
+  index satisfies `s.toNat < 2^radixWidth`. Helper
+  `findFirstEmptySlot_bounded` witnesses that a successful scan with `k`
+  steps produces an index in `[base, base + k)`.
+- **AK8-G (DS-M01 / MEDIUM, TEST-ONLY)**: Added `frozenStoreTcbChecked`,
+  `frozenStoreEndpointChecked`, `frozenStoreNotificationChecked` variants
+  that pre-validate variant kind via `frozenLookup*` helpers and reject
+  cross-variant overwrites with `.error .objectNotFound`. Soundness
+  witnessed by three `*_ok_eq_*` theorems. Test-only hardening.
+- **AK8-H (DS-M02 / MEDIUM, TEST-ONLY)**: Rewrote `frozenSchedContextUnbind`
+  as transactional two-phase (validate-then-write): TCB lookup is hoisted
+  before SC mutation, eliminating the half-mutated-state failure mode
+  documented in audit §DS-M02.
+- **AK8-I (DS-M03 / MEDIUM)**: Added `freezeCNodeSlotsChecked :
+  CNode → Option CNodeRadix` which validates `allKeysBounded` before
+  building and returns `none` on phantom-key conditions. Soundness
+  proved via `freezeCNodeSlotsChecked_some_eq_freezeCNodeSlots` and
+  `freezeCNodeSlotsChecked_none_iff_phantom`.
+- **AK8-J (DS-M04 / MEDIUM)**: Documented the `LawfulBEq` gate on
+  `RHTable.BEq` — consumers that need `LawfulBEq (RHTable α β)` must
+  supply `[LawfulBEq β]` separately. Added
+  `RHTable_BEq_requires_lawfulBEq_of_value` documentation sentinel.
+- **AK8-K (C-L1..C-L10, DS-L1..DS-L11)**: Implementation changes:
+  - C-L1: `cspaceMove` rejects self-moves (`src = dst`) with
+    `.illegalState`. Cascaded to `cspaceMove_ok_implies_source_exists`,
+    `cspaceMove_preserves_capabilityInvariantBundle`, and
+    `cspaceMove_preserves_projection` via `by_cases hSelf`.
+  - C-L2: `cspaceMutate` rejects `Capability.null` with `.nullCapability`.
+    Cascaded to three preservation proofs via `by_cases hNull`.
+  - Documentation batch covering C-L3..C-L10 and DS-L1..DS-L11 in
+    module file-level docblocks at `Capability/Operations.lean` and
+    `RobinHood/Bridge.lean`.
+
+**Gate**: `lake build` (260 jobs, 0 warnings) + `test_smoke.sh` PASS +
+`test_full.sh` PASS + `cargo test --workspace` PASS + zero sorry/axiom in
+`SeLe4n/` or `Main.lean` + `priority_management_suite` 27/27 PASS +
+`model_integrity_suite` PASS + `information_flow_suite` PASS +
+`frozen_ops_suite` 21/21 PASS + `operation_chain_suite` PASS.
+
 ## WS-AM — AK7 cascade hygiene closure (v0.30.0)
 
 **Status**: Phase AM1 + AM4 COMPLETE.  Phases AM2 (AK7-F.writer wrapper

@@ -681,7 +681,20 @@ def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
 Mirrors `schedContextUnbind` in frozen state. No RunQueue or replenish queue
 manipulation (frozen phase uses fixed membership set). Clears bidirectional
 binding and, if the bound thread is current, clears current to force
-rescheduling. -/
+rescheduling.
+
+**AK8-H (WS-AK / DS-M02) — Transactional two-phase rewrite:** the previous
+implementation was non-transactional — on a failed TCB lookup AFTER the SC
+mutation had already been committed, it silently succeeded with a half-mutated
+state (SC cleared, TCB binding stale). This matched the AE2-D finding pattern
+and was flagged in audit §DS-M02.
+
+The rewrite hoists **both** lookups (SC and TCB) to the top, validates that
+the target TCB exists and holds the expected `.tcb` variant, and only then
+writes the two updated objects. Either both writes succeed or neither is
+attempted. The clean up-front validation also lets us reject the "SC bound
+to a non-TCB" case explicitly with `.error .objectNotFound`, rather than
+leaving a half-mutated state behind. -/
 def frozenSchedContextUnbind (scId : SeLe4n.ObjId) : FrozenKernel Unit :=
   fun st =>
     match st.objects.get? scId with
@@ -689,24 +702,25 @@ def frozenSchedContextUnbind (scId : SeLe4n.ObjId) : FrozenKernel Unit :=
       match sc.boundThread with
       | none => .error .illegalState
       | some tid =>
-        -- Clear current if bound thread is current (force rescheduling)
-        let st0 := if st.scheduler.current == some tid then
-          { st with scheduler := { st.scheduler with current := none } }
-        else st
-        let updatedSc := { sc with boundThread := none, isActive := false }
-        match st0.objects.set scId (.schedContext updatedSc) with
-        | none => .error .objectNotFound
-        | some st1Objs =>
-        match st1Objs.get? tid.toObjId with
+        -- AK8-H Phase 1: Validate TCB lookup BEFORE any state mutation.
+        match st.objects.get? tid.toObjId with
         | some (.tcb tcb) =>
+          -- AK8-H Phase 2: Both lookups succeeded; apply all writes atomically.
+          let st0 := if st.scheduler.current == some tid then
+            { st with scheduler := { st.scheduler with current := none } }
+          else st
+          let updatedSc := { sc with boundThread := none, isActive := false }
           let updatedTcb := { tcb with
             schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound }
-          match st1Objs.set tid.toObjId (.tcb updatedTcb) with
-          | some objs2 => .ok ((), { st0 with objects := objs2 })
+          match st0.objects.set scId (.schedContext updatedSc) with
           | none => .error .objectNotFound
+          | some st1Objs =>
+            match st1Objs.set tid.toObjId (.tcb updatedTcb) with
+            | some objs2 => .ok ((), { st0 with objects := objs2 })
+            | none => .error .objectNotFound
         | _ =>
-          -- TCB not found — clear SC side only
-          .ok ((), { st0 with objects := st1Objs })
+          -- AK8-H: TCB missing or wrong variant — fail closed, no SC mutation.
+          .error .objectNotFound
     | _ => .error .objectNotFound
 
 -- ============================================================================

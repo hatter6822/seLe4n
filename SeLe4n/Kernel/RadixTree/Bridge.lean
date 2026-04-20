@@ -498,9 +498,74 @@ theorem buildCNodeRadixChecked_fallback
 /-- Convert a CNode's RHTable-backed slot store to a flat radix array.
 This is the integration point for Q5's freeze operation: during freeze,
 each CNode's `slots : RHTable Slot Capability` is converted to a
-`CNodeRadix` via this function. -/
+`CNodeRadix` via this function.
+
+**AK8-I (WS-AK / DS-M03) — Checked variant:** This function uses the
+unchecked `CNodeRadix.ofCNode` which internally calls `buildCNodeRadix`
+and trusts the caller to have established `UniqueRadixIndices` at the
+call site (e.g., `FreezeProofs.lean:914` which discharges it as an
+explicit hypothesis). New code that cannot establish the
+`UniqueRadixIndices` hypothesis statically should use
+`freezeCNodeSlotsChecked` (below), which returns `Option CNodeRadix`
+and produces `none` on phantom-key or radix-collision conditions. -/
 def freezeCNodeSlots (cn : CNode) : CNodeRadix :=
   CNodeRadix.ofCNode cn
+
+/-- AK8-I (WS-AK / DS-M03): Option-returning variant of `freezeCNodeSlots`
+that validates radix well-formedness at freeze time via
+`buildCNodeRadixChecked`'s `allKeysBounded` precondition.
+
+Returns `some radix` when every slot key fits in the CNode's
+`2^radixWidth` addressable range (the well-formedness precondition of
+`buildCNodeRadix_lookup_equiv` / `UniqueRadixIndices`). Returns `none`
+when any slot key exceeds the bound, surfacing the phantom-key condition
+as a freeze-time failure rather than silently producing a radix tree
+with collisions in the lower bits (the legacy behaviour of the unchecked
+`freezeCNodeSlots`).
+
+The plan (AUDIT §DS-M03) calls for converting `freezeCNodeSlots` to this
+`Option`-valued signature. For compatibility with the existing
+`FreezeProofs.lean:914` caller (which establishes `UniqueRadixIndices`
+as an explicit Prop-level hypothesis), we introduce the checked variant
+additively — new consumers should prefer the checked entry point, while
+proof-layer code that already discharges the precondition continues to
+use the unchecked `freezeCNodeSlots`. -/
+def freezeCNodeSlotsChecked (cn : CNode) : Option CNodeRadix :=
+  if allKeysBounded cn.slots cn.radixWidth then
+    some (buildCNodeRadixChecked cn.slots (CNodeConfig.ofCNode cn))
+  else
+    none
+
+/-- AK8-I (DS-M03): Soundness — when `freezeCNodeSlotsChecked` returns
+`some radix`, it produces the same value as the unchecked
+`freezeCNodeSlots`. Allows proofs that transport results about
+`freezeCNodeSlots` to the checked variant's success case. -/
+theorem freezeCNodeSlotsChecked_some_eq_freezeCNodeSlots
+    (cn : CNode) (radix : CNodeRadix)
+    (hOk : freezeCNodeSlotsChecked cn = some radix) :
+    freezeCNodeSlots cn = radix := by
+  unfold freezeCNodeSlotsChecked at hOk
+  unfold freezeCNodeSlots CNodeRadix.ofCNode
+  by_cases hB : allKeysBounded cn.slots cn.radixWidth
+  · simp [hB] at hOk
+    rw [buildCNodeRadixChecked_eq_of_bounded cn.slots (CNodeConfig.ofCNode cn) hB] at hOk
+    exact hOk
+  · simp [hB] at hOk
+
+/-- AK8-I (DS-M03): `freezeCNodeSlotsChecked` failure condition. Returns
+`none` iff there exists a slot key exceeding the CNode's radix bound. -/
+theorem freezeCNodeSlotsChecked_none_iff_phantom
+    (cn : CNode) :
+    freezeCNodeSlotsChecked cn = none ↔
+    allKeysBounded cn.slots cn.radixWidth = false := by
+  unfold freezeCNodeSlotsChecked
+  constructor
+  · intro h
+    by_cases hB : allKeysBounded cn.slots cn.radixWidth
+    · simp [hB] at h
+    · simpa using hB
+  · intro hNot
+    simp [hNot]
 
 /-- `freezeCNodeSlots` preserves guard parameters from the source CNode. -/
 theorem freezeCNodeSlots_guardWidth (cn : CNode) :

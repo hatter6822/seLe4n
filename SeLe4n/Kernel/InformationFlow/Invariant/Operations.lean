@@ -1158,6 +1158,10 @@ theorem cspaceMove_preserves_projection
     (hStep : cspaceMove src dst st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
   unfold cspaceMove at hStep
+  -- AK8-K (C-L1): self-move early-reject guard discharged first.
+  by_cases hSelf : src = dst
+  · simp [hSelf] at hStep
+  simp [hSelf] at hStep
   cases hLookup : cspaceLookupSlot src st with
   | error e => simp [hLookup] at hStep
   | ok pair =>

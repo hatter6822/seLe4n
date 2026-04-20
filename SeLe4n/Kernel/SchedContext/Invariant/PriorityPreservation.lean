@@ -108,13 +108,20 @@ theorem migrateRunQueueBucket_machine_eq
 -- ============================================================================
 
 /-- D2-J: validatePriorityAuthority success implies the priority is bounded.
-    Direct from the `if` guard in the definition. -/
+    AK8-D: With the extended check (`targetPriority ≤ maxHardwarePriority ∧
+    targetPriority ≤ callerTcb.mcp`), success still implies the MCP bound
+    (the second conjunct). -/
 theorem validatePriorityAuthority_ok_bounded
     (callerTcb : TCB) (targetPriority : SeLe4n.Priority)
     (hOk : validatePriorityAuthority callerTcb targetPriority = .ok ()) :
     targetPriority.val ≤ callerTcb.maxControlledPriority.val := by
-  simp [validatePriorityAuthority] at hOk
-  exact hOk
+  unfold validatePriorityAuthority at hOk
+  by_cases hHw : targetPriority.val > maxHardwarePriority
+  · simp [hHw] at hOk
+  · simp [hHw] at hOk
+    by_cases hMcp : targetPriority.val ≤ callerTcb.maxControlledPriority.val
+    · exact hMcp
+    · simp [hMcp] at hOk
 
 /-- D2-J: After `setPriorityOp` succeeds, the new priority does not exceed
 the caller's MCP. Direct proof from the validation check in D2-D. -/

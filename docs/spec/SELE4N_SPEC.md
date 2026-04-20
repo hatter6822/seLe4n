@@ -56,7 +56,7 @@ enforcement, and scheduling.
 | **Proved declarations** | 2,819 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
-| **Active workstream** | **WS-AK Phase AK7 COMPLETE** (v0.29.14). Pre-1.0 Release Hardening (v0.29.0 audit) — Phase AK7: Foundational Model (Prelude/Machine/Model). 11 sub-tasks (AK7-A..AK7-K) addressing 2 HIGH, 11 MEDIUM, 15 LOW foundational findings. Plan: [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) §10. Portfolio AK1..AK10 targeted at v1.0.0 release (AK1–AK7 complete; AK8–AK10 in progress). Prior: WS-AJ (v0.28.1–v0.29.0), WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG–WS-B. **Next: WS-AK Phase AK8 (Capability/Lifecycle/Data Structures).** |
+| **Active workstream** | **WS-AK Phase AK8 COMPLETE** (v0.30.0). Pre-1.0 Release Hardening (v0.29.0 audit) — Phase AK8: Capability / Lifecycle / Service + Data Structures. 11 sub-tasks (AK8-A..AK8-K) addressing 7 MEDIUM (C-M01..C-M07), 4 MEDIUM (DS-M01..DS-M04), 21 LOW findings. Key deliverables: `untypedRegionsDisjoint` as 12th conjunct of `crossSubsystemInvariant` (AK8-A); `cspaceRevokeCdtTransactional` (AK8-B); `maxHardwarePriority = 255` ceiling (AK8-D); `findFirstEmptySlotChecked` radix bound (AK8-F); transactional FrozenOps unbind (AK8-H); `cspaceMove` self-move + `cspaceMutate` null-cap guards (AK8-K). Plan: [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) §11. Portfolio AK1..AK10 targeted at v1.0.0 release (AK1–AK8 complete; AK9–AK10 in progress). Prior: WS-AM (v0.30.0), WS-AJ (v0.28.1–v0.29.0), WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG–WS-B. **Next: WS-AK Phase AK9 (Platform, Boot, DTB, MMIO).** |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -134,7 +134,7 @@ security model while introducing improvements that the Lean 4 proof framework en
 
 | Area | seL4 | seLe4n Improvement |
 |------|------|-------------------|
-| **Service registry** *(seLe4n extension)* | No kernel-level service concept | Service registry with dependency graphs, acyclic policy enforcement, isolation edges (novel seLe4n extension — not present in seL4). WS-Q1 simplified to stateless registry model: no `ServiceStatus`/`ServiceConfig`/lifecycle ops. R4: cross-subsystem invariants — endpoint cleanup on TCB retype, service registration authority check (Write right + endpoint type verification), dependency graph cleanup on revocation, `crossSubsystemInvariant` bundle (10 predicates: Z9 5→8, AE5-C +registryInterfaceValid, AF1-B3 +blockingAcyclic) in `proofLayerInvariantBundle` (10 conjuncts, Z9-extended) |
+| **Service registry** *(seLe4n extension)* | No kernel-level service concept | Service registry with dependency graphs, acyclic policy enforcement, isolation edges (novel seLe4n extension — not present in seL4). WS-Q1 simplified to stateless registry model: no `ServiceStatus`/`ServiceConfig`/lifecycle ops. R4: cross-subsystem invariants — endpoint cleanup on TCB retype, service registration authority check (Write right + endpoint type verification), dependency graph cleanup on revocation, `crossSubsystemInvariant` bundle (12 predicates: Z9 5→8, AE5-C +registryInterfaceValid, AF1-B3 +blockingAcyclic, AM4 +lifecycleObjectTypeLockstep, AK8-A +untypedRegionsDisjoint) in `proofLayerInvariantBundle` |
 | **CDT representation** | Mutable doubly-linked list | Node-stable CDT with O(1) slot transfer via pointer/backpointer fixup |
 | **IPC queuing** | Intrusive linked list | Dual-queue model (`sendQ`/`receiveQ`) with O(1) arbitrary removal; `blockedOnCall` state for call/reply semantics; reply-target scoping for confused-deputy prevention; formal `dualQueueSystemInvariant` with doubly-linked integrity (WS-H5) |
 | **Information flow** | Binary high/low partition | Parameterized N-domain labels with per-endpoint flow policies |
@@ -484,7 +484,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `barrierOrdered` theorems in `MmioAdapter.lean` (AG8-C) are trivially
    satisfied under the sequential model.
 
-4. **No multi-core invariants**: The `crossSubsystemInvariant` (10 predicates)
+4. **No multi-core invariants**: The `crossSubsystemInvariant` (12 predicates)
    and `proofLayerInvariantBundle` (11 conjuncts) are formulated for single-core
    state. Multi-core extensions would require per-core state partitioning and
    cross-core invariant composition.
