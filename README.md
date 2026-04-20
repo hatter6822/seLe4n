@@ -85,11 +85,11 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.29.13` |
+| **Version** | `0.30.5` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 95,528 across 141 files |
-| **Test Lean LoC** | 11,709 across 17 test suites |
-| **Proved declarations** | 2,819 theorem/lemma declarations (zero sorry/axiom) |
+| **Production Lean LoC** | 103,131 across 142 files |
+| **Test Lean LoC** | 14,874 across 24 test suites |
+| **Proved declarations** | 3,037 theorem/lemma declarations (zero sorry/axiom) |
 | **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 48 source files |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) — single-core (core 0), SMP deferred to WS-V |
 | **Hardware binding** | **H3 COMPLETE** (WS-AG AG1–AG10): HAL, GIC-400, timer, ARMv8 page tables, FFI bridge, QEMU boot |
@@ -189,7 +189,7 @@ SeLe4n/
 │   └── RPi5/                    Raspberry Pi 5 (BCM2712, GIC-400, MMIO)
 ├── Testing/                     Test harness, state builder, invariant checks
 Main.lean                        Executable entry point
-tests/                           17 test suites
+tests/                           24 test suites
 ```
 
 Each subsystem follows the **Operations/Invariant split**: transitions in

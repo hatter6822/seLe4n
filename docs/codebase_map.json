@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/complete-phase-ak9-workstream-2npyb",
-      "commit_sha": "0b1602581a3d4577815b79377e946fac35ecc442",
-      "tree_sha": "baaaef555f9ee84f27b761b8e990ede4a2b54f7b",
-      "committed_at_utc": "2026-04-20T03:28:56+00:00"
+      "commit_sha": "c60b9f16761873e3ca472b4bb42d9f1552596b94",
+      "tree_sha": "e44d2305c7469e4de53fd1a6e81b485aecf8e489",
+      "committed_at_utc": "2026-04-20T03:55:31+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "8773efc19ecc48c0d1bf31363c0aaf4d9eb1cbd9b1c68a01c24b71baebfa234c"
+    "source_digest": "49b375cb04778fe5f9b931944a3ad96bec4265db5ff1b660d27fae959f644c1c"
   },
   "summary": {
     "module_count": 166,
@@ -27,7 +27,7 @@
     "version": "0.30.5",
     "lean_toolchain": "v4.28.0",
     "production_files": 142,
-    "production_loc": 103131,
+    "production_loc": 103133,
     "test_files": 24,
     "test_loc": 14874,
     "proved_theorem_lemma_decls": 3037,
@@ -59337,7 +59337,7 @@
         {
           "kind": "def",
           "name": "mmioRead",
-          "line": 380,
+          "line": 382,
           "called": [
             "Kernel",
             "PAddr",
@@ -59347,7 +59347,7 @@
         {
           "kind": "def",
           "name": "mmioWrite",
-          "line": 392,
+          "line": 394,
           "called": [
             "Kernel",
             "PAddr",
@@ -59357,7 +59357,7 @@
         {
           "kind": "def",
           "name": "isAligned",
-          "line": 405,
+          "line": 407,
           "called": [
             "PAddr",
             "toNat"
@@ -59366,7 +59366,7 @@
         {
           "kind": "def",
           "name": "findDeviceRegion",
-          "line": 415,
+          "line": 417,
           "called": [
             "MemoryRegion",
             "PAddr",
@@ -59376,7 +59376,7 @@
         {
           "kind": "def",
           "name": "isDeviceRangeWithinRegion",
-          "line": 427,
+          "line": 429,
           "called": [
             "PAddr",
             "endAddr",
@@ -59388,7 +59388,7 @@
         {
           "kind": "def",
           "name": "mmioWrite32",
-          "line": 445,
+          "line": 447,
           "called": [
             "Kernel",
             "PAddr",
@@ -59402,7 +59402,7 @@
         {
           "kind": "def",
           "name": "mmioWrite64",
-          "line": 476,
+          "line": 478,
           "called": [
             "Kernel",
             "PAddr",
@@ -59416,7 +59416,7 @@
         {
           "kind": "def",
           "name": "mmioRead32",
-          "line": 548,
+          "line": 550,
           "called": [
             "Kernel",
             "PAddr",
@@ -59430,7 +59430,7 @@
         {
           "kind": "def",
           "name": "mmioRead64",
-          "line": 568,
+          "line": 570,
           "called": [
             "Kernel",
             "PAddr",
@@ -59444,7 +59444,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead32_rejects_unaligned",
-          "line": 590,
+          "line": 592,
           "called": [
             "PAddr",
             "SystemState",
@@ -59455,7 +59455,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead64_rejects_unaligned",
-          "line": 596,
+          "line": 598,
           "called": [
             "PAddr",
             "SystemState",
@@ -59466,7 +59466,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead32_rejects_out_of_region",
-          "line": 602,
+          "line": 604,
           "called": [
             "PAddr",
             "SystemState",
@@ -59478,7 +59478,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead64_rejects_out_of_region",
-          "line": 609,
+          "line": 611,
           "called": [
             "PAddr",
             "SystemState",
@@ -59490,7 +59490,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead32_preserves_state",
-          "line": 616,
+          "line": 618,
           "called": [
             "PAddr",
             "SystemState",
@@ -59500,7 +59500,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead64_preserves_state",
-          "line": 627,
+          "line": 629,
           "called": [
             "PAddr",
             "SystemState",
@@ -59510,7 +59510,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead32_alignedAndBounded_within_region",
-          "line": 640,
+          "line": 642,
           "called": [
             "PAddr",
             "SystemState",
@@ -59522,7 +59522,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead64_alignedAndBounded_within_region",
-          "line": 650,
+          "line": 652,
           "called": [
             "PAddr",
             "SystemState",
@@ -59534,7 +59534,7 @@
         {
           "kind": "def",
           "name": "mmioReadBytes32",
-          "line": 666,
+          "line": 668,
           "called": [
             "PAddr",
             "mem",
@@ -59545,7 +59545,7 @@
         {
           "kind": "def",
           "name": "mmioWrite32W1C",
-          "line": 685,
+          "line": 687,
           "called": [
             "Kernel",
             "PAddr",
@@ -59560,7 +59560,7 @@
         {
           "kind": "theorem",
           "name": "isDeviceRangeWithinRegion_false_of_non_device",
-          "line": 714,
+          "line": 716,
           "called": [
             "MemoryRegion",
             "PAddr",
@@ -59574,7 +59574,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite32W1C_rejects_out_of_region",
-          "line": 740,
+          "line": 742,
           "called": [
             "PAddr",
             "SystemState",
@@ -59586,7 +59586,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite32W1C_rejects_non_device",
-          "line": 748,
+          "line": 750,
           "called": [
             "PAddr",
             "SystemState",
@@ -59600,7 +59600,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite32W1C_rejects_unaligned",
-          "line": 756,
+          "line": 758,
           "called": [
             "PAddr",
             "SystemState",
@@ -59611,7 +59611,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite32_rejects_unaligned",
-          "line": 766,
+          "line": 768,
           "called": [
             "PAddr",
             "SystemState",
@@ -59622,7 +59622,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite64_rejects_unaligned",
-          "line": 772,
+          "line": 774,
           "called": [
             "PAddr",
             "SystemState",
@@ -59633,7 +59633,7 @@
         {
           "kind": "theorem",
           "name": "mmioReadByte_rejects_non_device",
-          "line": 782,
+          "line": 784,
           "called": [
             "PAddr",
             "SystemState",
@@ -59644,7 +59644,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead_rejects_non_device",
-          "line": 789,
+          "line": 791,
           "called": [
             "PAddr",
             "SystemState",
@@ -59656,7 +59656,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite_rejects_non_device",
-          "line": 795,
+          "line": 797,
           "called": [
             "PAddr",
             "SystemState",
@@ -59667,7 +59667,7 @@
         {
           "kind": "theorem",
           "name": "mmioReadByte_preserves_state",
-          "line": 801,
+          "line": 803,
           "called": [
             "PAddr",
             "SystemState",
@@ -59677,7 +59677,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead_preserves_state",
-          "line": 811,
+          "line": 813,
           "called": [
             "PAddr",
             "SystemState",
@@ -59688,7 +59688,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite_frame",
-          "line": 817,
+          "line": 819,
           "called": [
             "PAddr",
             "SystemState",
@@ -59698,7 +59698,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite32_rejects_out_of_region",
-          "line": 834,
+          "line": 836,
           "called": [
             "PAddr",
             "SystemState",
@@ -59710,7 +59710,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite32_rejects_non_device",
-          "line": 844,
+          "line": 846,
           "called": [
             "PAddr",
             "SystemState",
@@ -59724,7 +59724,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite64_rejects_out_of_region",
-          "line": 853,
+          "line": 855,
           "called": [
             "PAddr",
             "SystemState",
@@ -59736,7 +59736,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite64_rejects_non_device",
-          "line": 862,
+          "line": 864,
           "called": [
             "PAddr",
             "SystemState",
@@ -59750,7 +59750,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite32_alignedAndBounded_within_region",
-          "line": 874,
+          "line": 876,
           "called": [
             "PAddr",
             "SystemState",
@@ -59762,7 +59762,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite64_alignedAndBounded_within_region",
-          "line": 884,
+          "line": 886,
           "called": [
             "PAddr",
             "SystemState",
@@ -59774,7 +59774,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite32_frame",
-          "line": 893,
+          "line": 895,
           "called": [
             "PAddr",
             "SystemState",
@@ -59786,7 +59786,7 @@
         {
           "kind": "theorem",
           "name": "mmioWrite64_frame",
-          "line": 910,
+          "line": 912,
           "called": [
             "PAddr",
             "SystemState",
@@ -59798,7 +59798,7 @@
         {
           "kind": "def",
           "name": "notInMmioRegion",
-          "line": 937,
+          "line": 939,
           "called": [
             "PAddr",
             "inMmioRegion",
@@ -59808,7 +59808,7 @@
         {
           "kind": "theorem",
           "name": "mmioReadByte_nonMmio_safe",
-          "line": 943,
+          "line": 945,
           "called": [
             "PAddr",
             "SystemState",
@@ -59820,7 +59820,7 @@
         {
           "kind": "theorem",
           "name": "mmioRead_nonMmio_safe",
-          "line": 951,
+          "line": 953,
           "called": [
             "PAddr",
             "SystemState",
@@ -59833,7 +59833,7 @@
         {
           "kind": "theorem",
           "name": "memoryRead_idempotent_nonMmio",
-          "line": 961,
+          "line": 963,
           "called": [
             "PAddr",
             "SystemState",
@@ -59843,13 +59843,13 @@
         {
           "kind": "inductive",
           "name": "BarrierKind",
-          "line": 989,
+          "line": 991,
           "called": []
         },
         {
           "kind": "def",
           "name": "barrierOrdered",
-          "line": 1015,
+          "line": 1017,
           "called": [
             "SystemState"
           ]
@@ -59857,7 +59857,7 @@
         {
           "kind": "theorem",
           "name": "barrierOrdered_trivial",
-          "line": 1018,
+          "line": 1020,
           "called": [
             "SystemState",
             "barrierOrdered"
@@ -59866,7 +59866,7 @@
         {
           "kind": "theorem",
           "name": "dsb_isb_guarantees_tlb_visibility",
-          "line": 1027,
+          "line": 1029,
           "called": [
             "SystemState",
             "barrierOrdered"
@@ -59875,7 +59875,7 @@
         {
           "kind": "theorem",
           "name": "dmb_guarantees_mmio_ordering",
-          "line": 1038,
+          "line": 1040,
           "called": [
             "SystemState",
             "barrierOrdered"
@@ -59884,7 +59884,7 @@
         {
           "kind": "theorem",
           "name": "dsb_guarantees_mmio_completion",
-          "line": 1049,
+          "line": 1051,
           "called": [
             "SystemState",
             "barrierOrdered"

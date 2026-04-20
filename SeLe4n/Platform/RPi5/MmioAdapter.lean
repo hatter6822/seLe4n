@@ -372,11 +372,13 @@ def mmioReadByte (addr : PAddr) : Kernel UInt8 :=
       .error .policyDenied
 
 /-- AK9-A backwards-compat alias: `mmioRead` delegates to `mmioReadByte`.
-    Prior releases exposed this 8-bit read as `mmioRead`; it is renamed
-    to `mmioReadByte` in v0.30.4 to make the byte-granularity intent
-    explicit at call sites. New code should use `mmioReadByte`
-    (or `mmioRead32` / `mmioRead64` for word-sized access). -/
-@[deprecated mmioReadByte (since := "0.30.4"), inline]
+    Prior releases exposed this 8-bit read as `mmioRead`. v0.30.4 added
+    `mmioReadByte` as a thin `@[inline]` alias; the v0.30.5 audit
+    remediation inverted the relationship so `mmioReadByte` is the
+    primary definition and `mmioRead` is this deprecated alias. New
+    code should use `mmioReadByte` (or `mmioRead32` / `mmioRead64` for
+    word-sized access). -/
+@[deprecated mmioReadByte (since := "0.30.5"), inline]
 def mmioRead (addr : PAddr) : Kernel UInt8 := mmioReadByte addr
 
 /-- U6-A/T6-E: MMIO write operation with formal abstraction boundary.
