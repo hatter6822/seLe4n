@@ -238,7 +238,7 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 ```
 
 **Known large files** (read in ≤500-line chunks) — refreshed v0.30.6 (AK10-E):
-- `CHANGELOG.md` (~9325 lines)
+- `CHANGELOG.md` (~9453 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural.lean` (~7626 lines)
 - `docs/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~3768 lines)
@@ -270,11 +270,11 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 - `SeLe4n/Kernel/Lifecycle/Operations.lean` (~1473 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean` (~1069 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1076 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1177 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1012 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1006 lines)
-- `SeLe4n/Kernel/RobinHood/Bridge.lean` (~994 lines)
-- `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~949 lines)
+- `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1095 lines)
+- `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1031 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~939 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~895 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~869 lines)
