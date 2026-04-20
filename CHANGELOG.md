@@ -1,7 +1,26 @@
-## v0.30.5 — WS-AK Phase AK9 audit remediation
+## v0.30.5 — WS-AK Phase AK9 audit remediation (+ second-pass polish)
 
 Deep end-to-end audit of the v0.30.4 Phase AK9 delivery surfaced five
 correctness / rigor gaps where the plan's intent was not fully honored.
+A subsequent second-pass audit added: (a) eight additional
+`bootEnableInterruptsOp` frame theorems covering lifecycle, IRQ table,
+service registry, ASID table, TLB, object index, and machine-config
+fields (best-practice parity with `applyMachineConfig`'s 11 preservation
+theorems); (b) corrected the `@[deprecated mmioReadByte]` annotation's
+`since := "0.30.4"` → `since := "0.30.5"` to reflect that mmioRead only
+became a deprecated alias in v0.30.5 (v0.30.4 added mmioReadByte as a
+non-deprecating alias); (c) fixed two stale doc-comment references to
+`mmioRead` / `mmioRead_preserves_state` in the file-level docstring
+(now reference the renamed `mmioReadByte` / `mmioReadByte_preserves_state`
+plus the width-specific siblings); (d) strengthened
+`ak9a_06_mmioRead_alias_matches_byte` test from a weak Bool-equality
+to a value-comparison plus a negative-path RAM-rejection check;
+(e) refreshed `bootFromPlatform_machine_non_config_fields` docstring
+with a cross-reference to the AK9-G `bootFromPlatformChecked` mirror;
+(f) updated stale README / SPEC / GitBook / i18n metric tables
+(production LoC, test LoC, declaration count) to match the regenerated
+codebase_map.json after the new theorems landed.
+
 This release closes each gap with substantive wiring and additional
 regression tests (34 total, up from 21 at v0.30.4).
 

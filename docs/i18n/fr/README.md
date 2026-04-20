@@ -89,9 +89,9 @@ de preuve de Lean 4 :
 |----------|--------|
 | **Version** | `0.30.5` |
 | **Chaîne d'outils Lean** | `v4.28.0` |
-| **LoC Lean de production** | 103 131 réparties sur 142 fichiers |
-| **LoC Lean de test** | 14 874 réparties sur 24 suites de tests |
-| **Déclarations prouvées** | 3 037 déclarations theorem/lemma (zéro sorry/axiom) |
+| **LoC Lean de production** | 103 179 réparties sur 142 fichiers |
+| **LoC Lean de test** | 14 890 réparties sur 24 suites de tests |
+| **Déclarations prouvées** | 3 045 déclarations theorem/lemma (zéro sorry/axiom) |
 | **Matériel cible** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Dernier audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](../../../docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — Audit complet du noyau Lean + Rust (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
 | **Carte de la base de code** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventaire lisible par machine des déclarations |

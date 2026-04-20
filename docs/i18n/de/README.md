@@ -88,9 +88,9 @@ Lean-4-Beweissystem ermöglicht werden:
 |-------------|------|
 | **Version** | `0.30.5` |
 | **Lean-Toolchain** | `v4.28.0` |
-| **Produktions-LoC (Lean)** | 103.131 über 142 Dateien |
-| **Test-LoC (Lean)** | 14.874 über 24 Testsuiten |
-| **Bewiesene Deklarationen** | 3.037 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
+| **Produktions-LoC (Lean)** | 103.179 über 142 Dateien |
+| **Test-LoC (Lean)** | 14.890 über 24 Testsuiten |
+| **Bewiesene Deklarationen** | 3.045 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
 | **Zielhardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Letztes Audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](../../../docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — vollständiges Kernel-Audit Lean + Rust (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
 | **Codebase-Karte** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — maschinenlesbare Deklarationsinventur |

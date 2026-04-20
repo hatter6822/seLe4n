@@ -341,17 +341,33 @@ def ak9a_05_mmioReadByte_accepts_uart : IO Unit := do
      | _ => false)
 
 set_option linter.deprecated false in
-/-- AK9-A: Backwards-compat alias `mmioRead` produces the same outcome
-    shape (ok with a value) as `mmioReadByte` at a valid UART address. -/
+/-- AK9-A: Backwards-compat alias `mmioRead` produces the EXACT same byte
+    value as `mmioReadByte` at a valid UART address, AND is a structural
+    `@[inline]` alias so the two definitions reduce identically. -/
 def ak9a_06_mmioRead_alias_matches_byte : IO Unit := do
   let addr : PAddr := uart0Base
   let st : SystemState := default
-  let aliasOk : Bool :=
-    match mmioRead addr st with | .ok _ => true | _ => false
-  let primaryOk : Bool :=
-    match mmioReadByte addr st with | .ok _ => true | _ => false
-  expect "AK9-A-06 mmioRead alias matches mmioReadByte"
-    (aliasOk == primaryOk)
+  -- Both must succeed AND return the same byte (the memory function is
+  -- pure, so identical inputs guarantee identical outputs given identical
+  -- gate behavior).
+  let aliasByte : Option UInt8 :=
+    match mmioRead addr st with | .ok (b, _) => some b | _ => none
+  let primaryByte : Option UInt8 :=
+    match mmioReadByte addr st with | .ok (b, _) => some b | _ => none
+  expect "AK9-A-06 mmioRead alias byte matches mmioReadByte"
+    (aliasByte.isSome && aliasByte == primaryByte)
+  -- Negative: both reject the same RAM address with the same error.
+  let ramAddr : PAddr := PAddr.ofNat 0x1000
+  let aliasErr : Bool :=
+    match mmioRead ramAddr st with
+    | .error .policyDenied => true
+    | _ => false
+  let primaryErr : Bool :=
+    match mmioReadByte ramAddr st with
+    | .error .policyDenied => true
+    | _ => false
+  expect "AK9-A-06 mmioRead alias rejects RAM same as mmioReadByte"
+    (aliasErr && primaryErr)
 
 -- ============================================================================
 -- AK9-A: positive correctness theorems

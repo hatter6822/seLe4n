@@ -88,10 +88,11 @@ inductive MmioWriteKind where
 /-- U6-A: Formal MMIO region descriptor. Declares a range of physical
     addresses that map to device registers rather than normal memory.
 
-    For non-RAM regions, `mmioRead` returns the current abstract memory
+    For non-RAM regions, `mmioReadByte` (and the width-specific
+    `mmioRead32` / `mmioRead64`) return the current abstract memory
     content but proofs MUST NOT assume idempotency or determinism for
     volatile addresses. The `MmioSafe` hypothesis type enforces this at
-    the proof level. A future WS-V refinement will make the read result
+    the proof level. A future refinement may make the read result
     opaque (via a device state model) to prevent unsound unfolding. -/
 structure MmioRegionDesc where
   /-- Base physical address of the MMIO region. -/
@@ -270,8 +271,10 @@ def mkMmioSafe_gicCpu (addr : PAddr) (outcome memoryAt : Nat)
 4. **Frame properties**: MMIO writes only modify target bytes; all other addresses
    are preserved. Proven: `mmioWrite_frame`, `mmioWrite32_frame`, `mmioWrite64_frame`.
 
-5. **Read preservation**: `mmioRead` does not modify state. Proven:
-   `mmioRead_preserves_state`.
+5. **Read preservation**: MMIO reads do not modify state. Proven:
+   `mmioReadByte_preserves_state` (byte-granularity, AK9-A renamed),
+   `mmioRead32_preserves_state` and `mmioRead64_preserves_state`
+   (width-specific reads, AK9-A).
 
 6. **Write-one-clear modeling**: `mmioWrite32W1C` models GIC-400 W1C semantics
    (`new = old & ~mask`), distinct from direct-store `mmioWrite32`.

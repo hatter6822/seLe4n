@@ -337,6 +337,40 @@ theorem bootEnableInterruptsOp_objects_eq (ist : IntermediateState) :
 theorem bootEnableInterruptsOp_scheduler_eq (ist : IntermediateState) :
     (bootEnableInterruptsOp ist).state.scheduler = ist.state.scheduler := rfl
 
+/-- AK9-G: `bootEnableInterruptsOp` preserves the lifecycle metadata. -/
+theorem bootEnableInterruptsOp_lifecycle_eq (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.lifecycle = ist.state.lifecycle := rfl
+
+/-- AK9-G: `bootEnableInterruptsOp` preserves the IRQ handler table. -/
+theorem bootEnableInterruptsOp_irqHandlers_eq (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.irqHandlers = ist.state.irqHandlers := rfl
+
+/-- AK9-G: `bootEnableInterruptsOp` preserves the service registry. -/
+theorem bootEnableInterruptsOp_serviceRegistry_eq (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.serviceRegistry = ist.state.serviceRegistry := rfl
+
+/-- AK9-G: `bootEnableInterruptsOp` preserves the ASID table. -/
+theorem bootEnableInterruptsOp_asidTable_eq (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.asidTable = ist.state.asidTable := rfl
+
+/-- AK9-G: `bootEnableInterruptsOp` preserves the TLB shadow. -/
+theorem bootEnableInterruptsOp_tlb_eq (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.tlb = ist.state.tlb := rfl
+
+/-- AK9-G: `bootEnableInterruptsOp` preserves the object index. -/
+theorem bootEnableInterruptsOp_objectIndex_eq (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.objectIndex = ist.state.objectIndex := rfl
+
+/-- AK9-G: `bootEnableInterruptsOp` preserves machine.physicalAddressWidth. -/
+theorem bootEnableInterruptsOp_physicalAddressWidth_eq (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.machine.physicalAddressWidth =
+      ist.state.machine.physicalAddressWidth := rfl
+
+/-- AK9-G: `bootEnableInterruptsOp` preserves machine.memoryMap. -/
+theorem bootEnableInterruptsOp_memoryMap_eq (ist : IntermediateState) :
+    (bootEnableInterruptsOp ist).state.machine.memoryMap =
+      ist.state.machine.memoryMap := rfl
+
 /-- Q3-C: Construct an `IntermediateState` from platform configuration.
 
 Starts from the empty state and applies:
@@ -1296,7 +1330,8 @@ theorem bootFromPlatform_machine_physicalAddressWidth (config : PlatformConfig) 
   rw [applyMachineConfig_physicalAddressWidth]
 
 /-- AH2-F: Non-config machine fields (regs, memory, timer, systemRegisters,
-    interruptsEnabled) are preserved from default after boot.
+    interruptsEnabled) are preserved from default after `bootFromPlatform`
+    (the unchecked / pre-interrupts boot image).
 
     AK7-K (F-L4 / LOW) — boot interrupt-enable window: the Lean model's
     `bootFromPlatform` does NOT enable interrupts. The default
@@ -1307,8 +1342,16 @@ theorem bootFromPlatform_machine_physicalAddressWidth (config : PlatformConfig) 
     `interrupts::enable_irq()`. Between MMU enable (Phase 1) and GIC init
     (Phase 3) the kernel runs with IRQs masked — this is the
     interrupt-enable window. `tests/InterruptDispatchSuite.lean` covers
-    the Lean-side interrupt path; the Phase 3 enable is a HAL-layer
-    obligation. -/
+    the Lean-side interrupt path.
+
+    AK9-G (P-M06): The HAL Phase-3 enable is now MIRRORED in the Lean
+    model's checked boot path: `bootFromPlatformChecked` invokes
+    `bootEnableInterruptsOp` at the end of its ok-branch, so successful
+    checked boots emit `interruptsEnabled = true`. See
+    `bootFromPlatformChecked_ok_interruptsEnabled`. The plain
+    `bootFromPlatform` retains `interruptsEnabled = false` for
+    negative-state / boot-invariant-bridge contexts that need the
+    reset-state semantics. -/
 theorem bootFromPlatform_machine_non_config_fields (config : PlatformConfig) :
     (bootFromPlatform config).state.machine.regs = (default : SystemState).machine.regs ∧
     (bootFromPlatform config).state.machine.memory = (default : SystemState).machine.memory ∧
