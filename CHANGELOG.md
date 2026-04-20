@@ -1,3 +1,85 @@
+## v0.30.2 — WS-AK Phase AK8 audit remediation (untypedRegionsDisjoint preservation)
+
+Post-delivery end-to-end audit of the v0.30.1 Phase AK8 implementation
+surfaced one material gap: `lifecycleRetype_crossSubsystemInvariant_bridge`
+plumbed `hUntypedDisj : untypedRegionsDisjoint st'` as a hypothesis, but no
+theorem substantively proved that `retypeFromUntyped` actually preserves
+the invariant. This release closes that gap with machine-checked
+preservation proofs.
+
+### Invariant refinement
+
+- `untypedRegionsDisjoint` tightened to exclude DIRECT parent-child pairs
+  from the disjointness requirement. The `children` list on each
+  `UntypedObject` carries the ObjIds of its direct descendants; the
+  invariant's two new side-conditions (`∀ c ∈ ut₁.children, c.objId ≠ oid₂`
+  and the symmetric one) correctly permit the expected parent-child region
+  containment that retype produces, while still forcing top-level untypeds
+  to be pairwise disjoint. Boot-time configs satisfy the side-conditions
+  vacuously (no parent-child relationships at boot).
+- `PlatformConfig.untypedRegionsDisjoint` mirrors the refinement so
+  `bootFromPlatform_untypedRegionsDisjoint` remains a clean transport
+  from config-level precondition to runtime invariant.
+
+### New allocate bookkeeping lemmas
+
+- `UntypedObject.allocate_children_extends` — post-state `children` list
+  contains every pre-state entry.
+- `UntypedObject.allocate_children_new` — new child is at the head of the
+  post-state `children` list with exact `(objId, offset, size)` bookkeeping.
+- `UntypedObject.allocate_children_eq` — full structural characterization.
+- `UntypedObject.allocate_child_fits_parent` — the allocated sub-region
+  `[offset, offset + size)` lies inside the parent's region.
+
+### Substantive preservation proofs
+
+- `retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild` —
+  machine-checked preservation for the primary API dispatch path (retype
+  target is `.tcb`, `.endpoint`, `.notification`, `.cnode`, `.vspaceRoot`,
+  or `.schedContext`). Composes
+  `storeObject_sameRegion_untyped_preserves_untypedRegionsDisjoint` for
+  the parent-update step with
+  `storeObject_non_untyped_preserves_untypedRegionsDisjoint` for the
+  child-creation step.
+- `retypeFromUntyped_objectOfKernelType_preserves_untypedRegionsDisjoint`
+  — specialization for the actual API dispatch helper
+  `objectOfKernelType`, discharging the `hNotUntypedChild` hypothesis
+  from `objType ≠ .untyped` via a per-constructor case split.
+- `retypeFromUntyped_untypedRegionsDisjoint_retype_to_untyped_documented`
+  — TPI-DOC marker documenting the retype-to-untyped case (deferred to
+  WS-V; not exercised by any existing test since
+  `objectOfKernelType .untyped` hardcodes `regionBase = 0`).
+
+### Regression tests
+
+Seven new runtime tests in `tests/ModelIntegritySuite.lean`:
+- `ak8a_01_default_satisfies_untypedRegionsDisjoint`
+- `ak8a_02_disjoint_untypeds_satisfy_predicate`
+- `ak8a_03_overlapping_untypeds_violate_predicate`
+- `ak8a_04_parent_child_containment_allowed`
+- `ak8a_05_allocate_children_extends`
+- `ak8a_06_allocate_preserves_region`
+- `ak8a_07_empty_config_disjoint`
+
+### Infrastructure
+
+- `Kernel/Architecture/Invariant.lean` gains `import
+  SeLe4n.Kernel.Lifecycle.Invariant` so retype preservation proofs can
+  reach the retype operation's decomposition lemma without creating
+  import cycles.
+
+### Gate
+
+- `lake build` (260 jobs, 0 warnings)
+- `test_smoke.sh` + `test_full.sh` PASS
+- `cargo test --workspace` + `cargo clippy -- -D warnings` PASS (0 warnings)
+- `priority_management_suite` 27/27 PASS
+- `model_integrity_suite` PASS (now includes 7 AK8-A audit regression tests)
+- `frozen_ops_suite` 21/21, `information_flow_suite`,
+  `operation_chain_suite`, `negative_state_suite` all PASS
+- `check_version_sync.sh` PASS (canonical 0.30.2, all 15 files match)
+- Zero `sorry` / `axiom` in `SeLe4n/` or `Main.lean`
+
 ## v0.30.1 — WS-AK Phase AK8 (Capability / Lifecycle / Service + Data Structures)
 
 Phase AK8 of the pre-1.0 release hardening portfolio lands 11 sub-tasks

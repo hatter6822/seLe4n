@@ -436,24 +436,48 @@ child-ID collisions only *within* the same untyped object (via the
 allocate at the same underlying physical address, violating memory safety at
 the physical layer.
 
-**Invariant semantics:** Any two distinct untypeds in the object store (distinct
-by their ObjId key `oid₁ ≠ oid₂`) have non-overlapping physical memory regions.
-Two regions `[b₁, b₁+s₁)` and `[b₂, b₂+s₂)` are disjoint iff
+**Invariant semantics:** For any two distinct untypeds `ut₁` / `ut₂` in the
+object store (distinct by their ObjId key `oid₁ ≠ oid₂`), if **neither is
+a direct child of the other** (i.e., `oid₂ ∉ ut₁.children.map .objId` AND
+`oid₁ ∉ ut₂.children.map .objId`), their physical memory regions must not
+overlap. Two regions `[b₁, b₁+s₁)` and `[b₂, b₂+s₂)` are disjoint iff
 `b₁ + s₁ ≤ b₂ ∨ b₂ + s₂ ≤ b₁`.
+
+**Parent-child containment:** Retype operations carve a sub-region from the
+parent's allocation area for the child. In this case the child's region
+*must* lie inside the parent's region — a clear overlap — which is why the
+invariant explicitly excludes direct parent-child pairs. The `children` list
+on an `UntypedObject` tracks which ObjIds are its direct descendants; the
+invariant uses this list to exclude the legitimate-overlap pairs from the
+disjointness requirement.
+
+**Scope and transitive chains:** The invariant's "not a direct child"
+side-condition handles one level of parent-child nesting. Transitive
+grandparent/grandchild chains (retype → retype → retype) can produce
+multi-level containment overlap that is NOT captured by this direct-child
+exclusion. Under the current API dispatch
+(`objectOfKernelType .untyped` hardcodes `regionBase = 0`), retype-to-untyped
+is not exercised by the test suite. A richer invariant (transitive
+ancestor/descendant tracking via a CDT-style closure) is tracked as WS-V
+post-1.0 work; see
+`retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild` for
+the machine-checked non-`.untyped` retype preservation proof that covers
+every retype path currently exercised by the API.
 
 **Boot establishment:** Boot is responsible for establishing this invariant by
 partitioning the platform's physical RAM map into non-overlapping untyped
 regions (analogous to the existing `mmioRegionDisjointCheck` at
-`StateBuilder.lean` for MMIO regions). Runtime operations (all kernel ops
-except boot) preserve this invariant because no runtime op modifies an existing
-untyped's `regionBase` or `regionSize` — `retypeFromUntyped` only advances
-`watermark` and prepends to `children`, leaving the bounding region fixed (see
-`UntypedObject.allocate_preserves_region`). -/
+`StateBuilder.lean` for MMIO regions). At boot, all untypeds are top-level
+(no parent-child relationships) so the `children` side-conditions are vacuous
+and the invariant reduces to pairwise region disjointness across the entire
+boot-time untyped set. -/
 def untypedRegionsDisjoint (st : SystemState) : Prop :=
   ∀ (oid₁ oid₂ : SeLe4n.ObjId) (ut₁ ut₂ : UntypedObject),
     st.objects[oid₁]? = some (.untyped ut₁) →
     st.objects[oid₂]? = some (.untyped ut₂) →
     oid₁ ≠ oid₂ →
+    (∀ c ∈ ut₁.children, c.objId ≠ oid₂) →
+    (∀ c ∈ ut₂.children, c.objId ≠ oid₁) →
     ut₁.regionBase.val + ut₁.regionSize ≤ ut₂.regionBase.val ∨
     ut₂.regionBase.val + ut₂.regionSize ≤ ut₁.regionBase.val
 
@@ -462,7 +486,7 @@ vacuously — its `objects` table is empty, so the premise
 `st.objects[oid]? = some (.untyped _)` is uninhabited for every `oid`. -/
 theorem default_untypedRegionsDisjoint :
     untypedRegionsDisjoint (default : SystemState) := by
-  intro oid₁ oid₂ ut₁ ut₂ h₁ _ _
+  intro oid₁ oid₂ ut₁ ut₂ h₁ _ _ _ _
   simp only [RHTable_getElem?_eq_get?] at h₁
   have : (default : SystemState).objects.get? oid₁ = none :=
     SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) oid₁
@@ -476,9 +500,9 @@ theorem untypedRegionsDisjoint_frame
     (st st' : SystemState) (hObjects : st'.objects = st.objects)
     (hPre : untypedRegionsDisjoint st) :
     untypedRegionsDisjoint st' := by
-  intro oid₁ oid₂ ut₁ ut₂ h₁ h₂ hNe
+  intro oid₁ oid₂ ut₁ ut₂ h₁ h₂ hNe hChildren₁ hChildren₂
   rw [hObjects] at h₁ h₂
-  exact hPre oid₁ oid₂ ut₁ ut₂ h₁ h₂ hNe
+  exact hPre oid₁ oid₂ ut₁ ut₂ h₁ h₂ hNe hChildren₁ hChildren₂
 
 /-- AK8-A: `storeObject` of a non-`.untyped` variant preserves the set of
 untyped regions (same regionBase/regionSize for every existing `.untyped`
@@ -492,7 +516,7 @@ theorem storeObject_non_untyped_preserves_untypedRegionsDisjoint
     (hObjInv : st.objects.invExt)
     (hStep : storeObject id obj st = .ok ((), st')) :
     untypedRegionsDisjoint st' := by
-  intro oid₁ oid₂ ut₁ ut₂ h₁ h₂ hNe
+  intro oid₁ oid₂ ut₁ ut₂ h₁ h₂ hNe hChildren₁ hChildren₂
   unfold storeObject at hStep; cases hStep
   simp only [RHTable_getElem?_eq_get?] at h₁ h₂
   -- For either oid = id, the stored variant is `obj`, not `.untyped`, so the
@@ -518,51 +542,70 @@ theorem storeObject_non_untyped_preserves_untypedRegionsDisjoint
         simp only [RHTable_getElem?_eq_get?]; exact h₁
       have h₂' : st.objects[oid₂]? = some (.untyped ut₂) := by
         simp only [RHTable_getElem?_eq_get?]; exact h₂
-      exact hPre oid₁ oid₂ ut₁ ut₂ h₁' h₂' hNe
+      exact hPre oid₁ oid₂ ut₁ ut₂ h₁' h₂' hNe hChildren₁ hChildren₂
 
 /-- AK8-A: `storeObject` of an `.untyped` variant with the same `regionBase`
-and `regionSize` as the pre-existing entry at that key preserves
-`untypedRegionsDisjoint`. This is the preservation shape for
-`retypeFromUntyped` — the `allocate` helper only advances `watermark` and
-prepends to `children`, both of which leave `regionBase`/`regionSize`
-invariant. -/
+and `regionSize` as the pre-existing entry at that key — and whose
+`children` list is a superset of the pre-existing entry's — preserves
+`untypedRegionsDisjoint`. This is the preservation shape for the FIRST
+`storeObject` in `retypeFromUntyped` (the parent-update step): `allocate`
+advances `watermark`, prepends the new child to `children`, and leaves
+`regionBase` / `regionSize` unchanged (see
+`UntypedObject.allocate_preserves_region`).
+
+The `hChildrenExt` hypothesis captures the key containment property: every
+descendant already tracked in `utPre.children` is still tracked in
+`ut'.children` (retype only adds new children, never removes). This lets
+us transport root status from the richer post-state back to the smaller
+pre-state where the inductive invariant applies: if an ObjId is a root in
+post-state (not in any post-state untyped's `children` list), then it is
+also a root in pre-state (since pre-state children lists are subsets of
+post-state children lists). -/
 theorem storeObject_sameRegion_untyped_preserves_untypedRegionsDisjoint
     (st st' : SystemState) (id : SeLe4n.ObjId) (ut' : UntypedObject)
     (utPre : UntypedObject)
     (hPreExists : st.objects[id]? = some (.untyped utPre))
     (hBaseEq : ut'.regionBase = utPre.regionBase)
     (hSizeEq : ut'.regionSize = utPre.regionSize)
+    (hChildrenExt : ∀ c, c ∈ utPre.children → c ∈ ut'.children)
     (hPre : untypedRegionsDisjoint st)
     (hObjInv : st.objects.invExt)
     (hStep : storeObject id (.untyped ut') st = .ok ((), st')) :
     untypedRegionsDisjoint st' := by
-  intro oid₁ oid₂ ut₁ ut₂ h₁ h₂ hNe
+  intro oid₁ oid₂ ut₁ ut₂ h₁ h₂ hNe hChildren₁ hChildren₂
   unfold storeObject at hStep; cases hStep
   simp only [RHTable_getElem?_eq_get?] at h₁ h₂ hPreExists
-  -- Rewrite both lookups back to the pre-state using insert_self/insert_ne.
-  -- At key = id we learn ut = ut'; replace with utPre via the region equalities.
+  -- Returns the pre-state untyped together with the region equalities and a
+  -- children-list-containment fact, so child-exclusion hypotheses transport
+  -- backward from post- to pre-state.
   have hCvt : ∀ (oid : SeLe4n.ObjId) (ut : UntypedObject),
       (st.objects.insert id (KernelObject.untyped ut')).get? oid =
         some (KernelObject.untyped ut) →
       ∃ (utₓ : UntypedObject), st.objects.get? oid = some (.untyped utₓ) ∧
-        ut.regionBase = utₓ.regionBase ∧ ut.regionSize = utₓ.regionSize := by
+        ut.regionBase = utₓ.regionBase ∧ ut.regionSize = utₓ.regionSize ∧
+        (∀ c, c ∈ utₓ.children → c ∈ ut.children) := by
     intro oid ut hLookup
     by_cases hEq : oid = id
     · subst hEq
       rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hObjInv] at hLookup
       cases hLookup
-      exact ⟨utPre, hPreExists, hBaseEq, hSizeEq⟩
+      exact ⟨utPre, hPreExists, hBaseEq, hSizeEq, hChildrenExt⟩
     · have hNe' : ¬((id == oid) = true) := by
         intro heq; exact hEq (eq_of_beq heq).symm
       rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _ hNe' hObjInv] at hLookup
-      exact ⟨ut, hLookup, rfl, rfl⟩
-  obtain ⟨utₓ, h₁x, hBase₁, hSize₁⟩ := hCvt oid₁ ut₁ h₁
-  obtain ⟨utᵧ, h₂x, hBase₂, hSize₂⟩ := hCvt oid₂ ut₂ h₂
+      exact ⟨ut, hLookup, rfl, rfl, fun _ h => h⟩
+  obtain ⟨utₓ, h₁x, hBase₁, hSize₁, hCx₁⟩ := hCvt oid₁ ut₁ h₁
+  obtain ⟨utᵧ, h₂x, hBase₂, hSize₂, hCx₂⟩ := hCvt oid₂ ut₂ h₂
   have h₁'' : st.objects[oid₁]? = some (.untyped utₓ) := by
     simp only [RHTable_getElem?_eq_get?]; exact h₁x
   have h₂'' : st.objects[oid₂]? = some (.untyped utᵧ) := by
     simp only [RHTable_getElem?_eq_get?]; exact h₂x
-  have hDisj := hPre oid₁ oid₂ utₓ utᵧ h₁'' h₂'' hNe
+  -- Pre-state child-exclusion derived from post-state hypotheses + hCx.
+  have hPreC₁ : ∀ c ∈ utₓ.children, c.objId ≠ oid₂ :=
+    fun c hc => hChildren₁ c (hCx₁ c hc)
+  have hPreC₂ : ∀ c ∈ utᵧ.children, c.objId ≠ oid₁ :=
+    fun c hc => hChildren₂ c (hCx₂ c hc)
+  have hDisj := hPre oid₁ oid₂ utₓ utᵧ h₁'' h₂'' hNe hPreC₁ hPreC₂
   rw [hBase₁, hSize₁, hBase₂, hSize₂]; exact hDisj
 
 /-- R4-E.1 + T5-J + U4-G + Z9-D + AE5-C: Cross-subsystem invariant composing

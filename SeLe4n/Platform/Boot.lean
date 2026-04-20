@@ -1147,16 +1147,21 @@ def PlatformConfig.bootSafe (config : PlatformConfig) : Prop :=
   ∀ entry, entry ∈ config.initialObjects → bootSafeObject entry.obj
 
 /-- AK8-A (WS-AK / C-M01): Cross-untyped physical-region disjointness for
-boot configs. Any two distinct `.untyped` entries in `initialObjects` must
-have non-overlapping physical ranges.
+boot configs. For any two distinct `.untyped` entries in `initialObjects`
+where **neither is a direct child of the other**, their physical ranges
+must not overlap.
+
+The `children` side-conditions mirror the runtime
+`Kernel.untypedRegionsDisjoint` invariant so a config-level witness
+transports cleanly to the runtime post-state. At boot, configurations
+typically list only top-level untypeds (no `children`), so the
+side-conditions are vacuous and this reduces to pairwise region
+disjointness across the whole untyped set — the case the audit §C-M01
+finding was motivating.
 
 This mirrors the existing `mmioRegionDisjointCheck` pattern (which validates
 MMIO region disjointness at boot) and is the config-level precondition that
-discharges the runtime `Kernel.untypedRegionsDisjoint` invariant. Runtime
-operations preserve the invariant (see `untypedRegionsDisjoint_frame` and
-`storeObject_sameRegion_untyped_preserves_untypedRegionsDisjoint` in
-`Kernel/CrossSubsystem.lean`); only boot introduces new untyped regions, so
-this is the single location where disjointness must be established. -/
+discharges the runtime `Kernel.untypedRegionsDisjoint` invariant. -/
 def PlatformConfig.untypedRegionsDisjoint (config : PlatformConfig) : Prop :=
   ∀ (e₁ e₂ : ObjectEntry) (ut₁ ut₂ : UntypedObject),
     e₁ ∈ config.initialObjects →
@@ -1164,13 +1169,15 @@ def PlatformConfig.untypedRegionsDisjoint (config : PlatformConfig) : Prop :=
     e₁.id ≠ e₂.id →
     e₁.obj = .untyped ut₁ →
     e₂.obj = .untyped ut₂ →
+    (∀ c ∈ ut₁.children, c.objId ≠ e₂.id) →
+    (∀ c ∈ ut₂.children, c.objId ≠ e₁.id) →
     ut₁.regionBase.val + ut₁.regionSize ≤ ut₂.regionBase.val ∨
     ut₂.regionBase.val + ut₂.regionSize ≤ ut₁.regionBase.val
 
 /-- AK8-A: Empty config trivially satisfies `untypedRegionsDisjoint`. -/
 theorem PlatformConfig.untypedRegionsDisjoint_empty :
     PlatformConfig.untypedRegionsDisjoint { irqTable := [], initialObjects := [] } := by
-  intro _ _ _ _ hMem _ _ _ _; exact absurd hMem (by simp)
+  intro _ _ _ _ hMem _ _ _ _ _ _; exact absurd hMem (by simp)
 
 -- ============================================================================
 -- V4-A4b: Boot-safe object bridge — connect boot state objects to bootSafe
@@ -1263,7 +1270,7 @@ private theorem bootFromPlatform_untypedRegionsDisjoint
     (config : PlatformConfig)
     (hUntypedDisj : config.untypedRegionsDisjoint) :
     Kernel.untypedRegionsDisjoint (bootFromPlatform config).state := by
-  intro oid₁ oid₂ ut₁ ut₂ h₁ h₂ hNe
+  intro oid₁ oid₂ ut₁ ut₂ h₁ h₂ hNe hChildren₁ hChildren₂
   unfold bootFromPlatform at h₁ h₂
   -- Trace oid₁'s untyped back to initialObjects.
   rcases foldObjects_objects_reachable config.initialObjects
@@ -1276,7 +1283,13 @@ private theorem bootFromPlatform_untypedRegionsDisjoint
     · -- Both oid₁ and oid₂ from entries.
       -- e₁.id = oid₁ ≠ oid₂ = e₂.id, so e₁.id ≠ e₂.id.
       have hIdNe : e₁.id ≠ e₂.id := by rw [hId₁, hId₂]; exact hNe
-      exact hUntypedDisj e₁ e₂ ut₁ ut₂ hMem₁ hMem₂ hIdNe hObj₁ hObj₂
+      -- Transport the children-exclusion hypotheses from post-boot ObjIds
+      -- (oid₁ / oid₂) to entry-level IDs (e₁.id / e₂.id) via hId₁ / hId₂.
+      have hChildrenE₁ : ∀ c ∈ ut₁.children, c.objId ≠ e₂.id := by
+        intro c hc; rw [hId₂]; exact hChildren₁ c hc
+      have hChildrenE₂ : ∀ c ∈ ut₂.children, c.objId ≠ e₁.id := by
+        intro c hc; rw [hId₁]; exact hChildren₂ c hc
+      exact hUntypedDisj e₁ e₂ ut₁ ut₂ hMem₁ hMem₂ hIdNe hObj₁ hObj₂ hChildrenE₁ hChildrenE₂
     · -- oid₂ in foldIrqs base — but foldIrqs doesn't touch objects, and base is empty.
       rw [foldIrqs_objects] at hBase₂
       have hEmpty : mkEmptyIntermediateState.state.objects[oid₂]? = none := by

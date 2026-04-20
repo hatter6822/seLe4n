@@ -19,6 +19,68 @@ previously spread across README.md, GitBook chapters, and audit plans.
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 
+## WS-AK Phase AK8 audit remediation — untypedRegionsDisjoint preservation (v0.30.2)
+
+**Status**: Post-delivery audit COMPLETE. Closes a material gap in the
+v0.30.1 AK8-A delivery where the retype preservation proof for the 12th
+conjunct of `crossSubsystemInvariant` was plumbed as a hypothesis but
+never substantively discharged.
+
+### Audit findings
+
+- **AUDIT-AK8-1 (material gap):** The bridge
+  `lifecycleRetype_crossSubsystemInvariant_bridge` took
+  `hUntypedDisj : untypedRegionsDisjoint st'` as an input hypothesis but
+  no theorem proved `retypeFromUntyped` actually preserves the invariant
+  — leaving the top-level composition obligation open for any future
+  caller that invokes the bridge.
+
+### Remediation
+
+1. **Invariant refinement:** `untypedRegionsDisjoint` extended with
+   direct-child-exclusion side conditions
+   (`∀ c ∈ ut₁.children, c.objId ≠ oid₂` and symmetric), so parent-child
+   region containment (the expected retype outcome) correctly falls
+   outside the disjointness requirement.
+2. **Allocate bookkeeping:** 4 new theorems in `Model/Object/Types.lean`
+   (`allocate_children_extends`, `allocate_children_new`,
+   `allocate_children_eq`, `allocate_child_fits_parent`) expose the
+   structural facts needed by the preservation proof.
+3. **Substantive preservation:**
+   `retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild`
+   in `Kernel/Architecture/Invariant.lean` provides the machine-checked
+   preservation proof for the primary API dispatch path (retype target
+   `.tcb`/`.endpoint`/`.notification`/`.cnode`/`.vspaceRoot`/`.schedContext`).
+   Composes the parent-update step (via
+   `storeObject_sameRegion_untyped_preserves_untypedRegionsDisjoint`) with
+   the child-creation step (via
+   `storeObject_non_untyped_preserves_untypedRegionsDisjoint`).
+4. **API-path specialization:**
+   `retypeFromUntyped_objectOfKernelType_preserves_untypedRegionsDisjoint`
+   discharges `hNotUntypedChild` from the dispatch-layer `objType ≠ .untyped`
+   side-condition via per-constructor case split.
+5. **Deferral marker:**
+   `retypeFromUntyped_untypedRegionsDisjoint_retype_to_untyped_documented`
+   formalizes the retype-to-untyped deferral to WS-V with full context
+   on the `objectOfKernelType .untyped` `regionBase = 0` hardcoding
+   that makes this case unreachable under current API dispatch.
+6. **Regression tests:** 7 new tests in `ModelIntegritySuite` exercise
+   every facet of the invariant refinement (default, disjoint siblings,
+   overlapping violation detection, parent-child containment,
+   `allocate_*` structural bookkeeping, empty-config vacuous witness).
+
+### Gate (v0.30.2)
+
+- `lake build` 260 jobs, 0 warnings
+- `test_full.sh` PASS + `test_smoke.sh` PASS
+- `cargo test --workspace` + `cargo clippy -- -D warnings` PASS
+- `model_integrity_suite` PASS (+7 AK8-A audit tests)
+- All other suites (`priority_management_suite`, `frozen_ops_suite`,
+  `information_flow_suite`, `operation_chain_suite`,
+  `negative_state_suite`) PASS
+- `check_version_sync.sh` PASS at 0.30.2
+- Zero `sorry` / `axiom`
+
 ## WS-AK Phase AK8 — Capability / Lifecycle / Service + Data Structures (v0.30.1)
 
 **Status**: Phase AK8 COMPLETE. Addresses the C-M01..C-M07, DS-M01..DS-M04,
