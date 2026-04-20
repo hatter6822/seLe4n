@@ -333,7 +333,13 @@ def isDeviceAddress (addr : PAddr) : Bool :=
 -- T6-E: MMIO read/write operations in the kernel monad
 -- ============================================================================
 
-/-- U6-A/T6-E: MMIO read operation with formal abstraction boundary.
+/-- U6-A/T6-E: MMIO byte read operation — **debug/UART only**.
+
+    AK9-A (P-H01): This byte-granularity read is retained for UART debug
+    paths (PL011 DR/FR registers read 1 byte at a time) and diagnostic
+    contexts. Hardware-facing GIC-400 / BCM2712 peripheral registers
+    require word- or doubleword-sized aligned reads — callers should use
+    `mmioRead32` / `mmioRead64` (defined below) for those.
 
     For addresses in a declared `MmioRegionDesc` with non-RAM semantics,
     the read result is *modeled* as the current memory content but proofs
@@ -362,6 +368,12 @@ def mmioRead (addr : PAddr) : Kernel UInt8 :=
     else
       .error .policyDenied
 
+/-- AK9-A (P-H01): Byte-granularity MMIO read alias for debug/UART paths.
+    Delegates to `mmioRead`. Semantically identical — exposed under a
+    self-documenting name so production code sites can advertise whether
+    they intend debug byte-access or hardware word/doubleword access. -/
+@[inline] def mmioReadByte (addr : PAddr) : Kernel UInt8 := mmioRead addr
+
 /-- U6-A/T6-E: MMIO write operation with formal abstraction boundary.
 
     Writes a value to a device register address. For `writeOneClear`
@@ -388,22 +400,48 @@ def mmioWrite (addr : PAddr) (val : UInt8) : Kernel Unit :=
 def isAligned (addr : PAddr) (alignment : Nat) : Bool :=
   addr.toNat % alignment == 0
 
+-- ============================================================================
+-- AK9-D (P-M02): Region-local range check for multi-byte MMIO accesses
+-- ============================================================================
+
+/-- AK9-D (P-M02): Locate the declared `MemoryRegion` that contains `addr`
+    among the RPi5 `.device` regions. Returns `none` if the address is not
+    in any device region. -/
+def findDeviceRegion (addr : PAddr) : Option SeLe4n.MemoryRegion :=
+  rpi5MachineConfig.memoryMap.find?
+    fun region => region.kind == .device && region.contains addr
+
+/-- AK9-D (P-M02): Region-local endpoint bound — check that an N-byte access
+    starting at `addr` lies ENTIRELY within a single declared device region.
+    This strengthens the prior AF3-B dual-endpoint check which accepted two
+    addresses that happened to both be in (possibly different) device regions,
+    spliced at a boundary.
+
+    Returns `true` iff there is a device region `r` such that `r.contains addr`
+    AND `addr + N ≤ r.endAddr`. -/
+def isDeviceRangeWithinRegion (addr : PAddr) (n : Nat) : Bool :=
+  match findDeviceRegion addr with
+  | none => false
+  | some r => addr.toNat + n ≤ r.endAddr
+
 /-- U6-H/V4-B: MMIO 32-bit write for ARM64 GIC register access.
     GIC-400 registers require 32-bit aligned writes. This operation
     writes 4 bytes at the target address (little-endian byte order).
 
     V4-B/M-HW-1: Returns `mmioUnaligned` if `addr` is not 4-byte aligned.
 
-    AF3-B: Validates both endpoints (`addr` and `addr+3`) are in a device
-    region. This dual-endpoint check assumes device regions are at least
-    4-byte aligned and ≥4 bytes, so an aligned address within a region
-    has its full 4-byte range within the same region. The RPi5 memory map
-    satisfies this (all device regions are ≥4 KiB, page-aligned). -/
+    AF3-B → AK9-D (P-M02) tightening: Originally validated both endpoints
+    (`addr` and `addr+3`) against `isDeviceAddress` individually; this
+    permitted two addresses that happened to both be in device regions,
+    spliced across a region boundary (unreachable on the current RPi5
+    layout but structurally unsound). The range check now uses
+    `isDeviceRangeWithinRegion` which requires the ENTIRE 4-byte range
+    `[addr, addr+4)` to lie within a SINGLE declared `.device` region. -/
 def mmioWrite32 (addr : PAddr) (val : UInt32) : Kernel Unit :=
   fun st =>
     if !isAligned addr 4 then .error .mmioUnaligned
-    -- AF3-B: Validate entire write range [addr, addr+3] for 32-bit writes
-    else if isDeviceAddress addr && isDeviceAddress (PAddr.ofNat (addr.toNat + 3)) then
+    -- AK9-D (P-M02): Region-local range check (stronger than AF3-B)
+    else if isDeviceRangeWithinRegion addr 4 then
       let b0 : UInt8 := val.toNat % 256 |>.toUInt8
       let b1 : UInt8 := (val.toNat / 256) % 256 |>.toUInt8
       let b2 : UInt8 := (val.toNat / 65536) % 256 |>.toUInt8
@@ -426,12 +464,15 @@ def mmioWrite32 (addr : PAddr) (val : UInt32) : Kernel Unit :=
 /-- U6-H/V4-B: MMIO 64-bit write for ARM64 register access.
     Writes 8 bytes at the target address (little-endian byte order).
 
-    V4-B/M-HW-1: Returns `mmioUnaligned` if `addr` is not 8-byte aligned. -/
+    V4-B/M-HW-1: Returns `mmioUnaligned` if `addr` is not 8-byte aligned.
+
+    AK9-D (P-M02) tightening: 8-byte range must lie within a single
+    `.device` region, via `isDeviceRangeWithinRegion`. -/
 def mmioWrite64 (addr : PAddr) (val : UInt64) : Kernel Unit :=
   fun st =>
     if !isAligned addr 8 then .error .mmioUnaligned
-    -- AF3-B: Validate entire write range [addr, addr+7] for 64-bit writes
-    else if isDeviceAddress addr && isDeviceAddress (PAddr.ofNat (addr.toNat + 7)) then
+    -- AK9-D (P-M02): Region-local range check for 64-bit writes
+    else if isDeviceRangeWithinRegion addr 8 then
       let n := val.toNat
       let a0 := addr
       let a1 := PAddr.ofNat (addr.toNat + 1)
@@ -476,6 +517,120 @@ def mmioWrite64 (addr : PAddr) (val : UInt64) : Kernel Unit :=
 -- ============================================================================
 
 -- ============================================================================
+-- AK9-A (P-H01): Width-specific MMIO reads with alignment and range checks
+-- ============================================================================
+
+/-- AK9-A (P-H01): MMIO 32-bit aligned read for GIC-400 / BCM2712 device
+    registers. Hardware-facing peripheral registers REQUIRE word-aligned
+    word-sized reads; a misaligned access on `.device`/Device-nGnRnE memory
+    produces a synchronous Data Abort on ARM64 (ARM ARM § D7.2.44).
+
+    Returns:
+    - `.error .mmioUnaligned` if `addr` is not 4-byte aligned,
+    - `.error .policyDenied` if the 4-byte range `[addr, addr+4)` does not
+      lie entirely within a single declared RPi5 `.device` region
+      (AK9-D region-local check — stricter than the prior per-endpoint
+      AF3-B form),
+    - `.ok (value, st)` otherwise, where `value` is the little-endian
+      composition of the four bytes at `addr..addr+3`. The model returns
+      the current `st.machine.memory` bytes; real hardware behavior for
+      volatile / W1C / FIFO regions is constrained by `MmioSafe`.
+
+    AK5-G/H coordination: Rust HAL `mmio::mmio_read32` (alignment `assert!`,
+    ARM64 LDR) is the runtime counterpart. Both sides enforce alignment;
+    Rust abort asserts misalignment as a safety invariant, Lean propagates
+    as a proof-layer error. -/
+def mmioRead32 (addr : PAddr) : Kernel UInt32 :=
+  fun st =>
+    if !isAligned addr 4 then .error .mmioUnaligned
+    else if isDeviceRangeWithinRegion addr 4 then
+      let mem := st.machine.memory
+      let b0 := mem addr
+      let b1 := mem (PAddr.ofNat (addr.toNat + 1))
+      let b2 := mem (PAddr.ofNat (addr.toNat + 2))
+      let b3 := mem (PAddr.ofNat (addr.toNat + 3))
+      let v : UInt32 :=
+        b0.toUInt32 ||| (b1.toUInt32 <<< 8) ||| (b2.toUInt32 <<< 16) |||
+        (b3.toUInt32 <<< 24)
+      .ok (v, st)
+    else
+      .error .policyDenied
+
+/-- AK9-A (P-H01): MMIO 64-bit aligned read for 64-bit ARM64 device
+    registers (e.g., GIC-500 virtualization extensions, high-half timer
+    counters on some peripherals). Same discipline as `mmioRead32` with
+    8-byte alignment and an 8-byte region-local range check. -/
+def mmioRead64 (addr : PAddr) : Kernel UInt64 :=
+  fun st =>
+    if !isAligned addr 8 then .error .mmioUnaligned
+    else if isDeviceRangeWithinRegion addr 8 then
+      let mem := st.machine.memory
+      let b0 := mem addr
+      let b1 := mem (PAddr.ofNat (addr.toNat + 1))
+      let b2 := mem (PAddr.ofNat (addr.toNat + 2))
+      let b3 := mem (PAddr.ofNat (addr.toNat + 3))
+      let b4 := mem (PAddr.ofNat (addr.toNat + 4))
+      let b5 := mem (PAddr.ofNat (addr.toNat + 5))
+      let b6 := mem (PAddr.ofNat (addr.toNat + 6))
+      let b7 := mem (PAddr.ofNat (addr.toNat + 7))
+      let v : UInt64 :=
+        b0.toUInt64 ||| (b1.toUInt64 <<< 8) ||| (b2.toUInt64 <<< 16) |||
+        (b3.toUInt64 <<< 24) ||| (b4.toUInt64 <<< 32) ||| (b5.toUInt64 <<< 40) |||
+        (b6.toUInt64 <<< 48) ||| (b7.toUInt64 <<< 56)
+      .ok (v, st)
+    else
+      .error .policyDenied
+
+/-- AK9-A: `mmioRead32` at an unaligned address is rejected with `.mmioUnaligned`. -/
+theorem mmioRead32_rejects_unaligned (addr : PAddr) (st : SystemState)
+    (hUnaligned : isAligned addr 4 = false) :
+    mmioRead32 addr st = .error .mmioUnaligned := by
+  simp [mmioRead32, hUnaligned]
+
+/-- AK9-A: `mmioRead64` at an unaligned address is rejected with `.mmioUnaligned`. -/
+theorem mmioRead64_rejects_unaligned (addr : PAddr) (st : SystemState)
+    (hUnaligned : isAligned addr 8 = false) :
+    mmioRead64 addr st = .error .mmioUnaligned := by
+  simp [mmioRead64, hUnaligned]
+
+/-- AK9-A: `mmioRead32` outside any device region is rejected with `.policyDenied`. -/
+theorem mmioRead32_rejects_out_of_region (addr : PAddr) (st : SystemState)
+    (hAligned : isAligned addr 4 = true)
+    (hOutside : isDeviceRangeWithinRegion addr 4 = false) :
+    mmioRead32 addr st = .error .policyDenied := by
+  simp [mmioRead32, hAligned, hOutside]
+
+/-- AK9-A: `mmioRead64` outside any device region is rejected with `.policyDenied`. -/
+theorem mmioRead64_rejects_out_of_region (addr : PAddr) (st : SystemState)
+    (hAligned : isAligned addr 8 = true)
+    (hOutside : isDeviceRangeWithinRegion addr 8 = false) :
+    mmioRead64 addr st = .error .policyDenied := by
+  simp [mmioRead64, hAligned, hOutside]
+
+/-- AK9-A: `mmioRead32` does not modify state (read-only). -/
+theorem mmioRead32_preserves_state (addr : PAddr) (st st' : SystemState) (v : UInt32)
+    (hOk : mmioRead32 addr st = .ok (v, st')) :
+    st' = st := by
+  unfold mmioRead32 at hOk
+  split at hOk
+  · cases hOk
+  · split at hOk
+    · cases hOk; rfl
+    · cases hOk
+
+/-- AK9-A: `mmioRead64` does not modify state (read-only). -/
+theorem mmioRead64_preserves_state (addr : PAddr) (st st' : SystemState) (v : UInt64)
+    (hOk : mmioRead64 addr st = .ok (v, st')) :
+    st' = st := by
+  unfold mmioRead64 at hOk
+  split at hOk
+  · cases hOk
+  · split at hOk
+    · cases hOk; rfl
+    · cases hOk
+-- ============================================================================
+
+-- ============================================================================
 -- V4-C/M-HW-2: Write-one-clear (W1C) semantics for GIC registers
 -- ============================================================================
 
@@ -504,8 +659,9 @@ def mmioReadBytes32 (mem : PAddr → UInt8) (addr : PAddr) : UInt32 :=
 def mmioWrite32W1C (addr : PAddr) (clearMask : UInt32) : Kernel Unit :=
   fun st =>
     if !isAligned addr 4 then .error .mmioUnaligned
-    -- AF3-B: Validate entire write range [addr, addr+3] for W1C 32-bit writes
-    else if isDeviceAddress addr && isDeviceAddress (PAddr.ofNat (addr.toNat + 3)) then
+    -- AK9-D (P-M02): Region-local range check (stronger than AF3-B) — entire
+    -- 4-byte range must lie within a single `.device` region.
+    else if isDeviceRangeWithinRegion addr 4 then
       let oldVal := mmioReadBytes32 st.machine.memory addr
       let newVal := oldVal &&& (~~~ clearMask)
       let b0 : UInt8 := newVal.toNat % 256 |>.toUInt8
@@ -527,20 +683,48 @@ def mmioWrite32W1C (addr : PAddr) (clearMask : UInt32) : Kernel Unit :=
     else
       .error .policyDenied
 
-/-- V4-C: W1C write at a non-device address is rejected. -/
+/-- AK9-D bridge: if the base `addr` is not any device address, the range-
+    local check trivially fails because `findDeviceRegion` returns `none`. -/
+theorem isDeviceRangeWithinRegion_false_of_non_device (addr : PAddr) (n : Nat)
+    (hNonDevice : isDeviceAddress addr = false) :
+    isDeviceRangeWithinRegion addr n = false := by
+  -- `isDeviceAddress addr = false` ⟹ no region in memoryMap satisfies
+  -- the (.device ∧ contains addr) predicate ⟹ `find?` returns `none`.
+  let p : SeLe4n.MemoryRegion → Bool :=
+    fun region => region.kind == .device && region.contains addr
+  have hAnyFalse : rpi5MachineConfig.memoryMap.any p = false := hNonDevice
+  have hFindNone : findDeviceRegion addr = none := by
+    show rpi5MachineConfig.memoryMap.find? p = none
+    -- If find? returned `some r`, membership + predicate would imply .any = true.
+    rcases hFind : rpi5MachineConfig.memoryMap.find? p with _ | r
+    · rfl
+    · exfalso
+      have hMem : r ∈ rpi5MachineConfig.memoryMap :=
+        List.mem_of_find?_eq_some hFind
+      have hPred : p r = true := List.find?_some hFind
+      have hTrue : rpi5MachineConfig.memoryMap.any p = true :=
+        List.any_eq_true.mpr ⟨r, hMem, hPred⟩
+      rw [hTrue] at hAnyFalse
+      exact Bool.false_ne_true hAnyFalse.symm
+  simp [isDeviceRangeWithinRegion, hFindNone]
+
+/-- AK9-D: W1C write outside a single device region is rejected. Replaces the
+    former AF3-B per-endpoint rejection with the region-local check —
+    strictly stronger (covers boundary-splicing cases as well). -/
+theorem mmioWrite32W1C_rejects_out_of_region (addr : PAddr) (val : UInt32)
+    (st : SystemState)
+    (hAligned : isAligned addr 4 = true)
+    (hOutside : isDeviceRangeWithinRegion addr 4 = false) :
+    mmioWrite32W1C addr val st = .error .policyDenied := by
+  simp [mmioWrite32W1C, hAligned, hOutside]
+
+/-- AK9-D: W1C write at a non-device base address is rejected. -/
 theorem mmioWrite32W1C_rejects_non_device (addr : PAddr) (val : UInt32) (st : SystemState)
     (hNonDevice : isDeviceAddress addr = false)
     (hAligned : isAligned addr 4 = true) :
-    mmioWrite32W1C addr val st = .error .policyDenied := by
-  simp [mmioWrite32W1C, hNonDevice, hAligned]
-
-/-- AF3-B: W1C write rejected when end-of-range is outside device region. -/
-theorem mmioWrite32W1C_rejects_range_overflow (addr : PAddr) (val : UInt32) (st : SystemState)
-    (hBase : isDeviceAddress addr = true)
-    (hEnd : isDeviceAddress (PAddr.ofNat (addr.toNat + 3)) = false)
-    (hAligned : isAligned addr 4 = true) :
-    mmioWrite32W1C addr val st = .error .policyDenied := by
-  simp [mmioWrite32W1C, hAligned, hBase, hEnd]
+    mmioWrite32W1C addr val st = .error .policyDenied :=
+  mmioWrite32W1C_rejects_out_of_region addr val st hAligned
+    (isDeviceRangeWithinRegion_false_of_non_device addr 4 hNonDevice)
 
 /-- V4-C: W1C write with unaligned address is rejected. -/
 theorem mmioWrite32W1C_rejects_unaligned (addr : PAddr) (val : UInt32) (st : SystemState)
@@ -603,41 +787,67 @@ theorem mmioWrite_frame (addr : PAddr) (val : UInt8) (st st' : SystemState)
 -- U6-H: 32/64-bit write correctness properties
 -- ============================================================================
 
-/-- U6-H/V4-B: MMIO 32-bit write at a non-device, aligned address is rejected. -/
+/-- AK9-D (replaces AF3-B single-endpoint form): MMIO 32-bit write whose
+    4-byte range is not entirely within a single `.device` region is
+    rejected with `.policyDenied`. Strictly stronger than the prior
+    per-endpoint check — covers region-boundary splicing as well. -/
+theorem mmioWrite32_rejects_out_of_region (addr : PAddr) (val : UInt32)
+    (st : SystemState)
+    (hAligned : isAligned addr 4 = true)
+    (hOutside : isDeviceRangeWithinRegion addr 4 = false) :
+    mmioWrite32 addr val st = .error .policyDenied := by
+  simp [mmioWrite32, hAligned, hOutside]
+
+/-- U6-H/V4-B: MMIO 32-bit write at a non-device, aligned address is rejected.
+    AK9-D rewiring: derived from the stronger region-local rejection via
+    `isDeviceRangeWithinRegion_false_of_non_device`. -/
 theorem mmioWrite32_rejects_non_device (addr : PAddr) (val : UInt32) (st : SystemState)
     (hNonDevice : isDeviceAddress addr = false)
     (hAligned : isAligned addr 4 = true) :
-    mmioWrite32 addr val st = .error .policyDenied := by
-  simp [mmioWrite32, hNonDevice, hAligned]
+    mmioWrite32 addr val st = .error .policyDenied :=
+  mmioWrite32_rejects_out_of_region addr val st hAligned
+    (isDeviceRangeWithinRegion_false_of_non_device addr 4 hNonDevice)
 
-/-- AF3-B: MMIO 32-bit write rejected when end-of-range is outside device region.
-    Complements `mmioWrite32_rejects_non_device` (base address check) by covering
-    the case where the base address IS in a device region but the last byte
-    (`addr+3`) is not. -/
-theorem mmioWrite32_rejects_range_overflow (addr : PAddr) (val : UInt32) (st : SystemState)
-    (hBase : isDeviceAddress addr = true)
-    (hEnd : isDeviceAddress (PAddr.ofNat (addr.toNat + 3)) = false)
-    (hAligned : isAligned addr 4 = true) :
-    mmioWrite32 addr val st = .error .policyDenied := by
-  simp [mmioWrite32, hAligned, hBase, hEnd]
+/-- AK9-D: MMIO 64-bit write whose 8-byte range is not entirely within a
+    single `.device` region is rejected. -/
+theorem mmioWrite64_rejects_out_of_region (addr : PAddr) (val : UInt64)
+    (st : SystemState)
+    (hAligned : isAligned addr 8 = true)
+    (hOutside : isDeviceRangeWithinRegion addr 8 = false) :
+    mmioWrite64 addr val st = .error .policyDenied := by
+  simp [mmioWrite64, hAligned, hOutside]
 
-/-- U6-H/V4-B: MMIO 64-bit write at a non-device, aligned address is rejected. -/
+/-- U6-H/V4-B: MMIO 64-bit write at a non-device, aligned address is rejected.
+    AK9-D rewiring: derived from the stronger region-local rejection. -/
 theorem mmioWrite64_rejects_non_device (addr : PAddr) (val : UInt64) (st : SystemState)
     (hNonDevice : isDeviceAddress addr = false)
     (hAligned : isAligned addr 8 = true) :
-    mmioWrite64 addr val st = .error .policyDenied := by
-  simp [mmioWrite64, hNonDevice, hAligned]
+    mmioWrite64 addr val st = .error .policyDenied :=
+  mmioWrite64_rejects_out_of_region addr val st hAligned
+    (isDeviceRangeWithinRegion_false_of_non_device addr 8 hNonDevice)
 
-/-- AF3-B: MMIO 64-bit write rejected when end-of-range is outside device region.
-    Complements `mmioWrite64_rejects_non_device` (base address check) by covering
-    the case where the base address IS in a device region but the last byte
-    (`addr+7`) is not. -/
-theorem mmioWrite64_rejects_range_overflow (addr : PAddr) (val : UInt64) (st : SystemState)
-    (hBase : isDeviceAddress addr = true)
-    (hEnd : isDeviceAddress (PAddr.ofNat (addr.toNat + 7)) = false)
-    (hAligned : isAligned addr 8 = true) :
-    mmioWrite64 addr val st = .error .policyDenied := by
-  simp [mmioWrite64, hAligned, hBase, hEnd]
+/-- AK9-D (P-M02): MMIO 32-bit write ALIGNED AND region-locally BOUNDED
+    produces a success outcome. Positive correctness lemma: when alignment
+    holds AND the 4-byte range is within a single `.device` region, the
+    write proceeds to `.ok`. This is the new-world positive counterpart to
+    the negative `_rejects_*` theorems. -/
+theorem mmioWrite32_alignedAndBounded_within_region
+    (addr : PAddr) (val : UInt32) (st : SystemState)
+    (hAligned : isAligned addr 4 = true)
+    (hInside : isDeviceRangeWithinRegion addr 4 = true) :
+    ∃ st', mmioWrite32 addr val st = .ok ((), st') := by
+  -- Witness: the state produced by reducing the definition with the two guards true.
+  unfold mmioWrite32
+  simp [hAligned, hInside]
+
+/-- AK9-D: Positive correctness for 64-bit writes. -/
+theorem mmioWrite64_alignedAndBounded_within_region
+    (addr : PAddr) (val : UInt64) (st : SystemState)
+    (hAligned : isAligned addr 8 = true)
+    (hInside : isDeviceRangeWithinRegion addr 8 = true) :
+    ∃ st', mmioWrite64 addr val st = .ok ((), st') := by
+  unfold mmioWrite64
+  simp [hAligned, hInside]
 
 /-- U6-H/V4-B: MMIO 32-bit write only modifies the 4-byte range [addr, addr+4). -/
 theorem mmioWrite32_frame (addr : PAddr) (val : UInt32) (st st' : SystemState)
@@ -791,5 +1001,90 @@ theorem dsb_guarantees_mmio_completion (st st' : SystemState)
     (_hDsb : BarrierKind.dsb_ish = .dsb_ish) :
     barrierOrdered st st' :=
   trivial
+
+-- ============================================================================
+-- AK9-H: LOW-tier platform batch documentation (P-L1..P-L13)
+-- ============================================================================
+
+/-!
+## AK9-H (P-L1..P-L13): Platform LOW-tier accepted gaps / documentation batch
+
+- **P-L1** `StateBuilder.buildChecked` `panic!`: AE6-B migrated the primary
+  boot-path constructors off `buildChecked`; the remaining `panic!` is only
+  a diagnostic last resort invoked when invariant validation fails — test
+  harnesses prefer `buildValidated` directly. Recorded here; a structured
+  error return is the post-1.0 hardening direction (P-L6).
+
+- **P-L2** `readCString` fuel 256: the 256-byte cap reflects FDT string-
+  table entries which are always short property names (spec-mandated
+  sub-32-char names). A fuel-exhaustion return type upgrade is tracked
+  as a post-1.0 hardening candidate; no currently-active plan file
+  tracks it.
+
+- **P-L3** `physicalAddressWidth` bounds: **RESOLVED** via AK9-F —
+  `applyMachineConfigChecked` enforces `physicalAddressWidth ≤ 52`
+  (ARMv8 LPA maximum). `config.wellFormed` additionally enforces
+  `physicalAddressWidth > 0` (see Machine.lean §MachineConfig.wellFormed).
+
+- **P-L4** `extractPeripherals` 2-level: documented at `DeviceTree.lean`
+  (AF-32). The BCM2712 DTB has peripherals at depth 1–2; deeper nesting
+  for non-RPi5 platforms is recorded here as a post-1.0 hardening
+  candidate; no currently-active plan file tracks it.
+
+- **P-L5** MMIO operations do not issue interrupts-disable guards:
+  single-core sequential model — the MMIO write sequence is atomic by
+  modeling construction. On real hardware, the Rust HAL's
+  `with_interrupts_disabled` wrapper (`sele4n-hal/src/interrupts.rs`)
+  is the runtime guard. Proofs depending on atomicity of MMIO sequences
+  through interrupt windows are tracked under `barrierOrdered`; the
+  multi-core extension is recorded here as a post-1.0 hardening
+  candidate; no currently-active plan file tracks it.
+
+- **P-L6** `buildValidated` unstructured strings: test-surface
+  diagnostic, not proof-layer. A `BuildValidationError` inductive with
+  structured variants is tracked as post-1.0 test hygiene.
+
+- **P-L7** `mmioRegionDisjointCheck` scope: **RESOLVED** — pairwise
+  MMIO-vs-MMIO disjointness is covered by
+  `mmioRegionsPairwiseDisjointCheck` / `mmioRegionsPairwiseDisjoint_holds`
+  in `Board.lean:181` (from X4-D/M-10). MMIO-vs-RAM disjointness is
+  `mmioRegionDisjoint_holds`.
+
+- **P-L8** O(n²) boot IRQ scan in `bootFromPlatformWithWarnings`:
+  boot-only cost; the RPi5 `irqTable` is at most ~20 entries, and boot
+  runs once. Documented as accepted cost.
+
+- **P-L9** VSpaceRoot boot exclusion: recorded here as a post-1.0
+  hardening candidate; no currently-active plan file tracks it. The
+  `bootSafeObject` predicate excludes `.vspaceRoot` variants because
+  ASID-table registration in `storeObject` requires a fully-initialized
+  ASID manager which is not available during builder-phase boot. All
+  address spaces are configured post-boot via `vspaceMap` syscalls.
+
+- **P-L10** `registerContextStableCheck` ignores pre-state: deliberate.
+  The predicate examines post-state only; pre-state is retained in the
+  signature for `RuntimeBoundaryContract.registerContextStable` shape.
+  When a future extension requires pre-state comparison, extend the
+  field names rather than re-introduce the unused parameter.
+
+- **P-L11** FFI `opaque BaseIO` contract bridging: recorded here as a
+  post-1.0 hardening candidate; no currently-active plan file tracks it.
+  A formal soundness bridge between `@[extern]`-declared FFI functions
+  and their Rust HAL counterparts would supplement the existing
+  production AdapterProofHooks.
+
+- **P-L12** `mmioWrite32W1C` region-kind check: the `MmioWriteKind`
+  classifier (`normal`/`writeOneClear`/`setOnly`) is declared on
+  `MmioRegionDesc.writeSemantics`; runtime gating of caller choice
+  (`mmioWrite32` vs `mmioWrite32W1C`) against region declaration is a
+  post-1.0 hygiene tightening — tracked under `MmioWriteSafe` witness
+  type (see §AF3-C commentary above).
+
+- **P-L13** touching-regions fragility (page-granular alignment
+  assumption in the region-local check): **AK9-D** `isDeviceRangeWithinRegion`
+  now enforces this structurally — an N-byte access is accepted only if
+  `addr + N ≤ r.endAddr` for a containing region `r`. The concern about
+  adjacent device regions being accidentally spliced is eliminated.
+-/
 
 end SeLe4n.Platform.RPi5

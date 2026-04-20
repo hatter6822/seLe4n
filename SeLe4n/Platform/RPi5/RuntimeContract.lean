@@ -72,16 +72,24 @@ Memory access: Restricted to declared RAM regions in the BCM2712 memory map.
 Device and reserved regions require explicit MMIO adapter calls.
 -/
 
-/-- AG7-D: Budget sufficiency check for the current thread's SchedContext.
-    Returns `true` if the thread is unbound (vacuously sufficient) or if the
-    bound SchedContext has `budgetRemaining > 0`. -/
+/-- AG7-D / AK9-E: Budget sufficiency check for the current thread's
+    SchedContext. Returns `true` if the thread is unbound (vacuously sufficient)
+    or if the bound SchedContext has `budgetRemaining > 0`.
+
+    AK9-E (P-M03): When `schedContextBinding = .bound/.donated scId` but
+    `st'.objects[scId.toObjId]?` resolves to a variant OTHER than
+    `.schedContext` (or is `none`), this indicates a contract violation —
+    the TCB claims a binding to a non-existent or wrong-kind object. Such
+    states used to return `true` (silently permissive), letting an inconsistent
+    post-state pass the `registerContextStableCheck`. It now returns `false`
+    so the check fails loudly. -/
 private def budgetSufficientCheck (st' : SystemState) (tcb : TCB) : Bool :=
   match tcb.schedContextBinding with
   | .unbound => true
   | .bound scId | .donated scId _ =>
     match st'.objects[scId.toObjId]? with
     | some (.schedContext sc) => sc.budgetRemaining.val > 0
-    | _ => true
+    | _ => false   -- AK9-E: missing / wrong-variant binding is a violation
 
 /-- U6-C/V4-I/AG7-D: Computable check for register context stability with
     comprehensive current-thread validation. Returns `true` if the post-state
@@ -205,10 +213,14 @@ theorem mmioAccess_ram_kind_disjoint :
       (r.kind == .ram && r.kind == .device) = false := by
   intro r; cases r.kind <;> decide
 
-/-- AG7-D: When `registerContextStableCheck` passes for a context-switch
+/-- AG7-D / AK9-E: When `registerContextStableCheck` passes for a context-switch
     post-state, extract `currentBudgetPositive` from the budget-sufficiency
     conjunct. The budget check in `registerContextStableCheck` mirrors
-    the structure of `currentBudgetPositive` exactly. -/
+    the structure of `currentBudgetPositive` exactly.
+
+    AK9-E (P-M03): With the tightened `budgetSufficientCheck` (returns `false`
+    for missing / wrong-variant bindings), the wrong-variant branches now
+    produce a direct contradiction from `hBud : false = true`. -/
 theorem registerContextStableCheck_budget
     (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile) (st : SeLe4n.Model.SystemState)
     (tcb : SeLe4n.Model.TCB)
@@ -231,6 +243,9 @@ theorem registerContextStableCheck_budget
       simp at hBud; exact hBud
     | some (.endpoint _) | some (.notification _) | some (.tcb _) |
       some (.cnode _) | some (.vspaceRoot _) | some (.untyped _) | none =>
-      simp
+      -- AK9-E: budgetSufficientCheck now returns false for these cases,
+      -- so hBud : false = true is a direct contradiction — no SC to
+      -- discharge currentBudgetPositive from.
+      simp [hSc] at hBud
 
 end SeLe4n.Platform.RPi5

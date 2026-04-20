@@ -320,6 +320,13 @@ theorem extractMemoryRegions_truncated (blob : ByteArray) (h : blob.size < 16) :
     `MachineConfig.memoryMap`), it can override this default for addresses
     that fall within declared `.device` or `.reserved` regions.
 
+    **AK9-F (P-M04)** — the empty-platform-map default to `.ram` depends on
+    the DTB convention that this function classifies `/memory` entries
+    exclusively. If a caller misuses it on arbitrary regions with an empty
+    map, the result unsafely marks everything as RAM. New callers should
+    use `classifyMemoryRegionChecked` (Option return — `none` when the
+    map is empty / address unmapped, forcing explicit caller decision).
+
     Note: only the base address is checked, not the full region extent.
     See `classifyAddress` for standalone address classification (which
     defaults to `.reserved` for unmapped addresses). -/
@@ -328,6 +335,24 @@ def classifyMemoryRegion (region : FdtMemoryRegion)
   match platformMemory.find? fun r => r.contains ⟨region.base⟩ with
   | some r => r.kind
   | none => .ram  -- Default: /memory node entries are RAM when no map provided
+
+/-- AK9-F (P-M04): Strict classification — requires a non-empty platform
+    memory map AND a containing region. Returns `none` when the map is empty
+    or the address is unmapped. Forces the caller to decide explicitly what
+    to do in the unclassified case instead of silently assuming RAM. -/
+def classifyMemoryRegionChecked (region : FdtMemoryRegion)
+    (platformMemory : List MemoryRegion) : Option MemoryKind :=
+  match platformMemory with
+  | [] => none  -- AK9-F: reject empty map, caller must decide
+  | _ =>
+    match platformMemory.find? fun r => r.contains ⟨region.base⟩ with
+    | some r => some r.kind
+    | none => none  -- AK9-F: reject unmapped, caller must decide
+
+/-- AK9-F: When the platform memory map is empty, the checked classifier
+    refuses to guess — returns `none`. -/
+theorem classifyMemoryRegionChecked_empty_none (region : FdtMemoryRegion) :
+    classifyMemoryRegionChecked region [] = none := rfl
 
 /-- AG3-A (P-01): Classify a raw physical address against a platform memory map.
     Standalone address classification for use outside FDT parsing contexts. -/
@@ -504,6 +529,13 @@ structure FdtSearchResult where
 /-- V4-M3/L-PLAT-1: Fuel-bounded traversal of the FDT structure block.
     Iterates tokens to find the `/memory` node and extract its `reg` property.
 
+    AK9-F (P-M07): The legacy fuel default `1000` was an arbitrary constant
+    that did not scale with DTB size. Callers should compute fuel from
+    `hdr.sizeDtStruct / 4` — the maximum possible token count in the
+    structure block, since each token is at least 4 bytes. See
+    `findMemoryRegPropertyChecked` for the Except-returning variant
+    that distinguishes fuel exhaustion from malformed-blob failures.
+
     Token format (Devicetree Spec v0.4, §5.4):
     - FDT_BEGIN_NODE (0x1): followed by node name (null-terminated, 4-byte aligned)
     - FDT_END_NODE (0x2): no payload
@@ -560,6 +592,67 @@ where
           none  -- Reached end without finding /memory reg
         else
           none  -- Unknown token
+
+/-- AK9-F (P-M07): `Except`-returning variant of `findMemoryRegProperty`. Unlike
+    the legacy `Option` form that collapses "fuel exhausted" and "malformed
+    blob" into a single `none`, this form propagates the two error conditions
+    distinctly via `DeviceTreeParseError`.
+
+    Internally walks the same token stream as `findMemoryRegProperty` but
+    distinguishes the "fuel hit zero" boundary from structural parse
+    failures. Callers can decide whether to retry with more fuel vs fail
+    early on malformed input.
+
+    Fuel defaults to `hdr.sizeDtStruct.toNat / 4` — a DTB-sized bound: the
+    structure block is at most `sizeDtStruct` bytes and every token is at
+    least 4 bytes (FDT_BEGIN_NODE, FDT_END_NODE, FDT_PROP, FDT_NOP, FDT_END
+    all consume ≥ 4 bytes per iteration). Callers may override. -/
+def findMemoryRegPropertyChecked (blob : ByteArray) (hdr : FdtHeader)
+    (fuel : Nat := hdr.sizeDtStruct.toNat / 4) :
+    Except DeviceTreeParseError FdtSearchResult :=
+  go blob hdr.offDtStruct.toNat hdr.offDtStrings.toNat fuel false
+where
+  go (blob : ByteArray) (offset offStrings fuel : Nat) (inMemoryNode : Bool)
+      : Except DeviceTreeParseError FdtSearchResult :=
+    match fuel with
+    | 0 => .error .fuelExhausted
+    | fuel' + 1 =>
+      match readBE32 blob offset with
+      | none => .error .malformedBlob
+      | some token =>
+        if token == fdtBeginNode then
+          match readCString blob (offset + 4) with
+          | none => .error .malformedBlob
+          | some (name, nextOffset) =>
+            let isMemory := name == "memory" || name.startsWith "memory@"
+            go blob nextOffset offStrings fuel' isMemory
+        else if token == fdtEndNode then
+          go blob (offset + 4) offStrings fuel' false
+        else if token == fdtProp then
+          match readBE32 blob (offset + 4), readBE32 blob (offset + 8) with
+          | some len, some nameoff =>
+            let valueOffset := offset + 12
+            let alignedNext := valueOffset + ((len.toNat + 3) / 4) * 4
+            if inMemoryNode then
+              match lookupFdtString blob offStrings nameoff.toNat with
+              | some propName =>
+                if propName == "reg" then
+                  if valueOffset + len.toNat ≤ blob.size then
+                    let regBytes := blob.extract valueOffset (valueOffset + len.toNat)
+                    .ok { regPropertyBytes := regBytes }
+                  else .error .malformedBlob
+                else
+                  go blob alignedNext offStrings fuel' inMemoryNode
+              | none => go blob alignedNext offStrings fuel' inMemoryNode
+            else
+              go blob alignedNext offStrings fuel' inMemoryNode
+          | _, _ => .error .malformedBlob
+        else if token == fdtNop then
+          go blob (offset + 4) offStrings fuel' inMemoryNode
+        else if token == fdtEnd then
+          .error .malformedBlob  -- Reached end without finding /memory reg
+        else
+          .error .malformedBlob  -- Unknown token
 
 -- ============================================================================
 -- X4-A/H-7: Generic FDT device node traversal
@@ -840,9 +933,13 @@ def DeviceTree.fromDtbFull (blob : ByteArray) (physicalAddressWidth : Nat)
   match parseAndValidateFdtHeader blob with
   | none => .error .malformedBlob
   | some hdr =>
-    match findMemoryRegProperty blob hdr with
-    | none => .error .malformedBlob
-    | some searchResult =>
+    -- AK9-F (P-M07): Use `findMemoryRegPropertyChecked` so fuel exhaustion is
+    -- distinguishable from malformed blob. Fuel defaults to
+    -- `hdr.sizeDtStruct / 4`, which scales with the DTB structure block size
+    -- and is tight: each FDT token consumes at least 4 bytes.
+    match findMemoryRegPropertyChecked blob hdr with
+    | .error e => .error e
+    | .ok searchResult =>
       let memRegions := fdtRegionsToMemoryRegions
         (extractMemoryRegions searchResult.regPropertyBytes)
       if memRegions.isEmpty then .error .malformedBlob
@@ -876,14 +973,19 @@ def DeviceTree.fromDtbFull (blob : ByteArray) (physicalAddressWidth : Nat)
 -- V4-M5/L-PLAT-1: Correctness theorems
 -- ============================================================================
 
-/-- V4-M5/AJ3-A: If a blob has valid FDT magic, version, a `/memory` node with
-    a `reg` property, and `parseFdtNodes` succeeds, `fromDtbFull` returns `.ok`. -/
+/-- V4-M5/AJ3-A/AK9-F: If a blob has valid FDT magic, version, a `/memory`
+    node with a `reg` property (found via the checked fuel-aware search),
+    and `parseFdtNodes` succeeds, `fromDtbFull` returns `.ok`.
+
+    AK9-F (P-M07) update: precondition now uses `findMemoryRegPropertyChecked`
+    (returning `.ok result`) rather than the legacy `Option`-returning
+    `findMemoryRegProperty`. -/
 theorem parseFdtHeader_fromDtbFull_ok (blob : ByteArray)
     (physicalAddressWidth : Nat)
     (hdr : FdtHeader)
     (hValid : parseAndValidateFdtHeader blob = some hdr)
     (result : FdtSearchResult)
-    (hSearch : findMemoryRegProperty blob hdr = some result)
+    (hSearch : findMemoryRegPropertyChecked blob hdr = .ok result)
     (hNonEmpty : (fdtRegionsToMemoryRegions (extractMemoryRegions result.regPropertyBytes)).isEmpty = false)
     (nodes : List FdtNode)
     (hNodes : parseFdtNodes blob hdr = .ok nodes) :

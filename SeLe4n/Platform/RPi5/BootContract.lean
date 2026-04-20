@@ -51,21 +51,29 @@ def rpi5BootContract : BootBoundaryContract :=
       (default : SystemState).objects.size = 0
     capabilityRefMetadataConsistent :=
       (default : SystemState).lifecycle.capabilityRefs.size = 0
-    -- AJ3-D (M-19): RPi5 boots with empty initial object store. The boot
-    -- sequence populates objects from PlatformConfig. This is a verifiable
-    -- structural fact about the default state, not a vacuous `True`.
-    objectStoreNonEmpty :=
+    -- AJ3-D (M-19) / AK9-B (P-H02): RPi5 boots with empty initial object
+    -- store. The boot sequence populates objects from PlatformConfig.
+    -- Verifiable structural fact about the default state, not a vacuous `True`.
+    -- Field renamed from `objectStoreNonEmpty` (inverted semantic meaning) to
+    -- `objectStoreEmptyAtBoot` per AK9-B.
+    objectStoreEmptyAtBoot :=
       (default : SystemState).objects.size = 0
     -- AJ3-D (M-19): RPi5 GIC-400 IRQ range bounded (≤ 1024 INTIDs).
     irqRangeValid :=
       gicSpiCount + 32 ≤ 1024
   }
 
-/-- AJ3-D: RPi5 boot contract objectStoreNonEmpty holds. -/
-theorem rpi5BootContract_objectStoreNonEmpty_holds :
-    rpi5BootContract.objectStoreNonEmpty := by
+/-- AJ3-D / AK9-B: RPi5 boot contract `objectStoreEmptyAtBoot` holds. -/
+theorem rpi5BootContract_objectStoreEmptyAtBoot_holds :
+    rpi5BootContract.objectStoreEmptyAtBoot := by
   show ({} : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject).size = 0
   rfl
+
+/-- AK9-B: Backwards-compat alias preserving the prior theorem name. -/
+@[deprecated rpi5BootContract_objectStoreEmptyAtBoot_holds (since := "0.30.4")]
+theorem rpi5BootContract_objectStoreNonEmpty_holds :
+    rpi5BootContract.objectStoreEmptyAtBoot :=
+  rpi5BootContract_objectStoreEmptyAtBoot_holds
 
 /-- AJ3-D: RPi5 boot contract irqRangeValid holds. -/
 theorem rpi5BootContract_irqRangeValid_holds :

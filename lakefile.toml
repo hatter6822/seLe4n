@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.30.3"
+version = "0.30.4"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -123,3 +123,8 @@ root = "tests.AbiRoundtripSuite"
 [[lean_exe]]
 name = "model_integrity_suite"
 root = "tests.ModelIntegritySuite"
+
+# AK9 platform regression suite — Phase AK9 Boot/DTB/MMIO audit remediation.
+[[lean_exe]]
+name = "ak9_platform_suite"
+root = "tests.Ak9PlatformSuite"
