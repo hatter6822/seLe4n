@@ -253,7 +253,7 @@ checked variant. Two correctness theorems (`_rejects_oob`,
 ## v0.30.4 — WS-AK Phase AK9 (Platform / Boot / DTB / MMIO)
 
 Closes Phase AK9 of the v0.29.0 pre-1.0 release-hardening plan
-(`docs/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` §12). Eight sub-tasks
+(`docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` §12). Eight sub-tasks
 address 2 HIGH, 7 MEDIUM, and 13 LOW platform-layer findings.
 
 ### AK9-A (P-H01 / HIGH) — Width-specific MMIO reads
@@ -1487,7 +1487,7 @@ Enables fail-closed `isNotNull` checks at sensitive entry points
 - `cargo clippy --workspace -- -D warnings` (0 warnings)
 - Zero sorry/axiom
 
-See `docs/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` §10 (Phase AK7).
+See `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` §10 (Phase AK7).
 
 ---
 

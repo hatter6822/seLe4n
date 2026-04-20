@@ -54,7 +54,7 @@
 compile_error!(
     "seLe4n HAL requires panic = \"abort\" for release profiles. \
      See rust/Cargo.toml [profile.release] and AK5-A in \
-     docs/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md."
+     docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md."
 );
 
 // ============================================================================
