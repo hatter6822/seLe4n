@@ -160,8 +160,13 @@ __el0_irq_entry:
 __el0_serror_entry:
     save_context
     bl      handle_serror
-    // handle_serror does not return (loops on WFE), but if it ever did:
-    restore_context
+    // handle_serror is declared `-> !` (never returns; body is `loop { wfe() }`).
+    // If the compiler ever dropped the divergence contract, `b .` halts the
+    // core here rather than racing off the end of the section or attempting an
+    // ERET with SError-corrupted context. Per AK10 dead-code removal and the
+    // audit's original R-HAL-M12 remediation ("make signature `-> !` and `b .`
+    // after `bl` in asm").
+    b       .
 
 // =========================================================================
 // EL1 Synchronous — kernel-mode exception (page fault, etc.)
@@ -188,9 +193,9 @@ __el1_irq_entry:
 __el1_serror_entry:
     save_context
     bl      handle_serror
-    // AK5-K (R-HAL-M12): handle_serror is declared `-> !` (never returns)
-    // so this restore_context is formally dead. It stays as a defensive
-    // fall-through: if a future refactor ever relaxes the signature, the
-    // kernel still terminates via ERET rather than racing off the end of
-    // the section.
-    restore_context
+    // AK10 dead-code removal: the `-> !` divergence of handle_serror makes
+    // the previous `restore_context` unreachable. Replaced with `b .` per
+    // the audit's original R-HAL-M12 remediation so the kernel halts here
+    // rather than attempting an ERET with SError-corrupted context if the
+    // divergence contract is ever relaxed.
+    b       .

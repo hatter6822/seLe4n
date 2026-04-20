@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.30.5` (`lakefile.toml`) |
+| **Package version** | `0.30.6` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 103,179 across 142 Lean files |
 | **Test LoC** | 14,890 across 24 Lean test suites |
 | **Proved declarations** | 3,045 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
-| **Active workstream** | **WS-AK Phase AK9 audit remediation COMPLETE** (v0.30.5). Deep end-to-end audit of the v0.30.4 Phase AK9 delivery surfaced five gaps where the plan's intent was not fully honored at the production-path level. Closed: (1) **AK9-A alias → rename** — `mmioReadByte` is now the primary definition with `mmioRead` as `@[deprecated]` alias, completing the plan's rename directive; two new positive correctness theorems complete the four-theorem-per-width contract; (2) **AK9-F P-M05 validation wired into production** — `bootFromPlatformChecked` now gates on `machineConfig.wellFormed` + `physicalAddressWidth ≤ 52` BEFORE constructing the IntermediateState; two soundness theorems expose the post-conditions; (3) **AK9-G P-M06 interrupts-enable wired into checked path** — `bootFromPlatformChecked` now invokes `bootEnableInterruptsOp` at the end of the ok-branch per plan specification; new `_ok_interruptsEnabled` theorem; (4) **AK9-C end-to-end rejection tests** — two new tests exercise the full `bootFromPlatformChecked` chain with bad-ObjId and TCB-variant handlers; (5) **AK9-H P-L2 readCStringChecked** — new `Except DeviceTreeParseError (String × Nat)` variant distinguishes `.malformedBlob` from `.fuelExhausted`; two correctness theorems + four runtime tests. Test suite expanded from 21 to 34 tests. Predecessor v0.30.4 delivered Phase AK9 (8 sub-tasks AK9-A..AK9-H) addressing 2 HIGH, 7 MEDIUM, 13 LOW platform findings. Plan: [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) §12. Portfolio AK1..AK10 targeted at v1.0.0 release (AK1–AK9 complete; AK10 in progress). Prior: WS-AM (v0.30.0), WS-AJ (v0.28.1–v0.29.0), WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG–WS-B. **Next: WS-AK Phase AK10 (Testing, Documentation & Closure).** |
+| **Active workstream** | **WS-AK Phase AK10 COMPLETE** (v0.30.6). Portfolio-closure phase landing fixture re-verification, documentation synchronization, audit errata and deferred tracking, version bump (patch-only per maintainer direction: v0.30.5 → v0.30.6; v1.0.0 release-tag deferred to a separate maintainer action), residual LOW-tier review, website link manifest audit, dead-code removal in `rust/sele4n-hal/src/trap.S` (both SError entries now `b .` after `bl handle_serror`, completing the R-HAL-M12 remediation per the audit's original guidance), and final regression gate. `docs/audits/AUDIT_v0.29.0_ERRATA.md` formalises audit-text corrections E-1..E-6 (S-H03 verification clarification, R-HAL-M12 dead-code removal, A-H01 layering extends to three layers, R-HAL-H02 partial DSB/ISB + missing `tlbi vmalle1`/D-cache clean, NI-H02 composition theorem scope, finding-count arithmetic 202 not 201). `docs/audits/AUDIT_v0.29.0_DEFERRED.md` formalises 11 deferred items (7 hardware-binding: A-M04 TLB+cache composition, A-M06/AK3-I `tlbBarrierComplete`, A-M08/A-M09/AK3-K MMU/Device-memory `BarrierKind`, C-M04 `suspendThread` atomicity, P-L9 VSpaceRoot boot exclusion, R-HAL-L14 SVC FFI; 4 proof-hygiene: F-L9 17-deep tuple, AK2-K.4 `eventuallyExits` by-design, AK7-E.cascade/AK7-F.cascade migrations) — all recorded as **post-1.0 hardening candidates; no currently-active plan file tracks them**, matching the convention from the AK8 second-pass audit (avoiding misleading references to the closed workstreams WS-V and AG10). Fixture byte-identical to `tests/fixtures/main_trace_smoke.expected` (227 lines, unchanged — AK1-AK9 semantic changes kept observable trace stable). Portfolio AK1..AK10 addresses 2 CRITICAL + 23 HIGH + 76 MEDIUM + 101 LOW = 202 findings across 10 phases, 86 sub-tasks. Plan: [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) §13. Prior: WS-AM (v0.30.0), WS-AJ (v0.28.1–v0.29.0), WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG–WS-B. **Next:** hardware-binding / proof-hygiene items are tracked per-ID in `AUDIT_v0.29.0_DEFERRED.md`; a future workstream picking any up should reference the file and update its row. |
 | **Workstream history** | [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -551,7 +551,10 @@ Lean model exactly. Alignment faults (`PC_ALIGN`, `SP_ALIGN`) and unknown
 exceptions return discriminant 45 (`UserException`), matching
 `ExceptionModel.lean:175-177`. The SVC handler returns `NotImplemented` (17)
 as a pre-FFI stub, signaling that syscall dispatch is not yet wired to the Lean
-kernel (pending WS-V/AG10 FFI bridge activation). Named constants in `trap.rs`
+kernel (SVC FFI bridge tracked as DEF-R-HAL-L14 in
+[`docs/audits/AUDIT_v0.29.0_DEFERRED.md`](../audits/AUDIT_v0.29.0_DEFERRED.md);
+WS-V and AG10 are both closed workstreams per `docs/WORKSTREAM_HISTORY.md`).
+Named constants in `trap.rs`
 (`error_code::VM_FAULT`, `USER_EXCEPTION`, `NOT_IMPLEMENTED`) replace bare
 numeric literals for cross-reference clarity.
 
@@ -1408,8 +1411,10 @@ volatile register behavior:
 - **Write-one-to-clear registers**: Side effects not modeled in abstract store.
 
 Proofs must use `MmioSafe` or restrict to non-device addresses to avoid
-unsound reasoning. Hardware binding (WS-V/AG10) must substitute actual MMIO
-reads via the FFI bridge to Rust HAL (`mmio.rs`).
+unsound reasoning. A future hardware-binding workstream (tracked per-ID in
+[`docs/audits/AUDIT_v0.29.0_DEFERRED.md`](../audits/AUDIT_v0.29.0_DEFERRED.md))
+must substitute actual MMIO reads via the FFI bridge to Rust HAL
+(`mmio.rs`).
 
 **Source**: RPi5/MmioAdapter.lean:336-356.
 

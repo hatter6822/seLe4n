@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/complete-phase-ak9-workstream-2npyb",
-      "commit_sha": "ff624532b7927b4755a9e64badbb470b965f5997",
-      "tree_sha": "c571e0c4248965ea0d266b4dd2c8cc176bcded3f",
-      "committed_at_utc": "2026-04-20T04:27:44+00:00"
+      "branch": "claude/complete-phase-ak10-WQcyt",
+      "commit_sha": "1531ae6cca2aa72efcd3c66bf8d8be1490ccfc31",
+      "tree_sha": "4dc7ec6a43bd765abbd36a596c6d160334af7903",
+      "committed_at_utc": "2026-04-20T01:34:10-04:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 5636
   },
   "readme_sync": {
-    "version": "0.30.5",
+    "version": "0.30.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 142,
     "production_loc": 103179,

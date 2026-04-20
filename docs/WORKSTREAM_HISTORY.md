@@ -19,6 +19,94 @@ previously spread across README.md, GitBook chapters, and audit plans.
 GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
 through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
 
+## WS-AK — Pre-1.0 Release Hardening (v0.29.1 → v0.30.6)
+
+**Audit:** [`docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md`](audits/AUDIT_v0.29.0_COMPREHENSIVE.md)
+**Plan:** [`docs/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md)
+**Errata:** [`docs/audits/AUDIT_v0.29.0_ERRATA.md`](audits/AUDIT_v0.29.0_ERRATA.md) (E-1..E-6)
+**Deferred:** [`docs/audits/AUDIT_v0.29.0_DEFERRED.md`](audits/AUDIT_v0.29.0_DEFERRED.md) (11 items, all post-1.0 hardening candidates)
+
+**Phases:** 10 (AK1–AK10), 86 sub-tasks, 202 findings addressed
+(2 CRITICAL + 23 HIGH + 76 MEDIUM + 101 LOW).
+
+- **AK1** (IPC Fail-Closed, v0.29.1): I-H01, I-H02, I-M01..M07 + 6 LOW.
+  `cleanupPreReceiveDonationChecked` error propagation; `endpointReply`
+  fail-closed on `.replyCapInvalid`; atomic caller/receiver state transitions
+  on rendezvous; `ensureRunnable` uses PIP-effective priority.
+- **AK2** (Scheduler/PIP/WCRT, v0.29.2): S-H03/H04, S-M02..M05, S-M07/M08 +
+  6 LOW. `schedContextBind/Configure` priority propagation with RunQueue
+  rebucket; CBS `Bandwidth.utilization` ceiling-round; `ReplenishQueue.
+  insertSorted` FIFO tiebreak; `switchDomain` unreachable-fallback emits
+  `.schedulerInvariantViolation`.
+- **AK3** (Architecture, v0.29.3): A-C01, A-H01..H03, A-M01..M10 + 9 LOW.
+  `AsidPool.activeAsids` fail-closed rollover; W^X four-layer defense
+  (wrapper + backend + VSpaceRoot + encode); EOI differentiation
+  (`spurious` vs `outOfRange`); ASID reuse bumps generation;
+  `bootFromPlatform` checked paths; IPC buffer PA bounds.
+- **AK4** (ABI Bridge, v0.29.4): R-ABI-C01, R-ABI-H01..H02, R-ABI-M01..M04 +
+  8 LOW. IPC-buffer merge for 5-arg syscalls (`serviceRegister`,
+  `schedContextConfigure`); `SchedContextId` newtype; tightened
+  `decodeServiceRegisterArgs` + `decodeCSpaceMintArgs`; end-to-end
+  `AbiRoundtripSuite`.
+- **AK5** (Rust HAL, v0.29.5 → v0.29.6): R-HAL-H01..H05, R-HAL-M01..M12 +
+  16 LOW. `panic = "abort"` workspace profile; `Drop`-based `EoiGuard`;
+  full `SCTLR_EL1` bitmap; MMU enable ordering with `tlbi vmalle1` +
+  D-cache clean; `PageTableCell` replaces `static mut`; ESR/FAR snapshot
+  in TrapFrame.
+- **AK6** (InformationFlow/SchedContext, v0.29.7 → v0.29.12): NI-H01..H02,
+  SC-H01, NI-M01..M02, SC-M01..M04 + 7 LOW. `budget == 0` rejection;
+  `applyConfigureParamsFull` replenishment replacement; yield-self-guard;
+  `projectKernelObject` strips `pendingMessage`/`timedOut`/`pipBoost`;
+  `dispatchCapabilityOnly_preserves_projection` composition; 14/14 cap-only
+  arms have named per-op projection preservation theorems.
+- **AK7** (Foundational, v0.29.13 → v0.29.14): F-H01..H02, F-M01..M11 + 15 LOW.
+  `freezeMap` auto-grow invariant transfer; `apiInvariantBundle_frozenDirectFull`
+  30-conjunct coverage; `MessageInfo.mkChecked` bounded construction; baseline
+  `ValidObjId`/`ValidThreadId`/`ValidSchedContextId` subtypes (AK7-E);
+  `ObjectKind` + `KindedObjId` parallel structure (AK7-F); `Capability.isNull`
+  /`requireNotNull` gates (AK7-I); `TCB.ext` sanctioned extensionality.
+- **AK8** (Capability / Lifecycle / DataStructures, v0.30.1 → v0.30.3):
+  C-M01..M07, DS-M01..M04 + 21 LOW. `untypedRegionsDisjoint` as 12th
+  `crossSubsystemInvariant` conjunct with machine-checked
+  `retypeFromUntyped` preservation; transactional `cspaceRevokeCdt`;
+  `maxHardwarePriority = 255`; `getCurrentPriorityChecked`; kind-checked
+  frozen-store wrappers; transactional `frozenSchedContextUnbind`;
+  `freezeCNodeSlotsChecked` phantom-key rejection.
+- **AK9** (Platform / Boot / DTB / MMIO, v0.30.4 → v0.30.5): P-H01..H02,
+  P-M01..M07 + 13 LOW. `mmioRead{32,64}` aligned + region-local;
+  `objectStoreEmptyAtBoot` rename with inverted semantic meaning;
+  `irqHandlersReferenceNotifications` validation in `bootFromPlatformChecked`;
+  single-region byte-range MMIO writes; budget-sufficiency fails-closed on
+  wrong-variant; checked variants for memory-region classification /
+  machine-config application / DT `reg` search; `bootEnableInterruptsOp`;
+  `readCStringChecked` distinguishes malformed from fuel-exhausted.
+- **AK10** (Testing, Documentation & Closure, v0.30.6): fixture verification,
+  documentation sync, audit errata, deferred tracking (11 items, all
+  recorded as "post-1.0 hardening candidates; no currently-active plan
+  file tracks them" — WS-V and AG10 are both closed workstreams and
+  cannot be used as deferral buckets), version bump (patch-only per
+  maintainer direction: v1.0.0 release tag is a separate manual
+  maintainer action), residual LOW review, website manifest audit,
+  dead-code removal (trap.S SError entries now `b .` after
+  `bl handle_serror` instead of the unreachable `restore_context`
+  macro, completing the R-HAL-M12 remediation per the audit's original
+  guidance), final regression gate.
+
+### Gate at v0.30.6 tip
+
+- `lake build` (260 jobs, 0 warnings)
+- `test_full.sh` PASS (Tier 0–3)
+- `cargo test --workspace` PASS; `cargo clippy -- -D warnings` 0 warnings
+- `check_version_sync.sh` PASS at 0.30.6 (15 files synced)
+- `check_website_links.sh` PASS (manifest consistent)
+- Fixture byte-identical to `tests/fixtures/main_trace_smoke.expected`
+  (227 lines)
+- Zero `sorry` / `axiom` / `native_decide` in `SeLe4n/` or `Main.lean`
+- `ak7_cascade_check_monotonic.sh` PASS
+
+**Portfolio status:** COMPLETE. v1.0.0 release-tag application deferred to
+manual maintainer action; the kernel is at release-candidate parity.
+
 ## WS-AK Phase AK9 audit remediation (v0.30.5)
 
 **Status**: COMPLETE. Deep end-to-end audit of the v0.30.4 Phase AK9

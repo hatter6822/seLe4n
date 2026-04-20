@@ -247,11 +247,10 @@ pub extern "C" fn handle_irq(_frame: &mut TrapFrame) {
 /// system-level interconnect fault, etc.). Log and halt permanently.
 ///
 /// AK5-K (R-HAL-M12 / MEDIUM): Return type is `-> !` to communicate the
-/// never-return guarantee to the compiler. The assembly vectors in
-/// `trap.S::__el0_serror_entry` / `__el1_serror_entry` rely on this:
-/// `restore_context` is unreachable code after the call because the
-/// SError path terminates the kernel. Marking `!` also lets the optimizer
-/// drop the unreachable restore.
+/// never-return guarantee to the compiler. AK10 completes the remediation:
+/// `trap.S::__el0_serror_entry` / `__el1_serror_entry` now branch to `b .`
+/// after `bl handle_serror` (instead of the previously-dead `restore_context`
+/// fall-through) so the core halts in place if divergence is ever violated.
 #[no_mangle]
 pub extern "C" fn handle_serror(_frame: &mut TrapFrame) -> ! {
     crate::kprintln!("FATAL: SError exception");

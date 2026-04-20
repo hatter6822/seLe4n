@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.30.5.
+Lean 4.28.0 toolchain, Lake build system, version 0.30.6.
 
 ## Build and run
 
@@ -237,51 +237,49 @@ Read(file_path, offset=1,   limit=500)   # lines 1-500
 Read(file_path, offset=501, limit=500)   # lines 501-1000
 ```
 
-**Known large files** (read in ≤500-line chunks):
-- `SeLe4n/Kernel/IPC/Invariant/Structural.lean` (~7591 lines)
-- `CHANGELOG.md` (~5285 lines)
-- `tests/NegativeStateSuite.lean` (~3589 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3466 lines)
-- `SeLe4n/Testing/MainTraceHarness.lean` (~3114 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~2671 lines)
+**Known large files** (read in ≤500-line chunks) — refreshed v0.30.6 (AK10-E):
+- `CHANGELOG.md` (~9453 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural.lean` (~7626 lines)
+- `docs/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~3768 lines)
+- `tests/NegativeStateSuite.lean` (~3660 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3633 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~3160 lines)
+- `SeLe4n/Kernel/CrossSubsystem.lean` (~2839 lines)
+- `docs/gitbook/12-proof-and-invariant-map.md` (~2821 lines)
+- `SeLe4n/Model/Object/Structures.lean` (~2769 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~2572 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~2509 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2504 lines)
-- `SeLe4n/Model/Object/Structures.lean` (~2454 lines)
-- `SeLe4n/Kernel/Capability/Invariant/Preservation.lean` (~2407 lines)
-- `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
-- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~2300 lines)
-- `SeLe4n/Kernel/CrossSubsystem.lean` (~2211 lines)
+- `SeLe4n/Kernel/Capability/Invariant/Preservation.lean` (~2461 lines)
+- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~2368 lines)
+- `SeLe4n/Kernel/API.lean` (~2258 lines)
 - `tests/OperationChainSuite.lean` (~2208 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2186 lines)
-- `docs/WORKSTREAM_HISTORY.md` (~1926 lines)
-- `SeLe4n/Kernel/API.lean` (~1895 lines)
-- `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~1767 lines)
-- `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
-- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~1653 lines)
-- `SeLe4n/Model/State.lean` (~1569 lines)
+- `SeLe4n/Model/State.lean` (~2152 lines)
+- `SeLe4n/Platform/Boot.lean` (~2074 lines)
+- `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~1759 lines)
+- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~1739 lines)
+- `SeLe4n/Model/Object/Types.lean` (~1698 lines)
+- `SeLe4n/Model/FreezeProofs.lean` (~1660 lines)
+- `SeLe4n/Kernel/Capability/Operations.lean` (~1651 lines)
+- `SeLe4n/Prelude.lean` (~1649 lines)
+- `docs/spec/SELE4N_SPEC.md` (~1634 lines)
+- `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1595 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation.lean` (~1490 lines)
-- `SeLe4n/Kernel/Capability/Operations.lean` (~1384 lines)
-- `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1380 lines)
-- `SeLe4n/Model/FreezeProofs.lean` (~1372 lines)
-- `SeLe4n/Prelude.lean` (~1355 lines)
-- `SeLe4n/Kernel/Lifecycle/Operations.lean` (~1350 lines)
-- `SeLe4n/Model/Object/Types.lean` (~1290 lines)
-- `SeLe4n/Platform/Boot.lean` (~1270 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~1084 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1076 lines)
+- `SeLe4n/Kernel/Lifecycle/Operations.lean` (~1473 lines)
+- `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean` (~1069 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1177 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1012 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1006 lines)
-- `SeLe4n/Kernel/RobinHood/Bridge.lean` (~994 lines)
-- `docs/spec/SELE4N_SPEC.md` (~969 lines)
-- `tests/InformationFlowSuite.lean` (~969 lines)
-- `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~949 lines)
+- `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1095 lines)
+- `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1031 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~939 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~895 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~869 lines)
-- `docs/gitbook/12-proof-and-invariant-map.md` (~2714 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
-- `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
 
 When editing large files, read the specific region around the target lines
 first (e.g., `offset=380, limit=40`) rather than the whole file. This avoids
@@ -526,6 +524,7 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
+- **WS-AK Phase AK10 COMPLETE — WS-AK PORTFOLIO CLOSED (v0.30.6, branch `claude/complete-phase-ak10-WQcyt`)**: Phase AK10 closes the 10-phase WS-AK v0.29.0 audit remediation portfolio (202 findings addressed: 2 CRITICAL + 23 HIGH + 76 MEDIUM + 101 LOW). **AK10-A** — fixture verification: `lake exe sele4n` byte-identical to `tests/fixtures/main_trace_smoke.expected` (227 lines); AK1..AK9 semantic changes (AK1-D atomic `ipcState := .ready`, AK2-A priority re-enqueue, AK6-G projection strips) land at invariant layers the trace harness does not exercise. **AK10-B** — doc sync across `README.md`, 10 i18n README variants, `docs/spec/SELE4N_SPEC.md` (§2 snapshot + "Active workstream" entry), `docs/WORKSTREAM_HISTORY.md` (WS-AK portfolio summary with 10-phase breakdown), `docs/gitbook/` affected chapters, `CHANGELOG.md` v0.30.6 entry. **AK10-C** — **patch-only** version bump v0.30.5 → **v0.30.6** per maintainer direction (v1.0.0 release tag deferred to separate manual maintainer action); 15 version-bearing files synchronized; `check_version_sync.sh` PASS. **AK10-D** — new `docs/audits/AUDIT_v0.29.0_ERRATA.md` formalises six audit-text clarifications (E-1 S-H03 verification, E-2 R-HAL-M12 dead-code removal — supersedes AK5-K's "defensive fall-through" annotation and completes the original audit remediation per `b .`-after-`bl` guidance, E-3 A-H01 three-layer extent, E-4 R-HAL-H02 partial DSB/ISB + missing TLB flush/D-cache clean, E-5 NI-H02 composition scope, E-6 finding-count arithmetic 202 not 201); **dead-code deletion**: both `__el0_serror_entry` and `__el1_serror_entry` in `rust/sele4n-hal/src/trap.S` replace the unreachable `restore_context` macro with `b .` (branch-to-self infinite loop), which is stronger defence-in-depth than the prior annotated fall-through (halts in place if the `-> !` divergence contract is ever violated, rather than attempting `ERET` with SError-corrupted context). **AK10-E** — CLAUDE.md large-file list refreshed; notable deltas: `InformationFlow/Invariant/Operations.lean` 2671→3768 (AK6-F/G/H), `CrossSubsystem.lean` 2211→2839 (AK8-A+AM4), `Platform/Boot.lean` 1270→2074 (AK3/AK9), `API.lean` 1895→2258 (AK6-F+AK7-E/F/I), `CHANGELOG.md` 5285→9453. **AK10-F** — residual LOW-tier verification: all LOW findings batched per-phase (AK1-J..AK9-H); zero `sorry`/`axiom`/`native_decide` in production proof surface. **AK10-G** — `scripts/check_website_links.sh` PASS; no protected paths renamed or removed. **AK10-H** — `docs/WORKSTREAM_HISTORY.md` WS-AK portfolio summary with gate-state table and cross-references to errata + deferred tracking. **AK10-J** — new `docs/audits/AUDIT_v0.29.0_DEFERRED.md` formalises 11 deferred items (7 hardware-binding: DEF-A-M04 TLB+cache composition, DEF-A-M06/AK3-I `tlbBarrierComplete`, DEF-A-M08/M09/AK3-K MMU/Device BarrierKind, DEF-C-M04 `suspendThread` atomicity Rust proof, DEF-P-L9 VSpaceRoot boot exclusion, DEF-R-HAL-L14 SVC FFI wiring; 4 proof-hygiene: DEF-F-L9 17-deep tuple refactor, DEF-AK2-K.4 `eventuallyExits` by-design, DEF-AK7-E.cascade `ValidObjId` rollout, DEF-AK7-F.cascade `ObjKind` migration). Every deferred row is recorded as a **post-1.0 hardening candidate; no currently-active plan file tracks it**, matching the convention from the AK8 second-pass audit (WS-V and AG10 are both closed workstreams — using them as deferral buckets is misleading). **Gate at v0.30.6 tip**: `lake build` (260 jobs, 0 warnings) + `test_smoke.sh` PASS + `test_full.sh` PASS + `cargo test --workspace` PASS + `cargo clippy --workspace -- -D warnings` (0 warnings) + `check_version_sync.sh` PASS at 0.30.6 + `check_website_links.sh` PASS + `ak7_cascade_check_monotonic.sh` PASS + fixture byte-identical + zero `sorry`/`axiom`/`native_decide`. **Portfolio status**: COMPLETE. **Next workstream**: none currently active; deferred items are tracked per-ID in `AUDIT_v0.29.0_DEFERRED.md`.
 - **WS-AK Phase AK9 audit remediation COMPLETE (v0.30.5, branch `claude/complete-phase-ak9-workstream-2npyb`)**: Deep end-to-end audit of the v0.30.4 Phase AK9 delivery surfaced five gaps where the plan's intent was not fully honored at the production-path level. (1) **AK9-A (P-H01) alias → rename**: v0.30.4 added `mmioReadByte` as a thin `@[inline]` alias over `mmioRead`; the plan specified RENAME. Inverted so `mmioReadByte` is now the primary definition and `mmioRead` is a `@[deprecated]` alias preserving backward compat. Three theorems renamed (`mmioReadByte_rejects_non_device`, `mmioReadByte_preserves_state`, `mmioReadByte_nonMmio_safe`) with backward-compat aliases. Two new positive correctness theorems `mmioRead{32,64}_alignedAndBounded_within_region` complete the four-theorem-per-width contract. (2) **AK9-F (P-M05) validation not wired**: v0.30.4 defined `applyMachineConfigChecked` but `bootFromPlatform` still called unchecked `applyMachineConfig` — the production path silently accepted malformed configs. Remediation wires `machineConfig.wellFormed` + `physicalAddressWidth ≤ 52` gates directly into `bootFromPlatformChecked` BEFORE constructing the IntermediateState; two soundness theorems (`bootFromPlatformChecked_ok_implies_machineConfigWellFormed`, `bootFromPlatformChecked_ok_implies_physicalAddressWidth_bound`) expose post-conditions. (3) **AK9-G (P-M06) interrupts-enable not wired**: v0.30.4 added `bootFromPlatformWithInterrupts` but the plan specified "Invoke at end of `bootFromPlatform` checked path." Remediation wires `bootEnableInterruptsOp` into `bootFromPlatformChecked`'s ok-branch so successful checked boots emit a post-HAL-Phase-3 state with interrupts enabled. New soundness theorem `bootFromPlatformChecked_ok_interruptsEnabled`. The unchecked `bootFromPlatform` keeps `interruptsEnabled = false` for negative-state / invariant-bridge contexts. (4) **AK9-C no end-to-end rejection test**: v0.30.4 tested `irqHandlersReferenceNotifications` predicate-directly but the plan requires fixture exercising mis-configured IRQ with `bootFromPlatformChecked` rejection. Added two end-to-end tests (`ak9ce_01`, `ak9ce_02`) exercising the full production chain with missing-ObjId and TCB-variant handlers. (5) **AK9-H (P-L2) readCString not upgraded to Except**: v0.30.4 only documented the fuel-collapse concern; the plan says "return Except". Added `readCStringChecked : Except DeviceTreeParseError (String × Nat)` distinguishing `.malformedBlob` (OOB / truncated) from `.fuelExhausted` (no null terminator within fuel); two correctness theorems + four runtime tests. Legacy Option variant retained. Test suite `tests/Ak9PlatformSuite.lean` expanded from 21 → 34 tests: AK9-CE/FE/GE end-to-end chain (5), AK9-A rename / positive (4), AK9-H readCStringChecked (4). The existing `bootFromPlatformChecked_eq_bootFromPlatform` theorem now carries the stronger conclusion (emits `bootEnableInterruptsOp (bootFromPlatform config)` — a behavioural change that reflects the production post-IRQ-enable semantics). Gate: `lake build` (260 jobs, 0 warnings) + `test_smoke.sh` PASS + `test_full.sh` PASS + `lake exe ak9_platform_suite` 34/34 PASS + `cargo test --workspace` PASS + `cargo clippy --workspace -- -D warnings` (0 warnings) + `check_version_sync.sh` PASS at 0.30.5 (15 files synced) + fixture byte-identical to `tests/fixtures/main_trace_smoke.expected` + zero `sorry` / `axiom`. Plan: [`docs/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) §12. Portfolio AK1..AK10 targeted at v1.0.0 release (AK1–AK9 complete; **next: AK10 Testing, Documentation & Closure**).
 - **WS-AK Phase AK9 COMPLETE (v0.30.4, branch `claude/complete-phase-ak9-workstream-2npyb`)**: Phase AK9 of the v0.29.0 pre-1.0 release hardening plan — **Platform / Boot / DTB / MMIO**. 8 sub-tasks (AK9-A..AK9-H) addressing 2 HIGH, 7 MEDIUM, 13 LOW platform findings. **AK9-A (P-H01 / HIGH)**: `mmioRead32` / `mmioRead64` with 4/8-byte alignment + region-local range checks; `mmioRead` retained as `mmioReadByte` alias for UART/debug; four correctness theorems per width. **AK9-B (P-H02 / HIGH)**: `BootBoundaryContract.objectStoreNonEmpty` renamed to `objectStoreEmptyAtBoot` — field always asserted `(default : SystemState).objects.size = 0`, inverted semantic meaning now fixed across `Assumptions.lean`, `Sim/BootContract.lean`, `RPi5/BootContract.lean`; `@[deprecated]` alias preserves prior theorem names. **AK9-C (P-M01 / MEDIUM)**: `irqHandlersReferenceNotifications` validates each IRQ handler ObjId refers to a `.notification` in `initialObjects`; wired into `bootFromPlatformChecked` as a third validation step; soundness `bootFromPlatformChecked_ok_implies_irqHandlersValid`. **AK9-D (P-M02 / MEDIUM)**: `isDeviceRangeWithinRegion` + `findDeviceRegion` tighten multi-byte `mmioWrite32` / `mmioWrite64` / `mmioWrite32W1C` to require the ENTIRE N-byte range lie within a SINGLE declared `.device` region (stricter than the prior per-endpoint check); positive correctness `mmioWrite{32,64}_alignedAndBounded_within_region`; bridge `isDeviceRangeWithinRegion_false_of_non_device` recovers per-endpoint rejection theorems. **AK9-E (P-M03 / MEDIUM)**: `budgetSufficientCheck` in `RPi5/RuntimeContract.lean` now fails closed (`false`) for `TCB.schedContextBinding = .bound scId` when the store resolves to a non-`.schedContext` variant — was silently permissive; `registerContextStableCheck_budget` updated to discharge the new wrong-variant contradiction. **AK9-F (P-M04 / M05 / M07 / MEDIUM)**: three checked variants forcing explicit caller decisions — `classifyMemoryRegionChecked : Option MemoryKind` (rejects empty map / unmapped), `applyMachineConfigChecked` (`MachineConfig.wellFormed` + `physicalAddressWidth ≤ 52` ARMv8 LPA max), `findMemoryRegPropertyChecked : Except DeviceTreeParseError` (distinguishes fuel exhaustion from malformed blob; default fuel `hdr.sizeDtStruct / 4`); `DeviceTree.fromDtbFull` rewired through the checked search; `parseFdtHeader_fromDtbFull_ok` updated. **AK9-G (P-M06 / MEDIUM)**: `bootEnableInterruptsOp : IntermediateState → IntermediateState` mirrors Rust HAL Phase-3 IRQ re-enable after GIC + timer setup; `bootFromPlatformWithInterrupts` composes; default `bootFromPlatform` keeps IRQs disabled for negative-state / boot-invariant-bridge contexts; six supporting frame theorems. **AK9-H (P-L1..P-L13)**: 13-entry LOW batch documentation at end of `RPi5/MmioAdapter.lean`; P-L3 (PA width bounds — AK9-F), P-L7 (pairwise MMIO disjointness — pre-existing `mmioRegionsPairwiseDisjointCheck`), P-L13 (touching-regions fragility — AK9-D) RESOLVED; remaining LOW items documented as accepted single-core model gaps or recorded as post-1.0 hardening candidates (no currently-active plan file tracks them). **Regression test suite**: new `tests/Ak9PlatformSuite.lean` — 21 tests (AK9-A × 4, AK9-D × 2, AK9-B × 2, AK9-C × 4, AK9-F × 6, AK9-G × 3) wired into `test_tier2_negative.sh` as `ak9_platform_suite`. Gate: `lake build` (260 jobs, 0 warnings) + `test_smoke.sh` PASS + `test_full.sh` PASS + `lake exe ak9_platform_suite` 21/21 PASS + `cargo test --workspace` PASS + `cargo clippy --workspace -- -D warnings` (0 warnings) + `check_version_sync.sh` PASS at 0.30.4 + zero `sorry` / `axiom` in `SeLe4n/` or `Main.lean`. Plan: [`docs/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) §12. Portfolio status: AK1–AK9 complete; **next: AK10 (Testing, Documentation & Closure)** targeting v1.0.0 release.
 - **WS-AK Phase AK8 second-pass audit COMPLETE (v0.30.3, branch `claude/review-codebase-audit-stKD8`)**: Second deep end-to-end audit of Phase AK8 surfaced two process-level issues. **(1) Terminology hygiene**: eight deferral annotations introduced by AK8 incorrectly cited **WS-V** as a future-work bucket, but WS-V was completed many releases ago (see `docs/WORKSTREAM_HISTORY.md` §"WS-V workstream ... COMPLETE"). Using a closed workstream as a deferral bucket is misleading. Each of the eight references has been rephrased to state honestly "recorded here as a post-1.0 hardening candidate; no currently-active plan file tracks it" — scope: `SeLe4n/Kernel/Architecture/Invariant.lean` (3 sites, retype-to-untyped scope docs), `SeLe4n/Kernel/CrossSubsystem.lean` (1 site, `untypedRegionsDisjoint` transitive-chain scope), `SeLe4n/Kernel/Capability/Operations.lean` (2 sites, C-L3/C-L9 LOW-tier), `SeLe4n/Kernel/RobinHood/Bridge.lean` (3 sites, DS-L2/DS-L5/DS-M04), plus `CLAUDE.md`, `docs/WORKSTREAM_HISTORY.md`, `docs/spec/SELE4N_SPEC.md`, `CHANGELOG.md` active-workstream entries. Pre-existing WS-V references in historical log entries are left unchanged. **(2) AK8-B test gap**: `cspaceRevokeCdtTransactional` (AK8-B, v0.30.0) shipped with no regression tests. Added three tests in `tests/NegativeStateSuite.lean`: (a) transactional variant aborts atomically with `.error .objectNotFound` when a descendant's CNode is missing, (b) transactional variant succeeds with `firstFailure = none` when all descendants have valid CNodes, (c) `validateRevokeCdtDescendants` returns `.ok` on an empty list. All three pass in Tier 2 (`test_tier2_negative.sh`). Version bumped 0.30.2→0.30.3 across 15 files. Gate: `lake build` (260 jobs, 0 warnings) + `test_smoke.sh` PASS + `test_full.sh` PASS + `cargo test --workspace` PASS + `cargo clippy --workspace -- -D warnings` (0 warnings) + `model_integrity_suite` PASS (7 AK8-A tests from v0.30.2 still passing) + `priority_management_suite` 27/27 PASS + `frozen_ops_suite` 21/21 PASS + `information_flow_suite` PASS + `operation_chain_suite` PASS + `negative_state_suite` PASS (+3 new AK8-B tests) + `check_version_sync.sh` PASS at 0.30.3 + zero sorry/axiom.
@@ -594,7 +593,7 @@ under `docs/` and `docs/gitbook/`.
 - **WS-AC PORTFOLIO COMPLETE** (v0.25.3–v0.25.10): Comprehensive Audit Remediation — 6 phases (AC1–AC6), 42 sub-tasks. 3 HIGH, 9 MEDIUM, 9 LOW findings addressed. Phase AC6 COMPLETE (documentation, testing & closure: T-03 DecodingSuite, audit errata, workstream history). Zero sorry/axiom. See `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md`
 - **WS-AB PORTFOLIO COMPLETE** (v0.24.0–v0.25.5): Deferred Operations & Liveness Completion — 6 phases, 90 sub-tasks. All 5 deferred seL4 operations implemented: suspend/resume (D1), setPriority/setMCPriority (D2), setIPCBuffer (D3). Priority Inheritance Protocol (D4). Bounded Latency Theorem WCRT = D*L_max + N*(B+P) (D5). API Surface Integration & Closure (D6). Rust ABI synchronized (SyscallId 25, KernelError 44). Zero sorry/axiom. See `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md`
 - **WS-AA Phase AA2 COMPLETE**: CI & Infrastructure Hardening — 6 sub-tasks (AA2-A through AA2-F), all complete (v0.23.23). Zero sorry/axiom. See `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md`
-- **Next milestone**: Raspberry Pi 5 hardware integration (WS-V / AG10) — see §8.15 of SELE4N_SPEC.md for activation roadmaps
+- **Next milestone**: Raspberry Pi 5 hardware integration (tracked per-ID in `docs/audits/AUDIT_v0.29.0_DEFERRED.md` §A; no currently-active workstream — both WS-V and AG10 are closed per `docs/WORKSTREAM_HISTORY.md`)
 - **Hardware target**: Raspberry Pi 5 (ARM64)
 
 ## PR checklist
