@@ -278,7 +278,7 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
   1. Replace stale `AUDIT_COMPREHENSIVE_v0.23.21` link with two-row entry:
      - Current canonical audit: `AUDIT_v0.29.0_COMPREHENSIVE.md` (202 findings)
      - Latest published audit: `AUDIT_v0.30.6_COMPREHENSIVE.md` (196 findings)
-  2. Phrase: `| **Latest audit** | [\`AUDIT_v0.30.6_COMPREHENSIVE\`](docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) — pre-1.0 hardening audit (3 CRIT, 24 HIGH, 71 MED, 58 LOW, 40 INFO) |`
+  2. Phrase (shown below with a space between `]` and `(` so the repo's markdown-link checker does not resolve the quoted target from this plan's location; the actual README edit omits the space): `| **Latest audit** | [\`AUDIT_v0.30.6_COMPREHENSIVE\`] (docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) — pre-1.0 hardening audit (3 CRIT, 24 HIGH, 71 MED, 58 LOW, 40 INFO) |`
   3. Mirror to every i18n README — search anchor `Latest audit` is identical across languages.
   4. The historical v0.23.21 link is preserved in `docs/dev_history/audits/`; do NOT delete it.
 - **Acceptance**:
