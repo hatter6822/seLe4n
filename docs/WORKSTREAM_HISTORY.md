@@ -15,9 +15,69 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
-**Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
-GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
-through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
+**Active**: **WS-AN** — Pre-1.0 audit remediation for the v0.30.6 comprehensive
+audit. Phase **AN0 (Pre-flight)** in progress on branch
+`claude/phase-an0-preflight-9VECN`; subsequent phases AN1..AN10 land per the
+plan's sequencing. Plan:
+[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md).
+Baseline: [`docs/audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt`](audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt).
+
+**Next milestone (post-WS-AN)**: Raspberry Pi 5 hardware binding — ARMv8 page
+table walk, GIC-400 interrupt routing, boot sequence. All pre-benchmark
+workstreams (WS-B through WS-U Phase U8) are complete. **WS-U PORTFOLIO
+COMPLETE.**
+
+## WS-AN — Pre-1.0 Audit Remediation (v0.30.6 → v0.30.7/v1.0.0, **ACTIVE**)
+
+**Audit:** [`docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md`](audits/AUDIT_v0.30.6_COMPREHENSIVE.md)
+**Plan:** [`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
+**Baseline:** [`docs/audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt`](audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt)
+**Carried forward:** [`docs/audits/AUDIT_v0.29.0_DEFERRED.md`](audits/AUDIT_v0.29.0_DEFERRED.md) (11 items)
+**Errata:** [`docs/audits/AUDIT_v0.29.0_ERRATA.md`](audits/AUDIT_v0.29.0_ERRATA.md) (6 entries, all closed informational)
+
+**Scope:** 196 findings (2 actionable CRITICAL + 23 actionable HIGH + 71
+MEDIUM + 59 LOW + 40 INFO, after C-02 resolved and H-22 downgraded), plus
+11 carried-forward DEFERRED items. Decomposed into 11 phases (AN0..AN10)
+and 79 named sub-tasks.
+
+**Phases:**
+
+- **AN0 — Pre-flight** *(ACTIVE)*. AN0-A baseline snapshot, AN0-B sub-task
+  inventory (plan commit landed at b2ee03c on
+  `claude/audit-workstream-planning-AUBX4`, expanded into 158 sub-sub-tasks
+  at 7ac49e7, markdown-link-check fix at cad00cb), AN0-C branch policy
+  reminder. AN0 closes with this baseline snapshot on
+  `claude/phase-an0-preflight-9VECN`.
+- **AN1 — Critical-path blockers**: C-01 README "Latest audit" pointer,
+  C-03 pre-commit hook auto-installer, H-24 stale Rust HAL TODO retargeting,
+  RUST-M06 companion.
+- **AN2 — Foundation hardening**: H-10..H-13, FND-M01..M08, Theme 4.3
+  subtype gates, DEF-F-L9 prep.
+- **AN3 — IPC subsystem**: H-01, IPC-M01..M09, Theme 4.2 named projections,
+  Theme 4.7 Structural.lean split.
+- **AN4 — Capability / Lifecycle / Service**: H-02..H-06, CAP/LIF/SVC
+  MEDIUMs, Lifecycle/Operations.lean split.
+- **AN5 — Scheduler / SchedContext**: SCH-M01..M05, SC-M01..M03,
+  Preservation.lean split.
+- **AN6 — Architecture / IF / CrossSubsystem**: H-07 closure-form discharge,
+  H-08, H-09, ARCH/IF/CX MEDIUMs, IF/Operations.lean split.
+- **AN7 — Platform / API**: H-14..H-16, PLT-M01..M07, API-M01..M02.
+- **AN8 — Rust HAL**: H-17..H-19, RUST-M01..M08 (runs in parallel with
+  AN3..AN7).
+- **AN9 — Tests / CI / Scripts**: H-20 KernelError matrix, H-21, H-22, H-23,
+  TST-M01..M13.
+- **AN10 — Documentation, themes, closure**: DOC-M01..M08, Theme 4.1
+  discharge index, Theme 4.4 SMP inventory, version bump (v0.30.6 →
+  v0.30.7; v1.0.0 tag is a maintainer manual action per AK10-C precedent),
+  new `AUDIT_v0.30.6_DEFERRED.md`, WS-AN history entry, gate.
+
+**Gate at AN0 completion** (captured in the baseline file): `lake build`
+(260 jobs, 0 warnings) + `test_smoke.sh` PASS + `test_full.sh` PASS +
+`test_tier0_hygiene.sh` PASS + `cargo test --workspace` (414 tests, 0
+failed, 0 ignored) + `cargo clippy --workspace -- -D warnings` (0 warnings)
++ `check_version_sync.sh` PASS at 0.30.6 + `check_website_links.sh` PASS
++ fixture byte-identical to `main_trace_smoke.expected` (227 lines) +
+zero `sorry`/`axiom`/`native_decide` in production.
 
 ## WS-AK — Pre-1.0 Release Hardening (v0.29.1 → v0.30.6)
 
