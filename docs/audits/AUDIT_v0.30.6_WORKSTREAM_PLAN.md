@@ -53,7 +53,7 @@ Recommended reading order for a contributor picking up a sub-task:
 3. **§3..§13 per-phase plans** — for the phase you are working on; each sub-task lists file:line anchors, acceptance criteria, and the regression-test recipe.
 4. **§14 Cross-cutting theme handling** — explains why Theme 4.2 (named projections), 4.3 (subtype gates), 4.4 (SMP inventory), 4.7 (file splits) are folded into the per-subsystem phases rather than siloed.
 5. **§15 Closure criteria & gate** — the v1.0.0 release-readiness checklist.
-6. **§16 Deferred items carry-forward** — items that intentionally remain post-1.0.
+6. **§16 Absorption map** — each item from `AUDIT_v0.29.0_DEFERRED.md` mapped to the live WS-AN sub-task that closes it; zero items carry past v1.0.0.
 
 The plan supersedes nothing. All audit findings retain their original IDs (C-01..C-03, H-01..H-24, IPC-M01..M09, etc.) for traceability; phase sub-task IDs are formatted `AN{phase}-{letter}` (e.g., AN1-A) and cross-reference the audit ID in their headline.
 
@@ -262,7 +262,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 ### AN0-A — Baseline capture
 
 - **Files**: `docs/audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt` (new)
-- **Plan**: capture metrics at WS-AN start so AN10 can diff:
+- **Plan**: capture metrics at WS-AN start so AN12 can diff:
   - `lake build` job count, warning count
   - `cargo test --workspace` test count
   - 17 metrics from `scripts/ak7_cascade_baseline.sh` rerun
@@ -283,7 +283,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 ### AN0-C — Branch policy reminder
 
 - **Files**: none modified; reminder issued in the PR description
-- **Plan**: confirm with maintainer that AN1..AN10 all land on the same branch `claude/audit-workstream-planning-AUBX4` until WS-AN closes. Per task description's `Git Development Branch Requirements` section.
+- **Plan**: confirm with maintainer that AN1..AN12 all land on the same branch `claude/audit-workstream-planning-AUBX4` until WS-AN closes. Per task description's `Git Development Branch Requirements` section.
 - **Acceptance**: verbal/written confirmation; no PR force-pushed elsewhere
 - **Regression test**: n/a
 
@@ -977,7 +977,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 
 ## 7. Phase AN4 — Capability / Lifecycle / Service
 
-**Goal**: close the four HIGH capability findings (H-02..H-06), batch CAP/LIF/SVC MEDIUMs, address the Lifecycle.Operations.lean monolithic split (Theme 4.7), and document the CDT-discharge index pattern (Theme 4.1 anchor for AN10's broader index).
+**Goal**: close the four HIGH capability findings (H-02..H-06), batch CAP/LIF/SVC MEDIUMs, address the Lifecycle.Operations.lean monolithic split (Theme 4.7), and document the CDT-discharge index pattern (Theme 4.1 anchor for AN12-A's broader index).
 
 **Effort**: 5–6 days. **Blocks**: AN6 CrossSubsystem composition.
 
@@ -1065,8 +1065,8 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
      ```
      with a docstring listing each `(operation_name, file:line, discharge_site)` tuple. Use the marker-theorem pattern (per CAP-M01's preference for documentation-via-marker over vacuous Prop).
   2. For each cap operation taking a CDT post-state hypothesis (~6 operations: `cspaceCopy`, `cspaceMove`, `cspaceMutate`, `cspaceMint`, `cspaceDelete`, `cspaceRevoke`), add a `_cdt_hypothesis_discharged_at` companion theorem that bridges from `crossSubsystemInvariant` to the post-state CDT predicates. This makes the discharge mechanically searchable.
-  3. The marker theorem becomes the anchor for AN10's broader Theme 4.1 discharge index (covering H-04 CDT, H-07 projection, SC-M02 `hSchedProj`).
-- **Acceptance**: index theorem committed; each of the 6 cap operations has a named discharge witness; AN10 deliverable extends the index with H-07 + SC-M02 entries
+  3. The marker theorem becomes the anchor for AN12-A's broader Theme 4.1 discharge index (covering H-04 CDT, H-07 projection, SC-M02 `hSchedProj`).
+- **Acceptance**: index theorem committed; each of the 6 cap operations has a named discharge witness; AN12-A deliverable extends the index with H-07 + SC-M02 entries
 - **Regression test**: full gate
 - **Cascade**: ~12 sites (6 ops × 2 = base + companion)
 
@@ -1077,7 +1077,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Plan**:
   1. Add a precondition predicate `resolvedCnodeStillValid (st : SystemState) (resolvedRef : CapAddress) : Prop := ∃ cn, st.lookupKernelObject resolvedRef.cnode = some (.cnode cn)`.
   2. Refactor `cspaceLookupMultiLevel` to take this predicate as a hypothesis (or to assert it inside via an `if .. then .. else` returning `.error .invalidCapability`).
-  3. Prove the precondition holds in the single-core kernel via "no retype between resolveCapAddress and cspaceLookupSlot in the absence of concurrency". This becomes the first formalised entry in the AN10 SMP inventory (Theme 4.4).
+  3. Prove the precondition holds in the single-core kernel via "no retype between resolveCapAddress and cspaceLookupSlot in the absence of concurrency". This becomes the first formalised entry in the AN12-B SMP inventory (Theme 4.4); after AN9-J ships SMP bring-up, this precondition is discharged at SMP boundary by AN9-D's interrupt-disable wrapper on the dispatch path.
   4. Document the SMP-side discharge: at SMP boundary, the predicate becomes a critical-section obligation managed by an interrupt-disable bracket.
 - **Acceptance**: precondition predicate defined; single-core proof present; SMP discharge documented
 - **Regression test**: full gate; `lake exe negative_state_suite`
@@ -1178,7 +1178,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 
 - **AN4-G.4 — LIF-M04 retype atomicity theorem** (0.15 day)
   - Prove `retypeFromUntyped_atomicity_under_sequential_semantics` witnessing that the watermark-advance + post-allocation-verify appears atomic in the sequential Lean model (because Lean's deterministic evaluation collapses the window).
-  - Add TODO annotation cross-referencing AN10-B's SMP inventory (which will include a DEF for the H3 atomicity proof).
+  - Add TODO annotation cross-referencing AN12-B's SMP inventory confirmation (the inventory anchors the AN9-D HAL-bracket atomicity guarantee, so the sequential-semantics theorem here and the hardware atomicity in AN9-D compose cleanly).
   - **Acceptance**: theorem proven; TODO annotation present.
 
 - **AN4-G.5 — LIF-M05 Operations.lean 4-file split** (0.4 day)
@@ -1394,7 +1394,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 
 **Goal**: Address H-07 (template substantive discharge of one closure-form projection theorem), H-08 (assumption consumption index), H-09 (untypedRegionsDisjoint scope clarification or transitive strengthening). Batch ARCH/IF/CX MEDIUMs. Split the 3768-line `InformationFlow/Invariant/Operations.lean`.
 
-**Effort**: 5–6 days. **Blocks**: AN10.
+**Effort**: 7–9 days. **Blocks**: AN9 (via `VSpaceBackend` wiring) + AN12.
 
 ### AN6-A — Substantive discharge of ALL SIX `*_preserves_projection` theorems (H-07; closes E-5 residual entirely)
 
@@ -1750,7 +1750,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 
 - **AN7-D.1 — PLT-M01 deprecate `bootFromPlatformUnchecked` alias** (0.1 day)
   - Add `@[deprecated "use bootFromPlatformChecked; see PLT-M01"]` annotation.
-  - Optionally move into a `SeLe4n.Testing.Deprecated` namespace post-1.0 (defer to AN10 if scope is tight).
+  - Also move into a `SeLe4n.Testing.Deprecated` namespace in the same commit (mandatory — production adopters must not accidentally import the unchecked form; the Testing.Deprecated namespace makes the intent-tag explicit).
   - **Acceptance**: deprecation warning fires on legacy call sites; test-path consumers audited.
 
 - **AN7-D.2 — PLT-M02 / PLT-M03 full RPi5/VSpaceBoot shim + non-empty config bridge** (2.5 days, mandatory)
@@ -1800,7 +1800,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
     ```
   - Add `Staged.lean` to the test-harness build target (via `Main.lean`'s test entry or a new `lake exe staged_probe` that no-ops but forces the import graph).
   - For each of the 6 child modules: add `-- STATUS: staged for H3 hardware binding` header comment + cross-reference to `SELE4N_SPEC.md` §8.15 activation roadmap.
-  - Also wire `SeLe4n/Kernel/Concurrency/Assumptions.lean` (created in AN10-B) into `Staged.lean` per AN10-B.4.
+  - Also wire `SeLe4n/Kernel/Concurrency/Assumptions.lean` (created in AN12-B) into `Staged.lean` per AN12-B.4. Note: after AN9-J's SMP bring-up lands, most entries in this module transition from "SMP-latent" to "SMP-implemented, runtime-gated by `smp_enabled=false` at v1.0.0" — the module remains present as a confirmation inventory rather than a pending-work surface.
   - **Acceptance**: `lake build SeLe4n.Platform.Staged` PASS; each child module gets per-commit build verification via `lake build <Module.Path>`.
 
 - **AN7-D.7 — Staged-modules build-graph CI check** (0.1 day)
@@ -2819,33 +2819,33 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 
 **Sub-sub-task breakdown** (5 commits):
 
-- **AN10-A.1 — Scaffold file + methodology section** (0.1 day)
+- **AN12-A.1 — Scaffold file + methodology section** (0.1 day)
   - Create `docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md` with:
     - Header: Plan ID, workstream, source audit, baseline, author, date
     - §1 "Methodology" — explains the row format (Theorem name | File:Line | Hypothesis names | Discharge site | Reachability check)
     - §2 "Theme index" — table of contents for the three theme sections
   - **Acceptance**: file scaffold committed; §1 §2 visible.
 
-- **AN10-A.2 — Theme A: CDT post-state witnesses (6 entries)** (0.25 day)
+- **AN12-A.2 — Theme A: CDT post-state witnesses (6 entries)** (0.25 day)
   - Section "§3.A — CDT post-state discharge (H-04 / AN4-C)"
   - Rows (one per CDT-modifying operation): `cspaceCopy`, `cspaceMove`, `cspaceMutate`, `cspaceMint`, `cspaceDelete`, `cspaceRevoke`.
   - For each row: theorem name, file:line, `hCdtCompleteness` + `hCdtAcyclicity` hypothesis witness-threading pattern, canonical discharge site in `CrossSubsystem.lean`, a `#check` expression demonstrating reachability on one representative state.
   - **Acceptance**: 6 CDT rows committed; each row has all 5 fields filled.
 
-- **AN10-A.3 — Theme B: Projection closures (6 entries)** (0.3 day)
+- **AN12-A.3 — Theme B: Projection closures (6 entries)** (0.3 day)
   - Section "§3.B — Projection closures (H-07 / AN6-A / AK6F.20b)"
   - Rows (one per cap-only dispatch arm): `schedContextConfigure`, `schedContextBind`, `schedContextUnbind`, `lifecycleRetype`, `tcbSuspend`, `tcbResume`.
   - For the substantively-discharged target from AN6-A.2/A.3/A.4: "DISCHARGED at AN6-A.2 (or .3/.4)" + commit SHA.
   - For the remaining 5: discharge recipe described in prose (which frame lemmas, in what order); cross-reference the `AN6-A.6` template recipe.
   - **Acceptance**: 6 projection-closure rows committed; discharged row has commit SHA; remaining rows have named recipes.
 
-- **AN10-A.4 — Theme C: Schedule closures (5 entries)** (0.2 day)
+- **AN12-A.4 — Theme C: Schedule closures (5 entries)** (0.2 day)
   - Section "§3.C — Schedule closures (SC-M02 / AN5-D)"
   - Rows: `setPriorityOp`, `setMCPriorityOp`, `schedContextBind` (schedule-projection arm), `schedContextConfigure` (schedule-projection arm), `serviceRevoke` (schedule-projection arm).
   - For each: `hSchedProj` closure threading pattern, discharge site.
   - **Acceptance**: 5 schedule-closure rows committed.
 
-- **AN10-A.5 — Inline cross-references + closure witness** (0.15 day)
+- **AN12-A.5 — Inline cross-references + closure witness** (0.15 day)
   - At each of the 17 theorem's docstrings, insert:
     ```
     -- Discharge: see docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md §3.{A,B,C}-<entry>
@@ -2858,7 +2858,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
   - Add to `scripts/website_link_manifest.txt`.
   - **Acceptance**: 17 docstrings updated; marker theorem present; website-links PASS.
 
-- **Regression test**: smoke gate; `check_website_links.sh` PASS at AN10-A.5.
+- **Regression test**: smoke gate; `check_website_links.sh` PASS at AN12-A.5.
 
 ### AN12-B — Theme 4.4 deliverable: SMP-inventory confirmation (AN9 absorbed the SMP work)
 
@@ -2870,7 +2870,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 
 **Sub-sub-task breakdown** (4 commits):
 
-- **AN10-B.1 — Scaffold module + inventory entry schema** (0.15 day)
+- **AN12-B.1 — Scaffold module + inventory entry schema** (0.15 day)
   - New `SeLe4n/Kernel/Concurrency/Assumptions.lean` with structure:
     ```lean
     structure SmpLatentAssumption where
@@ -2884,7 +2884,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
   - Module-level tag: `-- This module is post-1.0 SMP refactor surface. See SELE4N_SPEC.md §6.`
   - **Acceptance**: module compiles; schema in place.
 
-- **AN10-B.2 — Inventory entries — capability / lifecycle / scheduler** (0.25 day)
+- **AN12-B.2 — Inventory entries — capability / lifecycle / scheduler** (0.25 day)
   - Add 5 entries, one `def` per site, each with filled-in fields:
     1. `cspaceLookupMultiLevel_smpLatent` (H-05 / AN4-D) — resolved CNode validity across calls
     2. `cspaceCopyMoveMutate_smpLatent` — CDT post-state composition assumes no concurrent mutation
@@ -2893,7 +2893,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
     5. `timerTickReplenishmentPipeline_smpLatent` — timer + replenishment pipeline atomicity
   - **Acceptance**: 5 entries present; each has all 5 fields; module builds.
 
-- **AN10-B.3 — Inventory entries — foundation / architecture** (0.2 day)
+- **AN12-B.3 — Inventory entries — foundation / architecture** (0.2 day)
   - Add 3 more entries:
     6. `typedIdDisjointness_smpLatent` (H-10 / AN2-D) — AN2-D's invariant holds structurally; SMP invariant still holds but needs atomicity on `storeObject`
     7. `architecture_singleCoreOnly_smpLatent` — already explicit in `Architecture/Assumptions.lean`; this entry cross-links it
@@ -2901,7 +2901,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
   - Post-AN2-C, `RegisterFile.BEq` (H-11) drops out of inventory because the `Fin 32` refactor makes concurrency a non-issue for register-file equality.
   - **Acceptance**: inventory now has 8 entries; total aggregator list `smpLatentInventory.length = 8`.
 
-- **AN10-B.4 — SPEC §6 cross-reference + module hygiene** (0.15 day)
+- **AN12-B.4 — SPEC §6 cross-reference + module hygiene** (0.15 day)
   - Add `docs/spec/SELE4N_SPEC.md` §6 new subsection "§6.X — SMP-Latent Single-Core Assumptions" listing the 8 inventory entries in tabular form with cross-references back to the Lean module.
   - Mark the module as a "staged-for-hardware-binding" module per PLT-M07 convention; ensure it's wired into the `Platform.Staged` meta-module (AN7-D PLT-M07).
   - Register in `scripts/website_link_manifest.txt`.
@@ -2917,7 +2917,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
   - **DOC-M01**: covered by AN1-A (i18n READMEs included).
   - **DOC-M02**: covered by AN7-D (PLT-M07 staged-modules wiring).
   - **DOC-M03**: add per-file SPDX headers `// SPDX-License-Identifier: GPL-3.0-or-later` to all Rust files (`rust/**/*.rs`); add `-- SPDX-License-Identifier: GPL-3.0-or-later` to all Lean files missing it. Mechanical pass; ~150 files.
-  - **DOC-M04**: covered by AN0-A baseline + per-phase CLAUDE.md large-files-list refresh; AN10 final refresh consolidates.
+  - **DOC-M04**: covered by AN0-A baseline + per-phase CLAUDE.md large-files-list refresh; AN12 final refresh consolidates.
   - **DOC-M05**: regenerate `docs/codebase_map.json` post AN1..AN9 via `scripts/generate_codebase_map.py`; verify README metric table matches via `scripts/sync_readme_from_codebase_map.sh --check`.
   - **DOC-M06**: covered by AN1-A (all 10 i18n READMEs verified).
   - **DOC-M07**: add new `WORKSTREAM_HISTORY.md` entry "WS-AN post-audit-remediation" enumerating C-01..C-03, H-01..H-24 finding IDs and their disposition.
@@ -2946,38 +2946,38 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 
 **Sub-sub-task breakdown** (6 commits, selective-scope approach per §20 question 6):
 
-- **AN10-E.1 — Inventory + classification pass** (0.2 day)
+- **AN12-E.1 — Inventory + classification pass** (0.2 day)
   - `grep -rn "WS-[A-Z]\|\bAK[0-9]\|\bAJ[0-9]\|\bAI[0-9]\|\bAH[0-9]\|\bAG[0-9]\|\bAF[0-9]\|\bAE[0-9]\|\bAD[0-9]\|\bAC[0-9]\|\bAB[0-9]\|\bAA[0-9]" SeLe4n/ rust/ tests/ scripts/ --include="*.lean" --include="*.rs" --include="*.sh"` into a temporary inventory file.
   - Classify each marker into one of three buckets (tag with `[HIST]`, `[DEFER]`, `[ROT]` prefixes):
     - **[HIST]** — historical completed-work reference (legitimate; leave alone)
     - **[DEFER]** — deferred-work pointer; retarget to canonical `DEF-*` ID per AN1-C pattern
     - **[ROT]** — workstream-cadence rot; convert to `// see WORKSTREAM_HISTORY:<id>` short cross-reference
   - Estimated counts after classification: ~3000 [HIST] (leave as-is), ~20 [DEFER] (retarget), ~2000 [ROT] (shorten). The bulk of work is [ROT].
-  - **Acceptance**: classified inventory committed (ephemeral; deleted at AN10-E.6).
+  - **Acceptance**: classified inventory committed (ephemeral; deleted at AN12-E.6).
 
-- **AN10-E.2 — [DEFER] retargets (≤30 sites; high-priority)** (0.15 day)
-  - These are the actually-incorrect forward references that AN1-C missed. Each gets retargeted to a canonical `DEF-*` ID in `AUDIT_v0.29.0_DEFERRED.md` or the new `AUDIT_v0.30.6_DEFERRED.md`.
+- **AN12-E.2 — [DEFER] retargets (≤30 sites; high-priority)** (0.15 day)
+  - These are the actually-incorrect forward references that AN1-C missed. Each gets retargeted to a live WS-AN sub-task ID (AN9-*, AN10-*, etc.) per the §16 absorption map. No retarget points to a DEF-* entry unless that entry is in `AUDIT_v0.29.0_DEFERRED.md` AND the source-side TODO is tracking a RESOLVED row (in which case the TODO gets removed entirely — there is no live deferred work to point at).
   - **Acceptance**: all [DEFER]-tagged markers retargeted; grep for deferred-work pointers to closed workstreams returns 0 non-historical matches.
 
-- **AN10-E.3 — [ROT] batch 1: IPC + Scheduler subsystems (~500 markers)** (0.2 day)
+- **AN12-E.3 — [ROT] batch 1: IPC + Scheduler subsystems (~500 markers)** (0.2 day)
   - Bulk convert inline workstream markers in `SeLe4n/Kernel/IPC/` and `SeLe4n/Kernel/Scheduler/` to short `// see WH:<id>` form.
   - Commit as a single atomic rewrite; reviewer verifies via diff that only comment content changed.
   - **Acceptance**: batch commit lands; smoke gate PASS.
 
-- **AN10-E.4 — [ROT] batch 2: Capability + Lifecycle + Service + SchedContext (~400 markers)** (0.15 day)
+- **AN12-E.4 — [ROT] batch 2: Capability + Lifecycle + Service + SchedContext (~400 markers)** (0.15 day)
   - Same pattern.
   - **Acceptance**: smoke gate PASS.
 
-- **AN10-E.5 — [ROT] batch 3: Architecture + IF + CrossSubsystem + Foundation + Model (~600 markers)** (0.15 day)
+- **AN12-E.5 — [ROT] batch 3: Architecture + IF + CrossSubsystem + Foundation + Model (~600 markers)** (0.15 day)
   - Same pattern.
   - **Acceptance**: smoke gate PASS.
 
-- **AN10-E.6 — [ROT] batch 4: Platform + API + Rust + tests + scripts (~500 markers) + inventory cleanup + metric** (0.15 day)
-  - Same pattern; plus delete the ephemeral inventory from AN10-E.1.
+- **AN12-E.6 — [ROT] batch 4: Platform + API + Rust + tests + scripts (~500 markers) + inventory cleanup + metric** (0.15 day)
+  - Same pattern; plus delete the ephemeral inventory from AN12-E.1.
   - Extend `scripts/ak7_cascade_baseline.sh` with `INLINE_WORKSTREAM_MARKERS` metric (floor = post-sweep count; should NOT grow in future PRs).
   - **Acceptance**: total inline-marker count dropped by ~40% (estimated 5000 → 3000); monotonicity metric committed to baseline; `check_website_links.sh` PASS.
 
-- **Regression test (cumulative)**: smoke gate after each batch commit; `check_website_links.sh` PASS at AN10-E.6.
+- **Regression test (cumulative)**: smoke gate after each batch commit; `check_website_links.sh` PASS at AN12-E.6.
 - **Cascade**: ~2000+ mechanical comment edits across 6 commits.
 
 ### AN12-F — Theme 4.7 file-split completion pass
@@ -2987,51 +2987,46 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Plan**:
   1. Re-scan with `wc -l` after AN3..AN6 splits land. Verify the original 5 monolithic files are below the 2000-LOC ceiling.
   2. If any file remains above ceiling (e.g., `Capability/Operations.lean` at 1651 LOC is borderline; `Model/Object/Structures.lean` at 2769 LOC may still need a split), schedule a mini-split commit here.
-  3. Update `CLAUDE.md` "Known large files" list to reflect the post-AN10 sizes.
-  4. Document the 2000-LOC ceiling convention in `CONTRIBUTING.md` (links to AN10-C / DOC-M08).
+  3. Update `CLAUDE.md` "Known large files" list to reflect the post-AN12 sizes.
+  4. Document the 2000-LOC ceiling convention in `CONTRIBUTING.md` (links to AN12-C / DOC-M08).
 - **Acceptance**: no production `.lean` file > 2000 LOC except `CHANGELOG.md` and other documentation/historical content per audit's own exception
 - **Regression test**: full gate
 - **Cascade**: 0–2 additional file splits depending on residual sizes
 
 ### AN12-G — Close `AUDIT_v0.29.0_DEFERRED.md` entries in-place (no new DEFERRED file created)
 
-- **Files**: `docs/audits/AUDIT_v0.30.6_DEFERRED.md` (new)
-- **Plan**: parallel to `AUDIT_v0.29.0_DEFERRED.md`. Document every WS-AN deferred item:
-  - **Carried-forward from AUDIT_v0.29.0_DEFERRED.md**:
-    - DEF-A-M04 (TLB+Cache composition closure) — hardware-binding
-    - DEF-A-M06 / DEF-AK3-I (`tlbBarrierComplete` substantive binding) — hardware-binding
-    - DEF-A-M08 / DEF-A-M09 / DEF-AK3-K (MMU/Device BarrierKind) — hardware-binding
-    - DEF-C-M04 (`suspendThread` atomicity Rust proof) — hardware-binding
-    - DEF-P-L9 (VSpaceRoot boot exclusion) — hardware-binding
-    - DEF-R-HAL-L14 (SVC FFI wiring) — hardware-binding
-    - DEF-F-L9 — RESOLVED in AN2-G; mark as closed with commit SHA
-    - DEF-AK2-K.4 (`eventuallyExits` by-design) — by-design; carry unchanged
-    - DEF-AK7-E.cascade (`ValidObjId`/`ValidThreadId` rollout) — proof-hygiene; partial progress noted in AN10-E if any
-    - DEF-AK7-F.cascade (`ObjKind` migration) — proof-hygiene
-  - **New deferred items from WS-AN that could not close in AN1..AN9**:
-    - DEF-PLT-M02 (VSpaceRoot boot bridge for non-empty configs) — hardware-binding
-    - DEF-H-07.partial (5 remaining closure-form projection theorems) — toolchain-pending if AN6-A took the toolchain-blocked path
-    - DEF-H-09.transitive (`untypedAncestorRegionsDisjoint` strengthening) — landed only if AN6-C Track B was deferred
-    - DEF-R-HAL-L17..L20 (per AN1-C: bounded WFE, parameterized barriers, OSH widening, secondary core bring-up) — hardware-binding / SMP
-  - **Closed in WS-AN** (recorded for traceability):
-    - Every C-01..C-03, H-01..H-24, M-*, L-* finding from AUDIT_v0.30.6_COMPREHENSIVE.md that AN1..AN10 addressed; cross-reference each by AN sub-task ID and commit SHA
-- **Acceptance**: file committed; all deferred IDs cross-reference live code; closed-items table lists every WS-AN sub-task disposition
+- **Files**: `docs/audits/AUDIT_v0.29.0_DEFERRED.md` (edit in-place; no new file)
+- **Plan**: per the maintainer directive, WS-AN does NOT create a `AUDIT_v0.30.6_DEFERRED.md` sibling. Instead, every row in the existing `AUDIT_v0.29.0_DEFERRED.md` is annotated RESOLVED with the closing WS-AN sub-task ID and commit SHA. Per the §16 absorption map, all 11 rows close:
+  - DEF-A-M04 — **RESOLVED in AN9-A** (commit SHA)
+  - DEF-A-M06 / DEF-AK3-I — **RESOLVED in AN9-B**
+  - DEF-A-M08 — **RESOLVED in AN9-C**
+  - DEF-A-M09 / DEF-AK3-K — **RESOLVED in AN9-C**
+  - DEF-C-M04 — **RESOLVED in AN9-D**
+  - DEF-P-L9 — **RESOLVED in AN7-D.2** (primary); AN9-E records cross-reference
+  - DEF-R-HAL-L14 — **RESOLVED in AN9-F**
+  - DEF-F-L9 — **RESOLVED in AN2-G**
+  - DEF-AK2-K.4 — **RESOLVED in AN5-F** (RPi5-canonical-config witness; general theorem retains parameterised form)
+  - DEF-AK7-E.cascade — **RESOLVED in AN10-A**
+  - DEF-AK7-F.cascade — **RESOLVED in AN10-B (reader) + AN10-C (writer)**
+- Add a closure summary at the top of `AUDIT_v0.29.0_DEFERRED.md` stating "All 11 items closed under WS-AN (v0.30.7). Zero items carried past v1.0.0."
+- No new `AUDIT_v0.30.6_DEFERRED.md` sibling file is created because WS-AN produces zero deferred items (§15.1 rule enforced at gate).
+- **Acceptance**: every row in `AUDIT_v0.29.0_DEFERRED.md` annotated RESOLVED with commit SHAs; closure summary at top; `grep -c "^### DEF-" docs/audits/AUDIT_v0.29.0_DEFERRED.md` matches `grep -c "RESOLVED in AN" docs/audits/AUDIT_v0.29.0_DEFERRED.md` (every row resolved).
 - **Regression test**: smoke gate; `check_website_links.sh` PASS
-- **Cascade**: 1 new file (~300 lines)
+- **Cascade**: 1 file edited in-place (~11 row annotations + 1 summary paragraph).
 
 ### AN12-H — `WORKSTREAM_HISTORY.md` WS-AN entry
 
 - **Files**: `docs/WORKSTREAM_HISTORY.md`
 - **Plan**: append the canonical WS-AN closure entry following the WS-AK/WS-AM precedent:
   - WS-AN identity: `v0.30.6 → v1.0.0` (or v0.30.7+ maintainer-selected patch-only sequence)
-  - 11-phase breakdown (AN0..AN10) with gate-state table
+  - 13-phase breakdown (AN0..AN12) with gate-state table
   - Cross-reference to:
     - `docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md`
     - `docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (this doc)
-    - `docs/audits/AUDIT_v0.30.6_DEFERRED.md` (AN10-G)
-    - `docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md` (AN10-A)
-  - Finding-count arithmetic: 196 findings addressed (2 actionable CRITICAL + 23 HIGH + 71 MEDIUM + 58 LOW + 40 INFO)
-  - Deferred-items count: 11 carried forward + 0-4 new (depending on AN6-A / AN6-C / AN7-D outcomes)
+    - `docs/audits/AUDIT_v0.29.0_DEFERRED.md` (in-place RESOLVED annotations landed in AN12-G)
+    - `docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md` (AN12-A)
+  - Finding-count arithmetic: 196 audit findings closed (2 actionable CRITICAL + 23 HIGH + 71 MEDIUM + 58 LOW + 40 INFO) + **11 absorbed DEF-* items all RESOLVED** + 4 new AN9 sub-tasks (DEF-R-HAL-L17..L20) all closed in-phase
+  - Deferred-items count: **zero past v1.0.0**
 - **Acceptance**: entry committed; gate-state table filled
 - **Regression test**: smoke gate
 
@@ -3040,9 +3035,9 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Files**: `CLAUDE.md`
 - **Plan**:
   1. Replace the top "Active workstream context" paragraph with a WS-AN summary (parallel to the current WS-AK AK10 paragraph).
-  2. Per AN10-D LOW item: archive pre-WS-AK paragraphs to `docs/CLAUDE_HISTORY.md` so the active file returns under the 500-line-chunked-read threshold.
-  3. Update "Known large files" list — `CHANGELOG.md` grows, `Structural.lean`/`Preservation.lean`/`IF Operations.lean` shrink, new DEFERRED + DISCHARGE_INDEX + DISCHARGE_INDEX are small and don't qualify.
-  4. Update "Next workstream" line: set to "WS-AO hardware-binding (post-1.0)" with cross-reference to `AUDIT_v0.30.6_DEFERRED.md`.
+  2. Per AN12-D LOW item: archive pre-WS-AK paragraphs to `docs/CLAUDE_HISTORY.md` so the active file returns under the 500-line-chunked-read threshold.
+  3. Update "Known large files" list — `CHANGELOG.md` grows, `Structural.lean`/`Preservation.lean`/`IF Operations.lean` shrink, new DISCHARGE_INDEX file is small and doesn't qualify; several new AN9-created modules (`VSpaceBoot.lean`, `BarrierComposition.lean`, `smp.rs`, `psci.rs`, etc.) added to the layout.
+  4. Update "Next workstream" line: since WS-AN closed every deferred item, set to "**v1.0.0 release-ready; no hardware-binding or cascade backlog**" with cross-reference to the RESOLVED rows in `docs/audits/AUDIT_v0.29.0_DEFERRED.md`.
 - **Acceptance**: CLAUDE.md active section reflects WS-AN closure; archive file created; large-files list refreshed
 - **Regression test**: smoke gate
 
@@ -3060,19 +3055,25 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 ### AN12-K — CHANGELOG entry consolidation
 
 - **Files**: `CHANGELOG.md`
-- **Plan**: consolidate AN1..AN9 per-phase entries under a single `## [0.30.7] — 2026-MM-DD (WS-AN closure)` (or equivalent version) heading, structured as:
+- **Plan**: consolidate AN1..AN11 per-phase entries under a single `## [0.30.7] — 2026-MM-DD (WS-AN closure)` (or equivalent version) heading, structured as:
   ```
   ### Addressed (AUDIT_v0.30.6_COMPREHENSIVE.md)
    - Critical: C-01, C-03 (C-02 resolved in prior commit)
-   - High: H-01..H-24 (22 closed in AN1..AN9; H-22 addressed post-downgrade in AN9-C)
-   - Medium: 71 addressed across AN3..AN9 (per-ID disposition in AUDIT_v0.30.6_DEFERRED.md)
-   - Low: 58 addressed (per-ID disposition in AUDIT_v0.30.6_DEFERRED.md)
-  ### Carried forward
-   - ...
+   - High: H-01..H-24 (23 closed substantively in AN1..AN11; H-22 addressed post-downgrade in AN11-C)
+   - Medium: 71/71 closed across AN3..AN11
+   - Low: 58/58 closed in batch commits
+  ### Absorbed from AUDIT_v0.29.0_DEFERRED.md (all 11 RESOLVED)
+   - Hardware-binding (AN9): DEF-A-M04/M06/M08/M09, DEF-C-M04, DEF-P-L9, DEF-R-HAL-L14
+   - Cascade (AN10): DEF-AK7-E, DEF-AK7-F.reader, DEF-AK7-F.writer
+   - Proof-hygiene / semantic: DEF-F-L9 (AN2-G), DEF-AK2-K.4 (AN5-F)
+  ### New AN9 items (all closed in-phase)
+   - DEF-R-HAL-L17/L18/L19/L20 (bounded WFE / parameterized barriers / OSH / SMP)
+  ### Deferred past v1.0.0
+   - **NONE** — zero items carry past this release per WS-AN directive.
   ### Thanks
    - ...
   ```
-- **Acceptance**: single coherent entry; cross-references to AUDIT_v0.30.6_DEFERRED.md resolve
+- **Acceptance**: single coherent entry; no "deferred past v1.0.0" items beyond the explicit NONE line; cross-references to `AUDIT_v0.29.0_DEFERRED.md` RESOLVED rows present
 - **Regression test**: smoke gate; `check_website_links.sh` PASS
 
 ### AN12-L — Final release gate
@@ -3108,7 +3109,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
   - `docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md` → `docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md`
   - `docs/audits/AUDIT_v0.29.0_DEFERRED.md` → `docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md`
   - `docs/audits/AUDIT_v0.29.0_ERRATA.md` → `docs/dev_history/audits/AUDIT_v0.29.0_ERRATA.md`
-- **Plan**: per audit §2.10 "one active audit at a time" convention (new in AN10-D). When WS-AN closes, archive this plan + the v0.29.0 parent audit alongside it. The v0.30.6 COMPREHENSIVE stays in `docs/audits/` until the next audit cuts, then it archives too.
+- **Plan**: per audit §2.10 "one active audit at a time" convention (new in AN12-D). When WS-AN closes, archive this plan + the v0.29.0 parent audit alongside it. The v0.30.6 COMPREHENSIVE stays in `docs/audits/` until the next audit cuts, then it archives too.
 - **Acceptance**: files moved; every reference (CLAUDE.md, WORKSTREAM_HISTORY, README) updated to the archived paths; `check_website_links.sh` updated manifest; `scripts/website_link_manifest.txt` refreshed
 - **Regression test**: smoke gate + `check_website_links.sh` PASS
 
@@ -3116,11 +3117,11 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 
 - **Files**: a final summary commit referencing the full WS-AN disposition
 - **Acceptance**:
-  - Every sub-task AN0-A..AN10-M accounted for
+  - Every sub-task AN0-A..AN12-M accounted for
   - WORKSTREAM_HISTORY.md records closure with gate-state table
   - `docs/audits/` contains only the v0.30.6 comprehensive + the post-audit DISCHARGE_INDEX + the new DEFERRED
   - The plan itself is archived under `docs/dev_history/audits/`
-- **Regression test**: the AN10-L final release gate
+- **Regression test**: the AN12-L final release gate
 
 ---
 
@@ -3133,18 +3134,20 @@ interact.
 
 ### 14.1 Theme 4.1 — Closure-form proof obligations
 
-**Where addressed**: AN4-C (CDT bridges), AN6-A (one projection theorem), AN10-A (index artifact).
+**Where addressed**: AN4-C (CDT bridges), AN6-A (all 6 projection theorems substantively discharged), AN12-A (index artifact aggregating AN4-C + AN6-A + SC-M02 closures).
 
 **Rationale**: the three sub-patterns (CDT post-state, `hProjEq`, `hSchedProj`) live in different subsystems and their discharges are
 already different shapes. Addressing each in the phase that owns its
-subsystem keeps the cascade bounded. The index artifact in AN10-A
-aggregates the three into a single auditable deliverable without
+subsystem keeps the cascade bounded. The index artifact in AN12-A
+aggregates all three into a single auditable deliverable without
 forcing a monolithic phase.
 
 **Interaction**: AN4-C's CDT bridge template informs AN6-A's choice of
-which projection theorem to substantively discharge (pick one whose
-frame lemmas mirror the CDT pattern). AN10-A then indexes both as a
-single artifact.
+which projection theorem to substantively discharge first (the CDT
+pattern generalises to the projection-closure pattern). AN12-A then
+indexes both as a single artifact. With AN6-A discharging ALL SIX arms
+substantively, AN12-A's §3.B Projection Closures section contains six
+DISCHARGED rows with commit SHAs — no residual closure-form entries.
 
 ### 14.2 Theme 4.2 — Tuple-projection brittleness → named structures
 
@@ -3158,7 +3161,7 @@ worse throughput.
 
 **Interaction**: AN2-G establishes the convention (how to write the
 bridge theorem, how to migrate destructures). AN3-B, AN4-F follow the
-convention mechanically. AN10 does NOT need to re-run any
+convention mechanically. AN12 does NOT need to re-run any
 tuple→structure refactor.
 
 ### 14.3 Theme 4.3 — Advisory predicates → subtype gates
@@ -3175,46 +3178,46 @@ the dependency.
 
 ### 14.4 Theme 4.4 — SMP-latent single-core assumptions
 
-**Where addressed**: AN4-D (H-05 first inventory entry), AN6-F / CX-M03 (`bootFromPlatform_currentCore_is_zero_witness`), AN10-B (module artifact).
+**Where addressed**: AN4-D (H-05 first inventory entry), AN6-F / CX-M03 (`bootFromPlatform_currentCore_is_zero_witness`), **AN9-J (SMP bring-up lands substantively — code+test merged, runtime-gated by `smp_enabled=false` default)**, AN12-B (post-AN9-J confirmation inventory — module records which items transitioned from "SMP-latent" to "SMP-implemented, runtime-gated").
 
 **Rationale**: the inventory is a docs/pre-SMP-checklist artifact, not
 a behavior change. Per-subsystem entries land as the subsystem gets
-touched; AN10-B aggregates into a single module.
+touched; AN9-J absorbs the real SMP bring-up (PSCI, per-core init, QEMU `-smp 4` smoke); AN12-B then aggregates the inventory into a single module that documents which entries transitioned from "SMP-latent single-core assumption" to "SMP-implemented runtime-gated" at v1.0.0.
 
-**Interaction**: AN10-B's module imports no kernel modules — it is
-docs-only. AN4-D / CX-M03 are the proof-level witnesses that AN10-B
-indexes.
+**Interaction**: AN12-B's module imports no kernel modules — it is
+docs-only. AN4-D / CX-M03 / AN9-J are the proof-level + implementation
+witnesses that AN12-B indexes.
 
 ### 14.5 Theme 4.5 — Workstream IDs in comments
 
-**Where addressed**: AN10-E.
+**Where addressed**: AN12-E.
 
 **Rationale**: a mechanical inline-marker hygiene pass. Late-phase
 because every prior phase introduces new AN-* markers; doing it once
-at AN10 is more efficient than pausing to re-run it after each phase.
+at AN12 is more efficient than pausing to re-run it after each phase.
 
-**Interaction**: AN10-E's grep baseline is captured in AN0-A and AN10's
-AN1..AN9 cumulative inline-marker count.
+**Interaction**: AN12-E's grep baseline is captured in AN0-A and
+AN12-E's input is the AN1..AN11 cumulative inline-marker count.
 
 ### 14.6 Theme 4.6 — Stale forward references
 
-**Where addressed**: AN1-C (source-side retarget of WS-V/AG10 TODOs), AN10-E (codebase-wide hygiene pass).
+**Where addressed**: AN1-C (source-side retarget of WS-V/AG10 TODOs to live AN9-F/G/H/I/J sub-task IDs), AN12-E (codebase-wide hygiene pass).
 
 **Rationale**: the urgent retargets land in AN1 (closes H-24 CRITICAL-ish
-gate item); the broader cleanup aggregates in AN10.
+gate item); the broader cleanup aggregates in AN12.
 
-**Interaction**: AN1-C targets the 6 flagged sites; AN10-E catches the
-remainder.
+**Interaction**: AN1-C targets the 6 flagged sites; AN12-E catches the
+remainder and, after AN9 lands, removes TODO markers that are now tracking RESOLVED work (nothing to track any more).
 
 ### 14.7 Theme 4.7 — Monolithic file splits
 
-**Where addressed**: AN3-C (Structural.lean), AN3-D (NotificationPreservation + CallReplyRecv), AN4-F / CAP-M03 (Preservation.lean), AN4-G / LIF-M05 (Lifecycle/Operations.lean), AN5-A (Scheduler/Preservation.lean), AN6-E / IF-M03 (IF/Operations.lean), AN10-F (residual sweep).
+**Where addressed**: AN3-C (Structural.lean), AN3-D (NotificationPreservation + CallReplyRecv), AN4-F / CAP-M03 (Preservation.lean), AN4-G / LIF-M05 (Lifecycle/Operations.lean), AN5-A (Scheduler/Preservation.lean), AN6-E / IF-M03 (IF/Operations.lean), AN12-F (residual sweep).
 
 **Rationale**: each split is subsystem-local; doing each in its own
 phase preserves reviewability (smaller diffs, single reviewer domain).
-AN10-F sweeps any remaining ≥ 2000 LOC files after AN3..AN6 land.
+AN12-F sweeps any remaining ≥ 2000 LOC files after AN3..AN6 land.
 
-**Interaction**: AN10-F depends on all prior splits having landed.
+**Interaction**: AN12-F depends on all prior splits having landed.
 
 ---
 
@@ -3223,19 +3226,20 @@ AN10-F sweeps any remaining ≥ 2000 LOC files after AN3..AN6 land.
 This section is the **single canonical gate** for declaring WS-AN
 complete. Every item below must be verifiable.
 
-### 15.1 Audit finding disposition (mandatory)
+### 15.1 Audit finding disposition (mandatory — zero deferrals permitted)
 
 | Severity | Audit count | WS-AN target | Verification |
 |----------|------------:|--------------|--------------|
 | CRITICAL | 3 (1 resolved pre-WS-AN) | 2/2 closed in AN1 | C-01 (AN1-A), C-03 (AN1-B); C-02 already resolved |
-| HIGH | 24 | 23 closed in AN1..AN9 (H-22 downgraded LOW per audit, addressed AN9-C) | each has a sub-task ID; per-PR evidence |
-| MEDIUM | 71 | ≥ 65 closed in AN3..AN9; ≤ 6 deferred to `AUDIT_v0.30.6_DEFERRED.md` with rationale | per-PR evidence + DEFERRED entries |
-| LOW | 58 | ≥ 50 closed in batch commits | per-PR evidence |
+| HIGH | 24 | **23/23 closed** in AN1..AN11 (H-22 downgraded LOW per audit, addressed AN11-C) | each has a sub-task ID; per-PR evidence |
+| MEDIUM | 71 | **71/71 closed** across AN3..AN11 | per-PR evidence |
+| LOW | 58 | **58/58 closed** in batch commits | per-PR evidence |
 | INFO | 40 | n/a — verifications, not work | (informational) |
+| DEF-* (v0.29.0 DEFERRED) | 11 | **11/11 absorbed + RESOLVED** (7 hardware-binding in AN9, 2 AK7 cascades in AN10, 1 eventuallyExits in AN5-F, 1 allTablesInvExtK structure refactor in AN2-G) | per-PR evidence + AUDIT_v0.29.0_DEFERRED.md RESOLVED-with-commit-SHA entries |
 
-**Rule**: any finding NOT closed must have a `DEF-*` entry in
-`AUDIT_v0.30.6_DEFERRED.md` with explicit rationale and acceptance
-criteria for a future workstream. No finding silently disappears.
+**Rule (strengthened)**: **No finding may be deferred past v1.0.0.** Every CRITICAL, HIGH, MEDIUM, LOW finding from `AUDIT_v0.30.6_COMPREHENSIVE.md` has a live sub-task ID in §3..§15 that must close substantively before WS-AN ships. Every DEF-* entry in the pre-existing `AUDIT_v0.29.0_DEFERRED.md` has a live sub-task ID that closes it substantively and updates the tracking row to RESOLVED. **WS-AN does NOT create a new `AUDIT_v0.30.6_DEFERRED.md` file**; the `AUDIT_v0.29.0_DEFERRED.md` file is updated in-place with per-row RESOLVED annotations + commit SHAs in AN12-G.
+
+**Consequence**: if any sub-task is blocked by a toolchain or hardware constraint the plan cannot reasonably close, the workstream itself pauses and is escalated to the maintainer before any defer decision is made. Deferral is NOT an automatic fallback; it requires explicit maintainer approval that would amend this plan.
 
 ### 15.2 Build & test gate (mandatory)
 
@@ -3270,17 +3274,19 @@ criteria for a future workstream. No finding silently disappears.
 - [ ] All 10 i18n READMEs mirror the pointer change
 - [ ] `CLAUDE.md` "Active workstream context" reflects WS-AN closure
 - [ ] `docs/WORKSTREAM_HISTORY.md` WS-AN entry committed with gate-state table
-- [ ] `docs/audits/AUDIT_v0.30.6_DEFERRED.md` committed with all post-1.0 items
+- [ ] `docs/audits/AUDIT_v0.29.0_DEFERRED.md` edited in-place with all 11 rows annotated RESOLVED + commit SHAs (zero deferred past v1.0.0; **no new `AUDIT_v0.30.6_DEFERRED.md` file created**)
 - [ ] `docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md` committed
 - [ ] `CONTRIBUTING.md` committed (DOC-M08)
 - [ ] All Rust + Lean files have SPDX headers (DOC-M03)
 - [ ] `docs/spec/SELE4N_SPEC.md` updated with §5/§6/§7 deltas referenced in AN3..AN6
 
-### 15.5 Hardware-fidelity gate (advisory — pre-1.0 hardware-binding is post-WS-AN)
+### 15.5 Hardware-fidelity gate (MANDATORY — AN9 absorbs hardware-binding into pre-1.0)
 
 - [ ] BCM2712 hardware constants cross-checked (existing `scripts/test_hw_crosscheck.sh` PASS)
 - [ ] QEMU boot if emulator available (`scripts/test_qemu.sh` PASS or skip-with-log)
+- [ ] QEMU `-smp 4` boot smoke (`scripts/test_smp_smoke.sh` PASS; exercises AN9-J)
 - [ ] No regression in `docs/hardware_validation/*.md` reports
+- [ ] New QEMU validation harnesses from AN9 all PASS (TLB+cache AN9-A, SVC round-trip AN9-F, SMP AN9-J)
 
 ### 15.6 Fixture & determinism gate (mandatory)
 
@@ -3292,58 +3298,77 @@ criteria for a future workstream. No finding silently disappears.
 ### 15.7 Maintainer-decision items (NOT gated by WS-AN automation)
 
 - Final v1.0.0 tag — manual maintainer action per AK10-C precedent
-- Whether to ship a feature-flag for the AN6-A toolchain-blocked closure-form template
-- Whether AN6-C Track B (`untypedAncestorRegionsDisjoint` strengthening) lands or defers
 - Whether DOC-M03 SPDX header pass lands as a single mechanical PR or batched per-subsystem
+- Whether AN9-J's `smp_enabled` flag flips to default-true at v1.0.0 or ships default-false with a patch-release flip after real-hardware SMP validation
 
 ---
 
-## 16. Deferred items carry-forward — `AUDIT_v0.29.0_DEFERRED.md` disposition
+## 16. Absorption map — every `AUDIT_v0.29.0_DEFERRED.md` entry maps to a live WS-AN sub-task
 
-This section establishes the WS-AN disposition for every item in the
-parent `AUDIT_v0.29.0_DEFERRED.md` so AN10-G's new
-`AUDIT_v0.30.6_DEFERRED.md` is built from a complete carry-forward map.
+**Directive**: per the maintainer, WS-AN does NOT create a new `AUDIT_v0.30.6_DEFERRED.md` file. Every one of the 11 entries in `AUDIT_v0.29.0_DEFERRED.md` is absorbed into pre-1.0 work via a named AN sub-task; at AN12-G each row is annotated RESOLVED with the closing commit SHA. No new deferred items are created during WS-AN execution.
 
-### 16.1 Hardware-binding category (carry forward unchanged)
+This section is the **absorption map**: given any DEF-* ID, find the WS-AN sub-task that closes it.
 
-These items require real-silicon bring-up and remain post-1.0
-candidates. They are NOT scheduled in WS-AN.
+### 16.1 Hardware-binding category (all absorbed in AN9 + AN7-D.2)
 
-| Deferred ID | Audit Finding | Why not in WS-AN | New disposition |
-|-------------|---------------|------------------|-----------------|
-| DEF-A-M04 | A-M04 (TLB+cache composition) | Requires HAL FFI sequence witness | Carry into AUDIT_v0.30.6_DEFERRED.md unchanged |
-| DEF-A-M06 / DEF-AK3-I | A-M06 (`tlbBarrierComplete`) | Needs HAL call-graph static analysis | Carry unchanged |
-| DEF-A-M08 / DEF-A-M09 / DEF-AK3-K | A-M08 / A-M09 (MMU/Device BarrierKind) | Needs FFI sequencing witness | Carry unchanged |
-| DEF-C-M04 | C-M04 (`suspendThread` atomicity) | Requires interrupt-disable bracket on hardware | Carry unchanged |
-| DEF-P-L9 | P-L9 (VSpaceRoot boot exclusion) | Requires `RPi5/VSpaceBoot` shim | Carry unchanged |
-| DEF-R-HAL-L14 | R-HAL-L14 (SVC FFI wiring) | Requires full FFI bridge from userspace | Carry unchanged; AN1-C retargets the source-side TODO to this ID |
+| Deferred ID | Audit Finding | WS-AN sub-task (substantive closure) | Phase | Expected commit target |
+|-------------|---------------|--------------------------------------|-------|------------------------|
+| DEF-A-M04 | A-M04 (TLB+cache composition) | **AN9-A** (TLB+cache composition full closure via FFI witness layer) | AN9 | PR-12, AN9-A.1..A.6 |
+| DEF-A-M06 / DEF-AK3-I | A-M06 (`tlbBarrierComplete`) | **AN9-B** (build-time scanner + FFI witness + substantive preservation) | AN9 | PR-12, AN9-B.1..B.5 |
+| DEF-A-M08 | A-M08 (MMU BarrierKind) | **AN9-C** (BarrierKind composition algebra; MMU update theorem) | AN9 | PR-12, AN9-C.1..C.5 |
+| DEF-A-M09 / DEF-AK3-K | A-M09 (Device BarrierKind) | **AN9-C** (same sub-task; MMIO write ordering theorem) | AN9 | PR-12, AN9-C.1..C.5 |
+| DEF-C-M04 | C-M04 (`suspendThread` atomicity) | **AN9-D** (HAL interrupt-disable bracket + clippy discipline) | AN9 | PR-12, AN9-D.1..D.4 |
+| DEF-P-L9 | P-L9 (VSpaceRoot boot exclusion) | **AN7-D.2** (full `RPi5/VSpaceBoot.lean` shim closes non-empty-config boot bridge); AN9-E cross-reference | AN7 (primary) + AN9 (cross-ref) | PR-10 (primary), PR-12 (cross-ref) |
+| DEF-R-HAL-L14 | R-HAL-L14 (SVC FFI wiring) | **AN9-F** (typed-argument marshalling + `sele4n_syscall_dispatch` bridge + QEMU SVC round-trip) | AN9 | PR-12, AN9-F.1..F.7 |
 
-### 16.2 Proof-hygiene category
+### 16.2 Proof-hygiene / semantic-refactor category (all absorbed in AN2 / AN5 / AN10)
 
-| Deferred ID | Audit Finding | WS-AN disposition |
-|-------------|---------------|-------------------|
-| DEF-F-L9 | F-L9 (17-deep tuple refactor) | **RESOLVED in AN2-G**; close in AUDIT_v0.30.6_DEFERRED.md with commit SHA |
-| DEF-AK2-K.4 | AK2-K.4 (`eventuallyExits` by-design) | **By-design**; carry unchanged with explicit "no action" annotation |
-| DEF-AK7-E.cascade | F-M03 (ValidObjId/ValidThreadId rollout) | **PARTIAL** — AN8-E (rust hygiene) does not affect this; AN10-E inline-marker hygiene does NOT migrate signatures. Cascade remains carry-forward; the metric `SENTINEL_CHECK_DISPATCH` continues to grow on opportunistic per-PR migrations gated by `ak7_cascade_check_monotonic.sh`. |
-| DEF-AK7-F.cascade | F-M04 (ObjKind migration) | **PARTIAL** — same disposition as DEF-AK7-E.cascade. Reader-side typed-helper adoption (`getTcb?`, `getSchedContext?`, etc.) is encouraged opportunistically in AN3..AN6 commits via the `RAW_MATCH_TCB`/`GETTCB_ADOPTION` monotonicity metrics; explicit migration not required. Carry-forward unchanged. |
+| Deferred ID | Audit Finding | WS-AN sub-task (substantive closure) | Phase | Expected commit target |
+|-------------|---------------|--------------------------------------|-------|------------------------|
+| DEF-F-L9 | F-L9 (17-deep tuple refactor) | **AN2-G** (`allTablesInvExtK` tuple→structure refactor; deletes tuple form) | AN2 | PR-5, AN2-G.1..G.7 |
+| DEF-AK2-K.4 | AK2-K.4 (`eventuallyExits` previously by-design) | **AN5-F** (RPi5-canonical-config substantive witness; general theorem retains parameterised form) | AN5 | PR-9, AN5-F.1..F.6 |
+| DEF-AK7-E.cascade | F-M03 (ValidObjId/ValidThreadId rollout) | **AN10-A** (~240 handler-signature migrations across Lifecycle/SchedContext/Scheduler/IpcBuffer/Capability) | AN10 | PR-13, AN10-A.1..A.6 |
+| DEF-AK7-F.cascade | F-M04 (reader + writer hygiene) | **AN10-B** (reader: ~304+ raw-match migrations) + **AN10-C** (writer: ~50 storeObjectKindChecked migrations) | AN10 | PR-13, AN10-B.1..B.5 + AN10-C.1..C.3 |
 
-### 16.3 Newly-deferred items from WS-AN (added to AUDIT_v0.30.6_DEFERRED.md)
+### 16.3 New hardware-binding sub-tasks surfaced by AN1-C (all absorbed in AN9)
 
-| New ID | Source | Reason for deferral |
-|--------|--------|---------------------|
-| DEF-PLT-M02 | PLT-M02 (VSpaceRoot boot bridge non-empty configs) | Hardware-binding |
-| DEF-H-07.partial | AN6-A toolchain-blocked path (5 of 6 closure-form theorems) | Toolchain-pending Lean 4.x |
-| DEF-H-09.transitive | AN6-C Track B (`untypedAncestorRegionsDisjoint`) | Effort budget; pre-AN6 risk-register decision |
-| DEF-R-HAL-L17 | AN1-C (bounded WFE optimisation) | Hardware-binding |
-| DEF-R-HAL-L18 | AN1-C (parameterized barriers) | Hardware-binding |
-| DEF-R-HAL-L19 | AN1-C (OSH widening) | SMP / hardware-binding |
-| DEF-R-HAL-L20 | AN1-C (secondary core bring-up) | SMP |
+These items are NEW in WS-AN (not in `AUDIT_v0.29.0_DEFERRED.md`) but are TODO markers in the Rust HAL that were pointing at the closed `WS-V`/`AG10` workstreams. AN1-C retargets the source-side TODOs to live AN9 sub-task IDs; AN9 closes each substantively.
 
-### 16.4 Errata acknowledgement (AUDIT_v0.29.0_ERRATA.md)
+| New ID | Source | WS-AN sub-task | Expected commit target |
+|--------|--------|----------------|------------------------|
+| DEF-R-HAL-L17 (bounded WFE) | AN1-C / `lib.rs:62` | **AN9-G** | PR-12, AN9-G.1..G.4 |
+| DEF-R-HAL-L18 (parameterized barriers) | AN1-C / `lib.rs:69` | **AN9-H** | PR-12, AN9-H.1..H.4 |
+| DEF-R-HAL-L19 (OSH widening) | AN1-C / `lib.rs:84` | **AN9-I** | PR-12, AN9-I.1..I.4 |
+| DEF-R-HAL-L20 (secondary-core bring-up / SMP) | AN1-C / `lib.rs:91` | **AN9-J** (largest AN9 sub-task; ships SMP merged but gated off-by-default at runtime via `smp_enabled=false`) | PR-12, AN9-J.1..J.8 |
 
-All six errata are informational closures under v0.30.6. WS-AN does
-NOT modify the errata file. The closure note in AN10-N records that
-the errata file remains as-is.
+### 16.4 Closure-form / H-09 / VSpaceBackend items — no new DEF-* entries created
+
+The maintainer directive specifically rejects the prior plan's "defer on toolchain block" / "defer Track B" / "defer VSpaceBackend" escape hatches. These items close substantively in-phase:
+
+- **H-07** (6 closure-form projection theorems): all 6 discharged in **AN6-A** (no `DEF-H-07.partial`). Escalation ladder in §2.4 risk register guarantees at least one proof strategy closes each arm.
+- **H-09** (untypedRegionsDisjoint transitive): Track B mandatory in **AN6-C** (no `DEF-H-09.transitive`). `UntypedObject.parent` field added in AN6-C.1; transitive disjointness is the 13th conjunct of `crossSubsystemInvariant`.
+- **ARCH-M01** (VSpaceBackend typeclass): wired as production indirection in **AN6-D** (no "forward-looking H3 infrastructure" tag). ARMv8 instance becomes the default production backend.
+- **PLT-M02 / PLT-M03** (VSpaceRoot non-empty-config boot bridge): substantive closure in **AN7-D.2** + cross-reference in AN9-E (no `DEF-PLT-M02`).
+- **H-18** (MPIDR_CORE_ID_MASK drift): both shared linker symbol (Option A) and build-time assertion (Option B) ship together in **AN8-B** (no `DEF-H-18.linker`).
+- **H-19** (EOI loss on handler panic): audit's Option b (EOI before handler invocation per GIC-400) lands in **AN8-C** (no "defer to post-1.0" annotation).
+- **FND-M05** (DS-L5 heartbeat fragility): full decomposition to ≤ 200,000 heartbeats in **AN2-F.5** (no `DEF-FND-M05.partial`).
+
+### 16.5 `AUDIT_v0.29.0_DEFERRED.md` final-state expectation (at WS-AN close)
+
+After AN12-G lands, `docs/audits/AUDIT_v0.29.0_DEFERRED.md` has every row annotated:
+
+```
+### DEF-A-M04 — TLB+Cache Composition Full Closure
+- **RESOLVED in WS-AN**: AN9-A (commit <SHA>)
+- **Prior disposition**: AK3-G PARTIAL+DOC → now substantively closed
+- [ ... original acceptance criteria retained for audit-trail ... ]
+```
+
+The file is preserved in `docs/audits/` (not archived) as the canonical historical record of items that were once deferred; the RESOLVED annotations make clear none carry past v1.0.0. **No sibling `AUDIT_v0.30.6_DEFERRED.md` file is created** because WS-AN produces zero deferred items.
+
+### 16.6 Errata acknowledgement (AUDIT_v0.29.0_ERRATA.md)
+
+All six errata are informational closures under v0.30.6. WS-AN does NOT modify the errata file except E-5 which gets a closure addendum confirming the residual (6 closure-form theorems) is now fully discharged in AN6-A.
 
 | Errata | WS-AN action |
 |--------|--------------|
@@ -3351,14 +3376,14 @@ the errata file remains as-is.
 | E-2 (R-HAL-M12 dead-code) | None |
 | E-3 (A-H01 three-layer extent) | None |
 | E-4 (R-HAL-H02 partial) | None |
-| E-5 (NI-H02 composition) | Closed in AN6-A residual; ERRATA needs no update |
+| E-5 (NI-H02 composition) | **Addendum in AN6-A.8**: all 6 arms substantively discharged; E-5 residual fully closed |
 | E-6 (finding-count arithmetic) | None |
 
 ---
 
 ## 17. PR mapping & commit ordering
 
-This section sequences the AN0..AN10 sub-tasks into PR batches so a
+This section sequences the AN0..AN12 sub-tasks into PR batches so a
 project lead can plan reviews and contributors know which PRs depend
 on which.
 
@@ -3370,51 +3395,63 @@ on which.
 | PR-2 | AN1 | AN1-A, AN1-B, AN1-C, AN1-D | `WS-AN AN1: critical-path blockers (C-01, C-03, H-24)` | PR-1 |
 | PR-3 | AN2 (1/3) | AN2-A, AN2-B | `WS-AN AN2.1: Badge + wrapper-type private-mk discipline (H-13, Theme 4.3)` | PR-1 |
 | PR-4 | AN2 (2/3) | AN2-C, AN2-D | `WS-AN AN2.2: RegisterFile Fin 32 + typedIdDisjointness (H-10, H-11)` | PR-3 |
-| PR-5 | AN2 (3/3) | AN2-E, AN2-F, AN2-G, AN2-H | `WS-AN AN2.3: Foundation MEDIUM batch + 17-tuple refactor (FND-M01..M08, DEF-F-L9)` | PR-4 |
-| PR-6 | AN8 (parallel) | AN8-A..F | `WS-AN AN8: Rust HAL hardening (H-17, H-18, H-19, RUST-M01..M08)` | PR-1 (independent of Lean phases) |
-| PR-7 | AN3 | AN3-A..G | `WS-AN AN3: IPC subsystem (H-01, IPC-M01..M09, Theme 4.7 split)` | PR-5 |
+| PR-5 | AN2 (3/3) | AN2-E, AN2-F, AN2-G, AN2-H | `WS-AN AN2.3: Foundation MEDIUM batch + 17-tuple refactor (FND-M01..M08, DEF-F-L9 ABSORBED)` | PR-4 |
+| PR-6 | AN8 (parallel) | AN8-A..F | `WS-AN AN8: Rust HAL hardening incl. EOI-before-handler (H-17, H-18, H-19 Option b, RUST-M01..M08)` | PR-1 (independent of Lean phases) |
+| PR-7 | AN3 | AN3-A..G | `WS-AN AN3: IPC subsystem (H-01 Option A, IPC-M01..M09, Theme 4.7 split)` | PR-5 |
 | PR-8 | AN4 | AN4-A..J | `WS-AN AN4: Capability/Lifecycle/Service (H-02..H-06)` | PR-5 |
-| PR-9 | AN5 | AN5-A..E | `WS-AN AN5: Scheduler/SchedContext (SCH/SC MEDIUMs)` | PR-5 |
-| PR-10 | AN7 | AN7-A..G | `WS-AN AN7: Platform/API (H-14..H-16)` | PR-5 |
-| PR-11 | AN6 | AN6-A..H | `WS-AN AN6: Architecture/IF/CrossSubsystem (H-07..H-09, Theme 4.1)` | PR-7, PR-8, PR-9, PR-10 |
-| PR-12 | AN9 | AN9-A..G | `WS-AN AN9: Tests/CI/Scripts (H-20..H-23)` | PR-3..PR-11 |
-| PR-13 | AN10 (1/2) | AN10-A..F | `WS-AN AN10.1: discharge index, SMP inventory, doc batch` | PR-12 |
-| PR-14 | AN10 (2/2) | AN10-G..N | `WS-AN AN10.2: closure (DEFERRED, HISTORY, version, gate)` | PR-13 |
+| PR-9 | AN5 | AN5-A..G | `WS-AN AN5: Scheduler/SchedContext + eventuallyExits closure (SCH/SC MEDIUMs, DEF-AK2-K.4 ABSORBED)` | PR-5 |
+| PR-10 | AN7 | AN7-A..G | `WS-AN AN7: Platform/API + full RPi5/VSpaceBoot shim (H-14..H-16, PLT-M02/M03, DEF-P-L9 ABSORBED)` | PR-5 |
+| PR-11 | AN6 | AN6-A..H | `WS-AN AN6: Arch/IF/CX (H-07 all-6-arms, H-08, H-09 Track B, ARCH-M01 VSpaceBackend wired)` | PR-7, PR-8, PR-9, PR-10 |
+| PR-12 | AN9 (split across 3 sub-PRs if reviewer bandwidth tight) | AN9-A..K | `WS-AN AN9: Hardware-binding closure (TLB+cache, barriers, SVC FFI, SMP)` | PR-6, PR-11 |
+| PR-13 | AN10 | AN10-A..D | `WS-AN AN10: AK7 cascade completion (DEF-AK7-E/F ABSORBED, ~600 sites)` | PR-12 |
+| PR-14 | AN11 | AN11-A..G | `WS-AN AN11: Tests/CI/Scripts (H-20..H-23)` | PR-13 |
+| PR-15 | AN12 (1/2) | AN12-A..F | `WS-AN AN12.1: discharge index, SMP inventory confirmation, doc batch` | PR-14 |
+| PR-16 | AN12 (2/2) | AN12-G..N | `WS-AN AN12.2: closure (DEFERRED.md in-place RESOLVED, HISTORY, version, gate)` | PR-15 |
 
 **Parallelism opportunity**: PR-6 (Rust HAL) is independent of all Lean
-phases; can land any time after PR-1. PR-7..PR-10 (AN3, AN4, AN5, AN7)
-are independent of each other and can land in any order or in parallel
-once PR-5 (foundation hardening) merges.
+phases; can land any time after PR-1 and must land before PR-12 (AN9).
+PR-7..PR-10 (AN3, AN4, AN5, AN7) are independent of each other and can
+land in any order or in parallel once PR-5 (foundation hardening)
+merges.
+
+**PR-12 (AN9) sub-split for parallel review**: AN9 is by far the
+largest PR at ~2500 LOC delta. Where reviewer bandwidth permits, split
+into:
+- PR-12a: AN9-A/B/C (TLB+cache+barriers; ~700 LOC)
+- PR-12b: AN9-D/E/F (atomicity + VSpaceBoot cross-ref + SVC FFI; ~800 LOC)
+- PR-12c: AN9-G/H/I/J/K (bounded WFE + parameterized barriers + OSH + SMP + closure; ~1000 LOC)
+
+PR-14 (AN11) and PR-15/16 (AN12) cannot start until upstream phases land because tests depend on the final kernel surface (including AN9 hardware-binding and AN10 cascade migrations).
 
 ### 17.2 Hot-path early landing
 
 If reviewer bandwidth is constrained, prioritise:
 
 1. PR-2 (AN1) — unblocks public-facing CRITICAL items
-2. PR-6 (AN8) — independent, can land in background
+2. PR-6 (AN8) — independent, can land in background; unblocks PR-12
 3. PR-5 (AN2) — foundation; unblocks PR-7..PR-10
-
-PR-12 (AN9) and PR-13/14 (AN10) cannot start until upstream phases land
-because tests depend on the surface.
+4. PR-12 (AN9) — largest phase; start review early even while upstream PRs are still in flight
 
 ### 17.3 Per-PR review scope guidance
 
 | PR | Approx LOC delta | Files touched | Reviewer focus |
 |----|----:|----:|----------------|
-| PR-1 | ~1800 | 1 (this plan) | Plan completeness, audit cross-refs |
-| PR-2 | ~80 | ~15 | Stale-pointer correctness, hook idempotency |
+| PR-1 | ~2500 | 1 (this plan) | Plan completeness, audit cross-refs, §16 absorption-map accuracy |
+| PR-2 | ~80 | ~15 | Stale-pointer correctness, hook idempotency, live AN9-F..J TODO retargets |
 | PR-3 | ~150 | ~10 | Subtype gate cascades, BadgeOverflowSuite extension |
 | PR-4 | ~200 | ~25 | Fin 32 refactor cascade, typedIdDisjointness preservation cascade (cascade-heavy) |
-| PR-5 | ~600 | ~80 | Heartbeat profile (FND-M05), 17-tuple → structure migration |
-| PR-6 | ~400 | ~12 (rust/) | RAII refactor correctness, MPIDR symbol drift gate |
-| PR-7 | ~700 | ~15 | Structural.lean split correctness (Theme 4.7), named projections |
-| PR-8 | ~900 | ~20 | lifecycleRetypeObject visibility cascade, CDT discharge index |
-| PR-9 | ~500 | ~12 | Scheduler split, blockingGraphAcyclic rename cascade |
-| PR-10 | ~250 | ~10 | DTB deprecation correctness, Check predicate fail-closed |
-| PR-11 | ~600 | ~25 | Closure-form template (toolchain-sensitive), CrossSubsystem index |
-| PR-12 | ~1500 | ~10 (tests/scripts) | KernelError matrix coverage, timeout wrapper, named tests |
-| PR-13 | ~600 | ~30 | Discharge index correctness, SMP inventory completeness |
-| PR-14 | ~400 | ~25 | Version sync, archive moves, CHANGELOG consolidation |
+| PR-5 | ~600 | ~80 | Heartbeat profile (FND-M05 full decomposition, no partial), 17-tuple → structure migration |
+| PR-6 | ~500 | ~12 (rust/) | RAII refactor correctness, MPIDR symbol drift gate (A+B), EOI-before-handler re-entrancy review |
+| PR-7 | ~700 | ~15 | Structural.lean split correctness (Theme 4.7), named projections, mandatory Option A primitives extraction |
+| PR-8 | ~900 | ~20 | lifecycleRetypeObject visibility cascade, CDT discharge index, mintDerivedCap return type tightening |
+| PR-9 | ~500 | ~12 | Scheduler split, blockingGraphAcyclic rename cascade, eventuallyExits RPi5-canonical witness proof |
+| PR-10 | ~600 | ~12 | DTB deprecation, Check predicate fail-closed, full RPi5/VSpaceBoot shim + non-empty-config boot bridge |
+| PR-11 | ~1100 | ~30 | ALL 6 arms substantively discharged (closure-form template), untypedAncestorRegionsDisjoint Track B, VSpaceBackend wired production-live |
+| PR-12 | ~2500 | ~25 (mix Lean+rust) | Hardware-binding FFI witnesses, SVC FFI round-trip, SMP bring-up + `smp_enabled` gating |
+| PR-13 | ~1200 | ~80+ | AK7 cascade mechanical migrations; verify monotonicity metrics advance; no silent test regressions |
+| PR-14 | ~1500 | ~10 (tests/scripts) | KernelError matrix coverage (≥35 variants), timeout wrapper, named AK6 tests |
+| PR-15 | ~600 | ~30 | Discharge index correctness, SMP inventory confirmation (AN9 work landed; items now single-core default but SMP code reviewed + merged) |
+| PR-16 | ~300 | ~25 | Version sync, archive moves, CHANGELOG consolidation, DEFERRED.md in-place RESOLVED annotations |
 
 ### 17.4 PR-merge gate sequence (each PR's CI must pass)
 
@@ -3425,10 +3462,12 @@ For each PR:
 4. `./scripts/test_smoke.sh` PASS (smoke gate)
 5. For PRs that touch theorems / invariants: `./scripts/test_full.sh` PASS (full gate)
 6. For PRs that touch fixtures: `sha256sum -c` on companion files PASS
-7. `./scripts/check_version_sync.sh` PASS at the prevailing version (no version bump until AN10-J)
+7. `./scripts/check_version_sync.sh` PASS at the prevailing version (no version bump until AN12-J)
 8. `./scripts/check_website_links.sh` PASS
+9. For PR-12 (AN9): `scripts/test_qemu.sh` PASS (or skip-with-log); `scripts/test_smp_smoke.sh` PASS on QEMU `-smp 4`
+10. For PR-13 (AN10): `scripts/ak7_cascade_check_monotonic.sh` PASS against the AN10-advanced baseline
 
-The AN10-L final release gate is the master verification; per-PR CI
+The AN12-L final release gate is the master verification; per-PR CI
 is a per-step proxy.
 
 ---
@@ -3470,10 +3509,10 @@ is addressed.
 | H-17 | AN8 | AN8-A |
 | H-18 | AN8 | AN8-B |
 | H-19 | AN8 | AN8-C |
-| H-20 | AN9 | AN9-A |
-| H-21 | AN9 | AN9-B |
-| H-22 (LOW post-downgrade) | AN9 | AN9-C |
-| H-23 | AN9 | AN9-D |
+| H-20 | AN11 | AN11-A |
+| H-21 | AN11 | AN11-B |
+| H-22 (LOW post-downgrade) | AN11 | AN11-C |
+| H-23 | AN11 | AN11-D |
 | H-24 | AN1 | AN1-C |
 
 ### 18.3 MEDIUM audit IDs (grouped by subsystem)
@@ -3484,15 +3523,15 @@ is addressed.
 **Lifecycle (LIF-M01..M06)** — all in **AN4-G**
 **Service (SVC-M01..M04)** — all in **AN4-H**
 **SchedContext (SC-M01..M03)** — **AN5-D** (SC-M02 cross-references AN6-A)
-**Architecture (ARCH-M01..M03)** — **AN6-D**
+**Architecture (ARCH-M01..M03)** — **AN6-D** (ARCH-M01 VSpaceBackend wired production-live, not tagged-deferred)
 **InformationFlow (IF-M01..M03)** — **AN6-E**
 **CrossSubsystem (CX-M01..M05)** — **AN6-F**
 **Foundation (FND-M01..M08)** — **AN2-F** (with M03 also touching AN2-B)
-**Platform (PLT-M01..M07)** — **AN7-D** (with M02/M03 carried forward to DEFERRED via AN10-G)
+**Platform (PLT-M01..M07)** — **AN7-D** (PLT-M02/M03 closed substantively in AN7-D.2 with RPi5/VSpaceBoot shim; PLT-M06 full recursion in AN7-D.5)
 **API (API-M01..M02)** — **AN7-E**
 **Rust (RUST-M01..M08)** — **AN8-D** (with M06 covered by AN1-C)
-**Tests (TST-M01..M13)** — **AN9-E** (with M10/M11 covered by AN9-C/D)
-**Documentation (DOC-M01..M08)** — **AN10-C** (with M01/M06 covered by AN1-A; M02 by AN7-D; M04 by AN10 final refresh)
+**Tests (TST-M01..M13)** — **AN11-E** (with M10/M11 covered by AN11-C/D)
+**Documentation (DOC-M01..M08)** — **AN12-C** (with M01/M06 covered by AN1-A; M02 by AN7-D; M04 by AN12 final refresh)
 
 ### 18.4 LOW audit IDs
 
@@ -3508,48 +3547,49 @@ LOW findings are batched per-subsystem. Lookup:
 | Foundation | AN2-F (LOW items combined with MEDIUM batch) |
 | Platform | AN7-F |
 | Rust | AN8-E |
-| Tests/CI | AN9-F |
-| Documentation | AN10-D |
+| Tests/CI | AN11-F |
+| Documentation | AN12-D |
 
 ### 18.5 Cross-cutting themes
 
 | Theme | Phase(s) | Sub-task(s) |
 |-------|----------|-------------|
-| 4.1 Closure-form proofs | AN4, AN6, AN10 | AN4-C, AN6-A, AN10-A |
-| 4.2 Tuple → structure | AN2, AN3, AN4 | AN2-G, AN3-B, AN4-F (CAP-M05) |
-| 4.3 Subtype gates | AN2, AN4 | AN2-A, AN2-B, AN2-F (FND-M03), AN4-F (CAP-M04) |
-| 4.4 SMP-latent assumptions | AN4, AN6, AN10 | AN4-D, AN6-F (CX-M03), AN10-B |
-| 4.5 Workstream IDs in comments | AN10 | AN10-E |
-| 4.6 Stale forward references | AN1, AN10 | AN1-C, AN10-E |
-| 4.7 Monolithic file splits | AN3, AN4, AN5, AN6, AN10 | AN3-C/D, AN4-F (CAP-M03)/AN4-G (LIF-M05), AN5-A, AN6-E (IF-M03), AN10-F |
+| 4.1 Closure-form proofs | AN4, AN6, AN12 | AN4-C, AN6-A (ALL 6 arms), AN12-A |
+| 4.2 Tuple → structure | AN2, AN3, AN4 | AN2-G (DEF-F-L9 absorbed), AN3-B, AN4-F (CAP-M05) |
+| 4.3 Subtype gates | AN2, AN4, AN10 | AN2-A, AN2-B, AN2-F (FND-M03), AN4-F (CAP-M04), **AN10-A (DEF-AK7-E ValidObjId rollout)** |
+| 4.4 SMP-latent assumptions | AN4, AN6, AN9, AN12 | AN4-D, AN6-F (CX-M03), **AN9-J (SMP bring-up absorbed)**, AN12-B (SMP inventory confirmation post-AN9) |
+| 4.5 Workstream IDs in comments | AN12 | AN12-E |
+| 4.6 Stale forward references | AN1, AN12 | AN1-C, AN12-E |
+| 4.7 Monolithic file splits | AN3, AN4, AN5, AN6, AN12 | AN3-C/D, AN4-F (CAP-M03)/AN4-G (LIF-M05), AN5-A, AN6-E (IF-M03), AN12-F |
 
-### 18.6 Carry-forward deferred IDs
+### 18.6 Absorbed deferred IDs (from `AUDIT_v0.29.0_DEFERRED.md`)
 
-| Source | Disposition | New ID (if any) |
-|--------|-------------|-----------------|
-| DEF-A-M04 | Carry unchanged | DEF-A-M04 (in AUDIT_v0.30.6_DEFERRED.md) |
-| DEF-A-M06 | Carry unchanged | DEF-A-M06 |
-| DEF-A-M08 | Carry unchanged | DEF-A-M08 |
-| DEF-A-M09 | Carry unchanged | DEF-A-M09 |
-| DEF-C-M04 | Carry unchanged | DEF-C-M04 |
-| DEF-P-L9 | Carry unchanged | DEF-P-L9 |
-| DEF-R-HAL-L14 | Carry unchanged | DEF-R-HAL-L14 |
-| DEF-F-L9 | RESOLVED in AN2-G | (closed entry in new DEFERRED) |
-| DEF-AK2-K.4 | By-design (carry) | DEF-AK2-K.4 |
-| DEF-AK7-E.cascade | Partial / carry | DEF-AK7-E.cascade |
-| DEF-AK7-F.cascade | Partial / carry | DEF-AK7-F.cascade |
+All 11 rows are absorbed as live pre-1.0 work per the §16 absorption map. Each row in `AUDIT_v0.29.0_DEFERRED.md` is annotated RESOLVED at AN12-G with the closing commit SHA.
 
-### 18.7 Newly-deferred IDs (added by WS-AN)
+| Source | Disposition | Closing sub-task |
+|--------|-------------|------------------|
+| DEF-A-M04 | **ABSORBED → RESOLVED** | AN9-A |
+| DEF-A-M06 / DEF-AK3-I | **ABSORBED → RESOLVED** | AN9-B |
+| DEF-A-M08 | **ABSORBED → RESOLVED** | AN9-C |
+| DEF-A-M09 / DEF-AK3-K | **ABSORBED → RESOLVED** | AN9-C |
+| DEF-C-M04 | **ABSORBED → RESOLVED** | AN9-D |
+| DEF-P-L9 | **ABSORBED → RESOLVED** (primary in AN7-D.2, cross-ref in AN9-E) | AN7-D.2 |
+| DEF-R-HAL-L14 | **ABSORBED → RESOLVED** | AN9-F |
+| DEF-F-L9 | **ABSORBED → RESOLVED** | AN2-G |
+| DEF-AK2-K.4 | **ABSORBED → RESOLVED** (RPi5-canonical witness) | AN5-F |
+| DEF-AK7-E.cascade | **ABSORBED → RESOLVED** | AN10-A |
+| DEF-AK7-F.cascade | **ABSORBED → RESOLVED** (reader AN10-B, writer AN10-C) | AN10-B + AN10-C |
 
-| New ID | Source | Category |
-|--------|--------|----------|
-| DEF-PLT-M02 | PLT-M02 / AN7-D | Hardware-binding |
-| DEF-H-07.partial | AN6-A toolchain-blocked | Toolchain-pending |
-| DEF-H-09.transitive | AN6-C Track B | Effort-budget |
-| DEF-R-HAL-L17 | AN1-C | Hardware / interrupt-wait |
-| DEF-R-HAL-L18 | AN1-C | Hardware / barriers |
-| DEF-R-HAL-L19 | AN1-C | SMP / barriers |
-| DEF-R-HAL-L20 | AN1-C | SMP / multi-core |
+### 18.7 New AN9 sub-tasks surfaced by AN1-C (all absorbed in-phase — no new DEF entries)
+
+| New sub-task ID | Source | Category | Closing sub-task |
+|-----------------|--------|----------|------------------|
+| DEF-R-HAL-L17 (bounded WFE) | AN1-C / `lib.rs:62` | Hardware / interrupt-wait | **AN9-G** |
+| DEF-R-HAL-L18 (parameterized barriers) | AN1-C / `lib.rs:69` | Hardware / barriers | **AN9-H** |
+| DEF-R-HAL-L19 (OSH widening) | AN1-C / `lib.rs:84` | SMP / barriers | **AN9-I** |
+| DEF-R-HAL-L20 (secondary-core bring-up / SMP) | AN1-C / `lib.rs:91` | SMP / multi-core | **AN9-J** |
+
+**Result at WS-AN close**: **zero deferred items** past v1.0.0. Every row in `AUDIT_v0.29.0_DEFERRED.md` is RESOLVED. No `AUDIT_v0.30.6_DEFERRED.md` file exists.
 
 ---
 
@@ -3584,7 +3624,7 @@ LOW findings are batched per-subsystem. Lookup:
 - `AN{phase}-{letter}.{digit}` — e.g., `AN3-B.4` is "sub-sub-task 4 inside AN3-B"; each sub-sub-task corresponds to one atomic commit
 - `AN{phase}-{letter}.{digit}.{digit}` — rare third-level decomposition for pathologically large units (e.g., `AN4-F.5.4` is "sub-sub-sub-task inside CAP-M05 named-projection refactor")
 - Sub-tasks are sequential within a phase; letter ordering reflects dependency
-- "AN10-G" is "Phase AN10, sub-task G" — the new DEFERRED file
+- "AN12-G" is "Phase AN12, sub-task G" — the in-place closure annotations for `AUDIT_v0.29.0_DEFERRED.md` (no new DEFERRED file created)
 - Audit-ID cross-reference is recorded in the sub-task heading for forward and reverse traversal
 - For sub-sub-tasks, the commit message convention is `WS-AN {SubSubId}: <one-line> (<audit-IDs>)` — e.g., `WS-AN AN2-D.3: retype preservation for typedIdDisjointness (H-10)`
 
@@ -3614,28 +3654,24 @@ defaults are noted.
    `serviceQuery_preserves_projection` (already substantively proven
    per the post-AK6F audit; could be the template).
 
-3. **AN6-C Track A vs B** — Track A (rename) is gate-passing; Track
-   B (transitive disjointness) is correctness-strengthening but
-   higher effort. Default: Track A; Track B as a stretch goal that
-   can defer.
+3. **AN6-C (H-09 transitive disjointness)** — removed from open questions. Per maintainer directive, Track B (transitive `untypedAncestorRegionsDisjoint`) is mandatory; the prior stretch-goal framing is superseded. No decision remains.
 
 4. **PR-6 (AN8) parallel landing** — is there a separate Rust-focused
    contributor available? Default: assume same contributor; PR-6
-   serializes after PR-1.
+   serializes after PR-1. Note: AN9 significantly increases Rust workload, so a dedicated Rust/HAL contributor is strongly recommended for the v1.0.0 timeline.
 
 5. **DOC-M03 SPDX header pass** — single mechanical PR (~150 file
    header changes, easy review) or batched per-subsystem (more PRs,
    smaller diffs)? Default: single PR for review efficiency.
 
-6. **AN10-E inline-marker hygiene scope** — full sweep or selective
+6. **AN12-E inline-marker hygiene scope** — full sweep or selective
    (only retarget closed-workstream pointers, leave per-feature
    markers)? Default: selective per audit guidance "after each
    portfolio closes, replace inline workstream markers" — ie selective.
 
-7. **AUDIT_v0.30.6_DEFERRED.md format** — match the
-   AUDIT_v0.29.0_DEFERRED.md structure exactly (Categories A/B,
-   per-item rationale + acceptance criteria), or add additional
-   structure? Default: match exactly for consistency.
+7. **AN9-J SMP default enablement** — AN9-J lands SMP bring-up code reviewed + merged + QEMU-tested, but gated behind a runtime `smp_enabled` flag defaulted to `false` at v1.0.0 boot. Does the maintainer want to flip the default to `true` for v1.0.0 (risk: single-core is the validated hardware configuration; SMP is QEMU-tested only), or stay default-off (AN9-J's proposal)? Default: stay default-off at v1.0.0; flip to default-on in a patch release after real-hardware SMP validation lands.
+
+8. **Deferral escalation protocol** — if any sub-task genuinely cannot close under the plan's escalation ladders (e.g., a Lean 4.28.0 toolchain bug that blocks AN6-A.7's `lifecycleRetype_preserves_projection`, or a QEMU limitation that prevents AN9-J SMP smoke), does the maintainer approve pausing the workstream and escalating, or can the item be the one exception that ships with a narrow DEF-* annotation? Default (per §15.1 rule): pause and escalate; no silent deferrals.
 
 ---
 
@@ -3645,8 +3681,17 @@ This plan is **single-source-of-truth** for WS-AN. Any AN-* sub-task
 that is renamed, dropped, or split during execution must be
 reflected by a same-PR edit to this file. The plan archives to
 `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` only after
-AN10-N (the workstream closure) ships and `docs/WORKSTREAM_HISTORY.md`
+AN12-N (the workstream closure) ships and `docs/WORKSTREAM_HISTORY.md`
 records the WS-AN entry.
+
+**Zero-deferral rule**: per maintainer directive, no sub-task may be
+silently deferred. Every CRITICAL, HIGH, MEDIUM, LOW finding in
+`AUDIT_v0.30.6_COMPREHENSIVE.md` and every row in
+`AUDIT_v0.29.0_DEFERRED.md` has a live AN sub-task ID in §3..§15 that
+must close substantively before WS-AN ships. If the plan encounters a
+genuinely un-closable obstacle (toolchain bug, hardware limitation that
+cannot be worked around), the workstream pauses and is escalated per
+§20 question 8 — deferral is NOT an automatic fallback.
 
 This document is GPL-3.0+ licensed (see `LICENSE`) per the project's
 standard.
