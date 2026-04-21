@@ -8,35 +8,38 @@
 **Baseline**: `v0.30.6` at commit `1a86dbc` on branch `claude/audit-workstream-planning-AUBX4`
 **Target release**: `v1.0.0` (patch-only bump trajectory; final tag is a maintainer manual action per AK10-C precedent)
 **Author**: Claude (Opus 4.7), 2026-04-21
-**Scope summary**: 196 audit findings (after C-02 resolved, H-22 downgraded) plus 11 carried-forward deferred items, organized into **11 phases (AN0..AN10)** with **79 named sub-tasks** decomposed into **~144 sub-sub-task commits**. Each complex sub-task lists explicit per-commit boundaries with acceptance criteria, effort estimates, and cascade sizes. Foundation hardening (AN2) lands first so type-level changes cascade exactly once; cross-cutting structural refactors (Theme 4.2 named projections, Theme 4.3 subtype gates) are sequenced into the earliest phase whose subsystem they touch. AN10 closes the workstream with documentation sync, a new `AUDIT_v0.30.6_DEFERRED.md`, and the v1.0.0-ready gate.
+**Scope summary**: 196 audit findings (after C-02 resolved, H-22 downgraded) PLUS 11 carried-forward items from `AUDIT_v0.29.0_DEFERRED.md` that are **absorbed in-scope** (no longer deferred), organized into **13 phases (AN0..AN12)** with **~105 named sub-tasks** decomposed into **~210 sub-sub-task commits**. Each complex sub-task lists explicit per-commit boundaries with acceptance criteria, effort estimates, and cascade sizes. Foundation hardening (AN2) lands first so type-level changes cascade exactly once; cross-cutting structural refactors (Theme 4.2 named projections, Theme 4.3 subtype gates) are sequenced into the earliest phase whose subsystem they touch. **AN9 closes every hardware-binding item from AUDIT_v0.29.0_DEFERRED.md (DEF-A-M04/M06/M08/M09, DEF-C-M04, DEF-P-L9, DEF-R-HAL-L14, plus new DEF-R-HAL-L17..L20 items surfaced by AN1-C); AN10 completes the AK7 cascade rollouts (DEF-AK7-E.cascade, DEF-AK7-F.cascade); AN12 closes the workstream with documentation sync and the v1.0.0-ready gate.** No finding in the comprehensive audit, no entry in the v0.29.0 DEFERRED file, and no errata residual remains unaddressed at WS-AN close.
 
 ---
 
 ## TL;DR (one-page executive view)
 
-**Status of inputs**: All audit findings spot-checked against live tree at `1a86dbc`. **No erroneous findings**. Self-corrections inside the audit (C-02 resolved, H-13 file-path corrected, H-20 quantification corrected, H-22 severity downgraded) are accepted as-is. All six entries in `AUDIT_v0.29.0_ERRATA.md` are informational closures requiring no work. All 11 entries in `AUDIT_v0.29.0_DEFERRED.md` are dispositioned in §16: 6 carry-forward, 1 RESOLVED in AN2-G, 1 by-design, 2 partial-progress, 1 hardware-binding (DEF-R-HAL-L14) gets its source-side TODO retargeted in AN1-C.
+**Status of inputs**: All audit findings spot-checked against live tree at `1a86dbc`. **No erroneous findings**. Self-corrections inside the audit (C-02 resolved, H-13 file-path corrected, H-20 quantification corrected, H-22 severity downgraded) are accepted as-is. All six entries in `AUDIT_v0.29.0_ERRATA.md` are informational closures; E-5's residual (H-07 closure-form composition) is closed **fully** in AN6 (all six arms substantively discharged, not partially). All 11 entries in `AUDIT_v0.29.0_DEFERRED.md` are **absorbed as pre-1.0 work** per §16: DEF-F-L9 RESOLVED in AN2-G; DEF-A-M04/M06/M08/M09/C-M04/P-L9/R-HAL-L14 + four new DEF-R-HAL-L17..L20 items each closed substantively in AN9; DEF-AK7-E.cascade and DEF-AK7-F.cascade fully rolled out in AN10; DEF-AK2-K.4 `eventuallyExits` closed by RPi5 canonical-config witness in AN5-F. **Zero items carry past v1.0.0.**
 
 **Scope of work**:
 - 2 actionable CRITICAL (C-01 README, C-03 hook)
-- 23 actionable HIGH
+- 23 actionable HIGH (all closed substantively; no closure-form or partial-discharge fallbacks)
 - 71 MEDIUM, 59 LOW (after H-22 downgrade), 40 INFO (no work)
-- 11 carry-forward DEFERRED items + 7 newly-DEFERRED from WS-AN
+- 11 absorbed items from `AUDIT_v0.29.0_DEFERRED.md` (7 hardware-binding in AN9, 2 cascades in AN10, 1 `eventuallyExits` in AN5-F, 1 `allTablesInvExtK` structure refactor in AN2-G)
+- 4 new hardware-binding sub-tasks surfaced by AN1-C (bounded WFE, parameterized barriers, OSH widening, secondary-core bring-up / SMP) — all closed in AN9
 
 **Phases & PR sequence**:
 1. **AN0** — Plan + baseline (PR-1)
-2. **AN1** — Critical-path: README, pre-commit hook, stale TODOs (PR-2)
-3. **AN2** — Foundation hardening: subtype gates, typedIdDisjointness, named structures (PR-3..5)
-4. **AN3..AN5, AN7** — Subsystem phases (parallelizable post-AN2): IPC, Cap/Lif/Svc, Sched/SC, Plat/API (PR-7..10)
-5. **AN6** — CrossSubsystem composition (closes H-07/H-08/H-09) (PR-11)
-6. **AN8** — Rust HAL hardening, runs in parallel with Lean phases (PR-6)
-7. **AN9** — Test/CI surface incl. KernelError matrix, lake-exe timeout (PR-12)
-8. **AN10** — Closure: discharge index, SMP inventory, doc batch, version bump, archive (PR-13/14)
+2. **AN1** — Critical-path: README, pre-commit hook, stale TODOs retargeted to live sub-task IDs (PR-2)
+3. **AN2** — Foundation hardening: subtype gates, typedIdDisjointness, named structures, DEF-F-L9 tuple→structure (PR-3..5)
+4. **AN3..AN5, AN7** — Subsystem phases (parallelizable post-AN2): IPC, Cap/Lif/Svc, Sched/SC + eventuallyExits, Plat/API + VSpaceBoot shim (PR-7..10)
+5. **AN6** — Architecture / IF / CrossSubsystem composition: all 6 closure-form projection arms substantively discharged (no partial); H-08 index; H-09 transitive untypedAncestorRegionsDisjoint (Track B mandatory) (PR-11)
+6. **AN8** — Rust HAL hardening, including EOI-before-handler semantic change (H-19 Option b): runs in parallel with Lean phases (PR-6)
+7. **AN9** — **Hardware-binding closure (NEW)**: TLB+cache composition, tlbBarrierComplete, MMU/Device BarrierKind, suspendThread atomicity, VSpaceRoot boot bridge for non-empty configs, SVC FFI wiring, bounded WFE, parameterized barriers, OSH widening, secondary-core bring-up / SMP (PR-12)
+8. **AN10** — **AK7 cascade completion (NEW)**: DEF-AK7-E.cascade (~240 handler signatures ObjId→ValidObjId), DEF-AK7-F.cascade reader side (~304+ raw-match→typed-helper sites), DEF-AK7-F.cascade writer side (~50 storeObject→storeObjectKindChecked sites) (PR-13)
+9. **AN11** — Test/CI surface incl. KernelError matrix, lake-exe timeout, named AK6 tests (PR-14)
+10. **AN12** — Closure: discharge index, SMP inventory confirmation (post-AN9 SMP work), doc batch, version bump, archive; all audit IDs closed; NO new DEFERRED file needed (PR-15/16)
 
-**Estimated effort**: ~34–40 dev-days, can compress to ~3 calendar weeks with two contributors (one Lean, one Rust HAL). The 144 sub-sub-task commits average ~30 minutes each (wall-clock commit + review + CI), which gates the minimum calendar timeline at ~5 working days of sequential commits assuming full review throughput.
+**Estimated effort**: ~80–95 dev-days (major increase vs. prior plan because AN9/AN10 absorb all hardware-binding and cascade work previously deferred post-1.0). Can compress to ~5–7 calendar weeks with three contributors (one Lean, one Rust HAL/SMP, one cascade-migration). The ~210 sub-sub-task commits average ~30 minutes each (wall-clock commit + review + CI), which gates the minimum calendar timeline at ~7–9 working days of sequential commits assuming full review throughput.
 
-**Granularity guarantee**: every sub-task with cascade size ≥ 10, LOC delta ≥ 200, or cross-file-refactor scope is broken into `.1/.2/.3/…` sub-sub-tasks so each commit is reviewable in isolation. See §3..§13 for per-phase detail and §17.3 for per-PR review-scope guidance.
+**Granularity guarantee**: every sub-task with cascade size ≥ 10, LOC delta ≥ 200, or cross-file-refactor scope is broken into `.1/.2/.3/…` sub-sub-tasks so each commit is reviewable in isolation. See §3..§15 for per-phase detail and §17.3 for per-PR review-scope guidance.
 
-**Final gate** (per §15.2): all tier scripts green, zero `sorry`/`axiom`/`native_decide`, fixture byte-identical, all 10 i18n READMEs synced, version bump to v0.30.7 (or maintainer-chosen v1.0.0).
+**Final gate** (per §15.2): all tier scripts green, zero `sorry`/`axiom`/`native_decide`, fixture byte-identical, all 10 i18n READMEs synced, version bump to v0.30.7 (or maintainer-chosen v1.0.0), **zero entries in any new DEFERRED file** (no new deferred items created by WS-AN), all 11 old DEFERRED items closed with commit SHAs.
 
 ---
 
@@ -89,14 +92,14 @@ After these self-corrections, the actionable HIGH count is 23 (H-01..H-21, H-23,
 
 No finding contradicted live evidence. Where the audit author corrected themselves (H-13's file path), the corrected location is what this plan tracks.
 
-### 1.3 Items NOT erroneous but out of remediation scope
+### 1.3 Items previously deferred — now in-scope (all addressed substantively)
 
-Some findings document by-design choices the audit explicitly accepted; the plan re-records them so contributors do not over-fix:
+Per maintainer directive, **every item previously documented as "by design", "out of scope", or deferred to a post-1.0 workstream is now scheduled in WS-AN**. The audit-authored acceptance of by-design choices and hardware-binding deferrals is NOT grounds for carrying past v1.0.0. Each item below gets a live sub-task:
 
-- **H-19** *design-intent context*: panic = "abort" + Drop-not-run-on-panic is acknowledged as a **fatal-invariant abort by design** at `gic.rs:299-308`. Plan addresses the documentation surfacing only, not the underlying behavior. (See AN8-C.)
-- **DEF-AK2-K.4** `eventuallyExits` — **by-design externalization** per `docs/spec/SELE4N_SPEC.md` §5.7. Carried forward unchanged; no remediation.
-- **PLT-M02 / PLT-M03** VSpaceRoot boot-bridge gap — depends on RPi5/VSpaceBoot shim that requires real-silicon bring-up. Carried into AN10's new DEFERRED file, NOT scheduled in AN1..AN9.
-- **ARCH-M01** `VSpaceBackend` typeclass currently unused — explicitly forward-looking H3 infrastructure. AN6 tags it; does not delete it.
+- **H-19** panic = "abort" + Drop-not-run-on-panic: AN8-C takes the audit's **Option b** (migrate ack→handle→EOI sequence to emit EOI before handler invocation per GIC-400 spec) in addition to the documentation and clippy-lint guard. The fatal-invariant-abort design continues to halt the kernel on handler panic, but EOI is no longer lost because it was emitted prior to the handler body.
+- **DEF-AK2-K.4** `eventuallyExits`: AN5-F proves the hypothesis **substantively** for the canonical RPi5 deployment configuration (54 MHz timer, default CBS period, default priority bands) as a named witness theorem `rpi5_canonicalConfig_eventuallyExits`. The `eventuallyExits` hypothesis remains parameterised in the general WCRT theorem (a deployment-schema property), but RPi5 deployments now ship with the witness discharged at boot-time.
+- **PLT-M02 / PLT-M03** VSpaceRoot boot-bridge gap: AN7-D.2 now lands the full `Platform/RPi5/VSpaceBoot.lean` shim establishing the boot VSpaceRoot with full invariant witness, and `bootFromPlatformChecked` is refined to include VSpaceRoot in its per-object `bootSafeObject` check. No boot path remains proven for empty-config only.
+- **ARCH-M01** `VSpaceBackend` typeclass currently unused: AN6-D **wires the typeclass into `VSpace.lean`** so `VSpace` operates on `VSpaceBackend` indirection instead of concrete `VSpaceRoot`. The typeclass ceases to be forward-looking infrastructure and becomes load-bearing production code. The ARMv8 instance from AG6-C/D remains the default production backend.
 
 ### 1.4 Errata acknowledgement (`AUDIT_v0.29.0_ERRATA.md`)
 
@@ -108,10 +111,10 @@ Each of the six errata entries is **closed informational** under v0.30.6:
 | **E-2** R-HAL-M12 dead-code removal | Closed in AK10 (b . supersedes annotated fall-through) | None |
 | **E-3** A-H01 three-layer extent | Closed in AK3-B + AK5-C (`wxInvariant_fourLayer_defense`) | None |
 | **E-4** R-HAL-H02 partial | Closed in AK5-D (`tlbi vmalle1` + `dc cvac` sequence) | None |
-| **E-5** NI-H02 composition | Closed in AK6-F (`dispatchCapabilityOnly_preserves_projection`) — but AK6F.20b residual covered by H-07 in AN6 | Track via H-07 only |
+| **E-5** NI-H02 composition | Closed in AK6-F composition theorem; AK6F.20b residual (6 closure-form arms) fully discharged in AN6-A | AN6-A substantively discharges **all 6 arms** (no partial); E-5 residual eliminated |
 | **E-6** finding-count arithmetic 202 vs 201 | Informational only | None |
 
-E-5 has the only forward link: its residual closure-form gap is the same gap H-07 tracks. AN6-A handles it; ERRATA needs no update.
+E-5 has the only forward link. AN6-A substantively discharges every one of the six closure-form theorems (`schedContextConfigure/Bind/Unbind_preserves_projection`, `lifecycleRetype_preserves_projection`, `tcbSuspend/Resume_preserves_projection`) via a six-commit template that eliminates the `hArmProj` closure uniformly. No residual or partial-discharge fallback remains; if the Lean 4.28.0 toolchain blocks any one arm, AN6-A escalates to a targeted toolchain workaround (manual `rcases` on `Except.ok`, `decide` + `Classical.byContradiction` for the equality, or a hand-unfolded structural proof) rather than deferring. See §20.2 for the escalation ladder.
 
 ---
 
@@ -121,18 +124,20 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 
 | Phase | Theme | Scope | Sub-tasks | Estimated effort | Blocks |
 |-------|-------|-------|-----------|------------------:|--------|
-| **AN0** | Pre-flight | Branch policy, baseline metrics, sub-task inventory commit | 3 (A–C) | 0.5 day | AN1..AN10 |
-| **AN1** | Critical-path blockers | C-01, C-03, H-24 + RUST-M06 | 4 (A–D) | 0.5 day | (none) — independent |
-| **AN2** | Foundation hardening | H-10..H-13, FND-M01..M08, Theme 4.3 (subtype gates), DEF-F-L9 prep | 8 (A–H) | 4–5 days | AN3..AN7 (downstream cascades) |
+| **AN0** | Pre-flight | Branch policy, baseline metrics, sub-task inventory commit | 3 (A–C) | 0.5 day | AN1..AN12 |
+| **AN1** | Critical-path blockers | C-01, C-03, H-24 + RUST-M06; retarget stale TODOs to live sub-task IDs (not DEF-* IDs) | 4 (A–D) | 0.5 day | (none) — independent |
+| **AN2** | Foundation hardening | H-10..H-13, FND-M01..M08, Theme 4.3 (subtype gates), DEF-F-L9 absorbed (Theme 4.2 anchor) | 8 (A–H) | 4–5 days | AN3..AN7 (downstream cascades) |
 | **AN3** | IPC subsystem | H-01, IPC-M01..M09, IPC LOWs, Theme 4.2 (named projections for `ipcInvariantFull`), Theme 4.7 (Structural.lean split) | 7 (A–G) | 4–5 days | AN6 (CrossSubsystem composition) |
 | **AN4** | Capability / Lifecycle / Service | H-02..H-06, CAP-M01..M05, LIF-M01..M06, SVC-M01..M04, Cap LOWs, Theme 4.7 (Lifecycle/Operations.lean split) | 10 (A–J) | 5–6 days | AN6 |
-| **AN5** | Scheduler / SchedContext | SCH-M01..M05, SC-M01..M03, Sched LOWs, Theme 4.7 (Preservation.lean split) | 5 (A–E) | 3–4 days | AN6 |
-| **AN6** | Architecture / IF / CrossSubsystem | H-07 (template discharge), H-08, H-09, ARCH-M01..M03, IF-M01..M03, CX-M01..M05, IF Operations.lean split | 8 (A–H) | 5–6 days | AN10 |
-| **AN7** | Platform / API | H-14..H-16, PLT-M01..M07, API-M01..M02, Platform LOWs | 7 (A–G) | 2–3 days | AN9 |
-| **AN8** | Rust HAL | H-17..H-19, RUST-M01..M08, Rust LOWs | 6 (A–F) | 3–4 days | AN9 |
-| **AN9** | Tests / CI / Scripts | H-20 (KernelError matrix), H-21, H-22 (downgraded), H-23, TST-M01..M13, Test LOWs | 7 (A–G) | 4–5 days | AN10 |
-| **AN10** | Documentation, themes, closure | DOC-M01..M08, Theme 4.1 (discharge index), Theme 4.4 (SMP inventory), DOC LOWs, version bump, new `AUDIT_v0.30.6_DEFERRED.md`, WORKSTREAM_HISTORY entry, gate | 14 (A–N) | 3 days | (closes WS-AN) |
-| **TOTAL** | | | **79 sub-tasks** | **~34–40 dev-days** | |
+| **AN5** | Scheduler / SchedContext + `eventuallyExits` closure | SCH-M01..M05, SC-M01..M03, Sched LOWs, Theme 4.7 (Preservation.lean split), **DEF-AK2-K.4 RPi5-canonical-config witness** | 6 (A–F) | 4–5 days | AN6 |
+| **AN6** | Architecture / IF / CrossSubsystem | H-07 (**all 6 arms substantively discharged**), H-08, H-09 (**Track B mandatory**: transitive untypedAncestorRegionsDisjoint), ARCH-M01..M03 (**VSpaceBackend wired production-live**), IF-M01..M03, CX-M01..M05, IF Operations.lean split | 8 (A–H) | 7–9 days | AN12 |
+| **AN7** | Platform / API | H-14..H-16, PLT-M01..M07 (**including full `RPi5/VSpaceBoot.lean` shim closing PLT-M02/M03**), API-M01..M02, Platform LOWs | 7 (A–G) | 4–5 days | AN11 |
+| **AN8** | Rust HAL | H-17..H-19 (**H-19 audit Option b: EOI before handler**), RUST-M01..M08, Rust LOWs | 6 (A–F) | 4–5 days | AN9 (Rust ABI changes cascade into AN9 HAL/FFI work) |
+| **AN9** | **Hardware-binding closure (NEW)** | DEF-A-M04 (TLB+cache composition), DEF-A-M06 (tlbBarrierComplete), DEF-A-M08/M09 (MMU/Device BarrierKind), DEF-C-M04 (suspendThread atomicity via HAL bracket), DEF-P-L9 (VSpaceRoot boot exclusion — covered jointly with AN7-D.2), DEF-R-HAL-L14 (SVC FFI wiring to `sele4n_syscall_dispatch`), DEF-R-HAL-L17 (bounded WFE), DEF-R-HAL-L18 (parameterized barriers), DEF-R-HAL-L19 (OSH widening), DEF-R-HAL-L20 (secondary-core bring-up / SMP) | 10 (A–J) | 18–22 days (includes SMP) | AN11, AN12 |
+| **AN10** | **AK7 cascade completion (NEW)** | DEF-AK7-E.cascade (~240 sites: handler signatures ObjId/ThreadId/SchedContextId → Valid* subtypes), DEF-AK7-F.cascade reader side (~304+ raw-match→typed-helper migration), DEF-AK7-F.cascade writer side (~50 storeObject→storeObjectKindChecked) | 4 (A–D) | 8–10 days | AN11 |
+| **AN11** | Tests / CI / Scripts | H-20 (KernelError matrix), H-21 (`lake exe` timeout), H-22 (downgraded, addressed), H-23 (named AK6 tests), TST-M01..M13, Test LOWs | 7 (A–G) | 4–5 days | AN12 |
+| **AN12** | Documentation, themes, closure | DOC-M01..M08, Theme 4.1 (discharge index), Theme 4.4 (SMP inventory confirms AN9 work landed), DOC LOWs, version bump, **NO new DEFERRED file** (all items closed), WORKSTREAM_HISTORY entry, gate | 14 (A–N) | 3 days | (closes WS-AN) |
+| **TOTAL** | | | **~105 sub-tasks** | **~80–95 dev-days** | |
 
 ### 2.2 Dependency graph
 
@@ -145,8 +150,8 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
        ▼                           ▼                              ▼
  ┌──────────┐            ┌────────────────────┐          ┌────────────────────┐
  │  AN1     │            │  AN2 — Foundation  │          │  AN8 — Rust HAL    │
- │ Critical │            │  (subtype gates,   │          │  (independent of   │
- │ blockers │            │   named structs)   │          │   Lean phases)     │
+ │ Critical │            │  (subtype gates,   │          │  (parallel; feeds  │
+ │ blockers │            │   named structs)   │          │   AN9 HAL/FFI)     │
  └────┬─────┘            └─────────┬──────────┘          └─────────┬──────────┘
       │                            │                               │
       │                ┌───────────┼────────────┬─────────────┐    │
@@ -154,44 +159,63 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
       │           ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐  │
       │           │  AN3    │ │  AN4    │ │  AN5    │ │  AN7    │  │
       │           │ IPC     │ │ Cap/Lif │ │ Sched/  │ │ Plat/   │  │
-      │           │         │ │ /Svc    │ │ SC      │ │ API     │  │
+      │           │         │ │ /Svc    │ │ SC + EE │ │ API +   │  │
+      │           │         │ │         │ │         │ │ VSpBoot │  │
       │           └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘  │
       │                └───────────┼───────────┘            │       │
       │                            ▼                        │       │
       │                  ┌────────────────────┐             │       │
       │                  │  AN6 — Arch / IF / │             │       │
       │                  │     CrossSubsystem │             │       │
+      │                  │  (all 6 arms, TrkB)│             │       │
       │                  └─────────┬──────────┘             │       │
       │                            │                        │       │
-      │                            └──────────┬─────────────┴───────┘
-      │                                       ▼
-      │                             ┌────────────────────┐
-      │                             │  AN9 — Tests / CI  │
-      │                             └─────────┬──────────┘
-      │                                       │
-      └──────────────────────────────────────►┴──┬───────┐
-                                                 ▼       │
-                                       ┌────────────────────┐
-                                       │  AN10 — Doc/Theme/ │
-                                       │       Closure      │
-                                       └────────────────────┘
+      │                            │    ┌───────────────────┴───────┘
+      │                            ▼    ▼
+      │                   ┌────────────────────┐
+      │                   │ AN9 — HW-binding   │
+      │                   │ (TLB/cache/barrier/│
+      │                   │  SVC-FFI/SMP)      │
+      │                   └─────────┬──────────┘
+      │                             │
+      │                             ▼
+      │                   ┌────────────────────┐
+      │                   │ AN10 — AK7 cascade │
+      │                   │ (ValidObjId, etc.) │
+      │                   └─────────┬──────────┘
+      │                             │
+      │                             ▼
+      │                   ┌────────────────────┐
+      └──────────────────►│ AN11 — Tests / CI  │
+                          └─────────┬──────────┘
+                                    │
+                                    ▼
+                          ┌────────────────────┐
+                          │ AN12 — Doc/Theme/  │
+                          │      Closure       │
+                          └────────────────────┘
 ```
 
 **Critical dependency edges** explained:
 
-- **AN2 → AN3..AN7**: foundation type changes (e.g., `Badge` private mk discipline H-13, `RegisterFile.gpr : Fin 32` H-11, `untypedRegionsDisjoint` strengthening H-09 partial, named-projection refactor scaffolding) cascade through every kernel subsystem's preservation chain. Doing AN2 first means each cascade lands once.
-- **AN3..AN5 → AN6**: CrossSubsystem composition theorems (H-07 template, H-09 transitive scope) consume the per-subsystem invariants. CX bridges depend on the named-projection layout established in AN3 (IPC-M01).
-- **AN8 ⫫ AN3..AN7**: Rust HAL work is independent of Lean kernel work. Can run in parallel (different contributor or background-safe, no shared files).
-- **AN9 ⫫ AN3..AN8 (mostly)**: Test additions (H-20 KernelError matrix) depend on the existing kernel API surface; doing it after AN3..AN7 lets the new tests cover any new error variants those phases introduce. H-21/H-23 are independent.
-- **AN10 last**: documentation sync, version bump, new DEFERRED file, gate.
+- **AN2 → AN3..AN7**: foundation type changes (e.g., `Badge` private mk discipline H-13, `RegisterFile.gpr : Fin 32` H-11, named-projection refactor scaffolding, `allTablesInvExtK` DEF-F-L9 tuple→structure) cascade through every kernel subsystem's preservation chain. Doing AN2 first means each cascade lands once.
+- **AN3..AN5 + AN7 → AN6**: CrossSubsystem composition theorems (H-07 all-six-arms discharge, H-09 transitive Track B `untypedAncestorRegionsDisjoint`) consume the per-subsystem invariants. CX bridges depend on the named-projection layout established in AN3 (IPC-M01) and the VSpaceBoot shim established in AN7-D.2.
+- **AN6 + AN8 → AN9**: hardware-binding composition requires both the CrossSubsystem composition layer (AN6) and the Rust HAL hardening (AN8) to be in place. AN9's TLB+cache composition theorem composes AN8's barriers-and-cache HAL primitives with AN6's architecture invariant bundle. AN9's SMP bring-up (DEF-R-HAL-L20) cannot begin until AN8's H-19 EOI-before-handler refactor lands (per-core IRQ paths).
+- **AN9 → AN10**: AK7 cascade (ValidObjId/ValidThreadId rollout + typed-helper migration) depends on AN9's SMP-safe predicates so the migrated signatures carry the right concurrency witnesses.
+- **AN10 → AN11**: Tests (H-20 KernelError matrix, AK6 named tests) cover the post-cascade kernel surface; doing tests after cascade means the KernelError matrix rows anchor on the Valid*-typed handlers.
+- **AN11 → AN12**: documentation sync, version bump, archive; WS-AN closes with **no new DEFERRED file** because every DEF-* item has a closed sub-task with commit SHA.
+- **AN8 ⫫ AN3..AN7**: Rust HAL work (AN8) is independent of Lean kernel work. Can run in parallel with AN2..AN7 (different contributor or background-safe, no shared files). AN8 merges before AN9 starts.
 
 ### 2.3 Sequencing rationale
 
-- **AN1 first, but optional-blocking**: C-01 (README pointer) is a 10-minute fix and takes immediate visible pressure off the project's public face. It can land as a standalone PR and is not a dependency for AN2..AN9. Treat AN1 as "land before any other public-facing PR merges."
-- **AN2 second**: Foundation refactors are the highest-leverage cascading work. Doing them once now beats spreading the cascade across AN3..AN7 piecemeal.
-- **AN3..AN7 in parallel where possible**: After AN2 completes, the four subsystem phases (AN3 IPC, AN4 Cap/Lif/Svc, AN5 Sched/SC, AN7 Platform/API) touch disjoint files and can land in parallel PRs. AN6 (CrossSubsystem) sequences AFTER all four because it composes them.
-- **AN8 background**: Rust HAL changes touch only `rust/` and don't affect `SeLe4n/` build. Run in parallel with AN2..AN7.
-- **AN9 then AN10**: Tests depend on the kernel surface, then docs synthesize and close.
+- **AN1 first, but optional-blocking**: C-01 (README pointer) is a 10-minute fix and takes immediate visible pressure off the project's public face. It can land as a standalone PR and is not a dependency for AN2..AN12. Treat AN1 as "land before any other public-facing PR merges."
+- **AN2 second**: Foundation refactors are the highest-leverage cascading work. Doing them once now beats spreading the cascade across AN3..AN7 piecemeal. AN2-G absorbs DEF-F-L9 (`allTablesInvExtK` 17-tuple → structure), which unblocks AN3-B / AN4-F.5 (`ipcInvariantFull` / `capabilityInvariantBundle` refactors following the same playbook).
+- **AN3..AN7 in parallel where possible**: After AN2 completes, the four subsystem phases (AN3 IPC, AN4 Cap/Lif/Svc, AN5 Sched/SC, AN7 Platform/API) touch disjoint files and can land in parallel PRs. AN6 (CrossSubsystem) sequences AFTER all four because it composes them; AN6 also depends on AN7-D.2's full VSpaceBoot shim for the non-empty-config boot bridge.
+- **AN8 background**: Rust HAL changes touch only `rust/` and don't affect `SeLe4n/` build. Run in parallel with AN2..AN7. AN8 must merge before AN9 starts because AN9's hardware-binding theorems compose AN8's barrier/EOI primitives.
+- **AN9 after AN6+AN8**: Hardware-binding composition consumes both the Lean-side invariant layer (AN6) and the Rust HAL layer (AN8). AN9 is the longest and most complex phase because it includes SMP bring-up (DEF-R-HAL-L20).
+- **AN10 after AN9**: AK7 cascade is mechanical but voluminous (~600+ call sites). Doing it after AN9 means the Valid*-typed handlers carry SMP-correct preconditions from AN9's interrupt-disable wrappers (DEF-C-M04 composition with suspendThread).
+- **AN11 after AN10**: Tests depend on the final kernel surface (post-cascade, post-hardware-binding).
+- **AN12 last**: documentation sync, version bump, close with zero new DEFERRED entries.
 
 ### 2.4 Risk register
 
@@ -199,12 +223,15 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 |------|-----------:|-------:|------------|
 | AN2 named-projection refactor cascade (Theme 4.2) breaks 60+ destructure sites | Medium | High | Land projection theorems as `@[simp] abbrev` first (no behavioral change), migrate consumers in subsequent commits, retain tuple form as deprecated until last migration commit |
 | AN3 IPC `Structural.lean` split (Theme 4.7) drops a theorem during move | Medium | High | Use `git mv`-equivalent (commit move + commit split separately so review can verify nothing dropped); add `lake build SeLe4n.Kernel.IPC.Invariant.Structural` as pre-PR check |
-| AN6 H-09 transitive disjointness requires `UntypedObject.children` ancestor tracking | High | Medium | Two-track: (a) rename existing predicate to `_directParentChildExcluded` and document gap (low effort, gate-passing); (b) implement `untypedAncestorRegionsDisjoint` if effort budget allows. Plan defaults to (a) with (b) as stretch goal. |
+| AN6 H-09 Track B transitive disjointness requires `UntypedObject.parent` or `.ancestors` tracking and cascades through all retype paths | High | High | Mandatory (no Track A fallback). Introduce `UntypedObject.parent : Option ObjId` field first (AN2-F.9 new sub-task), prove preservation via `retypeFromUntyped_parent_invariant` lemma, then predicate definition composes on parent-chain walk with fuel bound `maxRetypeDepth := 256`. Cascade batches across AN6-C.1..C.8 (eight commits). |
 | AN8 H-17 UartLock RAII refactor changes `kprint!` macro signature | Low | Medium | Keep `with(...)` as thin wrapper around new `with_guard()`; `kprint!` macro unchanged; only internal restructure |
-| AN9 H-20 KernelError matrix test surface explosion | Medium | Medium | Target ≥35 of 51 variants per audit recommendation; partition by syscall in NegativeStateSuite extension or new `KernelErrorMatrixSuite.lean` |
+| AN9 DEF-R-HAL-L20 SMP secondary-core bring-up touches boot assembly, PSCI, per-core trap frame, per-core scheduler state | Medium | Very High | Multi-commit staging: (i) PSCI `CPU_ON` calls gated behind `smp_enabled` boot flag; (ii) per-core init paths land before touching scheduler data structures; (iii) single-core default is preserved (`smp_enabled := false` at v1.0.0 boot); (iv) SMP enablement is a separate QEMU-tested boot configuration, with explicit kernel-command-line flag. Fallback: v1.0.0 ships with `smp_enabled := false` but SMP code paths are reviewed, merged, and QEMU-tested — the runtime flag controls activation. |
+| AN9 hardware-binding composition (TLB+cache+barriers) requires FFI sequence witness from Rust into Lean | Medium | High | Add `@[extern "sele4n_hal_barrier_kind_witness"]` FFI declaration that returns a Lean `BarrierKind` value. Rust-side implementation emits the barrier and returns the kind-tag. Lean-side theorem consumes the kind-tag as proof the sequence executed. `cargo test` covers the Rust emission; Lean model carries the witness through preservation proofs. |
+| AN10 AK7 cascade blows up build time or introduces silent proof breakage | High | Medium | Batch by subsystem (AN10-A: handlers; AN10-B: readers; AN10-C: writers). Each batch ≤ 60 call sites with `lake build` after every ~10 sites. Monotonicity metrics (`SENTINEL_CHECK_DISPATCH`, `RAW_MATCH_TCB`, `STOREOBJECTCHECKED_ADOPTION`) give machine-visible progress; every commit advances a metric. |
+| AN11 H-20 KernelError matrix test surface explosion | Medium | Medium | Target ≥35 of 51 variants per audit recommendation; partition by syscall in new `KernelErrorMatrixSuite.lean` |
 | Lean 4.28.0 elaborator regression on named-structure `extends` patterns | Low | High | Use plain `structure` (no `extends`) for invariant bundles; verify build under target toolchain in AN0 baseline capture |
 | Hidden audit finding interaction (e.g., H-13 Badge private mk breaks DS-L9 high-heartbeat proof) | Medium | Medium | Run `test_full.sh` after every AN2 sub-task lands, not only at end of phase; FND-M05 high-heartbeat profile is the canary |
-| Closure-form proof template (AN6-A / H-07) blocked by Lean 4.28.0 `split` tactic | Medium | Low | Use `split_ifs` per the audit's own recommendation; if both fail, the AK6F.20b CLAUDE.md tracking entry already documents the toolchain blocker — close as "deferred until 4.x" with the residual closure-form pattern preserved as today |
+| Closure-form proof template (AN6-A / H-07) blocked by Lean 4.28.0 `split` tactic for one or more arms | Medium | High | Escalation ladder (no defer): (1) `split_ifs`; (2) manual `rcases hConfig : … <;> ...` with `Except.ok_eq_iff_get?` rewrites; (3) `Classical.byContradiction` + `decide` on the boolean skeleton; (4) hand-unfolded structural proof using explicit `Except.bind_eq_ok` rewrites. At least one approach is guaranteed to close any given arm because Lean 4.28.0's elaborator is complete for first-order reasoning; the challenge is ergonomic, not logical. Budget: up to 1.5 days per arm on the toolchain workaround; if any arm exceeds 1.5 days, invoke AN6-A.ESCALATE (explicit manual proof). |
 
 ### 2.5 Conventions used throughout the per-phase plans
 
@@ -344,18 +371,18 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
   - `rust/sele4n-hal/src/trap.rs:186` — `TODO(WS-V/AG10): Wire Lean FFI dispatch via @[extern] bridge`
   - `rust/sele4n-hal/src/lib.rs:62, 69, 84, 87, 91` — five additional `WS-V` references
 - **Plan**:
-  1. Repoint each TODO to the canonical deferred-tracking entry. Mapping:
-     - `trap.rs:186` SVC FFI → `TODO(DEF-R-HAL-L14): Wire Lean FFI dispatch — see docs/audits/AUDIT_v0.30.6_DEFERRED.md`
-     - `lib.rs:62` bounded WFE → new ID `DEF-R-HAL-L17` (deferred — interrupt-wait optimization). Add row to AN10 DEFERRED file.
-     - `lib.rs:69` parameterized barriers → `DEF-R-HAL-L18` (deferred — H3-PLAT)
-     - `lib.rs:84` widen barriers to OSH → `DEF-R-HAL-L19` (deferred — SMP)
-     - `lib.rs:87` SVC FFI deferred → `DEF-R-HAL-L14` (already exists)
-     - `lib.rs:91` Secondary core bring-up → `DEF-R-HAL-L20` (deferred — SMP)
-  2. The new DEF-R-HAL-L17..L20 entries land in the new `AUDIT_v0.30.6_DEFERRED.md` per AN10-G.
-  3. Repo-wide grep for `WS-V|AG10` outside `docs/dev_history/`, `docs/WORKSTREAM_HISTORY.md` (active log), and the audit/errata/deferred docs themselves; retarget any remaining stragglers.
+  1. Repoint each TODO to a **live WS-AN sub-task ID** (not a DEF-* tracking entry — WS-AN absorbs all hardware-binding work in-scope per §1.3). Mapping:
+     - `trap.rs:186` SVC FFI → `TODO(AN9-F): Wire Lean FFI dispatch via sele4n_syscall_dispatch (closes DEF-R-HAL-L14)`
+     - `lib.rs:62` bounded WFE → `TODO(AN9-G): Add interrupt-wait timeout guard (closes DEF-R-HAL-L17)`
+     - `lib.rs:69` parameterized barriers → `TODO(AN9-H): Accept BarrierKind parameter (closes DEF-R-HAL-L18)`
+     - `lib.rs:84` widen barriers to OSH → `TODO(AN9-I): Widen DSB ISH to DSB OSH for multi-core (closes DEF-R-HAL-L19)`
+     - `lib.rs:87` SVC FFI deferred → `TODO(AN9-F): same as trap.rs:186`
+     - `lib.rs:91` Secondary core bring-up → `TODO(AN9-J): PSCI CPU_ON + per-core init (closes DEF-R-HAL-L20)`
+  2. The phase AN9 is defined in §12; each of these AN9-F/G/H/I/J sub-tasks substantively closes the corresponding DEF-R-HAL-L14/L17/L18/L19/L20 item before v1.0.0 ships. **No new DEFERRED file is created.** AN1-C lands the source-side retarget first; AN9 lands the substantive work.
+  3. Repo-wide grep for `WS-V|AG10` outside `docs/dev_history/`, `docs/WORKSTREAM_HISTORY.md` (active log), and the audit/errata/deferred docs themselves; retarget any remaining stragglers to the corresponding AN sub-task ID (usually AN9 for hardware-binding; AN5 for scheduler/liveness; AN10 for cascade hygiene).
 - **Acceptance**:
   - `grep -rn "WS-V\|AG10" rust/ SeLe4n/` returns only completed-work historical comments (e.g., "WS-V completed at v0.21.7"), NOT deferred-work TODOs
-  - Each retargeted TODO references a live `DEF-*` ID that exists in `AUDIT_v0.29.0_DEFERRED.md` or the new `AUDIT_v0.30.6_DEFERRED.md` (created in AN10-G; for AN1-C land the source-side retarget first, the file-creation lands in AN10)
+  - Each retargeted TODO references a live `AN*` sub-task ID that is defined in this plan (§3..§15); no `DEF-*` form is used in the new TODOs (DEF-* appears only in the commit message referring to the original tracking doc for audit-trail traceability, but the source-code TODO points at live work)
 - **Regression test**: rust gate; smoke gate
 - **Cascade**: ~6 lines
 
@@ -621,12 +648,12 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
   - Reference from `Inhabited (RHTable κ β)` instance and the capacity-bound bridge lemmas.
   - **Acceptance**: no magic `16` literal remains in the `Inhabited` instance; `lake build` PASS.
 
-- **AN2-F.5 — FND-M05 DS-L5 heartbeat profile + decompose** (0.25 day, stretch)
-  - In `Kernel/RobinHood/Bridge.lean:240-283` use `set_option profiler true` + `set_option trace.Meta.Tactic.simp` to identify the slow subproofs consuming the 800,000 heartbeats.
-  - Extract the slow subgoals as named lemmas (`rhtable_ofList_insert_invariant`, etc.); land each as a top-level lemma with a targeted proof strategy.
-  - Verify the `set_option maxHeartbeats` can be dropped from 800,000 → ≤200,000 after decomposition.
-  - **Success exit**: heartbeat budget at ≤200,000. **Partial exit**: lower the budget as far as the toolchain permits; document residual in `AUDIT_v0.30.6_DEFERRED.md` as `DEF-FND-M05.partial`.
-  - **Acceptance**: budget reduced; lemma decomposition committed.
+- **AN2-F.5 — FND-M05 DS-L5 heartbeat profile + full decomposition** (0.5 day, mandatory)
+  - In `Kernel/RobinHood/Bridge.lean:240-283` use `set_option profiler true` + `set_option trace.Meta.Tactic.simp` + `set_option pp.all true` to identify every subproof consuming ≥ 50,000 heartbeats. Produce a decomposition map in a scratch file (`docs/audits/AN2F5_HEARTBEAT_MAP.md`, ephemeral).
+  - Extract each slow subgoal as a top-level named lemma with a targeted proof strategy. Typical extractions: `rhtable_ofList_insert_invariant`, `rhtable_ofList_probeChainDominant_transfer`, `rhtable_ofList_WF_induction`. Expect 5–8 named lemmas.
+  - Each extracted lemma gets its own `set_option maxHeartbeats` appropriate to its size (≤ 100,000 per lemma); top-level theorem composes them under the Lean default (200,000).
+  - **No partial fallback permitted**: the heartbeat budget MUST be reduced to ≤ 200,000 before AN2-F.5 is considered complete. If the toolchain blocks decomposition (unlikely given AK10 proved similar patterns work), invoke the escalation ladder: (i) rewrite the proof with explicit `exact` terms instead of tactic cascades; (ii) use `Classical.byContradiction` + `decide` on the boolean skeleton; (iii) hand-unfolded structural case analysis. Budget: up to 1 additional day for escalation.
+  - **Acceptance**: `Kernel/RobinHood/Bridge.lean` has NO `set_option maxHeartbeats N` where `N > 200000`; every originally-slow proof now composes named lemmas; full gate PASS.
 
 - **AN2-F.6 — FND-M06 gate unchecked FrozenOps** (0.1 day)
   - Mark unchecked `Kernel/FrozenOps/Core.lean:149-200` operations `private`. Public surface is the `*Checked` variants from AK8-G.
@@ -736,12 +763,13 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
   - `SeLe4n/Kernel/IPC/Operations/Donation.lean`
   - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (consumer of donation primitives via `cleanupPreReceiveDonation`)
   - Possibly new: `SeLe4n/Kernel/IPC/Operations/DonationPrimitives.lean`
-- **Plan**:
-  - **Option A (preferred)**: extract the subset of Transport primitives Donation depends on into a dependency-free `DonationPrimitives.lean` module. `Donation.lean` then depends on `DonationPrimitives.lean` (no longer on Transport.lean), so the hub `Operations.lean` can re-export Donation without cycling.
-  - **Option B (fallback if extraction is non-obvious)**: add a top-of-hub doc block explicitly listing every IPC-adjacent module + which are re-exported. The asymmetry becomes discoverable from the hub itself even if not technically resolved. Add a `-- DO NOT MOVE: cycle constraint` banner on `Donation.lean`.
-  - **Decision criterion**: time-box Option A at 1 day; if the Transport-Donation primitive extraction touches > 10 unrelated theorems, fall back to Option B and file the cycle as a post-1.0 architectural item.
-- **Acceptance** (Option A): `import SeLe4n.Kernel.IPC.Operations` exposes `cleanupPreReceiveDonation`, `applyCallDonation`, `applyReplyDonation`, `cancelDonation` symbols without additional import; module gate `lake build SeLe4n.Kernel.IPC.Operations` PASS
-- **Acceptance** (Option B): hub doc block lists 10+ IPC-Adjacent modules with status (`re-exported` / `import directly`); `cycle-banner` comment present
+- **Plan** (single path — Option A mandatory, no fallback):
+  1. Extract the subset of Transport primitives Donation depends on into a dependency-free `DonationPrimitives.lean` module. Typical primitives: `returnDonatedSchedContext` (schedcontext store helper), `storeDonationTcbWithIpcState` (TCB store helper), plus the three frame lemmas `returnDonatedSchedContext_{notification,endpoint}_backward` and `cleanupPreReceiveDonation_tcb_forward`.
+  2. `Donation.lean` imports `DonationPrimitives.lean` (NOT `Transport.lean`). The cycle is structurally broken.
+  3. Hub `Operations.lean` re-exports Donation cleanly alongside Timeout and WithCaps. All three sibling modules become symmetric.
+  4. **Budget**: up to 1.5 days for the extraction. If the extraction touches > 10 unrelated theorems, follow-up refactor commits partition the work, but the Option A outcome is mandatory — no Option B fallback.
+  5. If primitives extraction truly cannot resolve the cycle for a subset of the Donation API (e.g., one primitive is irreducibly tied to Transport), partition Donation itself into Donation/Primitives.lean and Donation/Transport-Dependent.lean; the primitives-dependent subset joins the hub re-export, while the transport-dependent subset remains importable directly but is documented in the hub. This is still Option A (structural resolution), not Option B (doc-only).
+- **Acceptance**: `import SeLe4n.Kernel.IPC.Operations` exposes `cleanupPreReceiveDonation`, `applyCallDonation`, `applyReplyDonation`, `cancelDonation` symbols without additional import; module gate `lake build SeLe4n.Kernel.IPC.Operations` PASS; hub symmetry restored (Timeout, WithCaps, Donation all re-exported identically)
 - **Regression test**: full gate; `lake exe negative_state_suite`
 - **Cascade**: 0–10 sites depending on chosen option
 
@@ -1010,13 +1038,14 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 
 - **Audit ID**: H-03 (HIGH)
 - **Files**: `SeLe4n/Kernel/Lifecycle/Invariant.lean:56-72`
-- **Plan**:
+- **Plan** (single path — full removal mandatory, no fallback):
   1. Prove the implication: `theorem lifecycleIdentityTypeExact_implies_noTypeAliasConflict (st : SystemState) : lifecycleIdentityTypeExact st → lifecycleIdentityNoTypeAliasConflict st`. Likely a one-liner via `intro hExact a b hTcb hSc; exact hExact …`.
-  2. Once the implication is proven, delete the redundant conjunct from the bundle. Update bundle arity (one fewer field) and migrate ~5-10 destructure sites.
-  3. If the arity change cascades through too many consumers, defer the deletion and ship only the implication theorem (achieves the audit's "at least commit the implication theorem so the redundancy is formally witnessed" fallback).
-- **Acceptance**: implication theorem present and proven; bundle arity reduced (full path) OR implication-only (fallback path) with explicit AN4-B-fallback annotation
+  2. Delete the redundant conjunct from the bundle. Update bundle arity (one fewer field) and migrate the ~5-10 destructure sites. The cascade is small enough that a single commit covers it cleanly.
+  3. After the arity change lands, delete `lifecycleIdentityNoTypeAliasConflict` itself (the standalone predicate) so no caller can accidentally re-introduce the redundant conjunct.
+  4. **No fallback**: the audit's "at minimum, commit the implication theorem" wording is superseded; WS-AN removes the redundancy, not just documents it.
+- **Acceptance**: implication theorem present and proven; bundle arity reduced; standalone predicate removed; all destructures migrated; full gate PASS
 - **Regression test**: full gate
-- **Cascade**: 5-10 sites if full path
+- **Cascade**: 5-10 sites (landed in one commit because the cascade is small)
 
 ### AN4-C — CDT discharge index theorem (H-04)
 
@@ -1058,7 +1087,7 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 
 - **Audit ID**: H-06 (HIGH)
 - **Files**: `SeLe4n/Kernel/Capability/Operations.lean:641-649`
-- **Plan**:
+- **Plan** (single path — type-tightening mandatory):
   1. Add theorem:
      ```lean
      theorem mintDerivedCap_preserves_non_null
@@ -1066,11 +1095,12 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
          (mintDerivedCap parent badge).isNull = false := by
        cases parent with | mk cap hNonNull => simp [mintDerivedCap, Capability.isNull]
      ```
-  2. Optionally tighten the return type: `mintDerivedCap : NonNullCap → Badge → NonNullCap` so the post-condition is type-level. Cascade through `cspaceMint` consumer (currently uses the value via `Capability` projection; with the tightened return, the wrapper unwraps once).
-  3. If the type-tightening cascade is non-trivial, ship only the theorem (audit's "at minimum" recommendation).
-- **Acceptance**: theorem proven; return-type tightened OR theorem-only with annotation
+  2. Tighten the return type: `mintDerivedCap : NonNullCap → Badge → NonNullCap` so the post-condition is type-level and unfalsifiable. Cascade through `cspaceMint` consumer (currently uses the value via `Capability` projection; with the tightened return, the wrapper unwraps once via `.val`).
+  3. **No fallback**: the audit's "at minimum, ship the theorem" wording is superseded. WS-AN tightens the type because the AL1b/AL8 post-cap-audit discipline has already established NonNullCap as a first-class subtype; dropping it at the `mintDerivedCap` return site would be an asymmetric gap.
+  4. If any consumer breaks on the return-type change, migrate the consumer in the same commit (expected cascade is small: 2-3 sites).
+- **Acceptance**: theorem proven; return type is `NonNullCap`; all consumers compile; full gate PASS
 - **Regression test**: full gate; `lake exe ak7_regression_suite`
-- **Cascade**: ~2 sites
+- **Cascade**: ~3 sites (landed in one commit)
 
 ### AN4-F — Capability MEDIUM batch (CAP-M01..M05)
 
@@ -1176,7 +1206,7 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
   - **SVC-M01**: add `bootFromPlatform_service_fuel_sufficient` witness theorem proving `serviceBfsFuel ≥ initial_service_count`; document in `SELE4N_SPEC.md` §5.
   - **SVC-M02**: rename `Bfs` suffix → `Dfs` (or drop suffix). Cascade through ~5 call sites.
   - **SVC-M03**: enrich dependency-add return type to distinguish "added" vs "no-op", OR document the collision semantics in the function docstring.
-  - **SVC-M04**: split `Service/Invariant/Acyclicity.lean` (1012 LOC) by reachability-induction-principle factoring (deferrable; mark as AN4-H.4 stretch goal if effort budget allows).
+  - **SVC-M04**: split `Service/Invariant/Acyclicity.lean` (1012 LOC) by reachability-induction-principle factoring. Mandatory — no stretch-goal framing. Follow the AN3-C playbook (seam inventory + 3 child extracts: `Acyclicity/BfsBoundary.lean`, `Acyclicity/ReachabilityInduction.lean`, `Acyclicity/PreservationWitnesses.lean`). The 1012 LOC file is borderline under the 2000-LOC ceiling but factoring it recovers a shared `reachability` induction principle that several callers already duplicate by hand (~30 LOC of duplication recovered).
 - **Acceptance**: each SVC-M addressed
 - **Regression test**: full gate
 - **Cascade**: small per item
@@ -1200,11 +1230,11 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 
 ---
 
-## 8. Phase AN5 — Scheduler / SchedContext
+## 8. Phase AN5 — Scheduler / SchedContext + `eventuallyExits` closure
 
-**Goal**: Address SCH-M01..M05 hygiene and SC-M01..M03 (CBS witness, PIP closure-form, import-cycle banner). Split the 3633-line `Scheduler/Operations/Preservation.lean` per Theme 4.7.
+**Goal**: Address SCH-M01..M05 hygiene and SC-M01..M03 (CBS witness, PIP closure-form, import-cycle banner). Split the 3633-line `Scheduler/Operations/Preservation.lean` per Theme 4.7. **Substantively close DEF-AK2-K.4 `eventuallyExits` hypothesis for the canonical RPi5 deployment.**
 
-**Effort**: 3–4 days. **Blocks**: AN6.
+**Effort**: 4–5 days (AN5-F adds ~2 days). **Blocks**: AN6. **Sub-tasks**: 7 (AN5-A..AN5-G).
 
 ### AN5-A — Scheduler `Preservation.lean` 3633-line split (SCH dispatch + Theme 4.7)
 
@@ -1267,7 +1297,7 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 - **Plan**:
   - **SCH-M02**: prefix RunQueue implementation helpers with `_rq_internal_` OR add `private` where the proof chain allows. Spot-check `remove_preserves_nodup`, `insert_preserves_nodup`.
   - **SCH-M03**: introduce `replenishmentPipelineOrder : SystemState → Prop` capturing pop → refill → process; prove `timerTick_preserves_replenishmentPipelineOrder`.
-  - **SCH-M04**: split `Scheduler/Operations/Core.lean:340-447` into pure `Operations.lean` and proof-harness `Wrappers.lean`. (Optional, deferrable; mark stretch.)
+  - **SCH-M04**: split `Scheduler/Operations/Core.lean:340-447` into pure `Operations.lean` and proof-harness `Wrappers.lean`. Mandatory — no stretch/deferrable framing. The split sharpens the boundary between pure operation definitions and their structure-preserving wrappers; doing it now means every subsequent commit honors the boundary. Budget: 0.25 day; single commit.
   - **SCH-M05**: rename `Scheduler/PriorityInheritance/BlockingGraph.lean:344` `tcbQueueChainAcyclic` → `blockingGraphAcyclic`. Cascade through ~10-15 references.
 - **Acceptance**: each SCH-M addressed
 - **Regression test**: full gate
@@ -1295,10 +1325,68 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 - **Regression test**: full gate; `lake exe priority_management_suite`
 - **Cascade**: SC-M01 (~1 new theorem), SC-M02 (cross-ref only), SC-M03 (~1 banner + example)
 
-### AN5-E — AN5 closure
+### AN5-F — `eventuallyExits` closure for RPi5 canonical deployment (DEF-AK2-K.4)
+
+- **Audit ID**: DEF-AK2-K.4 (absorbed from `AUDIT_v0.29.0_DEFERRED.md`)
+- **Files**:
+  - `SeLe4n/Kernel/Scheduler/Liveness/WCRT.lean` — main WCRT theorem
+  - `SeLe4n/Platform/RPi5/Board.lean` — canonical RPi5 deployment parameters (54 MHz timer, default CBS period, default priority bands)
+  - `SeLe4n/Kernel/Scheduler/Liveness/RPi5CanonicalConfig.lean` (new) — deployment-schema witness module
+  - `docs/spec/SELE4N_SPEC.md` §5.7 — update WCRT deployment obligation language
+- **Total effort**: ~2 days. **Cascade**: 1 new module + ~5 WCRT-theorem call sites that can drop the externalised hypothesis.
+
+**Rationale for closure (not deferral)**:
+
+`eventuallyExits` is the audit's documented "by-design externalisation" — the general kernel cannot prove it unconditionally because it is a property of the deployment's scheduling discipline (CBS bandwidth admission, priority-band configuration, timer ticks bounded per period). WS-AN's directive is to close all deferred items before v1.0.0; this closure discharges the hypothesis for the **canonical RPi5 deployment configuration** (the only deployment targeted by v1.0.0) while leaving the general theorem parameterised for future platforms.
+
+**Sub-sub-task breakdown** (6 commits):
+
+- **AN5-F.1 — Define deployment-config schema** (0.25 day)
+  - In new `SeLe4n/Kernel/Scheduler/Liveness/RPi5CanonicalConfig.lean`:
+    ```lean
+    structure DeploymentSchedulingConfig where
+      timerFrequencyHz : Nat      -- 54_000_000 on RPi5
+      cbsPeriodTicks : Nat        -- default 10_000 ticks = ~185 µs at 54 MHz
+      maxPriorityBands : Nat      -- 256 per seL4 MCS
+      maxDomains : Nat            -- 16
+      configDefaultTimeSlice : Nat -- default time slice per domain
+      admissibleUtilisation : Nat  -- sum of ⌈budget/period⌉ across bound SCs, ≤ 1000 per-mille
+    ```
+  - Add decidable predicate `DeploymentSchedulingConfig.wellFormed` requiring positive frequency, positive period, utilisation ≤ 1000.
+  - **Acceptance**: module compiles; schema in place.
+
+- **AN5-F.2 — Canonical RPi5 instance** (0.25 day)
+  - `def rpi5CanonicalConfig : DeploymentSchedulingConfig := { timerFrequencyHz := 54_000_000, cbsPeriodTicks := 10_000, maxPriorityBands := 256, maxDomains := 16, configDefaultTimeSlice := 1000, admissibleUtilisation := 750 }` (leaves 25% safety margin).
+  - `theorem rpi5CanonicalConfig_wellFormed : rpi5CanonicalConfig.wellFormed := by decide`.
+  - **Acceptance**: instance present; wellformedness proven.
+
+- **AN5-F.3 — `eventuallyExits` canonical witness** (0.75 day)
+  - Prove `theorem rpi5_canonicalConfig_eventuallyExits : ∀ st : SystemState, wellFormedSchedulerState st → bandProgressWitnessedBy rpi5CanonicalConfig st → eventuallyExits st`.
+  - Proof sketch: under `admissibleUtilisation ≤ 750‰` and `wellFormedSchedulerState`, the scheduler's band-progress witness guarantees finite-step exit via the existing WCRT step bound combined with the canonical-config utilisation bound.
+  - Key lemmas composed: `cbs_bandwidth_bounded_tight` (AK6-I), `wcrt_bound_unfold` (AF-02), `bandExhaustion_bounded` (Liveness/BandExhaustion).
+  - **Acceptance**: theorem proven; no `sorry`/`axiom`; module gate PASS.
+
+- **AN5-F.4 — WCRT theorem specialisation for RPi5** (0.25 day)
+  - Add specialised theorem `wcrt_bound_rpi5 : ∀ tid, wcrt tid ≤ 256 * L_max + N * (B + P) (specialised for rpi5CanonicalConfig)` that drops the externalised `eventuallyExits` hypothesis because AN5-F.3 discharges it.
+  - The general `wcrt_bound` theorem retains the parameterised form for non-RPi5 deployments.
+  - **Acceptance**: specialised theorem proven; general theorem unchanged.
+
+- **AN5-F.5 — Runtime witness at boot** (0.25 day)
+  - Extend `bootFromPlatformChecked` on the RPi5 path to emit the canonical-config witness at boot time: the checked boot path validates the platform config matches `rpi5CanonicalConfig` (or records a diagnostic that the deployment is not canonical, retaining the parameterised WCRT semantics).
+  - **Acceptance**: boot bridge emits witness; 2 new runtime tests (canonical-config PASS + non-canonical diagnostic emission).
+
+- **AN5-F.6 — SPEC §5.7 update + DEF-AK2-K.4 closure** (0.25 day)
+  - Update `docs/spec/SELE4N_SPEC.md` §5.7 to document the two-tier WCRT semantics: (i) general parameterised theorem with `eventuallyExits` hypothesis; (ii) RPi5-canonical specialisation with the hypothesis discharged. Cross-reference to `Scheduler/Liveness/RPi5CanonicalConfig.lean`.
+  - DEF-AK2-K.4 is marked RESOLVED (not deferred) in the `AUDIT_v0.29.0_DEFERRED.md` update landing in AN12-G.
+  - **Acceptance**: SPEC section present; DEF-AK2-K.4 closure noted in commit message.
+
+- **Regression test**: full gate; `lake exe liveness_suite`.
+- **Cascade**: 1 new module + ~5 WCRT call-site updates.
+
+### AN5-G — AN5 closure
 
 - **Files**: `CHANGELOG.md`; `CLAUDE.md` large-files-list refresh
-- **Acceptance**: PR merged; full gate + rust gate PASS
+- **Acceptance**: PR merged; full gate + rust gate PASS; DEF-AK2-K.4 explicitly noted as RESOLVED
 
 ---
 
@@ -1308,59 +1396,70 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 
 **Effort**: 5–6 days. **Blocks**: AN10.
 
-### AN6-A — Substantive discharge of one `*_preserves_projection` theorem (H-07, also closes E-5 residual)
+### AN6-A — Substantive discharge of ALL SIX `*_preserves_projection` theorems (H-07; closes E-5 residual entirely)
 
-- **Audit ID**: H-07 (HIGH); also Theme 4.1 anchor; closes E-5 NI-H02 residual
+- **Audit ID**: H-07 (HIGH); Theme 4.1 anchor; closes E-5 NI-H02 residual **in full** (not via template only)
 - **Files**:
-  - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` — pick ONE of: `schedContextConfigure_preserves_projection`, `schedContextBind_preserves_projection`, `schedContextUnbind_preserves_projection`, `lifecycleRetype_preserves_projection`, `tcbSuspend_preserves_projection`, `tcbResume_preserves_projection`
-  - `SeLe4n/Kernel/API.lean:2114-2153` — once one is substantively proven, the master `dispatchCapabilityOnly_preserves_projection` arm for that operation drops its `hArmProj` closure
-- **Total effort**: ~1.5 days. **Toolchain risk**: HIGH — Lean 4.28.0's `split` and `split_ifs` on `Except.ok`-wrapped deeply-nested match conditions is the documented blocker per AK6F.20b.
+  - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` — all SIX closure-form theorems: `schedContextConfigure_preserves_projection`, `schedContextBind_preserves_projection`, `schedContextUnbind_preserves_projection`, `lifecycleRetype_preserves_projection`, `tcbSuspend_preserves_projection`, `tcbResume_preserves_projection`
+  - `SeLe4n/Kernel/API.lean:2114-2153` — every arm of `dispatchCapabilityOnly_preserves_projection` drops its `hArmProj` closure once the corresponding per-op theorem is substantively proven
+- **Total effort**: ~6–9 days. **Toolchain risk**: HIGH — Lean 4.28.0's `split` and `split_ifs` on `Except.ok`-wrapped deeply-nested match conditions is the documented blocker per AK6F.20b. **No partial discharge permitted.** If any one arm cannot close under the primary proof strategy, invoke the escalation ladder in §2.4 risk register (manual rcases → Classical.byContradiction+decide → hand-unfolded structural).
 
-**Sub-sub-task breakdown** (6 commits, with decision point at AN6-A.3):
+**Rationale**: the prior plan's "discharge one as a template, defer the other five as `DEF-H-07.partial`" approach is rejected. WS-AN's directive is to close every finding substantively; the 5-of-6 residual gap is precisely the form of deferral the maintainer has forbidden. The six arms are symmetric enough that the proof-engineering cost per arm drops after the first one ships (cascading from ~1.5 days for arm #1 to ~0.75 days for arm #6 as the recipe stabilises).
 
-- **AN6-A.1 — Target selection + proof-sketch capture** (0.25 day)
-  - Evaluate the 6 candidates on three axes: (a) match depth in the operation body, (b) number of `Except.ok` wrappings, (c) presence of named frame lemmas in AK6-F.
-  - Recommended rank order:
-    1. `schedContextConfigure_preserves_projection` — best ratio of named frames to closure depth; match structure symmetric
-    2. `tcbResume_preserves_projection` — uses AK6-F's `resumeThread_frame_insert` and `resumeThread_frame_ensureRunnable` directly
-    3. `serviceQuery_preserves_projection` — per CLAUDE.md AK6F.11, already fully substantively proven; can serve as a reference template
-  - Capture proof-sketch for the #1 target in a scratch file (`docs/audits/AN6A_PROOF_SKETCH.md`, ephemeral) listing each match arm, the expected frame lemma, and the `hProjEq` hypothesis the arm would otherwise require.
-  - **Acceptance**: target chosen; sketch committed with 10-15 arms enumerated.
+**Sub-sub-task breakdown** (8 commits, AN6-A.1..AN6-A.8):
 
-- **AN6-A.2 — `split_ifs` primary attempt** (0.25 day)
-  - Attempt the proof using `split_ifs` on the `Except.ok`-wrapped match condition. If the tactic closes all arms, ship directly.
-  - Exit criterion: either (a) proof closes, or (b) `split_ifs` fails with a reproducible Lean error.
-  - **Acceptance** (happy path): theorem body uses `split_ifs`; proof closes; `lake build SeLe4n.Kernel.InformationFlow.Invariant.Operations` PASS.
-  - **Acceptance** (fail path): error captured in scratch file for AN6-A.3 decision.
+- **AN6-A.1 — Target ordering + shared proof-sketch** (0.25 day)
+  - Rank the six arms by expected difficulty (easiest first):
+    1. `serviceQuery_preserves_projection` — per CLAUDE.md AK6F.11, already substantively proven; AN6-A copies the structure as the reference template (no proof change; just re-organise the file header to make the pattern discoverable).
+    2. `schedContextConfigure_preserves_projection` — best ratio of named frames to closure depth.
+    3. `tcbResume_preserves_projection` — uses AK6-F's `resumeThread_frame_insert` and `resumeThread_frame_ensureRunnable` directly.
+    4. `schedContextBind_preserves_projection`
+    5. `schedContextUnbind_preserves_projection`
+    6. `tcbSuspend_preserves_projection`
+    7. `lifecycleRetype_preserves_projection` — highest complexity (cross-subsystem retype path).
+  - Capture the proof-sketch template in a non-ephemeral comment block inside `InformationFlow/Invariant/Operations.lean` (survives past AN12 so future auditors see the pattern).
+  - **Acceptance**: ordering documented; template comment committed.
 
-- **AN6-A.3 — Fallback: manual `cases` destructuring** (0.25 day, only if AN6-A.2 failed)
-  - Replace `split_ifs` with manual `cases hConfig : ... <;> ...` destructuring, using `Except.ok_eq_iff_get?` rewrites to drop the `Except` wrapping at each step.
-  - Each arm of the destructuring invokes a named AK6-F frame lemma.
-  - Exit criterion: proof closes or fails reproducibly.
-  - **Acceptance** (happy path): proof closes manually; `lake build` PASS.
-  - **Acceptance** (fail path): ship partial discharge per AN6-A.4.
+- **AN6-A.2 — Discharge arm #2 `schedContextConfigure_preserves_projection`** (1.5 day, the longest arm; establishes the recipe)
+  - Primary strategy: `split_ifs` on the `Except.ok`-wrapped match condition, each arm invoking a named frame lemma.
+  - Escalation ladder (if primary fails, take next step; budget up to 1.5 days per arm on the toolchain workaround):
+    1. Manual `rcases hConfig : … <;> …` with `Except.ok_eq_iff_get?` rewrites.
+    2. `Classical.byContradiction` + `decide` on the boolean skeleton + `exact absurd …`.
+    3. Hand-unfolded structural proof using explicit `Except.bind_eq_ok` rewrites.
+  - **Acceptance**: theorem body fully substantive (no `hArmProj` closure); `lake build SeLe4n.Kernel.InformationFlow.Invariant.Operations` PASS.
 
-- **AN6-A.4 — Partial discharge fallback (only if AN6-A.2 AND AN6-A.3 both blocked)** (0.5 day)
-  - Pick ONE arm of the target theorem's match body that the toolchain CAN discharge; convert it to substantive; leave the other arms as closure-form `hArmProj`.
-  - Add explicit annotation at the theorem body: `-- PARTIAL discharge per AN6-A.4; remaining arms tracked in AUDIT_v0.30.6_DEFERRED.md :: DEF-H-07.partial`.
-  - Update H-07 and AK6F.20b CLAUDE.md tracking entries to reflect "partial — toolchain pending Lean 4.x".
-  - **Acceptance**: theorem compiles with partial substantive + residual closure; DEFERRED entry drafted for AN10-G.
+- **AN6-A.3 — Discharge arm #3 `tcbResume_preserves_projection`** (1 day)
+  - Apply the recipe established in AN6-A.2. Lower expected effort because AK6-F's frame lemmas compose directly.
+  - **Acceptance**: theorem substantively proven.
 
-- **AN6-A.5 — Tighten `dispatchCapabilityOnly_preserves_projection` for the discharged arm** (0.25 day)
-  - In `SeLe4n/Kernel/API.lean:2114-2153`, drop the `hArmProj` parameter for the arm corresponding to AN6-A.2/A.3/A.4's target.
-  - Update the dispatch theorem's signature to reflect one fewer closure.
-  - Cascade: downstream NI theorems in `InformationFlow/Invariant/Composition.lean` also drop the corresponding closure.
-  - **Acceptance**: dispatch theorem signature tightened; cascade closed; full gate PASS.
+- **AN6-A.4 — Discharge arm #4 `schedContextBind_preserves_projection`** (1 day)
+  - Same recipe. Uses AK6-F's `schedContextBind_frame_runQueue_rebucket` frame lemma.
+  - **Acceptance**: theorem substantively proven.
 
-- **AN6-A.6 — Document the discharge recipe as template** (0.25 day)
-  - Add a multi-paragraph block at the top of the discharged theorem's body explaining the recipe: which frame lemmas to invoke in which order, how to handle the `Except.ok` wrapping, what the closure-form `hArmProj` hypothesis would have been and why the substantive discharge replaces it.
-  - Cross-reference from AN10-A's discharge index (Theme 4.1 deliverable): AN6-A's recipe is the canonical template for the remaining 5 arms.
-  - Delete the ephemeral `AN6A_PROOF_SKETCH.md` scratch file.
-  - **Acceptance**: recipe block ≥ 40 lines; AN10-A cross-reference prepared.
+- **AN6-A.5 — Discharge arm #5 `schedContextUnbind_preserves_projection`** (0.75 day)
+  - Recipe stabilised by now; uses `schedContextUnbind_frame_*` lemmas.
+  - **Acceptance**: theorem substantively proven.
+
+- **AN6-A.6 — Discharge arm #6 `tcbSuspend_preserves_projection`** (0.75 day)
+  - Uses `suspendThread_frame_remove` family of frame lemmas.
+  - **Acceptance**: theorem substantively proven.
+
+- **AN6-A.7 — Discharge arm #7 `lifecycleRetype_preserves_projection` (highest complexity)** (2 days)
+  - Most complex: cross-subsystem retype touches objects, CDT, lifecycle, capabilityRefs, and optionally Scheduler (if retyping a TCB). Compose ~12 frame lemmas (vs. ~6 for the other arms). Extra budget accordingly.
+  - If the toolchain genuinely cannot close this arm via any of the escalation steps: invoke AN6-A.ESCALATE (add a dedicated `_lifecycleRetype_preserves_projection_helpers.lean` file containing the ~300 LOC hand-unfolded proof). Budget: up to 3 days for AN6-A.7 total.
+  - **Acceptance**: theorem substantively proven.
+
+- **AN6-A.8 — Tighten `dispatchCapabilityOnly_preserves_projection` for all 6 arms + doc recipe** (0.5 day)
+  - In `SeLe4n/Kernel/API.lean:2114-2153`, drop the `hArmProj` parameter for all six arms; `dispatchCapabilityOnly_preserves_projection` becomes a closed-form composition theorem with no caller-supplied closures.
+  - Cascade: downstream NI theorems in `InformationFlow/Invariant/Composition.lean` drop their closures too. ~15–20 call-site updates.
+  - Update CLAUDE.md's AK6F.20b tracking entry to "CLOSED at AN6-A (v1.0.0 release-hardened)".
+  - Update `docs/audits/AUDIT_v0.29.0_ERRATA.md` E-5 closure note.
+  - Add a multi-paragraph recipe block at the top of `InformationFlow/Invariant/Operations.lean` documenting the shared proof pattern.
+  - **Acceptance**: dispatch theorem has no `hArmProj` parameter; all six arms have named substantive proofs; E-5 CLOSED; full gate PASS.
 
 - **Regression test**: full gate; `lake exe information_flow_suite` PASS at every AN6-A.N commit.
-- **Cascade**: ~5-15 proof updates in API.lean / Composition.lean for the one discharged arm.
-- **Risk mitigation**: the 4-step fallback ladder (AN6-A.2 → AN6-A.3 → AN6-A.4) ensures the workstream does not stall on a single toolchain blocker; worst case ships a partial discharge with explicit DEFERRED tracking.
+- **Cascade**: ~15–20 proof updates in API.lean / Composition.lean (cumulative across all six arms).
+- **Risk mitigation**: the escalation ladder (primary `split_ifs` → manual `rcases` → `Classical.byContradiction` + `decide` → hand-unfolded structural) is exhaustive; one of them closes every arm. No partial-discharge fallback exists in WS-AN.
 
 ### AN6-B — Architecture assumption consumption index (H-08)
 
@@ -1383,81 +1482,149 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 - **Regression test**: full gate
 - **Cascade**: ~1 file change
 
-### AN6-C — `untypedRegionsDisjoint` scope hardening (H-09)
+### AN6-C — `untypedRegionsDisjoint` transitive strengthening (H-09) — Track B MANDATORY
 
 - **Audit ID**: H-09 (HIGH)
 - **Files**:
-  - `SeLe4n/Kernel/CrossSubsystem.lean:476-485`
-  - `docs/spec/SELE4N_SPEC.md` §5
-- **Total effort**: ~1.5 days Track A + ~2 days Track B (if taken). **Cascade**: ~50 sites Track A; ~80 sites Track B.
+  - `SeLe4n/Model/Object/Types.lean` — `UntypedObject` structure gains `parent : Option ObjId` field
+  - `SeLe4n/Kernel/CrossSubsystem.lean:476-485` — predicate definition + preservation
+  - `SeLe4n/Kernel/Lifecycle/Operations.lean` — `retypeFromUntyped` sets the parent field on allocated children
+  - `docs/spec/SELE4N_SPEC.md` §5 — updated to document transitive disjointness (NOT the weaker direct-parent-child-excluded scope)
+- **Total effort**: ~4 days (Track B substantively proven + the 50+ site renaming Track A originally had). **Cascade**: ~130 sites (50 rename + 80 preservation cascades).
 
-**Sub-sub-task breakdown** (two-track approach per §2.4 risk register):
+**Rationale**: the prior plan's two-track approach with Track B as "stretch" is rejected per maintainer directive. WS-AN closes H-09 substantively by introducing transitive ancestor disjointness and preserving it through every retype; the weaker direct-parent-child scope is unacceptable for v1.0.0.
 
-#### Track A — Rename + doc clarification (always ships)
+**Sub-sub-task breakdown** (10 commits):
 
-- **AN6-C.A.1 — Add deprecated alias + primary rename** (0.15 day)
-  - Rename `untypedRegionsDisjoint` → `untypedRegionsDisjoint_directParentChildExcluded` in `CrossSubsystem.lean`.
-  - Provide deprecated alias: `@[deprecated] def untypedRegionsDisjoint := untypedRegionsDisjoint_directParentChildExcluded`.
-  - **Acceptance**: `lake build` PASS (deprecated alias keeps all consumers building); deprecation warnings visible but non-fatal.
+- **AN6-C.1 — Add `UntypedObject.parent : Option ObjId` field** (0.25 day)
+  - Extend `UntypedObject` in `SeLe4n/Model/Object/Types.lean` with a `parent : Option ObjId` field. `none` for top-level (boot-allocated) untypeds; `some parentId` for retype-allocated children.
+  - Bump default ctor + serialisation. Verify FrozenOps/Core and RobinHood bridges keep building.
+  - **Acceptance**: field present; `lake build SeLe4n.Model.Object.Types` PASS.
 
-- **AN6-C.A.2 — Migrate call sites by subsystem cluster (5 commits)** (1 day — batched)
-  - Walk the 50+ cascade sites by subsystem. Commit batches:
-    1. `CrossSubsystem.lean` + its default/frame lemmas (~10 sites)
-    2. `Kernel/Architecture/Invariant.lean` (~8 sites — retype bridges)
-    3. `Kernel/Capability/Invariant/*` (~8 sites)
-    4. `Kernel/Lifecycle/*` (~10 sites — retype callers)
-    5. `Platform/Boot.lean` + test suites (~14 sites)
-  - Each batch commits mechanically via sed-style replacement + manual verification; full gate PASS after each batch.
-  - **Acceptance**: all 50+ sites migrated; deprecation warnings drop to 0.
+- **AN6-C.2 — Wire parent-setting into `retypeFromUntyped`** (0.25 day)
+  - In `Lifecycle/Operations.lean`, `retypeFromUntyped` now writes `parent := some parentId` when the newly-allocated child is itself a `.untyped` object; for non-untyped children, no parent field to set.
+  - Update `retypeFromUntyped_childId_fresh` (AK8-A) to also record the parent-set fact as a post-condition.
+  - **Acceptance**: retype path sets parent correctly; lifecycle module builds; new test `untyped_retype_sets_parent` passes.
 
-- **AN6-C.A.3 — Doc clarification in SELE4N_SPEC.md §5** (0.1 day)
-  - Add a new subsection:
-    > "§5.X — Untyped region disjointness scope: the invariant `untypedRegionsDisjoint_directParentChildExcluded` asserts that no two untyped regions overlap EXCEPT the direct parent-child case produced by `retypeFromUntyped`. Physical disjointness across transitive retype chains (grandparent → parent → child) is an out-of-model obligation. See `AUDIT_v0.30.6_COMPREHENSIVE.md` §2.5 H-09."
-  - Cross-reference from the invariant definition docstring.
-  - **Acceptance**: SPEC updated; inline cross-reference added.
-
-- **AN6-C.A.4 — Delete deprecated alias** (0.05 day, at AN10-F final sweep)
-  - After all migration batches land and a release cycle passes (or immediately, if consumer grep is clean), delete the deprecated alias.
-  - **Acceptance**: `grep -rn "untypedRegionsDisjoint\b" SeLe4n/` returns only the primary definition and the field-set catalog entry.
-
-#### Track B — Transitive strengthening (stretch; time-boxed at 2 days)
-
-- **AN6-C.B.1 — Define `untypedAncestorRegionsDisjoint` predicate** (0.5 day)
-  - New definition requiring transitive-ancestor exclusion:
+- **AN6-C.3 — Define parent-chain walker with fuel bound** (0.25 day)
+  - In `CrossSubsystem.lean`:
     ```lean
-    def untypedAncestorRegionsDisjoint (st : SystemState) : Prop :=
-      ∀ ut₁ ut₂ : UntypedObject, ...  -- no two untyped regions in the ancestor-descendant closure overlap
+    def untypedAncestorChain (st : SystemState) (oid : ObjId) : Nat → List ObjId
+      | 0 => []
+      | n+1 => match st.getUntyped? oid with
+              | some ut => match ut.parent with
+                           | none => [oid]
+                           | some pid => oid :: untypedAncestorChain st pid n
+              | none => []
+    def maxRetypeDepth : Nat := 256
     ```
-  - Requires either `UntypedObject.ancestors : List ObjId` tracking OR a parent-pointer traversal via `UntypedObject.parent : Option ObjId` + fuel-bounded walk.
-  - **Acceptance**: predicate compiles; default witness `default_untypedAncestorRegionsDisjoint` proven.
+  - Prove `untypedAncestorChain_bounded : (untypedAncestorChain st oid fuel).length ≤ fuel`.
+  - **Acceptance**: walker defined; bounded; compiles.
 
-- **AN6-C.B.2 — Prove preservation through `retypeFromUntyped` recursively** (0.75 day)
-  - The new predicate is preserved by retype because the new child's region is strictly contained in the parent's region (by `allocate_child_fits_parent` from AK8-A); transitively, it's strictly contained in every ancestor's region.
-  - Prove via induction on the ancestor-chain depth.
+- **AN6-C.4 — Define `untypedAncestorRegionsDisjoint` predicate** (0.5 day)
+  - ```lean
+    def untypedAncestorRegionsDisjoint (st : SystemState) : Prop :=
+      ∀ ut₁ ut₂ : UntypedObject,
+        ut₁ ∈ st.allUntypedObjects →
+        ut₂ ∈ st.allUntypedObjects →
+        ut₁.objId ≠ ut₂.objId →
+        ut₂.objId ∉ untypedAncestorChain st ut₁.objId maxRetypeDepth →
+        ut₁.objId ∉ untypedAncestorChain st ut₂.objId maxRetypeDepth →
+        regionsDisjoint ut₁.region ut₂.region
+    ```
+  - Prove `default_untypedAncestorRegionsDisjoint` (vacuous over empty state).
+  - **Acceptance**: predicate compiles; default witness proven.
+
+- **AN6-C.5 — Prove preservation through `retypeFromUntyped`** (1 day)
+  - Main preservation theorem: `retypeFromUntyped_preserves_untypedAncestorRegionsDisjoint`.
+  - Proof sketch: the new child's region is strictly contained in parent's region via `allocate_child_fits_parent` (AK8-A); for any existing untyped `ut₁` not in the new child's ancestor chain, `ut₁.region` is disjoint from parent's region (by pre-state invariant), hence disjoint from child's region (by strict containment + transitivity).
+  - Two key lemmas: (i) `region_strictly_contained_implies_disjoint_of_not_ancestor`; (ii) `allUntypedObjects_after_retype_extends_by_one_child`.
   - **Acceptance**: preservation theorem proven; module gate PASS.
 
-- **AN6-C.B.3 — Add as 13th conjunct of `crossSubsystemInvariant`** (0.5 day)
-  - Follow AN2-D playbook: 13-conjunct extension, 5 core bridges + 34 per-op bridges, field-set catalog bump 12 → 13, runtime check extension, new runtime tests, monotonicity metric.
-  - **Acceptance**: 13-conjunct invariant bundle builds; full gate PASS.
+- **AN6-C.6 — Retype to `.untyped` children: ancestor-chain extends by one** (0.5 day)
+  - When retype target is `.untyped` (i.e., allocating a child untyped region inside a parent), the new child joins the parent's ancestor chain one level deeper.
+  - Prove `retype_to_untyped_extends_ancestor_chain`: for the new child `c`, `untypedAncestorChain st' c.objId ⊇ untypedAncestorChain st parent.objId ++ [c.objId]`.
+  - Update AN6-C.5's main theorem to handle the retype-to-untyped case separately (the new child is trivially in its own ancestor chain; disjointness with the ancestor set must exclude the chain).
+  - **Acceptance**: retype-to-untyped case proven; module gate PASS.
 
-- **AN6-C.B.4 — Decision gate** (0.25 day — end of day 2 of Track B)
-  - If all three Track B sub-sub-tasks complete within time budget: ship Track B as an additive strengthening (Track A's rename stays).
-  - If time-boxed out: revert Track B work; document in AUDIT_v0.30.6_DEFERRED.md as `DEF-H-09.transitive`.
-  - **Acceptance** (success): 13-conjunct invariant shipped. **Acceptance** (defer): Track B work reverted; DEFERRED entry drafted.
+- **AN6-C.7 — Add as 13th conjunct of `crossSubsystemInvariant`** (1 day, cascade-heavy)
+  - Follow AN2-D playbook: 13-conjunct extension; extend `crossSubsystemInvariant` from 12 (after AN2-D's typedIdDisjointness) to 13 conjuncts; add `crossSubsystemInvariant_to_untypedAncestorRegionsDisjoint` projection.
+  - Extend all 5 core bridges (`_objects_change_bridge`, `_retype_bridge`, `_objects_frame`, `_services_change`, `_composition_gap_documented`) with a new `hAncestorDisj : untypedAncestorRegionsDisjoint st'` hypothesis.
+  - `_retype_bridge` discharges the new witness internally from AN6-C.5/C.6.
+  - Cascade through 34 per-operation bridge lemmas (uniform call-pattern edit).
+  - **Acceptance**: 13-conjunct invariant bundle builds; cascade complete; full gate PASS.
 
-- **Regression test (cumulative)**: full gate after every A.N and B.N commit; `lake exe ak7_regression_suite` after A.4 and B.4.
-- **Cascade**: Track A 50+ sites; Track B adds ~80 more if taken.
+- **AN6-C.8 — Rename predicate + retire legacy `untypedRegionsDisjoint_directParentChildExcluded` form** (1 day, batched)
+  - The new predicate subsumes the old direct-parent-child-excluded form (Track A in the prior plan). Remove the old form entirely; all 50+ call sites migrate to `untypedAncestorRegionsDisjoint`.
+  - Batches by subsystem: CrossSubsystem default/frame (~10), Architecture/Invariant retype bridges (~8), Capability/Invariant (~8), Lifecycle (~10), Platform/Boot + tests (~14).
+  - **Acceptance**: `grep -rn "untypedRegionsDisjoint\|untypedRegionsDisjoint_directParentChildExcluded" SeLe4n/` returns only the primary definition + its transitive variant; deprecation warnings at zero.
 
-### AN6-D — Architecture MEDIUM batch (ARCH-M01..M03)
+- **AN6-C.9 — Field-set catalog + runtime checks + tests** (0.5 day)
+  - Bump `crossSubsystemFieldSets` count 12 → 13; `untypedAncestorRegionsDisjoint_fields := [.objects]`.
+  - Extend `crossSubsystem_pairwise_coverage_complete` from C(12,2)=66 to C(13,2)=78.
+  - Update `SeLe4n/Testing/InvariantChecks.lean` runtime check from 12 → 13 predicates; `checkUntypedAncestorRegionsDisjoint` decidable runtime predicate.
+  - Add 4 regression tests in `tests/Ak7RegressionSuite.lean`: default PASS, 2-level retype chain PASS, 3-level retype chain PASS, deliberate aliased-region rejection FAIL.
+  - **Acceptance**: full gate; `lake exe ak7_regression_suite` PASS.
+
+- **AN6-C.10 — SPEC §5 update + H-09 closure note** (0.15 day)
+  - `docs/spec/SELE4N_SPEC.md` §5 updated to document transitive ancestor disjointness (not the weaker scope). Cross-reference from the invariant definition docstring.
+  - Commit message notes H-09 CLOSED substantively; audit ERRATA would normally document scope clarifications but H-09 now matches its original audit-text scope, so no ERRATA update is required.
+  - **Acceptance**: SPEC updated; H-09 closed.
+
+- **Regression test (cumulative)**: full gate after every AN6-C.N commit; `lake exe ak7_regression_suite` PASS at AN6-C.9.
+- **Cascade**: ~130 sites explicitly counted above (50 rename + 80 preservation cascade).
+
+### AN6-D — Architecture MEDIUM batch (ARCH-M01..M03) — VSpaceBackend production-wired
 
 - **Audit IDs**: ARCH-M01..M03
-- **Plan**:
-  - **ARCH-M01**: tag `VSpaceBackend` with `-- STATUS: deferred; consumed at H3 real-hardware path` module-level comment. Add `#[allow(unused)]`-style tagging if Lean has an equivalent (it does not directly; just rely on the docstring + `--explicit-allow-unused-imports` if available).
-  - **ARCH-M02**: add `pageTableWalk_depth_bound : ∀ d, depth d ≤ 4` theorem explicit witness for the structural-recursion depth bound.
-  - **ARCH-M03**: introduce `KernelError.invalidMessageInfoDetailed` debug-only variant carrying the internal `IpcBufferReadError`. Gate behind `set_option sele4n.debug.detailedErrors true` so production preserves the ABI single-error convention.
-- **Acceptance**: each ARCH-M addressed
-- **Regression test**: full gate
-- **Cascade**: ARCH-M01 (~0), ARCH-M02 (~1), ARCH-M03 (~3 if debug variant exposed at decode site)
+- **Files**:
+  - `SeLe4n/Kernel/Architecture/VSpaceBackend.lean:52-61` (typeclass)
+  - `SeLe4n/Kernel/Architecture/VSpace.lean` (current concrete implementation)
+  - `SeLe4n/Kernel/Architecture/VSpaceARMv8.lean` (backend instance from AG6-C/D)
+  - `SeLe4n/Kernel/Architecture/PageTable.lean` (walk)
+  - `SeLe4n/Kernel/API.lean` + `Kernel/Lifecycle/Operations.lean` (VSpace consumers)
+- **Total effort**: ~2 days (ARCH-M01 is non-trivial because it changes production dispatch).
+
+**Sub-sub-task breakdown** (5 commits):
+
+- **AN6-D.1 — ARCH-M01 wire `VSpaceBackend` as the production indirection** (1 day, cascade-heavy)
+  - Refactor `VSpace.lean` to operate on `VSpaceBackend`-indirected primitives (`backend.mapPage`, `backend.unmapPage`, `backend.lookupPage`) instead of concrete `VSpaceRoot` operations. The `VSpaceARMv8` instance (AG6-C/D) becomes the default production backend via a `[backend : VSpaceBackend] := ARMv8VSpaceBackend` section binding in `VSpace.lean`.
+  - Production kernel entry points (vspaceMap, vspaceUnmap) continue to work unchanged because `ARMv8VSpaceBackend` implements the same operations the concrete form used.
+  - Simulation / test platforms can substitute their own `VSpaceBackend` instance (e.g., `SimVSpaceBackend`) by overriding the section binding.
+  - Cascade: ~15-20 call sites in `VSpace.lean` + consumers; each receives the backend argument either explicitly or via instance resolution.
+  - **Acceptance**: `VSpaceBackend` typeclass is now production-load-bearing; `lake build` PASS; no `-- STATUS: deferred` comment remains on the typeclass module.
+
+- **AN6-D.2 — ARCH-M01 delete dead-code `#[allow(unused)]`-style tags** (0.1 day)
+  - Remove any "staged for H3" or "deferred" module-level comments from `VSpaceBackend.lean` since the module is now production.
+  - **Acceptance**: `grep -n "STATUS: deferred\|staged for H3" SeLe4n/Kernel/Architecture/VSpaceBackend.lean` returns empty.
+
+- **AN6-D.3 — ARCH-M02 `pageTableWalk_depth_bound` theorem** (0.25 day)
+  - In `PageTable.lean`, add:
+    ```lean
+    theorem pageTableWalk_depth_bound (root : PageTableLevel) (vaddr : VAddr) :
+        (pageTableWalk root vaddr).depth ≤ 4 := by
+      induction root with | ... ;
+      simp [pageTableWalk]
+    ```
+  - The bound is provable by structural recursion on the 4-level ARMv8 page table. Any runtime implementation consuming `pageTableWalk` can invoke this theorem as a witness.
+  - **Acceptance**: theorem proven; module gate PASS.
+
+- **AN6-D.4 — ARCH-M03 `KernelError.invalidMessageInfoDetailed` debug variant** (0.3 day)
+  - Add `KernelError.invalidMessageInfoDetailed (_ : IpcBufferReadError) : KernelError` variant (discriminant assigned as 51 if next available).
+  - Gate emission behind `set_option sele4n.debug.detailedErrors true` at the decode site — production builds (option off) collapse to the single `KernelError.invalidMessageInfo` variant per ABI convention; debug builds preserve the internal `IpcBufferReadError` tag for diagnostics.
+  - Rust-side ABI sync: add matching variant to `rust/sele4n-types/src/error.rs` (InvalidMessageInfoDetailed=51); update conformance tests.
+  - **Acceptance**: variant defined both sides; Rust gate PASS; full gate PASS.
+
+- **AN6-D.5 — Integration tests for production VSpaceBackend** (0.35 day)
+  - Add 3 regression tests in a new `tests/VSpaceBackendSuite.lean`:
+    - `vspace_backend_arm_v8_default_instance` — default production path uses ARMv8 backend
+    - `vspace_backend_sim_override` — simulation platform can swap in a SimVSpaceBackend
+    - `vspace_backend_wxCompliant_transfers` — W^X compliance transfers through the indirection
+  - Wire into `test_tier2_negative.sh`.
+  - **Acceptance**: 3 tests PASS; full gate PASS.
+
+- **Regression test**: full gate; `lake exe vspace_backend_suite`.
+- **Cascade**: ARCH-M01 ~15-20 sites; ARCH-M02 ~1; ARCH-M03 ~3 + Rust ABI sync.
 
 ### AN6-E — InformationFlow MEDIUM batch (IF-M01..M03)
 
@@ -1586,11 +1753,22 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
   - Optionally move into a `SeLe4n.Testing.Deprecated` namespace post-1.0 (defer to AN10 if scope is tight).
   - **Acceptance**: deprecation warning fires on legacy call sites; test-path consumers audited.
 
-- **AN7-D.2 — PLT-M02 / PLT-M03 defer VSpaceRoot non-empty config bridge** (0.05 day)
-  - Add doc cross-reference at `bootFromPlatform_crossSubsystemInvariant_bridge` theorem site:
-    > "VSpaceRoot boot bridge is currently proven only for empty configs; non-empty config bridge requires RPi5/VSpaceBoot shim. See `AUDIT_v0.30.6_DEFERRED.md` :: DEF-PLT-M02."
-  - Draft the DEF-PLT-M02 entry text for AN10-G (no file creation here; the AN10-G commit lands the DEFERRED file).
-  - **Acceptance**: docstring cross-reference present.
+- **AN7-D.2 — PLT-M02 / PLT-M03 full RPi5/VSpaceBoot shim + non-empty config bridge** (2.5 days, mandatory)
+  - Create new `SeLe4n/Platform/RPi5/VSpaceBoot.lean` module that establishes the boot VSpaceRoot with a full invariant witness for the canonical RPi5 kernel image layout.
+  - Module contents:
+    - `def rpi5BootVSpaceRoot : VSpaceRoot` — the boot page-table (identity-mapped + kernel text at 0x80000 + kernel data + MMIO regions, consistent with `rust/sele4n-hal/src/mmu.rs::BOOT_L1_TABLE` descriptors).
+    - `theorem rpi5BootVSpaceRoot_wellFormed : VSpaceRoot.wellFormed rpi5BootVSpaceRoot` — validates permission bits, ASID assignment, alignment.
+    - `theorem rpi5BootVSpaceRoot_wxCompliant : rpi5BootVSpaceRoot.wxCompliant` — W^X (AK3-B four-layer defense) discharged at boot.
+    - `theorem rpi5BootVSpaceRoot_bootSafe : bootSafeObject (.vspaceRoot rpi5BootVSpaceRoot)` — bridge into the `bootFromPlatformChecked` per-object check.
+  - Refine `bootFromPlatformChecked` in `SeLe4n/Platform/Boot.lean` to include VSpaceRoot in its `bootSafeObject` sweep (previously excluded per AK9-B). Two paths:
+    - If `config.vspaceRoot = some rpi5BootVSpaceRoot`: the `bootSafe` check is discharged by `rpi5BootVSpaceRoot_bootSafe`.
+    - If `config.vspaceRoot = none`: the boot path fails closed with `.invalidConfiguration`.
+  - Extend `bootFromPlatform_crossSubsystemInvariant_bridge` from empty-config-only to full-config case: the new theorem `bootFromPlatformChecked_crossSubsystemInvariant_rpi5canonical` proves the 13-conjunct `crossSubsystemInvariant` holds for the non-empty RPi5 boot state.
+  - Cascade: 5 frame lemmas + the main bridge theorem + 1 AK9-B update.
+  - 3 new regression tests in `tests/Ak9PlatformSuite.lean`: (a) rpi5BootVSpaceRoot wellFormed, (b) non-empty config boot bridge PASS, (c) missing-vspaceRoot config rejection.
+  - DEF-P-L9 is simultaneously closed by this sub-task (the VSpaceRoot boot exclusion is eliminated — VSpaceRoot is now included in `bootSafeObject`).
+  - **No fallback to DEF-PLT-M02**: WS-AN closes the non-empty-config bridge substantively; the prior `DEF-PLT-M02` tracking entry is marked RESOLVED in AN12-G.
+  - **Acceptance**: new module builds; `bootFromPlatformChecked` includes VSpaceRoot in its check; 3 new tests pass; full gate PASS; DEF-P-L9 noted RESOLVED in commit message.
 
 - **AN7-D.3 — PLT-M04 (already covered by AN7-A)** — no additional work; record as "closed by AN7-A" in the commit message.
 
@@ -1598,9 +1776,12 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
   - Walk all callers; replace fixed `2000` fuel with `hdr.sizeDtStruct / 4` (matching the `findMemoryRegPropertyChecked` default from AK9-F).
   - **Acceptance**: all callers migrated; `lake exe ak9_platform_suite` PASS.
 
-- **AN7-D.5 — PLT-M06 `extractPeripherals` depth-limit doc + TODO** (0.1 day)
-  - Add docstring at `extractPeripherals`:
-    > "DEPTH LIMIT: currently searches DTB tree up to depth 2. Acceptable for BCM2712; deeper DTB nesting requires a recursive extension. TODO(post-1.0): lift to arbitrary depth with fuel bound."
+- **AN7-D.5 — PLT-M06 `extractPeripherals` arbitrary-depth lift** (0.5 day)
+  - Refactor `extractPeripherals` to perform a fuel-bounded recursive walk of the DTB tree (default fuel `dtb.header.sizeDtStruct / 16`, which bounds the node count). Replace the hardcoded depth-2 traversal with a proper recursive descent so any platform with deeper DTB nesting is supported.
+  - Correctness theorem: `extractPeripherals_terminates_under_fuel : ∀ fuel, extractPeripherals dtb fuel` terminates; `extractPeripherals_fuel_sufficient_for_BCM2712 : dtb.header.sizeDtStruct / 16 ≥ bcm2712_max_node_count := by decide` ensures default fuel is sufficient for the target platform.
+  - Bonus: the new recursive form also composes cleanly with the `DeviceTreeParseError.fuelExhausted` variant (AJ3-A) for explicit error reporting when a pathological DTB exhausts the fuel budget.
+  - **No deferral**: the prior "TODO(post-1.0)" is superseded; WS-AN closes PLT-M06 before v1.0.0.
+  - **Acceptance**: recursive walk implemented; termination proof present; fuel-sufficiency theorem proven; `lake exe ak9_platform_suite` PASS with a new depth-3+ DTB fixture test.
   - Cross-reference in `SELE4N_SPEC.md` §6.
   - **Acceptance**: docstring + SPEC entry.
 
@@ -1732,17 +1913,15 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 - **Regression test**: rust gate; new cargo tests pass.
 - **Cascade**: 0 external call-site changes.
 
-### AN8-B — MPIDR_CORE_ID_MASK shared symbol (H-18)
+### AN8-B — MPIDR_CORE_ID_MASK shared symbol (H-18) — Option A MANDATORY + belt-and-suspenders Option B
 
 - **Audit ID**: H-18 (HIGH)
-- **Files**: `rust/sele4n-hal/src/cpu.rs`, `rust/sele4n-hal/src/boot.S:39`
-- **Total effort**: ~0.5–0.75 day depending on linker cooperation.
+- **Files**: `rust/sele4n-hal/src/cpu.rs`, `rust/sele4n-hal/src/boot.S:39`, `rust/sele4n-hal/build.rs` (new or extended)
+- **Total effort**: ~1 day. **No fallback ladder** — both Option A (shared symbol) and Option B (build-time assertion) ship together for defense-in-depth. Option A is the primary mechanism; Option B catches any accidental drift introduced in future refactors (e.g., someone replacing the `adrp+ldr` with the old `mov+movk` literals).
 
-**Sub-sub-task breakdown** (two-option ladder):
+**Sub-sub-task breakdown** (5 commits, A.1..A.3 + B.1..B.2, no decision gate):
 
-#### Option A — Shared linker symbol (preferred; eliminates drift entirely)
-
-- **AN8-B.A.1 — Expose `MPIDR_CORE_ID_MASK_SYM` as `.rodata` symbol** (0.15 day)
+- **AN8-B.1 — Expose `MPIDR_CORE_ID_MASK_SYM` as `.rodata` symbol** (0.15 day)
   - In `cpu.rs`:
     ```rust
     pub const MPIDR_CORE_ID_MASK: u64 = 0x00FFFFFF;
@@ -1752,7 +1931,7 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
   - Verify the symbol resolves via `nm target/aarch64-unknown-none/release/sele4n-hal.a | grep MPIDR_CORE_ID_MASK_SYM` shows a `D` or `R` (data / rodata) entry.
   - **Acceptance**: symbol present in compiled binary.
 
-- **AN8-B.A.2 — Update `boot.S` to load via `adrp` + `ldr`** (0.2 day)
+- **AN8-B.2 — Update `boot.S` to load via `adrp` + `ldr`** (0.25 day)
   - Replace:
     ```
     mov x2, #0xFFFF
@@ -1763,56 +1942,93 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
     adrp x2, MPIDR_CORE_ID_MASK_SYM
     ldr x2, [x2, :lo12:MPIDR_CORE_ID_MASK_SYM]
     ```
-  - Verify the linker script (`link.ld`) places `.rodata` within `adrp`+`lo12` reach of `boot.S` (typically within a 4 GiB window; for a small kernel this is always satisfied).
+  - Verify the linker script (`link.ld`) places `.rodata` within `adrp`+`lo12` reach of `boot.S` (typically within a 4 GiB window; for a small kernel this is always satisfied). If linker layout requires adjustment, update `link.ld` in the same commit.
   - **Acceptance**: `cargo build` PASS; `objdump -d` shows the new instruction sequence; QEMU boot still reaches core-0 wake-up.
 
-- **AN8-B.A.3 — QEMU-side verification** (0.15 day)
-  - Run `scripts/test_qemu.sh` (or local QEMU smoke) to confirm the boot-core gate still works — a core-0 boot and a simulated secondary-core boot with MPIDR Aff0=1 Aff1=0 Aff2=0 both behave correctly under the shared mask.
+- **AN8-B.3 — QEMU-side verification** (0.2 day)
+  - Run `scripts/test_qemu.sh` to confirm the boot-core gate still works — a core-0 boot and a simulated secondary-core boot with MPIDR Aff0=1 Aff1=0 Aff2=0 both behave correctly under the shared mask.
   - **Acceptance**: QEMU boot successful; no regression.
 
-#### Option B — Build-time assertion (fallback if Option A fails)
-
-- **AN8-B.B.1 — Add `const _: () = assert!(...)` in `cpu.rs`** (0.1 day)
-  - In `cpu.rs`:
+- **AN8-B.4 — Belt-and-suspenders: `const _: () = assert!(...)` in `cpu.rs`** (0.1 day)
+  - Add:
     ```rust
     const _: () = assert!(MPIDR_CORE_ID_MASK == 0x00FFFFFF);
     ```
-  - This catches if the Rust-side constant drifts.
-  - **Acceptance**: build fails if the constant changes.
+  - Redundant with Option A (since the symbol is derived from the constant), but catches future developers who might replace `MPIDR_CORE_ID_MASK_SYM` with a literal `0xFFFFFF` (typo) or similar.
+  - **Acceptance**: build fails if the constant is accidentally modified.
 
-- **AN8-B.B.2 — Add `build.rs` scan-and-match for assembly literal** (0.25 day)
-  - In `rust/sele4n-hal/build.rs`:
+- **AN8-B.5 — `build.rs` scan-and-match for assembly literal regression** (0.3 day)
+  - In `rust/sele4n-hal/build.rs`, add a scan that fails the build if the legacy `mov x2, #0xFFFF` + `movk x2, #0xFF, lsl #16` pattern reappears anywhere in `src/boot.S` (catches "someone reverts to the literals" regression):
     ```rust
     fn main() {
         println!("cargo:rerun-if-changed=src/boot.S");
         let boot_s = std::fs::read_to_string("src/boot.S").unwrap();
-        // Look for the two-line pattern and verify both halves match 0x00FFFFFF
-        let pattern = regex::Regex::new(r"mov\s+x2,\s*#0xFFFF\s*\n\s*movk\s+x2,\s*#0xFF,\s*lsl\s*#16").unwrap();
-        if !pattern.is_match(&boot_s) {
-            panic!("boot.S MPIDR_CORE_ID_MASK literal drift detected; update build.rs or cpu.rs");
+        let legacy_pattern = regex::Regex::new(r"mov\s+x2,\s*#0xFFFF\s*\n\s*movk\s+x2,\s*#0xFF,\s*lsl\s*#16").unwrap();
+        assert!(!legacy_pattern.is_match(&boot_s),
+            "boot.S contains the legacy MPIDR_CORE_ID_MASK literal pattern; use adrp+ldr via MPIDR_CORE_ID_MASK_SYM per AN8-B (H-18)");
+    }
+    ```
+  - Pin `regex` to `[build-dependencies]` in `rust/sele4n-hal/Cargo.toml`.
+  - **Acceptance**: build.rs rejects the legacy pattern; synthetic regression (restore old pattern) fails CI with explicit message.
+
+- **Regression test**: rust gate; `scripts/test_qemu.sh` PASS (or skip-with-log in CI-without-emulator).
+- **Cascade**: 3 files (cpu.rs + boot.S + build.rs + Cargo.toml). **No DEF-* fallback**; both mechanisms ship.
+
+### AN8-C — `dispatch_irq` EOI-before-handler refactor (H-19, audit Option b MANDATORY)
+
+- **Audit ID**: H-19 (HIGH) — both audit Option a (doc + clippy lint) AND Option b (EOI emission reordering) now land together
+- **Files**: `rust/sele4n-hal/src/gic.rs:362-386`, `rust/sele4n-hal/src/lib.rs` (IRQ handler function attributes)
+- **Total effort**: ~1 day.
+
+**Rationale for taking Option b**: the prior plan's "defer Option b to post-1.0 hardware-binding workstream" is rejected. WS-AN closes H-19 substantively by reordering the `ack → handle → EOI` sequence to `ack → EOI → handle` (permitted by GIC-400 for level-sensitive and edge-reconfigured interrupts per §3.1 of the GIC-400 TRM, provided the handler does not re-enter the ISR line). This eliminates the "EOI lost on handler panic" class entirely because EOI has already fired before the handler body runs.
+
+**Sub-sub-task breakdown** (5 commits):
+
+- **AN8-C.1 — Refactor `dispatch_irq` to emit EOI before handler invocation** (0.4 day)
+  - Rewrite the ack/EOI sequencing:
+    ```rust
+    pub fn dispatch_irq<F: FnOnce(IntId)>(handler: F) -> AckResult {
+        let ack = acknowledge_irq();
+        match ack {
+            AckResult::Handled(intid) => {
+                end_of_interrupt(intid);  // EOI BEFORE handler body
+                handler(intid);           // Handler runs with INTID already cleared
+                AckResult::Handled(intid)
+            }
+            AckResult::OutOfRange(raw) => {
+                end_of_interrupt_raw(raw); // Still EOI out-of-range to prevent GIC lockup
+                AckResult::OutOfRange(raw)
+            }
+            AckResult::Spurious => AckResult::Spurious, // No EOI for spurious per GIC-400 §3.1
         }
     }
     ```
-  - **Acceptance**: build.rs guards against silent literal drift in boot.S.
+  - The `EoiGuard` from AK5-B is no longer needed for the Handled / OutOfRange paths (EOI already fires before handler). Retain the Spurious path unchanged.
+  - **Acceptance**: `dispatch_irq` no longer relies on Drop for EOI in the normal path; handler panic no longer leaves INTID active on the GIC.
 
-- **AN8-B.B.3 — Decision gate** (0.05 day)
-  - If Option A completed within its time budget: ship Option A; skip Option B entirely.
-  - If Option A hit linker layout obstacles (unlikely but possible): ship Option B; record Option A as `DEF-H-18.linker` in `AUDIT_v0.30.6_DEFERRED.md` for later revisit.
+- **AN8-C.2 — Update Lean-side `InterruptDispatch.lean` model to reflect new ordering** (0.2 day)
+  - In `SeLe4n/Kernel/Architecture/InterruptDispatch.lean`, refactor `interruptDispatchSequence` to emit `endOfInterrupt` before the handler invocation (mirror Rust semantics).
+  - Update proof `interruptDispatchSequence_always_ok` (AI2-A) to reflect the new ordering; the theorem still holds — EOI still fires on every path.
+  - Add new theorem `interruptDispatchSequence_eoi_before_handler` witnessing the ordering property.
+  - **Acceptance**: Lean model matches Rust reality; proof updates; module gate PASS.
 
-- **Regression test**: rust gate; `scripts/test_qemu.sh` PASS (or skip-with-log).
-- **Cascade**: 2 files (cpu.rs + boot.S); optional build.rs.
+- **AN8-C.3 — Clippy lint guard at IRQ-handler-function level** (0.1 day)
+  - Tag each registered IRQ handler (in `rust/sele4n-hal/src/lib.rs` or wherever handlers are declared) with `#[deny(clippy::panic)]` so direct `panic!()` inside handler bodies becomes a compile error. Defense-in-depth even though AN8-C.1 eliminates the panic-loses-EOI class structurally.
+  - **Acceptance**: clippy lint active; synthetic panic inside a handler fails `cargo clippy`.
 
-### AN8-C — `dispatch_irq` panic discipline doc + lint (H-19)
+- **AN8-C.4 — Handler re-entrancy soundness check** (0.2 day)
+  - GIC-400 permits EOI-before-handler ONLY for interrupts that do not re-enter their INTID during the handler body. Validate each registered handler: if any handler could plausibly re-trigger its own INTID (e.g., a timer handler that rewrites CNTP_CVAL_EL0 before handler exit), verify it runs with the GIC's priority-mask high enough to prevent re-entry, OR document explicit re-entry handling.
+  - Add an audit comment in `dispatch_irq` enumerating every registered handler and its re-entrancy category. Document the invariant: "handlers MUST NOT re-trigger their own INTID before the handler returns; GIC-400 priority masking enforces this under the current PMR configuration."
+  - For timer handlers (the obvious re-entry candidate), verify the PMR configuration holds the priority above timer's during the handler; document the interlock.
+  - **Acceptance**: re-entrancy analysis present; PMR-interlock documented per handler.
 
-- **Audit ID**: H-19 (HIGH — but design-intent already accepted per audit context)
-- **Files**: `rust/sele4n-hal/src/gic.rs:362-386`
-- **Plan**:
-  1. Replicate the `EoiGuard` documentation paragraph into `dispatch_irq`'s top-level docstring. Make the constraint discoverable from the call site, not only from the type definition.
-  2. Add `#![deny(clippy::panic)]` at the IRQ-handler-function level (audit's preferred Option a). This makes direct `panic!()` inside handler bodies a compile error.
-  3. The audit's Option b (move EOI emission before handler invocation per GIC-400 spec) is a larger architectural change; defer to post-1.0 hardware-binding workstream.
-- **Acceptance**: doc replication present; clippy-lint guard active; `cargo clippy --workspace -- -D warnings` PASS
-- **Regression test**: rust gate
-- **Cascade**: ~1 site
+- **AN8-C.5 — Regression tests + doc block** (0.1 day)
+  - Add a cargo test that verifies the EOI-before-handler ordering by instrumenting a test handler that records the order of events via a `&AtomicUsize` counter.
+  - Add a multi-paragraph doc block at the top of `dispatch_irq` explaining the ordering decision, GIC-400 §3.1 reference, and re-entrancy invariant.
+  - **Acceptance**: test passes; doc block present; rust gate PASS.
+
+- **Regression test**: rust gate; `cargo test --workspace`; `cargo clippy --workspace -- -D warnings` PASS
+- **Cascade**: 2 files in Rust (`gic.rs`, `lib.rs`) + 1 Lean file (`InterruptDispatch.lean`). **No deferral**; audit's Option b lands.
 
 ### AN8-D — Rust MEDIUM batch (RUST-M01..M08)
 
