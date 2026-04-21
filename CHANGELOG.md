@@ -1,3 +1,123 @@
+## v0.30.6 — WS-AN Phase AN0 (Pre-flight) [in progress]
+
+Opens the WS-AN pre-1.0 audit remediation portfolio per
+[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md).
+WS-AN is scoped to 196 audit findings (2 actionable CRITICAL + 23
+actionable HIGH + 71 MEDIUM + 59 LOW + 40 INFO after C-02 was resolved
+in the audit PR and H-22 was downgraded HIGH → LOW) plus 11 items
+absorbed from `AUDIT_v0.29.0_DEFERRED.md` (7 hardware-binding targeted
+at AN9, 2 cascade rollouts at AN10, 1 `eventuallyExits` RPi5-canonical
+witness at AN5-E, 1 `allTablesInvExtK` tuple→struct at AN2-G). Target
+release is **v1.0.0** via a patch-only bump trajectory; the final tag
+is a separate manual maintainer action per the AK10-C precedent.
+
+Version stays at `0.30.6` at AN0; no production code or test-surface
+changes. AN1 will bump to `0.30.7` when it lands C-01 (README pointer)
++ C-03 (pre-commit hook install) + H-24 (stale TODO retarget).
+
+### AN0-A — Baseline capture
+
+New file: [`docs/audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt`](docs/audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt)
+
+Records the WS-AN start state so AN12 can diff the gate numbers. The
+baseline covers:
+
+- **Provenance**: commit SHA, branch, Lean/Lake versions, package
+  version.
+- **Build/test gate (all GREEN)**: `lake build` 260 jobs 0 warnings;
+  `cargo test --workspace` 414 passing / 0 failed / 0 ignored (407
+  unit + 7 doctests: sele4n-abi 94, sele4n-hal 93, sele4n-sys 153,
+  sele4n-types 13, conformance 54, doctests 7); `cargo clippy
+  --workspace -- -D warnings` 0 warnings (standard gate — the
+  `--all-targets` test-surface variant still surfaces a handful of
+  unsuppressed nits which AN11-C/D will sweep as part of the
+  test-surface hygiene pass, not counted as regressions); all tier
+  scripts PASS (`test_smoke.sh`, `test_full.sh`,
+  `test_tier0_hygiene.sh`, `test_tier2_negative.sh`,
+  `test_docs_sync.sh`, `test_rust_conformance.sh`,
+  `check_version_sync.sh` at 0.30.6, `check_website_links.sh`,
+  `test_tier3_invariant_surface.sh`).
+- **Source-purity gate**: zero `sorry` / `axiom` / `native_decide` in
+  production proof surface (`SeLe4n/` and `Main.lean`).
+- **Fixture verification**: `lake exe sele4n` output byte-identical to
+  `tests/fixtures/main_trace_smoke.expected` (227 lines);
+  `tests/fixtures/main_trace_smoke.expected.sha256` present and
+  enforced by Tier 2. `robin_hood_smoke.expected.sha256` and
+  `two_phase_arch_smoke.expected.sha256` remain absent and are
+  scheduled for AN11-D (H-22 downgraded HIGH → LOW).
+- **Theme 4.7 monolithic file LOC baseline**: Structural.lean 7626,
+  InformationFlow/Invariant/Operations.lean 3768,
+  Scheduler/Operations/Preservation.lean 3633,
+  Capability/Invariant/Preservation.lean 2461,
+  Lifecycle/Operations.lean 1473 (= 18961 total). AN12-F success
+  criterion: each split target's primary-file LOC drops to < 2000 OR a
+  closure note documents why it cannot.
+- **Monotonicity-guard status**: the historical
+  `scripts/ak7_cascade_baseline.sh` + `check_monotonic.sh` +
+  `docs/audits/AL0_baseline.txt` were retired in commit 8d9e61f
+  ("Rename workstream-ID-prefixed tests, scripts, and labels to
+  semantic names"). The three attack surfaces previously tracked by
+  numeric metric are now closed STRUCTURALLY at the type system
+  (`NonNullCap` subtype, `storeObjectKindChecked` wrapper,
+  `Valid{Thread,Obj,SchedContext}Id` subtypes). The baseline file
+  documents this as the current canonical enforcement layer rather
+  than re-creating the numeric script; the plan's reference in AN0-A
+  §3 to "17 metrics from `ak7_cascade_baseline.sh` rerun" is
+  accepted as an artifact of plan authorship predating the rename
+  commit.
+- **Test suite inventory**: 24 Lean test suites / 25 `lake exe`
+  targets / ~14890 LOC / ~1614 aggregate assertions at the WS-AN
+  floor.
+- **Audit-finding disposition**: 196 total (3 initial CRITICAL − C-02
+  resolved in the audit PR = 2 actionable CRITICAL; 24 initial HIGH −
+  H-22 downgrade = 23 actionable HIGH; 71 MEDIUM; 58 + H-22 = 59 LOW;
+  40 INFO). 11 items absorbed from `AUDIT_v0.29.0_DEFERRED.md`; 6
+  informational closures from `AUDIT_v0.29.0_ERRATA.md` carry forward
+  (E-5 has the only forward link — AN6-A fully discharges the
+  remaining six closure-form projection arms).
+
+### AN0-B — Sub-task inventory commit
+
+The WS-AN plan file itself
+([`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md),
+4110 lines) was already landed on branch
+`claude/audit-workstream-planning-AUBX4` via PRs #733/#736 (commits
+b2ee03c, 7ac49e7, cad00cb, d4b3e9f, d262775, f7e2590, de354f6, 95ebc1e).
+This AN0-B commit closes the acceptance criterion by adding the WS-AN
+AN0 entry to `CLAUDE.md` "Active workstream context", to
+`docs/WORKSTREAM_HISTORY.md` (new "WS-AN — Pre-1.0 Audit Remediation"
+section before the closed WS-AK entry), and to this `CHANGELOG.md`.
+
+### AN0-C — Branch policy confirmation
+
+AN1..AN12 all land on the designated WS-AN branch per the task
+description's `Git Development Branch Requirements`. No PR
+force-pushed elsewhere; no production code or test-surface changes at
+AN0.
+
+### Files modified
+
+- `docs/audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt` (new, 213 lines)
+- `CLAUDE.md` (AN0 entry prepended to "Active workstream context")
+- `docs/WORKSTREAM_HISTORY.md` (new "WS-AN" section; "What's next" refreshed)
+- `CHANGELOG.md` (this entry prepended)
+
+### Gate at AN0 tip
+
+- `lake build` 260 jobs, 0 warnings
+- `cargo test --workspace` 414 passing, 0 failed, 0 ignored
+- `cargo clippy --workspace -- -D warnings` 0 warnings
+- `scripts/test_smoke.sh` PASS
+- `scripts/test_full.sh` PASS
+- `scripts/test_tier0_hygiene.sh` PASS
+- `scripts/check_version_sync.sh` PASS at 0.30.6
+- `scripts/check_website_links.sh` PASS
+- `lake exe sele4n` byte-identical to
+  `tests/fixtures/main_trace_smoke.expected` (227 lines)
+- Zero `sorry` / `axiom` / `native_decide` in `SeLe4n/` or `Main.lean`
+
+---
+
 ## v0.30.6 — WS-AK Phase AK10 (Testing, Documentation & Closure)
 
 Portfolio-closure phase for the WS-AK v0.29.0 audit remediation
