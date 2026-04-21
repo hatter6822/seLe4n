@@ -183,7 +183,9 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
             // The seLe4n ABI uses x7 for syscall number, matching the Lean
             // model's `arm64DefaultLayout.syscallNumReg = ⟨7⟩`.
             //
-            // TODO(WS-V/AG10): Wire Lean FFI dispatch via @[extern] bridge.
+            // TODO(AN9-F): Wire Lean FFI dispatch via sele4n_syscall_dispatch
+            // (closes DEF-R-HAL-L14 per docs/audits/AUDIT_v0.29.0_DEFERRED.md
+            // and docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12 AN9-F).
             // See SeLe4n/Platform/FFI.lean for the Lean-side declarations.
             // Until wired, return NotImplemented to prevent userspace from
             // interpreting a no-op stub as success.

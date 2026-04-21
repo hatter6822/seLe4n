@@ -342,7 +342,7 @@ const TTBR_BAADDR_MASK: u64 = 0x0000_FFFF_FFFF_F000;
 ///    TTBR write; we do not attempt that here.
 /// 5. No other core is touching `BOOT_L1_TABLE` or TTBR0_EL1 concurrently.
 ///    The kernel boots core 0 only (AK5-I); secondary cores WFE-loop until
-///    SMP bring-up is wired in WS-V.
+///    SMP bring-up is wired by AN9-J (closes DEF-R-HAL-L20).
 /// 6. Caches and MMU are currently DISABLED (SCTLR.M/C/I == 0). This is
 ///    the reset state for ARMv8 (ARM ARM D7.2) and is re-established by
 ///    firmware before handing control to the kernel.

@@ -48,9 +48,11 @@ relational composition theorem — proving that TLB + cache + page table
 maintain *simultaneous* coherency through compound operations (e.g., a page
 table update followed by TLB flush followed by I-cache invalidation) — is
 not yet proven. Per-subsystem preservation suffices for the sequential model
-where operations are atomic. The relational composition theorem is deferred
-to WS-V hardware binding where non-atomic multi-step cache/TLB maintenance
-sequences require cross-subsystem coherency proofs.
+where operations are atomic. The relational composition theorem is closed
+by AN9-A (DEF-A-M04 TLB+cache composition) and AN9-H (BarrierKind)
+per docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12, where non-atomic
+multi-step cache/TLB maintenance sequences require cross-subsystem
+coherency proofs.
 -/
 
 namespace SeLe4n.Kernel.Architecture
@@ -1313,7 +1315,8 @@ it automatically discharges the `hNotUntypedChild` hypothesis from the
 `objType ≠ .untyped` side-condition. The six allowed object types
 together with `.untyped` exhaust `KernelObjectType`, so this theorem
 covers every retype target that API dispatch currently produces EXCEPT
-`.untyped` → `.untyped` (which is documented as deferred to WS-V below). -/
+`.untyped` → `.untyped` (recorded as a post-1.0 hardening candidate; no
+currently-active plan file tracks it — see discussion below). -/
 theorem retypeFromUntyped_objectOfKernelType_preserves_untypedRegionsDisjoint
     (st st' : SystemState)
     (authority : Kernel.CSpaceAddr)

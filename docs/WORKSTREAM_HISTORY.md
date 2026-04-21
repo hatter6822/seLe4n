@@ -93,6 +93,71 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
   pre-commit hook install, H-24 stale TODO retargeting to live
   sub-task IDs).
 
+- **AN1** (Critical-path blockers, v0.30.6, in progress): closes the
+  three CRITICAL / HIGH items blocking the v1.0.0 release gate (C-01
+  README pointer, C-03 pre-commit hook install, H-24 / RUST-M06 stale
+  TODO retargeting). AN1 touches no Lean proof surface; all changes are
+  to infrastructure, documentation, and source-comment pointers.
+  - **AN1-A** (C-01 / DOC-M01): `README.md` and 10 i18n READMEs replace
+    the stale `AUDIT_COMPREHENSIVE_v0.23.21` pointer with a two-row
+    metric-table entry — a `Canonical audit` row pointing at
+    `AUDIT_v0.29.0_COMPREHENSIVE.md` (202 findings; remediated by
+    WS-AK AK1–AK10) and a `Latest audit` row pointing at
+    `AUDIT_v0.30.6_COMPREHENSIVE.md` (3 CRIT / 24 HIGH / 71 MED / 58
+    LOW / 40 INFO — initial scoring per §0.4). The v0.23.21 audit
+    remains preserved under `docs/dev_history/audits/` for historical
+    traceability. `scripts/website_link_manifest.txt` now protects the
+    two audit files plus the `docs/audits/` directory.
+  - **AN1-B** (C-03): new `scripts/install_git_hooks.sh` — idempotent,
+    shellcheck-clean installer for `scripts/pre-commit-lean-build.sh`.
+    Default mode installs the hook if absent, no-ops if already
+    identical to the canonical source, and refuses with an actionable
+    message when a diverging hook is present. `--check` returns 0 iff
+    the installed hook is byte-identical to the canonical source (CI
+    guard); `--force` backs the diverging hook up to
+    `.git/hooks/pre-commit.backup-<timestamp>` and installs the
+    canonical source. Prefers a symlink so future edits to the
+    canonical source propagate automatically. Wired into
+    `scripts/setup_lean_env.sh` on both the fast-path and main-install
+    paths; wired into `.github/workflows/lean_action_ci.yml` as a
+    `--check` step after setup. `CLAUDE.md` replaces the manual `cp`
+    recipe with the installer convention.
+  - **AN1-C** (H-24 / RUST-M06): the 6 primary `WS-V/AG10` TODOs
+    called out in the audit (`trap.rs:186` SVC FFI; `lib.rs` HAL
+    batch-doc block R-HAL-L6/L8/L12/L14/L16) are retargeted to live
+    AN9-F/G/H/I/J sub-task IDs and cite their corresponding
+    `DEF-R-HAL-L14/L17/L18/L19/L20` tracking entries. Repo-wide
+    straggler sweep (per plan §4 step 3) covered the additional 26
+    sites found by `grep -rn "WS-V\|AG10" rust/ SeLe4n/`. Each retarget
+    uses one of three forms: (1) existing-`DEF-*` cite for items with a
+    pre-existing tracking entry; (2) named AN sub-task cite
+    (AN9-D/F/A/B/H/I/J as appropriate) for items tracked live in the
+    v0.30.6 plan; (3) "recorded as a post-1.0 hardening candidate; no
+    currently-active plan file tracks it" prose (AK8-second-pass /
+    AK10-J convention) for items without a natural DEF-* bucket.
+    Remaining WS-V / AG10 tokens (3 sites — `conformance.rs:769` V1
+    test block header; `Assumptions.lean:135,138` AG10-C section
+    headers) are purely historical completed-work labels and are
+    intentionally preserved per AN1-C's acceptance criterion.
+    Files: 6 rust + 16 SeLe4n = 22 files.
+  - **AN1-D**: this `docs/WORKSTREAM_HISTORY.md` entry,
+    `CHANGELOG.md` AN1 block, and `CLAUDE.md` active-workstream entry.
+
+  **Gate at AN1 tip**: `lake build` (260 jobs, 0 warnings) +
+  `test_smoke.sh` PASS + `test_full.sh` PASS +
+  `test_tier0_hygiene.sh` PASS (shellcheck covers
+  `install_git_hooks.sh` + modified `setup_lean_env.sh`) + `cargo test
+  --workspace` (414) + `cargo clippy --workspace -- -D warnings` (0
+  warnings) + `check_version_sync.sh` PASS at 0.30.6 +
+  `check_website_links.sh` PASS + `install_git_hooks.sh --check` PASS
+  + fixture byte-identical to `tests/fixtures/main_trace_smoke.expected`
+  (227 lines) + zero `sorry`/`axiom`/`native_decide` in `SeLe4n/` or
+  `Main.lean`. Version stays at `0.30.6` per the plan's convention —
+  AN12 is the consolidated closure step.
+
+  **Next**: AN2 (foundation hardening — H-10..H-13 subtype-gate
+  cascade, FND-M01..M08 batch, DEF-F-L9 17-tuple refactor).
+
 ## WS-AK — Pre-1.0 Release Hardening (v0.29.1 → v0.30.6)
 
 **Audit:** [`docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md`](audits/AUDIT_v0.29.0_COMPREHENSIVE.md)

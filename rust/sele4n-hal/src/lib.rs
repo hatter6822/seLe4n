@@ -59,14 +59,19 @@
 // - R-HAL-L6  Spinlock backoff tuning: `UartLock::with` in `uart.rs`
 //             uses `core::hint::spin_loop()` inside the CAS loop. On
 //             ARMv8.0 this maps to `yield`; on ARMv8.1+ with FEAT_WFxT
-//             a bounded WFE hint would be cheaper. Deferred to WS-V.
+//             a bounded WFE hint would be cheaper.
+//             TODO(AN9-G): Add interrupt-wait timeout guard (closes
+//             DEF-R-HAL-L17 per docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12).
 // - R-HAL-L7  `dc_zva` options: `cache::dc_zva` uses
 //             `options(nostack)` without `preserves_flags` because
 //             hardware semantics for DC ZVA do not touch PSTATE flags
 //             (ARM ARM C6.2.62). The current encoding is correct.
 // - R-HAL-L8  Hard-coded GIC base: `GICD_BASE`/`GICC_BASE` are BCM2712
 //             constants (`Board.lean`). A generic `PlatformConfig` API
-//             would parameterize these; deferred to WS-V (H3-PLAT).
+//             would parameterize these.
+//             TODO(AN9-H): Accept BarrierKind parameter and generalise MMIO
+//             base addresses (closes DEF-R-HAL-L18 per
+//             docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12).
 // - R-HAL-L9  Secondary core wake-storm risk: `.L_secondary_spin` wakes
 //             on any SEV (e.g., from WFE-aware spinlocks elsewhere).
 //             Current kernel never issues SEV, so this is latent.
@@ -80,15 +85,20 @@
 //             inside the kernel. WXN + SA + SA0 provide the security-
 //             relevant checks.
 // - R-HAL-L12 SMP-aware DSB / DMB: current HAL uses ISH domain which
-//             is correct for single-cluster boot (AK5-I). SMP bring-up
-//             in WS-V may need to widen selected barriers to OSH.
+//             is correct for single-cluster boot (AK5-I).
+//             TODO(AN9-I): Widen DSB ISH to DSB OSH for multi-core
+//             (closes DEF-R-HAL-L19 per
+//             docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12).
 // - R-HAL-L13 TLB maintenance granularity: AG6-E/G already emits DSB
 //             ISH + ISB after TLBI. No tightening needed.
-// - R-HAL-L14 SVC `_syscall_id` FFI wiring deferred to WS-V/AG10.
-//             Annotation in `trap.rs::handle_synchronous_exception`
-//             SVC arm documents the TODO.
+// - R-HAL-L14 SVC `_syscall_id` FFI wiring: TODO(AN9-F) at
+//             `trap.rs::handle_synchronous_exception` SVC arm
+//             (closes DEF-R-HAL-L14 per
+//             docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12).
 // - R-HAL-L15 MPIDR mask: handled by AK5-I.
-// - R-HAL-L16 Secondary core bring-up: deferred to WS-V.
+// - R-HAL-L16 Secondary core bring-up: TODO(AN9-J) — PSCI CPU_ON +
+//             per-core init (closes DEF-R-HAL-L20 per
+//             docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12).
 
 pub mod cpu;
 pub mod barriers;

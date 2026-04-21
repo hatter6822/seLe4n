@@ -66,8 +66,10 @@ pub use syscall::SyscallId;
 //
 // * R-ABI-L3 (`RegValue` exported but unused by non-test code) — kept
 //   public because it is the canonical wrapper for ARM64 register words
-//   and will be consumed by the (H3/WS-V) hardware-binding FFI layer.
-//   No `#[cfg(test)]` gating applied.
+//   and will be consumed by the (H3 / AN9-F) hardware-binding FFI layer
+//   (closes DEF-R-HAL-L14 per
+//   docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12). No `#[cfg(test)]`
+//   gating applied.
 //
 // * R-ABI-L4 (`ServiceQueryArgs` empty struct) — intentionally kept as
 //   a marker type so per-syscall dispatch code can treat service-query
@@ -77,10 +79,11 @@ pub use syscall::SyscallId;
 // * R-ABI-L5 (`lateout("x6") _` in `trap.rs`) — annotated with a comment
 //   explaining the `clobber_abi("C")` redundancy. Removing it is a no-op.
 //
-// * R-ABI-L6 (constants duplicated across crates) — deferred to WS-V
-//   to avoid churn during the Pre-1.0 hardening window. Canonical
-//   ownership already lives in `sele4n-abi` (e.g., `MAX_METHOD_COUNT`,
-//   `MAX_PRIORITY`) and `sele4n-types` (identifiers + error enums).
+// * R-ABI-L6 (constants duplicated across crates) — recorded as a
+//   post-1.0 hardening candidate; no currently-active plan file tracks
+//   it. Canonical ownership already lives in `sele4n-abi` (e.g.,
+//   `MAX_METHOD_COUNT`, `MAX_PRIORITY`) and `sele4n-types` (identifiers
+//   + error enums).
 //
 // * R-ABI-L7 (`ThreadId::SENTINEL` vs `CPtr::NULL`) — both names
 //   retained; `CPtr::NULL` mirrors the `seL4_CapNull` convention and

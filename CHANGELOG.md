@@ -1,3 +1,141 @@
+## v0.30.6 — WS-AN Phase AN1 (Critical-path blockers) [in progress]
+
+Closes the three CRITICAL / HIGH items blocking the v1.0.0 release gate per
+[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
+§4 (C-01 README pointer, C-03 pre-commit hook install, H-24 / RUST-M06
+stale TODO retargeting). AN1 touches no Lean proof surface; all changes
+are to infrastructure, documentation, and source-comment pointers.
+
+Version stays at `0.30.6` at AN1 per the plan's per-phase patch-bump
+convention — the consolidated workstream bump (0.30.6 → v1.0.0 tag) is
+AN12's portfolio-closure step, not per-phase.
+
+### AN1-A — README "Latest audit" pointer (C-01 / DOC-M01)
+
+`README.md` and every i18n README (`docs/i18n/{ar,de,es,fr,hi,ja,ko,
+pt-BR,ru,zh-CN}/README.md`) replace the stale
+`AUDIT_COMPREHENSIVE_v0.23.21` pointer with a **two-row** metric-table
+entry: a `Canonical audit` row pointing at
+[`docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md`](docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md)
+(202 findings, remediated by WS-AK AK1–AK10) and a `Latest audit` row
+pointing at
+[`docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md`](docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md)
+(3 CRIT / 24 HIGH / 71 MED / 58 LOW / 40 INFO — initial scoring per §0.4
+before C-02 was resolved in the audit PR and H-22 was downgraded). The
+v0.23.21 audit remains preserved under `docs/dev_history/audits/` for
+historical traceability. `scripts/website_link_manifest.txt` now protects
+the two audit files plus the `docs/audits/` directory so
+`scripts/check_website_links.sh` catches future renames.
+
+### AN1-B — Pre-commit hook auto-installer (C-03)
+
+New script: [`scripts/install_git_hooks.sh`](scripts/install_git_hooks.sh)
+— idempotent, shellcheck-clean (GPL-3.0+ header, `set -euo pipefail`).
+Default mode installs the hook if absent, no-ops if already identical to
+the canonical `scripts/pre-commit-lean-build.sh`, and refuses with an
+actionable message when a diverging hook is present. `--check` returns 0
+iff the installed hook is byte-identical to the canonical source (CI
+guard). `--force` moves any diverging hook to
+`.git/hooks/pre-commit.backup-<timestamp>` and installs the canonical
+source. Prefers a symlink (`ln -s ../../scripts/pre-commit-lean-build.sh`)
+so future edits to the canonical source propagate without a reinstall;
+falls back to copy for symlink-hostile filesystems. Non-git-repo
+scenario (tarball extract) exits 0 with an informational log so
+`setup_lean_env.sh` can invoke it unconditionally.
+
+Wiring: `scripts/setup_lean_env.sh` invokes the installer on both the
+fast-path exit and the main-install exit so every fresh clone gets the
+hook. `.github/workflows/lean_action_ci.yml` runs `--check` in the
+test-fast job after `setup_lean_env.sh` — on CI the checkout is fresh,
+so `--check` passing proves the installer's install step actually ran.
+`CLAUDE.md` replaces the manual `cp scripts/pre-commit-lean-build.sh
+.git/hooks/pre-commit` recipe with an `./scripts/install_git_hooks.sh`
+reference block documenting `--check` and `--force` modes.
+
+### AN1-C — Stale WS-V / AG10 TODO retargeting (H-24 / RUST-M06)
+
+**Primary retargets** (the 6 lines called out explicitly in plan §4):
+
+- `rust/sele4n-hal/src/trap.rs:186` SVC FFI → `TODO(AN9-F)` (closes
+  DEF-R-HAL-L14)
+- `rust/sele4n-hal/src/lib.rs` HAL batch-doc block: R-HAL-L6 bounded
+  WFE → `TODO(AN9-G)` (DEF-R-HAL-L17); R-HAL-L8 parameterized barriers
+  → `TODO(AN9-H)` (DEF-R-HAL-L18); R-HAL-L12 OSH widening →
+  `TODO(AN9-I)` (DEF-R-HAL-L19); R-HAL-L14 SVC FFI → `TODO(AN9-F)`
+  (DEF-R-HAL-L14); R-HAL-L16 secondary-core bring-up → `TODO(AN9-J)`
+  (DEF-R-HAL-L20).
+
+**Repo-wide straggler sweep** (per plan §4 step 3) covered the 26
+additional sites found by `grep -rn "WS-V\|AG10" rust/ SeLe4n/`. Each
+retarget uses ONE of three forms:
+
+1. **Existing-DEF cite** — when a concrete `DEF-*` ID already exists in
+   `docs/audits/AUDIT_v0.29.0_DEFERRED.md`, the TODO points at that ID
+   and references AN9's sub-task.
+2. **Named AN sub-task cite** — when the work is tracked as a live AN
+   sub-task in the v0.30.6 plan but no `DEF-*` ID pre-exists, the TODO
+   points at the AN sub-task ID alone (e.g., AN9-D for context-switch
+   atomicity; AN9-F for SVC FFI; AN9-A/B/H for TLB+cache composition
+   and barriers).
+3. **No-plan-tracks-it prose** — for items that are genuinely post-1.0
+   hygiene candidates with no currently-active workstream (e.g.,
+   CDT descendant BFS fuel sufficiency formal bridge; FrozenOps
+   production promotion pending RPi5 benchmarks; DEF-F-L9 17-tuple
+   refactor in `Model/Builder.lean`; 34-operation exponential-
+   interleaving cross-subsystem composition), the retarget uses the
+   "recorded as a post-1.0 hardening candidate; no currently-active
+   plan file tracks it" convention established by the AK8 second-pass
+   audit (v0.30.3) and AK10-J.
+
+**Remaining WS-V / AG10 tokens** (3 sites): purely historical completed-
+work labels — `rust/sele4n-abi/tests/conformance.rs:769` tags the
+V1 test block as "(Phase V1, WS-V)"; `SeLe4n/Kernel/Architecture/
+Assumptions.lean:135,138` are `AG10-C` section headers for the
+completed AG3–AG8 Architecture Modules documentation block. Per the
+AN1-C acceptance criterion, these are exactly the kind of historical
+comments that should stay.
+
+**Files touched** (AN1-C): 6 rust + 16 SeLe4n for a total of 22 files.
+
+### AN1-D — AN1 closure
+
+`CHANGELOG.md` (this entry), `docs/WORKSTREAM_HISTORY.md` WS-AN section,
+`CLAUDE.md` active-workstream context updated with an AN1 entry.
+
+### Files modified (AN1 total)
+
+- `README.md` + 10 i18n READMEs (+2 / −1 lines each)
+- `scripts/install_git_hooks.sh` (new, 170 lines)
+- `scripts/setup_lean_env.sh` (installer invocation on both paths)
+- `scripts/website_link_manifest.txt` (install_git_hooks.sh +
+  pre-commit-lean-build.sh + 2 audit docs + audits/ dir added)
+- `.github/workflows/lean_action_ci.yml` (install_git_hooks.sh --check
+  step added in test-fast)
+- `CLAUDE.md` (pre-commit install instructions refreshed; AN1 active-
+  workstream entry prepended)
+- 6 Rust files + 16 SeLe4n Lean files (TODO retargets, source-comment
+  only — no proof surface touched)
+- `docs/WORKSTREAM_HISTORY.md` (AN1 entry added to WS-AN section)
+
+### Gate at AN1 tip
+
+- `lake build` 260 jobs, 0 warnings
+- `cargo test --workspace` 414 passing, 0 failed, 0 ignored
+- `cargo clippy --workspace -- -D warnings` 0 warnings
+- `scripts/test_smoke.sh` PASS
+- `scripts/test_full.sh` PASS
+- `scripts/test_tier0_hygiene.sh` PASS (including shellcheck on
+  `install_git_hooks.sh` and the modified `setup_lean_env.sh`)
+- `scripts/check_version_sync.sh` PASS at 0.30.6
+- `scripts/check_website_links.sh` PASS
+- `scripts/install_git_hooks.sh --check` PASS (regression test for
+  AN1-B)
+- `lake exe sele4n` byte-identical to
+  `tests/fixtures/main_trace_smoke.expected` (227 lines)
+- Zero `sorry` / `axiom` / `native_decide` in `SeLe4n/` or `Main.lean`
+
+---
+
 ## v0.30.6 — WS-AN Phase AN0 (Pre-flight) [in progress]
 
 Opens the WS-AN pre-1.0 audit remediation portfolio per

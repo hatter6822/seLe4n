@@ -45,7 +45,9 @@ keeping the hardware walk implementation separate for the FFI bridge.
 shadow HashMap model. End-to-end proofs against hardware page table walks
 require the module to be integrated into the main kernel execution path
 (currently orphaned — see §8.15.1 of SELE4N_SPEC.md for the activation
-roadmap). Deferred to WS-V (AG10: Hardware Integration).
+roadmap). Hardware-integration activation closed by AN9-A (TLB+cache
+composition) and AN9-F (SVC FFI wiring) per
+docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12.
 -/
 
 namespace SeLe4n.Kernel.Architecture
@@ -78,12 +80,13 @@ The proof layer defines these barrier tokens (see AK3-G
 `CacheBarrierKind` and `Platform.RPi5.MmioAdapter.BarrierKind`) but
 does not yet prove that every `mapPage`/`unmapPage` path composes them.
 Full state-machine binding to the Rust HAL (`rust/sele4n-hal/src/tlb.rs`
-and `cache.rs`) is scheduled for WS-V (H3 hardware integration).
+and `cache.rs`) is closed by AN9-A / AN9-B / AN9-H (DEF-A-M04, DEF-A-M06,
+DEF-A-M08, DEF-A-M09) per docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12.
 
 Disposition: DEFER-WITH-ROADMAP. The Rust HAL already emits the required
 barriers in `tlb.rs` (AG6-F) and `cache.rs` (AG6-F/AG8-B); the proof-layer
 obligation will compose them via the AK3-G/K predicate family once the
-FFI round-trip is closed in WS-V.
+FFI round-trip is closed by AN9-F (SVC FFI wiring, DEF-R-HAL-L14).
 -/
 
 /-- Simple bump allocator for page table pages (4KiB aligned).

@@ -999,7 +999,8 @@ AG8-F: The structural building blocks are `donationChainAcyclic_general`
 `blockedOnReply_cannot_call` (proves blocked threads cannot call). These
 provide the *ingredients* of the k>2 prevention argument, but the formal
 bridge lemma from donation edges to `blockingAcyclic` (proving donation
-chains are a sub-relation of the blocking graph) is deferred to WS-V. -/
+chains are a sub-relation of the blocking graph) is recorded as a post-1.0
+hardening candidate; no currently-active plan file tracks it. -/
 def donationChainAcyclic (st : SystemState) : Prop :=
   ∀ (tid1 tid2 : SeLe4n.ThreadId) (tcb1 tcb2 : TCB)
     (scId1 scId2 : SeLe4n.SchedContextId),

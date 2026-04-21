@@ -92,15 +92,16 @@ _start:
 // Secondary core spin loop — park non-primary cores
 //
 // Secondary cores enter a low-power WFE loop. Multi-core support (SMP) is
-// deferred to WS-V. To wake a secondary core, write to a mailbox and issue
-// SEV.
+// closed by AN9-J (DEF-R-HAL-L20) per
+// docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12. To wake a secondary
+// core, write to a mailbox and issue SEV.
 //
 // AK5-N (R-HAL-L9 / R-HAL-L16): Wake-storm risk is latent because the
 // current kernel never issues SEV; any future WFE-aware spinlock must
 // ensure secondary cores gate on a mailbox value before exiting WFE so a
 // spurious SEV (or SEVL) does not cause all secondary cores to race into
-// boot simultaneously. Documented here until WS-V adds the proper SMP
-// bring-up with a per-core parking mailbox.
+// boot simultaneously. Documented here until AN9-J adds the proper SMP
+// bring-up with a per-core parking mailbox (closes DEF-R-HAL-L20).
 // =========================================================================
 .L_secondary_spin:
     wfe
