@@ -384,7 +384,8 @@ AF3-F (AF-44): Currently accepts empty `PlatformConfig` without
 validation. Use `bootFromPlatformChecked` for production boot paths,
 which validates `PlatformConfig.wellFormed` and rejects duplicates.
 Minimum-configuration validation (e.g., at least one initial thread,
-valid scheduler state) is deferred to WS-V. -/
+valid scheduler state) is a post-1.0 hardening candidate; no currently-
+active plan file tracks it. -/
 def bootFromPlatform (config : PlatformConfig) : IntermediateState :=
   let initial := mkEmptyIntermediateState
   let withIrqs := foldIrqs config.irqTable initial
@@ -883,8 +884,9 @@ The end-to-end bridge for the empty config is fully proved. For general
 configs, the gap is that builder operations (`registerIrq`, `createObject`)
 only preserve 4 structural invariants, not the full 10-component
 `proofLayerInvariantBundle`. Extending to general configs requires proving
-that each builder operation preserves all 9 components — deferred to WS-V
-where the full runtime semantics are exercised on hardware.
+that each builder operation preserves all 9 components — deferred as a
+post-1.0 hardening candidate (no currently-active plan file tracks it);
+full runtime semantics will be exercised once hardware validation lands.
 -/
 
 /-- U6-G Step 1: Boot from empty config produces the default state. -/
@@ -936,8 +938,8 @@ theorem bootToRuntime_invariantBridge_empty :
    well-formedness and uniqueness, but does not prove the resulting state
    satisfies all 10 runtime invariants simultaneously.
 
-   Remediation deferred to WS-V (hardware binding). When RPi5 boot is
-   implemented, either:
+   Remediation is a post-1.0 hardening candidate (no currently-active
+   plan file tracks it). When RPi5 boot is implemented, either:
    (a) Prove `bootToRuntime_invariantBridge` for arbitrary well-formed
        PlatformConfig, or
    (b) Add a post-boot runtime invariant validation pass that asserts all
@@ -1407,7 +1409,8 @@ theorem bootFromPlatform_cdtNodeSlot_eq (config : PlatformConfig) :
     **Tradeoff**: All address spaces must be configured post-boot via `vspaceMap`
     syscalls. This prevents pre-populating address space mappings during boot.
 
-    **Integration timeline**: VSpaceRoot boot support is planned for WS-V when
+    **Integration timeline**: VSpaceRoot boot support is a post-1.0 hardening
+    candidate (no currently-active plan file tracks it) to be landed when
     the ASID manager is wired into the `IntermediateState` builder operations.
     The `AsidManager` type and `asidPoolUnique` invariant (AsidManager.lean)
     provide the foundation — the missing piece is builder-phase ASID pool

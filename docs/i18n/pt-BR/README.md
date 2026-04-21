@@ -92,7 +92,8 @@ provas do Lean 4:
 | **LoC Lean de testes** | 10.564 em 15 suítes de testes |
 | **Declarações provadas** | 2.447 declarações de teorema/lema (zero sorry/axiom) |
 | **Hardware alvo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Auditoria mais recente** | [`AUDIT_COMPREHENSIVE_v0.23.21`](../../../docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — auditoria completa do kernel Lean + Rust (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
+| **Auditoria canônica atual** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — auditoria encerrada (202 achados, remediados por WS-AK Fases AK1–AK10) |
+| **Auditoria mais recente** | [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) — auditoria de endurecimento pré-1.0 (3 CRIT, 24 HIGH, 71 MED, 58 LOW, 40 INFO) |
 | **Mapa do codebase** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventário de declarações legível por máquina |
 
 As métricas são derivadas do codebase por `./scripts/generate_codebase_map.py`

@@ -292,7 +292,9 @@ def mkMmioSafe_gicCpu (addr : PAddr) (outcome memoryAt : Nat)
    instantaneous memory updates with no ordering constraints. AG8-C adds formal
    `BarrierKind` type and `barrierOrdered` predicate with trivial sequential
    satisfaction and explicit ordering theorems (see end of file). These become
-   non-trivial proof obligations in the multi-core extension (WS-W/WS-V).
+   non-trivial proof obligations in the multi-core extension (post-1.0
+   hardening candidate; see DEF-R-HAL-L19 / DEF-R-HAL-L20 in
+   docs/audits/AUDIT_v0.30.6_DEFERRED.md, scheduled AN10-G).
 
 3. **Device-specific register semantics**: Beyond the W1C model, device registers
    may have set-only, read-clear, or FIFO semantics. These are *declared* via
@@ -365,8 +367,9 @@ def isDeviceAddress (addr : PAddr) : Bool :=
     `st.machine.memory addr` (RAM semantics). The sequential model does
     not capture volatile register behavior — real hardware device registers
     may return different values on successive reads (status bits, FIFO data,
-    interrupt acknowledgment). Hardware binding (WS-V/AG10) must substitute
-    actual MMIO reads via FFI (`@[extern]` bridge to Rust HAL `mmio.rs`). -/
+    interrupt acknowledgment). Post-1.0 hardware binding (see DEF-R-HAL-L14
+    in docs/audits/AUDIT_v0.29.0_DEFERRED.md) must substitute actual MMIO
+    reads via FFI (`@[extern]` bridge to Rust HAL `mmio.rs`). -/
 def mmioReadByte (addr : PAddr) : Kernel UInt8 :=
   fun st =>
     if isDeviceAddress addr then
@@ -391,7 +394,8 @@ def mmioRead (addr : PAddr) : Kernel UInt8 := mmioReadByte addr
     for `setOnly` regions, only 1-bits take effect. The abstract model uses
     a direct memory store for all write semantics — the gap between abstract
     store and hardware-specific write effect is captured by `MmioWriteKind`
-    and will be refined in WS-V hardware binding.
+    and will be refined post-1.0 (see DEF-R-HAL-L14 in
+    docs/audits/AUDIT_v0.29.0_DEFERRED.md for the FFI binding).
 
     Returns `policyDenied` if the address is not in a device region. -/
 def mmioWrite (addr : PAddr) (val : UInt8) : Kernel Unit :=
@@ -1010,7 +1014,9 @@ inductive BarrierKind where
 In the sequential abstract model, memory updates are instantaneous, so
 barrier ordering is trivially satisfied. This predicate exists to:
 1. Document where barriers are semantically required
-2. Enable future multi-core extension (WS-W/WS-V) where barriers become
+2. Enable a future multi-core extension (post-1.0 hardening candidate; see
+   DEF-R-HAL-L19 / DEF-R-HAL-L20 in docs/audits/AUDIT_v0.30.6_DEFERRED.md)
+   where barriers become
    non-trivial proof obligations
 3. Allow proofs to explicitly depend on barrier presence
 

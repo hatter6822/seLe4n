@@ -93,7 +93,8 @@ de preuve de Lean 4 :
 | **LoC Lean de test** | 14 890 réparties sur 24 suites de tests |
 | **Déclarations prouvées** | 3 045 déclarations theorem/lemma (zéro sorry/axiom) |
 | **Matériel cible** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Dernier audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](../../../docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — Audit complet du noyau Lean + Rust (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
+| **Audit canonique actuel** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — audit clos (202 constats, corrigés par WS-AK Phases AK1–AK10) |
+| **Dernier audit** | [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) — audit de durcissement pré-1.0 (3 CRIT, 24 HIGH, 71 MED, 58 LOW, 40 INFO) |
 | **Carte de la base de code** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventaire lisible par machine des déclarations |
 
 Les métriques sont extraites de la base de code par `./scripts/generate_codebase_map.py`

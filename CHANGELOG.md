@@ -1,3 +1,71 @@
+## [Unreleased] — WS-AN Phase AN1 (Critical-path blockers)
+
+Phase AN1 of the v0.30.6 pre-1.0 audit remediation closes the critical-path
+items that block every subsequent phase: C-01 stale README audit pointer,
+C-03 missing pre-commit-hook auto-installer, H-24 / RUST-M06 stale
+`WS-V/AG10` TODO targets. Four sub-tasks (AN1-A, AN1-B, AN1-C, AN1-D). No
+production kernel code or proof surface is touched; all changes are to
+infrastructure, documentation, and source-comment pointers.
+
+### AN1-A — README "Latest audit" pointer (C-01, DOC-M01, DOC-M06)
+
+`README.md` and all 10 i18n READMEs (`docs/i18n/{ar,de,es,fr,hi,ja,ko,pt-BR,ru,zh-CN}/README.md`)
+replace the stale `AUDIT_COMPREHENSIVE_v0.23.21` pointer with a two-row entry:
+
+- **Current canonical audit** → [`AUDIT_v0.29.0_COMPREHENSIVE`](docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md)
+  (202 findings, remediated by WS-AK Phases AK1–AK10).
+- **Latest audit** → [`AUDIT_v0.30.6_COMPREHENSIVE`](docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md)
+  (3 CRIT / 24 HIGH / 71 MED / 58 LOW / 40 INFO — initial scoring per
+  §0.4, before post-verification adjustments).
+
+The historical v0.23.21 link is preserved in
+`docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md`.
+
+### AN1-B — Pre-commit hook auto-installer (C-03)
+
+New `scripts/install_git_hooks.sh` — idempotent, shellcheck-clean
+installer for the `pre-commit-lean-build.sh` hook. Default mode installs
+if absent, no-ops if already installed, and refuses (with an actionable
+message) when a different hook is present; `--check` returns 0 iff the
+hook matches the canonical source; `--force` backs up the diverging hook
+to `.git/hooks/pre-commit.backup-<timestamp>` and replaces it. Symlinks
+are preferred (`.git/hooks/pre-commit -> ../../scripts/pre-commit-lean-build.sh`)
+with a copy fallback for symlink-hostile filesystems.
+
+Wired into `scripts/setup_lean_env.sh` on both the fast-path and main
+install flow so every session-start install leaves the hook in place.
+The CI workflow `.github/workflows/lean_action_ci.yml` now runs
+`./scripts/install_git_hooks.sh --check` after `setup_lean_env.sh` as a
+defence-in-depth "did the installer run?" assertion.
+
+`CLAUDE.md:57-66` replaces the manual `cp` recipe with the automated
+installer convention (default / `--check` / `--force` invocations).
+
+### AN1-C — Stale `WS-V/AG10` TODO retargeting (H-24, RUST-M06)
+
+All deferred-work TODOs that still pointed at the long-closed WS-V and
+AG10 workstream IDs are retargeted to live deferral references. The
+plan-enumerated sites plus every straggler matched by
+`grep -rn "WS-V\|AG10" rust/ SeLe4n/` (34 edits across 22 files) now
+point at either an existing `DEF-R-HAL-L14` / `DEF-A-M04..M09` /
+`DEF-C-M04` / `DEF-F-L9` ID in
+`docs/audits/AUDIT_v0.29.0_DEFERRED.md`, or the new `DEF-R-HAL-L17..L20`
+/ `DEF-R-ABI-L6` / `DEF-PLT-L1` IDs in the forthcoming
+`docs/audits/AUDIT_v0.30.6_DEFERRED.md` (file creation lands in AN10-G
+per the workstream plan). Remaining `WS-V` / `AG10` tokens describe
+completed-work history (`// Phase V1, WS-V`, `-- Completed WS-AG AG10-C`)
+per the AN1-C acceptance criterion.
+
+### AN1-D — AN1 closure
+
+Single combined commit referencing C-01 / C-03 / H-24 / RUST-M06. Gate:
+`test_smoke.sh` + `cargo test --workspace` + `check_website_links.sh` +
+`check_version_sync.sh` + `ak7_cascade_check_monotonic.sh` (where
+applicable — AN1 touches no Lean proof surface so the cascade metrics
+are unchanged).
+
+---
+
 ## v0.30.6 — WS-AN Phase AN0 (Pre-flight) *(in progress)*
 
 WS-AN opens the pre-1.0 audit-remediation workstream against the

@@ -32,8 +32,9 @@ readiness, (3) time-slice positivity, (4) IPC readiness, (5) EDF
 compatibility, and (6) budget sufficiency validation. These predicates
 are well-typed and decidable, enabling non-vacuous `AdapterProofHooks`
 for both `preserveWriteRegister` and `preserveContextSwitch` on the
-production contract. Full hardware validation against actual RPi5 behavior
-is part of the H4 evidence-convergence workstream (WS-V/AG10).
+production contract. Full hardware validation against actual RPi5
+behavior is a post-1.0 H4 evidence-convergence hardening candidate
+(WS-AG / AG10 are closed per docs/WORKSTREAM_HISTORY.md).
 -/
 
 namespace SeLe4n.Platform.RPi5
