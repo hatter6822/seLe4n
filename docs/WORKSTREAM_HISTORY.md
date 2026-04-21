@@ -27,7 +27,7 @@ table walk, GIC-400 interrupt routing, boot sequence. All pre-benchmark
 workstreams (WS-B through WS-U Phase U8) are complete. **WS-U PORTFOLIO
 COMPLETE.**
 
-## WS-AN — Pre-1.0 Audit Remediation (v0.30.6 → v0.30.7/v1.0.0, **ACTIVE**)
+## WS-AN — Pre-1.0 Audit Remediation (v0.30.6 → v1.0.0, **ACTIVE**)
 
 **Audit:** [`docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md`](audits/AUDIT_v0.30.6_COMPREHENSIVE.md)
 **Plan:** [`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
@@ -48,20 +48,21 @@ and 79 named sub-tasks.
   at 7ac49e7, markdown-link-check fix at cad00cb), AN0-C branch policy
   reminder. AN0 closed with the baseline snapshot on
   `claude/phase-an0-preflight-9VECN` (merged as PR #737).
-- **AN1 — Critical-path blockers** *(COMPLETE)*: C-01 README "Latest audit"
-  pointer (README + 10 i18n READMEs now surface the v0.29.0 canonical + v0.30.6
-  latest audits); C-03 pre-commit hook auto-installer (new
-  `scripts/install_git_hooks.sh`, idempotent install/check/force modes,
-  wired into `setup_lean_env.sh` and CI); H-24 stale Rust HAL TODO
-  retargeting (34 `WS-V`/`AG10` references across 22 files retargeted to
-  live `DEF-*` IDs in `AUDIT_v0.29.0_DEFERRED.md` or the forthcoming
-  `AUDIT_v0.30.6_DEFERRED.md` per AN10-G); RUST-M06 companion resolved
-  alongside H-24. Gate: `lake build` (260 jobs, 0 warnings) +
-  `test_smoke.sh` + `test_full.sh` + `cargo test --workspace` +
-  `cargo clippy --workspace -- -D warnings` (0) + `check_website_links.sh`
-  + `check_version_sync.sh` at 0.30.6 + fixture byte-identical + zero
-  sorry/axiom/native_decide in `SeLe4n/` or `Main.lean`. Branch:
-  `claude/complete-phase-an1-blockers-LwZGP`.
+- **AN1 — Critical-path blockers** *(COMPLETE, v0.30.7)*: C-01 README
+  "Latest audit" pointer (README + 10 i18n READMEs now surface the v0.29.0
+  canonical + v0.30.6 latest audits); C-03 pre-commit hook auto-installer
+  (new `scripts/install_git_hooks.sh`, idempotent install/check/force
+  modes, wired into `setup_lean_env.sh` and CI); H-24 stale Rust HAL TODO
+  retargeting (34 `WS-V`/`AG10` references across 22 files retargeted via
+  three styles — existing `DEF-*` cite, new `DEF-*` cite with AN10-G
+  forward-reference, or the "no-plan-tracks-it" prose convention
+  inherited from AK8/AK10-J); RUST-M06 companion resolved alongside H-24.
+  Patch-only version bump v0.30.6 → v0.30.7. Gate: `lake build`
+  (260 jobs, 0 warnings) + `test_smoke.sh` + `test_full.sh` +
+  `cargo test --workspace` + `cargo clippy --workspace -- -D warnings` (0)
+  + `check_website_links.sh` + `check_version_sync.sh` at 0.30.7 +
+  fixture byte-identical + zero sorry/axiom/native_decide in `SeLe4n/` or
+  `Main.lean`. Branch: `claude/complete-phase-an1-blockers-LwZGP`.
 - **AN2 — Foundation hardening**: H-10..H-13, FND-M01..M08, Theme 4.3
   subtype gates, DEF-F-L9 prep.
 - **AN3 — IPC subsystem**: H-01, IPC-M01..M09, Theme 4.2 named projections,

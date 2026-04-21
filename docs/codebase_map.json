@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/complete-phase-an1-blockers-LwZGP",
-      "commit_sha": "d02347b1e30c861929310950e274f7313828c73a",
-      "tree_sha": "09cbd1965e0f926b0b293d1363f7a2c3496db6dd",
-      "committed_at_utc": "2026-04-21T02:26:18-04:00"
+      "commit_sha": "e834eecb91ba64443de36a60ae3bf32264c6460a",
+      "tree_sha": "31e4947cc3bd81343a84b0748f997497b7e79bc5",
+      "committed_at_utc": "2026-04-21T07:11:14+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 5636
   },
   "readme_sync": {
-    "version": "0.30.6",
+    "version": "0.30.7",
     "lean_toolchain": "v4.28.0",
     "production_files": 142,
     "production_loc": 103233,

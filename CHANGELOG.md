@@ -1,11 +1,14 @@
-## [Unreleased] — WS-AN Phase AN1 (Critical-path blockers)
+## v0.30.7 — WS-AN Phase AN1 (Critical-path blockers)
 
 Phase AN1 of the v0.30.6 pre-1.0 audit remediation closes the critical-path
 items that block every subsequent phase: C-01 stale README audit pointer,
 C-03 missing pre-commit-hook auto-installer, H-24 / RUST-M06 stale
 `WS-V/AG10` TODO targets. Four sub-tasks (AN1-A, AN1-B, AN1-C, AN1-D). No
 production kernel code or proof surface is touched; all changes are to
-infrastructure, documentation, and source-comment pointers.
+infrastructure, documentation, and source-comment pointers. Patch-only
+version bump v0.30.6 → v0.30.7 follows the per-phase convention
+established by the WS-AK portfolio (v1.0.0 tag remains a maintainer
+manual action per AK10-C precedent).
 
 ### AN1-A — README "Latest audit" pointer (C-01, DOC-M01, DOC-M06)
 
@@ -44,17 +47,32 @@ installer convention (default / `--check` / `--force` invocations).
 ### AN1-C — Stale `WS-V/AG10` TODO retargeting (H-24, RUST-M06)
 
 All deferred-work TODOs that still pointed at the long-closed WS-V and
-AG10 workstream IDs are retargeted to live deferral references. The
-plan-enumerated sites plus every straggler matched by
-`grep -rn "WS-V\|AG10" rust/ SeLe4n/` (34 edits across 22 files) now
-point at either an existing `DEF-R-HAL-L14` / `DEF-A-M04..M09` /
-`DEF-C-M04` / `DEF-F-L9` ID in
-`docs/audits/AUDIT_v0.29.0_DEFERRED.md`, or the new `DEF-R-HAL-L17..L20`
-/ `DEF-R-ABI-L6` / `DEF-PLT-L1` IDs in the forthcoming
-`docs/audits/AUDIT_v0.30.6_DEFERRED.md` (file creation lands in AN10-G
-per the workstream plan). Remaining `WS-V` / `AG10` tokens describe
-completed-work history (`// Phase V1, WS-V`, `-- Completed WS-AG AG10-C`)
-per the AN1-C acceptance criterion.
+AG10 workstream IDs are retargeted. The plan-enumerated sites plus every
+straggler matched by `grep -rn "WS-V\|AG10" rust/ SeLe4n/` (34 edits
+across 22 files) use one of two retarget styles:
+
+- **Cite an existing `DEF-*` ID** in `docs/audits/AUDIT_v0.29.0_DEFERRED.md`
+  when the deferred work has a formal tracking entry there — e.g.
+  `DEF-R-HAL-L14` (SVC FFI wiring), `DEF-A-M04` / `DEF-A-M06` /
+  `DEF-A-M08` / `DEF-A-M09` (TLB/cache/barrier composition),
+  `DEF-AK3-I` (`tlbBarrierComplete`), `DEF-C-M04` (`suspendThread`
+  atomicity), `DEF-F-L9` (17-deep tuple refactor).
+- **Cite a new `DEF-*` ID** to be landed in `docs/audits/AUDIT_v0.30.6_DEFERRED.md`
+  (file creation is AN10-G's responsibility per the workstream plan):
+  `DEF-R-HAL-L17` (bounded WFE), `DEF-R-HAL-L18` (parameterised
+  barriers), `DEF-R-HAL-L19` (OSH widening), `DEF-R-HAL-L20`
+  (secondary-core bring-up), `DEF-R-ABI-L6` (ABI constant de-dup).
+- **Use the "no-plan-tracks-it" prose convention** (inherited from
+  AK8 second-pass and AK10-J: *"post-1.0 hardening candidate; no
+  currently-active plan file tracks it"*) for items that are outside
+  the scope of every existing `DEF-*` bucket and do not warrant a new
+  one. This applies to ~12 internal proof-hygiene / defence-in-depth
+  markers (e.g., BFS fuel-sufficiency, PIP cycle detection, 34-op
+  invariant composition, CDT performance optimisation).
+
+Remaining `WS-V` / `AG10` tokens describe completed-work history
+(`// Phase V1, WS-V`, `-- Completed WS-AG AG10-C`) per the AN1-C
+acceptance criterion.
 
 ### AN1-D — AN1 closure
 

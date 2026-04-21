@@ -108,9 +108,14 @@ fast_path_ready() {
 if fast_path_ready; then
   log_elapsed "Lean environment already configured (fast-path)"
   # AN1-B.2 (audit C-03): ensure the pre-commit hook is installed on every
-  # setup, not only on fresh clones. The installer is idempotent and silently
-  # skips non-git worktrees.
-  "${ROOT_DIR}/scripts/install_git_hooks.sh" || true
+  # setup, not only on fresh clones. The installer is idempotent; it silently
+  # skips non-git worktrees and returns non-zero (with an actionable message)
+  # if a diverging hook is present. We surface that message to the user but
+  # do not fail setup — CI's `install_git_hooks.sh --check` step is the
+  # enforcement gate.
+  if ! "${ROOT_DIR}/scripts/install_git_hooks.sh"; then
+    log "[setup] WARNING: install_git_hooks.sh reported an issue (see message above)."
+  fi
   if [ "${BUILD_REQUESTED}" -eq 1 ]; then
     log_elapsed "running lake build"
     (cd "${ROOT_DIR}" && lake build)
@@ -582,9 +587,14 @@ log_elapsed "Lean environment is ready"
 log_elapsed "lake version: $(lake --version)"
 
 # AN1-B.2 (audit C-03): install the pre-commit hook automatically so fresh
-# clones are guarded on first setup. The installer is idempotent and silently
-# skips non-git worktrees (tarball extracts, read-only mirrors).
-"${ROOT_DIR}/scripts/install_git_hooks.sh" || true
+# clones are guarded on first setup. The installer is idempotent; it silently
+# skips non-git worktrees (tarball extracts, read-only mirrors) and returns
+# non-zero with an actionable message if a diverging hook is present. We
+# surface that message to the user but do not fail setup — CI's
+# `install_git_hooks.sh --check` step is the enforcement gate.
+if ! "${ROOT_DIR}/scripts/install_git_hooks.sh"; then
+  log "[setup] WARNING: install_git_hooks.sh reported an issue (see message above)."
+fi
 
 if [ "${QUIET}" -eq 0 ]; then
   echo "[setup] next steps:"
