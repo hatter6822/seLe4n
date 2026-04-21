@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.30.7-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.30.6-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -91,8 +91,7 @@ seLe4n은 Lean 4로 처음부터 설계된 마이크로커널입니다. 모든 �
 | **테스트 Lean LoC** | 15개 테스트 스위트, 10,564줄 |
 | **증명된 선언** | 2,447개 theorem/lemma 선언 (sorry/axiom 제로) |
 | **대상 하드웨어** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **현재 정식 감사** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — 종료된 감사 (202건, WS-AK 단계 AK1–AK10에서 조치) |
-| **최신 감사** | [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) — 1.0 이전 강화 감사 (3 CRIT, 24 HIGH, 71 MED, 58 LOW, 40 INFO) |
+| **최신 감사** | [`AUDIT_COMPREHENSIVE_v0.23.21`](../../../docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — 전체 커널 Lean + Rust 감사 (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
 | **코드베이스 맵** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — 기계 판독 가능한 선언 인벤토리 |
 
 지표는 `./scripts/generate_codebase_map.py`에 의해 코드베이스에서 산출되며,

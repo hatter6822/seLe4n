@@ -421,10 +421,9 @@ disposition:
   system lifetime.
 
 - **A-L7** `contextSwitchState` does not perform TLB/ASID maintenance.
-  Recorded as a post-1.0 H3 hardware-integration hardening candidate
-  (related: DEF-A-M04 TLB+cache composition in
-  docs/audits/AUDIT_v0.29.0_DEFERRED.md); the Rust HAL emits the required
-  TLBI and DSB sequences before loading TTBR0.
+  Deferred to WS-V (H3 hardware integration context-switch path), where
+  the Rust HAL emits the required TLBI and DSB sequences before loading
+  TTBR0.
 
 - **A-L8** `BumpAllocator` off-by-one analysis. Audit found no actual
   off-by-one; documented in `VSpaceARMv8.lean:BumpAllocator.allocate`.
@@ -436,9 +435,8 @@ disposition:
 These items are either:
 - Non-issues (the semantics are correct as-is),
 - Resolved by related higher-tier fixes (A-L4 → AK3-C),
-- Recorded as post-1.0 hardening candidates with clear technical scope
-  (A-L7 context-switch TLB/ASID maintenance; see DEF-A-M04 in
-  docs/audits/AUDIT_v0.29.0_DEFERRED.md).
+- Deferred to WS-V with clear technical scope (A-L7 context-switch
+  TLB/ASID maintenance).
 -/
 
 end SeLe4n.Kernel.Architecture

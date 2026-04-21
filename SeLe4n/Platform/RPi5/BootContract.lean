@@ -104,9 +104,8 @@ theorem rpi5BootContract_capabilityRef_holds : rpi5BootContract.capabilityRefMet
     - The GIC-400 on BCM2712 supports up to 192 SPIs (INTIDs 32–223).
       BCM2712 extended peripherals routed through INTIDs ≥ 224 (if any
       exist on future board revisions) are NOT covered by this contract.
-      Post-1.0 hardware binding must extend `gicSpiCount` if BCM2712
-      documentation reveals SPIs beyond INTID 223 (no currently-active
-      plan file tracks this extension).
+      WS-V (hardware binding) must extend `gicSpiCount` if BCM2712
+      documentation reveals SPIs beyond INTID 223.
 
     **Handler mapping:** For supported IRQ lines, the handler must be
     registered in the kernel's IRQ handler table (`st.irqHandlers`).

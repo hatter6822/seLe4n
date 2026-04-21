@@ -404,12 +404,11 @@ theorem vspaceUnmapPage_fullFlush_preserves_tlbConsistent
       3. Proving the toggle is tied to actual barrier emission (requires
          FFI round-trip round-tripping at proof layer).
 
-    The full proof requires the FFI bridge to be closed — tracked under
-    DEF-A-M06 / DEF-AK3-I (`tlbBarrierComplete` substantive binding) in
-    docs/audits/AUDIT_v0.29.0_DEFERRED.md. This `True`-valued predicate is
-    retained so existing composition theorems downstream do not need to
-    change; upgrading to a substantive version post-1.0 will strengthen
-    them without changing the predicate's use sites. -/
+    The full proof requires the FFI bridge to be closed and is scheduled
+    for WS-V (H3 hardware integration milestone). This `True`-valued
+    predicate is retained so existing composition theorems downstream
+    do not need to change; upgrading to a substantive version in WS-V
+    will strengthen them without changing the predicate's use sites. -/
 def tlbBarrierComplete (_st : SystemState) : Prop :=
   True
 

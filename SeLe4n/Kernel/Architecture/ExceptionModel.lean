@@ -43,9 +43,7 @@ kernel execution path. The `dispatchException` function routes SVC
 instructions to `syscallEntry` (API.lean), but an import cycle prevents
 direct integration (ExceptionModel imports API, which cannot import
 ExceptionModel back). See §8.15.1 of SELE4N_SPEC.md for the activation
-roadmap. Recorded as a post-1.0 hardware-integration hardening candidate
-(AG10 is closed per docs/WORKSTREAM_HISTORY.md; no currently-active plan
-file tracks integration).
+roadmap. Deferred to WS-V (AG10: Hardware Integration).
 -/
 
 namespace SeLe4n.Kernel.Architecture
