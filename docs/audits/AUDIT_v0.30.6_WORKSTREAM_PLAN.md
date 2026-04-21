@@ -8,7 +8,7 @@
 **Baseline**: `v0.30.6` at commit `1a86dbc` on branch `claude/audit-workstream-planning-AUBX4`
 **Target release**: `v1.0.0` (patch-only bump trajectory; final tag is a maintainer manual action per AK10-C precedent)
 **Author**: Claude (Opus 4.7), 2026-04-21
-**Scope summary**: 196 audit findings (after C-02 resolved, H-22 downgraded) plus 11 carried-forward deferred items, organized into **11 phases (AN0..AN10)** with **79 named sub-tasks**. Foundation hardening (AN2) lands first so type-level changes cascade exactly once; cross-cutting structural refactors (Theme 4.2 named projections, Theme 4.3 subtype gates) are sequenced into the earliest phase whose subsystem they touch. AN10 closes the workstream with documentation sync, a new `AUDIT_v0.30.6_DEFERRED.md`, and the v1.0.0-ready gate.
+**Scope summary**: 196 audit findings (after C-02 resolved, H-22 downgraded) plus 11 carried-forward deferred items, organized into **11 phases (AN0..AN10)** with **79 named sub-tasks** decomposed into **~144 sub-sub-task commits**. Each complex sub-task lists explicit per-commit boundaries with acceptance criteria, effort estimates, and cascade sizes. Foundation hardening (AN2) lands first so type-level changes cascade exactly once; cross-cutting structural refactors (Theme 4.2 named projections, Theme 4.3 subtype gates) are sequenced into the earliest phase whose subsystem they touch. AN10 closes the workstream with documentation sync, a new `AUDIT_v0.30.6_DEFERRED.md`, and the v1.0.0-ready gate.
 
 ---
 
@@ -32,7 +32,9 @@
 7. **AN9** — Test/CI surface incl. KernelError matrix, lake-exe timeout (PR-12)
 8. **AN10** — Closure: discharge index, SMP inventory, doc batch, version bump, archive (PR-13/14)
 
-**Estimated effort**: ~34–40 dev-days, can compress to ~3 calendar weeks with two contributors (one Lean, one Rust HAL).
+**Estimated effort**: ~34–40 dev-days, can compress to ~3 calendar weeks with two contributors (one Lean, one Rust HAL). The 144 sub-sub-task commits average ~30 minutes each (wall-clock commit + review + CI), which gates the minimum calendar timeline at ~5 working days of sequential commits assuming full review throughput.
+
+**Granularity guarantee**: every sub-task with cascade size ≥ 10, LOC delta ≥ 200, or cross-file-refactor scope is broken into `.1/.2/.3/…` sub-sub-tasks so each commit is reviewable in isolation. See §3..§13 for per-phase detail and §17.3 for per-PR review-scope guidance.
 
 **Final gate** (per §15.2): all tier scripts green, zero `sorry`/`axiom`/`native_decide`, fixture byte-identical, all 10 i18n READMEs synced, version bump to v0.30.7 (or maintainer-chosen v1.0.0).
 
@@ -295,23 +297,45 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
   - `scripts/pre-commit-lean-build.sh` — already exists; no change
   - `.github/workflows/lean_action_ci.yml` — invoke installer in CI bootstrap so any cloned-by-CI checkout is also guarded
   - `CLAUDE.md:53-61` — replace manual `cp` instruction with `scripts/install_git_hooks.sh` invocation reference
-- **Plan**:
-  1. New `scripts/install_git_hooks.sh`:
-     - Idempotent: checks if `.git/hooks/pre-commit` already exists and links to `pre-commit-lean-build.sh`
-     - If absent: symlink (preferred — auto-tracks future hook updates) or copy with sentinel marker
-     - If present and DIFFERENT: prompt-or-fail (interactive vs `--check` mode)
-     - GPL-3.0+ header, `set -euo pipefail`, shellcheck-clean (matches the C-02 resolution scripts' style)
-  2. Extend `scripts/setup_lean_env.sh`:
-     - After elan + lake initialization, call `./scripts/install_git_hooks.sh`
-     - Skip-with-warning if `.git/` is absent (e.g., Lean Lake build inside a non-git tarball)
-  3. Update `CLAUDE.md:53-61`: change "Install it: `cp …`" to "Install it: `./scripts/install_git_hooks.sh` (run automatically by `setup_lean_env.sh`)"
-- **Acceptance**:
-  - Fresh clone + `setup_lean_env.sh` results in `.git/hooks/pre-commit` linked or copied
-  - `install_git_hooks.sh --check` returns 0 if installed, non-zero otherwise (CI-friendly)
-  - `pre-commit-lean-build.sh` continues to fire on staged `.lean` files (verified by deliberately staging a sorry-bearing file → commit rejected)
-  - Idempotency: second run is no-op
-- **Regression test**: smoke gate; manual one-shot verification of fresh-clone scenario
-- **Cascade**: 0 (no kernel-side changes)
+- **Total effort**: ~0.5 day (1 full PR-2 bundled with AN1-A/C/D).
+
+**Sub-sub-task breakdown** (4 commits, bundled into single PR):
+
+- **AN1-B.1 — Write `install_git_hooks.sh` with idempotent install + check mode** (0.2 day)
+  - Script contract:
+    - Default mode: install hook if absent; no-op if already present and identical; fail if present and different (with explanation).
+    - `--check` mode: exit 0 if installed correctly; non-zero with actionable message otherwise (for CI).
+    - `--force` mode: overwrite existing hook with backup to `.git/hooks/pre-commit.backup-<timestamp>`.
+  - Implementation details:
+    - Shebang `#!/usr/bin/env bash`; `set -euo pipefail`; GPL-3.0+ header (matches C-02-resolution scripts' style).
+    - Prefer symlink (`ln -s`) over copy so future updates to `pre-commit-lean-build.sh` propagate automatically.
+    - Handle non-git-repo scenario (e.g., tarball extract): skip with warning, exit 0.
+    - Shellcheck-clean.
+  - **Acceptance**: `scripts/install_git_hooks.sh --check` returns 0 when installed; fresh-clone simulation (remove `.git/hooks/pre-commit` then run installer) produces a working hook.
+
+- **AN1-B.2 — Wire into `setup_lean_env.sh`** (0.1 day)
+  - Append installer invocation after elan + lake bootstrap, before `--skip-test-deps` exit path.
+  - Skip with informational log if `.git/` missing.
+  - **Acceptance**: fresh `setup_lean_env.sh` run installs the hook automatically.
+
+- **AN1-B.3 — Wire into CI and session-start hook** (0.1 day)
+  - Extend `.github/workflows/lean_action_ci.yml` to run `./scripts/install_git_hooks.sh --check` after checkout. On CI the repo is fresh so the hook does not exist until the installer runs; the `--check` mode serves as a "did the installer run?" guard.
+  - If the project has a `SessionStart` hook configured (e.g., `.claude/settings.json`), verify it invokes `setup_lean_env.sh` which in turn invokes the installer.
+  - **Acceptance**: CI green; synthetic test where hook is deliberately absent produces explicit installer-ran log line.
+
+- **AN1-B.4 — Update `CLAUDE.md` instructions** (0.1 day)
+  - Replace lines 53-61's manual `cp` guidance with:
+    ```markdown
+    Install it automatically by running `./scripts/install_git_hooks.sh`
+    (invoked by `setup_lean_env.sh` and by the SessionStart hook on
+    fresh clones). For manual invocation in CI contexts use the
+    `--check` mode.
+    ```
+  - Cross-reference `scripts/install_git_hooks.sh` from the website-link manifest.
+  - **Acceptance**: CLAUDE.md reflects the new convention; `check_website_links.sh` PASS.
+
+- **Regression test**: smoke gate; synthetic fresh-clone + setup verification; `install_git_hooks.sh --check` exit-code validation.
+- **Cascade**: 0 kernel-side changes; 5 infrastructure files touched.
 
 ### AN1-C — Stale `WS-V/AG10` TODO retargeting (H-24, RUST-M06)
 
@@ -357,22 +381,42 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
   - `SeLe4n/Prelude.lean:548-577` (`Badge` structure + smart constructors)
   - `tests/BadgeOverflowSuite.lean` (existing 22 tests; extend to cover private-mk rejection)
   - All call sites of `Badge.mk` (grep + migrate; expected ~5 sites in non-test code)
-- **Plan**:
-  1. Restructure `Badge` to use `private mk ::`:
-     ```lean
-     structure Badge where private mk ::
-       val : Nat
-     deriving DecidableEq, Repr, Inhabited
-     ```
-  2. Promote `Badge.ofNatMasked`, `Badge.ofNat`, and `Badge.zero` (literal builder if not present) as the only public constructors. Each MUST return a `Badge.valid` witness or a `Badge` that has `valid` provable by reduction.
-  3. Migrate every external `Badge.mk` call site to `Badge.ofNatMasked` (or `ofNat` where the bound is statically clear). Likely sites: test fixtures, decode helpers.
-  4. Add a regression test in `BadgeOverflowSuite`: `#eval Badge.mk` must produce a "constructor is private" elaboration error (use `set_option pp.privateNames true` to verify the symbol is hidden).
-- **Acceptance**:
-  - Repo-wide grep `grep -rn "Badge.mk" SeLe4n/ tests/` returns only the structure declaration site (and explicit-allowed test files using `Badge.mkUnsafe` if introduced as a fresh internal helper for proof-side reduction)
-  - `tests/BadgeOverflowSuite.lean` passes; new "private mk" test added (compile-time rejection or `Badge.valid` provable by construction)
-  - Module gate: `lake build SeLe4n.Prelude`; smoke gate; full gate
-- **Regression test**: full gate + `lake exe badge_overflow_suite`
-- **Cascade**: ~5 sites; LOW-cost. Pattern applied recursively in AN2-B for VAddr/PAddr/CPtr/Slot.
+- **Total effort**: ~0.5 day. **Cascade**: ~5 call sites; LOW-cost. Establishes the pattern AN2-B applies to VAddr/PAddr/CPtr/Slot.
+
+**Sub-sub-task breakdown** (4 commits):
+
+- **AN2-A.1 — Inventory `Badge.mk` external consumers** (0.1 day)
+  - `grep -rn "Badge\.mk\b\|Badge\.mk\s" SeLe4n/ tests/ rust/` to list every call site.
+  - Classify: (a) legitimate proof-side destructures that can migrate to a new `Badge.mkUnsafeForProof` (a private helper co-located with `Badge` inside the namespace); (b) ABI-decode sites that migrate to `Badge.ofNatMasked`; (c) test fixtures that migrate to `Badge.ofNatMasked` or `Badge.ofNat`.
+  - **Acceptance**: inventory captured in commit message; call-site count and classification present.
+
+- **AN2-A.2 — Introduce `private mk ::` + smart constructors** (0.15 day)
+  - Restructure:
+    ```lean
+    structure Badge where private mk ::
+      val : Nat
+    deriving DecidableEq, Repr, Inhabited
+    ```
+  - If proof-side destructuring requires a non-private construction form, add a `private` helper:
+    ```lean
+    private def Badge.mkUnsafeForProof (n : Nat) : Badge := ⟨n⟩  -- proof-internal only
+    ```
+  - Ensure `Badge.ofNatMasked`, `Badge.ofNat`, `Badge.zero` are public and return `Badge.valid`-witnessed values.
+  - **Acceptance**: `lake build SeLe4n.Prelude` PASS; external `Badge.mk` now rejected by the elaborator.
+
+- **AN2-A.3 — Migrate external `Badge.mk` call sites** (0.15 day)
+  - Walk the inventory from AN2-A.1. For each non-proof site, replace `Badge.mk n` with `Badge.ofNatMasked n 0` (or `Badge.ofNat n` + bound proof). For each proof site that needs destructuring, migrate to the new `mkUnsafeForProof` private helper.
+  - **Acceptance**: `grep -rn "Badge\.mk\b" SeLe4n/ tests/ rust/` returns only the structure declaration site and the private helper (if introduced).
+
+- **AN2-A.4 — Regression test + metric** (0.1 day)
+  - Add regression test in `BadgeOverflowSuite`:
+    - Elaboration-rejection test: `example : Badge := Badge.mk 42` should NOT compile outside the Prelude namespace — verify via a comment-level directive that would fail compile (or use a test scenario that constructs `Badge.ofNatMasked` and asserts `valid`).
+    - Runtime test: `Badge.ofNatMasked (2^64) 0 |>.valid` asserts validity.
+  - Extend `scripts/ak7_cascade_baseline.sh` with `BADGE_PUBLIC_MK_SITES` monotonicity metric (floor = 0; should never grow).
+  - **Acceptance**: test extensions landed; metric added to baseline; full gate PASS.
+
+- **Regression test**: full gate + `lake exe badge_overflow_suite`.
+- **Cascade**: ~5 sites.
 
 ### AN2-B — Subtype-gate cascade for `VAddr`/`PAddr`/`CPtr`/`Slot` (Theme 4.3, H-13 follow-on)
 
@@ -380,19 +424,44 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 - **Files**:
   - `SeLe4n/Prelude.lean:463-500` (`CPtr`, `Slot`, `VAddr`, `PAddr` structures)
   - All call sites — grep `\.mk\b` per type
-- **Plan**:
-  1. Apply the same `private mk ::` pattern to each type whose `valid` predicate is currently advisory. List in priority order:
-     - `CPtr` (lines 463-468): `isWord64Bounded` advisory → enforce via `private mk ::` + `CPtr.ofNat` smart constructor
-     - `Slot` (lines 490-495): same treatment
-     - `VAddr` (lines 671-679): `canonicalBound` 2^48 advisory → enforce via `VAddr.ofNat`
-     - `PAddr`: enforce 2^52 (or `physicalAddressWidth` parameterized) bound via `PAddr.ofNat`
-  2. Land migrations bottom-up: each type's smart constructor takes a `Nat` and produces `Option T`/`Except _ T`; an `unsafeMk` proof-side variant retained `private` for invariants that destructure a known-valid value.
-  3. The cascade through preservation theorems is mostly mechanical: theorems that use `CPtr.mk n` become `(CPtr.ofNat n).get!` or are rewritten to take a `CPtr` parameter. Cap the per-commit footprint at 1 type per commit so review scopes stay tight.
-- **Acceptance**:
-  - Per-type: `grep -rn "CPtr\.mk\|Slot\.mk\|VAddr\.mk\|PAddr\.mk" SeLe4n/ tests/` produces only expected proof-side `unsafeMk` patterns
-  - All `valid` predicates become provable-by-construction at every public entry
-- **Regression test**: full gate per type; ABI conformance suite (`lake exe abi_roundtrip_suite`) PASS
-- **Cascade**: ~30 sites total across the four types, batched 1-type-per-commit
+- **Total effort**: ~1 day. **Cascade**: ~30 sites total across the 4 types; 1-type-per-commit batching so review scopes stay tight.
+
+**Sub-sub-task breakdown** (4 commits — one per type, following AN2-A playbook):
+
+- **AN2-B.1 — `CPtr` private mk + smart constructors** (0.25 day)
+  - Apply AN2-A pattern to `CPtr`:
+    ```lean
+    structure CPtr where private mk ::
+      val : Nat
+    deriving DecidableEq, Repr, Inhabited
+    ```
+  - Add `CPtr.ofNat : Nat → Option CPtr` (rejects `val ≥ 2^64`); keep `isWord64Dec` as the runtime predicate.
+  - Migrate ~8 call sites (estimated).
+  - Delegate `CPtr.isWord64Bounded` to `isWord64Dec ·.val` (FND-M01 lands here).
+  - **Acceptance**: `grep -rn "CPtr\.mk\b" SeLe4n/ tests/` returns only the structure + proof-side helper; full gate PASS; FND-M01 closed for CPtr.
+
+- **AN2-B.2 — `Slot` private mk + smart constructors** (0.25 day)
+  - Same pattern for `Slot`. Migrate ~6 call sites.
+  - Delegate `Slot.isWord64Bounded` (FND-M01 closure for Slot).
+  - **Acceptance**: as above; FND-M01 closed for Slot.
+
+- **AN2-B.3 — `VAddr` private mk + canonicalBound parameterization** (0.25 day)
+  - Same pattern for `VAddr`. Additional work: parameterize `canonicalBound` on `virtualAddressWidth` (FND-M02):
+    ```lean
+    def VAddr.canonicalBound (vw : Nat := virtualAddressWidthDefault) : Nat := 2 ^ vw
+    ```
+    with `virtualAddressWidthDefault : Nat := 48` constant. All existing canonicalBound usages accept the new default and preserve current behavior; any code needing LPA2 semantics passes `vw := 52` explicitly.
+  - Migrate ~8 call sites; verify `MachineState.virtualAddressWidth` callers discovery.
+  - **Acceptance**: FND-M02 closed; VAddr private-mk complete; decode sites spot-checked for default consistency.
+
+- **AN2-B.4 — `PAddr` private mk + physicalAddressWidth gate** (0.25 day)
+  - Same pattern for `PAddr`. Smart constructor `PAddr.ofNat` requires `physicalAddressWidth` parameter (no default — forces each caller to supply the target platform's width).
+  - Cascade through AK3-E's `decodeVSpaceMapArgsChecked` and AJ4-C's `validateIpcBufferAddress` (both already check 2^pw bounds; verify they compose with the new smart constructor).
+  - Migrate ~8 call sites.
+  - **Acceptance**: PAddr private-mk complete; all callers explicit about PA width; full gate PASS.
+
+- **Regression test (cumulative)**: full gate per commit; `lake exe abi_roundtrip_suite` after AN2-B.4.
+- **Cascade**: ~30 sites (CPtr 8 + Slot 6 + VAddr 8 + PAddr 8).
 
 ### AN2-C — `RegisterFile.gpr : Fin 32` refactor + `LawfulBEq (RHTable α β)` instance (H-11)
 
@@ -401,19 +470,43 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
   - `SeLe4n/Machine.lean:254-304` (`RegisterFile`)
   - `SeLe4n/Kernel/RobinHood/Bridge.lean:136-153` (`RHTable.BEq`)
   - All call sites of `RegisterFile.gpr i` (most are bounded by inspection; need migration to `Fin 32`)
-- **Plan**:
-  1. Refactor `RegisterFile.gpr : Nat → RegValue` to `gpr : Fin 32 → RegValue`. The 32-GPR convention is hardcoded; make the typing reflect it.
-  2. Introduce `RegisterFile.gprNat : Nat → Option RegValue` for legacy callers that need to pass a `Nat` (returns `none` for indices ≥ 32). Migrate callers incrementally.
-  3. Derive `BEq` and `LawfulBEq` for the refactored `RegisterFile` automatically.
-  4. Delete the `RegisterFile.not_lawfulBEq` negative witness (it served as a guard against accidentally relying on the unlawful instance; the new instance is lawful).
-  5. For `RHTable.BEq`: add the `instance : LawfulBEq (RHTable κ β)` derivation under `[LawfulBEq κ] [LawfulBEq β]`. This is mechanical given the value-type pairing; ensure the `BEq` body is structural.
-  6. Verify any `DecidableEq SystemState` consumers no longer require manual witness threading.
-- **Acceptance**:
-  - `lake build SeLe4n.Machine` PASS
-  - `LawfulBEq (RHTable κ β)` derivable instance present and used by `SystemState`-touching proofs
-  - No regression in `cargo test --workspace` (Rust ABI's `RegValue` round-trip unchanged)
-- **Regression test**: full gate; rust gate
-- **Cascade**: ~20 call sites in scheduler/IPC for `RegisterFile.gpr`; ~5 for `RHTable.BEq`
+- **Total effort**: ~1 day. **Cascade**: ~20 RegisterFile sites + ~5 RHTable sites.
+
+**Sub-sub-task breakdown** (5 commits):
+
+- **AN2-C.1 — Add `RegisterFile.gprNat` legacy shim** (0.1 day)
+  - Before changing the primary `gpr` signature, introduce a `RegisterFile.gprNat : Nat → Option RegValue` helper that returns `none` for indices ≥ 32. All existing `RegisterFile.gpr (n : Nat)` callers can migrate to `RegisterFile.gprNat n |>.get!` with an accompanying proof-obligation that `n < 32`.
+  - **Acceptance**: shim added; builds unchanged.
+
+- **AN2-C.2 — Refactor `RegisterFile.gpr` to `Fin 32 → RegValue`** (0.25 day)
+  - Change signature. Bump downstream call sites using `⟨n, by decide⟩` proof-carrying construction or via the AN2-C.1 shim.
+  - Verify cargo-side `RegValue` round-trip unchanged (the Rust ABI should not need updates — Rust already uses `[u64; 32]` which is `Fin 32`-equivalent).
+  - **Acceptance**: `lake build SeLe4n.Machine` PASS.
+
+- **AN2-C.3 — Derive `BEq` + `LawfulBEq` for `RegisterFile`** (0.15 day)
+  - Add `deriving BEq, LawfulBEq` to the `RegisterFile` structure now that the refactored `Fin 32` representation supports it.
+  - Delete the old `RegisterFile.not_lawfulBEq` negative witness (it was a guard against accidentally relying on the unlawful instance; the new instance IS lawful).
+  - Spot-check that `RegisterFile.ext` (the AK7-G extensionality lemma) still composes.
+  - **Acceptance**: `LawfulBEq RegisterFile` derivable; negative witness removed; `lake build` PASS.
+
+- **AN2-C.4 — `RHTable.BEq` + `LawfulBEq (RHTable κ β)` derivation** (0.25 day)
+  - In `Bridge.lean:136-153`, add:
+    ```lean
+    instance [LawfulBEq κ] [LawfulBEq β] : LawfulBEq (RHTable κ β) where
+      eq_of_beq := ...  -- structural via field-by-field equality
+      rfl := ...        -- structural reflexivity
+    ```
+  - Verify via `example : LawfulBEq (RHTable ObjId KernelObject)` — now that `LawfulBEq KernelObject` + `LawfulBEq RegisterFile` both hold (post AN2-C.3), the chain composes.
+  - **Acceptance**: instance present; `#check @LawfulBEq (RHTable ObjId KernelObject)` succeeds.
+
+- **AN2-C.5 — Migrate consumers + cleanup shim** (0.25 day)
+  - Walk scheduler/IPC consumers of `RegisterFile.gpr`; migrate any that still use `gprNat` to direct `Fin 32` calls where the index is statically known.
+  - Keep `gprNat` as a permanent convenience for code paths where the index is a runtime value needing validation.
+  - Drop any manual `DecidableEq SystemState` witness-threading in downstream proofs; they compose automatically now.
+  - **Acceptance**: `grep -rn "RegisterFile\.gprNat" SeLe4n/` shows only the legitimate runtime-index usage; full gate + rust gate PASS.
+
+- **Regression test**: full gate + rust gate at each commit.
+- **Cascade**: ~20 RegisterFile sites + ~5 RHTable sites; 1-per-commit batching unnecessary (types are different).
 
 ### AN2-D — Typed-identifier disjointness as Prop-level invariant (H-10)
 
@@ -422,31 +515,63 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
   - `SeLe4n/Prelude.lean:111-135` (`ThreadId.toObjId`, `SchedContextId.toObjId`, `ServiceId.toObjId`)
   - `SeLe4n/Kernel/CrossSubsystem.lean` — extend `crossSubsystemInvariant` from 11 conjuncts to 12 with `typedIdDisjointness` as the new conjunct
   - `SeLe4n/Kernel/Lifecycle/Operations.lean:retypeFromUntyped` — verify `retypeFromUntyped_childId_fresh` discharges the new conjunct
-- **Plan**:
-  1. Promote `typedIdDisjointness_trivial` (existing weak witness from AJ2-D) into a substantive `typedIdDisjointness : SystemState → Prop`:
-     ```lean
-     def typedIdDisjointness (st : SystemState) : Prop :=
-       ∀ tid : ThreadId, ∀ scId : SchedContextId,
-         st.objects.get? tid.toObjId = some _.tcb _ →
-         st.objects.get? scId.toObjId = some _.schedContext _ →
-         tid.toObjId ≠ scId.toObjId
-     ```
-     and analogous for `ServiceId` (when service objects are stored under shared IDs).
-  2. Add as 12th conjunct of `crossSubsystemInvariant` (mirrors WS-AM AM4 pattern of adding `lifecycleObjectTypeLockstep` as 11th conjunct).
-  3. Frame lemmas:
-     - `default_typedIdDisjointness` (vacuous on empty state)
-     - `storeObject_preserves_typedIdDisjointness` for same-kind writes
-     - `retypeFromUntyped_preserves_typedIdDisjointness` via `retypeFromUntyped_childId_fresh` (new ID is provably absent pre-state)
-  4. Cascade through the 5 core bridges (`_objects_change_bridge`, `_retype_bridge`, `_objects_frame`, `_services_change`, `_composition_gap_documented`) and the ~34 per-operation bridge lemmas — same playbook as AM4-D/E.
-  5. Update `crossSubsystemInvariant_default` to 12 cases.
-  6. Bump `crossSubsystemFieldSets` count to 12; update `crossSubsystem_pairwise_coverage_complete` to C(12,2)=66 disjoint pairs (extend from 18 to 21 disjoint pairs — typedIdDisjointness is disjoint from at least 3 other field-sets).
-- **Acceptance**:
-  - `lake build SeLe4n.Kernel.CrossSubsystem` PASS
-  - 3 new runtime tests (`an2d_01..03`) in `tests/Ak7RegressionSuite.lean`: predicate true on default; predicate detects deliberate aliasing; preservation through `retypeFromUntyped` for non-overlapping IDs
-  - `checkCrossSubsystemInvariant` in `SeLe4n/Testing/InvariantChecks.lean` extended to 12 predicates
-  - V6-A runtime assertion in `tests/InformationFlowSuite.lean` updated 11→12 entries
-- **Regression test**: full gate; `lake exe ak7_regression_suite`
-- **Cascade**: cascade-heavy (~50 preservation proofs); split across 3-4 commits matching AM4-D/E pattern
+- **Total effort**: ~2.5 days. **Cascade**: cascade-heavy (~50 preservation proofs); split across 7 sub-sub-task commits matching AM4 playbook.
+
+**Sub-sub-task breakdown** (7 commits, one per AN2-D.N):
+
+- **AN2-D.1 — Predicate definition + default witness** (0.25 day)
+  - New definition in `CrossSubsystem.lean`:
+    ```lean
+    def typedIdDisjointness (st : SystemState) : Prop :=
+      (∀ tid : ThreadId, ∀ scId : SchedContextId,
+        (∃ tcb, st.lookupKernelObject tid.toObjId = some (.tcb tcb)) →
+        (∃ sc, st.lookupKernelObject scId.toObjId = some (.schedContext sc)) →
+        tid.toObjId ≠ scId.toObjId)
+      ∧ (∀ tid : ThreadId, ∀ svcId : ServiceId, /* ThreadId vs ServiceId */)
+      ∧ (∀ scId : SchedContextId, ∀ svcId : ServiceId, /* SchedContextId vs ServiceId */)
+    ```
+  - Prove `default_typedIdDisjointness : typedIdDisjointness (default : SystemState)` by `simp [typedIdDisjointness, lookupKernelObject, default]` (vacuous over empty store).
+  - **Acceptance**: `lake build SeLe4n.Kernel.CrossSubsystem` PASS; default witness present.
+
+- **AN2-D.2 — Same-kind frame lemma** (0.25 day)
+  - `storeObject_sameKind_preserves_typedIdDisjointness` — same-kind writes don't change which IDs resolve to which variants, so disjointness transfers.
+  - **Acceptance**: frame lemma proven; `module gate` PASS.
+
+- **AN2-D.3 — Cross-kind retype preservation** (0.5 day)
+  - `retypeFromUntyped_preserves_typedIdDisjointness` via `retypeFromUntyped_childId_fresh`: the new child ID is absent pre-state, so pre-state disjointness + post-state presence in one variant only implies no aliasing with a different variant.
+  - Case-split per `KernelObjectType` target variant (`.tcb`, `.schedContext`, `.endpoint`, `.notification`, `.cnode`, `.vspaceRoot`, `.service`): for each, the new ID enters one typed-ID namespace; prove no collision with the other two.
+  - **Acceptance**: 7-case theorem proven; rounds out the retype preservation story.
+
+- **AN2-D.4 — 12th conjunct of `crossSubsystemInvariant`** (0.25 day)
+  - Extend `crossSubsystemInvariant` from 11 → 12 conjuncts (append at end so prefix-indexed projections remain unchanged — follows AM4 convention).
+  - Add projection `crossSubsystemInvariant_to_typedIdDisjointness`.
+  - Update `default_crossSubsystemInvariant` to 12 cases.
+  - **Acceptance**: module gate PASS; projection accessor present.
+
+- **AN2-D.5 — 5 core bridges** (0.5 day)
+  - Extend the 5 core bridges (`_objects_change_bridge`, `_retype_bridge`, `_objects_frame`, `_services_change`, `_composition_gap_documented`) with a new `hTypedIdDisj : typedIdDisjointness st'` hypothesis where each bridge cannot discharge it from the pre-state alone.
+  - `_retype_bridge` specifically discharges `hTypedIdDisj` from `retypeFromUntyped_preserves_typedIdDisjointness` (AN2-D.3) internally — no caller supplies it.
+  - **Acceptance**: module gate PASS; retype bridge no longer requires caller-supplied `typedIdDisjointness` witness.
+
+- **AN2-D.6 — 34 per-operation bridge lemmas (cascade)** (0.5 day — mechanical)
+  - Uniform call-pattern edit across IPC/Scheduler/Lifecycle/Capability/SchedContext/Priority/VSpace/IPCBuffer/Retype/Interrupt bridge lemmas (follows AM4-E playbook).
+  - Each bridge gains a new `hTypedIdDisj` hypothesis wiring either (a) forward from the caller, or (b) discharged internally via AN2-D.2/AN2-D.3 where applicable.
+  - **Acceptance**: full gate PASS; cascade complete.
+
+- **AN2-D.7 — Field-set catalog update + runtime checks + tests** (0.25 day)
+  - Bump `crossSubsystemFieldSets` count 11 → 12; `typedIdDisjointness_fields := [.objects]` (or whichever fields the predicate touches).
+  - Extend `crossSubsystem_pairwise_coverage_complete` from C(11,2)=55 disjoint pairs to C(12,2)=66 — add the 11 new pairs (typedIdDisjointness vs each of the 11 previous predicates, checking field-set disjointness).
+  - Update runtime `checkCrossSubsystemInvariant` in `SeLe4n/Testing/InvariantChecks.lean` from 11 → 12 predicates.
+  - Update V6-A runtime assertion in `tests/InformationFlowSuite.lean` from "11 entries" to "12 entries".
+  - Add 3 new runtime tests in `tests/Ak7RegressionSuite.lean`:
+    - `an2d_01_default_disjoint` — predicate holds on default state
+    - `an2d_02_aliased_rejected` — deliberate ID-collision between TCB and SchedContext rejected
+    - `an2d_03_retype_preserves` — retype from Untyped to `.tcb` preserves disjointness
+  - Extend `scripts/ak7_cascade_baseline.sh` with `TYPEDIDDISJ_REFS` monotonicity metric (should grow as callers accumulate).
+  - **Acceptance**: full gate; `lake exe ak7_regression_suite` PASS; `ak7_cascade_check_monotonic.sh` PASS against new baseline.
+
+- **Regression test (cumulative)**: full gate at every sub-sub-task commit; `lake exe ak7_regression_suite` PASS at AN2-D.7
+- **Cascade**: ~50 preservation sites, explicit counts per sub-sub-task above
 
 ### AN2-E — Badge intermediate-overflow tightening (H-12)
 
@@ -466,40 +591,129 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 
 - **Audit IDs**: FND-M01..M08
 - **Files**: scattered; per-finding below
-- **Plan** (one commit per ID, batched into a single PR):
-  - **FND-M01**: `Prelude.lean:463-468, 490-495` — refactor `CPtr.isWord64Bounded` and `Slot.isWord64Bounded` to delegate via `@[inline] def isWord64Bounded := isWord64Dec ·.val`. Trivially follows from the AN2-B refactor.
-  - **FND-M02**: `Prelude.lean:671-679` — replace hardcoded `2^48` in `VAddr.canonicalBound` with `MachineState.virtualAddressWidth`-derived computation. Add `virtualAddressWidthDefault := 48` constant and a parameterized version. Verify no decode site silently mismatches the default.
-  - **FND-M03**: `Model/Object/Types.lean:1017-1043` — add `UntypedObjectValid := { ut : UntypedObject // ut.wellFormed }` subtype; tighten `allocate`/`retypeFromUntyped` to take `UntypedObjectValid` at the entry point. Cascade is bounded because retype already validates `wellFormed` at admission; the change makes the precondition type-level rather than runtime.
-  - **FND-M04**: `Kernel/RobinHood/Bridge.lean:88-94` — define `minPracticalRHCapacity : Nat := 16`; reference from `Inhabited` instance and bridge-lemma capacity bounds. Pure rename; no behavior change.
-  - **FND-M05**: `Kernel/RobinHood/Bridge.lean:240-283` (DS-L5) — heartbeat budget profile and decompose. Approach: use `set_option profiler true` to identify the slow subproofs; extract them as named lemmas; target ≤200,000 heartbeats. If the decomposition is non-obvious, split this into AN2-F.5 as a stretch sub-task and document residual heartbeat budget.
-  - **FND-M06**: `Kernel/FrozenOps/Core.lean:149-200` — gate unchecked FrozenOps. Two options: (a) `private` (preferred); (b) `set_option sele4n.frozenOps.unsafe true`. Per the audit's preference, mark `private`. The `*Checked` variants from AK8-G remain the public surface. Test sites that rely on unchecked variants migrate to the checked ones.
-  - **FND-M07**: `Kernel/FrozenOps/Core.lean:285-344` — prove the AE2-D Phase-2 unreachable branch substantively rather than returning `.error`. Pattern: `... := by exact absurd hPhase2 (Phase1_covers_all hPhase1)`.
-  - **FND-M08**: `Prelude.lean:149-198` — add Prelude docstring decision table for `toObjId`/`toObjIdChecked`/`toObjIdVerified`. Pure documentation.
-- **Acceptance**: each FND-M item resolved per its plan; full gate green after PR merges
-- **Regression test**: full gate; `lake exe frozen_ops_suite`
-- **Cascade**: small per-item; total ~25 sites across the eight items
+- **Total effort**: ~1 day. **Cascade**: ~25 sites total across 8 items.
+
+**Sub-sub-task breakdown** (8 commits, one per FND-M item):
+
+- **AN2-F.1 — FND-M01 `isWord64Bounded` delegation** (0.05 day; already covered by AN2-B.1/B.2)
+  - Verify AN2-B.1 (`CPtr`) and AN2-B.2 (`Slot`) have migrated `isWord64Bounded` to `@[inline] def isWord64Bounded := isWord64Dec ·.val`. No additional work if AN2-B landed correctly.
+  - **Acceptance**: `grep -rn "isWord64Bounded" SeLe4n/Prelude.lean` shows delegated form.
+
+- **AN2-F.2 — FND-M02 `VAddr.canonicalBound` parameterization** (0.1 day; already covered by AN2-B.3)
+  - Verify AN2-B.3 replaced hardcoded 2^48 with `MachineState.virtualAddressWidth`-derived computation.
+  - Confirm no decode site silently mismatches the default.
+  - **Acceptance**: no hardcoded `2^48` remains for `canonicalBound`; decode-site audit pass.
+
+- **AN2-F.3 — FND-M03 `UntypedObjectValid` subtype + retype precondition** (0.15 day)
+  - Add subtype in `Model/Object/Types.lean:1017-1043`:
+    ```lean
+    def UntypedObjectValid := { ut : UntypedObject // ut.wellFormed }
+    ```
+  - Tighten `allocate` and `retypeFromUntyped` entry signatures to accept `UntypedObjectValid` (instead of bare `UntypedObject` + runtime `wellFormed` check).
+  - Cascade through ~5-8 call sites at retype entry.
+  - **Acceptance**: subtype defined; retype signatures tightened; full gate PASS.
+
+- **AN2-F.4 — FND-M04 `minPracticalRHCapacity` constant** (0.05 day)
+  - In `Kernel/RobinHood/Bridge.lean:88-94`, introduce:
+    ```lean
+    def minPracticalRHCapacity : Nat := 16
+    ```
+  - Reference from `Inhabited (RHTable κ β)` instance and the capacity-bound bridge lemmas.
+  - **Acceptance**: no magic `16` literal remains in the `Inhabited` instance; `lake build` PASS.
+
+- **AN2-F.5 — FND-M05 DS-L5 heartbeat profile + decompose** (0.25 day, stretch)
+  - In `Kernel/RobinHood/Bridge.lean:240-283` use `set_option profiler true` + `set_option trace.Meta.Tactic.simp` to identify the slow subproofs consuming the 800,000 heartbeats.
+  - Extract the slow subgoals as named lemmas (`rhtable_ofList_insert_invariant`, etc.); land each as a top-level lemma with a targeted proof strategy.
+  - Verify the `set_option maxHeartbeats` can be dropped from 800,000 → ≤200,000 after decomposition.
+  - **Success exit**: heartbeat budget at ≤200,000. **Partial exit**: lower the budget as far as the toolchain permits; document residual in `AUDIT_v0.30.6_DEFERRED.md` as `DEF-FND-M05.partial`.
+  - **Acceptance**: budget reduced; lemma decomposition committed.
+
+- **AN2-F.6 — FND-M06 gate unchecked FrozenOps** (0.1 day)
+  - Mark unchecked `Kernel/FrozenOps/Core.lean:149-200` operations `private`. Public surface is the `*Checked` variants from AK8-G.
+  - Migrate any test site that depends on an unchecked variant to the checked form. Since FrozenOps is experimental (per CLAUDE.md "FrozenOps status stays 'experimental — deferred to WS-V. Not in production import chain'"), the call-site count is likely zero or very small.
+  - **Acceptance**: private marker applied; no production consumer references an unchecked variant.
+
+- **AN2-F.7 — FND-M07 Phase-2 unreachable branch proof** (0.15 day)
+  - In `Kernel/FrozenOps/Core.lean:285-344`, replace the AE2-D Phase-2 `.error .objectNotFound` fallback with a substantive impossibility proof:
+    ```lean
+    ... := by exact absurd hPhase2 (Phase1_covers_all hPhase1)
+    ```
+  - Need to first prove `Phase1_covers_all` as a named lemma (the covering property of Phase-1).
+  - **Acceptance**: substantive proof present; no silent `.error` fallback in the two-phase validation path.
+
+- **AN2-F.8 — FND-M08 `toObjId` decision-table docstring** (0.1 day)
+  - Add to `Prelude.lean:149-198` a Markdown decision table in the `ObjId`-namespace docstring:
+    | Variant | Checks sentinel | Checks store type | Use when |
+    |---------|:---------------:|:-----------------:|----------|
+    | `toObjId`         | no  | no  | Proof-side identity mapping |
+    | `toObjIdChecked`  | yes | no  | Kernel entry (sentinel rejection) |
+    | `toObjIdVerified` | yes | yes | Production API (full validation) |
+  - **Acceptance**: table present; `check_website_links.sh` PASS.
+
+- **Regression test**: full gate; `lake exe frozen_ops_suite`.
+- **Cascade**: small per item; total ~25 sites (most in AN2-F.3 retype-entry tightening).
 
 ### AN2-G — DEF-F-L9 17-deep tuple refactor (cross-cutting prep — Theme 4.2 entrypoint)
 
 - **Audit IDs**: DEF-F-L9 (carried forward from AUDIT_v0.29.0_DEFERRED.md), Theme 4.2 cross-cutting
 - **Files**: `SeLe4n/Model/State.lean` (`allTablesInvExtK` 17-tuple)
-- **Plan**:
-  1. Convert `allTablesInvExtK` from a 17-tuple to a Lean `structure` with named fields:
-     ```lean
-     structure AllTablesInvExtK (st : SystemState) : Prop where
-       objects_invExtK : st.objects.invExtK
-       irqHandlers_invExtK : st.irqHandlers.invExtK
-       ... (14 more)
-     ```
-  2. Update downstream callers to use `.objects_invExtK` field access instead of `.1`/`.2.1`/etc.
-  3. The named-projection convention introduced here is the template for AN3-B (`ipcInvariantFull`) and AN4-G (`apiInvariantBundle_frozenDirect`).
-  4. Estimated cascade: ~80 proof sites per the audit's WS-AF-26 design rationale. Land as 4-5 commits, each migrating one downstream consumer cluster.
-- **Acceptance**:
-  - `lake build SeLe4n.Model.State` PASS
-  - All consumers use named field access; no `.1.2.2…` remains for `allTablesInvExtK` projections
-  - Witness-equality theorem retained (no behavioral change)
-- **Regression test**: full gate; `lake exe ak7_regression_suite`
-- **Cascade**: ~80 sites; spread over 4-5 commits
+- **Total effort**: ~1.5 days. **Cascade**: ~80 proof sites per the audit's WS-AF-26 design rationale; establishes the template for AN3-B and AN4-F (CAP-M05).
+
+**Sub-sub-task breakdown** (7 commits):
+
+- **AN2-G.1 — `AllTablesInvExtK` structure + bidirectional bridge** (0.25 day)
+  - Define:
+    ```lean
+    structure AllTablesInvExtK (st : SystemState) : Prop where
+      objects_invExtK : st.objects.invExtK
+      irqHandlers_invExtK : st.irqHandlers.invExtK
+      asidTable_invExtK : st.asidTable.invExtK
+      serviceRegistry_invExtK : st.serviceRegistry.invExtK
+      interfaceRegistry_invExtK : st.interfaceRegistry.invExtK
+      services_invExtK : st.services.invExtK
+      cdtChildMap_invExtK : st.cdtChildMap.invExtK
+      cdtParentMap_invExtK : st.cdtParentMap.invExtK
+      cdtSlotNode_invExtK : st.cdtSlotNode.invExtK
+      cdtNodeSlot_invExtK : st.cdtNodeSlot.invExtK
+      objectTypes_invExtK : st.lifecycle.objectTypes.invExtK
+      capabilityRefs_invExtK : st.capabilityRefs.invExtK
+      objectIndexSet_invExtK : st.objectIndexSet.invExtK
+      scThreadIndex_invExtK : st.scThreadIndex.invExtK
+      scheduler_byPriority_invExtK : st.scheduler.byPriority.invExtK
+      scheduler_threadPriority_invExtK : st.scheduler.threadPriority.invExtK
+      scheduler_membership_invExtK : st.scheduler.membership.invExtK
+    ```
+  - Rename original 17-tuple to `allTablesInvExtKTuple`; keep legacy definition building. Add bidirectional bridge `allTablesInvExtK_iff_tuple`.
+  - **Acceptance**: structure + bridge compile; no downstream breakage (tuple form remains).
+
+- **AN2-G.2 — `@[simp]` projection abbrevs** (0.15 day)
+  - Add 17 projections matching AN3-B.2 pattern.
+  - **Acceptance**: 17 `#check` statements elaborate.
+
+- **AN2-G.3 — Define primary type as `AllTablesInvExtK`** (0.15 day)
+  - Swap which name is primary; mark tuple form `@[deprecated]`.
+  - **Acceptance**: `AllTablesInvExtK` is the canonical API; deprecation marker present.
+
+- **AN2-G.4 — Migrate Model/FreezeProofs consumers (~20 sites)** (0.25 day)
+  - `SeLe4n/Model/FreezeProofs.lean` (1660 LOC) is the heaviest consumer cluster. Replace deep projections with field access.
+  - **Acceptance**: `lake build SeLe4n.Model.FreezeProofs` PASS; module gate PASS.
+
+- **AN2-G.5 — Migrate Kernel subsystem consumers (~30 sites)** (0.3 day)
+  - Walk `Kernel/CrossSubsystem.lean`, `Kernel/API.lean`, scheduler/IPC preservation chains.
+  - Batch into 2 commits by file cluster.
+  - **Acceptance**: full gate PASS after each batch.
+
+- **AN2-G.6 — Migrate test consumers (~30 sites)** (0.25 day)
+  - Walk `tests/*Suite.lean`, `SeLe4n/Testing/*.lean`.
+  - **Acceptance**: all test suites PASS; full gate PASS.
+
+- **AN2-G.7 — Delete deprecated tuple form + monotonicity metric** (0.15 day)
+  - Confirm `grep -rn "allTablesInvExtKTuple" SeLe4n/ tests/` shows only definition site; delete it and the bridge.
+  - Extend `scripts/ak7_cascade_baseline.sh` with `ALLTABLESINVEXTK_TUPLE_REFS` metric (floor = 0).
+  - **Acceptance**: tuple form removed; monotonicity metric committed; full gate PASS.
+
+- **Regression test (cumulative)**: `lake build SeLe4n.Model.State` + full gate at every commit; `lake exe ak7_regression_suite` at AN2-G.7.
+- **Cascade**: ~80 sites, explicitly counted above (20+30+30).
 
 ### AN2-H — AN2 closure
 
@@ -537,50 +751,101 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 - **Files**:
   - `SeLe4n/Kernel/IPC/Invariant/Defs.lean:2483` (`ipcInvariantFull` 12-tuple definition)
   - All consumers using `.2.2.2.2.2.2.2.2.2.2.2.1` (`donationOwnerValid` extraction) and similar deep projections
-- **Plan**:
-  1. Promote `ipcInvariantFull` from a tuple to a `structure`:
-     ```lean
-     structure IpcInvariantFull (st : SystemState) : Prop where
-       structuralBasic : ...
-       endpointWaiterConsistent : ...
-       notificationWaiterConsistent : ...
-       ... (12 named fields total — match existing 12 conjuncts)
-       donationOwnerValid : ...
-     ```
-  2. Provide forward-compat: keep the legacy tuple form as `ipcInvariantFullTuple` with a bidirectional bridge `ipcInvariantFull_iff_tuple : IpcInvariantFull st ↔ ipcInvariantFullTuple st`. Migrate downstream proofs in batches.
-  3. Add `@[simp]` projection theorems: `ipcInvariantFull_donationOwnerValid : IpcInvariantFull st → donationOwnerValid st` (etc.) so callers can extract via `_.donationOwnerValid` instead of deep tuple projection.
-  4. Update the 12 conjunct extractions in cross-file consumers (notably `IPC/Invariant/Structural.lean`, `Kernel/CrossSubsystem.lean`, `IPC/Invariant/EndpointPreservation.lean`).
-- **Acceptance**:
-  - No remaining `.2.2.2.2.2.2.2.2.2.2.2.1` projection on `ipcInvariantFull` outside the bridge theorem
-  - `lake build SeLe4n.Kernel.IPC.Invariant.Defs` PASS
-  - Compositional theorem `IpcInvariantFull.mk` constructible from the 12 base predicates
-- **Regression test**: full gate; module gate on every cross-subsystem caller listed in CrossSubsystem.lean
-- **Cascade**: cascade-heavy (~60 sites per CAP-M05 and IPC-M01 references); split across 5-6 commits
+- **Total effort**: ~2 days. **Cascade**: cascade-heavy (~60 sites); split across 6 sub-sub-tasks matching AN2-G's tuple→structure playbook.
+
+**Sub-sub-task breakdown** (6 commits, one per AN3-B.N):
+
+- **AN3-B.1 — `IpcInvariantFull` structure + bidirectional bridge** (0.25 day)
+  - Define `IpcInvariantFull` as a Lean `structure` with 12 named fields mirroring the existing 12 conjuncts (field names: `structuralBasic`, `endpointWaiterConsistent`, `notificationWaiterConsistent`, `queueMembershipConsistent`, `queueNextBlockingConsistent`, `uniqueWaiters`, `queueNoDup`, `allPendingMessagesBounded`, `blockedOnReplyHasTarget`, `ipcStateQueueMembershipConsistent`, `passiveServerIdle`, `donationOwnerValid`).
+  - Rename original tuple-based definition to `ipcInvariantFullTuple` (keeps all existing callers building).
+  - Add bidirectional bridge `ipcInvariantFull_iff_tuple : ipcInvariantFullTuple st ↔ IpcInvariantFull st` proven by `constructor <;> intro h <;> constructor <;> simp_all [IpcInvariantFull, ipcInvariantFullTuple]`.
+  - **Acceptance**: `lake build SeLe4n.Kernel.IPC.Invariant.Defs` PASS; bridge theorem present; no downstream breakage (tuple form still callable).
+
+- **AN3-B.2 — `@[simp]` projection abbrevs** (0.25 day)
+  - Add 12 `@[simp] abbrev IpcInvariantFull.<field> (h : IpcInvariantFull st) : <PredType> st := h.<field>` projections so any legacy `.2.2...` projection can be rewritten as `h.fieldName` via mechanical find-replace.
+  - **Acceptance**: 12 projection abbrevs committed; `#check IpcInvariantFull.donationOwnerValid` elaborates.
+
+- **AN3-B.3 — Define primary type as `IpcInvariantFull`** (0.25 day)
+  - Swap which name is the primary definition: `ipcInvariantFullTuple` remains callable via bridge; the canonical name used in new theorems is `IpcInvariantFull`.
+  - Mark `ipcInvariantFullTuple` with `@[deprecated]` message pointing at `IpcInvariantFull`.
+  - Update `Defs.lean` documentation to reference the named-field form.
+  - **Acceptance**: `IpcInvariantFull` is the primary API; deprecation marker present; module gate PASS.
+
+- **AN3-B.4 — Migrate IPC subsystem consumers (~25 sites)** (0.5 day — batched)
+  - Walk IPC-internal consumers in `IPC/Invariant/Structural.lean` (many call sites), `EndpointPreservation.lean`, `CallReplyRecv.lean`, `NotificationPreservation.lean`, `QueueMembership.lean`, `QueueNextBlocking.lean`, `QueueNoDup.lean`, `WaitingThreadHelpers.lean`.
+  - Replace `.2.2.2.2...` projections with `.fieldName` field access.
+  - Commit in 2-3 grouped commits by file cluster to keep diffs reviewable.
+  - **Acceptance**: IPC-internal consumers migrated; full gate PASS after each batch.
+
+- **AN3-B.5 — Migrate cross-subsystem consumers (~25 sites)** (0.5 day — batched)
+  - Walk `Kernel/CrossSubsystem.lean`, `Kernel/API.lean`, `Kernel/Architecture/Invariant.lean`, `Kernel/Lifecycle/Operations.lean`, `Kernel/Capability/Invariant/Preservation.lean`, test suites (`tests/*Suite.lean`).
+  - Same find-replace pattern as AN3-B.4.
+  - Commit in 2-3 grouped commits.
+  - **Acceptance**: cross-subsystem consumers migrated; full gate PASS after each batch.
+
+- **AN3-B.6 — Delete deprecated tuple form + monotonicity baseline** (0.25 day)
+  - Confirm via `grep -rn "ipcInvariantFullTuple\|\.2\.2\.2\.2\.2\.2\.2\.2\.2\.2\.2\.1" SeLe4n/ tests/` that zero production consumers remain.
+  - If grep is clean: delete `ipcInvariantFullTuple` and the bridge theorem entirely. Otherwise keep as vestigial with a tracking DEFERRED entry.
+  - Extend `scripts/ak7_cascade_baseline.sh` with `IPCINVFULL_TUPLE_REFS` monotonicity metric (should DROP to zero once migration is complete).
+  - **Acceptance**: tuple form removed or explicitly kept with DEFERRED tracking; `ak7_cascade_check_monotonic.sh` PASS against new baseline
+
+- **Regression test (cumulative)**: `lake build SeLe4n.Kernel.IPC.Invariant.Defs` + full gate at every commit; `lake exe ak7_regression_suite` PASS at AN3-B.6
+- **Cascade**: ~50-60 sites explicitly counted (25 IPC-internal in AN3-B.4 + 25 cross-subsystem in AN3-B.5)
 
 ### AN3-C — IPC `Structural.lean` 7626-line split (Theme 4.7 first instance, IPC-M02)
 
 - **Audit IDs**: IPC-M02 (MEDIUM), Theme 4.7 cross-cutting
 - **Files**:
   - `SeLe4n/Kernel/IPC/Invariant/Structural.lean` (7626 lines) — split into 4 child modules
-  - `SeLe4n/Kernel/IPC/Invariant.lean` — re-export hub gains 4 imports (or 1 import for an aggregator hub)
-- **Plan**:
-  1. Identify the four natural seams from the audit: (a) QueueNext{Path,Foo} transport lemmas, (b) store-object frame lemmas, (c) dual-queue membership proofs, (d) per-operation Structural witnesses.
-  2. Create `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean`, `Structural/StoreObjectFrame.lean`, `Structural/DualQueueMembership.lean`, `Structural/PerOperation.lean`.
-  3. Move declarations atomically per file (one commit per move + one verification commit after each); each child file MUST `import` exactly the modules its declarations reference.
-  4. Convert `Structural.lean` to a thin re-export hub:
-     ```lean
-     import SeLe4n.Kernel.IPC.Invariant.Structural.QueueNextTransport
-     import SeLe4n.Kernel.IPC.Invariant.Structural.StoreObjectFrame
-     import SeLe4n.Kernel.IPC.Invariant.Structural.DualQueueMembership
-     import SeLe4n.Kernel.IPC.Invariant.Structural.PerOperation
-     ```
-  5. Keep all theorem names and namespaces stable so external consumers see no change.
-- **Acceptance**:
-  - Each new file ≤ 2000 LOC (matches Theme 4.7 ceiling); `Structural.lean` shrinks to <50 LOC re-export hub
-  - `lake build SeLe4n.Kernel.IPC.Invariant.Structural` PASS
-  - All upstream IPC tests PASS
-- **Regression test**: full gate
-- **Cascade**: 0 (re-export pattern preserves all import paths)
+  - `SeLe4n/Kernel/IPC/Invariant.lean` — re-export hub (no change needed if `Structural.lean` itself becomes the hub)
+- **Total effort**: ~1.5 days. **Cascade**: 0 external sites (re-export pattern preserves all import paths); ~7500 lines moved in total.
+
+**Sub-sub-task breakdown** (6 commits — Lean file splits must be done carefully; each move is its own commit so review can verify nothing dropped):
+
+- **AN3-C.1 — Seam inventory + declaration catalog** (0.25 day — planning-only commit)
+  - Produce a `docs/audits/AN3C_SEAM_MAP.md` (ephemeral; deleted at AN3-G closure) listing every declaration in `Structural.lean` tagged with its target child module. Four target categories:
+    - `QueueNextTransport.lean` — `QueueNextPath`-related lemmas, `queueNextReflTrans`, queueNext / transport compositions
+    - `StoreObjectFrame.lean` — `storeObject_*_preserves_*` frame lemmas (same-kind, cross-kind, TCB/endpoint/notification/schedcontext)
+    - `DualQueueMembership.lean` — queue-membership preservation, `queueIndexBound`, `queueNoDupPreservation`
+    - `PerOperation.lean` — per-operation Structural preservation witnesses (`endpointSendStructural`, `endpointReceiveStructural`, etc.)
+  - Spot-check: run `grep -n "^theorem\|^lemma\|^def" SeLe4n/Kernel/IPC/Invariant/Structural.lean | wc -l` to get the total declaration count; verify the sum across 4 child categories equals the total.
+  - **Acceptance**: seam map file committed; reviewer can verify every declaration has a target.
+
+- **AN3-C.2 — Extract `QueueNextTransport.lean`** (0.25 day)
+  - `git mv`-style: create `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean`; move ~1500-2000 lines.
+  - Import minimal set from original parent file's imports.
+  - Original `Structural.lean` gains `import SeLe4n.Kernel.IPC.Invariant.Structural.QueueNextTransport` at the top.
+  - Verify: `lake build SeLe4n.Kernel.IPC.Invariant.Structural.QueueNextTransport` PASS; `lake build SeLe4n.Kernel.IPC.Invariant.Structural` PASS (composed via the new import).
+  - **Acceptance**: child module builds; parent still builds via re-export; full gate PASS.
+
+- **AN3-C.3 — Extract `StoreObjectFrame.lean`** (0.25 day)
+  - Same pattern: create child module, move ~1500-2000 lines (frame lemmas), add import to parent.
+  - Frame lemmas often depend on QueueNextTransport — verify import order.
+  - **Acceptance**: child module builds; full gate PASS.
+
+- **AN3-C.4 — Extract `DualQueueMembership.lean`** (0.25 day)
+  - Same pattern: create child module, move ~1500-2000 lines (queue membership).
+  - **Acceptance**: child module builds; full gate PASS.
+
+- **AN3-C.5 — Extract `PerOperation.lean`** (0.25 day)
+  - Same pattern: create child module, move remaining ~1500-2000 lines (per-operation witnesses).
+  - **Acceptance**: child module builds; full gate PASS.
+
+- **AN3-C.6 — Finalize as thin re-export hub** (0.25 day)
+  - `Structural.lean` now contains only:
+    ```lean
+    import SeLe4n.Kernel.IPC.Invariant.Structural.QueueNextTransport
+    import SeLe4n.Kernel.IPC.Invariant.Structural.StoreObjectFrame
+    import SeLe4n.Kernel.IPC.Invariant.Structural.DualQueueMembership
+    import SeLe4n.Kernel.IPC.Invariant.Structural.PerOperation
+    ```
+  - Verify `wc -l` on each child file ≤ 2000; verify `Structural.lean` ≤ 50 LOC.
+  - Delete the ephemeral `AN3C_SEAM_MAP.md` (it was only useful during the split).
+  - Refresh `CLAUDE.md` "Known large files" list: remove `Structural.lean 7626` and add the 4 new children.
+  - **Acceptance**: file sizes at target; hub is re-export-only; full gate PASS.
+
+- **Regression test (cumulative)**: `lake build SeLe4n.Kernel.IPC.Invariant.Structural` at every commit; full gate after each move verifies no theorem went missing.
+- **Cascade**: 0 (no external import changes — re-export pattern)
 
 ### AN3-D — IPC `NotificationPreservation.lean` and `CallReplyRecv.lean` splits (IPC-M03, IPC-M04)
 
@@ -588,24 +853,78 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 - **Files**:
   - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation.lean` (1490 LOC) → split into `Notification/Signal.lean` + `Notification/Wait.lean`
   - `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv.lean` (1069 LOC) → split into `Call.lean` + `ReplyRecv.lean`
-- **Plan**: same playbook as AN3-C — extract per-operation files, hub re-exports.
-- **Acceptance**: each child file ≤ 1000 LOC; hub re-exports preserve all consumer imports
-- **Regression test**: full gate
-- **Cascade**: 0
+- **Total effort**: ~0.75 day. **Cascade**: 0 external (re-export pattern).
+
+**Sub-sub-task breakdown** (5 commits, same AN3-C playbook adapted for 2 files × 2 children each):
+
+- **AN3-D.1 — NotificationPreservation seam inventory + signal extract** (0.2 day)
+  - Catalog declarations into `Notification/Signal.lean` (signal-family preservation theorems, ~750 LOC) vs `Notification/Wait.lean` (wait-family, ~740 LOC).
+  - Extract `Notification/Signal.lean` as first child module; original hub gains import.
+  - **Acceptance**: `lake build SeLe4n.Kernel.IPC.Invariant.NotificationPreservation.Signal` PASS; parent still builds.
+
+- **AN3-D.2 — NotificationPreservation wait extract + hub conversion** (0.2 day)
+  - Extract `Notification/Wait.lean`; `NotificationPreservation.lean` reduces to thin re-export hub (~20 LOC).
+  - **Acceptance**: both children ≤ 1000 LOC; hub ≤ 30 LOC; full gate PASS.
+
+- **AN3-D.3 — CallReplyRecv seam inventory + call extract** (0.15 day)
+  - Catalog declarations. Extract `Call.lean` (call-family preservation theorems, ~550 LOC).
+  - **Acceptance**: `lake build` PASS.
+
+- **AN3-D.4 — CallReplyRecv replyrecv extract + hub conversion** (0.15 day)
+  - Extract `ReplyRecv.lean`; `CallReplyRecv.lean` becomes thin re-export hub.
+  - **Acceptance**: both children ≤ 600 LOC; hub ≤ 30 LOC; full gate PASS.
+
+- **AN3-D.5 — CLAUDE.md large-files-list update** (0.05 day)
+  - Remove `NotificationPreservation.lean 1490` + `CallReplyRecv.lean 1069` entries; verify none of the children exceed the 1000-LOC ceiling.
+  - **Acceptance**: large-files list reflects new topology; full gate PASS.
+
+- **Regression test**: full gate after each commit.
+- **Cascade**: 0 external.
 
 ### AN3-E — IPC MEDIUM batch (IPC-M05..M09)
 
 - **Audit IDs**: IPC-M05..M09
 - **Files**: scattered
-- **Plan** (one commit per ID, single PR):
-  - **IPC-M05**: `IPC/Invariant/QueueMembership.lean:31-78` — extract shared `transferAux` helper used by both `transfer`/`transferRecv`. Goal: collapse the duplicate ~40-LOC bodies to one shared definition.
-  - **IPC-M06**: `IPC/Operations/Endpoint.lean:460` — promote `storeObject_scheduler_eq_z7` to public OR document the internality rationale in its docstring with a `-- INTENTIONALLY PRIVATE: see WH:Z7` cross-reference.
-  - **IPC-M07**: `IPC/Invariant/Defs.lean:811-927` — strengthen queue-consistency predicates with a reachability precondition `∀ tid ∈ queue, st.objectIndex.contains tid.toObjId`. Verify no regression in preservation proofs that compose under `ipcInvariantFull`.
-  - **IPC-M08**: `IPC/Invariant/Defs.lean:228-284` — strengthen `allPendingMessagesBounded` to cross-check endpoint reference liveness, OR explicitly weaken the docstring to acknowledge that liveness is a transitive property (not the predicate's own).
-  - **IPC-M09**: `IPC/Operations/Endpoint.lean:1-20` — add `-- DO NOT MOVE: cleanupPreReceiveDonation must co-locate with Endpoint to avoid cycling Donation → Transport → Endpoint` banner. Also add a build-time check (a Lean `example` that triggers an import-cycle compile error if Donation is moved back).
-- **Acceptance**: each MEDIUM addressed; full gate green
-- **Regression test**: full gate; `lake exe negative_state_suite`
-- **Cascade**: small (~5-10 sites per item)
+- **Total effort**: ~0.75 day.
+
+**Sub-sub-task breakdown** (5 items, one commit each):
+
+- **AN3-E.1 — IPC-M05 shared `transferAux` helper** (0.2 day)
+  - In `IPC/Invariant/QueueMembership.lean:31-78`, extract the shared ~40-LOC body of `transfer`/`transferRecv` into a single `transferAux (... : QueueSide → ...) : ... := ...` helper parameterized on the queue side (send vs receive).
+  - Both existing `transfer` and `transferRecv` become thin wrappers.
+  - Verify downstream preservation proofs continue to compose.
+  - **Acceptance**: ~40 LOC recovered; module gate PASS.
+
+- **AN3-E.2 — IPC-M06 `storeObject_scheduler_eq_z7` visibility decision** (0.1 day)
+  - Option A: promote to public if downstream consumers benefit.
+  - Option B: keep private; add docstring `-- INTENTIONALLY PRIVATE: donation path consumes the general `storeObject_scheduler_eq_*` forms. Z7 variant is an optimization for the bound-SC case; see WH:Z7.`
+  - Default: Option B (audit-aligned).
+  - **Acceptance**: visibility decision documented.
+
+- **AN3-E.3 — IPC-M07 queue-consistency reachability precondition** (0.2 day)
+  - Strengthen predicates in `IPC/Invariant/Defs.lean:811-927` (queue-consistency): append `∀ tid ∈ queue, st.objectIndex.contains tid.toObjId`.
+  - Verify the strengthening is discharged by the existing `objectsInvariant`/`objectIndexConsistent` predicates; downstream preservation proofs should go through unchanged.
+  - If any preservation proof breaks: the callers were relying on the weaker form; patch them to thread the reachability witness.
+  - **Acceptance**: strengthened predicate ships; full gate PASS.
+
+- **AN3-E.4 — IPC-M08 `allPendingMessagesBounded` scope decision** (0.15 day)
+  - Option A: strengthen to cross-check endpoint liveness.
+  - Option B: weaken docstring to explicitly acknowledge liveness is a transitive property composed via `ipcStateQueueMembershipConsistent`.
+  - Default: Option B (minimal change; matches the predicate's actual role).
+  - **Acceptance**: docstring updated.
+
+- **AN3-E.5 — IPC-M09 `cleanupPreReceiveDonation` co-location banner + import-cycle guard** (0.1 day)
+  - Add banner comment at `IPC/Operations/Endpoint.lean:1-20`:
+    ```
+    -- DO NOT MOVE cleanupPreReceiveDonation out of this file.
+    -- Rationale: Donation.lean → Transport.lean → Endpoint.lean; moving the
+    -- cleanup helper back to Donation.lean reintroduces a cycle.
+    ```
+  - Add a Lean `example` that triggers a compile error if the function is relocated (e.g., a proof that the function is defined in this file via `#check @cleanupPreReceiveDonation`).
+  - **Acceptance**: banner + guard present.
+
+- **Regression test**: full gate; `lake exe negative_state_suite`.
+- **Cascade**: ~5-10 sites per item.
 
 ### AN3-F — IPC LOW batch
 
@@ -642,19 +961,50 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
   - `SeLe4n/Kernel/Lifecycle/Operations/Internal.lean` (new) — moves the function into a `protected` namespace OR a sibling module not exported from the hub
   - 13+ proof-chain consumers (per the audit's count) — verify they import the new internal module
   - `scripts/test_tier0_hygiene.sh` — extend with a CI check
-- **Plan**:
-  1. Move `lifecycleRetypeObject` into `SeLe4n.Kernel.Lifecycle.Internal` namespace (under `Operations/Internal.lean` if file split is desired, else inline as `namespace Internal`).
-  2. The hub `Lifecycle/Operations.lean` re-exports ONLY `lifecycleRetypeWithCleanup` and the cleanup primitives — NOT `lifecycleRetypeObject` directly.
-  3. Proof-chain consumers update imports: `import SeLe4n.Kernel.Lifecycle.Operations.Internal` (or `import SeLe4n.Kernel.Lifecycle.Operations` and reference as `Lifecycle.Internal.lifecycleRetypeObject`).
-  4. Add CI hygiene check in `test_tier0_hygiene.sh`:
-     - Grep for `lifecycleRetypeObject` outside `SeLe4n/Kernel/Lifecycle/` — if any match exists in a non-Lifecycle file that is NOT a proof-internal site, fail.
-     - Allowlist file: `scripts/lifecycle_internal_allowlist.txt` enumerating the legitimate proof-chain consumer paths.
-- **Acceptance**:
-  - `lifecycleRetypeObject` no longer visible from `Lifecycle.Operations` direct import (only via `Internal` sub-namespace)
-  - Production callers (syscall arms in `API.lean`) verify they go through `lifecycleRetypeWithCleanup`
-  - CI guard rejects new files that bypass the wrapper
-- **Regression test**: full gate; new `lake exe negative_state_suite` scenario asserting cleanup-bypass attempt yields `.error`
-- **Cascade**: ~13 import paths
+- **Total effort**: ~1 day. **Cascade**: ~13 import paths; 1 new CI hygiene check.
+
+**Sub-sub-task breakdown** (5 commits):
+
+- **AN4-A.1 — Inventory production vs proof-chain consumers** (0.15 day)
+  - `grep -rn "lifecycleRetypeObject" SeLe4n/` to list all 13+ references.
+  - Classify each reference as either:
+    - **Production caller (must bypass)** — any syscall dispatch arm in `API.lean` or any Kernel-level handler. These MUST go through `lifecycleRetypeWithCleanup`. Expected count: 0 (audit claims they already do; confirm).
+    - **Proof-chain reference (must be explicit)** — every theorem that needs to reason about the internal step.
+  - Capture inventory in `scripts/lifecycle_internal_allowlist.txt` with one path per line.
+  - **Acceptance**: allowlist file committed; classification documented.
+
+- **AN4-A.2 — Move `lifecycleRetypeObject` to `Internal` namespace** (0.25 day)
+  - Option A (preferred — simpler): rewrap the existing def as `namespace Internal ... end Internal` inside `Lifecycle/Operations.lean`. Consumers reference as `Lifecycle.Internal.lifecycleRetypeObject`.
+  - Option B (if file split desired): move to new `SeLe4n/Kernel/Lifecycle/Operations/Internal.lean`. Hub `Operations.lean` does NOT re-export `Internal`.
+  - Hub `Operations.lean` continues to re-export `lifecycleRetypeWithCleanup` + cleanup primitives.
+  - **Acceptance**: `lifecycleRetypeObject` no longer visible from direct `import SeLe4n.Kernel.Lifecycle.Operations`; accessible only via the explicit `Internal` sub-namespace.
+
+- **AN4-A.3 — Migrate proof-chain consumer imports** (0.25 day)
+  - Walk the 13 entries from AN4-A.1. For each, update its `import`/namespace reference to the new `Internal` sub-namespace.
+  - Verify `lake build` passes after each batch of 3-4 consumers.
+  - **Acceptance**: all proof-chain consumers updated; full gate PASS.
+
+- **AN4-A.4 — CI hygiene check: reject unauthorized consumers** (0.2 day)
+  - Extend `scripts/test_tier0_hygiene.sh` with:
+    ```bash
+    # AN4-A: enforce lifecycleRetypeObject visibility
+    unauthorized=$(grep -rn "lifecycleRetypeObject" SeLe4n/ --include="*.lean" \
+                   | grep -v -f scripts/lifecycle_internal_allowlist.txt || true)
+    if [ -n "$unauthorized" ]; then
+        echo "ERROR: unauthorized lifecycleRetypeObject consumer detected:"
+        echo "$unauthorized"
+        exit 1
+    fi
+    ```
+  - Verify the check fails on a synthetic unauthorized usage and passes on the current tree.
+  - **Acceptance**: CI hygiene check active; synthetic-violation test produces expected failure.
+
+- **AN4-A.5 — Regression test for cleanup bypass** (0.15 day)
+  - Add scenario test in `tests/NegativeStateSuite.lean`: synthesize a state where `lifecyclePreRetypeCleanup` WOULD have scrubbed a dangling capability reference; confirm that invoking `lifecycleRetypeWithCleanup` clears the reference but a hypothetical direct invocation of `Internal.lifecycleRetypeObject` (via a test-only namespace unfurl) does not. This documents the semantic difference.
+  - **Acceptance**: test committed; scenario passes.
+
+- **Regression test**: full gate; `lake exe negative_state_suite`.
+- **Cascade**: ~13 import paths + 1 CI check + 1 regression test.
 
 ### AN4-B — Redundant `lifecycleIdentityNoTypeAliasConflict` removal (H-03)
 
@@ -726,30 +1076,98 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 
 - **Audit IDs**: CAP-M01..M05
 - **Files**: scattered
-- **Plan**:
-  - **CAP-M01**: replace `resolveCapAddress_caller_rights_obligation : True := trivial` (vacuous Prop) with a `def` marker `… : Unit := ()` OR use a `@[documented_obligation]` attribute (define this attribute as a no-op tag in `SeLe4n/Prelude.lean`). Prefer the attribute approach because it makes the obligation tag-greppable without theorem-namespace pollution.
-  - **CAP-M02**: prove `cspaceRevokeCdtTransactional_unreachable_fallback` substantively if the branch really is dead, OR document the invariant failure trigger if it isn't. Walk the validation path; if the absurdity is provable, prove it.
-  - **CAP-M03**: split `Capability/Invariant/Preservation.lean` (2461 LOC) per operation: `Preservation/Insert.lean`, `Preservation/Delete.lean`, `Preservation/Revoke.lean`, `Preservation/CDT.lean`, `Preservation/CopyMoveMutate.lean`, `Preservation/MintLifecycle.lean`. Hub `Preservation.lean` becomes a re-export (Theme 4.7).
-  - **CAP-M04**: introduce `RetypeTarget := { id : ObjId // cleanupHookDischarged id }` precondition type for retype paths. Cascade through `lifecyclePreRetypeCleanup` callers; update cleanup hook to produce the witness.
-  - **CAP-M05**: apply the AN3-B named-projection treatment to `capabilityInvariantBundle` 6-tuple. Pattern is identical; smaller cascade because only 6 conjuncts.
-- **Acceptance**: each MEDIUM addressed; full gate green after the CAP-M03 split is verified across all importers
-- **Regression test**: full gate
-- **Cascade**: CAP-M01 (~1), CAP-M02 (~1), CAP-M03 (~0 due to re-export pattern), CAP-M04 (~5-10), CAP-M05 (~30 destructure sites)
+- **Total effort**: ~1.5 days. **Cascade**: CAP-M03 split (0 external); CAP-M05 cascade-heavy (~30 sites).
+
+**Sub-sub-task breakdown** (5 top-level commits, CAP-M05 expanded into its own 6 sub-sub-sub-tasks mirroring AN3-B):
+
+- **AN4-F.1 — CAP-M01 documented-obligation attribute** (0.1 day)
+  - Define a no-op attribute in `SeLe4n/Prelude.lean`:
+    ```lean
+    syntax (name := documented_obligation) "@[documented_obligation]" : attr
+    ```
+  - Tag `resolveCapAddress_caller_rights_obligation` with `@[documented_obligation]`; replace its body from `: True := trivial` to `: Unit := ()` marker constant (audit's preferred form over vacuous Prop).
+  - **Acceptance**: attribute defined; obligation greppable via `grep -rn "@\[documented_obligation\]" SeLe4n/`.
+
+- **AN4-F.2 — CAP-M02 dead-branch proof-or-doc** (0.25 day)
+  - Walk `cspaceRevokeCdtTransactional` at lines 1231-1236 and trace the validation post-condition.
+  - If dead: prove `cspaceRevokeCdtTransactional_unreachable_fallback` substantively using the post-condition of `validateRevokeCdtDescendants`.
+  - If live: document the triggering invariant failure in the function docstring.
+  - **Acceptance**: one path resolved; `lake build SeLe4n.Kernel.Capability.Operations` PASS.
+
+- **AN4-F.3 — CAP-M03 Preservation.lean split (6 child files)** (0.75 day)
+  - Follow AN3-C playbook; 6 child modules × ~400 LOC each:
+    - `Preservation/Insert.lean`, `Preservation/Delete.lean`, `Preservation/Revoke.lean`, `Preservation/CDT.lean`, `Preservation/CopyMoveMutate.lean`, `Preservation/MintLifecycle.lean`
+  - 7 commits: seam inventory, 6 extractions, one finalization.
+  - **Acceptance**: each child ≤ 500 LOC; hub ≤ 50 LOC; full gate after each extraction.
+
+- **AN4-F.4 — CAP-M04 `RetypeTarget` subtype precondition** (0.25 day)
+  - Define subtype in `SeLe4n/Kernel/Capability/Invariant/Defs.lean`:
+    ```lean
+    structure RetypeTarget where
+      id : ObjId
+      cleanupHookDischarged : ... -- witness
+    ```
+  - Cascade through `lifecyclePreRetypeCleanup` callers producing the witness post-cleanup; proof-chain callers of `retypeFromUntyped` (limited after AN4-A visibility hardening) thread the precondition.
+  - **Acceptance**: subtype defined; ~5-10 consumer sites migrated.
+
+- **AN4-F.5 — CAP-M05 `capabilityInvariantBundle` named-projection refactor** (0.75 day)
+  - Follow AN3-B playbook for the 6-tuple (smaller than ipcInvariantFull's 12-tuple). Sub-sub-sub-tasks:
+    - **AN4-F.5.1** — Structure + bidirectional bridge (0.1 day)
+    - **AN4-F.5.2** — `@[simp]` projection abbrevs (0.1 day)
+    - **AN4-F.5.3** — Swap primary to named form; deprecate tuple (0.1 day)
+    - **AN4-F.5.4** — Migrate Capability-internal consumers (~15 sites) (0.2 day)
+    - **AN4-F.5.5** — Migrate cross-subsystem consumers (~15 sites) (0.15 day)
+    - **AN4-F.5.6** — Delete tuple + monotonicity metric (0.1 day)
+  - **Acceptance**: ~30 sites migrated; tuple form deleted; `CAPINVBUNDLE_TUPLE_REFS` monotonicity metric at 0.
+
+- **Regression test**: full gate after each sub-sub-task.
+- **Cascade**: CAP-M01 ~1, CAP-M02 ~1, CAP-M03 ~0 external, CAP-M04 ~5-10, CAP-M05 ~30.
 
 ### AN4-G — Lifecycle MEDIUM batch (LIF-M01..M06)
 
 - **Audit IDs**: LIF-M01..M06
 - **Files**: `SeLe4n/Kernel/Lifecycle/Operations.lean` (1473 LOC) — split is LIF-M05
-- **Plan**:
-  - **LIF-M01**: prove `removeThreadFromQueue_unreachable_under_tcbExistsInvariant` substantively; remove the `(none, none)` defensive fallback (or prove it absurd).
-  - **LIF-M02**: introduce `lifecycleCleanupPipeline` wrapper that composes the per-step cleanups with a fixed order; expose ONLY the pipeline.
-  - **LIF-M03**: cross-reference scrub-address-formula limitation in `SELE4N_SPEC.md` §5; add a `// TODO(H3-binding): scrub address must map to physical via VSpace bridge` annotation.
-  - **LIF-M04**: prove `retypeFromUntyped_atomicity_under_sequential_semantics` witnessing the watermark-advance + post-allocation-verify happens atomically in the sequential model, then add a TODO for H3 atomicity proof.
-  - **LIF-M05**: split `Lifecycle/Operations.lean` (1473 LOC) into `Operations/Cleanup.lean`, `Operations/Retype.lean`, `Operations/Suspend.lean`, `Operations/Untyped.lean`. Hub re-exports.
-  - **LIF-M06**: add docstring to `lifecycleRevokeDeleteRetype` documenting the no-rollback partial-failure contract; surface in `SELE4N_SPEC.md` §5.
-- **Acceptance**: each LIF-M addressed
-- **Regression test**: full gate
-- **Cascade**: LIF-M01 (~1), LIF-M02 (~5), LIF-M03 (~0 doc), LIF-M04 (~1), LIF-M05 (~0 re-export), LIF-M06 (~0 doc)
+- **Total effort**: ~1 day.
+
+**Sub-sub-task breakdown** (6 commits):
+
+- **AN4-G.1 — LIF-M01 prove `removeThreadFromQueue` fallback unreachable** (0.15 day)
+  - Prove `removeThreadFromQueue_unreachable_under_tcbExistsInvariant` substantively: under `tcbExistsInvariant`, the `(none, none)` "TCB not found" path is absurd because the invariant guarantees the TCB's presence in the object store.
+  - Replace the defensive fallback with an explicit `absurd` or error.
+  - **Acceptance**: theorem proven; no silent queue-zeroing path remains.
+
+- **AN4-G.2 — LIF-M02 `lifecycleCleanupPipeline` wrapper** (0.15 day)
+  - Wrap the per-step cleanup sequence (donated SC return, TCB ref scrub, endpoint-service detach, CDT detach) into a single `lifecycleCleanupPipeline : RetypeTarget → Kernel Unit` definition.
+  - Expose ONLY the pipeline from the hub; mark the per-step helpers as `private` (where proof chain permits) OR move to `Internal` namespace.
+  - **Acceptance**: pipeline defined; ~5 consumer sites migrated; full gate PASS.
+
+- **AN4-G.3 — LIF-M03 scrub-address H3-binding doc cross-reference** (0.05 day)
+  - Add `-- TODO(H3-binding): scrubObjectMemory uses abstract formula; hardware path must map via VSpace bridge` annotation at `scrubObjectMemory`.
+  - Add `SELE4N_SPEC.md` §5 subsection documenting the model-vs-hardware scrub bridge gap.
+  - **Acceptance**: annotation + SPEC entry present.
+
+- **AN4-G.4 — LIF-M04 retype atomicity theorem** (0.15 day)
+  - Prove `retypeFromUntyped_atomicity_under_sequential_semantics` witnessing that the watermark-advance + post-allocation-verify appears atomic in the sequential Lean model (because Lean's deterministic evaluation collapses the window).
+  - Add TODO annotation cross-referencing AN10-B's SMP inventory (which will include a DEF for the H3 atomicity proof).
+  - **Acceptance**: theorem proven; TODO annotation present.
+
+- **AN4-G.5 — LIF-M05 Operations.lean 4-file split** (0.4 day)
+  - Follow AN3-C playbook for 4 children (~370 LOC each):
+    - `Operations/Cleanup.lean`
+    - `Operations/Retype.lean`
+    - `Operations/Suspend.lean`
+    - `Operations/Untyped.lean`
+  - 5 commits: seam inventory + 4 extractions + hub conversion.
+  - Hub `Operations.lean` becomes thin re-export after `lifecycleRetypeObject` visibility hardening from AN4-A is preserved (the `Internal` namespace is extracted into one of the children — recommend `Operations/Retype.lean` given the `lifecycleRetypeObject` function lives in the retype cluster).
+  - **Acceptance**: each child ≤ 500 LOC; hub ≤ 50 LOC; full gate after each extraction commit.
+
+- **AN4-G.6 — LIF-M06 partial-failure contract docstring** (0.1 day)
+  - Add explicit docstring on `lifecycleRevokeDeleteRetype` documenting the no-rollback contract on partial failure: early `.error` returns leave state in a partially-cleaned form the caller must handle.
+  - Surface in `SELE4N_SPEC.md` §5 as part of the lifecycle semantics.
+  - **Acceptance**: docstring + SPEC entry present.
+
+- **Regression test**: full gate after each commit.
+- **Cascade**: LIF-M01 ~1, LIF-M02 ~5, LIF-M03 ~0, LIF-M04 ~1, LIF-M05 ~0 external, LIF-M06 ~0.
 
 ### AN4-H — Service MEDIUM batch (SVC-M01..M04)
 
@@ -794,20 +1212,54 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 - **Files**:
   - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (3633 LOC)
   - Hub `Scheduler/Operations.lean` re-export
-- **Plan**:
-  1. Identify natural seams: (a) per-operation `schedule`/`handleYield`/`timerTick`/`switchDomain` preservation theorems, (b) RunQueue helpers (`remove_preserves_nodup` etc.), (c) replenishment-pipeline preservation (`popDueReplenishments`, `refillSchedContext`), (d) cross-subsystem bridge witnesses.
-  2. Extract:
-     - `Preservation/Schedule.lean`
-     - `Preservation/HandleYield.lean`
-     - `Preservation/TimerTick.lean`
-     - `Preservation/SwitchDomain.lean`
-     - `Preservation/RunQueueHelpers.lean`
-     - `Preservation/ReplenishmentPipeline.lean`
-  3. Each ≤ 1000 LOC. Hub re-exports.
-  4. SCH-M01: factor the duplicated `cases obj` dispatch into a helper macro `tcbCasesPreservation` in `Preservation/RunQueueHelpers.lean`. Apply at all 4 op call sites; recover ~80 LOC and eliminate the future-divergence risk.
-- **Acceptance**: each child file ≤ 1000 LOC; SCH-M01 pattern factored; full gate
-- **Regression test**: full gate
-- **Cascade**: 0 (re-export pattern)
+- **Total effort**: ~1.5 days. **Cascade**: 0 external sites; ~3500 lines moved into 6 child modules.
+
+**Sub-sub-task breakdown** (8 commits, one per AN5-A.N):
+
+- **AN5-A.1 — Seam inventory** (0.1 day)
+  - Catalog `Preservation.lean` declarations into 6 target child modules. Spot-check total declaration count.
+  - **Acceptance**: seam map committed (ephemeral).
+
+- **AN5-A.2 — Factor SCH-M01 `tcbCasesPreservation` helper** (0.25 day)
+  - Before splitting the file, factor the duplicated `cases obj` dispatch (identified by audit at lines 267-308 and 439-448) into a named helper:
+    ```lean
+    -- In (or extracted into) Preservation/RunQueueHelpers.lean
+    private lemma tcbCasesPreservation (st : SystemState) (oid : ObjId)
+        (P : KernelObject → Prop) (hTcb : ∀ tcb, st.lookupKernelObject oid = some (.tcb tcb) → P (.tcb tcb))
+        (hOther : ∀ obj, (∀ tcb, obj ≠ .tcb tcb) → P obj) : ... := ...
+    ```
+  - Apply at all 4 operation sites (`schedule`/`handleYield`/`timerTick`/`switchDomain`). Recover ~80 LOC. Land as a single commit before the split so the audit-mentioned divergence risk is closed first.
+  - **Acceptance**: 4 call sites now use the helper; no behavior change; module gate PASS.
+
+- **AN5-A.3 — Extract `Preservation/Schedule.lean`** (0.15 day)
+  - Move `schedule`-family theorems (~500-600 LOC).
+  - **Acceptance**: child module builds; parent imports.
+
+- **AN5-A.4 — Extract `Preservation/HandleYield.lean`** (0.15 day)
+  - Move `handleYield`-family theorems (~400-500 LOC).
+  - **Acceptance**: child module builds.
+
+- **AN5-A.5 — Extract `Preservation/TimerTick.lean`** (0.15 day)
+  - Move `timerTick`-family theorems (~700-800 LOC — includes budget-aware variants).
+  - **Acceptance**: child module builds.
+
+- **AN5-A.6 — Extract `Preservation/SwitchDomain.lean`** (0.15 day)
+  - Move `switchDomain`-family theorems (~400-500 LOC).
+  - **Acceptance**: child module builds.
+
+- **AN5-A.7 — Extract `Preservation/RunQueueHelpers.lean` + `Preservation/ReplenishmentPipeline.lean`** (0.25 day)
+  - RunQueueHelpers: `remove_preserves_nodup`, `insert_preserves_nodup`, the new `tcbCasesPreservation` (~300 LOC).
+  - ReplenishmentPipeline: `popDueReplenishments_*`, `refillSchedContext_*`, `processReplenishmentsDue_*` (~500 LOC).
+  - **Acceptance**: both child modules build; full gate PASS.
+
+- **AN5-A.8 — Finalize as thin re-export hub** (0.1 day)
+  - `Preservation.lean` reduces to 6 imports + its own cross-subsystem bridge witnesses (keeps the latter because they transitively consume all 6 child modules).
+  - `wc -l` verification: each child ≤ 1000 LOC; parent ≤ 100 LOC.
+  - Refresh `CLAUDE.md` "Known large files" list.
+  - **Acceptance**: file sizes at target; full gate PASS.
+
+- **Regression test (cumulative)**: `lake build SeLe4n.Kernel.Scheduler.Operations.Preservation` at every commit; full gate after AN5-A.2 (to verify SCH-M01 factoring doesn't break anything) and after AN5-A.8.
+- **Cascade**: 0 external (re-export pattern); 80 LOC recovered via SCH-M01 factoring.
 
 ### AN5-B — Scheduler MEDIUM batch (SCH-M02..M05)
 
@@ -862,17 +1314,53 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 - **Files**:
   - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` — pick ONE of: `schedContextConfigure_preserves_projection`, `schedContextBind_preserves_projection`, `schedContextUnbind_preserves_projection`, `lifecycleRetype_preserves_projection`, `tcbSuspend_preserves_projection`, `tcbResume_preserves_projection`
   - `SeLe4n/Kernel/API.lean:2114-2153` — once one is substantively proven, the master `dispatchCapabilityOnly_preserves_projection` arm for that operation drops its `hArmProj` closure
-- **Plan**:
-  1. Recommended target: `schedContextConfigure_preserves_projection`. Reasons:
-     - Body uses well-named frame lemmas already proven in AK6-F (`schedContextBind_frame_runQueue_rebucket` and analogs)
-     - The Except.ok-wrapped match structure is symmetric (configure has fewer branches than the suspend/resume paths)
-  2. Use `split_ifs` per the audit's recommendation; if Lean 4.28.0's `split_ifs` cannot fully discharge, fall back to manual `cases hConfig : ...` destructuring with `Except.ok_eq_iff_get?` rewrites.
-  3. The substantive proof becomes the template; document the discharge recipe at the top of the theorem body so the other 5 closure-form theorems can follow the pattern in a future workstream.
-  4. If `split`/`split_ifs` are blocked by the toolchain, ship a "best-effort" partial discharge: convert ONE arm of the match to substantive, leave the others as the closure-form `hArmProj`, and update H-07 / AK6F.20b tracking to "partial discharge — toolchain pending 4.x".
-- **Acceptance** (success path): one theorem substantively proven; `dispatchCapabilityOnly_preserves_projection` for that arm drops its `hArmProj` parameter; recipe documented
-- **Acceptance** (toolchain-blocked path): partial discharge committed with explicit annotation; tracking entry preserved
-- **Regression test**: full gate; `lake exe information_flow_suite`
-- **Cascade**: ~5-15 cascading proof updates; potentially blocks if toolchain shifts
+- **Total effort**: ~1.5 days. **Toolchain risk**: HIGH — Lean 4.28.0's `split` and `split_ifs` on `Except.ok`-wrapped deeply-nested match conditions is the documented blocker per AK6F.20b.
+
+**Sub-sub-task breakdown** (6 commits, with decision point at AN6-A.3):
+
+- **AN6-A.1 — Target selection + proof-sketch capture** (0.25 day)
+  - Evaluate the 6 candidates on three axes: (a) match depth in the operation body, (b) number of `Except.ok` wrappings, (c) presence of named frame lemmas in AK6-F.
+  - Recommended rank order:
+    1. `schedContextConfigure_preserves_projection` — best ratio of named frames to closure depth; match structure symmetric
+    2. `tcbResume_preserves_projection` — uses AK6-F's `resumeThread_frame_insert` and `resumeThread_frame_ensureRunnable` directly
+    3. `serviceQuery_preserves_projection` — per CLAUDE.md AK6F.11, already fully substantively proven; can serve as a reference template
+  - Capture proof-sketch for the #1 target in a scratch file (`docs/audits/AN6A_PROOF_SKETCH.md`, ephemeral) listing each match arm, the expected frame lemma, and the `hProjEq` hypothesis the arm would otherwise require.
+  - **Acceptance**: target chosen; sketch committed with 10-15 arms enumerated.
+
+- **AN6-A.2 — `split_ifs` primary attempt** (0.25 day)
+  - Attempt the proof using `split_ifs` on the `Except.ok`-wrapped match condition. If the tactic closes all arms, ship directly.
+  - Exit criterion: either (a) proof closes, or (b) `split_ifs` fails with a reproducible Lean error.
+  - **Acceptance** (happy path): theorem body uses `split_ifs`; proof closes; `lake build SeLe4n.Kernel.InformationFlow.Invariant.Operations` PASS.
+  - **Acceptance** (fail path): error captured in scratch file for AN6-A.3 decision.
+
+- **AN6-A.3 — Fallback: manual `cases` destructuring** (0.25 day, only if AN6-A.2 failed)
+  - Replace `split_ifs` with manual `cases hConfig : ... <;> ...` destructuring, using `Except.ok_eq_iff_get?` rewrites to drop the `Except` wrapping at each step.
+  - Each arm of the destructuring invokes a named AK6-F frame lemma.
+  - Exit criterion: proof closes or fails reproducibly.
+  - **Acceptance** (happy path): proof closes manually; `lake build` PASS.
+  - **Acceptance** (fail path): ship partial discharge per AN6-A.4.
+
+- **AN6-A.4 — Partial discharge fallback (only if AN6-A.2 AND AN6-A.3 both blocked)** (0.5 day)
+  - Pick ONE arm of the target theorem's match body that the toolchain CAN discharge; convert it to substantive; leave the other arms as closure-form `hArmProj`.
+  - Add explicit annotation at the theorem body: `-- PARTIAL discharge per AN6-A.4; remaining arms tracked in AUDIT_v0.30.6_DEFERRED.md :: DEF-H-07.partial`.
+  - Update H-07 and AK6F.20b CLAUDE.md tracking entries to reflect "partial — toolchain pending Lean 4.x".
+  - **Acceptance**: theorem compiles with partial substantive + residual closure; DEFERRED entry drafted for AN10-G.
+
+- **AN6-A.5 — Tighten `dispatchCapabilityOnly_preserves_projection` for the discharged arm** (0.25 day)
+  - In `SeLe4n/Kernel/API.lean:2114-2153`, drop the `hArmProj` parameter for the arm corresponding to AN6-A.2/A.3/A.4's target.
+  - Update the dispatch theorem's signature to reflect one fewer closure.
+  - Cascade: downstream NI theorems in `InformationFlow/Invariant/Composition.lean` also drop the corresponding closure.
+  - **Acceptance**: dispatch theorem signature tightened; cascade closed; full gate PASS.
+
+- **AN6-A.6 — Document the discharge recipe as template** (0.25 day)
+  - Add a multi-paragraph block at the top of the discharged theorem's body explaining the recipe: which frame lemmas to invoke in which order, how to handle the `Except.ok` wrapping, what the closure-form `hArmProj` hypothesis would have been and why the substantive discharge replaces it.
+  - Cross-reference from AN10-A's discharge index (Theme 4.1 deliverable): AN6-A's recipe is the canonical template for the remaining 5 arms.
+  - Delete the ephemeral `AN6A_PROOF_SKETCH.md` scratch file.
+  - **Acceptance**: recipe block ≥ 40 lines; AN10-A cross-reference prepared.
+
+- **Regression test**: full gate; `lake exe information_flow_suite` PASS at every AN6-A.N commit.
+- **Cascade**: ~5-15 proof updates in API.lean / Composition.lean for the one discharged arm.
+- **Risk mitigation**: the 4-step fallback ladder (AN6-A.2 → AN6-A.3 → AN6-A.4) ensures the workstream does not stall on a single toolchain blocker; worst case ships a partial discharge with explicit DEFERRED tracking.
 
 ### AN6-B — Architecture assumption consumption index (H-08)
 
@@ -901,14 +1389,64 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 - **Files**:
   - `SeLe4n/Kernel/CrossSubsystem.lean:476-485`
   - `docs/spec/SELE4N_SPEC.md` §5
-- **Plan** (two-track per §2.4 risk register):
-  - **Track A (always land)**: rename `untypedRegionsDisjoint` → `untypedRegionsDisjoint_directParentChildExcluded`. Update all 50+ cascade sites mechanically (matching AM4-D/E pattern). Add `SELE4N_SPEC.md` §5 clarification that physical disjointness across transitive retype chains is an out-of-model obligation. Provide a deprecated alias `untypedRegionsDisjoint := untypedRegionsDisjoint_directParentChildExcluded` for one release cycle.
-  - **Track B (stretch)**: add `untypedAncestorRegionsDisjoint` strengthening that requires `UntypedObject.children` to also track ancestors transitively (or to track a parent-pointer chain). Prove preservation through `retypeFromUntyped` recursively.
-  - **Decision**: time-box Track B at 2 days; if not feasible, ship Track A and add an entry to the new `AUDIT_v0.30.6_DEFERRED.md` for Track B.
-- **Acceptance** (Track A): rename complete; doc clarification in SPEC; deprecated alias preserves backward compat
-- **Acceptance** (Track B): transitive predicate added as 13th conjunct of `crossSubsystemInvariant`; cascade complete
-- **Regression test**: full gate
-- **Cascade**: cascade-heavy (~50 sites for Track A rename; ~80 sites for Track B strengthening)
+- **Total effort**: ~1.5 days Track A + ~2 days Track B (if taken). **Cascade**: ~50 sites Track A; ~80 sites Track B.
+
+**Sub-sub-task breakdown** (two-track approach per §2.4 risk register):
+
+#### Track A — Rename + doc clarification (always ships)
+
+- **AN6-C.A.1 — Add deprecated alias + primary rename** (0.15 day)
+  - Rename `untypedRegionsDisjoint` → `untypedRegionsDisjoint_directParentChildExcluded` in `CrossSubsystem.lean`.
+  - Provide deprecated alias: `@[deprecated] def untypedRegionsDisjoint := untypedRegionsDisjoint_directParentChildExcluded`.
+  - **Acceptance**: `lake build` PASS (deprecated alias keeps all consumers building); deprecation warnings visible but non-fatal.
+
+- **AN6-C.A.2 — Migrate call sites by subsystem cluster (5 commits)** (1 day — batched)
+  - Walk the 50+ cascade sites by subsystem. Commit batches:
+    1. `CrossSubsystem.lean` + its default/frame lemmas (~10 sites)
+    2. `Kernel/Architecture/Invariant.lean` (~8 sites — retype bridges)
+    3. `Kernel/Capability/Invariant/*` (~8 sites)
+    4. `Kernel/Lifecycle/*` (~10 sites — retype callers)
+    5. `Platform/Boot.lean` + test suites (~14 sites)
+  - Each batch commits mechanically via sed-style replacement + manual verification; full gate PASS after each batch.
+  - **Acceptance**: all 50+ sites migrated; deprecation warnings drop to 0.
+
+- **AN6-C.A.3 — Doc clarification in SELE4N_SPEC.md §5** (0.1 day)
+  - Add a new subsection:
+    > "§5.X — Untyped region disjointness scope: the invariant `untypedRegionsDisjoint_directParentChildExcluded` asserts that no two untyped regions overlap EXCEPT the direct parent-child case produced by `retypeFromUntyped`. Physical disjointness across transitive retype chains (grandparent → parent → child) is an out-of-model obligation. See `AUDIT_v0.30.6_COMPREHENSIVE.md` §2.5 H-09."
+  - Cross-reference from the invariant definition docstring.
+  - **Acceptance**: SPEC updated; inline cross-reference added.
+
+- **AN6-C.A.4 — Delete deprecated alias** (0.05 day, at AN10-F final sweep)
+  - After all migration batches land and a release cycle passes (or immediately, if consumer grep is clean), delete the deprecated alias.
+  - **Acceptance**: `grep -rn "untypedRegionsDisjoint\b" SeLe4n/` returns only the primary definition and the field-set catalog entry.
+
+#### Track B — Transitive strengthening (stretch; time-boxed at 2 days)
+
+- **AN6-C.B.1 — Define `untypedAncestorRegionsDisjoint` predicate** (0.5 day)
+  - New definition requiring transitive-ancestor exclusion:
+    ```lean
+    def untypedAncestorRegionsDisjoint (st : SystemState) : Prop :=
+      ∀ ut₁ ut₂ : UntypedObject, ...  -- no two untyped regions in the ancestor-descendant closure overlap
+    ```
+  - Requires either `UntypedObject.ancestors : List ObjId` tracking OR a parent-pointer traversal via `UntypedObject.parent : Option ObjId` + fuel-bounded walk.
+  - **Acceptance**: predicate compiles; default witness `default_untypedAncestorRegionsDisjoint` proven.
+
+- **AN6-C.B.2 — Prove preservation through `retypeFromUntyped` recursively** (0.75 day)
+  - The new predicate is preserved by retype because the new child's region is strictly contained in the parent's region (by `allocate_child_fits_parent` from AK8-A); transitively, it's strictly contained in every ancestor's region.
+  - Prove via induction on the ancestor-chain depth.
+  - **Acceptance**: preservation theorem proven; module gate PASS.
+
+- **AN6-C.B.3 — Add as 13th conjunct of `crossSubsystemInvariant`** (0.5 day)
+  - Follow AN2-D playbook: 13-conjunct extension, 5 core bridges + 34 per-op bridges, field-set catalog bump 12 → 13, runtime check extension, new runtime tests, monotonicity metric.
+  - **Acceptance**: 13-conjunct invariant bundle builds; full gate PASS.
+
+- **AN6-C.B.4 — Decision gate** (0.25 day — end of day 2 of Track B)
+  - If all three Track B sub-sub-tasks complete within time budget: ship Track B as an additive strengthening (Track A's rename stays).
+  - If time-boxed out: revert Track B work; document in AUDIT_v0.30.6_DEFERRED.md as `DEF-H-09.transitive`.
+  - **Acceptance** (success): 13-conjunct invariant shipped. **Acceptance** (defer): Track B work reverted; DEFERRED entry drafted.
+
+- **Regression test (cumulative)**: full gate after every A.N and B.N commit; `lake exe ak7_regression_suite` after A.4 and B.4.
+- **Cascade**: Track A 50+ sites; Track B adds ~80 more if taken.
 
 ### AN6-D — Architecture MEDIUM batch (ARCH-M01..M03)
 
@@ -924,13 +1462,35 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 ### AN6-E — InformationFlow MEDIUM batch (IF-M01..M03)
 
 - **Audit IDs**: IF-M01..M03
-- **Plan**:
-  - **IF-M01**: document `serviceObservable` covert-channel scope in `SELE4N_SPEC.md` §7 ("Non-interference scope and exclusions"). Cross-reference the module header.
-  - **IF-M02**: add a "negative-case" test in `tests/InformationFlowSuite.lean` asserting the four NI-L3 accepted covert channels are observable today. Pattern: build two states differing only in scheduler-state-induced timing; project both; assert projections differ. This guards against an accidental future "fix" that silently closes the channel and invalidates the acceptance documentation.
-  - **IF-M03**: split `InformationFlow/Invariant/Operations.lean` (3768 LOC) by `KernelOperation` constructor groups: `Operations/IPC.lean`, `Operations/Capability.lean`, `Operations/SchedContext.lean`, `Operations/Architecture.lean`. Hub re-exports.
-- **Acceptance**: each IF-M addressed; AN6-E split keeps re-export semantics
-- **Regression test**: full gate; `lake exe information_flow_suite`
-- **Cascade**: IF-M01 (~0 doc), IF-M02 (~1 new test), IF-M03 (~0 re-export)
+- **Total effort**: ~1 day (IF-M03 split dominates).
+
+**Sub-sub-task breakdown** (3 IF-M items; IF-M03 expanded into AN3-C-style playbook):
+
+- **AN6-E.1 — IF-M01 `serviceObservable` covert-channel scope doc** (0.1 day)
+  - Add `SELE4N_SPEC.md` §7 subsection "§7.X — Non-interference scope and exclusions":
+    > "§7.X: `serviceObservable` covers boolean service presence only, not internal state. Cross-service covert channels — for example, one service observing another's restart cadence via service-presence sampling — are NOT covered by the NI property. These are accepted covert channels; see `AUDIT_v0.30.6_COMPREHENSIVE.md` §2.5 IF-M01."
+  - Cross-reference from the `serviceObservable` definition's docstring.
+  - **Acceptance**: SPEC + docstring updated.
+
+- **AN6-E.2 — IF-M02 NI-L3 negative-case regression test** (0.15 day)
+  - Add 4 negative-case tests in `tests/InformationFlowSuite.lean` (one per NI-L3-accepted covert channel):
+    - build two states differing only in the channel's observable (e.g., scheduler PIP boost, scheduler timing, domain schedule, service restart cadence);
+    - project both via `projectKernelObject`;
+    - assert the projections DIFFER (i.e., the channel remains observable today).
+  - These guard against an accidental future "fix" that silently closes the channel and invalidates the acceptance documentation.
+  - **Acceptance**: 4 tests committed; `lake exe information_flow_suite` PASS with the 4 new assertions.
+
+- **AN6-E.3 — IF-M03 Operations.lean 3768-line split (4 child files)** (0.75 day)
+  - Follow AN3-C playbook for 4 children (~940 LOC each):
+    - `Operations/IPC.lean` (per-op preservation for IPC-family ops: send, receive, call, reply, notification signal/wait)
+    - `Operations/Capability.lean` (per-op preservation for cap ops: copy, move, mutate, mint, delete, revoke)
+    - `Operations/SchedContext.lean` (per-op preservation for SC ops: configure, bind, unbind, yieldTo, priority ops)
+    - `Operations/Architecture.lean` (per-op preservation for arch ops: vspaceMap/Unmap, exception dispatch, interrupt, service query/revoke/register, lifecycle retype, suspend/resume)
+  - 5 commits: seam inventory + 4 extractions.
+  - **Acceptance**: each child ≤ 1000 LOC; hub ≤ 50 LOC; full gate after each commit.
+
+- **Regression test**: full gate; `lake exe information_flow_suite` PASS.
+- **Cascade**: IF-M01 ~0, IF-M02 ~1 test, IF-M03 ~0 external.
 
 ### AN6-F — CrossSubsystem MEDIUM batch (CX-M01..M05)
 
@@ -1017,16 +1577,57 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 ### AN7-D — Platform MEDIUM batch (PLT-M01..M07)
 
 - **Audit IDs**: PLT-M01..M07
-- **Plan**:
-  - **PLT-M01**: move `bootFromPlatformUnchecked` deprecated alias into `SeLe4n.Testing.Deprecated` namespace (or add `@[deprecated]` with explicit migration message).
-  - **PLT-M02 / PLT-M03**: VSpaceRoot boot bridge gap is hardware-binding; carry into AN10's new `AUDIT_v0.30.6_DEFERRED.md` as `DEF-PLT-M02-V1.0` (out of scope for AN1..AN9). Add doc cross-reference at the theorem site to the new DEFERRED entry.
-  - **PLT-M04**: covered by AN7-A. No additional work.
-  - **PLT-M05**: `parseFdtNodes` default fuel migration to size-derived `hdr.sizeDtStruct / 4` for all callers.
-  - **PLT-M06**: document `extractPeripherals` 2-level depth limitation in `SELE4N_SPEC.md` §6 with TODO for recursive extension.
-  - **PLT-M07**: 6 unimported modules (`Platform/Sim/Contract.lean`, `Platform/FFI.lean`, `Platform/RPi5/Contract.lean`, `Architecture/CacheModel.lean`, `Architecture/ExceptionModel.lean`, `Architecture/TimerModel.lean`) — wire via a `Platform.Staged` module that imports them all; add to test harness build target so they are compile-checked. Mark each with a docstring `-- STATUS: staged for H3 hardware binding`. Alternative: move to `docs/dev_history/staged/` per audit's option (b). Recommendation: stage them (option a) so refactors in their dependencies break loudly.
-- **Acceptance**: each PLT-M addressed; staged modules compile under build target
-- **Regression test**: full gate; module gate per staged module
-- **Cascade**: PLT-M07 (~6 staged modules become buildable)
+- **Total effort**: ~1.25 days. **Cascade**: PLT-M07 wires 6 modules into the build graph.
+
+**Sub-sub-task breakdown** (7 commits):
+
+- **AN7-D.1 — PLT-M01 deprecate `bootFromPlatformUnchecked` alias** (0.1 day)
+  - Add `@[deprecated "use bootFromPlatformChecked; see PLT-M01"]` annotation.
+  - Optionally move into a `SeLe4n.Testing.Deprecated` namespace post-1.0 (defer to AN10 if scope is tight).
+  - **Acceptance**: deprecation warning fires on legacy call sites; test-path consumers audited.
+
+- **AN7-D.2 — PLT-M02 / PLT-M03 defer VSpaceRoot non-empty config bridge** (0.05 day)
+  - Add doc cross-reference at `bootFromPlatform_crossSubsystemInvariant_bridge` theorem site:
+    > "VSpaceRoot boot bridge is currently proven only for empty configs; non-empty config bridge requires RPi5/VSpaceBoot shim. See `AUDIT_v0.30.6_DEFERRED.md` :: DEF-PLT-M02."
+  - Draft the DEF-PLT-M02 entry text for AN10-G (no file creation here; the AN10-G commit lands the DEFERRED file).
+  - **Acceptance**: docstring cross-reference present.
+
+- **AN7-D.3 — PLT-M04 (already covered by AN7-A)** — no additional work; record as "closed by AN7-A" in the commit message.
+
+- **AN7-D.4 — PLT-M05 `parseFdtNodes` size-derived fuel migration** (0.15 day)
+  - Walk all callers; replace fixed `2000` fuel with `hdr.sizeDtStruct / 4` (matching the `findMemoryRegPropertyChecked` default from AK9-F).
+  - **Acceptance**: all callers migrated; `lake exe ak9_platform_suite` PASS.
+
+- **AN7-D.5 — PLT-M06 `extractPeripherals` depth-limit doc + TODO** (0.1 day)
+  - Add docstring at `extractPeripherals`:
+    > "DEPTH LIMIT: currently searches DTB tree up to depth 2. Acceptable for BCM2712; deeper DTB nesting requires a recursive extension. TODO(post-1.0): lift to arbitrary depth with fuel bound."
+  - Cross-reference in `SELE4N_SPEC.md` §6.
+  - **Acceptance**: docstring + SPEC entry.
+
+- **AN7-D.6 — PLT-M07 staged-modules wiring (6 modules)** (0.75 day)
+  - Create new meta-module `SeLe4n/Platform/Staged.lean`:
+    ```lean
+    /-! PLT-M07: Staged modules wired into the build graph so refactors
+        in their dependencies break loudly. Each module is tagged
+        "STATUS: staged for H3 hardware binding" in its own header. -/
+    import SeLe4n.Platform.Sim.Contract
+    import SeLe4n.Platform.FFI
+    import SeLe4n.Platform.RPi5.Contract
+    import SeLe4n.Kernel.Architecture.CacheModel
+    import SeLe4n.Kernel.Architecture.ExceptionModel
+    import SeLe4n.Kernel.Architecture.TimerModel
+    ```
+  - Add `Staged.lean` to the test-harness build target (via `Main.lean`'s test entry or a new `lake exe staged_probe` that no-ops but forces the import graph).
+  - For each of the 6 child modules: add `-- STATUS: staged for H3 hardware binding` header comment + cross-reference to `SELE4N_SPEC.md` §8.15 activation roadmap.
+  - Also wire `SeLe4n/Kernel/Concurrency/Assumptions.lean` (created in AN10-B) into `Staged.lean` per AN10-B.4.
+  - **Acceptance**: `lake build SeLe4n.Platform.Staged` PASS; each child module gets per-commit build verification via `lake build <Module.Path>`.
+
+- **AN7-D.7 — Staged-modules build-graph CI check** (0.1 day)
+  - Extend `scripts/test_tier1_build.sh` (or an equivalent build-verification step) to assert `lake build SeLe4n.Platform.Staged` succeeds. This forces the 6 staged modules to compile on every PR even though they're not in `Main.lean`'s chain.
+  - **Acceptance**: CI check active; synthetic breakage of a staged module produces CI failure.
+
+- **Regression test**: full gate; `lake exe ak9_platform_suite` PASS.
+- **Cascade**: ~6 staged modules come under CI build.
 
 ### AN7-E — API MEDIUM batch (API-M01..M02)
 
@@ -1065,36 +1666,141 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 
 - **Audit ID**: H-17 (HIGH)
 - **Files**: `rust/sele4n-hal/src/uart.rs:238`
-- **Plan**:
-  1. Define `UartGuard<'a>` struct holding the spin-acquired pointer and implementing `Drop` to release the CAS:
-     ```rust
-     pub struct UartGuard<'a> {
-         inner: &'a mut Uart,
-         lock: &'a UartLock,
-     }
-     impl Drop for UartGuard<'_> {
-         fn drop(&mut self) { self.lock.release(); }
-     }
-     ```
-  2. Add `with_guard()` method returning `UartGuard<'_>` that acquires the spin lock at construction.
-  3. Refactor `with()` to delegate: `pub fn with<F, R>(&self, f: F) -> R where F: FnOnce(&mut Uart) -> R { let mut guard = self.with_guard(); f(&mut guard.inner) }`.
-  4. The SAFETY-comment thinness is eliminated because the lifetime-borrow is enforced by the `'a` annotation on `UartGuard`; the spin guard release is automatic.
-  5. Mirror to `kprint!` macro consumers — should require zero call-site changes since they go through `with(...)`.
-- **Acceptance**: `UartGuard<'_>` defined and Drop'ing releases the lock; `with()` is a thin wrapper; `kprint!` macro continues to work; rust gate PASS
-- **Regression test**: rust gate; `cargo test --workspace` (any UART-touching tests)
-- **Cascade**: ~5 sites
+- **Total effort**: ~0.5 day.
+
+**Sub-sub-task breakdown** (4 commits):
+
+- **AN8-A.1 — Define `UartGuard<'a>` + `with_guard()` method** (0.15 day)
+  - Add:
+    ```rust
+    pub struct UartGuard<'a> {
+        inner: &'a mut Uart,
+        lock: &'a UartLock,
+    }
+    impl Drop for UartGuard<'_> {
+        fn drop(&mut self) {
+            self.lock.release();  // release the CAS-acquired spin lock
+        }
+    }
+    impl UartLock {
+        pub fn with_guard(&self) -> UartGuard<'_> {
+            self.acquire();
+            UartGuard {
+                inner: unsafe { &mut *BOOT_UART_INNER.0.get() },
+                lock: self,
+            }
+        }
+    }
+    ```
+  - The `'a` lifetime on `UartGuard` pins the mutable-borrow lifetime to the guard's own lifetime; dropping the guard first drops the mutable borrow, then runs the release via `Drop`.
+  - **Acceptance**: `UartGuard` struct + `with_guard()` compile; SAFETY comments pin the mutable-borrow lifetime explicitly.
+
+- **AN8-A.2 — Thin-wrapper `with()` delegating to `with_guard()`** (0.1 day)
+  - Rewrite the existing `with()`:
+    ```rust
+    pub fn with<F, R>(&self, f: F) -> R where F: FnOnce(&mut Uart) -> R {
+        let mut guard = self.with_guard();
+        f(guard.inner)
+    }
+    ```
+  - The `unsafe { f(&mut *BOOT_UART_INNER.0.get()) }` block is eliminated; all `unsafe` is now localized to `with_guard()`'s single pointer dereference.
+  - **Acceptance**: `with()` compiles as thin wrapper; cargo gate PASS.
+
+- **AN8-A.3 — Add runtime test for guard semantics** (0.15 day)
+  - New cargo test asserting Drop runs on scope exit:
+    ```rust
+    #[test]
+    fn uart_guard_drops_lock_on_scope_exit() {
+        let lock = UartLock::new();
+        let before = lock.is_held();
+        {
+            let _g = lock.with_guard();
+            assert!(lock.is_held(), "lock held while guard alive");
+        }
+        assert!(!lock.is_held(), "lock released after guard drops");
+        assert_eq!(before, lock.is_held());
+    }
+    ```
+  - Plus a `#[should_panic]` test verifying double-release does not deadlock (if relevant to the spin primitive).
+  - **Acceptance**: both tests pass.
+
+- **AN8-A.4 — `kprint!` macro consumer audit** (0.1 day)
+  - Walk every `kprint!` call site and verify it continues to go through `with(...)` — no call-site changes expected because `with()` is a thin wrapper around `with_guard()`.
+  - Spot-check panic-path behavior: under `panic = "abort"`, `Drop` does not run; the release therefore does not fire on panic. That is correct for the fatal-invariant-abort design per gic.rs:299-308 rationale (H-19 context). Document in `UartGuard`'s docstring.
+  - **Acceptance**: all `kprint!` sites unchanged; panic-behavior doc present.
+
+- **Regression test**: rust gate; new cargo tests pass.
+- **Cascade**: 0 external call-site changes.
 
 ### AN8-B — MPIDR_CORE_ID_MASK shared symbol (H-18)
 
 - **Audit ID**: H-18 (HIGH)
 - **Files**: `rust/sele4n-hal/src/cpu.rs`, `rust/sele4n-hal/src/boot.S:39`
-- **Plan**: Per audit's preferred Option (a): expose `MPIDR_CORE_ID_MASK` as a Rust `pub const` AND emit a `.rodata`-placed `u64` symbol that boot.S `ldr`'s. Eliminates drift entirely.
-  1. In `cpu.rs`: `pub const MPIDR_CORE_ID_MASK: u64 = 0x00FFFFFF;` and `#[no_mangle] pub static MPIDR_CORE_ID_MASK_SYM: u64 = MPIDR_CORE_ID_MASK;`.
-  2. In `boot.S:39`: replace the `mov`+`movk` immediate-build with `adrp x2, MPIDR_CORE_ID_MASK_SYM; ldr x2, [x2, :lo12:MPIDR_CORE_ID_MASK_SYM]` (or equivalent for the linker layout).
-  3. If Option (a) is non-trivial (linker layout does not cooperate), fallback to Option (b): `const _: () = assert!(MPIDR_CORE_ID_MASK == 0x00FFFFFF)` in `cpu.rs` plus a `build.rs` step that scans `boot.S` for the literal `0xFFFF` + `0xFF, lsl #16` pattern and fails on mismatch.
-- **Acceptance** (Option a): boot.S loads from shared symbol; runtime mask agrees with Rust constant trivially. (Option b): build-time assertion present and CI-enforced.
-- **Regression test**: rust gate; QEMU boot test (`scripts/test_qemu.sh` if available)
-- **Cascade**: ~2 files
+- **Total effort**: ~0.5–0.75 day depending on linker cooperation.
+
+**Sub-sub-task breakdown** (two-option ladder):
+
+#### Option A — Shared linker symbol (preferred; eliminates drift entirely)
+
+- **AN8-B.A.1 — Expose `MPIDR_CORE_ID_MASK_SYM` as `.rodata` symbol** (0.15 day)
+  - In `cpu.rs`:
+    ```rust
+    pub const MPIDR_CORE_ID_MASK: u64 = 0x00FFFFFF;
+    #[no_mangle]
+    pub static MPIDR_CORE_ID_MASK_SYM: u64 = MPIDR_CORE_ID_MASK;
+    ```
+  - Verify the symbol resolves via `nm target/aarch64-unknown-none/release/sele4n-hal.a | grep MPIDR_CORE_ID_MASK_SYM` shows a `D` or `R` (data / rodata) entry.
+  - **Acceptance**: symbol present in compiled binary.
+
+- **AN8-B.A.2 — Update `boot.S` to load via `adrp` + `ldr`** (0.2 day)
+  - Replace:
+    ```
+    mov x2, #0xFFFF
+    movk x2, #0xFF, lsl #16
+    ```
+    with:
+    ```
+    adrp x2, MPIDR_CORE_ID_MASK_SYM
+    ldr x2, [x2, :lo12:MPIDR_CORE_ID_MASK_SYM]
+    ```
+  - Verify the linker script (`link.ld`) places `.rodata` within `adrp`+`lo12` reach of `boot.S` (typically within a 4 GiB window; for a small kernel this is always satisfied).
+  - **Acceptance**: `cargo build` PASS; `objdump -d` shows the new instruction sequence; QEMU boot still reaches core-0 wake-up.
+
+- **AN8-B.A.3 — QEMU-side verification** (0.15 day)
+  - Run `scripts/test_qemu.sh` (or local QEMU smoke) to confirm the boot-core gate still works — a core-0 boot and a simulated secondary-core boot with MPIDR Aff0=1 Aff1=0 Aff2=0 both behave correctly under the shared mask.
+  - **Acceptance**: QEMU boot successful; no regression.
+
+#### Option B — Build-time assertion (fallback if Option A fails)
+
+- **AN8-B.B.1 — Add `const _: () = assert!(...)` in `cpu.rs`** (0.1 day)
+  - In `cpu.rs`:
+    ```rust
+    const _: () = assert!(MPIDR_CORE_ID_MASK == 0x00FFFFFF);
+    ```
+  - This catches if the Rust-side constant drifts.
+  - **Acceptance**: build fails if the constant changes.
+
+- **AN8-B.B.2 — Add `build.rs` scan-and-match for assembly literal** (0.25 day)
+  - In `rust/sele4n-hal/build.rs`:
+    ```rust
+    fn main() {
+        println!("cargo:rerun-if-changed=src/boot.S");
+        let boot_s = std::fs::read_to_string("src/boot.S").unwrap();
+        // Look for the two-line pattern and verify both halves match 0x00FFFFFF
+        let pattern = regex::Regex::new(r"mov\s+x2,\s*#0xFFFF\s*\n\s*movk\s+x2,\s*#0xFF,\s*lsl\s*#16").unwrap();
+        if !pattern.is_match(&boot_s) {
+            panic!("boot.S MPIDR_CORE_ID_MASK literal drift detected; update build.rs or cpu.rs");
+        }
+    }
+    ```
+  - **Acceptance**: build.rs guards against silent literal drift in boot.S.
+
+- **AN8-B.B.3 — Decision gate** (0.05 day)
+  - If Option A completed within its time budget: ship Option A; skip Option B entirely.
+  - If Option A hit linker layout obstacles (unlikely but possible): ship Option B; record Option A as `DEF-H-18.linker` in `AUDIT_v0.30.6_DEFERRED.md` for later revisit.
+
+- **Regression test**: rust gate; `scripts/test_qemu.sh` PASS (or skip-with-log).
+- **Cascade**: 2 files (cpu.rs + boot.S); optional build.rs.
 
 ### AN8-C — `dispatch_irq` panic discipline doc + lint (H-19)
 
@@ -1162,19 +1868,64 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
   - `tests/KernelErrorMatrixSuite.lean` (new) — dedicated suite for the rejection matrix
   - `scripts/test_tier2_negative.sh` — wire the new suite
   - `SeLe4n/Model/State.lean:34-97` — verify the 51-variant `KernelError` enumeration is the source-of-truth
-- **Plan**:
-  1. Build the rows-=-`SyscallId` × cols-=-`KernelError` matrix as a Lean `def errorMatrix : List (SyscallId × KernelError × String)` table where each row is `(syscall, expectedError, scenarioDescription)`.
-  2. For each populated cell, write a scenario test that constructs a deliberately-failing input and asserts the dispatcher returns the expected `KernelError` variant.
-  3. Target coverage per audit recommendation: **≥35 of 51 variants** with at least one per-syscall rejection test. Prioritize security-relevant variants explicitly named in the audit:
-     `.revocationRequired`, `.asidNotBound`, `.schedulerInvariantViolation`, `.alignmentError`, `.vmFault`, `.targetSlotOccupied`, `.cyclicDependency`, `.dependencyViolation`, `.replyCapInvalid`.
-  4. Verify the matrix is discoverable: a `#eval errorMatrix.length` shows the populated count; a `theorem errorMatrix_covers_at_least_35 : errorMatrix.length ≥ 35 := by decide` is the audit-deliverable witness.
-  5. After AN3..AN8 introduce any new `KernelError` variants (e.g., AN6-E introduces `partialResolution` if API-M01 is taken), update the matrix in the same PR.
-- **Acceptance**:
-  - New suite added; ≥35 variants tested
-  - `scripts/test_tier2_negative.sh` runs the new suite
-  - `lake exe kernel_error_matrix_suite` PASS with explicit assertion count printed
-- **Regression test**: full gate; new suite execution
-- **Cascade**: ~50 new test scenarios; one new file
+- **Total effort**: ~2.5 days. **Cascade**: ~45 new scenarios in ONE new suite file.
+
+**Sub-sub-task breakdown** (7 commits, AN9-A.1..A.7):
+
+- **AN9-A.1 — Matrix schema + source-of-truth verification** (0.25 day)
+  - Define `KernelErrorRejection` structure:
+    ```lean
+    structure KernelErrorRejection where
+      syscall : SyscallId
+      expectedError : KernelError
+      scenarioTag : String
+      scenarioDesc : String
+    deriving Repr
+    ```
+  - Enumerate all 51 `KernelError` variants in `SeLe4n/Model/State.lean`; confirm the count matches the audit's claim. If AN3..AN8 introduce new variants (AN6-E `partialResolution`, AN7-E `partialResolution`, etc.), include them.
+  - **Acceptance**: schema committed; variant-count assertion matches source.
+
+- **AN9-A.2 — Baseline coverage layer (already-tested variants)** (0.25 day)
+  - Rows for the 14 variants the audit confirms are already exercised somewhere in tests. Even though they have coverage elsewhere, land formal matrix entries so the new suite is the canonical source.
+  - Variants: `.addressOutOfBounds`, `.declassificationDenied`, `.flowDenied`, `.illegalState`, `.invalidArgument`, `.invalidCapability`, `.invalidMessageInfo`, `.invalidObjectType`, `.ipcMessageTooLarge`, `.ipcMessageTooManyCaps`, `.mmioUnaligned`, `.nullCapability`, `.objectNotFound`, `.policyDenied`.
+  - **Acceptance**: 14 rows present and passing; matrix table-driven test harness runs.
+
+- **AN9-A.3 — Security-priority variants (audit-named)** (0.5 day)
+  - Rows for the 9 variants the audit explicitly flags as security-critical coverage gaps:
+    - `.revocationRequired` — CDT revocation path
+    - `.asidNotBound` — VSpace ASID path
+    - `.schedulerInvariantViolation` — scheduler domain-split contradiction
+    - `.alignmentError` — MMIO / page-table alignment
+    - `.vmFault` — page-table walk fault
+    - `.targetSlotOccupied` — CSpace insert to occupied slot
+    - `.cyclicDependency` — service-registry cycle detection
+    - `.dependencyViolation` — service-registry unmet dependency
+    - `.replyCapInvalid` — IPC reply without valid reply cap
+  - For each, construct a deliberately-failing input and assert the dispatcher returns the expected variant.
+  - **Acceptance**: 9 rows present and passing.
+
+- **AN9-A.4 — IPC / SchedContext / Lifecycle error path variants** (0.5 day)
+  - Rows for remaining IPC-adjacent variants (e.g., `.endpointQueueEmpty`, `.notificationQueueEmpty`, `.sendBlocked`), SchedContext-specific variants (`.schedContextInvariantViolation`, `.replenishmentError`), and Lifecycle/retype variants (`.retypeBadChildType`, `.untypedOutOfRange`, `.untypedWatermarkMismatch`).
+  - **Acceptance**: ~8 rows present and passing.
+
+- **AN9-A.5 — Architecture / Capability / Service residual variants** (0.5 day)
+  - Remaining architecture variants (`.pageTableFault`, `.vspaceLookupFailure`, `.interruptSpurious`), capability variants (`.cnodeIndexOverflow`, `.cnodeRadixMismatch`, `.mintAttenuationInvalid`), service variants.
+  - Target count so the **≥35 total** target is met.
+  - **Acceptance**: total matrix rows ≥ 35; `errorMatrix_covers_at_least_35 : errorMatrix.length ≥ 35 := by decide` witness theorem.
+
+- **AN9-A.6 — Coverage-witness theorems + per-syscall marker** (0.25 day)
+  - `errorMatrix_covers_at_least_35 : errorMatrix.length ≥ 35 := by decide`
+  - Optional stretch: `errorMatrix_covers_security_critical : ∀ v ∈ [.revocationRequired, .asidNotBound, ...], ∃ row ∈ errorMatrix, row.expectedError = v := by decide`
+  - `errorMatrix_distinctSyscalls : ∀ sid : SyscallId, (∃ row ∈ errorMatrix, row.syscall = sid)` — every syscall has at least one rejection row (optional extension depending on coverage).
+  - **Acceptance**: theorems decidable; suite's `main` reports coverage count and critical-variant coverage boolean.
+
+- **AN9-A.7 — CI wiring + coverage monotonicity metric** (0.25 day)
+  - Wire `lake exe kernel_error_matrix_suite` into `scripts/test_tier2_negative.sh`.
+  - Extend `scripts/ak7_cascade_baseline.sh` with `KERRORMATRIX_ROWS` monotonicity metric (floor = matrix-row-count-at-this-commit; should grow over time).
+  - **Acceptance**: CI runs the suite; monotonicity metric added to baseline.
+
+- **Regression test**: full gate; `lake exe kernel_error_matrix_suite` PASS.
+- **Cascade**: ~35+ new test scenarios across 7 commits.
 
 ### AN9-B — `lake exe …` timeout wrapper (H-21)
 
@@ -1232,24 +1983,63 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 
 ### AN9-E — Test MEDIUM batch (TST-M01..M13)
 
-- **Audit IDs**: TST-M01..M13 (subset; some already covered above)
-- **Plan**:
-  - **TST-M01**: extend AK8-B test pattern (atomicity + success paths) to other AK8 sub-items (C, D, E, F, G, H, I, J, K) that lack tests per audit.
-  - **TST-M02**: add `assertCrossSubsystemInvariants` bundled assertion in `SeLe4n/Testing/InvariantChecks.lean` running all 12 (post-AN2-D) cross-subsystem invariants in one call with a single failure report.
-  - **TST-M03**: `scripts/test_abi_roundtrip.sh:14` — either create `_common.sh` with shared helpers OR remove the `source … || true` line. Audit-preferred: create `_common.sh` and drop the swallow.
-  - **TST-M04**: standardize `secrets.GITHUB_TOKEN` → `github.token` across `.github/workflows/*.yml`.
-  - **TST-M05**: `scripts/test_docs_sync.sh:36-56` — promote GitBook drift check to hard failure (`exit 1`).
-  - **TST-M06**: rename `test_tier3_invariant_surface.sh` description to "invariant-surface anchors" (already named correctly per CLAUDE.md; verify wording is consistent in script comments).
-  - **TST-M07**: add idempotency guard to `setup_lean_env.sh` via sentinel file `~/.elan/.sele4n-bootstrap-marker`.
-  - **TST-M08**: add 3-attempt `apt-get install` retry with backoff in `.github/workflows/lean_action_ci.yml:45-50`.
-  - **TST-M09**: input-validate `expectCond`/`expectError` `tag`/`label` to reject empty strings (compile-time `String.length > 0` check).
-  - **TST-M10**: covered by AN9-C (fixtures README).
-  - **TST-M11**: covered by AN9-D.
-  - **TST-M12**: audit `scripts/audit_testing_framework.sh`; document purpose & integrate, OR remove if unused. Audit-preferred: integrate (e.g., wire into `test_tier4_nightly_candidates.sh`).
-  - **TST-M13**: promote `TraceSequenceProbe` to Tier 2 OR document why it's Tier-4-only in CLAUDE.md.
-- **Acceptance**: each TST-M addressed
-- **Regression test**: full gate; `scripts/test_tier0_hygiene.sh` PASS
-- **Cascade**: ~10-15 sites; mostly script edits
+- **Audit IDs**: TST-M01..M13 (subset; some already covered by AN9-C / AN9-D)
+- **Total effort**: ~1 day (mostly script edits).
+
+**Sub-sub-task breakdown** (11 items; TST-M10 + TST-M11 already covered):
+
+- **AN9-E.1 — TST-M01 AK8 sub-item test coverage** (0.2 day)
+  - Extend the AK8-B atomicity + success-path pattern to AK8-C/D/E/F/G/H/I/J/K sub-items that lack tests. Add test groups in `tests/NegativeStateSuite.lean` (or a new `Ak8CoverageSuite.lean`).
+  - Each AK8 sub-item gets: 1 success-path test + 1 failure-path test.
+  - **Acceptance**: ~18 new test cases (9 AK8 sub-items × 2); `test_tier2_negative.sh` PASS.
+
+- **AN9-E.2 — TST-M02 `assertCrossSubsystemInvariants` bundle** (0.1 day)
+  - In `SeLe4n/Testing/InvariantChecks.lean`, add bundled assertion function `assertCrossSubsystemInvariants : SystemState → IO Bool` running all 12 (post-AN2-D) cross-subsystem invariants in sequence with a single composite failure report.
+  - **Acceptance**: bundled assertion present; invoked from `MainTraceHarness` as a trace-end validation.
+
+- **AN9-E.3 — TST-M03 `_common.sh` creation** (0.1 day)
+  - Create `scripts/_common.sh` with shared helpers used across tier scripts (`log_info`, `log_error`, timing measurement, temp-file cleanup).
+  - Update `scripts/test_abi_roundtrip.sh:14` to `source "$(dirname "$0")/_common.sh"` (drop the `|| true` swallow).
+  - Audit other tier scripts for similar swallowed-source patterns; migrate each.
+  - **Acceptance**: `_common.sh` present; no more silent-failure `source` lines.
+
+- **AN9-E.4 — TST-M04 `github.token` standardization** (0.1 day)
+  - `grep -rn "secrets\.GITHUB_TOKEN" .github/workflows/*.yml` to identify sites; replace with `github.token` (the automatic per-action token; more scoped).
+  - Leave `secrets.GITHUB_TOKEN` only where a documented reason exists (e.g., a cross-repo action).
+  - **Acceptance**: standardized; workflows green.
+
+- **AN9-E.5 — TST-M05 GitBook drift hard failure** (0.05 day)
+  - In `scripts/test_docs_sync.sh:36-56`, change warning exit to `exit 1` on drift.
+  - **Acceptance**: GitBook drift now fails CI.
+
+- **AN9-E.6 — TST-M06 tier-3 description verification** (0.05 day)
+  - Verify `scripts/test_tier3_invariant_surface.sh`'s header comment matches CLAUDE.md's "invariant-surface anchors" phrasing (doesn't claim behavioral coverage).
+  - **Acceptance**: comment consistent.
+
+- **AN9-E.7 — TST-M07 `setup_lean_env.sh` idempotency guard** (0.1 day)
+  - Add sentinel file check `~/.elan/.sele4n-bootstrap-marker`; if present, skip re-bootstrap (but still re-install hooks via AN1-B.2's idempotent installer).
+  - **Acceptance**: second-invocation is a no-op for elan/lake but still refreshes the hook.
+
+- **AN9-E.8 — TST-M08 `apt-get` retry with backoff** (0.1 day)
+  - In `.github/workflows/lean_action_ci.yml:45-50`, wrap the `apt-get install` call in a 3-attempt retry loop with exponential backoff (2s, 4s, 8s).
+  - **Acceptance**: CI workflow includes retry; synthetic-flake test verifies retry fires.
+
+- **AN9-E.9 — TST-M09 `expectCond`/`expectError` empty-tag rejection** (0.1 day)
+  - In `SeLe4n/Testing/Helpers.lean:23-44`, add runtime assertion `tag.length > 0` at function entry; same for `label`. Reject empty strings with a clear error message.
+  - **Acceptance**: helper validates input; existing call sites with non-empty strings unchanged.
+
+- **AN9-E.10 — TST-M12 `audit_testing_framework.sh` integration** (0.1 day)
+  - Audit what the script does; if useful, wire into `scripts/test_tier4_nightly_candidates.sh`; otherwise remove.
+  - Audit recommendation: integrate.
+  - **Acceptance**: script wired OR removed; documented in `CLAUDE.md`.
+
+- **AN9-E.11 — TST-M13 `TraceSequenceProbe` tier decision** (0.05 day)
+  - Either promote `TraceSequenceProbe` from Tier 4 → Tier 2 (if runtime budget allows per TST-M13), OR document in CLAUDE.md why it's Tier-4-only.
+  - Default: document (simpler; no perf risk).
+  - **Acceptance**: doc updated.
+
+- **Regression test**: full gate; `scripts/test_tier0_hygiene.sh` PASS.
+- **Cascade**: ~10-15 script/test edits.
 
 ### AN9-F — Test LOW batch
 
@@ -1284,22 +2074,50 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 - **Files**:
   - `docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md` (new) — the discharge artifact
   - `SeLe4n/Kernel/CrossSubsystem.lean` — references the index from inline cross-references
-- **Plan**:
-  1. New deliverable doc enumerates every closure-form theorem in the codebase. For each theorem:
-     - Theorem name (e.g., `cspaceCopy_preserves_capabilityInvariantBundle`)
-     - File:line anchor
-     - Hypothesis names (e.g., `hCdtCompleteness`, `hCdtAcyclicity`, `hProjEq`, `hSchedProj`, `hArmProj`)
-     - Canonical discharge site (file:line of the caller that supplies the witness)
-     - Reachability check: a Lean `example` or `#check` proving the discharge composes on one representative input
-  2. Categorize by theme:
-     - **CDT post-state witnesses** (H-04 / AN4-C): 6 entries
-     - **`hProjEq`/`hArmProj` projection closures** (H-07 / AN6-A): 6 entries (1 substantively discharged in AN6-A; 5 remaining listed with their discharge recipes)
-     - **`hSchedProj` schedule closures** (SC-M02): 5 entries
-  3. The discharge index becomes the canonical reference cited from every closure-form theorem's docstring. Inline references read `-- Discharge: see docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md §<theme>-<entry>`.
-  4. Format the index as a Markdown table grouped by theme; total length ~200 lines.
-- **Acceptance**: file committed; every closure-form theorem in the codebase has a row; cross-references inserted at theorem docstrings
-- **Regression test**: smoke gate; `check_website_links.sh` PASS
-- **Cascade**: ~17 docstring updates
+- **Total effort**: ~1 day. **Cascade**: ~17 theorem-docstring updates across 3 themes.
+
+**Sub-sub-task breakdown** (5 commits):
+
+- **AN10-A.1 — Scaffold file + methodology section** (0.1 day)
+  - Create `docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md` with:
+    - Header: Plan ID, workstream, source audit, baseline, author, date
+    - §1 "Methodology" — explains the row format (Theorem name | File:Line | Hypothesis names | Discharge site | Reachability check)
+    - §2 "Theme index" — table of contents for the three theme sections
+  - **Acceptance**: file scaffold committed; §1 §2 visible.
+
+- **AN10-A.2 — Theme A: CDT post-state witnesses (6 entries)** (0.25 day)
+  - Section "§3.A — CDT post-state discharge (H-04 / AN4-C)"
+  - Rows (one per CDT-modifying operation): `cspaceCopy`, `cspaceMove`, `cspaceMutate`, `cspaceMint`, `cspaceDelete`, `cspaceRevoke`.
+  - For each row: theorem name, file:line, `hCdtCompleteness` + `hCdtAcyclicity` hypothesis witness-threading pattern, canonical discharge site in `CrossSubsystem.lean`, a `#check` expression demonstrating reachability on one representative state.
+  - **Acceptance**: 6 CDT rows committed; each row has all 5 fields filled.
+
+- **AN10-A.3 — Theme B: Projection closures (6 entries)** (0.3 day)
+  - Section "§3.B — Projection closures (H-07 / AN6-A / AK6F.20b)"
+  - Rows (one per cap-only dispatch arm): `schedContextConfigure`, `schedContextBind`, `schedContextUnbind`, `lifecycleRetype`, `tcbSuspend`, `tcbResume`.
+  - For the substantively-discharged target from AN6-A.2/A.3/A.4: "DISCHARGED at AN6-A.2 (or .3/.4)" + commit SHA.
+  - For the remaining 5: discharge recipe described in prose (which frame lemmas, in what order); cross-reference the `AN6-A.6` template recipe.
+  - **Acceptance**: 6 projection-closure rows committed; discharged row has commit SHA; remaining rows have named recipes.
+
+- **AN10-A.4 — Theme C: Schedule closures (5 entries)** (0.2 day)
+  - Section "§3.C — Schedule closures (SC-M02 / AN5-D)"
+  - Rows: `setPriorityOp`, `setMCPriorityOp`, `schedContextBind` (schedule-projection arm), `schedContextConfigure` (schedule-projection arm), `serviceRevoke` (schedule-projection arm).
+  - For each: `hSchedProj` closure threading pattern, discharge site.
+  - **Acceptance**: 5 schedule-closure rows committed.
+
+- **AN10-A.5 — Inline cross-references + closure witness** (0.15 day)
+  - At each of the 17 theorem's docstrings, insert:
+    ```
+    -- Discharge: see docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md §3.{A,B,C}-<entry>
+    ```
+  - Add a marker theorem in `CrossSubsystem.lean`:
+    ```lean
+    theorem closureForm_discharge_index_documented : True := trivial
+    -- Cross-reference: docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md
+    ```
+  - Add to `scripts/website_link_manifest.txt`.
+  - **Acceptance**: 17 docstrings updated; marker theorem present; website-links PASS.
+
+- **Regression test**: smoke gate; `check_website_links.sh` PASS at AN10-A.5.
 
 ### AN10-B — Theme 4.4 deliverable: SMP-latent single-core inventory
 
@@ -1307,24 +2125,49 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 - **Files**:
   - `SeLe4n/Kernel/Concurrency/Assumptions.lean` (new) — single-core inventory module
   - `docs/spec/SELE4N_SPEC.md` §6 — cross-reference
-- **Plan**:
-  1. New Lean module enumerates every site that depends on the single-core assumption:
-     - `cspaceLookupMultiLevel` (H-05 / AN4-D) — resolved CNode validity across calls
-     - `H-10 ThreadId.toObjId namespace` (AN2-D) — typed-id disjointness via functional-map uniqueness
-     - `H-11 RegisterFile.BEq` — pre-AN2-C; once `Fin 32` lands, this drops out of inventory
-     - `Architecture/Assumptions.lean :: singleCoreOnly` — already explicit
-     - `Capability/Operations.lean :: cspaceCopy/Move/Mutate` — CDT post-state composition assumes no concurrent mutation
-     - `Lifecycle/Operations.lean :: lifecyclePreRetypeCleanup` — sequential cleanup ordering
-     - `serviceHasPathTo` (SVC-M01 / AN4-H) — graph traversal is non-atomic
-     - `Scheduler/Operations/Core.lean :: timerTick` — timer + replenishment pipeline
-  2. Each entry is a `def` carrying a docstring with:
-     - Single-core precondition (what holds today)
-     - SMP-side discharge obligation (what must hold under concurrency — typically a critical-section bracket)
-     - Cross-reference to the source theorem
-  3. The module is import-only documentation; no runtime semantics. Tag with `-- This module is post-1.0 SMP refactor surface. See SELE4N_SPEC.md §6.`
-- **Acceptance**: module created; ≥8 inventory entries; SPEC §6 cross-reference added
-- **Regression test**: smoke gate; module gate `lake build SeLe4n.Kernel.Concurrency.Assumptions`
-- **Cascade**: 1 new file; 1 SPEC cross-reference
+- **Total effort**: ~0.75 day. **Cascade**: 1 new module + 1 SPEC cross-reference.
+
+**Sub-sub-task breakdown** (4 commits):
+
+- **AN10-B.1 — Scaffold module + inventory entry schema** (0.15 day)
+  - New `SeLe4n/Kernel/Concurrency/Assumptions.lean` with structure:
+    ```lean
+    structure SmpLatentAssumption where
+      identifier : Lean.Name
+      singleCoreWitness : String  -- what holds today
+      smpDischarge : String       -- what must hold under concurrency
+      sourceTheorem : Lean.Name
+      auditReference : String
+    ```
+  - Plus a `def smpLatentInventory : List SmpLatentAssumption := [ ... ]` aggregator.
+  - Module-level tag: `-- This module is post-1.0 SMP refactor surface. See SELE4N_SPEC.md §6.`
+  - **Acceptance**: module compiles; schema in place.
+
+- **AN10-B.2 — Inventory entries — capability / lifecycle / scheduler** (0.25 day)
+  - Add 5 entries, one `def` per site, each with filled-in fields:
+    1. `cspaceLookupMultiLevel_smpLatent` (H-05 / AN4-D) — resolved CNode validity across calls
+    2. `cspaceCopyMoveMutate_smpLatent` — CDT post-state composition assumes no concurrent mutation
+    3. `lifecyclePreRetypeCleanup_smpLatent` — sequential cleanup ordering
+    4. `serviceHasPathTo_smpLatent` (SVC-M01 / AN4-H) — graph traversal is non-atomic
+    5. `timerTickReplenishmentPipeline_smpLatent` — timer + replenishment pipeline atomicity
+  - **Acceptance**: 5 entries present; each has all 5 fields; module builds.
+
+- **AN10-B.3 — Inventory entries — foundation / architecture** (0.2 day)
+  - Add 3 more entries:
+    6. `typedIdDisjointness_smpLatent` (H-10 / AN2-D) — AN2-D's invariant holds structurally; SMP invariant still holds but needs atomicity on `storeObject`
+    7. `architecture_singleCoreOnly_smpLatent` — already explicit in `Architecture/Assumptions.lean`; this entry cross-links it
+    8. `bootFromPlatform_currentCore_is_zero_smpLatent` (CX-M03 / AN6-F) — boot bridge currently-core-zero
+  - Post-AN2-C, `RegisterFile.BEq` (H-11) drops out of inventory because the `Fin 32` refactor makes concurrency a non-issue for register-file equality.
+  - **Acceptance**: inventory now has 8 entries; total aggregator list `smpLatentInventory.length = 8`.
+
+- **AN10-B.4 — SPEC §6 cross-reference + module hygiene** (0.15 day)
+  - Add `docs/spec/SELE4N_SPEC.md` §6 new subsection "§6.X — SMP-Latent Single-Core Assumptions" listing the 8 inventory entries in tabular form with cross-references back to the Lean module.
+  - Mark the module as a "staged-for-hardware-binding" module per PLT-M07 convention; ensure it's wired into the `Platform.Staged` meta-module (AN7-D PLT-M07).
+  - Register in `scripts/website_link_manifest.txt`.
+  - **Acceptance**: SPEC section visible; `check_website_links.sh` PASS; module builds.
+
+- **Regression test**: smoke gate; module gate `lake build SeLe4n.Kernel.Concurrency.Assumptions`.
+- **Cascade**: 1 new module; SPEC update.
 
 ### AN10-C — Documentation MEDIUM batch (DOC-M01..M08)
 
@@ -1358,17 +2201,43 @@ E-5 has the only forward link: its residual closure-form gap is the same gap H-0
 
 - **Audit references**: §4.5 (workstream IDs in comments) and §4.6 (stale forward references)
 - **Files**: codebase-wide comment grep
-- **Plan**:
-  1. `grep -rn "WS-[A-Z]\|AK[0-9]" SeLe4n/ rust/ tests/ scripts/ --include="*.lean" --include="*.rs" --include="*.sh"` to inventory the inline-marker count. Capture in `AUDIT_v0.30.6_WS_AN_BASELINE.txt` as the AN10 baseline.
-  2. For each marker, classify:
-     - **Completed-work historical**: leave alone (legitimate dev-history)
-     - **Deferred-work pointer**: retarget to the canonical DEF-ID per AN1-C playbook
-     - **Workstream-cadence rot**: convert to `// see WORKSTREAM_HISTORY:<id>` short cross-reference
-  3. Land in batches of ≤50 changes per commit; each commit's diff is mechanically verifiable.
-  4. Per audit guidance, this is a **hygiene pass**, not a behavior change. The total inline-marker count likely drops from 5000+ → ~3000 (rough estimate; baseline capture in step 1 finalizes the target).
-- **Acceptance**: marker count reduced; no production code semantics altered; `WORKSTREAM_HISTORY.md` cross-refs are valid
-- **Regression test**: smoke gate; `check_website_links.sh` PASS
-- **Cascade**: cascade-heavy by line count (~2000+ comment edits) but trivially low-risk per commit; spread across 5-10 commits
+- **Total effort**: ~1 day. **Cascade**: ~2000+ comment edits across ~200 files (trivially low-risk per commit).
+
+**Sub-sub-task breakdown** (6 commits, selective-scope approach per §20 question 6):
+
+- **AN10-E.1 — Inventory + classification pass** (0.2 day)
+  - `grep -rn "WS-[A-Z]\|\bAK[0-9]\|\bAJ[0-9]\|\bAI[0-9]\|\bAH[0-9]\|\bAG[0-9]\|\bAF[0-9]\|\bAE[0-9]\|\bAD[0-9]\|\bAC[0-9]\|\bAB[0-9]\|\bAA[0-9]" SeLe4n/ rust/ tests/ scripts/ --include="*.lean" --include="*.rs" --include="*.sh"` into a temporary inventory file.
+  - Classify each marker into one of three buckets (tag with `[HIST]`, `[DEFER]`, `[ROT]` prefixes):
+    - **[HIST]** — historical completed-work reference (legitimate; leave alone)
+    - **[DEFER]** — deferred-work pointer; retarget to canonical `DEF-*` ID per AN1-C pattern
+    - **[ROT]** — workstream-cadence rot; convert to `// see WORKSTREAM_HISTORY:<id>` short cross-reference
+  - Estimated counts after classification: ~3000 [HIST] (leave as-is), ~20 [DEFER] (retarget), ~2000 [ROT] (shorten). The bulk of work is [ROT].
+  - **Acceptance**: classified inventory committed (ephemeral; deleted at AN10-E.6).
+
+- **AN10-E.2 — [DEFER] retargets (≤30 sites; high-priority)** (0.15 day)
+  - These are the actually-incorrect forward references that AN1-C missed. Each gets retargeted to a canonical `DEF-*` ID in `AUDIT_v0.29.0_DEFERRED.md` or the new `AUDIT_v0.30.6_DEFERRED.md`.
+  - **Acceptance**: all [DEFER]-tagged markers retargeted; grep for deferred-work pointers to closed workstreams returns 0 non-historical matches.
+
+- **AN10-E.3 — [ROT] batch 1: IPC + Scheduler subsystems (~500 markers)** (0.2 day)
+  - Bulk convert inline workstream markers in `SeLe4n/Kernel/IPC/` and `SeLe4n/Kernel/Scheduler/` to short `// see WH:<id>` form.
+  - Commit as a single atomic rewrite; reviewer verifies via diff that only comment content changed.
+  - **Acceptance**: batch commit lands; smoke gate PASS.
+
+- **AN10-E.4 — [ROT] batch 2: Capability + Lifecycle + Service + SchedContext (~400 markers)** (0.15 day)
+  - Same pattern.
+  - **Acceptance**: smoke gate PASS.
+
+- **AN10-E.5 — [ROT] batch 3: Architecture + IF + CrossSubsystem + Foundation + Model (~600 markers)** (0.15 day)
+  - Same pattern.
+  - **Acceptance**: smoke gate PASS.
+
+- **AN10-E.6 — [ROT] batch 4: Platform + API + Rust + tests + scripts (~500 markers) + inventory cleanup + metric** (0.15 day)
+  - Same pattern; plus delete the ephemeral inventory from AN10-E.1.
+  - Extend `scripts/ak7_cascade_baseline.sh` with `INLINE_WORKSTREAM_MARKERS` metric (floor = post-sweep count; should NOT grow in future PRs).
+  - **Acceptance**: total inline-marker count dropped by ~40% (estimated 5000 → 3000); monotonicity metric committed to baseline; `check_website_links.sh` PASS.
+
+- **Regression test (cumulative)**: smoke gate after each batch commit; `check_website_links.sh` PASS at AN10-E.6.
+- **Cascade**: ~2000+ mechanical comment edits across 6 commits.
 
 ### AN10-F — Theme 4.7 file-split completion pass
 
@@ -1971,9 +2840,12 @@ LOW findings are batched per-subsystem. Lookup:
 ### 19.4 Sub-task ID convention
 
 - `AN{phase}-{letter}` — e.g., `AN3-B` is "Phase AN3, sub-task B"
+- `AN{phase}-{letter}.{digit}` — e.g., `AN3-B.4` is "sub-sub-task 4 inside AN3-B"; each sub-sub-task corresponds to one atomic commit
+- `AN{phase}-{letter}.{digit}.{digit}` — rare third-level decomposition for pathologically large units (e.g., `AN4-F.5.4` is "sub-sub-sub-task inside CAP-M05 named-projection refactor")
 - Sub-tasks are sequential within a phase; letter ordering reflects dependency
 - "AN10-G" is "Phase AN10, sub-task G" — the new DEFERRED file
 - Audit-ID cross-reference is recorded in the sub-task heading for forward and reverse traversal
+- For sub-sub-tasks, the commit message convention is `WS-AN {SubSubId}: <one-line> (<audit-IDs>)` — e.g., `WS-AN AN2-D.3: retype preservation for typedIdDisjointness (H-10)`
 
 ### 19.5 PR title convention
 
@@ -2037,6 +2909,97 @@ records the WS-AN entry.
 
 This document is GPL-3.0+ licensed (see `LICENSE`) per the project's
 standard.
+
+---
+
+## 22. Sub-sub-task decomposition principles
+
+This section documents the **criteria** that were used to decide which
+sub-tasks get broken down into `.N` sub-sub-tasks versus kept as
+single units. Future workstreams (WS-AO, etc.) should apply the same
+criteria.
+
+### 22.1 Triggers for decomposition
+
+A sub-task MUST be decomposed into sub-sub-tasks if any one of the
+following applies:
+
+1. **Cascade ≥ 10 sites** — a refactor touching 10 or more production
+   call sites should batch into a series of commits, one batch per
+   subsystem cluster, so review diffs stay scoped.
+2. **Effort ≥ 0.75 days** — a sub-task estimated at more than ~6 hours
+   of focused work is better expressed as multiple smaller commits
+   that can be interrupted and resumed.
+3. **Multi-option decision** — if a sub-task has "Option A / Option B"
+   decision points (e.g., linker-layout fallback in AN8-B), each
+   option gets its own sub-sub-task sequence with an explicit decision
+   gate.
+4. **Toolchain risk** — if a sub-task depends on a Lean or Rust
+   toolchain feature that may not work uniformly (e.g., AN6-A's
+   `split_ifs` on `Except.ok`-wrapped match), break into an attempt
+   ladder with fallbacks.
+5. **Mixed concerns** — if a single sub-task addresses multiple
+   independent findings (e.g., AN4-F's 5 CAP-M IDs), decompose into
+   per-finding sub-sub-tasks even if each individual finding is
+   small.
+6. **File split (Theme 4.7)** — every monolithic-file split decomposes
+   into seam-inventory + per-child-extraction + hub-finalization
+   commits. Minimum 2-3 commits per split.
+7. **Structure refactor (Theme 4.2)** — every tuple→structure
+   refactor follows the 6-step AN3-B playbook: structure + bridge,
+   projection abbrevs, swap primary, migrate subsystem consumers,
+   migrate cross-subsystem consumers, delete deprecated form +
+   monotonicity metric.
+8. **Invariant extension (AM4 playbook)** — every `crossSubsystemInvariant`
+   extension follows the AN2-D playbook: predicate + default, frame
+   lemmas, preservation through retype, conjunct addition, 5 core
+   bridges, 34 per-op bridges, field-set catalog.
+
+### 22.2 Granularity anti-patterns (avoid)
+
+- **Over-decomposition**: if a sub-sub-task has ≤ 15 minutes of
+  engineer work and isn't a review/audit boundary, fold it into a
+  parent sub-task. Example of over-decomposition: splitting a docstring
+  rewrite into 4 commits (one per paragraph).
+- **Cascade-free decomposition**: if a sub-task has 0 cascade and ≤
+  100 LOC delta, it's one commit. Don't invent sub-sub-tasks for the
+  sake of structure.
+- **Ordering coupling**: if sub-sub-tasks MUST land in a specific
+  order AND cannot be reviewed independently, they're one logical unit;
+  combine them. The `.N` numbering is for independently-reviewable
+  commits, not for narratively-ordered steps inside a single commit.
+
+### 22.3 Review-scope guidance per sub-sub-task
+
+Every sub-sub-task commit should:
+
+1. **Stand alone**: a reviewer reading only the sub-sub-task's diff
+   should understand what changed and why.
+2. **Pass CI by itself**: each commit should not require a subsequent
+   commit to restore green CI. Use temporary shims or bidirectional
+   bridges (AN2-G.1's `allTablesInvExtKTuple` kept callable) to
+   maintain build-greenness mid-migration.
+3. **Reference its parent**: the commit message includes both the
+   sub-sub-task ID (`AN2-D.3`) and the audit finding IDs it addresses
+   (`H-10`).
+4. **Document cascade**: if the commit touches N files, the commit
+   message records N in the summary so the aggregate cascade can be
+   reconstructed from the git log post-closure.
+
+### 22.4 Emergency reversion protocol
+
+If a sub-sub-task commit breaks the full gate in a way that cannot be
+fixed forward within 1 hour, revert it and open a `DEF-*` tracking
+entry for a post-workstream revisit. This is preferable to blocking
+the rest of the workstream on a single stubborn cascade. Examples
+where this may apply:
+
+- AN2-C.3 LawfulBEq derivation fails due to Lean toolchain limitation
+  → revert; open `DEF-AN2-C.3-lawfulbeq`; proceed with AN2-C.4/.5
+- AN6-A.2/A.3/A.4 all fail → ship partial discharge (AN6-A.4)
+  preserves the sub-task's value
+- AN2-G.4 consumer migration breaks a non-obvious subsystem → revert
+  just that batch; re-plan with a smaller granularity
 
 **End of plan.**
 
