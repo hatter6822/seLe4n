@@ -2071,13 +2071,538 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 
 ---
 
-## 12. Phase AN9 — Tests / CI / Scripts
+## 12. Phase AN9 — Hardware-binding closure (NEW)
 
-**Goal**: close the four HIGH test findings (H-20 KernelError matrix, H-21 lake-exe timeout, H-22 small-fixture sha256, H-23 named AK6 tests), batch TST-M01..M13, and address Test LOWs. This phase exercises everything the prior phases shipped and gates AN10's closure.
+**Goal**: substantively close every hardware-binding item previously carried in `AUDIT_v0.29.0_DEFERRED.md` plus the four hardware-binding items surfaced by AN1-C (DEF-R-HAL-L17..L20). This phase pairs Lean-side correctness proofs with Rust HAL implementation so each deferred item has a proof-linked implementation at v1.0.0 ship.
 
-**Effort**: 4–5 days. **Blocks**: AN10.
+**Scope**: 10 sub-tasks (AN9-A through AN9-J) covering TLB+Cache composition (DEF-A-M04), `tlbBarrierComplete` substantive binding (DEF-A-M06), MMU/Device BarrierKind composition (DEF-A-M08/M09), `suspendThread` atomicity via HAL bracket (DEF-C-M04), VSpaceRoot boot-bridge closure cross-check (DEF-P-L9 — already discharged in AN7-D.2; AN9-E records the cross-reference), SVC FFI wiring (DEF-R-HAL-L14), bounded WFE (DEF-R-HAL-L17), parameterized barriers (DEF-R-HAL-L18), OSH widening (DEF-R-HAL-L19), and secondary-core bring-up / SMP enablement (DEF-R-HAL-L20).
 
-### AN9-A — KernelError variant cross-syscall coverage matrix (H-20)
+**Effort**: 18–22 dev-days. **Blocks**: AN11, AN12. **Depends on**: AN6 (invariant layer ready for composition) + AN8 (Rust HAL barriers refactored; EOI-before-handler landed).
+
+### AN9-A — DEF-A-M04: TLB+Cache composition full closure
+
+- **Audit ID**: DEF-A-M04 (absorbed from `AUDIT_v0.29.0_DEFERRED.md`, Category A hardware-binding)
+- **Files**:
+  - `SeLe4n/Kernel/Architecture/CacheModel.lean` (currently `CacheBarrierKind` + `cacheCoherentForExecutable`)
+  - `SeLe4n/Kernel/Architecture/TlbModel.lean` (currently `tlbBarrierComplete` stub)
+  - `SeLe4n/Kernel/Architecture/PageTable.lean` (page-table update entry points)
+  - `rust/sele4n-hal/src/cache.rs` (`clean_pagetable_range`, `ic_iallu`, new FFI-visible barrier witnesses)
+  - `rust/sele4n-hal/src/tlb.rs` (TLB invalidation emission + new FFI witnesses)
+  - New `SeLe4n/Kernel/Architecture/TlbCacheComposition.lean` — composition theorem file
+- **Total effort**: ~2.5 days.
+
+**Rationale for closure (not deferral)**: AK3-G landed `CacheBarrierKind` + `cacheCoherentForExecutable` + `pageTableUpdate_icache_coherent_under_sequence` as a PARTIAL remediation. The composition theorem assumed an externalised sequence hypothesis that only real-hardware emission can discharge. AN9-A wires the HAL's actual emission sites through a FFI layer into Lean so the composition theorem becomes unconditional.
+
+**Sub-sub-task breakdown** (6 commits):
+
+- **AN9-A.1 — Add `@[extern]` FFI layer for cache+TLB sequence witnesses** (0.4 day)
+  - In `SeLe4n/Kernel/Architecture/CacheModel.lean`, add:
+    ```lean
+    @[extern "sele4n_hal_cache_clean_pagetable_range_witness"]
+    opaque cacheCleanPagetableRangeWitness : ∀ (addr len : Nat), IO CacheBarrierKind
+    @[extern "sele4n_hal_ic_iallu_witness"]
+    opaque icIalluWitness : IO CacheBarrierKind
+    ```
+  - Rust side emits `cache::clean_pagetable_range(...)` + `cache::ic_iallu()` and returns a Lean-compatible `CacheBarrierKind` variant tag.
+  - **Acceptance**: FFI symbols declared both sides; Lean imports compile; Rust crate exports symbols; `cargo test --workspace` links.
+
+- **AN9-A.2 — Extend `CacheBarrierKind` with sequence-composition constructor** (0.3 day)
+  - Add `CacheBarrierKind.sequenced (pre : CacheBarrierKind) (post : CacheBarrierKind) : CacheBarrierKind` + associativity lemma.
+  - Update `cacheCoherentForExecutable` to accept the sequenced form and prove composition preserves coherency.
+  - **Acceptance**: constructor present; composition lemma proven.
+
+- **AN9-A.3 — Substantive `pageTableUpdate_icache_coherent` theorem** (0.7 day)
+  - Replace the AK3-G externalised-sequence version with a theorem that takes no externalised hypothesis. Proof composes `cacheCleanPagetableRangeWitness` + `icIalluWitness` + the sequenced composition lemma.
+  - **Acceptance**: theorem holds unconditionally; old externalised form marked `@[deprecated]`.
+
+- **AN9-A.4 — Page-table update entry points emit the witness** (0.4 day)
+  - Every kernel operation that writes a page-table entry (via `VSpaceBackend.mapPage` / `unmapPage` under AN6-D) threads the witness emission through the HAL FFI.
+  - **Acceptance**: write paths validated; full gate PASS.
+
+- **AN9-A.5 — QEMU validation harness** (0.4 day)
+  - New `scripts/test_qemu_tlb_cache_coherence.sh`: boots kernel in QEMU `virt` machine, exercises a page-table update followed by an executable-page flush, verifies no stale-I-cache fetch.
+  - Wired into Tier-2 CI (skip-with-log if no QEMU).
+  - **Acceptance**: harness passes in QEMU.
+
+- **AN9-A.6 — Close DEF-A-M04 in `AUDIT_v0.29.0_DEFERRED.md`** (0.1 day)
+  - Mark DEF-A-M04 RESOLVED with AN9-A commit SHA; update the disposition table.
+  - **Acceptance**: tracking entry shows RESOLVED.
+
+- **Regression test**: full gate + rust gate + QEMU harness.
+- **Cascade**: ~6 Lean files touched + 3 Rust files + 1 new script.
+
+### AN9-B — DEF-A-M06 / DEF-AK3-I: `tlbBarrierComplete` substantive binding
+
+- **Audit ID**: DEF-A-M06 / DEF-AK3-I (absorbed, Category A)
+- **Files**:
+  - `SeLe4n/Kernel/Architecture/Invariant.lean` (current TPI-DOC-AK3I annotation)
+  - `SeLe4n/Kernel/Architecture/TlbModel.lean`
+  - `rust/sele4n-hal/src/tlb.rs` (call-graph static analysis source)
+  - New `rust/sele4n-hal/build.rs` scan helper (extends AN8-B.5's scanner)
+- **Total effort**: ~2 days.
+
+**Sub-sub-task breakdown** (5 commits):
+
+- **AN9-B.1 — Static-analysis pass of HAL TLB call graph** (0.5 day)
+  - Extend `rust/sele4n-hal/build.rs` to scan `tlb.rs` and verify every `tlbi` instruction is bracketed by `dsb ish` before and `isb` after. Fail the build on any violation.
+  - Record the analysis output as machine-readable metadata (`target/tlb_barrier_bracketed.json`) that Lean-side can ingest via the FFI layer from AN9-A.1.
+  - **Acceptance**: build.rs scanner present; current tlb.rs passes; synthetic violation test fails build.
+
+- **AN9-B.2 — FFI witness for barrier-bracketed invalidation** (0.4 day)
+  - Add `@[extern "sele4n_hal_tlb_invalidate_barrier_bracketed_witness"]` that returns a proof-carrying token `TlbInvalidationWitness` each time the HAL emits a TLB invalidation with proper bracketing.
+  - **Acceptance**: FFI bridge present both sides.
+
+- **AN9-B.3 — Refine `tlbBarrierComplete` to consume the witness** (0.5 day)
+  - The invariant now requires a `TlbInvalidationWitness` at every TLB-invalidation kernel entry point instead of being a stub `True` predicate.
+  - Preservation theorems for every kernel operation that invalidates TLB entries (VSpaceBackend.unmapPage, ASID reuse, retype-from-VSpaceRoot) thread the witness.
+  - **Acceptance**: `tlbBarrierComplete` is substantively enforced; preservation chain complete.
+
+- **AN9-B.4 — Cascade through existing AK3-I TPI-DOC annotations** (0.4 day)
+  - Remove the TPI-DOC-AK3I annotation from `Architecture/Invariant.lean`; replace with cross-reference to the new substantive theorem `tlbBarrierComplete_bridge_via_hal_witness`.
+  - **Acceptance**: no TPI-DOC-AK3I annotations remain; `grep -rn "TPI-DOC-AK3I" SeLe4n/` returns empty.
+
+- **AN9-B.5 — Close DEF-A-M06 / DEF-AK3-I in v0.29.0 DEFERRED file** (0.1 day)
+  - Mark RESOLVED with commit SHA.
+  - **Acceptance**: tracking entry shows RESOLVED.
+
+- **Regression test**: full gate + rust gate + synthetic unbracketed-tlbi regression test.
+- **Cascade**: ~8 preservation theorems updated.
+
+### AN9-C — DEF-A-M08 / DEF-A-M09 / DEF-AK3-K: MMU / Device BarrierKind composition
+
+- **Audit IDs**: DEF-A-M08, DEF-A-M09, DEF-AK3-K (absorbed, Category A)
+- **Files**:
+  - `SeLe4n/Kernel/Architecture/VSpaceARMv8.lean` (currently carries TPI-DOC doc block)
+  - New `SeLe4n/Kernel/Architecture/BarrierComposition.lean`
+  - `rust/sele4n-hal/src/mmio.rs` (MMIO write barrier emission)
+  - `rust/sele4n-hal/src/mmu.rs` (MMU update barrier emission)
+- **Total effort**: ~2 days.
+
+**Sub-sub-task breakdown** (5 commits):
+
+- **AN9-C.1 — Define `BarrierKind` composition algebra** (0.3 day)
+  - In new `BarrierComposition.lean`:
+    ```lean
+    inductive BarrierKind where
+      | none
+      | dsbIshst        -- write-ordering before MMU update
+      | dcCvacDsbIsh    -- D-cache clean + D-side sync (page-table pages)
+      | isb             -- instruction-side serialization
+      | sequenced (pre : BarrierKind) (post : BarrierKind)
+    ```
+  - Prove associativity + `BarrierKind.subsumes` partial order.
+  - **Acceptance**: algebra present; laws proven.
+
+- **AN9-C.2 — MMU update composition theorem (A-M08)** (0.5 day)
+  - Prove `pageTableUpdate_observes_armv8_ordering : BarrierKind.sequenced dsbIshst (BarrierKind.sequenced dcCvacDsbIsh isb)` subsumes the ARMv8 page-table update ordering requirement (per ARM ARM D8.11).
+  - **Acceptance**: theorem proven; composition complete.
+
+- **AN9-C.3 — MMIO write composition theorem (A-M09)** (0.4 day)
+  - Prove `mmioWrite_observes_dsbIshst_before_sideEffect : MMIO writes sequence with DSB ISHST before any externally-observable side effect`.
+  - Wire FFI witness from `mmio.rs` so every MMIO write returns a `BarrierKind` witness Lean can consume.
+  - **Acceptance**: theorem proven; FFI witness in place.
+
+- **AN9-C.4 — Cascade + remove TPI-DOC annotations** (0.7 day)
+  - Replace TPI-DOC-AK3K doc block at top of `VSpaceARMv8.lean` with cross-reference to the new substantive theorems.
+  - Every page-table update and MMIO write call site in the kernel threads the corresponding `BarrierKind` witness.
+  - **Acceptance**: TPI-DOC-AK3K removed; ~12 call sites updated; full gate PASS.
+
+- **AN9-C.5 — Close DEF-A-M08/M09/AK3-K in v0.29.0 DEFERRED file** (0.1 day)
+  - Mark three entries RESOLVED with commit SHA.
+  - **Acceptance**: tracking entries RESOLVED.
+
+- **Regression test**: full gate + rust gate.
+- **Cascade**: ~12 sites + 1 new module + 3 updated theorems.
+
+### AN9-D — DEF-C-M04: `suspendThread` atomicity via HAL interrupt-disable bracket
+
+- **Audit ID**: DEF-C-M04 (absorbed, Category A)
+- **Files**:
+  - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (currently carries H3-ATOMICITY annotation)
+  - `rust/sele4n-hal/src/ffi.rs` (suspendThread FFI wrapper — new file or extension)
+  - `rust/sele4n-hal/src/interrupts.rs` (existing `with_interrupts_disabled`)
+- **Total effort**: ~1.25 days.
+
+**Sub-sub-task breakdown** (4 commits):
+
+- **AN9-D.1 — FFI wrapper brackets suspendThread with interrupts-disabled** (0.4 day)
+  - In `rust/sele4n-hal/src/ffi.rs`, add:
+    ```rust
+    #[no_mangle]
+    pub extern "C" fn sele4n_suspend_thread(tid: u64) -> u32 {
+        crate::interrupts::with_interrupts_disabled(|| {
+            unsafe { sele4n_suspend_thread_inner(tid) }
+        })
+    }
+    extern "C" {
+        fn sele4n_suspend_thread_inner(tid: u64) -> u32; // Lean-provided
+    }
+    ```
+  - The inner function is the existing Lean-level `suspendThread` dispatch entry; the outer wrapper guarantees that the transient inconsistency window (remove from run queue → clear `pendingMessage`) is atomic wrt interrupts.
+  - **Acceptance**: FFI wrapper present; cargo builds.
+
+- **AN9-D.2 — Clippy lint enforces bracket discipline** (0.2 day)
+  - Add `#[must_use = "call sele4n_suspend_thread, not sele4n_suspend_thread_inner, to preserve atomicity"]` on the inner function, plus a clippy lint that flags direct calls to `_inner` outside the `ffi.rs` module.
+  - **Acceptance**: clippy warns on direct `_inner` use; synthetic-violation test fails `cargo clippy -- -D warnings`.
+
+- **AN9-D.3 — Lean-side atomicity theorem** (0.5 day)
+  - In `SeLe4n/Kernel/Lifecycle/Suspend.lean`, replace the H3-ATOMICITY annotation with:
+    ```lean
+    theorem suspendThread_atomicity_under_ffi_bracket :
+        ∀ (st : SystemState) (tid : ThreadId),
+        st.machine.interruptsEnabled = false →
+        ∃ st', suspendThread st tid = .ok st' ∧
+               suspendThread_transientWindowInvariant st' := by
+      -- proof composes existing suspend-preservation lemmas with the
+      -- interrupts-enabled = false precondition established by the FFI wrapper
+    ```
+  - The precondition is discharged at kernel entry by the FFI wrapper's `with_interrupts_disabled` call.
+  - **Acceptance**: theorem proven; module gate PASS.
+
+- **AN9-D.4 — Close DEF-C-M04 in v0.29.0 DEFERRED file** (0.15 day)
+  - Mark DEF-C-M04 RESOLVED with commit SHA.
+  - **Acceptance**: tracking entry RESOLVED.
+
+- **Regression test**: full gate + rust gate + `lake exe suspend_resume_suite`.
+- **Cascade**: 2 new/modified Rust files + 1 new theorem + 1 annotation removal.
+
+### AN9-E — DEF-P-L9: VSpaceRoot boot exclusion — closed by AN7-D.2 cross-reference
+
+- **Audit ID**: DEF-P-L9 (absorbed; closure work landed in AN7-D.2)
+- **Effort**: 0.1 day (cross-reference only; the substantive work is in AN7-D.2's `RPi5/VSpaceBoot.lean` module).
+- **Plan**:
+  - Add annotation in `SeLe4n/Platform/Boot.lean` at the former boot-exclusion site: `-- DEF-P-L9 RESOLVED by AN7-D.2: VSpaceRoot now included in bootSafeObject via RPi5/VSpaceBoot.lean`.
+  - Mark DEF-P-L9 RESOLVED in `AUDIT_v0.29.0_DEFERRED.md` with reference to AN7-D.2's commit SHA.
+- **Acceptance**: annotation present; tracking entry RESOLVED.
+- **Regression test**: inherits from AN7-D.2.
+
+### AN9-F — DEF-R-HAL-L14: SVC FFI wiring to `sele4n_syscall_dispatch`
+
+- **Audit ID**: DEF-R-HAL-L14 (absorbed, Category A)
+- **Files**:
+  - `rust/sele4n-hal/src/trap.rs:186` (current `handle_svc` stub returning `NOT_IMPLEMENTED = 17`)
+  - `rust/sele4n-hal/src/lib.rs:89` (ffi export)
+  - New `rust/sele4n-hal/src/svc_dispatch.rs` — typed argument marshalling
+  - `SeLe4n/Kernel/API.lean` (Lean-side syscall entry, currently `syscallEntryChecked`)
+- **Total effort**: ~3 days.
+
+**Sub-sub-task breakdown** (7 commits):
+
+- **AN9-F.1 — Design typed argument marshalling layer** (0.5 day)
+  - New `rust/sele4n-hal/src/svc_dispatch.rs` exports `pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<u64, KernelError>`.
+  - `SyscallArgs` mirrors the Lean `SyscallArgs` union type (MessageInfo + msgRegs + IPC buffer reference); per-syscall decoding uses the existing AK4 ABI types.
+  - **Acceptance**: `svc_dispatch.rs` compiles; type shapes match Lean.
+
+- **AN9-F.2 — Lean-side `@[extern]` dispatcher** (0.4 day)
+  - In `SeLe4n/Kernel/API.lean`, expose `@[extern "sele4n_syscall_dispatch"] opaque syscallDispatchFromAbi : SyscallId → SyscallArgs → IO (Except KernelError UInt64)`.
+  - Wrap existing `syscallEntryChecked` so the FFI route matches.
+  - **Acceptance**: FFI symbol declared; wrapper compiles.
+
+- **AN9-F.3 — `handle_svc` routes through the typed dispatcher** (0.5 day)
+  - Replace the `NOT_IMPLEMENTED = 17` stub in `trap.rs:186` with:
+    ```rust
+    pub fn handle_svc(trap_frame: &TrapFrame) -> u64 {
+        let syscall_id = trap_frame.x0 as u32;
+        let args = SyscallArgs::from_trap_frame(trap_frame);
+        match unsafe { svc_dispatch::dispatch_svc(syscall_id, &args) } {
+            Ok(ret) => ret,
+            Err(e) => e.to_u32() as u64, // ABI convention
+        }
+    }
+    ```
+  - **Acceptance**: handle_svc returns non-stub values; `cargo build` PASS.
+
+- **AN9-F.4 — End-to-end FFI integration test** (0.6 day)
+  - Add cargo integration test `tests/svc_dispatch_roundtrip.rs` that constructs a synthetic TrapFrame, calls `handle_svc`, and asserts the correct kernel error variant is returned.
+  - Extend `scripts/test_qemu.sh` to exercise a real SVC instruction trap end-to-end (`svc #0` from a userspace stub).
+  - **Acceptance**: cargo integration test PASS; QEMU SVC round-trip PASS.
+
+- **AN9-F.5 — Rust-side proof-of-typedness audit** (0.3 day)
+  - Every typed argument decoded in `svc_dispatch.rs` must match a corresponding AK4-D decoder on the Lean side. Validate with a new `scripts/check_abi_parity.sh` that greps both sides and reports mismatches.
+  - **Acceptance**: parity script PASS; no mismatches.
+
+- **AN9-F.6 — Update source TODOs** (0.15 day)
+  - Replace the AN1-C-placed `TODO(AN9-F)` markers with annotations `// CLOSED at AN9-F: see commit SHA`.
+  - **Acceptance**: no remaining `TODO(AN9-F)` in source.
+
+- **AN9-F.7 — Close DEF-R-HAL-L14 in v0.29.0 DEFERRED file** (0.1 day)
+  - Mark RESOLVED with commit SHA.
+  - **Acceptance**: tracking entry RESOLVED.
+
+- **Regression test**: full gate + rust gate + QEMU SVC round-trip.
+- **Cascade**: 1 new Rust module + 2 modified trap.rs/lib.rs + Lean-side FFI layer + integration test.
+
+### AN9-G — DEF-R-HAL-L17: Bounded WFE timeout guard
+
+- **Audit ID**: DEF-R-HAL-L17 (new, surfaced by AN1-C)
+- **Files**: `rust/sele4n-hal/src/lib.rs:62` (current `wfe()` call), `rust/sele4n-hal/src/cpu.rs`
+- **Total effort**: ~0.75 day.
+
+**Rationale**: unconditional `wfe()` in the idle loop can hang if no wake event ever arrives (e.g., mis-configured timer). A bounded timeout guard breaks the sleep periodically, sanity-checks the scheduler's tick counter, and re-arms timer interrupts if required. Closes the "interrupt-wait optimisation" item.
+
+**Sub-sub-task breakdown** (4 commits):
+
+- **AN9-G.1 — Define `wfe_bounded(max_ticks: u64)` helper** (0.2 day)
+  - In `rust/sele4n-hal/src/cpu.rs`, add a bounded wrapper that reads CNTPCT_EL0, issues `wfe()`, and falls through after `max_ticks` have elapsed regardless of event state.
+  - **Acceptance**: helper compiles; a unit test on non-aarch64 exercises the fall-through path.
+
+- **AN9-G.2 — Replace `lib.rs:62` wfe() with wfe_bounded(10 ms at 54 MHz)** (0.15 day)
+  - Default timeout: 10 ms × 54_000_000 / 1000 = 540000 ticks.
+  - On fall-through, re-check the scheduler's `nextWakeUp` and re-arm the timer if it has drifted.
+  - **Acceptance**: boot loop no longer hangs on missing wake event; QEMU verifies.
+
+- **AN9-G.3 — Update source TODOs** (0.1 day)
+  - Replace `TODO(AN9-G)` marker with `// CLOSED at AN9-G: bounded WFE with 10ms fall-through`.
+  - **Acceptance**: no remaining TODO.
+
+- **AN9-G.4 — Close DEF-R-HAL-L17 in v0.29.0 DEFERRED file** (0.1 day)
+  - Mark RESOLVED with commit SHA.
+  - **Acceptance**: tracking entry RESOLVED.
+
+- **Regression test**: rust gate + QEMU idle-loop smoke.
+- **Cascade**: 2 files.
+
+### AN9-H — DEF-R-HAL-L18: Parameterized barriers (accept `BarrierKind` argument)
+
+- **Audit ID**: DEF-R-HAL-L18 (new, surfaced by AN1-C)
+- **Files**: `rust/sele4n-hal/src/barriers.rs`, `rust/sele4n-hal/src/lib.rs:69`
+- **Total effort**: ~1 day.
+
+**Rationale**: current barrier helpers (`dsb_ish()`, `dsb_ishst()`, `isb()`) are separate functions. Consuming code selects one; there's no way for generic code to accept "whichever barrier is appropriate for the caller's situation" as an argument. Parameterisation lets the AN9-C `BarrierKind` composition algebra translate directly to HAL emission.
+
+**Sub-sub-task breakdown** (4 commits):
+
+- **AN9-H.1 — Define `BarrierKind` enum in `barriers.rs`** (0.2 day)
+  - Mirror AN9-C.1's Lean-side `BarrierKind` inductive as a Rust enum with `emit(self)` method dispatching to the appropriate `dsb/isb` call.
+  - **Acceptance**: enum + emit method compile.
+
+- **AN9-H.2 — Migrate existing single-purpose barrier call sites to `BarrierKind`** (0.5 day)
+  - Walk `mmu.rs`, `tlb.rs`, `cache.rs`, `mmio.rs` and replace direct `dsb_ish()` / `dsb_ishst()` / `isb()` calls with `BarrierKind::DsbIsh.emit()` / `BarrierKind::DsbIshst.emit()` / `BarrierKind::Isb.emit()`.
+  - **Acceptance**: ~15 call sites migrated; cargo test PASS; no behavioural change.
+
+- **AN9-H.3 — Update source TODOs** (0.1 day)
+  - Replace `TODO(AN9-H)` marker with `// CLOSED at AN9-H: BarrierKind parameterisation`.
+  - **Acceptance**: no remaining TODO.
+
+- **AN9-H.4 — Close DEF-R-HAL-L18 in v0.29.0 DEFERRED file** (0.1 day)
+  - Mark RESOLVED with commit SHA.
+  - **Acceptance**: tracking entry RESOLVED.
+
+- **Regression test**: rust gate + QEMU.
+- **Cascade**: ~15 call sites migrated.
+
+### AN9-I — DEF-R-HAL-L19: OSH widening for multi-core
+
+- **Audit ID**: DEF-R-HAL-L19 (new, surfaced by AN1-C)
+- **Files**: `rust/sele4n-hal/src/barriers.rs` (extend with OSH variants), `rust/sele4n-hal/src/lib.rs:84`
+- **Total effort**: ~0.75 day.
+
+**Rationale**: ARM `dsb ish` synchronises only within the Inner Shareable domain (typically cluster-local). For multi-core systems spanning clusters and for device-coherent ordering guarantees, `dsb osh` (Outer Shareable) is required. AN9-I adds the OSH-width barriers as first-class members of `BarrierKind` (AN9-H) and migrates the small set of call sites that require outer-shareable ordering (MMIO device writes that cross cluster boundaries, PSCI secondary-core wake-ups).
+
+**Sub-sub-task breakdown** (4 commits):
+
+- **AN9-I.1 — Add `BarrierKind::DsbOsh` + `BarrierKind::DsbOshst` variants** (0.2 day)
+  - Extend AN9-H's enum; `emit()` dispatches to `dsb osh` / `dsb oshst` respectively.
+  - **Acceptance**: variants compile; aarch64 test path exercises them.
+
+- **AN9-I.2 — Migrate cross-cluster call sites** (0.3 day)
+  - MMIO writes that target device registers visible to other clusters use `DsbOshst`.
+  - PSCI CPU_ON calls (prep for AN9-J) use `DsbOsh` before emitting the PSCI SMC.
+  - Document each migrated site: `-- AN9-I: widened from DsbIshst to DsbOshst for cross-cluster visibility`.
+  - **Acceptance**: ~5 call sites migrated; `cargo test` PASS.
+
+- **AN9-I.3 — Update source TODOs** (0.1 day)
+  - Replace `TODO(AN9-I)` marker with `// CLOSED at AN9-I: OSH-width barriers added`.
+  - **Acceptance**: no remaining TODO.
+
+- **AN9-I.4 — Close DEF-R-HAL-L19 in v0.29.0 DEFERRED file** (0.15 day)
+  - Mark RESOLVED with commit SHA.
+  - **Acceptance**: tracking entry RESOLVED.
+
+- **Regression test**: rust gate + QEMU multi-core smoke (inherits AN9-J).
+- **Cascade**: ~5 sites.
+
+### AN9-J — DEF-R-HAL-L20: Secondary-core bring-up (SMP enablement, merged off by default at v1.0.0)
+
+- **Audit ID**: DEF-R-HAL-L20 (new, surfaced by AN1-C). **This is the largest and highest-risk sub-task in AN9.**
+- **Files**:
+  - `rust/sele4n-hal/src/boot.S` (PSCI CPU_ON call + secondary entry point)
+  - New `rust/sele4n-hal/src/smp.rs` — SMP bring-up logic, per-core init paths
+  - New `rust/sele4n-hal/src/psci.rs` — PSCI HVC/SMC wrapper
+  - `rust/sele4n-hal/src/trap.rs` (per-core trap frame storage via TPIDR_EL1)
+  - `SeLe4n/Kernel/Concurrency/Assumptions.lean` (AN12-B SMP inventory) — update post-SMP-bring-up to reflect which assumptions ARE still load-bearing
+  - `rust/sele4n-hal/src/boot.rs` (boot-flag `smp_enabled` plumbed from kernel command-line)
+- **Total effort**: ~7 days. Largest AN9 sub-task; staged across 8 commits so each is independently reviewable.
+
+**Rationale for pre-1.0 closure + "disabled-by-default" stance**: maintainer directive requires absorption of DEF-R-HAL-L20 into pre-1.0 work. However, SMP ships **as a compile-and-test-included feature gated off at runtime** at v1.0.0 — the kernel-command-line `smp_enabled` flag is `false` by default, so single-core semantics preserve. The SMP code path is code-reviewed, QEMU-tested with `-smp 4`, and present in the v1.0.0 image, but activation is a deployment-time decision. This satisfies the "complete all deferred work before v1.0.0" directive (SMP is implemented + tested + merged) while preserving single-core as the default-safe configuration.
+
+**Sub-sub-task breakdown** (8 commits):
+
+- **AN9-J.1 — PSCI wrapper module** (0.5 day)
+  - New `rust/sele4n-hal/src/psci.rs`: exports `pub fn cpu_on(target_mpidr: u64, entry_point: usize, context_id: u64) -> PsciResult`. Emits `hvc #0` (or `smc #0` if configured) with PSCI function ID `0x8400_0003` (CPU_ON) per ARM DEN0022.
+  - **Acceptance**: PSCI wrapper compiles; unit test on non-aarch64 stubs the HVC.
+
+- **AN9-J.2 — Per-core TPIDR_EL1 scratch + trap frame storage** (0.75 day)
+  - Reserve per-core TPIDR_EL1 storage pointing at a `PerCoreData` structure (trap frame buffer + scheduler state + interrupt mask). On `boot.S` entry for secondary cores, write TPIDR_EL1 before any trap-capable code runs.
+  - **Acceptance**: per-core data layout defined; secondary core preserves its own TPIDR across a synthetic trap in QEMU.
+
+- **AN9-J.3 — Secondary-core entry assembly** (0.75 day)
+  - In `boot.S`, add a `secondary_entry` label that primary core passes as `entry_point` to PSCI. Secondary entry: set up SP, TPIDR_EL1, call `rust_secondary_main`.
+  - **Acceptance**: secondary entry assembly present; QEMU `-smp 4` boots up to 4 cores.
+
+- **AN9-J.4 — `rust_secondary_main` performs per-core MMU + GIC CPU interface init** (1 day)
+  - Each secondary core: loads TTBR from the shared primary-set boot L1 table, enables its SCTLR with the same bitmap as primary (AK5-C), initialises its GIC CPU interface (secondary GICC_CTLR + GICC_PMR from GIC-400 TRM).
+  - Waits on a per-core ready flag set by the primary once the kernel image is fully set up.
+  - **Acceptance**: all cores reach the post-MMU state; `printk` from each core shows up in UART log.
+
+- **AN9-J.5 — `smp_enabled` runtime flag gates primary → secondary CPU_ON calls** (0.5 day)
+  - Boot primary parses kernel command line for `smp_enabled=true|false`; if `false` (default), skips PSCI CPU_ON entirely. If `true`, issues CPU_ON for each MPIDR read from the platform's cpus list.
+  - **Acceptance**: default boot is single-core (SMP code not activated); `smp_enabled=true` boots 4 cores.
+
+- **AN9-J.6 — Integrate with `InterruptDispatch.lean` + SPI routing** (1 day)
+  - Lean-side interrupt dispatch accommodates a `target_cpu : Fin numCpus` parameter; per-core GIC CPU interfaces register separately. Per-core timer IRQ (PPI 30) routed to the respective core.
+  - Update `interruptDispatchSequence_always_ok` (AI2-A) to account for `target_cpu`.
+  - **Acceptance**: Lean model composes; each core services its own timer IRQ.
+
+- **AN9-J.7 — QEMU `-smp 4` boot test + regression** (1 day)
+  - Extend `scripts/test_qemu.sh` with an `--smp 4` path that boots the kernel with `smp_enabled=true` and verifies all 4 cores reach a steady state.
+  - Add `scripts/test_smp_smoke.sh` — new tier-2 test.
+  - **Acceptance**: SMP smoke passes in QEMU; single-core default path unchanged.
+
+- **AN9-J.8 — Update source TODOs, SMP inventory, close DEF-R-HAL-L20** (0.5 day)
+  - Replace `TODO(AN9-J)` with `// CLOSED at AN9-J: PSCI CPU_ON + per-core init; smp_enabled flag gates activation`.
+  - Update `SeLe4n/Kernel/Concurrency/Assumptions.lean` (AN12-B inventory) — items that were SMP-latent now have their SMP-side implementation landed; single-core is a runtime default, not a proof-layer constraint.
+  - Mark DEF-R-HAL-L20 RESOLVED in `AUDIT_v0.29.0_DEFERRED.md`.
+  - **Acceptance**: all TODOs retargeted; inventory updated; tracking entry RESOLVED.
+
+- **Regression test**: rust gate + QEMU `-smp 4` smoke + single-core default path smoke (both must pass).
+- **Cascade**: 4 new/modified Rust files + 1 Lean interrupt-dispatch update + 1 new script + 1 inventory update.
+
+### AN9-K — AN9 closure
+
+- **Files**: `CHANGELOG.md` entry consolidating AN9-A..J; `CLAUDE.md` large-files-list refresh (new modules)
+- **Acceptance**: PR merged; full gate + rust gate + QEMU smoke (single-core + SMP) PASS; all 10 DEF-* entries closed under AN9 (A-M04, A-M06, A-M08, A-M09, C-M04, P-L9 cross-ref, R-HAL-L14, L17, L18, L19, L20) are marked RESOLVED in `docs/audits/AUDIT_v0.29.0_DEFERRED.md` with AN9-* commit SHAs.
+
+---
+
+## 13. Phase AN10 — AK7 cascade completion (NEW)
+
+**Goal**: substantively close DEF-AK7-E.cascade and DEF-AK7-F.cascade (reader + writer sides) from `AUDIT_v0.29.0_DEFERRED.md`. This phase is mechanical but voluminous: ~600+ call sites across 5 kernel subsystems migrate from raw identifier / raw-match patterns to the AL2-A typed helpers and `Valid*` subtypes introduced in the AL workstream. Each migration step is guarded by the AK7 cascade monotonicity metrics already wired into `scripts/ak7_cascade_check_monotonic.sh` so progress is machine-visible.
+
+**Scope**: 4 sub-tasks (AN10-A through AN10-D) covering handler-signature tightening (DEF-AK7-E, ~240 sites), reader-side typed-helper adoption (DEF-AK7-F reader, ~304+ sites), writer-side `storeObjectKindChecked` adoption (DEF-AK7-F writer, ~50 sites), and final metric floors / monotonicity-gate hardening.
+
+**Effort**: 8–10 dev-days. **Blocks**: AN11. **Depends on**: AN9 (SMP-safe predicates land in Valid*-typed handler signatures).
+
+### AN10-A — DEF-AK7-E.cascade: Handler signatures ObjId/ThreadId/SchedContextId → Valid* subtypes
+
+- **Audit ID**: DEF-AK7-E (absorbed, Category B proof-hygiene — elevated to pre-1.0 per maintainer directive)
+- **Files**: Lifecycle / SchedContext / IpcBufferValidation / Scheduler handler dispatch arms + per-op preservation theorems
+- **Total effort**: ~4 days. **Cascade**: ~240 call sites. **Monotonicity metric**: `SENTINEL_CHECK_DISPATCH` (should grow to a post-AN10 floor).
+
+**Sub-sub-task breakdown** (6 commits; batched by subsystem cluster):
+
+- **AN10-A.1 — Migrate Lifecycle handlers (~50 sites)** (0.75 day)
+  - Handler signatures: `suspendThread : ThreadId → …` → `suspendThread : ValidThreadId → …`; same for `resumeThread`, `lifecycleRetype` (takes `ValidObjId` for target), and their preservation theorems.
+  - `validateThreadIdArg` already wired at dispatch boundary (AL1b/AL8); this step pushes `ValidThreadId` through the handler body instead of unwrapping.
+  - **Acceptance**: Lifecycle handlers + preservation theorems carry `Valid*` types; `lake build SeLe4n.Kernel.Lifecycle.Operations` PASS.
+
+- **AN10-A.2 — Migrate SchedContext handlers (~40 sites)** (0.6 day)
+  - `schedContextConfigure/Bind/Unbind/yieldTo` signatures take `ValidSchedContextId` / `ValidObjId`.
+  - **Acceptance**: SC handlers migrated; module gate PASS.
+
+- **AN10-A.3 — Migrate Scheduler handlers (~50 sites)** (0.75 day)
+  - `setPriorityOp`, `setMCPriorityOp`, priority-management handlers take `ValidThreadId`.
+  - **Acceptance**: Scheduler handler surface migrated; module gate PASS.
+
+- **AN10-A.4 — Migrate IpcBufferValidation + Capability handlers (~50 sites)** (0.75 day)
+  - `setIPCBufferOp`, plus any remaining Capability handlers not already migrated in AL workstream.
+  - **Acceptance**: IPC-buffer + Cap surface migrated.
+
+- **AN10-A.5 — Migrate Scheduler liveness + WCRT proof sites (~50 sites)** (0.65 day)
+  - WCRT / liveness theorems that destructure `ThreadId` to `ObjId` now thread `ValidThreadId` through; downstream preservation closures compose automatically.
+  - **Acceptance**: Liveness proofs build; `lake exe liveness_suite` PASS.
+
+- **AN10-A.6 — Metric floor bump + DEF-AK7-E closure** (0.25 day)
+  - `scripts/ak7_cascade_baseline.sh`: `SENTINEL_CHECK_DISPATCH` floor raised from current value (15 at v0.30.0) to target post-AN10 value.
+  - Mark DEF-AK7-E.cascade RESOLVED in `AUDIT_v0.29.0_DEFERRED.md`.
+  - **Acceptance**: metric advanced; tracking entry RESOLVED; `ak7_cascade_check_monotonic.sh` PASS.
+
+- **Regression test**: full gate + rust gate + `lake exe ak7_regression_suite` PASS after each batch.
+- **Cascade**: ~240 sites, bounded by the batching above.
+
+### AN10-B — DEF-AK7-F.cascade reader side: raw-match → AL2-A typed helpers (~304+ sites)
+
+- **Audit ID**: DEF-AK7-F.reader.hygiene (absorbed)
+- **Files**: Scheduler (151), IPC (104), Architecture/InformationFlow/Lifecycle/FrozenOps/SchedContext/Platform (~49) consumer modules
+- **Total effort**: ~3 days. **Cascade**: ~304+ call sites. **Monotonicity metric**: `RAW_MATCH_TCB`, `RAW_MATCH_ENDPOINT`, `RAW_MATCH_NOTIFICATION`, `RAW_MATCH_UNTYPED`, `RAW_LOOKUP_TID`, `GETTCB_ADOPTION`, `GETSCHEDCTX_ADOPTION` (should drop / grow respectively).
+
+**Sub-sub-task breakdown** (5 commits; batched by subsystem):
+
+- **AN10-B.1 — Scheduler reader migration (~151 sites)** (1 day)
+  - Replace `match st.objects[tid]? with | some (.tcb tcb) => …` with `match st.getTcb? tid with | some tcb => …` and similar for schedContext.
+  - **Acceptance**: `RAW_MATCH_TCB` drops by ~120+; `GETTCB_ADOPTION` rises by ~120+; module gate PASS.
+
+- **AN10-B.2 — IPC reader migration (~104 sites)** (0.75 day)
+  - Same pattern; endpoint / notification raw-match sites migrate to `getEndpoint?` / `getNotification?`.
+  - **Acceptance**: `RAW_MATCH_ENDPOINT` + `RAW_MATCH_NOTIFICATION` drop; adoption metrics rise.
+
+- **AN10-B.3 — Cross-subsystem reader migration (~49 sites)** (0.5 day)
+  - Architecture / InformationFlow / Lifecycle / FrozenOps / SchedContext / Platform.
+  - **Acceptance**: remaining raw-match sites in production surface drop to ≤ 20 (ceiling set by the helper-definition file itself, which retains the patterns by design).
+
+- **AN10-B.4 — Metric floors + monotonicity tightening** (0.5 day)
+  - Set new post-AN10 floors on all 7 reader-side metrics. `RAW_MATCH_TCB` target floor ≤ 100 (from 600 at v0.30.0), `GETTCB_ADOPTION` target floor ≥ 300 (from 49).
+  - **Acceptance**: `ak7_cascade_check_monotonic.sh` PASS against new baseline.
+
+- **AN10-B.5 — Close DEF-AK7-F.reader.hygiene in v0.29.0 DEFERRED file** (0.25 day)
+  - Mark RESOLVED with commit SHA.
+  - **Acceptance**: tracking entry RESOLVED.
+
+- **Regression test**: full gate + `lake exe ak7_regression_suite` after each batch.
+- **Cascade**: ~304+ sites.
+
+### AN10-C — DEF-AK7-F.cascade writer side: storeObject → storeObjectKindChecked (~50 sites)
+
+- **Audit ID**: DEF-AK7-F.writer.hygiene (absorbed)
+- **Files**: ~50 in-place `storeObject` call sites across kernel subsystems
+- **Total effort**: ~1.5 days. **Cascade**: ~50 sites. **Monotonicity metric**: `STOREOBJECTCHECKED_ADOPTION` (should grow to post-AN10 floor).
+
+**Sub-sub-task breakdown** (3 commits):
+
+- **AN10-C.1 — Migrate IPC + Scheduler writer sites (~25 sites)** (0.6 day)
+  - Replace `storeObject oid (.tcb tcb)` with `storeObjectKindChecked oid (.tcb tcb)` throughout these subsystems. Each migration is transparent because `storeObjectKindChecked_sameKind_eq_storeObject` discharges the equivalence at same-kind writes (fresh allocations discharged via `storeObjectKindChecked_fresh_eq_storeObject`).
+  - **Acceptance**: ~25 sites migrated; preservation proofs build with no new obligations.
+
+- **AN10-C.2 — Migrate Capability / Lifecycle / Service / SchedContext / Platform writer sites (~25 sites)** (0.6 day)
+  - Same pattern.
+  - **Acceptance**: remaining 25 sites migrated.
+
+- **AN10-C.3 — Metric floor + DEF-AK7-F.writer closure** (0.3 day)
+  - `STOREOBJECTCHECKED_ADOPTION` floor: 9 (at v0.30.0) → ~55 post-AN10.
+  - Mark DEF-AK7-F.writer.hygiene RESOLVED in `AUDIT_v0.29.0_DEFERRED.md`.
+  - **Acceptance**: metric advanced; tracking entry RESOLVED.
+
+- **Regression test**: full gate + `lake exe ak7_regression_suite`.
+- **Cascade**: ~50 sites.
+
+### AN10-D — AN10 closure + metric-floor hardening
+
+- **Files**: `CHANGELOG.md` entry; `CLAUDE.md` WS-AN entry refresh; `scripts/ak7_cascade_baseline.sh` final-floor update
+- **Plan**:
+  - Consolidate metric floors into baseline: every AK7 metric that grew during AN10-A/B/C receives its new floor; monotonicity gate rejects regressions against the post-AN10 baseline.
+  - Three `DEF-AK7-*` entries (E, F.reader, F.writer) all marked RESOLVED.
+  - AN10-A/B/C commit SHAs cross-referenced from the tracking entries.
+- **Acceptance**: PR merged; full gate + rust gate PASS; all 3 AK7-cascade tracking entries RESOLVED; monotonicity-check baseline updated.
+
+---
+
+## 14. Phase AN11 — Tests / CI / Scripts
+
+**Goal**: close the four HIGH test findings (H-20 KernelError matrix, H-21 lake-exe timeout, H-22 small-fixture sha256, H-23 named AK6 tests), batch TST-M01..M13, and address Test LOWs. This phase exercises everything the prior phases shipped (including AN9 hardware-binding and AN10 cascade work) and gates AN12's closure.
+
+**Effort**: 4–5 days. **Blocks**: AN12.
+
+### AN11-A — KernelError variant cross-syscall coverage matrix (H-20)
 
 - **Audit ID**: H-20 (HIGH)
 - **Files**:
@@ -2143,7 +2668,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Regression test**: full gate; `lake exe kernel_error_matrix_suite` PASS.
 - **Cascade**: ~35+ new test scenarios across 7 commits.
 
-### AN9-B — `lake exe …` timeout wrapper (H-21)
+### AN11-B — `lake exe …` timeout wrapper (H-21)
 
 - **Audit ID**: H-21 (HIGH)
 - **Files**: `scripts/test_lib.sh`, possibly `scripts/test_smoke.sh` / `test_full.sh` / `test_nightly.sh`
@@ -2163,7 +2688,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Regression test**: smoke gate; manual timeout-hit verification with synthetic test
 - **Cascade**: ~10-15 invocation sites
 
-### AN9-C — Small-fixture sha256 companions (H-22 — downgraded LOW, addressed here)
+### AN11-C — Small-fixture sha256 companions (H-22 — downgraded LOW, addressed here)
 
 - **Audit ID**: H-22 (downgraded HIGH→LOW per audit §0.4)
 - **Files**:
@@ -2182,7 +2707,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Regression test**: smoke gate; manual fixture-edit-without-hash-update verification
 - **Cascade**: 2 new files; 1 script extension
 
-### AN9-D — Named test functions for AK6 sub-tests (H-23, TST-M11)
+### AN11-D — Named test functions for AK6 sub-tests (H-23, TST-M11)
 
 - **Audit IDs**: H-23 (HIGH), TST-M11 (MEDIUM, same root cause)
 - **Files**: `tests/InformationFlowSuite.lean:1067-1114` (and adjacent comment-delimited blocks for AK6-A through AK6-F)
@@ -2197,7 +2722,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Regression test**: full gate; `lake exe information_flow_suite`
 - **Cascade**: ~9 test functions; ~1 dispatch table
 
-### AN9-E — Test MEDIUM batch (TST-M01..M13)
+### AN11-E — Test MEDIUM batch (TST-M01..M13)
 
 - **Audit IDs**: TST-M01..M13 (subset; some already covered by AN9-C / AN9-D)
 - **Total effort**: ~1 day (mostly script edits).
@@ -2257,7 +2782,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Regression test**: full gate; `scripts/test_tier0_hygiene.sh` PASS.
 - **Cascade**: ~10-15 script/test edits.
 
-### AN9-F — Test LOW batch
+### AN11-F — Test LOW batch
 
 - **Audit IDs**: 7 LOW per audit §2.10
 - **Plan**:
@@ -2271,20 +2796,20 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Acceptance**: each LOW addressed; smoke gate PASS
 - **Regression test**: smoke gate
 
-### AN9-G — AN9 closure
+### AN11-G — AN11 closure
 
 - **Files**: `CHANGELOG.md`; `scripts/test_lib.sh` final review
 - **Acceptance**: PR merged; full gate + rust gate PASS; new suites registered in CI
 
 ---
 
-## 13. Phase AN10 — Documentation, themes, closure
+## 15. Phase AN12 — Documentation, themes, closure
 
-**Goal**: synthesise the AN1..AN9 deltas, deliver the cross-cutting Theme 4.1 (discharge index) and Theme 4.4 (SMP inventory) artifacts, batch DOC-M01..M08 + DOC LOWs, ship the new `AUDIT_v0.30.6_DEFERRED.md`, update `WORKSTREAM_HISTORY.md`, refresh `CLAUDE.md`, bump version, and close WS-AN.
+**Goal**: synthesise the AN1..AN11 deltas, deliver the cross-cutting Theme 4.1 (discharge index) and Theme 4.4 (SMP inventory — confirming AN9 work landed), batch DOC-M01..M08 + DOC LOWs, **mark all 11 absorbed DEF-* items RESOLVED in the existing `docs/audits/AUDIT_v0.29.0_DEFERRED.md` file (no new DEFERRED file created)**, update `WORKSTREAM_HISTORY.md`, refresh `CLAUDE.md`, bump version, and close WS-AN.
 
 **Effort**: 3 days. **Blocks**: workstream closure (final gate). **Branch**: same WS-AN branch.
 
-### AN10-A — Theme 4.1 deliverable: closure-form discharge index
+### AN12-A — Theme 4.1 deliverable: closure-form discharge index
 
 - **Audit reference**: §4.1 Cross-cutting theme
 - **Files**:
@@ -2335,7 +2860,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 
 - **Regression test**: smoke gate; `check_website_links.sh` PASS at AN10-A.5.
 
-### AN10-B — Theme 4.4 deliverable: SMP-latent single-core inventory
+### AN12-B — Theme 4.4 deliverable: SMP-inventory confirmation (AN9 absorbed the SMP work)
 
 - **Audit reference**: §4.4 Cross-cutting theme
 - **Files**:
@@ -2385,7 +2910,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Regression test**: smoke gate; module gate `lake build SeLe4n.Kernel.Concurrency.Assumptions`.
 - **Cascade**: 1 new module; SPEC update.
 
-### AN10-C — Documentation MEDIUM batch (DOC-M01..M08)
+### AN12-C — Documentation MEDIUM batch (DOC-M01..M08)
 
 - **Audit IDs**: DOC-M01..M08
 - **Plan**:
@@ -2401,7 +2926,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Regression test**: smoke gate; `check_website_links.sh` PASS; `check_version_sync.sh` PASS
 - **Cascade**: DOC-M03 ~150 file headers (mechanical, low-risk)
 
-### AN10-D — Documentation LOW batch
+### AN12-D — Documentation LOW batch
 
 - **Audit IDs**: 5 LOW per audit §2.10
 - **Plan**:
@@ -2413,7 +2938,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Acceptance**: each LOW addressed
 - **Regression test**: smoke gate
 
-### AN10-E — Theme 4.5 / 4.6 inline-marker hygiene pass
+### AN12-E — Theme 4.5 / 4.6 inline-marker hygiene pass
 
 - **Audit references**: §4.5 (workstream IDs in comments) and §4.6 (stale forward references)
 - **Files**: codebase-wide comment grep
@@ -2455,7 +2980,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Regression test (cumulative)**: smoke gate after each batch commit; `check_website_links.sh` PASS at AN10-E.6.
 - **Cascade**: ~2000+ mechanical comment edits across 6 commits.
 
-### AN10-F — Theme 4.7 file-split completion pass
+### AN12-F — Theme 4.7 file-split completion pass
 
 - **Audit reference**: §4.7
 - **Files**: any kernel `.lean` file ≥ 2000 LOC after AN3-C/D, AN4-F (CAP-M03), AN5-A, AN6-E
@@ -2468,7 +2993,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Regression test**: full gate
 - **Cascade**: 0–2 additional file splits depending on residual sizes
 
-### AN10-G — New `AUDIT_v0.30.6_DEFERRED.md`
+### AN12-G — Close `AUDIT_v0.29.0_DEFERRED.md` entries in-place (no new DEFERRED file created)
 
 - **Files**: `docs/audits/AUDIT_v0.30.6_DEFERRED.md` (new)
 - **Plan**: parallel to `AUDIT_v0.29.0_DEFERRED.md`. Document every WS-AN deferred item:
@@ -2494,7 +3019,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Regression test**: smoke gate; `check_website_links.sh` PASS
 - **Cascade**: 1 new file (~300 lines)
 
-### AN10-H — `WORKSTREAM_HISTORY.md` WS-AN entry
+### AN12-H — `WORKSTREAM_HISTORY.md` WS-AN entry
 
 - **Files**: `docs/WORKSTREAM_HISTORY.md`
 - **Plan**: append the canonical WS-AN closure entry following the WS-AK/WS-AM precedent:
@@ -2510,7 +3035,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Acceptance**: entry committed; gate-state table filled
 - **Regression test**: smoke gate
 
-### AN10-I — `CLAUDE.md` Active-workstream-context refresh
+### AN12-I — `CLAUDE.md` Active-workstream-context refresh
 
 - **Files**: `CLAUDE.md`
 - **Plan**:
@@ -2521,7 +3046,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Acceptance**: CLAUDE.md active section reflects WS-AN closure; archive file created; large-files list refreshed
 - **Regression test**: smoke gate
 
-### AN10-J — Version bump and release trajectory
+### AN12-J — Version bump and release trajectory
 
 - **Files**: 15 version-bearing files (per `scripts/check_version_sync.sh` canonical list)
 - **Plan**:
@@ -2532,7 +3057,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Acceptance**: `check_version_sync.sh` PASS at the new version
 - **Regression test**: full gate + rust gate + `check_version_sync.sh`
 
-### AN10-K — CHANGELOG entry consolidation
+### AN12-K — CHANGELOG entry consolidation
 
 - **Files**: `CHANGELOG.md`
 - **Plan**: consolidate AN1..AN9 per-phase entries under a single `## [0.30.7] — 2026-MM-DD (WS-AN closure)` (or equivalent version) heading, structured as:
@@ -2550,7 +3075,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Acceptance**: single coherent entry; cross-references to AUDIT_v0.30.6_DEFERRED.md resolve
 - **Regression test**: smoke gate; `check_website_links.sh` PASS
 
-### AN10-L — Final release gate
+### AN12-L — Final release gate
 
 - **Files**: none modified; gate execution only
 - **Plan**: execute the full release gate:
@@ -2576,7 +3101,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Acceptance**: every gate item PASS; PR merge eligible
 - **Regression test**: the gate itself is the regression test
 
-### AN10-M — Archive plan files
+### AN12-M — Archive plan files
 
 - **Files**:
   - `docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (this doc) → `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`
@@ -2587,7 +3112,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Acceptance**: files moved; every reference (CLAUDE.md, WORKSTREAM_HISTORY, README) updated to the archived paths; `check_website_links.sh` updated manifest; `scripts/website_link_manifest.txt` refreshed
 - **Regression test**: smoke gate + `check_website_links.sh` PASS
 
-### AN10-N — WS-AN closure
+### AN12-N — WS-AN closure
 
 - **Files**: a final summary commit referencing the full WS-AN disposition
 - **Acceptance**:
