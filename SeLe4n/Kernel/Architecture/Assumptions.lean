@@ -132,10 +132,11 @@ This four-step chain ensures every declared assumption has a concrete proof-leve
 consumer, closing the gap identified in finding M-08. -/
 
 -- ============================================================================
--- AG10-C: Hardware Model Documentation (AG3–AG8 Architecture Modules)
+-- Completed WS-AG AG10-C (v0.26.9): Hardware Model Documentation
+-- (AG3–AG8 Architecture Modules). WS-AG is closed per docs/WORKSTREAM_HISTORY.md.
 -- ============================================================================
 
-/-! ## AG10-C: ARM64 Architecture Model Summary
+/-! ## Completed WS-AG AG10-C: ARM64 Architecture Model Summary
 
 The following architecture modules were added during WS-AG phases AG3–AG8 to
 bridge the abstract Lean kernel model to concrete ARM64 hardware semantics on
@@ -236,7 +237,9 @@ The following hardware constraints are assumed for the Raspberry Pi 5 target:
 
 - **Single-core operation**: H3 uses core 0 only. Other cores are held in WFE
   loop. Per-core assumptions (run queues, TLB, cache) are simplified to
-  single-core semantics. SMP support is deferred to WS-V.
+  single-core semantics. SMP support is a post-1.0 hardening candidate
+  (see DEF-R-HAL-L20 in docs/audits/AUDIT_v0.30.6_DEFERRED.md, scheduled
+  AN10-G).
 - **Sequential memory model**: All memory operations are sequentially ordered.
   DMB/DSB/ISB barriers are modeled as no-ops in the sequential model but are
   emitted in the Rust HAL for hardware correctness.

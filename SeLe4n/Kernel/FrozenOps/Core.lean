@@ -12,24 +12,28 @@ import SeLe4n.Model.FreezeProofs
 /-!
 # Q7-A: Frozen Kernel Monad and Core Primitives
 
-**STATUS: Experimental — deferred to WS-V. Not in production import chain.**
+**STATUS: Experimental — accepted as a post-1.0 hardening candidate.
+Not in production import chain. No currently-active plan file tracks
+promotion.**
 
 AG8-D production decision (H3-PROOF-05): FrozenOps evaluated for H3 promotion.
-Decision: **defer to WS-V**. Rationale:
+Decision: **defer post-1.0**. Rationale:
 1. All 24 per-subsystem operations have preservation theorems (33 total).
 2. `FrozenSchedulerState.replenishQueue` present (AG1-E).
 3. `FrozenMap` commutativity proofs complete.
 4. However, the two-phase architecture requires RPi5 performance benchmarking
    to validate that the freeze→operate→thaw cycle does not exceed the WCRT
-   budget on Cortex-A76. This cannot be assessed until WS-V hardware testing.
+   budget on Cortex-A76. This cannot be assessed until empirical hardware
+   testing lands.
 5. Zero production consumers — promoting now would add import weight without
    a runtime benefit.
 
 These modules implement the frozen-state kernel monad for a future
 architecture where syscall processing operates on immutable
 `FrozenSystemState` snapshots. Currently exercised by test suites only.
-Integration into the production API layer is planned for WS-V
-when the performance characteristics of the two-phase approach can be
+Integration into the production API layer is a post-1.0 hardening
+candidate, to be revisited when the performance characteristics of the
+two-phase approach can be
 benchmarked on RPi5. (AE2-E / U-02 / AG8-D)
 
 **Subsystem status (W3-G):** FrozenOps has zero production consumers — the

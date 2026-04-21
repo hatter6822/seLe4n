@@ -11,7 +11,9 @@ import SeLe4n.Kernel.FrozenOps.Operations
 /-!
 # Q7-D: Commutativity Proofs
 
-**STATUS: Experimental — deferred to WS-V (AG8-D). Not in production chain.**
+**STATUS: Experimental — AG8-D accepted the module as a post-1.0 hardening
+candidate. Not in production chain. No currently-active plan file tracks
+promotion; integration is gated on empirical WCRT measurement on hardware.**
 
 Establishes the commutativity diagram between builder-phase and frozen-phase
 operations:

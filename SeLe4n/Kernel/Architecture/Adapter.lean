@@ -139,8 +139,9 @@ theorem adapterReadMemory_error_unsupportedBinding
     between threads in different address spaces requires ASID-tagged TLB
     management to prevent stale translation entries. ASID switching is performed
     by VSpace operations (`VSpaceBackend` / `VSpaceARMv8.lean`) independently
-    of the context switch path. Atomic TLB + ASID + register context switch
-    coordination is deferred to WS-V hardware binding. -/
+    of the context switch path. Atomic TLB + ASID + register context
+    switch coordination is a post-1.0 hardware-binding hardening candidate
+    (see DEF-A-M04 + DEF-C-M04 in docs/audits/AUDIT_v0.29.0_DEFERRED.md). -/
 def contextSwitchState (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile)
     (st : SystemState) : SystemState :=
   { st with
