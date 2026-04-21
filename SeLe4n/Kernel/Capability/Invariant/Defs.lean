@@ -172,9 +172,7 @@ standalone operation-correctness lemmas in `Authority.lean`.
   compatibility with the existing proof surface.
 - AF5-F (AF-26): This 7-property conjunction uses right-associative `∧` chains
   accessed via `.2.2.2...` projections. Refactoring to a named structure is
-  a post-1.0 code-quality hardening candidate (see DEF-F-L9 in
-  docs/audits/AUDIT_v0.29.0_DEFERRED.md and the Builder.lean AF5-F
-  annotation). -/
+  deferred to WS-V (see Builder.lean AF5-F annotation for rationale). -/
 def capabilityInvariantBundle (st : SystemState) : Prop :=
   cspaceSlotUnique st ∧ cspaceLookupSound st ∧
     cspaceSlotCountBounded st ∧ cdtCompleteness st ∧ cdtAcyclicity st ∧

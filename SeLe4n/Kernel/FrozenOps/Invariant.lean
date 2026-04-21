@@ -11,9 +11,7 @@ import SeLe4n.Kernel.FrozenOps.Commutativity
 /-!
 # Q7-E: Frozen Invariant Preservation
 
-**STATUS: Experimental — AG8-D accepted the module as a post-1.0 hardening
-candidate. Not in production chain. No currently-active plan file tracks
-promotion; integration is gated on empirical WCRT measurement on hardware.**
+**STATUS: Experimental — deferred to WS-V (AG8-D). Not in production chain.**
 
 Proves that frozen operations preserve key state fields via frame lemmas.
 The core insight: `frozenStoreObject` only modifies the `objects` field

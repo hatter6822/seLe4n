@@ -1170,8 +1170,7 @@ AF2-F / AG8-E: Fuel sufficiency placeholder. `descendantsOf_fuel_sufficient`
 proves only `edges.length ≥ 0` (a `Nat` tautology — not a substantive fuel
 sufficiency proof). `maxCdtDepth = 65536` provides the hardware-binding CDT
 depth constant. The substantive fuel-sufficiency proof (connecting
-`edgeWellFounded` to BFS termination) is a post-1.0 hardening candidate
-(no currently-active plan file tracks it).
+`edgeWellFounded` to BFS termination) is deferred to WS-V.
 Structural argument (informal): the CDT is acyclic (proven by `cdtAcyclicity`
 / `edgeWellFounded`), so BFS with `edges.length` fuel visits every
 reachable node — each edge is traversed at most once, and fuel ≥ edge
@@ -2396,8 +2395,7 @@ on acyclic CDTs.  The complete transitive closure proof (connecting
 hardware-binding phase where concrete CDT size bounds are available.
 
 AI6-D (M-21): See TPI-DOC for full fuel sufficiency formal bridge
-(post-1.0 hardening candidate; no currently-active plan file tracks it).
-`edgeWellFounded` (Model/Object/Structures.lean:1058)
+(deferred to WS-V). `edgeWellFounded` (Model/Object/Structures.lean:1058)
 provides the inductive well-foundedness foundation: CDT edges form a
 well-founded relation on `CdtNodeId`, ensuring termination of any
 traversal. The depth-1 proof here is the base case; the inductive step

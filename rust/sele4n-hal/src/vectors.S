@@ -35,9 +35,7 @@ __exception_vectors:
 // enters EL1 with SPSel=1 (SPx) and never switches to SP0; therefore an
 // exception taken to "Current EL with SP0" indicates a corrupted PSTATE.
 // The `__exception_stub` infinite-WFE loop treats this as a terminal
-// fault. For the SP0-unreachable rationale under secondary-core bring-up
-// see DEF-R-HAL-L20 in docs/audits/AUDIT_v0.30.6_DEFERRED.md
-// (scheduled AN10-G).
+// fault (see the SP0-unreachable rationale in WS-V SMP design notes).
 // =========================================================================
 
 // 0x000: Synchronous — Current EL, SP0
