@@ -8,7 +8,7 @@
 **Baseline**: `v0.30.6` at commit `1a86dbc` on branch `claude/audit-workstream-planning-AUBX4`
 **Target release**: `v1.0.0` (patch-only bump trajectory; final tag is a maintainer manual action per AK10-C precedent)
 **Author**: Claude (Opus 4.7), 2026-04-21
-**Scope summary**: 196 audit findings (after C-02 resolved, H-22 downgraded) PLUS 11 carried-forward items from `AUDIT_v0.29.0_DEFERRED.md` that are **absorbed in-scope** (no longer deferred), organized into **13 phases (AN0..AN12)** with **~105 named sub-tasks** decomposed into **~210 sub-sub-task commits**. Each complex sub-task lists explicit per-commit boundaries with acceptance criteria, effort estimates, and cascade sizes. Foundation hardening (AN2) lands first so type-level changes cascade exactly once; cross-cutting structural refactors (Theme 4.2 named projections, Theme 4.3 subtype gates) are sequenced into the earliest phase whose subsystem they touch. **AN9 closes every hardware-binding item from AUDIT_v0.29.0_DEFERRED.md (DEF-A-M04/M06/M08/M09, DEF-C-M04, DEF-P-L9, DEF-R-HAL-L14, plus new DEF-R-HAL-L17..L20 items surfaced by AN1-C); AN10 completes the AK7 cascade rollouts (DEF-AK7-E.cascade, DEF-AK7-F.cascade); AN12 closes the workstream with documentation sync and the v1.0.0-ready gate.** No finding in the comprehensive audit, no entry in the v0.29.0 DEFERRED file, and no errata residual remains unaddressed at WS-AN close.
+**Scope summary**: 196 audit findings (after C-02 resolved, H-22 downgraded) PLUS 11 carried-forward items from `AUDIT_v0.29.0_DEFERRED.md` that are **absorbed in-scope** (no longer deferred), organized into **13 phases (AN0..AN12)** with **95 named sub-tasks** decomposed into **~247 sub-sub-task commits**. Each complex sub-task lists explicit per-commit boundaries with acceptance criteria, effort estimates, and cascade sizes. Foundation hardening (AN2) lands first so type-level changes cascade exactly once; cross-cutting structural refactors (Theme 4.2 named projections, Theme 4.3 subtype gates) are sequenced into the earliest phase whose subsystem they touch. **AN9 closes every hardware-binding item from AUDIT_v0.29.0_DEFERRED.md (DEF-A-M04/M06/M08/M09, DEF-C-M04, DEF-P-L9, DEF-R-HAL-L14, plus new DEF-R-HAL-L17..L20 items surfaced by AN1-C); AN10 completes the AK7 cascade rollouts (DEF-AK7-E.cascade, DEF-AK7-F.cascade); AN12 closes the workstream with documentation sync and the v1.0.0-ready gate.** No finding in the comprehensive audit, no entry in the v0.29.0 DEFERRED file, and no errata residual remains unaddressed at WS-AN close.
 
 ---
 
@@ -20,7 +20,7 @@
 - 2 actionable CRITICAL (C-01 README, C-03 hook)
 - 23 actionable HIGH (all closed substantively; no closure-form or partial-discharge fallbacks)
 - 71 MEDIUM, 59 LOW (after H-22 downgrade), 40 INFO (no work)
-- 11 absorbed items from `AUDIT_v0.29.0_DEFERRED.md` (7 hardware-binding in AN9, 2 cascades in AN10, 1 `eventuallyExits` in AN5-F, 1 `allTablesInvExtK` structure refactor in AN2-G)
+- 11 absorbed items from `AUDIT_v0.29.0_DEFERRED.md` (7 hardware-binding in AN9, 2 cascades in AN10, 1 `eventuallyExits` in AN5-E, 1 `allTablesInvExtK` structure refactor in AN2-G)
 - 4 new hardware-binding sub-tasks surfaced by AN1-C (bounded WFE, parameterized barriers, OSH widening, secondary-core bring-up / SMP) — all closed in AN9
 
 **Phases & PR sequence**:
@@ -35,11 +35,11 @@
 9. **AN11** — Test/CI surface incl. KernelError matrix, lake-exe timeout, named AK6 tests (PR-14)
 10. **AN12** — Closure: discharge index, SMP inventory confirmation (post-AN9 SMP work), doc batch, version bump, archive; all audit IDs closed; NO new DEFERRED file needed (PR-15/16)
 
-**Estimated effort**: ~80–95 dev-days (major increase vs. prior plan because AN9/AN10 absorb all hardware-binding and cascade work previously deferred post-1.0). Can compress to ~5–7 calendar weeks with three contributors (one Lean, one Rust HAL/SMP, one cascade-migration). The ~210 sub-sub-task commits average ~30 minutes each (wall-clock commit + review + CI), which gates the minimum calendar timeline at ~7–9 working days of sequential commits assuming full review throughput.
+**Estimated effort**: ~80–95 dev-days (major increase vs. prior plan because AN9/AN10 absorb all hardware-binding and cascade work previously deferred post-1.0). Can compress to ~5–7 calendar weeks with three contributors (one Lean, one Rust HAL/SMP, one cascade-migration). The ~247 sub-sub-task commits average ~30 minutes each (wall-clock commit + review + CI), which gates the minimum calendar timeline at ~7–9 working days of sequential commits assuming full review throughput.
 
-**Granularity guarantee**: every sub-task with cascade size ≥ 10, LOC delta ≥ 200, or cross-file-refactor scope is broken into `.1/.2/.3/…` sub-sub-tasks so each commit is reviewable in isolation. See §3..§15 for per-phase detail and §17.3 for per-PR review-scope guidance.
+**Granularity guarantee**: every sub-task with cascade size ≥ 10, LOC delta ≥ 200, or cross-file-refactor scope is broken into `.1/.2/.3/…` sub-sub-tasks so each commit is reviewable in isolation. See §3..§15 for per-phase detail and §19.3 for per-PR review-scope guidance.
 
-**Final gate** (per §15.2): all tier scripts green, zero `sorry`/`axiom`/`native_decide`, fixture byte-identical, all 10 i18n READMEs synced, version bump to v0.30.7 (or maintainer-chosen v1.0.0), **zero entries in any new DEFERRED file** (no new deferred items created by WS-AN), all 11 old DEFERRED items closed with commit SHAs.
+**Final gate** (per §17.2): all tier scripts green, zero `sorry`/`axiom`/`native_decide`, fixture byte-identical, all 10 i18n READMEs synced, version bump to v0.30.7 (or maintainer-chosen v1.0.0), **zero entries in any new DEFERRED file** (no new deferred items created by WS-AN), all 11 old DEFERRED items closed with commit SHAs.
 
 ---
 
@@ -51,9 +51,9 @@ Recommended reading order for a contributor picking up a sub-task:
 1. **§1 Pre-flight verification** — confirms no audit finding is erroneous; lists what was spot-checked.
 2. **§2 Workstream organization & dependency graph** — phase-level layout and cross-phase blockers.
 3. **§3..§13 per-phase plans** — for the phase you are working on; each sub-task lists file:line anchors, acceptance criteria, and the regression-test recipe.
-4. **§14 Cross-cutting theme handling** — explains why Theme 4.2 (named projections), 4.3 (subtype gates), 4.4 (SMP inventory), 4.7 (file splits) are folded into the per-subsystem phases rather than siloed.
-5. **§15 Closure criteria & gate** — the v1.0.0 release-readiness checklist.
-6. **§16 Absorption map** — each item from `AUDIT_v0.29.0_DEFERRED.md` mapped to the live WS-AN sub-task that closes it; zero items carry past v1.0.0.
+4. **§16 Cross-cutting theme handling** — explains why Theme 4.2 (named projections), 4.3 (subtype gates), 4.4 (SMP inventory), 4.7 (file splits) are folded into the per-subsystem phases rather than siloed.
+5. **§17 Closure criteria & gate** — the v1.0.0 release-readiness checklist.
+6. **§18 Absorption map** — each item from `AUDIT_v0.29.0_DEFERRED.md` mapped to the live WS-AN sub-task that closes it; zero items carry past v1.0.0.
 
 The plan supersedes nothing. All audit findings retain their original IDs (C-01..C-03, H-01..H-24, IPC-M01..M09, etc.) for traceability; phase sub-task IDs are formatted `AN{phase}-{letter}` (e.g., AN1-A) and cross-reference the audit ID in their headline.
 
@@ -97,7 +97,7 @@ No finding contradicted live evidence. Where the audit author corrected themselv
 Per maintainer directive, **every item previously documented as "by design", "out of scope", or deferred to a post-1.0 workstream is now scheduled in WS-AN**. The audit-authored acceptance of by-design choices and hardware-binding deferrals is NOT grounds for carrying past v1.0.0. Each item below gets a live sub-task:
 
 - **H-19** panic = "abort" + Drop-not-run-on-panic: AN8-C takes the audit's **Option b** (migrate ack→handle→EOI sequence to emit EOI before handler invocation per GIC-400 spec) in addition to the documentation and clippy-lint guard. The fatal-invariant-abort design continues to halt the kernel on handler panic, but EOI is no longer lost because it was emitted prior to the handler body.
-- **DEF-AK2-K.4** `eventuallyExits`: AN5-F proves the hypothesis **substantively** for the canonical RPi5 deployment configuration (54 MHz timer, default CBS period, default priority bands) as a named witness theorem `rpi5_canonicalConfig_eventuallyExits`. The `eventuallyExits` hypothesis remains parameterised in the general WCRT theorem (a deployment-schema property), but RPi5 deployments now ship with the witness discharged at boot-time.
+- **DEF-AK2-K.4** `eventuallyExits`: AN5-E proves the hypothesis **substantively** for the canonical RPi5 deployment configuration (54 MHz timer, default CBS period, default priority bands) as a named witness theorem `rpi5_canonicalConfig_eventuallyExits`. The `eventuallyExits` hypothesis remains parameterised in the general WCRT theorem (a deployment-schema property), but RPi5 deployments now ship with the witness discharged at boot-time.
 - **PLT-M02 / PLT-M03** VSpaceRoot boot-bridge gap: AN7-D.2 now lands the full `Platform/RPi5/VSpaceBoot.lean` shim establishing the boot VSpaceRoot with full invariant witness, and `bootFromPlatformChecked` is refined to include VSpaceRoot in its per-object `bootSafeObject` check. No boot path remains proven for empty-config only.
 - **ARCH-M01** `VSpaceBackend` typeclass currently unused: AN6-D **wires the typeclass into `VSpace.lean`** so `VSpace` operates on `VSpaceBackend` indirection instead of concrete `VSpaceRoot`. The typeclass ceases to be forward-looking infrastructure and becomes load-bearing production code. The ARMv8 instance from AG6-C/D remains the default production backend.
 
@@ -137,7 +137,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 | **AN10** | **AK7 cascade completion (NEW)** | DEF-AK7-E.cascade (~240 sites: handler signatures ObjId/ThreadId/SchedContextId → Valid* subtypes), DEF-AK7-F.cascade reader side (~304+ raw-match→typed-helper migration), DEF-AK7-F.cascade writer side (~50 storeObject→storeObjectKindChecked) | 4 (A–D) | 8–10 days | AN11 |
 | **AN11** | Tests / CI / Scripts | H-20 (KernelError matrix), H-21 (`lake exe` timeout), H-22 (downgraded, addressed), H-23 (named AK6 tests), TST-M01..M13, Test LOWs | 7 (A–G) | 4–5 days | AN12 |
 | **AN12** | Documentation, themes, closure | DOC-M01..M08, Theme 4.1 (discharge index), Theme 4.4 (SMP inventory confirms AN9 work landed), DOC LOWs, version bump, **NO new DEFERRED file** (all items closed), WORKSTREAM_HISTORY entry, gate | 14 (A–N) | 3 days | (closes WS-AN) |
-| **TOTAL** | | | **~105 sub-tasks** | **~80–95 dev-days** | |
+| **TOTAL** | | | **95 top-level sub-tasks (~247 sub-sub-tasks)** | **~80–95 dev-days** | |
 
 ### 2.2 Dependency graph
 
@@ -1234,7 +1234,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 
 **Goal**: Address SCH-M01..M05 hygiene and SC-M01..M03 (CBS witness, PIP closure-form, import-cycle banner). Split the 3633-line `Scheduler/Operations/Preservation.lean` per Theme 4.7. **Substantively close DEF-AK2-K.4 `eventuallyExits` hypothesis for the canonical RPi5 deployment.**
 
-**Effort**: 4–5 days (AN5-F adds ~2 days). **Blocks**: AN6. **Sub-tasks**: 7 (AN5-A..AN5-G).
+**Effort**: 4–5 days (AN5-E adds ~2 days). **Blocks**: AN6. **Sub-tasks**: 6 (AN5-A..AN5-F).
 
 ### AN5-A — Scheduler `Preservation.lean` 3633-line split (SCH dispatch + Theme 4.7)
 
@@ -1325,7 +1325,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Regression test**: full gate; `lake exe priority_management_suite`
 - **Cascade**: SC-M01 (~1 new theorem), SC-M02 (cross-ref only), SC-M03 (~1 banner + example)
 
-### AN5-F — `eventuallyExits` closure for RPi5 canonical deployment (DEF-AK2-K.4)
+### AN5-E — `eventuallyExits` closure for RPi5 canonical deployment (DEF-AK2-K.4)
 
 - **Audit ID**: DEF-AK2-K.4 (absorbed from `AUDIT_v0.29.0_DEFERRED.md`)
 - **Files**:
@@ -1341,7 +1341,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 
 **Sub-sub-task breakdown** (6 commits):
 
-- **AN5-F.1 — Define deployment-config schema** (0.25 day)
+- **AN5-E.1 — Define deployment-config schema** (0.25 day)
   - In new `SeLe4n/Kernel/Scheduler/Liveness/RPi5CanonicalConfig.lean`:
     ```lean
     structure DeploymentSchedulingConfig where
@@ -1355,27 +1355,27 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
   - Add decidable predicate `DeploymentSchedulingConfig.wellFormed` requiring positive frequency, positive period, utilisation ≤ 1000.
   - **Acceptance**: module compiles; schema in place.
 
-- **AN5-F.2 — Canonical RPi5 instance** (0.25 day)
+- **AN5-E.2 — Canonical RPi5 instance** (0.25 day)
   - `def rpi5CanonicalConfig : DeploymentSchedulingConfig := { timerFrequencyHz := 54_000_000, cbsPeriodTicks := 10_000, maxPriorityBands := 256, maxDomains := 16, configDefaultTimeSlice := 1000, admissibleUtilisation := 750 }` (leaves 25% safety margin).
   - `theorem rpi5CanonicalConfig_wellFormed : rpi5CanonicalConfig.wellFormed := by decide`.
   - **Acceptance**: instance present; wellformedness proven.
 
-- **AN5-F.3 — `eventuallyExits` canonical witness** (0.75 day)
+- **AN5-E.3 — `eventuallyExits` canonical witness** (0.75 day)
   - Prove `theorem rpi5_canonicalConfig_eventuallyExits : ∀ st : SystemState, wellFormedSchedulerState st → bandProgressWitnessedBy rpi5CanonicalConfig st → eventuallyExits st`.
   - Proof sketch: under `admissibleUtilisation ≤ 750‰` and `wellFormedSchedulerState`, the scheduler's band-progress witness guarantees finite-step exit via the existing WCRT step bound combined with the canonical-config utilisation bound.
   - Key lemmas composed: `cbs_bandwidth_bounded_tight` (AK6-I), `wcrt_bound_unfold` (AF-02), `bandExhaustion_bounded` (Liveness/BandExhaustion).
   - **Acceptance**: theorem proven; no `sorry`/`axiom`; module gate PASS.
 
-- **AN5-F.4 — WCRT theorem specialisation for RPi5** (0.25 day)
-  - Add specialised theorem `wcrt_bound_rpi5 : ∀ tid, wcrt tid ≤ 256 * L_max + N * (B + P) (specialised for rpi5CanonicalConfig)` that drops the externalised `eventuallyExits` hypothesis because AN5-F.3 discharges it.
+- **AN5-E.4 — WCRT theorem specialisation for RPi5** (0.25 day)
+  - Add specialised theorem `wcrt_bound_rpi5 : ∀ tid, wcrt tid ≤ 256 * L_max + N * (B + P) (specialised for rpi5CanonicalConfig)` that drops the externalised `eventuallyExits` hypothesis because AN5-E.3 discharges it.
   - The general `wcrt_bound` theorem retains the parameterised form for non-RPi5 deployments.
   - **Acceptance**: specialised theorem proven; general theorem unchanged.
 
-- **AN5-F.5 — Runtime witness at boot** (0.25 day)
+- **AN5-E.5 — Runtime witness at boot** (0.25 day)
   - Extend `bootFromPlatformChecked` on the RPi5 path to emit the canonical-config witness at boot time: the checked boot path validates the platform config matches `rpi5CanonicalConfig` (or records a diagnostic that the deployment is not canonical, retaining the parameterised WCRT semantics).
   - **Acceptance**: boot bridge emits witness; 2 new runtime tests (canonical-config PASS + non-canonical diagnostic emission).
 
-- **AN5-F.6 — SPEC §5.7 update + DEF-AK2-K.4 closure** (0.25 day)
+- **AN5-E.6 — SPEC §5.7 update + DEF-AK2-K.4 closure** (0.25 day)
   - Update `docs/spec/SELE4N_SPEC.md` §5.7 to document the two-tier WCRT semantics: (i) general parameterised theorem with `eventuallyExits` hypothesis; (ii) RPi5-canonical specialisation with the hypothesis discharged. Cross-reference to `Scheduler/Liveness/RPi5CanonicalConfig.lean`.
   - DEF-AK2-K.4 is marked RESOLVED (not deferred) in the `AUDIT_v0.29.0_DEFERRED.md` update landing in AN12-G.
   - **Acceptance**: SPEC section present; DEF-AK2-K.4 closure noted in commit message.
@@ -1383,7 +1383,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Regression test**: full gate; `lake exe liveness_suite`.
 - **Cascade**: 1 new module + ~5 WCRT call-site updates.
 
-### AN5-G — AN5 closure
+### AN5-F — AN5 closure
 
 - **Files**: `CHANGELOG.md`; `CLAUDE.md` large-files-list refresh
 - **Acceptance**: PR merged; full gate + rust gate PASS; DEF-AK2-K.4 explicitly noted as RESOLVED
@@ -2881,7 +2881,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
       auditReference : String
     ```
   - Plus a `def smpLatentInventory : List SmpLatentAssumption := [ ... ]` aggregator.
-  - Module-level tag: `-- This module is post-1.0 SMP refactor surface. See SELE4N_SPEC.md §6.`
+  - Module-level tag: `-- This module is the post-AN9-J SMP-implementation confirmation inventory. Each entry records a site that was SMP-latent before AN9-J and is now SMP-implemented with runtime gating. See SELE4N_SPEC.md §6.`
   - **Acceptance**: module compiles; schema in place.
 
 - **AN12-B.2 — Inventory entries — capability / lifecycle / scheduler** (0.25 day)
@@ -2944,7 +2944,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Files**: codebase-wide comment grep
 - **Total effort**: ~1 day. **Cascade**: ~2000+ comment edits across ~200 files (trivially low-risk per commit).
 
-**Sub-sub-task breakdown** (6 commits, selective-scope approach per §20 question 6):
+**Sub-sub-task breakdown** (6 commits, selective-scope approach per §22 question 6):
 
 - **AN12-E.1 — Inventory + classification pass** (0.2 day)
   - `grep -rn "WS-[A-Z]\|\bAK[0-9]\|\bAJ[0-9]\|\bAI[0-9]\|\bAH[0-9]\|\bAG[0-9]\|\bAF[0-9]\|\bAE[0-9]\|\bAD[0-9]\|\bAC[0-9]\|\bAB[0-9]\|\bAA[0-9]" SeLe4n/ rust/ tests/ scripts/ --include="*.lean" --include="*.rs" --include="*.sh"` into a temporary inventory file.
@@ -2956,7 +2956,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
   - **Acceptance**: classified inventory committed (ephemeral; deleted at AN12-E.6).
 
 - **AN12-E.2 — [DEFER] retargets (≤30 sites; high-priority)** (0.15 day)
-  - These are the actually-incorrect forward references that AN1-C missed. Each gets retargeted to a live WS-AN sub-task ID (AN9-*, AN10-*, etc.) per the §16 absorption map. No retarget points to a DEF-* entry unless that entry is in `AUDIT_v0.29.0_DEFERRED.md` AND the source-side TODO is tracking a RESOLVED row (in which case the TODO gets removed entirely — there is no live deferred work to point at).
+  - These are the actually-incorrect forward references that AN1-C missed. Each gets retargeted to a live WS-AN sub-task ID (AN9-*, AN10-*, etc.) per the §18 absorption map. No retarget points to a DEF-* entry unless that entry is in `AUDIT_v0.29.0_DEFERRED.md` AND the source-side TODO is tracking a RESOLVED row (in which case the TODO gets removed entirely — there is no live deferred work to point at).
   - **Acceptance**: all [DEFER]-tagged markers retargeted; grep for deferred-work pointers to closed workstreams returns 0 non-historical matches.
 
 - **AN12-E.3 — [ROT] batch 1: IPC + Scheduler subsystems (~500 markers)** (0.2 day)
@@ -2996,7 +2996,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 ### AN12-G — Close `AUDIT_v0.29.0_DEFERRED.md` entries in-place (no new DEFERRED file created)
 
 - **Files**: `docs/audits/AUDIT_v0.29.0_DEFERRED.md` (edit in-place; no new file)
-- **Plan**: per the maintainer directive, WS-AN does NOT create a `AUDIT_v0.30.6_DEFERRED.md` sibling. Instead, every row in the existing `AUDIT_v0.29.0_DEFERRED.md` is annotated RESOLVED with the closing WS-AN sub-task ID and commit SHA. Per the §16 absorption map, all 11 rows close:
+- **Plan**: per the maintainer directive, WS-AN does NOT create a `AUDIT_v0.30.6_DEFERRED.md` sibling. Instead, every row in the existing `AUDIT_v0.29.0_DEFERRED.md` is annotated RESOLVED with the closing WS-AN sub-task ID and commit SHA. Per the §18 absorption map, all 11 rows close:
   - DEF-A-M04 — **RESOLVED in AN9-A** (commit SHA)
   - DEF-A-M06 / DEF-AK3-I — **RESOLVED in AN9-B**
   - DEF-A-M08 — **RESOLVED in AN9-C**
@@ -3005,11 +3005,11 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
   - DEF-P-L9 — **RESOLVED in AN7-D.2** (primary); AN9-E records cross-reference
   - DEF-R-HAL-L14 — **RESOLVED in AN9-F**
   - DEF-F-L9 — **RESOLVED in AN2-G**
-  - DEF-AK2-K.4 — **RESOLVED in AN5-F** (RPi5-canonical-config witness; general theorem retains parameterised form)
+  - DEF-AK2-K.4 — **RESOLVED in AN5-E** (RPi5-canonical-config witness; general theorem retains parameterised form)
   - DEF-AK7-E.cascade — **RESOLVED in AN10-A**
   - DEF-AK7-F.cascade — **RESOLVED in AN10-B (reader) + AN10-C (writer)**
 - Add a closure summary at the top of `AUDIT_v0.29.0_DEFERRED.md` stating "All 11 items closed under WS-AN (v0.30.7). Zero items carried past v1.0.0."
-- No new `AUDIT_v0.30.6_DEFERRED.md` sibling file is created because WS-AN produces zero deferred items (§15.1 rule enforced at gate).
+- No new `AUDIT_v0.30.6_DEFERRED.md` sibling file is created because WS-AN produces zero deferred items (§17.1 rule enforced at gate).
 - **Acceptance**: every row in `AUDIT_v0.29.0_DEFERRED.md` annotated RESOLVED with commit SHAs; closure summary at top; `grep -c "^### DEF-" docs/audits/AUDIT_v0.29.0_DEFERRED.md` matches `grep -c "RESOLVED in AN" docs/audits/AUDIT_v0.29.0_DEFERRED.md` (every row resolved).
 - **Regression test**: smoke gate; `check_website_links.sh` PASS
 - **Cascade**: 1 file edited in-place (~11 row annotations + 1 summary paragraph).
@@ -3065,7 +3065,7 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
   ### Absorbed from AUDIT_v0.29.0_DEFERRED.md (all 11 RESOLVED)
    - Hardware-binding (AN9): DEF-A-M04/M06/M08/M09, DEF-C-M04, DEF-P-L9, DEF-R-HAL-L14
    - Cascade (AN10): DEF-AK7-E, DEF-AK7-F.reader, DEF-AK7-F.writer
-   - Proof-hygiene / semantic: DEF-F-L9 (AN2-G), DEF-AK2-K.4 (AN5-F)
+   - Proof-hygiene / semantic: DEF-F-L9 (AN2-G), DEF-AK2-K.4 (AN5-E)
   ### New AN9 items (all closed in-phase)
    - DEF-R-HAL-L17/L18/L19/L20 (bounded WFE / parameterized barriers / OSH / SMP)
   ### Deferred past v1.0.0
@@ -3125,14 +3125,14 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 
 ---
 
-## 14. Cross-cutting theme handling — detailed placement rationale
+## 16. Cross-cutting theme handling — detailed placement rationale
 
 This section explains why the seven cross-cutting themes identified in
 `AUDIT_v0.30.6_COMPREHENSIVE.md` §4 are folded into the per-subsystem
 phases rather than each given its own dedicated phase, plus how they
 interact.
 
-### 14.1 Theme 4.1 — Closure-form proof obligations
+### 16.1 Theme 4.1 — Closure-form proof obligations
 
 **Where addressed**: AN4-C (CDT bridges), AN6-A (all 6 projection theorems substantively discharged), AN12-A (index artifact aggregating AN4-C + AN6-A + SC-M02 closures).
 
@@ -3149,7 +3149,7 @@ indexes both as a single artifact. With AN6-A discharging ALL SIX arms
 substantively, AN12-A's §3.B Projection Closures section contains six
 DISCHARGED rows with commit SHAs — no residual closure-form entries.
 
-### 14.2 Theme 4.2 — Tuple-projection brittleness → named structures
+### 16.2 Theme 4.2 — Tuple-projection brittleness → named structures
 
 **Where addressed**: AN2-G (`allTablesInvExtK` — foundation anchor), AN3-B (`ipcInvariantFull`), AN4-F (CAP-M05 `capabilityInvariantBundle`), plus incidental at AN6-E (other bundles surfaced during IF split).
 
@@ -3164,7 +3164,7 @@ bridge theorem, how to migrate destructures). AN3-B, AN4-F follow the
 convention mechanically. AN12 does NOT need to re-run any
 tuple→structure refactor.
 
-### 14.3 Theme 4.3 — Advisory predicates → subtype gates
+### 16.3 Theme 4.3 — Advisory predicates → subtype gates
 
 **Where addressed**: AN2-A (`Badge`), AN2-B (`CPtr`/`Slot`/`VAddr`/`PAddr`), AN2-F / FND-M03 (`UntypedObject`), AN4-F / CAP-M04 (`RetypeTarget`).
 
@@ -3176,7 +3176,7 @@ AN2 once.
 `UntypedObject` subtype from AN2-F. The phase order AN2 → AN4 ensures
 the dependency.
 
-### 14.4 Theme 4.4 — SMP-latent single-core assumptions
+### 16.4 Theme 4.4 — SMP-latent single-core assumptions
 
 **Where addressed**: AN4-D (H-05 first inventory entry), AN6-F / CX-M03 (`bootFromPlatform_currentCore_is_zero_witness`), **AN9-J (SMP bring-up lands substantively — code+test merged, runtime-gated by `smp_enabled=false` default)**, AN12-B (post-AN9-J confirmation inventory — module records which items transitioned from "SMP-latent" to "SMP-implemented, runtime-gated").
 
@@ -3188,7 +3188,7 @@ touched; AN9-J absorbs the real SMP bring-up (PSCI, per-core init, QEMU `-smp 4`
 docs-only. AN4-D / CX-M03 / AN9-J are the proof-level + implementation
 witnesses that AN12-B indexes.
 
-### 14.5 Theme 4.5 — Workstream IDs in comments
+### 16.5 Theme 4.5 — Workstream IDs in comments
 
 **Where addressed**: AN12-E.
 
@@ -3199,7 +3199,7 @@ at AN12 is more efficient than pausing to re-run it after each phase.
 **Interaction**: AN12-E's grep baseline is captured in AN0-A and
 AN12-E's input is the AN1..AN11 cumulative inline-marker count.
 
-### 14.6 Theme 4.6 — Stale forward references
+### 16.6 Theme 4.6 — Stale forward references
 
 **Where addressed**: AN1-C (source-side retarget of WS-V/AG10 TODOs to live AN9-F/G/H/I/J sub-task IDs), AN12-E (codebase-wide hygiene pass).
 
@@ -3209,7 +3209,7 @@ gate item); the broader cleanup aggregates in AN12.
 **Interaction**: AN1-C targets the 6 flagged sites; AN12-E catches the
 remainder and, after AN9 lands, removes TODO markers that are now tracking RESOLVED work (nothing to track any more).
 
-### 14.7 Theme 4.7 — Monolithic file splits
+### 16.7 Theme 4.7 — Monolithic file splits
 
 **Where addressed**: AN3-C (Structural.lean), AN3-D (NotificationPreservation + CallReplyRecv), AN4-F / CAP-M03 (Preservation.lean), AN4-G / LIF-M05 (Lifecycle/Operations.lean), AN5-A (Scheduler/Preservation.lean), AN6-E / IF-M03 (IF/Operations.lean), AN12-F (residual sweep).
 
@@ -3221,12 +3221,12 @@ AN12-F sweeps any remaining ≥ 2000 LOC files after AN3..AN6 land.
 
 ---
 
-## 15. Closure criteria & v1.0.0 release readiness checklist
+## 17. Closure criteria & v1.0.0 release readiness checklist
 
 This section is the **single canonical gate** for declaring WS-AN
 complete. Every item below must be verifiable.
 
-### 15.1 Audit finding disposition (mandatory — zero deferrals permitted)
+### 17.1 Audit finding disposition (mandatory — zero deferrals permitted)
 
 | Severity | Audit count | WS-AN target | Verification |
 |----------|------------:|--------------|--------------|
@@ -3235,13 +3235,13 @@ complete. Every item below must be verifiable.
 | MEDIUM | 71 | **71/71 closed** across AN3..AN11 | per-PR evidence |
 | LOW | 58 | **58/58 closed** in batch commits | per-PR evidence |
 | INFO | 40 | n/a — verifications, not work | (informational) |
-| DEF-* (v0.29.0 DEFERRED) | 11 | **11/11 absorbed + RESOLVED** (7 hardware-binding in AN9, 2 AK7 cascades in AN10, 1 eventuallyExits in AN5-F, 1 allTablesInvExtK structure refactor in AN2-G) | per-PR evidence + AUDIT_v0.29.0_DEFERRED.md RESOLVED-with-commit-SHA entries |
+| DEF-* (v0.29.0 DEFERRED) | 11 | **11/11 absorbed + RESOLVED** (7 hardware-binding in AN9, 2 AK7 cascades in AN10, 1 eventuallyExits in AN5-E, 1 allTablesInvExtK structure refactor in AN2-G) | per-PR evidence + AUDIT_v0.29.0_DEFERRED.md RESOLVED-with-commit-SHA entries |
 
 **Rule (strengthened)**: **No finding may be deferred past v1.0.0.** Every CRITICAL, HIGH, MEDIUM, LOW finding from `AUDIT_v0.30.6_COMPREHENSIVE.md` has a live sub-task ID in §3..§15 that must close substantively before WS-AN ships. Every DEF-* entry in the pre-existing `AUDIT_v0.29.0_DEFERRED.md` has a live sub-task ID that closes it substantively and updates the tracking row to RESOLVED. **WS-AN does NOT create a new `AUDIT_v0.30.6_DEFERRED.md` file**; the `AUDIT_v0.29.0_DEFERRED.md` file is updated in-place with per-row RESOLVED annotations + commit SHAs in AN12-G.
 
 **Consequence**: if any sub-task is blocked by a toolchain or hardware constraint the plan cannot reasonably close, the workstream itself pauses and is escalated to the maintainer before any defer decision is made. Deferral is NOT an automatic fallback; it requires explicit maintainer approval that would amend this plan.
 
-### 15.2 Build & test gate (mandatory)
+### 17.2 Build & test gate (mandatory)
 
 - [ ] `lake build` passes with 0 warnings (job count matches AN0-A baseline ± expected delta)
 - [ ] `cargo build --workspace` passes
@@ -3259,7 +3259,7 @@ complete. Every item below must be verifiable.
 - [ ] `./scripts/ak7_cascade_check_monotonic.sh` PASS against refreshed baseline
 - [ ] Synthetic timeout test (AN9-B) confirms exit-124 mapping
 
-### 15.3 Source-purity gate (mandatory)
+### 17.3 Source-purity gate (mandatory)
 
 - [ ] Zero `sorry` in `SeLe4n/` and `Main.lean` and `rust/`
 - [ ] Zero `axiom` in `SeLe4n/` (excluding documented `Architecture/Assumptions.lean` declarations)
@@ -3268,7 +3268,7 @@ complete. Every item below must be verifiable.
 - [ ] Zero `#[allow(unused)]` without docstring rationale
 - [ ] Zero `TODO(WS-V)` / `TODO(AG10)` / other closed-workstream references; all live TODOs point at `DEF-*` IDs
 
-### 15.4 Documentation gate (mandatory)
+### 17.4 Documentation gate (mandatory)
 
 - [ ] `README.md` "Latest audit" pointer updated to AUDIT_v0.30.6_COMPREHENSIVE.md
 - [ ] All 10 i18n READMEs mirror the pointer change
@@ -3280,7 +3280,7 @@ complete. Every item below must be verifiable.
 - [ ] All Rust + Lean files have SPDX headers (DOC-M03)
 - [ ] `docs/spec/SELE4N_SPEC.md` updated with §5/§6/§7 deltas referenced in AN3..AN6
 
-### 15.5 Hardware-fidelity gate (MANDATORY — AN9 absorbs hardware-binding into pre-1.0)
+### 17.5 Hardware-fidelity gate (MANDATORY — AN9 absorbs hardware-binding into pre-1.0)
 
 - [ ] BCM2712 hardware constants cross-checked (existing `scripts/test_hw_crosscheck.sh` PASS)
 - [ ] QEMU boot if emulator available (`scripts/test_qemu.sh` PASS or skip-with-log)
@@ -3288,14 +3288,14 @@ complete. Every item below must be verifiable.
 - [ ] No regression in `docs/hardware_validation/*.md` reports
 - [ ] New QEMU validation harnesses from AN9 all PASS (TLB+cache AN9-A, SVC round-trip AN9-F, SMP AN9-J)
 
-### 15.6 Fixture & determinism gate (mandatory)
+### 17.6 Fixture & determinism gate (mandatory)
 
 - [ ] All 3 fixtures have sha256 companions and `test_tier2_trace.sh` enforces all 3
 - [ ] `lake exe sele4n` byte-identical to `tests/fixtures/main_trace_smoke.expected`
 - [ ] `nightly_determinism.yml` cross-commit drift check confirmed passing
 - [ ] `tests/fixtures/README.md` documents regeneration (TST-M10)
 
-### 15.7 Maintainer-decision items (NOT gated by WS-AN automation)
+### 17.7 Maintainer-decision items (NOT gated by WS-AN automation)
 
 - Final v1.0.0 tag — manual maintainer action per AK10-C precedent
 - Whether DOC-M03 SPDX header pass lands as a single mechanical PR or batched per-subsystem
@@ -3303,13 +3303,13 @@ complete. Every item below must be verifiable.
 
 ---
 
-## 16. Absorption map — every `AUDIT_v0.29.0_DEFERRED.md` entry maps to a live WS-AN sub-task
+## 18. Absorption map — every `AUDIT_v0.29.0_DEFERRED.md` entry maps to a live WS-AN sub-task
 
 **Directive**: per the maintainer, WS-AN does NOT create a new `AUDIT_v0.30.6_DEFERRED.md` file. Every one of the 11 entries in `AUDIT_v0.29.0_DEFERRED.md` is absorbed into pre-1.0 work via a named AN sub-task; at AN12-G each row is annotated RESOLVED with the closing commit SHA. No new deferred items are created during WS-AN execution.
 
 This section is the **absorption map**: given any DEF-* ID, find the WS-AN sub-task that closes it.
 
-### 16.1 Hardware-binding category (all absorbed in AN9 + AN7-D.2)
+### 18.1 Hardware-binding category (all absorbed in AN9 + AN7-D.2)
 
 | Deferred ID | Audit Finding | WS-AN sub-task (substantive closure) | Phase | Expected commit target |
 |-------------|---------------|--------------------------------------|-------|------------------------|
@@ -3321,16 +3321,16 @@ This section is the **absorption map**: given any DEF-* ID, find the WS-AN sub-t
 | DEF-P-L9 | P-L9 (VSpaceRoot boot exclusion) | **AN7-D.2** (full `RPi5/VSpaceBoot.lean` shim closes non-empty-config boot bridge); AN9-E cross-reference | AN7 (primary) + AN9 (cross-ref) | PR-10 (primary), PR-12 (cross-ref) |
 | DEF-R-HAL-L14 | R-HAL-L14 (SVC FFI wiring) | **AN9-F** (typed-argument marshalling + `sele4n_syscall_dispatch` bridge + QEMU SVC round-trip) | AN9 | PR-12, AN9-F.1..F.7 |
 
-### 16.2 Proof-hygiene / semantic-refactor category (all absorbed in AN2 / AN5 / AN10)
+### 18.2 Proof-hygiene / semantic-refactor category (all absorbed in AN2 / AN5 / AN10)
 
 | Deferred ID | Audit Finding | WS-AN sub-task (substantive closure) | Phase | Expected commit target |
 |-------------|---------------|--------------------------------------|-------|------------------------|
 | DEF-F-L9 | F-L9 (17-deep tuple refactor) | **AN2-G** (`allTablesInvExtK` tuple→structure refactor; deletes tuple form) | AN2 | PR-5, AN2-G.1..G.7 |
-| DEF-AK2-K.4 | AK2-K.4 (`eventuallyExits` previously by-design) | **AN5-F** (RPi5-canonical-config substantive witness; general theorem retains parameterised form) | AN5 | PR-9, AN5-F.1..F.6 |
+| DEF-AK2-K.4 | AK2-K.4 (`eventuallyExits` previously by-design) | **AN5-E** (RPi5-canonical-config substantive witness; general theorem retains parameterised form) | AN5 | PR-9, AN5-E.1..E.6 |
 | DEF-AK7-E.cascade | F-M03 (ValidObjId/ValidThreadId rollout) | **AN10-A** (~240 handler-signature migrations across Lifecycle/SchedContext/Scheduler/IpcBuffer/Capability) | AN10 | PR-13, AN10-A.1..A.6 |
 | DEF-AK7-F.cascade | F-M04 (reader + writer hygiene) | **AN10-B** (reader: ~304+ raw-match migrations) + **AN10-C** (writer: ~50 storeObjectKindChecked migrations) | AN10 | PR-13, AN10-B.1..B.5 + AN10-C.1..C.3 |
 
-### 16.3 New hardware-binding sub-tasks surfaced by AN1-C (all absorbed in AN9)
+### 18.3 New hardware-binding sub-tasks surfaced by AN1-C (all absorbed in AN9)
 
 These items are NEW in WS-AN (not in `AUDIT_v0.29.0_DEFERRED.md`) but are TODO markers in the Rust HAL that were pointing at the closed `WS-V`/`AG10` workstreams. AN1-C retargets the source-side TODOs to live AN9 sub-task IDs; AN9 closes each substantively.
 
@@ -3341,7 +3341,7 @@ These items are NEW in WS-AN (not in `AUDIT_v0.29.0_DEFERRED.md`) but are TODO m
 | DEF-R-HAL-L19 (OSH widening) | AN1-C / `lib.rs:84` | **AN9-I** | PR-12, AN9-I.1..I.4 |
 | DEF-R-HAL-L20 (secondary-core bring-up / SMP) | AN1-C / `lib.rs:91` | **AN9-J** (largest AN9 sub-task; ships SMP merged but gated off-by-default at runtime via `smp_enabled=false`) | PR-12, AN9-J.1..J.8 |
 
-### 16.4 Closure-form / H-09 / VSpaceBackend items — no new DEF-* entries created
+### 18.4 Closure-form / H-09 / VSpaceBackend items — no new DEF-* entries created
 
 The maintainer directive specifically rejects the prior plan's "defer on toolchain block" / "defer Track B" / "defer VSpaceBackend" escape hatches. These items close substantively in-phase:
 
@@ -3353,7 +3353,7 @@ The maintainer directive specifically rejects the prior plan's "defer on toolcha
 - **H-19** (EOI loss on handler panic): audit's Option b (EOI before handler invocation per GIC-400) lands in **AN8-C** (no "defer to post-1.0" annotation).
 - **FND-M05** (DS-L5 heartbeat fragility): full decomposition to ≤ 200,000 heartbeats in **AN2-F.5** (no `DEF-FND-M05.partial`).
 
-### 16.5 `AUDIT_v0.29.0_DEFERRED.md` final-state expectation (at WS-AN close)
+### 18.5 `AUDIT_v0.29.0_DEFERRED.md` final-state expectation (at WS-AN close)
 
 After AN12-G lands, `docs/audits/AUDIT_v0.29.0_DEFERRED.md` has every row annotated:
 
@@ -3366,7 +3366,7 @@ After AN12-G lands, `docs/audits/AUDIT_v0.29.0_DEFERRED.md` has every row annota
 
 The file is preserved in `docs/audits/` (not archived) as the canonical historical record of items that were once deferred; the RESOLVED annotations make clear none carry past v1.0.0. **No sibling `AUDIT_v0.30.6_DEFERRED.md` file is created** because WS-AN produces zero deferred items.
 
-### 16.6 Errata acknowledgement (AUDIT_v0.29.0_ERRATA.md)
+### 18.6 Errata acknowledgement (AUDIT_v0.29.0_ERRATA.md)
 
 All six errata are informational closures under v0.30.6. WS-AN does NOT modify the errata file except E-5 which gets a closure addendum confirming the residual (6 closure-form theorems) is now fully discharged in AN6-A.
 
@@ -3381,13 +3381,13 @@ All six errata are informational closures under v0.30.6. WS-AN does NOT modify t
 
 ---
 
-## 17. PR mapping & commit ordering
+## 19. PR mapping & commit ordering
 
 This section sequences the AN0..AN12 sub-tasks into PR batches so a
 project lead can plan reviews and contributors know which PRs depend
 on which.
 
-### 17.1 Recommended PR sequence
+### 19.1 Recommended PR sequence
 
 | PR | Phase | Sub-tasks | Title (suggested) | Depends on |
 |----|-------|-----------|-------------------|------------|
@@ -3399,7 +3399,7 @@ on which.
 | PR-6 | AN8 (parallel) | AN8-A..F | `WS-AN AN8: Rust HAL hardening incl. EOI-before-handler (H-17, H-18, H-19 Option b, RUST-M01..M08)` | PR-1 (independent of Lean phases) |
 | PR-7 | AN3 | AN3-A..G | `WS-AN AN3: IPC subsystem (H-01 Option A, IPC-M01..M09, Theme 4.7 split)` | PR-5 |
 | PR-8 | AN4 | AN4-A..J | `WS-AN AN4: Capability/Lifecycle/Service (H-02..H-06)` | PR-5 |
-| PR-9 | AN5 | AN5-A..G | `WS-AN AN5: Scheduler/SchedContext + eventuallyExits closure (SCH/SC MEDIUMs, DEF-AK2-K.4 ABSORBED)` | PR-5 |
+| PR-9 | AN5 | AN5-A..F | `WS-AN AN5: Scheduler/SchedContext + eventuallyExits closure (SCH/SC MEDIUMs, DEF-AK2-K.4 ABSORBED)` | PR-5 |
 | PR-10 | AN7 | AN7-A..G | `WS-AN AN7: Platform/API + full RPi5/VSpaceBoot shim (H-14..H-16, PLT-M02/M03, DEF-P-L9 ABSORBED)` | PR-5 |
 | PR-11 | AN6 | AN6-A..H | `WS-AN AN6: Arch/IF/CX (H-07 all-6-arms, H-08, H-09 Track B, ARCH-M01 VSpaceBackend wired)` | PR-7, PR-8, PR-9, PR-10 |
 | PR-12 | AN9 (split across 3 sub-PRs if reviewer bandwidth tight) | AN9-A..K | `WS-AN AN9: Hardware-binding closure (TLB+cache, barriers, SVC FFI, SMP)` | PR-6, PR-11 |
@@ -3423,7 +3423,7 @@ into:
 
 PR-14 (AN11) and PR-15/16 (AN12) cannot start until upstream phases land because tests depend on the final kernel surface (including AN9 hardware-binding and AN10 cascade migrations).
 
-### 17.2 Hot-path early landing
+### 19.2 Hot-path early landing
 
 If reviewer bandwidth is constrained, prioritise:
 
@@ -3432,11 +3432,11 @@ If reviewer bandwidth is constrained, prioritise:
 3. PR-5 (AN2) — foundation; unblocks PR-7..PR-10
 4. PR-12 (AN9) — largest phase; start review early even while upstream PRs are still in flight
 
-### 17.3 Per-PR review scope guidance
+### 19.3 Per-PR review scope guidance
 
 | PR | Approx LOC delta | Files touched | Reviewer focus |
 |----|----:|----:|----------------|
-| PR-1 | ~2500 | 1 (this plan) | Plan completeness, audit cross-refs, §16 absorption-map accuracy |
+| PR-1 | ~2500 | 1 (this plan) | Plan completeness, audit cross-refs, §18 absorption-map accuracy |
 | PR-2 | ~80 | ~15 | Stale-pointer correctness, hook idempotency, live AN9-F..J TODO retargets |
 | PR-3 | ~150 | ~10 | Subtype gate cascades, BadgeOverflowSuite extension |
 | PR-4 | ~200 | ~25 | Fin 32 refactor cascade, typedIdDisjointness preservation cascade (cascade-heavy) |
@@ -3453,7 +3453,7 @@ If reviewer bandwidth is constrained, prioritise:
 | PR-15 | ~600 | ~30 | Discharge index correctness, SMP inventory confirmation (AN9 work landed; items now single-core default but SMP code reviewed + merged) |
 | PR-16 | ~300 | ~25 | Version sync, archive moves, CHANGELOG consolidation, DEFERRED.md in-place RESOLVED annotations |
 
-### 17.4 PR-merge gate sequence (each PR's CI must pass)
+### 19.4 PR-merge gate sequence (each PR's CI must pass)
 
 For each PR:
 1. `lake build` PASS
@@ -3472,13 +3472,13 @@ is a per-step proxy.
 
 ---
 
-## 18. Sub-task index — quick lookup by audit ID
+## 20. Sub-task index — quick lookup by audit ID
 
 This table is the inverse of the per-phase plan: given an audit-ID,
 find its phase + sub-task. Use during PR review to confirm a finding
 is addressed.
 
-### 18.1 CRITICAL audit IDs
+### 20.1 CRITICAL audit IDs
 
 | Audit ID | Phase | Sub-task | Status |
 |----------|-------|----------|--------|
@@ -3486,7 +3486,7 @@ is addressed.
 | C-02 | (resolved pre-WS-AN) | — | RESOLVED in audit-cut PR |
 | C-03 | AN1 | AN1-B | Scheduled |
 
-### 18.2 HIGH audit IDs
+### 20.2 HIGH audit IDs
 
 | Audit ID | Phase | Sub-task |
 |----------|-------|----------|
@@ -3515,7 +3515,7 @@ is addressed.
 | H-23 | AN11 | AN11-D |
 | H-24 | AN1 | AN1-C |
 
-### 18.3 MEDIUM audit IDs (grouped by subsystem)
+### 20.3 MEDIUM audit IDs (grouped by subsystem)
 
 **IPC (M01..M09)** — all in **AN3-B..F** (M01 in AN3-B; M02..M04 in AN3-C/D; M05..M09 in AN3-E)
 **Scheduler (SCH-M01..M05)** — all in **AN5-A, AN5-B**
@@ -3533,7 +3533,7 @@ is addressed.
 **Tests (TST-M01..M13)** — **AN11-E** (with M10/M11 covered by AN11-C/D)
 **Documentation (DOC-M01..M08)** — **AN12-C** (with M01/M06 covered by AN1-A; M02 by AN7-D; M04 by AN12 final refresh)
 
-### 18.4 LOW audit IDs
+### 20.4 LOW audit IDs
 
 LOW findings are batched per-subsystem. Lookup:
 
@@ -3550,7 +3550,7 @@ LOW findings are batched per-subsystem. Lookup:
 | Tests/CI | AN11-F |
 | Documentation | AN12-D |
 
-### 18.5 Cross-cutting themes
+### 20.5 Cross-cutting themes
 
 | Theme | Phase(s) | Sub-task(s) |
 |-------|----------|-------------|
@@ -3562,9 +3562,9 @@ LOW findings are batched per-subsystem. Lookup:
 | 4.6 Stale forward references | AN1, AN12 | AN1-C, AN12-E |
 | 4.7 Monolithic file splits | AN3, AN4, AN5, AN6, AN12 | AN3-C/D, AN4-F (CAP-M03)/AN4-G (LIF-M05), AN5-A, AN6-E (IF-M03), AN12-F |
 
-### 18.6 Absorbed deferred IDs (from `AUDIT_v0.29.0_DEFERRED.md`)
+### 20.6 Absorbed deferred IDs (from `AUDIT_v0.29.0_DEFERRED.md`)
 
-All 11 rows are absorbed as live pre-1.0 work per the §16 absorption map. Each row in `AUDIT_v0.29.0_DEFERRED.md` is annotated RESOLVED at AN12-G with the closing commit SHA.
+All 11 rows are absorbed as live pre-1.0 work per the §18 absorption map. Each row in `AUDIT_v0.29.0_DEFERRED.md` is annotated RESOLVED at AN12-G with the closing commit SHA.
 
 | Source | Disposition | Closing sub-task |
 |--------|-------------|------------------|
@@ -3576,11 +3576,11 @@ All 11 rows are absorbed as live pre-1.0 work per the §16 absorption map. Each 
 | DEF-P-L9 | **ABSORBED → RESOLVED** (primary in AN7-D.2, cross-ref in AN9-E) | AN7-D.2 |
 | DEF-R-HAL-L14 | **ABSORBED → RESOLVED** | AN9-F |
 | DEF-F-L9 | **ABSORBED → RESOLVED** | AN2-G |
-| DEF-AK2-K.4 | **ABSORBED → RESOLVED** (RPi5-canonical witness) | AN5-F |
+| DEF-AK2-K.4 | **ABSORBED → RESOLVED** (RPi5-canonical witness) | AN5-E |
 | DEF-AK7-E.cascade | **ABSORBED → RESOLVED** | AN10-A |
 | DEF-AK7-F.cascade | **ABSORBED → RESOLVED** (reader AN10-B, writer AN10-C) | AN10-B + AN10-C |
 
-### 18.7 New AN9 sub-tasks surfaced by AN1-C (all absorbed in-phase — no new DEF entries)
+### 20.7 New AN9 sub-tasks surfaced by AN1-C (all absorbed in-phase — no new DEF entries)
 
 | New sub-task ID | Source | Category | Closing sub-task |
 |-----------------|--------|----------|------------------|
@@ -3593,9 +3593,9 @@ All 11 rows are absorbed as live pre-1.0 work per the §16 absorption map. Each 
 
 ---
 
-## 19. Glossary and conventions
+## 21. Glossary and conventions
 
-### 19.1 Severity ladder (per audit §0.3)
+### 21.1 Severity ladder (per audit §0.3)
 
 - **CRITICAL**: exploitable today against a non-malicious caller, or directly blocks v1.0 release
 - **HIGH**: correctness / security gap that should not ship in v1.0
@@ -3603,12 +3603,12 @@ All 11 rows are absorbed as live pre-1.0 work per the §16 absorption map. Each 
 - **LOW**: hygiene, clarity, or minor performance concern
 - **INFO**: confirmed-clean check or strength
 
-### 19.2 Cascade-size shorthand
+### 21.2 Cascade-size shorthand
 
 - `~N`: N proof sites likely need a one-line edit
 - `cascade-heavy`: N ≥ 50 sites; spread the change across ≥ 3 commits
 
-### 19.3 Acceptance gate ladder
+### 21.3 Acceptance gate ladder
 
 | Gate | Command | Latency |
 |------|---------|--------:|
@@ -3618,7 +3618,7 @@ All 11 rows are absorbed as live pre-1.0 work per the §16 absorption map. Each 
 | rust gate | `cargo test --workspace && cargo clippy --workspace -- -D warnings` | 2-5 min |
 | all gate | smoke + full + rust + version-sync + website-links + cascade-monotonic + zero-sorry/axiom | 15-30 min |
 
-### 19.4 Sub-task ID convention
+### 21.4 Sub-task ID convention
 
 - `AN{phase}-{letter}` — e.g., `AN3-B` is "Phase AN3, sub-task B"
 - `AN{phase}-{letter}.{digit}` — e.g., `AN3-B.4` is "sub-sub-task 4 inside AN3-B"; each sub-sub-task corresponds to one atomic commit
@@ -3628,15 +3628,15 @@ All 11 rows are absorbed as live pre-1.0 work per the §16 absorption map. Each 
 - Audit-ID cross-reference is recorded in the sub-task heading for forward and reverse traversal
 - For sub-sub-tasks, the commit message convention is `WS-AN {SubSubId}: <one-line> (<audit-IDs>)` — e.g., `WS-AN AN2-D.3: retype preservation for typedIdDisjointness (H-10)`
 
-### 19.5 PR title convention
+### 21.5 PR title convention
 
 - Format: `WS-AN <phase>: <one-line summary> (<comma-separated audit IDs>)`
 - Example: `WS-AN AN1: critical-path blockers (C-01, C-03, H-24)`
-- Per-PR-12 review-scope guidance per §17.3
+- Per-PR-12 review-scope guidance per §19.3
 
 ---
 
-## 20. Open questions for maintainer review
+## 22. Open questions for maintainer review
 
 These are decisions that benefit from explicit maintainer
 confirmation before WS-AN starts. None are blockers — sensible
@@ -3646,7 +3646,7 @@ defaults are noted.
    manual maintainer action. Does WS-AN target v1.0.0 directly, or
    does it land as v0.30.7 (or further patch increments) with v1.0.0
    tagged separately? Default: WS-AN targets v0.30.7 patch-bump per
-   §15.7.
+   §17.7.
 
 2. **AN6-A target theorem choice** — the plan recommends
    `schedContextConfigure_preserves_projection`. Alternatives:
@@ -3671,11 +3671,11 @@ defaults are noted.
 
 7. **AN9-J SMP default enablement** — AN9-J lands SMP bring-up code reviewed + merged + QEMU-tested, but gated behind a runtime `smp_enabled` flag defaulted to `false` at v1.0.0 boot. Does the maintainer want to flip the default to `true` for v1.0.0 (risk: single-core is the validated hardware configuration; SMP is QEMU-tested only), or stay default-off (AN9-J's proposal)? Default: stay default-off at v1.0.0; flip to default-on in a patch release after real-hardware SMP validation lands.
 
-8. **Deferral escalation protocol** — if any sub-task genuinely cannot close under the plan's escalation ladders (e.g., a Lean 4.28.0 toolchain bug that blocks AN6-A.7's `lifecycleRetype_preserves_projection`, or a QEMU limitation that prevents AN9-J SMP smoke), does the maintainer approve pausing the workstream and escalating, or can the item be the one exception that ships with a narrow DEF-* annotation? Default (per §15.1 rule): pause and escalate; no silent deferrals.
+8. **Deferral escalation protocol** — if any sub-task genuinely cannot close under the plan's escalation ladders (e.g., a Lean 4.28.0 toolchain bug that blocks AN6-A.7's `lifecycleRetype_preserves_projection`, or a QEMU limitation that prevents AN9-J SMP smoke), does the maintainer approve pausing the workstream and escalating, or can the item be the one exception that ships with a narrow DEF-* annotation? Default (per §17.1 rule): pause and escalate; no silent deferrals.
 
 ---
 
-## 21. Closure note
+## 23. Closure note
 
 This plan is **single-source-of-truth** for WS-AN. Any AN-* sub-task
 that is renamed, dropped, or split during execution must be
@@ -3691,21 +3691,21 @@ silently deferred. Every CRITICAL, HIGH, MEDIUM, LOW finding in
 must close substantively before WS-AN ships. If the plan encounters a
 genuinely un-closable obstacle (toolchain bug, hardware limitation that
 cannot be worked around), the workstream pauses and is escalated per
-§20 question 8 — deferral is NOT an automatic fallback.
+§22 question 8 — deferral is NOT an automatic fallback.
 
 This document is GPL-3.0+ licensed (see `LICENSE`) per the project's
 standard.
 
 ---
 
-## 22. Sub-sub-task decomposition principles
+## 24. Sub-sub-task decomposition principles
 
 This section documents the **criteria** that were used to decide which
 sub-tasks get broken down into `.N` sub-sub-tasks versus kept as
 single units. Future workstreams (WS-AO, etc.) should apply the same
 criteria.
 
-### 22.1 Triggers for decomposition
+### 24.1 Triggers for decomposition
 
 A sub-task MUST be decomposed into sub-sub-tasks if any one of the
 following applies:
@@ -3741,7 +3741,7 @@ following applies:
    lemmas, preservation through retype, conjunct addition, 5 core
    bridges, 34 per-op bridges, field-set catalog.
 
-### 22.2 Granularity anti-patterns (avoid)
+### 24.2 Granularity anti-patterns (avoid)
 
 - **Over-decomposition**: if a sub-sub-task has ≤ 15 minutes of
   engineer work and isn't a review/audit boundary, fold it into a
@@ -3755,7 +3755,7 @@ following applies:
   combine them. The `.N` numbering is for independently-reviewable
   commits, not for narratively-ordered steps inside a single commit.
 
-### 22.3 Review-scope guidance per sub-sub-task
+### 24.3 Review-scope guidance per sub-sub-task
 
 Every sub-sub-task commit should:
 
@@ -3772,20 +3772,48 @@ Every sub-sub-task commit should:
    message records N in the summary so the aggregate cascade can be
    reconstructed from the git log post-closure.
 
-### 22.4 Emergency reversion protocol
+### 24.4 Emergency escalation protocol (replaces the prior "revert + DEF-* and move on" pattern)
 
 If a sub-sub-task commit breaks the full gate in a way that cannot be
-fixed forward within 1 hour, revert it and open a `DEF-*` tracking
-entry for a post-workstream revisit. This is preferable to blocking
-the rest of the workstream on a single stubborn cascade. Examples
-where this may apply:
+fixed forward within 1 hour, the response is **NOT** to open a silent
+DEF-* entry and move on — that violates the zero-deferral rule in
+§17.1. Instead, apply the escalation ladder per §2.4 risk register
+and §22 open question 8:
 
-- AN2-C.3 LawfulBEq derivation fails due to Lean toolchain limitation
-  → revert; open `DEF-AN2-C.3-lawfulbeq`; proceed with AN2-C.4/.5
-- AN6-A.2/A.3/A.4 all fail → ship partial discharge (AN6-A.4)
-  preserves the sub-task's value
+1. **Immediate**: revert the broken commit so CI is green again.
+2. **Diagnose**: produce a minimal reproduction and capture the
+   toolchain error output in a scratch note (ephemeral, not
+   committed).
+3. **Try the next rung of the sub-task's escalation ladder**: each
+   complex sub-task (AN6-A, AN2-F.5, AN2-C.3, AN9-A, etc.) documents
+   its own ladder. Exhaust the ladder before escalating further.
+4. **If every ladder rung fails**: pause the workstream and escalate
+   to the maintainer with the scratch-note reproduction and the full
+   history of attempted proof strategies. The maintainer decides
+   either (a) to approve a narrowly-scoped deferral (which amends
+   this plan in the same commit) or (b) to fund an alternative
+   approach (e.g., a toolchain patch for Lean, a different model
+   representation).
+
+Examples where this applies:
+
+- AN2-C.3 LawfulBEq derivation fails under current Lean → ladder:
+  (i) manual `eq_of_beq` with per-field proof; (ii) `decide` on the
+  composed BEq; (iii) defer BEq derivation and ship proof-layer
+  `ext` lemma instead. All three fail → escalate.
+- AN6-A.7 `lifecycleRetype_preserves_projection` fails all 4 proof
+  strategies → escalate (do NOT ship "partial discharge"; that was
+  the forbidden prior-plan fallback). Budget for this arm is 3 days
+  per §9's AN6-A.7 entry; exceeding 3 days triggers escalation.
 - AN2-G.4 consumer migration breaks a non-obvious subsystem → revert
-  just that batch; re-plan with a smaller granularity
+  just that batch; re-plan with a smaller granularity. Not a
+  deferral candidate — this is a mechanical refactor with a narrower
+  slice available.
+
+**Rule**: no sub-task silently ships in a "partial" or "deferred"
+state under WS-AN. Every missed acceptance criterion either closes
+under the next ladder rung, or it escalates. This is the direct
+operational consequence of the §17.1 zero-deferral rule.
 
 **End of plan.**
 
