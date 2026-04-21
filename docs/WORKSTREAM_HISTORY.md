@@ -15,9 +15,83 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
-**Next milestone**: Raspberry Pi 5 hardware binding — ARMv8 page table walk,
-GIC-400 interrupt routing, boot sequence. All pre-benchmark workstreams (WS-B
-through WS-U Phase U8) are complete. **WS-U PORTFOLIO COMPLETE.**
+**Active workstream**: **WS-AN** — Pre-1.0 audit remediation for the
+`v0.30.6` baseline per [`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md).
+13 phases (AN0–AN12), 95 top-level sub-tasks, ~253 sub-sub-task commits
+scoped against 196 audit findings (2 actionable CRITICAL + 23 actionable
+HIGH + 71 MEDIUM + 59 LOW + 40 INFO) plus 11 absorbed items from
+`AUDIT_v0.29.0_DEFERRED.md`. Target release: **v1.0.0** via a patch-only
+bump trajectory (final tag is a separate manual maintainer action per
+the AK10-C precedent).
+
+**Next hardware milestone**: Raspberry Pi 5 hardware binding — ARMv8
+page table walk, GIC-400 interrupt routing, boot sequence. All
+pre-benchmark workstreams (WS-B through WS-U Phase U8) are complete;
+the remaining hardware-binding gaps (TLB+cache composition, SVC FFI
+wiring, secondary-core bring-up / SMP) are absorbed into WS-AN Phase
+AN9 as pre-1.0 work rather than carried past v1.0.0.
+
+## WS-AN — Pre-1.0 Audit Remediation (v0.30.6 → v1.0.0, in progress)
+
+**Audit:** [`docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md`](audits/AUDIT_v0.30.6_COMPREHENSIVE.md)
+**Plan:** [`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
+**Baseline:** [`docs/audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt`](audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt) (AN0-A snapshot)
+**Carried forward:** [`docs/audits/AUDIT_v0.29.0_DEFERRED.md`](audits/AUDIT_v0.29.0_DEFERRED.md) (11 items, all absorbed in-scope)
+
+**Phases:** 13 (AN0–AN12), 95 top-level sub-tasks, ~253 sub-sub-task commits
+(scope: 196 audit findings + 11 absorbed DEFERRED items).
+
+- **AN0** (Pre-flight, v0.30.6, in progress): baseline capture,
+  sub-task inventory commit, branch policy confirmation. No production
+  code or test-surface changes.
+  - **AN0-A**: new `docs/audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt`
+    records the WS-AN start state so AN12 can diff the gate numbers —
+    `lake build` 260 jobs 0 warnings, `cargo test --workspace` 414
+    passing (407 unit + 7 doctests), `cargo clippy --workspace -- -D
+    warnings` 0 warnings, `test_smoke.sh` / `test_full.sh` /
+    `test_tier0_hygiene.sh` all PASS, `check_version_sync.sh` PASS at
+    0.30.6, `check_website_links.sh` PASS, fixture byte-identical to
+    `tests/fixtures/main_trace_smoke.expected` (227 lines), zero
+    `sorry`/`axiom`/`native_decide` in `SeLe4n/` or `Main.lean`, Theme
+    4.7 monolithic file LOC baseline (Structural 7626 / NI-Operations
+    3768 / Sched-Preservation 3633 / Cap-Preservation 2461 /
+    Lifecycle-Operations 1473 = 18961 total), 24 Lean test suites / 25
+    `lake exe` targets / ~1614 aggregate assertions, audit-finding
+    disposition (196 findings = 2 actionable CRITICAL + 23 actionable
+    HIGH + 71 MEDIUM + 59 LOW + 40 INFO after C-02 resolved and H-22
+    downgraded), 11 absorbed DEFERRED items (7 hardware-binding
+    targeted at AN9, 2 cascade rollouts at AN10, 1 `eventuallyExits`
+    RPi5-canonical-config witness at AN5-E, 1 `allTablesInvExtK`
+    17-tuple → structure at AN2-G). Monotonicity-guard status: the
+    historical `scripts/ak7_cascade_baseline.sh` +
+    `check_monotonic.sh` + `docs/audits/AL0_baseline.txt` were retired
+    in commit 8d9e61f because the three tracked attack surfaces are
+    now closed STRUCTURALLY at the type system (`NonNullCap` subtype,
+    `storeObjectKindChecked` wrapper,
+    `Valid{Thread,Obj,SchedContext}Id` subtypes) — the baseline
+    documents this as the current canonical enforcement layer rather
+    than re-creating the numeric script.
+  - **AN0-B**: the plan file
+    (`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`, 4110 lines) was
+    already landed on `claude/audit-workstream-planning-AUBX4` via
+    PRs #733/#736. This commit closes AN0-B by adding the WS-AN AN0
+    entry to `CLAUDE.md` "Active workstream context", this section of
+    `docs/WORKSTREAM_HISTORY.md`, and `CHANGELOG.md`.
+  - **AN0-C**: branch policy confirmed — AN1..AN12 land on the
+    designated WS-AN branch per task description's `Git Development
+    Branch Requirements`. No PR force-pushed elsewhere.
+
+  **Gate at AN0 tip**: `lake build` (260 jobs, 0 warnings) +
+  `test_smoke.sh` PASS + `test_full.sh` PASS + `cargo test
+  --workspace` (414) + `cargo clippy --workspace -- -D warnings` (0
+  warnings) + `check_version_sync.sh` PASS at 0.30.6 +
+  `check_website_links.sh` PASS + fixture byte-identical + zero
+  `sorry`/`axiom`/`native_decide`. Version stays at `0.30.6` — AN0 is
+  pre-flight only.
+
+  **Next**: AN1 (critical-path blockers — C-01 README pointer, C-03
+  pre-commit hook install, H-24 stale TODO retargeting to live
+  sub-task IDs).
 
 ## WS-AK — Pre-1.0 Release Hardening (v0.29.1 → v0.30.6)
 

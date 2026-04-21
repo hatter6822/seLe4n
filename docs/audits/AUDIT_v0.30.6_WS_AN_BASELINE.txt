@@ -1,0 +1,226 @@
+# WS-AN baseline snapshot (AN0-A)
+#
+# Captured at the start of WS-AN so AN12 can diff the gate state against
+# this file. Any drift from these numbers in AN1..AN11 is expected and
+# is accounted for in the closure gate (§17.2 of the plan). Any drift that
+# contradicts the plan's cascade predictions is a finding against the
+# plan and triggers a §20 escalation review.
+#
+# Format: human-readable sections. Each numeric metric is also emitted
+# in `KEY=value` form at the bottom for machine diffability.
+#
+# Source-of-truth:
+#   * plan         docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md (AN0-A §3)
+#   * audit        docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md
+#   * deferred     docs/audits/AUDIT_v0.29.0_DEFERRED.md (carried forward)
+
+## 0. Provenance
+
+timestamp_utc       = 2026-04-21T22:18:57Z
+repo_head_sha       = 8d3834ec360f27acbf5a8c01ff31c940f410d56f
+branch              = claude/implement-phase-an0-3D5pR
+package_version     = 0.30.6
+rust_workspace_ver  = 0.30.6
+lean_toolchain      = leanprover/lean4:v4.28.0
+lake_version        = 5.0.0-src+7e01a1b
+plan_branch_note    = Plan §3 (AN0) named branch
+                      claude/audit-workstream-planning-AUBX4 as the
+                      anchor, which landed the plan itself. AN0-A is
+                      captured on claude/implement-phase-an0-3D5pR as
+                      the first implementation commit of the WS-AN
+                      workstream. The SeLe4n/, Main.lean, tests/, and
+                      rust/ trees are byte-identical to commit
+                      4beae3c (the prior AN0-A attempt reverted by
+                      PR #740); only docs/audits/AUDIT_v0.30.6_
+                      WORKSTREAM_PLAN.md has changed between the two
+                      commits, so every build/test/fixture number
+                      below is verified afresh at HEAD 8d3834e.
+
+## 1. Build / test gate at WS-AN start (all GREEN)
+
+lake_jobs           = 260
+lake_warnings       = 0
+lake_errors         = 0
+lake_command        = `lake build`
+
+cargo_tests_total   = 414
+cargo_tests_failed  = 0
+cargo_tests_ignored = 0
+cargo_clippy_warns  = 0
+cargo_breakdown     = sele4n-abi:94 sele4n-hal:93 sele4n-sys:153
+                      sele4n-types:13 conformance:54 (unit 407)
+                      doctests:7 (abi:1 hal:4 sys:1 types:1)
+
+# Tier scripts all PASS at WS-AN start:
+#   scripts/test_smoke.sh                  PASS
+#   scripts/test_full.sh                   PASS
+#   scripts/test_tier0_hygiene.sh          PASS
+#   scripts/test_tier2_negative.sh         PASS (via lake env lean --run;
+#       NegativeStateSuite intentionally skips C-compilation per
+#       test_tier2_negative.sh:19 to avoid a pathological clang
+#       bracket-nesting depth — documented, not a regression)
+#   scripts/test_docs_sync.sh              PASS (inside test_smoke.sh)
+#   scripts/test_rust_conformance.sh       PASS (inside test_smoke.sh)
+#   scripts/check_version_sync.sh          PASS at 0.30.6
+#   scripts/check_website_links.sh         PASS
+#   scripts/test_tier3_invariant_surface.sh PASS (inside test_full.sh)
+
+# Clippy note: the canonical gate in CLAUDE.md and every prior
+# workstream closure is `cargo clippy --workspace -- -D warnings`
+# (the workspace library + binary surface, 0 warnings at this commit).
+# Running `cargo clippy --workspace --all-targets -- -D warnings`
+# additionally lints the test crates and reports a handful of nits
+# (needless_return, manual_div_ceil, expect_fun_call, etc.) that
+# AN11-C / AN11-D will clean up as part of the test-surface hygiene
+# pass. These are NOT regressions introduced by WS-AN — they predate
+# this baseline and are tracked as test-only noise, not gating the
+# release.
+
+## 2. Source-purity gate
+
+sorry_prod_count    = 0
+axiom_prod_count    = 0
+native_decide_count = 0
+
+# Grep note: five matches for the tokens under SeLe4n/ are all in
+# docstrings or comments that EXPLAIN the policy of not using those
+# tokens (e.g. W4-C annotation "Uses `decide` instead of `native_decide`
+# to avoid TCB growth"). No actual use sites.
+
+## 3. Fixture verification
+
+main_trace_fixture_lines     = 227
+main_trace_fixture_byte_id   = PASS (`diff` against
+                               tests/fixtures/main_trace_smoke.expected
+                               returns empty)
+main_trace_fixture_sha256    = tests/fixtures/main_trace_smoke.expected.sha256
+                               present and enforced by Tier 2
+robin_hood_fixture_sha256    = ABSENT (H-22 downgraded LOW; AN11-D
+                               scheduled to add)
+two_phase_arch_fixture_sha256= ABSENT (H-22 downgraded LOW; AN11-D
+                               scheduled to add)
+
+## 4. Theme 4.7 — monolithic file baseline (AN3-C, AN3-D, AN4-F,
+##   AN4-G, AN5-A, AN6-E targets). LOCs cited in plan §1.2 (cross-
+##   checked against `wc -l` at this commit).
+
+THEME47_STRUCTURAL_LOC         = 7626   # SeLe4n/Kernel/IPC/Invariant/Structural.lean
+THEME47_NI_OPERATIONS_LOC      = 3768   # SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+THEME47_SCHED_PRESERVATION_LOC = 3633   # SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
+THEME47_CAP_PRESERVATION_LOC   = 2461   # SeLe4n/Kernel/Capability/Invariant/Preservation.lean
+THEME47_LIFECYCLE_OPS_LOC      = 1473   # SeLe4n/Kernel/Lifecycle/Operations.lean
+THEME47_TOTAL_LOC              = 18961
+
+# AN12-F success criterion: each split target's primary-file LOC drops
+# to < 2000 OR a closure note documents why it cannot.
+
+## 5. Monotonicity-guard metrics — status note
+
+# Historical AL0 monotonicity script
+# (scripts/ak7_cascade_baseline.sh + check_monotonic.sh) and the file
+# docs/audits/AL0_baseline.txt were intentionally deleted in commit
+# 8d9e61f ("Rename workstream-ID-prefixed tests, scripts, and labels
+# to semantic names"). The three attack surfaces previously tracked by
+# numeric metric are now closed STRUCTURALLY at the type system:
+#
+#   * AK7-I  null-cap guard       -> `NonNullCap` subtype (AL1b)
+#   * AK7-F  kind-swap writer     -> `storeObjectKindChecked` (AL6)
+#   * AK7-E  sentinel dispatch    -> `Valid{Thread,ObjId,...}` (AL8)
+#
+# Because the compiler now rejects regressions at the type layer, the
+# numeric monotonicity guard was retired as redundant. The plan's
+# reference in AN0-A to "17 metrics from
+# scripts/ak7_cascade_baseline.sh rerun" is accepted as an artifact
+# of plan authorship predating the rename commit; AN0-A therefore
+# records the STRUCTURAL replacement rather than the retired script
+# numbers. See CLAUDE.md "WS-AM cascade continuation" block for the
+# full rationale and AUDIT_v0.29.0_DEFERRED.md for the deferred
+# reader/writer hygiene sweeps that AN10 will close.
+
+retired_monotonicity_script   = scripts/ak7_cascade_baseline.sh (deleted 8d9e61f)
+retired_monotonicity_check    = scripts/ak7_cascade_check_monotonic.sh (deleted 8d9e61f)
+retired_baseline_file         = docs/audits/AL0_baseline.txt (deleted 8d9e61f)
+structural_replacement_1      = NonNullCap subtype (SeLe4n/Model/Object/Types.lean)
+structural_replacement_2      = storeObjectKindChecked (SeLe4n/Model/State.lean)
+structural_replacement_3      = ValidThreadId, ValidObjId, ValidSchedContextId,
+                                ValidCPtr subtypes
+                                (SeLe4n/Model/Object/Types.lean)
+
+## 6. Test suite inventory
+
+test_lean_exes_declared       = 25
+test_suites_lean_files        = 24   # *.lean under tests/
+test_suites_total_loc         = 14890
+
+# Per-suite pass counts (captured by running each `lake exe`
+# once except NegativeStateSuite, which is run via `lake env lean
+# --run` per test_tier2_negative.sh convention).
+
+SUITE_TRACE_SEQUENCE_PROBE    = 1    # single-line summary (seed=7 steps=250)
+SUITE_NEGATIVE_STATE          = 305  # `lake env lean --run tests/NegativeStateSuite.lean`
+SUITE_INFORMATION_FLOW        = 127
+SUITE_ROBIN_HOOD              = 53
+SUITE_RADIX_TREE              = 43
+SUITE_FROZEN_STATE            = 50
+SUITE_FREEZE_PROOF            = 59
+SUITE_FROZEN_OPS              = 41
+SUITE_TWO_PHASE_ARCH          = 43
+SUITE_OPERATION_CHAIN         = 351
+SUITE_SUSPEND_RESUME          = 31
+SUITE_PRIORITY_MANAGEMENT     = 34
+SUITE_IPC_BUFFER              = 23
+SUITE_PRIORITY_INHERITANCE    = 26
+SUITE_LIVENESS                = 63   # "All 63 surface anchors verified"
+SUITE_DECODING                = 109
+SUITE_BADGE_OVERFLOW          = 39
+SUITE_ASID_POOL               = 23
+SUITE_INTERRUPT_DISPATCH      = 11
+SUITE_WX_DEFENSE              = 10
+SUITE_DECODE_VALIDATION       = 13
+SUITE_ABI_ROUNDTRIP           = 27
+SUITE_MODEL_INTEGRITY         = 97
+SUITE_AK9_PLATFORM            = 35
+SUITE_ASSERTIONS_TOTAL        = 1614
+
+## 7. Audit-finding disposition at WS-AN start
+
+# Source: AUDIT_v0.30.6_COMPREHENSIVE.md §0.4
+findings_critical_initial     = 3    # C-01, C-02, C-03
+findings_critical_actionable  = 2    # C-02 resolved in audit PR (ec22620 + 0232840)
+findings_high_initial         = 24
+findings_high_actionable      = 23   # H-22 downgraded HIGH -> LOW
+findings_medium               = 71
+findings_low                  = 59   # after H-22 downgrade
+findings_info                 = 40
+findings_total                = 196
+deferred_carried_forward      = 11   # AUDIT_v0.29.0_DEFERRED.md
+errata_entries                = 6    # AUDIT_v0.29.0_ERRATA.md (all closed informational)
+
+## 8. Machine-diffable metric tail (KEY=value)
+
+LAKE_JOBS=260
+LAKE_WARNINGS=0
+LAKE_ERRORS=0
+CARGO_TESTS=414
+CARGO_TESTS_FAILED=0
+CARGO_CLIPPY_WARNS=0
+SORRY_COUNT=0
+AXIOM_COUNT=0
+NATIVE_DECIDE_COUNT=0
+FIXTURE_BYTE_IDENTICAL=1
+THEME47_STRUCTURAL_LOC=7626
+THEME47_NI_OPERATIONS_LOC=3768
+THEME47_SCHED_PRESERVATION_LOC=3633
+THEME47_CAP_PRESERVATION_LOC=2461
+THEME47_LIFECYCLE_OPS_LOC=1473
+TEST_SUITES_LEAN=24
+TEST_LEAN_EXES=25
+TEST_ASSERTIONS_TOTAL=1614
+FINDINGS_TOTAL=196
+FINDINGS_CRITICAL_ACTIONABLE=2
+FINDINGS_HIGH_ACTIONABLE=23
+FINDINGS_MEDIUM=71
+FINDINGS_LOW=59
+FINDINGS_INFO=40
+
+# End of baseline.
