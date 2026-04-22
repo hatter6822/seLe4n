@@ -30,7 +30,7 @@ private def expect (label : String) (cond : Bool) : IO Unit := do
 private def mkTcb (tid : Nat) (state : ThreadState := .Ready)
     (prio : Nat := 10) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := ⟨0⟩,
+    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (0)),
     threadState := state }
 
 /-- Helper: build a minimal SystemState with objects. -/

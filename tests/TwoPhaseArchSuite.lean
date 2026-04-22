@@ -50,7 +50,7 @@ private def expect (label : String) (cond : Bool) : IO Unit := do
 /-- Helper: construct a minimal test TCB. -/
 private def mkTcb (tid : Nat) (prio : Nat := 0) (dom : Nat := 0) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨dom⟩,
-    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := ⟨0⟩ }
+    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (0)) }
 
 /-- Helper: construct an empty FrozenSystemState. -/
 private def emptyFrozenState : FrozenSystemState := {

@@ -30,7 +30,7 @@ private def expect (label : String) (cond : Bool) : IO Unit := do
 private def mkTcb (tid : Nat) (vsRoot : Nat := 100)
     (buf : Nat := 0) (state : ThreadState := .Ready) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨10⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨vsRoot⟩, ipcBuffer := ⟨buf⟩,
+    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨vsRoot⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (buf)),
     threadState := state }
 
 /-- Helper: create writable page permissions. -/
@@ -63,44 +63,44 @@ private def mkState (objs : List (ObjId × KernelObject))
 /-- IB-001: setIPCBuffer with valid aligned mapped writable address succeeds. -/
 private def ib001_setIPCBufferValidAddress : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
-  let vsRoot := mkVSpaceRoot [(⟨512⟩, (⟨0x1000⟩, writablePerms))]
+  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat (512)), ((SeLe4n.PAddr.ofNat (0x1000)), writablePerms))]
   let st := mkState [
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ ⟨512⟩ with
+  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat (512)) with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
-      expect "ipcBuffer updated to 512" (tcb.ipcBuffer == ⟨512⟩)
+      expect "ipcBuffer updated to 512" (tcb.ipcBuffer == (SeLe4n.VAddr.ofNat (512)))
     | _ => throw <| IO.userError "TCB not found after update"
   | .error e => throw <| IO.userError s!"setIPCBuffer should succeed, got {repr e}"
 
 /-- IB-002: setIPCBuffer with address 0 (trivially aligned, must be mapped). -/
 private def ib002_setIPCBufferZeroAddress : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
-  let vsRoot := mkVSpaceRoot [(⟨0⟩, (⟨0x2000⟩, writablePerms))]
+  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat (0)), ((SeLe4n.PAddr.ofNat (0x2000)), writablePerms))]
   let st := mkState [
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ ⟨0⟩ with
+  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat (0)) with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
-      expect "ipcBuffer set to 0" (tcb.ipcBuffer == ⟨0⟩)
+      expect "ipcBuffer set to 0" (tcb.ipcBuffer == (SeLe4n.VAddr.ofNat (0)))
     | _ => throw <| IO.userError "TCB not found"
   | .error e => throw <| IO.userError s!"setIPCBuffer at 0 should succeed, got {repr e}"
 
 /-- IB-003: setIPCBuffer on running thread succeeds (no suspend required). -/
 private def ib003_setIPCBufferRunningThread : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
-  let vsRoot := mkVSpaceRoot [(⟨1024⟩, (⟨0x3000⟩, writablePerms))]
+  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat (1024)), ((SeLe4n.PAddr.ofNat (0x3000)), writablePerms))]
   let st := mkState [
     (⟨1⟩, .tcb (mkTcb 1 (state := .Running))),
     (⟨100⟩, .vspaceRoot vsRoot)
   ] (current := some ⟨1⟩)
-  match setIPCBufferOp st ⟨tid, by decide⟩ ⟨1024⟩ with
+  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat (1024)) with
   | .ok _ => expect "setIPCBuffer on running thread succeeds" true
   | .error e => throw <| IO.userError s!"should succeed on running thread, got {repr e}"
 
@@ -111,12 +111,12 @@ private def ib003_setIPCBufferRunningThread : IO Unit := do
 /-- IB-004: Unaligned address returns alignmentError. -/
 private def ib004_unalignedAddress : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
-  let vsRoot := mkVSpaceRoot [(⟨100⟩, (⟨0x4000⟩, writablePerms))]
+  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat (100)), ((SeLe4n.PAddr.ofNat (0x4000)), writablePerms))]
   let st := mkState [
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ ⟨100⟩ with
+  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat (100)) with
   | .ok _ => throw <| IO.userError "unaligned address should fail"
   | .error e => expect "unaligned returns alignmentError" (e == .alignmentError)
 
@@ -129,7 +129,7 @@ private def ib005_unmappedAddress : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ ⟨512⟩ with
+  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat (512)) with
   | .ok _ => throw <| IO.userError "unmapped address should fail"
   | .error e => expect "unmapped returns translationFault" (e == .translationFault)
 
@@ -144,30 +144,30 @@ private def ib006_addressBeyondCanonical : IO Unit := do
   -- 2^48 is beyond canonical bound (ARM64 48-bit VA space)
   -- Must also be aligned to 512
   let beyondCanonical := VAddr.canonicalBound
-  match setIPCBufferOp st ⟨tid, by decide⟩ ⟨beyondCanonical⟩ with
+  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat (beyondCanonical)) with
   | .ok _ => throw <| IO.userError "beyond canonical should fail"
   | .error e => expect "beyond canonical returns addressOutOfBounds" (e == .addressOutOfBounds)
 
 /-- IB-007: Read-only page returns translationFault. -/
 private def ib007_readOnlyPage : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
-  let vsRoot := mkVSpaceRoot [(⟨512⟩, (⟨0x5000⟩, readOnlyPerms))]
+  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat (512)), ((SeLe4n.PAddr.ofNat (0x5000)), readOnlyPerms))]
   let st := mkState [
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ ⟨512⟩ with
+  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat (512)) with
   | .ok _ => throw <| IO.userError "read-only page should fail"
   | .error e => expect "read-only returns translationFault" (e == .translationFault)
 
 /-- IB-008: Missing thread returns objectNotFound. -/
 private def ib008_missingThread : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨99⟩  -- nonexistent
-  let vsRoot := mkVSpaceRoot [(⟨512⟩, (⟨0x6000⟩, writablePerms))]
+  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat (512)), ((SeLe4n.PAddr.ofNat (0x6000)), writablePerms))]
   let st := mkState [
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ ⟨512⟩ with
+  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat (512)) with
   | .ok _ => throw <| IO.userError "missing thread should fail"
   | .error e => expect "missing thread returns objectNotFound" (e == .objectNotFound)
 
@@ -179,7 +179,7 @@ private def ib009_invalidVSpaceRoot : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .endpoint {})
   ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ ⟨512⟩ with
+  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat (512)) with
   | .ok _ => throw <| IO.userError "invalid vspace root should fail"
   | .error e => expect "invalid vspace returns invalidArgument" (e == .invalidArgument)
 
@@ -191,12 +191,12 @@ private def ib009_invalidVSpaceRoot : IO Unit := do
 private def ib010_fieldPreservation : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let origTcb := mkTcb 1 (buf := 0)
-  let vsRoot := mkVSpaceRoot [(⟨1024⟩, (⟨0x7000⟩, writablePerms))]
+  let vsRoot := mkVSpaceRoot [((SeLe4n.VAddr.ofNat (1024)), ((SeLe4n.PAddr.ofNat (0x7000)), writablePerms))]
   let st := mkState [
     (⟨1⟩, .tcb origTcb),
     (⟨100⟩, .vspaceRoot vsRoot)
   ]
-  match setIPCBufferOp st ⟨tid, by decide⟩ ⟨1024⟩ with
+  match setIPCBufferOp st ⟨tid, by decide⟩ (SeLe4n.VAddr.ofNat (1024)) with
   | .ok st' =>
     match st'.objects[tid.toObjId]? with
     | some (.tcb tcb) => do
@@ -206,7 +206,7 @@ private def ib010_fieldPreservation : IO Unit := do
       expect "cspaceRoot preserved" (tcb.cspaceRoot == origTcb.cspaceRoot)
       expect "threadState preserved" (tcb.threadState == origTcb.threadState)
       expect "ipcState preserved" (tcb.ipcState == origTcb.ipcState)
-      expect "ipcBuffer updated" (tcb.ipcBuffer == ⟨1024⟩)
+      expect "ipcBuffer updated" (tcb.ipcBuffer == (SeLe4n.VAddr.ofNat (1024)))
     | _ => throw <| IO.userError "TCB not found"
   | .error e => throw <| IO.userError s!"should succeed, got {repr e}"
 
@@ -263,40 +263,40 @@ private def mkFrozenVSpaceRoot (mappings : List (VAddr × (PAddr × PagePermissi
 /-- IB-011: Frozen setIPCBuffer with valid address succeeds. -/
 private def ib011_frozenSetIPCBuffer : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
-  let fvs := mkFrozenVSpaceRoot [(⟨512⟩, (⟨0x8000⟩, writablePerms))]
+  let fvs := mkFrozenVSpaceRoot [((SeLe4n.VAddr.ofNat (512)), ((SeLe4n.PAddr.ofNat (0x8000)), writablePerms))]
   let fst := mkFrozenState [
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot fvs)
   ]
-  match frozenSetIPCBuffer tid ⟨512⟩ fst with
+  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat (512)) fst with
   | .ok ((), fst') =>
     match fst'.objects.get? ⟨1⟩ with
     | some (.tcb tcb) =>
-      expect "frozen ipcBuffer updated" (tcb.ipcBuffer == ⟨512⟩)
+      expect "frozen ipcBuffer updated" (tcb.ipcBuffer == (SeLe4n.VAddr.ofNat (512)))
     | _ => throw <| IO.userError "frozen TCB not found"
   | .error e => throw <| IO.userError s!"frozen setIPCBuffer should succeed, got {repr e}"
 
 /-- IB-012: Frozen setIPCBuffer with unaligned address fails. -/
 private def ib012_frozenUnaligned : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
-  let fvs := mkFrozenVSpaceRoot [(⟨100⟩, (⟨0x9000⟩, writablePerms))]
+  let fvs := mkFrozenVSpaceRoot [((SeLe4n.VAddr.ofNat (100)), ((SeLe4n.PAddr.ofNat (0x9000)), writablePerms))]
   let fst := mkFrozenState [
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot fvs)
   ]
-  match frozenSetIPCBuffer tid ⟨100⟩ fst with
+  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat (100)) fst with
   | .ok _ => throw <| IO.userError "frozen unaligned should fail"
   | .error e => expect "frozen unaligned returns alignmentError" (e == .alignmentError)
 
 /-- IB-013: Frozen setIPCBuffer with read-only page fails. -/
 private def ib013_frozenReadOnly : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
-  let fvs := mkFrozenVSpaceRoot [(⟨512⟩, (⟨0xA000⟩, readOnlyPerms))]
+  let fvs := mkFrozenVSpaceRoot [((SeLe4n.VAddr.ofNat (512)), ((SeLe4n.PAddr.ofNat (0xA000)), readOnlyPerms))]
   let fst := mkFrozenState [
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot fvs)
   ]
-  match frozenSetIPCBuffer tid ⟨512⟩ fst with
+  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat (512)) fst with
   | .ok _ => throw <| IO.userError "frozen read-only should fail"
   | .error e => expect "frozen read-only returns translationFault" (e == .translationFault)
 
@@ -308,7 +308,7 @@ private def ib014_frozenUnmapped : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .vspaceRoot fvs)
   ]
-  match frozenSetIPCBuffer tid ⟨512⟩ fst with
+  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat (512)) fst with
   | .ok _ => throw <| IO.userError "frozen unmapped should fail"
   | .error e => expect "frozen unmapped returns translationFault" (e == .translationFault)
 
@@ -316,7 +316,7 @@ private def ib014_frozenUnmapped : IO Unit := do
 private def ib015_frozenMissingThread : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨99⟩  -- nonexistent
   let fst := mkFrozenState []
-  match frozenSetIPCBuffer tid ⟨512⟩ fst with
+  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat (512)) fst with
   | .ok _ => throw <| IO.userError "frozen missing thread should fail"
   | .error e => expect "frozen missing thread returns objectNotFound" (e == .objectNotFound)
 
@@ -329,7 +329,7 @@ private def ib016_frozenNonCanonical : IO Unit := do
     (⟨100⟩, .vspaceRoot fvs)
   ]
   let beyondCanonical := VAddr.canonicalBound  -- 2^48, aligned to 512
-  match frozenSetIPCBuffer tid ⟨beyondCanonical⟩ fst with
+  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat (beyondCanonical)) fst with
   | .ok _ => throw <| IO.userError "frozen non-canonical should fail"
   | .error e => expect "frozen non-canonical returns addressOutOfBounds" (e == .addressOutOfBounds)
 
@@ -340,7 +340,7 @@ private def ib017_frozenInvalidVSpaceRoot : IO Unit := do
     (⟨1⟩, .tcb (mkTcb 1)),
     (⟨100⟩, .endpoint {})  -- Not a VSpaceRoot
   ]
-  match frozenSetIPCBuffer tid ⟨512⟩ fst with
+  match frozenSetIPCBuffer tid (SeLe4n.VAddr.ofNat (512)) fst with
   | .ok _ => throw <| IO.userError "frozen invalid vspace root should fail"
   | .error e => expect "frozen invalid vspace returns invalidArgument" (e == .invalidArgument)
 

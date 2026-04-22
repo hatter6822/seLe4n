@@ -62,7 +62,7 @@ def bootstrapState : SystemState :=
       domain := ⟨0⟩
       cspaceRoot := ⟨10⟩
       vspaceRoot := ⟨20⟩
-      ipcBuffer := ⟨4096⟩
+      ipcBuffer := (SeLe4n.VAddr.ofNat (4096))
       ipcState := .ready
       threadState := .Ready  -- V8-G: In run queue
     })
@@ -94,7 +94,7 @@ def bootstrapState : SystemState :=
       domain := ⟨0⟩
       cspaceRoot := ⟨10⟩
       vspaceRoot := ⟨20⟩
-      ipcBuffer := ⟨8192⟩
+      ipcBuffer := (SeLe4n.VAddr.ofNat (8192))
       ipcState := .ready
       threadState := .Ready  -- V8-G: In run queue
     })
@@ -103,7 +103,7 @@ def bootstrapState : SystemState :=
     |>.withObject demoEndpoint (.endpoint {})
     |>.withObject demoNotification (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
     |>.withObject demoUntyped (.untyped {
-      regionBase := ⟨0x100000⟩
+      regionBase := (SeLe4n.PAddr.ofNat (0x100000))
       regionSize := 16384
       watermark := 0
       children := []
@@ -161,69 +161,69 @@ private def runCapabilityAndArchitectureTrace (counter : IO.Ref Nat) (st1 : Syst
   | .error err => IO.println s!"[CAT-005] adapter timer unsupported branch: {reprStr err}"
   | .ok _ =>
       IO.println "[CAT-006] unexpected adapter timer success under denied contract"
-  match SeLe4n.Kernel.Architecture.adapterReadMemory runtimeContractDenyAll ⟨0⟩ st1 with
+  match SeLe4n.Kernel.Architecture.adapterReadMemory runtimeContractDenyAll (SeLe4n.PAddr.ofNat (0)) st1 with
   | .error err => IO.println s!"[CAT-007] adapter read denied branch: {reprStr err}"
   | .ok _ =>
       IO.println "[CAT-008] unexpected adapter read success under denied contract"
-  match SeLe4n.Kernel.Architecture.adapterReadMemory runtimeContractAcceptAll ⟨4096⟩ st1 with
+  match SeLe4n.Kernel.Architecture.adapterReadMemory runtimeContractAcceptAll (SeLe4n.PAddr.ofNat (4096)) st1 with
   | .error err => IO.println s!"[CAT-009] adapter read success path error: {reprStr err}"
   | .ok (byte, _) =>
       IO.println s!"[CAT-010] adapter read success path byte: {reprStr byte}"
   -- S6-A: Production-path VSpace trace uses WithFlush variants (R7-A.3/M-17).
   -- TLB is flushed after map/unmap to maintain tlbConsistent on hardware.
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush ⟨1⟩ ⟨4096⟩ ⟨8192⟩) st1 with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush ⟨1⟩ (SeLe4n.VAddr.ofNat (4096)) (SeLe4n.PAddr.ofNat (8192))) st1 with
   | .error err => IO.println s!"[CAT-011] vspace map error: {reprStr err}"
   | .ok (_, stV1) =>
-      match SeLe4n.Kernel.Architecture.vspaceLookup ⟨1⟩ ⟨4096⟩ stV1 with
+      match SeLe4n.Kernel.Architecture.vspaceLookup ⟨1⟩ (SeLe4n.VAddr.ofNat (4096)) stV1 with
       | .error err => IO.println s!"[CAT-012] vspace lookup error: {reprStr err}"
       | .ok (paddr, stV2) =>
           IO.println s!"[CAT-013] vspace lookup mapped paddr: {paddr.toNat}"
-          match SeLe4n.Kernel.Architecture.vspaceUnmapPageWithFlush ⟨1⟩ ⟨4096⟩ stV2 with
+          match SeLe4n.Kernel.Architecture.vspaceUnmapPageWithFlush ⟨1⟩ (SeLe4n.VAddr.ofNat (4096)) stV2 with
           | .error err => IO.println s!"[CAT-014] vspace unmap error: {reprStr err}"
           | .ok (_, stV3) =>
-              match SeLe4n.Kernel.Architecture.vspaceLookup ⟨1⟩ ⟨4096⟩ stV3 with
+              match SeLe4n.Kernel.Architecture.vspaceLookup ⟨1⟩ (SeLe4n.VAddr.ofNat (4096)) stV3 with
               | .error err => IO.println s!"[CAT-015] vspace lookup after unmap branch: {reprStr err}"
               | .ok (resolved, _) => IO.println s!"[CAT-016] unexpected vspace lookup after unmap: {reprStr resolved}"
   -- V8-C: Post-mutation invariant check on vspace operations result
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush ⟨1⟩ ⟨4096⟩ ⟨8192⟩) st1 with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush ⟨1⟩ (SeLe4n.VAddr.ofNat (4096)) (SeLe4n.PAddr.ofNat (8192))) st1 with
   | .ok (_, stVMut) =>
-    match SeLe4n.Kernel.Architecture.vspaceUnmapPageWithFlush ⟨1⟩ ⟨4096⟩ stVMut with
+    match SeLe4n.Kernel.Architecture.vspaceUnmapPageWithFlush ⟨1⟩ (SeLe4n.VAddr.ofNat (4096)) stVMut with
     | .ok (_, stVFinal) => checkInvariants counter "post-vspace-map-unmap-result" stVFinal
     | .error _ => pure ()
   | .error _ => pure ()
   checkInvariants counter "post-vspace-map-lookup-unmap" st1
   -- T7-B: Post-mutation invariant check on vspace-unmap result state
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush ⟨1⟩ ⟨4096⟩ ⟨8192⟩) st1 with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush ⟨1⟩ (SeLe4n.VAddr.ofNat (4096)) (SeLe4n.PAddr.ofNat (8192))) st1 with
   | .ok (_, stV) =>
-    match SeLe4n.Kernel.Architecture.vspaceUnmapPageWithFlush ⟨1⟩ ⟨4096⟩ stV with
+    match SeLe4n.Kernel.Architecture.vspaceUnmapPageWithFlush ⟨1⟩ (SeLe4n.VAddr.ofNat (4096)) stV with
     | .ok (_, stVUnmapped) => checkInvariants counter "post-vspace-unmap-mutated" stVUnmapped
     | .error _ => pure ()
   | .error _ => pure ()
   -- WS-H11: W^X violation test — write+execute permissions must be rejected
   let wxViolation : SeLe4n.Model.PagePermissions := { write := true, execute := true }
-  match (SeLe4n.Kernel.Architecture.vspaceMapPage ⟨1⟩ ⟨4096⟩ ⟨8192⟩ wxViolation) st1 with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPage ⟨1⟩ (SeLe4n.VAddr.ofNat (4096)) (SeLe4n.PAddr.ofNat (8192)) wxViolation) st1 with
   | .error err => IO.println s!"[CAT-017] vspace map W^X violation correctly rejected: {reprStr err}"
   | .ok _ => IO.println "[CAT-018] unexpected vspace map W^X violation accepted"
   -- WS-H11: Explicit read-only permissions test
   let readOnly : SeLe4n.Model.PagePermissions := { read := true }
-  match (SeLe4n.Kernel.Architecture.vspaceMapPage ⟨1⟩ ⟨4096⟩ ⟨8192⟩ readOnly) st1 with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPage ⟨1⟩ (SeLe4n.VAddr.ofNat (4096)) (SeLe4n.PAddr.ofNat (8192)) readOnly) st1 with
   | .error err => IO.println s!"[CAT-019] vspace map read-only error: {reprStr err}"
   | .ok (_, stPerm) =>
-      match SeLe4n.Kernel.Architecture.vspaceLookupFull ⟨1⟩ ⟨4096⟩ stPerm with
+      match SeLe4n.Kernel.Architecture.vspaceLookupFull ⟨1⟩ (SeLe4n.VAddr.ofNat (4096)) stPerm with
       | .error err => IO.println s!"[CAT-020] vspace lookupFull error: {reprStr err}"
       | .ok ((paddr, perms), _) =>
           IO.println s!"[CAT-021] vspace lookupFull paddr: {paddr.toNat}, read={perms.read}, write={perms.write}, exec={perms.execute}"
   -- WS-H11/A-05: Address bounds check — vspaceMapPageChecked rejects paddr ≥ 2^52
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked ⟨1⟩ ⟨4096⟩ ⟨2^52⟩) st1 with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked ⟨1⟩ (SeLe4n.VAddr.ofNat (4096)) (SeLe4n.PAddr.ofNat (2^52))) st1 with
   | .error err => IO.println s!"[CAT-022] vspace mapChecked address out of bounds: {reprStr err}"
   | .ok _ => IO.println "[CAT-023] unexpected vspace mapChecked accepted out-of-bounds address"
   -- WS-H11/A-05: Valid address (2^52 - 1) accepted through checked path
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked ⟨1⟩ ⟨4096⟩ ⟨2^52 - 1⟩) st1 with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked ⟨1⟩ (SeLe4n.VAddr.ofNat (4096)) (SeLe4n.PAddr.ofNat (2^52 - 1))) st1 with
   | .error err => IO.println s!"[CAT-024] unexpected vspace mapChecked rejected valid address: {reprStr err}"
   | .ok _ => IO.println "[CAT-025] vspace mapChecked valid address accepted"
   -- WS-H11/M-14: TLB full flush produces empty TLB
   let tlbWithEntries : SeLe4n.Model.TlbState :=
-    { entries := [{ asid := ⟨1⟩, vaddr := ⟨4096⟩, paddr := ⟨8192⟩, perms := default }] }
+    { entries := [{ asid := ⟨1⟩, vaddr := (SeLe4n.VAddr.ofNat (4096)), paddr := (SeLe4n.PAddr.ofNat (8192)), perms := default }] }
   let flushed := SeLe4n.Model.adapterFlushTlb tlbWithEntries
   IO.println s!"[CAT-026] TLB flush entry count: {flushed.entries.length}"
   match SeLe4n.Kernel.Architecture.adapterWriteRegister runtimeContractAcceptAll ⟨7⟩ ⟨99⟩ st1 with
@@ -438,7 +438,7 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   let ctxRegFile : SeLe4n.RegisterFile := { pc := ⟨42⟩, sp := ⟨1024⟩, gpr := fun _ => ⟨0⟩ }
   let ctxTcb1 : KernelObject := .tcb {
     tid := ⟨1⟩, priority := ⟨100⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
     ipcState := .ready, registerContext := ctxRegFile }
   let stCtx : SystemState := { st1 with
     objects := st1.objects.insert ⟨1⟩ ctxTcb1,
@@ -515,10 +515,10 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   IO.println s!"[SST-038] service dependency chain path chainTop→chainRoot: {reprStr <| SeLe4n.Kernel.serviceHasPathTo stServiceChain chainTop chainRoot chainFuel}"
   IO.println s!"[SST-039] service dependency chain lookup chainTop: {reprStr <| (SeLe4n.Model.lookupService stServiceChain chainTop).map ServiceGraphEntry.dependencies}"
 
-  match SeLe4n.Kernel.Architecture.adapterReadMemory runtimeContractAcceptAll ⟨0⟩ st1 with
+  match SeLe4n.Kernel.Architecture.adapterReadMemory runtimeContractAcceptAll (SeLe4n.PAddr.ofNat (0)) st1 with
   | .error err => IO.println s!"[SST-040] boundary memory low-address error: {reprStr err}"
   | .ok (byte, _) => IO.println s!"[SST-041] boundary memory low-address byte: {reprStr byte}"
-  match SeLe4n.Kernel.Architecture.adapterReadMemory runtimeContractAcceptAll ⟨18446744073709551615⟩ st1 with
+  match SeLe4n.Kernel.Architecture.adapterReadMemory runtimeContractAcceptAll (SeLe4n.PAddr.ofNat (18446744073709551615)) st1 with
   | .error err => IO.println s!"[SST-042] boundary memory high-address error: {reprStr err}"
   | .ok (byte, _) => IO.println s!"[SST-043] boundary memory high-address byte: {reprStr byte}"
   checkInvariants counter "post-stress-boundary-memory" st1
@@ -685,7 +685,7 @@ private def runCapabilityIpcTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
   let replierTid : SeLe4n.ThreadId := ⟨2⟩
   let replyTcb : KernelObject := .tcb {
     tid := replyTarget, priority := ⟨100⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
     ipcState := .blockedOnReply demoEndpoint (some replierTid) }
   let replySched := { st1.scheduler with
     runQueue := st1.scheduler.runQueue.remove replyTarget }
@@ -706,11 +706,11 @@ private def runSchedulerTimingDomainTrace (counter : IO.Ref Nat) (st1 : SystemSt
   -- M-03: EDF tie-breaking — two threads at same priority, different deadlines
   let edfTcbA : KernelObject := .tcb {
     tid := ⟨1⟩, priority := ⟨100⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
     ipcState := .ready, deadline := ⟨50⟩ }
   let edfTcbB : KernelObject := .tcb {
     tid := ⟨12⟩, priority := ⟨100⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨8192⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (8192)),
     ipcState := .ready, deadline := ⟨30⟩ }
   let stEdf : SystemState := { st1 with
     objects := st1.objects.insert ⟨1⟩ edfTcbA |>.insert ⟨12⟩ edfTcbB,
@@ -723,7 +723,7 @@ private def runSchedulerTimingDomainTrace (counter : IO.Ref Nat) (st1 : SystemSt
   -- M-04: Time-slice preemption — tick down until expiry triggers reschedule
   let tickTcb : KernelObject := .tcb {
     tid := ⟨1⟩, priority := ⟨100⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
     ipcState := .ready, timeSlice := 2 }
   let stTick : SystemState := { st1 with
     objects := st1.objects.insert ⟨1⟩ tickTcb,
@@ -739,7 +739,7 @@ private def runSchedulerTimingDomainTrace (counter : IO.Ref Nat) (st1 : SystemSt
   -- Now tick again — this should trigger expiry and reschedule
   let expiryTcb : KernelObject := .tcb {
     tid := ⟨1⟩, priority := ⟨100⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
     ipcState := .ready, timeSlice := 1 }
   let stExpiry : SystemState := { st1 with
     objects := st1.objects.insert ⟨1⟩ expiryTcb,
@@ -1046,7 +1046,7 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
       let childTcb : SeLe4n.ObjId := ⟨51⟩
       let newTcb : KernelObject := .tcb {
         tid := ⟨51⟩, priority := ⟨50⟩, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨12288⟩,
+        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (12288)),
         ipcState := .ready }
       let tcbAllocSize : Nat := SeLe4n.Kernel.objectTypeAllocSize .tcb
       match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped childTcb newTcb tcbAllocSize stRetyped with
@@ -1064,7 +1064,7 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
     let childTcbUT : SeLe4n.ObjId := ⟨51⟩
     let newTcbUT : KernelObject := .tcb {
       tid := ⟨51⟩, priority := ⟨50⟩, domain := ⟨0⟩,
-      cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨12288⟩,
+      cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (12288)),
       ipcState := .ready }
     let tcbAllocSizeUT := SeLe4n.Kernel.objectTypeAllocSize .tcb
     match SeLe4n.Kernel.retypeFromUntyped untypedAuthSlot demoUntyped childTcbUT newTcbUT tcbAllocSizeUT stRet1 with
@@ -1090,7 +1090,7 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
   let stDevice : SystemState :=
     { st1 with
       objects := st1.objects.insert deviceUntypedId (.untyped {
-          regionBase := ⟨0x200000⟩, regionSize := 8192,
+          regionBase := (SeLe4n.PAddr.ofNat (0x200000)), regionSize := 8192,
           watermark := 0, children := [], isDevice := true })
         |>.insert ⟨10⟩ (.cnode {
           depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
@@ -1102,7 +1102,7 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
   let devAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := SeLe4n.Slot.ofNat 7 }
   let devTcb : KernelObject := .tcb {
     tid := ⟨53⟩, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨16384⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (16384)),
     ipcState := .ready }
   match SeLe4n.Kernel.retypeFromUntyped devAuthSlot deviceUntypedId ⟨53⟩ devTcb 1024 stDevice with
   | .error err => IO.println s!"[UMT-015] retype-from-untyped device-restriction branch: {reprStr err}"
@@ -1137,11 +1137,11 @@ private def runDequeueOnDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState)
   let lowPrio : SeLe4n.Priority := ⟨50⟩
   let highTcb : KernelObject := .tcb {
     tid := ⟨1⟩, priority := highPrio, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
     ipcState := .ready, timeSlice := 2 }
   let lowTcb : KernelObject := .tcb {
     tid := ⟨12⟩, priority := lowPrio, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨8192⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (8192)),
     ipcState := .ready }
   let stDispatch : SystemState := { st1 with
     objects := st1.objects.insert ⟨1⟩ highTcb |>.insert ⟨12⟩ lowTcb,
@@ -1165,7 +1165,7 @@ private def runDequeueOnDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState)
   -- the preempted thread remains in the runQueue.
   let preemptLow : KernelObject := .tcb {
     tid := ⟨12⟩, priority := lowPrio, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨8192⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (8192)),
     ipcState := .ready, timeSlice := 1 }
   let stPreempt : SystemState := { st1 with
     objects := st1.objects.insert ⟨1⟩ highTcb |>.insert ⟨12⟩ preemptLow,
@@ -1197,11 +1197,11 @@ private def runInlineContextSwitchTrace (counter : IO.Ref Nat) (st1 : SystemStat
   let inPrio : SeLe4n.Priority := ⟨100⟩
   let outgoingTcb : KernelObject := .tcb {
     tid := ⟨1⟩, priority := outPrio, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
     ipcState := .ready, registerContext := outgoingRegs }
   let incomingTcb : KernelObject := .tcb {
     tid := ⟨12⟩, priority := inPrio, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨8192⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (8192)),
     ipcState := .ready, registerContext := incomingRegs }
   -- Thread 1 is current, thread 12 is in run queue — schedule should switch to 12
   let stCtx : SystemState := { st1 with
@@ -1375,13 +1375,13 @@ private def runRuntimeContractFixtureTrace (counter : IO.Ref Nat) (st1 : SystemS
       IO.println s!"[RCF-003] F7 timerOnly register denied: {reprStr err}"
   | .ok _ =>
       IO.println "[RCF-004] F7 timerOnly register unexpected success"
-  match SeLe4n.Kernel.Architecture.adapterReadMemory runtimeContractTimerOnly ⟨4096⟩ st1 with
+  match SeLe4n.Kernel.Architecture.adapterReadMemory runtimeContractTimerOnly (SeLe4n.PAddr.ofNat (4096)) st1 with
   | .error err =>
       IO.println s!"[RCF-005] F7 timerOnly memory denied: {reprStr err}"
   | .ok _ =>
       IO.println "[RCF-006] F7 timerOnly memory unexpected success"
   -- D3a: ReadOnlyMemory contract — memory passes, timer denied, register denied
-  match SeLe4n.Kernel.Architecture.adapterReadMemory runtimeContractReadOnlyMemory ⟨4096⟩ st1 with
+  match SeLe4n.Kernel.Architecture.adapterReadMemory runtimeContractReadOnlyMemory (SeLe4n.PAddr.ofNat (4096)) st1 with
   | .ok (byte, _) =>
       IO.println s!"[RCF-007] F7 readOnlyMemory memory success: {reprStr byte}"
   | .error err =>
@@ -1428,7 +1428,7 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
     (BootstrapBuilder.empty
       |>.withObject rdtTid (.tcb {
         tid := ⟨500⟩, priority := ⟨50⟩, domain := ⟨0⟩,
-        cspaceRoot := rdtCn, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+        cspaceRoot := rdtCn, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
         ipcState := .ready,
         registerContext := validRegs })
       |>.withObject rdtEp (.endpoint {})
@@ -1466,7 +1466,7 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
     (BootstrapBuilder.empty
       |>.withObject rdtTid (.tcb {
         tid := ⟨500⟩, priority := ⟨50⟩, domain := ⟨0⟩,
-        cspaceRoot := rdtCn, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+        cspaceRoot := rdtCn, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
         ipcState := .ready,
         registerContext := invalidSyscallRegs })
       |>.withObject rdtEp (.endpoint {})
@@ -1501,7 +1501,7 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
     (BootstrapBuilder.empty
       |>.withObject rdtTid (.tcb {
         tid := ⟨500⟩, priority := ⟨50⟩, domain := ⟨0⟩,
-        cspaceRoot := rdtCn, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+        cspaceRoot := rdtCn, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
         ipcState := .ready,
         registerContext := malformedMsgInfoRegs })
       |>.withObject rdtEp (.endpoint {})
@@ -1680,7 +1680,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
     (BootstrapBuilder.empty
       |>.withObject ksdSvcBackingId (.tcb {
         tid := ⟨901⟩, priority := ⟨10⟩, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
         ipcState := .ready })
       |>.withService ksdSvcId {
         identity := { sid := ksdSvcId, backingObject := ksdSvcBackingId, owner := ⟨10⟩ }
@@ -1755,7 +1755,7 @@ private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) 
     (BootstrapBuilder.empty
       |>.withObject pipeTid (.tcb {
         tid := ⟨700⟩, priority := ⟨50⟩, domain := ⟨0⟩,
-        cspaceRoot := pipeCn, vspaceRoot := pipeVs, ipcBuffer := ⟨4096⟩,
+        cspaceRoot := pipeCn, vspaceRoot := pipeVs, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
         ipcState := .ready, threadState := .Running,
         registerContext := pipeRegs })
       |>.withObject pipeEp (.endpoint {})
@@ -1896,7 +1896,7 @@ private def runReplyRecvRoundtripTrace (counter : IO.Ref Nat) (st1 : SystemState
   let ep : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
   let callerB : KernelObject := .tcb {
     tid := callerBId, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨12288⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (12288)),
     ipcState := .ready
   }
   let stFresh : SystemState := { st1 with
@@ -1992,12 +1992,12 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
       |>.withObject ⟨10⟩ lcCnode
       |>.withObject ⟨1⟩ (.tcb {
         tid := ⟨1⟩, priority := ⟨100⟩, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
         ipcState := .ready
       })
       |>.withObject ⟨12⟩ (.tcb {
         tid := ⟨12⟩, priority := ⟨10⟩, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨8192⟩,
+        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (8192)),
         ipcState := .ready
       })
       |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
@@ -2225,7 +2225,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     boundThread := some tid, isActive := true }
   let tcbBoundForUnbind : KernelObject := .tcb {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩, cspaceRoot := ⟨10⟩,
-    vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready,
+    vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)), ipcState := .ready,
     schedContextBinding := .bound ⟨5000⟩ }
   let stForUnbind := { st1 with
     objects := (st1.objects.insert scId (.schedContext scBoundForUnbind)).insert
@@ -2317,7 +2317,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     boundThread := some tidCur, isActive := true }
   let tcbBoundCur : KernelObject := .tcb {
     tid := tidCur, priority := ⟨50⟩, domain := ⟨0⟩, cspaceRoot := ⟨10⟩,
-    vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready,
+    vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)), ipcState := .ready,
     schedContextBinding := .bound ⟨5000⟩ }
   let stForCur := { st1 with
     objects := (st1.objects.insert scId (.schedContext scBoundCur)).insert
@@ -2339,7 +2339,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     boundThread := some tidInRQ, isActive := true }
   let tcbBoundRQ : KernelObject := .tcb {
     tid := tidInRQ, priority := ⟨50⟩, domain := ⟨0⟩, cspaceRoot := ⟨10⟩,
-    vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready,
+    vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)), ipcState := .ready,
     schedContextBinding := .bound ⟨5000⟩ }
   let stForRQUnbind := { st1 with
     objects := (st1.objects.insert scId (.schedContext scBoundRQ)).insert
@@ -2404,7 +2404,7 @@ private def runSchedContextOpsTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨50⟩ }
   let tcbAlreadyBound : KernelObject := .tcb {
     tid := ⟨1⟩, priority := ⟨50⟩, domain := ⟨0⟩, cspaceRoot := ⟨10⟩,
-    vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready,
+    vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)), ipcState := .ready,
     schedContextBinding := .bound ⟨9999⟩ }  -- already bound to SC 9999
   let stBind2 := { st1 with
     objects := (st1.objects.insert scId (.schedContext scForBind2)).insert
@@ -2466,12 +2466,12 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let tid2 : SeLe4n.ThreadId := ⟨6002⟩
   let tcb1 : TCB := {
     tid := tid1, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
     ipcState := .blockedOnSend epId,
     queuePrev := none, queueNext := some tid2, queuePPrev := some .endpointHead }
   let tcb2 : TCB := {
     tid := tid2, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨8192⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (8192)),
     ipcState := .blockedOnSend epId,
     queuePrev := some tid1, queueNext := none, queuePPrev := some (.tcbNext tid1) }
   let ep : Endpoint := { sendQ := { head := some tid1, tail := some tid2 }, receiveQ := {} }
@@ -2574,7 +2574,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let rcvTid : SeLe4n.ThreadId := ⟨6003⟩
   let tcbTimedOut : TCB := {
     tid := rcvTid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨12288⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (12288)),
     ipcState := .ready, timedOut := true }
   let stRcv := { st1 with objects := st1.objects.insert rcvTid.toObjId (.tcb tcbTimedOut) }
   match SeLe4n.Kernel.timeoutAwareReceive rcvTid stRcv with
@@ -2589,7 +2589,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   -- SCO-030: timeoutAwareReceive — normal path (no timeout, no pending message)
   let tcbNormal : TCB := {
     tid := rcvTid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨12288⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (12288)),
     ipcState := .ready }
   let stNorm := { st1 with objects := st1.objects.insert rcvTid.toObjId (.tcb tcbNormal) }
   match SeLe4n.Kernel.timeoutAwareReceive rcvTid stNorm with
@@ -2618,17 +2618,17 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let tid3 : SeLe4n.ThreadId := ⟨6003⟩
   let tcb1_3q : TCB := {
     tid := tid1, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
     ipcState := .blockedOnSend epId,
     queuePrev := none, queueNext := some tid2, queuePPrev := some .endpointHead }
   let tcb2_3q : TCB := {
     tid := tid2, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨8192⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (8192)),
     ipcState := .blockedOnSend epId,
     queuePrev := some tid1, queueNext := some tid3, queuePPrev := some (.tcbNext tid1) }
   let tcb3_3q : TCB := {
     tid := tid3, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨12288⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (12288)),
     ipcState := .blockedOnSend epId,
     queuePrev := some tid2, queueNext := none, queuePPrev := some (.tcbNext tid2) }
   let ep3q : Endpoint := { sendQ := { head := some tid1, tail := some tid3 }, receiveQ := {} }
@@ -2661,12 +2661,12 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let epRecv : Endpoint := { sendQ := {}, receiveQ := { head := some tid1, tail := some tid2 } }
   let tcb1Recv : TCB := {
     tid := tid1, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
     ipcState := .blockedOnReceive epId,
     queuePrev := none, queueNext := some tid2, queuePPrev := some .endpointHead }
   let tcb2Recv : TCB := {
     tid := tid2, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨8192⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (8192)),
     ipcState := .blockedOnReceive epId,
     queuePrev := some tid1, queueNext := none, queuePPrev := some (.tcbNext tid1) }
   let stRecvQ := { st1 with
@@ -2687,7 +2687,7 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   -- SCO-034: timeoutThread on a blockedOnCall thread
   let tcb1Call : TCB := {
     tid := tid1, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
     ipcState := .blockedOnCall epId,
     queuePrev := none, queueNext := none, queuePPrev := some .endpointHead }
   let epCall : Endpoint := { sendQ := { head := some tid1, tail := some tid1 }, receiveQ := {} }
@@ -2712,13 +2712,13 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     sendQ := { head := some tid1, tail := some tid2 }, receiveQ := {} }
   let tcbM1 : TCB := {
     tid := tid1, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
     ipcState := .blockedOnSend epId,
     schedContextBinding := .bound scIdMulti,
     queuePrev := none, queueNext := some tid2, queuePPrev := some .endpointHead }
   let tcbM2 : TCB := {
     tid := tid2, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨8192⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (8192)),
     ipcState := .blockedOnSend epId,
     schedContextBinding := .bound scIdMulti,
     queuePrev := some tid1, queueNext := none, queuePPrev := some (.tcbNext tid1) }
@@ -2751,11 +2751,11 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let scId : SeLe4n.SchedContextId := ⟨7000⟩
   let callerTcb : KernelObject := .tcb {
     tid := callerTid, priority := ⟨100⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
     schedContextBinding := .bound scId }
   let serverTcb : KernelObject := .tcb {
     tid := serverTid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
     schedContextBinding := .unbound }  -- passive server
   let sc : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty scId with
@@ -2779,7 +2779,7 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   -- Z7D-002: returnDonatedSchedContext — successful return
   let serverDonated : KernelObject := .tcb {
     tid := serverTid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
     schedContextBinding := .donated scId callerTid }
   let scDonated : SeLe4n.Kernel.SchedContext := {
     SeLe4n.Kernel.SchedContext.empty scId with
@@ -2817,7 +2817,7 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   -- Z7D-004: applyCallDonation — active server skips donation
   let activeServer : KernelObject := .tcb {
     tid := serverTid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
     schedContextBinding := .bound ⟨9999⟩ }  -- already has SC
   let stActive := { st1 with
     objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
@@ -2882,7 +2882,7 @@ private def runBudgetLifecycleTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
   let scObj : KernelObject := .schedContext (SeLe4n.Kernel.SchedContext.empty scIdTyped)
   let tcb0 : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
     ipcState := .ready }
   let stSetup := { st1 with
     objects := (st1.objects.insert scId scObj).insert tid.toObjId (.tcb tcb0)
@@ -2992,7 +2992,7 @@ private def buildParameterizedTopology
         domain := ⟨0⟩
         cspaceRoot := ⟨2000⟩
         vspaceRoot := ⟨3000⟩
-        ipcBuffer := ⟨4096 + i * 4096⟩
+        ipcBuffer := SeLe4n.VAddr.ofNat (4096 + i * 4096)
         ipcState := .ready
       })
   let cnodeSlots : List (SeLe4n.Slot × Capability) :=
@@ -3117,7 +3117,7 @@ private def runRustXvalVectors : IO Unit := do
 
   -- RUST-XVAL: SetIPCBufferArgs encode/decode roundtrip (D3)
   let ibArgs : SeLe4n.Kernel.Architecture.SyscallArgDecode.SetIPCBufferArgs :=
-    { bufferAddr := ⟨512⟩ }   -- 512 is aligned to ipcBufferAlignment (512)
+    { bufferAddr := (SeLe4n.VAddr.ofNat (512)) }   -- 512 is aligned to ipcBufferAlignment (512)
   let ibEncoded := SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeSetIPCBufferArgs ibArgs
   let ibStub : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 0, extraCaps := 0, label := 0 },

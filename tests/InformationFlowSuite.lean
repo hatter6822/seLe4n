@@ -1033,11 +1033,11 @@ def runInformationFlowChecks : IO Unit := do
               slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [((SeLe4n.Slot.ofNat 0), cap1)] })
         |>.withObject senderTid.toObjId (.tcb
             { tid := senderTid, priority := ⟨1⟩, domain := ⟨0⟩,
-              cspaceRoot := senderCNode, vspaceRoot := ⟨0⟩, ipcBuffer := ⟨0⟩,
+              cspaceRoot := senderCNode, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (0)),
               ipcState := .ready })
         |>.withObject receiverTid.toObjId (.tcb
             { tid := receiverTid, priority := ⟨1⟩, domain := ⟨0⟩,
-              cspaceRoot := ⟨3799⟩, vspaceRoot := ⟨0⟩, ipcBuffer := ⟨0⟩,
+              cspaceRoot := ⟨3799⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (0)),
               ipcState := .ready })
         |>.withRunnable [senderTid, receiverTid]
         |>.buildChecked)
@@ -1077,7 +1077,7 @@ def runInformationFlowChecks : IO Unit := do
         domain := ⟨0⟩,
         cspaceRoot := SeLe4n.ObjId.ofNat 0,
         vspaceRoot := SeLe4n.ObjId.ofNat 0,
-        ipcBuffer := ⟨0⟩,
+        ipcBuffer := (SeLe4n.VAddr.ofNat (0)),
         pendingMessage := some testMsg,
         timedOut := true }
     let projected :=

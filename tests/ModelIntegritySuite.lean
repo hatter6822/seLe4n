@@ -109,30 +109,30 @@ def freeze_preserves_full_invariants_default : IO Unit := do
 /-- Empty memoryMap rejects every address (no RAM regions). -/
 def addrInRange_empty_map_rejects : IO Unit := do
   let ms : MachineState := default  -- memoryMap := []
-  let addr : PAddr := ⟨0x1000⟩
+  let addr : PAddr := (SeLe4n.PAddr.ofNat (0x1000))
   expect "empty map rejects" (ms.addrInRange addr = false)
 
 /-- `readMemChecked` returns `none` on out-of-range. -/
 def readMemChecked_out_of_range_none : IO Unit := do
   let ms : MachineState := default
-  expect "readMemChecked OOR=none" ((readMemChecked ms ⟨0x1000⟩).isNone)
+  expect "readMemChecked OOR=none" ((readMemChecked ms (SeLe4n.PAddr.ofNat (0x1000))).isNone)
 
 /-- `writeMemChecked` returns `none` on out-of-range. -/
 def writeMemChecked_out_of_range_none : IO Unit := do
   let ms : MachineState := default
-  expect "writeMemChecked OOR=none" ((writeMemChecked ms ⟨0x1000⟩ 42).isNone)
+  expect "writeMemChecked OOR=none" ((writeMemChecked ms (SeLe4n.PAddr.ofNat (0x1000)) 42).isNone)
 
 /-- With a RAM region declared, addrInRange succeeds inside. -/
 def addrInRange_ram_region_accepts : IO Unit := do
-  let region : MemoryRegion := { base := ⟨0⟩, size := 0x10000, kind := .ram }
+  let region : MemoryRegion := { base := (SeLe4n.PAddr.ofNat (0)), size := 0x10000, kind := .ram }
   let ms : MachineState := { (default : MachineState) with memoryMap := [region] }
-  expect "RAM region accepts in-range" (ms.addrInRange ⟨0x100⟩ = true)
+  expect "RAM region accepts in-range" (ms.addrInRange (SeLe4n.PAddr.ofNat (0x100)) = true)
 
 /-- A device region does NOT satisfy `addrInRange` (RAM-only). -/
 def addrInRange_device_region_rejected : IO Unit := do
-  let region : MemoryRegion := { base := ⟨0xFE000000⟩, size := 0x1000, kind := .device }
+  let region : MemoryRegion := { base := (SeLe4n.PAddr.ofNat (0xFE000000)), size := 0x1000, kind := .device }
   let ms : MachineState := { (default : MachineState) with memoryMap := [region] }
-  expect "device region rejected" (ms.addrInRange ⟨0xFE000100⟩ = false)
+  expect "device region rejected" (ms.addrInRange (SeLe4n.PAddr.ofNat (0xFE000100)) = false)
 
 -- ============================================================================
 -- MessageInfo.mkChecked + wellFormed
@@ -409,7 +409,7 @@ private def minimalTcb (tid : ThreadId) : TCB :=
     domain := ⟨0⟩
     cspaceRoot := ⟨0⟩
     vspaceRoot := ⟨0⟩
-    ipcBuffer := ⟨0⟩ }
+    ipcBuffer := (SeLe4n.VAddr.ofNat (0)) }
 
 /-- Minimal SchedContext fixture for typed-helper tests. -/
 private def minimalSchedContext (scId : SchedContextId) : SeLe4n.Kernel.SchedContext :=
@@ -473,7 +473,7 @@ getTcb? fails. -/
 def getUntyped_discriminates_variants : IO Unit := do
   let id : ObjId := ⟨60⟩
   let tid : ThreadId := ⟨60⟩
-  let ut : UntypedObject := { regionBase := ⟨0⟩, regionSize := 4096 }
+  let ut : UntypedObject := { regionBase := (SeLe4n.PAddr.ofNat (0)), regionSize := 4096 }
   let base : SystemState := default
   let st : SystemState :=
     { base with objects := base.objects.insert id (.untyped ut) }
@@ -1018,6 +1018,33 @@ def ak8a_07_empty_config_disjoint : IO Unit := do
   expect "empty config initialObjects is empty"
     (emptyConfig.initialObjects.length == 0)
 
+-- ============================================================================
+-- AN2-F.3 / FND-M03 — UntypedObjectValid subtype regression tests
+-- ============================================================================
+
+/-- AN2-F.3: `UntypedObjectValid.empty` constructs a subtype inhabitant
+    whose well-formedness witness is discharged by `empty_wellFormed`. -/
+def an2f3_01_empty_wellFormed : IO Unit := do
+  let base : SeLe4n.PAddr := SeLe4n.PAddr.ofNat 0x1000
+  let size : Nat := 4096
+  let uv : UntypedObjectValid := UntypedObjectValid.empty base size
+  -- The underlying UntypedObject has the expected structure
+  expect "UntypedObjectValid.empty regionBase matches" (uv.toUntyped.regionBase == base)
+  expect "UntypedObjectValid.empty regionSize matches" (uv.toUntyped.regionSize == size)
+  expect "UntypedObjectValid.empty watermark is zero" (uv.toUntyped.watermark == 0)
+  expect "UntypedObjectValid.empty no children" (uv.toUntyped.children.isEmpty)
+
+/-- AN2-F.3: The `CoeHead UntypedObjectValid UntypedObject` instance
+    enables implicit coercion — the same `empty` value can be used
+    wherever `UntypedObject` is expected, preserving the structural
+    contents. -/
+def an2f3_02_coercion_roundtrip : IO Unit := do
+  let base : SeLe4n.PAddr := SeLe4n.PAddr.ofNat 0x2000
+  let uv : UntypedObjectValid := UntypedObjectValid.empty base 8192
+  let ut : UntypedObject := uv  -- CoeHead activation
+  expect "Coercion preserves regionBase" (ut.regionBase == base)
+  expect "Coercion preserves regionSize" (ut.regionSize == 8192)
+
 end SeLe4n.Testing.ModelIntegritySuite
 
 open SeLe4n.Testing.ModelIntegritySuite in
@@ -1116,5 +1143,8 @@ def main : IO Unit := do
   ak8a_05_allocate_children_extends
   ak8a_06_allocate_preserves_region
   ak8a_07_empty_config_disjoint
+  -- AN2-F.3: UntypedObjectValid subtype
+  an2f3_01_empty_wellFormed
+  an2f3_02_coercion_roundtrip
   IO.println ""
   IO.println "=== All model integrity tests passed ==="

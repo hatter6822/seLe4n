@@ -101,7 +101,7 @@ private def fs008_freezeTcb : IO Unit := do
   let tid : ThreadId := ⟨1⟩
   let tcb : TCB :=
     { tid := tid, priority := ⟨10⟩, domain := ⟨0⟩
-      cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := ⟨0⟩ }
+      cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (0)) }
   let frozen := freezeObject (.tcb tcb)
   expect "frozen TCB has correct type" (frozen.objectType == .tcb)
 
@@ -133,13 +133,13 @@ private def fs010_freezeVSpaceRoot : IO Unit := do
     { read := true, write := false, execute := false }
   let vs : VSpaceRoot :=
     { asid := ⟨1⟩
-      mappings := (RHTable.empty 16).insert ⟨0x1000⟩ (⟨0x2000⟩, perms) }
+      mappings := (RHTable.empty 16).insert (SeLe4n.VAddr.ofNat (0x1000)) ((SeLe4n.PAddr.ofNat (0x2000)), perms) }
   let frozen := freezeObject (.vspaceRoot vs)
   expect "frozen VSpaceRoot type" (frozen.objectType == .vspaceRoot)
   match frozen with
   | .vspaceRoot fvs =>
     expect "ASID preserved" (fvs.asid == ⟨1⟩)
-    expect "mappings lookup works" (fvs.mappings.get? ⟨0x1000⟩ == some (⟨0x2000⟩, perms))
+    expect "mappings lookup works" (fvs.mappings.get? (SeLe4n.VAddr.ofNat (0x1000)) == some ((SeLe4n.PAddr.ofNat (0x2000)), perms))
   | _ => throw <| IO.userError "expected FrozenVSpaceRoot"
 
 -- ============================================================================

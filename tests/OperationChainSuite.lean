@@ -90,9 +90,9 @@ private def chain2SendSendReceiveFifo : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject tid1.toObjId (.tcb { tid := tid1, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
-      |>.withObject tid2.toObjId (.tcb { tid := tid2, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
-      |>.withObject tid3.toObjId (.tcb { tid := tid3, priority := ⟨38⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨12288⟩, ipcState := .ready })
+      |>.withObject tid1.toObjId (.tcb { tid := tid1, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)), ipcState := .ready })
+      |>.withObject tid2.toObjId (.tcb { tid := tid2, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (8192)), ipcState := .ready })
+      |>.withObject tid3.toObjId (.tcb { tid := tid3, priority := ⟨38⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (12288)), ipcState := .ready })
       |>.withRunnable [tid1, tid2, tid3]
       |>.buildChecked)
   let msg1 : IpcMessage := .empty
@@ -105,8 +105,8 @@ private def chain2SendSendReceiveFifo : IO Unit := do
 
 private def chain3MapLookupUnmapLookup : IO Unit := do
   let asid : SeLe4n.ASID := ⟨2⟩
-  let vaddr : SeLe4n.VAddr := ⟨4096⟩
-  let paddr : SeLe4n.PAddr := ⟨12288⟩
+  let vaddr : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat (4096))
+  let paddr : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (12288))
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject ⟨220⟩ (.vspaceRoot { asid := asid, mappings := {} })
@@ -199,7 +199,7 @@ private def chain6NotificationBadgeAccumulation : IO Unit := do
           domain := ⟨0⟩
           cspaceRoot := ⟨300⟩
           vspaceRoot := ⟨310⟩
-          ipcBuffer := ⟨4096⟩
+          ipcBuffer := (SeLe4n.VAddr.ofNat (4096))
           ipcState := .ready
         })
       |>.withRunnable [waiter]
@@ -217,9 +217,9 @@ private def chain6NotificationBadgeAccumulation : IO Unit := do
 private def chain7VSpaceMultiAsidSharedPage : IO Unit := do
   let asid1 : SeLe4n.ASID := ⟨31⟩
   let asid2 : SeLe4n.ASID := ⟨32⟩
-  let vaddr1 : SeLe4n.VAddr := ⟨0x2000⟩
-  let vaddr2 : SeLe4n.VAddr := ⟨0x3000⟩
-  let paddr : SeLe4n.PAddr := ⟨0x1000⟩
+  let vaddr1 : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat (0x2000))
+  let vaddr2 : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat (0x3000))
+  let paddr : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (0x1000))
   let roPerms : PagePermissions := { read := true, write := false, execute := false }
   let rwPerms : PagePermissions := { read := true, write := true, execute := false }
   let st0 :=
@@ -272,10 +272,10 @@ private def chain8IpcInterleavedSendOrdering : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject tidA.toObjId (.tcb { tid := tidA, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
-      |>.withObject tidB.toObjId (.tcb { tid := tidB, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
-      |>.withObject tidC.toObjId (.tcb { tid := tidC, priority := ⟨38⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨12288⟩, ipcState := .ready })
-      |>.withObject tidD.toObjId (.tcb { tid := tidD, priority := ⟨37⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨16384⟩, ipcState := .ready })
+      |>.withObject tidA.toObjId (.tcb { tid := tidA, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)), ipcState := .ready })
+      |>.withObject tidB.toObjId (.tcb { tid := tidB, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (8192)), ipcState := .ready })
+      |>.withObject tidC.toObjId (.tcb { tid := tidC, priority := ⟨38⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (12288)), ipcState := .ready })
+      |>.withObject tidD.toObjId (.tcb { tid := tidD, priority := ⟨37⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (16384)), ipcState := .ready })
       |>.withRunnable [tidA, tidB, tidC, tidD]
       |>.buildChecked)
 
@@ -392,7 +392,7 @@ private def buildParameterizedTopology
         domain := ⟨0⟩
         cspaceRoot := ⟨2000⟩
         vspaceRoot := ⟨3000⟩
-        ipcBuffer := ⟨4096 + i * 4096⟩
+        ipcBuffer := (SeLe4n.VAddr.ofNat (4096 + i * 4096))
         ipcState := .ready
       })
   let cnodeSlots : List (SeLe4n.Slot × Capability) :=
@@ -433,10 +433,10 @@ private def schedulerStressChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨260⟩ (.cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 })
       |>.withObject ⟨3000⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
-      |>.withObject ⟨2600⟩ (.tcb { tid := ⟨2600⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
-      |>.withObject ⟨2601⟩ (.tcb { tid := ⟨2601⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
-      |>.withObject ⟨2602⟩ (.tcb { tid := ⟨2602⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := ⟨12288⟩, ipcState := .ready })
-      |>.withObject ⟨2603⟩ (.tcb { tid := ⟨2603⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := ⟨16384⟩, ipcState := .ready })
+      |>.withObject ⟨2600⟩ (.tcb { tid := ⟨2600⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)), ipcState := .ready })
+      |>.withObject ⟨2601⟩ (.tcb { tid := ⟨2601⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (8192)), ipcState := .ready })
+      |>.withObject ⟨2602⟩ (.tcb { tid := ⟨2602⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (12288)), ipcState := .ready })
+      |>.withObject ⟨2603⟩ (.tcb { tid := ⟨2603⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (16384)), ipcState := .ready })
       |>.withRunnable [⟨2600⟩, ⟨2601⟩, ⟨2602⟩, ⟨2603⟩]
       |>.buildChecked)
   let (_, stFirst) ← expectOkSt "scheduler same-priority baseline" (SeLe4n.Kernel.schedule samePrioState)
@@ -462,7 +462,7 @@ private def schedulerStressChecks : IO Unit := do
         domain := dom
         cspaceRoot := ⟨4000⟩
         vspaceRoot := vroot
-        ipcBuffer := ⟨4096 + i * 4096⟩
+        ipcBuffer := (SeLe4n.VAddr.ofNat (4096 + i * 4096))
         ipcState := .ready
       })
   let runnableDomainThreads : List SeLe4n.ThreadId :=
@@ -529,7 +529,7 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
         domain := ⟨0⟩
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
-        ipcBuffer := ⟨4096⟩
+        ipcBuffer := (SeLe4n.VAddr.ofNat (4096))
         ipcState := .ready
         registerContext := {  -- x0=0 (capPtr for slot 0), x1=0 (msgInfo), x7=0 (send)
           pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
@@ -541,7 +541,7 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
         domain := ⟨0⟩
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
-        ipcBuffer := ⟨8192⟩
+        ipcBuffer := (SeLe4n.VAddr.ofNat (8192))
         ipcState := .ready
         registerContext := {  -- x0=1 (capPtr for slot 1), x1=0 (msgInfo), x7=1 (receive)
           pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
@@ -617,7 +617,7 @@ private def chain11RegisterDecodeIpcTransfer : IO Unit := do
         domain := ⟨0⟩
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
-        ipcBuffer := ⟨4096⟩
+        ipcBuffer := (SeLe4n.VAddr.ofNat (4096))
         ipcState := .ready
         registerContext := {  -- x0=0 (capPtr), x1=0 (msgInfo), x7=0 (send)
           pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
@@ -702,8 +702,8 @@ private def chain12IpcCapTransfer : IO Unit := do
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
         })
-      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3240⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
-      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3241⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3240⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)), ipcState := .ready })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3241⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (8192)), ipcState := .ready })
       |>.withRunnable [sender, receiver]
       |>.buildChecked)
 
@@ -754,8 +754,8 @@ private def chain13IpcCapTransferNoGrant : IO Unit := do
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
         })
-      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3340⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
-      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3341⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3340⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)), ipcState := .ready })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3341⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (8192)), ipcState := .ready })
       |>.withRunnable [sender, receiver]
       |>.buildChecked)
 
@@ -813,8 +813,8 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
         })
-      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3440⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
-      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3441⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3440⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)), ipcState := .ready })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3441⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (8192)), ipcState := .ready })
       |>.withRunnable [sender, receiver]
       |>.buildChecked)
 
@@ -1403,7 +1403,7 @@ private def chain22NotificationBadgeDelivery : IO Unit := do
           domain := ⟨0⟩
           cspaceRoot := ⟨350⟩
           vspaceRoot := ⟨360⟩
-          ipcBuffer := ⟨4096⟩
+          ipcBuffer := (SeLe4n.VAddr.ofNat (4096))
           ipcState := .ready
         })
       |>.withRunnable [waiter]
@@ -1564,7 +1564,7 @@ private def chain24HandleYieldEmptyQueue : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject tid.toObjId (.tcb {
         tid := tid, priority := prio, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
         ipcState := .ready })
       |>.withObject ⟨10⟩ (.cnode CNode.empty)
       |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
@@ -1704,7 +1704,7 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
     |>.withObject tid.toObjId (.tcb {
         tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
         cspaceRoot := cnodeId, vspaceRoot := vsId,
-        ipcBuffer := ⟨4096⟩, ipcState := .ready,
+        ipcBuffer := (SeLe4n.VAddr.ofNat (4096)), ipcState := .ready,
         registerContext := { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩, gpr := regFile }
     })
     |>.withObject targetId (match extraObjects with | (_, obj) :: _ => obj | [] => .endpoint {})
@@ -1809,8 +1809,8 @@ private def chain28SyscallVSpaceOps : IO Unit := do
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stMap with
   | .ok (_, stAfter) =>
     -- Verify the mapping was created
-    match SeLe4n.Kernel.Architecture.vspaceLookup ⟨1⟩ ⟨0x2000⟩ stAfter with
-    | .ok (paddr, _) => expect "chain28: vspaceMap dispatch mapped" (paddr == ⟨0x3000⟩)
+    match SeLe4n.Kernel.Architecture.vspaceLookup ⟨1⟩ (SeLe4n.VAddr.ofNat (0x2000)) stAfter with
+    | .ok (paddr, _) => expect "chain28: vspaceMap dispatch mapped" (paddr == (SeLe4n.PAddr.ofNat (0x3000)))
     | .error _ => throw <| IO.userError "chain28: lookup after vspaceMap failed"
   | .error err =>
     -- vspaceMap may fail if state setup incomplete — dispatch path still exercised
@@ -1820,7 +1820,7 @@ private def chain28SyscallVSpaceOps : IO Unit := do
   let vsWithMapping : SeLe4n.Model.VSpaceRoot := {
     asid := ⟨1⟩
     mappings := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-      (⟨0x4000⟩, (⟨0x5000⟩, SeLe4n.Model.PagePermissions.readOnly))
+      ((SeLe4n.VAddr.ofNat (0x4000)), ((SeLe4n.PAddr.ofNat (0x5000)), SeLe4n.Model.PagePermissions.readOnly))
     ]
   }
   let stUnmap := buildSyscallState 10 0 vsId
@@ -1830,7 +1830,7 @@ private def chain28SyscallVSpaceOps : IO Unit := do
     [(vsId, .vspaceRoot)]
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stUnmap with
   | .ok (_, stAfter) =>
-    match SeLe4n.Kernel.Architecture.vspaceLookup ⟨1⟩ ⟨0x4000⟩ stAfter with
+    match SeLe4n.Kernel.Architecture.vspaceLookup ⟨1⟩ (SeLe4n.VAddr.ofNat (0x4000)) stAfter with
     | .error _ => IO.println "operation-chain check passed [chain28: vspaceUnmap dispatch unmapped]"
     | .ok _ => throw <| IO.userError "chain28: mapping still exists after unmap"
   | .error err =>
@@ -1922,13 +1922,13 @@ private def chain31SyscallReply : IO Unit := do
       |>.withObject tid.toObjId (.tcb {
           tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
           cspaceRoot := cnodeId, vspaceRoot := vsId,
-          ipcBuffer := ⟨4096⟩, ipcState := .ready,
+          ipcBuffer := (SeLe4n.VAddr.ofNat (4096)), ipcState := .ready,
           registerContext := { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩, gpr := regFile }
       })
       |>.withObject senderId (.tcb {
           tid := ⟨503⟩, priority := ⟨40⟩, domain := ⟨0⟩,
           cspaceRoot := cnodeId, vspaceRoot := vsId,
-          ipcBuffer := ⟨8192⟩, ipcState := .blockedOnCall epId,
+          ipcBuffer := (SeLe4n.VAddr.ofNat (8192)), ipcState := .blockedOnCall epId,
           registerContext := { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩, gpr := fun _ => ⟨0⟩ }
       })
       |>.withObject epId (.endpoint {})

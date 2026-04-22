@@ -441,6 +441,33 @@ theorem toObjId_injective (a b : SchedContextId) (h : a.toObjId = b.toObjId) : a
 
 end SchedContextId
 
+/-! ### Machine-word bounds (hoisted before `CPtr`/`Slot` so both can
+    delegate their hardware-width predicate to `isWord64Dec` — AN2-F.1 /
+    FND-M01). These constants are used throughout the kernel to assert
+    that identifiers, badges, and addresses fit in one hardware word
+    on the target platform. -/
+
+/-- WS-F5/D1a: Machine word width in bits. ARM64 target = 64.
+    Badge values and notification bitmasks are bounded to this width. -/
+def machineWordBits : Nat := 64
+
+/-- WS-F5/D1a: Maximum value representable in one machine word. -/
+def machineWordMax : Nat := 2 ^ machineWordBits
+
+/-- R7-C/L-03: Predicate asserting a natural number fits in one machine word.
+    Hardware registers, virtual addresses, and physical addresses are 64-bit
+    values. This predicate is used as a refinement in invariants — the underlying
+    types keep `Nat` for proof ergonomics, but hardware-bound operations should
+    ensure `isWord64` holds. -/
+@[inline] def isWord64 (n : Nat) : Prop := n < machineWordMax
+
+/-- R7-C/L-03: Decidable `isWord64` check for runtime use. -/
+@[inline] def isWord64Dec (n : Nat) : Bool := n < machineWordMax
+
+/-- R7-C/L-03: `isWord64Dec` reflects `isWord64`. -/
+theorem isWord64Dec_iff (n : Nat) : isWord64Dec n = true ↔ isWord64 n := by
+  simp [isWord64Dec, isWord64]
+
 /-- Capability-space pointer value.
 
     AN2-B.1 / H-13 (Theme 4.3): The `mk` constructor is `private`. External
@@ -485,12 +512,11 @@ theorem sentinel_isReserved : CPtr.sentinel.isReserved = true := rfl
 
 /-- V4-L/L-FND-4: A CPtr is hardware-representable if its value fits in 64 bits.
     Hardware decode paths should validate this before passing to kernel operations.
-    Uses inline bound check (2^64) to avoid forward reference to `isWord64Dec`.
 
-    AN2-F.1 / FND-M01: Inline literal `2^64` matches `machineWordMax`
-    (defined later in the file). See `isWord64Bounded_matches_isWord64Dec`
-    (below, after both constants are in scope) for the formal equivalence. -/
-@[inline] def isWord64Bounded (ptr : CPtr) : Bool := ptr.val < 2 ^ 64
+    AN2-F.1 / FND-M01: Delegates to `isWord64Dec` (hoisted above `CPtr` in this
+    file). The delegation ensures future drift between the two predicates is
+    impossible — any adjustment to `machineWordMax` propagates automatically. -/
+@[inline] def isWord64Bounded (ptr : CPtr) : Bool := isWord64Dec ptr.val
 
 end CPtr
 
@@ -525,47 +551,25 @@ instance : ToString Slot where
 
 /-- V4-L/L-FND-4: A Slot is hardware-representable if its value fits in 64 bits.
     Hardware decode paths should validate this before passing to kernel operations.
-    Uses inline bound check (2^64) to avoid forward reference to `isWord64Dec`.
 
-    AN2-F.1 / FND-M01: Inline literal `2^64` matches `machineWordMax`. -/
-@[inline] def isWord64Bounded (slot : Slot) : Bool := slot.val < 2 ^ 64
+    AN2-F.1 / FND-M01: Delegates to `isWord64Dec` — see `CPtr.isWord64Bounded`
+    for rationale. -/
+@[inline] def isWord64Bounded (slot : Slot) : Bool := isWord64Dec slot.val
 
 end Slot
 
-/-- WS-F5/D1a: Machine word width in bits. ARM64 target = 64.
-    Badge values and notification bitmasks are bounded to this width. -/
-def machineWordBits : Nat := 64
-
-/-- WS-F5/D1a: Maximum value representable in one machine word. -/
-def machineWordMax : Nat := 2 ^ machineWordBits
-
-/-- R7-C/L-03: Predicate asserting a natural number fits in one machine word.
-    Hardware registers, virtual addresses, and physical addresses are 64-bit
-    values. This predicate is used as a refinement in invariants — the underlying
-    types keep `Nat` for proof ergonomics, but hardware-bound operations should
-    ensure `isWord64` holds. -/
-@[inline] def isWord64 (n : Nat) : Prop := n < machineWordMax
-
-/-- R7-C/L-03: Decidable `isWord64` check for runtime use. -/
-@[inline] def isWord64Dec (n : Nat) : Bool := n < machineWordMax
-
-/-- R7-C/L-03: `isWord64Dec` reflects `isWord64`. -/
-theorem isWord64Dec_iff (n : Nat) : isWord64Dec n = true ↔ isWord64 n := by
-  simp [isWord64Dec, isWord64]
-
-/-- AN2-F.1 / FND-M01: `CPtr.isWord64Bounded` matches `isWord64Dec` on the
-    projected value. The two predicates were defined separately to avoid a
-    forward reference at `CPtr` definition site; this equivalence theorem
-    witnesses that they denote the same check. -/
+/-- AN2-F.1 / FND-M01: `CPtr.isWord64Bounded` reduces definitionally to
+    `isWord64Dec ptr.val` — `isWord64Bounded` is implemented as the
+    delegation itself (see `CPtr.isWord64Bounded` above). This theorem
+    records the equivalence for call sites that still want the explicit
+    rewrite form. -/
 theorem CPtr.isWord64Bounded_eq_isWord64Dec (ptr : CPtr) :
-    CPtr.isWord64Bounded ptr = isWord64Dec ptr.val := by
-  simp [CPtr.isWord64Bounded, isWord64Dec, machineWordMax, machineWordBits]
+    CPtr.isWord64Bounded ptr = isWord64Dec ptr.val := rfl
 
-/-- AN2-F.1 / FND-M01: `Slot.isWord64Bounded` matches `isWord64Dec` on the
-    projected value. -/
+/-- AN2-F.1 / FND-M01: `Slot.isWord64Bounded` reduces definitionally to
+    `isWord64Dec slot.val`. -/
 theorem Slot.isWord64Bounded_eq_isWord64Dec (slot : Slot) :
-    Slot.isWord64Bounded slot = isWord64Dec slot.val := by
-  simp [Slot.isWord64Bounded, isWord64Dec, machineWordMax, machineWordBits]
+    Slot.isWord64Bounded slot = isWord64Dec slot.val := rfl
 
 -- AN2-A / H-13: Badge constructor is now `private` to force every external
 -- consumer through a smart constructor (`ofNatMasked`, `ofNat`, `zero`, or
@@ -738,10 +742,19 @@ instance : ToString ASID where
 
 end ASID
 
-/-- Virtual-memory address in the abstract model. -/
+/-- Virtual-memory address in the abstract model.
+
+    AN2-B.3 / H-13 (Theme 4.3): The `mk` constructor is `private`. External
+    callers must use `VAddr.ofNat`. Combined with `isCanonical` (ARM64
+    48-bit canonical-form check), this gates the abstract-address entry
+    points to the kernel. -/
 structure VAddr where
+  private mk ::
   val : Nat
-deriving DecidableEq, Repr, Inhabited
+deriving DecidableEq, Repr
+
+/-- AN2-B.3: Manual `Inhabited`. -/
+instance : Inhabited VAddr := ⟨⟨0⟩⟩
 
 /-- WS-G1: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
     BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
@@ -750,7 +763,8 @@ deriving DecidableEq, Repr, Inhabited
 
 namespace VAddr
 
-/-- Constructor helper kept explicit for migration ergonomics. -/
+/-- Smart constructor — accepts any `Nat`. Pre-existing migration helper;
+    remains the default construction API for external callers. -/
 @[inline] def ofNat (n : Nat) : VAddr := ⟨n⟩
 
 /-- Projection helper kept explicit for migration ergonomics. -/
@@ -784,10 +798,21 @@ end VAddr
     safely read/write message registers without crossing page boundaries. -/
 def ipcBufferAlignment : Nat := 512
 
-/-- Physical-memory address in the abstract model. -/
+/-- Physical-memory address in the abstract model.
+
+    AN2-B.4 / H-13 (Theme 4.3): The `mk` constructor is `private`. External
+    callers must use `PAddr.ofNat`. Validation against the platform's
+    `physicalAddressWidth` (e.g. AK3-E's `decodeVSpaceMapArgsChecked` and
+    AJ4-C's `validateIpcBufferAddress`) remains the caller's obligation —
+    production decode paths must gate against `2^physicalAddressWidth`
+    before accepting a raw ABI word. -/
 structure PAddr where
+  private mk ::
   val : Nat
-deriving DecidableEq, Repr, Inhabited
+deriving DecidableEq, Repr
+
+/-- AN2-B.4: Manual `Inhabited`. -/
+instance : Inhabited PAddr := ⟨⟨0⟩⟩
 
 /-- WS-G1: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
     BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
@@ -796,7 +821,8 @@ deriving DecidableEq, Repr, Inhabited
 
 namespace PAddr
 
-/-- Constructor helper kept explicit for migration ergonomics. -/
+/-- Smart constructor — accepts any `Nat`. Pre-existing migration helper;
+    remains the default construction API for external callers. -/
 @[inline] def ofNat (n : Nat) : PAddr := ⟨n⟩
 
 /-- Projection helper kept explicit for migration ergonomics. -/

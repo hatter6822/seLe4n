@@ -61,7 +61,7 @@ private def emptyFrozenState : FrozenSystemState := {
 /-- Helper: construct a test TCB. -/
 private def mkTcb (tid : Nat) (prio : Nat := 0) (dom : Nat := 0) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨dom⟩,
-    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := ⟨0⟩ }
+    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (0)) }
 
 /-- Helper: construct a FrozenSystemState with given objects. -/
 private def mkFrozenState (objs : List (ObjId × FrozenKernelObject))
@@ -178,20 +178,20 @@ private def fo008_cspaceLookupMissing : IO Unit := do
 private def fo009_vspaceLookup : IO Unit := do
   -- Create a frozen VSpaceRoot with one mapping
   let mappingsRt := (RHTable.empty 16 : RHTable VAddr (PAddr × PagePermissions)).insert
-    ⟨0x1000⟩ (⟨0x2000⟩, default)
+    (SeLe4n.VAddr.ofNat (0x1000)) ((SeLe4n.PAddr.ofNat (0x2000)), default)
   let vsr : FrozenVSpaceRoot := { asid := ⟨1⟩, mappings := freezeMap mappingsRt }
   let asidRt := (RHTable.empty 16 : RHTable ASID ObjId).insert ⟨1⟩ ⟨20⟩
   let fst := { mkFrozenState [(⟨20⟩, .vspaceRoot vsr)] with
     asidTable := freezeMap asidRt }
-  match frozenVspaceLookup ⟨1⟩ ⟨0x1000⟩ fst with
+  match frozenVspaceLookup ⟨1⟩ (SeLe4n.VAddr.ofNat (0x1000)) fst with
   | .ok ((paddr, _perms), _) =>
-      expect "resolved paddr" (paddr == ⟨0x2000⟩)
+      expect "resolved paddr" (paddr == (SeLe4n.PAddr.ofNat (0x2000)))
   | .error _ => throw <| IO.userError "vspace lookup should succeed"
 
 /-- FO-010: frozenVspaceLookup — unbound ASID returns error -/
 private def fo010_vspaceLookupMissing : IO Unit := do
   let fst := emptyFrozenState
-  match frozenVspaceLookup ⟨99⟩ ⟨0x1000⟩ fst with
+  match frozenVspaceLookup ⟨99⟩ (SeLe4n.VAddr.ofNat (0x1000)) fst with
   | .ok _ => throw <| IO.userError "should fail"
   | .error e => expect "unbound ASID → asidNotBound" (e == .asidNotBound)
 

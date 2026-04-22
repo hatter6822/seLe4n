@@ -182,29 +182,41 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
     `InformationFlowSuite`, `NegativeStateSuite`, `OperationChainSuite`,
     `SuspendResumeSuite`). `BadgeOverflowSuite` gains `bov023` /
     `bov024` covering the smart-constructor surface.
-  - **AN2-B.1/B.2 (Theme 4.3 follow-on)**: same `private mk ::` pattern
-    applied to `CPtr` and `Slot`. Cascade reached ~130 call sites
-    across `SyscallArgDecode`, `MainTraceHarness`, and every affected
-    test suite — migration automated with a Lean-error-driven Python
-    patcher that iteratively runs `lake build` on each suite, extracts
-    the `Constructor for SeLe4n.{Slot,CPtr} is marked as private`
+  - **AN2-B.1/B.2/B.3/B.4 (Theme 4.3 follow-on)**: same `private mk ::`
+    pattern applied to `CPtr`, `Slot`, `VAddr`, and `PAddr`. Cascade
+    reached ~250+ call sites across `SyscallArgDecode`, `Platform/DeviceTree`,
+    `MainTraceHarness`, and every affected test suite — migration
+    automated with a Lean-error-driven Python patcher that iteratively
+    runs `lake build` on each suite, extracts the
+    `Constructor for SeLe4n.{Slot,CPtr,VAddr,PAddr} is marked as private`
     errors, and rewrites `⟨N⟩` at the offending column to
-    `SeLe4n.{Slot,CPtr}.ofNat N`. A handful of multi-line `(⟨N⟩, { ...
-    })` patterns required explicit `(... : Capability)` ascriptions
-    because once the key is qualified, Lean can no longer infer the
-    record type bottom-up from the `RHTable` context.
+    `SeLe4n.{type}.ofNat N`. A handful of multi-line `(⟨N⟩, { ... })`
+    patterns required explicit `(... : Capability)` ascriptions because
+    once the key is qualified, Lean can no longer infer the record type
+    bottom-up from the `RHTable` context. `PAddr.ofNat` does NOT yet
+    carry a `physicalAddressWidth` parameter (tracked for
+    AN2-continuation) — validation remains at the production decode
+    paths (AK3-E's `decodeVSpaceMapArgsChecked`, AJ4-C's
+    `validateIpcBufferAddress`) which already gate against the width.
   - **AN2-E (H-12)**: new `Badge.ofUInt64Pair (a b : UInt64) : Badge`
     lifts the bitwise-OR composition into the `UInt64` domain, so the
     intermediate value never escapes `2^64`. Closes the
     "unbounded-intermediate" concern in the pre-existing `bor`
     composition. Proven `.valid` by construction. Two new regression
     tests (`bov025`, `bov026`) in `BadgeOverflowSuite`.
-  - **AN2-F.1 (FND-M01)**: two new theorems
-    (`CPtr.isWord64Bounded_eq_isWord64Dec`,
-    `Slot.isWord64Bounded_eq_isWord64Dec`) witness that the inline `<
-    2^64` literals match `isWord64Dec ·.val`. Forecloses drift without
-    requiring a reorder of `machineWordMax` in front of the identifier
-    types.
+  - **AN2-F.1 (FND-M01)**: `machineWordBits`, `machineWordMax`,
+    `isWord64`, `isWord64Dec` hoisted before `CPtr`/`Slot` so both can
+    structurally delegate their hardware-width predicate. The
+    `isWord64Bounded` definitions in `CPtr` and `Slot` are rewritten as
+    `isWord64Dec ·.val` — the delegation is now by `rfl`, foreclosing
+    any future drift. Backwards-compat `_eq_isWord64Dec` theorems are
+    retained as `rfl` aliases.
+  - **AN2-F.3 (FND-M03, partial)**: new `UntypedObjectValid` subtype
+    in `Model/Object/Types.lean` with `toUntyped` / `wf` / `empty`
+    helpers and a `CoeHead` instance for implicit coercion to
+    `UntypedObject`. The subtype is landed; tightening `allocate` /
+    `retypeFromUntyped` entry signatures to accept it is tracked for
+    AN2-continuation (per-call-site cascade).
   - **AN2-F.4 (FND-M04)**: new `abbrev minPracticalRHCapacity : Nat :=
     16` in `Kernel/RobinHood/Bridge.lean` replaces the magic `16`
     literal inside the `Inhabited (RHTable α β)` instance.
