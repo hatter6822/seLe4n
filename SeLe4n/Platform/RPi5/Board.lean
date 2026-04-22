@@ -36,22 +36,22 @@ namespace SeLe4n.Platform.RPi5
 -- ============================================================================
 
 /-- BCM2712 low-peripheral base address (legacy 32-bit peripheral window). -/
-def peripheralBaseLow : SeLe4n.PAddr := ⟨0xFE000000⟩
+def peripheralBaseLow : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 0xFE000000)
 
 /-- BCM2712 high-peripheral base address (new peripherals in BCM2712). -/
-def peripheralBaseHigh : SeLe4n.PAddr := ⟨0x1000000000⟩
+def peripheralBaseHigh : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 0x1000000000)
 
 /-- GIC-400 distributor base address. -/
-def gicDistributorBase : SeLe4n.PAddr := ⟨0xFF841000⟩
+def gicDistributorBase : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 0xFF841000)
 
 /-- GIC-400 CPU interface base address. -/
-def gicCpuInterfaceBase : SeLe4n.PAddr := ⟨0xFF842000⟩
+def gicCpuInterfaceBase : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 0xFF842000)
 
 /-- ARM Generic Timer frequency (54 MHz crystal on RPi5). -/
 def timerFrequencyHz : Nat := 54000000
 
 /-- UART0 (PL011) base address for debug console. -/
-def uart0Base : SeLe4n.PAddr := ⟨0xFE201000⟩
+def uart0Base : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 0xFE201000)
 
 -- ============================================================================
 -- RPi5 memory map
@@ -84,22 +84,22 @@ def rpi5MemoryMapForConfig (config : BCM2712Config) : List SeLe4n.MemoryRegion :
   let peripheralBoundary := 0xFC000000
   let lowRamSize := min config.ramSize peripheralBoundary
   let baseRegions :=
-    [ { base := ⟨0x00000000⟩
+    [ { base := (SeLe4n.PAddr.ofNat 0x00000000)
         size := lowRamSize
         kind := .ram }
-    , { base := ⟨0xFC000000⟩
+    , { base := (SeLe4n.PAddr.ofNat 0xFC000000)
         size := 0x02000000  -- 32 MiB GPU/VideoCore firmware region
         kind := .reserved }
-    , { base := ⟨0xFE000000⟩
+    , { base := (SeLe4n.PAddr.ofNat 0xFE000000)
         size := 0x01850000  -- ~24.3 MiB peripheral window (legacy + GIC-400)
         kind := .device }
-    , { base := ⟨0xFF850000⟩
+    , { base := (SeLe4n.PAddr.ofNat 0xFF850000)
         size := 0x007B0000  -- reserved region above GIC to 4 GB boundary
         kind := .reserved }
     ]
   if config.ramSize > 0x100000000 then
     -- 8 GB model: additional RAM above 4 GB boundary
-    baseRegions ++ [{ base := ⟨0x100000000⟩
+    baseRegions ++ [{ base := (SeLe4n.PAddr.ofNat 0x100000000)
                       size := config.ramSize - 0x100000000
                       kind := .ram }]
   else

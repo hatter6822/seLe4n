@@ -91,8 +91,20 @@ namespace SeLe4n.Kernel.RobinHood
 -- N3-A3: Inhabited instance
 -- ============================================================================
 
+/-- AN2-F.4 / FND-M04: Minimum practical capacity for an `RHTable` used as
+    a default. The value is exposed as a constant rather than a magic
+    literal to ensure the `Inhabited` instance and capacity-bound bridge
+    lemmas reference the same symbol, so future adjustments propagate
+    uniformly. Value `16` mirrors the seL4 CNode minimum 2^4 radix and
+    keeps the initial backing-array allocation modest.
+
+    Declared as `abbrev` so `omega`/`decide` can unfold the literal when
+    discharging capacity preconditions (e.g. `RHTable.empty`'s `cap ≥ 4`
+    obligation). -/
+abbrev minPracticalRHCapacity : Nat := 16
+
 instance [BEq α] [Hashable α] : Inhabited (RHTable α β) where
-  default := RHTable.empty 16
+  default := RHTable.empty minPracticalRHCapacity (by decide)
 
 -- ============================================================================
 -- N3-A4: BEq instance (entry-wise comparison via fold)
@@ -942,9 +954,12 @@ theorem RHTable.filter_filter_getElem? [BEq α] [Hashable α] [LawfulBEq α]
 -- Q2: EmptyCollection instance for migration compatibility
 -- ============================================================================
 
-/-- EmptyCollection instance so `{}` syntax works for RHTable fields. -/
+/-- EmptyCollection instance so `{}` syntax works for RHTable fields.
+    AN2-F.4 / FND-M04: Uses `minPracticalRHCapacity` (16) — references the
+    same constant as the `Inhabited` instance so capacity adjustments
+    propagate uniformly. -/
 instance [BEq α] [Hashable α] : EmptyCollection (RHTable α β) where
-  emptyCollection := RHTable.empty 16
+  emptyCollection := RHTable.empty minPracticalRHCapacity (by decide)
 
 -- ============================================================================
 -- V3-B Phase 1: invExtK — Kernel-Level Extended Invariant Bundle

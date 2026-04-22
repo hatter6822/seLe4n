@@ -34,14 +34,14 @@ private def wrongTypeId : SeLe4n.ObjId := ⟨99⟩
 private def guardedCnodeId : SeLe4n.ObjId := ⟨55⟩
 private def notificationId : SeLe4n.ObjId := ⟨42⟩
 private def asidPrimary : SeLe4n.ASID := ⟨2⟩
-private def vaddrPrimary : SeLe4n.VAddr := ⟨4096⟩
-private def paddrPrimary : SeLe4n.PAddr := ⟨12288⟩
+private def vaddrPrimary : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat 4096)
+private def paddrPrimary : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 12288)
 
-private def slot0 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
-private def slot0Path : SeLe4n.Kernel.CSpacePathAddr := { cnode := cnodeId, cptr := ⟨0⟩, depth := 0 }
-private def guardedPathBadDepth : SeLe4n.Kernel.CSpacePathAddr := { cnode := guardedCnodeId, cptr := ⟨0⟩, depth := 1 }
-private def badSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := wrongTypeId, slot := ⟨0⟩ }
-private def guardedPathBadGuard : SeLe4n.Kernel.CSpacePathAddr := { cnode := guardedCnodeId, cptr := ⟨0⟩, depth := 3 }
+private def slot0 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 0 }
+private def slot0Path : SeLe4n.Kernel.CSpacePathAddr := { cnode := cnodeId, cptr := SeLe4n.CPtr.ofNat 0, depth := 0 }
+private def guardedPathBadDepth : SeLe4n.Kernel.CSpacePathAddr := { cnode := guardedCnodeId, cptr := SeLe4n.CPtr.ofNat 0, depth := 1 }
+private def badSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := wrongTypeId, slot := SeLe4n.Slot.ofNat 0 }
+private def guardedPathBadGuard : SeLe4n.Kernel.CSpacePathAddr := { cnode := guardedCnodeId, cptr := SeLe4n.CPtr.ofNat 0, depth := 3 }
 
 private def baseState : SystemState :=
   (BootstrapBuilder.empty
@@ -52,7 +52,7 @@ private def baseState : SystemState :=
       guardValue := 0
       radixWidth := 0
       slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-        (⟨0⟩, {
+        (SeLe4n.Slot.ofNat 0, {
           target := .object endpointId
           rights := AccessRightSet.ofList [.read, .write]
           badge := none
@@ -66,7 +66,7 @@ private def baseState : SystemState :=
       guardValue := 1
       radixWidth := 2
       slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-        (⟨1⟩, {
+        (SeLe4n.Slot.ofNat 1, {
           target := .object endpointId
           rights := AccessRightSet.ofList [.read]
           badge := none
@@ -79,7 +79,7 @@ private def baseState : SystemState :=
       domain := ⟨0⟩
       cspaceRoot := cnodeId
       vspaceRoot := ⟨20⟩
-      ipcBuffer := ⟨2048⟩
+      ipcBuffer := (SeLe4n.VAddr.ofNat 2048)
       ipcState := .ready
     })
     |>.withObject ⟨7⟩ (.tcb {
@@ -88,7 +88,7 @@ private def baseState : SystemState :=
       domain := ⟨0⟩
       cspaceRoot := cnodeId
       vspaceRoot := ⟨20⟩
-      ipcBuffer := ⟨4096⟩
+      ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
       ipcState := .ready
     })
     |>.withObject ⟨8⟩ (.tcb {
@@ -97,7 +97,7 @@ private def baseState : SystemState :=
       domain := ⟨0⟩
       cspaceRoot := cnodeId
       vspaceRoot := ⟨20⟩
-      ipcBuffer := ⟨8192⟩
+      ipcBuffer := (SeLe4n.VAddr.ofNat 8192)
       ipcState := .ready
     })
     |>.withObject ⟨9⟩ (.tcb {
@@ -106,7 +106,7 @@ private def baseState : SystemState :=
       domain := ⟨0⟩
       cspaceRoot := cnodeId
       vspaceRoot := ⟨20⟩
-      ipcBuffer := ⟨12288⟩
+      ipcBuffer := (SeLe4n.VAddr.ofNat 12288)
       ipcState := .ready
     })
     |>.withObject notificationId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
@@ -185,12 +185,12 @@ private def f2UntypedObjId : SeLe4n.ObjId := ⟨80⟩
 private def f2UntypedChildId : SeLe4n.ObjId := ⟨81⟩
 private def f2UntypedAuthCnode : SeLe4n.ObjId := ⟨82⟩
 private def f2UntypedAuthSlot : SeLe4n.Kernel.CSpaceAddr :=
-  { cnode := f2UntypedAuthCnode, slot := ⟨0⟩ }
+  { cnode := f2UntypedAuthCnode, slot := SeLe4n.Slot.ofNat 0 }
 
 private def f2UntypedState : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject f2UntypedObjId (.untyped {
-      regionBase := ⟨0x10000⟩
+      regionBase := (SeLe4n.PAddr.ofNat 0x10000)
       regionSize := 256
       watermark := 0
       children := []
@@ -202,7 +202,7 @@ private def f2UntypedState : SystemState :=
       guardValue := 0
       radixWidth := 0
       slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-        (⟨0⟩, {
+        (SeLe4n.Slot.ofNat 0, {
           target := .object f2UntypedObjId
           rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
           badge := none
@@ -219,7 +219,7 @@ private def f2DeviceUntypedId : SeLe4n.ObjId := ⟨83⟩
 private def f2DeviceState : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject f2DeviceUntypedId (.untyped {
-      regionBase := ⟨0x20000⟩
+      regionBase := (SeLe4n.PAddr.ofNat 0x20000)
       regionSize := 4096
       watermark := 0
       children := []
@@ -231,7 +231,7 @@ private def f2DeviceState : SystemState :=
       guardValue := 0
       radixWidth := 0
       slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-        (⟨0⟩, {
+        (SeLe4n.Slot.ofNat 0, {
           target := .object f2DeviceUntypedId
           rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
           badge := none
@@ -260,7 +260,7 @@ private def runNegativeChecks : IO Unit := do
     .invalidCapability
 
   -- WS-E4/C-02/C-03 refinement: move updates slot↔node mappings without rewriting edges.
-  let moveDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨2⟩ }
+  let moveDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 2 }
   let moveSrcNode : CdtNodeId := ⟨0⟩
   let moveParentNode : CdtNodeId := ⟨1⟩
   let moveChildNode : CdtNodeId := ⟨2⟩
@@ -272,8 +272,8 @@ private def runNegativeChecks : IO Unit := do
       cdtSlotNode := baseState.cdtSlotNode.insert slot0 moveSrcNode
       cdtNodeSlot := (((baseState.cdtNodeSlot
         |>.insert moveSrcNode slot0)
-        |>.insert moveParentNode { cnode := cnodeId, slot := ⟨7⟩ })
-        |>.insert moveChildNode { cnode := cnodeId, slot := ⟨8⟩ })
+        |>.insert moveParentNode { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 7 })
+        |>.insert moveChildNode { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 8 })
       cdtNextNode := ⟨3⟩
     }
   let (_, moveState) ← expectOkSt "cspaceMove remaps slot-node pointer"
@@ -317,7 +317,7 @@ private def runNegativeChecks : IO Unit := do
       cdtSlotNode := baseState.cdtSlotNode.insert slot0 childBearingNode
       cdtNodeSlot := ((baseState.cdtNodeSlot
         |>.insert childBearingNode slot0)
-        |>.insert childOfBearing { cnode := cnodeId, slot := ⟨9⟩ })
+        |>.insert childOfBearing { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 9 })
       cdtNextNode := ⟨12⟩
     }
   expectErr "cspaceDeleteSlot rejects delete with CDT children"
@@ -325,9 +325,9 @@ private def runNegativeChecks : IO Unit := do
     .revocationRequired
 
   -- WS-E4/C-04 strict variant: surface first descendant deletion failure with context.
-  let strictRootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨5⟩ }
-  let strictChildSlotOk : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨6⟩ }
-  let strictChildSlotBad : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨777⟩, slot := ⟨0⟩ }
+  let strictRootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 5 }
+  let strictChildSlotOk : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 6 }
+  let strictChildSlotBad : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨777⟩, slot := SeLe4n.Slot.ofNat 0 }
   let strictRootNode : CdtNodeId := ⟨30⟩
   let strictChildNodeOk : CdtNodeId := ⟨31⟩
   let strictChildNodeBad : CdtNodeId := ⟨32⟩
@@ -829,7 +829,7 @@ private def runNegativeChecks : IO Unit := do
         domain := ⟨0⟩
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
-        ipcBuffer := ⟨4096⟩
+        ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
         ipcState := .ready
       })
       |>.withObject ⟨8⟩ (.tcb {
@@ -838,7 +838,7 @@ private def runNegativeChecks : IO Unit := do
         domain := ⟨0⟩
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
-        ipcBuffer := ⟨8192⟩
+        ipcBuffer := (SeLe4n.VAddr.ofNat 8192)
         ipcState := .ready
       })
       |>.withRunnable [⟨8⟩]
@@ -860,7 +860,7 @@ private def runNegativeChecks : IO Unit := do
             domain := ⟨1⟩
             cspaceRoot := cnodeId
             vspaceRoot := ⟨20⟩
-            ipcBuffer := ⟨4096⟩
+            ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
             ipcState := .ready
           })
       scheduler := { schedPriorityState.scheduler with
@@ -892,7 +892,7 @@ private def runNegativeChecks : IO Unit := do
         domain := ⟨1⟩
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
-        ipcBuffer := ⟨12288⟩
+        ipcBuffer := (SeLe4n.VAddr.ofNat 12288)
         ipcState := .ready
       })
       |>.withObject ⟨11⟩ (.tcb {
@@ -902,7 +902,7 @@ private def runNegativeChecks : IO Unit := do
         domain := ⟨1⟩
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
-        ipcBuffer := ⟨16384⟩
+        ipcBuffer := (SeLe4n.VAddr.ofNat 16384)
         ipcState := .ready
       })
       |>.withObject ⟨12⟩ (.tcb {
@@ -912,7 +912,7 @@ private def runNegativeChecks : IO Unit := do
         domain := ⟨0⟩
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
-        ipcBuffer := ⟨20480⟩
+        ipcBuffer := (SeLe4n.VAddr.ofNat 20480)
         ipcState := .ready
       })
       |>.withRunnable [⟨12⟩, ⟨10⟩, ⟨11⟩]
@@ -936,7 +936,7 @@ private def runNegativeChecks : IO Unit := do
             domain := ⟨1⟩
             cspaceRoot := cnodeId
             vspaceRoot := ⟨20⟩
-            ipcBuffer := ⟨12288⟩
+            ipcBuffer := (SeLe4n.VAddr.ofNat 12288)
             ipcState := .ready
           }) })
   if stMixedDomainScheduledFifo.scheduler.current = some (SeLe4n.ThreadId.ofNat 10) then
@@ -1116,7 +1116,7 @@ private def runNegativeChecks : IO Unit := do
 
   -- F2-NEG-05: wrong authority (lookup from bad slot)
   expectErr "F2 retype wrong authority"
-    (SeLe4n.Kernel.retypeFromUntyped { cnode := ⟨999⟩, slot := ⟨0⟩ } f2UntypedObjId f2UntypedChildId
+    (SeLe4n.Kernel.retypeFromUntyped { cnode := ⟨999⟩, slot := SeLe4n.Slot.ofNat 0 } f2UntypedObjId f2UntypedChildId
       (.endpoint {}) 64 f2UntypedState)
     .objectNotFound
 
@@ -1130,7 +1130,7 @@ private def runNegativeChecks : IO Unit := do
   let f2MisalignedState : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject f2UntypedObjId (.untyped {
-        regionBase := ⟨0x10001⟩  -- deliberately misaligned (not 4KB-aligned)
+        regionBase := (SeLe4n.PAddr.ofNat 0x10001)  -- deliberately misaligned (not 4KB-aligned)
         regionSize := 8192
         watermark := 0
         children := []
@@ -1142,7 +1142,7 @@ private def runNegativeChecks : IO Unit := do
         guardValue := 0
         radixWidth := 0
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-          (⟨0⟩, {
+          (SeLe4n.Slot.ofNat 0, {
             target := .object f2UntypedObjId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
             badge := none
@@ -1179,7 +1179,7 @@ private def runH2NegativeChecks : IO Unit := do
   let h2UntypedWithChild : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject f2UntypedObjId (.untyped {
-        regionBase := ⟨0x10000⟩
+        regionBase := (SeLe4n.PAddr.ofNat 0x10000)
         regionSize := 256
         watermark := 64
         children := [{ objId := ⟨60⟩, offset := 0, size := 64 }]
@@ -1191,7 +1191,7 @@ private def runH2NegativeChecks : IO Unit := do
         guardValue := 0
         radixWidth := 0
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-          (⟨0⟩, {
+          (SeLe4n.Slot.ofNat 0, {
             target := .object f2UntypedObjId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
             badge := none
@@ -1258,7 +1258,7 @@ private def runAuditCoverageChecks : IO Unit := do
   -- ── Audit: cspaceMutate coverage ─────────────────────────────────────
   -- NEG-MUTATE-01: mutate on non-existent CNode
   expectErr "cspaceMutate non-existent CNode"
-    (SeLe4n.Kernel.cspaceMutate { cnode := ⟨999⟩, slot := ⟨0⟩ } (AccessRightSet.ofList [.read]) none baseState)
+    (SeLe4n.Kernel.cspaceMutate { cnode := ⟨999⟩, slot := SeLe4n.Slot.ofNat 0 } (AccessRightSet.ofList [.read]) none baseState)
     .objectNotFound
 
   -- NEG-MUTATE-02: mutate with rights not a subset (escalation attempt)
@@ -1284,7 +1284,7 @@ private def runAuditCoverageChecks : IO Unit := do
     (SeLe4n.Kernel.cspaceMutate slot0 (AccessRightSet.ofList [.read]) (some (SeLe4n.Badge.ofNatMasked 77)) baseState)
   match SeLe4n.Kernel.cspaceLookupSlot slot0 stBadgeMutate with
   | .ok (cap, _) =>
-      if cap.badge = some ⟨77⟩ then
+      if cap.badge = some (SeLe4n.Badge.ofNatMasked 77) then
         IO.println "positive check passed [cspaceMutate: badge override applied]"
       else
         throw <| IO.userError s!"cspaceMutate: expected badge 77, got {toString cap.badge}"
@@ -1297,10 +1297,10 @@ private def runAuditCoverageChecks : IO Unit := do
 private def runWSH7Checks : IO Unit := do
   let vr1 : VSpaceRoot :=
     { asid := ⟨77⟩
-      mappings := (({} : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert ⟨4096⟩ (⟨8192⟩, default)).insert ⟨12288⟩ (⟨16384⟩, default) }
+      mappings := (({} : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert (SeLe4n.VAddr.ofNat 4096) ((SeLe4n.PAddr.ofNat 8192), default)).insert (SeLe4n.VAddr.ofNat 12288) ((SeLe4n.PAddr.ofNat 16384), default) }
   let vr2 : VSpaceRoot :=
     { asid := ⟨77⟩
-      mappings := (({} : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert ⟨12288⟩ (⟨16384⟩, default)).insert ⟨4096⟩ (⟨8192⟩, default) }
+      mappings := (({} : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert (SeLe4n.VAddr.ofNat 12288) ((SeLe4n.PAddr.ofNat 16384), default)).insert (SeLe4n.VAddr.ofNat 4096) ((SeLe4n.PAddr.ofNat 8192), default) }
   if vr1 == vr2 then
     IO.println "positive check passed [WS-H7 VSpaceRoot BEq ignores insertion order]"
   else
@@ -1310,16 +1310,16 @@ private def runWSH7Checks : IO Unit := do
   let capB : Capability := { target := .object notificationId, rights := AccessRightSet.ofList [.read, .write], badge := none }
   let cn1 : CNode :=
     { depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2
-      slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(⟨1⟩, capA), (⟨2⟩, capB)] }
+      slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(SeLe4n.Slot.ofNat 1, capA), (SeLe4n.Slot.ofNat 2, capB)] }
   let cn2 : CNode :=
     { depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2
-      slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(⟨2⟩, capB), (⟨1⟩, capA)] }
+      slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(SeLe4n.Slot.ofNat 2, capB), (SeLe4n.Slot.ofNat 1, capA)] }
   if cn1 == cn2 then
     IO.println "positive check passed [WS-H7 CNode BEq ignores insertion order]"
   else
     throw <| IO.userError "CNode BEq ignores insertion order: expected true"
 
-  let lifecycleCnode : KernelObject := .cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(⟨0⟩, capA)] }
+  let lifecycleCnode : KernelObject := .cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(SeLe4n.Slot.ofNat 0, capA)] }
   let lifecycleEndpoint : KernelObject := .endpoint {}
 
   let stAfterCnode :=
@@ -1328,7 +1328,7 @@ private def runWSH7Checks : IO Unit := do
     | .error err =>
         panic! s!"unexpected storeObject failure in WS-H7 check (cnode phase): {toString err}"
 
-  if SystemState.lookupCapabilityRefMeta stAfterCnode { cnode := ⟨500⟩, slot := ⟨0⟩ } = some capA.target then
+  if SystemState.lookupCapabilityRefMeta stAfterCnode { cnode := ⟨500⟩, slot := SeLe4n.Slot.ofNat 0 } = some capA.target then
     IO.println "positive check passed [WS-H7 storeObject syncs capabilityRef metadata for stored CNode slot]"
   else
     throw <| IO.userError "storeObject syncs capabilityRef metadata for stored CNode slot: expected some target"
@@ -1339,7 +1339,7 @@ private def runWSH7Checks : IO Unit := do
     | .error err =>
         panic! s!"unexpected storeObject failure in WS-H7 check (overwrite phase): {toString err}"
 
-  if SystemState.lookupCapabilityRefMeta stAfterOverwrite { cnode := ⟨500⟩, slot := ⟨0⟩ } = none then
+  if SystemState.lookupCapabilityRefMeta stAfterOverwrite { cnode := ⟨500⟩, slot := SeLe4n.Slot.ofNat 0 } = none then
     IO.println "positive check passed [WS-H7 storeObject clears capabilityRef metadata when overwriting CNode]"
   else
     throw <| IO.userError "storeObject clears capabilityRef metadata when overwriting CNode: expected none"
@@ -1364,71 +1364,71 @@ def runWSH11Checks : IO Unit := do
   -- H-02: W^X violation must be rejected
   let wxPerms : PagePermissions := { write := true, execute := true }
   expectErr "W^X violation rejected"
-    ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨4096⟩ ⟨8192⟩ wxPerms) st)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat 8192) wxPerms) st)
     .policyDenied
   IO.println "negative check passed [WS-H11 W^X violation correctly rejected]"
 
   -- A-05: Address bounds violation must be rejected (vspaceMapPageChecked)
-  let hugeAddr : SeLe4n.PAddr := ⟨2^52 + 1⟩
+  let hugeAddr : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (2^52 + 1))
   expectErr "address out of bounds rejected"
-    ((SeLe4n.Kernel.Architecture.vspaceMapPageChecked asid ⟨4096⟩ hugeAddr) st)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageChecked asid (SeLe4n.VAddr.ofNat 4096) hugeAddr) st)
     .addressOutOfBounds
   IO.println "negative check passed [WS-H11 address out of bounds correctly rejected]"
 
   -- Boundary: address exactly at bound is also rejected
-  let boundaryAddr : SeLe4n.PAddr := ⟨2^52⟩
+  let boundaryAddr : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (2^52))
   expectErr "address at boundary rejected"
-    ((SeLe4n.Kernel.Architecture.vspaceMapPageChecked asid ⟨4096⟩ boundaryAddr) st)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageChecked asid (SeLe4n.VAddr.ofNat 4096) boundaryAddr) st)
     .addressOutOfBounds
   IO.println "negative check passed [WS-H11 address at boundary correctly rejected]"
 
   -- A-05: Address just below bound should succeed via checked path
-  let validAddr : SeLe4n.PAddr := ⟨2^52 - 1⟩
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked asid ⟨4096⟩ validAddr) st with
+  let validAddr : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (2^52 - 1))
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked asid (SeLe4n.VAddr.ofNat 4096) validAddr) st with
   | .ok _ => IO.println "positive check passed [WS-H11 valid address accepted by checked map]"
   | .error err => throw <| IO.userError s!"valid address rejected: {toString err}"
 
   -- Mapping conflict: duplicate vaddr should fail
   let (_, stMapped) ← expectOkSt "map initial"
-    ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨4096⟩ ⟨8192⟩) st)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat 8192)) st)
   expectErr "duplicate mapping conflict"
-    ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨4096⟩ ⟨16384⟩) stMapped)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat 16384)) stMapped)
     .mappingConflict
   IO.println "negative check passed [WS-H11 duplicate mapping correctly rejected]"
 
   -- ASID not bound: lookup on unregistered ASID
   expectErr "unbound ASID lookup"
-    (SeLe4n.Kernel.Architecture.vspaceLookup ⟨99⟩ ⟨4096⟩ st)
+    (SeLe4n.Kernel.Architecture.vspaceLookup ⟨99⟩ (SeLe4n.VAddr.ofNat 4096) st)
     .asidNotBound
   IO.println "negative check passed [WS-H11 unbound ASID correctly rejected]"
 
   -- Translation fault: lookup on unmapped vaddr
   expectErr "unmapped vaddr lookup"
-    (SeLe4n.Kernel.Architecture.vspaceLookup asid ⟨9999⟩ st)
+    (SeLe4n.Kernel.Architecture.vspaceLookup asid (SeLe4n.VAddr.ofNat 9999) st)
     .translationFault
   IO.println "negative check passed [WS-H11 unmapped vaddr returns translation fault]"
 
   -- Unmap non-existent mapping returns error
   expectErr "unmap non-existent"
-    ((SeLe4n.Kernel.Architecture.vspaceUnmapPage asid ⟨9999⟩) st)
+    ((SeLe4n.Kernel.Architecture.vspaceUnmapPage asid (SeLe4n.VAddr.ofNat 9999)) st)
     .translationFault
   IO.println "negative check passed [WS-H11 unmap non-existent returns translation fault]"
 
   -- Read-only permissions (write=false, execute=false) should be W^X compliant
   let roPerms : PagePermissions := { read := true, write := false, execute := false }
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨8192⟩ ⟨16384⟩ roPerms) st with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 8192) (SeLe4n.PAddr.ofNat 16384) roPerms) st with
   | .ok _ => IO.println "positive check passed [WS-H11 read-only permissions accepted]"
   | .error err => throw <| IO.userError s!"read-only rejected: {toString err}"
 
   -- Write-only (no execute) should be W^X compliant
   let woPerms : PagePermissions := { read := false, write := true, execute := false }
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨12288⟩ ⟨20480⟩ woPerms) st with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 12288) (SeLe4n.PAddr.ofNat 20480) woPerms) st with
   | .ok _ => IO.println "positive check passed [WS-H11 write-only permissions accepted]"
   | .error err => throw <| IO.userError s!"write-only rejected: {toString err}"
 
   -- Execute-only (no write) should be W^X compliant
   let xoPerms : PagePermissions := { read := false, write := false, execute := true }
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨16384⟩ ⟨24576⟩ xoPerms) st with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 16384) (SeLe4n.PAddr.ofNat 24576) xoPerms) st with
   | .ok _ => IO.println "positive check passed [WS-H11 execute-only permissions accepted]"
   | .error err => throw <| IO.userError s!"execute-only rejected: {toString err}"
 
@@ -1443,9 +1443,9 @@ def runWSH11Checks : IO Unit := do
 
   -- Per-ASID flush removes only matching ASID entries
   let entry1 : SeLe4n.Model.TlbEntry :=
-    { asid := ⟨1⟩, vaddr := ⟨4096⟩, paddr := ⟨8192⟩, perms := default }
+    { asid := ⟨1⟩, vaddr := (SeLe4n.VAddr.ofNat 4096), paddr := (SeLe4n.PAddr.ofNat 8192), perms := default }
   let entry2 : SeLe4n.Model.TlbEntry :=
-    { asid := ⟨2⟩, vaddr := ⟨8192⟩, paddr := ⟨16384⟩, perms := default }
+    { asid := ⟨2⟩, vaddr := (SeLe4n.VAddr.ofNat 8192), paddr := (SeLe4n.PAddr.ofNat 16384), perms := default }
   let tlb2 : SeLe4n.Model.TlbState := { entries := [entry1, entry2] }
   let flushedAsid := SeLe4n.Model.adapterFlushTlbByAsid tlb2 ⟨1⟩
   if flushedAsid.entries.length = 1 then
@@ -1455,13 +1455,13 @@ def runWSH11Checks : IO Unit := do
 
   -- Per-VAddr flush removes only matching (ASID, VAddr) entries
   let entry3 : SeLe4n.Model.TlbEntry :=
-    { asid := ⟨1⟩, vaddr := ⟨4096⟩, paddr := ⟨8192⟩, perms := default }
+    { asid := ⟨1⟩, vaddr := (SeLe4n.VAddr.ofNat 4096), paddr := (SeLe4n.PAddr.ofNat 8192), perms := default }
   let entry4 : SeLe4n.Model.TlbEntry :=
-    { asid := ⟨1⟩, vaddr := ⟨8192⟩, paddr := ⟨16384⟩, perms := default }
+    { asid := ⟨1⟩, vaddr := (SeLe4n.VAddr.ofNat 8192), paddr := (SeLe4n.PAddr.ofNat 16384), perms := default }
   let entry5 : SeLe4n.Model.TlbEntry :=
-    { asid := ⟨2⟩, vaddr := ⟨4096⟩, paddr := ⟨24576⟩, perms := default }
+    { asid := ⟨2⟩, vaddr := (SeLe4n.VAddr.ofNat 4096), paddr := (SeLe4n.PAddr.ofNat 24576), perms := default }
   let tlb3 : SeLe4n.Model.TlbState := { entries := [entry3, entry4, entry5] }
-  let flushedVAddr := SeLe4n.Model.adapterFlushTlbByVAddr tlb3 ⟨1⟩ ⟨4096⟩
+  let flushedVAddr := SeLe4n.Model.adapterFlushTlbByVAddr tlb3 ⟨1⟩ (SeLe4n.VAddr.ofNat 4096)
   if flushedVAddr.entries.length = 2 then
     IO.println "positive check passed [WS-H11 per-VAddr TLB flush removes only matching (ASID,VAddr)]"
   else
@@ -1469,13 +1469,13 @@ def runWSH11Checks : IO Unit := do
 
   -- vspaceLookupFull returns permissions
   let permsCheck : PagePermissions := { read := true, write := false, execute := false, user := true }
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨20480⟩ ⟨32768⟩ permsCheck) st with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 20480) (SeLe4n.PAddr.ofNat 32768) permsCheck) st with
   | .error err => throw <| IO.userError s!"lookupFull map error: {toString err}"
   | .ok (_, stPerm) =>
-      match SeLe4n.Kernel.Architecture.vspaceLookupFull asid ⟨20480⟩ stPerm with
+      match SeLe4n.Kernel.Architecture.vspaceLookupFull asid (SeLe4n.VAddr.ofNat 20480) stPerm with
       | .error err => throw <| IO.userError s!"lookupFull error: {toString err}"
       | .ok ((paddr, perms), _) =>
-          if paddr = ⟨32768⟩ && perms.read == true && perms.write == false &&
+          if paddr = (SeLe4n.PAddr.ofNat 32768) && perms.read == true && perms.write == false &&
              perms.execute == false && perms.user == true then
             IO.println "positive check passed [WS-H11 vspaceLookupFull returns correct permissions]"
           else
@@ -1489,47 +1489,47 @@ def runWSH11Checks : IO Unit := do
     |>.withLifecycleObjectType vspaceOid .vspaceRoot
     |>.withObject vspaceOid2 (.vspaceRoot { asid := asid2, mappings := {} })
     |>.withLifecycleObjectType vspaceOid2 .vspaceRoot).buildChecked
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨4096⟩ ⟨8192⟩) st2Asid with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat 8192)) st2Asid with
   | .error err => throw <| IO.userError s!"cross-ASID map failed: {toString err}"
   | .ok (_, stCross) =>
       expectErr "cross-ASID isolation"
-        (SeLe4n.Kernel.Architecture.vspaceLookup asid2 ⟨4096⟩ stCross)
+        (SeLe4n.Kernel.Architecture.vspaceLookup asid2 (SeLe4n.VAddr.ofNat 4096) stCross)
         .translationFault
   IO.println "negative check passed [WS-H11 cross-ASID isolation enforced]"
 
   -- Multiple concurrent mappings: map 3 different vaddrs, verify all retrievable
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨4096⟩ ⟨8192⟩) st with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat 8192)) st with
   | .error err => throw <| IO.userError s!"multi-map step 1 failed: {toString err}"
   | .ok (_, stM1) =>
-      match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨8192⟩ ⟨16384⟩) stM1 with
+      match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 8192) (SeLe4n.PAddr.ofNat 16384)) stM1 with
       | .error err => throw <| IO.userError s!"multi-map step 2 failed: {toString err}"
       | .ok (_, stM2) =>
-          match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨12288⟩ ⟨24576⟩) stM2 with
+          match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 12288) (SeLe4n.PAddr.ofNat 24576)) stM2 with
           | .error err => throw <| IO.userError s!"multi-map step 3 failed: {toString err}"
           | .ok (_, stM3) =>
-              match SeLe4n.Kernel.Architecture.vspaceLookup asid ⟨4096⟩ stM3,
-                    SeLe4n.Kernel.Architecture.vspaceLookup asid ⟨8192⟩ stM3,
-                    SeLe4n.Kernel.Architecture.vspaceLookup asid ⟨12288⟩ stM3 with
+              match SeLe4n.Kernel.Architecture.vspaceLookup asid (SeLe4n.VAddr.ofNat 4096) stM3,
+                    SeLe4n.Kernel.Architecture.vspaceLookup asid (SeLe4n.VAddr.ofNat 8192) stM3,
+                    SeLe4n.Kernel.Architecture.vspaceLookup asid (SeLe4n.VAddr.ofNat 12288) stM3 with
               | .ok (p1, _), .ok (p2, _), .ok (p3, _) =>
-                  if p1 = ⟨8192⟩ && p2 = ⟨16384⟩ && p3 = ⟨24576⟩ then
+                  if p1 = (SeLe4n.PAddr.ofNat 8192) && p2 = (SeLe4n.PAddr.ofNat 16384) && p3 = (SeLe4n.PAddr.ofNat 24576) then
                     IO.println "positive check passed [WS-H11 multiple concurrent mappings all retrievable]"
                   else
                     throw <| IO.userError "multi-map: wrong addresses returned"
               | _, _, _ => throw <| IO.userError "multi-map: lookup failed"
 
   -- Sequential map-unmap-map cycle: verify remapping works after unmap
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨4096⟩ ⟨8192⟩) st with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat 8192)) st with
   | .error err => throw <| IO.userError s!"cycle map1 failed: {toString err}"
   | .ok (_, stC1) =>
-      match (SeLe4n.Kernel.Architecture.vspaceUnmapPage asid ⟨4096⟩) stC1 with
+      match (SeLe4n.Kernel.Architecture.vspaceUnmapPage asid (SeLe4n.VAddr.ofNat 4096)) stC1 with
       | .error err => throw <| IO.userError s!"cycle unmap failed: {toString err}"
       | .ok (_, stC2) =>
-          match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid ⟨4096⟩ ⟨16384⟩) stC2 with
+          match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat 16384)) stC2 with
           | .error err => throw <| IO.userError s!"cycle remap failed: {toString err}"
           | .ok (_, stC3) =>
-              match SeLe4n.Kernel.Architecture.vspaceLookup asid ⟨4096⟩ stC3 with
+              match SeLe4n.Kernel.Architecture.vspaceLookup asid (SeLe4n.VAddr.ofNat 4096) stC3 with
               | .ok (pa, _) =>
-                  if pa = ⟨16384⟩ then
+                  if pa = (SeLe4n.PAddr.ofNat 16384) then
                     IO.println "positive check passed [WS-H11 map-unmap-remap cycle works correctly]"
                   else
                     throw <| IO.userError s!"cycle: expected 16384, got {pa.toNat}"
@@ -1559,7 +1559,7 @@ private def runWSH13Checks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨1⟩ (.tcb {
         tid := ⟨1⟩, priority := ⟨100⟩, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
         ipcState := .ready })
       |>.withService svcA {
         identity := { sid := svcA, backingObject := ⟨1⟩, owner := ⟨10⟩ }
@@ -1590,8 +1590,8 @@ private def runWSH15Checks : IO Unit := do
   let cn : CNode := {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
     slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-      (⟨0⟩, writeCap),
-      (⟨1⟩, readOnlyCap)
+      (SeLe4n.Slot.ofNat 0, writeCap),
+      (SeLe4n.Slot.ofNat 1, readOnlyCap)
     ]
   }
   let ep : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
@@ -1604,7 +1604,7 @@ private def runWSH15Checks : IO Unit := do
   -- H15-NEG-01: syscallLookupCap with non-existent CSpace root
   let badRootGate : SeLe4n.Kernel.SyscallGate := {
     callerId := callerId, cspaceRoot := ⟨9999⟩,
-    capAddr := ⟨0⟩, capDepth := 4, requiredRight := .write
+    capAddr := SeLe4n.CPtr.ofNat 0, capDepth := 4, requiredRight := .write
   }
   expectErr "H15 syscallLookupCap non-existent CSpace root"
     (SeLe4n.Kernel.syscallLookupCap badRootGate st)
@@ -1613,7 +1613,7 @@ private def runWSH15Checks : IO Unit := do
   -- H15-NEG-02: syscallLookupCap with valid CSpace but missing capability (slot 15)
   let missingSlotGate : SeLe4n.Kernel.SyscallGate := {
     callerId := callerId, cspaceRoot := cnodeId,
-    capAddr := ⟨15⟩, capDepth := 4, requiredRight := .write
+    capAddr := SeLe4n.CPtr.ofNat 15, capDepth := 4, requiredRight := .write
   }
   expectErr "H15 syscallLookupCap valid CSpace missing capability"
     (SeLe4n.Kernel.syscallLookupCap missingSlotGate st)
@@ -1622,7 +1622,7 @@ private def runWSH15Checks : IO Unit := do
   -- H15-NEG-03: syscallLookupCap with valid capability but wrong right
   let wrongRightGate : SeLe4n.Kernel.SyscallGate := {
     callerId := callerId, cspaceRoot := cnodeId,
-    capAddr := ⟨1⟩, capDepth := 4, requiredRight := .write   -- slot 1 has .read only
+    capAddr := SeLe4n.CPtr.ofNat 1, capDepth := 4, requiredRight := .write   -- slot 1 has .read only
   }
   expectErr "H15 syscallLookupCap valid capability wrong right"
     (SeLe4n.Kernel.syscallLookupCap wrongRightGate st)
@@ -1631,7 +1631,7 @@ private def runWSH15Checks : IO Unit := do
   -- H15-NEG-04: syscallLookupCap succeeds with correct right
   let goodGate : SeLe4n.Kernel.SyscallGate := {
     callerId := callerId, cspaceRoot := cnodeId,
-    capAddr := ⟨0⟩, capDepth := 4, requiredRight := .write
+    capAddr := SeLe4n.CPtr.ofNat 0, capDepth := 4, requiredRight := .write
   }
   match SeLe4n.Kernel.syscallLookupCap goodGate st with
   | .ok (cap, _) =>
@@ -1653,7 +1653,7 @@ private def runWSH15Checks : IO Unit := do
   -- H15-NEG-06: syscallLookupCap with zero depth → illegalState
   let zeroDepthGate : SeLe4n.Kernel.SyscallGate := {
     callerId := callerId, cspaceRoot := cnodeId,
-    capAddr := ⟨0⟩, capDepth := 0, requiredRight := .write
+    capAddr := SeLe4n.CPtr.ofNat 0, capDepth := 0, requiredRight := .write
   }
   expectErr "H15 syscallLookupCap zero depth"
     (SeLe4n.Kernel.syscallLookupCap zeroDepthGate st)
@@ -1727,8 +1727,8 @@ def runWSH16LifecycleChecks : IO Unit := do
   let h16TargetId : SeLe4n.ObjId := ⟨150⟩
   let h16CnodeId : SeLe4n.ObjId := ⟨151⟩
   let h16TcbId : SeLe4n.ObjId := ⟨152⟩
-  let h16AuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16CnodeId, slot := ⟨0⟩ }
-  let h16CleanupSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16CnodeId, slot := ⟨1⟩ }
+  let h16AuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16CnodeId, slot := SeLe4n.Slot.ofNat 0 }
+  let h16CleanupSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16CnodeId, slot := SeLe4n.Slot.ofNat 1 }
 
   let h16State : SystemState :=
     (BootstrapBuilder.empty
@@ -1739,12 +1739,12 @@ def runWSH16LifecycleChecks : IO Unit := do
         guardValue := 0
         radixWidth := 0
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-          (⟨0⟩, {
+          (SeLe4n.Slot.ofNat 0, {
             target := .object h16TargetId
             rights := AccessRightSet.ofList [.read, .write]
             badge := none
           }),
-          (⟨1⟩, {
+          (SeLe4n.Slot.ofNat 1, {
             target := .object h16TargetId
             rights := AccessRightSet.ofList [.read]
             badge := none
@@ -1757,7 +1757,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         domain := ⟨0⟩
         cspaceRoot := h16CnodeId
         vspaceRoot := ⟨20⟩
-        ipcBuffer := ⟨4096⟩
+        ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
         ipcState := .ready
       })
       |>.withLifecycleObjectType h16TargetId .endpoint
@@ -1783,7 +1783,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         guardValue := 0
         radixWidth := 0
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-          (⟨0⟩, {
+          (SeLe4n.Slot.ofNat 0, {
             target := .object h16TargetId
             rights := AccessRightSet.ofList [.read, .write]
             badge := none
@@ -1801,13 +1801,13 @@ def runWSH16LifecycleChecks : IO Unit := do
     .illegalState
 
   -- H16-NEG-03: lifecycleRetypeObject with insufficient authority (read-only cap) → illegalAuthority
-  let h16ReadOnlySlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16CnodeId, slot := ⟨1⟩ }
+  let h16ReadOnlySlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16CnodeId, slot := SeLe4n.Slot.ofNat 1 }
   expectErr "H16 lifecycleRetypeObject insufficient authority"
     (SeLe4n.Kernel.lifecycleRetypeObject h16ReadOnlySlot h16TargetId (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) h16State)
     .illegalAuthority
 
   -- H16-NEG-04: lifecycleRetypeObject with bad authority CNode → objectNotFound
-  let h16BadAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := ⟨0⟩ }
+  let h16BadAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := SeLe4n.Slot.ofNat 0 }
   expectErr "H16 lifecycleRetypeObject bad authority CNode"
     (SeLe4n.Kernel.lifecycleRetypeObject h16BadAuthSlot h16TargetId (.endpoint {}) h16State)
     .objectNotFound
@@ -1818,7 +1818,7 @@ def runWSH16LifecycleChecks : IO Unit := do
     .illegalState
 
   -- H16-NEG-06: lifecycleRevokeDeleteRetype with non-existent cleanup CNode → objectNotFound
-  let h16BadCleanupSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := ⟨0⟩ }
+  let h16BadCleanupSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := SeLe4n.Slot.ofNat 0 }
   expectErr "H16 lifecycleRevokeDeleteRetype bad cleanup CNode"
     (SeLe4n.Kernel.lifecycleRevokeDeleteRetype h16AuthSlot h16BadCleanupSlot h16TargetId (.endpoint {}) h16State)
     .objectNotFound
@@ -1826,11 +1826,11 @@ def runWSH16LifecycleChecks : IO Unit := do
   -- H16-NEG-07: retypeFromUntyped with exhausted untyped (watermark at region boundary) → regionExhausted
   let h16ExhaustedUntypedId : SeLe4n.ObjId := ⟨160⟩
   let h16ExhaustedCnodeId : SeLe4n.ObjId := ⟨161⟩
-  let h16ExhaustedAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16ExhaustedCnodeId, slot := ⟨0⟩ }
+  let h16ExhaustedAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16ExhaustedCnodeId, slot := SeLe4n.Slot.ofNat 0 }
   let h16ExhaustedState : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject h16ExhaustedUntypedId (.untyped {
-        regionBase := ⟨0x10000⟩
+        regionBase := (SeLe4n.PAddr.ofNat 0x10000)
         regionSize := 64
         watermark := 64   -- fully exhausted
         children := []
@@ -1842,7 +1842,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         guardValue := 0
         radixWidth := 0
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-          (⟨0⟩, {
+          (SeLe4n.Slot.ofNat 0, {
             target := .object h16ExhaustedUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
             badge := none
@@ -1870,11 +1870,11 @@ def runWSH16LifecycleChecks : IO Unit := do
   -- Device untypeds cannot back typed kernel objects (except other untypeds).
   let h16DeviceUntypedId : SeLe4n.ObjId := ⟨163⟩
   let h16DeviceCnodeId : SeLe4n.ObjId := ⟨164⟩
-  let h16DeviceAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16DeviceCnodeId, slot := ⟨0⟩ }
+  let h16DeviceAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16DeviceCnodeId, slot := SeLe4n.Slot.ofNat 0 }
   let h16DeviceState : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject h16DeviceUntypedId (.untyped {
-        regionBase := ⟨0x20000⟩
+        regionBase := (SeLe4n.PAddr.ofNat 0x20000)
         regionSize := 8192
         watermark := 0
         children := []
@@ -1886,7 +1886,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         guardValue := 0
         radixWidth := 0
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-          (⟨0⟩, {
+          (SeLe4n.Slot.ofNat 0, {
             target := .object h16DeviceUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
             badge := none
@@ -2065,7 +2065,7 @@ def runWSKGChecks : IO Unit := do
 
   -- K-G-NEG-01: decodeCSpaceMintArgs with insufficient msgRegs (< 4) → invalidMessageInfo
   let shortDecode : SyscallDecodeResult := {
-    capAddr := ⟨0⟩
+    capAddr := SeLe4n.CPtr.ofNat 0
     msgInfo := { length := 0, extraCaps := 0, label := 0 }
     syscallId := .cspaceMint
     msgRegs := #[⟨10⟩, ⟨20⟩]  -- only 2, need 4
@@ -2076,7 +2076,7 @@ def runWSKGChecks : IO Unit := do
 
   -- K-G-NEG-02: decodeCSpaceCopyArgs with insufficient msgRegs (< 2) → invalidMessageInfo
   let oneRegDecode : SyscallDecodeResult := {
-    capAddr := ⟨0⟩
+    capAddr := SeLe4n.CPtr.ofNat 0
     msgInfo := { length := 0, extraCaps := 0, label := 0 }
     syscallId := .cspaceCopy
     msgRegs := #[⟨10⟩]  -- only 1, need 2
@@ -2092,7 +2092,7 @@ def runWSKGChecks : IO Unit := do
 
   -- K-G-NEG-04: decodeCSpaceDeleteArgs with zero msgRegs → invalidMessageInfo
   let emptyDecode : SyscallDecodeResult := {
-    capAddr := ⟨0⟩
+    capAddr := SeLe4n.CPtr.ofNat 0
     msgInfo := { length := 0, extraCaps := 0, label := 0 }
     syscallId := .cspaceDelete
     msgRegs := #[]  -- empty
@@ -2103,8 +2103,8 @@ def runWSKGChecks : IO Unit := do
 
   -- K-G-NEG-05: cspaceMint dispatch fails — CNode not found
   let noCnodeState : SystemState := BootstrapBuilder.empty.buildChecked
-  let mintAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := ⟨0⟩ }
-  let dstAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := ⟨1⟩ }
+  let mintAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := SeLe4n.Slot.ofNat 0 }
+  let dstAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := SeLe4n.Slot.ofNat 1 }
   expectErr "K-G-NEG-05 cspaceMint CNode not found"
     (SeLe4n.Kernel.cspaceMint mintAddr dstAddr AccessRightSet.empty none noCnodeState)
     .objectNotFound
@@ -2118,8 +2118,8 @@ def runWSKGChecks : IO Unit := do
       })
       |>.withLifecycleObjectType ⟨200⟩ .cnode
       |>.buildChecked)
-  let emptySlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨200⟩, slot := ⟨0⟩ }
-  let dstSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨200⟩, slot := ⟨1⟩ }
+  let emptySlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨200⟩, slot := SeLe4n.Slot.ofNat 0 }
+  let dstSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨200⟩, slot := SeLe4n.Slot.ofNat 1 }
   expectErr "K-G-NEG-06 cspaceCopy source slot empty"
     (SeLe4n.Kernel.cspaceCopy emptySlot dstSlot emptyCnodeState)
     .invalidCapability
@@ -2130,7 +2130,7 @@ def runWSKGChecks : IO Unit := do
 
   -- K-G-NEG-07: decodeLifecycleRetypeArgs with insufficient msgRegs (< 3) → invalidMessageInfo
   let twoRegDecode : SyscallDecodeResult := {
-    capAddr := ⟨0⟩
+    capAddr := SeLe4n.CPtr.ofNat 0
     msgInfo := { length := 0, extraCaps := 0, label := 0 }
     syscallId := .lifecycleRetype
     msgRegs := #[⟨1⟩, ⟨2⟩]  -- only 2, need 3
@@ -2172,7 +2172,7 @@ def runWSKGChecks : IO Unit := do
 
   -- K-G-NEG-11: decodeVSpaceMapArgs with insufficient msgRegs (< 4) → invalidMessageInfo
   let threeRegDecode : SyscallDecodeResult := {
-    capAddr := ⟨0⟩
+    capAddr := SeLe4n.CPtr.ofNat 0
     msgInfo := { length := 0, extraCaps := 0, label := 0 }
     syscallId := .vspaceMap
     msgRegs := #[⟨1⟩, ⟨2⟩, ⟨3⟩]  -- only 3, need 4
@@ -2190,12 +2190,12 @@ def runWSKGChecks : IO Unit := do
       |>.buildChecked)
   let wxPerms := PagePermissions.ofNat 6  -- bits 1+2 = write+execute
   expectErr "K-G-NEG-12 vspaceMap W^X violation"
-    ((SeLe4n.Kernel.Architecture.vspaceMapPageChecked vspaceAsid ⟨4096⟩ ⟨8192⟩ wxPerms) vspaceState)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageChecked vspaceAsid (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat 8192) wxPerms) vspaceState)
     .policyDenied
 
   -- K-G-NEG-13: vspaceUnmapPage with no existing mapping → translationFault
   expectErr "K-G-NEG-13 vspaceUnmap no mapping"
-    ((SeLe4n.Kernel.Architecture.vspaceUnmapPage vspaceAsid ⟨4096⟩) vspaceState)
+    ((SeLe4n.Kernel.Architecture.vspaceUnmapPage vspaceAsid (SeLe4n.VAddr.ofNat 4096)) vspaceState)
     .translationFault
 
   IO.println "lifecycle/VSpace negative tests passed"
@@ -2209,7 +2209,7 @@ def runWSKGChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject svcBackingId (.tcb {
         tid := ⟨801⟩, priority := ⟨10⟩, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
         ipcState := .ready })
       |>.withService svcPolicyId {
         identity := { sid := svcPolicyId, backingObject := svcBackingId, owner := ⟨10⟩ }
@@ -2333,12 +2333,12 @@ def runWSL4BlockedThreadChecks : IO Unit := do
       |>.withObject ntfnId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
       |>.withObject ⟨7⟩ (.tcb {
         tid := ⟨7⟩, priority := ⟨10⟩, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
         ipcState := .ready
       })
       |>.withObject ⟨8⟩ (.tcb {
         tid := ⟨8⟩, priority := ⟨20⟩, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨8192⟩,
+        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
         ipcState := .ready
       })
       |>.withRunnable [⟨7⟩, ⟨8⟩]
@@ -2410,7 +2410,7 @@ def runWSM3CapTransferNegativeChecks : IO Unit := do
   let fullCNode : CNode := {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 2,
     slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-      (⟨0⟩, cap), (⟨1⟩, cap), (⟨2⟩, cap), (⟨3⟩, cap)
+      (SeLe4n.Slot.ofNat 0, cap), (SeLe4n.Slot.ofNat 1, cap), (SeLe4n.Slot.ofNat 2, cap), (SeLe4n.Slot.ofNat 3, cap)
     ]
   }
 
@@ -2419,14 +2419,14 @@ def runWSM3CapTransferNegativeChecks : IO Unit := do
       |>.withObject receiverRoot (.cnode fullCNode)
       |>.withObject senderRoot (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(⟨0⟩, cap)]
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(SeLe4n.Slot.ofNat 0, cap)]
         })
       |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
       |>.buildChecked)
 
   -- ipcTransferSingleCap with scanLimit covering all 4 slots → should get .noSlot
-  let senderSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := senderRoot, slot := ⟨0⟩ }
-  let result := SeLe4n.Kernel.ipcTransferSingleCap cap senderSlot receiverRoot ⟨0⟩ 4 st0
+  let senderSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := senderRoot, slot := SeLe4n.Slot.ofNat 0 }
+  let result := SeLe4n.Kernel.ipcTransferSingleCap cap senderSlot receiverRoot (SeLe4n.Slot.ofNat 0) 4 st0
   match result with
   | .ok (transferResult, st') =>
     let isNoSlot := match transferResult with
@@ -2479,7 +2479,7 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
     domain := ⟨0⟩,
     cspaceRoot := senderRoot,
     vspaceRoot := senderRoot,
-    ipcBuffer := ⟨0⟩,
+    ipcBuffer := (SeLe4n.VAddr.ofNat 0),
     timeSlice := 5,
     ipcState := .ready,
     schedContextBinding := .unbound
@@ -2487,7 +2487,7 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
 
   let senderCNode : CNode := {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(⟨0⟩, cap), (⟨1⟩, cap), (⟨2⟩, cap)]
+    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(SeLe4n.Slot.ofNat 0, cap), (SeLe4n.Slot.ofNat 1, cap), (SeLe4n.Slot.ofNat 2, cap)]
   }
 
   let st0 :=
@@ -2501,7 +2501,7 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
 
   -- L13-01: 3 caps with receiver root = TCB → short-circuit, all .noSlot
   let result := SeLe4n.Kernel.ipcUnwrapCapsLoop caps senderRoot receiverRoot
-    0 ⟨0⟩ #[] caps.size st0
+    0 (SeLe4n.Slot.ofNat 0) #[] caps.size st0
   match result with
   | .ok (summary, st') =>
     if summary.results.size != 3 then
@@ -2531,7 +2531,7 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
       |>.buildChecked)
 
   let result1 := SeLe4n.Kernel.ipcUnwrapCapsLoop #[cap] senderRoot missingRoot
-    0 ⟨0⟩ #[] 1 st1
+    0 (SeLe4n.Slot.ofNat 0) #[] 1 st1
   match result1 with
   | .ok (summary1, st1') =>
     if summary1.results.size != 1 then
@@ -2576,17 +2576,17 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardValue := 0xA
           radixWidth := 0
           slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-            (⟨0⟩, { target := .object guardOnlyTarget, rights := AccessRightSet.ofList [.read], badge := none })
+            (SeLe4n.Slot.ofNat 0, { target := .object guardOnlyTarget, rights := AccessRightSet.ofList [.read], badge := none })
           ]
         })
       |>.withObject guardOnlyTarget (.endpoint {})
       |>.buildChecked)
 
   -- Correct guard: addr=0xA (top 4 bits encode guard 0xA)
-  let resultOk := SeLe4n.Kernel.resolveCapAddress guardOnlyRoot ⟨0xA⟩ 4 stGuardOnly
+  let resultOk := SeLe4n.Kernel.resolveCapAddress guardOnlyRoot (SeLe4n.CPtr.ofNat 0xA) 4 stGuardOnly
   match resultOk with
   | .ok ref =>
-      if ref.cnode = guardOnlyRoot ∧ ref.slot = ⟨0⟩ then
+      if ref.cnode = guardOnlyRoot ∧ ref.slot = SeLe4n.Slot.ofNat 0 then
         IO.println "check passed [guard-only CNode resolves to slot 0]"
       else
         throw <| IO.userError s!"expected slot 0 at guardOnlyRoot, got {toString ref}"
@@ -2594,7 +2594,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
       throw <| IO.userError s!"expected success, got {toString e}"
 
   -- Wrong guard: addr=0xB (guard extracted = 0xB ≠ 0xA)
-  let resultBad := SeLe4n.Kernel.resolveCapAddress guardOnlyRoot ⟨0xB⟩ 4 stGuardOnly
+  let resultBad := SeLe4n.Kernel.resolveCapAddress guardOnlyRoot (SeLe4n.CPtr.ofNat 0xB) 4 stGuardOnly
   match resultBad with
   | .error .invalidCapability =>
       IO.println "check passed [guard-only CNode rejects wrong guard]"
@@ -2615,16 +2615,16 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardValue := 0
           radixWidth := 4
           slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-            (⟨5⟩, { target := .object leafTarget, rights := AccessRightSet.ofList [.read, .write], badge := none })
+            (SeLe4n.Slot.ofNat 5, { target := .object leafTarget, rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
         })
       |>.withObject leafTarget (.endpoint {})
       |>.buildChecked)
 
-  let resultLeaf := SeLe4n.Kernel.resolveCapAddress leafRoot ⟨5⟩ 4 stLeaf
+  let resultLeaf := SeLe4n.Kernel.resolveCapAddress leafRoot (SeLe4n.CPtr.ofNat 5) 4 stLeaf
   match resultLeaf with
   | .ok ref =>
-      if ref.cnode = leafRoot ∧ ref.slot = ⟨5⟩ then
+      if ref.cnode = leafRoot ∧ ref.slot = SeLe4n.Slot.ofNat 5 then
         IO.println "check passed [single-level leaf resolves to slot 5]"
       else
         throw <| IO.userError s!"expected slot 5, got {toString ref}"
@@ -2645,7 +2645,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
         })
       |>.buildChecked)
 
-  let resultPartial := SeLe4n.Kernel.resolveCapAddress partialRoot ⟨0⟩ 4 stPartial
+  let resultPartial := SeLe4n.Kernel.resolveCapAddress partialRoot (SeLe4n.CPtr.ofNat 0) 4 stPartial
   match resultPartial with
   | .error .illegalState =>
       IO.println "check passed [partial bits returns illegalState]"
@@ -2655,7 +2655,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
       throw <| IO.userError "expected error for partial bits, got success"
 
   -- M4-A4 zero bits
-  let resultZero := SeLe4n.Kernel.resolveCapAddress partialRoot ⟨0⟩ 0 stPartial
+  let resultZero := SeLe4n.Kernel.resolveCapAddress partialRoot (SeLe4n.CPtr.ofNat 0) 0 stPartial
   match resultZero with
   | .error .illegalState =>
       IO.println "check passed [zero bitsRemaining returns illegalState]"
@@ -2695,7 +2695,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardValue := 3
           radixWidth := 2
           slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-            (⟨0⟩, { target := .object lvl1, rights := AccessRightSet.ofList [.read, .write], badge := none })
+            (SeLe4n.Slot.ofNat 0, { target := .object lvl1, rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
         })
       |>.withObject lvl1 (.cnode {
@@ -2704,7 +2704,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardValue := 1
           radixWidth := 2
           slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-            (⟨0⟩, { target := .object lvl2, rights := AccessRightSet.ofList [.read, .write], badge := none })
+            (SeLe4n.Slot.ofNat 0, { target := .object lvl2, rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
         })
       |>.withObject lvl2 (.cnode {
@@ -2713,17 +2713,17 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardValue := 0
           radixWidth := 4
           slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-            (⟨7⟩, { target := .object lvl2Target, rights := AccessRightSet.ofList [.read], badge := none })
+            (SeLe4n.Slot.ofNat 7, { target := .object lvl2Target, rights := AccessRightSet.ofList [.read], badge := none })
           ]
         })
       |>.withObject lvl2Target (.endpoint {})
       |>.buildChecked)
 
   -- Correct: all guards match, should resolve to lvl2 slot 7
-  let resultCorrect := SeLe4n.Kernel.resolveCapAddress lvl0 ⟨0xC47⟩ 12 stMidGuard
+  let resultCorrect := SeLe4n.Kernel.resolveCapAddress lvl0 (SeLe4n.CPtr.ofNat 0xC47) 12 stMidGuard
   match resultCorrect with
   | .ok ref =>
-      if ref.cnode = lvl2 ∧ ref.slot = ⟨7⟩ then
+      if ref.cnode = lvl2 ∧ ref.slot = SeLe4n.Slot.ofNat 7 then
         IO.println "check passed [correct guards resolve through 3 levels]"
       else
         throw <| IO.userError s!"expected lvl2 slot 7, got {toString ref}"
@@ -2731,7 +2731,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
       throw <| IO.userError s!"expected success for correct guards, got {toString e}"
 
   -- Wrong guard at level 1: guard1=2 instead of 1
-  let resultWrongMid := SeLe4n.Kernel.resolveCapAddress lvl0 ⟨0xC87⟩ 12 stMidGuard
+  let resultWrongMid := SeLe4n.Kernel.resolveCapAddress lvl0 (SeLe4n.CPtr.ofNat 0xC87) 12 stMidGuard
   match resultWrongMid with
   | .error .invalidCapability =>
       IO.println "check passed [guard mismatch at intermediate level returns invalidCapability]"
@@ -2762,7 +2762,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
       guardValue := 0
       radixWidth := 8
       slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-        (⟨1⟩, { target := .object nextId, rights := AccessRightSet.ofList [.read, .write], badge := none })
+        (SeLe4n.Slot.ofNat 1, { target := .object nextId, rights := AccessRightSet.ofList [.read, .write], badge := none })
       ]
     })
   -- Level 7 (leaf): slot 1 holds the target cap
@@ -2772,18 +2772,18 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
     guardValue := 0
     radixWidth := 8
     slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-      (⟨1⟩, { target := .object maxDepthLeafTarget, rights := AccessRightSet.ofList [.read], badge := none })
+      (SeLe4n.Slot.ofNat 1, { target := .object maxDepthLeafTarget, rights := AccessRightSet.ofList [.read], badge := none })
     ]
   })
   builder := builder.withObject maxDepthLeafTarget (.endpoint {})
   let stMaxDepth := builder.buildChecked
 
   -- Resolve with 64 bits: 0x0101010101010101
-  let addr64 : SeLe4n.CPtr := ⟨0x0101010101010101⟩
+  let addr64 : SeLe4n.CPtr := SeLe4n.CPtr.ofNat 0x0101010101010101
   let resultMax := SeLe4n.Kernel.resolveCapAddress maxDepthIds[0]! addr64 64 stMaxDepth
   match resultMax with
   | .ok ref =>
-      if ref.cnode = maxDepthIds[7]! ∧ ref.slot = ⟨1⟩ then
+      if ref.cnode = maxDepthIds[7]! ∧ ref.slot = SeLe4n.Slot.ofNat 1 then
         IO.println "check passed [64-bit resolution across 8 CNodes succeeds]"
       else
         throw <| IO.userError s!"expected leaf at level 7 slot 1, got {toString ref}"
@@ -2821,7 +2821,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardValue := 0
           radixWidth := 4
           slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-            (⟨3⟩, { target := .object emptyMidChild, rights := AccessRightSet.ofList [.read], badge := none })
+            (SeLe4n.Slot.ofNat 3, { target := .object emptyMidChild, rights := AccessRightSet.ofList [.read], badge := none })
           ]
         })
       |>.withObject emptyMidChild (.cnode {
@@ -2836,7 +2836,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   -- addr=0xC0 (10 bits): lvl0 shift=(10-4)=6, 0xC0>>>6=3, slot 3 → lvl1.
   -- At lvl1: bits=6, shift=(6-4)=2, 0xC0>>>2=48, slot=48%16=0. Remaining=2>0.
   -- Slot 0 is empty → invalidCapability (intermediate recursion path, line 106).
-  let resultEmptyMid := SeLe4n.Kernel.resolveCapAddress emptyMidRoot ⟨0xC0⟩ 10 stEmptyMid
+  let resultEmptyMid := SeLe4n.Kernel.resolveCapAddress emptyMidRoot (SeLe4n.CPtr.ofNat 0xC0) 10 stEmptyMid
   match resultEmptyMid with
   | .error .invalidCapability =>
       IO.println "check passed [empty slot at intermediate level returns invalidCapability]"
@@ -2857,7 +2857,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
           guardValue := 0
           radixWidth := 4
           slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-            (⟨1⟩, { target := .object nonCnodeMidEp, rights := AccessRightSet.ofList [.read], badge := none })
+            (SeLe4n.Slot.ofNat 1, { target := .object nonCnodeMidEp, rights := AccessRightSet.ofList [.read], badge := none })
           ]
         })
       |>.withObject nonCnodeMidEp (.endpoint {})
@@ -2865,7 +2865,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
 
   -- addr=0x15 (8 bits): lvl0 slot = 1 → cap targets endpoint, recurse with 4 bits
   -- endpoint is not a CNode → objectNotFound
-  let resultNonCnode := SeLe4n.Kernel.resolveCapAddress nonCnodeMidRoot ⟨0x15⟩ 8 stNonCnodeMid
+  let resultNonCnode := SeLe4n.Kernel.resolveCapAddress nonCnodeMidRoot (SeLe4n.CPtr.ofNat 0x15) 8 stNonCnodeMid
   match resultNonCnode with
   | .error .objectNotFound =>
       IO.println "check passed [non-CNode target at intermediate level returns objectNotFound]"
@@ -2876,7 +2876,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
 
   -- M4-A8: cspaceLookupMultiLevel wrapper integration — verify full pipeline
   -- Reuse the single-level leaf state (stLeaf): leafRoot slot 5 → leafTarget endpoint
-  let resultWrapper := SeLe4n.Kernel.cspaceLookupMultiLevel leafRoot ⟨5⟩ 4 stLeaf
+  let resultWrapper := SeLe4n.Kernel.cspaceLookupMultiLevel leafRoot (SeLe4n.CPtr.ofNat 5) 4 stLeaf
   match resultWrapper with
   | .ok (cap, _) =>
       if cap.target = .object leafTarget then
@@ -2887,7 +2887,7 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
       throw <| IO.userError s!"expected success, got {toString e}"
 
   -- Wrapper negative: nonexistent slot → invalidCapability
-  let resultWrapperBad := SeLe4n.Kernel.cspaceLookupMultiLevel leafRoot ⟨15⟩ 4 stLeaf
+  let resultWrapperBad := SeLe4n.Kernel.cspaceLookupMultiLevel leafRoot (SeLe4n.CPtr.ofNat 15) 4 stLeaf
   match resultWrapperBad with
   | .error .invalidCapability =>
       IO.println "check passed [cspaceLookupMultiLevel empty slot returns invalidCapability]"
@@ -2913,7 +2913,7 @@ def runWSR2RevocationChecks : IO Unit := do
   let r2CnodeId : SeLe4n.ObjId := ⟨10⟩
   let r2BadCnodeId : SeLe4n.ObjId := ⟨777⟩
   let r2NodeId : CdtNodeId := ⟨50⟩
-  let r2BadSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2BadCnodeId, slot := ⟨0⟩ }
+  let r2BadSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2BadCnodeId, slot := SeLe4n.Slot.ofNat 0 }
   let r2State : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject r2CnodeId (.cnode {
@@ -2939,16 +2939,16 @@ def runWSR2RevocationChecks : IO Unit := do
   -- R2-NEG-02: streamingRevokeBFS returns resourceExhausted on fuel exhaustion
   let r2Node1 : CdtNodeId := ⟨60⟩
   let r2Node2 : CdtNodeId := ⟨61⟩
-  let r2Slot1 : SeLe4n.Kernel.CSpaceAddr := { cnode := r2CnodeId, slot := ⟨0⟩ }
+  let r2Slot1 : SeLe4n.Kernel.CSpaceAddr := { cnode := r2CnodeId, slot := SeLe4n.Slot.ofNat 0 }
   let r2BfsSeed := { r2State with
     cdt := CapDerivationTree.empty
       |>.addEdge r2Node1 r2Node2 .mint
     cdtNodeSlot := (r2State.cdtNodeSlot
       |>.insert r2Node1 r2Slot1)
-      |>.insert r2Node2 { cnode := r2CnodeId, slot := ⟨1⟩ }
+      |>.insert r2Node2 { cnode := r2CnodeId, slot := SeLe4n.Slot.ofNat 1 }
     cdtSlotNode := (r2State.cdtSlotNode
       |>.insert r2Slot1 r2Node1)
-      |>.insert { cnode := r2CnodeId, slot := ⟨1⟩ } r2Node2
+      |>.insert { cnode := r2CnodeId, slot := SeLe4n.Slot.ofNat 1 } r2Node2
     cdtNextNode := ⟨62⟩
   }
   -- Fuel = 0 with non-empty queue → resourceExhausted
@@ -2964,10 +2964,10 @@ def runWSR2RevocationChecks : IO Unit := do
   -- R2-NEG-03: cspaceRevokeCdt propagates descendant delete failures
   -- Set up: CNode with root cap at slot 5. CDT: rootNode → childNode (bad slot).
   -- cspaceRevokeCdt should fail because descendant deletion fails.
-  let r2RootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2CnodeId, slot := ⟨5⟩ }
+  let r2RootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2CnodeId, slot := SeLe4n.Slot.ofNat 5 }
   let r2RootNode : CdtNodeId := ⟨70⟩
   let r2ChildNode : CdtNodeId := ⟨71⟩
-  let r2ChildBadSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2BadCnodeId, slot := ⟨0⟩ }
+  let r2ChildBadSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := r2BadCnodeId, slot := SeLe4n.Slot.ofNat 0 }
   let r2RevokeSeed : SystemState :=
     { r2State with
       objects := r2State.objects.insert r2CnodeId (.cnode {
@@ -3039,7 +3039,7 @@ private def runWSR4CoherenceChecks : IO Unit := do
     let r4State2 := (BootstrapBuilder.empty
         |>.withObject tcbId (.tcb {
           tid := ⟨1⟩, priority := ⟨0⟩, domain := ⟨0⟩,
-          cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := ⟨0⟩ })
+          cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0) })
         |>.withLifecycleObjectType tcbId .tcb
         |>.buildChecked)
     match SeLe4n.Kernel.registerInterface iface r4State2 with
@@ -3147,8 +3147,8 @@ private def runWSR4CoherenceChecks : IO Unit := do
 private def runS2GCapabilityErrorTests : IO Unit := do
   -- S2-G-01: cspaceMint requesting rights beyond source capability
   -- Source cap has read-only, attempt to mint read+write → invalidCapability
-  let mintSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
-  let mintDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨3⟩ }
+  let mintSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 0 }
+  let mintDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 3 }
   -- slot0 in baseState has rights [read, write]; create a read-only source
   let readOnlyCnode : KernelObject := .cnode {
     depth := 0
@@ -3156,7 +3156,7 @@ private def runS2GCapabilityErrorTests : IO Unit := do
     guardValue := 0
     radixWidth := 0
     slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-      (⟨0⟩, {
+      (SeLe4n.Slot.ofNat 0, {
         target := .object endpointId
         rights := AccessRightSet.ofList [.read]
         badge := none
@@ -3173,8 +3173,8 @@ private def runS2GCapabilityErrorTests : IO Unit := do
 
   -- S2-G-02: cspaceCopy to occupied destination slot → targetSlotOccupied
   -- slot0 is already occupied in baseState; copy to it should fail
-  let copySrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
-  let copyDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
+  let copySrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 0 }
+  let copyDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 0 }
   expectErr "cspaceCopy to occupied slot"
     (SeLe4n.Kernel.cspaceCopy copySrc copyDst baseState)
     .targetSlotOccupied
@@ -3186,7 +3186,7 @@ private def runS2GCapabilityErrorTests : IO Unit := do
     .targetSlotOccupied
 
   -- S2-G-04: cspaceRevokeCdtStrict on node with no descendants (empty revoke)
-  let emptyRevokeSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
+  let emptyRevokeSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 0 }
   let (emptyReport, _) ← expectOkSt "cspaceRevokeCdtStrict empty descendants"
     (SeLe4n.Kernel.cspaceRevokeCdtStrict emptyRevokeSlot baseState)
   if emptyReport.deletedSlots ≠ [] then
@@ -3201,16 +3201,16 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   let fullCnode : KernelObject := .cnode {
     depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
     slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-      (⟨0⟩, { target := .object endpointId, rights := AccessRightSet.ofList [.read, .write], badge := none }),
-      (⟨1⟩, { target := .object endpointId, rights := AccessRightSet.ofList [.read], badge := none }),
-      (⟨2⟩, { target := .object endpointId, rights := AccessRightSet.ofList [.write], badge := none }),
-      (⟨3⟩, { target := .object endpointId, rights := AccessRightSet.ofList [.read, .write], badge := none })
+      (SeLe4n.Slot.ofNat 0, { target := .object endpointId, rights := AccessRightSet.ofList [.read, .write], badge := none }),
+      (SeLe4n.Slot.ofNat 1, { target := .object endpointId, rights := AccessRightSet.ofList [.read], badge := none }),
+      (SeLe4n.Slot.ofNat 2, { target := .object endpointId, rights := AccessRightSet.ofList [.write], badge := none }),
+      (SeLe4n.Slot.ofNat 3, { target := .object endpointId, rights := AccessRightSet.ofList [.read, .write], badge := none })
     ]
   }
   let fullCnodeState := { baseState with objects := baseState.objects.insert fullCnodeId fullCnode }
   -- Copy from slot0 in cnodeId into slot 0 of full CNode (occupied)
-  let fullCopySrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
-  let fullCopyDst : SeLe4n.Kernel.CSpaceAddr := { cnode := fullCnodeId, slot := ⟨0⟩ }
+  let fullCopySrc : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 0 }
+  let fullCopyDst : SeLe4n.Kernel.CSpaceAddr := { cnode := fullCnodeId, slot := SeLe4n.Slot.ofNat 0 }
   expectErr "cspaceCopy to full CNode slot"
     (SeLe4n.Kernel.cspaceCopy fullCopySrc fullCopyDst fullCnodeState)
     .targetSlotOccupied
@@ -3223,7 +3223,7 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   let deepN3 : CdtNodeId := ⟨53⟩
   let deepN4 : CdtNodeId := ⟨54⟩
   let deepN5 : CdtNodeId := ⟨55⟩
-  let deepRootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
+  let deepRootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 0 }
   -- All descendants map to cnodeId slot 0 (which exists); all have valid caps
   let deepSeed : SystemState :=
     { baseState with
@@ -3235,18 +3235,18 @@ private def runS2GCapabilityErrorTests : IO Unit := do
         |>.addEdge deepN4 deepN5 .mint
       cdtSlotNode := baseState.cdtSlotNode
         |>.insert deepRootSlot deepRoot
-        |>.insert { cnode := cnodeId, slot := ⟨3⟩ } deepN1
-        |>.insert { cnode := cnodeId, slot := ⟨4⟩ } deepN2
-        |>.insert { cnode := cnodeId, slot := ⟨5⟩ } deepN3
-        |>.insert { cnode := cnodeId, slot := ⟨6⟩ } deepN4
-        |>.insert { cnode := cnodeId, slot := ⟨7⟩ } deepN5
+        |>.insert { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 3 } deepN1
+        |>.insert { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 4 } deepN2
+        |>.insert { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 5 } deepN3
+        |>.insert { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 6 } deepN4
+        |>.insert { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 7 } deepN5
       cdtNodeSlot := baseState.cdtNodeSlot
         |>.insert deepRoot deepRootSlot
-        |>.insert deepN1 { cnode := cnodeId, slot := ⟨3⟩ }
-        |>.insert deepN2 { cnode := cnodeId, slot := ⟨4⟩ }
-        |>.insert deepN3 { cnode := cnodeId, slot := ⟨5⟩ }
-        |>.insert deepN4 { cnode := cnodeId, slot := ⟨6⟩ }
-        |>.insert deepN5 { cnode := cnodeId, slot := ⟨7⟩ }
+        |>.insert deepN1 { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 3 }
+        |>.insert deepN2 { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 4 }
+        |>.insert deepN3 { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 5 }
+        |>.insert deepN4 { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 6 }
+        |>.insert deepN5 { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 7 }
       cdtNextNode := ⟨60⟩
     }
   -- Deep revoke must handle 5 levels of descendants. Since slots 3-7 don't exist
@@ -3278,7 +3278,7 @@ private def runS2HLifecycleErrorTests : IO Unit := do
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId ⟨90⟩
       (.tcb { tid := ⟨90⟩, priority := ⟨10⟩, domain := ⟨0⟩,
               cspaceRoot := cnodeId, vspaceRoot := ⟨20⟩,
-              ipcBuffer := ⟨0⟩, ipcState := .ready }) 0 f2UntypedState)
+              ipcBuffer := (SeLe4n.VAddr.ofNat 0), ipcState := .ready }) 0 f2UntypedState)
     .untypedAllocSizeTooSmall
 
   -- S2-H-02: retypeFromUntyped with device untyped → TCB rejection
@@ -3287,7 +3287,7 @@ private def runS2HLifecycleErrorTests : IO Unit := do
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2DeviceUntypedId ⟨91⟩
       (.tcb { tid := ⟨91⟩, priority := ⟨10⟩, domain := ⟨0⟩,
               cspaceRoot := cnodeId, vspaceRoot := ⟨20⟩,
-              ipcBuffer := ⟨0⟩, ipcState := .ready }) 64 f2DeviceState)
+              ipcBuffer := (SeLe4n.VAddr.ofNat 0), ipcState := .ready }) 64 f2DeviceState)
     .untypedDeviceRestriction
 
   -- S2-H-03: retypeFromUntyped targeting non-untyped object → typeMismatch
@@ -3302,11 +3302,11 @@ private def runS2HLifecycleErrorTests : IO Unit := do
   let exhaustedUntypedId : SeLe4n.ObjId := ⟨85⟩
   let exhaustedAuthCnode : SeLe4n.ObjId := ⟨86⟩
   let exhaustedAuthSlot : SeLe4n.Kernel.CSpaceAddr :=
-    { cnode := exhaustedAuthCnode, slot := ⟨0⟩ }
+    { cnode := exhaustedAuthCnode, slot := SeLe4n.Slot.ofNat 0 }
   let exhaustedState : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject exhaustedUntypedId (.untyped {
-        regionBase := ⟨0x10000⟩
+        regionBase := (SeLe4n.PAddr.ofNat 0x10000)
         regionSize := 128
         watermark := 128   -- watermark == regionSize → no space left
         children := []
@@ -3315,7 +3315,7 @@ private def runS2HLifecycleErrorTests : IO Unit := do
       |>.withObject exhaustedAuthCnode (.cnode {
         depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-          (⟨0⟩, {
+          (SeLe4n.Slot.ofNat 0, {
             target := .object exhaustedUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
             badge := none
@@ -3398,9 +3398,9 @@ private def runX2RuntimeInvariantTests : IO Unit := do
   -- on RPi5 config (44-bit PA). This verifies that the state-aware production
   -- entry point enforces platform-specific bounds, closing the [2^44, 2^52) gap.
   let asidAC4 : SeLe4n.ASID := ⟨1⟩
-  let vaddrAC4 : SeLe4n.VAddr := ⟨0x1000⟩
+  let vaddrAC4 : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat 0x1000)
   let rootOid : SeLe4n.ObjId := ⟨500⟩
-  let paddrAtBoundary : SeLe4n.PAddr := ⟨2^44⟩  -- first address beyond 44-bit range
+  let paddrAtBoundary : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (2^44))  -- first address beyond 44-bit range
   let stRpi5 : SystemState :=
     { withPA.state with
       objects := withPA.state.objects.insert rootOid
@@ -3417,7 +3417,7 @@ private def runX2RuntimeInvariantTests : IO Unit := do
     throw <| IO.userError "state-aware map should reject PA at 2^44 on 44-bit platform"
 
   -- AC4-A/A-04: address just below the 44-bit boundary should be accepted
-  let paddrJustBelow : SeLe4n.PAddr := ⟨2^44 - 1⟩
+  let paddrJustBelow : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (2^44 - 1))
   let resultAccept := SeLe4n.Kernel.Architecture.vspaceMapPageCheckedWithFlushFromState
     asidAC4 vaddrAC4 paddrJustBelow default stRpi5
   match resultAccept with
@@ -3498,7 +3498,7 @@ def runZ8SchedContextNegativeChecks : IO Unit := do
   -- Z8-L-06: Bind when TCB is already bound to another SC
   let tcbAlreadyBound : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     schedContextBinding := .bound ⟨8888⟩ }
   let stTcbBound := { stWithSc with
     objects := stWithSc.objects.insert tid.toObjId (.tcb tcbAlreadyBound) }
@@ -3531,7 +3531,7 @@ def runAC1BudgetFailClosedChecks : IO Unit := do
   -- AC1-G-01: Unbound thread always has sufficient budget
   let tcbUnbound : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     schedContextBinding := .unbound }
   if SeLe4n.Kernel.hasSufficientBudget st0 tcbUnbound != true then
     throw <| IO.userError "unbound thread should have sufficient budget"
@@ -3539,7 +3539,7 @@ def runAC1BudgetFailClosedChecks : IO Unit := do
   -- AC1-G-02: Bound thread with non-existent SchedContext → false (fail-closed)
   let tcbBoundMissing : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     schedContextBinding := .bound ⟨7777⟩ }
   if SeLe4n.Kernel.hasSufficientBudget st0 tcbBoundMissing != false then
     throw <| IO.userError "missing SchedContext should fail-closed (return false)"
@@ -3547,7 +3547,7 @@ def runAC1BudgetFailClosedChecks : IO Unit := do
   -- AC1-G-03: Donated binding with non-existent SchedContext → false
   let tcbDonatedMissing : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     schedContextBinding := .donated ⟨8888⟩ ⟨9999⟩ }
   if SeLe4n.Kernel.hasSufficientBudget st0 tcbDonatedMissing != false then
     throw <| IO.userError "donated missing SchedContext should fail-closed"
@@ -3560,7 +3560,7 @@ def runAC1BudgetFailClosedChecks : IO Unit := do
     objects := st0.objects.insert scId (.schedContext scWithBudget) }
   let tcbBound : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     schedContextBinding := .bound ⟨6001⟩ }
   if SeLe4n.Kernel.hasSufficientBudget stWithSc tcbBound != true then
     throw <| IO.userError "bound with positive budget should be true"
@@ -3586,8 +3586,8 @@ def runAC1CdtTrackingChecks : IO Unit := do
   -- Build a minimal CSpace with 2 CNodes and a source capability
   let srcCnodeId : SeLe4n.ObjId := ⟨100⟩
   let dstCnodeId : SeLe4n.ObjId := ⟨200⟩
-  let srcSlot : SeLe4n.Slot := ⟨0⟩
-  let dstSlot : SeLe4n.Slot := ⟨1⟩
+  let srcSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
+  let dstSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 1
   let allRights := AccessRightSet.ofList [.read, .write, .grant, .grantReply, .retype]
   let cap : Capability := {
     target := .object ⟨300⟩,

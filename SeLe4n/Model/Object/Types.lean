@@ -771,7 +771,7 @@ theorem TCB.not_lawfulBEq : ¬ LawfulBEq TCB := by
   let r₁ : SeLe4n.RegisterFile := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := f₁ }
   let r₂ : SeLe4n.RegisterFile := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := f₂ }
   let oid : SeLe4n.ObjId := ⟨0⟩
-  let va : SeLe4n.VAddr := ⟨0⟩
+  let va : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat 0)
   let t₁ : TCB := {
     tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
     cspaceRoot := oid, vspaceRoot := oid, ipcBuffer := va, registerContext := r₁ }
@@ -1042,6 +1042,14 @@ theorem empty_wellFormed (base : SeLe4n.PAddr) (size : Nat) :
   ⟨empty_watermarkValid base size, empty_childrenWithinWatermark base size,
    empty_childrenNonOverlap base size, empty_childrenUniqueIds base size⟩
 
+/-! ### AN2-F.3 / FND-M03 — `UntypedObjectValid` subtype (marker)
+
+    A proof-carrying refinement of `UntypedObject` whose well-formedness
+    has been discharged at construction time. Defined below, outside the
+    `UntypedObject` namespace, so it is reachable from callers via
+    `SeLe4n.Model.UntypedObjectValid` (or just `UntypedObjectValid` with
+    `open SeLe4n.Model`). -/
+
 /-- `canAllocate` being true implies the allocation fits within region bounds. -/
 theorem canAllocate_implies_fits (ut : UntypedObject) (size : Nat)
     (hCan : ut.canAllocate size = true) :
@@ -1240,6 +1248,41 @@ theorem reset_wellFormed (ut : UntypedObject) : ut.reset.wellFormed := by
   · intro c₁ c₂ hMem₁; simp [reset] at hMem₁
 
 end UntypedObject
+
+/-! ### AN2-F.3 / FND-M03 — `UntypedObjectValid` subtype
+
+    A proof-carrying refinement of `UntypedObject` whose well-formedness
+    has been discharged at construction time. Production paths (retype,
+    capability derivation) that require a well-formed untyped region
+    should accept this subtype rather than bare `UntypedObject` + a
+    run-time `wellFormed` check.
+
+    Current state (AN2-landed subset): the subtype is defined and a
+    convenience `UntypedObjectValid.empty` smart constructor is provided.
+    Tightening `allocate` / `retypeFromUntyped` entry signatures to take
+    `UntypedObjectValid` (instead of a bare `UntypedObject`) is tracked
+    as an AN2-continuation cascade — each caller needs to produce the
+    `.wellFormed` witness locally, which typically reduces to the
+    `crossSubsystemInvariant` / `retypeFromUntyped_capacity_gated`
+    chain already present at kernel-entry boundaries. -/
+def UntypedObjectValid : Type := { ut : UntypedObject // ut.wellFormed }
+
+namespace UntypedObjectValid
+
+/-- AN2-F.3: Project the underlying `UntypedObject`. -/
+@[inline] def toUntyped (u : UntypedObjectValid) : UntypedObject := u.val
+
+/-- AN2-F.3: Extract the well-formedness witness. -/
+@[inline] def wf (u : UntypedObjectValid) : u.toUntyped.wellFormed := u.property
+
+/-- AN2-F.3: Canonical empty constructor — a fresh untyped region at `base`
+    with `size` capacity, zero children, is well-formed by `empty_wellFormed`. -/
+@[inline] def empty (base : SeLe4n.PAddr) (size : Nat) : UntypedObjectValid :=
+  ⟨UntypedObject.mk base size 0 [] false, UntypedObject.empty_wellFormed base size⟩
+
+end UntypedObjectValid
+
+instance : CoeHead UntypedObjectValid UntypedObject := ⟨UntypedObjectValid.toUntyped⟩
 
 -- ============================================================================
 -- Syscall decode types — register-sourced syscall argument decoding

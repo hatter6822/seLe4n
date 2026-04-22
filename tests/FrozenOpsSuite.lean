@@ -61,7 +61,7 @@ private def emptyFrozenState : FrozenSystemState := {
 /-- Helper: construct a test TCB. -/
 private def mkTcb (tid : Nat) (prio : Nat := 0) (dom : Nat := 0) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨dom⟩,
-    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := ⟨0⟩ }
+    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
 
 /-- Helper: construct a FrozenSystemState with given objects. -/
 private def mkFrozenState (objs : List (ObjId × FrozenKernelObject))
@@ -152,11 +152,11 @@ private def fo007_cspaceLookup : IO Unit := do
     rights := .ofNat 7
     badge := none
   }
-  let radix := (CNodeRadix.empty 0 0 4).insert ⟨3⟩ cap
+  let radix := (CNodeRadix.empty 0 0 4).insert (SeLe4n.Slot.ofNat 3) cap
   let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
   let fst := mkFrozenState [(⟨10⟩, .cnode cn)]
   -- Lookup slot 3 (CPtr with value 3)
-  match frozenCspaceLookup fst ⟨3⟩ ⟨10⟩ with
+  match frozenCspaceLookup fst (SeLe4n.CPtr.ofNat 3) ⟨10⟩ with
   | .ok foundCap =>
       expect "found capability" (foundCap.target == .object ⟨42⟩)
   | .error _ => throw <| IO.userError "radix lookup should succeed"
@@ -166,7 +166,7 @@ private def fo008_cspaceLookupMissing : IO Unit := do
   let radix := CNodeRadix.empty 0 0 4
   let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
   let fst := mkFrozenState [(⟨10⟩, .cnode cn)]
-  match frozenCspaceLookup fst ⟨5⟩ ⟨10⟩ with
+  match frozenCspaceLookup fst (SeLe4n.CPtr.ofNat 5) ⟨10⟩ with
   | .ok _ => throw <| IO.userError "should fail"
   | .error e => expect "empty slot → invalidCapability" (e == .invalidCapability)
 
@@ -178,20 +178,20 @@ private def fo008_cspaceLookupMissing : IO Unit := do
 private def fo009_vspaceLookup : IO Unit := do
   -- Create a frozen VSpaceRoot with one mapping
   let mappingsRt := (RHTable.empty 16 : RHTable VAddr (PAddr × PagePermissions)).insert
-    ⟨0x1000⟩ (⟨0x2000⟩, default)
+    (SeLe4n.VAddr.ofNat 0x1000) ((SeLe4n.PAddr.ofNat 0x2000), default)
   let vsr : FrozenVSpaceRoot := { asid := ⟨1⟩, mappings := freezeMap mappingsRt }
   let asidRt := (RHTable.empty 16 : RHTable ASID ObjId).insert ⟨1⟩ ⟨20⟩
   let fst := { mkFrozenState [(⟨20⟩, .vspaceRoot vsr)] with
     asidTable := freezeMap asidRt }
-  match frozenVspaceLookup ⟨1⟩ ⟨0x1000⟩ fst with
+  match frozenVspaceLookup ⟨1⟩ (SeLe4n.VAddr.ofNat 0x1000) fst with
   | .ok ((paddr, _perms), _) =>
-      expect "resolved paddr" (paddr == ⟨0x2000⟩)
+      expect "resolved paddr" (paddr == (SeLe4n.PAddr.ofNat 0x2000))
   | .error _ => throw <| IO.userError "vspace lookup should succeed"
 
 /-- FO-010: frozenVspaceLookup — unbound ASID returns error -/
 private def fo010_vspaceLookupMissing : IO Unit := do
   let fst := emptyFrozenState
-  match frozenVspaceLookup ⟨99⟩ ⟨0x1000⟩ fst with
+  match frozenVspaceLookup ⟨99⟩ (SeLe4n.VAddr.ofNat 0x1000) fst with
   | .ok _ => throw <| IO.userError "should fail"
   | .error e => expect "unbound ASID → asidNotBound" (e == .asidNotBound)
 
@@ -227,13 +227,13 @@ private def fo012_serviceLookupMissing : IO Unit := do
 /-- FO-013: frozenCspaceDelete — erase slot from frozen CNode -/
 private def fo013_cspaceDelete : IO Unit := do
   let cap : Capability := { target := .object ⟨42⟩, rights := .ofNat 7, badge := none }
-  let radix := (CNodeRadix.empty 0 0 4).insert ⟨3⟩ cap
+  let radix := (CNodeRadix.empty 0 0 4).insert (SeLe4n.Slot.ofNat 3) cap
   let cn : FrozenCNode := { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := radix }
   let fst := mkFrozenState [(⟨10⟩, .cnode cn)]
-  match frozenCspaceDelete ⟨10⟩ ⟨3⟩ fst with
+  match frozenCspaceDelete ⟨10⟩ (SeLe4n.Slot.ofNat 3) fst with
   | .ok ((), fst') =>
       -- After delete, lookup should fail
-      match frozenCspaceLookup fst' ⟨3⟩ ⟨10⟩ with
+      match frozenCspaceLookup fst' (SeLe4n.CPtr.ofNat 3) ⟨10⟩ with
       | .ok _ => throw <| IO.userError "deleted slot should be empty"
       | .error e => expect "deleted → invalidCapability" (e == .invalidCapability)
   | .error _ => throw <| IO.userError "delete should succeed"
@@ -377,10 +377,10 @@ private def fo020_frozenCspaceMint : IO Unit := do
   let objsMap := objs.foldl (fun acc (k, v) => acc.insert k v) (RHTable.empty 16)
   let st0 : FrozenSystemState := { emptyFrozenState with objects := freezeMap objsMap }
   let testCap : Capability := { target := .object epId, rights := .ofNat 7, badge := none }
-  match frozenCspaceMint cnodeId ⟨0⟩ testCap st0 with
+  match frozenCspaceMint cnodeId (SeLe4n.Slot.ofNat 0) testCap st0 with
   | .ok ((), st1) =>
     -- Verify slot 0 now has the cap
-    match frozenCspaceLookup st1 ⟨0⟩ cnodeId with
+    match frozenCspaceLookup st1 (SeLe4n.CPtr.ofNat 0) cnodeId with
     | .ok cap =>
       expect "frozenCspaceMint inserts cap" (cap.target == .object epId)
       IO.println "frozen-ops check passed [FO-020: frozenCspaceMint]"

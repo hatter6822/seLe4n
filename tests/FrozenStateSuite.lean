@@ -101,7 +101,7 @@ private def fs008_freezeTcb : IO Unit := do
   let tid : ThreadId := ⟨1⟩
   let tcb : TCB :=
     { tid := tid, priority := ⟨10⟩, domain := ⟨0⟩
-      cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := ⟨0⟩ }
+      cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
   let frozen := freezeObject (.tcb tcb)
   expect "frozen TCB has correct type" (frozen.objectType == .tcb)
 
@@ -114,7 +114,7 @@ private def fs009_freezeCNode : IO Unit := do
   let cn : CNode :=
     { depth := 16, guardWidth := 4, guardValue := 0
       radixWidth := 4
-      slots := (RHTable.empty 16).insert ⟨3⟩ cap }
+      slots := (RHTable.empty 16).insert (SeLe4n.Slot.ofNat 3) cap }
   let frozen := freezeObject (.cnode cn)
   expect "frozen CNode has correct type" (frozen.objectType == .cnode)
   -- Verify the frozen CNode slots use CNodeRadix (flat array)
@@ -123,8 +123,8 @@ private def fs009_freezeCNode : IO Unit := do
     expect "guard width preserved" (fc.guardWidth == 4)
     expect "guard value preserved" (fc.guardValue == 0)
     expect "radix width preserved" (fc.radixWidth == 4)
-    expect "radix lookup finds cap" (fc.slots.lookup ⟨3⟩ == some cap)
-    expect "radix lookup misses" (fc.slots.lookup ⟨7⟩ == none)
+    expect "radix lookup finds cap" (fc.slots.lookup (SeLe4n.Slot.ofNat 3) == some cap)
+    expect "radix lookup misses" (fc.slots.lookup (SeLe4n.Slot.ofNat 7) == none)
   | _ => throw <| IO.userError "expected FrozenCNode"
 
 /-- FS-010: freezeObject converts VSpaceRoot to FrozenVSpaceRoot -/
@@ -133,13 +133,13 @@ private def fs010_freezeVSpaceRoot : IO Unit := do
     { read := true, write := false, execute := false }
   let vs : VSpaceRoot :=
     { asid := ⟨1⟩
-      mappings := (RHTable.empty 16).insert ⟨0x1000⟩ (⟨0x2000⟩, perms) }
+      mappings := (RHTable.empty 16).insert (SeLe4n.VAddr.ofNat 0x1000) ((SeLe4n.PAddr.ofNat 0x2000), perms) }
   let frozen := freezeObject (.vspaceRoot vs)
   expect "frozen VSpaceRoot type" (frozen.objectType == .vspaceRoot)
   match frozen with
   | .vspaceRoot fvs =>
     expect "ASID preserved" (fvs.asid == ⟨1⟩)
-    expect "mappings lookup works" (fvs.mappings.get? ⟨0x1000⟩ == some (⟨0x2000⟩, perms))
+    expect "mappings lookup works" (fvs.mappings.get? (SeLe4n.VAddr.ofNat 0x1000) == some ((SeLe4n.PAddr.ofNat 0x2000), perms))
   | _ => throw <| IO.userError "expected FrozenVSpaceRoot"
 
 -- ============================================================================

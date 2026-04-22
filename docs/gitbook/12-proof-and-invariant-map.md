@@ -2819,3 +2819,97 @@ transitive propagation, reversion, frame preservation, zero-fuel identity.
 - `RegisterFile` non-lawful BEq (AF-23/CF-03) — safety analysis documented.
 - `descendantsOf` BFS transitive closure completeness (AF-34/MED-M2) —
   deferral to WS-V/H3 documented with structural argument.
+
+### 12.20 Foundation hardening — Theme 4.3 subtype-gate cascade (WS-AN Phase AN2)
+
+Phase AN2 lands the **Theme 4.3 (advisory predicates → subtype gates)**
+migration for every hardware-adjacent identifier and address type in
+`SeLe4n/Prelude.lean`, plus the Badge H-12 intermediate-overflow closure,
+the `UntypedObjectValid` refinement subtype, and four small FND-M batch
+items. The canonical audit plan is [`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md) §5.
+
+**AN2-A / H-13 — Badge `private mk`:**
+- `Badge` constructor is now `private mk ::`. Cross-module `Badge.mk n`
+  and `⟨n⟩` anonymous-constructor calls are elaboration errors.
+- Public smart constructors: `Badge.ofNatMasked` (masking), `Badge.ofNat`
+  (proof-carrying, rejects `n ≥ 2^64` via default `by decide`),
+  `Badge.zero` (canonical zero), `Badge.ofUInt64Pair` (AN2-E).
+- `private Badge.mkUnsafeForProof` helper preserves proof-internal
+  destructuring without leaking a bypass to external modules.
+- Manual `Inhabited Badge := ⟨⟨0⟩⟩` replaces `deriving Inhabited`.
+- Supporting theorems: `Badge.zero_valid`, `Badge.zero_toNat`
+  (`@[simp]`), `Badge.ofNat_toNat` (`@[simp]`), `Badge.ofNat_valid`.
+- Pattern matches the pre-existing `AccessRightSet` (AJ2-A) and
+  `CapDerivationTree` discipline.
+
+**AN2-B.1/B.2/B.3/B.4 / Theme 4.3 follow-on — CPtr, Slot, VAddr, PAddr
+`private mk`:** same pattern applied to the four remaining identifier /
+address types. ~250+ call sites across `SyscallArgDecode`,
+`Platform/DeviceTree`, `MainTraceHarness`, and every affected test
+suite were auto-migrated using a Lean-error-driven Python patcher
+(iterative `lake build <target>` → extract `Constructor ... is marked
+as private` errors → rewrite `⟨N⟩` at the offending column to
+`(SeLe4n.{type}.ofNat (N))`).
+
+`PAddr.ofNat` retains its bare `Nat → PAddr` signature at the
+constructor layer; a `physicalAddressWidth` validation gate is
+implemented at production decode sites (AK3-E's
+`decodeVSpaceMapArgsChecked`, AJ4-C's `validateIpcBufferAddress`)
+rather than at the constructor — a constructor-level gate would
+duplicate those checks without adding safety.
+
+**AN2-E / H-12 — Badge.ofUInt64Pair:** new constructor
+`Badge.ofUInt64Pair (a b : UInt64) : Badge` performs the bitwise-OR
+entirely in the `UInt64` domain so the intermediate never escapes
+`2^64`. `ofUInt64Pair_valid` theorem proves `.valid` by construction
+(no truncation). Supporting theorems `ofUInt64Pair_comm`
+(commutativity) and `ofUInt64Pair_zero_right` (identity on
+OR-with-zero). Four regression tests (`bov025`–`bov028`) verify
+full-mask round-trip, equivalence with `bor ∘ ofNatMasked` on
+word-bounded inputs, commutativity, and the zero-right identity.
+
+**AN2-F.1 / FND-M01 — isWord64Bounded delegation:**
+`machineWordBits`, `machineWordMax`, `isWord64`, `isWord64Dec` hoisted
+before `CPtr`/`Slot` in `Prelude.lean`. `CPtr.isWord64Bounded` and
+`Slot.isWord64Bounded` are now structurally `isWord64Dec ·.val` — the
+delegation reduces by `rfl`. Backwards-compat `_eq_isWord64Dec`
+theorems are retained as `rfl` aliases for explicit-rewrite call sites.
+
+**AN2-F.3 / FND-M03 — UntypedObjectValid subtype (partial):**
+new subtype `UntypedObjectValid := { ut : UntypedObject // ut.wellFormed }`
+in `Model/Object/Types.lean` with:
+- `UntypedObjectValid.toUntyped` — project underlying `UntypedObject`
+- `UntypedObjectValid.wf` — extract well-formedness witness
+- `UntypedObjectValid.empty` — canonical constructor (well-formedness
+  discharged by the pre-existing `empty_wellFormed` theorem)
+- `CoeHead UntypedObjectValid UntypedObject` — implicit coercion
+
+Tightening `allocate` / `retypeFromUntyped` entry signatures to accept
+`UntypedObjectValid` (instead of the bare `UntypedObject` + a run-time
+`wellFormed` check) is tracked as an AN2-continuation cascade — each
+caller needs to discharge `.wellFormed` locally.
+
+**AN2-F.4 / FND-M04 — minPracticalRHCapacity:** new
+`abbrev minPracticalRHCapacity : Nat := 16` in
+`Kernel/RobinHood/Bridge.lean` replaces the magic `16` in **both**
+the `Inhabited (RHTable α β)` and `EmptyCollection (RHTable α β)`
+instances. Declared `abbrev` so `decide` can unfold it when
+discharging `RHTable.empty`'s `cap ≥ 4` precondition.
+
+**AN2-F.8 / FND-M08 — toObjId decision table:** Markdown decision
+table added to the `ThreadId.toObjId` / `toObjIdChecked` /
+`toObjIdVerified` cluster in `Prelude.lean` documenting the
+sentinel-check / store-type-check dichotomy.
+
+**Deferred to AN2-continuation:** `RegisterFile.gpr : Fin 32` cascade
+(H-11); `typedIdDisjointness` as a new `crossSubsystemInvariant`
+conjunct (H-10 — 34-bridge cascade per AM4 playbook);
+`VAddr.canonicalBound` parameterization on `MachineState.virtualAddressWidth`
+(FND-M02); `PAddr.ofNat` width parameter; `allocate`/`retypeFromUntyped`
+signature tightening for `UntypedObjectValid`; DS-L5 heartbeat
+decomposition; FrozenOps unchecked-variant `private` gate
+(cross-module proof unfolding makes this risky); Phase-2
+unreachable-branch proof; `allTablesInvExtK` 17-tuple → structure
+refactor (~80 sites).
+
+Zero sorry/axiom/native_decide in production surface throughout.

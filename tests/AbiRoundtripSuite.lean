@@ -66,8 +66,8 @@ private def buildAbiState
     let tid : SeLe4n.ThreadId := ⟨900⟩
     let cnodeId : SeLe4n.ObjId := ⟨901⟩
     let vsId : SeLe4n.ObjId := ⟨902⟩
-    let ipcBufferVA : SeLe4n.VAddr := ⟨0x20_000⟩
-    let ipcBufferPA : SeLe4n.PAddr := ⟨0x40_000⟩
+    let ipcBufferVA : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat (0x20_000))
+    let ipcBufferPA : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (0x40_000))
     -- Encode each overflow u64 into bytes at the correct physical offset
     let mut mem : SeLe4n.Memory := fun _ => 0
     for i in [:overflowRegs.size] do

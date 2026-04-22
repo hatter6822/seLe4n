@@ -161,7 +161,7 @@ private def minimalTcb (tid : ThreadId) : TCB :=
     domain := ⟨0⟩
     cspaceRoot := ⟨0⟩
     vspaceRoot := ⟨0⟩
-    ipcBuffer := ⟨0⟩ }
+    ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
 
 private def mkNotifObjectEntry (oid : ObjId) : ObjectEntry :=
   { id := oid
@@ -208,7 +208,7 @@ def ak9f_01_classify_empty_map : IO Unit := do
 def ak9f_02_classify_unmapped : IO Unit := do
   let fdtRegion : FdtMemoryRegion := { base := 0xDEAD_0000, size := 0x1000 }
   let pm : List MemoryRegion :=
-    [{ base := ⟨0x0⟩, size := 0x1000, kind := .ram }]
+    [{ base := (SeLe4n.PAddr.ofNat 0x0), size := 0x1000, kind := .ram }]
   expect "AK9-F-02 classifyChecked unmapped rejected"
     (classifyMemoryRegionChecked fdtRegion pm = none)
 
@@ -216,7 +216,7 @@ def ak9f_02_classify_unmapped : IO Unit := do
 def ak9f_03_classify_mapped : IO Unit := do
   let fdtRegion : FdtMemoryRegion := { base := 0x500, size := 0x100 }
   let pm : List MemoryRegion :=
-    [{ base := ⟨0x0⟩, size := 0x1000, kind := .ram }]
+    [{ base := (SeLe4n.PAddr.ofNat 0x0), size := 0x1000, kind := .ram }]
   expect "AK9-F-03 classifyChecked mapped returns kind"
     (classifyMemoryRegionChecked fdtRegion pm = some .ram)
 

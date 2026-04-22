@@ -593,7 +593,7 @@ def allocationBasePageAligned (ut : UntypedObject) : Bool :=
 def scrubObjectMemory (st : SystemState) (objectId : SeLe4n.ObjId)
     (objType : KernelObjectType) : SystemState :=
   let size := objectTypeAllocSize objType
-  let base : SeLe4n.PAddr := ⟨objectId.toNat * size⟩
+  let base : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (objectId.toNat * size))
   { st with machine := SeLe4n.zeroMemoryRange st.machine base size }
 
 /-- S6-C: `scrubObjectMemory` preserves the object store. -/
@@ -617,7 +617,7 @@ theorem scrubObjectMemory_establishes_memoryZeroed
     (st : SystemState) (objectId : SeLe4n.ObjId)
     (objType : KernelObjectType) :
     let size := objectTypeAllocSize objType
-    let base : SeLe4n.PAddr := ⟨objectId.toNat * size⟩
+    let base : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (objectId.toNat * size))
     SeLe4n.memoryZeroed (scrubObjectMemory st objectId objType).machine base size := by
   simp [scrubObjectMemory]
   exact SeLe4n.zeroMemoryRange_establishes_memoryZeroed st.machine _ _

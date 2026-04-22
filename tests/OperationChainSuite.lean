@@ -19,7 +19,7 @@ open SeLe4n.Model
 namespace SeLe4n.Testing
 
 instance : Inhabited SeLe4n.Kernel.CSpaceAddr where
-  default := { cnode := ⟨0⟩, slot := ⟨0⟩ }
+  default := { cnode := ⟨0⟩, slot := (SeLe4n.Slot.ofNat 0) }
 
 -- W5-A: Consolidated test helpers — delegate to SeLe4n.Testing shared helpers
 private def expect (label : String) (cond : Bool) : IO Unit :=
@@ -47,8 +47,8 @@ private def assertInvariants (label : String) (st : SystemState) : IO Unit :=
 private def chain1RetypeMintRevoke : IO Unit := do
   let targetId : SeLe4n.ObjId := ⟨200⟩
   let cnodeId : SeLe4n.ObjId := ⟨201⟩
-  let authSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
-  let dstSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨1⟩ }
+  let authSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := (SeLe4n.Slot.ofNat 0) }
+  let dstSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := (SeLe4n.Slot.ofNat 1) }
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject targetId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
@@ -58,7 +58,7 @@ private def chain1RetypeMintRevoke : IO Unit := do
           guardValue := 0
           radixWidth := 1
           slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-            (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant, .retype], badge := none })
+            ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant, .retype], badge := none })
           ]
         })
       |>.withLifecycleObjectType targetId .notification
@@ -76,7 +76,7 @@ private def chain1RetypeMintRevoke : IO Unit := do
     (SeLe4n.Kernel.cspaceMint authSlot dstSlot (AccessRightSet.ofList [.read]) none st1)
   -- W5-E: Verify post-state mutation — minted cap in destination slot
   match st2.objects[cnodeId]? with
-  | some (.cnode cn) => expect "chain1: mint dest slot populated" (cn.slots[(⟨1⟩ : SeLe4n.Slot)]?.isSome)
+  | some (.cnode cn) => expect "chain1: mint dest slot populated" (cn.slots[((SeLe4n.Slot.ofNat 1) : SeLe4n.Slot)]?.isSome)
   | _ => throw <| IO.userError "chain1: CNode not found after mint"
   let (_, st3) ← expectOkSt "chain1: cspaceRevokeCdtStrict"
     (SeLe4n.Kernel.cspaceRevokeCdtStrict dstSlot st2)
@@ -90,9 +90,9 @@ private def chain2SendSendReceiveFifo : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject tid1.toObjId (.tcb { tid := tid1, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
-      |>.withObject tid2.toObjId (.tcb { tid := tid2, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
-      |>.withObject tid3.toObjId (.tcb { tid := tid3, priority := ⟨38⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨12288⟩, ipcState := .ready })
+      |>.withObject tid1.toObjId (.tcb { tid := tid1, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready })
+      |>.withObject tid2.toObjId (.tcb { tid := tid2, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), ipcState := .ready })
+      |>.withObject tid3.toObjId (.tcb { tid := tid3, priority := ⟨38⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 12288), ipcState := .ready })
       |>.withRunnable [tid1, tid2, tid3]
       |>.buildChecked)
   let msg1 : IpcMessage := .empty
@@ -105,8 +105,8 @@ private def chain2SendSendReceiveFifo : IO Unit := do
 
 private def chain3MapLookupUnmapLookup : IO Unit := do
   let asid : SeLe4n.ASID := ⟨2⟩
-  let vaddr : SeLe4n.VAddr := ⟨4096⟩
-  let paddr : SeLe4n.PAddr := ⟨12288⟩
+  let vaddr : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat 4096)
+  let paddr : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 12288)
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject ⟨220⟩ (.vspaceRoot { asid := asid, mappings := {} })
@@ -150,9 +150,9 @@ private def chain4ServiceRegistryDependencyGraph : IO Unit := do
 private def chain5CopyMoveDelete : IO Unit := do
   let cnodeId : SeLe4n.ObjId := ⟨240⟩
   let target : SeLe4n.ObjId := ⟨241⟩
-  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨0⟩ }
-  let copyDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨1⟩ }
-  let moveDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨2⟩ }
+  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := (SeLe4n.Slot.ofNat 0) }
+  let copyDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := (SeLe4n.Slot.ofNat 1) }
+  let moveDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := (SeLe4n.Slot.ofNat 2) }
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject target (.endpoint {})
@@ -162,7 +162,7 @@ private def chain5CopyMoveDelete : IO Unit := do
           guardValue := 0
           radixWidth := 2
           slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-            (⟨0⟩, { target := .object target, rights := AccessRightSet.ofList [.read, .write], badge := none })
+            ((SeLe4n.Slot.ofNat 0), { target := .object target, rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
         })
       |>.withLifecycleObjectType target .endpoint
@@ -171,19 +171,19 @@ private def chain5CopyMoveDelete : IO Unit := do
   let (_, st1) ← expectOkSt "chain5: copy cap" (SeLe4n.Kernel.cspaceCopy src copyDst st0)
   -- W5-E: Verify post-state mutation — copied cap appears in destination slot
   match st1.objects[cnodeId]? with
-  | some (.cnode cn) => expect "chain5: copy target slot populated" (cn.slots[(⟨1⟩ : SeLe4n.Slot)]?.isSome)
+  | some (.cnode cn) => expect "chain5: copy target slot populated" (cn.slots[((SeLe4n.Slot.ofNat 1) : SeLe4n.Slot)]?.isSome)
   | _ => throw <| IO.userError "chain5: CNode not found after copy"
   let (_, st2) ← expectOkSt "chain5: move copied cap" (SeLe4n.Kernel.cspaceMove copyDst moveDst st1)
   -- W5-E: Verify post-state mutation — source slot cleared, dest slot populated
   match st2.objects[cnodeId]? with
   | some (.cnode cn) =>
-    expect "chain5: move source slot cleared" (cn.slots[(⟨1⟩ : SeLe4n.Slot)]?.isNone)
-    expect "chain5: move dest slot populated" (cn.slots[(⟨2⟩ : SeLe4n.Slot)]?.isSome)
+    expect "chain5: move source slot cleared" (cn.slots[((SeLe4n.Slot.ofNat 1) : SeLe4n.Slot)]?.isNone)
+    expect "chain5: move dest slot populated" (cn.slots[((SeLe4n.Slot.ofNat 2) : SeLe4n.Slot)]?.isSome)
   | _ => throw <| IO.userError "chain5: CNode not found after move"
   let (_, st3) ← expectOkSt "chain5: delete moved cap" (SeLe4n.Kernel.cspaceDeleteSlot moveDst st2)
   -- W5-E: Verify post-state mutation — deleted slot cleared
   match st3.objects[cnodeId]? with
-  | some (.cnode cn) => expect "chain5: delete slot cleared" (cn.slots[(⟨2⟩ : SeLe4n.Slot)]?.isNone)
+  | some (.cnode cn) => expect "chain5: delete slot cleared" (cn.slots[((SeLe4n.Slot.ofNat 2) : SeLe4n.Slot)]?.isNone)
   | _ => throw <| IO.userError "chain5: CNode not found after delete"
   assertInvariants "chain5: copy→move→delete" st3
 
@@ -199,7 +199,7 @@ private def chain6NotificationBadgeAccumulation : IO Unit := do
           domain := ⟨0⟩
           cspaceRoot := ⟨300⟩
           vspaceRoot := ⟨310⟩
-          ipcBuffer := ⟨4096⟩
+          ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
           ipcState := .ready
         })
       |>.withRunnable [waiter]
@@ -217,9 +217,9 @@ private def chain6NotificationBadgeAccumulation : IO Unit := do
 private def chain7VSpaceMultiAsidSharedPage : IO Unit := do
   let asid1 : SeLe4n.ASID := ⟨31⟩
   let asid2 : SeLe4n.ASID := ⟨32⟩
-  let vaddr1 : SeLe4n.VAddr := ⟨0x2000⟩
-  let vaddr2 : SeLe4n.VAddr := ⟨0x3000⟩
-  let paddr : SeLe4n.PAddr := ⟨0x1000⟩
+  let vaddr1 : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat 0x2000)
+  let vaddr2 : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat 0x3000)
+  let paddr : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 0x1000)
   let roPerms : PagePermissions := { read := true, write := false, execute := false }
   let rwPerms : PagePermissions := { read := true, write := true, execute := false }
   let st0 :=
@@ -272,10 +272,10 @@ private def chain8IpcInterleavedSendOrdering : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject tidA.toObjId (.tcb { tid := tidA, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
-      |>.withObject tidB.toObjId (.tcb { tid := tidB, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
-      |>.withObject tidC.toObjId (.tcb { tid := tidC, priority := ⟨38⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨12288⟩, ipcState := .ready })
-      |>.withObject tidD.toObjId (.tcb { tid := tidD, priority := ⟨37⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := ⟨16384⟩, ipcState := .ready })
+      |>.withObject tidA.toObjId (.tcb { tid := tidA, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready })
+      |>.withObject tidB.toObjId (.tcb { tid := tidB, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), ipcState := .ready })
+      |>.withObject tidC.toObjId (.tcb { tid := tidC, priority := ⟨38⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 12288), ipcState := .ready })
+      |>.withObject tidD.toObjId (.tcb { tid := tidD, priority := ⟨37⟩, domain := ⟨0⟩, cspaceRoot := ⟨300⟩, vspaceRoot := ⟨310⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 16384), ipcState := .ready })
       |>.withRunnable [tidA, tidB, tidC, tidD]
       |>.buildChecked)
 
@@ -316,9 +316,9 @@ private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
   let rootCNode : SeLe4n.ObjId := ⟨2901⟩
   let childCNode : SeLe4n.ObjId := ⟨2902⟩
   let grandCNode : SeLe4n.ObjId := ⟨2903⟩
-  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := ⟨0⟩ }
-  let childSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := childCNode, slot := ⟨0⟩ }
-  let grandSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := grandCNode, slot := ⟨0⟩ }
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := (SeLe4n.Slot.ofNat 0) }
+  let childSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := childCNode, slot := (SeLe4n.Slot.ofNat 0) }
+  let grandSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := grandCNode, slot := (SeLe4n.Slot.ofNat 0) }
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject targetId (.endpoint {})
@@ -328,7 +328,7 @@ private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
           guardValue := 0
           radixWidth := 4
           slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-            (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+            ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
           ]
         })
       |>.withObject childCNode (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 })
@@ -348,13 +348,13 @@ private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
     (grandCap.map Capability.rights = some (AccessRightSet.ofList [.read]))
 
   expectErr "chain9: grandchild cannot mint additional write right"
-    (SeLe4n.Kernel.cspaceMint grandSlot { cnode := grandCNode, slot := ⟨1⟩ } (AccessRightSet.ofList [.read, .write]) none st2)
+    (SeLe4n.Kernel.cspaceMint grandSlot { cnode := grandCNode, slot := (SeLe4n.Slot.ofNat 1) } (AccessRightSet.ofList [.read, .write]) none st2)
     .invalidCapability
 
   let noGrantGate : SeLe4n.Kernel.SyscallGate := {
     callerId := ⟨42⟩
     cspaceRoot := grandCNode
-    capAddr := ⟨0⟩
+    capAddr := (SeLe4n.CPtr.ofNat 0)
     capDepth := 4
     requiredRight := .grant
   }
@@ -365,7 +365,7 @@ private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
   expectErr "chain9: grandchild cannot mint via syscall gate without grant"
     (SeLe4n.Kernel.syscallInvoke { noGrantGate with requiredRight := .grant } (fun cap =>
       if cap.target ≠ .object grandSlot.cnode then fun _ => .error .invalidCapability
-      else SeLe4n.Kernel.cspaceMint grandSlot { cnode := grandCNode, slot := ⟨1⟩ }
+      else SeLe4n.Kernel.cspaceMint grandSlot { cnode := grandCNode, slot := (SeLe4n.Slot.ofNat 1) }
         (AccessRightSet.ofList [.read]) none) st2)
     .illegalAuthority
 
@@ -392,12 +392,12 @@ private def buildParameterizedTopology
         domain := ⟨0⟩
         cspaceRoot := ⟨2000⟩
         vspaceRoot := ⟨3000⟩
-        ipcBuffer := ⟨4096 + i * 4096⟩
+        ipcBuffer := (SeLe4n.VAddr.ofNat (4096 + i * 4096))
         ipcState := .ready
       })
   let cnodeSlots : List (SeLe4n.Slot × Capability) :=
     (List.range threadCount).map fun i =>
-      (⟨i⟩, { target := .object ⟨1000 + i⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
+      (SeLe4n.Slot.ofNat i, { target := .object ⟨1000 + i⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
   let cnodeObj : KernelObject :=
     .cnode { depth := radix, guardWidth := 0, guardValue := 0, radixWidth := radix, slots := SeLe4n.Kernel.RobinHood.RHTable.ofList cnodeSlots }
   let vspaceRoots : List (SeLe4n.ObjId × KernelObject) :=
@@ -433,10 +433,10 @@ private def schedulerStressChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨260⟩ (.cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 })
       |>.withObject ⟨3000⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
-      |>.withObject ⟨2600⟩ (.tcb { tid := ⟨2600⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
-      |>.withObject ⟨2601⟩ (.tcb { tid := ⟨2601⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
-      |>.withObject ⟨2602⟩ (.tcb { tid := ⟨2602⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := ⟨12288⟩, ipcState := .ready })
-      |>.withObject ⟨2603⟩ (.tcb { tid := ⟨2603⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := ⟨16384⟩, ipcState := .ready })
+      |>.withObject ⟨2600⟩ (.tcb { tid := ⟨2600⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready })
+      |>.withObject ⟨2601⟩ (.tcb { tid := ⟨2601⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), ipcState := .ready })
+      |>.withObject ⟨2602⟩ (.tcb { tid := ⟨2602⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 12288), ipcState := .ready })
+      |>.withObject ⟨2603⟩ (.tcb { tid := ⟨2603⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 16384), ipcState := .ready })
       |>.withRunnable [⟨2600⟩, ⟨2601⟩, ⟨2602⟩, ⟨2603⟩]
       |>.buildChecked)
   let (_, stFirst) ← expectOkSt "scheduler same-priority baseline" (SeLe4n.Kernel.schedule samePrioState)
@@ -462,7 +462,7 @@ private def schedulerStressChecks : IO Unit := do
         domain := dom
         cspaceRoot := ⟨4000⟩
         vspaceRoot := vroot
-        ipcBuffer := ⟨4096 + i * 4096⟩
+        ipcBuffer := (SeLe4n.VAddr.ofNat (4096 + i * 4096))
         ipcState := .ready
       })
   let runnableDomainThreads : List SeLe4n.ThreadId :=
@@ -529,7 +529,7 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
         domain := ⟨0⟩
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
-        ipcBuffer := ⟨4096⟩
+        ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
         ipcState := .ready
         registerContext := {  -- x0=0 (capPtr for slot 0), x1=0 (msgInfo), x7=0 (send)
           pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
@@ -541,7 +541,7 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
         domain := ⟨0⟩
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
-        ipcBuffer := ⟨8192⟩
+        ipcBuffer := (SeLe4n.VAddr.ofNat 8192)
         ipcState := .ready
         registerContext := {  -- x0=1 (capPtr for slot 1), x1=0 (msgInfo), x7=1 (receive)
           pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
@@ -554,8 +554,8 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
       |>.withObject cnodeId (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-          (⟨0⟩, { target := .object epId, rights := AccessRightSet.ofList [.read, .write], badge := none }),
-          (⟨1⟩, { target := .object epId, rights := AccessRightSet.ofList [.read], badge := none })
+          ((SeLe4n.Slot.ofNat 0), { target := .object epId, rights := AccessRightSet.ofList [.read, .write], badge := none }),
+          ((SeLe4n.Slot.ofNat 1), { target := .object epId, rights := AccessRightSet.ofList [.read], badge := none })
         ]
       })
       |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
@@ -608,7 +608,7 @@ private def chain11RegisterDecodeIpcTransfer : IO Unit := do
   let senderId : SeLe4n.ObjId := ⟨400⟩
   let epId : SeLe4n.ObjId := ⟨402⟩
   let cnodeId : SeLe4n.ObjId := ⟨403⟩
-  let badgeVal : SeLe4n.Badge := ⟨0xBEEF⟩
+  let badgeVal : SeLe4n.Badge := SeLe4n.Badge.ofNatMasked 0xBEEF
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject senderId (.tcb {
@@ -617,7 +617,7 @@ private def chain11RegisterDecodeIpcTransfer : IO Unit := do
         domain := ⟨0⟩
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
-        ipcBuffer := ⟨4096⟩
+        ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
         ipcState := .ready
         registerContext := {  -- x0=0 (capPtr), x1=0 (msgInfo), x7=0 (send)
           pc := ⟨0x1000⟩, sp := ⟨0x8000⟩,
@@ -627,9 +627,7 @@ private def chain11RegisterDecodeIpcTransfer : IO Unit := do
       |>.withObject cnodeId (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-          (⟨0⟩, { target := .object epId,
-                   rights := AccessRightSet.ofList [.read, .write],
-                   badge := some badgeVal })
+          (SeLe4n.Slot.ofNat 0, ({ target := .object epId, rights := AccessRightSet.ofList [.read, .write], badge := some badgeVal } : Capability))
         ]
       })
       |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
@@ -695,17 +693,17 @@ private def chain12IpcCapTransfer : IO Unit := do
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-            (⟨0⟩, cap1),
-            (⟨1⟩, cap2),
-            (⟨2⟩, cap3)
+            ((SeLe4n.Slot.ofNat 0), cap1),
+            ((SeLe4n.Slot.ofNat 1), cap2),
+            ((SeLe4n.Slot.ofNat 2), cap3)
           ]
         })
       |>.withObject receiverCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
         })
-      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3240⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
-      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3241⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3240⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3241⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), ipcState := .ready })
       |>.withRunnable [sender, receiver]
       |>.buildChecked)
 
@@ -724,7 +722,7 @@ private def chain12IpcCapTransfer : IO Unit := do
   -- Verify: receiver's CNode has 3 new caps in slots 0, 1, 2
   let recvCnodeCheck := match st2.objects[receiverCNode]? with
     | some (.cnode cn) =>
-        (cn.lookup ⟨0⟩).isSome && (cn.lookup ⟨1⟩).isSome && (cn.lookup ⟨2⟩).isSome
+        (cn.lookup (SeLe4n.Slot.ofNat 0)).isSome && (cn.lookup (SeLe4n.Slot.ofNat 1)).isSome && (cn.lookup (SeLe4n.Slot.ofNat 2)).isSome
     | _ => false
   expect "chain12: receiver CNode has 3 caps" recvCnodeCheck
 
@@ -750,14 +748,14 @@ private def chain13IpcCapTransferNoGrant : IO Unit := do
       |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(⟨0⟩, cap1)]
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [((SeLe4n.Slot.ofNat 0), cap1)]
         })
       |>.withObject receiverCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
         })
-      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3340⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
-      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3341⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3340⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3341⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), ipcState := .ready })
       |>.withRunnable [sender, receiver]
       |>.buildChecked)
 
@@ -777,7 +775,7 @@ private def chain13IpcCapTransferNoGrant : IO Unit := do
 
   -- Receiver's CNode should still be empty
   let recvEmpty := match st2.objects[receiverCNode]? with
-    | some (.cnode cn) => (cn.lookup ⟨0⟩).isNone
+    | some (.cnode cn) => (cn.lookup (SeLe4n.Slot.ofNat 0)).isNone
     | _ => false
   expect "chain13: receiver CNode still empty" recvEmpty
 
@@ -807,16 +805,16 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-            (⟨0⟩, cap1),
-            (⟨1⟩, cap2)
+            ((SeLe4n.Slot.ofNat 0), cap1),
+            ((SeLe4n.Slot.ofNat 1), cap2)
           ]
         })
       |>.withObject receiverCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
         })
-      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3440⟩, ipcBuffer := ⟨4096⟩, ipcState := .ready })
-      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3441⟩, ipcBuffer := ⟨8192⟩, ipcState := .ready })
+      |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3440⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready })
+      |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3441⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), ipcState := .ready })
       |>.withRunnable [sender, receiver]
       |>.buildChecked)
 
@@ -825,7 +823,7 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
     (SeLe4n.Kernel.endpointReceiveDual epId receiver st0)
 
   -- Step 2: Sender sends with badge 0xCAFE + 2 caps (immediate rendezvous)
-  let badgeVal : SeLe4n.Badge := ⟨0xCAFE⟩
+  let badgeVal : SeLe4n.Badge := SeLe4n.Badge.ofNatMasked 0xCAFE
   let msg : IpcMessage := { registers := #[⟨77⟩], caps := #[cap1, cap2], badge := some badgeVal }
   let (summary, st2) ← expectOkSt "chain14: send with badge + caps"
     (SeLe4n.Kernel.endpointSendDualWithCaps epId sender msg grantRights senderCNode (SeLe4n.Slot.ofNat 0) st1)
@@ -845,7 +843,7 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
   -- Verify: receiver's CNode has 2 new capabilities
   let recvCnodeCheck := match st2.objects[receiverCNode]? with
     | some (.cnode cn) =>
-        (cn.lookup ⟨0⟩).isSome && (cn.lookup ⟨1⟩).isSome
+        (cn.lookup (SeLe4n.Slot.ofNat 0)).isSome && (cn.lookup (SeLe4n.Slot.ofNat 1)).isSome
     | _ => false
   expect "chain14: receiver CNode has 2 caps" recvCnodeCheck
 
@@ -871,18 +869,18 @@ private def chain15StrictRevokeDeepChain : IO Unit := do
   -- Create 16 CNodes: root + 15 levels
   let rootCNode : SeLe4n.ObjId := ⟨7000⟩
   let targetId : SeLe4n.ObjId := ⟨7100⟩
-  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := ⟨0⟩ }
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := (SeLe4n.Slot.ofNat 0) }
 
   -- Build initial state with all 16 CNodes (root + 15 children)
   let childIds : List SeLe4n.ObjId := (List.range 15).map fun i => ⟨7001 + i⟩
   let childSlots : List SeLe4n.Kernel.CSpaceAddr :=
-    childIds.map fun cid => { cnode := cid, slot := ⟨0⟩ }
+    childIds.map fun cid => { cnode := cid, slot := (SeLe4n.Slot.ofNat 0) }
   let mut builder := BootstrapBuilder.empty
   builder := builder.withObject targetId (.endpoint {})
   builder := builder.withObject rootCNode (.cnode {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
     slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-      (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+      ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
     ]
   })
   for cid in childIds do
@@ -947,19 +945,19 @@ is populated and traversal halts. -/
 private def chain16StrictRevokePartialFail : IO Unit := do
   let rootCNode : SeLe4n.ObjId := ⟨7200⟩
   let targetId : SeLe4n.ObjId := ⟨7300⟩
-  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := ⟨0⟩ }
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := (SeLe4n.Slot.ofNat 0) }
 
   -- 5 child CNodes
   let childIds : List SeLe4n.ObjId := (List.range 5).map fun i => ⟨7201 + i⟩
   let childSlots : List SeLe4n.Kernel.CSpaceAddr :=
-    childIds.map fun cid => { cnode := cid, slot := ⟨0⟩ }
+    childIds.map fun cid => { cnode := cid, slot := (SeLe4n.Slot.ofNat 0) }
 
   let mut builder := BootstrapBuilder.empty
   builder := builder.withObject targetId (.endpoint {})
   builder := builder.withObject rootCNode (.cnode {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
     slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-      (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+      ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
     ]
   })
   for cid in childIds do
@@ -1063,12 +1061,12 @@ private def chain17StrictRevokeOrdering : IO Unit := do
   let cnodeB2 : SeLe4n.ObjId := ⟨7405⟩
   let targetId : SeLe4n.ObjId := ⟨7500⟩
 
-  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := ⟨0⟩ }
-  let slotA : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA, slot := ⟨0⟩ }
-  let slotB : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB, slot := ⟨0⟩ }
-  let slotA1 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA1, slot := ⟨0⟩ }
-  let slotB1 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB1, slot := ⟨0⟩ }
-  let slotB2 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB2, slot := ⟨0⟩ }
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := (SeLe4n.Slot.ofNat 0) }
+  let slotA : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA, slot := (SeLe4n.Slot.ofNat 0) }
+  let slotB : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB, slot := (SeLe4n.Slot.ofNat 0) }
+  let slotA1 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA1, slot := (SeLe4n.Slot.ofNat 0) }
+  let slotB1 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB1, slot := (SeLe4n.Slot.ofNat 0) }
+  let slotB2 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB2, slot := (SeLe4n.Slot.ofNat 0) }
 
   let mut builder := BootstrapBuilder.empty
   builder := builder.withObject targetId (.endpoint {})
@@ -1077,7 +1075,7 @@ private def chain17StrictRevokeOrdering : IO Unit := do
       depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
       slots := if cid = rootCNode then
         SeLe4n.Kernel.RobinHood.RHTable.ofList [
-          (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+          ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
         ]
       else SeLe4n.Kernel.RobinHood.RHTable.empty 16
     })
@@ -1177,12 +1175,12 @@ private def chain18StreamingRevokeBFS : IO Unit := do
   let cnodeB2 : SeLe4n.ObjId := ⟨7605⟩
   let targetId : SeLe4n.ObjId := ⟨7700⟩
 
-  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := ⟨0⟩ }
-  let slotA : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA, slot := ⟨0⟩ }
-  let slotB : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB, slot := ⟨0⟩ }
-  let slotA1 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA1, slot := ⟨0⟩ }
-  let slotB1 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB1, slot := ⟨0⟩ }
-  let slotB2 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB2, slot := ⟨0⟩ }
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := (SeLe4n.Slot.ofNat 0) }
+  let slotA : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA, slot := (SeLe4n.Slot.ofNat 0) }
+  let slotB : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB, slot := (SeLe4n.Slot.ofNat 0) }
+  let slotA1 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA1, slot := (SeLe4n.Slot.ofNat 0) }
+  let slotB1 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB1, slot := (SeLe4n.Slot.ofNat 0) }
+  let slotB2 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB2, slot := (SeLe4n.Slot.ofNat 0) }
 
   let mut builder := BootstrapBuilder.empty
   builder := builder.withObject targetId (.endpoint {})
@@ -1191,7 +1189,7 @@ private def chain18StreamingRevokeBFS : IO Unit := do
       depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
       slots := if cid = rootCNode then
         SeLe4n.Kernel.RobinHood.RHTable.ofList [
-          (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+          ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
         ]
       else SeLe4n.Kernel.RobinHood.RHTable.empty 16
     })
@@ -1246,14 +1244,14 @@ private def chain19StreamingRevokeEmpty : IO Unit := do
   let rootCNode : SeLe4n.ObjId := ⟨7800⟩
   let targetId : SeLe4n.ObjId := ⟨7900⟩
 
-  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := ⟨0⟩ }
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := (SeLe4n.Slot.ofNat 0) }
 
   let mut builder := BootstrapBuilder.empty
   builder := builder.withObject targetId (.endpoint {})
   builder := builder.withObject rootCNode (.cnode {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
     slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-      (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+      ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
     ]
   })
   let st0 := builder.buildChecked
@@ -1279,11 +1277,11 @@ private def chain20StreamingRevokeDeepChain : IO Unit := do
   let cnodeD : SeLe4n.ObjId := ⟨8004⟩
   let targetId : SeLe4n.ObjId := ⟨8100⟩
 
-  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := ⟨0⟩ }
-  let slotA : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA, slot := ⟨0⟩ }
-  let slotB : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB, slot := ⟨0⟩ }
-  let slotC : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeC, slot := ⟨0⟩ }
-  let slotD : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeD, slot := ⟨0⟩ }
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := (SeLe4n.Slot.ofNat 0) }
+  let slotA : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA, slot := (SeLe4n.Slot.ofNat 0) }
+  let slotB : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB, slot := (SeLe4n.Slot.ofNat 0) }
+  let slotC : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeC, slot := (SeLe4n.Slot.ofNat 0) }
+  let slotD : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeD, slot := (SeLe4n.Slot.ofNat 0) }
 
   let mut builder := BootstrapBuilder.empty
   builder := builder.withObject targetId (.endpoint {})
@@ -1292,7 +1290,7 @@ private def chain20StreamingRevokeDeepChain : IO Unit := do
       depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
       slots := if cid = rootCNode then
         SeLe4n.Kernel.RobinHood.RHTable.ofList [
-          (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+          ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
         ]
       else SeLe4n.Kernel.RobinHood.RHTable.empty 16
     })
@@ -1337,9 +1335,9 @@ private def chain21StreamingRevokeEquivalence : IO Unit := do
   let cnodeB : SeLe4n.ObjId := ⟨8202⟩
   let targetId : SeLe4n.ObjId := ⟨8300⟩
 
-  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := ⟨0⟩ }
-  let slotA : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA, slot := ⟨0⟩ }
-  let slotB : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB, slot := ⟨0⟩ }
+  let rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := rootCNode, slot := (SeLe4n.Slot.ofNat 0) }
+  let slotA : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeA, slot := (SeLe4n.Slot.ofNat 0) }
+  let slotB : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeB, slot := (SeLe4n.Slot.ofNat 0) }
 
   -- Build identical initial states for both variants
   let mkState : IO SystemState := do
@@ -1350,7 +1348,7 @@ private def chain21StreamingRevokeEquivalence : IO Unit := do
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
         slots := if cid = rootCNode then
           SeLe4n.Kernel.RobinHood.RHTable.ofList [
-            (⟨0⟩, { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+            ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
           ]
         else SeLe4n.Kernel.RobinHood.RHTable.empty 16
       })
@@ -1405,7 +1403,7 @@ private def chain22NotificationBadgeDelivery : IO Unit := do
           domain := ⟨0⟩
           cspaceRoot := ⟨350⟩
           vspaceRoot := ⟨360⟩
-          ipcBuffer := ⟨4096⟩
+          ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
           ipcState := .ready
         })
       |>.withRunnable [waiter]
@@ -1446,10 +1444,10 @@ private def chain23CdtDeepCascadeWithMidDelete : IO Unit := do
   let cnodeGrand : SeLe4n.ObjId := ⟨8002⟩
   let cnodeGreat : SeLe4n.ObjId := ⟨8003⟩
   let targetEp : SeLe4n.ObjId := ⟨8100⟩
-  let slot0 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeRoot, slot := ⟨0⟩ }
-  let slot1 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeChild, slot := ⟨0⟩ }
-  let slot2 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeGrand, slot := ⟨0⟩ }
-  let slot3 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeGreat, slot := ⟨0⟩ }
+  let slot0 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeRoot, slot := (SeLe4n.Slot.ofNat 0) }
+  let slot1 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeChild, slot := (SeLe4n.Slot.ofNat 0) }
+  let slot2 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeGrand, slot := (SeLe4n.Slot.ofNat 0) }
+  let slot3 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeGreat, slot := (SeLe4n.Slot.ofNat 0) }
   let emptyCNode := SeLe4n.Kernel.RobinHood.RHTable.empty 16
   let st0 :=
     (BootstrapBuilder.empty
@@ -1457,7 +1455,7 @@ private def chain23CdtDeepCascadeWithMidDelete : IO Unit := do
       |>.withObject cnodeRoot (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-          (⟨0⟩, { target := .object targetEp, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+          ((SeLe4n.Slot.ofNat 0), { target := .object targetEp, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
         ]
       })
       |>.withObject cnodeChild (.cnode {
@@ -1566,7 +1564,7 @@ private def chain24HandleYieldEmptyQueue : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject tid.toObjId (.tcb {
         tid := tid, priority := prio, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨4096⟩,
+        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
         ipcState := .ready })
       |>.withObject ⟨10⟩ (.cnode CNode.empty)
       |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
@@ -1706,14 +1704,14 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
     |>.withObject tid.toObjId (.tcb {
         tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
         cspaceRoot := cnodeId, vspaceRoot := vsId,
-        ipcBuffer := ⟨4096⟩, ipcState := .ready,
+        ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready,
         registerContext := { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩, gpr := regFile }
     })
     |>.withObject targetId (match extraObjects with | (_, obj) :: _ => obj | [] => .endpoint {})
     |>.withObject cnodeId (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-          (⟨capAddr⟩, { target := .object targetId, rights := capRights, badge := none })
+          (SeLe4n.Slot.ofNat capAddr, ({ target := .object targetId, rights := capRights, badge := none } : Capability))
         ]
     })
     |>.withObject vsId (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
@@ -1740,7 +1738,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
   let cnode : SeLe4n.Model.CNode := {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
     slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-      (⟨0⟩, { target := .object epId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+      ((SeLe4n.Slot.ofNat 0), { target := .object epId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
     ]
   }
   -- === cspaceMint (syscallId=4): x2=srcSlot(0), x3=dstSlot(1), x4=rights(3=read|write), x5=badge(42) ===
@@ -1754,7 +1752,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
     -- Verify slot 1 now has a minted cap
     match stAfter.objects[cnodeTarget]? with
     | some (.cnode cn) =>
-      expect "chain27: cspaceMint dispatch populates slot 1" (cn.slots[(⟨1⟩ : SeLe4n.Slot)]?.isSome)
+      expect "chain27: cspaceMint dispatch populates slot 1" (cn.slots[((SeLe4n.Slot.ofNat 1) : SeLe4n.Slot)]?.isSome)
     | _ => throw <| IO.userError "chain27: target CNode not found after mint"
   | .error err => throw <| IO.userError s!"chain27: cspaceMint syscall failed: {toString err}"
   -- === cspaceDelete (syscallId=7): x2=targetSlot(0) ===
@@ -1767,7 +1765,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
   | .ok (_, stAfter) =>
     match stAfter.objects[cnodeTarget]? with
     | some (.cnode cn) =>
-      expect "chain27: cspaceDelete dispatch clears slot 0" (cn.slots[(⟨0⟩ : SeLe4n.Slot)]?.isNone)
+      expect "chain27: cspaceDelete dispatch clears slot 0" (cn.slots[((SeLe4n.Slot.ofNat 0) : SeLe4n.Slot)]?.isNone)
     | _ => throw <| IO.userError "chain27: CNode not found after delete"
   | .error err => throw <| IO.userError s!"chain27: cspaceDelete syscall failed: {toString err}"
   -- === cspaceCopy (syscallId=5): x2=srcSlot(0), x3=dstSlot(2) ===
@@ -1780,7 +1778,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
   | .ok (_, stAfter) =>
     match stAfter.objects[cnodeTarget]? with
     | some (.cnode cn) =>
-      expect "chain27: cspaceCopy dispatch populates slot 2" (cn.slots[(⟨2⟩ : SeLe4n.Slot)]?.isSome)
+      expect "chain27: cspaceCopy dispatch populates slot 2" (cn.slots[((SeLe4n.Slot.ofNat 2) : SeLe4n.Slot)]?.isSome)
     | _ => throw <| IO.userError "chain27: CNode not found after copy"
   | .error err => throw <| IO.userError s!"chain27: cspaceCopy syscall failed: {toString err}"
   -- === cspaceMove (syscallId=6): x2=srcSlot(0), x3=dstSlot(3) ===
@@ -1793,8 +1791,8 @@ private def chain27SyscallCSpaceOps : IO Unit := do
   | .ok (_, stAfter) =>
     match stAfter.objects[cnodeTarget]? with
     | some (.cnode cn) =>
-      expect "chain27: cspaceMove dispatch populates slot 3" (cn.slots[(⟨3⟩ : SeLe4n.Slot)]?.isSome)
-      expect "chain27: cspaceMove dispatch clears source slot 0" (cn.slots[(⟨0⟩ : SeLe4n.Slot)]?.isNone)
+      expect "chain27: cspaceMove dispatch populates slot 3" (cn.slots[((SeLe4n.Slot.ofNat 3) : SeLe4n.Slot)]?.isSome)
+      expect "chain27: cspaceMove dispatch clears source slot 0" (cn.slots[((SeLe4n.Slot.ofNat 0) : SeLe4n.Slot)]?.isNone)
     | _ => throw <| IO.userError "chain27: CNode not found after move"
   | .error err => throw <| IO.userError s!"chain27: cspaceMove syscall failed: {toString err}"
 
@@ -1811,8 +1809,8 @@ private def chain28SyscallVSpaceOps : IO Unit := do
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stMap with
   | .ok (_, stAfter) =>
     -- Verify the mapping was created
-    match SeLe4n.Kernel.Architecture.vspaceLookup ⟨1⟩ ⟨0x2000⟩ stAfter with
-    | .ok (paddr, _) => expect "chain28: vspaceMap dispatch mapped" (paddr == ⟨0x3000⟩)
+    match SeLe4n.Kernel.Architecture.vspaceLookup ⟨1⟩ (SeLe4n.VAddr.ofNat 0x2000) stAfter with
+    | .ok (paddr, _) => expect "chain28: vspaceMap dispatch mapped" (paddr == (SeLe4n.PAddr.ofNat 0x3000))
     | .error _ => throw <| IO.userError "chain28: lookup after vspaceMap failed"
   | .error err =>
     -- vspaceMap may fail if state setup incomplete — dispatch path still exercised
@@ -1822,7 +1820,7 @@ private def chain28SyscallVSpaceOps : IO Unit := do
   let vsWithMapping : SeLe4n.Model.VSpaceRoot := {
     asid := ⟨1⟩
     mappings := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-      (⟨0x4000⟩, (⟨0x5000⟩, SeLe4n.Model.PagePermissions.readOnly))
+      ((SeLe4n.VAddr.ofNat 0x4000), ((SeLe4n.PAddr.ofNat 0x5000), SeLe4n.Model.PagePermissions.readOnly))
     ]
   }
   let stUnmap := buildSyscallState 10 0 vsId
@@ -1832,7 +1830,7 @@ private def chain28SyscallVSpaceOps : IO Unit := do
     [(vsId, .vspaceRoot)]
   match SeLe4n.Kernel.syscallEntry SeLe4n.arm64DefaultLayout 32 stUnmap with
   | .ok (_, stAfter) =>
-    match SeLe4n.Kernel.Architecture.vspaceLookup ⟨1⟩ ⟨0x4000⟩ stAfter with
+    match SeLe4n.Kernel.Architecture.vspaceLookup ⟨1⟩ (SeLe4n.VAddr.ofNat 0x4000) stAfter with
     | .error _ => IO.println "operation-chain check passed [chain28: vspaceUnmap dispatch unmapped]"
     | .ok _ => throw <| IO.userError "chain28: mapping still exists after unmap"
   | .error err =>
@@ -1924,13 +1922,13 @@ private def chain31SyscallReply : IO Unit := do
       |>.withObject tid.toObjId (.tcb {
           tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
           cspaceRoot := cnodeId, vspaceRoot := vsId,
-          ipcBuffer := ⟨4096⟩, ipcState := .ready,
+          ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready,
           registerContext := { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩, gpr := regFile }
       })
       |>.withObject senderId (.tcb {
           tid := ⟨503⟩, priority := ⟨40⟩, domain := ⟨0⟩,
           cspaceRoot := cnodeId, vspaceRoot := vsId,
-          ipcBuffer := ⟨8192⟩, ipcState := .blockedOnCall epId,
+          ipcBuffer := (SeLe4n.VAddr.ofNat 8192), ipcState := .blockedOnCall epId,
           registerContext := { pc := ⟨0x1000⟩, sp := ⟨0x8000⟩, gpr := fun _ => ⟨0⟩ }
       })
       |>.withObject epId (.endpoint {})
@@ -1938,7 +1936,7 @@ private def chain31SyscallReply : IO Unit := do
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
             -- Slot 0: reply cap targeting the blocked sender
-            (⟨0⟩, { target := .replyCap ⟨503⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
+            ((SeLe4n.Slot.ofNat 0), { target := .replyCap ⟨503⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
       })
       |>.withObject vsId (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
@@ -2119,40 +2117,40 @@ private def chain34ResolveExtraCapsSilentDrop : IO Unit := do
       |>.withObject cnodeId (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
           slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-            (⟨0⟩, cap0),
-            (⟨1⟩, cap1)
+            ((SeLe4n.Slot.ofNat 0), cap0),
+            ((SeLe4n.Slot.ofNat 1), cap1)
             -- slot 2 intentionally empty
           ]
         })
       |>.buildChecked)
 
   -- Resolve slot 0: should succeed
-  let resolve0 := SeLe4n.Kernel.resolveCapAddress cnodeId ⟨0⟩ 4 st
+  let resolve0 := SeLe4n.Kernel.resolveCapAddress cnodeId (SeLe4n.CPtr.ofNat 0) 4 st
   match resolve0 with
   | .ok ref0 =>
-    expect "chain34: slot 0 resolves" (ref0.cnode == cnodeId && ref0.slot == ⟨0⟩)
+    expect "chain34: slot 0 resolves" (ref0.cnode == cnodeId && ref0.slot == (SeLe4n.Slot.ofNat 0))
     expect "chain34: slot 0 cap exists" (SystemState.lookupSlotCap st ref0).isSome
   | .error _ => throw <| IO.userError "chain34: slot 0 resolution failed unexpectedly"
 
   -- Resolve slot 1: should succeed
-  let resolve1 := SeLe4n.Kernel.resolveCapAddress cnodeId ⟨1⟩ 4 st
+  let resolve1 := SeLe4n.Kernel.resolveCapAddress cnodeId (SeLe4n.CPtr.ofNat 1) 4 st
   match resolve1 with
   | .ok ref1 =>
-    expect "chain34: slot 1 resolves" (ref1.cnode == cnodeId && ref1.slot == ⟨1⟩)
+    expect "chain34: slot 1 resolves" (ref1.cnode == cnodeId && ref1.slot == (SeLe4n.Slot.ofNat 1))
     expect "chain34: slot 1 cap exists" (SystemState.lookupSlotCap st ref1).isSome
   | .error _ => throw <| IO.userError "chain34: slot 1 resolution failed unexpectedly"
 
   -- Resolve slot 2: resolves but cap is absent (simulates silent drop)
-  let resolve2 := SeLe4n.Kernel.resolveCapAddress cnodeId ⟨2⟩ 4 st
+  let resolve2 := SeLe4n.Kernel.resolveCapAddress cnodeId (SeLe4n.CPtr.ofNat 2) 4 st
   match resolve2 with
   | .ok ref2 =>
     -- Resolution succeeds (slot address valid) but no cap stored there
-    expect "chain34: slot 2 resolves to address" (ref2.slot == ⟨2⟩)
+    expect "chain34: slot 2 resolves to address" (ref2.slot == (SeLe4n.Slot.ofNat 2))
     expect "chain34: slot 2 cap absent (silent drop)" (SystemState.lookupSlotCap st ref2).isNone
   | .error _ => throw <| IO.userError "chain34: slot 2 resolution failed unexpectedly"
 
   -- Simulate resolveExtraCaps logic: fold over 3 addresses, keep only resolvable caps
-  let capAddrs : Array SeLe4n.CPtr := #[⟨0⟩, ⟨1⟩, ⟨2⟩]
+  let capAddrs : Array SeLe4n.CPtr := #[(SeLe4n.CPtr.ofNat 0), (SeLe4n.CPtr.ofNat 1), (SeLe4n.CPtr.ofNat 2)]
   let resolved := capAddrs.foldl (fun acc addr =>
     match SeLe4n.Kernel.resolveCapAddress cnodeId addr 4 st with
     | .error _ => acc

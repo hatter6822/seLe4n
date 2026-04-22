@@ -30,7 +30,7 @@ private def expect (label : String) (cond : Bool) : IO Unit := do
 private def mkTcb (tid : Nat) (state : ThreadState := .Ready)
     (prio : Nat := 10) : TCB :=
   { tid := ⟨tid⟩, priority := ⟨prio⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := ⟨0⟩,
+    cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
     threadState := state }
 
 /-- Helper: build a minimal SystemState with objects. -/
@@ -80,7 +80,7 @@ private def sr003_suspendMissing : IO Unit := do
 private def sr004_suspendClearsPending : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let tcb := { mkTcb 1 .Ready with
-    pendingMessage := some { registers := #[], caps := #[], badge := SeLe4n.Badge.mk 42 }
+    pendingMessage := some { registers := #[], caps := #[], badge := SeLe4n.Badge.ofNatMasked 42 }
     timeoutBudget := some (SeLe4n.SchedContextId.ofNat 100) }
   let st := mkState [(⟨1⟩, .tcb tcb)]
   match suspendThread st ⟨tid, by decide⟩ with
