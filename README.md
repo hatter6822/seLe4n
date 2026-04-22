@@ -93,7 +93,8 @@ architectural improvements enabled by the Lean 4 proof framework:
 | **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 48 source files |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) — single-core (core 0), SMP deferred to WS-V |
 | **Hardware binding** | **H3 COMPLETE** (WS-AG AG1–AG10): HAL, GIC-400, timer, ARMv8 page tables, FFI bridge, QEMU boot |
-| **Latest audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — full-kernel Lean + Rust audit (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
+| **Canonical audit** | [`AUDIT_v0.29.0_COMPREHENSIVE`](docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — pre-1.0 comprehensive audit (202 findings; remediated by WS-AK AK1–AK10) |
+| **Latest audit** | [`AUDIT_v0.30.6_COMPREHENSIVE`](docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) — pre-1.0 hardening audit (3 CRIT, 24 HIGH, 71 MED, 58 LOW, 40 INFO — initial scoring per §0.4) |
 | **Codebase map** | [`docs/codebase_map.json`](docs/codebase_map.json) — machine-readable declaration inventory |
 
 Metrics are derived from the codebase by `./scripts/generate_codebase_map.py`

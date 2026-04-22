@@ -93,7 +93,8 @@ security model) от seL4, вводя при этом архитектурные
 | **Тестовый код (Lean LoC)** | 10 564 строк в 15 тест-сьютах |
 | **Доказанные декларации** | 2 447 деклараций theorem/lemma (ноль sorry/axiom) |
 | **Целевое оборудование** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Последний аудит** | [`AUDIT_COMPREHENSIVE_v0.23.21`](../../../docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — полный аудит ядра Lean + Rust (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
+| **Канонический аудит** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — комплексный предрелизный аудит 1.0 (202 результата; устранены WS-AK AK1–AK10) |
+| **Последний аудит** | [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) — аудит упрочнения перед 1.0 (3 CRIT, 24 HIGH, 71 MED, 58 LOW, 40 INFO — первичная оценка согласно §0.4) |
 | **Карта кодовой базы** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — машиночитаемая опись деклараций |
 
 Метрики формируются скриптом `./scripts/generate_codebase_map.py` и хранятся

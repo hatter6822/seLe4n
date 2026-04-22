@@ -421,7 +421,8 @@ disposition:
   system lifetime.
 
 - **A-L7** `contextSwitchState` does not perform TLB/ASID maintenance.
-  Deferred to WS-V (H3 hardware integration context-switch path), where
+  Closed by AN9-D (suspendThread atomicity / context-switch bracket,
+  DEF-C-M04) in docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12, where
   the Rust HAL emits the required TLBI and DSB sequences before loading
   TTBR0.
 
@@ -435,7 +436,7 @@ disposition:
 These items are either:
 - Non-issues (the semantics are correct as-is),
 - Resolved by related higher-tier fixes (A-L4 → AK3-C),
-- Deferred to WS-V with clear technical scope (A-L7 context-switch
+- Deferred to AN9-D with clear technical scope (A-L7 context-switch
   TLB/ASID maintenance).
 -/
 

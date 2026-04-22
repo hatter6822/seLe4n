@@ -140,7 +140,8 @@ theorem adapterReadMemory_error_unsupportedBinding
     management to prevent stale translation entries. ASID switching is performed
     by VSpace operations (`VSpaceBackend` / `VSpaceARMv8.lean`) independently
     of the context switch path. Atomic TLB + ASID + register context switch
-    coordination is deferred to WS-V hardware binding. -/
+    coordination closes DEF-A-M06 / DEF-A-M08 / DEF-A-M09 under AN9-A / AN9-B
+    / AN9-C / AN9-D of docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12. -/
 def contextSwitchState (newTid : SeLe4n.ThreadId) (newRegs : SeLe4n.RegisterFile)
     (st : SystemState) : SystemState :=
   { st with

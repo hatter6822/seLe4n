@@ -42,6 +42,13 @@ jobs:
       - name: Setup Lean toolchain
         run: ./scripts/setup_lean_env.sh
 
+      # AN1-B.3 (C-03): confirm setup_lean_env.sh installed the pre-commit hook.
+      # On CI the checkout is fresh, so this asserts the installer actually ran
+      # end-to-end — a regression (e.g. setup_lean_env exits early before the
+      # install step) would fail the lane with an actionable message.
+      - name: Verify pre-commit hook installed
+        run: ./scripts/install_git_hooks.sh --check
+
       # AF6-F: Install shellcheck so Tier 0 hygiene runs shell lint instead of
       # skipping it. shellcheck is not in the default ubuntu-latest image.
       # ripgrep is pre-installed on ubuntu-latest but not on ubuntu-24.04-arm;

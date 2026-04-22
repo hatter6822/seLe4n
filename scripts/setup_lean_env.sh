@@ -107,6 +107,12 @@ fast_path_ready() {
 
 if fast_path_ready; then
   log_elapsed "Lean environment already configured (fast-path)"
+  # AN1-B.2 (C-03): install the pre-commit hook on every invocation so fresh
+  # clones, worktrees, and new contributor checkouts are guarded automatically.
+  # The installer is idempotent and no-ops if the hook is already present.
+  if ! "${ROOT_DIR}/scripts/install_git_hooks.sh"; then
+    log_elapsed "WARNING: install_git_hooks.sh returned non-zero (fast-path); pre-commit hook may not be installed"
+  fi
   if [ "${BUILD_REQUESTED}" -eq 1 ]; then
     log_elapsed "running lake build"
     (cd "${ROOT_DIR}" && lake build)
@@ -576,6 +582,13 @@ fi
 
 log_elapsed "Lean environment is ready"
 log_elapsed "lake version: $(lake --version)"
+
+# AN1-B.2 (C-03): install the pre-commit hook on every invocation so fresh
+# clones, worktrees, and new contributor checkouts are guarded automatically.
+# The installer is idempotent and no-ops if the hook is already present.
+if ! "${ROOT_DIR}/scripts/install_git_hooks.sh"; then
+  log_elapsed "WARNING: install_git_hooks.sh returned non-zero; pre-commit hook may not be installed"
+fi
 
 if [ "${QUIET}" -eq 0 ]; then
   echo "[setup] next steps:"

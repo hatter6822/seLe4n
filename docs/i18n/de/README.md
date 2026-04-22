@@ -92,7 +92,8 @@ Lean-4-Beweissystem ermöglicht werden:
 | **Test-LoC (Lean)** | 14.890 über 24 Testsuiten |
 | **Bewiesene Deklarationen** | 3.045 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
 | **Zielhardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Letztes Audit** | [`AUDIT_COMPREHENSIVE_v0.23.21`](../../../docs/dev_history/AUDIT_COMPREHENSIVE_v0.23.21_LEAN_RUST_KERNEL.md) — vollständiges Kernel-Audit Lean + Rust (0 CRIT, 5 HIGH, 8 MED, 30 LOW) |
+| **Kanonisches Audit** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — umfassendes Pre-1.0-Audit (202 Befunde; behoben durch WS-AK AK1–AK10) |
+| **Letztes Audit** | [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) — Pre-1.0-Härtungsaudit (3 CRIT, 24 HIGH, 71 MED, 58 LOW, 40 INFO — anfängliche Bewertung gemäß §0.4) |
 | **Codebase-Karte** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — maschinenlesbare Deklarationsinventur |
 
 Die Metriken werden durch `./scripts/generate_codebase_map.py` aus der Codebasis

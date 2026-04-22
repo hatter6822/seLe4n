@@ -56,7 +56,7 @@ finding ID, the affected site, and the remediation applied.
   `IPC/Operations/Endpoint.lean:notificationSignal` uses `Badge.bor`
   for pending-badge accumulation. `Badge.bor` is defined in
   `Prelude.lean` and preserves the 64-bit mask via the
-  `bor_valid` theorem (see AC3/I-04). Hardware-binding (WS-V/H3) masks
+  `bor_valid` theorem (see AC3/I-04). Hardware-binding (AN9) masks
   the result to `2^64 - 1` at the platform boundary. Safety documented
   at the `notificationSignal` definition site.
 
@@ -549,9 +549,9 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
             -- U8-C/U-L24: Notification word overflow note: Badge.bor uses
             -- unbounded Lean Nat internally (bitwise OR). In the formal model
             -- this is correct — no overflow is possible. However, on real
-            -- hardware (ARM64), notification words are 64-bit. The hardware
-            -- binding workstream (WS-V) must enforce 64-bit word width by
-            -- masking Badge values to 2^64 - 1 at the platform boundary.
+            -- hardware (ARM64), notification words are 64-bit. AN9 (hardware
+            -- binding) must enforce 64-bit word width by masking Badge values
+            -- to 2^64 - 1 at the platform boundary.
             -- Badge.ofNatMasked already applies a 64-bit mask, and Badge.bor
             -- preserves the mask (see Badge.bor definition in Prelude.lean).
             -- AF5-D (AF-15): Nat round-trip via `Badge.ofNatMasked badge.toNat`

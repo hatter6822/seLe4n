@@ -131,7 +131,8 @@ theorem collectQueueMembers_none (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe
 --   the path predicate to `queueNext` field traversal. This is the sole
 --   remaining TPI-DOC item for the IPC subsystem.
 -- TPI-DOC / AJ-L08: fuel-sufficiency formal connection to `tcbQueueChainAcyclic`
--- deferred to WS-V. Closure requires connecting `QueueNextPath` (inductive path
+-- recorded as a post-1.0 hardening candidate; no currently-active plan file
+-- tracks it. Closure requires connecting `QueueNextPath` (inductive path
 -- predicate) to `queueNext` field traversal in `collectQueueMembers`. See INFO-06.
 theorem collectQueueMembers_fuel_sufficiency_documented
     (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject)
@@ -666,7 +667,8 @@ theorem storeObject_sameRegion_untyped_preserves_untypedRegionsDisjoint
         frame lemmas ensure each operation preserves all 11 predicates
         individually. The missing piece is a formal proof that ALL 11
         predicates compose correctly under arbitrary interleaving of all
-        34 operations (exponential combinatorics, deferred to WS-V). -/
+        34 operations (exponential combinatorics; recorded as a post-1.0
+        hardening candidate — no currently-active plan file tracks it). -/
 def crossSubsystemInvariant (st : SystemState) : Prop :=
   registryEndpointValid st ∧
   registryInterfaceValid st ∧  -- AE5-C (SVC-04): Added

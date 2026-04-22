@@ -97,8 +97,14 @@ docs/CLAIM_EVIDENCE_INDEX.md
 docs/PLATFORM_BINDING_ADR.md
 docs/VSPACE_MEMORY_MODEL_ADR.md
 
+# ── Audit artefacts (referenced from README "Latest audit" row) ──────
+docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md
+docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md
+
 # ── Scripts ──────────────────────────────────────────────────────────
 scripts/setup_lean_env.sh
+scripts/install_git_hooks.sh
+scripts/pre-commit-lean-build.sh
 scripts/test_fast.sh
 scripts/test_smoke.sh
 scripts/test_full.sh
@@ -130,6 +136,7 @@ SeLe4n/Platform/
 SeLe4n/Platform/Sim/
 SeLe4n/Platform/RPi5/
 docs/
+docs/audits/
 docs/i18n/
 docs/i18n/zh-CN/
 docs/i18n/es/

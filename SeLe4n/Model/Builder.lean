@@ -124,7 +124,8 @@ private theorem allTablesInvExtK_scThreadIndex {st : SystemState}
 -- deferred to post-release because: (1) it would require updating 100+ proof
 -- sites that destructure tuples, (2) named structures in Lean 4 have different
 -- `cases`/`rcases` behavior, (3) current approach is functionally correct.
--- Tracked for WS-V code quality phase.
+-- Recorded as a post-1.0 hardening candidate; no currently-active plan file
+-- tracks it (see DEF-F-L9 in docs/audits/AUDIT_v0.29.0_DEFERRED.md).
 
 -- ============================================================================
 -- Q3-B.1: registerIrq — insert into irqHandlers

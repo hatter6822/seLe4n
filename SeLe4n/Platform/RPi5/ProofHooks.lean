@@ -38,9 +38,11 @@ disjunct (`sp preserved ∨ context switch in progress`).
 
 The restrictive contract still denies all register writes
 (`registerContextStable := False`), so proof hooks remain vacuously correct
-for the write path. A future context-switch-aware adapter (WS-V) will
-combine register-file load with `scheduler.current` update atomically,
-enabling proof hooks for the production contract.
+for the write path. A future context-switch-aware adapter (closed by
+AN9-D — DEF-C-M04 suspendThread atomicity — per
+docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12) will combine register-
+file load with `scheduler.current` update atomically, enabling proof
+hooks for the production contract.
 -/
 
 namespace SeLe4n.Platform.RPi5
