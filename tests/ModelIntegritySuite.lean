@@ -109,30 +109,30 @@ def freeze_preserves_full_invariants_default : IO Unit := do
 /-- Empty memoryMap rejects every address (no RAM regions). -/
 def addrInRange_empty_map_rejects : IO Unit := do
   let ms : MachineState := default  -- memoryMap := []
-  let addr : PAddr := (SeLe4n.PAddr.ofNat (0x1000))
+  let addr : PAddr := (SeLe4n.PAddr.ofNat 0x1000)
   expect "empty map rejects" (ms.addrInRange addr = false)
 
 /-- `readMemChecked` returns `none` on out-of-range. -/
 def readMemChecked_out_of_range_none : IO Unit := do
   let ms : MachineState := default
-  expect "readMemChecked OOR=none" ((readMemChecked ms (SeLe4n.PAddr.ofNat (0x1000))).isNone)
+  expect "readMemChecked OOR=none" ((readMemChecked ms (SeLe4n.PAddr.ofNat 0x1000)).isNone)
 
 /-- `writeMemChecked` returns `none` on out-of-range. -/
 def writeMemChecked_out_of_range_none : IO Unit := do
   let ms : MachineState := default
-  expect "writeMemChecked OOR=none" ((writeMemChecked ms (SeLe4n.PAddr.ofNat (0x1000)) 42).isNone)
+  expect "writeMemChecked OOR=none" ((writeMemChecked ms (SeLe4n.PAddr.ofNat 0x1000) 42).isNone)
 
 /-- With a RAM region declared, addrInRange succeeds inside. -/
 def addrInRange_ram_region_accepts : IO Unit := do
-  let region : MemoryRegion := { base := (SeLe4n.PAddr.ofNat (0)), size := 0x10000, kind := .ram }
+  let region : MemoryRegion := { base := (SeLe4n.PAddr.ofNat 0), size := 0x10000, kind := .ram }
   let ms : MachineState := { (default : MachineState) with memoryMap := [region] }
-  expect "RAM region accepts in-range" (ms.addrInRange (SeLe4n.PAddr.ofNat (0x100)) = true)
+  expect "RAM region accepts in-range" (ms.addrInRange (SeLe4n.PAddr.ofNat 0x100) = true)
 
 /-- A device region does NOT satisfy `addrInRange` (RAM-only). -/
 def addrInRange_device_region_rejected : IO Unit := do
-  let region : MemoryRegion := { base := (SeLe4n.PAddr.ofNat (0xFE000000)), size := 0x1000, kind := .device }
+  let region : MemoryRegion := { base := (SeLe4n.PAddr.ofNat 0xFE000000), size := 0x1000, kind := .device }
   let ms : MachineState := { (default : MachineState) with memoryMap := [region] }
-  expect "device region rejected" (ms.addrInRange (SeLe4n.PAddr.ofNat (0xFE000100)) = false)
+  expect "device region rejected" (ms.addrInRange (SeLe4n.PAddr.ofNat 0xFE000100) = false)
 
 -- ============================================================================
 -- MessageInfo.mkChecked + wellFormed
@@ -409,7 +409,7 @@ private def minimalTcb (tid : ThreadId) : TCB :=
     domain := ⟨0⟩
     cspaceRoot := ⟨0⟩
     vspaceRoot := ⟨0⟩
-    ipcBuffer := (SeLe4n.VAddr.ofNat (0)) }
+    ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
 
 /-- Minimal SchedContext fixture for typed-helper tests. -/
 private def minimalSchedContext (scId : SchedContextId) : SeLe4n.Kernel.SchedContext :=
@@ -473,7 +473,7 @@ getTcb? fails. -/
 def getUntyped_discriminates_variants : IO Unit := do
   let id : ObjId := ⟨60⟩
   let tid : ThreadId := ⟨60⟩
-  let ut : UntypedObject := { regionBase := (SeLe4n.PAddr.ofNat (0)), regionSize := 4096 }
+  let ut : UntypedObject := { regionBase := (SeLe4n.PAddr.ofNat 0), regionSize := 4096 }
   let base : SystemState := default
   let st : SystemState :=
     { base with objects := base.objects.insert id (.untyped ut) }

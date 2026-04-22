@@ -638,12 +638,33 @@ namespace Badge
 /-- AN2-A / H-13: Canonical zero badge (valid by construction). -/
 @[inline] def zero : Badge := ⟨0⟩
 
+/-- AN2-A / H-13: `Badge.zero` is always valid. The zero badge is
+    the canonical "no-badge" sentinel used by the kernel ABI when
+    a capability is minted without a caller-supplied badge. -/
+theorem zero_valid : Badge.zero.valid := by
+  unfold valid zero machineWordMax machineWordBits
+  decide
+
+/-- AN2-A / H-13: `Badge.zero.toNat = 0` (projection of the canonical
+    zero badge). -/
+@[simp] theorem zero_toNat : Badge.zero.toNat = 0 := rfl
+
 /-- AN2-A / H-13: Construct a badge from a `Nat` that is already
     word-bounded, carrying the bound as a proof. Prefer this over
     `ofNatMasked` when the caller has a pre-validated input (e.g. decoded
     from a `UInt64`). -/
 @[inline] def ofNat (n : Nat) (_h : n < machineWordMax := by decide) : Badge :=
   ⟨n⟩
+
+/-- AN2-A / H-13: `Badge.ofNat n h` produces a badge whose underlying
+    value is exactly `n` (no masking). -/
+@[simp] theorem ofNat_toNat (n : Nat) (h : n < machineWordMax) :
+    (Badge.ofNat n h).toNat = n := rfl
+
+/-- AN2-A / H-13: `Badge.ofNat n h` is valid — the bound `h` is the
+    witness. -/
+theorem ofNat_valid (n : Nat) (h : n < machineWordMax) :
+    (Badge.ofNat n h).valid := h
 
 /-- WS-F5/D1a: Construct a badge with word-size truncation, matching seL4's
     silent word-truncation semantics on 64-bit platforms. -/
@@ -706,6 +727,21 @@ theorem ofNatMasked_lt_eq {n : Nat} (h : n < machineWordMax) :
 theorem ofUInt64Pair_valid (a b : UInt64) : (ofUInt64Pair a b).valid := by
   unfold ofUInt64Pair valid machineWordMax machineWordBits
   exact (a ||| b).toNat_lt
+
+/-- AN2-E / H-12: `ofUInt64Pair` is commutative — matches the commutative
+    `Badge.bor` (pre-AN2-E `Nat`-level OR) on `UInt64`-bounded inputs. -/
+theorem ofUInt64Pair_comm (a b : UInt64) :
+    ofUInt64Pair a b = ofUInt64Pair b a := by
+  unfold ofUInt64Pair
+  congr 1
+  simp [UInt64.or_comm]
+
+/-- AN2-E / H-12: `ofUInt64Pair` with a zero argument projects the other
+    argument's `toNat` directly. -/
+theorem ofUInt64Pair_zero_right (a : UInt64) :
+    (ofUInt64Pair a 0).toNat = a.toNat := by
+  unfold ofUInt64Pair toNat
+  simp
 
 instance : ToString Badge where
   toString badge := toString badge.toNat

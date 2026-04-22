@@ -2837,6 +2837,8 @@ items. The canonical audit plan is [`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.m
 - `private Badge.mkUnsafeForProof` helper preserves proof-internal
   destructuring without leaking a bypass to external modules.
 - Manual `Inhabited Badge := ⟨⟨0⟩⟩` replaces `deriving Inhabited`.
+- Supporting theorems: `Badge.zero_valid`, `Badge.zero_toNat`
+  (`@[simp]`), `Badge.ofNat_toNat` (`@[simp]`), `Badge.ofNat_valid`.
 - Pattern matches the pre-existing `AccessRightSet` (AJ2-A) and
   `CapDerivationTree` discipline.
 
@@ -2860,9 +2862,11 @@ duplicate those checks without adding safety.
 `Badge.ofUInt64Pair (a b : UInt64) : Badge` performs the bitwise-OR
 entirely in the `UInt64` domain so the intermediate never escapes
 `2^64`. `ofUInt64Pair_valid` theorem proves `.valid` by construction
-(no truncation). Two new regression tests (`bov025`, `bov026`)
-verify full-mask round-trip and equivalence with `bor ∘ ofNatMasked`
-on word-bounded inputs.
+(no truncation). Supporting theorems `ofUInt64Pair_comm`
+(commutativity) and `ofUInt64Pair_zero_right` (identity on
+OR-with-zero). Four regression tests (`bov025`–`bov028`) verify
+full-mask round-trip, equivalence with `bor ∘ ofNatMasked` on
+word-bounded inputs, commutativity, and the zero-right identity.
 
 **AN2-F.1 / FND-M01 — isWord64Bounded delegation:**
 `machineWordBits`, `machineWordMax`, `isWord64`, `isWord64Dec` hoisted
@@ -2887,10 +2891,10 @@ caller needs to discharge `.wellFormed` locally.
 
 **AN2-F.4 / FND-M04 — minPracticalRHCapacity:** new
 `abbrev minPracticalRHCapacity : Nat := 16` in
-`Kernel/RobinHood/Bridge.lean` replaces the magic `16` in the
-`Inhabited (RHTable α β)` instance. Declared `abbrev` so `decide`
-can unfold it when discharging `RHTable.empty`'s `cap ≥ 4`
-precondition.
+`Kernel/RobinHood/Bridge.lean` replaces the magic `16` in **both**
+the `Inhabited (RHTable α β)` and `EmptyCollection (RHTable α β)`
+instances. Declared `abbrev` so `decide` can unfold it when
+discharging `RHTable.empty`'s `cap ≥ 4` precondition.
 
 **AN2-F.8 / FND-M08 — toObjId decision table:** Markdown decision
 table added to the `ThreadId.toObjId` / `toObjIdChecked` /

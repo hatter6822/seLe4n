@@ -954,9 +954,12 @@ theorem RHTable.filter_filter_getElem? [BEq α] [Hashable α] [LawfulBEq α]
 -- Q2: EmptyCollection instance for migration compatibility
 -- ============================================================================
 
-/-- EmptyCollection instance so `{}` syntax works for RHTable fields. -/
+/-- EmptyCollection instance so `{}` syntax works for RHTable fields.
+    AN2-F.4 / FND-M04: Uses `minPracticalRHCapacity` (16) — references the
+    same constant as the `Inhabited` instance so capacity adjustments
+    propagate uniformly. -/
 instance [BEq α] [Hashable α] : EmptyCollection (RHTable α β) where
-  emptyCollection := RHTable.empty 16
+  emptyCollection := RHTable.empty minPracticalRHCapacity (by decide)
 
 -- ============================================================================
 -- V3-B Phase 1: invExtK — Kernel-Level Extended Invariant Bundle

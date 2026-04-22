@@ -229,6 +229,38 @@ private def bov026_ofUInt64PairMatchesBor : IO Unit := do
   let viaBor := Badge.bor (Badge.ofNatMasked a.toNat) (Badge.ofNatMasked b.toNat)
   expect "ofUInt64Pair matches bor ∘ ofNatMasked" (viaUInt64.toNat == viaBor.toNat)
 
+/-- AN2-E / H-12: `ofUInt64Pair_comm` theorem runtime witness —
+    commutativity on representative non-trivial inputs. -/
+private def bov027_ofUInt64PairComm : IO Unit := do
+  let a : UInt64 := 0xDEADBEEF
+  let b : UInt64 := 0xCAFEBABE
+  expect "ofUInt64Pair commutative (toNat)"
+    ((Badge.ofUInt64Pair a b).toNat == (Badge.ofUInt64Pair b a).toNat)
+
+/-- AN2-E / H-12: `ofUInt64Pair_zero_right` — OR-with-zero is identity. -/
+private def bov028_ofUInt64PairZeroRight : IO Unit := do
+  let a : UInt64 := 0xABCDEF0123456789
+  expect "ofUInt64Pair a 0 = a"
+    ((Badge.ofUInt64Pair a 0).toNat == a.toNat)
+
+/-- AN2-A / H-13: `Badge.zero_valid` witness — the canonical zero badge
+    satisfies the 64-bit validity predicate. -/
+private def bov029_zeroValidTheorem : IO Unit := do
+  -- Witness theorem presence + alignment with runtime `isValid` check
+  let _ : Badge.zero.valid := Badge.zero_valid
+  expect "Badge.zero_valid matches runtime isValid" Badge.zero.isValid
+  expect "Badge.zero_toNat matches runtime toNat" (Badge.zero.toNat == 0)
+
+/-- AN2-A / H-13: `Badge.ofNat_valid` proof-carrying constructor witness. -/
+private def bov030_ofNatValid : IO Unit := do
+  -- ofNat accepts pre-bounded inputs with explicit proof
+  let n : Nat := 42
+  have h : n < machineWordMax := by decide
+  let b := Badge.ofNat n h
+  let _ : b.valid := Badge.ofNat_valid n h
+  expect "ofNat 42 valid" b.isValid
+  expect "ofNat 42 toNat unchanged" (b.toNat == 42)
+
 end SeLe4n.Testing.BadgeOverflowSuite
 
 -- ============================================================================
@@ -272,5 +304,10 @@ def main : IO Unit := do
   -- AN2-E / H-12 UInt64-pair bounded intermediate
   bov025_ofUInt64PairBounded
   bov026_ofUInt64PairMatchesBor
+  -- AN2-audit-pass extras: theorem runtime witnesses
+  bov027_ofUInt64PairComm
+  bov028_ofUInt64PairZeroRight
+  bov029_zeroValidTheorem
+  bov030_ofNatValid
   IO.println ""
-  IO.println "=== All 26 badge overflow tests passed ==="
+  IO.println "=== All 30 badge overflow tests passed ==="

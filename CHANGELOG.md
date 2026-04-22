@@ -102,9 +102,22 @@ passes unmasked `Nat` badges. `ofUInt64Pair_valid` theorem witnesses
 that the result is `.valid` by construction (no truncation). Legacy
 `Badge.bor` remains in place for proof-side rewriting.
 
-Tests: `bov025` (full-mask and zero round-trip) and `bov026`
+Additional theorems: `ofUInt64Pair_comm` (commutativity),
+`ofUInt64Pair_zero_right` (identity on OR-with-zero).
+
+Tests: `bov025` (full-mask and zero round-trip), `bov026`
 (`ofUInt64Pair` equivalent to `bor ∘ ofNatMasked` on word-bounded
-inputs) added to `tests/BadgeOverflowSuite.lean`.
+inputs), `bov027` (commutativity), `bov028` (zero-right identity),
+plus AN2-A theorem-witness tests `bov029` (`zero_valid`), `bov030`
+(`ofNat_valid`) added to `tests/BadgeOverflowSuite.lean` — **30 badge
+overflow tests total**.
+
+### AN2-A additional theorems (audit-pass enhancements)
+
+`Badge.zero_valid`, `Badge.zero_toNat`, `Badge.ofNat_toNat`,
+`Badge.ofNat_valid` — explicit theorem witnesses for the new smart
+constructors, enabling ergonomic use in downstream proofs without
+re-deriving the underlying facts.
 
 ### AN2-F.1 — `isWord64Bounded` properly delegates to `isWord64Dec` (FND-M01)
 
@@ -124,10 +137,11 @@ any call sites that want the explicit rewrite form.
 
 New `abbrev minPracticalRHCapacity : Nat := 16` in
 `SeLe4n/Kernel/RobinHood/Bridge.lean` replaces the magic `16` literal
-inside the `Inhabited (RHTable α β)` instance. Declared `abbrev` so
-`decide` / `omega` can unfold the symbol when discharging the `cap ≥ 4`
-precondition on `RHTable.empty`. Future capacity adjustments can edit
-the constant in one place.
+in **both** the `Inhabited (RHTable α β)` instance and the
+`EmptyCollection (RHTable α β)` instance. Declared `abbrev` so
+`decide` / `omega` can unfold the symbol when discharging the
+`cap ≥ 4` precondition on `RHTable.empty`. Future capacity
+adjustments edit the constant in one place.
 
 ### AN2-F.8 — `toObjId` decision-table docstring (FND-M08)
 
@@ -159,8 +173,10 @@ API surface introduced from here forward.
 - `scripts/test_full.sh` — PASS
 - `cargo test --workspace` — PASS (415 tests)
 - `cargo clippy --workspace -- -D warnings` — 0 warnings
-- `lake exe badge_overflow_suite` — **26 tests pass** (was 22 pre-AN2;
-  +2 AN2-A smart-constructor tests, +2 AN2-E `ofUInt64Pair` tests)
+- `lake exe badge_overflow_suite` — **30 tests pass** (was 22 pre-AN2;
+  +2 AN2-A smart-constructor tests, +2 AN2-E `ofUInt64Pair` tests,
+  +2 AN2-E theorem-witness tests, +2 AN2-A theorem-witness tests
+  added in this audit pass)
 - `scripts/check_version_sync.sh` — PASS at 0.30.6
 - `scripts/check_website_links.sh` — PASS
 - `scripts/install_git_hooks.sh --check` — PASS (AN1-B infra)

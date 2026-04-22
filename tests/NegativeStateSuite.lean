@@ -34,8 +34,8 @@ private def wrongTypeId : SeLe4n.ObjId := ⟨99⟩
 private def guardedCnodeId : SeLe4n.ObjId := ⟨55⟩
 private def notificationId : SeLe4n.ObjId := ⟨42⟩
 private def asidPrimary : SeLe4n.ASID := ⟨2⟩
-private def vaddrPrimary : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat (4096))
-private def paddrPrimary : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (12288))
+private def vaddrPrimary : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat 4096)
+private def paddrPrimary : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 12288)
 
 private def slot0 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 0 }
 private def slot0Path : SeLe4n.Kernel.CSpacePathAddr := { cnode := cnodeId, cptr := SeLe4n.CPtr.ofNat 0, depth := 0 }
@@ -79,7 +79,7 @@ private def baseState : SystemState :=
       domain := ⟨0⟩
       cspaceRoot := cnodeId
       vspaceRoot := ⟨20⟩
-      ipcBuffer := (SeLe4n.VAddr.ofNat (2048))
+      ipcBuffer := (SeLe4n.VAddr.ofNat 2048)
       ipcState := .ready
     })
     |>.withObject ⟨7⟩ (.tcb {
@@ -88,7 +88,7 @@ private def baseState : SystemState :=
       domain := ⟨0⟩
       cspaceRoot := cnodeId
       vspaceRoot := ⟨20⟩
-      ipcBuffer := (SeLe4n.VAddr.ofNat (4096))
+      ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
       ipcState := .ready
     })
     |>.withObject ⟨8⟩ (.tcb {
@@ -97,7 +97,7 @@ private def baseState : SystemState :=
       domain := ⟨0⟩
       cspaceRoot := cnodeId
       vspaceRoot := ⟨20⟩
-      ipcBuffer := (SeLe4n.VAddr.ofNat (8192))
+      ipcBuffer := (SeLe4n.VAddr.ofNat 8192)
       ipcState := .ready
     })
     |>.withObject ⟨9⟩ (.tcb {
@@ -106,7 +106,7 @@ private def baseState : SystemState :=
       domain := ⟨0⟩
       cspaceRoot := cnodeId
       vspaceRoot := ⟨20⟩
-      ipcBuffer := (SeLe4n.VAddr.ofNat (12288))
+      ipcBuffer := (SeLe4n.VAddr.ofNat 12288)
       ipcState := .ready
     })
     |>.withObject notificationId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
@@ -190,7 +190,7 @@ private def f2UntypedAuthSlot : SeLe4n.Kernel.CSpaceAddr :=
 private def f2UntypedState : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject f2UntypedObjId (.untyped {
-      regionBase := (SeLe4n.PAddr.ofNat (0x10000))
+      regionBase := (SeLe4n.PAddr.ofNat 0x10000)
       regionSize := 256
       watermark := 0
       children := []
@@ -219,7 +219,7 @@ private def f2DeviceUntypedId : SeLe4n.ObjId := ⟨83⟩
 private def f2DeviceState : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject f2DeviceUntypedId (.untyped {
-      regionBase := (SeLe4n.PAddr.ofNat (0x20000))
+      regionBase := (SeLe4n.PAddr.ofNat 0x20000)
       regionSize := 4096
       watermark := 0
       children := []
@@ -829,7 +829,7 @@ private def runNegativeChecks : IO Unit := do
         domain := ⟨0⟩
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
-        ipcBuffer := (SeLe4n.VAddr.ofNat (4096))
+        ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
         ipcState := .ready
       })
       |>.withObject ⟨8⟩ (.tcb {
@@ -838,7 +838,7 @@ private def runNegativeChecks : IO Unit := do
         domain := ⟨0⟩
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
-        ipcBuffer := (SeLe4n.VAddr.ofNat (8192))
+        ipcBuffer := (SeLe4n.VAddr.ofNat 8192)
         ipcState := .ready
       })
       |>.withRunnable [⟨8⟩]
@@ -860,7 +860,7 @@ private def runNegativeChecks : IO Unit := do
             domain := ⟨1⟩
             cspaceRoot := cnodeId
             vspaceRoot := ⟨20⟩
-            ipcBuffer := (SeLe4n.VAddr.ofNat (4096))
+            ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
             ipcState := .ready
           })
       scheduler := { schedPriorityState.scheduler with
@@ -892,7 +892,7 @@ private def runNegativeChecks : IO Unit := do
         domain := ⟨1⟩
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
-        ipcBuffer := (SeLe4n.VAddr.ofNat (12288))
+        ipcBuffer := (SeLe4n.VAddr.ofNat 12288)
         ipcState := .ready
       })
       |>.withObject ⟨11⟩ (.tcb {
@@ -902,7 +902,7 @@ private def runNegativeChecks : IO Unit := do
         domain := ⟨1⟩
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
-        ipcBuffer := (SeLe4n.VAddr.ofNat (16384))
+        ipcBuffer := (SeLe4n.VAddr.ofNat 16384)
         ipcState := .ready
       })
       |>.withObject ⟨12⟩ (.tcb {
@@ -912,7 +912,7 @@ private def runNegativeChecks : IO Unit := do
         domain := ⟨0⟩
         cspaceRoot := cnodeId
         vspaceRoot := ⟨20⟩
-        ipcBuffer := (SeLe4n.VAddr.ofNat (20480))
+        ipcBuffer := (SeLe4n.VAddr.ofNat 20480)
         ipcState := .ready
       })
       |>.withRunnable [⟨12⟩, ⟨10⟩, ⟨11⟩]
@@ -936,7 +936,7 @@ private def runNegativeChecks : IO Unit := do
             domain := ⟨1⟩
             cspaceRoot := cnodeId
             vspaceRoot := ⟨20⟩
-            ipcBuffer := (SeLe4n.VAddr.ofNat (12288))
+            ipcBuffer := (SeLe4n.VAddr.ofNat 12288)
             ipcState := .ready
           }) })
   if stMixedDomainScheduledFifo.scheduler.current = some (SeLe4n.ThreadId.ofNat 10) then
@@ -1130,7 +1130,7 @@ private def runNegativeChecks : IO Unit := do
   let f2MisalignedState : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject f2UntypedObjId (.untyped {
-        regionBase := (SeLe4n.PAddr.ofNat (0x10001))  -- deliberately misaligned (not 4KB-aligned)
+        regionBase := (SeLe4n.PAddr.ofNat 0x10001)  -- deliberately misaligned (not 4KB-aligned)
         regionSize := 8192
         watermark := 0
         children := []
@@ -1179,7 +1179,7 @@ private def runH2NegativeChecks : IO Unit := do
   let h2UntypedWithChild : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject f2UntypedObjId (.untyped {
-        regionBase := (SeLe4n.PAddr.ofNat (0x10000))
+        regionBase := (SeLe4n.PAddr.ofNat 0x10000)
         regionSize := 256
         watermark := 64
         children := [{ objId := ⟨60⟩, offset := 0, size := 64 }]
@@ -1297,10 +1297,10 @@ private def runAuditCoverageChecks : IO Unit := do
 private def runWSH7Checks : IO Unit := do
   let vr1 : VSpaceRoot :=
     { asid := ⟨77⟩
-      mappings := (({} : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert (SeLe4n.VAddr.ofNat (4096)) ((SeLe4n.PAddr.ofNat (8192)), default)).insert (SeLe4n.VAddr.ofNat (12288)) ((SeLe4n.PAddr.ofNat (16384)), default) }
+      mappings := (({} : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert (SeLe4n.VAddr.ofNat 4096) ((SeLe4n.PAddr.ofNat 8192), default)).insert (SeLe4n.VAddr.ofNat 12288) ((SeLe4n.PAddr.ofNat 16384), default) }
   let vr2 : VSpaceRoot :=
     { asid := ⟨77⟩
-      mappings := (({} : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert (SeLe4n.VAddr.ofNat (12288)) ((SeLe4n.PAddr.ofNat (16384)), default)).insert (SeLe4n.VAddr.ofNat (4096)) ((SeLe4n.PAddr.ofNat (8192)), default) }
+      mappings := (({} : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.VAddr (SeLe4n.PAddr × PagePermissions)).insert (SeLe4n.VAddr.ofNat 12288) ((SeLe4n.PAddr.ofNat 16384), default)).insert (SeLe4n.VAddr.ofNat 4096) ((SeLe4n.PAddr.ofNat 8192), default) }
   if vr1 == vr2 then
     IO.println "positive check passed [WS-H7 VSpaceRoot BEq ignores insertion order]"
   else
@@ -1364,71 +1364,71 @@ def runWSH11Checks : IO Unit := do
   -- H-02: W^X violation must be rejected
   let wxPerms : PagePermissions := { write := true, execute := true }
   expectErr "W^X violation rejected"
-    ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat (4096)) (SeLe4n.PAddr.ofNat (8192)) wxPerms) st)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat 8192) wxPerms) st)
     .policyDenied
   IO.println "negative check passed [WS-H11 W^X violation correctly rejected]"
 
   -- A-05: Address bounds violation must be rejected (vspaceMapPageChecked)
   let hugeAddr : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (2^52 + 1))
   expectErr "address out of bounds rejected"
-    ((SeLe4n.Kernel.Architecture.vspaceMapPageChecked asid (SeLe4n.VAddr.ofNat (4096)) hugeAddr) st)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageChecked asid (SeLe4n.VAddr.ofNat 4096) hugeAddr) st)
     .addressOutOfBounds
   IO.println "negative check passed [WS-H11 address out of bounds correctly rejected]"
 
   -- Boundary: address exactly at bound is also rejected
   let boundaryAddr : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (2^52))
   expectErr "address at boundary rejected"
-    ((SeLe4n.Kernel.Architecture.vspaceMapPageChecked asid (SeLe4n.VAddr.ofNat (4096)) boundaryAddr) st)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageChecked asid (SeLe4n.VAddr.ofNat 4096) boundaryAddr) st)
     .addressOutOfBounds
   IO.println "negative check passed [WS-H11 address at boundary correctly rejected]"
 
   -- A-05: Address just below bound should succeed via checked path
   let validAddr : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (2^52 - 1))
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked asid (SeLe4n.VAddr.ofNat (4096)) validAddr) st with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageChecked asid (SeLe4n.VAddr.ofNat 4096) validAddr) st with
   | .ok _ => IO.println "positive check passed [WS-H11 valid address accepted by checked map]"
   | .error err => throw <| IO.userError s!"valid address rejected: {toString err}"
 
   -- Mapping conflict: duplicate vaddr should fail
   let (_, stMapped) ← expectOkSt "map initial"
-    ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat (4096)) (SeLe4n.PAddr.ofNat (8192))) st)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat 8192)) st)
   expectErr "duplicate mapping conflict"
-    ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat (4096)) (SeLe4n.PAddr.ofNat (16384))) stMapped)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat 16384)) stMapped)
     .mappingConflict
   IO.println "negative check passed [WS-H11 duplicate mapping correctly rejected]"
 
   -- ASID not bound: lookup on unregistered ASID
   expectErr "unbound ASID lookup"
-    (SeLe4n.Kernel.Architecture.vspaceLookup ⟨99⟩ (SeLe4n.VAddr.ofNat (4096)) st)
+    (SeLe4n.Kernel.Architecture.vspaceLookup ⟨99⟩ (SeLe4n.VAddr.ofNat 4096) st)
     .asidNotBound
   IO.println "negative check passed [WS-H11 unbound ASID correctly rejected]"
 
   -- Translation fault: lookup on unmapped vaddr
   expectErr "unmapped vaddr lookup"
-    (SeLe4n.Kernel.Architecture.vspaceLookup asid (SeLe4n.VAddr.ofNat (9999)) st)
+    (SeLe4n.Kernel.Architecture.vspaceLookup asid (SeLe4n.VAddr.ofNat 9999) st)
     .translationFault
   IO.println "negative check passed [WS-H11 unmapped vaddr returns translation fault]"
 
   -- Unmap non-existent mapping returns error
   expectErr "unmap non-existent"
-    ((SeLe4n.Kernel.Architecture.vspaceUnmapPage asid (SeLe4n.VAddr.ofNat (9999))) st)
+    ((SeLe4n.Kernel.Architecture.vspaceUnmapPage asid (SeLe4n.VAddr.ofNat 9999)) st)
     .translationFault
   IO.println "negative check passed [WS-H11 unmap non-existent returns translation fault]"
 
   -- Read-only permissions (write=false, execute=false) should be W^X compliant
   let roPerms : PagePermissions := { read := true, write := false, execute := false }
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat (8192)) (SeLe4n.PAddr.ofNat (16384)) roPerms) st with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 8192) (SeLe4n.PAddr.ofNat 16384) roPerms) st with
   | .ok _ => IO.println "positive check passed [WS-H11 read-only permissions accepted]"
   | .error err => throw <| IO.userError s!"read-only rejected: {toString err}"
 
   -- Write-only (no execute) should be W^X compliant
   let woPerms : PagePermissions := { read := false, write := true, execute := false }
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat (12288)) (SeLe4n.PAddr.ofNat (20480)) woPerms) st with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 12288) (SeLe4n.PAddr.ofNat 20480) woPerms) st with
   | .ok _ => IO.println "positive check passed [WS-H11 write-only permissions accepted]"
   | .error err => throw <| IO.userError s!"write-only rejected: {toString err}"
 
   -- Execute-only (no write) should be W^X compliant
   let xoPerms : PagePermissions := { read := false, write := false, execute := true }
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat (16384)) (SeLe4n.PAddr.ofNat (24576)) xoPerms) st with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 16384) (SeLe4n.PAddr.ofNat 24576) xoPerms) st with
   | .ok _ => IO.println "positive check passed [WS-H11 execute-only permissions accepted]"
   | .error err => throw <| IO.userError s!"execute-only rejected: {toString err}"
 
@@ -1443,9 +1443,9 @@ def runWSH11Checks : IO Unit := do
 
   -- Per-ASID flush removes only matching ASID entries
   let entry1 : SeLe4n.Model.TlbEntry :=
-    { asid := ⟨1⟩, vaddr := (SeLe4n.VAddr.ofNat (4096)), paddr := (SeLe4n.PAddr.ofNat (8192)), perms := default }
+    { asid := ⟨1⟩, vaddr := (SeLe4n.VAddr.ofNat 4096), paddr := (SeLe4n.PAddr.ofNat 8192), perms := default }
   let entry2 : SeLe4n.Model.TlbEntry :=
-    { asid := ⟨2⟩, vaddr := (SeLe4n.VAddr.ofNat (8192)), paddr := (SeLe4n.PAddr.ofNat (16384)), perms := default }
+    { asid := ⟨2⟩, vaddr := (SeLe4n.VAddr.ofNat 8192), paddr := (SeLe4n.PAddr.ofNat 16384), perms := default }
   let tlb2 : SeLe4n.Model.TlbState := { entries := [entry1, entry2] }
   let flushedAsid := SeLe4n.Model.adapterFlushTlbByAsid tlb2 ⟨1⟩
   if flushedAsid.entries.length = 1 then
@@ -1455,13 +1455,13 @@ def runWSH11Checks : IO Unit := do
 
   -- Per-VAddr flush removes only matching (ASID, VAddr) entries
   let entry3 : SeLe4n.Model.TlbEntry :=
-    { asid := ⟨1⟩, vaddr := (SeLe4n.VAddr.ofNat (4096)), paddr := (SeLe4n.PAddr.ofNat (8192)), perms := default }
+    { asid := ⟨1⟩, vaddr := (SeLe4n.VAddr.ofNat 4096), paddr := (SeLe4n.PAddr.ofNat 8192), perms := default }
   let entry4 : SeLe4n.Model.TlbEntry :=
-    { asid := ⟨1⟩, vaddr := (SeLe4n.VAddr.ofNat (8192)), paddr := (SeLe4n.PAddr.ofNat (16384)), perms := default }
+    { asid := ⟨1⟩, vaddr := (SeLe4n.VAddr.ofNat 8192), paddr := (SeLe4n.PAddr.ofNat 16384), perms := default }
   let entry5 : SeLe4n.Model.TlbEntry :=
-    { asid := ⟨2⟩, vaddr := (SeLe4n.VAddr.ofNat (4096)), paddr := (SeLe4n.PAddr.ofNat (24576)), perms := default }
+    { asid := ⟨2⟩, vaddr := (SeLe4n.VAddr.ofNat 4096), paddr := (SeLe4n.PAddr.ofNat 24576), perms := default }
   let tlb3 : SeLe4n.Model.TlbState := { entries := [entry3, entry4, entry5] }
-  let flushedVAddr := SeLe4n.Model.adapterFlushTlbByVAddr tlb3 ⟨1⟩ (SeLe4n.VAddr.ofNat (4096))
+  let flushedVAddr := SeLe4n.Model.adapterFlushTlbByVAddr tlb3 ⟨1⟩ (SeLe4n.VAddr.ofNat 4096)
   if flushedVAddr.entries.length = 2 then
     IO.println "positive check passed [WS-H11 per-VAddr TLB flush removes only matching (ASID,VAddr)]"
   else
@@ -1469,13 +1469,13 @@ def runWSH11Checks : IO Unit := do
 
   -- vspaceLookupFull returns permissions
   let permsCheck : PagePermissions := { read := true, write := false, execute := false, user := true }
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat (20480)) (SeLe4n.PAddr.ofNat (32768)) permsCheck) st with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 20480) (SeLe4n.PAddr.ofNat 32768) permsCheck) st with
   | .error err => throw <| IO.userError s!"lookupFull map error: {toString err}"
   | .ok (_, stPerm) =>
-      match SeLe4n.Kernel.Architecture.vspaceLookupFull asid (SeLe4n.VAddr.ofNat (20480)) stPerm with
+      match SeLe4n.Kernel.Architecture.vspaceLookupFull asid (SeLe4n.VAddr.ofNat 20480) stPerm with
       | .error err => throw <| IO.userError s!"lookupFull error: {toString err}"
       | .ok ((paddr, perms), _) =>
-          if paddr = (SeLe4n.PAddr.ofNat (32768)) && perms.read == true && perms.write == false &&
+          if paddr = (SeLe4n.PAddr.ofNat 32768) && perms.read == true && perms.write == false &&
              perms.execute == false && perms.user == true then
             IO.println "positive check passed [WS-H11 vspaceLookupFull returns correct permissions]"
           else
@@ -1489,47 +1489,47 @@ def runWSH11Checks : IO Unit := do
     |>.withLifecycleObjectType vspaceOid .vspaceRoot
     |>.withObject vspaceOid2 (.vspaceRoot { asid := asid2, mappings := {} })
     |>.withLifecycleObjectType vspaceOid2 .vspaceRoot).buildChecked
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat (4096)) (SeLe4n.PAddr.ofNat (8192))) st2Asid with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat 8192)) st2Asid with
   | .error err => throw <| IO.userError s!"cross-ASID map failed: {toString err}"
   | .ok (_, stCross) =>
       expectErr "cross-ASID isolation"
-        (SeLe4n.Kernel.Architecture.vspaceLookup asid2 (SeLe4n.VAddr.ofNat (4096)) stCross)
+        (SeLe4n.Kernel.Architecture.vspaceLookup asid2 (SeLe4n.VAddr.ofNat 4096) stCross)
         .translationFault
   IO.println "negative check passed [WS-H11 cross-ASID isolation enforced]"
 
   -- Multiple concurrent mappings: map 3 different vaddrs, verify all retrievable
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat (4096)) (SeLe4n.PAddr.ofNat (8192))) st with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat 8192)) st with
   | .error err => throw <| IO.userError s!"multi-map step 1 failed: {toString err}"
   | .ok (_, stM1) =>
-      match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat (8192)) (SeLe4n.PAddr.ofNat (16384))) stM1 with
+      match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 8192) (SeLe4n.PAddr.ofNat 16384)) stM1 with
       | .error err => throw <| IO.userError s!"multi-map step 2 failed: {toString err}"
       | .ok (_, stM2) =>
-          match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat (12288)) (SeLe4n.PAddr.ofNat (24576))) stM2 with
+          match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 12288) (SeLe4n.PAddr.ofNat 24576)) stM2 with
           | .error err => throw <| IO.userError s!"multi-map step 3 failed: {toString err}"
           | .ok (_, stM3) =>
-              match SeLe4n.Kernel.Architecture.vspaceLookup asid (SeLe4n.VAddr.ofNat (4096)) stM3,
-                    SeLe4n.Kernel.Architecture.vspaceLookup asid (SeLe4n.VAddr.ofNat (8192)) stM3,
-                    SeLe4n.Kernel.Architecture.vspaceLookup asid (SeLe4n.VAddr.ofNat (12288)) stM3 with
+              match SeLe4n.Kernel.Architecture.vspaceLookup asid (SeLe4n.VAddr.ofNat 4096) stM3,
+                    SeLe4n.Kernel.Architecture.vspaceLookup asid (SeLe4n.VAddr.ofNat 8192) stM3,
+                    SeLe4n.Kernel.Architecture.vspaceLookup asid (SeLe4n.VAddr.ofNat 12288) stM3 with
               | .ok (p1, _), .ok (p2, _), .ok (p3, _) =>
-                  if p1 = (SeLe4n.PAddr.ofNat (8192)) && p2 = (SeLe4n.PAddr.ofNat (16384)) && p3 = (SeLe4n.PAddr.ofNat (24576)) then
+                  if p1 = (SeLe4n.PAddr.ofNat 8192) && p2 = (SeLe4n.PAddr.ofNat 16384) && p3 = (SeLe4n.PAddr.ofNat 24576) then
                     IO.println "positive check passed [WS-H11 multiple concurrent mappings all retrievable]"
                   else
                     throw <| IO.userError "multi-map: wrong addresses returned"
               | _, _, _ => throw <| IO.userError "multi-map: lookup failed"
 
   -- Sequential map-unmap-map cycle: verify remapping works after unmap
-  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat (4096)) (SeLe4n.PAddr.ofNat (8192))) st with
+  match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat 8192)) st with
   | .error err => throw <| IO.userError s!"cycle map1 failed: {toString err}"
   | .ok (_, stC1) =>
-      match (SeLe4n.Kernel.Architecture.vspaceUnmapPage asid (SeLe4n.VAddr.ofNat (4096))) stC1 with
+      match (SeLe4n.Kernel.Architecture.vspaceUnmapPage asid (SeLe4n.VAddr.ofNat 4096)) stC1 with
       | .error err => throw <| IO.userError s!"cycle unmap failed: {toString err}"
       | .ok (_, stC2) =>
-          match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat (4096)) (SeLe4n.PAddr.ofNat (16384))) stC2 with
+          match (SeLe4n.Kernel.Architecture.vspaceMapPageWithFlush asid (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat 16384)) stC2 with
           | .error err => throw <| IO.userError s!"cycle remap failed: {toString err}"
           | .ok (_, stC3) =>
-              match SeLe4n.Kernel.Architecture.vspaceLookup asid (SeLe4n.VAddr.ofNat (4096)) stC3 with
+              match SeLe4n.Kernel.Architecture.vspaceLookup asid (SeLe4n.VAddr.ofNat 4096) stC3 with
               | .ok (pa, _) =>
-                  if pa = (SeLe4n.PAddr.ofNat (16384)) then
+                  if pa = (SeLe4n.PAddr.ofNat 16384) then
                     IO.println "positive check passed [WS-H11 map-unmap-remap cycle works correctly]"
                   else
                     throw <| IO.userError s!"cycle: expected 16384, got {pa.toNat}"
@@ -1559,7 +1559,7 @@ private def runWSH13Checks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨1⟩ (.tcb {
         tid := ⟨1⟩, priority := ⟨100⟩, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
+        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
         ipcState := .ready })
       |>.withService svcA {
         identity := { sid := svcA, backingObject := ⟨1⟩, owner := ⟨10⟩ }
@@ -1757,7 +1757,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         domain := ⟨0⟩
         cspaceRoot := h16CnodeId
         vspaceRoot := ⟨20⟩
-        ipcBuffer := (SeLe4n.VAddr.ofNat (4096))
+        ipcBuffer := (SeLe4n.VAddr.ofNat 4096)
         ipcState := .ready
       })
       |>.withLifecycleObjectType h16TargetId .endpoint
@@ -1830,7 +1830,7 @@ def runWSH16LifecycleChecks : IO Unit := do
   let h16ExhaustedState : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject h16ExhaustedUntypedId (.untyped {
-        regionBase := (SeLe4n.PAddr.ofNat (0x10000))
+        regionBase := (SeLe4n.PAddr.ofNat 0x10000)
         regionSize := 64
         watermark := 64   -- fully exhausted
         children := []
@@ -1874,7 +1874,7 @@ def runWSH16LifecycleChecks : IO Unit := do
   let h16DeviceState : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject h16DeviceUntypedId (.untyped {
-        regionBase := (SeLe4n.PAddr.ofNat (0x20000))
+        regionBase := (SeLe4n.PAddr.ofNat 0x20000)
         regionSize := 8192
         watermark := 0
         children := []
@@ -2190,12 +2190,12 @@ def runWSKGChecks : IO Unit := do
       |>.buildChecked)
   let wxPerms := PagePermissions.ofNat 6  -- bits 1+2 = write+execute
   expectErr "K-G-NEG-12 vspaceMap W^X violation"
-    ((SeLe4n.Kernel.Architecture.vspaceMapPageChecked vspaceAsid (SeLe4n.VAddr.ofNat (4096)) (SeLe4n.PAddr.ofNat (8192)) wxPerms) vspaceState)
+    ((SeLe4n.Kernel.Architecture.vspaceMapPageChecked vspaceAsid (SeLe4n.VAddr.ofNat 4096) (SeLe4n.PAddr.ofNat 8192) wxPerms) vspaceState)
     .policyDenied
 
   -- K-G-NEG-13: vspaceUnmapPage with no existing mapping → translationFault
   expectErr "K-G-NEG-13 vspaceUnmap no mapping"
-    ((SeLe4n.Kernel.Architecture.vspaceUnmapPage vspaceAsid (SeLe4n.VAddr.ofNat (4096))) vspaceState)
+    ((SeLe4n.Kernel.Architecture.vspaceUnmapPage vspaceAsid (SeLe4n.VAddr.ofNat 4096)) vspaceState)
     .translationFault
 
   IO.println "lifecycle/VSpace negative tests passed"
@@ -2209,7 +2209,7 @@ def runWSKGChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject svcBackingId (.tcb {
         tid := ⟨801⟩, priority := ⟨10⟩, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
+        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
         ipcState := .ready })
       |>.withService svcPolicyId {
         identity := { sid := svcPolicyId, backingObject := svcBackingId, owner := ⟨10⟩ }
@@ -2333,12 +2333,12 @@ def runWSL4BlockedThreadChecks : IO Unit := do
       |>.withObject ntfnId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
       |>.withObject ⟨7⟩ (.tcb {
         tid := ⟨7⟩, priority := ⟨10⟩, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
+        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
         ipcState := .ready
       })
       |>.withObject ⟨8⟩ (.tcb {
         tid := ⟨8⟩, priority := ⟨20⟩, domain := ⟨0⟩,
-        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (8192)),
+        cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192),
         ipcState := .ready
       })
       |>.withRunnable [⟨7⟩, ⟨8⟩]
@@ -2479,7 +2479,7 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
     domain := ⟨0⟩,
     cspaceRoot := senderRoot,
     vspaceRoot := senderRoot,
-    ipcBuffer := (SeLe4n.VAddr.ofNat (0)),
+    ipcBuffer := (SeLe4n.VAddr.ofNat 0),
     timeSlice := 5,
     ipcState := .ready,
     schedContextBinding := .unbound
@@ -3039,7 +3039,7 @@ private def runWSR4CoherenceChecks : IO Unit := do
     let r4State2 := (BootstrapBuilder.empty
         |>.withObject tcbId (.tcb {
           tid := ⟨1⟩, priority := ⟨0⟩, domain := ⟨0⟩,
-          cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (0)) })
+          cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0) })
         |>.withLifecycleObjectType tcbId .tcb
         |>.buildChecked)
     match SeLe4n.Kernel.registerInterface iface r4State2 with
@@ -3278,7 +3278,7 @@ private def runS2HLifecycleErrorTests : IO Unit := do
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId ⟨90⟩
       (.tcb { tid := ⟨90⟩, priority := ⟨10⟩, domain := ⟨0⟩,
               cspaceRoot := cnodeId, vspaceRoot := ⟨20⟩,
-              ipcBuffer := (SeLe4n.VAddr.ofNat (0)), ipcState := .ready }) 0 f2UntypedState)
+              ipcBuffer := (SeLe4n.VAddr.ofNat 0), ipcState := .ready }) 0 f2UntypedState)
     .untypedAllocSizeTooSmall
 
   -- S2-H-02: retypeFromUntyped with device untyped → TCB rejection
@@ -3287,7 +3287,7 @@ private def runS2HLifecycleErrorTests : IO Unit := do
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2DeviceUntypedId ⟨91⟩
       (.tcb { tid := ⟨91⟩, priority := ⟨10⟩, domain := ⟨0⟩,
               cspaceRoot := cnodeId, vspaceRoot := ⟨20⟩,
-              ipcBuffer := (SeLe4n.VAddr.ofNat (0)), ipcState := .ready }) 64 f2DeviceState)
+              ipcBuffer := (SeLe4n.VAddr.ofNat 0), ipcState := .ready }) 64 f2DeviceState)
     .untypedDeviceRestriction
 
   -- S2-H-03: retypeFromUntyped targeting non-untyped object → typeMismatch
@@ -3306,7 +3306,7 @@ private def runS2HLifecycleErrorTests : IO Unit := do
   let exhaustedState : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject exhaustedUntypedId (.untyped {
-        regionBase := (SeLe4n.PAddr.ofNat (0x10000))
+        regionBase := (SeLe4n.PAddr.ofNat 0x10000)
         regionSize := 128
         watermark := 128   -- watermark == regionSize → no space left
         children := []
@@ -3398,7 +3398,7 @@ private def runX2RuntimeInvariantTests : IO Unit := do
   -- on RPi5 config (44-bit PA). This verifies that the state-aware production
   -- entry point enforces platform-specific bounds, closing the [2^44, 2^52) gap.
   let asidAC4 : SeLe4n.ASID := ⟨1⟩
-  let vaddrAC4 : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat (0x1000))
+  let vaddrAC4 : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat 0x1000)
   let rootOid : SeLe4n.ObjId := ⟨500⟩
   let paddrAtBoundary : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (2^44))  -- first address beyond 44-bit range
   let stRpi5 : SystemState :=
@@ -3498,7 +3498,7 @@ def runZ8SchedContextNegativeChecks : IO Unit := do
   -- Z8-L-06: Bind when TCB is already bound to another SC
   let tcbAlreadyBound : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     schedContextBinding := .bound ⟨8888⟩ }
   let stTcbBound := { stWithSc with
     objects := stWithSc.objects.insert tid.toObjId (.tcb tcbAlreadyBound) }
@@ -3531,7 +3531,7 @@ def runAC1BudgetFailClosedChecks : IO Unit := do
   -- AC1-G-01: Unbound thread always has sufficient budget
   let tcbUnbound : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     schedContextBinding := .unbound }
   if SeLe4n.Kernel.hasSufficientBudget st0 tcbUnbound != true then
     throw <| IO.userError "unbound thread should have sufficient budget"
@@ -3539,7 +3539,7 @@ def runAC1BudgetFailClosedChecks : IO Unit := do
   -- AC1-G-02: Bound thread with non-existent SchedContext → false (fail-closed)
   let tcbBoundMissing : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     schedContextBinding := .bound ⟨7777⟩ }
   if SeLe4n.Kernel.hasSufficientBudget st0 tcbBoundMissing != false then
     throw <| IO.userError "missing SchedContext should fail-closed (return false)"
@@ -3547,7 +3547,7 @@ def runAC1BudgetFailClosedChecks : IO Unit := do
   -- AC1-G-03: Donated binding with non-existent SchedContext → false
   let tcbDonatedMissing : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     schedContextBinding := .donated ⟨8888⟩ ⟨9999⟩ }
   if SeLe4n.Kernel.hasSufficientBudget st0 tcbDonatedMissing != false then
     throw <| IO.userError "donated missing SchedContext should fail-closed"
@@ -3560,7 +3560,7 @@ def runAC1BudgetFailClosedChecks : IO Unit := do
     objects := st0.objects.insert scId (.schedContext scWithBudget) }
   let tcbBound : TCB := {
     tid := tid, priority := ⟨50⟩, domain := ⟨0⟩,
-    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat (4096)),
+    cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
     schedContextBinding := .bound ⟨6001⟩ }
   if SeLe4n.Kernel.hasSufficientBudget stWithSc tcbBound != true then
     throw <| IO.userError "bound with positive budget should be true"

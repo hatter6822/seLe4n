@@ -332,7 +332,7 @@ theorem extractMemoryRegions_truncated (blob : ByteArray) (h : blob.size < 16) :
     defaults to `.reserved` for unmapped addresses). -/
 def classifyMemoryRegion (region : FdtMemoryRegion)
     (platformMemory : List MemoryRegion := []) : MemoryKind :=
-  match platformMemory.find? fun r => r.contains (SeLe4n.PAddr.ofNat (region.base)) with
+  match platformMemory.find? fun r => r.contains (SeLe4n.PAddr.ofNat region.base) with
   | some r => r.kind
   | none => .ram  -- Default: /memory node entries are RAM when no map provided
 
@@ -345,7 +345,7 @@ def classifyMemoryRegionChecked (region : FdtMemoryRegion)
   match platformMemory with
   | [] => none  -- AK9-F: reject empty map, caller must decide
   | _ =>
-    match platformMemory.find? fun r => r.contains (SeLe4n.PAddr.ofNat (region.base)) with
+    match platformMemory.find? fun r => r.contains (SeLe4n.PAddr.ofNat region.base) with
     | some r => some r.kind
     | none => none  -- AK9-F: reject unmapped, caller must decide
 
@@ -366,7 +366,7 @@ def classifyAddress (addr : PAddr) (platformMemory : List MemoryRegion) : Memory
 def fdtRegionsToMemoryRegions (regions : List FdtMemoryRegion)
     (platformMemory : List MemoryRegion := []) : List MemoryRegion :=
   regions.map fun r =>
-    { base := (SeLe4n.PAddr.ofNat (r.base)), size := r.size, kind := classifyMemoryRegion r platformMemory }
+    { base := (SeLe4n.PAddr.ofNat r.base), size := r.size, kind := classifyMemoryRegion r platformMemory }
 
 /-- AG3-A: When no platform memory map is provided, classification defaults to `.ram`. -/
 theorem classifyMemoryRegion_default (region : FdtMemoryRegion) :
@@ -418,7 +418,7 @@ def DeviceTree.fromDtbWithRegions (blob : ByteArray)
     platformName := s!"DTB-parsed (version {hdr.version.toNat})"
     machineConfig := config
     peripherals := []  -- Use fromDtbFull for full device discovery
-    interruptController := { distributorBase := (SeLe4n.PAddr.ofNat (0)), cpuInterfaceBase := (SeLe4n.PAddr.ofNat (0)),
+    interruptController := { distributorBase := (SeLe4n.PAddr.ofNat 0), cpuInterfaceBase := (SeLe4n.PAddr.ofNat 0),
                              spiCount := 0, timerPpiId := ⟨0⟩ }
     timerFrequencyHz := 0
   }
@@ -870,7 +870,7 @@ def extractInterruptController (nodes : List FdtNode) : InterruptControllerInfo 
         | some compat => compat == "arm,gic-400" || compat == "arm,cortex-a15-gic"
         | none => c.name == "interrupt-controller" || c.name.startsWith "interrupt-controller@"
     match childResult with
-    | none => { distributorBase := (SeLe4n.PAddr.ofNat (0)), cpuInterfaceBase := (SeLe4n.PAddr.ofNat (0)), spiCount := 0, timerPpiId := ⟨0⟩ }
+    | none => { distributorBase := (SeLe4n.PAddr.ofNat 0), cpuInterfaceBase := (SeLe4n.PAddr.ofNat 0), spiCount := 0, timerPpiId := ⟨0⟩ }
     | some gicNode => parseGicRegProperty gicNode
   | some gicNode => parseGicRegProperty gicNode
 where
@@ -879,16 +879,16 @@ where
       Assumes 2-cell addresses (64-bit), 2-cell sizes (standard for ARM64). -/
   parseGicRegProperty (node : FdtNode) : InterruptControllerInfo :=
     match node.findProperty "reg" with
-    | none => { distributorBase := (SeLe4n.PAddr.ofNat (0)), cpuInterfaceBase := (SeLe4n.PAddr.ofNat (0)), spiCount := 0, timerPpiId := ⟨0⟩ }
+    | none => { distributorBase := (SeLe4n.PAddr.ofNat 0), cpuInterfaceBase := (SeLe4n.PAddr.ofNat 0), spiCount := 0, timerPpiId := ⟨0⟩ }
     | some regBytes =>
       -- GIC reg: [dist_base(8), dist_size(8), cpu_base(8), cpu_size(8)] = 32 bytes minimum
       if regBytes.size < 32 then
-        { distributorBase := (SeLe4n.PAddr.ofNat (0)), cpuInterfaceBase := (SeLe4n.PAddr.ofNat (0)), spiCount := 0, timerPpiId := ⟨0⟩ }
+        { distributorBase := (SeLe4n.PAddr.ofNat 0), cpuInterfaceBase := (SeLe4n.PAddr.ofNat 0), spiCount := 0, timerPpiId := ⟨0⟩ }
       else
         let distBase := match readBE64 regBytes 0 with | some v => v.toNat | none => 0
         let cpuBase := match readBE64 regBytes 16 with | some v => v.toNat | none => 0
-        { distributorBase := (SeLe4n.PAddr.ofNat (distBase))
-          cpuInterfaceBase := (SeLe4n.PAddr.ofNat (cpuBase))
+        { distributorBase := (SeLe4n.PAddr.ofNat distBase)
+          cpuInterfaceBase := (SeLe4n.PAddr.ofNat cpuBase)
           spiCount := 0  -- SPI count not in `reg`; from `#interrupt-cells` or board constants
           timerPpiId := ⟨0⟩ }  -- Timer PPI from /timer node
 
@@ -957,7 +957,7 @@ def extractPeripherals (nodes : List FdtNode) : List DeviceEntry :=
         let base := match readBE64 regBytes 0 with | some v => v.toNat | none => 0
         let size := match readBE64 regBytes 8 with | some v => v.toNat | none => 0
         if size == 0 then none
-        else some { name := node.name, base := (SeLe4n.PAddr.ofNat (base)), size }
+        else some { name := node.name, base := (SeLe4n.PAddr.ofNat base), size }
     | _, _ => none
 
 -- ============================================================================

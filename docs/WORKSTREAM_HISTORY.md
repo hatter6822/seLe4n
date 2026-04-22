@@ -180,8 +180,11 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
     sites (`SyscallArgDecode.lean:decodeCSpaceMintArgs_roundtrip`
     rewritten without badge destructuring; `MainTraceHarness.lean`,
     `InformationFlowSuite`, `NegativeStateSuite`, `OperationChainSuite`,
-    `SuspendResumeSuite`). `BadgeOverflowSuite` gains `bov023` /
-    `bov024` covering the smart-constructor surface.
+    `SuspendResumeSuite`). Supporting theorems `Badge.zero_valid`,
+    `Badge.zero_toNat`, `Badge.ofNat_toNat`, `Badge.ofNat_valid`
+    landed in `Prelude.lean`. `BadgeOverflowSuite` gains `bov023`,
+    `bov024`, `bov029`, `bov030` covering the smart-constructor
+    surface and theorem witnesses.
   - **AN2-B.1/B.2/B.3/B.4 (Theme 4.3 follow-on)**: same `private mk ::`
     pattern applied to `CPtr`, `Slot`, `VAddr`, and `PAddr`. Cascade
     reached ~250+ call sites across `SyscallArgDecode`, `Platform/DeviceTree`,
@@ -202,8 +205,9 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
     lifts the bitwise-OR composition into the `UInt64` domain, so the
     intermediate value never escapes `2^64`. Closes the
     "unbounded-intermediate" concern in the pre-existing `bor`
-    composition. Proven `.valid` by construction. Two new regression
-    tests (`bov025`, `bov026`) in `BadgeOverflowSuite`.
+    composition. Proven `.valid` by construction. Supporting theorems
+    `ofUInt64Pair_comm`, `ofUInt64Pair_zero_right`. Regression tests
+    `bov025`–`bov028` (4 tests) in `BadgeOverflowSuite`.
   - **AN2-F.1 (FND-M01)**: `machineWordBits`, `machineWordMax`,
     `isWord64`, `isWord64Dec` hoisted before `CPtr`/`Slot` so both can
     structurally delegate their hardware-width predicate. The

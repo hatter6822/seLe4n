@@ -771,7 +771,7 @@ theorem TCB.not_lawfulBEq : ¬ LawfulBEq TCB := by
   let r₁ : SeLe4n.RegisterFile := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := f₁ }
   let r₂ : SeLe4n.RegisterFile := { pc := ⟨0⟩, sp := ⟨0⟩, gpr := f₂ }
   let oid : SeLe4n.ObjId := ⟨0⟩
-  let va : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat (0))
+  let va : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat 0)
   let t₁ : TCB := {
     tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
     cspaceRoot := oid, vspaceRoot := oid, ipcBuffer := va, registerContext := r₁ }

@@ -529,8 +529,8 @@ private def sad029_decodeExtraCapAddrs : IO Unit := do
     `ipcBufferReadMr` returns `.ipcBufferVAddrUnmapped`. -/
 private def buildIpcDecodeState
     (syscallNum : Nat) (msgLen : Nat) (msgRegs : Array SeLe4n.RegValue)
-    (ipcBufferVA : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat (0x10000)))
-    (ipcBufferPA : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat (0x20000)))
+    (ipcBufferVA : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat 0x10000))
+    (ipcBufferPA : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 0x20000))
     (mapIpcBuffer : Bool := true) : SeLe4n.Model.SystemState :=
   let tid : SeLe4n.ThreadId := ⟨800⟩
   let cnodeId : SeLe4n.ObjId := ⟨801⟩
