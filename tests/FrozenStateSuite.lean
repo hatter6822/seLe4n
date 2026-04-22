@@ -114,7 +114,7 @@ private def fs009_freezeCNode : IO Unit := do
   let cn : CNode :=
     { depth := 16, guardWidth := 4, guardValue := 0
       radixWidth := 4
-      slots := (RHTable.empty 16).insert ⟨3⟩ cap }
+      slots := (RHTable.empty 16).insert (SeLe4n.Slot.ofNat 3) cap }
   let frozen := freezeObject (.cnode cn)
   expect "frozen CNode has correct type" (frozen.objectType == .cnode)
   -- Verify the frozen CNode slots use CNodeRadix (flat array)
@@ -123,8 +123,8 @@ private def fs009_freezeCNode : IO Unit := do
     expect "guard width preserved" (fc.guardWidth == 4)
     expect "guard value preserved" (fc.guardValue == 0)
     expect "radix width preserved" (fc.radixWidth == 4)
-    expect "radix lookup finds cap" (fc.slots.lookup ⟨3⟩ == some cap)
-    expect "radix lookup misses" (fc.slots.lookup ⟨7⟩ == none)
+    expect "radix lookup finds cap" (fc.slots.lookup (SeLe4n.Slot.ofNat 3) == some cap)
+    expect "radix lookup misses" (fc.slots.lookup (SeLe4n.Slot.ofNat 7) == none)
   | _ => throw <| IO.userError "expected FrozenCNode"
 
 /-- FS-010: freezeObject converts VSpaceRoot to FrozenVSpaceRoot -/

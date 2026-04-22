@@ -46,9 +46,7 @@ def probeBaseState (threadCount : Nat) : SystemState :=
   -- WS-F7/D2c: CNode with one slot per thread targeting the endpoint
   let cnodeSlots : List (SeLe4n.Slot × Capability) :=
     (List.range threadCount).map fun n =>
-      (⟨n⟩, { target := .object probeEndpointId,
-               rights := AccessRightSet.ofList [.read, .write],
-               badge := none })
+      (SeLe4n.Slot.ofNat n, ({ target := .object probeEndpointId, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability))
   let cnodeObj : KernelObject := .cnode {
     depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
     slots := SeLe4n.Kernel.RobinHood.RHTable.ofList cnodeSlots }
@@ -190,8 +188,8 @@ def stepOp (op : ProbeOp) (tid : SeLe4n.ThreadId) (st : SystemState) : StepOutco
   -- Y3-D: capCopy replaces duplicate awaitReceive (LOW-07), exercising CSpace
   -- copy subsystem (distinct from capLookup which only reads).
   | .capCopy =>
-      let srcSlot := ⟨tid.toNat % 16⟩
-      let dstSlot := ⟨(tid.toNat + 8) % 16⟩
+      let srcSlot := SeLe4n.Slot.ofNat (tid.toNat % 16)
+      let dstSlot := SeLe4n.Slot.ofNat ((tid.toNat + 8) % 16)
       let src : SeLe4n.Kernel.CSpaceAddr := { cnode := probeCNodeId, slot := srcSlot }
       let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := probeCNodeId, slot := dstSlot }
       match SeLe4n.Kernel.cspaceCopy src dst st with
@@ -222,7 +220,7 @@ def stepOp (op : ProbeOp) (tid : SeLe4n.ThreadId) (st : SystemState) : StepOutco
       | .error err => classifyError .scheduleOp err
   -- WS-F7/D2d: Capability lookup — exercise CSpace resolution
   | .capLookup =>
-      let addr : SeLe4n.Kernel.CSpaceAddr := { cnode := probeCNodeId, slot := ⟨tid.toNat % 16⟩ }
+      let addr : SeLe4n.Kernel.CSpaceAddr := { cnode := probeCNodeId, slot := SeLe4n.Slot.ofNat (tid.toNat % 16) }
       match SeLe4n.Kernel.cspaceLookupSlot addr st with
       | .ok (_, st') => .mutated st'
       | .error err => classifyError .capLookup err

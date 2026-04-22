@@ -1,3 +1,167 @@
+## v0.30.6 — WS-AN Phase AN2 (Foundation hardening) [in progress — landed subset]
+
+Begins the WS-AN foundation-hardening phase per
+[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
+§5. Lands **Theme 4.3 (advisory predicates → subtype gates)** for `Badge`,
+`CPtr`, and `Slot`, plus the `Badge` H-12 intermediate-overflow closure
+and four small FND-M batch items. Phase AN2 is multi-day in the plan's
+estimate; the items landed in this commit are the ones that compose
+safely without a multi-proof cascade. Remaining AN2 sub-tasks
+(`VAddr`/`PAddr` private mk, `RegisterFile.gpr : Fin 32`,
+`typedIdDisjointness` as a new `crossSubsystemInvariant` conjunct, the
+DEF-F-L9 17-tuple refactor, and the FND-M03/M05/M06/M07 items) are
+tracked for a subsequent AN2-continuation pass — each is a cascade-heavy
+refactor the plan explicitly budgets as its own commit batch and would
+not merge cleanly inside the scope of this PR.
+
+Version stays at `0.30.6` per the plan's no-per-phase-bump convention.
+
+### AN2-A — Badge private mk + smart constructors (H-13)
+
+`SeLe4n/Prelude.lean` — the `Badge` structure now carries
+`private mk ::`. External `Badge.mk n` and `⟨n⟩` anonymous-constructor
+uses are rejected by the elaborator across module boundaries. Direct
+construction goes through one of the public smart constructors:
+
+- `Badge.ofNatMasked n` — existing truncating constructor (seL4
+  word-truncation semantics).
+- `Badge.ofNat n (h : n < machineWordMax := by decide)` — new
+  proof-carrying constructor for pre-bounded `Nat` inputs.
+- `Badge.zero` — new canonical zero badge.
+
+A private `Badge.mkUnsafeForProof` helper is provided for proof-internal
+destructuring and `congrArg Badge.mk` sites; it is not accessible from
+outside `Prelude.lean`. A manual `Inhabited Badge := ⟨⟨0⟩⟩` replaces the
+prior `deriving Inhabited` (which requires a public constructor).
+
+Migration touched 17 production and test sites:
+`SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (1,
+`decodeCSpaceMintArgs_roundtrip` rewritten without Badge destructuring),
+`SeLe4n/Testing/MainTraceHarness.lean` (11), `tests/InformationFlowSuite.lean`
+(3, `notificationSignalChecked` badge args), `tests/NegativeStateSuite.lean`
+(1, `cspaceMutate` badge expectation), `tests/OperationChainSuite.lean` (2,
+`badgeVal` literals), `tests/SuspendResumeSuite.lean` (1, TCB
+`pendingMessage` badge), plus `tests/BadgeOverflowSuite.lean` gains two
+new regression tests (`bov023` `zero` constructor; `bov024` `ofNat`
+constructor) covering the smart-constructor surface.
+
+### AN2-B.1/B.2 — `CPtr` and `Slot` private mk (Theme 4.3 follow-on)
+
+Same pattern applied to `CPtr` and `Slot` in `SeLe4n/Prelude.lean`:
+`private mk ::` + manual `Inhabited` + `ofNat` smart constructor kept
+public. Cross-module external `CPtr.mk` / `Slot.mk` and `⟨n⟩`
+anonymous constructor calls are now rejected by the elaborator.
+
+Migration: ~130 call sites across
+`SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`,
+`SeLe4n/Testing/MainTraceHarness.lean`, and every affected test suite
+(`OperationChainSuite`, `NegativeStateSuite`, `InformationFlowSuite`,
+`RobinHoodSuite`, `RadixTreeSuite`, `FrozenStateSuite`, `FreezeProofSuite`,
+`FrozenOpsSuite`, `TraceSequenceProbe`, `ModelIntegritySuite`). Most sites
+take the form `slot := ⟨N⟩` / `capAddr := ⟨N⟩` / `cptr := ⟨N⟩` (record
+field assignments) or `(⟨N⟩, cap)` (CNode slot-capability pairs);
+automated migration used a Lean-error-driven Python patcher
+(`/tmp/fix_private_mk2.py` — ephemeral) that iteratively runs `lake
+build` against each suite target, extracts `Constructor for SeLe4n.{Slot,
+CPtr} is marked as private` errors, and rewrites the `⟨N⟩` at the
+offending column to `(SeLe4n.{Slot,CPtr}.ofNat N)`. A handful of
+multi-line `(⟨N⟩, { ... })` patterns where the anonymous record's type
+could not be inferred once the key was qualified required explicit
+`(... : Capability)` ascriptions.
+
+### AN2-E — Badge.ofUInt64Pair (H-12)
+
+New `Badge.ofUInt64Pair (a b : UInt64) : Badge` lifts the bitwise-OR
+composition into the `UInt64` domain so the intermediate value never
+escapes `2^64` — forecloses the "unbounded-intermediate" concern flagged
+by audit H-12 in the pre-existing `Badge.bor` composition when a caller
+passes unmasked `Nat` badges. `ofUInt64Pair_valid` theorem witnesses
+that the result is `.valid` by construction (no truncation). Legacy
+`Badge.bor` remains in place for proof-side rewriting.
+
+Tests: `bov025` (full-mask and zero round-trip) and `bov026`
+(`ofUInt64Pair` equivalent to `bor ∘ ofNatMasked` on word-bounded
+inputs) added to `tests/BadgeOverflowSuite.lean`.
+
+### AN2-F.1 — `isWord64Bounded` delegation equivalence (FND-M01)
+
+Two new theorems in `SeLe4n/Prelude.lean` —
+`CPtr.isWord64Bounded_eq_isWord64Dec` and
+`Slot.isWord64Bounded_eq_isWord64Dec` — witness that the inline `<
+2^64` literal used inside `CPtr.isWord64Bounded` and
+`Slot.isWord64Bounded` (needed to avoid a forward reference to
+`isWord64Dec` at the `CPtr`/`Slot` definition site) denotes the same
+check as `isWord64Dec ·.val`. This forecloses a future drift between
+the two predicates without requiring an intrusive reorder of
+`machineWordMax` / `isWord64Dec` in front of the identifier types.
+
+### AN2-F.4 — `minPracticalRHCapacity` constant (FND-M04)
+
+New `abbrev minPracticalRHCapacity : Nat := 16` in
+`SeLe4n/Kernel/RobinHood/Bridge.lean` replaces the magic `16` literal
+inside the `Inhabited (RHTable α β)` instance. Declared `abbrev` so
+`decide` / `omega` can unfold the symbol when discharging the `cap ≥ 4`
+precondition on `RHTable.empty`. Future capacity adjustments can edit
+the constant in one place.
+
+### AN2-F.8 — `toObjId` decision-table docstring (FND-M08)
+
+A Markdown decision table is added to the `ThreadId.toObjId` /
+`toObjIdChecked` / `toObjIdVerified` cluster in `SeLe4n/Prelude.lean`
+documenting, for each variant, whether it checks the sentinel and/or
+the store type, and when each should be used. Mirrors the
+`ObjId` / `ValidThreadId` discipline introduced in AL7 (WS-AL).
+
+### Gate
+
+- `lake build` — 260 jobs, 0 warnings
+- `scripts/test_smoke.sh` — PASS
+- `scripts/test_full.sh` — PASS
+- `cargo test --workspace` — PASS (415 tests)
+- `cargo clippy --workspace -- -D warnings` — 0 warnings
+- `lake exe badge_overflow_suite` — **26 tests pass** (was 22 pre-AN2;
+  +2 AN2-A smart-constructor tests, +2 AN2-E `ofUInt64Pair` tests)
+- `scripts/check_version_sync.sh` — PASS at 0.30.6
+- `scripts/check_website_links.sh` — PASS
+- `scripts/install_git_hooks.sh --check` — PASS (AN1-B infra)
+- Fixture byte-identical to `tests/fixtures/main_trace_smoke.expected`
+  (227 lines) — private-mk changes alter only construction-site syntax,
+  not emitted trace values
+- Zero `sorry` / `axiom` / `native_decide` in `SeLe4n/` or `Main.lean`
+
+### Deferred to a subsequent AN2-continuation commit
+
+- **AN2-B.3 / FND-M02** — `VAddr` private mk + `canonicalBound`
+  parameterization on `MachineState.virtualAddressWidth`.
+- **AN2-B.4** — `PAddr` private mk + `physicalAddressWidth` gate
+  cascade through AK3-E / AJ4-C decode paths.
+- **AN2-C / H-11** — `RegisterFile.gpr : Nat → RegValue` →
+  `Fin 32 → RegValue` refactor (~20 RegisterFile sites + ~5 RHTable
+  sites) plus `LawfulBEq (RHTable κ β)` derivation.
+- **AN2-D / H-10** — `typedIdDisjointness` as a new 13th conjunct of
+  `crossSubsystemInvariant` (the predicate already exists as a
+  standalone trivial witness; the cascade is extending the 5 core
+  bridges and 34 per-operation bridges with a new `hTypedIdDisj`
+  hypothesis wired forward/backward — follows the AM4 playbook).
+- **AN2-F.3** — `UntypedObjectValid` subtype at retype entry.
+- **AN2-F.5** — DS-L5 heartbeat profile + full decomposition of the
+  slow `Bridge.lean` proof (deep profiling work).
+- **AN2-F.6** — `private` markers on unchecked `FrozenOps/Core.lean`
+  operations.
+- **AN2-F.7** — Phase-2 unreachable-branch proof in `FrozenOps/Core.lean`.
+- **AN2-G / DEF-F-L9** — `allTablesInvExtK` 17-tuple → structure
+  refactor (~80 sites across `Model/FreezeProofs.lean`,
+  `Kernel/CrossSubsystem.lean`, `Kernel/API.lean`, and every test suite
+  that destructures the tuple).
+
+All deferred items retain the audit-ID tracking. None of the deferred
+work is required to preserve any correctness property landed by this
+PR; the landed subset is strictly additive (new smart constructors,
+new theorems, new tests) except for the private-mk enforcement, which
+is the intended surface-area reduction.
+
+---
+
 ## v0.30.6 — WS-AN Phase AN1 (Critical-path blockers) [in progress]
 
 Closes the three CRITICAL / HIGH items blocking the v1.0.0 release gate per

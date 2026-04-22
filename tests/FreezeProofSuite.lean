@@ -125,14 +125,14 @@ private def fp010_cnodeRadixSingle : IO Unit := do
   let cn : CNode :=
     { depth := 16, guardWidth := 4, guardValue := 0
       radixWidth := 4
-      slots := (RHTable.empty 16).insert ⟨3⟩ cap }
+      slots := (RHTable.empty 16).insert (SeLe4n.Slot.ofNat 3) cap }
   let frozen := freezeObject (.cnode cn)
   match frozen with
   | .cnode fc =>
     -- Source lookup matches radix lookup
-    expect "radix finds cap" (fc.slots.lookup ⟨3⟩ == some cap)
-    expect "source agrees" (cn.slots.get? ⟨3⟩ == some cap)
-    expect "radix misses absent" (fc.slots.lookup ⟨7⟩ == none)
+    expect "radix finds cap" (fc.slots.lookup (SeLe4n.Slot.ofNat 3) == some cap)
+    expect "source agrees" (cn.slots.get? (SeLe4n.Slot.ofNat 3) == some cap)
+    expect "radix misses absent" (fc.slots.lookup (SeLe4n.Slot.ofNat 7) == none)
   | _ => throw <| IO.userError "expected FrozenCNode"
 
 /-- FP-011: CNode radix — multiple slots all preserved -/
@@ -144,16 +144,16 @@ private def fp011_cnodeRadixMulti : IO Unit := do
   let cn : CNode :=
     { depth := 16, guardWidth := 0, guardValue := 0
       radixWidth := 4
-      slots := ((RHTable.empty 16).insert ⟨1⟩ (mkCap 1))
-        |>.insert ⟨2⟩ (mkCap 2)
-        |>.insert ⟨5⟩ (mkCap 5) }
+      slots := ((RHTable.empty 16).insert (SeLe4n.Slot.ofNat 1) (mkCap 1))
+        |>.insert (SeLe4n.Slot.ofNat 2) (mkCap 2)
+        |>.insert (SeLe4n.Slot.ofNat 5) (mkCap 5) }
   let frozen := freezeObject (.cnode cn)
   match frozen with
   | .cnode fc =>
-    expect "slot 1" (fc.slots.lookup ⟨1⟩ == some (mkCap 1))
-    expect "slot 2" (fc.slots.lookup ⟨2⟩ == some (mkCap 2))
-    expect "slot 5" (fc.slots.lookup ⟨5⟩ == some (mkCap 5))
-    expect "absent slot" (fc.slots.lookup ⟨0⟩ == none)
+    expect "slot 1" (fc.slots.lookup (SeLe4n.Slot.ofNat 1) == some (mkCap 1))
+    expect "slot 2" (fc.slots.lookup (SeLe4n.Slot.ofNat 2) == some (mkCap 2))
+    expect "slot 5" (fc.slots.lookup (SeLe4n.Slot.ofNat 5) == some (mkCap 5))
+    expect "absent slot" (fc.slots.lookup (SeLe4n.Slot.ofNat 0) == none)
   | _ => throw <| IO.userError "expected FrozenCNode"
 
 /-- FP-012: CNode radix — empty CNode slots all none -/
@@ -165,8 +165,8 @@ private def fp012_cnodeRadixEmpty : IO Unit := do
   let frozen := freezeObject (.cnode cn)
   match frozen with
   | .cnode fc =>
-    expect "empty radix slot 0" (fc.slots.lookup ⟨0⟩ == none)
-    expect "empty radix slot 3" (fc.slots.lookup ⟨3⟩ == none)
+    expect "empty radix slot 0" (fc.slots.lookup (SeLe4n.Slot.ofNat 0) == none)
+    expect "empty radix slot 3" (fc.slots.lookup (SeLe4n.Slot.ofNat 3) == none)
   | _ => throw <| IO.userError "expected FrozenCNode"
 
 /-- FP-013: CNode radix — structural properties preserved -/
@@ -178,7 +178,7 @@ private def fp013_cnodeRadixStructure : IO Unit := do
   let cn : CNode :=
     { depth := 16, guardWidth := 2, guardValue := 1
       radixWidth := 3
-      slots := (RHTable.empty 16).insert ⟨4⟩ cap }
+      slots := (RHTable.empty 16).insert (SeLe4n.Slot.ofNat 4) cap }
   let frozen := freezeObject (.cnode cn)
   match frozen with
   | .cnode fc =>

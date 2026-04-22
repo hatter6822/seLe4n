@@ -21,16 +21,16 @@ namespace SeLe4n.Testing
 private def mkRunQueue (tids : List SeLe4n.ThreadId) : SeLe4n.Kernel.RunQueue :=
   SeLe4n.Kernel.RunQueue.ofList (tids.map (fun tid => (tid, ⟨0⟩)))
 
-def rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨0⟩ }
-def rootPath : SeLe4n.Kernel.CSpacePathAddr := { cnode := ⟨10⟩, cptr := ⟨0⟩, depth := 0 }
-def rootPathAlias : SeLe4n.Kernel.CSpacePathAddr := { cnode := ⟨10⟩, cptr := ⟨1⟩, depth := 0 }
-def lifecycleAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨5⟩ }
-def mintedSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := ⟨3⟩ }
-def siblingSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := ⟨4⟩ }
+def rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := SeLe4n.Slot.ofNat 0 }
+def rootPath : SeLe4n.Kernel.CSpacePathAddr := { cnode := ⟨10⟩, cptr := SeLe4n.CPtr.ofNat 0, depth := 0 }
+def rootPathAlias : SeLe4n.Kernel.CSpacePathAddr := { cnode := ⟨10⟩, cptr := SeLe4n.CPtr.ofNat 1, depth := 0 }
+def lifecycleAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := SeLe4n.Slot.ofNat 5 }
+def mintedSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := SeLe4n.Slot.ofNat 3 }
+def siblingSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := SeLe4n.Slot.ofNat 4 }
 def demoEndpoint : SeLe4n.ObjId := ⟨30⟩
 def demoNotification : SeLe4n.ObjId := ⟨31⟩
 def demoUntyped : SeLe4n.ObjId := ⟨40⟩
-def untypedAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨6⟩ }
+def untypedAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := SeLe4n.Slot.ofNat 6 }
 
 def svcDb : ServiceId := ⟨100⟩
 def svcApi : ServiceId := ⟨101⟩
@@ -72,17 +72,17 @@ def bootstrapState : SystemState :=
       guardValue := 0
       radixWidth := 0
       slots := SeLe4n.Kernel.RobinHood.RHTable.ofList
-        [ (⟨0⟩, {
+        [ (SeLe4n.Slot.ofNat 0, {
             target := .object ⟨1⟩
             rights := AccessRightSet.ofList [.read, .write, .grant]
             badge := none
           }),
-          (⟨5⟩, {
+          (SeLe4n.Slot.ofNat 5, {
             target := .object ⟨12⟩
             rights := AccessRightSet.ofList [.read, .write, .retype]
             badge := none
           }),
-          (⟨6⟩, {
+          (SeLe4n.Slot.ofNat 6, {
             target := .object demoUntyped
             rights := AccessRightSet.ofList [.read, .write, .retype]
             badge := none
@@ -352,7 +352,7 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   | .ok _ => IO.println "[SRG-003] unexpected success with unknown interface"
 
   -- SRG-004: Register with invalid endpoint (non-object target)
-  let srgInvalidCap : Capability := { target := .cnodeSlot ⟨10⟩ ⟨0⟩, rights := .singleton .write }
+  let srgInvalidCap : Capability := { target := .cnodeSlot ⟨10⟩ (SeLe4n.Slot.ofNat 0), rights := .singleton .write }
   match SeLe4n.Kernel.registerInterface srgIface st1 with
   | .error _ => IO.println "[SRG-004] skipped (interface already tested)"
   | .ok (_, stIface4) =>
@@ -405,8 +405,8 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
     guardValue := 3
     radixWidth := 12
     slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-      (⟨1⟩, { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none }),
-      (⟨1024⟩, { target := .object ⟨12⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
+      (SeLe4n.Slot.ofNat 1, { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none }),
+      (SeLe4n.Slot.ofNat 1024, { target := .object ⟨12⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
     ]
   }
   let stDeepCNode : SystemState :=
@@ -414,13 +414,13 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
       objects := st1.objects.insert ⟨200⟩ (.cnode deepRadixCNode)
     }
   IO.println s!"[SST-021] deep cnode radix fixture: {reprStr <| (stDeepCNode.objects[(⟨200⟩ : SeLe4n.ObjId)]?).map (fun obj => match obj with | KernelObject.cnode cn => cn.radixWidth | _ => 0)}"
-  match SeLe4n.Kernel.cspaceLookupPath { cnode := ⟨200⟩, cptr := ⟨13312⟩, depth := 14 } stDeepCNode with
+  match SeLe4n.Kernel.cspaceLookupPath { cnode := ⟨200⟩, cptr := SeLe4n.CPtr.ofNat 13312, depth := 14 } stDeepCNode with
   | .error err => IO.println s!"[SST-022] deep cnode path lookup error: {reprStr err}"
   | .ok (cap, _) => IO.println s!"[SST-023] deep cnode path lookup rights: {reprStr cap.rights}"
-  match SeLe4n.Kernel.cspaceLookupPath { cnode := ⟨200⟩, cptr := ⟨1024⟩, depth := 4 } stDeepCNode with
+  match SeLe4n.Kernel.cspaceLookupPath { cnode := ⟨200⟩, cptr := SeLe4n.CPtr.ofNat 1024, depth := 4 } stDeepCNode with
   | .error err => IO.println s!"[SST-024] deep cnode path bad-depth branch: {reprStr err}"
   | .ok (cap, _) => IO.println s!"[SST-025] unexpected deep cnode path bad-depth success: {reprStr cap}"
-  match SeLe4n.Kernel.cspaceLookupPath { cnode := ⟨200⟩, cptr := ⟨9216⟩, depth := 14 } stDeepCNode with
+  match SeLe4n.Kernel.cspaceLookupPath { cnode := ⟨200⟩, cptr := SeLe4n.CPtr.ofNat 9216, depth := 14 } stDeepCNode with
   | .error err => IO.println s!"[SST-026] deep cnode path guard-mismatch branch: {reprStr err}"
   | .ok (cap, _) => IO.println s!"[SST-027] unexpected deep cnode path guard success: {reprStr cap}"
 
@@ -614,10 +614,10 @@ private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemSta
                                   | .error err => IO.println s!"[LEP-029] notification wait #1 error: {reprStr err}"
                                   | .ok (badge, st10) =>
                                       IO.println s!"[LEP-030] notification wait #1 result: {reprStr badge}"
-                                      match SeLe4n.Kernel.notificationSignal demoNotification ⟨99⟩ st10 with
+                                      match SeLe4n.Kernel.notificationSignal demoNotification (SeLe4n.Badge.ofNatMasked 99) st10 with
                                       | .error err => IO.println s!"[LEP-031] notification signal #1 error: {reprStr err}"
                                       | .ok (_, st11) =>
-                                          match SeLe4n.Kernel.notificationSignal demoNotification ⟨123⟩ st11 with
+                                          match SeLe4n.Kernel.notificationSignal demoNotification (SeLe4n.Badge.ofNatMasked 123) st11 with
                                           | .error err => IO.println s!"[LEP-032] notification signal #2 error: {reprStr err}"
                                           | .ok (_, st12) =>
                                               match SeLe4n.Kernel.notificationWait demoNotification ⟨1⟩ st12 with
@@ -644,13 +644,13 @@ private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemSta
 /-- WS-E4 test: H-02 guard, cspaceCopy, dual-queue, reply operations -/
 private def runCapabilityIpcTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
   -- H-02: Try inserting into occupied slot (slot 0 already has a cap)
-  let occSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨0⟩ }
+  let occSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := SeLe4n.Slot.ofNat 0 }
   let testCap : Capability := { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none }
   match SeLe4n.Kernel.cspaceInsertSlot occSlot testCap st1 with
   | .error err => IO.println s!"[CIC-001] H-02 occupied slot guard: {reprStr err}"
   | .ok _ => IO.println "[CIC-002] unexpected: H-02 guard did not reject occupied slot"
   -- C-02: cspaceCopy from rootSlot to a fresh destination
-  let copyDst : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := ⟨7⟩ }
+  let copyDst : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := SeLe4n.Slot.ofNat 7 }
   match SeLe4n.Kernel.cspaceCopy rootSlot copyDst st1 with
   | .error err => IO.println s!"[CIC-003] cspaceCopy error: {reprStr err}"
   | .ok (_, stCopy) =>
@@ -786,7 +786,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
   let epId : SeLe4n.ObjId := demoEndpoint
   let senderId : SeLe4n.ThreadId := ⟨1⟩
   let receiverId : SeLe4n.ThreadId := ⟨12⟩
-  let testMsg : IpcMessage := { registers := #[⟨42⟩, ⟨7⟩], caps := #[], badge := some ⟨123⟩ }
+  let testMsg : IpcMessage := { registers := #[⟨42⟩, ⟨7⟩], caps := #[], badge := some (Badge.ofNatMasked 123) }
   -- Fresh endpoint for dual-queue test
   let ep0 : KernelObject := .endpoint {
     sendQ := {}, receiveQ := {} }
@@ -860,7 +860,7 @@ private def runIpcMessageTransferTrace (counter : IO.Ref Nat) (st1 : SystemState
   | .error err => IO.println s!"[IMT-010] F1-03 receive error: {reprStr err}"
   | .ok (_, stWait2) =>
       -- Caller calls with message
-      let callMsg : IpcMessage := { registers := #[⟨10⟩, ⟨20⟩, ⟨30⟩], caps := #[], badge := some ⟨456⟩ }
+      let callMsg : IpcMessage := { registers := #[⟨10⟩, ⟨20⟩, ⟨30⟩], caps := #[], badge := some (Badge.ofNatMasked 456) }
       match SeLe4n.Kernel.endpointCall epId senderId callMsg stWait2 with
       | .error err => IO.println s!"[IMT-011] F1-03 call error: {reprStr err}"
       | .ok (_, stCalled) =>
@@ -992,7 +992,7 @@ private def runIpcMessageBoundsTrace (counter : IO.Ref Nat) (st1 : SystemState) 
       { target := .object ⟨1⟩, rights := AccessRightSet.ofList [] },
       { target := .object ⟨2⟩, rights := AccessRightSet.ofList [] },
       { target := .object ⟨3⟩, rights := AccessRightSet.ofList [] }],
-    badge := some ⟨999⟩ }
+    badge := some (Badge.ofNatMasked 999) }
   -- Create a fresh endpoint for this test
   let ep0 : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
   let stFresh : SystemState := { st1 with objects := st1.objects.insert epId ep0 }
@@ -1095,11 +1095,11 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
         |>.insert ⟨10⟩ (.cnode {
           depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
           slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-            (⟨0⟩, { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none }),
-            (⟨5⟩, { target := .object ⟨12⟩, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }),
-            (⟨6⟩, { target := .object demoUntyped, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }),
-            (⟨7⟩, { target := .object deviceUntypedId, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }) ] }) }
-  let devAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨7⟩ }
+            (SeLe4n.Slot.ofNat 0, { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none }),
+            (SeLe4n.Slot.ofNat 5, { target := .object ⟨12⟩, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }),
+            (SeLe4n.Slot.ofNat 6, { target := .object demoUntyped, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }),
+            (SeLe4n.Slot.ofNat 7, { target := .object deviceUntypedId, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }) ] }) }
+  let devAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := SeLe4n.Slot.ofNat 7 }
   let devTcb : KernelObject := .tcb {
     tid := ⟨53⟩, priority := ⟨50⟩, domain := ⟨0⟩,
     cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := ⟨16384⟩,
@@ -1262,7 +1262,7 @@ private def runBoundedMessageExtendedTrace (counter : IO.Ref Nat) (st1 : SystemS
       { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read] },
       { target := .object ⟨2⟩, rights := AccessRightSet.ofList [.write] },
       { target := .object ⟨3⟩, rights := AccessRightSet.ofList [.grant] }],
-    badge := some ⟨42⟩ }
+    badge := some (Badge.ofNatMasked 42) }
   let stFresh3 : SystemState := { st1 with objects := st1.objects.insert epId ep0 }
   match SeLe4n.Kernel.endpointSendDual epId senderId maxCapsMsg stFresh3 with
   | .error err =>
@@ -1295,9 +1295,9 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   let cn : CNode := {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
     slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-      (⟨0⟩, writeCap),
-      (⟨1⟩, readOnlyCap),
-      (⟨2⟩, retypeCap)
+      (SeLe4n.Slot.ofNat 0, writeCap),
+      (SeLe4n.Slot.ofNat 1, readOnlyCap),
+      (SeLe4n.Slot.ofNat 2, retypeCap)
     ]
   }
   -- Insert the CNode and a fresh endpoint into the state
@@ -1307,7 +1307,7 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   -- Case 1: Correct gate (slot 0, .write right, depth 4) → success
   let goodGate : SeLe4n.Kernel.SyscallGate := {
     callerId := callerId, cspaceRoot := cnodeId,
-    capAddr := ⟨0⟩, capDepth := 4, requiredRight := .write
+    capAddr := SeLe4n.CPtr.ofNat 0, capDepth := 4, requiredRight := .write
   }
   let msg : IpcMessage := { registers := #[⟨42⟩], caps := #[], badge := none }
   -- S2-J: Using syscallInvoke directly instead of deprecated apiEndpointSend
@@ -1321,7 +1321,7 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   -- Case 2: Non-existent CSpace root → objectNotFound
   let badRootGate : SeLe4n.Kernel.SyscallGate := {
     callerId := callerId, cspaceRoot := ⟨9999⟩,
-    capAddr := ⟨0⟩, capDepth := 4, requiredRight := .write
+    capAddr := SeLe4n.CPtr.ofNat 0, capDepth := 4, requiredRight := .write
   }
   match sendViaGate badRootGate stLocal with
   | .ok _ => IO.println "[SGT-003] H15e syscall gate send (bad root): unexpected ok"
@@ -1329,7 +1329,7 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   -- Case 3: Insufficient rights — slot 1 has .read only, we require .write
   let insufficientGate : SeLe4n.Kernel.SyscallGate := {
     callerId := callerId, cspaceRoot := cnodeId,
-    capAddr := ⟨1⟩, capDepth := 4, requiredRight := .write
+    capAddr := SeLe4n.CPtr.ofNat 1, capDepth := 4, requiredRight := .write
   }
   match sendViaGate insufficientGate stLocal with
   | .ok _ => IO.println "[SGT-005] H15e syscall gate send (insufficient rights): unexpected ok"
@@ -1337,7 +1337,7 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   -- Case 4: Missing capability — slot 15 has no capability
   let missingCapGate : SeLe4n.Kernel.SyscallGate := {
     callerId := callerId, cspaceRoot := ⟨50⟩,
-    capAddr := ⟨15⟩, capDepth := 4, requiredRight := .write
+    capAddr := SeLe4n.CPtr.ofNat 15, capDepth := 4, requiredRight := .write
   }
   match sendViaGate missingCapGate stLocal with
   | .ok _ => IO.println "[SGT-007] H15e syscall gate send (missing cap): unexpected ok"
@@ -1345,9 +1345,9 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   -- Case 5: S2-J: Using syscallInvoke directly instead of deprecated apiLifecycleRetype
   let retypeGate : SeLe4n.Kernel.SyscallGate := {
     callerId := callerId, cspaceRoot := cnodeId,
-    capAddr := ⟨2⟩, capDepth := 4, requiredRight := .retype
+    capAddr := SeLe4n.CPtr.ofNat 2, capDepth := 4, requiredRight := .retype
   }
-  let authSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := ⟨2⟩ }
+  let authSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 2 }
   let newObj : KernelObject := .endpoint {}
   match SeLe4n.Kernel.syscallInvoke { retypeGate with requiredRight := .retype }
       (fun cap => match cap.target with
@@ -1435,9 +1435,7 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withObject rdtCn (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-          (⟨0⟩, { target := .object rdtEp,
-                   rights := AccessRightSet.ofList [.read, .write],
-                   badge := none })
+          (SeLe4n.Slot.ofNat 0, ({ target := .object rdtEp, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability))
         ] })
       |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
       |>.withLifecycleObjectType rdtTid .tcb
@@ -1475,9 +1473,7 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withObject rdtCn (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-          (⟨0⟩, { target := .object rdtEp,
-                   rights := AccessRightSet.ofList [.read, .write],
-                   badge := none })
+          (SeLe4n.Slot.ofNat 0, ({ target := .object rdtEp, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability))
         ] })
       |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
       |>.withLifecycleObjectType rdtTid .tcb
@@ -1512,9 +1508,7 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withObject rdtCn (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-          (⟨0⟩, { target := .object rdtEp,
-                   rights := AccessRightSet.ofList [.read, .write],
-                   badge := none })
+          (SeLe4n.Slot.ofNat 0, ({ target := .object rdtEp, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability))
         ] })
       |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
       |>.withLifecycleObjectType rdtTid .tcb
@@ -1552,15 +1546,15 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
   -- KSD-001: CSpace mint via decoded registers — success path
   let ksdCnodeId : SeLe4n.ObjId := ⟨600⟩
   let ksdEpId : SeLe4n.ObjId := ⟨601⟩
-  let ksdSrcSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ksdCnodeId, slot := ⟨0⟩ }
-  let ksdDstSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ksdCnodeId, slot := ⟨1⟩ }
+  let ksdSrcSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ksdCnodeId, slot := SeLe4n.Slot.ofNat 0 }
+  let ksdDstSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ksdCnodeId, slot := SeLe4n.Slot.ofNat 1 }
   let stKsd : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject ksdEpId (.endpoint {})
       |>.withObject ksdCnodeId (.cnode {
         depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-          (⟨0⟩, { target := .object ksdEpId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
+          (SeLe4n.Slot.ofNat 0, { target := .object ksdEpId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
         ]
       })
       |>.withLifecycleObjectType ksdEpId .endpoint
@@ -1569,7 +1563,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       |>.buildChecked)
   -- Decode mint args from msgRegs: srcSlot=0, dstSlot=1, rights=1(read), badge=42
   let mintDecoded : SyscallDecodeResult := {
-    capAddr := ⟨0⟩
+    capAddr := SeLe4n.CPtr.ofNat 0
     msgInfo := { length := 4, extraCaps := 0, label := 0 }
     syscallId := .cspaceMint
     msgRegs := #[⟨0⟩, ⟨1⟩, ⟨1⟩, ⟨42⟩]
@@ -1586,7 +1580,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
 
   -- KSD-002: CSpace copy via decoded registers — success path
   let copyDecoded : SyscallDecodeResult := {
-    capAddr := ⟨0⟩
+    capAddr := SeLe4n.CPtr.ofNat 0
     msgInfo := { length := 2, extraCaps := 0, label := 0 }
     syscallId := .cspaceCopy
     msgRegs := #[⟨0⟩, ⟨1⟩]  -- srcSlot=0, dstSlot=1
@@ -1610,7 +1604,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
   | .error _ => IO.println "[KSD-003] cspaceCopy setup failed"
   | .ok (_, stSetup) =>
     let deleteDecoded : SyscallDecodeResult := {
-      capAddr := ⟨0⟩
+      capAddr := SeLe4n.CPtr.ofNat 0
       msgInfo := { length := 1, extraCaps := 0, label := 0 }
       syscallId := .cspaceDelete
       msgRegs := #[⟨1⟩]  -- targetSlot=1
@@ -1633,7 +1627,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       |>.withLifecycleObjectType ksdRetypeTargetId .endpoint
       |>.buildChecked)
   let retypeDecoded : SyscallDecodeResult := {
-    capAddr := ⟨0⟩
+    capAddr := SeLe4n.CPtr.ofNat 0
     msgInfo := { length := 3, extraCaps := 0, label := 0 }
     syscallId := .lifecycleRetype
     msgRegs := #[⟨602⟩, ⟨2⟩, ⟨0⟩]  -- targetObj=602, typeTag=2(notification), size=0
@@ -1662,7 +1656,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       |>.withLifecycleObjectType ksdVspaceId .vspaceRoot
       |>.buildChecked)
   let vspaceDecoded : SyscallDecodeResult := {
-    capAddr := ⟨0⟩
+    capAddr := SeLe4n.CPtr.ofNat 0
     msgInfo := { length := 4, extraCaps := 0, label := 0 }
     syscallId := .vspaceMap
     msgRegs := #[⟨10⟩, ⟨4096⟩, ⟨8192⟩, ⟨1⟩]  -- asid=10, vaddr=4096, paddr=8192, perms=1(read)
@@ -1769,15 +1763,9 @@ private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) 
       |>.withObject pipeCn (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-          (⟨0⟩, { target := .object pipeEp,
-                   rights := AccessRightSet.ofList [.read, .write],
-                   badge := none }),
-          (⟨1⟩, { target := .object pipeNtfn,
-                   rights := AccessRightSet.ofList [.read, .write],
-                   badge := none }),
-          (⟨2⟩, { target := .object pipeCn,
-                   rights := AccessRightSet.ofList [.read],
-                   badge := none })
+          (SeLe4n.Slot.ofNat 0, ({ target := .object pipeEp, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability)),
+          (SeLe4n.Slot.ofNat 1, ({ target := .object pipeNtfn, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability)),
+          (SeLe4n.Slot.ofNat 2, ({ target := .object pipeCn, rights := AccessRightSet.ofList [.read], badge := none } : Capability))
         ] })
       |>.withObject pipeVs (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
       |>.withLifecycleObjectType pipeTid .tcb
@@ -1847,17 +1835,15 @@ private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) 
 private def runCspaceMoveTrace (counter : IO.Ref Nat) (_st1 : SystemState) : IO Unit := do
   let moveCnId : SeLe4n.ObjId := ⟨800⟩
   let moveEpId : SeLe4n.ObjId := ⟨801⟩
-  let moveSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := moveCnId, slot := ⟨0⟩ }
-  let moveDst : SeLe4n.Kernel.CSpaceAddr := { cnode := moveCnId, slot := ⟨2⟩ }
+  let moveSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := moveCnId, slot := SeLe4n.Slot.ofNat 0 }
+  let moveDst : SeLe4n.Kernel.CSpaceAddr := { cnode := moveCnId, slot := SeLe4n.Slot.ofNat 2 }
   let stMove : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject moveEpId (.endpoint {})
       |>.withObject moveCnId (.cnode {
         depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
         slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-          (⟨0⟩, { target := .object moveEpId,
-                   rights := AccessRightSet.ofList [.read, .write],
-                   badge := none })
+          (SeLe4n.Slot.ofNat 0, ({ target := .object moveEpId, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability))
         ]
       })
       |>.withLifecycleObjectType moveEpId .endpoint
@@ -1867,7 +1853,7 @@ private def runCspaceMoveTrace (counter : IO.Ref Nat) (_st1 : SystemState) : IO 
 
   -- Decode move args: srcSlot=0, dstSlot=2
   let moveDecoded : SyscallDecodeResult := {
-    capAddr := ⟨0⟩
+    capAddr := SeLe4n.CPtr.ofNat 0
     msgInfo := { length := 2, extraCaps := 0, label := 0 }
     syscallId := .cspaceMove
     msgRegs := #[⟨0⟩, ⟨2⟩, ⟨0⟩, ⟨0⟩]
@@ -1916,7 +1902,7 @@ private def runReplyRecvRoundtripTrace (counter : IO.Ref Nat) (st1 : SystemState
   let stFresh : SystemState := { st1 with
     objects := (st1.objects.insert epId ep).insert ⟨13⟩ callerB }
   -- Step 1: Caller A calls endpoint (no receiver yet → enqueues on sendQ)
-  let callMsgA : IpcMessage := { registers := #[⟨50⟩, ⟨60⟩], caps := #[], badge := some ⟨789⟩ }
+  let callMsgA : IpcMessage := { registers := #[⟨50⟩, ⟨60⟩], caps := #[], badge := some (Badge.ofNatMasked 789) }
   match SeLe4n.Kernel.endpointCall epId callerAId callMsgA stFresh with
   | .error err => IO.println s!"[RRC-001] replyRecv call1 error: {reprStr err}"
   | .ok (_, stCalledA) =>
@@ -1933,7 +1919,7 @@ private def runReplyRecvRoundtripTrace (counter : IO.Ref Nat) (st1 : SystemState
           IO.println s!"[RRC-001] replyRecv caller state after receive: {callerState}"
           -- Step 3 (L4-A2): Caller B calls the same endpoint while A awaits reply
           -- B enqueues on sendQ with blockedOnCall
-          let callMsgB : IpcMessage := { registers := #[⟨70⟩, ⟨80⟩, ⟨90⟩], caps := #[], badge := some ⟨456⟩ }
+          let callMsgB : IpcMessage := { registers := #[⟨70⟩, ⟨80⟩, ⟨90⟩], caps := #[], badge := some (Badge.ofNatMasked 456) }
           match SeLe4n.Kernel.endpointCall epId callerBId callMsgB stRecvd with
           | .error err => IO.println s!"[RRC-002] replyRecv callerB call error: {reprStr err}"
           | .ok (_, stCalledB) =>
@@ -1990,13 +1976,13 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
   let lcEpId : SeLe4n.ObjId := ⟨50⟩
   let lcSender1 : SeLe4n.ThreadId := ⟨1⟩
   let lcSender2 : SeLe4n.ThreadId := ⟨12⟩
-  let lcAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨0⟩ }
+  let lcAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := SeLe4n.Slot.ofNat 0 }
   -- Fresh endpoint and CNode with authority cap for lifecycle retype
   let lcEp : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
   let lcCnode : KernelObject := .cnode {
     depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
     slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
-      (⟨0⟩, { target := .object lcEpId, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none })
+      (SeLe4n.Slot.ofNat 0, ({ target := .object lcEpId, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none } : Capability))
     ]
   }
   -- Build state with lifecycle metadata
@@ -2096,7 +2082,7 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
   let stFresh : SystemState := { st1 with
     objects := ((st1.objects.insert epId1 ep1).insert epId2 ep2).insert epId3 ep3 }
   -- Send on endpoint 1
-  let msg1 : IpcMessage := { registers := #[⟨11⟩, ⟨22⟩], caps := #[], badge := some ⟨100⟩ }
+  let msg1 : IpcMessage := { registers := #[⟨11⟩, ⟨22⟩], caps := #[], badge := some (Badge.ofNatMasked 100) }
   match SeLe4n.Kernel.endpointSendDual epId1 senderId msg1 stFresh with
   | .error err => IO.println s!"[MEI-001] multi-ep send1 error: {reprStr err}"
   | .ok (_, stSent1) =>
@@ -2109,7 +2095,7 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
             | none => none
           IO.println s!"[MEI-001] multi-ep recv1 registers: {reprStr recvRegs1}"
           -- Send on endpoint 2
-          let msg2 : IpcMessage := { registers := #[⟨33⟩, ⟨44⟩], caps := #[], badge := some ⟨200⟩ }
+          let msg2 : IpcMessage := { registers := #[⟨33⟩, ⟨44⟩], caps := #[], badge := some (Badge.ofNatMasked 200) }
           match SeLe4n.Kernel.endpointSendDual epId2 senderId msg2 stRecv1 with
           | .error err => IO.println s!"[MEI-003] multi-ep send2 error: {reprStr err}"
           | .ok (_, stSent2) =>
@@ -2128,7 +2114,7 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
                   IO.println s!"[MEI-003] multi-ep endpoint1 queues empty: {ep1Empty}"
                   -- L4-D2/D3: 3rd endpoint out-of-order receive
                   -- Send on EP3 via sender, receive EP3 out-of-order (before EP1 second round)
-                  let msg3 : IpcMessage := { registers := #[⟨55⟩, ⟨66⟩], caps := #[], badge := some ⟨300⟩ }
+                  let msg3 : IpcMessage := { registers := #[⟨55⟩, ⟨66⟩], caps := #[], badge := some (Badge.ofNatMasked 300) }
                   match SeLe4n.Kernel.endpointSendDual epId3 senderId msg3 stRecv2 with
                   | .error err => IO.println s!"[MEI-004] multi-ep send3 error: {reprStr err}"
                   | .ok (_, stSent3) =>
@@ -2142,7 +2128,7 @@ private def runMultiEndpointInterleavingTrace (counter : IO.Ref Nat) (st1 : Syst
                           IO.println s!"[MEI-004] multi-ep ep3 out-of-order recv registers: {reprStr recvRegs3}"
                           -- Now sender is free again (unblocked by EP3 receive)
                           -- Send on EP1 again to verify FIFO with second message
-                          let msg4 : IpcMessage := { registers := #[⟨77⟩, ⟨88⟩], caps := #[], badge := some ⟨101⟩ }
+                          let msg4 : IpcMessage := { registers := #[⟨77⟩, ⟨88⟩], caps := #[], badge := some (Badge.ofNatMasked 101) }
                           match SeLe4n.Kernel.endpointSendDual epId1 senderId msg4 stRecv3 with
                           | .error err => IO.println s!"[MEI-005] multi-ep send4-ep1 error: {reprStr err}"
                           | .ok (_, stSent4) =>
@@ -3011,7 +2997,7 @@ private def buildParameterizedTopology
       })
   let cnodeSlots : List (SeLe4n.Slot × Capability) :=
     (List.range threadCount).map fun i =>
-      (⟨i⟩, { target := .object ⟨1000 + i⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
+      (SeLe4n.Slot.ofNat i, { target := .object ⟨1000 + i⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
   let cnodeObj : KernelObject := .cnode { depth := radix, guardWidth := 0, guardValue := 0, radixWidth := radix, slots := SeLe4n.Kernel.RobinHood.RHTable.ofList cnodeSlots }
   let vspaceRoots : List (SeLe4n.ObjId × KernelObject) :=
     (List.range asidCount).map fun i =>
@@ -3107,10 +3093,10 @@ private def runRustXvalVectors : IO Unit := do
 
   -- RUST-XVAL: CSpaceMintArgs encode/decode
   let mintArgs : SeLe4n.Kernel.Architecture.SyscallArgDecode.CSpaceMintArgs :=
-    { srcSlot := ⟨10⟩, dstSlot := ⟨20⟩, rights := .ofNat 0x07, badge := ⟨999⟩ }
+    { srcSlot := SeLe4n.Slot.ofNat 10, dstSlot := SeLe4n.Slot.ofNat 20, rights := .ofNat 0x07, badge := Badge.ofNatMasked 999 }
   let mintEncoded := SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeCSpaceMintArgs mintArgs
   let mintStub : SyscallDecodeResult :=
-    { capAddr := ⟨0⟩, msgInfo := { length := 0, extraCaps := 0, label := 0 },
+    { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 0, extraCaps := 0, label := 0 },
       syscallId := .send, msgRegs := mintEncoded }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeCSpaceMintArgs mintStub with
   | .ok decoded =>
@@ -3134,7 +3120,7 @@ private def runRustXvalVectors : IO Unit := do
     { bufferAddr := ⟨512⟩ }   -- 512 is aligned to ipcBufferAlignment (512)
   let ibEncoded := SeLe4n.Kernel.Architecture.SyscallArgDecode.encodeSetIPCBufferArgs ibArgs
   let ibStub : SyscallDecodeResult :=
-    { capAddr := ⟨0⟩, msgInfo := { length := 0, extraCaps := 0, label := 0 },
+    { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := { length := 0, extraCaps := 0, label := 0 },
       syscallId := .tcbSetIPCBuffer, msgRegs := ibEncoded }
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeSetIPCBufferArgs ibStub with
   | .ok decoded =>

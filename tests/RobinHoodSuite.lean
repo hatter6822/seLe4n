@@ -188,15 +188,15 @@ private def rhInt001_cnodeLookupInsertRemove : IO Unit := do
   let cap2 : Capability := { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.write], badge := none }
   let cn := CNode.empty
   -- Insert two capabilities
-  let cn := cn.insert ⟨0⟩ cap1
-  let cn := cn.insert ⟨1⟩ cap2
-  expect "RH-INT-001a lookup slot 0" (cn.lookup ⟨0⟩ == some cap1)
-  expect "RH-INT-001b lookup slot 1" (cn.lookup ⟨1⟩ == some cap2)
-  expect "RH-INT-001c absent slot" (cn.lookup ⟨5⟩ == none)
+  let cn := cn.insert (SeLe4n.Slot.ofNat 0) cap1
+  let cn := cn.insert (SeLe4n.Slot.ofNat 1) cap2
+  expect "RH-INT-001a lookup slot 0" (cn.lookup (SeLe4n.Slot.ofNat 0) == some cap1)
+  expect "RH-INT-001b lookup slot 1" (cn.lookup (SeLe4n.Slot.ofNat 1) == some cap2)
+  expect "RH-INT-001c absent slot" (cn.lookup (SeLe4n.Slot.ofNat 5) == none)
   -- Remove slot 0
-  let cn := cn.remove ⟨0⟩
-  expect "RH-INT-001d removed slot gone" (cn.lookup ⟨0⟩ == none)
-  expect "RH-INT-001e other slot preserved" (cn.lookup ⟨1⟩ == some cap2)
+  let cn := cn.remove (SeLe4n.Slot.ofNat 0)
+  expect "RH-INT-001d removed slot gone" (cn.lookup (SeLe4n.Slot.ofNat 0) == none)
+  expect "RH-INT-001e other slot preserved" (cn.lookup (SeLe4n.Slot.ofNat 1) == some cap2)
 
 open CNode in
 /-- RH-INT-002: CNode.revokeTargetLocal with RHTable filter -/
@@ -206,24 +206,24 @@ private def rhInt002_revokeTargetLocal : IO Unit := do
   let cap1 : Capability := { target := target, rights := AccessRightSet.ofList [.read, .grant], badge := none }
   let cap2 : Capability := { target := target, rights := AccessRightSet.ofList [.read], badge := none }
   let capOther : Capability := { target := otherTarget, rights := AccessRightSet.ofList [.write], badge := none }
-  let cn := ((CNode.empty.insert ⟨0⟩ cap1).insert ⟨1⟩ cap2).insert ⟨2⟩ capOther
+  let cn := ((CNode.empty.insert (SeLe4n.Slot.ofNat 0) cap1).insert (SeLe4n.Slot.ofNat 1) cap2).insert (SeLe4n.Slot.ofNat 2) capOther
   -- Revoke target from slot 0 (source) — should keep slot 0, remove slot 1, keep slot 2
-  let cn' := cn.revokeTargetLocal ⟨0⟩ target
-  expect "RH-INT-002a source slot preserved" (cn'.lookup ⟨0⟩ == some cap1)
-  expect "RH-INT-002b target sibling removed" (cn'.lookup ⟨1⟩ == none)
-  expect "RH-INT-002c other target preserved" (cn'.lookup ⟨2⟩ == some capOther)
+  let cn' := cn.revokeTargetLocal (SeLe4n.Slot.ofNat 0) target
+  expect "RH-INT-002a source slot preserved" (cn'.lookup (SeLe4n.Slot.ofNat 0) == some cap1)
+  expect "RH-INT-002b target sibling removed" (cn'.lookup (SeLe4n.Slot.ofNat 1) == none)
+  expect "RH-INT-002c other target preserved" (cn'.lookup (SeLe4n.Slot.ofNat 2) == some capOther)
 
 open CNode in
 /-- RH-INT-003: CNode.findFirstEmptySlot with RHTable-backed slots -/
 private def rhInt003_findFirstEmptySlot : IO Unit := do
   let cap : Capability := { target := .object ⟨10⟩, rights := AccessRightSet.ofList [.read], badge := none }
   -- CNode with slots 0 and 1 occupied
-  let cn := (CNode.empty.insert ⟨0⟩ cap).insert ⟨1⟩ cap
+  let cn := (CNode.empty.insert (SeLe4n.Slot.ofNat 0) cap).insert (SeLe4n.Slot.ofNat 1) cap
   -- Find first empty starting from slot 0 with limit 4
-  let result := cn.findFirstEmptySlot ⟨0⟩ 4
+  let result := cn.findFirstEmptySlot (SeLe4n.Slot.ofNat 0) 4
   expect "RH-INT-003a finds empty slot" (result.isSome)
   -- Slot 2 should be the first empty (0 and 1 are occupied)
-  expect "RH-INT-003b correct empty slot" (result == some ⟨2⟩)
+  expect "RH-INT-003b correct empty slot" (result == some (SeLe4n.Slot.ofNat 2))
   -- Verify the found slot is actually empty
   match result with
   | some s => expect "RH-INT-003c slot is empty" (cn.lookup s == none)
@@ -247,28 +247,28 @@ open CNode in
 private def rhInt005_cspaceResolution : IO Unit := do
   -- Create a CNode with specific guard/radix for resolution testing
   let cap : Capability := { target := .object ⟨42⟩, rights := AccessRightSet.ofList [.read, .write], badge := none }
-  let cn := CNode.mk' 4 0 0 2 (RHTable.ofList [(⟨0⟩, cap), (⟨1⟩, cap), (⟨3⟩, cap)])
+  let cn := CNode.mk' 4 0 0 2 (RHTable.ofList [((SeLe4n.Slot.ofNat 0), cap), ((SeLe4n.Slot.ofNat 1), cap), ((SeLe4n.Slot.ofNat 3), cap)])
   -- Resolve slot from CPtr
-  let result := cn.resolveSlot ⟨3⟩ 4
+  let result := cn.resolveSlot (SeLe4n.CPtr.ofNat 3) 4
   match result with
   | .ok slot =>
     expect "RH-INT-005a resolution succeeds" true
     expect "RH-INT-005b resolved slot has capability" (cn.lookup slot == some cap)
   | .error _ =>
     -- Resolution depends on guard/radix matching — verify the CNode at least works
-    expect "RH-INT-005a direct lookup works" (cn.lookup ⟨0⟩ == some cap)
-    expect "RH-INT-005b direct lookup slot 3" (cn.lookup ⟨3⟩ == some cap)
+    expect "RH-INT-005a direct lookup works" (cn.lookup (SeLe4n.Slot.ofNat 0) == some cap)
+    expect "RH-INT-005b direct lookup slot 3" (cn.lookup (SeLe4n.Slot.ofNat 3) == some cap)
 
 open CNode in
 /-- RH-INT-006: CNode BEq comparison with RHTable slots -/
 private def rhInt006_cnodeBEq : IO Unit := do
   let cap : Capability := { target := .object ⟨10⟩, rights := AccessRightSet.ofList [.read], badge := none }
   -- Two CNodes built identically should be BEq-equal
-  let cn1 := CNode.empty.insert ⟨0⟩ cap
-  let cn2 := CNode.empty.insert ⟨0⟩ cap
+  let cn1 := CNode.empty.insert (SeLe4n.Slot.ofNat 0) cap
+  let cn2 := CNode.empty.insert (SeLe4n.Slot.ofNat 0) cap
   expect "RH-INT-006a identical CNodes equal" (cn1 == cn2)
   -- Different CNodes should not be equal
-  let cn3 := CNode.empty.insert ⟨1⟩ cap
+  let cn3 := CNode.empty.insert (SeLe4n.Slot.ofNat 1) cap
   expect "RH-INT-006b different CNodes not equal" (!(cn1 == cn3))
 
 private def runRobinHoodSuite : IO Unit := do

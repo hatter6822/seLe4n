@@ -136,6 +136,18 @@ maps to exactly one `KernelObject` variant. `retypeFromUntyped_childId_fresh`
 See `typedIdDisjointness` (CrossSubsystem.lean) for the formal statement. -/
 @[inline] def toObjId (id : ThreadId) : ObjId := ObjId.ofNat id.toNat
 
+/-! ### AN2-F.8 / FND-M08 — `toObjId` family decision table
+
+| Variant             | Checks sentinel | Checks store type | Use when                                   |
+|---------------------|:---------------:|:-----------------:|--------------------------------------------|
+| `toObjId`           |       no        |        no         | Proof-side identity mapping / trusted path |
+| `toObjIdChecked`    |      yes        |        no         | Kernel entry rejecting sentinel IDs        |
+| `toObjIdVerified`   |      yes        |       yes         | API boundary with guaranteed-TCB result    |
+
+The sentinel-checked/store-checked dichotomy mirrors the `ObjId` / `ValidThreadId`
+discipline introduced in AL7 (WS-AL) — see the per-variant docstrings below for
+migration guidance. -/
+
 instance : ToString ThreadId where
   toString tid := toString tid.toNat
 
@@ -429,10 +441,19 @@ theorem toObjId_injective (a b : SchedContextId) (h : a.toObjId = b.toObjId) : a
 
 end SchedContextId
 
-/-- Capability-space pointer value. -/
+/-- Capability-space pointer value.
+
+    AN2-B.1 / H-13 (Theme 4.3): The `mk` constructor is `private`. External
+    callers must use `CPtr.ofNat` (unbounded) or `CPtr.ofNat?` (word-bounded
+    smart constructor). This forecloses accidental `CPtr.mk (2^64)` that
+    would exceed hardware width. -/
 structure CPtr where
+  private mk ::
   val : Nat
-deriving DecidableEq, Repr, Inhabited
+deriving DecidableEq, Repr
+
+/-- AN2-B.1: Manual `Inhabited` (deriving requires public constructor). -/
+instance : Inhabited CPtr := ⟨⟨0⟩⟩
 
 /-- WS-G1: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
     BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
@@ -441,7 +462,8 @@ deriving DecidableEq, Repr, Inhabited
 
 namespace CPtr
 
-/-- Constructor helper kept explicit for migration ergonomics. -/
+/-- Smart constructor — accepts any `Nat`. Pre-existing migration helper;
+    remains the default construction API for external callers. -/
 @[inline] def ofNat (n : Nat) : CPtr := ⟨n⟩
 
 /-- Projection helper kept explicit for migration ergonomics. -/
@@ -463,15 +485,26 @@ theorem sentinel_isReserved : CPtr.sentinel.isReserved = true := rfl
 
 /-- V4-L/L-FND-4: A CPtr is hardware-representable if its value fits in 64 bits.
     Hardware decode paths should validate this before passing to kernel operations.
-    Uses inline bound check (2^64) to avoid forward reference to `isWord64Dec`. -/
+    Uses inline bound check (2^64) to avoid forward reference to `isWord64Dec`.
+
+    AN2-F.1 / FND-M01: Inline literal `2^64` matches `machineWordMax`
+    (defined later in the file). See `isWord64Bounded_matches_isWord64Dec`
+    (below, after both constants are in scope) for the formal equivalence. -/
 @[inline] def isWord64Bounded (ptr : CPtr) : Bool := ptr.val < 2 ^ 64
 
 end CPtr
 
-/-- Slot index within a CNode. -/
+/-- Slot index within a CNode.
+
+    AN2-B.2 / H-13 (Theme 4.3): The `mk` constructor is `private`. External
+    callers must use `Slot.ofNat`. -/
 structure Slot where
+  private mk ::
   val : Nat
-deriving DecidableEq, Repr, Inhabited
+deriving DecidableEq, Repr
+
+/-- AN2-B.2: Manual `Inhabited`. -/
+instance : Inhabited Slot := ⟨⟨0⟩⟩
 
 /-- WS-G1: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
     BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
@@ -480,7 +513,8 @@ deriving DecidableEq, Repr, Inhabited
 
 namespace Slot
 
-/-- Constructor helper kept explicit for migration ergonomics. -/
+/-- Smart constructor — accepts any `Nat`. Pre-existing migration helper;
+    remains the default construction API for external callers. -/
 @[inline] def ofNat (n : Nat) : Slot := ⟨n⟩
 
 /-- Projection helper kept explicit for migration ergonomics. -/
@@ -491,7 +525,9 @@ instance : ToString Slot where
 
 /-- V4-L/L-FND-4: A Slot is hardware-representable if its value fits in 64 bits.
     Hardware decode paths should validate this before passing to kernel operations.
-    Uses inline bound check (2^64) to avoid forward reference to `isWord64Dec`. -/
+    Uses inline bound check (2^64) to avoid forward reference to `isWord64Dec`.
+
+    AN2-F.1 / FND-M01: Inline literal `2^64` matches `machineWordMax`. -/
 @[inline] def isWord64Bounded (slot : Slot) : Bool := slot.val < 2 ^ 64
 
 end Slot
@@ -517,20 +553,33 @@ def machineWordMax : Nat := 2 ^ machineWordBits
 theorem isWord64Dec_iff (n : Nat) : isWord64Dec n = true ↔ isWord64 n := by
   simp [isWord64Dec, isWord64]
 
--- L-11/AH5-C: Badge constructor safety analysis.
--- `Badge.mk n` with `n ≥ 2^64` produces an invalid badge (exceeds UInt64
--- word size). This is by design — Lean's Nat is unbounded, and `Badge` wraps
--- a Nat for proof convenience.
+/-- AN2-F.1 / FND-M01: `CPtr.isWord64Bounded` matches `isWord64Dec` on the
+    projected value. The two predicates were defined separately to avoid a
+    forward reference at `CPtr` definition site; this equivalence theorem
+    witnesses that they denote the same check. -/
+theorem CPtr.isWord64Bounded_eq_isWord64Dec (ptr : CPtr) :
+    CPtr.isWord64Bounded ptr = isWord64Dec ptr.val := by
+  simp [CPtr.isWord64Bounded, isWord64Dec, machineWordMax, machineWordBits]
+
+/-- AN2-F.1 / FND-M01: `Slot.isWord64Bounded` matches `isWord64Dec` on the
+    projected value. -/
+theorem Slot.isWord64Bounded_eq_isWord64Dec (slot : Slot) :
+    Slot.isWord64Bounded slot = isWord64Dec slot.val := by
+  simp [Slot.isWord64Bounded, isWord64Dec, machineWordMax, machineWordBits]
+
+-- AN2-A / H-13: Badge constructor is now `private` to force every external
+-- consumer through a smart constructor (`ofNatMasked`, `ofNat`, `zero`, or
+-- `ofUInt64Pair`). Direct `Badge.mk n` calls outside the `Badge` namespace
+-- are rejected by the elaborator. Proof-side destructuring (when strictly
+-- necessary) goes through the private `Badge.mkUnsafeForProof` helper below.
+-- Pattern matches `AccessRightSet` (AJ2-A) and `CapDerivationTree`.
 --
--- Safety layers:
+-- Historical safety layers retained:
 -- 1. `Badge.valid` predicate: `b.val < 2^64` — used in proof obligations
 -- 2. `Badge.ofNatMasked`: truncates to word size at construction
 -- 3. `cspaceMint` (Operations.lean): uses masked badge from decoded syscall
 -- 4. IPC message delivery: badge comes from stored Capability (already masked)
 -- 5. Rust ABI: `Badge` is `u64` — hardware truncation at FFI boundary
---
--- Risk: only internal test code can construct `Badge.mk (2^64)` directly.
--- No user-facing syscall path bypasses `ofNatMasked` or `cspaceMint`.
 -- BadgeOverflowSuite.lean (AG9-E) validates round-trip Nat↔UInt64 safety.
 --
 -- AK7-K (F-L2 / LOW) — seL4 badge-64-bit compatibility note:
@@ -544,10 +593,19 @@ theorem isWord64Dec_iff (n : Nat) : isWord64Dec n = true ↔ isWord64 n := by
 /-- Endpoint or notification badge value.
     WS-F5/D1a: Values are logically bounded to `machineWordBits` (64) bits.
     The `valid` predicate asserts word-boundedness; `ofNatMasked` enforces it
-    at construction. -/
+    at construction.
+
+    AN2-A / H-13: The `mk` constructor is `private`. External callers must use
+    one of the public smart constructors (`ofNatMasked`, `ofNat`, `zero`,
+    `ofUInt64Pair`). -/
 structure Badge where
+  private mk ::
   val : Nat
-deriving DecidableEq, Repr, Inhabited
+deriving DecidableEq, Repr
+
+/-- AN2-A / H-13: Manual `Inhabited` instance — `deriving Inhabited` requires
+    a public constructor. The default value is the zero badge (`⟨0⟩`). -/
+instance : Inhabited Badge := ⟨⟨0⟩⟩
 
 /-- WS-G1: Hash instance for HashMap/HashSet keying. Delegates to Nat hash.
     BEq is already provided by DecidableEq via instBEqOfDecidableEq. -/
@@ -564,6 +622,24 @@ namespace Badge
 
 /-- WS-F5/D1a: Decidable validity check for runtime use. -/
 @[inline] def isValid (badge : Badge) : Bool := badge.val < machineWordMax
+
+/-- AN2-A / H-13: Proof-internal destructuring helper — use ONLY inside
+    `Badge` proof machinery where a non-masked constructor is needed to
+    witness `Badge.mk n` equalities (e.g. `congrArg Badge.mk`). Never call
+    this from operational code — callers should use `ofNatMasked` or
+    `ofNat`. Kept `private` so external modules cannot bypass the
+    smart-constructor discipline. -/
+@[inline] private def mkUnsafeForProof (n : Nat) : Badge := ⟨n⟩
+
+/-- AN2-A / H-13: Canonical zero badge (valid by construction). -/
+@[inline] def zero : Badge := ⟨0⟩
+
+/-- AN2-A / H-13: Construct a badge from a `Nat` that is already
+    word-bounded, carrying the bound as a proof. Prefer this over
+    `ofNatMasked` when the caller has a pre-validated input (e.g. decoded
+    from a `UInt64`). -/
+@[inline] def ofNat (n : Nat) (_h : n < machineWordMax := by decide) : Badge :=
+  ⟨n⟩
 
 /-- WS-F5/D1a: Construct a badge with word-size truncation, matching seL4's
     silent word-truncation semantics on 64-bit platforms. -/
@@ -607,6 +683,25 @@ theorem ofNatMasked_lt_eq {n : Nat} (h : n < machineWordMax) :
     (ofNatMasked n).val = n := by
   unfold ofNatMasked machineWordMax machineWordBits
   exact Nat.mod_eq_of_lt h
+
+/-- AN2-E / H-12: OR two pre-bounded `UInt64` values and lift the result
+    into `Badge`. The bitwise OR is performed on `UInt64` (64-bit bounded)
+    so the intermediate value never exceeds `2^64` — this forecloses the
+    unbounded-intermediate concern flagged by audit H-12 (present in the
+    pre-AN2-E `bor` composition when a caller passes un-masked `Nat`
+    badges).
+
+    Production paths ingesting values from the Rust ABI (where badges are
+    `u64`) should prefer this constructor over `bor` + `ofNatMasked`. -/
+@[inline] def ofUInt64Pair (a b : UInt64) : Badge :=
+  ⟨(a ||| b).toNat⟩
+
+/-- AN2-E / H-12: The intermediate value in `ofUInt64Pair` is always
+    `< 2^64`, so the resulting badge is `valid` by construction — no
+    truncation occurs. -/
+theorem ofUInt64Pair_valid (a b : UInt64) : (ofUInt64Pair a b).valid := by
+  unfold ofUInt64Pair valid machineWordMax machineWordBits
+  exact (a ||| b).toNat_lt
 
 instance : ToString Badge where
   toString badge := toString badge.toNat

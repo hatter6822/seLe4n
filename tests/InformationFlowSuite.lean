@@ -51,7 +51,7 @@ private def publicServiceEntry : ServiceGraphEntry :=
 private def sampleState : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject ⟨1⟩ (.endpoint {})
-    |>.withObject ⟨2⟩ (.notification { state := .active, waitingThreads := [], pendingBadge := some ⟨7⟩ })
+    |>.withObject ⟨2⟩ (.notification { state := .active, waitingThreads := [], pendingBadge := some (SeLe4n.Badge.ofNatMasked 7) })
     |>.withService ⟨1⟩ sampleServiceEntry
     |>.withService ⟨2⟩ publicServiceEntry
     -- Y3-A: current thread set for projection tests (not in runnable → check 8 passes).
@@ -254,7 +254,7 @@ def runInformationFlowChecks : IO Unit := do
   -- cspaceMintChecked: same-domain mint should be allowed
   let mintState :=
     (BootstrapBuilder.empty
-      |>.withObject ⟨100⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.Kernel.RobinHood.RHTable.ofList [(⟨0⟩, { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })]) })
+      |>.withObject ⟨100⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.Kernel.RobinHood.RHTable.ofList [((SeLe4n.Slot.ofNat 0), { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })]) })
       |>.withObject ⟨101⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.Kernel.RobinHood.RHTable.ofList []) })
       |>.buildChecked)
 
@@ -264,8 +264,8 @@ def runInformationFlowChecks : IO Unit := do
       endpointLabelOf := fun _ => publicLabel
       serviceLabelOf := fun _ => publicLabel }
 
-  let srcAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨100⟩, slot := ⟨0⟩ }
-  let dstAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨101⟩, slot := ⟨0⟩ }
+  let srcAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨100⟩, slot := (SeLe4n.Slot.ofNat 0) }
+  let dstAddr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨101⟩, slot := (SeLe4n.Slot.ofNat 0) }
 
   let checkedMint := SeLe4n.Kernel.cspaceMintChecked sameDomainMintCtx srcAddr dstAddr (AccessRightSet.ofList [.read]) none mintState
   let uncheckedMint := SeLe4n.Kernel.cspaceMint srcAddr dstAddr (AccessRightSet.ofList [.read]) none mintState
@@ -438,7 +438,7 @@ def runInformationFlowChecks : IO Unit := do
   let irqState :=
     (BootstrapBuilder.empty
       |>.withObject ⟨1⟩ (.endpoint {})
-      |>.withObject ⟨2⟩ (.notification { state := .active, waitingThreads := [], pendingBadge := some ⟨7⟩ })
+      |>.withObject ⟨2⟩ (.notification { state := .active, waitingThreads := [], pendingBadge := some (SeLe4n.Badge.ofNatMasked 7) })
       |>.withIrqHandler ⟨0⟩ ⟨1⟩   -- IRQ 0 → oid 1 (public object)
       |>.withIrqHandler ⟨1⟩ ⟨2⟩   -- IRQ 1 → oid 2 (secret object)
       |>.buildChecked)
@@ -499,9 +499,9 @@ def runInformationFlowChecks : IO Unit := do
       |>.withObject ⟨1⟩ (.endpoint {})  -- public target
       |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })  -- secret target
       |>.withObject ⟨50⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.Kernel.RobinHood.RHTable.ofList
-          [ (⟨0⟩, { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none })
-          , (⟨1⟩, { target := .object ⟨2⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
-          , (⟨2⟩, { target := .replyCap ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none })
+          [ ((SeLe4n.Slot.ofNat 0), { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none })
+          , ((SeLe4n.Slot.ofNat 1), { target := .object ⟨2⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
+          , ((SeLe4n.Slot.ofNat 2), { target := .replyCap ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none })
           ]) })
       |>.buildChecked)
 
@@ -520,13 +520,13 @@ def runInformationFlowChecks : IO Unit := do
   | some (.cnode cn) =>
     -- Slot 0 (target: public obj 1) should be present
     expect "public observer sees cap slot targeting public object"
-      (cn.slots.contains ⟨0⟩)
+      (cn.slots.contains (SeLe4n.Slot.ofNat 0))
     -- Slot 1 (target: secret obj 2) should be filtered out
     expect "public observer cannot see cap slot targeting secret object"
-      (!cn.slots.contains ⟨1⟩)
+      (!cn.slots.contains (SeLe4n.Slot.ofNat 1))
     -- Slot 2 (target: replyCap to public thread 1) should be present
     expect "public observer sees reply cap to public thread"
-      (cn.slots.contains ⟨2⟩)
+      (cn.slots.contains (SeLe4n.Slot.ofNat 2))
     -- Verify slot count
     expect "public observer sees exactly 2 of 3 slots"
       (cn.slots.size = 2)
@@ -555,8 +555,8 @@ def runInformationFlowChecks : IO Unit := do
       |>.withObject ⟨1⟩ (.endpoint {})  -- public target
       |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })  -- secret target
       |>.withObject ⟨60⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.Kernel.RobinHood.RHTable.ofList
-          [ (⟨0⟩, { target := .cnodeSlot ⟨1⟩ ⟨0⟩, rights := AccessRightSet.ofList [.read], badge := none })
-          , (⟨1⟩, { target := .cnodeSlot ⟨2⟩ ⟨0⟩, rights := AccessRightSet.ofList [.read], badge := none })
+          [ ((SeLe4n.Slot.ofNat 0), { target := .cnodeSlot ⟨1⟩ (SeLe4n.Slot.ofNat 0), rights := AccessRightSet.ofList [.read], badge := none })
+          , ((SeLe4n.Slot.ofNat 1), { target := .cnodeSlot ⟨2⟩ (SeLe4n.Slot.ofNat 0), rights := AccessRightSet.ofList [.read], badge := none })
           ]) })
       |>.buildChecked)
 
@@ -564,9 +564,9 @@ def runInformationFlowChecks : IO Unit := do
   match cnodeSlotProj.objects ⟨60⟩ with
   | some (.cnode cn) =>
     expect "cnodeSlot target to public CNode is visible"
-      (cn.slots.contains ⟨0⟩)
+      (cn.slots.contains (SeLe4n.Slot.ofNat 0))
     expect "cnodeSlot target to secret CNode is filtered"
-      (!cn.slots.contains ⟨1⟩)
+      (!cn.slots.contains (SeLe4n.Slot.ofNat 1))
     expect "cnodeSlot variant: exactly 1 of 2 slots visible"
       (cn.slots.size = 1)
   | _ =>
@@ -653,8 +653,8 @@ def runInformationFlowChecks : IO Unit := do
       endpointLabelOf := fun _ => publicLabel
       serviceLabelOf := fun _ => publicLabel }
 
-  let checkedSignal := SeLe4n.Kernel.notificationSignalChecked sameDomainNtfnCtx ⟨30⟩ ⟨1⟩ ⟨42⟩ ntfnState
-  let uncheckedSignal := SeLe4n.Kernel.notificationSignal ⟨30⟩ ⟨42⟩ ntfnState
+  let checkedSignal := SeLe4n.Kernel.notificationSignalChecked sameDomainNtfnCtx ⟨30⟩ ⟨1⟩ (SeLe4n.Badge.ofNatMasked 42) ntfnState
+  let uncheckedSignal := SeLe4n.Kernel.notificationSignal ⟨30⟩ (SeLe4n.Badge.ofNatMasked 42) ntfnState
 
   expect "same-domain notificationSignalChecked matches unchecked"
     (match checkedSignal, uncheckedSignal with
@@ -669,7 +669,7 @@ def runInformationFlowChecks : IO Unit := do
       endpointLabelOf := fun _ => publicLabel
       serviceLabelOf := fun _ => publicLabel }
 
-  let deniedSignal := SeLe4n.Kernel.notificationSignalChecked crossDomainNtfnCtx ⟨30⟩ ⟨1⟩ ⟨42⟩ ntfnState
+  let deniedSignal := SeLe4n.Kernel.notificationSignalChecked crossDomainNtfnCtx ⟨30⟩ ⟨1⟩ (SeLe4n.Badge.ofNatMasked 42) ntfnState
   expect "cross-domain notificationSignalChecked returns flowDenied"
     (match deniedSignal with
       | .error .flowDenied => true
@@ -679,7 +679,7 @@ def runInformationFlowChecks : IO Unit := do
 
   -- WS-H8: cspaceCopyChecked tests
   let copySrcCNode := SeLe4n.Model.CNode.empty
-  let copySrcCNodeWithCap := copySrcCNode.insert ⟨0⟩ {
+  let copySrcCNodeWithCap := copySrcCNode.insert (SeLe4n.Slot.ofNat 0) {
     target := .object ⟨99⟩
     rights := AccessRightSet.ofList [.read]
     badge := none }
@@ -689,8 +689,8 @@ def runInformationFlowChecks : IO Unit := do
       |>.withObject ⟨41⟩ (.cnode SeLe4n.Model.CNode.empty)
       |>.buildChecked)
 
-  let copySrc : SlotRef := { cnode := ⟨40⟩, slot := ⟨0⟩ }
-  let copyDst : SlotRef := { cnode := ⟨41⟩, slot := ⟨0⟩ }
+  let copySrc : SlotRef := { cnode := ⟨40⟩, slot := (SeLe4n.Slot.ofNat 0) }
+  let copyDst : SlotRef := { cnode := ⟨41⟩, slot := (SeLe4n.Slot.ofNat 0) }
 
   -- Same-domain copy should succeed
   let checkedCopy := SeLe4n.Kernel.cspaceCopyChecked sameDomainNtfnCtx copySrc copyDst copyState
@@ -784,7 +784,7 @@ def runInformationFlowChecks : IO Unit := do
   let denyDecl : SeLe4n.Kernel.DeclassificationPolicy :=
     { canDeclassify := fun _ _ => false }
 
-  let declassObj : KernelObject := .notification { state := .active, waitingThreads := [], pendingBadge := some ⟨0xAA⟩ }
+  let declassObj : KernelObject := .notification { state := .active, waitingThreads := [], pendingBadge := some (SeLe4n.Badge.ofNatMasked 0xAA) }
 
   let allowedDeclass :=
     SeLe4n.Kernel.declassifyStore declassCtx allowDecl ⟨2⟩ ⟨0⟩ ⟨902⟩ declassObj declassState
@@ -1007,7 +1007,7 @@ def runInformationFlowChecks : IO Unit := do
         |>.withObject nonCNodeRoot (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
         |>.withObject senderCNode (.cnode
             { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-              slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(⟨0⟩, cap1)] })
+              slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [((SeLe4n.Slot.ofNat 0), cap1)] })
         |>.buildChecked)
     let msgWithCaps : IpcMessage := { registers := #[], caps := #[cap1], badge := none }
     let result := SeLe4n.Kernel.ipcUnwrapCaps msgWithCaps senderCNode nonCNodeRoot
@@ -1030,7 +1030,7 @@ def runInformationFlowChecks : IO Unit := do
         |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
         |>.withObject senderCNode (.cnode
             { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-              slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(⟨0⟩, cap1)] })
+              slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [((SeLe4n.Slot.ofNat 0), cap1)] })
         |>.withObject senderTid.toObjId (.tcb
             { tid := senderTid, priority := ⟨1⟩, domain := ⟨0⟩,
               cspaceRoot := senderCNode, vspaceRoot := ⟨0⟩, ipcBuffer := ⟨0⟩,

@@ -160,6 +160,75 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
   **Next**: AN2 (foundation hardening — H-10..H-13 subtype-gate
   cascade, FND-M01..M08 batch, DEF-F-L9 17-tuple refactor).
 
+- **AN2** (Foundation hardening, v0.30.6, in progress — landed subset):
+  begins the Theme 4.3 advisory-predicate → subtype-gate migration plus
+  the Badge H-12 intermediate-overflow closure and four FND-M batch
+  items. The plan's estimate is 4–5 days across 8 sub-tasks; this
+  commit lands the subset that composes safely without a multi-proof
+  cascade. Remaining sub-tasks (`VAddr` / `PAddr` private mk,
+  `RegisterFile.gpr : Fin 32`, `typedIdDisjointness` as a new
+  `crossSubsystemInvariant` conjunct, the 17-tuple → structure refactor,
+  and FND-M03/M05/M06/M07) are tracked for an AN2-continuation commit —
+  each is a cascade-heavy refactor the plan explicitly budgets as its
+  own commit batch.
+  - **AN2-A (H-13)**: `Badge` gains `private mk ::` + new smart
+    constructors (`ofNat`, `zero`) + a `private
+    Badge.mkUnsafeForProof` helper for proof-side destructuring.
+    Cross-module `Badge.mk n` and `⟨n⟩` anonymous-constructor calls are
+    now elaboration errors. Manual `Inhabited Badge := ⟨⟨0⟩⟩` replaces
+    the prior `deriving Inhabited`. Migrated 17 production and test
+    sites (`SyscallArgDecode.lean:decodeCSpaceMintArgs_roundtrip`
+    rewritten without badge destructuring; `MainTraceHarness.lean`,
+    `InformationFlowSuite`, `NegativeStateSuite`, `OperationChainSuite`,
+    `SuspendResumeSuite`). `BadgeOverflowSuite` gains `bov023` /
+    `bov024` covering the smart-constructor surface.
+  - **AN2-B.1/B.2 (Theme 4.3 follow-on)**: same `private mk ::` pattern
+    applied to `CPtr` and `Slot`. Cascade reached ~130 call sites
+    across `SyscallArgDecode`, `MainTraceHarness`, and every affected
+    test suite — migration automated with a Lean-error-driven Python
+    patcher that iteratively runs `lake build` on each suite, extracts
+    the `Constructor for SeLe4n.{Slot,CPtr} is marked as private`
+    errors, and rewrites `⟨N⟩` at the offending column to
+    `SeLe4n.{Slot,CPtr}.ofNat N`. A handful of multi-line `(⟨N⟩, { ...
+    })` patterns required explicit `(... : Capability)` ascriptions
+    because once the key is qualified, Lean can no longer infer the
+    record type bottom-up from the `RHTable` context.
+  - **AN2-E (H-12)**: new `Badge.ofUInt64Pair (a b : UInt64) : Badge`
+    lifts the bitwise-OR composition into the `UInt64` domain, so the
+    intermediate value never escapes `2^64`. Closes the
+    "unbounded-intermediate" concern in the pre-existing `bor`
+    composition. Proven `.valid` by construction. Two new regression
+    tests (`bov025`, `bov026`) in `BadgeOverflowSuite`.
+  - **AN2-F.1 (FND-M01)**: two new theorems
+    (`CPtr.isWord64Bounded_eq_isWord64Dec`,
+    `Slot.isWord64Bounded_eq_isWord64Dec`) witness that the inline `<
+    2^64` literals match `isWord64Dec ·.val`. Forecloses drift without
+    requiring a reorder of `machineWordMax` in front of the identifier
+    types.
+  - **AN2-F.4 (FND-M04)**: new `abbrev minPracticalRHCapacity : Nat :=
+    16` in `Kernel/RobinHood/Bridge.lean` replaces the magic `16`
+    literal inside the `Inhabited (RHTable α β)` instance.
+  - **AN2-F.8 (FND-M08)**: Markdown decision table added to the
+    `ThreadId.toObjId` / `toObjIdChecked` / `toObjIdVerified` cluster
+    clarifying when each variant should be used (sentinel check /
+    store-type check).
+
+  **Gate at AN2 tip**: `lake build` (260 jobs, 0 warnings) +
+  `test_smoke.sh` PASS + `test_full.sh` PASS + `cargo test
+  --workspace` PASS (415 tests) + `cargo clippy --workspace -- -D
+  warnings` (0 warnings) + `lake exe badge_overflow_suite` 26 PASS
+  (was 22 pre-AN2) + `check_version_sync.sh` PASS at 0.30.6 +
+  `check_website_links.sh` PASS + fixture byte-identical to
+  `tests/fixtures/main_trace_smoke.expected` (227 lines; private-mk
+  changes alter only construction-site syntax, not emitted values) +
+  zero `sorry`/`axiom`/`native_decide` in `SeLe4n/` or `Main.lean`.
+  Version stays at `0.30.6`.
+
+  **Next**: AN2-continuation — `VAddr` / `PAddr` private mk
+  (AN2-B.3/B.4) and canonicalBound parameterization (FND-M02), then
+  AN2-C (RegisterFile.gpr : Fin 32), AN2-D (typedIdDisjointness 13th
+  conjunct), AN2-F.3/F.5/F.6/F.7, and AN2-G (17-tuple → structure).
+
 ## WS-AK — Pre-1.0 Release Hardening (v0.29.1 → v0.30.6)
 
 **Audit:** [`docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md`](audits/AUDIT_v0.29.0_COMPREHENSIVE.md)

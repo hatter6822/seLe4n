@@ -276,7 +276,7 @@ variants — only `.object` with reserved ObjId + empty rights counts as
 the canonical null cap. -/
 def capability_cnodeSlot_not_null : IO Unit := do
   let cap : Capability :=
-    { target := .cnodeSlot ⟨0⟩ ⟨0⟩
+    { target := .cnodeSlot ⟨0⟩ (SeLe4n.Slot.ofNat 0)
       rights := AccessRightSet.empty, badge := none }
   expect "cnodeSlot not null" (cap.isNull = false)
   let reply : Capability :=
@@ -334,7 +334,7 @@ NonNullCap end-to-end tests. -/
 private def al1bStateWithNullCapSlot : SystemState :=
   let srcCnode : CNode := {
     depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(⟨0⟩, Capability.null)] }
+    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [((SeLe4n.Slot.ofNat 0), Capability.null)] }
   let dstCnode : CNode := {
     depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
     slots := SeLe4n.Kernel.RobinHood.RHTable.ofList ([] : List (Slot × Capability)) }
@@ -348,8 +348,8 @@ private def al1bStateWithNullCapSlot : SystemState :=
 signature requires `NonNullCap`). -/
 def cspaceMint_from_null_rejected : IO Unit := do
   let st := al1bStateWithNullCapSlot
-  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨0⟩ }
-  let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := ⟨0⟩ }
+  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := (SeLe4n.Slot.ofNat 0) }
+  let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := (SeLe4n.Slot.ofNat 0) }
   let result := SeLe4n.Kernel.cspaceMint src dst AccessRightSet.empty none st
   match result with
   | .error .nullCapability =>
@@ -362,8 +362,8 @@ def cspaceMint_from_null_rejected : IO Unit := do
 /-- `cspaceCopy` from a null-cap source returns `.nullCapability`. -/
 def cspaceCopy_from_null_rejected : IO Unit := do
   let st := al1bStateWithNullCapSlot
-  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨0⟩ }
-  let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := ⟨0⟩ }
+  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := (SeLe4n.Slot.ofNat 0) }
+  let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := (SeLe4n.Slot.ofNat 0) }
   match SeLe4n.Kernel.cspaceCopy src dst st with
   | .error .nullCapability =>
       expect "copy from null → .nullCapability" true
@@ -375,8 +375,8 @@ def cspaceCopy_from_null_rejected : IO Unit := do
 /-- `cspaceMove` from a null-cap source returns `.nullCapability`. -/
 def cspaceMove_from_null_rejected : IO Unit := do
   let st := al1bStateWithNullCapSlot
-  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := ⟨0⟩ }
-  let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := ⟨0⟩ }
+  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := (SeLe4n.Slot.ofNat 0) }
+  let dst : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := (SeLe4n.Slot.ofNat 0) }
   match SeLe4n.Kernel.cspaceMove src dst st with
   | .error .nullCapability =>
       expect "move from null → .nullCapability" true
@@ -843,7 +843,7 @@ def ensureCdtNodeForSlotChecked_counter_overflow_rejected : IO Unit := do
   -- Build a state where cdtNextNode.val = maxCdtDepth - 1 (so new alloc would go to maxCdtDepth)
   let st : SystemState :=
     { (default : SystemState) with cdtNextNode := ⟨65535⟩ }
-  let ref : SlotRef := { cnode := ⟨0⟩, slot := ⟨0⟩ }
+  let ref : SlotRef := { cnode := ⟨0⟩, slot := (SeLe4n.Slot.ofNat 0) }
   let result : Option (CdtNodeId × SystemState) :=
     SystemState.ensureCdtNodeForSlotChecked st ref
   -- counter+1 = 65536 = maxCdtDepth, fails the `< maxCdtDepth` check
@@ -852,7 +852,7 @@ def ensureCdtNodeForSlotChecked_counter_overflow_rejected : IO Unit := do
 /-- `ensureCdtNodeForSlotChecked` succeeds when counter well below bound. -/
 def ensureCdtNodeForSlotChecked_counter_ok : IO Unit := do
   let st : SystemState := default
-  let ref : SlotRef := { cnode := ⟨0⟩, slot := ⟨0⟩ }
+  let ref : SlotRef := { cnode := ⟨0⟩, slot := (SeLe4n.Slot.ofNat 0) }
   let result : Option (CdtNodeId × SystemState) :=
     SystemState.ensureCdtNodeForSlotChecked st ref
   expect "cdt counter ok" (Option.isSome result)

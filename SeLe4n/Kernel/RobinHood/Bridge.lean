@@ -91,8 +91,20 @@ namespace SeLe4n.Kernel.RobinHood
 -- N3-A3: Inhabited instance
 -- ============================================================================
 
+/-- AN2-F.4 / FND-M04: Minimum practical capacity for an `RHTable` used as
+    a default. The value is exposed as a constant rather than a magic
+    literal to ensure the `Inhabited` instance and capacity-bound bridge
+    lemmas reference the same symbol, so future adjustments propagate
+    uniformly. Value `16` mirrors the seL4 CNode minimum 2^4 radix and
+    keeps the initial backing-array allocation modest.
+
+    Declared as `abbrev` so `omega`/`decide` can unfold the literal when
+    discharging capacity preconditions (e.g. `RHTable.empty`'s `cap ≥ 4`
+    obligation). -/
+abbrev minPracticalRHCapacity : Nat := 16
+
 instance [BEq α] [Hashable α] : Inhabited (RHTable α β) where
-  default := RHTable.empty 16
+  default := RHTable.empty minPracticalRHCapacity (by decide)
 
 -- ============================================================================
 -- N3-A4: BEq instance (entry-wise comparison via fold)

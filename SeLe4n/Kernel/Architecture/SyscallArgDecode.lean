@@ -735,31 +735,25 @@ private def stubDecoded (regs : Array RegValue) : SyscallDecodeResult :=
 theorem decodeCSpaceMintArgs_roundtrip (args : CSpaceMintArgs)
     (hRights : args.rights.valid) (hBadge : args.badge.valid) :
     decodeCSpaceMintArgs (stubDecoded (encodeCSpaceMintArgs args)) = .ok args := by
-  rcases args with ⟨s, d, r, ⟨bv⟩⟩
-  simp only [Badge.valid, machineWordMax, machineWordBits] at hBadge
-  have hModBadge : bv % 18446744073709551616 = bv := Nat.mod_eq_of_lt hBadge
-  have hModRights : AccessRightSet.ofNat r.bits = r := AccessRightSet.ofNat_idempotent r hRights
-  -- AK4-E: rights.valid (`r.bits < 32`) implies `¬ (r.bits > 31)`.
-  have hRightsLt : r.bits < 32 :=
-    AccessRightSet.isWord5_of_valid r hRights
+  -- AN2-A: `Badge.mk` is private cross-module, so we do not destructure the
+  -- badge; we work at the `args.badge.toNat` level and use `Badge.ext`
+  -- (via `ofNatMasked_toNat`) to recover the original badge.
+  rcases args with ⟨s, d, r, b⟩
+  simp only at *
+  have hModRights : AccessRightSet.ofNat r.bits = r :=
+    AccessRightSet.ofNat_idempotent r hRights
+  have hRightsLt : r.bits < 32 := AccessRightSet.isWord5_of_valid r hRights
   have hRightsBound : ¬ r.bits > 31 := by omega
-  have := hModRights; have := hModBadge; have := hRightsBound
-  -- Pre-AK4-E body produced the goal
-  -- `Except.ok (⟨Slot.ofNat s.toNat, Slot.ofNat d.toNat, AccessRightSet.ofNat r.bits, ⟨bv % 2^64⟩⟩) = ...`.
-  -- AK4-E adds a guarding `if r2.val > 31 then error else ok ...` that
-  -- evaluates to the `else` branch via `hRightsBound`.
+  have hBadgeId : Badge.ofNatMasked b.toNat = b := Badge.ofNatMasked_toNat b hBadge
+  -- After unfolding, the goal reduces to the guarded if-then-else branch.
   show (if (r.bits > 31) then (Except.error KernelError.invalidArgument
                                   : Except KernelError CSpaceMintArgs)
-        else Except.ok (⟨Slot.ofNat s.toNat, Slot.ofNat d.toNat,
-                          AccessRightSet.ofNat r.bits,
-                          Badge.ofNatMasked ({val := bv} : Badge).toNat⟩
-                         : CSpaceMintArgs))
-        = Except.ok ⟨s, d, r, ⟨bv⟩⟩
+        else Except.ok { srcSlot := Slot.ofNat s.toNat, dstSlot := Slot.ofNat d.toNat,
+                          rights := AccessRightSet.ofNat r.bits,
+                          badge := Badge.ofNatMasked b.toNat })
+        = Except.ok { srcSlot := s, dstSlot := d, rights := r, badge := b }
   rw [if_neg hRightsBound]
-  show Except.ok (⟨Slot.ofNat s.toNat, Slot.ofNat d.toNat,
-                     AccessRightSet.ofNat r.bits, ⟨bv % 18446744073709551616⟩⟩
-                    : CSpaceMintArgs) = Except.ok ⟨s, d, r, ⟨bv⟩⟩
-  simp only [Slot.ofNat, Slot.toNat, hModRights, hModBadge]
+  simp only [Slot.ofNat, Slot.toNat, hModRights, hBadgeId]
 
 /-- Round-trip: encoding then decoding CSpaceCopyArgs recovers the original. -/
 theorem decodeCSpaceCopyArgs_roundtrip (args : CSpaceCopyArgs) :
@@ -1414,7 +1408,7 @@ def decodeExtraCapAddrs (decoded : SyscallDecodeResult) :
   let startIdx := decoded.msgInfo.length
   let count := min decoded.msgInfo.extraCaps maxExtraCaps
   (Array.range count).filterMap fun i =>
-    decoded.msgRegs[startIdx + i]?.map fun rv => ⟨rv.val⟩
+    decoded.msgRegs[startIdx + i]?.map fun rv => SeLe4n.CPtr.ofNat rv.val
 
 -- ============================================================================
 -- X4-F/M-8: Platform-specific regCount validation

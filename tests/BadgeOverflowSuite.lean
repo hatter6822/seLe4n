@@ -193,6 +193,42 @@ private def bov022_validityMatchesWord64 : IO Unit := do
   let bMax := Badge.ofNatMasked (machineWordMax - 1)
   expect "valid↔isWord64 max-1" (bMax.isValid == isWord64Dec bMax.toNat)
 
+/-- AN2-A / H-13: `Badge.zero` smart constructor is valid and equal to the
+    masked-zero badge. -/
+private def bov023_zeroSmartConstructor : IO Unit := do
+  expect "Badge.zero valid" Badge.zero.isValid
+  expect "Badge.zero.toNat = 0" (Badge.zero.toNat == 0)
+  expect "Badge.zero = ofNatMasked 0" (Badge.zero == Badge.ofNatMasked 0)
+
+/-- AN2-A / H-13: `Badge.ofNat` smart constructor accepts pre-bounded `Nat`. -/
+private def bov024_ofNatBoundedConstructor : IO Unit := do
+  -- `Badge.ofNat` takes a default proof; for literals under 2^64 it elaborates.
+  let b := Badge.ofNat 42
+  expect "Badge.ofNat 42 toNat" (b.toNat == 42)
+  expect "Badge.ofNat 42 valid" b.isValid
+
+/-- AN2-E / H-12: `Badge.ofUInt64Pair` keeps the bitwise-OR intermediate
+    inside the `UInt64` domain — no unbounded-Nat intermediate escapes. -/
+private def bov025_ofUInt64PairBounded : IO Unit := do
+  let a : UInt64 := 0x00FF_00FF_00FF_00FF
+  let b : UInt64 := 0xFF00_FF00_FF00_FF00
+  let combined := Badge.ofUInt64Pair a b
+  expect "ofUInt64Pair full-mask toNat" (combined.toNat == 0xFFFF_FFFF_FFFF_FFFF)
+  expect "ofUInt64Pair full-mask valid" combined.isValid
+  let zero := Badge.ofUInt64Pair 0 0
+  expect "ofUInt64Pair zero toNat" (zero.toNat == 0)
+  expect "ofUInt64Pair zero valid" zero.isValid
+
+/-- AN2-E / H-12: `ofUInt64Pair` agrees with `bor ∘ ofNatMasked` for
+    UInt64-bounded inputs (equivalence with the legacy `Nat`-wrapped
+    composition in the word-bounded regime). -/
+private def bov026_ofUInt64PairMatchesBor : IO Unit := do
+  let a : UInt64 := 0x1234_5678
+  let b : UInt64 := 0x8765_4321
+  let viaUInt64 := Badge.ofUInt64Pair a b
+  let viaBor := Badge.bor (Badge.ofNatMasked a.toNat) (Badge.ofNatMasked b.toNat)
+  expect "ofUInt64Pair matches bor ∘ ofNatMasked" (viaUInt64.toNat == viaBor.toNat)
+
 end SeLe4n.Testing.BadgeOverflowSuite
 
 -- ============================================================================
@@ -230,5 +266,11 @@ def main : IO Unit := do
   bov020_identitySmall
   bov021_isWord64Consistency
   bov022_validityMatchesWord64
+  -- AN2-A / H-13 private mk smart constructors
+  bov023_zeroSmartConstructor
+  bov024_ofNatBoundedConstructor
+  -- AN2-E / H-12 UInt64-pair bounded intermediate
+  bov025_ofUInt64PairBounded
+  bov026_ofUInt64PairMatchesBor
   IO.println ""
-  IO.println "=== All 22 badge overflow tests passed ==="
+  IO.println "=== All 26 badge overflow tests passed ==="

@@ -80,7 +80,7 @@ private def sr003_suspendMissing : IO Unit := do
 private def sr004_suspendClearsPending : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨1⟩
   let tcb := { mkTcb 1 .Ready with
-    pendingMessage := some { registers := #[], caps := #[], badge := SeLe4n.Badge.mk 42 }
+    pendingMessage := some { registers := #[], caps := #[], badge := SeLe4n.Badge.ofNatMasked 42 }
     timeoutBudget := some (SeLe4n.SchedContextId.ofNat 100) }
   let st := mkState [(⟨1⟩, .tcb tcb)]
   match suspendThread st ⟨tid, by decide⟩ with
