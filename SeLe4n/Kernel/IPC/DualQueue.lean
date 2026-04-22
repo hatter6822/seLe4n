@@ -22,4 +22,19 @@ Decomposed into:
 - **WithCaps**: IPC cap transfer wrappers (M-D01/WS-M3) — compose existing
   dual-queue operations with `ipcUnwrapCaps` for capability transfer during
   rendezvous.
+
+**AN3-F (IPC LOW #4) re-export policy.**  This hub re-exports every IPC
+dual-queue module.  The sibling hub `SeLe4n.Kernel.IPC.Operations`
+re-exports the core operation family plus `Donation.Primitives` (per
+AN3-A / H-01), but deliberately does NOT re-export
+`SeLe4n.Kernel.IPC.Operations.Donation` (the transport-dependent
+donation wrappers) because doing so would reintroduce the
+`Operations -> Donation -> Transport -> Core -> Operations` import
+cycle closed by AI4-A.  Consumers that want the transport-dependent
+donation wrappers (`endpointCallWithDonation`, etc.) must import
+`SeLe4n.Kernel.IPC.Operations.Donation` directly — this is a
+prescriptive policy, not an accidental omission.  New IPC modules
+must honour the hub symmetry by exporting their primitives through
+`Operations` (if transport-independent) or through `DualQueue` /
+direct import (if transport-dependent).
 -/

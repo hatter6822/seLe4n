@@ -8,6 +8,24 @@
 
 import SeLe4n.Kernel.IPC.Invariant.Defs
 
+/-! # AN3-F (IPC LOW #3) — endpoint field-preservation scope note.
+
+The `storeTcbIpcState_*` / `storeTcbIpcStateAndMessage_*` /
+`storeTcbQueueLinks_*` preservation family at lines ~200-236 proves
+preservation of `ipcInvariant` specifically (an invariant about
+notifications, not TCB fields).  A companion "field-preservation"
+lemma set — `storeObject_nonTcb_preserves_tcb_ipcState`,
+`storeObject_nonTcb_preserves_tcb_queueNext`, etc. — has been derived
+via `storeObject_objects_ne` at each call site in `Structural/*.lean`
+rather than lifted to a named helper per field.  Rationale: the
+derivation is a one-liner at every call site (`rw [storeObject_objects_ne]`)
+and lifting it to N × M individual helpers (N = field count, M = kind)
+would multiply the public API surface without reducing call-site
+complexity.  The preserved-by-frame facts are uniformly recoverable,
+so the on-site rewrite is preferred over a named lemma.  See IPC-L3
+disposition in the AN3-F work log.
+-/
+
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model

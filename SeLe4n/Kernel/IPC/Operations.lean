@@ -9,9 +9,7 @@
 import SeLe4n.Kernel.IPC.Operations.Endpoint
 import SeLe4n.Kernel.IPC.Operations.SchedulerLemmas
 import SeLe4n.Kernel.IPC.Operations.CapTransfer
--- Note: Donation.lean is NOT re-exported here to avoid import cycles.
--- It imports Transport.lean which depends on this module.
--- Import SeLe4n.Kernel.IPC.Operations.Donation directly where needed.
+import SeLe4n.Kernel.IPC.Operations.Donation.Primitives
 
 /-! # IPC Operations — Re-export Hub
 
@@ -25,4 +23,18 @@ Decomposed into:
   storeTcbPendingMessage.
 - **CapTransfer**: IPC capability transfer operations (M-D01/WS-M3) —
   `ipcUnwrapCaps` batch operation with Grant-right gate.
+- **Donation.Primitives** (AN3-A / H-01): transport-independent donation
+  helpers (`applyCallDonation`, `applyReplyDonation`, plus all
+  `*_scheduler_eq` / `*_machine_eq` / `*_atomicRegion` preservation theorems
+  and server-binding witnesses). This is the symmetric counterpart to
+  Timeout/WithCaps re-exports — `Donation.Primitives` depends only on
+  `Endpoint.lean`, so adding it to the hub does NOT reintroduce the
+  `Operations -> Donation -> Transport -> Core -> Operations` cycle.
+
+The transport-dependent donation wrappers
+(`endpointCallWithDonation`, `endpointReplyWithDonation`,
+`endpointReplyRecvWithDonation`) remain in
+`SeLe4n.Kernel.IPC.Operations.Donation` and are importable directly from
+consumers that need them; they are NOT re-exported here by design (see
+AN3-A in `docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` §6).
 -/

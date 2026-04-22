@@ -8,6 +8,25 @@
 
 import SeLe4n.Model.State
 
+/-! # AN3-E.5 (IPC-M09) — `cleanupPreReceiveDonation` co-location banner.
+
+**DO NOT MOVE `cleanupPreReceiveDonation` or `cleanupPreReceiveDonationChecked`
+out of this file.**
+
+The donation primitive graph currently flows:
+
+  `Donation.lean` → `DualQueue/Transport.lean` → `DualQueue/Core.lean`
+                 → `Operations` (hub) → `Operations/Endpoint.lean` (this file)
+
+If the cleanup helpers are moved back to `Donation.lean`, the hub re-export
+constructed in AN3-A reintroduces the `Operations -> Donation -> Transport
+-> Core -> Operations` import cycle that AI4-A (v0.27.10 / M-01) closed by
+relocating the functions here in the first place.  The compile-time guard
+below (`an3e_cleanup_colocation_guard`) re-elaborates `cleanupPreReceiveDonation`
+through its fully-qualified name in this file's namespace so that any
+future relocation that bypasses this banner fails the build immediately.
+-/
+
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
@@ -456,7 +475,26 @@ theorem cleanupPreReceiveDonation_eq_cleanupChecked_ok
     st' = cleanupPreReceiveDonation st receiver :=
   (cleanupPreReceiveDonationChecked_ok_eq_cleanup st st' receiver h).symm
 
-/-- Z7: storeObject preserves the scheduler field. -/
+/-- AN3-E.5 (IPC-M09): compile-time guard — if `cleanupPreReceiveDonation`
+or `cleanupPreReceiveDonationChecked` is relocated out of this file, this
+example fails to elaborate and the build breaks.  The banner at the top of
+this file explains why the functions must stay here.  DO NOT remove this
+guard without also updating the banner. -/
+private example : @cleanupPreReceiveDonation = @cleanupPreReceiveDonation := rfl
+private example : @cleanupPreReceiveDonationChecked = @cleanupPreReceiveDonationChecked := rfl
+
+/-- Z7: storeObject preserves the scheduler field.
+
+**AN3-E.2 (IPC-M06) — INTENTIONALLY PRIVATE.** The donation path consumes
+the general `storeObject_scheduler_eq_*` forms exported from
+`Donation/Primitives.lean` and from the general-purpose preservation
+layers. This `_z7` variant is an optimization used exclusively by
+`returnDonatedSchedContext_scheduler_eq` below — a three-step sequence
+of `storeObject` calls whose schedulerstability must be proved
+compositionally without leaking `_z7` out as a user-facing API.
+Promoting this helper to public would invite spurious callers; keeping
+it file-private reflects its one-proof scope. See WH:Z7 for the
+donation-atomicity context. -/
 private theorem storeObject_scheduler_eq_z7 (st : SystemState) (oid : SeLe4n.ObjId)
     (obj : KernelObject) (pair : Unit × SystemState)
     (h : storeObject oid obj st = .ok pair) :

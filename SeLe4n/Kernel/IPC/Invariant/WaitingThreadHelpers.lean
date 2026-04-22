@@ -9,6 +9,20 @@
 import SeLe4n.Kernel.IPC.Invariant.EndpointPreservation
 
 /-! # Primitive preservation lemmas for `waitingThreadsPendingMessageNone`
+    (notification wait-list helpers)
+
+**AN3-F (IPC LOW #1) scope note.**  Despite the historical file name
+`WaitingThreadHelpers`, the helpers in this module are specifically
+the *notification wait-list* invariant primitives: they prove that
+low-level state mutations (`storeObject`, `storeTcbIpcState`,
+`removeRunnable`, the `storeTcbIpcStateAndMessage_*` family, ...)
+preserve `waitingThreadsPendingMessageNone`, which is an invariant
+about notification-blocked threads having a cleared `pendingMessage`
+field.  The file does NOT cover endpoint wait lists — those are
+handled in `IPC/Invariant/EndpointPreservation.lean`.  The broader
+`WaitingThreadHelpers` name is preserved for git-history continuity;
+treat it as an alias for "notification-wait-list helpers" when reading
+call sites.
 
 These lemmas prove that low-level state mutation operations (storeObject,
 storeTcbIpcState, removeRunnable, etc.) preserve the `waitingThreadsPendingMessageNone`
