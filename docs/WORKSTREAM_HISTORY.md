@@ -127,19 +127,21 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
     batch-doc block R-HAL-L6/L8/L12/L14/L16) are retargeted to live
     AN9-F/G/H/I/J sub-task IDs and cite their corresponding
     `DEF-R-HAL-L14/L17/L18/L19/L20` tracking entries. Repo-wide
-    straggler sweep (per plan §4 step 3) covered the additional 26
-    sites found by `grep -rn "WS-V\|AG10" rust/ SeLe4n/`. Each retarget
-    uses one of three forms: (1) existing-`DEF-*` cite for items with a
-    pre-existing tracking entry; (2) named AN sub-task cite
-    (AN9-D/F/A/B/H/I/J as appropriate) for items tracked live in the
-    v0.30.6 plan; (3) "recorded as a post-1.0 hardening candidate; no
-    currently-active plan file tracks it" prose (AK8-second-pass /
-    AK10-J convention) for items without a natural DEF-* bucket.
-    Remaining WS-V / AG10 tokens (3 sites — `conformance.rs:769` V1
-    test block header; `Assumptions.lean:135,138` AG10-C section
-    headers) are purely historical completed-work labels and are
-    intentionally preserved per AN1-C's acceptance criterion.
-    Files: 6 rust + 16 SeLe4n = 22 files.
+    straggler sweep (per plan §4 step 3) covered the additional 46
+    sites found by `grep -rn "WS-V\|AG10" rust/ SeLe4n/` (total
+    pre-AN1-C: 55 lines = 6 primary + 46 stragglers + 3 historical-
+    kept). Each retarget uses one of three forms: (1) existing-`DEF-*`
+    cite for items with a pre-existing tracking entry; (2) named AN
+    sub-task cite (AN9-D/F/A/B/H/I/J as appropriate) for items tracked
+    live in the v0.30.6 plan; (3) "recorded as a post-1.0 hardening
+    candidate; no currently-active plan file tracks it" prose
+    (AK8-second-pass / AK10-J convention) for items without a natural
+    DEF-* bucket. Remaining WS-V / AG10 tokens (3 sites —
+    `conformance.rs:769` V1 test block header;
+    `Assumptions.lean:135,138` AG10-C section headers) are purely
+    historical completed-work labels and are intentionally preserved
+    per AN1-C's acceptance criterion. Files: 6 rust + 25 SeLe4n = 31
+    files.
   - **AN1-D**: this `docs/WORKSTREAM_HISTORY.md` entry,
     `CHANGELOG.md` AN1 block, and `CLAUDE.md` active-workstream entry.
 

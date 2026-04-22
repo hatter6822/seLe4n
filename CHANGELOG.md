@@ -6,9 +6,9 @@ Closes the three CRITICAL / HIGH items blocking the v1.0.0 release gate per
 stale TODO retargeting). AN1 touches no Lean proof surface; all changes
 are to infrastructure, documentation, and source-comment pointers.
 
-Version stays at `0.30.6` at AN1 per the plan's per-phase patch-bump
-convention — the consolidated workstream bump (0.30.6 → v1.0.0 tag) is
-AN12's portfolio-closure step, not per-phase.
+Version stays at `0.30.6` at AN1 per the plan's no-per-phase-bump
+convention — the consolidated workstream bump (`0.30.6` → `v1.0.0` tag)
+is AN12's portfolio-closure step, not a per-phase patch bump.
 
 ### AN1-A — README "Latest audit" pointer (C-01 / DOC-M01)
 
@@ -65,9 +65,10 @@ reference block documenting `--check` and `--force` modes.
   (DEF-R-HAL-L14); R-HAL-L16 secondary-core bring-up → `TODO(AN9-J)`
   (DEF-R-HAL-L20).
 
-**Repo-wide straggler sweep** (per plan §4 step 3) covered the 26
-additional sites found by `grep -rn "WS-V\|AG10" rust/ SeLe4n/`. Each
-retarget uses ONE of three forms:
+**Repo-wide straggler sweep** (per plan §4 step 3) covered the 46
+additional sites found by `grep -rn "WS-V\|AG10" rust/ SeLe4n/` (total
+pre-AN1-C: 55 lines = 6 primary + 46 stragglers + 3 historical-kept).
+Each retarget uses ONE of three forms:
 
 1. **Existing-DEF cite** — when a concrete `DEF-*` ID already exists in
    `docs/audits/AUDIT_v0.29.0_DEFERRED.md`, the TODO points at that ID
@@ -95,7 +96,7 @@ completed AG3–AG8 Architecture Modules documentation block. Per the
 AN1-C acceptance criterion, these are exactly the kind of historical
 comments that should stay.
 
-**Files touched** (AN1-C): 6 rust + 16 SeLe4n for a total of 22 files.
+**Files touched** (AN1-C): 6 rust + 25 SeLe4n for a total of 31 files.
 
 ### AN1-D — AN1 closure
 
@@ -105,7 +106,7 @@ comments that should stay.
 ### Files modified (AN1 total)
 
 - `README.md` + 10 i18n READMEs (+2 / −1 lines each)
-- `scripts/install_git_hooks.sh` (new, 170 lines)
+- `scripts/install_git_hooks.sh` (new, 176 lines)
 - `scripts/setup_lean_env.sh` (installer invocation on both paths)
 - `scripts/website_link_manifest.txt` (install_git_hooks.sh +
   pre-commit-lean-build.sh + 2 audit docs + audits/ dir added)
@@ -113,7 +114,7 @@ comments that should stay.
   step added in test-fast)
 - `CLAUDE.md` (pre-commit install instructions refreshed; AN1 active-
   workstream entry prepended)
-- 6 Rust files + 16 SeLe4n Lean files (TODO retargets, source-comment
+- 6 Rust files + 25 SeLe4n Lean files (TODO retargets, source-comment
   only — no proof surface touched)
 - `docs/WORKSTREAM_HISTORY.md` (AN1 entry added to WS-AN section)
 
