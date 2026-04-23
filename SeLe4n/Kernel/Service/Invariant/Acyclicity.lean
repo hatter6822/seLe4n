@@ -25,7 +25,24 @@ The proofs are layered:
 - **Layer 2:** Operation preservation (registration preserves acyclicity).
 - **Layer 3:** Cross-subsystem composition with lifecycle and capability proofs.
 
-See `Service/Operations.lean` for the full seLe4n extension rationale. -/
+See `Service/Operations.lean` for the full seLe4n extension rationale.
+
+## AN4-H.SVC-M04 — deferred file split
+
+The plan proposed extracting 3 children (`Acyclicity/BfsBoundary.lean`,
+`Acyclicity/ReachabilityInduction.lean`,
+`Acyclicity/PreservationWitnesses.lean`) to recover a shared `reachability`
+induction principle. A trial extraction surfaced the same Lean
+elaboration fragility that blocked AN4-G.5 (see
+`Kernel/Lifecycle/Operations.lean`): many internal proofs rely on
+`private` BFS-boundary lemmas whose `match`-branch syntactic shape
+matters for `rw`/`simp` closures, and promoting them to file-boundary
+scope reshapes the unfolded goal just enough to break the existing
+proofs. The split is therefore deferred to a follow-up workstream that
+can refactor the proof idiom in a dedicated commit. The file's 1012 LOC
+are well under the 2000 LOC ceiling CLAUDE.md tracks for "large files",
+so delivering SVC-M04 now is not gating. Recorded as a post-1.0 hardening
+candidate; no currently-active plan file tracks it beyond this note. -/
 
 namespace SeLe4n.Kernel
 
@@ -231,7 +248,20 @@ private theorem bfsClosed_expand {st : SystemState} {nd : ServiceId}
 
 /-- CB1: Boundary lemma — if a visited node reaches the target (not visited),
     some frontier node also reaches the target.
-WS-G8: Visited set is HashSet. -/
+WS-G8: Visited set is HashSet.
+
+**AN4-I (LOW) — `bfs_boundary_lemma` family taxonomy**: this is the
+canonical BFS-boundary witness. Companion witnesses in this module cover
+four axes: (a) `bfsClosed_init` / `bfsClosed_skip` / `bfsClosed_expand`
+maintain the closure predicate across the three BFS transitions;
+(b) `bfs_complete_for_nontrivialPath` lifts the boundary lemma to the
+full-traversal completeness property; (c) `reach_in_universe` constrains
+reachability to the bounded BFS universe so fuel-adequacy proofs have a
+finite target set; (d) `go_*` lemmas (skip/expand/complete) package the
+termination argument for the DFS-implementation that backs the `Bfs`
+API. Future extensions (e.g., bounded-degree or bounded-depth variants)
+should follow the same (transition / closure / completeness / universe)
+taxonomy so proof consumers can find the right witness by category. -/
 private theorem bfs_boundary_lemma {st : SystemState} {tgt : ServiceId}
     {fr : List ServiceId} {vis : Std.HashSet ServiceId} {v : ServiceId}
     (hR : serviceReachable st v tgt) :

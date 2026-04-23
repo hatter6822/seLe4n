@@ -67,7 +67,7 @@ private def chain1RetypeMintRevoke : IO Unit := do
       |>.buildChecked)
 
   let (_, st1) ← expectOkSt "chain1: lifecycleRetypeObject"
-    (SeLe4n.Kernel.lifecycleRetypeObject authSlot targetId (.endpoint {}) st0)
+    (SeLe4n.Kernel.Internal.lifecycleRetypeObject authSlot targetId (.endpoint {}) st0)
   -- W5-E: Verify post-state mutation — target retyped to endpoint
   match st1.objects[targetId]? with
   | some (.endpoint _) => expect "chain1: target retyped to endpoint" true

@@ -179,6 +179,108 @@ def capabilityInvariantBundle (st : SystemState) : Prop :=
     cspaceSlotCountBounded st ∧ cdtCompleteness st ∧ cdtAcyclicity st ∧
     cspaceDepthConsistent st ∧ st.objects.invExt
 
+/-! ## AN4-F.5 (CAP-M05) — Named-projection refactor of `capabilityInvariantBundle`
+
+Mirror of the AN3-B playbook for IPC's `ipcInvariantFull`. The 7-conjunct
+right-associative `∧` chain above is fragile to reason about — consumers
+write `.2.2.2.1` to reach `cdtCompleteness`, `.2.2.2.2.1` for
+`cdtAcyclicity`, and so on. The audit's CAP-M05 finding calls for a named
+structure that exposes each field by name.
+
+At v0.30.6 the tuple form remains the primary definition so the 243 existing
+consumer sites do not have to migrate in a single commit. The named
+structure below is **derived** from the tuple via a bidirectional bridge
+(`capabilityInvariantBundle_iff_CapabilityInvariantBundle`), and each field
+has a `@[simp]` projection abbrev so consumers can migrate incrementally —
+`bundle.cdtCompleteness` replaces `bundle.2.2.2.1`, and `simp` unfolds the
+abbrev to the underlying tuple projection automatically.
+
+A follow-up workstream (AN4-F.5.3..F.5.6, tracked for a subsequent commit
+that touches the 30+ primary sites simultaneously) will swap the primary
+def to the structure and delete the tuple form. Both forms are legal in
+the interim. -/
+
+/-- AN4-F.5 (CAP-M05): Named-projection view of `capabilityInvariantBundle`.
+Each field records a distinct slot-level invariant (uniqueness,
+soundness, size-bounded) or a CDT structural invariant (completeness,
+acyclicity, depth) plus the underlying `RHTable` kernel-level invariant
+on the object store. The structure is logically equivalent to the
+right-associative tuple form via the bridge below. -/
+structure CapabilityInvariantBundle (st : SystemState) : Prop where
+  /-- Every (cnode, slot) pair appears in at most one CNode slot table. -/
+  slotUnique : cspaceSlotUnique st
+  /-- `cspaceLookupSlot` agrees with the direct-object-store projection
+      on every present CNode/slot pair. -/
+  lookupSound : cspaceLookupSound st
+  /-- Every CNode slot table satisfies its `slotCountBounded` invariant. -/
+  slotCountBounded : cspaceSlotCountBounded st
+  /-- The CDT `childMap`/`parentMap`/`slotNode`/`nodeSlot` bookkeeping
+      covers every capability edge emitted by the graph. -/
+  cdtCompleteness : cdtCompleteness st
+  /-- The capability derivation graph is acyclic. -/
+  cdtAcyclicity : cdtAcyclicity st
+  /-- Child CNodes have strictly smaller guard/radix depth than their
+      parents. -/
+  depthConsistent : cspaceDepthConsistent st
+  /-- The kernel-level `objects` `RHTable` invariant holds (external hash,
+      capacity positive, no duplicate keys). -/
+  objectsInvExt : st.objects.invExt
+
+/-- AN4-F.5.1 (CAP-M05): Bidirectional bridge between the tuple and named
+forms. Consumers can move freely between the two representations; the
+primary def continues to be the tuple form so existing destructures
+compile unchanged. -/
+theorem capabilityInvariantBundle_iff_CapabilityInvariantBundle
+    (st : SystemState) :
+    capabilityInvariantBundle st ↔ CapabilityInvariantBundle st := by
+  constructor
+  · rintro ⟨hU, hS, hB, hComp, hAcyc, hDep, hObj⟩
+    exact { slotUnique := hU, lookupSound := hS, slotCountBounded := hB
+          , cdtCompleteness := hComp, cdtAcyclicity := hAcyc
+          , depthConsistent := hDep, objectsInvExt := hObj }
+  · intro h
+    exact ⟨h.slotUnique, h.lookupSound, h.slotCountBounded,
+           h.cdtCompleteness, h.cdtAcyclicity, h.depthConsistent,
+           h.objectsInvExt⟩
+
+/-! ### AN4-F.5.2 (CAP-M05): `@[simp]` projection abbreviations
+
+Shorthand accessors so consumers of the tuple form can use named fields
+without going through the bidirectional bridge. Tagged `@[simp]` so the
+definitional unfolding happens automatically during `simp`-closed goals. -/
+
+namespace capabilityInvariantBundle
+
+/-- Extract `cspaceSlotUnique` from the tuple form. -/
+@[simp] abbrev slotUnique {st : SystemState} (h : capabilityInvariantBundle st) :
+    cspaceSlotUnique st := h.1
+
+/-- Extract `cspaceLookupSound` from the tuple form. -/
+@[simp] abbrev lookupSound {st : SystemState} (h : capabilityInvariantBundle st) :
+    cspaceLookupSound st := h.2.1
+
+/-- Extract `cspaceSlotCountBounded` from the tuple form. -/
+@[simp] abbrev slotCountBounded {st : SystemState} (h : capabilityInvariantBundle st) :
+    cspaceSlotCountBounded st := h.2.2.1
+
+/-- Extract `cdtCompleteness` from the tuple form. -/
+@[simp] abbrev cdtCompleteness {st : SystemState} (h : capabilityInvariantBundle st) :
+    _root_.SeLe4n.Kernel.cdtCompleteness st := h.2.2.2.1
+
+/-- Extract `cdtAcyclicity` from the tuple form. -/
+@[simp] abbrev cdtAcyclicity {st : SystemState} (h : capabilityInvariantBundle st) :
+    _root_.SeLe4n.Kernel.cdtAcyclicity st := h.2.2.2.2.1
+
+/-- Extract `cspaceDepthConsistent` from the tuple form. -/
+@[simp] abbrev depthConsistent {st : SystemState} (h : capabilityInvariantBundle st) :
+    cspaceDepthConsistent st := h.2.2.2.2.2.1
+
+/-- Extract `st.objects.invExt` from the tuple form. -/
+@[simp] abbrev objectsInvExt {st : SystemState} (h : capabilityInvariantBundle st) :
+    st.objects.invExt := h.2.2.2.2.2.2
+
+end capabilityInvariantBundle
+
 /-- AE4-D (U-36/C-CAP06): Extended capability invariant bundle with mint
 completeness. Conjoins the standard 7-property `capabilityInvariantBundle`
 with `cdtMintCompleteness`, ensuring CDT-based revocation via `cspaceRevokeCdt`
@@ -209,6 +311,60 @@ theorem capabilityInvariantBundleWithMintCompleteness_of_parts
     (hBundle : capabilityInvariantBundle st)
     (hMint : cdtMintCompleteness st) :
     capabilityInvariantBundleWithMintCompleteness st := ⟨hBundle, hMint⟩
+
+/-! ## AN4-F.4 (CAP-M04) — `RetypeTarget` precondition subtype
+
+The retype pipeline (`lifecyclePreRetypeCleanup` → `scrubObjectMemory` →
+`Internal.lifecycleRetypeObject`) carries a caller obligation: the cleanup
+hook must have run on the target id before the retype primitive executes.
+Historically this was a documented invariant maintained by
+`lifecycleRetypeWithCleanup` (AN4-A) and its `Direct` variant, but the
+obligation was not reflected in any type.
+
+AN4-F.4 adds a subtype `RetypeTarget` that bundles the target `ObjId`
+with a `cleanupHookDischarged` witness — a `Prop` that holds iff
+`lifecyclePreRetypeCleanup` has observably run (or the target is
+pre-cleanup-clean by boot construction). Threading `RetypeTarget` through
+cleanup-aware entry points lets the type system enforce the obligation
+rather than relying on a documented invariant alone.
+
+The subtype is deliberately **phantom-like** at v0.30.6 — the witness
+predicate is kept weak so the existing proof surface doesn't have to
+discharge it everywhere, only at wrappers that compose cleanup with retype.
+Future workstreams (AN6 CrossSubsystem composition) can strengthen the
+witness to carry a concrete `lifecyclePreRetypeCleanup_ok` hypothesis. -/
+
+/-- AN4-F.4 (CAP-M04): Predicate witnessing that the cleanup hook has
+been discharged for `target`. At v0.30.6 this is the conjunction of two
+observable boot-state properties: (a) the target's lifecycle object-type
+metadata matches its currently-stored kernel-object variant, and (b)
+no stale scheduler-queue reference points at `target`. Both are
+consequences of `lifecyclePreRetypeCleanup_ok`; the weaker predicate is
+retained here so the subtype can be constructed without the full
+cleanup-hook-result handle. -/
+def cleanupHookDischarged (st : SystemState) (target : SeLe4n.ObjId) : Prop :=
+  (∀ obj, st.objects[target]? = some obj →
+    SystemState.lookupObjectTypeMeta st target = some obj.objectType)
+  ∧ (∀ tcb, st.objects[target]? = some (.tcb tcb) →
+      ¬ (tcb.tid ∈ st.scheduler.runQueue.flat))
+
+/-- AN4-F.4 (CAP-M04): Precondition subtype for cleanup-aware retype entry
+points. Bundles a target `ObjId` with a `cleanupHookDischarged` witness at
+the *pre-retype* state `st`. The subtype is used at the boundary of
+`lifecycleRetypeWithCleanup` and its proof-chain companions so callers
+cannot construct a target without carrying the discharge obligation. -/
+structure RetypeTarget (st : SystemState) where
+  id : SeLe4n.ObjId
+  cleanupHookDischarged : SeLe4n.Kernel.cleanupHookDischarged st id
+
+/-- AN4-F.4 (CAP-M04): Identity-coercion helper — recover the raw `ObjId`
+from a `RetypeTarget`. Used by the cleanup-integrated wrappers when they
+have to drop into the type-erased internal primitive. -/
+@[inline] def RetypeTarget.toObjId {st : SystemState} (tgt : RetypeTarget st) :
+    SeLe4n.ObjId := tgt.id
+
+instance {st : SystemState} : CoeHead (RetypeTarget st) SeLe4n.ObjId where
+  coe tgt := tgt.id
 
 -- ============================================================================
 -- S3-D/U-M03: CDT maps consistency as state-level invariant

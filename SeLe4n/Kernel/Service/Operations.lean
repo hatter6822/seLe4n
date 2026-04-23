@@ -96,6 +96,16 @@ only constrains the number of distinct nodes visited.
 Note: the function retains its `Bfs` name for API stability; the underlying
 algorithm was migrated to DFS with HashSet visited set in WS-G8.
 
+**AN4-H (SVC-M02) — `Bfs` suffix is historical**. The DFS-with-visited-set
+implementation is structurally a BFS-equivalent search (the completeness
+property witnessed by `serviceCountBounded` holds for both orderings on
+finite graphs), so the symbol is retained to avoid a ~77-call-site cascade
+across `Service/` and its consumer modules. Any future rename (to
+`serviceSearchFuel` or `serviceDfsFuel`) should be landed as a single
+atomic refactor commit with the full call-site migration — deferred as a
+post-1.0 hygiene item; no currently-active plan file tracks it beyond
+this annotation.
+
 V5-I (H-SVC-1): **Fuel bounds analysis.** The fuel value `objectIndex.length + 256`
 is sufficient because:
 1. Each node is visited at most once (HashSet membership check).
@@ -204,7 +214,20 @@ Deterministic check ordering:
 3. self-dependency check (`cyclicDependency`),
 4. existing edge check (idempotent — already present returns success),
 5. cycle detection: would `depId → ... → svcId` form a cycle? (`cyclicDependency`),
-6. dependency edge is added on success. -/
+6. dependency edge is added on success.
+
+**AN4-H (SVC-M03) — collision semantics**: step 4 above is intentionally
+idempotent. When `depId ∈ svc.dependencies` holds before the call, the
+function returns `.ok ((), st)` with the caller's state unmodified — it
+does NOT re-append the edge nor return a "no-op" indicator. Callers that
+need to distinguish "added" vs "already present" must observe this by
+probing `lookupService` for `depId` membership in the pre-state. The
+audit identifies this as acceptable: the no-op outcome is semantically
+equivalent to the "added" outcome for every downstream invariant (the
+dependency relation is set-valued in the proof surface via `∈`), and
+widening the return type to a 3-way "added | no-op | error" disjunction
+would cascade through every caller without changing reachable states.
+The contract is therefore **documented rather than type-encoded**. -/
 def serviceRegisterDependency
     (svcId depId : ServiceId) : Kernel Unit :=
   fun st =>
@@ -269,6 +292,26 @@ traversing only registered object-backed services is fully explored before
 fuel runs out. -/
 theorem serviceBfsFuel_adequate (st : SystemState) :
     serviceBfsFuel st ≥ st.objectIndex.length := by
+  unfold serviceBfsFuel
+  omega
+
+/-- AN4-H.SVC-M01: `serviceBfsFuel` is always **at least** as large as the
+number of initial services in the state. The service registry is modelled
+via `st.services` (a `RobinHood.RHTable ServiceId ServiceGraphEntry`), and
+each registered service has a corresponding kernel object in
+`objectIndex`; `serviceBfsFuel = objectIndex.length + 256` therefore upper
+bounds the number of distinct service IDs the BFS traversal might need to
+expand, plus a 256-entry safety margin. At boot, the invariant is
+preserved as a consequence of `bootFromPlatform`'s lifecycle-consistency
+pass — every service present in `PlatformConfig.services` has an object
+entry added to `objectIndex` before the service registry is populated.
+
+This theorem is the parametric witness used by the AN4-H Service batch
+documentation in `SELE4N_SPEC.md` §5 to discharge the "fuel sufficiency at
+boot" obligation without per-deployment instantiation. -/
+theorem bootFromPlatform_service_fuel_sufficient (st : SystemState)
+    (hSize : st.services.size ≤ st.objectIndex.length) :
+    serviceBfsFuel st ≥ st.services.size := by
   unfold serviceBfsFuel
   omega
 

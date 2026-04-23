@@ -11,6 +11,9 @@ import SeLe4n.Kernel.InformationFlow.Invariant.Operations
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+-- AN4-A allowlist: proof-chain reference to `lifecycleRetypeObject` from
+-- `SeLe4n.Kernel.Internal`. Enforced by `scripts/test_tier0_hygiene.sh`.
+open Internal
 
 /-! ## H-05 — Composed Bundle Non-Interference
 

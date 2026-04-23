@@ -1769,7 +1769,7 @@ def runWSH16LifecycleChecks : IO Unit := do
 
   -- H16-NEG-01: lifecycleRetypeObject with non-existent target → objectNotFound
   expectErr "H16 lifecycleRetypeObject non-existent target"
-    (SeLe4n.Kernel.lifecycleRetypeObject h16AuthSlot ⟨999⟩ (.endpoint {}) h16State)
+    (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16AuthSlot ⟨999⟩ (.endpoint {}) h16State)
     .objectNotFound
 
   -- H16-NEG-02: lifecycleRetypeObject with metadata mismatch → illegalState
@@ -1797,19 +1797,19 @@ def runWSH16LifecycleChecks : IO Unit := do
       |>.withLifecycleCapabilityRef h16AuthSlot (.object h16TargetId)
       |>.build)
   expectErr "H16 lifecycleRetypeObject metadata mismatch"
-    (SeLe4n.Kernel.lifecycleRetypeObject h16AuthSlot h16TargetId (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) h16MismatchState)
+    (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16AuthSlot h16TargetId (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) h16MismatchState)
     .illegalState
 
   -- H16-NEG-03: lifecycleRetypeObject with insufficient authority (read-only cap) → illegalAuthority
   let h16ReadOnlySlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16CnodeId, slot := SeLe4n.Slot.ofNat 1 }
   expectErr "H16 lifecycleRetypeObject insufficient authority"
-    (SeLe4n.Kernel.lifecycleRetypeObject h16ReadOnlySlot h16TargetId (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) h16State)
+    (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16ReadOnlySlot h16TargetId (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) h16State)
     .illegalAuthority
 
   -- H16-NEG-04: lifecycleRetypeObject with bad authority CNode → objectNotFound
   let h16BadAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨999⟩, slot := SeLe4n.Slot.ofNat 0 }
   expectErr "H16 lifecycleRetypeObject bad authority CNode"
-    (SeLe4n.Kernel.lifecycleRetypeObject h16BadAuthSlot h16TargetId (.endpoint {}) h16State)
+    (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16BadAuthSlot h16TargetId (.endpoint {}) h16State)
     .objectNotFound
 
   -- H16-NEG-05: lifecycleRevokeDeleteRetype with authority = cleanup → illegalState
@@ -1910,6 +1910,58 @@ def runWSH16LifecycleChecks : IO Unit := do
     .objectNotFound
 
   IO.println "all WS-H16/M-18 lifecycle negative checks passed"
+
+/-- AN4-A.5 (H-02): Regression test demonstrating the cleanup-bypass semantic
+difference between `Internal.lifecycleRetypeObject` and
+`lifecycleRetypeWithCleanup`. Build a state where a TCB sits in the run queue;
+both paths successfully retype the object store, but only the safe wrapper
+scrubs the dangling reference out of the scheduler run queue. This is the
+exact semantic gap that motivates keeping the internal primitive behind the
+`Internal` namespace (AN4-A visibility hardening). -/
+def runAN4A5LifecycleVisibilityChecks : IO Unit := do
+  IO.println "=== AN4-A.5 lifecycle visibility regression checks ==="
+  let a5RetypeTcbId : SeLe4n.ObjId := ⟨170⟩
+  let a5CnodeId : SeLe4n.ObjId := ⟨171⟩
+  let a5AuthSlot : SeLe4n.Kernel.CSpaceAddr :=
+    { cnode := a5CnodeId, slot := SeLe4n.Slot.ofNat 0 }
+  let a5NewObj : KernelObject := .endpoint {}
+  let a5Tcb : TCB :=
+    { tid := ⟨170⟩, priority := ⟨10⟩, domain := ⟨0⟩
+    , cspaceRoot := a5CnodeId, vspaceRoot := ⟨20⟩
+    , ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready }
+  let a5State : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject a5RetypeTcbId (.tcb a5Tcb)
+      |>.withObject a5CnodeId (.cnode {
+        depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
+        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          (SeLe4n.Slot.ofNat 0, {
+            target := .object a5RetypeTcbId
+            rights := AccessRightSet.ofList [.read, .write, .retype]
+            badge := none })
+        ] })
+      |>.withLifecycleObjectType a5RetypeTcbId .tcb
+      |>.withLifecycleObjectType a5CnodeId .cnode
+      |>.withLifecycleCapabilityRef a5AuthSlot (.object a5RetypeTcbId)
+      |>.withRunnable [a5Tcb.tid]
+      |>.buildChecked)
+
+  -- AN4-A.5-01: `Internal.lifecycleRetypeObject` succeeds on the store but
+  -- leaves the run-queue ThreadId behind — the classic cleanup-bypass bug.
+  let (_, stInternal) ← expectOkState "AN4-A.5-01 Internal.lifecycleRetypeObject ok"
+    (SeLe4n.Kernel.Internal.lifecycleRetypeObject a5AuthSlot a5RetypeTcbId a5NewObj a5State)
+  expectCond "AN4-A.5-01" "Internal.lifecycleRetypeObject leaves dangling run-queue entry"
+    (stInternal.scheduler.runQueue.flat.contains a5Tcb.tid)
+
+  -- AN4-A.5-02: `lifecycleRetypeWithCleanup` runs the cleanup phase first, so
+  -- the run-queue reference is purged. This is the exact difference the
+  -- AN4-A visibility hardening is defending.
+  let (_, stWrapped) ← expectOkState "AN4-A.5-02 lifecycleRetypeWithCleanup ok"
+    (SeLe4n.Kernel.lifecycleRetypeWithCleanup a5AuthSlot a5RetypeTcbId a5NewObj a5State)
+  expectCond "AN4-A.5-02" "lifecycleRetypeWithCleanup scrubs run-queue reference"
+    (!stWrapped.scheduler.runQueue.flat.contains a5Tcb.tid)
+
+  IO.println "all AN4-A.5 lifecycle visibility regression checks passed"
 
 -- ============================================================================
 -- WS-J1-E: Register decode negative tests
@@ -3644,6 +3696,7 @@ def main : IO Unit := do
   SeLe4n.Testing.runWSH15Checks
   SeLe4n.Testing.runWSH15PlatformChecks
   SeLe4n.Testing.runWSH16LifecycleChecks
+  SeLe4n.Testing.runAN4A5LifecycleVisibilityChecks
   SeLe4n.Testing.runWSJ1DecodeChecks
   SeLe4n.Testing.runWSKGChecks
   SeLe4n.Testing.runWSL4BlockedThreadChecks

@@ -107,4 +107,11 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" validate-registr
   --extra-fixtures tests/fixtures/robin_hood_smoke.expected \
   tests/fixtures/two_phase_arch_smoke.expected
 
+# AN4-A (H-02): enforce `SeLe4n.Kernel.Internal.lifecycleRetypeObject` consumer allowlist.
+# The internal retype primitive bypasses `lifecyclePreRetypeCleanup` and
+# `scrubObjectMemory`; production dispatch must use `lifecycleRetypeWithCleanup`.
+# Any `.lean` file that references `Internal.lifecycleRetypeObject` or opens
+# `SeLe4n.Kernel.Internal` must appear in `scripts/lifecycle_internal_allowlist.txt`.
+run_check "HYGIENE" "${SCRIPT_DIR}/check_lifecycle_internal_allowlist.sh"
+
 finalize_report

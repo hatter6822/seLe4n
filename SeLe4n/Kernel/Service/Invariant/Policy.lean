@@ -77,8 +77,9 @@ theorem policyBackingObjectTyped_of_lifecycleInvariant
     (hLifecycle : lifecycleInvariantBundle st)
     (hObj : st.objects[svc.identity.backingObject]? = some obj) :
     policyBackingObjectTyped st svc := by
-  rcases hLifecycle with ⟨hIdAlias, _⟩
-  rcases hIdAlias with ⟨hTypeExact, _⟩
+  -- AN4-B (H-03): the identity/aliasing bundle collapsed to its single exact
+  -- conjunct, so we project directly.
+  rcases hLifecycle with ⟨hTypeExact, _⟩
   refine ⟨obj.objectType, ?_⟩
   simpa [lifecycleIdentityTypeExact, SystemState.objectTypeMetadataConsistent,
     SystemState.lookupObjectTypeMeta, hObj] using hTypeExact svc.identity.backingObject
@@ -174,8 +175,11 @@ theorem storeServiceState_preserves_lifecycleInvariantBundle
     (entry : ServiceGraphEntry)
     (hLifecycle : lifecycleInvariantBundle st) :
     lifecycleInvariantBundle (storeServiceState sid entry st) := by
+  -- AN4-B (H-03): `lifecycleIdentityNoTypeAliasConflict` was removed from the
+  -- bundle (redundant with `lifecycleIdentityTypeExact`), so the simpa list no
+  -- longer unfolds it.
   simpa [lifecycleInvariantBundle, lifecycleIdentityAliasingInvariant, lifecycleIdentityTypeExact,
-    lifecycleIdentityNoTypeAliasConflict, lifecycleCapabilityReferenceInvariant,
+    lifecycleCapabilityReferenceInvariant,
     lifecycleCapabilityRefExact, lifecycleCapabilityRefObjectTargetBacked, storeServiceState,
     SystemState.objectTypeMetadataConsistent, SystemState.capabilityRefMetadataConsistent,
     SystemState.lookupObjectTypeMeta, SystemState.lookupCapabilityRefMeta,

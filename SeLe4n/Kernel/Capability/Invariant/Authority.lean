@@ -310,13 +310,24 @@ private theorem mintDerivedCap_attenuates
     (badge : Option SeLe4n.Badge)
     (hMint : mintDerivedCap parent rights badge = .ok child) :
     capAttenuates parent.val child := by
-  by_cases hSubset : rightsSubset rights parent.val.rights = true
-  · simp [mintDerivedCap, hSubset] at hMint
-    cases hMint
-    constructor
-    · rfl
-    · exact rightsSubset_sound rights parent.val.rights hSubset
-  · simp [mintDerivedCap, hSubset] at hMint
+  -- AN4-E (H-06): the function body now has two `if`s (rightsSubset, then
+  -- isNull). Walk through both via `split at hMint` so the `.ok` branch is
+  -- isolated before we destructure.
+  unfold mintDerivedCap at hMint
+  split at hMint
+  · -- rightsSubset = true
+    rename_i hSubset
+    split at hMint
+    · -- candidate.isNull = true: contradiction with `.ok`
+      simp at hMint
+    · -- candidate.isNull = false: .ok branch
+      injection hMint with hEq
+      subst hEq
+      constructor
+      · rfl
+      · exact rightsSubset_sound rights parent.val.rights hSubset
+  · -- rightsSubset = false: .error
+    simp at hMint
 
 -- ============================================================================
 -- F-06 / TPI-D04: Badge-override safety in cspaceMint
@@ -430,10 +441,19 @@ theorem mintDerivedCap_badge_propagated
     (child : Capability)
     (hMint : mintDerivedCap parent rights badge = .ok child) :
     child.badge = badge := by
+  -- AN4-E (H-06): walk through both `if`s introduced by the null-guard.
   unfold mintDerivedCap at hMint
   split at hMint
-  · cases hMint; rfl
-  · exact absurd hMint (by simp)
+  · -- rightsSubset = true
+    split at hMint
+    · -- candidate.isNull = true: contradiction
+      simp at hMint
+    · -- candidate.isNull = false: extract equality from `.ok`
+      injection hMint with hEq
+      subst hEq
+      rfl
+  · -- rightsSubset = false
+    simp at hMint
 
 /-- (H-03) `cspaceMint` stores a child capability whose badge equals the requested badge.
 This is the operation-level badge consistency witness. -/
@@ -469,10 +489,11 @@ theorem cspaceMint_child_badge_preserved
           simp [hMint] at hStep
           have hDst := cspaceInsertSlot_lookup_eq st st' dst child hSlotUniq hObjInv hStep
           refine ⟨child, hDst, ?_⟩
-          unfold mintDerivedCap at hMint
-          by_cases hRights : rightsSubset rights parent.rights
-          · simp [hRights] at hMint; cases hMint; rfl
-          · simp [hRights] at hMint
+          -- AN4-E (H-06): discharge child.badge = some badge via the
+          -- badge-propagation companion theorem, which already walks through
+          -- the new two-`if` structure of `mintDerivedCap`.
+          exact mintDerivedCap_badge_propagated ⟨parent, hNotNull⟩ rights
+            (some badge) child hMint
 
 /-- (H-03) When a notification has no waiters and no pending badge, signaling with badge `b`
 stores `ofNatMasked b.val` as the pending badge (word-bounded).

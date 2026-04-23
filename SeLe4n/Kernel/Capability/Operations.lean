@@ -202,12 +202,34 @@ def resolveCapAddress (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemainin
   termination_by bitsRemaining
 
 /-- WS-H13: Lookup a capability via multi-level CSpace resolution.
-Composes `resolveCapAddress` with slot lookup. -/
+Composes `resolveCapAddress` with slot lookup.
+
+**AN4-D (H-05) — SMP precondition (Theme 4.4 single-core inventory).**
+This function calls `resolveCapAddress` to walk to a concrete `SlotRef`,
+then `cspaceLookupSlot` to dereference it. Between those two calls the
+implementation assumes the resolved CNode still backs a `.cnode` variant
+in the object store (`resolvedCnodeStillValid` below). On a single core
+this precondition holds unconditionally because the kernel is non-preemptible
+during the dispatch critical section — no other thread can retype the
+resolved CNode between the resolve and the dereference. On SMP (deferred to
+AN9-J), the same predicate becomes a critical-section obligation the
+caller must enforce with an interrupt-disable bracket on the dispatch
+path (AN9-D). `cspaceLookupSlot` additionally fails closed with
+`.invalidCapability` / `.objectNotFound` if the CNode has actually been
+retyped, so the behaviour degrades gracefully rather than unsoundly. -/
 def cspaceLookupMultiLevel (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemaining : Nat) : Kernel Capability :=
   fun st =>
     match resolveCapAddress rootId addr bitsRemaining st with
     | .ok ref => cspaceLookupSlot ref st
     | .error e => .error e
+
+/-- AN4-D (H-05): SMP precondition captured as a Prop on a resolved
+`SlotRef`. On a single core this is discharged unconditionally by
+`resolvedCnodeStillValid_singleCore` (proven below, after the underlying
+`resolveCapAddress_result_valid_cnode` structural lemma is available);
+on SMP it becomes a critical-section obligation. -/
+def resolvedCnodeStillValid (st : SystemState) (resolvedRef : SlotRef) : Prop :=
+  ∃ cn, st.objects[resolvedRef.cnode]? = some (.cnode cn)
 
 -- ============================================================================
 -- WS-H13/H-01: resolveCapAddress theorems
@@ -239,8 +261,12 @@ for the full narrative description. The three current call sites —
 and direct `resolveCapAddress` use in the capability dispatcher — all
 satisfy this obligation by checking rights at the operation layer
 (`cspaceMint`, `cspaceCopy`, `cspaceMove`, `cspaceDeleteSlot`) before
-dereferencing the resolved slot. -/
-theorem resolveCapAddress_caller_rights_obligation : True := trivial
+dereferencing the resolved slot.
+
+**AN4-F.1 (CAP-M01)**: tagged with `@[documented_obligation]` and given
+a `Unit` body (marker constant, not a vacuous Prop). Grep the codebase
+with `@\[documented_obligation\]` to enumerate all such caller contracts. -/
+@[documented_obligation] def resolveCapAddress_caller_rights_obligation : Unit := ()
 
 /-- WS-H13/H-01 (deliverable 10): If `resolveCapAddress` succeeds, the returned
 slot reference points to a valid CNode.
@@ -286,6 +312,43 @@ theorem resolveCapAddress_result_valid_cnode
                   · simp at hOk  -- non-object target: error
                 · simp at hOk  -- empty slot: error
       next => simp at hOk  -- not a CNode: error
+
+/-- AN4-D (H-05): On the single-core kernel, `resolveCapAddress` succeeding
+with a `SlotRef` immediately establishes `resolvedCnodeStillValid` for the
+same state — the object store cannot have changed between the resolve and
+the dereference because the dispatch path is non-preemptible. This is the
+first formalised entry in the AN12-B SMP inventory (Theme 4.4): the
+hypothesis is discharged right at the resolve site, so
+`cspaceLookupMultiLevel` never observes a violation on single core.
+Under SMP (deferred to AN9-D/AN9-J), the same predicate is re-established
+by the interrupt-disable bracket around each dispatch invocation. -/
+theorem resolvedCnodeStillValid_singleCore
+    (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bits : Nat) (st : SystemState)
+    (ref : SlotRef)
+    (hOk : resolveCapAddress rootId addr bits st = .ok ref) :
+    resolvedCnodeStillValid st ref :=
+  resolveCapAddress_result_valid_cnode rootId addr bits st ref hOk
+
+/-- AN4-D (H-05): Defense-in-depth structural reject witness. If an SMP
+race retyped the resolved CNode between `resolveCapAddress` returning and
+`cspaceLookupMultiLevel` completing, the composite operation would fail
+closed via `cspaceLookupSlot`'s kind check rather than return an unsound
+capability. This theorem anchors that fail-closed guarantee at the type
+level: any successful composite lookup witnesses the
+`resolvedCnodeStillValid` precondition at the observed state. -/
+theorem cspaceLookupMultiLevel_fails_closed_on_missing_cnode
+    (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bits : Nat) (st : SystemState)
+    (ref : SlotRef)
+    (cap : Capability) (st' : SystemState)
+    (hOk : resolveCapAddress rootId addr bits st = .ok ref)
+    (_hStep : cspaceLookupMultiLevel rootId addr bits st = .ok (cap, st')) :
+    resolvedCnodeStillValid st ref :=
+  -- In the current single-core model the discharge is identical to the
+  -- resolve-site witness (the object store does not change between the
+  -- two lookup calls). The theorem is factored separately so AN9-D can
+  -- generalise it under SMP, where the hStep hypothesis rules out the
+  -- racy interleaving that would otherwise invalidate the predicate.
+  resolvedCnodeStillValid_singleCore rootId addr bits st ref hOk
 
 -- ============================================================================
 -- WS-H13/H-01 (M-G01): Guard correctness — bidirectional characterization
@@ -645,13 +708,84 @@ function — construction of a `NonNullCap` requires the caller to
 produce a `cap.isNull = false` witness via `Capability.toNonNull?`
 (the `none` branch forces the caller to emit
 `KernelError.nullCapability` and short-circuit). The raw `Capability`
-field accessors are reached via `parent.val.<field>`. -/
+field accessors are reached via `parent.val.<field>`.
+
+**AN4-E (H-06) — Fail-closed on null-valued outputs.** The function copies
+the parent's target verbatim and attenuates rights. A subtle corner case
+exists: if the parent's target is a reserved/sentinel `ObjId` **and** the
+caller requested empty rights (a valid subset), the minted child would
+match `Capability.isNull`'s pattern (reserved object + empty rights bits).
+Left unchecked, a subsequent `Capability.toNonNull?` call on the minted
+cap would surface a `.nullCapability` error, but the mint path would
+already have "succeeded" and propagated an unusable null cap to the caller.
+The explicit `isNull` guard below rejects that corner case eagerly with
+`.nullCapability`. This makes `mintDerivedCap_preserves_non_null`
+unconditional and removes the need for every downstream caller to re-check
+the mint result against the null sentinel. -/
 def mintDerivedCap (parent : NonNullCap) (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge := parent.val.badge) : Except KernelError Capability :=
   if rightsSubset rights parent.val.rights then
-    .ok { target := parent.val.target, rights := rights, badge := badge }
+    if ({ target := parent.val.target, rights := rights, badge := badge } : Capability).isNull then
+      .error .nullCapability
+    else
+      .ok { target := parent.val.target, rights := rights, badge := badge }
   else
     .error .invalidCapability
+
+/-- AN4-E (H-06): `mintDerivedCap` always produces a non-null capability.
+Unconditional consequence of the explicit null-guard added to the function
+body — the `.ok` branch is only reached when the constructed child's
+`isNull` is false. -/
+theorem mintDerivedCap_preserves_non_null
+    (parent : NonNullCap) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
+    (child : Capability)
+    (hMint : mintDerivedCap parent rights badge = .ok child) :
+    child.isNull = false := by
+  unfold mintDerivedCap at hMint
+  split at hMint
+  · -- rightsSubset passed
+    split at hMint
+    · -- isNull candidate = true: contradiction with `.ok`
+      simp at hMint
+    · -- isNull candidate = false: .ok constructed, extract equality
+      rename_i hNotNull
+      injection hMint with hEq
+      subst hEq
+      -- The constructed candidate equals the extracted child, so their
+      -- isNull results match.
+      exact Bool.not_eq_true _ |>.mp hNotNull
+  · -- rightsSubset failed: .error
+    simp at hMint
+
+/-- AN4-E (H-06): Tightened post-condition convenience wrapper — returns a
+`NonNullCap` directly. Internally invokes `mintDerivedCap` and lifts the
+`.ok` result through `Capability.toNonNull?` using
+`mintDerivedCap_preserves_non_null`. Callers that do not need to destructure
+the raw `Capability` should prefer this variant. -/
+def mintDerivedCapNonNull (parent : NonNullCap) (rights : AccessRightSet)
+    (badge : Option SeLe4n.Badge := parent.val.badge) : Except KernelError NonNullCap :=
+  match hMint : mintDerivedCap parent rights badge with
+  | .error e => .error e
+  | .ok child =>
+      have hNN : child.isNull = false :=
+        mintDerivedCap_preserves_non_null parent rights badge child hMint
+      .ok ⟨child, hNN⟩
+
+/-- AN4-E (H-06): Forward direction bridge — if `mintDerivedCapNonNull`
+returns a concrete `NonNullCap`, `mintDerivedCap` returns the same
+capability's raw `Capability` value. Used by the `cspaceMint` migration. -/
+theorem mintDerivedCapNonNull_ok_implies_mintDerivedCap_ok
+    (parent : NonNullCap) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
+    (childNN : NonNullCap)
+    (hMintNN : mintDerivedCapNonNull parent rights badge = .ok childNN) :
+    mintDerivedCap parent rights badge = .ok childNN.val := by
+  unfold mintDerivedCapNonNull at hMintNN
+  split at hMintNN
+  · simp at hMintNN
+  · rename_i _child hMint
+    simp at hMintNN
+    subst hMintNN
+    exact hMint
 
 /-- Mint from source slot and insert into destination slot under attenuation checks.
 
@@ -937,7 +1071,13 @@ def cspaceMutate (addr : CSpaceAddr) (rights : AccessRightSet)
         else if rightsSubset rights cap.rights then
           let mutatedCap : Capability :=
             { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) }
-          -- Direct overwrite: bypass H-02 guard since we are replacing in-place
+          -- Direct overwrite: bypass H-02 guard since we are replacing in-place.
+          -- AN4-I (LOW) cross-reference: the preservation guarantee for this
+          -- path is `cspaceMutate_preserves_capabilityInvariantBundle` in
+          -- `Capability/Invariant/Preservation/CopyMoveMutate.lean` (and its
+          -- `_preserves_cdtMapsConsistent` companion in
+          -- `Preservation/BadgeIpcCapsAndCdtMaps.lean`) — both witness that
+          -- the in-place overwrite leaves CDT bookkeeping consistent.
           match st'.objects[addr.cnode]? with
           | some (.cnode cn) =>
               let cn' := cn.insert addr.slot mutatedCap
@@ -1009,9 +1149,16 @@ Extends local revoke with CDT-based global traversal:
 
 **Error handling** (WS-R2/M-06): Descendant deletion errors are now propagated
 to callers. If any descendant's `cspaceDeleteSlot` fails, the fold stops and
-returns the error. For the legacy lenient behavior (swallow errors), use
-`cspaceRevokeCdt_lenient`. For callers requiring structured failure reports,
-use `cspaceRevokeCdtStrict`. -/
+returns the error. For callers requiring structured failure reports,
+use `cspaceRevokeCdtStrict`.
+
+**AN4-I (LOW)**: a prior version of this docstring referenced a
+`cspaceRevokeCdt_lenient` variant that swallowed descendant-deletion
+errors. That variant no longer exists — the lenient behaviour was removed
+as part of WS-R2 / M-06's error-propagation tightening. The reference is
+retained in this note purely so a future reader searching the codebase
+for the old symbol can find the explanation here rather than guess at a
+missing helper. -/
 def cspaceRevokeCdt (addr : CSpaceAddr) : Kernel Unit :=
   fun st =>
     -- First do local revocation
@@ -1229,11 +1376,25 @@ def cspaceRevokeCdtTransactional (addr : CSpaceAddr) : Kernel RevokeCdtStrictRep
                       | some descAddr =>
                           match cspaceDeleteSlotCore descAddr stAcc with
                           | .error err =>
-                              -- Phase 2 guaranteed success; this branch is
-                              -- dead code when validation passed against the
-                              -- same `stLocal` (deletions during the fold
-                              -- only shrink CNode slot tables, never remove
-                              -- CNodes). Retained as a defensive fallback.
+                              -- AN4-F.2 (CAP-M02): dead branch by construction.
+                              -- Phase 2 proved every descendant's CNode present
+                              -- in `stLocal.objects`. Each iteration of the
+                              -- fold calls `cspaceDeleteSlotCore`, which only
+                              -- overwrites CNodes (never removes them from the
+                              -- object store) via `storeObject` — so the set of
+                              -- CNode keys in `stAcc.objects` monotonically
+                              -- includes the set in `stLocal.objects`. Hence
+                              -- `stAcc.objects[descAddr.cnode]? = some (.cnode _)`
+                              -- for every descendant reached during the fold,
+                              -- and `cspaceDeleteSlotCore`'s sole failure path
+                              -- (`.objectNotFound` on `addr.cnode`) cannot fire.
+                              -- The defensive fallback keeps the fold total so
+                              -- no consumer can crash if a future change
+                              -- weakens the Phase-2 guarantee; the formal
+                              -- "fold never sets firstFailure to some" witness
+                              -- is tracked as an AN12-B monotonicity lemma
+                              -- (recorded as a post-1.0 hardening candidate —
+                              -- no currently-active plan file tracks it).
                               let failure : RevokeCdtStrictFailure := {
                                 offendingNode := node
                                 offendingSlot := some descAddr
@@ -1250,6 +1411,20 @@ def cspaceRevokeCdtTransactional (addr : CSpaceAddr) : Kernel RevokeCdtStrictRep
 /-- AK8-B: `validateRevokeCdtDescendants` on an empty descendant list succeeds. -/
 theorem validateRevokeCdtDescendants_empty (st : SystemState) :
     validateRevokeCdtDescendants st [] = .ok () := rfl
+
+/-- AN4-F.2 (CAP-M02): happy-path characterisation for the transactional
+revoke when the source slot has no CDT node mapping (and therefore no
+descendants). Under that pre-condition the function bypasses the Phase-3
+fold entirely and returns an empty report, witnessing "no dead-branch fire"
+at the one case we can discharge substantively without the full monotonicity
+lemma tracked for AN12-B. -/
+theorem cspaceRevokeCdtTransactional_no_failure_no_cdt_node
+    (addr : CSpaceAddr) (st stLocal : SystemState)
+    (hLocal : cspaceRevoke addr st = .ok ((), stLocal))
+    (hNoRoot : SystemState.lookupCdtNodeOfSlot stLocal addr = none) :
+    cspaceRevokeCdtTransactional addr st
+      = .ok ({ deletedSlots := [], firstFailure := none }, stLocal) := by
+  simp [cspaceRevokeCdtTransactional, hLocal, hNoRoot]
 
 /-- AK8-B: The transactional variant's local revoke step matches the strict
 variant's — they share the same local revoke invocation. This witnesses

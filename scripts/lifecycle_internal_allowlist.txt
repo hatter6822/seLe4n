@@ -1,0 +1,45 @@
+# AN4-A: allowlist for `SeLe4n.Kernel.Internal.lifecycleRetypeObject` consumers.
+#
+# `lifecycleRetypeObject` lives in `SeLe4n.Kernel.Internal` because it bypasses
+# the `lifecyclePreRetypeCleanup` + `scrubObjectMemory` pipeline (H-02). Production
+# dispatch must call `lifecycleRetypeWithCleanup` / `lifecycleRetypeDirectWithCleanup`
+# — never this internal primitive. The files below are the ONLY consumers allowed
+# to reference `Internal.lifecycleRetypeObject` or `open SeLe4n.Kernel.Internal`.
+#
+# Enforced by `scripts/test_tier0_hygiene.sh` (Tier 0 hygiene gate).
+#
+# To add a file: submit it with rationale; reviewers confirm the file is either
+# proof-chain infrastructure (theorem) or test harness (direct exercise of the
+# internal step for negative-branch coverage), NOT production dispatch.
+
+# Declaration site (the function itself and its paired wrappers).
+SeLe4n/Kernel/Lifecycle/Operations.lean
+# AN4-G.5: Post-split child modules that host the declaration and wrapper
+# callers. `CleanupPreservation` is the new declaration site for
+# `Internal.lifecycleRetypeObject`; `ScrubAndUntyped` and `RetypeWrappers`
+# re-enable the bare name via `open Internal`.
+SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+
+# Proof chain (preservation theorems — cannot avoid referencing the internal def).
+SeLe4n/Kernel/Lifecycle/Invariant.lean
+SeLe4n/Kernel/Capability/Invariant/Preservation.lean
+# AN4-F.3: Post-split Capability Preservation children. The Preservation hub
+# transitively imports these so the proof chain stays reachable; each child
+# imports its upstream sibling and inherits `open Internal` via transitive
+# `open` re-export through the hub chain.
+SeLe4n/Kernel/Capability/Invariant/Preservation/Insert.lean
+SeLe4n/Kernel/Capability/Invariant/Preservation/Delete.lean
+SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean
+SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+SeLe4n/Kernel/Capability/Invariant/Preservation/BadgeIpcCapsAndCdtMaps.lean
+SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
+SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+
+# Test harness (negative branches + direct internal-step exercise).
+SeLe4n/Testing/MainTraceHarness.lean
+tests/NegativeStateSuite.lean
+tests/OperationChainSuite.lean
