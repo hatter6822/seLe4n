@@ -246,10 +246,10 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 
 **Known large files** (read in ≤500-line chunks) — refreshed v0.30.6 (AK10-E):
 - `CHANGELOG.md` (~9453 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~2065 lines, AN3-C child)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~1979 lines, AN3-C child)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~1887 lines, AN3-C child)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~1835 lines, AN3-C child)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~2070 lines, AN3-C child)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~1984 lines, AN3-C child)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~1891 lines, AN3-C child)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~1859 lines, AN3-C child)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~3768 lines)
 - `tests/NegativeStateSuite.lean` (~3660 lines)

@@ -827,18 +827,21 @@ with all queue and IPC operations.
 
 **AN3-E.3 (IPC-M07) reachability scope note.** This predicate does not
 directly append `∀ tid ∈ queue, st.objectIndex.contains tid.toObjId` —
-the object-index reachability property is an orthogonal invariant
-(`objectIndexConsistent` in `SeLe4n.Model.State`) that composes with
-this predicate rather than being embedded inside it.  At every call
-site where both are needed, callers thread them independently; this
-separation is intentional (and was preserved here rather than merged
-per Option B of the plan) because the two invariants are proved by
-disjoint means: `ipcStateQueueConsistent` is preserved by every IPC
-operation that modifies `ipcState`, while `objectIndexConsistent` is
-preserved by every operation that modifies `objects` or `objectIndex`.
-Merging them would force both to co-evolve in every preservation
-proof, which would increase the cascade size without tightening any
-safety conclusion the combination already admits at call sites. -/
+the object-index reachability property is captured by the orthogonal
+`objectIndexSetComplete` invariant (`SeLe4n.Model.State.objectIndexSetComplete`,
+`∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true`),
+composed with the stronger reachability predicate
+`ipcStateQueueMembershipConsistent` (defined just below) which walks the
+queueNext chain from each endpoint's queue head.  At every call site
+where queue-member object-index reachability is needed, callers thread
+these independent invariants; this separation is intentional (Option B
+of the plan) because the invariants are preserved by disjoint means:
+`ipcStateQueueConsistent` is preserved by every IPC operation that
+modifies `ipcState`, while `objectIndexSetComplete` is preserved by
+every operation that modifies `objects` or `objectIndexSet`.  Merging
+them would force both to co-evolve in every preservation proof, which
+would multiply the cascade size without tightening any safety
+conclusion the combination already admits at call sites. -/
 def ipcStateQueueConsistent (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
     st.objects[tid.toObjId]? = some (.tcb tcb) →

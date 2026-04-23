@@ -144,6 +144,25 @@ theorem endpointQueuePopHead_link_safe (q : IntrusiveQueue) (st : SystemState)
 
 -- ---- Helper: QueueNextPath transport across object equality ----
 
+/-! **AN3-F (IPC LOW #2) `QueueNextPath` reconstruction helpers — note.**
+The three transport helpers below (`QueueNextPath_of_objects_eq`,
+`QueueNextPath_transport_storeObject_tcb`,
+`QueueNextPath_transport_storeObject_nonTcb`) are the named factoring
+of the `hTransfer` let-bindings the audit identified at the original
+`Structural.lean:946-957` line range.  Every caller further down in
+this module now composes those three lemmas (plus their acyclicity
+corollaries `tcbQueueChainAcyclic_of_objects_eq` /
+`storeObject_tcb_preserves_tcbQueueChainAcyclic` /
+`storeObject_nonTcb_preserves_tcbQueueChainAcyclic`) instead of
+re-proving transport inline, so the factoring is complete in the
+post-AN3-C tree.  Remaining `have hTransfer` local `let`-bindings in
+`storeTcbQueueLinks_clearing_*` theorems stay inline because they
+specialise the transport argument to the `storeTcbQueueLinks` shape
+and cannot be fully reduced to the general helpers without threading
+additional preconditions -- the same Option-B reasoning as IPC-M05
+(see `IPC/Invariant/QueueMembership.lean` for the parallel
+discussion). -/
+
 /-- If two states have the same objects, QueueNextPath transfers between them. -/
 theorem QueueNextPath_of_objects_eq {st st' : SystemState}
     (hObjs : st'.objects = st.objects) {a b : SeLe4n.ThreadId}
