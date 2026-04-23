@@ -190,9 +190,15 @@ seLe4n uses a layered architecture so semantic changes can be reviewed and prove
   - Node-stable CDT integration: slot↔node mapping (`cdtSlotNode`/`cdtNodeSlot`), move-as-pointer-update semantics, delete-time mapping detachment to avoid stale slot reuse aliasing, and strict revoke reporting (`cspaceRevokeCdtStrict`) that returns first descendant-delete failure context.
   - Streaming BFS revoke (`cspaceRevokeCdtStreaming`): level-by-level BFS traversal via `streamingRevokeBFS`, eliminating full `descendantsOf` materialization. Preserves `capabilityInvariantBundle` with proved step and composed preservation theorems.
 - `SeLe4n/Kernel/Capability/Invariant.lean` (re-export hub)
-  - `Invariant/Defs.lean` — core invariant definitions, transfer theorems, depth consistency.
+  - `Invariant/Defs.lean` — core invariant definitions, transfer theorems, depth consistency; AN4-F.4 `RetypeTarget` subtype + `cleanupHookDischarged` predicate; AN4-F.5 `CapabilityInvariantBundle` named-projection structure + bridge + `@[simp]` abbrevs.
   - `Invariant/Authority.lean` — authority reduction, attenuation, badge routing consistency.
-  - `Invariant/Preservation.lean` — operation preservation, lifecycle integration, composed bundles.
+  - `Invariant/Preservation.lean` — thin re-export hub after AN4-F.3 split (42 LOC).
+  - `Invariant/Preservation/Insert.lean` — `cspaceLookupSlot` / `cspaceInsertSlot` / `cspaceMint` base preservation.
+  - `Invariant/Preservation/Delete.lean` — `cspaceDeleteSlotCore` / `cspaceDeleteSlot` / `cspaceRevoke` base preservation.
+  - `Invariant/Preservation/CopyMoveMutate.lean` — `cspaceCopy` / `cspaceMove` / `cspaceMintWithCdt` / `cspaceMutate` preservation.
+  - `Invariant/Preservation/Revoke.lean` — `processRevokeNode` + `cspaceRevokeCdt` (+ strict / streaming variants) preservation.
+  - `Invariant/Preservation/EndpointReplyAndLifecycle.lean` — `endpointReply` + `coreIpcInvariantBundle` + `lifecycleRetypeObject` / `lifecycleRevokeDeleteRetype` preservation cluster.
+  - `Invariant/Preservation/BadgeIpcCapsAndCdtMaps.lean` — Mint / Mutate badge preservation + `ipcTransferSingleCap` / `ipcUnwrapCaps` variants + `cdtMapsConsistent` preservation + CDT composition witnesses.
 - **WS-N modules** (v0.17.0–v0.17.5, **PORTFOLIO COMPLETE**):
   - `SeLe4n/Kernel/RobinHood/Core.lean` — Robin Hood hash table types (`RHEntry`, `RHTable`), fuel-bounded operations (`insert`, `get?`, `erase`, `fold`, `resize`), `GetElem?`/`Membership` instances. 379 LoC. **N1 COMPLETED** (v0.17.1).
   - `SeLe4n/Kernel/RobinHood/Bridge.lean` — Kernel API bridge: `Inhabited`/`BEq` instances, 12 bridge lemmas, `filter`/`ofList` support. ~860 LoC. **N3 COMPLETED** (v0.17.3).
@@ -254,13 +260,16 @@ equivalence theorems (M-01), error asymmetry documentation (L-18).
 
 ### Lifecycle subsystem
 
-- `SeLe4n/Kernel/Lifecycle/Operations.lean`
-  - deterministic lifecycle retype transition (`lifecycleRetypeObject`),
-  - explicit illegal-state / illegal-authority error branching and local theorem entrypoints.
+- `SeLe4n/Kernel/Lifecycle/Operations.lean` — thin re-export hub after AN4-G.5 split (~54 LOC).
+  - `Operations/Cleanup.lean` — cleanup primitives (`lifecycleRetypeAuthority`, `removeThreadFromQueue`, `spliceOutMidQueueNode`, `removeFromAll{Endpoint,Notification}Queues`, `cleanupDonatedSchedContext`, `cleanupTcbReferences`).
+  - `Operations/CleanupPreservation.lean` — cleanup preservation theorems, `detachCNodeSlots`, `lifecyclePreRetypeCleanup`, AN4-G.2 `lifecycleCleanupPipeline` wrapper, `Internal.lifecycleRetypeObject` (AN4-A), `lifecycleRevokeDeleteRetype`.
+  - `Operations/ScrubAndUntyped.lean` — `scrubObjectMemory` + frame theorems, `retypeFromUntyped` + capacity / freshness / AN4-G.4 atomicity / error-path theorems.
+  - `Operations/RetypeWrappers.lean` — production entry points: `lifecycleRetypeWithCleanup`, WS-K-D dispatch helpers, `lifecycleRetypeDirect*` variants.
+  - AN4-A (H-02): the internal retype primitive `Internal.lifecycleRetypeObject` lives in `CleanupPreservation`; production dispatch MUST call `lifecycleRetypeWithCleanup` / `lifecycleRetypeDirectWithCleanup`. Enforcement via `scripts/check_lifecycle_internal_allowlist.sh` wired into Tier 0 hygiene.
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` — D1: `suspendThread`/`resumeThread` with run-queue cleanup and state transitions.
 - `SeLe4n/Kernel/Lifecycle/Invariant.lean`
   - step-3 lifecycle invariant components and bundle layering,
-  - explicit split between identity/aliasing and capability-reference constraints.
+  - AN4-B (H-03): the redundant `lifecycleIdentityNoTypeAliasConflict` conjunct (derivable in one step from `lifecycleIdentityTypeExact` via lookup determinism) was removed; `lifecycleIdentityAliasingInvariant` is now an `abbrev` for the exactness witness. The capability-reference side of the bundle remains a distinct conjunct.
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` — D1: transport lemmas for suspend/resume across all subsystem invariants.
 
 ### Service subsystem *(seLe4n extension — not present in seL4)*
