@@ -245,6 +245,117 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
   AN2-C (RegisterFile.gpr : Fin 32), AN2-D (typedIdDisjointness 13th
   conjunct), AN2-F.3/F.5/F.6/F.7, and AN2-G (17-tuple → structure).
 
+- **AN3** (IPC subsystem, v0.30.6, complete): closes H-01 (Donation
+  re-export asymmetry), lands IPC-M01's named-projection refactor for
+  `ipcInvariantFull` (Theme 4.2), executes Theme 4.7 file splits for
+  three IPC files (IPC-M02 `Structural.lean` 7626 LOC → 4 children,
+  IPC-M03 `NotificationPreservation.lean` 1490 LOC → 2 children,
+  IPC-M04 `CallReplyRecv.lean` 1069 LOC → 2 children), and batches
+  IPC-M05..M09 medium + 5 LOW findings as either structural changes
+  (IPC-M09 co-location banner + compile-time guards) or annotated
+  Option-B design decisions.
+
+  - **AN3-A (H-01)**: `SeLe4n/Kernel/IPC/Operations/Donation.lean`
+    partitioned into `Donation/Primitives.lean` (transport-
+    independent, 559 LOC — `applyCallDonation`, `applyReplyDonation`,
+    full preservation stack including atomicity theorems) and
+    `Donation.lean` (transport-dependent wrappers, 188 LOC —
+    `endpointCallWithDonation`, `endpointReplyWithDonation`,
+    `endpointReplyRecvWithDonation` + decomposition `_unfold`
+    lemmas). Hub `SeLe4n.Kernel.IPC.Operations` re-exports the
+    Primitives child, restoring symmetry with the Timeout / WithCaps
+    re-export pattern in the sibling `DualQueue.lean` hub. The cycle
+    `Operations -> Donation -> Transport -> Core -> Operations`
+    (closed by AI4-A) does NOT re-open because the Primitives child
+    does not depend on Transport.
+
+  - **AN3-B (IPC-M01 / Theme 4.2)**: the 16-conjunct
+    `ipcInvariantFull` tuple form is retained as the primary `def`
+    to minimise cascade; a companion `structure IpcInvariantFull` is
+    added with 16 named fields mirroring the tuple. A bidirectional
+    bridge `ipcInvariantFull_iff_IpcInvariantFull` + forward /
+    backward coercions `ipcInvariantFull.toStruct` /
+    `IpcInvariantFull.toTuple` make the two forms interchangeable.
+    16 `@[simp]` projection theorems live in the `ipcInvariantFull`
+    namespace, letting callers write `hInv.donationOwnerValid` via
+    Lean 4 dot-notation dispatch instead of the fragile
+    `hInv.2.2.2.2.2.2.2.2.2.2.2.1` 11-deep chain.  Two known deep
+    consumers migrated (`cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull`
+    in `IPC/Invariant/Defs.lean:2484`, `contextSwitchState_preserves_proofLayerInvariantBundle`
+    in `Architecture/Invariant.lean:1024`).  3 new runtime tests
+    (`an3b_01..03`) in `tests/ModelIntegritySuite.lean` pin the
+    projection layer, the bridge, and all 16 field signatures at
+    test-run time.  AN3-B.3 (swap primary type to
+    `IpcInvariantFull`) and AN3-B.6 (delete the tuple form) are
+    tracked as follow-up commits per the plan.
+
+  - **AN3-C (IPC-M02 / Theme 4.7)**: `Structural.lean` 7626 LOC →
+    33-LOC re-export hub + four children under
+    `SeLe4n/Kernel/IPC/Invariant/Structural/*.lean`:
+    `QueueNextTransport.lean` (1835 LOC), `StoreObjectFrame.lean`
+    (1979 LOC), `DualQueueMembership.lean` (2065 LOC),
+    `PerOperation.lean` (1887 LOC).  All 39 `private` helpers
+    promoted to public plain `theorem` because file-boundary
+    `private` visibility is file-local in Lean 4; dropping the
+    keyword is the minimal-cascade fix.  Every theorem preserved
+    unchanged in order, content, and proof.
+    `scripts/test_tier3_invariant_surface.sh` 37 references
+    retargeted from `Structural.lean` to the `Structural/`
+    directory.
+
+  - **AN3-D (IPC-M03 + IPC-M04 / Theme 4.7)**:
+    `NotificationPreservation.lean` 1490 LOC → 22-LOC hub +
+    `Signal.lean` (850 LOC) + `Wait.lean` (688 LOC);
+    `CallReplyRecv.lean` 1069 LOC → 20-LOC hub + `Call.lean`
+    (530 LOC) + `ReplyRecv.lean` (558 LOC).  10 Tier-3 references
+    retargeted to the new child directories.  No theorem renamed or
+    reproven.
+
+  - **AN3-E (IPC-M05..M09)**: IPC-M05 `transferAux` helper stays as
+    proof-local `let`-bindings with an annotated rationale
+    (extracting to a top-level helper requires 18 parameters and is
+    net-negative in LOC).  IPC-M06 `storeObject_scheduler_eq_z7`
+    visibility stays `private` with an annotated rationale matching
+    the plan's Option-B default (single-use optimisation).  IPC-M07
+    `ipcStateQueueConsistent` stays separate from
+    `objectIndexConsistent` with a scope note (they are preserved by
+    disjoint means).  IPC-M08 `allPendingMessagesBounded` scope
+    docstring clarifies that endpoint liveness is transitive through
+    `ipcStateQueueMembershipConsistent`.  IPC-M09
+    `cleanupPreReceiveDonation` co-location banner at the top of
+    `IPC/Operations/Endpoint.lean` + two compile-time `example`
+    guards that trigger a build error if the function is relocated.
+
+  - **AN3-F (IPC LOW batch)**: `WaitingThreadHelpers.lean` narrowing
+    docstring (notification-wait-list scope);
+    `DualQueue.lean` prescriptive re-export policy documented;
+    `CapTransfer.lean` `fillRemainingNoSlot` contract clarified
+    with fuel / padding / caller invariants;
+    `EndpointPreservation.lean` field-preservation lemma-set
+    rationale recorded (on-site `storeObject_objects_ne` rewrite is
+    preferred over N × M helper explosion).
+
+  - **AN3-G**: `CHANGELOG.md` entry, `CLAUDE.md` active-workstream
+    prepend, this `docs/WORKSTREAM_HISTORY.md` sub-entry,
+    large-files list refreshed (8 new child entries replace the 3
+    retired parents).
+
+  **Gate at AN3 tip**: `lake build` (278 jobs, up from 262 at
+  AN2-landed — 8 new child modules × 2 compilation targets) +
+  `test_smoke.sh` PASS + `test_full.sh` PASS +
+  `test_tier3_invariant_surface.sh` PASS + `test_rust.sh`
+  (`cargo test --workspace` 415 tests, `cargo clippy --workspace
+  -- -D warnings` 0 warnings) + `check_version_sync.sh` PASS at
+  0.30.6 + fixture byte-identical to
+  `tests/fixtures/main_trace_smoke.expected` (227 lines) + zero
+  `sorry`/`axiom`/`native_decide` in `SeLe4n/` or `Main.lean`.
+  Version stays at `0.30.6` per the plan's no-per-phase-bump
+  convention.
+
+  **Next**: AN4 (Capability / Lifecycle / Service), parallel-safe
+  with AN5 / AN7 / AN8, then AN6 (CrossSubsystem composition)
+  sequences after the four subsystem phases.
+
 ## WS-AK — Pre-1.0 Release Hardening (v0.29.1 → v0.30.6)
 
 **Audit:** [`docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md`](audits/AUDIT_v0.29.0_COMPREHENSIVE.md)

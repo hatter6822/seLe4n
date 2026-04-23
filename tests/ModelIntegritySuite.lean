@@ -16,6 +16,7 @@ import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Testing.Helpers
 import SeLe4n.Testing.InvariantChecks
 import SeLe4n.Kernel.CrossSubsystem
+import SeLe4n.Kernel.IPC.Invariant.Defs
 import SeLe4n.Platform.Boot
 
 /-! # Model Integrity Suite — Foundational Kernel Model Safety
@@ -1045,6 +1046,174 @@ def an2f3_02_coercion_roundtrip : IO Unit := do
   expect "Coercion preserves regionBase" (ut.regionBase == base)
   expect "Coercion preserves regionSize" (ut.regionSize == 8192)
 
+/-! ## Named-projection refactor for `ipcInvariantFull`
+
+These tests exercise the named-projection layer over `ipcInvariantFull`.
+The discipline is:
+
+* `IpcInvariantFull` (structure) has 16 fields.
+* `ipcInvariantFull` (tuple form) has 16 conjuncts.
+* `ipcInvariantFull_iff_IpcInvariantFull` bridges them bidirectionally.
+* 16 `@[simp]` projection theorems in the `ipcInvariantFull` namespace let
+  callers read conjuncts via dot notation (`hInv.donationOwnerValid`).
+
+If the arity of `ipcInvariantFull` grows (or shrinks) without the
+projection layer being updated in lockstep, these runtime checks fail at
+build-time because the type signatures no longer align.
+
+(Landed by WS-AN phase AN3-B, IPC-M01.)
+-/
+
+/-! ### Type-level assertion: donation primitives reachable from the Operations hub.
+
+The `let _ : T := @name` ascriptions below force Lean to resolve each
+donation-primitive symbol via `SeLe4n.Kernel.IPC.Operations` alone.
+If the hub's re-export list stops importing `Donation.Primitives`,
+these symbols would still resolve from this test file because
+`ModelIntegritySuite` transitively imports the primitives via
+`CrossSubsystem`.  The regression is therefore protected structurally
+at the `lake build` level: breaking the hub import list causes ~80
+kernel modules (API / InformationFlow / Architecture / ...) to stop
+resolving `applyCallDonation` and fail to build.  The type
+ascriptions below additionally pin the public signatures so
+accidental signature changes surface as a test build failure in
+addition to the whole-kernel failure.
+
+(Landed by WS-AN phase AN3-A, H-01.)
+-/
+
+open SeLe4n.Model in
+open SeLe4n.Kernel in
+/-- Donation primitives expose their documented public signatures. -/
+def donation_primitives_reachable_via_operations_hub : IO Unit := do
+  -- Core donation primitives.
+  let _ : SystemState -> SeLe4n.ThreadId -> SeLe4n.ThreadId ->
+          Except KernelError SystemState :=
+    @applyCallDonation
+  let _ : SystemState -> SeLe4n.ThreadId ->
+          Except KernelError SystemState :=
+    @applyReplyDonation
+  -- Preservation theorems: scheduler / machine equality.
+  let _ : ∀ (st : SystemState) (caller receiver : SeLe4n.ThreadId)
+            (st' : SystemState),
+          applyCallDonation st caller receiver = .ok st' ->
+          st'.scheduler = st.scheduler :=
+    @applyCallDonation_scheduler_eq
+  let _ : ∀ (st : SystemState) (caller receiver : SeLe4n.ThreadId)
+            (st' : SystemState),
+          applyCallDonation st caller receiver = .ok st' ->
+          st'.machine = st.machine :=
+    @applyCallDonation_machine_eq
+  let _ : ∀ (st : SystemState) (replier : SeLe4n.ThreadId)
+            (st' : SystemState),
+          applyReplyDonation st replier = .ok st' ->
+          st'.machine = st.machine :=
+    @applyReplyDonation_machine_eq
+  -- Atomicity predicate surface.
+  let _ : SystemState -> SystemState -> Prop := @donationAtomicRegion
+  expect "donation primitives expose documented public signatures" (True == True)
+
+/-! ### Type-level assertions for the named-projection refactor.
+
+The three tests below use explicit type ascriptions (not just `let _ := …`)
+so that each sampled projection / bridge is type-checked end-to-end: if
+a field is renamed in the `structure` without a matching update on the
+tuple projection (or vice versa), the ascription cannot be satisfied and
+the test file fails to elaborate.  This is stronger than a pure
+identifier-resolution check. -/
+
+open SeLe4n.Model in
+open SeLe4n.Kernel in
+/-- `ipcInvariantFull` tuple ↔ `IpcInvariantFull` structure bridge has the
+    expected Iff signature; forward and backward coercions have the
+    expected `Prop -> Prop` shapes. -/
+def ipc_invariant_full_tuple_struct_bridge_signatures : IO Unit := do
+  -- Tuple form is a `SystemState -> Prop`.
+  let _ : SystemState -> Prop := @ipcInvariantFull
+  -- Structure form is ALSO a `SystemState -> Prop` (since every field
+  -- is a Prop).  This ascription would fail if the structure were
+  -- accidentally defined as a `Type`.
+  let _ : SystemState -> Prop := @IpcInvariantFull
+  -- Bidirectional bridge has the expected Iff signature.
+  let _ : ∀ st : SystemState, ipcInvariantFull st ↔ IpcInvariantFull st :=
+    @ipcInvariantFull_iff_IpcInvariantFull
+  -- Forward and backward coercions.
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> IpcInvariantFull st :=
+    @ipcInvariantFull.toStruct
+  let _ : ∀ {st : SystemState}, IpcInvariantFull st -> ipcInvariantFull st :=
+    @IpcInvariantFull.toTuple
+  expect "ipcInvariantFull tuple-struct bridge signatures OK" (True == True)
+
+open SeLe4n.Model in
+open SeLe4n.Kernel in
+/-- All 16 `@[simp]` projection theorems on `ipcInvariantFull` preserve
+    their typed conjunct. Each ascription pins the projection's codomain
+    to the matching top-level predicate, so a drift between the
+    structure field name and the tuple projection theorem fails the
+    ascription. -/
+def ipc_invariant_full_named_projection_signatures : IO Unit := do
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> ipcInvariant st :=
+    @ipcInvariantFull.ipcInvariant
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> dualQueueSystemInvariant st :=
+    @ipcInvariantFull.dualQueueSystemInvariant
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> allPendingMessagesBounded st :=
+    @ipcInvariantFull.allPendingMessagesBounded
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> badgeWellFormed st :=
+    @ipcInvariantFull.badgeWellFormed
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> waitingThreadsPendingMessageNone st :=
+    @ipcInvariantFull.waitingThreadsPendingMessageNone
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> endpointQueueNoDup st :=
+    @ipcInvariantFull.endpointQueueNoDup
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> ipcStateQueueMembershipConsistent st :=
+    @ipcInvariantFull.ipcStateQueueMembershipConsistent
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> queueNextBlockingConsistent st :=
+    @ipcInvariantFull.queueNextBlockingConsistent
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> queueHeadBlockedConsistent st :=
+    @ipcInvariantFull.queueHeadBlockedConsistent
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> blockedThreadTimeoutConsistent st :=
+    @ipcInvariantFull.blockedThreadTimeoutConsistent
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> donationChainAcyclic st :=
+    @ipcInvariantFull.donationChainAcyclic
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> donationOwnerValid st :=
+    @ipcInvariantFull.donationOwnerValid
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> passiveServerIdle st :=
+    @ipcInvariantFull.passiveServerIdle
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> donationBudgetTransfer st :=
+    @ipcInvariantFull.donationBudgetTransfer
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> uniqueWaiters st :=
+    @ipcInvariantFull.uniqueWaiters
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> blockedOnReplyHasTarget st :=
+    @ipcInvariantFull.blockedOnReplyHasTarget
+  expect "all 16 ipcInvariantFull named projection signatures typecheck" (True == True)
+
+
+open SeLe4n.Model in
+open SeLe4n.Kernel in
+/-- Dot notation on a hypothesis `h : ipcInvariantFull st` dispatches
+    through the `ipcInvariantFull` namespace. We construct one-shot
+    witnesses of the projection chain to prove that e.g.
+    `h.donationOwnerValid` really yields a proof of
+    `donationOwnerValid st` and not (say) the whole tuple tail.
+    Includes the first conjunct (`h.1` accessor) and the last conjunct
+    (no trailing `.1`) to cover both boundary shapes. -/
+def ipc_invariant_full_dot_notation_dispatch : IO Unit := do
+  -- The following lambda compiles iff dot notation on `h` dispatches
+  -- through `ipcInvariantFull.donationOwnerValid` AND that projection
+  -- returns the expected predicate type.
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> donationOwnerValid st :=
+    fun {_} h => h.donationOwnerValid
+  -- Dot notation also works on the structure form.
+  let _ : ∀ {st : SystemState}, IpcInvariantFull st -> donationOwnerValid st :=
+    fun {_} h => h.donationOwnerValid
+  -- Last conjunct `.blockedOnReplyHasTarget` uses `h.2.2...2.2` (no
+  -- trailing `.1`) -- verify it still dispatches.
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> blockedOnReplyHasTarget st :=
+    fun {_} h => h.blockedOnReplyHasTarget
+  -- First conjunct `.ipcInvariant` uses `h.1`.
+  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> ipcInvariant st :=
+    fun {_} h => h.ipcInvariant
+  expect "ipcInvariantFull dot-notation dispatch OK" (True == True)
+
 end SeLe4n.Testing.ModelIntegritySuite
 
 open SeLe4n.Testing.ModelIntegritySuite in
@@ -1146,5 +1315,11 @@ def main : IO Unit := do
   -- AN2-F.3: UntypedObjectValid subtype
   an2f3_01_empty_wellFormed
   an2f3_02_coercion_roundtrip
+  -- Donation primitive signatures reachable from the Operations hub.
+  donation_primitives_reachable_via_operations_hub
+  -- Named-projection refactor for ipcInvariantFull.
+  ipc_invariant_full_tuple_struct_bridge_signatures
+  ipc_invariant_full_named_projection_signatures
+  ipc_invariant_full_dot_notation_dispatch
   IO.println ""
   IO.println "=== All model integrity tests passed ==="

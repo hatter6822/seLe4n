@@ -1020,8 +1020,12 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
   have hValidPost : currentThreadValid (contextSwitchState newTid newRegs st) :=
     contextSwitchState_preserves_currentThreadValid st newTid newRegs tcb hLookup
   -- currentNotEndpointQueueHead: ipcState = .ready contradicts queueHeadBlockedConsistent
-  have hIpcFull := hIpc.2.2
-  have hQHBC : queueHeadBlockedConsistent st := hIpcFull.2.2.2.2.2.2.2.2.1
+  have hIpcFull : ipcInvariantFull st := hIpc.2.2
+  -- AN3-B.2: `hIpcFull.queueHeadBlockedConsistent` replaces the legacy
+  -- 8-deep `.2.2.2.2.2.2.2.2.1` projection.  The named accessor is an
+  -- `@[simp]` theorem in the `ipcInvariantFull` namespace and is resolved
+  -- via Lean 4 dot notation on the hypothesis's type.
+  have hQHBC : queueHeadBlockedConsistent st := hIpcFull.queueHeadBlockedConsistent
   have hNotEpHead : currentNotEndpointQueueHead (contextSwitchState newTid newRegs st) := by
     show currentNotEndpointQueueHead { st with machine := _, scheduler := _ }
     unfold currentNotEndpointQueueHead; simp

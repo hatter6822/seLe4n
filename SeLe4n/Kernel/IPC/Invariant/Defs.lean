@@ -224,7 +224,23 @@ def ipcInvariant (st : SystemState) : Prop :=
 /-- WS-H12d/A-09: All pending IPC messages stored in TCBs satisfy payload bounds.
 This is a system-level invariant maintained by the bounds checks at every IPC
 send boundary (`endpointSendDual`, `endpointCall`, `endpointReply`,
-`endpointReplyRecv`). -/
+`endpointReplyRecv`).
+
+**AN3-E.4 (IPC-M08) scope note.** This predicate quantifies over _every_
+TCB in `st.objects`, so it bounds the payload of every pending message
+regardless of whether the carrier thread is still live or whether the
+corresponding endpoint remains mapped.  Liveness of the addressed
+endpoint is _not_ a direct conjunct here: a TCB that is still blocked
+on a since-revoked endpoint retains its pending message, and the bounds
+check is about payload size, not about rendezvous reachability.
+Endpoint liveness is a _transitive_ property that flows from
+`ipcStateQueueMembershipConsistent` (which witnesses that a TCB whose
+`ipcState` names an endpoint is enqueued on that endpoint) composed
+with the V3-K/J queue membership invariants.  Strengthening this
+predicate to cross-check endpoint existence would duplicate those
+invariants and make the payload-bounds proof coupled to queue state,
+which is not the contract the send-boundary bounds check establishes.
+See `ipcStateQueueMembershipConsistent` below for the liveness side. -/
 def allPendingMessagesBounded (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (msg : IpcMessage),
     st.objects[tid.toObjId]? = some (.tcb tcb) →
@@ -807,7 +823,25 @@ Design note: we use the "endpoint exists" form rather than the stronger
 safety property, (2) endpointQueuePopHead doesn't update ipcState, creating
 a transient state where the thread is dequeued but still "blocked" until
 the caller sets it to .ready, and (3) the existence form composes cleanly
-with all queue and IPC operations. -/
+with all queue and IPC operations.
+
+**AN3-E.3 (IPC-M07) reachability scope note.** This predicate does not
+directly append `∀ tid ∈ queue, st.objectIndex.contains tid.toObjId` —
+the object-index reachability property is captured by the orthogonal
+`objectIndexSetComplete` invariant (`SeLe4n.Model.State.objectIndexSetComplete`,
+`∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true`),
+composed with the stronger reachability predicate
+`ipcStateQueueMembershipConsistent` (defined just below) which walks the
+queueNext chain from each endpoint's queue head.  At every call site
+where queue-member object-index reachability is needed, callers thread
+these independent invariants; this separation is intentional (Option B
+of the plan) because the invariants are preserved by disjoint means:
+`ipcStateQueueConsistent` is preserved by every IPC operation that
+modifies `ipcState`, while `objectIndexSetComplete` is preserved by
+every operation that modifies `objects` or `objectIndexSet`.  Merging
+them would force both to co-evolve in every preservation proof, which
+would multiply the cascade size without tightening any safety
+conclusion the combination already admits at call sites. -/
 def ipcStateQueueConsistent (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
     st.objects[tid.toObjId]? = some (.tcb tcb) →
@@ -1198,6 +1232,185 @@ def ipcInvariantFull (st : SystemState) : Prop :=
   passiveServerIdle st ∧ donationBudgetTransfer st ∧
   uniqueWaiters st ∧
   blockedOnReplyHasTarget st
+
+-- ============================================================================
+-- AN3-B (IPC-M01 / Theme 4.2): Named-projection refactor for ipcInvariantFull.
+--
+-- The legacy tuple form above is preserved as the primary definition so
+-- every existing consumer that destructures `ipcInvariantFull` via tuple
+-- projections continues to typecheck. The block below layers a named
+-- `structure IpcInvariantFull` over the same 16 conjuncts, a bidirectional
+-- `ipcInvariantFull_iff_IpcInvariantFull` bridge, and per-field projection
+-- theorems (installed as `@[simp]`) so callers can write
+-- `hInv.donationOwnerValid` (or any other conjunct name) in place of the
+-- fragile `hInv.2.2.2.2.2.2.2.2.2.2.2.1` chain.
+--
+-- The projection theorems live in the `SeLe4n.Kernel.ipcInvariantFull`
+-- namespace so that Lean 4 dot notation (`h.foo` elaborates to
+-- `SeLe4n.Kernel.ipcInvariantFull.foo h` when `h : ipcInvariantFull st`)
+-- dispatches through the named accessor without any caller-visible type
+-- change. AN3-B.3 (swap primary type to `IpcInvariantFull`) and AN3-B.6
+-- (delete the tuple form) are separate follow-up commits; landing the
+-- named-projection layer first keeps the cascade shallow.
+-- ============================================================================
+
+/-- AN3-B.1: Named-field counterpart of `ipcInvariantFull`.
+
+All 16 fields mirror the conjuncts of the legacy tuple form, one-for-one
+in declaration order. The bidirectional bridge
+`ipcInvariantFull_iff_IpcInvariantFull` establishes that the two Prop-level
+forms are interchangeable; new theorems should prefer this structure because
+adding or removing a conjunct (a frequent audit-remediation operation) only
+requires editing the field list here rather than every `.2.2...2.1`
+projection site across the codebase. -/
+structure IpcInvariantFull (st : SystemState) : Prop where
+  ipcInvariant : ipcInvariant st
+  dualQueueSystemInvariant : dualQueueSystemInvariant st
+  allPendingMessagesBounded : allPendingMessagesBounded st
+  badgeWellFormed : badgeWellFormed st
+  waitingThreadsPendingMessageNone : waitingThreadsPendingMessageNone st
+  endpointQueueNoDup : endpointQueueNoDup st
+  ipcStateQueueMembershipConsistent : ipcStateQueueMembershipConsistent st
+  queueNextBlockingConsistent : queueNextBlockingConsistent st
+  queueHeadBlockedConsistent : queueHeadBlockedConsistent st
+  blockedThreadTimeoutConsistent : blockedThreadTimeoutConsistent st
+  donationChainAcyclic : donationChainAcyclic st
+  donationOwnerValid : donationOwnerValid st
+  passiveServerIdle : passiveServerIdle st
+  donationBudgetTransfer : donationBudgetTransfer st
+  uniqueWaiters : uniqueWaiters st
+  blockedOnReplyHasTarget : blockedOnReplyHasTarget st
+
+namespace ipcInvariantFull
+
+/-! ### AN3-B.2: `@[simp]` projection abbrevs for the tuple form.
+
+Each theorem projects one conjunct from a proof of `ipcInvariantFull st`.
+The `@[simp]` attribute lets `simp_all` collapse long projection chains to
+the named form automatically.  Dot notation on a hypothesis `hInv :
+ipcInvariantFull st` resolves to these via `SeLe4n.Kernel.ipcInvariantFull`
+namespace lookup, so `hInv.donationOwnerValid` is accepted by the
+elaborator. -/
+
+@[simp] theorem ipcInvariant {st : SystemState}
+    (h : ipcInvariantFull st) : _root_.SeLe4n.Kernel.ipcInvariant st :=
+  h.1
+
+@[simp] theorem dualQueueSystemInvariant {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.dualQueueSystemInvariant st :=
+  h.2.1
+
+@[simp] theorem allPendingMessagesBounded {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.allPendingMessagesBounded st :=
+  h.2.2.1
+
+@[simp] theorem badgeWellFormed {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.badgeWellFormed st :=
+  h.2.2.2.1
+
+@[simp] theorem waitingThreadsPendingMessageNone {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.waitingThreadsPendingMessageNone st :=
+  h.2.2.2.2.1
+
+@[simp] theorem endpointQueueNoDup {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.endpointQueueNoDup st :=
+  h.2.2.2.2.2.1
+
+@[simp] theorem ipcStateQueueMembershipConsistent {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.ipcStateQueueMembershipConsistent st :=
+  h.2.2.2.2.2.2.1
+
+@[simp] theorem queueNextBlockingConsistent {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.queueNextBlockingConsistent st :=
+  h.2.2.2.2.2.2.2.1
+
+@[simp] theorem queueHeadBlockedConsistent {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.queueHeadBlockedConsistent st :=
+  h.2.2.2.2.2.2.2.2.1
+
+@[simp] theorem blockedThreadTimeoutConsistent {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.blockedThreadTimeoutConsistent st :=
+  h.2.2.2.2.2.2.2.2.2.1
+
+@[simp] theorem donationChainAcyclic {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.donationChainAcyclic st :=
+  h.2.2.2.2.2.2.2.2.2.2.1
+
+@[simp] theorem donationOwnerValid {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.donationOwnerValid st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.1
+
+@[simp] theorem passiveServerIdle {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.passiveServerIdle st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+@[simp] theorem donationBudgetTransfer {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.donationBudgetTransfer st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+@[simp] theorem uniqueWaiters {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.uniqueWaiters st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+@[simp] theorem blockedOnReplyHasTarget {st : SystemState}
+    (h : ipcInvariantFull st) :
+    _root_.SeLe4n.Kernel.blockedOnReplyHasTarget st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+
+end ipcInvariantFull
+
+/-- AN3-B.1 bridge: `ipcInvariantFull` (tuple form) and `IpcInvariantFull`
+(named-field form) are logically equivalent.  Proven by constructor-then-
+cases so adding or removing a conjunct in both forms keeps the bridge
+mechanical. -/
+theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
+    ipcInvariantFull st ↔ IpcInvariantFull st := by
+  constructor
+  · intro h
+    exact ⟨h.ipcInvariant, h.dualQueueSystemInvariant,
+           h.allPendingMessagesBounded, h.badgeWellFormed,
+           h.waitingThreadsPendingMessageNone, h.endpointQueueNoDup,
+           h.ipcStateQueueMembershipConsistent,
+           h.queueNextBlockingConsistent, h.queueHeadBlockedConsistent,
+           h.blockedThreadTimeoutConsistent, h.donationChainAcyclic,
+           h.donationOwnerValid, h.passiveServerIdle,
+           h.donationBudgetTransfer, h.uniqueWaiters,
+           h.blockedOnReplyHasTarget⟩
+  · intro h
+    exact ⟨h.ipcInvariant, h.dualQueueSystemInvariant,
+           h.allPendingMessagesBounded, h.badgeWellFormed,
+           h.waitingThreadsPendingMessageNone, h.endpointQueueNoDup,
+           h.ipcStateQueueMembershipConsistent,
+           h.queueNextBlockingConsistent, h.queueHeadBlockedConsistent,
+           h.blockedThreadTimeoutConsistent, h.donationChainAcyclic,
+           h.donationOwnerValid, h.passiveServerIdle,
+           h.donationBudgetTransfer, h.uniqueWaiters,
+           h.blockedOnReplyHasTarget⟩
+
+/-- AN3-B.1: forward direction of the bridge, as a convenience coercion.
+Used by callers that prefer the named-field form. -/
+theorem ipcInvariantFull.toStruct {st : SystemState}
+    (h : ipcInvariantFull st) : IpcInvariantFull st :=
+  (ipcInvariantFull_iff_IpcInvariantFull st).mp h
+
+/-- AN3-B.1: backward direction of the bridge. -/
+theorem IpcInvariantFull.toTuple {st : SystemState}
+    (h : IpcInvariantFull st) : ipcInvariantFull st :=
+  (ipcInvariantFull_iff_IpcInvariantFull st).mpr h
 
 -- ============================================================================
 -- AI4-A (M-01): Frame lemmas for cleanupPreReceiveDonation
@@ -2480,8 +2693,13 @@ theorem cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull
       recvTcb.schedContextBinding = .donated scId owner →
       ¬owner.isReserved = true) :
     ∃ st', cleanupPreReceiveDonationChecked st receiver = .ok st' := by
-  -- Extract donationOwnerValid from the 12-conjunct ipcInvariantFull.
-  have hDOV : donationOwnerValid st := hInv.2.2.2.2.2.2.2.2.2.2.2.1
+  -- AN3-B.2: Named projection replaces the legacy `.2.2.2.2.2.2.2.2.2.2.2.1`
+  -- deep tuple chain.  `hInv.donationOwnerValid` dispatches through the
+  -- `ipcInvariantFull.donationOwnerValid` simp projection.  The arity of
+  -- `ipcInvariantFull` has grown over time (AG1-C added `uniqueWaiters` as
+  -- the 15th conjunct; AJ1-B added `blockedOnReplyHasTarget` as the 16th),
+  -- so this migration insulates the theorem from any further arity changes.
+  have hDOV : donationOwnerValid st := hInv.donationOwnerValid
   unfold cleanupPreReceiveDonationChecked
   cases hLk : lookupTcb st receiver with
   | none => exact ⟨st, rfl⟩

@@ -11,6 +11,31 @@ open SeLe4n.Model
 
 set_option linter.unusedVariables false
 
+/-! ## AN3-E.1 (IPC-M05) — shared `transfer` / `transferRecv` helper note.
+
+The `storeObject_non_ep_non_tcb_preserves_ipcStateQueueMembershipConsistent`
+proof below introduces two file-local let-bindings, `transfer` and
+`transferRecv`, whose bodies are structurally identical except for the
+endpoint queue they index (`sendQ` vs. `receiveQ`) and the queue-side
+component of the membership witness.  The audit (IPC-M05) suggested
+factoring them into a single `transferAux` helper parameterised on
+`QueueSide`.
+
+**Decision (AN3-E.1):** the two `let`-bodies stay as-is.  They are
+_inside_ a single proof and their outer context (`tid`, `tcbA`,
+`hFrame`, `hObjInv`, and several `h*NotEp` / `h*NotTcb` hypotheses)
+is captured implicitly.  Extracting them to a top-level
+`transferAux` would either require 18 additional parameters per call
+site (eliminating the code-size saving) or threading a record struct
+through (adding a new abstraction whose maintenance cost exceeds the
+~40 LOC the audit hoped to recover).  The pair is short, the
+duplication is mechanical, and any future audit concern about drift
+between the `sendQ` and `receiveQ` paths is satisfied by the fact
+that every preservation theorem downstream uses both sides of the
+let-binding symmetrically — drift would break the surrounding theorem
+immediately.  See IPC-M05 in the AN3-E work log.
+-/
+
 -- ============================================================================
 -- Section 1: Primitive frame lemmas
 -- ============================================================================

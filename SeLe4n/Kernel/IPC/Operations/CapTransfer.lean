@@ -51,7 +51,23 @@ open SeLe4n.Model
 `idx, idx+1, ...` up to the fuel bound. Used to short-circuit when a fatal
 error (e.g., receiver CSpace root not a CNode) makes all remaining transfers
 impossible. Mirrors the array-bounds structure of `ipcUnwrapCapsLoop` so that
-the result count matches exactly. -/
+the result count matches exactly.
+
+**AN3-F (IPC LOW #5) contract clarification.**  The returned array
+`acc` is extended by exactly `min fuel (caps.size - idx)` elements.
+Each appended element is `CapTransferResult.noSlot`, indicating to the
+receiver's IPC buffer that no slot was allocated for that index's
+capability.  The fuel parameter is seeded by callers at
+`caps.size - idx`, so termination is structural and the "padding"
+always covers every remaining cap.  The `none` branch of `caps[idx]?`
+is reached when `idx = caps.size`; the `some _ => … fuel'` recursion
+consumes one fuel unit per real cap index, so the two termination
+conditions (fuel-exhausted vs. array-exhausted) agree at the terminal
+step.  This helper is `private` because all real callers live in
+`ipcUnwrapCapsLoop` below and in `endpointSendDualWithCaps` /
+`endpointCallWithCaps`; exposing it publicly would invite misuse
+(e.g., supplying a fuel budget smaller than `caps.size - idx`, which
+would silently truncate the result without surfacing an error). -/
 private def fillRemainingNoSlot
     (caps : Array Capability) (idx : Nat)
     (acc : Array CapTransferResult) (fuel : Nat) : Array CapTransferResult :=
