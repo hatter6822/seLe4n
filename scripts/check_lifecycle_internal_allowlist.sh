@@ -58,7 +58,9 @@ done < <(
 
 if [[ -n "${unauthorized}" ]]; then
     echo "AN4-A FAIL: unauthorized consumer(s) of SeLe4n.Kernel.Internal detected:" >&2
-    printf '  %s\n' ${unauthorized} >&2
+    while IFS= read -r _u_file; do
+        [[ -n "${_u_file}" ]] && printf '  %s\n' "${_u_file}" >&2
+    done <<<"${unauthorized}"
     cat >&2 <<'EOM'
 
 Add the file to `scripts/lifecycle_internal_allowlist.txt` ONLY if it is
