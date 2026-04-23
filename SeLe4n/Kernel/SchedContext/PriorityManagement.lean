@@ -32,7 +32,24 @@ ensures the authority hierarchy is monotonically non-increasing.
 When priority changes for a thread currently in the run queue, the thread
 is removed and re-inserted at the new priority bucket to maintain correct
 scheduling order.
--/
+
+## AN5-D (SC-M02) — Closure-form preservation theorems
+
+The preservation theorems for `setPriorityOp` and `setMCPriorityOp`
+(in `SchedContext/Invariant/PriorityPreservation.lean`) carry an
+`hSchedProj` closure hypothesis representing the optional preemption-
+schedule call. This is structurally the same pattern as the `H-07`
+finding for information-flow projection theorems (see
+`docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` §H-07).
+
+**Discharge plan**: AN6-A performs the substantive discharge of
+projection closure-form theorems. The priority-management closure form
+follows the same recipe: frame lemmas in
+`Scheduler/Operations/Preservation.lean` (specifically
+`schedule_preserves_schedulerInvariantBundle` and its domain/EDF
+companions) compose to eliminate the closure. AN5-D retains the
+closure-form version at this phase; AN6-A's discharge recipe applies
+here unchanged. -/
 
 namespace SeLe4n.Kernel.SchedContext.PriorityManagement
 

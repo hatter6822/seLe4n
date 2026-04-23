@@ -144,6 +144,31 @@ open SeLe4n.Model
 #check @SeLe4n.Kernel.PriorityInheritance.pip_revert_congruence
 
 -- ============================================================================
+-- AN5-E: RPi5 canonical deployment — eventuallyExits closure (DEF-AK2-K.4)
+-- ============================================================================
+
+#check @DeploymentSchedulingConfig
+#check @DeploymentSchedulingConfig.wellFormed
+#check @rpi5CanonicalConfig
+#check @rpi5CanonicalConfig_wellFormed
+#check @eventuallyExits_of_exit_index
+#check @CanonicalDeploymentProgress
+#check @rpi5_canonicalConfig_eventuallyExits
+#check @rpi5_canonicalConfig_progress_config_wellFormed
+#check @wcrt_bound_rpi5
+#check @wcrt_bound_rpi5_symbolic
+#check @isRPi5CanonicalConfig
+#check @isRPi5CanonicalConfig_iff
+#check @rpi5CanonicalConfig_isCanonical
+
+-- Runtime verification of the canonical-config witness
+example : rpi5CanonicalConfig.wellFormed := rpi5CanonicalConfig_wellFormed
+example : isRPi5CanonicalConfig rpi5CanonicalConfig = true := rpi5CanonicalConfig_isCanonical
+example : rpi5CanonicalConfig.timerFrequencyHz = 54_000_000 := rfl
+example : rpi5CanonicalConfig.cbsPeriodTicks = 10_000 := rfl
+example : rpi5CanonicalConfig.admissibleUtilisation = 750 := rfl
+
+-- ============================================================================
 -- Executable entry point
 -- ============================================================================
 
@@ -162,5 +187,8 @@ def main : IO Unit := do
   IO.println "  ✓ Priority-inheritance bounded inversion"
   IO.println "  ✓ blockingChain_step, blockingChain_congr, blockingAcyclic_frame"
   IO.println "  ✓ pip_congruence, pip_revert_congruence, crossSubsystem projection"
-  IO.println "=== All 63 surface anchors verified ==="
+  IO.println "  ✓ AN5-E: DeploymentSchedulingConfig + rpi5CanonicalConfig (DEF-AK2-K.4)"
+  IO.println "  ✓ AN5-E: rpi5_canonicalConfig_eventuallyExits (substantive closure)"
+  IO.println "  ✓ AN5-E: wcrt_bound_rpi5 specialised + runtime canonical-check"
+  IO.println "=== All 76 surface anchors verified ==="
   return ()

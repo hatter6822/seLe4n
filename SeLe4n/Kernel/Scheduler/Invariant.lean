@@ -15,6 +15,47 @@ import SeLe4n.Kernel.SchedContext.Invariant
 This module contains invariant definitions for the scheduler subsystem: queue
 uniqueness, current-thread validity, and queue/current consistency.
 
+## AN5-C: Invariant hierarchy
+
+The scheduler invariant surface is layered from smallest to largest. A
+proof author should consume the narrowest predicate that discharges the
+obligation at hand; downstream composition theorems lift each to the
+full bundle.
+
+1. **Base invariants** (per-field correctness):
+   * `queueCurrentConsistent` / `schedulerWellFormed` — dequeue-on-dispatch
+     (seL4 semantics): the current thread is not in the runnable queue.
+   * `runQueueUnique` — `Nodup` on the flat runnable list.
+   * `currentThreadValid` — the current thread (if any) resolves to a
+     TCB in the object store.
+
+2. **Structural invariants**:
+   * `currentThreadInActiveDomain` — active-domain correctness.
+   * `timeSlicePositive` / `currentTimeSlicePositive` — time-slice
+     positivity for runnable threads and the current thread.
+   * `configTimeSlicePositive` — deployment-level positivity of
+     `configDefaultTimeSlice` (prevents zero-quantum boot misconfiguration).
+   * `replenishmentPipelineOrder` (AN5-B / SCH-M03) — post-pipeline
+     witness: every `replenishQueue` entry has `eligibleAt > machine.timer`.
+
+3. **Base bundle**:
+   * `schedulerInvariantBundle` = (queueCurrentConsistent ∧ runQueueUnique
+     ∧ currentThreadValid). Used by cross-subsystem composition surfaces
+     where a minimal scheduler witness is required.
+
+4. **Full bundle**:
+   * `schedulerInvariantBundleFull` — adds time-slice, domain, EDF,
+     context-matches, and priority-match conjuncts. Consumed by top-level
+     liveness/WCRT theorems. Full preservation proofs for the primary
+     transitions (`schedule`, `handleYield`, `timerTick`, `switchDomain`,
+     `scheduleDomain`) live in `Operations/Preservation.lean`.
+
+5. **Cross-subsystem composition**:
+   * `crossSubsystemInvariant` (in `SeLe4n/Kernel/CrossSubsystem.lean`)
+     bundles the scheduler invariant with IPC / Capability / Lifecycle /
+     Architecture invariants. Per-operation preservation theorems in the
+     scheduler module discharge the scheduler conjunct.
+
 ## Proof scope qualification (F-16)
 
 **Structural theorems** (high assurance):
@@ -103,6 +144,59 @@ theorem default_configTimeSlicePositive :
     configTimeSlicePositive (default : SystemState) := by
   simp [configTimeSlicePositive]
   decide
+
+-- ============================================================================
+-- AN5-B (SCH-M03): Replenishment pipeline ordering invariant
+-- ============================================================================
+
+/-- AN5-B (SCH-M03): Replenishment pipeline ordering invariant.
+
+`timerTickWithBudget` performs its replenishment pipeline in a fixed
+three-step order:
+
+1. **Pop due entries** (`popDueReplenishments`): extract every entry whose
+   `eligibleAt ≤ now` from the sorted `replenishQueue`.
+2. **Refill SchedContexts** (`refillSchedContext` × k): for each popped
+   entry, run `processReplenishments` + `cbsUpdateDeadline` on the owning
+   SchedContext.
+3. **Process current thread's budget** (`timerTickBudget`): decrement
+   the current thread's CBS budget, possibly re-enqueueing on
+   exhaustion.
+
+This predicate captures a post-pipeline witness: after `timerTickWithBudget`
+runs at time `t`, every entry in `replenishQueue` has
+`eligibleAt > t` — i.e. no due entries remain unprocessed. A future
+refactor that reorders the pipeline (e.g. swaps steps 1 and 3) would
+leave due-but-unprocessed entries in the queue, falsifying this
+invariant.
+
+The invariant is proven preserved by `timerTick` (which has no
+replenishment queue interaction) trivially, and by `timerTickWithBudget`
+after the pop/refill sweep. -/
+def replenishmentPipelineOrder (st : SystemState) : Prop :=
+  ∀ (pair : SchedContextId × Nat),
+    pair ∈ st.scheduler.replenishQueue.entries → pair.2 > st.machine.timer
+
+/-- AN5-B (SCH-M03): The default state has an empty `replenishQueue` so
+`replenishmentPipelineOrder` holds vacuously. -/
+theorem default_replenishmentPipelineOrder :
+    replenishmentPipelineOrder (default : SystemState) := by
+  intro pair hMem
+  -- Default ReplenishQueue has empty entries list
+  have : (default : SystemState).scheduler.replenishQueue.entries = [] := by
+    rfl
+  rw [this] at hMem
+  exact absurd hMem (by simp)
+
+/-- AN5-B (SCH-M03): If the `replenishQueue` is empty, the pipeline-order
+invariant holds vacuously. -/
+theorem replenishmentPipelineOrder_of_empty
+    (st : SystemState)
+    (hEmpty : st.scheduler.replenishQueue.entries = []) :
+    replenishmentPipelineOrder st := by
+  intro pair hMem
+  rw [hEmpty] at hMem
+  exact absurd hMem (by simp)
 
 -- ============================================================================
 -- M-04/WS-E6: Time-slice positivity invariant

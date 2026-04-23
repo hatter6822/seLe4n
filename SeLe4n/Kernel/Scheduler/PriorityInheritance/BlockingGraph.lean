@@ -118,12 +118,32 @@ def blockingGraphEdges (st : SystemState) : List (ThreadId × ThreadId) :=
 -- D4-D: Blocking graph acyclicity proofs
 -- ============================================================================
 
-/-- D4-D: The IPC blocking relation is acyclic in a well-formed system state.
-No thread can transitively block on itself via Reply chains. This predicate
-is part of `crossSubsystemInvariant` (10th conjunct, AF1-B). Fuel-bounded
-PIP propagation (`propagatePriorityInheritance` uses `objectIndex.length` as
-fuel) prevents non-termination, and chain-walk correctness depends on this
-invariant being maintained by all ipcState-modifying operations. -/
+/-- D4-D / AN5-B (SCH-M05): The IPC blocking relation is acyclic in a
+well-formed system state. No thread can transitively block on itself via
+Reply chains. This predicate is part of `crossSubsystemInvariant` (10th
+conjunct, AF1-B). Fuel-bounded PIP propagation
+(`propagatePriorityInheritance` uses `objectIndex.length` as fuel)
+prevents non-termination, and chain-walk correctness depends on this
+invariant being maintained by all ipcState-modifying operations.
+
+**Naming disambiguation (AN5-B / SCH-M05)**: this predicate is **not**
+the IPC-scope `SeLe4n.Kernel.tcbQueueChainAcyclic`
+(`IPC/Invariant/Defs.lean:145`) even though both encode graph acyclicity:
+
+* `blockingAcyclic` (this file) — acyclicity of the priority-inheritance
+  **blocking graph** built by `blockingServer`: edge `tid → server`
+  exists iff `tid` is blocked on a reply to `server`. Fuel bound:
+  `objectIndex.length`. Consumed by PIP bounded-inversion and WCRT
+  proofs.
+
+* `tcbQueueChainAcyclic` (IPC scope) — acyclicity of the IPC **TCB
+  queue-next chain** built by `TCB.queueNext`: edge `a → b` exists iff
+  `a.queueNext = some b`. Consumed by the IPC `dualQueueSystemInvariant`
+  and queue-membership preservation proofs.
+
+The two predicates operate on different edge relations; a system can
+satisfy one without the other. Proof authors importing both scheduler
+and IPC hubs must keep them distinct. -/
 def blockingAcyclic (st : SystemState) : Prop :=
   ∀ tid : ThreadId, tid ∉ blockingChain st tid
 

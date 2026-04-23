@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/complete-phase-an4-workstream-xBQoA",
-      "commit_sha": "49865ea35a2953c20ac46b91385017dce37e65cd",
-      "tree_sha": "9711e5b06d7455fff72a0235ed564693a24abbba",
-      "committed_at_utc": "2026-04-23T22:14:07+00:00"
+      "branch": "claude/review-scheduler-phase-2eYM8",
+      "commit_sha": "b3ed07df80b9f2c191da2e692edc1b9fabaf4260",
+      "tree_sha": "5183e8e173333864e19ceb0afdb7cc0bdeade2b8",
+      "committed_at_utc": "2026-04-23T19:01:59-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "dba28f246e939bbcf52bcc222c0973cac654ac1a4df9435b7373a6790b0a51db"
+    "source_digest": "5a7a1b736d6c733726ac4007eabfedb4fc7ca4365f9734454b6b0d5b81f68b5a"
   },
   "summary": {
-    "module_count": 185,
-    "declaration_count": 5748
+    "module_count": 186,
+    "declaration_count": 5776
   },
   "readme_sync": {
     "version": "0.30.6",
     "lean_toolchain": "v4.28.0",
-    "production_files": 161,
-    "production_loc": 105192,
+    "production_files": 162,
+    "production_loc": 105913,
     "test_files": 24,
-    "test_loc": 15223,
-    "proved_theorem_lemma_decls": 3089,
+    "test_loc": 15251,
+    "proved_theorem_lemma_decls": 3103,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -17456,7 +17456,7 @@
         {
           "kind": "def",
           "name": "tcbQueueChainAcyclic",
-          "line": 145,
+          "line": 160,
           "called": [
             "QueueNextPath",
             "SystemState",
@@ -17466,7 +17466,7 @@
         {
           "kind": "theorem",
           "name": "QueueNextPath_trans",
-          "line": 149,
+          "line": 164,
           "called": [
             "QueueNextPath",
             "SystemState",
@@ -17476,7 +17476,7 @@
         {
           "kind": "theorem",
           "name": "QueueNextPath.firstEdge",
-          "line": 157,
+          "line": 172,
           "called": [
             "QueueNextPath",
             "SystemState",
@@ -17487,7 +17487,7 @@
         {
           "kind": "theorem",
           "name": "tcbQueueChainAcyclic_of_allNextNone",
-          "line": 165,
+          "line": 180,
           "called": [
             "SystemState",
             "TCB",
@@ -17501,7 +17501,7 @@
         {
           "kind": "theorem",
           "name": "tcbQueueChainAcyclic_no_self_loop",
-          "line": 174,
+          "line": 189,
           "called": [
             "SystemState",
             "TCB",
@@ -17513,7 +17513,7 @@
         {
           "kind": "theorem",
           "name": "tcbQueueChainAcyclic_no_two_cycle",
-          "line": 183,
+          "line": 198,
           "called": [
             "SystemState",
             "TCB",
@@ -17525,7 +17525,7 @@
         {
           "kind": "def",
           "name": "dualQueueEndpointWellFormed",
-          "line": 197,
+          "line": 212,
           "called": [
             "ObjId",
             "SystemState",
@@ -17535,7 +17535,7 @@
         {
           "kind": "def",
           "name": "dualQueueSystemInvariant",
-          "line": 210,
+          "line": 225,
           "called": [
             "Endpoint",
             "ObjId",
@@ -17548,7 +17548,7 @@
         {
           "kind": "def",
           "name": "ipcInvariant",
-          "line": 221,
+          "line": 236,
           "called": [
             "Notification",
             "ObjId",
@@ -17559,7 +17559,7 @@
         {
           "kind": "def",
           "name": "allPendingMessagesBounded",
-          "line": 244,
+          "line": 259,
           "called": [
             "IpcMessage",
             "SystemState",
@@ -17572,7 +17572,7 @@
         {
           "kind": "def",
           "name": "badgeValid",
-          "line": 255,
+          "line": 270,
           "called": [
             "Badge",
             "valid"
@@ -17581,7 +17581,7 @@
         {
           "kind": "def",
           "name": "notificationBadgesWellFormed",
-          "line": 261,
+          "line": 276,
           "called": [
             "Badge",
             "Notification",
@@ -17593,7 +17593,7 @@
         {
           "kind": "def",
           "name": "capabilityBadgesWellFormed",
-          "line": 270,
+          "line": 285,
           "called": [
             "Badge",
             "CNode",
@@ -17608,7 +17608,7 @@
         {
           "kind": "def",
           "name": "badgeWellFormed",
-          "line": 280,
+          "line": 295,
           "called": [
             "SystemState",
             "capabilityBadgesWellFormed",
@@ -17618,7 +17618,7 @@
         {
           "kind": "def",
           "name": "waitingThreadsPendingMessageNone",
-          "line": 300,
+          "line": 315,
           "called": [
             "SystemState",
             "TCB",
@@ -17630,7 +17630,7 @@
         {
           "kind": "def",
           "name": "runnableThreadIpcReady",
-          "line": 333,
+          "line": 348,
           "called": [
             "SystemState",
             "ThreadId",
@@ -17641,7 +17641,7 @@
         {
           "kind": "def",
           "name": "blockedOnSendNotRunnable",
-          "line": 337,
+          "line": 352,
           "called": [
             "SystemState",
             "ThreadId",
@@ -17653,7 +17653,7 @@
         {
           "kind": "def",
           "name": "blockedOnReceiveNotRunnable",
-          "line": 342,
+          "line": 357,
           "called": [
             "SystemState",
             "ThreadId",
@@ -17665,7 +17665,7 @@
         {
           "kind": "def",
           "name": "blockedOnCallNotRunnable",
-          "line": 348,
+          "line": 363,
           "called": [
             "SystemState",
             "ThreadId",
@@ -17677,7 +17677,7 @@
         {
           "kind": "def",
           "name": "blockedOnReplyNotRunnable",
-          "line": 354,
+          "line": 369,
           "called": [
             "SystemState",
             "ThreadId",
@@ -17689,7 +17689,7 @@
         {
           "kind": "def",
           "name": "blockedOnNotificationNotRunnable",
-          "line": 363,
+          "line": 378,
           "called": [
             "SystemState",
             "ThreadId",
@@ -17701,7 +17701,7 @@
         {
           "kind": "def",
           "name": "ipcSchedulerContractPredicates",
-          "line": 370,
+          "line": 385,
           "called": [
             "SystemState",
             "blockedOnCallNotRunnable",
@@ -17715,7 +17715,7 @@
         {
           "kind": "def",
           "name": "currentThreadIpcReady",
-          "line": 379,
+          "line": 394,
           "called": [
             "SystemState",
             "none",
@@ -17725,7 +17725,7 @@
         {
           "kind": "def",
           "name": "currentNotEndpointQueueHead",
-          "line": 387,
+          "line": 402,
           "called": [
             "Endpoint",
             "ObjId",
@@ -17736,7 +17736,7 @@
         {
           "kind": "def",
           "name": "currentNotOnNotificationWaitList",
-          "line": 398,
+          "line": 413,
           "called": [
             "Notification",
             "ObjId",
@@ -17747,7 +17747,7 @@
         {
           "kind": "def",
           "name": "currentThreadDequeueCoherent",
-          "line": 409,
+          "line": 424,
           "called": [
             "SystemState",
             "currentNotEndpointQueueHead",
@@ -17758,7 +17758,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueuePopHead_returns_head",
-          "line": 413,
+          "line": 428,
           "called": [
             "Endpoint",
             "ObjId",
@@ -17775,7 +17775,7 @@
         {
           "kind": "theorem",
           "name": "endpointQueuePopHead_returns_pre_tcb",
-          "line": 460,
+          "line": 475,
           "called": [
             "Endpoint",
             "ObjId",
@@ -17795,7 +17795,7 @@
         {
           "kind": "theorem",
           "name": "scheduler_unchanged_through_store_tcb",
-          "line": 513,
+          "line": 528,
           "called": [
             "KernelObject",
             "ObjId",
@@ -17811,7 +17811,7 @@
         {
           "kind": "theorem",
           "name": "tcb_preserved_through_endpoint_store",
-          "line": 523,
+          "line": 538,
           "called": [
             "KernelObject",
             "ObjId",
@@ -17828,7 +17828,7 @@
         {
           "kind": "def",
           "name": "notificationWaiterConsistent",
-          "line": 541,
+          "line": 556,
           "called": [
             "Notification",
             "ObjId",
@@ -17840,7 +17840,7 @@
         {
           "kind": "theorem",
           "name": "not_mem_waitingThreads_of_ipcState_ne",
-          "line": 550,
+          "line": 565,
           "called": [
             "Notification",
             "ObjId",
@@ -17854,7 +17854,7 @@
         {
           "kind": "def",
           "name": "uniqueWaiters",
-          "line": 567,
+          "line": 582,
           "called": [
             "Notification",
             "ObjId",
@@ -17864,7 +17864,7 @@
         {
           "kind": "def",
           "name": "blockedOnReplyHasTarget",
-          "line": 574,
+          "line": 589,
           "called": [
             "ObjId",
             "SystemState",
@@ -17877,7 +17877,7 @@
         {
           "kind": "theorem",
           "name": "blockedOnReplyHasTarget_implies_some_replyTarget",
-          "line": 587,
+          "line": 602,
           "called": [
             "ObjId",
             "SystemState",
@@ -17892,7 +17892,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_preserves_uniqueWaiters",
-          "line": 603,
+          "line": 618,
           "called": [
             "Badge",
             "ObjId",
@@ -17922,7 +17922,7 @@
         {
           "kind": "theorem",
           "name": "default_notificationWaiterConsistent",
-          "line": 710,
+          "line": 725,
           "called": [
             "RHTable_get",
             "RHTable_getElem",
@@ -17935,7 +17935,7 @@
         {
           "kind": "theorem",
           "name": "notificationSignal_result_wellFormed_wake",
-          "line": 772,
+          "line": 787,
           "called": [
             "ThreadId",
             "isEmpty",
@@ -17946,7 +17946,7 @@
         {
           "kind": "theorem",
           "name": "notificationSignal_result_wellFormed_merge",
-          "line": 784,
+          "line": 799,
           "called": [
             "Badge",
             "notificationQueueWellFormed"
@@ -17955,7 +17955,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_result_wellFormed_badge",
-          "line": 794,
+          "line": 809,
           "called": [
             "none",
             "notificationQueueWellFormed"
@@ -17964,7 +17964,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_result_wellFormed_wait",
-          "line": 801,
+          "line": 816,
           "called": [
             "ThreadId",
             "none",
@@ -17974,7 +17974,7 @@
         {
           "kind": "def",
           "name": "ipcStateQueueConsistent",
-          "line": 845,
+          "line": 860,
           "called": [
             "SystemState",
             "TCB",
@@ -17985,7 +17985,7 @@
         {
           "kind": "def",
           "name": "ipcStateQueueMembershipConsistent",
-          "line": 876,
+          "line": 891,
           "called": [
             "SystemState",
             "TCB",
@@ -17996,7 +17996,7 @@
         {
           "kind": "def",
           "name": "endpointQueueNoDup",
-          "line": 907,
+          "line": 922,
           "called": [
             "Endpoint",
             "ObjId",
@@ -18010,7 +18010,7 @@
         {
           "kind": "def",
           "name": "queueNextBlockingMatch",
-          "line": 928,
+          "line": 943,
           "called": [
             "ThreadIpcState"
           ]
@@ -18018,7 +18018,7 @@
         {
           "kind": "def",
           "name": "queueNextBlockingConsistent",
-          "line": 945,
+          "line": 960,
           "called": [
             "SystemState",
             "TCB",
@@ -18030,7 +18030,7 @@
         {
           "kind": "def",
           "name": "queueHeadBlockedConsistent",
-          "line": 961,
+          "line": 976,
           "called": [
             "Endpoint",
             "ObjId",
@@ -18043,7 +18043,7 @@
         {
           "kind": "def",
           "name": "blockedThreadTimeoutConsistent",
-          "line": 987,
+          "line": 1002,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -18056,7 +18056,7 @@
         {
           "kind": "theorem",
           "name": "blockedThreadTimeoutConsistent_of_all_none",
-          "line": 1001,
+          "line": 1016,
           "called": [
             "SystemState",
             "TCB",
@@ -18070,7 +18070,7 @@
         {
           "kind": "def",
           "name": "donationChainAcyclic",
-          "line": 1038,
+          "line": 1053,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -18082,7 +18082,7 @@
         {
           "kind": "def",
           "name": "donationOwnerValid",
-          "line": 1058,
+          "line": 1073,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -18095,7 +18095,7 @@
         {
           "kind": "def",
           "name": "passiveServerIdle",
-          "line": 1078,
+          "line": 1093,
           "called": [
             "SystemState",
             "TCB",
@@ -18106,7 +18106,7 @@
         {
           "kind": "def",
           "name": "donationBudgetTransfer",
-          "line": 1097,
+          "line": 1112,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -18119,7 +18119,7 @@
         {
           "kind": "theorem",
           "name": "donationChainAcyclic_of_no_donated",
-          "line": 1112,
+          "line": 1127,
           "called": [
             "SystemState",
             "TCB",
@@ -18132,7 +18132,7 @@
         {
           "kind": "theorem",
           "name": "donationOwnerValid_implies_donationChainAcyclic",
-          "line": 1132,
+          "line": 1147,
           "called": [
             "SystemState",
             "donationChainAcyclic",
@@ -18142,7 +18142,7 @@
         {
           "kind": "theorem",
           "name": "donationChain_no_extension",
-          "line": 1156,
+          "line": 1171,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -18156,7 +18156,7 @@
         {
           "kind": "theorem",
           "name": "blockedOnReply_cannot_call",
-          "line": 1180,
+          "line": 1195,
           "called": [
             "ObjId",
             "ThreadId",
@@ -18166,7 +18166,7 @@
         {
           "kind": "theorem",
           "name": "donationOwnerValid_of_no_donated",
-          "line": 1188,
+          "line": 1203,
           "called": [
             "SystemState",
             "TCB",
@@ -18179,7 +18179,7 @@
         {
           "kind": "theorem",
           "name": "donationBudgetTransfer_of_no_shared",
-          "line": 1198,
+          "line": 1213,
           "called": [
             "SystemState",
             "TCB",
@@ -18192,7 +18192,7 @@
         {
           "kind": "def",
           "name": "ipcInvariantFull",
-          "line": 1225,
+          "line": 1240,
           "called": [
             "SystemState",
             "allPendingMessagesBounded",
@@ -18216,7 +18216,7 @@
         {
           "kind": "structure",
           "name": "IpcInvariantFull",
-          "line": 1266,
+          "line": 1281,
           "called": [
             "SystemState",
             "allPendingMessagesBounded",
@@ -18240,13 +18240,13 @@
         {
           "kind": "namespace",
           "name": "ipcInvariantFull",
-          "line": 1284,
+          "line": 1299,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ipcInvariant",
-          "line": 1295,
+          "line": 1310,
           "called": [
             "SystemState",
             "ipcInvariantFull"
@@ -18255,33 +18255,6 @@
         {
           "kind": "theorem",
           "name": "dualQueueSystemInvariant",
-          "line": 1299,
-          "called": [
-            "SystemState",
-            "ipcInvariantFull"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "allPendingMessagesBounded",
-          "line": 1304,
-          "called": [
-            "SystemState",
-            "ipcInvariantFull"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "badgeWellFormed",
-          "line": 1309,
-          "called": [
-            "SystemState",
-            "ipcInvariantFull"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "waitingThreadsPendingMessageNone",
           "line": 1314,
           "called": [
             "SystemState",
@@ -18290,7 +18263,7 @@
         },
         {
           "kind": "theorem",
-          "name": "endpointQueueNoDup",
+          "name": "allPendingMessagesBounded",
           "line": 1319,
           "called": [
             "SystemState",
@@ -18299,7 +18272,7 @@
         },
         {
           "kind": "theorem",
-          "name": "ipcStateQueueMembershipConsistent",
+          "name": "badgeWellFormed",
           "line": 1324,
           "called": [
             "SystemState",
@@ -18308,7 +18281,7 @@
         },
         {
           "kind": "theorem",
-          "name": "queueNextBlockingConsistent",
+          "name": "waitingThreadsPendingMessageNone",
           "line": 1329,
           "called": [
             "SystemState",
@@ -18317,7 +18290,7 @@
         },
         {
           "kind": "theorem",
-          "name": "queueHeadBlockedConsistent",
+          "name": "endpointQueueNoDup",
           "line": 1334,
           "called": [
             "SystemState",
@@ -18326,7 +18299,7 @@
         },
         {
           "kind": "theorem",
-          "name": "blockedThreadTimeoutConsistent",
+          "name": "ipcStateQueueMembershipConsistent",
           "line": 1339,
           "called": [
             "SystemState",
@@ -18335,7 +18308,7 @@
         },
         {
           "kind": "theorem",
-          "name": "donationChainAcyclic",
+          "name": "queueNextBlockingConsistent",
           "line": 1344,
           "called": [
             "SystemState",
@@ -18344,7 +18317,7 @@
         },
         {
           "kind": "theorem",
-          "name": "donationOwnerValid",
+          "name": "queueHeadBlockedConsistent",
           "line": 1349,
           "called": [
             "SystemState",
@@ -18353,7 +18326,7 @@
         },
         {
           "kind": "theorem",
-          "name": "passiveServerIdle",
+          "name": "blockedThreadTimeoutConsistent",
           "line": 1354,
           "called": [
             "SystemState",
@@ -18362,7 +18335,7 @@
         },
         {
           "kind": "theorem",
-          "name": "donationBudgetTransfer",
+          "name": "donationChainAcyclic",
           "line": 1359,
           "called": [
             "SystemState",
@@ -18371,7 +18344,7 @@
         },
         {
           "kind": "theorem",
-          "name": "uniqueWaiters",
+          "name": "donationOwnerValid",
           "line": 1364,
           "called": [
             "SystemState",
@@ -18380,7 +18353,7 @@
         },
         {
           "kind": "theorem",
-          "name": "blockedOnReplyHasTarget",
+          "name": "passiveServerIdle",
           "line": 1369,
           "called": [
             "SystemState",
@@ -18389,8 +18362,35 @@
         },
         {
           "kind": "theorem",
+          "name": "donationBudgetTransfer",
+          "line": 1374,
+          "called": [
+            "SystemState",
+            "ipcInvariantFull"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "uniqueWaiters",
+          "line": 1379,
+          "called": [
+            "SystemState",
+            "ipcInvariantFull"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedOnReplyHasTarget",
+          "line": 1384,
+          "called": [
+            "SystemState",
+            "ipcInvariantFull"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "ipcInvariantFull_iff_IpcInvariantFull",
-          "line": 1380,
+          "line": 1395,
           "called": [
             "IpcInvariantFull",
             "SystemState",
@@ -18416,7 +18416,7 @@
         {
           "kind": "theorem",
           "name": "ipcInvariantFull.toStruct",
-          "line": 1406,
+          "line": 1421,
           "called": [
             "IpcInvariantFull",
             "SystemState",
@@ -18427,7 +18427,7 @@
         {
           "kind": "theorem",
           "name": "IpcInvariantFull.toTuple",
-          "line": 1411,
+          "line": 1426,
           "called": [
             "IpcInvariantFull",
             "SystemState",
@@ -18438,7 +18438,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_scheduler_eq",
-          "line": 1425,
+          "line": 1440,
           "called": [
             "SystemState",
             "ThreadId",
@@ -18453,7 +18453,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_preserves_objects_invExt",
-          "line": 1443,
+          "line": 1458,
           "called": [
             "SystemState",
             "ThreadId",
@@ -18471,7 +18471,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_frame_helper",
-          "line": 1500,
+          "line": 1515,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -18486,7 +18486,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_preserves_objects_invExt",
-          "line": 1529,
+          "line": 1544,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -18504,7 +18504,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_notification_backward",
-          "line": 1572,
+          "line": 1587,
           "called": [
             "Notification",
             "ObjId",
@@ -18526,7 +18526,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_tcb_forward",
-          "line": 1644,
+          "line": 1659,
           "called": [
             "SystemState",
             "ThreadId",
@@ -18546,7 +18546,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_tcb_ipcState_backward",
-          "line": 1728,
+          "line": 1743,
           "called": [
             "RHTable_getElem",
             "SystemState",
@@ -18568,7 +18568,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_endpoint_backward",
-          "line": 1821,
+          "line": 1836,
           "called": [
             "Endpoint",
             "ObjId",
@@ -18590,7 +18590,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_endpoint_backward",
-          "line": 1889,
+          "line": 1904,
           "called": [
             "Endpoint",
             "ObjId",
@@ -18606,7 +18606,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_cnode_backward",
-          "line": 1904,
+          "line": 1919,
           "called": [
             "CNode",
             "ObjId",
@@ -18628,7 +18628,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_endpoint_forward",
-          "line": 1968,
+          "line": 1983,
           "called": [
             "Endpoint",
             "ObjId",
@@ -18651,7 +18651,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_endpoint_forward",
-          "line": 2034,
+          "line": 2049,
           "called": [
             "Endpoint",
             "ObjId",
@@ -18667,7 +18667,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_tcb_queue_backward",
-          "line": 2049,
+          "line": 2064,
           "called": [
             "ObjId",
             "RHTable_getElem",
@@ -18690,7 +18690,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_tcb_queue_forward",
-          "line": 2129,
+          "line": 2144,
           "called": [
             "ObjId",
             "RHTable_getElem",
@@ -18713,7 +18713,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_preserves_allPendingMessagesBounded",
-          "line": 2210,
+          "line": 2225,
           "called": [
             "SystemState",
             "ThreadId",
@@ -18729,7 +18729,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_preserves_badgeWellFormed",
-          "line": 2227,
+          "line": 2242,
           "called": [
             "SystemState",
             "ThreadId",
@@ -18745,7 +18745,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_preserves_waitingThreadsPendingMessageNone",
-          "line": 2254,
+          "line": 2269,
           "called": [
             "SystemState",
             "ThreadId",
@@ -18761,7 +18761,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_preserves_ipcStateQueueConsistent",
-          "line": 2271,
+          "line": 2286,
           "called": [
             "SystemState",
             "ThreadId",
@@ -18778,7 +18778,7 @@
         {
           "kind": "theorem",
           "name": "QueueNextPath_backward_of_returnDonatedSchedContext",
-          "line": 2302,
+          "line": 2317,
           "called": [
             "QueueNextPath",
             "SchedContextId",
@@ -18794,7 +18794,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant",
-          "line": 2324,
+          "line": 2339,
           "called": [
             "IntrusiveQueue",
             "QueueNextPath_backward_of_returnDonatedSchedContext",
@@ -18816,7 +18816,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_preserves_endpointQueueNoDup",
-          "line": 2389,
+          "line": 2404,
           "called": [
             "SystemState",
             "ThreadId",
@@ -18833,7 +18833,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_preserves_ipcStateQueueMembershipConsistent",
-          "line": 2410,
+          "line": 2425,
           "called": [
             "SystemState",
             "ThreadId",
@@ -18851,7 +18851,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_preserves_dualQueueEndpointWellFormed",
-          "line": 2466,
+          "line": 2481,
           "called": [
             "Endpoint",
             "ObjId",
@@ -18867,7 +18867,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonationChecked_ok_of_non_donated",
-          "line": 2500,
+          "line": 2515,
           "called": [
             "SystemState",
             "ThreadId",
@@ -18881,7 +18881,7 @@
         {
           "kind": "theorem",
           "name": "donationOwnerValid_excludes_self_donation",
-          "line": 2522,
+          "line": 2537,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -18895,7 +18895,7 @@
         {
           "kind": "theorem",
           "name": "schedContext_ne_tcb_at_objId",
-          "line": 2552,
+          "line": 2567,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -18909,7 +18909,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_ok_under_invariants",
-          "line": 2579,
+          "line": 2594,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -18934,7 +18934,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull",
-          "line": 2686,
+          "line": 2701,
           "called": [
             "SystemState",
             "ThreadId",
@@ -18953,7 +18953,7 @@
         {
           "kind": "abbrev",
           "name": "cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull",
-          "line": 2725,
+          "line": 2740,
           "called": [
             "Kernel",
             "cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull"
@@ -39480,8 +39480,18 @@
     {
       "module": "SeLe4n.Kernel.SchedContext.Invariant",
       "path": "SeLe4n/Kernel/SchedContext/Invariant.lean",
-      "declaration_count": 0,
-      "declarations": []
+      "declaration_count": 1,
+      "declarations": [
+        {
+          "kind": "example",
+          "name": "<anonymous:example:48>",
+          "line": 48,
+          "called": [
+            "SchedContext",
+            "schedContextWellFormed"
+          ]
+        }
+      ]
     },
     {
       "module": "SeLe4n.Kernel.SchedContext.Operations",
@@ -39624,19 +39634,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.SchedContext.PriorityManagement",
-          "line": 37,
+          "line": 54,
           "called": []
         },
         {
           "kind": "def",
           "name": "maxHardwarePriority",
-          "line": 53,
+          "line": 70,
           "called": []
         },
         {
           "kind": "def",
           "name": "validatePriorityAuthority",
-          "line": 71,
+          "line": 88,
           "called": [
             "KernelError",
             "Priority",
@@ -39647,7 +39657,7 @@
         {
           "kind": "theorem",
           "name": "validatePriorityAuthority_bound",
-          "line": 82,
+          "line": 99,
           "called": [
             "Priority",
             "TCB",
@@ -39658,7 +39668,7 @@
         {
           "kind": "def",
           "name": "getCurrentPriority",
-          "line": 112,
+          "line": 129,
           "called": [
             "Priority",
             "SystemState",
@@ -39670,7 +39680,7 @@
         {
           "kind": "def",
           "name": "getCurrentPriorityChecked",
-          "line": 140,
+          "line": 157,
           "called": [
             "KernelError",
             "Priority",
@@ -39683,7 +39693,7 @@
         {
           "kind": "theorem",
           "name": "getCurrentPriorityChecked_ok_eq_getCurrentPriority",
-          "line": 153,
+          "line": 170,
           "called": [
             "Priority",
             "SystemState",
@@ -39695,7 +39705,7 @@
         {
           "kind": "def",
           "name": "updatePrioritySource",
-          "line": 178,
+          "line": 195,
           "called": [
             "Priority",
             "SystemState",
@@ -39709,7 +39719,7 @@
         {
           "kind": "def",
           "name": "migrateRunQueueBucket",
-          "line": 203,
+          "line": 220,
           "called": [
             "Priority",
             "SystemState",
@@ -39723,7 +39733,7 @@
         {
           "kind": "def",
           "name": "setPriorityOp",
-          "line": 242,
+          "line": 259,
           "called": [
             "KernelError",
             "Priority",
@@ -39740,7 +39750,7 @@
         {
           "kind": "def",
           "name": "setMCPriorityOp",
-          "line": 291,
+          "line": 308,
           "called": [
             "KernelError",
             "Priority",
@@ -40516,18 +40526,18 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Invariant",
       "path": "SeLe4n/Kernel/Scheduler/Invariant.lean",
-      "declaration_count": 61,
+      "declaration_count": 64,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 30,
+          "line": 71,
           "called": []
         },
         {
           "kind": "def",
           "name": "queueCurrentConsistent",
-          "line": 42,
+          "line": 83,
           "called": [
             "SchedulerState",
             "none",
@@ -40537,7 +40547,7 @@
         {
           "kind": "abbrev",
           "name": "schedulerWellFormed",
-          "line": 50,
+          "line": 91,
           "called": [
             "SchedulerState",
             "queueCurrentConsistent"
@@ -40546,7 +40556,7 @@
         {
           "kind": "def",
           "name": "runQueueUnique",
-          "line": 54,
+          "line": 95,
           "called": [
             "SchedulerState"
           ]
@@ -40554,7 +40564,7 @@
         {
           "kind": "def",
           "name": "currentThreadValid",
-          "line": 59,
+          "line": 100,
           "called": [
             "SystemState",
             "TCB",
@@ -40565,7 +40575,7 @@
         {
           "kind": "def",
           "name": "currentThreadInActiveDomain",
-          "line": 67,
+          "line": 108,
           "called": [
             "SystemState",
             "none",
@@ -40575,7 +40585,7 @@
         {
           "kind": "def",
           "name": "schedulerInvariantBundle",
-          "line": 78,
+          "line": 119,
           "called": [
             "SystemState",
             "currentThreadValid",
@@ -40586,7 +40596,7 @@
         {
           "kind": "theorem",
           "name": "schedulerWellFormed_iff_queueCurrentConsistent",
-          "line": 81,
+          "line": 122,
           "called": [
             "SchedulerState",
             "queueCurrentConsistent",
@@ -40596,7 +40606,7 @@
         {
           "kind": "def",
           "name": "configTimeSlicePositive",
-          "line": 98,
+          "line": 139,
           "called": [
             "SystemState"
           ]
@@ -40604,7 +40614,7 @@
         {
           "kind": "theorem",
           "name": "default_configTimeSlicePositive",
-          "line": 102,
+          "line": 143,
           "called": [
             "SystemState",
             "configTimeSlicePositive",
@@ -40613,8 +40623,36 @@
         },
         {
           "kind": "def",
+          "name": "replenishmentPipelineOrder",
+          "line": 176,
+          "called": [
+            "SchedContextId",
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "default_replenishmentPipelineOrder",
+          "line": 182,
+          "called": [
+            "SystemState",
+            "default",
+            "replenishmentPipelineOrder"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replenishmentPipelineOrder_of_empty",
+          "line": 193,
+          "called": [
+            "SystemState",
+            "replenishmentPipelineOrder"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "timeSlicePositive",
-          "line": 114,
+          "line": 208,
           "called": [
             "SystemState",
             "runnable",
@@ -40624,7 +40662,7 @@
         {
           "kind": "def",
           "name": "currentTimeSlicePositive",
-          "line": 126,
+          "line": 220,
           "called": [
             "SystemState",
             "none",
@@ -40634,7 +40672,7 @@
         {
           "kind": "def",
           "name": "effectiveRunQueuePriority",
-          "line": 146,
+          "line": 240,
           "called": [
             "Priority",
             "TCB",
@@ -40644,7 +40682,7 @@
         {
           "kind": "theorem",
           "name": "effectiveRunQueuePriority_no_pip",
-          "line": 153,
+          "line": 247,
           "called": [
             "TCB",
             "effectiveRunQueuePriority",
@@ -40654,7 +40692,7 @@
         {
           "kind": "def",
           "name": "effectiveBucketPriority",
-          "line": 170,
+          "line": 264,
           "called": [
             "KernelObject",
             "Priority",
@@ -40668,7 +40706,7 @@
         {
           "kind": "theorem",
           "name": "effectiveBucketPriority_of_unbound",
-          "line": 183,
+          "line": 277,
           "called": [
             "SystemState",
             "TCB",
@@ -40679,7 +40717,7 @@
         {
           "kind": "theorem",
           "name": "effectiveBucketPriority_of_bound_sc_missing",
-          "line": 193,
+          "line": 287,
           "called": [
             "KernelObject",
             "SchedContextId",
@@ -40695,7 +40733,7 @@
         {
           "kind": "theorem",
           "name": "effectiveBucketPriority_lookup_non_sc",
-          "line": 221,
+          "line": 315,
           "called": [
             "KernelObject",
             "SchedContextId",
@@ -40709,7 +40747,7 @@
         {
           "kind": "theorem",
           "name": "effectiveBucketPriority_frame",
-          "line": 236,
+          "line": 330,
           "called": [
             "SystemState",
             "TCB",
@@ -40720,14 +40758,14 @@
         },
         {
           "kind": "section",
-          "name": "<anonymous:section:254>",
-          "line": 254,
+          "name": "<anonymous:section:348>",
+          "line": 348,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "effectiveBucketPriority_frame_weak",
-          "line": 263,
+          "line": 357,
           "called": [
             "SystemState",
             "TCB",
@@ -40740,7 +40778,7 @@
         {
           "kind": "def",
           "name": "edfCurrentHasEarliestDeadline",
-          "line": 311,
+          "line": 405,
           "called": [
             "SystemState",
             "effectiveRunQueuePriority",
@@ -40753,7 +40791,7 @@
         {
           "kind": "def",
           "name": "contextMatchesCurrent",
-          "line": 352,
+          "line": 446,
           "called": [
             "SystemState",
             "none",
@@ -40763,7 +40801,7 @@
         {
           "kind": "theorem",
           "name": "contextMatchesCurrent_of_regs_eq",
-          "line": 363,
+          "line": 457,
           "called": [
             "RegisterFile.beq_self",
             "SystemState",
@@ -40776,7 +40814,7 @@
         {
           "kind": "def",
           "name": "runnableThreadsAreTCBs",
-          "line": 392,
+          "line": 486,
           "called": [
             "SystemState",
             "TCB",
@@ -40787,7 +40825,7 @@
         {
           "kind": "theorem",
           "name": "default_runnableThreadsAreTCBs",
-          "line": 397,
+          "line": 491,
           "called": [
             "SystemState",
             "default",
@@ -40798,7 +40836,7 @@
         {
           "kind": "def",
           "name": "schedulerPriorityMatch",
-          "line": 425,
+          "line": 519,
           "called": [
             "SystemState",
             "effectiveRunQueuePriority",
@@ -40808,7 +40846,7 @@
         {
           "kind": "def",
           "name": "domainTimeRemainingPositive",
-          "line": 445,
+          "line": 539,
           "called": [
             "SystemState"
           ]
@@ -40816,7 +40854,7 @@
         {
           "kind": "def",
           "name": "domainScheduleEntriesPositive",
-          "line": 453,
+          "line": 547,
           "called": [
             "SystemState"
           ]
@@ -40824,7 +40862,7 @@
         {
           "kind": "theorem",
           "name": "default_domainScheduleEntriesPositive",
-          "line": 457,
+          "line": 551,
           "called": [
             "SystemState",
             "default",
@@ -40834,7 +40872,7 @@
         {
           "kind": "def",
           "name": "schedulerInvariantBundleFull",
-          "line": 472,
+          "line": 566,
           "called": [
             "SystemState",
             "contextMatchesCurrent",
@@ -40851,7 +40889,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_base",
-          "line": 480,
+          "line": 574,
           "called": [
             "SystemState",
             "schedulerInvariantBundle",
@@ -40861,7 +40899,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_contextMatchesCurrent",
-          "line": 485,
+          "line": 579,
           "called": [
             "SystemState",
             "contextMatchesCurrent",
@@ -40871,7 +40909,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_priorityMatch",
-          "line": 490,
+          "line": 584,
           "called": [
             "SystemState",
             "schedulerInvariantBundleFull",
@@ -40881,7 +40919,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_domainTimeRemainingPositive",
-          "line": 495,
+          "line": 589,
           "called": [
             "SystemState",
             "domainTimeRemainingPositive",
@@ -40891,7 +40929,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleFull_to_domainScheduleEntriesPositive",
-          "line": 500,
+          "line": 594,
           "called": [
             "SystemState",
             "domainScheduleEntriesPositive",
@@ -40901,7 +40939,7 @@
         {
           "kind": "theorem",
           "name": "schedulerPriorityMatch_of_runQueue_objects_eq",
-          "line": 506,
+          "line": 600,
           "called": [
             "SystemState",
             "schedulerPriorityMatch"
@@ -40910,7 +40948,7 @@
         {
           "kind": "theorem",
           "name": "schedulerPriorityMatch_insert",
-          "line": 517,
+          "line": 611,
           "called": [
             "RHTable_getElem",
             "SystemState",
@@ -40930,7 +40968,7 @@
         {
           "kind": "def",
           "name": "budgetPositive",
-          "line": 563,
+          "line": 657,
           "called": [
             "SystemState",
             "runnable",
@@ -40941,7 +40979,7 @@
         {
           "kind": "theorem",
           "name": "default_budgetPositive",
-          "line": 576,
+          "line": 670,
           "called": [
             "SystemState",
             "budgetPositive",
@@ -40952,7 +40990,7 @@
         {
           "kind": "def",
           "name": "currentBudgetPositive",
-          "line": 590,
+          "line": 684,
           "called": [
             "SystemState",
             "none",
@@ -40963,7 +41001,7 @@
         {
           "kind": "theorem",
           "name": "default_currentBudgetPositive",
-          "line": 605,
+          "line": 699,
           "called": [
             "SystemState",
             "currentBudgetPositive",
@@ -40973,7 +41011,7 @@
         {
           "kind": "def",
           "name": "schedContextsWellFormed",
-          "line": 616,
+          "line": 710,
           "called": [
             "ObjId",
             "SchedContext",
@@ -40984,7 +41022,7 @@
         {
           "kind": "theorem",
           "name": "default_schedContextsWellFormed",
-          "line": 624,
+          "line": 718,
           "called": [
             "RHTable.getElem",
             "SystemState",
@@ -40998,7 +41036,7 @@
         {
           "kind": "def",
           "name": "replenishQueueValid",
-          "line": 639,
+          "line": 733,
           "called": [
             "SystemState",
             "replenishQueueSizeConsistent",
@@ -41008,7 +41046,7 @@
         {
           "kind": "theorem",
           "name": "default_replenishQueueValid",
-          "line": 644,
+          "line": 738,
           "called": [
             "SystemState",
             "default",
@@ -41020,7 +41058,7 @@
         {
           "kind": "def",
           "name": "schedContextBindingConsistent",
-          "line": 659,
+          "line": 753,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -41034,7 +41072,7 @@
         {
           "kind": "theorem",
           "name": "default_schedContextBindingConsistent",
-          "line": 673,
+          "line": 767,
           "called": [
             "RHTable.getElem",
             "SystemState",
@@ -41050,7 +41088,7 @@
         {
           "kind": "def",
           "name": "effectiveParamsMatchRunQueue",
-          "line": 695,
+          "line": 789,
           "called": [
             "SystemState",
             "scId",
@@ -41060,7 +41098,7 @@
         {
           "kind": "theorem",
           "name": "default_effectiveParamsMatchRunQueue",
-          "line": 710,
+          "line": 804,
           "called": [
             "RHSet.contains_empty",
             "SystemState",
@@ -41073,7 +41111,7 @@
         {
           "kind": "def",
           "name": "boundThreadDomainConsistent",
-          "line": 727,
+          "line": 821,
           "called": [
             "KernelObject",
             "SchedContextId",
@@ -41086,7 +41124,7 @@
         {
           "kind": "theorem",
           "name": "default_boundThreadDomainConsistent",
-          "line": 738,
+          "line": 832,
           "called": [
             "RHTable.getElem",
             "SystemState",
@@ -41100,7 +41138,7 @@
         {
           "kind": "def",
           "name": "schedulerInvariantBundleExtended",
-          "line": 755,
+          "line": 849,
           "called": [
             "SystemState",
             "boundThreadDomainConsistent",
@@ -41116,7 +41154,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_full",
-          "line": 763,
+          "line": 857,
           "called": [
             "SystemState",
             "schedulerInvariantBundleExtended",
@@ -41126,7 +41164,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_budgetPositive",
-          "line": 768,
+          "line": 862,
           "called": [
             "SystemState",
             "budgetPositive",
@@ -41136,7 +41174,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_currentBudgetPositive",
-          "line": 773,
+          "line": 867,
           "called": [
             "SystemState",
             "currentBudgetPositive",
@@ -41146,7 +41184,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_schedContextsWellFormed",
-          "line": 778,
+          "line": 872,
           "called": [
             "SystemState",
             "schedContextsWellFormed",
@@ -41156,7 +41194,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_replenishQueueValid",
-          "line": 783,
+          "line": 877,
           "called": [
             "SystemState",
             "replenishQueueValid",
@@ -41166,7 +41204,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_schedContextBindingConsistent",
-          "line": 788,
+          "line": 882,
           "called": [
             "SystemState",
             "schedContextBindingConsistent",
@@ -41176,7 +41214,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_effectiveParamsMatchRunQueue",
-          "line": 793,
+          "line": 887,
           "called": [
             "SystemState",
             "effectiveParamsMatchRunQueue",
@@ -41186,7 +41224,7 @@
         {
           "kind": "theorem",
           "name": "schedulerInvariantBundleExtended_to_boundThreadDomainConsistent",
-          "line": 798,
+          "line": 892,
           "called": [
             "Kernel",
             "SystemState",
@@ -41369,6 +41407,196 @@
             "domainRotationTotal",
             "maxDomainLength",
             "schedule"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Scheduler.Liveness.RPi5CanonicalConfig",
+      "path": "SeLe4n/Kernel/Scheduler/Liveness/RPi5CanonicalConfig.lean",
+      "declaration_count": 17,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Liveness",
+          "line": 11,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "DeploymentSchedulingConfig",
+          "line": 59,
+          "called": [
+            "timerFrequencyHz"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "DeploymentSchedulingConfig.wellFormed",
+          "line": 81,
+          "called": [
+            "DeploymentSchedulingConfig",
+            "timerFrequencyHz"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:87>",
+          "line": 87,
+          "called": [
+            "DeploymentSchedulingConfig",
+            "DeploymentSchedulingConfig.wellFormed",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rpi5CanonicalConfig",
+          "line": 104,
+          "called": [
+            "DeploymentSchedulingConfig",
+            "timerFrequencyHz"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5CanonicalConfig_wellFormed",
+          "line": 115,
+          "called": [
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "eventuallyExits_of_exit_index",
+          "line": 164,
+          "called": [
+            "SchedulerTrace",
+            "SystemState",
+            "ThreadId",
+            "contains",
+            "eventuallyExits",
+            "traceStateAt"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "CanonicalDeploymentProgress",
+          "line": 190,
+          "called": [
+            "DeploymentSchedulingConfig",
+            "SchedulerTrace",
+            "SystemState",
+            "ThreadId",
+            "config",
+            "contains",
+            "rpi5CanonicalConfig",
+            "traceStateAt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5_canonicalConfig_eventuallyExits",
+          "line": 215,
+          "called": [
+            "CanonicalDeploymentProgress",
+            "SchedulerTrace",
+            "ThreadId",
+            "eventuallyExits",
+            "eventuallyExits_of_exit_index"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5_canonicalConfig_progress_config_wellFormed",
+          "line": 228,
+          "called": [
+            "CanonicalDeploymentProgress",
+            "SchedulerTrace",
+            "ThreadId",
+            "rpi5CanonicalConfig_wellFormed",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "wcrt_bound_rpi5",
+          "line": 254,
+          "called": [
+            "SchedulerTrace",
+            "SystemState",
+            "ThreadId",
+            "ValidTrace",
+            "WCRTHypotheses",
+            "bandExhaustionBound",
+            "bounded_scheduling_latency_exists",
+            "contains",
+            "domainRotationBound",
+            "maxDomainLength",
+            "none",
+            "selectedAt",
+            "traceStateAt",
+            "wcrtBound"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "wcrt_bound_rpi5_symbolic",
+          "line": 288,
+          "called": [
+            "wcrtBound"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "isRPi5CanonicalConfig",
+          "line": 301,
+          "called": [
+            "DeploymentSchedulingConfig",
+            "rpi5CanonicalConfig"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "isRPi5CanonicalConfig_iff",
+          "line": 306,
+          "called": [
+            "DeploymentSchedulingConfig",
+            "isRPi5CanonicalConfig",
+            "rpi5CanonicalConfig"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5CanonicalConfig_isCanonical",
+          "line": 311,
+          "called": [
+            "isRPi5CanonicalConfig",
+            "rpi5CanonicalConfig"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5_cbs_window_replenishments_bounded",
+          "line": 333,
+          "called": [
+            "SchedContext",
+            "cbsWindowReplenishmentsBounded",
+            "cbs_bandwidth_bounded_tight",
+            "replenishmentAmountsBounded",
+            "totalConsumed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rpi5_cbs_window_replenishments_bounded_concrete",
+          "line": 350,
+          "called": [
+            "SchedContext",
+            "cbsWindowReplenishmentsBounded",
+            "cbs_bandwidth_bounded_tight",
+            "replenishmentAmountsBounded",
+            "totalConsumed"
           ]
         }
       ]
@@ -42259,7 +42487,7 @@
         {
           "kind": "def",
           "name": "schedule",
-          "line": 340,
+          "line": 355,
           "called": [
             "Kernel",
             "chooseThread",
@@ -42274,7 +42502,7 @@
         {
           "kind": "def",
           "name": "handleYield",
-          "line": 412,
+          "line": 427,
           "called": [
             "Kernel",
             "effectiveRunQueuePriority",
@@ -42288,13 +42516,13 @@
         {
           "kind": "def",
           "name": "defaultTimeSlice",
-          "line": 447,
+          "line": 462,
           "called": []
         },
         {
           "kind": "def",
           "name": "timerTick",
-          "line": 465,
+          "line": 480,
           "called": [
             "Kernel",
             "effectiveRunQueuePriority",
@@ -42308,7 +42536,7 @@
         {
           "kind": "def",
           "name": "popDueReplenishments",
-          "line": 506,
+          "line": 521,
           "called": [
             "ReplenishQueue",
             "SchedContextId",
@@ -42319,7 +42547,7 @@
         {
           "kind": "def",
           "name": "refillSchedContext",
-          "line": 514,
+          "line": 529,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -42333,7 +42561,7 @@
         {
           "kind": "def",
           "name": "processReplenishmentsDue",
-          "line": 535,
+          "line": 550,
           "called": [
             "SystemState",
             "insert",
@@ -42350,7 +42578,7 @@
         {
           "kind": "def",
           "name": "tcbBlockingInfo",
-          "line": 568,
+          "line": 583,
           "called": [
             "ObjId",
             "TCB",
@@ -42360,7 +42588,7 @@
         {
           "kind": "def",
           "name": "timeoutBlockedThreads",
-          "line": 599,
+          "line": 614,
           "called": [
             "KernelError",
             "KernelObject",
@@ -42377,7 +42605,7 @@
         {
           "kind": "def",
           "name": "timerTickBudget",
-          "line": 634,
+          "line": 649,
           "called": [
             "Budget",
             "KernelError",
@@ -42399,7 +42627,7 @@
         {
           "kind": "def",
           "name": "scheduleEffective",
-          "line": 712,
+          "line": 729,
           "called": [
             "Kernel",
             "chooseThreadEffective",
@@ -42414,7 +42642,7 @@
         {
           "kind": "def",
           "name": "timerTickWithBudget",
-          "line": 746,
+          "line": 767,
           "called": [
             "Kernel",
             "none",
@@ -42428,7 +42656,7 @@
         {
           "kind": "def",
           "name": "handleYieldWithBudget",
-          "line": 786,
+          "line": 807,
           "called": [
             "Budget",
             "Kernel",
@@ -42447,7 +42675,7 @@
         {
           "kind": "def",
           "name": "chooseThreadInDomain",
-          "line": 833,
+          "line": 854,
           "called": [
             "Kernel",
             "ThreadId",
@@ -42457,7 +42685,7 @@
         {
           "kind": "def",
           "name": "switchDomain",
-          "line": 862,
+          "line": 883,
           "called": [
             "Kernel",
             "effectiveRunQueuePriority",
@@ -42471,7 +42699,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_index_in_bounds",
-          "line": 908,
+          "line": 929,
           "called": [
             "DomainScheduleEntry",
             "schedule"
@@ -42480,7 +42708,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_index_lookup_isSome",
-          "line": 920,
+          "line": 941,
           "called": [
             "DomainScheduleEntry",
             "getElem",
@@ -42491,7 +42719,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_objects_invExt",
-          "line": 930,
+          "line": 951,
           "called": [
             "SystemState",
             "invExt",
@@ -42502,7 +42730,7 @@
         {
           "kind": "def",
           "name": "scheduleDomain",
-          "line": 947,
+          "line": 968,
           "called": [
             "Kernel",
             "schedule",
@@ -42512,7 +42740,7 @@
         {
           "kind": "def",
           "name": "inferThreadState",
-          "line": 969,
+          "line": 990,
           "called": [
             "SystemState",
             "TCB",
@@ -42523,7 +42751,7 @@
         {
           "kind": "def",
           "name": "syncThreadStates",
-          "line": 984,
+          "line": 1005,
           "called": [
             "SystemState",
             "fold",
@@ -42535,7 +42763,7 @@
         {
           "kind": "def",
           "name": "threadStateConsistent",
-          "line": 996,
+          "line": 1017,
           "called": [
             "Kernel",
             "ObjId",
@@ -42550,7 +42778,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.Operations.Preservation",
       "path": "SeLe4n/Kernel/Scheduler/Operations/Preservation.lean",
-      "declaration_count": 112,
+      "declaration_count": 114,
       "declarations": [
         {
           "kind": "namespace",
@@ -42719,7 +42947,7 @@
         {
           "kind": "theorem",
           "name": "remove_preserves_nodup",
-          "line": 213,
+          "line": 218,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -42730,7 +42958,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_runQueueUnique",
-          "line": 220,
+          "line": 262,
           "called": [
             "SchedulerState.runnable",
             "SystemState",
@@ -42753,7 +42981,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_currentThreadValid",
-          "line": 268,
+          "line": 310,
           "called": [
             "SystemState",
             "chooseThread",
@@ -42774,7 +43002,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_currentThreadInActiveDomain",
-          "line": 311,
+          "line": 353,
           "called": [
             "SystemState",
             "chooseThread",
@@ -42794,7 +43022,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_queueCurrentConsistent",
-          "line": 359,
+          "line": 401,
           "called": [
             "SystemState",
             "handleYield",
@@ -42807,7 +43035,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_wellFormed",
-          "line": 379,
+          "line": 421,
           "called": [
             "SystemState",
             "handleYield",
@@ -42818,7 +43046,7 @@
         {
           "kind": "theorem",
           "name": "insert_preserves_nodup",
-          "line": 386,
+          "line": 430,
           "called": [
             "Priority",
             "RunQueue",
@@ -42831,7 +43059,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_runQueueUnique",
-          "line": 396,
+          "line": 440,
           "called": [
             "SchedulerState.runnable",
             "SystemState",
@@ -42853,7 +43081,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_currentThreadValid",
-          "line": 428,
+          "line": 472,
           "called": [
             "SystemState",
             "currentThreadValid",
@@ -42867,7 +43095,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_currentThreadInActiveDomain",
-          "line": 451,
+          "line": 495,
           "called": [
             "SystemState",
             "currentThreadInActiveDomain",
@@ -42881,7 +43109,7 @@
         {
           "kind": "theorem",
           "name": "chooseThread_preserves_schedulerInvariantBundle",
-          "line": 473,
+          "line": 517,
           "called": [
             "SystemState",
             "ThreadId",
@@ -42895,7 +43123,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_schedulerInvariantBundle",
-          "line": 485,
+          "line": 529,
           "called": [
             "SystemState",
             "invExt",
@@ -42909,7 +43137,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_schedulerInvariantBundle",
-          "line": 497,
+          "line": 541,
           "called": [
             "SystemState",
             "handleYield",
@@ -42923,7 +43151,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_schedulerInvariantBundle",
-          "line": 516,
+          "line": 560,
           "called": [
             "SchedulerState.runnable",
             "SystemState",
@@ -42942,7 +43170,7 @@
         {
           "kind": "theorem",
           "name": "scheduleDomain_preserves_currentThreadInActiveDomain",
-          "line": 560,
+          "line": 604,
           "called": [
             "SystemState",
             "currentThreadInActiveDomain",
@@ -42957,7 +43185,7 @@
         {
           "kind": "theorem",
           "name": "scheduleDomain_preserves_schedulerInvariantBundle",
-          "line": 583,
+          "line": 627,
           "called": [
             "SystemState",
             "invExt",
@@ -42973,7 +43201,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadInDomain_preserves_state",
-          "line": 608,
+          "line": 652,
           "called": [
             "SystemState",
             "ThreadId",
@@ -42984,7 +43212,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedulerInvariantBundle",
-          "line": 625,
+          "line": 669,
           "called": [
             "RHTable_getElem",
             "RHTable_insert_preserves_invExt",
@@ -43010,7 +43238,7 @@
         {
           "kind": "theorem",
           "name": "isBetterCandidate_not_better_trans",
-          "line": 676,
+          "line": 720,
           "called": [
             "Deadline",
             "Priority",
@@ -43021,7 +43249,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_optimal_combined",
-          "line": 697,
+          "line": 741,
           "called": [
             "Deadline",
             "KernelObject",
@@ -43042,7 +43270,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_optimal",
-          "line": 795,
+          "line": 839,
           "called": [
             "Deadline",
             "KernelObject",
@@ -43061,7 +43289,7 @@
         {
           "kind": "theorem",
           "name": "noBetter_implies_edf",
-          "line": 811,
+          "line": 855,
           "called": [
             "Deadline",
             "Priority",
@@ -43072,7 +43300,7 @@
         {
           "kind": "theorem",
           "name": "setCurrentThread_preserves_timeSlicePositive",
-          "line": 827,
+          "line": 871,
           "called": [
             "SystemState",
             "ThreadId",
@@ -43083,7 +43311,7 @@
         {
           "kind": "theorem",
           "name": "chooseThread_preserves_timeSlicePositive",
-          "line": 836,
+          "line": 880,
           "called": [
             "SystemState",
             "ThreadId",
@@ -43095,7 +43323,7 @@
         {
           "kind": "theorem",
           "name": "remove_preserves_timeSlicePositive",
-          "line": 846,
+          "line": 890,
           "called": [
             "SchedulerState.runnable",
             "SystemState",
@@ -43110,7 +43338,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_timeSlicePositive",
-          "line": 862,
+          "line": 906,
           "called": [
             "SchedulerState.runnable",
             "SystemState",
@@ -43134,7 +43362,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_timeSlicePositive",
-          "line": 913,
+          "line": 957,
           "called": [
             "SchedulerState.runnable",
             "SystemState",
@@ -43156,7 +43384,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_timeSlicePositive",
-          "line": 962,
+          "line": 1006,
           "called": [
             "SchedulerState.runnable",
             "SystemState",
@@ -43178,7 +43406,7 @@
         {
           "kind": "theorem",
           "name": "threadId_ne_objId_beq_false",
-          "line": 1019,
+          "line": 1063,
           "called": [
             "ThreadId",
             "ofNat",
@@ -43189,7 +43417,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_timeSlicePositive",
-          "line": 1032,
+          "line": 1076,
           "called": [
             "RHTable_getElem",
             "RHTable_insert_preserves_invExt",
@@ -43212,7 +43440,7 @@
         {
           "kind": "theorem",
           "name": "setCurrentThread_none_preserves_currentTimeSlicePositive",
-          "line": 1095,
+          "line": 1139,
           "called": [
             "SystemState",
             "currentTimeSlicePositive",
@@ -43223,7 +43451,7 @@
         {
           "kind": "theorem",
           "name": "setCurrentThread_some_preserves_currentTimeSlicePositive",
-          "line": 1104,
+          "line": 1148,
           "called": [
             "SystemState",
             "ThreadId",
@@ -43235,7 +43463,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_currentTimeSlicePositive",
-          "line": 1118,
+          "line": 1162,
           "called": [
             "SchedulerState.runnable",
             "SystemState",
@@ -43260,7 +43488,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_currentTimeSlicePositive",
-          "line": 1168,
+          "line": 1212,
           "called": [
             "SchedulerState.runnable",
             "SystemState",
@@ -43282,7 +43510,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_currentTimeSlicePositive",
-          "line": 1215,
+          "line": 1259,
           "called": [
             "SystemState",
             "currentTimeSlicePositive",
@@ -43292,7 +43520,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_currentTimeSlicePositive",
-          "line": 1231,
+          "line": 1275,
           "called": [
             "RHTable_getElem",
             "RHTable_insert_preserves_invExt",
@@ -43316,7 +43544,7 @@
         {
           "kind": "theorem",
           "name": "setCurrentThread_none_preserves_edfCurrentHasEarliestDeadline",
-          "line": 1292,
+          "line": 1336,
           "called": [
             "SystemState",
             "edfCurrentHasEarliestDeadline",
@@ -43327,7 +43555,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_edfCurrentHasEarliestDeadline",
-          "line": 1302,
+          "line": 1346,
           "called": [
             "SystemState",
             "edfCurrentHasEarliestDeadline",
@@ -43337,7 +43565,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_contextMatchesCurrent",
-          "line": 1326,
+          "line": 1370,
           "called": [
             "SystemState",
             "contextMatchesCurrent",
@@ -43348,7 +43576,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_runnableThreadsAreTCBs",
-          "line": 1358,
+          "line": 1402,
           "called": [
             "SchedulerState.runnable",
             "SystemState",
@@ -43367,7 +43595,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_runnableThreadsAreTCBs",
-          "line": 1411,
+          "line": 1455,
           "called": [
             "SchedulerState.runnable",
             "SystemState",
@@ -43395,7 +43623,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_runnableThreadsAreTCBs",
-          "line": 1490,
+          "line": 1534,
           "called": [
             "SchedulerState.runnable",
             "SystemState",
@@ -43414,7 +43642,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_runnableThreadsAreTCBs",
-          "line": 1528,
+          "line": 1572,
           "called": [
             "RHTable_getElem",
             "RHTable_insert_preserves_invExt",
@@ -43434,7 +43662,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_preserves_lookup_of_ne",
-          "line": 1589,
+          "line": 1633,
           "called": [
             "ObjId",
             "RHTable_getElem",
@@ -43448,7 +43676,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_preserves_schedContext_lookup",
-          "line": 1617,
+          "line": 1661,
           "called": [
             "RHTable_getElem",
             "SchedContext",
@@ -43464,7 +43692,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_effectiveBucketPriority_eq",
-          "line": 1649,
+          "line": 1693,
           "called": [
             "RHTable_getElem",
             "SystemState",
@@ -43483,7 +43711,7 @@
         {
           "kind": "theorem",
           "name": "schedulerPriorityMatch_of_saveOutgoingContext",
-          "line": 1719,
+          "line": 1763,
           "called": [
             "SystemState",
             "effectiveRunQueuePriority",
@@ -43500,7 +43728,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_schedulerPriorityMatch",
-          "line": 1748,
+          "line": 1792,
           "called": [
             "SystemState",
             "effectiveRunQueuePriority",
@@ -43523,7 +43751,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_domainTimeRemaining_eq",
-          "line": 1825,
+          "line": 1869,
           "called": [
             "SystemState",
             "none",
@@ -43534,7 +43762,7 @@
         {
           "kind": "theorem",
           "name": "restoreIncomingContext_domainTimeRemaining_eq",
-          "line": 1838,
+          "line": 1882,
           "called": [
             "SystemState",
             "ThreadId",
@@ -43546,7 +43774,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_domainTimeRemainingPositive",
-          "line": 1849,
+          "line": 1893,
           "called": [
             "SystemState",
             "chooseThread",
@@ -43569,7 +43797,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_domainTimeRemainingPositive",
-          "line": 1914,
+          "line": 1958,
           "called": [
             "SystemState",
             "domainTimeRemainingPositive",
@@ -43583,7 +43811,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_domainTimeRemainingPositive",
-          "line": 1942,
+          "line": 1986,
           "called": [
             "RHTable_insert_preserves_invExt",
             "SystemState",
@@ -43598,7 +43826,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_domainTimeRemainingPositive",
-          "line": 1977,
+          "line": 2021,
           "called": [
             "SystemState",
             "domainTimeRemainingPositive",
@@ -43608,7 +43836,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_domainSchedule",
-          "line": 2008,
+          "line": 2052,
           "called": [
             "SystemState",
             "switchDomain"
@@ -43617,7 +43845,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_preserves_domainSchedule",
-          "line": 2027,
+          "line": 2071,
           "called": [
             "SystemState",
             "none",
@@ -43627,7 +43855,7 @@
         {
           "kind": "theorem",
           "name": "restoreIncomingContext_preserves_domainSchedule",
-          "line": 2038,
+          "line": 2082,
           "called": [
             "SystemState",
             "ThreadId",
@@ -43637,7 +43865,7 @@
         {
           "kind": "theorem",
           "name": "chooseThread_preserves_domainSchedule",
-          "line": 2045,
+          "line": 2089,
           "called": [
             "SystemState",
             "ThreadId",
@@ -43650,7 +43878,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_domainSchedule",
-          "line": 2062,
+          "line": 2106,
           "called": [
             "SystemState",
             "chooseThread",
@@ -43666,7 +43894,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_domainSchedule",
-          "line": 2091,
+          "line": 2135,
           "called": [
             "SystemState",
             "handleYield",
@@ -43677,7 +43905,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_domainSchedule",
-          "line": 2107,
+          "line": 2151,
           "called": [
             "SystemState",
             "none",
@@ -43688,7 +43916,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_schedulerInvariantBundleFull",
-          "line": 2132,
+          "line": 2176,
           "called": [
             "SystemState",
             "invExt",
@@ -43708,7 +43936,7 @@
         {
           "kind": "theorem",
           "name": "setCurrentThread_some_preserves_edfCurrentHasEarliestDeadline",
-          "line": 2152,
+          "line": 2196,
           "called": [
             "SystemState",
             "TCB",
@@ -43724,7 +43952,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_result_fields",
-          "line": 2176,
+          "line": 2220,
           "called": [
             "Deadline",
             "KernelObject",
@@ -43742,7 +43970,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_result_mem_aux",
-          "line": 2232,
+          "line": 2276,
           "called": [
             "Deadline",
             "KernelObject",
@@ -43759,7 +43987,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestRunnableBy_result_mem",
-          "line": 2289,
+          "line": 2333,
           "called": [
             "Deadline",
             "KernelObject",
@@ -43776,7 +44004,7 @@
         {
           "kind": "theorem",
           "name": "chooseBestInBucket_edf_bridge",
-          "line": 2314,
+          "line": 2358,
           "called": [
             "Deadline",
             "Priority",
@@ -43813,7 +44041,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_edfCurrentHasEarliestDeadline",
-          "line": 2465,
+          "line": 2509,
           "called": [
             "SchedulerState.runnable",
             "SystemState",
@@ -43842,7 +44070,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_edfCurrentHasEarliestDeadline",
-          "line": 2575,
+          "line": 2619,
           "called": [
             "RHTable_getElem",
             "SchedulerState.runnable",
@@ -43874,7 +44102,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_edfCurrentHasEarliestDeadline",
-          "line": 2662,
+          "line": 2706,
           "called": [
             "RHTable_getElem",
             "RHTable_insert_preserves_invExt",
@@ -43906,7 +44134,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_contextMatchesCurrent",
-          "line": 2785,
+          "line": 2829,
           "called": [
             "RegisterFile.beq_self",
             "SystemState",
@@ -43928,7 +44156,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_contextMatchesCurrent",
-          "line": 2836,
+          "line": 2880,
           "called": [
             "SystemState",
             "contextMatchesCurrent",
@@ -43942,7 +44170,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_contextMatchesCurrent",
-          "line": 2864,
+          "line": 2908,
           "called": [
             "RHTable_getElem",
             "RHTable_insert_preserves_invExt",
@@ -43959,7 +44187,7 @@
         {
           "kind": "theorem",
           "name": "contextMatchesCurrent_frame",
-          "line": 2908,
+          "line": 2952,
           "called": [
             "SystemState",
             "contextMatchesCurrent",
@@ -43970,7 +44198,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_schedulerPriorityMatch",
-          "line": 2951,
+          "line": 2995,
           "called": [
             "RHTable.getElem",
             "RHTable_getElem",
@@ -44001,7 +44229,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_schedulerPriorityMatch",
-          "line": 3080,
+          "line": 3124,
           "called": [
             "RHTable_getElem",
             "SchedulerState.runnable",
@@ -44027,7 +44255,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedulerPriorityMatch",
-          "line": 3146,
+          "line": 3190,
           "called": [
             "RHTable_getElem",
             "RHTable_insert_preserves_invExt",
@@ -44052,7 +44280,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_schedulerInvariantBundleFull",
-          "line": 3247,
+          "line": 3291,
           "called": [
             "SystemState",
             "invExt",
@@ -44075,7 +44303,7 @@
         {
           "kind": "theorem",
           "name": "handleYield_preserves_schedulerInvariantBundleFull",
-          "line": 3270,
+          "line": 3314,
           "called": [
             "SystemState",
             "handleYield",
@@ -44098,7 +44326,7 @@
         {
           "kind": "theorem",
           "name": "timerTick_preserves_schedulerInvariantBundleFull",
-          "line": 3294,
+          "line": 3338,
           "called": [
             "SystemState",
             "invExt",
@@ -44121,7 +44349,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_runQueueWellFormed",
-          "line": 3323,
+          "line": 3367,
           "called": [
             "SystemState",
             "insert_preserves_wellFormed",
@@ -44134,7 +44362,7 @@
         {
           "kind": "theorem",
           "name": "scheduleDomain_preserves_schedulerInvariantBundleFull",
-          "line": 3360,
+          "line": 3404,
           "called": [
             "SystemState",
             "domainTimeRemainingPositive",
@@ -44155,7 +44383,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudget_unbound_nopreempt_scheduler_eq",
-          "line": 3419,
+          "line": 3463,
           "called": [
             "SystemState",
             "TCB",
@@ -44166,7 +44394,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudget_unbound_preempt_replenishQueue_eq",
-          "line": 3429,
+          "line": 3473,
           "called": [
             "SystemState",
             "TCB",
@@ -44177,7 +44405,7 @@
         {
           "kind": "theorem",
           "name": "popDueReplenishments_sorted",
-          "line": 3442,
+          "line": 3486,
           "called": [
             "SystemState",
             "popDueReplenishments",
@@ -44188,7 +44416,7 @@
         {
           "kind": "theorem",
           "name": "popDueReplenishments_sizeConsistent",
-          "line": 3451,
+          "line": 3495,
           "called": [
             "SystemState",
             "popDueReplenishments",
@@ -44199,7 +44427,7 @@
         {
           "kind": "theorem",
           "name": "refillSchedContext_noop",
-          "line": 3462,
+          "line": 3506,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -44214,13 +44442,13 @@
         {
           "kind": "theorem",
           "name": "budget_decrement_stays_positive",
-          "line": 3483,
+          "line": 3527,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "consumeBudget_positive_of_gt_one",
-          "line": 3489,
+          "line": 3533,
           "called": [
             "SchedContext",
             "consumeBudget",
@@ -44230,7 +44458,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudget_unbound_nopreempt_objects_key",
-          "line": 3500,
+          "line": 3544,
           "called": [
             "SystemState",
             "TCB",
@@ -44243,7 +44471,7 @@
         {
           "kind": "theorem",
           "name": "timerTickBudget_unbound_preempt_objects_key",
-          "line": 3516,
+          "line": 3560,
           "called": [
             "SystemState",
             "TCB",
@@ -44256,7 +44484,7 @@
         {
           "kind": "theorem",
           "name": "consumeBudget_preserves_wf",
-          "line": 3534,
+          "line": 3578,
           "called": [
             "SchedContext",
             "consumeBudget",
@@ -44267,7 +44495,7 @@
         {
           "kind": "theorem",
           "name": "consumeBudget_preserves_schedContextWellFormed_full",
-          "line": 3541,
+          "line": 3585,
           "called": [
             "SchedContext",
             "consumeBudget",
@@ -44281,7 +44509,7 @@
         {
           "kind": "theorem",
           "name": "scheduleReplenishment_preserves_schedContextWellFormed_full",
-          "line": 3558,
+          "line": 3602,
           "called": [
             "Budget",
             "SchedContext",
@@ -44296,7 +44524,7 @@
         {
           "kind": "theorem",
           "name": "chooseThreadEffective_state_unchanged",
-          "line": 3576,
+          "line": 3620,
           "called": [
             "SystemState",
             "ThreadId",
@@ -44307,7 +44535,7 @@
         {
           "kind": "theorem",
           "name": "budgetPositive_subset",
-          "line": 3585,
+          "line": 3629,
           "called": [
             "SystemState",
             "ThreadId",
@@ -44320,7 +44548,7 @@
         {
           "kind": "theorem",
           "name": "effectivePriority_unbound_legacy",
-          "line": 3605,
+          "line": 3649,
           "called": [
             "SystemState",
             "TCB",
@@ -44331,7 +44559,7 @@
         {
           "kind": "theorem",
           "name": "hasSufficientBudget_unbound_legacy",
-          "line": 3613,
+          "line": 3657,
           "called": [
             "SystemState",
             "TCB",
@@ -44341,11 +44569,37 @@
         {
           "kind": "theorem",
           "name": "cbsUpdateDeadline_preserves_wf",
-          "line": 3622,
+          "line": 3666,
           "called": [
             "SchedContext",
             "cbsUpdateDeadline",
             "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pairwiseSortedBy_head_le_all",
+          "line": 3713,
+          "called": [
+            "SchedContextId",
+            "pairwiseSortedBy",
+            "pairwiseSortedBy_head_le_second"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "popDueReplenishments_remaining_gt_now",
+          "line": 3736,
+          "called": [
+            "SchedContextId",
+            "SystemState",
+            "pairwiseSortedBy",
+            "pairwiseSortedBy_head_le_all",
+            "pairwiseSortedBy_tail",
+            "popDue",
+            "popDueReplenishments",
+            "replenishQueueSorted",
+            "splitDue"
           ]
         }
       ]
@@ -44876,7 +45130,7 @@
         {
           "kind": "def",
           "name": "blockingAcyclic",
-          "line": 127,
+          "line": 147,
           "called": [
             "SystemState",
             "ThreadId",
@@ -44886,7 +45140,7 @@
         {
           "kind": "theorem",
           "name": "blockingChain_acyclic",
-          "line": 133,
+          "line": 153,
           "called": [
             "SystemState",
             "ThreadId",
@@ -44897,7 +45151,7 @@
         {
           "kind": "def",
           "name": "blockingServer",
-          "line": 139,
+          "line": 159,
           "called": [
             "SystemState",
             "ThreadId",
@@ -44908,7 +45162,7 @@
         {
           "kind": "theorem",
           "name": "blockingServer_isSome_iff_blockedOnReply_some",
-          "line": 162,
+          "line": 182,
           "called": [
             "ObjId",
             "SystemState",
@@ -44922,7 +45176,7 @@
         {
           "kind": "abbrev",
           "name": "pipBoost_attached_only_on_reply_blocked",
-          "line": 201,
+          "line": 221,
           "called": [
             "blockingServer_isSome_iff_blockedOnReply_some"
           ]
@@ -44930,7 +45184,7 @@
         {
           "kind": "theorem",
           "name": "blockingServer_some_implies_blockedOnReply",
-          "line": 208,
+          "line": 228,
           "called": [
             "ObjId",
             "SystemState",
@@ -44944,7 +45198,7 @@
         {
           "kind": "theorem",
           "name": "blockingChain_step",
-          "line": 244,
+          "line": 264,
           "called": [
             "SystemState",
             "ThreadId",
@@ -44957,7 +45211,7 @@
         {
           "kind": "theorem",
           "name": "blockingChain_congr",
-          "line": 274,
+          "line": 294,
           "called": [
             "SystemState",
             "ThreadId",
@@ -44971,7 +45225,7 @@
         {
           "kind": "theorem",
           "name": "blockingAcyclic_frame",
-          "line": 289,
+          "line": 309,
           "called": [
             "SystemState",
             "blockingAcyclic",
@@ -44982,7 +45236,7 @@
         {
           "kind": "theorem",
           "name": "blockingChain_length_le_fuel",
-          "line": 306,
+          "line": 326,
           "called": [
             "SystemState",
             "ThreadId",
@@ -44995,7 +45249,7 @@
         {
           "kind": "theorem",
           "name": "blockingChain_bounded",
-          "line": 334,
+          "line": 354,
           "called": [
             "SystemState",
             "ThreadId",
@@ -45006,7 +45260,7 @@
         {
           "kind": "def",
           "name": "countTCBs",
-          "line": 339,
+          "line": 359,
           "called": [
             "SystemState"
           ]
@@ -45780,7 +46034,7 @@
         {
           "kind": "def",
           "name": "updatePipBoost",
-          "line": 25,
+          "line": 39,
           "called": [
             "SystemState",
             "ThreadId",
@@ -45794,7 +46048,7 @@
         {
           "kind": "def",
           "name": "propagatePriorityInheritance",
-          "line": 60,
+          "line": 74,
           "called": [
             "SystemState",
             "ThreadId",
@@ -45806,7 +46060,7 @@
         {
           "kind": "def",
           "name": "revertPriorityInheritance",
-          "line": 88,
+          "line": 102,
           "called": [
             "SystemState",
             "ThreadId",
@@ -45818,7 +46072,7 @@
         {
           "kind": "theorem",
           "name": "propagate_zero",
-          "line": 105,
+          "line": 119,
           "called": [
             "SystemState",
             "ThreadId",
@@ -45828,7 +46082,7 @@
         {
           "kind": "theorem",
           "name": "propagate_step",
-          "line": 110,
+          "line": 124,
           "called": [
             "SystemState",
             "ThreadId",
@@ -45841,7 +46095,7 @@
         {
           "kind": "theorem",
           "name": "revert_eq_propagate",
-          "line": 123,
+          "line": 137,
           "called": [
             "SystemState",
             "ThreadId",
@@ -45853,7 +46107,7 @@
         {
           "kind": "theorem",
           "name": "updatePipBoost_ipcState_frame",
-          "line": 153,
+          "line": 167,
           "called": [
             "RHTable_get",
             "SystemState",
@@ -45870,7 +46124,7 @@
         {
           "kind": "theorem",
           "name": "updatePipBoost_self_ipcState",
-          "line": 186,
+          "line": 200,
           "called": [
             "RHTable_get",
             "SystemState",
@@ -45886,7 +46140,7 @@
         {
           "kind": "theorem",
           "name": "blockingServer_congr_objects",
-          "line": 224,
+          "line": 238,
           "called": [
             "SystemState",
             "ThreadId",
@@ -45897,7 +46151,7 @@
         {
           "kind": "theorem",
           "name": "blockingServer_ipcState_congr",
-          "line": 230,
+          "line": 244,
           "called": [
             "SystemState",
             "TCB",
@@ -45909,7 +46163,7 @@
         {
           "kind": "theorem",
           "name": "updatePipBoost_preserves_blockingServer",
-          "line": 237,
+          "line": 251,
           "called": [
             "RHTable_get",
             "SystemState",
@@ -46111,7 +46365,7 @@
         {
           "kind": "def",
           "name": "toList",
-          "line": 253,
+          "line": 259,
           "called": [
             "RunQueue",
             "ThreadId"
@@ -46120,7 +46374,7 @@
         {
           "kind": "def",
           "name": "atPriority",
-          "line": 254,
+          "line": 260,
           "called": [
             "Priority",
             "RunQueue",
@@ -46130,7 +46384,7 @@
         {
           "kind": "def",
           "name": "maxPriorityBucket",
-          "line": 258,
+          "line": 264,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -46141,7 +46395,7 @@
         {
           "kind": "def",
           "name": "ofList",
-          "line": 268,
+          "line": 274,
           "called": [
             "Priority",
             "RunQueue",
@@ -46153,7 +46407,7 @@
         {
           "kind": "theorem",
           "name": "mem_iff_contains",
-          "line": 273,
+          "line": 279,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -46163,7 +46417,7 @@
         {
           "kind": "theorem",
           "name": "contains_false_of_not_mem",
-          "line": 276,
+          "line": 282,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -46173,7 +46427,7 @@
         {
           "kind": "theorem",
           "name": "not_mem_empty",
-          "line": 280,
+          "line": 286,
           "called": [
             "RHSet",
             "RHSet.contains_empty",
@@ -46188,7 +46442,7 @@
         {
           "kind": "theorem",
           "name": "mem_insert",
-          "line": 289,
+          "line": 295,
           "called": [
             "Priority",
             "RHSet.contains_insert_ne",
@@ -46202,7 +46456,7 @@
         {
           "kind": "theorem",
           "name": "mem_remove",
-          "line": 313,
+          "line": 319,
           "called": [
             "RHSet.contains_erase_ne_K",
             "RHSet.contains_erase_self",
@@ -46215,7 +46469,7 @@
         {
           "kind": "theorem",
           "name": "mem_rotateToBack",
-          "line": 333,
+          "line": 339,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -46226,7 +46480,7 @@
         {
           "kind": "theorem",
           "name": "not_mem_remove_self",
-          "line": 341,
+          "line": 347,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -46237,7 +46491,7 @@
         {
           "kind": "theorem",
           "name": "not_mem_toList_of_not_mem",
-          "line": 347,
+          "line": 353,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -46248,7 +46502,7 @@
         {
           "kind": "theorem",
           "name": "membership_implies_flat",
-          "line": 355,
+          "line": 361,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -46259,7 +46513,7 @@
         {
           "kind": "theorem",
           "name": "mem_toList_iff_mem",
-          "line": 361,
+          "line": 367,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -46271,7 +46525,7 @@
         {
           "kind": "theorem",
           "name": "toList_empty",
-          "line": 369,
+          "line": 375,
           "called": [
             "RunQueue",
             "empty",
@@ -46281,7 +46535,7 @@
         {
           "kind": "theorem",
           "name": "toList_insert_not_mem",
-          "line": 371,
+          "line": 377,
           "called": [
             "Priority",
             "RunQueue",
@@ -46295,7 +46549,7 @@
         {
           "kind": "theorem",
           "name": "filter_filter_ne_of_false",
-          "line": 382,
+          "line": 388,
           "called": [
             "filter"
           ]
@@ -46303,7 +46557,7 @@
         {
           "kind": "theorem",
           "name": "toList_filter_insert_neg",
-          "line": 395,
+          "line": 401,
           "called": [
             "Priority",
             "RunQueue",
@@ -46316,7 +46570,7 @@
         {
           "kind": "theorem",
           "name": "toList_filter_insert_neg'",
-          "line": 404,
+          "line": 410,
           "called": [
             "Priority",
             "RunQueue",
@@ -46331,7 +46585,7 @@
         {
           "kind": "theorem",
           "name": "toList_filter_remove_neg",
-          "line": 413,
+          "line": 419,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -46344,7 +46598,7 @@
         {
           "kind": "theorem",
           "name": "not_mem_remove_toList",
-          "line": 422,
+          "line": 428,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -46355,7 +46609,7 @@
         {
           "kind": "theorem",
           "name": "toList_rotateToBack_nodup",
-          "line": 431,
+          "line": 437,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -46369,7 +46623,7 @@
         {
           "kind": "theorem",
           "name": "filter_erase_of_false",
-          "line": 449,
+          "line": 455,
           "called": [
             "erase",
             "filter"
@@ -46378,7 +46632,7 @@
         {
           "kind": "theorem",
           "name": "toList_filter_rotateToBack_neg",
-          "line": 464,
+          "line": 470,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -46391,7 +46645,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 503,
+          "line": 509,
           "called": [
             "RunQueue",
             "contains"
@@ -46400,7 +46654,7 @@
         {
           "kind": "theorem",
           "name": "maxPriorityBucket_subset",
-          "line": 512,
+          "line": 518,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -46413,7 +46667,7 @@
         {
           "kind": "theorem",
           "name": "maxPriorityBucket_threadPriority",
-          "line": 524,
+          "line": 530,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -46425,7 +46679,7 @@
         {
           "kind": "theorem",
           "name": "mem_maxPriorityBucket_of_threadPriority",
-          "line": 536,
+          "line": 542,
           "called": [
             "Priority",
             "RunQueue",
@@ -46439,16 +46693,6 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_membership",
-          "line": 554,
-          "called": [
-            "RunQueue",
-            "ThreadId",
-            "rotateToBack"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "rotateToBack_threadPriority",
           "line": 560,
           "called": [
             "RunQueue",
@@ -46458,8 +46702,18 @@
         },
         {
           "kind": "theorem",
-          "name": "rotateToBack_contains",
+          "name": "rotateToBack_threadPriority",
           "line": 566,
+          "called": [
+            "RunQueue",
+            "ThreadId",
+            "rotateToBack"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rotateToBack_contains",
+          "line": 572,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -46471,7 +46725,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_mem_iff",
-          "line": 571,
+          "line": 577,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -46483,7 +46737,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_preserves_wellFormed",
-          "line": 576,
+          "line": 582,
           "called": [
             "Priority",
             "RHTable",
@@ -46499,7 +46753,7 @@
         {
           "kind": "theorem",
           "name": "insert_threadPriority",
-          "line": 642,
+          "line": 648,
           "called": [
             "Priority",
             "RunQueue",
@@ -46511,7 +46765,7 @@
         {
           "kind": "theorem",
           "name": "insert_preserves_wellFormed",
-          "line": 652,
+          "line": 658,
           "called": [
             "Priority",
             "RHSet.contains_insert_ne",
@@ -46529,7 +46783,7 @@
         {
           "kind": "theorem",
           "name": "remove_byPrio_to_orig",
-          "line": 743,
+          "line": 749,
           "called": [
             "Priority",
             "RHTable_get",
@@ -46543,7 +46797,7 @@
         {
           "kind": "theorem",
           "name": "remove_byPrio_from_orig",
-          "line": 764,
+          "line": 770,
           "called": [
             "Priority",
             "RHTable_get",
@@ -46558,7 +46812,7 @@
         {
           "kind": "theorem",
           "name": "remove_tid_not_in_bucket",
-          "line": 798,
+          "line": 804,
           "called": [
             "Priority",
             "RHTable_get",
@@ -46573,7 +46827,7 @@
         {
           "kind": "theorem",
           "name": "remove_preserves_wellFormed",
-          "line": 832,
+          "line": 838,
           "called": [
             "Kernel",
             "RHSet.contains_erase_ne_K",
@@ -70408,12 +70662,51 @@
     {
       "module": "tests.LivenessSuite",
       "path": "tests/LivenessSuite.lean",
-      "declaration_count": 1,
+      "declaration_count": 6,
       "declarations": [
+        {
+          "kind": "example",
+          "name": "<anonymous:example:165>",
+          "line": 165,
+          "called": [
+            "rpi5CanonicalConfig_wellFormed",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:166>",
+          "line": 166,
+          "called": [
+            "isRPi5CanonicalConfig",
+            "rpi5CanonicalConfig",
+            "rpi5CanonicalConfig_isCanonical"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:167>",
+          "line": 167,
+          "called": [
+            "timerFrequencyHz"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:168>",
+          "line": 168,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:169>",
+          "line": 169,
+          "called": []
+        },
         {
           "kind": "def",
           "name": "main",
-          "line": 150,
+          "line": 175,
           "called": []
         }
       ]

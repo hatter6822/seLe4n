@@ -16,12 +16,26 @@ open SeLe4n.Model
 -- D4-G: updatePipBoost (single-thread priority update)
 -- ============================================================================
 
-/-- D4-G: Update the `pipBoost` field for a single thread based on its
-current waiters. If the thread has higher-priority waiters than its base
-priority, sets `pipBoost` to the maximum waiter priority. Otherwise clears it.
+/-- D4-G / AN5-C: Update the `pipBoost` field for a single thread based on
+its current waiters. If the thread has higher-priority waiters than its
+base priority, sets `pipBoost` to the maximum waiter priority. Otherwise
+clears it.
 
-If the thread is in the run queue and effective priority changed, performs
-remove-then-insert for bucket migration (D2-E pattern). -/
+If the thread is in the run queue and effective priority changed,
+performs remove-then-insert for bucket migration (D2-E pattern).
+
+**Lifecycle relationship (AN5-C)**:
+* `propagatePriorityInheritance` — top-level "forward" entry point that
+  walks a blocking chain from `startTid` and invokes `updatePipBoost`
+  on each server in the chain (up to fuel).
+* `revertPriorityInheritance` — symmetric "cleanup" path that clears
+  `pipBoost` when the blocking chain dissolves (IPC reply, timeout).
+  Invokes `updatePipBoost` to reset each server's boost after the waiter
+  exits the chain.
+* `updatePipBoost` (this function) — idempotent single-thread update.
+  `propagate`/`revert` compose it across the chain. It is called
+  directly by scheduler frame lemmas when a waiter's effective priority
+  changes without a full chain walk. -/
 def updatePipBoost (st : SystemState) (tid : ThreadId) : SystemState :=
   match st.objects[tid.toObjId]? with
   | some (KernelObject.tcb tcb) =>

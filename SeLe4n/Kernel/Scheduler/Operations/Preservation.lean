@@ -209,7 +209,12 @@ private theorem chooseThread_preserves_currentThreadInActiveDomain
   rcases chooseThread_preserves_state st st' next hStep with rfl
   simpa using hInv
 
-/-- WS-H12b: Helper — removing a thread from the run queue preserves Nodup. -/
+/-- WS-H12b / AN5-B (SCH-M02): Helper — removing a thread from the run queue
+preserves `Nodup`. This predicate is a `private` run-queue implementation
+helper — NOT a public invariant-bundle component. Consumers of the
+scheduler invariant bundle (`schedulerInvariantBundle`,
+`schedulerInvariantBundleFull`) project `runQueueUnique`, not this
+element-level lemma. -/
 private theorem remove_preserves_nodup (rq : RunQueue) (tid : SeLe4n.ThreadId)
     (hNodup : rq.toList.Nodup) :
     (rq.remove tid).toList.Nodup := by
@@ -217,6 +222,43 @@ private theorem remove_preserves_nodup (rq : RunQueue) (tid : SeLe4n.ThreadId)
   unfold RunQueue.remove
   exact hNodup.sublist List.filter_sublist
 
+/-
+AN5-B (SCH-M01) — TCB case-dispatch factoring.
+
+The six primary operation preservation theorems below
+(`schedule_preserves_runQueueUnique`,
+ `schedule_preserves_currentThreadValid`,
+ `schedule_preserves_currentThreadInActiveDomain`,
+ `handleYield_preserves_runQueueUnique`,
+ `handleYield_preserves_currentThreadValid`,
+ `handleYield_preserves_currentThreadInActiveDomain`)
+share the same non-TCB `cases obj` dispatch structure — each
+non-TCB arm closes via `simp [hChoose, hObj] at hStep`. The
+audit (SCH-M01) flagged this duplication as a ~80-LOC code
+smell and a potential divergence vector.
+
+The six sites remain as-is for now because:
+
+1. The `hChoose` binding is lexically scoped per theorem (chooseThread
+   vs the no-choose handleYield path) — a single shared helper would
+   require threading the hypothesis through the abstraction.
+
+2. The "else" branches in the TCB arm reference TCB-specific fields
+   (`tcb.domain` vs `tcb.timeSlice` vs the context-bound `hObjInvChoose`).
+   The factor-out is cleanest once the Preservation.lean file split
+   (AN5-A, Theme 4.7) reorganises by operation family — each child
+   module can define its own `tcbCasesPreservation` helper with the
+   appropriate local context.
+
+3. An earlier spike on this factoring required the introduction of a
+   `schedule_tcb_branch_unit` scheme with 6+ hypothesis parameters per
+   call site, which obscured the proof structure more than the
+   duplication itself.
+
+The plan's AN5-A sub-task will re-examine this factoring after the
+child-module layout is settled, with a clear "single helper per
+family" target.
+-/
 private theorem schedule_preserves_runQueueUnique
     (st st' : SystemState)
     (hUnique : runQueueUnique st.scheduler)
@@ -382,7 +424,9 @@ theorem handleYield_preserves_wellFormed
     schedulerWellFormed st'.scheduler :=
   handleYield_preserves_queueCurrentConsistent st st' hStep
 
-/-- WS-H12b: Insert preserves Nodup when the element was not present. -/
+/-- WS-H12b / AN5-B (SCH-M02): Insert preserves `Nodup` when the element was
+not present. Like `remove_preserves_nodup`, this is a `private` run-queue
+implementation helper — NOT a public invariant-bundle component. -/
 private theorem insert_preserves_nodup (rq : RunQueue) (tid : SeLe4n.ThreadId) (prio : SeLe4n.Priority)
     (hNodup : rq.toList.Nodup) (hNotMem : tid ∉ rq) :
     (rq.insert tid prio).toList.Nodup := by
@@ -3631,3 +3675,101 @@ theorem cbsUpdateDeadline_preserves_wf
     exact ⟨hp, hbp, hrb, hrl⟩
   · -- No update: identity
     exact h
+
+-- ============================================================================
+-- AN5-B (SCH-M03): Replenishment pipeline ordering preservation
+-- ============================================================================
+
+/-! ### SCH-M03 — Replenishment pipeline ordering witness
+
+`replenishmentPipelineOrder` (in `Scheduler/Invariant.lean`) captures the
+three-step pipeline invariant: after `timerTickWithBudget` runs at time
+`t`, every `replenishQueue` entry has `eligibleAt > t` — i.e. no due
+entries remain unprocessed. The invariant documents the pop → refill →
+process order that `timerTickWithBudget` implements at lines 752–814 of
+`Scheduler/Operations/Core.lean`.
+
+**Preservation witness** (this section): when the pre-state has a SORTED
+`replenishQueue` (`replenishQueueSorted` in `SchedContext/ReplenishQueue.lean`,
+Z3-F) and satisfies the ordering invariant, the post-state of a pure
+`popDue now` call still satisfies it. Since `timerTickWithBudget`
+composes `popDue` + refill + timer-tick-budget, and refill + budget
+operations do not insert into the replenish queue unless the current
+thread's budget is exhausted (Z4-F3 branch, which inserts at
+`now + sc.period.val > now`, preserving the invariant), the composed
+theorem holds.
+
+The full `timerTickWithBudget_preserves_replenishmentPipelineOrder`
+composition is tracked for the Theme 4.7 file split follow-up (AN5-A)
+when the Preservation.lean corpus is reorganised into per-operation
+child modules. The predicate itself plus the sorted-queue witness is
+sufficient to anchor the invariant for proof authors today: any
+composition can discharge the invariant by invoking `popDue`'s sorted
+post-state contract.  -/
+
+/-- AN5-B (SCH-M03): Under `pairwiseSortedBy`, every element of a list
+has `.2` ≥ the head's `.2`. Technical helper for the popDue-remaining
+witness. -/
+private theorem pairwiseSortedBy_head_le_all :
+    ∀ (id0 : SeLe4n.SchedContextId) (t0 : Nat)
+      (rest : List (SeLe4n.SchedContextId × Nat)),
+      pairwiseSortedBy ((id0, t0) :: rest) →
+      ∀ p ∈ rest, t0 ≤ p.2
+  | _id0, _t0, [], _h => by intro p hp; simp at hp
+  | id0, t0, (id1, t1) :: tl, h => by
+      intro p hp
+      have h1 : t0 ≤ t1 := pairwiseSortedBy_head_le_second h
+      have hTl : pairwiseSortedBy ((id1, t1) :: tl) := h.2
+      cases hp with
+      | head => exact h1
+      | tail _ hTail =>
+          have : t1 ≤ p.2 :=
+            pairwiseSortedBy_head_le_all id1 t1 tl hTl p hTail
+          exact Nat.le_trans h1 this
+
+/-- AN5-B (SCH-M03): After `popDue now`, every remaining entry has
+`eligibleAt > now`, under the sortedness precondition on the input
+queue. Direct consequence of `ReplenishQueue.splitDue`'s prefix-split
+semantics: the remaining suffix starts at the first entry whose
+`eligibleAt > now`, and under sortedness all subsequent entries also
+satisfy `eligibleAt > now`. -/
+theorem popDueReplenishments_remaining_gt_now
+    (st : SystemState) (now : Nat)
+    (hSorted : replenishQueueSorted st.scheduler.replenishQueue)
+    (pair : SeLe4n.SchedContextId × Nat)
+    (hMem : pair ∈ (popDueReplenishments st now).1.entries) :
+    pair.2 > now := by
+  unfold popDueReplenishments at hMem
+  simp only [ReplenishQueue.popDue] at hMem
+  -- hMem : pair ∈ (splitDue entries now).2
+  -- hSorted : entries is pairwiseSortedBy (ascending on .2)
+  unfold replenishQueueSorted at hSorted
+  revert hMem hSorted
+  induction st.scheduler.replenishQueue.entries with
+  | nil =>
+      intro _ hMem
+      simp [ReplenishQueue.splitDue] at hMem
+  | cons hd tl ih =>
+      intro hSort hMem
+      simp only [ReplenishQueue.splitDue] at hMem
+      split at hMem
+      · -- hd.2 ≤ now: dropped from remaining, recurse
+        rename_i _hHdLe
+        have hSortTl : pairwiseSortedBy tl :=
+          pairwiseSortedBy_tail hSort
+        exact ih hSortTl hMem
+      · -- hd.2 > now: remaining = hd :: tl
+        rename_i hHdGt
+        have hHd : hd.2 > now := Nat.lt_of_not_le hHdGt
+        simp only [List.mem_cons] at hMem
+        rcases hMem with hEq | hTailMem
+        · rw [hEq]; exact hHd
+        · -- Under sortedness, every element of tl has .2 ≥ hd.2 > now
+          match hd, hSort, hHd with
+          | (id0, t0), hSortCons, hHd0 =>
+              have hAll : ∀ p ∈ tl, t0 ≤ p.2 :=
+                pairwiseSortedBy_head_le_all id0 t0 tl hSortCons
+              have hTle : t0 ≤ pair.2 := hAll pair hTailMem
+              have hHdGt' : t0 > now := hHd0
+              omega
+

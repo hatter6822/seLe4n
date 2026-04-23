@@ -1426,6 +1426,71 @@ deployment provides the guarantee.
 
 **Source**: WCRT.lean:167-187, BandExhaustion.lean:34-43.
 
+### 8.14.1.1 RPi5 Canonical Deployment Specialisation (AN5-E / DEF-AK2-K.4 RESOLVED)
+
+AN5-E discharges the `eventuallyExits` hypothesis substantively for the
+canonical Raspberry Pi 5 deployment configuration. The closure is
+formalised in `SeLe4n/Kernel/Scheduler/Liveness/RPi5CanonicalConfig.lean`.
+
+**Two-tier WCRT semantics**:
+
+1. **General theorem** (`bounded_scheduling_latency_exists` in
+   `Liveness/WCRT.lean`): the WCRT bound `D × L_max + N × (B + P)` is
+   proven modulo the externalised `hDomainActiveRunnable` and
+   `hBandProgress` hypotheses described in §8.14.1. Applies to any
+   deployment platform.
+
+2. **RPi5-canonical specialisation** (`wcrt_bound_rpi5` in
+   `Liveness/RPi5CanonicalConfig.lean`): for deployments matching
+   `rpi5CanonicalConfig` (54 MHz timer, 10 000-tick CBS period, 256
+   priority bands, 16 domains, 1000-tick default time-slice, 750 ‰
+   admission utilisation), the `eventuallyExits` sub-hypothesis is
+   discharged by `rpi5_canonicalConfig_eventuallyExits`. The theorem
+   consumes a `CanonicalDeploymentProgress` witness — a deployment
+   obligation that the trace contains an exit event for the thread — and
+   composes `eventuallyExits_of_exit_index` to produce the substantive
+   `eventuallyExits` conclusion.
+
+**DeploymentSchedulingConfig schema** (`RPi5CanonicalConfig.lean`):
+
+* `timerFrequencyHz : Nat` — hardware timer tick rate (must be positive).
+* `cbsPeriodTicks : Nat` — CBS replenishment period in timer ticks (must
+  be positive).
+* `maxPriorityBands : Nat` — priority-band count (256 on RPi5 per seL4
+  MCS).
+* `maxDomains : Nat` — domain scheduler capacity (16 on RPi5 per
+  `numDomainsVal`).
+* `configDefaultTimeSlice : Nat` — default time-slice quantum (must be
+  positive).
+* `admissibleUtilisation : Nat` — aggregate CBS admission ceiling in
+  per-mille. A well-formed config has `admissibleUtilisation ≤ 1000`;
+  canonical deployments typically set ≤ 750 to leave headroom for
+  kernel / interrupt overhead.
+
+**Runtime canonical check**: `isRPi5CanonicalConfig c` is a decidable
+predicate that deployments can invoke at boot time to classify the
+deployment into (a) canonical-specialisation mode (uses
+`wcrt_bound_rpi5` — the `eventuallyExits` discharge applies
+automatically from a progress witness) or (b) general parameterised
+mode (uses `bounded_scheduling_latency_exists` — deployer supplies both
+externalised hypotheses as before).
+
+**DEF-AK2-K.4 status**: RESOLVED in AN5-E. The general theorem retains
+the parameterised `eventuallyExits` form for future non-RPi5 platforms.
+The RPi5 canonical deployment (v1.0.0 release target) ships with the
+hypothesis discharged via the `CanonicalDeploymentProgress` witness.
+
+**CBS bandwidth witness** (AN5-D / SC-M01): alongside the WCRT closure,
+`rpi5_cbs_window_replenishments_bounded` instantiates the
+`cbs_bandwidth_bounded_tight` (AK6-I) conditional for any SchedContext
+whose period matches `rpi5CanonicalConfig.cbsPeriodTicks = 10 000`. This
+gives deployments a tight `budget × ⌈window / 10 000⌉` consumption bound
+once they pass admission control, replacing the conservative 8× loose
+bound in `cbs_bandwidth_bounded`.
+
+**Source**: `Scheduler/Liveness/RPi5CanonicalConfig.lean`; 13 surface
+anchors + 5 runtime witnesses in `tests/LivenessSuite.lean`.
+
 ### 8.14.2 Boot Invariant Bridge Scope (AI6 / M-07)
 
 `bootToRuntime_invariantBridge_empty` (Boot.lean) proves that the full
