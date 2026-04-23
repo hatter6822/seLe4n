@@ -24,6 +24,13 @@ if ! command -v rg >/dev/null 2>&1; then
     cat > "${_RG_SHIM_DIR}/rg" <<'RGSHIM'
 #!/usr/bin/env bash
 # Minimal rg -> grep -P shim (WS-H3/M-20 fallback).
+# AN3-G post-delivery audit: `-r` added so GNU grep accepts directory
+# arguments the way `rg` does.  Without `-r`, `grep -P pattern dir/`
+# fails with `Is a directory` (exit code 2), which CI hit after AN3-C/D
+# split monolithic files into Structural/, NotificationPreservation/,
+# CallReplyRecv/ subdirectories whose Tier 3 surface checks now point
+# at directories.  `-r` is harmless for individual file arguments and
+# preserves rg's default `file:line:match` output format.
 nflag=""
 pattern=""
 files=()
@@ -42,9 +49,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 if [[ -n "${nflag}" ]]; then
-  exec grep -Pn -- "${pattern}" "${files[@]}"
+  exec grep -rPn -- "${pattern}" "${files[@]}"
 else
-  exec grep -P -- "${pattern}" "${files[@]}"
+  exec grep -rP -- "${pattern}" "${files[@]}"
 fi
 RGSHIM
     chmod +x "${_RG_SHIM_DIR}/rg"
