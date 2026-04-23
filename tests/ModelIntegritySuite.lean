@@ -1046,13 +1046,13 @@ def an2f3_02_coercion_roundtrip : IO Unit := do
   expect "Coercion preserves regionBase" (ut.regionBase == base)
   expect "Coercion preserves regionSize" (ut.regionSize == 8192)
 
-/-! ## AN3-B (IPC-M01 / Theme 4.2) — named-projection refactor for `ipcInvariantFull`
+/-! ## Named-projection refactor for `ipcInvariantFull`
 
-These tests exercise the named-projection layer added in AN3-B.2.  The
-discipline is:
+These tests exercise the named-projection layer over `ipcInvariantFull`.
+The discipline is:
 
 * `IpcInvariantFull` (structure) has 16 fields.
-* `ipcInvariantFull` (legacy tuple form) has 16 conjuncts.
+* `ipcInvariantFull` (tuple form) has 16 conjuncts.
 * `ipcInvariantFull_iff_IpcInvariantFull` bridges them bidirectionally.
 * 16 `@[simp]` projection theorems in the `ipcInvariantFull` namespace let
   callers read conjuncts via dot notation (`hInv.donationOwnerValid`).
@@ -1060,27 +1060,32 @@ discipline is:
 If the arity of `ipcInvariantFull` grows (or shrinks) without the
 projection layer being updated in lockstep, these runtime checks fail at
 build-time because the type signatures no longer align.
+
+(Landed by WS-AN phase AN3-B, IPC-M01.)
 -/
 
-/-! ### AN3-A type-level assertion: donation primitives reachable from hub.
+/-! ### Type-level assertion: donation primitives reachable from the Operations hub.
 
-The three `let _ : T := @name` ascriptions below force Lean to
-resolve each donation-primitive symbol.  If `AN3-A`'s hub-re-export
-regressed (e.g., `SeLe4n.Kernel.IPC.Operations` stopped importing
-`Donation.Primitives`), these symbols would still resolve from this
-test file because `ModelIntegritySuite` transitively imports the
-primitives via `CrossSubsystem`.  The regression is therefore
-protected structurally at the `lake build` level: breaking the hub
-import list causes ~80 kernel modules (API / InformationFlow /
-Architecture / ...) to stop resolving `applyCallDonation` and fail
-to build.  The type ascriptions below pin the public signatures so
-accidental signature changes in AN3-A primitives surface as a test
-build failure in addition to the whole-kernel failure. -/
+The `let _ : T := @name` ascriptions below force Lean to resolve each
+donation-primitive symbol via `SeLe4n.Kernel.IPC.Operations` alone.
+If the hub's re-export list stops importing `Donation.Primitives`,
+these symbols would still resolve from this test file because
+`ModelIntegritySuite` transitively imports the primitives via
+`CrossSubsystem`.  The regression is therefore protected structurally
+at the `lake build` level: breaking the hub import list causes ~80
+kernel modules (API / InformationFlow / Architecture / ...) to stop
+resolving `applyCallDonation` and fail to build.  The type
+ascriptions below additionally pin the public signatures so
+accidental signature changes surface as a test build failure in
+addition to the whole-kernel failure.
+
+(Landed by WS-AN phase AN3-A, H-01.)
+-/
 
 open SeLe4n.Model in
 open SeLe4n.Kernel in
-/-- AN3-A — donation primitives expose their documented signatures. -/
-def an3a_01_donation_primitive_signatures : IO Unit := do
+/-- Donation primitives expose their documented public signatures. -/
+def donation_primitives_reachable_via_operations_hub : IO Unit := do
   -- Core donation primitives.
   let _ : SystemState -> SeLe4n.ThreadId -> SeLe4n.ThreadId ->
           Except KernelError SystemState :=
@@ -1106,9 +1111,9 @@ def an3a_01_donation_primitive_signatures : IO Unit := do
     @applyReplyDonation_machine_eq
   -- Atomicity predicate surface.
   let _ : SystemState -> SystemState -> Prop := @donationAtomicRegion
-  expect "AN3-A donation primitives expose documented signatures" (True == True)
+  expect "donation primitives expose documented public signatures" (True == True)
 
-/-! ### AN3-B type-level assertions.
+/-! ### Type-level assertions for the named-projection refactor.
 
 The three tests below use explicit type ascriptions (not just `let _ := …`)
 so that each sampled projection / bridge is type-checked end-to-end: if
@@ -1119,11 +1124,10 @@ identifier-resolution check. -/
 
 open SeLe4n.Model in
 open SeLe4n.Kernel in
-/-- AN3-B.1 — bridge round-trip. Both `ipcInvariantFull` (tuple) and
-    `IpcInvariantFull` (structure) must be Props, and the coercions
-    `toStruct`/`toTuple` must compose to the identity at the Prop
-    level. We check this by ascribing the expected signatures. -/
-def an3b_01_bridge_signatures : IO Unit := do
+/-- `ipcInvariantFull` tuple ↔ `IpcInvariantFull` structure bridge has the
+    expected Iff signature; forward and backward coercions have the
+    expected `Prop -> Prop` shapes. -/
+def ipc_invariant_full_tuple_struct_bridge_signatures : IO Unit := do
   -- Tuple form is a `SystemState -> Prop`.
   let _ : SystemState -> Prop := @ipcInvariantFull
   -- Structure form is ALSO a `SystemState -> Prop` (since every field
@@ -1138,15 +1142,16 @@ def an3b_01_bridge_signatures : IO Unit := do
     @ipcInvariantFull.toStruct
   let _ : ∀ {st : SystemState}, IpcInvariantFull st -> ipcInvariantFull st :=
     @IpcInvariantFull.toTuple
-  expect "AN3-B bridge signatures OK" (True == True)
+  expect "ipcInvariantFull tuple-struct bridge signatures OK" (True == True)
 
 open SeLe4n.Model in
 open SeLe4n.Kernel in
-/-- AN3-B.2 — all 16 `@[simp]` projection theorems preserve their typed
-    conjunct. Each ascription pins the projection's codomain to the
-    matching top-level predicate, so a drift between the structure
-    field name and the tuple projection theorem fails the ascription. -/
-def an3b_02_projection_typing : IO Unit := do
+/-- All 16 `@[simp]` projection theorems on `ipcInvariantFull` preserve
+    their typed conjunct. Each ascription pins the projection's codomain
+    to the matching top-level predicate, so a drift between the
+    structure field name and the tuple projection theorem fails the
+    ascription. -/
+def ipc_invariant_full_named_projection_signatures : IO Unit := do
   let _ : ∀ {st : SystemState}, ipcInvariantFull st -> ipcInvariant st :=
     @ipcInvariantFull.ipcInvariant
   let _ : ∀ {st : SystemState}, ipcInvariantFull st -> dualQueueSystemInvariant st :=
@@ -1179,16 +1184,19 @@ def an3b_02_projection_typing : IO Unit := do
     @ipcInvariantFull.uniqueWaiters
   let _ : ∀ {st : SystemState}, ipcInvariantFull st -> blockedOnReplyHasTarget st :=
     @ipcInvariantFull.blockedOnReplyHasTarget
-  expect "All 16 AN3-B projection signatures typecheck" (True == True)
+  expect "all 16 ipcInvariantFull named projection signatures typecheck" (True == True)
+
 
 open SeLe4n.Model in
 open SeLe4n.Kernel in
-/-- AN3-B.3 — dot notation on a hypothesis `h : ipcInvariantFull st`
-    dispatches through the `ipcInvariantFull` namespace.  We construct
-    a one-shot witness of the projection chain to prove that
+/-- Dot notation on a hypothesis `h : ipcInvariantFull st` dispatches
+    through the `ipcInvariantFull` namespace. We construct one-shot
+    witnesses of the projection chain to prove that e.g.
     `h.donationOwnerValid` really yields a proof of
-    `donationOwnerValid st` and not (say) the whole tuple tail. -/
-def an3b_03_dot_notation_dispatch : IO Unit := do
+    `donationOwnerValid st` and not (say) the whole tuple tail.
+    Includes the first conjunct (`h.1` accessor) and the last conjunct
+    (no trailing `.1`) to cover both boundary shapes. -/
+def ipc_invariant_full_dot_notation_dispatch : IO Unit := do
   -- The following lambda compiles iff dot notation on `h` dispatches
   -- through `ipcInvariantFull.donationOwnerValid` AND that projection
   -- returns the expected predicate type.
@@ -1204,7 +1212,7 @@ def an3b_03_dot_notation_dispatch : IO Unit := do
   -- First conjunct `.ipcInvariant` uses `h.1`.
   let _ : ∀ {st : SystemState}, ipcInvariantFull st -> ipcInvariant st :=
     fun {_} h => h.ipcInvariant
-  expect "AN3-B dot-notation dispatch OK" (True == True)
+  expect "ipcInvariantFull dot-notation dispatch OK" (True == True)
 
 end SeLe4n.Testing.ModelIntegritySuite
 
@@ -1307,11 +1315,11 @@ def main : IO Unit := do
   -- AN2-F.3: UntypedObjectValid subtype
   an2f3_01_empty_wellFormed
   an2f3_02_coercion_roundtrip
-  -- AN3-A (H-01): donation primitive signatures reachable from hub
-  an3a_01_donation_primitive_signatures
-  -- AN3-B (IPC-M01 / Theme 4.2): named-projection refactor for ipcInvariantFull
-  an3b_01_bridge_signatures
-  an3b_02_projection_typing
-  an3b_03_dot_notation_dispatch
+  -- Donation primitive signatures reachable from the Operations hub.
+  donation_primitives_reachable_via_operations_hub
+  -- Named-projection refactor for ipcInvariantFull.
+  ipc_invariant_full_tuple_struct_bridge_signatures
+  ipc_invariant_full_named_projection_signatures
+  ipc_invariant_full_dot_notation_dispatch
   IO.println ""
   IO.println "=== All model integrity tests passed ==="

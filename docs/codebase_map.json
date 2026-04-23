@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/phase-an3-ipc-subsystem-6bLHZ",
-      "commit_sha": "96f0127825fe2a965d7198b8f653f649a9d0b979",
-      "tree_sha": "1a8c4f71ea4b654a1fda23fca8f54f3478763573",
-      "committed_at_utc": "2026-04-22T22:30:06+00:00"
+      "commit_sha": "abb2c1715055262e7119e224416e73850923ed68",
+      "tree_sha": "bc4a03c50487d9243cdcde8719d0469433cb6478",
+      "committed_at_utc": "2026-04-23T01:31:59+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "aad539840a0e9abb493feeb8159993da41dae0667b2aba10c2909b2c88dd3df2"
+    "source_digest": "da921015595782df459953bdc47792954ffec96e7b7d232812479f807b0d1026"
   },
   "summary": {
     "module_count": 175,
@@ -29,7 +29,7 @@
     "production_files": 151,
     "production_loc": 104156,
     "test_files": 24,
-    "test_loc": 15162,
+    "test_loc": 15170,
     "proved_theorem_lemma_decls": 3074,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -70956,8 +70956,8 @@
         },
         {
           "kind": "def",
-          "name": "an3a_01_donation_primitive_signatures",
-          "line": 1083,
+          "name": "donation_primitives_reachable_via_operations_hub",
+          "line": 1088,
           "called": [
             "KernelError",
             "SystemState",
@@ -70973,8 +70973,8 @@
         },
         {
           "kind": "def",
-          "name": "an3b_01_bridge_signatures",
-          "line": 1126,
+          "name": "ipc_invariant_full_tuple_struct_bridge_signatures",
+          "line": 1130,
           "called": [
             "IpcInvariantFull",
             "IpcInvariantFull.toTuple",
@@ -70987,8 +70987,8 @@
         },
         {
           "kind": "def",
-          "name": "an3b_02_projection_typing",
-          "line": 1149,
+          "name": "ipc_invariant_full_named_projection_signatures",
+          "line": 1154,
           "called": [
             "SystemState",
             "allPendingMessagesBounded",
@@ -71013,8 +71013,8 @@
         },
         {
           "kind": "def",
-          "name": "an3b_03_dot_notation_dispatch",
-          "line": 1191,
+          "name": "ipc_invariant_full_dot_notation_dispatch",
+          "line": 1199,
           "called": [
             "IpcInvariantFull",
             "SystemState",
@@ -71028,7 +71028,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1212,
+          "line": 1220,
           "called": [
             "addrInRange_device_region_rejected",
             "addrInRange_empty_map_rejects",
@@ -71042,10 +71042,6 @@
             "ak8a_07_empty_config_disjoint",
             "an2f3_01_empty_wellFormed",
             "an2f3_02_coercion_roundtrip",
-            "an3a_01_donation_primitive_signatures",
-            "an3b_01_bridge_signatures",
-            "an3b_02_projection_typing",
-            "an3b_03_dot_notation_dispatch",
             "apiInvariantBundle_full_implies_objectsOnly",
             "blockingAcyclic_projection_reindex_ok",
             "capability_canonical_null",
@@ -71064,6 +71060,7 @@
             "cspaceCopy_from_null_rejected",
             "cspaceMint_from_null_rejected",
             "cspaceMove_from_null_rejected",
+            "donation_primitives_reachable_via_operations_hub",
             "ensureCdtNodeForSlotChecked_counter_ok",
             "ensureCdtNodeForSlotChecked_counter_overflow_rejected",
             "freezeMap_empty_invExtK",
@@ -71083,6 +71080,9 @@
             "integration_validSchedContextId_rejects_sentinel",
             "integration_validThreadId_rejects_sentinel",
             "integration_validThreadId_roundtrip",
+            "ipc_invariant_full_dot_notation_dispatch",
+            "ipc_invariant_full_named_projection_signatures",
+            "ipc_invariant_full_tuple_struct_bridge_signatures",
             "kindedObjId_thread_schedContext_disjoint",
             "lifecycleObjectTypeLockstep_default",
             "messageInfo_mkChecked_accepts_maxLabel_boundary",

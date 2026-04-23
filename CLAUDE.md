@@ -470,9 +470,24 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   `tests/fixtures/main_trace_smoke.expected`. Update fixture only with rationale.
 - **Typed identifiers**: `ThreadId`, `ObjId`, `CPtr`, `Slot`, `DomainId`, etc.
   are wrapper structures, not `Nat` aliases. Use explicit `.toNat`/`.ofNat`.
-- **Internal-first naming**: theorem/function/definition names must describe
-  semantics (state update shape, preserved invariant, transition path). Do **not**
-  encode workstream IDs (`WS-*`, `wsH*`, etc.) in identifier names.
+- **Internal-first naming**: every identifier in the codebase — theorems,
+  functions, definitions, structures, fields, test runners, file names, and
+  directory names — must describe the semantics of what it is (state update
+  shape, preserved invariant, transition path, test subject). Workstream IDs,
+  audit IDs, phase codes, and sub-task numbers (`WS-*`, `wsH*`, `AN3-*`, `AK7-*`,
+  `ak9ce_01`, `an3b_02`, `I-H01`, etc.) **must not** appear in any identifier
+  or file name. Example: rename a test from `an3b_02_projection_typing` to
+  `ipc_invariant_full_projection_signatures`; rename a theorem from
+  `ak7_cdt_hypothesis_discharge_index` to `cdt_hypothesis_discharge_index`.
+  Rationale: workstream IDs are commit-time labels and age out as soon as a
+  workstream closes — encoding them in identifiers creates documentation debt
+  (every rename on workstream closure) and hides what the code actually
+  means from anyone reading it outside the audit's temporal window.
+  Legitimate places to reference a workstream ID: docstrings, commit messages,
+  CHANGELOG entries, and `CLAUDE.md` / `docs/WORKSTREAM_HISTORY.md` prose.
+  Historical identifiers that already encode workstream IDs (`ak8a_*`,
+  `an2f3_*`, etc.) stay as-is until touched by a workstream that can rename
+  them in the same commit; new code must comply with this rule from day one.
 
 ## Documentation rules
 
