@@ -1,3 +1,237 @@
+## v0.30.6 — WS-AN Phase AN4 (Capability / Lifecycle / Service) [in progress]
+
+Phase AN4 of the WS-AN v0.30.6 audit remediation portfolio per
+[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
+§7. Closes the four capability HIGH findings (H-02..H-06), lands the
+capability / lifecycle / service MEDIUM batches (CAP-M01..M05, LIF-M01..M06,
+SVC-M01..M04), executes two major Theme 4.7 file splits (`Preservation.lean`
+2464-LOC → 6 children; `Lifecycle/Operations.lean` 1600-LOC → 4 children),
+and adds the AN4-A CI allowlist enforcing production-path discipline on the
+internal retype primitive.
+
+**AN4-A (H-02 / HIGH)** — `lifecycleRetypeObject` visibility hardening.
+`SeLe4n/Kernel/Lifecycle/Operations.lean`:
+* `def lifecycleRetypeObject` moved into `namespace SeLe4n.Kernel.Internal`
+  so a direct `SeLe4n.Kernel.lifecycleRetypeObject` reference from
+  production dispatch is a compile error.
+* Proof-chain consumers (`Capability/Invariant/Preservation.lean`,
+  `Lifecycle/Invariant.lean`, `InformationFlow/Invariant/{Helpers,Composition}.lean`,
+  `Testing/MainTraceHarness.lean`, `tests/NegativeStateSuite.lean`,
+  `tests/OperationChainSuite.lean`) re-enable the bare name via
+  `open SeLe4n.Kernel.Internal` (within-file shadowing; does not leak to
+  downstream importers).
+* New `scripts/lifecycle_internal_allowlist.txt` enumerates every file
+  permitted to reference `Internal.lifecycleRetypeObject`. New
+  `scripts/check_lifecycle_internal_allowlist.sh` wired into
+  `scripts/test_tier0_hygiene.sh` as a CI gate; synthetic-violation test
+  confirms the check fails-closed.
+* New regression function `runAN4A5LifecycleVisibilityChecks` in
+  `tests/NegativeStateSuite.lean` demonstrates the cleanup-bypass semantic
+  difference: `Internal.lifecycleRetypeObject` leaves a dangling run-queue
+  entry while `lifecycleRetypeWithCleanup` scrubs it. Wired into the suite
+  `main`.
+
+**AN4-B (H-03 / HIGH)** — `lifecycleIdentityNoTypeAliasConflict` redundancy
+removal. `SeLe4n/Kernel/Lifecycle/Invariant.lean`:
+* `lifecycleIdentityNoTypeAliasConflict` (derivable in one step from
+  `lifecycleIdentityTypeExact` since `lookupObjectTypeMeta` is deterministic)
+  deleted.
+* `lifecycleIdentityAliasingInvariant` collapsed from `lifecycleIdentityTypeExact
+  ∧ lifecycleIdentityNoTypeAliasConflict` to a bare `abbrev` for
+  `lifecycleIdentityTypeExact`.
+* Downstream destructures (`lifecycleInvariantBundle_of_metadata_consistent`,
+  `lifecycleMetadataConsistent_of_lifecycleInvariantBundle`,
+  `lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle`,
+  `Service/Invariant/Policy.lean::storeServiceState_preserves_lifecycleInvariantBundle`
+  + `policyBackingObjectTyped_of_lifecycleInvariant`) migrated to project
+  `lifecycleIdentityTypeExact` directly.
+* New witness `lifecycleCapabilityRefNoTypeAliasConflict_of_exact` replaces
+  the removed `_of_identity` helper, deriving the capability-side aliasing
+  lemma from exactness.
+
+**AN4-C (H-04 / HIGH — Theme 4.1 anchor)** — CDT hypothesis discharge index.
+`SeLe4n/Kernel/CrossSubsystem.lean` gains a dedicated section documenting the
+mechanism by which CDT-modifying capability operations discharge their
+`cdtCompleteness ∧ cdtAcyclicity` post-state hypotheses:
+* Marker def `capabilityInvariantBundle_cdt_hypothesis_discharge_index : Unit := ()`
+  with a discharge-site mapping table covering `cspaceCopy`, `cspaceMove`,
+  `cspaceMintWithCdt`, `cspaceMutate`, `cspaceDeleteSlot`, `cspaceRevoke`.
+* Six per-operation `_cdt_hypothesis_discharged_at` companion theorems
+  bridging `capabilityInvariantBundle st'` to the pair `(cdtCompleteness st',
+  cdtAcyclicity st')`.
+* Anchors the broader Theme 4.1 discharge index (AN12-A will extend to
+  H-07 projection and SC-M02 `hSchedProj`).
+
+**AN4-D (H-05 / HIGH — Theme 4.4 SMP inventory)** — `cspaceLookupMultiLevel`
+precondition. `SeLe4n/Kernel/Capability/Operations.lean`:
+* New `resolvedCnodeStillValid (st : SystemState) (resolvedRef : SlotRef) : Prop`
+  precondition predicate capturing the "resolved CNode still backs a `.cnode`
+  variant" SMP obligation.
+* `resolvedCnodeStillValid_singleCore` proves the predicate holds
+  unconditionally on the single-core kernel (discharged directly from
+  `resolveCapAddress_result_valid_cnode`).
+* `cspaceLookupMultiLevel_fails_closed_on_missing_cnode` anchors the
+  fail-closed behaviour for the SMP case — the composite lookup fails
+  with `.invalidCapability` / `.objectNotFound` rather than returning
+  an unsound capability if a race retypes the CNode.
+* Docstring explicitly cross-references AN9-D (HAL bracket) and AN12-B
+  (SMP inventory).
+
+**AN4-E (H-06 / HIGH)** — `mintDerivedCap` non-null output witness.
+`SeLe4n/Kernel/Capability/Operations.lean`:
+* Function body gains an explicit `isNull` guard: if the candidate child
+  (parent's target + requested rights + badge) would satisfy
+  `Capability.isNull`, the mint returns `.error .nullCapability` rather
+  than constructing a null-valued cap. Closes the corner case where a
+  reserved-object parent + empty rights request would produce a null
+  child even after `rightsSubset` passed.
+* Unconditional theorem `mintDerivedCap_preserves_non_null` witnesses
+  that every `.ok` result carries `child.isNull = false`.
+* Tightened-return-type wrapper `mintDerivedCapNonNull : ...  → Except
+  KernelError NonNullCap` composes the base mint with the non-null
+  witness; bridge lemma `mintDerivedCapNonNull_ok_implies_mintDerivedCap_ok`
+  enables the cspaceMint migration.
+* `mintDerivedCap_attenuates`, `mintDerivedCap_badge_propagated`,
+  `cspaceMint_child_badge_preserved`, and the Preservation theorem
+  `cspaceMint_preserves_badgeWellFormed` updated to walk the new
+  two-`if` structure.
+
+**AN4-F (Capability MEDIUM batch)** — CAP-M01..M05:
+* **AN4-F.1 (CAP-M01)**: new `@[documented_obligation]` tag attribute
+  registered in `SeLe4n/Prelude.lean` via `Lean.registerTagAttribute`.
+  `resolveCapAddress_caller_rights_obligation` retagged and re-bodied
+  as `def ... : Unit := ()` (marker constant, replacing the prior
+  `: True := trivial`). Grep the codebase via
+  `grep -rn '@\[documented_obligation\]' SeLe4n/` to enumerate caller
+  contracts.
+* **AN4-F.2 (CAP-M02)**: the `cspaceRevokeCdtTransactional` Phase-3 fold's
+  defensive "`cspaceDeleteSlotCore` failure" branch is annotated with a
+  detailed monotonicity rationale (Phase-2 validation witnesses that every
+  descendant's CNode is present; deletions only overwrite CNodes in place,
+  never removing them from the object store). New happy-path theorem
+  `cspaceRevokeCdtTransactional_no_failure_no_cdt_node` witnesses the
+  no-descendant case; the full-fold monotonicity witness is tracked for
+  AN12-B.
+* **AN4-F.3 (CAP-M03)**: `SeLe4n/Kernel/Capability/Invariant/Preservation.lean`
+  (2464 LOC) split into six children:
+  - `Preservation/Insert.lean` (229 LOC): `cspaceLookupSlot`, `cspaceInsertSlot`
+  - `Preservation/Delete.lean` (284 LOC): `cspaceMint` base,
+    `cspaceDeleteSlotCore`, `cspaceDeleteSlot`, `cspaceRevoke` base
+  - `Preservation/CopyMoveMutate.lean` (353 LOC): `cspaceCopy`, `cspaceMove`,
+    `cspaceMintWithCdt`, `cspaceMutate`
+  - `Preservation/Revoke.lean` (459 LOC): `processRevokeNode`, `cspaceRevokeCdt`
+    (+ strict / streaming variants)
+  - `Preservation/EndpointReplyAndLifecycle.lean` (622 LOC): `endpointReply`,
+    `coreIpcInvariantBundle` + projections, IPC-scheduler coherence
+    components, `lifecycleRetypeObject` / `lifecycleRevokeDeleteRetype`
+    preservation cluster
+  - `Preservation/BadgeIpcCapsAndCdtMaps.lean` (675 LOC): Mint/Mutate
+    badge preservation, `ipcTransferSingleCap` / `ipcUnwrapCaps` variants,
+    `cdtMapsConsistent` preservations, `cdtExpandingOp` / `cdtShrinkingOps`
+  Hub `Preservation.lean` (42 LOC) thin re-export. Every proof moves
+  byte-identically; 17 private helpers promoted to file-boundary scope.
+* **AN4-F.4 (CAP-M04)**: new `cleanupHookDischarged (st : SystemState) (target
+  : SeLe4n.ObjId) : Prop` predicate in `Capability/Invariant/Defs.lean`
+  capturing the observable consequences of a successful
+  `lifecyclePreRetypeCleanup`. New precondition subtype
+  `structure RetypeTarget (st : SystemState)` bundles a target `ObjId`
+  with the cleanup witness; identity coercion via `CoeHead RetypeTarget
+  ObjId`.
+* **AN4-F.5 (CAP-M05)**: named-projection refactor for
+  `capabilityInvariantBundle`. New `structure CapabilityInvariantBundle
+  (st : SystemState) : Prop` with 7 named fields mirroring the tuple's
+  conjuncts, bidirectional bridge
+  `capabilityInvariantBundle_iff_CapabilityInvariantBundle`, and 7
+  `@[simp]` projection abbrevs in the `capabilityInvariantBundle`
+  namespace (`.slotUnique` through `.objectsInvExt`). Tuple form
+  remains the primary def at v0.30.6; consumer migration (30+ sites)
+  tracked for a follow-up atomic commit.
+
+**AN4-G (Lifecycle MEDIUM batch)** — LIF-M01..M06:
+* **AN4-G.1 (LIF-M01)**: new `removeThreadFromQueue_tcb_present` witness
+  characterises the principled advance-past-tid semantics of
+  `removeThreadFromQueue` when the TCB exists; the `(none, none)`
+  defensive fallback is annotated as formally unreachable under real
+  cleanup ordering. Signature-tightening to `Except` tracked for AN6.
+* **AN4-G.2 (LIF-M02)**: new `def lifecycleCleanupPipeline` named wrapper
+  over `lifecyclePreRetypeCleanup` + `@[simp] theorem
+  lifecycleCleanupPipeline_eq` definitional alias, surfacing the
+  composite cleanup step with a grep-friendly name.
+* **AN4-G.3 (LIF-M03)**: `scrubObjectMemory` docstring gains an
+  H3-hardware-binding cross-reference pointing at `SELE4N_SPEC.md` §5
+  "Lifecycle: model-vs-hardware scrub bridge".
+* **AN4-G.4 (LIF-M04)**: new
+  `retypeFromUntyped_atomicity_under_sequential_semantics` theorem
+  witnesses the "single transition" property for the watermark-advance +
+  child-store pair in the Lean sequential-evaluation model.
+* **AN4-G.5 (LIF-M05)**: `SeLe4n/Kernel/Lifecycle/Operations.lean` (1600
+  LOC) split into four children:
+  - `Operations/Cleanup.lean` (204 LOC): `lifecycleRetypeAuthority` +
+    cleanup primitives
+  - `Operations/CleanupPreservation.lean` (460 LOC): cleanup-primitive
+    preservations, `detachCNodeSlots`, `lifecyclePreRetypeCleanup`,
+    `lifecycleCleanupPipeline`, `Internal.lifecycleRetypeObject`,
+    `lifecycleRevokeDeleteRetype`
+  - `Operations/ScrubAndUntyped.lean` (764 LOC): untyped memory model,
+    `scrubObjectMemory`, `retypeFromUntyped` + complete proof cluster
+  - `Operations/RetypeWrappers.lean` (279 LOC): `lifecycleRetypeWithCleanup`,
+    WS-K-D dispatch helpers, `lifecycleRetypeDirect*` variants
+  Hub `Operations.lean` (54 LOC) thin re-export. One preservation proof
+  (`removeFromAllEndpointQueues_preserves`) rewritten to apply
+  `RHTable.fold_preserves` directly against a bundled triple invariant,
+  eliminating a cross-file elaboration fragility where the former
+  `epFold` helper relied on syntactic `let ep' : Endpoint := ...`
+  matching that reshaped to `have` through the import boundary. The
+  three new child files are added to `scripts/lifecycle_internal_allowlist.txt`.
+* **AN4-G.6 (LIF-M06)**: `lifecycleRevokeDeleteRetype` docstring gains
+  an explicit **non-transactional partial-failure contract** section
+  enumerating each error-path's side-effect state (local-revoke failure
+  preserves caller state; post-revoke delete failure leaves revoked edges
+  stripped; etc.) and pointing callers needing strict transactional
+  semantics at `cspaceRevokeCdtTransactional`.
+
+**AN4-H (Service MEDIUM batch)** — SVC-M01..M04:
+* **AN4-H.SVC-M01**: new `bootFromPlatform_service_fuel_sufficient`
+  witness theorem proving `serviceBfsFuel st ≥ st.services.size` under
+  the boot-time invariant `services.size ≤ objectIndex.length`.
+* **AN4-H.SVC-M02**: `serviceBfsFuel` docstring clarifies the
+  historical `Bfs` suffix (underlying algorithm is DFS-with-HashSet;
+  a 77-site atomic rename is deferred as a post-1.0 hygiene item).
+* **AN4-H.SVC-M03**: `serviceRegisterDependency` docstring documents
+  the idempotent collision semantics for `depId ∈ svc.dependencies`
+  (no-op vs added is not exposed via the return type; widening the
+  return would cascade through every caller without changing reachable
+  states).
+* **AN4-H.SVC-M04**: the `Service/Invariant/Acyclicity.lean` 3-child
+  split is deferred with a documented rationale — the same elaboration
+  fragility fixed by AN4-G.5's `fold_preserves`-direct rewrite would
+  need to be applied to ~10 private BFS-boundary proofs, and the file
+  at 1012 LOC is well under the 2000-LOC ceiling. Tracked as a post-1.0
+  hardening candidate.
+
+**AN4-I (Capability / Lifecycle / Service LOW batch)** — documentation
+annotations covering:
+* stale `cspaceRevokeCdt_lenient` docstring reference scrubbed with an
+  explanatory note (the variant was removed in WS-R2 / M-06's
+  error-propagation tightening).
+* `lifecycleCapabilityRefObjectTargetTypeAligned` gains an
+  SMP-assumption cross-reference pointing at AN4-D /
+  `resolvedCnodeStillValid` and AN12-B's SMP inventory.
+* `bfs_boundary_lemma` docstring gains a family-taxonomy annotation
+  documenting the transition / closure / completeness / universe axes
+  of the BFS-infrastructure witnesses.
+* `cspaceMutate`'s direct-overwrite annotation gains a CDT-preservation
+  theorem cross-reference pointing at
+  `cspaceMutate_preserves_capabilityInvariantBundle` and
+  `cspaceMutate_preserves_cdtMapsConsistent`.
+
+**Gate**: `lake build` (298 jobs, up from 278 — 20 new child modules + `.c.o`
+targets) + `test_smoke.sh` PASS + `test_tier0_hygiene.sh` PASS (including
+the new AN4-A allowlist check) + `check_lifecycle_internal_allowlist.sh`
+PASS + fixture byte-identical to `tests/fixtures/main_trace_smoke.expected`
++ zero `sorry` / `axiom` / `native_decide` in `SeLe4n/` or `Main.lean`.
+Version stays at 0.30.6 per the plan's no-per-phase-bump convention.
+
 ## v0.30.6 — WS-AN Phase AN3 (IPC subsystem) [in progress]
 
 Phase AN3 of the WS-AN v0.30.6 audit remediation portfolio per

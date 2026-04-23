@@ -524,7 +524,7 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
   checkInvariants counter "post-stress-boundary-memory" st1
 
 private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO Unit := do
-  match SeLe4n.Kernel.lifecycleRetypeObject rootSlot ⟨12⟩
+  match SeLe4n.Kernel.Internal.lifecycleRetypeObject rootSlot ⟨12⟩
       (.endpoint {}) st1 with
   | .error err =>
       IO.println s!"[LEP-001] lifecycle retype unauthorized branch: {reprStr err}"
@@ -537,12 +537,12 @@ private def runLifecycleAndEndpointTrace (counter : IO.Ref Nat) (st1 : SystemSta
           objectTypes := st1.lifecycle.objectTypes.insert ⟨12⟩ .endpoint
       }
     }
-  match SeLe4n.Kernel.lifecycleRetypeObject lifecycleAuthSlot ⟨12⟩
+  match SeLe4n.Kernel.Internal.lifecycleRetypeObject lifecycleAuthSlot ⟨12⟩
       (.endpoint {}) stIllegalState with
   | .error err => IO.println s!"[LEP-003] lifecycle retype illegal-state branch: {reprStr err}"
   | .ok _ =>
       IO.println "[LEP-004] unexpected lifecycle retype success under stale metadata"
-  match SeLe4n.Kernel.lifecycleRetypeObject lifecycleAuthSlot ⟨12⟩
+  match SeLe4n.Kernel.Internal.lifecycleRetypeObject lifecycleAuthSlot ⟨12⟩
       (.endpoint {}) st1 with
   | .error err => IO.println s!"[LEP-005] lifecycle retype error: {reprStr err}"
   | .ok (_, stLifecycle) =>
@@ -1351,7 +1351,7 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   let newObj : KernelObject := .endpoint {}
   match SeLe4n.Kernel.syscallInvoke { retypeGate with requiredRight := .retype }
       (fun cap => match cap.target with
-        | .object _ => SeLe4n.Kernel.lifecycleRetypeObject authSlot ⟨60⟩ newObj
+        | .object _ => SeLe4n.Kernel.Internal.lifecycleRetypeObject authSlot ⟨60⟩ newObj
         | _ => fun _ => .error .invalidCapability) stLocal with
   | .ok _ => IO.println "[SGT-009] H15e syscall gate retype: ok"
   | .error e => IO.println s!"[SGT-010] H15e syscall gate retype: {reprStr e}"
@@ -2034,7 +2034,7 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
           -- Retype endpoint to a fresh notification (effectively deleting it)
           let newObj : KernelObject := .notification {
             state := .idle, waitingThreads := [], pendingBadge := none }
-          match SeLe4n.Kernel.lifecycleRetypeObject lcAuthSlot lcEpId newObj stBlk2 with
+          match SeLe4n.Kernel.Internal.lifecycleRetypeObject lcAuthSlot lcEpId newObj stBlk2 with
           | .error err =>
               IO.println s!"[ELC-002] lifecycle retype-delete error: {reprStr err}"
           | .ok (_, stRetyped) =>

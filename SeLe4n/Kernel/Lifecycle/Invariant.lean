@@ -26,12 +26,11 @@ over *changed* state after a *successful* operation):
 
 **Structural / bridge theorems** (high assurance — prove decomposition and composition
 relationships between invariant layers):
-- `lifecycleIdentityNoTypeAliasConflict_of_exact`
 - `lifecycleCapabilityRefObjectTargetBacked_of_exact`
 - `lifecycleInvariantBundle_of_metadata_consistent`
 - `lifecycleMetadataConsistent_of_lifecycleInvariantBundle`
 - `lifecycleCapabilityRefObjectTargetTypeAligned_of_exact`
-- `lifecycleCapabilityRefNoTypeAliasConflict_of_identity`
+- `lifecycleCapabilityRefNoTypeAliasConflict_of_exact` (AN4-B replaces `_of_identity`)
 - `lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle`
 - `lifecycleIdentityStaleReferenceInvariant_of_lifecycleInvariantBundle`
 
@@ -43,33 +42,25 @@ operations. There are no error-case preservation theorems in this module.
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+-- AN4-A allowlist: proof-chain reference to `lifecycleRetypeObject` from
+-- `SeLe4n.Kernel.Internal`. Enforced by `scripts/test_tier0_hygiene.sh`.
+open Internal
 
 /-- M4-A step-3 identity invariant: lifecycle object-type metadata exactly tracks
 object-store identity typing for each object id. -/
 def lifecycleIdentityTypeExact (st : SystemState) : Prop :=
   SystemState.objectTypeMetadataConsistent st
 
-/-- M4-A step-3 aliasing invariant: one object identity cannot carry conflicting lifecycle
-object-type aliases.
-
-WS-F6/D1c: Reclassified as a structural lemma derivable from `lifecycleIdentityTypeExact`
-(see `lifecycleIdentityNoTypeAliasConflict_of_exact`). This is a tautology: the same
-deterministic lookup cannot return two different values. Retained for backward compatibility
-with the `lifecycleIdentityAliasingInvariant` bundle and downstream proof surfaces. -/
-def lifecycleIdentityNoTypeAliasConflict (st : SystemState) : Prop :=
-  ∀ oid ty₁ ty₂,
-    SystemState.lookupObjectTypeMeta st oid = some ty₁ →
-    SystemState.lookupObjectTypeMeta st oid = some ty₂ →
-    ty₁ = ty₂
-
 /-- Identity/aliasing bundle used by lifecycle proofs before capability-reference composition.
 
-WS-F6/D1c note: `lifecycleIdentityNoTypeAliasConflict` is derivable from
-`lifecycleIdentityTypeExact` via `lifecycleIdentityNoTypeAliasConflict_of_exact`.
-Both are retained in the bundle for backward compatibility, but auditors should note
-that the second conjunct adds no independent assurance beyond the first. -/
-def lifecycleIdentityAliasingInvariant (st : SystemState) : Prop :=
-  lifecycleIdentityTypeExact st ∧ lifecycleIdentityNoTypeAliasConflict st
+AN4-B (H-03): the previous formulation conjoined
+`lifecycleIdentityNoTypeAliasConflict` (a tautology derivable from
+`lifecycleIdentityTypeExact` — the same deterministic lookup cannot return
+two different values). The redundant predicate has been removed; the bundle
+is now a bare alias for `lifecycleIdentityTypeExact`. Legacy destructures
+should project `hIdAlias` directly as the identity witness. -/
+abbrev lifecycleIdentityAliasingInvariant (st : SystemState) : Prop :=
+  lifecycleIdentityTypeExact st
 
 /-- M4-A step-3 capability-reference invariant: lifecycle slot-reference metadata exactly tracks
 concrete capability-slot targets. -/
@@ -104,7 +95,16 @@ def lifecycleCapabilityReferenceInvariant (st : SystemState) : Prop :=
   lifecycleCapabilityRefExact st ∧ lifecycleCapabilityRefObjectTargetBacked st
 
 /-- M4-B stale-reference exclusion component: any object-target capability reference agrees with
-object-type metadata whenever that object identity is present. -/
+object-type metadata whenever that object identity is present.
+
+**AN4-I (LOW) — SMP-assumption cross-reference**: like the CSpace lookup
+semantics (`cspaceLookupMultiLevel` — see AN4-D / H-05 SMP-precondition
+predicate `resolvedCnodeStillValid`), this predicate assumes the
+capability-reference table does not concurrently mutate between the
+metadata lookup and the kernel-object lookup. On a single core the
+assumption is discharged unconditionally; under SMP it becomes a
+critical-section obligation tracked by the AN9-D interrupt-disable
+bracket and the AN12-B SMP inventory. -/
 def lifecycleCapabilityRefObjectTargetTypeAligned (st : SystemState) : Prop :=
   ∀ ref oid obj,
     SystemState.lookupCapabilityRefMeta st ref = some (.object oid) →
@@ -135,26 +135,12 @@ def lifecycleIdentityStaleReferenceInvariant (st : SystemState) : Prop :=
 def lifecycleInvariantBundle (st : SystemState) : Prop :=
   lifecycleIdentityAliasingInvariant st ∧ lifecycleCapabilityReferenceInvariant st
 
-theorem lifecycleIdentityNoTypeAliasConflict_of_exact
-    (st : SystemState)
-    (hExact : lifecycleIdentityTypeExact st) :
-    lifecycleIdentityNoTypeAliasConflict st := by
-  intro oid ty₁ ty₂ hTy₁ hTy₂
-  cases hObj : st.objects[oid]? with
-  | none =>
-      have hNone : SystemState.lookupObjectTypeMeta st oid = none := by
-        simpa [lifecycleIdentityTypeExact, SystemState.objectTypeMetadataConsistent,
-          SystemState.lookupObjectTypeMeta, hObj] using hExact oid
-      rw [hNone] at hTy₁
-      contradiction
-  | some obj =>
-      have hMeta : SystemState.lookupObjectTypeMeta st oid = some obj.objectType := by
-        simpa [lifecycleIdentityTypeExact, SystemState.objectTypeMetadataConsistent,
-          SystemState.lookupObjectTypeMeta, hObj] using hExact oid
-      rw [hMeta] at hTy₁ hTy₂
-      cases hTy₁
-      cases hTy₂
-      rfl
+-- AN4-B (H-03): `lifecycleIdentityNoTypeAliasConflict_of_exact` was the
+-- implication witness bridging `lifecycleIdentityTypeExact` to the deleted
+-- `lifecycleIdentityNoTypeAliasConflict` predicate. Because the redundant
+-- predicate has been removed, the implication's target has disappeared and the
+-- theorem is no longer needed. Proof-chain consumers now reason directly from
+-- `lifecycleIdentityTypeExact`.
 
 theorem lifecycleCapabilityRefObjectTargetBacked_of_exact
     (st : SystemState)
@@ -175,15 +161,15 @@ theorem lifecycleInvariantBundle_of_metadata_consistent
     lifecycleInvariantBundle st := by
   rcases hMeta with ⟨hObjType, hCapRef⟩
   refine ⟨?_, ?_⟩
-  · exact ⟨hObjType, lifecycleIdentityNoTypeAliasConflict_of_exact st hObjType⟩
+  · -- AN4-B: the identity/aliasing bundle collapses to the exactness witness.
+    exact hObjType
   · exact ⟨hCapRef, lifecycleCapabilityRefObjectTargetBacked_of_exact st hCapRef⟩
 
 theorem lifecycleMetadataConsistent_of_lifecycleInvariantBundle
     (st : SystemState)
     (hInv : lifecycleInvariantBundle st) :
     SystemState.lifecycleMetadataConsistent st := by
-  rcases hInv with ⟨hIdAlias, hCapRef⟩
-  rcases hIdAlias with ⟨hObjType, _hAlias⟩
+  rcases hInv with ⟨hObjType, hCapRef⟩
   rcases hCapRef with ⟨hCapRefExact, _hBacked⟩
   exact ⟨hObjType, hCapRefExact⟩
 
@@ -195,23 +181,42 @@ theorem lifecycleCapabilityRefObjectTargetTypeAligned_of_exact
   simpa [lifecycleIdentityTypeExact, SystemState.objectTypeMetadataConsistent,
     SystemState.lookupObjectTypeMeta, hObj] using hObjType oid
 
-theorem lifecycleCapabilityRefNoTypeAliasConflict_of_identity
+/-- AN4-B (H-03): derive `lifecycleCapabilityRefNoTypeAliasConflict` directly
+from `lifecycleIdentityTypeExact`. This replaces
+`lifecycleCapabilityRefNoTypeAliasConflict_of_identity` (whose hypothesis
+`lifecycleIdentityNoTypeAliasConflict` was removed as a redundant bundle
+conjunct). The proof inlines the former two-step chain via the shared
+"deterministic lookup of the same id agrees" argument. -/
+theorem lifecycleCapabilityRefNoTypeAliasConflict_of_exact
     (st : SystemState)
-    (hAlias : lifecycleIdentityNoTypeAliasConflict st) :
+    (hExact : lifecycleIdentityTypeExact st) :
     lifecycleCapabilityRefNoTypeAliasConflict st := by
   intro _ref oid ty₁ ty₂ _hMeta hTy₁ hTy₂
-  exact hAlias oid ty₁ ty₂ hTy₁ hTy₂
+  cases hObj : st.objects[oid]? with
+  | none =>
+      have hNone : SystemState.lookupObjectTypeMeta st oid = none := by
+        simpa [lifecycleIdentityTypeExact, SystemState.objectTypeMetadataConsistent,
+          SystemState.lookupObjectTypeMeta, hObj] using hExact oid
+      rw [hNone] at hTy₁
+      contradiction
+  | some obj =>
+      have hMeta : SystemState.lookupObjectTypeMeta st oid = some obj.objectType := by
+        simpa [lifecycleIdentityTypeExact, SystemState.objectTypeMetadataConsistent,
+          SystemState.lookupObjectTypeMeta, hObj] using hExact oid
+      rw [hMeta] at hTy₁ hTy₂
+      cases hTy₁
+      cases hTy₂
+      rfl
 
 theorem lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle
     (st : SystemState)
     (hInv : lifecycleInvariantBundle st) :
     lifecycleStaleReferenceExclusionInvariant st := by
-  rcases hInv with ⟨hIdAlias, hCapRef⟩
-  rcases hIdAlias with ⟨hObjType, hAlias⟩
+  rcases hInv with ⟨hObjType, hCapRef⟩
   rcases hCapRef with ⟨_hCapRefExact, hBacked⟩
   refine ⟨hBacked, ?_, ?_⟩
   · exact lifecycleCapabilityRefObjectTargetTypeAligned_of_exact st hObjType
-  · exact lifecycleCapabilityRefNoTypeAliasConflict_of_identity st hAlias
+  · exact lifecycleCapabilityRefNoTypeAliasConflict_of_exact st hObjType
 
 theorem lifecycleIdentityStaleReferenceInvariant_of_lifecycleInvariantBundle
     (st : SystemState)

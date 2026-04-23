@@ -903,13 +903,61 @@ memory is retyped for a different purpose.
   range of physical memory addresses.
 - **`memoryZeroed`** (`Machine.lean`): Postcondition predicate asserting all
   bytes in a range are zero after scrubbing.
-- **`scrubObjectMemory`** (`Lifecycle/Operations.lean`): Applies `zeroMemoryRange`
+- **`scrubObjectMemory`** (`Lifecycle/Operations/ScrubAndUntyped.lean` after the
+  AN4-G.5 split; was `Lifecycle/Operations.lean`): Applies `zeroMemoryRange`
   to the object's backing region during cleanup.
 - **Invariant preservation**: `scrubObjectMemory` preserves lifecycle invariants
   trivially (only modifies `machine.memory`, not kernel state structures).
 - **NI preservation**: `scrubObjectMemory` preserves `lowEquivalent` for
   non-observable targets — scrubbing memory outside an observer's domain does
   not affect their projected state.
+
+**AN4-G.3 (LIF-M03) — Lifecycle: model-vs-hardware scrub bridge.** The
+model-layer `scrubObjectMemory` computes its target PAddr as
+`objectId.toNat × objectTypeAllocSize` — a purely abstract convention. Real
+hardware (the RPi5 AArch64 target) must route the same scrub through the
+VSpace bridge so it hits the physical frame that actually backs the object's
+allocation extent:
+
+1. The untyped allocator in `retypeFromUntyped` records each child's
+   allocation region as `(regionBase + offset, allocSize)` within the parent
+   untyped object's physical range.
+2. On cleanup, the hardware bridge must map the model-layer PAddr to the
+   physical-frame extent assigned by the allocator and zero that extent
+   using a cache-safe sequence (DSB ISHST + DC CVAC per 64-byte line +
+   DSB ISH) before the memory is returned to the untyped pool.
+3. The VSpace bridge is deferred to AN9 (hardware workstream); until then,
+   the model-level scrub stands in as the abstract witness, and the
+   `memoryZeroed` postcondition covers the model's view of the region.
+4. AN12-B's SMP inventory tracks the additional obligation that the
+   scrub must happen within the same critical section as the retype to
+   prevent another core from observing the pre-scrub contents of the
+   region during a race.
+
+**AN4-G.6 (LIF-M06) — Lifecycle partial-failure semantics.** The
+`lifecycleRevokeDeleteRetype` composition is **non-transactional**. An
+early `.error` return from any of its four phases (revoke / delete /
+post-delete-lookup / final retype) leaves the system state in a
+partially-cleaned form, and the caller must handle this contractually.
+The phase-by-phase side-effect catalogue is:
+
+1. **`cspaceRevoke` failure**: no mutations committed; caller state preserved.
+2. **`cspaceDeleteSlot` failure** (after successful revoke): the revoked
+   CDT edges remain stripped even though the slot still holds its original
+   capability. Caller sees `.error` with the partial revoke side-effect.
+3. **Post-delete `cspaceLookupSlot` returns unexpectedly**: both revoke and
+   delete have committed; retype is skipped; the slot was already scrubbed
+   clean.
+4. **`Internal.lifecycleRetypeObject` failure** (cleanup-bypass path —
+   production callers use `lifecycleRetypeWithCleanup` instead): revoke +
+   delete committed; target object retains its old variant.
+
+Callers needing strict transactional "all-or-nothing" semantics should
+invoke `cspaceRevokeCdtTransactional` (AK8-B) separately before the
+retype pipeline, or use `lifecycleRetypeWithCleanup`, which wraps the
+strict cleanup pipeline and propagates errors before any retype is
+attempted. `.error` from `lifecycleRevokeDeleteRetype` is a best-effort
+cleanup-partially-completed outcome, NOT a rollback.
 
 ### 8.7 TLB Flush Requirements for Production Paths (WS-S Phase S6)
 

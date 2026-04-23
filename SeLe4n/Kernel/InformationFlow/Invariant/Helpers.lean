@@ -18,6 +18,9 @@ import SeLe4n.Kernel.Architecture.VSpace
 namespace SeLe4n.Kernel
 
 open SeLe4n.Model
+-- AN4-A allowlist: proof-chain reference to `lifecycleRetypeObject` from
+-- `SeLe4n.Kernel.Internal`. Enforced by `scripts/test_tier0_hygiene.sh`.
+open Internal
 
 -- ============================================================================
 -- R5-C.1: Memory projection preservation helper

@@ -8,6 +8,7 @@
 
 import Std.Data.HashMap
 import Std.Data.HashSet
+import Lean.Attributes
 import SeLe4n.Kernel.RobinHood.Bridge
 
 namespace SeLe4n
@@ -52,6 +53,17 @@ identifiers. Specifically:
 predicates (defined below at `machineWordMax := 2^64`) must be enforced at every
 ABI entry point. The `CPtr.isWord64Bounded` and `Slot.isWord64Bounded` methods
 provide this check for capability pointers and slot indices. -/
+
+/-! ## AN4-F.1 (CAP-M01): `@[documented_obligation]` attribute
+
+Marker attribute for theorems that exist solely to surface a caller-facing
+invariant as machine-searchable documentation (no Prop content). The
+attribute is a no-op; it exists so reviewers can `grep -r @\[documented_obligation\]`
+to locate every such obligation. -/
+
+initialize SeLe4n.documentedObligationAttr : Lean.TagAttribute ←
+  Lean.registerTagAttribute `documented_obligation
+    "AN4-F.1 (CAP-M01): marks a declaration whose sole purpose is to record a caller obligation in machine-searchable form (no Prop content)."
 
 /-- Identifier for objects in the global kernel object store.
     Value 0 is reserved as sentinel (H-06/WS-E3). -/
