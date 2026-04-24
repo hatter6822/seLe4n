@@ -15,6 +15,7 @@ import SeLe4n.Model.FreezeProofs
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Testing.Helpers
 import SeLe4n.Testing.InvariantChecks
+import SeLe4n.Testing.StateBuilder
 import SeLe4n.Kernel.CrossSubsystem
 import SeLe4n.Kernel.IPC.Invariant.Defs
 import SeLe4n.Platform.Boot
@@ -1357,6 +1358,59 @@ def an6c3_untypedAncestorChain_bounded : IO Unit := do
   let _ := @SeLe4n.Kernel.untypedAncestorChain_bounded
   expect "maxRetypeDepth = 256" (SeLe4n.Kernel.maxRetypeDepth == 256)
 
+/-- AN6-C.3 post-audit: non-empty-state walker test — builds a 2-level
+    parent chain (boot untyped A → retyped child B with `parent = some
+    A.objId`) and verifies `untypedAncestorChain` walks from B up to A
+    correctly. The empty-state test above only exercises fuel bounds;
+    this test exercises the `some pid` recursive branch.
+
+    Under today's API, retype-to-untyped is never exercised so this
+    state is synthetic — but the walker's correctness on synthetic
+    parent chains is the scaffolding for AN6-C.5..C.10 follow-up
+    preservation proofs. -/
+def an6c3_untypedAncestorChain_walks_synthetic_chain : IO Unit := do
+  let parentId := SeLe4n.ObjId.ofNat 100
+  let childId := SeLe4n.ObjId.ofNat 200
+  let parentUt : UntypedObject := {
+    regionBase := SeLe4n.PAddr.ofNat 0x1000,
+    regionSize := 0x2000,
+    parent := none
+  }
+  let childUt : UntypedObject := {
+    regionBase := SeLe4n.PAddr.ofNat 0x1100,
+    regionSize := 0x100,
+    parent := some parentId
+  }
+  let builder0 := SeLe4n.Testing.BootstrapBuilder.empty
+  let builder1 := SeLe4n.Testing.BootstrapBuilder.withObject
+                    builder0 parentId (.untyped parentUt)
+  let builder2 := SeLe4n.Testing.BootstrapBuilder.withObject
+                    builder1 childId (.untyped childUt)
+  let st : SystemState := SeLe4n.Testing.BootstrapBuilder.build builder2
+  -- Walker from child with fuel = 2 should return [childId, parentId].
+  let chainFrom2 := SeLe4n.Kernel.untypedAncestorChain st childId 2
+  expect "walker returns length-2 chain from child with fuel 2"
+    (chainFrom2.length == 2)
+  expect "walker returns [childId, parentId] (head is queried node)"
+    (chainFrom2.head? == some childId)
+  match chainFrom2 with
+  | [c, p] =>
+      expect "walker's 1st element is child" (c == childId)
+      expect "walker's 2nd element is parent" (p == parentId)
+  | _ => expect "walker returned non-2-element chain unexpectedly" false
+  -- Walker with fuel 1 visits only the child (parent requires 1 more fuel).
+  let chainFrom1 := SeLe4n.Kernel.untypedAncestorChain st childId 1
+  expect "walker at fuel 1 returns [child] only (no parent descent)"
+    (chainFrom1 == [childId])
+  -- Walker from parent with fuel ≥ 1 returns [parentId] (no parent).
+  let parentChain := SeLe4n.Kernel.untypedAncestorChain st parentId 10
+  expect "walker on top-level (parent=none) returns [parentId]"
+    (parentChain == [parentId])
+  -- Bound holds on the synthetic chain.
+  let _ := @SeLe4n.Kernel.untypedAncestorChain_bounded
+  expect "bound: length-2 chain with fuel 2 has length ≤ 2"
+    (chainFrom2.length ≤ 2)
+
 /-- AN6 post-audit (AK8-A): `objectOfKernelType .untyped sizeHint`
     hardcodes `regionBase = PAddr.ofNat 0`. The substantive theorem
     replaces the prior `True := trivial` marker and structurally
@@ -1556,6 +1610,7 @@ def main : IO Unit := do
   -- AN6-C (H-09): UntypedObject.parent + ancestor-chain foundation
   an6c1_untypedObject_parent_field_default
   an6c3_untypedAncestorChain_bounded
+  an6c3_untypedAncestorChain_walks_synthetic_chain
   an6c4_untypedAncestorRegionsDisjoint_default
   -- AN6 post-audit: AK8-A `True := trivial` → substantive theorems
   an6_postaudit_ak8a_objectOfKernelType_untyped_zero_regionBase

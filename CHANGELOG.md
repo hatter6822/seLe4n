@@ -1,3 +1,65 @@
+## v0.30.6 — WS-AN Phase AN6 second audit-pass remediation [in progress]
+
+Second deep audit pass on the AN6 post-audit tip identified four more
+issues where the landing could be strengthened. All fixed in-PR.
+
+### Audit finding #1 (AN6-B): cycle-form distinctness insufficient
+
+`archAssumptionConsumer_distinct` proved 5 cyclic inequalities (timer ≠
+register, register ≠ memory, memory ≠ boot, boot ≠ irq, irq ≠ timer),
+which catches full-collapse drift but misses pairs like "timer ≠
+memory" or "register ≠ boot" (non-adjacent in the cycle). Strengthened
+to full pairwise distinctness: **C(5,2) = 10 inequalities**, each
+discharged by `decide`. Catches every possible two-constructor
+collision.
+
+### Audit finding #2 (AN6-C): walker test only exercised the empty state
+
+The `an6c3_untypedAncestorChain_bounded` test exercised only the
+`fuel = 0` / `fuel = maxRetypeDepth` on an empty state — it did NOT
+exercise the `some pid` recursive branch. Added new runtime test
+`an6c3_untypedAncestorChain_walks_synthetic_chain` that builds a
+synthetic 2-level parent chain (boot untyped at ObjId 100, retyped
+child at ObjId 200 with `parent := some 100`) via the
+`SeLe4n.Testing.BootstrapBuilder` API and verifies:
+
+1. Walker from child with fuel 2 returns exactly `[childId, parentId]`
+   (head is queried node, recursion descends to parent).
+2. Walker at fuel 1 returns `[childId]` only (no parent descent — fuel
+   exhausted before reaching parent).
+3. Walker from top-level (parent = none) returns `[parentId]`.
+4. `untypedAncestorChain_bounded` holds on the synthetic chain.
+
+This exercises the walker's recursive branch for the first time.
+
+### Audit finding #3 (gitbook drift): gitbook §12 cross-subsystem bundle count stale
+
+`docs/gitbook/12-proof-and-invariant-map.md` described
+`crossSubsystemInvariant` as a "10-predicate bundle" — stale since
+AM4/AL6-C (11th conjunct) and AK8-A/C-M01 (12th conjunct). Updated to
+"**12-predicate bundle**" with correct chronological attribution, plus
+a new paragraph documenting AN6-C (H-09) foundation (parent field +
+walker + `untypedAncestorRegionsDisjoint` predicate + collapse theorem)
+and the follow-up 13th-conjunct integration scope (AN6-C.5..C.10).
+
+### Audit finding #4 (imports): test suite missing `StateBuilder` import
+
+Adding the walker-chain test required
+`SeLe4n.Testing.StateBuilder.BootstrapBuilder` — the module was not
+previously imported by `ModelIntegritySuite`. Added the import and
+verified no downstream test breakage.
+
+### Post-audit-2 gate
+
+- `lake build` 300 jobs, 0 warnings, 0 `sorry`/`axiom`/`native_decide`
+- `test_smoke.sh` + `test_full.sh` + `test_docs_sync.sh` PASS
+- `model_integrity_suite` PASS (+1 new walker-chain test, 7 assertions)
+- `information_flow_suite` PASS
+- `cargo test --workspace` 414 + `cargo clippy` 0 warnings
+- Fixture byte-identical
+
+---
+
 ## v0.30.6 — WS-AN Phase AN6 post-audit remediation [in progress]
 
 Deep end-to-end audit of the AN6 initial landing surfaced eight issues

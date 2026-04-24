@@ -165,21 +165,38 @@ theorem archAssumptionConsumer_covers_inventory :
     ∀ a ∈ assumptionInventory, ∃ n : Lean.Name, archAssumptionConsumer a = n :=
   fun a _ => architecture_assumptions_index a
 
-/-- AN6-B: Distinctness of the 5 consumer names. Catches the
-    "all constructors map to the same name" shortcut that would
-    otherwise make `archAssumptionConsumer` semantically trivial. -/
+/-- AN6-B: Full pairwise distinctness of the 5 consumer names — C(5,2) = 10
+    inequalities — verifies no two `ArchAssumption` constructors map to
+    the same consuming theorem. Catches the "two constructors happen to
+    share a consumer" drift the simpler cycle-form of distinctness would
+    miss (timer ≠ memory, timer ≠ boot, register ≠ boot, register ≠ irq,
+    memory ≠ irq are only exposed by the full pairwise form). -/
 theorem archAssumptionConsumer_distinct :
+    -- timer vs. {register, memory, boot, irq} (4 pairs)
     archAssumptionConsumer .deterministicTimerProgress
       ≠ archAssumptionConsumer .deterministicRegisterContext ∧
+    archAssumptionConsumer .deterministicTimerProgress
+      ≠ archAssumptionConsumer .memoryAccessSafety ∧
+    archAssumptionConsumer .deterministicTimerProgress
+      ≠ archAssumptionConsumer .bootObjectTyping ∧
+    archAssumptionConsumer .deterministicTimerProgress
+      ≠ archAssumptionConsumer .irqRoutingTotality ∧
+    -- register vs. {memory, boot, irq} (3 pairs)
     archAssumptionConsumer .deterministicRegisterContext
       ≠ archAssumptionConsumer .memoryAccessSafety ∧
+    archAssumptionConsumer .deterministicRegisterContext
+      ≠ archAssumptionConsumer .bootObjectTyping ∧
+    archAssumptionConsumer .deterministicRegisterContext
+      ≠ archAssumptionConsumer .irqRoutingTotality ∧
+    -- memory vs. {boot, irq} (2 pairs)
     archAssumptionConsumer .memoryAccessSafety
       ≠ archAssumptionConsumer .bootObjectTyping ∧
-    archAssumptionConsumer .bootObjectTyping
+    archAssumptionConsumer .memoryAccessSafety
       ≠ archAssumptionConsumer .irqRoutingTotality ∧
-    archAssumptionConsumer .irqRoutingTotality
-      ≠ archAssumptionConsumer .deterministicTimerProgress := by
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> decide
+    -- boot vs. irq (1 pair)
+    archAssumptionConsumer .bootObjectTyping
+      ≠ archAssumptionConsumer .irqRoutingTotality := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> decide
 
 -- ============================================================================
 -- M-08/WS-E6: Assumption consumption documentation

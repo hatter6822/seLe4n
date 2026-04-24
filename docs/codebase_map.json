@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-phase-an6-architecture-a9R3s",
-      "commit_sha": "4ef17a8df7711edbe1ec4b342d123f60c6ffebaa",
-      "tree_sha": "7d171ce469f178755dd8595942090890c330ce36",
-      "committed_at_utc": "2026-04-24T02:32:58+00:00"
+      "commit_sha": "f519537ce0cefcd4d283b0c8400897f05d3f70aa",
+      "tree_sha": "72fe45caef164ddf659d74501b4d23cbd3c8f04b",
+      "committed_at_utc": "2026-04-24T03:20:24+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a86ac7d5fa3b41dd8f8a116e89450783d33e70f287178bbda5e5086c55a90e5b"
+    "source_digest": "cb67060a505705b29c0cc3600335dcd1658f57b7bf121b6a38b1dbedb607e41a"
   },
   "summary": {
     "module_count": 186,
-    "declaration_count": 5823
+    "declaration_count": 5824
   },
   "readme_sync": {
     "version": "0.30.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 162,
-    "production_loc": 106930,
+    "production_loc": 106947,
     "test_files": 24,
-    "test_loc": 15677,
+    "test_loc": 15732,
     "proved_theorem_lemma_decls": 3122,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -1812,7 +1812,7 @@
         {
           "kind": "theorem",
           "name": "archAssumptionConsumer_distinct",
-          "line": 171,
+          "line": 174,
           "called": [
             "archAssumptionConsumer"
           ]
@@ -71191,24 +71191,24 @@
     {
       "module": "tests.ModelIntegritySuite",
       "path": "tests/ModelIntegritySuite.lean",
-      "declaration_count": 96,
+      "declaration_count": 97,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.ModelIntegritySuite",
-          "line": 55,
+          "line": 56,
           "called": []
         },
         {
           "kind": "def",
           "name": "tag",
-          "line": 57,
+          "line": 58,
           "called": []
         },
         {
           "kind": "def",
           "name": "expect",
-          "line": 59,
+          "line": 60,
           "called": [
             "expectCond",
             "tag"
@@ -71217,7 +71217,7 @@
         {
           "kind": "def",
           "name": "freezeMap_empty_invExtK",
-          "line": 68,
+          "line": 69,
           "called": [
             "ObjId",
             "RHTable",
@@ -71233,7 +71233,7 @@
         {
           "kind": "def",
           "name": "freezeMap_singleton_invExtK",
-          "line": 78,
+          "line": 79,
           "called": [
             "ObjId",
             "RHTable",
@@ -71250,7 +71250,7 @@
         {
           "kind": "def",
           "name": "apiInvariantBundle_full_implies_objectsOnly",
-          "line": 93,
+          "line": 94,
           "called": [
             "apiInvariantBundle_frozenDirectFull_implies_objectsOnly",
             "expect"
@@ -71259,7 +71259,7 @@
         {
           "kind": "def",
           "name": "freeze_preserves_full_invariants_default",
-          "line": 100,
+          "line": 101,
           "called": [
             "IntermediateState",
             "apiInvariantBundle",
@@ -71272,7 +71272,7 @@
         {
           "kind": "def",
           "name": "addrInRange_empty_map_rejects",
-          "line": 113,
+          "line": 114,
           "called": [
             "MachineState",
             "PAddr",
@@ -71285,7 +71285,7 @@
         {
           "kind": "def",
           "name": "readMemChecked_out_of_range_none",
-          "line": 119,
+          "line": 120,
           "called": [
             "MachineState",
             "default",
@@ -71297,7 +71297,7 @@
         {
           "kind": "def",
           "name": "writeMemChecked_out_of_range_none",
-          "line": 124,
+          "line": 125,
           "called": [
             "MachineState",
             "default",
@@ -71309,7 +71309,7 @@
         {
           "kind": "def",
           "name": "addrInRange_ram_region_accepts",
-          "line": 129,
+          "line": 130,
           "called": [
             "MachineState",
             "MemoryRegion",
@@ -71323,7 +71323,7 @@
         {
           "kind": "def",
           "name": "addrInRange_device_region_rejected",
-          "line": 135,
+          "line": 136,
           "called": [
             "MachineState",
             "MemoryRegion",
@@ -71337,7 +71337,7 @@
         {
           "kind": "def",
           "name": "messageInfo_mkChecked_accepts_valid",
-          "line": 145,
+          "line": 146,
           "called": [
             "expect",
             "mkChecked"
@@ -71346,7 +71346,7 @@
         {
           "kind": "def",
           "name": "messageInfo_mkChecked_rejects_oversize_length",
-          "line": 150,
+          "line": 151,
           "called": [
             "expect",
             "mkChecked"
@@ -71355,7 +71355,7 @@
         {
           "kind": "def",
           "name": "messageInfo_mkChecked_rejects_oversize_extraCaps",
-          "line": 155,
+          "line": 156,
           "called": [
             "expect",
             "mkChecked"
@@ -71364,7 +71364,7 @@
         {
           "kind": "def",
           "name": "messageInfo_mkChecked_rejects_oversize_label",
-          "line": 160,
+          "line": 161,
           "called": [
             "expect",
             "mkChecked"
@@ -71373,7 +71373,7 @@
         {
           "kind": "def",
           "name": "messageInfo_mkChecked_accepts_maxLabel_boundary",
-          "line": 165,
+          "line": 166,
           "called": [
             "expect",
             "mkChecked"
@@ -71382,7 +71382,7 @@
         {
           "kind": "def",
           "name": "messageInfo_wellFormed_sound",
-          "line": 170,
+          "line": 171,
           "called": [
             "MessageInfo",
             "expect",
@@ -71392,7 +71392,7 @@
         {
           "kind": "def",
           "name": "threadId_toValid_rejects_sentinel",
-          "line": 179,
+          "line": 180,
           "called": [
             "expect",
             "sentinel",
@@ -71402,7 +71402,7 @@
         {
           "kind": "def",
           "name": "threadId_toValid_accepts_nonsentinel",
-          "line": 184,
+          "line": 185,
           "called": [
             "expect",
             "toValid"
@@ -71411,7 +71411,7 @@
         {
           "kind": "def",
           "name": "schedContextId_toValid_rejects_sentinel",
-          "line": 189,
+          "line": 190,
           "called": [
             "expect",
             "sentinel",
@@ -71421,7 +71421,7 @@
         {
           "kind": "def",
           "name": "cptr_toValid_rejects_null",
-          "line": 194,
+          "line": 195,
           "called": [
             "expect",
             "sentinel",
@@ -71431,7 +71431,7 @@
         {
           "kind": "def",
           "name": "kindedObjId_thread_schedContext_disjoint",
-          "line": 204,
+          "line": 205,
           "called": [
             "KindedObjId",
             "expect",
@@ -71442,7 +71442,7 @@
         {
           "kind": "def",
           "name": "objectKind_variants_pairwise_distinct",
-          "line": 212,
+          "line": 213,
           "called": [
             "ObjectKind",
             "all",
@@ -71453,7 +71453,7 @@
         {
           "kind": "def",
           "name": "tcb_ext_reflexive",
-          "line": 232,
+          "line": 233,
           "called": [
             "TCB.ext",
             "expect"
@@ -71462,7 +71462,7 @@
         {
           "kind": "def",
           "name": "frozenMap_empty_wellFormed",
-          "line": 241,
+          "line": 242,
           "called": [
             "ObjId",
             "RHTable",
@@ -71476,7 +71476,7 @@
         {
           "kind": "def",
           "name": "frozenMap_nonempty_wellFormed",
-          "line": 249,
+          "line": 250,
           "called": [
             "ObjId",
             "RHTable",
@@ -71491,7 +71491,7 @@
         {
           "kind": "def",
           "name": "capability_canonical_null",
-          "line": 261,
+          "line": 262,
           "called": [
             "expect",
             "isNull"
@@ -71500,7 +71500,7 @@
         {
           "kind": "def",
           "name": "capability_nonnull_cap",
-          "line": 265,
+          "line": 266,
           "called": [
             "Capability",
             "empty",
@@ -71512,7 +71512,7 @@
         {
           "kind": "def",
           "name": "capability_requireNotNull_roundtrip",
-          "line": 271,
+          "line": 272,
           "called": [
             "Capability",
             "empty",
@@ -71524,7 +71524,7 @@
         {
           "kind": "def",
           "name": "capability_cnodeSlot_not_null",
-          "line": 280,
+          "line": 281,
           "called": [
             "Capability",
             "empty",
@@ -71537,7 +71537,7 @@
         {
           "kind": "def",
           "name": "capability_object_with_rights_not_null",
-          "line": 293,
+          "line": 294,
           "called": [
             "Capability",
             "expect",
@@ -71550,7 +71550,7 @@
         {
           "kind": "def",
           "name": "capability_toNonNull_rejects_null",
-          "line": 314,
+          "line": 315,
           "called": [
             "expect",
             "toNonNull"
@@ -71559,7 +71559,7 @@
         {
           "kind": "def",
           "name": "capability_toNonNull_accepts_nonnull",
-          "line": 318,
+          "line": 319,
           "called": [
             "Capability",
             "empty",
@@ -71571,7 +71571,7 @@
         {
           "kind": "def",
           "name": "capability_toNonNull_roundtrip",
-          "line": 324,
+          "line": 325,
           "called": [
             "Capability",
             "empty",
@@ -71585,7 +71585,7 @@
         {
           "kind": "def",
           "name": "al1bStateWithNullCapSlot",
-          "line": 337,
+          "line": 338,
           "called": [
             "CNode",
             "Capability",
@@ -71601,7 +71601,7 @@
         {
           "kind": "def",
           "name": "cspaceMint_from_null_rejected",
-          "line": 352,
+          "line": 353,
           "called": [
             "CSpaceAddr",
             "al1bStateWithNullCapSlot",
@@ -71616,7 +71616,7 @@
         {
           "kind": "def",
           "name": "cspaceCopy_from_null_rejected",
-          "line": 366,
+          "line": 367,
           "called": [
             "CSpaceAddr",
             "al1bStateWithNullCapSlot",
@@ -71629,7 +71629,7 @@
         {
           "kind": "def",
           "name": "cspaceMove_from_null_rejected",
-          "line": 379,
+          "line": 380,
           "called": [
             "CSpaceAddr",
             "al1bStateWithNullCapSlot",
@@ -71642,7 +71642,7 @@
         {
           "kind": "def",
           "name": "nullCapability_distinct_from_invalidCapability",
-          "line": 394,
+          "line": 395,
           "called": [
             "KernelError",
             "expect",
@@ -71652,7 +71652,7 @@
         {
           "kind": "def",
           "name": "minimalTcb",
-          "line": 409,
+          "line": 410,
           "called": [
             "TCB",
             "ThreadId",
@@ -71662,7 +71662,7 @@
         {
           "kind": "def",
           "name": "minimalSchedContext",
-          "line": 418,
+          "line": 419,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -71672,7 +71672,7 @@
         {
           "kind": "def",
           "name": "getTcb_discriminates_variants",
-          "line": 428,
+          "line": 429,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -71690,7 +71690,7 @@
         {
           "kind": "def",
           "name": "getSchedContext_discriminates_variants",
-          "line": 440,
+          "line": 441,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -71708,7 +71708,7 @@
         {
           "kind": "def",
           "name": "getEndpoint_discriminates_variants",
-          "line": 452,
+          "line": 453,
           "called": [
             "Endpoint",
             "ObjId",
@@ -71725,7 +71725,7 @@
         {
           "kind": "def",
           "name": "getNotification_discriminates_variants",
-          "line": 465,
+          "line": 466,
           "called": [
             "Notification",
             "ObjId",
@@ -71740,7 +71740,7 @@
         {
           "kind": "def",
           "name": "getUntyped_discriminates_variants",
-          "line": 476,
+          "line": 477,
           "called": [
             "ObjId",
             "SystemState",
@@ -71757,7 +71757,7 @@
         {
           "kind": "def",
           "name": "getTcb_none_when_absent",
-          "line": 487,
+          "line": 488,
           "called": [
             "SystemState",
             "ThreadId",
@@ -71769,7 +71769,7 @@
         {
           "kind": "def",
           "name": "getTcb_roundtrip",
-          "line": 494,
+          "line": 495,
           "called": [
             "SystemState",
             "TCB",
@@ -71787,7 +71787,7 @@
         {
           "kind": "def",
           "name": "getSchedContext_roundtrip",
-          "line": 509,
+          "line": 510,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -71805,7 +71805,7 @@
         {
           "kind": "def",
           "name": "storeObjectKindChecked_fresh_allocation_succeeds",
-          "line": 532,
+          "line": 533,
           "called": [
             "ObjId",
             "SystemState",
@@ -71820,7 +71820,7 @@
         {
           "kind": "def",
           "name": "storeObjectKindChecked_samekind_overwrite_succeeds",
-          "line": 543,
+          "line": 544,
           "called": [
             "ObjId",
             "SystemState",
@@ -71837,7 +71837,7 @@
         {
           "kind": "def",
           "name": "storeObjectKindChecked_tcb_to_schedContext_rejected",
-          "line": 562,
+          "line": 563,
           "called": [
             "ObjId",
             "SystemState",
@@ -71853,7 +71853,7 @@
         {
           "kind": "def",
           "name": "storeObjectKindChecked_schedContext_to_tcb_rejected",
-          "line": 578,
+          "line": 579,
           "called": [
             "ObjId",
             "SystemState",
@@ -71869,7 +71869,7 @@
         {
           "kind": "def",
           "name": "storeObjectKindChecked_rejection_preserves_state",
-          "line": 594,
+          "line": 595,
           "called": [
             "ObjId",
             "SystemState",
@@ -71886,7 +71886,7 @@
         {
           "kind": "def",
           "name": "lifecycleObjectTypeLockstep_default",
-          "line": 619,
+          "line": 620,
           "called": [
             "ObjId",
             "SystemState",
@@ -71897,7 +71897,7 @@
         {
           "kind": "def",
           "name": "storeObject_updates_objects_and_objectTypes_in_lockstep",
-          "line": 629,
+          "line": 630,
           "called": [
             "ObjId",
             "SystemState",
@@ -71911,7 +71911,7 @@
         {
           "kind": "def",
           "name": "crossSubsystemInvariant_default_has_lockstep",
-          "line": 650,
+          "line": 651,
           "called": [
             "ObjId",
             "SystemState",
@@ -71925,7 +71925,7 @@
         {
           "kind": "def",
           "name": "blockingAcyclic_projection_reindex_ok",
-          "line": 671,
+          "line": 672,
           "called": [
             "SystemState",
             "crossSubsystemInvariant_to_blockingAcyclic",
@@ -71937,7 +71937,7 @@
         {
           "kind": "def",
           "name": "checkCrossSubsystemInvariant_covers_all_predicates",
-          "line": 684,
+          "line": 685,
           "called": [
             "SystemState",
             "checkCrossSubsystemInvariant",
@@ -71950,7 +71950,7 @@
         {
           "kind": "def",
           "name": "checkCrossSubsystemInvariant_detects_lockstep_violation",
-          "line": 705,
+          "line": 706,
           "called": [
             "ObjId",
             "SystemState",
@@ -71966,7 +71966,7 @@
         {
           "kind": "def",
           "name": "storeObject_preserves_lockstep_under_crossSubsystemInvariant",
-          "line": 732,
+          "line": 733,
           "called": [
             "ObjId",
             "SystemState",
@@ -71980,7 +71980,7 @@
         {
           "kind": "def",
           "name": "storeObjectKindChecked_rejection_preserves_lockstep",
-          "line": 753,
+          "line": 754,
           "called": [
             "ObjId",
             "SystemState",
@@ -71996,7 +71996,7 @@
         {
           "kind": "def",
           "name": "integration_validThreadId_rejects_sentinel",
-          "line": 787,
+          "line": 788,
           "called": [
             "ThreadId",
             "expect",
@@ -72007,7 +72007,7 @@
         {
           "kind": "def",
           "name": "integration_validSchedContextId_rejects_sentinel",
-          "line": 792,
+          "line": 793,
           "called": [
             "SchedContextId",
             "expect",
@@ -72018,7 +72018,7 @@
         {
           "kind": "def",
           "name": "integration_validThreadId_roundtrip",
-          "line": 798,
+          "line": 799,
           "called": [
             "ThreadId",
             "expect",
@@ -72031,7 +72031,7 @@
         {
           "kind": "def",
           "name": "integration_null_cap_cross_kind_sentinel_rejected",
-          "line": 811,
+          "line": 812,
           "called": [
             "Capability",
             "SystemState",
@@ -72051,7 +72051,7 @@
         {
           "kind": "def",
           "name": "requireNotNull_complement_on_null_and_nonnull",
-          "line": 832,
+          "line": 833,
           "called": [
             "Capability",
             "empty",
@@ -72064,7 +72064,7 @@
         {
           "kind": "def",
           "name": "ensureCdtNodeForSlotChecked_counter_overflow_rejected",
-          "line": 845,
+          "line": 846,
           "called": [
             "CdtNodeId",
             "SlotRef",
@@ -72078,7 +72078,7 @@
         {
           "kind": "def",
           "name": "ensureCdtNodeForSlotChecked_counter_ok",
-          "line": 856,
+          "line": 857,
           "called": [
             "CdtNodeId",
             "SlotRef",
@@ -72092,7 +72092,7 @@
         {
           "kind": "def",
           "name": "vspaceRoot_noPhysicalFrameCollision_empty",
-          "line": 864,
+          "line": 865,
           "called": [
             "expect",
             "noPhysicalFrameCollision_empty"
@@ -72101,7 +72101,7 @@
         {
           "kind": "def",
           "name": "pagePermissions_toNat_ofNat_roundtrip",
-          "line": 873,
+          "line": 874,
           "called": [
             "PagePermissions.ofNat",
             "PagePermissions.toNat",
@@ -72112,7 +72112,7 @@
         {
           "kind": "def",
           "name": "cdtNodeId_sentinel_isReserved",
-          "line": 883,
+          "line": 884,
           "called": [
             "expect",
             "isReserved",
@@ -72122,7 +72122,7 @@
         {
           "kind": "def",
           "name": "ak8a_01_default_satisfies_untypedRegionsDisjoint",
-          "line": 896,
+          "line": 897,
           "called": [
             "SystemState",
             "default",
@@ -72132,7 +72132,7 @@
         {
           "kind": "def",
           "name": "ak8a_02_disjoint_untypeds_satisfy_predicate",
-          "line": 906,
+          "line": 907,
           "called": [
             "UntypedObject",
             "expect",
@@ -72142,7 +72142,7 @@
         {
           "kind": "def",
           "name": "ak8a_03_overlapping_untypeds_violate_predicate",
-          "line": 929,
+          "line": 930,
           "called": [
             "UntypedObject",
             "expect",
@@ -72152,7 +72152,7 @@
         {
           "kind": "def",
           "name": "ak8a_04_parent_child_containment_allowed",
-          "line": 952,
+          "line": 953,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -72164,7 +72164,7 @@
         {
           "kind": "def",
           "name": "ak8a_05_allocate_children_extends",
-          "line": 981,
+          "line": 982,
           "called": [
             "UntypedChild",
             "UntypedObject",
@@ -72179,7 +72179,7 @@
         {
           "kind": "def",
           "name": "ak8a_06_allocate_preserves_region",
-          "line": 1001,
+          "line": 1002,
           "called": [
             "UntypedObject",
             "allocate",
@@ -72192,7 +72192,7 @@
         {
           "kind": "def",
           "name": "ak8a_07_empty_config_disjoint",
-          "line": 1018,
+          "line": 1019,
           "called": [
             "PlatformConfig",
             "expect"
@@ -72201,7 +72201,7 @@
         {
           "kind": "def",
           "name": "an2f3_01_empty_wellFormed",
-          "line": 1030,
+          "line": 1031,
           "called": [
             "PAddr",
             "UntypedObjectValid",
@@ -72215,7 +72215,7 @@
         {
           "kind": "def",
           "name": "an2f3_02_coercion_roundtrip",
-          "line": 1044,
+          "line": 1045,
           "called": [
             "PAddr",
             "UntypedObject",
@@ -72228,7 +72228,7 @@
         {
           "kind": "def",
           "name": "donation_primitives_reachable_via_operations_hub",
-          "line": 1090,
+          "line": 1091,
           "called": [
             "KernelError",
             "SystemState",
@@ -72245,7 +72245,7 @@
         {
           "kind": "def",
           "name": "ipc_invariant_full_tuple_struct_bridge_signatures",
-          "line": 1132,
+          "line": 1133,
           "called": [
             "IpcInvariantFull",
             "IpcInvariantFull.toTuple",
@@ -72259,7 +72259,7 @@
         {
           "kind": "def",
           "name": "ipc_invariant_full_named_projection_signatures",
-          "line": 1156,
+          "line": 1157,
           "called": [
             "SystemState",
             "allPendingMessagesBounded",
@@ -72285,7 +72285,7 @@
         {
           "kind": "def",
           "name": "ipc_invariant_full_dot_notation_dispatch",
-          "line": 1201,
+          "line": 1202,
           "called": [
             "IpcInvariantFull",
             "SystemState",
@@ -72299,7 +72299,7 @@
         {
           "kind": "def",
           "name": "an6f_cxm01_collectQueueMembers_structural_signatures",
-          "line": 1225,
+          "line": 1226,
           "called": [
             "collectQueueMembers_head_is_start",
             "collectQueueMembers_some_start_nonEmpty_result",
@@ -72309,7 +72309,7 @@
         {
           "kind": "def",
           "name": "an6f_cxm03_singleCore_witness_reachable",
-          "line": 1238,
+          "line": 1239,
           "called": [
             "SchedulerState",
             "bootFromPlatform_singleCore_witness",
@@ -72322,7 +72322,7 @@
         {
           "kind": "def",
           "name": "an6f_cxm04_interruptsEnabled_bundle_inhabited",
-          "line": 1265,
+          "line": 1266,
           "called": [
             "SystemState",
             "archInvariant_interruptsEnabled_all_eight_bundle",
@@ -72334,7 +72334,7 @@
         {
           "kind": "def",
           "name": "an6f_cxm05_crossSubsystemInvariant_positive",
-          "line": 1306,
+          "line": 1307,
           "called": [
             "SystemState",
             "crossSubsystemInvariant",
@@ -72354,7 +72354,7 @@
         {
           "kind": "def",
           "name": "an6c1_untypedObject_parent_field_default",
-          "line": 1330,
+          "line": 1331,
           "called": [
             "UntypedObject",
             "expect",
@@ -72365,7 +72365,7 @@
         {
           "kind": "def",
           "name": "an6c3_untypedAncestorChain_bounded",
-          "line": 1346,
+          "line": 1347,
           "called": [
             "SystemState",
             "default",
@@ -72378,8 +72378,25 @@
         },
         {
           "kind": "def",
+          "name": "an6c3_untypedAncestorChain_walks_synthetic_chain",
+          "line": 1371,
+          "called": [
+            "SystemState",
+            "UntypedObject",
+            "build",
+            "empty",
+            "expect",
+            "none",
+            "ofNat",
+            "untypedAncestorChain",
+            "untypedAncestorChain_bounded",
+            "withObject"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "an6_postaudit_ak8a_objectOfKernelType_untyped_zero_regionBase",
-          "line": 1369,
+          "line": 1423,
           "called": [
             "expect",
             "objectOfKernelType",
@@ -72392,7 +72409,7 @@
         {
           "kind": "def",
           "name": "an6c4_untypedAncestorRegionsDisjoint_default",
-          "line": 1394,
+          "line": 1448,
           "called": [
             "SystemState",
             "default",
@@ -72407,7 +72424,7 @@
         {
           "kind": "def",
           "name": "an6b_architecture_assumptions_index_total",
-          "line": 1421,
+          "line": 1475,
           "called": [
             "archAssumptionConsumer",
             "archAssumptionConsumer_distinct",
@@ -72419,7 +72436,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1450,
+          "line": 1504,
           "called": [
             "addrInRange_device_region_rejected",
             "addrInRange_empty_map_rejects",
@@ -72437,6 +72454,7 @@
             "an6b_architecture_assumptions_index_total",
             "an6c1_untypedObject_parent_field_default",
             "an6c3_untypedAncestorChain_bounded",
+            "an6c3_untypedAncestorChain_walks_synthetic_chain",
             "an6c4_untypedAncestorRegionsDisjoint_default",
             "an6f_cxm01_collectQueueMembers_structural_signatures",
             "an6f_cxm03_singleCore_witness_reachable",

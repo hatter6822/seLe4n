@@ -499,6 +499,40 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
   (CrossSubsystem composition) sequences after the four subsystem
   phases.
 
+- **AN6 second audit-pass remediation** (v0.30.6, in progress):
+  Second deep audit pass on the AN6 post-audit tip identified 4
+  strengthening items. All fixed in-PR.
+
+  1. **`archAssumptionConsumer_distinct` strengthened from cycle-form
+     to full pairwise distinctness**: previously proved 5 cyclic
+     inequalities (timer≠register, register≠memory, memory≠boot,
+     boot≠irq, irq≠timer) which misses non-adjacent collisions like
+     timer≠memory or register≠boot. Strengthened to full **C(5,2) = 10
+     pairwise inequalities**, each discharged by `decide`.
+  2. **Walker runtime test for non-empty state**: new
+     `an6c3_untypedAncestorChain_walks_synthetic_chain` test builds a
+     2-level parent chain via `BootstrapBuilder` (boot untyped at
+     ObjId 100, retyped child at ObjId 200 with `parent := some 100`)
+     and verifies walker returns `[childId, parentId]` at fuel 2,
+     `[childId]` only at fuel 1, and `[parentId]` for a top-level
+     `parent = none` state. First coverage of the `some pid` recursive
+     branch — the empty-state test alone only exercised fuel bounds.
+  3. **Gitbook §12 cross-subsystem bundle count refresh**: the
+     "10-predicate bundle" description was stale since AM4/AL6-C
+     (11th conjunct) and AK8-A/C-M01 (12th conjunct). Updated to
+     "**12-predicate bundle**" with chronological attribution + new
+     paragraph documenting AN6-C (H-09) foundation.
+  4. **`ModelIntegritySuite` import fix**: the new walker-chain test
+     required `SeLe4n.Testing.StateBuilder.BootstrapBuilder`; added
+     the missing import.
+
+  **Post-audit-2 gate**: `lake build` (300 jobs, 0 warnings) +
+  `test_smoke.sh` PASS + `test_full.sh` PASS + `test_docs_sync.sh`
+  PASS + `model_integrity_suite` PASS (+1 new test, 7 assertions) +
+  `information_flow_suite` PASS + `cargo test --workspace` (414) +
+  `cargo clippy --workspace -- -D warnings` (0 warnings) + fixture
+  byte-identical + zero `sorry`/`axiom`/`native_decide`.
+
 - **AN6 post-audit remediation** (v0.30.6, in progress):
   Deep end-to-end audit of the AN6 landed subset surfaced **8 issues**
   where the landing was less substantive than it appeared; all fixed
