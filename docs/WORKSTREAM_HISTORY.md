@@ -36,10 +36,92 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
 **Audit:** [`docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md`](audits/AUDIT_v0.30.6_COMPREHENSIVE.md)
 **Plan:** [`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
 **Baseline:** [`docs/audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt`](audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt) (AN0-A snapshot)
-**Carried forward:** [`docs/audits/AUDIT_v0.29.0_DEFERRED.md`](audits/AUDIT_v0.29.0_DEFERRED.md) (11 items, all absorbed in-scope)
+**Carried forward:** [`docs/audits/AUDIT_v0.29.0_DEFERRED.md`](audits/AUDIT_v0.29.0_DEFERRED.md) (11 items — all absorbed in-scope; **DEF-P-L9 closed at AN7 landing**)
 
 **Phases:** 13 (AN0–AN12), 95 top-level sub-tasks, ~253 sub-sub-task commits
 (scope: 196 audit findings + 11 absorbed DEFERRED items).
+
+- **AN7** (Platform / API, v0.30.8, **released**): 11 sub-tasks
+  (AN7-A..AN7-G) addressing 3 HIGH (H-14..H-16), 7 PLATFORM MEDIUM
+  (PLT-M01..PLT-M07), 2 API MEDIUM (API-M01..M02), 3 Platform LOWs.
+  **DEF-P-L9 RESOLVED** by AN7-D.2's landing of the canonical RPi5
+  boot VSpaceRoot.
+  - **AN7-A (H-14/PLT-M04)**: `findMemoryRegProperty` /
+    `classifyMemoryRegion` marked `@[deprecated (since := "0.30.8")]`;
+    new CI hygiene check
+    `scripts/check_devicetree_legacy_consumers.sh` blocks consumers
+    outside `DeviceTree.lean` from using the legacy Option-returning
+    forms.  Bridge theorem `classifyMemoryRegionChecked_some_agrees`
+    witnesses equivalence on success.
+  - **AN7-B (H-15)**: repo-wide `physicalAddressWidth` audit +
+    `scripts/check_physical_address_width.sh` CI guard enforcing RPi5=44,
+    Sim=52, defaults=52, and forbidding `:= 48` (VA/PA confusion).
+  - **AN7-C (H-16)**: `registerContextStableCheck` silent-true audit.
+    Eight new per-conjunct soundness theorems (register match,
+    dequeue-on-dispatch, time-slice positivity, IPC readiness, EDF
+    compat, budget sufficiency, `_none_current` vacuous case,
+    `_implies_tcb_present`).  Sim contract's permissive predicates
+    documented as intentional accept-all scoped to `Platform.Sim`.
+  - **AN7-D.1 (PLT-M01)**: `bootFromPlatformUnchecked` relocated to
+    new `SeLe4n.Testing.Deprecated` namespace
+    (`SeLe4n/Testing/Deprecated.lean`); production adopters can no
+    longer reach the unchecked form by bare name.
+  - **AN7-D.2 (PLT-M02/PLT-M03)**: new
+    `SeLe4n/Platform/RPi5/VSpaceBoot.lean` module ships the canonical
+    Raspberry Pi 5 boot VSpaceRoot with 4 substantively-proven
+    theorems: `_asid`, `_wxCompliant` (W^X on every mapping,
+    discharged by `decide`), `_wellFormed`, `_bootSafe`.  Kernel image
+    layout mirrors `rust/sele4n-hal/src/mmu.rs::BOOT_L1_TABLE`: kernel
+    text RX, kernel data RW, stack RW, UART0/GIC distributor/GIC CPU
+    interface RW non-executable.  Three permission constants
+    (`permsTextRX`, `permsDataRW`, `permsMmioRW`), each
+    `wxCompliant`-witnessed.  Three regression tests
+    (`an7d2_01..03`) anchor the constants at runtime.
+    **DEF-P-L9 RESOLVED.**  Full cascade rewrite of `bootSafeObject`
+    to admit well-formed VSpaceRoots in production boot sweep tracked
+    for AN9 hardware-binding closure (AN9-E cross-reference).
+  - **AN7-D.4 (PLT-M05)**: `parseFdtNodes` default fuel migrated from
+    fixed `2000` to `hdr.sizeDtStruct.toNat / 4` (matches AK9-F's
+    `findMemoryRegPropertyChecked` default).
+  - **AN7-D.5 (PLT-M06)**: `extractPeripherals` rewritten as fuel-
+    bounded recursive depth-first descent via
+    `extractPeripheralsWalk`.  Default fuel `1024` covers BCM2712
+    (~200 nodes).  Termination theorem
+    `extractPeripherals_terminates_under_fuel` and BCM2712-sufficiency
+    theorem anchor the invariant surface.  Per-node classifier
+    `classifyPeripheralNode` factored out for reuse.
+  - **AN7-D.6 (PLT-M07)**: new `SeLe4n/Platform/Staged.lean`
+    meta-module pulls seven platform-binding-adjacent modules into the
+    build graph.  Each gets a `STATUS: staged for H3 hardware binding`
+    header block cross-referenced to `SELE4N_SPEC.md §8.15`.
+  - **AN7-D.7**: `test_tier1_build.sh` extended with
+    `lake build SeLe4n.Platform.Staged` so CI verifies the seven
+    staged modules on every run.
+  - **AN7-E (API-M01/API-M02)**: new `KernelError.partialResolution`
+    (discriminant 51) + `resolveExtraCapsDetailed` helper + debug
+    option `sele4n.debug.noisyResolution`.  Rust ABI synchronized
+    (`PartialResolution = 51`), all conformance tests extended for
+    52-variant range.  Default ABI stays seL4-compatible
+    (silent drop) — noisy variant opt-in.
+  - **AN7-F (Platform LOW batch)**: `Platform/Boot.lean` file header
+    documents last-wins semantics, BCM2712 freshness protocol,
+    `Main.lean` no-op status.  New
+    `scripts/check_bcm2712_freshness.sh` parses the
+    `BCM2712_DATASHEET_VERIFIED: YYYY-MM-DD` marker in
+    `RPi5/Board.lean` and warns when older than one calendar year.
+  - **AN7-G**: `CHANGELOG.md` v0.30.8 entry, version bump
+    `0.30.7 → 0.30.8` across 15 files, this `WORKSTREAM_HISTORY.md`
+    entry.
+
+  **Gate at AN7 tip**: `lake build` (300 jobs, 0 warnings; 311 with the
+  new staged meta-module + AK9 suite + operation-chain suite reached) +
+  `test_smoke.sh` PASS + `test_full.sh` PASS + `test_tier0_hygiene.sh`
+  PASS (AN7-A/B/F checks wired in) + `test_tier1_build.sh` PASS (new
+  `Platform.Staged` step) + `lake exe ak9_platform_suite` 37/37 PASS
+  (3 new AN7-D.2 tests) + `cargo test --workspace` (415 tests,
+  extended discriminant coverage) + `cargo clippy --workspace --
+  -D warnings` (0 warnings) + `check_version_sync.sh` PASS at 0.30.8 +
+  fixture byte-identical + zero `sorry` / `axiom` / `native_decide`.
 
 - **AN0** (Pre-flight, v0.30.6, in progress): baseline capture,
   sub-task inventory commit, branch policy confirmation. No production

@@ -17,4 +17,11 @@ ensure_lake_available
 
 run_check "BUILD" lake build
 
+# AN7-D.7 (PLT-M07): force the seven staged platform-binding modules into
+# the build graph.  Without this, regressions in modules not reached from
+# `Main.lean` (e.g., the RPi5 boot VSpaceRoot AN7-D.2) would go undetected
+# until a future workstream reaches them.  See `SeLe4n/Platform/Staged.lean`
+# for the module list.
+run_check "BUILD" lake build SeLe4n.Platform.Staged
+
 finalize_report

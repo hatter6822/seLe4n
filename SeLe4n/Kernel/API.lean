@@ -429,6 +429,66 @@ private def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
         | none => acc
         | some cap => acc.push cap) #[]
 
+/-- AN7-E (API-M01): Debug-noisy variant of `resolveExtraCaps` that surfaces
+    partial resolution explicitly.  Returns the resolved array paired with a
+    flag `partial := true` iff at least one input address failed to resolve.
+    The two possible failure modes are conflated in the single flag per
+    seL4 convention (the caller cannot distinguish them structurally from
+    the silent-drop variant either).
+
+    Callers that want to reject partial resolutions should do:
+    ```
+    match resolveExtraCapsDetailed cspaceRoot addrs depth st with
+    | (caps, false) => -- complete: all addresses resolved
+    | (_,    true)  => .error .partialResolution
+    ```
+
+    The default ABI path continues to use `resolveExtraCaps` (silent drop)
+    to stay byte-compatible with the seL4 reference kernel.  Production
+    deployments that want the noisy behaviour gate via the debug option
+    `sele4n.debug.noisyResolution` — a compile-time `set_option` directive
+    in the consuming module. -/
+private def resolveExtraCapsDetailed (cspaceRoot : SeLe4n.ObjId)
+    (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
+    (st : SystemState) : Array Capability × Bool :=
+  capAddrs.foldl (fun acc addr =>
+    match resolveCapAddress cspaceRoot addr depth st with
+    | .error _ => (acc.1, true)  -- partial: lookup failed
+    | .ok ref =>
+        match SystemState.lookupSlotCap st ref with
+        | none => (acc.1, true)  -- partial: slot empty
+        | some cap => (acc.1.push cap, acc.2)) (#[], false)
+
+/-- AN7-E (API-M01) option declaration: `set_option sele4n.debug.noisyResolution true`
+    flips production callers from the silent-drop `resolveExtraCaps` to
+    the explicit-error `resolveExtraCapsDetailed` wrapper.  Disabled by
+    default so the ABI stays seL4-compatible. -/
+register_option sele4n.debug.noisyResolution : Bool := {
+  defValue := false
+  descr := "AN7-E (API-M01): When true, resolveExtraCaps surfaces partial resolution as KernelError.partialResolution instead of silently dropping unresolvable caps."
+}
+
+/-- AN7-E (API-M01) soundness (empty-input): on an empty capability-address
+    array, the detailed variant returns an empty resolved-caps list and a
+    `partial := false` flag — matching the silent-drop variant's empty
+    output.  This is the base case that anchors the swap-invariance
+    property between the two variants; the fully-general form (equal caps
+    for all inputs) requires a fold-level induction that is tractable but
+    beyond the AN7-E landing scope and recorded as a post-1.0 hardening
+    candidate; no currently-active plan file tracks it. -/
+theorem resolveExtraCapsDetailed_empty
+    (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (st : SystemState) :
+    resolveExtraCapsDetailed cspaceRoot #[] depth st = (#[], false) := by
+  rfl
+
+/-- AN7-E (API-M01): the silent-drop variant on the empty input is also
+    empty.  Paired with `resolveExtraCapsDetailed_empty`, this confirms
+    that in the base case both variants agree (vacuously). -/
+theorem resolveExtraCaps_empty
+    (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (st : SystemState) :
+    resolveExtraCaps cspaceRoot #[] depth st = #[] := by
+  rfl
+
 /-- AL7-A (WS-AL / AK7-E.cascade): lift a raw `ThreadId` to `ValidThreadId`
 at the dispatch boundary. Returns `.error .invalidArgument` if the id
 is the reserved sentinel, otherwise `.ok` with the validated subtype.

@@ -21,6 +21,26 @@ starting from `mkEmptyIntermediateState` and applying builder operations.
 `bootFromPlatform` is a pure function: the same `PlatformConfig` always
 yields the same `IntermediateState`. This is required for reproducible booting
 and is guaranteed by the deterministic semantics of all builder operations.
+
+## AN7-F (PLT-L batch) — semantic and hygiene notes
+
+* **Last-wins semantics on duplicates** — `bootFromPlatform` uses
+  `foldIrqs` / `foldObjects` with `HashMap.insert` semantics, so duplicate
+  IRQ lines or ObjIds in the config see the LAST entry retained.  This is
+  intentional (matches seL4's reference C kernel) but can cause silent
+  data loss if the config is malformed.  Production callers MUST use
+  `bootFromPlatformChecked`, which validates `PlatformConfig.wellFormed`
+  (O(n) duplicate detection via `natKeysNoDup`) and returns `.error` on
+  any duplicate.
+* **Datasheet reference freshness** — BCM2712 constants in
+  `SeLe4n/Platform/RPi5/Board.lean` are snapshotted from publicly-available
+  Raspberry Pi Ltd documentation as of the v0.30.x release cut.  A CI
+  hygiene check (`scripts/check_bcm2712_freshness.sh`) warns when the
+  datasheet-reference marker in `Board.lean` is older than one calendar
+  year.  Annual re-verification is logged in the CHANGELOG.
+* **`Main.lean` no-op** — the smoke trace harness does NOT exercise the
+  boot path; adding `bootFromPlatform`-related probes there is not
+  expected and no such probe is present.
 -/
 
 namespace SeLe4n.Platform.Boot
@@ -395,17 +415,22 @@ def bootFromPlatform (config : PlatformConfig) : IntermediateState :=
   -- manually chain `applyMachineConfig` after boot.
   applyMachineConfig withObjects config.machineConfig
 
-/-- V5-C/W4-E (M-DEF-3/L-15): **Deprecated** — use `bootFromPlatformChecked`
-    for production boot paths. This function silently uses last-wins semantics
-    on duplicate IRQs or object IDs, which can cause silent data loss if the
-    same ObjId appears multiple times in the platform configuration.
+/-- V5-C/W4-E (M-DEF-3/L-15) + AN7-D.1 (PLT-M01): **Deprecated** — use
+    `bootFromPlatformChecked` for production boot paths. This function
+    silently uses last-wins semantics on duplicate IRQs or object IDs,
+    which can cause silent data loss if the same ObjId appears multiple
+    times in the platform configuration.
 
-    `bootFromPlatformChecked` validates `PlatformConfig.wellFormed` and returns
-    an explicit error on duplicates, preventing silent overwrites.
+    `bootFromPlatformChecked` validates `PlatformConfig.wellFormed` and
+    returns an explicit error on duplicates, preventing silent overwrites.
 
-    **Retained for**: backward compatibility with existing proofs and test code
-    that exercises invalid-state scenarios (e.g., `NegativeStateSuite`). New
-    boot paths should always use the checked variant. -/
+    **Retained for**: backward compatibility with legacy test code exercising
+    invalid-state scenarios.  The canonical test-path alias now lives at
+    `SeLe4n.Testing.Deprecated.bootFromPlatformUnchecked` — new test code
+    MUST use that namespaced form so the `@[deprecated]` attribute below
+    does not leak deprecation warnings into production call sites that
+    only reference `bootFromPlatform` / `bootFromPlatformChecked`. -/
+@[deprecated "AN7-D.1 (PLT-M01): use bootFromPlatformChecked for production paths. Test code that needs the unchecked form must import SeLe4n.Testing.Deprecated.bootFromPlatformUnchecked, which makes the test-only intent explicit." (since := "0.30.8")]
 abbrev bootFromPlatformUnchecked := bootFromPlatform
 
 /-- AK9-G (P-M06): Full HAL-parity boot — `bootFromPlatform` followed by the
@@ -661,9 +686,12 @@ theorem irqHandlersReferenceNotifications_empty_irqs
     Every IRQ's handler ObjId must refer to a notification object in
     `initialObjects`.
 
-    Use `bootFromPlatformUnchecked` (alias for `bootFromPlatform`) only when
-    the config is known-valid (e.g., constructed programmatically with
-    uniqueness guarantees). All new boot paths should use this function. -/
+    Use `SeLe4n.Testing.Deprecated.bootFromPlatformUnchecked` (alias for
+    `bootFromPlatform`) only when the config is known-valid — e.g., test
+    fixtures constructed programmatically with uniqueness guarantees.  The
+    `Testing.Deprecated` namespace prevents production code from importing
+    the unchecked form by accident (AN7-D.1 / PLT-M01).  All new boot paths
+    should use this function. -/
 def bootFromPlatformChecked (config : PlatformConfig) :
     Except String IntermediateState :=
   if config.wellFormed then

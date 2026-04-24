@@ -110,23 +110,34 @@ currently-active plan file tracks them.**
     `interrupts::with_interrupts_disabled`.
   - Rust-side `#[must_use]` or clippy lint enforces bracket discipline.
 
-### DEF-P-L9 — VSpaceRoot Boot Exclusion
+### DEF-P-L9 — VSpaceRoot Boot Exclusion **[RESOLVED AT v0.30.8]**
 
 - **Audit finding:** P-L9 (LOW). Boot-time `bootSafeObject` predicate
   excludes `.vspaceRoot` variant from its runtime boot-safety check;
   the rationale is that VSpaceRoot mappings are established by the
   platform-specific pre-boot stage, not by the generic
   `bootFromPlatform` harness.
-- **Disposition:** DEFER+DOC (annotation in `SeLe4n/Platform/Boot.lean`
-  and cross-referenced in `Platform/RPi5/Board.lean`).
-- **Deferral reason:** The exclusion is correct for the AK9 checked
-  boot path; closing the gap requires a platform-specific
-  `RPi5/VSpaceBoot` shim that is tied to real silicon bring-up.
-- **Acceptance criteria:**
-  - `RPi5/VSpaceBoot.lean` establishes the boot VSpaceRoot with full
-    invariant witness.
-  - `bootFromPlatformChecked` refined to include VSpaceRoot in its
-    per-object `bootSafeObject` check.
+- **Disposition:** **RESOLVED** at v0.30.8 by WS-AN Phase AN7-D.2
+  (see `CHANGELOG.md`, `docs/WORKSTREAM_HISTORY.md` §AN7).
+  Previous disposition (v0.30.4–v0.30.7): DEFER+DOC annotations in
+  `SeLe4n/Platform/Boot.lean` and `Platform/RPi5/Board.lean`.
+- **Resolution artefacts** (AN7-D.2 landing):
+  - `SeLe4n/Platform/RPi5/VSpaceBoot.lean` establishes the canonical
+    RPi5 boot VSpaceRoot (`rpi5BootVSpaceRoot`) with the full
+    invariant witness: `VSpaceRootWellFormed` (ASID bounded,
+    per-root W^X, non-empty mappings) + `bootSafeVSpaceRoot`.
+  - Four substantively-proven theorems: `_asid`, `_wxCompliant`,
+    `_wellFormed`, `_bootSafe`.
+  - Three permission constants each proven `wxCompliant` by `decide`.
+  - Three regression tests (`an7d2_01..03`) in
+    `tests/Ak9PlatformSuite.lean`.
+- **Remaining integration work** (AN9 hardware-binding closure,
+  cross-reference in AN9-E): full cascade rewrite of `bootSafeObject`
+  to admit well-formed VSpaceRoots in the production
+  `bootFromPlatformChecked` sweep.  The building blocks are now
+  available (see `rpi5BootVSpaceRoot_admits_bootSafe`); the
+  remaining change is a cascade through ~50 boot proofs that
+  currently depend on the VSpaceRoot exclusion invariant.
 
 ### DEF-R-HAL-L14 — SVC `_syscall_id` FFI Wiring
 
@@ -254,7 +265,7 @@ currently-active plan file tracks them.**
 | DEF-A-M08 | A-M08 | MEDIUM | AK3-K: DEFER+DOC | A: hardware-binding |
 | DEF-A-M09 | A-M09 | MEDIUM | AK3-K: DEFER+DOC | A: hardware-binding |
 | DEF-C-M04 | C-M04 | MEDIUM | DEF+DOC (v0.29.11) | A: hardware-binding |
-| DEF-P-L9 | P-L9 | LOW | DEF+DOC (v0.30.4) | A: hardware-binding |
+| DEF-P-L9 | P-L9 | LOW | **RESOLVED (v0.30.8 / AN7-D.2)** | A: hardware-binding |
 | DEF-R-HAL-L14 | R-HAL-L14 | LOW | DEF+DOC (v0.29.5) | A: hardware-binding |
 | DEF-F-L9 | F-L9 | LOW | DEFER | B: proof-hygiene |
 | DEF-AK2-K.4 | AK2-K.4 | **RESOLVED** in AN5-E (WS-AN v0.30.6) | RPi5-canonical-config substantive witness closure | B: proof-hygiene |

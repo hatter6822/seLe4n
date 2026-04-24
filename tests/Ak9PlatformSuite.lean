@@ -14,6 +14,7 @@ import SeLe4n.Platform.RPi5.Board
 import SeLe4n.Platform.RPi5.MmioAdapter
 import SeLe4n.Platform.RPi5.BootContract
 import SeLe4n.Platform.RPi5.RuntimeContract
+import SeLe4n.Platform.RPi5.VSpaceBoot
 import SeLe4n.Platform.Sim.BootContract
 import SeLe4n.Platform.DeviceTree
 import SeLe4n.Testing.Helpers
@@ -436,6 +437,82 @@ def ak9h_04_readCStringChecked_fuel_exhausted_on_unterminated : IO Unit := do
      | _ => false)
 
 -- ============================================================================
+-- AN7-D.2 (PLT-M02/PLT-M03): RPi5 boot VSpaceRoot + DEF-P-L9 closure
+-- ============================================================================
+
+/-- AN7-D.2.8: `rpi5BootVSpaceRoot` is well-formed (ASID bounded, every
+    mapping W^X, non-empty). -/
+def an7d2_01_rpi5BootVSpaceRoot_wellFormed : IO Unit := do
+  -- The theorem is discharged at compile time by `decide`; we exercise it
+  -- by asserting every projected conjunct holds.  Failure at any one of
+  -- these assertions surfaces a regression in either the boot root
+  -- definition or the `wellFormed` predicate.
+  expect "AN7-D.2-01 boot VSpaceRoot asid = 0"
+    (RPi5.VSpaceBoot.rpi5BootVSpaceRoot.asid.val == 0)
+  expect "AN7-D.2-01 boot VSpaceRoot mappings non-empty"
+    (decide (RPi5.VSpaceBoot.rpi5BootVSpaceRoot.mappings.size > 0))
+  -- Witness all three mapping permissions are wxCompliant by spot-check.
+  expect "AN7-D.2-01 permsTextRX wxCompliant"
+    (RPi5.VSpaceBoot.permsTextRX.wxCompliant)
+  expect "AN7-D.2-01 permsDataRW wxCompliant"
+    (RPi5.VSpaceBoot.permsDataRW.wxCompliant)
+  expect "AN7-D.2-01 permsMmioRW wxCompliant"
+    (RPi5.VSpaceBoot.permsMmioRW.wxCompliant)
+
+/-- AN7-D.2.8: `rpi5BootVSpaceRoot` satisfies the per-root W^X predicate.
+    A regression that introduces a W+X mapping (e.g., by flipping a
+    permission constant to `execute := true, write := true`) fails
+    `decide` at module compile time AND trips this runtime assertion. -/
+def an7d2_02_rpi5BootVSpaceRoot_wxCompliant : IO Unit := do
+  -- At runtime we can't directly evaluate the fold (it's decidable at
+  -- compile time via `decide`).  We instead exercise it by inspecting the
+  -- specific permissions used in the boot root and asserting they are
+  -- wxCompliant one-by-one.  This anchors the three permission constants
+  -- to their W^X witnesses.
+  let allCompliant :=
+    RPi5.VSpaceBoot.permsTextRX.wxCompliant &&
+    RPi5.VSpaceBoot.permsDataRW.wxCompliant &&
+    RPi5.VSpaceBoot.permsMmioRW.wxCompliant
+  expect "AN7-D.2-02 all boot permissions wxCompliant" allCompliant
+  -- Specific negative: permsTextRX must NOT have write flag
+  expect "AN7-D.2-02 permsTextRX not writable"
+    (!RPi5.VSpaceBoot.permsTextRX.write)
+  -- Specific negative: permsDataRW must NOT have execute flag
+  expect "AN7-D.2-02 permsDataRW not executable"
+    (!RPi5.VSpaceBoot.permsDataRW.execute)
+  -- Specific negative: permsMmioRW must NOT have execute or cacheable
+  expect "AN7-D.2-02 permsMmioRW not executable"
+    (!RPi5.VSpaceBoot.permsMmioRW.execute)
+  expect "AN7-D.2-02 permsMmioRW not cacheable"
+    (!RPi5.VSpaceBoot.permsMmioRW.cacheable)
+
+/-- AN7-D.2.8: The boot VSpaceRoot's MMIO mappings cover the three
+    canonical BCM2712 device regions.  A regression that drops (e.g.) the
+    GIC CPU interface mapping breaks kernel boot on real silicon. -/
+def an7d2_03_rpi5BootVSpaceRoot_covers_mmio_regions : IO Unit := do
+  -- The boot root's mappings must cover UART0, GIC distributor, GIC CPU
+  -- interface at their identity physical addresses.  We spot-check via
+  -- RHTable.get? on each PAddr's corresponding VAddr.
+  let uartVaddr : VAddr := VAddr.ofNat uart0Base.toNat
+  let gicDistVaddr : VAddr := VAddr.ofNat gicDistributorBase.toNat
+  let gicCpuVaddr : VAddr := VAddr.ofNat gicCpuInterfaceBase.toNat
+  let root := RPi5.VSpaceBoot.rpi5BootVSpaceRoot
+  expect "AN7-D.2-03 boot root maps UART0"
+    (root.mappings[uartVaddr]?.isSome)
+  expect "AN7-D.2-03 boot root maps GIC distributor"
+    (root.mappings[gicDistVaddr]?.isSome)
+  expect "AN7-D.2-03 boot root maps GIC CPU interface"
+    (root.mappings[gicCpuVaddr]?.isSome)
+  -- Each MMIO mapping should have the `permsMmioRW` permissions (not
+  -- executable, not cacheable).
+  match root.mappings[uartVaddr]? with
+  | some (_, perms) =>
+    expect "AN7-D.2-03 UART perms = permsMmioRW"
+      (decide (perms = RPi5.VSpaceBoot.permsMmioRW))
+  | none =>
+    expect "AN7-D.2-03 UART mapping present (unreachable if prior assert holds)" false
+
+-- ============================================================================
 -- Entry point
 -- ============================================================================
 
@@ -481,5 +558,9 @@ def main : IO Unit := do
   ak9h_02_readCStringChecked_rejects_fuel_zero
   ak9h_03_readCStringChecked_ok
   ak9h_04_readCStringChecked_fuel_exhausted_on_unterminated
+  -- AN7-D.2 RPi5 boot VSpaceRoot (DEF-P-L9 closure)
+  an7d2_01_rpi5BootVSpaceRoot_wellFormed
+  an7d2_02_rpi5BootVSpaceRoot_wxCompliant
+  an7d2_03_rpi5BootVSpaceRoot_covers_mmio_regions
   IO.println ""
   IO.println "=== All AK9 platform tests passed ==="

@@ -11,6 +11,11 @@ import SeLe4n.Machine
 /-!
 # AG3-E (FINDING-08): Hardware Timer Model Binding
 
+> **STATUS: staged for H3 hardware binding** (AN7-D.6 / PLT-M07).  This
+> module is wired into `SeLe4n.Platform.Staged` so every CI run verifies
+> it compiles.  See `docs/spec/SELE4N_SPEC.md` §8.15 for the activation
+> roadmap.
+
 Bridges the abstract model timer (`Nat` incremented by `timerTick`) to ARM64
 hardware timer semantics. ARM64 uses:
 

@@ -11,6 +11,11 @@ import SeLe4n.Model.State
 /-!
 # AG8-B: Cache Coherency Model (H3-ARCH-07)
 
+> **STATUS: staged for H3 hardware binding** (AN7-D.6 / PLT-M07).  This
+> module is wired into `SeLe4n.Platform.Staged` so every CI run verifies
+> it compiles.  See `docs/spec/SELE4N_SPEC.md` §8.15 for the activation
+> roadmap.
+
 Abstract model of ARM64 data cache and instruction cache state. This module
 provides the formal vocabulary for reasoning about cache coherency in the
 context of page table modifications, self-modifying code, and DMA.

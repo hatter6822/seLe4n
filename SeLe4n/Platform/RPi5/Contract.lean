@@ -15,6 +15,11 @@ import SeLe4n.Platform.RPi5.MmioAdapter
 /-!
 # Raspberry Pi 5 — Platform Binding
 
+> **STATUS: staged for H3 hardware binding** (AN7-D.6 / PLT-M07).  This
+> module is wired into `SeLe4n.Platform.Staged` so every CI run verifies
+> it compiles.  See `docs/spec/SELE4N_SPEC.md` §8.15 for the activation
+> roadmap.
+
 Composed `PlatformBinding` instance for the Raspberry Pi 5 (BCM2712, ARM64).
 This is the first hardware target for seLe4n.
 

@@ -19,6 +19,16 @@ platform-binding architecture.
 **Non-production:** These contracts are intentionally broad (accept-all) or
 intentionally restrictive (deny-all) for testing purposes. They MUST NOT be
 used by production kernel modules under `SeLe4n/Kernel/`.
+
+**AN7-C (H-16) audit note**: the permissive contract's three predicates all
+return `True` unconditionally; this is an INTENTIONAL "accept-all" harness
+and is not a silent-true pathology in the same class as the AK9-E hole it
+pre-dates.  It is namespaced under `Platform.Sim` precisely so production
+code cannot accidentally import it.  The substantive contract
+(`simRuntimeContractSubstantive`) replaces the permissive register-context
+check with the `False` predicate and gates memory access through the
+`simSubstantiveMemoryMap.any` bounds, mirroring the RPi5 contract's
+structure.
 -/
 
 namespace SeLe4n.Platform.Sim

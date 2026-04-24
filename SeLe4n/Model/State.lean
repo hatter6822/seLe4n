@@ -94,6 +94,14 @@ inductive KernelError where
                            -- type-level promotion failure path; the type
                            -- system enforces the discipline at call sites
                            -- that demand `NonNullCap` arguments.
+  | partialResolution      -- AN7-E (API-M01): `resolveExtraCaps` encountered
+                           -- an unresolvable capability address in the extra-
+                           -- cap list AND the `sele4n.debug.noisyResolution`
+                           -- option was enabled.  By default seL4-compatible
+                           -- semantics silently drop the unresolvable entries;
+                           -- under the noisy option the kernel surfaces this
+                           -- variant so callers can distinguish a *partial*
+                           -- resolution from a *complete* success.
   deriving Repr, DecidableEq
 
 /-- S2-A: Low-priority blanket `ToString` from `Repr`. Enables standard

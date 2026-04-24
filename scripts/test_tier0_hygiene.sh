@@ -114,4 +114,20 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" validate-registr
 # `SeLe4n.Kernel.Internal` must appear in `scripts/lifecycle_internal_allowlist.txt`.
 run_check "HYGIENE" "${SCRIPT_DIR}/check_lifecycle_internal_allowlist.sh"
 
+# AN7-A (H-14/PLT-M04): enforce that no consumer outside DeviceTree.lean itself
+# references the deprecated legacy `findMemoryRegProperty` /
+# `classifyMemoryRegion` Option-returning variants.  Callers must use the
+# `Checked` variants that propagate DeviceTreeParseError / Option MemoryKind.
+run_check "HYGIENE" "${SCRIPT_DIR}/check_devicetree_legacy_consumers.sh"
+
+# AN7-B (H-15): audit every `physicalAddressWidth := N` binding so that
+# platform-specific values are explicit and correct (RPi5 = 44, Sim = 52,
+# defaults = 52; no `:= 48` VA/PA confusion anywhere).
+run_check "HYGIENE" "${SCRIPT_DIR}/check_physical_address_width.sh"
+
+# AN7-F (PLT-L): BCM2712 datasheet reference freshness marker.  Warns (not
+# fatal) when the `BCM2712_DATASHEET_VERIFIED` marker in RPi5/Board.lean is
+# older than one calendar year.
+run_check "HYGIENE" "${SCRIPT_DIR}/check_bcm2712_freshness.sh"
+
 finalize_report

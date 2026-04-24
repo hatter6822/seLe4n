@@ -12,6 +12,11 @@ import SeLe4n.Kernel.Architecture.InterruptDispatch
 /-!
 # AG3-C (FINDING-04): ARM64 Exception Model
 
+> **STATUS: staged for H3 hardware binding** (AN7-D.6 / PLT-M07).  This
+> module is wired into `SeLe4n.Platform.Staged` so every CI run verifies
+> it compiles.  See `docs/spec/SELE4N_SPEC.md` §8.15 for the activation
+> roadmap.
+
 Models the ARM64 exception vector table and exception dispatch. ARM64 defines
 4 exception types × 4 execution states = 16 vector entries. The kernel's
 `syscallEntry` is currently a pure function call; this module wraps it in the

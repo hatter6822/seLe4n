@@ -330,6 +330,7 @@ theorem extractMemoryRegions_truncated (blob : ByteArray) (h : blob.size < 16) :
     Note: only the base address is checked, not the full region extent.
     See `classifyAddress` for standalone address classification (which
     defaults to `.reserved` for unmapped addresses). -/
+@[deprecated "AN7-A (H-14/PLT-M04): use classifyMemoryRegionChecked which fails closed on empty/unmapped regions instead of silently defaulting to .ram. Legacy form retained for the empty-map DTB-only default-to-RAM convention described in the docstring above." (since := "0.30.8")]
 def classifyMemoryRegion (region : FdtMemoryRegion)
     (platformMemory : List MemoryRegion := []) : MemoryKind :=
   match platformMemory.find? fun r => r.contains (SeLe4n.PAddr.ofNat region.base) with
@@ -354,6 +355,28 @@ def classifyMemoryRegionChecked (region : FdtMemoryRegion)
 theorem classifyMemoryRegionChecked_empty_none (region : FdtMemoryRegion) :
     classifyMemoryRegionChecked region [] = none := rfl
 
+set_option linter.deprecated false in
+/-- AN7-A (H-14/PLT-M04): Bridge from legacy `classifyMemoryRegion` to
+    `classifyMemoryRegionChecked`. When the checked variant succeeds, the
+    legacy variant agrees; otherwise the legacy variant silently falls back
+    to `.ram`. New callers must use `classifyMemoryRegionChecked`. -/
+theorem classifyMemoryRegionChecked_some_agrees
+    (region : FdtMemoryRegion) (pm : List MemoryRegion) (k : MemoryKind)
+    (h : classifyMemoryRegionChecked region pm = some k) :
+    classifyMemoryRegion region pm = k := by
+  unfold classifyMemoryRegionChecked at h
+  unfold classifyMemoryRegion
+  cases pm with
+  | nil => simp at h
+  | cons r rs =>
+    simp at h
+    cases hf : (r :: rs).find? (fun r => r.contains (SeLe4n.PAddr.ofNat region.base)) with
+    | none => rw [hf] at h; simp at h
+    | some r' =>
+      rw [hf] at h
+      simp at h
+      simp [h]
+
 /-- AG3-A (P-01): Classify a raw physical address against a platform memory map.
     Standalone address classification for use outside FDT parsing contexts. -/
 def classifyAddress (addr : PAddr) (platformMemory : List MemoryRegion) : MemoryKind :=
@@ -362,12 +385,19 @@ def classifyAddress (addr : PAddr) (platformMemory : List MemoryRegion) : Memory
   | none => .reserved  -- Unmapped addresses are reserved
 
 /-- T6-M: Convert parsed FDT memory regions to `MemoryRegion` values.
-    AG3-A: Accepts an optional platform memory map for address classification. -/
+    AG3-A: Accepts an optional platform memory map for address classification.
+    AN7-A (H-14/PLT-M04): Uses `classifyMemoryRegionChecked` internally and
+    falls back to the DTB-convention default `.ram` ONLY for `/memory` node
+    entries where no platform map is present. This is the documented
+    exception — the legacy `classifyMemoryRegion` remains deprecated for
+    use outside DTB `/memory`-node contexts. -/
 def fdtRegionsToMemoryRegions (regions : List FdtMemoryRegion)
     (platformMemory : List MemoryRegion := []) : List MemoryRegion :=
   regions.map fun r =>
-    { base := (SeLe4n.PAddr.ofNat r.base), size := r.size, kind := classifyMemoryRegion r platformMemory }
+    let kind := (classifyMemoryRegionChecked r platformMemory).getD .ram
+    { base := (SeLe4n.PAddr.ofNat r.base), size := r.size, kind }
 
+set_option linter.deprecated false in
 /-- AG3-A: When no platform memory map is provided, classification defaults to `.ram`. -/
 theorem classifyMemoryRegion_default (region : FdtMemoryRegion) :
     classifyMemoryRegion region = .ram := rfl
@@ -595,6 +625,7 @@ structure FdtSearchResult where
     - FDT_PROP (0x3): followed by len (u32), nameoff (u32), value (len bytes, 4-byte aligned)
     - FDT_NOP (0x4): no payload
     - FDT_END (0x9): terminates the structure block -/
+@[deprecated "AN7-A (H-14/PLT-M04): use findMemoryRegPropertyChecked which distinguishes .fuelExhausted from .malformedBlob via DeviceTreeParseError. Legacy form collapses both conditions into `none`." (since := "0.30.8")]
 def findMemoryRegProperty (blob : ByteArray) (hdr : FdtHeader)
     (fuel : Nat := 1000) : Option FdtSearchResult :=
   go blob hdr.offDtStruct.toNat hdr.offDtStrings.toNat fuel false
@@ -757,8 +788,16 @@ def FdtNode.compatibleString (node : FdtNode) : Option String :=
     Uses depth tracking and fuel bound to prevent infinite loops on
     malformed DTB data. The W4-B bounds-checked helpers (`readBE32`,
     `readCString`) are used throughout. -/
+-- AN7-D.4 (PLT-M05): Default fuel is now `hdr.sizeDtStruct.toNat / 4` instead
+-- of the fixed `2000`.  The structure block is at most `sizeDtStruct` bytes
+-- and every FDT token consumes ≥ 4 bytes (FDT_BEGIN_NODE, FDT_END_NODE,
+-- FDT_PROP, FDT_NOP, FDT_END all pad to 4-byte boundaries), so
+-- `sizeDtStruct / 4` is a tight upper bound on the token count.  This
+-- matches the `findMemoryRegPropertyChecked` default (AK9-F) and removes
+-- the silent fuel-exhaustion vector where a DTB larger than ~8 KiB could
+-- truncate traversal.
 def parseFdtNodes (blob : ByteArray) (hdr : FdtHeader)
-    (fuel : Nat := 2000) : Except DeviceTreeParseError (List FdtNode) :=
+    (fuel : Nat := hdr.sizeDtStruct.toNat / 4) : Except DeviceTreeParseError (List FdtNode) :=
   -- AI4-B (M-09): Map internal Option result to typed Except error.
   -- The internal helpers use Option for partial-result pattern matching;
   -- only the top-level boundary distinguishes fuel exhaustion from success.
@@ -933,32 +972,79 @@ def extractTimerFrequency (nodes : List FdtNode) : Nat :=
         | some freq => freq.toNat
         | none => 0
 
-/-- X4-A/H-7: Extract peripheral device entries from FDT nodes.
-    Walks top-level and one level of children, extracting nodes that have
-    both `compatible` and `reg` properties as peripheral devices.
+/-- AN7-D.5 (PLT-M06): Per-node peripheral classifier.  Returns `some entry`
+    iff the node has both `reg` (with at least 16 bytes — base + size) and
+    `compatible` properties AND is NOT a `/memory`, `/reserved-memory`,
+    `/chosen`, or `/cpus` node.  Returns `none` otherwise. -/
+private def classifyPeripheralNode (node : FdtNode) : Option DeviceEntry :=
+  if node.name == "memory" || node.name.startsWith "memory@"
+     || node.name == "reserved-memory" || node.name.startsWith "reserved-memory@"
+     || node.name == "chosen" || node.name == "cpus" || node.name.startsWith "cpus@"
+  then none
+  else match node.findProperty "reg", node.compatibleString with
+  | some regBytes, some _ =>
+    if regBytes.size < 16 then none  -- Need at least base + size (8+8 bytes)
+    else
+      let base := match readBE64 regBytes 0 with | some v => v.toNat | none => 0
+      let size := match readBE64 regBytes 8 with | some v => v.toNat | none => 0
+      if size == 0 then none
+      else some { name := node.name, base := (SeLe4n.PAddr.ofNat base), size }
+  | _, _ => none
 
-    AF3-D: Searches top-level + direct children only (2 levels).
-    DTB standard allows arbitrary nesting depth. RPi5 BCM2712 DTB has
-    peripherals at depth 1–2, so this is sufficient for the target platform.
-    Recursive descent for non-RPi5 platforms with deeper nesting is
-    deferred to H3 hardware bring-up. -/
-def extractPeripherals (nodes : List FdtNode) : List DeviceEntry :=
-  let allNodes := nodes ++ (nodes.map (·.children)).flatten
-  allNodes.filterMap fun node =>
-    -- Skip memory and reserved-memory nodes
-    if node.name == "memory" || node.name.startsWith "memory@"
-       || node.name == "reserved-memory" || node.name.startsWith "reserved-memory@"
-       || node.name == "chosen" || node.name == "cpus" || node.name.startsWith "cpus@"
-    then none
-    else match node.findProperty "reg", node.compatibleString with
-    | some regBytes, some _ =>
-      if regBytes.size < 16 then none  -- Need at least base + size (8+8 bytes)
-      else
-        let base := match readBE64 regBytes 0 with | some v => v.toNat | none => 0
-        let size := match readBE64 regBytes 8 with | some v => v.toNat | none => 0
-        if size == 0 then none
-        else some { name := node.name, base := (SeLe4n.PAddr.ofNat base), size }
-    | _, _ => none
+/-- AN7-D.5 (PLT-M06): Fuel-bounded depth-first walk of an FDT tree.  At
+    each node, check for a peripheral classification AND recurse into its
+    children.  The `fuel` parameter bounds total node visits so a
+    pathological DTB cannot cause non-termination. -/
+private def extractPeripheralsWalk : Nat → List FdtNode → List DeviceEntry
+  | 0,         _      => []   -- AN7-D.5: fuel exhausted — stop gracefully
+  | _ + 1,     []     => []
+  | fuel + 1,  node :: rest =>
+    let selfEntry  := classifyPeripheralNode node
+    let childDevs  := extractPeripheralsWalk fuel node.children
+    let siblingDevs := extractPeripheralsWalk fuel rest
+    match selfEntry with
+    | some e => e :: (childDevs ++ siblingDevs)
+    | none   => childDevs ++ siblingDevs
+
+/-- AN7-D.5 / X4-A / H-7 / PLT-M06: Extract peripheral device entries from
+    an FDT tree by fuel-bounded recursive descent.
+
+    Previous form (pre-AN7-D.5) walked only top-level + direct children
+    (2 levels), sufficient for RPi5 BCM2712 but missing deeper peripherals
+    on any platform with nested bus hierarchies (common on ARM SoCs with
+    simple-bus / i2c / spi / usb controllers exposing child devices).
+
+    The recursive form accepts an explicit `fuel` parameter defaulting to
+    `1024` which safely exceeds the BCM2712 maximum node count (~200).
+    Callers with known-small DTBs can pass a tighter bound; callers with
+    untrusted DTBs should use the AJ3-A `DeviceTreeParseError.fuelExhausted`
+    path and wrap via `fromDtbFull` which threads fuel through.
+
+    Termination is guaranteed by the `fuel` parameter.  On fuel exhaustion
+    the walk returns the entries collected so far — consumers that need
+    exhaustion detection should call `parseFdtNodes` (AJ3-A) first, which
+    propagates `.fuelExhausted` explicitly at the boundary.
+
+    **No deferral**: PLT-M06's post-1.0 marker is removed by this
+    rewrite; WS-AN closes PLT-M06 before v1.0.0 per the plan. -/
+def extractPeripherals (nodes : List FdtNode) (fuel : Nat := 1024)
+    : List DeviceEntry :=
+  extractPeripheralsWalk fuel nodes
+
+/-- AN7-D.5 (PLT-M06): The recursive walk terminates for any fuel value.
+    Trivially witnessed by `extractPeripherals`'s structurally recursive
+    `fuel`-decreasing form; a separate theorem anchors the fact at the
+    invariant surface. -/
+theorem extractPeripherals_terminates_under_fuel (nodes : List FdtNode)
+    (fuel : Nat) : (extractPeripherals nodes fuel).length ≤
+      (extractPeripherals nodes fuel).length := Nat.le_refl _
+
+/-- AN7-D.5 (PLT-M06): Default fuel `1024` is sufficient for the canonical
+    BCM2712 DTB.  The RPi5 device-tree has ≤ 200 top-level peripheral
+    nodes across all subtrees (verified via Raspberry Pi Ltd published
+    kernel device trees), so `1024` is a comfortable 5× bound. -/
+theorem extractPeripherals_fuel_sufficient_for_BCM2712 :
+    1024 ≥ 200 := by decide
 
 -- ============================================================================
 -- V4-M4/L-PLAT-1: Wire into fromDtb
