@@ -27,6 +27,14 @@ architectural parameters that platform contracts reference.
 H3-prep stub. Values are based on publicly available BCM2712 documentation.
 Full register-level definitions will be added during the H3 platform-binding
 workstream.
+
+## Datasheet freshness
+
+<!-- AN7-F (PLT-L): last datasheet verification date (YYYY-MM-DD).  The
+     CI hygiene check `scripts/check_bcm2712_freshness.sh` warns when this
+     date is older than one calendar year.  Update in the same commit when
+     you re-verify BCM2712 constants against upstream documentation. -->
+<!-- BCM2712_DATASHEET_VERIFIED: 2026-04-24 -->
 -/
 
 namespace SeLe4n.Platform.RPi5

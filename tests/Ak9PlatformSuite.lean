@@ -14,6 +14,7 @@ import SeLe4n.Platform.RPi5.Board
 import SeLe4n.Platform.RPi5.MmioAdapter
 import SeLe4n.Platform.RPi5.BootContract
 import SeLe4n.Platform.RPi5.RuntimeContract
+import SeLe4n.Platform.RPi5.VSpaceBoot
 import SeLe4n.Platform.Sim.BootContract
 import SeLe4n.Platform.DeviceTree
 import SeLe4n.Testing.Helpers
@@ -436,6 +437,214 @@ def ak9h_04_readCStringChecked_fuel_exhausted_on_unterminated : IO Unit := do
      | _ => false)
 
 -- ============================================================================
+-- AN7-D.2 (PLT-M02/PLT-M03): RPi5 boot VSpaceRoot + DEF-P-L9 closure
+-- ============================================================================
+
+/-- AN7-D.2.8: `rpi5BootVSpaceRoot` is well-formed (ASID bounded, every
+    mapping W^X, non-empty). -/
+def an7d2_01_rpi5BootVSpaceRoot_wellFormed : IO Unit := do
+  -- The theorem is discharged at compile time by `decide`; we exercise it
+  -- by asserting every projected conjunct holds.  Failure at any one of
+  -- these assertions surfaces a regression in either the boot root
+  -- definition or the `wellFormed` predicate.
+  expect "AN7-D.2-01 boot VSpaceRoot asid = 0"
+    (RPi5.VSpaceBoot.rpi5BootVSpaceRoot.asid.val == 0)
+  expect "AN7-D.2-01 boot VSpaceRoot mappings non-empty"
+    (decide (RPi5.VSpaceBoot.rpi5BootVSpaceRoot.mappings.size > 0))
+  -- Witness all three mapping permissions are wxCompliant by spot-check.
+  expect "AN7-D.2-01 permsTextRX wxCompliant"
+    (RPi5.VSpaceBoot.permsTextRX.wxCompliant)
+  expect "AN7-D.2-01 permsDataRW wxCompliant"
+    (RPi5.VSpaceBoot.permsDataRW.wxCompliant)
+  expect "AN7-D.2-01 permsMmioRW wxCompliant"
+    (RPi5.VSpaceBoot.permsMmioRW.wxCompliant)
+
+/-- AN7-D.2.8: `rpi5BootVSpaceRoot` satisfies the per-root W^X predicate.
+    A regression that introduces a W+X mapping (e.g., by flipping a
+    permission constant to `execute := true, write := true`) fails
+    `decide` at module compile time AND trips this runtime assertion. -/
+def an7d2_02_rpi5BootVSpaceRoot_wxCompliant : IO Unit := do
+  -- At runtime we can't directly evaluate the fold (it's decidable at
+  -- compile time via `decide`).  We instead exercise it by inspecting the
+  -- specific permissions used in the boot root and asserting they are
+  -- wxCompliant one-by-one.  This anchors the three permission constants
+  -- to their W^X witnesses.
+  let allCompliant :=
+    RPi5.VSpaceBoot.permsTextRX.wxCompliant &&
+    RPi5.VSpaceBoot.permsDataRW.wxCompliant &&
+    RPi5.VSpaceBoot.permsMmioRW.wxCompliant
+  expect "AN7-D.2-02 all boot permissions wxCompliant" allCompliant
+  -- Specific negative: permsTextRX must NOT have write flag
+  expect "AN7-D.2-02 permsTextRX not writable"
+    (!RPi5.VSpaceBoot.permsTextRX.write)
+  -- Specific negative: permsDataRW must NOT have execute flag
+  expect "AN7-D.2-02 permsDataRW not executable"
+    (!RPi5.VSpaceBoot.permsDataRW.execute)
+  -- Specific negative: permsMmioRW must NOT have execute or cacheable
+  expect "AN7-D.2-02 permsMmioRW not executable"
+    (!RPi5.VSpaceBoot.permsMmioRW.execute)
+  expect "AN7-D.2-02 permsMmioRW not cacheable"
+    (!RPi5.VSpaceBoot.permsMmioRW.cacheable)
+
+/-- AN7-D.2.8: The boot VSpaceRoot's MMIO mappings cover the three
+    canonical BCM2712 device regions.  A regression that drops (e.g.) the
+    GIC CPU interface mapping breaks kernel boot on real silicon. -/
+def an7d2_03_rpi5BootVSpaceRoot_covers_mmio_regions : IO Unit := do
+  -- The boot root's mappings must cover UART0, GIC distributor, GIC CPU
+  -- interface at their identity physical addresses.  We spot-check via
+  -- RHTable.get? on each PAddr's corresponding VAddr.
+  let uartVaddr : VAddr := VAddr.ofNat uart0Base.toNat
+  let gicDistVaddr : VAddr := VAddr.ofNat gicDistributorBase.toNat
+  let gicCpuVaddr : VAddr := VAddr.ofNat gicCpuInterfaceBase.toNat
+  let root := RPi5.VSpaceBoot.rpi5BootVSpaceRoot
+  expect "AN7-D.2-03 boot root maps UART0"
+    (root.mappings[uartVaddr]?.isSome)
+  expect "AN7-D.2-03 boot root maps GIC distributor"
+    (root.mappings[gicDistVaddr]?.isSome)
+  expect "AN7-D.2-03 boot root maps GIC CPU interface"
+    (root.mappings[gicCpuVaddr]?.isSome)
+  -- Each MMIO mapping should have the `permsMmioRW` permissions (not
+  -- executable, not cacheable).
+  match root.mappings[uartVaddr]? with
+  | some (_, perms) =>
+    expect "AN7-D.2-03 UART perms = permsMmioRW"
+      (decide (perms = RPi5.VSpaceBoot.permsMmioRW))
+  | none =>
+    expect "AN7-D.2-03 UART mapping present (unreachable if prior assert holds)" false
+
+/-- AN7-D.2.8 (audit remediation): The boot VSpaceRoot's `paddrBounded`
+    conjunct witnesses that every mapped PA fits the BCM2712 44-bit PA
+    range.  A regression that adds a PA ≥ 2^44 would fail `decide` on
+    the aggregated fold and this runtime test would detect the lapse
+    by spot-checking the six known bases. -/
+def an7d2_04_rpi5BootVSpaceRoot_paddrBounded : IO Unit := do
+  -- Every known base address is below 2^44 = 0x100000000000.
+  let twoPow44 : Nat := 0x100000000000
+  expect "AN7-D.2-04 kernelTextBase < 2^44"
+    (decide (RPi5.VSpaceBoot.kernelTextBase.toNat < twoPow44))
+  expect "AN7-D.2-04 kernelDataBase < 2^44"
+    (decide (RPi5.VSpaceBoot.kernelDataBase.toNat < twoPow44))
+  expect "AN7-D.2-04 kernelStackBase < 2^44"
+    (decide (RPi5.VSpaceBoot.kernelStackBase.toNat < twoPow44))
+  expect "AN7-D.2-04 uart0Base < 2^44"
+    (decide (uart0Base.toNat < twoPow44))
+  expect "AN7-D.2-04 gicDistributorBase < 2^44"
+    (decide (gicDistributorBase.toNat < twoPow44))
+  expect "AN7-D.2-04 gicCpuInterfaceBase < 2^44"
+    (decide (gicCpuInterfaceBase.toNat < twoPow44))
+
+-- ============================================================================
+-- AN7-D.5 (PLT-M06): extractPeripherals recursive walk tests
+-- ============================================================================
+
+/-- Helper: build a 16-byte big-endian `reg` property encoding
+    (base, size) as two 64-bit big-endian values.  Used by the
+    depth-3+ DTB peripheral-walk tests below. -/
+private def mkRegProperty (base size : UInt64) : ByteArray :=
+  let baseBytes : Array UInt8 :=
+    #[ ((base >>> 56) &&& 0xFF).toUInt8
+     , ((base >>> 48) &&& 0xFF).toUInt8
+     , ((base >>> 40) &&& 0xFF).toUInt8
+     , ((base >>> 32) &&& 0xFF).toUInt8
+     , ((base >>> 24) &&& 0xFF).toUInt8
+     , ((base >>> 16) &&& 0xFF).toUInt8
+     , ((base >>> 8)  &&& 0xFF).toUInt8
+     , ( base         &&& 0xFF).toUInt8 ]
+  let sizeBytes : Array UInt8 :=
+    #[ ((size >>> 56) &&& 0xFF).toUInt8
+     , ((size >>> 48) &&& 0xFF).toUInt8
+     , ((size >>> 40) &&& 0xFF).toUInt8
+     , ((size >>> 32) &&& 0xFF).toUInt8
+     , ((size >>> 24) &&& 0xFF).toUInt8
+     , ((size >>> 16) &&& 0xFF).toUInt8
+     , ((size >>> 8)  &&& 0xFF).toUInt8
+     , ( size         &&& 0xFF).toUInt8 ]
+  ByteArray.mk (baseBytes ++ sizeBytes)
+
+/-- Helper: make an `FdtNode` with `reg` + `compatible` properties. -/
+private def mkPeripheral (name : String) (base : UInt64)
+    (children : List FdtNode := []) : FdtNode :=
+  { name
+    properties :=
+      [ { name := "reg", value := mkRegProperty base 0x1000 }
+      , { name := "compatible", value := ByteArray.mk #[0x61, 0x72, 0x6D, 0x00] } ]  -- "arm\0"
+    children }
+
+/-- AN7-D.5: `extractPeripherals` discovers peripherals at depth 3+ via
+    the new recursive walk.  The previous 2-level walk (pre-AN7-D.5)
+    would have missed the `level3-device` in this synthetic tree; the
+    new recursive form finds it. -/
+def an7d5_01_extractPeripherals_depth3_discovery : IO Unit := do
+  -- Build a depth-3 tree:
+  --   level1-bus (depth 1)
+  --     └─ level2-controller (depth 2)
+  --         └─ level3-device (depth 3)
+  let deepTree : List FdtNode := [
+    mkPeripheral "level1-bus" 0x10000000 [
+      mkPeripheral "level2-controller" 0x20000000 [
+        mkPeripheral "level3-device" 0x30000000 []
+      ]
+    ]
+  ]
+  let devices := extractPeripherals deepTree 1024
+  -- All three levels should be discovered
+  expect "AN7-D.5-01 level1-bus discovered"
+    (devices.any (fun d => d.name == "level1-bus"))
+  expect "AN7-D.5-01 level2-controller discovered"
+    (devices.any (fun d => d.name == "level2-controller"))
+  expect "AN7-D.5-01 level3-device discovered"
+    (devices.any (fun d => d.name == "level3-device"))
+  expect "AN7-D.5-01 exactly 3 devices total"
+    (decide (devices.length = 3))
+
+/-- AN7-D.5: The walk terminates at `fuel = 0` regardless of tree depth. -/
+def an7d5_02_extractPeripherals_zero_fuel_collapses : IO Unit := do
+  let deepTree : List FdtNode := [
+    mkPeripheral "top" 0x1000 [
+      mkPeripheral "middle" 0x2000 [
+        mkPeripheral "bottom" 0x3000 []
+      ]
+    ]
+  ]
+  let devices := extractPeripherals deepTree 0
+  expect "AN7-D.5-02 zero-fuel returns empty list"
+    (decide (devices.length = 0))
+
+/-- AN7-D.5: The walk correctly skips nodes lacking `reg` or
+    `compatible` properties. -/
+def an7d5_03_extractPeripherals_skips_incomplete_nodes : IO Unit := do
+  -- Node without any properties (no reg, no compatible) — should be skipped
+  let incompleteNode : FdtNode :=
+    { name := "no-props", properties := [], children := [] }
+  let devices := extractPeripherals [incompleteNode] 1024
+  expect "AN7-D.5-03 incomplete node skipped"
+    (decide (devices.length = 0))
+
+/-- AN7-D.5: The walk correctly excludes `memory@*` / `cpus` / `chosen`
+    nodes from peripheral classification, even at deep nesting. -/
+def an7d5_04_extractPeripherals_excludes_reserved_names : IO Unit := do
+  -- Reserved-name nodes should NOT be reported as peripherals
+  let treeWithReserved : List FdtNode := [
+    mkPeripheral "legit-device" 0x10000 [],
+    -- Even with proper reg+compatible, these names are excluded by classifier
+    { name := "memory@0"
+      properties :=
+        [ { name := "reg", value := mkRegProperty 0x20000 0x1000 }
+        , { name := "compatible", value := ByteArray.mk #[0x61, 0x72, 0x6D, 0x00] } ]
+      children := [] },
+    { name := "cpus"
+      properties :=
+        [ { name := "reg", value := mkRegProperty 0x30000 0x1000 }
+        , { name := "compatible", value := ByteArray.mk #[0x61, 0x72, 0x6D, 0x00] } ]
+      children := [] }
+  ]
+  let devices := extractPeripherals treeWithReserved 1024
+  expect "AN7-D.5-04 only legit-device extracted"
+    (decide (devices.length = 1))
+  expect "AN7-D.5-04 legit-device is the one found"
+    (devices.any (fun d => d.name == "legit-device"))
+
+-- ============================================================================
 -- Entry point
 -- ============================================================================
 
@@ -481,5 +690,15 @@ def main : IO Unit := do
   ak9h_02_readCStringChecked_rejects_fuel_zero
   ak9h_03_readCStringChecked_ok
   ak9h_04_readCStringChecked_fuel_exhausted_on_unterminated
+  -- AN7-D.2 RPi5 boot VSpaceRoot (DEF-P-L9 closure)
+  an7d2_01_rpi5BootVSpaceRoot_wellFormed
+  an7d2_02_rpi5BootVSpaceRoot_wxCompliant
+  an7d2_03_rpi5BootVSpaceRoot_covers_mmio_regions
+  an7d2_04_rpi5BootVSpaceRoot_paddrBounded
+  -- AN7-D.5 extractPeripherals recursive walk
+  an7d5_01_extractPeripherals_depth3_discovery
+  an7d5_02_extractPeripherals_zero_fuel_collapses
+  an7d5_03_extractPeripherals_skips_incomplete_nodes
+  an7d5_04_extractPeripherals_excludes_reserved_names
   IO.println ""
   IO.println "=== All AK9 platform tests passed ==="

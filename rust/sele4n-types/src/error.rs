@@ -1,7 +1,8 @@
 //! Kernel error enumeration — mirrors `SeLe4n.Model.KernelError`.
 //!
-//! Lean source: `SeLe4n/Model/State.lean` lines 19–84.
-//! Discriminants 0–48 are a 1:1 mapping from the Lean inductive (49 variants).
+//! Lean source: `SeLe4n/Model/State.lean` lines 19–97.
+//! Discriminants 0–51 are a 1:1 mapping from the Lean inductive (52 variants
+//! after AN7-E's `PartialResolution` at 51).
 //! `UnknownKernelError` (255) is a Rust-only sentinel for forward compatibility.
 
 /// All kernel error variants, plus a Rust-only forward-compatibility sentinel.
@@ -91,8 +92,15 @@ pub enum KernelError {
     /// empty rights). Emitted by the kernel's `NonNullCap.ofCap?` type-level
     /// promotion failure path at `cspaceMint` / `cspaceCopy` / `cspaceMove`.
     NullCapability = 50,
+    /// AN7-E (API-M01): `resolveExtraCaps` encountered an unresolvable
+    /// capability address AND the noisy-resolution debug option was
+    /// enabled.  Default ABI path silently drops unresolvable caps
+    /// (seL4-compatible); this variant surfaces partial resolution
+    /// explicitly when the kernel is built with
+    /// `set_option sele4n.debug.noisyResolution true` on the Lean side.
+    PartialResolution = 51,
     /// AF6-A: Kernel returned an error code not recognized by this ABI version.
-    /// Discriminant 255 is a reserved sentinel outside the kernel range 0–50.
+    /// Discriminant 255 is a reserved sentinel outside the kernel range 0–51.
     UnknownKernelError = 255,
 }
 
@@ -151,6 +159,7 @@ impl KernelError {
             48 => Some(Self::InvalidIrq),
             49 => Some(Self::InvalidObjectType),
             50 => Some(Self::NullCapability),
+            51 => Some(Self::PartialResolution),
             255 => Some(Self::UnknownKernelError),
             _ => None,
         }
@@ -212,6 +221,7 @@ impl std::fmt::Display for KernelError {
             Self::InvalidIrq => write!(f, "invalid IRQ"),
             Self::InvalidObjectType => write!(f, "invalid object type"),
             Self::NullCapability => write!(f, "null capability (seL4_CapNull sentinel)"),
+            Self::PartialResolution => write!(f, "partial capability resolution (noisy-resolution debug mode)"),
             Self::UnknownKernelError => write!(f, "unknown kernel error"),
         }
     }
@@ -226,10 +236,10 @@ mod tests {
 
     #[test]
     fn from_u32_roundtrip() {
-        // AL1b (WS-AL / AK7-I.cascade): variants 0-50 must roundtrip after
-        // NullCapability was added at discriminant 50 (extending AL6's range
-        // of 0..=49 with InvalidObjectType at 49).
-        for i in 0..=50u32 {
+        // AN7-E (API-M01): variants 0-51 must roundtrip after
+        // PartialResolution was added at discriminant 51 (extending AL1b's
+        // range of 0..=50 with NullCapability at 50).
+        for i in 0..=51u32 {
             let e = KernelError::from_u32(i).unwrap();
             assert_eq!(e as u32, i);
         }
@@ -238,7 +248,7 @@ mod tests {
     #[test]
     fn from_u32_out_of_range() {
         // T1-G: Discriminants in gaps and beyond range must return None
-        assert!(KernelError::from_u32(51).is_none());
+        assert!(KernelError::from_u32(52).is_none());
         assert!(KernelError::from_u32(254).is_none());
         // 255 is now UnknownKernelError (AF6-A sentinel)
         assert_eq!(KernelError::from_u32(255), Some(KernelError::UnknownKernelError));
@@ -269,6 +279,8 @@ mod tests {
         assert_eq!(KernelError::InvalidObjectType as u32, 49);
         // AL1b (WS-AL / AK7-I.cascade): null-cap type-level rejection
         assert_eq!(KernelError::NullCapability as u32, 50);
+        // AN7-E (API-M01): partial resolution under noisy-resolution debug
+        assert_eq!(KernelError::PartialResolution as u32, 51);
     }
 
     /// T1-H: Cross-validation — verify Lean-Rust enum correspondence
@@ -279,22 +291,22 @@ mod tests {
     ///   | allocationMisaligned    (37)
     #[test]
     fn lean_rust_correspondence() {
-        // AL1b (WS-AL / AK7-I.cascade): 51 variants (0-50) — verify total
-        // variant count matches Lean (extends AL6's range).
-        let max_valid = 50u32;
+        // AN7-E (API-M01): 52 variants (0-51) — verify total
+        // variant count matches Lean (extends AL1b's range).
+        let max_valid = 51u32;
         assert!(KernelError::from_u32(max_valid).is_some());
         assert!(KernelError::from_u32(max_valid + 1).is_none());
 
-        // Verify from_u32: unknown discriminants in the gap (51–254) return None
+        // Verify from_u32: unknown discriminants in the gap (52–254) return None
         assert!(KernelError::from_u32(100).is_none());
     }
 
-    /// T1-H: Discriminant ordering — kernel variants 0–50 are sequential
-    /// (AL1b extended the range with NullCapability at 50).
+    /// T1-H: Discriminant ordering — kernel variants 0–51 are sequential
+    /// (AN7-E extended the range with PartialResolution at 51).
     #[test]
     fn discriminant_ordering() {
         let mut prev = None;
-        for i in 0..=50u32 {
+        for i in 0..=51u32 {
             let e = KernelError::from_u32(i);
             assert!(e.is_some(), "gap at discriminant {i}");
             if let Some(p) = prev {
@@ -305,13 +317,13 @@ mod tests {
     }
 
     /// AF6-A: UnknownKernelError sentinel at discriminant 255
-    /// (AL1b: the 50 gap closed, so the None range starts at 51).
+    /// (AN7-E: the 51 gap closed, so the None range starts at 52).
     #[test]
     fn unknown_kernel_error_sentinel() {
         assert_eq!(KernelError::UnknownKernelError as u32, 255);
         assert_eq!(KernelError::from_u32(255), Some(KernelError::UnknownKernelError));
-        // Gap between 50 and 255 is all None
-        for i in 51..255u32 {
+        // Gap between 51 and 255 is all None
+        for i in 52..255u32 {
             assert!(KernelError::from_u32(i).is_none(), "unexpected variant at {i}");
         }
     }

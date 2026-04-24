@@ -9,6 +9,11 @@
 /-!
 # FFI Bridge: Lean Kernel → Rust HAL
 
+> **STATUS: staged for H3 hardware binding** (AN7-D.6 / PLT-M07).  This
+> module is wired into `SeLe4n.Platform.Staged` so every CI run verifies
+> it compiles.  See `docs/spec/SELE4N_SPEC.md` §8.15 for the activation
+> roadmap.
+
 AG7-A-iii/iv: `@[extern]` declarations for Lean-to-Rust FFI bridge.
 
 Each declaration corresponds to a `#[no_mangle] pub extern "C"` function in

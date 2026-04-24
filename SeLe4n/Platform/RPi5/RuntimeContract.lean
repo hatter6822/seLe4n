@@ -249,4 +249,150 @@ theorem registerContextStableCheck_budget
       -- discharge currentBudgetPositive from.
       simp [hSc] at hBud
 
+/-! ## AN7-C (H-16): Per-conjunct soundness theorems for `registerContextStableCheck`
+
+Each of the six AG7-D conjuncts projected into a standalone soundness theorem,
+following the AK9-E pattern (see `registerContextStableCheck_budget` above).
+Rationale: allow callers that only need ONE consequence of the bundled check
+to discharge their obligation without re-unfolding the full 6-conjunct
+conjunction. Every extraction theorem fails loudly on the "current thread
+present but not a TCB" branch where the raw check already returns `false` —
+so a passing witness for `registerContextStableCheck` implies the TCB lookup
+succeeds.
+
+"Silent-true" audit: the ONE branch where the raw check returns `true`
+unconditionally is `scheduler.current = none`.  This is not a silent bypass
+— it is the "no current thread, no obligation to check" case, documented by
+`registerContextStableCheck_none_current` below.  All OTHER branches are
+fail-closed (return `false` when the expected TCB / binding / condition is
+missing).
+-/
+
+/-- AN7-C: When `scheduler.current = none`, the check returns `true` by
+    construction (no current thread means no register-context obligation).
+    This is the ONE vacuous-true branch and is semantically correct: there is
+    no thread whose register file must match. -/
+theorem registerContextStableCheck_none_current
+    (st st' : SeLe4n.Model.SystemState)
+    (hNone : st'.scheduler.current = none) :
+    registerContextStableCheck st st' = true := by
+  unfold registerContextStableCheck
+  rw [hNone]
+
+/-- AN7-C: Conversely, when the check passes, either there is no current
+    thread OR the current thread's ObjId resolves to a TCB (every other
+    variant causes the raw check to fall to the `| _ => false` branch). -/
+theorem registerContextStableCheck_implies_tcb_present
+    (st st' : SeLe4n.Model.SystemState)
+    (hStable : registerContextStableCheck st st' = true) :
+    st'.scheduler.current = none ∨
+    ∃ tid tcb,
+      st'.scheduler.current = some tid ∧
+      st'.objects[tid.toObjId]? = some (.tcb tcb) := by
+  unfold registerContextStableCheck at hStable
+  cases hCur : st'.scheduler.current with
+  | none => exact Or.inl rfl
+  | some tid =>
+    simp only [hCur] at hStable
+    cases hObj : st'.objects[tid.toObjId]? with
+    | none => simp only [hObj] at hStable; simp at hStable
+    | some o =>
+      simp only [hObj] at hStable
+      match o, hObj, hStable with
+      | .tcb tcb, hObj, _ => exact Or.inr ⟨tid, tcb, rfl, hObj⟩
+      | .endpoint _, _, hStable => simp at hStable
+      | .notification _, _, hStable => simp at hStable
+      | .cnode _, _, hStable => simp at hStable
+      | .vspaceRoot _, _, hStable => simp at hStable
+      | .untyped _, _, hStable => simp at hStable
+      | .schedContext _, _, hStable => simp at hStable
+
+/-- AN7-C: Register-context conjunct soundness (Boolean form) — when the
+    check passes for a TCB-present state, the post-state register file's
+    decidable `==` against the TCB's stored context is `true`.  This is the
+    strongest form available because `BEq RegisterFile` is NOT `LawfulBEq`
+    (see AK7-G, `TCB.not_lawfulBEq`); callers that need structural equality
+    compose this with `RegisterFile.ext` on a per-field basis. -/
+theorem registerContextStableCheck_register_match
+    (st st' : SeLe4n.Model.SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : SeLe4n.Model.TCB)
+    (hCur : st'.scheduler.current = some tid)
+    (hObj : st'.objects[tid.toObjId]? = some (.tcb tcb))
+    (hStable : registerContextStableCheck st st' = true) :
+    (st'.machine.regs == tcb.registerContext) = true := by
+  unfold registerContextStableCheck at hStable
+  simp only [hCur, hObj, Bool.and_eq_true] at hStable
+  exact hStable.1.1.1.1.1
+
+/-- AN7-C: Dequeue-on-dispatch conjunct — when the check passes the current
+    thread is NOT in the runnable queue (a runnable-queue membership would
+    violate EDF dispatch semantics). -/
+theorem registerContextStableCheck_dequeue_on_dispatch
+    (st st' : SeLe4n.Model.SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : SeLe4n.Model.TCB)
+    (hCur : st'.scheduler.current = some tid)
+    (hObj : st'.objects[tid.toObjId]? = some (.tcb tcb))
+    (hStable : registerContextStableCheck st st' = true) :
+    st'.scheduler.runnable.contains tid = false := by
+  unfold registerContextStableCheck at hStable
+  simp only [hCur, hObj, Bool.and_eq_true] at hStable
+  have h := hStable.1.1.1.1.2
+  exact Bool.not_eq_true' _ |>.mp h
+
+/-- AN7-C: Time-slice positivity conjunct — the dispatched TCB's time slice
+    is strictly positive. -/
+theorem registerContextStableCheck_timeSlice_positive
+    (st st' : SeLe4n.Model.SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : SeLe4n.Model.TCB)
+    (hCur : st'.scheduler.current = some tid)
+    (hObj : st'.objects[tid.toObjId]? = some (.tcb tcb))
+    (hStable : registerContextStableCheck st st' = true) :
+    tcb.timeSlice > 0 := by
+  unfold registerContextStableCheck at hStable
+  simp only [hCur, hObj, Bool.and_eq_true] at hStable
+  have h := hStable.1.1.1.2
+  exact decide_eq_true_eq.mp h
+
+/-- AN7-C: IPC readiness conjunct — the dispatched TCB's IPC state is
+    `.ready` (not blocked on any send/receive/reply). -/
+theorem registerContextStableCheck_ipcReady
+    (st st' : SeLe4n.Model.SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : SeLe4n.Model.TCB)
+    (hCur : st'.scheduler.current = some tid)
+    (hObj : st'.objects[tid.toObjId]? = some (.tcb tcb))
+    (hStable : registerContextStableCheck st st' = true) :
+    tcb.ipcState = .ready := by
+  unfold registerContextStableCheck at hStable
+  simp only [hCur, hObj, Bool.and_eq_true] at hStable
+  have h := hStable.1.1.2
+  exact beq_iff_eq.mp h
+
+/-- AN7-C: EDF compatibility conjunct — the dispatched TCB's deadline is
+    zero (trivially earliest among any EDF ordering). -/
+theorem registerContextStableCheck_edfCompatible
+    (st st' : SeLe4n.Model.SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : SeLe4n.Model.TCB)
+    (hCur : st'.scheduler.current = some tid)
+    (hObj : st'.objects[tid.toObjId]? = some (.tcb tcb))
+    (hStable : registerContextStableCheck st st' = true) :
+    tcb.deadline.toNat = 0 := by
+  unfold registerContextStableCheck at hStable
+  simp only [hCur, hObj, Bool.and_eq_true] at hStable
+  have h := hStable.1.2
+  exact beq_iff_eq.mp h
+
+/-- AN7-C: Budget sufficiency conjunct — the dispatched TCB's
+    `budgetSufficientCheck` passes.  Combined with AK9-E, this fails closed
+    on missing/wrong-variant SchedContext bindings. -/
+theorem registerContextStableCheck_budget_conjunct
+    (st st' : SeLe4n.Model.SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : SeLe4n.Model.TCB)
+    (hCur : st'.scheduler.current = some tid)
+    (hObj : st'.objects[tid.toObjId]? = some (.tcb tcb))
+    (hStable : registerContextStableCheck st st' = true) :
+    budgetSufficientCheck st' tcb = true := by
+  unfold registerContextStableCheck at hStable
+  simp only [hCur, hObj, Bool.and_eq_true] at hStable
+  exact hStable.2
+
 end SeLe4n.Platform.RPi5

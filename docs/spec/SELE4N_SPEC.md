@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.30.7` (`lakefile.toml`) |
+| **Package version** | `0.30.8` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 104,156 across 151 Lean files |
 | **Test LoC** | 15,170 across 24 Lean test suites |
@@ -419,6 +419,46 @@ organizational foundation for hardware binding:
 (ARMv8 memory management) → AG7 (FFI bridge + proof hooks) → AG8 (integration
 + model closure) → AG9 (testing + validation) → AG10 (documentation + closure).
 **All 10 phases COMPLETE** (v0.26.0–v0.27.1).
+
+### 6.2.1 DTB peripheral-discovery depth (AN7-D.5 / PLT-M06, v0.30.8)
+
+`extractPeripherals` in `SeLe4n/Platform/DeviceTree.lean` performs a
+**fuel-bounded recursive depth-first walk** of the FDT tree, replacing
+the previous hardcoded 2-level traversal (top-level + direct children
+only).  The new walk supports arbitrary nesting depth, which is required
+for ARM SoC platforms with nested bus hierarchies (`simple-bus`, `i2c`,
+`spi`, `usb` controllers exposing child devices).
+
+**Fuel contract**:
+- Default fuel `1024` comfortably exceeds the BCM2712 node count (~200).
+- Termination is guaranteed structurally by the decreasing `fuel`
+  parameter.
+- `extractPeripherals_zero_fuel` and `extractPeripherals_empty` witness
+  the two base cases of the recursion at the invariant surface.
+- `extractPeripherals_fuel_sufficient_for_BCM2712 : 1024 ≥ 200` anchors
+  the sufficiency bound.
+
+**Boundary guarantees**:
+- On fuel exhaustion, the walk returns the entries collected so far
+  (graceful degradation).
+- Consumers that need exhaustion detection should invoke `parseFdtNodes`
+  first; that function propagates `DeviceTreeParseError.fuelExhausted`
+  explicitly (AJ3-A).
+
+**Regression coverage**: `tests/Ak9PlatformSuite.lean` includes 8
+runtime tests (`an7d5_01..04`) exercising:
+
+- Depth-3 peripheral discovery (`level1-bus` → `level2-controller` →
+  `level3-device` nested tree, all three extracted).
+- Zero-fuel collapse (empty-list return regardless of tree depth).
+- Incomplete-node skip (nodes lacking `reg` or `compatible` are
+  correctly filtered out).
+- Reserved-name exclusion (`memory@*` / `cpus` / `chosen` are excluded
+  even when they carry proper `reg` + `compatible` properties).
+
+The tests are constructed programmatically via `FdtNode` values with
+explicit big-endian `reg` property encoding; no synthesized DTB-blob
+infrastructure is required.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions (T6-G/M-NEW-8)
 
