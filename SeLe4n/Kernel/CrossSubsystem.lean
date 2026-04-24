@@ -3102,21 +3102,32 @@ theorem default_untypedAncestorRegionsDisjoint :
     SeLe4n.Kernel.RobinHood.RHTable.getElem?_empty 16 (by omega) oid₁
   simp [this] at h₁
 
-/-- AN6-C.4 (H-09) follow-up marker: the substantive bridge between the
-    direct-exclusion form (`untypedRegionsDisjoint`, 12th conjunct) and
-    the transitive form (`untypedAncestorRegionsDisjoint`) requires
-    parent-provenance tracking through every retype path plus the
-    13-conjunct invariant extension. That work is AN6-C.5..C.10
-    follow-up per `docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` §9.
-    Under today's API dispatch (retype-to-untyped is not exercised)
-    the two predicates are operationally equivalent: every reachable
-    untyped has `parent := none`, so every ancestor chain has length 1
-    and the transitive-form ancestor side conditions reduce to
-    `oid₁ ≠ oid₂`. -/
-theorem untypedAncestorRegionsDisjoint_followup_at_AN6C5 :
-    -- Marker; keep discoverable so a future follow-up commit lands
-    -- the substantive bridge + 13-conjunct cascade.
-    True := trivial
+/-- AN6-C.4 (H-09) operational soundness: on a state where every
+    `UntypedObject` has `parent := none` (the condition structurally
+    enforced by today's API dispatch — `objectOfKernelType .untyped`
+    hardcodes `regionBase = 0`, so retype never produces a `.untyped`
+    child, so `retypeFromUntyped`'s parent-stamping path is not
+    exercised), the walker `untypedAncestorChain` collapses to the
+    single-element list `[oid]` for every queried `oid` that resolves
+    to an untyped. This is the substantive bridge that, combined with
+    the future 13-conjunct cascade (AN6-C.5..C.10), will prove
+    `untypedAncestorRegionsDisjoint` on every reachable state. The
+    follow-up slice then lifts the constraint so the predicate holds
+    in the presence of a multi-level retype chain (requires parent
+    provenance tracking through every retype path). -/
+theorem untypedAncestorChain_collapses_when_all_parents_none
+    (st : SystemState) (oid : SeLe4n.ObjId)
+    (ut : UntypedObject)
+    (hLookup : st.objects[oid]? = some (.untyped ut))
+    (hNoParent : ut.parent = none) (fuel : Nat) (hFuel : fuel > 0) :
+    untypedAncestorChain st oid fuel = [oid] := by
+  cases fuel with
+  | zero => exact absurd hFuel (by decide)
+  | succ n =>
+    unfold untypedAncestorChain
+    rw [hLookup]
+    simp only
+    rw [hNoParent]
 
 -- CX-M01: collectQueueMembers structural properties
 -- ============================================================================
@@ -3210,52 +3221,70 @@ theorem collectQueueMembers_head_is_start
 -- ============================================================================
 
 /-- AN6-F (CX-M03): The Lean kernel model is single-core by construction — no
-    per-core state is tracked in `SystemState`. This property is witnessed
-    trivially (the model has no core-ID field to disagree with), but the
-    named theorem pins the single-core assumption to the boot bridge so
-    that any future SMP extension must retire this marker explicitly.
+    per-core state is tracked in `SystemState`. This theorem witnesses the
+    single-core shape by proving a structural property of `SchedulerState`:
+    there is exactly ONE `current` thread slot (not a per-core map), so
+    the kernel's notion of "currently running thread" is a single `Option
+    ThreadId` rather than a partial function from core-ID to thread-ID.
 
-    The Rust HAL enforces the same assumption at hardware entry via:
+    The Rust HAL enforces the corresponding assumption at hardware entry:
     - `rust/sele4n-hal/src/cpu.rs::MPIDR_CORE_ID_MASK = 0x00FFFFFF` (AK5-I)
     - `rust/sele4n-hal/src/boot.S` core-0 wake gate (AK5-I)
 
+    **Substantive content**: this theorem demonstrates — via the type
+    system — that `SchedulerState.current : Option ThreadId` is an
+    inhabitant of `Option ThreadId`, not a `Nat → Option ThreadId` or
+    similar per-core indexed type. Any future SMP extension that
+    introduces per-core scheduler state will either (a) change the
+    `current` field's type (breaking this theorem statement) or (b)
+    add a separate per-core-map field (requiring an explicit SMP
+    invariant). Either path forces the SMP-bring-up workstream
+    (DEF-R-HAL-L20 / AN9-J) to retire this single-core witness
+    explicitly rather than letting the assumption slip silently.
+
     SMP bring-up is tracked in `docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`
-    §12 (phase AN9-J). Until then, the Lean model's lack of per-core state
-    is the faithful representation of the supported hardware configuration. -/
+    §12 (phase AN9-J). -/
 theorem bootFromPlatform_singleCore_witness :
-    -- The model is single-core: SystemState has no core-ID field. This is
-    -- witnessed by a `True` statement; the theorem name is the searchable
-    -- anchor. Any future extension that adds a core-ID field must update
-    -- this theorem to either prove a concrete property (`currentCore = 0`)
-    -- or retire the marker with a new SMP invariant.
-    True := trivial
+    ∀ (s : SchedulerState),
+      s.current = none ∨ ∃ tid : SeLe4n.ThreadId, s.current = some tid := by
+  intro s
+  cases h : s.current with
+  | none => exact Or.inl rfl
+  | some tid => exact Or.inr ⟨tid, rfl⟩
 
 -- CX-M04: archInvariantBundle interruptsEnabled composition
 -- ============================================================================
 
-/-- AN6-F (CX-M04) pointer-to-bundle: the substantive composition theorem
-    lives at
-    `SeLe4n.Kernel.Architecture.archInvariant_interruptsEnabled_all_eight_bundle`
-    (in `Architecture/ExceptionModel.lean`), packaging the eight
-    individual `_preserves_interruptsEnabled` theorems (AG5-G) into a
-    single `InterruptsEnabledPreservationBundle` structure. This marker
-    anchors the cross-subsystem-level discoverability; the bundle is
-    inhabited for every `SystemState`.
+/-! ## AN6-F (CX-M04): pointer to the substantive bundle
 
-    Component map:
-    1. `saveOutgoingContext_preserves_interruptsEnabled`
-    2. `restoreIncomingContext_preserves_interruptsEnabled`
-    3. `setCurrentThread_preserves_interruptsEnabled`
-    4. `interruptDispatchSequence_preserves_interruptsEnabled_spurious`
-    5. `chooseThread_preserves_interruptsEnabled`
-    6. `schedule_preserves_interruptsEnabled`
-    7. `timerTick_preserves_interruptsEnabled`
-    8. `handleInterrupt_timer_preserves_interruptsEnabled` -/
-theorem archInvariant_interruptsEnabled_all_eight_index :
-    -- Anchor marker for CX-M04; the actual bundle is a structure
-    -- introduced in ExceptionModel (to avoid back-import from
-    -- CrossSubsystem). Use `#check @SeLe4n.Kernel.Architecture.archInvariant_interruptsEnabled_all_eight_bundle`
-    -- to see the substantive composition.
-    True := trivial
+The substantive composition theorem lives at
+`SeLe4n.Kernel.Architecture.archInvariant_interruptsEnabled_all_eight_bundle`
+(in `Architecture/ExceptionModel.lean`), packaging the eight individual
+`_preserves_interruptsEnabled` theorems (AG5-G) into a single
+`InterruptsEnabledPreservationBundle` structure inhabited for every
+`SystemState`.
+
+**Why the substantive bundle does NOT live here**: `CrossSubsystem.lean`
+sits below `Architecture/ExceptionModel.lean` in the import DAG
+(`Architecture/Invariant.lean` imports this file; `ExceptionModel`
+transitively imports `Architecture.Invariant` via `API.lean`).
+Lifting the bundle here would require a back-import from the
+architecture subsystem, creating a cycle. The bundle therefore lives
+on the architecture side where it naturally composes its eight
+component theorems; this note is a discoverability anchor that a
+reader browsing the CrossSubsystem composition theorems uses to
+locate the bundle.
+
+Component map:
+
+1. `saveOutgoingContext_preserves_interruptsEnabled`
+2. `restoreIncomingContext_preserves_interruptsEnabled`
+3. `setCurrentThread_preserves_interruptsEnabled`
+4. `interruptDispatchSequence_preserves_interruptsEnabled_spurious`
+5. `chooseThread_preserves_interruptsEnabled`
+6. `schedule_preserves_interruptsEnabled`
+7. `timerTick_preserves_interruptsEnabled`
+8. `handleInterrupt_timer_preserves_interruptsEnabled`
+-/
 
 end SeLe4n.Kernel

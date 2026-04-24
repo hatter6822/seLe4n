@@ -128,7 +128,7 @@ in `Invariant.lean`; the index is pointers only so this file has no
 2. `deterministicRegisterContext_consumed_by_writeRegister`
 3. `memoryAccessSafety_consumed_by_readMemory`
 4. `default_system_state_proofLayerInvariantBundle` (boot-state typing witness)
-5. `SeLe4n.Kernel.Platform.Boot.bootFromPlatformChecked_ok_implies_irqHandlersValid`
+5. `SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_implies_irqHandlersValid`
    (IRQ routing totality witness; structural across every registered IRQ
    handler, introduced by AK9-C). -/
 
@@ -145,7 +145,7 @@ def archAssumptionConsumer : ArchAssumption → Lean.Name
   | .bootObjectTyping =>
       `SeLe4n.Kernel.Architecture.default_system_state_proofLayerInvariantBundle
   | .irqRoutingTotality =>
-      `SeLe4n.Kernel.Platform.Boot.bootFromPlatformChecked_ok_implies_irqHandlersValid
+      `SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_implies_irqHandlersValid
 
 /-- AN6-B: Total-mapping marker theorem — every architecture assumption has a
     named consumer. The proof is by case analysis over the finite inductive;
@@ -164,6 +164,22 @@ theorem architecture_assumptions_index :
 theorem archAssumptionConsumer_covers_inventory :
     ∀ a ∈ assumptionInventory, ∃ n : Lean.Name, archAssumptionConsumer a = n :=
   fun a _ => architecture_assumptions_index a
+
+/-- AN6-B: Distinctness of the 5 consumer names. Catches the
+    "all constructors map to the same name" shortcut that would
+    otherwise make `archAssumptionConsumer` semantically trivial. -/
+theorem archAssumptionConsumer_distinct :
+    archAssumptionConsumer .deterministicTimerProgress
+      ≠ archAssumptionConsumer .deterministicRegisterContext ∧
+    archAssumptionConsumer .deterministicRegisterContext
+      ≠ archAssumptionConsumer .memoryAccessSafety ∧
+    archAssumptionConsumer .memoryAccessSafety
+      ≠ archAssumptionConsumer .bootObjectTyping ∧
+    archAssumptionConsumer .bootObjectTyping
+      ≠ archAssumptionConsumer .irqRoutingTotality ∧
+    archAssumptionConsumer .irqRoutingTotality
+      ≠ archAssumptionConsumer .deterministicTimerProgress := by
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> decide
 
 -- ============================================================================
 -- M-08/WS-E6: Assumption consumption documentation

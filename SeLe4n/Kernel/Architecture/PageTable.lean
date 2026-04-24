@@ -522,4 +522,64 @@ theorem pageTableWalk_depth_bound (mem : Memory) (ttbr : PAddr) (va : VAddr)
                 | (cases hDepth; omega)
                 | (exact absurd hDepth (by simp)))))
 
+/-- AN6-D.3 (ARCH-M02) post-audit bridge: if the real `pageTableWalk`
+    succeeds, then `pageTableWalkDepth` also succeeds (and vice versa
+    — the two functions share the same `match` cascade). This bridge
+    prevents `pageTableWalkDepth` from drifting into a
+    semantically-disconnected parallel function: any future refactor
+    that changes `pageTableWalk`'s success conditions must mirror the
+    change in `pageTableWalkDepth` or fail to prove this theorem.
+
+    Composed with `pageTableWalk_depth_bound` below, this closes the
+    end-to-end chain "if `pageTableWalk` succeeds, the architectural
+    walk depth is ≤ 4." -/
+theorem pageTableWalkDepth_some_of_pageTableWalk_some
+    (mem : Memory) (ttbr : PAddr) (va : VAddr)
+    (pa : PAddr) (attrs : PageAttributes)
+    (hWalk : pageTableWalk mem ttbr va = some (pa, attrs)) :
+    ∃ d, pageTableWalkDepth mem ttbr va = some d := by
+  unfold pageTableWalk at hWalk
+  unfold pageTableWalkDepth
+  -- Manual case analysis on the descriptor at each level.
+  cases hL0 : readDescriptor mem ttbr (l0Index va) .l0 with
+  | invalid => rw [hL0] at hWalk; simp at hWalk
+  | block _ _ => rw [hL0] at hWalk; simp at hWalk
+  | page _ _ => rw [hL0] at hWalk; simp at hWalk
+  | table l1 =>
+    rw [hL0] at hWalk
+    simp only at hWalk
+    cases hL1 : readDescriptor mem l1 (l1Index va) .l1 with
+    | invalid => rw [hL1] at hWalk; simp at hWalk
+    | page _ _ => rw [hL1] at hWalk; simp at hWalk
+    | block _ _ => exact ⟨2, by simp only [hL1]⟩
+    | table l2 =>
+      rw [hL1] at hWalk
+      simp only at hWalk
+      cases hL2 : readDescriptor mem l2 (l2Index va) .l2 with
+      | invalid => rw [hL2] at hWalk; simp at hWalk
+      | page _ _ => rw [hL2] at hWalk; simp at hWalk
+      | block _ _ => exact ⟨3, by simp only [hL1, hL2]⟩
+      | table l3 =>
+        rw [hL2] at hWalk
+        simp only at hWalk
+        cases hL3 : readDescriptor mem l3 (l3Index va) .l3 with
+        | invalid => rw [hL3] at hWalk; simp at hWalk
+        | block _ _ => rw [hL3] at hWalk; simp at hWalk
+        | table _ => rw [hL3] at hWalk; simp at hWalk
+        | page _ _ => exact ⟨4, by simp only [hL1, hL2, hL3]⟩
+
+/-- AN6-D.3 (ARCH-M02) end-to-end composition: if the real `pageTableWalk`
+    succeeds, then the ARMv8 architectural walk consumed at most
+    `maxPageTableLevel = 4` descriptor reads. Composes
+    `pageTableWalkDepth_some_of_pageTableWalk_some` with
+    `pageTableWalk_depth_bound`. -/
+theorem pageTableWalk_success_within_maxPageTableLevel
+    (mem : Memory) (ttbr : PAddr) (va : VAddr)
+    (pa : PAddr) (attrs : PageAttributes)
+    (hWalk : pageTableWalk mem ttbr va = some (pa, attrs)) :
+    ∃ d, pageTableWalkDepth mem ttbr va = some d ∧ d ≤ maxPageTableLevel := by
+  obtain ⟨d, hDepth⟩ :=
+    pageTableWalkDepth_some_of_pageTableWalk_some mem ttbr va pa attrs hWalk
+  exact ⟨d, hDepth, pageTableWalk_depth_bound mem ttbr va d hDepth⟩
+
 end SeLe4n.Kernel.Architecture

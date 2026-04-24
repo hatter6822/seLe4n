@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-phase-an6-architecture-a9R3s",
-      "commit_sha": "08f5de290a69e6a96b724cd308fc998726c298f5",
-      "tree_sha": "99785845c5ce7341d2d1714134102176d37bb1dc",
-      "committed_at_utc": "2026-04-23T21:14:33-04:00"
+      "commit_sha": "4ef17a8df7711edbe1ec4b342d123f60c6ffebaa",
+      "tree_sha": "7d171ce469f178755dd8595942090890c330ce36",
+      "committed_at_utc": "2026-04-24T02:32:58+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "e1b9f5033fbf282a1bf881d20d715d466518ec5ddacbaa3f67bc326e26083e64"
+    "source_digest": "a86ac7d5fa3b41dd8f8a116e89450783d33e70f287178bbda5e5086c55a90e5b"
   },
   "summary": {
     "module_count": 186,
-    "declaration_count": 5814
+    "declaration_count": 5823
   },
   "readme_sync": {
     "version": "0.30.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 162,
-    "production_loc": 106683,
+    "production_loc": 106930,
     "test_files": 24,
-    "test_loc": 15553,
-    "proved_theorem_lemma_decls": 3117,
+    "test_loc": 15677,
+    "proved_theorem_lemma_decls": 3122,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -1692,7 +1692,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.Assumptions",
       "path": "SeLe4n/Kernel/Architecture/Assumptions.lean",
-      "declaration_count": 13,
+      "declaration_count": 14,
       "declarations": [
         {
           "kind": "namespace",
@@ -1807,6 +1807,14 @@
             "archAssumptionConsumer",
             "architecture_assumptions_index",
             "assumptionInventory"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "archAssumptionConsumer_distinct",
+          "line": 171,
+          "called": [
+            "archAssumptionConsumer"
           ]
         }
       ]
@@ -2769,7 +2777,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.Invariant",
       "path": "SeLe4n/Kernel/Architecture/Invariant.lean",
-      "declaration_count": 66,
+      "declaration_count": 72,
       "declarations": [
         {
           "kind": "namespace",
@@ -3396,9 +3404,61 @@
           ]
         },
         {
+          "kind": "example",
+          "name": "<anonymous:example:624>",
+          "line": 624,
+          "called": [
+            "AdapterProofHooks",
+            "RuntimeBoundaryContract",
+            "SystemState",
+            "advanceTimerState",
+            "deterministicTimerProgress_consumed_by_advanceTimer",
+            "proofLayerInvariantBundle"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:635>",
+          "line": 635,
+          "called": [
+            "AdapterProofHooks",
+            "RegName",
+            "RegValue",
+            "RuntimeBoundaryContract",
+            "SystemState",
+            "deterministicRegisterContext_consumed_by_writeRegister",
+            "proofLayerInvariantBundle",
+            "writeRegisterState"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:646>",
+          "line": 646,
+          "called": [
+            "AdapterProofHooks",
+            "PAddr",
+            "RuntimeBoundaryContract",
+            "SystemState",
+            "memoryAccessSafety_consumed_by_readMemory",
+            "proofLayerInvariantBundle"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:657>",
+          "line": 657,
+          "called": [
+            "SystemState",
+            "default",
+            "default_system_state_proofLayerInvariantBundle",
+            "proofLayerInvariantBundle"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_capabilityInvariantBundle",
-          "line": 634,
+          "line": 693,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -3408,7 +3468,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_ipcInvariantFull",
-          "line": 642,
+          "line": 701,
           "called": [
             "ObjId",
             "QueueNextPath",
@@ -3424,7 +3484,7 @@
         {
           "kind": "theorem",
           "name": "serviceEdge_of_services_eq",
-          "line": 701,
+          "line": 760,
           "called": [
             "ServiceId",
             "SystemState",
@@ -3435,7 +3495,7 @@
         {
           "kind": "theorem",
           "name": "serviceNontrivialPath_of_services_eq",
-          "line": 708,
+          "line": 767,
           "called": [
             "ServiceId",
             "SystemState",
@@ -3446,7 +3506,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_serviceGraphInvariant",
-          "line": 717,
+          "line": 776,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -3457,7 +3517,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_proofLayerInvariantBundle",
-          "line": 732,
+          "line": 791,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -3474,7 +3534,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_capabilityInvariantBundle",
-          "line": 783,
+          "line": 842,
           "called": [
             "RegName",
             "RegValue",
@@ -3486,7 +3546,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_ipcInvariantFull",
-          "line": 791,
+          "line": 850,
           "called": [
             "ObjId",
             "QueueNextPath",
@@ -3504,7 +3564,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_proofLayerInvariantBundle",
-          "line": 842,
+          "line": 901,
           "called": [
             "RegName",
             "RegValue",
@@ -3525,7 +3585,7 @@
         {
           "kind": "theorem",
           "name": "contextSwitchState_preserves_ipcInvariantFull",
-          "line": 921,
+          "line": 980,
           "called": [
             "ObjId",
             "QueueNextPath",
@@ -3543,7 +3603,7 @@
         {
           "kind": "theorem",
           "name": "contextSwitchState_preserves_proofLayerInvariantBundle",
-          "line": 999,
+          "line": 1058,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -3579,7 +3639,7 @@
         {
           "kind": "def",
           "name": "registerDecodeConsistent",
-          "line": 1167,
+          "line": 1226,
           "called": [
             "SystemState",
             "toObjId"
@@ -3588,7 +3648,7 @@
         {
           "kind": "theorem",
           "name": "default_registerDecodeConsistent",
-          "line": 1173,
+          "line": 1232,
           "called": [
             "SystemState",
             "default",
@@ -3598,7 +3658,7 @@
         {
           "kind": "theorem",
           "name": "registerDecodeConsistent_of_proofLayerInvariantBundle",
-          "line": 1180,
+          "line": 1239,
           "called": [
             "SystemState",
             "currentThreadValid",
@@ -3609,7 +3669,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_registerDecodeConsistent",
-          "line": 1194,
+          "line": 1253,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -3619,7 +3679,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_registerDecodeConsistent",
-          "line": 1202,
+          "line": 1261,
           "called": [
             "RegName",
             "RegValue",
@@ -3631,7 +3691,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild",
-          "line": 1270,
+          "line": 1329,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -3652,7 +3712,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_objectOfKernelType_preserves_untypedRegionsDisjoint",
-          "line": 1324,
+          "line": 1383,
           "called": [
             "CSpaceAddr",
             "KernelObjectType",
@@ -3667,9 +3727,43 @@
         },
         {
           "kind": "theorem",
+          "name": "objectOfKernelType_untyped_hardcodes_zero_regionBase",
+          "line": 1460,
+          "called": [
+            "UntypedObject",
+            "objectOfKernelType",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "retypeFromUntyped_via_objectOfKernelType_untyped_child_has_zero_regionBase",
+          "line": 1479,
+          "called": [
+            "CSpaceAddr",
+            "ObjId",
+            "SystemState",
+            "cspaceLookupSlot_preserves_state",
+            "invExt",
+            "objectOfKernelType",
+            "objectOfKernelType_untyped_hardcodes_zero_regionBase",
+            "ofNat",
+            "retypeFromUntyped",
+            "retypeFromUntyped_ok_decompose",
+            "storeObject_objects_eq",
+            "storeObject_preserves_objects_invExt"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "retypeFromUntyped_untypedRegionsDisjoint_retype_to_untyped_documented",
-          "line": 1380,
-          "called": []
+          "line": 1516,
+          "called": [
+            "UntypedObject",
+            "objectOfKernelType",
+            "objectOfKernelType_untyped_hardcodes_zero_regionBase",
+            "ofNat"
+          ]
         }
       ]
     },
@@ -3958,7 +4052,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.PageTable",
       "path": "SeLe4n/Kernel/Architecture/PageTable.lean",
-      "declaration_count": 47,
+      "declaration_count": 49,
       "declarations": [
         {
           "kind": "namespace",
@@ -4422,6 +4516,42 @@
             "maxPageTableLevel",
             "mem",
             "pageTableWalkDepth"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pageTableWalkDepth_some_of_pageTableWalk_some",
+          "line": 536,
+          "called": [
+            "Memory",
+            "PAddr",
+            "PageAttributes",
+            "VAddr",
+            "l0Index",
+            "l1Index",
+            "l2Index",
+            "l3Index",
+            "mem",
+            "pageTableWalk",
+            "pageTableWalkDepth",
+            "readDescriptor"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pageTableWalk_success_within_maxPageTableLevel",
+          "line": 576,
+          "called": [
+            "Memory",
+            "PAddr",
+            "PageAttributes",
+            "VAddr",
+            "maxPageTableLevel",
+            "mem",
+            "pageTableWalk",
+            "pageTableWalkDepth",
+            "pageTableWalkDepth_some_of_pageTableWalk_some",
+            "pageTableWalk_depth_bound"
           ]
         }
       ]
@@ -12571,7 +12701,7 @@
     {
       "module": "SeLe4n.Kernel.CrossSubsystem",
       "path": "SeLe4n/Kernel/CrossSubsystem.lean",
-      "declaration_count": 166,
+      "declaration_count": 165,
       "declarations": [
         {
           "kind": "namespace",
@@ -14642,14 +14772,21 @@
         },
         {
           "kind": "theorem",
-          "name": "untypedAncestorRegionsDisjoint_followup_at_AN6C5",
-          "line": 3116,
-          "called": []
+          "name": "untypedAncestorChain_collapses_when_all_parents_none",
+          "line": 3118,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "UntypedObject",
+            "none",
+            "untypedAncestorChain",
+            "zero"
+          ]
         },
         {
           "kind": "theorem",
           "name": "collectQueueMembers_some_start_nonEmpty_result",
-          "line": 3135,
+          "line": 3146,
           "called": [
             "KernelObject",
             "ObjId",
@@ -14664,7 +14801,7 @@
         {
           "kind": "theorem",
           "name": "collectQueueMembers_head_is_start",
-          "line": 3172,
+          "line": 3183,
           "called": [
             "KernelObject",
             "ObjId",
@@ -14679,15 +14816,12 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_singleCore_witness",
-          "line": 3225,
-          "called": []
-        },
-        {
-          "kind": "theorem",
-          "name": "archInvariant_interruptsEnabled_all_eight_index",
-          "line": 3254,
+          "line": 3247,
           "called": [
-            "Kernel"
+            "Kernel",
+            "SchedulerState",
+            "ThreadId",
+            "none"
           ]
         }
       ]
@@ -32224,7 +32358,7 @@
         {
           "kind": "def",
           "name": "serviceObservable",
-          "line": 139,
+          "line": 141,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32235,7 +32369,7 @@
         {
           "kind": "def",
           "name": "projectServicePresence",
-          "line": 144,
+          "line": 146,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32248,7 +32382,7 @@
         {
           "kind": "def",
           "name": "projectServiceRegistry",
-          "line": 163,
+          "line": 165,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32263,7 +32397,7 @@
         {
           "kind": "theorem",
           "name": "projectServiceRegistry_consistent_with_presence",
-          "line": 174,
+          "line": 176,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32277,7 +32411,7 @@
         {
           "kind": "def",
           "name": "capTargetObservable",
-          "line": 190,
+          "line": 192,
           "called": [
             "CapTarget",
             "IfObserver",
@@ -32289,7 +32423,7 @@
         {
           "kind": "def",
           "name": "projectKernelObject",
-          "line": 201,
+          "line": 203,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -32303,7 +32437,7 @@
         {
           "kind": "theorem",
           "name": "projectKernelObject_idempotent",
-          "line": 270,
+          "line": 272,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -32318,7 +32452,7 @@
         {
           "kind": "theorem",
           "name": "projectKernelObject_objectType",
-          "line": 285,
+          "line": 287,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -32330,7 +32464,7 @@
         {
           "kind": "theorem",
           "name": "projectKernelObject_erases_cross_domain_ipc",
-          "line": 297,
+          "line": 299,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32342,7 +32476,7 @@
         {
           "kind": "theorem",
           "name": "projectKernelObject_erases_timeout_signal",
-          "line": 309,
+          "line": 311,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32353,7 +32487,7 @@
         {
           "kind": "def",
           "name": "projectObjects",
-          "line": 320,
+          "line": 322,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -32368,7 +32502,7 @@
         {
           "kind": "def",
           "name": "projectRunnable",
-          "line": 329,
+          "line": 331,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32381,7 +32515,7 @@
         {
           "kind": "def",
           "name": "projectCurrent",
-          "line": 334,
+          "line": 336,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32394,7 +32528,7 @@
         {
           "kind": "def",
           "name": "projectActiveDomain",
-          "line": 341,
+          "line": 343,
           "called": [
             "DomainId",
             "IfObserver",
@@ -32405,7 +32539,7 @@
         {
           "kind": "def",
           "name": "projectIrqHandlers",
-          "line": 347,
+          "line": 349,
           "called": [
             "IfObserver",
             "Irq",
@@ -32419,7 +32553,7 @@
         {
           "kind": "def",
           "name": "projectObjectIndex",
-          "line": 355,
+          "line": 357,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32432,7 +32566,7 @@
         {
           "kind": "def",
           "name": "projectDomainTimeRemaining",
-          "line": 360,
+          "line": 362,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32442,7 +32576,7 @@
         {
           "kind": "def",
           "name": "projectDomainSchedule",
-          "line": 365,
+          "line": 367,
           "called": [
             "DomainScheduleEntry",
             "IfObserver",
@@ -32453,7 +32587,7 @@
         {
           "kind": "def",
           "name": "projectDomainScheduleIndex",
-          "line": 370,
+          "line": 372,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32463,7 +32597,7 @@
         {
           "kind": "def",
           "name": "projectMachineRegs",
-          "line": 384,
+          "line": 386,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32476,7 +32610,7 @@
         {
           "kind": "def",
           "name": "memoryAddressObservable",
-          "line": 391,
+          "line": 393,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32488,7 +32622,7 @@
         {
           "kind": "def",
           "name": "projectMemory",
-          "line": 410,
+          "line": 412,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32501,7 +32635,7 @@
         {
           "kind": "theorem",
           "name": "projectMemory_no_ownership",
-          "line": 416,
+          "line": 418,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32514,7 +32648,7 @@
         {
           "kind": "theorem",
           "name": "projectMemory_eq_of_memory_eq",
-          "line": 425,
+          "line": 427,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32525,7 +32659,7 @@
         {
           "kind": "theorem",
           "name": "projectServiceRegistry_eq_of_services_eq",
-          "line": 433,
+          "line": 435,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32537,7 +32671,7 @@
         {
           "kind": "theorem",
           "name": "acceptedCovertChannel_scheduling",
-          "line": 489,
+          "line": 491,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32551,7 +32685,7 @@
         {
           "kind": "theorem",
           "name": "schedulingCovertChannel_bounded_width",
-          "line": 528,
+          "line": 530,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32564,7 +32698,7 @@
         {
           "kind": "def",
           "name": "projectState",
-          "line": 551,
+          "line": 553,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32589,7 +32723,7 @@
         {
           "kind": "theorem",
           "name": "projectState_scThreadIndex_eq",
-          "line": 572,
+          "line": 574,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32603,7 +32737,7 @@
         {
           "kind": "theorem",
           "name": "projectState_replenishQueue_eq",
-          "line": 583,
+          "line": 585,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32615,7 +32749,7 @@
         {
           "kind": "theorem",
           "name": "projectState_scheduler_current_cleared_when_high",
-          "line": 599,
+          "line": 601,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32630,7 +32764,7 @@
         {
           "kind": "def",
           "name": "lowEquivalent",
-          "line": 625,
+          "line": 627,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32641,7 +32775,7 @@
         {
           "kind": "theorem",
           "name": "lowEquivalent_refl",
-          "line": 628,
+          "line": 630,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32652,7 +32786,7 @@
         {
           "kind": "theorem",
           "name": "lowEquivalent_symm",
-          "line": 635,
+          "line": 637,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32663,7 +32797,7 @@
         {
           "kind": "theorem",
           "name": "lowEquivalent_trans",
-          "line": 643,
+          "line": 645,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32674,7 +32808,7 @@
         {
           "kind": "def",
           "name": "serviceRegistryAffectsProjection",
-          "line": 664,
+          "line": 666,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32686,7 +32820,7 @@
         {
           "kind": "theorem",
           "name": "serviceOrchestrationOutsideNiBoundary",
-          "line": 705,
+          "line": 707,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32714,7 +32848,7 @@
         {
           "kind": "theorem",
           "name": "serviceOrchestration_boundary_disjunction",
-          "line": 765,
+          "line": 767,
           "called": [
             "IfObserver",
             "Kernel",
@@ -71057,7 +71191,7 @@
     {
       "module": "tests.ModelIntegritySuite",
       "path": "tests/ModelIntegritySuite.lean",
-      "declaration_count": 95,
+      "declaration_count": 96,
       "declarations": [
         {
           "kind": "namespace",
@@ -72175,42 +72309,52 @@
         {
           "kind": "def",
           "name": "an6f_cxm03_singleCore_witness_reachable",
-          "line": 1232,
+          "line": 1238,
           "called": [
+            "SchedulerState",
             "bootFromPlatform_singleCore_witness",
-            "expect"
+            "default",
+            "expect",
+            "none",
+            "ofNat"
           ]
         },
         {
           "kind": "def",
           "name": "an6f_cxm04_interruptsEnabled_bundle_inhabited",
-          "line": 1239,
+          "line": 1265,
           "called": [
             "SystemState",
             "archInvariant_interruptsEnabled_all_eight_bundle",
             "default",
-            "expect"
+            "expect",
+            "saveOutgoingContext"
           ]
         },
         {
           "kind": "def",
           "name": "an6f_cxm05_crossSubsystemInvariant_positive",
-          "line": 1250,
+          "line": 1306,
           "called": [
             "SystemState",
+            "crossSubsystemInvariant",
+            "crossSubsystemInvariant_composition_gap_documented",
             "crossSubsystemInvariant_to_blockingAcyclic",
             "crossSubsystemInvariant_to_lifecycleObjectTypeLockstep",
+            "crossSubsystemInvariant_to_registryInterfaceValid",
+            "crossSubsystemInvariant_to_schedContextNotDualBound",
+            "crossSubsystemInvariant_to_schedContextRunQueueConsistent",
+            "crossSubsystemInvariant_to_schedContextStoreConsistent",
             "crossSubsystemInvariant_to_untypedRegionsDisjoint",
             "default",
             "default_crossSubsystemInvariant",
-            "expect",
-            "size"
+            "expect"
           ]
         },
         {
           "kind": "def",
           "name": "an6c1_untypedObject_parent_field_default",
-          "line": 1267,
+          "line": 1330,
           "called": [
             "UntypedObject",
             "expect",
@@ -72221,7 +72365,7 @@
         {
           "kind": "def",
           "name": "an6c3_untypedAncestorChain_bounded",
-          "line": 1283,
+          "line": 1346,
           "called": [
             "SystemState",
             "default",
@@ -72234,30 +72378,48 @@
         },
         {
           "kind": "def",
+          "name": "an6_postaudit_ak8a_objectOfKernelType_untyped_zero_regionBase",
+          "line": 1369,
+          "called": [
+            "expect",
+            "objectOfKernelType",
+            "objectOfKernelType_untyped_hardcodes_zero_regionBase",
+            "ofNat",
+            "retypeFromUntyped_untypedRegionsDisjoint_retype_to_untyped_documented",
+            "retypeFromUntyped_via_objectOfKernelType_untyped_child_has_zero_regionBase"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "an6c4_untypedAncestorRegionsDisjoint_default",
-          "line": 1299,
+          "line": 1394,
           "called": [
             "SystemState",
             "default",
             "default_untypedAncestorRegionsDisjoint",
             "expect",
-            "size"
+            "ofNat",
+            "untypedAncestorChain",
+            "untypedAncestorChain_collapses_when_all_parents_none",
+            "untypedAncestorRegionsDisjoint"
           ]
         },
         {
           "kind": "def",
           "name": "an6b_architecture_assumptions_index_total",
-          "line": 1310,
+          "line": 1421,
           "called": [
             "archAssumptionConsumer",
+            "archAssumptionConsumer_distinct",
             "architecture_assumptions_index",
+            "bootFromPlatformChecked_ok_implies_irqHandlersValid",
             "expect"
           ]
         },
         {
           "kind": "def",
           "name": "main",
-          "line": 1328,
+          "line": 1450,
           "called": [
             "addrInRange_device_region_rejected",
             "addrInRange_empty_map_rejects",
@@ -72271,6 +72433,7 @@
             "ak8a_07_empty_config_disjoint",
             "an2f3_01_empty_wellFormed",
             "an2f3_02_coercion_roundtrip",
+            "an6_postaudit_ak8a_objectOfKernelType_untyped_zero_regionBase",
             "an6b_architecture_assumptions_index_total",
             "an6c1_untypedObject_parent_field_default",
             "an6c3_untypedAncestorChain_bounded",

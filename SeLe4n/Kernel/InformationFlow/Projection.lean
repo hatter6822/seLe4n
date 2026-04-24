@@ -126,16 +126,18 @@ def threadObservable (ctx : LabelingContext) (observer : IfObserver) (tid : SeLe
     internal state. Cross-service covert channels — for example, one
     service observing another's restart cadence via service-presence
     sampling — are NOT covered by the NI property of this kernel. These
-    are accepted covert channels and appear in `SELE4N_SPEC.md` §7 under
-    "Non-interference scope and exclusions". The formal justification
-    for the acceptance is that service orchestration operates above the
-    kernel-primitive NI boundary: services are trusted components that
-    the kernel merely tracks presence for. A deployment that requires
-    NI at the service-orchestration layer must either (a) model service
-    state in the projection explicitly, or (b) treat the service layer
-    as a separate trusted component outside the NI analysis — the
-    kernel model itself does not attempt to close this gap at v1.0.0.
-    See `AUDIT_v0.30.6_COMPREHENSIVE.md` §2.5 IF-M01. -/
+    are accepted covert channels and appear in `SELE4N_SPEC.md` §11.2
+    "Information Flow and Non-Interference Boundary" (extended by AN6-E.1
+    with a dedicated "Service-presence covert channels" subsection).
+    The formal justification for the acceptance is that service
+    orchestration operates above the kernel-primitive NI boundary:
+    services are trusted components that the kernel merely tracks
+    presence for. A deployment that requires NI at the
+    service-orchestration layer must either (a) model service state in
+    the projection explicitly, or (b) treat the service layer as a
+    separate trusted component outside the NI analysis — the kernel
+    model itself does not attempt to close this gap at v1.0.0. See
+    `AUDIT_v0.30.6_COMPREHENSIVE.md` §2.5 IF-M01. -/
 def serviceObservable (ctx : LabelingContext) (observer : IfObserver) (sid : ServiceId) : Bool :=
   securityFlowsTo (ctx.serviceLabelOf sid) observer.clearance
 

@@ -499,6 +499,86 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
   (CrossSubsystem composition) sequences after the four subsystem
   phases.
 
+- **AN6 post-audit remediation** (v0.30.6, in progress):
+  Deep end-to-end audit of the AN6 landed subset surfaced **8 issues**
+  where the landing was less substantive than it appeared; all fixed
+  in-PR.
+
+  1. **Consumer-name drift (AN6-B)**: `archAssumptionConsumer` mapped
+     `.irqRoutingTotality` to `` `SeLe4n.Kernel.Platform.Boot.… `` —
+     wrong namespace (actual is `SeLe4n.Platform.Boot` without
+     `Kernel.`). Bare `Name` literals don't validate; drift went
+     undetected. Corrected + added `archAssumptionConsumer_distinct`
+     theorem + 4 compile-time `private example` consumer-resolution
+     guards in `Architecture/Invariant.lean` (4 of 5 in-file; the 5th
+     — Platform.Boot — resolved via `@` reference in the
+     `ModelIntegritySuite` test).
+  2. **`pageTableWalkDepth` disconnected from `pageTableWalk`
+     (AN6-D.3)**: the depth function was a parallel mirror of the
+     walk with no theorem linking them — a future refactor could
+     leave them stale without breaking the build. Added substantive
+     `pageTableWalkDepth_some_of_pageTableWalk_some` forward bridge
+     (proven by manual `cases` through all 4 descriptor variants per
+     level) + `pageTableWalk_success_within_maxPageTableLevel`
+     end-to-end composition.
+  3. **`bootFromPlatform_singleCore_witness` (CX-M03) was `True := trivial`**:
+     replaced with substantive
+     `∀ s : SchedulerState, s.current = none ∨ ∃ tid, s.current = some tid`
+     proving the single-slot (non-per-core) scheduler shape via
+     type-level case analysis.
+  4. **`archInvariant_interruptsEnabled_all_eight_index` (CX-M04) was
+     `True := trivial`**: removed (replaced with a `/-! -/`
+     documentation block). The substantive
+     `InterruptsEnabledPreservationBundle` in
+     `Architecture/ExceptionModel.lean` is unchanged.
+  5. **`untypedAncestorRegionsDisjoint_followup_at_AN6C5` (AN6-C) was
+     `True := trivial`**: replaced with substantive
+     `untypedAncestorChain_collapses_when_all_parents_none` proving
+     that on any state with all-parent-none untypeds (today's API
+     guarantees this structurally), the walker collapses to `[oid]`.
+  6. **Shallow test assertions**: four AN6 tests (`an6c4`,
+     `an6f_cxm03`, `an6f_cxm04`, `an6f_cxm05`) strengthened from
+     `True == True` / `objects.size == 0` to substantive content —
+     type-ascribed theorem references, concrete state invocations,
+     all 8 bundle-field projections, and all 7 named
+     `crossSubsystemInvariant_to_*` extraction theorems (not just 3).
+  7. **AN6-E.1 SPEC cross-reference error**: docstring cited
+     `SELE4N_SPEC.md §7` but the Information-Flow section is `§11.2`.
+     Corrected + added three new subsections: `§11.2.1`
+     service-presence NI scope, `§11.2.2` architecture assumption
+     consumer index, `§11.2.3` single-core kernel model witness.
+  8. **Documentation refresh**: CHANGELOG, CLAUDE.md, this entry,
+     `docs/spec/SELE4N_SPEC.md` subsections, and
+     `docs/codebase_map.json` regenerated to reflect the 2 new
+     substantive theorems and the 3 `True := trivial` removals.
+
+  **Additional: pre-existing AK8-A marker substantively closed.** The
+  audit sweep identified a pre-existing AK8-A `True := trivial` marker
+  in `Kernel/Architecture/Invariant.lean` (from WS-AK Phase AK8) that
+  had documented the retype-to-untyped scope gap but without any
+  substantive theorem content. Substantively closed with three new
+  theorems: `objectOfKernelType_untyped_hardcodes_zero_regionBase`
+  (structural fact), `retypeFromUntyped_via_objectOfKernelType_untyped_child_has_zero_regionBase`
+  (end-to-end retype composition via
+  `retypeFromUntyped_ok_decompose` + `cspaceLookupSlot_preserves_state` +
+  `storeObject_preserves_objects_invExt` +
+  `storeObject_objects_eq`), and the renamed marker
+  `retypeFromUntyped_untypedRegionsDisjoint_retype_to_untyped_documented
+  (sizeHint)` that delegates to the structural helper. Together they
+  machine-check the scope gap: production retype-to-untyped via
+  `objectOfKernelType` always produces a zero-regionBase child, hence
+  cannot produce a valid parent-derived untyped region. One new test
+  `an6_postaudit_ak8a_objectOfKernelType_untyped_zero_regionBase`
+  exercises all three theorems.
+
+  **Post-audit gate**: `lake build` (300 jobs, 0 warnings) +
+  `test_smoke.sh` PASS + `test_full.sh` PASS + `test_docs_sync.sh`
+  PASS + `model_integrity_suite` PASS (strengthened AN6 tests + new
+  AK8-A substantive test) +
+  `information_flow_suite` PASS + `cargo test --workspace` (414) +
+  `cargo clippy --workspace -- -D warnings` (0 warnings) + fixture
+  byte-identical + zero `sorry`/`axiom`/`native_decide`.
+
 - **AN6** (Architecture / InformationFlow / CrossSubsystem, v0.30.6,
   in progress — landed subset): tractable-subset landing for the
   7–9-day AN6 phase. The full phase covers H-07 (substantive discharge
