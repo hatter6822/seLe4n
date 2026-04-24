@@ -1,4 +1,25 @@
-## v0.30.6 — WS-AN Phase AN6 second audit-pass remediation [in progress]
+## v0.30.7 — WS-AN Phase AN6 (Architecture / InformationFlow / CrossSubsystem)
+
+Consolidated v0.30.7 patch release bundles WS-AN Phase AN6 into a
+single patch-version bump off v0.30.6. Per the v0.30.6 WS-AN plan's
+no-per-phase-bump convention, phases AN0..AN5 ship at v0.30.6; AN6
+breaks the convention because this PR bundles three commits of
+substantive work (initial AN6 landing + post-audit remediation + a
+second audit-pass) that together close the audit-remediable subset
+of H-07/H-08/H-09/ARCH-M02/IF-M01..M02/CX-M01..M05. The AN6
+follow-ups (A.2..A.7 substantive closure-form discharge, C.5..C.10
+13-conjunct cascade, D.1 VSpaceBackend wire-in, D.4 debug variant,
+E.3 4-file split) continue under v0.30.x tags as dedicated follow-up
+PRs.
+
+**Cumulative AN6 v0.30.7 closure** — the three below sections
+describe the three commits composing this release. The "second
+audit-pass" section documents the final substantive tightening;
+"post-audit remediation" documents the eight-item fix-pass on the
+initial landing; "landed subset" documents the initial
+tractable-subset landing of the 8 AN6 sub-tasks.
+
+### Section 1 of 3 — AN6 second audit-pass remediation
 
 Second deep audit pass on the AN6 post-audit tip identified four more
 issues where the landing could be strengthened. All fixed in-PR.
@@ -60,7 +81,7 @@ verified no downstream test breakage.
 
 ---
 
-## v0.30.6 — WS-AN Phase AN6 post-audit remediation [in progress]
+### Section 2 of 3 — AN6 post-audit remediation
 
 Deep end-to-end audit of the AN6 initial landing surfaced eight issues
 that made the landing less substantive than it appeared. All eight were
@@ -231,7 +252,7 @@ All audit-surfaced issues fixed. Test suites strengthened:
 
 ---
 
-## v0.30.6 — WS-AN Phase AN6 (Architecture / InformationFlow / CrossSubsystem) [in progress — landed subset]
+### Section 3 of 3 — AN6 (Architecture / InformationFlow / CrossSubsystem) initial landed subset
 
 Phase AN6 of the WS-AN v0.30.6 audit remediation portfolio per
 [`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)

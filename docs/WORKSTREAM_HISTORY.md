@@ -499,7 +499,7 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
   (CrossSubsystem composition) sequences after the four subsystem
   phases.
 
-- **AN6 second audit-pass remediation** (v0.30.6, in progress):
+- **AN6 second audit-pass remediation** (v0.30.7, released):
   Second deep audit pass on the AN6 post-audit tip identified 4
   strengthening items. All fixed in-PR.
 
@@ -533,7 +533,7 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
   `cargo clippy --workspace -- -D warnings` (0 warnings) + fixture
   byte-identical + zero `sorry`/`axiom`/`native_decide`.
 
-- **AN6 post-audit remediation** (v0.30.6, in progress):
+- **AN6 post-audit remediation** (v0.30.7, released):
   Deep end-to-end audit of the AN6 landed subset surfaced **8 issues**
   where the landing was less substantive than it appeared; all fixed
   in-PR.
@@ -613,9 +613,13 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
   `cargo clippy --workspace -- -D warnings` (0 warnings) + fixture
   byte-identical + zero `sorry`/`axiom`/`native_decide`.
 
-- **AN6** (Architecture / InformationFlow / CrossSubsystem, v0.30.6,
-  in progress — landed subset): tractable-subset landing for the
-  7–9-day AN6 phase. The full phase covers H-07 (substantive discharge
+- **AN6** (Architecture / InformationFlow / CrossSubsystem, v0.30.7,
+  released — landed subset): tractable-subset landing for the
+  7–9-day AN6 phase. Patch version bumped 0.30.6 → 0.30.7 as part
+  of this consolidated release (breaking the no-per-phase-bump
+  convention because AN6 bundles three commits of substantive work
+  — initial landing + post-audit remediation + second audit-pass —
+  into a single semver-visible release). The full phase covers H-07 (substantive discharge
   of six closure-form `*_preserves_projection` theorems), H-08
   (architecture assumption consumption index), H-09 (transitive
   `untypedAncestorRegionsDisjoint`), ARCH-M01..M03, IF-M01..M03, and

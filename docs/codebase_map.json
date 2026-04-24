@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-phase-an6-architecture-a9R3s",
-      "commit_sha": "f519537ce0cefcd4d283b0c8400897f05d3f70aa",
-      "tree_sha": "72fe45caef164ddf659d74501b4d23cbd3c8f04b",
-      "committed_at_utc": "2026-04-24T03:20:24+00:00"
+      "commit_sha": "d35cd31b991e33f4022edf6c0c76be6d050fca2f",
+      "tree_sha": "93f87e09ef31f48b12c7f7183fb012604d313f65",
+      "committed_at_utc": "2026-04-24T03:59:25+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 5824
   },
   "readme_sync": {
-    "version": "0.30.6",
+    "version": "0.30.7",
     "lean_toolchain": "v4.28.0",
     "production_files": 162,
     "production_loc": 106947,
