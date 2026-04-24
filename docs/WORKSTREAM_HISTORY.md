@@ -138,8 +138,10 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
   suite reached) +
   `test_smoke.sh` PASS + `test_full.sh` PASS + `test_tier0_hygiene.sh`
   PASS (AN7-A/B/F checks wired in) + `test_tier1_build.sh` PASS (new
-  `Platform.Staged` step) + `lake exe ak9_platform_suite` 37/37 PASS
-  (3 new AN7-D.2 tests) + `cargo test --workspace` (415 tests,
+  `Platform.Staged` step) + `lake exe ak9_platform_suite` 63 assertions
+  PASS (3 new AN7-D.2 + 6 new AN7-D.2-04 paddrBounded + 8 new AN7-D.5
+  depth-3+ peripheral tests) +
+  `cargo test --workspace` (414 tests,
   extended discriminant coverage) + `cargo clippy --workspace --
   -D warnings` (0 warnings) + `check_version_sync.sh` PASS at 0.30.8 +
   fixture byte-identical + zero `sorry` / `axiom` / `native_decide`.

@@ -97,15 +97,30 @@ def kernelTextBase : PAddr := PAddr.ofNat 0x80000
 
 /-- Approximate kernel text size (1 MiB — generous upper bound; actual kernel
     text fits well within this on a production build).  For the model this
-    is one identity-mapped page whose permissions are RX. -/
+    is one identity-mapped page whose permissions are RX; the size constant
+    documents how much physical address space the kernel text occupies on
+    real hardware (used by the HAL's linker script to place `.text`). -/
 def kernelTextSize : Nat := 0x100000
 
 /-- Kernel data section base (immediately after text; 1 MiB aligned for the
-    model).  RW non-executable. -/
+    model).  RW non-executable.  Note: the base address equals
+    `kernelTextBase + kernelTextSize`, anchoring the layout contract that
+    kernel data immediately follows kernel text in physical memory. -/
 def kernelDataBase : PAddr := PAddr.ofNat 0x180000
 
 /-- Kernel stack base (model: 64 KiB at a known offset).  RW non-executable. -/
 def kernelStackBase : PAddr := PAddr.ofNat 0x200000
+
+/-- AN7-D.2.1 layout contract: the kernel data section base equals
+    `kernelTextBase.toNat + kernelTextSize`.  A regression that moves
+    `kernelDataBase` without updating `kernelTextSize` (or vice versa)
+    fails this `rfl`-provable equality at compile time. -/
+theorem kernelDataBase_follows_kernelText :
+    kernelDataBase.toNat = kernelTextBase.toNat + kernelTextSize := rfl
+
+/-- AN7-D.2.1 layout contract: `kernelTextSize` is positive (a zero-size
+    kernel text would be nonsensical on any real hardware). -/
+theorem kernelTextSize_positive : kernelTextSize > 0 := by decide
 
 -- ============================================================================
 -- AN7-D.2.1 — Per-region permissions

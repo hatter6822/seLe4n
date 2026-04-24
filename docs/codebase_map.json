@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/complete-phase-an7-api-yUFCY",
-      "commit_sha": "4b6023e89e247573e3dfebbbba722170a74a7797",
-      "tree_sha": "855276d6d451e111fd13b6baa5ee410881f5a82c",
-      "committed_at_utc": "2026-04-24T05:57:33+00:00"
+      "commit_sha": "d2d79b496f4edd1bf039a01aaa661ee31a74f55a",
+      "tree_sha": "5cfcfe6dabc861fe75e8cf1376e6fa827c380b11",
+      "committed_at_utc": "2026-04-24T21:00:13+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "95c323935e439f146373ff700ba47c35f90844e7df97bd3b7b843a1dc454b76f"
+    "source_digest": "4211702e2a4537b8e25f279954a15af6340808fabdf993534bc6329f1c144615"
   },
   "summary": {
     "module_count": 189,
-    "declaration_count": 5877
+    "declaration_count": 5885
   },
   "readme_sync": {
     "version": "0.30.8",
     "lean_toolchain": "v4.28.0",
     "production_files": 165,
-    "production_loc": 107743,
+    "production_loc": 107758,
     "test_files": 24,
-    "test_loc": 15836,
-    "proved_theorem_lemma_decls": 3149,
+    "test_loc": 15952,
+    "proved_theorem_lemma_decls": 3151,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -62034,7 +62034,7 @@
     {
       "module": "SeLe4n.Platform.RPi5.VSpaceBoot",
       "path": "SeLe4n/Platform/RPi5/VSpaceBoot.lean",
-      "declaration_count": 24,
+      "declaration_count": 26,
       "declarations": [
         {
           "kind": "namespace",
@@ -62054,13 +62054,13 @@
         {
           "kind": "def",
           "name": "kernelTextSize",
-          "line": 101,
+          "line": 103,
           "called": []
         },
         {
           "kind": "def",
           "name": "kernelDataBase",
-          "line": 105,
+          "line": 109,
           "called": [
             "PAddr",
             "ofNat"
@@ -62069,16 +62069,33 @@
         {
           "kind": "def",
           "name": "kernelStackBase",
-          "line": 108,
+          "line": 112,
           "called": [
             "PAddr",
             "ofNat"
           ]
         },
         {
+          "kind": "theorem",
+          "name": "kernelDataBase_follows_kernelText",
+          "line": 118,
+          "called": [
+            "kernelTextSize",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "kernelTextSize_positive",
+          "line": 123,
+          "called": [
+            "kernelTextSize"
+          ]
+        },
+        {
           "kind": "def",
           "name": "permsTextRX",
-          "line": 116,
+          "line": 131,
           "called": [
             "PagePermissions"
           ]
@@ -62086,7 +62103,7 @@
         {
           "kind": "def",
           "name": "permsDataRW",
-          "line": 120,
+          "line": 135,
           "called": [
             "PagePermissions"
           ]
@@ -62094,7 +62111,7 @@
         {
           "kind": "def",
           "name": "permsMmioRW",
-          "line": 125,
+          "line": 140,
           "called": [
             "PagePermissions"
           ]
@@ -62102,7 +62119,7 @@
         {
           "kind": "theorem",
           "name": "permsTextRX_wxCompliant",
-          "line": 130,
+          "line": 145,
           "called": [
             "wxCompliant"
           ]
@@ -62110,7 +62127,7 @@
         {
           "kind": "theorem",
           "name": "permsDataRW_wxCompliant",
-          "line": 132,
+          "line": 147,
           "called": [
             "wxCompliant"
           ]
@@ -62118,7 +62135,7 @@
         {
           "kind": "theorem",
           "name": "permsMmioRW_wxCompliant",
-          "line": 134,
+          "line": 149,
           "called": [
             "wxCompliant"
           ]
@@ -62126,7 +62143,7 @@
         {
           "kind": "def",
           "name": "insertIdentity",
-          "line": 142,
+          "line": 157,
           "called": [
             "PAddr",
             "PagePermissions",
@@ -62140,7 +62157,7 @@
         {
           "kind": "def",
           "name": "emptyBootRoot",
-          "line": 148,
+          "line": 163,
           "called": [
             "RHTable.empty",
             "VSpaceRoot",
@@ -62150,7 +62167,7 @@
         {
           "kind": "def",
           "name": "rpi5BootVSpaceRoot",
-          "line": 158,
+          "line": 173,
           "called": [
             "VSpaceRoot",
             "emptyBootRoot",
@@ -62169,7 +62186,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_asid",
-          "line": 168,
+          "line": 183,
           "called": [
             "ofNat"
           ]
@@ -62177,7 +62194,7 @@
         {
           "kind": "def",
           "name": "VSpaceRootWxCompliant",
-          "line": 179,
+          "line": 194,
           "called": [
             "VSpaceRoot",
             "fold",
@@ -62187,7 +62204,7 @@
         {
           "kind": "def",
           "name": "VSpaceRootPaddrBounded",
-          "line": 188,
+          "line": 203,
           "called": [
             "VSpaceRoot",
             "fold",
@@ -62197,7 +62214,7 @@
         {
           "kind": "def",
           "name": "VSpaceRootWellFormed",
-          "line": 203,
+          "line": 218,
           "called": [
             "VSpaceRoot",
             "VSpaceRootPaddrBounded",
@@ -62209,7 +62226,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_wxCompliant",
-          "line": 217,
+          "line": 232,
           "called": [
             "VSpaceRootWxCompliant",
             "rpi5BootVSpaceRoot"
@@ -62218,7 +62235,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_paddrBounded",
-          "line": 230,
+          "line": 245,
           "called": [
             "VSpaceRootPaddrBounded",
             "rpi5BootVSpaceRoot"
@@ -62227,7 +62244,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_wellFormed",
-          "line": 237,
+          "line": 252,
           "called": [
             "VSpaceRootWellFormed",
             "maxAsidValue",
@@ -62241,7 +62258,7 @@
         {
           "kind": "def",
           "name": "bootSafeVSpaceRoot",
-          "line": 257,
+          "line": 272,
           "called": [
             "VSpaceRoot",
             "VSpaceRootWellFormed"
@@ -62250,7 +62267,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_bootSafe",
-          "line": 262,
+          "line": 277,
           "called": [
             "bootSafeVSpaceRoot",
             "rpi5BootVSpaceRoot",
@@ -62260,7 +62277,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_admits_bootSafe",
-          "line": 278,
+          "line": 293,
           "called": [
             "bootSafeVSpaceRoot",
             "ofNat",
@@ -67850,7 +67867,7 @@
     {
       "module": "tests.Ak9PlatformSuite",
       "path": "tests/Ak9PlatformSuite.lean",
-      "declaration_count": 46,
+      "declaration_count": 52,
       "declarations": [
         {
           "kind": "namespace",
@@ -68348,8 +68365,69 @@
         },
         {
           "kind": "def",
-          "name": "main",
+          "name": "mkRegProperty",
           "line": 543,
+          "called": [
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkPeripheral",
+          "line": 565,
+          "called": [
+            "FdtNode",
+            "mkRegProperty"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "an7d5_01_extractPeripherals_depth3_discovery",
+          "line": 577,
+          "called": [
+            "FdtNode",
+            "expect",
+            "extractPeripherals",
+            "mkPeripheral"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "an7d5_02_extractPeripherals_zero_fuel_collapses",
+          "line": 601,
+          "called": [
+            "FdtNode",
+            "expect",
+            "extractPeripherals",
+            "mkPeripheral"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "an7d5_03_extractPeripherals_skips_incomplete_nodes",
+          "line": 615,
+          "called": [
+            "FdtNode",
+            "expect",
+            "extractPeripherals"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "an7d5_04_extractPeripherals_excludes_reserved_names",
+          "line": 625,
+          "called": [
+            "FdtNode",
+            "expect",
+            "extractPeripherals",
+            "mkPeripheral",
+            "mkRegProperty"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 654,
           "called": [
             "ak9a_01_mmioRead32_rejects_unaligned",
             "ak9a_02_mmioRead64_rejects_unaligned",
@@ -68388,7 +68466,11 @@
             "an7d2_01_rpi5BootVSpaceRoot_wellFormed",
             "an7d2_02_rpi5BootVSpaceRoot_wxCompliant",
             "an7d2_03_rpi5BootVSpaceRoot_covers_mmio_regions",
-            "an7d2_04_rpi5BootVSpaceRoot_paddrBounded"
+            "an7d2_04_rpi5BootVSpaceRoot_paddrBounded",
+            "an7d5_01_extractPeripherals_depth3_discovery",
+            "an7d5_02_extractPeripherals_zero_fuel_collapses",
+            "an7d5_03_extractPeripherals_skips_incomplete_nodes",
+            "an7d5_04_extractPeripherals_excludes_reserved_names"
           ]
         }
       ]

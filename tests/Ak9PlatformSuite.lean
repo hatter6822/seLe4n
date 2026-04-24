@@ -534,6 +534,117 @@ def an7d2_04_rpi5BootVSpaceRoot_paddrBounded : IO Unit := do
     (decide (gicCpuInterfaceBase.toNat < twoPow44))
 
 -- ============================================================================
+-- AN7-D.5 (PLT-M06): extractPeripherals recursive walk tests
+-- ============================================================================
+
+/-- Helper: build a 16-byte big-endian `reg` property encoding
+    (base, size) as two 64-bit big-endian values.  Used by the
+    depth-3+ DTB peripheral-walk tests below. -/
+private def mkRegProperty (base size : UInt64) : ByteArray :=
+  let baseBytes : Array UInt8 :=
+    #[ ((base >>> 56) &&& 0xFF).toUInt8
+     , ((base >>> 48) &&& 0xFF).toUInt8
+     , ((base >>> 40) &&& 0xFF).toUInt8
+     , ((base >>> 32) &&& 0xFF).toUInt8
+     , ((base >>> 24) &&& 0xFF).toUInt8
+     , ((base >>> 16) &&& 0xFF).toUInt8
+     , ((base >>> 8)  &&& 0xFF).toUInt8
+     , ( base         &&& 0xFF).toUInt8 ]
+  let sizeBytes : Array UInt8 :=
+    #[ ((size >>> 56) &&& 0xFF).toUInt8
+     , ((size >>> 48) &&& 0xFF).toUInt8
+     , ((size >>> 40) &&& 0xFF).toUInt8
+     , ((size >>> 32) &&& 0xFF).toUInt8
+     , ((size >>> 24) &&& 0xFF).toUInt8
+     , ((size >>> 16) &&& 0xFF).toUInt8
+     , ((size >>> 8)  &&& 0xFF).toUInt8
+     , ( size         &&& 0xFF).toUInt8 ]
+  ByteArray.mk (baseBytes ++ sizeBytes)
+
+/-- Helper: make an `FdtNode` with `reg` + `compatible` properties. -/
+private def mkPeripheral (name : String) (base : UInt64)
+    (children : List FdtNode := []) : FdtNode :=
+  { name
+    properties :=
+      [ { name := "reg", value := mkRegProperty base 0x1000 }
+      , { name := "compatible", value := ByteArray.mk #[0x61, 0x72, 0x6D, 0x00] } ]  -- "arm\0"
+    children }
+
+/-- AN7-D.5: `extractPeripherals` discovers peripherals at depth 3+ via
+    the new recursive walk.  The previous 2-level walk (pre-AN7-D.5)
+    would have missed the `level3-device` in this synthetic tree; the
+    new recursive form finds it. -/
+def an7d5_01_extractPeripherals_depth3_discovery : IO Unit := do
+  -- Build a depth-3 tree:
+  --   level1-bus (depth 1)
+  --     └─ level2-controller (depth 2)
+  --         └─ level3-device (depth 3)
+  let deepTree : List FdtNode := [
+    mkPeripheral "level1-bus" 0x10000000 [
+      mkPeripheral "level2-controller" 0x20000000 [
+        mkPeripheral "level3-device" 0x30000000 []
+      ]
+    ]
+  ]
+  let devices := extractPeripherals deepTree 1024
+  -- All three levels should be discovered
+  expect "AN7-D.5-01 level1-bus discovered"
+    (devices.any (fun d => d.name == "level1-bus"))
+  expect "AN7-D.5-01 level2-controller discovered"
+    (devices.any (fun d => d.name == "level2-controller"))
+  expect "AN7-D.5-01 level3-device discovered"
+    (devices.any (fun d => d.name == "level3-device"))
+  expect "AN7-D.5-01 exactly 3 devices total"
+    (decide (devices.length = 3))
+
+/-- AN7-D.5: The walk terminates at `fuel = 0` regardless of tree depth. -/
+def an7d5_02_extractPeripherals_zero_fuel_collapses : IO Unit := do
+  let deepTree : List FdtNode := [
+    mkPeripheral "top" 0x1000 [
+      mkPeripheral "middle" 0x2000 [
+        mkPeripheral "bottom" 0x3000 []
+      ]
+    ]
+  ]
+  let devices := extractPeripherals deepTree 0
+  expect "AN7-D.5-02 zero-fuel returns empty list"
+    (decide (devices.length = 0))
+
+/-- AN7-D.5: The walk correctly skips nodes lacking `reg` or
+    `compatible` properties. -/
+def an7d5_03_extractPeripherals_skips_incomplete_nodes : IO Unit := do
+  -- Node without any properties (no reg, no compatible) — should be skipped
+  let incompleteNode : FdtNode :=
+    { name := "no-props", properties := [], children := [] }
+  let devices := extractPeripherals [incompleteNode] 1024
+  expect "AN7-D.5-03 incomplete node skipped"
+    (decide (devices.length = 0))
+
+/-- AN7-D.5: The walk correctly excludes `memory@*` / `cpus` / `chosen`
+    nodes from peripheral classification, even at deep nesting. -/
+def an7d5_04_extractPeripherals_excludes_reserved_names : IO Unit := do
+  -- Reserved-name nodes should NOT be reported as peripherals
+  let treeWithReserved : List FdtNode := [
+    mkPeripheral "legit-device" 0x10000 [],
+    -- Even with proper reg+compatible, these names are excluded by classifier
+    { name := "memory@0"
+      properties :=
+        [ { name := "reg", value := mkRegProperty 0x20000 0x1000 }
+        , { name := "compatible", value := ByteArray.mk #[0x61, 0x72, 0x6D, 0x00] } ]
+      children := [] },
+    { name := "cpus"
+      properties :=
+        [ { name := "reg", value := mkRegProperty 0x30000 0x1000 }
+        , { name := "compatible", value := ByteArray.mk #[0x61, 0x72, 0x6D, 0x00] } ]
+      children := [] }
+  ]
+  let devices := extractPeripherals treeWithReserved 1024
+  expect "AN7-D.5-04 only legit-device extracted"
+    (decide (devices.length = 1))
+  expect "AN7-D.5-04 legit-device is the one found"
+    (devices.any (fun d => d.name == "legit-device"))
+
+-- ============================================================================
 -- Entry point
 -- ============================================================================
 
@@ -584,5 +695,10 @@ def main : IO Unit := do
   an7d2_02_rpi5BootVSpaceRoot_wxCompliant
   an7d2_03_rpi5BootVSpaceRoot_covers_mmio_regions
   an7d2_04_rpi5BootVSpaceRoot_paddrBounded
+  -- AN7-D.5 extractPeripherals recursive walk
+  an7d5_01_extractPeripherals_depth3_discovery
+  an7d5_02_extractPeripherals_zero_fuel_collapses
+  an7d5_03_extractPeripherals_skips_incomplete_nodes
+  an7d5_04_extractPeripherals_excludes_reserved_names
   IO.println ""
   IO.println "=== All AK9 platform tests passed ==="

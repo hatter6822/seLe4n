@@ -10,8 +10,41 @@ AN7-D.2 landing.
 
 ### Post-delivery audit remediation
 
-Deep end-to-end audit of the initial AN7 landing surfaced three material
-strengthening opportunities, all fixed in-PR:
+Two rounds of deep end-to-end audit of the initial AN7 landing surfaced
+material strengthening opportunities, all fixed in-PR.
+
+**Third-pass audit remediation** (AK9 suite expanded to 63 assertions):
+
+1. **AN7-D.5 depth-3+ DTB test gap**: the plan required "a new depth-3+
+   DTB fixture test" for `extractPeripherals` but the initial landing
+   and the second-pass audit did not add one.  Added **8 new runtime
+   tests** (`an7d5_01..04`) constructed programmatically via `FdtNode`
+   values with big-endian `reg` property encoding: depth-3 peripheral
+   discovery (level1-bus → level2-controller → level3-device all
+   extracted), zero-fuel collapse, incomplete-node skip, and reserved-
+   name exclusion (`memory@*` / `cpus` / `chosen` rejected even with
+   proper `reg` + `compatible`).  Helper `mkRegProperty` emits 16-byte
+   big-endian base+size; `mkPeripheral` constructs standard nodes.
+
+2. **SELE4N_SPEC §6.2.1 cross-reference**: added a new sub-section
+   documenting the `extractPeripherals` fuel contract, boundary
+   guarantees on exhaustion, and regression coverage.  The plan's
+   "Cross-reference in SELE4N_SPEC.md §6" acceptance criterion is now
+   met.
+
+3. **Dead-code remediation**: `kernelTextSize` was defined but
+   unreferenced.  Added two anchor theorems:
+   `kernelDataBase_follows_kernelText` (PA layout contract —
+   `kernelDataBase = kernelTextBase + kernelTextSize`, proven by
+   `rfl`) and `kernelTextSize_positive` (proven by `decide`).  A
+   regression that decouples the data base from the text size
+   fails the `rfl` at compile time.
+
+4. **Doc count correction**: CHANGELOG and WORKSTREAM_HISTORY previously
+   reported 415 Rust tests; actual passing count is 414.  Corrected.
+
+**Second-pass audit remediation** (AK9 suite expanded from 34 to 55
+assertions):
 
 1. **AN7-D.2 `VSpaceRootWellFormed` was missing the PA-bounds conjunct**
    that the module docstring claimed.  Strengthened from 3 conjuncts to
@@ -165,10 +198,12 @@ trivial `rfl` placeholders).
 operation-chain suites reach 311 jobs) + `test_smoke.sh` PASS +
 `test_full.sh` PASS + `test_tier0_hygiene.sh` PASS (new AN7-A, AN7-B,
 AN7-F hygiene checks wired in) + `test_tier1_build.sh` PASS (new
-`Platform.Staged` build step) + `lake exe ak9_platform_suite` 37/37
-PASS (3 new AN7-D.2 tests) + `cargo test --workspace` (415 tests,
-extended discriminant coverage) + `cargo clippy --workspace --
--D warnings` (0 warnings) + `check_version_sync.sh` PASS at 0.30.8 +
+`Platform.Staged` build step) + `lake exe ak9_platform_suite` 63
+assertions PASS (3 new AN7-D.2 tests at initial landing + 6 new
+AN7-D.2-04 paddrBounded tests + 8 new AN7-D.5 depth-3+ peripheral
+tests at third-pass audit) + `cargo test --workspace`
+(414 tests, extended discriminant coverage) + `cargo clippy --workspace
+-- -D warnings` (0 warnings) + `check_version_sync.sh` PASS at 0.30.8 +
 fixture byte-identical to `tests/fixtures/main_trace_smoke.expected` +
 zero `sorry`/`axiom`/`native_decide` in `SeLe4n/` or `Main.lean`.
 
