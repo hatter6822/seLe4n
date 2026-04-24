@@ -6,7 +6,7 @@
 **Carried forward**: [`docs/audits/AUDIT_v0.29.0_DEFERRED.md`](AUDIT_v0.29.0_DEFERRED.md) — 11 deferred items (7 hardware-binding, 4 proof-hygiene)
 **Errata reference**: [`docs/audits/AUDIT_v0.29.0_ERRATA.md`](AUDIT_v0.29.0_ERRATA.md) — 6 informational entries (no actionable work)
 **Baseline**: `v0.30.6` at commit `1a86dbc` on branch `claude/audit-workstream-planning-AUBX4`
-**Target release**: `v1.0.0` (patch-only bump trajectory; final tag is a maintainer manual action per AK10-C precedent)
+**Target release**: `v1.0.0` (patch-only bump trajectory; final tag is a maintainer manual action per AK10-C precedent). **Versioning convention (amended v0.30.7)**: each phase lands its own patch bump (AN0=v0.30.6 baseline + AN6=v0.30.7 was the first per-phase bump; from AN7 onward every phase gets a dedicated patch version). AN0..AN5 shipped batched at v0.30.6 as a historical artifact of the original no-per-phase-bump convention; that convention was retired at the v0.30.7 release cut when WS-AN transitioned to per-phase patch bumps. The maintainer-selected sequence AN7=v0.30.8, AN8=v0.30.9, … holds going forward.
 **Author**: Claude (Opus 4.7), 2026-04-21
 **Scope summary**: 196 audit findings (after C-02 resolved, H-22 downgraded) PLUS 11 carried-forward items from `AUDIT_v0.29.0_DEFERRED.md` that are **absorbed in-scope** (no longer deferred), organized into **13 phases (AN0..AN12)** with **95 named sub-tasks** decomposed into **~253 sub-sub-task commits**, of which **50 high-complexity (T4/T5) sub-sub-tasks are further decomposed into sub-sub-sub-task commits** with explicit intermediate-artifact milestones (see §24.5 for the complexity-tier classification). Each complex sub-task lists explicit per-commit boundaries with acceptance criteria, effort estimates, and cascade sizes. Foundation hardening (AN2) lands first so type-level changes cascade exactly once; cross-cutting structural refactors (Theme 4.2 named projections, Theme 4.3 subtype gates) are sequenced into the earliest phase whose subsystem they touch. **AN9 closes every hardware-binding item from AUDIT_v0.29.0_DEFERRED.md (DEF-A-M04/M06/M08/M09, DEF-C-M04, DEF-P-L9, DEF-R-HAL-L14, plus new DEF-R-HAL-L17..L20 items surfaced by AN1-C); AN10 completes the AK7 cascade rollouts (DEF-AK7-E.cascade, DEF-AK7-F.cascade); AN12 closes the workstream with documentation sync and the v1.0.0-ready gate.** No finding in the comprehensive audit, no entry in the v0.29.0 DEFERRED file, and no errata residual remains unaddressed at WS-AN close.
 
@@ -3265,15 +3265,35 @@ E-5 has the only forward link. AN6-A substantively discharges every one of the s
 - **Acceptance**: CLAUDE.md active section reflects WS-AN closure; archive file created; large-files list refreshed
 - **Regression test**: smoke gate
 
-### AN12-J — Version bump and release trajectory
+### AN12-J — Version bump and release trajectory (amended)
 
 - **Files**: 15 version-bearing files (per `scripts/check_version_sync.sh` canonical list)
+- **Convention** (amended v0.30.7): **each phase gets its own patch bump.**
+  The original plan batched AN0..AN11 at the same baseline (v0.30.6) with a
+  single bump at AN12. That convention was retired at the AN6 release cut
+  (v0.30.6 → v0.30.7) when the maintainer directed that every phase should
+  ship a patch-visible release. Per-phase patch bumps going forward:
+  AN7=v0.30.8, AN8=v0.30.9, AN9=v0.30.10 (or the next available patch),
+  AN10=v0.30.11, AN11=v0.30.12, AN12=v0.30.13 (or whatever patch sequence
+  the maintainer selects). AN12 is therefore a regular phase bump now, NOT
+  a batched-closure bump.
 - **Plan**:
-  1. Per AK10-C precedent, **do NOT tag v1.0.0 programmatically** — the v1.0.0 tag is a maintainer manual action.
-  2. Instead, bump patch version `0.30.6 → 0.30.7` (or whatever sequence the maintainer selects) for the WS-AN release cut.
-  3. `scripts/check_version_sync.sh` PASS at the new version across all 15 files (`lakefile.toml`, `rust/Cargo.toml`, `README.md` + 10 i18n READMEs, `docs/spec/SELE4N_SPEC.md`, `CLAUDE.md`, and any CHANGELOG header).
-  4. If the maintainer chooses `v1.0.0` as the WS-AN cut, perform the tag in a separate commit after the plan lands.
-- **Acceptance**: `check_version_sync.sh` PASS at the new version
+  1. Per AK10-C precedent, **do NOT tag v1.0.0 programmatically** — the
+     v1.0.0 tag is a maintainer manual action.
+  2. Bump patch version at the landing commit of each phase (AN7, AN8,
+     ..., AN12) rather than batching. Each phase's closure commit
+     includes the lakefile bump + all 14 version-bearing files synced +
+     `check_version_sync.sh` PASS + CHANGELOG section header retagged to
+     the new patch version.
+  3. `scripts/check_version_sync.sh` PASS at every release cut across all
+     15 files (`lakefile.toml`, `rust/Cargo.toml` + `Cargo.lock`,
+     `rust/sele4n-hal/src/boot.rs::KERNEL_VERSION`, `README.md` +
+     10 i18n READMEs, `docs/spec/SELE4N_SPEC.md`, `CLAUDE.md`, and the
+     AN12 CHANGELOG header).
+  4. If the maintainer chooses `v1.0.0` as the WS-AN cut, perform the
+     tag in a separate commit after the plan lands.
+- **Acceptance**: `check_version_sync.sh` PASS at the new version at each
+  phase closure
 - **Regression test**: full gate + rust gate + `check_version_sync.sh`
 
 ### AN12-K — CHANGELOG entry consolidation

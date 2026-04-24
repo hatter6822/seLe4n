@@ -1,16 +1,22 @@
 ## v0.30.7 — WS-AN Phase AN6 (Architecture / InformationFlow / CrossSubsystem)
 
-Consolidated v0.30.7 patch release bundles WS-AN Phase AN6 into a
-single patch-version bump off v0.30.6. Per the v0.30.6 WS-AN plan's
-no-per-phase-bump convention, phases AN0..AN5 ship at v0.30.6; AN6
-breaks the convention because this PR bundles three commits of
-substantive work (initial AN6 landing + post-audit remediation + a
-second audit-pass) that together close the audit-remediable subset
-of H-07/H-08/H-09/ARCH-M02/IF-M01..M02/CX-M01..M05. The AN6
-follow-ups (A.2..A.7 substantive closure-form discharge, C.5..C.10
-13-conjunct cascade, D.1 VSpaceBackend wire-in, D.4 debug variant,
-E.3 4-file split) continue under v0.30.x tags as dedicated follow-up
-PRs.
+v0.30.7 patch release bundles WS-AN Phase AN6. This release also
+**retires the original no-per-phase-bump convention** of the
+`AUDIT_v0.30.6_WORKSTREAM_PLAN.md`. Going forward, each WS-AN phase
+gets its own patch version: AN7=v0.30.8, AN8=v0.30.9, AN9=v0.30.10,
+etc. through AN12. The historical batching of AN0..AN5 under v0.30.6
+remains in the CHANGELOG record (those phases shipped together at
+v0.30.6 as the last cohort under the old convention) — the new
+convention took effect at this release cut (v0.30.6 → v0.30.7).
+
+This PR bundles three commits of substantive AN6 work (initial AN6
+landing + post-audit remediation + a second audit-pass) that together
+close the audit-remediable subset of
+H-07/H-08/H-09/ARCH-M02/IF-M01..M02/CX-M01..M05. The AN6 follow-ups
+(A.2..A.7 substantive closure-form discharge, C.5..C.10 13-conjunct
+cascade, D.1 VSpaceBackend wire-in, D.4 debug variant, E.3 4-file
+split) continue under v0.30.x tags as dedicated follow-up PRs, each of
+which will itself be a patch bump under the new convention.
 
 **Cumulative AN6 v0.30.7 closure** — the three below sections
 describe the three commits composing this release. The "second
@@ -449,7 +455,7 @@ file-split cluster for a dedicated PR.
   (227 lines; no semantic behaviour changes)
 - Zero `sorry` / `axiom` / `native_decide` in `SeLe4n/` or `Main.lean`
 
-Version stays at `0.30.6` per the plan's no-per-phase-bump convention.
+Version stays at `0.30.6` per the **original** no-per-phase-bump convention in effect at the time (the convention was retired at v0.30.7 with WS-AN Phase AN6; from AN7 onward each phase bumps its own patch version).
 
 ---
 
@@ -624,7 +630,7 @@ map) + `lake exe liveness_suite` 76 anchors PASS + `cargo test --workspace`
 PASS (415 tests) + `cargo clippy --workspace -- -D warnings` (0
 warnings) + fixture byte-identical to `tests/fixtures/main_trace_smoke.expected`
 + zero `sorry`/`axiom`/`native_decide` in `SeLe4n/` or `Main.lean`.
-Version stays at 0.30.6 per no-per-phase-bump convention.
+Version stays at 0.30.6 per the **original** no-per-phase-bump convention in effect at the time (retired at v0.30.7 with WS-AN Phase AN6; from AN7 onward each phase bumps its own patch version).
 
 **Next**: AN6 (Architecture / InformationFlow / CrossSubsystem) per plan
 §9, which can land in parallel with AN7 (Platform/API) per plan §2.
@@ -863,7 +869,9 @@ targets) + `test_smoke.sh` PASS + `test_tier0_hygiene.sh` PASS (including
 the new AN4-A allowlist check) + `check_lifecycle_internal_allowlist.sh`
 PASS + fixture byte-identical to `tests/fixtures/main_trace_smoke.expected`
 + zero `sorry` / `axiom` / `native_decide` in `SeLe4n/` or `Main.lean`.
-Version stays at 0.30.6 per the plan's no-per-phase-bump convention.
+Version stays at 0.30.6 per the **original** no-per-phase-bump convention
+in effect at the time (retired at v0.30.7 with WS-AN Phase AN6; from AN7
+onward each phase bumps its own patch version).
 
 ## v0.30.6 — WS-AN Phase AN3 (IPC subsystem) [in progress]
 
@@ -1035,7 +1043,7 @@ clippy --workspace -- -D warnings` 0 warnings), `check_version_sync.sh`
 PASS at 0.30.6, fixture byte-identical, zero `sorry` / `axiom` /
 `native_decide` in `SeLe4n/` or `Main.lean`. 3 new tests in
 `tests/ModelIntegritySuite.lean` (`an3b_01..03`). Version stays at
-`0.30.6` per the plan's no-per-phase-bump convention.
+`0.30.6` per the **original** no-per-phase-bump convention in effect at the time (retired at v0.30.7 with WS-AN Phase AN6; from AN7 onward each phase bumps its own patch version).
 
 
 ## v0.30.6 — WS-AN Phase AN2 (Foundation hardening) [in progress — landed subset]
@@ -1060,7 +1068,7 @@ pass — each is a cascade-heavy refactor the plan explicitly budgets as
 its own commit batch and would not merge cleanly inside the scope of
 this PR.
 
-Version stays at `0.30.6` per the plan's no-per-phase-bump convention.
+Version stays at `0.30.6` per the **original** no-per-phase-bump convention in effect at the time (the convention was retired at v0.30.7 with WS-AN Phase AN6; from AN7 onward each phase bumps its own patch version).
 
 ### AN2-A — Badge private mk + smart constructors (H-13)
 
@@ -1276,7 +1284,7 @@ Closes the three CRITICAL / HIGH items blocking the v1.0.0 release gate per
 stale TODO retargeting). AN1 touches no Lean proof surface; all changes
 are to infrastructure, documentation, and source-comment pointers.
 
-Version stays at `0.30.6` at AN1 per the plan's no-per-phase-bump
+Version stays at `0.30.6` at AN1 per the **original** no-per-phase-bump
 convention — the consolidated workstream bump (`0.30.6` → `v1.0.0` tag)
 is AN12's portfolio-closure step, not a per-phase patch bump.
 

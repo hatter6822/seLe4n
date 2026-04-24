@@ -349,8 +349,10 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
   0.30.6 + fixture byte-identical to
   `tests/fixtures/main_trace_smoke.expected` (227 lines) + zero
   `sorry`/`axiom`/`native_decide` in `SeLe4n/` or `Main.lean`.
-  Version stays at `0.30.6` per the plan's no-per-phase-bump
-  convention.
+  Version stays at `0.30.6` per the **original** no-per-phase-bump
+  convention in effect at the time (the convention was retired at
+  v0.30.7 with WS-AN Phase AN6; from AN7 onward each phase bumps its
+  own patch version).
 
   **Next**: AN4 (Capability / Lifecycle / Service), parallel-safe
   with AN5 / AN7 / AN8, then AN6 (CrossSubsystem composition)
@@ -615,11 +617,14 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
 
 - **AN6** (Architecture / InformationFlow / CrossSubsystem, v0.30.7,
   released — landed subset): tractable-subset landing for the
-  7–9-day AN6 phase. Patch version bumped 0.30.6 → 0.30.7 as part
-  of this consolidated release (breaking the no-per-phase-bump
-  convention because AN6 bundles three commits of substantive work
-  — initial landing + post-audit remediation + second audit-pass —
-  into a single semver-visible release). The full phase covers H-07 (substantive discharge
+  7–9-day AN6 phase. **Patch version bumped 0.30.6 → 0.30.7.** This
+  release **retires the original no-per-phase-bump convention** of
+  the WS-AN plan: going forward, each WS-AN phase (AN7..AN12) gets
+  its own patch version (AN7=v0.30.8, AN8=v0.30.9, AN9=v0.30.10,
+  etc.). AN6 itself bundles three commits of substantive work
+  (initial landing + post-audit remediation + second audit-pass)
+  into a single semver-visible release at v0.30.7; each follow-up
+  PR under the new convention will itself get its own patch bump. The full phase covers H-07 (substantive discharge
   of six closure-form `*_preserves_projection` theorems), H-08
   (architecture assumption consumption index), H-09 (transitive
   `untypedAncestorRegionsDisjoint`), ARCH-M01..M03, IF-M01..M03, and
