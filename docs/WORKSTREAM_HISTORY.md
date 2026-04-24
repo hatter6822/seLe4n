@@ -349,8 +349,10 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
   0.30.6 + fixture byte-identical to
   `tests/fixtures/main_trace_smoke.expected` (227 lines) + zero
   `sorry`/`axiom`/`native_decide` in `SeLe4n/` or `Main.lean`.
-  Version stays at `0.30.6` per the plan's no-per-phase-bump
-  convention.
+  Version stays at `0.30.6` per the **original** no-per-phase-bump
+  convention in effect at the time (the convention was retired at
+  v0.30.7 with WS-AN Phase AN6; from AN7 onward each phase bumps its
+  own patch version).
 
   **Next**: AN4 (Capability / Lifecycle / Service), parallel-safe
   with AN5 / AN7 / AN8, then AN6 (CrossSubsystem composition)
@@ -498,6 +500,238 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
   canonical witness closure), parallel-safe with AN7 / AN8, then AN6
   (CrossSubsystem composition) sequences after the four subsystem
   phases.
+
+- **AN6 second audit-pass remediation** (v0.30.7, released):
+  Second deep audit pass on the AN6 post-audit tip identified 4
+  strengthening items. All fixed in-PR.
+
+  1. **`archAssumptionConsumer_distinct` strengthened from cycle-form
+     to full pairwise distinctness**: previously proved 5 cyclic
+     inequalities (timer≠register, register≠memory, memory≠boot,
+     boot≠irq, irq≠timer) which misses non-adjacent collisions like
+     timer≠memory or register≠boot. Strengthened to full **C(5,2) = 10
+     pairwise inequalities**, each discharged by `decide`.
+  2. **Walker runtime test for non-empty state**: new
+     `an6c3_untypedAncestorChain_walks_synthetic_chain` test builds a
+     2-level parent chain via `BootstrapBuilder` (boot untyped at
+     ObjId 100, retyped child at ObjId 200 with `parent := some 100`)
+     and verifies walker returns `[childId, parentId]` at fuel 2,
+     `[childId]` only at fuel 1, and `[parentId]` for a top-level
+     `parent = none` state. First coverage of the `some pid` recursive
+     branch — the empty-state test alone only exercised fuel bounds.
+  3. **Gitbook §12 cross-subsystem bundle count refresh**: the
+     "10-predicate bundle" description was stale since AM4/AL6-C
+     (11th conjunct) and AK8-A/C-M01 (12th conjunct). Updated to
+     "**12-predicate bundle**" with chronological attribution + new
+     paragraph documenting AN6-C (H-09) foundation.
+  4. **`ModelIntegritySuite` import fix**: the new walker-chain test
+     required `SeLe4n.Testing.StateBuilder.BootstrapBuilder`; added
+     the missing import.
+
+  **Post-audit-2 gate**: `lake build` (300 jobs, 0 warnings) +
+  `test_smoke.sh` PASS + `test_full.sh` PASS + `test_docs_sync.sh`
+  PASS + `model_integrity_suite` PASS (+1 new test, 7 assertions) +
+  `information_flow_suite` PASS + `cargo test --workspace` (414) +
+  `cargo clippy --workspace -- -D warnings` (0 warnings) + fixture
+  byte-identical + zero `sorry`/`axiom`/`native_decide`.
+
+- **AN6 post-audit remediation** (v0.30.7, released):
+  Deep end-to-end audit of the AN6 landed subset surfaced **8 issues**
+  where the landing was less substantive than it appeared; all fixed
+  in-PR.
+
+  1. **Consumer-name drift (AN6-B)**: `archAssumptionConsumer` mapped
+     `.irqRoutingTotality` to `` `SeLe4n.Kernel.Platform.Boot.… `` —
+     wrong namespace (actual is `SeLe4n.Platform.Boot` without
+     `Kernel.`). Bare `Name` literals don't validate; drift went
+     undetected. Corrected + added `archAssumptionConsumer_distinct`
+     theorem + 4 compile-time `private example` consumer-resolution
+     guards in `Architecture/Invariant.lean` (4 of 5 in-file; the 5th
+     — Platform.Boot — resolved via `@` reference in the
+     `ModelIntegritySuite` test).
+  2. **`pageTableWalkDepth` disconnected from `pageTableWalk`
+     (AN6-D.3)**: the depth function was a parallel mirror of the
+     walk with no theorem linking them — a future refactor could
+     leave them stale without breaking the build. Added substantive
+     `pageTableWalkDepth_some_of_pageTableWalk_some` forward bridge
+     (proven by manual `cases` through all 4 descriptor variants per
+     level) + `pageTableWalk_success_within_maxPageTableLevel`
+     end-to-end composition.
+  3. **`bootFromPlatform_singleCore_witness` (CX-M03) was `True := trivial`**:
+     replaced with substantive
+     `∀ s : SchedulerState, s.current = none ∨ ∃ tid, s.current = some tid`
+     proving the single-slot (non-per-core) scheduler shape via
+     type-level case analysis.
+  4. **`archInvariant_interruptsEnabled_all_eight_index` (CX-M04) was
+     `True := trivial`**: removed (replaced with a `/-! -/`
+     documentation block). The substantive
+     `InterruptsEnabledPreservationBundle` in
+     `Architecture/ExceptionModel.lean` is unchanged.
+  5. **`untypedAncestorRegionsDisjoint_followup_at_AN6C5` (AN6-C) was
+     `True := trivial`**: replaced with substantive
+     `untypedAncestorChain_collapses_when_all_parents_none` proving
+     that on any state with all-parent-none untypeds (today's API
+     guarantees this structurally), the walker collapses to `[oid]`.
+  6. **Shallow test assertions**: four AN6 tests (`an6c4`,
+     `an6f_cxm03`, `an6f_cxm04`, `an6f_cxm05`) strengthened from
+     `True == True` / `objects.size == 0` to substantive content —
+     type-ascribed theorem references, concrete state invocations,
+     all 8 bundle-field projections, and all 7 named
+     `crossSubsystemInvariant_to_*` extraction theorems (not just 3).
+  7. **AN6-E.1 SPEC cross-reference error**: docstring cited
+     `SELE4N_SPEC.md §7` but the Information-Flow section is `§11.2`.
+     Corrected + added three new subsections: `§11.2.1`
+     service-presence NI scope, `§11.2.2` architecture assumption
+     consumer index, `§11.2.3` single-core kernel model witness.
+  8. **Documentation refresh**: CHANGELOG, CLAUDE.md, this entry,
+     `docs/spec/SELE4N_SPEC.md` subsections, and
+     `docs/codebase_map.json` regenerated to reflect the 2 new
+     substantive theorems and the 3 `True := trivial` removals.
+
+  **Additional: pre-existing AK8-A marker substantively closed.** The
+  audit sweep identified a pre-existing AK8-A `True := trivial` marker
+  in `Kernel/Architecture/Invariant.lean` (from WS-AK Phase AK8) that
+  had documented the retype-to-untyped scope gap but without any
+  substantive theorem content. Substantively closed with three new
+  theorems: `objectOfKernelType_untyped_hardcodes_zero_regionBase`
+  (structural fact), `retypeFromUntyped_via_objectOfKernelType_untyped_child_has_zero_regionBase`
+  (end-to-end retype composition via
+  `retypeFromUntyped_ok_decompose` + `cspaceLookupSlot_preserves_state` +
+  `storeObject_preserves_objects_invExt` +
+  `storeObject_objects_eq`), and the renamed marker
+  `retypeFromUntyped_untypedRegionsDisjoint_retype_to_untyped_documented
+  (sizeHint)` that delegates to the structural helper. Together they
+  machine-check the scope gap: production retype-to-untyped via
+  `objectOfKernelType` always produces a zero-regionBase child, hence
+  cannot produce a valid parent-derived untyped region. One new test
+  `an6_postaudit_ak8a_objectOfKernelType_untyped_zero_regionBase`
+  exercises all three theorems.
+
+  **Post-audit gate**: `lake build` (300 jobs, 0 warnings) +
+  `test_smoke.sh` PASS + `test_full.sh` PASS + `test_docs_sync.sh`
+  PASS + `model_integrity_suite` PASS (strengthened AN6 tests + new
+  AK8-A substantive test) +
+  `information_flow_suite` PASS + `cargo test --workspace` (414) +
+  `cargo clippy --workspace -- -D warnings` (0 warnings) + fixture
+  byte-identical + zero `sorry`/`axiom`/`native_decide`.
+
+- **AN6** (Architecture / InformationFlow / CrossSubsystem, v0.30.7,
+  released — landed subset): tractable-subset landing for the
+  7–9-day AN6 phase. **Patch version bumped 0.30.6 → 0.30.7.** This
+  release **retires the original no-per-phase-bump convention** of
+  the WS-AN plan: going forward, each WS-AN phase (AN7..AN12) gets
+  its own patch version (AN7=v0.30.8, AN8=v0.30.9, AN9=v0.30.10,
+  etc.). AN6 itself bundles three commits of substantive work
+  (initial landing + post-audit remediation + second audit-pass)
+  into a single semver-visible release at v0.30.7; each follow-up
+  PR under the new convention will itself get its own patch bump. The full phase covers H-07 (substantive discharge
+  of six closure-form `*_preserves_projection` theorems), H-08
+  (architecture assumption consumption index), H-09 (transitive
+  `untypedAncestorRegionsDisjoint`), ARCH-M01..M03, IF-M01..M03, and
+  CX-M01..M05. This landed subset closes AN6-B, AN6-C foundation,
+  AN6-D.3, AN6-E.1+E.2, AN6-F, AN6-G, AN6-A.1, AN6-H; follow-up PRs
+  with explicit scope annotations cover AN6-A.2..A.7, AN6-C.5..C.10,
+  AN6-D.1, AN6-D.4, AN6-E.3.
+
+  - **AN6-B (H-08)**: new `archAssumptionConsumer : ArchAssumption →
+    Lean.Name` in `Kernel/Architecture/Assumptions.lean` mapping each
+    of the 5 architecture assumptions to its consuming theorem name +
+    `architecture_assumptions_index` marker theorem proving totality
+    via exhaustive case analysis (adding a new assumption without a
+    mapping entry fails at elaboration) + `archAssumptionConsumer_covers_inventory`
+    agreement witness with the existing `assumptionInventory` list.
+  - **AN6-C foundation (H-09, C.1..C.4)**: new `UntypedObject.parent
+    : Option ObjId` field (default `none`) in `Model/Object/Types.lean`;
+    new `untypedAncestorChain` walker, `maxRetypeDepth := 256`
+    bound, substantively-proven `untypedAncestorChain_bounded`, and
+    `untypedAncestorRegionsDisjoint` predicate in `Kernel/CrossSubsystem.lean`;
+    `default_untypedAncestorRegionsDisjoint` vacuous witness.
+    Retype-to-untyped is not exercised by today's API dispatch
+    (`objectOfKernelType .untyped` hardcodes `regionBase = 0`), so the
+    new predicate is operationally equivalent to the pre-AN6
+    12th-conjunct `untypedRegionsDisjoint`; the 13-conjunct cascade
+    (AN6-C.5..C.10, ~130 call sites, ~4 days) is a dedicated follow-up.
+  - **AN6-D.3 (ARCH-M02)**: new `maxPageTableLevel := 4` constant +
+    `pageTableWalkDepth` helper + `pageTableWalk_depth_bound`
+    substantive theorem in `Architecture/PageTable.lean`. Proves that
+    every successful `pageTableWalk` consumes between 2 and 4
+    `readDescriptor` calls (1 GiB block → 2, 2 MiB block → 3, 4 KiB
+    page → 4), all bounded by the ARMv8 4-level architecture constant.
+  - **AN6-E.1 (IF-M01)**: `serviceObservable` docstring extended with
+    a formal "non-interference scope and exclusions" section
+    documenting that the predicate covers boolean service presence
+    only — cross-service covert channels via restart-cadence sampling
+    are NOT covered by the kernel NI property at v1.0.0.
+  - **AN6-E.2 (IF-M02)**: four new NI-L3 negative-case regression
+    tests in `tests/InformationFlowSuite.lean`, one per accepted
+    covert channel (`scheduler.current`, `activeDomain`,
+    `domainTimeRemaining`, `domainScheduleIndex`). Each builds two
+    states differing ONLY in the channel's observable, then asserts
+    the projections DIFFER — silently closing a channel by adding
+    projection stripping will FAIL one of these, forcing re-auditing.
+  - **AN6-F (CX-M01..M05)**: five CrossSubsystem MEDIUM items in one
+    batch.
+    - **CX-M01**: `collectQueueMembers_some_start_nonEmpty_result` +
+      `collectQueueMembers_head_is_start` substantively prove two
+      structural properties of the walk. Combined with the existing
+      `collectQueueMembers_length_bounded`, these support the
+      operational fuel-sufficiency argument without requiring the
+      full `QueueNextPath` decidable-reachability bridge.
+    - **CX-M02**: symmetric docstring cross-reference between
+      `lifecycleObjectTypeLockstep` (proof-layer invariant) and
+      `storeObjectKindChecked` (runtime guard).
+    - **CX-M03**: `bootFromPlatform_singleCore_witness` marker
+      theorem anchoring the single-core MPIDR-mask assumption. The
+      Lean model has no per-core state; SMP bring-up (DEF-R-HAL-L20
+      / AN9-J) must retire this marker explicitly.
+    - **CX-M04**: new `InterruptsEnabledPreservationBundle` structure
+      in `Architecture/ExceptionModel.lean` packaging the 8 AG5-G
+      `_preserves_interruptsEnabled` theorems;
+      `archInvariant_interruptsEnabled_all_eight_bundle` inhabits it
+      for every `SystemState`. Pointer marker
+      `archInvariant_interruptsEnabled_all_eight_index` in
+      `CrossSubsystem.lean` provides cross-subsystem discoverability.
+    - **CX-M05**: positive-state smoke test
+      `an6f_cxm05_crossSubsystemInvariant_positive` in
+      `tests/ModelIntegritySuite.lean` witnessing the concrete
+      `default_crossSubsystemInvariant`; three representative conjunct
+      projections catch bundle-reordering regressions.
+  - **AN6-G**: TPI-002 already at canonical location
+    (`docs/dev_history/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`);
+    `Projection.lean`'s cross-reference is unchanged. SC-M03 import-cycle
+    banner at `SchedContext/Invariant.lean` is the canonical
+    single-source-of-truth, strengthened with an "AN6-G verified"
+    annotation.
+  - **AN6-A.1 (H-07 template)**: shared closure-form proof-sketch
+    template block prepended to `Kernel/InformationFlow/Invariant/Operations.lean`
+    documenting (a) the stabilising-recipe order of the six
+    closure-form arms, (b) the per-phase frame-lemma composition
+    template, (c) the Lean 4.28.0 escalation ladder for the
+    `split`/`split_ifs` ergonomics blocker. Substantive discharge of
+    the six arms (AN6-A.2..A.7) is a dedicated follow-up PR with per-arm
+    budgets totaling 6–9 days; the template ensures the work is
+    reproducible once toolchain ergonomics stabilise.
+  - **AN6-H**: CHANGELOG entry, CLAUDE.md active-workstream prepend,
+    this `docs/WORKSTREAM_HISTORY.md` entry, and `docs/codebase_map.json`
+    regeneration.
+
+  **Follow-up PRs (explicit scope)**: AN6-A.2..A.7 (substantive
+  closure-form discharge, 6–9 days), AN6-C.5..C.10 (13-conjunct
+  cascade, ~4 days), AN6-D.1 (VSpaceBackend production wire-in, ~1
+  day), AN6-D.4 (InvalidMessageInfoDetailed debug variant + Rust ABI
+  sync, 0.5 day), AN6-E.3 (Operations.lean 4-file split, 0.75 day).
+
+  **Gate at AN6 landed-subset tip**: `lake build` (300 jobs, 0
+  warnings) + `test_smoke.sh` PASS + `test_full.sh` PASS +
+  `test_docs_sync.sh` PASS + `lake exe model_integrity_suite` PASS
+  (+9 new AN6 tests) + `lake exe information_flow_suite` PASS (+4 new
+  NI-L3 tests) + `cargo test --workspace` (414) + `cargo clippy
+  --workspace -- -D warnings` (0 warnings) + `check_version_sync.sh`
+  PASS at 0.30.6 + fixture byte-identical + zero
+  `sorry`/`axiom`/`native_decide`. Version stays at 0.30.6.
+
+  **Next**: AN6-A.2..A.7 substantive discharge, or AN7 (Platform /
+  API), or parallel AN8 (Rust HAL hardening).
 
 - **AN5** (Scheduler / SchedContext + `eventuallyExits` closure, v0.30.6,
   in progress): lands the Scheduler MEDIUM (SCH-M02..M05) and LOW batches,

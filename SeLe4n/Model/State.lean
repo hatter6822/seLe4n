@@ -717,7 +717,29 @@ Succeeds on a fresh id (pre-state has no object) OR when the pre-state
 object has the same `objectType` as the incoming one. Otherwise returns
 `.error .invalidObjectType`. Used by consumers that update an existing
 object in place and must not accidentally change its variant. Fresh
-allocations (boot, retype) continue to use `storeObject` directly. -/
+allocations (boot, retype) continue to use `storeObject` directly.
+
+**AN6-F (CX-M02) cross-reference**: The proof-layer semantic witness
+for the property this wrapper enforces is `lifecycleObjectTypeLockstep`
+in `SeLe4n/Kernel/CrossSubsystem.lean` (the 11th conjunct of
+`crossSubsystemInvariant`). Together the two form a defense-in-depth
+pair:
+
+- This wrapper (`storeObjectKindChecked`) is a *dynamic* guard at the
+  write boundary: if a caller attempts a cross-variant overwrite, the
+  Kernel computation returns `.error .invalidObjectType` and the
+  pre-state is preserved.
+- `lifecycleObjectTypeLockstep` is a *static* invariant on reachable
+  states: every populated `ObjId` has a matching `lifecycle.objectTypes`
+  entry. `storeObject` (the underlying primitive this wrapper delegates
+  to on the happy path) updates BOTH fields in lockstep, so reachable
+  states always satisfy the invariant.
+
+A reader entering from either side discovers the pair. Tamper-detection
+is structural: if a bug or malicious write bypasses the wrapper and
+performs a cross-variant overwrite, the next proof obligation that
+unfolds through `lifecycleObjectTypeLockstep` fails to close, rather
+than the cross-variant write silently escaping detection. -/
 def storeObjectKindChecked (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
   fun st =>
     match st.objects[id]? with

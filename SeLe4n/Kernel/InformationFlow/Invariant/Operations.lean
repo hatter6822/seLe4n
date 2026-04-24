@@ -23,6 +23,81 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
+/-! ### AN6-A.1 (H-07): Shared closure-form proof-sketch recipe
+
+Six capability-only dispatch arms currently ship as *closure-form*
+`_preserves_projection` theorems — the theorem takes `hProjEq : ∀
+stFinal, op = .ok stFinal → projectState stFinal = projectState st` and
+its body is `hProjEq st' hStep`. The closure form provides a *stable
+interface* for callers but requires them to discharge the projection
+preservation themselves using this file's named frame lemmas.
+
+The six closure-form arms, in stabilising-recipe order:
+
+  1. `schedContextConfigure_preserves_projection` (AK6F.13) — baseline
+     recipe: two `storeObject` updates at non-observable target + a
+     single `replenQueue` field change + optional `boundThread` TCB
+     update. Discharge combines `objects_insert_preserves_projection_high`
+     × 2 with `projectState_replenishQueue_eq` + (optional)
+     `schedContextBind_frame_runQueue_rebucket`.
+  2. `tcbResume_preserves_projection` = `resumeThread_preserves_projection`
+     (AK6F.19) — uses the substantive frame lemmas
+     `resumeThread_frame_insert` and `resumeThread_frame_ensureRunnable`
+     from this file (both proven).
+  3. `schedContextBind_preserves_projection` (AK6F.14) — two SC+TCB
+     updates at non-observable target + runQueue re-bucket.
+  4. `schedContextUnbind_preserves_projection` (AK6F.15) — five-phase
+     teardown: `scheduler.current` clear, runQueue remove, SC+TCB
+     updates, replenQueue remove.
+  5. `tcbSuspend_preserves_projection` = `suspendThread_preserves_projection`
+     (AK6F.18) — hardest: 9-phase PIP-revert + IPC cleanup + donation
+     cancel + TCB-state transition + optional schedule.
+  6. `lifecycleRetype_preserves_projection` = composite at
+     `lifecycleRetypeDirectWithCleanup_preserves_projection` (AK6F.16)
+     — cross-subsystem retype touches objects, CDT, lifecycle,
+     capabilityRefs, and optionally scheduler.
+
+**Shared proof-sketch template** (apply per arm):
+
+  1. `intro` the observability hypotheses (e.g. `hScIdHigh`, `hTidHigh`)
+     and the `.ok` step hypothesis `hStep`.
+  2. `unfold` the operation. This exposes the nested `match` structure
+     of the operation's success arms.
+  3. For each atomic state-update phase, introduce a named intermediate
+     `have hP_i : projectState stP_i = projectState stP_{i-1}` by
+     applying a frame lemma (e.g. `objects_insert_preserves_projection_high`
+     at the non-observable target, or a named `_frame_*` helper from
+     this file's AK6-F block).
+  4. Compose via `Eq.trans` in sequence: `hP_n.trans (hP_{n-1}.trans
+     (... hP_1 ...))`.
+  5. If the operation has an optional tail phase (scheduler preemption,
+     optional TCB propagation), case-split with `by_cases` on the
+     guarding condition and discharge the optional branch via an
+     external theorem (e.g. `schedule_preserves_projection`).
+
+**Toolchain considerations (Lean 4.28.0 — AK6F.20b)**: `split` and
+`split_ifs` on `Except.ok`-wrapped match conditions with 4+ nested
+levels do not reliably destructure inside a `by` block — the
+elaborator produces metavariable leaks. The escalation ladder for
+such arms (per the v0.30.6 workstream plan §2.4 risk register):
+
+  1. Manual `rcases hOp : op ... <;> …` with `Except.ok_eq_iff_get?`
+     rewrites that bypass `split`'s non-determinism.
+  2. `Classical.byContradiction` + `decide` on the boolean skeleton
+     obtained by collapsing the match conditions into a single `Prop`.
+  3. Hand-unfolded structural proof using explicit `Except.bind_eq_ok`
+     rewrites (≈100-200 LOC per arm, factored into a dedicated helper
+     file `Operations/<ArmName>ProjHelpers.lean`).
+
+Callers invoking the closure-form theorems today discharge `hProjEq`
+with the recipe above; the interface is stable across the toolchain
+workarounds, so substantive discharge lands as future commits without
+touching the call sites. The AN6-A.2..A.7 follow-up workstream (per
+`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` §9) retires the closure
+form arm-by-arm, replacing each with the recipe above, once the Lean
+toolchain ergonomics stabilise.
+-/
+
 /-! ### WS-F3/K-F5: Capability CRUD and Lifecycle NI proofs — all completed
 
 The following capability and lifecycle operations have NI properties that

@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.30.6` (`lakefile.toml`) |
+| **Package version** | `0.30.7` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 104,156 across 151 Lean files |
 | **Test LoC** | 15,170 across 24 Lean test suites |
@@ -1705,6 +1705,83 @@ Deployers requiring service-layer information-flow isolation must analyze
 service-layer flows independently of kernel NI guarantees. See
 [`docs/DEPLOYMENT_GUIDE.md`](../DEPLOYMENT_GUIDE.md) Section 3 for deployment
 implications.
+
+#### 11.2.1 Service-presence covert channels (AN6-E.1 / IF-M01)
+
+WS-AN Phase AN6-E.1 formalizes the scope of `serviceObservable`
+(`Kernel/InformationFlow/Projection.lean:139`): the predicate covers
+**boolean service presence only**, not internal state. Cross-service
+covert channels — for example, one service observing another's restart
+cadence via service-presence sampling — are **NOT** closed by the kernel
+NI property. These are accepted covert channels at v1.0.0.
+
+The formal justification for the acceptance is that service
+orchestration operates above the kernel-primitive NI boundary: services
+are trusted components that the kernel merely tracks presence for. A
+deployment that requires NI at the service-orchestration layer must
+either:
+
+1. Model service state in the projection explicitly (a deployer-specific
+   model-refinement effort — the kernel model does not ship with
+   service-state-aware projection), or
+2. Treat the service layer as a separate trusted component outside the
+   NI analysis boundary.
+
+The kernel model at v1.0.0 does not attempt to close this gap. Four
+regression tests in `tests/InformationFlowSuite.lean` (`NI-L3/1..4`)
+guard the four known observable scheduler channels (current thread,
+active domain, time-remaining, schedule index) against silent closure
+that would invalidate the NI-L3 acceptance documentation.
+
+See `docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` §2.5 IF-M01 for the
+audit-level classification.
+
+#### 11.2.2 Architecture assumption consumer index (AN6-B / H-08)
+
+WS-AN Phase AN6-B adds a machine-searchable index
+(`archAssumptionConsumer` in `Kernel/Architecture/Assumptions.lean`)
+mapping each of the 5 `ArchAssumption` enumeration values to the fully
+qualified `Lean.Name` of its consuming theorem. The mapping is:
+
+| `ArchAssumption` constructor      | Consuming theorem |
+|-----------------------------------|-------------------|
+| `.deterministicTimerProgress`     | `deterministicTimerProgress_consumed_by_advanceTimer` |
+| `.deterministicRegisterContext`   | `deterministicRegisterContext_consumed_by_writeRegister` |
+| `.memoryAccessSafety`             | `memoryAccessSafety_consumed_by_readMemory` |
+| `.bootObjectTyping`               | `default_system_state_proofLayerInvariantBundle` |
+| `.irqRoutingTotality`             | `SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_implies_irqHandlersValid` |
+
+Three complementary guards enforce the index cannot silently drift:
+
+1. `architecture_assumptions_index : ∀ a, ∃ n, archAssumptionConsumer a = n`
+   — totality witness (adding a constructor without a mapping entry
+   fails elaboration via `cases a`).
+2. `archAssumptionConsumer_distinct` — the 5 names are pairwise
+   distinct (catches the "all map to the same name" shortcut).
+3. 5 compile-time `example` blocks in
+   `Kernel/Architecture/Invariant.lean` that resolve 4 of the 5
+   consumer theorems by Lean-level identifier (not by `Name` literal),
+   plus an `@` reference to the 5th in `tests/ModelIntegritySuite.lean`.
+   If any consumer theorem is renamed or deleted, one of these
+   references fails elaboration.
+
+#### 11.2.3 Single-core kernel model witness (AN6-F / CX-M03)
+
+WS-AN Phase AN6-F adds `bootFromPlatform_singleCore_witness` in
+`Kernel/CrossSubsystem.lean` proving that `SchedulerState.current` is a
+single `Option ThreadId`, not a per-core indexed map. The theorem is a
+structural witness of the Lean kernel model's single-core shape; the
+Rust HAL enforces the corresponding hardware-level assumption via
+`MPIDR_CORE_ID_MASK = 0x00FFFFFF` and the core-0 wake gate in
+`rust/sele4n-hal/src/boot.S`.
+
+Any future SMP extension (tracked as DEF-R-HAL-L20 / AN9-J in the v0.30.6
+workstream plan) that adds per-core scheduler state will either (a)
+change the `current` field's type (breaking this theorem statement) or
+(b) introduce a separate per-core-map field (requiring an explicit SMP
+invariant). Both paths force the SMP-bring-up workstream to retire the
+single-core witness explicitly rather than letting the assumption slip
+silently.
 
 ## 12. Licensing and Third-Party Attribution
 

@@ -13,7 +13,13 @@ import SeLe4n.Kernel.SchedContext.Invariant.Defs
 Thin re-export hub for SchedContext invariant definitions and proofs.
 Follows the project convention of `Invariant.lean` → `Invariant/Defs.lean`.
 
-## AN5-D (SC-M03) — DO NOT IMPORT PRESERVATION HERE
+## AN5-D (SC-M03) / AN6-G — DO NOT IMPORT (OR RE-IMPORT) PRESERVATION HERE
+
+**Single source of truth**: this banner + the compile-time `example` guard
+below is the canonical notice. Verified via AN6-G as the only
+import-cycle documentation for the SchedContext subsystem; the
+`CrossSubsystem.lean` consumer docstring references this banner by
+location rather than restating it.
 
 **Import-cycle banner.** `Preservation.lean` (Z5 per-operation preservation)
 and `PriorityPreservation.lean` (D2 transport lemmas, authority bounds)

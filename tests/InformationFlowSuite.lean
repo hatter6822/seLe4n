@@ -1126,6 +1126,108 @@ def runInformationFlowChecks : IO Unit := do
       (tight = 500)
     IO.println "CBS tight bandwidth bound arithmetic verified"
 
+  -- ======================================================================
+  -- AN6-E.2 (IF-M02 / NI-L3): Four negative-case regression tests
+  -- guarding the ACCEPTED covert channels documented at
+  -- `InformationFlow/Invariant/Operations.lean` (NI-L3 batch comment).
+  -- Each test builds two states that differ ONLY in the channel's
+  -- observable; the tests assert that today's projection DIFFERS — i.e.
+  -- the channel remains observable. If a future commit silently closes
+  -- the channel (e.g. strips an additional TCB field in
+  -- `projectKernelObject`), one of these assertions will FAIL, flagging
+  -- the behavioural change for explicit re-auditing of the NI-L3
+  -- acceptance documentation rather than letting it slip silently past.
+  -- ======================================================================
+
+  /- NI-L3/1: Scheduler `current` observability.
+     The scheduler's `current` thread pointer is intentionally visible in
+     the projection so currently-running-thread identity is not hidden
+     across domains. A silent fix that erased this would invalidate the
+     NI-L3 acceptance. -/
+  do
+    let tidA := SeLe4n.ThreadId.ofNat 1
+    let tidB := SeLe4n.ThreadId.ofNat 2
+    let stA : SystemState :=
+      { (default : SystemState) with
+        scheduler := { (default : SystemState).scheduler with current := some tidA } }
+    let stB : SystemState :=
+      { (default : SystemState) with
+        scheduler := { (default : SystemState).scheduler with current := some tidB } }
+    let pA :=
+      SeLe4n.Kernel.projectState
+        SeLe4n.Kernel.defaultLabelingContext reviewer stA
+    let pB :=
+      SeLe4n.Kernel.projectState
+        SeLe4n.Kernel.defaultLabelingContext reviewer stB
+    -- Channel remains observable: projections of differing `current`
+    -- produce differing `projectCurrent` outputs.
+    expect "NI-L3/1: scheduler.current channel remains observable"
+      (pA.current ≠ pB.current)
+    IO.println "NI-L3/1 scheduler.current covert channel guard verified"
+
+  /- NI-L3/2: `activeDomain` observability.
+     Domain identity is visible in the projection; a silent fix that
+     erased this would invalidate the NI-L3 acceptance. -/
+  do
+    let stA : SystemState :=
+      { (default : SystemState) with
+        scheduler := { (default : SystemState).scheduler with activeDomain := ⟨0⟩ } }
+    let stB : SystemState :=
+      { (default : SystemState) with
+        scheduler := { (default : SystemState).scheduler with activeDomain := ⟨1⟩ } }
+    let pA :=
+      SeLe4n.Kernel.projectState
+        SeLe4n.Kernel.defaultLabelingContext reviewer stA
+    let pB :=
+      SeLe4n.Kernel.projectState
+        SeLe4n.Kernel.defaultLabelingContext reviewer stB
+    expect "NI-L3/2: activeDomain channel remains observable"
+      (pA.activeDomain ≠ pB.activeDomain)
+    IO.println "NI-L3/2 activeDomain covert channel guard verified"
+
+  /- NI-L3/3: `domainTimeRemaining` observability.
+     Scheduling-timing leakage via time-remaining is accepted at
+     v1.0.0 — an audit-level decision. A fix that erased it would
+     invalidate the NI-L3 acceptance. -/
+  do
+    let stA : SystemState :=
+      { (default : SystemState) with
+        scheduler := { (default : SystemState).scheduler with domainTimeRemaining := 100 } }
+    let stB : SystemState :=
+      { (default : SystemState) with
+        scheduler := { (default : SystemState).scheduler with domainTimeRemaining := 200 } }
+    let pA :=
+      SeLe4n.Kernel.projectState
+        SeLe4n.Kernel.defaultLabelingContext reviewer stA
+    let pB :=
+      SeLe4n.Kernel.projectState
+        SeLe4n.Kernel.defaultLabelingContext reviewer stB
+    expect "NI-L3/3: domainTimeRemaining channel remains observable"
+      (pA.domainTimeRemaining ≠ pB.domainTimeRemaining)
+    IO.println "NI-L3/3 domainTimeRemaining covert channel guard verified"
+
+  /- NI-L3/4: `domainScheduleIndex` observability.
+     The current-index into the domain schedule is visible. A silent
+     fix would invalidate the acceptance and should re-audit NI-L3. -/
+  do
+    let stA : SystemState :=
+      { (default : SystemState) with
+        scheduler := { (default : SystemState).scheduler with domainScheduleIndex := 0 } }
+    let stB : SystemState :=
+      { (default : SystemState) with
+        scheduler := { (default : SystemState).scheduler with domainScheduleIndex := 3 } }
+    let pA :=
+      SeLe4n.Kernel.projectState
+        SeLe4n.Kernel.defaultLabelingContext reviewer stA
+    let pB :=
+      SeLe4n.Kernel.projectState
+        SeLe4n.Kernel.defaultLabelingContext reviewer stB
+    expect "NI-L3/4: domainScheduleIndex channel remains observable"
+      (pA.domainScheduleIndex ≠ pB.domainScheduleIndex)
+    IO.println "NI-L3/4 domainScheduleIndex covert channel guard verified"
+
+  IO.println "AN6-E.2 (IF-M02 / NI-L3) negative-case regression tests passed"
+
   IO.println "all V6 information-flow & cross-subsystem checks passed"
 
 end SeLe4n.Testing
