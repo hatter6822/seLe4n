@@ -35,11 +35,21 @@ scheduling order.
 
 ## AN5-D (SC-M02) — Closure-form preservation theorems
 
-The preservation theorems for `setPriorityOp` and `setMCPriorityOp`
-(in `SchedContext/Invariant/PriorityPreservation.lean`) carry an
-`hSchedProj` closure hypothesis representing the optional preemption-
-schedule call. This is structurally the same pattern as the `H-07`
-finding for information-flow projection theorems (see
+The NI projection-preservation theorems for `setPriorityOp` and
+`setMCPriorityOp` live in `InformationFlow/Invariant/Operations.lean`
+(not in `SchedContext/Invariant/PriorityPreservation.lean` — that file
+holds the *authority* preservation theorems `setPriority_authority_bounded`
+/ `setMCPriority_authority_bounded` and the non-closure frame lemmas).
+The projection theorems carry an `hSchedProj` closure hypothesis
+representing the optional preemption-schedule call:
+
+```lean
+theorem setPriorityOp_preserves_projection
+    … (hSchedProj : ∀ stMid stFinal, …) : …
+```
+
+This is structurally the same pattern as the `H-07` finding for
+information-flow projection theorems (see
 `docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` §H-07).
 
 **Discharge plan**: AN6-A performs the substantive discharge of

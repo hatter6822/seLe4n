@@ -154,25 +154,44 @@ theorem default_configTimeSlicePositive :
 `timerTickWithBudget` performs its replenishment pipeline in a fixed
 three-step order:
 
-1. **Pop due entries** (`popDueReplenishments`): extract every entry whose
-   `eligibleAt ≤ now` from the sorted `replenishQueue`.
+1. **Pop due entries** (`popDueReplenishments`): extract every entry
+   whose `eligibleAt ≤ now` from the sorted `replenishQueue`.
 2. **Refill SchedContexts** (`refillSchedContext` × k): for each popped
-   entry, run `processReplenishments` + `cbsUpdateDeadline` on the owning
-   SchedContext.
+   entry, run `processReplenishments` + `cbsUpdateDeadline` on the
+   owning SchedContext.
 3. **Process current thread's budget** (`timerTickBudget`): decrement
    the current thread's CBS budget, possibly re-enqueueing on
    exhaustion.
 
-This predicate captures a post-pipeline witness: after `timerTickWithBudget`
-runs at time `t`, every entry in `replenishQueue` has
-`eligibleAt > t` — i.e. no due entries remain unprocessed. A future
-refactor that reorders the pipeline (e.g. swaps steps 1 and 3) would
-leave due-but-unprocessed entries in the queue, falsifying this
-invariant.
+## Semantic scope (IMPORTANT)
 
-The invariant is proven preserved by `timerTick` (which has no
-replenishment queue interaction) trivially, and by `timerTickWithBudget`
-after the pop/refill sweep. -/
+This predicate is a **post-condition of step 1** relative to
+`st.machine.timer` at the moment the pipeline was invoked. Concretely,
+`replenishmentPipelineOrder st` asserts that every remaining entry has
+`eligibleAt > st.machine.timer`.
+
+The predicate is **NOT a free-standing state invariant preserved by
+arbitrary operations**. In particular, it is NOT preserved by a bare
+`tick` of the machine timer: after `machine.timer := timer + 1`, an
+entry whose `eligibleAt = timer + 1` that satisfied `> timer` pre-tick
+now satisfies only `= post-tick timer`, which falsifies the strict
+`>` condition.
+
+The invariant is instead **re-established on every pipeline entry** by
+the pop-due sweep (step 1). The sorted-queue post-state witness
+`popDueReplenishments_remaining_gt_now` in
+`Scheduler/Operations/Preservation.lean` discharges the invariant
+immediately after step 1 completes. Callers that need the invariant
+held at an arbitrary moment should invoke `processReplenishmentsDue`
+at that moment and then assert the invariant via the sorted-queue
+witness — see `timerTickWithBudget` in
+`Scheduler/Operations/Core.lean` for the canonical call pattern
+(`now := st.machine.timer` then `processReplenishmentsDue st now`
+then dispatch to `timerTickBudget`).
+
+A future refactor that reorders the pipeline (e.g. swaps steps 1 and 3)
+would leave due-but-unprocessed entries in the queue, falsifying this
+invariant at the expected post-state. -/
 def replenishmentPipelineOrder (st : SystemState) : Prop :=
   ∀ (pair : SchedContextId × Nat),
     pair ∈ st.scheduler.replenishQueue.entries → pair.2 > st.machine.timer

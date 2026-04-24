@@ -25,17 +25,21 @@ If the thread is in the run queue and effective priority changed,
 performs remove-then-insert for bucket migration (D2-E pattern).
 
 **Lifecycle relationship (AN5-C)**:
-* `propagatePriorityInheritance` — top-level "forward" entry point that
-  walks a blocking chain from `startTid` and invokes `updatePipBoost`
-  on each server in the chain (up to fuel).
+* `propagatePriorityInheritance` — top-level "forward" entry point
+  that walks a blocking chain from `startTid` and invokes
+  `updatePipBoost` on each server in the chain (up to fuel).
 * `revertPriorityInheritance` — symmetric "cleanup" path that clears
   `pipBoost` when the blocking chain dissolves (IPC reply, timeout).
-  Invokes `updatePipBoost` to reset each server's boost after the waiter
-  exits the chain.
+  Invokes `updatePipBoost` to reset each server's boost after the
+  waiter exits the chain.
 * `updatePipBoost` (this function) — idempotent single-thread update.
-  `propagate`/`revert` compose it across the chain. It is called
-  directly by scheduler frame lemmas when a waiter's effective priority
-  changes without a full chain walk. -/
+  `propagate` / `revert` compose it across the chain. Frame lemmas
+  in `PriorityInheritance/Preservation.lean` (D4-O family) establish
+  which fields it preserves (current, services, activeDomain, etc.),
+  and the NI-preservation theorem
+  `updatePipBoost_preserves_projection` in
+  `InformationFlow/Invariant/Operations.lean` discharges cross-domain
+  information-flow safety. -/
 def updatePipBoost (st : SystemState) (tid : ThreadId) : SystemState :=
   match st.objects[tid.toObjId]? with
   | some (KernelObject.tcb tcb) =>

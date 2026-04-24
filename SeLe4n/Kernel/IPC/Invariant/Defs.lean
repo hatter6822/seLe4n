@@ -155,8 +155,9 @@ on different edge relations:
   a reply to `server`. Consumed by PIP bounded-inversion + WCRT proofs.
 
 A system can satisfy one without the other. The names are retained
-because both are well-established across ~89 + ~60 proof sites; a rename
-would cause a mechanical cascade disproportionate to the clarity gain. -/
+because both are well-established across ~73 + ~76 proof sites; a
+rename would cause a mechanical cascade disproportionate to the
+clarity gain. -/
 def tcbQueueChainAcyclic (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId), ¬ QueueNextPath st tid tid
 

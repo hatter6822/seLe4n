@@ -519,6 +519,13 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
       plus `eventuallyExits_of_exit_index` bridge lemma and
       `rpi5_canonicalConfig_eventuallyExits` main theorem composing the
       bridge with the progress witness.
+    - **AN5-E.3b** (post-audit addition): substantive
+      `higherBandExhausted` bridge —
+      `rpi5_higherBandExhausted_from_progresses` lifts a collection of
+      per-thread `CanonicalDeploymentProgress` witnesses to the
+      quantified `higherBandExhausted` form consumed by `hBandProgress`
+      builders. `rpi5_higherBandExhausted_empty_band` corollary
+      discharges the vacuous case.
     - **AN5-E.4**: `wcrt_bound_rpi5` RPi5-specialised WCRT theorem that
       delegates to `bounded_scheduling_latency_exists` (retains the
       general theorem for non-RPi5 deployments).
@@ -580,9 +587,29 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
     stabilise the file contents; the mechanical refactor has no
     correctness impact and is tracked for a dedicated follow-up PR.
 
-  **Regression tests**: 13 new `#check` + 5 new `example` surface
-  anchors in `tests/LivenessSuite.lean` — total 76 anchors (was 63 at
-  AN4 tip).
+  **Regression tests**: 17 new `#check` (including AN5-E.3b bridge and
+  SC-M01 CBS bounds) + 12 new `example` anchors in
+  `tests/LivenessSuite.lean` — total **95** anchors (was 63 at AN4 tip).
+  New `example` tests exercise concrete `CanonicalDeploymentProgress`
+  construction, degenerate-config rejection (zero timer / zero period /
+  over-admission), and two-step-trace `eventuallyExits` discharge.
+
+  **Post-landing audit remediation** (same PR): five material issues
+  surfaced by end-to-end audit were fixed in-place:
+    1. `wcrt_bound_rpi5` was a trivial delegation; added substantive
+       `rpi5_higherBandExhausted_from_progresses` bridge as the real
+       specialisation contribution.
+    2. SCH-M04 annotation was placed as a bare `/- -/` block between
+       the `schedule` docstring and its `def`, potentially
+       disconnecting the docstring. Merged into the docstring.
+    3. `replenishmentPipelineOrder` docstring claimed preservation by
+       `timerTick` "trivially" — actually not preserved by a bare
+       `tick`. Rewritten as a PIPELINE-relative post-condition.
+    4. SC-M02 docstring referenced wrong file for the `hSchedProj`
+       preservation theorems; corrected to
+       `InformationFlow/Invariant/Operations.lean`.
+    5. `SeLe4n.numDomainsVal` reference corrected to
+       `SeLe4n.Kernel.SchedContextOps.numDomainsVal`.
 
   **Gate at AN5 tip**: `lake build` (300 jobs, up from 298 at AN4 tip —
   2 new `.c.o` targets for `RPi5CanonicalConfig`) + `test_smoke.sh` PASS

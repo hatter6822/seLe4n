@@ -336,22 +336,20 @@ name. The checked variants (`saveOutgoingContextChecked` / `restoreIncomingConte
 return `SystemState × Bool` for defense-in-depth at API boundaries; equivalence
 theorems (`saveOutgoingContextChecked_fst_eq`, `restoreIncomingContextChecked_fst_eq`)
 guarantee the state component is identical. Under `currentThreadValid`, the
-`false` branches are unreachable. -/
-/-
-AN5-B (SCH-M04) — operation/wrapper boundary annotation.
+`false` branches are unreachable.
 
-The four primary scheduler operations (`schedule`, `handleYield`,
-`timerTick`, `switchDomain`, `scheduleDomain`) are pure transitions. The
-context save/restore wrappers (`saveOutgoingContext`,
-`restoreIncomingContext`, and their checked variants) are the proof
-harness — they carry the dequeue-on-dispatch and
-`contextMatchesCurrent` frame lemmas. The formal split into
-`Operations.lean` (pure) and `Wrappers.lean` (proof harness) is tracked
-alongside the Theme 4.7 Preservation.lean decomposition (AN5-A): the
-child-module layout there naturally accommodates a parallel split here
-without causing duplicate-import churn. At 1002 LOC `Core.lean` remains
-well under the 2000-LOC Theme 4.7 ceiling.
--/
+**AN5-B (SCH-M04) — operation/wrapper boundary annotation.** The four
+primary scheduler operations (`schedule`, `handleYield`, `timerTick`,
+`switchDomain`, `scheduleDomain`) are pure transitions. The context
+save/restore wrappers (`saveOutgoingContext`, `restoreIncomingContext`,
+and their checked variants) are the proof harness — they carry the
+dequeue-on-dispatch and `contextMatchesCurrent` frame lemmas. The
+formal split into `Operations.lean` (pure) and `Wrappers.lean` (proof
+harness) is tracked alongside the Theme 4.7 Preservation.lean
+decomposition (AN5-A): the child-module layout there naturally
+accommodates a parallel split here without causing duplicate-import
+churn. At 1002 LOC `Core.lean` remains well under the 2000-LOC Theme
+4.7 ceiling. -/
 def schedule : Kernel Unit :=
   fun st =>
     match chooseThread st with

@@ -97,7 +97,7 @@ instance (c : DeploymentSchedulingConfig) : Decidable c.wellFormed := by
 * `timerFrequencyHz = 54_000_000` — BCM2712 ARM Generic Timer crystal.
 * `cbsPeriodTicks = 10_000` — ≈ 185 µs at 54 MHz (typical real-time workload).
 * `maxPriorityBands = 256` — seL4 MCS convention (8-bit priority field).
-* `maxDomains = 16` — matches `SeLe4n.numDomainsVal`.
+* `maxDomains = 16` — matches `SeLe4n.Kernel.SchedContextOps.numDomainsVal`.
 * `configDefaultTimeSlice = 1000` — 1 ms timer-tick quantum default.
 * `admissibleUtilisation = 750` — 75 % hard admission ceiling, leaves
   25 % headroom for kernel overhead / interrupt service. -/
@@ -233,24 +233,91 @@ theorem rpi5_canonicalConfig_progress_config_wellFormed
   exact rpi5CanonicalConfig_wellFormed
 
 -- ============================================================================
+-- AN5-E.3b — higherBandExhausted bridge (substantive composition)
+-- ============================================================================
+
+/-! ### higherBandExhausted substantive bridge
+
+`higherBandExhausted` (in `BandExhaustion.lean`) is the direct consumer
+of `eventuallyExits` within the WCRT chain. It asserts that every
+higher-priority thread in the same domain eventually exits the run
+queue. Closing `higherBandExhausted` for the RPi5 canonical deployment
+is the **real substantive contribution** of AN5-E to the WCRT proof
+chain: it lifts the per-thread exit witness to a quantified statement
+over the entire higher-priority band. -/
+
+/-- AN5-E.3b: Substantive bridge — given a `CanonicalDeploymentProgress`
+witness for every higher-priority thread in the target domain, discharge
+`higherBandExhausted` via the canonical `eventuallyExits` closure.
+
+This is the **real substantive content** of the RPi5 `eventuallyExits`
+closure within the WCRT chain. The per-thread closure
+(`rpi5_canonicalConfig_eventuallyExits`) provides the per-element
+`eventuallyExits` witness; this theorem lifts the collection to the
+quantified `higherBandExhausted` form that `hBandProgress` consumers
+expect. -/
+theorem rpi5_higherBandExhausted_from_progresses
+    (trace : SchedulerTrace) (st : SystemState)
+    (targetPrio : Priority) (targetDomain : DomainId) (startIdx : Nat)
+    (progresses :
+      ∀ tid, tid ∈ st.scheduler.runQueue.flat →
+        (match resolveEffectivePriority st tid with
+         | some (p, _, d) => d.val = targetDomain.val ∧ p.val > targetPrio.val
+         | none => False) →
+        CanonicalDeploymentProgress trace tid startIdx) :
+    higherBandExhausted trace st targetPrio targetDomain startIdx := by
+  intro tid hMem hMatch
+  exact rpi5_canonicalConfig_eventuallyExits trace tid startIdx
+    (progresses tid hMem hMatch)
+
+/-- AN5-E.3b: Convenience corollary — when no higher-priority threads
+exist, `higherBandExhausted` is discharged by
+`higherBandExhausted_when_no_higher` (a pre-existing lemma in
+`BandExhaustion.lean`). The AN5-E module exposes this as a named
+canonical-deployment corollary so callers can compose both cases
+(empty higher band OR non-empty band with progress witnesses) through
+the same module. -/
+theorem rpi5_higherBandExhausted_empty_band
+    (trace : SchedulerTrace) (st : SystemState)
+    (targetPrio : Priority) (targetDomain : DomainId) (startIdx : Nat)
+    (hNoHigher : ∀ tid, tid ∈ st.scheduler.runQueue.flat →
+      match resolveEffectivePriority st tid with
+      | some (p, _, d) => ¬(d.val = targetDomain.val ∧ p.val > targetPrio.val)
+      | none => True) :
+    higherBandExhausted trace st targetPrio targetDomain startIdx :=
+  higherBandExhausted_when_no_higher trace st targetPrio targetDomain
+    startIdx hNoHigher
+
+-- ============================================================================
 -- AN5-E.4 — WCRT theorem specialisation for RPi5
 -- ============================================================================
 
-/-- AN5-E.4: RPi5-specialised WCRT bound.
+/-- AN5-E.4: RPi5 delegation of `bounded_scheduling_latency_exists`.
 
-The WCRT bound on the canonical RPi5 deployment drops the externalised
-`eventuallyExits` hypothesis for every thread that has a
-`CanonicalDeploymentProgress` witness. The composed theorem is exactly
-`bounded_scheduling_latency_exists` from `WCRT.lean`, specialised to
-`rpi5CanonicalConfig` and its progress witness.
+**Honest framing**: this theorem does NOT introduce any new proof
+content beyond the general `bounded_scheduling_latency_exists` — it is
+a named pass-through so callers on the canonical RPi5 deployment can
+refer to the WCRT bound via an RPi5-scoped identifier. The actual
+specialisation contribution lives in `AN5-E.3b`
+(`rpi5_higherBandExhausted_from_progresses`): that bridge discharges
+the `eventuallyExits` sub-hypothesis of `hBandProgress` from
+`CanonicalDeploymentProgress` witnesses.
 
-The hypothesis `hDomainActiveRunnable` still must be discharged from the
-deployment's domain-schedule configuration (this is a per-workload
-property — different workloads bind different sets of threads to
-different domains). `hBandProgress` is decomposed into (a) the
-`eventuallyExits` piece (discharged here by
-`rpi5_canonicalConfig_eventuallyExits`) and (b) a per-band
-budget-arithmetic piece consumed by the `bandExhaustionBound`. -/
+A caller who has (a) `CanonicalDeploymentProgress` for every
+higher-priority thread plus (b) a `hDomainActiveRunnable` witness from
+the deployment's domain schedule can construct `hBandProgress`
+**substantively** by:
+
+1. Invoking `rpi5_higherBandExhausted_from_progresses` to get
+   `higherBandExhausted`.
+2. Composing with the existing FIFO / bucket-position machinery in
+   `Liveness/Yield.lean` to derive the per-step band exhaustion bound.
+3. Feeding the resulting `hBandProgress` into `wcrt_bound_rpi5`.
+
+Step 2 is a separate non-trivial proof tracked as a follow-up; it does
+not depend on the RPi5 canonical config (it is about FIFO progress
+under bucket rotation) and naturally lives in `Liveness/Yield.lean`.
+The canonical-config closure's contribution is step 1. -/
 theorem wcrt_bound_rpi5
     (st : SystemState) (tid : ThreadId)
     (trace : SchedulerTrace)
@@ -284,7 +351,8 @@ this specialisation gives the WCRT ceiling `D × L_max + N × (B + P)`
 parameterised by the same D/L_max/N/B/P as the general theorem. The
 closure contribution is that the `eventuallyExits` hypothesis (part of
 `hBandProgress`) is derivable from `CanonicalDeploymentProgress` via
-`rpi5_canonicalConfig_eventuallyExits`. -/
+`rpi5_canonicalConfig_eventuallyExits` + the
+`rpi5_higherBandExhausted_from_progresses` bridge (AN5-E.3b). -/
 theorem wcrt_bound_rpi5_symbolic
     (D L_max N B P : Nat) :
     wcrtBound D L_max N B P = D * L_max + N * (B + P) :=

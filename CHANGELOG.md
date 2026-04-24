@@ -12,6 +12,57 @@ annotations) — still well under any reachable proof-surface risk but
 above the 2000-LOC Theme 4.7 ceiling, so the split is tracked for a
 dedicated PR.
 
+**Post-AN5 audit remediation (same PR)**: Deep end-to-end audit of the
+AN5 landing surfaced five material issues, all fixed in-PR:
+
+1. **`wcrt_bound_rpi5` trivial delegation**: The theorem as initially
+   landed was a pure pass-through to `bounded_scheduling_latency_exists`
+   — its docstring misleadingly claimed it "drops the externalised
+   `eventuallyExits` hypothesis". Remediation: added honest
+   `**honest framing**` docstring + new substantive bridge
+   `rpi5_higherBandExhausted_from_progresses` (AN5-E.3b) that lifts a
+   collection of `CanonicalDeploymentProgress` witnesses to the
+   quantified `higherBandExhausted` form consumed by `hBandProgress`
+   builders. Plus `rpi5_higherBandExhausted_empty_band` convenience
+   corollary for the vacuous-higher-band case.
+
+2. **Docstring disconnection in `Core.lean`**: The SCH-M04 boundary
+   annotation was inserted as a bare `/- ... -/` block *between* the
+   existing `/-- ... -/` docstring for `schedule` and its `def`,
+   potentially disconnecting the docstring. Merged the annotation into
+   the existing docstring as a `**AN5-B (SCH-M04)**` paragraph.
+
+3. **`replenishmentPipelineOrder` false preservation claim**: The
+   docstring claimed "proven preserved by `timerTick` ... trivially"
+   but no such theorem exists, and the predicate is in fact NOT
+   preserved by a bare `tick` of `machine.timer` (the strict
+   `eligibleAt > timer` comparison fails when `timer` advances).
+   Rewritten as a **PIPELINE-relative post-condition** (not a
+   free-standing state invariant): the predicate holds after
+   `processReplenishmentsDue`'s pop-due sweep at the pipeline entry
+   time, not at arbitrary moments. The accompanying
+   `popDueReplenishments_remaining_gt_now` theorem was always correct;
+   only the wrapper documentation was wrong.
+
+4. **SC-M02 file reference error**: Docstring said preservation
+   theorems with `hSchedProj` live in
+   `SchedContext/Invariant/PriorityPreservation.lean`. Actual file is
+   `InformationFlow/Invariant/Operations.lean`
+   (`setPriorityOp_preserves_projection`,
+   `setMCPriorityOp_preserves_projection`). Fixed.
+
+5. **`SeLe4n.numDomainsVal` namespace**: The canonical-config docstring
+   referenced `SeLe4n.numDomainsVal` but the symbol is at
+   `SeLe4n.Kernel.SchedContextOps.numDomainsVal`. Fixed.
+
+Functional tests added in `tests/LivenessSuite.lean`: four new
+`#check` anchors for `rpi5_higherBandExhausted_*`, plus seven new
+`example` tests exercising concrete `CanonicalDeploymentProgress`
+construction, degenerate-config rejection (zero timer, zero period,
+over-admission), and two-step-trace `eventuallyExits` discharge.
+Surface anchor count grew to **95** (was 76 pre-audit, 63 at AN4
+tip).
+
 **AN5-E (DEF-AK2-K.4 / RPi5 eventuallyExits closure, substantive)**
 — `SeLe4n/Kernel/Scheduler/Liveness/RPi5CanonicalConfig.lean` (new
 module, 6 sub-sub-tasks landed):

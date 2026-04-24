@@ -3682,30 +3682,33 @@ theorem cbsUpdateDeadline_preserves_wf
 
 /-! ### SCH-M03 — Replenishment pipeline ordering witness
 
-`replenishmentPipelineOrder` (in `Scheduler/Invariant.lean`) captures the
-three-step pipeline invariant: after `timerTickWithBudget` runs at time
-`t`, every `replenishQueue` entry has `eligibleAt > t` — i.e. no due
-entries remain unprocessed. The invariant documents the pop → refill →
-process order that `timerTickWithBudget` implements at lines 752–814 of
-`Scheduler/Operations/Core.lean`.
+`replenishmentPipelineOrder` (in `Scheduler/Invariant.lean`) captures
+the post-pop-due post-condition: under a sorted input queue and a pop
+at time `now`, every remaining entry has `eligibleAt > now`. See the
+scope note in `Scheduler/Invariant.lean` for the important caveat
+that this predicate is pipeline-relative, not a free-standing state
+invariant preserved by arbitrary operations.
 
-**Preservation witness** (this section): when the pre-state has a SORTED
-`replenishQueue` (`replenishQueueSorted` in `SchedContext/ReplenishQueue.lean`,
-Z3-F) and satisfies the ordering invariant, the post-state of a pure
-`popDue now` call still satisfies it. Since `timerTickWithBudget`
-composes `popDue` + refill + timer-tick-budget, and refill + budget
-operations do not insert into the replenish queue unless the current
-thread's budget is exhausted (Z4-F3 branch, which inserts at
-`now + sc.period.val > now`, preserving the invariant), the composed
-theorem holds.
+**Preservation witness** (this section): when the pre-state has a
+SORTED `replenishQueue` (`replenishQueueSorted` in
+`SchedContext/ReplenishQueue.lean`, Z3-F), the post-state of a pure
+`popDue now` call satisfies the pair-level witness `pair.2 > now` for
+every remaining entry. This is exactly the contract
+`replenishmentPipelineOrder` asserts at the point where `machine.timer`
+equals `now`.
 
-The full `timerTickWithBudget_preserves_replenishmentPipelineOrder`
-composition is tracked for the Theme 4.7 file split follow-up (AN5-A)
-when the Preservation.lean corpus is reorganised into per-operation
-child modules. The predicate itself plus the sorted-queue witness is
-sufficient to anchor the invariant for proof authors today: any
-composition can discharge the invariant by invoking `popDue`'s sorted
-post-state contract.  -/
+The predicate is PIPELINE-relative, not a free-standing state
+invariant — see the scope note in `Scheduler/Invariant.lean` at
+`replenishmentPipelineOrder` for details. A bare `tick` of the timer
+does NOT preserve the invariant; re-entry into `processReplenishmentsDue`
+re-establishes it. The composed `timerTickWithBudget` preserves the
+invariant in the idiomatic "pop then tick" ordering because the
+post-pop pair-level witness is stronger than the post-tick requirement
+(remaining `eligibleAt > now → eligibleAt ≥ now + 1 = post-tick timer`
+only when the entry's `eligibleAt > now` strictly; if `eligibleAt = now`
+it was already popped). The full `timerTickWithBudget` composition
+theorem is tracked for the Theme 4.7 file split (AN5-A) when per-op
+preservation moves into child modules. -/
 
 /-- AN5-B (SCH-M03): Under `pairwiseSortedBy`, every element of a list
 has `.2` ≥ the head's `.2`. Technical helper for the popDue-remaining
