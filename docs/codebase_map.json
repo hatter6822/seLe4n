@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/complete-phase-an7-api-yUFCY",
-      "commit_sha": "d619418b73af3722882135cadf60c500ec069e58",
-      "tree_sha": "94d0e3ab3250917c815001bac577e563a9dd06ce",
-      "committed_at_utc": "2026-04-24T00:33:07-04:00"
+      "commit_sha": "4b6023e89e247573e3dfebbbba722170a74a7797",
+      "tree_sha": "855276d6d451e111fd13b6baa5ee410881f5a82c",
+      "committed_at_utc": "2026-04-24T05:57:33+00:00"
     }
   },
   "source_sync": {
@@ -17,27 +17,27 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ecba7819d43d590b2fbdfcf9702af08b621d90da794de581e68907fce504a4bb"
+    "source_digest": "95c323935e439f146373ff700ba47c35f90844e7df97bd3b7b843a1dc454b76f"
   },
   "summary": {
     "module_count": 189,
-    "declaration_count": 5869
+    "declaration_count": 5877
   },
   "readme_sync": {
     "version": "0.30.8",
     "lean_toolchain": "v4.28.0",
     "production_files": 165,
-    "production_loc": 107664,
+    "production_loc": 107743,
     "test_files": 24,
-    "test_loc": 15814,
-    "proved_theorem_lemma_decls": 3144,
+    "test_loc": 15836,
+    "proved_theorem_lemma_decls": 3149,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
     {
       "module": "SeLe4n.Kernel.API",
       "path": "SeLe4n/Kernel/API.lean",
-      "declaration_count": 78,
+      "declaration_count": 80,
       "declarations": [
         {
           "kind": "namespace",
@@ -265,8 +265,32 @@
         },
         {
           "kind": "def",
+          "name": "resolveExtraCapsGated",
+          "line": 499,
+          "called": [
+            "CPtr",
+            "Capability",
+            "KernelError",
+            "ObjId",
+            "SystemState",
+            "resolveExtraCapsDetailed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "resolveExtraCapsGated_empty",
+          "line": 508,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "resolveExtraCapsDetailed_empty",
+            "resolveExtraCapsGated"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "validateThreadIdArg",
-          "line": 505,
+          "line": 527,
           "called": [
             "KernelError",
             "ThreadId",
@@ -278,7 +302,7 @@
         {
           "kind": "def",
           "name": "validateSchedContextIdArg",
-          "line": 514,
+          "line": 536,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -291,7 +315,7 @@
         {
           "kind": "def",
           "name": "validateObjIdArg",
-          "line": 524,
+          "line": 546,
           "called": [
             "KernelError",
             "ObjId",
@@ -303,7 +327,7 @@
         {
           "kind": "def",
           "name": "dispatchCapabilityOnly",
-          "line": 540,
+          "line": 562,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -352,7 +376,7 @@
         {
           "kind": "def",
           "name": "dispatchWithCap",
-          "line": 773,
+          "line": 795,
           "called": [
             "Badge",
             "CSpaceAddr",
@@ -397,7 +421,7 @@
         {
           "kind": "def",
           "name": "dispatchWithCapChecked",
-          "line": 974,
+          "line": 996,
           "called": [
             "Badge",
             "CSpaceAddr",
@@ -449,7 +473,7 @@
         {
           "kind": "def",
           "name": "dispatchSyscallChecked",
-          "line": 1167,
+          "line": 1189,
           "called": [
             "Kernel",
             "LabelingContext",
@@ -466,7 +490,7 @@
         {
           "kind": "def",
           "name": "syscallEntryChecked",
-          "line": 1200,
+          "line": 1222,
           "called": [
             "Kernel",
             "LabelingContext",
@@ -481,7 +505,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_cspaceDelete_eq_unchecked",
-          "line": 1237,
+          "line": 1259,
           "called": [
             "Capability",
             "LabelingContext",
@@ -496,7 +520,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_lifecycleRetype_eq_unchecked",
-          "line": 1246,
+          "line": 1268,
           "called": [
             "Capability",
             "LabelingContext",
@@ -511,7 +535,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_vspaceMap_eq_unchecked",
-          "line": 1255,
+          "line": 1277,
           "called": [
             "Capability",
             "LabelingContext",
@@ -526,7 +550,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_vspaceUnmap_eq_unchecked",
-          "line": 1264,
+          "line": 1286,
           "called": [
             "Capability",
             "LabelingContext",
@@ -541,7 +565,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_serviceRevoke_eq_unchecked",
-          "line": 1273,
+          "line": 1295,
           "called": [
             "Capability",
             "LabelingContext",
@@ -556,7 +580,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_serviceQuery_eq_unchecked",
-          "line": 1282,
+          "line": 1304,
           "called": [
             "Capability",
             "LabelingContext",
@@ -571,7 +595,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_schedContextConfigure_eq_unchecked",
-          "line": 1291,
+          "line": 1313,
           "called": [
             "Capability",
             "LabelingContext",
@@ -587,7 +611,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_schedContextBind_eq_unchecked",
-          "line": 1300,
+          "line": 1322,
           "called": [
             "Capability",
             "LabelingContext",
@@ -603,7 +627,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_schedContextUnbind_eq_unchecked",
-          "line": 1309,
+          "line": 1331,
           "called": [
             "Capability",
             "LabelingContext",
@@ -619,7 +643,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_tcbSuspend_eq_unchecked",
-          "line": 1318,
+          "line": 1340,
           "called": [
             "Capability",
             "LabelingContext",
@@ -634,7 +658,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_tcbResume_eq_unchecked",
-          "line": 1327,
+          "line": 1349,
           "called": [
             "Capability",
             "LabelingContext",
@@ -649,7 +673,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_tcbSetPriority_eq_unchecked",
-          "line": 1336,
+          "line": 1358,
           "called": [
             "Capability",
             "LabelingContext",
@@ -664,7 +688,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_tcbSetMCPriority_eq_unchecked",
-          "line": 1345,
+          "line": 1367,
           "called": [
             "Capability",
             "LabelingContext",
@@ -679,7 +703,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_tcbSetIPCBuffer_eq_unchecked",
-          "line": 1354,
+          "line": 1376,
           "called": [
             "Capability",
             "LabelingContext",
@@ -694,7 +718,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_capabilityOnly_eq_unchecked",
-          "line": 1373,
+          "line": 1395,
           "called": [
             "Capability",
             "LabelingContext",
@@ -712,7 +736,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_reply_eq_unchecked_when_allowed",
-          "line": 1409,
+          "line": 1431,
           "called": [
             "Capability",
             "LabelingContext",
@@ -730,7 +754,7 @@
         {
           "kind": "theorem",
           "name": "checkedDispatch_replyRecv_eq_unchecked_when_allowed",
-          "line": 1436,
+          "line": 1458,
           "called": [
             "Capability",
             "LabelingContext",
@@ -755,7 +779,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_wildcard_unreachable",
-          "line": 1493,
+          "line": 1515,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -771,7 +795,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCapChecked_wildcard_unreachable",
-          "line": 1511,
+          "line": 1533,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -787,7 +811,7 @@
         {
           "kind": "def",
           "name": "dispatchSyscall",
-          "line": 1533,
+          "line": 1555,
           "called": [
             "Kernel",
             "SyscallDecodeResult",
@@ -803,7 +827,7 @@
         {
           "kind": "def",
           "name": "syscallEntry",
-          "line": 1565,
+          "line": 1587,
           "called": [
             "Kernel",
             "SyscallRegisterLayout",
@@ -816,7 +840,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_requires_valid_decode",
-          "line": 1588,
+          "line": 1610,
           "called": [
             "SyscallRegisterLayout",
             "SystemState",
@@ -828,7 +852,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscall_requires_right",
-          "line": 1617,
+          "line": 1639,
           "called": [
             "SyscallDecodeResult",
             "SystemState",
@@ -846,7 +870,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_implies_capability_held",
-          "line": 1656,
+          "line": 1678,
           "called": [
             "SyscallRegisterLayout",
             "SystemState",
@@ -864,7 +888,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_state_unchanged",
-          "line": 1692,
+          "line": 1714,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -875,7 +899,7 @@
         {
           "kind": "theorem",
           "name": "syscallRequiredRight_total",
-          "line": 1702,
+          "line": 1724,
           "called": [
             "SyscallId",
             "syscallRequiredRight"
@@ -884,7 +908,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceMint_delegates",
-          "line": 1712,
+          "line": 1734,
           "called": [
             "Badge",
             "CSpaceAddr",
@@ -906,7 +930,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceCopy_delegates",
-          "line": 1729,
+          "line": 1751,
           "called": [
             "CSpaceAddr",
             "CSpaceCopyArgs",
@@ -925,7 +949,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceMove_delegates",
-          "line": 1744,
+          "line": 1766,
           "called": [
             "CSpaceAddr",
             "CSpaceMoveArgs",
@@ -944,7 +968,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_cspaceDelete_delegates",
-          "line": 1759,
+          "line": 1781,
           "called": [
             "CSpaceAddr",
             "CSpaceDeleteArgs",
@@ -963,7 +987,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_lifecycleRetype_delegates",
-          "line": 1778,
+          "line": 1800,
           "called": [
             "Capability",
             "LifecycleRetypeArgs",
@@ -982,7 +1006,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceMap_delegates",
-          "line": 1798,
+          "line": 1820,
           "called": [
             "Capability",
             "ObjId",
@@ -1001,7 +1025,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_vspaceUnmap_delegates",
-          "line": 1819,
+          "line": 1841,
           "called": [
             "Capability",
             "ObjId",
@@ -1019,7 +1043,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_send_uses_withCaps",
-          "line": 1838,
+          "line": 1860,
           "called": [
             "Capability",
             "IpcMessage",
@@ -1038,7 +1062,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_call_uses_withCaps",
-          "line": 1857,
+          "line": 1879,
           "called": [
             "Capability",
             "IpcMessage",
@@ -1060,7 +1084,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_reply_populates_msg",
-          "line": 1888,
+          "line": 1910,
           "called": [
             "Capability",
             "SyscallDecodeResult",
@@ -1075,7 +1099,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_state",
-          "line": 1904,
+          "line": 1926,
           "called": [
             "Capability",
             "SyscallGate",
@@ -1087,7 +1111,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_preserves_proofLayerInvariantBundle",
-          "line": 1913,
+          "line": 1935,
           "called": [
             "KernelError",
             "SyscallRegisterLayout",
@@ -1099,7 +1123,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_proofLayerInvariantBundle",
-          "line": 1923,
+          "line": 1945,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -1112,7 +1136,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_proofLayerInvariantBundle",
-          "line": 1940,
+          "line": 1962,
           "called": [
             "SyscallRegisterLayout",
             "SystemState",
@@ -1125,7 +1149,7 @@
         {
           "kind": "theorem",
           "name": "decodeSyscallArgs_preserves_lowEquivalent",
-          "line": 1970,
+          "line": 1992,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1136,7 +1160,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_projection",
-          "line": 1979,
+          "line": 2001,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1151,7 +1175,7 @@
         {
           "kind": "theorem",
           "name": "lookupThreadRegisterContext_preserves_lowEquivalent",
-          "line": 1990,
+          "line": 2012,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1166,7 +1190,7 @@
         {
           "kind": "theorem",
           "name": "syscallLookupCap_preserves_projection",
-          "line": 2005,
+          "line": 2027,
           "called": [
             "Capability",
             "IfObserver",
@@ -1181,7 +1205,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_preserves_projection",
-          "line": 2020,
+          "line": 2042,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1196,7 +1220,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_error_yields_NI_step",
-          "line": 2043,
+          "line": 2065,
           "called": [
             "IfObserver",
             "KernelError",
@@ -1210,7 +1234,7 @@
         {
           "kind": "theorem",
           "name": "syscallEntry_success_yields_NI_step",
-          "line": 2058,
+          "line": 2080,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -1227,7 +1251,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_layer2_decode_pure",
-          "line": 2086,
+          "line": 2108,
           "called": [
             "SyscallDecodeResult",
             "decodeCSpaceCopyArgs",
@@ -1243,7 +1267,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_preservation_composition_witness",
-          "line": 2114,
+          "line": 2136,
           "called": [
             "dispatchSyscall",
             "proofLayerInvariantBundle",
@@ -1254,7 +1278,7 @@
         {
           "kind": "theorem",
           "name": "dispatchCapabilityOnly_preserves_projection",
-          "line": 2240,
+          "line": 2262,
           "called": [
             "Capability",
             "IfObserver",
@@ -1269,7 +1293,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscallChecked_preserves_projection",
-          "line": 2279,
+          "line": 2301,
           "called": [
             "Capability",
             "IfObserver",
@@ -59687,7 +59711,7 @@
     {
       "module": "SeLe4n.Platform.DeviceTree",
       "path": "SeLe4n/Platform/DeviceTree.lean",
-      "declaration_count": 59,
+      "declaration_count": 62,
       "declarations": [
         {
           "kind": "namespace",
@@ -60284,8 +60308,25 @@
         },
         {
           "kind": "theorem",
-          "name": "extractPeripherals_terminates_under_fuel",
-          "line": 1038,
+          "name": "extractPeripheralsWalk_zero_fuel",
+          "line": 1037,
+          "called": [
+            "FdtNode",
+            "extractPeripheralsWalk"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "extractPeripheralsWalk_empty_nodes",
+          "line": 1043,
+          "called": [
+            "extractPeripheralsWalk"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "extractPeripherals_zero_fuel",
+          "line": 1049,
           "called": [
             "FdtNode",
             "extractPeripherals"
@@ -60293,14 +60334,24 @@
         },
         {
           "kind": "theorem",
+          "name": "extractPeripherals_empty",
+          "line": 1054,
+          "called": [
+            "FdtNode",
+            "extractPeripherals",
+            "extractPeripheralsWalk_empty_nodes"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "extractPeripherals_fuel_sufficient_for_BCM2712",
-          "line": 1046,
+          "line": 1064,
           "called": []
         },
         {
           "kind": "def",
           "name": "DeviceTree.fromDtbFull",
-          "line": 1070,
+          "line": 1088,
           "called": [
             "DeviceTree",
             "DeviceTreeParseError",
@@ -60323,7 +60374,7 @@
         {
           "kind": "theorem",
           "name": "parseFdtHeader_fromDtbFull_ok",
-          "line": 1122,
+          "line": 1140,
           "called": [
             "DeviceTree.fromDtbFull",
             "FdtHeader",
@@ -61983,18 +62034,18 @@
     {
       "module": "SeLe4n.Platform.RPi5.VSpaceBoot",
       "path": "SeLe4n/Platform/RPi5/VSpaceBoot.lean",
-      "declaration_count": 22,
+      "declaration_count": 24,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.RPi5.VSpaceBoot",
-          "line": 69,
+          "line": 84,
           "called": []
         },
         {
           "kind": "def",
           "name": "kernelTextBase",
-          "line": 81,
+          "line": 96,
           "called": [
             "PAddr",
             "ofNat"
@@ -62003,13 +62054,13 @@
         {
           "kind": "def",
           "name": "kernelTextSize",
-          "line": 86,
+          "line": 101,
           "called": []
         },
         {
           "kind": "def",
           "name": "kernelDataBase",
-          "line": 90,
+          "line": 105,
           "called": [
             "PAddr",
             "ofNat"
@@ -62018,7 +62069,7 @@
         {
           "kind": "def",
           "name": "kernelStackBase",
-          "line": 93,
+          "line": 108,
           "called": [
             "PAddr",
             "ofNat"
@@ -62027,7 +62078,7 @@
         {
           "kind": "def",
           "name": "permsTextRX",
-          "line": 101,
+          "line": 116,
           "called": [
             "PagePermissions"
           ]
@@ -62035,7 +62086,7 @@
         {
           "kind": "def",
           "name": "permsDataRW",
-          "line": 105,
+          "line": 120,
           "called": [
             "PagePermissions"
           ]
@@ -62043,7 +62094,7 @@
         {
           "kind": "def",
           "name": "permsMmioRW",
-          "line": 110,
+          "line": 125,
           "called": [
             "PagePermissions"
           ]
@@ -62051,7 +62102,7 @@
         {
           "kind": "theorem",
           "name": "permsTextRX_wxCompliant",
-          "line": 115,
+          "line": 130,
           "called": [
             "wxCompliant"
           ]
@@ -62059,7 +62110,7 @@
         {
           "kind": "theorem",
           "name": "permsDataRW_wxCompliant",
-          "line": 117,
+          "line": 132,
           "called": [
             "wxCompliant"
           ]
@@ -62067,7 +62118,7 @@
         {
           "kind": "theorem",
           "name": "permsMmioRW_wxCompliant",
-          "line": 119,
+          "line": 134,
           "called": [
             "wxCompliant"
           ]
@@ -62075,7 +62126,7 @@
         {
           "kind": "def",
           "name": "insertIdentity",
-          "line": 127,
+          "line": 142,
           "called": [
             "PAddr",
             "PagePermissions",
@@ -62089,7 +62140,7 @@
         {
           "kind": "def",
           "name": "emptyBootRoot",
-          "line": 133,
+          "line": 148,
           "called": [
             "RHTable.empty",
             "VSpaceRoot",
@@ -62099,7 +62150,7 @@
         {
           "kind": "def",
           "name": "rpi5BootVSpaceRoot",
-          "line": 143,
+          "line": 158,
           "called": [
             "VSpaceRoot",
             "emptyBootRoot",
@@ -62118,7 +62169,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_asid",
-          "line": 153,
+          "line": 168,
           "called": [
             "ofNat"
           ]
@@ -62126,7 +62177,7 @@
         {
           "kind": "def",
           "name": "VSpaceRootWxCompliant",
-          "line": 164,
+          "line": 179,
           "called": [
             "VSpaceRoot",
             "fold",
@@ -62135,10 +62186,21 @@
         },
         {
           "kind": "def",
-          "name": "VSpaceRootWellFormed",
-          "line": 176,
+          "name": "VSpaceRootPaddrBounded",
+          "line": 188,
           "called": [
             "VSpaceRoot",
+            "fold",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "VSpaceRootWellFormed",
+          "line": 203,
+          "called": [
+            "VSpaceRoot",
+            "VSpaceRootPaddrBounded",
             "VSpaceRootWxCompliant",
             "maxAsidValue",
             "size"
@@ -62147,7 +62209,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_wxCompliant",
-          "line": 189,
+          "line": 217,
           "called": [
             "VSpaceRootWxCompliant",
             "rpi5BootVSpaceRoot"
@@ -62155,13 +62217,23 @@
         },
         {
           "kind": "theorem",
+          "name": "rpi5BootVSpaceRoot_paddrBounded",
+          "line": 230,
+          "called": [
+            "VSpaceRootPaddrBounded",
+            "rpi5BootVSpaceRoot"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_wellFormed",
-          "line": 198,
+          "line": 237,
           "called": [
             "VSpaceRootWellFormed",
             "maxAsidValue",
             "rpi5BootVSpaceRoot",
             "rpi5BootVSpaceRoot_asid",
+            "rpi5BootVSpaceRoot_paddrBounded",
             "rpi5BootVSpaceRoot_wxCompliant",
             "size"
           ]
@@ -62169,7 +62241,7 @@
         {
           "kind": "def",
           "name": "bootSafeVSpaceRoot",
-          "line": 218,
+          "line": 257,
           "called": [
             "VSpaceRoot",
             "VSpaceRootWellFormed"
@@ -62178,7 +62250,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_bootSafe",
-          "line": 223,
+          "line": 262,
           "called": [
             "bootSafeVSpaceRoot",
             "rpi5BootVSpaceRoot",
@@ -62188,7 +62260,7 @@
         {
           "kind": "theorem",
           "name": "rpi5BootVSpaceRoot_admits_bootSafe",
-          "line": 239,
+          "line": 278,
           "called": [
             "bootSafeVSpaceRoot",
             "ofNat",
@@ -67778,7 +67850,7 @@
     {
       "module": "tests.Ak9PlatformSuite",
       "path": "tests/Ak9PlatformSuite.lean",
-      "declaration_count": 45,
+      "declaration_count": 46,
       "declarations": [
         {
           "kind": "namespace",
@@ -68267,8 +68339,17 @@
         },
         {
           "kind": "def",
+          "name": "an7d2_04_rpi5BootVSpaceRoot_paddrBounded",
+          "line": 520,
+          "called": [
+            "expect",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 522,
+          "line": 543,
           "called": [
             "ak9a_01_mmioRead32_rejects_unaligned",
             "ak9a_02_mmioRead64_rejects_unaligned",
@@ -68306,7 +68387,8 @@
             "ak9h_04_readCStringChecked_fuel_exhausted_on_unterminated",
             "an7d2_01_rpi5BootVSpaceRoot_wellFormed",
             "an7d2_02_rpi5BootVSpaceRoot_wxCompliant",
-            "an7d2_03_rpi5BootVSpaceRoot_covers_mmio_regions"
+            "an7d2_03_rpi5BootVSpaceRoot_covers_mmio_regions",
+            "an7d2_04_rpi5BootVSpaceRoot_paddrBounded"
           ]
         }
       ]

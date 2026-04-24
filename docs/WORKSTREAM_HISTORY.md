@@ -113,8 +113,29 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
     `0.30.7 → 0.30.8` across 15 files, this `WORKSTREAM_HISTORY.md`
     entry.
 
-  **Gate at AN7 tip**: `lake build` (300 jobs, 0 warnings; 311 with the
-  new staged meta-module + AK9 suite + operation-chain suite reached) +
+- **AN7 post-delivery audit remediation** (v0.30.8, same PR): deep
+  end-to-end audit of the AN7 initial landing surfaced three material
+  strengthening opportunities, all fixed in-PR.
+  - **AN7-D.2 PA-bounds conjunct added**: `VSpaceRootWellFormed`
+    extended from 3 → **4 conjuncts** with new `VSpaceRootPaddrBounded`
+    predicate.  `rpi5BootVSpaceRoot_paddrBounded` substantively proven
+    via `decide` on the six-mapping fold; 6 new runtime tests
+    (`an7d2_04_*`) anchor each known base address against the 2^44
+    bound.
+  - **AN7-D.5 trivial theorem upgraded**: `_terminates_under_fuel` was
+    `x ≤ x` — replaced with 4 substantive theorems
+    (`_zero_fuel`, `_empty_nodes`, `_zero_fuel` public, `_empty`
+    public) witnessing fuel-exhaustion fail-closed behaviour and the
+    empty-input vacuous case.
+  - **AN7-E production-ready gated wrapper**: new `resolveExtraCapsGated
+    : Except KernelError (Array Capability)` composes
+    `resolveExtraCapsDetailed` with `KernelError.partialResolution`
+    so consuming arms can opt in via function-name swap.
+    `resolveExtraCapsGated_empty` witnesses the empty-input base case.
+
+  **Gate at AN7 tip (post-audit)**: `lake build` (300 jobs, 0 warnings;
+  311 with the new staged meta-module + AK9 suite + operation-chain
+  suite reached) +
   `test_smoke.sh` PASS + `test_full.sh` PASS + `test_tier0_hygiene.sh`
   PASS (AN7-A/B/F checks wired in) + `test_tier1_build.sh` PASS (new
   `Platform.Staged` step) + `lake exe ak9_platform_suite` 37/37 PASS

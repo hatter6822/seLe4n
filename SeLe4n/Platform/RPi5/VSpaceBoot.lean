@@ -27,19 +27,21 @@ exclusion deferred item) by providing:
    regions (UART, GIC-400 distributor, GIC-400 CPU interface) mapped RW
    non-executable.  All mappings use ASID 0 (reserved for the kernel).
 
-2. `VSpaceRoot.wellFormed` — a freshly-defined structural predicate on
-   the root: ASID within hardware bounds, every `(paddr, perms)` pair's
-   `paddr.toNat` lies within the 44-bit BCM2712 physical address space, and
-   every permission satisfies W^X.
+2. `VSpaceRootWellFormed` — a freshly-defined structural predicate on
+   the root with **four conjuncts**: ASID within hardware bounds, every
+   mapping's permissions satisfy W^X, at least one mapping is present,
+   and every mapping's `paddr.toNat` lies within the BCM2712 44-bit
+   physical address space.
 
-3. `VSpaceRoot.wxCompliant` — per-root W^X: every mapping's permissions
-   satisfy the `PagePermissions.wxCompliant` predicate.
+3. `VSpaceRootWxCompliant` — per-root W^X: every mapping's permissions
+   satisfy the `PagePermissions.wxCompliant` predicate (checked via an
+   `RHTable.fold`-based accumulator).
 
-4. `bootSafeVSpaceRoot` — per-root boot-safety predicate mirroring the
-   well-formedness conjuncts plus a non-empty mappings requirement (a boot
-   VSpaceRoot with no mappings cannot serve a single executable page — a
-   kernel with an empty L1 page table cannot even fetch its first
-   instruction after MMU enable).
+4. `bootSafeVSpaceRoot` — per-root boot-safety predicate; currently
+   equivalent to `VSpaceRootWellFormed`.  A boot VSpaceRoot with no
+   mappings cannot serve a single executable page (an empty L1 table
+   cannot even fetch the kernel's first instruction after MMU enable),
+   so the non-empty conjunct is actively required.
 
 The module is deliberately SELF-CONTAINED: it does not yet rewire
 `bootFromPlatformChecked` to admit VSpaceRoot objects in `initialObjects`
@@ -48,6 +50,19 @@ the current VSpaceRoot exclusion invariant).  Instead, it provides the
 **substantive building blocks** that AN9 (Hardware-binding closure) will
 compose when the H3 boot pipeline is wired to real silicon.  See
 `docs/audits/AUDIT_v0.29.0_DEFERRED.md` for the cross-reference.
+
+## Safety note on `insertIdentity`
+
+The private `insertIdentity` helper used to build the boot root calls
+`RHTable.insert` directly rather than routing through
+`VSpaceRoot.mapPage` (which enforces `perms.wxCompliant`).  This bypass
+is **safe by construction** because the three permission constants
+(`permsTextRX`, `permsDataRW`, `permsMmioRW`) are each statically
+verified `wxCompliant` by the three per-constant `decide` theorems
+below; a future developer who adds a non-compliant permission constant
+would see the corresponding theorem fail at compile time AND the
+`rpi5BootVSpaceRoot_wxCompliant` aggregate decide fail at module build
+time.
 
 ## Four-layer W^X defense composition
 
@@ -164,40 +179,64 @@ theorem rpi5BootVSpaceRoot_asid : rpi5BootVSpaceRoot.asid = ASID.ofNat 0 := rfl
 def VSpaceRootWxCompliant (root : VSpaceRoot) : Prop :=
   root.mappings.fold true (fun acc _ entry => acc && entry.2.wxCompliant) = true
 
+/-- **AN7-D.2.2**: per-root physical-address bounds predicate.  Every
+    mapping's physical address component must fit within the BCM2712
+    44-bit PA space (`paddr.toNat < 2^44 = 0x100000000000`).  A boot
+    VSpaceRoot containing a PA ≥ 2^44 would trigger a translation fault
+    on real hardware; this predicate surfaces the violation structurally.
+    The fold form is closed under `decide` on a fixed-shape boot root. -/
+def VSpaceRootPaddrBounded (root : VSpaceRoot) : Prop :=
+  root.mappings.fold true
+    (fun acc _ entry => acc && decide (entry.1.toNat < 2^44)) = true
+
 /-- **AN7-D.2.2**: structural well-formedness predicate for a VSpaceRoot used
-    at kernel boot.  Three conjuncts:
+    at kernel boot.  Four conjuncts:
 
     - `asidBounded`: `asid.val ≤ maxAsidValue` (ARM64 reserves ASID=0 for
       the kernel address space, so ASID 0 is explicitly allowed).
     - `wxCompliant`: every mapping satisfies W^X.
     - `nonEmptyMappings`: at least one mapping is populated (an empty
       L1 table cannot serve the kernel's first instruction fetch after MMU
-      enable, so an empty boot root is actively unsafe). -/
+      enable, so an empty boot root is actively unsafe).
+    - `paddrBounded`: every mapping's `paddr.toNat` fits within the
+      BCM2712 44-bit PA space (pa < 2^44). -/
 def VSpaceRootWellFormed (root : VSpaceRoot) : Prop :=
   root.asid.val ≤ maxAsidValue ∧
   VSpaceRootWxCompliant root ∧
-  root.mappings.size > 0
+  root.mappings.size > 0 ∧
+  VSpaceRootPaddrBounded root
 
 /-- **AN7-D.2.3**: The canonical RPi5 boot root satisfies per-root W^X.
 
     Proof strategy: reduce to `decide` on the concrete, finite list of
     stored permissions.  Every non-`none` entry's permissions component is
     one of `permsTextRX`, `permsDataRW`, or `permsMmioRW` — each wxCompliant
-    by decidable reduction (proven above).  The `List.all` form iterates
-    only over actually-stored pairs (`RHTable.values`), so the kernel can
-    evaluate the statement in a bounded number of steps. -/
+    by decidable reduction (proven above).  The `RHTable.fold` iterates
+    only over actually-stored pairs, so the kernel can evaluate the
+    statement in a bounded number of steps. -/
 theorem rpi5BootVSpaceRoot_wxCompliant :
     VSpaceRootWxCompliant rpi5BootVSpaceRoot := by
   -- Convert to a decide-eligible statement: every value pair's permission
-  -- component is wxCompliant.  The six inserts produce a finite .values
-  -- list; each element is one of the three permission constants.
+  -- component is wxCompliant.  The six inserts produce a finite .fold
+  -- trace; each element is one of the three permission constants.
   unfold VSpaceRootWxCompliant
   decide
 
-/-- **AN7-D.2.2**: The canonical RPi5 boot root is well-formed. -/
+/-- **AN7-D.2.2**: The canonical RPi5 boot root's mapped physical
+    addresses all fit within the BCM2712 44-bit PA space.  Every base
+    (kernel text 0x80000, data 0x180000, stack 0x200000, UART0 0xFE201000,
+    GIC dist 0xFF841000, GIC CPU 0xFF842000) is well below 2^44 ≈
+    1.76e13.  Discharged by `decide` on the finite six-element fold. -/
+theorem rpi5BootVSpaceRoot_paddrBounded :
+    VSpaceRootPaddrBounded rpi5BootVSpaceRoot := by
+  unfold VSpaceRootPaddrBounded
+  decide
+
+/-- **AN7-D.2.2**: The canonical RPi5 boot root is well-formed (all four
+    conjuncts hold). -/
 theorem rpi5BootVSpaceRoot_wellFormed :
     VSpaceRootWellFormed rpi5BootVSpaceRoot := by
-  refine ⟨?_, rpi5BootVSpaceRoot_wxCompliant, ?_⟩
+  refine ⟨?_, rpi5BootVSpaceRoot_wxCompliant, ?_, rpi5BootVSpaceRoot_paddrBounded⟩
   · -- asid = 0 ≤ maxAsidValue
     rw [rpi5BootVSpaceRoot_asid]
     show (0 : Nat) ≤ maxAsidValue
@@ -240,6 +279,6 @@ theorem rpi5BootVSpaceRoot_admits_bootSafe :
     ∃ root, bootSafeVSpaceRoot root ∧ root.asid = ASID.ofNat 0 ∧
       root.mappings.size > 0 :=
   ⟨rpi5BootVSpaceRoot, rpi5BootVSpaceRoot_bootSafe, rpi5BootVSpaceRoot_asid,
-    rpi5BootVSpaceRoot_wellFormed.2.2⟩
+    rpi5BootVSpaceRoot_wellFormed.2.2.1⟩
 
 end SeLe4n.Platform.RPi5.VSpaceBoot

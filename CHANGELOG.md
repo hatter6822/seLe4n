@@ -8,6 +8,43 @@ audit findings H-14..H-16, PLT-M01..M07, API-M01..M02, and the Platform
 LOW batch. **DEF-P-L9** (VSpaceRoot boot exclusion) is closed by the
 AN7-D.2 landing.
 
+### Post-delivery audit remediation
+
+Deep end-to-end audit of the initial AN7 landing surfaced three material
+strengthening opportunities, all fixed in-PR:
+
+1. **AN7-D.2 `VSpaceRootWellFormed` was missing the PA-bounds conjunct**
+   that the module docstring claimed.  Strengthened from 3 conjuncts to
+   **4 conjuncts** by adding a new `VSpaceRootPaddrBounded` predicate
+   (every mapping's `paddr.toNat < 2^44`, matching BCM2712 hardware).
+   Proven substantively for `rpi5BootVSpaceRoot` via
+   `rpi5BootVSpaceRoot_paddrBounded` (discharged by `decide` on the
+   finite six-mapping fold); `rpi5BootVSpaceRoot_wellFormed` now
+   composes four witnesses instead of three.  Six new runtime tests
+   (`an7d2_04_*`) assert every known base address fits in 2^44.
+
+2. **AN7-D.5 `extractPeripherals_terminates_under_fuel` was a trivial
+   tautology** (`x ≤ x`).  Replaced with four substantive theorems:
+   `extractPeripheralsWalk_zero_fuel` (zero-fuel collapse),
+   `extractPeripheralsWalk_empty_nodes` (empty-node-list base case),
+   `extractPeripherals_zero_fuel` (public wrapper of the zero-fuel
+   case), and `extractPeripherals_empty` (public wrapper of the
+   empty-list case).  These anchor the two base cases of the
+   fuel-bounded recursion at the invariant surface.
+
+3. **AN7-E missing production-ready gated wrapper**: added
+   `resolveExtraCapsGated : Except KernelError (Array Capability)`
+   that composes `resolveExtraCapsDetailed` with the
+   `KernelError.partialResolution` error — callers that want the
+   noisy-resolution semantics can switch from `resolveExtraCaps` to
+   `resolveExtraCapsGated` by swapping the function name (no other
+   changes).  New soundness theorem `resolveExtraCapsGated_empty`
+   witnesses the empty-input base case.
+
+The 4-conjunct `VSpaceRootWellFormed` now honours the module docstring
+verbatim.  All audit-remediation theorems are substantively proven (no
+trivial `rfl` placeholders).
+
 **11 sub-tasks (AN7-A through AN7-G)**:
 
 - **AN7-A (H-14/PLT-M04)**: `findMemoryRegProperty` and

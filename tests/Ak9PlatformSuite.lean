@@ -512,6 +512,27 @@ def an7d2_03_rpi5BootVSpaceRoot_covers_mmio_regions : IO Unit := do
   | none =>
     expect "AN7-D.2-03 UART mapping present (unreachable if prior assert holds)" false
 
+/-- AN7-D.2.8 (audit remediation): The boot VSpaceRoot's `paddrBounded`
+    conjunct witnesses that every mapped PA fits the BCM2712 44-bit PA
+    range.  A regression that adds a PA ≥ 2^44 would fail `decide` on
+    the aggregated fold and this runtime test would detect the lapse
+    by spot-checking the six known bases. -/
+def an7d2_04_rpi5BootVSpaceRoot_paddrBounded : IO Unit := do
+  -- Every known base address is below 2^44 = 0x100000000000.
+  let twoPow44 : Nat := 0x100000000000
+  expect "AN7-D.2-04 kernelTextBase < 2^44"
+    (decide (RPi5.VSpaceBoot.kernelTextBase.toNat < twoPow44))
+  expect "AN7-D.2-04 kernelDataBase < 2^44"
+    (decide (RPi5.VSpaceBoot.kernelDataBase.toNat < twoPow44))
+  expect "AN7-D.2-04 kernelStackBase < 2^44"
+    (decide (RPi5.VSpaceBoot.kernelStackBase.toNat < twoPow44))
+  expect "AN7-D.2-04 uart0Base < 2^44"
+    (decide (uart0Base.toNat < twoPow44))
+  expect "AN7-D.2-04 gicDistributorBase < 2^44"
+    (decide (gicDistributorBase.toNat < twoPow44))
+  expect "AN7-D.2-04 gicCpuInterfaceBase < 2^44"
+    (decide (gicCpuInterfaceBase.toNat < twoPow44))
+
 -- ============================================================================
 -- Entry point
 -- ============================================================================
@@ -562,5 +583,6 @@ def main : IO Unit := do
   an7d2_01_rpi5BootVSpaceRoot_wellFormed
   an7d2_02_rpi5BootVSpaceRoot_wxCompliant
   an7d2_03_rpi5BootVSpaceRoot_covers_mmio_regions
+  an7d2_04_rpi5BootVSpaceRoot_paddrBounded
   IO.println ""
   IO.println "=== All AK9 platform tests passed ==="

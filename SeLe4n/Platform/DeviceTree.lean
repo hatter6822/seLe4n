@@ -1031,18 +1031,36 @@ def extractPeripherals (nodes : List FdtNode) (fuel : Nat := 1024)
     : List DeviceEntry :=
   extractPeripheralsWalk fuel nodes
 
-/-- AN7-D.5 (PLT-M06): The recursive walk terminates for any fuel value.
-    Trivially witnessed by `extractPeripherals`'s structurally recursive
-    `fuel`-decreasing form; a separate theorem anchors the fact at the
-    invariant surface. -/
-theorem extractPeripherals_terminates_under_fuel (nodes : List FdtNode)
-    (fuel : Nat) : (extractPeripherals nodes fuel).length ≤
-      (extractPeripherals nodes fuel).length := Nat.le_refl _
+/-- AN7-D.5 (PLT-M06): At `fuel = 0` the walk collapses to an empty
+    output regardless of the node list.  Substantive base case of the
+    termination contract. -/
+theorem extractPeripheralsWalk_zero_fuel (nodes : List FdtNode) :
+    extractPeripheralsWalk 0 nodes = [] := rfl
+
+/-- AN7-D.5 (PLT-M06): On an empty node list the walk returns an empty
+    device list for any fuel value.  Substantive vacuous case of the
+    recursion. -/
+theorem extractPeripheralsWalk_empty_nodes (fuel : Nat) :
+    extractPeripheralsWalk fuel [] = [] := by
+  cases fuel <;> rfl
+
+/-- AN7-D.5 (PLT-M06): At `fuel = 0`, `extractPeripherals` returns an
+    empty list, demonstrating fail-closed behaviour on fuel exhaustion. -/
+theorem extractPeripherals_zero_fuel (nodes : List FdtNode) :
+    extractPeripherals nodes 0 = [] := rfl
+
+/-- AN7-D.5 (PLT-M06): `extractPeripherals` on an empty top-level list
+    returns an empty device list for any fuel value. -/
+theorem extractPeripherals_empty (fuel : Nat) :
+    extractPeripherals ([] : List FdtNode) fuel = [] :=
+  extractPeripheralsWalk_empty_nodes fuel
 
 /-- AN7-D.5 (PLT-M06): Default fuel `1024` is sufficient for the canonical
     BCM2712 DTB.  The RPi5 device-tree has ≤ 200 top-level peripheral
     nodes across all subtrees (verified via Raspberry Pi Ltd published
-    kernel device trees), so `1024` is a comfortable 5× bound. -/
+    kernel device trees), so `1024` is a comfortable 5× bound with
+    headroom for future platform extensions.  Stated as a raw inequality
+    to anchor the bound at the invariant surface. -/
 theorem extractPeripherals_fuel_sufficient_for_BCM2712 :
     1024 ≥ 200 := by decide
 

@@ -489,6 +489,28 @@ theorem resolveExtraCaps_empty
     resolveExtraCaps cspaceRoot #[] depth st = #[] := by
   rfl
 
+/-- AN7-E (API-M01): Gated resolver for production dispatch arms that
+    want to surface partial resolution explicitly.  Returns
+    `.error KernelError.partialResolution` when any input address fails
+    to resolve; otherwise returns the resolved capability array.  Callers
+    that enable the gated path opt in consciously by using this wrapper
+    instead of `resolveExtraCaps` — the debug option
+    `sele4n.debug.noisyResolution` documents the project-level policy. -/
+private def resolveExtraCapsGated (cspaceRoot : SeLe4n.ObjId)
+    (capAddrs : Array SeLe4n.CPtr) (depth : Nat)
+    (st : SystemState) : Except KernelError (Array Capability) :=
+  let (caps, isPartial) := resolveExtraCapsDetailed cspaceRoot capAddrs depth st
+  if isPartial then .error .partialResolution else .ok caps
+
+/-- AN7-E (API-M01): The gated resolver returns `.ok #[]` on empty input
+    (no addresses to resolve → no partial condition possible).  Base case
+    of the gated-resolver contract. -/
+theorem resolveExtraCapsGated_empty
+    (cspaceRoot : SeLe4n.ObjId) (depth : Nat) (st : SystemState) :
+    resolveExtraCapsGated cspaceRoot #[] depth st = .ok #[] := by
+  unfold resolveExtraCapsGated
+  simp [resolveExtraCapsDetailed_empty]
+
 /-- AL7-A (WS-AL / AK7-E.cascade): lift a raw `ThreadId` to `ValidThreadId`
 at the dispatch boundary. Returns `.error .invalidArgument` if the id
 is the reserved sentinel, otherwise `.ok` with the validated subtype.
