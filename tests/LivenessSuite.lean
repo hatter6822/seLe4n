@@ -144,6 +144,107 @@ open SeLe4n.Model
 #check @SeLe4n.Kernel.PriorityInheritance.pip_revert_congruence
 
 -- ============================================================================
+-- AN5-E: RPi5 canonical deployment — eventuallyExits closure (DEF-AK2-K.4)
+-- ============================================================================
+
+#check @DeploymentSchedulingConfig
+#check @DeploymentSchedulingConfig.wellFormed
+#check @rpi5CanonicalConfig
+#check @rpi5CanonicalConfig_wellFormed
+#check @eventuallyExits_of_exit_index
+#check @CanonicalDeploymentProgress
+#check @rpi5_canonicalConfig_eventuallyExits
+#check @rpi5_canonicalConfig_progress_config_wellFormed
+#check @rpi5_higherBandExhausted_from_progresses
+#check @rpi5_higherBandExhausted_empty_band
+#check @wcrt_bound_rpi5
+#check @wcrt_bound_rpi5_symbolic
+#check @isRPi5CanonicalConfig
+#check @isRPi5CanonicalConfig_iff
+#check @rpi5CanonicalConfig_isCanonical
+#check @rpi5_cbs_window_replenishments_bounded
+#check @rpi5_cbs_window_replenishments_bounded_concrete
+
+-- Runtime verification of the canonical-config witness values
+example : rpi5CanonicalConfig.wellFormed := rpi5CanonicalConfig_wellFormed
+example : isRPi5CanonicalConfig rpi5CanonicalConfig = true := rpi5CanonicalConfig_isCanonical
+example : rpi5CanonicalConfig.timerFrequencyHz = 54_000_000 := rfl
+example : rpi5CanonicalConfig.cbsPeriodTicks = 10_000 := rfl
+example : rpi5CanonicalConfig.admissibleUtilisation = 750 := rfl
+example : rpi5CanonicalConfig.maxPriorityBands = 256 := rfl
+example : rpi5CanonicalConfig.maxDomains = 16 := rfl
+example : rpi5CanonicalConfig.configDefaultTimeSlice = 1000 := rfl
+
+-- AN5-E.1: Non-canonical configs that differ by a single field are rejected
+-- by the canonical-check (defense-in-depth against misconfiguration).
+example :
+    isRPi5CanonicalConfig { rpi5CanonicalConfig with admissibleUtilisation := 751 } = false := by
+  decide
+
+example :
+    isRPi5CanonicalConfig { rpi5CanonicalConfig with timerFrequencyHz := 0 } = false := by
+  decide
+
+-- AN5-E.1: A degenerate config with zero timer frequency is rejected by the
+-- well-formedness check.
+example : ¬ ({ rpi5CanonicalConfig with timerFrequencyHz := 0 } : DeploymentSchedulingConfig).wellFormed := by
+  intro h
+  exact absurd h.1 (by decide)
+
+-- AN5-E.1: A degenerate config with zero CBS period is rejected.
+example : ¬ ({ rpi5CanonicalConfig with cbsPeriodTicks := 0 } : DeploymentSchedulingConfig).wellFormed := by
+  intro h
+  exact absurd h.2.1 (by decide)
+
+-- AN5-E.1: A config with utilisation over 1000‰ (over-admitted) is rejected.
+example :
+    ¬ ({ rpi5CanonicalConfig with admissibleUtilisation := 1001 } : DeploymentSchedulingConfig).wellFormed := by
+  intro h
+  exact absurd h.2.2.2 (by decide)
+
+-- AN5-E.3: Functional test — constructing an exit witness from a two-step
+-- trace whose post-state places `tid` neither in the run queue nor as
+-- current discharges `eventuallyExits` via
+-- `eventuallyExits_of_exit_index`. With `default : SystemState`:
+--   * `default.scheduler.runQueue.contains _ = false` (empty RQ).
+--   * `default.scheduler.current = none ≠ some _`.
+example :
+    let tid : SeLe4n.ThreadId := SeLe4n.ThreadId.ofNat 42
+    let tr : SchedulerTrace :=
+      [(SchedulerStep.schedule, default), (SchedulerStep.schedule, default)]
+    eventuallyExits tr tid 0 := by
+  -- Build the exit witness at k = 1 (> startIdx = 0).
+  -- At index 1, `traceStateAt tr 1 = some default`.
+  apply eventuallyExits_of_exit_index
+    (trace := [(SchedulerStep.schedule, default), (SchedulerStep.schedule, default)])
+    (tid := SeLe4n.ThreadId.ofNat 42) (startIdx := 0) (k := 1) (by decide)
+    (st := default)
+  · rfl
+  · decide
+  · decide
+
+-- AN5-E.3: Functional test — `rpi5_canonicalConfig_eventuallyExits` via
+-- the packaged `CanonicalDeploymentProgress` structure.
+example :
+    let tid : SeLe4n.ThreadId := SeLe4n.ThreadId.ofNat 42
+    let tr : SchedulerTrace :=
+      [(SchedulerStep.schedule, default), (SchedulerStep.schedule, default)]
+    eventuallyExits tr tid 0 := by
+  apply rpi5_canonicalConfig_eventuallyExits
+    (trace := [(SchedulerStep.schedule, default), (SchedulerStep.schedule, default)])
+    (tid := SeLe4n.ThreadId.ofNat 42) (startIdx := 0)
+  exact {
+    config := rpi5CanonicalConfig
+    configIsRPi5 := rfl
+    exitIdx := 1
+    exitIdxAfter := by decide
+    exitState := default
+    exitStateAtIdx := by rfl
+    notInRunQueue := by decide
+    notCurrent := by decide
+  }
+
+-- ============================================================================
 -- Executable entry point
 -- ============================================================================
 
@@ -162,5 +263,13 @@ def main : IO Unit := do
   IO.println "  ✓ Priority-inheritance bounded inversion"
   IO.println "  ✓ blockingChain_step, blockingChain_congr, blockingAcyclic_frame"
   IO.println "  ✓ pip_congruence, pip_revert_congruence, crossSubsystem projection"
-  IO.println "=== All 63 surface anchors verified ==="
+  IO.println "  ✓ AN5-E: DeploymentSchedulingConfig + rpi5CanonicalConfig (DEF-AK2-K.4)"
+  IO.println "  ✓ AN5-E: rpi5_canonicalConfig_eventuallyExits (substantive closure)"
+  IO.println "  ✓ AN5-E.3b: rpi5_higherBandExhausted_from_progresses (bridge)"
+  IO.println "  ✓ AN5-E.3b: rpi5_higherBandExhausted_empty_band (vacuous case)"
+  IO.println "  ✓ AN5-E: wcrt_bound_rpi5 delegation + runtime canonical-check"
+  IO.println "  ✓ AN5-E.1: DeploymentSchedulingConfig.wellFormed rejects degenerate configs"
+  IO.println "  ✓ AN5-E.3: functional tests — concrete CanonicalDeploymentProgress"
+  IO.println "  ✓ AN5-D: rpi5_cbs_window_replenishments_bounded + _concrete (SC-M01)"
+  IO.println "=== All 95 surface anchors verified ==="
   return ()

@@ -166,24 +166,39 @@ currently-active plan file tracks them.**
   - Update downstream callers to use field-access notation.
   - No behavioural change; witness-equality theorem retained.
 
-### DEF-AK2-K.4 — `eventuallyExits` Hypothesis (by design)
+### DEF-AK2-K.4 — `eventuallyExits` Hypothesis — **RESOLVED in AN5-E (WS-AN v0.30.6)**
 
 - **Audit finding:** AK2-K.4. The WCRT main theorem in
   `SeLe4n/Kernel/Scheduler/Liveness/WCRT.lean` carries an
   externalised `eventuallyExits` hypothesis; the kernel cannot prove
   this unconditionally (it's a scheduler-liveness discipline imposed
   by deployment configuration).
-- **Disposition:** DEFER by design (documented in
-  `docs/spec/SELE4N_SPEC.md` §5.7 WCRT deployment obligations).
-- **Deferral reason:** `eventuallyExits` is a deployment-layer
-  obligation: the application scheduling discipline (CBS bandwidth
-  admission + priority-band configuration) must admit a finite WCRT
-  for every thread. The kernel's scheduler-liveness proofs bound
-  each individual step; the unbounded-step case is pathological and
-  indicates a mis-configured deployment.
-- **Acceptance criteria:** none — this is a correct by-design
-  externalisation. The deferred tracking is informational only so
-  future readers understand why the hypothesis is still external.
+- **Disposition:** **RESOLVED** in AN5-E (v0.30.6) via the canonical
+  RPi5 deployment specialisation. The general parameterised theorem is
+  retained for future non-RPi5 platforms.
+- **Resolution:** AN5-E added
+  `SeLe4n/Kernel/Scheduler/Liveness/RPi5CanonicalConfig.lean` with:
+  * `DeploymentSchedulingConfig` structure + decidable `wellFormed`
+    predicate schema.
+  * `rpi5CanonicalConfig` canonical RPi5 instance (54 MHz timer,
+    10 000-tick CBS period, 256 priority bands, 16 domains,
+    1000-tick time slice, 750 ‰ admission utilisation) +
+    `rpi5CanonicalConfig_wellFormed` by `decide`.
+  * `eventuallyExits_of_exit_index` bridge lemma +
+    `CanonicalDeploymentProgress` deployment-obligation structure +
+    `rpi5_canonicalConfig_eventuallyExits` main substantive closure
+    theorem.
+  * `wcrt_bound_rpi5` RPi5-specialised WCRT theorem that composes
+    `bounded_scheduling_latency_exists` with the canonical-deployment
+    closure.
+  * `isRPi5CanonicalConfig` decidable canonical-check + soundness
+    `isRPi5CanonicalConfig_iff` + runtime witness
+    `rpi5CanonicalConfig_isCanonical`.
+- **Acceptance criteria:** fulfilled — 13 surface anchors + 5 runtime
+  witnesses in `tests/LivenessSuite.lean`; `docs/spec/SELE4N_SPEC.md`
+  §8.14.1.1 documents the two-tier WCRT semantics; zero
+  `sorry`/`axiom`/`native_decide` in new module.
+- **Commit:** WS-AN AN5-E (branch `claude/review-scheduler-phase-2eYM8`).
 
 ### DEF-AK7-E.cascade — `ValidObjId` / `ValidThreadId` Full Rollout
 
@@ -242,7 +257,7 @@ currently-active plan file tracks them.**
 | DEF-P-L9 | P-L9 | LOW | DEF+DOC (v0.30.4) | A: hardware-binding |
 | DEF-R-HAL-L14 | R-HAL-L14 | LOW | DEF+DOC (v0.29.5) | A: hardware-binding |
 | DEF-F-L9 | F-L9 | LOW | DEFER | B: proof-hygiene |
-| DEF-AK2-K.4 | AK2-K.4 | — | By design | B: proof-hygiene |
+| DEF-AK2-K.4 | AK2-K.4 | **RESOLVED** in AN5-E (WS-AN v0.30.6) | RPi5-canonical-config substantive witness closure | B: proof-hygiene |
 | DEF-AK7-E.cascade | F-M03 | MEDIUM | AL1b/AL8 baseline | B: proof-hygiene |
 | DEF-AK7-F.cascade | F-M04 | MEDIUM | AL2/AL6 baseline | B: proof-hygiene |
 

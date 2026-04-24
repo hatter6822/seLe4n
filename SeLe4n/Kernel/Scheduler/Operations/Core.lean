@@ -336,7 +336,20 @@ name. The checked variants (`saveOutgoingContextChecked` / `restoreIncomingConte
 return `SystemState × Bool` for defense-in-depth at API boundaries; equivalence
 theorems (`saveOutgoingContextChecked_fst_eq`, `restoreIncomingContextChecked_fst_eq`)
 guarantee the state component is identical. Under `currentThreadValid`, the
-`false` branches are unreachable. -/
+`false` branches are unreachable.
+
+**AN5-B (SCH-M04) — operation/wrapper boundary annotation.** The four
+primary scheduler operations (`schedule`, `handleYield`, `timerTick`,
+`switchDomain`, `scheduleDomain`) are pure transitions. The context
+save/restore wrappers (`saveOutgoingContext`, `restoreIncomingContext`,
+and their checked variants) are the proof harness — they carry the
+dequeue-on-dispatch and `contextMatchesCurrent` frame lemmas. The
+formal split into `Operations.lean` (pure) and `Wrappers.lean` (proof
+harness) is tracked alongside the Theme 4.7 Preservation.lean
+decomposition (AN5-A): the child-module layout there naturally
+accommodates a parallel split here without causing duplicate-import
+churn. At 1002 LOC `Core.lean` remains well under the 2000-LOC Theme
+4.7 ceiling. -/
 def schedule : Kernel Unit :=
   fun st =>
     match chooseThread st with
@@ -703,12 +716,14 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
 -- Z4-I: Budget-aware schedule (must precede timerTickWithBudget)
 -- ============================================================================
 
-/-- Z4-I: SchedContext-aware schedule that uses effective thread selection.
-
-Identical to `schedule` but uses `chooseThreadEffective` which filters
-by budget eligibility and resolves effective priorities from SchedContext.
-Threads with exhausted CBS budgets are automatically skipped during selection.
-The original `schedule` is preserved for backward compatibility. -/
+/-- Z4-I / AN5-C: **Budget-aware** SchedContext-aware schedule that uses
+effective thread selection. Naming-convention note: `Effective` here is
+semantically equivalent to `_budgetAware` — the function filters by
+budget eligibility and resolves effective priorities from SchedContext.
+Threads with exhausted CBS budgets are automatically skipped during
+selection. The primary `schedule` transition is preserved for backward
+compatibility (unbound threads + legacy test fixtures). Production boot
+paths use `scheduleEffective` via `timerTickWithBudget`. -/
 def scheduleEffective : Kernel Unit :=
   fun st =>
     match chooseThreadEffective st with
@@ -733,7 +748,11 @@ def scheduleEffective : Kernel Unit :=
 -- Z4-H: Integrated timerTick with replenishment and budget
 -- ============================================================================
 
-/-- Z4-H: Extended timer tick with CBS replenishment and budget accounting.
+/-- Z4-H / AN5-C: **Budget-aware** extended timer tick with CBS
+replenishment and budget accounting. Naming-convention note: the
+`WithBudget` suffix is semantically equivalent to `_budgetAware` used in
+the AN5-C documentation — this is the primary timer entry point for
+production boot paths.
 
 This replaces the original `timerTick` as the primary timer entry point.
 Processing order:

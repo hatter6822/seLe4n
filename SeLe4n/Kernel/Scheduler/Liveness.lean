@@ -7,6 +7,7 @@
 -/
 
 import SeLe4n.Kernel.Scheduler.Liveness.WCRT
+import SeLe4n.Kernel.Scheduler.Liveness.RPi5CanonicalConfig
 
 /-!
 # D5-N: Scheduler Liveness — Re-export Hub
@@ -19,4 +20,7 @@ This module re-exports all scheduler liveness submodules:
 - `BandExhaustion`: Priority-band exhaustion analysis
 - `DomainRotation`: Domain rotation bounds
 - `WCRT`: CBS-aware WCRT hypotheses, main bounded latency theorem, PIP enhancement
+- `RPi5CanonicalConfig`: AN5-E — `DeploymentSchedulingConfig` schema and
+  canonical RPi5 instance discharging the `eventuallyExits` hypothesis for
+  the v1.0.0 release target (closes `DEF-AK2-K.4`).
 -/

@@ -228,6 +228,12 @@ def remove (rq : RunQueue) (tid : ThreadId) : RunQueue :=
     `rotateHead` — acceptable for systems with < 256 threads. -/
 def rotateToBack (rq : RunQueue) (tid : ThreadId) : RunQueue :=
   if hc : rq.contains tid then
+    -- AN5-C: `getD ⟨0⟩` is safe under `runQueueInvariant` — the invariant
+    -- guarantees `tid ∈ rq.flat ↔ rq.threadPriority[tid]?.isSome`, so the
+    -- `hc : rq.contains tid` dispatch ensures the lookup succeeds. The
+    -- fallback priority `⟨0⟩` is defensive but unreachable under the
+    -- invariant. Removing the invariant precondition without updating
+    -- this site would silently prefer priority 0 instead of erroring.
     let prio := rq.threadPriority[tid]?.getD ⟨0⟩
     let bucket := (rq.byPriority[prio]?).getD []
     let bucket' := bucket.filter (· ≠ tid) ++ [tid]

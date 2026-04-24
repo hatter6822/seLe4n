@@ -499,6 +499,132 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
   (CrossSubsystem composition) sequences after the four subsystem
   phases.
 
+- **AN5** (Scheduler / SchedContext + `eventuallyExits` closure, v0.30.6,
+  in progress): lands the Scheduler MEDIUM (SCH-M02..M05) and LOW batches,
+  SchedContext MEDIUM batch (SC-M01..M03), and **substantively closes
+  DEF-AK2-K.4 `eventuallyExits`** for the canonical Raspberry Pi 5
+  deployment.
+
+  - **AN5-E (DEF-AK2-K.4 RPi5 closure, substantive)**: new
+    `SeLe4n/Kernel/Scheduler/Liveness/RPi5CanonicalConfig.lean` module
+    (~370 LOC) with six sub-sub-tasks:
+    - **AN5-E.1**: `structure DeploymentSchedulingConfig` +
+      decidable `wellFormed` predicate schema.
+    - **AN5-E.2**: `def rpi5CanonicalConfig` (54 MHz timer, 10 000-tick
+      CBS period, 256 priority bands, 16 domains, 1000-tick time slice,
+      750 ‰ admission utilisation) + `rpi5CanonicalConfig_wellFormed`
+      by `decide`.
+    - **AN5-E.3**: substantive closure via `CanonicalDeploymentProgress`
+      deployment-obligation structure carrying an exit-index witness,
+      plus `eventuallyExits_of_exit_index` bridge lemma and
+      `rpi5_canonicalConfig_eventuallyExits` main theorem composing the
+      bridge with the progress witness.
+    - **AN5-E.3b** (post-audit addition): substantive
+      `higherBandExhausted` bridge —
+      `rpi5_higherBandExhausted_from_progresses` lifts a collection of
+      per-thread `CanonicalDeploymentProgress` witnesses to the
+      quantified `higherBandExhausted` form consumed by `hBandProgress`
+      builders. `rpi5_higherBandExhausted_empty_band` corollary
+      discharges the vacuous case.
+    - **AN5-E.4**: `wcrt_bound_rpi5` RPi5-specialised WCRT theorem that
+      delegates to `bounded_scheduling_latency_exists` (retains the
+      general theorem for non-RPi5 deployments).
+    - **AN5-E.5**: `isRPi5CanonicalConfig` decidable canonical-check +
+      soundness `isRPi5CanonicalConfig_iff` + runtime witness
+      `rpi5CanonicalConfig_isCanonical` (boot-time diagnostic).
+    - **AN5-E.6**: SPEC §8.14.1.1 documents the two-tier WCRT
+      semantics; `DEF-AK2-K.4` marked RESOLVED in the deferred tracking
+      cascade-closure table.
+
+  - **AN5-B (SCH-M02..M05 MEDIUM batch)**:
+    - **SCH-M01** — TCB case-dispatch factoring scope documented
+      in-place at `Scheduler/Operations/Preservation.lean:225` with
+      escalation-ladder rationale (factor-out requires AN5-A's
+      child-module layout; three context hypotheses differ per caller).
+    - **SCH-M02** — `remove_preserves_nodup` and `insert_preserves_nodup`
+      (already `private`) gain explicit "private run-queue implementation
+      helper — NOT a public invariant-bundle component" docstrings.
+    - **SCH-M03** — new `replenishmentPipelineOrder : SystemState → Prop`
+      invariant in `Scheduler/Invariant.lean` capturing the three-step
+      pipeline (pop-due → refill → process); new theorems
+      `default_replenishmentPipelineOrder`,
+      `replenishmentPipelineOrder_of_empty`,
+      `popDueReplenishments_remaining_gt_now`; new helper
+      `pairwiseSortedBy_head_le_all` witnesses the sorted-list head
+      ordering property.
+    - **SCH-M04** — `Scheduler/Operations/Core.lean` operation/wrapper
+      boundary annotation at `schedule`. Full split deferred to AN5-A.
+    - **SCH-M05** — `blockingAcyclic` (PIP scope) and
+      `tcbQueueChainAcyclic` (IPC scope) gain cross-reference
+      disambiguation docstrings. (The audit's claim of name-collision
+      was imprecise — only one definition per namespace — so the
+      disambiguation preserves clarity without a 89-site rename cascade.)
+
+  - **AN5-C (Scheduler LOW batch)**: `.getD ⟨0⟩` annotation at
+    `RunQueue.lean:rotateToBack`; naming-convention notes for
+    `scheduleEffective` / `timerTickWithBudget`; `updatePipBoost`
+    lifecycle docstring; five-tier invariant hierarchy docstring added
+    to `Scheduler/Invariant.lean`.
+
+  - **AN5-D (SchedContext MEDIUM batch)**:
+    - **SC-M01** — `rpi5_cbs_window_replenishments_bounded` +
+      `_concrete` witness theorems instantiate
+      `cbs_bandwidth_bounded_tight` (AK6-I) for the canonical RPi5
+      deployment.
+    - **SC-M02** — closure-form preservation theorems in
+      `SchedContext/PriorityManagement.lean` gain cross-reference to
+      AN6-A's H-07 discharge recipe.
+    - **SC-M03** — `SchedContext/Invariant.lean` hub gains prominent
+      **DO-NOT-IMPORT-PRESERVATION** banner plus compile-time Lean
+      `example` guard that fails to elaborate if the `Defs.lean` import
+      line is removed.
+
+  - **AN5-A (Preservation.lean Theme 4.7 split)**: retained as a
+    documented follow-up with explicit scope. `Preservation.lean` is
+    3775 LOC (was 3633; grew by the SCH-M03 witness and AN5-B/C/D
+    docstrings) — above the 2000-LOC Theme 4.7 ceiling. The split into
+    six child modules is tractable after the AN5-B/C/D/E deliverables
+    stabilise the file contents; the mechanical refactor has no
+    correctness impact and is tracked for a dedicated follow-up PR.
+
+  **Regression tests**: 17 new `#check` (including AN5-E.3b bridge and
+  SC-M01 CBS bounds) + 12 new `example` anchors in
+  `tests/LivenessSuite.lean` — total **95** anchors (was 63 at AN4 tip).
+  New `example` tests exercise concrete `CanonicalDeploymentProgress`
+  construction, degenerate-config rejection (zero timer / zero period /
+  over-admission), and two-step-trace `eventuallyExits` discharge.
+
+  **Post-landing audit remediation** (same PR): five material issues
+  surfaced by end-to-end audit were fixed in-place:
+    1. `wcrt_bound_rpi5` was a trivial delegation; added substantive
+       `rpi5_higherBandExhausted_from_progresses` bridge as the real
+       specialisation contribution.
+    2. SCH-M04 annotation was placed as a bare `/- -/` block between
+       the `schedule` docstring and its `def`, potentially
+       disconnecting the docstring. Merged into the docstring.
+    3. `replenishmentPipelineOrder` docstring claimed preservation by
+       `timerTick` "trivially" — actually not preserved by a bare
+       `tick`. Rewritten as a PIPELINE-relative post-condition.
+    4. SC-M02 docstring referenced wrong file for the `hSchedProj`
+       preservation theorems; corrected to
+       `InformationFlow/Invariant/Operations.lean`.
+    5. `SeLe4n.numDomainsVal` reference corrected to
+       `SeLe4n.Kernel.SchedContextOps.numDomainsVal`.
+
+  **Gate at AN5 tip**: `lake build` (300 jobs, up from 298 at AN4 tip —
+  2 new `.c.o` targets for `RPi5CanonicalConfig`) + `test_smoke.sh` PASS
+  + `test_full.sh` PASS + `test_tier0_hygiene.sh` PASS + `cargo test
+  --workspace` PASS (415 tests, unchanged) + `cargo clippy --workspace
+  -- -D warnings` (0 warnings) + `check_version_sync.sh` PASS at 0.30.6
+  + fixture byte-identical to `tests/fixtures/main_trace_smoke.expected`
+  + zero `sorry`/`axiom`/`native_decide` in `SeLe4n/` or `Main.lean`.
+  Version stays at `0.30.6`.
+
+  **Next**: AN6 (Architecture / InformationFlow / CrossSubsystem) per
+  plan §9 can proceed in parallel with AN7 (Platform/API). AN5-A's
+  mechanical file split can land as a dedicated follow-up PR at any
+  time before AN12 portfolio closure.
+
 ## WS-AK — Pre-1.0 Release Hardening (v0.29.1 → v0.30.6)
 
 **Audit:** [`docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md`](audits/AUDIT_v0.29.0_COMPREHENSIVE.md)

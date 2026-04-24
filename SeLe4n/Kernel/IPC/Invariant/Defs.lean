@@ -140,8 +140,24 @@ inductive QueueNextPath (st : SystemState) : SeLe4n.ThreadId → SeLe4n.ThreadId
       st.objects[a.toObjId]? = some (.tcb tcb) → tcb.queueNext = some b →
       QueueNextPath st b c → QueueNextPath st a c
 
-/-- WS-H5: TCB queue chain acyclicity — no thread can reach itself via queueNext.
-This prevents infinite loops during queue traversal. -/
+/-- WS-H5 / AN5-B (SCH-M05): TCB queue chain acyclicity — no thread can
+reach itself via `queueNext`. Prevents infinite loops during IPC queue
+traversal (`intrusiveQueueWellFormed`, `collectQueueMembers`).
+
+**Naming disambiguation (AN5-B / SCH-M05)**: this predicate is *not* the
+priority-inheritance `blockingAcyclic` at
+`Scheduler/PriorityInheritance/BlockingGraph.lean:127`. The two operate
+on different edge relations:
+
+* `tcbQueueChainAcyclic` (this file, IPC scope) — edge `a → b` iff
+  `a.queueNext = some b`. Consumed by IPC dual-queue proofs.
+* `blockingAcyclic` (PIP scope) — edge `tid → server` iff `tid` blocks on
+  a reply to `server`. Consumed by PIP bounded-inversion + WCRT proofs.
+
+A system can satisfy one without the other. The names are retained
+because both are well-established across ~73 + ~76 proof sites; a
+rename would cause a mechanical cascade disproportionate to the
+clarity gain. -/
 def tcbQueueChainAcyclic (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId), ¬ QueueNextPath st tid tid
 
