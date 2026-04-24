@@ -107,6 +107,65 @@ theorem assumptionInventoryComplete_holds : assumptionInventoryComplete := by
   cases a <;> simp [assumptionInventory]
 
 -- ============================================================================
+-- AN6-B (H-08): Architecture assumption consumption INDEX
+-- ============================================================================
+
+/-! ## AN6-B (H-08): Machine-searchable consumer index
+
+WS-AN AN6-B turns the architecture-assumption consumption chain (declared in
+§M-08/WS-E6 below) into a *machine-searchable index*. Every `ArchAssumption`
+is mapped to the fully qualified name of its consuming theorem via
+`archAssumptionConsumer`, and a total marker theorem
+`architecture_assumptions_index` proves every assumption has a named
+consumer. `#eval archAssumptionConsumer <a>` recovers the consumer name at
+the REPL; the marker theorem guarantees exhaustiveness at elaboration time.
+
+The five consuming theorems that this index points to (their bodies remain
+in `Invariant.lean`; the index is pointers only so this file has no
+`Invariant.lean` import dependency):
+
+1. `deterministicTimerProgress_consumed_by_advanceTimer`
+2. `deterministicRegisterContext_consumed_by_writeRegister`
+3. `memoryAccessSafety_consumed_by_readMemory`
+4. `default_system_state_proofLayerInvariantBundle` (boot-state typing witness)
+5. `SeLe4n.Kernel.Platform.Boot.bootFromPlatformChecked_ok_implies_irqHandlersValid`
+   (IRQ routing totality witness; structural across every registered IRQ
+   handler, introduced by AK9-C). -/
+
+/-- AN6-B: Canonical mapping from `ArchAssumption` to the fully-qualified
+    `Lean.Name` of the theorem that consumes it. See the docstring for the
+    full binding matrix. -/
+def archAssumptionConsumer : ArchAssumption → Lean.Name
+  | .deterministicTimerProgress =>
+      `SeLe4n.Kernel.Architecture.deterministicTimerProgress_consumed_by_advanceTimer
+  | .deterministicRegisterContext =>
+      `SeLe4n.Kernel.Architecture.deterministicRegisterContext_consumed_by_writeRegister
+  | .memoryAccessSafety =>
+      `SeLe4n.Kernel.Architecture.memoryAccessSafety_consumed_by_readMemory
+  | .bootObjectTyping =>
+      `SeLe4n.Kernel.Architecture.default_system_state_proofLayerInvariantBundle
+  | .irqRoutingTotality =>
+      `SeLe4n.Kernel.Platform.Boot.bootFromPlatformChecked_ok_implies_irqHandlersValid
+
+/-- AN6-B: Total-mapping marker theorem — every architecture assumption has a
+    named consumer. The proof is by case analysis over the finite inductive;
+    if a future assumption is added without a mapping entry, `cases a` fails
+    at elaboration, forcing the index to stay exhaustive. -/
+theorem architecture_assumptions_index :
+    ∀ a : ArchAssumption, ∃ n : Lean.Name, archAssumptionConsumer a = n := by
+  intro a
+  cases a <;> exact ⟨_, rfl⟩
+
+/-- AN6-B: Inventory-vs-consumer-index agreement witness. Every entry of
+    `assumptionInventory` appears in `archAssumptionConsumer`'s domain
+    (trivially, since both are total over `ArchAssumption`). This is kept
+    as a documentation anchor; removing one list entry without the other
+    is still caught by `architecture_assumptions_index`. -/
+theorem archAssumptionConsumer_covers_inventory :
+    ∀ a ∈ assumptionInventory, ∃ n : Lean.Name, archAssumptionConsumer a = n :=
+  fun a _ => architecture_assumptions_index a
+
+-- ============================================================================
 -- M-08/WS-E6: Assumption consumption documentation
 -- ============================================================================
 

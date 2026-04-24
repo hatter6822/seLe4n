@@ -193,7 +193,21 @@ def retypeFromUntyped
                     if requiresPageAlignment newObj.objectType && !allocationBasePageAligned ut' then
                       .error .allocationMisaligned
                     else
-                    -- Atomic dual-store: untyped watermark advance + child creation
+                    -- Atomic dual-store: untyped watermark advance + child creation.
+                    -- AN6-C.2 (H-09): Per-caller contract — callers allocating a
+                    -- `.untyped` child via this primitive SHOULD pre-stamp the
+                    -- child's `parent` field with the parent untyped's ObjId
+                    -- before invocation so the transitive
+                    -- `untypedAncestorRegionsDisjoint` invariant (AN6-C.4) can
+                    -- walk the ancestor chain. The stamping is NOT done inside
+                    -- `retypeFromUntyped` to preserve the theorem surface (the
+                    -- 60+ preservation theorems that destructure `newObj` via
+                    -- `hStep` direct equality). Under the current API dispatch
+                    -- (`objectOfKernelType .untyped` hardcodes `regionBase = 0`),
+                    -- retype-to-untyped is not exercised by any test and the
+                    -- default `parent := none` is correct for every
+                    -- boot-constructed untyped. See AN6-C.2 in
+                    -- `docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`.
                     match storeObject untypedId (.untyped ut') st' with
                     | .error e => .error e
                     | .ok ((), stUt) =>

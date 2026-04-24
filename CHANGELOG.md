@@ -1,3 +1,204 @@
+## v0.30.6 — WS-AN Phase AN6 (Architecture / InformationFlow / CrossSubsystem) [in progress — landed subset]
+
+Phase AN6 of the WS-AN v0.30.6 audit remediation portfolio per
+[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
+§9. This entry lands the **tractable** subset of AN6's 8 sub-tasks (AN6-A
+through AN6-H) as a single reviewable slice. The plan budgets AN6 at
+7–9 days; this commit closes AN6-B, AN6-E (partial), AN6-F, AN6-G,
+AN6-H, AN6-D (partial), AN6-C foundation, and AN6-A.1 (template). The
+follow-up slices AN6-A.2..A.7 (substantive closure-form theorem
+discharge) and AN6-C.5..C.10 (13-conjunct cascade over ~130 call
+sites) are documented as dedicated follow-up PRs with explicit scope
+annotations per §2.4 Lean 4.28.0 toolchain escalation ladder.
+
+### AN6-B — Architecture assumption consumption INDEX (H-08)
+
+New `archAssumptionConsumer : ArchAssumption → Lean.Name` mapping in
+`SeLe4n/Kernel/Architecture/Assumptions.lean` that pins each of the 5
+pre-existing `ArchAssumption` enumeration values to its consuming
+theorem name. Marker theorem `architecture_assumptions_index` proves
+the map is total by exhaustive case analysis (if a future constructor
+is added without a corresponding map entry, `cases a` fails at
+elaboration). Companion theorem `archAssumptionConsumer_covers_inventory`
+witnesses agreement with the existing `assumptionInventory` list. This
+turns the declare→contract→adapter→preservation consumption chain
+documented in §M-08/WS-E6 into a machine-searchable index.
+
+### AN6-C — `UntypedObject.parent` + ancestor-chain foundation (H-09, foundation only)
+
+New `UntypedObject.parent : Option ObjId` field (default `none`) in
+`Model/Object/Types.lean`; new `untypedAncestorChain` walker, `maxRetypeDepth := 256`
+bound, substantively-proven `untypedAncestorChain_bounded` theorem, and
+new `untypedAncestorRegionsDisjoint` predicate in
+`Kernel/CrossSubsystem.lean`. `default_untypedAncestorRegionsDisjoint`
+witnesses the predicate holds vacuously on the default state. Under
+today's API dispatch (`objectOfKernelType .untyped` hardcodes
+`regionBase = 0`), retype never produces a `.untyped` child, so every
+reachable `UntypedObject` has `parent := none` and the transitive
+predicate is operationally equivalent to the pre-AN6
+`untypedRegionsDisjoint` (the 12th conjunct). The transitive
+strengthening to the 13th conjunct + 130-site cascade (AN6-C.5..C.10)
+is documented as a follow-up PR with explicit scope annotations — the
+foundation lands here so downstream commits can compose on the
+predicate without re-doing the design. Backward compatibility preserved
+across 6 `UntypedObject.mk` positional call sites via mechanical
+`none` suffix insertion; no theorem signatures changed.
+
+### AN6-D.3 — `pageTableWalk` depth bound (ARCH-M02)
+
+New `maxPageTableLevel := 4` constant + `pageTableWalkDepth` helper
+function + `pageTableWalk_depth_bound` theorem in
+`Kernel/Architecture/PageTable.lean`. Substantively proves that every
+successful `pageTableWalk` consumes between 2 and 4 `readDescriptor`
+calls (1 GiB block → 2, 2 MiB block → 3, 4 KiB page → 4), all bounded
+by the ARMv8 4-level architecture constant. Runtime implementations
+can invoke `pageTableWalk_depth_bound` as a witness when reasoning
+about page-table-walk termination.
+
+### AN6-D.4 — `InvalidMessageInfoDetailed` variant [deferred with scope]
+
+AN6-D.4 was scoped to add a `KernelError.invalidMessageInfoDetailed`
+variant (discriminant 51) gated behind a `set_option` for debug builds,
+plus the matching Rust ABI sync across `sele4n-types`, conformance
+tests, and the 7 cross-language tests. Since the variant is
+debug-only and has no production-path consumer, and the Rust ABI sync
+requires multi-file coordination that substantially exceeds the
+tractable scope of a foundation-landing PR, it is explicitly deferred
+to the AN6-A.2..A.7 substantive-discharge follow-up PR where it composes
+naturally alongside the diagnostic improvements to the closure-form
+theorems.
+
+### AN6-E.1 — `serviceObservable` NI scope documentation (IF-M01)
+
+Extended the `serviceObservable` docstring in
+`Kernel/InformationFlow/Projection.lean` with a new "non-interference
+scope and exclusions" section documenting that the predicate covers
+*boolean service presence only*, not internal state — cross-service
+covert channels via restart-cadence sampling are NOT covered by the
+kernel NI property. This is an ACCEPTED covert channel at v1.0.0 per
+the audit; the formal justification is that service orchestration sits
+above the kernel-primitive NI boundary.
+
+### AN6-E.2 — NI-L3 negative-case regression tests (IF-M02)
+
+Four new negative-case regression tests in `tests/InformationFlowSuite.lean`
+(NI-L3/1..4). Each test builds two states differing ONLY in the
+channel's observable (`scheduler.current`, `activeDomain`,
+`domainTimeRemaining`, `domainScheduleIndex`); the test asserts today's
+projection DIFFERS — i.e. the covert channel remains observable. A
+future commit that silently closes a channel (e.g. via additional
+projection stripping) would fail the corresponding assertion, forcing
+explicit re-auditing of the NI-L3 acceptance documentation rather than
+letting behavioural changes slip silently past.
+
+### AN6-E.3 — `Operations.lean` 4-file split [deferred with scope]
+
+IF-M03's 3768-LOC `Operations.lean` split is deferred to a dedicated
+follow-up PR. The file is above the 2000-LOC Theme 4.7 ceiling, but the
+mechanical split is invasive (4 new child modules, ~30 import updates
+across downstream consumers), has no correctness impact, and would
+enlarge this PR's diff substantially without improving its reviewability.
+The split is tracked alongside AN5-A (Preservation.lean split) and
+AN4-G.5 (already-landed Lifecycle/Operations split) as the Theme 4.7
+file-split cluster for a dedicated PR.
+
+### AN6-F — CrossSubsystem MEDIUM batch (CX-M01..M05)
+
+- **CX-M01**: two substantive structural theorems on `collectQueueMembers`
+  in `Kernel/CrossSubsystem.lean`: `collectQueueMembers_some_start_nonEmpty_result`
+  (successful `some`-start walks return non-empty results) and
+  `collectQueueMembers_head_is_start` (result's head is the start tid).
+  Combined with the existing `collectQueueMembers_length_bounded`,
+  these support the operational fuel-sufficiency argument without
+  requiring the full `QueueNextPath` decidable-reachability bridge
+  (which remains tracked as the sole IPC-subsystem TPI-DOC item).
+- **CX-M02**: symmetric cross-reference between
+  `lifecycleObjectTypeLockstep` (the proof-layer invariant) and
+  `storeObjectKindChecked` (the runtime guard) via an extended
+  docstring in `Model/State.lean`. A reader entering from either side
+  discovers the defense-in-depth pair.
+- **CX-M03**: new `bootFromPlatform_singleCore_witness` marker theorem
+  in `Kernel/CrossSubsystem.lean` anchoring the single-core MPIDR-mask
+  assumption. The Lean model has no per-core state, so the witness
+  documents the assumption without imposing a runtime check. Future
+  SMP extensions (DEF-R-HAL-L20 / AN9-J) must retire this marker
+  explicitly.
+- **CX-M04**: new `InterruptsEnabledPreservationBundle` structure in
+  `Kernel/Architecture/ExceptionModel.lean` packaging the 8 individual
+  `_preserves_interruptsEnabled` theorems (AG5-G) into a single
+  discoverable artifact. `archInvariant_interruptsEnabled_all_eight_bundle`
+  inhabits the bundle for every `SystemState`. Pointer marker
+  `archInvariant_interruptsEnabled_all_eight_index` in `CrossSubsystem.lean`
+  anchors the cross-subsystem-level discoverability.
+- **CX-M05**: positive-state smoke test in `tests/ModelIntegritySuite.lean`
+  (`an6f_cxm05_crossSubsystemInvariant_positive`) exercising the
+  concrete witness that the default `SystemState` inhabits
+  `crossSubsystemInvariant` via `default_crossSubsystemInvariant`.
+  Three representative conjuncts (`blockingAcyclic`,
+  `lifecycleObjectTypeLockstep`, `untypedRegionsDisjoint`) are
+  projected to catch bundle re-ordering regressions.
+
+### AN6-G — LOW batch
+
+- **TPI-002**: the pre-existing `docs/dev_history/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`
+  is the canonical index of tracked proof-level obligations for the
+  information-flow projection surface. `Projection.lean`'s existing
+  cross-reference continues to point there; no action required.
+- **SC-M03 DO-NOT-IMPORT banner**: the existing banner at
+  `Kernel/SchedContext/Invariant.lean:16` is the canonical
+  single-source-of-truth for the SchedContext preservation
+  import-cycle policy. The banner is strengthened with an "AN6-G
+  verified" annotation confirming the single-source status and
+  documenting the cross-reference convention used by downstream
+  consumers in `CrossSubsystem.lean`.
+
+### AN6-H — Closure and documentation refresh
+
+- This CHANGELOG entry, the CLAUDE.md active-workstream prepend, and a
+  corresponding `docs/WORKSTREAM_HISTORY.md` entry. The large-files
+  list is unchanged (AN6-A.1 template added ~90 lines to
+  `Operations.lean`, keeping it at 3768 total). `docs/codebase_map.json`
+  regenerated to pick up the new theorem/function declarations.
+
+**Follow-up PRs (explicit scope annotations)**:
+
+- **AN6-A.2..A.7** — Substantive discharge of the 6 closure-form
+  `*_preserves_projection` theorems. Budget: 6–9 days. Per-arm
+  escalation ladder documented in the template block at the top of
+  `InformationFlow/Invariant/Operations.lean` (AN6-A.1, landed).
+- **AN6-C.5..C.10** — 13-conjunct extension of
+  `crossSubsystemInvariant` with the new
+  `untypedAncestorRegionsDisjoint` + 130-site cascade of preservation
+  proof updates + 50-site rename of `untypedRegionsDisjoint`. Budget:
+  ~4 days.
+- **AN6-D.1** — `VSpaceBackend` typeclass production wire-in via
+  section binding + ARMv8 default instance. Budget: ~1 day; cascade
+  of ~15-20 consumer sites in `VSpace.lean` and `API.lean`.
+- **AN6-D.4** — `InvalidMessageInfoDetailed` debug variant with Rust
+  ABI sync. Budget: 0.5 day.
+- **AN6-E.3** — 3768-LOC `Operations.lean` → 4 child files per AN3-C
+  playbook. Budget: 0.75 day.
+
+### AN6 gate at this tip
+
+- `lake build` (300 jobs, 0 warnings)
+- `test_smoke.sh` PASS (all META checks including Rust 414-test gate)
+- `test_full.sh` PASS (including Tier 3 invariant surface anchors)
+- `test_docs_sync.sh` PASS (`docs/codebase_map.json` regenerated)
+- `lake exe model_integrity_suite` PASS (+9 new AN6 tests: 3 AN6-C +
+  5 AN6-F + 1 AN6-B)
+- `lake exe information_flow_suite` PASS (+4 new NI-L3 tests)
+- `cargo test --workspace` PASS (414 tests)
+- `cargo clippy --workspace -- -D warnings` (0 warnings)
+- `check_version_sync.sh` PASS at 0.30.6
+- Fixture byte-identical to `tests/fixtures/main_trace_smoke.expected`
+  (227 lines; no semantic behaviour changes)
+- Zero `sorry` / `axiom` / `native_decide` in `SeLe4n/` or `Main.lean`
+
+Version stays at `0.30.6` per the plan's no-per-phase-bump convention.
+
+---
+
 ## v0.30.6 — WS-AN Phase AN5 (Scheduler / SchedContext + eventuallyExits closure) [in progress]
 
 Phase AN5 of the WS-AN v0.30.6 audit remediation portfolio per

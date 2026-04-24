@@ -495,4 +495,72 @@ theorem handleInterrupt_timer_preserves_interruptsEnabled (st : SystemState) :
   rw [hReduce] at hStep
   exact timerTick_preserves_interruptsEnabled st st' hStep
 
+-- ============================================================================
+-- AN6-F (CX-M04): archInvariantBundle interruptsEnabled composition
+-- ============================================================================
+
+/-- AN6-F (CX-M04): Composition bundle packaging the eight individual
+`_preserves_interruptsEnabled` theorems (AG5-G) into a single
+discoverable artifact. Each field quantifies the corresponding op's
+IE-preservation property under its natural signature; callers wanting
+the "all-eight" bundle at once project the relevant field rather than
+re-threading eight theorem applications.
+
+Component map:
+
+| # | Field | Underlying theorem (AG5-G) |
+|---|-------|----------------------------|
+| 1 | `saveOutgoing` | `saveOutgoingContext_preserves_interruptsEnabled` |
+| 2 | `restoreIncoming` | `restoreIncomingContext_preserves_interruptsEnabled` |
+| 3 | `setCurrent` | `setCurrentThread_preserves_interruptsEnabled` |
+| 4 | `dispatchSpurious` | `interruptDispatchSequence_preserves_interruptsEnabled_spurious` |
+| 5 | `chooseThread` | `chooseThread_preserves_interruptsEnabled` |
+| 6 | `schedule` | `schedule_preserves_interruptsEnabled` |
+| 7 | `timerTick` | `timerTick_preserves_interruptsEnabled` |
+| 8 | `handleInterruptTimer` | `handleInterrupt_timer_preserves_interruptsEnabled` |
+
+The structure is `Prop`-valued so it can be projected without
+ungrouping closures in proof scripts: e.g.
+`(archInvariant_interruptsEnabled_all_eight_bundle st).schedule`
+gives the schedule-specific preservation statement. -/
+structure InterruptsEnabledPreservationBundle (st : SystemState) : Prop where
+  saveOutgoing :
+    (saveOutgoingContext st).machine.interruptsEnabled = st.machine.interruptsEnabled
+  restoreIncoming : ∀ (tid : SeLe4n.ThreadId),
+    (restoreIncomingContext st tid).machine.interruptsEnabled =
+      st.machine.interruptsEnabled
+  setCurrent : ∀ (tid : Option SeLe4n.ThreadId) (st' : SystemState),
+    setCurrentThread tid st = .ok ((), st') →
+    st'.machine.interruptsEnabled = st.machine.interruptsEnabled
+  dispatchSpurious : ∀ (rawIntId : Nat),
+    rawIntId ≥ spuriousInterruptThreshold →
+    ∀ (st' : SystemState),
+    interruptDispatchSequence st rawIntId = .ok ((), st') →
+    st'.machine.interruptsEnabled = st.machine.interruptsEnabled
+  chooseThread' : ∀ (result : Option SeLe4n.ThreadId) (st' : SystemState),
+    chooseThread st = .ok (result, st') →
+    st'.machine.interruptsEnabled = st.machine.interruptsEnabled
+  schedule' : ∀ (st' : SystemState),
+    schedule st = .ok ((), st') →
+    st'.machine.interruptsEnabled = st.machine.interruptsEnabled
+  timerTick' : ∀ (st' : SystemState),
+    timerTick st = .ok ((), st') →
+    st'.machine.interruptsEnabled = st.machine.interruptsEnabled
+  handleInterruptTimer : ∀ (st' : SystemState),
+    handleInterrupt st timerInterruptId = .ok ((), st') →
+    st'.machine.interruptsEnabled = st.machine.interruptsEnabled
+
+/-- AN6-F (CX-M04): Composition witness — every `SystemState` inhabits the
+bundle, since each field is a theorem already proven in this file. -/
+theorem archInvariant_interruptsEnabled_all_eight_bundle (st : SystemState) :
+    InterruptsEnabledPreservationBundle st :=
+  { saveOutgoing := saveOutgoingContext_preserves_interruptsEnabled st
+    restoreIncoming := restoreIncomingContext_preserves_interruptsEnabled st
+    setCurrent := fun tid st' h => setCurrentThread_preserves_interruptsEnabled tid st st' h
+    dispatchSpurious := interruptDispatchSequence_preserves_interruptsEnabled_spurious st
+    chooseThread' := chooseThread_preserves_interruptsEnabled st
+    schedule' := schedule_preserves_interruptsEnabled st
+    timerTick' := timerTick_preserves_interruptsEnabled st
+    handleInterruptTimer := handleInterrupt_timer_preserves_interruptsEnabled st }
+
 end SeLe4n.Kernel.Architecture

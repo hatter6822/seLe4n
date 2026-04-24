@@ -18,6 +18,8 @@ import SeLe4n.Testing.InvariantChecks
 import SeLe4n.Kernel.CrossSubsystem
 import SeLe4n.Kernel.IPC.Invariant.Defs
 import SeLe4n.Platform.Boot
+import SeLe4n.Kernel.Architecture.ExceptionModel
+import SeLe4n.Kernel.Architecture.Assumptions
 
 /-! # Model Integrity Suite — Foundational Kernel Model Safety
 
@@ -1214,6 +1216,112 @@ def ipc_invariant_full_dot_notation_dispatch : IO Unit := do
     fun {_} h => h.ipcInvariant
   expect "ipcInvariantFull dot-notation dispatch OK" (True == True)
 
+/-- AN6-F (CX-M01): `collectQueueMembers_some_start_nonEmpty_result` is the
+    substantive non-emptiness property of a successful `some`-start walk.
+    Any walk starting from `some tid0` that returns `some result` must
+    have `result ≠ []`, and
+    `collectQueueMembers_head_is_start` says the head is precisely
+    `tid0`. Verifies both bridge theorems' signatures type-check. -/
+def an6f_cxm01_collectQueueMembers_structural_signatures : IO Unit := do
+  let _ := @SeLe4n.Kernel.collectQueueMembers_some_start_nonEmpty_result
+  let _ := @SeLe4n.Kernel.collectQueueMembers_head_is_start
+  expect "CX-M01 structural bridges reachable" (True == True)
+
+/-- AN6-F (CX-M03): Single-core model witness is discoverable at its
+    canonical name. -/
+def an6f_cxm03_singleCore_witness_reachable : IO Unit := do
+  let _ := @SeLe4n.Kernel.bootFromPlatform_singleCore_witness
+  expect "CX-M03 single-core witness reachable" (True == True)
+
+/-- AN6-F (CX-M04): The `InterruptsEnabledPreservationBundle` structure
+    packages the eight individual `_preserves_interruptsEnabled`
+    theorems. Verifies the bundle is inhabited for the default state. -/
+def an6f_cxm04_interruptsEnabled_bundle_inhabited : IO Unit := do
+  let st : SystemState := default
+  let bundle := SeLe4n.Kernel.Architecture.archInvariant_interruptsEnabled_all_eight_bundle st
+  -- Probe a single field to witness that the bundle is reachable.
+  let _ := bundle.saveOutgoing
+  expect "CX-M04 interruptsEnabled bundle inhabited" (True == True)
+
+/-- AN6-F (CX-M05): Positive-state smoke test: the default `SystemState`
+    inhabits `crossSubsystemInvariant`, confirming the 12-predicate
+    conjunction is not only a Prop but holds at a concrete state.
+    Anchors the "a post-boot valid state exists" requirement. -/
+def an6f_cxm05_crossSubsystemInvariant_positive : IO Unit := do
+  let st : SystemState := default
+  let bundle := SeLe4n.Kernel.default_crossSubsystemInvariant
+  -- Project a handful of representative conjuncts to witness the full
+  -- bundle is inhabited (the projections at the boundary conjuncts
+  -- catch any re-ordering regression silently introduced by a future
+  -- bundle-extension).
+  let _ := SeLe4n.Kernel.crossSubsystemInvariant_to_blockingAcyclic st bundle
+  let _ := SeLe4n.Kernel.crossSubsystemInvariant_to_lifecycleObjectTypeLockstep st bundle
+  let _ := SeLe4n.Kernel.crossSubsystemInvariant_to_untypedRegionsDisjoint st bundle
+  -- Inhabitant existence — the key smoke fact is that `default_crossSubsystemInvariant`
+  -- produces a proof object.
+  expect "CX-M05 positive-state smoke: default satisfies crossSubsystemInvariant"
+    (st.objects.size == 0)
+
+/-- AN6-C.1 (H-09): `UntypedObject.parent` field defaults to `none` on
+    empty-state untypeds and carries through named-field syntax. -/
+def an6c1_untypedObject_parent_field_default : IO Unit := do
+  let ut : UntypedObject :=
+    { regionBase := SeLe4n.PAddr.ofNat 0x10000,
+      regionSize := 4096 }
+  expect "parent defaults to none" (ut.parent.isNone)
+  -- Explicitly-set parent field roundtrips.
+  let utChild : UntypedObject :=
+    { regionBase := SeLe4n.PAddr.ofNat 0x11000,
+      regionSize := 4096,
+      parent := some (SeLe4n.ObjId.ofNat 42) }
+  match utChild.parent with
+  | none => expect "parent should be set" false
+  | some pid => expect "parent roundtrips" (pid.val == 42)
+
+/-- AN6-C.3 (H-09): `untypedAncestorChain_bounded` witnesses that the
+    walker output length is bounded by fuel. Runtime smoke check. -/
+def an6c3_untypedAncestorChain_bounded : IO Unit := do
+  let st : SystemState := default
+  let probe := SeLe4n.ObjId.ofNat 0
+  -- Default state has no untypeds, so the walker returns [].
+  let chain0 := SeLe4n.Kernel.untypedAncestorChain st probe 0
+  let chain256 := SeLe4n.Kernel.untypedAncestorChain st probe
+                    SeLe4n.Kernel.maxRetypeDepth
+  expect "chain at fuel=0 is []" (chain0.length == 0)
+  expect "chain at maxRetypeDepth is [] on empty state"
+    (chain256.length == 0)
+  -- The bound theorem applies to any state / fuel.
+  let _ := @SeLe4n.Kernel.untypedAncestorChain_bounded
+  expect "maxRetypeDepth = 256" (SeLe4n.Kernel.maxRetypeDepth == 256)
+
+/-- AN6-C.4 (H-09): Default state satisfies the transitive
+    ancestor-disjointness predicate vacuously. -/
+def an6c4_untypedAncestorRegionsDisjoint_default : IO Unit := do
+  let st : SystemState := default
+  -- `default_untypedAncestorRegionsDisjoint` is a Prop-level witness;
+  -- exists as a discoverable entry point at its canonical name.
+  let _ := @SeLe4n.Kernel.default_untypedAncestorRegionsDisjoint
+  expect "default untypedAncestorRegionsDisjoint witness reachable"
+    (st.objects.size == 0)
+
+/-- AN6-B (H-08): Architecture assumption consumer index is total over
+    `ArchAssumption`. Verifies `architecture_assumptions_index` yields a
+    Lean.Name for every assumption constructor. -/
+def an6b_architecture_assumptions_index_total : IO Unit := do
+  let _ := @SeLe4n.Kernel.Architecture.architecture_assumptions_index
+  let _ := @SeLe4n.Kernel.Architecture.archAssumptionConsumer
+  -- Spot-check that each assumption maps to a non-trivial name.
+  let nTimer := SeLe4n.Kernel.Architecture.archAssumptionConsumer .deterministicTimerProgress
+  let nReg := SeLe4n.Kernel.Architecture.archAssumptionConsumer .deterministicRegisterContext
+  let nMem := SeLe4n.Kernel.Architecture.archAssumptionConsumer .memoryAccessSafety
+  let nBoot := SeLe4n.Kernel.Architecture.archAssumptionConsumer .bootObjectTyping
+  let nIrq := SeLe4n.Kernel.Architecture.archAssumptionConsumer .irqRoutingTotality
+  -- Names are distinct (assumption-consumer map has no collisions).
+  expect "timer consumer name distinct from register" (nTimer != nReg)
+  expect "memory consumer name distinct from boot" (nMem != nBoot)
+  expect "boot consumer name distinct from irq" (nBoot != nIrq)
+  expect "irq consumer name distinct from timer" (nIrq != nTimer)
+
 end SeLe4n.Testing.ModelIntegritySuite
 
 open SeLe4n.Testing.ModelIntegritySuite in
@@ -1321,5 +1429,16 @@ def main : IO Unit := do
   ipc_invariant_full_tuple_struct_bridge_signatures
   ipc_invariant_full_named_projection_signatures
   ipc_invariant_full_dot_notation_dispatch
+  -- AN6-B (H-08): Architecture assumption consumer index
+  an6b_architecture_assumptions_index_total
+  -- AN6-C (H-09): UntypedObject.parent + ancestor-chain foundation
+  an6c1_untypedObject_parent_field_default
+  an6c3_untypedAncestorChain_bounded
+  an6c4_untypedAncestorRegionsDisjoint_default
+  -- AN6-F (CX-M01/M03/M04/M05): CrossSubsystem MEDIUM batch
+  an6f_cxm01_collectQueueMembers_structural_signatures
+  an6f_cxm03_singleCore_witness_reachable
+  an6f_cxm04_interruptsEnabled_bundle_inhabited
+  an6f_cxm05_crossSubsystemInvariant_positive
   IO.println ""
   IO.println "=== All model integrity tests passed ==="

@@ -938,6 +938,23 @@ structure UntypedObject where
   /-- Whether this untyped covers device memory (MMIO). Device untypeds
       cannot back TCBs, CNodes, or other kernel objects. -/
   isDevice : Bool := false
+  /-- AN6-C.1 (H-09): parent ObjId for transitive ancestor tracking.
+      `none` for top-level (boot-allocated) untypeds; `some parentId` for
+      untypeds carved out by a `retypeFromUntyped` call with `.untyped`
+      target. Enables the transitive `untypedAncestorRegionsDisjoint`
+      invariant (AN6-C.4 in `CrossSubsystem.lean`) to walk ancestor
+      chains and avoid false-overlap reports for grandparent-grandchild
+      nesting. For non-`.untyped` children (e.g., TCBs, Endpoints) the
+      parent relationship is irrelevant and the field is unused since
+      non-untyped objects do not carry an `UntypedObject` record.
+
+      **Default** is `none` to preserve backward compatibility with
+      existing tests + fixtures that construct `UntypedObject` via named
+      field syntax. Existing code that does not set `parent` defaults to
+      "top-level" semantics, which is correct for boot-constructed
+      untypeds and for any test that does not exercise multi-level
+      retype chains. -/
+  parent : Option SeLe4n.ObjId := none
   deriving Repr, DecidableEq
 
 namespace UntypedObject
@@ -1019,26 +1036,26 @@ def wellFormed (ut : UntypedObject) : Prop :=
   ut.childrenNonOverlap ∧ ut.childrenUniqueIds
 
 theorem empty_watermarkValid (base : SeLe4n.PAddr) (size : Nat) :
-    (UntypedObject.mk base size 0 [] false).watermarkValid := by
+    (UntypedObject.mk base size 0 [] false none).watermarkValid := by
   simp [watermarkValid]
 
 theorem empty_childrenWithinWatermark (base : SeLe4n.PAddr) (size : Nat) :
-    (UntypedObject.mk base size 0 [] false).childrenWithinWatermark := by
+    (UntypedObject.mk base size 0 [] false none).childrenWithinWatermark := by
   intro c hMem
   simp at hMem
 
 theorem empty_childrenNonOverlap (base : SeLe4n.PAddr) (size : Nat) :
-    (UntypedObject.mk base size 0 [] false).childrenNonOverlap := by
+    (UntypedObject.mk base size 0 [] false none).childrenNonOverlap := by
   intro c₁ c₂ hMem₁
   simp at hMem₁
 
 theorem empty_childrenUniqueIds (base : SeLe4n.PAddr) (size : Nat) :
-    (UntypedObject.mk base size 0 [] false).childrenUniqueIds := by
+    (UntypedObject.mk base size 0 [] false none).childrenUniqueIds := by
   intro c₁ c₂ hMem₁
   simp at hMem₁
 
 theorem empty_wellFormed (base : SeLe4n.PAddr) (size : Nat) :
-    (UntypedObject.mk base size 0 [] false).wellFormed :=
+    (UntypedObject.mk base size 0 [] false none).wellFormed :=
   ⟨empty_watermarkValid base size, empty_childrenWithinWatermark base size,
    empty_childrenNonOverlap base size, empty_childrenUniqueIds base size⟩
 
@@ -1278,7 +1295,7 @@ namespace UntypedObjectValid
 /-- AN2-F.3: Canonical empty constructor — a fresh untyped region at `base`
     with `size` capacity, zero children, is well-formed by `empty_wellFormed`. -/
 @[inline] def empty (base : SeLe4n.PAddr) (size : Nat) : UntypedObjectValid :=
-  ⟨UntypedObject.mk base size 0 [] false, UntypedObject.empty_wellFormed base size⟩
+  ⟨UntypedObject.mk base size 0 [] false none, UntypedObject.empty_wellFormed base size⟩
 
 end UntypedObjectValid
 
