@@ -89,9 +89,33 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
     `_crossKind_rejected`) for transparent migration of any
     future consumer.
   - **AN10 regression suite**: new `tests/An10CascadeSuite.lean`
-    (17 tests covering AN10-A/B/C/D), wired into
-    `lakefile.toml` as `lean_exe an10_cascade_suite` and into
+    (initial 17 tests, post-audit-pass extended to **26 tests**
+    covering AN10-A/B/C/D), wired into `lakefile.toml` as
+    `lean_exe an10_cascade_suite` and into
     `scripts/test_tier2_negative.sh`.
+  - **AN10 post-delivery audit-pass remediation**: a deep audit of
+    the initial AN10 landing identified four strengthening
+    opportunities, all addressed in-PR.  (1) Additional 9 reader-
+    side migrations across `Lifecycle/Suspend.lean` (3 sites),
+    `SchedContext/Operations.lean` (8 raw lookups across
+    `allOtherActiveSchedContexts`/`schedContextYieldTo`/`Configure`/
+    `Bind`/`Unbind`), and `SchedContext/PriorityManagement.lean` (4
+    raw lookups across `updatePrioritySource`/
+    `migrateRunQueueBucket`/`setPriorityOp`/`setMCPriorityOp`).
+    Downstream proof updates in
+    `SchedContext/Invariant/PriorityPreservation.lean` and
+    `InformationFlow/Invariant/Operations.lean` bridge typed-
+    helper hypotheses back to raw-lookup form via
+    `SystemState.getTcb?_eq_some_iff` /
+    `getEndpoint?_eq_some_iff`. (2) Test suite expanded from 17 →
+    26 tests with substantive semantic-equivalence coverage on
+    migrated functions.  (3) Baseline floors advanced:
+    `RAW_MATCH_TCB` 49→42, `RAW_MATCH_SCHEDCONTEXT` 13→11,
+    `RAW_MATCH_TOTAL` 115→106; `GETTCB_ADOPTION` 54→77,
+    `GETSCHEDCTX_ADOPTION` 23→34; `TEST_COUNT_AK7` 17→26.
+    (4) Documentation accuracy: corrected stale
+    `tests/Ak7RegressionSuite.lean` reference in baseline-script
+    docstring.
   - **AN10-D**: `docs/audits/AUDIT_v0.29.0_DEFERRED.md` updated
     — DEF-AK7-E.cascade and DEF-AK7-F.cascade marked **RESOLVED
     at v0.30.10 / AN10**; cross-reference table updated; only

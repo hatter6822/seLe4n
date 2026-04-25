@@ -1,5 +1,61 @@
 ## v0.30.10 — WS-AN Phase AN10 (AK7 cascade closure)
 
+### Post-delivery audit-pass remediation
+
+A deep audit of the initial AN10 landing (`0ce739e`) surfaced four
+strengthening opportunities, all addressed in-PR:
+
+1. **Additional reader-side migrations** — the initial landing covered
+   only 14 sites despite the plan's mechanical-but-voluminous scope.
+   The audit-pass migrates an additional 9 production reader sites:
+   `Lifecycle/Suspend.lean::clearTcbIpcFields` + `clearPendingState` +
+   `cancelDonation` (3 sites);
+   `SchedContext/Operations.lean::allOtherActiveSchedContexts` +
+   `schedContextYieldTo` (2 raw lookups) +
+   `schedContextConfigure` (2 raw lookups) +
+   `schedContextBind` (2 raw lookups) +
+   `schedContextUnbind` (2 raw lookups);
+   `SchedContext/PriorityManagement.lean::updatePrioritySource` +
+   `migrateRunQueueBucket` + `setPriorityOp` (2 raw lookups) +
+   `setMCPriorityOp` (2 raw lookups).  Downstream proof updates in
+   `SchedContext/Invariant/PriorityPreservation.lean` and
+   `InformationFlow/Invariant/Operations.lean` bridge from the
+   typed-helper hypothesis back to the raw-lookup form via
+   `SystemState.getTcb?_eq_some_iff` / `getEndpoint?_eq_some_iff`.
+2. **Test suite expanded** — `tests/An10CascadeSuite.lean` extended
+   from 17 to **26 tests** with substantive semantic-equivalence
+   coverage on the migrated functions:
+   * 3 `lookupCspaceRoot` tests (populated TCB / empty state / wrong-
+     kind discrimination).
+   * 3 `getCurrentPriority` tests (bound TCB returns SC priority /
+     unbound returns TCB priority / bound-with-missing-SC returns the
+     defensive TCB priority).
+   * 2 `hasSufficientBudget` tests (positive vs zero budget).
+   * 1 `clearPendingState` test (queue links cleared).
+3. **Baseline floors advanced** — `docs/audits/AL0_baseline.txt`
+   re-anchored:
+   * `RAW_MATCH_TCB` 49 → 42, `RAW_MATCH_SCHEDCONTEXT` 13 → 11,
+     `RAW_MATCH_TOTAL` 115 → 106 (per-variant counts continue to drop).
+   * `GETTCB_ADOPTION` 54 → 77, `GETSCHEDCTX_ADOPTION` 23 → 34
+     (typed-helper consumers continue to grow).
+   * `TEST_COUNT_AK7` 17 → 26.
+4. **Documentation accuracy** — corrected a stale `tests/Ak7RegressionSuite.lean`
+   reference in the `scripts/ak7_cascade_baseline.sh` docstring (the
+   real path is `tests/An10CascadeSuite.lean`).
+
+The audit-pass also explored writer-side migration into
+`Service/Registry.lean::registerService` but reverted the change after
+discovering it would cascade through 3 deep proof-body re-indents in
+`Service/Registry/Invariant.lean` (`registryEndpointValid_preserved`,
+`registryHasIfaceConsistent_preserved`,
+`registryEndpointUnique_preserved`).  The 3-arm pattern there already
+collapsed wrong-variant and absent into `.invalidCapability`, so the
+migration is semantics-preserving but the proof structure carried a
+deep `cases hObj : st.objects[epId]? + cases obj` two-level
+case-split whose body bound `hObj` further down — an audit-pass-
+appropriate re-indent is non-trivial and tracked as a residual hygiene
+item under DEF-AK7-F.reader.hygiene-residual (no scheduled work).
+
 ### Summary
 
 WS-AN Phase AN10 closes the two AK7 cascade tracking entries from
@@ -75,11 +131,11 @@ Reader-side raw-match patterns migrated to the AL2-A typed helpers
   `getCurrentPriority` and `getCurrentPriorityChecked` migrate to
   `getSchedContext?`.
 
-Metric deltas: `RAW_MATCH_TCB` 52 → 49, `RAW_MATCH_SCHEDCONTEXT`
-19 → 13, `RAW_MATCH_ENDPOINT` 17 → 12, `RAW_MATCH_TOTAL` 129 → 115.
-`GETTCB_ADOPTION` 34 → 54, `GETSCHEDCTX_ADOPTION` 9 → 23,
-`GETENDPOINT_ADOPTION` 6 → 19, `GETNOTIFICATION_ADOPTION` 8 → 10,
-`GETUNTYPED_ADOPTION` 3 → 5.
+Metric deltas (post-audit-pass cumulative): `RAW_MATCH_TCB` 52 → 42,
+`RAW_MATCH_SCHEDCONTEXT` 19 → 11, `RAW_MATCH_ENDPOINT` 17 → 12,
+`RAW_MATCH_TOTAL` 129 → 106.  `GETTCB_ADOPTION` 34 → 77,
+`GETSCHEDCTX_ADOPTION` 9 → 34, `GETENDPOINT_ADOPTION` 6 → 19,
+`GETNOTIFICATION_ADOPTION` 8 → 10, `GETUNTYPED_ADOPTION` 3 → 5.
 
 Functions intentionally **not** migrated (with rationale recorded
 inline as docstring or AN10-B comment): `effectiveBucketPriority`
@@ -130,7 +186,7 @@ New `lean_exe an10_cascade_suite` wired into
 * `test_tier0_hygiene.sh` — PASS, including new
   `ak7_cascade_check_monotonic.sh` gate.
 * `test_tier2_negative.sh` — PASS, including new
-  `an10_cascade_suite` (17 tests).
+  `an10_cascade_suite` (26 tests, post-audit-pass).
 * `cargo test --workspace` — PASS (462 tests, unchanged).
 * `cargo clippy --workspace -- -D warnings` — 0 warnings.
 * `check_version_sync.sh` — PASS at 0.30.10.

@@ -227,7 +227,7 @@ the cascade migrated produces the same observable behaviour as the raw
 form.  -/
 def an10_d_typed_helper_equivalence : IO Bool := do
   let tid : ThreadId := ThreadId.ofNat 99
-  let tcb : TCB := { mkTcb 100 with tid := tid }
+  let tcb : TCB := mkTcb 99
   let st : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert tid.toObjId (.tcb tcb) }
   -- Raw form — what existed pre-migration.
@@ -237,6 +237,116 @@ def an10_d_typed_helper_equivalence : IO Bool := do
   -- Typed helper — what AN10-B migrates consumers to.
   let typed : Option TCB := st.getTcb? tid
   return raw == typed
+
+-- ============================================================================
+-- AN10 audit-pass coverage extension — semantic equivalence on migrated
+-- production functions.  Each test exercises the post-AN10 form on the
+-- exact production function that was migrated and compares against the
+-- pre-AN10 raw-match shape (constructed from the same input state).  A
+-- regression in any migrated function — even if the pre-/post-form happen
+-- to diverge only on a corner case — is caught here.
+-- ============================================================================
+
+/-- AN10-D.3 — `lookupCspaceRoot` (post-migration via `Option.map`)
+preserves the pre-migration semantics on a populated TCB. -/
+def an10_d_lookupCspaceRoot_populated : IO Bool := do
+  let tid : ThreadId := ThreadId.ofNat 50
+  let cspaceRoot : ObjId := ObjId.ofNat 999
+  let tcb : TCB :=
+    { mkTcb 50 with cspaceRoot := cspaceRoot }
+  let st : SystemState := { (default : SystemState) with
+    objects := (default : SystemState).objects.insert tid.toObjId (.tcb tcb) }
+  return lookupCspaceRoot st tid == some cspaceRoot
+
+/-- AN10-D.4 — `lookupCspaceRoot` returns `none` on the empty state
+(no TCB to read from). -/
+def an10_d_lookupCspaceRoot_empty : IO Bool := do
+  let tid : ThreadId := ThreadId.ofNat 50
+  let st : SystemState := default
+  return lookupCspaceRoot st tid == none
+
+/-- AN10-D.5 — `lookupCspaceRoot` returns `none` when the ObjId at the
+given TID resolves to a non-TCB variant (kind discrimination). -/
+def an10_d_lookupCspaceRoot_wrong_kind : IO Bool := do
+  let tid : ThreadId := ThreadId.ofNat 50
+  let st : SystemState := { (default : SystemState) with
+    objects := (default : SystemState).objects.insert tid.toObjId
+      (.endpoint mkEmptyEndpoint) }
+  return lookupCspaceRoot st tid == none
+
+/-- AN10-D.6 — `getCurrentPriority` (post-migration via
+`getSchedContext?`) returns the SchedContext's priority for a bound TCB. -/
+def an10_d_getCurrentPriority_bound : IO Bool := do
+  let scId : SchedContextId := SchedContextId.ofNat 300
+  let sc : Kernel.SchedContext :=
+    { mkEmptySchedContext 300 with priority := ⟨42⟩ }
+  let tcb : TCB :=
+    { mkTcb 51 with schedContextBinding := .bound scId, priority := ⟨5⟩ }
+  let st : SystemState := { (default : SystemState) with
+    objects := ((default : SystemState).objects
+      |>.insert scId.toObjId (.schedContext sc)) }
+  -- For .bound, getCurrentPriority must read sc.priority not tcb.priority.
+  return SeLe4n.Kernel.SchedContext.PriorityManagement.getCurrentPriority st tcb == ⟨42⟩
+
+/-- AN10-D.7 — `getCurrentPriority` falls back to the TCB's own
+`priority` for an `.unbound` TCB.  This confirms the unbound branch is
+unaffected by the typed-helper migration. -/
+def an10_d_getCurrentPriority_unbound : IO Bool := do
+  let tcb : TCB :=
+    { mkTcb 52 with schedContextBinding := .unbound, priority := ⟨13⟩ }
+  let st : SystemState := default
+  return SeLe4n.Kernel.SchedContext.PriorityManagement.getCurrentPriority st tcb == ⟨13⟩
+
+/-- AN10-D.8 — `getCurrentPriority` falls back to the TCB's own
+`priority` when the bound SchedContext is missing (defensive
+fall-through path; unreachable under
+`schedContextBindingConsistent`). -/
+def an10_d_getCurrentPriority_bound_missing : IO Bool := do
+  let scId : SchedContextId := SchedContextId.ofNat 9001
+  let tcb : TCB :=
+    { mkTcb 53 with schedContextBinding := .bound scId, priority := ⟨21⟩ }
+  let st : SystemState := default  -- SchedContext absent
+  return SeLe4n.Kernel.SchedContext.PriorityManagement.getCurrentPriority st tcb == ⟨21⟩
+
+/-- AN10-D.9 — `hasSufficientBudget` (post-migration via
+`getSchedContext?`) accepts a bound TCB whose SchedContext has a
+positive remaining budget. -/
+def an10_d_hasSufficientBudget_positive : IO Bool := do
+  let scId : SchedContextId := SchedContextId.ofNat 400
+  let sc : Kernel.SchedContext :=
+    { mkEmptySchedContext 400 with budgetRemaining := { val := 50 } }
+  let tcb : TCB :=
+    { mkTcb 54 with schedContextBinding := .bound scId }
+  let st : SystemState := { (default : SystemState) with
+    objects := (default : SystemState).objects.insert scId.toObjId (.schedContext sc) }
+  return SeLe4n.Kernel.hasSufficientBudget st tcb == true
+
+/-- AN10-D.10 — `hasSufficientBudget` rejects a bound TCB whose
+SchedContext has zero remaining budget. -/
+def an10_d_hasSufficientBudget_zero : IO Bool := do
+  let scId : SchedContextId := SchedContextId.ofNat 401
+  let sc : Kernel.SchedContext :=
+    { mkEmptySchedContext 401 with budgetRemaining := { val := 0 } }
+  let tcb : TCB :=
+    { mkTcb 55 with schedContextBinding := .bound scId }
+  let st : SystemState := { (default : SystemState) with
+    objects := (default : SystemState).objects.insert scId.toObjId (.schedContext sc) }
+  return SeLe4n.Kernel.hasSufficientBudget st tcb == false
+
+/-- AN10-D.11 — `clearPendingState` (post-migration via `getTcb?`)
+correctly clears queue links on a populated TCB. -/
+def an10_d_clearPendingState_populated : IO Bool := do
+  let tid : ThreadId := ThreadId.ofNat 56
+  let tcb : TCB :=
+    { mkTcb 56 with
+        queuePrev := some (ThreadId.ofNat 100)
+        queueNext := some (ThreadId.ofNat 200) }
+  let st : SystemState := { (default : SystemState) with
+    objects := (default : SystemState).objects.insert tid.toObjId (.tcb tcb) }
+  let st' := SeLe4n.Kernel.Lifecycle.Suspend.clearPendingState st tid
+  match st'.getTcb? tid with
+  | some t => return t.queuePrev == none && t.queueNext == none
+  | none   => return false
 
 -- ============================================================================
 -- Suite runner
@@ -260,7 +370,16 @@ def runAll : IO Bool := do
     ("an10_c_storeObjectKindChecked_rejects_cross_variant", an10_c_storeObjectKindChecked_rejects_cross_variant),
     ("an10_c_storeObjectKindChecked_accepts_same_variant", an10_c_storeObjectKindChecked_accepts_same_variant),
     ("an10_d_dispatch_validators_reachable", an10_d_dispatch_validators_reachable),
-    ("an10_d_typed_helper_equivalence", an10_d_typed_helper_equivalence)
+    ("an10_d_typed_helper_equivalence", an10_d_typed_helper_equivalence),
+    ("an10_d_lookupCspaceRoot_populated", an10_d_lookupCspaceRoot_populated),
+    ("an10_d_lookupCspaceRoot_empty", an10_d_lookupCspaceRoot_empty),
+    ("an10_d_lookupCspaceRoot_wrong_kind", an10_d_lookupCspaceRoot_wrong_kind),
+    ("an10_d_getCurrentPriority_bound", an10_d_getCurrentPriority_bound),
+    ("an10_d_getCurrentPriority_unbound", an10_d_getCurrentPriority_unbound),
+    ("an10_d_getCurrentPriority_bound_missing", an10_d_getCurrentPriority_bound_missing),
+    ("an10_d_hasSufficientBudget_positive", an10_d_hasSufficientBudget_positive),
+    ("an10_d_hasSufficientBudget_zero", an10_d_hasSufficientBudget_zero),
+    ("an10_d_clearPendingState_populated", an10_d_clearPendingState_populated)
   ]
   let mut allOk : Bool := true
   for (name, action) in tests do

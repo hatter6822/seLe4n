@@ -3378,12 +3378,18 @@ theorem setPriorityOp_preserves_projection
     · simp at hStep  -- validation error
     · split at hStep
       · rename_i targetTcb hTarget
+        -- AN10-B: post-migration `setPriorityOp` reads via `getTcb?`;
+        -- bridge from the typed-helper hypothesis to the raw lookup
+        -- expected by `hScHigh`.
+        have hTargetRaw :
+            st.objects[vTargetTid.val.toObjId]? = some (KernelObject.tcb targetTcb) :=
+          (SystemState.getTcb?_eq_some_iff st vTargetTid.val targetTcb).mp hTarget
         have hProj1 :
             projectState ctx observer
               (SchedContext.PriorityManagement.updatePrioritySource st vTargetTid.val targetTcb newPriority) =
             projectState ctx observer st :=
           updatePrioritySource_preserves_projection ctx observer st vTargetTid.val targetTcb
-            newPriority hTargetObjHigh (hScHigh targetTcb hTarget) hObjInv
+            newPriority hTargetObjHigh (hScHigh targetTcb hTargetRaw) hObjInv
         have hProj2 :
             projectState ctx observer
               (SchedContext.PriorityManagement.migrateRunQueueBucket
@@ -3451,6 +3457,12 @@ theorem setMCPriorityOp_preserves_projection
     · simp at hStep  -- validation error
     · split at hStep
       · rename_i targetTcb hTarget
+        -- AN10-B: post-migration `setMCPriorityOp` reads via `getTcb?`;
+        -- bridge from the typed-helper hypothesis to the raw lookup
+        -- expected by `hScHighForUpdated`.
+        have hTargetRaw :
+            st.objects[vTargetTid.val.toObjId]? = some (KernelObject.tcb targetTcb) :=
+          (SystemState.getTcb?_eq_some_iff st vTargetTid.val targetTcb).mp hTarget
         -- The post-MCP-update state (after F2):
         let targetTcb' : TCB := { targetTcb with maxControlledPriority := newMCP }
         let stAfterMCP : SystemState :=
@@ -3470,7 +3482,7 @@ theorem setMCPriorityOp_preserves_projection
               projectState ctx observer st := by
             rw [updatePrioritySource_preserves_projection ctx observer stAfterMCP vTargetTid.val
                  targetTcb' newMCP hTargetObjHigh
-                 (fun scId hB => hScHighForUpdated targetTcb hTarget scId hB) hObjInvMCP]
+                 (fun scId hB => hScHighForUpdated targetTcb hTargetRaw scId hB) hObjInvMCP]
             exact hStAfterMCP
           have hProj2 :
               projectState ctx observer

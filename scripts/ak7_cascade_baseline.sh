@@ -17,7 +17,7 @@
 #                           — production dispatch sites guarded by
 #                             `validateThreadIdArg` / `validateSchedContextIdArg`
 #                             / `validateObjIdArg`. SHOULD-GROW metric.
-#   * `TEST_COUNT_AK7`      — `tests/Ak7RegressionSuite.lean` test count.
+#   * `TEST_COUNT_AK7`      — `tests/An10CascadeSuite.lean` test count.
 #                             SHOULD-GROW metric.
 #
 # All counts exclude `SeLe4n/Model/State.lean` (the helper definition file

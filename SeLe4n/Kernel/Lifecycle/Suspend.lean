@@ -46,14 +46,15 @@ open SeLe4n.Kernel
 /-- Helper: update a TCB's ipcState and queue links to ready/detached.
     Only modifies `objects` field of the state. -/
 private def clearTcbIpcFields (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb tcb') =>
+  -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+  match st.getTcb? tid with
+  | some tcb' =>
     { st with objects := st.objects.insert tid.toObjId (.tcb { tcb' with
         ipcState := .ready
         queuePrev := none
         queueNext := none
         queuePPrev := none }) }
-  | _ => st
+  | none => st
 
 /-- Helper: clearTcbIpcFields preserves the scheduler. -/
 theorem clearTcbIpcFields_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -96,11 +97,12 @@ def cancelDonation (st : SystemState) (tid : SeLe4n.ThreadId)
   | .unbound => .ok st
   | .bound scId =>
     -- Unbind: clear the SchedContext's boundThread and deactivate (AE3-B/U-15)
-    let st1 : SystemState := match st.objects[scId.toObjId]? with
-      | some (.schedContext sc) =>
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+    let st1 : SystemState := match st.getSchedContext? scId with
+      | some sc =>
         let sc' := { sc with boundThread := none, isActive := false }
         { st with objects := st.objects.insert scId.toObjId (.schedContext sc') }
-      | _ => st
+      | none => st
     -- AE3-C/SC-07: Remove SchedContext from replenish queue (consistent with schedContextUnbind)
     let st2 := { st1 with scheduler := { st1.scheduler with
         replenishQueue := ReplenishQueue.remove st1.scheduler.replenishQueue scId } }
@@ -108,11 +110,12 @@ def cancelDonation (st : SystemState) (tid : SeLe4n.ThreadId)
     let st2 := { st2 with scThreadIndex :=
       (scThreadIndexRemove st2.scThreadIndex scId tid) }
     -- Clear TCB binding
-    .ok (match (st2.objects[tid.toObjId]? : Option KernelObject) with
-    | some (.tcb tcb') =>
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+    .ok (match st2.getTcb? tid with
+    | some tcb' =>
       let tcb'' := { tcb' with schedContextBinding := .unbound }
       { st2 with objects := st2.objects.insert tid.toObjId (.tcb tcb'') }
-    | _ => st2)
+    | none => st2)
   | .donated _ _ =>
     cleanupDonatedSchedContext st tid
 
@@ -124,15 +127,16 @@ def cancelDonation (st : SystemState) (tid : SeLe4n.ThreadId)
 pending message, timeout budget, and queue link fields to ensure clean
 state when the thread is Inactive. -/
 def clearPendingState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb tcb) =>
+  -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+  match st.getTcb? tid with
+  | some tcb =>
     { st with objects := st.objects.insert tid.toObjId (.tcb { tcb with
         pendingMessage := none
         timeoutBudget := none
         queuePrev := none
         queueNext := none
         queuePPrev := none }) }
-  | _ => st
+  | none => st
 
 -- ============================================================================
 -- D1-G: suspendThread (composite)

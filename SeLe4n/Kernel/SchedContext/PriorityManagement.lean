@@ -213,11 +213,12 @@ def updatePrioritySource (st : SystemState) (tid : SeLe4n.ThreadId)
     { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
   | .bound scId | .donated scId _ =>
     -- Update SchedContext priority
-    match st.objects[scId.toObjId]? with
-    | some (.schedContext sc) =>
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+    match st.getSchedContext? scId with
+    | some sc =>
       let sc' := { sc with priority := newPriority }
       { st with objects := st.objects.insert scId.toObjId (.schedContext sc') }
-    | _ => st  -- SchedContext missing — no-op (consistency violation)
+    | none => st  -- SchedContext missing — no-op (consistency violation)
 
 /-- Helper: if a thread is in the run queue, remove it and re-insert at
 the effective priority (new base priority with PIP boost applied). This
@@ -238,11 +239,12 @@ def migrateRunQueueBucket (st : SystemState) (tid : SeLe4n.ThreadId)
     -- `runnableThreadsAreTCBs`) now takes the max of `newPriority` and the
     -- RunQueue's cached priority for `tid`. Any PIP boost previously recorded
     -- in the RunQueue is therefore preserved rather than silently erased.
-    let effectivePrio := match st.objects[tid.toObjId]? with
-      | some (.tcb tcb) => match tcb.pipBoost with
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+    let effectivePrio := match st.getTcb? tid with
+      | some tcb => match tcb.pipBoost with
         | none => newPriority
         | some boostPrio => ⟨Nat.max newPriority.val boostPrio.val⟩
-      | _ =>
+      | none =>
         match st.scheduler.runQueue.threadPriority[tid]? with
         | some rqPrio => ⟨Nat.max newPriority.val rqPrio.val⟩
         | none => newPriority
@@ -271,14 +273,18 @@ so `split at` tactics in preservation proofs work cleanly. -/
 def setPriorityOp (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
     (newPriority : SeLe4n.Priority) : Except KernelError SystemState :=
   -- E1: Caller TCB lookup + MCP authority check
-  match st.objects[vCallerTid.val.toObjId]? with
-  | some (.tcb callerTcb) =>
+  -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. Both
+  -- original `_ => .error .invalidArgument` arms collapsed wrong-variant
+  -- and absent into the same error code, so migration is
+  -- semantics-preserving.
+  match st.getTcb? vCallerTid.val with
+  | some callerTcb =>
     match validatePriorityAuthority callerTcb newPriority with
     | .error e => .error e
     | .ok () =>
       -- E2: Target TCB lookup
-      match st.objects[vTargetTid.val.toObjId]? with
-      | some (.tcb targetTcb) =>
+      match st.getTcb? vTargetTid.val with
+      | some targetTcb =>
         -- E3: Update priority source (SchedContext or TCB)
         let oldPriority := getCurrentPriority st targetTcb
         let st := updatePrioritySource st vTargetTid.val targetTcb newPriority
@@ -293,8 +299,8 @@ def setPriorityOp (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThread
           | .error e => .error e
         else
           .ok st
-      | _ => .error .invalidArgument
-  | _ => .error .invalidArgument
+      | none => .error .invalidArgument
+  | none => .error .invalidArgument
 
 -- ============================================================================
 -- D2-F: setMCPriorityOp
@@ -320,14 +326,18 @@ Returns `illegalAuthority` if `newMCP > caller.maxControlledPriority`.
 def setMCPriorityOp (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThreadId)
     (newMCP : SeLe4n.Priority) : Except KernelError SystemState :=
   -- F1: Caller MCP authority validation (reuses validatePriorityAuthority for consistency)
-  match st.objects[vCallerTid.val.toObjId]? with
-  | some (.tcb callerTcb) =>
+  -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. Both
+  -- original `_ => .error .invalidArgument` arms collapsed wrong-variant
+  -- and absent into the same error code, so migration is
+  -- semantics-preserving.
+  match st.getTcb? vCallerTid.val with
+  | some callerTcb =>
     match validatePriorityAuthority callerTcb newMCP with
     | .error e => .error e
     | .ok () =>
       -- F2: Target TCB lookup + MCP update
-      match st.objects[vTargetTid.val.toObjId]? with
-      | some (.tcb targetTcb) =>
+      match st.getTcb? vTargetTid.val with
+      | some targetTcb =>
         let targetTcb' := { targetTcb with maxControlledPriority := newMCP }
         let st := { st with objects := st.objects.insert vTargetTid.val.toObjId (.tcb targetTcb') }
         -- F3: Priority capping — if current priority exceeds new MCP, cap it
@@ -345,7 +355,7 @@ def setMCPriorityOp (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThre
             .ok st
         else
           .ok st
-      | _ => .error .invalidArgument
-  | _ => .error .invalidArgument
+      | none => .error .invalidArgument
+  | none => .error .invalidArgument
 
 end SeLe4n.Kernel.SchedContext.PriorityManagement
