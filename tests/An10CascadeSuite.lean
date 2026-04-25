@@ -416,7 +416,33 @@ def an10_d_clearPendingState_populated : IO Bool := do
 -- equivalence, NOT just type-level acceptance.
 -- ============================================================================
 
--- (Test bodies are added by subsequent commits in this session.)
+/-- AN10-E.H7.1 — `removeRunnableValid` reduces to `removeRunnable`. The
+typed wrapper is a thin sugar that documents the dispatch-boundary
+discipline at the type system; the equality witness lets proofs
+discharge through the typed form. -/
+def an10_e_removeRunnableValid_reduces_to_raw : IO Bool := do
+  let tid : ThreadId := ThreadId.ofNat 7
+  let vtid : ValidThreadId :=
+    ⟨tid, by decide⟩
+  let st : SystemState := default
+  let viaWrapper : SystemState := SeLe4n.Kernel.removeRunnableValid st vtid
+  let viaRaw : SystemState := SeLe4n.Kernel.removeRunnable st vtid.val
+  -- The wrapper's reduction lemma is `rfl`, so every observable field
+  -- agrees pointwise. Compare the scheduler bucket directly (objects are
+  -- preserved trivially since `removeRunnable` is scheduler-only).
+  return viaWrapper.scheduler.runQueue.threadPriority.size ==
+    viaRaw.scheduler.runQueue.threadPriority.size
+
+/-- AN10-E.H7.2 — `removeRunnableValid` is a no-op on a state where the
+thread is not in the run queue (the empty default state has an empty
+queue, so removing any thread is structurally a no-op). -/
+def an10_e_removeRunnableValid_no_op_on_empty_queue : IO Bool := do
+  let tid : ThreadId := ThreadId.ofNat 99
+  let vtid : ValidThreadId := ⟨tid, by decide⟩
+  let st : SystemState := default
+  let st' : SystemState := SeLe4n.Kernel.removeRunnableValid st vtid
+  -- Empty queue stays empty after a no-op remove.
+  return st'.scheduler.runQueue.threadPriority.size == 0
 
 -- ============================================================================
 -- Suite runner
@@ -455,7 +481,9 @@ def runAll : IO Bool := do
     ("an10_d_getCurrentPriority_bound_missing", an10_d_getCurrentPriority_bound_missing),
     ("an10_d_hasSufficientBudget_positive", an10_d_hasSufficientBudget_positive),
     ("an10_d_hasSufficientBudget_zero", an10_d_hasSufficientBudget_zero),
-    ("an10_d_clearPendingState_populated", an10_d_clearPendingState_populated)
+    ("an10_d_clearPendingState_populated", an10_d_clearPendingState_populated),
+    ("an10_e_removeRunnableValid_reduces_to_raw", an10_e_removeRunnableValid_reduces_to_raw),
+    ("an10_e_removeRunnableValid_no_op_on_empty_queue", an10_e_removeRunnableValid_no_op_on_empty_queue)
   ]
   let mut allOk : Bool := true
   for (name, action) in tests do

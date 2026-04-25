@@ -110,6 +110,28 @@ def removeRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
       }
   }
 
+/-- AN10 residual closure (H7): typed entry-point for `removeRunnable` that
+documents the production-path discipline at the type system. Production
+handlers that have already validated their `ThreadId` (through
+`validateThreadIdArg` at the dispatch boundary, or through structural
+extraction from a queue / TCB lookup) should prefer this wrapper to
+make the invariant locally observable.
+
+The underlying `removeRunnable` is sentinel-safe (the sentinel can never
+be a member of any RunQueue or `scheduler.current`), so this wrapper
+adds no runtime safety beyond what the function already guarantees —
+its value is **type-level documentation of the dispatch-boundary contract**
+and a reusable reduction lemma (`removeRunnableValid_eq`) for proofs
+that want to discharge through the typed form. -/
+@[inline] def removeRunnableValid (st : SystemState) (vtid : SeLe4n.ValidThreadId) : SystemState :=
+  removeRunnable st vtid.val
+
+/-- AN10 residual closure (H7): the typed wrapper reduces to the raw form,
+so any proof body that established a result over `removeRunnable` can
+be reused by rewriting through this equality. -/
+@[simp] theorem removeRunnableValid_eq (st : SystemState) (vtid : SeLe4n.ValidThreadId) :
+    removeRunnableValid st vtid = removeRunnable st vtid.val := rfl
+
 /-- AK1-E (I-M03): Inlined PIP-effective priority. Duplicated from
 `Scheduler/Invariant.lean:146` (`effectiveRunQueuePriority`) to avoid a
 circular import (Scheduler.Invariant → ... → Endpoint). When a TCB has a
