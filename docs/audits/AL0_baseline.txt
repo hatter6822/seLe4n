@@ -25,12 +25,12 @@ getschedctx_adoption     = 34
 getendpoint_adoption     = 22
 getnotification_adoption = 10
 getuntyped_adoption      = 5
-getcnode_adoption        = 33
+getcnode_adoption        = 34
 getvspaceroot_adoption   = 12
 
 ## Writer-side wrapper adoption (should-grow)
 
-storeobjectchecked_adoption = 57
+storeobjectchecked_adoption = 58
 
 ## Dispatch-boundary sentinel guards (should-grow)
 
@@ -61,9 +61,9 @@ GETSCHEDCTX_ADOPTION=34
 GETENDPOINT_ADOPTION=22
 GETNOTIFICATION_ADOPTION=10
 GETUNTYPED_ADOPTION=5
-GETCNODE_ADOPTION=33
+GETCNODE_ADOPTION=34
 GETVSPACEROOT_ADOPTION=12
-STOREOBJECTCHECKED_ADOPTION=57
+STOREOBJECTCHECKED_ADOPTION=58
 SENTINEL_CHECK_DISPATCH=17
 TEST_COUNT_AK7=32
 SORRY_COUNT=0

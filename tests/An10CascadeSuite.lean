@@ -404,6 +404,21 @@ def an10_d_clearPendingState_populated : IO Bool := do
   | none   => return false
 
 -- ============================================================================
+-- AN10-E (residual closure) — handler `Valid*Id` + reader/writer hygiene
+-- ============================================================================
+-- Tests in this section exercise the residual-closure migrations landed in
+-- the AN10 post-audit-pass-3 work (commits 2–17 of the residual plan):
+--   * H1–H7 lifecycle / IPC handler signatures tightened to `Valid*Id`.
+--   * R1–R5 reader-side typed-helper migrations (`getCNode?`, etc.).
+--   * C.1–C.3 writer-side `storeObjectKindChecked` adoption.
+-- Each new test asserts that the migrated production function preserves
+-- the pre-migration semantics on a representative input — semantic
+-- equivalence, NOT just type-level acceptance.
+-- ============================================================================
+
+-- (Test bodies are added by subsequent commits in this session.)
+
+-- ============================================================================
 -- Suite runner
 -- ============================================================================
 
