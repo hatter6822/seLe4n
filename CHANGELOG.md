@@ -10,6 +10,36 @@ phases (AN3..AN7) and merges the Rust HAL into a state where
 `cargo test --workspace` reports **428 passing** (up from 414 baseline)
 and `cargo clippy --workspace -- -D warnings` is at **0 warnings**.
 
+### Post-delivery audit remediation (third pass)
+
+A third deep audit pass caught four additional tightening opportunities:
+
+(A) **Stale `mmu.rs:326` "AG6 replaces it" comment**: the second-pass
+audit fixed the module-level docstring but missed a duplicate stale
+comment above `build_identity_tables()`. Updated with the proper
+boot/runtime distinction.
+
+(B) **`UartGuard` visibility**: the struct was declared `pub` but its
+only constructor (`UartLock::with_guard`) is private, and the only
+consumer (`with_boot_uart`) is `pub(crate)`. The `pub` leaked an
+unreachable type into the crate's public surface. Tightened to
+`struct UartGuard` (module-private) and documented the rationale.
+
+(C) **`#[deny(clippy::panic)]` extended**: the initial AN8-C.3
+attribute only caught `panic!()`. `unreachable!()` and `todo!()` are
+panic-equivalents at runtime; extending to
+`#[deny(clippy::panic, clippy::unreachable, clippy::todo)]` prevents
+all three from sneaking into IRQ handler bodies.
+
+(D) **T11 comment correction**: the Lean `test_t11_eoi_before_handler`
+comment incorrectly claimed the test exercised "no handler
+registered → .error .invalidIrq" but INTID 30 is `timerInterruptId`,
+which routes to `timerTick` and returns `.ok`. Updated the test
+docstring to describe the actual success-branch exercise and to
+clarify that the substantive ordering distinction is captured by the
+proof-layer theorem referenced in T13 (both old and new dispatch
+orderings satisfy the final-state-empty property).
+
 ### Post-delivery audit remediation
 
 A deep end-to-end audit of the initial AN8 landing surfaced six

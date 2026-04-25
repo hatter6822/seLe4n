@@ -229,14 +229,17 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
 /// bridge incremented the tick count, causing double-counting.
 ///
 /// AN8-C.3 (H-19): `#[deny(clippy::panic)]` is applied at the function
-/// level so a future edit that inserts `panic!()` directly inside the
-/// handler body fails `cargo clippy`. Even though AN8-C.1's EOI-before-
-/// handler reorder removed the panic-loses-EOI class structurally, a
-/// panicking handler still halts the kernel under `panic = "abort"`, so
-/// direct panics are a latent correctness hazard: the handler should
-/// signal recoverable conditions through return values, not unwinding.
+/// level (together with the related `clippy::unreachable` and
+/// `clippy::todo` lints, which are panic-equivalents at runtime) so a
+/// future edit that inserts `panic!()`, `unreachable!()`, or `todo!()`
+/// directly inside the handler body fails `cargo clippy`. Even though
+/// AN8-C.1's EOI-before-handler reorder removed the panic-loses-EOI
+/// class structurally, a panicking handler still halts the kernel
+/// under `panic = "abort"`, so direct panics are a latent correctness
+/// hazard: the handler should signal recoverable conditions through
+/// return values, not unwinding.
 #[no_mangle]
-#[deny(clippy::panic)]
+#[deny(clippy::panic, clippy::unreachable, clippy::todo)]
 pub extern "C" fn handle_irq(_frame: &mut TrapFrame) {
     crate::gic::dispatch_irq(|intid| {
         if intid == crate::gic::TIMER_PPI_ID {

@@ -322,8 +322,11 @@ const _: () = assert!(core::mem::size_of::<BootL1Table>() == 4096,
 /// - 0x80000000 – 0xBFFFFFFF (1 GiB): Normal RAM
 /// - 0xC0000000 – 0xFFFFFFFF (1 GiB): Device memory
 ///
-/// This is a simplified boot mapping. AG6 replaces it with fine-grained
-/// 4 KiB page tables and proper kernel/user TTBR0/TTBR1 split.
+/// This is a simplified boot mapping. AN8-D (RUST-M04): the runtime
+/// kernel uses fine-grained 4 KiB page tables via
+/// `SeLe4n.Kernel.Architecture.PageTable` + `VSpaceARMv8` (AG6), with
+/// proper kernel/user TTBR0/TTBR1 split; those tables are built on top
+/// of this boot mapping once the scheduler is alive.
 fn build_identity_tables() {
     // SAFETY: Boot context is single-threaded (core 0 only, per AK5-I), the
     // MMU has not been enabled yet, and interrupts are still masked by the

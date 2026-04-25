@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/implement-rust-hal-phase-FwOJu",
-      "commit_sha": "187c25749c15e4393bc5b02ea680fc707c73e790",
-      "tree_sha": "addcde1f5888e061c77c09d84b17ac96dd2e94c5",
-      "committed_at_utc": "2026-04-25T00:01:44+00:00"
+      "commit_sha": "b53e502aece9db915310b976056f7f954a47c7ec",
+      "tree_sha": "f29d097ad5dfc44cb6cda6a910904340920d21a9",
+      "committed_at_utc": "2026-04-25T01:24:28+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "fdb0a01a69006b31f814a11c9b72ac110786a1dca700f3ae4bed107915dae3b5"
+    "source_digest": "ca6ab37b23aa0cf0de13ab220f92738cbf0362a8fb361e5c60a30bcf432fc458"
   },
   "summary": {
     "module_count": 189,
@@ -29,7 +29,7 @@
     "production_files": 165,
     "production_loc": 107870,
     "test_files": 24,
-    "test_loc": 16010,
+    "test_loc": 16014,
     "proved_theorem_lemma_decls": 3152,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -71265,7 +71265,7 @@
         {
           "kind": "def",
           "name": "test_t11_eoi_before_handler",
-          "line": 131,
+          "line": 136,
           "called": [
             "SystemState",
             "default",
@@ -71277,7 +71277,7 @@
         {
           "kind": "def",
           "name": "test_t12_eoi_filters_only_target_intid",
-          "line": 150,
+          "line": 154,
           "called": [
             "SystemState",
             "ackInterruptAudit",
@@ -71290,7 +71290,7 @@
         {
           "kind": "def",
           "name": "test_t13_ordering_theorem_witness",
-          "line": 178,
+          "line": 182,
           "called": [
             "interruptDispatchSequence_eoi_before_handler"
           ]
@@ -71298,7 +71298,7 @@
         {
           "kind": "def",
           "name": "runAllTests",
-          "line": 183,
+          "line": 187,
           "called": [
             "test_t01_ack_spurious",
             "test_t02_ack_out_of_range",
@@ -71318,7 +71318,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 204,
+          "line": 208,
           "called": [
             "runAllTests"
           ]

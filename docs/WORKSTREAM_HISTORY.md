@@ -106,6 +106,20 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
     synced); CHANGELOG.md entry; CLAUDE.md prepend; this entry;
     Cargo.lock refreshed via `cargo update -w`.
 
+  - **AN8 third-pass audit**: caught four more tightening items.
+    (A) Stale `mmu.rs:326` "AG6 replaces it" comment updated with
+    boot/runtime distinction. (B) `UartGuard` visibility tightened
+    from `pub struct` to module-private `struct` — the `pub` leaked
+    an unreachable type into the crate surface because
+    `UartLock::with_guard` is private and `with_boot_uart` is
+    `pub(crate)`. (C) `#[deny(clippy::panic)]` on `handle_irq`
+    extended to `#[deny(clippy::panic, clippy::unreachable,
+    clippy::todo)]` to catch all three panic-equivalent macros.
+    (D) Lean `test_t11_eoi_before_handler` comment corrected — INTID
+    30 is `timerInterruptId` which routes to `timerTick` (success
+    branch, not error as the comment claimed); cross-reference to
+    the proof-layer theorem in T13 clarifies that the substantive
+    ordering distinction is proved there, not in T11.
   - **AN8 post-delivery audit remediation**: deep end-to-end audit
     surfaced 6 strengthening items, all fixed in-PR. (1) `uart.rs`
     `extern crate std` placement (clippy::items_after_test_module).

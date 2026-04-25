@@ -124,15 +124,19 @@ def test_t10_dispatch_out_of_range : IO Unit := do
   | .error _ =>
     throw <| IO.userError "T10: dispatch of outOfRange returned error"
 
-/-- T11: AN8-C (H-19) — after a successful dispatch of a handled INTID,
-    the INTID is NOT present in `machine.eoiPending` (EOI fired BEFORE
-    the handler). Any handler body that preserves the `eoiPending`
-    structure leaves the ack trace empty. -/
+/-- T11: AN8-C (H-19) — round-trip property: after a successful dispatch
+    of INTID 30 (the timer PPI, which routes to `timerTick`), the INTID
+    is NOT present in `machine.eoiPending` in the final state. This is
+    the AK3-L `eoiPendingEmpty` invariant exercised through the AN8-C
+    `ack → EOI → handle` path; both pre- and post-AN8-C orderings
+    satisfy it (because both emit EOI). The substantive ordering
+    distinction is captured by the proof-layer theorem referenced in
+    T13; this test additionally verifies the round-trip on the success
+    branch (`timerTick` returns `.ok`). -/
 def test_t11_eoi_before_handler : IO Unit := do
   let st : SeLe4n.Model.SystemState := default
-  -- Dispatch of timer INTID 30 (no handler registered → handleInterrupt
-  -- returns .error .invalidIrq, but the sequence absorbs the error and
-  -- still produces `.ok` with stEoi as the final state).
+  -- INTID 30 = `timerInterruptId`; `handleInterrupt` routes to
+  -- `timerTick`, which succeeds on default state.
   match interruptDispatchSequence st 30 with
   | .ok ((), st') =>
     expectCond "interrupt-dispatch" "AN8-C: 30 not in final eoiPending (EOI fired)"

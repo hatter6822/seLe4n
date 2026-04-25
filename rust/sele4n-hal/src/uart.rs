@@ -371,7 +371,16 @@ impl UartLock {
 /// the stable `cargo test` profile (which forces `panic = "unwind"`),
 /// the `Drop` still fires on the unwind path. Both behaviours match
 /// the AK5-B `EoiGuard` design from GIC dispatch.
-pub struct UartGuard<'a> {
+///
+/// # Visibility
+///
+/// The struct is non-`pub` because the only constructor
+/// ([`UartLock::with_guard`]) is private; external callers use
+/// [`with_boot_uart`] (`pub(crate)`) which consumes the guard
+/// internally. Keeping the struct private prevents any accidental
+/// external construction (which would be UB-prone without the lock's
+/// invariants).
+struct UartGuard<'a> {
     inner: &'a mut Uart,
     lock: &'a UartLock,
 }
