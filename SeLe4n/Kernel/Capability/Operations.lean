@@ -82,15 +82,21 @@ derivation in this slice. -/
 def capAttenuates (parent derived : Capability) : Prop :=
   derived.target = parent.target ∧ ∀ right, right ∈ derived.rights → right ∈ parent.rights
 
-/-- Lookup a capability at `(cnode, slot)` with typed CNode checking. -/
+/-- Lookup a capability at `(cnode, slot)` with typed CNode checking.
+
+AN10 residual closure (R1): the absent-arm is migrated to the `getCNode?`
+typed helper. Semantically equivalent — `getCNode?` returns `none` for
+both wrong-variant and absent, collapsing into the original
+`.objectNotFound` arm; `getCNode? = some _` matches the original
+`.cnode _` arm exactly. -/
 def cspaceLookupSlot (addr : CSpaceAddr) : Kernel Capability :=
   fun st =>
     match SystemState.lookupSlotCap st addr with
     | some cap => .ok (cap, st)
     | none =>
-        match st.objects[addr.cnode]? with
-        | some (.cnode _) => .error .invalidCapability
-        | _ => .error .objectNotFound
+        match st.getCNode? addr.cnode with
+        | some _ => .error .invalidCapability
+        | none   => .error .objectNotFound
 
 /-- Resolve a CSpace path address into a concrete slot using CNode guard/radix semantics.
 
@@ -638,10 +644,11 @@ theorem cspaceLookupSlot_ok_iff_lookupSlotCap
     unfold cspaceLookupSlot at hOk
     cases hLookup : SystemState.lookupSlotCap st addr with
     | none =>
-        cases hObj : st.objects[addr.cnode]? with
-        | none => simp [hLookup, hObj] at hOk
-        | some obj =>
-            cases obj <;> simp [hLookup, hObj] at hOk
+        -- AN10-residual (R1): destructure on the typed helper to match
+        -- the migrated outer match shape.
+        cases hCN : st.getCNode? addr.cnode with
+        | none => simp [hLookup, hCN] at hOk
+        | some _ => simp [hLookup, hCN] at hOk
     | some cap' =>
         simp [hLookup] at hOk
         cases hOk

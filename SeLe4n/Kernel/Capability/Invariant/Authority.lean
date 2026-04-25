@@ -143,10 +143,10 @@ theorem cspaceLookupSlot_preserves_state
   unfold cspaceLookupSlot at hStep
   cases hLookup : SystemState.lookupSlotCap st addr with
   | none =>
-      cases hObj : st.objects[addr.cnode]? with
-      | none => simp [hLookup, hObj] at hStep
-      | some obj =>
-          cases obj <;> simp [hLookup, hObj] at hStep
+      -- AN10-residual (R1): destructure on the typed helper.
+      cases hCN : st.getCNode? addr.cnode with
+      | none => simp [hLookup, hCN] at hStep
+      | some _ => simp [hLookup, hCN] at hStep
   | some foundCap =>
       simp [hLookup] at hStep
       exact hStep.2.symm
@@ -178,8 +178,11 @@ private theorem cspaceInsertSlot_lookup_eq
           | none =>
               simp [hLookupGuard] at hStep
               cases hStep
+              -- AN10-residual (R1): include `getCNode?` in the unfold set so
+              -- the inner match (which never fires here, since `lookupSlotCap`
+              -- succeeds via the inserted cap) collapses with the outer one.
               simp only [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode,
-                RHTable_getElem?_eq_get?]
+                SystemState.getCNode?, RHTable_getElem?_eq_get?]
               rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
               simp [CNode.lookup_insert_eq cn slot cap hUniq]
 
@@ -218,8 +221,11 @@ theorem cspaceDeleteSlotCore_lookup_eq_none
           have hUniq := hSlotUniq cnodeId cn hObj
           simp [hObj] at hStep
           cases hStep
+          -- AN10-residual (R1): include `getCNode?` so the inner match
+          -- (now over `getCNode?` instead of raw `objects[]?`) unfolds.
           simp only [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode,
-            RHTable_getElem?_eq_get?, SystemState.detachSlotFromCdt_objects_eq]
+            SystemState.getCNode?, RHTable_getElem?_eq_get?,
+            SystemState.detachSlotFromCdt_objects_eq]
           rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
           simp [CNode.lookup_remove_eq_none cn slot hUniq]
 

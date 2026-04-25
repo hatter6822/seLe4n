@@ -566,10 +566,10 @@ theorem cspaceLookupSlot_ok_state_eq
   unfold cspaceLookupSlot at hLookup
   cases hCap : SystemState.lookupSlotCap st addr with
   | none =>
-      cases hObj : st.objects[addr.cnode]? with
-      | none => simp [hCap, hObj] at hLookup
-      | some obj =>
-          cases obj <;> simp [hCap, hObj] at hLookup
+      -- AN10-residual (R1): destructure on the typed helper.
+      cases hCN : st.getCNode? addr.cnode with
+      | none => simp [hCap, hCN] at hLookup
+      | some _ => simp [hCap, hCN] at hLookup
   | some cap' =>
       simp [hCap] at hLookup
       exact hLookup.2.symm

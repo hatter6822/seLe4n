@@ -474,6 +474,38 @@ def an10_e_cancelDonationValid_reduces : IO Bool := do
   | Except.ok _   => return true
   | Except.error _ => return false
 
+/-- AN10-E.R1.1 — `cspaceLookupSlot` rejects a non-CNode at the cnode
+slot with `.objectNotFound`. After the AN10-residual migration, the
+absent-arm uses `getCNode?` which returns `none` for both wrong-variant
+and absent — semantically equivalent to the prior catch-all `_` case
+that yielded `.objectNotFound`. -/
+def an10_e_cspaceLookupSlot_wrong_variant_is_objectNotFound : IO Bool := do
+  let cnodeAddr : ObjId := ObjId.ofNat 100
+  let slotAddr : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
+  let addr : CSpaceAddr := { cnode := cnodeAddr, slot := slotAddr }
+  -- Store a TCB at the cnode slot — wrong variant.
+  let tcb : TCB := mkTcb 100
+  let st : SystemState := { (default : SystemState) with
+    objects := (default : SystemState).objects.insert cnodeAddr (.tcb tcb) }
+  match SeLe4n.Kernel.cspaceLookupSlot addr st with
+  | Except.error KernelError.objectNotFound => return true
+  | _ => return false
+
+/-- AN10-E.R1.2 — `cspaceLookupSlot` returns `.invalidCapability` when
+the cnode is present but the slot is empty. -/
+def an10_e_cspaceLookupSlot_cnode_no_slot_is_invalidCapability : IO Bool := do
+  let cnodeAddr : ObjId := ObjId.ofNat 200
+  let slotAddr : SeLe4n.Slot := SeLe4n.Slot.ofNat 99
+  let addr : CSpaceAddr := { cnode := cnodeAddr, slot := slotAddr }
+  -- Store an empty CNode (4-bit radix, no entries).
+  let cn : CNode := { radixWidth := 4, depth := 4, guardWidth := 0, guardValue := 0,
+                      slots := default }
+  let st : SystemState := { (default : SystemState) with
+    objects := (default : SystemState).objects.insert cnodeAddr (.cnode cn) }
+  match SeLe4n.Kernel.cspaceLookupSlot addr st with
+  | Except.error KernelError.invalidCapability => return true
+  | _ => return false
+
 -- ============================================================================
 -- Suite runner
 -- ============================================================================
@@ -516,7 +548,11 @@ def runAll : IO Bool := do
     ("an10_e_removeRunnableValid_no_op_on_empty_queue", an10_e_removeRunnableValid_no_op_on_empty_queue),
     ("an10_e_clearPendingStateValid_reduces", an10_e_clearPendingStateValid_reduces),
     ("an10_e_cancelIpcBlockingValid_reduces", an10_e_cancelIpcBlockingValid_reduces),
-    ("an10_e_cancelDonationValid_reduces", an10_e_cancelDonationValid_reduces)
+    ("an10_e_cancelDonationValid_reduces", an10_e_cancelDonationValid_reduces),
+    ("an10_e_cspaceLookupSlot_wrong_variant_is_objectNotFound",
+      an10_e_cspaceLookupSlot_wrong_variant_is_objectNotFound),
+    ("an10_e_cspaceLookupSlot_cnode_no_slot_is_invalidCapability",
+      an10_e_cspaceLookupSlot_cnode_no_slot_is_invalidCapability)
   ]
   let mut allOk : Bool := true
   for (name, action) in tests do
