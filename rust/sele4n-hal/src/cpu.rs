@@ -122,8 +122,16 @@ pub static MPIDR_CORE_ID_MASK_SYM: u64 = MPIDR_CORE_ID_MASK;
 /// 0xFF or mis-typed 0x00FF_FFFE), the build fails here before anyone
 /// runs the binary on hardware.
 const _: () = assert!(MPIDR_CORE_ID_MASK == 0x00FF_FFFF);
-/// AN8-B.4: The shared symbol must track the constant exactly.
-const _: () = assert!(MPIDR_CORE_ID_MASK_SYM == MPIDR_CORE_ID_MASK);
+// AN8-B.4: the symbol-vs-constant equality check that *would* live here
+// (`const _: () = assert!(MPIDR_CORE_ID_MASK_SYM == MPIDR_CORE_ID_MASK);`)
+// requires `feature(const_refs_to_statics)` (rust-lang/rust#119618), which
+// only stabilised in Rust 1.83. The seLe4n MSRV is 1.82, so we instead
+// pin the equality at runtime via the `mpidr_shared_symbol_matches_constant`
+// test (cpu::tests in this file) — that test runs on every `cargo test`
+// invocation and has equivalent regression-detection power. The MSRV
+// migration to ≥ 1.83 is tracked alongside the AN8-E (R-HAL-L8)
+// `mmio.rs` MSRV note; once it lands the static-ref check can be
+// re-instated for compile-time enforcement.
 
 /// Read the MPIDR_EL1 register to determine the current core ID.
 ///
