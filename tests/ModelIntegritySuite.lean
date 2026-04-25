@@ -1087,29 +1087,30 @@ addition to the whole-kernel failure.
 
 open SeLe4n.Model in
 open SeLe4n.Kernel in
-/-- Donation primitives expose their documented public signatures. -/
+/-- Donation primitives expose their documented public signatures.
+AN10-residual-1 deep-audit: signatures now require `ValidThreadId`. -/
 def donation_primitives_reachable_via_operations_hub : IO Unit := do
   -- Core donation primitives.
-  let _ : SystemState -> SeLe4n.ThreadId -> SeLe4n.ThreadId ->
+  let _ : SystemState -> SeLe4n.ValidThreadId -> SeLe4n.ValidThreadId ->
           Except KernelError SystemState :=
     @applyCallDonation
-  let _ : SystemState -> SeLe4n.ThreadId ->
+  let _ : SystemState -> SeLe4n.ValidThreadId ->
           Except KernelError SystemState :=
     @applyReplyDonation
   -- Preservation theorems: scheduler / machine equality.
-  let _ : ∀ (st : SystemState) (caller receiver : SeLe4n.ThreadId)
+  let _ : ∀ (st : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
             (st' : SystemState),
-          applyCallDonation st caller receiver = .ok st' ->
+          applyCallDonation st callerVtid receiverVtid = .ok st' ->
           st'.scheduler = st.scheduler :=
     @applyCallDonation_scheduler_eq
-  let _ : ∀ (st : SystemState) (caller receiver : SeLe4n.ThreadId)
+  let _ : ∀ (st : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
             (st' : SystemState),
-          applyCallDonation st caller receiver = .ok st' ->
+          applyCallDonation st callerVtid receiverVtid = .ok st' ->
           st'.machine = st.machine :=
     @applyCallDonation_machine_eq
-  let _ : ∀ (st : SystemState) (replier : SeLe4n.ThreadId)
+  let _ : ∀ (st : SystemState) (replierVtid : SeLe4n.ValidThreadId)
             (st' : SystemState),
-          applyReplyDonation st replier = .ok st' ->
+          applyReplyDonation st replierVtid = .ok st' ->
           st'.machine = st.machine :=
     @applyReplyDonation_machine_eq
   -- Atomicity predicate surface.

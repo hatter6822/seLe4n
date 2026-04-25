@@ -2807,7 +2807,10 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let stApply := { st1 with
     objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
       serverTid.toObjId serverTcb).insert scId.toObjId (.schedContext sc) }
-  let stAfterCall := match SeLe4n.Kernel.applyCallDonation stApply callerTid serverTid with
+  -- AN10-residual-1 deep-audit: applyCallDonation now requires ValidThreadId.
+  let callerVtid : SeLe4n.ValidThreadId := ⟨callerTid, by decide⟩
+  let serverVtid : SeLe4n.ValidThreadId := ⟨serverTid, by decide⟩
+  let stAfterCall := match SeLe4n.Kernel.applyCallDonation stApply callerVtid serverVtid with
     | .ok s => s | .error _ => stApply
   let serverGotSc := match stAfterCall.objects[serverTid.toObjId]? with
     | some (.tcb t) => t.schedContextBinding.isBound
@@ -2822,7 +2825,7 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let stActive := { st1 with
     objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
       serverTid.toObjId activeServer).insert scId.toObjId (.schedContext sc) }
-  let stAfterActive := match SeLe4n.Kernel.applyCallDonation stActive callerTid serverTid with
+  let stAfterActive := match SeLe4n.Kernel.applyCallDonation stActive callerVtid serverVtid with
     | .ok s => s | .error _ => stActive
   let schedulerUnchanged := stAfterActive.scheduler.current == stActive.scheduler.current
   IO.println s!"[Z7D-004] applyCallDonation active-server: scheduler_unchanged={schedulerUnchanged}"
@@ -2831,7 +2834,7 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   let stReplyDon := { st1 with
     objects := ((st1.objects.insert callerTid.toObjId callerTcb).insert
       serverTid.toObjId serverDonated).insert scId.toObjId (.schedContext scDonated) }
-  let stAfterReply := match SeLe4n.Kernel.applyReplyDonation stReplyDon serverTid with
+  let stAfterReply := match SeLe4n.Kernel.applyReplyDonation stReplyDon serverVtid with
     | .ok s => s | .error _ => stReplyDon
   let callerGotBack := match stAfterReply.objects[callerTid.toObjId]? with
     | some (.tcb t) => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.bound scId
@@ -2844,7 +2847,7 @@ private def runDonationTrace (_counter : IO.Ref Nat) (st1 : SystemState) : IO Un
   -- Z7D-006: applyReplyDonation — non-donated server is noop
   let stReplyNormal := { st1 with
     objects := (st1.objects.insert serverTid.toObjId serverTcb) }
-  let stAfterNormal := match SeLe4n.Kernel.applyReplyDonation stReplyNormal serverTid with
+  let stAfterNormal := match SeLe4n.Kernel.applyReplyDonation stReplyNormal serverVtid with
     | .ok s => s | .error _ => stReplyNormal
   let unchanged := stAfterNormal.scheduler.current == stReplyNormal.scheduler.current
   IO.println s!"[Z7D-006] applyReplyDonation non-donated: unchanged={unchanged}"

@@ -1,5 +1,88 @@
 ## v0.30.10 — WS-AN Phase AN10 (AK7 cascade closure)
 
+### Deep-audit pass v2: H5/H6 signature tightening (parity with H1–H4 + H7)
+
+A second deep-audit pass identified that the H5/H6 wiring landed in
+the prior pass was structurally weaker than H1–H4/H7: the wrappers
+were invoked **conditionally** via a `ThreadId.toValid?` case-split
+inside `applyCallDonation` / `applyReplyDonation`, with a raw-form
+fallback.  Both branches reduced to identical semantics (the wrapper
+`_eq` lemma plus `toValid?_some_val_eq` made the wrapper branch
+observationally equal to the fallback), so the wrapper invocation was
+runtime-decorative rather than type-enforced.
+
+Remediation tightens the signatures of `applyCallDonation` and
+`applyReplyDonation` to take `ValidThreadId` directly:
+
+- `applyCallDonation : SystemState → ValidThreadId → ValidThreadId →
+  Except KernelError SystemState` — body removes the toValid?
+  case-split + raw fallback, calls `donateSchedContextValid` directly.
+- `applyReplyDonation : SystemState → ValidThreadId → Except
+  KernelError SystemState` — body removes the toValid? case-split for
+  `replier`, retains a `toValid? originalOwner` shim because the
+  `originalOwner` field is stored inside the `.donated` constructor
+  (not a parameter).  The `none` arm yields `.error .invalidArgument`
+  (structurally unreachable under `donationOwnerValid`).
+
+**Production caller updates** (raw `tid` → `ValidThreadId`
+construction at the boundary):
+
+- `Kernel/API.lean`: 5 dispatch-arm sites at lines 845
+  (`dispatchWithCap.call`), 1056 (`dispatchWithCapChecked.call`), 1078
+  (`dispatchWithCapChecked.reply`), 1180
+  (`dispatchWithCapChecked.replyRecv`), 1908 (theorem
+  `dispatchWithCap_call_uses_withCaps`).  Each wraps the call in
+  `match ThreadId.toValid? tid (, ThreadId.toValid? receiverTid) with
+  | some _, some _ => ... | _, _ => .error .invalidArgument`.  Under
+  the AL7 dispatch-gate validators on `tid` and the
+  `endpointQueuePopHead_returns_head`-witnessed `receiverTid`, the
+  rejection arm is structurally unreachable.
+
+- `IPC/Operations/Donation.lean`: 3 sites in
+  `endpointCallWithDonation`, `endpointReplyWithDonation`,
+  `endpointReplyRecvWithDonation`.  Same `toValid?` shim pattern.
+
+- `Testing/MainTraceHarness.lean`: trace fixtures at the Z7D-003 /
+  Z7D-004 / Z7D-005 / Z7D-006 sites construct `ValidThreadId` via
+  `⟨tid, by decide⟩` (the literal tids `7001` / `7002` are decidable
+  non-sentinel).
+
+- `tests/An10CascadeSuite.lean::an10_e_applyCallDonation_wires_h5` /
+  `_applyReplyDonation_wires_h6`: same explicit `ValidThreadId`
+  construction.
+
+- `tests/ModelIntegritySuite.lean::donation_primitives_reachable_via_
+  operations_hub`: type ascriptions updated to require `ValidThreadId`
+  arguments.
+
+**Proof cascade**: 4 unfold-proof sites updated:
+
+- `applyCallDonation_scheduler_eq` (Primitives.lean:133): signature
+  `(callerVtid receiverVtid : ValidThreadId)`; the body simplifies to
+  a single direct case on `donateSchedContext` (no toValid?
+  case-split).
+- `applyCallDonation_machine_eq` (Primitives.lean:508): same.
+- `applyReplyDonation_machine_eq` (Primitives.lean:573): signature
+  takes `replierVtid`; body case-splits on `originalOwner.toValid?`
+  with `cases h` to discharge the structurally-unreachable `none` arm.
+- `applyCallDonation_preserves_projection` (NI Operations.lean:2781):
+  signature update + body simplification.
+
+**checkedDispatch_replyRecv_eq_unchecked_when_allowed** proof
+(API.lean:1492) gains a `cases SeLe4n.ThreadId.toValid? tid` shim to
+match the symmetric toValid? case-splits in both checked and
+unchecked dispatch arms.
+
+After this pass, all 7 wrappers (H1–H4, H5, H6, H7) now share the
+same type-enforced wiring discipline as `suspendThread`: the type
+system rejects sentinel inputs at the function entry, eliminating the
+asymmetry the prior pass introduced.
+
+Gate at the deep-audit-v2 tip: `lake build` (302 jobs, 0 warnings) +
+`an10_cascade_suite` 45/45 PASS + `model_integrity_suite` PASS +
+monotonicity gate PASS at the AN10-residual-1 floors + zero `sorry`/
+`axiom`/`native_decide`.
+
 ### Post-delivery AN10-residual-1 closure (deep-audit pass)
 
 After the user observed that the three audit passes still delivered

@@ -652,10 +652,15 @@ def an10_e_returnDonatedSchedContextValid_reduces : IO Bool := do
 /-- AN10-E.production-wiring — verify `applyCallDonation` invokes the H5
 wrapper path on a state where both `caller`/`receiver` are non-sentinel.
 This is the end-to-end production-wiring test that confirms the wrapper
-is reachable from the IPC dispatch chain. -/
+is reachable from the IPC dispatch chain.
+
+AN10-residual-1 deep-audit: signature now requires `ValidThreadId`,
+making the wiring type-enforced rather than runtime-conditional. -/
 def an10_e_applyCallDonation_wires_h5 : IO Bool := do
   let callerTid : ThreadId := ThreadId.ofNat 10
   let receiverTid : ThreadId := ThreadId.ofNat 20
+  let callerVtid : ValidThreadId := ⟨callerTid, by decide⟩
+  let receiverVtid : ValidThreadId := ⟨receiverTid, by decide⟩
   let scId : SchedContextId := SchedContextId.ofNat 30
   let sc : Kernel.SchedContext := { mkEmptySchedContext 30 with boundThread := some callerTid }
   let callerTcb : TCB := { mkTcb 10 with schedContextBinding := .bound scId }
@@ -667,7 +672,7 @@ def an10_e_applyCallDonation_wires_h5 : IO Bool := do
       |>.insert callerTid.toObjId (.tcb callerTcb)
       |>.insert receiverTid.toObjId (.tcb receiverTcb)) }
   -- After applyCallDonation, the receiver's binding should be `.donated`.
-  match SeLe4n.Kernel.applyCallDonation st callerTid receiverTid with
+  match SeLe4n.Kernel.applyCallDonation st callerVtid receiverVtid with
   | Except.ok st' =>
       match st'.objects[receiverTid.toObjId]? with
       | some (.tcb t) =>
@@ -679,10 +684,13 @@ def an10_e_applyCallDonation_wires_h5 : IO Bool := do
 
 /-- AN10-E.production-wiring — verify `applyReplyDonation` invokes the H6
 wrapper path on a state where the replier has a `.donated` binding.
-End-to-end test confirming H6 is reachable from the IPC reply chain. -/
+End-to-end test confirming H6 is reachable from the IPC reply chain.
+
+AN10-residual-1 deep-audit: signature now requires `ValidThreadId`. -/
 def an10_e_applyReplyDonation_wires_h6 : IO Bool := do
   let replierTid : ThreadId := ThreadId.ofNat 10
   let originalOwnerTid : ThreadId := ThreadId.ofNat 20
+  let replierVtid : ValidThreadId := ⟨replierTid, by decide⟩
   let scId : SchedContextId := SchedContextId.ofNat 30
   let sc : Kernel.SchedContext := { mkEmptySchedContext 30 with boundThread := some replierTid }
   let replierTcb : TCB := { mkTcb 10 with
@@ -693,7 +701,7 @@ def an10_e_applyReplyDonation_wires_h6 : IO Bool := do
       |>.insert scId.toObjId (.schedContext sc)
       |>.insert replierTid.toObjId (.tcb replierTcb)
       |>.insert originalOwnerTid.toObjId (.tcb ownerTcb)) }
-  match SeLe4n.Kernel.applyReplyDonation st replierTid with
+  match SeLe4n.Kernel.applyReplyDonation st replierVtid with
   | Except.ok st' =>
       -- After return, the replier should be unbound, the original owner
       -- should be bound, and the SC's boundThread should be the original owner.

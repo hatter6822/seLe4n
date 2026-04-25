@@ -436,12 +436,24 @@ currently-active plan file tracks them.**
 
     Each wrapper takes `ValidThreadId` parameters and reduces to the
     raw form via a `_eq` `@[simp]` lemma so existing proof bodies
-    operating on the raw form continue to work unchanged.  The new
-    Prelude lemma `ThreadId.toValid?_some_val_eq` (`t.toValid? = some
-    vt → vt.val = t`) bridges back from the H5/H6 wrapper-form to the
-    raw-tid form for the 4 affected unfold proofs in
-    `Donation/Primitives.lean` and `InformationFlow/Invariant/
-    Operations.lean`.
+    operating on the raw form continue to work unchanged.
+
+    **Deep-audit-v2 pass (signature parity)**: a follow-up audit
+    found the H5/H6 wiring was structurally weaker than H1–H4/H7
+    because the wrappers were invoked conditionally via a `toValid?`
+    case-split with a raw-form fallback.  Remediation tightens the
+    signatures of `applyCallDonation` and `applyReplyDonation` to
+    take `ValidThreadId` directly, removing the conditional shim.
+    The Prelude lemma `ThreadId.toValid?_some_val_eq` is retained
+    for the 4 unfold proofs in `Donation/Primitives.lean`,
+    `InformationFlow/Invariant/Operations.lean`, and
+    `Kernel/API.lean::checkedDispatch_replyRecv_eq_unchecked_when_allowed`,
+    which now reason about the symmetric `toValid?` shims at the
+    production caller boundary in `API.lean` (5 sites) and
+    `Donation.lean` (3 sites).  Under the AL7 dispatch-gate
+    validators, the `.error .invalidArgument` rejection arms are
+    structurally unreachable.  All 7 wrappers (H1–H7) now share the
+    same type-enforced discipline as `suspendThread`.
 
     **Rationale for wrapper-not-tightening** (AN10-residual-1
     findings): the original tightening plan would have cascaded

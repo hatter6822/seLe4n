@@ -2781,12 +2781,12 @@ On success, the scheduler is preserved (`applyCallDonation_scheduler_eq`). -/
 theorem applyCallDonation_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState)
-    (caller receiver : SeLe4n.ThreadId)
+    (callerVtid receiverVtid : SeLe4n.ValidThreadId)
     (st' : SystemState)
-    (hOk : applyCallDonation st caller receiver = .ok st')
-    (_hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
-    (hReceiverObjHigh : objectObservable ctx observer receiver.toObjId = false)
-    (hScHigh : ∀ tcb : TCB, lookupTcb st caller = some tcb →
+    (hOk : applyCallDonation st callerVtid receiverVtid = .ok st')
+    (_hCallerObjHigh : objectObservable ctx observer callerVtid.val.toObjId = false)
+    (hReceiverObjHigh : objectObservable ctx observer receiverVtid.val.toObjId = false)
+    (hScHigh : ∀ tcb : TCB, lookupTcb st callerVtid.val = some tcb →
       ∀ scId : SeLe4n.SchedContextId, tcb.schedContextBinding = .bound scId →
         objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt) :
@@ -2797,8 +2797,10 @@ theorem applyCallDonation_preserves_projection
   -- In the donation case, donateSchedContext does two storeObject calls at
   -- non-observable ObjIds (clientScId.toObjId and serverTid.toObjId).
   -- Chain storeObject_preserves_projection for each store.
+  -- AN10-residual-1 deep-audit: signature now takes ValidThreadId; body
+  -- calls donateSchedContextValid directly (no toValid? case-split).
   unfold applyCallDonation at hOk
-  cases hR : lookupTcb st receiver with
+  cases hR : lookupTcb st receiverVtid.val with
   | none => simp [hR] at hOk; cases hOk; simp
   | some receiverTcb =>
     simp only [hR] at hOk
@@ -2807,7 +2809,7 @@ theorem applyCallDonation_preserves_projection
     | donated _ _ => simp [hBinding] at hOk; cases hOk; simp
     | unbound =>
       simp only [hBinding] at hOk
-      cases hC : lookupTcb st caller with
+      cases hC : lookupTcb st callerVtid.val with
       | none => simp [hC] at hOk; cases hOk; simp
       | some callerTcb =>
         simp only [hC] at hOk
@@ -2815,27 +2817,10 @@ theorem applyCallDonation_preserves_projection
         | unbound => simp [hCBinding] at hOk; cases hOk; simp
         | donated _ _ => simp [hCBinding] at hOk; cases hOk; simp
         | bound clientScId =>
-          simp only [hCBinding] at hOk
-          -- AN10-residual-1 (commit 6): the body case-splits on `toValid?`
-          -- before calling `donateSchedContext`(`Valid`).  Collapse back to
-          -- the raw form so the original proof body composes unchanged.
-          have hOk :
-              (match donateSchedContext st caller receiver clientScId with
-               | .error e => Except.error (α := SystemState) e
-               | .ok st' => Except.ok st') = .ok st' := by
-            cases hCV : SeLe4n.ThreadId.toValid? caller with
-            | none => simp only [hCV] at hOk; exact hOk
-            | some clientVtid =>
-                cases hRV : SeLe4n.ThreadId.toValid? receiver with
-                | none => simp only [hCV, hRV] at hOk; exact hOk
-                | some serverVtid =>
-                    have hCEq : clientVtid.val = caller :=
-                      SeLe4n.ThreadId.toValid?_some_val_eq caller clientVtid hCV
-                    have hREq : serverVtid.val = receiver :=
-                      SeLe4n.ThreadId.toValid?_some_val_eq receiver serverVtid hRV
-                    simp only [hCV, hRV, donateSchedContextValid, hCEq, hREq] at hOk
-                    exact hOk
-          cases hDon : donateSchedContext st caller receiver clientScId with
+          -- AN10-residual-1 deep-audit: body now calls
+          -- `donateSchedContextValid` directly; reduce via `_eq` lemma.
+          simp only [hCBinding, donateSchedContextValid] at hOk
+          cases hDon : donateSchedContext st callerVtid.val receiverVtid.val clientScId with
           | error _ => simp [hDon] at hOk
           | ok stDon =>
             simp [hDon] at hOk; cases hOk
@@ -2855,11 +2840,11 @@ theorem applyCallDonation_preserves_projection
                   | error _ => intro h; cases h
                   | ok p1 =>
                     simp only []
-                    cases hL : lookupTcb p1.2 receiver with
+                    cases hL : lookupTcb p1.2 receiverVtid.val with
                     | none => intro h; cases h
                     | some serverTcb =>
                       simp only []
-                      cases hS2 : storeObject receiver.toObjId _ p1.2 with
+                      cases hS2 : storeObject receiverVtid.val.toObjId _ p1.2 with
                       | error _ => intro h; cases h
                       | ok p2 =>
                         simp only [Except.ok.injEq]
@@ -2871,7 +2856,7 @@ theorem applyCallDonation_preserves_projection
                         have hProj1 := storeObject_preserves_projection
                           ctx observer st p1.2 clientScId.toObjId _ hScObjHigh hObjInv hS1
                         have hProj2 := storeObject_preserves_projection
-                          ctx observer p1.2 p2.2 receiver.toObjId _ hReceiverObjHigh hInv1 hS2
+                          ctx observer p1.2 p2.2 receiverVtid.val.toObjId _ hReceiverObjHigh hInv1 hS2
                         rw [projectState_scThreadIndex_eq, hProj2, hProj1]
               | _ => simp only []; intro h; cases h
 

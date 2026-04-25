@@ -46,11 +46,25 @@ If both conditions hold, donate the caller's SchedContext to the receiver.
 Otherwise, return the state unchanged.
 
 This function modifies only `objects` (SchedContext and TCB schedContextBinding
-fields). It does NOT modify the scheduler RunQueue or current thread. -/
+fields). It does NOT modify the scheduler RunQueue or current thread.
+
+**AN10-residual-1 deep-audit pass (signature tightening)**: both `caller`
+and `receiver` are now `ValidThreadId`.  The Lean type system enforces
+the dispatch-boundary discipline at this function's signature —
+construction of a `ValidThreadId` requires a non-sentinel proof, so
+calling `applyCallDonation st sentinel sentinel` is a compile-time
+error.  Production callers (`dispatchWithCap` in `API.lean`,
+`endpointCallWithDonation` in `Donation.lean`) construct
+`ValidThreadId` from their raw `ThreadId` arguments via
+`ThreadId.toValid?` with `.error .invalidArgument` rejection; under
+the AL7 dispatch-gate (`validateThreadIdArg`) the rejection is
+structurally unreachable but provides defense-in-depth. -/
 def applyCallDonation
     (st : SystemState)
-    (caller : SeLe4n.ThreadId) (receiver : SeLe4n.ThreadId)
+    (callerVtid : SeLe4n.ValidThreadId) (receiverVtid : SeLe4n.ValidThreadId)
     : Except KernelError SystemState :=
+  let caller : SeLe4n.ThreadId := callerVtid.val
+  let receiver : SeLe4n.ThreadId := receiverVtid.val
   -- Check if receiver is passive
   match lookupTcb st receiver with
   | none => .ok st                          -- No-op: receiver not found
@@ -64,22 +78,12 @@ def applyCallDonation
         match callerTcb.schedContextBinding with
         | .bound clientScId =>
           -- AH2-A: Propagate donation errors instead of swallowing them.
-          -- AN10-residual-1 (commit 6/H5): route through the H5 wrapper
-          -- `donateSchedContextValid` when both ids are non-sentinel.
-          -- The prior `lookupTcb` successes (lines 55, 61) guarantee
-          -- both ids reference TCBs in the store; the sentinel ObjId is
-          -- not associated with any TCB.  The fallback branch below
-          -- preserves observational equivalence in any context that
-          -- cannot establish that invariant.
-          match SeLe4n.ThreadId.toValid? caller, SeLe4n.ThreadId.toValid? receiver with
-          | some clientVtid, some serverVtid =>
-              match donateSchedContextValid st clientVtid serverVtid clientScId with
-              | .error e => .error e
-              | .ok st' => .ok st'
-          | _, _ =>
-              match donateSchedContext st caller receiver clientScId with
-              | .error e => .error e
-              | .ok st' => .ok st'
+          -- AN10-residual-1 deep-audit (H5): direct call to the typed
+          -- wrapper.  Type-level enforcement of the dispatch-boundary
+          -- discipline at this function's signature.
+          match donateSchedContextValid st callerVtid receiverVtid clientScId with
+          | .error e => .error e
+          | .ok st' => .ok st'
         | _ => .ok st                       -- No-op: caller has no SC to donate
     | _ => .ok st  -- Receiver already has SC, no donation needed
 
@@ -128,62 +132,33 @@ theorem donateSchedContext_scheduler_eq
 
 /-- Z7-B/AH2-D: applyCallDonation preserves the scheduler exactly. -/
 theorem applyCallDonation_scheduler_eq
-    (st : SystemState) (caller receiver : SeLe4n.ThreadId)
+    (st : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
     (st' : SystemState)
-    (h : applyCallDonation st caller receiver = .ok st') :
+    (h : applyCallDonation st callerVtid receiverVtid = .ok st') :
     st'.scheduler = st.scheduler := by
   unfold applyCallDonation at h
-  cases hRecv : lookupTcb st receiver with
+  cases hRecv : lookupTcb st receiverVtid.val with
   | none => simp [hRecv] at h; cases h; rfl
   | some receiverTcb =>
     simp only [hRecv] at h
     cases hBinding : receiverTcb.schedContextBinding with
     | unbound =>
       simp only [hBinding] at h
-      cases hCaller : lookupTcb st caller with
+      cases hCaller : lookupTcb st callerVtid.val with
       | none => simp [hCaller] at h; cases h; rfl
       | some callerTcb =>
         simp only [hCaller] at h
         cases hCallerBinding : callerTcb.schedContextBinding with
         | unbound => simp [hCallerBinding] at h; cases h; rfl
         | bound clientScId =>
-          simp only [hCallerBinding] at h
-          -- AN10-residual-1 (commit 6): the body case-splits on `toValid?`
-          -- for both ids before calling `donateSchedContext` (via the H5
-          -- wrapper or the raw fallback).  Both branches reduce to
-          -- `donateSchedContext st caller receiver clientScId` once the
-          -- wrapper's `_eq` lemma fires + `toValid?_some_val_eq` rewrites
-          -- vtid.val back to the original tid.
-          cases hCV : SeLe4n.ThreadId.toValid? caller with
-          | none =>
-              simp only [hCV] at h
-              cases hDonate : donateSchedContext st caller receiver clientScId with
-              | error _ => simp [hDonate] at h
-              | ok stDon =>
-                  simp [hDonate] at h; rw [← h]
-                  exact donateSchedContext_scheduler_eq st stDon caller receiver clientScId hDonate
-          | some clientVtid =>
-              cases hRV : SeLe4n.ThreadId.toValid? receiver with
-              | none =>
-                  simp only [hCV, hRV] at h
-                  cases hDonate : donateSchedContext st caller receiver clientScId with
-                  | error _ => simp [hDonate] at h
-                  | ok stDon =>
-                      simp [hDonate] at h; rw [← h]
-                      exact donateSchedContext_scheduler_eq st stDon caller receiver clientScId hDonate
-              | some serverVtid =>
-                  -- some/some branch: route through the wrapper.  Bridge
-                  -- vtid.val back to the original tid via the prelude lemma.
-                  have hCEq : clientVtid.val = caller :=
-                    SeLe4n.ThreadId.toValid?_some_val_eq caller clientVtid hCV
-                  have hREq : serverVtid.val = receiver :=
-                    SeLe4n.ThreadId.toValid?_some_val_eq receiver serverVtid hRV
-                  simp only [hCV, hRV, donateSchedContextValid, hCEq, hREq] at h
-                  cases hDonate : donateSchedContext st caller receiver clientScId with
-                  | error _ => simp [hDonate] at h
-                  | ok stDon =>
-                      simp [hDonate] at h; rw [← h]
-                      exact donateSchedContext_scheduler_eq st stDon caller receiver clientScId hDonate
+          -- AN10-residual-1 deep-audit: body now calls `donateSchedContextValid`
+          -- directly with the typed arguments; reduce via `_eq` lemma.
+          simp only [hCallerBinding, donateSchedContextValid] at h
+          cases hDonate : donateSchedContext st callerVtid.val receiverVtid.val clientScId with
+          | error _ => simp [hDonate] at h
+          | ok stDon =>
+              simp [hDonate] at h; rw [← h]
+              exact donateSchedContext_scheduler_eq st stDon callerVtid.val receiverVtid.val clientScId hDonate
         | donated scId owner => simp [hCallerBinding] at h; cases h; rfl
     | bound scId => simp [hBinding] at h; cases h; rfl
     | donated scId owner => simp [hBinding] at h; cases h; rfl
@@ -196,31 +171,35 @@ theorem applyCallDonation_scheduler_eq
 
 If the replier has a donated SchedContext binding (.donated scId originalOwner),
 return the SchedContext to the original owner and remove the (now passive)
-replier from the RunQueue. Otherwise, return the state unchanged. -/
-def applyReplyDonation (st : SystemState) (replier : SeLe4n.ThreadId)
+replier from the RunQueue. Otherwise, return the state unchanged.
+
+**AN10-residual-1 deep-audit pass (signature tightening)**: `replier` is
+now `ValidThreadId` — type-level enforcement at the function entry.
+The `originalOwner` is a stored field of the `.donated` constructor
+(set by `donateSchedContext` from a previously-validated client tid);
+it is promoted via `ThreadId.toValid?` with `.error .invalidArgument`
+rejection.  Under `donationOwnerValid` (an `ipcInvariantFull`
+conjunct), `originalOwner` is structurally non-sentinel, so the
+rejection arm is unreachable in production but provides
+defense-in-depth for any path that hasn't yet established that
+invariant. -/
+def applyReplyDonation (st : SystemState) (replierVtid : SeLe4n.ValidThreadId)
     : Except KernelError SystemState :=
+  let replier : SeLe4n.ThreadId := replierVtid.val
   match lookupTcb st replier with
   | none => .ok st                          -- No-op: replier not found
   | some replierTcb =>
     match replierTcb.schedContextBinding with
     | .donated scId originalOwner =>
       -- AH2-B: Propagate return errors instead of swallowing them.
-      -- AN10-residual-1 (commit 6/H6): route through `returnDonatedSchedContext
-      -- Valid` when both ids are non-sentinel.  The prior `lookupTcb st replier
-      -- = some _` (line 158) guarantees `replier` is non-sentinel; the
-      -- `originalOwner` field of `.donated` was set by `donateSchedContext`
-      -- which itself only stores non-sentinel client tids (the sentinel
-      -- ObjId has no TCB).  The fallback branch preserves observational
-      -- equivalence in any context that cannot establish that invariant.
-      match SeLe4n.ThreadId.toValid? replier, SeLe4n.ThreadId.toValid? originalOwner with
-      | some replierVtid, some ownerVtid =>
+      -- AN10-residual-1 deep-audit (H6): direct call to the typed wrapper
+      -- after promoting the stored `originalOwner` field via `toValid?`.
+      match SeLe4n.ThreadId.toValid? originalOwner with
+      | some ownerVtid =>
           match returnDonatedSchedContextValid st replierVtid scId ownerVtid with
           | .error e => .error e
           | .ok st' => .ok (removeRunnable st' replier)
-      | _, _ =>
-          match returnDonatedSchedContext st replier scId originalOwner with
-          | .error e => .error e
-          | .ok st' => .ok (removeRunnable st' replier)
+      | none => .error .invalidArgument
     | _ => .ok st                           -- No-op: no donation to return
 
 -- ============================================================================
@@ -531,56 +510,33 @@ Composition of `donateSchedContext_machine_eq`: all no-op paths return `.ok st`
 unchanged, and the success path delegates to `donateSchedContext` which
 preserves machine state. -/
 theorem applyCallDonation_machine_eq
-    (st : SystemState) (caller receiver : SeLe4n.ThreadId)
+    (st : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
     (st' : SystemState)
-    (h : applyCallDonation st caller receiver = .ok st') :
+    (h : applyCallDonation st callerVtid receiverVtid = .ok st') :
     st'.machine = st.machine := by
   unfold applyCallDonation at h
-  cases hRecv : lookupTcb st receiver with
+  cases hRecv : lookupTcb st receiverVtid.val with
   | none => simp [hRecv] at h; cases h; rfl
   | some receiverTcb =>
     simp only [hRecv] at h
     cases hBinding : receiverTcb.schedContextBinding with
     | unbound =>
       simp only [hBinding] at h
-      cases hCaller : lookupTcb st caller with
+      cases hCaller : lookupTcb st callerVtid.val with
       | none => simp [hCaller] at h; cases h; rfl
       | some callerTcb =>
         simp only [hCaller] at h
         cases hCallerBinding : callerTcb.schedContextBinding with
         | unbound => simp [hCallerBinding] at h; cases h; rfl
         | bound clientScId =>
-          simp only [hCallerBinding] at h
-          -- AN10-residual-1 (commit 6): same toValid? case-split as
-          -- applyCallDonation_scheduler_eq.
-          cases hCV : SeLe4n.ThreadId.toValid? caller with
-          | none =>
-              simp only [hCV] at h
-              cases hDonate : donateSchedContext st caller receiver clientScId with
-              | error _ => simp [hDonate] at h
-              | ok stDon =>
-                  simp [hDonate] at h; rw [← h]
-                  exact donateSchedContext_machine_eq st stDon caller receiver clientScId hDonate
-          | some clientVtid =>
-              cases hRV : SeLe4n.ThreadId.toValid? receiver with
-              | none =>
-                  simp only [hCV, hRV] at h
-                  cases hDonate : donateSchedContext st caller receiver clientScId with
-                  | error _ => simp [hDonate] at h
-                  | ok stDon =>
-                      simp [hDonate] at h; rw [← h]
-                      exact donateSchedContext_machine_eq st stDon caller receiver clientScId hDonate
-              | some serverVtid =>
-                  have hCEq : clientVtid.val = caller :=
-                    SeLe4n.ThreadId.toValid?_some_val_eq caller clientVtid hCV
-                  have hREq : serverVtid.val = receiver :=
-                    SeLe4n.ThreadId.toValid?_some_val_eq receiver serverVtid hRV
-                  simp only [hCV, hRV, donateSchedContextValid, hCEq, hREq] at h
-                  cases hDonate : donateSchedContext st caller receiver clientScId with
-                  | error _ => simp [hDonate] at h
-                  | ok stDon =>
-                      simp [hDonate] at h; rw [← h]
-                      exact donateSchedContext_machine_eq st stDon caller receiver clientScId hDonate
+          -- AN10-residual-1 deep-audit: body now calls `donateSchedContextValid`
+          -- directly with typed args; reduce via `_eq` lemma.
+          simp only [hCallerBinding, donateSchedContextValid] at h
+          cases hDonate : donateSchedContext st callerVtid.val receiverVtid.val clientScId with
+          | error _ => simp [hDonate] at h
+          | ok stDon =>
+              simp [hDonate] at h; rw [← h]
+              exact donateSchedContext_machine_eq st stDon callerVtid.val receiverVtid.val clientScId hDonate
         | donated scId owner => simp [hCallerBinding] at h; cases h; rfl
     | bound scId => simp [hBinding] at h; cases h; rfl
     | donated scId owner => simp [hBinding] at h; cases h; rfl
@@ -596,12 +552,12 @@ all no-op paths return `.ok st` unchanged, and the success path delegates to
 `returnDonatedSchedContext` (preserves machine) followed by `removeRunnable`
 (only modifies scheduler). -/
 theorem applyReplyDonation_machine_eq
-    (st : SystemState) (replier : SeLe4n.ThreadId)
+    (st : SystemState) (replierVtid : SeLe4n.ValidThreadId)
     (st' : SystemState)
-    (h : applyReplyDonation st replier = .ok st') :
+    (h : applyReplyDonation st replierVtid = .ok st') :
     st'.machine = st.machine := by
   unfold applyReplyDonation at h
-  cases hLookup : lookupTcb st replier with
+  cases hLookup : lookupTcb st replierVtid.val with
   | none => simp [hLookup] at h; cases h; rfl
   | some replierTcb =>
     simp only [hLookup] at h
@@ -610,31 +566,24 @@ theorem applyReplyDonation_machine_eq
     | bound scId => simp [hBinding] at h; cases h; rfl
     | donated scId originalOwner =>
       simp only [hBinding] at h
-      -- AN10-residual-1 (commit 6/H6): collapse the toValid? case-split
-      -- back to the raw form so the original proof body composes unchanged.
-      have h :
-          (match returnDonatedSchedContext st replier scId originalOwner with
-           | .error e => Except.error (α := SystemState) e
-           | .ok st' => .ok (removeRunnable st' replier)) = .ok st' := by
-        cases hRV : SeLe4n.ThreadId.toValid? replier with
-        | none => simp only [hRV] at h; exact h
-        | some replierVtid =>
-            cases hOV : SeLe4n.ThreadId.toValid? originalOwner with
-            | none => simp only [hRV, hOV] at h; exact h
-            | some ownerVtid =>
-                have hREq : replierVtid.val = replier :=
-                  SeLe4n.ThreadId.toValid?_some_val_eq replier replierVtid hRV
-                have hOEq : ownerVtid.val = originalOwner :=
-                  SeLe4n.ThreadId.toValid?_some_val_eq originalOwner ownerVtid hOV
-                simp only [hRV, hOV, returnDonatedSchedContextValid, hREq, hOEq] at h
-                exact h
-      cases hReturn : returnDonatedSchedContext st replier scId originalOwner with
-      | error _ => simp [hReturn] at h
-      | ok st'' =>
-        simp [hReturn] at h; cases h
-        have hMach := returnDonatedSchedContext_machine_eq st st'' replier scId originalOwner hReturn
-        have hRem := removeRunnable_machine_eq st'' replier
-        exact hRem.trans hMach
+      -- AN10-residual-1 deep-audit: body now case-splits ONLY on
+      -- `originalOwner.toValid?` (the `replier` is already a
+      -- `ValidThreadId` argument).  The `none` arm yields `.error`
+      -- which contradicts `.ok st'`; the `some` arm reduces via the
+      -- wrapper `_eq` lemma + `toValid?_some_val_eq`.
+      cases hOV : SeLe4n.ThreadId.toValid? originalOwner with
+      | none => simp only [hOV] at h; cases h
+      | some ownerVtid =>
+          have hOEq : ownerVtid.val = originalOwner :=
+            SeLe4n.ThreadId.toValid?_some_val_eq originalOwner ownerVtid hOV
+          simp only [hOV, returnDonatedSchedContextValid, hOEq] at h
+          cases hReturn : returnDonatedSchedContext st replierVtid.val scId originalOwner with
+          | error _ => simp [hReturn] at h
+          | ok st'' =>
+            simp [hReturn] at h; cases h
+            have hMach := returnDonatedSchedContext_machine_eq st st'' replierVtid.val scId originalOwner hReturn
+            have hRem := removeRunnable_machine_eq st'' replierVtid.val
+            exact hRem.trans hMach
 
 /-- AG8-G: cleanupPreReceiveDonation preserves machine state.
 All fallback paths return `st` unchanged, and the success path delegates to
