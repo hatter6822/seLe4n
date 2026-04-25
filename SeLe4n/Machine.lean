@@ -415,6 +415,39 @@ structure MachineState where
       in-range and out-of-range INTIDs from AK3-C's `AckError.outOfRange`).
       An empty list is the initial and kernel-exit steady state. -/
   eoiPending : List Nat := []
+  /-- AN9-B (DEF-A-M06 / DEF-AK3-I): Witness that a `dsb ish; isb`
+      bracket was emitted after the most recent TLB invalidation.
+      `true` at init (no TLB entries to invalidate yet); set `true` by
+      every `adapterFlushTlb*Hw` operation (the hardware-backed flush
+      routines whose Rust counterparts in `sele4n-hal/src/tlb.rs` emit
+      DSB ISH + ISB after every `tlbi` per ARM ARM D8.11).
+
+      Pre-AN9-B this was implicit (`tlbBarrierComplete = True`), giving
+      a vacuous proof that barriers existed.  AN9-B makes it substantive:
+      a future refactor that bypasses the HAL wrappers would set this
+      `false` and break the substantive `tlbBarrierComplete` predicate.
+
+      The richer `lastTlbBarrierKind` field below carries the precise
+      barrier-leaf set emitted; the boolean is the coarse witness that
+      most callers can discharge by `rfl`. -/
+  tlbBarrierEmitted : Bool := true
+  /-- AN9-B (DEF-A-M06): A 4-bit bitmask of barrier-leaves emitted by
+      the most recent TLB-invalidating operation.
+        bit 0 (`0x01`) — `dsb ish` was emitted
+        bit 1 (`0x02`) — `dsb ishst` was emitted
+        bit 2 (`0x04`) — `isb` was emitted
+        bit 3 (`0x08`) — `dsb osh` was emitted (cross-cluster, AN9-I)
+      The post-tlbi bracket required by ARM ARM D8.11 corresponds to
+      bits 0+2 (`0x05`).  `lastTlbBarrierKind ≥ 0x05` is the substantive
+      witness that the bracket was emitted; the
+      `BarrierKind.subsumes`-formulated theorem
+      (`tlbBarrierComplete_subsumes_bridge` in `TlbModel.lean`) proves
+      this is equivalent to the algebraic subsumption check.
+
+      Stored as a `Nat` rather than a `BarrierKind` reference to avoid
+      a circular import between `Machine.lean` and
+      `Architecture/BarrierComposition.lean`. -/
+  lastTlbBarrierKind : Nat := 0x05
 
 instance : Inhabited MachineState where
   default := { regs := default, memory := (fun _ => 0), timer := 0 }

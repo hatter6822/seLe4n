@@ -138,7 +138,11 @@ mod ec {
 /// AI1-A/AI1-B: Named constants replace bare numeric literals for
 /// maintainability and cross-reference clarity.
 mod error_code {
-    /// `KernelError::NotImplemented = 17` — syscall dispatch not yet wired.
+    /// `KernelError::NotImplemented = 17` — historical SVC stub return.
+    /// Preserved for cross-reference even after AN9-F wired the real
+    /// dispatch path; the `svc_stub_returns_not_implemented` test in
+    /// the parent module still asserts this value.
+    #[allow(dead_code)]
     pub const NOT_IMPLEMENTED: u64 = 17;
     /// `KernelError::VmFault = 44` — data abort or instruction abort.
     pub const VM_FAULT: u64 = 44;
@@ -179,18 +183,23 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
 
     match exception_class {
         ec::SVC_AARCH64 => {
-            // Syscall: extract the immediate from ESR (bits [15:0]) or use x7
-            // The seLe4n ABI uses x7 for syscall number, matching the Lean
-            // model's `arm64DefaultLayout.syscallNumReg = ⟨7⟩`.
+            // CLOSED at AN9-F: Wire Lean FFI dispatch via
+            // `sele4n_syscall_dispatch` (closes DEF-R-HAL-L14 per
+            // docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12 AN9-F).
             //
-            // TODO(AN9-F): Wire Lean FFI dispatch via sele4n_syscall_dispatch
-            // (closes DEF-R-HAL-L14 per docs/audits/AUDIT_v0.29.0_DEFERRED.md
-            // and docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12 AN9-F).
-            // See SeLe4n/Platform/FFI.lean for the Lean-side declarations.
-            // Until wired, return NotImplemented to prevent userspace from
-            // interpreting a no-op stub as success.
-            let _syscall_id = frame.x7();
-            frame.set_x0(error_code::NOT_IMPLEMENTED);
+            // The seLe4n ABI uses x7 for the syscall number (Lean
+            // `arm64DefaultLayout.syscallNumReg = ⟨7⟩`).  The dispatcher
+            // reads x0..x5 + msg_info from the trap frame, validates
+            // argument count against `MessageInfo.length`, and routes
+            // through the typed `dispatch_svc` shim into the Lean
+            // kernel.  Errors are surfaced via x0 with the canonical
+            // KernelError discriminant (matching `sele4n-types`).
+            let syscall_id = frame.x7() as u32;
+            let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(frame);
+            match crate::svc_dispatch::dispatch_svc(syscall_id, &args) {
+                Ok(retval) => frame.set_x0(retval),
+                Err(e) => frame.set_x0(e.to_u32() as u64),
+            }
         }
         ec::DABT_LOWER | ec::DABT_CURRENT => {
             // Data abort — VM fault (KernelError::VmFault = 44)

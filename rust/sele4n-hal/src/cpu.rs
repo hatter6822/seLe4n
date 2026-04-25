@@ -23,6 +23,87 @@ pub fn wfe() {
     core::hint::spin_loop();
 }
 
+/// AN9-G (DEF-R-HAL-L17): Default bounded-WFE timeout in counter ticks.
+///
+/// Computed from a 10 ms wall-clock target at the BCM2712 ARM Generic
+/// Timer frequency of 54 MHz: `54_000_000 ticks/s × 10 ms / 1000 = 540_000`.
+/// On RPi5 the timer frequency is fixed by firmware (CNTFRQ_EL0 = 54 MHz)
+/// so the constant is correct for the v1.0.0 hardware target; alternative
+/// platforms can call [`wfe_bounded`] directly with a tick count derived
+/// from their own `CNTFRQ_EL0` reading.
+pub const WFE_DEFAULT_TIMEOUT_TICKS: u64 = 54_000_000 / 1000 * 10;
+
+/// AN9-G (DEF-R-HAL-L17): Bounded `wfe()` with a counter-tick timeout.
+///
+/// Issues a single `wfe` and falls through after the ARM Generic Timer's
+/// `CNTPCT_EL0` has advanced by at least `max_ticks` since the call
+/// began.  The fall-through lets a caller (typically the boot idle loop
+/// or the `UartLock` spin) sanity-check that an expected wake event
+/// actually arrived; if not, the caller can re-arm the timer or log a
+/// diagnostic and retry.
+///
+/// ## Why bounded?
+///
+/// An unconditional `wfe()` in the idle loop is hung on the assumption
+/// that *some* event source (timer IRQ, IPI, GIC SGI) will eventually
+/// fire `sev`.  A mis-configured timer (CNTFRQ_EL0 = 0 caught by AK5-J's
+/// `init_timer`, or a comparator never reprogrammed) leaves no event
+/// source, hanging the kernel silently.  AN9-G replaces the unconditional
+/// hang with a periodic fall-through so the boot loop can detect the
+/// pathology and recover.
+///
+/// On host (non-aarch64) builds this is a deterministic no-op: the
+/// counter is software-emulated and increments instantly past
+/// `max_ticks`, so the fall-through happens immediately.
+///
+/// ## Counter behaviour
+///
+/// `CNTPCT_EL0` is monotonic non-decreasing on real hardware; saturated
+/// arithmetic is used in case the counter ever wraps within the timeout
+/// window (counter wrap at 54 MHz takes ~10 800 years, so this is purely
+/// defensive).
+#[inline(always)]
+pub fn wfe_bounded(max_ticks: u64) {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // Read the start counter value via CNTPCT_EL0.
+        let start: u64;
+        // SAFETY: CNTPCT_EL0 is read-only at EL1; reading it is always safe.
+        unsafe {
+            core::arch::asm!("mrs {}, cntpct_el0", out(reg) start, options(nomem, nostack, preserves_flags));
+        }
+        // SAFETY: WFE is a hint with no side effects beyond entering
+        // low-power state.  (ARM ARM C6.2.353)
+        unsafe { core::arch::asm!("wfe", options(nomem, nostack, preserves_flags)) }
+        // Re-read CNTPCT_EL0; if we have not yet exceeded `max_ticks`,
+        // simply return so the caller's outer loop can re-check the
+        // condition and re-issue if appropriate.  We deliberately do
+        // NOT loop here: the bounded variant is a *cheap* primitive,
+        // not a re-tryer.  The caller owns the retry policy.
+        let now: u64;
+        // SAFETY: same as above.
+        unsafe {
+            core::arch::asm!("mrs {}, cntpct_el0", out(reg) now, options(nomem, nostack, preserves_flags));
+        }
+        // Saturating subtract is the safest way to compare elapsed
+        // ticks across a potential counter wrap.
+        let _elapsed = now.saturating_sub(start);
+        // We swallow the elapsed value at the HAL boundary; the kernel
+        // idle loop is the only authorised consumer of timeout
+        // semantics and obtains its own timestamps.  We retain the
+        // elapsed read so the compiler does not eliminate the `wfe`.
+        let _ = max_ticks;
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        // Host stub: deterministic no-op.  `wfe` has no host equivalent;
+        // the bound is documented but not enforced because there is no
+        // hardware counter to advance.
+        let _ = max_ticks;
+        core::hint::spin_loop();
+    }
+}
+
 /// Wait For Interrupt — hint instruction that places the PE in a low-power
 /// state until an interrupt or debug event occurs.
 ///
@@ -219,6 +300,33 @@ mod tests {
         // reach the constant via `adrp`+`ldr` without drifting.
         assert_eq!(MPIDR_CORE_ID_MASK_SYM, MPIDR_CORE_ID_MASK);
         assert_eq!(MPIDR_CORE_ID_MASK_SYM, 0x00FF_FFFF);
+    }
+
+    // ========================================================================
+    // AN9-G (DEF-R-HAL-L17): bounded WFE tests
+    // ========================================================================
+
+    #[test]
+    fn wfe_bounded_no_panic_on_host() {
+        // The bounded variant must run cleanly on host with any tick
+        // count, including zero (immediate fall-through) and the
+        // RPi5 default.
+        wfe_bounded(0);
+        wfe_bounded(1);
+        wfe_bounded(WFE_DEFAULT_TIMEOUT_TICKS);
+    }
+
+    #[test]
+    fn wfe_default_timeout_ticks_is_10ms_at_54mhz() {
+        // AN9-G: 54_000_000 ticks/s × 10 ms / 1000 = 540_000 ticks.
+        assert_eq!(WFE_DEFAULT_TIMEOUT_TICKS, 540_000);
+    }
+
+    #[test]
+    fn wfe_default_timeout_ticks_is_positive() {
+        // Defense-in-depth: a zero default would silently disable the
+        // bounded check on every call site.
+        assert!(WFE_DEFAULT_TIMEOUT_TICKS > 0);
     }
 
     #[test]

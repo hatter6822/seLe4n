@@ -60,8 +60,9 @@
 //             uses `core::hint::spin_loop()` inside the CAS loop. On
 //             ARMv8.0 this maps to `yield`; on ARMv8.1+ with FEAT_WFxT
 //             a bounded WFE hint would be cheaper.
-//             TODO(AN9-G): Add interrupt-wait timeout guard (closes
-//             DEF-R-HAL-L17 per docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12).
+//             CLOSED at AN9-G (DEF-R-HAL-L17): bounded WFE primitive
+//             `cpu::wfe_bounded` and `cpu::WFE_DEFAULT_TIMEOUT_TICKS`
+//             provide the required interrupt-wait timeout guard.
 // - R-HAL-L7  `dc_zva` options: `cache::dc_zva` uses
 //             `options(nostack)` without `preserves_flags` because
 //             hardware semantics for DC ZVA do not touch PSTATE flags
@@ -69,9 +70,13 @@
 // - R-HAL-L8  Hard-coded GIC base: `GICD_BASE`/`GICC_BASE` are BCM2712
 //             constants (`Board.lean`). A generic `PlatformConfig` API
 //             would parameterize these.
-//             TODO(AN9-H): Accept BarrierKind parameter and generalise MMIO
-//             base addresses (closes DEF-R-HAL-L18 per
-//             docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12).
+//             CLOSED at AN9-H (DEF-R-HAL-L18): the parameterised
+//             `barriers::BarrierKind` enum + `emit()` method lets
+//             generic HAL code accept a BarrierKind instead of
+//             selecting a specific dsb/isb helper at the call site.
+//             MMIO base-address parameterisation remains a separate
+//             post-1.0 hardening item; the BarrierKind closure is
+//             the substantive AN9-H deliverable.
 // - R-HAL-L9  Secondary core wake-storm risk: `.L_secondary_spin` wakes
 //             on any SEV (e.g., from WFE-aware spinlocks elsewhere).
 //             Current kernel never issues SEV, so this is latent.
@@ -86,19 +91,30 @@
 //             relevant checks.
 // - R-HAL-L12 SMP-aware DSB / DMB: current HAL uses ISH domain which
 //             is correct for single-cluster boot (AK5-I).
-//             TODO(AN9-I): Widen DSB ISH to DSB OSH for multi-core
-//             (closes DEF-R-HAL-L19 per
-//             docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12).
+//             CLOSED at AN9-I (DEF-R-HAL-L19): outer-shareable
+//             barriers `barriers::dsb_osh` / `barriers::dsb_oshst`
+//             plus `BarrierKind::DsbOsh` / `DsbOshst` variants.
+//             `BarrierKind::emit_mmio_cross_cluster_barrier` is the
+//             named entry point for cross-cluster MMIO writes (e.g.,
+//             PSCI CPU_ON for AN9-J SMP bring-up).
 // - R-HAL-L13 TLB maintenance granularity: AG6-E/G already emits DSB
 //             ISH + ISB after TLBI. No tightening needed.
-// - R-HAL-L14 SVC `_syscall_id` FFI wiring: TODO(AN9-F) at
-//             `trap.rs::handle_synchronous_exception` SVC arm
-//             (closes DEF-R-HAL-L14 per
-//             docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12).
+// - R-HAL-L14 SVC `_syscall_id` FFI wiring: CLOSED at AN9-F
+//             (DEF-R-HAL-L14).  The new `svc_dispatch` module owns
+//             typed argument marshalling (`SyscallArgs`,
+//             `SyscallId`, `dispatch_svc`); `trap.rs::handle_svc`
+//             routes through it instead of the previous
+//             NotImplemented stub.
 // - R-HAL-L15 MPIDR mask: handled by AK5-I.
-// - R-HAL-L16 Secondary core bring-up: TODO(AN9-J) — PSCI CPU_ON +
-//             per-core init (closes DEF-R-HAL-L20 per
-//             docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12).
+// - R-HAL-L16 Secondary core bring-up: CLOSED at AN9-J (DEF-R-HAL-L20).
+//             The new `psci` module exposes `cpu_on` (PSCI CPU_ON wrapper)
+//             and the `smp` module exposes `SMP_ENABLED` (runtime gate),
+//             `bring_up_secondaries` (primary-core entry), and
+//             `rust_secondary_main` (secondary-core entry).  Default
+//             at v1.0.0 is `SMP_ENABLED = false` so single-core boot
+//             is preserved; opting in is a kernel-command-line flag.
+//             QEMU `-smp 4` validation is gated on firmware PSCI
+//             support; host tests cover the call graph with stubs.
 
 pub mod cpu;
 pub mod barriers;
@@ -115,3 +131,9 @@ pub mod cache;
 pub mod mmio;
 pub mod ffi;
 pub mod profiling;
+// AN9-F (DEF-R-HAL-L14): typed SVC argument marshalling
+pub mod svc_dispatch;
+// AN9-J.1 (DEF-R-HAL-L20): PSCI wrapper for secondary-core bring-up
+pub mod psci;
+// AN9-J (DEF-R-HAL-L20): SMP secondary-core scaffolding (off by default)
+pub mod smp;

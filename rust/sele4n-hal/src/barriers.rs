@@ -56,6 +56,64 @@ pub fn dsb_ish() {
     }
 }
 
+/// AN9-H: DSB ISHST — store-only inner-shareable data sync.
+///
+/// Cheaper than `dsb ish` because it only orders prior **store** operations
+/// (no-op for loads).  Required before a page-table descriptor write so
+/// the hardware MMU walker observes the new descriptor (ARM ARM D8.11).
+///
+/// ARM ARM C6.2.65: DSB ISHST.
+#[inline(always)]
+pub fn dsb_ishst() {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: DSB ISHST orders prior stores only.  No side effects.
+        // (ARM ARM C6.2.65)
+        unsafe { core::arch::asm!("dsb ishst", options(nostack, preserves_flags)) }
+    }
+}
+
+/// AN9-I (DEF-R-HAL-L19): DSB OSH — outer-shareable data sync.
+///
+/// Outer-shareable barriers cover the FULL system shareable domain rather
+/// than just the cluster-local inner domain.  Required when
+/// synchronising with cores in *other* clusters (BCM2712 has two
+/// Cortex-A76 clusters) or with non-cluster device interconnects (PCIe
+/// root complexes, GPU command processors that sit outside ISH).
+///
+/// On a single-cluster boot (the v1.0.0 default with `smp_enabled=false`)
+/// this is functionally identical to `dsb ish`.  Used by AN9-J's PSCI
+/// CPU_ON sequence to ensure secondary cores observe the boot L1 page
+/// table after `tlbi vmalle1is`.
+///
+/// ARM ARM C6.2.65: DSB OSH.
+#[inline(always)]
+pub fn dsb_osh() {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: DSB OSH is a barrier instruction.  No side effects.
+        // (ARM ARM C6.2.65)
+        unsafe { core::arch::asm!("dsb osh", options(nostack, preserves_flags)) }
+    }
+}
+
+/// AN9-I (DEF-R-HAL-L19): DSB OSHST — outer-shareable, store-only.
+///
+/// Outer-shareable variant of `dsb ishst`.  Required before MMIO writes
+/// to device registers that other clusters or non-cluster agents need
+/// to observe.
+///
+/// ARM ARM C6.2.65: DSB OSHST.
+#[inline(always)]
+pub fn dsb_oshst() {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: DSB OSHST orders prior stores in the outer shareable
+        // domain.  No side effects.  (ARM ARM C6.2.65)
+        unsafe { core::arch::asm!("dsb oshst", options(nostack, preserves_flags)) }
+    }
+}
+
 /// Data Synchronization Barrier (System) — strongest data synchronization.
 /// Required before MMU enable/disable and after TLBI instructions.
 ///
@@ -203,6 +261,126 @@ pub fn has_feat_csv2() -> bool {
 }
 
 // ============================================================================
+// AN9-H (DEF-R-HAL-L18): Parameterised BarrierKind enum
+// ============================================================================
+//
+// Mirrors `SeLe4n.Kernel.Architecture.BarrierKind` (Lean), giving generic
+// HAL code one type to plumb instead of selecting a specific
+// `dsb_ish`/`dsb_ishst`/`isb` helper at the call site.  See
+// `SeLe4n/Kernel/Architecture/BarrierComposition.lean` for the algebraic
+// laws (associativity of `Sequenced`, `subsumes` partial order) the kernel
+// model relies on; the Rust-side `emit()` chain is the operational
+// witness for those theorems.
+//
+// AN9-I extends the enum with `DsbOsh` / `DsbOshst` so cross-cluster
+// ordering becomes expressible without dropping out of the algebra.
+//
+// AN9-C bridge: keep new variants synchronised with the Lean inductive
+// in `BarrierComposition.lean::BarrierKind`.  The CI test
+// `barrier_kind_lean_parity` (see tests below) lists every Lean variant
+// and asserts a corresponding Rust variant exists.
+
+/// AN9-H / AN9-I: Parameterised barrier kind.
+///
+/// Flat (non-recursive) enum — every variant emits a single ARMv8-A
+/// barrier (or no-op for [`BarrierKind::None`]).  Composed sequences are
+/// expressed at the call site as multiple `emit()` calls in order;
+/// the Lean model captures the tree structure for proof purposes
+/// (`SeLe4n.Kernel.Architecture.BarrierKind` in
+/// `BarrierComposition.lean`), but the Rust emission layer keeps the
+/// runtime representation flat to satisfy the `#![no_std]` HAL crate's
+/// no-`alloc` constraint.
+///
+/// For convenience there are dedicated emitters for the canonical
+/// composed sequences ([`BarrierKind::emit_armv8_page_table_update`],
+/// [`BarrierKind::emit_tlb_invalidation_bracket`]) so call sites do not
+/// re-derive the ordering by hand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BarrierKind {
+    /// No barrier emitted.  Identity element for sequential composition.
+    None,
+    /// `dsb ish` — inner-shareable, full data sync.
+    DsbIsh,
+    /// `dsb ishst` — inner-shareable, store-only.
+    DsbIshst,
+    /// AN9-I: `dsb osh` — outer-shareable, full data sync (cross-cluster).
+    DsbOsh,
+    /// AN9-I: `dsb oshst` — outer-shareable, store-only (cross-cluster).
+    DsbOshst,
+    /// `isb` — instruction-side serialisation.
+    Isb,
+}
+
+impl BarrierKind {
+    /// AN9-H: emit the underlying instruction.
+    ///
+    /// On `target_arch = "aarch64"` this writes the actual barrier;
+    /// on host (test) builds it is a deterministic no-op so unit tests
+    /// can exercise the emission path without crashing.
+    #[inline(always)]
+    pub fn emit(self) {
+        match self {
+            BarrierKind::None => {}
+            BarrierKind::DsbIsh => dsb_ish(),
+            BarrierKind::DsbIshst => dsb_ishst(),
+            BarrierKind::DsbOsh => dsb_osh(),
+            BarrierKind::DsbOshst => dsb_oshst(),
+            BarrierKind::Isb => isb(),
+        }
+    }
+
+    /// AN9-C.2 / AN9-A: emit the canonical ARMv8-A page-table-update
+    /// barrier sequence required by ARM ARM D8.11:
+    ///
+    ///   `dsb ishst`  →  `dc cvac descriptor + dsb ish`  →  `isb`
+    ///
+    /// `descriptor_addr` must be a kernel-mapped VA pointing at the
+    /// freshly-written page-table descriptor.
+    ///
+    /// This is the operational witness for the Lean theorem
+    /// `pageTableUpdate_observes_armv8_ordering` in
+    /// `SeLe4n/Kernel/Architecture/BarrierComposition.lean`.
+    #[inline(always)]
+    pub fn emit_armv8_page_table_update(descriptor_addr: u64) {
+        BarrierKind::DsbIshst.emit();
+        // SAFETY: caller guarantees `descriptor_addr` is a mapped page-
+        // table VA; `dc cvac` is always safe on such addresses
+        // (ARM ARM C6.2.61) and is a no-op on host builds.
+        #[cfg(target_arch = "aarch64")]
+        unsafe {
+            core::arch::asm!(
+                "dc cvac, {0}",
+                in(reg) descriptor_addr,
+                options(nostack, preserves_flags)
+            );
+        }
+        #[cfg(not(target_arch = "aarch64"))]
+        let _ = descriptor_addr;
+        BarrierKind::DsbIsh.emit();
+        BarrierKind::Isb.emit();
+    }
+
+    /// AN9-B: emit the canonical post-`tlbi` bracket — `dsb ish; isb`.
+    /// This is the operational witness for the Lean theorem
+    /// `tlbInvalidationBracket_subsumes` in `BarrierComposition.lean`,
+    /// which proves the bracket subsumes both `dsbIsh` and `isb` leaves.
+    #[inline(always)]
+    pub fn emit_tlb_invalidation_bracket() {
+        BarrierKind::DsbIsh.emit();
+        BarrierKind::Isb.emit();
+    }
+
+    /// AN9-I (DEF-R-HAL-L19): emit the cross-cluster MMIO write
+    /// barrier — `dsb oshst` before any externally-observable side
+    /// effect that other clusters or non-cluster agents need to
+    /// observe.
+    #[inline(always)]
+    pub fn emit_mmio_cross_cluster_barrier() {
+        BarrierKind::DsbOshst.emit();
+    }
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -255,8 +433,84 @@ mod tests {
         dmb_sy();
         dsb_ish();
         dsb_sy();
+        dsb_ishst();
+        dsb_osh();
+        dsb_oshst();
         isb();
         csdb();
         sb();
+    }
+
+    // ========================================================================
+    // AN9-H / AN9-I: BarrierKind enum tests
+    // ========================================================================
+
+    #[test]
+    fn barrier_kind_emit_no_panic() {
+        // Each leaf barrier must be emittable on host without panic.
+        BarrierKind::None.emit();
+        BarrierKind::DsbIsh.emit();
+        BarrierKind::DsbIshst.emit();
+        BarrierKind::DsbOsh.emit();
+        BarrierKind::DsbOshst.emit();
+        BarrierKind::Isb.emit();
+    }
+
+    #[test]
+    fn barrier_kind_armv8_page_table_update_no_panic() {
+        // AN9-A operational witness — the canonical ARM ARM D8.11
+        // sequence must run end-to-end without panicking on host.
+        BarrierKind::emit_armv8_page_table_update(0x1000);
+    }
+
+    #[test]
+    fn barrier_kind_tlb_invalidation_bracket_no_panic() {
+        // AN9-B operational witness — `dsb ish; isb` post-tlbi bracket.
+        BarrierKind::emit_tlb_invalidation_bracket();
+    }
+
+    #[test]
+    fn barrier_kind_mmio_cross_cluster_no_panic() {
+        // AN9-I operational witness — outer-shareable store ordering.
+        BarrierKind::emit_mmio_cross_cluster_barrier();
+    }
+
+    #[test]
+    fn barrier_kind_lean_parity() {
+        // AN9-C parity guard: every Lean `BarrierKind` constructor must
+        // have a Rust-side counterpart.  When a new variant lands in
+        // `BarrierComposition.lean`, this test must be updated.  Listing
+        // the variants by name produces a pattern-match exhaustiveness
+        // failure if a Rust variant is removed without removing its
+        // Lean partner.
+        //
+        // Lean variants (BarrierComposition.lean): none, dsbIsh,
+        //     dsbIshst, dsbOsh, dsbOshst, dcCvacDsbIsh, isb, sequenced
+        //
+        // dcCvacDsbIsh and sequenced are expressed compositionally in
+        // Rust via the dedicated emitters
+        // (`emit_armv8_page_table_update`,
+        // `emit_tlb_invalidation_bracket`) per the no-`alloc` design
+        // discussed in the BarrierKind docstring.
+        for kind in [
+            BarrierKind::None,
+            BarrierKind::DsbIsh,
+            BarrierKind::DsbIshst,
+            BarrierKind::DsbOsh,
+            BarrierKind::DsbOshst,
+            BarrierKind::Isb,
+        ] {
+            // Pattern-match exhaustively to provoke a compile error if
+            // a variant is removed without updating this list.
+            match kind {
+                BarrierKind::None
+                | BarrierKind::DsbIsh
+                | BarrierKind::DsbIshst
+                | BarrierKind::DsbOsh
+                | BarrierKind::DsbOshst
+                | BarrierKind::Isb => {}
+            }
+            kind.emit();
+        }
     }
 }

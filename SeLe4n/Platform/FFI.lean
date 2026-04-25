@@ -151,4 +151,51 @@ opaque ffiRestoreInterrupts : UInt64 → BaseIO Unit
 @[extern "ffi_enable_interrupts"]
 opaque ffiEnableInterrupts : BaseIO Unit
 
+-- ============================================================================
+-- AN9-D (DEF-C-M04): suspendThread atomicity bracket
+-- ============================================================================
+
+/-- AN9-D: Atomic suspendThread invocation with the
+    `with_interrupts_disabled` bracket on the Rust side.
+
+    See `rust/sele4n-hal/src/ffi.rs::sele4n_suspend_thread`. -/
+@[extern "sele4n_suspend_thread"]
+opaque ffiSuspendThread : UInt64 → BaseIO UInt32
+
+-- ============================================================================
+-- AN9-F (DEF-R-HAL-L14): SVC dispatch entry
+-- ============================================================================
+
+/-- AN9-F: SVC dispatch entry called from `trap.rs::handle_svc` after
+    the typed argument extractor in `svc_dispatch.rs` has produced a
+    `SyscallArgs` struct.  The Lean side decodes the arguments per
+    AK4-D's typed decoders and routes to the kernel API.
+
+    Returns a 64-bit value where bit 63 is the error flag.  See
+    `rust/sele4n-hal/src/svc_dispatch.rs::dispatch_svc` for the
+    encoding. -/
+@[extern "syscall_dispatch_inner"]
+opaque ffiSyscallDispatchInner :
+  UInt32 → UInt64 → UInt64 → UInt64 → UInt64 →
+  UInt64 → UInt64 → UInt64 → UInt64 → BaseIO UInt64
+
+-- ============================================================================
+-- AN9-A (DEF-A-M04): TLB+Cache composition witnesses
+-- ============================================================================
+
+/-- AN9-A.1: TLB+Cache composition witness — clean a page-table page
+    range followed by `dsb ish` so the writeback completes before any
+    subsequent operation observes the page-table state.
+
+    Rust: `cache::clean_pagetable_range` in `sele4n-hal/src/cache.rs`. -/
+@[extern "cache_clean_pagetable_range"]
+opaque ffiCacheCleanPagetableRange : UInt64 → UInt64 → BaseIO Unit
+
+/-- AN9-A.1: I-cache invalidation witness — drop every I-cache line so
+    subsequent instruction fetches re-read from coherent memory.
+
+    Rust: `cache::ic_iallu` in `sele4n-hal/src/cache.rs`. -/
+@[extern "cache_ic_iallu"]
+opaque ffiIcIallu : BaseIO Unit
+
 end SeLe4n.Platform.FFI

@@ -22,7 +22,36 @@ developed with this target in mind.
 | **H1** | Architecture-boundary interfaces and adapters | **Complete** | M6 |
 | **H2** | Audit-driven proof deepening | **Complete** (WS-F1..F8, all findings closed) | Close CRIT/HIGH findings |
 | **H3** | Platform binding — Raspberry Pi 5 hardware | **AG9 complete** (testing + validation) | ~~WS-F1..F4~~ (done) |
-| **H4** | Evidence convergence — connect proofs to platform | Planned | H3 complete |
+| **H3.5** | Hardware-binding closure (TLB/cache composition, SVC FFI, SMP) | **AN9 complete (v0.30.10)** | ~~AG9~~ (done), AN6/AN8 (done) |
+| **H4** | Evidence convergence — connect proofs to platform | Planned | H3.5 complete |
+
+### H3.5 — Hardware-binding closure (WS-AN Phase AN9, v0.30.10)
+
+WS-AN Phase AN9 closes every hardware-binding deferred item from
+`AUDIT_v0.29.0_DEFERRED.md` plus four new items surfaced by AN1-C.
+
+- **TLB+Cache composition** (AN9-A / DEF-A-M04): substantive
+  `pageTableUpdate_full_coherency` theorem.
+- **`tlbBarrierComplete` substantive** (AN9-B / DEF-A-M06): bitmask
+  + Bool witness on every TLB-touching path.
+- **BarrierKind algebra** (AN9-C/H/I): Lean inductive + Rust
+  enum mirror; `dsb osh`/`dsb oshst` for outer-shareable /
+  cross-cluster ordering (DEF-A-M08, M09, R-HAL-L18, L19).
+- **SuspendThread atomicity** (AN9-D / DEF-C-M04): FFI bracket via
+  `interrupts::with_interrupts_disabled`.
+- **SVC FFI dispatch** (AN9-F / DEF-R-HAL-L14): typed
+  `SyscallArgs` + `SyscallId` + `dispatch_svc`.
+- **Bounded WFE** (AN9-G / DEF-R-HAL-L17): `wfe_bounded` with
+  10 ms default at 54 MHz.
+- **SMP scaffolding** (AN9-J / DEF-R-HAL-L20): PSCI `cpu_on` +
+  `smp.rs` secondary-core bring-up; **disabled by default** at
+  v1.0.0 (`SMP_ENABLED = false`).
+
+The **runtime** validation that complements these static guarantees
+(QEMU virt boots, RPi 5 silicon validation) is documented in
+[`docs/HARDWARE_TESTING.md`](../HARDWARE_TESTING.md) with step-by-step
+procedures for each AN9 sub-task.  Setup is automated by
+`scripts/hardware_test_env_setup.sh`.
 
 ### H2 — Proof deepening (critical gaps resolved)
 

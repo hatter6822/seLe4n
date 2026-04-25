@@ -41,6 +41,78 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
 **Phases:** 13 (AN0–AN12), 95 top-level sub-tasks, ~253 sub-sub-task commits
 (scope: 196 audit findings + 11 absorbed DEFERRED items).
 
+- **AN9** (Hardware-binding closure, v0.30.10, **released**): 11
+  sub-tasks (AN9-A..AN9-K) closing every hardware-binding item from
+  `AUDIT_v0.29.0_DEFERRED.md` (DEF-A-M04, DEF-A-M06, DEF-A-M08,
+  DEF-A-M09, DEF-C-M04, DEF-P-L9, DEF-R-HAL-L14) plus four new items
+  surfaced by AN1-C (DEF-R-HAL-L17/L18/L19/L20).
+  - **AN9-A (DEF-A-M04 RESOLVED)**: TLB+Cache composition full closure.
+    New `SeLe4n/Kernel/Architecture/TlbCacheComposition.lean` proves
+    `pageTableUpdate_full_coherency` end-to-end (TLB consistency +
+    barrier discipline + I-cache coherency in one statement).  FFI
+    witnesses `cache_clean_pagetable_range` + `cache_ic_iallu`
+    exposed via `SeLe4n.Platform.FFI`.
+  - **AN9-B (DEF-A-M06 RESOLVED)**: `tlbBarrierComplete` substantive
+    binding.  Predicate refined from `True` to require both
+    `MachineState.tlbBarrierEmitted = true` and a 4-bit bitmask
+    covering `dsb ish | isb` leaves.  Two new fields added to
+    `MachineState` carry the witnesses.
+  - **AN9-C (DEF-A-M08/M09 Lean side RESOLVED)**: New
+    `BarrierComposition.lean` defines the `BarrierKind` inductive
+    + `subsumes` partial order + headline theorems
+    `pageTableUpdate_observes_armv8_ordering` and
+    `mmioWrite_observes_dsbIshst_before_sideEffect`.
+  - **AN9-D (DEF-C-M04 RESOLVED)**: `suspendThread` atomicity via FFI
+    bracket.  `sele4n_suspend_thread` brackets the Lean dispatch with
+    `interrupts::with_interrupts_disabled`.  Lean-side
+    `suspendThread_transientWindowInvariant` predicate +
+    `suspendThread_atomicity_under_ffi_bracket` theorem.
+  - **AN9-E (DEF-P-L9 cross-reference)**: RESOLVED already in AN7-D.2;
+    `bootSafeObject` docstring now explicitly cross-references the
+    AN7-D.2 closure path.
+  - **AN9-F (DEF-R-HAL-L14 RESOLVED)**: SVC FFI wiring.  New
+    `rust/sele4n-hal/src/svc_dispatch.rs` module owns typed argument
+    marshalling.  `trap.rs::handle_synchronous_exception` SVC arm
+    replaces the `NOT_IMPLEMENTED` stub with the typed dispatcher.
+  - **AN9-G (DEF-R-HAL-L17 RESOLVED)**: Bounded WFE.
+    `cpu::wfe_bounded(max_ticks)` reads CNTPCT_EL0 and falls through
+    after the timeout.  Default 540 000 ticks (10 ms at 54 MHz).
+  - **AN9-H (DEF-R-HAL-L18 RESOLVED)**: Parameterised
+    `barriers::BarrierKind` enum mirroring the Lean inductive.
+    `barrier_kind_lean_parity` test enforces 1:1 alignment.
+  - **AN9-I (DEF-R-HAL-L19 RESOLVED)**: OSH widening.
+    `barriers::dsb_osh()` / `dsb_oshst()`, `BarrierKind::DsbOsh` /
+    `DsbOshst` variants, `mmioWriteCrossCluster_observes_dsbOshst`
+    Lean theorem.
+  - **AN9-J (DEF-R-HAL-L20 RESOLVED, off by default)**: SMP
+    secondary-core bring-up.  New `psci.rs` (PSCI `cpu_on` HVC
+    wrapper) + `smp.rs` (`SMP_ENABLED: AtomicBool`,
+    `bring_up_secondaries`, `rust_secondary_main`).  v1.0.0 ships
+    SMP code merged but **disabled by default**.
+  - **AN9-K (closure)**: 11 deferred-file rows marked RESOLVED;
+    version bumped 0.30.9 → 0.30.10; CHANGELOG + this entry; new
+    `tests/An9HardwareBindingSuite.lean` (15 surface anchors); new
+    `docs/HARDWARE_TESTING.md` documenting post-AN9 hardware
+    validation steps.
+  - **Tests added**: 15 new Lean surface anchors + 36 new Rust unit
+    tests across barriers/cpu/svc_dispatch/ffi/psci/smp.  Total
+    Rust tests: **459 passing** (up from 428 at AN8 close).
+  - **Gate**: `lake build` (306+ jobs, 0 warnings) + `test_smoke.sh`
+    PASS + `test_full.sh` PASS + `test_tier0_hygiene.sh` PASS +
+    `cargo test --workspace` (459 tests) +
+    `cargo clippy --workspace -- -D warnings` (0 warnings) +
+    `check_version_sync.sh` PASS at 0.30.10 + fixture byte-identical
+    + zero `sorry`/`axiom`/`native_decide`.
+  - **Hardware testing**: see `docs/HARDWARE_TESTING.md` for the
+    post-AN9 RPi 5 / QEMU validation checklist
+    (`scripts/hardware_test_env_setup.sh` provides the toolchain
+    installer).
+  - **Portfolio status after AN9**: every hardware-binding item from
+    `AUDIT_v0.29.0_DEFERRED.md` Category A is RESOLVED.  No
+    hardware-binding scope carries past v1.0.0.  **Next**: AN10
+    (AK7 cascade completion), AN11 (testing), AN12 (closure +
+    v1.0.0 tag).
+
 - **AN8** (Rust HAL hardening, v0.30.9, **released**): 6 sub-tasks
   (AN8-A..AN8-F) addressing 3 HIGH (H-17 UartLock RAII, H-18 MPIDR
   shared symbol, H-19 EOI-before-handler), 8 MEDIUM (RUST-M01..M08),

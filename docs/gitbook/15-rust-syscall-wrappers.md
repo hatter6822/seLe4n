@@ -127,8 +127,11 @@ ARM Architecture Reference Manual.
 
 | Module | Purpose | Key Items |
 |--------|---------|-----------|
-| `cpu` | CPU instructions | `wfe`, `wfi`, `nop`, `eret`, `current_core_id`, **`MPIDR_CORE_ID_MASK_SYM`** shared linker symbol (AN8-B v0.30.9 — H-18; replaces literal `mov`/`movk` in `boot.S`) |
-| `barriers` | Memory barriers | `dmb_ish/sy`, `dsb_ish/sy`, `isb` |
+| `cpu` | CPU instructions | `wfe`, `wfi`, `nop`, `eret`, `current_core_id`, **`MPIDR_CORE_ID_MASK_SYM`** shared linker symbol (AN8-B v0.30.9 — H-18), **`wfe_bounded(max_ticks)`** + `WFE_DEFAULT_TIMEOUT_TICKS` (AN9-G v0.30.10 — DEF-R-HAL-L17) |
+| `barriers` | Memory barriers | `dmb_ish/sy`, `dsb_ish/sy`, `isb`, **`dsb_ishst`**, **`dsb_osh`**, **`dsb_oshst`** + parameterised **`BarrierKind`** enum with `emit()` + composite emitters `emit_armv8_page_table_update` / `emit_tlb_invalidation_bracket` / `emit_mmio_cross_cluster_barrier` (AN9-H/I v0.30.10 — DEF-R-HAL-L18/L19) |
+| `svc_dispatch` | SVC typed dispatch | `SyscallArgs::from_trap_frame`, 25-variant `SyscallId` enum, `dispatch_svc(id, args) -> Result<u64, DispatchError>` (AN9-F v0.30.10 — DEF-R-HAL-L14; replaces `NOT_IMPLEMENTED` SVC stub) |
+| `psci` | Power State Coordination Interface | `cpu_on(target_mpidr, entry_point, context_id) -> PsciResult`, ARM DEN0022D function ids (AN9-J.1 v0.30.10 — DEF-R-HAL-L20) |
+| `smp` | Secondary-core bring-up | `SMP_ENABLED: AtomicBool` (default `false`), `CORE_READY: [AtomicBool; 4]`, `bring_up_secondaries`, `rust_secondary_main` (AN9-J v0.30.10 — DEF-R-HAL-L20; v1.0.0 ships SMP merged but disabled) |
 | `registers` | System register I/O | `read_sysreg!`/`write_sysreg!` macros, 11 typed accessors |
 | `uart` | PL011 UART driver | `Uart` struct, `kprint!`/`kprintln!` macros, 0xFE201000 base, `UartLock` spinlock (AI1-D), `UnsafeCell`-based safe static (AJ5-B), **`UartGuard<'a>` RAII pattern** (AN8-A v0.30.9 — H-17) |
 | `mmu` | MMU configuration | MAIR/TCR/TTBR/SCTLR, identity-mapped L1 boot tables |

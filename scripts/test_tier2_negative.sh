@@ -61,5 +61,7 @@ run_check "TRACE" lake exe abi_roundtrip_suite
 run_check "TRACE" lake exe model_integrity_suite
 # AK9 (platform / boot / DTB / MMIO): 21 regression tests covering AK9-A..AK9-H.
 run_check "TRACE" lake exe ak9_platform_suite
+# AN9 (hardware-binding closure): 15 regression tests covering AN9-A..AN9-J.
+run_check "TRACE" lake exe an9_hardware_binding_suite
 
 finalize_report
