@@ -506,6 +506,31 @@ def an10_e_cspaceLookupSlot_cnode_no_slot_is_invalidCapability : IO Bool := do
   | Except.error KernelError.invalidCapability => return true
   | _ => return false
 
+/-- AN10-E.R2 — `cspaceResolvePath` rejects a non-CNode at the cnode
+slot with `.objectNotFound`. -/
+def an10_e_cspaceResolvePath_wrong_variant_is_objectNotFound : IO Bool := do
+  let cnodeAddr : ObjId := ObjId.ofNat 300
+  let addr : CSpacePathAddr := { cnode := cnodeAddr, cptr := SeLe4n.CPtr.ofNat 0,
+                                  depth := 4 }
+  -- Wrong variant at the cnode slot.
+  let tcb : TCB := mkTcb 300
+  let st : SystemState := { (default : SystemState) with
+    objects := (default : SystemState).objects.insert cnodeAddr (.tcb tcb) }
+  match SeLe4n.Kernel.cspaceResolvePath addr st with
+  | Except.error KernelError.objectNotFound => return true
+  | _ => return false
+
+/-- AN10-E.R3 — `resolveCapAddress` rejects a missing root CNode with
+`.objectNotFound` (semantically equivalent under the migration since
+`getCNode?` returns `none` for both wrong-variant and absent). -/
+def an10_e_resolveCapAddress_missing_root_is_objectNotFound : IO Bool := do
+  let rootId : ObjId := ObjId.ofNat 999
+  let addr : SeLe4n.CPtr := SeLe4n.CPtr.ofNat 0
+  let st : SystemState := default
+  match SeLe4n.Kernel.resolveCapAddress rootId addr 16 st with
+  | Except.error KernelError.objectNotFound => return true
+  | _ => return false
+
 -- ============================================================================
 -- Suite runner
 -- ============================================================================
@@ -552,7 +577,11 @@ def runAll : IO Bool := do
     ("an10_e_cspaceLookupSlot_wrong_variant_is_objectNotFound",
       an10_e_cspaceLookupSlot_wrong_variant_is_objectNotFound),
     ("an10_e_cspaceLookupSlot_cnode_no_slot_is_invalidCapability",
-      an10_e_cspaceLookupSlot_cnode_no_slot_is_invalidCapability)
+      an10_e_cspaceLookupSlot_cnode_no_slot_is_invalidCapability),
+    ("an10_e_cspaceResolvePath_wrong_variant_is_objectNotFound",
+      an10_e_cspaceResolvePath_wrong_variant_is_objectNotFound),
+    ("an10_e_resolveCapAddress_missing_root_is_objectNotFound",
+      an10_e_resolveCapAddress_missing_root_is_objectNotFound)
   ]
   let mut allOk : Bool := true
   for (name, action) in tests do

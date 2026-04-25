@@ -109,13 +109,16 @@ AF5-G (AF-27): CSpace Resolution Layers
 while `resolveCapAddress` starts from a root CNode and walks arbitrarily deep. -/
 def cspaceResolvePath (addr : CSpacePathAddr) : Kernel CSpaceAddr :=
   fun st =>
-    match st.objects[addr.cnode]? with
-    | some (.cnode cn) =>
+    -- AN10-residual (R2): typed-helper migration. `getCNode?` returns
+    -- `none` for both wrong-variant and absent, collapsing into the
+    -- original catch-all `_` arm that yielded `.objectNotFound`.
+    match st.getCNode? addr.cnode with
+    | some cn =>
         match cn.resolveSlot addr.cptr addr.depth with
         | .ok slot => .ok ({ cnode := addr.cnode, slot := slot }, st)
         | .error .depthMismatch => .error .illegalState
         | .error .guardMismatch => .error .invalidCapability
-    | _ => .error .objectNotFound
+    | none => .error .objectNotFound
 
 /-- Lookup a capability via guard/radix resolution from a CSpace pointer path. -/
 def cspaceLookupPath (addr : CSpacePathAddr) : Kernel Capability :=
@@ -174,8 +177,11 @@ def resolveCapAddress (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemainin
     (st : SystemState) : Except KernelError SlotRef :=
   if hZero : bitsRemaining = 0 then .error .illegalState        -- no bits to consume
   else
-    match st.objects[rootId]? with
-    | some (.cnode cn) =>
+    -- AN10-residual (R3): typed-helper migration. Termination metric
+    -- is `bitsRemaining` (Nat-strict descent), unaffected by the lookup
+    -- shape.
+    match st.getCNode? rootId with
+    | some cn =>
       let consumed := cn.guardWidth + cn.radixWidth
       if hCons : consumed = 0 then .error .illegalState  -- zero-width CNode
       else if bitsRemaining < consumed then .error .illegalState
@@ -204,7 +210,7 @@ def resolveCapAddress (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemainin
                 resolveCapAddress childId addr (bitsRemaining - consumed) st
               | _ => .error .invalidCapability
             | none => .error .invalidCapability
-    | _ => .error .objectNotFound
+    | none => .error .objectNotFound
   termination_by bitsRemaining
 
 /-- WS-H13: Lookup a capability via multi-level CSpace resolution.
@@ -307,7 +313,9 @@ theorem resolveCapAddress_result_valid_cnode
             · simp at hOk  -- guard mismatch: error
             · split at hOk
               · -- Leaf case: all bits consumed, ref.cnode = rootId
-                simp at hOk; cases hOk; exact ⟨cn, hObj⟩
+                -- AN10-residual (R3): bridge typed-helper hypothesis to raw form.
+                simp at hOk; cases hOk
+                exact ⟨cn, (SystemState.getCNode?_eq_some_iff st rootId cn).mp hObj⟩
               · -- Recursive case: bits remaining, look up slot
                 split at hOk
                 · next cap _ =>
@@ -388,9 +396,12 @@ theorem resolveCapAddress_guard_reject
       ((addr.toNat % SeLe4n.machineWordMax) >>> (bits - (cn.guardWidth + cn.radixWidth))) /
         2 ^ cn.radixWidth % 2 ^ cn.guardWidth ≠ cn.guardValue) :
     resolveCapAddress rootId addr bits st = .error .invalidCapability := by
+  -- AN10-residual (R3): bridge raw-form hypothesis to typed-helper form.
+  have hCN : st.getCNode? rootId = some cn :=
+    (SystemState.getCNode?_eq_some_iff st rootId cn).mpr hObj
   unfold resolveCapAddress
   have hNZ : bits ≠ 0 := by omega
-  simp only [hNZ, ↓reduceDIte, hObj]
+  simp only [hNZ, ↓reduceDIte, hCN]
   have hNZ2 : ¬(cn.guardWidth = 0 ∧ cn.radixWidth = 0) := by omega
   split
   · next h => exfalso; exact hNZ2 (by constructor <;> omega)
@@ -417,10 +428,14 @@ theorem resolveCapAddress_guard_match
     (hLeaf : bits = cn.guardWidth + cn.radixWidth) :
     ((addr.toNat % SeLe4n.machineWordMax) >>> (bits - (cn.guardWidth + cn.radixWidth))) /
       2 ^ cn.radixWidth % 2 ^ cn.guardWidth = cn.guardValue := by
+  -- AN10-residual (R3): bridge the raw-form hypothesis to the typed-helper
+  -- form so the simp set still collapses the inner match.
+  have hCN : st.getCNode? rootId = some cn :=
+    (SystemState.getCNode?_eq_some_iff st rootId cn).mpr hObj
   -- Unfold and trace through the function structure
   unfold resolveCapAddress at hOk
   have hNZ : bits ≠ 0 := by intro h; subst h; simp at hOk
-  simp only [hNZ, ↓reduceDIte, hObj] at hOk
+  simp only [hNZ, ↓reduceDIte, hCN] at hOk
   -- consumed = 0 → error, contradicts hOk
   split at hOk
   · simp at hOk
