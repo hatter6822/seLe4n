@@ -3041,28 +3041,25 @@ theorem setIPCBufferOp_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : Architecture.IpcBufferValidation.setIPCBufferOp st vtid addr = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
+  -- AN10-B: post-migration `setIPCBufferOp` reads via `getTcb?`.
   unfold Architecture.IpcBufferValidation.setIPCBufferOp at hStep
   cases hVal : Architecture.IpcBufferValidation.validateIpcBufferAddress st vtid.val addr with
   | error e => rw [hVal] at hStep; simp at hStep
   | ok _ =>
     rw [hVal] at hStep
-    cases hLook : (st.objects[vtid.val.toObjId]? : Option KernelObject) with
+    cases hLook : st.getTcb? vtid.val with
     | none => rw [hLook] at hStep; simp at hStep
-    | some obj =>
+    | some tcb =>
       rw [hLook] at hStep
-      cases obj with
-      | tcb tcb =>
-        simp only at hStep
-        cases hStore : storeObject vtid.val.toObjId (.tcb { tcb with ipcBuffer := addr }) st with
-        | error e => rw [hStore] at hStep; simp at hStep
-        | ok pair =>
-          rw [hStore] at hStep
-          simp only [Except.ok.injEq] at hStep
-          subst hStep
-          exact storeObject_preserves_projection ctx observer st _ vtid.val.toObjId _
-            hTcbHigh hObjInv hStore
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
-        simp at hStep
+      simp only at hStep
+      cases hStore : storeObject vtid.val.toObjId (.tcb { tcb with ipcBuffer := addr }) st with
+      | error e => rw [hStore] at hStep; simp at hStep
+      | ok pair =>
+        rw [hStore] at hStep
+        simp only [Except.ok.injEq] at hStep
+        subst hStep
+        exact storeObject_preserves_projection ctx observer st _ vtid.val.toObjId _
+          hTcbHigh hObjInv hStore
 
 -- ============================================================================
 -- AK6-F Step A: Universal direct-insert frame lemma

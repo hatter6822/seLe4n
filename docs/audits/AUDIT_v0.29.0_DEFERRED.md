@@ -403,14 +403,66 @@ currently-active plan file tracks them.**
     `storeObjectKindChecked_crossKind_rejected`) that allow any
     consumer to migrate transparently.
 - **Resolution artefacts (AN10-D closure):**
-  - `tests/An10CascadeSuite.lean` (17 tests: 7 reader-side, 5
-    sentinel/dispatch-side, 3 writer-side, 2 closure witnesses)
+  - `tests/An10CascadeSuite.lean` (32 tests post-audit-pass-3,
+    covering: 13 reader-side typed-helper tests including the new
+    `getCNode?` and `getVSpaceRoot?` helpers + 5 sentinel/dispatch-side
+    + 3 writer-side + 11 semantic-equivalence and closure witnesses)
     pins the post-migration shape.
   - `docs/audits/AL0_baseline.txt` re-anchored at the post-AN10
-    metric floors.
+    metric floors after each audit pass.
   - `scripts/test_tier0_hygiene.sh` runs
     `ak7_cascade_check_monotonic.sh` so every commit re-validates
     the floors.
+
+- **Residual hygiene work tracked but non-gating** (post-AN10):
+  * **AN10-A.handler-internal-hygiene** — internal helper signatures
+    (`lifecycleRetypeWithCleanup`, `cancelDonation` body parameter,
+    `removeRunnable`, `cancelIpcBlocking`, `donateSchedContext`,
+    `returnDonatedSchedContext`, `clearTcbIpcFields`, `clearPendingState`,
+    `getCurrentPriority`, `getCurrentPriorityChecked`, `updatePrioritySource`,
+    `migrateRunQueueBucket`, the `_default` lookups inside `suspendThread`
+    and `resumeThread`, etc.) still take raw `ObjId` / `ThreadId` /
+    `SchedContextId` instead of `Valid*Id`. AL1b/AL8 + AL7's dispatch-
+    boundary validators ensure the type-level discipline is preserved
+    transitively — every reachable call path goes through a validator
+    first. Tightening these signatures requires updating ~30+ proof
+    sites per helper (each affects every preservation theorem that
+    consumes the helper).  No security gap relative to the gated
+    dispatch boundary; tracked as readability hygiene.
+  * **AN10-B.deep-cascade-readers** — the following functions retain
+    raw `match st.objects[id]?` patterns despite being clean 2-arm
+    candidates because each has 8–30 downstream preservation proofs
+    that case-split on the raw lookup shape and would each need a
+    typed-helper bridge: `cspaceLookupSlot`, `cspaceResolvePath`,
+    `resolveCapAddress`, `cspaceInsertSlot`, `cspaceDeleteSlotCore`,
+    `donateSchedContext`, `returnDonatedSchedContext`, `notificationSignal`
+    no-waiters branch, `endpointQueueRemoveDual`, `endpointQueuePopHead`,
+    `endpointQueueEnqueue`, `effectiveBucketPriority`,
+    `saveOutgoingContext`, `restoreIncomingContext`, `suspendThread`
+    body, `resumeThread` body. The monotonicity gate locks the
+    migrated surface so this scope cannot regress; the not-yet-
+    migrated surface is bounded by the gate's current floor.
+  * **AN10-B.three-arm-readers** — `notificationSignal` /
+    `notificationWait` / `endpointQueuePopHead` / `endpointQueueEnqueue` /
+    `endpointQueueRemoveDual` / `dispatchSyscallChecked` /
+    `dispatchWithCap_apiSourcedRegisters` carry 3-arm patterns that
+    distinguish wrong-variant (`.invalidCapability`) from absent
+    (`.objectNotFound`) at the API boundary.  Migrating to typed
+    helpers would collapse both error arms — a **semantic change** that
+    breaks the userspace ABI contract.  These are correctly NOT
+    migrated.
+  * **AN10-C.writer-production** — production `storeObject` call sites
+    in IPC / Lifecycle / Capability / SchedContext / Service /
+    Architecture have not been migrated to `storeObjectKindChecked`.
+    Each migration requires a same-kind precondition discharge via
+    `storeObjectKindChecked_sameKind_eq_storeObject` and updates to
+    8–30 downstream preservation proofs per site.  The wrapper is
+    fully tested and exercised at the test layer; production
+    correctness is structurally enforced by the AM4
+    `lifecycleObjectTypeLockstep` invariant (11th conjunct of
+    `crossSubsystemInvariant`), which makes any cross-variant write
+    a `crossSubsystemInvariant` violation.  Defense-in-depth migration
+    of production sites would require a dedicated focused PR.
 
 ---
 

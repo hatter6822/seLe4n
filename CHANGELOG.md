@@ -1,5 +1,70 @@
 ## v0.30.10 — WS-AN Phase AN10 (AK7 cascade closure)
 
+### Post-delivery audit-pass-3 remediation
+
+The user pointed out that the audit-pass-1 + audit-pass-2 work
+delivered only ~10% of the plan's migration scope and that marking
+the items "RESOLVED" overstated the closure.  This pass addresses the
+substantive gaps:
+
+1. **New typed helpers** — `Model/State.lean` gains `getCNode?` and
+   `getVSpaceRoot?` (and their `_eq_some_iff` unfolding lemmas)
+   alongside the AL2-A baseline (`getTcb?`, `getSchedContext?`,
+   `getEndpoint?`, `getNotification?`, `getUntyped?`).  The new
+   helpers unblock migration of CNode and VSpaceRoot lookups in
+   `Capability/Operations.lean`, `Architecture/IpcBufferRead.lean`,
+   `Architecture/IpcBufferValidation.lean`.  The metric scripts
+   gain `GETCNODE_ADOPTION` and `GETVSPACEROOT_ADOPTION` should-grow
+   metrics; the monotonicity gate enforces both.
+
+2. **Additional reader-side migrations + downstream proof bridges:**
+   * `Capability/Operations.lean::ipcTransferSingleCap` — 1 raw
+     CNode lookup migrated to `getCNode?`.  Updated 5 downstream
+     preservation proofs (`_preserves_objects_invExt`,
+     `_preserves_objects_ne`, `_preserves_scheduler`,
+     `_preserves_services`, `_receiverRoot_stays_cnode`,
+     `_preserves_objects_eq_tcb` / `_eq_endpoint` /
+     `_eq_notification`) — each bridges typed-helper hypothesis to
+     raw-lookup form via `SystemState.getCNode?_eq_some_iff` or
+     uses the typed-helper case-split directly.
+   * `Architecture/IpcBufferRead.lean::ipcBufferReadMr` — VSpaceRoot
+     lookup (the inner match) migrated to `getVSpaceRoot?`.
+     Updated `_reads_only_caller_tcb` proof to also unfold
+     `getVSpaceRoot?` so the framing hypothesis still applies.
+   * `Architecture/IpcBufferValidation.lean::validateIpcBufferAddress`
+     — both TCB and VSpaceRoot lookups migrated.  Updated
+     `_implies_mapped_writable` to bridge both typed-helper
+     hypotheses to raw-lookup form via the iff lemmas.
+   * `Architecture/IpcBufferValidation.lean::setIPCBufferOp` — TCB
+     lookup migrated.  Updated 2 preservation proofs
+     (`_success_shape`, `_asidTable_eq`) to bridge.  Updated
+     `setIPCBufferOp_preserves_projection` in
+     `InformationFlow/Invariant/Operations.lean` (the IF NI proof)
+     to case-split on `getTcb?` directly.
+   * `IPC/Operations/Endpoint.lean::ensureRunnable` — TCB lookup
+     migrated.  Updated 4 downstream proofs in
+     `IPC/Operations/SchedulerLemmas.lean`,
+     `IPC/Invariant/Structural/StoreObjectFrame.lean`, and
+     `InformationFlow/Invariant/Helpers.lean` to bridge.
+
+3. **Test suite expanded** — `tests/An10CascadeSuite.lean` extended
+   from 26 to **32 tests** with 6 new round-trip / kind-discrimination
+   / empty-state tests for `getCNode?` and `getVSpaceRoot?`.
+
+4. **Honest residual scope tracked in `AUDIT_v0.29.0_DEFERRED.md`** —
+   three explicit categories of deferred work documented:
+   * `AN10-A.handler-internal-hygiene` (internal helper signatures
+     not yet `Valid*Id` — transitively safe via dispatch validators)
+   * `AN10-B.deep-cascade-readers` (readers with 8–30 downstream
+     proof unfolds — bounded by the gate's current floor)
+   * `AN10-B.three-arm-readers` (3-arm patterns whose API ABI
+     contract distinguishes wrong-variant from absent — correctly
+     NOT migrated; migration would change semantics)
+   * `AN10-C.writer-production` (production `storeObject` sites
+     not yet `storeObjectKindChecked` — defense-in-depth that's
+     structurally enforced by the AM4 `lifecycleObjectTypeLockstep`
+     invariant)
+
 ### Post-delivery audit-pass-2 remediation
 
 A second deep audit of the AN10 + audit-pass landing

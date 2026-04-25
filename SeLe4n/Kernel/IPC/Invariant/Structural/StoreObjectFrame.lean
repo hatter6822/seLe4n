@@ -578,21 +578,19 @@ theorem ensureRunnable_preserves_contextMatchesCurrent
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hInv : contextMatchesCurrent st) :
     contextMatchesCurrent (ensureRunnable st tid) := by
+  -- AN10-B: post-migration `ensureRunnable` reads via `getTcb?`.
   unfold ensureRunnable
   split
   · exact hInv
-  · cases hObj : st.objects[tid.toObjId]? with
+  · cases hTcb : st.getTcb? tid with
     | none => exact hInv
-    | some obj =>
-      cases obj with
-      | tcb tcb =>
-        simp only [contextMatchesCurrent]
-        cases hCur : st.scheduler.current with
-        | none => trivial
-        | some curTid =>
-          simp only [contextMatchesCurrent, hCur] at hInv
-          exact hInv
-      | _ => exact hInv
+    | some tcb =>
+      simp only [contextMatchesCurrent]
+      cases hCur : st.scheduler.current with
+      | none => trivial
+      | some curTid =>
+        simp only [contextMatchesCurrent, hCur] at hInv
+        exact hInv
 
 /-- WS-H12c: `removeRunnable` preserves `contextMatchesCurrent`. -/
 theorem removeRunnable_preserves_contextMatchesCurrent

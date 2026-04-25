@@ -89,11 +89,38 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
     `_crossKind_rejected`) for transparent migration of any
     future consumer.
   - **AN10 regression suite**: new `tests/An10CascadeSuite.lean`
-    (initial 17 tests, post-audit-pass extended to **26 tests**
-    covering AN10-A/B/C/D), wired into `lakefile.toml` as
-    `lean_exe an10_cascade_suite` and into
-    `scripts/test_tier2_negative.sh`.
-  - **AN10 post-delivery audit-pass remediation**: a deep audit of
+    (initial 17 tests, post-audit-pass extended to 26 tests, post-
+    audit-pass-3 extended to **32 tests** covering AN10-A/B/C/D
+    plus the new `getCNode?` and `getVSpaceRoot?` typed-helper
+    round-trip / kind-discrimination / empty-state witnesses),
+    wired into `lakefile.toml` as `lean_exe an10_cascade_suite`
+    and into `scripts/test_tier2_negative.sh`.
+  - **AN10 post-delivery audit-pass-3 remediation**: a third deep
+    audit (in response to user observation that the prior passes
+    delivered ~10% of the plan's migration scope and overstated
+    closure with "RESOLVED" markers) added the `getCNode?` and
+    `getVSpaceRoot?` typed helpers to `Model/State.lean`,
+    migrated 5 more reader sites (`Capability/Operations.lean::
+    ipcTransferSingleCap`, `Architecture/IpcBufferRead.lean::
+    ipcBufferReadMr` VSpaceRoot lookup, `IpcBufferValidation.lean::
+    validateIpcBufferAddress` + `setIPCBufferOp`, `IPC/Operations/
+    Endpoint.lean::ensureRunnable`) and updated 11 downstream
+    proofs to bridge the typed-helper hypotheses to raw lookups
+    via the new `getCNode?_eq_some_iff` / `getVSpaceRoot?_eq_some_iff`
+    iff lemmas plus the existing `getTcb?_eq_some_iff`.  Added 6
+    new round-trip / kind-discrimination / empty-state tests to
+    `An10CascadeSuite.lean` (now 32 tests).  `AUDIT_v0.29.0_DEFERRED.md`
+    rewritten to honestly enumerate four residual scope categories
+    with rationale (handler-internal-hygiene, deep-cascade-readers,
+    three-arm-readers, writer-production).  Cumulative metric
+    deltas (post-corrected regex): `RAW_MATCH_TOTAL` 145→116
+    (−29 across 3 audit passes); `GETTCB_ADOPTION` 34→99 (+65);
+    `GETSCHEDCTX_ADOPTION` 9→34 (+25); `GETENDPOINT_ADOPTION`
+    6→22 (+16); new `GETCNODE_ADOPTION` 0→27 and
+    `GETVSPACEROOT_ADOPTION` 1→6.
+
+  - **AN10 post-delivery audit-pass remediation** (initial pass):
+    a deep audit of
     the initial AN10 landing identified four strengthening
     opportunities, all addressed in-PR.  (1) Additional 9 reader-
     side migrations across `Lifecycle/Suspend.lean` (3 sites),

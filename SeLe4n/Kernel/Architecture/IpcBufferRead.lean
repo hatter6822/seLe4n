@@ -100,19 +100,20 @@ def ipcBufferReadMr (st : SystemState) (tid : ThreadId) (idx : Nat)
   if idx ≥ maxOverflowSlots then
     .error .overflowIndexOutOfRange
   else
-    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. The
-    -- VSpaceRoot lookup retains the raw form because no `getVSpaceRoot?`
-    -- typed helper exists at the AL2-A foundational layer.
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration on
+    -- both the TCB and VSpaceRoot lookups. Both `_` arms in the
+    -- pre-AN10 form collapsed wrong-variant and absent into the same
+    -- error code, so migration is semantics-preserving.
     match st.getTcb? tid with
     | some tcb =>
-      match st.objects[tcb.vspaceRoot]? with
-      | some (.vspaceRoot root) =>
+      match st.getVSpaceRoot? tcb.vspaceRoot with
+      | some root =>
         let offsetVA : VAddr := VAddr.ofNat (tcb.ipcBuffer.toNat + idx * 8)
         match root.lookup offsetVA with
         | some (paddr, _perms) =>
           .ok (SeLe4n.Kernel.Architecture.readUInt64 st.machine.memory paddr)
         | none => .error .ipcBufferVAddrUnmapped
-      | _ => .error .vspaceRootInvalid
+      | none => .error .vspaceRootInvalid
     | none => .error .threadNotFound
 
 /-- AK4-A.1: Out-of-range index — reads above `maxOverflowSlots` fail. -/
@@ -167,10 +168,10 @@ theorem ipcBufferReadMr_reads_only_caller_tcb
               st'.objects[vs]? = st.objects[vs]?)
     (hMem  : st'.machine.memory = st.machine.memory) :
     ipcBufferReadMr st' tid idx = ipcBufferReadMr st tid idx := by
-  -- AN10-B: unfold `getTcb?` so the framing hypothesis (stated against
-  -- the raw object-store lookup) lines up with what `ipcBufferReadMr`
-  -- now reads via the typed helper.
-  unfold ipcBufferReadMr SystemState.getTcb?
+  -- AN10-B: unfold both `getTcb?` and `getVSpaceRoot?` so the framing
+  -- hypotheses (stated against the raw object-store lookup) line up
+  -- with what `ipcBufferReadMr` now reads via the typed helpers.
+  unfold ipcBufferReadMr SystemState.getTcb? SystemState.getVSpaceRoot?
   by_cases hBound : idx ≥ maxOverflowSlots
   · simp [hBound]
   · simp only [hBound, ↓reduceIte]

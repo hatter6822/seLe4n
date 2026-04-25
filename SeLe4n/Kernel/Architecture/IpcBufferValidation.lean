@@ -65,12 +65,15 @@ def validateIpcBufferAddress (st : SystemState) (tid : ThreadId)
   -- Step 2: Canonical address check
   else if !addr.isCanonical then .error .addressOutOfBounds
   else
-    -- Look up the thread's TCB
-    match st.objects[tid.toObjId]? with
-    | some (.tcb tcb) =>
+    -- Look up the thread's TCB.  AN10-B (DEF-AK7-F.reader.hygiene):
+    -- typed-helper migration. Both pre-AN10 `_` arms collapsed
+    -- wrong-variant and absent into the same error, so migration is
+    -- semantics-preserving.
+    match st.getTcb? tid with
+    | some tcb =>
       -- Step 4: VSpace root validity
-      match st.objects[tcb.vspaceRoot]? with
-      | some (.vspaceRoot root) =>
+      match st.getVSpaceRoot? tcb.vspaceRoot with
+      | some root =>
         -- Step 5: Mapping check via VSpaceRoot.lookup
         match root.lookup addr with
         | some (paddr, perms) =>
@@ -90,8 +93,8 @@ def validateIpcBufferAddress (st : SystemState) (tid : ThreadId)
             .error .addressOutOfBounds
           else .ok ()
         | none => .error .translationFault
-      | _ => .error .invalidArgument
-    | _ => .error .objectNotFound
+      | none => .error .invalidArgument
+    | none => .error .objectNotFound
 
 -- ============================================================================
 -- D3-E: setIPCBufferOp — the complete operation
@@ -118,8 +121,9 @@ def setIPCBufferOp (st : SystemState) (vtid : ValidThreadId)
   match validateIpcBufferAddress st vtid.val addr with
   | .error e => .error e
   | .ok () =>
-    match st.objects[vtid.val.toObjId]? with
-    | some (.tcb tcb) =>
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+    match st.getTcb? vtid.val with
+    | some tcb =>
       -- AH3-B (L-08): Delegate to `storeObject` instead of manual struct-with.
       -- `storeObject` handles objects/objectIndex/objectIndexSet/lifecycle/asidTable
       -- uniformly. For TCB-to-TCB updates, asidTable is a no-op and capabilityRefs
@@ -128,7 +132,7 @@ def setIPCBufferOp (st : SystemState) (vtid : ValidThreadId)
       match storeObject vtid.val.toObjId (.tcb tcb') st with
       | .ok ((), st') => .ok st'
       | .error e => .error e
-    | _ => .error .objectNotFound
+    | none => .error .objectNotFound
 
 -- ============================================================================
 -- D3-G: Validation correctness theorems
@@ -182,9 +186,9 @@ theorem validateIpcBufferAddress_implies_mapped_writable
     · contradiction
     · rename_i hAlign hCanon
       split at hOk
-      · rename_i hTcb
+      · rename_i tcb hTcb
         split at hOk
-        · rename_i hVs
+        · rename_i root hVs
           split at hOk
           · rename_i hLookup
             split at hOk
@@ -194,7 +198,15 @@ theorem validateIpcBufferAddress_implies_mapped_writable
               · contradiction
               · rename_i hPA
                 simp only [Bool.not_eq_true, Bool.not_eq_false'] at hWrite hPA
-                exact ⟨_, _, _, _, hTcb, hVs, hLookup,
+                -- AN10-B: post-migration `validateIpcBufferAddress` reads
+                -- via `getTcb?` and `getVSpaceRoot?`; bridge each typed-
+                -- helper hypothesis to the raw lookup form expected by
+                -- the post-condition.
+                have hTcbRaw : st.objects[tid.toObjId]? = some (.tcb tcb) :=
+                  (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
+                have hVsRaw : st.objects[tcb.vspaceRoot]? = some (.vspaceRoot root) :=
+                  (SystemState.getVSpaceRoot?_eq_some_iff st tcb.vspaceRoot root).mp hVs
+                exact ⟨_, _, _, _, hTcbRaw, hVsRaw, hLookup,
                   by simp_all, by simp_all [decide_eq_true_eq]⟩
           · contradiction
         · contradiction
@@ -227,12 +239,18 @@ private theorem setIPCBufferOp_success_shape
     (hOk : setIPCBufferOp st vtid addr = .ok st') :
     ∃ tcb, st.objects[vtid.val.toObjId]? = some (.tcb tcb) ∧
       validateIpcBufferAddress st vtid.val addr = .ok () := by
+  -- AN10-B: post-migration `setIPCBufferOp` reads via `getTcb?`; bridge
+  -- the typed-helper hypothesis to the raw lookup form expected by the
+  -- post-condition.
   unfold setIPCBufferOp at hOk
   split at hOk
   · contradiction
   · rename_i hVal
     split at hOk
-    · exact ⟨_, by assumption, hVal⟩
+    · rename_i tcb hTcbTyped
+      have hTcbRaw : st.objects[vtid.val.toObjId]? = some (.tcb tcb) :=
+        (SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hTcbTyped
+      exact ⟨tcb, hTcbRaw, hVal⟩
     · contradiction
 
 /-- D3-F: `setIPCBufferOp` preserves the scheduler state.
@@ -293,13 +311,18 @@ theorem setIPCBufferOp_asidTable_eq
     (st st' : SystemState) (vtid : ValidThreadId) (addr : VAddr)
     (hOk : setIPCBufferOp st vtid addr = .ok st') :
     st'.asidTable = st.asidTable := by
+  -- AN10-B: post-migration `setIPCBufferOp` reads via `getTcb?`; bridge
+  -- to the raw lookup form expected by `storeObject`'s asidTable
+  -- match-on-objects branch.
   unfold setIPCBufferOp at hOk
   split at hOk
   · contradiction
   · split at hOk
     · rename_i tcb hLookup
+      have hRaw : st.objects[vtid.val.toObjId]? = some (.tcb tcb) :=
+        (SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hLookup
       unfold storeObject at hOk; simp only [] at hOk; cases hOk
-      simp only [hLookup]
+      simp only [hRaw]
     · contradiction
 
 /-- D3-F/AH3-B: `setIPCBufferOp` delegates to `storeObject`, which applies the

@@ -131,15 +131,18 @@ def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   if tid ∈ st.scheduler.runQueue then
     st
   else
-    match st.objects[tid.toObjId]? with
-    | some (.tcb tcb) =>
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. The
+    -- pre-AN10 `_ => st` arm collapsed wrong-variant and absent into the
+    -- same identity fall-through, so migration is semantics-preserving.
+    match st.getTcb? tid with
+    | some tcb =>
         { st with
             scheduler := {
               st.scheduler with
                 runQueue := st.scheduler.runQueue.insert tid (ipcEffectiveRunQueuePriority tcb)
             }
         }
-    | _ => st
+    | none => st
 
 def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
   if tid.isReserved then

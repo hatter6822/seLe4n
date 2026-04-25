@@ -134,6 +134,61 @@ def an10_b_getUntyped_populated : IO Bool := do
     objects := (default : SystemState).objects.insert id (.untyped ut) }
   return st.getUntyped? id |>.isSome
 
+/-- AN10-B.8 (audit-pass-3) — `getCNode?` round-trips on a populated
+    CNode. -/
+def an10_b_getCNode_populated : IO Bool := do
+  let id : ObjId := ObjId.ofNat 600
+  let cn : CNode :=
+    { depth      := 8
+    , guardWidth := 0
+    , guardValue := 0
+    , radixWidth := 8
+    , slots      := SeLe4n.Kernel.RobinHood.RHTable.empty 16 }
+  let st : SystemState := { (default : SystemState) with
+    objects := (default : SystemState).objects.insert id (.cnode cn) }
+  return st.getCNode? id |>.isSome
+
+/-- AN10-B.9 (audit-pass-3) — `getCNode?` rejects a wrong-variant store
+    at the same ObjId (kind discrimination). -/
+def an10_b_getCNode_wrong_kind : IO Bool := do
+  let id : ObjId := ObjId.ofNat 600
+  let st : SystemState := { (default : SystemState) with
+    objects := (default : SystemState).objects.insert id
+      (.endpoint mkEmptyEndpoint) }
+  return st.getCNode? id == none
+
+/-- AN10-B.10 (audit-pass-3) — `getCNode?` returns `none` on the empty
+    state. -/
+def an10_b_getCNode_empty : IO Bool := do
+  let id : ObjId := ObjId.ofNat 600
+  return (default : SystemState).getCNode? id == none
+
+/-- AN10-B.11 (audit-pass-3) — `getVSpaceRoot?` round-trips on a
+    populated VSpaceRoot. -/
+def an10_b_getVSpaceRoot_populated : IO Bool := do
+  let id : ObjId := ObjId.ofNat 700
+  let root : VSpaceRoot :=
+    { asid     := SeLe4n.ASID.mk 1
+    , mappings := SeLe4n.Kernel.RobinHood.RHTable.empty 16 }
+  let st : SystemState := { (default : SystemState) with
+    objects := (default : SystemState).objects.insert id (.vspaceRoot root) }
+  return st.getVSpaceRoot? id |>.isSome
+
+/-- AN10-B.12 (audit-pass-3) — `getVSpaceRoot?` rejects a wrong-variant
+    store at the same ObjId (kind discrimination). -/
+def an10_b_getVSpaceRoot_wrong_kind : IO Bool := do
+  let id : ObjId := ObjId.ofNat 700
+  let st : SystemState := { (default : SystemState) with
+    objects := (default : SystemState).objects.insert id
+      (.endpoint mkEmptyEndpoint) }
+  return st.getVSpaceRoot? id == none
+
+/-- AN10-B.13 (audit-pass-3) — `getVSpaceRoot?` returns `none` on the
+    empty state. -/
+def an10_b_getVSpaceRoot_empty : IO Bool := do
+  let id : ObjId := ObjId.ofNat 700
+  return (default : SystemState).getVSpaceRoot? id == none
+
 -- ============================================================================
 -- AN10-A (DEF-AK7-E) — `Valid*Id` dispatch boundary witnesses
 -- ============================================================================
@@ -361,6 +416,12 @@ def runAll : IO Bool := do
     ("an10_b_getEndpoint_wrong_kind", an10_b_getEndpoint_wrong_kind),
     ("an10_b_getNotification_populated", an10_b_getNotification_populated),
     ("an10_b_getUntyped_populated", an10_b_getUntyped_populated),
+    ("an10_b_getCNode_populated", an10_b_getCNode_populated),
+    ("an10_b_getCNode_wrong_kind", an10_b_getCNode_wrong_kind),
+    ("an10_b_getCNode_empty", an10_b_getCNode_empty),
+    ("an10_b_getVSpaceRoot_populated", an10_b_getVSpaceRoot_populated),
+    ("an10_b_getVSpaceRoot_wrong_kind", an10_b_getVSpaceRoot_wrong_kind),
+    ("an10_b_getVSpaceRoot_empty", an10_b_getVSpaceRoot_empty),
     ("an10_a_validObjId_rejects_sentinel", an10_a_validObjId_rejects_sentinel),
     ("an10_a_validObjId_accepts_nonzero", an10_a_validObjId_accepts_nonzero),
     ("an10_a_validThreadId_rejects_sentinel", an10_a_validThreadId_rejects_sentinel),

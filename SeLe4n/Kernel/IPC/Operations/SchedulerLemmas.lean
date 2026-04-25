@@ -65,10 +65,14 @@ theorem ensureRunnable_mem_self
     (hTcb : ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb)) :
     tid ∈ (ensureRunnable st tid).scheduler.runQueue := by
   obtain ⟨tcb, hTcb⟩ := hTcb
+  -- AN10-B: post-migration `ensureRunnable` reads via `getTcb?`; bridge
+  -- from the raw lookup hypothesis via the iff lemma.
+  have hTcbTyped : st.getTcb? tid = some tcb :=
+    (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hTcb
   unfold ensureRunnable
   split
   · assumption
-  · simp only [hTcb]
+  · simp only [hTcbTyped]
     rw [RunQueue.mem_insert]
     exact Or.inr rfl
 
@@ -140,8 +144,11 @@ theorem ensureRunnable_inserts_at_effective_priority
     (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb)) :
     (ensureRunnable st tid).scheduler.runQueue =
       st.scheduler.runQueue.insert tid (ipcEffectiveRunQueuePriority tcb) := by
+  -- AN10-B: post-migration `ensureRunnable` reads via `getTcb?`.
+  have hTcbTyped : st.getTcb? tid = some tcb :=
+    (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hTcb
   unfold ensureRunnable
-  simp only [hNotMem, if_false, hTcb]
+  simp only [hNotMem, if_false, hTcbTyped]
 
 /-- AK1-E (I-M03): PIP-boosted threads are inserted at their boosted
     priority (not their base priority) when awakened via `ensureRunnable`.
