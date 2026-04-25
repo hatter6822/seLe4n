@@ -63,10 +63,23 @@ def applyCallDonation
       | some callerTcb =>
         match callerTcb.schedContextBinding with
         | .bound clientScId =>
-          -- AH2-A: Propagate donation errors instead of swallowing them
-          match donateSchedContext st caller receiver clientScId with
-          | .error e => .error e
-          | .ok st' => .ok st'
+          -- AH2-A: Propagate donation errors instead of swallowing them.
+          -- AN10-residual-1 (commit 6/H5): route through the H5 wrapper
+          -- `donateSchedContextValid` when both ids are non-sentinel.
+          -- The prior `lookupTcb` successes (lines 55, 61) guarantee
+          -- both ids reference TCBs in the store; the sentinel ObjId is
+          -- not associated with any TCB.  The fallback branch below
+          -- preserves observational equivalence in any context that
+          -- cannot establish that invariant.
+          match SeLe4n.ThreadId.toValid? caller, SeLe4n.ThreadId.toValid? receiver with
+          | some clientVtid, some serverVtid =>
+              match donateSchedContextValid st clientVtid serverVtid clientScId with
+              | .error e => .error e
+              | .ok st' => .ok st'
+          | _, _ =>
+              match donateSchedContext st caller receiver clientScId with
+              | .error e => .error e
+              | .ok st' => .ok st'
         | _ => .ok st                       -- No-op: caller has no SC to donate
     | _ => .ok st  -- Receiver already has SC, no donation needed
 
@@ -135,11 +148,42 @@ theorem applyCallDonation_scheduler_eq
         | unbound => simp [hCallerBinding] at h; cases h; rfl
         | bound clientScId =>
           simp only [hCallerBinding] at h
-          cases hDonate : donateSchedContext st caller receiver clientScId with
-          | error _ => simp [hDonate] at h
-          | ok stDon =>
-            simp [hDonate] at h; rw [← h]
-            exact donateSchedContext_scheduler_eq st stDon caller receiver clientScId hDonate
+          -- AN10-residual-1 (commit 6): the body case-splits on `toValid?`
+          -- for both ids before calling `donateSchedContext` (via the H5
+          -- wrapper or the raw fallback).  Both branches reduce to
+          -- `donateSchedContext st caller receiver clientScId` once the
+          -- wrapper's `_eq` lemma fires + `toValid?_some_val_eq` rewrites
+          -- vtid.val back to the original tid.
+          cases hCV : SeLe4n.ThreadId.toValid? caller with
+          | none =>
+              simp only [hCV] at h
+              cases hDonate : donateSchedContext st caller receiver clientScId with
+              | error _ => simp [hDonate] at h
+              | ok stDon =>
+                  simp [hDonate] at h; rw [← h]
+                  exact donateSchedContext_scheduler_eq st stDon caller receiver clientScId hDonate
+          | some clientVtid =>
+              cases hRV : SeLe4n.ThreadId.toValid? receiver with
+              | none =>
+                  simp only [hCV, hRV] at h
+                  cases hDonate : donateSchedContext st caller receiver clientScId with
+                  | error _ => simp [hDonate] at h
+                  | ok stDon =>
+                      simp [hDonate] at h; rw [← h]
+                      exact donateSchedContext_scheduler_eq st stDon caller receiver clientScId hDonate
+              | some serverVtid =>
+                  -- some/some branch: route through the wrapper.  Bridge
+                  -- vtid.val back to the original tid via the prelude lemma.
+                  have hCEq : clientVtid.val = caller :=
+                    SeLe4n.ThreadId.toValid?_some_val_eq caller clientVtid hCV
+                  have hREq : serverVtid.val = receiver :=
+                    SeLe4n.ThreadId.toValid?_some_val_eq receiver serverVtid hRV
+                  simp only [hCV, hRV, donateSchedContextValid, hCEq, hREq] at h
+                  cases hDonate : donateSchedContext st caller receiver clientScId with
+                  | error _ => simp [hDonate] at h
+                  | ok stDon =>
+                      simp [hDonate] at h; rw [← h]
+                      exact donateSchedContext_scheduler_eq st stDon caller receiver clientScId hDonate
         | donated scId owner => simp [hCallerBinding] at h; cases h; rfl
     | bound scId => simp [hBinding] at h; cases h; rfl
     | donated scId owner => simp [hBinding] at h; cases h; rfl
@@ -160,10 +204,23 @@ def applyReplyDonation (st : SystemState) (replier : SeLe4n.ThreadId)
   | some replierTcb =>
     match replierTcb.schedContextBinding with
     | .donated scId originalOwner =>
-      -- AH2-B: Propagate return errors instead of swallowing them
-      match returnDonatedSchedContext st replier scId originalOwner with
-      | .error e => .error e
-      | .ok st' => .ok (removeRunnable st' replier)
+      -- AH2-B: Propagate return errors instead of swallowing them.
+      -- AN10-residual-1 (commit 6/H6): route through `returnDonatedSchedContext
+      -- Valid` when both ids are non-sentinel.  The prior `lookupTcb st replier
+      -- = some _` (line 158) guarantees `replier` is non-sentinel; the
+      -- `originalOwner` field of `.donated` was set by `donateSchedContext`
+      -- which itself only stores non-sentinel client tids (the sentinel
+      -- ObjId has no TCB).  The fallback branch preserves observational
+      -- equivalence in any context that cannot establish that invariant.
+      match SeLe4n.ThreadId.toValid? replier, SeLe4n.ThreadId.toValid? originalOwner with
+      | some replierVtid, some ownerVtid =>
+          match returnDonatedSchedContextValid st replierVtid scId ownerVtid with
+          | .error e => .error e
+          | .ok st' => .ok (removeRunnable st' replier)
+      | _, _ =>
+          match returnDonatedSchedContext st replier scId originalOwner with
+          | .error e => .error e
+          | .ok st' => .ok (removeRunnable st' replier)
     | _ => .ok st                           -- No-op: no donation to return
 
 -- ============================================================================
@@ -494,11 +551,36 @@ theorem applyCallDonation_machine_eq
         | unbound => simp [hCallerBinding] at h; cases h; rfl
         | bound clientScId =>
           simp only [hCallerBinding] at h
-          cases hDonate : donateSchedContext st caller receiver clientScId with
-          | error _ => simp [hDonate] at h
-          | ok stDon =>
-            simp [hDonate] at h; rw [← h]
-            exact donateSchedContext_machine_eq st stDon caller receiver clientScId hDonate
+          -- AN10-residual-1 (commit 6): same toValid? case-split as
+          -- applyCallDonation_scheduler_eq.
+          cases hCV : SeLe4n.ThreadId.toValid? caller with
+          | none =>
+              simp only [hCV] at h
+              cases hDonate : donateSchedContext st caller receiver clientScId with
+              | error _ => simp [hDonate] at h
+              | ok stDon =>
+                  simp [hDonate] at h; rw [← h]
+                  exact donateSchedContext_machine_eq st stDon caller receiver clientScId hDonate
+          | some clientVtid =>
+              cases hRV : SeLe4n.ThreadId.toValid? receiver with
+              | none =>
+                  simp only [hCV, hRV] at h
+                  cases hDonate : donateSchedContext st caller receiver clientScId with
+                  | error _ => simp [hDonate] at h
+                  | ok stDon =>
+                      simp [hDonate] at h; rw [← h]
+                      exact donateSchedContext_machine_eq st stDon caller receiver clientScId hDonate
+              | some serverVtid =>
+                  have hCEq : clientVtid.val = caller :=
+                    SeLe4n.ThreadId.toValid?_some_val_eq caller clientVtid hCV
+                  have hREq : serverVtid.val = receiver :=
+                    SeLe4n.ThreadId.toValid?_some_val_eq receiver serverVtid hRV
+                  simp only [hCV, hRV, donateSchedContextValid, hCEq, hREq] at h
+                  cases hDonate : donateSchedContext st caller receiver clientScId with
+                  | error _ => simp [hDonate] at h
+                  | ok stDon =>
+                      simp [hDonate] at h; rw [← h]
+                      exact donateSchedContext_machine_eq st stDon caller receiver clientScId hDonate
         | donated scId owner => simp [hCallerBinding] at h; cases h; rfl
     | bound scId => simp [hBinding] at h; cases h; rfl
     | donated scId owner => simp [hBinding] at h; cases h; rfl
@@ -528,6 +610,24 @@ theorem applyReplyDonation_machine_eq
     | bound scId => simp [hBinding] at h; cases h; rfl
     | donated scId originalOwner =>
       simp only [hBinding] at h
+      -- AN10-residual-1 (commit 6/H6): collapse the toValid? case-split
+      -- back to the raw form so the original proof body composes unchanged.
+      have h :
+          (match returnDonatedSchedContext st replier scId originalOwner with
+           | .error e => Except.error (α := SystemState) e
+           | .ok st' => .ok (removeRunnable st' replier)) = .ok st' := by
+        cases hRV : SeLe4n.ThreadId.toValid? replier with
+        | none => simp only [hRV] at h; exact h
+        | some replierVtid =>
+            cases hOV : SeLe4n.ThreadId.toValid? originalOwner with
+            | none => simp only [hRV, hOV] at h; exact h
+            | some ownerVtid =>
+                have hREq : replierVtid.val = replier :=
+                  SeLe4n.ThreadId.toValid?_some_val_eq replier replierVtid hRV
+                have hOEq : ownerVtid.val = originalOwner :=
+                  SeLe4n.ThreadId.toValid?_some_val_eq originalOwner ownerVtid hOV
+                simp only [hRV, hOV, returnDonatedSchedContextValid, hREq, hOEq] at h
+                exact h
       cases hReturn : returnDonatedSchedContext st replier scId originalOwner with
       | error _ => simp [hReturn] at h
       | ok st'' =>

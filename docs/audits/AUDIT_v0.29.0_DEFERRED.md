@@ -417,19 +417,31 @@ currently-active plan file tracks them.**
 - **Residual hygiene work tracked but non-gating** (post-AN10):
   * **AN10-A.handler-internal-hygiene** — partial closure via the
     **AN10-residual-1 typed-wrapper pattern** (commits 2, 3, 6 on
-    branch `claude/review-codebase-audit-Fx4iX`).  Seven lifecycle/IPC
-    handlers gained typed `*Valid` entry-points via thin wrappers that
-    document the dispatch-boundary discipline at the type system
-    without disturbing the proof surface: `removeRunnableValid` (H7,
-    `IPC/Operations/Endpoint.lean:114`), `clearTcbIpcFieldsValid`
-    (H1, private), `clearPendingStateValid` (H2),
-    `cancelIpcBlockingValid` (H3), `cancelDonationValid` (H4) — all
-    in `Lifecycle/Suspend.lean`; plus `donateSchedContextValid` (H5),
-    `returnDonatedSchedContextValid` (H6) in
-    `IPC/Operations/Endpoint.lean`.  Each wrapper takes
-    `ValidThreadId` parameters and reduces to the raw form via a
-    `_eq` `@[simp]` lemma so existing proof bodies operating on the
-    raw form continue to work unchanged.
+    branch `claude/review-codebase-audit-Fx4iX`) **PLUS the deep-audit
+    pass production wiring**.  Seven lifecycle/IPC handlers gained
+    typed `*Valid` entry-points via thin wrappers and are now wired
+    into production:
+    - `removeRunnableValid` (H7) — used by `Lifecycle/Suspend.lean::
+      suspendThread` G4 phase.
+    - `clearTcbIpcFieldsValid` (H1, private) — invoked transitively
+      via `cancelIpcBlockingValid`.
+    - `clearPendingStateValid` (H2) — used by `suspendThread` G5.
+    - `cancelIpcBlockingValid` (H3) — used by `suspendThread` G2.
+    - `cancelDonationValid` (H4) — used by `suspendThread` G3.
+    - `donateSchedContextValid` (H5) — used by
+      `IPC/Operations/Donation/Primitives.lean::applyCallDonation`
+      via `ThreadId.toValid?` case-split with raw fallback.
+    - `returnDonatedSchedContextValid` (H6) — used by
+      `applyReplyDonation` similarly.
+
+    Each wrapper takes `ValidThreadId` parameters and reduces to the
+    raw form via a `_eq` `@[simp]` lemma so existing proof bodies
+    operating on the raw form continue to work unchanged.  The new
+    Prelude lemma `ThreadId.toValid?_some_val_eq` (`t.toValid? = some
+    vt → vt.val = t`) bridges back from the H5/H6 wrapper-form to the
+    raw-tid form for the 4 affected unfold proofs in
+    `Donation/Primitives.lean` and `InformationFlow/Invariant/
+    Operations.lean`.
 
     **Rationale for wrapper-not-tightening** (AN10-residual-1
     findings): the original tightening plan would have cascaded
@@ -440,6 +452,17 @@ currently-active plan file tracks them.**
     sentinel.  Tightening provides type-level documentation but
     zero runtime safety improvement.  The wrapper achieves the
     documentation benefit without paying the cascade cost.
+
+    **Production-wiring rationale (deep-audit pass)**: the initial
+    wrapper landing did not adopt the wrappers at any production
+    call site, leaving them as defined-but-unused dead code.  The
+    deep-audit pass wired all seven wrappers into production paths
+    (`suspendThread` for H1–H4 + H7; `applyCallDonation` /
+    `applyReplyDonation` for H5/H6 via toValid?-case-split with raw
+    fallback).  End-to-end wiring tests
+    `an10_e_applyCallDonation_wires_h5` /
+    `an10_e_applyReplyDonation_wires_h6` substantively verify that
+    the wrappers are reachable from the IPC dispatch chain.
 
     **Remaining work** (still tracked under this category):
     handlers `getCurrentPriority`, `getCurrentPriorityChecked`,

@@ -2816,6 +2816,25 @@ theorem applyCallDonation_preserves_projection
         | donated _ _ => simp [hCBinding] at hOk; cases hOk; simp
         | bound clientScId =>
           simp only [hCBinding] at hOk
+          -- AN10-residual-1 (commit 6): the body case-splits on `toValid?`
+          -- before calling `donateSchedContext`(`Valid`).  Collapse back to
+          -- the raw form so the original proof body composes unchanged.
+          have hOk :
+              (match donateSchedContext st caller receiver clientScId with
+               | .error e => Except.error (α := SystemState) e
+               | .ok st' => Except.ok st') = .ok st' := by
+            cases hCV : SeLe4n.ThreadId.toValid? caller with
+            | none => simp only [hCV] at hOk; exact hOk
+            | some clientVtid =>
+                cases hRV : SeLe4n.ThreadId.toValid? receiver with
+                | none => simp only [hCV, hRV] at hOk; exact hOk
+                | some serverVtid =>
+                    have hCEq : clientVtid.val = caller :=
+                      SeLe4n.ThreadId.toValid?_some_val_eq caller clientVtid hCV
+                    have hREq : serverVtid.val = receiver :=
+                      SeLe4n.ThreadId.toValid?_some_val_eq receiver serverVtid hRV
+                    simp only [hCV, hRV, donateSchedContextValid, hCEq, hREq] at hOk
+                    exact hOk
           cases hDon : donateSchedContext st caller receiver clientScId with
           | error _ => simp [hDon] at hOk
           | ok stDon =>

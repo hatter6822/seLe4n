@@ -1,12 +1,12 @@
 ## v0.30.10 — WS-AN Phase AN10 (AK7 cascade closure)
 
-### Post-delivery AN10-residual-1 closure
+### Post-delivery AN10-residual-1 closure (deep-audit pass)
 
 After the user observed that the three audit passes still delivered
 ~10% of the plan scope, a fourth pass landed the residual closure
-across **6 atomic commits** on `claude/review-codebase-audit-Fx4iX`.
-Each commit is independently green (full `lake build` + AN10 cascade
-suite + monotonicity gate); the work decomposes as follows:
+across **6 atomic commits** on `claude/review-codebase-audit-Fx4iX`,
+followed by a deep-audit pass that found the wrappers were unwired
+in production and addressed it:
 
 1. **SETUP** (commit `ff656b3`): re-anchor `docs/audits/AL0_baseline.txt`
    at the post-audit-pass-3 floor; add `tests/An10CascadeSuite.lean`
@@ -15,17 +15,10 @@ suite + monotonicity gate); the work decomposes as follows:
 2. **H7 typed wrapper** (commit `b4fd653`): add
    `removeRunnableValid : SystemState → ValidThreadId → SystemState`
    in `IPC/Operations/Endpoint.lean:114` with `_eq` reduction lemma.
-   Wrapper-not-tightening rationale: `removeRunnable` is sentinel-safe
-   (sentinel can never be a member of any RunQueue / `scheduler.current`),
-   so tightening provides type-level documentation but zero runtime
-   safety.  Tightening would have cascaded through ~100 references.
 
 3. **H1–H4 lifecycle wrappers** (commit `f8fd2e6`): typed entry-points
    for `clearTcbIpcFields`, `clearPendingState`, `cancelIpcBlocking`,
-   `cancelDonation` in `Lifecycle/Suspend.lean`.  Each handler routes
-   through the AL2-A typed helpers internally and is therefore
-   sentinel-safe; the wrappers add type-level documentation of the
-   dispatch-boundary discipline.
+   `cancelDonation` in `Lifecycle/Suspend.lean`.
 
 4. **R1 cspaceLookupSlot → getCNode?** (commit `f92b036`): outer
    match on `objects[addr.cnode]?` migrated to the typed helper.
@@ -33,54 +26,103 @@ suite + monotonicity gate); the work decomposes as follows:
    `Operations.lean`, `Authority.lean`, `ScrubAndUntyped.lean`.
 
 5. **R2+R3 cspaceResolvePath / resolveCapAddress** (commit `0a49569`):
-   both outer matches migrated to `getCNode?`.  R3 is recursive;
-   termination metric (`bitsRemaining`, Nat-strict descent) is
-   unchanged.  Cascade: 3 proof-surface bridges via `getCNode?_eq_some_iff`
-   in `resolveCapAddress_guard_match`, `_guard_reject`,
+   both outer matches migrated to `getCNode?`.  Cascade: 3 proof-
+   surface bridges via `getCNode?_eq_some_iff` in
+   `resolveCapAddress_guard_match`, `_guard_reject`,
    `_result_valid_cnode`.
 
 6. **H5+H6 donation handler wrappers** (commit `68c0db3`):
    `donateSchedContextValid`, `returnDonatedSchedContextValid` in
-   `IPC/Operations/Endpoint.lean`.  Body migration deferred (see
-   `AUDIT_v0.29.0_DEFERRED.md` AN10-B.deep-cascade-readers).
+   `IPC/Operations/Endpoint.lean`.
 
-**Honest residual scope** (delivered as the closure of this pass):
-- **AN10-A handler hygiene**: 7 of ~12 handlers gained typed wrappers.
-  Remaining (`getCurrentPriority`, `getCurrentPriorityChecked`,
-  `updatePrioritySource`, `migrateRunQueueBucket`, etc.) tracked as
-  marginal-value future work.
+7. **CLOSURE-1** (commit `b0d8b42`): documentation sync, baseline
+   re-anchor, DEFERRED.md updates.
+
+**Deep-audit pass (post-closure remediation)**: the audit identified
+that wrappers H1–H7 were defined but had ZERO production callers —
+they were effectively dead-code-as-documentation.  Remediation:
+
+- **Production wiring of H1–H4 + H7** (`Lifecycle/Suspend.lean::suspendThread`):
+  the four lifecycle handler wrappers + the H7 wrapper are now
+  invoked at the four call sites in `suspendThread`'s body
+  (G2 `cancelIpcBlockingValid`, G3 `cancelDonationValid`, G4
+  `removeRunnableValid`, G5 `clearPendingStateValid`).  This makes the
+  wrappers **genuinely used** rather than future-migration material.
+
+- **Production wiring of H5 + H6** (`IPC/Operations/Donation/Primitives.lean`):
+  `applyCallDonation` and `applyReplyDonation` route through the
+  H5/H6 wrappers via a `ThreadId.toValid?` case-split with raw-form
+  fallback (the fallback branch is structurally unreachable under
+  the prior `lookupTcb = some _` guards but preserved for
+  observational equivalence in proof contexts that can't establish
+  that invariant).  The 3 affected unfold proofs
+  (`applyCallDonation_scheduler_eq`, `applyCallDonation_machine_eq`,
+  the NI projection-preservation proof in
+  `InformationFlow/Invariant/Operations.lean`) are updated to handle
+  the new outer match by collapsing back to the raw form via the
+  new `ThreadId.toValid?_some_val_eq` Prelude lemma.
+
+- **New Prelude lemma** (`Prelude.lean::ThreadId.toValid?_some_val_eq`):
+  `t.toValid? = some vt → vt.val = t`.  Used by the H5/H6 unfold
+  proofs to bridge `vtid.val` back to the original `ThreadId` so the
+  `donateSchedContext`-shaped goal composes with existing helpers.
+
+- **Test strengthening**: 6 weak tests (only checking `size`/`Except.ok`
+  cardinality) were rewritten to substantively verify the wrapper's
+  effect path on populated states matching the production scenarios:
+    - H7 test: seed scheduler.current=tid; assert wrapper clears it.
+    - H2 test: seed TCB with non-empty pendingMessage; assert clear.
+    - H3 test: seed TCB blockedOnSend; assert ipcState→.ready.
+    - H4 test: exercise both `.unbound` and `.bound` arms.
+    - H5 test: exercise both error and success paths.
+    - H6 test: exercise both error and success paths.
+  Plus 2 new end-to-end production-wiring tests:
+    - `an10_e_applyCallDonation_wires_h5`: full positive donation
+      scenario through `applyCallDonation`, verifies receiver
+      becomes `.donated` (confirming H5 wrapper is reachable from IPC
+      dispatch).
+    - `an10_e_applyReplyDonation_wires_h6`: full positive return
+      scenario, verifies replier becomes `.unbound` (confirming H6
+      wrapper is reachable from IPC reply).
+
+**Honest residual scope** (still tracked as deferred work):
+- **AN10-A handler hygiene**: 7 of ~12 handlers gained wired typed
+  wrappers (H1–H7). Remaining (`getCurrentPriority`,
+  `getCurrentPriorityChecked`, `updatePrioritySource`,
+  `migrateRunQueueBucket`, etc.) tracked as marginal-value future
+  work.
 - **AN10-B reader hygiene**: 3 of ~8 deep-cascade readers migrated
-  (R1, R2, R3).  Remaining (R4 `cspaceInsertSlot`, R5
-  `cspaceDeleteSlotCore`, H5/H6 inner matches, `notificationSignal`
-  no-waiters branch, `effectiveBucketPriority`, `saveOutgoingContext`,
-  `restoreIncomingContext`, `suspendThread` body, `resumeThread` body)
-  documented as deferred — each has 16–30 proof-surface destructures
-  enumerating all 7 KernelObject variants.  Source-read confirmed
-  `endpointQueueRemoveDual` is a genuine 3-arm reader and reclassified
-  out of the tractable bucket.
-- **AN10-B 3-arm readers**: correctly NOT migrated (semantic ABI break).
-- **AN10-C writer-production**: NOT migrated.  Defense-in-depth wrapper
-  `storeObjectKindChecked` is fully tested; production correctness is
-  structurally enforced by the AM4 `lifecycleObjectTypeLockstep`
-  invariant (11th conjunct of `crossSubsystemInvariant`).
+  (R1, R2, R3). Remaining (R4 `cspaceInsertSlot`, R5
+  `cspaceDeleteSlotCore`, H5/H6 body inner matches,
+  `notificationSignal` no-waiters branch, `effectiveBucketPriority`,
+  `saveOutgoingContext`, `restoreIncomingContext`, `suspendThread`
+  body lookup, `resumeThread` body lookup) documented as deferred
+  — each has 16–30 proof-surface destructures enumerating all 7
+  KernelObject variants. Source-read confirmed
+  `endpointQueueRemoveDual` is a genuine 3-arm reader.
+- **AN10-B 3-arm readers**: correctly NOT migrated (semantic ABI
+  break).
+- **AN10-C writer-production**: NOT migrated. Defense-in-depth via
+  the AM4 `lifecycleObjectTypeLockstep` invariant.
 
 **Cumulative metric trajectory** (AN10 baseline → audit-pass-3 →
-AN10-residual-1):
+AN10-residual-1 → deep-audit):
 
-| Metric | Baseline | After AP3 | After R1 |
-|--------|---------|-----------|----------|
-| `RAW_MATCH_TCB` | 58 | 44 | 44 |
-| `RAW_MATCH_CNODE` | 13 | 10 | 7 |
-| `GETCNODE_ADOPTION` | 0 | 33 | 56 |
-| `GETTCB_ADOPTION` | 34 | 99 | 100 |
-| `STOREOBJECTCHECKED_ADOPTION` | 41 | 57 | 58 |
-| `TEST_COUNT_AK7` | 17 | 32 | 43 |
-| `SENTINEL_CHECK_DISPATCH` | 17 | 17 | 17 |
+| Metric | Baseline | AP3 | R-1 | Deep |
+|--------|---------|-----|-----|------|
+| `RAW_MATCH_TCB` | 58 | 44 | 44 | 44 |
+| `RAW_MATCH_CNODE` | 13 | 10 | 7 | 7 |
+| `GETCNODE_ADOPTION` | 0 | 33 | 56 | 56 |
+| `GETTCB_ADOPTION` | 34 | 99 | 100 | 100 |
+| `STOREOBJECTCHECKED_ADOPTION` | 41 | 57 | 58 | 58 |
+| `TEST_COUNT_AK7` | 17 | 32 | 43 | 45 |
+| `SENTINEL_CHECK_DISPATCH` | 17 | 17 | 17 | 17 |
 
-Gate at the AN10-residual-1 tip: `lake build` (302 jobs, 0 warnings)
-+ `an10_cascade_suite` 43/43 PASS + monotonicity gate PASS at the new
-floors (RAW_MATCH_CNODE=7 / GETCNODE_ADOPTION=56 / TEST_COUNT_AK7=43)
-+ zero `sorry`/`axiom`/`native_decide`.
+Gate at the deep-audit tip: `lake build` (302 jobs, 0 warnings) +
+`an10_cascade_suite` 45/45 PASS + monotonicity gate PASS at new
+floors (TEST_COUNT_AK7=45) + `cargo test --workspace` (462 tests
+across 9 binaries) + `cargo clippy --workspace -- -D warnings` (0
+warnings) + zero `sorry`/`axiom`/`native_decide`.
 
 ### Post-delivery audit-pass-3 remediation
 

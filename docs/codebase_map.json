@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-codebase-audit-Fx4iX",
-      "commit_sha": "68c0db33f7e9751a12426f866d9fbc5ea011f981",
-      "tree_sha": "be266e64bdfe9df06af4354170921064d3ff1cb9",
-      "committed_at_utc": "2026-04-25T21:25:06+00:00"
+      "commit_sha": "b0d8b42aace55c02108ac3bfe401971eaef47dd2",
+      "tree_sha": "90957b2f64e863c22ab67861b724d6abc7fb5955",
+      "committed_at_utc": "2026-04-25T21:34:31+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a0924bf033f2ca5e0dc81e0a126de46967fab6e330dfa3f5b8687a86d62c3f50"
+    "source_digest": "9342890427e1a4c9722846f2c4a28b5683f02fecbdb4c44610df931532bc63d4"
   },
   "summary": {
     "module_count": 193,
-    "declaration_count": 6032
+    "declaration_count": 6035
   },
   "readme_sync": {
     "version": "0.30.10",
     "lean_toolchain": "v4.28.0",
     "production_files": 167,
-    "production_loc": 109179,
+    "production_loc": 109325,
     "test_files": 26,
-    "test_loc": 16825,
-    "proved_theorem_lemma_decls": 3195,
+    "test_loc": 16975,
+    "proved_theorem_lemma_decls": 3196,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -26035,14 +26035,16 @@
             "SystemState",
             "ThreadId",
             "donateSchedContext",
+            "donateSchedContextValid",
             "lookupTcb",
-            "none"
+            "none",
+            "toValid"
           ]
         },
         {
           "kind": "theorem",
           "name": "storeObject_scheduler_eq_local",
-          "line": 74,
+          "line": 87,
           "called": [
             "KernelObject",
             "ObjId",
@@ -26053,7 +26055,7 @@
         {
           "kind": "theorem",
           "name": "donateSchedContext_scheduler_eq",
-          "line": 81,
+          "line": 94,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -26069,22 +26071,24 @@
         {
           "kind": "theorem",
           "name": "applyCallDonation_scheduler_eq",
-          "line": 117,
+          "line": 130,
           "called": [
             "SystemState",
             "ThreadId",
             "applyCallDonation",
             "donateSchedContext",
+            "donateSchedContextValid",
             "donateSchedContext_scheduler_eq",
             "lookupTcb",
             "none",
-            "scId"
+            "scId",
+            "toValid"
           ]
         },
         {
           "kind": "def",
           "name": "applyReplyDonation",
-          "line": 156,
+          "line": 200,
           "called": [
             "KernelError",
             "SystemState",
@@ -26093,13 +26097,15 @@
             "none",
             "removeRunnable",
             "returnDonatedSchedContext",
-            "scId"
+            "returnDonatedSchedContextValid",
+            "scId",
+            "toValid"
           ]
         },
         {
           "kind": "theorem",
           "name": "donateSchedContext_server_binding",
-          "line": 175,
+          "line": 232,
           "called": [
             "RHTable.getElem",
             "RHTable_insert_preserves_invExt",
@@ -26117,7 +26123,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_server_unbound",
-          "line": 217,
+          "line": 274,
           "called": [
             "RHTable.getElem",
             "RHTable_insert_preserves_invExt",
@@ -26136,7 +26142,7 @@
         {
           "kind": "def",
           "name": "donationAtomicRegion",
-          "line": 339,
+          "line": 396,
           "called": [
             "SystemState"
           ]
@@ -26144,7 +26150,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_machine_eq_local",
-          "line": 344,
+          "line": 401,
           "called": [
             "KernelObject",
             "ObjId",
@@ -26155,7 +26161,7 @@
         {
           "kind": "theorem",
           "name": "donateSchedContext_machine_eq",
-          "line": 352,
+          "line": 409,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -26171,7 +26177,7 @@
         {
           "kind": "theorem",
           "name": "donateSchedContext_atomicRegion",
-          "line": 390,
+          "line": 447,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -26184,7 +26190,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_machine_eq",
-          "line": 410,
+          "line": 467,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -26201,7 +26207,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_atomicRegion",
-          "line": 455,
+          "line": 512,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -26215,22 +26221,24 @@
         {
           "kind": "theorem",
           "name": "applyCallDonation_machine_eq",
-          "line": 476,
+          "line": 533,
           "called": [
             "SystemState",
             "ThreadId",
             "applyCallDonation",
             "donateSchedContext",
+            "donateSchedContextValid",
             "donateSchedContext_machine_eq",
             "lookupTcb",
             "none",
-            "scId"
+            "scId",
+            "toValid"
           ]
         },
         {
           "kind": "theorem",
           "name": "removeRunnable_machine_eq",
-          "line": 507,
+          "line": 589,
           "called": [
             "SystemState",
             "ThreadId",
@@ -26240,23 +26248,26 @@
         {
           "kind": "theorem",
           "name": "applyReplyDonation_machine_eq",
-          "line": 516,
+          "line": 598,
           "called": [
             "SystemState",
             "ThreadId",
             "applyReplyDonation",
             "lookupTcb",
             "none",
+            "removeRunnable",
             "removeRunnable_machine_eq",
             "returnDonatedSchedContext",
+            "returnDonatedSchedContextValid",
             "returnDonatedSchedContext_machine_eq",
-            "scId"
+            "scId",
+            "toValid"
           ]
         },
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_machine_eq",
-          "line": 542,
+          "line": 642,
           "called": [
             "Kernel",
             "SystemState",
@@ -26616,7 +26627,7 @@
         {
           "kind": "def",
           "name": "donateSchedContextValid",
-          "line": 419,
+          "line": 434,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -26628,7 +26639,7 @@
         {
           "kind": "theorem",
           "name": "donateSchedContextValid_eq",
-          "line": 424,
+          "line": 439,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -26640,7 +26651,7 @@
         {
           "kind": "def",
           "name": "returnDonatedSchedContextValid",
-          "line": 431,
+          "line": 446,
           "called": [
             "KernelError",
             "SchedContextId",
@@ -26653,7 +26664,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContextValid_eq",
-          "line": 437,
+          "line": 452,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -26666,7 +26677,7 @@
         {
           "kind": "def",
           "name": "cleanupPreReceiveDonation",
-          "line": 462,
+          "line": 477,
           "called": [
             "SystemState",
             "ThreadId",
@@ -26679,7 +26690,7 @@
         {
           "kind": "def",
           "name": "cleanupPreReceiveDonationChecked",
-          "line": 491,
+          "line": 506,
           "called": [
             "KernelError",
             "SystemState",
@@ -26693,7 +26704,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonationChecked_ok_eq_cleanup",
-          "line": 503,
+          "line": 518,
           "called": [
             "SystemState",
             "ThreadId",
@@ -26708,7 +26719,7 @@
         {
           "kind": "theorem",
           "name": "cleanupPreReceiveDonation_eq_cleanupChecked_ok",
-          "line": 532,
+          "line": 547,
           "called": [
             "SystemState",
             "ThreadId",
@@ -26719,16 +26730,16 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:543>",
-          "line": 543,
+          "name": "<anonymous:example:558>",
+          "line": 558,
           "called": [
             "cleanupPreReceiveDonation"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:544>",
-          "line": 544,
+          "name": "<anonymous:example:559>",
+          "line": 559,
           "called": [
             "cleanupPreReceiveDonationChecked"
           ]
@@ -26736,7 +26747,7 @@
         {
           "kind": "theorem",
           "name": "storeObject_scheduler_eq_z7",
-          "line": 558,
+          "line": 573,
           "called": [
             "KernelObject",
             "ObjId",
@@ -26747,7 +26758,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_scheduler_eq",
-          "line": 565,
+          "line": 580,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -26764,7 +26775,7 @@
         {
           "kind": "def",
           "name": "notificationSignal",
-          "line": 624,
+          "line": 639,
           "called": [
             "Badge",
             "IpcMessage",
@@ -26787,7 +26798,7 @@
         {
           "kind": "def",
           "name": "notificationWait",
-          "line": 687,
+          "line": 702,
           "called": [
             "Badge",
             "Kernel",
@@ -26806,7 +26817,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_objects_ne",
-          "line": 731,
+          "line": 746,
           "called": [
             "ObjId",
             "SystemState",
@@ -26824,7 +26835,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_notification",
-          "line": 756,
+          "line": 771,
           "called": [
             "Notification",
             "ObjId",
@@ -26842,7 +26853,7 @@
         {
           "kind": "theorem",
           "name": "removeRunnable_preserves_objects",
-          "line": 776,
+          "line": 791,
           "called": [
             "SystemState",
             "ThreadId",
@@ -26852,7 +26863,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objects",
-          "line": 783,
+          "line": 798,
           "called": [
             "SystemState",
             "ThreadId",
@@ -26862,7 +26873,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objectIndexSet",
-          "line": 793,
+          "line": 808,
           "called": [
             "SystemState",
             "ThreadId",
@@ -26872,7 +26883,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objectIndexSetComplete",
-          "line": 802,
+          "line": 817,
           "called": [
             "SystemState",
             "ThreadId",
@@ -26885,7 +26896,7 @@
         {
           "kind": "theorem",
           "name": "ensureRunnable_preserves_objectIndexSet_invExt",
-          "line": 812,
+          "line": 827,
           "called": [
             "SystemState",
             "ThreadId",
@@ -26897,7 +26908,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_scheduler_eq",
-          "line": 819,
+          "line": 834,
           "called": [
             "SystemState",
             "ThreadId",
@@ -26913,7 +26924,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_endpoint",
-          "line": 840,
+          "line": 855,
           "called": [
             "Endpoint",
             "ObjId",
@@ -26931,7 +26942,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_cnode",
-          "line": 860,
+          "line": 875,
           "called": [
             "CNode",
             "ObjId",
@@ -26950,7 +26961,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_preserves_vspaceRoot",
-          "line": 880,
+          "line": 895,
           "called": [
             "ObjId",
             "SystemState",
@@ -26968,7 +26979,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_cnode_backward",
-          "line": 901,
+          "line": 916,
           "called": [
             "CNode",
             "ObjId",
@@ -26988,7 +26999,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_endpoint_backward",
-          "line": 928,
+          "line": 943,
           "called": [
             "Endpoint",
             "ObjId",
@@ -27008,7 +27019,7 @@
         {
           "kind": "theorem",
           "name": "storeTcbIpcState_notification_backward",
-          "line": 955,
+          "line": 970,
           "called": [
             "Notification",
             "ObjId",
@@ -27028,7 +27039,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_error_alreadyWaiting",
-          "line": 984,
+          "line": 999,
           "called": [
             "Notification",
             "ObjId",
@@ -27043,7 +27054,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_badge_path_notification",
-          "line": 1000,
+          "line": 1015,
           "called": [
             "Badge",
             "Notification",
@@ -27066,7 +27077,7 @@
         {
           "kind": "theorem",
           "name": "notificationWait_wait_path_notification",
-          "line": 1071,
+          "line": 1086,
           "called": [
             "Notification",
             "ObjId",
@@ -31590,6 +31601,7 @@
             "ThreadId",
             "applyCallDonation",
             "donateSchedContext",
+            "donateSchedContextValid",
             "invExt",
             "lookupTcb",
             "none",
@@ -31600,13 +31612,14 @@
             "storeObject",
             "storeObject_preserves_objects_invExt",
             "storeObject_preserves_projection",
-            "toObjId"
+            "toObjId",
+            "toValid"
           ]
         },
         {
           "kind": "theorem",
           "name": "updatePipBoost_preserves_projection",
-          "line": 2875,
+          "line": 2894,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -31649,7 +31662,7 @@
         {
           "kind": "theorem",
           "name": "propagatePIP_preserves_projection",
-          "line": 2939,
+          "line": 2958,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -31671,7 +31684,7 @@
         {
           "kind": "theorem",
           "name": "revertPIP_preserves_projection",
-          "line": 2975,
+          "line": 2994,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -31691,7 +31704,7 @@
         {
           "kind": "theorem",
           "name": "endpointCallWithDonation_preserves_lowEquivalent",
-          "line": 3005,
+          "line": 3024,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -31703,7 +31716,7 @@
         {
           "kind": "theorem",
           "name": "endpointReplyWithReversion_preserves_lowEquivalent",
-          "line": 3015,
+          "line": 3034,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -31715,7 +31728,7 @@
         {
           "kind": "theorem",
           "name": "setIPCBufferOp_preserves_projection",
-          "line": 3036,
+          "line": 3055,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -31737,7 +31750,7 @@
         {
           "kind": "theorem",
           "name": "objects_insert_preserves_projection_high",
-          "line": 3079,
+          "line": 3098,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -31755,7 +31768,7 @@
         {
           "kind": "theorem",
           "name": "updatePrioritySource_preserves_projection",
-          "line": 3122,
+          "line": 3141,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -31775,7 +31788,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithFlushFromState_preserves_projection",
-          "line": 3167,
+          "line": 3186,
           "called": [
             "ASID",
             "IfObserver",
@@ -31798,7 +31811,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithFlush_preserves_projection",
-          "line": 3208,
+          "line": 3227,
           "called": [
             "ASID",
             "IfObserver",
@@ -31817,7 +31830,7 @@
         {
           "kind": "theorem",
           "name": "runQueue_remove_preserves_projection_at_high",
-          "line": 3243,
+          "line": 3262,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -31834,7 +31847,7 @@
         {
           "kind": "theorem",
           "name": "runQueue_insert_preserves_projection_at_high",
-          "line": 3268,
+          "line": 3287,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -31852,7 +31865,7 @@
         {
           "kind": "theorem",
           "name": "runQueue_remove_insert_preserves_projection_at_high",
-          "line": 3292,
+          "line": 3311,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -31872,7 +31885,7 @@
         {
           "kind": "theorem",
           "name": "migrateRunQueueBucket_preserves_projection",
-          "line": 3326,
+          "line": 3345,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -31888,7 +31901,7 @@
         {
           "kind": "theorem",
           "name": "setPriorityOp_preserves_projection",
-          "line": 3352,
+          "line": 3371,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -31915,7 +31928,7 @@
         {
           "kind": "theorem",
           "name": "setMCPriorityOp_preserves_projection",
-          "line": 3430,
+          "line": 3449,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -31945,7 +31958,7 @@
         {
           "kind": "theorem",
           "name": "lookupServiceByCap_preserves_state",
-          "line": 3521,
+          "line": 3540,
           "called": [
             "ObjId",
             "ServiceRegistration",
@@ -31958,7 +31971,7 @@
         {
           "kind": "theorem",
           "name": "lookupServiceByCap_preserves_projection",
-          "line": 3539,
+          "line": 3558,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -31973,7 +31986,7 @@
         {
           "kind": "theorem",
           "name": "revokeService_preserves_projection",
-          "line": 3568,
+          "line": 3587,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32001,7 +32014,7 @@
         {
           "kind": "theorem",
           "name": "schedContextConfigure_preserves_projection",
-          "line": 3622,
+          "line": 3641,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32014,7 +32027,7 @@
         {
           "kind": "theorem",
           "name": "schedContextBind_frame_runQueue_rebucket",
-          "line": 3643,
+          "line": 3662,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32031,7 +32044,7 @@
         {
           "kind": "theorem",
           "name": "schedContextBind_preserves_projection",
-          "line": 3662,
+          "line": 3681,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32045,7 +32058,7 @@
         {
           "kind": "theorem",
           "name": "schedContextUnbind_preserves_projection",
-          "line": 3688,
+          "line": 3707,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32058,7 +32071,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanup_preserves_projection",
-          "line": 3718,
+          "line": 3737,
           "called": [
             "Capability",
             "IfObserver",
@@ -32073,7 +32086,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonation_preserves_projection",
-          "line": 3746,
+          "line": 3765,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32087,7 +32100,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_preserves_projection",
-          "line": 3783,
+          "line": 3802,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32100,7 +32113,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_frame_insert",
-          "line": 3802,
+          "line": 3821,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -32118,7 +32131,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_frame_ensureRunnable",
-          "line": 3816,
+          "line": 3835,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32133,7 +32146,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_preserves_projection",
-          "line": 3841,
+          "line": 3860,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -35578,11 +35591,11 @@
             "SystemState",
             "ThreadId",
             "ValidThreadId",
-            "cancelDonation",
-            "cancelIpcBlocking",
-            "clearPendingState",
+            "cancelDonationValid",
+            "cancelIpcBlockingValid",
+            "clearPendingStateValid",
             "insert",
-            "removeRunnable",
+            "removeRunnableValid",
             "revertPriorityInheritance",
             "schedule",
             "toObjId"
@@ -35591,7 +35604,7 @@
         {
           "kind": "def",
           "name": "resumeThread",
-          "line": 288,
+          "line": 289,
           "called": [
             "KernelError",
             "SystemState",
@@ -35608,7 +35621,7 @@
         {
           "kind": "def",
           "name": "suspendThread_transientWindowInvariant",
-          "line": 359,
+          "line": 360,
           "called": [
             "SystemState",
             "ThreadId",
@@ -35619,7 +35632,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_transientWindowInvariant_default",
-          "line": 372,
+          "line": 373,
           "called": [
             "RHTable_get",
             "SystemState",
@@ -35633,7 +35646,7 @@
         {
           "kind": "def",
           "name": "suspendThread_atomicity_precondition",
-          "line": 385,
+          "line": 386,
           "called": [
             "SystemState"
           ]
@@ -35641,7 +35654,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_atomicity_under_ffi_bracket_default",
-          "line": 413,
+          "line": 414,
           "called": [
             "RHTable_get",
             "SystemState",
@@ -35656,7 +35669,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_atomicity_precondition_default",
-          "line": 428,
+          "line": 429,
           "called": [
             "SystemState",
             "default",
@@ -35666,7 +35679,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_default_rejects_with_invalidArgument",
-          "line": 437,
+          "line": 438,
           "called": [
             "SystemState",
             "ValidThreadId",
@@ -63656,7 +63669,7 @@
     {
       "module": "SeLe4n.Prelude",
       "path": "SeLe4n/Prelude.lean",
-      "declaration_count": 353,
+      "declaration_count": 354,
       "declarations": [
         {
           "kind": "namespace",
@@ -66530,7 +66543,16 @@
         {
           "kind": "theorem",
           "name": "toValid",
-          "line": 1659,
+          "line": 1661,
+          "called": [
+            "ThreadId",
+            "ValidThreadId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "toValid",
+          "line": 1670,
           "called": [
             "ThreadId",
             "ext",
@@ -66540,13 +66562,13 @@
         {
           "kind": "namespace",
           "name": "SchedContextId",
-          "line": 1671,
+          "line": 1682,
           "called": []
         },
         {
           "kind": "def",
           "name": "toValid",
-          "line": 1674,
+          "line": 1685,
           "called": [
             "SchedContextId",
             "ValidSchedContextId",
@@ -66556,7 +66578,7 @@
         {
           "kind": "def",
           "name": "ofValid",
-          "line": 1677,
+          "line": 1688,
           "called": [
             "SchedContextId",
             "ValidSchedContextId"
@@ -66565,7 +66587,7 @@
         {
           "kind": "def",
           "name": "toValid",
-          "line": 1680,
+          "line": 1691,
           "called": [
             "SchedContextId",
             "ValidSchedContextId",
@@ -66576,13 +66598,13 @@
         {
           "kind": "namespace",
           "name": "CPtr",
-          "line": 1685,
+          "line": 1696,
           "called": []
         },
         {
           "kind": "def",
           "name": "toValid",
-          "line": 1688,
+          "line": 1699,
           "called": [
             "CPtr",
             "ValidCPtr",
@@ -66592,7 +66614,7 @@
         {
           "kind": "def",
           "name": "ofValid",
-          "line": 1691,
+          "line": 1702,
           "called": [
             "CPtr",
             "ValidCPtr"
@@ -66601,7 +66623,7 @@
         {
           "kind": "def",
           "name": "toValid",
-          "line": 1694,
+          "line": 1705,
           "called": [
             "CPtr",
             "ValidCPtr",
@@ -66612,13 +66634,13 @@
         {
           "kind": "inductive",
           "name": "ObjectKind",
-          "line": 1733,
+          "line": 1744,
           "called": []
         },
         {
           "kind": "structure",
           "name": "KindedObjId",
-          "line": 1750,
+          "line": 1761,
           "called": [
             "ObjectKind"
           ]
@@ -66626,13 +66648,13 @@
         {
           "kind": "namespace",
           "name": "KindedObjId",
-          "line": 1755,
+          "line": 1766,
           "called": []
         },
         {
           "kind": "def",
           "name": "toObjId",
-          "line": 1758,
+          "line": 1769,
           "called": [
             "KindedObjId",
             "ObjId",
@@ -66642,7 +66664,7 @@
         {
           "kind": "def",
           "name": "ofNatUnknown",
-          "line": 1761,
+          "line": 1772,
           "called": [
             "KindedObjId"
           ]
@@ -66650,13 +66672,13 @@
         {
           "kind": "namespace",
           "name": "ThreadId",
-          "line": 1766,
+          "line": 1777,
           "called": []
         },
         {
           "kind": "def",
           "name": "toKinded",
-          "line": 1771,
+          "line": 1782,
           "called": [
             "KindedObjId",
             "ThreadId"
@@ -66665,13 +66687,13 @@
         {
           "kind": "namespace",
           "name": "SchedContextId",
-          "line": 1776,
+          "line": 1787,
           "called": []
         },
         {
           "kind": "def",
           "name": "toKinded",
-          "line": 1780,
+          "line": 1791,
           "called": [
             "KindedObjId",
             "SchedContextId"
@@ -66680,7 +66702,7 @@
         {
           "kind": "theorem",
           "name": "KindedObjId.ne_of_kind_ne",
-          "line": 1805,
+          "line": 1816,
           "called": [
             "KindedObjId"
           ]
@@ -66688,7 +66710,7 @@
         {
           "kind": "theorem",
           "name": "ThreadId.toKinded_ne_schedContext_toKinded",
-          "line": 1812,
+          "line": 1823,
           "called": [
             "KindedObjId.ne_of_kind_ne",
             "SchedContextId",
@@ -69495,7 +69517,7 @@
     {
       "module": "tests.An10CascadeSuite",
       "path": "tests/An10CascadeSuite.lean",
-      "declaration_count": 50,
+      "declaration_count": 52,
       "declarations": [
         {
           "kind": "namespace",
@@ -70009,22 +70031,22 @@
         {
           "kind": "def",
           "name": "an10_e_removeRunnableValid_reduces_to_raw",
-          "line": 423,
+          "line": 430,
           "called": [
             "SystemState",
             "ThreadId",
             "ValidThreadId",
             "default",
+            "none",
             "ofNat",
             "removeRunnable",
-            "removeRunnableValid",
-            "size"
+            "removeRunnableValid"
           ]
         },
         {
           "kind": "def",
           "name": "an10_e_removeRunnableValid_no_op_on_empty_queue",
-          "line": 439,
+          "line": 448,
           "called": [
             "SystemState",
             "ThreadId",
@@ -70038,53 +70060,63 @@
         {
           "kind": "def",
           "name": "an10_e_clearPendingStateValid_reduces",
-          "line": 448,
+          "line": 460,
           "called": [
+            "RegValue",
             "SystemState",
+            "TCB",
             "ThreadId",
             "ValidThreadId",
             "clearPendingState",
             "clearPendingStateValid",
             "default",
+            "insert",
+            "mkTcb",
             "ofNat",
-            "size"
+            "toObjId"
           ]
         },
         {
           "kind": "def",
           "name": "an10_e_cancelIpcBlockingValid_reduces",
-          "line": 457,
+          "line": 484,
           "called": [
+            "ObjId",
             "SystemState",
             "TCB",
             "ThreadId",
             "ValidThreadId",
+            "cancelIpcBlocking",
             "cancelIpcBlockingValid",
             "default",
+            "insert",
             "mkTcb",
             "ofNat",
-            "size"
+            "toObjId"
           ]
         },
         {
           "kind": "def",
           "name": "an10_e_cancelDonationValid_reduces",
-          "line": 467,
+          "line": 507,
           "called": [
+            "SchedContextId",
             "SystemState",
             "TCB",
             "ThreadId",
             "ValidThreadId",
+            "cancelDonation",
             "cancelDonationValid",
             "default",
             "mkTcb",
-            "ofNat"
+            "ofNat",
+            "scId"
           ]
         },
         {
           "kind": "def",
           "name": "an10_e_cspaceLookupSlot_wrong_variant_is_objectNotFound",
-          "line": 482,
+          "line": 536,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -70101,7 +70133,7 @@
         {
           "kind": "def",
           "name": "an10_e_cspaceLookupSlot_cnode_no_slot_is_invalidCapability",
-          "line": 496,
+          "line": 550,
           "called": [
             "CNode",
             "CSpaceAddr",
@@ -70117,7 +70149,7 @@
         {
           "kind": "def",
           "name": "an10_e_cspaceResolvePath_wrong_variant_is_objectNotFound",
-          "line": 511,
+          "line": 565,
           "called": [
             "CSpacePathAddr",
             "ObjId",
@@ -70133,7 +70165,7 @@
         {
           "kind": "def",
           "name": "an10_e_resolveCapAddress_missing_root_is_objectNotFound",
-          "line": 526,
+          "line": 580,
           "called": [
             "CPtr",
             "ObjId",
@@ -70146,37 +70178,91 @@
         {
           "kind": "def",
           "name": "an10_e_donateSchedContextValid_reduces",
-          "line": 535,
+          "line": 591,
           "called": [
+            "SchedContext",
             "SchedContextId",
             "SystemState",
+            "TCB",
+            "ThreadId",
             "ValidThreadId",
             "default",
             "donateSchedContext",
             "donateSchedContextValid",
+            "insert",
+            "mkEmptySchedContext",
+            "mkTcb",
             "ofNat",
-            "scId"
+            "scId",
+            "toObjId"
           ]
         },
         {
           "kind": "def",
           "name": "an10_e_returnDonatedSchedContextValid_reduces",
-          "line": 548,
+          "line": 623,
           "called": [
+            "SchedContext",
             "SchedContextId",
             "SystemState",
+            "TCB",
+            "ThreadId",
             "ValidThreadId",
             "default",
+            "insert",
+            "mkEmptySchedContext",
+            "mkTcb",
             "ofNat",
             "returnDonatedSchedContext",
             "returnDonatedSchedContextValid",
-            "scId"
+            "scId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "an10_e_applyCallDonation_wires_h5",
+          "line": 656,
+          "called": [
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "applyCallDonation",
+            "default",
+            "insert",
+            "mkEmptySchedContext",
+            "mkTcb",
+            "ofNat",
+            "scId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "an10_e_applyReplyDonation_wires_h6",
+          "line": 683,
+          "called": [
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "applyReplyDonation",
+            "default",
+            "insert",
+            "mkEmptySchedContext",
+            "mkTcb",
+            "ofNat",
+            "scId",
+            "toObjId"
           ]
         },
         {
           "kind": "def",
           "name": "runAll",
-          "line": 562,
+          "line": 710,
           "called": [
             "an10_a_validObjId_accepts_nonzero",
             "an10_a_validObjId_rejects_sentinel",
@@ -70210,6 +70296,8 @@
             "an10_d_lookupCspaceRoot_populated",
             "an10_d_lookupCspaceRoot_wrong_kind",
             "an10_d_typed_helper_equivalence",
+            "an10_e_applyCallDonation_wires_h5",
+            "an10_e_applyReplyDonation_wires_h6",
             "an10_e_cancelDonationValid_reduces",
             "an10_e_cancelIpcBlockingValid_reduces",
             "an10_e_clearPendingStateValid_reduces",
@@ -70226,7 +70314,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 625,
+          "line": 775,
           "called": [
             "runAll"
           ]

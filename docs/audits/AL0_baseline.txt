@@ -38,7 +38,7 @@ sentinel_check_dispatch  = 17
 
 ## Regression test counts (should-grow)
 
-test_count_ak7           = 43
+test_count_ak7           = 45
 
 ## Proof-surface health (should-stay-zero)
 
@@ -65,6 +65,6 @@ GETCNODE_ADOPTION=56
 GETVSPACEROOT_ADOPTION=12
 STOREOBJECTCHECKED_ADOPTION=58
 SENTINEL_CHECK_DISPATCH=17
-TEST_COUNT_AK7=43
+TEST_COUNT_AK7=45
 SORRY_COUNT=0
 AXIOM_COUNT=0

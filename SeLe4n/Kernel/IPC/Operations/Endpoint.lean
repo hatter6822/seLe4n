@@ -408,12 +408,27 @@ def cleanupActiveDonation
 -- ============================================================================
 -- AN10 residual closure (H5–H6): typed entry-points for donation handlers
 -- ============================================================================
--- Same wrapper pattern as the H1–H4 lifecycle handlers — provides
--- type-level documentation that callers must hold validated thread/sc
--- ids. Production handlers (`endpointCallWithDonation`, `endpointReply
--- WithDonation`, `endpointReplyRecvWithDonation`) extract the tids from
--- the kernel's queue/lookup chain after the AL7 `validateThreadIdArg`
--- gate, so they can adopt these wrappers transparently.
+-- Same wrapper pattern as the H1–H4 lifecycle handlers — provides a typed
+-- entry-point that documents the dispatch-boundary discipline.  Wired
+-- into production at:
+--   * `applyCallDonation` (`Donation/Primitives.lean`) routes through
+--     `donateSchedContextValid` via `ThreadId.toValid?` after the inner
+--     `lookupTcb` lookups have already validated the ids.
+--   * `applyReplyDonation` (`Donation/Primitives.lean`) routes through
+--     `returnDonatedSchedContextValid` similarly.
+--
+-- Both production callers retain a raw-form fallback for observational
+-- equivalence in proof contexts that cannot establish the
+-- `lookupTcb = some _` witness; under the production invariants
+-- (which the prior `lookupTcb` guards already establish), the fallback
+-- branch is structurally unreachable.
+--
+-- The `cleanupPreReceiveDonation` / `cleanupPreReceiveDonationChecked`
+-- helpers retain the raw `returnDonatedSchedContext` call to preserve
+-- compatibility with the extensive frame-lemma infrastructure in
+-- `IPC/Invariant/Defs.lean` / `EndpointPreservation.lean` /
+-- `Structural/*.lean`.  Migrating those would cascade ~20 proof-surface
+-- destructures; tracked under AN10-A.handler-internal-hygiene.
 
 /-- AN10-H5: typed entry-point for `donateSchedContext`. -/
 @[inline] def donateSchedContextValid (st : SystemState)

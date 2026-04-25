@@ -217,8 +217,8 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- D4-N: Revert PIP before cleanup — if this thread has pipBoost or is
       -- in a blocking chain, recompute priorities for upstream servers
       let st := PriorityInheritance.revertPriorityInheritance st tid
-      -- G2: Cancel IPC blocking
-      let st := cancelIpcBlocking st tid tcb
+      -- G2: Cancel IPC blocking — AN10-residual-1 (commit 3): typed entry-point.
+      let st := cancelIpcBlockingValid st vtid tcb
       -- AI2-D (M-20) / AF5-H (AF-28): Re-lookup is necessary because
       -- `cancelIpcBlocking` modifies the TCB via `clearTcbIpcFields`, which
       -- updates `ipcState`, `queuePrev`, `queueNext`, and `queuePPrev`.
@@ -242,13 +242,14 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       let tcb' := match st.objects[tid.toObjId]? with
         | some (.tcb t) => t | _ => tcb
       -- G3: Cancel donation (AJ1-A/M-14: propagate cleanup errors)
-      match _root_.SeLe4n.Kernel.Lifecycle.Suspend.cancelDonation st tid tcb' with
+      -- AN10-residual-1 (commit 3): typed entry-point.
+      match cancelDonationValid st vtid tcb' with
       | .error e => .error e
       | .ok st =>
-      -- G4: Remove from run queue
-      let st := removeRunnable st tid
-      -- G5: Clear pending state
-      let st := clearPendingState st tid
+      -- G4: Remove from run queue — AN10-residual-1 (commit 2): typed entry-point.
+      let st := removeRunnableValid st vtid
+      -- G5: Clear pending state — AN10-residual-1 (commit 3): typed entry-point.
+      let st := clearPendingStateValid st vtid
       -- G6: Set threadState := .Inactive
       let st := match st.objects[tid.toObjId]? with
         | some (.tcb tcb'') =>
