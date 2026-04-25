@@ -1657,34 +1657,30 @@ theorem endpointSendDualWithCaps_preserves_ipcInvariant
     have hInvMid := endpointSendDual_preserves_ipcInvariant st stMid endpointId sender msg hInv hObjInv hSend
     have hObjInvMid := endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
     simp [hSend] at hStep
-    -- Case split on st.objects[endpointId]? to determine hasReceiver
-    cases hEp : st.objects[endpointId]? with
+    -- AN10-B: post-migration `endpointSendDualWithCaps` reads via
+    -- `getEndpoint?`; case-split on the typed helper.
+    cases hEp : st.getEndpoint? endpointId with
     | none =>
       -- hasReceiver = false → if-then branch taken
       simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-    | some obj =>
-      cases obj with
-      | endpoint ep =>
-        simp [hEp] at hStep
-        cases hHead : ep.receiveQ.head with
-        | none =>
-          -- hasReceiver = false → if-then branch
-          simp [hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-        | some receiverId =>
-          simp [hHead] at hStep
-          -- hasReceiver = true, condition reduces to msg.caps.isEmpty
-          by_cases hEmpty : msg.caps = #[]
-          · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-          · simp [hEmpty] at hStep
-            cases hLookup : lookupCspaceRoot stMid receiverId with
-            | none => simp [hLookup] at hStep -- AK1-I: fail-closed, vacuous
-            | some recvRoot =>
-              simp [hLookup] at hStep
-              exact ipcUnwrapCaps_preserves_ipcInvariant msg senderCspaceRoot recvRoot
-                receiverSlotBase _ stMid st' summary hInvMid hObjInvMid hStep
-      | _ =>
-        -- Not an endpoint → hasReceiver = false
-        simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+    | some ep =>
+      simp [hEp] at hStep
+      cases hHead : ep.receiveQ.head with
+      | none =>
+        -- hasReceiver = false → if-then branch
+        simp [hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+      | some receiverId =>
+        simp [hHead] at hStep
+        -- hasReceiver = true, condition reduces to msg.caps.isEmpty
+        by_cases hEmpty : msg.caps = #[]
+        · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+        · simp [hEmpty] at hStep
+          cases hLookup : lookupCspaceRoot stMid receiverId with
+          | none => simp [hLookup] at hStep -- AK1-I: fail-closed, vacuous
+          | some recvRoot =>
+            simp [hLookup] at hStep
+            exact ipcUnwrapCaps_preserves_ipcInvariant msg senderCspaceRoot recvRoot
+              receiverSlotBase _ stMid st' summary hInvMid hObjInvMid hStep
 
 /-- M3-E4: endpointReceiveDualWithCaps preserves ipcInvariant. -/
 theorem endpointReceiveDualWithCaps_preserves_ipcInvariant
@@ -1709,39 +1705,38 @@ theorem endpointReceiveDualWithCaps_preserves_ipcInvariant
     have hObjInvMid := endpointReceiveDual_preserves_objects_invExt st stMid endpointId
       receiver sid hObjInv hRecv
     simp [hRecv] at hStep
-    cases hTcb : stMid.objects[receiver.toObjId]? with
+    -- AN10-B: post-migration `endpointReceiveDualWithCaps` reads via
+    -- `getTcb?`; case-split on the typed helper.
+    cases hTcb : stMid.getTcb? receiver with
     | none => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hInvMid
-    | some obj =>
-      cases obj with
-      | tcb receiverTcb =>
-        simp [hTcb] at hStep
-        cases hMsg : receiverTcb.pendingMessage with
-        | none => simp [hMsg] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hInvMid
-        | some msg =>
-          simp [hMsg] at hStep
-          -- After simp, the if condition may be on msg.caps.isEmpty or msg.caps = #[]
-          split at hStep
-          · -- if-then: caps empty, state unchanged
-            obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hInvMid
-          · -- if-else: caps non-empty, ipcUnwrapCaps runs
-            -- Case split on lookupCspaceRoot to determine senderRoot value
-            cases hLookup : lookupCspaceRoot stMid sid with
-            | none =>
-              -- U-H13: Missing CSpace root now returns error, contradicting .ok
-              simp only [hLookup] at hStep; contradiction
-            | some senderRoot =>
-              -- senderRoot = senderRoot
-              simp only [hLookup] at hStep
-              cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
-                  receiverSlotBase (endpointRights.mem .grant) stMid with
-              | error e => simp [hUnwrap] at hStep
-              | ok pair =>
-                rcases pair with ⟨s, stFinal⟩
-                simp [hUnwrap] at hStep
-                obtain ⟨⟨_, _⟩, rfl⟩ := hStep
-                exact ipcUnwrapCaps_preserves_ipcInvariant msg senderRoot receiverCspaceRoot
-                  receiverSlotBase _ stMid stFinal s hInvMid hObjInvMid hUnwrap
-      | _ => simp [hTcb] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hInvMid
+    | some receiverTcb =>
+      simp [hTcb] at hStep
+      cases hMsg : receiverTcb.pendingMessage with
+      | none => simp [hMsg] at hStep; obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hInvMid
+      | some msg =>
+        simp [hMsg] at hStep
+        -- After simp, the if condition may be on msg.caps.isEmpty or msg.caps = #[]
+        split at hStep
+        · -- if-then: caps empty, state unchanged
+          obtain ⟨⟨_, _⟩, rfl⟩ := hStep; exact hInvMid
+        · -- if-else: caps non-empty, ipcUnwrapCaps runs
+          -- Case split on lookupCspaceRoot to determine senderRoot value
+          cases hLookup : lookupCspaceRoot stMid sid with
+          | none =>
+            -- U-H13: Missing CSpace root now returns error, contradicting .ok
+            simp only [hLookup] at hStep; contradiction
+          | some senderRoot =>
+            -- senderRoot = senderRoot
+            simp only [hLookup] at hStep
+            cases hUnwrap : ipcUnwrapCaps msg senderRoot receiverCspaceRoot
+                receiverSlotBase (endpointRights.mem .grant) stMid with
+            | error e => simp [hUnwrap] at hStep
+            | ok pair =>
+              rcases pair with ⟨s, stFinal⟩
+              simp [hUnwrap] at hStep
+              obtain ⟨⟨_, _⟩, rfl⟩ := hStep
+              exact ipcUnwrapCaps_preserves_ipcInvariant msg senderRoot receiverCspaceRoot
+                receiverSlotBase _ stMid stFinal s hInvMid hObjInvMid hUnwrap
 
 -- ============================================================================
 -- V3-G4 (M-PRF-5): waitingThreadsPendingMessageNone preservation

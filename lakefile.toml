@@ -133,3 +133,8 @@ root = "tests.Ak9PlatformSuite"
 [[lean_exe]]
 name = "an9_hardware_binding_suite"
 root = "tests.An9HardwareBindingSuite"
+
+# AN10 cascade closure suite — Phase AN10 (DEF-AK7-E / DEF-AK7-F).
+[[lean_exe]]
+name = "an10_cascade_suite"
+root = "tests.An10CascadeSuite"

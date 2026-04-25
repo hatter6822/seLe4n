@@ -100,6 +100,12 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_website_links.sh"
 # AH4-F: Version sync — validate all version-bearing files match lakefile.toml.
 run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 
+# AN10-D: AK7 cascade monotonicity gate. Reads docs/audits/AL0_baseline.txt
+# and rejects regressions on any AK7 cascade metric (raw-match site count,
+# typed-helper adoption, storeObjectKindChecked adoption, sentinel guard
+# coverage, AN10 regression test count).
+run_check "HYGIENE" "${SCRIPT_DIR}/ak7_cascade_check_monotonic.sh"
+
 run_check "HYGIENE" python3 -m unittest scripts.tests.test_generate_codebase_map
 
 # WS-I1/R-03: Scenario registry validation — every fixture ID must be in the registry and vice versa.

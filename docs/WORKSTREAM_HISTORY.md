@@ -41,6 +41,63 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
 **Phases:** 13 (AN0–AN12), 95 top-level sub-tasks, ~253 sub-sub-task commits
 (scope: 196 audit findings + 11 absorbed DEFERRED items).
 
+- **AN10** (AK7 cascade closure, v0.30.10, **released**): 4 sub-tasks
+  (AN10-Setup, AN10-A, AN10-B, AN10-C, AN10-D) closing the two AK7
+  cascade tracking entries from `AUDIT_v0.29.0_DEFERRED.md`.
+  - **AN10-Setup**: re-introduces the AK7 cascade monotonicity
+    infrastructure that was retired in commit 8d9e61f. New
+    `scripts/ak7_cascade_baseline.sh` captures 19 metrics
+    (per-variant raw-match counts, typed-helper adoption,
+    `storeObjectKindChecked` adoption, sentinel-check dispatch
+    coverage, AN10 test count, sorry/axiom counts).  New
+    `scripts/ak7_cascade_check_monotonic.sh` enforces per-metric
+    should-drop / should-grow direction against the post-AN10
+    floors in `docs/audits/AL0_baseline.txt`.  Wired into
+    `scripts/test_tier0_hygiene.sh`.
+  - **AN10-A (DEF-AK7-E.cascade RESOLVED)**: `Valid*Id` discipline
+    at the dispatch boundary.  AL1b/AL8 (v0.29.14) closed the
+    primary attack surface structurally at the type system; AN10
+    hardens the gate via the `SENTINEL_CHECK_DISPATCH`
+    monotonicity metric that flags any future dispatch arm that
+    bypasses the validator wrappers (`validateThreadIdArg`,
+    `validateSchedContextIdArg`, `validateObjIdArg`).
+  - **AN10-B (DEF-AK7-F.reader.hygiene RESOLVED)**: 14 reader-
+    side raw-match sites migrated to the AL2-A typed helpers
+    (`getTcb?`, `getSchedContext?`, `getEndpoint?`,
+    `getNotification?`, `getUntyped?`).  Files migrated:
+    `Scheduler/Operations/Selection.lean` (5 sites),
+    `IPC/DualQueue/WithCaps.lean` (5 sites),
+    `IPC/Operations/Donation.lean` (1 site),
+    `Architecture/IpcBufferRead.lean` (1 site),
+    `SchedContext/PriorityManagement.lean` (2 sites).  Downstream
+    proof updates in `Scheduler/Liveness/TraceModel.lean`,
+    `IPC/Invariant/EndpointPreservation.lean`,
+    `IPC/Invariant/CallReplyRecv/ReplyRecv.lean`,
+    `IPC/Invariant/Structural/PerOperation.lean`.  Metric deltas:
+    `RAW_MATCH_TCB` 52→49, `RAW_MATCH_SCHEDCONTEXT` 19→13,
+    `RAW_MATCH_ENDPOINT` 17→12, `RAW_MATCH_TOTAL` 129→115;
+    `GETTCB_ADOPTION` 34→54, `GETSCHEDCTX_ADOPTION` 9→23,
+    `GETENDPOINT_ADOPTION` 6→19.
+  - **AN10-C (DEF-AK7-F.writer.hygiene RESOLVED)**:
+    `STOREOBJECTCHECKED_ADOPTION` 41→57 driven by the new
+    regression suite.  Production-side in-place `storeObject`
+    sites are protected structurally by the AM4
+    `lifecycleObjectTypeLockstep` invariant (11th conjunct of
+    `crossSubsystemInvariant`); the writer wrapper remains
+    available as defense-in-depth with three correctness
+    theorems (`_fresh_eq_storeObject`, `_sameKind_eq_storeObject`,
+    `_crossKind_rejected`) for transparent migration of any
+    future consumer.
+  - **AN10 regression suite**: new `tests/An10CascadeSuite.lean`
+    (17 tests covering AN10-A/B/C/D), wired into
+    `lakefile.toml` as `lean_exe an10_cascade_suite` and into
+    `scripts/test_tier2_negative.sh`.
+  - **AN10-D**: `docs/audits/AUDIT_v0.29.0_DEFERRED.md` updated
+    — DEF-AK7-E.cascade and DEF-AK7-F.cascade marked **RESOLVED
+    at v0.30.10 / AN10**; cross-reference table updated; only
+    DEF-F-L9 (17-tuple projection refactor, by-design)
+    remains tracked.
+
 - **AN9** (Hardware-binding closure, v0.30.10, **released**): 11
   sub-tasks (AN9-A..AN9-K) closing every hardware-binding item from
   `AUDIT_v0.29.0_DEFERRED.md` (DEF-A-M04, DEF-A-M06, DEF-A-M08,

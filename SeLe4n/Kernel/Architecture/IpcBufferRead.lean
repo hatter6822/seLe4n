@@ -100,8 +100,11 @@ def ipcBufferReadMr (st : SystemState) (tid : ThreadId) (idx : Nat)
   if idx ≥ maxOverflowSlots then
     .error .overflowIndexOutOfRange
   else
-    match st.objects[tid.toObjId]? with
-    | some (.tcb tcb) =>
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. The
+    -- VSpaceRoot lookup retains the raw form because no `getVSpaceRoot?`
+    -- typed helper exists at the AL2-A foundational layer.
+    match st.getTcb? tid with
+    | some tcb =>
       match st.objects[tcb.vspaceRoot]? with
       | some (.vspaceRoot root) =>
         let offsetVA : VAddr := VAddr.ofNat (tcb.ipcBuffer.toNat + idx * 8)
@@ -110,7 +113,7 @@ def ipcBufferReadMr (st : SystemState) (tid : ThreadId) (idx : Nat)
           .ok (SeLe4n.Kernel.Architecture.readUInt64 st.machine.memory paddr)
         | none => .error .ipcBufferVAddrUnmapped
       | _ => .error .vspaceRootInvalid
-    | _ => .error .threadNotFound
+    | none => .error .threadNotFound
 
 /-- AK4-A.1: Out-of-range index — reads above `maxOverflowSlots` fail. -/
 theorem ipcBufferReadMr_out_of_range
@@ -138,12 +141,14 @@ theorem ipcBufferReadMr_ok_implies_tcb
     (st : SystemState) (tid : ThreadId) (idx : Nat) (val : UInt64)
     (hOk : ipcBufferReadMr st tid idx = .ok val) :
     ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) := by
+  -- AN10-B: post-migration `ipcBufferReadMr` reads via `getTcb?`; bridge
+  -- via the iff lemma so the existing post-condition (raw lookup) holds.
   unfold ipcBufferReadMr at hOk
   split at hOk
   · simp at hOk
   · split at hOk
     · rename_i _ tcb hTcb
-      exact ⟨tcb, hTcb⟩
+      exact ⟨tcb, (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb⟩
     · simp at hOk
 
 /-- AK4-A.5 (NI): The read scope is exclusively the caller's own state.
@@ -162,7 +167,10 @@ theorem ipcBufferReadMr_reads_only_caller_tcb
               st'.objects[vs]? = st.objects[vs]?)
     (hMem  : st'.machine.memory = st.machine.memory) :
     ipcBufferReadMr st' tid idx = ipcBufferReadMr st tid idx := by
-  unfold ipcBufferReadMr
+  -- AN10-B: unfold `getTcb?` so the framing hypothesis (stated against
+  -- the raw object-store lookup) lines up with what `ipcBufferReadMr`
+  -- now reads via the typed helper.
+  unfold ipcBufferReadMr SystemState.getTcb?
   by_cases hBound : idx ≥ maxOverflowSlots
   · simp [hBound]
   · simp only [hBound, ↓reduceIte]

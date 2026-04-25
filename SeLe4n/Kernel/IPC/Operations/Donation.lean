@@ -81,9 +81,10 @@ def endpointCallWithDonation
     -- AJ1-C (M-02): `endpointQueuePopHead_returns_head` proves the pre-inspected
     -- receiver matches the thread actually dequeued by endpointCall, ensuring
     -- donation targets the correct thread.
-    let maybeReceiver := match st.objects[endpointId]? with
-      | some (.endpoint ep) => ep.receiveQ.head
-      | _ => none
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+    let maybeReceiver := match st.getEndpoint? endpointId with
+      | some ep => ep.receiveQ.head
+      | none    => none
     match endpointCall endpointId caller msg st with
     | .error e => .error e
     | .ok ((), st') =>

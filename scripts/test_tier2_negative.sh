@@ -64,5 +64,10 @@ run_check "TRACE" lake exe ak9_platform_suite
 # AN9 (hardware-binding closure): 23 regression tests covering AN9-A..AN9-J
 # (includes audit-fix substantive proofs for D1, A1, B1).
 run_check "TRACE" lake exe an9_hardware_binding_suite
+# AN10 (AK7 cascade closure): 17 regression tests covering AN10-A/B/C/D —
+# typed-helper kind discrimination, ValidObjId/ValidThreadId/ValidSchedContextId
+# sentinel rejection, storeObjectKindChecked cross-kind rejection, and
+# typed-helper / raw-match equivalence.
+run_check "TRACE" lake exe an10_cascade_suite
 
 finalize_report

@@ -141,9 +141,10 @@ def getCurrentPriority (st : SystemState) (tcb : TCB)
   match tcb.schedContextBinding with
   | .unbound => tcb.priority
   | .bound scId | .donated scId _ =>
-    match st.objects[scId.toObjId]? with
-    | some (.schedContext sc) => sc.priority
-    | _ => tcb.priority
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+    match st.getSchedContext? scId with
+    | some sc => sc.priority
+    | none    => tcb.priority
 
 /-- AK8-E (WS-AK / C-M06): Error-surfacing variant of `getCurrentPriority`.
 
@@ -169,9 +170,10 @@ def getCurrentPriorityChecked (st : SystemState) (tcb : TCB)
   match tcb.schedContextBinding with
   | .unbound => .ok tcb.priority
   | .bound scId | .donated scId _ =>
-    match st.objects[scId.toObjId]? with
-    | some (.schedContext sc) => .ok sc.priority
-    | _ => .error .objectNotFound
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+    match st.getSchedContext? scId with
+    | some sc => .ok sc.priority
+    | none    => .error .objectNotFound
 
 /-- AK8-E (C-M06): Soundness — when `getCurrentPriorityChecked` returns
 `.ok p`, the result matches the lookup-tolerant `getCurrentPriority`. This

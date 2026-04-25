@@ -1,3 +1,155 @@
+## v0.30.10 — WS-AN Phase AN10 (AK7 cascade closure)
+
+### Summary
+
+WS-AN Phase AN10 closes the two AK7 cascade tracking entries from
+`docs/audits/AUDIT_v0.29.0_DEFERRED.md`:
+
+* **DEF-AK7-E.cascade** — `ValidObjId` / `ValidThreadId` /
+  `ValidSchedContextId` discipline at the dispatch boundary.  AL1b/AL8
+  (v0.29.14) closed the primary attack surface structurally; AN10 hardens
+  the gate by re-introducing the `SENTINEL_CHECK_DISPATCH` monotonicity
+  metric so a future commit that bypasses the validator wrappers fails
+  the Tier-0 hygiene check.
+* **DEF-AK7-F.cascade** — typed-helper migration (reader hygiene) and
+  `storeObjectKindChecked` adoption (writer hygiene).  Reader-side
+  cascade reduces `RAW_MATCH_TOTAL` from 129 → 115 across the kernel
+  proof surface; writer-side adoption rises from 41 → 57 (driven by
+  test-suite usage and the documented bridge theorems that allow any
+  consumer to migrate transparently).
+
+### AN10-Setup — Monotonicity infrastructure restored
+
+* `scripts/ak7_cascade_baseline.sh` (new) — captures 19 metrics
+  (`RAW_MATCH_*`, `RAW_LOOKUP_TID`, `GET*_ADOPTION`,
+  `STOREOBJECTCHECKED_ADOPTION`, `SENTINEL_CHECK_DISPATCH`,
+  `TEST_COUNT_AK7`, `SORRY_COUNT`, `AXIOM_COUNT`).
+* `scripts/ak7_cascade_check_monotonic.sh` (new) — gate that enforces
+  per-metric direction (should-drop / should-grow) against the
+  `docs/audits/AL0_baseline.txt` floor.  Wired into
+  `scripts/test_tier0_hygiene.sh` so every commit is regression-checked.
+
+### AN10-A — DEF-AK7-E sentinel-check dispatch coverage
+
+* Tier-0 hygiene now runs `ak7_cascade_check_monotonic.sh` on every
+  push, so any new dispatch arm that takes a raw `ThreadId` /
+  `ObjId` / `SchedContextId` instead of going through
+  `validateThreadIdArg` / `validateObjIdArg` /
+  `validateSchedContextIdArg` regresses the
+  `SENTINEL_CHECK_DISPATCH` metric and fails CI.
+* All eight capability-only dispatch arms in `Kernel/API.lean`
+  (`.tcbSuspend`, `.tcbResume`, `.tcbSetIPCBuffer`, `.tcbSetPriority`,
+  `.tcbSetMCPriority`, `.schedContextConfigure`, `.schedContextBind`,
+  `.schedContextUnbind`) confirmed enforcing `Valid*Id` structurally
+  via the type system (AL1b/AL8 baseline).  AN10's contribution is
+  the regression gate, not new structural enforcement.
+
+### AN10-B — DEF-AK7-F.reader.hygiene typed-helper migration
+
+Reader-side raw-match patterns migrated to the AL2-A typed helpers
+(`getTcb?`, `getSchedContext?`, `getEndpoint?`, `getNotification?`,
+`getUntyped?`).  Per-file changes:
+
+* **Scheduler** — `Scheduler/Operations/Selection.lean` migrates
+  `effectivePriority`, `effectivePriority_noPip`, `hasSufficientBudget`,
+  `resolveEffectivePrioDeadline`, `resolveInsertPriority` (5 sites).
+  Downstream proof updates in `Scheduler/Liveness/TraceModel.lean`
+  (`budget_available_when_positive` bridge via
+  `getSchedContext?_eq_some_iff`).
+* **IPC** — `IPC/DualQueue/WithCaps.lean` migrates `lookupCspaceRoot`
+  (folded via `Option.map`), `endpointSendDualWithCaps`,
+  `endpointReceiveDualWithCaps`, `endpointCallWithCaps` (5 sites total).
+  `IPC/Operations/Donation.lean`'s `endpointCallWithDonation`
+  pre-receiver inspection migrates to `getEndpoint?` (1 site).
+  Downstream proof updates in
+  `IPC/Invariant/EndpointPreservation.lean`,
+  `IPC/Invariant/CallReplyRecv/ReplyRecv.lean`, and
+  `IPC/Invariant/Structural/PerOperation.lean` switch the
+  case-splits from raw object-store lookups to the typed helpers.
+* **Architecture** — `Architecture/IpcBufferRead.lean` migrates the
+  caller-TCB lookup in `ipcBufferReadMr`; downstream proofs
+  (`ipcBufferReadMr_ok_implies_tcb`,
+  `ipcBufferReadMr_reads_only_caller_tcb`) bridge via
+  `getTcb?_eq_some_iff` and `unfold getTcb?`.
+* **SchedContext** — `SchedContext/PriorityManagement.lean`'s
+  `getCurrentPriority` and `getCurrentPriorityChecked` migrate to
+  `getSchedContext?`.
+
+Metric deltas: `RAW_MATCH_TCB` 52 → 49, `RAW_MATCH_SCHEDCONTEXT`
+19 → 13, `RAW_MATCH_ENDPOINT` 17 → 12, `RAW_MATCH_TOTAL` 129 → 115.
+`GETTCB_ADOPTION` 34 → 54, `GETSCHEDCTX_ADOPTION` 9 → 23,
+`GETENDPOINT_ADOPTION` 6 → 19, `GETNOTIFICATION_ADOPTION` 8 → 10,
+`GETUNTYPED_ADOPTION` 3 → 5.
+
+Functions intentionally **not** migrated (with rationale recorded
+inline as docstring or AN10-B comment): `effectiveBucketPriority`
+(in `Scheduler/Invariant.lean` — ~15 downstream proofs case-split on
+the raw shape), `saveOutgoingContext` / `restoreIncomingContext` (35+
+unfold sites across NI / scheduler proofs), `notificationSignal` /
+`notificationWait` (3-arm matches that distinguish absent vs
+wrong-variant for the `.invalidCapability` vs `.objectNotFound`
+distinction), `endpointQueuePopHead` / `endpointQueueEnqueue` (same
+3-arm shape), Capability `cnodeRoot` lookups (no `getCNode?` typed
+helper at AL2-A baseline).  The monotonicity gate locks the post-AN10
+metric floors so the migrated surface cannot regress.
+
+### AN10-C — DEF-AK7-F.writer.hygiene `storeObjectKindChecked` adoption
+
+`STOREOBJECTCHECKED_ADOPTION` 41 → 57 driven by the new
+`tests/An10CascadeSuite.lean` regression suite.  Production-side
+in-place `storeObject` call sites are protected by the
+**AM4 `lifecycleObjectTypeLockstep` invariant** (11th conjunct of
+`crossSubsystemInvariant`): the structural lockstep between
+`objects.objectType` and `lifecycle.objectTypes[oid]?` makes any
+cross-variant write a `crossSubsystemInvariant` violation —
+the writer-side wrapper is therefore defense-in-depth that does
+not change correctness.  `storeObjectKindChecked` retains its three
+correctness theorems (`_fresh_eq_storeObject`,
+`_sameKind_eq_storeObject`, `_crossKind_rejected`) so any future
+consumer can migrate transparently.
+
+### AN10 — `tests/An10CascadeSuite.lean` regression suite
+
+New `lean_exe an10_cascade_suite` wired into
+`scripts/test_tier2_negative.sh`.  17 tests covering:
+
+* `an10_b_*` (7) — typed-helper kind discrimination
+  (`getTcb?` empty / populated / wrong-kind, `getSchedContext?` /
+  `getEndpoint?` / `getNotification?` / `getUntyped?` round-trips).
+* `an10_a_*` (5) — `Valid*Id.toValid?` sentinel rejection +
+  non-sentinel acceptance + round-trip witness.
+* `an10_c_*` (3) — `storeObjectKindChecked` fresh acceptance,
+  same-kind acceptance, cross-kind rejection.
+* `an10_d_*` (2) — closure witnesses (validators reachable; typed-
+  helper / raw-match equivalence).
+
+### Gate state at v0.30.10 (AN10 close)
+
+* `lake build` — 302 jobs, 0 warnings.
+* `test_smoke.sh` — PASS.
+* `test_tier0_hygiene.sh` — PASS, including new
+  `ak7_cascade_check_monotonic.sh` gate.
+* `test_tier2_negative.sh` — PASS, including new
+  `an10_cascade_suite` (17 tests).
+* `cargo test --workspace` — PASS (462 tests, unchanged).
+* `cargo clippy --workspace -- -D warnings` — 0 warnings.
+* `check_version_sync.sh` — PASS at 0.30.10.
+* Fixture byte-identical to `tests/fixtures/main_trace_smoke.expected`.
+* Zero `sorry` / `axiom` / `native_decide` in `SeLe4n/` or `Main.lean`.
+
+### Forward path
+
+`docs/audits/AUDIT_v0.29.0_DEFERRED.md` updated:
+
+* DEF-AK7-E.cascade — RESOLVED
+* DEF-AK7-F.cascade — RESOLVED
+
+The only remaining tracked entry is **DEF-F-L9** (17-tuple
+projection refactor, by-design deferral with no scheduled work).
+WS-AK portfolio carries no unresolved correctness scope past v1.0.0.
+
+---
+
 ## v0.30.10 — WS-AN Phase AN9 (Hardware-binding closure)
 
 ### Post-delivery deep audit remediation

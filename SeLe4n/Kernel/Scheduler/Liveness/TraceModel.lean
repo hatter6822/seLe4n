@@ -205,7 +205,11 @@ theorem budget_available_when_positive
     (hLookup : st.objects[scId.toObjId]? = some (.schedContext sc))
     (hPos : sc.budgetRemaining.val > 0) :
     hasSufficientBudget st tcb = true := by
-  simp [hasSufficientBudget, hBound, hLookup, Budget.isPositive]
+  -- AN10-B: `hasSufficientBudget` now case-splits on `getSchedContext?`;
+  -- bridge from the raw lookup hypothesis via the iff lemma.
+  have hSc : st.getSchedContext? scId = some sc :=
+    (SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hLookup
+  simp [hasSufficientBudget, hBound, hSc, Budget.isPositive]
   omega
 
 -- ============================================================================

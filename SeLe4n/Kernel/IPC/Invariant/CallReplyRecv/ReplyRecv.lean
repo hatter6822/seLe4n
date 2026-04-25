@@ -520,29 +520,26 @@ theorem endpointCallWithCaps_preserves_ipcInvariant
     have hInvMid := endpointCall_preserves_ipcInvariant st stMid endpointId caller msg hInv hObjInv hCall
     have hObjInvMid : stMid.objects.invExt := endpointCall_preserves_objects_invExt st stMid endpointId caller msg hObjInv hCall
     simp [hCall] at hStep
-    cases hEp : st.objects[endpointId]? with
+    -- AN10-B: post-migration `endpointCallWithCaps` reads via `getEndpoint?`.
+    cases hEp : st.getEndpoint? endpointId with
     | none =>
       simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-    | some obj =>
-      cases obj with
-      | endpoint ep =>
-        simp [hEp] at hStep
-        cases hHead : ep.receiveQ.head with
-        | none =>
-          simp [hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-        | some receiverId =>
-          simp [hHead] at hStep
-          by_cases hEmpty : msg.caps = #[]
-          · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-          · simp [hEmpty] at hStep
-            cases hLookup : lookupCspaceRoot stMid receiverId with
-            | none => simp [hLookup] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-            | some recvRoot =>
-              simp [hLookup] at hStep
-              exact ipcUnwrapCaps_preserves_ipcInvariant msg callerCspaceRoot recvRoot
-                receiverSlotBase _ stMid st' summary hInvMid hObjInvMid hStep
-      | _ =>
-        simp [hEp] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+    | some ep =>
+      simp [hEp] at hStep
+      cases hHead : ep.receiveQ.head with
+      | none =>
+        simp [hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+      | some receiverId =>
+        simp [hHead] at hStep
+        by_cases hEmpty : msg.caps = #[]
+        · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+        · simp [hEmpty] at hStep
+          cases hLookup : lookupCspaceRoot stMid receiverId with
+          | none => simp [hLookup] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+          | some recvRoot =>
+            simp [hLookup] at hStep
+            exact ipcUnwrapCaps_preserves_ipcInvariant msg callerCspaceRoot recvRoot
+              receiverSlotBase _ stMid st' summary hInvMid hObjInvMid hStep
 
 -- ============================================================================
 -- V3-G5 (M-PRF-5): waitingThreadsPendingMessageNone preservation
