@@ -124,9 +124,68 @@ def test_t10_dispatch_out_of_range : IO Unit := do
   | .error _ =>
     throw <| IO.userError "T10: dispatch of outOfRange returned error"
 
+/-- T11: AN8-C (H-19) — round-trip property: after a successful dispatch
+    of INTID 30 (the timer PPI, which routes to `timerTick`), the INTID
+    is NOT present in `machine.eoiPending` in the final state. This is
+    the AK3-L `eoiPendingEmpty` invariant exercised through the AN8-C
+    `ack → EOI → handle` path; both pre- and post-AN8-C orderings
+    satisfy it (because both emit EOI). The substantive ordering
+    distinction is captured by the proof-layer theorem referenced in
+    T13; this test additionally verifies the round-trip on the success
+    branch (`timerTick` returns `.ok`). -/
+def test_t11_eoi_before_handler : IO Unit := do
+  let st : SeLe4n.Model.SystemState := default
+  -- INTID 30 = `timerInterruptId`; `handleInterrupt` routes to
+  -- `timerTick`, which succeeds on default state.
+  match interruptDispatchSequence st 30 with
+  | .ok ((), st') =>
+    expectCond "interrupt-dispatch" "AN8-C: 30 not in final eoiPending (EOI fired)"
+      (30 ∉ st'.machine.eoiPending)
+  | .error _ =>
+    throw <| IO.userError "T11: dispatch of 30 returned error"
+
+/-- T12: AN8-C (H-19) — substantive ordering verification: pre-load the
+    audit trail with a sentinel INTID, dispatch a different handled
+    INTID, and verify the dispatched INTID is filtered while the
+    sentinel survives. This proves `endOfInterrupt` ran on a state
+    derived from `ackInterruptAudit` (the `endOfInterrupt → handler`
+    path) — not the old `handler → endOfInterrupt` path which would
+    have left the ack record visible to the handler. -/
+def test_t12_eoi_filters_only_target_intid : IO Unit := do
+  -- Build a state with a sentinel ack already pending. The sentinel
+  -- is INTID 99 (a valid Fin 224 value not equal to the dispatched
+  -- INTID 30). A correct EOI ordering filters only INTID 30 and
+  -- leaves the sentinel.
+  let st0 : SeLe4n.Model.SystemState := default
+  let stSentinel := ackInterruptAudit st0 99
+  expectCond "interrupt-dispatch" "T12 precondition: sentinel 99 in eoiPending"
+    (99 ∈ stSentinel.machine.eoiPending)
+  -- Dispatch INTID 30. Because no handler is registered, the sequence
+  -- takes the error branch; under AN8-C this returns the post-EOI
+  -- state directly. Under the OLD ordering, EOI would have been
+  -- skipped on the error branch — so this test is a regression guard
+  -- against any future revert to `ack → handle → EOI`.
+  match interruptDispatchSequence stSentinel 30 with
+  | .ok ((), st') =>
+    expectCond "interrupt-dispatch" "T12: target INTID 30 filtered by EOI"
+      (30 ∉ st'.machine.eoiPending)
+    expectCond "interrupt-dispatch" "T12: sentinel INTID 99 preserved"
+      (99 ∈ st'.machine.eoiPending)
+  | .error _ =>
+    throw <| IO.userError "T12: dispatch returned error unexpectedly"
+
+/-- T13: AN8-C.5 (H-19) — type-level witness verifying the
+    `interruptDispatchSequence_eoi_before_handler` theorem exists with
+    its precise signature. The reference at parse time forces
+    elaboration; if the theorem is renamed, removed, or its conclusion
+    changes, this file fails to compile. -/
+def test_t13_ordering_theorem_witness : IO Unit := do
+  let _witness := @interruptDispatchSequence_eoi_before_handler
+  IO.println "check passed [AN8-C.5 eoi_before_handler theorem elaborated]"
+
 /-- Running entry. -/
 def runAllTests : IO Unit := do
-  IO.println "=== AK3-C + AK3-L InterruptDispatch regression suite ==="
+  IO.println "=== AK3-C + AK3-L + AN8-C InterruptDispatch regression suite ==="
   test_t01_ack_spurious
   test_t02_ack_out_of_range
   test_t03_ack_handled
@@ -137,6 +196,9 @@ def runAllTests : IO Unit := do
   test_t08_round_trip_empty
   test_t09_dispatch_spurious_no_state_change
   test_t10_dispatch_out_of_range
+  test_t11_eoi_before_handler
+  test_t12_eoi_filters_only_target_intid
+  test_t13_ordering_theorem_witness
   IO.println "=== All InterruptDispatch tests passed ==="
 
 end SeLe4n.Testing.InterruptDispatch

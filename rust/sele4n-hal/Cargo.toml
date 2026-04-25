@@ -13,4 +13,8 @@ default = []
 hw_target = []
 
 [build-dependencies]
-cc = "1.0"
+# AN8-E (R-HAL-L3): pinned with explicit minimum versions matching the
+# resolved versions in `Cargo.lock`. `cc` 1.2.x is required for the
+# `find-msvc-tools` decoupling; pinning here makes the build-graph
+# reproducible across `cargo update -w` runs.
+cc = "1.2"

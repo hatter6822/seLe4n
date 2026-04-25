@@ -57,7 +57,15 @@ SECTIONS
      * wrapper is declared `static` with `repr(align(4096))`), so the
      * dedicated `.bss.page_tables` section is no longer required. The
      * linker places `BOOT_L1_TABLE` at a 4 KiB-aligned offset inside
-     * `.bss` which satisfies the ARMv8 TTBR BAADDR alignment. */
+     * `.bss` which satisfies the ARMv8 TTBR BAADDR alignment.
+     *
+     * AN8-E (R-HAL-L6) cross-reference: see `sele4n-hal/src/mmu.rs`
+     * (`PageTableCell` + `BOOT_L1_TABLE` definitions) for the Rust-side
+     * struct. The `.bss` ALIGN(4096) directive above is what allows
+     * `#[repr(align(4096))]` on `PageTableCell` to be satisfied without
+     * extra linker arithmetic — the struct's first byte is naturally on
+     * a 4 KiB boundary, matching the TTBR0_EL1 BAADDR contract.
+     */
 
     /* Kernel stack — 64 KiB, 16-byte aligned (AArch64 SP requirement) */
     .stack (NOLOAD) : ALIGN(16) {

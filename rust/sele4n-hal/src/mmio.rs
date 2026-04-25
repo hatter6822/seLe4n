@@ -1,5 +1,12 @@
 // Alignment checks use `addr % N == 0` for Rust 1.82 compatibility.
 // `is_multiple_of()` was stabilized in Rust 1.85.
+//
+// AN8-E (R-HAL-L8): The workspace MSRV is currently 1.82 to support
+// long-tail toolchain availability on bare-metal targets. Once the
+// toolchain floor moves to >=1.85, remove this allow and migrate the
+// modulo checks to `addr.is_multiple_of(N)` for clarity. This is
+// tracked as a post-1.0 hygiene item; no currently-active plan file
+// schedules the migration.
 #![allow(clippy::manual_is_multiple_of)]
 //! MMIO Volatile Read/Write Primitives for ARMv8-A.
 //!

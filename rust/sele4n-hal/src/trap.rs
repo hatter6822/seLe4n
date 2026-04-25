@@ -218,7 +218,7 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
 
 /// IRQ handler — called from assembly after context save.
 ///
-/// AG5-C: Wired to GIC-400 acknowledge → dispatch → EOI sequence.
+/// AG5-C: Wired to GIC-400 acknowledge → EOI → dispatch sequence.
 /// The dispatch routes timer interrupts (INTID 30) to the timer handler,
 /// which re-arms the hardware comparator for the next interval.
 ///
@@ -227,13 +227,33 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
 /// IRQ handler only re-arms the hardware timer to prevent missed interrupts.
 /// This eliminates the dual-path bug where both the IRQ handler and the FFI
 /// bridge incremented the tick count, causing double-counting.
+///
+/// AN8-C.3 (H-19): `#[deny(clippy::panic)]` is applied at the function
+/// level (together with the related `clippy::unreachable` and
+/// `clippy::todo` lints, which are panic-equivalents at runtime) so a
+/// future edit that inserts `panic!()`, `unreachable!()`, or `todo!()`
+/// directly inside the handler body fails `cargo clippy`. Even though
+/// AN8-C.1's EOI-before-handler reorder removed the panic-loses-EOI
+/// class structurally, a panicking handler still halts the kernel
+/// under `panic = "abort"`, so direct panics are a latent correctness
+/// hazard: the handler should signal recoverable conditions through
+/// return values, not unwinding.
 #[no_mangle]
+#[deny(clippy::panic, clippy::unreachable, clippy::todo)]
 pub extern "C" fn handle_irq(_frame: &mut TrapFrame) {
     crate::gic::dispatch_irq(|intid| {
         if intid == crate::gic::TIMER_PPI_ID {
             // Timer interrupt: re-arm the hardware comparator only.
             // Tick accounting is performed by the Lean kernel via
             // ffi_timer_reprogram — see ffi.rs:40-43.
+            //
+            // AN8-C.4 re-entrancy note: `reprogram_timer()` computes
+            // `CNTP_CVAL_EL0 = CNTPCT_EL0 + interval`. On RPi5 the
+            // interval is 54 000 counter ticks (~1 ms at 54 MHz);
+            // handler latency is ≪ 1 ms, so the timer IRQ cannot
+            // re-trigger inside this handler body. The GIC's CPU-
+            // interface running-priority mask also holds the INTID off
+            // until PSTATE.I clears on exception return.
             crate::timer::reprogram_timer();
         } else {
             // Non-timer interrupt: log for debugging

@@ -90,6 +90,49 @@ pub unsafe fn eret() -> ! {
 /// use the extended affinity field.
 pub const MPIDR_CORE_ID_MASK: u64 = 0x00FF_FFFF;
 
+/// AN8-B.1 (H-18): Shared `.rodata` symbol exposing `MPIDR_CORE_ID_MASK`
+/// to assembly.
+///
+/// `boot.S` used to encode the mask as two literal instructions
+/// (`mov x2, #0xFFFF ; movk x2, #0xFF, lsl #16`). Any future edit that
+/// changed `MPIDR_CORE_ID_MASK` in Rust would silently drift from the
+/// assembly-side literal — the build would succeed and the kernel would
+/// boot, but the boot-core gate would behave inconsistently between the
+/// two sides. Exposing the constant as a `.rodata` symbol lets assembly
+/// pull it via `adrp` + `ldr`, so the Rust constant is the single source
+/// of truth.
+///
+/// The `#[no_mangle]` attribute is required so the assembly's
+/// `MPIDR_CORE_ID_MASK_SYM` reference resolves at link time; the `#[used]`
+/// attribute prevents the symbol from being stripped by the linker as
+/// "unused" (no Rust caller references it — it's referenced only from
+/// `boot.S`).
+///
+/// AN8-B.4 defense-in-depth: a `const _: () = assert!(...)` below binds
+/// the symbol's visible value to the constant at compile time, so any
+/// accidental divergence (typo, search-and-replace mistake) fails the
+/// build with a clear diagnostic.
+#[no_mangle]
+#[used]
+pub static MPIDR_CORE_ID_MASK_SYM: u64 = MPIDR_CORE_ID_MASK;
+
+/// AN8-B.4 (H-18) belt-and-suspenders: compile-time assertion that the
+/// Rust constant has not drifted from the documented BCM2712 mask value.
+/// If a future refactor accidentally narrows the mask (e.g., Aff0-only
+/// 0xFF or mis-typed 0x00FF_FFFE), the build fails here before anyone
+/// runs the binary on hardware.
+const _: () = assert!(MPIDR_CORE_ID_MASK == 0x00FF_FFFF);
+// AN8-B.4: the symbol-vs-constant equality check that *would* live here
+// (`const _: () = assert!(MPIDR_CORE_ID_MASK_SYM == MPIDR_CORE_ID_MASK);`)
+// requires `feature(const_refs_to_statics)` (rust-lang/rust#119618), which
+// only stabilised in Rust 1.83. The seLe4n MSRV is 1.82, so we instead
+// pin the equality at runtime via the `mpidr_shared_symbol_matches_constant`
+// test (cpu::tests in this file) — that test runs on every `cargo test`
+// invocation and has equivalent regression-detection power. The MSRV
+// migration to ≥ 1.83 is tracked alongside the AN8-E (R-HAL-L8)
+// `mmio.rs` MSRV note; once it lands the static-ref check can be
+// re-instated for compile-time enforcement.
+
 /// Read the MPIDR_EL1 register to determine the current core ID.
 ///
 /// AK5-I (R-HAL-M02/M09): Returns Aff1:Aff0 packed in bits [15:8] | [7:0].
@@ -163,5 +206,30 @@ mod tests {
         // On non-aarch64 hosts, current_core_id returns 0 (boot core alias).
         #[cfg(not(target_arch = "aarch64"))]
         assert_eq!(current_core_id(), 0);
+    }
+
+    // ========================================================================
+    // AN8-B (H-18): MPIDR_CORE_ID_MASK_SYM shared symbol tests
+    // ========================================================================
+
+    #[test]
+    fn mpidr_shared_symbol_matches_constant() {
+        // AN8-B.1: The symbol exported to assembly must hold exactly the
+        // same bits as the Rust constant — this is what lets `boot.S`
+        // reach the constant via `adrp`+`ldr` without drifting.
+        assert_eq!(MPIDR_CORE_ID_MASK_SYM, MPIDR_CORE_ID_MASK);
+        assert_eq!(MPIDR_CORE_ID_MASK_SYM, 0x00FF_FFFF);
+    }
+
+    #[test]
+    fn mpidr_shared_symbol_is_immutable_reference() {
+        // AN8-B: Reading the shared symbol via `core::ptr::read` must
+        // return the same value as reading the constant directly. On
+        // non-aarch64 hosts this exercises the same .rodata placement
+        // used by the aarch64 build.
+        let from_static: u64 = MPIDR_CORE_ID_MASK_SYM;
+        let from_constant: u64 = MPIDR_CORE_ID_MASK;
+        assert_eq!(from_static, from_constant,
+            "Shared static MPIDR_CORE_ID_MASK_SYM drifted from the constant");
     }
 }

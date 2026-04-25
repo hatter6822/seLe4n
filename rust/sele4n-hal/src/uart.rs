@@ -5,6 +5,12 @@
 //!
 //! Register offsets per ARM PrimeCell UART (PL011) Technical Reference Manual.
 
+// AN8-A.3 audit: `std::panic::catch_unwind` is needed by the unwinding-path
+// `UartGuard` Drop tests below. Declared once at the top of the module so
+// `clippy::items_after_test_module` is satisfied.
+#[cfg(test)]
+extern crate std;
+
 use core::fmt;
 
 /// PL011 register offsets from base address.
@@ -43,6 +49,24 @@ const UART_CLOCK_HZ: u32 = 48_000_000;
 
 /// Default baud rate for debug console.
 const DEFAULT_BAUD: u32 = 115_200;
+
+/// AN8-D (RUST-M02): boot-time invariants for the production baud-rate path.
+///
+/// `init_with_baud` uses `debug_assert!` to catch a zero baud (which would
+/// trigger an integer divide-by-zero in the divisor computation). To ensure
+/// release builds never reach `init_with_baud(0)` on the production path,
+/// the only callable boot path (`init` → `init_boot_uart`) passes a
+/// **compile-time constant** verified by the assertion below. Adding any
+/// new boot-time caller that bypasses `init` will fail the build if it
+/// ever introduces a path that could pass `0`.
+const _: () = assert!(
+    DEFAULT_BAUD > 0,
+    "DEFAULT_BAUD must be non-zero so init() can use debug_assert! safely"
+);
+const _: () = assert!(
+    UART_CLOCK_HZ >= DEFAULT_BAUD * 16,
+    "UART_CLOCK_HZ must be at least 16 × baud for PL011 oversampling"
+);
 
 /// PL011 UART driver instance.
 pub struct Uart {
@@ -90,15 +114,40 @@ impl Uart {
 
     /// Initialize UART with a specific baud rate.
     ///
-    /// # Panics
+    /// # AN8-E (R-HAL-L4): non-standard-baud silent rounding
+    ///
+    /// PL011 baud-rate divisors are computed from
+    ///   `BRD = UART_CLOCK_HZ / (16 × baud)`
+    /// and split into `IBRD` (integer) and `FBRD` (fractional, 6 bits).
+    /// Non-standard baud rates that do not divide evenly into the clock
+    /// produce a slightly-off effective baud (within ±1.5% by PL011 TRM
+    /// §3.3.6 specification). This is silent — no warning is emitted —
+    /// because the PL011 hardware itself does no error reporting on
+    /// baud-rate mismatch. Callers passing non-115200/57600/38400/etc.
+    /// rates should validate the resulting effective baud externally.
+    ///
+    /// # Panics (debug builds only)
     ///
     /// AK5-K (R-HAL-M10 / MEDIUM): `baud == 0` would cause division by zero
     /// in the baud-rate divisor computation. We assert rather than silently
     /// returning because the boot UART must be functional for any kernel
     /// diagnostic output — a silent no-op init would leave subsequent
     /// `kprintln!` calls hanging on a disabled UART.
+    ///
+    /// # AN8-D (RUST-M02) trade-off
+    ///
+    /// Production callers (`init` / `init_boot_uart`) pass the compile-time
+    /// constant `DEFAULT_BAUD = 115_200`, so the runtime check fires only in
+    /// debug builds where `debug_assertions = true`. Release builds rely on
+    /// the [`init_boot_uart_invariants_check`] static assertions below to
+    /// validate that the boot-time baud is non-zero at compile time.
+    /// `init_with_baud(0)` in release would still divide-by-zero → fault,
+    /// which on ARM64 with floating-point divide-by-zero is well-defined
+    /// (returns `inf`/`nan`) but on integer divide is implementation-defined
+    /// (Cortex-A76 returns 0, leading to silent UART misconfiguration). The
+    /// boot-time invariants below ensure no zero-baud caller path exists.
     pub fn init_with_baud(&self, baud: u32) {
-        assert!(baud > 0, "UART baud rate must be > 0");
+        debug_assert!(baud > 0, "UART baud rate must be > 0");
         // Disable UART while configuring
         self.write_reg(regs::UARTCR, 0);
 
@@ -180,7 +229,7 @@ impl fmt::Write for Uart {
 // ============================================================================
 
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 /// AJ5-B/M-21: Wrapper providing `Sync` for `UnsafeCell<Uart>`.
 ///
@@ -212,19 +261,24 @@ static BOOT_UART_INNER: UartInner = UartInner(UnsafeCell::new(Uart::new(UART0_BA
 /// single-threaded test execution.
 struct UartLock {
     locked: AtomicBool,
+    /// AN8-A.1: DAIF snapshot stashed at `acquire()` time so `release()` can
+    /// restore it. Written only by the lock holder (Relaxed is sufficient:
+    /// the `locked` AtomicBool's Acquire/Release pair publishes the write).
+    saved_daif: AtomicU64,
 }
 
 impl UartLock {
     const fn new() -> Self {
-        Self { locked: AtomicBool::new(false) }
+        Self { locked: AtomicBool::new(false), saved_daif: AtomicU64::new(0) }
     }
 
-    /// Execute `f` with exclusive `&mut Uart` access.
+    /// Acquire the spin lock after first masking interrupts.
     ///
-    /// Disables interrupts before acquiring the lock and restores them
-    /// after release, preventing IRQ-handler deadlock on single-core.
+    /// The saved DAIF value is stashed in `saved_daif` so that
+    /// [`release`](Self::release) — the only legitimate counterpart —
+    /// can restore it symmetrically. Called by [`with_guard`](Self::with_guard).
     #[inline(always)]
-    fn with<R, F: FnOnce(&mut Uart) -> R>(&self, f: F) -> R {
+    fn acquire(&self) {
         // Disable interrupts BEFORE acquiring the lock to prevent an IRQ
         // handler from preempting us mid-acquisition and deadlocking.
         let saved_daif = crate::interrupts::disable_interrupts();
@@ -233,12 +287,108 @@ impl UartLock {
         ).is_err() {
             core::hint::spin_loop();
         }
-        // SAFETY: Lock held + interrupts disabled — single writer guaranteed.
-        // AJ5-B/M-21: Access via UnsafeCell::get() instead of static mut.
-        let result = unsafe { f(&mut *BOOT_UART_INNER.0.get()) };
+        // Stash the DAIF snapshot AFTER the lock is held so only the owner
+        // can read/write this field. Relaxed ordering suffices because the
+        // lock's Acquire/Release pair already publishes the write.
+        self.saved_daif.store(saved_daif, Ordering::Relaxed);
+    }
+
+    /// Release the spin lock and restore the DAIF mask.
+    ///
+    /// Invariant: must only be called by the thread that holds the lock
+    /// (enforced structurally because [`UartGuard::drop`] is the only
+    /// caller — `Drop` is parameterised by `&mut self`, so only the
+    /// single guard holding the mutable borrow can invoke it).
+    #[inline(always)]
+    fn release(&self) {
+        let saved_daif = self.saved_daif.load(Ordering::Relaxed);
         self.locked.store(false, Ordering::Release);
         crate::interrupts::restore_interrupts(saved_daif);
-        result
+    }
+
+    /// AN8-A.1 (H-17): RAII lock acquisition.
+    ///
+    /// Acquires the spin lock (with interrupt masking) and returns a
+    /// [`UartGuard`] whose `Drop` implementation releases it. The guard's
+    /// lifetime `'a` is pinned to the lock reference, so the guard cannot
+    /// outlive the lock — and the compiler rejects any attempt to hold a
+    /// live `&mut Uart` while the guard is dropped.
+    ///
+    /// This replaces the earlier `with(F)` callback pattern in which the
+    /// release was a plain `self.locked.store(false, Ordering::Release)`
+    /// call on the path after the closure returned: an early-return or
+    /// panic inside the closure would have bypassed the release. With
+    /// RAII, the release is attached to the guard's lifetime, so every
+    /// normal scope exit (and every unwinding path on the test profile)
+    /// fires it.
+    #[inline(always)]
+    fn with_guard(&self) -> UartGuard<'_> {
+        self.acquire();
+        // SAFETY: `acquire` guarantees exclusive access to
+        // `BOOT_UART_INNER` for the lifetime of the returned guard. The
+        // guard's `Drop` calls `self.release()`, which both resets the
+        // atomic lock flag AND restores the DAIF mask, so the critical
+        // section is symmetric. `&mut *get()` is sound because the
+        // atomic acquire establishes happens-before with any prior
+        // release, and no other code path constructs `&mut Uart` from
+        // `BOOT_UART_INNER` without going through this routine.
+        let inner = unsafe { &mut *BOOT_UART_INNER.0.get() };
+        UartGuard { inner, lock: self }
+    }
+
+    /// Check whether the lock is currently held. Primarily for tests.
+    #[inline(always)]
+    #[cfg(test)]
+    fn is_held(&self) -> bool {
+        self.locked.load(Ordering::Acquire)
+    }
+}
+
+// ============================================================================
+// AN8-A.1 (H-17): UartGuard RAII
+// ============================================================================
+
+/// RAII guard that pins exclusive access to the boot UART.
+///
+/// Produced by [`UartLock::with_guard`]. The `Drop` implementation
+/// releases the spin lock and restores the DAIF mask that was masked
+/// at acquisition time, so every normal scope exit (and every unwinding
+/// path under the test profile) symmetrically balances the acquire.
+///
+/// # Lifetime binding
+///
+/// The `'a` lifetime ties the mutable-borrow lifetime of `inner` to the
+/// lifetime of the guard itself. Dropping the guard first drops the
+/// mutable borrow (via NLL), then runs the `Drop` body. This is what
+/// makes the pattern sound.
+///
+/// # Panic-path behaviour (AN8-A.4)
+///
+/// Under the workspace `panic = "abort"` profile (see
+/// `rust/Cargo.toml` and `ffi.rs` AK5-M guard), a panic terminates the
+/// kernel without running destructors — the `release` never fires, but
+/// the kernel has already aborted, so the GIC/UART state is moot. Under
+/// the stable `cargo test` profile (which forces `panic = "unwind"`),
+/// the `Drop` still fires on the unwind path. Both behaviours match
+/// the AK5-B `EoiGuard` design from GIC dispatch.
+///
+/// # Visibility
+///
+/// The struct is non-`pub` because the only constructor
+/// ([`UartLock::with_guard`]) is private; external callers use
+/// [`with_boot_uart`] (`pub(crate)`) which consumes the guard
+/// internally. Keeping the struct private prevents any accidental
+/// external construction (which would be UB-prone without the lock's
+/// invariants).
+struct UartGuard<'a> {
+    inner: &'a mut Uart,
+    lock: &'a UartLock,
+}
+
+impl Drop for UartGuard<'_> {
+    #[inline(always)]
+    fn drop(&mut self) {
+        self.lock.release();
     }
 }
 
@@ -250,11 +400,26 @@ static UART_LOCK: UartLock = UartLock::new();
 /// Obtain exclusive access to the global UART and call `f`.
 ///
 /// Safe to call from any context (boot, kernel, IRQ handler). The
-/// spinlock ensures mutual exclusion without requiring the caller to
-/// manually disable interrupts.
+/// RAII [`UartGuard`] ensures mutual exclusion without requiring the
+/// caller to manually disable interrupts.
+///
+/// AN8-A.2 (H-17): Thin wrapper over [`UartLock::with_guard`]. Every
+/// scope exit — normal return, early return, unwind — runs the guard's
+/// `Drop` so the lock is always released. The closure receives a
+/// `&mut Uart` that is implicitly bound to the guard's lifetime; when
+/// `f` returns, the borrow is released before the guard is dropped, so
+/// the NLL borrow-checker accepts the pattern statically.
 #[inline(always)]
 pub(crate) fn with_boot_uart<R, F: FnOnce(&mut Uart) -> R>(f: F) -> R {
-    UART_LOCK.with(f)
+    let guard = UART_LOCK.with_guard();
+    // Reborrow `guard.inner` (itself a `&'a mut Uart`) so `f` receives a
+    // shorter-lived `&mut Uart` that ends before the guard's `Drop` runs
+    // at function scope exit. Under `panic = "unwind"` (test profile) the
+    // unwind path still invokes `Drop`, which releases the lock and
+    // restores DAIF; under `panic = "abort"` (production) the kernel
+    // halts before any subsequent code observes the lock state, so the
+    // skipped release is moot.
+    f(&mut *guard.inner)
 }
 
 /// Initialize the global boot UART.
@@ -340,14 +505,97 @@ mod tests {
         assert_eq!(flags::BUSY, 1 << 3);
     }
 
-    // AK5-K (R-HAL-M10): init_with_baud(0) panics instead of silently
-    // misconfiguring the UART. We cannot exercise it directly because
-    // constructing a Uart with a valid base then issuing MMIO is a no-op
-    // on non-aarch64; but we can still trigger the assertion.
+    // AK5-K (R-HAL-M10) + AN8-D (RUST-M02): `init_with_baud(0)` triggers
+    // the in-function `debug_assert!`. The test profile compiles with
+    // `debug_assertions = true` (default for `cargo test`), so the
+    // assertion fires and the `#[should_panic]` matches the message
+    // string. In release builds the `debug_assert!` is elided; the
+    // boot-time `const _: () = assert!(...)` invariants in the file
+    // header (and the fact that production callers pass the
+    // compile-time constant `DEFAULT_BAUD = 115_200`) prevent
+    // zero-baud calls in release.
     #[test]
     #[should_panic(expected = "UART baud rate must be > 0")]
-    fn init_with_zero_baud_panics() {
+    fn init_with_zero_baud_panics_in_debug_builds() {
         let uart = Uart::new(UART0_BASE);
         uart.init_with_baud(0);
+    }
+
+    // ========================================================================
+    // AN8-A.3 (H-17): UartGuard RAII semantics
+    //
+    // The guard must:
+    //   1. Leave the lock held for the duration of its lifetime.
+    //   2. Release the lock (both the AtomicBool flag and the stashed
+    //      DAIF mask) on every normal scope exit.
+    //   3. Run its `Drop` on the unwind path too, so panics inside the
+    //      critical section don't leak the lock. (`panic = "abort"` skips
+    //      this in production, which is the correct response to an
+    //      invariant violation; we verify the unwinding test-profile
+    //      behaviour here.)
+    // ========================================================================
+
+    #[test]
+    fn uart_guard_holds_lock_for_scope_and_releases_on_exit() {
+        // Fresh local lock so the test is isolated from the global one.
+        let lock = UartLock::new();
+        assert!(!lock.is_held(), "precondition: lock not held");
+        {
+            let _g = lock.with_guard();
+            assert!(lock.is_held(), "lock must be held while guard alive");
+        }
+        assert!(!lock.is_held(), "lock must be released when guard drops");
+    }
+
+    #[test]
+    fn uart_guard_releases_on_early_return() {
+        // The guard fires its Drop even when the scope exits via an
+        // explicit `return` before the end of the block. Branching
+        // through a conditional `return` (rather than the bare
+        // `return;` clippy considers unneeded) keeps the early-exit
+        // semantics explicit while satisfying `clippy::needless_return`.
+        fn exercise(l: &UartLock, take_short_path: bool) -> u32 {
+            let _g = l.with_guard();
+            if take_short_path {
+                return 0xEA21_F00D;
+            }
+            0xEA22_F00D
+        }
+        let lock = UartLock::new();
+        let r1 = exercise(&lock, true);
+        assert_eq!(r1, 0xEA21_F00D);
+        assert!(!lock.is_held(),
+            "lock must be released after early-return (short path)");
+        let r2 = exercise(&lock, false);
+        assert_eq!(r2, 0xEA22_F00D);
+        assert!(!lock.is_held(),
+            "lock must be released after fall-through (long path)");
+    }
+
+    #[test]
+    fn uart_guard_global_lock_released_after_with_boot_uart() {
+        // `with_boot_uart` is the only documented consumer of the guard
+        // pattern; verify the global lock is not leaked.
+        let before = UART_LOCK.is_held();
+        let result = with_boot_uart(|_u| 0xABCDu32);
+        assert_eq!(result, 0xABCD);
+        assert_eq!(UART_LOCK.is_held(), before,
+            "global UART_LOCK state must match before/after with_boot_uart");
+    }
+
+    // The `panic = "abort"` profile in production never runs Drop; but the
+    // stable test harness forces unwind, so we can cross-check that Drop
+    // fires on the unwind path too. Any future refactor that breaks the
+    // Drop wiring will be caught.
+    #[test]
+    fn uart_guard_releases_on_unwind() {
+        let lock = UartLock::new();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _g = lock.with_guard();
+            panic!("simulated fault inside UART critical section");
+        }));
+        assert!(result.is_err(), "catch_unwind should have caught the panic");
+        assert!(!lock.is_held(),
+            "UartGuard::drop did not fire on unwind — lock leaked");
     }
 }

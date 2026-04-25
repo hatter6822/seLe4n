@@ -138,6 +138,22 @@ pub fn ic_ialluis() {
     }
 }
 
+/// AN8-D (RUST-M07): Pure memory-ordering fence (no cache-line side effect).
+///
+/// Issues a DSB ISH so that all preceding memory operations from the
+/// current core are observed by other agents in the Inner Shareable
+/// domain before any subsequent memory operation. Use this when the
+/// caller wants ordering ONLY — not cache maintenance — and would
+/// otherwise abuse `cache_range(_, ptr, ptr)` for the side effect of
+/// the trailing DSB. Calling `cache_range` with an empty range works
+/// (AK5-K) but is misleading at the call site.
+///
+/// References: ARM ARM B2.3.5 (DSB), C6.2.71 (DSB ISH).
+#[inline(always)]
+pub fn memory_fence() {
+    barriers::dsb_ish();
+}
+
 /// Apply a cache maintenance operation over an address range.
 ///
 /// Iterates from `start` to `end` (exclusive) in `CACHE_LINE_SIZE` increments,
@@ -147,6 +163,13 @@ pub fn ic_ialluis() {
 /// * `op` - Cache maintenance function (e.g., `dc_civac`)
 /// * `start` - Start address (will be rounded down to cache line boundary)
 /// * `end` - End address (exclusive)
+///
+/// AN8-D (RUST-M07): Callers needing a pure memory-ordering fence (no
+/// cache-line maintenance) should use [`memory_fence`] instead — the
+/// empty-range path here is preserved for backward compatibility with
+/// AK5-K-era callers that relied on `cache_range(_, ptr, ptr)` as an
+/// implicit DSB ISH, but new code should use `memory_fence()` directly
+/// for clarity.
 pub fn cache_range(op: fn(u64), start: u64, end: u64) {
     // AK5-K (R-HAL-M08 / MEDIUM): Always emit DSB ISH — even on an empty
     // range — so callers can rely on `cache_range` as a stable memory
@@ -154,7 +177,7 @@ pub fn cache_range(op: fn(u64), start: u64, end: u64) {
     // early return skipped the barrier, which could surprise callers that
     // used `cache_range(..., ptr, ptr)` as a zero-length "fence".
     if start >= end {
-        barriers::dsb_ish();
+        memory_fence();
         return;
     }
     let aligned_start = start & !(CACHE_LINE_SIZE - 1);
@@ -166,7 +189,7 @@ pub fn cache_range(op: fn(u64), start: u64, end: u64) {
         // u64::MAX >= end for any valid end address.
         addr = addr.saturating_add(CACHE_LINE_SIZE);
     }
-    barriers::dsb_ish();
+    memory_fence();
 }
 
 /// Clean and invalidate a range of data cache lines (convenience wrapper).
@@ -319,5 +342,21 @@ mod tests {
     #[test]
     fn test_clean_range() {
         clean_range(0x1000, 0x2000);
+    }
+
+    // AN8-D (RUST-M07): memory_fence is a pure DSB ISH — verify it does
+    // not panic on host (DSB is a no-op outside aarch64) and that
+    // cache_range with an empty range still calls into it.
+    #[test]
+    fn test_memory_fence_compiles() {
+        memory_fence();
+    }
+
+    #[test]
+    fn test_cache_range_empty_uses_memory_fence() {
+        // Empty range → cache_range delegates to memory_fence; both behave
+        // identically on host. This test documents the invariant.
+        cache_range(dc_civac, 0x1000, 0x1000);
+        memory_fence();
     }
 }

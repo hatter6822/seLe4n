@@ -1,3 +1,246 @@
+## v0.30.9 — WS-AN Phase AN8 (Rust HAL hardening)
+
+v0.30.9 patch release bundles **WS-AN Phase AN8** per
+[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
+§11. AN8 closes the three Rust-HAL HIGH findings (H-17 UartLock RAII,
+H-18 MPIDR shared symbol, H-19 EOI-before-handler), batches the eight
+RUST-M MEDIUM items (RUST-M01..M08), and the eleven Rust LOW-tier
+findings (R-HAL-L1..L11). The phase is independent of all Lean kernel
+phases (AN3..AN7) and merges the Rust HAL into a state where
+`cargo test --workspace` reports **428 passing** (up from 414 baseline)
+and `cargo clippy --workspace -- -D warnings` is at **0 warnings**.
+
+### Post-delivery audit remediation (third pass)
+
+A third deep audit pass caught four additional tightening opportunities:
+
+(A) **Stale `mmu.rs:326` "AG6 replaces it" comment**: the second-pass
+audit fixed the module-level docstring but missed a duplicate stale
+comment above `build_identity_tables()`. Updated with the proper
+boot/runtime distinction.
+
+(B) **`UartGuard` visibility**: the struct was declared `pub` but its
+only constructor (`UartLock::with_guard`) is private, and the only
+consumer (`with_boot_uart`) is `pub(crate)`. The `pub` leaked an
+unreachable type into the crate's public surface. Tightened to
+`struct UartGuard` (module-private) and documented the rationale.
+
+(C) **`#[deny(clippy::panic)]` extended**: the initial AN8-C.3
+attribute only caught `panic!()`. `unreachable!()` and `todo!()` are
+panic-equivalents at runtime; extending to
+`#[deny(clippy::panic, clippy::unreachable, clippy::todo)]` prevents
+all three from sneaking into IRQ handler bodies.
+
+(D) **T11 comment correction**: the Lean `test_t11_eoi_before_handler`
+comment incorrectly claimed the test exercised "no handler
+registered → .error .invalidIrq" but INTID 30 is `timerInterruptId`,
+which routes to `timerTick` and returns `.ok`. Updated the test
+docstring to describe the actual success-branch exercise and to
+clarify that the substantive ordering distinction is captured by the
+proof-layer theorem referenced in T13 (both old and new dispatch
+orderings satisfy the final-state-empty property).
+
+### Post-delivery audit remediation
+
+A deep end-to-end audit of the initial AN8 landing surfaced six
+strengthening opportunities, all fixed in-PR:
+
+1. **AN8-A clippy regression**: the initial commit placed
+   `#[cfg(test)] extern crate std;` at the bottom of `uart.rs`,
+   triggering `clippy::items_after_test_module`. Moved to the top of
+   the module where it belongs.
+2. **AN8-A `uart_guard_releases_on_early_return` test**: the bare
+   `return;` triggered `clippy::needless_return`. Replaced with a
+   conditional-branch early return that exercises BOTH paths (short
+   and long), strengthening coverage instead of weakening it.
+3. **AN8-A stale test annotation**: `init_with_zero_baud_panics`
+   carried a comment claiming `init_with_baud(0)` "panics" but AN8-D
+   RUST-M02 had downgraded the runtime `assert!` to `debug_assert!`.
+   Renamed to `init_with_zero_baud_panics_in_debug_builds` with a
+   docstring documenting the new debug-vs-release semantics and the
+   compile-time invariants that protect release builds.
+4. **AN8-C.5 substantive ordering test missing**: the initial landing
+   had two near-duplicate "handler runs once" tests that didn't
+   actually verify EOI-before-handler ORDERING.  Refactored
+   `dispatch_irq` to delegate to a pure state machine
+   `dispatch_irq_inner(ack, eoi, handler)` that takes the EOI fn as a
+   parameter. New `dispatch_irq_handled_eoi_fires_before_handler`
+   test instruments mock `eoi`/`handler` with a shared `EventClock`
+   and asserts `eoi_tick < handler_tick`. New
+   `dispatch_irq_out_of_range_eois_without_handler` and
+   `dispatch_irq_spurious_skips_eoi_and_handler` exercise the other
+   two branches with mock observers. New
+   `dispatch_irq_handler_panic_does_not_unfire_eoi` uses a `static
+   AtomicU32` (so the counter survives unwind) to substantively
+   verify that EOI fires exactly once even when the handler panics
+   under the unwinding test profile.
+5. **AN8-D RUST-M05 self-check untested**: `self_check_distributor`
+   was gated on `cfg(target_arch = "aarch64")` so its read-back
+   structure had zero test coverage. Factored the read-address
+   arithmetic into `read_self_check_target` and exposed two compile-
+   time invariants (`SELF_CHECK_TARGET_INDEX >= 8` for writable SPI
+   bank, `< 256` for ITARGETSR window) plus three runtime tests
+   (`self_check_does_not_panic_on_host`,
+   `self_check_target_address_arithmetic`,
+   `self_check_expected_pattern_matches_init_distributor`) that
+   exercise the structure on the host. The actual WFE-loop halt path
+   remains aarch64-only (because there is no way to test "halt the
+   core" in a unit test).
+6. **AN8-C Lean T12 shallow**: the initial T12 just printed a "check
+   passed" message with no substantive assertion. Replaced with
+   `test_t12_eoi_filters_only_target_intid` — pre-loads
+   `eoiPending` with a sentinel INTID (99), dispatches a different
+   INTID (30), and verifies the dispatched INTID is filtered while
+   the sentinel survives. This regresses against any future
+   accidental revert to `ack → handle → EOI` (which would skip the
+   EOI step on the error branch). Added new
+   `test_t13_ordering_theorem_witness` that elaborates
+   `interruptDispatchSequence_eoi_before_handler` at parse time so
+   the test file fails to load if the theorem is renamed/removed.
+
+### Original AN8 landing
+
+### AN8-A — `UartLock` RAII refactor (H-17 HIGH)
+
+`uart.rs::UartLock::with` is replaced with a `UartGuard<'a>` RAII
+wrapper. Acquisition (`with_guard()`) masks interrupts via DAIF, spins
+on the AtomicBool flag, and stashes the saved DAIF in `UartLock.saved_daif`.
+The returned `UartGuard` carries the `&mut Uart` borrow and a back-pointer
+to the lock; its `Drop` impl calls `release()` which clears the flag
+AND restores the DAIF mask. Every normal scope exit (and every unwinding
+path under the test profile) symmetrically balances the acquire/release
+pair, eliminating the latent path where an early-return inside the
+closure would skip the lock release. Under `panic = "abort"` (production)
+a handler panic halts the kernel before any subsequent code observes the
+lock state, so the skipped release is moot. **4 new tests** in
+`tests::uart_guard_*` cover normal-return, early-return, global-lock,
+and unwind-path Drop semantics.
+
+### AN8-B — `MPIDR_CORE_ID_MASK` shared symbol (H-18 HIGH)
+
+`cpu.rs` now exposes `MPIDR_CORE_ID_MASK` as a `#[no_mangle] pub static`
+named `MPIDR_CORE_ID_MASK_SYM` so `boot.S`'s core-0 gate pulls the value
+via `adrp` + `ldr [..., :lo12:...]` instead of a literal `mov`/`movk`
+pair. The Rust constant is now the single source of truth — any future
+edit propagates to assembly automatically. Two compile-time `const _: ()`
+asserts pin the constant value and the symbol-vs-constant equality.
+A new **`build.rs` scanner** (AN8-B.5) reads `src/boot.S` on every build
+and rejects the legacy `mov x2, #0xFFFF` + `movk x2, #0xFF, lsl #16`
+literal pattern with an actionable error pointing at AN8-B; the scan is
+robust to whitespace and case differences and strips `//` comments before
+matching so documentation references don't false-positive. **2 new tests**
+in `cpu::tests::mpidr_shared_symbol_*` verify the constant/symbol
+round-trip on host. Synthetic regression (restoring the old pattern)
+fails the build with the documented error message.
+
+### AN8-C — `dispatch_irq` EOI-before-handler refactor (H-19 HIGH, Option b)
+
+The audit's Option (b) — emit EOI BEFORE handler invocation — lands.
+`gic.rs::dispatch_irq` no longer wraps the handler in an `EoiGuard`
+RAII pattern; instead, EOI is emitted unconditionally on the Handled
+and OutOfRange branches *before* the handler body runs. Spurious INTIDs
+(≥ 1020) still skip EOI per GIC-400 §3.1. Under `panic = "abort"` this
+eliminates the "handler panic leaves INTID active" class of failures
+structurally — the GIC has already retired the line by the time the
+handler executes. The Lean-side `Architecture/InterruptDispatch.lean`
+model is updated in lockstep: `interruptDispatchSequence` now executes
+`endOfInterrupt (ackInterruptAudit st intId) intId` BEFORE invoking the
+handler. The `eoiEmitted` predicate is extended to a 3-disjunct form
+that captures both the old and new orderings, and a new theorem
+`interruptDispatchSequence_eoi_before_handler` formalises the AN8-C
+ordering at the proof layer. The handler in `trap.rs::handle_irq` carries
+`#[deny(clippy::panic)]` (AN8-C.3) as defense-in-depth so a future
+direct `panic!()` inside the handler body fails `cargo clippy`. The
+re-entrancy invariant is documented per registered handler — timer PPI
+30 reprograms `CNTP_CVAL_EL0` ≥ 1 ms in the future and cannot
+re-trigger inside the handler body; non-timer handlers log only.
+**4 new ordering tests** in `gic::tests::dispatch_irq_*` exercise the
+Handled path, handler invocation, and the unwinding-test-profile
+behaviour. **2 new Lean tests** in `tests/InterruptDispatchSuite.lean`
+exercise the AN8-C ordering through the dispatch sequence.
+
+### AN8-D — Rust MEDIUM batch (RUST-M01..M08)
+
+- **RUST-M01**: `mmu.rs::sctlr_bits` collapses 5 per-constant
+  `#[allow(dead_code)]` annotations into a single module-level
+  `#![allow(dead_code)]` plus a Markdown table in the doc-block
+  enumerating each excluded bit and the rationale.
+- **RUST-M02**: `uart.rs::init_with_baud(0)` is now `debug_assert!`
+  (was runtime `assert!`); production callers use the compile-time
+  constant `DEFAULT_BAUD = 115_200`, and two new boot-time
+  `const _: () = assert!(...)` static asserts on `DEFAULT_BAUD > 0`
+  and `UART_CLOCK_HZ ≥ 16 × DEFAULT_BAUD` provide release-build
+  defense-in-depth without per-call runtime cost.
+- **RUST-M03**: timer test `init_timer_stores_interval` /
+  `init_timer_100hz_interval` migrated from `init_timer(...).unwrap()`
+  to `assert_eq!(init_timer(...), Ok(()))` for explicit return-value
+  documentation.
+- **RUST-M04**: `mmu.rs:5` stale "AG6 replaces this" docstring replaced
+  with a clarifying paragraph distinguishing the boot identity-map (1
+  GiB block descriptors at L1) from the runtime fine-grained 4 KiB
+  page tables (`PageTable.lean` + `VSpaceARMv8.lean`).
+- **RUST-M05**: `gic.rs::init_gic` now invokes
+  `self_check_distributor` after the distributor init: reads register
+  index 8 (`ITARGETSR` for INTID 32, the first writable SPI bank) and
+  verifies it matches the pattern written during init. Mismatch halts
+  the core via WFE-loop — the kernel cannot use a faulty GIC
+  distributor, and the WFE-loop is more diagnostic-friendly than
+  booting with broken interrupt routing.
+- **RUST-M06**: covered by AN1-C; no AN8 work.
+- **RUST-M07**: new `cache::memory_fence()` helper provides a pure
+  DSB ISH for callers that want a memory-ordering point without
+  cache-line maintenance. `cache_range`'s empty-range path delegates
+  to it. **2 new tests** verify host-side compilation.
+- **RUST-M08**: `IpcBuffer` audited end-to-end and confirmed live;
+  module-level docstring documents the production consumers
+  (`sched_context_configure`, `service_register`).
+
+### AN8-E — Rust LOW batch (R-HAL-L1..L11)
+
+- **R-HAL-L1**: `gicd::ICENABLER_BASE` retained with forward-reference
+  comment for the future selective-disable paths landing in AN9-F.
+- **R-HAL-L2**: 52-line AK4-H audit-notes block extracted from
+  `sele4n-types/src/lib.rs` to `docs/AUDIT_NOTES.md`; `lib.rs` keeps a
+  single-paragraph cross-reference.
+- **R-HAL-L3**: `sele4n-hal/Cargo.toml` `cc` build-dep pinned to
+  `1.2` matching the resolved version in Cargo.lock.
+- **R-HAL-L4**: `init_with_baud` non-standard-baud silent-rounding
+  documented (PL011 ±1.5% spec at non-multiple-divisor baud rates).
+- **R-HAL-L5**: `interrupts::disable_interrupts` DAIF read-before-mask
+  ordering rationale documented (saved value must be pre-mask).
+- **R-HAL-L6**: `link.ld` `.bss` ALIGN(4096) cross-references
+  `mmu.rs::PageTableCell` `#[repr(align(4096))]`.
+- **R-HAL-L7**: `boot.rs::rust_boot_main` `#[no_mangle]` symbol-resolution
+  contract documented (linker resolves `boot.S`'s `bl rust_boot_main`).
+- **R-HAL-L8**: `mmio.rs` Rust 1.85 MSRV migration tracked as a
+  post-1.0 hygiene item.
+- **R-HAL-L9**: `boot.rs::set_vbar` adds runtime `debug_assert_eq!`
+  on the 2048-byte alignment of `__exception_vectors` (compile-time
+  check is impossible because the symbol's value is linker-supplied).
+- **R-HAL-L10**: `mmu.rs` extends compile-time `const _: () = assert!(...)`
+  set with `L1_ENTRIES == 512` and `size_of::<BootL1Table>() == 4096`.
+- **R-HAL-L11**: `find-msvc-tools` non-Windows-host status already
+  documented in `THIRD_PARTY_LICENSES.md` §2.
+
+### Gate at v0.30.9 tip (post-audit)
+
+`lake build` (300 jobs, 0 warnings) + `test_smoke.sh` PASS +
+`test_full.sh` PASS + `test_tier0_hygiene.sh` PASS +
+`cargo test --workspace` (**428 tests**, up from 414 baseline — +4
+uart-guard + 2 cpu-mpidr-symbol + ~10 gic-eoi-ordering + 2
+cache-memory-fence + 3 self-check-arithmetic; net +14 vs. baseline,
++6 over the initial AN8 landing because the audit replaced two
+shallow tests with substantive ones) + `cargo clippy --workspace --
+-D warnings` (0 warnings) + `check_version_sync.sh` PASS at 0.30.9 +
+fixture byte-identical to `tests/fixtures/main_trace_smoke.expected`
++ zero `sorry`/`axiom`/`native_decide` in `SeLe4n/` or `Main.lean`.
+**Lean tests**: `lake exe interrupt_dispatch_suite` reports **16
+checks PASS** (up from 12 — +4 from T11 sentinel-preservation +
+T13 theorem-witness verification). **Next**: AN9 (hardware-binding
+closure) per plan §12 — depends on AN6 + AN8 both landing.
+
+---
+
 ## v0.30.8 — WS-AN Phase AN7 (Platform / API)
 
 v0.30.8 patch release bundles **WS-AN Phase AN7** per

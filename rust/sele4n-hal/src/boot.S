@@ -31,13 +31,19 @@ _start:
     //
     // Mask 0x00FFFFFF = bits [23:0]. Bits 24 (MT) and 30 (U) are
     // INTENTIONALLY excluded — they are not part of the core identifier.
-    // Mirrors `cpu::MPIDR_CORE_ID_MASK`.
+    //
+    // AN8-B (H-18): The mask is pulled from the Rust `.rodata` symbol
+    // `MPIDR_CORE_ID_MASK_SYM` (cpu.rs) via `adrp` + `ldr` instead of an
+    // assembly-side literal. This keeps the Rust constant as the single
+    // source of truth — any future edit to `MPIDR_CORE_ID_MASK` in Rust
+    // automatically propagates here without manual assembly updates.
+    // The `build.rs` scanner rejects any regression to the old
+    // `mov x2, #0xFFFF ; movk x2, #0xFF, lsl #16` literal pattern.
     // =====================================================================
     mrs     x1, mpidr_el1
-    // AArch64 immediate encoding cannot fit 0xFFFFFF directly; build it.
-    mov     x2, #0xFFFF
-    movk    x2, #0xFF, lsl #16
-    and     x1, x1, x2              // x1 = MPIDR & 0x00FFFFFF
+    adrp    x2, MPIDR_CORE_ID_MASK_SYM
+    ldr     x2, [x2, :lo12:MPIDR_CORE_ID_MASK_SYM]
+    and     x1, x1, x2              // x1 = MPIDR & MPIDR_CORE_ID_MASK
     cbnz    x1, .L_secondary_spin   // If not cluster 0 core 0, park
 
     // =====================================================================

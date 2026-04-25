@@ -8,13 +8,20 @@
 //! Phase 4: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.30.8";
+const KERNEL_VERSION: &str = "0.30.9";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
 ///
 /// This function must never return. If the kernel main returns (which it
 /// shouldn't), we enter an infinite WFE loop.
+///
+/// AN8-E (R-HAL-L7): `#[no_mangle]` exports the symbol with the literal
+/// name `rust_boot_main`. The assembly stub in `boot.S` references it via
+/// `bl rust_boot_main`, so the linker resolves the call at link time
+/// against this Rust definition. If a future refactor renames this
+/// function, `boot.S` must be updated in lockstep — `cargo build` would
+/// fail with an unresolved-symbol error before any binary is produced.
 #[no_mangle]
 pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
     // -----------------------------------------------------------------------
@@ -103,6 +110,19 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
 ///
 /// The vector table is defined in `vectors.S` and exported as
 /// `__exception_vectors`. It must be 2048-byte aligned per ARM ARM D1.10.2.
+///
+/// AN8-E (R-HAL-L9): The 2048-byte alignment of `__exception_vectors`
+/// is enforced at the assembly level by the `.balign 2048` directive in
+/// `vectors.S` and reinforced by the linker's section ordering in
+/// `link.ld` (`.text.vectors : ALIGN(2048) { ... }`). A compile-time
+/// `assert_eq!(align_of_val(...) % 2048, 0)` would require accessing
+/// the linker-provided symbol's value at compile time, which Rust does
+/// not currently support; the check is therefore deferred to runtime
+/// via `write_vbar_el1` (ARM ARM D17.2.135 mandates that VBAR_EL1
+/// writes with mis-aligned values are UNDEFINED, so a misalignment
+/// would manifest as an immediate Synchronous Exception on the next
+/// ERET — a hard halt that's easier to diagnose than a silent
+/// boot-loop).
 fn set_vbar() {
     #[cfg(target_arch = "aarch64")]
     {
@@ -112,6 +132,13 @@ fn set_vbar() {
         // SAFETY: __exception_vectors is a linker-provided symbol defined in
         // vectors.S with .balign 2048. We're reading its address, not its value.
         let vbar = unsafe { &raw const __exception_vectors as u64 };
+        // AN8-E (R-HAL-L9): runtime alignment check before VBAR_EL1 write.
+        // ARM ARM D17.2.135: VBAR_EL1 bits [10:0] are RES0 — a misaligned
+        // address produces an UNDEFINED instruction on the next exception
+        // entry. We catch this here so the kernel halts in a debuggable
+        // state rather than at exception time.
+        debug_assert_eq!(vbar % 2048, 0,
+            "exception vector table must be 2048-byte aligned (ARM ARM D1.10.2)");
         crate::registers::write_vbar_el1(vbar);
     }
     crate::barriers::dsb_sy();

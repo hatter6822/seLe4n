@@ -18,6 +18,22 @@
 //! (`ipcBuffer : VAddr` in Lean).
 //!
 //! Lean: `SeLe4n/Model/Object/Types.lean` — `TCB.ipcBuffer : VAddr`.
+//!
+//! # AN8-D (RUST-M08) consumer status
+//!
+//! The audit's RUST-M08 asked whether `IpcBuffer` is still a stub or has
+//! a live consumer. The answer is **live**: this type is consumed by the
+//! production syscall wrappers
+//! - `sele4n_sys::sched_context_configure` (writes the 5th argument
+//!   `domain` into IPC buffer overflow slot 0 — see
+//!   `rust/sele4n-sys/src/sched_context.rs`),
+//! - `sele4n_sys::service_register` (writes the 5th argument
+//!   `requires_grant` into IPC buffer overflow slot 0 — see
+//!   `rust/sele4n-sys/src/service.rs`).
+//!
+//! Both follow the AK4-A IPC-buffer overflow merge contract documented
+//! in `SeLe4n/Kernel/Architecture/IpcBufferRead.lean`. The type is NOT
+//! gated behind a feature flag.
 
 use sele4n_types::KernelError;
 
