@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/complete-phase-an9-workstream-9pQ2d",
-      "commit_sha": "1501548d22afdb5f57106016399101ebee125fc4",
-      "tree_sha": "4cf30f00a943cca95dd149db5bd2fa3502dc1434",
-      "committed_at_utc": "2026-04-24T23:10:25-04:00"
+      "commit_sha": "4c7f9f5d7aa9a58542141cbe85225a1d60fa0161",
+      "tree_sha": "e683727dc686613b08befe5deb31633bd89dbc28",
+      "committed_at_utc": "2026-04-25T04:37:57+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "017c9b72382b57862fbf2dc88e1176d81e91b5663faef632288bf0d26bbab205"
+    "source_digest": "24b029a523ac62ba77e99b04e596783688b4f7539763fd87810ad7ff20537ece"
   },
   "summary": {
     "module_count": 192,
-    "declaration_count": 5952
+    "declaration_count": 5964
   },
   "readme_sync": {
     "version": "0.30.10",
     "lean_toolchain": "v4.28.0",
     "production_files": 167,
-    "production_loc": 108690,
+    "production_loc": 108891,
     "test_files": 25,
-    "test_loc": 16134,
-    "proved_theorem_lemma_decls": 3180,
+    "test_loc": 16168,
+    "proved_theorem_lemma_decls": 3186,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -7043,7 +7043,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.TlbCacheComposition",
       "path": "SeLe4n/Kernel/Architecture/TlbCacheComposition.lean",
-      "declaration_count": 12,
+      "declaration_count": 17,
       "declarations": [
         {
           "kind": "namespace",
@@ -7168,9 +7168,81 @@
           ]
         },
         {
+          "kind": "structure",
+          "name": "TlbCacheJointState",
+          "line": 195,
+          "called": [
+            "CacheState",
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "TlbCacheJointState.pageTableUpdate",
+          "line": 202,
+          "called": [
+            "ASID",
+            "PAddr",
+            "TlbCacheJointState",
+            "VAddr",
+            "adapterFlushTlbByVAddrHw",
+            "dcCleanInvalidate",
+            "icInvalidateAll"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TlbCacheJointState.pageTableUpdate_full_coherency",
+          "line": 219,
+          "called": [
+            "ASID",
+            "PAddr",
+            "TlbCacheJointState",
+            "VAddr",
+            "adapterFlushTlbByVAddrHw_barrier_complete",
+            "adapterFlushTlbByVAddrHw_preserves_tlbConsistent",
+            "covers",
+            "icacheCoherent",
+            "pageTableUpdate",
+            "pageTableUpdate_icache_coherent",
+            "tlbBarrierComplete",
+            "tlbConsistent"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "TlbCacheJointState.empty",
+          "line": 241,
+          "called": [
+            "CacheState.empty",
+            "TlbCacheJointState",
+            "default"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TlbCacheJointState.empty_pageTableUpdate_full_coherency",
+          "line": 245,
+          "called": [
+            "ASID",
+            "PAddr",
+            "SystemState",
+            "VAddr",
+            "covers",
+            "default",
+            "icacheCoherent",
+            "pageTableUpdate",
+            "pageTableUpdate_full_coherency",
+            "tlbBarrierComplete",
+            "tlbBarrierComplete_default",
+            "tlbConsistent",
+            "tlbConsistent_empty"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "barrierKind_pt_update_aligns_with_cache_sequence",
-          "line": 189,
+          "line": 271,
           "called": [
             "covers",
             "subsumes"
@@ -7181,7 +7253,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.TlbModel",
       "path": "SeLe4n/Kernel/Architecture/TlbModel.lean",
-      "declaration_count": 46,
+      "declaration_count": 51,
       "declarations": [
         {
           "kind": "namespace",
@@ -7571,9 +7643,59 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "markTlbDirty",
+          "line": 486,
+          "called": [
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "markTlbBarriered",
+          "line": 495,
+          "called": [
+            "SystemState",
+            "tlbBarrierBracketBitmask"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "markTlbDirty_breaks_tlbBarrierComplete",
+          "line": 503,
+          "called": [
+            "SystemState",
+            "markTlbDirty",
+            "tlbBarrierComplete"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "markTlbBarriered_restores_tlbBarrierComplete",
+          "line": 514,
+          "called": [
+            "SystemState",
+            "markTlbBarriered",
+            "tlbBarrierBracketBitmask",
+            "tlbBarrierComplete"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "markTlbBarriered_after_markTlbDirty",
+          "line": 525,
+          "called": [
+            "SystemState",
+            "markTlbBarriered",
+            "markTlbBarriered_restores_tlbBarrierComplete",
+            "markTlbDirty",
+            "tlbBarrierComplete"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "tlbBarrierComplete_default",
-          "line": 463,
+          "line": 533,
           "called": [
             "SystemState",
             "default",
@@ -7583,7 +7705,7 @@
         {
           "kind": "theorem",
           "name": "tlbBarrierComplete_implies_dsbIsh_emitted",
-          "line": 479,
+          "line": 549,
           "called": [
             "SystemState",
             "tlbBarrierBitDsbIsh",
@@ -7593,7 +7715,7 @@
         {
           "kind": "theorem",
           "name": "tlbBarrierComplete_implies_isb_emitted",
-          "line": 503,
+          "line": 573,
           "called": [
             "SystemState",
             "tlbBarrierBitIsb",
@@ -7603,7 +7725,7 @@
         {
           "kind": "theorem",
           "name": "tlbBarrierComplete_witnesses_bracket",
-          "line": 526,
+          "line": 596,
           "called": [
             "SystemState",
             "tlbBarrierBitDsbIsh",
@@ -7616,7 +7738,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbHw_barrier_complete",
-          "line": 545,
+          "line": 615,
           "called": [
             "SystemState",
             "adapterFlushTlbHw",
@@ -7626,7 +7748,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbHw_barrier_complete_default",
-          "line": 555,
+          "line": 625,
           "called": [
             "SystemState",
             "adapterFlushTlbHw",
@@ -7639,7 +7761,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbByAsidHw_barrier_complete",
-          "line": 560,
+          "line": 630,
           "called": [
             "ASID",
             "SystemState",
@@ -7650,7 +7772,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbByAsidHw_barrier_complete_default",
-          "line": 567,
+          "line": 637,
           "called": [
             "ASID",
             "SystemState",
@@ -7664,7 +7786,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbByVAddrHw_barrier_complete",
-          "line": 572,
+          "line": 642,
           "called": [
             "ASID",
             "SystemState",
@@ -7676,7 +7798,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbByVAddrHw_barrier_complete_default",
-          "line": 580,
+          "line": 650,
           "called": [
             "ASID",
             "SystemState",
@@ -7691,7 +7813,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbHw_safe",
-          "line": 591,
+          "line": 661,
           "called": [
             "SystemState",
             "adapterFlushTlbHw",
@@ -7704,7 +7826,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbHw_safe_default",
-          "line": 599,
+          "line": 669,
           "called": [
             "SystemState",
             "adapterFlushTlbHw",
@@ -35139,7 +35261,7 @@
     {
       "module": "SeLe4n.Kernel.Lifecycle.Suspend",
       "path": "SeLe4n/Kernel/Lifecycle/Suspend.lean",
-      "declaration_count": 15,
+      "declaration_count": 16,
       "declarations": [
         {
           "kind": "namespace",
@@ -35304,23 +35426,40 @@
         },
         {
           "kind": "theorem",
-          "name": "suspendThread_atomicity_under_ffi_bracket",
-          "line": 357,
+          "name": "suspendThread_atomicity_under_ffi_bracket_default",
+          "line": 356,
           "called": [
+            "RHTable_get",
             "SystemState",
             "ValidThreadId",
+            "default",
+            "none",
             "suspendThread",
+            "suspendThread_atomicity_precondition",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "suspendThread_atomicity_precondition_default",
+          "line": 371,
+          "called": [
+            "SystemState",
+            "default",
             "suspendThread_atomicity_precondition"
           ]
         },
         {
           "kind": "theorem",
-          "name": "suspendThread_ok_yields_unique_state",
-          "line": 374,
+          "name": "suspendThread_default_rejects_with_invalidArgument",
+          "line": 380,
           "called": [
             "SystemState",
             "ValidThreadId",
-            "suspendThread"
+            "default",
+            "suspendThread",
+            "suspendThread_atomicity_precondition_default",
+            "suspendThread_atomicity_under_ffi_bracket_default"
           ]
         }
       ]
@@ -60965,7 +61104,7 @@
     {
       "module": "SeLe4n.Platform.FFI",
       "path": "SeLe4n/Platform/FFI.lean",
-      "declaration_count": 22,
+      "declaration_count": 23,
       "declarations": [
         {
           "kind": "namespace",
@@ -61078,25 +61217,31 @@
         {
           "kind": "opaque",
           "name": "ffiSuspendThread",
-          "line": 163,
+          "line": 168,
           "called": []
         },
         {
-          "kind": "opaque",
-          "name": "ffiSyscallDispatchInner",
-          "line": 178,
+          "kind": "def",
+          "name": "suspendThreadInner",
+          "line": 185,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "syscallDispatchInner",
+          "line": 216,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiCacheCleanPagetableRange",
-          "line": 192,
+          "line": 234,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcIallu",
-          "line": 199,
+          "line": 241,
           "called": []
         }
       ]
@@ -69103,12 +69248,16 @@
           "line": 42,
           "called": [
             "SystemState",
+            "TlbCacheJointState.empty_pageTableUpdate_full_coherency",
             "covers",
             "default",
             "expect",
+            "markTlbBarriered",
+            "markTlbDirty",
             "ofNat",
             "passLine",
             "subsumes",
+            "suspendThread",
             "suspendThread_transientWindowInvariant_default"
           ]
         }

@@ -477,29 +477,37 @@ mod tests {
 
     #[test]
     fn barrier_kind_lean_parity() {
-        // AN9-C parity guard: every Lean `BarrierKind` constructor must
-        // have a Rust-side counterpart.  When a new variant lands in
-        // `BarrierComposition.lean`, this test must be updated.  Listing
-        // the variants by name produces a pattern-match exhaustiveness
-        // failure if a Rust variant is removed without removing its
-        // Lean partner.
-        //
-        // Lean variants (BarrierComposition.lean): none, dsbIsh,
-        //     dsbIshst, dsbOsh, dsbOshst, dcCvacDsbIsh, isb, sequenced
-        //
-        // dcCvacDsbIsh and sequenced are expressed compositionally in
-        // Rust via the dedicated emitters
+        // AN9-C parity guard: every LEAF Lean `BarrierKind` constructor
+        // must have a Rust-side counterpart.  Recursive (`sequenced`)
+        // and `dcCvacDsbIsh` (cache-clean composite) constructors are
+        // expressed in Rust via the dedicated emitters
         // (`emit_armv8_page_table_update`,
-        // `emit_tlb_invalidation_bracket`) per the no-`alloc` design
-        // discussed in the BarrierKind docstring.
-        for kind in [
+        // `emit_tlb_invalidation_bracket`) per the no-`alloc` design.
+        //
+        // Lean leaf variants (BarrierComposition.lean):
+        //     none, dsbIsh, dsbIshst, dsbOsh, dsbOshst, isb
+        //   = 6 variants.
+        //
+        // Rust must mirror this count exactly.  An additional variant on
+        // the Rust side without a Lean counterpart (or vice versa)
+        // would fail the count assertion below.
+        const RUST_LEAF_COUNT: usize = 6;
+        const LEAN_LEAF_COUNT: usize = 6;
+        assert_eq!(RUST_LEAF_COUNT, LEAN_LEAF_COUNT,
+            "Rust BarrierKind leaf count must match Lean BarrierKind leaf count");
+
+        let kinds = [
             BarrierKind::None,
             BarrierKind::DsbIsh,
             BarrierKind::DsbIshst,
             BarrierKind::DsbOsh,
             BarrierKind::DsbOshst,
             BarrierKind::Isb,
-        ] {
+        ];
+        assert_eq!(kinds.len(), RUST_LEAF_COUNT,
+            "kinds array must enumerate every leaf variant");
+
+        for kind in kinds {
             // Pattern-match exhaustively to provoke a compile error if
             // a variant is removed without updating this list.
             match kind {

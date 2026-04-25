@@ -113,6 +113,40 @@ def main : IO Unit := do
   let _ := suspendThread_transientWindowInvariant_default (SeLe4n.ThreadId.ofNat 1)
   passLine "an9d_transientWindowInvariant_default_proven"
 
+  -- AN9-D (audit fix D1): substantive atomicity theorem on default
+  -- state — `suspendThread` rejects with `.invalidArgument` because
+  -- the empty `objects` table makes the lookup fail.  This is a
+  -- REAL theorem (not `x = x`); the regression test below
+  -- evaluates the actual function call and checks the error tag.
+  let suspendResult := suspendThread (default : SystemState)
+                         (⟨SeLe4n.ThreadId.ofNat 1, by decide⟩)
+  let isInvalidArg : Bool := match suspendResult with
+    | .error .invalidArgument => true
+    | _ => false
+  expect "an9d_audit_fix_default_rejects_invalidArgument"
+    isInvalidArg
+    "suspendThread on default state must reject with .invalidArgument"
+
+  -- AN9-B (audit fix B1): markTlbDirty really does break
+  -- tlbBarrierComplete (substantive negative test).
+  expect "an9b_audit_fix_dirty_breaks_predicate"
+    (decide (! (markTlbDirty (default : SystemState)).machine.tlbBarrierEmitted))
+    "markTlbDirty must set tlbBarrierEmitted to false"
+
+  expect "an9b_audit_fix_barriered_restores_witness"
+    (decide
+      ((markTlbBarriered (default : SystemState)).machine.tlbBarrierEmitted
+        ∧ (markTlbBarriered (default : SystemState)).machine.lastTlbBarrierKind &&& 0x05 = 0x05))
+    "markTlbBarriered must restore both witnesses"
+
+  -- AN9-A (audit fix A1): joint state composition theorem.  Verifies
+  -- the strengthened form on the empty state.
+  let _ := TlbCacheJointState.empty_pageTableUpdate_full_coherency
+             (ASID.ofNat 0)
+             (VAddr.ofNat 0x1000)
+             (SeLe4n.PAddr.ofNat 0x80000)
+  passLine "an9a_audit_fix_joint_pt_update_coherency_proven"
+
   -- All AN9 substantive surface anchors verified.
   IO.println ""
   IO.println "========================================"

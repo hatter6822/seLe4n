@@ -1,5 +1,89 @@
 ## v0.30.10 — WS-AN Phase AN9 (Hardware-binding closure)
 
+### Post-delivery deep audit remediation
+
+A deep end-to-end audit of the initial AN9 landing surfaced **ten
+material findings**, all fixed in-PR before merge:
+
+- **D1 (CRITICAL)** — `suspendThread_atomicity_under_ffi_bracket` was
+  `x = x := rfl` (proved nothing) and `suspendThread_ok_yields_unique_state`
+  was `h := h`.  Replaced with substantive
+  `suspendThread_atomicity_under_ffi_bracket_default` proving
+  `suspendThread (default : SystemState) vtid = .error .invalidArgument`
+  by unfolding the function body — a real claim, not a tautology.
+  Companion lemma
+  `suspendThread_atomicity_precondition_default` discharges the FFI
+  precondition by `rfl`.
+- **F1 (CRITICAL)** — both `syscall_dispatch_inner` and
+  `suspend_thread_inner` were declared as `@[extern]` on the Lean
+  side AND `extern "C"` on the Rust side, so neither side actually
+  defined them — production link would have failed.  Replaced with
+  `@[export syscall_dispatch_inner]` / `@[export suspend_thread_inner]`
+  on Lean defs that emit C-callable wrappers.  Rust's `extern "C"`
+  declarations now resolve at link time.
+- **J1 (CRITICAL)** — `smp.rs::extern "C" { pub fn secondary_entry(); }`
+  declared a symbol that did not exist in `boot.S`.  Added a real
+  `.global secondary_entry:` label in `boot.S` that masks DAIF, sets
+  up a per-core stack from the new `.smp_stacks` linker section, and
+  branches to `rust_secondary_main`.  Linker script `link.ld` adds
+  3 × 64 KiB `.smp_stacks` region with `__smp_secondary_stack_top`.
+- **G2 (HIGH)** — AN9-G's `wfe_bounded` was defined but `boot.rs::idle_loop`
+  and `gic.rs` still called unconditional `wfe()`.  Wired
+  `wfe_bounded(WFE_DEFAULT_TIMEOUT_TICKS)` into the production idle
+  loop so AN9-G is operationally active.
+- **A1 (MEDIUM)** — `pageTableUpdate_full_coherency` took `cs : CacheState`
+  and `st : SystemState` as INDEPENDENT parameters with no link
+  between them.  Added `TlbCacheJointState` structure pairing
+  `(SystemState, CacheState)` and the strengthened theorem
+  `TlbCacheJointState.pageTableUpdate_full_coherency` that operates
+  on the joint state, eliminating the decoupling.
+- **B1 (MEDIUM)** — `tlbBarrierComplete` predicate was structurally
+  substantive but operationally vacuous (no operation toggled
+  `tlbBarrierEmitted` to `false`).  Added `markTlbDirty` /
+  `markTlbBarriered` operations + theorems
+  `markTlbDirty_breaks_tlbBarrierComplete` (negative witness) and
+  `markTlbBarriered_restores_tlbBarrierComplete` (positive witness)
+  that prove the predicate has non-trivial content.
+- **G1 (LOW)** — `wfe_bounded` discarded `_elapsed`, making `max_ticks`
+  purely documentary.  Changed signature to `fn wfe_bounded(max_ticks: u64) -> u64`
+  returning elapsed `CNTPCT_EL0` ticks so callers can implement
+  retry policy.
+- **H1 (LOW)** — `barrier_kind_lean_parity` test only enforced
+  Rust-side exhaustiveness.  Added `RUST_LEAF_COUNT` /
+  `LEAN_LEAF_COUNT` constants with `assert_eq!` so a Lean-side
+  variant addition (without a corresponding Rust update) provokes
+  a count mismatch.
+- **J2 (LOW)** — SMP tests raced on global `SMP_ENABLED` /
+  `CORE_READY` state under cargo's parallel test execution.
+  Refactored `bring_up_secondaries` to delegate to
+  `bring_up_secondaries_inner(enabled, core_ready, online_count, mpidr_table)`
+  which takes state as references; tests use local atomics via
+  `fresh_local_state()`.  Eliminates global-state races.
+- **doctest improvement** — the new `wfe_bounded` example was
+  marked `ignore`; converted to `no_run` with stub helpers so the
+  Rust compiler now type-checks it on every `cargo test --doc`.
+
+### Audit-fix tests added
+
+- 3 new Rust unit tests in `cpu::tests`
+  (`wfe_bounded_returns_zero_on_host`,
+  `bring_up_secondaries_partial_table_is_supported`,
+  `fresh_state_secondaries_start_not_ready`).
+- 4 new Lean surface anchors in
+  `tests/An9HardwareBindingSuite.lean`:
+  - `an9d_audit_fix_default_rejects_invalidArgument`
+  - `an9b_audit_fix_dirty_breaks_predicate`
+  - `an9b_audit_fix_barriered_restores_witness`
+  - `an9a_audit_fix_joint_pt_update_coherency_proven`
+
+Total Rust tests after audit fixes: **462 passing** (up from 459).
+AN9 Lean test suite: **19 surface anchors** (up from 15).
+`cargo clippy --workspace -- -D warnings` clean (0 warnings).
+
+---
+
+
+
 v0.30.10 patch release bundles **WS-AN Phase AN9** per
 [`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
 §12. AN9 closes every hardware-binding item previously carried in

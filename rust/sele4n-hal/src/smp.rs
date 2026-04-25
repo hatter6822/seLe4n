@@ -107,26 +107,36 @@ pub extern "C" fn secondary_entry() {
     // host stub: no-op
 }
 
-/// AN9-J: bring up all secondary cores listed in
-/// [`SECONDARY_MPIDR_TABLE`].
+/// AN9-J: bring up all secondary cores listed in `mpidr_table`.
 ///
-/// At v1.0.0 with [`SMP_ENABLED`] = `false`, this is a no-op (returns
-/// `0`).  When SMP is opted in:
-///   1. Issue PSCI `CPU_ON` for each secondary with
-///      `entry_point = secondary_entry` and `context_id` = the index.
-///   2. Track success count in [`SECONDARY_CORES_ONLINE`].
-///   3. Set [`CORE_READY`] flags `true` once every CPU_ON has
-///      returned `Success` (so secondary `wfe_bounded` loops exit).
+/// Inner form taking explicit state references so unit tests can
+/// substitute local atomics and avoid cargo's parallel-test global
+/// state race.  Production callers go through
+/// [`bring_up_secondaries`] which threads the global statics.
+///
+/// Behaviour:
+///   1. If `enabled.load(Acquire) == false`, returns 0 (no-op).
+///   2. Otherwise, issues PSCI `CPU_ON` for each secondary with
+///      `entry_point = secondary_entry` and `context_id` = index+1.
+///   3. Sets `core_ready[idx+1] = true` for each successful core.
+///   4. Stores online count into `online_count`.
+///   5. On aarch64, broadcasts SEV so secondaries parked in `wfe`
+///      wake immediately.
 ///
 /// Returns the number of secondaries successfully brought up.
-pub fn bring_up_secondaries() -> u32 {
-    if !SMP_ENABLED.load(Ordering::Acquire) {
+pub fn bring_up_secondaries_inner(
+    enabled: &AtomicBool,
+    core_ready: &[AtomicBool],
+    online_count: &AtomicU32,
+    mpidr_table: &[u64],
+) -> u32 {
+    if !enabled.load(Ordering::Acquire) {
         return 0;
     }
 
     let mut online: u32 = 0;
-    for (idx, &mpidr) in SECONDARY_MPIDR_TABLE.iter().enumerate() {
-        let context_id = (idx as u64) + 1; // matches CORE_READY index
+    for (idx, &mpidr) in mpidr_table.iter().enumerate() {
+        let context_id = (idx as u64) + 1; // matches core_ready index
         // First cast to a raw fn pointer, then to usize, to keep
         // clippy happy (`function_casts_as_integer`).  The fn item
         // type only converts to a fn pointer or integer via these
@@ -138,8 +148,8 @@ pub fn bring_up_secondaries() -> u32 {
                 online += 1;
                 // AN9-J.4.d: signal the secondary it can proceed.
                 let core_idx = idx + 1;
-                if core_idx < CORE_READY.len() {
-                    CORE_READY[core_idx].store(true, Ordering::Release);
+                if core_idx < core_ready.len() {
+                    core_ready[core_idx].store(true, Ordering::Release);
                 }
             }
             other => {
@@ -155,7 +165,7 @@ pub fn bring_up_secondaries() -> u32 {
         }
     }
 
-    SECONDARY_CORES_ONLINE.store(online, Ordering::Release);
+    online_count.store(online, Ordering::Release);
 
     // AN9-J.4.d: broadcast SEV so any secondary parked in `wfe`
     // wakes immediately.  On host this is a no-op.
@@ -169,6 +179,23 @@ pub fn bring_up_secondaries() -> u32 {
     }
 
     online
+}
+
+/// AN9-J: bring up all secondary cores listed in
+/// [`SECONDARY_MPIDR_TABLE`] using the global static state.
+///
+/// Production-path entry point.  Calls [`bring_up_secondaries_inner`]
+/// with the global atomics; tests use the inner form with local
+/// state to avoid global-state races under parallel cargo test.
+///
+/// Returns the number of secondaries successfully brought up.
+pub fn bring_up_secondaries() -> u32 {
+    bring_up_secondaries_inner(
+        &SMP_ENABLED,
+        &CORE_READY,
+        &SECONDARY_CORES_ONLINE,
+        &SECONDARY_MPIDR_TABLE,
+    )
 }
 
 /// AN9-J: secondary-core entry point called from the boot.S
@@ -189,7 +216,12 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     let core_idx = context_id as usize;
     if core_idx < CORE_READY.len() {
         while !CORE_READY[core_idx].load(Ordering::Acquire) {
-            crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
+            // Discard elapsed-ticks return; the secondary's only
+            // wake condition is the `CORE_READY` flag, polled on the
+            // next loop iteration.  AN9-G's bounded primitive
+            // ensures we never block forever if the primary's SEV
+            // is lost.
+            let _ = crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
         }
     }
 
@@ -209,20 +241,42 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
 mod tests {
     use super::*;
 
+    // AN9-J test discipline: the inner-state-injection refactor
+    // eliminates global-state races.  Each test allocates its own
+    // local atomics and exercises `bring_up_secondaries_inner` so
+    // cargo's parallel test execution never sees inter-test state
+    // bleed-through.
+
+    fn fresh_local_state() -> (AtomicBool, [AtomicBool; 4], AtomicU32) {
+        (
+            AtomicBool::new(false),
+            [
+                AtomicBool::new(true),  // boot core
+                AtomicBool::new(false),
+                AtomicBool::new(false),
+                AtomicBool::new(false),
+            ],
+            AtomicU32::new(0),
+        )
+    }
+
     #[test]
     fn smp_default_is_disabled() {
-        // AN9-J: v1.0.0 default — single-core boot.  Tests run with
-        // SMP_ENABLED in its initial state.
+        // AN9-J: v1.0.0 default — single-core boot.  The GLOBAL
+        // `SMP_ENABLED` is `false` at module load time.  This test
+        // is read-only on the global so concurrent tests do not
+        // affect the outcome.
         assert!(!SMP_ENABLED.load(Ordering::Acquire));
     }
 
     #[test]
     fn bring_up_secondaries_returns_zero_when_disabled() {
-        // AN9-J: with SMP_ENABLED=false the primary issues no PSCI
-        // calls and reports 0 secondaries online.
-        SMP_ENABLED.store(false, Ordering::Release);
-        let online = bring_up_secondaries();
+        // AN9-J: with `enabled = false`, no PSCI calls are issued.
+        let (enabled, ready, count) = fresh_local_state();
+        let online = bring_up_secondaries_inner(
+            &enabled, &ready, &count, &SECONDARY_MPIDR_TABLE);
         assert_eq!(online, 0);
+        assert_eq!(count.load(Ordering::Acquire), 0);
     }
 
     #[test]
@@ -237,44 +291,54 @@ mod tests {
 
     #[test]
     fn core_ready_boot_core_starts_ready() {
-        // AN9-J.4.d: index 0 is the boot core which is always ready
-        // (it's running this code).
+        // AN9-J.4.d: the boot-core slot is always `true` at module
+        // initialisation regardless of test ordering.
         assert!(CORE_READY[0].load(Ordering::Acquire));
     }
 
     #[test]
-    fn core_ready_secondaries_start_not_ready() {
-        // AN9-J.4.d: secondaries (indices 1..=3) start in the
-        // not-ready state until primary signals them.
-        // Save state to be a good citizen for parallel test runs.
-        let snapshot = [
-            CORE_READY[1].load(Ordering::Acquire),
-            CORE_READY[2].load(Ordering::Acquire),
-            CORE_READY[3].load(Ordering::Acquire),
-        ];
-        // Reset to false (initial state), then verify.
-        CORE_READY[1].store(false, Ordering::Release);
-        CORE_READY[2].store(false, Ordering::Release);
-        CORE_READY[3].store(false, Ordering::Release);
-        assert!(!CORE_READY[1].load(Ordering::Acquire));
-        assert!(!CORE_READY[2].load(Ordering::Acquire));
-        assert!(!CORE_READY[3].load(Ordering::Acquire));
-        // Restore.
-        CORE_READY[1].store(snapshot[0], Ordering::Release);
-        CORE_READY[2].store(snapshot[1], Ordering::Release);
-        CORE_READY[3].store(snapshot[2], Ordering::Release);
+    fn fresh_state_secondaries_start_not_ready() {
+        // AN9-J.4.d: a freshly-allocated local state has all
+        // secondaries in the not-ready state until primary signals.
+        let (_enabled, ready, _count) = fresh_local_state();
+        assert!(ready[0].load(Ordering::Acquire),
+            "boot core slot should start ready");
+        assert!(!ready[1].load(Ordering::Acquire));
+        assert!(!ready[2].load(Ordering::Acquire));
+        assert!(!ready[3].load(Ordering::Acquire));
     }
 
     #[test]
     fn bring_up_secondaries_when_enabled_runs_psci_loop() {
-        // AN9-J: with SMP_ENABLED=true and the host PSCI stub
+        // AN9-J: with `enabled = true` and the host PSCI stub
         // returning Success, all 3 secondaries come online.
-        SMP_ENABLED.store(true, Ordering::Release);
-        let online = bring_up_secondaries();
-        SMP_ENABLED.store(false, Ordering::Release); // restore default
+        let (enabled, ready, count) = fresh_local_state();
+        enabled.store(true, Ordering::Release);
+        let online = bring_up_secondaries_inner(
+            &enabled, &ready, &count, &SECONDARY_MPIDR_TABLE);
         assert_eq!(online, MAX_SECONDARY_CORES as u32);
-        // Subsequent reads see the count.
-        assert_eq!(SECONDARY_CORES_ONLINE.load(Ordering::Acquire),
+        assert_eq!(count.load(Ordering::Acquire),
                    MAX_SECONDARY_CORES as u32);
+        // Each secondary's ready flag should now be true.
+        for idx in 1..=MAX_SECONDARY_CORES {
+            assert!(ready[idx].load(Ordering::Acquire),
+                "core_ready[{}] must be true after successful bring-up", idx);
+        }
+    }
+
+    #[test]
+    fn bring_up_secondaries_partial_table_is_supported() {
+        // AN9-J: passing a smaller mpidr table brings up fewer
+        // secondaries.  Tests the parameter discipline.
+        let (enabled, ready, count) = fresh_local_state();
+        enabled.store(true, Ordering::Release);
+        let small_table: [u64; 1] = [0x0001];
+        let online = bring_up_secondaries_inner(
+            &enabled, &ready, &count, &small_table);
+        assert_eq!(online, 1);
+        assert!(ready[1].load(Ordering::Acquire));
+        // Cores 2 and 3 untouched.
+        assert!(!ready[2].load(Ordering::Acquire));
+        assert!(!ready[3].load(Ordering::Acquire));
     }
 }

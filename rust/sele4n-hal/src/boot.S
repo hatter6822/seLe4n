@@ -15,6 +15,7 @@
 
 .section .text.boot, "ax"
 .global _start
+.global secondary_entry
 
 _start:
     // =====================================================================
@@ -111,4 +112,59 @@ _start:
 // =========================================================================
 .L_secondary_spin:
     wfe
+    b       .L_secondary_spin
+
+// =========================================================================
+// AN9-J (DEF-R-HAL-L20): Secondary-core entry point
+//
+// PSCI CPU_ON (psci.rs::cpu_on) jumps here on each secondary core after
+// the primary issues `hvc #0` with PSCI function id 0xC4000003.  The
+// firmware sets up x0 = context_id (passed as the third PSCI argument).
+//
+// Responsibilities:
+//   1. Mask interrupts (DAIF = 0xF) so the secondary cannot take an
+//      asynchronous trap before its trap-frame storage is set up.
+//   2. Set up a per-core stack.  At v1.0.0 with SMP_ENABLED=false this
+//      symbol is never reached at runtime; we still need to provide a
+//      working stack so that the linker resolves the address and so
+//      that opting into SMP at deployment time does not require an
+//      assembly rebuild.  Per-core stack regions are allocated in the
+//      `.bss.smp_stacks` section by `smp.rs` and selected by
+//      `(context_id - 1) * 0x10000` (64 KiB per secondary).
+//   3. Branch to `rust_secondary_main(context_id)` which performs the
+//      remaining per-core initialisation (MMU, GIC, ready-flag spin).
+//
+// Each secondary core is responsible for its own MMU + GIC bring-up
+// inside `rust_secondary_main`; this assembly stub is purely the
+// entry-point shim PSCI requires.
+//
+// AN9-J test discipline: the `bring_up_secondaries` host stub does
+// NOT call this function (it cannot — there is no actual core to wake
+// on host).  The symbol is reachable only via the production-build
+// PSCI HVC path on aarch64 firmware.
+// =========================================================================
+secondary_entry:
+    // Step 1: mask all maskable interrupts.  PSCI returns with DAIF
+    // unset on some firmwares; do not assume.
+    msr     daifset, #0xf
+
+    // Step 2: per-core stack.  Use `__smp_secondary_stack_top` defined
+    // by the linker script + offset by (context_id - 1) * 64 KiB.
+    // Since context_id is in x0, offset = (x0 - 1) * 0x10000.
+    sub     x1, x0, #1               // x1 = secondary index (0..=2)
+    lsl     x1, x1, #16              // x1 = index * 0x10000 (64 KiB)
+    adrp    x2, __smp_secondary_stack_top
+    add     x2, x2, :lo12:__smp_secondary_stack_top
+    sub     sp, x2, x1               // sp = stack_top - offset
+    and     sp, sp, #~0xF            // ensure 16-byte alignment
+
+    // Step 3: jump to Rust per-core init with the original context_id.
+    //
+    // Note: x0 already holds context_id from the PSCI calling
+    // convention (DEN0022D §5.1.7), so no register reshuffle is
+    // needed — Rust's `extern "C"` ABI takes the first argument in x0.
+    bl      rust_secondary_main
+
+    // rust_secondary_main is `-> !` so this should be unreachable.
+    // If we ever fall through, halt the core in a low-power loop.
     b       .L_secondary_spin

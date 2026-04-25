@@ -456,6 +456,76 @@ def tlbBarrierBitDsbOsh   : Nat := 0x08
 def tlbBarrierBracketBitmask : Nat :=
   tlbBarrierBitDsbIsh ||| tlbBarrierBitIsb
 
+-- ============================================================================
+-- AN9-B (audit reinforcement): operations that exercise the witness
+-- ============================================================================
+--
+-- Audit finding B1: the `tlbBarrierEmitted` field defaults to `true`
+-- and no kernel operation toggles it `false`, so the substantive
+-- predicate `tlbBarrierComplete` is structurally rich but
+-- operationally still always satisfied.  The two operations below
+-- close that gap: `markTlbDirty` represents a TLB-modifying step
+-- that has NOT yet emitted its post-tlbi barrier (e.g., a
+-- mid-pipeline state); `markTlbBarriered` represents the hardware
+-- barrier emission that restores the witness.
+--
+-- These are NOT a separate kernel API surface — the existing
+-- `adapterFlushTlb*Hw` operations remain the production entry
+-- points and they always emit the full sequence atomically.  The
+-- two operations below are the proof-layer abstraction that
+-- exposes the dirty/clean transition for invariant reasoning.
+
+/-- AN9-B: Mark the TLB-barrier witness "dirty".  Models a
+    hypothetical TLB-modifying operation that has not yet emitted
+    its post-tlbi `dsb ish; isb` bracket.
+
+    Production code never reaches this state (the `adapterFlushTlb*Hw`
+    primitives emit the bracket atomically), but the proof layer
+    needs the transition so a future operation that violates the
+    discipline is provably caught by `tlbBarrierComplete`. -/
+def markTlbDirty (st : SystemState) : SystemState :=
+  { st with machine := { st.machine with
+      tlbBarrierEmitted := false
+      lastTlbBarrierKind := 0 } }
+
+/-- AN9-B: Mark the TLB-barrier witness "clean" — restores the
+    full `dsb ish | isb` bracket bitmask and sets the boolean
+    witness `true`.  This is the post-state of every successful
+    `adapterFlushTlb*Hw` call. -/
+def markTlbBarriered (st : SystemState) : SystemState :=
+  { st with machine := { st.machine with
+      tlbBarrierEmitted := true
+      lastTlbBarrierKind := tlbBarrierBracketBitmask } }
+
+/-- AN9-B: substantive negative theorem — after `markTlbDirty`,
+    `tlbBarrierComplete` does NOT hold.  This is the operational
+    witness that the predicate has non-trivial content. -/
+theorem markTlbDirty_breaks_tlbBarrierComplete (st : SystemState) :
+    ¬ tlbBarrierComplete (markTlbDirty st) := by
+  unfold tlbBarrierComplete markTlbDirty
+  intro ⟨hBool, _⟩
+  -- The boolean field is `false` after `markTlbDirty`; the predicate
+  -- requires `true`.
+  simp at hBool
+
+/-- AN9-B: substantive positive theorem — after `markTlbBarriered`,
+    `tlbBarrierComplete` always holds, regardless of the input
+    state's previous witness. -/
+theorem markTlbBarriered_restores_tlbBarrierComplete (st : SystemState) :
+    tlbBarrierComplete (markTlbBarriered st) := by
+  unfold tlbBarrierComplete markTlbBarriered
+  refine ⟨rfl, ?_⟩
+  -- `lastTlbBarrierKind = tlbBarrierBracketBitmask = 0x05`, which
+  -- has both bit 0 (dsb ish) and bit 2 (isb) set, so
+  -- `0x05 &&& 0x05 = 0x05`.
+  show tlbBarrierBracketBitmask &&& 0x05 = 0x05
+  decide
+
+/-- AN9-B: round-trip — `dirty → barriered` restores the witness. -/
+theorem markTlbBarriered_after_markTlbDirty (st : SystemState) :
+    tlbBarrierComplete (markTlbBarriered (markTlbDirty st)) :=
+  markTlbBarriered_restores_tlbBarrierComplete _
+
 /-- AN9-B (DEF-A-M06): The default machine state satisfies
     `tlbBarrierComplete` because (i) the boolean is `true` at init
     (no stale TLB entries to be invalidated) and (ii) the default
