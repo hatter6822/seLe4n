@@ -127,18 +127,18 @@ ARM Architecture Reference Manual.
 
 | Module | Purpose | Key Items |
 |--------|---------|-----------|
-| `cpu` | CPU instructions | `wfe`, `wfi`, `nop`, `eret`, `current_core_id` |
+| `cpu` | CPU instructions | `wfe`, `wfi`, `nop`, `eret`, `current_core_id`, **`MPIDR_CORE_ID_MASK_SYM`** shared linker symbol (AN8-B v0.30.9 — H-18; replaces literal `mov`/`movk` in `boot.S`) |
 | `barriers` | Memory barriers | `dmb_ish/sy`, `dsb_ish/sy`, `isb` |
 | `registers` | System register I/O | `read_sysreg!`/`write_sysreg!` macros, 11 typed accessors |
-| `uart` | PL011 UART driver | `Uart` struct, `kprint!`/`kprintln!` macros, 0xFE201000 base, `UartLock` spinlock (AI1-D), `UnsafeCell`-based safe static (AJ5-B) |
+| `uart` | PL011 UART driver | `Uart` struct, `kprint!`/`kprintln!` macros, 0xFE201000 base, `UartLock` spinlock (AI1-D), `UnsafeCell`-based safe static (AJ5-B), **`UartGuard<'a>` RAII pattern** (AN8-A v0.30.9 — H-17) |
 | `mmu` | MMU configuration | MAIR/TCR/TTBR/SCTLR, identity-mapped L1 boot tables |
 | `trap` | Exception dispatch | `TrapFrame` (272 bytes), ESR EC routing, SVC/IRQ/SError handlers, `error_code` constants (AI1-A/B) |
 | `boot` | Boot sequence | `_start` → BSS zero → stack → UART → MMU → VBAR → idle |
-| `gic` | GIC-400 driver | Distributor + CPU interface init, acknowledge/dispatch/EOI, `dispatch_irq<F>()` (AG5) |
+| `gic` | GIC-400 driver | Distributor + CPU interface init, acknowledge/dispatch/EOI, `dispatch_irq<F>()` (AG5), **EOI-before-handler ordering** (AN8-C v0.30.9 — H-19, audit Option b), boot-time `self_check_distributor` (AN8-D RUST-M05) |
 | `timer` | ARM Generic Timer | 54 MHz counter, 1000 Hz tick, `reprogram_timer()`, `increment_tick_count()` (AG5), `TimerError` result type (AJ5-C), `pub(crate)` tick visibility (AJ5-D) |
 | `interrupts` | Interrupt management | `disable_interrupts`/`restore_interrupts`/`enable_irq`, DAIF register (AG5) |
 | `tlb` | TLB maintenance | TLBI VMALLE1/VAE1/ASIDE1/VALE1 + DSB ISH + ISB (AG6) |
-| `cache` | Cache maintenance | DC CIVAC/CVAC/IVAC/ZVA, IC IALLU/IALLUIS, aligned `cache_range` (AG6) |
+| `cache` | Cache maintenance | DC CIVAC/CVAC/IVAC/ZVA, IC IALLU/IALLUIS, aligned `cache_range` (AG6), **`memory_fence()`** pure DSB ISH helper (AN8-D v0.30.9 — RUST-M07) |
 | `mmio` | MMIO volatile I/O | `mmio_read32/write32/read64/write64`, runtime alignment `assert!` (AJ5-A) |
 | `ffi` | Lean FFI bridge | 17 `#[no_mangle] extern "C"` exports for timer, GIC, TLB, MMIO, UART, interrupts (AG7) |
 | `profiling` | Performance profiling | `LatencyStats`, PMCCNTR_EL0 cycle counter (AG9) |

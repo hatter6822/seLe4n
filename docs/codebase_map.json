@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/complete-phase-an7-api-yUFCY",
-      "commit_sha": "d2d79b496f4edd1bf039a01aaa661ee31a74f55a",
-      "tree_sha": "5cfcfe6dabc861fe75e8cf1376e6fa827c380b11",
-      "committed_at_utc": "2026-04-24T21:00:13+00:00"
+      "branch": "claude/implement-rust-hal-phase-FwOJu",
+      "commit_sha": "fcbb6dfa437cb63e1dfdfc0086da5655d0dff7f8",
+      "tree_sha": "ab42bda0e14d5aefa66ff9833760a78d516e99be",
+      "committed_at_utc": "2026-04-24T17:30:33-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "4211702e2a4537b8e25f279954a15af6340808fabdf993534bc6329f1c144615"
+    "source_digest": "1ca06455d203e1f52f8830264acf4d7ba354d3b1b5701bdadc36d70b72970599"
   },
   "summary": {
     "module_count": 189,
-    "declaration_count": 5885
+    "declaration_count": 5888
   },
   "readme_sync": {
-    "version": "0.30.8",
+    "version": "0.30.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 165,
-    "production_loc": 107758,
+    "production_loc": 107870,
     "test_files": 24,
-    "test_loc": 15952,
-    "proved_theorem_lemma_decls": 3151,
+    "test_loc": 15983,
+    "proved_theorem_lemma_decls": 3152,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -2577,7 +2577,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.InterruptDispatch",
       "path": "SeLe4n/Kernel/Architecture/InterruptDispatch.lean",
-      "declaration_count": 25,
+      "declaration_count": 26,
       "declarations": [
         {
           "kind": "namespace",
@@ -2700,7 +2700,7 @@
         {
           "kind": "def",
           "name": "interruptDispatchSequence",
-          "line": 204,
+          "line": 223,
           "called": [
             "KernelError",
             "SystemState",
@@ -2713,7 +2713,7 @@
         {
           "kind": "theorem",
           "name": "interruptDispatchSequence_spurious",
-          "line": 230,
+          "line": 253,
           "called": [
             "SystemState",
             "acknowledgeInterrupt",
@@ -2724,7 +2724,7 @@
         {
           "kind": "theorem",
           "name": "interruptDispatchSequence_outOfRange",
-          "line": 237,
+          "line": 260,
           "called": [
             "SystemState",
             "acknowledgeInterrupt",
@@ -2735,7 +2735,7 @@
         {
           "kind": "theorem",
           "name": "endOfInterrupt_non_machine_eq",
-          "line": 248,
+          "line": 271,
           "called": [
             "InterruptId",
             "SystemState",
@@ -2745,7 +2745,7 @@
         {
           "kind": "theorem",
           "name": "endOfInterrupt_removes_from_eoiPending",
-          "line": 256,
+          "line": 279,
           "called": [
             "InterruptId",
             "SystemState",
@@ -2755,7 +2755,7 @@
         {
           "kind": "theorem",
           "name": "handleInterrupt_unmapped",
-          "line": 266,
+          "line": 289,
           "called": [
             "InterruptId",
             "Irq",
@@ -2768,7 +2768,7 @@
         {
           "kind": "theorem",
           "name": "interruptDispatchSequence_always_ok",
-          "line": 280,
+          "line": 306,
           "called": [
             "SystemState",
             "ackInterruptAudit",
@@ -2781,22 +2781,38 @@
         {
           "kind": "def",
           "name": "eoiEmitted",
-          "line": 300,
+          "line": 342,
           "called": [
             "InterruptId",
             "SystemState",
-            "endOfInterrupt"
+            "endOfInterrupt",
+            "handleInterrupt"
           ]
         },
         {
           "kind": "theorem",
           "name": "interruptDispatchSequence_eoi_unless_spurious",
-          "line": 310,
+          "line": 363,
           "called": [
             "SystemState",
             "ackInterruptAudit",
             "acknowledgeInterrupt",
+            "endOfInterrupt",
             "eoiEmitted",
+            "handleInterrupt",
+            "interruptDispatchSequence"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "interruptDispatchSequence_eoi_before_handler",
+          "line": 431,
+          "called": [
+            "InterruptId",
+            "SystemState",
+            "ackInterruptAudit",
+            "acknowledgeInterrupt",
+            "endOfInterrupt",
             "handleInterrupt",
             "interruptDispatchSequence"
           ]
@@ -2804,7 +2820,7 @@
         {
           "kind": "def",
           "name": "timerInterruptHandler",
-          "line": 371,
+          "line": 483,
           "called": [
             "Kernel",
             "timerTick"
@@ -2813,7 +2829,7 @@
         {
           "kind": "theorem",
           "name": "timerInterruptHandler_eq_timerTick",
-          "line": 377,
+          "line": 489,
           "called": [
             "timerInterruptHandler",
             "timerTick"
@@ -2822,7 +2838,7 @@
         {
           "kind": "theorem",
           "name": "handleInterrupt_timer",
-          "line": 382,
+          "line": 494,
           "called": [
             "SystemState",
             "handleInterrupt",
@@ -71129,7 +71145,7 @@
     {
       "module": "tests.InterruptDispatchSuite",
       "path": "tests/InterruptDispatchSuite.lean",
-      "declaration_count": 13,
+      "declaration_count": 15,
       "declarations": [
         {
           "kind": "namespace",
@@ -71248,9 +71264,28 @@
         },
         {
           "kind": "def",
-          "name": "runAllTests",
-          "line": 128,
+          "name": "test_t11_eoi_before_handler",
+          "line": 131,
           "called": [
+            "SystemState",
+            "default",
+            "expectCond",
+            "interruptDispatchSequence",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t12_ordering_theorem_exists",
+          "line": 146,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "runAllTests",
+          "line": 153,
+          "called": [
+            "interruptDispatchSequence_eoi_before_handler",
             "test_t01_ack_spurious",
             "test_t02_ack_out_of_range",
             "test_t03_ack_handled",
@@ -71260,13 +71295,15 @@
             "test_t07_eoi_drains",
             "test_t08_round_trip_empty",
             "test_t09_dispatch_spurious_no_state_change",
-            "test_t10_dispatch_out_of_range"
+            "test_t10_dispatch_out_of_range",
+            "test_t11_eoi_before_handler",
+            "test_t12_ordering_theorem_exists"
           ]
         },
         {
           "kind": "def",
           "name": "main",
-          "line": 146,
+          "line": 177,
           "called": [
             "runAllTests"
           ]

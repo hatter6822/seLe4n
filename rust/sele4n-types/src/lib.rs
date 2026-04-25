@@ -49,48 +49,8 @@ pub use error::{KernelError, KernelResult};
 pub use rights::{AccessRight, AccessRights, AccessRightsError};
 pub use syscall::SyscallId;
 
-// ============================================================================
-// AK4-H: LOW-tier ABI cleanup notes (R-ABI-L1..L8)
-// ============================================================================
-//
-// Most LOW-tier findings from the v0.29.0 audit are documented at their
-// original call sites. Centralised cross-references:
-//
-// * R-ABI-L1 (lifecycle.rs:14 docstring) — addressed in `args/lifecycle.rs`:
-//   the full 7-variant `TypeTag` list is now enumerated in the
-//   `LifecycleRetypeArgs` doc comment.
-//
-// * R-ABI-L2 (lib.rs:6 count) — docstring updated to "15 newtype
-//   identifiers" (see line above) when `SchedContextId` was added in
-//   AK4-C.
-//
-// * R-ABI-L3 (`RegValue` exported but unused by non-test code) — kept
-//   public because it is the canonical wrapper for ARM64 register words
-//   and will be consumed by the (H3 / AN9-F) hardware-binding FFI layer
-//   (closes DEF-R-HAL-L14 per
-//   docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12). No `#[cfg(test)]`
-//   gating applied.
-//
-// * R-ABI-L4 (`ServiceQueryArgs` empty struct) — intentionally kept as
-//   a marker type so per-syscall dispatch code can treat service-query
-//   the same way it treats argument-bearing syscalls. Lean mirror:
-//   `ServiceQueryArgs` in `SyscallArgDecode.lean`.
-//
-// * R-ABI-L5 (`lateout("x6") _` in `trap.rs`) — annotated with a comment
-//   explaining the `clobber_abi("C")` redundancy. Removing it is a no-op.
-//
-// * R-ABI-L6 (constants duplicated across crates) — recorded as a
-//   post-1.0 hardening candidate; no currently-active plan file tracks
-//   it. Canonical ownership already lives in `sele4n-abi` (e.g.,
-//   `MAX_METHOD_COUNT`, `MAX_PRIORITY`) and `sele4n-types` (identifiers
-//   + error enums).
-//
-// * R-ABI-L7 (`ThreadId::SENTINEL` vs `CPtr::NULL`) — both names
-//   retained; `CPtr::NULL` mirrors the `seL4_CapNull` convention and
-//   removing it would break external-facing Rust code. No deprecation
-//   shim added.
-//
-// * R-ABI-L8 (`Hash` derive on typed IDs) — `#[derive(Hash)]` is safe
-//   because all identifier wrappers are `#[repr(transparent)] u64`; the
-//   underlying hash is identical to `hash(&u64)`. Cross-reference:
-//   AJ2-D in `docs/spec/SELE4N_SPEC.md` §8.12.
+// AN8-E (R-HAL-L2): The 52-line AK4-H audit-notes block previously inlined
+// here is canonical-archived in `docs/AUDIT_NOTES.md` so this file stays
+// lean. Cross-references for the current `KernelError` discriminants and
+// `SyscallId` variants live next to their source-of-truth definitions in
+// `error.rs` and `syscall.rs` respectively.

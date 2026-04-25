@@ -307,15 +307,21 @@ mod tests {
     #[test]
     fn init_timer_stores_interval() {
         // On non-aarch64, read_frequency returns 0 so fallback to COUNTER_FREQ_HZ.
-        // 54000000 / 1000 = 54000
-        init_timer(1000).unwrap();
+        // 54000000 / 1000 = 54000.
+        //
+        // AN8-D (RUST-M03): use `assert_eq!(... , Ok(()))` so the test
+        // documents the expected return value explicitly. `unwrap()` would
+        // hide a future error variant change behind a panic message that
+        // doesn't name the variant.
+        assert_eq!(init_timer(1000), Ok(()));
         assert_eq!(TIMER_INTERVAL.load(Ordering::Relaxed), 54_000);
         assert_eq!(get_tick_count(), 0);
     }
 
     #[test]
     fn init_timer_100hz_interval() {
-        init_timer(100).unwrap();
+        // AN8-D (RUST-M03): explicit Ok(()) check.
+        assert_eq!(init_timer(100), Ok(()));
         assert_eq!(TIMER_INTERVAL.load(Ordering::Relaxed), 540_000);
     }
 

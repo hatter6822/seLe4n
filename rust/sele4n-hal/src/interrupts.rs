@@ -21,6 +21,18 @@
 /// Returns the previous DAIF value for later restoration.
 ///
 /// ARM ARM C5.2.5: DAIFSet is a write-only register that sets DAIF bits.
+///
+/// # AN8-E (R-HAL-L5): DAIF read-before-mask rationale
+///
+/// The DAIF read **must** happen before the DAIFSet write so we capture
+/// the *pre-mask* state. Reading after the write would always return
+/// `0b1111`, defeating the saved-and-restore semantics needed by nested
+/// critical sections. This ordering is observable on ARM64 because
+/// `mrs daif` and `msr daifset` are two separate instructions; the
+/// compiler cannot reorder them across the function boundary because
+/// both sides are `volatile` inline asm with `nomem` markers. The
+/// `preserves_flags` option on the `daifset` write is correct because
+/// DAIFSet does not touch NZCV.
 #[inline(always)]
 pub fn disable_interrupts() -> u64 {
     let saved = crate::read_sysreg!("daif");

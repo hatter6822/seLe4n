@@ -1,8 +1,16 @@
 //! MMU configuration for ARMv8-A on Raspberry Pi 5.
 //!
 //! Sets up MAIR_EL1, TCR_EL1, identity-mapped boot page tables, and enables
-//! the MMU via SCTLR_EL1. Initial mapping uses 1 GiB block descriptors at
-//! L1 for simplicity; AG6 replaces this with 4 KiB page-level mappings.
+//! the MMU via SCTLR_EL1. Initial boot mapping uses 1 GiB block descriptors
+//! at L1 for simplicity; the **runtime** kernel uses fine-grained 4 KiB
+//! page-level mappings via `SeLe4n.Kernel.Architecture.PageTable` (AG6) and
+//! `SeLe4n.Kernel.Architecture.VSpaceARMv8` (AG6-C/D), bridged to hardware
+//! through the `VSpaceBackend` typeclass instance. AN8-D (RUST-M04): the
+//! pre-AG6 stale "AG6 replaces this" comment is replaced with this clarified
+//! description — the boot table and the runtime page-table are deliberately
+//! distinct: the boot table covers the kernel image plus the device-memory
+//! window so the kernel can run at all; the runtime page-table is built on
+//! top of it once the kernel scheduler is alive.
 //!
 //! Memory attribute configuration:
 //! - Index 0 (0xFF): Normal, Inner/Outer WB-WA-RA (cacheable RAM)
@@ -109,23 +117,35 @@ const TCR_VALUE: u64 = {
 
 /// SCTLR_EL1 bit positions (ARM ARM D17.2.120).
 ///
-/// Bits marked `pub` are actively written in the bitmap; `#[allow(dead_code)]`
-/// bits are included for documentation/readability so the bitmap's SAFETY
-/// notes can reference them by name without triggering dead-code warnings.
+/// AN8-D (RUST-M01): This module intentionally enumerates ALL bits that
+/// seLe4n's bitmap explicitly sets or documents as "excluded by design".
+/// A module-level `#[allow(dead_code)]` covers the reference-only constants
+/// so the bitmap's SAFETY comments can cite them by name without cluttering
+/// every constant with an individual attribute. The following bits are
+/// **reference-only** (declared but not OR'd into
+/// `compute_sctlr_el1_bitmap`):
+///
+/// | Bit | Name    | Excluded because                                                 |
+/// |-----|---------|-------------------------------------------------------------------|
+/// | 1   | A       | Alignment checks on data-memory accesses would false-fault on    |
+/// |     |         | kernel byte-wise `memcpy` sequences; SA/SA0/WXN cover the SP     |
+/// |     |         | and write-execute cases which are the security-relevant ones.   |
+/// | 5   | CP15BEN | AArch32-only; seLe4n runs EL0/EL1 in AArch64.                    |
+/// | 6   | NAA     | We WANT unaligned-access faults preserved (0 = default).         |
+/// | 9   | UMA     | Related to FEAT_PAN which seLe4n does not use.                   |
+/// | 25  | EE      | EL1 little-endian (default); flipping this corrupts all kernel   |
+/// |     |         | memory accesses.                                                  |
 mod sctlr_bits {
+    #![allow(dead_code)]
     pub const M:    u64 = 1 << 0;   // MMU enable
-    #[allow(dead_code)]
     pub const A:    u64 = 1 << 1;   // Alignment check enable (EL0 + EL1)
     pub const C:    u64 = 1 << 2;   // Data cache enable
     pub const SA:   u64 = 1 << 3;   // SP alignment check enable (EL1)
     pub const SA0:  u64 = 1 << 4;   // SP alignment check enable (EL0, RES1)
-    #[allow(dead_code)]
     pub const CP15BEN: u64 = 1 << 5; // AArch32 CP15 barrier enable (RES0 at AArch64)
-    #[allow(dead_code)]
     pub const NAA:  u64 = 1 << 6;   // Non-aligned access: 0 = faults preserved
     pub const ITD:  u64 = 1 << 7;   // IT instruction disable (RES1 at AArch64)
     pub const SED:  u64 = 1 << 8;   // SETEND disable (RES1 at AArch64)
-    #[allow(dead_code)]
     pub const UMA:  u64 = 1 << 9;   // User Mask Access (PAN-related)
     pub const EOS:  u64 = 1 << 11;  // Exception Exit Serialization (EL1, RES1)
     pub const I:    u64 = 1 << 12;  // Instruction cache enable
@@ -137,7 +157,6 @@ mod sctlr_bits {
     pub const RES1_BIT20: u64 = 1 << 20;
     pub const EIS:  u64 = 1 << 22;  // Exception Entry Serialization (EL1, RES1)
     pub const SPAN: u64 = 1 << 23;  // Set Privileged Access Never on exception (RES1)
-    #[allow(dead_code)]
     pub const EE:   u64 = 1 << 25;  // Exception endianness: 0 = little-endian at EL1
     pub const TSCXT:u64 = 1 << 28;  // Trap EL0 access to SCXTNUM_EL0 (RES1)
     pub const RES1_BIT29: u64 = 1 << 29;  // Architecturally RES1
@@ -281,6 +300,19 @@ static BOOT_L1_TABLE: PageTableCell = PageTableCell::new(BootL1Table::new());
 const _: () = assert!(core::mem::align_of::<PageTableCell>() == 4096);
 const _: () = assert!(core::mem::align_of::<BootL1Table>() == 4096);
 const _: () = assert!(core::mem::size_of::<BootL1Table>() == L1_ENTRIES * 8);
+
+// AN8-E (R-HAL-L10): extended compile-time alignment enforcement. ARMv8
+// requires 4 KiB alignment for L1 page-table base addresses, and we use
+// 1 GiB block descriptors at L1 — each entry maps a 1 GiB region whose
+// physical base must be 1 GiB-aligned (achieved by encoding the entry
+// as `(i << 30) | BLOCK_NORMAL`). The `_ENTRIES` constant must equal
+// the number of 8-byte u64 slots in a 4 KiB page (512), which is what
+// `BootL1Table` declares. If a future refactor reduces `L1_ENTRIES`
+// to a smaller value, the size assertion above will fail.
+const _: () = assert!(L1_ENTRIES == 512,
+    "L1_ENTRIES must be 512 (4 KiB / 8 bytes/entry) per ARMv8 D8.3");
+const _: () = assert!(core::mem::size_of::<BootL1Table>() == 4096,
+    "BootL1Table must be exactly 4 KiB to fit a single TTBR0 page");
 
 /// Build identity-mapped L1 page tables for boot.
 ///

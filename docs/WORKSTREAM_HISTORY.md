@@ -41,6 +41,80 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
 **Phases:** 13 (AN0–AN12), 95 top-level sub-tasks, ~253 sub-sub-task commits
 (scope: 196 audit findings + 11 absorbed DEFERRED items).
 
+- **AN8** (Rust HAL hardening, v0.30.9, **released**): 6 sub-tasks
+  (AN8-A..AN8-F) addressing 3 HIGH (H-17 UartLock RAII, H-18 MPIDR
+  shared symbol, H-19 EOI-before-handler), 8 MEDIUM (RUST-M01..M08),
+  11 LOW (R-HAL-L1..L11).
+  - **AN8-A (H-17)**: `UartLock::with` replaced with a `UartGuard<'a>`
+    RAII wrapper. `with_guard()` masks interrupts via DAIF, spins on
+    AtomicBool, stashes saved DAIF in `UartLock.saved_daif`. The
+    guard's `Drop` impl calls `release()` which clears the flag AND
+    restores the DAIF mask, guaranteeing symmetric acquire/release on
+    every normal scope exit (and unwinding paths under the test
+    profile). Production `panic = "abort"` skips Drop but the kernel
+    halts, so the lock state is moot. **4 new tests** in
+    `tests::uart_guard_*` cover normal-return, early-return,
+    global-lock, and unwind-path Drop semantics.
+  - **AN8-B (H-18)**: `cpu.rs` exposes `MPIDR_CORE_ID_MASK_SYM` as
+    `#[no_mangle] pub static u64` (with `#[used]` to prevent linker
+    stripping). `boot.S`'s core-0 gate now loads via `adrp` + `ldr`
+    instead of literal `mov`/`movk`. Two `const _: ()` compile-time
+    asserts pin the constant value (0x00FFFFFF) and the
+    symbol-vs-constant equality. New **`build.rs` scanner** (AN8-B.5)
+    reads `src/boot.S` on every build (after `//`-comment stripping)
+    and rejects the legacy literal pattern with an actionable error
+    pointing at AN8-B. Verified by synthetic regression test.
+    **2 new tests** in `cpu::tests::mpidr_shared_symbol_*` round-trip
+    the static against the constant on host.
+  - **AN8-C (H-19, audit Option b MANDATORY)**: `gic.rs::dispatch_irq`
+    removes the `EoiGuard` RAII pattern; EOI fires unconditionally on
+    Handled and OutOfRange branches **BEFORE** the handler body runs.
+    Spurious INTIDs (≥ 1020) still skip EOI per GIC-400 §3.1. Under
+    `panic = "abort"` this eliminates the "handler panic leaves INTID
+    active" class structurally. The Lean
+    `Architecture/InterruptDispatch.lean` model is updated in
+    lockstep: `interruptDispatchSequence` executes `endOfInterrupt`
+    BEFORE `handleInterrupt`. The `eoiEmitted` predicate is extended
+    to a 3-disjunct form; new theorem
+    `interruptDispatchSequence_eoi_before_handler` formalises the
+    AN8-C ordering. `trap.rs::handle_irq` carries `#[deny(clippy::panic)]`
+    (AN8-C.3). Re-entrancy invariant documented per registered handler
+    (timer PPI 30 reprograms ≥ 1 ms in the future; non-timer handlers
+    log only). **4 new Rust ordering tests** + **2 new Lean tests**.
+  - **AN8-D (RUST-M01..M08)**: M01 sctlr_bits dead-code consolidation
+    + Markdown table doc-block; M02 `init_with_baud(0)` becomes
+    `debug_assert!` with two new compile-time invariants
+    (`DEFAULT_BAUD > 0`, `UART_CLOCK_HZ ≥ 16 × DEFAULT_BAUD`); M03
+    timer tests use `assert_eq!(init_timer(...), Ok(()))`; M04 stale
+    "AG6 replaces this" docstring corrected; **M05 new
+    `gic::self_check_distributor`** reads back `ITARGETSR[8]` after
+    init, halts via WFE-loop on mismatch; M06 covered by AN1-C; **M07
+    new `cache::memory_fence()`** for pure DSB ISH (cache_range's
+    empty-range path delegates); M08 IpcBuffer end-to-end audit —
+    confirmed live, documents production consumers.
+  - **AN8-E (R-HAL-L1..L11)**: L1 ICENABLER_BASE forward-ref doc; L2
+    52-line audit-notes block extracted from `sele4n-types/src/lib.rs`
+    to new `docs/AUDIT_NOTES.md`; L3 `cc` build-dep pinned to 1.2; L4
+    PL011 non-standard-baud silent-rounding doc; L5 DAIF
+    read-before-mask ordering rationale; L6 `link.ld` cross-references
+    `mmu.rs::PageTableCell`; L7 `rust_boot_main` symbol resolution
+    contract; L8 Rust 1.85 MSRV migration tracked; L9 `set_vbar`
+    runtime alignment debug_assert; L10 mmu.rs compile-time alignment
+    asserts extended; L11 `find-msvc-tools` non-Windows-host status
+    pre-documented in `THIRD_PARTY_LICENSES.md`.
+  - **AN8-F**: version bump 0.30.8 → 0.30.9 (15 version-bearing files
+    synced); CHANGELOG.md entry; CLAUDE.md prepend; this entry;
+    Cargo.lock refreshed via `cargo update -w`.
+
+  **Gate at v0.30.9 tip**: `lake build` (300 jobs, 0 warnings) +
+  `test_smoke.sh` PASS + `test_full.sh` PASS + `test_tier0_hygiene.sh`
+  PASS + `cargo test --workspace` (**422 tests**, up from 414 — +4
+  uart-guard + 2 cpu-mpidr-symbol + 4 gic-eoi-ordering + 2
+  cache-memory-fence) + `cargo clippy --workspace -- -D warnings`
+  (0 warnings) + `check_version_sync.sh` PASS at 0.30.9 + fixture
+  byte-identical + zero `sorry`/`axiom`/`native_decide`. **Next**: AN9
+  (hardware-binding closure) per plan §12.
+
 - **AN7** (Platform / API, v0.30.8, **released**): 11 sub-tasks
   (AN7-A..AN7-G) addressing 3 HIGH (H-14..H-16), 7 PLATFORM MEDIUM
   (PLT-M01..PLT-M07), 2 API MEDIUM (API-M01..M02), 3 Platform LOWs.
