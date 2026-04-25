@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/implement-rust-hal-phase-FwOJu",
-      "commit_sha": "fcbb6dfa437cb63e1dfdfc0086da5655d0dff7f8",
-      "tree_sha": "ab42bda0e14d5aefa66ff9833760a78d516e99be",
-      "committed_at_utc": "2026-04-24T17:30:33-04:00"
+      "commit_sha": "187c25749c15e4393bc5b02ea680fc707c73e790",
+      "tree_sha": "addcde1f5888e061c77c09d84b17ac96dd2e94c5",
+      "committed_at_utc": "2026-04-25T00:01:44+00:00"
     }
   },
   "source_sync": {
@@ -17,11 +17,11 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "1ca06455d203e1f52f8830264acf4d7ba354d3b1b5701bdadc36d70b72970599"
+    "source_digest": "fdb0a01a69006b31f814a11c9b72ac110786a1dca700f3ae4bed107915dae3b5"
   },
   "summary": {
     "module_count": 189,
-    "declaration_count": 5888
+    "declaration_count": 5889
   },
   "readme_sync": {
     "version": "0.30.9",
@@ -29,7 +29,7 @@
     "production_files": 165,
     "production_loc": 107870,
     "test_files": 24,
-    "test_loc": 15983,
+    "test_loc": 16010,
     "proved_theorem_lemma_decls": 3152,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -71145,7 +71145,7 @@
     {
       "module": "tests.InterruptDispatchSuite",
       "path": "tests/InterruptDispatchSuite.lean",
-      "declaration_count": 15,
+      "declaration_count": 16,
       "declarations": [
         {
           "kind": "namespace",
@@ -71276,16 +71276,30 @@
         },
         {
           "kind": "def",
-          "name": "test_t12_ordering_theorem_exists",
-          "line": 146,
-          "called": []
+          "name": "test_t12_eoi_filters_only_target_intid",
+          "line": 150,
+          "called": [
+            "SystemState",
+            "ackInterruptAudit",
+            "default",
+            "expectCond",
+            "interruptDispatchSequence",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t13_ordering_theorem_witness",
+          "line": 178,
+          "called": [
+            "interruptDispatchSequence_eoi_before_handler"
+          ]
         },
         {
           "kind": "def",
           "name": "runAllTests",
-          "line": 153,
+          "line": 183,
           "called": [
-            "interruptDispatchSequence_eoi_before_handler",
             "test_t01_ack_spurious",
             "test_t02_ack_out_of_range",
             "test_t03_ack_handled",
@@ -71297,13 +71311,14 @@
             "test_t09_dispatch_spurious_no_state_change",
             "test_t10_dispatch_out_of_range",
             "test_t11_eoi_before_handler",
-            "test_t12_ordering_theorem_exists"
+            "test_t12_eoi_filters_only_target_intid",
+            "test_t13_ordering_theorem_witness"
           ]
         },
         {
           "kind": "def",
           "name": "main",
-          "line": 177,
+          "line": 204,
           "called": [
             "runAllTests"
           ]

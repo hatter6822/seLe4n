@@ -106,13 +106,41 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
     synced); CHANGELOG.md entry; CLAUDE.md prepend; this entry;
     Cargo.lock refreshed via `cargo update -w`.
 
-  **Gate at v0.30.9 tip**: `lake build` (300 jobs, 0 warnings) +
-  `test_smoke.sh` PASS + `test_full.sh` PASS + `test_tier0_hygiene.sh`
-  PASS + `cargo test --workspace` (**422 tests**, up from 414 — +4
-  uart-guard + 2 cpu-mpidr-symbol + 4 gic-eoi-ordering + 2
-  cache-memory-fence) + `cargo clippy --workspace -- -D warnings`
-  (0 warnings) + `check_version_sync.sh` PASS at 0.30.9 + fixture
-  byte-identical + zero `sorry`/`axiom`/`native_decide`. **Next**: AN9
+  - **AN8 post-delivery audit remediation**: deep end-to-end audit
+    surfaced 6 strengthening items, all fixed in-PR. (1) `uart.rs`
+    `extern crate std` placement (clippy::items_after_test_module).
+    (2) `uart_guard_releases_on_early_return` redesigned with
+    conditional-branch early-return (clippy::needless_return + path
+    coverage). (3) Stale "panics" annotation on
+    `init_with_zero_baud_panics` updated to reflect `debug_assert!`
+    semantics. (4) **AN8-C.5 substantive ordering test**: refactored
+    `dispatch_irq` to delegate to pure state machine
+    `dispatch_irq_inner(ack, eoi, handler)`; new
+    `dispatch_irq_handled_eoi_fires_before_handler` uses an
+    `EventClock` to assert `eoi_tick < handler_tick`; three new
+    branch-coverage tests (Handled/OutOfRange/Spurious); panic-after-
+    EOI test uses a `static AtomicU32` to verify EOI fires exactly
+    once even on handler panic. (5) **AN8-D RUST-M05 self-check
+    coverage**: factored `read_self_check_target` for unit testing;
+    two compile-time invariants on `SELF_CHECK_TARGET_INDEX` (≥ 8
+    for writable SPI bank, < 256 for ITARGETSR window); three new
+    runtime tests for arithmetic/structure. (6) **AN8-C Lean T12**:
+    replaced shallow "println message" test with substantive
+    `test_t12_eoi_filters_only_target_intid` — sentinel-preservation
+    test that pre-loads `eoiPending` with INTID 99, dispatches INTID
+    30, verifies 30 filtered + 99 preserved; new
+    `test_t13_ordering_theorem_witness` elaborates the AN8-C.2
+    theorem at parse time.
+
+  **Gate at v0.30.9 tip (post-audit)**: `lake build` (300 jobs, 0
+  warnings) + `test_smoke.sh` PASS + `test_full.sh` PASS +
+  `test_tier0_hygiene.sh` PASS + `cargo test --workspace`
+  (**428 tests**, up from 414 baseline; +6 over initial AN8 landing
+  due to audit-replacing two shallow tests with substantive ones) +
+  `cargo clippy --workspace -- -D warnings` (0 warnings) + Lean
+  `interrupt_dispatch_suite` 16 checks PASS (up from 12) +
+  `check_version_sync.sh` PASS at 0.30.9 + fixture byte-identical +
+  zero `sorry`/`axiom`/`native_decide`. **Next**: AN9
   (hardware-binding closure) per plan §12.
 
 - **AN7** (Platform / API, v0.30.8, **released**): 11 sub-tasks

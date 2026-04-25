@@ -7,8 +7,68 @@ H-18 MPIDR shared symbol, H-19 EOI-before-handler), batches the eight
 RUST-M MEDIUM items (RUST-M01..M08), and the eleven Rust LOW-tier
 findings (R-HAL-L1..L11). The phase is independent of all Lean kernel
 phases (AN3..AN7) and merges the Rust HAL into a state where
-`cargo test --workspace` reports **422 passing** (up from 414 baseline)
+`cargo test --workspace` reports **428 passing** (up from 414 baseline)
 and `cargo clippy --workspace -- -D warnings` is at **0 warnings**.
+
+### Post-delivery audit remediation
+
+A deep end-to-end audit of the initial AN8 landing surfaced six
+strengthening opportunities, all fixed in-PR:
+
+1. **AN8-A clippy regression**: the initial commit placed
+   `#[cfg(test)] extern crate std;` at the bottom of `uart.rs`,
+   triggering `clippy::items_after_test_module`. Moved to the top of
+   the module where it belongs.
+2. **AN8-A `uart_guard_releases_on_early_return` test**: the bare
+   `return;` triggered `clippy::needless_return`. Replaced with a
+   conditional-branch early return that exercises BOTH paths (short
+   and long), strengthening coverage instead of weakening it.
+3. **AN8-A stale test annotation**: `init_with_zero_baud_panics`
+   carried a comment claiming `init_with_baud(0)` "panics" but AN8-D
+   RUST-M02 had downgraded the runtime `assert!` to `debug_assert!`.
+   Renamed to `init_with_zero_baud_panics_in_debug_builds` with a
+   docstring documenting the new debug-vs-release semantics and the
+   compile-time invariants that protect release builds.
+4. **AN8-C.5 substantive ordering test missing**: the initial landing
+   had two near-duplicate "handler runs once" tests that didn't
+   actually verify EOI-before-handler ORDERING.  Refactored
+   `dispatch_irq` to delegate to a pure state machine
+   `dispatch_irq_inner(ack, eoi, handler)` that takes the EOI fn as a
+   parameter. New `dispatch_irq_handled_eoi_fires_before_handler`
+   test instruments mock `eoi`/`handler` with a shared `EventClock`
+   and asserts `eoi_tick < handler_tick`. New
+   `dispatch_irq_out_of_range_eois_without_handler` and
+   `dispatch_irq_spurious_skips_eoi_and_handler` exercise the other
+   two branches with mock observers. New
+   `dispatch_irq_handler_panic_does_not_unfire_eoi` uses a `static
+   AtomicU32` (so the counter survives unwind) to substantively
+   verify that EOI fires exactly once even when the handler panics
+   under the unwinding test profile.
+5. **AN8-D RUST-M05 self-check untested**: `self_check_distributor`
+   was gated on `cfg(target_arch = "aarch64")` so its read-back
+   structure had zero test coverage. Factored the read-address
+   arithmetic into `read_self_check_target` and exposed two compile-
+   time invariants (`SELF_CHECK_TARGET_INDEX >= 8` for writable SPI
+   bank, `< 256` for ITARGETSR window) plus three runtime tests
+   (`self_check_does_not_panic_on_host`,
+   `self_check_target_address_arithmetic`,
+   `self_check_expected_pattern_matches_init_distributor`) that
+   exercise the structure on the host. The actual WFE-loop halt path
+   remains aarch64-only (because there is no way to test "halt the
+   core" in a unit test).
+6. **AN8-C Lean T12 shallow**: the initial T12 just printed a "check
+   passed" message with no substantive assertion. Replaced with
+   `test_t12_eoi_filters_only_target_intid` — pre-loads
+   `eoiPending` with a sentinel INTID (99), dispatches a different
+   INTID (30), and verifies the dispatched INTID is filtered while
+   the sentinel survives. This regresses against any future
+   accidental revert to `ack → handle → EOI` (which would skip the
+   EOI step on the error branch). Added new
+   `test_t13_ordering_theorem_witness` that elaborates
+   `interruptDispatchSequence_eoi_before_handler` at parse time so
+   the test file fails to load if the theorem is renamed/removed.
+
+### Original AN8 landing
 
 ### AN8-A — `UartLock` RAII refactor (H-17 HIGH)
 
@@ -132,17 +192,22 @@ exercise the AN8-C ordering through the dispatch sequence.
 - **R-HAL-L11**: `find-msvc-tools` non-Windows-host status already
   documented in `THIRD_PARTY_LICENSES.md` §2.
 
-### Gate at v0.30.9 tip
+### Gate at v0.30.9 tip (post-audit)
 
 `lake build` (300 jobs, 0 warnings) + `test_smoke.sh` PASS +
 `test_full.sh` PASS + `test_tier0_hygiene.sh` PASS +
-`cargo test --workspace` (**422 tests**, up from 414 — +4 uart-guard +
-2 cpu-mpidr-symbol + 4 gic-eoi-ordering + 2 cache-memory-fence) +
-`cargo clippy --workspace -- -D warnings` (0 warnings) +
-`check_version_sync.sh` PASS at 0.30.9 + fixture byte-identical to
-`tests/fixtures/main_trace_smoke.expected` + zero `sorry`/`axiom`/
-`native_decide` in `SeLe4n/` or `Main.lean`. **Next**: AN9 (hardware-
-binding closure) per plan §12 — depends on AN6 + AN8 both landing.
+`cargo test --workspace` (**428 tests**, up from 414 baseline — +4
+uart-guard + 2 cpu-mpidr-symbol + ~10 gic-eoi-ordering + 2
+cache-memory-fence + 3 self-check-arithmetic; net +14 vs. baseline,
++6 over the initial AN8 landing because the audit replaced two
+shallow tests with substantive ones) + `cargo clippy --workspace --
+-D warnings` (0 warnings) + `check_version_sync.sh` PASS at 0.30.9 +
+fixture byte-identical to `tests/fixtures/main_trace_smoke.expected`
++ zero `sorry`/`axiom`/`native_decide` in `SeLe4n/` or `Main.lean`.
+**Lean tests**: `lake exe interrupt_dispatch_suite` reports **16
+checks PASS** (up from 12 — +4 from T11 sentinel-preservation +
+T13 theorem-witness verification). **Next**: AN9 (hardware-binding
+closure) per plan §12 — depends on AN6 + AN8 both landing.
 
 ---
 

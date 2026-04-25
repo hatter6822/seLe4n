@@ -5,6 +5,12 @@
 //!
 //! Register offsets per ARM PrimeCell UART (PL011) Technical Reference Manual.
 
+// AN8-A.3 audit: `std::panic::catch_unwind` is needed by the unwinding-path
+// `UartGuard` Drop tests below. Declared once at the top of the module so
+// `clippy::items_after_test_module` is satisfied.
+#[cfg(test)]
+extern crate std;
+
 use core::fmt;
 
 /// PL011 register offsets from base address.
@@ -490,13 +496,18 @@ mod tests {
         assert_eq!(flags::BUSY, 1 << 3);
     }
 
-    // AK5-K (R-HAL-M10): init_with_baud(0) panics instead of silently
-    // misconfiguring the UART. We cannot exercise it directly because
-    // constructing a Uart with a valid base then issuing MMIO is a no-op
-    // on non-aarch64; but we can still trigger the assertion.
+    // AK5-K (R-HAL-M10) + AN8-D (RUST-M02): `init_with_baud(0)` triggers
+    // the in-function `debug_assert!`. The test profile compiles with
+    // `debug_assertions = true` (default for `cargo test`), so the
+    // assertion fires and the `#[should_panic]` matches the message
+    // string. In release builds the `debug_assert!` is elided; the
+    // boot-time `const _: () = assert!(...)` invariants in the file
+    // header (and the fact that production callers pass the
+    // compile-time constant `DEFAULT_BAUD = 115_200`) prevent
+    // zero-baud calls in release.
     #[test]
     #[should_panic(expected = "UART baud rate must be > 0")]
-    fn init_with_zero_baud_panics() {
+    fn init_with_zero_baud_panics_in_debug_builds() {
         let uart = Uart::new(UART0_BASE);
         uart.init_with_baud(0);
     }
@@ -530,14 +541,26 @@ mod tests {
     #[test]
     fn uart_guard_releases_on_early_return() {
         // The guard fires its Drop even when the scope exits via an
-        // explicit `return` before the end of the block.
-        fn exercise(l: &UartLock) {
+        // explicit `return` before the end of the block. Branching
+        // through a conditional `return` (rather than the bare
+        // `return;` clippy considers unneeded) keeps the early-exit
+        // semantics explicit while satisfying `clippy::needless_return`.
+        fn exercise(l: &UartLock, take_short_path: bool) -> u32 {
             let _g = l.with_guard();
-            return;
+            if take_short_path {
+                return 0xEA21_F00D;
+            }
+            0xEA22_F00D
         }
         let lock = UartLock::new();
-        exercise(&lock);
-        assert!(!lock.is_held(), "lock must be released after early return");
+        let r1 = exercise(&lock, true);
+        assert_eq!(r1, 0xEA21_F00D);
+        assert!(!lock.is_held(),
+            "lock must be released after early-return (short path)");
+        let r2 = exercise(&lock, false);
+        assert_eq!(r2, 0xEA22_F00D);
+        assert!(!lock.is_held(),
+            "lock must be released after fall-through (long path)");
     }
 
     #[test]
@@ -567,6 +590,3 @@ mod tests {
             "UartGuard::drop did not fire on unwind — lock leaked");
     }
 }
-
-#[cfg(test)]
-extern crate std;
