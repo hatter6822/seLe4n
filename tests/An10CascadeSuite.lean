@@ -444,6 +444,36 @@ def an10_e_removeRunnableValid_no_op_on_empty_queue : IO Bool := do
   -- Empty queue stays empty after a no-op remove.
   return st'.scheduler.runQueue.threadPriority.size == 0
 
+/-- AN10-E.H2 — `clearPendingStateValid` reduces to `clearPendingState`. -/
+def an10_e_clearPendingStateValid_reduces : IO Bool := do
+  let tid : ThreadId := ThreadId.ofNat 5
+  let vtid : ValidThreadId := ⟨tid, by decide⟩
+  let st : SystemState := default
+  let viaWrapper : SystemState := SeLe4n.Kernel.Lifecycle.Suspend.clearPendingStateValid st vtid
+  let viaRaw : SystemState := SeLe4n.Kernel.Lifecycle.Suspend.clearPendingState st vtid.val
+  return viaWrapper.objects.size == viaRaw.objects.size
+
+/-- AN10-E.H3 — `cancelIpcBlockingValid` reduces to `cancelIpcBlocking`. -/
+def an10_e_cancelIpcBlockingValid_reduces : IO Bool := do
+  let tid : ThreadId := ThreadId.ofNat 5
+  let vtid : ValidThreadId := ⟨tid, by decide⟩
+  let tcb : TCB := mkTcb 5
+  let st : SystemState := default
+  -- `tcb.ipcState = .ready` (default), so the function returns `st` unchanged.
+  let st' : SystemState := SeLe4n.Kernel.Lifecycle.Suspend.cancelIpcBlockingValid st vtid tcb
+  return st'.objects.size == st.objects.size
+
+/-- AN10-E.H4 — `cancelDonationValid` reduces to `cancelDonation`. -/
+def an10_e_cancelDonationValid_reduces : IO Bool := do
+  let tid : ThreadId := ThreadId.ofNat 5
+  let vtid : ValidThreadId := ⟨tid, by decide⟩
+  let tcb : TCB := mkTcb 5
+  let st : SystemState := default
+  -- `tcb.schedContextBinding = .unbound` (default), so it returns `.ok st`.
+  match SeLe4n.Kernel.Lifecycle.Suspend.cancelDonationValid st vtid tcb with
+  | Except.ok _   => return true
+  | Except.error _ => return false
+
 -- ============================================================================
 -- Suite runner
 -- ============================================================================
@@ -483,7 +513,10 @@ def runAll : IO Bool := do
     ("an10_d_hasSufficientBudget_zero", an10_d_hasSufficientBudget_zero),
     ("an10_d_clearPendingState_populated", an10_d_clearPendingState_populated),
     ("an10_e_removeRunnableValid_reduces_to_raw", an10_e_removeRunnableValid_reduces_to_raw),
-    ("an10_e_removeRunnableValid_no_op_on_empty_queue", an10_e_removeRunnableValid_no_op_on_empty_queue)
+    ("an10_e_removeRunnableValid_no_op_on_empty_queue", an10_e_removeRunnableValid_no_op_on_empty_queue),
+    ("an10_e_clearPendingStateValid_reduces", an10_e_clearPendingStateValid_reduces),
+    ("an10_e_cancelIpcBlockingValid_reduces", an10_e_cancelIpcBlockingValid_reduces),
+    ("an10_e_cancelDonationValid_reduces", an10_e_cancelDonationValid_reduces)
   ]
   let mut allOk : Bool := true
   for (name, action) in tests do

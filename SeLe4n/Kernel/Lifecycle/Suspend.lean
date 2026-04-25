@@ -139,6 +139,52 @@ def clearPendingState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :
   | none => st
 
 -- ============================================================================
+-- AN10 residual closure (H1–H4): typed entry-points for lifecycle handlers
+-- ============================================================================
+-- Each underlying handler routes through the AL2-A typed helpers
+-- (`getTcb?`, `getSchedContext?`) which already return `none` for the
+-- sentinel id, so the body is structurally sentinel-safe. The wrappers
+-- below document the production-handler discipline at the type system —
+-- callers that already hold a `ValidThreadId` (post-AL7 dispatch
+-- validation, post-`validateThreadIdArg` argument check, or
+-- structurally-extracted from a TCB lookup) should prefer the typed
+-- entry-points to make the invariant locally observable.
+
+/-- AN10-H1: typed entry-point for `clearTcbIpcFields`. -/
+@[inline] private def clearTcbIpcFieldsValid (st : SystemState)
+    (vtid : SeLe4n.ValidThreadId) : SystemState :=
+  clearTcbIpcFields st vtid.val
+
+@[simp] theorem clearTcbIpcFieldsValid_eq (st : SystemState) (vtid : SeLe4n.ValidThreadId) :
+    clearTcbIpcFieldsValid st vtid = clearTcbIpcFields st vtid.val := rfl
+
+/-- AN10-H2: typed entry-point for `clearPendingState`. -/
+@[inline] def clearPendingStateValid (st : SystemState)
+    (vtid : SeLe4n.ValidThreadId) : SystemState :=
+  clearPendingState st vtid.val
+
+@[simp] theorem clearPendingStateValid_eq (st : SystemState) (vtid : SeLe4n.ValidThreadId) :
+    clearPendingStateValid st vtid = clearPendingState st vtid.val := rfl
+
+/-- AN10-H3: typed entry-point for `cancelIpcBlocking`. -/
+@[inline] def cancelIpcBlockingValid (st : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (tcb : TCB) : SystemState :=
+  cancelIpcBlocking st vtid.val tcb
+
+@[simp] theorem cancelIpcBlockingValid_eq (st : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (tcb : TCB) :
+    cancelIpcBlockingValid st vtid tcb = cancelIpcBlocking st vtid.val tcb := rfl
+
+/-- AN10-H4: typed entry-point for `cancelDonation`. -/
+@[inline] def cancelDonationValid (st : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (tcb : TCB) : Except KernelError SystemState :=
+  cancelDonation st vtid.val tcb
+
+@[simp] theorem cancelDonationValid_eq (st : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (tcb : TCB) :
+    cancelDonationValid st vtid tcb = cancelDonation st vtid.val tcb := rfl
+
+-- ============================================================================
 -- D1-G: suspendThread (composite)
 -- ============================================================================
 
