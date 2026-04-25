@@ -49,13 +49,17 @@ while IFS= read -r f; do
   TEST_FILES+=("$f")
 done < <(find tests SeLe4n/Testing Main.lean -type f -name "*.lean" 2>/dev/null)
 
-# Helper: count `match st.objects[<idExpr>]?` patterns followed within ≤4
-# lines by `some (.<variant> ...)`. Multi-line tolerant.
+# Helper: count `match <expr>.objects[<idExpr>]?` patterns followed within
+# ≤4 lines by `some (.<variant> ...)`. Multi-line tolerant. The `match`
+# expression head can be bare (`st.objects[…]`) or parenthesized
+# (`(st.objects[…] : Option KernelObject)`) and the state name can be
+# any identifier (`st`, `st'`, `stMid`, `stStored`, etc.) — captured by
+# matching on `.objects[` regardless of preceding context.
 count_raw_match_variant() {
   local variant="$1"
   awk -v v="$variant" '
     BEGIN {hits=0; pending=0}
-    /match st\.objects\[/ {pending=4; next}
+    /match.*\.objects\[/ {pending=4; next}
     pending > 0 {
       if (index($0, "some (." v) > 0) {hits++; pending=0; next}
       pending--
@@ -73,10 +77,12 @@ RAW_MATCH_UNTYPED=$(count_raw_match_variant "untyped")
 RAW_MATCH_CNODE=$(count_raw_match_variant "cnode")
 RAW_MATCH_VSPACEROOT=$(count_raw_match_variant "vspaceRoot")
 
-# Total raw-match site count: every `match st.objects[…]?` regardless of
-# variant. Used as a coarse upper-bound diagnostic; the per-variant counts
-# are the binding monotonicity targets.
-RAW_MATCH_TOTAL=$( (grep -c "match st\.objects\[" "${KERNEL_FILES[@]}" 2>/dev/null || true) \
+# Total raw-match site count: every `match <expr>.objects[…]?` regardless
+# of variant. Used as a coarse upper-bound diagnostic; the per-variant
+# counts are the binding monotonicity targets. Matches both the bare
+# (`match st.objects[`) and parenthesized (`match (st.objects[…] : …)`)
+# forms, which co-exist in the codebase pre-migration.
+RAW_MATCH_TOTAL=$( (grep -cE "match.*\.objects\[" "${KERNEL_FILES[@]}" 2>/dev/null || true) \
   | awk -F: '{s += $2} END {print s + 0}')
 
 # RAW_LOOKUP_TID — `tid.toObjId` projected at object-store boundaries.

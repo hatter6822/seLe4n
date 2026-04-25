@@ -98,7 +98,7 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
     opportunities, all addressed in-PR.  (1) Additional 9 reader-
     side migrations across `Lifecycle/Suspend.lean` (3 sites),
     `SchedContext/Operations.lean` (8 raw lookups across
-    `allOtherActiveSchedContexts`/`schedContextYieldTo`/`Configure`/
+    `collectSchedContexts`/`schedContextYieldTo`/`Configure`/
     `Bind`/`Unbind`), and `SchedContext/PriorityManagement.lean` (4
     raw lookups across `updatePrioritySource`/
     `migrateRunQueueBucket`/`setPriorityOp`/`setMCPriorityOp`).

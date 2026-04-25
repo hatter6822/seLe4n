@@ -1,6 +1,42 @@
 ## v0.30.10 — WS-AN Phase AN10 (AK7 cascade closure)
 
-### Post-delivery audit-pass remediation
+### Post-delivery audit-pass-2 remediation
+
+A second deep audit of the AN10 + audit-pass landing
+(`0ce739e..1c4b6d6`) surfaced two additional issues, addressed in
+this commit:
+
+1. **Metric script regex bug** — `scripts/ak7_cascade_baseline.sh`'s
+   `match st\.objects\[` regex missed the parenthesized form
+   `match (st.objects[…] : Option KernelObject) with` and variant
+   state names (`stMid`, `stStored`, `st1`, `st2`, etc.).  ~16
+   pre-existing patterns (in `Scheduler/Invariant.lean`,
+   `Scheduler/Operations/Core.lean`,
+   `Scheduler/PriorityInheritance/Propagate.lean`,
+   `SchedContext/Operations.lean`, `Lifecycle/Suspend.lean`) were
+   undercounted.  In particular, this meant the audit-pass
+   migration of 8 paren-form sites in `SchedContext/Operations.lean`
+   produced ZERO metric movement under the old regex.  The regex is
+   now `match.*\.objects\[`.  `docs/audits/AL0_baseline.txt`
+   re-anchored against the corrected counts.
+
+2. **Documentation accuracy** — the audit-pass entry referred to
+   the `SchedContext/Operations.lean` function as
+   `allOtherActiveSchedContexts`; the actual function name is
+   `collectSchedContexts`.  Corrected in `CHANGELOG.md`,
+   `CLAUDE.md`, `docs/WORKSTREAM_HISTORY.md`, and
+   `docs/gitbook/07-testing-and-ci.md`.
+
+3. **4 additional safe migrations** —
+   `Scheduler/Operations/Core.lean::timeoutBlockedThreads` (1
+   pattern, 2-arm `_ => identity` semantics) and three sites in
+   `Kernel/API.lean` (`maybeReceiver` pre-receiver lookups in the
+   call-with-caps + checked + with-donation paths, all 2-arm
+   `_ => none`).  Updated the
+   `dispatchWithCap_call_uses_withCaps` theorem statement to match
+   the new function body.
+
+### Post-delivery audit-pass remediation (initial)
 
 A deep audit of the initial AN10 landing (`0ce739e`) surfaced four
 strengthening opportunities, all addressed in-PR:
@@ -10,7 +46,7 @@ strengthening opportunities, all addressed in-PR:
    The audit-pass migrates an additional 9 production reader sites:
    `Lifecycle/Suspend.lean::clearTcbIpcFields` + `clearPendingState` +
    `cancelDonation` (3 sites);
-   `SchedContext/Operations.lean::allOtherActiveSchedContexts` +
+   `SchedContext/Operations.lean::collectSchedContexts` +
    `schedContextYieldTo` (2 raw lookups) +
    `schedContextConfigure` (2 raw lookups) +
    `schedContextBind` (2 raw lookups) +
@@ -34,14 +70,26 @@ strengthening opportunities, all addressed in-PR:
    * 1 `clearPendingState` test (queue links cleared).
 3. **Baseline floors advanced** — `docs/audits/AL0_baseline.txt`
    re-anchored:
-   * `RAW_MATCH_TCB` 49 → 42, `RAW_MATCH_SCHEDCONTEXT` 13 → 11,
-     `RAW_MATCH_TOTAL` 115 → 106 (per-variant counts continue to drop).
-   * `GETTCB_ADOPTION` 54 → 77, `GETSCHEDCTX_ADOPTION` 23 → 34
-     (typed-helper consumers continue to grow).
+   * Per-variant counts continue to drop on the migrated surface
+     (e.g., `RAW_MATCH_TCB` 52 → 48 on the corrected metric).
+   * `GETTCB_ADOPTION` 34 → 77, `GETSCHEDCTX_ADOPTION` 9 → 34
+     (typed-helper consumers grow as migration proceeds).
    * `TEST_COUNT_AK7` 17 → 26.
 4. **Documentation accuracy** — corrected a stale `tests/Ak7RegressionSuite.lean`
    reference in the `scripts/ak7_cascade_baseline.sh` docstring (the
    real path is `tests/An10CascadeSuite.lean`).
+5. **Metric script accuracy** — `scripts/ak7_cascade_baseline.sh`'s
+   `RAW_MATCH_*` regex extended from `match st\.objects\[` to
+   `match.*\.objects\[` so the script now sees the parenthesized
+   form `match (st.objects[…] : Option KernelObject)` (~20 sites
+   pre-existed in `Scheduler/Invariant.lean`,
+   `Scheduler/Operations/Core.lean`,
+   `Scheduler/PriorityInheritance/Propagate.lean`,
+   `SchedContext/Operations.lean`) and variant state names
+   (`stMid`, `stStored`, etc.).  `docs/audits/AL0_baseline.txt`
+   re-anchored against the corrected counts; the monotonicity gate
+   continues to enforce should-drop / should-grow direction on
+   every commit.
 
 The audit-pass also explored writer-side migration into
 `Service/Registry.lean::registerService` but reverted the change after
@@ -131,11 +179,21 @@ Reader-side raw-match patterns migrated to the AL2-A typed helpers
   `getCurrentPriority` and `getCurrentPriorityChecked` migrate to
   `getSchedContext?`.
 
-Metric deltas (post-audit-pass cumulative): `RAW_MATCH_TCB` 52 → 42,
-`RAW_MATCH_SCHEDCONTEXT` 19 → 11, `RAW_MATCH_ENDPOINT` 17 → 12,
-`RAW_MATCH_TOTAL` 129 → 106.  `GETTCB_ADOPTION` 34 → 77,
-`GETSCHEDCTX_ADOPTION` 9 → 34, `GETENDPOINT_ADOPTION` 6 → 19,
-`GETNOTIFICATION_ADOPTION` 8 → 10, `GETUNTYPED_ADOPTION` 3 → 5.
+Metric deltas (post-audit-pass cumulative, per the corrected
+`match.*\.objects\[` regex which now also captures the
+parenthesized `match (st.objects[…] : Option KernelObject)` form):
+`RAW_MATCH_TCB` 58 → 48 (−10), `RAW_MATCH_SCHEDCONTEXT` 26 → 18
+(−8), `RAW_MATCH_ENDPOINT` 17 → 12 (−5), `RAW_MATCH_TOTAL` 145 →
+126 (−19).  `GETTCB_ADOPTION` 34 → 77 (+43),
+`GETSCHEDCTX_ADOPTION` 9 → 34 (+25), `GETENDPOINT_ADOPTION` 6 →
+19 (+13), `GETNOTIFICATION_ADOPTION` 8 → 10 (+2),
+`GETUNTYPED_ADOPTION` 3 → 5 (+2).  Note: the pre-AN10 baseline
+captured under the OLD regex showed `RAW_MATCH_TCB = 52` /
+`RAW_MATCH_TOTAL = 129`; the corrected regex gives `58` / `145`
+because it sees the ~16 paren-form patterns that pre-existed and
+were undercounted.  Migration deltas are unchanged at the
+function-and-site level (12 functions, 19 raw lookups removed
+across the AN10 + audit-pass + audit-pass-2 work).
 
 Functions intentionally **not** migrated (with rationale recorded
 inline as docstring or AN10-B comment): `effectiveBucketPriority`

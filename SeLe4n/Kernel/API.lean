@@ -829,9 +829,10 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         -- Z7: Determine receiver before call pops it from receiveQ
-        let maybeReceiver := match st.objects[epId]? with
-          | some (.endpoint ep) => ep.receiveQ.head
-          | _ => none
+        -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+        let maybeReceiver := match st.getEndpoint? epId with
+          | some ep => ep.receiveQ.head
+          | none    => none
         match endpointCallWithCaps epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot st with
         | .error e => .error e
@@ -1035,9 +1036,10 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         -- Z7: Determine receiver before call pops it from receiveQ
-        let maybeReceiver := match st.objects[epId]? with
-          | some (.endpoint ep) => ep.receiveQ.head
-          | _ => none
+        -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+        let maybeReceiver := match st.getEndpoint? epId with
+          | some ep => ep.receiveQ.head
+          | none    => none
         match endpointCallChecked ctx epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot st with
         | .error e => .error e
@@ -1888,9 +1890,10 @@ theorem dispatchWithCap_call_uses_withCaps
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         -- Z7: Donation post-processing after call with caps
-        let maybeReceiver := match st.objects[epId]? with
-          | some (.endpoint ep) => ep.receiveQ.head
-          | _ => none
+        -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+        let maybeReceiver := match st.getEndpoint? epId with
+          | some ep => ep.receiveQ.head
+          | none    => none
         match endpointCallWithCaps epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot st with
         | .error e => .error e
