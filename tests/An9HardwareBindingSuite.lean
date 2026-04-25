@@ -140,12 +140,37 @@ def main : IO Unit := do
     "markTlbBarriered must restore both witnesses"
 
   -- AN9-A (audit fix A1): joint state composition theorem.  Verifies
-  -- the strengthened form on the empty state.
-  let _ := TlbCacheJointState.empty_pageTableUpdate_full_coherency
-             (ASID.ofNat 0)
-             (VAddr.ofNat 0x1000)
-             (SeLe4n.PAddr.ofNat 0x80000)
+  -- the strengthened form on the empty state AND exercises the
+  -- post-state field shapes substantively.
+  let asid0 := ASID.ofNat 0
+  let vaddr0 := VAddr.ofNat 0x1000
+  let paddr0 := SeLe4n.PAddr.ofNat 0x80000
+  let _bundle := TlbCacheJointState.empty_pageTableUpdate_full_coherency
+                   asid0 vaddr0 paddr0
+  -- Verify the joint update produces the expected post-state shapes
+  -- (operationally, not just at the type level).
+  let postJoint := TlbCacheJointState.empty.pageTableUpdate asid0 vaddr0 paddr0
+  expect "an9a_audit_fix_joint_post_tlbBarrierEmitted_true"
+    (decide postJoint.sysState.machine.tlbBarrierEmitted)
+    "joint post-state must preserve tlbBarrierEmitted = true"
+  expect "an9a_audit_fix_joint_post_lastTlbBarrierKind_includes_bracket"
+    (decide (postJoint.sysState.machine.lastTlbBarrierKind &&& 0x05 = 0x05))
+    "joint post-state must preserve dsbIsh|isb bracket bitmask"
+  -- I-cache: every entry should be `.invalid` after the D→I sequence
+  -- (the headline AN9-A coherency claim).
+  expect "an9a_audit_fix_joint_post_icache_invalidated"
+    (postJoint.cacheState.icache (SeLe4n.PAddr.ofNat 0x40000) = .invalid)
+    "joint post-state I-cache must be fully invalidated"
   passLine "an9a_audit_fix_joint_pt_update_coherency_proven"
+
+  -- AN9-B (audit reinforcement): markTlbDirty followed by
+  -- markTlbBarriered is the canonical "operation+flush" round-trip.
+  let dirtyState := markTlbDirty (default : SystemState)
+  let restoredState := markTlbBarriered dirtyState
+  expect "an9b_audit_fix_round_trip_dirty_then_clean"
+    (decide restoredState.machine.tlbBarrierEmitted ∧
+     decide (restoredState.machine.lastTlbBarrierKind &&& 0x05 = 0x05))
+    "dirty→barriered round-trip must restore the bracket witness"
 
   -- All AN9 substantive surface anchors verified.
   IO.println ""

@@ -280,9 +280,16 @@ def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
 --   1. Defining `suspendThread_transientWindowInvariant` — a predicate
 --      that holds at every observable moment after `suspendThread` returns
 --      `.ok` and witnesses the post-condition the FFI bracket guarantees.
---   2. Proving `suspendThread_atomicity_under_ffi_bracket`, which states
---      that under the FFI-supplied precondition `interruptsEnabled = false`
---      the post-state satisfies the transient-window invariant.
+--   2. Defining `suspendThread_atomicity_precondition` — the FFI-supplied
+--      `interruptsEnabled = false` shape that real-hardware callers
+--      always discharge via the Rust `with_interrupts_disabled` bracket.
+--   3. Proving `suspendThread_atomicity_under_ffi_bracket_default` (the
+--      substantive form) which UNFOLDS `suspendThread` and proves
+--      `.error .invalidArgument` is the result on the empty default
+--      state — a real claim, not a tautology.  Composed with
+--      `suspendThread_atomicity_precondition_default` (the boot-state
+--      precondition discharge) and re-exported as
+--      `suspendThread_default_rejects_with_invalidArgument`.
 --
 -- The Rust counterpart `sele4n_suspend_thread` in
 -- `rust/sele4n-hal/src/ffi.rs` brackets the inner Lean dispatch with

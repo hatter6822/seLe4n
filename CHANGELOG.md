@@ -65,19 +65,25 @@ material findings**, all fixed in-PR before merge:
 
 ### Audit-fix tests added
 
-- 3 new Rust unit tests in `cpu::tests`
+- 3 new Rust unit tests in `cpu::tests` / `smp::tests`
   (`wfe_bounded_returns_zero_on_host`,
   `bring_up_secondaries_partial_table_is_supported`,
   `fresh_state_secondaries_start_not_ready`).
-- 4 new Lean surface anchors in
+- 8 new Lean surface anchors in
   `tests/An9HardwareBindingSuite.lean`:
-  - `an9d_audit_fix_default_rejects_invalidArgument`
-  - `an9b_audit_fix_dirty_breaks_predicate`
-  - `an9b_audit_fix_barriered_restores_witness`
+  - `an9d_audit_fix_default_rejects_invalidArgument` —
+    substantive AN9-D theorem (not `rfl`)
+  - `an9b_audit_fix_dirty_breaks_predicate` — negative witness
+  - `an9b_audit_fix_barriered_restores_witness` — positive witness
+  - `an9b_audit_fix_round_trip_dirty_then_clean` — composition
+  - `an9a_audit_fix_joint_post_tlbBarrierEmitted_true` — joint-state
+    post-condition operationally exercised
+  - `an9a_audit_fix_joint_post_lastTlbBarrierKind_includes_bracket`
+  - `an9a_audit_fix_joint_post_icache_invalidated`
   - `an9a_audit_fix_joint_pt_update_coherency_proven`
 
 Total Rust tests after audit fixes: **462 passing** (up from 459).
-AN9 Lean test suite: **19 surface anchors** (up from 15).
+AN9 Lean test suite: **23 surface anchors** (up from 15 initial).
 `cargo clippy --workspace -- -D warnings` clean (0 warnings).
 
 ---

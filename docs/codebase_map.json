@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/complete-phase-an9-workstream-9pQ2d",
-      "commit_sha": "4c7f9f5d7aa9a58542141cbe85225a1d60fa0161",
-      "tree_sha": "e683727dc686613b08befe5deb31633bd89dbc28",
-      "committed_at_utc": "2026-04-25T04:37:57+00:00"
+      "commit_sha": "b9910321b06e9d9961c0f81a8dc0b4e2dd98ccf4",
+      "tree_sha": "ff04d3aa1c48d7545dfceafb63f3583a07135be9",
+      "committed_at_utc": "2026-04-25T05:06:07+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "24b029a523ac62ba77e99b04e596783688b4f7539763fd87810ad7ff20537ece"
+    "source_digest": "92de5533fe613ffb1358b44056a9f60960e3b0e3d921249bbefd0d079aa1bd05"
   },
   "summary": {
     "module_count": 192,
@@ -27,9 +27,9 @@
     "version": "0.30.10",
     "lean_toolchain": "v4.28.0",
     "production_files": 167,
-    "production_loc": 108891,
+    "production_loc": 108898,
     "test_files": 25,
-    "test_loc": 16168,
+    "test_loc": 16193,
     "proved_theorem_lemma_decls": 3186,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -35394,7 +35394,7 @@
         {
           "kind": "def",
           "name": "suspendThread_transientWindowInvariant",
-          "line": 302,
+          "line": 309,
           "called": [
             "SystemState",
             "ThreadId",
@@ -35405,7 +35405,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_transientWindowInvariant_default",
-          "line": 315,
+          "line": 322,
           "called": [
             "RHTable_get",
             "SystemState",
@@ -35419,7 +35419,7 @@
         {
           "kind": "def",
           "name": "suspendThread_atomicity_precondition",
-          "line": 328,
+          "line": 335,
           "called": [
             "SystemState"
           ]
@@ -35427,7 +35427,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_atomicity_under_ffi_bracket_default",
-          "line": 356,
+          "line": 363,
           "called": [
             "RHTable_get",
             "SystemState",
@@ -35442,7 +35442,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_atomicity_precondition_default",
-          "line": 371,
+          "line": 378,
           "called": [
             "SystemState",
             "default",
@@ -35452,7 +35452,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_default_rejects_with_invalidArgument",
-          "line": 380,
+          "line": 387,
           "called": [
             "SystemState",
             "ValidThreadId",
@@ -69255,6 +69255,7 @@
             "markTlbBarriered",
             "markTlbDirty",
             "ofNat",
+            "pageTableUpdate",
             "passLine",
             "subsumes",
             "suspendThread",
