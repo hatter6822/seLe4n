@@ -1,5 +1,87 @@
 ## v0.30.10 — WS-AN Phase AN10 (AK7 cascade closure)
 
+### Post-delivery AN10-residual-1 closure
+
+After the user observed that the three audit passes still delivered
+~10% of the plan scope, a fourth pass landed the residual closure
+across **6 atomic commits** on `claude/review-codebase-audit-Fx4iX`.
+Each commit is independently green (full `lake build` + AN10 cascade
+suite + monotonicity gate); the work decomposes as follows:
+
+1. **SETUP** (commit `ff656b3`): re-anchor `docs/audits/AL0_baseline.txt`
+   at the post-audit-pass-3 floor; add `tests/An10CascadeSuite.lean`
+   AN10-E section header.
+
+2. **H7 typed wrapper** (commit `b4fd653`): add
+   `removeRunnableValid : SystemState → ValidThreadId → SystemState`
+   in `IPC/Operations/Endpoint.lean:114` with `_eq` reduction lemma.
+   Wrapper-not-tightening rationale: `removeRunnable` is sentinel-safe
+   (sentinel can never be a member of any RunQueue / `scheduler.current`),
+   so tightening provides type-level documentation but zero runtime
+   safety.  Tightening would have cascaded through ~100 references.
+
+3. **H1–H4 lifecycle wrappers** (commit `f8fd2e6`): typed entry-points
+   for `clearTcbIpcFields`, `clearPendingState`, `cancelIpcBlocking`,
+   `cancelDonation` in `Lifecycle/Suspend.lean`.  Each handler routes
+   through the AL2-A typed helpers internally and is therefore
+   sentinel-safe; the wrappers add type-level documentation of the
+   dispatch-boundary discipline.
+
+4. **R1 cspaceLookupSlot → getCNode?** (commit `f92b036`): outer
+   match on `objects[addr.cnode]?` migrated to the typed helper.
+   Cascade: 3 destructure rewrites + 2 simp-set extensions across
+   `Operations.lean`, `Authority.lean`, `ScrubAndUntyped.lean`.
+
+5. **R2+R3 cspaceResolvePath / resolveCapAddress** (commit `0a49569`):
+   both outer matches migrated to `getCNode?`.  R3 is recursive;
+   termination metric (`bitsRemaining`, Nat-strict descent) is
+   unchanged.  Cascade: 3 proof-surface bridges via `getCNode?_eq_some_iff`
+   in `resolveCapAddress_guard_match`, `_guard_reject`,
+   `_result_valid_cnode`.
+
+6. **H5+H6 donation handler wrappers** (commit `68c0db3`):
+   `donateSchedContextValid`, `returnDonatedSchedContextValid` in
+   `IPC/Operations/Endpoint.lean`.  Body migration deferred (see
+   `AUDIT_v0.29.0_DEFERRED.md` AN10-B.deep-cascade-readers).
+
+**Honest residual scope** (delivered as the closure of this pass):
+- **AN10-A handler hygiene**: 7 of ~12 handlers gained typed wrappers.
+  Remaining (`getCurrentPriority`, `getCurrentPriorityChecked`,
+  `updatePrioritySource`, `migrateRunQueueBucket`, etc.) tracked as
+  marginal-value future work.
+- **AN10-B reader hygiene**: 3 of ~8 deep-cascade readers migrated
+  (R1, R2, R3).  Remaining (R4 `cspaceInsertSlot`, R5
+  `cspaceDeleteSlotCore`, H5/H6 inner matches, `notificationSignal`
+  no-waiters branch, `effectiveBucketPriority`, `saveOutgoingContext`,
+  `restoreIncomingContext`, `suspendThread` body, `resumeThread` body)
+  documented as deferred — each has 16–30 proof-surface destructures
+  enumerating all 7 KernelObject variants.  Source-read confirmed
+  `endpointQueueRemoveDual` is a genuine 3-arm reader and reclassified
+  out of the tractable bucket.
+- **AN10-B 3-arm readers**: correctly NOT migrated (semantic ABI break).
+- **AN10-C writer-production**: NOT migrated.  Defense-in-depth wrapper
+  `storeObjectKindChecked` is fully tested; production correctness is
+  structurally enforced by the AM4 `lifecycleObjectTypeLockstep`
+  invariant (11th conjunct of `crossSubsystemInvariant`).
+
+**Cumulative metric trajectory** (AN10 baseline → audit-pass-3 →
+AN10-residual-1):
+
+| Metric | Baseline | After AP3 | After R1 |
+|--------|---------|-----------|----------|
+| `RAW_MATCH_TCB` | 58 | 44 | 44 |
+| `RAW_MATCH_CNODE` | 13 | 10 | 7 |
+| `GETCNODE_ADOPTION` | 0 | 33 | 56 |
+| `GETTCB_ADOPTION` | 34 | 99 | 100 |
+| `STOREOBJECTCHECKED_ADOPTION` | 41 | 57 | 58 |
+| `TEST_COUNT_AK7` | 17 | 32 | 43 |
+| `SENTINEL_CHECK_DISPATCH` | 17 | 17 | 17 |
+
+Gate at the AN10-residual-1 tip: `lake build` (302 jobs, 0 warnings)
++ `an10_cascade_suite` 43/43 PASS + monotonicity gate PASS at the new
+floors (RAW_MATCH_CNODE=7 / GETCNODE_ADOPTION=56 / TEST_COUNT_AK7=43)
++ zero `sorry`/`axiom`/`native_decide`.
+
 ### Post-delivery audit-pass-3 remediation
 
 The user pointed out that the audit-pass-1 + audit-pass-2 work

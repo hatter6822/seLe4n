@@ -415,33 +415,68 @@ currently-active plan file tracks them.**
     the floors.
 
 - **Residual hygiene work tracked but non-gating** (post-AN10):
-  * **AN10-A.handler-internal-hygiene** — internal helper signatures
-    (`lifecycleRetypeWithCleanup`, `cancelDonation` body parameter,
-    `removeRunnable`, `cancelIpcBlocking`, `donateSchedContext`,
-    `returnDonatedSchedContext`, `clearTcbIpcFields`, `clearPendingState`,
-    `getCurrentPriority`, `getCurrentPriorityChecked`, `updatePrioritySource`,
-    `migrateRunQueueBucket`, the `_default` lookups inside `suspendThread`
-    and `resumeThread`, etc.) still take raw `ObjId` / `ThreadId` /
-    `SchedContextId` instead of `Valid*Id`. AL1b/AL8 + AL7's dispatch-
-    boundary validators ensure the type-level discipline is preserved
-    transitively — every reachable call path goes through a validator
-    first. Tightening these signatures requires updating ~30+ proof
-    sites per helper (each affects every preservation theorem that
-    consumes the helper).  No security gap relative to the gated
-    dispatch boundary; tracked as readability hygiene.
-  * **AN10-B.deep-cascade-readers** — the following functions retain
-    raw `match st.objects[id]?` patterns despite being clean 2-arm
-    candidates because each has 8–30 downstream preservation proofs
-    that case-split on the raw lookup shape and would each need a
-    typed-helper bridge: `cspaceLookupSlot`, `cspaceResolvePath`,
-    `resolveCapAddress`, `cspaceInsertSlot`, `cspaceDeleteSlotCore`,
-    `donateSchedContext`, `returnDonatedSchedContext`, `notificationSignal`
-    no-waiters branch, `endpointQueueRemoveDual`, `endpointQueuePopHead`,
-    `endpointQueueEnqueue`, `effectiveBucketPriority`,
-    `saveOutgoingContext`, `restoreIncomingContext`, `suspendThread`
-    body, `resumeThread` body. The monotonicity gate locks the
-    migrated surface so this scope cannot regress; the not-yet-
-    migrated surface is bounded by the gate's current floor.
+  * **AN10-A.handler-internal-hygiene** — partial closure via the
+    **AN10-residual-1 typed-wrapper pattern** (commits 2, 3, 6 on
+    branch `claude/review-codebase-audit-Fx4iX`).  Seven lifecycle/IPC
+    handlers gained typed `*Valid` entry-points via thin wrappers that
+    document the dispatch-boundary discipline at the type system
+    without disturbing the proof surface: `removeRunnableValid` (H7,
+    `IPC/Operations/Endpoint.lean:114`), `clearTcbIpcFieldsValid`
+    (H1, private), `clearPendingStateValid` (H2),
+    `cancelIpcBlockingValid` (H3), `cancelDonationValid` (H4) — all
+    in `Lifecycle/Suspend.lean`; plus `donateSchedContextValid` (H5),
+    `returnDonatedSchedContextValid` (H6) in
+    `IPC/Operations/Endpoint.lean`.  Each wrapper takes
+    `ValidThreadId` parameters and reduces to the raw form via a
+    `_eq` `@[simp]` lemma so existing proof bodies operating on the
+    raw form continue to work unchanged.
+
+    **Rationale for wrapper-not-tightening** (AN10-residual-1
+    findings): the original tightening plan would have cascaded
+    through ~30+ proof-surface call sites per handler.  Reading the
+    handler bodies confirmed they are sentinel-safe by virtue of
+    routing through the AL2-A typed helpers (`getTcb?`,
+    `getSchedContext?`) which already return `none` for the
+    sentinel.  Tightening provides type-level documentation but
+    zero runtime safety improvement.  The wrapper achieves the
+    documentation benefit without paying the cascade cost.
+
+    **Remaining work** (still tracked under this category):
+    handlers `getCurrentPriority`, `getCurrentPriorityChecked`,
+    `updatePrioritySource`, `migrateRunQueueBucket` — same wrapper
+    pattern applies; not yet adopted because their AL7-validated
+    callers already construct `ValidThreadId` and the wrappers are
+    a marginal-value documentation-only addition.
+  * **AN10-B.deep-cascade-readers** — partial closure via the
+    **AN10-residual-1 reader-side migration** (commits 4, 5 on
+    branch `claude/review-codebase-audit-Fx4iX`).  Three functions
+    migrated from raw `match st.objects[id]?` to AL2-A typed
+    helpers:
+      - `cspaceLookupSlot` (R1, `Capability/Operations.lean:88`) →
+        `getCNode?`. Cascade: 3 destructure rewrites + 2 simp-set
+        extensions across `Operations.lean`, `Authority.lean`,
+        `ScrubAndUntyped.lean`.
+      - `cspaceResolvePath` (R2, `Capability/Operations.lean:110`) →
+        `getCNode?`. Cascade: 0 unfolds.
+      - `resolveCapAddress` (R3, `Capability/Operations.lean:177`) →
+        `getCNode?`. Cascade: 3 proof-surface bridges via
+        `getCNode?_eq_some_iff` (`resolveCapAddress_guard_match`,
+        `_guard_reject`, `_result_valid_cnode`).
+
+    Metric delta: GETCNODE_ADOPTION 33 → 56 (+23). RAW_MATCH_CNODE
+    10 → 7 (−3).
+
+    **Remaining deep-cascade readers** (still tracked under this
+    category — each has 16–30 proof-surface destructures that
+    case-split on all 7 KernelObject variants):
+    `cspaceInsertSlot` (R4), `cspaceDeleteSlotCore` (R5),
+    `donateSchedContext` body (H5 inner match), `returnDonatedSchedContext`
+    body (H6 inner match), `notificationSignal` no-waiters branch,
+    `effectiveBucketPriority`, `saveOutgoingContext`,
+    `restoreIncomingContext`, `suspendThread` body, `resumeThread`
+    body.  The monotonicity gate locks the migrated surface so this
+    scope cannot regress; the not-yet-migrated surface is bounded
+    by the gate's current floor.
   * **AN10-B.three-arm-readers** — `notificationSignal` /
     `notificationWait` / `endpointQueuePopHead` / `endpointQueueEnqueue` /
     `endpointQueueRemoveDual` / `dispatchSyscallChecked` /
@@ -451,6 +486,13 @@ currently-active plan file tracks them.**
     helpers would collapse both error arms — a **semantic change** that
     breaks the userspace ABI contract.  These are correctly NOT
     migrated.
+
+    **Reclassification note (AN10-residual-1)**: source-read of
+    `endpointQueueRemoveDual` (`IPC/DualQueue/Transport.lean:872-873`)
+    confirmed it is **3-arm** (`some _ => .invalidCapability | none =>
+    .objectNotFound`).  Earlier residual documentation listed it as a
+    tractable 2-arm candidate; this is corrected.  Like the rest of
+    this category, it stays deferred.
   * **AN10-C.writer-production** — production `storeObject` call sites
     in IPC / Lifecycle / Capability / SchedContext / Service /
     Architecture have not been migrated to `storeObjectKindChecked`.

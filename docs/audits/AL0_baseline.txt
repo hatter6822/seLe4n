@@ -13,19 +13,19 @@ raw_match_schedcontext   = 18
 raw_match_endpoint       = 9
 raw_match_notification   = 2
 raw_match_untyped        = 2
-raw_match_cnode          = 10
+raw_match_cnode          = 7
 raw_match_vspaceroot     = 12
-raw_match_total          = 116
+raw_match_total          = 113
 raw_lookup_tid           = 675
 
 ## Typed-helper adoption (should-grow)
 
-gettcb_adoption          = 99
-getschedctx_adoption     = 34
+gettcb_adoption          = 100
+getschedctx_adoption     = 35
 getendpoint_adoption     = 22
 getnotification_adoption = 10
 getuntyped_adoption      = 5
-getcnode_adoption        = 34
+getcnode_adoption        = 56
 getvspaceroot_adoption   = 12
 
 ## Writer-side wrapper adoption (should-grow)
@@ -38,7 +38,7 @@ sentinel_check_dispatch  = 17
 
 ## Regression test counts (should-grow)
 
-test_count_ak7           = 32
+test_count_ak7           = 43
 
 ## Proof-surface health (should-stay-zero)
 
@@ -52,19 +52,19 @@ RAW_MATCH_SCHEDCONTEXT=18
 RAW_MATCH_ENDPOINT=9
 RAW_MATCH_NOTIFICATION=2
 RAW_MATCH_UNTYPED=2
-RAW_MATCH_CNODE=10
+RAW_MATCH_CNODE=7
 RAW_MATCH_VSPACEROOT=12
-RAW_MATCH_TOTAL=116
+RAW_MATCH_TOTAL=113
 RAW_LOOKUP_TID=675
-GETTCB_ADOPTION=99
-GETSCHEDCTX_ADOPTION=34
+GETTCB_ADOPTION=100
+GETSCHEDCTX_ADOPTION=35
 GETENDPOINT_ADOPTION=22
 GETNOTIFICATION_ADOPTION=10
 GETUNTYPED_ADOPTION=5
-GETCNODE_ADOPTION=34
+GETCNODE_ADOPTION=56
 GETVSPACEROOT_ADOPTION=12
 STOREOBJECTCHECKED_ADOPTION=58
 SENTINEL_CHECK_DISPATCH=17
-TEST_COUNT_AK7=32
+TEST_COUNT_AK7=43
 SORRY_COUNT=0
 AXIOM_COUNT=0

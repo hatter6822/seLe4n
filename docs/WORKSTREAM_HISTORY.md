@@ -95,6 +95,70 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
     round-trip / kind-discrimination / empty-state witnesses),
     wired into `lakefile.toml` as `lean_exe an10_cascade_suite`
     and into `scripts/test_tier2_negative.sh`.
+  - **AN10 post-delivery AN10-residual-1 closure**: a fourth
+    pass (in response to user observation that even after three
+    audit passes the original 17-commit plan remained ~90%
+    unscoped) landed an honest residual closure as **6 atomic
+    commits**:
+      1. SETUP (`ff656b3`): re-anchor baseline + AN10-E section.
+      2. H7 wrapper (`b4fd653`): `removeRunnableValid` typed
+         entry-point in `IPC/Operations/Endpoint.lean:114`.
+      3. H1–H4 wrappers (`f8fd2e6`): `clearTcbIpcFieldsValid`,
+         `clearPendingStateValid`, `cancelIpcBlockingValid`,
+         `cancelDonationValid` in `Lifecycle/Suspend.lean`.
+      4. R1 reader migration (`f92b036`):
+         `cspaceLookupSlot` → `getCNode?` + 3 cascade
+         destructure rewrites + 2 simp-set extensions across
+         `Operations.lean`, `Authority.lean`, `ScrubAndUntyped.lean`.
+      5. R2+R3 reader migrations (`0a49569`):
+         `cspaceResolvePath` + `resolveCapAddress` → `getCNode?`,
+         3 proof-surface bridges via `getCNode?_eq_some_iff` for
+         `_guard_match`/`_guard_reject`/`_result_valid_cnode`.
+         Recursive termination metric (`bitsRemaining`) unaffected.
+      6. H5+H6 wrappers (`68c0db3`):
+         `donateSchedContextValid`, `returnDonatedSchedContextValid`.
+
+    **Wrapper-pattern rationale** (durable design decision):
+    sentinel-safe handlers route through AL2-A typed helpers
+    internally (which return `none` for the sentinel), so
+    tightening the parameter signature would require ~30+
+    proof-surface call-site rewrites for **zero runtime safety
+    improvement**.  The `*Valid` wrappers add type-level
+    documentation of the dispatch-boundary discipline at near-
+    zero proof cost; existing proofs continue to operate on the
+    raw form via the `_eq` `@[simp]` reduction lemma.  This
+    pattern was substituted for the original plan's
+    "tighten-and-cascade" approach, which source-reads showed
+    estimated cascade volumes 2–3× lower than reality.
+
+    **Honest deferral**: R4 `cspaceInsertSlot` was attempted but
+    its proof cascade enumerated all 7 KernelObject variants
+    across 6 files (35+ destructure sites); reverted and
+    documented in `docs/audits/AUDIT_v0.29.0_DEFERRED.md`
+    AN10-B.deep-cascade-readers.  R5 `cspaceDeleteSlotCore`,
+    H5/H6 inner matches, `notificationSignal` no-waiters branch,
+    `effectiveBucketPriority`, save/restore context, and
+    `suspendThread`/`resumeThread` body migrations similarly
+    tracked.  Writer-production migrations (C.1/C.2/C.3) NOT
+    landed — defense-in-depth structurally enforced by the AM4
+    `lifecycleObjectTypeLockstep` invariant.
+
+    **Source-read correction**: `endpointQueueRemoveDual`
+    (`IPC/DualQueue/Transport.lean:872-873`) confirmed 3-arm
+    (`some _ => .invalidCapability | none => .objectNotFound`);
+    earlier residual docs incorrectly listed it as 2-arm.
+    Reclassified into the (correctly NOT-migrated) 3-arm bucket.
+
+    **Cumulative metric deltas (AN10 baseline → AN10-residual-1
+    tip)**: `RAW_MATCH_TCB` 58→44, `RAW_MATCH_CNODE` 13→7,
+    `GETCNODE_ADOPTION` 0→56, `GETTCB_ADOPTION` 34→100,
+    `STOREOBJECTCHECKED_ADOPTION` 41→58, `TEST_COUNT_AK7` 17→43,
+    `SENTINEL_CHECK_DISPATCH` 17→17, zero `sorry`/`axiom`.
+    Gate at the residual-1 tip: `lake build` (302 jobs, 0
+    warnings) + `an10_cascade_suite` 43/43 PASS +
+    `ak7_cascade_check_monotonic.sh` PASS at the new floors +
+    `cargo test --workspace` (462) + `test_smoke.sh` PASS.
+
   - **AN10 post-delivery audit-pass-3 remediation**: a third deep
     audit (in response to user observation that the prior passes
     delivered ~10% of the plan's migration scope and overstated
