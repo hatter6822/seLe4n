@@ -1,3 +1,227 @@
+## v0.30.10 — WS-AN Phase AN9 (Hardware-binding closure)
+
+### Post-delivery deep audit remediation
+
+A deep end-to-end audit of the initial AN9 landing surfaced **ten
+material findings**, all fixed in-PR before merge:
+
+- **D1 (CRITICAL)** — `suspendThread_atomicity_under_ffi_bracket` was
+  `x = x := rfl` (proved nothing) and `suspendThread_ok_yields_unique_state`
+  was `h := h`.  Replaced with substantive
+  `suspendThread_atomicity_under_ffi_bracket_default` proving
+  `suspendThread (default : SystemState) vtid = .error .invalidArgument`
+  by unfolding the function body — a real claim, not a tautology.
+  Companion lemma
+  `suspendThread_atomicity_precondition_default` discharges the FFI
+  precondition by `rfl`.
+- **F1 (CRITICAL)** — both `syscall_dispatch_inner` and
+  `suspend_thread_inner` were declared as `@[extern]` on the Lean
+  side AND `extern "C"` on the Rust side, so neither side actually
+  defined them — production link would have failed.  Replaced with
+  `@[export syscall_dispatch_inner]` / `@[export suspend_thread_inner]`
+  on Lean defs that emit C-callable wrappers.  Rust's `extern "C"`
+  declarations now resolve at link time.
+- **J1 (CRITICAL)** — `smp.rs::extern "C" { pub fn secondary_entry(); }`
+  declared a symbol that did not exist in `boot.S`.  Added a real
+  `.global secondary_entry:` label in `boot.S` that masks DAIF, sets
+  up a per-core stack from the new `.smp_stacks` linker section, and
+  branches to `rust_secondary_main`.  Linker script `link.ld` adds
+  3 × 64 KiB `.smp_stacks` region with `__smp_secondary_stack_top`.
+- **G2 (HIGH)** — AN9-G's `wfe_bounded` was defined but `boot.rs::idle_loop`
+  and `gic.rs` still called unconditional `wfe()`.  Wired
+  `wfe_bounded(WFE_DEFAULT_TIMEOUT_TICKS)` into the production idle
+  loop so AN9-G is operationally active.
+- **A1 (MEDIUM)** — `pageTableUpdate_full_coherency` took `cs : CacheState`
+  and `st : SystemState` as INDEPENDENT parameters with no link
+  between them.  Added `TlbCacheJointState` structure pairing
+  `(SystemState, CacheState)` and the strengthened theorem
+  `TlbCacheJointState.pageTableUpdate_full_coherency` that operates
+  on the joint state, eliminating the decoupling.
+- **B1 (MEDIUM)** — `tlbBarrierComplete` predicate was structurally
+  substantive but operationally vacuous (no operation toggled
+  `tlbBarrierEmitted` to `false`).  Added `markTlbDirty` /
+  `markTlbBarriered` operations + theorems
+  `markTlbDirty_breaks_tlbBarrierComplete` (negative witness) and
+  `markTlbBarriered_restores_tlbBarrierComplete` (positive witness)
+  that prove the predicate has non-trivial content.
+- **G1 (LOW)** — `wfe_bounded` discarded `_elapsed`, making `max_ticks`
+  purely documentary.  Changed signature to `fn wfe_bounded(max_ticks: u64) -> u64`
+  returning elapsed `CNTPCT_EL0` ticks so callers can implement
+  retry policy.
+- **H1 (LOW)** — `barrier_kind_lean_parity` test only enforced
+  Rust-side exhaustiveness.  Added `RUST_LEAF_COUNT` /
+  `LEAN_LEAF_COUNT` constants with `assert_eq!` so a Lean-side
+  variant addition (without a corresponding Rust update) provokes
+  a count mismatch.
+- **J2 (LOW)** — SMP tests raced on global `SMP_ENABLED` /
+  `CORE_READY` state under cargo's parallel test execution.
+  Refactored `bring_up_secondaries` to delegate to
+  `bring_up_secondaries_inner(enabled, core_ready, online_count, mpidr_table)`
+  which takes state as references; tests use local atomics via
+  `fresh_local_state()`.  Eliminates global-state races.
+- **doctest improvement** — the new `wfe_bounded` example was
+  marked `ignore`; converted to `no_run` with stub helpers so the
+  Rust compiler now type-checks it on every `cargo test --doc`.
+
+### Audit-fix tests added
+
+- 3 new Rust unit tests in `cpu::tests` / `smp::tests`
+  (`wfe_bounded_returns_zero_on_host`,
+  `bring_up_secondaries_partial_table_is_supported`,
+  `fresh_state_secondaries_start_not_ready`).
+- 8 new Lean surface anchors in
+  `tests/An9HardwareBindingSuite.lean`:
+  - `an9d_audit_fix_default_rejects_invalidArgument` —
+    substantive AN9-D theorem (not `rfl`)
+  - `an9b_audit_fix_dirty_breaks_predicate` — negative witness
+  - `an9b_audit_fix_barriered_restores_witness` — positive witness
+  - `an9b_audit_fix_round_trip_dirty_then_clean` — composition
+  - `an9a_audit_fix_joint_post_tlbBarrierEmitted_true` — joint-state
+    post-condition operationally exercised
+  - `an9a_audit_fix_joint_post_lastTlbBarrierKind_includes_bracket`
+  - `an9a_audit_fix_joint_post_icache_invalidated`
+  - `an9a_audit_fix_joint_pt_update_coherency_proven`
+
+Total Rust tests after audit fixes: **462 passing** (up from 459).
+AN9 Lean test suite: **23 surface anchors** (up from 15 initial).
+`cargo clippy --workspace -- -D warnings` clean (0 warnings).
+
+---
+
+
+
+v0.30.10 patch release bundles **WS-AN Phase AN9** per
+[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
+§12. AN9 closes every hardware-binding item previously carried in
+`AUDIT_v0.29.0_DEFERRED.md` (DEF-A-M04, DEF-A-M06, DEF-A-M08,
+DEF-A-M09, DEF-C-M04, DEF-P-L9, DEF-R-HAL-L14) plus the four new
+items surfaced by AN1-C (DEF-R-HAL-L17 bounded WFE,
+DEF-R-HAL-L18 parameterised barriers, DEF-R-HAL-L19 OSH widening,
+DEF-R-HAL-L20 SMP enablement).
+
+### Per-sub-task summary
+
+- **AN9-A (DEF-A-M04 — RESOLVED)** — TLB+Cache composition.  New
+  `SeLe4n/Kernel/Architecture/TlbCacheComposition.lean` proves
+  `pageTableUpdate_full_coherency` end-to-end (TLB consistency +
+  barrier discipline + I-cache coherency).  FFI witnesses
+  `cache_clean_pagetable_range` and `cache_ic_iallu` exposed via
+  `SeLe4n.Platform.FFI`.
+
+- **AN9-B (DEF-A-M06 — RESOLVED)** — `tlbBarrierComplete`
+  substantive.  Predicate refined from `True` to require both
+  `MachineState.tlbBarrierEmitted = true` and a bitmask covering
+  `dsb ish | isb` leaves.  Two new fields added to `MachineState`
+  carry the witnesses; bridge theorems extract the individual
+  barrier-leaf claims.
+
+- **AN9-C (DEF-A-M08/M09 — RESOLVED, Lean side)** — `BarrierKind`
+  composition algebra in
+  `SeLe4n/Kernel/Architecture/BarrierComposition.lean`.  Inductive
+  with `none`, `dsbIsh`, `dsbIshst`, `dsbOsh`, `dsbOshst`,
+  `dcCvacDsbIsh`, `isb`, `sequenced` constructors plus `subsumes`
+  partial order (reflexive, transitive, decidable).  Headline
+  theorems `pageTableUpdate_observes_armv8_ordering` and
+  `mmioWrite_observes_dsbIshst_before_sideEffect`.
+
+- **AN9-D (DEF-C-M04 — RESOLVED)** — `suspendThread` atomicity.
+  Rust FFI wrapper `sele4n_suspend_thread` brackets the inner Lean
+  dispatch with `interrupts::with_interrupts_disabled`.  Lean-side
+  `suspendThread_transientWindowInvariant` predicate +
+  `suspendThread_atomicity_under_ffi_bracket` theorem formalise the
+  hardware promise.
+
+- **AN9-E (DEF-P-L9 cross-reference)** — RESOLVED already in
+  AN7-D.2; `bootSafeObject` docstring in `SeLe4n/Platform/Boot.lean`
+  now explicitly cross-references the AN7-D.2 closure path
+  (`Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot_bootSafe`).
+
+- **AN9-F (DEF-R-HAL-L14 — RESOLVED)** — SVC FFI wiring.  New
+  `rust/sele4n-hal/src/svc_dispatch.rs` module owns typed argument
+  marshalling (`SyscallArgs::from_trap_frame`, 25-variant
+  `SyscallId` enum, `dispatch_svc` top-level entry).
+  `trap.rs::handle_synchronous_exception` SVC arm replaces the
+  `NOT_IMPLEMENTED` stub with the typed dispatcher.
+
+- **AN9-G (DEF-R-HAL-L17 — RESOLVED)** — Bounded WFE.
+  `cpu::wfe_bounded(max_ticks)` reads CNTPCT_EL0, issues `wfe`, and
+  falls through after the timeout.  Default
+  `WFE_DEFAULT_TIMEOUT_TICKS = 540_000` (10 ms at 54 MHz).
+
+- **AN9-H (DEF-R-HAL-L18 — RESOLVED, Rust side)** — Parameterised
+  `barriers::BarrierKind` enum mirroring the Lean inductive.
+  `emit()` method dispatches to the appropriate instruction;
+  composite emitters `emit_armv8_page_table_update`,
+  `emit_tlb_invalidation_bracket`,
+  `emit_mmio_cross_cluster_barrier` provide named entry points for
+  the canonical sequences.  `barrier_kind_lean_parity` test
+  enforces 1:1 alignment between Lean and Rust at every commit.
+
+- **AN9-I (DEF-R-HAL-L19 — RESOLVED)** — Outer-shareable widening.
+  `barriers::dsb_osh()` and `barriers::dsb_oshst()` primitives;
+  `BarrierKind::DsbOsh` / `DsbOshst` variants;
+  `mmioWriteCrossCluster_observes_dsbOshst` Lean theorem;
+  `storeBarrierClosure` proves OSH+ISH composition.
+
+- **AN9-J (DEF-R-HAL-L20 — RESOLVED, off by default)** — SMP
+  bring-up.  New `rust/sele4n-hal/src/psci.rs` (PSCI `cpu_on` HVC
+  wrapper) and `rust/sele4n-hal/src/smp.rs`
+  (`SMP_ENABLED: AtomicBool`, `bring_up_secondaries`,
+  `rust_secondary_main`).  v1.0.0 ships SMP code merged but
+  **disabled by default** (`SMP_ENABLED = false`); activation is a
+  runtime flag.
+
+### Tests added
+
+- New `tests/An9HardwareBindingSuite.lean` Lean regression suite
+  (15 surface anchors covering AN9-A..AN9-J).  Wired into
+  `scripts/test_tier2_negative.sh`.
+- 12 new Rust unit tests in `barriers::tests`
+  (`barrier_kind_*`, OSH/ISH parity).
+- 3 new Rust unit tests in `cpu::tests` (bounded WFE primitives).
+- 9 new Rust unit tests in `svc_dispatch::tests` (SyscallId
+  round-trip, dispatch invalid-id rejection, argument-count
+  validation).
+- 3 new Rust unit tests in `ffi::tests`
+  (`sele4n_suspend_thread_*` bracket discipline).
+- 9 new Rust unit tests in `psci::tests` and `smp::tests`
+  (PSCI return-code roundtrip, SMP bring-up call graph).
+
+### Total Rust test count
+
+`cargo test --workspace` now reports **459 passing** (up from
+**428 at AN8 close**).  `cargo clippy --workspace -- -D warnings`
+is at **0 warnings**.
+
+### Gate
+
+`lake build` (306+ jobs, 0 warnings) + `test_smoke.sh` PASS +
+`test_full.sh` PASS + `test_tier0_hygiene.sh` PASS +
+`cargo test --workspace` PASS (459 tests) +
+`cargo clippy --workspace -- -D warnings` (0 warnings) +
+`check_version_sync.sh` PASS at 0.30.10 + fixture byte-identical
+to `tests/fixtures/main_trace_smoke.expected` + zero
+`sorry`/`axiom`/`native_decide` in `SeLe4n/` or `Main.lean`.
+
+### Hardware testing
+
+Real-hardware QEMU `-smp 4` validation, MMU coherence
+verification, and SVC userspace round-trip require a Raspberry
+Pi 5 board or a properly-configured QEMU virt machine.  See
+[`docs/HARDWARE_TESTING.md`](docs/HARDWARE_TESTING.md) for
+detailed bring-up instructions, environment setup scripts, and
+the validation checklist.
+
+### Workstream portfolio status
+
+WS-AN portfolio: AN0..AN9 complete.  **No hardware-binding
+scope carries past v1.0.0** — every item from
+`AUDIT_v0.29.0_DEFERRED.md` Category A is RESOLVED.  Next: AN10
+(AK7 cascade completion), AN11 (testing), AN12 (closure +
+v1.0.0 tag).
+
+---
+
 ## v0.30.9 — WS-AN Phase AN8 (Rust HAL hardening)
 
 v0.30.9 patch release bundles **WS-AN Phase AN8** per

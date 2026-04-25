@@ -13,6 +13,9 @@ import SeLe4n.Platform.RPi5.VSpaceBoot
 import SeLe4n.Kernel.Architecture.CacheModel
 import SeLe4n.Kernel.Architecture.ExceptionModel
 import SeLe4n.Kernel.Architecture.TimerModel
+-- AN9-C / AN9-A / AN9-B: hardware-binding closure modules
+import SeLe4n.Kernel.Architecture.BarrierComposition
+import SeLe4n.Kernel.Architecture.TlbCacheComposition
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

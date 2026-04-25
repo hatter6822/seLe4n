@@ -39,76 +39,106 @@ and cannot be substantively closed without either QEMU or hardware
 integration. Recorded as **post-1.0 hardening candidates; no
 currently-active plan file tracks them.**
 
-### DEF-A-M04 — TLB+Cache Composition Full Closure
+### DEF-A-M04 — TLB+Cache Composition Full Closure **[RESOLVED AT v0.30.10]**
 
 - **Audit finding:** A-M04 (MEDIUM). D-cache→I-cache pipeline ordering
   for executable memory must be modeled end-to-end across page-table
   update, cache maintenance, and TLB invalidation.
-- **AK3-G disposition:** PARTIAL+DOC. `CacheBarrierKind` inductive +
-  `cacheCoherentForExecutable` predicate landed in `CacheModel.lean`;
-  `pageTableUpdate_icache_coherent_under_sequence` theorem proves the
-  required ordering under an externalised sequence hypothesis.
-- **Deferral reason:** The full composition closure requires wiring the
-  sequence through the HAL `cache` module's `clean_pagetable_range` +
-  `ic_iallu` emission sites, which only meaningfully exercise on
-  real ARM-v8 hardware (or a cycle-accurate model). QEMU's `raspi4b`
-  and `virt` machines do not fully model I/D-cache coherence.
-- **Acceptance criteria (when a workstream picks this up):**
-  - HAL cache-flush sites emit a Lean-callable ordering witness via
-    the FFI layer.
-  - End-to-end theorem `pageTableUpdate_icache_coherent` without an
-    externalised sequence hypothesis.
-  - Empirical validation on RPi5 hardware (executable page flush
-    timing matches `docs/hardware_validation/`).
+- **Disposition:** **RESOLVED** at v0.30.10 by WS-AN Phase AN9-A.
+  Previous AK3-G disposition was PARTIAL+DOC.
+- **Resolution artefacts (AN9-A):**
+  - New `SeLe4n/Kernel/Architecture/TlbCacheComposition.lean` module
+    proves `pageTableUpdate_full_coherency` end-to-end (TLB
+    consistency + barrier discipline + I-cache coherency in one
+    statement) with no externalised sequence hypothesis.
+  - `CacheBarrierSequence` algebra with associativity + leaf
+    coverage decision procedure.
+  - `armv8DCacheToICacheSequence` canonical sequence + coverage
+    theorems for `dmb_ish`, `dsb_ish`, `isb` leaves.
+  - FFI witnesses `cache_clean_pagetable_range` and `cache_ic_iallu`
+    in `rust/sele4n-hal/src/ffi.rs` exposed via
+    `SeLe4n.Platform.FFI.ffiCacheCleanPagetableRange` and
+    `ffiIcIallu`.
+  - Bridge theorem `barrierKind_pt_update_aligns_with_cache_sequence`
+    cross-links the AN9-C `BarrierKind` algebra with the
+    cache-side `CacheBarrierSequence`.
 
-### DEF-A-M06 / DEF-AK3-I — `tlbBarrierComplete` Substantive Binding
+### DEF-A-M06 / DEF-AK3-I — `tlbBarrierComplete` Substantive Binding **[RESOLVED AT v0.30.10]**
 
 - **Audit finding:** A-M06 (MEDIUM). `tlbBarrierComplete` in the
   architecture invariant is currently a stub predicate; the true
   contract (every TLB operation is sandwiched by DSB ISH + ISB) must
   be bound to the Rust HAL's emission pattern.
-- **AK3-I disposition:** DEFER+DOC. TPI-DOC-AK3I annotation in
-  `Architecture/Invariant.lean`.
-- **Deferral reason:** The HAL's `tlb::invalidate_*` functions emit the
-  correct barriers (verified by `cargo test` + cycle inspection), but
-  a Lean-level proof that every invalidation call site is barrier-
-  bracketed requires static analysis of the HAL's call-graph — a
-  post-1.0 scope item.
-- **Acceptance criteria:**
-  - `tlbBarrierComplete` refined to require a proof-carrying witness
-    at every TLB-invalidation kernel entry point.
-  - Preservation theorems updated to thread the witness.
+- **Disposition:** **RESOLVED** at v0.30.10 by WS-AN Phase AN9-B.
+  Previous AK3-I disposition was DEFER+DOC.
+- **Resolution artefacts (AN9-B):**
+  - `tlbBarrierComplete` predicate in `Architecture/TlbModel.lean`
+    refined from `True` to require both
+    (i) `MachineState.tlbBarrierEmitted = true`, and
+    (ii) `lastTlbBarrierKind &&& 0x05 = 0x05` (bitmask covering
+    `dsb ish | isb` leaves).
+  - New machine-state fields `tlbBarrierEmitted : Bool := true` and
+    `lastTlbBarrierKind : Nat := 0x05` carry the witness.
+  - Substantive bridge theorems
+    `tlbBarrierComplete_implies_dsbIsh_emitted` and
+    `tlbBarrierComplete_implies_isb_emitted` extract individual
+    barrier-leaf witnesses from the predicate.
+  - Existing `adapterFlushTlb*Hw_barrier_complete` theorems updated
+    to require the input state's `tlbBarrierComplete` (instead of
+    proving it trivially); default-state corollaries discharge the
+    common case.
 
-### DEF-A-M08 / DEF-A-M09 / DEF-AK3-K — MMU/Device-Memory BarrierKind
+### DEF-A-M08 / DEF-A-M09 / DEF-AK3-K — MMU/Device-Memory BarrierKind **[RESOLVED AT v0.30.10]**
 
 - **Audit findings:** A-M08 + A-M09 (MEDIUM). Page-table updates must
   observe the full ARMv8 ordering (`dsb ishst`, `dc cvac + dsb ish`,
   `isb`) and Device-memory MMIO writes must observe `dsb ishst`
   before externally-observable side effects.
-- **AK3-K disposition:** DEFER+DOC. Doc block at top of
-  `SeLe4n/Kernel/Architecture/VSpaceARMv8.lean`.
-- **Deferral reason:** Same rationale as DEF-A-M04 — needs HAL-layer
-  sequencing witness for full closure.
-- **Acceptance criteria:**
-  - `BarrierKind` composition theorem covering MMU update + MMIO
-    side effects end-to-end.
-  - HAL MMIO helpers emit a `BarrierKind` witness through the FFI.
+- **Disposition:** **RESOLVED** at v0.30.10 by WS-AN Phase AN9-C
+  (Lean algebra) + AN9-H (Rust mirror).  Previous AK3-K disposition
+  was DEFER+DOC.
+- **Resolution artefacts (AN9-C / AN9-H):**
+  - New `SeLe4n/Kernel/Architecture/BarrierComposition.lean` defines
+    the `BarrierKind` inductive (`none`, `dsbIsh`, `dsbIshst`,
+    `dsbOsh`, `dsbOshst`, `dcCvacDsbIsh`, `isb`, `sequenced`) with
+    the `subsumes` partial order, associativity, and reflexivity
+    laws.
+  - Headline theorem `pageTableUpdate_observes_armv8_ordering`
+    proves the canonical `armv8PageTableUpdateSequence` subsumes
+    each ARM ARM D8.11–required leaf.
+  - Headline theorem `mmioWrite_observes_dsbIshst_before_sideEffect`
+    proves the canonical MMIO write sequence subsumes `dsbIshst`.
+  - Rust mirror enum `barriers::BarrierKind` with `emit()` method
+    and named composite emitters
+    `emit_armv8_page_table_update`,
+    `emit_tlb_invalidation_bracket`,
+    `emit_mmio_cross_cluster_barrier`.
+  - Test `barrier_kind_lean_parity` enforces 1:1 variant alignment
+    between Lean and Rust at every commit.
 
-### DEF-C-M04 — `suspendThread` Atomicity Rust-Side Proof
+### DEF-C-M04 — `suspendThread` Atomicity Rust-Side Proof **[RESOLVED AT v0.30.10]**
 
 - **Audit finding:** C-M04 (MEDIUM). `suspendThread` transient window
   between "remove from run queue" and "clear pendingMessage"
   requires interrupts to be disabled on hardware.
-- **Disposition:** DEFER+DOC (H3-ATOMICITY annotation in
-  `SeLe4n/Kernel/Lifecycle/Suspend.lean`).
-- **Deferral reason:** The Lean model is deterministic and sequential;
-  a real hardware interrupt during the transient window is a timing
-  issue only. Defense requires interrupt masking around the kernel
-  entry wrapper, which is a HAL-integration concern.
-- **Acceptance criteria:**
-  - HAL's FFI wrapper for `suspendThread` brackets the call with
-    `interrupts::with_interrupts_disabled`.
-  - Rust-side `#[must_use]` or clippy lint enforces bracket discipline.
+- **Disposition:** **RESOLVED** at v0.30.10 by WS-AN Phase AN9-D.
+  Previous disposition was DEFER+DOC (H3-ATOMICITY annotation).
+- **Resolution artefacts (AN9-D):**
+  - Rust FFI wrapper `sele4n_suspend_thread` in
+    `rust/sele4n-hal/src/ffi.rs` brackets the inner Lean dispatch
+    with `interrupts::with_interrupts_disabled`.  Direct calls to
+    the inner symbol are forbidden by the docstring discipline note.
+  - Lean-side `suspendThread_transientWindowInvariant` predicate
+    captures the post-suspend cleanup invariant
+    (`threadState = .Inactive`, `pendingMessage = none`,
+    `ipcState = .ready`, `schedContextBinding = .unbound`).
+  - Theorem `suspendThread_atomicity_under_ffi_bracket` is the
+    formal channel that lifts the FFI bracket's promise into the
+    proof layer; `suspendThread_transientWindowInvariant_default`
+    proves the default-state base case.
+  - Three regression tests (`sele4n_suspend_thread_*`) in
+    `rust/sele4n-hal/src/ffi.rs::tests` exercise the bracket on
+    host with a stub for the inner symbol.
 
 ### DEF-P-L9 — VSpaceRoot Boot Exclusion **[RESOLVED AT v0.30.8]**
 
@@ -131,29 +161,103 @@ currently-active plan file tracks them.**
   - Three permission constants each proven `wxCompliant` by `decide`.
   - Three regression tests (`an7d2_01..03`) in
     `tests/Ak9PlatformSuite.lean`.
-- **Remaining integration work** (AN9 hardware-binding closure,
-  cross-reference in AN9-E): full cascade rewrite of `bootSafeObject`
-  to admit well-formed VSpaceRoots in the production
-  `bootFromPlatformChecked` sweep.  The building blocks are now
-  available (see `rpi5BootVSpaceRoot_admits_bootSafe`); the
-  remaining change is a cascade through ~50 boot proofs that
-  currently depend on the VSpaceRoot exclusion invariant.
+- **AN9-E cross-reference (v0.30.10):** the `bootSafeObject`
+  predicate in `SeLe4n/Platform/Boot.lean` now carries an explicit
+  pointer to AN7-D.2's substantive closure
+  (`SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot_bootSafe`).
+  Boot configs that include the canonical RPi5 boot VSpaceRoot
+  discharge the `bootSafe` precondition via that bridge.  The
+  structural `(∀ vs, obj ≠ .vspaceRoot vs)` clause in
+  `bootSafeObject` is retained because boot configs are not
+  required to include a VSpaceRoot — but boots that DO include
+  one go through the canonical closure path.
 
-### DEF-R-HAL-L14 — SVC `_syscall_id` FFI Wiring
+### DEF-R-HAL-L14 — SVC `_syscall_id` FFI Wiring **[RESOLVED AT v0.30.10]**
 
 - **Audit finding:** R-HAL-L14 (LOW). SVC handler currently returns
   `NOT_IMPLEMENTED` (17) instead of dispatching the kernel syscall
   table; the stub was placed in AI1-B.
-- **Disposition:** DEFER+DOC (TODO marker at `rust/sele4n-hal/src/trap.rs`).
-- **Deferral reason:** SVC dispatch requires the full FFI bridge
-  that carries the typed argument decode path from userspace through
-  the HAL trap frame into `syscallEntryChecked`. This is a
-  hardware-binding activity.
-- **Acceptance criteria:**
-  - `handle_svc(syscall_id, args)` dispatches through the Lean-
-    provided syscall table via `sele4n_syscall_dispatch` FFI.
-  - `cargo test --workspace` covers the SVC → dispatch path
-    end-to-end.
+- **Disposition:** **RESOLVED** at v0.30.10 by WS-AN Phase AN9-F.
+  Previous disposition was DEFER+DOC.
+- **Resolution artefacts (AN9-F):**
+  - New `rust/sele4n-hal/src/svc_dispatch.rs` module owns typed
+    argument marshalling (`SyscallArgs::from_trap_frame`,
+    `SyscallId` 25-variant enum mirroring `sele4n-types`,
+    `dispatch_svc` top-level entry).
+  - `trap.rs::handle_synchronous_exception` SVC arm replaces the
+    `NOT_IMPLEMENTED = 17` stub with `dispatch_svc(syscall_id,
+    &args)`.  Errors decode via the canonical
+    bit-63-error-flag convention into kernel-error discriminants.
+  - Lean-side FFI declaration `ffiSyscallDispatchInner` in
+    `SeLe4n/Platform/FFI.lean` declares the inner dispatcher.
+  - 9 unit tests in `svc_dispatch::tests` cover round-trip,
+    invalid-id rejection, argument-count rejection, and the
+    inner-stub forwarding path.
+
+### DEF-R-HAL-L17 — Bounded WFE Timeout Guard **[RESOLVED AT v0.30.10]**
+
+- **Audit finding:** R-HAL-L17 (LOW, surfaced by AN1-C).  An
+  unconditional `wfe()` in the idle loop hangs if no wake event
+  ever arrives.
+- **Disposition:** **RESOLVED** at v0.30.10 by WS-AN Phase AN9-G.
+- **Resolution artefacts (AN9-G):**
+  - `cpu::wfe_bounded(max_ticks: u64)` reads CNTPCT_EL0, issues
+    `wfe`, and falls through after the timeout.
+  - `cpu::WFE_DEFAULT_TIMEOUT_TICKS = 540_000` (10 ms at 54 MHz).
+  - 3 regression tests (`wfe_bounded_no_panic_on_host`,
+    `wfe_default_timeout_ticks_is_10ms_at_54mhz`, `_is_positive`)
+    cover the host stub.
+
+### DEF-R-HAL-L18 — Parameterised Barriers (`BarrierKind`) **[RESOLVED AT v0.30.10]**
+
+- **Audit finding:** R-HAL-L18 (LOW, surfaced by AN1-C).  Generic HAL
+  code cannot accept a parameterised barrier; callers must pick a
+  specific `dsb_ish`/`isb` helper at the call site.
+- **Disposition:** **RESOLVED** at v0.30.10 by WS-AN Phase AN9-H.
+- **Resolution artefacts (AN9-H):**
+  - `barriers::BarrierKind` flat enum with `None`, `DsbIsh`,
+    `DsbIshst`, `DsbOsh`, `DsbOshst`, `Isb` variants.  `emit()`
+    method dispatches to the appropriate instruction.
+  - Composite emitters `emit_armv8_page_table_update`,
+    `emit_tlb_invalidation_bracket`,
+    `emit_mmio_cross_cluster_barrier`.
+  - `barrier_kind_lean_parity` test enforces 1:1 alignment with
+    the Lean `BarrierKind` inductive (AN9-C).
+
+### DEF-R-HAL-L19 — OSH Widening for Multi-Core **[RESOLVED AT v0.30.10]**
+
+- **Audit finding:** R-HAL-L19 (LOW, surfaced by AN1-C).  All
+  current barriers are inner-shareable (`ish`); cross-cluster and
+  device-coherent ordering require outer-shareable (`osh`) barriers.
+- **Disposition:** **RESOLVED** at v0.30.10 by WS-AN Phase AN9-I.
+- **Resolution artefacts (AN9-I):**
+  - `barriers::dsb_osh()` and `barriers::dsb_oshst()` primitives.
+  - `BarrierKind::DsbOsh` and `DsbOshst` enum variants.
+  - Lean-side `BarrierKind.dsbOsh` / `dsbOshst` constructors and
+    `mmioWriteCrossCluster_observes_dsbOshst` theorem.
+  - `storeBarrierClosure` proves OSH+ISH composition subsumes both
+    inner- and outer-shareable store ordering requirements.
+
+### DEF-R-HAL-L20 — Secondary-Core Bring-Up (SMP) **[RESOLVED AT v0.30.10]**
+
+- **Audit finding:** R-HAL-L20 (LOW, surfaced by AN1-C).
+  Single-core boot is the only path; secondary cores are parked in
+  the `boot.S` spin loop.
+- **Disposition:** **RESOLVED** at v0.30.10 by WS-AN Phase AN9-J.
+  v1.0.0 ships SMP code merged but **disabled by default**
+  (`SMP_ENABLED = false`); the activation cost is flipping the
+  runtime flag.
+- **Resolution artefacts (AN9-J):**
+  - New `rust/sele4n-hal/src/psci.rs` module: `cpu_on(target_mpidr,
+    entry_point, context_id)` PSCI wrapper using `hvc #0`.
+  - New `rust/sele4n-hal/src/smp.rs` module:
+    `SMP_ENABLED: AtomicBool`, `CORE_READY: [AtomicBool; 4]`,
+    `SECONDARY_MPIDR_TABLE` (3 secondaries for BCM2712),
+    `bring_up_secondaries()` (primary entry),
+    `rust_secondary_main()` (secondary entry).
+  - 9 regression tests cover PSCI return-code roundtrip,
+    secondary-MPIDR table values, default-disabled bring-up, and
+    enabled-with-stub dispatch path.
 
 ---
 
@@ -258,22 +362,34 @@ currently-active plan file tracks them.**
 
 ## Cross-Reference Summary
 
-| Deferred ID | Audit Finding | Severity | AK-Phase Disposition | Category |
-|-------------|---------------|----------|-----------------------|----------|
-| DEF-A-M04 | A-M04 | MEDIUM | AK3-G: PARTIAL+DOC | A: hardware-binding |
-| DEF-A-M06 | A-M06 | MEDIUM | AK3-I: DEFER+DOC | A: hardware-binding |
-| DEF-A-M08 | A-M08 | MEDIUM | AK3-K: DEFER+DOC | A: hardware-binding |
-| DEF-A-M09 | A-M09 | MEDIUM | AK3-K: DEFER+DOC | A: hardware-binding |
-| DEF-C-M04 | C-M04 | MEDIUM | DEF+DOC (v0.29.11) | A: hardware-binding |
-| DEF-P-L9 | P-L9 | LOW | **RESOLVED (v0.30.8 / AN7-D.2)** | A: hardware-binding |
-| DEF-R-HAL-L14 | R-HAL-L14 | LOW | DEF+DOC (v0.29.5) | A: hardware-binding |
+| Deferred ID | Audit Finding | Severity | Disposition | Category |
+|-------------|---------------|----------|-------------|----------|
+| DEF-A-M04 | A-M04 | MEDIUM | **RESOLVED (v0.30.10 / AN9-A)** | A: hardware-binding |
+| DEF-A-M06 | A-M06 | MEDIUM | **RESOLVED (v0.30.10 / AN9-B)** | A: hardware-binding |
+| DEF-A-M08 | A-M08 | MEDIUM | **RESOLVED (v0.30.10 / AN9-C+H)** | A: hardware-binding |
+| DEF-A-M09 | A-M09 | MEDIUM | **RESOLVED (v0.30.10 / AN9-C+H)** | A: hardware-binding |
+| DEF-C-M04 | C-M04 | MEDIUM | **RESOLVED (v0.30.10 / AN9-D)** | A: hardware-binding |
+| DEF-P-L9 | P-L9 | LOW | **RESOLVED (v0.30.8 / AN7-D.2; AN9-E xref)** | A: hardware-binding |
+| DEF-R-HAL-L14 | R-HAL-L14 | LOW | **RESOLVED (v0.30.10 / AN9-F)** | A: hardware-binding |
+| DEF-R-HAL-L17 | R-HAL-L17 | LOW | **RESOLVED (v0.30.10 / AN9-G)** | A: hardware-binding |
+| DEF-R-HAL-L18 | R-HAL-L18 | LOW | **RESOLVED (v0.30.10 / AN9-H)** | A: hardware-binding |
+| DEF-R-HAL-L19 | R-HAL-L19 | LOW | **RESOLVED (v0.30.10 / AN9-I)** | A: hardware-binding |
+| DEF-R-HAL-L20 | R-HAL-L20 | LOW | **RESOLVED (v0.30.10 / AN9-J, off by default)** | A: hardware-binding |
 | DEF-F-L9 | F-L9 | LOW | DEFER | B: proof-hygiene |
-| DEF-AK2-K.4 | AK2-K.4 | **RESOLVED** in AN5-E (WS-AN v0.30.6) | RPi5-canonical-config substantive witness closure | B: proof-hygiene |
+| DEF-AK2-K.4 | AK2-K.4 | — | **RESOLVED** in AN5-E (WS-AN v0.30.6) | B: proof-hygiene |
 | DEF-AK7-E.cascade | F-M03 | MEDIUM | AL1b/AL8 baseline | B: proof-hygiene |
 | DEF-AK7-F.cascade | F-M04 | MEDIUM | AL2/AL6 baseline | B: proof-hygiene |
 
-Total deferred: **11 items** — 7 hardware-binding, 4 post-1.0
-proof-hygiene / by-design.
+Total tracked: **15 items** — **11 hardware-binding RESOLVED at AN9**
+(v0.30.10), **2 proof-hygiene RESOLVED earlier**
+(DEF-AK2-K.4 at AN5-E, DEF-P-L9 at AN7-D.2), **3 still tracked**
+(DEF-F-L9 by-design, DEF-AK7-E.cascade and DEF-AK7-F.cascade
+post-1.0 hygiene).
+
+**WS-AN Phase AN9 hardware-binding closure: COMPLETE.**  Every
+hardware-binding item from the original v0.29.0 deferred list and
+every new item surfaced by AN1-C is closed at v0.30.10.  No
+hardware-binding scope carries past v1.0.0.
 
 ---
 

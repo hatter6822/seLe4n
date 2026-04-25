@@ -151,4 +151,93 @@ opaque ffiRestoreInterrupts : UInt64 → BaseIO Unit
 @[extern "ffi_enable_interrupts"]
 opaque ffiEnableInterrupts : BaseIO Unit
 
+-- ============================================================================
+-- AN9-D (DEF-C-M04): suspendThread atomicity bracket
+-- ============================================================================
+
+/-- AN9-D (DEF-C-M04): Lean → Rust direction.  Calls the
+    `sele4n_suspend_thread` Rust wrapper that brackets the inner Lean
+    dispatch with `with_interrupts_disabled`.
+
+    Used when a Lean module invoking `suspendThread` from a path that
+    must enforce hardware atomicity (i.e., not the abstract
+    sequential model) wants to ensure the FFI bracket is in place.
+
+    See `rust/sele4n-hal/src/ffi.rs::sele4n_suspend_thread`. -/
+@[extern "sele4n_suspend_thread"]
+opaque ffiSuspendThread : UInt64 → BaseIO UInt32
+
+/-- AN9-D inner — Rust → Lean direction.  Exported so the Rust
+    `sele4n_suspend_thread` wrapper can call back into the Lean
+    suspend dispatch (after `with_interrupts_disabled` is set up).
+
+    `@[export]` instructs the Lean compiler to emit a C-callable
+    `suspend_thread_inner` symbol; the Rust side declares
+    `extern "C" { fn suspend_thread_inner(...) -> u32; }` in
+    `rust/sele4n-hal/src/ffi.rs`.
+
+    Returns a `KernelError` discriminant; `0` means success (matching
+    the `KernelError::Ok` slot reserved at AK4-A).  At v1.0.0 this is
+    the Rust-→-Lean channel; substantive routing into the Lean
+    `suspendThread` API is the closure work tracked in
+    `docs/HARDWARE_TESTING.md` §4.3. -/
+@[export suspend_thread_inner]
+def suspendThreadInner (_tid : UInt64) : UInt32 :=
+  -- KernelError::NotImplemented = 17 until the AN9-D Lean glue routes
+  -- into `suspendThread` proper (requires threading the active
+  -- SystemState through the FFI, which is the v1.x work item).
+  17
+
+-- ============================================================================
+-- AN9-F (DEF-R-HAL-L14): SVC dispatch entry — Rust → Lean direction
+-- ============================================================================
+
+/-- AN9-F: Lean-side SVC dispatch routine called BY Rust through the
+    `syscall_dispatch_inner` `extern "C"` symbol.  This is the
+    Rust-→-Lean direction (opposite of every other declaration in
+    this module): `@[export]` instructs the Lean compiler to emit a
+    C-callable wrapper named `syscall_dispatch_inner` that resolves
+    the Rust-side `extern "C" { fn syscall_dispatch_inner(...) }`
+    declaration in `rust/sele4n-hal/src/svc_dispatch.rs`.
+
+    Encoding of the return value (matching
+    `rust/sele4n-hal/src/svc_dispatch.rs::dispatch_svc`):
+    - bit 63 = 1  → low 32 bits = `KernelError` discriminant
+    - bit 63 = 0  → low 64 bits = success return value
+
+    Current implementation: returns the `NotImplemented = 17` error
+    flag because the full kernel-side syscall table wiring lives
+    behind another v1.0.0 follow-up (the syscall table needs the
+    SystemState to be threaded; the Rust-→-Lean glue is the channel
+    this AN9-F sub-task delivers).  Substantive routing into
+    `syscallEntryChecked` is the closure work documented in
+    `docs/HARDWARE_TESTING.md` §4.4 as the SVC end-to-end test. -/
+@[export syscall_dispatch_inner]
+def syscallDispatchInner
+    (_syscallId : UInt32) (_msgInfo : UInt64)
+    (_x0 _x1 _x2 _x3 _x4 _x5 : UInt64)
+    (_ipcBufferAddr : UInt64) : UInt64 :=
+  -- Bit 63 set + low 32 bits = NotImplemented (17).  See the docstring
+  -- above for the encoding contract.
+  ((1 : UInt64) <<< 63) ||| 17
+
+-- ============================================================================
+-- AN9-A (DEF-A-M04): TLB+Cache composition witnesses
+-- ============================================================================
+
+/-- AN9-A.1: TLB+Cache composition witness — clean a page-table page
+    range followed by `dsb ish` so the writeback completes before any
+    subsequent operation observes the page-table state.
+
+    Rust: `cache::clean_pagetable_range` in `sele4n-hal/src/cache.rs`. -/
+@[extern "cache_clean_pagetable_range"]
+opaque ffiCacheCleanPagetableRange : UInt64 → UInt64 → BaseIO Unit
+
+/-- AN9-A.1: I-cache invalidation witness — drop every I-cache line so
+    subsequent instruction fetches re-read from coherent memory.
+
+    Rust: `cache::ic_iallu` in `sele4n-hal/src/cache.rs`. -/
+@[extern "cache_ic_iallu"]
+opaque ffiIcIallu : BaseIO Unit
+
 end SeLe4n.Platform.FFI

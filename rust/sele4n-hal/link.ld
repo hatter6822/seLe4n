@@ -74,6 +74,24 @@ SECTIONS
         __stack_top = .;
     } > RAM
 
+    /* AN9-J (DEF-R-HAL-L20): per-core stacks for SMP secondaries.
+     *
+     * Three 64 KiB regions, one per secondary core (BCM2712 has 3
+     * secondaries — 4 cores total, primary uses `.stack` above).
+     * Each secondary's `secondary_entry` (boot.S) computes its own
+     * stack top via `__smp_secondary_stack_top - (context_id - 1) *
+     * 0x10000`.
+     *
+     * Reachable only when `SMP_ENABLED=true` (default `false` at
+     * v1.0.0); the linker keeps the section present so the symbol
+     * resolves in either configuration.
+     */
+    .smp_stacks (NOLOAD) : ALIGN(16) {
+        __smp_secondary_stacks_bottom = .;
+        . += (3 * 64K);
+        __smp_secondary_stack_top = .;
+    } > RAM
+
     /* Discard unneeded sections */
     /DISCARD/ : {
         *(.comment)

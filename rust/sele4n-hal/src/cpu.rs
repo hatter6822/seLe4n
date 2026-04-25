@@ -23,6 +23,84 @@ pub fn wfe() {
     core::hint::spin_loop();
 }
 
+/// AN9-G (DEF-R-HAL-L17): Default bounded-WFE timeout in counter ticks.
+///
+/// Computed from a 10 ms wall-clock target at the BCM2712 ARM Generic
+/// Timer frequency of 54 MHz: `54_000_000 ticks/s × 10 ms / 1000 = 540_000`.
+/// On RPi5 the timer frequency is fixed by firmware (CNTFRQ_EL0 = 54 MHz)
+/// so the constant is correct for the v1.0.0 hardware target; alternative
+/// platforms can call [`wfe_bounded`] directly with a tick count derived
+/// from their own `CNTFRQ_EL0` reading.
+pub const WFE_DEFAULT_TIMEOUT_TICKS: u64 = 54_000_000 / 1000 * 10;
+
+/// AN9-G (DEF-R-HAL-L17): Bounded `wfe()` with a counter-tick budget.
+///
+/// Issues `wfe` and returns the elapsed `CNTPCT_EL0` ticks since the
+/// call began.  Returning the elapsed count lets the caller compare
+/// against `max_ticks` and decide whether to retry, log a diagnostic,
+/// or re-arm a missing timer.
+///
+/// Note that this primitive does NOT internally loop: ARMv8 `wfe`
+/// returns when an event arrives or when the local "event register"
+/// is set.  The CALLER owns the retry/timeout policy; this function
+/// is the cheap leaf primitive.  The `max_ticks` argument is
+/// informational — it documents the EXPECTED maximum so call sites
+/// stay self-describing — but does not bound the actual `wfe`.
+/// Practical bounding requires arming a timer to fire within
+/// `max_ticks`; without one, `wfe` blocks until an event arrives.
+///
+/// Use the boot idle loop pattern:
+///
+/// ```no_run
+/// # use sele4n_hal::cpu::{wfe_bounded, WFE_DEFAULT_TIMEOUT_TICKS};
+/// # fn rearm() {}
+/// fn idle_loop() -> ! {
+///     loop {
+///         let elapsed = wfe_bounded(WFE_DEFAULT_TIMEOUT_TICKS);
+///         if elapsed >= WFE_DEFAULT_TIMEOUT_TICKS {
+///             // Timer almost certainly didn't fire — re-arm and retry.
+///             rearm();
+///         }
+///     }
+/// }
+/// ```
+///
+/// Returns: elapsed `CNTPCT_EL0` ticks during the call (≥ 0 on
+/// hardware; 0 on host stubs).  Saturating arithmetic guards
+/// against counter wrap (which takes ~10 800 years at 54 MHz on
+/// the BCM2712 timer, so this is purely defensive).
+#[inline(always)]
+pub fn wfe_bounded(max_ticks: u64) -> u64 {
+    let _ = max_ticks; // informational — see docstring
+    #[cfg(target_arch = "aarch64")]
+    {
+        let start: u64;
+        // SAFETY: CNTPCT_EL0 is read-only at EL1; reading is always safe.
+        unsafe {
+            core::arch::asm!("mrs {}, cntpct_el0", out(reg) start,
+                options(nomem, nostack, preserves_flags));
+        }
+        // SAFETY: WFE is a hint instruction.  (ARM ARM C6.2.353)
+        unsafe { core::arch::asm!("wfe", options(nomem, nostack, preserves_flags)) }
+        let now: u64;
+        // SAFETY: same as above.
+        unsafe {
+            core::arch::asm!("mrs {}, cntpct_el0", out(reg) now,
+                options(nomem, nostack, preserves_flags));
+        }
+        now.saturating_sub(start)
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        // Host stub: deterministic.  `wfe` has no host equivalent; we
+        // return 0 ticks so callers' "did we time out?" check
+        // (`elapsed >= max_ticks`) consistently returns false on host
+        // unless `max_ticks == 0`.
+        core::hint::spin_loop();
+        0
+    }
+}
+
 /// Wait For Interrupt — hint instruction that places the PE in a low-power
 /// state until an interrupt or debug event occurs.
 ///
@@ -219,6 +297,42 @@ mod tests {
         // reach the constant via `adrp`+`ldr` without drifting.
         assert_eq!(MPIDR_CORE_ID_MASK_SYM, MPIDR_CORE_ID_MASK);
         assert_eq!(MPIDR_CORE_ID_MASK_SYM, 0x00FF_FFFF);
+    }
+
+    // ========================================================================
+    // AN9-G (DEF-R-HAL-L17): bounded WFE tests
+    // ========================================================================
+
+    #[test]
+    fn wfe_bounded_no_panic_on_host() {
+        // The bounded variant must run cleanly on host with any tick
+        // count, including zero (immediate fall-through) and the
+        // RPi5 default.  Host returns 0 ticks elapsed.
+        let _: u64 = wfe_bounded(0);
+        let _: u64 = wfe_bounded(1);
+        let _: u64 = wfe_bounded(WFE_DEFAULT_TIMEOUT_TICKS);
+    }
+
+    #[test]
+    fn wfe_bounded_returns_zero_on_host() {
+        // AN9-G: the host stub returns exactly 0 elapsed ticks so the
+        // caller's "did we time out" check (`elapsed >= max_ticks`)
+        // resolves consistently to false unless `max_ticks == 0`.
+        assert_eq!(wfe_bounded(WFE_DEFAULT_TIMEOUT_TICKS), 0,
+            "host stub must return zero elapsed ticks");
+    }
+
+    #[test]
+    fn wfe_default_timeout_ticks_is_10ms_at_54mhz() {
+        // AN9-G: 54_000_000 ticks/s × 10 ms / 1000 = 540_000 ticks.
+        assert_eq!(WFE_DEFAULT_TIMEOUT_TICKS, 540_000);
+    }
+
+    #[test]
+    fn wfe_default_timeout_ticks_is_positive() {
+        // Defense-in-depth: a zero default would silently disable the
+        // bounded check on every call site.
+        assert!(WFE_DEFAULT_TIMEOUT_TICKS > 0);
     }
 
     #[test]

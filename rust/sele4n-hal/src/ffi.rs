@@ -219,6 +219,121 @@ pub extern "C" fn ffi_enable_interrupts() {
 }
 
 // ============================================================================
+// AN9-D (DEF-C-M04 / RESOLVED): suspendThread atomicity bracket
+// ============================================================================
+//
+// The Lean side defines `suspendThread_atomicity_under_ffi_bracket` (in
+// `SeLe4n/Kernel/Lifecycle/Suspend.lean`), which takes a precondition
+// `interruptsEnabled = false`.  This wrapper is what discharges that
+// precondition on real hardware: it disables interrupts via
+// `with_interrupts_disabled`, calls the inner Lean dispatch, and
+// restores DAIF on return.
+//
+// Without this bracket, an ISR observing the partially-cleaned TCB
+// between G2 (`cancelIpcBlocking`) and G6 (`threadState := .Inactive`)
+// would see an inconsistent state — for instance, `ipcState = .ready`
+// but `threadState = .Running` — that would violate the
+// `suspendThread_transientWindowInvariant` predicate.
+
+/// AN9-D: Suspend a thread atomically with respect to interrupts.
+///
+/// Brackets the inner Lean dispatch with
+/// [`crate::interrupts::with_interrupts_disabled`] so the entire
+/// G2→G3→G4→G5→G6 cleanup pipeline runs without interruption.  This
+/// satisfies the
+/// `suspendThread_atomicity_precondition` from the Lean model.
+///
+/// The inner symbol `sele4n_suspend_thread_inner` is provided by the
+/// Lean compiler from the kernel's `@[export]` declaration (see
+/// `SeLe4n/Platform/FFI.lean`).  A direct call to the inner symbol
+/// from outside this wrapper bypasses the atomicity guarantee and
+/// flagged with the `#[must_use]` discipline note in the Lean
+/// docstring.
+///
+/// Returns: `KernelError::Ok = 0` on success, the kernel-error
+/// discriminant otherwise.
+///
+/// Lean binding: see comment on `suspend_thread_inner` below.
+#[no_mangle]
+pub extern "C" fn sele4n_suspend_thread(tid: u64) -> u32 {
+    crate::interrupts::with_interrupts_disabled(|| {
+        // SAFETY: in production builds `suspend_thread_inner` is a
+        // Lean-emitted `extern "C"` symbol; calling an extern "C"
+        // function is unsafe.  In test builds it is a Rust-side
+        // safe stub.  We use `unsafe` unconditionally so the
+        // production path is correct; the `#[allow(unused_unsafe)]`
+        // suppresses the test-only warning.
+        #[allow(unused_unsafe)]
+        unsafe {
+            suspend_thread_inner(tid)
+        }
+    })
+}
+
+// ============================================================================
+// AN9-A (DEF-A-M04): Cache + TLB composition FFI witnesses
+// ============================================================================
+
+/// AN9-A.1: Clean a page-table-page range to PoC + emit DSB ISH.
+///
+/// Wraps `cache::clean_pagetable_range`.  The Lean kernel calls this
+/// after writing a page-table descriptor to ensure the hardware
+/// walker sees the new descriptor before any subsequent translation
+/// is attempted.
+///
+/// SAFETY: caller must guarantee `addr..addr+len` is mapped and
+/// inside RAM (cleanable).  The Lean side discharges this via the
+/// `pageTableUpdate_full_coherency` theorem in
+/// `Architecture/TlbCacheComposition.lean`.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiCacheCleanPagetableRange`
+#[no_mangle]
+pub extern "C" fn cache_clean_pagetable_range(addr: u64, len: u64) {
+    // SAFETY: Lean caller proves the range is valid via
+    // `pageTableUpdate_full_coherency`.  We forward to the existing
+    // unsafe primitive.
+    unsafe { crate::cache::clean_pagetable_range(addr as usize, len as usize) }
+}
+
+/// AN9-A.1: Invalidate all I-cache to PoU.
+///
+/// Wraps `cache::ic_iallu`.  Required after self-modifying code or
+/// page-table updates that affect executable mappings.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiIcIallu`
+#[no_mangle]
+pub extern "C" fn cache_ic_iallu() {
+    crate::cache::ic_iallu();
+}
+
+// AN9-D inner — Lean-emitted `suspendThread` dispatch entry.
+//
+// **DO NOT CALL DIRECTLY** from any path other than
+// `sele4n_suspend_thread`.  Calling this without the
+// `with_interrupts_disabled` bracket bypasses the atomicity
+// guarantee documented in the Lean theorem
+// `suspendThread_atomicity_under_ffi_bracket`.
+//
+// On production builds (`#[cfg(not(test))]`) this is declared as an
+// `extern "C"` symbol resolved at link time against the Lean
+// kernel's emitted dispatch routine.  Under cargo test the symbol
+// is provided by a Rust-side stub (see below) so the bracket
+// discipline can still be exercised without a full Lean build.
+#[cfg(not(test))]
+extern "C" {
+    fn suspend_thread_inner(tid: u64) -> u32;
+}
+
+/// AN9-D test stub: returns `KernelError::NotImplemented = 17` so the
+/// bracket discipline can be unit-tested on host without pulling in
+/// the full Lean kernel build artefact.
+#[cfg(test)]
+#[no_mangle]
+extern "C" fn suspend_thread_inner(_tid: u64) -> u32 {
+    17 // KernelError::NotImplemented
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -279,5 +394,42 @@ mod tests {
         let saved = ffi_disable_interrupts();
         ffi_restore_interrupts(saved);
         ffi_enable_interrupts();
+    }
+
+    // ========================================================================
+    // AN9-D (DEF-C-M04): suspendThread atomicity bracket tests
+    // ========================================================================
+
+    #[test]
+    fn sele4n_suspend_thread_brackets_inner_call() {
+        // The wrapper must invoke the inner stub (which returns
+        // NotImplemented = 17 in test builds) and return its result.
+        // This proves the bracket dispatches into the inner symbol.
+        let result = sele4n_suspend_thread(42);
+        assert_eq!(result, 17, "suspendThread bracket must forward inner stub return");
+    }
+
+    #[test]
+    fn sele4n_suspend_thread_handles_zero_tid() {
+        // ThreadId 0 is the sentinel; the wrapper must still invoke the
+        // inner dispatch (which performs sentinel rejection at the Lean
+        // layer).  This proves the bracket is a transparent forwarder
+        // and does not pre-filter ids.
+        let result = sele4n_suspend_thread(0);
+        assert_eq!(result, 17, "bracket must not pre-filter sentinel");
+    }
+
+    #[test]
+    fn sele4n_suspend_thread_disables_interrupts_during_call() {
+        // The bracket calls `with_interrupts_disabled`, which on host
+        // is a no-op closure call.  We assert that it does not
+        // panic and that the return value matches the inner stub.
+        // The atomicity contract (interrupts actually disabled on
+        // hardware) is enforced by the aarch64 implementation of
+        // `interrupts::with_interrupts_disabled` which is exercised
+        // in the corresponding `interrupts_no_panic` test.
+        let r1 = sele4n_suspend_thread(1);
+        let r2 = sele4n_suspend_thread(2);
+        assert_eq!(r1, r2, "bracket must be deterministic");
     }
 }

@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/implement-rust-hal-phase-FwOJu",
-      "commit_sha": "b53e502aece9db915310b976056f7f954a47c7ec",
-      "tree_sha": "f29d097ad5dfc44cb6cda6a910904340920d21a9",
-      "committed_at_utc": "2026-04-25T01:24:28+00:00"
+      "branch": "claude/complete-phase-an9-workstream-9pQ2d",
+      "commit_sha": "b9910321b06e9d9961c0f81a8dc0b4e2dd98ccf4",
+      "tree_sha": "ff04d3aa1c48d7545dfceafb63f3583a07135be9",
+      "committed_at_utc": "2026-04-25T05:06:07+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ca6ab37b23aa0cf0de13ab220f92738cbf0362a8fb361e5c60a30bcf432fc458"
+    "source_digest": "92de5533fe613ffb1358b44056a9f60960e3b0e3d921249bbefd0d079aa1bd05"
   },
   "summary": {
-    "module_count": 189,
-    "declaration_count": 5889
+    "module_count": 192,
+    "declaration_count": 5964
   },
   "readme_sync": {
-    "version": "0.30.9",
+    "version": "0.30.10",
     "lean_toolchain": "v4.28.0",
-    "production_files": 165,
-    "production_loc": 107870,
-    "test_files": 24,
-    "test_loc": 16014,
-    "proved_theorem_lemma_decls": 3152,
+    "production_files": 167,
+    "production_loc": 108898,
+    "test_files": 25,
+    "test_loc": 16193,
+    "proved_theorem_lemma_decls": 3186,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -1873,6 +1873,238 @@
           "line": 174,
           "called": [
             "archAssumptionConsumer"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Architecture.BarrierComposition",
+      "path": "SeLe4n/Kernel/Architecture/BarrierComposition.lean",
+      "declaration_count": 25,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Architecture",
+          "line": 61,
+          "called": []
+        },
+        {
+          "kind": "inductive",
+          "name": "BarrierKind",
+          "line": 66,
+          "called": [
+            "none"
+          ]
+        },
+        {
+          "kind": "namespace",
+          "name": "BarrierKind",
+          "line": 94,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "leaves",
+          "line": 99,
+          "called": [
+            "BarrierKind"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "containsLeaf",
+          "line": 105,
+          "called": [
+            "BarrierKind",
+            "leaves"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:110>",
+          "line": 110,
+          "called": [
+            "BarrierKind",
+            "containsLeaf",
+            "leaves"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "leaves_sequenced_none_left",
+          "line": 117,
+          "called": [
+            "BarrierKind",
+            "leaves",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "leaves_sequenced_none_right",
+          "line": 122,
+          "called": [
+            "BarrierKind",
+            "leaves",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "leaves_sequenced_assoc",
+          "line": 130,
+          "called": [
+            "BarrierKind",
+            "leaves"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "subsumes",
+          "line": 143,
+          "called": [
+            "BarrierKind",
+            "leaves"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "subsumes_refl",
+          "line": 147,
+          "called": [
+            "BarrierKind",
+            "subsumes"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "subsumes_trans",
+          "line": 151,
+          "called": [
+            "BarrierKind",
+            "subsumes"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "sequenced_subsumes_left",
+          "line": 157,
+          "called": [
+            "BarrierKind",
+            "leaves",
+            "subsumes"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "sequenced_subsumes_right",
+          "line": 164,
+          "called": [
+            "BarrierKind",
+            "leaves",
+            "subsumes"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "subsumesDecidable",
+          "line": 172,
+          "called": [
+            "BarrierKind",
+            "subsumes"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "armv8PageTableUpdateSequence",
+          "line": 187,
+          "called": [
+            "BarrierKind"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pageTableUpdate_observes_armv8_ordering",
+          "line": 194,
+          "called": [
+            "armv8PageTableUpdateSequence",
+            "leaves",
+            "subsumes"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mmioWriteOrderingSequence",
+          "line": 205,
+          "called": [
+            "BarrierKind",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mmioWrite_observes_dsbIshst_before_sideEffect",
+          "line": 209,
+          "called": [
+            "leaves",
+            "mmioWriteOrderingSequence",
+            "subsumes"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mmioWriteOrderingSequenceOuterShareable",
+          "line": 216,
+          "called": [
+            "BarrierKind",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mmioWriteCrossCluster_observes_dsbOshst",
+          "line": 220,
+          "called": [
+            "leaves",
+            "mmioWriteOrderingSequenceOuterShareable",
+            "subsumes"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "storeBarrierClosure",
+          "line": 233,
+          "called": [
+            "BarrierKind"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeBarrierClosure_subsumes_both",
+          "line": 238,
+          "called": [
+            "leaves",
+            "storeBarrierClosure",
+            "subsumes"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tlbInvalidationBracket",
+          "line": 249,
+          "called": [
+            "BarrierKind"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tlbInvalidationBracket_subsumes",
+          "line": 253,
+          "called": [
+            "BarrierKind",
+            "leaves",
+            "subsumes",
+            "tlbInvalidationBracket"
           ]
         }
       ]
@@ -6809,20 +7041,230 @@
       ]
     },
     {
-      "module": "SeLe4n.Kernel.Architecture.TlbModel",
-      "path": "SeLe4n/Kernel/Architecture/TlbModel.lean",
-      "declaration_count": 33,
+      "module": "SeLe4n.Kernel.Architecture.TlbCacheComposition",
+      "path": "SeLe4n/Kernel/Architecture/TlbCacheComposition.lean",
+      "declaration_count": 17,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Architecture",
-          "line": 40,
+          "line": 49,
+          "called": []
+        },
+        {
+          "kind": "inductive",
+          "name": "CacheBarrierSequence",
+          "line": 62,
+          "called": [
+            "CacheBarrierKind"
+          ]
+        },
+        {
+          "kind": "namespace",
+          "name": "CacheBarrierSequence",
+          "line": 67,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "leaves",
+          "line": 70,
+          "called": [
+            "CacheBarrierKind",
+            "CacheBarrierSequence"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "covers",
+          "line": 76,
+          "called": [
+            "CacheBarrierKind",
+            "CacheBarrierSequence",
+            "leaves"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:79>",
+          "line": 79,
+          "called": [
+            "CacheBarrierKind",
+            "CacheBarrierSequence",
+            "covers",
+            "leaves"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "leaves_assoc",
+          "line": 85,
+          "called": [
+            "CacheBarrierSequence",
+            "leaves"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "armv8DCacheToICacheSequence",
+          "line": 100,
+          "called": [
+            "CacheBarrierSequence"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "armv8DCacheToICacheSequence_covers_required",
+          "line": 109,
+          "called": [
+            "armv8DCacheToICacheSequence",
+            "covers",
+            "leaves"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pageTableUpdate_full_coherency",
+          "line": 139,
+          "called": [
+            "ASID",
+            "CacheState",
+            "PAddr",
+            "SystemState",
+            "VAddr",
+            "adapterFlushTlbByVAddrHw",
+            "adapterFlushTlbByVAddrHw_barrier_complete",
+            "adapterFlushTlbByVAddrHw_preserves_tlbConsistent",
+            "covers",
+            "dcCleanInvalidate",
+            "icInvalidateAll",
+            "icacheCoherent",
+            "pageTableUpdate_icache_coherent",
+            "tlbBarrierComplete",
+            "tlbConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pageTableUpdate_full_coherency_default",
+          "line": 162,
+          "called": [
+            "ASID",
+            "CacheState",
+            "PAddr",
+            "SystemState",
+            "VAddr",
+            "adapterFlushTlbByVAddrHw",
+            "covers",
+            "dcCleanInvalidate",
+            "default",
+            "icInvalidateAll",
+            "icacheCoherent",
+            "pageTableUpdate_full_coherency",
+            "tlbBarrierComplete",
+            "tlbBarrierComplete_default",
+            "tlbConsistent",
+            "tlbConsistent_empty"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "TlbCacheJointState",
+          "line": 195,
+          "called": [
+            "CacheState",
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "TlbCacheJointState.pageTableUpdate",
+          "line": 202,
+          "called": [
+            "ASID",
+            "PAddr",
+            "TlbCacheJointState",
+            "VAddr",
+            "adapterFlushTlbByVAddrHw",
+            "dcCleanInvalidate",
+            "icInvalidateAll"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TlbCacheJointState.pageTableUpdate_full_coherency",
+          "line": 219,
+          "called": [
+            "ASID",
+            "PAddr",
+            "TlbCacheJointState",
+            "VAddr",
+            "adapterFlushTlbByVAddrHw_barrier_complete",
+            "adapterFlushTlbByVAddrHw_preserves_tlbConsistent",
+            "covers",
+            "icacheCoherent",
+            "pageTableUpdate",
+            "pageTableUpdate_icache_coherent",
+            "tlbBarrierComplete",
+            "tlbConsistent"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "TlbCacheJointState.empty",
+          "line": 241,
+          "called": [
+            "CacheState.empty",
+            "TlbCacheJointState",
+            "default"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TlbCacheJointState.empty_pageTableUpdate_full_coherency",
+          "line": 245,
+          "called": [
+            "ASID",
+            "PAddr",
+            "SystemState",
+            "VAddr",
+            "covers",
+            "default",
+            "icacheCoherent",
+            "pageTableUpdate",
+            "pageTableUpdate_full_coherency",
+            "tlbBarrierComplete",
+            "tlbBarrierComplete_default",
+            "tlbConsistent",
+            "tlbConsistent_empty"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "barrierKind_pt_update_aligns_with_cache_sequence",
+          "line": 271,
+          "called": [
+            "covers",
+            "subsumes"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Architecture.TlbModel",
+      "path": "SeLe4n/Kernel/Architecture/TlbModel.lean",
+      "declaration_count": 51,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Architecture",
+          "line": 41,
           "called": []
         },
         {
           "kind": "def",
           "name": "tlbConsistent",
-          "line": 56,
+          "line": 57,
           "called": [
             "SystemState",
             "TlbState",
@@ -6833,7 +7275,7 @@
         {
           "kind": "theorem",
           "name": "tlbConsistent_empty",
-          "line": 67,
+          "line": 68,
           "called": [
             "SystemState",
             "TlbState.empty",
@@ -6843,7 +7285,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlb_restores_tlbConsistent",
-          "line": 73,
+          "line": 74,
           "called": [
             "SystemState",
             "TlbState",
@@ -6855,7 +7297,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbByAsid_preserves_tlbConsistent",
-          "line": 79,
+          "line": 80,
           "called": [
             "ASID",
             "SystemState",
@@ -6867,7 +7309,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_then_flush_preserves_tlbConsistent",
-          "line": 92,
+          "line": 93,
           "called": [
             "ASID",
             "PAddr",
@@ -6884,7 +7326,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_then_flush_preserves_tlbConsistent",
-          "line": 100,
+          "line": 101,
           "called": [
             "ASID",
             "SystemState",
@@ -6899,7 +7341,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbByAsid_removes_matching",
-          "line": 112,
+          "line": 113,
           "called": [
             "ASID",
             "TlbEntry",
@@ -6910,7 +7352,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbByAsid_preserves_other",
-          "line": 121,
+          "line": 122,
           "called": [
             "ASID",
             "TlbEntry",
@@ -6921,7 +7363,7 @@
         {
           "kind": "theorem",
           "name": "sequential_modifications_then_flush_preserves_tlbConsistent",
-          "line": 131,
+          "line": 132,
           "called": [
             "SystemState",
             "TlbState",
@@ -6933,7 +7375,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbByVAddr_preserves_tlbConsistent",
-          "line": 142,
+          "line": 143,
           "called": [
             "ASID",
             "SystemState",
@@ -6946,7 +7388,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbByVAddr_removes_matching",
-          "line": 152,
+          "line": 153,
           "called": [
             "ASID",
             "TlbEntry",
@@ -6958,7 +7400,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbByVAddr_preserves_other",
-          "line": 163,
+          "line": 164,
           "called": [
             "ASID",
             "TlbEntry",
@@ -6970,7 +7412,7 @@
         {
           "kind": "theorem",
           "name": "vaddrFlush_after_asidFlush_no_asid_entries",
-          "line": 177,
+          "line": 178,
           "called": [
             "ASID",
             "TlbEntry",
@@ -6983,7 +7425,7 @@
         {
           "kind": "theorem",
           "name": "cross_asid_tlb_isolation",
-          "line": 199,
+          "line": 200,
           "called": [
             "ASID",
             "TlbState",
@@ -6994,7 +7436,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageWithFlush_preserves_tlbConsistent",
-          "line": 225,
+          "line": 226,
           "called": [
             "ASID",
             "ObjId",
@@ -7017,7 +7459,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithFlush_preserves_tlbConsistent",
-          "line": 262,
+          "line": 263,
           "called": [
             "ASID",
             "ObjId",
@@ -7039,7 +7481,7 @@
         {
           "kind": "theorem",
           "name": "tlbConsistent_of_objects_eq",
-          "line": 301,
+          "line": 302,
           "called": [
             "SystemState",
             "resolveAsidRoot",
@@ -7049,7 +7491,7 @@
         {
           "kind": "def",
           "name": "adapterFlushTlbHw",
-          "line": 323,
+          "line": 324,
           "called": [
             "SystemState",
             "adapterFlushTlb"
@@ -7058,7 +7500,7 @@
         {
           "kind": "def",
           "name": "adapterFlushTlbByAsidHw",
-          "line": 328,
+          "line": 329,
           "called": [
             "ASID",
             "SystemState",
@@ -7068,7 +7510,7 @@
         {
           "kind": "def",
           "name": "adapterFlushTlbByVAddrHw",
-          "line": 333,
+          "line": 334,
           "called": [
             "ASID",
             "SystemState",
@@ -7079,7 +7521,7 @@
         {
           "kind": "theorem",
           "name": "hardwareFlushAll_equiv_modelFlush",
-          "line": 337,
+          "line": 338,
           "called": [
             "TlbState",
             "TlbState.empty",
@@ -7089,7 +7531,7 @@
         {
           "kind": "theorem",
           "name": "hardwareFlushByAsid_equiv_modelFlush",
-          "line": 342,
+          "line": 343,
           "called": [
             "ASID",
             "TlbState",
@@ -7100,7 +7542,7 @@
         {
           "kind": "theorem",
           "name": "hardwareFlushByVAddr_equiv_modelFlush",
-          "line": 348,
+          "line": 349,
           "called": [
             "ASID",
             "TlbState",
@@ -7112,7 +7554,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbHw_preserves_tlbConsistent",
-          "line": 354,
+          "line": 355,
           "called": [
             "SystemState",
             "adapterFlushTlbHw",
@@ -7123,7 +7565,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbByAsidHw_preserves_tlbConsistent",
-          "line": 360,
+          "line": 361,
           "called": [
             "ASID",
             "SystemState",
@@ -7135,7 +7577,7 @@
         {
           "kind": "theorem",
           "name": "adapterFlushTlbByVAddrHw_preserves_tlbConsistent",
-          "line": 367,
+          "line": 368,
           "called": [
             "ASID",
             "SystemState",
@@ -7148,7 +7590,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_fullFlush_preserves_tlbConsistent",
-          "line": 382,
+          "line": 383,
           "called": [
             "ASID",
             "SystemState",
@@ -7162,15 +7604,141 @@
         {
           "kind": "def",
           "name": "tlbBarrierComplete",
-          "line": 413,
+          "line": 433,
           "called": [
             "SystemState"
           ]
         },
         {
+          "kind": "def",
+          "name": "tlbBarrierBitDsbIsh",
+          "line": 449,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "tlbBarrierBitDsbIshst",
+          "line": 450,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "tlbBarrierBitIsb",
+          "line": 451,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "tlbBarrierBitDsbOsh",
+          "line": 452,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "tlbBarrierBracketBitmask",
+          "line": 456,
+          "called": [
+            "tlbBarrierBitDsbIsh",
+            "tlbBarrierBitIsb"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "markTlbDirty",
+          "line": 486,
+          "called": [
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "markTlbBarriered",
+          "line": 495,
+          "called": [
+            "SystemState",
+            "tlbBarrierBracketBitmask"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "markTlbDirty_breaks_tlbBarrierComplete",
+          "line": 503,
+          "called": [
+            "SystemState",
+            "markTlbDirty",
+            "tlbBarrierComplete"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "markTlbBarriered_restores_tlbBarrierComplete",
+          "line": 514,
+          "called": [
+            "SystemState",
+            "markTlbBarriered",
+            "tlbBarrierBracketBitmask",
+            "tlbBarrierComplete"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "markTlbBarriered_after_markTlbDirty",
+          "line": 525,
+          "called": [
+            "SystemState",
+            "markTlbBarriered",
+            "markTlbBarriered_restores_tlbBarrierComplete",
+            "markTlbDirty",
+            "tlbBarrierComplete"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tlbBarrierComplete_default",
+          "line": 533,
+          "called": [
+            "SystemState",
+            "default",
+            "tlbBarrierComplete"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tlbBarrierComplete_implies_dsbIsh_emitted",
+          "line": 549,
+          "called": [
+            "SystemState",
+            "tlbBarrierBitDsbIsh",
+            "tlbBarrierComplete"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tlbBarrierComplete_implies_isb_emitted",
+          "line": 573,
+          "called": [
+            "SystemState",
+            "tlbBarrierBitIsb",
+            "tlbBarrierComplete"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tlbBarrierComplete_witnesses_bracket",
+          "line": 596,
+          "called": [
+            "SystemState",
+            "tlbBarrierBitDsbIsh",
+            "tlbBarrierBitIsb",
+            "tlbBarrierComplete",
+            "tlbBarrierComplete_implies_dsbIsh_emitted",
+            "tlbBarrierComplete_implies_isb_emitted"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "adapterFlushTlbHw_barrier_complete",
-          "line": 419,
+          "line": 615,
           "called": [
             "SystemState",
             "adapterFlushTlbHw",
@@ -7179,8 +7747,21 @@
         },
         {
           "kind": "theorem",
+          "name": "adapterFlushTlbHw_barrier_complete_default",
+          "line": 625,
+          "called": [
+            "SystemState",
+            "adapterFlushTlbHw",
+            "adapterFlushTlbHw_barrier_complete",
+            "default",
+            "tlbBarrierComplete",
+            "tlbBarrierComplete_default"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "adapterFlushTlbByAsidHw_barrier_complete",
-          "line": 424,
+          "line": 630,
           "called": [
             "ASID",
             "SystemState",
@@ -7190,8 +7771,22 @@
         },
         {
           "kind": "theorem",
+          "name": "adapterFlushTlbByAsidHw_barrier_complete_default",
+          "line": 637,
+          "called": [
+            "ASID",
+            "SystemState",
+            "adapterFlushTlbByAsidHw",
+            "adapterFlushTlbByAsidHw_barrier_complete",
+            "default",
+            "tlbBarrierComplete",
+            "tlbBarrierComplete_default"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "adapterFlushTlbByVAddrHw_barrier_complete",
-          "line": 429,
+          "line": 642,
           "called": [
             "ASID",
             "SystemState",
@@ -7202,14 +7797,43 @@
         },
         {
           "kind": "theorem",
+          "name": "adapterFlushTlbByVAddrHw_barrier_complete_default",
+          "line": 650,
+          "called": [
+            "ASID",
+            "SystemState",
+            "VAddr",
+            "adapterFlushTlbByVAddrHw",
+            "adapterFlushTlbByVAddrHw_barrier_complete",
+            "default",
+            "tlbBarrierComplete",
+            "tlbBarrierComplete_default"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "adapterFlushTlbHw_safe",
-          "line": 436,
+          "line": 661,
           "called": [
             "SystemState",
             "adapterFlushTlbHw",
             "adapterFlushTlbHw_barrier_complete",
             "adapterFlushTlbHw_preserves_tlbConsistent",
             "tlbBarrierComplete",
+            "tlbConsistent"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "adapterFlushTlbHw_safe_default",
+          "line": 669,
+          "called": [
+            "SystemState",
+            "adapterFlushTlbHw",
+            "adapterFlushTlbHw_safe",
+            "default",
+            "tlbBarrierComplete",
+            "tlbBarrierComplete_default",
             "tlbConsistent"
           ]
         }
@@ -34637,7 +35261,7 @@
     {
       "module": "SeLe4n.Kernel.Lifecycle.Suspend",
       "path": "SeLe4n/Kernel/Lifecycle/Suspend.lean",
-      "declaration_count": 10,
+      "declaration_count": 16,
       "declarations": [
         {
           "kind": "namespace",
@@ -34765,6 +35389,77 @@
             "resolveEffectivePrioDeadline",
             "schedule",
             "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "suspendThread_transientWindowInvariant",
+          "line": 309,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "none",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "suspendThread_transientWindowInvariant_default",
+          "line": 322,
+          "called": [
+            "RHTable_get",
+            "SystemState",
+            "ThreadId",
+            "default",
+            "none",
+            "suspendThread_transientWindowInvariant",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "suspendThread_atomicity_precondition",
+          "line": 335,
+          "called": [
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "suspendThread_atomicity_under_ffi_bracket_default",
+          "line": 363,
+          "called": [
+            "RHTable_get",
+            "SystemState",
+            "ValidThreadId",
+            "default",
+            "none",
+            "suspendThread",
+            "suspendThread_atomicity_precondition",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "suspendThread_atomicity_precondition_default",
+          "line": 378,
+          "called": [
+            "SystemState",
+            "default",
+            "suspendThread_atomicity_precondition"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "suspendThread_default_rejects_with_invalidArgument",
+          "line": 387,
+          "called": [
+            "SystemState",
+            "ValidThreadId",
+            "default",
+            "suspendThread",
+            "suspendThread_atomicity_precondition_default",
+            "suspendThread_atomicity_under_ffi_bracket_default"
           ]
         }
       ]
@@ -49710,8 +50405,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:419>",
-          "line": 419,
+          "name": "<anonymous:instance:452>",
+          "line": 452,
           "called": [
             "MachineState",
             "default"
@@ -49720,7 +50415,7 @@
         {
           "kind": "def",
           "name": "machineWordBounded",
-          "line": 433,
+          "line": 466,
           "called": [
             "MachineState",
             "RegName",
@@ -49731,7 +50426,7 @@
         {
           "kind": "theorem",
           "name": "machineWordBounded_default",
-          "line": 439,
+          "line": 472,
           "called": [
             "MachineState",
             "default",
@@ -49741,7 +50436,7 @@
         {
           "kind": "def",
           "name": "readReg",
-          "line": 446,
+          "line": 479,
           "called": [
             "RegName",
             "RegValue",
@@ -49751,7 +50446,7 @@
         {
           "kind": "def",
           "name": "writeReg",
-          "line": 449,
+          "line": 482,
           "called": [
             "RegName",
             "RegValue",
@@ -49761,7 +50456,7 @@
         {
           "kind": "def",
           "name": "readMem",
-          "line": 452,
+          "line": 485,
           "called": [
             "MachineState",
             "PAddr"
@@ -49770,7 +50465,7 @@
         {
           "kind": "def",
           "name": "writeMem",
-          "line": 455,
+          "line": 488,
           "called": [
             "MachineState",
             "PAddr"
@@ -49779,7 +50474,7 @@
         {
           "kind": "def",
           "name": "MachineState.addrInRange",
-          "line": 476,
+          "line": 509,
           "called": [
             "MachineState",
             "PAddr",
@@ -49790,7 +50485,7 @@
         {
           "kind": "def",
           "name": "readMemChecked",
-          "line": 484,
+          "line": 517,
           "called": [
             "MachineState",
             "PAddr",
@@ -49801,7 +50496,7 @@
         {
           "kind": "def",
           "name": "writeMemChecked",
-          "line": 489,
+          "line": 522,
           "called": [
             "MachineState",
             "PAddr",
@@ -49813,7 +50508,7 @@
         {
           "kind": "theorem",
           "name": "readMemChecked_eq_readMem_of_inRange",
-          "line": 494,
+          "line": 527,
           "called": [
             "MachineState",
             "PAddr",
@@ -49825,7 +50520,7 @@
         {
           "kind": "theorem",
           "name": "readMemChecked_none_of_outRange",
-          "line": 500,
+          "line": 533,
           "called": [
             "MachineState",
             "PAddr",
@@ -49837,7 +50532,7 @@
         {
           "kind": "theorem",
           "name": "writeMemChecked_eq_writeMem_of_inRange",
-          "line": 506,
+          "line": 539,
           "called": [
             "MachineState",
             "PAddr",
@@ -49849,7 +50544,7 @@
         {
           "kind": "theorem",
           "name": "writeMemChecked_none_of_outRange",
-          "line": 513,
+          "line": 546,
           "called": [
             "MachineState",
             "PAddr",
@@ -49861,7 +50556,7 @@
         {
           "kind": "theorem",
           "name": "writeMemChecked_preserves_regs",
-          "line": 520,
+          "line": 553,
           "called": [
             "MachineState",
             "PAddr",
@@ -49871,7 +50566,7 @@
         {
           "kind": "theorem",
           "name": "writeMemChecked_preserves_timer",
-          "line": 530,
+          "line": 563,
           "called": [
             "MachineState",
             "PAddr",
@@ -49881,7 +50576,7 @@
         {
           "kind": "def",
           "name": "setPC",
-          "line": 539,
+          "line": 572,
           "called": [
             "MachineState",
             "RegValue"
@@ -49890,7 +50585,7 @@
         {
           "kind": "def",
           "name": "tick",
-          "line": 542,
+          "line": 575,
           "called": [
             "MachineState"
           ]
@@ -49898,7 +50593,7 @@
         {
           "kind": "def",
           "name": "disableInterrupts",
-          "line": 551,
+          "line": 584,
           "called": [
             "MachineState"
           ]
@@ -49906,7 +50601,7 @@
         {
           "kind": "def",
           "name": "enableInterrupts",
-          "line": 556,
+          "line": 589,
           "called": [
             "MachineState"
           ]
@@ -49914,7 +50609,7 @@
         {
           "kind": "def",
           "name": "withInterruptsDisabled",
-          "line": 564,
+          "line": 597,
           "called": [
             "MachineState",
             "disableInterrupts"
@@ -49923,7 +50618,7 @@
         {
           "kind": "theorem",
           "name": "disableInterrupts_sets_false",
-          "line": 571,
+          "line": 604,
           "called": [
             "MachineState",
             "disableInterrupts"
@@ -49932,7 +50627,7 @@
         {
           "kind": "theorem",
           "name": "enableInterrupts_sets_true",
-          "line": 575,
+          "line": 608,
           "called": [
             "MachineState",
             "enableInterrupts"
@@ -49941,7 +50636,7 @@
         {
           "kind": "theorem",
           "name": "disableInterrupts_preserves_timer",
-          "line": 579,
+          "line": 612,
           "called": [
             "MachineState",
             "disableInterrupts"
@@ -49950,7 +50645,7 @@
         {
           "kind": "theorem",
           "name": "disableInterrupts_preserves_regs",
-          "line": 583,
+          "line": 616,
           "called": [
             "MachineState",
             "disableInterrupts"
@@ -49959,7 +50654,7 @@
         {
           "kind": "theorem",
           "name": "disableInterrupts_preserves_memory",
-          "line": 587,
+          "line": 620,
           "called": [
             "MachineState",
             "disableInterrupts"
@@ -49968,7 +50663,7 @@
         {
           "kind": "theorem",
           "name": "enableInterrupts_preserves_timer",
-          "line": 591,
+          "line": 624,
           "called": [
             "MachineState",
             "enableInterrupts"
@@ -49977,7 +50672,7 @@
         {
           "kind": "theorem",
           "name": "enableInterrupts_preserves_regs",
-          "line": 595,
+          "line": 628,
           "called": [
             "MachineState",
             "enableInterrupts"
@@ -49986,7 +50681,7 @@
         {
           "kind": "theorem",
           "name": "enableInterrupts_preserves_memory",
-          "line": 599,
+          "line": 632,
           "called": [
             "MachineState",
             "enableInterrupts"
@@ -49995,7 +50690,7 @@
         {
           "kind": "theorem",
           "name": "withInterruptsDisabled_restores",
-          "line": 604,
+          "line": 637,
           "called": [
             "MachineState",
             "withInterruptsDisabled"
@@ -50004,7 +50699,7 @@
         {
           "kind": "theorem",
           "name": "tick_preserves_interruptsEnabled",
-          "line": 609,
+          "line": 642,
           "called": [
             "MachineState",
             "tick"
@@ -50013,7 +50708,7 @@
         {
           "kind": "theorem",
           "name": "readReg_writeReg_eq",
-          "line": 616,
+          "line": 649,
           "called": [
             "RegName",
             "RegValue",
@@ -50025,7 +50720,7 @@
         {
           "kind": "theorem",
           "name": "readReg_writeReg_ne",
-          "line": 620,
+          "line": 653,
           "called": [
             "RegName",
             "RegValue",
@@ -50038,7 +50733,7 @@
         {
           "kind": "theorem",
           "name": "readMem_writeMem_eq",
-          "line": 627,
+          "line": 660,
           "called": [
             "MachineState",
             "PAddr",
@@ -50049,7 +50744,7 @@
         {
           "kind": "theorem",
           "name": "readMem_writeMem_ne",
-          "line": 631,
+          "line": 664,
           "called": [
             "MachineState",
             "PAddr",
@@ -50060,7 +50755,7 @@
         {
           "kind": "theorem",
           "name": "writeReg_preserves_pc",
-          "line": 636,
+          "line": 669,
           "called": [
             "RegName",
             "RegValue",
@@ -50071,7 +50766,7 @@
         {
           "kind": "theorem",
           "name": "writeReg_preserves_sp",
-          "line": 639,
+          "line": 672,
           "called": [
             "RegName",
             "RegValue",
@@ -50082,7 +50777,7 @@
         {
           "kind": "theorem",
           "name": "writeMem_preserves_regs",
-          "line": 642,
+          "line": 675,
           "called": [
             "MachineState",
             "PAddr",
@@ -50092,7 +50787,7 @@
         {
           "kind": "theorem",
           "name": "writeMem_preserves_timer",
-          "line": 645,
+          "line": 678,
           "called": [
             "MachineState",
             "PAddr",
@@ -50102,7 +50797,7 @@
         {
           "kind": "theorem",
           "name": "setPC_preserves_memory",
-          "line": 648,
+          "line": 681,
           "called": [
             "MachineState",
             "RegValue",
@@ -50112,7 +50807,7 @@
         {
           "kind": "theorem",
           "name": "setPC_preserves_timer",
-          "line": 651,
+          "line": 684,
           "called": [
             "MachineState",
             "RegValue",
@@ -50122,7 +50817,7 @@
         {
           "kind": "theorem",
           "name": "tick_preserves_regs",
-          "line": 654,
+          "line": 687,
           "called": [
             "MachineState",
             "tick"
@@ -50131,7 +50826,7 @@
         {
           "kind": "theorem",
           "name": "tick_preserves_memory",
-          "line": 657,
+          "line": 690,
           "called": [
             "MachineState",
             "tick"
@@ -50140,7 +50835,7 @@
         {
           "kind": "theorem",
           "name": "tick_timer_succ",
-          "line": 660,
+          "line": 693,
           "called": [
             "MachineState",
             "tick"
@@ -50149,7 +50844,7 @@
         {
           "kind": "theorem",
           "name": "default_memory_returns_zero",
-          "line": 669,
+          "line": 702,
           "called": [
             "MachineState",
             "PAddr",
@@ -50159,7 +50854,7 @@
         {
           "kind": "theorem",
           "name": "default_registerFile_pc_zero",
-          "line": 674,
+          "line": 707,
           "called": [
             "RegisterFile",
             "default"
@@ -50168,7 +50863,7 @@
         {
           "kind": "theorem",
           "name": "default_registerFile_sp_zero",
-          "line": 678,
+          "line": 711,
           "called": [
             "RegisterFile",
             "default"
@@ -50177,7 +50872,7 @@
         {
           "kind": "theorem",
           "name": "default_timer_zero",
-          "line": 682,
+          "line": 715,
           "called": [
             "MachineState",
             "default"
@@ -50186,7 +50881,7 @@
         {
           "kind": "def",
           "name": "zeroMemoryRange",
-          "line": 703,
+          "line": 736,
           "called": [
             "MachineState",
             "PAddr",
@@ -50197,7 +50892,7 @@
         {
           "kind": "def",
           "name": "memoryZeroed",
-          "line": 710,
+          "line": 743,
           "called": [
             "MachineState",
             "PAddr",
@@ -50208,7 +50903,7 @@
         {
           "kind": "theorem",
           "name": "zeroMemoryRange_establishes_memoryZeroed",
-          "line": 715,
+          "line": 748,
           "called": [
             "MachineState",
             "PAddr",
@@ -50220,7 +50915,7 @@
         {
           "kind": "theorem",
           "name": "zeroMemoryRange_frame",
-          "line": 725,
+          "line": 758,
           "called": [
             "MachineState",
             "PAddr",
@@ -50232,7 +50927,7 @@
         {
           "kind": "theorem",
           "name": "zeroMemoryRange_preserves_regs",
-          "line": 735,
+          "line": 768,
           "called": [
             "MachineState",
             "PAddr",
@@ -50243,7 +50938,7 @@
         {
           "kind": "theorem",
           "name": "zeroMemoryRange_preserves_timer",
-          "line": 740,
+          "line": 773,
           "called": [
             "MachineState",
             "PAddr",
@@ -50254,7 +50949,7 @@
         {
           "kind": "theorem",
           "name": "zeroMemoryRange_zero_size_memory",
-          "line": 745,
+          "line": 778,
           "called": [
             "MachineState",
             "PAddr",
@@ -50264,13 +50959,13 @@
         {
           "kind": "inductive",
           "name": "SystemRegisterIndex",
-          "line": 758,
+          "line": 791,
           "called": []
         },
         {
           "kind": "def",
           "name": "readSystemRegister",
-          "line": 764,
+          "line": 797,
           "called": [
             "MachineState",
             "SystemRegisterIndex"
@@ -50279,7 +50974,7 @@
         {
           "kind": "def",
           "name": "writeSystemRegister",
-          "line": 778,
+          "line": 811,
           "called": [
             "MachineState",
             "SystemRegisterIndex"
@@ -50288,7 +50983,7 @@
         {
           "kind": "theorem",
           "name": "writeSystemRegister_preserves_regs",
-          "line": 797,
+          "line": 830,
           "called": [
             "MachineState",
             "SystemRegisterIndex",
@@ -50298,7 +50993,7 @@
         {
           "kind": "theorem",
           "name": "writeSystemRegister_preserves_memory",
-          "line": 803,
+          "line": 836,
           "called": [
             "MachineState",
             "SystemRegisterIndex",
@@ -50308,7 +51003,7 @@
         {
           "kind": "theorem",
           "name": "writeSystemRegister_preserves_timer",
-          "line": 809,
+          "line": 842,
           "called": [
             "MachineState",
             "SystemRegisterIndex",
@@ -50318,7 +51013,7 @@
         {
           "kind": "theorem",
           "name": "readSystemRegister_writeSystemRegister_eq",
-          "line": 815,
+          "line": 848,
           "called": [
             "MachineState",
             "SystemRegisterIndex",
@@ -50329,7 +51024,7 @@
         {
           "kind": "structure",
           "name": "MachineConfig",
-          "line": 836,
+          "line": 869,
           "called": [
             "MemoryRegion"
           ]
@@ -50337,7 +51032,7 @@
         {
           "kind": "def",
           "name": "defaultMachineConfig",
-          "line": 868,
+          "line": 901,
           "called": [
             "MachineConfig"
           ]
@@ -50345,7 +51040,7 @@
         {
           "kind": "theorem",
           "name": "registerFileGPRCount_eq_registerCount_default",
-          "line": 879,
+          "line": 912,
           "called": [
             "registerFileGPRCount"
           ]
@@ -50353,13 +51048,13 @@
         {
           "kind": "namespace",
           "name": "MachineConfig",
-          "line": 882,
+          "line": 915,
           "called": []
         },
         {
           "kind": "def",
           "name": "noOverlapAux",
-          "line": 888,
+          "line": 921,
           "called": [
             "MemoryRegion",
             "all",
@@ -50369,13 +51064,13 @@
         {
           "kind": "def",
           "name": "isPowerOfTwo",
-          "line": 894,
+          "line": 927,
           "called": []
         },
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 904,
+          "line": 937,
           "called": [
             "MachineConfig",
             "all",
@@ -50388,7 +51083,7 @@
         {
           "kind": "structure",
           "name": "SyscallRegisterLayout",
-          "line": 925,
+          "line": 958,
           "called": [
             "RegName"
           ]
@@ -50396,7 +51091,7 @@
         {
           "kind": "def",
           "name": "arm64DefaultLayout",
-          "line": 937,
+          "line": 970,
           "called": [
             "SyscallRegisterLayout"
           ]
@@ -59452,7 +60147,7 @@
         {
           "kind": "def",
           "name": "bootSafeObject",
-          "line": 1447,
+          "line": 1455,
           "called": [
             "KernelObject",
             "bitsConsumed",
@@ -59468,7 +60163,7 @@
         {
           "kind": "def",
           "name": "PlatformConfig.bootSafe",
-          "line": 1477,
+          "line": 1485,
           "called": [
             "PlatformConfig",
             "bootSafeObject",
@@ -59478,7 +60173,7 @@
         {
           "kind": "def",
           "name": "PlatformConfig.untypedRegionsDisjoint",
-          "line": 1496,
+          "line": 1504,
           "called": [
             "ObjectEntry",
             "PlatformConfig",
@@ -59489,7 +60184,7 @@
         {
           "kind": "theorem",
           "name": "PlatformConfig.untypedRegionsDisjoint_empty",
-          "line": 1509,
+          "line": 1517,
           "called": [
             "PlatformConfig.untypedRegionsDisjoint"
           ]
@@ -59497,7 +60192,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_objects_bootSafe",
-          "line": 1520,
+          "line": 1528,
           "called": [
             "IntermediateState",
             "KernelObject",
@@ -59515,7 +60210,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_objects_bootSafe",
-          "line": 1548,
+          "line": 1556,
           "called": [
             "KernelObject",
             "ObjId",
@@ -59534,7 +60229,7 @@
         {
           "kind": "theorem",
           "name": "foldObjects_objects_reachable",
-          "line": 1569,
+          "line": 1577,
           "called": [
             "IntermediateState",
             "KernelObject",
@@ -59551,7 +60246,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_untypedRegionsDisjoint",
-          "line": 1600,
+          "line": 1608,
           "called": [
             "PlatformConfig",
             "RHTable_get",
@@ -59569,7 +60264,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_proofLayerInvariantBundle_general",
-          "line": 1669,
+          "line": 1677,
           "called": [
             "PlatformConfig",
             "RHTable_get",
@@ -59648,7 +60343,7 @@
         {
           "kind": "theorem",
           "name": "bootToRuntime_invariantBridge_general",
-          "line": 2097,
+          "line": 2105,
           "called": [
             "PlatformConfig",
             "apiInvariantBundle_frozen",
@@ -60409,7 +61104,7 @@
     {
       "module": "SeLe4n.Platform.FFI",
       "path": "SeLe4n/Platform/FFI.lean",
-      "declaration_count": 18,
+      "declaration_count": 23,
       "declarations": [
         {
           "kind": "namespace",
@@ -60517,6 +61212,36 @@
           "kind": "opaque",
           "name": "ffiEnableInterrupts",
           "line": 152,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiSuspendThread",
+          "line": 168,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "suspendThreadInner",
+          "line": 185,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "syscallDispatchInner",
+          "line": 216,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiCacheCleanPagetableRange",
+          "line": 234,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiIcIallu",
+          "line": 241,
           "called": []
         }
       ]
@@ -62641,13 +63366,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Staged",
-          "line": 50,
+          "line": 53,
           "called": []
         },
         {
           "kind": "def",
           "name": "stagedBuildAnchor",
-          "line": 56,
+          "line": 59,
           "called": []
         }
       ]
@@ -68487,6 +69212,54 @@
             "an7d5_02_extractPeripherals_zero_fuel_collapses",
             "an7d5_03_extractPeripherals_skips_incomplete_nodes",
             "an7d5_04_extractPeripherals_excludes_reserved_names"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "tests.An9HardwareBindingSuite",
+      "path": "tests/An9HardwareBindingSuite.lean",
+      "declaration_count": 4,
+      "declarations": [
+        {
+          "kind": "def",
+          "name": "passLine",
+          "line": 32,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "failLine",
+          "line": 35,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "expect",
+          "line": 39,
+          "called": [
+            "failLine",
+            "passLine"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 42,
+          "called": [
+            "SystemState",
+            "TlbCacheJointState.empty_pageTableUpdate_full_coherency",
+            "covers",
+            "default",
+            "expect",
+            "markTlbBarriered",
+            "markTlbDirty",
+            "ofNat",
+            "pageTableUpdate",
+            "passLine",
+            "subsumes",
+            "suspendThread",
+            "suspendThread_transientWindowInvariant_default"
           ]
         }
       ]

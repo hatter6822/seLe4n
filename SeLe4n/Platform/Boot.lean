@@ -1437,13 +1437,21 @@ theorem bootFromPlatform_cdtNodeSlot_eq (config : PlatformConfig) :
     **Tradeoff**: All address spaces must be configured post-boot via `vspaceMap`
     syscalls. This prevents pre-populating address space mappings during boot.
 
-    **Integration timeline**: VSpaceRoot boot support is closed by AN7-D.2
-    / AN9-E (DEF-P-L9) per docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12
-    when the ASID manager is wired into the `IntermediateState` builder
-    operations.
-    The `AsidManager` type and `asidPoolUnique` invariant (AsidManager.lean)
-    provide the foundation — the missing piece is builder-phase ASID pool
-    integration. -/
+    **AN9-E (DEF-P-L9 — RESOLVED via AN7-D.2)**: a canonical RPi5 boot
+    VSpaceRoot is now provided by `SeLe4n.Platform.RPi5.VSpaceBoot`
+    (`rpi5BootVSpaceRoot`).  The companion theorem
+    `rpi5BootVSpaceRoot_bootSafe` in that module witnesses a single
+    well-formed boot VSpaceRoot at ASID 0; non-empty boot configs that
+    include this canonical root therefore satisfy the
+    `PlatformConfig.bootSafe` precondition.  The `bootSafeObject`
+    predicate here retains the `(∀ vs, obj ≠ .vspaceRoot vs)` clause
+    as a *structural* exclusion — i.e., we do not require every
+    config to include any VSpaceRoot — but boots that DO include the
+    canonical root via `RPi5.VSpaceBoot` discharge the constraint via
+    that module's bridge.
+
+    See `SeLe4n/Platform/RPi5/VSpaceBoot.lean` for the substantive
+    closure. -/
 def bootSafeObject (obj : KernelObject) : Prop :=
   -- Endpoints must have empty queues (no thread references)
   (∀ ep, obj = .endpoint ep →

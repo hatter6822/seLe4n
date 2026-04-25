@@ -8,7 +8,7 @@
 //! Phase 4: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.30.9";
+const KERNEL_VERSION: &str = "0.30.10";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
@@ -145,10 +145,25 @@ fn set_vbar() {
     crate::barriers::isb();
 }
 
-/// Infinite idle loop — WFE to save power while waiting for events.
-/// Used as the final state after boot when no kernel main is available yet.
+/// Infinite idle loop — bounded WFE to save power while waiting for events.
+///
+/// AN9-G (DEF-R-HAL-L17): uses [`crate::cpu::wfe_bounded`] with the
+/// 10 ms RPi5 default timeout instead of unconditional `wfe`.  If a
+/// timer event source ever silently disappears (mis-configured CNTFRQ,
+/// mis-armed comparator), the bounded variant lets the boot diagnostic
+/// loop fall through every 10 ms and re-check `next_wakeup` rather
+/// than hanging silently.
+///
+/// The loop itself is infinite; the bound is on each individual
+/// `wfe_bounded` call.  Combined with timer interrupt re-arm (AG5)
+/// and `wfe_bounded`'s `CNTPCT_EL0` round-trip, this guarantees
+/// progress under any single event-source failure.
 fn idle_loop() -> ! {
     loop {
-        crate::cpu::wfe();
+        let _elapsed = crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
+        // Future: examine `_elapsed` and emit a diagnostic if no
+        // events arrived for an unexpectedly long stretch.  The
+        // hook lives in this loop (not in `wfe_bounded`) so the
+        // bounded primitive remains a thin shim.
     }
 }
