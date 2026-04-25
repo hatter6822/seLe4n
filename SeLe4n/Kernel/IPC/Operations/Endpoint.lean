@@ -405,6 +405,41 @@ def cleanupActiveDonation
     (originalOwner : SeLe4n.ThreadId) : Except KernelError SystemState :=
   returnDonatedSchedContext st serverTid scId originalOwner
 
+-- ============================================================================
+-- AN10 residual closure (H5–H6): typed entry-points for donation handlers
+-- ============================================================================
+-- Same wrapper pattern as the H1–H4 lifecycle handlers — provides
+-- type-level documentation that callers must hold validated thread/sc
+-- ids. Production handlers (`endpointCallWithDonation`, `endpointReply
+-- WithDonation`, `endpointReplyRecvWithDonation`) extract the tids from
+-- the kernel's queue/lookup chain after the AL7 `validateThreadIdArg`
+-- gate, so they can adopt these wrappers transparently.
+
+/-- AN10-H5: typed entry-point for `donateSchedContext`. -/
+@[inline] def donateSchedContextValid (st : SystemState)
+    (clientVtid serverVtid : SeLe4n.ValidThreadId)
+    (clientScId : SeLe4n.SchedContextId) : Except KernelError SystemState :=
+  donateSchedContext st clientVtid.val serverVtid.val clientScId
+
+@[simp] theorem donateSchedContextValid_eq (st : SystemState)
+    (clientVtid serverVtid : SeLe4n.ValidThreadId)
+    (clientScId : SeLe4n.SchedContextId) :
+    donateSchedContextValid st clientVtid serverVtid clientScId =
+      donateSchedContext st clientVtid.val serverVtid.val clientScId := rfl
+
+/-- AN10-H6: typed entry-point for `returnDonatedSchedContext`. -/
+@[inline] def returnDonatedSchedContextValid (st : SystemState)
+    (serverVtid : SeLe4n.ValidThreadId)
+    (scId : SeLe4n.SchedContextId)
+    (originalOwnerVtid : SeLe4n.ValidThreadId) : Except KernelError SystemState :=
+  returnDonatedSchedContext st serverVtid.val scId originalOwnerVtid.val
+
+@[simp] theorem returnDonatedSchedContextValid_eq (st : SystemState)
+    (serverVtid : SeLe4n.ValidThreadId) (scId : SeLe4n.SchedContextId)
+    (originalOwnerVtid : SeLe4n.ValidThreadId) :
+    returnDonatedSchedContextValid st serverVtid scId originalOwnerVtid =
+      returnDonatedSchedContext st serverVtid.val scId originalOwnerVtid.val := rfl
+
 /-- AI4-A (M-01): Clean up stale donation before a server blocks on receive.
 
 If the receiver has a `.donated` binding from a previous call that was never

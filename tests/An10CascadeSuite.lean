@@ -531,6 +531,30 @@ def an10_e_resolveCapAddress_missing_root_is_objectNotFound : IO Bool := do
   | Except.error KernelError.objectNotFound => return true
   | _ => return false
 
+/-- AN10-E.H5 — `donateSchedContextValid` reduces to `donateSchedContext`. -/
+def an10_e_donateSchedContextValid_reduces : IO Bool := do
+  let clientVtid : ValidThreadId := ⟨ThreadId.ofNat 1, by decide⟩
+  let serverVtid : ValidThreadId := ⟨ThreadId.ofNat 2, by decide⟩
+  let scId : SchedContextId := SchedContextId.ofNat 100
+  let st : SystemState := default
+  -- No SchedContext at scId.toObjId; both forms return `.error .objectNotFound`.
+  match SeLe4n.Kernel.donateSchedContextValid st clientVtid serverVtid scId,
+        SeLe4n.Kernel.donateSchedContext st clientVtid.val serverVtid.val scId with
+  | Except.error e1, Except.error e2 => return e1 == e2
+  | _, _ => return false
+
+/-- AN10-E.H6 — `returnDonatedSchedContextValid` reduces to
+`returnDonatedSchedContext`. -/
+def an10_e_returnDonatedSchedContextValid_reduces : IO Bool := do
+  let serverVtid : ValidThreadId := ⟨ThreadId.ofNat 1, by decide⟩
+  let originalOwnerVtid : ValidThreadId := ⟨ThreadId.ofNat 2, by decide⟩
+  let scId : SchedContextId := SchedContextId.ofNat 100
+  let st : SystemState := default
+  match SeLe4n.Kernel.returnDonatedSchedContextValid st serverVtid scId originalOwnerVtid,
+        SeLe4n.Kernel.returnDonatedSchedContext st serverVtid.val scId originalOwnerVtid.val with
+  | Except.error e1, Except.error e2 => return e1 == e2
+  | _, _ => return false
+
 -- ============================================================================
 -- Suite runner
 -- ============================================================================
@@ -581,7 +605,10 @@ def runAll : IO Bool := do
     ("an10_e_cspaceResolvePath_wrong_variant_is_objectNotFound",
       an10_e_cspaceResolvePath_wrong_variant_is_objectNotFound),
     ("an10_e_resolveCapAddress_missing_root_is_objectNotFound",
-      an10_e_resolveCapAddress_missing_root_is_objectNotFound)
+      an10_e_resolveCapAddress_missing_root_is_objectNotFound),
+    ("an10_e_donateSchedContextValid_reduces", an10_e_donateSchedContextValid_reduces),
+    ("an10_e_returnDonatedSchedContextValid_reduces",
+      an10_e_returnDonatedSchedContextValid_reduces)
   ]
   let mut allOk : Bool := true
   for (name, action) in tests do
