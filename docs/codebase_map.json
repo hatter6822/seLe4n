@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-codebase-phase-an12-JBPQN",
-      "commit_sha": "34c34d6b87e86dc5753fadf9aa38a9d978b1c601",
-      "tree_sha": "fc4d6627a4c3661421c77743b54654327f0479c6",
-      "committed_at_utc": "2026-04-26T03:08:23-04:00"
+      "commit_sha": "d8eee699b58897e703b91423fdbbeda596e0e2b4",
+      "tree_sha": "2e0cc478e5e9fcc88b20aa6c39b1205d965bd266",
+      "committed_at_utc": "2026-04-26T19:52:11+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "3f95510f4ecfb0fedeb59acc8f4f018b829832fc695f65de03cb118493974cb5"
+    "source_digest": "b8b6e1dfee8cf0241c21c39344e47eae98ed49be2965282dffb63feb1a409a5d"
   },
   "summary": {
     "module_count": 196,
@@ -27,7 +27,7 @@
     "version": "0.30.11",
     "lean_toolchain": "v4.28.0",
     "production_files": 168,
-    "production_loc": 109788,
+    "production_loc": 109801,
     "test_files": 28,
     "test_loc": 18925,
     "proved_theorem_lemma_decls": 3199,
@@ -13463,13 +13463,13 @@
         {
           "kind": "structure",
           "name": "SmpLatentAssumption",
-          "line": 55,
+          "line": 67,
           "called": []
         },
         {
           "kind": "def",
           "name": "cspaceLookupMultiLevel_smpLatent",
-          "line": 73,
+          "line": 85,
           "called": [
             "CNode",
             "SmpLatentAssumption",
@@ -13482,7 +13482,7 @@
         {
           "kind": "def",
           "name": "cspaceCopyMoveMutate_smpLatent",
-          "line": 86,
+          "line": 98,
           "called": [
             "ObjId",
             "SmpLatentAssumption",
@@ -13493,7 +13493,7 @@
         {
           "kind": "def",
           "name": "lifecyclePreRetypeCleanup_smpLatent",
-          "line": 98,
+          "line": 110,
           "called": [
             "SmpLatentAssumption",
             "lifecyclePreRetypeCleanup"
@@ -13502,7 +13502,7 @@
         {
           "kind": "def",
           "name": "serviceHasPathTo_smpLatent",
-          "line": 110,
+          "line": 122,
           "called": [
             "SmpLatentAssumption",
             "registerService",
@@ -13512,7 +13512,7 @@
         {
           "kind": "def",
           "name": "timerTickReplenishmentPipeline_smpLatent",
-          "line": 122,
+          "line": 134,
           "called": [
             "SmpLatentAssumption",
             "replenishmentPipelineOrder",
@@ -13522,7 +13522,7 @@
         {
           "kind": "def",
           "name": "typedIdDisjointness_smpLatent",
-          "line": 137,
+          "line": 149,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -13536,10 +13536,12 @@
         {
           "kind": "def",
           "name": "architecture_singleCoreOnly_smpLatent",
-          "line": 151,
+          "line": 163,
           "called": [
+            "ArchAssumption",
             "SmpLatentAssumption",
             "architecture_assumptions_index",
+            "assumptionInventory",
             "canonical",
             "runtime"
           ]
@@ -13547,7 +13549,7 @@
         {
           "kind": "def",
           "name": "bootFromPlatform_currentCore_is_zero_smpLatent",
-          "line": 166,
+          "line": 179,
           "called": [
             "SmpLatentAssumption",
             "boot",
@@ -13558,7 +13560,7 @@
         {
           "kind": "def",
           "name": "smpLatentInventory",
-          "line": 183,
+          "line": 196,
           "called": [
             "SmpLatentAssumption",
             "architecture_singleCoreOnly_smpLatent",
@@ -13574,13 +13576,13 @@
         {
           "kind": "theorem",
           "name": "smpLatentInventory_count",
-          "line": 197,
+          "line": 210,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "smpLatentInventory_identifiers_nonAnonymous",
-          "line": 203,
+          "line": 216,
           "called": [
             "architecture_singleCoreOnly_smpLatent",
             "bootFromPlatform_currentCore_is_zero_smpLatent",

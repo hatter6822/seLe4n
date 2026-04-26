@@ -48,6 +48,18 @@ Each entry carries:
 - `auditReference` — short audit-ID string identifying the originating
   finding or workstream sub-task.
 
+The `identifier` and `sourceTheorem` fields hold `Lean.Name` literals.
+Lean does not enforce that a `Lean.Name` literal resolves to a defined
+symbol — the name is just a structural reference. The inventory's
+canonical names are **audited by source-read at every WS-AN closure**;
+each name in the 8 entries below was verified to resolve to a real
+kernel symbol at v0.30.11 (AN12-B audit pass). Importing every named
+symbol's owning module here would balloon the dependency graph; the
+audit-by-source-read pattern keeps the inventory lightweight while
+maintaining accuracy. Future maintainers who add or rename an entry
+must re-run the source-read audit and update names accordingly — the
+non-resolution case is a documentation regression, not a proof failure.
+
 The structure is a plain Lean record so the per-entry record-builder
 syntax collapses to literal data at elaboration; the inventory list below
 is therefore a concrete value that can be grepped and decided at term
@@ -103,24 +115,24 @@ def lifecyclePreRetypeCleanup_smpLatent : SmpLatentAssumption :=
     smpDischarge      :=
       "SMP: AN9-D's `sele4n_suspend_thread` FFI bracket idiom is reused — \
        cleanup runs interrupts-disabled on the calling core."
-    sourceTheorem     := `SeLe4n.Kernel.Lifecycle.lifecyclePreRetypeCleanup
+    sourceTheorem     := `SeLe4n.Kernel.lifecyclePreRetypeCleanup
     auditReference    := "C-M04 / AN9-D" }
 
 /-- SVC-M01 / AN4-H: serviceHasPathTo non-atomic graph traversal. -/
 def serviceHasPathTo_smpLatent : SmpLatentAssumption :=
-  { identifier        := `SeLe4n.Kernel.Service.Invariant.serviceHasPathTo
+  { identifier        := `SeLe4n.Kernel.serviceHasPathTo
     singleCoreWitness :=
       "Single-core: BFS over the registry's dependency map sees a stable \
        snapshot — no concurrent registerService can extend the graph mid-walk."
     smpDischarge      :=
       "SMP: ServiceRegistry mutations route through capability operations; \
        AN9-D bracket discipline serialises them on the calling core."
-    sourceTheorem     := `SeLe4n.Kernel.Service.Invariant.serviceHasPathTo
+    sourceTheorem     := `SeLe4n.Kernel.serviceHasPathTo
     auditReference    := "SVC-M01 / AN4-H" }
 
 /-- AK2-K / AN5-D: timer-tick + replenishment-pipeline atomicity. -/
 def timerTickReplenishmentPipeline_smpLatent : SmpLatentAssumption :=
-  { identifier        := `SeLe4n.Kernel.Scheduler.timerTickWithBudget
+  { identifier        := `SeLe4n.Kernel.timerTickWithBudget
     singleCoreWitness :=
       "Single-core: timer ISR runs to completion before any other kernel \
        transition — pop-due / refill / process pipeline is atomic."
@@ -128,7 +140,7 @@ def timerTickReplenishmentPipeline_smpLatent : SmpLatentAssumption :=
       "SMP: per-core timer bookkeeping; the Rust HAL emits the GIC EOI \
        before re-enabling IRQs (AN8-C ordering). v1.0.0 ships with \
        `SMP_ENABLED = false` so the single-core pipeline is the live path."
-    sourceTheorem     := `SeLe4n.Kernel.Scheduler.replenishmentPipelineOrder
+    sourceTheorem     := `SeLe4n.Kernel.replenishmentPipelineOrder
     auditReference    := "AK2-K / AN5-D" }
 
 /-! ## AN12-B.3 — foundation / architecture entries (3) -/
@@ -149,11 +161,12 @@ def typedIdDisjointness_smpLatent : SmpLatentAssumption :=
 
 /-- AG-* / Architecture/Assumptions.lean: explicit single-core kernel model. -/
 def architecture_singleCoreOnly_smpLatent : SmpLatentAssumption :=
-  { identifier        := `SeLe4n.Kernel.Architecture.singleCoreOnly
+  { identifier        := `SeLe4n.Kernel.Architecture.ArchAssumption
     singleCoreWitness :=
       "Single-core: SchedulerState has a single `current : Option ThreadId` \
        slot rather than a per-core array; this is the canonical single-core \
-       kernel model recorded in `Architecture/Assumptions.lean`."
+       kernel model recorded in `Architecture/Assumptions.lean` via the \
+       `ArchAssumption` inductive + `assumptionInventory` aggregator."
     smpDischarge      :=
       "SMP: model extension would replace the slot with `Array (Option ThreadId)`. \
        AN9-J ships SMP code merged but `SMP_ENABLED = false` at v1.0.0 — the \
@@ -164,7 +177,7 @@ def architecture_singleCoreOnly_smpLatent : SmpLatentAssumption :=
 
 /-- CX-M03 / AN6-F: bootFromPlatform single-core boot bridge. -/
 def bootFromPlatform_currentCore_is_zero_smpLatent : SmpLatentAssumption :=
-  { identifier        := `SeLe4n.Platform.bootFromPlatform
+  { identifier        := `SeLe4n.Platform.Boot.bootFromPlatform
     singleCoreWitness :=
       "Single-core: bootFromPlatform returns IntermediateState whose scheduler \
        runs on the boot core with implicit core-id = 0; the AN6-F witness \
@@ -174,7 +187,7 @@ def bootFromPlatform_currentCore_is_zero_smpLatent : SmpLatentAssumption :=
        boot core has finished bootFromPlatform; the boot bridge predicate \
        holds for the boot core specifically. Secondary cores enter through \
        `rust_secondary_main` which is a separate proof obligation."
-    sourceTheorem     := `SeLe4n.Kernel.Architecture.bootFromPlatform_singleCore_witness
+    sourceTheorem     := `SeLe4n.Kernel.bootFromPlatform_singleCore_witness
     auditReference    := "CX-M03 / AN6-F" }
 
 /-- AN12-B.4: aggregator. The full inventory aggregates the 8 entries above

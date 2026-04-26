@@ -287,19 +287,27 @@ currently-active plan file tracks them.**
 
 ## Category B — Post-1.0 proof-hygiene
 
-### DEF-F-L9 — 17-Deep Tuple Projection Refactor
+### DEF-F-L9 — 17-Deep Tuple Projection Refactor **[RETAINED POST-v1.0.0 — cosmetic, no correctness impact]**
 
 - **Audit finding:** F-L9 (LOW). `allTablesInvExtK` in `SeLe4n/Model/
   State.lean` carries a 17-tuple invariant whose projection
   accessors are position-indexed; adding a new tuple entry requires
   updating every downstream caller's projection depth.
-- **Disposition:** DEFER (AK7-K marker) per §14.3 of the plan.
-- **Deferral reason:** Refactoring to a named structure is strictly a
-  readability/maintainability win with no correctness impact. The
-  WS-AF-26 design rationale stands: 17-deep tuples are tractable
-  under Lean 4.28.0's elaborator, and a named-record refactor
-  cascades through ~80 proof sites.
-- **Acceptance criteria:**
+- **Disposition:** **RETAINED** as a post-v1.0.0 cosmetic improvement
+  with no correctness impact. The WS-AN closure (v0.30.11) explicitly
+  carries this row past v1.0.0 because: (a) refactoring to a named
+  structure is strictly a readability/maintainability win, (b) the
+  17-deep tuple is tractable under Lean 4.28.0's elaborator with no
+  observed friction in the WS-AN proof additions, and (c) the cascade
+  spans ~80 proof sites — a cost-benefit ratio that does not justify
+  the closure-phase risk. (Original AK7-K marker per §14.3 of the
+  v0.29.0 plan; WS-AF-26 design rationale stands.)
+- **Closure note:** No currently-active plan file tracks this row.
+  Future maintainers picking it up should reference this entry by ID,
+  perform the named-record refactor, update downstream callers to
+  field-access notation, and verify zero behavioural change via the
+  `default_allTablesInvExtK` witness theorem.
+- **Acceptance criteria** (when picked up):
   - Convert `allTablesInvExtK` to a Lean `structure` with named
     fields.
   - Update downstream callers to use field-access notation.
@@ -582,7 +590,7 @@ currently-active plan file tracks them.**
 | DEF-R-HAL-L18 | R-HAL-L18 | LOW | **RESOLVED (v0.30.10 / AN9-H)** | A: hardware-binding |
 | DEF-R-HAL-L19 | R-HAL-L19 | LOW | **RESOLVED (v0.30.10 / AN9-I)** | A: hardware-binding |
 | DEF-R-HAL-L20 | R-HAL-L20 | LOW | **RESOLVED (v0.30.10 / AN9-J, off by default)** | A: hardware-binding |
-| DEF-F-L9 | F-L9 | LOW | DEFER | B: proof-hygiene |
+| DEF-F-L9 | F-L9 | LOW | **RETAINED post-v1.0.0** (cosmetic, no correctness impact; WS-AN AN12-G closure note) | B: proof-hygiene |
 | DEF-AK2-K.4 | AK2-K.4 | — | **RESOLVED** in AN5-E (WS-AN v0.30.6) | B: proof-hygiene |
 | DEF-AK7-E.cascade | F-M03 | MEDIUM | **RESOLVED (v0.30.10 / AN10)** | B: proof-hygiene |
 | DEF-AK7-F.cascade | F-M04 | MEDIUM | **RESOLVED (v0.30.10 / AN10)** | B: proof-hygiene |
