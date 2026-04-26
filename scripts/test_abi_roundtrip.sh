@@ -25,7 +25,7 @@ if [ -f "$HOME/.elan/env" ]; then
     source "$HOME/.elan/env"
 fi
 
-echo "[test_abi_roundtrip] Building abi_roundtrip_suite..."
+log_info "test_abi_roundtrip" "Building abi_roundtrip_suite..."
 lake build abi_roundtrip_suite >/dev/null
 
 # AN11-B (H-21): wrap the suite in a timeout so a runaway proof / scenario
@@ -39,17 +39,22 @@ else
     TIMEOUT_BIN=""
 fi
 
-echo "[test_abi_roundtrip] Running AbiRoundtripSuite (timeout: ${LEAN_TEST_TIMEOUT_MINS}m)..."
+log_info "test_abi_roundtrip" "Running AbiRoundtripSuite (timeout: ${LEAN_TEST_TIMEOUT_MINS}m)..."
+# `time_command` (from _common.sh) wraps the run with wall-clock timing
+# and prints a uniform success / failure line on completion.
 if [[ -n "${TIMEOUT_BIN}" ]]; then
-    if ! "${TIMEOUT_BIN}" "${LEAN_TEST_TIMEOUT_MINS}m" lake exe abi_roundtrip_suite; then
+    if ! time_command "test_abi_roundtrip" \
+            "${TIMEOUT_BIN}" "${LEAN_TEST_TIMEOUT_MINS}m" lake exe abi_roundtrip_suite; then
         rc=$?
         if [[ "${rc}" -eq 124 ]]; then
-            echo "[test_abi_roundtrip] FAIL: timed out after ${LEAN_TEST_TIMEOUT_MINS}m" >&2
+            log_error "test_abi_roundtrip" \
+                "timed out after ${LEAN_TEST_TIMEOUT_MINS}m — set LEAN_TEST_TIMEOUT_MINS=<minutes> to extend"
         fi
         exit "${rc}"
     fi
 else
-    lake exe abi_roundtrip_suite
+    log_warn "test_abi_roundtrip" "timeout(1) not found; running unguarded"
+    time_command "test_abi_roundtrip" lake exe abi_roundtrip_suite
 fi
 
-echo "[test_abi_roundtrip] PASS"
+log_info "test_abi_roundtrip" "PASS"

@@ -150,6 +150,15 @@ run_check() {
 # their original semantics.  Use this for any `lake exe <suite>` invocation
 # where a runaway proof / scenario could hang CI past its job budget.
 #
+# Audit-pass v2 (post-AN11) corrections:
+#   * Use the `if "$@"; then …; else …; fi` idiom instead of `set +e ; rc=$? ;
+#     set -e` — the latter unconditionally re-enables errexit, which broke
+#     `--continue` mode (parse_common_args disables errexit and the wrapper
+#     was flipping it back on after every check).
+#   * Fold the failure message into a single string — `record_failure` only
+#     consumes `$1`/`$2`, so the multi-arg call form silently dropped the
+#     `Override…` advice.
+#
 # Usage:
 #   run_check_with_timeout "TRACE" lake exe operation_chain_suite
 run_check_with_timeout() {
@@ -162,12 +171,14 @@ run_check_with_timeout() {
   # `timeout` is a coreutils binary that ships with every Linux distro the
   # CI uses and with macOS via brew (gtimeout); pre-flight check keeps the
   # script portable when neither is present.
-  local timeout_bin
+  local timeout_bin=""
   if command -v timeout >/dev/null 2>&1; then
     timeout_bin="timeout"
   elif command -v gtimeout >/dev/null 2>&1; then
     timeout_bin="gtimeout"
-  else
+  fi
+
+  if [[ -z "${timeout_bin}" ]]; then
     log_section "${category}" "WARN: timeout(1) not found; running unguarded"
     if "$@"; then
       log_section "${category}" "PASS"
@@ -180,22 +191,22 @@ run_check_with_timeout() {
     return 1
   fi
 
-  local rc
-  set +e
-  "${timeout_bin}" "${mins}m" "$@"
-  rc=$?
-  set -e
+  # The `if … then … else … fi` form catches the failure without tripping
+  # `set -e`, regardless of the caller's errexit state.  `$?` inside the
+  # else-branch holds the exit code; we capture it before any further
+  # commands clobber the value.
+  local rc=0
+  if "${timeout_bin}" "${mins}m" "$@"; then
+    log_section "${category}" "PASS"
+    return 0
+  else
+    rc=$?
+  fi
 
   case "${rc}" in
-    0)
-      log_section "${category}" "PASS"
-      return 0
-      ;;
     124)
       record_failure "${category}" \
-        "Timed out after ${mins}m: $* — possible runaway proof or scenario." \
-        " Override the budget with LEAN_TEST_TIMEOUT_MINS=<minutes> for a single" \
-        " run, or investigate the suite for an infinite loop / divergent term."
+        "Timed out after ${mins}m: $* — possible runaway proof or scenario. Override the budget with LEAN_TEST_TIMEOUT_MINS=<minutes> for a single run, or investigate the suite for an infinite loop / divergent term."
       if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
         finalize_report
       fi

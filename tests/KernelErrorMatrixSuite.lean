@@ -813,6 +813,180 @@ refactor unifies the Except wrapper with `KernelError`, add a row here
 `errorMatrixFloor` accordingly. -/
 
 -- ============================================================================
+-- AN11-A.6 (audit-pass v2) — additional variants identified in the deep audit
+--
+-- The initial AN11-A landing covered 28 distinct variants across 41 rows.
+-- The audit-pass v2 sweep added rows for 6 more variants that have
+-- straightforward production trigger paths but were not previously
+-- exercised by the matrix:  `invalidObjectType`, `translationFault`,
+-- `endpointQueueEmpty`, `untypedTypeMismatch`, `untypedDeviceRestriction`,
+-- `childIdSelfOverwrite`.
+-- ============================================================================
+
+/-- Row: `storeObjectKindChecked` rejects a cross-variant overwrite with
+`.invalidObjectType` (AL6 / AK7-F.cascade). -/
+private def row_invalidObjectType_cross_variant : KernelErrorRejection :=
+  { syscall       := "storeObjectKindChecked"
+    expectedError := .invalidObjectType
+    scenarioTag   := "AN11A.6.invalidObjectType.cross_variant"
+    scenarioDesc  := "AL6: storeObjectKindChecked refuses to overwrite a" ++
+                     " populated slot with an object of a different variant" ++
+                     " (e.g., writing a SchedContext at an oid holding a TCB)"
+    runScenario   := fun _ =>
+      let oid : ObjId := ObjId.ofNat 700
+      let tcb : TCB := mkTcb 700
+      let sc : Kernel.SchedContext :=
+        { scId := SchedContextId.ofObjId oid
+          budget := ⟨100⟩, period := ⟨1000⟩
+          priority := ⟨0⟩, deadline := ⟨0⟩
+          domain := ⟨0⟩, budgetRemaining := ⟨100⟩
+          boundThread := none, isActive := false
+          replenishments := [] }
+      let st : SystemState := { (default : SystemState) with
+        objects := (default : SystemState).objects.insert oid (.tcb tcb) }
+      runUnit (SeLe4n.Model.storeObjectKindChecked oid (.schedContext sc) st) }
+
+/-- Row: `validateIpcBufferAddress` rejects a write-permission-missing
+mapping with `.translationFault`.  The IPC buffer must be writable; a
+read-only mapping at an aligned canonical address fails at step 6. -/
+private def row_translationFault_ipcBuffer_no_write : KernelErrorRejection :=
+  { syscall       := "validateIpcBufferAddress"
+    expectedError := .translationFault
+    scenarioTag   := "AN11A.6.translationFault.ipcBuffer_no_write_perm"
+    scenarioDesc  := "IPC buffer mapped without write permission is" ++
+                     " rejected at validateIpcBufferAddress step 6"
+    runScenario   := fun _ =>
+      let tid : ThreadId := ThreadId.ofNat 800
+      let vsRootId : ObjId := ObjId.ofNat 801
+      let vaddr : SeLe4n.VAddr := SeLe4n.VAddr.ofNat 0x200
+      -- Read-only mapping (no write permission)
+      let perms : PagePermissions :=
+        { read := true, write := false, execute := false, user := true,
+          cacheable := true }
+      let vsRoot : VSpaceRoot :=
+        { asid := SeLe4n.ASID.ofNat 1
+          mappings := (SeLe4n.Kernel.RobinHood.RHTable.empty 16).insert vaddr
+                        (SeLe4n.PAddr.ofNat 0x1000, perms) }
+      let tcb : TCB := { mkTcb 800 with vspaceRoot := vsRootId }
+      let st : SystemState := { (default : SystemState) with
+        objects := ((default : SystemState).objects.insert tid.toObjId
+          (.tcb tcb)).insert vsRootId (.vspaceRoot vsRoot) }
+      SeLe4n.Kernel.Architecture.IpcBufferValidation.validateIpcBufferAddress
+        st tid vaddr }
+
+/-- Row: `endpointQueuePopHead` on an empty queue returns
+`.endpointQueueEmpty`. -/
+private def row_endpointQueueEmpty_pop_empty : KernelErrorRejection :=
+  { syscall       := "endpointQueuePopHead"
+    expectedError := .endpointQueueEmpty
+    scenarioTag   := "AN11A.6.endpointQueueEmpty.pop_empty_queue"
+    scenarioDesc  := "Popping from an empty endpoint queue returns" ++
+                     " .endpointQueueEmpty rather than silently producing" ++
+                     " an invalid result"
+    runScenario   := fun _ =>
+      let endpointId : ObjId := ObjId.ofNat 900
+      let ep : Endpoint := {}  -- empty sendQ + receiveQ by default
+      let st : SystemState := { (default : SystemState) with
+        objects := (default : SystemState).objects.insert endpointId
+          (.endpoint ep) }
+      runUnit (SeLe4n.Kernel.endpointQueuePopHead endpointId false st) }
+
+/-- Row: `retypeFromUntyped` on a non-untyped source returns
+`.untypedTypeMismatch`. -/
+private def row_untypedTypeMismatch : KernelErrorRejection :=
+  { syscall       := "retypeFromUntyped"
+    expectedError := .untypedTypeMismatch
+    scenarioTag   := "AN11A.6.untypedTypeMismatch.source_not_untyped"
+    scenarioDesc  := "WS-F2: retypeFromUntyped rejects when the source" ++
+                     " object is present but is not an UntypedObject"
+    runScenario   := fun _ =>
+      let untypedId : ObjId := ObjId.ofNat 1000
+      let childId : ObjId := ObjId.ofNat 1001
+      let cnodeId : ObjId := ObjId.ofNat 1002
+      -- Source is a Notification, NOT an Untyped — triggers type mismatch.
+      let n : Notification := { state := .idle, waitingThreads := [] }
+      -- Need a CSpace with the authority cap; build a minimal CNode.
+      let authCap : Capability :=
+        { target := .object untypedId
+          rights := AccessRightSet.singleton .write
+          badge := none }
+      let cn : CNode := { mkEmptyCNode with
+        slots := (mkEmptyCNode).slots.insert (SeLe4n.Slot.ofNat 0) authCap }
+      let st : SystemState := { (default : SystemState) with
+        objects := ((default : SystemState).objects.insert untypedId
+          (.notification n)).insert cnodeId (.cnode cn) }
+      let newObj : KernelObject := .endpoint {}
+      runUnit (SeLe4n.Kernel.retypeFromUntyped
+        ⟨cnodeId, SeLe4n.Slot.ofNat 0⟩ untypedId childId newObj 256 st) }
+
+/-- Row: `retypeFromUntyped` with childId == untypedId returns
+`.childIdSelfOverwrite`. -/
+private def row_childIdSelfOverwrite : KernelErrorRejection :=
+  { syscall       := "retypeFromUntyped"
+    expectedError := .childIdSelfOverwrite
+    scenarioTag   := "AN11A.6.childIdSelfOverwrite.same_id"
+    scenarioDesc  := "WS-H2/H-06: retypeFromUntyped rejects when the" ++
+                     " childId equals the untypedId — would overwrite the" ++
+                     " parent untyped with the new child object"
+    runScenario   := fun _ =>
+      let untypedId : ObjId := ObjId.ofNat 1100
+      let cnodeId : ObjId := ObjId.ofNat 1102
+      let ut : UntypedObject :=
+        { regionBase := SeLe4n.PAddr.ofNat 0x10000
+          regionSize := 4096
+          watermark := 0
+          isDevice := false
+          children := []
+          parent := none }
+      let authCap : Capability :=
+        { target := .object untypedId
+          rights := AccessRightSet.singleton .write
+          badge := none }
+      let cn : CNode := { mkEmptyCNode with
+        slots := (mkEmptyCNode).slots.insert (SeLe4n.Slot.ofNat 0) authCap }
+      let st : SystemState := { (default : SystemState) with
+        objects := ((default : SystemState).objects.insert untypedId
+          (.untyped ut)).insert cnodeId (.cnode cn) }
+      let newObj : KernelObject := .endpoint {}
+      -- childId == untypedId — must be rejected.
+      runUnit (SeLe4n.Kernel.retypeFromUntyped
+        ⟨cnodeId, SeLe4n.Slot.ofNat 0⟩ untypedId untypedId newObj 256 st) }
+
+/-- Row: `retypeFromUntyped` from a device untyped to a non-untyped
+target returns `.untypedDeviceRestriction`. -/
+private def row_untypedDeviceRestriction : KernelErrorRejection :=
+  { syscall       := "retypeFromUntyped"
+    expectedError := .untypedDeviceRestriction
+    scenarioTag   := "AN11A.6.untypedDeviceRestriction.device_to_typed"
+    scenarioDesc  := "WS-F2: device untyped regions cannot back typed" ++
+                     " kernel objects (only other untypeds), guarding" ++
+                     " against MMIO regions hosting kernel state"
+    runScenario   := fun _ =>
+      let untypedId : ObjId := ObjId.ofNat 1200
+      let childId : ObjId := ObjId.ofNat 1201
+      let cnodeId : ObjId := ObjId.ofNat 1202
+      let ut : UntypedObject :=
+        { regionBase := SeLe4n.PAddr.ofNat 0xFE000000  -- BCM2712 MMIO range
+          regionSize := 4096
+          watermark := 0
+          isDevice := true   -- device untyped
+          children := []
+          parent := none }
+      let authCap : Capability :=
+        { target := .object untypedId
+          rights := AccessRightSet.singleton .write
+          badge := none }
+      let cn : CNode := { mkEmptyCNode with
+        slots := (mkEmptyCNode).slots.insert (SeLe4n.Slot.ofNat 0) authCap }
+      let st : SystemState := { (default : SystemState) with
+        objects := ((default : SystemState).objects.insert untypedId
+          (.untyped ut)).insert cnodeId (.cnode cn) }
+      -- Try to retype to an Endpoint — forbidden from a device untyped.
+      let newObj : KernelObject := .endpoint {}
+      runUnit (SeLe4n.Kernel.retypeFromUntyped
+        ⟨cnodeId, SeLe4n.Slot.ofNat 0⟩ untypedId childId newObj 256 st) }
+
+-- ============================================================================
 -- The matrix
 -- ============================================================================
 
@@ -862,7 +1036,14 @@ def errorMatrix : List KernelErrorRejection :=
     row_vmFault_data_abort,
     row_userException_pc_alignment,
     row_objectNotFound_mint_missing_cnode,
-    row_invalidArgument_ipcBuffer_missing_vspaceRoot ]
+    row_invalidArgument_ipcBuffer_missing_vspaceRoot,
+    -- AN11-A.6 audit-pass v2 additions
+    row_invalidObjectType_cross_variant,
+    row_translationFault_ipcBuffer_no_write,
+    row_endpointQueueEmpty_pop_empty,
+    row_untypedTypeMismatch,
+    row_childIdSelfOverwrite,
+    row_untypedDeviceRestriction ]
 
 -- ============================================================================
 -- AN11-A.6 — Coverage-witness theorems
@@ -877,7 +1058,7 @@ theorem errorMatrix_covers_at_least_35 :
 /-- AN11-A.6: The matrix never decreases below the post-AN11 floor
 `errorMatrixFloor` (the AN11 closing count).  CI's monotonicity guard
 turns any future deletion into a pipeline failure. -/
-def errorMatrixFloor : Nat := 40
+def errorMatrixFloor : Nat := 47
 
 /-- AN11-A.6: The audit's nine security-priority variants are the targets
 the matrix MUST exercise.  We verify coverage at runtime in `runAll` (via

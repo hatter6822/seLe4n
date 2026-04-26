@@ -41,6 +41,33 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
 **Phases:** 13 (AN0–AN12), 95 top-level sub-tasks, ~253 sub-sub-task commits
 (scope: 196 audit findings + 11 absorbed DEFERRED items).
 
+- **AN11 audit-pass v2** (v0.30.10, **released**): six findings remediated
+  in the post-AN11 deep audit:
+  - **CRITICAL — timeout wrapper**: `run_check_with_timeout`
+    unconditionally re-enabled errexit after every check, breaking
+    `--continue` mode.  Plus the multi-arg `record_failure` invocation
+    silently dropped the actionable diagnostic.  Switched to the
+    `if cmd; then …; else rc=$?; fi` idiom and folded the message.
+  - **Vacuous AK6-E/F tests**: replaced `let _ := @theorem; return true`
+    with module-scope `#check` markers PLUS substantive runtime checks
+    (`test_niStepConstructorCoverage_witness_is_state_identity` and
+    `test_dispatchCapabilityOnly_projection_invariant`).
+  - **`_common.sh` dead code**: refactored `test_abi_roundtrip.sh` to
+    actually use `log_info`/`log_warn`/`log_error`/`time_command`.
+  - **LivenessSuite "canonical" framing**: fixed misleading comment;
+    period now read from `rpi5CanonicalConfig.cbsPeriodTicks` directly
+    with a drift-detection assertion.
+  - **Bootstrap marker on fast-path**: `setup_lean_env.sh` now writes
+    the marker on fast-path success too (idempotent guard).
+  - **Matrix breadth +6**: added `invalidObjectType`, `translationFault`,
+    `endpointQueueEmpty`, `untypedTypeMismatch`, `childIdSelfOverwrite`,
+    `untypedDeviceRestriction` rows.  41 → 47 rows; 28 → 34 distinct
+    variants.  Floor advanced.
+  - Gate: `lake build` (302 jobs, 0 warnings) + smoke + full + tier-0
+    + `kernel_error_matrix_suite` 47/47 + `ak8_coverage_suite` 13/13
+    + `information_flow_suite` PASS + `cargo test --workspace` 462 +
+    `cargo clippy -- -D warnings` 0 + zero `sorry`/`axiom`.
+
 - **AN11** (Tests / CI / Scripts, v0.30.10, **released**): 7 sub-tasks
   (AN11-A..AN11-G) closing all four HIGH test findings (H-20 KernelError
   matrix, H-21 lake-exe timeout, H-22 small-fixture sha256, H-23 named

@@ -113,6 +113,13 @@ if fast_path_ready; then
   if ! "${ROOT_DIR}/scripts/install_git_hooks.sh"; then
     log_elapsed "WARNING: install_git_hooks.sh returned non-zero (fast-path); pre-commit hook may not be installed"
   fi
+  # AN11-E.7 (TST-M07) audit-pass v2: write the bootstrap marker on the
+  # fast-path too.  Without this, environments bootstrapped before AN11
+  # landed never get the marker even though they're set up correctly.
+  ELAN_BOOTSTRAP_MARKER="${ELAN_HOME_DIR}/.sele4n-bootstrap-marker"
+  if [ ! -f "${ELAN_BOOTSTRAP_MARKER}" ]; then
+    date -u +"%Y-%m-%dT%H:%M:%SZ" > "${ELAN_BOOTSTRAP_MARKER}" 2>/dev/null || true
+  fi
   if [ "${BUILD_REQUESTED}" -eq 1 ]; then
     log_elapsed "running lake build"
     (cd "${ROOT_DIR}" && lake build)

@@ -1,3 +1,120 @@
+## v0.30.10 — WS-AN Phase AN11 audit-pass v2
+
+A deep end-to-end audit of the initial AN11 landing surfaced six material
+findings, all remediated in this pass:
+
+### Audit-pass v2: timeout wrapper continue-mode bug (CRITICAL)
+
+`scripts/test_lib.sh::run_check_with_timeout` had two correctness bugs:
+
+* It used `set +e ; cmd ; rc=$? ; set -e` to capture the timeout exit
+  code, which **unconditionally re-enabled errexit** even when the
+  caller invoked `parse_common_args --continue` (which deliberately
+  disables errexit so failures can accumulate without aborting the
+  script).  Continue mode was effectively broken: a single
+  `run_check_with_timeout` failure flipped errexit back on, causing the
+  next unrelated command to abort the script.
+* The `record_failure` invocation passed four string fragments as
+  separate arguments, but `record_failure` only consumes `$1`/`$2` —
+  the actionable advice ("Override the budget with
+  `LEAN_TEST_TIMEOUT_MINS=<minutes>` for a single run, or investigate
+  the suite for an infinite loop / divergent term") was **silently
+  dropped**.
+
+Remediation switches to the `if cmd; then …; else rc=$?; fi` idiom
+(which catches the failure without tripping errexit, regardless of
+caller state) and folds the diagnostic message into a single string.
+Synthetic verification confirms continue-mode preserves errexit-OFF
+across timeout failures and the full message reaches `FAILURE_MESSAGES`.
+
+### Audit-pass v2: vacuous AK6-E / AK6-F tests upgraded
+
+The initial AN11-D landing wrapped two AK6 sub-tests as `IO Bool` runtime
+tests that just contained `let _ := @theorem; return true` — vacuous
+runtime checks that always passed.  Remediation:
+
+* Adds `#check @SeLe4n.Kernel.niStepConstructorCoverage` and
+  `#check @SeLe4n.Kernel.dispatchCapabilityOnly_preserves_projection`
+  at module scope in `InformationFlowSuite.lean` — these are stricter
+  than runtime wrappers because a rename or removal fails the file's
+  elaboration.
+* Replaces the runtime tests with substantive checks:
+  `test_niStepConstructorCoverage_witness_is_state_identity` exercises
+  the theorem on a concrete `.syscallDecodeError` operation and pins
+  the constructor-count contract;
+  `test_dispatchCapabilityOnly_projection_invariant` builds two states
+  differing only in a high-secret notification's content and asserts
+  the public-observer projection is identical for both (the
+  projection-stripping discipline that the theorem aggregates).
+
+### Audit-pass v2: `_common.sh` actually used now
+
+The initial AN11-E.3 landing created `scripts/_common.sh` with
+`log_info`/`log_warn`/`log_error`/`time_command`/`tmpfile_cleanup`
+helpers but **only** sourced it from `test_abi_roundtrip.sh`, which
+itself used raw `echo` calls instead of the helpers.  Remediation
+refactors `test_abi_roundtrip.sh` to actually use `log_info`,
+`log_warn`, `log_error`, and `time_command` (the latter wraps the
+`lake exe abi_roundtrip_suite` call with wall-clock timing and prints
+the success/failure line uniformly with the rest of the tier scripts).
+
+### Audit-pass v2: LivenessSuite "canonical" framing corrected
+
+The AN11-F live runtime assertion in `tests/LivenessSuite.lean::main`
+claimed "Canonical RPi5 instance: budget = 5_000, period = 10_000" —
+but `DeploymentSchedulingConfig` does NOT pin a budget; the canonical
+config only pins `cbsPeriodTicks = 10_000`.  Remediation reads the
+period from `rpi5CanonicalConfig.cbsPeriodTicks` directly, documents
+that the budget is "representative — half the canonical period",
+asserts the canonical period itself hasn't drifted (catches a silent
+change to AN5-E.2), and computes the bound symbolically via
+`3 * period`.
+
+### Audit-pass v2: bootstrap marker on fast-path
+
+`scripts/setup_lean_env.sh` only wrote
+`~/.elan/.sele4n-bootstrap-marker` at the END of the full bootstrap
+path, but the fast-path early-exits before reaching that line.
+Environments bootstrapped before AN11 landed therefore never got the
+marker even though they're set up correctly.  Remediation adds a
+fast-path marker write (idempotent: `[ ! -f marker ]` guard) so
+existing installs catch up the first time setup is invoked.
+
+### Audit-pass v2: KernelError matrix breadth (+6 variants)
+
+The initial AN11-A matrix had 41 rows covering 28 distinct `KernelError`
+variants.  The audit identified six easy-to-trigger production paths
+that were not exercised:
+
+* `invalidObjectType` — `storeObjectKindChecked` cross-variant rejection
+* `translationFault` — IPC buffer mapped without write permission
+* `endpointQueueEmpty` — `endpointQueuePopHead` on an empty queue
+* `untypedTypeMismatch` — `retypeFromUntyped` from a non-untyped source
+* `childIdSelfOverwrite` — `retypeFromUntyped` with `childId == untypedId`
+* `untypedDeviceRestriction` — `retypeFromUntyped` from a device untyped
+  to a typed object
+
+Matrix grew from 41 → 47 rows; coverage from 28 → 34 distinct variants.
+`KERRORMATRIX_ROWS` floor in `docs/audits/AL0_baseline.txt` updated to
+47; `errorMatrixFloor` in the suite advanced to 47.  All new rows pass.
+
+### Gate at audit-pass v2 tip
+
+* `lake build` (302 jobs, 0 warnings)
+* `test_smoke.sh` PASS, `test_full.sh` PASS, `test_tier0_hygiene.sh` PASS
+* `lake exe kernel_error_matrix_suite` 47/47 PASS (was 41)
+* `lake exe ak8_coverage_suite` 13/13 PASS (unchanged)
+* `lake exe information_flow_suite` PASS (9 AK6 named tests, AK6-E/F
+  now substantive)
+* `cargo test --workspace` 462 tests, 0 failures
+* `cargo clippy --workspace -- -D warnings` 0 warnings
+* `check_version_sync.sh` PASS at 0.30.10
+* `ak7_cascade_check_monotonic.sh` PASS at new floor
+  (`KERRORMATRIX_ROWS=47`, `STOREOBJECTCHECKED_ADOPTION=62`)
+* Fixture byte-identical, zero `sorry`/`axiom`/`native_decide`
+
+---
+
 ## v0.30.10 — WS-AN Phase AN11 (Tests / CI / Scripts)
 
 ### AN11-A — KernelError variant cross-syscall coverage matrix (H-20)

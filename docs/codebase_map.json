@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-codebase-phase-an11-LuSFW",
-      "commit_sha": "3d15a98d170b3964ab0d5317f0e842feb6863dbd",
-      "tree_sha": "dc98dac2e8092e13dfdb6a17abeb5c5446a55699",
-      "committed_at_utc": "2026-04-25T20:38:59-04:00"
+      "commit_sha": "1109740208a964b8ecebd3e40f7e5eb483fd7d36",
+      "tree_sha": "49f8ef595699e9b80b654f697f5bf091cc43224b",
+      "committed_at_utc": "2026-04-26T02:13:37+00:00"
     }
   },
   "source_sync": {
@@ -17,11 +17,11 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "6d900fb01462ce92d430c72ba88e45a1133a3be05ad1823798a4f33b3a5aa751"
+    "source_digest": "a9c582970756a9155d03a337e4ce36631ddd0bb7b588294285093645e27174d2"
   },
   "summary": {
     "module_count": 195,
-    "declaration_count": 6122
+    "declaration_count": 6128
   },
   "readme_sync": {
     "version": "0.30.10",
@@ -29,7 +29,7 @@
     "production_files": 167,
     "production_loc": 109383,
     "test_files": 28,
-    "test_loc": 18631,
+    "test_loc": 18897,
     "proved_theorem_lemma_decls": 3196,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -73257,7 +73257,9 @@
             "SchedContextId",
             "SystemState",
             "default",
+            "dispatchCapabilityOnly_preserves_projection",
             "insert",
+            "niStepConstructorCoverage",
             "none",
             "ofNat",
             "scId",
@@ -73267,24 +73269,36 @@
         },
         {
           "kind": "def",
-          "name": "test_niStepConstructorCoverage_present",
-          "line": 232,
+          "name": "test_niStepConstructorCoverage_witness_is_state_identity",
+          "line": 245,
           "called": [
-            "niStepConstructorCoverage"
+            "SystemState",
+            "default",
+            "defaultLabelingContext",
+            "niStepConstructorCoverage",
+            "reviewer"
           ]
         },
         {
           "kind": "def",
-          "name": "test_dispatchCapabilityOnly_preserves_projection_present",
-          "line": 243,
+          "name": "test_dispatchCapabilityOnly_projection_invariant",
+          "line": 278,
           "called": [
-            "dispatchCapabilityOnly_preserves_projection"
+            "ObjId",
+            "SystemState",
+            "default",
+            "insert",
+            "none",
+            "ofNatMasked",
+            "projectState",
+            "reviewer",
+            "sampleLabeling"
           ]
         },
         {
           "kind": "def",
           "name": "test_projectKernelObject_strips_tcb_signals",
-          "line": 250,
+          "line": 321,
           "called": [
             "IpcMessage",
             "TCB",
@@ -73298,7 +73312,7 @@
         {
           "kind": "def",
           "name": "test_defaultLabelingContext_runtime_rejection",
-          "line": 275,
+          "line": 346,
           "called": [
             "defaultLabelingContext",
             "isInsecureDefaultContext"
@@ -73307,19 +73321,19 @@
         {
           "kind": "def",
           "name": "test_cbs_bandwidth_bounded_tight_arithmetic",
-          "line": 283,
+          "line": 354,
           "called": []
         },
         {
           "kind": "def",
           "name": "ak6Tests",
-          "line": 293,
+          "line": 364,
           "called": [
             "test_applyConfigureParamsFull_post_state_shape",
             "test_cbs_bandwidth_bounded_tight_arithmetic",
             "test_defaultLabelingContext_runtime_rejection",
-            "test_dispatchCapabilityOnly_preserves_projection_present",
-            "test_niStepConstructorCoverage_present",
+            "test_dispatchCapabilityOnly_projection_invariant",
+            "test_niStepConstructorCoverage_witness_is_state_identity",
             "test_projectKernelObject_strips_tcb_signals",
             "test_schedContext_configure_replenishment_eligibility",
             "test_schedContext_param_validation_rejects_invariant_violations",
@@ -73329,7 +73343,7 @@
         {
           "kind": "def",
           "name": "runAk6Suite",
-          "line": 307,
+          "line": 378,
           "called": [
             "ak6Tests"
           ]
@@ -73337,7 +73351,7 @@
         {
           "kind": "def",
           "name": "runInformationFlowChecks",
-          "line": 327,
+          "line": 398,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -73434,7 +73448,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1471,
+          "line": 1542,
           "called": [
             "runAk6Suite",
             "runInformationFlowChecks",
@@ -74035,7 +74049,7 @@
     {
       "module": "tests.KernelErrorMatrixSuite",
       "path": "tests/KernelErrorMatrixSuite.lean",
-      "declaration_count": 56,
+      "declaration_count": 62,
       "declarations": [
         {
           "kind": "namespace",
@@ -74669,8 +74683,137 @@
         },
         {
           "kind": "def",
+          "name": "row_invalidObjectType_cross_variant",
+          "line": 828,
+          "called": [
+            "KernelErrorRejection",
+            "ObjId",
+            "SchedContext",
+            "SystemState",
+            "TCB",
+            "default",
+            "insert",
+            "mkTcb",
+            "none",
+            "ofNat",
+            "ofObjId",
+            "runUnit",
+            "scId",
+            "storeObjectKindChecked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_translationFault_ipcBuffer_no_write",
+          "line": 852,
+          "called": [
+            "KernelErrorRejection",
+            "ObjId",
+            "PagePermissions",
+            "RHTable.empty",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "VAddr",
+            "VSpaceRoot",
+            "default",
+            "insert",
+            "mkTcb",
+            "ofNat",
+            "toObjId",
+            "validateIpcBufferAddress"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_endpointQueueEmpty_pop_empty",
+          "line": 879,
+          "called": [
+            "Endpoint",
+            "KernelErrorRejection",
+            "ObjId",
+            "SystemState",
+            "default",
+            "endpointId",
+            "endpointQueuePopHead",
+            "insert",
+            "ofNat",
+            "runUnit"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_untypedTypeMismatch",
+          "line": 896,
+          "called": [
+            "CNode",
+            "Capability",
+            "KernelErrorRejection",
+            "KernelObject",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "cnodeId",
+            "default",
+            "insert",
+            "mkEmptyCNode",
+            "none",
+            "ofNat",
+            "retypeFromUntyped",
+            "runUnit",
+            "singleton"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_childIdSelfOverwrite",
+          "line": 924,
+          "called": [
+            "CNode",
+            "Capability",
+            "KernelErrorRejection",
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "UntypedObject",
+            "cnodeId",
+            "default",
+            "insert",
+            "mkEmptyCNode",
+            "none",
+            "ofNat",
+            "retypeFromUntyped",
+            "runUnit",
+            "singleton"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_untypedDeviceRestriction",
+          "line": 957,
+          "called": [
+            "CNode",
+            "Capability",
+            "KernelErrorRejection",
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "UntypedObject",
+            "cnodeId",
+            "default",
+            "insert",
+            "mkEmptyCNode",
+            "none",
+            "ofNat",
+            "retypeFromUntyped",
+            "runUnit",
+            "singleton"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "errorMatrix",
-          "line": 820,
+          "line": 994,
           "called": [
             "KernelErrorRejection",
             "row_addressOutOfBounds_paddr",
@@ -74679,7 +74822,9 @@
             "row_alignmentError_security",
             "row_alreadyWaiting_enqueue_blocked",
             "row_asidNotBound_vspaceMap",
+            "row_childIdSelfOverwrite",
             "row_cyclicDependency_self_edge",
+            "row_endpointQueueEmpty_pop_empty",
             "row_hardwareFault_serror",
             "row_illegalAuthority_over_mcp",
             "row_illegalAuthority_priority_over_hw",
@@ -74694,6 +74839,7 @@
             "row_invalidCapPtr",
             "row_invalidCapability_send_to_nonEndpoint",
             "row_invalidMessageInfo",
+            "row_invalidObjectType_cross_variant",
             "row_invalidRegister",
             "row_invalidSyscallArgument_perms",
             "row_invalidSyscallNumber",
@@ -74712,6 +74858,9 @@
             "row_revocationRequired_delete_with_children",
             "row_schedulerInvariantViolation",
             "row_targetSlotOccupied",
+            "row_translationFault_ipcBuffer_no_write",
+            "row_untypedDeviceRestriction",
+            "row_untypedTypeMismatch",
             "row_userException_pc_alignment",
             "row_vmFault_data_abort"
           ]
@@ -74719,19 +74868,19 @@
         {
           "kind": "theorem",
           "name": "errorMatrix_covers_at_least_35",
-          "line": 874,
+          "line": 1055,
           "called": []
         },
         {
           "kind": "def",
           "name": "errorMatrixFloor",
-          "line": 880,
+          "line": 1061,
           "called": []
         },
         {
           "kind": "def",
           "name": "securityPriorityVariants",
-          "line": 888,
+          "line": 1069,
           "called": [
             "KernelError"
           ]
@@ -74739,7 +74888,7 @@
         {
           "kind": "def",
           "name": "coveredVariants",
-          "line": 902,
+          "line": 1083,
           "called": [
             "KernelError",
             "contains"
@@ -74748,7 +74897,7 @@
         {
           "kind": "def",
           "name": "runRow",
-          "line": 912,
+          "line": 1093,
           "called": [
             "KernelErrorRejection"
           ]
@@ -74756,7 +74905,7 @@
         {
           "kind": "def",
           "name": "runAll",
-          "line": 930,
+          "line": 1111,
           "called": [
             "KernelError",
             "contains",
@@ -74771,7 +74920,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 950,
+          "line": 1131,
           "called": [
             "runAll"
           ]
@@ -74925,7 +75074,8 @@
           "name": "main",
           "line": 251,
           "called": [
-            "rpi5_cbs_window_replenishments_bounded_concrete",
+            "canonical",
+            "cbs_bandwidth_bounded_tight",
             "throw"
           ]
         }

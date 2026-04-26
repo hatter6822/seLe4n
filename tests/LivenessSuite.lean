@@ -249,21 +249,35 @@ example :
 -- ============================================================================
 
 def main : IO Unit := do
-  -- AN11-F (LOW): live runtime assertions matching the SC-M01 / AN5-D
-  -- compile-time `#check` anchors on lines 165-166.  The arithmetic the
-  -- bounding theorem proves can drift from the formal statement (e.g.
-  -- if the canonical RPi5 budget / period changes); pinning a concrete
-  -- value at runtime catches the drift on every smoke run.
-  -- Canonical RPi5 instance:  budget = 5_000, period = 10_000.
-  -- For a 30 000-tick observation window, the tight bound is
-  -- 5_000 * ⌈30_000 / 10_000⌉ = 5_000 * 3 = 15_000.
+  -- AN11-F (LOW) audit-pass v2: live runtime assertions matching the
+  -- SC-M01 / AN5-D compile-time `#check` anchors on lines 165-166.  The
+  -- arithmetic the bounding theorem proves can drift from the formal
+  -- statement (e.g. if the AN5-D witness or `cbs_bandwidth_bounded_tight`
+  -- formula changes); pinning concrete values at runtime catches the
+  -- drift on every smoke run.
+  --
+  -- Configuration: `period = rpi5CanonicalConfig.cbsPeriodTicks = 10_000`
+  -- (canonical AN5-E.2); `budget = 5_000` (representative — half the
+  -- canonical period, well within the 750‰ admissibility ceiling
+  -- 7_500); `window = 30_000` (3 canonical periods).  These are NOT
+  -- "the canonical RPi5 SC values" — DeploymentSchedulingConfig does
+  -- not pin a budget — but they exercise the formula on realistic
+  -- numbers.  Adjust if the AN5-D theorem statement changes.
+  let period := SeLe4n.Kernel.Liveness.rpi5CanonicalConfig.cbsPeriodTicks
   let budget := 5_000
-  let period := 10_000
-  let window := 30_000
+  let window := 3 * period  -- 3 periods → ⌈window / period⌉ = 3
   let tight := budget * ((window + period - 1) / period)
-  if tight ≠ 15_000 then
-    throw <| IO.userError s!"AN11-F: rpi5_cbs_window_replenishments_bounded_concrete arithmetic drifted (got {tight}, expected 15000)"
-  IO.println s!"AN11-F live assertion: cbs tight bound (window=30k) = {tight}"
+  let expected := budget * 3
+  if tight ≠ expected then
+    throw <| IO.userError
+      s!"AN11-F: cbs_bandwidth_bounded_tight arithmetic drifted (got {tight}, expected {expected} for budget={budget} period={period} window={window})"
+  -- Cross-check that the canonical period is what the AN5-E.2 spec
+  -- pins it at; a silent change to `rpi5CanonicalConfig.cbsPeriodTicks`
+  -- would slip through this test otherwise.
+  if period ≠ 10_000 then
+    throw <| IO.userError
+      s!"AN11-F: rpi5CanonicalConfig.cbsPeriodTicks drifted (got {period}, expected 10000)"
+  IO.println s!"AN11-F live assertion: cbs tight bound = {tight} for canonical period {period}"
   IO.println "=== Liveness Suite ==="
   IO.println "  ✓ TraceModel types: SchedulerStep, SchedulerTrace, ValidTrace"
   IO.println "  ✓ Query predicates: selectedAt, runnableAt, budgetAvailableAt"
