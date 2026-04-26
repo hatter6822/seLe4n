@@ -30,9 +30,9 @@ record is:
 - [`docs/WORKSTREAM_HISTORY.md`](WORKSTREAM_HISTORY.md) — phase-by-phase
   closure with gate-state tables.
 - [`CHANGELOG.md`](../CHANGELOG.md) — per-version release notes.
-- [`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
+- [`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
   — original 13-phase plan with sub-task breakdown.
-- [`docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md`](audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md)
+- [`docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md`](dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md)
   — closure-form discharge index landed at AN12-A.
 
 Each WS-AN phase landed under a dedicated branch on

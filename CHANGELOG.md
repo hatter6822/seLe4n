@@ -1138,7 +1138,7 @@ AN9 Lean test suite: **23 surface anchors** (up from 15 initial).
 
 
 v0.30.10 patch release bundles **WS-AN Phase AN9** per
-[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
+[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
 §12. AN9 closes every hardware-binding item previously carried in
 `AUDIT_v0.29.0_DEFERRED.md` (DEF-A-M04, DEF-A-M06, DEF-A-M08,
 DEF-A-M09, DEF-C-M04, DEF-P-L9, DEF-R-HAL-L14) plus the four new
@@ -1272,7 +1272,7 @@ v1.0.0 tag).
 ## v0.30.9 — WS-AN Phase AN8 (Rust HAL hardening)
 
 v0.30.9 patch release bundles **WS-AN Phase AN8** per
-[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
+[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
 §11. AN8 closes the three Rust-HAL HIGH findings (H-17 UartLock RAII,
 H-18 MPIDR shared symbol, H-19 EOI-before-handler), batches the eight
 RUST-M MEDIUM items (RUST-M01..M08), and the eleven Rust LOW-tier
@@ -1515,7 +1515,7 @@ closure) per plan §12 — depends on AN6 + AN8 both landing.
 ## v0.30.8 — WS-AN Phase AN7 (Platform / API)
 
 v0.30.8 patch release bundles **WS-AN Phase AN7** per
-[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
+[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
 §10. This is the first per-phase patch bump under the convention retired
 with v0.30.7 (AN6) — AN7 lands the Platform / API changes called out by
 audit findings H-14..H-16, PLT-M01..M07, API-M01..M02, and the Platform
@@ -1989,7 +1989,7 @@ All audit-surfaced issues fixed. Test suites strengthened:
 ### Section 3 of 3 — AN6 (Architecture / InformationFlow / CrossSubsystem) initial landed subset
 
 Phase AN6 of the WS-AN v0.30.6 audit remediation portfolio per
-[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
+[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
 §9. This entry lands the **tractable** subset of AN6's 8 sub-tasks (AN6-A
 through AN6-H) as a single reviewable slice. The plan budgets AN6 at
 7–9 days; this commit closes AN6-B, AN6-E (partial), AN6-F, AN6-G,
@@ -2190,7 +2190,7 @@ Version stays at `0.30.6` per the **original** no-per-phase-bump convention in e
 ## v0.30.6 — WS-AN Phase AN5 (Scheduler / SchedContext + eventuallyExits closure) [in progress]
 
 Phase AN5 of the WS-AN v0.30.6 audit remediation portfolio per
-[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
+[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
 §8. Lands the Scheduler MEDIUM (SCH-M02..M05) and LOW batches, SchedContext
 MEDIUM batch (SC-M01..M03), and **substantively closes DEF-AK2-K.4
 `eventuallyExits`** for the canonical Raspberry Pi 5 deployment
@@ -2368,7 +2368,7 @@ Version stays at 0.30.6 per the **original** no-per-phase-bump convention in eff
 ## v0.30.6 — WS-AN Phase AN4 (Capability / Lifecycle / Service) [in progress]
 
 Phase AN4 of the WS-AN v0.30.6 audit remediation portfolio per
-[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
+[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
 §7. Closes the four capability HIGH findings (H-02..H-06), lands the
 capability / lifecycle / service MEDIUM batches (CAP-M01..M05, LIF-M01..M06,
 SVC-M01..M04), executes two major Theme 4.7 file splits (`Preservation.lean`
@@ -2604,7 +2604,7 @@ onward each phase bumps its own patch version).
 ## v0.30.6 — WS-AN Phase AN3 (IPC subsystem) [in progress]
 
 Phase AN3 of the WS-AN v0.30.6 audit remediation portfolio per
-[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
+[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
 §6. Closes H-01 (Donation re-export asymmetry), lands the IPC-M01 named-projection
 refactor for `ipcInvariantFull`, executes the IPC-M02 7626-line `Structural.lean`
 split, executes the IPC-M03 / IPC-M04 `NotificationPreservation.lean` / `CallReplyRecv.lean`
@@ -2777,7 +2777,7 @@ PASS at 0.30.6, fixture byte-identical, zero `sorry` / `axiom` /
 ## v0.30.6 — WS-AN Phase AN2 (Foundation hardening) [in progress — landed subset]
 
 Begins the WS-AN foundation-hardening phase per
-[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
+[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
 §5. Lands **Theme 4.3 (advisory predicates → subtype gates)** for
 **all five identifier/address types** (`Badge`, `CPtr`, `Slot`,
 `VAddr`, `PAddr`), plus the `Badge` H-12 intermediate-overflow closure,
@@ -3007,7 +3007,7 @@ is the intended surface-area reduction.
 ## v0.30.6 — WS-AN Phase AN1 (Critical-path blockers) [in progress]
 
 Closes the three CRITICAL / HIGH items blocking the v1.0.0 release gate per
-[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
+[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
 §4 (C-01 README pointer, C-03 pre-commit hook install, H-24 / RUST-M06
 stale TODO retargeting). AN1 touches no Lean proof surface; all changes
 are to infrastructure, documentation, and source-comment pointers.
@@ -3022,10 +3022,10 @@ is AN12's portfolio-closure step, not a per-phase patch bump.
 pt-BR,ru,zh-CN}/README.md`) replace the stale
 `AUDIT_COMPREHENSIVE_v0.23.21` pointer with a **two-row** metric-table
 entry: a `Canonical audit` row pointing at
-[`docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md`](docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md)
+[`docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md`](docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md)
 (202 findings, remediated by WS-AK AK1–AK10) and a `Latest audit` row
 pointing at
-[`docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md`](docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md)
+[`docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md`](docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md)
 (3 CRIT / 24 HIGH / 71 MED / 58 LOW / 40 INFO — initial scoring per §0.4
 before C-02 was resolved in the audit PR and H-22 was downgraded). The
 v0.23.21 audit remains preserved under `docs/dev_history/audits/` for
@@ -3146,7 +3146,7 @@ comments that should stay.
 ## v0.30.6 — WS-AN Phase AN0 (Pre-flight) [in progress]
 
 Opens the WS-AN pre-1.0 audit remediation portfolio per
-[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md).
+[`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md).
 WS-AN is scoped to 196 audit findings (2 actionable CRITICAL + 23
 actionable HIGH + 71 MEDIUM + 59 LOW + 40 INFO after C-02 was resolved
 in the audit PR and H-22 was downgraded HIGH → LOW) plus 11 items
@@ -3162,7 +3162,7 @@ changes. AN1 will bump to `0.30.7` when it lands C-01 (README pointer)
 
 ### AN0-A — Baseline capture
 
-New file: [`docs/audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt`](docs/audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt)
+New file: [`docs/audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt`](docs/dev_history/audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt)
 
 Records the WS-AN start state so AN12 can diff the gate numbers. The
 baseline covers:
@@ -3224,7 +3224,7 @@ baseline covers:
 ### AN0-B — Sub-task inventory commit
 
 The WS-AN plan file itself
-([`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md),
+([`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md),
 4110 lines) was already landed on branch
 `claude/audit-workstream-planning-AUBX4` via PRs #733/#736 (commits
 b2ee03c, 7ac49e7, cad00cb, d4b3e9f, d262775, f7e2590, de354f6, 95ebc1e).
