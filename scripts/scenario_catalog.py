@@ -149,7 +149,9 @@ def validate_registry(fixture_path: Path, registry_path: Path,
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Scenario catalog utilities")
-    parser.add_argument("command", choices=["validate", "nightly-seeds", "validate-registry"])
+    parser.add_argument("command", choices=[
+        "validate", "nightly-seeds", "validate-registry", "generate-registry-stub"
+    ])
     parser.add_argument(
         "--catalog",
         default="tests/scenarios/scenario_catalog.json",
@@ -217,6 +219,59 @@ def main() -> int:
             return 1
         print("scenario registry validation passed")
         return 0
+
+    if args.command == "generate-registry-stub":
+        # AN11-F (LOW) — generator rule for `tests/fixtures/scenario_registry.yaml`.
+        # Scans the trace fixtures for scenario IDs that are NOT yet in the
+        # registry and emits a YAML stub the maintainer can paste into the
+        # canonical registry.  This is *not* a full regeneration (registry
+        # entries carry hand-curated `source` / `function` / `subsystem`
+        # / `description` fields the script cannot infer) — it surfaces
+        # the missing-ID list with default placeholders so a fixture edit
+        # cannot land without a registry update.
+        import re
+        registry_path = Path(args.registry)
+        extra_fixtures = [Path(p) for p in args.extra_fixtures]
+        # Re-use validate_registry's diff machinery via a manual scan.
+        bracket_re = re.compile(r"^\[([A-Z]+-\d+)\]")
+        fixture_ids: set[str] = set()
+        for fp in [fixture_path] + extra_fixtures:
+            if not fp.exists():
+                continue
+            for line in fp.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split("|")
+                if len(parts) >= 3:
+                    fixture_ids.add(parts[0].strip())
+                else:
+                    m = bracket_re.match(line)
+                    if m:
+                        fixture_ids.add(m.group(1))
+        registry_ids: set[str] = set()
+        if registry_path.exists():
+            for line in registry_path.read_text(encoding="utf-8").splitlines():
+                m = re.match(r"^  ([A-Z]+-\d+):", line)
+                if m:
+                    registry_ids.add(m.group(1))
+        missing = sorted(fixture_ids - registry_ids)
+        if not missing:
+            print(
+                f"scenario registry up-to-date "
+                f"({len(fixture_ids)} fixture IDs all present)"
+            )
+            return 0
+        print("# AN11-F: missing scenario registry entries (paste into")
+        print(f"# {registry_path} under the `scenarios:` block):")
+        print()
+        for sid in missing:
+            print(f"  {sid}:")
+            print("    source: TODO/path/to/source.lean")
+            print("    function: TODO_function_name")
+            print("    subsystem: TODO_subsystem")
+            print(f'    description: "TODO: short description for {sid}"')
+        return 1
 
     for seed in nightly_seeds(catalog):
         print(seed)

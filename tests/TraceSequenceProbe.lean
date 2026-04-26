@@ -9,6 +9,15 @@
 import SeLe4n
 import SeLe4n.Testing.InvariantChecks
 
+/-! AN11-E.11 (TST-M13): TraceSequenceProbe is intentionally **Tier 4
+only** (`scripts/test_tier4_nightly_candidates.sh`).  It runs every seed
+in `tests/fixtures/scenario_registry.yaml` for 320 steps, which is
+~30-90 seconds per seed; promoting it into Tier 2 (run on every PR)
+would inflate the per-PR CI budget by an order of magnitude with no
+proportional confidence gain.  Decision recorded here at point-of-use so
+a future contributor cannot silently move it without revisiting the
+budget rationale. -/
+
 open SeLe4n.Model
 
 namespace SeLe4n.Testing

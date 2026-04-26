@@ -26,13 +26,26 @@ structure BootstrapBuilder where
   irqHandlers : List (SeLe4n.Irq × SeLe4n.ObjId) := []
   lifecycleObjectTypes : List (SeLe4n.ObjId × KernelObjectType) := []
   lifecycleCapabilityRefs : List (SeLe4n.Model.SlotRef × CapTarget) := []
+  -- AN11-F (LOW): `panic!` in `withObject` requires `Inhabited
+  -- BootstrapBuilder` for the return type.  Every field above carries a
+  -- default, so the derivation is total.
+  deriving Inhabited
 
 namespace BootstrapBuilder
 
 def empty : BootstrapBuilder := {}
 
+/-- AN11-F (LOW): runtime guard against sentinel ObjId at `withObject`
+entry.  `ObjId.sentinel` (val = 0xFFFFFFFFFFFFFFFF) is the typed-helper
+"this id is reserved" marker; placing a real object at the sentinel
+would corrupt the AK7-E type-level discipline (every `Valid*Id` lookup
+treats sentinel as the unconditional reject case).  Test fixtures that
+try this almost always have a typo elsewhere. -/
 def withObject (builder : BootstrapBuilder) (oid : SeLe4n.ObjId) (obj : KernelObject) : BootstrapBuilder :=
-  { builder with objects := (oid, obj) :: builder.objects }
+  if oid = SeLe4n.ObjId.sentinel then
+    panic! "BootstrapBuilder.withObject: refusing to insert at ObjId.sentinel (AN11-F / TST LOW). Use a non-reserved OID per Helpers.lean's range table."
+  else
+    { builder with objects := (oid, obj) :: builder.objects }
 
 def withService
     (builder : BootstrapBuilder)

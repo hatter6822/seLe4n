@@ -50,7 +50,7 @@ run_check "META" "${SCRIPT_DIR}/test_rust.sh"
 # ── Phase 3: Badge Overflow Validation (AG9-E) ────────────────────────
 log_section "META" "--- Phase 3: Badge Overflow Validation (AG9-E) ---"
 ensure_lake_available
-run_check "BUILD" lake exe badge_overflow_suite
+run_check_with_timeout "BUILD" lake exe badge_overflow_suite
 
 # ── Phase 4: Hardware Cross-Check (AG9-B) ─────────────────────────────
 log_section "META" "--- Phase 4: Hardware Cross-Check (AG9-B) ---"

@@ -23,8 +23,8 @@ ensure_lake_available
 DETERMINISM_DIR="$(mktemp -d)"
 trap 'rm -rf "${DETERMINISM_DIR}"' EXIT
 
-run_check "TRACE" bash -lc "lake exe sele4n > '${DETERMINISM_DIR}/run1.trace'"
-run_check "TRACE" bash -lc "lake exe sele4n > '${DETERMINISM_DIR}/run2.trace'"
+run_check_with_timeout "TRACE" bash -lc "lake exe sele4n > '${DETERMINISM_DIR}/run1.trace'"
+run_check_with_timeout "TRACE" bash -lc "lake exe sele4n > '${DETERMINISM_DIR}/run2.trace'"
 run_check "TRACE" bash -lc "diff -q '${DETERMINISM_DIR}/run1.trace' '${DETERMINISM_DIR}/run2.trace' || \
     { echo 'Non-determinism detected: trace output differs between runs' >&2; exit 1; }"
 

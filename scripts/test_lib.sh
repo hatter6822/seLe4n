@@ -14,6 +14,14 @@ CONTINUE_MODE=0
 FAILURE_COUNT=0
 FAILURE_MESSAGES=()
 
+# AN11-B (H-21): per-suite timeout for `lake exe …` invocations. Default 30
+# minutes is generous on CI hardware (the slowest production suite —
+# `operation_chain_suite` — completes in well under 5 minutes); nightly
+# workflows may override via the env var (e.g. `LEAN_TEST_TIMEOUT_MINS=120`).
+# Override at invocation:  LEAN_TEST_TIMEOUT_MINS=10 ./scripts/test_smoke.sh
+LEAN_TEST_TIMEOUT_MINS="${LEAN_TEST_TIMEOUT_MINS:-30}"
+export LEAN_TEST_TIMEOUT_MINS
+
 if [[ -t 1 ]] && [[ "${NO_COLOR:-}" = "" ]]; then
   COLOR_RESET='\033[0m'
   COLOR_META='\033[1;36m'
@@ -134,6 +142,73 @@ run_check() {
     finalize_report
   fi
   return 1
+}
+
+# AN11-B (H-21): Run a command under `timeout`, mapping the canonical
+# `coreutils` exit code 124 (timeout fired) to an explicit, actionable
+# failure message that names the timeout budget. Other non-zero exits keep
+# their original semantics.  Use this for any `lake exe <suite>` invocation
+# where a runaway proof / scenario could hang CI past its job budget.
+#
+# Usage:
+#   run_check_with_timeout "TRACE" lake exe operation_chain_suite
+run_check_with_timeout() {
+  local category="$1"
+  shift
+
+  local mins="${LEAN_TEST_TIMEOUT_MINS}"
+  log_section "${category}" "RUN: $* (timeout: ${mins}m)"
+
+  # `timeout` is a coreutils binary that ships with every Linux distro the
+  # CI uses and with macOS via brew (gtimeout); pre-flight check keeps the
+  # script portable when neither is present.
+  local timeout_bin
+  if command -v timeout >/dev/null 2>&1; then
+    timeout_bin="timeout"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    timeout_bin="gtimeout"
+  else
+    log_section "${category}" "WARN: timeout(1) not found; running unguarded"
+    if "$@"; then
+      log_section "${category}" "PASS"
+      return 0
+    fi
+    record_failure "${category}" "Command failed: $*"
+    if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+      finalize_report
+    fi
+    return 1
+  fi
+
+  local rc
+  set +e
+  "${timeout_bin}" "${mins}m" "$@"
+  rc=$?
+  set -e
+
+  case "${rc}" in
+    0)
+      log_section "${category}" "PASS"
+      return 0
+      ;;
+    124)
+      record_failure "${category}" \
+        "Timed out after ${mins}m: $* — possible runaway proof or scenario." \
+        " Override the budget with LEAN_TEST_TIMEOUT_MINS=<minutes> for a single" \
+        " run, or investigate the suite for an infinite loop / divergent term."
+      if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+        finalize_report
+      fi
+      return 1
+      ;;
+    *)
+      record_failure "${category}" "Command failed (exit ${rc}): $*"
+      if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+        finalize_report
+      fi
+      return 1
+      ;;
+  esac
 }
 
 finalize_report() {

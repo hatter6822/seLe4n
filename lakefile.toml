@@ -138,3 +138,13 @@ root = "tests.An9HardwareBindingSuite"
 [[lean_exe]]
 name = "an10_cascade_suite"
 root = "tests.An10CascadeSuite"
+
+# AN11-A KernelError variant cross-syscall coverage matrix (H-20).
+[[lean_exe]]
+name = "kernel_error_matrix_suite"
+root = "tests.KernelErrorMatrixSuite"
+
+# AN11-E.1 (TST-M01) AK8 sub-item coverage suite.
+[[lean_exe]]
+name = "ak8_coverage_suite"
+root = "tests.Ak8CoverageSuite"

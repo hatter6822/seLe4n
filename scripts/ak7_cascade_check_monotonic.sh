@@ -73,6 +73,7 @@ METRICS=(
   "STOREOBJECTCHECKED_ADOPTION:grow"
   "SENTINEL_CHECK_DISPATCH:grow"
   "TEST_COUNT_AK7:grow"
+  "KERRORMATRIX_ROWS:grow"
 )
 
 # SORRY/AXIOM are zero-floor (any positive value is a regression).

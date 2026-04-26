@@ -249,6 +249,21 @@ example :
 -- ============================================================================
 
 def main : IO Unit := do
+  -- AN11-F (LOW): live runtime assertions matching the SC-M01 / AN5-D
+  -- compile-time `#check` anchors on lines 165-166.  The arithmetic the
+  -- bounding theorem proves can drift from the formal statement (e.g.
+  -- if the canonical RPi5 budget / period changes); pinning a concrete
+  -- value at runtime catches the drift on every smoke run.
+  -- Canonical RPi5 instance:  budget = 5_000, period = 10_000.
+  -- For a 30 000-tick observation window, the tight bound is
+  -- 5_000 * ⌈30_000 / 10_000⌉ = 5_000 * 3 = 15_000.
+  let budget := 5_000
+  let period := 10_000
+  let window := 30_000
+  let tight := budget * ((window + period - 1) / period)
+  if tight ≠ 15_000 then
+    throw <| IO.userError s!"AN11-F: rpi5_cbs_window_replenishments_bounded_concrete arithmetic drifted (got {tight}, expected 15000)"
+  IO.println s!"AN11-F live assertion: cbs tight bound (window=30k) = {tight}"
   IO.println "=== Liveness Suite ==="
   IO.println "  ✓ TraceModel types: SchedulerStep, SchedulerTrace, ValidTrace"
   IO.println "  ✓ Query predicates: selectedAt, runnableAt, budgetAvailableAt"

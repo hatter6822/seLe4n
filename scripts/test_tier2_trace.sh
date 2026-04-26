@@ -46,23 +46,40 @@ if [[ ! -f "${TRACE_FIXTURE}" ]]; then
   finalize_report
 fi
 
-# V8-F: Fixture drift detection — verify the expected fixture hasn't been
-# modified without updating its companion hash file.
-FIXTURE_HASH_FILE="${TRACE_FIXTURE}.sha256"
-if [[ -f "${FIXTURE_HASH_FILE}" ]]; then
-  FIXTURE_DIR="$(dirname "${TRACE_FIXTURE}")"
-  if ! (cd "${FIXTURE_DIR}" && sha256sum -c "$(basename "${FIXTURE_HASH_FILE}")" > /dev/null 2>&1); then
-    record_failure "TRACE" "Fixture drift detected: ${TRACE_FIXTURE} hash does not match ${FIXTURE_HASH_FILE}. Regenerate with: sha256sum ${TRACE_FIXTURE} | awk '{print \$1 \"  \" FILENAME}' FILENAME=$(basename "${TRACE_FIXTURE}") > ${FIXTURE_HASH_FILE}"
+# V8-F + AN11-C (H-22): Fixture drift detection — verify ALL `tests/fixtures/`
+# `.expected` files have hashes matching their `.sha256` companion.  The
+# main trace fixture is checked unconditionally (as a runtime gate); the
+# secondary fixtures (`robin_hood_smoke.expected`, `two_phase_arch_smoke.expected`)
+# are checked alongside in the same `sha256sum -c` invocation so the
+# remediation message is uniform across all three.  See
+# `tests/fixtures/README.md` for regeneration workflow.
+SHA256_COMPANIONS=()
+SHA256_DIR="tests/fixtures"
+if [[ -d "${SHA256_DIR}" ]]; then
+  while IFS= read -r companion; do
+    SHA256_COMPANIONS+=("$(basename "${companion}")")
+  done < <(find "${SHA256_DIR}" -maxdepth 1 -type f -name "*.expected.sha256" | sort)
+fi
+
+if [[ "${#SHA256_COMPANIONS[@]}" -gt 0 ]]; then
+  if ! (cd "${SHA256_DIR}" && sha256sum -c "${SHA256_COMPANIONS[@]}" > /dev/null 2>&1); then
+    drift_msg="Fixture drift detected in tests/fixtures/. One or more"
+    drift_msg+=" .expected files do not match their .sha256 companion."
+    drift_msg+=" To update, regenerate the affected hash file via:"
+    drift_msg+=" cd tests/fixtures && sha256sum <fixture>.expected"
+    drift_msg+=" > <fixture>.expected.sha256"
+    drift_msg+=" — see tests/fixtures/README.md for the full workflow."
+    record_failure "TRACE" "${drift_msg}"
     if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
       write_trace_artifacts
       finalize_report
     fi
   else
-    log_section "TRACE" "Fixture hash verified: ${TRACE_FIXTURE}"
+    log_section "TRACE" "Fixture hashes verified (${#SHA256_COMPANIONS[@]} files)."
   fi
 fi
 
-run_check "TRACE" bash -lc "lake exe sele4n > '${TRACE_OUTPUT}'"
+run_check_with_timeout "TRACE" bash -lc "lake exe sele4n > '${TRACE_OUTPUT}'"
 
 expected_count=0
 matched_count=0

@@ -87,7 +87,20 @@ if command -v rg >/dev/null 2>&1; then
 fi
 
 if command -v shellcheck >/dev/null 2>&1; then
-  run_check "HYGIENE" shellcheck scripts/*.sh
+  # AN11-F (LOW): comprehensive shell lint — covers every `.sh` under the
+  # repo (currently only `scripts/`, but enforced at find-time so any
+  # future shell script outside `scripts/` is caught automatically).
+  # `--exclude=SC1090,SC1091` covers dynamic source paths that shellcheck
+  # cannot statically resolve (e.g. user-supplied env files).
+  shell_files_args=()
+  while IFS= read -r f; do
+    shell_files_args+=("$f")
+  done < <(find scripts -type f -name "*.sh" | sort)
+  if [[ "${#shell_files_args[@]}" -eq 0 ]]; then
+    log_section "HYGIENE" "no .sh files found under scripts/ — skipping shellcheck"
+  else
+    run_check "HYGIENE" shellcheck --exclude=SC1090,SC1091 "${shell_files_args[@]}"
+  fi
 else
   log_section "HYGIENE" "shellcheck unavailable; optional shell lint not executed in this environment."
 fi

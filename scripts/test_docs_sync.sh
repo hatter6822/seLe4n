@@ -55,8 +55,14 @@ for canonical in "${!CANONICAL_TO_GITBOOK[@]}"; do
   fi
 done
 if [[ ${gitbook_drift_warnings} -gt 0 ]]; then
-  echo "warning: ${gitbook_drift_warnings} GitBook chapter(s) have divergent H1/H2 headers from canonical sources." >&2
+  # AN11-E.5 (TST-M05): GitBook drift now fails hard.  Previously a warning,
+  # which let GitBook chapters drift silently from their canonical sources.
+  # If the drift is intentional (e.g., a deliberate divergence that the
+  # mirror cannot reflect), update both files in lockstep so the H1/H2
+  # header set hashes match.
+  echo "error: ${gitbook_drift_warnings} GitBook chapter(s) have divergent H1/H2 headers from canonical sources." >&2
   echo "  Run: diff <(grep -E '^#{1,2} ' docs/FILE.md) <(grep -E '^#{1,2} ' docs/gitbook/CHAPTER.md) to inspect." >&2
+  exit 1
 fi
 
 # Prefer an already-installed elan toolchain in non-login shells.

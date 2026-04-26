@@ -3145,5 +3145,14 @@ def runMainTrace : IO Unit := do
       runMainTraceFrom st1
   runParameterizedTopologies
   runRustXvalVectors
+  -- AN11-E.2 (TST-M02): bundled cross-subsystem invariant assertion as
+  -- trace-end validation.  Silent on success; on failure prints a single
+  -- composite report listing every failing conjunct AND throws so the
+  -- harness exits non-zero.  Validates the bootstrapState shape that the
+  -- harness threaded all transitions through; per-operation states are
+  -- already checked by `checkInvariants` between transitions.
+  let trailingOk ← SeLe4n.Testing.assertCrossSubsystemInvariants bootstrapState
+  if !trailingOk then
+    throw <| IO.userError "MainTraceHarness: trace-end cross-subsystem invariant failed"
 
 end SeLe4n.Testing

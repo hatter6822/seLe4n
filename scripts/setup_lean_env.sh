@@ -583,6 +583,14 @@ fi
 log_elapsed "Lean environment is ready"
 log_elapsed "lake version: $(lake --version)"
 
+# AN11-E.7 (TST-M07): write a sentinel marker so subsequent invocations
+# can short-circuit the bootstrap path with a single stat() call.  The
+# marker is purely informational — `fast_path_ready` above already
+# enforces tool-presence checks (lake on PATH, toolchain dir present,
+# CRT files staged) which are stricter than a sentinel file alone.
+ELAN_BOOTSTRAP_MARKER="${ELAN_HOME_DIR}/.sele4n-bootstrap-marker"
+date -u +"%Y-%m-%dT%H:%M:%SZ" > "${ELAN_BOOTSTRAP_MARKER}" 2>/dev/null || true
+
 # AN1-B.2 (C-03): install the pre-commit hook on every invocation so fresh
 # clones, worktrees, and new contributor checkouts are guarded automatically.
 # The installer is idempotent and no-ops if the hook is already present.

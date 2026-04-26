@@ -120,6 +120,14 @@ if [[ -f tests/An10CascadeSuite.lean ]]; then
   TEST_COUNT_AK7=$(grep -c "^def an10_" tests/An10CascadeSuite.lean 2>/dev/null || echo 0)
 fi
 
+# AN11-A KernelError matrix row count (cascades into the post-AN11 floor).
+# Counts rows in the `errorMatrix : List KernelErrorRejection` definition
+# by counting `private def row_*` per-row definitions.  Should-grow metric.
+KERRORMATRIX_ROWS=0
+if [[ -f tests/KernelErrorMatrixSuite.lean ]]; then
+  KERRORMATRIX_ROWS=$(grep -c "^private def row_" tests/KernelErrorMatrixSuite.lean 2>/dev/null || echo 0)
+fi
+
 # Proof-surface health (should-stay-zero).
 SORRY_COUNT=$( (grep -rn "\bsorry\b" SeLe4n/ Main.lean --include="*.lean" 2>/dev/null \
   | grep -v "^[^:]*:[^:]*:\s*--" || true) | wc -l)
@@ -167,6 +175,7 @@ sentinel_check_dispatch  = $SENTINEL_CHECK_DISPATCH
 ## Regression test counts (should-grow)
 
 test_count_ak7           = $TEST_COUNT_AK7
+kerrormatrix_rows        = $KERRORMATRIX_ROWS
 
 ## Proof-surface health (should-stay-zero)
 
@@ -194,6 +203,7 @@ GETVSPACEROOT_ADOPTION=$GETVSPACEROOT_ADOPTION
 STOREOBJECTCHECKED_ADOPTION=$STOREOBJECTCHECKED_ADOPTION
 SENTINEL_CHECK_DISPATCH=$SENTINEL_CHECK_DISPATCH
 TEST_COUNT_AK7=$TEST_COUNT_AK7
+KERRORMATRIX_ROWS=$KERRORMATRIX_ROWS
 SORRY_COUNT=$SORRY_COUNT
 AXIOM_COUNT=$AXIOM_COUNT
 EOF
