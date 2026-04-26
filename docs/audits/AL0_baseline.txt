@@ -30,7 +30,7 @@ getvspaceroot_adoption   = 12
 
 ## Writer-side wrapper adoption (should-grow)
 
-storeobjectchecked_adoption = 58
+storeobjectchecked_adoption = 62
 
 ## Dispatch-boundary sentinel guards (should-grow)
 
@@ -39,6 +39,7 @@ sentinel_check_dispatch  = 17
 ## Regression test counts (should-grow)
 
 test_count_ak7           = 45
+kerrormatrix_rows        = 47
 
 ## Proof-surface health (should-stay-zero)
 
@@ -63,8 +64,9 @@ GETNOTIFICATION_ADOPTION=10
 GETUNTYPED_ADOPTION=5
 GETCNODE_ADOPTION=56
 GETVSPACEROOT_ADOPTION=12
-STOREOBJECTCHECKED_ADOPTION=58
+STOREOBJECTCHECKED_ADOPTION=62
 SENTINEL_CHECK_DISPATCH=17
 TEST_COUNT_AK7=45
+KERRORMATRIX_ROWS=47
 SORRY_COUNT=0
 AXIOM_COUNT=0

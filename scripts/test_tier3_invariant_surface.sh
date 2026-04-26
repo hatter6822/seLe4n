@@ -4,6 +4,20 @@
 # This program comes with ABSOLUTELY NO WARRANTY.
 # This is free software, and you are welcome to redistribute it
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
+#
+# AN11-E.6 (TST-M06) — Tier 3 "invariant-surface anchor" validator.
+#
+# This script verifies that every theorem named in the kernel's
+# **invariant-surface anchor** index (via `rg`-driven name searches across
+# `SeLe4n/Kernel/**`) is still present at its expected location.  An
+# "invariant-surface anchor" is a theorem name that proof consumers cite
+# explicitly — renaming or deleting an anchor would silently break those
+# consumers, so this gate enforces name stability.
+#
+# This is **not** a behavioural-coverage test: a Tier 3 PASS means every
+# anchor name resolves, NOT that the corresponding kernel transition was
+# exercised on a populated state.  Behavioural validation lives in Tier 2
+# (`test_tier2_negative.sh`, `test_tier2_trace.sh`).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -110,7 +124,7 @@ run_check "INVARIANT" rg -n '^def projectState' SeLe4n/Kernel/InformationFlow/Pr
 run_check "INVARIANT" rg -n '^def lowEquivalent' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^theorem lowEquivalent_trans' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^def runInformationFlowChecks' tests/InformationFlowSuite.lean
-run_check "INVARIANT" rg -n '^run_check "TRACE" lake env lean --run tests/InformationFlowSuite\.lean' scripts/test_tier2_negative.sh
+run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake env lean --run tests/InformationFlowSuite\.lean' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n '^ELAN_INSTALLER_SHA256=' scripts/setup_lean_env.sh
 run_check "INVARIANT" rg -n '^compute_sha256\(\)' scripts/setup_lean_env.sh
 # shellcheck disable=SC2016
@@ -119,7 +133,7 @@ run_check "INVARIANT" rg -n '^compute_sha256\(\)' scripts/setup_lean_env.sh
 run_check "INVARIANT" rg -n '^structure BootstrapBuilder' SeLe4n/Testing/StateBuilder.lean
 run_check "INVARIANT" rg -n '^def build \(builder : BootstrapBuilder\)' SeLe4n/Testing/StateBuilder.lean
 run_check "INVARIANT" rg -n '^private def runNegativeChecks' tests/NegativeStateSuite.lean
-run_check "INVARIANT" rg -n '^run_check "TRACE" lake env lean --run tests/NegativeStateSuite\.lean' scripts/test_tier2_negative.sh
+run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake env lean --run tests/NegativeStateSuite\.lean' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n 'trace_sequence_probe_manifest\.csv' scripts/test_tier4_nightly_candidates.sh
 run_check "INVARIANT" rg -n '^def runMainTrace' SeLe4n/Testing/MainTraceHarness.lean
 run_check "INVARIANT" rg -n '^def bootstrapState' SeLe4n/Testing/MainTraceHarness.lean

@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-codebase-audit-Fx4iX",
-      "commit_sha": "697456aeccd7c009274d96f1a25892e99aaa667c",
-      "tree_sha": "cbefd65b4d28ce42a26d5d962c9cfa8fbac28462",
-      "committed_at_utc": "2026-04-25T22:14:45+00:00"
+      "branch": "claude/review-codebase-phase-an11-LuSFW",
+      "commit_sha": "7d053585cde0c04a3c249436d29287a8fab38b1e",
+      "tree_sha": "81b1823f7aa42d279735139fc109489fbf50f811",
+      "committed_at_utc": "2026-04-26T02:58:42+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "679a6bde555c46570797595643bdee0fa17bfbc425ede024fd40c35e6b9916e2"
+    "source_digest": "c5f0d5d3ca9431986506db9efeafba1397d3db94a96a4ebedd809769e03da118"
   },
   "summary": {
-    "module_count": 193,
-    "declaration_count": 6035
+    "module_count": 195,
+    "declaration_count": 6128
   },
   "readme_sync": {
     "version": "0.30.10",
     "lean_toolchain": "v4.28.0",
     "production_files": 167,
-    "production_loc": 109320,
-    "test_files": 26,
-    "test_loc": 16984,
+    "production_loc": 109383,
+    "test_files": 28,
+    "test_loc": 18897,
     "proved_theorem_lemma_decls": 3196,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -4944,7 +4944,8 @@
             "KernelError",
             "RegValue",
             "isWord64Dec",
-            "ofNat"
+            "ofNat",
+            "rv"
           ]
         },
         {
@@ -4956,7 +4957,8 @@
             "MessageInfo",
             "RegValue",
             "decode",
-            "none"
+            "none",
+            "rv"
           ]
         },
         {
@@ -4968,7 +4970,8 @@
             "RegValue",
             "SyscallId",
             "none",
-            "ofNat"
+            "ofNat",
+            "rv"
           ]
         },
         {
@@ -5127,7 +5130,8 @@
             "RegValue",
             "decodeSyscallId",
             "none",
-            "ofNat"
+            "ofNat",
+            "rv"
           ]
         },
         {
@@ -5138,7 +5142,8 @@
             "RegValue",
             "decode",
             "decodeMsgInfo",
-            "none"
+            "none",
+            "rv"
           ]
         },
         {
@@ -5149,7 +5154,8 @@
             "RegValue",
             "decodeCapPtr",
             "isWord64Dec",
-            "ofNat"
+            "ofNat",
+            "rv"
           ]
         },
         {
@@ -5160,7 +5166,8 @@
             "RegValue",
             "decodeCapPtr",
             "isWord64Dec",
-            "ofNat"
+            "ofNat",
+            "rv"
           ]
         },
         {
@@ -6594,7 +6601,8 @@
             "SyscallDecodeResult",
             "count",
             "maxExtraCaps",
-            "ofNat"
+            "ofNat",
+            "rv"
           ]
         },
         {
@@ -66764,8 +66772,9 @@
         {
           "kind": "def",
           "name": "expectCond",
-          "line": 24,
+          "line": 30,
           "called": [
+            "isEmpty",
             "tag",
             "throw"
           ]
@@ -66773,16 +66782,17 @@
         {
           "kind": "def",
           "name": "expectError",
-          "line": 32,
+          "line": 46,
           "called": [
             "KernelError",
+            "isEmpty",
             "throw"
           ]
         },
         {
           "kind": "def",
           "name": "expectOk",
-          "line": 47,
+          "line": 65,
           "called": [
             "KernelError",
             "pure",
@@ -66792,7 +66802,7 @@
         {
           "kind": "def",
           "name": "expectOkState",
-          "line": 59,
+          "line": 77,
           "called": [
             "KernelError",
             "SystemState",
@@ -66803,7 +66813,7 @@
         {
           "kind": "def",
           "name": "runKernelState",
-          "line": 71,
+          "line": 89,
           "called": [
             "KernelError",
             "SystemState",
@@ -66816,7 +66826,7 @@
     {
       "module": "SeLe4n.Testing.InvariantChecks",
       "path": "SeLe4n/Testing/InvariantChecks.lean",
-      "declaration_count": 45,
+      "declaration_count": 46,
       "declarations": [
         {
           "kind": "namespace",
@@ -67372,6 +67382,17 @@
             "none",
             "pure",
             "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "assertCrossSubsystemInvariants",
+          "line": 633,
+          "called": [
+            "SystemState",
+            "checkCrossSubsystemInvariant",
+            "isEmpty",
+            "none"
           ]
         }
       ]
@@ -68408,6 +68429,7 @@
           "name": "runMainTrace",
           "line": 3136,
           "called": [
+            "assertCrossSubsystemInvariants",
             "assertStateInvariantsFor",
             "bootstrapInvariantObjectIds",
             "bootstrapServiceIds",
@@ -68417,6 +68439,7 @@
             "runRustXvalVectors",
             "schedule",
             "syncThreadStates",
+            "throw",
             "toNat"
           ]
         }
@@ -68501,13 +68524,13 @@
         {
           "kind": "namespace",
           "name": "BootstrapBuilder",
-          "line": 30,
+          "line": 34,
           "called": []
         },
         {
           "kind": "def",
           "name": "empty",
-          "line": 32,
+          "line": 36,
           "called": [
             "BootstrapBuilder"
           ]
@@ -68515,17 +68538,18 @@
         {
           "kind": "def",
           "name": "withObject",
-          "line": 34,
+          "line": 44,
           "called": [
             "BootstrapBuilder",
             "KernelObject",
-            "ObjId"
+            "ObjId",
+            "sentinel"
           ]
         },
         {
           "kind": "def",
           "name": "withService",
-          "line": 37,
+          "line": 50,
           "called": [
             "BootstrapBuilder",
             "ServiceGraphEntry",
@@ -68535,7 +68559,7 @@
         {
           "kind": "def",
           "name": "withRunnable",
-          "line": 43,
+          "line": 56,
           "called": [
             "BootstrapBuilder",
             "ThreadId",
@@ -68545,7 +68569,7 @@
         {
           "kind": "def",
           "name": "withCurrent",
-          "line": 46,
+          "line": 59,
           "called": [
             "BootstrapBuilder",
             "ThreadId"
@@ -68554,7 +68578,7 @@
         {
           "kind": "def",
           "name": "withIrqHandler",
-          "line": 49,
+          "line": 62,
           "called": [
             "BootstrapBuilder",
             "Irq",
@@ -68564,7 +68588,7 @@
         {
           "kind": "def",
           "name": "withLifecycleObjectType",
-          "line": 55,
+          "line": 68,
           "called": [
             "BootstrapBuilder",
             "KernelObjectType",
@@ -68574,7 +68598,7 @@
         {
           "kind": "def",
           "name": "withLifecycleCapabilityRef",
-          "line": 61,
+          "line": 74,
           "called": [
             "BootstrapBuilder",
             "CapTarget",
@@ -68584,7 +68608,7 @@
         {
           "kind": "def",
           "name": "lookupThreadPriority",
-          "line": 69,
+          "line": 82,
           "called": [
             "KernelObject",
             "ObjId",
@@ -68596,7 +68620,7 @@
         {
           "kind": "def",
           "name": "build",
-          "line": 75,
+          "line": 88,
           "called": [
             "BootstrapBuilder",
             "RHSet.ofList",
@@ -68610,7 +68634,7 @@
         {
           "kind": "def",
           "name": "buildValidated",
-          "line": 111,
+          "line": 124,
           "called": [
             "BootstrapBuilder",
             "SystemState",
@@ -68628,7 +68652,7 @@
         {
           "kind": "def",
           "name": "buildChecked",
-          "line": 172,
+          "line": 185,
           "called": [
             "BootstrapBuilder",
             "SystemState",
@@ -68907,6 +68931,273 @@
           "kind": "def",
           "name": "main",
           "line": 363,
+          "called": [
+            "runAll"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "tests.Ak8CoverageSuite",
+      "path": "tests/Ak8CoverageSuite.lean",
+      "declaration_count": 19,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.Ak8Coverage",
+          "line": 59,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "test_AK8_E_unbound_returns_tcb_priority",
+          "line": 67,
+          "called": [
+            "SystemState",
+            "TCB",
+            "default",
+            "getCurrentPriorityChecked",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_AK8_E_bound_returns_sc_priority",
+          "line": 83,
+          "called": [
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "default",
+            "getCurrentPriorityChecked",
+            "insert",
+            "none",
+            "ofNat",
+            "scId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_AK8_E_bound_missing_sc_is_objectNotFound",
+          "line": 110,
+          "called": [
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "default",
+            "getCurrentPriorityChecked",
+            "ofNat",
+            "scId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_AK8_F_returns_first_free_slot",
+          "line": 131,
+          "called": [
+            "CNode",
+            "Capability",
+            "RHTable.empty",
+            "empty",
+            "findFirstEmptySlotChecked",
+            "insert",
+            "none",
+            "ofNat",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_AK8_F_rejects_base_over_radix",
+          "line": 147,
+          "called": [
+            "CNode",
+            "RHTable.empty",
+            "findFirstEmptySlotChecked",
+            "none",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "emptyFrozenState",
+          "line": 163,
+          "called": [
+            "FrozenSystemState",
+            "RHTable.empty",
+            "TlbState.empty",
+            "default",
+            "freezeMap",
+            "none",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkFrozenStateWith",
+          "line": 199,
+          "called": [
+            "FrozenKernelObject",
+            "FrozenSystemState",
+            "ObjId",
+            "RHTable.empty",
+            "emptyFrozenState",
+            "freezeMap",
+            "insert"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_AK8_G_storeTcbChecked_same_kind_ok",
+          "line": 206,
+          "called": [
+            "TCB",
+            "ThreadId",
+            "frozenStoreTcbChecked",
+            "mkFrozenStateWith",
+            "ofNat",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_AK8_G_storeTcbChecked_cross_variant_rejected",
+          "line": 222,
+          "called": [
+            "Endpoint",
+            "TCB",
+            "ThreadId",
+            "frozenStoreTcbChecked",
+            "mkFrozenStateWith",
+            "ofNat",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_AK8_G_storeEndpointChecked_cross_variant_rejected",
+          "line": 239,
+          "called": [
+            "Endpoint",
+            "Notification",
+            "ObjId",
+            "frozenStoreEndpointChecked",
+            "mkFrozenStateWith",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_AK8_G_storeNotificationChecked_cross_variant_rejected",
+          "line": 250,
+          "called": [
+            "Notification",
+            "ObjId",
+            "TCB",
+            "frozenStoreNotificationChecked",
+            "mkFrozenStateWith",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_AK8_H_unbind_missing_tcb_no_partial_mutation",
+          "line": 274,
+          "called": [
+            "ObjId",
+            "SchedContext",
+            "ThreadId",
+            "frozenSchedContextUnbind",
+            "get",
+            "mkFrozenStateWith",
+            "ofNat",
+            "ofObjId",
+            "scId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_AK8_H_unbind_happy_path",
+          "line": 302,
+          "called": [
+            "ObjId",
+            "SchedContext",
+            "TCB",
+            "ThreadId",
+            "frozenSchedContextUnbind",
+            "get",
+            "mkFrozenStateWith",
+            "none",
+            "ofNat",
+            "ofObjId",
+            "scId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_AK8_I_well_keyed_freeze_succeeds",
+          "line": 338,
+          "called": [
+            "CNode",
+            "Capability",
+            "RHTable.empty",
+            "empty",
+            "freezeCNodeSlotsChecked",
+            "insert",
+            "none",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_AK8_I_phantom_key_freeze_rejected",
+          "line": 352,
+          "called": [
+            "CNode",
+            "Capability",
+            "RHTable.empty",
+            "empty",
+            "freezeCNodeSlotsChecked",
+            "insert",
+            "none",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ak8Tests",
+          "line": 370,
+          "called": [
+            "test_AK8_E_bound_missing_sc_is_objectNotFound",
+            "test_AK8_E_bound_returns_sc_priority",
+            "test_AK8_E_unbound_returns_tcb_priority",
+            "test_AK8_F_rejects_base_over_radix",
+            "test_AK8_F_returns_first_free_slot",
+            "test_AK8_G_storeEndpointChecked_cross_variant_rejected",
+            "test_AK8_G_storeNotificationChecked_cross_variant_rejected",
+            "test_AK8_G_storeTcbChecked_cross_variant_rejected",
+            "test_AK8_G_storeTcbChecked_same_kind_ok",
+            "test_AK8_H_unbind_happy_path",
+            "test_AK8_H_unbind_missing_tcb_no_partial_mutation",
+            "test_AK8_I_phantom_key_freeze_rejected",
+            "test_AK8_I_well_keyed_freeze_succeeds"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runAll",
+          "line": 398,
+          "called": [
+            "ak8Tests"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 416,
           "called": [
             "runAll"
           ]
@@ -72817,7 +73108,7 @@
     {
       "module": "tests.InformationFlowSuite",
       "path": "tests/InformationFlowSuite.lean",
-      "declaration_count": 13,
+      "declaration_count": 24,
       "declarations": [
         {
           "kind": "namespace",
@@ -72927,8 +73218,141 @@
         },
         {
           "kind": "def",
+          "name": "test_schedContext_param_validation_rejects_invariant_violations",
+          "line": 121,
+          "called": [
+            "validateSchedContextParams"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_applyConfigureParamsFull_post_state_shape",
+          "line": 143,
+          "called": [
+            "SchedContext",
+            "applyConfigureParamsFull",
+            "none",
+            "ofNat",
+            "scId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_schedContext_configure_replenishment_eligibility",
+          "line": 180,
+          "called": [
+            "SchedContext",
+            "applyConfigureParamsFull",
+            "none",
+            "ofNat",
+            "scId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_schedContext_yield_self_returns_state_unchanged",
+          "line": 204,
+          "called": [
+            "SchedContext",
+            "SchedContextId",
+            "SystemState",
+            "default",
+            "dispatchCapabilityOnly_preserves_projection",
+            "insert",
+            "niStepConstructorCoverage",
+            "none",
+            "ofNat",
+            "scId",
+            "schedContextYieldTo",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_niStepConstructorCoverage_witness_is_state_identity",
+          "line": 245,
+          "called": [
+            "SystemState",
+            "default",
+            "defaultLabelingContext",
+            "niStepConstructorCoverage",
+            "reviewer"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_dispatchCapabilityOnly_projection_invariant",
+          "line": 285,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "default",
+            "insert",
+            "none",
+            "ofNatMasked",
+            "projectState",
+            "reviewer",
+            "sampleLabeling"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_projectKernelObject_strips_tcb_signals",
+          "line": 321,
+          "called": [
+            "IpcMessage",
+            "TCB",
+            "defaultLabelingContext",
+            "none",
+            "ofNat",
+            "projectKernelObject",
+            "reviewer"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_defaultLabelingContext_runtime_rejection",
+          "line": 346,
+          "called": [
+            "defaultLabelingContext",
+            "isInsecureDefaultContext"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_cbs_bandwidth_bounded_tight_arithmetic",
+          "line": 354,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "ak6Tests",
+          "line": 364,
+          "called": [
+            "test_applyConfigureParamsFull_post_state_shape",
+            "test_cbs_bandwidth_bounded_tight_arithmetic",
+            "test_defaultLabelingContext_runtime_rejection",
+            "test_dispatchCapabilityOnly_projection_invariant",
+            "test_niStepConstructorCoverage_witness_is_state_identity",
+            "test_projectKernelObject_strips_tcb_signals",
+            "test_schedContext_configure_replenishment_eligibility",
+            "test_schedContext_param_validation_rejects_invariant_violations",
+            "test_schedContext_yield_self_returns_state_unchanged"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runAk6Suite",
+          "line": 378,
+          "called": [
+            "ak6Tests"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runInformationFlowChecks",
-          "line": 91,
+          "line": 398,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -73025,9 +73449,11 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1235,
+          "line": 1542,
           "called": [
-            "runInformationFlowChecks"
+            "runAk6Suite",
+            "runInformationFlowChecks",
+            "throw"
           ]
         }
       ]
@@ -73622,6 +74048,887 @@
       ]
     },
     {
+      "module": "tests.KernelErrorMatrixSuite",
+      "path": "tests/KernelErrorMatrixSuite.lean",
+      "declaration_count": 62,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.KernelErrorMatrix",
+          "line": 80,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "KernelErrorRejection",
+          "line": 95,
+          "called": [
+            "KernelError"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runUnit",
+          "line": 109,
+          "called": [
+            "KernelError"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkTcb",
+          "line": 117,
+          "called": [
+            "TCB",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkEmptyCNode",
+          "line": 127,
+          "called": [
+            "CNode",
+            "RHTable.empty"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkDecoded",
+          "line": 137,
+          "called": [
+            "RegValue",
+            "SyscallDecodeResult",
+            "SyscallId",
+            "cspaceMint",
+            "ofNat",
+            "size"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rv",
+          "line": 149,
+          "called": [
+            "RegValue"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_invalidArgument_period_zero",
+          "line": 162,
+          "called": [
+            "KernelErrorRejection",
+            "validateSchedContextParams"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_alignmentError_ipcBuffer",
+          "line": 176,
+          "called": [
+            "KernelErrorRejection",
+            "SystemState",
+            "default",
+            "ofNat",
+            "validateIpcBufferAddress"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_objectNotFound_ipcBuffer_missing_tcb",
+          "line": 190,
+          "called": [
+            "KernelErrorRejection",
+            "SystemState",
+            "default",
+            "ofNat",
+            "validateIpcBufferAddress"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_invalidArgument_mint_rights",
+          "line": 207,
+          "called": [
+            "KernelErrorRejection",
+            "decodeCSpaceMintArgs",
+            "mkDecoded",
+            "runUnit",
+            "rv"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_invalidSyscallNumber",
+          "line": 219,
+          "called": [
+            "KernelErrorRejection",
+            "decodeSyscallId",
+            "runUnit",
+            "rv"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_invalidMessageInfo",
+          "line": 231,
+          "called": [
+            "KernelErrorRejection",
+            "decodeMsgInfo",
+            "runUnit",
+            "rv"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_invalidCapPtr",
+          "line": 243,
+          "called": [
+            "KernelErrorRejection",
+            "decodeCapPtr",
+            "runUnit",
+            "rv"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_invalidRegister",
+          "line": 254,
+          "called": [
+            "KernelErrorRejection",
+            "validateRegBound"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_ipcMessageTooLarge",
+          "line": 265,
+          "called": [
+            "IpcMessage",
+            "KernelErrorRejection",
+            "SystemState",
+            "default",
+            "endpointSendDual",
+            "maxMessageRegisters",
+            "none",
+            "ofNat",
+            "runUnit",
+            "rv"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_ipcMessageTooManyCaps",
+          "line": 281,
+          "called": [
+            "IpcMessage",
+            "KernelErrorRejection",
+            "SystemState",
+            "default",
+            "endpointSendDual",
+            "maxExtraCaps",
+            "none",
+            "null",
+            "ofNat",
+            "runUnit"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_illegalState_no_current",
+          "line": 297,
+          "called": [
+            "KernelErrorRejection",
+            "SystemState",
+            "arm64DefaultLayout",
+            "default",
+            "runUnit",
+            "syscallEntry"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_policyDenied_insecure_default",
+          "line": 310,
+          "called": [
+            "KernelErrorRejection",
+            "SystemState",
+            "arm64DefaultLayout",
+            "default",
+            "defaultLabelingContext",
+            "runUnit",
+            "syscallEntryChecked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_nullCapability_mint",
+          "line": 325,
+          "called": [
+            "CNode",
+            "KernelErrorRejection",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "cnodeId",
+            "cspaceMint",
+            "default",
+            "empty",
+            "insert",
+            "mkEmptyCNode",
+            "none",
+            "null",
+            "ofNat",
+            "runUnit"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_revocationRequired_delete_with_children",
+          "line": 356,
+          "called": [
+            "CNode",
+            "Capability",
+            "KernelErrorRejection",
+            "ObjId",
+            "Slot",
+            "SlotRef",
+            "SystemState",
+            "addEdge",
+            "cnodeId",
+            "cspaceDeleteSlot",
+            "default",
+            "empty",
+            "ensureCdtNodeForSlot",
+            "insert",
+            "mkEmptyCNode",
+            "none",
+            "ofNat",
+            "runUnit"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_asidNotBound_vspaceMap",
+          "line": 389,
+          "called": [
+            "KernelErrorRejection",
+            "decodeVSpaceMapArgs",
+            "mkDecoded",
+            "runUnit",
+            "rv"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_schedulerInvariantViolation",
+          "line": 401,
+          "called": [
+            "KernelErrorRejection",
+            "SystemState",
+            "default",
+            "ofNat",
+            "runUnit",
+            "scheduleChecked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_alignmentError_security",
+          "line": 419,
+          "called": [
+            "KernelErrorRejection",
+            "SystemState",
+            "default",
+            "ofNat",
+            "validateIpcBufferAddress"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_targetSlotOccupied",
+          "line": 433,
+          "called": [
+            "CNode",
+            "Capability",
+            "KernelErrorRejection",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "cnodeId",
+            "cspaceInsertSlot",
+            "default",
+            "empty",
+            "insert",
+            "mkEmptyCNode",
+            "none",
+            "ofNat",
+            "runUnit"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_cyclicDependency_self_edge",
+          "line": 455,
+          "called": [
+            "KernelErrorRejection",
+            "ServiceGraphEntry",
+            "ServiceId",
+            "SystemState",
+            "default",
+            "insert",
+            "runUnit",
+            "serviceRegisterDependency"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_objectNotFound_dep_unmet",
+          "line": 478,
+          "called": [
+            "KernelErrorRejection",
+            "ServiceGraphEntry",
+            "ServiceId",
+            "SystemState",
+            "default",
+            "insert",
+            "runUnit",
+            "serviceRegisterDependency"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_replyCapInvalid_no_target",
+          "line": 500,
+          "called": [
+            "KernelErrorRejection",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "default",
+            "empty",
+            "endpointId",
+            "endpointReply",
+            "insert",
+            "mkTcb",
+            "none",
+            "ofNat",
+            "runUnit",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_replyCapInvalid_not_blocked",
+          "line": 521,
+          "called": [
+            "KernelErrorRejection",
+            "SystemState",
+            "ThreadId",
+            "default",
+            "empty",
+            "endpointReply",
+            "insert",
+            "mkTcb",
+            "ofNat",
+            "runUnit",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_invalidCapability_send_to_nonEndpoint",
+          "line": 543,
+          "called": [
+            "KernelErrorRejection",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "default",
+            "empty",
+            "endpointId",
+            "endpointSendDual",
+            "insert",
+            "ofNat",
+            "runUnit"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_objectNotFound_send_missing",
+          "line": 560,
+          "called": [
+            "KernelErrorRejection",
+            "SystemState",
+            "default",
+            "empty",
+            "endpointSendDual",
+            "ofNat",
+            "runUnit"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_alreadyWaiting_enqueue_blocked",
+          "line": 572,
+          "called": [
+            "Endpoint",
+            "KernelErrorRejection",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "default",
+            "endpointId",
+            "endpointQueueEnqueue",
+            "insert",
+            "mkTcb",
+            "ofNat",
+            "runUnit",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_invalidArgument_budget_zero",
+          "line": 592,
+          "called": [
+            "KernelErrorRejection",
+            "validateSchedContextParams"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_invalidArgument_budget_over_period",
+          "line": 606,
+          "called": [
+            "KernelErrorRejection",
+            "validateSchedContextParams"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_invalidArgument_priority_overflow",
+          "line": 619,
+          "called": [
+            "KernelErrorRejection",
+            "validateSchedContextParams"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_invalidArgument_domain_overflow",
+          "line": 631,
+          "called": [
+            "KernelErrorRejection",
+            "validateSchedContextParams"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_illegalAuthority_priority_over_hw",
+          "line": 643,
+          "called": [
+            "KernelErrorRejection",
+            "TCB",
+            "mkTcb",
+            "validatePriorityAuthority"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_illegalAuthority_over_mcp",
+          "line": 656,
+          "called": [
+            "KernelErrorRejection",
+            "TCB",
+            "mkTcb",
+            "validatePriorityAuthority"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_invalidTypeTag",
+          "line": 669,
+          "called": [
+            "KernelErrorRejection",
+            "decodeLifecycleRetypeArgs",
+            "mkDecoded",
+            "runUnit",
+            "rv"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_addressOutOfBounds_vaddr",
+          "line": 686,
+          "called": [
+            "KernelErrorRejection",
+            "decodeVSpaceMapArgs",
+            "mkDecoded",
+            "runUnit",
+            "rv"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_invalidSyscallArgument_perms",
+          "line": 698,
+          "called": [
+            "KernelErrorRejection",
+            "decodeVSpaceMapArgs",
+            "mkDecoded",
+            "runUnit",
+            "rv"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_addressOutOfBounds_paddr",
+          "line": 710,
+          "called": [
+            "KernelErrorRejection",
+            "decodeVSpaceMapArgsChecked",
+            "mkDecoded",
+            "runUnit",
+            "rv"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_notSupported_fiq",
+          "line": 722,
+          "called": [
+            "ExceptionContext",
+            "KernelErrorRejection",
+            "SystemState",
+            "default",
+            "dispatchException",
+            "runUnit"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_hardwareFault_serror",
+          "line": 735,
+          "called": [
+            "ExceptionContext",
+            "KernelErrorRejection",
+            "SystemState",
+            "default",
+            "dispatchException",
+            "runUnit"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_vmFault_data_abort",
+          "line": 749,
+          "called": [
+            "ExceptionContext",
+            "KernelErrorRejection",
+            "SystemState",
+            "default",
+            "dispatchSynchronousException",
+            "ofNat",
+            "runUnit"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_userException_pc_alignment",
+          "line": 765,
+          "called": [
+            "ExceptionContext",
+            "KernelErrorRejection",
+            "SystemState",
+            "default",
+            "dispatchSynchronousException",
+            "ofNat",
+            "runUnit"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_objectNotFound_mint_missing_cnode",
+          "line": 778,
+          "called": [
+            "KernelErrorRejection",
+            "SystemState",
+            "cspaceMint",
+            "default",
+            "empty",
+            "none",
+            "ofNat",
+            "runUnit"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_invalidArgument_ipcBuffer_missing_vspaceRoot",
+          "line": 792,
+          "called": [
+            "KernelErrorRejection",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "default",
+            "insert",
+            "mkTcb",
+            "ofNat",
+            "toObjId",
+            "validateIpcBufferAddress"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_invalidObjectType_cross_variant",
+          "line": 828,
+          "called": [
+            "KernelErrorRejection",
+            "ObjId",
+            "SchedContext",
+            "SystemState",
+            "TCB",
+            "default",
+            "insert",
+            "mkTcb",
+            "none",
+            "ofNat",
+            "ofObjId",
+            "runUnit",
+            "scId",
+            "storeObjectKindChecked"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_translationFault_ipcBuffer_no_write",
+          "line": 852,
+          "called": [
+            "KernelErrorRejection",
+            "ObjId",
+            "PagePermissions",
+            "RHTable.empty",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "VAddr",
+            "VSpaceRoot",
+            "default",
+            "insert",
+            "mkTcb",
+            "ofNat",
+            "toObjId",
+            "validateIpcBufferAddress"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_endpointQueueEmpty_pop_empty",
+          "line": 879,
+          "called": [
+            "Endpoint",
+            "KernelErrorRejection",
+            "ObjId",
+            "SystemState",
+            "default",
+            "endpointId",
+            "endpointQueuePopHead",
+            "insert",
+            "ofNat",
+            "runUnit"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_untypedTypeMismatch",
+          "line": 896,
+          "called": [
+            "CNode",
+            "Capability",
+            "KernelErrorRejection",
+            "KernelObject",
+            "Notification",
+            "ObjId",
+            "SystemState",
+            "cnodeId",
+            "default",
+            "insert",
+            "mkEmptyCNode",
+            "none",
+            "ofNat",
+            "retypeFromUntyped",
+            "runUnit",
+            "singleton"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_childIdSelfOverwrite",
+          "line": 924,
+          "called": [
+            "CNode",
+            "Capability",
+            "KernelErrorRejection",
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "UntypedObject",
+            "cnodeId",
+            "default",
+            "insert",
+            "mkEmptyCNode",
+            "none",
+            "ofNat",
+            "retypeFromUntyped",
+            "runUnit",
+            "singleton"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "row_untypedDeviceRestriction",
+          "line": 957,
+          "called": [
+            "CNode",
+            "Capability",
+            "KernelErrorRejection",
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "UntypedObject",
+            "cnodeId",
+            "default",
+            "insert",
+            "mkEmptyCNode",
+            "none",
+            "ofNat",
+            "retypeFromUntyped",
+            "runUnit",
+            "singleton"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "errorMatrix",
+          "line": 994,
+          "called": [
+            "KernelErrorRejection",
+            "row_addressOutOfBounds_paddr",
+            "row_addressOutOfBounds_vaddr",
+            "row_alignmentError_ipcBuffer",
+            "row_alignmentError_security",
+            "row_alreadyWaiting_enqueue_blocked",
+            "row_asidNotBound_vspaceMap",
+            "row_childIdSelfOverwrite",
+            "row_cyclicDependency_self_edge",
+            "row_endpointQueueEmpty_pop_empty",
+            "row_hardwareFault_serror",
+            "row_illegalAuthority_over_mcp",
+            "row_illegalAuthority_priority_over_hw",
+            "row_illegalState_no_current",
+            "row_invalidArgument_budget_over_period",
+            "row_invalidArgument_budget_zero",
+            "row_invalidArgument_domain_overflow",
+            "row_invalidArgument_ipcBuffer_missing_vspaceRoot",
+            "row_invalidArgument_mint_rights",
+            "row_invalidArgument_period_zero",
+            "row_invalidArgument_priority_overflow",
+            "row_invalidCapPtr",
+            "row_invalidCapability_send_to_nonEndpoint",
+            "row_invalidMessageInfo",
+            "row_invalidObjectType_cross_variant",
+            "row_invalidRegister",
+            "row_invalidSyscallArgument_perms",
+            "row_invalidSyscallNumber",
+            "row_invalidTypeTag",
+            "row_ipcMessageTooLarge",
+            "row_ipcMessageTooManyCaps",
+            "row_notSupported_fiq",
+            "row_nullCapability_mint",
+            "row_objectNotFound_dep_unmet",
+            "row_objectNotFound_ipcBuffer_missing_tcb",
+            "row_objectNotFound_mint_missing_cnode",
+            "row_objectNotFound_send_missing",
+            "row_policyDenied_insecure_default",
+            "row_replyCapInvalid_no_target",
+            "row_replyCapInvalid_not_blocked",
+            "row_revocationRequired_delete_with_children",
+            "row_schedulerInvariantViolation",
+            "row_targetSlotOccupied",
+            "row_translationFault_ipcBuffer_no_write",
+            "row_untypedDeviceRestriction",
+            "row_untypedTypeMismatch",
+            "row_userException_pc_alignment",
+            "row_vmFault_data_abort"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "errorMatrix_covers_at_least_35",
+          "line": 1055,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "errorMatrixFloor",
+          "line": 1061,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "securityPriorityVariants",
+          "line": 1069,
+          "called": [
+            "KernelError"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "coveredVariants",
+          "line": 1083,
+          "called": [
+            "KernelError",
+            "contains"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runRow",
+          "line": 1093,
+          "called": [
+            "KernelErrorRejection"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runAll",
+          "line": 1111,
+          "called": [
+            "KernelError",
+            "contains",
+            "coveredVariants",
+            "errorMatrix",
+            "errorMatrixFloor",
+            "filter",
+            "isEmpty",
+            "runRow"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 1131,
+          "called": [
+            "runAll"
+          ]
+        }
+      ]
+    },
+    {
       "module": "tests.LivenessSuite",
       "path": "tests/LivenessSuite.lean",
       "declaration_count": 16,
@@ -73767,7 +75074,11 @@
           "kind": "def",
           "name": "main",
           "line": 251,
-          "called": []
+          "called": [
+            "canonical",
+            "cbs_bandwidth_bounded_tight",
+            "throw"
+          ]
         }
       ]
     },
@@ -78964,19 +80275,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing",
-          "line": 14,
+          "line": 23,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "ProbeOp",
-          "line": 18,
+          "line": 27,
           "called": []
         },
         {
           "kind": "def",
           "name": "probeEndpointId",
-          "line": 28,
+          "line": 37,
           "called": [
             "ObjId",
             "ofNat"
@@ -78985,7 +80296,7 @@
         {
           "kind": "def",
           "name": "probeNotificationId",
-          "line": 30,
+          "line": 39,
           "called": [
             "ObjId",
             "ofNat"
@@ -78994,7 +80305,7 @@
         {
           "kind": "def",
           "name": "probeCNodeId",
-          "line": 32,
+          "line": 41,
           "called": [
             "ObjId",
             "ofNat"
@@ -79003,7 +80314,7 @@
         {
           "kind": "def",
           "name": "probeThreadIds",
-          "line": 34,
+          "line": 43,
           "called": [
             "ObjId",
             "ofNat"
@@ -79012,7 +80323,7 @@
         {
           "kind": "def",
           "name": "probeBaseState",
-          "line": 39,
+          "line": 48,
           "called": [
             "Capability",
             "KernelObject",
@@ -79034,13 +80345,13 @@
         {
           "kind": "def",
           "name": "nextRand",
-          "line": 70,
+          "line": 79,
           "called": []
         },
         {
           "kind": "def",
           "name": "pickOp",
-          "line": 74,
+          "line": 83,
           "called": [
             "ProbeOp"
           ]
@@ -79048,7 +80359,7 @@
         {
           "kind": "def",
           "name": "pickThreadId",
-          "line": 84,
+          "line": 93,
           "called": [
             "ThreadId",
             "ofNat"
@@ -79057,7 +80368,7 @@
         {
           "kind": "def",
           "name": "endpointConsistencyHolds",
-          "line": 89,
+          "line": 98,
           "called": [
             "Endpoint"
           ]
@@ -79065,7 +80376,7 @@
         {
           "kind": "def",
           "name": "probeInvariantObjectIds",
-          "line": 95,
+          "line": 104,
           "called": [
             "ObjId",
             "probeCNodeId",
@@ -79077,7 +80388,7 @@
         {
           "kind": "def",
           "name": "checkStateInvariants",
-          "line": 98,
+          "line": 107,
           "called": [
             "SystemState",
             "invariant",
@@ -79091,7 +80402,7 @@
         {
           "kind": "def",
           "name": "checkEndpointConsistency",
-          "line": 108,
+          "line": 117,
           "called": [
             "SystemState",
             "endpointConsistencyHolds",
@@ -79104,7 +80415,7 @@
         {
           "kind": "inductive",
           "name": "StepOutcome",
-          "line": 125,
+          "line": 134,
           "called": [
             "KernelError",
             "SystemState"
@@ -79113,7 +80424,7 @@
         {
           "kind": "def",
           "name": "classifyError",
-          "line": 138,
+          "line": 147,
           "called": [
             "KernelError",
             "ProbeOp",
@@ -79123,7 +80434,7 @@
         {
           "kind": "def",
           "name": "stepOp",
-          "line": 176,
+          "line": 185,
           "called": [
             "CSpaceAddr",
             "ProbeOp",
@@ -79153,13 +80464,13 @@
         {
           "kind": "structure",
           "name": "ProbeStats",
-          "line": 229,
+          "line": 238,
           "called": []
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:236>",
-          "line": 236,
+          "name": "<anonymous:instance:245>",
+          "line": 245,
           "called": [
             "ProbeStats",
             "default"
@@ -79168,7 +80479,7 @@
         {
           "kind": "def",
           "name": "runProbeLoop",
-          "line": 239,
+          "line": 248,
           "called": [
             "ProbeStats",
             "SystemState",
@@ -79183,13 +80494,13 @@
         {
           "kind": "def",
           "name": "pickThreadCount",
-          "line": 263,
+          "line": 272,
           "called": []
         },
         {
           "kind": "def",
           "name": "runProbe",
-          "line": 266,
+          "line": 275,
           "called": [
             "ProbeStats",
             "default",
@@ -79202,7 +80513,7 @@
         {
           "kind": "def",
           "name": "parseNatArg",
-          "line": 277,
+          "line": 286,
           "called": [
             "none",
             "toNat"
@@ -79211,7 +80522,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 282,
+          "line": 291,
           "called": [
             "parseNatArg",
             "runProbe",

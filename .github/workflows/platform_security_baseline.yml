@@ -82,7 +82,12 @@ jobs:
       - name: Run Gitleaks secret scan
         uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # AN11-E.4 (TST-M04): Prefer the per-action `github.token` over
+          # `secrets.GITHUB_TOKEN` — both resolve to the same automatic
+          # token, but `github.token` is the canonical contextual form
+          # documented under github-actions and avoids an unnecessary
+          # secrets-scope read.
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Run Trivy repository vulnerability scan
         uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0

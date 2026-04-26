@@ -12,6 +12,12 @@ on:
   workflow_dispatch:
 
 permissions:
+  # AN11-F (LOW) audit: this workflow OPENS A NOTIFICATION ISSUE only —
+  # it has no `contents: write`, no `pull-requests: write`, no
+  # `actions: write`.  Branch-protection rules on `main` therefore cannot
+  # be bypassed by this workflow:  even if it were compromised, the most
+  # it can do is post a (read-only-content-derived) issue.  Manual review
+  # remains required for every actual toolchain bump.
   contents: read
   issues: write
 

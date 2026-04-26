@@ -6,6 +6,21 @@
 
 name: Nightly Determinism
 
+# AN11-F (LOW) audit scope clarification:
+#
+# **What this workflow actually verifies**: same-run determinism — running
+# `lake exe sele4n` twice in the same job produces byte-identical trace
+# output (`tests/artifacts/nightly/sele4n_run1.trace` ≡ `…/sele4n_run2.trace`).
+# The diff is captured at `…/sele4n_determinism.diff` and uploaded.
+#
+# **What it does NOT verify**: cross-commit determinism (today's trace
+# matching yesterday's trace).  That stronger check would require either
+# downloading the previous run's artifacts via `actions/download-artifact`
+# or maintaining a fixture inside the repo.  Implemented today as the
+# `tests/fixtures/main_trace_smoke.expected` fixture (gated by Tier 2)
+# which runs on every PR — so cross-commit determinism IS gated, just
+# not in this nightly job.
+
 on:
   schedule:
     - cron: '22 3 * * *'
@@ -29,8 +44,12 @@ jobs:
             ~/.elan
             .lake/packages
             .lake/build
-          key: ${{ runner.os }}-${{ runner.arch }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+          # AN11-F (LOW): job-tagged cache key (nightly lane).  Falls back
+          # to the full lane's cache when the nightly key misses.
+          key: ${{ runner.os }}-${{ runner.arch }}-lean-nightly-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
           restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-lean-nightly-
+            ${{ runner.os }}-${{ runner.arch }}-lean-full-
             ${{ runner.os }}-${{ runner.arch }}-lean-
 
       - name: Setup Lean toolchain

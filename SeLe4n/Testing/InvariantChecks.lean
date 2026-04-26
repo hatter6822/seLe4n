@@ -618,4 +618,27 @@ def assertCrossSubsystemInvariant (label : String) (st : SystemState) : IO Unit 
   else
     throw <| IO.userError s!"{label}: cross-subsystem invariant failed: {reprStr failures}"
 
+/-- AN11-E.2 (TST-M02) — Bundled cross-subsystem invariant assertion.
+
+Returns `true` iff every conjunct of `crossSubsystemInvariant` (currently
+11; 12 once AN2-D / `typedIdDisjointness` lands) holds at the supplied
+state.  Unlike `assertCrossSubsystemInvariant`, this variant does NOT
+throw on the first failure — it walks the full check list and prints a
+single composite failure report with EVERY failing conjunct.
+
+Designed for trace-end / scenario-end validation in test harnesses where
+a single failure should not mask other regressions; production proof-
+chain code that needs early-fail semantics should keep using
+`assertCrossSubsystemInvariant`. -/
+def assertCrossSubsystemInvariants (st : SystemState) : IO Bool := do
+  let checks := checkCrossSubsystemInvariant st
+  let failures := checks.filterMap fun (name, ok) => if ok then none else some name
+  if failures.isEmpty then
+    return true
+  else
+    IO.println s!"assertCrossSubsystemInvariants: {failures.length}/{checks.length} conjuncts failed:"
+    for name in failures do
+      IO.println s!"  - {name}"
+    return false
+
 end SeLe4n.Testing

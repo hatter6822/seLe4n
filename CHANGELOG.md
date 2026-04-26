@@ -1,3 +1,372 @@
+## v0.30.10 — WS-AN Phase AN11 audit-pass v3
+
+A third deep audit pass on the AN11 audit-pass-v2 tip caught three more
+material correctness issues, all remediated:
+
+### Audit-pass v3: AK6-F vacuous-pass
+
+The audit-pass-v2 strengthening of `test_dispatchCapabilityOnly_projection_invariant`
+inserted a notification at oid=2 (secret label) in two states differing
+only in notification content, then probed `pA.objects ⟨1⟩` and
+`pB.objects ⟨1⟩`.  But neither state had any object at oid=1, so the
+probes vacuously returned `none = none` — the assertion passed even if
+the projection-stripping discipline were buggy.  Audit-pass v3 inserts
+an IDENTICAL public object at oid=1 in BOTH states (so `probe = some _`
+must surface), uses distinct secret content at oid=2, and explicitly
+guards against the vacuous-none-equality pass via the `(some, some) =>
+a == b | _, _ => false` arm.  The strengthened test now catches BOTH
+directions of regression: a buggy projection that drops the public
+object (probe becomes `none`, fails the `(some, some)` arm) AND a
+buggy projection that leaks the secret (`secretHidden = false`).
+
+### Audit-pass v3: `tmpfile_cleanup` corrupted-trap bug (CRITICAL latent)
+
+`scripts/_common.sh::tmpfile_cleanup` re-extracted any pre-existing
+EXIT trap via `sed`, then re-registered it inside an outer
+single-quoted trap.  But `trap -p` returns its body wrapped in single
+quotes WITH internal single-quote escapes (`'\\''`), so the outer
+re-quoting corrupted the trap body whenever it contained any
+single-quoted text — which it always did, after the first call.
+Synthetic test confirmed the bug: two `tmpfile_cleanup` calls produced
+a malformed trap that bash rejected with "unexpected EOF while looking
+for matching `'`".  No production caller currently uses the helper
+(test_abi_roundtrip.sh sources `_common.sh` but only for `log_info` /
+`time_command`), so the bug was dormant — but a future caller would
+have hit it immediately.  Audit-pass v3 rewrites `tmpfile_cleanup` to
+track paths in a global array `_SELE4N_TMPFILES` and register the EXIT
+trap ONCE on first use as a function (`_sele4n_tmpfile_cleanup_handler`),
+preserving any pre-existing trap via a captured `_SELE4N_PRIOR_EXIT_TRAP`
+that the handler invokes via `eval`.  Synthetic verification confirms
+both file removal AND prior-trap chaining work.
+
+### Audit-pass v3: `time_command` not portable on macOS BSD
+
+`scripts/_common.sh::time_command` used `date +%s%N` to capture
+nanosecond-precision wall-clock time.  This is a GNU coreutils
+extension; BSD `date` (macOS default) returns a literal `…N` suffix
+for the unsupported `%N` directive.  Under `set -euo pipefail`, the
+downstream `[[ "${start_ns}" -gt 0 ]]` arithmetic comparison would
+abort the script on macOS.  Audit-pass v3 probes `%N` support once at
+`_common.sh` source time via `date +%s%N | grep -Eq '^[0-9]+$'` and
+caches the result in `_SELE4N_DATE_HAS_NANO`; `time_command` then
+branches to integer-second precision on BSD, preserving accurate
+timing on GNU and graceful degradation on BSD.  Synthetic BSD
+simulation (override `date()` to return `…N` literal) confirms the
+fallback path exits cleanly with second-granularity output.
+
+### Gate at audit-pass v3 tip
+
+* `lake build` (302 jobs, 0 warnings)
+* `test_smoke.sh` PASS, `test_full.sh` PASS, `test_tier0_hygiene.sh` PASS
+* `lake exe kernel_error_matrix_suite` 47/47 PASS
+* `lake exe ak8_coverage_suite` 13/13 PASS
+* `lake exe information_flow_suite` PASS (9 AK6 named tests; AK6-F now
+  substantive — vacuous-pass guard added)
+* `cargo test --workspace` 462 tests, 0 failures
+* `cargo clippy --workspace -- -D warnings` 0 warnings
+* shellcheck clean on `_common.sh` and `test_abi_roundtrip.sh`
+* `tmpfile_cleanup` synthetic test PASS (chained traps work)
+* `time_command` BSD/GNU portability verified
+* Fixture byte-identical, zero `sorry`/`axiom`/`native_decide`
+
+---
+
+## v0.30.10 — WS-AN Phase AN11 audit-pass v2
+
+A deep end-to-end audit of the initial AN11 landing surfaced six material
+findings, all remediated in this pass:
+
+### Audit-pass v2: timeout wrapper continue-mode bug (CRITICAL)
+
+`scripts/test_lib.sh::run_check_with_timeout` had two correctness bugs:
+
+* It used `set +e ; cmd ; rc=$? ; set -e` to capture the timeout exit
+  code, which **unconditionally re-enabled errexit** even when the
+  caller invoked `parse_common_args --continue` (which deliberately
+  disables errexit so failures can accumulate without aborting the
+  script).  Continue mode was effectively broken: a single
+  `run_check_with_timeout` failure flipped errexit back on, causing the
+  next unrelated command to abort the script.
+* The `record_failure` invocation passed four string fragments as
+  separate arguments, but `record_failure` only consumes `$1`/`$2` —
+  the actionable advice ("Override the budget with
+  `LEAN_TEST_TIMEOUT_MINS=<minutes>` for a single run, or investigate
+  the suite for an infinite loop / divergent term") was **silently
+  dropped**.
+
+Remediation switches to the `if cmd; then …; else rc=$?; fi` idiom
+(which catches the failure without tripping errexit, regardless of
+caller state) and folds the diagnostic message into a single string.
+Synthetic verification confirms continue-mode preserves errexit-OFF
+across timeout failures and the full message reaches `FAILURE_MESSAGES`.
+
+### Audit-pass v2: vacuous AK6-E / AK6-F tests upgraded
+
+The initial AN11-D landing wrapped two AK6 sub-tests as `IO Bool` runtime
+tests that just contained `let _ := @theorem; return true` — vacuous
+runtime checks that always passed.  Remediation:
+
+* Adds `#check @SeLe4n.Kernel.niStepConstructorCoverage` and
+  `#check @SeLe4n.Kernel.dispatchCapabilityOnly_preserves_projection`
+  at module scope in `InformationFlowSuite.lean` — these are stricter
+  than runtime wrappers because a rename or removal fails the file's
+  elaboration.
+* Replaces the runtime tests with substantive checks:
+  `test_niStepConstructorCoverage_witness_is_state_identity` exercises
+  the theorem on a concrete `.syscallDecodeError` operation and pins
+  the constructor-count contract;
+  `test_dispatchCapabilityOnly_projection_invariant` builds two states
+  differing only in a high-secret notification's content and asserts
+  the public-observer projection is identical for both (the
+  projection-stripping discipline that the theorem aggregates).
+
+### Audit-pass v2: `_common.sh` actually used now
+
+The initial AN11-E.3 landing created `scripts/_common.sh` with
+`log_info`/`log_warn`/`log_error`/`time_command`/`tmpfile_cleanup`
+helpers but **only** sourced it from `test_abi_roundtrip.sh`, which
+itself used raw `echo` calls instead of the helpers.  Remediation
+refactors `test_abi_roundtrip.sh` to actually use `log_info`,
+`log_warn`, `log_error`, and `time_command` (the latter wraps the
+`lake exe abi_roundtrip_suite` call with wall-clock timing and prints
+the success/failure line uniformly with the rest of the tier scripts).
+
+### Audit-pass v2: LivenessSuite "canonical" framing corrected
+
+The AN11-F live runtime assertion in `tests/LivenessSuite.lean::main`
+claimed "Canonical RPi5 instance: budget = 5_000, period = 10_000" —
+but `DeploymentSchedulingConfig` does NOT pin a budget; the canonical
+config only pins `cbsPeriodTicks = 10_000`.  Remediation reads the
+period from `rpi5CanonicalConfig.cbsPeriodTicks` directly, documents
+that the budget is "representative — half the canonical period",
+asserts the canonical period itself hasn't drifted (catches a silent
+change to AN5-E.2), and computes the bound symbolically via
+`3 * period`.
+
+### Audit-pass v2: bootstrap marker on fast-path
+
+`scripts/setup_lean_env.sh` only wrote
+`~/.elan/.sele4n-bootstrap-marker` at the END of the full bootstrap
+path, but the fast-path early-exits before reaching that line.
+Environments bootstrapped before AN11 landed therefore never got the
+marker even though they're set up correctly.  Remediation adds a
+fast-path marker write (idempotent: `[ ! -f marker ]` guard) so
+existing installs catch up the first time setup is invoked.
+
+### Audit-pass v2: KernelError matrix breadth (+6 variants)
+
+The initial AN11-A matrix had 41 rows covering 28 distinct `KernelError`
+variants.  The audit identified six easy-to-trigger production paths
+that were not exercised:
+
+* `invalidObjectType` — `storeObjectKindChecked` cross-variant rejection
+* `translationFault` — IPC buffer mapped without write permission
+* `endpointQueueEmpty` — `endpointQueuePopHead` on an empty queue
+* `untypedTypeMismatch` — `retypeFromUntyped` from a non-untyped source
+* `childIdSelfOverwrite` — `retypeFromUntyped` with `childId == untypedId`
+* `untypedDeviceRestriction` — `retypeFromUntyped` from a device untyped
+  to a typed object
+
+Matrix grew from 41 → 47 rows; coverage from 28 → 34 distinct variants.
+`KERRORMATRIX_ROWS` floor in `docs/audits/AL0_baseline.txt` updated to
+47; `errorMatrixFloor` in the suite advanced to 47.  All new rows pass.
+
+### Gate at audit-pass v2 tip
+
+* `lake build` (302 jobs, 0 warnings)
+* `test_smoke.sh` PASS, `test_full.sh` PASS, `test_tier0_hygiene.sh` PASS
+* `lake exe kernel_error_matrix_suite` 47/47 PASS (was 41)
+* `lake exe ak8_coverage_suite` 13/13 PASS (unchanged)
+* `lake exe information_flow_suite` PASS (9 AK6 named tests, AK6-E/F
+  now substantive)
+* `cargo test --workspace` 462 tests, 0 failures
+* `cargo clippy --workspace -- -D warnings` 0 warnings
+* `check_version_sync.sh` PASS at 0.30.10
+* `ak7_cascade_check_monotonic.sh` PASS at new floor
+  (`KERRORMATRIX_ROWS=47`, `STOREOBJECTCHECKED_ADOPTION=62`)
+* Fixture byte-identical, zero `sorry`/`axiom`/`native_decide`
+
+---
+
+## v0.30.10 — WS-AN Phase AN11 (Tests / CI / Scripts)
+
+### AN11-A — KernelError variant cross-syscall coverage matrix (H-20)
+
+New `tests/KernelErrorMatrixSuite.lean` provides the canonical, machine-
+decidable matrix of `KernelError` rejection paths.  Each row of
+`errorMatrix` is a `KernelErrorRejection` record naming the operation
+under test, the expected variant, a stable `scenarioTag`, a one-sentence
+rationale, and a `runScenario : Unit → Except KernelError Unit` thunk.
+At AN11 close the matrix has **41 rows** covering 28 distinct variants
+across four bands:
+
+* AN11-A.2 baseline (13 rows) — already-tested variants reasserted as
+  the canonical index entry.
+* AN11-A.3 security-priority (9 rows) — every variant the audit flags
+  as security-critical (revocation, ASID, scheduler invariant,
+  alignment, cyclic deps, slot occupancy, reply-cap, etc.).
+* AN11-A.4 IPC / SchedContext / Lifecycle (10 rows).
+* AN11-A.5 Architecture / Capability / Service residual (9 rows).
+
+`errorMatrix_covers_at_least_35` is a `decide`-witness theorem locking
+the row count at the audit's recommended floor.  The new
+`KERRORMATRIX_ROWS` monotonicity metric in
+`scripts/ak7_cascade_baseline.sh` enforces should-grow direction; CI's
+`ak7_cascade_check_monotonic.sh` fails any commit that drops a row.
+`docs/audits/AL0_baseline.txt` re-anchored at 41 rows.
+
+### AN11-B — `lake exe` timeout wrapper (H-21)
+
+`scripts/test_lib.sh` gains `LEAN_TEST_TIMEOUT_MINS` (default 30 min,
+overridable via env) and a new `run_check_with_timeout` helper that
+wraps `lake exe …` (or any command) in `timeout`, mapping the canonical
+`coreutils` exit code 124 to an explicit, actionable failure message.
+Every `lake exe` / `lake env lean --run` invocation in the tier scripts
+(`test_tier2_negative.sh`, `test_tier2_trace.sh`,
+`test_tier2_determinism.sh`, `test_tier4_nightly_candidates.sh`,
+`test_hw_full.sh`, `test_abi_roundtrip.sh`) now routes through the
+timeout wrapper.  Synthetic timeout-hit verified: exit 124 maps to the
+documented FAIL message.
+
+### AN11-C — Small-fixture sha256 companions (H-22, downgraded LOW)
+
+New `tests/fixtures/robin_hood_smoke.expected.sha256` and
+`tests/fixtures/two_phase_arch_smoke.expected.sha256` pair every trace
+fixture with a hash gate.  `scripts/test_tier2_trace.sh` now walks
+**every** `*.expected.sha256` companion in the fixtures directory and
+runs `sha256sum -c` in a single invocation, with a uniform remediation
+message naming `tests/fixtures/README.md` for the regeneration
+workflow.  The new README documents the regeneration recipe explicitly
+(canonical commands for each fixture) so a behavioural fixture change
+cannot land without an explicit hash refresh in the same commit.
+
+### AN11-D — Named AK6 sub-test functions (H-23, TST-M11)
+
+`tests/InformationFlowSuite.lean` adds nine named `def
+test_<semantic_name>` functions covering AK6-A through AK6-I (the
+audit's prior tests embedded in `do` blocks were named only by header
+comments).  Naming follows CLAUDE.md's "internal-first naming" rule —
+e.g. `test_schedContext_param_validation_rejects_invariant_violations`
+(AK6-A) rather than `test_AK6_A`.  A new `ak6Tests` dispatch table
+maps each AK6 ID to its semantic function; the new `runAk6Suite`
+driver walks the table and prints `AK6-X PASS` / `AK6-X FAIL` per row
+so a regression names the responsible sub-task at the audit-ID level.
+
+### AN11-E — Test MEDIUM batch (TST-M01..M13)
+
+* **AN11-E.1 (TST-M01)**: new `tests/Ak8CoverageSuite.lean` — 13 rows
+  covering AK8-E (`getCurrentPriorityChecked` ok / `.objectNotFound`
+  paths), AK8-F (`findFirstEmptySlotChecked` cap on slot scan), AK8-G
+  (`frozenStore*Checked` cross-variant rejection), AK8-H
+  (`frozenSchedContextUnbind` transactional discipline — failing
+  unbind leaves no partial mutation), AK8-I
+  (`freezeCNodeSlotsChecked` rejects phantom keys).  Wired into
+  `scripts/test_tier2_negative.sh`.  AK8-A/B/D coverage already lives
+  in `ModelIntegritySuite`/`NegativeStateSuite`/`PriorityManagementSuite`;
+  AK8-C/J/K are pure-documentation closures with no runtime surface.
+* **AN11-E.2 (TST-M02)**: new `assertCrossSubsystemInvariants : SystemState
+  → IO Bool` in `SeLe4n/Testing/InvariantChecks.lean` — runs every
+  cross-subsystem conjunct in sequence and prints a single composite
+  failure report (vs `assertCrossSubsystemInvariant`'s throw-on-first
+  semantics).  Wired into `MainTraceHarness::runMainTrace` as a
+  trace-end validation; throws if any conjunct fails.
+* **AN11-E.3 (TST-M03)**: new `scripts/_common.sh` with shared shell
+  helpers (`log_info`, `log_warn`, `log_error`, `time_command`,
+  `tmpfile_cleanup`); `test_abi_roundtrip.sh` updated to source it
+  without the prior `|| true` swallow that hid a missing-file bug.
+* **AN11-E.4 (TST-M04)**: `platform_security_baseline.yml` standardised
+  on `${{ github.token }}` (vs `secrets.GITHUB_TOKEN`).
+* **AN11-E.5 (TST-M05)**: `scripts/test_docs_sync.sh` GitBook drift
+  now fails CI hard (`exit 1`) — was warn-only before.
+* **AN11-E.6 (TST-M06)**: `scripts/test_tier3_invariant_surface.sh`
+  header documents the "invariant-surface anchor" semantics — Tier 3
+  PASS means every named anchor resolves, NOT that the corresponding
+  kernel transition was exercised on populated state.
+* **AN11-E.7 (TST-M07)**: `scripts/setup_lean_env.sh` writes
+  `~/.elan/.sele4n-bootstrap-marker` after a successful bootstrap
+  (informational; the existing `fast_path_ready` tool-presence check
+  remains the binding idempotency guard).
+* **AN11-E.8 (TST-M08)**: `lean_action_ci.yml` `apt-get` step wrapped
+  in a 3-attempt retry with exponential backoff (2s, 4s, 8s).
+* **AN11-E.9 (TST-M09)**: `expectCond` / `expectError` reject empty
+  tag/label strings at runtime — surfaces caller mistakes immediately
+  rather than producing an uninterpretable `[]` output.
+* **AN11-E.10 (TST-M12)**: `scripts/audit_testing_framework.sh` header
+  documents that this is the manual umbrella self-test (intentionally
+  not auto-wired into Tier 4 to avoid a circular run).
+* **AN11-E.11 (TST-M13)**: `tests/TraceSequenceProbe.lean` carries an
+  explicit "intentionally Tier-4-only" comment with the budget
+  rationale recorded at point-of-use.
+
+### AN11-F — Test LOW batch
+
+Seven LOW-tier closures landed:
+
+* **CI cache-key separation** in `lean_action_ci.yml` and
+  `nightly_determinism.yml` — each lane (`fast` / `smoke` / `full` /
+  `nightly`) tags its `.lake/build` cache key so a smaller-coverage
+  job's cache cannot overwrite a larger-coverage job's cache.
+  `restore-keys` chain falls through to broader caches on miss.
+* **Live runtime assertion** in `tests/LivenessSuite.lean::main`
+  pinning the AN5-D / SC-M01 `cbs_bandwidth_bounded_tight` arithmetic
+  for `budget=5_000, period=10_000, window=30_000` → expected 15_000.
+* **Generator rule for `tests/fixtures/scenario_registry.yaml`**:
+  `scripts/scenario_catalog.py generate-registry-stub` walks every
+  fixture, identifies missing scenario IDs, and emits a YAML stub the
+  maintainer can paste into the canonical registry.
+* **Comprehensive shellcheck enforcement** in
+  `scripts/test_tier0_hygiene.sh` — covers every `*.sh` under
+  `scripts/` (find-time enumeration so future scripts outside that
+  directory are caught automatically).  `_common.sh` shellcheck-clean.
+* **OID range discipline runtime assertion** at
+  `BootstrapBuilder.withObject` entry — refuses to insert at
+  `ObjId.sentinel` (which would corrupt the AK7-E `Valid*Id` discipline).
+* **`lean_toolchain_update_proposal.yml`** documented as
+  branch-protection-safe — only `contents: read` + `issues: write`,
+  cannot push or PR.
+* **`nightly_determinism.yml`** scope clarified — verifies same-run
+  determinism (two runs in same job match), NOT cross-commit
+  determinism (which is gated by the Tier 2 fixture on every PR).
+
+### AN11-G — Closure
+
+* New `tests/KernelErrorMatrixSuite.lean` and `tests/Ak8CoverageSuite.lean`
+  registered in `lakefile.toml` and `scripts/test_tier2_negative.sh`.
+* `docs/audits/AL0_baseline.txt` re-anchored at the AN11 floor
+  (`KERRORMATRIX_ROWS=41`, `TEST_COUNT_AK7=45`, all other metrics
+  unchanged from AN10 close).
+* `docs/codebase_map.json` regenerated to reflect the two new test
+  suites and the helper additions in `SeLe4n/Testing/Helpers.lean` /
+  `SeLe4n/Testing/StateBuilder.lean` / `SeLe4n/Testing/InvariantChecks.lean`.
+* `BootstrapBuilder` now derives `Inhabited` (required by the AN11-F
+  panic guard at `withObject`).
+* This `CHANGELOG.md` entry, this `CLAUDE.md` prepend, and
+  `docs/WORKSTREAM_HISTORY.md` AN11 entry.
+
+### Gate at AN11 tip
+
+* `lake build` (302 jobs, 0 warnings)
+* `test_smoke.sh` PASS, `test_full.sh` PASS, `test_tier0_hygiene.sh`
+  PASS (incl. monotonicity + comprehensive shellcheck)
+* `lake exe kernel_error_matrix_suite` 41/41 PASS
+* `lake exe ak8_coverage_suite` 13/13 PASS
+* `lake exe information_flow_suite` PASS (incl. 9 new AK6 named tests)
+* `cargo test --workspace` 462 tests
+* `cargo clippy --workspace -- -D warnings` 0 warnings
+* `check_version_sync.sh` PASS at 0.30.10
+* Fixture byte-identical to `tests/fixtures/main_trace_smoke.expected`
+  (227 lines)
+* Zero `sorry`/`axiom`/`native_decide` in `SeLe4n/` or `Main.lean`
+
+**Next**: AN12 (Documentation, themes, closure) — the final WS-AN
+phase, which delivers Theme 4.1 (closure-form discharge index),
+Theme 4.4 (SMP inventory), batches DOC-M01..M08, marks all 11
+absorbed `DEF-*` items RESOLVED in
+`docs/audits/AUDIT_v0.29.0_DEFERRED.md`, and bumps version for the
+WS-AN portfolio close.
+
+---
+
 ## v0.30.10 — WS-AN Phase AN10 (AK7 cascade closure)
 
 ### Deep-audit pass v2: H5/H6 signature tightening (parity with H1–H4 + H7)

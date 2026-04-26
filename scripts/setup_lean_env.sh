@@ -113,6 +113,13 @@ if fast_path_ready; then
   if ! "${ROOT_DIR}/scripts/install_git_hooks.sh"; then
     log_elapsed "WARNING: install_git_hooks.sh returned non-zero (fast-path); pre-commit hook may not be installed"
   fi
+  # AN11-E.7 (TST-M07) audit-pass v2: write the bootstrap marker on the
+  # fast-path too.  Without this, environments bootstrapped before AN11
+  # landed never get the marker even though they're set up correctly.
+  ELAN_BOOTSTRAP_MARKER="${ELAN_HOME_DIR}/.sele4n-bootstrap-marker"
+  if [ ! -f "${ELAN_BOOTSTRAP_MARKER}" ]; then
+    date -u +"%Y-%m-%dT%H:%M:%SZ" > "${ELAN_BOOTSTRAP_MARKER}" 2>/dev/null || true
+  fi
   if [ "${BUILD_REQUESTED}" -eq 1 ]; then
     log_elapsed "running lake build"
     (cd "${ROOT_DIR}" && lake build)
@@ -582,6 +589,14 @@ fi
 
 log_elapsed "Lean environment is ready"
 log_elapsed "lake version: $(lake --version)"
+
+# AN11-E.7 (TST-M07): write a sentinel marker so subsequent invocations
+# can short-circuit the bootstrap path with a single stat() call.  The
+# marker is purely informational — `fast_path_ready` above already
+# enforces tool-presence checks (lake on PATH, toolchain dir present,
+# CRT files staged) which are stricter than a sentinel file alone.
+ELAN_BOOTSTRAP_MARKER="${ELAN_HOME_DIR}/.sele4n-bootstrap-marker"
+date -u +"%Y-%m-%dT%H:%M:%SZ" > "${ELAN_BOOTSTRAP_MARKER}" 2>/dev/null || true
 
 # AN1-B.2 (C-03): install the pre-commit hook on every invocation so fresh
 # clones, worktrees, and new contributor checkouts are guarded automatically.

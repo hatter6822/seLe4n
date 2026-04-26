@@ -20,20 +20,38 @@ open SeLe4n.Model
 
 namespace SeLe4n.Testing
 
-/-- Boolean assertion with labeled pass/fail output. -/
-def expectCond (tag : String) (label : String) (cond : Bool) : IO Unit :=
+/-- Boolean assertion with labeled pass/fail output.
+
+AN11-E.9 (TST-M09): a runtime guard rejects empty `tag`/`label` strings
+to surface mistaken empty-string callers immediately rather than letting
+them produce uninterpretable `[]` output.  Existing call sites all pass
+non-empty literals, so the guard is a tightening on the test surface
+only. -/
+def expectCond (tag : String) (label : String) (cond : Bool) : IO Unit := do
+  if tag.isEmpty then
+    throw <| IO.userError "expectCond: tag must be non-empty (AN11-E.9 / TST-M09)"
+  if label.isEmpty then
+    throw <| IO.userError "expectCond: label must be non-empty (AN11-E.9 / TST-M09)"
   if cond then
     IO.println s!"{tag} check passed [{label}]"
   else
     throw <| IO.userError s!"{tag} check failed [{label}]"
 
 /-- Assert that a kernel operation returned an error matching `expected`.
-    The optional `msgPrefix` parameter supports suite-specific message formatting. -/
+    The optional `msgPrefix` parameter supports suite-specific message formatting.
+
+AN11-E.9 (TST-M09): a runtime guard rejects empty `label`/`msgPrefix`
+strings.  Same rationale as `expectCond` — surfaces caller mistakes
+immediately rather than producing an unhelpful `[]:` message. -/
 def expectError
     (label : String)
     (actual : Except KernelError α)
     (expected : KernelError)
-    (msgPrefix : String := "check") : IO Unit :=
+    (msgPrefix : String := "check") : IO Unit := do
+  if label.isEmpty then
+    throw <| IO.userError "expectError: label must be non-empty (AN11-E.9 / TST-M09)"
+  if msgPrefix.isEmpty then
+    throw <| IO.userError "expectError: msgPrefix must be non-empty (AN11-E.9 / TST-M09)"
   match actual with
   | .ok _ =>
       throw <| IO.userError s!"{label}: expected error {toString expected}, got success"

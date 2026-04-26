@@ -35,8 +35,17 @@ jobs:
             ~/.elan
             .lake/packages
             .lake/build
-          key: ${{ runner.os }}-${{ runner.arch }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+          # AN11-F (LOW): job-tagged cache key.  The fast / smoke / full /
+          # nightly jobs build different target sets (`.lake/build` content
+          # diverges); a shared key would let one job's smaller cache
+          # overwrite another's larger cache, forcing a full recompile on
+          # the lower-coverage job's next run.  Tag the key with `-fast`
+          # so each job owns its own `.lake/build` slice.  The
+          # `restore-keys` fallback still lets a fresh job seed off any
+          # prior cache for the same Lean toolchain.
+          key: ${{ runner.os }}-${{ runner.arch }}-lean-fast-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
           restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-lean-fast-
             ${{ runner.os }}-${{ runner.arch }}-lean-
 
       - name: Setup Lean toolchain
@@ -53,8 +62,28 @@ jobs:
       # skipping it. shellcheck is not in the default ubuntu-latest image.
       # ripgrep is pre-installed on ubuntu-latest but not on ubuntu-24.04-arm;
       # install it here defensively so both lanes share the same prereqs.
+      #
+      # AN11-E.8 (TST-M08): wrap apt-get in a 3-attempt retry with
+      # exponential backoff (2s, 4s, 8s).  Transient archive-mirror
+      # flakes are common and otherwise produce CI noise unrelated to the
+      # PR under test.
       - name: Install shellcheck and ripgrep
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck ripgrep
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if sudo apt-get update -qq && \
+               sudo apt-get install -y -qq shellcheck ripgrep; then
+              echo "[apt-get] succeeded on attempt ${attempt}"
+              break
+            fi
+            if [[ "${attempt}" -eq 3 ]]; then
+              echo "[apt-get] failed after 3 attempts" >&2
+              exit 1
+            fi
+            backoff=$((2 ** attempt))
+            echo "[apt-get] attempt ${attempt} failed; sleeping ${backoff}s" >&2
+            sleep "${backoff}"
+          done
 
       - name: Run fast gate
         run: ./scripts/ci_capture_timing.sh fast ./scripts/test_fast.sh
@@ -82,8 +111,12 @@ jobs:
             ~/.elan
             .lake/packages
             .lake/build
-          key: ${{ runner.os }}-${{ runner.arch }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+          # AN11-F (LOW): job-tagged cache key (smoke lane).  See the
+          # comment at test-fast above for the rationale.
+          key: ${{ runner.os }}-${{ runner.arch }}-lean-smoke-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
           restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-lean-smoke-
+            ${{ runner.os }}-${{ runner.arch }}-lean-fast-
             ${{ runner.os }}-${{ runner.arch }}-lean-
 
       - name: Setup Lean toolchain
@@ -137,8 +170,13 @@ jobs:
             ~/.elan
             .lake/packages
             .lake/build
-          key: ${{ runner.os }}-${{ runner.arch }}-lean-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
+          # AN11-F (LOW): job-tagged cache key (full lane).  Tier 3 builds
+          # the broadest set of targets, so its `.lake/build` is the
+          # canonical seed for the smaller smoke / fast lanes.
+          key: ${{ runner.os }}-${{ runner.arch }}-lean-full-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh') }}
           restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-lean-full-
+            ${{ runner.os }}-${{ runner.arch }}-lean-smoke-
             ${{ runner.os }}-${{ runner.arch }}-lean-
 
       - name: Setup Lean toolchain
