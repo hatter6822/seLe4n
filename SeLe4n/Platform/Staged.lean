@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
 /-
   seLe4n  - A Lean Microkernel
   Copyright (C) 2026  Adam Hall
@@ -16,6 +17,8 @@ import SeLe4n.Kernel.Architecture.TimerModel
 -- AN9-C / AN9-A / AN9-B: hardware-binding closure modules
 import SeLe4n.Kernel.Architecture.BarrierComposition
 import SeLe4n.Kernel.Architecture.TlbCacheComposition
+-- AN12-B (Theme 4.4): SMP-latent single-core assumption inventory
+import SeLe4n.Kernel.Concurrency.Assumptions
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph
@@ -28,7 +31,7 @@ from `Main.lean` or from any production kernel chain, so a regression that
 breaks them would go undetected until the H3 hardware-binding workstream
 reaches them.
 
-The seven staged modules are:
+The staged modules are:
 
 1. `SeLe4n.Platform.Sim.Contract`              — Sim platform contract
 2. `SeLe4n.Platform.FFI`                       — Lean @[extern] FFI declarations
@@ -37,6 +40,9 @@ The seven staged modules are:
 5. `SeLe4n.Kernel.Architecture.CacheModel`     — Cache coherency model
 6. `SeLe4n.Kernel.Architecture.ExceptionModel` — ARM64 exception model
 7. `SeLe4n.Kernel.Architecture.TimerModel`     — ARM generic timer model
+8. `SeLe4n.Kernel.Architecture.BarrierComposition` — AN9-C BarrierKind algebra
+9. `SeLe4n.Kernel.Architecture.TlbCacheComposition` — AN9-A page-table coherency
+10. `SeLe4n.Kernel.Concurrency.Assumptions`    — AN12-B SMP-latent inventory
 
 Per the plan (AN9-J will transition most of these from "SMP-latent" to
 "SMP-implemented, runtime-gated by smp_enabled=false at v1.0.0"), the

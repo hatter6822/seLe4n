@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Trap frame structure and exception handler dispatch.
 //!
 //! The assembly entry points (vectors.S / trap.S) save the full CPU context

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! TCB (Thread Control Block) operations — suspend, resume, priority, IPC buffer.
 //!
 //! Lean: `SeLe4n/Kernel/API.lean` — D1 (suspend/resume), D2 (priority),

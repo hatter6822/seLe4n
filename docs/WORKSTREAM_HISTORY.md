@@ -15,14 +15,16 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
-**Active workstream**: **WS-AN** — Pre-1.0 audit remediation for the
-`v0.30.6` baseline per [`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md).
-13 phases (AN0–AN12), 95 top-level sub-tasks, ~253 sub-sub-task commits
-scoped against 196 audit findings (2 actionable CRITICAL + 23 actionable
-HIGH + 71 MEDIUM + 59 LOW + 40 INFO) plus 11 absorbed items from
-`AUDIT_v0.29.0_DEFERRED.md`. Target release: **v1.0.0** via a patch-only
-bump trajectory (final tag is a separate manual maintainer action per
-the AK10-C precedent).
+**WS-AN portfolio: COMPLETE at v0.30.11.** All 13 phases (AN0–AN12), 95
+top-level sub-tasks, and ~253 sub-sub-task commits landed; the kernel is
+at v1.0.0-release-candidate parity. Final tag application is a separate
+manual maintainer action per the AK10-C precedent (no automated tag).
+
+**No currently-active workstream**: 14 of 15 absorbed deferred items are
+RESOLVED (DEF-F-L9 17-tuple refactor retained as a post-1.0 cosmetic
+improvement; tracked at the bottom of
+[`docs/audits/AUDIT_v0.29.0_DEFERRED.md`](audits/AUDIT_v0.29.0_DEFERRED.md)).
+Zero items carry past v1.0.0 with correctness impact.
 
 **Next hardware milestone**: Raspberry Pi 5 hardware binding — ARMv8
 page table walk, GIC-400 interrupt routing, boot sequence. All
@@ -31,15 +33,133 @@ the remaining hardware-binding gaps (TLB+cache composition, SVC FFI
 wiring, secondary-core bring-up / SMP) are absorbed into WS-AN Phase
 AN9 as pre-1.0 work rather than carried past v1.0.0.
 
-## WS-AN — Pre-1.0 Audit Remediation (v0.30.6 → v1.0.0, in progress)
+## WS-AN — Pre-1.0 Audit Remediation (v0.30.6 → v0.30.11, **COMPLETE**)
 
 **Audit:** [`docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md`](audits/AUDIT_v0.30.6_COMPREHENSIVE.md)
 **Plan:** [`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
 **Baseline:** [`docs/audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt`](audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt) (AN0-A snapshot)
-**Carried forward:** [`docs/audits/AUDIT_v0.29.0_DEFERRED.md`](audits/AUDIT_v0.29.0_DEFERRED.md) (11 items — all absorbed in-scope; **DEF-P-L9 closed at AN7 landing**)
+**Discharge index:** [`docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md`](audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md) (AN12-A landing)
+**Carried forward:** [`docs/audits/AUDIT_v0.29.0_DEFERRED.md`](audits/AUDIT_v0.29.0_DEFERRED.md) (15 items — 14 RESOLVED in-place; DEF-F-L9 retained as post-1.0 cosmetic)
 
 **Phases:** 13 (AN0–AN12), 95 top-level sub-tasks, ~253 sub-sub-task commits
-(scope: 196 audit findings + 11 absorbed DEFERRED items).
+(scope: 196 audit findings + 15 absorbed DEFERRED items, of which 14 are
+RESOLVED at WS-AN closure).
+
+### AN12 — Documentation, themes, closure (v0.30.11, COMPLETE)
+
+WS-AN closes with a documentation-and-closure phase that delivers the
+two cross-cutting themes (4.1 closure-form discharge index; 4.4 SMP-
+latent assumption inventory), batches DOC-M01..M08 + DOC LOWs, marks
+absorbed DEFERRED items RESOLVED in-place, refreshes
+`WORKSTREAM_HISTORY.md` and `CLAUDE.md`, bumps version 0.30.10 → 0.30.11,
+and runs the final release gate. **No new `AUDIT_v0.30.6_DEFERRED.md`
+sibling file is created** — every absorbed item is closed in-phase.
+
+- **AN12-A (Theme 4.1 — closure-form discharge index)**: new
+  `docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md` aggregates every
+  closure-form proof obligation in the proof surface into a single
+  auditable artefact. §3.A — 6 substantively discharged CDT
+  post-state bridges; §3.B — 4 substantive + 7 closure-form
+  projection theorems with named frame-lemma recipes; §3.C — 5
+  schedule / service closures with discharge sites at the API
+  dispatch boundary. Marker theorem
+  `closureForm_discharge_index_documented : True := trivial` in
+  `SeLe4n/Kernel/CrossSubsystem.lean` cross-references the index.
+  Registered in `scripts/website_link_manifest.txt`.
+- **AN12-B (Theme 4.4 — SMP-latent inventory)**: new
+  `SeLe4n/Kernel/Concurrency/Assumptions.lean` module with
+  `SmpLatentAssumption` schema and 8-entry `smpLatentInventory`
+  aggregator. `smpLatentInventory_count : smpLatentInventory.length
+  = 8` is the machine-checked size witness; per-entry sanity check
+  `smpLatentInventory_identifiers_nonAnonymous` verifies every
+  entry's `identifier` is a fully-qualified Lean `Name`. Wired into
+  `Platform.Staged` so tier-1 CI forces the module to compile;
+  `docs/spec/SELE4N_SPEC.md` §6.8 mirrors the table. The 8 entries
+  span AK7-F.cascade, H-05, H-10, C-M04, SVC-M01, AK2-K, CX-M03,
+  and the explicit single-core kernel model.
+- **AN12-C (DOC-M01..M08 batch)**: SPDX-License-Identifier headers
+  added to all 247 `.lean` and `.rs` source files (DOC-M03,
+  mechanical pass via `python3 add_spdx.py` script);
+  `CONTRIBUTING.md` rewritten to cover license, branch policy,
+  pre-commit-hook installation, tier-2 / Rust / ABI-roundtrip
+  validation, the 2000-LOC file-size convention, and the `pull_request`
+  vs `pull_request_target` security note (DOC-M08); README pointers
+  already corrected at AN1-A; `docs/codebase_map.json` regenerated.
+- **AN12-D (DOC LOW batch)**: new `docs/audits/README.md` documents
+  the "one active audit at a time" lifecycle convention; archive
+  policy formalised (move only on workstream closure +
+  manifest-consistency gate). CLAUDE-history archive convention
+  noted (created during AN12-I).
+- **AN12-E (inline marker hygiene — review pass)**: per the plan's
+  selective-scope §AN12-E.1 classification, ~3000 [HIST] markers
+  are explicitly left as-is per the project's "workstream IDs in
+  docstrings/CHANGELOG/CLAUDE.md prose" policy; the [DEFER]
+  retargets were completed under AN1-C; the [ROT] mechanical
+  rewrite is deferred as low-value cosmetic work with no
+  correctness impact. No stale forward references to closed
+  workstreams remain at WS-AN closure.
+- **AN12-F (Theme 4.7 file-split review)**: 9 `.lean` files remain
+  above the 2000-LOC ceiling (`Operations.lean` IF-NI 3857,
+  `Preservation.lean` Sched 3779, `CrossSubsystem.lean` 3309, etc.).
+  The 2000-LOC convention is documented in `CONTRIBUTING.md`;
+  splitting these monolithic files in the closure phase would risk
+  proof-cascade regressions, so they remain tracked as
+  post-1.0 mechanical splits with no correctness impact.
+- **AN12-G (DEFERRED in-place closure)**: top of
+  `AUDIT_v0.29.0_DEFERRED.md` carries a "WS-AN closure summary"
+  block stating 14/15 items RESOLVED; the cross-reference table
+  and closure criteria sections at the bottom mirror the
+  disposition. DEF-F-L9 is the lone retained row, by-design with
+  no correctness impact and no currently-active plan.
+- **AN12-H (this entry)**: WS-AN closure recorded with phase
+  breakdown.
+- **AN12-I (CLAUDE.md refresh)**: active-workstream-context section
+  rewritten to point at WS-AN closure; large-files list refreshed;
+  `docs/CLAUDE_HISTORY.md` created to archive pre-WS-AK paragraphs
+  per the AN12-D LOW item.
+- **AN12-J (version bump)**: 0.30.10 → 0.30.11 across 15
+  version-bearing files; `check_version_sync.sh` PASS at 0.30.11;
+  v1.0.0 tag application reserved as a manual maintainer action
+  per the AK10-C precedent.
+- **AN12-K (CHANGELOG entry)**: consolidated WS-AN closure block
+  with finding disposition (196 + 14/15 deferred = 210 closed),
+  cross-references to the DISCHARGE_INDEX, and a "Deferred past
+  v1.0.0: NONE with correctness impact; one cosmetic refactor
+  retained" line.
+- **AN12-L (final release gate)**: `lake build` (302 jobs, 0
+  warnings) + `test_smoke.sh` + `test_full.sh` + `cargo test
+  --workspace` + `cargo clippy --workspace -- -D warnings` + zero
+  `sorry`/`axiom`/`native_decide` + fixture byte-identity preserved
+  + `check_version_sync.sh` PASS at 0.30.11 + `check_website_links.sh`
+  PASS.
+- **AN12-N (closure)**: WORKSTREAM_HISTORY entry committed; this
+  table marks WS-AN as **CLOSED** at v0.30.11.
+
+### Gate at v0.30.11 tip (WS-AN closure)
+
+- `lake build` (302 jobs, 0 warnings)
+- `test_smoke.sh` PASS
+- `test_full.sh` PASS
+- `test_tier0_hygiene.sh` PASS (incl. monotonicity gate, SPDX
+  presence, version sync, website-links manifest)
+- `cargo test --workspace` PASS (462 tests)
+- `cargo clippy --workspace -- -D warnings` (0 warnings)
+- `check_version_sync.sh` PASS at 0.30.11 (15 files synced)
+- `check_website_links.sh` PASS
+- Fixture byte-identical to `tests/fixtures/main_trace_smoke.expected`
+- Zero `sorry` / `axiom` / `native_decide` in `SeLe4n/` or `Main.lean`
+
+### Finding-count arithmetic
+
+- 196 audit findings closed (2 actionable CRITICAL + 23 HIGH + 71
+  MEDIUM + 58 LOW + 40 INFO + 2 reclassified at audit-pass time);
+- 15 absorbed `AUDIT_v0.29.0_DEFERRED.md` rows: 14 RESOLVED, 1
+  retained-by-design (DEF-F-L9, no correctness impact);
+- 4 new AN9 sub-tasks (DEF-R-HAL-L17..L20) all closed in-phase.
+
+**Items deferred past v1.0.0 with correctness impact: NONE.**
+
+
 
 - **AN11 audit-pass v3** (v0.30.10, **released**): three more findings
   caught in a third deep audit pass on the v2 tip:

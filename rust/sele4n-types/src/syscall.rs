@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Syscall identifier enumeration — 1:1 mapping from `SeLe4n.Model.SyscallId`.
 //!
 //! Lean source: `SeLe4n/Model/Object/Types.lean` lines 601–710.

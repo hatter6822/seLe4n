@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! System register accessor macros and wrappers for ARMv8-A.
 //!
 //! Provides type-safe read/write access to AArch64 system registers via

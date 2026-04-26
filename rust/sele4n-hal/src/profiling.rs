@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Performance measurement infrastructure for AG9-C (WCRT) and AG9-D (RunQueue).
 //!
 //! Provides cycle-accurate measurement primitives using the ARM Performance

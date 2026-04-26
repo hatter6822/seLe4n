@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Memory barrier and speculation barrier instruction wrappers for ARMv8-A.
 //!
 //! ARM ARM B2.3: Barrier instructions enforce ordering of memory accesses and

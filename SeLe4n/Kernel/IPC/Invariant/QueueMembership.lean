@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
 import SeLe4n.Kernel.IPC.Invariant.Defs
 import SeLe4n.Kernel.IPC.DualQueue.Transport
 

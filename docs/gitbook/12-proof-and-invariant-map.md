@@ -2915,3 +2915,85 @@ unreachable-branch proof; `allTablesInvExtK` 17-tuple → structure
 refactor (~80 sites).
 
 Zero sorry/axiom/native_decide in production surface throughout.
+
+### 12.21 Closure-form discharge index — Theme 4.1 (WS-AN Phase AN12-A)
+
+Phase AN12-A lands the canonical index of every closure-form proof
+obligation in the proof surface. The artefact is
+[`docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md`](../audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md);
+the marker theorem `closureForm_discharge_index_documented : True := trivial`
+in `SeLe4n/Kernel/CrossSubsystem.lean` cross-references it.
+
+The index has three sub-themes:
+
+- **§3.A — CDT post-state discharge (6 substantive bridges).**
+  `cspaceCopy`, `cspaceMove`, `cspaceMintWithCdt`, `cspaceMutate`,
+  `cspaceDeleteSlot`, `cspaceRevoke` each have a one-line companion
+  theorem `*_cdt_hypothesis_discharged_at` in `CrossSubsystem.lean`
+  proving `(cdtCompleteness, cdtAcyclicity)` from
+  `capabilityInvariantBundle`. The companions are the substantive
+  closure for `hCdtPost` (and analogous bundle-transfer-style
+  obligations).
+- **§3.B — Projection closures (4 substantive + 7 closure-form).**
+  Every cap-only NI dispatch arm has a named per-op
+  `_preserves_projection` theorem. The 5 substantive arms
+  (`cspaceDelete`, `serviceQuery`, `tcbSetIPCBuffer`, `vspaceMap`,
+  `vspaceUnmap`) need only observability hypotheses. The 3 hybrid
+  arms (`tcbSetPriority`, `tcbSetMCPriority`, `serviceRevoke`) take
+  ONE legit external closure (§3.C). The 6 closure-form arms
+  (`schedContextConfigure`, `schedContextBind`,
+  `schedContextUnbind`, `lifecycleRetypeDirectWithCleanup`,
+  `tcbSuspend`, `tcbResume`) carry named frame-lemma recipes in
+  the index — typical discharge ≈25–60 LOC per arm.
+- **§3.C — Schedule / Service closures (5 named recipes).**
+  `setPriorityOp` / `setMCPriorityOp` (`hSchedProj`),
+  `schedContextBind` / `schedContextConfigure` schedule arms
+  (covered inside §3.B's `hProjEq`), and `revokeService`
+  (`hServiceProjEq` for RHTable fold-induction at projection
+  layer).
+
+No closure-form obligation is orphaned at v0.30.11 — every
+`hCdtPost` / `hProjEq` / `hSchedProj` / `hServiceProjEq` parameter
+in the proof surface has either a substantive bridge (§3.A) or a
+documented frame-lemma recipe (§3.B / §3.C).
+
+### 12.22 SMP-latent assumption inventory — Theme 4.4 (WS-AN Phase AN12-B)
+
+Phase AN12-B lands the post-AN9-J SMP-implementation confirmation
+inventory at `SeLe4n/Kernel/Concurrency/Assumptions.lean`. Every
+entry records a kernel site that depended on a single-core ordering
+invariant before AN9-J's secondary-core bring-up landed and is now
+SMP-implemented with runtime gating (`SMP_ENABLED = false` at
+v1.0.0). Each `SmpLatentAssumption` carries five fields:
+`identifier`, `singleCoreWitness`, `smpDischarge`, `sourceTheorem`,
+`auditReference`. The aggregator `smpLatentInventory` lists 8
+entries; `smpLatentInventory_count : smpLatentInventory.length = 8`
+is the machine-checked size witness;
+`smpLatentInventory_identifiers_nonAnonymous` verifies every entry's
+`identifier` is a fully-qualified Lean `Name`.
+
+The 8 entries span:
+
+1. `cspaceLookupMultiLevel_smpLatent` — H-05 / AN4-D resolved-CNode
+   validity across the multi-level walk.
+2. `cspaceCopyMoveMutate_smpLatent` — AK7-F.cascade CDT post-state
+   composition assumption.
+3. `lifecyclePreRetypeCleanup_smpLatent` — C-M04 / AN9-D sequential
+   cleanup ordering.
+4. `serviceHasPathTo_smpLatent` — SVC-M01 graph traversal stable
+   snapshot.
+5. `timerTickReplenishmentPipeline_smpLatent` — AK2-K replenishment
+   pipeline atomicity.
+6. `typedIdDisjointness_smpLatent` — H-10 / AN2-D.
+7. `architecture_singleCoreOnly_smpLatent` — explicit single-core
+   kernel model in `Architecture/Assumptions.lean`.
+8. `bootFromPlatform_currentCore_is_zero_smpLatent` — CX-M03 / AN6-F.
+
+The module is wired into `SeLe4n.Platform.Staged` so tier-1 CI forces
+it to compile. `docs/spec/SELE4N_SPEC.md` §6.8 mirrors the table in
+prose. SMP activation (flipping `SMP_ENABLED = true`) does not
+require any new entries — each entry's `smpDischarge` field already
+documents the runtime invariant that AN9-J's bring-up code preserves
+on a per-core basis.
+
+Zero sorry/axiom/native_decide in production surface throughout.

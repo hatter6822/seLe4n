@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Lifecycle operations — retype with type tag validation.
 //!
 //! Lean: `SeLe4n/Kernel/API.lean` — `apiLifecycleRetype`.

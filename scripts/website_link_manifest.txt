@@ -100,6 +100,7 @@ docs/VSPACE_MEMORY_MODEL_ADR.md
 # ── Audit artefacts (referenced from README "Latest audit" row) ──────
 docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md
 docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md
+docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md
 
 # ── Scripts ──────────────────────────────────────────────────────────
 scripts/setup_lean_env.sh
@@ -130,6 +131,7 @@ SeLe4n/Kernel/Lifecycle/
 SeLe4n/Kernel/Service/
 SeLe4n/Kernel/SchedContext/
 SeLe4n/Kernel/Architecture/
+SeLe4n/Kernel/Concurrency/
 SeLe4n/Model/
 SeLe4n/Testing/
 SeLe4n/Platform/

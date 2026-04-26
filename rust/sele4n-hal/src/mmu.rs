@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! MMU configuration for ARMv8-A on Raspberry Pi 5.
 //!
 //! Sets up MAIR_EL1, TCR_EL1, identity-mapped boot page tables, and enables

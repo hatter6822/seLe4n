@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Safe high-level syscall wrappers for the seLe4n verified microkernel.
 //!
 //! This crate provides ergonomic, fully safe wrappers around all 25 seLe4n

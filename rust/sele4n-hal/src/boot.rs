@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Boot sequence for the seLe4n microkernel on Raspberry Pi 5.
 //!
 //! Entry flow: ATF → U-Boot → `_start` (boot.S) → `rust_boot_main` (this file).
@@ -8,7 +9,7 @@
 //! Phase 4: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.30.10";
+const KERNEL_VERSION: &str = "0.30.11";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.

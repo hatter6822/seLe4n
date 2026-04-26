@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Page permissions bitmask for VSpace operations.
 //!
 //! Enforces W^X: write + execute cannot be simultaneously set.

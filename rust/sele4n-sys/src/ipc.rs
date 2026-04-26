@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! IPC operations — 7 syscall wrappers plus 1 checked variant.
 //!
 //! - `endpoint_send` / `endpoint_receive` / `endpoint_call` / `endpoint_reply`

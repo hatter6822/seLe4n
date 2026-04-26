@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! CSpace operations — capability mint, copy, move, delete.
 //!
 //! Lean: `SeLe4n/Kernel/API.lean` — `apiCspaceMint`, `apiCspaceCopy`,

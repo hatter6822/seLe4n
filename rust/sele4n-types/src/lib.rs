@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Core types for the seLe4n verified microkernel.
 //!
 //! This crate provides the foundational type definitions that mirror the Lean 4

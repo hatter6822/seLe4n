@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! AN9-J (DEF-R-HAL-L20): Secondary-core bring-up scaffolding.
 //!
 //! At v1.0.0 the kernel boots single-core by default — the runtime

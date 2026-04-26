@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
 import SeLe4n.Kernel.Architecture.Invariant
 import SeLe4n.Platform.RPi5.RuntimeContract
 

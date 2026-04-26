@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Type tag for retype operations.
 //!
 //! Lean: `SeLe4n/Model/Object/Structures.lean:1391` (`KernelObjectType`)

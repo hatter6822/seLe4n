@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! AN9-J.1 (DEF-R-HAL-L20): PSCI (Power State Coordination Interface) wrapper.
 //!
 //! Implements the small PSCI ARM DEN0022 subset the seLe4n boot path

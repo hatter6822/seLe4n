@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Register-by-register ABI conformance tests.
 //!
 //! RUST-XVAL-001 through RUST-XVAL-019: Validates that Rust encoding matches
