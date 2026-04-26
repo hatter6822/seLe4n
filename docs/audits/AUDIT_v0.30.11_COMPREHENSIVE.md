@@ -75,7 +75,7 @@ fix before tag), **M** medium (post-1.0 maintainability), **L** low
 | ID | Severity | Area | Summary |
 |---|---|---|---|
 | DEBT-ST-01 | M | Model/State+Builder | 17-conjunct tuple-projection chain in `allTablesInvExtK` plus the named-accessor workaround in Builder.lean. Acknowledged debt (AF5-F). |
-| DEBT-CAP-01 | M | Capability/Operations | Shared frame-helper extraction across cspaceInsertSlot preservation patterns (lines 503–641). |
+| DEBT-CAP-01 | M | Capability/Operations | Shared frame-helper extraction across the cspaceInsertSlot preservation block (theorems start at line 471 — `_preserves_scheduler`, `_preserves_services` 501, `_preserves_objects_ne` 529, etc.). |
 | DEBT-CAP-02 | L | Capability/Invariant/Preservation/* | Tactic-extraction for the Insert/Delete/Revoke proof scaffold (case-split → unfold → storeObject thread-through). |
 | DEBT-SCH-01 | M | Scheduler/Operations/Preservation | 3779-LoC file is cohesive but ripe for per-invariant split (5–6 files). |
 | DEBT-SCH-02 | M | Scheduler/Liveness/WCRT | Discharge `hDomainActiveRunnable` and `hBandProgress` from kernel invariants. |
@@ -145,8 +145,9 @@ totalling ~7800 LoC.
 - **Proof debt**: 0 sorry/axiom/Classical/unjustified-unsafe. Single
   `decide` at `QueueNoDup.lean:450` (boolean decision, justified).
 - **Critical invariants verified.**
-  - Dual-queue head disjointness: `endpointQueueNoDup` (Defs.lean
-    931–932); preservation requires the disjointness precondition
+  - Dual-queue head disjointness: `endpointQueueNoDup` defined at
+    `Invariant/Defs.lean:924` and bundled into the system invariant
+    at line 1289; preservation requires the disjointness precondition
     explicitly (`QueueNoDup.lean:102`).
   - Capability transfer authority: `ipcUnwrapCaps` is gated on
     `endpointGrantRight` (CapTransfer.lean:161); callers extract via
@@ -176,13 +177,19 @@ totalling ~7800 LoC.
   surfaces the seL4-divergence U-M25 contract: intermediate-level
   CSpace traversal does **not** check rights, callers must use
   `capHasRight` guards at the operation layer. Documented and intended.
-- Badge derivation (lines 718–756) is one-way; `mintDerivedCap`
-  enforces rights attenuation via `rightsSubset`. Null-cap guard at
-  lines 736–756 explicit and unconditional.
-- **DEBT-CAP-01**: cross-subsystem frame-lemma copy-paste across lines
-  503–641 (`cspaceInsertSlot` preserves scheduler / services /
-  objects_ne / objects_invExt / machine / irqHandlers). Refactor
-  candidate.
+- Badge derivation is one-way: `mintDerivedCap`
+  (`Capability/Operations.lean:748`) enforces rights attenuation via
+  `rightsSubset`. The AN4-E null-cap guard inside `mintDerivedCap`
+  (lines 749–757) is explicit and unconditional;
+  `mintDerivedCap_preserves_non_null` (line 762) discharges the
+  obligation that downstream callers do not need to re-check the
+  mint result against the null sentinel.
+- **DEBT-CAP-01**: cross-subsystem frame-lemma copy-paste across the
+  `cspaceInsertSlot` preservation block (theorems start at line 471
+  with `cspaceInsertSlot_preserves_scheduler` and continue through
+  `_preserves_services` (501), `_preserves_objects_ne` (529), and
+  the matching `_invExt` / `_machine` / `_irqHandlers` theorems).
+  Refactor candidate (shared frame helper or tactic).
 
 **Capability — Invariant{/Defs,/Authority,/Preservation/*}**
 
@@ -383,8 +390,9 @@ sequential model is trivially safe.
   the sorted invariant. Cached size invariant maintained on every
   mutation.
 - `PriorityManagement.lean` (362) — **MCP authority** enforces both
-  hardware ceiling (`maxHardwarePriority := 255`, line 75; AK8-D /
-  C-M05) and `targetPriority ≤ callerTcb.maxControlledPriority`.
+  the hardware ceiling (`maxHardwarePriority := 255` at line 81;
+  AK8-D / C-M05) and `targetPriority ≤ callerTcb.maxControlledPriority`
+  (`validatePriorityAuthority` at line 99).
   `setMCPriorityOp` (327) rejects `newMCP > caller MCP` (336) and
   caps the target's priority (344–350) if it exceeds the new MCP.
   **No escalation path.** Soundness witness
