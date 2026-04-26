@@ -81,23 +81,34 @@ def endpointCallWithDonation
     -- AJ1-C (M-02): `endpointQueuePopHead_returns_head` proves the pre-inspected
     -- receiver matches the thread actually dequeued by endpointCall, ensuring
     -- donation targets the correct thread.
-    let maybeReceiver := match st.objects[endpointId]? with
-      | some (.endpoint ep) => ep.receiveQ.head
-      | _ => none
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+    let maybeReceiver := match st.getEndpoint? endpointId with
+      | some ep => ep.receiveQ.head
+      | none    => none
     match endpointCall endpointId caller msg st with
     | .error e => .error e
     | .ok ((), st') =>
       match maybeReceiver with
       | some receiverTid =>
-        -- Handshake path: a receiver was woken — apply donation
-        -- AH2-C: Propagate donation errors
-        match applyCallDonation st' caller receiverTid with
-        | .error e => .error e
-        | .ok st'' =>
-          -- D4-L: Apply PIP — propagate priority inheritance from the server
-          -- upward through the blocking chain. The server may itself be blocked
-          -- on another server, requiring transitive propagation.
-          .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
+        -- Handshake path: a receiver was woken — apply donation.
+        -- AH2-C: Propagate donation errors.
+        -- AN10-residual-1 deep-audit: `applyCallDonation` now requires
+        -- `ValidThreadId` for both caller and receiver.  Promote the raw
+        -- tids via `toValid?` with `.error .invalidArgument` rejection;
+        -- under the AL7 dispatch-gate validators on `caller` and the
+        -- `endpointQueuePopHead_returns_head`-witnessed `receiverTid`
+        -- (which came from a previously-stored TCB), the rejection
+        -- arm is structurally unreachable.
+        match SeLe4n.ThreadId.toValid? caller, SeLe4n.ThreadId.toValid? receiverTid with
+        | some callerVtid, some receiverVtid =>
+          match applyCallDonation st' callerVtid receiverVtid with
+          | .error e => .error e
+          | .ok st'' =>
+            -- D4-L: Apply PIP — propagate priority inheritance from the server
+            -- upward through the blocking chain. The server may itself be blocked
+            -- on another server, requiring transitive propagation.
+            .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
+        | _, _ => .error .invalidArgument
       | none =>
         -- Blocking path: no receiver was available, caller blocked
         .ok ((), st')
@@ -112,14 +123,20 @@ def endpointReplyWithDonation
     | .error e => .error e
     | .ok ((), st') =>
       -- Apply donation return: if replier has donated SC, return it
-      -- AH2-C: Propagate donation return errors
-      match applyReplyDonation st' replier with
-      | .error e => .error e
-      | .ok st'' =>
-        -- D4-M: Revert PIP — the client (target) is unblocked, so the replier's
-        -- pipBoost must be recomputed from remaining waiters. Propagate reversion
-        -- upward through the chain.
-        .ok ((), PriorityInheritance.revertPriorityInheritance st'' replier)
+      -- AH2-C: Propagate donation return errors.
+      -- AN10-residual-1 deep-audit: `applyReplyDonation` now requires
+      -- `ValidThreadId`.  Promote `replier` via `toValid?` with
+      -- `.error .invalidArgument` rejection (unreachable under AL7).
+      match SeLe4n.ThreadId.toValid? replier with
+      | some replierVtid =>
+        match applyReplyDonation st' replierVtid with
+        | .error e => .error e
+        | .ok st'' =>
+          -- D4-M: Revert PIP — the client (target) is unblocked, so the replier's
+          -- pipBoost must be recomputed from remaining waiters. Propagate reversion
+          -- upward through the chain.
+          .ok ((), PriorityInheritance.revertPriorityInheritance st'' replier)
+      | none => .error .invalidArgument
 
 /-- Z7: Donation-aware endpointReplyRecv. Composes:
 1. Standard endpointReplyRecv (reply + receive) — server still holds donated SC during reply
@@ -140,38 +157,47 @@ def endpointReplyRecvWithDonation
     | .error e => .error e
     | .ok ((), st') =>
       -- Z7-D1: Return old donation AFTER reply+receive completes
-      -- AH2-C: Propagate donation return errors
-      match applyReplyDonation st' receiver with
-      | .error e => .error e
-      | .ok st'' =>
-        -- D4-M: Revert PIP for the reply portion
-        .ok ((), PriorityInheritance.revertPriorityInheritance st'' receiver)
+      -- AH2-C: Propagate donation return errors.
+      -- AN10-residual-1 deep-audit: `applyReplyDonation` now requires
+      -- `ValidThreadId`.  Promote `receiver` via `toValid?` with
+      -- `.error .invalidArgument` rejection (unreachable under AL7).
+      match SeLe4n.ThreadId.toValid? receiver with
+      | some receiverVtid =>
+        match applyReplyDonation st' receiverVtid with
+        | .error e => .error e
+        | .ok st'' =>
+          -- D4-M: Revert PIP for the reply portion
+          .ok ((), PriorityInheritance.revertPriorityInheritance st'' receiver)
+      | none => .error .invalidArgument
 
 -- ============================================================================
 -- AJ1-D (M-01): Decomposition lemmas for donation-aware wrappers
 -- ============================================================================
 
 /-- AJ1-D (M-01): `endpointReplyWithDonation` decomposes into the three-step
-sequence: `endpointReply` → `applyReplyDonation` → `revertPriorityInheritance`.
-This is a definitional unfolding — the wrapper is syntactic sugar for the
-three-step pipeline. The `dispatchWithCapChecked` `.reply` arm manually inlines
-this same three-step sequence (via `endpointReplyChecked` + inline donation +
-inline PIP revert), making the two paths structurally identical when the
-information flow check passes. -/
+sequence: `endpointReply` → `applyReplyDonation` → `revertPriorityInheritance`,
+gated by a `replier.toValid?` shim that AN10-residual-1 deep-audit added to
+satisfy the `applyReplyDonation` typed signature.  The `none` arm is
+structurally unreachable under the AL7 dispatch-gate validators on
+`replier`. -/
 theorem endpointReplyWithDonation_unfold
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (st : SystemState) :
     endpointReplyWithDonation replier target msg st =
     (match endpointReply replier target msg st with
      | .error e => .error e
      | .ok ((), st') =>
-       match applyReplyDonation st' replier with
-       | .error e => .error e
-       | .ok st'' =>
-         .ok ((), PriorityInheritance.revertPriorityInheritance st'' replier)) := by
+       match SeLe4n.ThreadId.toValid? replier with
+       | some replierVtid =>
+         match applyReplyDonation st' replierVtid with
+         | .error e => .error e
+         | .ok st'' =>
+           .ok ((), PriorityInheritance.revertPriorityInheritance st'' replier)
+       | none => .error .invalidArgument) := by
   rfl
 
 /-- AJ1-D (M-01): `endpointReplyRecvWithDonation` decomposes into:
-`endpointReplyRecv` → `applyReplyDonation` → `revertPriorityInheritance`. -/
+`endpointReplyRecv` → `applyReplyDonation` → `revertPriorityInheritance`,
+gated by a `receiver.toValid?` shim. -/
 theorem endpointReplyRecvWithDonation_unfold
     (endpointId : SeLe4n.ObjId) (receiver replyTarget : SeLe4n.ThreadId)
     (msg : IpcMessage) (st : SystemState) :
@@ -179,10 +205,13 @@ theorem endpointReplyRecvWithDonation_unfold
     (match endpointReplyRecv endpointId receiver replyTarget msg st with
      | .error e => .error e
      | .ok ((), st') =>
-       match applyReplyDonation st' receiver with
-       | .error e => .error e
-       | .ok st'' =>
-         .ok ((), PriorityInheritance.revertPriorityInheritance st'' receiver)) := by
+       match SeLe4n.ThreadId.toValid? receiver with
+       | some receiverVtid =>
+         match applyReplyDonation st' receiverVtid with
+         | .error e => .error e
+         | .ok st'' =>
+           .ok ((), PriorityInheritance.revertPriorityInheritance st'' receiver)
+       | none => .error .invalidArgument) := by
   rfl
 
 end SeLe4n.Kernel

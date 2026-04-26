@@ -829,9 +829,10 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         -- Z7: Determine receiver before call pops it from receiveQ
-        let maybeReceiver := match st.objects[epId]? with
-          | some (.endpoint ep) => ep.receiveQ.head
-          | _ => none
+        -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+        let maybeReceiver := match st.getEndpoint? epId with
+          | some ep => ep.receiveQ.head
+          | none    => none
         match endpointCallWithCaps epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot st with
         | .error e => .error e
@@ -840,11 +841,18 @@ private def dispatchWithCap (decoded : SyscallDecodeResult) (tid : SeLe4n.Thread
           -- D4-L: Propagate PIP upward from the server after Call blocks the caller
           match maybeReceiver with
           | some receiverTid =>
-            -- AH2-C: Propagate donation errors
-            match applyCallDonation st' tid receiverTid with
-            | .error e => .error e
-            | .ok st'' =>
-              .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
+            -- AH2-C: Propagate donation errors.
+            -- AN10-residual-1 deep-audit: `applyCallDonation` requires
+            -- `ValidThreadId` for both args. Promote via `toValid?`;
+            -- under the AL7 dispatch-gate validators, the rejection arm
+            -- is structurally unreachable.
+            match SeLe4n.ThreadId.toValid? tid, SeLe4n.ThreadId.toValid? receiverTid with
+            | some tidVtid, some receiverVtid =>
+              match applyCallDonation st' tidVtid receiverVtid with
+              | .error e => .error e
+              | .ok st'' =>
+                .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
+            | _, _ => .error .invalidArgument
           | none => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
   -- WS-K-E: IPC reply — message body populated from decoded message registers.
@@ -1035,9 +1043,10 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         -- Z7: Determine receiver before call pops it from receiveQ
-        let maybeReceiver := match st.objects[epId]? with
-          | some (.endpoint ep) => ep.receiveQ.head
-          | _ => none
+        -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+        let maybeReceiver := match st.getEndpoint? epId with
+          | some ep => ep.receiveQ.head
+          | none    => none
         match endpointCallChecked ctx epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot st with
         | .error e => .error e
@@ -1046,11 +1055,15 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
           -- D4-L: Propagate PIP upward from the server after Call blocks the caller
           match maybeReceiver with
           | some receiverTid =>
-            -- AH2-C: Propagate donation errors
-            match applyCallDonation st' tid receiverTid with
-            | .error e => .error e
-            | .ok st'' =>
-              .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
+            -- AH2-C: Propagate donation errors.
+            -- AN10-residual-1 deep-audit: applyCallDonation requires ValidThreadId.
+            match SeLe4n.ThreadId.toValid? tid, SeLe4n.ThreadId.toValid? receiverTid with
+            | some tidVtid, some receiverVtid =>
+              match applyCallDonation st' tidVtid receiverVtid with
+              | .error e => .error e
+              | .ok st'' =>
+                .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
+            | _, _ => .error .invalidArgument
           | none => .ok ((), st')
     | _ => fun _ => .error .invalidCapability
   -- U5-C/U-M04: Reply — routed through enforcement wrapper for defense-in-depth.
@@ -1068,11 +1081,15 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
         match endpointReplyChecked ctx tid targetTid { registers := body, caps := #[], badge := cap.badge } st with
         | .error e => .error e
         | .ok ((), st') =>
-          -- AH2-C: Propagate donation return errors
-          match applyReplyDonation st' tid with
-          | .error e => .error e
-          | .ok st'' =>
-            .ok ((), PriorityInheritance.revertPriorityInheritance st'' tid)
+          -- AH2-C: Propagate donation return errors.
+          -- AN10-residual-1 deep-audit: applyReplyDonation requires ValidThreadId.
+          match SeLe4n.ThreadId.toValid? tid with
+          | some tidVtid =>
+            match applyReplyDonation st' tidVtid with
+            | .error e => .error e
+            | .ok st'' =>
+              .ok ((), PriorityInheritance.revertPriorityInheritance st'' tid)
+          | none => .error .invalidArgument
     | _ => fun _ => .error .invalidCapability
   -- T6-I: CSpace mint — checked for source→destination CNode flow
   -- U5-H/U-M03: Badge value 0 is treated as "no badge" by design, matching seL4
@@ -1170,11 +1187,15 @@ private def dispatchWithCapChecked (ctx : LabelingContext)
           match endpointReplyRecvChecked ctx epId tid args.replyTarget msg st with
           | .error e => .error e
           | .ok ((), st') =>
-            -- AH2-C: Propagate donation return errors
-            match applyReplyDonation st' tid with
-            | .error e => .error e
-            | .ok st'' =>
-              .ok ((), PriorityInheritance.revertPriorityInheritance st'' tid)
+            -- AH2-C: Propagate donation return errors.
+            -- AN10-residual-1 deep-audit: applyReplyDonation requires ValidThreadId.
+            match SeLe4n.ThreadId.toValid? tid with
+            | some tidVtid =>
+              match applyReplyDonation st' tidVtid with
+              | .error e => .error e
+              | .ok st'' =>
+                .ok ((), PriorityInheritance.revertPriorityInheritance st'' tid)
+            | none => .error .invalidArgument
     | _ => fun _ => .error .invalidCapability
   -- AE1-A/AE1-B/AE1-C: All remaining capability-only arms (tcbSetPriority,
   -- tcbSetMCPriority, tcbSetIPCBuffer, cspaceDelete, lifecycleRetype, vspaceMap,
@@ -1487,9 +1508,16 @@ theorem checkedDispatch_replyRecv_eq_unchecked_when_allowed
   | ok p =>
     obtain ⟨⟨⟩, s⟩ := p
     simp only []
-    cases applyReplyDonation s tid with
-    | error => rfl
-    | ok => rfl
+    -- AN10-residual-1 deep-audit: both checked and unchecked dispatch paths
+    -- now route applyReplyDonation through the same `toValid? tid` shim
+    -- (added at the typed-wrapper signatures).  Match the case-split.
+    cases SeLe4n.ThreadId.toValid? tid with
+    | none => rfl
+    | some tidVtid =>
+      simp only []
+      cases applyReplyDonation s tidVtid with
+      | error => rfl
+      | ok => rfl
 
 -- ============================================================================
 -- W2-C (MED-04): dispatchWithCap wildcard arm unreachability
@@ -1888,20 +1916,25 @@ theorem dispatchWithCap_call_uses_withCaps
         let resolvedCaps := resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth st
         let msg : IpcMessage := { registers := body, caps := resolvedCaps, badge := cap.badge }
         -- Z7: Donation post-processing after call with caps
-        let maybeReceiver := match st.objects[epId]? with
-          | some (.endpoint ep) => ep.receiveQ.head
-          | _ => none
+        -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+        let maybeReceiver := match st.getEndpoint? epId with
+          | some ep => ep.receiveQ.head
+          | none    => none
         match endpointCallWithCaps epId tid msg cap.rights gate.cspaceRoot
             decoded.capRecvSlot st with
         | .error e => .error e
         | .ok (_, st') =>
           match maybeReceiver with
           | some receiverTid =>
-            -- AH2-C: Propagate donation errors
-            match applyCallDonation st' tid receiverTid with
-            | .error e => .error e
-            | .ok st'' =>
-              .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
+            -- AH2-C: Propagate donation errors.
+            -- AN10-residual-1 deep-audit: applyCallDonation requires ValidThreadId.
+            match SeLe4n.ThreadId.toValid? tid, SeLe4n.ThreadId.toValid? receiverTid with
+            | some tidVtid, some receiverVtid =>
+              match applyCallDonation st' tidVtid receiverVtid with
+              | .error e => .error e
+              | .ok st'' =>
+                .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
+            | _, _ => .error .invalidArgument
           | none => .ok ((), st') := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget]
 

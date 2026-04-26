@@ -237,15 +237,17 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
     (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     capabilityInvariantBundle st' := by
+  -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`.
   simp only [ipcTransferSingleCap] at hStep
-  cases hObj : st.objects[receiverRoot]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-    cases obj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
-    | cnode cn =>
-      simp [hObj] at hStep
-      cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+  cases hCn : st.getCNode? receiverRoot with
+  | none => simp [hCn] at hStep
+  | some cn =>
+    -- Bridge to raw lookup form so `hSlotCapacity` (stated against raw
+    -- lookup) can be discharged from the typed-helper hypothesis.
+    have hObj : st.objects[receiverRoot]? = some (.cnode cn) :=
+      (SystemState.getCNode?_eq_some_iff st receiverRoot cn).mp hCn
+    simp [hCn] at hStep
+    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
       | none =>
         simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
       | some emptySlot =>

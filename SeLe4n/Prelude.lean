@@ -1655,6 +1655,17 @@ namespace ThreadId
 @[inline] def toValid? (t : ThreadId) : Option ValidThreadId :=
   if h : t = sentinel then none else some ⟨t, h⟩
 
+/-- AN10-residual-1: when `toValid?` produces `some vt`, the underlying
+`ThreadId` round-trips. Used by callers that bridge `ValidThreadId`-typed
+wrappers back to their raw form for proof composition. -/
+theorem toValid?_some_val_eq (t : ThreadId) (vt : ValidThreadId)
+    (h : t.toValid? = some vt) : vt.val = t := by
+  unfold toValid? at h
+  split at h
+  · exact absurd h (by simp)
+  · injection h with hEq
+    rw [← hEq]
+
 /-- AK7-E.2 (F-M03): `toValid?` succeeds iff `t` is not reserved. -/
 theorem toValid?_isSome_iff (t : ThreadId) :
     t.toValid?.isSome = true ↔ t.isReserved = false := by

@@ -316,21 +316,14 @@ theorem ensureRunnable_preserves_projection
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (hTidHigh : threadObservable ctx observer tid = false) :
     projectState ctx observer (ensureRunnable st tid) = projectState ctx observer st := by
+  -- AN10-B: post-migration `ensureRunnable` reads via `getTcb?`.
   unfold ensureRunnable
   split
   · rfl
   · rename_i hNotMem
-    cases hObjTcb : st.objects[tid.toObjId]? with
+    cases hTcb : st.getTcb? tid with
     | none => rfl
-    | some obj =>
-      cases obj with
-      | endpoint ep => rfl
-      | notification ntfn => rfl
-      | cnode cn => rfl
-      | vspaceRoot root => rfl
-      | untyped _ => rfl
-      | schedContext _ => rfl
-      | tcb tcb =>
+    | some tcb =>
           show projectState ctx observer
               { st with scheduler := { st.scheduler with
                   runQueue := st.scheduler.runQueue.insert tid (ipcEffectiveRunQueuePriority tcb) } } =

@@ -46,14 +46,15 @@ open SeLe4n.Kernel
 /-- Helper: update a TCB's ipcState and queue links to ready/detached.
     Only modifies `objects` field of the state. -/
 private def clearTcbIpcFields (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb tcb') =>
+  -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+  match st.getTcb? tid with
+  | some tcb' =>
     { st with objects := st.objects.insert tid.toObjId (.tcb { tcb' with
         ipcState := .ready
         queuePrev := none
         queueNext := none
         queuePPrev := none }) }
-  | _ => st
+  | none => st
 
 /-- Helper: clearTcbIpcFields preserves the scheduler. -/
 theorem clearTcbIpcFields_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -96,11 +97,12 @@ def cancelDonation (st : SystemState) (tid : SeLe4n.ThreadId)
   | .unbound => .ok st
   | .bound scId =>
     -- Unbind: clear the SchedContext's boundThread and deactivate (AE3-B/U-15)
-    let st1 : SystemState := match st.objects[scId.toObjId]? with
-      | some (.schedContext sc) =>
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+    let st1 : SystemState := match st.getSchedContext? scId with
+      | some sc =>
         let sc' := { sc with boundThread := none, isActive := false }
         { st with objects := st.objects.insert scId.toObjId (.schedContext sc') }
-      | _ => st
+      | none => st
     -- AE3-C/SC-07: Remove SchedContext from replenish queue (consistent with schedContextUnbind)
     let st2 := { st1 with scheduler := { st1.scheduler with
         replenishQueue := ReplenishQueue.remove st1.scheduler.replenishQueue scId } }
@@ -108,11 +110,12 @@ def cancelDonation (st : SystemState) (tid : SeLe4n.ThreadId)
     let st2 := { st2 with scThreadIndex :=
       (scThreadIndexRemove st2.scThreadIndex scId tid) }
     -- Clear TCB binding
-    .ok (match (st2.objects[tid.toObjId]? : Option KernelObject) with
-    | some (.tcb tcb') =>
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+    .ok (match st2.getTcb? tid with
+    | some tcb' =>
       let tcb'' := { tcb' with schedContextBinding := .unbound }
       { st2 with objects := st2.objects.insert tid.toObjId (.tcb tcb'') }
-    | _ => st2)
+    | none => st2)
   | .donated _ _ =>
     cleanupDonatedSchedContext st tid
 
@@ -124,15 +127,62 @@ def cancelDonation (st : SystemState) (tid : SeLe4n.ThreadId)
 pending message, timeout budget, and queue link fields to ensure clean
 state when the thread is Inactive. -/
 def clearPendingState (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb tcb) =>
+  -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+  match st.getTcb? tid with
+  | some tcb =>
     { st with objects := st.objects.insert tid.toObjId (.tcb { tcb with
         pendingMessage := none
         timeoutBudget := none
         queuePrev := none
         queueNext := none
         queuePPrev := none }) }
-  | _ => st
+  | none => st
+
+-- ============================================================================
+-- AN10 residual closure (H1–H4): typed entry-points for lifecycle handlers
+-- ============================================================================
+-- Each underlying handler routes through the AL2-A typed helpers
+-- (`getTcb?`, `getSchedContext?`) which already return `none` for the
+-- sentinel id, so the body is structurally sentinel-safe. The wrappers
+-- below document the production-handler discipline at the type system —
+-- callers that already hold a `ValidThreadId` (post-AL7 dispatch
+-- validation, post-`validateThreadIdArg` argument check, or
+-- structurally-extracted from a TCB lookup) should prefer the typed
+-- entry-points to make the invariant locally observable.
+
+/-- AN10-H1: typed entry-point for `clearTcbIpcFields`. -/
+@[inline] private def clearTcbIpcFieldsValid (st : SystemState)
+    (vtid : SeLe4n.ValidThreadId) : SystemState :=
+  clearTcbIpcFields st vtid.val
+
+@[simp] theorem clearTcbIpcFieldsValid_eq (st : SystemState) (vtid : SeLe4n.ValidThreadId) :
+    clearTcbIpcFieldsValid st vtid = clearTcbIpcFields st vtid.val := rfl
+
+/-- AN10-H2: typed entry-point for `clearPendingState`. -/
+@[inline] def clearPendingStateValid (st : SystemState)
+    (vtid : SeLe4n.ValidThreadId) : SystemState :=
+  clearPendingState st vtid.val
+
+@[simp] theorem clearPendingStateValid_eq (st : SystemState) (vtid : SeLe4n.ValidThreadId) :
+    clearPendingStateValid st vtid = clearPendingState st vtid.val := rfl
+
+/-- AN10-H3: typed entry-point for `cancelIpcBlocking`. -/
+@[inline] def cancelIpcBlockingValid (st : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (tcb : TCB) : SystemState :=
+  cancelIpcBlocking st vtid.val tcb
+
+@[simp] theorem cancelIpcBlockingValid_eq (st : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (tcb : TCB) :
+    cancelIpcBlockingValid st vtid tcb = cancelIpcBlocking st vtid.val tcb := rfl
+
+/-- AN10-H4: typed entry-point for `cancelDonation`. -/
+@[inline] def cancelDonationValid (st : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (tcb : TCB) : Except KernelError SystemState :=
+  cancelDonation st vtid.val tcb
+
+@[simp] theorem cancelDonationValid_eq (st : SystemState)
+    (vtid : SeLe4n.ValidThreadId) (tcb : TCB) :
+    cancelDonationValid st vtid tcb = cancelDonation st vtid.val tcb := rfl
 
 -- ============================================================================
 -- D1-G: suspendThread (composite)
@@ -167,8 +217,8 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- D4-N: Revert PIP before cleanup — if this thread has pipBoost or is
       -- in a blocking chain, recompute priorities for upstream servers
       let st := PriorityInheritance.revertPriorityInheritance st tid
-      -- G2: Cancel IPC blocking
-      let st := cancelIpcBlocking st tid tcb
+      -- G2: Cancel IPC blocking — AN10-residual-1 (commit 3): typed entry-point.
+      let st := cancelIpcBlockingValid st vtid tcb
       -- AI2-D (M-20) / AF5-H (AF-28): Re-lookup is necessary because
       -- `cancelIpcBlocking` modifies the TCB via `clearTcbIpcFields`, which
       -- updates `ipcState`, `queuePrev`, `queueNext`, and `queuePPrev`.
@@ -192,13 +242,14 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       let tcb' := match st.objects[tid.toObjId]? with
         | some (.tcb t) => t | _ => tcb
       -- G3: Cancel donation (AJ1-A/M-14: propagate cleanup errors)
-      match _root_.SeLe4n.Kernel.Lifecycle.Suspend.cancelDonation st tid tcb' with
+      -- AN10-residual-1 (commit 3): typed entry-point.
+      match cancelDonationValid st vtid tcb' with
       | .error e => .error e
       | .ok st =>
-      -- G4: Remove from run queue
-      let st := removeRunnable st tid
-      -- G5: Clear pending state
-      let st := clearPendingState st tid
+      -- G4: Remove from run queue — AN10-residual-1 (commit 2): typed entry-point.
+      let st := removeRunnableValid st vtid
+      -- G5: Clear pending state — AN10-residual-1 (commit 3): typed entry-point.
+      let st := clearPendingStateValid st vtid
       -- G6: Set threadState := .Inactive
       let st := match st.objects[tid.toObjId]? with
         | some (.tcb tcb'') =>

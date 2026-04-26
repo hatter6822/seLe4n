@@ -2781,12 +2781,12 @@ On success, the scheduler is preserved (`applyCallDonation_scheduler_eq`). -/
 theorem applyCallDonation_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState)
-    (caller receiver : SeLe4n.ThreadId)
+    (callerVtid receiverVtid : SeLe4n.ValidThreadId)
     (st' : SystemState)
-    (hOk : applyCallDonation st caller receiver = .ok st')
-    (_hCallerObjHigh : objectObservable ctx observer caller.toObjId = false)
-    (hReceiverObjHigh : objectObservable ctx observer receiver.toObjId = false)
-    (hScHigh : ∀ tcb : TCB, lookupTcb st caller = some tcb →
+    (hOk : applyCallDonation st callerVtid receiverVtid = .ok st')
+    (_hCallerObjHigh : objectObservable ctx observer callerVtid.val.toObjId = false)
+    (hReceiverObjHigh : objectObservable ctx observer receiverVtid.val.toObjId = false)
+    (hScHigh : ∀ tcb : TCB, lookupTcb st callerVtid.val = some tcb →
       ∀ scId : SeLe4n.SchedContextId, tcb.schedContextBinding = .bound scId →
         objectObservable ctx observer scId.toObjId = false)
     (hObjInv : st.objects.invExt) :
@@ -2797,8 +2797,10 @@ theorem applyCallDonation_preserves_projection
   -- In the donation case, donateSchedContext does two storeObject calls at
   -- non-observable ObjIds (clientScId.toObjId and serverTid.toObjId).
   -- Chain storeObject_preserves_projection for each store.
+  -- AN10-residual-1 deep-audit: signature now takes ValidThreadId; body
+  -- calls donateSchedContextValid directly (no toValid? case-split).
   unfold applyCallDonation at hOk
-  cases hR : lookupTcb st receiver with
+  cases hR : lookupTcb st receiverVtid.val with
   | none => simp [hR] at hOk; cases hOk; simp
   | some receiverTcb =>
     simp only [hR] at hOk
@@ -2807,7 +2809,7 @@ theorem applyCallDonation_preserves_projection
     | donated _ _ => simp [hBinding] at hOk; cases hOk; simp
     | unbound =>
       simp only [hBinding] at hOk
-      cases hC : lookupTcb st caller with
+      cases hC : lookupTcb st callerVtid.val with
       | none => simp [hC] at hOk; cases hOk; simp
       | some callerTcb =>
         simp only [hC] at hOk
@@ -2815,8 +2817,10 @@ theorem applyCallDonation_preserves_projection
         | unbound => simp [hCBinding] at hOk; cases hOk; simp
         | donated _ _ => simp [hCBinding] at hOk; cases hOk; simp
         | bound clientScId =>
-          simp only [hCBinding] at hOk
-          cases hDon : donateSchedContext st caller receiver clientScId with
+          -- AN10-residual-1 deep-audit: body now calls
+          -- `donateSchedContextValid` directly; reduce via `_eq` lemma.
+          simp only [hCBinding, donateSchedContextValid] at hOk
+          cases hDon : donateSchedContext st callerVtid.val receiverVtid.val clientScId with
           | error _ => simp [hDon] at hOk
           | ok stDon =>
             simp [hDon] at hOk; cases hOk
@@ -2836,11 +2840,11 @@ theorem applyCallDonation_preserves_projection
                   | error _ => intro h; cases h
                   | ok p1 =>
                     simp only []
-                    cases hL : lookupTcb p1.2 receiver with
+                    cases hL : lookupTcb p1.2 receiverVtid.val with
                     | none => intro h; cases h
                     | some serverTcb =>
                       simp only []
-                      cases hS2 : storeObject receiver.toObjId _ p1.2 with
+                      cases hS2 : storeObject receiverVtid.val.toObjId _ p1.2 with
                       | error _ => intro h; cases h
                       | ok p2 =>
                         simp only [Except.ok.injEq]
@@ -2852,7 +2856,7 @@ theorem applyCallDonation_preserves_projection
                         have hProj1 := storeObject_preserves_projection
                           ctx observer st p1.2 clientScId.toObjId _ hScObjHigh hObjInv hS1
                         have hProj2 := storeObject_preserves_projection
-                          ctx observer p1.2 p2.2 receiver.toObjId _ hReceiverObjHigh hInv1 hS2
+                          ctx observer p1.2 p2.2 receiverVtid.val.toObjId _ hReceiverObjHigh hInv1 hS2
                         rw [projectState_scThreadIndex_eq, hProj2, hProj1]
               | _ => simp only []; intro h; cases h
 
@@ -3041,28 +3045,25 @@ theorem setIPCBufferOp_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : Architecture.IpcBufferValidation.setIPCBufferOp st vtid addr = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
+  -- AN10-B: post-migration `setIPCBufferOp` reads via `getTcb?`.
   unfold Architecture.IpcBufferValidation.setIPCBufferOp at hStep
   cases hVal : Architecture.IpcBufferValidation.validateIpcBufferAddress st vtid.val addr with
   | error e => rw [hVal] at hStep; simp at hStep
   | ok _ =>
     rw [hVal] at hStep
-    cases hLook : (st.objects[vtid.val.toObjId]? : Option KernelObject) with
+    cases hLook : st.getTcb? vtid.val with
     | none => rw [hLook] at hStep; simp at hStep
-    | some obj =>
+    | some tcb =>
       rw [hLook] at hStep
-      cases obj with
-      | tcb tcb =>
-        simp only at hStep
-        cases hStore : storeObject vtid.val.toObjId (.tcb { tcb with ipcBuffer := addr }) st with
-        | error e => rw [hStore] at hStep; simp at hStep
-        | ok pair =>
-          rw [hStore] at hStep
-          simp only [Except.ok.injEq] at hStep
-          subst hStep
-          exact storeObject_preserves_projection ctx observer st _ vtid.val.toObjId _
-            hTcbHigh hObjInv hStore
-      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ =>
-        simp at hStep
+      simp only at hStep
+      cases hStore : storeObject vtid.val.toObjId (.tcb { tcb with ipcBuffer := addr }) st with
+      | error e => rw [hStore] at hStep; simp at hStep
+      | ok pair =>
+        rw [hStore] at hStep
+        simp only [Except.ok.injEq] at hStep
+        subst hStep
+        exact storeObject_preserves_projection ctx observer st _ vtid.val.toObjId _
+          hTcbHigh hObjInv hStore
 
 -- ============================================================================
 -- AK6-F Step A: Universal direct-insert frame lemma
@@ -3378,12 +3379,18 @@ theorem setPriorityOp_preserves_projection
     · simp at hStep  -- validation error
     · split at hStep
       · rename_i targetTcb hTarget
+        -- AN10-B: post-migration `setPriorityOp` reads via `getTcb?`;
+        -- bridge from the typed-helper hypothesis to the raw lookup
+        -- expected by `hScHigh`.
+        have hTargetRaw :
+            st.objects[vTargetTid.val.toObjId]? = some (KernelObject.tcb targetTcb) :=
+          (SystemState.getTcb?_eq_some_iff st vTargetTid.val targetTcb).mp hTarget
         have hProj1 :
             projectState ctx observer
               (SchedContext.PriorityManagement.updatePrioritySource st vTargetTid.val targetTcb newPriority) =
             projectState ctx observer st :=
           updatePrioritySource_preserves_projection ctx observer st vTargetTid.val targetTcb
-            newPriority hTargetObjHigh (hScHigh targetTcb hTarget) hObjInv
+            newPriority hTargetObjHigh (hScHigh targetTcb hTargetRaw) hObjInv
         have hProj2 :
             projectState ctx observer
               (SchedContext.PriorityManagement.migrateRunQueueBucket
@@ -3451,6 +3458,12 @@ theorem setMCPriorityOp_preserves_projection
     · simp at hStep  -- validation error
     · split at hStep
       · rename_i targetTcb hTarget
+        -- AN10-B: post-migration `setMCPriorityOp` reads via `getTcb?`;
+        -- bridge from the typed-helper hypothesis to the raw lookup
+        -- expected by `hScHighForUpdated`.
+        have hTargetRaw :
+            st.objects[vTargetTid.val.toObjId]? = some (KernelObject.tcb targetTcb) :=
+          (SystemState.getTcb?_eq_some_iff st vTargetTid.val targetTcb).mp hTarget
         -- The post-MCP-update state (after F2):
         let targetTcb' : TCB := { targetTcb with maxControlledPriority := newMCP }
         let stAfterMCP : SystemState :=
@@ -3470,7 +3483,7 @@ theorem setMCPriorityOp_preserves_projection
               projectState ctx observer st := by
             rw [updatePrioritySource_preserves_projection ctx observer stAfterMCP vTargetTid.val
                  targetTcb' newMCP hTargetObjHigh
-                 (fun scId hB => hScHighForUpdated targetTcb hTarget scId hB) hObjInvMCP]
+                 (fun scId hB => hScHighForUpdated targetTcb hTargetRaw scId hB) hObjInvMCP]
             exact hStAfterMCP
           have hProj2 :
               projectState ctx observer

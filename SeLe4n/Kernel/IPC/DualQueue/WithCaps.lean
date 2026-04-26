@@ -51,12 +51,11 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- M-D01: Helper to read a thread's CSpace root ObjId from its TCB. -/
+/-- M-D01: Helper to read a thread's CSpace root ObjId from its TCB.
+    AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. -/
 def lookupCspaceRoot (st : SystemState) (tid : SeLe4n.ThreadId)
     : Option SeLe4n.ObjId :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb tcb) => some tcb.cspaceRoot
-  | _ => none
+  st.getTcb? tid |>.map (·.cspaceRoot)
 
 /-- M-D01: Extended send with capability transfer. Composes `endpointSendDual`
 with `ipcUnwrapCaps` as a post-step when immediate rendezvous occurs.
@@ -85,9 +84,10 @@ def endpointSendDualWithCaps
     -- AJ1-C (M-02): `endpointQueuePopHead_returns_head` proves the pre-inspected
     -- receiver matches the thread actually dequeued, ensuring capability transfer
     -- targets the correct thread.
-    let hasReceiver := match st.objects[endpointId]? with
-      | some (.endpoint ep) => ep.receiveQ.head.isSome
-      | _ => false
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+    let hasReceiver := match st.getEndpoint? endpointId with
+      | some ep => ep.receiveQ.head.isSome
+      | none    => false
     match endpointSendDual endpointId sender msg st with
     | .error e => .error e
     | .ok ((), st') =>
@@ -99,8 +99,9 @@ def endpointSendDualWithCaps
           -- The receiver was the head of the receiveQ before the send.
           -- After send, the receiver's TCB has been updated with the message.
           -- We need to find who was dequeued. Look at endpoint state pre-send.
-          match st.objects[endpointId]? with
-          | some (.endpoint ep) =>
+          -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+          match st.getEndpoint? endpointId with
+          | some ep =>
             match ep.receiveQ.head with
             | some receiverId =>
               match lookupCspaceRoot st' receiverId with
@@ -122,7 +123,7 @@ def endpointSendDualWithCaps
                 -- protocol-level error.
                 .error .invalidCapability
             | none => .ok ({ results := #[] }, st')
-          | _ => .ok ({ results := #[] }, st')
+          | none => .ok ({ results := #[] }, st')
 
 /-- M-D01: Extended receive with capability transfer. When a sender is
 dequeued (immediate rendezvous on the receive side), unwrap `msg.caps`
@@ -141,8 +142,9 @@ def endpointReceiveDualWithCaps
     | .error e => .error e
     | .ok (senderId, st') =>
         -- Check if the receiver got a message (sender was dequeued)
-        match st'.objects[receiver.toObjId]? with
-        | some (.tcb receiverTcb) =>
+        -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+        match st'.getTcb? receiver with
+        | some receiverTcb =>
             match receiverTcb.pendingMessage with
             | some msg =>
                 if msg.caps.isEmpty then
@@ -162,7 +164,7 @@ def endpointReceiveDualWithCaps
             | none =>
                 -- Receiver was enqueued (no sender available)
                 .ok ((senderId, { results := #[] }), st')
-        | _ => .ok ((senderId, { results := #[] }), st')
+        | none => .ok ((senderId, { results := #[] }), st')
 
 /-- M-D01: Extended call with capability transfer. Composes `endpointCall`
 with `ipcUnwrapCaps` for the immediate-rendezvous path. Same structure as
@@ -173,17 +175,19 @@ def endpointCallWithCaps
     (callerCspaceRoot : SeLe4n.ObjId)
     (receiverSlotBase : SeLe4n.Slot) : Kernel CapTransferSummary :=
   fun st =>
-    let hasReceiver := match st.objects[endpointId]? with
-      | some (.endpoint ep) => ep.receiveQ.head.isSome
-      | _ => false
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+    let hasReceiver := match st.getEndpoint? endpointId with
+      | some ep => ep.receiveQ.head.isSome
+      | none    => false
     match endpointCall endpointId caller msg st with
     | .error e => .error e
     | .ok ((), st') =>
         if !hasReceiver || msg.caps.isEmpty then
           .ok ({ results := #[] }, st')
         else
-          match st.objects[endpointId]? with
-          | some (.endpoint ep) =>
+          -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+          match st.getEndpoint? endpointId with
+          | some ep =>
             match ep.receiveQ.head with
             | some receiverId =>
               match lookupCspaceRoot st' receiverId with
@@ -192,6 +196,6 @@ def endpointCallWithCaps
                 ipcUnwrapCaps msg callerCspaceRoot recvRoot receiverSlotBase grantRight st'
               | none => .ok ({ results := #[] }, st')
             | none => .ok ({ results := #[] }, st')
-          | _ => .ok ({ results := #[] }, st')
+          | none => .ok ({ results := #[] }, st')
 
 end SeLe4n.Kernel

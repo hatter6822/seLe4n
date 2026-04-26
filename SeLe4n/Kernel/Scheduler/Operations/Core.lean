@@ -615,8 +615,11 @@ def timeoutBlockedThreads (st : SystemState) (scId : SeLe4n.SchedContextId)
   let tids := st.scThreadIndex[scId]?.getD []
   tids.foldl (fun (acc : SystemState × List (SeLe4n.ThreadId × KernelError)) tid =>
     let (st', errs) := acc
-    match (st'.objects[tid.toObjId]? : Option KernelObject) with
-    | some (.tcb tcb) =>
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. The
+    -- original `_` arm collapsed wrong-variant and absent into the same
+    -- identity fall-through, so migration is semantics-preserving.
+    match st'.getTcb? tid with
+    | some tcb =>
       match tcbBlockingInfo tcb with
       | some (epId, isReceiveQ) =>
         match timeoutThread epId isReceiveQ tid st' with
@@ -626,7 +629,7 @@ def timeoutBlockedThreads (st : SystemState) (scId : SeLe4n.SchedContextId)
         -- A non-empty error list indicates an invariant violation.
         | .error e => (st', errs ++ [(tid, e)])
       | none => (st', errs)  -- not blocked on IPC
-    | _ => (st', errs)  -- index entry for non-TCB (invariant violation)
+    | none => (st', errs)  -- index entry for non-TCB (invariant violation)
   ) (st, [])
 
 -- ============================================================================

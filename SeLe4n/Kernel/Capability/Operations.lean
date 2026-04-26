@@ -82,15 +82,21 @@ derivation in this slice. -/
 def capAttenuates (parent derived : Capability) : Prop :=
   derived.target = parent.target ∧ ∀ right, right ∈ derived.rights → right ∈ parent.rights
 
-/-- Lookup a capability at `(cnode, slot)` with typed CNode checking. -/
+/-- Lookup a capability at `(cnode, slot)` with typed CNode checking.
+
+AN10 residual closure (R1): the absent-arm is migrated to the `getCNode?`
+typed helper. Semantically equivalent — `getCNode?` returns `none` for
+both wrong-variant and absent, collapsing into the original
+`.objectNotFound` arm; `getCNode? = some _` matches the original
+`.cnode _` arm exactly. -/
 def cspaceLookupSlot (addr : CSpaceAddr) : Kernel Capability :=
   fun st =>
     match SystemState.lookupSlotCap st addr with
     | some cap => .ok (cap, st)
     | none =>
-        match st.objects[addr.cnode]? with
-        | some (.cnode _) => .error .invalidCapability
-        | _ => .error .objectNotFound
+        match st.getCNode? addr.cnode with
+        | some _ => .error .invalidCapability
+        | none   => .error .objectNotFound
 
 /-- Resolve a CSpace path address into a concrete slot using CNode guard/radix semantics.
 
@@ -103,13 +109,16 @@ AF5-G (AF-27): CSpace Resolution Layers
 while `resolveCapAddress` starts from a root CNode and walks arbitrarily deep. -/
 def cspaceResolvePath (addr : CSpacePathAddr) : Kernel CSpaceAddr :=
   fun st =>
-    match st.objects[addr.cnode]? with
-    | some (.cnode cn) =>
+    -- AN10-residual (R2): typed-helper migration. `getCNode?` returns
+    -- `none` for both wrong-variant and absent, collapsing into the
+    -- original catch-all `_` arm that yielded `.objectNotFound`.
+    match st.getCNode? addr.cnode with
+    | some cn =>
         match cn.resolveSlot addr.cptr addr.depth with
         | .ok slot => .ok ({ cnode := addr.cnode, slot := slot }, st)
         | .error .depthMismatch => .error .illegalState
         | .error .guardMismatch => .error .invalidCapability
-    | _ => .error .objectNotFound
+    | none => .error .objectNotFound
 
 /-- Lookup a capability via guard/radix resolution from a CSpace pointer path. -/
 def cspaceLookupPath (addr : CSpacePathAddr) : Kernel Capability :=
@@ -168,8 +177,11 @@ def resolveCapAddress (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemainin
     (st : SystemState) : Except KernelError SlotRef :=
   if hZero : bitsRemaining = 0 then .error .illegalState        -- no bits to consume
   else
-    match st.objects[rootId]? with
-    | some (.cnode cn) =>
+    -- AN10-residual (R3): typed-helper migration. Termination metric
+    -- is `bitsRemaining` (Nat-strict descent), unaffected by the lookup
+    -- shape.
+    match st.getCNode? rootId with
+    | some cn =>
       let consumed := cn.guardWidth + cn.radixWidth
       if hCons : consumed = 0 then .error .illegalState  -- zero-width CNode
       else if bitsRemaining < consumed then .error .illegalState
@@ -198,7 +210,7 @@ def resolveCapAddress (rootId : SeLe4n.ObjId) (addr : SeLe4n.CPtr) (bitsRemainin
                 resolveCapAddress childId addr (bitsRemaining - consumed) st
               | _ => .error .invalidCapability
             | none => .error .invalidCapability
-    | _ => .error .objectNotFound
+    | none => .error .objectNotFound
   termination_by bitsRemaining
 
 /-- WS-H13: Lookup a capability via multi-level CSpace resolution.
@@ -301,7 +313,9 @@ theorem resolveCapAddress_result_valid_cnode
             · simp at hOk  -- guard mismatch: error
             · split at hOk
               · -- Leaf case: all bits consumed, ref.cnode = rootId
-                simp at hOk; cases hOk; exact ⟨cn, hObj⟩
+                -- AN10-residual (R3): bridge typed-helper hypothesis to raw form.
+                simp at hOk; cases hOk
+                exact ⟨cn, (SystemState.getCNode?_eq_some_iff st rootId cn).mp hObj⟩
               · -- Recursive case: bits remaining, look up slot
                 split at hOk
                 · next cap _ =>
@@ -382,9 +396,12 @@ theorem resolveCapAddress_guard_reject
       ((addr.toNat % SeLe4n.machineWordMax) >>> (bits - (cn.guardWidth + cn.radixWidth))) /
         2 ^ cn.radixWidth % 2 ^ cn.guardWidth ≠ cn.guardValue) :
     resolveCapAddress rootId addr bits st = .error .invalidCapability := by
+  -- AN10-residual (R3): bridge raw-form hypothesis to typed-helper form.
+  have hCN : st.getCNode? rootId = some cn :=
+    (SystemState.getCNode?_eq_some_iff st rootId cn).mpr hObj
   unfold resolveCapAddress
   have hNZ : bits ≠ 0 := by omega
-  simp only [hNZ, ↓reduceDIte, hObj]
+  simp only [hNZ, ↓reduceDIte, hCN]
   have hNZ2 : ¬(cn.guardWidth = 0 ∧ cn.radixWidth = 0) := by omega
   split
   · next h => exfalso; exact hNZ2 (by constructor <;> omega)
@@ -411,10 +428,14 @@ theorem resolveCapAddress_guard_match
     (hLeaf : bits = cn.guardWidth + cn.radixWidth) :
     ((addr.toNat % SeLe4n.machineWordMax) >>> (bits - (cn.guardWidth + cn.radixWidth))) /
       2 ^ cn.radixWidth % 2 ^ cn.guardWidth = cn.guardValue := by
+  -- AN10-residual (R3): bridge the raw-form hypothesis to the typed-helper
+  -- form so the simp set still collapses the inner match.
+  have hCN : st.getCNode? rootId = some cn :=
+    (SystemState.getCNode?_eq_some_iff st rootId cn).mpr hObj
   -- Unfold and trace through the function structure
   unfold resolveCapAddress at hOk
   have hNZ : bits ≠ 0 := by intro h; subst h; simp at hOk
-  simp only [hNZ, ↓reduceDIte, hObj] at hOk
+  simp only [hNZ, ↓reduceDIte, hCN] at hOk
   -- consumed = 0 → error, contradicts hOk
   split at hOk
   · simp at hOk
@@ -638,10 +659,11 @@ theorem cspaceLookupSlot_ok_iff_lookupSlotCap
     unfold cspaceLookupSlot at hOk
     cases hLookup : SystemState.lookupSlotCap st addr with
     | none =>
-        cases hObj : st.objects[addr.cnode]? with
-        | none => simp [hLookup, hObj] at hOk
-        | some obj =>
-            cases obj <;> simp [hLookup, hObj] at hOk
+        -- AN10-residual (R1): destructure on the typed helper to match
+        -- the migrated outer match shape.
+        cases hCN : st.getCNode? addr.cnode with
+        | none => simp [hLookup, hCN] at hOk
+        | some _ => simp [hLookup, hCN] at hOk
     | some cap' =>
         simp [hLookup] at hOk
         cases hOk
@@ -1466,8 +1488,12 @@ def ipcTransferSingleCap
     (slotBase : SeLe4n.Slot)
     (scanLimit : Nat) : Kernel CapTransferResult :=
   fun st =>
-    match st.objects[receiverCspaceRoot]? with
-    | some (.cnode cn) =>
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. The
+    -- original `_ => .error .objectNotFound` arm collapsed wrong-variant
+    -- and absent into the same error code, so migration is
+    -- semantics-preserving.
+    match st.getCNode? receiverCspaceRoot with
+    | some cn =>
         match cn.findFirstEmptySlot slotBase scanLimit with
         | none => .ok (.noSlot, st)
         | some emptySlot =>
@@ -1480,7 +1506,7 @@ def ipcTransferSingleCap
                 let cdt' := stDst.cdt.addEdge srcNode dstNode .ipcTransfer
                 .ok (.installed receiverCspaceRoot emptySlot,
                      { stDst with cdt := cdt' })
-    | _ => .error .objectNotFound
+    | none => .error .objectNotFound
 
 private theorem ensureCdtNodeForSlot_scheduler_eq (st : SystemState) (ref : SlotRef) :
     (SystemState.ensureCdtNodeForSlot st ref).2.scheduler = st.scheduler := by
@@ -1500,18 +1526,15 @@ theorem ipcTransferSingleCap_preserves_scheduler
     (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     st'.scheduler = st.scheduler := by
+  -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`.
   simp only [ipcTransferSingleCap] at hStep
-  cases hObj : st.objects[receiverRoot]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-    cases obj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-    | schedContext _ => simp [hObj] at hStep
-    | cnode cn =>
-      simp [hObj] at hStep
-      cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
-      | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
-      | some emptySlot =>
+  cases hCn : st.getCNode? receiverRoot with
+  | none => simp [hCn] at hStep
+  | some cn =>
+    simp [hCn] at hStep
+    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
+    | some emptySlot =>
         simp [hSlot] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
@@ -1536,18 +1559,15 @@ theorem ipcTransferSingleCap_preserves_objects_ne
     (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     st'.objects[oid]? = st.objects[oid]? := by
+  -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`.
   simp only [ipcTransferSingleCap] at hStep
-  cases hObj : st.objects[receiverRoot]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-    cases obj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-    | schedContext _ => simp [hObj] at hStep
-    | cnode cn =>
-      simp [hObj] at hStep
-      cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
-      | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
-      | some emptySlot =>
+  cases hCn : st.getCNode? receiverRoot with
+  | none => simp [hCn] at hStep
+  | some cn =>
+    simp [hCn] at hStep
+    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
+    | some emptySlot =>
         simp [hSlot] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
@@ -1570,18 +1590,15 @@ theorem ipcTransferSingleCap_preserves_services
     (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     st'.services = st.services := by
+  -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`.
   simp only [ipcTransferSingleCap] at hStep
-  cases hObj : st.objects[receiverRoot]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-    cases obj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-    | schedContext _ => simp [hObj] at hStep
-    | cnode cn =>
-      simp [hObj] at hStep
-      cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
-      | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
-      | some emptySlot =>
+  cases hCn : st.getCNode? receiverRoot with
+  | none => simp [hCn] at hStep
+  | some cn =>
+    simp [hCn] at hStep
+    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
+    | some emptySlot =>
         simp [hSlot] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
@@ -1605,18 +1622,15 @@ theorem ipcTransferSingleCap_preserves_objects_invExt
     (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     st'.objects.invExt := by
+  -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`.
   simp only [ipcTransferSingleCap] at hStep
-  cases hObj : st.objects[receiverRoot]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-    cases obj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-    | schedContext _ => simp [hObj] at hStep
-    | cnode cn =>
-      simp [hObj] at hStep
-      cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
-      | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hObjInv
-      | some emptySlot =>
+  cases hCn : st.getCNode? receiverRoot with
+  | none => simp [hCn] at hStep
+  | some cn =>
+    simp [hCn] at hStep
+    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hObjInv
+    | some emptySlot =>
         simp [hSlot] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
@@ -1648,7 +1662,10 @@ theorem ipcTransferSingleCap_preserves_ntfn_objects
   by_cases hNe : oid = receiverRoot
   · subst hNe
     simp only [ipcTransferSingleCap] at hStep
-    simp [hNtfn] at hStep
+    -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`.
+    have hCnNone : st.getCNode? oid = none := by
+      unfold SystemState.getCNode?; rw [hNtfn]
+    simp [hCnNone] at hStep
   · rw [ipcTransferSingleCap_preserves_objects_ne cap senderSlot receiverRoot slotBase
       scanLimit st st' result oid hNe hObjInv hStep]
     exact hNtfn
@@ -1666,20 +1683,21 @@ theorem ipcTransferSingleCap_receiverRoot_not_ntfn
     (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     ∀ ntfn, st'.objects[receiverRoot]? ≠ some (.notification ntfn) := by
+  -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`;
+  -- case-split on the typed helper.
   simp only [ipcTransferSingleCap] at hStep
-  cases hObj : st.objects[receiverRoot]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-    cases obj with
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-    | schedContext _ => simp [hObj] at hStep
-    | cnode cn =>
-      simp [hObj] at hStep
-      cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
-      | none =>
-        simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep
-        intro ntfn h; rw [hObj] at h; exact absurd h (by simp)
-      | some emptySlot =>
+  cases hCn : st.getCNode? receiverRoot with
+  | none => simp [hCn] at hStep
+  | some cn =>
+    -- Bridge to the raw lookup form so the existing post-condition holds.
+    have hObj : st.objects[receiverRoot]? = some (.cnode cn) :=
+      (SystemState.getCNode?_eq_some_iff st receiverRoot cn).mp hCn
+    simp [hCn] at hStep
+    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    | none =>
+      simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep
+      intro ntfn h; rw [hObj] at h; exact absurd h (by simp)
+    | some emptySlot =>
         simp [hSlot] at hStep
         cases hIns : cspaceInsertSlot { cnode := receiverRoot, slot := emptySlot } cap st with
         | error e => simp [hIns] at hStep
@@ -1745,7 +1763,10 @@ theorem ipcTransferSingleCap_preserves_ep_objects
   by_cases hNe : oid = receiverRoot
   · subst hNe
     simp only [ipcTransferSingleCap] at hStep
-    simp [hEp] at hStep
+    -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`.
+    have hCnNone : st.getCNode? oid = none := by
+      unfold SystemState.getCNode?; rw [hEp]
+    simp [hCnNone] at hStep
   · rw [ipcTransferSingleCap_preserves_objects_ne cap senderSlot receiverRoot slotBase
       scanLimit st st' result oid hNe hObjInv hStep]
     exact hEp
@@ -1766,7 +1787,13 @@ theorem ipcTransferSingleCap_preserves_tcb_objects
   by_cases hNe : oid = receiverRoot
   · subst hNe
     simp only [ipcTransferSingleCap] at hStep
-    simp [hTcb] at hStep
+    -- AN10-B: post-migration `ipcTransferSingleCap` reads via `getCNode?`.
+    -- `getCNode?` returns `none` when the slot holds a TCB, so the
+    -- function's outer match falls into the `none` branch and returns
+    -- `.error .objectNotFound` — contradicting `hStep`'s `.ok`.
+    have hCnNone : st.getCNode? oid = none := by
+      unfold SystemState.getCNode?; rw [hTcb]
+    simp [hCnNone] at hStep
   · rw [ipcTransferSingleCap_preserves_objects_ne cap senderSlot receiverRoot slotBase
       scanLimit st st' result oid hNe hObjInv hStep]
     exact hTcb
@@ -1785,8 +1812,12 @@ theorem ipcTransferSingleCap_receiverRoot_stays_cnode
     (hStep : ipcTransferSingleCap cap senderSlot receiverRoot slotBase scanLimit st
              = .ok (result, st')) :
     ∃ cn', st'.objects[receiverRoot]? = some (.cnode cn') := by
+  -- AN10-B: bridge raw-lookup hypothesis to typed-helper form so the
+  -- `simp` matches what `ipcTransferSingleCap` reads post-migration.
+  have hCnTyped : st.getCNode? receiverRoot = some cn :=
+    (SystemState.getCNode?_eq_some_iff st receiverRoot cn).mpr hCn
   simp only [ipcTransferSingleCap] at hStep
-  simp [hCn] at hStep
+  simp [hCnTyped] at hStep
   cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
   | none =>
     simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep

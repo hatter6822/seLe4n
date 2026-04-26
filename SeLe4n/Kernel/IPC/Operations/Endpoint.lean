@@ -110,6 +110,28 @@ def removeRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
       }
   }
 
+/-- AN10 residual closure (H7): typed entry-point for `removeRunnable` that
+documents the production-path discipline at the type system. Production
+handlers that have already validated their `ThreadId` (through
+`validateThreadIdArg` at the dispatch boundary, or through structural
+extraction from a queue / TCB lookup) should prefer this wrapper to
+make the invariant locally observable.
+
+The underlying `removeRunnable` is sentinel-safe (the sentinel can never
+be a member of any RunQueue or `scheduler.current`), so this wrapper
+adds no runtime safety beyond what the function already guarantees —
+its value is **type-level documentation of the dispatch-boundary contract**
+and a reusable reduction lemma (`removeRunnableValid_eq`) for proofs
+that want to discharge through the typed form. -/
+@[inline] def removeRunnableValid (st : SystemState) (vtid : SeLe4n.ValidThreadId) : SystemState :=
+  removeRunnable st vtid.val
+
+/-- AN10 residual closure (H7): the typed wrapper reduces to the raw form,
+so any proof body that established a result over `removeRunnable` can
+be reused by rewriting through this equality. -/
+@[simp] theorem removeRunnableValid_eq (st : SystemState) (vtid : SeLe4n.ValidThreadId) :
+    removeRunnableValid st vtid = removeRunnable st vtid.val := rfl
+
 /-- AK1-E (I-M03): Inlined PIP-effective priority. Duplicated from
 `Scheduler/Invariant.lean:146` (`effectiveRunQueuePriority`) to avoid a
 circular import (Scheduler.Invariant → ... → Endpoint). When a TCB has a
@@ -131,15 +153,18 @@ def ensureRunnable (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   if tid ∈ st.scheduler.runQueue then
     st
   else
-    match st.objects[tid.toObjId]? with
-    | some (.tcb tcb) =>
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. The
+    -- pre-AN10 `_ => st` arm collapsed wrong-variant and absent into the
+    -- same identity fall-through, so migration is semantics-preserving.
+    match st.getTcb? tid with
+    | some tcb =>
         { st with
             scheduler := {
               st.scheduler with
                 runQueue := st.scheduler.runQueue.insert tid (ipcEffectiveRunQueuePriority tcb)
             }
         }
-    | _ => st
+    | none => st
 
 def lookupTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option TCB :=
   if tid.isReserved then
@@ -379,6 +404,56 @@ def cleanupActiveDonation
     (scId : SeLe4n.SchedContextId)
     (originalOwner : SeLe4n.ThreadId) : Except KernelError SystemState :=
   returnDonatedSchedContext st serverTid scId originalOwner
+
+-- ============================================================================
+-- AN10 residual closure (H5–H6): typed entry-points for donation handlers
+-- ============================================================================
+-- Same wrapper pattern as the H1–H4 lifecycle handlers — provides a typed
+-- entry-point that documents the dispatch-boundary discipline.  Wired
+-- into production at:
+--   * `applyCallDonation` (`Donation/Primitives.lean`) routes through
+--     `donateSchedContextValid` via `ThreadId.toValid?` after the inner
+--     `lookupTcb` lookups have already validated the ids.
+--   * `applyReplyDonation` (`Donation/Primitives.lean`) routes through
+--     `returnDonatedSchedContextValid` similarly.
+--
+-- Both production callers retain a raw-form fallback for observational
+-- equivalence in proof contexts that cannot establish the
+-- `lookupTcb = some _` witness; under the production invariants
+-- (which the prior `lookupTcb` guards already establish), the fallback
+-- branch is structurally unreachable.
+--
+-- The `cleanupPreReceiveDonation` / `cleanupPreReceiveDonationChecked`
+-- helpers retain the raw `returnDonatedSchedContext` call to preserve
+-- compatibility with the extensive frame-lemma infrastructure in
+-- `IPC/Invariant/Defs.lean` / `EndpointPreservation.lean` /
+-- `Structural/*.lean`.  Migrating those would cascade ~20 proof-surface
+-- destructures; tracked under AN10-A.handler-internal-hygiene.
+
+/-- AN10-H5: typed entry-point for `donateSchedContext`. -/
+@[inline] def donateSchedContextValid (st : SystemState)
+    (clientVtid serverVtid : SeLe4n.ValidThreadId)
+    (clientScId : SeLe4n.SchedContextId) : Except KernelError SystemState :=
+  donateSchedContext st clientVtid.val serverVtid.val clientScId
+
+@[simp] theorem donateSchedContextValid_eq (st : SystemState)
+    (clientVtid serverVtid : SeLe4n.ValidThreadId)
+    (clientScId : SeLe4n.SchedContextId) :
+    donateSchedContextValid st clientVtid serverVtid clientScId =
+      donateSchedContext st clientVtid.val serverVtid.val clientScId := rfl
+
+/-- AN10-H6: typed entry-point for `returnDonatedSchedContext`. -/
+@[inline] def returnDonatedSchedContextValid (st : SystemState)
+    (serverVtid : SeLe4n.ValidThreadId)
+    (scId : SeLe4n.SchedContextId)
+    (originalOwnerVtid : SeLe4n.ValidThreadId) : Except KernelError SystemState :=
+  returnDonatedSchedContext st serverVtid.val scId originalOwnerVtid.val
+
+@[simp] theorem returnDonatedSchedContextValid_eq (st : SystemState)
+    (serverVtid : SeLe4n.ValidThreadId) (scId : SeLe4n.SchedContextId)
+    (originalOwnerVtid : SeLe4n.ValidThreadId) :
+    returnDonatedSchedContextValid st serverVtid scId originalOwnerVtid =
+      returnDonatedSchedContext st serverVtid.val scId originalOwnerVtid.val := rfl
 
 /-- AI4-A (M-01): Clean up stale donation before a server blocks on receive.
 

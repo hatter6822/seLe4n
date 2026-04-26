@@ -179,32 +179,28 @@ theorem endpointSendDualWithCaps_preserves_dualQueueSystemInvariant
       st stMid hObjInv hSend hInv hFreshSender hSendTailFresh
     have hObjInvMid : stMid.objects.invExt :=
       endpointSendDual_preserves_objects_invExt st stMid endpointId sender msg hObjInv hSend
-    -- All paths either return stMid directly or go through ipcUnwrapCaps
-    -- Case-split on the objects to determine hasReceiver before touching hStep
-    cases hObj : st.objects[endpointId]? with
+    -- AN10-B: post-migration `endpointSendDualWithCaps` reads via
+    -- `getEndpoint?`; case-split on the typed helper.
+    cases hObj : st.getEndpoint? endpointId with
     | none =>
       simp [hObj] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-    | some obj =>
-      cases obj with
-      | endpoint ep =>
-        cases hHead : ep.receiveQ.head with
-        | none =>
-          simp [hObj, hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-        | some receiverId =>
-          -- hasReceiver = true, guard = msg.caps.isEmpty
-          by_cases hEmpty : msg.caps.isEmpty = true
-          · simp [hObj, hHead, hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
-          · -- Cap transfer path
-            simp [hObj, hHead, hEmpty] at hStep
-            cases hLookup : lookupCspaceRoot stMid receiverId with
-            | none => simp [hLookup] at hStep -- AK1-I: fail-closed, vacuous
-            | some recvRoot =>
-              simp only [hLookup] at hStep
-              obtain ⟨cn, hCn⟩ := hCnodeRoot stMid recvRoot hSend
-              exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant msg senderCspaceRoot
-                recvRoot receiverSlotBase _ stMid st' summary cn hCn hInvMid hObjInvMid hStep
-      | tcb _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ =>
-        simp [hObj] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+    | some ep =>
+      cases hHead : ep.receiveQ.head with
+      | none =>
+        simp [hObj, hHead] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+      | some receiverId =>
+        -- hasReceiver = true, guard = msg.caps.isEmpty
+        by_cases hEmpty : msg.caps.isEmpty = true
+        · simp [hObj, hHead, hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+        · -- Cap transfer path
+          simp [hObj, hHead, hEmpty] at hStep
+          cases hLookup : lookupCspaceRoot stMid receiverId with
+          | none => simp [hLookup] at hStep -- AK1-I: fail-closed, vacuous
+          | some recvRoot =>
+            simp only [hLookup] at hStep
+            obtain ⟨cn, hCn⟩ := hCnodeRoot stMid recvRoot hSend
+            exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant msg senderCspaceRoot
+              recvRoot receiverSlotBase _ stMid st' summary cn hCn hInvMid hObjInvMid hStep
 
 /-- M3-E4: endpointReceiveDualWithCaps preserves dualQueueSystemInvariant.
 Composes endpointReceiveDual base preservation with ipcUnwrapCaps preservation. -/
@@ -246,39 +242,36 @@ theorem endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant
       st stMid sid hObjInv hRecv hInv hFreshReceiver hRecvTailFresh
     have hObjInvMid : stMid.objects.invExt :=
       endpointReceiveDual_preserves_objects_invExt st stMid endpointId receiver sid hObjInv hRecv
-    -- All paths return stMid (invariant holds) or go through ipcUnwrapCaps (compose)
-    cases hTcb : stMid.objects[receiver.toObjId]? with
+    -- AN10-B: post-migration `endpointReceiveDualWithCaps` reads via
+    -- `getTcb?`; case-split on the typed helper.
+    cases hTcb : stMid.getTcb? receiver with
     | none => simp [hTcb] at hStep; obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep; exact hInvMid
-    | some obj =>
+    | some receiverTcb =>
       simp only [hTcb] at hStep
-      cases obj with
-      | tcb receiverTcb =>
-        cases hMsg : receiverTcb.pendingMessage with
-        | none => simp [hMsg] at hStep; obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep; exact hInvMid
-        | some msg =>
-          simp only [hMsg] at hStep
-          by_cases hEmpty : msg.caps.isEmpty
-          · simp [hEmpty] at hStep; obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep; exact hInvMid
-          · simp [hEmpty] at hStep
-            -- U-H13: match on lookupCspaceRoot — none returns error, some proceeds
-            cases hLookup : lookupCspaceRoot stMid sid with
-            | none =>
-              -- Missing CSpace root returns error, contradicting .ok
-              simp only [hLookup] at hStep; contradiction
-            | some senderRoot =>
-              simp only [hLookup] at hStep
-              -- ipcUnwrapCaps path
-              split at hStep
-              · -- ipcUnwrapCaps errored — contradiction with hStep : ... = .ok
-                exact absurd hStep (by simp)
-              · -- ipcUnwrapCaps succeeded
-                rename_i hUnwrapResult
-                obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep
-                obtain ⟨cn, hCn⟩ := hCnodeRoot stMid hRecv
-                exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant msg _ receiverCspaceRoot
-                  receiverSlotBase _ stMid _ _ cn hCn hInvMid hObjInvMid hUnwrapResult
-      | endpoint _ | cnode _ | vspaceRoot _ | notification _ | untyped _ | schedContext _ =>
-        obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep; exact hInvMid
+      cases hMsg : receiverTcb.pendingMessage with
+      | none => simp [hMsg] at hStep; obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep; exact hInvMid
+      | some msg =>
+        simp only [hMsg] at hStep
+        by_cases hEmpty : msg.caps.isEmpty
+        · simp [hEmpty] at hStep; obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep; exact hInvMid
+        · simp [hEmpty] at hStep
+          -- U-H13: match on lookupCspaceRoot — none returns error, some proceeds
+          cases hLookup : lookupCspaceRoot stMid sid with
+          | none =>
+            -- Missing CSpace root returns error, contradicting .ok
+            simp only [hLookup] at hStep; contradiction
+          | some senderRoot =>
+            simp only [hLookup] at hStep
+            -- ipcUnwrapCaps path
+            split at hStep
+            · -- ipcUnwrapCaps errored — contradiction with hStep : ... = .ok
+              exact absurd hStep (by simp)
+            · -- ipcUnwrapCaps succeeded
+              rename_i hUnwrapResult
+              obtain ⟨⟨rfl, _⟩, rfl⟩ := hStep
+              obtain ⟨cn, hCn⟩ := hCnodeRoot stMid hRecv
+              exact ipcUnwrapCaps_preserves_dualQueueSystemInvariant msg _ receiverCspaceRoot
+                receiverSlotBase _ stMid _ _ cn hCn hInvMid hObjInvMid hUnwrapResult
 
 theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)

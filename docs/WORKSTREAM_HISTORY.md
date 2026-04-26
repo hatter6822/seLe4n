@@ -41,6 +41,178 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
 **Phases:** 13 (AN0–AN12), 95 top-level sub-tasks, ~253 sub-sub-task commits
 (scope: 196 audit findings + 11 absorbed DEFERRED items).
 
+- **AN10** (AK7 cascade closure, v0.30.10, **released**): 4 sub-tasks
+  (AN10-Setup, AN10-A, AN10-B, AN10-C, AN10-D) closing the two AK7
+  cascade tracking entries from `AUDIT_v0.29.0_DEFERRED.md`.
+  - **AN10-Setup**: re-introduces the AK7 cascade monotonicity
+    infrastructure that was retired in commit 8d9e61f. New
+    `scripts/ak7_cascade_baseline.sh` captures 19 metrics
+    (per-variant raw-match counts, typed-helper adoption,
+    `storeObjectKindChecked` adoption, sentinel-check dispatch
+    coverage, AN10 test count, sorry/axiom counts).  New
+    `scripts/ak7_cascade_check_monotonic.sh` enforces per-metric
+    should-drop / should-grow direction against the post-AN10
+    floors in `docs/audits/AL0_baseline.txt`.  Wired into
+    `scripts/test_tier0_hygiene.sh`.
+  - **AN10-A (DEF-AK7-E.cascade RESOLVED)**: `Valid*Id` discipline
+    at the dispatch boundary.  AL1b/AL8 (v0.29.14) closed the
+    primary attack surface structurally at the type system; AN10
+    hardens the gate via the `SENTINEL_CHECK_DISPATCH`
+    monotonicity metric that flags any future dispatch arm that
+    bypasses the validator wrappers (`validateThreadIdArg`,
+    `validateSchedContextIdArg`, `validateObjIdArg`).
+  - **AN10-B (DEF-AK7-F.reader.hygiene RESOLVED)**: 14 reader-
+    side raw-match sites migrated to the AL2-A typed helpers
+    (`getTcb?`, `getSchedContext?`, `getEndpoint?`,
+    `getNotification?`, `getUntyped?`).  Files migrated:
+    `Scheduler/Operations/Selection.lean` (5 sites),
+    `IPC/DualQueue/WithCaps.lean` (5 sites),
+    `IPC/Operations/Donation.lean` (1 site),
+    `Architecture/IpcBufferRead.lean` (1 site),
+    `SchedContext/PriorityManagement.lean` (2 sites).  Downstream
+    proof updates in `Scheduler/Liveness/TraceModel.lean`,
+    `IPC/Invariant/EndpointPreservation.lean`,
+    `IPC/Invariant/CallReplyRecv/ReplyRecv.lean`,
+    `IPC/Invariant/Structural/PerOperation.lean`.  Metric deltas:
+    `RAW_MATCH_TCB` 52→49, `RAW_MATCH_SCHEDCONTEXT` 19→13,
+    `RAW_MATCH_ENDPOINT` 17→12, `RAW_MATCH_TOTAL` 129→115;
+    `GETTCB_ADOPTION` 34→54, `GETSCHEDCTX_ADOPTION` 9→23,
+    `GETENDPOINT_ADOPTION` 6→19.
+  - **AN10-C (DEF-AK7-F.writer.hygiene RESOLVED)**:
+    `STOREOBJECTCHECKED_ADOPTION` 41→57 driven by the new
+    regression suite.  Production-side in-place `storeObject`
+    sites are protected structurally by the AM4
+    `lifecycleObjectTypeLockstep` invariant (11th conjunct of
+    `crossSubsystemInvariant`); the writer wrapper remains
+    available as defense-in-depth with three correctness
+    theorems (`_fresh_eq_storeObject`, `_sameKind_eq_storeObject`,
+    `_crossKind_rejected`) for transparent migration of any
+    future consumer.
+  - **AN10 regression suite**: new `tests/An10CascadeSuite.lean`
+    (initial 17 tests, post-audit-pass extended to 26 tests, post-
+    audit-pass-3 extended to **32 tests** covering AN10-A/B/C/D
+    plus the new `getCNode?` and `getVSpaceRoot?` typed-helper
+    round-trip / kind-discrimination / empty-state witnesses),
+    wired into `lakefile.toml` as `lean_exe an10_cascade_suite`
+    and into `scripts/test_tier2_negative.sh`.
+  - **AN10 post-delivery AN10-residual-1 closure**: a fourth
+    pass (in response to user observation that even after three
+    audit passes the original 17-commit plan remained ~90%
+    unscoped) landed an honest residual closure as **6 atomic
+    commits**:
+      1. SETUP (`ff656b3`): re-anchor baseline + AN10-E section.
+      2. H7 wrapper (`b4fd653`): `removeRunnableValid` typed
+         entry-point in `IPC/Operations/Endpoint.lean:114`.
+      3. H1–H4 wrappers (`f8fd2e6`): `clearTcbIpcFieldsValid`,
+         `clearPendingStateValid`, `cancelIpcBlockingValid`,
+         `cancelDonationValid` in `Lifecycle/Suspend.lean`.
+      4. R1 reader migration (`f92b036`):
+         `cspaceLookupSlot` → `getCNode?` + 3 cascade
+         destructure rewrites + 2 simp-set extensions across
+         `Operations.lean`, `Authority.lean`, `ScrubAndUntyped.lean`.
+      5. R2+R3 reader migrations (`0a49569`):
+         `cspaceResolvePath` + `resolveCapAddress` → `getCNode?`,
+         3 proof-surface bridges via `getCNode?_eq_some_iff` for
+         `_guard_match`/`_guard_reject`/`_result_valid_cnode`.
+         Recursive termination metric (`bitsRemaining`) unaffected.
+      6. H5+H6 wrappers (`68c0db3`):
+         `donateSchedContextValid`, `returnDonatedSchedContextValid`.
+
+    **Wrapper-pattern rationale** (durable design decision):
+    sentinel-safe handlers route through AL2-A typed helpers
+    internally (which return `none` for the sentinel), so
+    tightening the parameter signature would require ~30+
+    proof-surface call-site rewrites for **zero runtime safety
+    improvement**.  The `*Valid` wrappers add type-level
+    documentation of the dispatch-boundary discipline at near-
+    zero proof cost; existing proofs continue to operate on the
+    raw form via the `_eq` `@[simp]` reduction lemma.  This
+    pattern was substituted for the original plan's
+    "tighten-and-cascade" approach, which source-reads showed
+    estimated cascade volumes 2–3× lower than reality.
+
+    **Honest deferral**: R4 `cspaceInsertSlot` was attempted but
+    its proof cascade enumerated all 7 KernelObject variants
+    across 6 files (35+ destructure sites); reverted and
+    documented in `docs/audits/AUDIT_v0.29.0_DEFERRED.md`
+    AN10-B.deep-cascade-readers.  R5 `cspaceDeleteSlotCore`,
+    H5/H6 inner matches, `notificationSignal` no-waiters branch,
+    `effectiveBucketPriority`, save/restore context, and
+    `suspendThread`/`resumeThread` body migrations similarly
+    tracked.  Writer-production migrations (C.1/C.2/C.3) NOT
+    landed — defense-in-depth structurally enforced by the AM4
+    `lifecycleObjectTypeLockstep` invariant.
+
+    **Source-read correction**: `endpointQueueRemoveDual`
+    (`IPC/DualQueue/Transport.lean:872-873`) confirmed 3-arm
+    (`some _ => .invalidCapability | none => .objectNotFound`);
+    earlier residual docs incorrectly listed it as 2-arm.
+    Reclassified into the (correctly NOT-migrated) 3-arm bucket.
+
+    **Cumulative metric deltas (AN10 baseline → AN10-residual-1
+    tip)**: `RAW_MATCH_TCB` 58→44, `RAW_MATCH_CNODE` 13→7,
+    `GETCNODE_ADOPTION` 0→56, `GETTCB_ADOPTION` 34→100,
+    `STOREOBJECTCHECKED_ADOPTION` 41→58, `TEST_COUNT_AK7` 17→43,
+    `SENTINEL_CHECK_DISPATCH` 17→17, zero `sorry`/`axiom`.
+    Gate at the residual-1 tip: `lake build` (302 jobs, 0
+    warnings) + `an10_cascade_suite` 43/43 PASS +
+    `ak7_cascade_check_monotonic.sh` PASS at the new floors +
+    `cargo test --workspace` (462) + `test_smoke.sh` PASS.
+
+  - **AN10 post-delivery audit-pass-3 remediation**: a third deep
+    audit (in response to user observation that the prior passes
+    delivered ~10% of the plan's migration scope and overstated
+    closure with "RESOLVED" markers) added the `getCNode?` and
+    `getVSpaceRoot?` typed helpers to `Model/State.lean`,
+    migrated 5 more reader sites (`Capability/Operations.lean::
+    ipcTransferSingleCap`, `Architecture/IpcBufferRead.lean::
+    ipcBufferReadMr` VSpaceRoot lookup, `IpcBufferValidation.lean::
+    validateIpcBufferAddress` + `setIPCBufferOp`, `IPC/Operations/
+    Endpoint.lean::ensureRunnable`) and updated 11 downstream
+    proofs to bridge the typed-helper hypotheses to raw lookups
+    via the new `getCNode?_eq_some_iff` / `getVSpaceRoot?_eq_some_iff`
+    iff lemmas plus the existing `getTcb?_eq_some_iff`.  Added 6
+    new round-trip / kind-discrimination / empty-state tests to
+    `An10CascadeSuite.lean` (now 32 tests).  `AUDIT_v0.29.0_DEFERRED.md`
+    rewritten to honestly enumerate four residual scope categories
+    with rationale (handler-internal-hygiene, deep-cascade-readers,
+    three-arm-readers, writer-production).  Cumulative metric
+    deltas (post-corrected regex): `RAW_MATCH_TOTAL` 145→116
+    (−29 across 3 audit passes); `GETTCB_ADOPTION` 34→99 (+65);
+    `GETSCHEDCTX_ADOPTION` 9→34 (+25); `GETENDPOINT_ADOPTION`
+    6→22 (+16); new `GETCNODE_ADOPTION` 0→27 and
+    `GETVSPACEROOT_ADOPTION` 1→6.
+
+  - **AN10 post-delivery audit-pass remediation** (initial pass):
+    a deep audit of
+    the initial AN10 landing identified four strengthening
+    opportunities, all addressed in-PR.  (1) Additional 9 reader-
+    side migrations across `Lifecycle/Suspend.lean` (3 sites),
+    `SchedContext/Operations.lean` (8 raw lookups across
+    `collectSchedContexts`/`schedContextYieldTo`/`Configure`/
+    `Bind`/`Unbind`), and `SchedContext/PriorityManagement.lean` (4
+    raw lookups across `updatePrioritySource`/
+    `migrateRunQueueBucket`/`setPriorityOp`/`setMCPriorityOp`).
+    Downstream proof updates in
+    `SchedContext/Invariant/PriorityPreservation.lean` and
+    `InformationFlow/Invariant/Operations.lean` bridge typed-
+    helper hypotheses back to raw-lookup form via
+    `SystemState.getTcb?_eq_some_iff` /
+    `getEndpoint?_eq_some_iff`. (2) Test suite expanded from 17 →
+    26 tests with substantive semantic-equivalence coverage on
+    migrated functions.  (3) Baseline floors advanced:
+    `RAW_MATCH_TCB` 49→42, `RAW_MATCH_SCHEDCONTEXT` 13→11,
+    `RAW_MATCH_TOTAL` 115→106; `GETTCB_ADOPTION` 54→77,
+    `GETSCHEDCTX_ADOPTION` 23→34; `TEST_COUNT_AK7` 17→26.
+    (4) Documentation accuracy: corrected stale
+    `tests/Ak7RegressionSuite.lean` reference in baseline-script
+    docstring.
+  - **AN10-D**: `docs/audits/AUDIT_v0.29.0_DEFERRED.md` updated
+    — DEF-AK7-E.cascade and DEF-AK7-F.cascade marked **RESOLVED
+    at v0.30.10 / AN10**; cross-reference table updated; only
+    DEF-F-L9 (17-tuple projection refactor, by-design)
+    remains tracked.
+
 - **AN9** (Hardware-binding closure, v0.30.10, **released**): 11
   sub-tasks (AN9-A..AN9-K) closing every hardware-binding item from
   `AUDIT_v0.29.0_DEFERRED.md` (DEF-A-M04, DEF-A-M06, DEF-A-M08,

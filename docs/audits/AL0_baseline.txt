@@ -1,0 +1,70 @@
+# AK7 cascade baseline (AN10-D)
+#
+# Refreshed by WS-AN Phase AN10. Format: human-readable sections plus a
+# KEY=VALUE block for monotonicity-script consumption.
+#
+# Should-drop metrics: every subsequent commit must keep these <= baseline.
+# Should-grow metrics: every subsequent commit must keep these >= baseline.
+
+## Reader-side raw patterns (should-drop)
+
+raw_match_tcb            = 44
+raw_match_schedcontext   = 18
+raw_match_endpoint       = 9
+raw_match_notification   = 2
+raw_match_untyped        = 2
+raw_match_cnode          = 7
+raw_match_vspaceroot     = 12
+raw_match_total          = 113
+raw_lookup_tid           = 675
+
+## Typed-helper adoption (should-grow)
+
+gettcb_adoption          = 100
+getschedctx_adoption     = 35
+getendpoint_adoption     = 22
+getnotification_adoption = 10
+getuntyped_adoption      = 5
+getcnode_adoption        = 56
+getvspaceroot_adoption   = 12
+
+## Writer-side wrapper adoption (should-grow)
+
+storeobjectchecked_adoption = 58
+
+## Dispatch-boundary sentinel guards (should-grow)
+
+sentinel_check_dispatch  = 17
+
+## Regression test counts (should-grow)
+
+test_count_ak7           = 45
+
+## Proof-surface health (should-stay-zero)
+
+sorry_count              = 0
+axiom_count              = 0
+
+## Machine-diffable block
+
+RAW_MATCH_TCB=44
+RAW_MATCH_SCHEDCONTEXT=18
+RAW_MATCH_ENDPOINT=9
+RAW_MATCH_NOTIFICATION=2
+RAW_MATCH_UNTYPED=2
+RAW_MATCH_CNODE=7
+RAW_MATCH_VSPACEROOT=12
+RAW_MATCH_TOTAL=113
+RAW_LOOKUP_TID=675
+GETTCB_ADOPTION=100
+GETSCHEDCTX_ADOPTION=35
+GETENDPOINT_ADOPTION=22
+GETNOTIFICATION_ADOPTION=10
+GETUNTYPED_ADOPTION=5
+GETCNODE_ADOPTION=56
+GETVSPACEROOT_ADOPTION=12
+STOREOBJECTCHECKED_ADOPTION=58
+SENTINEL_CHECK_DISPATCH=17
+TEST_COUNT_AK7=45
+SORRY_COUNT=0
+AXIOM_COUNT=0

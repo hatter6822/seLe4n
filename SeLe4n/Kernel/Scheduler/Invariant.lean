@@ -284,6 +284,12 @@ def effectiveBucketPriority (st : SystemState) (tcb : TCB) : SeLe4n.Priority :=
   let base : SeLe4n.Priority := match tcb.schedContextBinding with
     | .unbound => tcb.priority
     | .bound scId | .donated scId _ =>
+      -- AN10-B note: kept on the raw lookup (rather than migrated to
+      -- `getSchedContext?`) because `effectiveBucketPriority_frame` /
+      -- `_frame_weak` / `_lookup_non_sc` and ~15 downstream invariant
+      -- proofs case-split on this exact shape. Migrating cascades through
+      -- the entire scheduler invariant module without proof-correctness
+      -- benefit; tracked under DEF-AK7-F.reader.hygiene-residual.
       match (st.objects[scId.toObjId]? : Option KernelObject) with
       | some (.schedContext sc) => sc.priority
       | _ => tcb.priority

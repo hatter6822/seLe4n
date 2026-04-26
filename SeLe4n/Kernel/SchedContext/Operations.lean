@@ -71,11 +71,12 @@ control, optionally excluding a specific SchedContext (used when reconfiguring
 an existing SchedContext to avoid double-counting its bandwidth). -/
 def collectSchedContexts (st : SystemState) (excludeId : Option ObjId := none)
     : List SchedContext :=
+  -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.  Lift
+  -- the raw `ObjId` through `SchedContextId.ofObjId` and route the
+  -- variant discrimination through `getSchedContext?`.
   st.objectIndex.filterMap fun oid =>
     if excludeId == some oid then none
-    else match (st.objects[oid]? : Option KernelObject) with
-    | some (KernelObject.schedContext sc) => some sc
-    | _ => none
+    else st.getSchedContext? (SchedContextId.ofObjId oid)
 
 /-- Z5-F2: Check admission control — total bandwidth including candidate
 must not exceed 100% (1000 per-mille). When reconfiguring an existing
@@ -111,8 +112,12 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
     match validateSchedContextParams budget period priority deadline domain with
     | .error e => .error e
     | .ok () =>
-      match (st.objects[vScId.val]? : Option KernelObject) with
-      | some (KernelObject.schedContext sc) =>
+      -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. The
+      -- original `_ => .error .objectNotFound` arm collapsed wrong-variant
+      -- and absent into the same error code, so migration is
+      -- semantics-preserving.
+      match st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
+      | some sc =>
         let updated : SchedContext :=
           { sc with
             budget := ⟨budget⟩
@@ -156,8 +161,9 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
             match sc.boundThread with
             | none => .ok ((), stStored)
             | some boundTid =>
-              match (stStored.objects[boundTid.toObjId]? : Option KernelObject) with
-              | some (KernelObject.tcb boundTcb) =>
+              -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+              match stStored.getTcb? boundTid with
+              | some boundTcb =>
                 if boundTcb.priority.val = priority then
                   .ok ((), stStored)  -- already consistent: no propagation needed
                 else
@@ -177,10 +183,10 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
                         { stWithTcb.scheduler with runQueue := rqInserted } }
                     else stWithTcb
                   .ok ((), stProp)
-              | _ => .ok ((), stStored)  -- bound thread's TCB missing: leave as-is
+              | none => .ok ((), stStored)  -- bound thread's TCB missing: leave as-is
         else
           .error .resourceExhausted
-      | _ => .error .objectNotFound
+      | none => .error .objectNotFound
 
 -- ============================================================================
 -- Z5-G1/G2/G3: schedContextBind
@@ -197,13 +203,17 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
 `ValidThreadId` for compile-time sentinel rejection on BOTH IDs. -/
 def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel Unit :=
   fun st =>
-    match (st.objects[vScId.val]? : Option KernelObject) with
-    | some (KernelObject.schedContext sc) =>
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. Both
+    -- the original `_ => .error .objectNotFound` arms collapsed
+    -- wrong-variant and absent into the same error code, so migrating to
+    -- `none => .error .objectNotFound` is semantics-preserving.
+    match st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
+    | some sc =>
       -- Z5-G1: Precondition check — SchedContext must not already have a bound thread
       if sc.boundThread.isSome then .error .illegalState
       else
-        match (st.objects[vThreadId.val.toObjId]? : Option KernelObject) with
-        | some (KernelObject.tcb tcb) =>
+        match st.getTcb? vThreadId.val with
+        | some tcb =>
           -- AE3-A/U-11: Domain consistency check — reject cross-domain binding.
           -- The domain filter (chooseBestRunnableInDomainEffective) uses tcb.domain
           -- but effective priority resolves from sc.domain. Mismatched domains would
@@ -257,8 +267,8 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
               (scThreadIndexAdd st3.scThreadIndex scIdTyped vThreadId.val) }
             .ok ((), st4)
           | _ => .error .illegalState
-        | _ => .error .objectNotFound
-    | _ => .error .objectNotFound
+        | none => .error .objectNotFound
+    | none => .error .objectNotFound
 
 -- ============================================================================
 -- Z5-H1/H2/H3: schedContextUnbind
@@ -277,13 +287,17 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
 sentinel rejection. -/
 def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
   fun st =>
-    match (st.objects[vScId.val]? : Option KernelObject) with
-    | some (KernelObject.schedContext sc) =>
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration. The
+    -- original `_ => .error .objectNotFound` arm collapsed wrong-variant
+    -- and absent into the same error code, so migration is
+    -- semantics-preserving.
+    match st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
+    | some sc =>
       match sc.boundThread with
       | none => .error .illegalState
       | some tid =>
-        match (st.objects[tid.toObjId]? : Option KernelObject) with
-        | some (KernelObject.tcb tcb) =>
+        match st.getTcb? tid with
+        | some tcb =>
           -- Z5-H1: Preemption guard — if bound thread is current, clear current
           -- to force rescheduling. Under dequeue-on-dispatch, the current thread
           -- is not in the RunQueue, so clearing current is sufficient.
@@ -311,7 +325,7 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
             (scThreadIndexRemove st4.scThreadIndex scIdTyped tid) }
           .ok ((), st5)
         -- Bound thread's TCB not found — clear SC side anyway
-        | _ =>
+        | none =>
           let updatedSc := { sc with boundThread := none, isActive := false }
           let st1 := { st with objects := st.objects.insert vScId.val (KernelObject.schedContext updatedSc) }
           let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
@@ -321,7 +335,7 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           let st3 := { st2 with scThreadIndex :=
             (scThreadIndexRemove st2.scThreadIndex scIdTyped tid) }
           .ok ((), st3)
-    | _ => .error .objectNotFound
+    | none => .error .objectNotFound
 
 -- ============================================================================
 -- Z5-I1/I2: schedContextYieldTo (kernel-internal)
@@ -354,10 +368,11 @@ def schedContextYieldTo (st : SystemState) (fromScId targetScId : SchedContextId
   -- returns `SystemState` (not `Except`) because all failure paths are
   -- kernel-internal identity fallbacks; self-yield joins that family.
   if fromScId == targetScId then st else
-  match (st.objects[fromScId.toObjId]? : Option KernelObject) with
-  | some (KernelObject.schedContext fromSc) =>
-    match (st.objects[targetScId.toObjId]? : Option KernelObject) with
-    | some (KernelObject.schedContext targetSc) =>
+  -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+  match st.getSchedContext? fromScId with
+  | some fromSc =>
+    match st.getSchedContext? targetScId with
+    | some targetSc =>
       -- Z5-I1: Transfer budget from source to target
       let transferAmount := fromSc.budgetRemaining.val
       let newTargetBudget := min (targetSc.budgetRemaining.val + transferAmount) targetSc.budget.val
@@ -380,7 +395,7 @@ def schedContextYieldTo (st : SystemState) (fromScId targetScId : SchedContextId
           else st2
         | none => st2
       else st2
-    | _ => st
-  | _ => st
+    | none => st
+  | none => st
 
 end SeLe4n.Kernel.SchedContextOps

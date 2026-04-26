@@ -226,9 +226,10 @@ def effectivePriority (st : SystemState) (tcb : TCB)
   let basePrio := match tcb.schedContextBinding with
     | .unbound => some (tcb.priority, tcb.deadline, tcb.domain)
     | .bound scId | .donated scId _ =>
-      match st.objects[scId.toObjId]? with
-      | some (.schedContext sc) => some (sc.priority, sc.deadline, sc.domain)
-      | _ => none
+      -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+      match st.getSchedContext? scId with
+      | some sc => some (sc.priority, sc.deadline, sc.domain)
+      | none    => none
   -- D4-B: Apply PIP boost — effective priority is max(basePrio, pipBoost)
   match basePrio with
   | none => none
@@ -268,9 +269,10 @@ theorem effectivePriority_noPip (st : SystemState) (tcb : TCB)
       (match tcb.schedContextBinding with
         | .unbound => some (tcb.priority, tcb.deadline, tcb.domain)
         | .bound scId | .donated scId _ =>
-          match st.objects[scId.toObjId]? with
-          | some (.schedContext sc) => some (sc.priority, sc.deadline, sc.domain)
-          | _ => none) := by
+          -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+          match st.getSchedContext? scId with
+          | some sc => some (sc.priority, sc.deadline, sc.domain)
+          | none    => none) := by
   unfold effectivePriority
   simp [hPip]
   split <;> simp_all
@@ -291,9 +293,10 @@ def hasSufficientBudget (st : SystemState) (tcb : TCB) : Bool :=
   match tcb.schedContextBinding with
   | .unbound => true
   | .bound scId | .donated scId _ =>
-    match st.objects[scId.toObjId]? with
-    | some (.schedContext sc) => sc.budgetRemaining.isPositive
-    | _ => false
+    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+    match st.getSchedContext? scId with
+    | some sc => sc.budgetRemaining.isPositive
+    | none    => false
 
 /-- Z4-C: Unbound threads always have sufficient budget. -/
 theorem hasSufficientBudget_unbound (st : SystemState) (tcb : TCB)
@@ -325,9 +328,10 @@ when SchedContext lookup fails is safe because:
   let (basePrio, dl) := match tcb.schedContextBinding with
     | .unbound => (tcb.priority, tcb.deadline)
     | .bound scId | .donated scId _ =>
-      match st.objects[scId.toObjId]? with
-      | some (.schedContext sc) => (sc.priority, sc.deadline)
-      | _ => (tcb.priority, tcb.deadline)
+      -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+      match st.getSchedContext? scId with
+      | some sc => (sc.priority, sc.deadline)
+      | none    => (tcb.priority, tcb.deadline)
   -- D4-B: Apply PIP boost
   match tcb.pipBoost with
   | none => (basePrio, dl)
@@ -353,9 +357,10 @@ If the TCB lookup fails (invariant violation — unreachable under
 `crossSubsystemInvariant`), falls back to `sc.priority` for safety. -/
 @[inline] def resolveInsertPriority (st : SystemState) (tid : SeLe4n.ThreadId)
     (sc : SchedContext) : SeLe4n.Priority :=
-  match st.objects[tid.toObjId]? with
-  | some (.tcb tcb) => (resolveEffectivePrioDeadline st tcb).1
-  | _ => sc.priority  -- defensive fallback
+  -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+  match st.getTcb? tid with
+  | some tcb => (resolveEffectivePrioDeadline st tcb).1
+  | none     => sc.priority  -- defensive fallback
 
 section
 set_option linter.unusedSimpArgs false
@@ -369,7 +374,11 @@ AK2.5 Option A fusion. -/
 theorem effectiveBucketPriority_eq_resolveEffective
     (st : SystemState) (tcb : TCB) :
     effectiveBucketPriority st tcb = (resolveEffectivePrioDeadline st tcb).1 := by
+  -- AN10-B: `resolveEffectivePrioDeadline` now reads via `getSchedContext?`
+  -- but `effectiveBucketPriority` still reads via the raw object-store
+  -- lookup; unfold both helpers locally to expose the shared raw form.
   unfold effectiveBucketPriority resolveEffectivePrioDeadline
+    SystemState.getSchedContext?
   cases hBind : tcb.schedContextBinding with
   | unbound =>
     simp only [hBind]

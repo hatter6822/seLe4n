@@ -133,9 +133,13 @@ theorem setPriority_authority_bounded
     (hCaller : st.objects[vCallerTid.val.toObjId]? = some (.tcb callerTcb)) :
     newPriority.val ≤ callerTcb.maxControlledPriority.val := by
   -- Reduce to the validatePriorityAuthority check
+  -- AN10-B: post-migration `setPriorityOp` reads the caller via
+  -- `getTcb?`; bridge from the raw lookup hypothesis via the iff lemma.
   have hVal := validatePriorityAuthority_ok_bounded callerTcb newPriority
+  have hCallerTyped : st.getTcb? vCallerTid.val = some callerTcb :=
+    (SystemState.getTcb?_eq_some_iff st vCallerTid.val callerTcb).mpr hCaller
   unfold setPriorityOp at hOk
-  rw [hCaller] at hOk
+  rw [hCallerTyped] at hOk
   -- If validatePriorityAuthority fails, setPriorityOp returns .error,
   -- so it cannot equal .ok st'. Therefore it must succeed.
   match hv : validatePriorityAuthority callerTcb newPriority with
@@ -152,9 +156,13 @@ theorem setMCPriority_authority_bounded
     (hCaller : st.objects[vCallerTid.val.toObjId]? = some (.tcb callerTcb)) :
     newMCP.val ≤ callerTcb.maxControlledPriority.val := by
   -- Reduce to the validatePriorityAuthority check
+  -- AN10-B: post-migration `setMCPriorityOp` reads the caller via
+  -- `getTcb?`; bridge from the raw lookup hypothesis via the iff lemma.
   have hVal := validatePriorityAuthority_ok_bounded callerTcb newMCP
+  have hCallerTyped : st.getTcb? vCallerTid.val = some callerTcb :=
+    (SystemState.getTcb?_eq_some_iff st vCallerTid.val callerTcb).mpr hCaller
   unfold setMCPriorityOp at hOk
-  rw [hCaller] at hOk
+  rw [hCallerTyped] at hOk
   -- If validatePriorityAuthority fails, setMCPriorityOp returns .error
   -- so it cannot equal .ok st'. Therefore it must succeed.
   match hv : validatePriorityAuthority callerTcb newMCP with

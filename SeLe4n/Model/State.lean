@@ -1431,6 +1431,22 @@ def getUntyped? (st : SystemState) (id : SeLe4n.ObjId) : Option UntypedObject :=
   | some (.untyped ut) => some ut
   | _                  => none
 
+/-- AN10-B: Read a CNode from the global object store. Same kind-checked
+discriminator pattern as the AL2-A helpers, extended to cover Capability
+operations that resolve a CSpace root or descend a CNode chain. -/
+def getCNode? (st : SystemState) (id : SeLe4n.ObjId) : Option CNode :=
+  match st.objects[id]? with
+  | some (.cnode cn) => some cn
+  | _                => none
+
+/-- AN10-B: Read a VSpaceRoot from the global object store. Used by the
+IPC-buffer reader and VSpace operations that descend a thread's vspace
+root. -/
+def getVSpaceRoot? (st : SystemState) (id : SeLe4n.ObjId) : Option VSpaceRoot :=
+  match st.objects[id]? with
+  | some (.vspaceRoot root) => some root
+  | _                       => none
+
 -- ============================================================================
 -- AL2-B (WS-AL / AK7-F.cascade): kind-discrimination sanity lemmas.
 --
@@ -1587,6 +1603,33 @@ theorem getUntyped?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId) (ut : Unt
   unfold getUntyped?
   split
   · rename_i ut' heq; constructor
+    · intro h; cases h; exact heq
+    · intro h; rw [h] at heq; cases heq; rfl
+  · rename_i hne; constructor
+    · intro h; cases h
+    · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
+/-- AN10-B: Unfolding lemma — `getCNode?` returns `some cn` iff the
+store holds exactly `KernelObject.cnode cn` at `id`. -/
+theorem getCNode?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId) (cn : CNode) :
+    st.getCNode? id = some cn ↔ st.objects[id]? = some (.cnode cn) := by
+  unfold getCNode?
+  split
+  · rename_i cn' heq; constructor
+    · intro h; cases h; exact heq
+    · intro h; rw [h] at heq; cases heq; rfl
+  · rename_i hne; constructor
+    · intro h; cases h
+    · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
+/-- AN10-B: Unfolding lemma — `getVSpaceRoot?` returns `some root` iff
+the store holds exactly `KernelObject.vspaceRoot root` at `id`. -/
+theorem getVSpaceRoot?_eq_some_iff (st : SystemState) (id : SeLe4n.ObjId)
+    (root : VSpaceRoot) :
+    st.getVSpaceRoot? id = some root ↔ st.objects[id]? = some (.vspaceRoot root) := by
+  unfold getVSpaceRoot?
+  split
+  · rename_i root' heq; constructor
     · intro h; cases h; exact heq
     · intro h; rw [h] at heq; cases heq; rfl
   · rename_i hne; constructor
