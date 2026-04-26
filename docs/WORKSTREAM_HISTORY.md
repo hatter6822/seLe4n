@@ -41,6 +41,36 @@ AN9 as pre-1.0 work rather than carried past v1.0.0.
 **Phases:** 13 (AN0–AN12), 95 top-level sub-tasks, ~253 sub-sub-task commits
 (scope: 196 audit findings + 11 absorbed DEFERRED items).
 
+- **AN11 audit-pass v3** (v0.30.10, **released**): three more findings
+  caught in a third deep audit pass on the v2 tip:
+  - **AK6-F vacuous-pass**: the v2 strengthening probed
+    `pA.objects ⟨1⟩` / `pB.objects ⟨1⟩` but neither state had any
+    object at oid=1 — both probes vacuously returned `none`, so the
+    test passed even with a buggy projection.  v3 inserts an
+    IDENTICAL public object at oid=1 in BOTH states, uses distinct
+    secret content at oid=2, and explicitly guards against
+    none-equality vacuous pass via `(some, some) => a == b | _, _ =>
+    false`.  Now catches both directions: dropped public AND leaked
+    secret.
+  - **`tmpfile_cleanup` corrupted-trap (CRITICAL latent)**: the helper's
+    sed-based trap composition produced malformed quoting that bash
+    rejected with "unexpected EOF" on the second call.  Dormant
+    because no production caller uses it yet, but a future caller
+    would hit it immediately.  Rewritten with a global array
+    `_SELE4N_TMPFILES`, a one-shot trap-installation guard
+    (`_SELE4N_TRAP_INSTALLED`), and prior-trap preservation via
+    `_SELE4N_PRIOR_EXIT_TRAP` + `eval` chaining.
+  - **`time_command` BSD portability**: used `date +%s%N` (GNU only);
+    BSD `date` returns literal `…N` and the downstream arithmetic
+    comparison aborts under `set -euo pipefail`.  Probes `%N` support
+    once at source time, falls back to integer-second precision on BSD.
+    Synthetic verification confirms both branches work.
+  - Gate: lake build (302 jobs, 0 warnings) + smoke + full + tier-0
+    + kernel_error_matrix_suite 47/47 + ak8_coverage_suite 13/13 +
+    information_flow_suite PASS + cargo test 462 + clippy 0 warnings
+    + shellcheck clean + tmpfile_cleanup + time_command synthetic
+    tests + zero sorry/axiom.
+
 - **AN11 audit-pass v2** (v0.30.10, **released**): six findings remediated
   in the post-AN11 deep audit:
   - **CRITICAL — timeout wrapper**: `run_check_with_timeout`

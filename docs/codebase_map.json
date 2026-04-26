@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-codebase-phase-an11-LuSFW",
-      "commit_sha": "1109740208a964b8ecebd3e40f7e5eb483fd7d36",
-      "tree_sha": "49f8ef595699e9b80b654f697f5bf091cc43224b",
-      "committed_at_utc": "2026-04-26T02:13:37+00:00"
+      "commit_sha": "7d053585cde0c04a3c249436d29287a8fab38b1e",
+      "tree_sha": "81b1823f7aa42d279735139fc109489fbf50f811",
+      "committed_at_utc": "2026-04-26T02:58:42+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a9c582970756a9155d03a337e4ce36631ddd0bb7b588294285093645e27174d2"
+    "source_digest": "c5f0d5d3ca9431986506db9efeafba1397d3db94a96a4ebedd809769e03da118"
   },
   "summary": {
     "module_count": 195,
@@ -73282,8 +73282,9 @@
         {
           "kind": "def",
           "name": "test_dispatchCapabilityOnly_projection_invariant",
-          "line": 278,
+          "line": 285,
           "called": [
+            "KernelObject",
             "ObjId",
             "SystemState",
             "default",

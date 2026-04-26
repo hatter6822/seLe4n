@@ -75,50 +75,90 @@ log_error() {
 # time_command <tag> <command...> — run a command, print elapsed wall-clock
 # time on success.  On failure, prints the elapsed time then propagates
 # the original exit code.
+#
+# Audit-pass v3 portability fix: GNU `date +%s%N` returns nanoseconds,
+# but BSD `date` (macOS) does not understand `%N` and returns the literal
+# string `…N` — a downstream `[[ … -gt 0 ]]` would then error in
+# arithmetic context with `set -euo pipefail`.  We probe support once at
+# source time and fall back to integer-second precision on BSD.
+if date +%s%N 2>/dev/null | grep -Eq '^[0-9]+$'; then
+  _SELE4N_DATE_HAS_NANO=1
+else
+  _SELE4N_DATE_HAS_NANO=0
+fi
+
 time_command() {
   local tag="$1"
   shift
-  local start_ns end_ns elapsed_s
-  start_ns="$(date +%s%N 2>/dev/null || echo 0)"
-  local rc
-  set +e
-  "$@"
-  rc=$?
-  set -e
-  end_ns="$(date +%s%N 2>/dev/null || echo 0)"
-  if [[ "${start_ns}" -gt 0 && "${end_ns}" -gt 0 ]]; then
-    elapsed_s=$(awk "BEGIN { printf \"%.2f\", (${end_ns} - ${start_ns}) / 1000000000 }")
-    if [[ "${rc}" -eq 0 ]]; then
-      log_info "${tag}" "completed in ${elapsed_s}s: $*"
-    else
-      log_error "${tag}" "failed after ${elapsed_s}s (rc=${rc}): $*"
-    fi
+  local start end elapsed_s rc
+  if [[ "${_SELE4N_DATE_HAS_NANO}" -eq 1 ]]; then
+    start="$(date +%s%N)"
+  else
+    start="$(date +%s)"
+  fi
+  if "$@"; then
+    rc=0
+  else
+    rc=$?
+  fi
+  if [[ "${_SELE4N_DATE_HAS_NANO}" -eq 1 ]]; then
+    end="$(date +%s%N)"
+    elapsed_s=$(awk "BEGIN { printf \"%.2f\", (${end} - ${start}) / 1000000000 }")
+  else
+    end="$(date +%s)"
+    elapsed_s="$((end - start))"
+  fi
+  if [[ "${rc}" -eq 0 ]]; then
+    log_info "${tag}" "completed in ${elapsed_s}s: $*"
+  else
+    log_error "${tag}" "failed after ${elapsed_s}s (rc=${rc}): $*"
   fi
   return "${rc}"
 }
 
 # tmpfile_cleanup <varname> — register a temp-file path stored in the
-# named bash variable so it is removed on script exit.  Idempotent across
-# multiple calls; preserves any existing EXIT trap chain by combining.
+# named bash variable so it is removed on script exit.  Composable across
+# multiple calls without corrupting trap quoting.
+#
+# Audit-pass v3 fix: the prior implementation re-extracted the existing
+# EXIT trap via `sed` and re-registered it inside an outer single-quoted
+# trap, which corrupted the quoting whenever the existing trap itself
+# contained single-quoted text (it always did, after the first call).
+# The new implementation tracks paths in a global array and registers
+# the EXIT trap **once on first use**, preserving any pre-existing trap
+# the caller installed via `eval`-able composition.
+_SELE4N_TMPFILES=()
+_SELE4N_TRAP_INSTALLED=0
+_sele4n_tmpfile_cleanup_handler() {
+  local f
+  for f in "${_SELE4N_TMPFILES[@]}"; do
+    rm -f "${f}"
+  done
+  # If the caller had a pre-existing EXIT trap, _SELE4N_PRIOR_EXIT_TRAP
+  # holds its body; eval it so chained cleanup still runs.
+  if [[ -n "${_SELE4N_PRIOR_EXIT_TRAP:-}" ]]; then
+    eval "${_SELE4N_PRIOR_EXIT_TRAP}"
+  fi
+}
+
 tmpfile_cleanup() {
   local varname="$1"
   local path="${!varname:-}"
   if [[ -z "${path}" ]]; then
     return 0
   fi
-  # Append our cleanup to any existing EXIT trap.  The traps are written
-  # with `'${path}'` quoted so the path is captured by-value at registration
-  # time (single-quote suppression of expansion is exactly the SC2064 cure
-  # — but since the path is passed in via `$1` and consumed before the
-  # trap fires, the value is fixed by the time we get here).  The
-  # disables below acknowledge the auditor's concern explicitly.
-  local existing
-  existing="$(trap -p EXIT | sed -E "s/^trap -- '(.*)' EXIT$/\1/")"
-  if [[ -n "${existing}" ]]; then
-    # shellcheck disable=SC2064  # path expansion at registration is intentional
-    trap "${existing}; rm -f '${path}'" EXIT
-  else
-    # shellcheck disable=SC2064  # path expansion at registration is intentional
-    trap "rm -f '${path}'" EXIT
+  _SELE4N_TMPFILES+=("${path}")
+  if [[ "${_SELE4N_TRAP_INSTALLED}" -eq 0 ]]; then
+    # Capture any existing EXIT trap body (as a single eval-able string)
+    # so we chain cleanly instead of silently replacing it.
+    local prior
+    prior="$(trap -p EXIT)"
+    if [[ -n "${prior}" ]]; then
+      # Strip the `trap -- '` prefix and `' EXIT` suffix; `trap -p` always
+      # uses single-quote escaping so this is the canonical inverse.
+      _SELE4N_PRIOR_EXIT_TRAP="$(printf '%s' "${prior}" | sed -E "s/^trap -- '(.*)' EXIT$/\1/" | sed "s/'\\\\''/'/g")"
+    fi
+    trap _sele4n_tmpfile_cleanup_handler EXIT
+    _SELE4N_TRAP_INSTALLED=1
   fi
 }

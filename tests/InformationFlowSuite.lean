@@ -270,50 +270,50 @@ arm.  Beyond the compile-time `#check` above, this runtime test
 exercises the projection-preservation property on a concrete state
 where a capability-only operation is dispatched.
 
-We verify the property indirectly by constructing two states that
-project to identical observations under the labelling context; any
-projection-changing transition would break this equality.  The test
-catches regressions in the projection-stripping discipline that
-`dispatchCapabilityOnly_preserves_projection` aggregates. -/
+We verify the property by constructing two states that:
+  • share an IDENTICAL public-labelled object at oid=1 (so the
+    public-observer projection MUST surface that object), and
+  • carry DIFFERENT secret-labelled object content at oid=2 (so the
+    public-observer projection MUST hide both variants identically).
+
+Audit-pass v3 strengthens the prior version, which built two states
+without any public-labelled object: probes at oid=1 vacuously returned
+`none = none`, masking a regression in the projection-stripping
+discipline.  This version exercises BOTH directions:
+  • public preservation (probe must be `some _` and identical), and
+  • secret hiding (probe must be `none` in both states). -/
 def test_dispatchCapabilityOnly_projection_invariant : IO Bool := do
-  -- Two states that differ only in a high-secret object's content.  A
-  -- public observer's projection of both states must be identical.
+  let publicOid : SeLe4n.ObjId := ⟨1⟩
+  let secretOid : SeLe4n.ObjId := ⟨2⟩
+  -- Identical public object surfaces in both states (must show through).
+  let publicObj : KernelObject := .endpoint {}
+  -- Distinct secret content in each state (must NOT show through).
+  let secretA : KernelObject := .notification
+    { state := .active, waitingThreads := []
+      pendingBadge := some (SeLe4n.Badge.ofNatMasked 7) }
+  let secretB : KernelObject := .notification
+    { state := .idle, waitingThreads := [], pendingBadge := none }
   let stA : SystemState :=
     { (default : SystemState) with
-      -- Insert a notification at a "high" oid; the public observer's
-      -- projection should hide this.
-      objects := (default : SystemState).objects.insert ⟨2⟩
-        (.notification { state := .active, waitingThreads := []
-                         pendingBadge := some (SeLe4n.Badge.ofNatMasked 7) }) }
+      objects := ((default : SystemState).objects.insert publicOid publicObj).insert
+                  secretOid secretA }
   let stB : SystemState :=
     { (default : SystemState) with
-      objects := (default : SystemState).objects.insert ⟨2⟩
-        (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) }
+      objects := ((default : SystemState).objects.insert publicOid publicObj).insert
+                  secretOid secretB }
   let pA := SeLe4n.Kernel.projectState sampleLabeling reviewer stA
   let pB := SeLe4n.Kernel.projectState sampleLabeling reviewer stB
-  -- The two projections must agree on every public-observable field.
-  -- Public observer sees only the bits not assigned to the `secretLabel`
-  -- via `sampleLabeling.objectLabelOf`; oid=2 is mapped to `secretLabel`,
-  -- so the high-content notification must NOT leak through.  Probe a
-  -- representative public oid (here, oid=1, which is published in the
-  -- bootstrap state) and confirm the projection is unchanged across the
-  -- two scenarios.
-  let publicOid : SeLe4n.ObjId := ⟨1⟩
   let probeA := pA.objects publicOid
   let probeB := pB.objects publicOid
-  -- The high-secret oid=2 must project to `none` in both states (it is
-  -- mapped to `secretLabel`, which a public reviewer cannot observe).
-  let secretOid : SeLe4n.ObjId := ⟨2⟩
-  let secretA := pA.objects secretOid
-  let secretB := pB.objects secretOid
-  -- `KernelObject` has BEq derived (instance at Object/Structures.lean);
-  -- we compare via `Option.beq_some_ext`-style pattern match to avoid
-  -- relying on Option's polymorphic DecidableEq.
-  let probesAgree : Bool := match probeA, probeB with
-    | none, none => true
+  let secretProbeA := pA.objects secretOid
+  let secretProbeB := pB.objects secretOid
+  -- Both projections must surface the public object identically.
+  let publicAgree : Bool := match probeA, probeB with
     | some a, some b => a == b
-    | _, _ => false
-  return probesAgree && secretA.isNone && secretB.isNone
+    | _, _ => false       -- VACUOUS-PASS GUARD: refuse none==none
+  -- The secret object must be hidden in BOTH projections.
+  let secretHidden : Bool := secretProbeA.isNone && secretProbeB.isNone
+  return publicAgree && secretHidden
 
 /-- AK6-G (NI-M01): `projectKernelObject` strips `pendingMessage` and
 `timedOut` from a projected TCB so a low observer cannot read either

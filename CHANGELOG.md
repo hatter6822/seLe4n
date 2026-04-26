@@ -1,3 +1,76 @@
+## v0.30.10 — WS-AN Phase AN11 audit-pass v3
+
+A third deep audit pass on the AN11 audit-pass-v2 tip caught three more
+material correctness issues, all remediated:
+
+### Audit-pass v3: AK6-F vacuous-pass
+
+The audit-pass-v2 strengthening of `test_dispatchCapabilityOnly_projection_invariant`
+inserted a notification at oid=2 (secret label) in two states differing
+only in notification content, then probed `pA.objects ⟨1⟩` and
+`pB.objects ⟨1⟩`.  But neither state had any object at oid=1, so the
+probes vacuously returned `none = none` — the assertion passed even if
+the projection-stripping discipline were buggy.  Audit-pass v3 inserts
+an IDENTICAL public object at oid=1 in BOTH states (so `probe = some _`
+must surface), uses distinct secret content at oid=2, and explicitly
+guards against the vacuous-none-equality pass via the `(some, some) =>
+a == b | _, _ => false` arm.  The strengthened test now catches BOTH
+directions of regression: a buggy projection that drops the public
+object (probe becomes `none`, fails the `(some, some)` arm) AND a
+buggy projection that leaks the secret (`secretHidden = false`).
+
+### Audit-pass v3: `tmpfile_cleanup` corrupted-trap bug (CRITICAL latent)
+
+`scripts/_common.sh::tmpfile_cleanup` re-extracted any pre-existing
+EXIT trap via `sed`, then re-registered it inside an outer
+single-quoted trap.  But `trap -p` returns its body wrapped in single
+quotes WITH internal single-quote escapes (`'\\''`), so the outer
+re-quoting corrupted the trap body whenever it contained any
+single-quoted text — which it always did, after the first call.
+Synthetic test confirmed the bug: two `tmpfile_cleanup` calls produced
+a malformed trap that bash rejected with "unexpected EOF while looking
+for matching `'`".  No production caller currently uses the helper
+(test_abi_roundtrip.sh sources `_common.sh` but only for `log_info` /
+`time_command`), so the bug was dormant — but a future caller would
+have hit it immediately.  Audit-pass v3 rewrites `tmpfile_cleanup` to
+track paths in a global array `_SELE4N_TMPFILES` and register the EXIT
+trap ONCE on first use as a function (`_sele4n_tmpfile_cleanup_handler`),
+preserving any pre-existing trap via a captured `_SELE4N_PRIOR_EXIT_TRAP`
+that the handler invokes via `eval`.  Synthetic verification confirms
+both file removal AND prior-trap chaining work.
+
+### Audit-pass v3: `time_command` not portable on macOS BSD
+
+`scripts/_common.sh::time_command` used `date +%s%N` to capture
+nanosecond-precision wall-clock time.  This is a GNU coreutils
+extension; BSD `date` (macOS default) returns a literal `…N` suffix
+for the unsupported `%N` directive.  Under `set -euo pipefail`, the
+downstream `[[ "${start_ns}" -gt 0 ]]` arithmetic comparison would
+abort the script on macOS.  Audit-pass v3 probes `%N` support once at
+`_common.sh` source time via `date +%s%N | grep -Eq '^[0-9]+$'` and
+caches the result in `_SELE4N_DATE_HAS_NANO`; `time_command` then
+branches to integer-second precision on BSD, preserving accurate
+timing on GNU and graceful degradation on BSD.  Synthetic BSD
+simulation (override `date()` to return `…N` literal) confirms the
+fallback path exits cleanly with second-granularity output.
+
+### Gate at audit-pass v3 tip
+
+* `lake build` (302 jobs, 0 warnings)
+* `test_smoke.sh` PASS, `test_full.sh` PASS, `test_tier0_hygiene.sh` PASS
+* `lake exe kernel_error_matrix_suite` 47/47 PASS
+* `lake exe ak8_coverage_suite` 13/13 PASS
+* `lake exe information_flow_suite` PASS (9 AK6 named tests; AK6-F now
+  substantive — vacuous-pass guard added)
+* `cargo test --workspace` 462 tests, 0 failures
+* `cargo clippy --workspace -- -D warnings` 0 warnings
+* shellcheck clean on `_common.sh` and `test_abi_roundtrip.sh`
+* `tmpfile_cleanup` synthetic test PASS (chained traps work)
+* `time_command` BSD/GNU portability verified
+* Fixture byte-identical, zero `sorry`/`axiom`/`native_decide`
+
+---
+
 ## v0.30.10 — WS-AN Phase AN11 audit-pass v2
 
 A deep end-to-end audit of the initial AN11 landing surfaced six material
