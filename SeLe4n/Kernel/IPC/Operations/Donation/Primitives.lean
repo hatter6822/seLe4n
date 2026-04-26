@@ -25,7 +25,7 @@ sibling module `SeLe4n.Kernel.IPC.Operations.Donation`, which also imports
 this file so that legacy single-import consumers continue to see the full
 donation API unchanged.
 
-See §6 (Phase AN3-A) of `docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`
+See §6 (Phase AN3-A) of `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`
 for rationale.
 -/
 

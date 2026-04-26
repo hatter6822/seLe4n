@@ -93,8 +93,8 @@ demostración de Lean 4:
 | **LoC de pruebas en Lean** | 10.564 en 15 suites de pruebas |
 | **Declaraciones demostradas** | 2.447 declaraciones theorem/lemma (cero sorry/axiom) |
 | **Hardware objetivo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
-| **Auditoría canónica** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — auditoría integral previa a 1.0 (202 hallazgos; remediados por WS-AK AK1–AK10) |
-| **Última auditoría** | [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) — auditoría de endurecimiento previo a 1.0 (3 CRIT, 24 HIGH, 71 MED, 58 LOW, 40 INFO — puntuación inicial según §0.4) |
+| **Auditoría canónica** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — auditoría integral previa a 1.0 (202 hallazgos; remediados por WS-AK AK1–AK10) |
+| **Última auditoría** | [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) — auditoría de endurecimiento previo a 1.0 (3 CRIT, 24 HIGH, 71 MED, 58 LOW, 40 INFO — puntuación inicial según §0.4) |
 | **Mapa del código** | [`docs/codebase_map.json`](../../../docs/codebase_map.json) — inventario de declaraciones legible por máquina |
 
 Las métricas se derivan del código fuente mediante `./scripts/generate_codebase_map.py`

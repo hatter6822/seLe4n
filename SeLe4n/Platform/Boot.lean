@@ -967,7 +967,7 @@ theorem bootToRuntime_invariantBridge_empty :
    satisfies all 10 runtime invariants simultaneously.
 
    Remediation closed by AN9 (hardware binding, DEF-A-M04 / DEF-A-M06 /
-   DEF-A-M08 / DEF-A-M09) per docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md
+   DEF-A-M08 / DEF-A-M09) per docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md
    §12. When RPi5 boot is fully wired, either:
    (a) Prove `bootToRuntime_invariantBridge` for arbitrary well-formed
        PlatformConfig, or

@@ -50,7 +50,7 @@ The module is deliberately SELF-CONTAINED: it does not yet rewire
 the current VSpaceRoot exclusion invariant).  Instead, it provides the
 **substantive building blocks** that AN9 (Hardware-binding closure) will
 compose when the H3 boot pipeline is wired to real silicon.  See
-`docs/audits/AUDIT_v0.29.0_DEFERRED.md` for the cross-reference.
+`docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md` for the cross-reference.
 
 ## Safety note on `insertIdentity`
 
@@ -288,7 +288,7 @@ theorem rpi5BootVSpaceRoot_bootSafe :
     predicate.  Callers that extend `bootFromPlatformChecked` to accept
     VSpaceRoots can use this witness as the refinement hypothesis.  The full
     cascade rewrite of `bootSafeObject` is tracked for AN9 hardware-binding
-    closure (see `docs/audits/AUDIT_v0.29.0_DEFERRED.md` — DEF-P-L9 is
+    closure (see `docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md` — DEF-P-L9 is
     closed by the LANDING of this module; the downstream sweep refinement
     remains a follow-up integration task cross-referenced in AN9-E). -/
 theorem rpi5BootVSpaceRoot_admits_bootSafe :

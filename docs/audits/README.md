@@ -32,20 +32,28 @@ Once the workstream closes:
    "Latest audit" link points at the next active audit (or its archived
    location while there is no successor).
 
-## Files currently live (v0.30.6 → v0.30.11 → v0.30.11 pre-1.0 cut)
+## Files currently live (v0.30.11 pre-1.0 cut)
 
-- `AUDIT_v0.30.11_COMPREHENSIVE.md` — **new pre-1.0 readiness audit cut
-  (2026-04-26)**. Succeeds `AUDIT_v0.30.6_COMPREHENSIVE.md`. Has no
-  paired `WORKSTREAM_PLAN.md`/`*_BASELINE.txt` yet because no
-  remediation workstream has opened; per the lifecycle table above,
-  those artefacts will be added when the next workstream opens. This
-  audit's two pre-1.0 actions (DEBT-DOC-01 metric refresh,
-  DEBT-RUST-02 H-24 reconfirmation) plus the post-1.0 DEBT register
-  are the seed of that next workstream.
-- `AUDIT_v0.30.6_COMPREHENSIVE.md` — preceding active audit; remains
-  in this directory until the v0.30.11 remediation workstream closes,
-  at which point both the v0.30.6 and v0.30.11 artefacts move to
-  `docs/dev_history/audits/` together.
+- `AUDIT_v0.30.11_COMPREHENSIVE.md` — **active pre-1.0 readiness audit
+  cut (2026-04-26)**. Succeeds `AUDIT_v0.30.6_COMPREHENSIVE.md` (now
+  archived under `docs/dev_history/audits/`). Has no paired
+  `WORKSTREAM_PLAN.md`/`*_BASELINE.txt` yet because no remediation
+  workstream has opened; per the lifecycle table above, those artefacts
+  will be added when the next workstream opens. This audit's two
+  pre-1.0 actions (DEBT-DOC-01 metric refresh, DEBT-RUST-02 H-24
+  reconfirmation) plus the post-1.0 DEBT register are the seed of that
+  next workstream.
+
+## Recently archived (WS-AN closure, v0.30.11)
+
+The following predecessor artefacts were archived to
+[`docs/dev_history/audits/`](../dev_history/audits/) once WS-AN closed
+at v0.30.11 (every absorbed `AUDIT_v0.29.0_DEFERRED.md` row landed
+RESOLVED in-place except DEF-F-L9 which is retained post-v1.0 as a
+cosmetic refactor with no correctness impact):
+
+- `AUDIT_v0.30.6_COMPREHENSIVE.md` — predecessor active audit (196
+  findings; remediated by WS-AN AN0..AN12).
 - `AUDIT_v0.30.6_WORKSTREAM_PLAN.md` — WS-AN remediation plan
   (AN0..AN12).
 - `AUDIT_v0.30.6_WS_AN_BASELINE.txt` — numeric baseline at WS-AN start.
@@ -53,14 +61,17 @@ Once the workstream closes:
   index (landed at AN12-A; see also the marker theorem
   `closureForm_discharge_index_documented` in
   `SeLe4n/Kernel/CrossSubsystem.lean`).
-- `AUDIT_v0.29.0_COMPREHENSIVE.md` — predecessor audit (kept here while
-  WS-AN absorbs items from `AUDIT_v0.29.0_DEFERRED.md`).
-- `AUDIT_v0.29.0_DEFERRED.md` — deferred-item tracking; every row is
-  RESOLVED at v0.30.11 (WS-AN closure). Closure summary at the top of
-  the file.
+- `AUDIT_v0.29.0_COMPREHENSIVE.md` — pre-1.0 full-kernel audit
+  (remediated by WS-AK AK1..AK10).
+- `AUDIT_v0.29.0_DEFERRED.md` — deferred-item tracking absorbed by
+  WS-AN; every row RESOLVED at v0.30.11 (closure summary at the top of
+  the file). DEF-F-L9 retained as a post-v1.0 cosmetic refactor with
+  no correctness impact.
 - `AUDIT_v0.29.0_ERRATA.md` — errata for the v0.29.0 audit (E-1..E-6).
-- `AL0_baseline.txt` — historical AL0 monotonicity baseline (re-anchored
-  at every WS-AN AN10 commit).
+- `AL0_baseline.txt` — AL0 monotonicity baseline (re-anchored at every
+  WS-AN AN10 commit; the AK7 cascade gate
+  `scripts/ak7_cascade_check_monotonic.sh` reads it from the archived
+  path until the next workstream cuts a fresh baseline).
 
 ## Archival policy
 

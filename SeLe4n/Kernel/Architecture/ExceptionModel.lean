@@ -50,7 +50,7 @@ instructions to `syscallEntry` (API.lean), but an import cycle prevents
 direct integration (ExceptionModel imports API, which cannot import
 ExceptionModel back). See §8.15.1 of SELE4N_SPEC.md for the activation
 roadmap. Hardware-integration activation closed by AN9-F (SVC FFI wiring,
-DEF-R-HAL-L14) per docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12.
+DEF-R-HAL-L14) per docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12.
 -/
 
 namespace SeLe4n.Kernel.Architecture

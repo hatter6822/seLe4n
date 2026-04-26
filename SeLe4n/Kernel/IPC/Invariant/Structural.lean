@@ -16,7 +16,7 @@ import SeLe4n.Kernel.IPC.Invariant.Structural.PerOperation
 
 Post-AN3-C, the former 7626-line `Structural.lean` has been split into
 four child modules under `SeLe4n.Kernel.IPC.Invariant.Structural.*`
-(see plan §6 / AN3-C of `docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`):
+(see plan §6 / AN3-C of `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`):
 
 * `QueueNextTransport` — intrusive-queue basics + `storeObject` /
   `ensure/removeRunnable` / `storeTcbQueueLinks` frame lemmas

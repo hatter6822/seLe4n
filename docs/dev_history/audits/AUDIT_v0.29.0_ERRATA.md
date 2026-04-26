@@ -1,7 +1,7 @@
 # Audit v0.29.0 — Errata and Clarifications
 
 **Parent audit:** [`AUDIT_v0.29.0_COMPREHENSIVE.md`](AUDIT_v0.29.0_COMPREHENSIVE.md)
-**Plan:** [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) (archived in `docs/dev_history/audits/` after WS-AK closure)
+**Plan:** [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](AUDIT_v0.29.0_WORKSTREAM_PLAN.md) (archived in `docs/dev_history/audits/` after WS-AK closure)
 **Workstream:** WS-AK Phase AK10 (Closure)
 **Status:** Closed under v0.30.6 (AK10-D).
 
