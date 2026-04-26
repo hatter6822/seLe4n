@@ -35,8 +35,8 @@ provides a substantive witness for the v1.0.0 release target.
 
 ## References
 
-* Plan: `docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` §8 (Phase AN5-E)
-* Deferred tracking: `docs/audits/AUDIT_v0.29.0_DEFERRED.md` — AK2-K.4
+* Plan: `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` §8 (Phase AN5-E)
+* Deferred tracking: `docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md` — AK2-K.4
 * Spec: `docs/spec/SELE4N_SPEC.md` §5.7 (WCRT deployment obligation)
 -/
 

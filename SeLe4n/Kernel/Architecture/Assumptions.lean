@@ -330,7 +330,7 @@ The following hardware constraints are assumed for the Raspberry Pi 5 target:
 - **Single-core operation**: H3 uses core 0 only. Other cores are held in WFE
   loop. Per-core assumptions (run queues, TLB, cache) are simplified to
   single-core semantics. SMP bring-up (DEF-R-HAL-L20) is closed by AN9-J
-  (see docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12 AN9-J).
+  (see docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12 AN9-J).
 - **Sequential memory model**: All memory operations are sequentially ordered.
   DMB/DSB/ISB barriers are modeled as no-ops in the sequential model but are
   emitted in the Rust HAL for hardware correctness.

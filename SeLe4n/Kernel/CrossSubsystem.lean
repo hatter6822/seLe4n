@@ -2938,7 +2938,7 @@ theorem cspaceRevoke_cdt_hypothesis_discharged_at
 
 /-- AN12-A (Theme 4.1) — closure-form discharge index marker.
 
-The full index lives in `docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md` and
+The full index lives in `docs/dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md` and
 maps every closure-form hypothesis (`hCdtPost`, `hProjEq`, `hSchedProj`,
 `hServiceProjEq`) in the proof surface to either a substantively proven
 companion bridge (`{cspaceCopy,cspaceMove,cspaceMintWithCdt,cspaceMutate,
@@ -2952,7 +2952,7 @@ pattern (the index content is in the markdown file). The companion
 `#check` reachability tests are listed in §3 of the index file and
 exercised by `scripts/test_tier3_invariant_surface.sh`. -/
 theorem closureForm_discharge_index_documented : True := trivial
--- Cross-reference: docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md
+-- Cross-reference: docs/dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md
 
 -- ============================================================================
 -- AN6-F: Phase AN6 CrossSubsystem MEDIUM batch (CX-M01..M05)
@@ -3017,7 +3017,7 @@ AN6-C adds *transitive* ancestor tracking via a new
 disjointness predicate. The full 13th-conjunct integration (preservation
 proofs + 130-site rename cascade) is a multi-day workstream and is
 tracked as follow-up AN6-C.5..C.10 per
-`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` §9. This section lands
+`docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` §9. This section lands
 the foundation pieces (C.1 through C.4) so future commits can compose
 on the predicate without re-doing the design work.
 
@@ -3261,7 +3261,7 @@ theorem collectQueueMembers_head_is_start
     (DEF-R-HAL-L20 / AN9-J) to retire this single-core witness
     explicitly rather than letting the assumption slip silently.
 
-    SMP bring-up is tracked in `docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`
+    SMP bring-up is tracked in `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`
     §12 (phase AN9-J). -/
 theorem bootFromPlatform_singleCore_witness :
     ∀ (s : SchedulerState),

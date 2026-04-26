@@ -2828,7 +2828,7 @@ Phase AN2 lands the **Theme 4.3 (advisory predicates → subtype gates)**
 migration for every hardware-adjacent identifier and address type in
 `SeLe4n/Prelude.lean`, plus the Badge H-12 intermediate-overflow closure,
 the `UntypedObjectValid` refinement subtype, and four small FND-M batch
-items. The canonical audit plan is [`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md) §5.
+items. The canonical audit plan is [`docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md) §5.
 
 **AN2-A / H-13 — Badge `private mk`:**
 - `Badge` constructor is now `private mk ::`. Cross-module `Badge.mk n`
@@ -2920,7 +2920,7 @@ Zero sorry/axiom/native_decide in production surface throughout.
 
 Phase AN12-A lands the canonical index of every closure-form proof
 obligation in the proof surface. The artefact is
-[`docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md`](../audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md);
+[`docs/dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md`](../dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md);
 the marker theorem `closureForm_discharge_index_documented : True := trivial`
 in `SeLe4n/Kernel/CrossSubsystem.lean` cross-references it.
 

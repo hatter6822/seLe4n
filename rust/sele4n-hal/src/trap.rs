@@ -186,7 +186,7 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
         ec::SVC_AARCH64 => {
             // CLOSED at AN9-F: Wire Lean FFI dispatch via
             // `sele4n_syscall_dispatch` (closes DEF-R-HAL-L14 per
-            // docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12 AN9-F).
+            // docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12 AN9-F).
             //
             // The seLe4n ABI uses x7 for the syscall number (Lean
             // `arm64DefaultLayout.syscallNumReg = ⟨7⟩`).  The dispatcher

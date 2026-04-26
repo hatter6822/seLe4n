@@ -1,7 +1,7 @@
 # Audit v0.29.0 — Deferred Items (post-1.0 hardening candidates)
 
 **Parent audit:** [`AUDIT_v0.29.0_COMPREHENSIVE.md`](AUDIT_v0.29.0_COMPREHENSIVE.md)
-**Plan:** [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) §17 (archived in `docs/dev_history/audits/` after WS-AK closure)
+**Plan:** [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](AUDIT_v0.29.0_WORKSTREAM_PLAN.md) §17 (archived in `docs/dev_history/audits/` after WS-AK closure)
 **Workstream:** WS-AK Phase AK10 (Closure — AK10-J); **closure annotations landed under WS-AN AN12-G (v0.30.11).**
 **Status:** Tracking file established under v0.30.6; **14 of 15 rows RESOLVED at v0.30.11**.
 

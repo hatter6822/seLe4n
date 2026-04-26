@@ -73,7 +73,7 @@ representation. No deprecation shim added.
 
 The 11 LOW items addressed by Phase AN8-E are documented inline in the
 respective source files (with one-line cross-references back to
-`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` §11). This file does not
+`docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` §11). This file does not
 duplicate them — it is intentionally a minimal index, not a full audit
 log.
 

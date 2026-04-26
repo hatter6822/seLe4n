@@ -294,7 +294,7 @@ def mkMmioSafe_gicCpu (addr : PAddr) (outcome memoryAt : Nat)
    `BarrierKind` type and `barrierOrdered` predicate with trivial sequential
    satisfaction and explicit ordering theorems (see end of file). These become
    non-trivial proof obligations in the multi-core extension (closed by
-   AN9-I / AN9-J per docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12).
+   AN9-I / AN9-J per docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12).
 
 3. **Device-specific register semantics**: Beyond the W1C model, device registers
    may have set-only, read-clear, or FIFO semantics. These are *declared* via
@@ -368,7 +368,7 @@ def isDeviceAddress (addr : PAddr) : Bool :=
     not capture volatile register behavior — real hardware device registers
     may return different values on successive reads (status bits, FIFO data,
     interrupt acknowledgment). Hardware binding (AN9 / closes DEF-R-HAL-L14
-    per docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12) must substitute
+    per docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12) must substitute
     actual MMIO reads via FFI (`@[extern]` bridge to Rust HAL `mmio.rs`). -/
 def mmioReadByte (addr : PAddr) : Kernel UInt8 :=
   fun st =>
@@ -1014,7 +1014,7 @@ In the sequential abstract model, memory updates are instantaneous, so
 barrier ordering is trivially satisfied. This predicate exists to:
 1. Document where barriers are semantically required
 2. Enable future multi-core extension (closed by AN9-I / AN9-J per
-   docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12) where barriers
+   docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12) where barriers
    become non-trivial proof obligations
 3. Allow proofs to explicitly depend on barrier presence
 

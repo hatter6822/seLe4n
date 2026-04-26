@@ -23,7 +23,7 @@ manual maintainer action per the AK10-C precedent (no automated tag).
 **No currently-active workstream**: 14 of 15 absorbed deferred items are
 RESOLVED (DEF-F-L9 17-tuple refactor retained as a post-1.0 cosmetic
 improvement; tracked at the bottom of
-[`docs/audits/AUDIT_v0.29.0_DEFERRED.md`](audits/AUDIT_v0.29.0_DEFERRED.md)).
+[`docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md`](dev_history/audits/AUDIT_v0.29.0_DEFERRED.md)).
 Zero items carry past v1.0.0 with correctness impact.
 
 **Next hardware milestone**: Raspberry Pi 5 hardware binding — ARMv8
@@ -33,13 +33,16 @@ the remaining hardware-binding gaps (TLB+cache composition, SVC FFI
 wiring, secondary-core bring-up / SMP) are absorbed into WS-AN Phase
 AN9 as pre-1.0 work rather than carried past v1.0.0.
 
-## WS-AN — Pre-1.0 Audit Remediation (v0.30.6 → v0.30.11, **COMPLETE**)
+## WS-AN — Pre-1.0 Audit Remediation (v0.30.6 → v0.30.11, **COMPLETE — ARCHIVED**)
 
-**Audit:** [`docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md`](audits/AUDIT_v0.30.6_COMPREHENSIVE.md)
-**Plan:** [`docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
-**Baseline:** [`docs/audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt`](audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt) (AN0-A snapshot)
-**Discharge index:** [`docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md`](audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md) (AN12-A landing)
-**Carried forward:** [`docs/audits/AUDIT_v0.29.0_DEFERRED.md`](audits/AUDIT_v0.29.0_DEFERRED.md) (15 items — 14 RESOLVED in-place; DEF-F-L9 retained as post-1.0 cosmetic)
+**Audit:** [`docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md`](dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md)
+**Plan:** [`docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md)
+**Baseline:** [`docs/dev_history/audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt`](dev_history/audits/AUDIT_v0.30.6_WS_AN_BASELINE.txt) (AN0-A snapshot)
+**Discharge index:** [`docs/dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md`](dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md) (AN12-A landing)
+**Carried forward:** [`docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md`](dev_history/audits/AUDIT_v0.29.0_DEFERRED.md) (15 items — 14 RESOLVED in-place; DEF-F-L9 retained as post-1.0 cosmetic)
+**Archive note:** all WS-AN artefacts moved to `docs/dev_history/audits/`
+after closure; the active audit is now
+[`docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md`](audits/AUDIT_v0.30.11_COMPREHENSIVE.md).
 
 **Phases:** 13 (AN0–AN12), 95 top-level sub-tasks, ~253 sub-sub-task commits
 (scope: 196 audit findings + 15 absorbed DEFERRED items, of which 14 are
@@ -1559,12 +1562,12 @@ sibling file is created** — every absorbed item is closed in-phase.
   mechanical file split can land as a dedicated follow-up PR at any
   time before AN12 portfolio closure.
 
-## WS-AK — Pre-1.0 Release Hardening (v0.29.1 → v0.30.6)
+## WS-AK — Pre-1.0 Release Hardening (v0.29.1 → v0.30.6, **ARCHIVED**)
 
-**Audit:** [`docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md`](audits/AUDIT_v0.29.0_COMPREHENSIVE.md)
+**Audit:** [`docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md`](dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md)
 **Plan:** [`docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md)
-**Errata:** [`docs/audits/AUDIT_v0.29.0_ERRATA.md`](audits/AUDIT_v0.29.0_ERRATA.md) (E-1..E-6)
-**Deferred:** [`docs/audits/AUDIT_v0.29.0_DEFERRED.md`](audits/AUDIT_v0.29.0_DEFERRED.md) (11 items, all post-1.0 hardening candidates)
+**Errata:** [`docs/dev_history/audits/AUDIT_v0.29.0_ERRATA.md`](dev_history/audits/AUDIT_v0.29.0_ERRATA.md) (E-1..E-6)
+**Deferred:** [`docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md`](dev_history/audits/AUDIT_v0.29.0_DEFERRED.md) (11 items absorbed into WS-AN; 14 RESOLVED, 1 retained post-v1.0 cosmetic)
 
 **Phases:** 10 (AK1–AK10), 86 sub-tasks, 202 findings addressed
 (2 CRITICAL + 23 HIGH + 76 MEDIUM + 101 LOW).

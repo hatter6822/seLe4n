@@ -8,7 +8,7 @@
 # install_git_hooks.sh — idempotent installer for seLe4n's git pre-commit hook.
 #
 # Closes C-03 from AUDIT_v0.30.6_COMPREHENSIVE.md per AN1-B in
-# docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §4.
+# docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §4.
 #
 # The canonical source is scripts/pre-commit-lean-build.sh. Contributors used
 # to run a manual `cp` per CLAUDE.md's install recipe, which did not protect

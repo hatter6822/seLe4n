@@ -51,7 +51,7 @@ theorem setPriorityOp_preserves_projection
 
 This is structurally the same pattern as the `H-07` finding for
 information-flow projection theorems (see
-`docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` §H-07).
+`docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` §H-07).
 
 **Discharge plan**: AN6-A performs the substantive discharge of
 projection closure-form theorems. The priority-management closure form

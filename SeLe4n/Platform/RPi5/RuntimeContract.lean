@@ -35,7 +35,7 @@ are well-typed and decidable, enabling non-vacuous `AdapterProofHooks`
 for both `preserveWriteRegister` and `preserveContextSwitch` on the
 production contract. Full hardware validation against actual RPi5 behavior
 is part of AN9 (hardware binding) per
-docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12.
+docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12.
 -/
 
 namespace SeLe4n.Platform.RPi5

@@ -20,7 +20,7 @@ binary contains zero third-party crates.
 2. **Testing tiers:** [`docs/TESTING_FRAMEWORK_PLAN.md`](docs/TESTING_FRAMEWORK_PLAN.md)
 3. **CI policy:** [`docs/CI_POLICY.md`](docs/CI_POLICY.md)
 4. **Project scope + workstreams:** [`docs/spec/SELE4N_SPEC.md`](docs/spec/SELE4N_SPEC.md)
-5. **Latest audit:** [`docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md`](docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md)
+5. **Latest audit:** [`docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md`](docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md)
 6. **Workstream history:** [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md)
 
 Full handbook: [`docs/gitbook/README.md`](docs/gitbook/README.md)

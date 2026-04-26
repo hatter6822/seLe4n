@@ -100,7 +100,7 @@ _start:
 //
 // Secondary cores enter a low-power WFE loop. Multi-core support (SMP) is
 // closed by AN9-J (DEF-R-HAL-L20) per
-// docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12. To wake a secondary
+// docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12. To wake a secondary
 // core, write to a mailbox and issue SEV.
 //
 // AK5-N (R-HAL-L9 / R-HAL-L16): Wake-storm risk is latent because the

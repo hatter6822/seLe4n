@@ -535,7 +535,7 @@ disposition:
 
 - **A-L7** `contextSwitchState` does not perform TLB/ASID maintenance.
   Closed by AN9-D (suspendThread atomicity / context-switch bracket,
-  DEF-C-M04) in docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12, where
+  DEF-C-M04) in docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12, where
   the Rust HAL emits the required TLBI and DSB sequences before loading
   TTBR0.
 

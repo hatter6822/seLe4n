@@ -208,7 +208,7 @@ def retypeFromUntyped
                     -- retype-to-untyped is not exercised by any test and the
                     -- default `parent := none` is correct for every
                     -- boot-constructed untyped. See AN6-C.2 in
-                    -- `docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`.
+                    -- `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`.
                     match storeObject untypedId (.untyped ut') st' with
                     | .error e => .error e
                     | .ok ((), stUt) =>

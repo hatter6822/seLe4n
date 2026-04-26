@@ -416,7 +416,7 @@ checklist before tagging:
 
 - [ ] **Documentation:**
   - [ ] `CHANGELOG.md` AN9 entry committed
-  - [ ] `docs/audits/AUDIT_v0.29.0_DEFERRED.md` rows marked RESOLVED
+  - [ ] `docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md` rows marked RESOLVED
   - [ ] `CLAUDE.md` Active workstream context refreshed
 
 After the static gate passes for the v1.0.0 commit, the project is

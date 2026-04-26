@@ -98,9 +98,10 @@ docs/PLATFORM_BINDING_ADR.md
 docs/VSPACE_MEMORY_MODEL_ADR.md
 
 # ── Audit artefacts (referenced from README "Latest audit" row) ──────
-docs/audits/AUDIT_v0.29.0_COMPREHENSIVE.md
-docs/audits/AUDIT_v0.30.6_COMPREHENSIVE.md
-docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md
+docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md
+docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md
+docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md
+docs/dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md
 
 # ── Scripts ──────────────────────────────────────────────────────────
 scripts/setup_lean_env.sh

@@ -10,7 +10,8 @@ partitions, each tasked with reading source rather than trusting docstrings,
 followed by spot-verification of the highest-impact claims against the live
 codebase.
 
-This audit succeeds `AUDIT_v0.30.6_COMPREHENSIVE.md` and is intended to be
+This audit succeeds `AUDIT_v0.30.6_COMPREHENSIVE.md` (now archived under
+`docs/dev_history/audits/` after WS-AN closure) and is intended to be
 the **pre-1.0 readiness checkpoint**. It does not yet have a paired
 `WORKSTREAM_PLAN`/`BASELINE` because remediation has not started; those
 artefacts will be added when (and only when) the next remediation workstream
@@ -669,7 +670,7 @@ remediation workstream's `WORKSTREAM_PLAN.md`.
 | ID | Severity | Location | Action |
 |---|---|---|---|
 | DEBT-DOC-01 | H (pre-1.0) | README.md, docs/codebase_map.json | Refresh metrics. |
-| DEBT-RUST-02 | M (pre-1.0) | docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md | Reconfirm or close H-24. |
+| DEBT-RUST-02 | M (pre-1.0) | docs/dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md | Reconfirm or close H-24. |
 | DEBT-ST-01 | M | SeLe4n/Model/State.lean, Builder.lean | Replace 17-conjunct projection chain with structure or HasField projections. |
 | DEBT-CAP-01 | M | SeLe4n/Kernel/Capability/Operations.lean 503–641 | Extract shared frame-helper for cspaceInsertSlot preservation. |
 | DEBT-CAP-02 | L | SeLe4n/Kernel/Capability/Invariant/Preservation/* | Tactic for Insert/Delete/Revoke proof scaffold. |

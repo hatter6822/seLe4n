@@ -2,7 +2,7 @@
 # AK7 cascade monotonicity gate (AN10-D, restored from AL0).
 #
 # Re-introduced by WS-AN Phase AN10. Reads the post-AN10 floors from
-# `docs/audits/AL0_baseline.txt` (KEY=value format produced by
+# `docs/dev_history/audits/AL0_baseline.txt` (KEY=value format produced by
 # `scripts/ak7_cascade_baseline.sh`). For every metric, enforces the
 # direction the AK7 cascade is supposed to drive:
 #   * SHOULD-DROP: current value MUST be ≤ baseline floor.
@@ -20,14 +20,14 @@
 #
 # To re-anchor the baseline (after AN10 close, or after each subsequent
 # WS-AN-style hygiene push):
-#   bash scripts/ak7_cascade_baseline.sh > docs/audits/AL0_baseline.txt
+#   bash scripts/ak7_cascade_baseline.sh > docs/dev_history/audits/AL0_baseline.txt
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
-BASELINE_FILE="docs/audits/AL0_baseline.txt"
+BASELINE_FILE="docs/dev_history/audits/AL0_baseline.txt"
 
 if [[ ! -f "$BASELINE_FILE" ]]; then
   echo "[ak7-monotonicity] Baseline not found: $BASELINE_FILE" >&2

@@ -257,7 +257,7 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~1885 lines, AN3-C child)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~1859 lines, AN3-C child)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
-- `docs/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines, WS-AN canonical plan)
+- `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines, WS-AN canonical plan, archived at WS-AN closure)
 - `docs/WORKSTREAM_HISTORY.md` (~4200 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~3857 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3779 lines, AN5-B SCH-M03)
@@ -569,7 +569,8 @@ under `docs/` and `docs/gitbook/`.
 - **WS-AN portfolio COMPLETE (v0.30.11, branch `claude/review-codebase-phase-an12-JBPQN`)**:
   Phase AN12 — Documentation, themes, closure — landed the cross-cutting
   Theme 4.1 closure-form discharge index
-  (`docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md`, marker theorem
+  (`docs/dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md`, archived at
+  WS-AN closure; marker theorem
   `closureForm_discharge_index_documented` in `SeLe4n/Kernel/CrossSubsystem.lean`),
   Theme 4.4 SMP-latent assumption inventory
   (`SeLe4n/Kernel/Concurrency/Assumptions.lean` with `smpLatentInventory`
@@ -580,7 +581,8 @@ under `docs/` and `docs/gitbook/`.
   the DOC LOW batch (`docs/audits/README.md` documenting the
   "one active audit at a time" lifecycle convention; `docs/CLAUDE_HISTORY.md`
   archive convention established), in-place RESOLVED annotations on
-  14 of 15 absorbed `AUDIT_v0.29.0_DEFERRED.md` rows (DEF-F-L9 retained
+  14 of 15 absorbed `AUDIT_v0.29.0_DEFERRED.md` rows (now archived under
+  `docs/dev_history/audits/`; DEF-F-L9 retained
   as a post-1.0 readability/maintainability refactor with no correctness
   impact), and the closure summary in `docs/WORKSTREAM_HISTORY.md`.
   Version bumped 0.30.10 → 0.30.11. Items deferred past v1.0.0 with
