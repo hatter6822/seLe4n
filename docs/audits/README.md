@@ -32,9 +32,20 @@ Once the workstream closes:
    "Latest audit" link points at the next active audit (or its archived
    location while there is no successor).
 
-## Files currently live (v0.30.6 → v0.30.11)
+## Files currently live (v0.30.6 → v0.30.11 → v0.30.11 pre-1.0 cut)
 
-- `AUDIT_v0.30.6_COMPREHENSIVE.md` — the active comprehensive audit.
+- `AUDIT_v0.30.11_COMPREHENSIVE.md` — **new pre-1.0 readiness audit cut
+  (2026-04-26)**. Succeeds `AUDIT_v0.30.6_COMPREHENSIVE.md`. Has no
+  paired `WORKSTREAM_PLAN.md`/`*_BASELINE.txt` yet because no
+  remediation workstream has opened; per the lifecycle table above,
+  those artefacts will be added when the next workstream opens. This
+  audit's two pre-1.0 actions (DEBT-DOC-01 metric refresh,
+  DEBT-RUST-02 H-24 reconfirmation) plus the post-1.0 DEBT register
+  are the seed of that next workstream.
+- `AUDIT_v0.30.6_COMPREHENSIVE.md` — preceding active audit; remains
+  in this directory until the v0.30.11 remediation workstream closes,
+  at which point both the v0.30.6 and v0.30.11 artefacts move to
+  `docs/dev_history/audits/` together.
 - `AUDIT_v0.30.6_WORKSTREAM_PLAN.md` — WS-AN remediation plan
   (AN0..AN12).
 - `AUDIT_v0.30.6_WS_AN_BASELINE.txt` — numeric baseline at WS-AN start.
