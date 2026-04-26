@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! AN9-F (DEF-R-HAL-L14 / RESOLVED): Typed SVC argument marshalling.
 //!
 //! This module owns the typed-argument extraction for SVC traps.  The

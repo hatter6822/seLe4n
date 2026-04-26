@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Syscall response decoding — unpacks ARM64 registers into typed results.
 
 use sele4n_types::{KernelError, KernelResult, Badge};

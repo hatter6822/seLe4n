@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Syscall trap — the **single** `unsafe` block in the entire library.
 //!
 //! On ARM64 (AArch64), the kernel entry point is the `svc #0` instruction.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Access rights model — 1:1 mapping from `SeLe4n.Model.AccessRight` and
 //! `SeLe4n.Model.AccessRightSet`.
 //!

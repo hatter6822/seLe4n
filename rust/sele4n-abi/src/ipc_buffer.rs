@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! IPC buffer — shared memory region for extended IPC operations.
 //!
 //! When a message exceeds the 4 inline ARM64 registers (x2–x5),

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! TCB operation syscall argument structures (D1/D2/D3).
 //!
 //! Lean: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` lines 1201–1340.

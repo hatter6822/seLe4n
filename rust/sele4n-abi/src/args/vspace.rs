@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! VSpace syscall argument structures.
 //!
 //! Lean: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` lines 117–131.

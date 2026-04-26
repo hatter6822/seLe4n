@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Cache maintenance operations for ARMv8-A on Cortex-A76.
 //!
 //! AG6-I: Cache maintenance operations (H3-RUST-06)

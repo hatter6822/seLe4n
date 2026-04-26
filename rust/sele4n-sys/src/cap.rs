@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Phantom-typed capability handles — compile-time rights tracking.
 //!
 //! `Cap<Obj, Rts>` encodes the object type and access rights at the type level,

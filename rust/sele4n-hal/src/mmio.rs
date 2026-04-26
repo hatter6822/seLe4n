@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Alignment checks use `addr % N == 0` for Rust 1.82 compatibility.
 // `is_multiple_of()` was stabilized in Rust 1.85.
 //

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! RegisterFile — safe, bounds-checked wrapper for syscall register arrays.
 //!
 //! U3-G / U-L09: Replaces raw `[u64; 7]` array indexing with a type that

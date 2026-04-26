@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! MessageInfo bitfield — matches `SeLe4n.Model.MessageInfo` encoding.
 //!
 //! Lean source: `SeLe4n/Model/Object/Types.lean` lines 717–860.

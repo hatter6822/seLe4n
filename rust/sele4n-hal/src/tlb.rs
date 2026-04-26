@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! TLB (Translation Lookaside Buffer) flush instruction wrappers for ARMv8-A.
 //!
 //! Each TLBI instruction is followed by DSB ISH + ISB per ARM ARM D8.11:

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Per-syscall typed argument structures with encode/decode.
 //!
 //! Mirrors `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` exactly.

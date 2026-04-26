@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
 /-
   seLe4n  - A Lean Microkernel
   Copyright (C) 2026  Adam Hall
@@ -2934,6 +2935,24 @@ theorem cspaceRevoke_cdt_hypothesis_discharged_at
     (st' : SystemState) (hBundle : capabilityInvariantBundle st') :
     cdtCompleteness st' ∧ cdtAcyclicity st' :=
   ⟨hBundle.2.2.2.1, hBundle.2.2.2.2.1⟩
+
+/-- AN12-A (Theme 4.1) — closure-form discharge index marker.
+
+The full index lives in `docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md` and
+maps every closure-form hypothesis (`hCdtPost`, `hProjEq`, `hSchedProj`,
+`hServiceProjEq`) in the proof surface to either a substantively proven
+companion bridge (`{cspaceCopy,cspaceMove,cspaceMintWithCdt,cspaceMutate,
+cspaceDeleteSlot,cspaceRevoke}_cdt_hypothesis_discharged_at` above) or a
+named frame-lemma recipe in `SeLe4n/Kernel/InformationFlow/Invariant/
+Operations.lean`.
+
+This marker theorem exists so that a tier-3 invariant-surface check can
+locate the index by name; the body is `trivial` per the marker-theorem
+pattern (the index content is in the markdown file). The companion
+`#check` reachability tests are listed in §3 of the index file and
+exercised by `scripts/test_tier3_invariant_surface.sh`. -/
+theorem closureForm_discharge_index_documented : True := trivial
+-- Cross-reference: docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md
 
 -- ============================================================================
 -- AN6-F: Phase AN6 CrossSubsystem MEDIUM batch (CX-M01..M05)

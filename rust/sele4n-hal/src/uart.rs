@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! PL011 UART driver for debug console output on Raspberry Pi 5.
 //!
 //! Base address: 0xFE201000 (BCM2712 UART0, matches `Board.lean:uart0Base`).

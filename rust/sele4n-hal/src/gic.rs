@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! GIC-400 interrupt controller driver for Raspberry Pi 5.
 //!
 //! Base addresses (from Board.lean):

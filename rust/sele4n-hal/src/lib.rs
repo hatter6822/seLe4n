@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! # sele4n-hal — ARM64 Hardware Abstraction Layer
 //!
 //! Kernel-side HAL for the seLe4n verified microkernel targeting Raspberry Pi 5

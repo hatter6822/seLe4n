@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.30.10` (`lakefile.toml`) |
+| **Package version** | `0.30.11` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 108,891 across 167 Lean files |
 | **Test LoC** | 16,168 across 25 Lean test suites |
@@ -774,6 +774,41 @@ The detector checks sentinel labels at ID 0 across all four entity classes
 passing the guard while remaining structurally valid for test execution. Test
 harnesses should use this context instead of `defaultLabelingContext` when
 exercising `syscallEntryChecked`.
+
+### 6.8 SMP-Latent Single-Core Assumptions (AN12-B / Theme 4.4)
+
+WS-AN Phase AN9-J landed the secondary-core bring-up infrastructure
+(`rust/sele4n-hal/src/psci.rs`, `rust/sele4n-hal/src/smp.rs`) merged
+behind the runtime flag `SMP_ENABLED = false` so v1.0.0 ships single-core
+by default. AN12-B records the per-site inventory of kernel transitions
+that depended on a single-core ordering invariant before AN9-J and now
+share the AN9-J runtime gating.
+
+The canonical inventory lives in
+`SeLe4n/Kernel/Concurrency/Assumptions.lean` as
+`def smpLatentInventory : List SmpLatentAssumption` with 8 entries
+(`smpLatentInventory_count : smpLatentInventory.length = 8` is the
+machine-checked size witness). Each entry carries five fields
+(`identifier`, `singleCoreWitness`, `smpDischarge`, `sourceTheorem`,
+`auditReference`).
+
+| # | Site | Audit reference |
+|---|------|-----------------|
+| 1 | `cspaceLookupMultiLevel` resolved-CNode validity | H-05 / AN4-D |
+| 2 | `cspaceCopy/Move/Mutate` CDT post-state composition | AK7-F.cascade / AN10-B |
+| 3 | `lifecyclePreRetypeCleanup` sequential cleanup ordering | C-M04 / AN9-D |
+| 4 | `serviceHasPathTo` graph traversal | SVC-M01 / AN4-H |
+| 5 | `timerTickWithBudget` replenishment pipeline | AK2-K / AN5-D |
+| 6 | `typedIdDisjointness` invariant | H-10 / AN2-D |
+| 7 | `Architecture/Assumptions.lean` single-core kernel model | AG-* baseline |
+| 8 | `bootFromPlatform` boot-core / current-core | CX-M03 / AN6-F |
+
+The inventory is wired into `SeLe4n.Platform.Staged` so `lake build
+SeLe4n.Platform.Staged` (and therefore tier-1 CI) forces the module to
+compile. Future SMP activation (flipping `SMP_ENABLED = true`) does not
+require any new entries to land; instead each entry's `smpDischarge`
+field documents the runtime invariant that AN9-J's bring-up code
+preserves on a per-core basis.
 
 ---
 

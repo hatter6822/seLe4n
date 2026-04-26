@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /// Build script for sele4n-hal: assembles ARM64 .S files via the `cc` crate.
 ///
 /// Assembly sources:

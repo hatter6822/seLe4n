@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! CPU instruction wrappers for ARMv8-A.
 //!
 //! Each wrapper encapsulates a single privileged or hint instruction with a

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! FFI Bridge: Lean kernel → Rust HAL
 //!
 //! AG7-A: `#[no_mangle] pub extern "C"` wrappers exposing HAL functions to the

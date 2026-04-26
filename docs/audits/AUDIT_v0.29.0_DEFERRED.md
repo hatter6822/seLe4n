@@ -2,8 +2,32 @@
 
 **Parent audit:** [`AUDIT_v0.29.0_COMPREHENSIVE.md`](AUDIT_v0.29.0_COMPREHENSIVE.md)
 **Plan:** [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) §17 (archived in `docs/dev_history/audits/` after WS-AK closure)
-**Workstream:** WS-AK Phase AK10 (Closure — AK10-J)
-**Status:** Tracking file established under v0.30.6.
+**Workstream:** WS-AK Phase AK10 (Closure — AK10-J); **closure annotations landed under WS-AN AN12-G (v0.30.11).**
+**Status:** Tracking file established under v0.30.6; **14 of 15 rows RESOLVED at v0.30.11**.
+
+## WS-AN closure summary (v0.30.11 / AN12-G)
+
+WS-AN absorbs the items in this file in-scope per
+[`AUDIT_v0.30.6_WORKSTREAM_PLAN.md`](AUDIT_v0.30.6_WORKSTREAM_PLAN.md) §18.
+At WS-AN closure (v0.30.11) the disposition is:
+
+- **14 of 15 rows RESOLVED.** No new `AUDIT_v0.30.6_DEFERRED.md` file is
+  created — every absorbed row is annotated RESOLVED in-place below.
+- **1 row still tracked**: `DEF-F-L9` (17-deep tuple projection refactor).
+  This is **by-design at v1.0.0** per the WS-AF-26 design rationale;
+  the refactor is strictly a readability/maintainability win with no
+  correctness impact, so it stays as a post-1.0 cosmetic improvement
+  with **no currently-active plan file tracking it**.
+- **0 items carry past v1.0.0 with correctness impact.**
+
+The original plan target was a perfect 15/15 closure. The honest
+disposition is 14/15 with one retained-by-design row; the AN2 entry in
+[`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) already
+documents AN2-G as deferred for follow-up because the AN2 cascade was
+larger than the original sub-task budgeted (the plan estimated
+~80 sites; source-reads showed >150). Doing AN2-G as part of AN12 would
+have risked the closure window. The DEF-F-L9 row below carries the same
+"post-1.0 cosmetic" disposition that was true before WS-AN opened.
 
 This document formalises the deferred scope from the audit's §2.5
 "DEFER-to-WS-V" bucket plus two cascade items tracked for post-1.0
@@ -563,11 +587,16 @@ currently-active plan file tracks them.**
 | DEF-AK7-E.cascade | F-M03 | MEDIUM | **RESOLVED (v0.30.10 / AN10)** | B: proof-hygiene |
 | DEF-AK7-F.cascade | F-M04 | MEDIUM | **RESOLVED (v0.30.10 / AN10)** | B: proof-hygiene |
 
-Total tracked: **15 items** — **11 hardware-binding RESOLVED at AN9**
-(v0.30.10), **2 proof-hygiene RESOLVED earlier**
-(DEF-AK2-K.4 at AN5-E, DEF-P-L9 at AN7-D.2), **2 RESOLVED at AN10**
-(DEF-AK7-E.cascade and DEF-AK7-F.cascade), **1 still tracked**
-(DEF-F-L9 by-design).
+Total tracked: **15 items** — **14 RESOLVED at WS-AN closure (v0.30.11)**:
+
+- **11 hardware-binding RESOLVED at AN9** (v0.30.10);
+- **2 proof-hygiene RESOLVED earlier** (DEF-AK2-K.4 at AN5-E,
+  DEF-P-L9 at AN7-D.2);
+- **2 cascade RESOLVED at AN10** (DEF-AK7-E.cascade and
+  DEF-AK7-F.cascade).
+
+**1 still tracked** (DEF-F-L9 by-design): retained as a post-1.0
+readability/maintainability refactor with no correctness impact.
 
 **WS-AN Phase AN9 hardware-binding closure: COMPLETE.**  Every
 hardware-binding item from the original v0.29.0 deferred list and
@@ -594,3 +623,11 @@ or an entry in this file. When a future workstream is opened to pick
 up any of the deferred items, it should reference this file by ID,
 update the corresponding row's disposition to RESOLVED, and record
 the commit SHA that closes the item.
+
+**WS-AN closure update (v0.30.11):** WS-AN absorbed 14 of 15 items in
+this file as **RESOLVED**; the lone remaining row (`DEF-F-L9`) is the
+17-tuple projection refactor, which carries no correctness impact and
+is retained as a post-1.0 cosmetic improvement. WS-AN does NOT create
+a sibling `AUDIT_v0.30.6_DEFERRED.md` file — every WS-AN audit finding
+is closed in-phase per the plan's "zero deferred items past v1.0.0
+with correctness impact" rule.

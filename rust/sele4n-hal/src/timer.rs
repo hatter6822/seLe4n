@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! ARM Generic Timer driver for Raspberry Pi 5.
 //!
 //! Counter frequency: 54 MHz (from Board.lean `timerFrequencyHz`).

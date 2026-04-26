@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! SchedContext operations — configure, bind, unbind.
 //!
 //! Lean: `SeLe4n/Kernel/API.lean` — `apiSchedContextConfigure`,

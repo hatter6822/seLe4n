@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
 /-
   seLe4n  - A Lean Microkernel
   Copyright (C) 2026  Adam Hall

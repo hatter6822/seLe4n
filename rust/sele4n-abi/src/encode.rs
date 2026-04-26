@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Syscall request encoding — packs typed arguments into ARM64 registers.
 //!
 //! Register layout (from `SeLe4n.Machine.arm64DefaultLayout`):

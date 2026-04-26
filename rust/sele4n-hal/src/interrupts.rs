@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Interrupt management primitives for ARMv8-A.
 //!
 //! Provides critical section support via DAIF register manipulation.

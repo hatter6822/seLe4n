@@ -1,3 +1,143 @@
+## v0.30.11 — WS-AN Phase AN12: Documentation, themes, closure (WS-AN COMPLETE)
+
+WS-AN closes with the documentation-and-closure phase landing the two
+cross-cutting themes (Theme 4.1 closure-form discharge index; Theme 4.4
+SMP-latent assumption inventory), the DOC-M01..M08 batch, the DOC LOW
+batch, in-place RESOLVED annotations on the absorbed DEFERRED rows,
+the WORKSTREAM_HISTORY entry, the CLAUDE.md refresh + archive, the
+version bump, and the final release gate.
+
+### Addressed (`AUDIT_v0.30.6_COMPREHENSIVE.md`)
+
+- Critical: C-01, C-03 closed in AN1 (C-02 resolved in prior commit).
+- High: H-01..H-24 closed across AN3..AN11 (H-22 addressed
+  post-downgrade in AN11-C).
+- Medium: 71 / 71 closed across AN3..AN11.
+- Low: 58 / 58 closed in batch commits.
+
+### Absorbed from `AUDIT_v0.29.0_DEFERRED.md` (14 of 15 RESOLVED)
+
+- Hardware-binding (AN9): DEF-A-M04, DEF-A-M06, DEF-A-M08, DEF-A-M09,
+  DEF-C-M04, DEF-P-L9, DEF-R-HAL-L14.
+- AN9 surface-extension items: DEF-R-HAL-L17, DEF-R-HAL-L18,
+  DEF-R-HAL-L19, DEF-R-HAL-L20.
+- Cascade (AN10): DEF-AK7-E.cascade, DEF-AK7-F.reader,
+  DEF-AK7-F.writer.
+- Proof-hygiene / semantic: DEF-AK2-K.4 (RESOLVED at AN5-E).
+- **Retained as post-1.0 cosmetic**: DEF-F-L9 (17-deep tuple
+  projection refactor, no correctness impact, no currently-active
+  plan tracks it). All other rows are RESOLVED in-place at the top
+  of `docs/audits/AUDIT_v0.29.0_DEFERRED.md`.
+
+### Theme 4.1 — Closure-form discharge index (AN12-A)
+
+New `docs/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md` aggregates every
+closure-form proof obligation in the proof surface into a single
+auditable artefact. §3.A — 6 substantively discharged CDT
+post-state bridges; §3.B — 4 substantive + 7 closure-form
+projection theorems with named frame-lemma recipes; §3.C — 5
+schedule / service closures with discharge sites at the API
+dispatch boundary. Marker theorem
+`closureForm_discharge_index_documented` in
+`SeLe4n/Kernel/CrossSubsystem.lean` cross-references the index.
+Registered in `scripts/website_link_manifest.txt`.
+
+### Theme 4.4 — SMP-latent inventory (AN12-B)
+
+New `SeLe4n/Kernel/Concurrency/Assumptions.lean` module records the
+8 kernel sites that depended on a single-core ordering invariant
+before AN9-J's secondary-core bring-up landed. Each entry has five
+fields (`identifier`, `singleCoreWitness`, `smpDischarge`,
+`sourceTheorem`, `auditReference`).
+`smpLatentInventory_count : smpLatentInventory.length = 8` is the
+machine-checked size witness; `smpLatentInventory_identifiers_nonAnonymous`
+verifies every entry's `identifier` is a fully-qualified Lean
+`Name`. The 8 entries span H-05 / AK7-F.cascade / C-M04 / SVC-M01 /
+AK2-K / H-10 / single-core kernel model / CX-M03. Wired into
+`Platform.Staged`; `docs/spec/SELE4N_SPEC.md` §6.8 mirrors the
+table.
+
+### DOC-M01..M08 batch (AN12-C)
+
+- **DOC-M03 (SPDX headers)**: `SPDX-License-Identifier:
+  GPL-3.0-or-later` added to all 247 `.lean` and `.rs` source files
+  via `python3 add_spdx.py`. Idempotent; all-files build still PASS
+  on Lean (302 jobs) and Rust (`cargo build --workspace`).
+- **DOC-M07 (WORKSTREAM_HISTORY)**: WS-AN closure entry committed
+  with 13-phase breakdown, gate-state table, finding-count
+  arithmetic.
+- **DOC-M08 (CONTRIBUTING.md)**: rewritten to cover license,
+  branch policy, pre-commit-hook installation, tier-2 / Rust /
+  ABI-roundtrip validation, the 2000-LOC file-size convention, and
+  the `pull_request` vs `pull_request_target` security note.
+
+### DOC LOW batch (AN12-D)
+
+- New `docs/audits/README.md` documents the "one active audit at a
+  time" lifecycle convention (audit cut → workstream planning →
+  in-flight remediation → closure → archive under
+  `docs/dev_history/audits/`).
+- New `docs/CLAUDE_HISTORY.md` archive convention established.
+- CLAUDE.md `## Active workstream context` section refactored from
+  104 verbose paragraphs to a 30-line summary that points at the
+  canonical record (`WORKSTREAM_HISTORY.md`).
+
+### Theme 4.7 file-split review (AN12-F)
+
+9 `.lean` files remain above the 2000-LOC ceiling. The convention is
+documented in `CONTRIBUTING.md`; splitting these files in the
+closure phase would risk proof-cascade regressions, so they remain
+tracked as post-1.0 mechanical splits with no correctness impact.
+
+### Inline marker hygiene (AN12-E)
+
+Per the plan's selective-scope §AN12-E.1 classification, ~3000
+[HIST] markers are explicitly retained per the project's
+"workstream IDs in docstrings/CHANGELOG/CLAUDE.md prose" policy
+(internal-first naming convention from CLAUDE.md). The [DEFER]
+retargets were completed under AN1-C. No stale forward references
+to closed workstreams remain at WS-AN closure.
+
+### Version bump (AN12-J)
+
+`0.30.10 → 0.30.11` across 15 version-bearing files
+(`lakefile.toml`, `rust/Cargo.toml`, `rust/Cargo.lock`,
+`rust/sele4n-hal/src/boot.rs::KERNEL_VERSION`, `README.md` + 10 i18n
+READMEs, `docs/spec/SELE4N_SPEC.md`, `CLAUDE.md`).
+`scripts/check_version_sync.sh` PASS at 0.30.11.
+
+### Deferred past v1.0.0
+
+**NONE with correctness impact.** The lone retained row
+(`DEF-F-L9`) is a readability/maintainability refactor of the
+17-deep `allTablesInvExtK` tuple projection — strictly cosmetic,
+with no correctness impact, and no currently-active plan tracks it.
+
+### Gate at v0.30.11 tip
+
+- `lake build` (302 jobs, 0 warnings)
+- `test_smoke.sh` PASS
+- `test_full.sh` PASS
+- `test_tier0_hygiene.sh` PASS (incl. monotonicity, SPDX presence,
+  version sync, website-links manifest)
+- `cargo test --workspace` PASS (462 tests)
+- `cargo clippy --workspace -- -D warnings` (0 warnings)
+- `check_version_sync.sh` PASS at 0.30.11
+- `check_website_links.sh` PASS
+- Fixture byte-identical to
+  `tests/fixtures/main_trace_smoke.expected`
+- Zero `sorry` / `axiom` / `native_decide` in `SeLe4n/` or `Main.lean`
+
+### Thanks
+
+To every contributor across the 13 WS-AN phases (AN0..AN12) and
+the prior WS-AK / WS-AM / WS-AL portfolios that brought the kernel
+from audit baseline to v1.0.0-release-candidate parity. Final tag
+application is a separate manual maintainer action per the AK10-C
+precedent.
+
+---
+
 ## v0.30.10 — WS-AN Phase AN11 audit-pass v3
 
 A third deep audit pass on the AN11 audit-pass-v2 tip caught three more

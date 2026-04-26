@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 //! Typed kernel identifiers — 14 newtype wrappers over `u64`.
 //!
 //! Each identifier mirrors a Lean `structure Foo where val : Nat` in
