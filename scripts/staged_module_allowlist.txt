@@ -1,0 +1,31 @@
+# scripts/staged_module_allowlist.txt
+#
+# Per WS-RC R12.B: explicit allowlist of modules that are intentionally
+# in the Platform.Staged transitive closure but NOT reachable from the
+# production library entry point (SeLe4n.lean).
+#
+# The companion gate scripts/check_production_staging_partition.sh
+# verifies that the live staged_only set equals this allowlist exactly.
+# A module that enters production (becomes reachable from SeLe4n.lean)
+# without being removed from this allowlist will fail the gate; a new
+# staged module added without an allowlist entry will also fail.
+#
+# Format: <module>  # <category>: <one-line rationale>
+# Categories:
+#   marker              — file carries a "STATUS: staged for ..." marker
+#   transitively-staged — pulled in by a marker-bearing module
+#   infra               — platform infrastructure (bridges, anchors, helpers)
+#   anchor              — the staging anchor file itself
+#
+# Last verified: WS-RC R0 cut (v0.30.11 HEAD).
+
+SeLe4n.Kernel.Architecture.AsidManager        # transitively-staged via Platform.RPi5.VSpaceBoot
+SeLe4n.Kernel.Architecture.CacheModel         # marker (STATUS: staged for H3)
+SeLe4n.Kernel.Architecture.ExceptionModel     # marker (STATUS: staged for H3)
+SeLe4n.Kernel.Architecture.InterruptDispatch  # transitively-staged via ExceptionModel
+SeLe4n.Kernel.Architecture.TimerModel         # marker (STATUS: staged for H3)
+SeLe4n.Kernel.Architecture.TlbCacheComposition # transitively-staged via Staged
+SeLe4n.Kernel.Concurrency.Assumptions         # infra (SMP-latent assumption inventory)
+SeLe4n.Platform.FFI                           # infra (Lean ↔ Rust bridge; promotes after WS-RC R2)
+SeLe4n.Platform.RPi5.VSpaceBoot               # infra (boot VSpace; promotes after WS-RC R3)
+SeLe4n.Platform.Staged                        # anchor (the staging entry point itself)

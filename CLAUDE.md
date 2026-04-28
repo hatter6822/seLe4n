@@ -644,6 +644,26 @@ under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
+- **WS-RC remediation workstream IN FLIGHT (v0.30.11 → v0.31.0 → v1.0.0,
+  branch `claude/audit-workstream-planning-XsmKS`)**:
+  Remediates the v0.30.11 audit cycle (comprehensive + deep verification)
+  via 15 phases (R0..R14). Plan:
+  [`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md).
+  Errata recording the audit-text corrections discovered during planning:
+  [`docs/audits/AUDIT_v0.30.11_ERRATA.md`](docs/audits/AUDIT_v0.30.11_ERRATA.md).
+  Release path: `v0.31.0` "verified specification release" (R0+R1+R8..R12)
+  → `v1.0.0` "bootable verified microkernel" (+ R2..R6). The plan applies
+  the implement-the-improvement rule uniformly: even false-positive
+  audit findings receive structural enforcement gates (R12.B for
+  production/staged partition, R12.C for ARM-ARM citations, R12.D for
+  `_fields` consumer presence; R4.D for cspaceMutate witness theorem).
+  Plan-author audit at WS-RC R0 prep landed: SPDX header on
+  `SeLe4n.lean` (R10.1), audit errata file (R0.2), staged-module
+  allowlist + partition gate (R12.B.1/2), orphan-fields gate (R12.D.1),
+  contract-marker text correction (R12.B side effect — partition
+  gate caught 2 stale "STATUS: staged" markers on production-wired
+  contract files).
+
 - **WS-AN portfolio COMPLETE (v0.30.11, branch `claude/review-codebase-phase-an12-JBPQN`)**:
   Phase AN12 — Documentation, themes, closure — landed the cross-cutting
   Theme 4.1 closure-form discharge index

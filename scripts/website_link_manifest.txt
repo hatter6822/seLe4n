@@ -99,6 +99,9 @@ docs/VSPACE_MEMORY_MODEL_ADR.md
 
 # ── Audit artefacts (referenced from README "Latest audit" row) ──────
 docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md
+docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md
+docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md
+docs/audits/AUDIT_v0.30.11_ERRATA.md
 docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md
 docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md
 docs/dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md
@@ -116,6 +119,9 @@ scripts/test_tier1_build.sh
 scripts/test_tier2_negative.sh
 scripts/test_tier2_trace.sh
 scripts/test_tier3_invariant_surface.sh
+scripts/check_production_staging_partition.sh
+scripts/check_no_orphan_fields.sh
+scripts/staged_module_allowlist.txt
 
 # ── Assets (served via raw.githubusercontent.com) ────────────────────
 assets/logo.png

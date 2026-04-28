@@ -119,6 +119,20 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 # coverage, AN10 regression test count).
 run_check "HYGIENE" "${SCRIPT_DIR}/ak7_cascade_check_monotonic.sh"
 
+# WS-RC R12.B (closes DEEP-ARCH-01 false positive structurally): verify
+# the production/staged module partition. The gate computes the transitive
+# `^import SeLe4n.` closure from `SeLe4n.lean` and from
+# `Platform/Staged.lean`, and checks that the staged-only set matches
+# `scripts/staged_module_allowlist.txt` exactly. Also verifies no
+# "STATUS: staged" marker has leaked into a production-reachable file.
+run_check "HYGIENE" "${SCRIPT_DIR}/check_production_staging_partition.sh"
+
+# WS-RC R12.D (closes DEEP-ARCH-02 false positive structurally): verify
+# every `*_fields : List StateField` definition in CrossSubsystem.lean
+# has at least one consumer somewhere in the SeLe4n tree (in-file or
+# out-of-file). Detects orphan metadata; file-local helpers pass.
+run_check "HYGIENE" "${SCRIPT_DIR}/check_no_orphan_fields.sh"
+
 run_check "HYGIENE" python3 -m unittest scripts.tests.test_generate_codebase_map
 
 # WS-I1/R-03: Scenario registry validation — every fixture ID must be in the registry and vice versa.

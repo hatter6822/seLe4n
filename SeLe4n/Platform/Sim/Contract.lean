@@ -15,9 +15,11 @@ import SeLe4n.Platform.Sim.ProofHooks
 /-!
 # Simulation Platform Binding
 
-> **STATUS: staged for H3 hardware binding** (AN7-D.6 / PLT-M07).  This
-> module is wired into `SeLe4n.Platform.Staged` so every CI run verifies
-> it compiles.  See `docs/spec/SELE4N_SPEC.md` §8.15 for the activation
+> **STATUS: production binding** (typeclass instance reachable from
+> `SeLe4n.lean`).  The simulation `PlatformBinding` instance composed
+> here is in the production import chain; the substantive simulation
+> path is exercised by `SeLe4n.Testing.MainTraceHarness` and the test
+> tier suites.  See `docs/spec/SELE4N_SPEC.md` §8.15 for the activation
 > roadmap.
 
 Composed `PlatformBinding` instance for the simulation target. This is the

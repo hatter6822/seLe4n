@@ -776,39 +776,68 @@ the typed-ABI entry point.
 
 **Implementation walkthrough.**
 
-*R2.B.1 — `syscallDispatchFromAbi` body.* The function is the
-typed-ABI entry point that bridges raw register slots to the
-verified `syscallEntryChecked`. Implementation skeleton:
+*R2.B.1 — `syscallDispatchFromAbi` body — REVISED per audit.* The
+plan author's audit at WS-RC R0 prep verified the actual
+`syscallEntryChecked` signature at `Kernel/API.lean:1244`:
+
+```lean
+def syscallEntryChecked (ctx : LabelingContext)
+    (layout : SeLe4n.SyscallRegisterLayout)
+    (regCount : Nat := 32) : Kernel Unit
+```
+
+Crucially, `syscallEntryChecked` does **not** take pre-decoded
+typed args. It looks up `lookupThreadRegisterContext tid st`
+internally and invokes `decodeSyscallArgsFromState st tid layout
+regs regCount` to do the decode (line 1260). So the FFI shim
+should NOT re-implement the decode; instead it should populate
+the current thread's register context from the FFI-passed
+register values, then call `syscallEntryChecked`.
+
+Revised implementation skeleton:
 
 ```lean
 def syscallDispatchFromAbi
     (syscallId : UInt32) (msgInfo : UInt64)
     (regs : Array UInt64) (ipcBufferAddr : UInt64) : Kernel UInt64 :=
   fun st =>
-    -- Step 1: Decode the syscall ID
-    match RegisterDecode.decodeSyscallId syscallId with
-    | .error e => .error e
-    | .ok sid =>
-      -- Step 2: Decode the typed arguments per syscall
-      match SyscallArgDecode.decodeSyscallArgs sid msgInfo regs ipcBufferAddr with
-      | .error e => .error e
-      | .ok typedArgs =>
-        -- Step 3: Invoke the verified entry point
-        match syscallEntryChecked sid typedArgs st with
-        | .error ke => .ok (encodeError ke, st)         -- bit 63 = 1 + low 32 = ke
-        | .ok (result, st') => .ok (encodeOk result, st')  -- bit 63 = 0
+    -- Step 1: Look up the current thread (must exist on syscall entry).
+    match st.scheduler.current with
+    | none => .ok (encodeError .illegalState, st)
+    | some tid =>
+      -- Step 2: Populate the current thread's register context from the
+      -- FFI inputs (syscallId in x8 per ARM EABI; msgInfo in x1; x0..x5
+      -- per RegisterDecode layout; ipcBufferAddr in TCB.ipcBuffer).
+      let stWithRegs := writeFfiRegistersToTcb st tid syscallId msgInfo regs ipcBufferAddr
+      -- Step 3: Invoke the verified entry point with the platform's
+      -- canonical layout and a labeling context derived from the TCB.
+      let layout := SeLe4n.SyscallRegisterLayout.aapcs64
+      let ctx := labelingContextOfTcb stWithRegs tid
+      match syscallEntryChecked ctx layout 32 stWithRegs with
+      | .error ke => .ok (encodeError ke, stWithRegs)
+      | .ok ((), st') =>
+        -- Step 4: Read the syscall result from the post-state
+        -- (currentThread's x0 register, per AAPCS64 return convention).
+        .ok (encodeOk (readReturnValue st' tid), st')
 ```
 
-Where `encodeError : KernelError → UInt64` sets bit 63 and packs
-the discriminant into the low 32, and `encodeOk : SyscallResult →
-UInt64` clears bit 63 and packs the result. Both are pure
-functions; their definitions live alongside `syscallDispatchFromAbi`
-in `FFI.lean`.
+Helpers used:
+- `writeFfiRegistersToTcb`: pure SystemState transform writing the
+  passed register values into the TCB's `registerContext` field.
+  Trivial (8 RegisterFile.set calls).
+- `labelingContextOfTcb`: derives the IF labeling context from
+  the TCB's recorded security domain. Likely already exists; if
+  not, define it.
+- `readReturnValue`: extracts x0 from the TCB's register context
+  post-call.
+- `encodeError`/`encodeOk`: bit-63-discriminant encoding into a
+  `UInt64` per the Rust-side decoding contract.
 
-The decode functions (`decodeSyscallId`, `decodeSyscallArgs`)
-already exist in `Architecture/RegisterDecode.lean` and
-`Architecture/SyscallArgDecode.lean`; verify their signatures
-before writing the bridge so the call sites match.
+This design AVOIDS the over-engineering of re-implementing
+decode (the original plan called for this; the audit corrected
+it). The verified `syscallEntryChecked` is invoked directly with
+its actual signature. Decode happens once, where it always has
+(inside `syscallEntryChecked`).
 
 *R2.B.2 — `syscallDispatchInner` body.* The exported function
 becomes a thin BaseIO wrapper:
@@ -998,24 +1027,50 @@ SeLe4n/Platform/RPi5/VSpaceBoot.lean:272-297  bootSafeVSpaceRoot predicate
 
 ### 7.4 Implementation walkthrough
 
-*R3.1 — `bootSafeObject` rewrite.* The current arm at line 551
-explicitly rejects every VSpaceRoot:
+*R3.1 — `bootSafeObjectCheck` and `bootSafeObject` rewrite.* The
+boot path actually has **two parallel functions** (verified by
+direct read at audit time):
+
+- `bootSafeObjectCheck : KernelObject → Bool` at `Platform/Boot.lean:534`
+  (runtime-decidable check used by `bootFromPlatformChecked`)
+- `bootSafeObject : KernelObject → Prop` at `Platform/Boot.lean:1456`
+  (Prop-level predicate used by proof obligations)
+
+Both currently reject all `VSpaceRoot` variants:
 
 ```lean
+-- bootSafeObjectCheck:551
 | .vspaceRoot _ => false
+
+-- bootSafeObject:1478
+(∀ vs, obj ≠ .vspaceRoot vs) ∧
 ```
 
-The replacement admits VSpaceRoots that satisfy the W^X-compliance
-predicate:
+The replacement must update **both**. Since `bootSafeVSpaceRoot` is
+defined as `Prop` at `Platform/RPi5/VSpaceBoot.lean:273`
+(`def bootSafeVSpaceRoot (root : VSpaceRoot) : Prop := VSpaceRootWellFormed root`),
+the substitutions are:
 
 ```lean
-| .vspaceRoot vsr => bootSafeVSpaceRoot vsr
+-- bootSafeObjectCheck (Bool variant):
+| .vspaceRoot vsr => decide (bootSafeVSpaceRoot vsr)
+
+-- bootSafeObject (Prop variant):
+(∀ vs, obj = .vspaceRoot vs → bootSafeVSpaceRoot vs) ∧
 ```
 
-Where `bootSafeVSpaceRoot` is defined at
-`Platform/RPi5/VSpaceBoot.lean:272–297`. Verify by reading the
-function before the edit; ensure it returns `Bool` (not `Prop`)
-for `bootSafeObject` consistency.
+The `decide` wrapping in the Bool variant requires
+`Decidable (bootSafeVSpaceRoot vsr)`. `VSpaceRootWellFormed` is a
+conjunction of decidable predicates (`asid = 0`, `wxCompliant`,
+`paddrBounded`, `mappings.size > 0`); confirm a `Decidable`
+instance exists or add one.
+
+Verify the soundness theorem `bootSafeObjectCheck_sound_structural`
+(at `Platform/Boot.lean:567`) is updated to admit the new
+VSpaceRoot arm: the existing theorem proves `bootSafeObjectCheck =
+true → bootSafeObject obj`; with the new arm, it must additionally
+prove `decide (bootSafeVSpaceRoot vsr) = true → bootSafeVSpaceRoot vsr`,
+which is the standard `decide_eq_true` lemma.
 
 *R3.2 — Admission witness theorem.* Add immediately after the
 `bootSafeObject` definition:
@@ -1034,23 +1089,29 @@ the file.
 
 *R3.3 — Object-store admission in `bootFromPlatformChecked`.* The
 current implementation builds the initial object store from
-`config.objects` only. The change is to inject `rpi5BootVSpaceRoot`
-into the store at a reserved ObjId. The cleanest approach is to
-extend `PlatformConfig` with an optional `bootVSpaceRoot :
-Option (ObjId × VSpaceRoot)` field, defaulting to
+`config.initialObjects` only (verified field name at audit time).
+The change is to inject `rpi5BootVSpaceRoot` into the store at a
+reserved ObjId. The cleanest approach is to extend `PlatformConfig`
+with an optional `bootVSpaceRoot : Option (ObjId × VSpaceRoot)`
+field, defaulting to
 `some (rpi5BootVSpaceRootObjId, rpi5BootVSpaceRoot)` for the RPi5
 binding and `none` for sim (or a sim equivalent). Implementation
 steps:
 
 1. Add `bootVSpaceRoot : Option (ObjId × VSpaceRoot)` to
-   `PlatformConfig` in `Platform/Contract.lean`.
+   `PlatformConfig` in `Platform/Boot.lean:81` (the structure's
+   actual location — Contract.lean defines `PlatformBinding`
+   typeclass, not `PlatformConfig`). Default to `none` to preserve
+   backward compatibility for existing call sites.
 2. In `bootFromPlatformChecked`, after gate (3) (IRQ handlers
    reference notifications), if `cfg.bootVSpaceRoot = some (oid, vsr)`,
    insert `KernelObject.vspaceRoot vsr` at `oid` in the
-   under-construction object store. Use `IntermediateState`'s
+   under-construction object store via `IntermediateState`'s
    builder API.
 3. Verify the gate (1) `objectIdsUnique` check still passes (the
-   reserved ObjId must not collide with `config.objects` ObjIds).
+   reserved ObjId must not collide with `config.initialObjects`
+   ObjIds). If a collision is possible, return
+   `.error .invalidConfig` BEFORE installing.
 4. Record the VSpaceRoot reference in `SystemState.scheduler` (or
    wherever the kernel looks up "the boot VSpace") so subsequent
    VSpace operations can find it without re-scanning the store.
@@ -1198,13 +1259,30 @@ SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean  R4.D theore
 
 ### 8.4 Sub-task R4.B — `RetypeTarget` non-bypassable
 
+**Verified at audit time** (re-read `Capability/Invariant/Defs.lean:316–367`):
+the existing `RetypeTarget` already IS a smart-constructor pattern —
+the `structure RetypeTarget (st : SystemState)` at line 357 has
+fields `id : ObjId` and `cleanupHookDischarged : Kernel.cleanupHookDischarged st id`,
+so any direct construction must supply both arguments. The
+"phantom-like" criticism in the deep audit's §5.1 is about the
+**weakness of the predicate**, not about a bypassable structure.
+
+The `cleanupHookDischarged` predicate (lines 346–350) is the
+conjunction of two state-observable properties: object-type
+metadata consistency, and absence of stale scheduler queue
+references. A caller can in principle prove these manually by
+reasoning about the post-scrub state without actually running
+`scrubLifecycleObject`. R4.B's job is to **strengthen the
+predicate** so manual discharge becomes infeasible.
+
 | # | Action |
 |---|---|
-| R4.B.1 | At `Capability/Invariant/Defs.lean:345-367`, make the `structure RetypeTarget` `private`; expose a smart constructor `mkRetypeTarget` whose only public form requires the caller to invoke `scrubLifecycleObject` first. |
-| R4.B.2 | The smart constructor's signature should require a proof witness that scrub has been applied: `def mkRetypeTarget (obj : KernelObject) (h : afterScrub obj) : RetypeTarget`. |
-| R4.B.3 | Mark the underlying `structure` as `private`; the loud "phantom-like; correctness depends on no caller bypassing the cleanup invocation" warning comment is removed because the bypass route is now structurally closed. |
-| R4.B.4 | Add a no-bypass theorem: `theorem retypeTarget_implies_scrubbed : ∀ rt : RetypeTarget, afterScrub rt.toKernelObject`. |
-| R4.B.5 | Update every consumer of `RetypeTarget` construction (Lifecycle/Operations/RetypeWrappers.lean, etc.) to invoke `mkRetypeTarget` with the scrub witness. |
+| R4.B.1 | At `Capability/Invariant/Defs.lean:346-350`, strengthen `cleanupHookDischarged` to additionally require an opaque **scrub-witness token** that can only be obtained as a side-effect of `lifecyclePreRetypeCleanup`. Sketch: introduce `private opaque ScrubToken : SystemState → ObjId → Type` whose only public constructor is the result of `lifecyclePreRetypeCleanup_ok`; add it as a third conjunct of `cleanupHookDischarged`. |
+| R4.B.2 | At `Lifecycle/Operations/Cleanup.lean`, change `lifecyclePreRetypeCleanup` to return `Kernel ScrubToken` rather than `Kernel Unit`, threading the token to its callers. |
+| R4.B.3 | At `Lifecycle/Operations/RetypeWrappers.lean`, update the `lifecycleRetypeWithCleanup` call chain to capture the scrub token and pass it to `mkRetypeTarget` via the strengthened `cleanupHookDischarged`. |
+| R4.B.4 | Update the `RetypeTarget` docstring at lines 332–336 to drop the "phantom-like" caveat and replace with: "The predicate now incorporates a `ScrubToken`-backed witness; manual discharge by reasoning about post-scrub state alone is no longer sufficient." |
+| R4.B.5 | Add a no-bypass witness theorem: `theorem retypeTarget_implies_scrub_token_held (rt : RetypeTarget st) : ∃ token : ScrubToken st rt.id, True` — recording that every constructed `RetypeTarget` carries an opaque token whose existence proves the cleanup hook ran. |
+| R4.B.6 | Verify that the structure remains `public` (it must, since downstream lifecycle wrappers construct it); only the `ScrubToken` opaque type is `private`. The smart-constructor effect is achieved by gating the only `ScrubToken` introduction site through `lifecyclePreRetypeCleanup`. |
 
 ### 8.5 Sub-task R4.C — `NoDup` on `waitingThreads` (subsumes DEEP-IPC-01 false positive)
 
@@ -2092,28 +2170,68 @@ imports from `SeLe4n.lean`" verification (which was performed
 incorrectly, leading to the DEEP-ARCH-01 false positive) into a
 machine-checked CI gate.
 
-**Verified prerequisites (re-confirmed by this plan author).**
+**Verified prerequisites (re-confirmed by this plan author at v0.30.11
+HEAD; cardinality verified by direct trace).**
 
 ```text
 SeLe4n.lean transitive-import closure: 144 modules.
-Platform/Staged.lean transitive-import closure: 154 modules (= 144 production + 10 staged).
-Modules in Staged \ Production: CacheModel, TimerModel, ExceptionModel,
-                                 TlbCacheComposition, BarrierComposition,
-                                 (5 more if/when staged set grows).
-"STATUS: staged" markers in source: CacheModel.lean, TimerModel.lean, ExceptionModel.lean.
+Platform/Staged.lean transitive-import closure: 144 modules.
+Staged \ Production (10 modules):
+  - SeLe4n.Kernel.Architecture.AsidManager       [NO MARKER — transitively staged]
+  - SeLe4n.Kernel.Architecture.CacheModel        [STATUS: staged ✓]
+  - SeLe4n.Kernel.Architecture.ExceptionModel    [STATUS: staged ✓]
+  - SeLe4n.Kernel.Architecture.InterruptDispatch [NO MARKER — transitively staged via ExceptionModel]
+  - SeLe4n.Kernel.Architecture.TimerModel        [STATUS: staged ✓]
+  - SeLe4n.Kernel.Architecture.TlbCacheComposition [NO MARKER — transitively staged]
+  - SeLe4n.Kernel.Concurrency.Assumptions        [NO MARKER — platform infrastructure]
+  - SeLe4n.Platform.FFI                           [NO MARKER — platform infrastructure]
+  - SeLe4n.Platform.RPi5.VSpaceBoot               [NO MARKER — platform infrastructure (post-R3 promotes to production)]
+  - SeLe4n.Platform.Staged                        [NO MARKER — anchor file itself]
+"STATUS: staged" markers in source (3 files):
+  CacheModel.lean, TimerModel.lean, ExceptionModel.lean
 ```
+
+**Design implication (refined from the original sketch).** Three of
+the ten staged-only modules carry the marker; seven do not because
+they are either:
+- **Transitively staged** (reachable only because a marked module
+  imports them — AsidManager, InterruptDispatch, TlbCacheComposition).
+- **Platform infrastructure** (the staging anchor itself plus
+  cross-cutting infrastructure — Concurrency.Assumptions, FFI,
+  VSpaceBoot, Staged).
+
+The gate must accept this layered structure. Two acceptable
+designs:
+
+- **Design A (recommended for this PR scope)**: maintain an
+  explicit allowlist file `scripts/staged_module_allowlist.txt`
+  listing the 10 known staged-only modules; the gate fails if
+  (a) `staged_only` contains a module not in the allowlist, OR
+  (b) any module in `production_set` carries a "STATUS: staged"
+  marker. The allowlist is human-maintained but small and
+  auditable; adding/removing a staged module requires an explicit
+  allowlist update plus the marker change.
+- **Design B (richer, future work)**: add markers to all 7
+  unmarked staged modules (turning them into a self-describing
+  partition). Costs 7 file edits but removes the allowlist file.
+  Defer to a v1.x cleanup.
+
+This plan adopts **Design A** for R12.B. The allowlist is the
+single source of truth for "what is staged"; the production-set
+cross-check guarantees no marker leaks into production.
 
 **Tasks.**
 
 | # | File | Action |
 |---|---|---|
-| R12.B.1 | `scripts/check_production_staging_partition.sh` (new) | Implement a bash script that: (a) computes `production_set` = transitive-closure of `^import SeLe4n\.` from `SeLe4n.lean`; (b) computes `staged_set` = transitive-closure from `Platform/Staged.lean`; (c) computes `staged_only := staged_set \ production_set`; (d) for every `.lean` file in `staged_only`, verifies the file contains a `> **STATUS: staged` marker in lines 1–40; (e) for every file with the marker, verifies it is in `staged_only` (NOT in `production_set`); (f) exits non-zero with a diff on any partition violation. |
-| R12.B.2 | `scripts/test_tier0_hygiene.sh` | Wire `scripts/check_production_staging_partition.sh` into the Tier-0 hygiene checks so it runs on every CI cycle and every pre-push. |
-| R12.B.3 | `scripts/website_link_manifest.txt` | Add `scripts/check_production_staging_partition.sh` to the manifest (the script is referenced by Tier 0 hygiene and may be linked from the website). |
-| R12.B.4 | `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` | Add a row: "DEEP-ARCH-01 closed structurally by R12.B; the production/staged partition is now machine-checked at every CI run." |
-| R12.B.5 | `CLAUDE.md` | Add a one-paragraph note under "Module build verification (mandatory)" explaining that the partition gate is the canonical source-of-truth for the production-vs-staged classification, and any contributor adding a new "STATUS: staged" marker must verify the file is reachable only via `Platform/Staged.lean`. |
+| R12.B.1 | `scripts/staged_module_allowlist.txt` (new) | Allowlist file listing the 10 staged-only modules verified at audit time, with one-line rationale for each (marker / transitively-staged / platform-infrastructure / anchor). |
+| R12.B.2 | `scripts/check_production_staging_partition.sh` (new) | Implement a bash script that: (a) computes `production_set` = transitive-closure of `^import SeLe4n\.` from `SeLe4n.lean`; (b) computes `staged_set` = transitive-closure from `Platform/Staged.lean`; (c) computes `staged_only := staged_set \ production_set`; (d) verifies `staged_only` equals the allowlist set exactly (no extras, no missing); (e) for every file with a `STATUS: staged` marker, verifies it is in `staged_only` (NOT in `production_set`); (f) exits non-zero with a diff on any partition violation. |
+| R12.B.3 | `scripts/test_tier0_hygiene.sh` | Wire `scripts/check_production_staging_partition.sh` into the Tier-0 hygiene checks so it runs on every CI cycle and every pre-push. |
+| R12.B.4 | `scripts/website_link_manifest.txt` | Add the allowlist file and gate script to the manifest. |
+| R12.B.5 | `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` | Add a row: "DEEP-ARCH-01 closed structurally by R12.B; the production/staged partition is now machine-checked at every CI run via `staged_module_allowlist.txt` + transitive-closure verification." |
+| R12.B.6 | `CLAUDE.md` | Add a one-paragraph note under "Module build verification (mandatory)" explaining that the partition gate is the canonical source-of-truth for the production-vs-staged classification, and any contributor adding a new module to the staged tree must update both the source (with a marker if appropriate) AND the allowlist. |
 
-**Implementation steps for R12.B.1 (the gate script).**
+**Implementation steps for R12.B.2 (the gate script).**
 
 ```bash
 #!/usr/bin/env bash
@@ -2123,6 +2241,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT"
+
+ALLOWLIST="$SCRIPT_DIR/staged_module_allowlist.txt"
+[ -f "$ALLOWLIST" ] || { echo "FAIL: missing $ALLOWLIST"; exit 1; }
 
 trace_imports() {
   local entry="$1"
@@ -2143,28 +2264,30 @@ trace_imports() {
 production_set="$(trace_imports SeLe4n)"
 staged_set="$(trace_imports SeLe4n.Platform.Staged)"
 staged_only="$(comm -23 <(echo "$staged_set") <(echo "$production_set"))"
+allowed="$(grep -vE '^\s*(#|$)' "$ALLOWLIST" | awk '{print $1}' | sort -u)"
 
 errors=0
-# Check 1: every staged-only module has the marker
-while IFS= read -r mod; do
-  [ -z "$mod" ] && continue
-  file="${mod//.//}.lean"
-  if [ -f "$file" ] && ! grep -qE "^>?\s*\*\*STATUS: staged" "$file" \
-        && ! grep -qE "^--\s*STATUS: staged" "$file"; then
-    # Only flag user-authored leaves; hub re-exports are exempt.
-    if grep -qE "^(def|theorem|inductive|structure|class)" "$file"; then
-      echo "ERROR: $file is in staged_only set but lacks 'STATUS: staged' marker"
-      errors=$((errors + 1))
-    fi
-  fi
-done <<< "$staged_only"
 
-# Check 2: every "STATUS: staged" file is in staged_only (not in production)
+# Check 1: staged_only must equal the allowlist exactly.
+extras="$(comm -23 <(echo "$staged_only") <(echo "$allowed"))"
+if [ -n "$extras" ]; then
+  echo "ERROR: modules in staged_only but NOT in allowlist:"
+  echo "$extras" | sed 's/^/    /'
+  errors=$((errors + 1))
+fi
+missing="$(comm -13 <(echo "$staged_only") <(echo "$allowed"))"
+if [ -n "$missing" ]; then
+  echo "ERROR: modules in allowlist but NOT staged-only (entered production?):"
+  echo "$missing" | sed 's/^/    /'
+  errors=$((errors + 1))
+fi
+
+# Check 2: every "STATUS: staged" file is in staged_only (not in production).
 while IFS= read -r file; do
   [ -z "$file" ] && continue
   mod="$(echo "$file" | sed 's|^\./||; s|\.lean$||; s|/|.|g')"
   if echo "$production_set" | grep -qx "$mod"; then
-    echo "ERROR: $file has 'STATUS: staged' marker but is reachable from production (SeLe4n.lean)"
+    echo "ERROR: $file has 'STATUS: staged' marker but is reachable from production"
     errors=$((errors + 1))
   fi
 done < <(grep -rlE "^>?\s*\*\*STATUS: staged|^--\s*STATUS: staged" SeLe4n)
@@ -2173,7 +2296,24 @@ if [ "$errors" -gt 0 ]; then
   echo "FAIL: production/staged partition violation ($errors errors)"
   exit 1
 fi
-echo "OK: production/staged partition consistent"
+echo "OK: production/staged partition consistent (10 staged-only modules verified against allowlist)"
+```
+
+**`scripts/staged_module_allowlist.txt` content (R12.B.1):**
+
+```
+# Staged-only modules verified at WS-RC R0 (HEAD = <commit>).
+# Format: <module>  # <category: marker | transitively-staged | infra | anchor>
+SeLe4n.Kernel.Architecture.AsidManager        # transitively-staged via VSpaceBoot
+SeLe4n.Kernel.Architecture.CacheModel         # marker
+SeLe4n.Kernel.Architecture.ExceptionModel     # marker
+SeLe4n.Kernel.Architecture.InterruptDispatch  # transitively-staged via ExceptionModel
+SeLe4n.Kernel.Architecture.TimerModel         # marker
+SeLe4n.Kernel.Architecture.TlbCacheComposition # transitively-staged
+SeLe4n.Kernel.Concurrency.Assumptions         # infra (SMP-latent inventory)
+SeLe4n.Platform.FFI                           # infra (Lean-Rust bridge; promotes after R2)
+SeLe4n.Platform.RPi5.VSpaceBoot               # infra (boot VSpace; promotes after R3)
+SeLe4n.Platform.Staged                        # anchor file
 ```
 
 **Validation.**
@@ -2197,14 +2337,41 @@ test as part of R12.B.1's test suite.
 unsafe blocks cite ARM ARM B2.1; mrs/msr asm! blocks cite ARM ARM
 C5.2") into a machine-checked CI gate that runs on every push.
 
-**Verified prerequisites.**
+**Verified prerequisites (refined by this plan author at audit time).**
+A naive "every unsafe block cites (ARM ARM)" gate FAILS on the
+existing tree with 20 hits. Direct inspection shows the 20 misses
+are all NON-hardware-access unsafe blocks (`unsafe impl Sync` for
+`UnsafeCell` wrappers, `unsafe fn` boundary helpers, etc.) which
+correctly use `// SAFETY:` comments per the Rust idiom but do not
+need ARM-ARM citations. The deep audit's §11.1 verification was
+correct only for the **hardware-access** subset (MMIO + asm! + DSB/ISB
+barriers).
 
 ```text
-HAL unsafe-block locations (from audit §11.1 verification, re-confirmed):
-  rust/sele4n-hal/src/mmio.rs:54-57, 76-79, 96-98, 117-119  → cite (ARM ARM B2.1)
-  rust/sele4n-hal/src/registers.rs:20-21, 45-46              → cite (ARM ARM C5.2)
-Total HAL unsafe blocks: 53 (per deep audit §2; each cites ARM ARM section)
+HAL unsafe-block taxonomy (live count, 53 total):
+  Hardware-access (MUST cite ARM ARM):
+    - MMIO read_volatile / write_volatile blocks    → ARM ARM B2.1
+    - asm! mrs / msr / DSB / ISB / DMB blocks       → ARM ARM C5.2 / C2 / D17
+  Non-hardware-access (MUST cite via // SAFETY: only):
+    - unsafe impl Sync for cell wrappers
+    - unsafe fn marker functions (single-threaded preconditions)
+    - unsafe { ptr::read / write } intra-cell access
 ```
+
+**Design implication (refined from the original sketch).** The
+gate enforces a **two-tier rule**:
+
+1. **Universal**: every `unsafe { … }` block AND every `unsafe fn`
+   declaration AND every `unsafe impl` MUST have a `// SAFETY:`
+   comment within 5 preceding lines. This is the standard Rust
+   idiom; missing this is a real defect.
+2. **Hardware-access subset**: blocks containing `read_volatile`,
+   `write_volatile`, or `asm!` MUST additionally cite `(ARM ARM
+   <section>)` within 5 preceding lines. This is the audit
+   verification.
+
+The gate fails if either tier is violated. The deep audit's
+§11.1 verification covered only tier 2.
 
 **Tasks.**
 
@@ -2221,35 +2388,62 @@ Total HAL unsafe blocks: 53 (per deep audit §2; each cites ARM ARM section)
 ```bash
 #!/usr/bin/env bash
 # scripts/check_arm_arm_citations.sh
-# Per WS-RC R12.C: every HAL unsafe block must cite an ARM ARM section.
+# Per WS-RC R12.C: two-tier gate.
+#   Tier 1 (universal): every unsafe block/fn/impl has a // SAFETY: comment
+#   Tier 2 (hardware-access): MMIO + asm! blocks additionally cite ARM ARM
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT"
 
 errors=0
-PATTERN='\(ARM ARM [A-Z][0-9]+(\.[0-9]+)*\)'
+SAFETY_PATTERN='// SAFETY:'
+ARM_PATTERN='\(ARM ARM [A-Z][0-9]+(\.[0-9]+)*\)'
+HW_PATTERN='read_volatile|write_volatile|asm!'
 LOOKBACK=5
+LOOKBACK_HW=20  # asm! blocks may have a longer SAFETY/section comment block
 
 while IFS= read -r file; do
-  # Find every line containing 'unsafe {' or 'unsafe fn ' or 'unsafe impl '
-  while IFS=: read -r lineno _; do
+  while IFS=: read -r lineno line; do
     [ -z "$lineno" ] && continue
     start=$((lineno - LOOKBACK))
     [ "$start" -lt 1 ] && start=1
-    if ! sed -n "${start},${lineno}p" "$file" | grep -qE "$PATTERN"; then
-      echo "ERROR: $file:$lineno — unsafe block lacks (ARM ARM <section>) citation in preceding $LOOKBACK lines"
+    pre="$(sed -n "${start},${lineno}p" "$file")"
+
+    # Tier 1: SAFETY comment universally required
+    if ! echo "$pre" | grep -qF "$SAFETY_PATTERN"; then
+      echo "ERROR-T1: $file:$lineno — unsafe lacks // SAFETY: comment in preceding $LOOKBACK lines"
       errors=$((errors + 1))
+    fi
+
+    # Tier 2: ARM ARM citation only required for hardware-access unsafe blocks
+    # We look at the unsafe block's body within ~20 lines after the unsafe keyword
+    end_hw=$((lineno + LOOKBACK_HW))
+    body="$(sed -n "${lineno},${end_hw}p" "$file")"
+    if echo "$body" | grep -qE "$HW_PATTERN"; then
+      pre_hw="$(sed -n "${start},${end_hw}p" "$file")"
+      if ! echo "$pre_hw" | grep -qE "$ARM_PATTERN"; then
+        echo "ERROR-T2: $file:$lineno — hardware-access unsafe lacks (ARM ARM <section>) citation"
+        errors=$((errors + 1))
+      fi
     fi
   done < <(grep -nE 'unsafe \{|unsafe fn |unsafe impl ' "$file")
 done < <(find rust/sele4n-hal/src -name '*.rs' -type f)
 
 if [ "$errors" -gt 0 ]; then
-  echo "FAIL: $errors unsafe block(s) lack ARM ARM citations"
+  echo "FAIL: $errors unsafe-block citation issue(s)"
   exit 1
 fi
-echo "OK: every HAL unsafe block has an ARM ARM citation"
+echo "OK: every HAL unsafe block has // SAFETY: (universal); every hardware-access block additionally cites ARM ARM"
 ```
+
+**Pre-landing audit step.** Before wiring this gate into Tier 0,
+run it locally and inventory any pre-existing tier-1 misses
+(unsafe blocks lacking `// SAFETY:` comments). Each miss is a
+small Rust-side fix (add the comment). Empirically, the live
+tree has 20 unsafe blocks where the gate would fire on tier 1
+or tier 2 — these need to be triaged file-by-file BEFORE the
+gate lands so the gate goes green on first activation.
 
 **Validation.**
 
@@ -2271,23 +2465,47 @@ block has a citation within 5 lines.
 
 ### 16.5 Sub-task R12.D — `_fields` consumer gate (closes DEEP-ARCH-02 false positive)
 
-**Goal.** Convert the deep audit's §11.1 manual verification ("each
-`*_fields : List StateField` definition has 3..26 consumers") into a
-machine-checked CI gate so the next audit cycle does not re-discover
-the false positive.
+**Goal.** Convert the deep audit's §11.1 manual verification (which
+claimed "each `*_fields : List StateField` definition has 3..26
+consumers") into a machine-checked CI gate.
 
-**Verified prerequisites.**
+**Verified prerequisites (corrected from the deep audit).** A live
+re-grep shows the deep audit's consumer count was wrong: it counted
+references to the underlying predicate name (e.g.,
+`registryEndpointValid` — which has 16 consumers across the kernel)
+rather than the `_fields` metadata def (e.g.,
+`registryEndpointValid_fields` — which has **0 consumers outside
+its declaring file** but 4-5 inside it via `fieldsDisjoint` calls).
 
 ```text
-CrossSubsystem.lean:887-930 contains 11 *_fields definitions:
-  registryEndpointValid_fields, registryInterfaceValid_fields,
-  registryDependencyConsistent_fields, noStaleEndpointQueueReferences_fields,
-  noStaleNotificationWaitReferences_fields, serviceGraphInvariant_fields,
-  schedContextStoreConsistent_fields, schedContextNotDualBound_fields,
-  schedContextRunQueueConsistent_fields, blockingAcyclic_fields,
-  lifecycleObjectTypeLockstep_fields
-Each has 3..26 consumers per audit §11.1 verification.
+CrossSubsystem.lean:887-930 contains 11 *_fields definitions.
+Live consumer counts (verified by direct `grep -rn "<name>_fields\b"
+SeLe4n/`):
+  registryEndpointValid_fields:           in-file 4, out-of-file 0
+  registryInterfaceValid_fields:          in-file 3, out-of-file 0
+  registryDependencyConsistent_fields:    in-file 5, out-of-file 0
+  noStaleEndpointQueueReferences_fields:  in-file 5, out-of-file 0
+  noStaleNotificationWaitReferences_fields: in-file 5, out-of-file 0
+  serviceGraphInvariant_fields:           in-file 5, out-of-file 0
+  schedContextStoreConsistent_fields:     in-file 4, out-of-file 0
+  schedContextNotDualBound_fields:        in-file 4, out-of-file 0
+  schedContextRunQueueConsistent_fields:  in-file 4, out-of-file 0
+  blockingAcyclic_fields:                 in-file 3, out-of-file 0
+  lifecycleObjectTypeLockstep_fields:     in-file 3, out-of-file 0
 ```
+
+All 11 are file-local helpers used only via `fieldsDisjoint` calls
+within `CrossSubsystem.lean`. They are NOT dead code (in-file
+consumers exist), but they are NOT exported (zero out-of-file
+consumers).
+
+**Design implication (refined from the original sketch).** A naive
+"out-of-file consumer required" gate would fail on all 11 — a
+false alarm. The correct gate enforces: every `*_fields` def must
+have at least 1 consumer ANYWHERE in the SeLe4n tree (in-file or
+out-of-file). Truly dead defs (0 consumers anywhere) fail the
+gate; file-local helpers pass. This matches the deep audit's
+intent: detect orphan metadata, not enforce export discipline.
 
 **Tasks.**
 
@@ -2305,7 +2523,8 @@ Each has 3..26 consumers per audit §11.1 verification.
 #!/usr/bin/env bash
 # scripts/check_no_orphan_fields.sh
 # Per WS-RC R12.D: every *_fields : List StateField definition must have
-# at least one consumer outside its declaring file.
+# at least one consumer somewhere in the SeLe4n tree (in-file or out-of-file).
+# This detects truly dead metadata, not export discipline.
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -2315,23 +2534,30 @@ errors=0
 TARGETS=(SeLe4n/Kernel/CrossSubsystem.lean)
 
 for file in "${TARGETS[@]}"; do
-  while IFS=: read -r lineno _; do
-    name="$(grep -nE "^def [A-Za-z_]+_fields\s*:" "$file" | sed -n "${lineno}s/.*def \([A-Za-z_]\+_fields\).*/\1/p")"
+  while IFS= read -r line; do
+    name="$(echo "$line" | sed -E 's/^def ([A-Za-z_]+_fields).*/\1/')"
     [ -z "$name" ] && continue
-    out_of_file_hits="$(grep -rn "\b${name}\b" SeLe4n/ | grep -v "^${file}:" | wc -l)"
-    if [ "$out_of_file_hits" -lt 1 ]; then
-      echo "ERROR: $file:$lineno — '$name' has no consumer outside its declaring file"
+    # Count ALL hits in SeLe4n tree, including in-file (the definition
+    # itself contributes 1; we need at least 2 to mean "used").
+    total_hits="$(grep -rn "\b${name}\b" SeLe4n/ | wc -l)"
+    if [ "$total_hits" -lt 2 ]; then
+      echo "ERROR: '$name' is dead (only the def itself, 0 consumers)"
       errors=$((errors + 1))
     fi
-  done < <(grep -nE "^def [A-Za-z_]+_fields\s*:" "$file")
+  done < <(grep -E "^def [A-Za-z_]+_fields\s*:" "$file")
 done
 
 if [ "$errors" -gt 0 ]; then
-  echo "FAIL: $errors orphan *_fields definition(s)"
+  echo "FAIL: $errors dead *_fields definition(s)"
   exit 1
 fi
-echo "OK: every *_fields definition has consumers"
+echo "OK: every *_fields definition is used (in-file or out-of-file)"
 ```
+
+**Live verification at audit time** (this plan author re-ran the
+gate against the v0.30.11 HEAD): all 11 `*_fields` defs have
+total_hits ≥ 4, so the gate goes green on activation. No orphan
+defs in the tree.
 
 **Validation.**
 
