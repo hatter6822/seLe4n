@@ -47,21 +47,33 @@ for a "v1.0 = proof artefact" cut, but unacceptable for a "v1.0 = bootable
 microkernel" cut. The two interpretations should be made explicit in the
 release notes before tagging.
 
-Beyond the FFI gap, this audit finds:
-- **0 critical (C)** correctness defects.
-- **2 high-severity (H)** findings: README internal metric inconsistency
-  (3,186 vs 2,725 declarations on the same page); FFI dispatch gap with
-  silent stub.
-- **4 medium-severity (M)** findings: stale Rust↔Lean function-name
-  comment, missing CLAUDE.md source-layout entries for FFI.lean / VSpaceBoot.lean
-  / Staged.lean, the `Classical.byContradiction` use, and the
-  test-naming workstream-ID violations.
-- **~20 low-severity (L)** findings inherited or refined from the
-  predecessor.
-- **~80 informational (I)** findings — code-quality and documentation
-  hygiene.
+Beyond the FFI gap, this audit finds (after the §11 verification
+pass that withdrew 5 false positives and refined severities):
 
-The full register is in §10.
+- **0 critical (C)** correctness defects.
+- **2 high-severity (H)** findings: FFI dispatch gap with silent
+  stub (DEEP-FFI-01); IPC capability-transfer NI asymmetry on the
+  call path (DEEP-IPC-03, narrowed from 3 paths to 1).
+- **~10 medium-severity (M)** findings: stale Rust↔Lean
+  function-name comment (DEEP-FFI-02), AGENTS.md comprehensively
+  stale (DEEP-DOC-02), missing CLAUDE.md source-layout entries
+  (DEEP-DOC-03), README metric inconsistency (DEEP-DOC-01,
+  downgraded H→M), test-naming workstream-ID violations
+  (DEEP-TEST-01), thin checked-syscall test coverage
+  (DEEP-TEST-03), boot VSpaceRoot rejection (DEEP-BOOT-01),
+  pre-commit regex over-zealousness (DEEP-PRECOM-01, severity
+  inverted L→M for fragility), IPC linter-suppression hygiene
+  (DEEP-IPC-02), 17-conjunct accessor refactor (DEEP-MODEL-02).
+- **~18 low-severity (L)** findings — including
+  DEEP-PROOF-01 (the lone `Classical.byContradiction`,
+  downgraded M→L after re-analysis), DEEP-CAP-01 (docstring
+  promotion), and several LoC-hygiene items.
+- **~18 informational (I)** findings — documentation gaps,
+  consistency nits, post-1.0 maintainability hooks.
+
+The full register is in §10; the verification-pass corrections
+(5 false positives withdrawn, 2 narrowed, 2 inverted-or-adjusted-severity)
+are catalogued in §11.
 
 ## Document layout
 
@@ -84,19 +96,25 @@ Severity legend — **C** critical (must fix before tag), **H** high (should
 fix before tag), **M** medium (post-1.0 maintainability with material
 risk), **L** low (cosmetic / cleanup), **I** informational.
 
-### NEW findings introduced by this audit (not in predecessor)
+### NEW findings introduced by this audit (not in predecessor) — POST-VERIFICATION
+
+> Note: the table below shows severities **after** the §11 verification
+> pass. Findings withdrawn as false positives (DEEP-CAP-02, DEEP-ARCH-02,
+> DEEP-RUST-01, DEEP-RUST-02, DEEP-IPC-01) are listed in §11.1 with full
+> rationale.
 
 | ID | Sev | Area | One-line summary |
 |---|---|---|---|
 | DEEP-FFI-01 | H | Platform/FFI + Rust HAL | `syscall_dispatch_inner` and `suspend_thread_inner` Lean exports are stubs returning `NotImplemented = 17`; verified hardware path never reaches `syscallEntryChecked`. Plan acknowledges deferral; release-notes wording must too. |
-| DEEP-FFI-02 | M | Rust HAL | `rust/sele4n-hal/src/svc_dispatch.rs:308` comment claims production resolves to Lean fn `syscallDispatchFromAbi` — **that name does not exist** in the Lean tree (only in archived audit plans). |
-| DEEP-DOC-01 | H | README | README internally inconsistent: line 92 says "3,186 theorem/lemma declarations"; line 213 says "2,725 proved declarations" — same page, ~12-month-old number side by side with current number. |
-| DEEP-DOC-02 | M | AGENTS.md | `AGENTS.md` line 7 declares project version **0.12.4** vs actual **0.30.11**. AGENTS.md is the canonical contributor/agent guidance file. |
+| DEEP-IPC-03 | H | IPC/DualQueue/WithCaps:198 | `endpointCallWithCaps` returns `.ok ({ results := #[] }, st')` on missing receiver-CSpace-root; AK1-I closed send and receive paths but the call path remains asymmetric. NI covert-channel risk. |
+| DEEP-FFI-02 | M | Rust HAL | `rust/sele4n-hal/src/svc_dispatch.rs:308` comment claims production resolves to Lean fn `syscallDispatchFromAbi` — **that name does not exist** in the Lean tree (only in archived audit plans). Comment also misnames the `@[export]` directionality as `@[extern]`. |
+| DEEP-DOC-01 | M | README (was H, downgraded §11.4) | README internally inconsistent: line 92 says "3,186 theorem/lemma declarations"; line 213 says "2,725 proved declarations" — same page. Documentation hygiene; one-PR refresh. |
+| DEEP-DOC-02 | M | AGENTS.md | `AGENTS.md` line 7 declares project version **0.12.4** vs actual **0.30.11**. The entire file is from ~v0.12.x — it references audits at v0.11.0/v0.12.2 and a "WS-F (v0.12.2 audit remediation)" workstream. Best fix: delete and redirect to CLAUDE.md (§11.5). |
 | DEEP-DOC-03 | M | CLAUDE.md | Source-layout section omits `SeLe4n/Platform/FFI.lean` (245 LoC, contains the stub bridges flagged as DEEP-FFI-01), `SeLe4n/Platform/Staged.lean` (the build-anchor that pulls FFI into CI), and `SeLe4n/Platform/RPi5/VSpaceBoot.lean`. Verified by `grep -c "FFI" CLAUDE.md` → 0. |
-| DEEP-PROOF-01 | M | Scheduler/Operations/Preservation | `Classical.byContradiction` at `Preservation.lean:1720` (single use). Sound (Lean's classical logic is part of the standard kernel) but inconsistent with the project's "constructive-where-possible" discipline; the case-split it performs is decidable and can be rewritten. |
 | DEEP-TEST-01 | M | tests/Ak8CoverageSuite.lean | 25+ test functions named `test_AK8_E_*`, `test_AK8_F_*`, `test_AK8_G_*`, `test_AK8_H_*`, `test_AK8_I_*`. CLAUDE.md identifier policy bans workstream IDs in identifiers. Filename `Ak8CoverageSuite.lean` is also a violation. |
 | DEEP-TEST-02 | L | README + codebase_map.json | Test-suite count drift: README says "25 test suites" (line 38) and elsewhere "24 test suites" (source layout); actual is 28. |
-| DEEP-PRECOM-01 | M | scripts/pre-commit-lean-build.sh | `sorry` regex (line 65) excludes only `--`-prefixed lines and lines starting with `/-`; does NOT exclude `sorry` inside `/- ... -/` block comments that span multiple lines. A `sorry` placed inside a block doc-comment would commit silently. |
+| DEEP-PROOF-01 | L | Scheduler/Operations/Preservation (was M, downgraded §11.4) | `Classical.byContradiction` at `Preservation.lean:1720` (single explicit Classical use). Surrounding `by_cases` already invokes `Classical.em` implicitly; full elimination requires proof restructuring, not one-line rewrite. Lean stdlib Classical is foundationally safe. |
+| DEEP-PRECOM-01 | M | scripts/pre-commit-lean-build.sh | The `sorry`-detection regex chain is fragile against block-comment syntax. Verification pass found the failure mode is OVER-zealous (rejects legitimate doc references to `sorry` in `/-…-/` blocks), not UNDER-zealous as initially documented. Best fix: replace with a Lean-tokeniser-based check. |
 
 ### Findings re-confirmed from predecessor (still applicable)
 
@@ -107,29 +125,79 @@ DEBT-TST-01, DEBT-BOOT-01) is re-confirmed by this audit unless flagged
 otherwise below in the per-subsystem narrative. None of those items have
 been silently discharged in the 2 days between the two audits.
 
-### Pre-1.0 must-fix list (proposed)
+### Pre-1.0 must-fix list (proposed, post-verification)
 
-To keep the v1.0 cut credible:
+To keep the v1.0 cut credible. Order chosen by smallest-PR-first
+within each tier:
 
-1. **DEEP-FFI-01 disclosure** — add a "Hardware integration status" block
-   to README, SECURITY_ADVISORY, and the v1.0 release notes that
-   explicitly says: "On real hardware, syscalls currently return
-   `NotImplemented`; the verified Lean dispatcher is wired through CI
-   compilation but not yet through the hardware exception vector. Tagged
-   for v1.x." This is the difference between honest and misleading.
-2. **DEEP-FFI-02 fix** — correct the `syscallDispatchFromAbi` name in
-   `svc_dispatch.rs:308` to the actual exported symbol
-   (`syscall_dispatch_inner`); add a comment that the production binding
-   is a stub and link to the FFI.lean docstring.
-3. **DEEP-DOC-01/02/03 fix** — refresh README in one PR; bump AGENTS.md
-   version; add the three missing Platform files to CLAUDE.md source
-   layout.
-4. **DEBT-DOC-01 (predecessor)** — README ↔ codebase_map.json metric
-   refresh; this is also a one-PR fix and is cleanly compatible with the
-   above.
+**Tier 1 — Honesty PR (one PR; documentation only):**
 
-The remainder of the predecessor debt register and the new MEDIUM/LOW
-items here can ship as post-1.0 maintainability workstreams.
+1. **DEEP-FFI-01 disclosure** — add a "Hardware integration status"
+   section to README, SECURITY_ADVISORY, and v1.0 release notes
+   stating: "On real hardware, syscalls currently return
+   `NotImplemented`; the verified Lean dispatcher is compiled by CI
+   but not yet wired into the hardware exception vector. The
+   AN9-D / AN9-F closure landing in v1.x will route
+   `syscall_dispatch_inner` and `suspend_thread_inner` to the
+   verified `syscallEntryChecked` and `suspendThread` entry points
+   respectively." Cite `SeLe4n/Platform/FFI.lean:186, 217`.
+2. **DEEP-FFI-02 fix** — in `rust/sele4n-hal/src/svc_dispatch.rs:305-309`,
+   replace the misnamed reference to "the Lean kernel's
+   `syscallDispatchFromAbi`" with the actual exported symbol name
+   (`syscall_dispatch_inner`), and correct the attribute reference
+   from `@[extern …]` to `@[export syscall_dispatch_inner]`. Add a
+   pointer to FFI.lean's stub-status docstring.
+3. **DEEP-DOC-01** — reconcile the 3,186 vs 2,725 declaration
+   counts. Best approach: drop both inline numbers and replace
+   with "see [`docs/codebase_map.json`](docs/codebase_map.json) for
+   current metrics", removing the README's responsibility to
+   stay synchronised. Or: pick a single number, sync both
+   instances, and add a CI check that runs the
+   `report_current_state.py` script and fails if README differs.
+4. **DEEP-DOC-02** — replace `AGENTS.md` with a 10-line redirect
+   stub pointing to `CLAUDE.md`, OR rewrite to mirror CLAUDE.md
+   content with a CI-enforced sync check. The current file is
+   stale enough that a version-bump alone is insufficient.
+5. **DEEP-DOC-03** — add the three missing Platform files
+   (`FFI.lean`, `Staged.lean`, `RPi5/VSpaceBoot.lean`) to
+   `CLAUDE.md` source-layout section.
+6. **DEEP-LICENSE-01** — add `-- SPDX-License-Identifier:
+   GPL-3.0-or-later` as line 1 of `SeLe4n.lean` (the only of 248
+   sources missing it).
+7. **DEBT-DOC-01 (predecessor)** — refresh
+   README ↔ codebase_map.json metric drift; sync test-suite
+   count, file count, LoC.
+
+**Tier 2 — NI symmetry (one-line code change):**
+
+8. **DEEP-IPC-03** — at `SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean:198`,
+   replace `.ok ({ results := #[] }, st')` with
+   `.error .invalidCapability`. Mirror the AK1-I comment block
+   from line 113-125. This closes the last NI asymmetry between
+   send/receive/call cap-transfer paths.
+
+**Tier 3 — Test rename (mechanical, large churn):**
+
+9. **DEEP-TEST-01 / DEEP-TEST-02** — rename `Ak8CoverageSuite.lean`
+   and its 25+ workstream-ID-prefixed tests to semantic names.
+   Update `lakefile.toml`'s `lean_exe` declaration and any
+   test-runner references.
+
+**Tier 4 — Hook hardening (small but tooling change):**
+
+10. **DEEP-PRECOM-01** — replace the `sorry`-detection regex chain
+    in `scripts/pre-commit-lean-build.sh:59,61` with a
+    Lean-tokeniser-based check. Either invoke `lean --run` on a
+    small Lean script that uses the parser to find `sorry`
+    identifiers outside strings/comments, or use a robust
+    bash-side preprocessor that strips comments before
+    grepping.
+
+The remainder of the predecessor debt register and the
+LOW/INFORMATIONAL items here can ship as post-1.0 maintainability
+workstreams. **DEEP-PROOF-01 (Classical use) and DEEP-MODEL-02
+(accessor refactor) are explicitly post-1.0** in this audit's
+recommendation.
 
 ## 2. Verified codebase shape (re-counted at audit time)
 
@@ -295,12 +363,11 @@ timedOut`. Predecessor audit said "22 fields"; ✓.
 `Notification.waitingThreads : List ThreadId` (lines 850–874) is
 intentionally a list, not a HashSet, because notification waits are
 expected to be rare (≤4 typical). The associated `uniqueWaiters`
-predicate is asserted but **not enforced at the queue-link layer** —
-notification operations could theoretically add a duplicate if invariant
-discipline is violated upstream. **DEEP-IPC-01 (M)** (corroborates IPC
-agent finding 8): consider a defensive guard in `notificationWait` to
-reject already-waiting threads, instead of relying solely on
-`uniqueWaiters` invariant maintenance.
+predicate is asserted; **operationally enforced** by
+`notificationWait` at `Operations/Endpoint.lean:723` via an O(1)
+`tcb.ipcState = .blockedOnNotification notificationId` check
+(`.error .alreadyWaiting`). The originally-filed DEEP-IPC-01 was
+**WITHDRAWN** in §11.1 after this verification.
 
 **`SeLe4n/Model/Object/Structures.lean` (2772 LoC).** Heaviest single
 type-level file: `VSpaceRoot`, `CNode`, `KernelObject`, CDT helpers.
@@ -371,12 +438,11 @@ New findings in this audit (deep-dive agent):
   1002) guard against null caps but **do not document the guard in the
   function docstring**. Reader-inferable behaviour vs documented
   behaviour are inconsistent.
-- **DEEP-CAP-02 (L)**: `cspaceMutate` (Operations.lean:1081–1111) calls
-  `cn.insert` which silently overwrites. The function does NOT validate
-  that the slot already contains a capability before mutation —
-  mutating an empty slot succeeds silently. Docstring (line 1070) says
-  "must already contain a capability" but the code does not enforce
-  this.
+- ~~**DEEP-CAP-02 (L)**~~: **WITHDRAWN — see §11.1.** The
+  agent claim was that `cspaceMutate` does not validate the
+  precondition. False positive: line 1093
+  `if cap.isNull then .error .nullCapability` IS the validation,
+  and the docstring at lines 1069–1080 describes the design.
 - **DEEP-CAP-03 (I)**: `mintDerivedCap` (Operations.lean:750–756)
   ordering of guards is `rights → null`. If the parent is non-null but
   the constructed child happens to match the null sentinel, the error
@@ -438,15 +504,15 @@ New findings:
   the suppression is needed in this file specifically. Absence of
   such comments was verified by reading all 7 files; none has the
   justifier comment.
-- **DEEP-IPC-03 (H)**: `endpointSendDualWithCaps` and
-  `endpointCallWithCaps` (DualQueue/WithCaps.lean:112–198) silently
-  return `.ok` with an empty results array when the receiver's CSpace
-  root is missing, while `endpointReceiveDualWithCaps` (line 158)
-  fails closed with `.error .invalidCapability`. The send-side
-  documentation (lines 113–124) acknowledges this is **post-v0.30.6
-  debt tracked as AK1-I**. **Information-flow risk**: the asymmetric
-  error shapes are observable to a malicious sender — they leak the
-  receiver-CSpace presence/absence as a side-channel via
+- **DEEP-IPC-03 (H — narrowed in §11.3)**: `endpointCallWithCaps`
+  (DualQueue/WithCaps.lean:198) silently returns `.ok ({ results := #[] }, st')`
+  when the receiver's CSpace root is missing. The send and receive
+  paths were already aligned with `.error .invalidCapability` under
+  AK1-I (lines 125 and 158); only the call path remained
+  asymmetric. **Information-flow risk**: a malicious caller can
+  distinguish "receiver-CSpace-root present" from "missing" by
+  observing `.ok` vs (some other error), giving a covert channel
+  via
   `KernelError`. Should be closed before v1.0 to maintain NI symmetry.
 - **DEEP-IPC-04 (I)**: `cleanupPreReceiveDonation`
   (Operations/Endpoint.lean:459–488) has a defensive `.error _ => st`
@@ -617,29 +683,18 @@ Re-confirmed (§2.4 predecessor):
 
 New findings:
 
-- **DEEP-ARCH-01 (L)**: **Stale "STATUS: staged for H3" markers**
-  on three modules that ARE in the production import chain:
-  `CacheModel.lean:15–18`, `TimerModel.lean:15–18`,
-  `ExceptionModel.lean:15–19`. These markers were added when the
-  modules were intended to be H3-only but the code is now type-checked
-  on every CI run via either Main.lean's chain or Platform.Staged.
-  The marker should be reclassified ("staged-and-active") or
-  removed.
-- **DEEP-ARCH-02 (L)**: **Dead `_fields` metadata** in
-  `CrossSubsystem.lean`. Eleven `def *_fields : List StateField`
-  declarations (lines 887–930):
-  `registryEndpointValid_fields`, `registryInterfaceValid_fields`,
-  `registryDependencyConsistent_fields`,
-  `noStaleEndpointQueueReferences_fields`,
-  `noStaleNotificationWaitReferences_fields`,
-  `serviceGraphInvariant_fields`,
-  `schedContextStoreConsistent_fields`,
-  `schedContextNotDualBound_fields`,
-  `schedContextRunQueueConsistent_fields`,
-  `blockingAcyclic_fields`, `lifecycleObjectTypeLockstep_fields`.
-  Predecessor agent claimed only 3 are consumed via `fieldsDisjoint`;
-  the others are dormant metadata. Verify by `grep -rn "<name>_fields"`
-  for each; remove unused variants for v1.0.
+- **DEEP-ARCH-01 (L — narrowed §11.3)**: **Stale "STATUS: staged
+  for H3" marker** on `CacheModel.lean:15–18`. Direct trace of
+  imports: `SeLe4n.lean → TlbModel.lean → BarrierComposition.lean →
+  CacheModel.lean`. CacheModel IS in the production chain, so the
+  marker is misleading. **TimerModel.lean and ExceptionModel.lean
+  markers are correct** — both are imported only by
+  `Platform/Staged.lean` (verified via `grep -rln`), so they are
+  genuinely staged. Action narrows to one file (CacheModel).
+- ~~**DEEP-ARCH-02 (L)**~~: **WITHDRAWN — see §11.1.** The agent
+  claim was that 7 of 11 `_fields` definitions are dead metadata.
+  Direct verification shows every one has 3 to 26 consumers in
+  the kernel. False positive.
 - **DEEP-ARCH-03 (I)**: `ExceptionModel.lean` defines `ExceptionType`
   (synchronous | irq | fiq | serror) and `SynchronousExceptionClass`,
   but **does not yet model the GIC-400 acknowledge→handle→EOI flow**
@@ -929,14 +984,14 @@ Four crates: `sele4n-types` (~555 LoC), `sele4n-abi` (~1.4K),
 - **DEEP-FFI-02 (M)**: `svc_dispatch.rs:308` — comment references
   nonexistent Lean function `syscallDispatchFromAbi`. Already detailed
   above in §6.1.
-- **DEEP-RUST-01 (L)**: `rust/sele4n-hal/src/mmio.rs:57,79,98,119` —
-  `read_volatile`/`write_volatile` blocks have a `// SAFETY: …
-  alignment is caller's responsibility` comment but **no ARM ARM
-  section reference** unlike the cache/barrier blocks. Should cite
-  ARM ARM B2.2.1 (Device Memory access restrictions) for consistency.
-- **DEEP-RUST-02 (L)**: `rust/sele4n-hal/src/registers.rs:22,47` —
-  `mrs`/`msr` `asm!` blocks have minimal SAFETY commentary; no
-  ARM ARM D17 (System registers) reference.
+- ~~**DEEP-RUST-01 (L)**~~: **WITHDRAWN — see §11.1.** Direct
+  verification: every MMIO unsafe block at lines 54–57, 76–79,
+  96–98, 117–119 cites `(ARM ARM B2.1)`. The agent's claim was
+  incorrect.
+- ~~**DEEP-RUST-02 (L)**~~: **WITHDRAWN — see §11.1.** Direct
+  verification: `mrs`/`msr` `asm!` blocks at lines 20–21 and
+  45–46 cite `(ARM ARM C5.2)`, the appropriate section for
+  system register access mnemonics.
 - **DEEP-RUST-03 (I)**: `sele4n-abi/src/trap.rs:2-6` — module-level
   comment claims "the **single** `unsafe` block in the entire
   library." Technically inaccurate: only `raw_syscall` is unsafe,
@@ -1239,34 +1294,39 @@ only real candidates this audit found.
 
 | ID | Sev | Area | Action |
 |---|---|---|---|
+> ⚠ Severities below are **as-originally-issued**; refer to §11.4
+> for severity adjustments and §11.1 for findings withdrawn as
+> false positives. The §11.6 table has the post-correction
+> headline counts.
+
 | DEEP-FFI-01 | H | Platform/FFI + Rust HAL | Disclose hardware-dispatch gap in README, SECURITY_ADVISORY, release notes; do not ship a "v1.0 = bootable kernel" cut without first wiring `syscall_dispatch_inner`/`suspend_thread_inner` to the verified Lean dispatchers. Acknowledged debt under AN9-D / AN9-F → v1.x. |
 | DEEP-FFI-02 | M | rust/sele4n-hal/src/svc_dispatch.rs:308 | Replace `syscallDispatchFromAbi` reference with the actual exported symbol (`syscall_dispatch_inner`) and link to FFI.lean docstring. |
 | DEEP-FFI-03 | I | SeLe4n/Platform/FFI.lean:34–39 | Clarify in docstring that the `-DhwTarget=true` gating applies only to `@[extern]` (Lean→Rust) declarations; `@[export]` (Rust→Lean) stubs are always compiled. |
-| DEEP-DOC-01 | H | README.md:92 vs :213 | Reconcile "3,186" and "2,725" theorem-count numbers; choose one and remove the other. |
-| DEEP-DOC-02 | M | AGENTS.md:7 | Bump version from 0.12.4 → 0.30.11 (and add a sync-script hook). |
+| DEEP-DOC-01 | M | README.md:92 vs :213 | (DOWNGRADED H→M §11.4) Reconcile "3,186" and "2,725" theorem-count numbers. Best fix: drop both, link to `codebase_map.json`, add CI sync check (§10.3 PR 1). |
+| DEEP-DOC-02 | M | AGENTS.md (entire file) | (REFINED §11.5) Entire file is from ~v0.12.x — version bump alone is insufficient. Best fix: replace with a 10-line redirect stub pointing to CLAUDE.md, OR full rewrite mirroring CLAUDE.md with CI-enforced sync check. |
 | DEEP-DOC-03 | M | CLAUDE.md source-layout section | Add entries for `SeLe4n/Platform/FFI.lean`, `SeLe4n/Platform/Staged.lean`, `SeLe4n/Platform/RPi5/VSpaceBoot.lean`. |
 | DEEP-DOC-04 | L | README.md audit-history table | Annotate `AUDIT_v0.29.0_*` and `AUDIT_v0.30.6_*` links as "archived". |
 | DEEP-DOC-05 | I | CLAUDE.md project description | Qualify "First hardware target: Raspberry Pi 5" with v1.0 dispatch-stub note. |
 | DEEP-DOC-06 | L | README.md test-suite count | Update 25/24 → 28; resync from `codebase_map.json`. |
-| DEEP-PROOF-01 | M | Scheduler/Operations/Preservation.lean:1720 | Rewrite the single `Classical.byContradiction` use as a constructive `cases hCur : st.scheduler.current` split. The existential is decidable. |
+| DEEP-PROOF-01 | L | Scheduler/Operations/Preservation.lean:1711-1721 | (DOWNGRADED M→L §11.4) The surrounding `by_cases hNe` (line 1711) on a non-decidable proposition already invokes `Classical.em` implicitly. Removing only the explicit `Classical.byContradiction` is cosmetic; full elimination requires restructuring around case-analysis on `Option ThreadId`. Either restructure for v1.x, or add a CLAUDE.md note clarifying that Lean stdlib Classical is permitted. |
 | DEEP-LICENSE-01 | I | SeLe4n.lean | Add `-- SPDX-License-Identifier: GPL-3.0-or-later` as line 1 (matches the 247 other files). |
 | DEEP-MODEL-01 | L | Model/Object/Structures.lean CNode | Inline comment on `slots` field flagging `slotsUnique` proof obligation. |
-| DEEP-MODEL-02 | L | Model/State.lean + Builder.lean | Promote 17 named accessors to public lemmas (or refactor to a record-shaped invariant). Subsumes DEBT-ST-01. |
+| DEEP-MODEL-02 | L | Model/State.lean + Builder.lean | (REFINED §11.5) Best fix: refactor `allTablesInvExtK` from a 17-tuple conjunction to a `structure` with named `Prop` fields. Then call sites use `h.objects`/`h.scheduler` etc.; adding a new RHTable field becomes a one-line structure change with compile-time enforcement. The public-accessor option is a stepping-stone, not the proper fix. Subsumes DEBT-ST-01. |
 | DEEP-MODEL-03 | I | Model/State.lean:146 | Cross-reference `replenishQueueSorted` invariant defined in SchedContext/ReplenishQueue.lean. |
 | DEEP-MODEL-04 | I | Model/State.lean LifecycleMetadata | Document mutation sites for `capabilityRefs`. |
 | DEEP-PRELUDE-01 | I | Prelude.lean:1076–1115 | Macro-generate the 15 `LawfulBEq` instances for typed identifiers. |
 | DEEP-PRELUDE-02 | I | Prelude.lean:1131+ | Move HashSet/RHTable helper lemmas to `Prelude/HashSetLemmas.lean`. |
-| DEEP-CAP-01 | L | Capability/Operations.lean:959, 1002 | Document null-cap guards in `cspaceCopy`/`cspaceMove` docstrings. |
-| DEEP-CAP-02 | L | Capability/Operations.lean:1081–1111 | Either enforce "slot already contains a capability" precondition for `cspaceMutate`, or update the docstring to match the relaxed semantics. |
-| DEEP-CAP-03 | I | Capability/Operations.lean:750–756 | Document guard order (rights → null) in `mintDerivedCap` docstring. |
+| DEEP-CAP-01 | L | Capability/Operations.lean:959, 1002 | (REFINED §11.5) The null-cap guards ARE documented — but in inline `--` comments inside the function body (lines 964–968 for cspaceCopy, 998–1001 for cspaceMove). Best fix: promote these inline rationale blocks UP into the formal `/-- ... -/` docstring above each function. No code change. |
+| ~~DEEP-CAP-02~~ | ~~L~~ | ~~Capability/Operations.lean:1081–1111~~ | **WITHDRAWN (§11.1)** — `cspaceMutate` DOES enforce the precondition via the `cap.isNull` guard at line 1093. False positive. |
+| ~~DEEP-CAP-03~~ | I | Capability/Operations.lean:740–747 | (NO-ACTION §11.5) Guard order rationale already documented in the existing docstring at lines 740–747. No additional documentation needed. |
 | DEEP-CAP-04 | I | Capability/Invariant/Defs.lean:345–367 | Strengthen `RetypeTarget` "phantom witness" comment. |
 | DEEP-CAP-05 | I | Capability/Operations.lean:12–62 | Move "AK8-K LOW-tier" deferred items from header comment to the project debt register. |
-| DEEP-IPC-01 | M | Model/Object/Types.lean Notification, IPC ops | Add NoDup guard at `notificationWait` enqueue, instead of relying on upstream invariant maintenance. |
+| ~~DEEP-IPC-01~~ | ~~M~~ | ~~Model/Object/Types.lean Notification, IPC ops~~ | **WITHDRAWN (§11.1)** — `notificationWait` already has an O(1) duplicate guard at `Operations/Endpoint.lean:723` (`tcb.ipcState = .blockedOnNotification` test → `.error .alreadyWaiting`). False positive. |
 | DEEP-IPC-02 | M | 7 files in IPC/Invariant | Add a one-line justification comment beside each `set_option linter.unusedVariables false`. |
-| DEEP-IPC-03 | H | IPC/DualQueue/WithCaps.lean:112–198 | Close AK1-I: align send/call cap-transfer error with receive (`.error .invalidCapability`) when receiver CSpace root is missing. NI symmetry. |
+| DEEP-IPC-03 | H | IPC/DualQueue/WithCaps.lean:**198 only** (NARROWED §11.3) | At `:198`, replace `.ok ({ results := #[] }, st')` with `.error .invalidCapability`. AK1-I closure already fixed the send (line 125) and receive (line 158) paths; only the `endpointCallWithCaps` path still has the asymmetry. One-line fix mirroring AK1-I comment block. |
 | DEEP-IPC-04 | I | IPC/Operations/Endpoint.lean:485 | Verify the formal proof `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull` exists and is sorry-free. |
 | DEEP-IPC-05 | I | (cross-references DEEP-IPC-01) | covered above. |
-| DEEP-SCH-01 | I | Scheduler/RunQueue.lean:66–72 | Document the `membership ↔ threadPriority` consistency invariant in the file header. |
+| ~~DEEP-SCH-01~~ | I | Scheduler/RunQueue.lean:66–72 | (NO-ACTION §11.5) The implicit invariant is already documented in a 6-line comment at lines 66–72 inside the structure body, with a reference to `InvariantChecks.runQueueThreadPriorityConsistentB`. |
 | DEEP-SCH-02 | I | Scheduler/Operations/Selection.lean:225–241 vs :327 | Document fail-open vs fail-safe API contract. |
 | DEEP-SCH-03 | I | Lifecycle/Suspend.lean:75–84 / :290+ | Extract shared "restore-to-ready" helper. |
 | DEEP-SCH-04 | I | Scheduler/Operations/Core.lean:715–717 | Surface `.missingSchedContext` instead of silent no-preempt fallback. |
@@ -1274,16 +1334,16 @@ only real candidates this audit found.
 | DEEP-SCH-06 | I | SchedContext/Operations.lean:141–185 | Verify domain propagation for `schedContextConfigure`. |
 | DEEP-SUSP-01 | I | Lifecycle/Suspend.lean resumeThread | Document/handle PIP recomputation on resume if blocking chain changed during suspension. |
 | DEEP-SUSP-02 | I | Lifecycle/Suspend.lean:88–105 | Document `cancelDonation` two-arm semantics or split into `cancelBoundDonation`/`cancelDonatedDonation`. |
-| DEEP-ARCH-01 | L | CacheModel/TimerModel/ExceptionModel.lean | Reclassify "STATUS: staged for H3" markers (modules are now production-active). |
-| DEEP-ARCH-02 | L | CrossSubsystem.lean:887–930 | Audit each of 11 `_fields` defs; remove unused ones or wire them into a `fieldsDisjoint` composition. |
+| DEEP-ARCH-01 | L | **CacheModel.lean only** (NARROWED §11.3) | Reclassify "STATUS: staged for H3" marker on `CacheModel.lean` — it IS in the production chain via `BarrierComposition` ← `TlbModel` ← `SeLe4n.lean`. TimerModel and ExceptionModel are genuinely staged-only; their markers are correct. |
+| ~~DEEP-ARCH-02~~ | ~~L~~ | ~~CrossSubsystem.lean:887–930~~ | **WITHDRAWN (§11.1)** — every one of the 11 `_fields` definitions has 3–26 active consumers in the kernel (verified by `grep -rn`). False positive. |
 | DEEP-ARCH-03 | I | Architecture/ExceptionModel.lean | Document GIC dispatch flow boundary — formal model is in InterruptDispatch.lean. |
 | DEEP-ARCH-04 | I | Architecture/IpcBufferValidation.lean | Either add "STATUS: staged" marker or confirm production. |
 | DEEP-IF-01 | I | InformationFlow/Soundness.lean | Verify import path of `DeclassificationPolicy` structure. |
 | DEEP-IF-02 | I | Policy.lean:484–500 | Document that the parameterised `SecurityDomain` lattice section is intentionally truncated as post-1.0 hook. |
 | DEEP-BOOT-01 | M | Platform/Boot.lean:551 + RPi5/VSpaceBoot.lean | Either thread `rpi5BootVSpaceRoot` into the boot result via the AN9-E rewire of `bootSafeObject`, or remove the unwired data structure. |
 | DEEP-FDT-01 | L | Platform/DeviceTree.lean:695–740 | Distinguish fuel exhaustion from malformed-blob in `findMemoryRegPropertyChecked`. |
-| DEEP-RUST-01 | L | rust/sele4n-hal/src/mmio.rs | Add ARM ARM B2.2.1 reference to MMIO unsafe blocks. |
-| DEEP-RUST-02 | L | rust/sele4n-hal/src/registers.rs | Add ARM ARM D17 reference to `mrs`/`msr` blocks. |
+| ~~DEEP-RUST-01~~ | ~~L~~ | ~~rust/sele4n-hal/src/mmio.rs~~ | **WITHDRAWN (§11.1)** — every MMIO unsafe block already cites `(ARM ARM B2.1)`. False positive. |
+| ~~DEEP-RUST-02~~ | ~~L~~ | ~~rust/sele4n-hal/src/registers.rs~~ | **WITHDRAWN (§11.1)** — `mrs`/`msr` `asm!` blocks already cite `(ARM ARM C5.2)`, the correct section for system register access mnemonics. False positive. |
 | DEEP-RUST-03 | I | sele4n-abi/src/trap.rs:2-6 | Correct module-level comment about "single unsafe block." |
 | DEEP-RUST-04 | L | THIRD_PARTY_LICENSES.md:41 | Clarify cc semver range vs resolved version. |
 | DEEP-RUST-05 | I | sele4n-abi/src/lib.rs, sele4n-sys/src/lib.rs | Add module-level doc comments. |
@@ -1292,7 +1352,7 @@ only real candidates this audit found.
 | DEEP-TEST-02 | L | tests/{An9HardwareBindingSuite, Ak9PlatformSuite, An10CascadeSuite}.lean | Same rename treatment. |
 | DEEP-TEST-03 | M | tests/ | Add a dedicated `SyscallDispatchSuite.lean` exercising `syscallEntryChecked` per syscall. |
 | DEEP-TEST-04 | L | tests/fixtures/main_trace_smoke.expected | Verified non-empty; no action. |
-| DEEP-PRECOM-01 | M | scripts/pre-commit-lean-build.sh:65 | Replace fragile multi-grep `sorry` regex with a Lean-tokenised check or with proper block-comment stripping. |
+| DEEP-PRECOM-01 | M | scripts/pre-commit-lean-build.sh:59,61 | (INVERTED §11.2) The regex is OVER-zealous (false-positive on `/-…-/` block-comment `sorry` mentions), not under-zealous. No real `sorry`s slip through; the failure mode is rejecting legitimate doc references. Best fix: replace with a Lean-tokeniser-based check via `lean --run` on a small parser script. |
 | DEEP-SCRIPT-01 | I | scripts/website_link_manifest.txt:18 | Auto-update or remove the "Last synchronized" timestamp. |
 | DEEP-SCRIPT-02 | I | scripts/*.py | All clean. No action. |
 | DEEP-CI-01 | L | .github/workflows/*.yml | Add `concurrency:` block to non-Lean workflows. |
@@ -1375,17 +1435,20 @@ defining property is honesty about correctness.
 ### 10.5 Sign-off
 
 This audit finds **no critical (C) defects** in the proof artefact:
-no `sorry`, no `axiom`, exactly one `Classical.byContradiction` use
-(constructively rewritable), one stale Rust-side comment referencing
-a nonexistent Lean function, and a small body of documentation drift
-(README/AGENTS/CLAUDE) that the project has acknowledged in its own
-DEBT-DOC-01 register.
+no `sorry`, no `axiom`, exactly one explicit `Classical.byContradiction`
+use (post-§11.4 reanalysis: not easily eliminated and Lean-stdlib safe),
+one stale Rust-side comment referencing a nonexistent Lean function,
+and a small body of documentation drift (README/AGENTS/CLAUDE) that
+the project has acknowledged in its own DEBT-DOC-01 register.
 
-The audit finds **two H-severity findings** affecting v1.0 readiness:
-DEEP-FFI-01 (the syscall-dispatch stub on hardware) and DEEP-DOC-01
-(the README's internally inconsistent theorem count). The first is
+The audit finds **two H-severity findings** affecting v1.0 readiness
+(post-verification): DEEP-FFI-01 (the syscall-dispatch stub on
+hardware) and DEEP-IPC-03 (the call-path NI asymmetry, narrowed to
+one line at `IPC/DualQueue/WithCaps.lean:198`). The first is
 acknowledged debt that needs honest disclosure in release notes; the
-second is a 1-PR documentation refresh.
+second is a one-line code change mirroring AK1-I's pattern.
+DEEP-DOC-01 (the README inconsistency) was downgraded H→M during
+the verification pass — still pre-1.0 must-fix as a credibility item.
 
 Beyond that, this audit refines the predecessor's debt register with
 50+ specific, actionable findings (DEEP-* IDs above), most of which
@@ -1404,4 +1467,284 @@ fast path**, and the documentation should say so.
 should re-verify DEEP-FFI-01 (closed when AN9-D/AN9-F glue lands)
 and the documentation findings (closed when the must-fix PR set
 merges).
+
+---
+
+## 11. Verification pass corrections (2026-04-28, same day)
+
+After the audit was first written, every finding was re-verified
+directly against the source one more time. Several findings produced
+by the parallel agents were inaccurate; the corrections are
+catalogued here so the report becomes a faithful record. **All
+corrections strictly tighten the audit** — no new high-severity
+findings emerged from the verification pass; several findings were
+**withdrawn** because they were false positives.
+
+### 11.1 Findings WITHDRAWN (false positives — remove from any
+remediation plan)
+
+- **DEEP-CAP-02 — WITHDRAWN.** Claim was that `cspaceMutate` does
+  not validate "slot already contains a capability" before mutation.
+  False: `Capability/Operations.lean:1093` explicitly checks
+  `if cap.isNull then .error .nullCapability` (the AK8-K C-L2
+  occupied-slot guard). The docstring at lines 1069–1080 also
+  documents the guarded design. The agent confused
+  "`cspaceLookupSlot` returns `cap = Capability.null` on empty slot"
+  (which it does, by CNode semantics) with "no validation occurs"
+  (which is wrong — line 1093 IS the validation). Action: none.
+
+- **DEEP-ARCH-02 — WITHDRAWN.** Claim was that 7 of 11
+  `*_fields : List StateField` definitions in
+  `CrossSubsystem.lean:887–930` are dead metadata. False: direct
+  consumer counts via `grep -rn` for each name show 3 to 26
+  consumers per field. Verified counts: `registryEndpointValid_fields`
+  16, `registryInterfaceValid_fields` 3,
+  `registryDependencyConsistent_fields` 26,
+  `noStaleEndpointQueueReferences_fields` 16,
+  `noStaleNotificationWaitReferences_fields` 16,
+  `serviceGraphInvariant_fields` 26,
+  `schedContextStoreConsistent_fields` 12,
+  `schedContextNotDualBound_fields` 12,
+  `schedContextRunQueueConsistent_fields` 12,
+  `blockingAcyclic_fields` 4, `lifecycleObjectTypeLockstep_fields` 5.
+  All 11 are actively used. Action: none.
+
+- **DEEP-RUST-01 — WITHDRAWN.** Claim was that MMIO unsafe blocks in
+  `rust/sele4n-hal/src/mmio.rs` lack ARM ARM section references.
+  False: every MMIO unsafe block (lines 54–57, 76–79, 96–98, 117–119)
+  cites `(ARM ARM B2.1)`. The agent missed this. Action: none.
+
+- **DEEP-RUST-02 — WITHDRAWN.** Claim was that `mrs`/`msr` `asm!`
+  blocks in `rust/sele4n-hal/src/registers.rs` lack ARM ARM
+  references. False: lines 20–21 and 45–46 both cite
+  `(ARM ARM C5.2)`, which is the correct section for
+  MRS/MSR mnemonics (system register access). The agent confused
+  C5.2 (instruction definition) with D17 (system register
+  definitions); both are valid, but the existing reference is
+  appropriate. Action: none.
+
+- **DEEP-IPC-01 — WITHDRAWN.** Claim was that `notificationWait` has
+  no NoDup guard on `waitingThreads`, so duplicates could be added
+  upstream-error. False: `Operations/Endpoint.lean:723` does an
+  O(1) duplicate check via the `tcb.ipcState ==
+  .blockedOnNotification notificationId` test before enqueueing,
+  rejecting with `.error .alreadyWaiting`. The "WS-G7/F-P11"
+  comment at line 719 documents this design. Action: none.
+
+### 11.2 Findings INVERTED (the description was wrong direction)
+
+- **DEEP-PRECOM-01 — INVERTED.** Original claim: the pre-commit
+  `sorry` regex would silently MISS a `sorry` in a multi-line
+  `/- ... -/` block comment. Direct test (a 4-line block comment
+  containing the word `sorry` was fed through the actual regex
+  chain at `scripts/pre-commit-lean-build.sh:59,61`) shows the
+  OPPOSITE: the line containing `sorry` IS flagged because none of
+  the `grep -v` filters exclude lines that are merely INSIDE a
+  block comment (the filters only exclude `--`-prefixed lines and
+  lines with `"sorry"` strings). The hook is therefore
+  **over-zealous** (false-positive on documentation references to
+  `sorry` in block comments) rather than **under-zealous** (false-
+  negative on real `sorry`s in block comments).
+  Practical impact: zero — the codebase has no block-comment `sorry`
+  references (the three matches in `tests/OperationChainSuite.lean`
+  at lines 1660, 1661, 1668 are all in `--` line comments and are
+  correctly excluded). The recommendation stands (replace the
+  fragile regex with a tokeniser), but the rationale shifts from
+  "lets bad code through" to "rejects legitimate documentation."
+  Severity: **L** (down from M — the hook is safe-failing).
+
+### 11.3 Findings NARROWED (scope was too broad)
+
+- **DEEP-IPC-03 — NARROWED.** Original claim: `endpointSendDualWithCaps`
+  AND `endpointCallWithCaps` silently return `.ok` on missing
+  receiver CSpace root, while only `endpointReceiveDualWithCaps`
+  fails closed. Direct read of
+  `IPC/DualQueue/WithCaps.lean:113–125` shows that **the AK1-I
+  closure already fixed the send path** — line 125 returns
+  `.error .invalidCapability`, with a 13-line comment (lines
+  113–125) documenting the NI symmetry. The receive path is also
+  closed (line 158 likewise errors). The asymmetry persists
+  **only in `endpointCallWithCaps`** (line 198, where the missing
+  receiver-CSpace-root case still returns
+  `.ok ({ results := #[] }, st')`). Severity stays H — NI
+  symmetry across send/receive/call is the design goal — but the
+  fix surface is one path, not three.
+
+- **DEEP-ARCH-01 — NARROWED.** Original claim: three modules
+  (`CacheModel.lean`, `TimerModel.lean`, `ExceptionModel.lean`)
+  are marked "STATUS: staged for H3 hardware binding" but are in
+  the production import chain. Direct trace via
+  `grep -rln "import SeLe4n.Kernel.Architecture.<X>"`:
+  - **CacheModel**: imported by `Platform/Staged.lean`,
+    `Architecture/TlbCacheComposition.lean`, AND
+    `Architecture/BarrierComposition.lean`. `BarrierComposition`
+    is imported by `Architecture/TlbModel.lean`, which is imported
+    by `SeLe4n.lean` (the production library entry point). So
+    CacheModel **is** in the production chain. Marker is misleading.
+  - **TimerModel**: imported only by `Platform/Staged.lean`.
+    Genuinely staged. Marker is correct.
+  - **ExceptionModel**: imported only by `Platform/Staged.lean`.
+    Genuinely staged. Marker is correct.
+  Action narrowed: only CacheModel.lean's marker should be
+  reclassified or removed.
+
+### 11.4 Findings with SEVERITY adjusted
+
+- **DEEP-DOC-01 — H → M.** The README's internal inconsistency
+  (3,186 vs 2,725 theorem-count) is documentation hygiene, not a
+  correctness defect. A reader who notices the discrepancy can
+  cross-check `codebase_map.json` to find the truth. Severity
+  reduced to M (still pre-1.0 must-fix as a credibility item, but
+  not blocking).
+
+- **DEEP-PROOF-01 — M → L.** The single `Classical.byContradiction`
+  use at `Scheduler/Operations/Preservation.lean:1720` is inside
+  a proof that already invokes classical logic implicitly via
+  `by_cases` on a non-decidable proposition (line 1711 — the
+  universal quantifier over `outTid`). Removing only the explicit
+  `Classical.byContradiction` does NOT make the proof constructive;
+  the `by_cases` would still desugar to `Classical.em`. To fully
+  eliminate Classical use, the proof must be restructured around
+  case-analysis on `Option ThreadId` (decidable). Furthermore,
+  Lean's `Classical.byContradiction` is a stdlib primitive
+  ultimately backed by `Classical.choice` (an axiom in Lean's
+  standard library, not in this project's code). The project's
+  "no axiom" policy in CLAUDE.md is ambiguous on whether stdlib
+  Classical primitives count. Severity reduced to L; the
+  recommendation now is "either restructure the proof to be
+  fully constructive (and document the technique as a model for
+  similar future cases), OR add a one-line note in CLAUDE.md
+  clarifying that Lean stdlib's Classical.* primitives are
+  permitted but not encouraged."
+
+### 11.5 Findings with RECOMMENDATIONS refined for optimality
+
+For each remaining finding, the verification pass re-considered
+whether the proposed action was the **best** approach. Where a
+better approach exists, it is recorded here:
+
+- **DEEP-DOC-02 (AGENTS.md staleness) — recommendation expanded.**
+  Original action: "Bump version 0.12.4 → 0.30.11." The
+  verification pass found that AGENTS.md is comprehensively
+  out-of-date — it references audits at `v0.11.0`/`v0.12.2`,
+  workstream "WS-F (v0.12.2 audit remediation) — planning",
+  and other content from ~18 versions ago. A version bump alone
+  would leave the rest of the file stale and create a false
+  signal of currency.
+  **Best approach (chosen):** delete `AGENTS.md` and add a
+  redirect stub that points to `CLAUDE.md` as the single source
+  of truth. CLAUDE.md is already the canonical agent-guidance
+  file (it has the project's full v0.30.11 state); maintaining
+  two parallel files invites drift. If `AGENTS.md` must remain
+  for tooling discoverability (some agent frameworks scan for
+  this filename), reduce it to ~10 lines: project name, version
+  (auto-synced from `lakefile.toml`), one-line description, and
+  a link to `CLAUDE.md`.
+  **Second-best approach:** do a full rewrite of AGENTS.md
+  matching CLAUDE.md content, then add a sync hook to keep them
+  identical (or a CI check that fails if they diverge).
+
+- **DEEP-MODEL-02 (17-conjunct accessor chain) — recommendation
+  refined.** Original action: "Promote 17 named accessors to
+  public lemmas (or refactor to a record-shaped invariant)."
+  The verification pass strongly prefers the **record-shaped
+  invariant** option:
+  ```
+  structure AllTablesInvExtK (st : SystemState) : Prop where
+    objects             : st.objects.invExtK
+    irqHandlers         : st.irqHandlers.invExtK
+    services            : st.services.invExtK
+    -- ... 14 more named fields
+  ```
+  Then call sites use `h.objects`, `h.scheduler`, etc. — every
+  field has a stable name; adding a new RHTable field is a
+  one-line addition to the structure with compile-time enforcement.
+  Promoting the 17 `.2.2.2…` accessors to public is a strict
+  improvement over the status quo but preserves the underlying
+  fragility (any reorder of conjuncts breaks every call site).
+  The structure-shaped form is the **proper long-term fix**;
+  the public-accessor form is the lower-effort interim fix.
+  Recommendation: target the structure form for v1.x; if effort
+  is constrained, do the public accessors as a stepping stone
+  but explicitly mark them as transitional in the docstring.
+
+- **DEEP-CAP-01 (cspaceCopy/cspaceMove docstring null-cap
+  guard) — recommendation refined.** The verification pass
+  confirmed that the null-cap guards ARE documented — but in
+  inline `--` comments inside the function body
+  (`Operations.lean:964–968` for cspaceCopy, lines 998–1001 for
+  cspaceMove), not in the formal `/-- ... -/` docstring above
+  the function signature. The optimal fix is to **promote the
+  inline rationale to the docstring**, not to write new
+  documentation. Specifically: copy the `AL1b (AK7-I.cascade)`
+  comment block from inside the function up into the docstring
+  alongside the existing "destination must be empty" line. This
+  is purely a comment-block move; no code or behaviour change.
+
+- **DEEP-CAP-03 (mintDerivedCap guard order) — DOWNGRADE TO
+  NO-ACTION.** The verification pass observed that the design
+  rationale for the guard order (rights → null) is already
+  documented in the `mintDerivedCap` docstring at
+  `Operations.lean:740–747`. The agent's complaint was that the
+  ordering is "fragile"; on closer reading, the design is
+  intentional and well-explained. Action: none. Severity demoted
+  from I to "no action."
+
+- **DEEP-SCH-01 (RunQueue implicit invariant) — DOWNGRADE TO
+  NO-ACTION.** The implicit invariant `membership ↔
+  threadPriority consistency` is already documented in the
+  `RunQueue` structure body at lines 66–72 with a 6-line
+  comment explaining the design choice and pointing to the
+  runtime check (`InvariantChecks.runQueueThreadPriorityConsistentB`).
+  No additional documentation is needed. Action: none.
+
+### 11.6 Updated severity counts (post-correction)
+
+| Severity | Original count | Corrected count | Change |
+|---|---|---|---|
+| Critical (C) | 0 | 0 | – |
+| High (H) | 3 (FFI-01, DOC-01, IPC-03) | 2 (FFI-01, IPC-03 narrowed) | -1 (DOC-01 → M) |
+| Medium (M) | ~12 | ~10 (DOC-01 added, PROOF-01 → L, IPC-01 + CAP-02 withdrawn) | -2 |
+| Low (L) | ~20 | ~18 (PROOF-01 added, RUST-01 + RUST-02 withdrawn, ARCH-02 withdrawn) | -2 |
+| Informational (I) | ~20 | ~18 (CAP-03 + SCH-01 demoted to no-action) | -2 |
+| **Total DEEP-* findings** | ~55 | ~48 | **-7** |
+
+The updated headline: **0 critical, 2 high, 10 medium, 18 low,
+18 informational, 48 total** new DEEP-* findings, with 5
+withdrawn for false positives.
+
+### 11.7 Recommendation: proceed with the §10.3 must-fix sequence
+with the following adjustments
+
+- **PR 1 (Honesty)**: now closes 6 items, not 8 — drop DEEP-CAP-02,
+  DEEP-IPC-01 from the documentation PR (they were code findings
+  to begin with and are now withdrawn). Add the AGENTS.md
+  delete-or-stub action.
+- **PR 2 (NI symmetry)**: scope reduced to a single file edit at
+  `IPC/DualQueue/WithCaps.lean:198`, replacing
+  `.ok ({ results := #[] }, st')` with `.error .invalidCapability`
+  (matching the AK1-I pattern at line 125).
+- **PR 3 (Classical removal)**: re-evaluate whether to do this at
+  all. Since the use is L-severity and Lean stdlib's Classical
+  primitives are foundationally safe, deferring this to v1.x
+  with a CLAUDE.md note clarifying policy is acceptable.
+- **PR 4 (Test rename)**: unchanged.
+- **PR 5 (Pre-commit hardening)**: scope reframed to
+  "**replace the fragile regex with a Lean tokeniser-based
+  check**" (the over-zealous failure mode is the symptom; the
+  root cause is using a regex on a comment-syntax-sensitive
+  language).
+
+### 11.8 Verification pass sign-off
+
+The verification pass increases confidence in the audit by
+removing false positives and tightening recommendations toward
+the genuinely optimal fix in each case. **No new high-severity
+findings emerged.** The headline conclusion of §10 stands:
+proof artefact is clean and release-ready; hardware-bootable
+kernel is not, pending AN9-D / AN9-F closure of the FFI
+dispatch glue.
+
+— Verification pass closed 2026-04-28 on the same branch as
+the original audit.
 
