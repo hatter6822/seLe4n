@@ -56,13 +56,19 @@ WS-RC closes the v0.30.11 audit cycle by remediating every active
 finding from the comprehensive audit (17 DEBT-* items, of which 1 is
 fully closed by R0 reconfirmation, 4 are subsumed by DEEP-* items,
 and 12 carry forward) and the deep verification audit (~52 DEEP-*
-items, of which 5 are withdrawn as false positives in deep §11.1,
-1 additionally withdrawn by this plan (DEEP-ARCH-01, see §2.2),
-and 6 are no-action). After deduplication, the workstream tracks
-**~45 active DEEP-* items + 17 active DEBT-* items = ~62 distinct
-remediation items**. The workstream is decomposed into **15 phases**
-(R0..R14), of which R0..R6 are pre-v1.0 must-fix and R7..R14 are
-release-aligned cleanup or post-1.0 backlog.
+items). Every audit finding — including those classified as **false
+positives** by either audit's verification pass — receives a
+remediation: active findings get an implementation slice, and false
+positives get a **structural enforcement gate** that prevents the
+false positive from recurring (per CLAUDE.md's "implement-the-
+improvement rule": the verification's correctness becomes a
+machine-checked invariant rather than ad-hoc human re-derivation).
+
+After deduplication, the workstream tracks **~45 active DEEP-* items
++ 6 false-positive structural-fix items + 17 active DEBT-* items =
+~68 distinct remediation items**. The workstream is decomposed into
+**15 phases** (R0..R14), of which R0..R6 are pre-v1.0 must-fix and
+R7..R14 are release-aligned cleanup or post-1.0 backlog.
 
 Headline counts (post-§11/§12 revision + this plan's verification;
 see §2 for the per-finding disposition):
@@ -74,8 +80,22 @@ see §2 for the per-finding disposition):
 | M — medium | 9 (DEEP) + 1 (DEBT) | 5 | 4 | 1 (DEBT-CAP-01) |
 | L — low | 11 (DEEP) | 7 | 1 | 3 (PROOF-01, MODEL-02, RUST-06) |
 | I — informational | 23 (DEEP) | 9 | 12 | 2 (PRELUDE-01/02) |
+| **False-positive structural fixes** | **6** | **6** (R4.D, R12.B/C/D) | – | – |
 | Predecessor DEBT-* (active) | 17 | 3 (DOC-01, RUST-02, IPC-02 via R10) | 1 (FR-01 via R11; included in v0.31.0 too) | 13 (the maintainability backlog) |
-| **Total active items** | **~62** | **~25** | **~18** | **~19** |
+| **Total active items** | **~68** | **~31** | **~18** | **~19** |
+
+The "false-positive structural fixes" row counts the six findings the
+deep audit's §11.1/§11.3 (and this plan's §2.2) classified as false
+positives: DEEP-CAP-02 (cspaceMutate validates), DEEP-ARCH-02 (no dead
+`_fields`), DEEP-RUST-01 (MMIO ARM-ARM cited), DEEP-RUST-02 (registers
+ARM-ARM cited), DEEP-IPC-01 (notification waiters NoDup), and
+DEEP-ARCH-01 (CacheModel staged correctly). Each receives a
+structural enforcement gate (R4.D for the cspaceMutate witness,
+R12.B/C/D for the three CI gates) so that the verification's
+correctness is **machine-checked at every CI run** rather than left
+to a future auditor's manual re-derivation. DEEP-IPC-01 is subsumed
+by R4.C (NoDup waitingThreads at type level) and needs no separate
+fix slot.
 
 Numbers are rounded because some DEBT-* items are subsumed by DEEP-*
 items (e.g., DEBT-DOC-01 → DEEP-DOC-01..06; DEBT-ST-01 → DEEP-MODEL-02;
@@ -126,9 +146,34 @@ staged" markers are therefore **correct**, and DEEP-ARCH-01 should be
 reclassified as a **withdrawn false positive** alongside the five
 already-withdrawn items in §11.1 of the deep audit.
 
-This plan treats DEEP-ARCH-01 as withdrawn (no remediation in any
-phase) and §2.2 below records the errata for inclusion in
-`AUDIT_v0.30.11_ERRATA.md` once Phase R0 lands.
+### 1.5 Structural-fix policy for false positives
+
+Per the user-articulated principle "implement the optimal fix instead
+of documenting findings to be handled in a later audit," this plan
+goes further than the deep audit's §11.1/§11.3 classifications. A
+false positive verified once via human grep is one audit cycle away
+from being re-discovered as a "new" finding; the optimal remediation
+is to convert the verification into a **machine-checked invariant**
+that runs on every CI cycle. Concretely:
+
+| Withdrawn finding | Optimal structural fix | Lands in phase |
+|---|---|---|
+| DEEP-ARCH-01 (CacheModel staging) | CI gate that computes the production-chain transitive closure from `SeLe4n.lean` and the staged set from `Platform/Staged.lean`, fails if any "STATUS: staged" marked file is in production or vice versa | **R12.B** |
+| DEEP-RUST-01 (MMIO `(ARM ARM B2.1)` citations) | CI gate that scans every `unsafe { … }` block in `rust/sele4n-hal/src/` and fails if the preceding 5 lines do not contain `(ARM ARM <section>)` | **R12.C** |
+| DEEP-RUST-02 (registers `(ARM ARM C5.2)` citations) | Same gate as R12.C — covered uniformly across HAL | **R12.C** |
+| DEEP-ARCH-02 (`*_fields` definitions consumed) | CI gate that fails if any `<name>_fields : List StateField` definition has fewer than 1 consumer outside the file it's declared in | **R12.D** |
+| DEEP-CAP-02 (`cspaceMutate` null-cap guard) | Witness theorem `cspaceMutate_rejects_null_cap` proving the runtime check at line 1093 is equivalent to a non-null precondition | **R4.D** |
+| DEEP-IPC-01 (`notificationWait` NoDup) | Subsumed by R4.C (NoDup at type level on `Notification.waitingThreads`) | **R4.C (no separate fix)** |
+
+Each of these is a distinct WS-RC sub-phase (R4.D for the witness
+theorem; R12.B/C/D for the three CI gates). Their content is
+detailed in §8.6 (R4.D), §16.3 (R12.B), §16.4 (R12.C), and §16.5
+(R12.D). The policy is canonical in this plan; CLAUDE.md's
+"Implement-the-improvement rule" governs the broader principle.
+
+This plan treats DEEP-ARCH-01 as withdrawn-as-finding-but-fixed-
+structurally-in-R12.B; §2.2 below records the errata for inclusion
+in `AUDIT_v0.30.11_ERRATA.md` once Phase R0 lands.
 
 
 ---
@@ -147,28 +192,32 @@ deferred past v1.0).
 The `Verification` column records the exact command or file/line
 inspection used to confirm or reject the finding.
 
-### 2.1 Findings already withdrawn in the deep audit's §11.1
+### 2.1 Findings withdrawn-as-finding-but-fixed-structurally
 
-No remediation. Recorded here for completeness so a maintainer
-reading the plan does not re-discover them.
+The deep audit's §11.1 withdrew five findings as false positives;
+this plan adds DEEP-ARCH-01 to that list (§2.2). Per the §1.5
+structural-fix policy, each receives a machine-checked enforcement
+gate so the verification is preserved automatically rather than
+manually re-derived by a future auditor.
 
-| ID | Disposition | Verification (re-confirmed by this plan author) |
-|---|---|---|
-| DEEP-CAP-02 | WITHDRAWN | `Capability/Operations.lean:1093` checks `if cap.isNull then .error .nullCapability`; AK8-K C-L2 guard is present. |
-| DEEP-ARCH-02 | WITHDRAWN | `grep -rn` on each of the 11 `*_fields` definitions in `CrossSubsystem.lean:887–930` returns 3..26 consumers each. All actively used. |
-| DEEP-RUST-01 | WITHDRAWN | `rust/sele4n-hal/src/mmio.rs` lines 54–57, 76–79, 96–98, 117–119 each cite `(ARM ARM B2.1)`. |
-| DEEP-RUST-02 | WITHDRAWN | `rust/sele4n-hal/src/registers.rs` lines 20–21 and 45–46 each cite `(ARM ARM C5.2)` for `mrs`/`msr`. |
-| DEEP-IPC-01 | WITHDRAWN | `Operations/Endpoint.lean:723` performs O(1) duplicate guard via `tcb.ipcState == .blockedOnNotification` returning `.error .alreadyWaiting`. |
+| ID | Verified-correct claim (audit-time finding) | Structural fix lands in | Mechanism |
+|---|---|---|---|
+| DEEP-CAP-02 | `Capability/Operations.lean:1093` checks `if cap.isNull then .error .nullCapability`; AK8-K C-L2 guard is present. | **R4.D** | Lean witness theorem `cspaceMutate_rejects_null_cap`. |
+| DEEP-ARCH-02 | `grep -rn` on each of the 11 `*_fields` definitions in `CrossSubsystem.lean:887–930` returns 3..26 consumers each. All actively used. | **R12.D** | CI gate `scripts/check_no_orphan_fields.sh` fails on `*_fields` defs with zero out-of-file consumers. |
+| DEEP-RUST-01 | `rust/sele4n-hal/src/mmio.rs` lines 54–57, 76–79, 96–98, 117–119 each cite `(ARM ARM B2.1)`. | **R12.C** | CI gate `scripts/check_arm_arm_citations.sh` fails on HAL `unsafe` blocks lacking `(ARM ARM <section>)` within 5 preceding lines. |
+| DEEP-RUST-02 | `rust/sele4n-hal/src/registers.rs` lines 20–21 and 45–46 each cite `(ARM ARM C5.2)` for `mrs`/`msr`. | **R12.C** | Same gate; covers all HAL files uniformly. |
+| DEEP-IPC-01 | `Operations/Endpoint.lean:723` performs O(1) duplicate guard via `tcb.ipcState == .blockedOnNotification` returning `.error .alreadyWaiting`. | **R4.C** (subsumed) | Type-level `NoDupList ThreadId` on `Notification.waitingThreads` makes the duplicate impossible at the type system level. |
+| DEEP-ARCH-01 | All three "STATUS: staged" markers (CacheModel/TimerModel/ExceptionModel) are correct: each module is reachable only via `Platform/Staged.lean`, not from `SeLe4n.lean`. | **R12.B** | CI gate `scripts/check_production_staging_partition.sh` computes the transitive closure from `SeLe4n.lean` and `Platform/Staged.lean` and fails on partition violations. |
 
-### 2.2 Findings withdrawn by this plan (audit verification error)
+### 2.2 Audit errata produced by this plan (DEEP-ARCH-01)
 
 This plan author identified one additional finding whose verification
-rationale in the deep audit is wrong. It is **withdrawn** and recorded
-here as audit errata.
+rationale in the deep audit is wrong. The original claim is
+withdrawn-as-finding; per §1.5 the structural fix lands in **R12.B**.
 
 | ID | Original claim | Verification | Disposition |
 |---|---|---|---|
-| DEEP-ARCH-01 | CacheModel "STATUS: staged" marker is misleading because CacheModel is in production via `SeLe4n.lean → TlbModel → BarrierComposition → CacheModel`. | `grep "^import" SeLe4n/Kernel/Architecture/BarrierComposition.lean` returns no imports of CacheModel. Transitive-closure trace from `SeLe4n.lean` (144 modules) does not contain CacheModel, TimerModel, ExceptionModel, or TlbCacheComposition. CacheModel is reachable only via `Platform/Staged.lean` and via TlbCacheComposition (itself only reachable via Staged). The marker is correct. | **WITHDRAWN.** No remediation. To be lifted into `AUDIT_v0.30.11_ERRATA.md` at WS-RC R0 (see Phase R0 below). |
+| DEEP-ARCH-01 | CacheModel "STATUS: staged" marker is misleading because CacheModel is in production via `SeLe4n.lean → TlbModel → BarrierComposition → CacheModel`. | `grep "^import" SeLe4n/Kernel/Architecture/BarrierComposition.lean` returns zero imports of CacheModel. Transitive-closure trace from `SeLe4n.lean` (144 modules) does not contain CacheModel, TimerModel, ExceptionModel, or TlbCacheComposition. CacheModel is reachable only via `Platform/Staged.lean` and via TlbCacheComposition (itself only reachable via Staged). The marker is correct. | **WITHDRAWN as finding.** Errata to be lifted into `AUDIT_v0.30.11_ERRATA.md` at WS-RC R0. **Structural fix: R12.B** — CI gate that codifies the production/staged partition so the false positive cannot recur. See §16.3 for the gate's design. |
 
 ### 2.3 Findings demoted to NO-ACTION in the deep audit's §11.5
 
@@ -230,7 +279,7 @@ here as audit errata.
 | DEEP-BOOT-01 | M | R3 | `Platform/Boot.lean:551`; `Platform/RPi5/VSpaceBoot.lean:272–297` |
 | DEEP-SCRIPT-01 | I | R10 | `scripts/website_link_manifest.txt:18` |
 | DEEP-CI-01 | L | R12 | `.github/workflows/{platform_security_baseline,lean_toolchain_update_proposal,nightly_determinism,codebase_map_sync}.yml` |
-| DEEP-ARCH-01 | – | – | **WITHDRAWN by this plan (§2.2)** |
+| DEEP-ARCH-01 | – | R12.B | **WITHDRAWN as finding (§2.2); structural fix in R12.B** — `scripts/check_production_staging_partition.sh` Tier-0 gate. |
 
 
 ### 2.5 Active findings — predecessor DEBT-* (carry into WS-RC phases)
@@ -324,7 +373,7 @@ maintainability backlog.
 | R1 | `ipc-call-ni-symmetry` | One-line code change | **v0.31.0** | 1 | DEEP-IPC-03: align call-path cap-transfer with send/receive. |
 | R2 | `hardware-syscall-dispatch` | Substantive implementation | **v1.0.0** | 3 sub-PRs | DEEP-FFI-01/02/03 + DEEP-TEST-03: thread `SystemState`, implement `syscallDispatchFromAbi`, wire `syscall_dispatch_inner` and `suspend_thread_inner`, add a hardware-mode integration suite. |
 | R3 | `boot-vspace-threading` | Boot-path implementation | **v1.0.0** | 1 | DEEP-BOOT-01: rewrite `bootSafeObject` to admit boot VSpaceRoots; thread `rpi5BootVSpaceRoot` into the boot result. |
-| R4 | `structural-invariants` | Type-level invariant promotion | **v1.0.0** | 1 | DEEP-MODEL-01 (slotsUnique), DEEP-CAP-04 (RetypeTarget non-bypassable), DEEP-IPC-05 (NoDup waitingThreads). |
+| R4 | `structural-invariants` | Type-level invariant promotion | **v1.0.0** | 1 (4 sub-tasks) | R4.A: DEEP-MODEL-01 (slotsUnique). R4.B: DEEP-CAP-04 (RetypeTarget non-bypassable). R4.C: DEEP-IPC-05 (NoDup waitingThreads — subsumes DEEP-IPC-01). R4.D: structural witness for DEEP-CAP-02 (cspaceMutate). |
 | R5 | `scheduler-lifecycle-symmetry` | Behaviour-symmetry refactor | **v1.0.0** | 1 | DEEP-SUSP-01/02, DEEP-SCH-02/03/04/05/06. |
 | R6 | `arch-infoflow-completeness` | Spec completion | **v1.0.0** | 1 | DEEP-ARCH-03 (GIC bridge), DEEP-IF-01 (`DeclassificationPolicy`), DEEP-IF-02 (SecurityDomain lattice), DEEP-IPC-04 (verify or prove cleanup-error-unreachable). |
 | R7 | `capability-deferred-items` | AK8-K LOW-tier cleanup | optional | 1 | DEEP-CAP-05: address each AK8-K item where in-scope; lift residue to debt register. |
@@ -332,7 +381,7 @@ maintainability backlog.
 | R9 | `precommit-hardening` | Hook robustness | **v0.31.0** | 1 | DEEP-PRECOM-01: replace regex `sorry` check with Lean tokeniser. |
 | R10 | `inline-doc-and-cleanup` | Comment/docstring/inline polish | **v0.31.0** | 1 | DEEP-LICENSE-01, DEEP-CAP-01, DEEP-IPC-02, DEEP-MODEL-03/04, DEEP-RUST-03/04/05, DEEP-FDT-01, DEEP-SCRIPT-01, DEBT-IPC-02. |
 | R11 | `documentation-accuracy` | Genuine doc drift | **v0.31.0** | 1 | DEEP-DOC-01/02/03/04/06, DEBT-DOC-01, DEBT-FR-01. |
-| R12 | `ci-hygiene` | Workflow concurrency | **v0.31.0** | 1 | DEEP-CI-01: add `concurrency:` block to non-Lean workflows. |
+| R12 | `ci-hygiene-and-structural-gates` | Workflow concurrency + false-positive prevention | **v0.31.0** | 1 (4 sub-tasks) | R12.A: DEEP-CI-01 concurrency blocks. R12.B: production/staged partition gate (subsumes DEEP-ARCH-01). R12.C: ARM-ARM citation gate (subsumes DEEP-RUST-01/02). R12.D: `_fields` consumer gate (subsumes DEEP-ARCH-02). |
 | R13 | (reserved) | – | – | 0 (if empty) | Reserved for downstream emergent items discovered during R1..R12. |
 | R14 | `post-1.0-backlog` | Maintainability backlog | post-1.0 | – | DEBT-* maintainability + DEEP-PROOF-01 + DEEP-MODEL-02 + DEEP-PRELUDE-01/02. **Not part of v1.0.0**; tracked as the v1.x roadmap. |
 
@@ -364,11 +413,22 @@ maintainability backlog.
   documented-better-state items.
 - **R7..R12**: documentation, hygiene, and CI tier — the order here
   is flexible and PRs can land in parallel because they touch
-  disjoint files.
+  disjoint files. The exception is R12.B/C/D (the structural-fix
+  CI gates): they should land BEFORE R11 because R11's metric
+  refresh runs `test_tier0_hygiene.sh`, which now exercises the
+  three new gates. If R11 lands first, the metric refresh PR
+  would not have an enforced production/staged partition,
+  ARM-ARM citation, or `_fields` consumer check at refresh time
+  — a missed opportunity to verify the final state.
 - **R11 specifically lands LAST among hygiene phases** because the
   README/codebase_map.json metric refresh must reflect the
   post-implementation tree (otherwise the metrics drift again the
   moment the next R-phase merges).
+- **R12 sub-phases R12.A/B/C/D** can land as a single PR (they
+  touch disjoint files: `.github/workflows/*.yml` for R12.A, and
+  three new `scripts/check_*.sh` files for R12.B/C/D) but it is
+  acceptable to land them as four separate PRs if review velocity
+  benefits.
 
 
 ### 3.3 File→phase index (jump table)
@@ -384,7 +444,7 @@ to find the owning phase. Files not listed here have no WS-RC remediation.
 | `SeLe4n/Model/Object/Types.lean` | R4 (`Notification.waitingThreads` NoDup) |
 | `SeLe4n/Model/State.lean` | R10 (field cross-references), R14 (17-conjunct refactor) |
 | `SeLe4n/Model/Builder.lean` | R14 (named accessors removed once R4/R14 lands) |
-| `SeLe4n/Kernel/Capability/Operations.lean` | R7 (AK8-K), R10 (docstring promotion), R14 (frame helper) |
+| `SeLe4n/Kernel/Capability/Operations.lean` | R4.D (witness theorem for cspaceMutate null-cap guard), R7 (AK8-K), R10 (docstring promotion), R14 (frame helper) |
 | `SeLe4n/Kernel/Capability/Invariant/Defs.lean` | R4 (RetypeTarget smart-constructor) |
 | `SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean` | R1 (line 198 NI symmetry) |
 | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | R6 (cleanup-error proof verification) |
@@ -427,7 +487,12 @@ to find the owning phase. Files not listed here have no WS-RC remediation.
 | `AGENTS.md` | R11 (rewrite or redirect) |
 | `docs/SECURITY_ADVISORY.md` | R11 (FrozenOps experimental status — DEBT-FR-01) |
 | `docs/codebase_map.json` | R11 (metric resync) |
-| `.github/workflows/{platform_security_baseline,lean_toolchain_update_proposal,nightly_determinism,codebase_map_sync}.yml` | R12 |
+| `.github/workflows/{platform_security_baseline,lean_toolchain_update_proposal,nightly_determinism,codebase_map_sync}.yml` | R12.A |
+| `scripts/check_production_staging_partition.sh` (NEW) | R12.B |
+| `scripts/check_arm_arm_citations.sh` (NEW) | R12.C |
+| `scripts/check_no_orphan_fields.sh` (NEW) | R12.D |
+| `SeLe4n/Platform/Staged.lean` | R11.C (CLAUDE.md source-layout entry); referenced by R12.B as the canonical staged-set anchor |
+| `SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean` | R4.D (witness theorem placement) |
 
 
 ---
@@ -607,8 +672,88 @@ shim can access state without a parameter pipe.
 | R2.A.4 | `SeLe4n/Platform/FFI.lean` | Document the design choice in the file's header docstring. The IO.Ref approach is chosen because (a) the simulation harness already passes state explicitly so the IO.Ref is a hardware-only addition; (b) the alternative thread-local register-decoded snapshot adds two FFI symbols per syscall; (c) the Rust HAL already serialises SVC entry under `with_interrupts_disabled`, so the IO.Ref does not require atomicity. |
 | R2.A.5 | `tests/SyscallDispatchSuite.lean` (new) | Exercise the IO.Ref initialisation path in a simulation context: bootstrap via `bootFromPlatformChecked`, then read state via `getKernelState`. |
 
-**Validation.** `lake build SeLe4n.Platform.FFI`, `lake build SeLe4n.Platform.Boot`, `test_smoke.sh`.
+**Implementation walkthrough.**
 
+*R2.A.1 — IO.Ref construction.* The `IO.Ref SystemState` is a Lean
+4 stdlib primitive backed by an atomic pointer; reads and writes
+are sequential per `IO.Ref` semantics. Implementation pattern (to
+mirror in `SeLe4n/Platform/FFI.lean`):
+
+```lean
+section
+@[hwTarget]
+private opaque kernelStateRefImpl : NonemptyType
+private def KernelStateRef : Type := kernelStateRefImpl.type
+private opaque kernelStateRef : IO.Ref KernelStateRef
+end
+```
+
+The `@[hwTarget]` attribute is the same one used for the
+`@[extern]` declarations elsewhere in the file; verify by reading
+the existing section around lines 50–242. If the attribute name
+differs in practice, use whatever the existing gating section uses.
+
+*R2.A.2 — Init/read API.* The two functions form a minimal API:
+
+```lean
+def initialiseKernelState (st : SystemState) : BaseIO Unit :=
+  kernelStateRef.set st
+
+def getKernelState : BaseIO SystemState :=
+  kernelStateRef.get
+
+def updateKernelState (f : SystemState → SystemState) : BaseIO Unit :=
+  kernelStateRef.modify f
+```
+
+`updateKernelState` is the helper R2.B.2/B.3 use to apply the
+`Kernel α → SystemState → Result α × SystemState` produced by
+`syscallEntryChecked`.
+
+*R2.A.3 — Boot integration.* `Platform/Boot.lean:696`
+(`bootFromPlatformChecked`) currently returns `Except KernelError
+(SystemState × _)`. The change is additive: keep the return type,
+add a top-level wrapper that, on `.ok`, also calls
+`initialiseKernelState`. Mirror the existing pattern in
+`SeLe4n/Testing/MainTraceHarness.lean` for consistency:
+
+```lean
+def bootAndInitialiseFromPlatform (cfg : PlatformConfig) : BaseIO (Except KernelError SystemState) := do
+  match bootFromPlatformChecked cfg with
+  | .error e => pure (.error e)
+  | .ok (st, _) =>
+      initialiseKernelState st
+      pure (.ok st)
+```
+
+The hardware boot path (Rust HAL `boot.S` → Rust kernel-init →
+this wrapper) calls `bootAndInitialiseFromPlatform`; the simulation
+path (MainTraceHarness) keeps using `bootFromPlatformChecked`
+directly.
+
+*R2.A.4 — Design-choice documentation.* Three alternatives
+considered; the file's header docstring records all three so a
+future contributor understands the trade-offs:
+
+1. **IO.Ref (chosen)**: single mutable cell, sequential SVC
+   semantics on hardware (HAL `with_interrupts_disabled`), no
+   per-syscall FFI overhead.
+2. **Thread-local register-decoded snapshot**: rejected because
+   it would add 8 register-passing FFI symbols per syscall and
+   complicate the typed-decode path.
+3. **Pure functional re-construction at every SVC entry**:
+   rejected because it would force every Rust SVC entry to
+   serialise/deserialise the entire SystemState, a hot-path cost
+   that is unbounded in object-store size.
+
+*R2.A.5 — Test-side initialisation hook.* The new
+`SyscallDispatchSuite` exercises the IO.Ref path under simulation
+by calling `initialiseKernelState` explicitly with a bootstrapped
+state, then invoking `getKernelState` and asserting equality. This
+test runs in simulation builds only; on hardware the same path is
+exercised by Rust integration code.
+
+**Validation.** `lake build SeLe4n.Platform.FFI`, `lake build SeLe4n.Platform.Boot`, `test_smoke.sh`.
 
 ### 6.4 Sub-PR R2.B — `syscallDispatchFromAbi` and FFI export bodies
 
@@ -628,6 +773,131 @@ the typed-ABI entry point.
 | R2.B.4 | `rust/sele4n-hal/src/svc_dispatch.rs` | The comment at line 308 referencing `syscallDispatchFromAbi` becomes accurate as written (no edit required); verify the identifier/symbol name (`sele4n_syscall_dispatch_inner` vs bare `syscall_dispatch_inner`) matches the Lean export and the Rust `extern "C"` block. If the comment claims `sele4n_syscall_dispatch_inner` and the Lean export is `syscall_dispatch_inner`, update either side so they match. |
 | R2.B.5 | `SeLe4n/Platform/FFI.lean` | Add three correctness theorems to the new section: (a) `syscallDispatchFromAbi_ok_iff_syscallEntryChecked_ok` (decoding round-trip), (b) `syscallDispatchFromAbi_preserves_well_typed_invariant`, (c) `syscallDispatchInner_eq_syscallDispatchFromAbi_after_state_io`. These tie the FFI entry to the verified entry point. |
 | R2.B.6 | `SeLe4n/Kernel/API.lean` | Re-export `syscallEntryChecked` such that consumers (R2.B.1, tests) can reference it without circular imports. (Already exported; verify by direct read.) |
+
+**Implementation walkthrough.**
+
+*R2.B.1 — `syscallDispatchFromAbi` body.* The function is the
+typed-ABI entry point that bridges raw register slots to the
+verified `syscallEntryChecked`. Implementation skeleton:
+
+```lean
+def syscallDispatchFromAbi
+    (syscallId : UInt32) (msgInfo : UInt64)
+    (regs : Array UInt64) (ipcBufferAddr : UInt64) : Kernel UInt64 :=
+  fun st =>
+    -- Step 1: Decode the syscall ID
+    match RegisterDecode.decodeSyscallId syscallId with
+    | .error e => .error e
+    | .ok sid =>
+      -- Step 2: Decode the typed arguments per syscall
+      match SyscallArgDecode.decodeSyscallArgs sid msgInfo regs ipcBufferAddr with
+      | .error e => .error e
+      | .ok typedArgs =>
+        -- Step 3: Invoke the verified entry point
+        match syscallEntryChecked sid typedArgs st with
+        | .error ke => .ok (encodeError ke, st)         -- bit 63 = 1 + low 32 = ke
+        | .ok (result, st') => .ok (encodeOk result, st')  -- bit 63 = 0
+```
+
+Where `encodeError : KernelError → UInt64` sets bit 63 and packs
+the discriminant into the low 32, and `encodeOk : SyscallResult →
+UInt64` clears bit 63 and packs the result. Both are pure
+functions; their definitions live alongside `syscallDispatchFromAbi`
+in `FFI.lean`.
+
+The decode functions (`decodeSyscallId`, `decodeSyscallArgs`)
+already exist in `Architecture/RegisterDecode.lean` and
+`Architecture/SyscallArgDecode.lean`; verify their signatures
+before writing the bridge so the call sites match.
+
+*R2.B.2 — `syscallDispatchInner` body.* The exported function
+becomes a thin BaseIO wrapper:
+
+```lean
+@[export syscall_dispatch_inner]
+def syscallDispatchInner
+    (syscallId : UInt32) (msgInfo : UInt64)
+    (x0 x1 x2 x3 x4 x5 : UInt64) (ipcBufferAddr : UInt64) : BaseIO UInt64 := do
+  let st ← getKernelState
+  let regs := #[x0, x1, x2, x3, x4, x5]
+  match syscallDispatchFromAbi syscallId msgInfo regs ipcBufferAddr st with
+  | .ok (encoded, st') => initialiseKernelState st'; pure encoded
+  | .error e => pure (encodeError e)
+```
+
+The signature change from `(_x0 _x1 _x2 _x3 _x4 _x5 : UInt64) →
+UInt64` (current stub) to a `BaseIO UInt64` return is necessary
+because the function now performs IO. Verify the Rust HAL's
+`extern "C" { fn syscall_dispatch_inner(...) -> u64; }`
+declaration matches: Lean emits a `BaseIO UInt64` as a C function
+returning `u64` after the runtime executes the IO action.
+
+*R2.B.3 — `suspendThreadInner` body.* Same pattern, narrower
+scope:
+
+```lean
+@[export suspend_thread_inner]
+def suspendThreadInner (tid : UInt64) : BaseIO UInt32 := do
+  let st ← getKernelState
+  match suspendThread (ThreadId.ofUInt64 tid) st with
+  | .ok ((), st') => initialiseKernelState st'; pure 0  -- KernelError::Ok
+  | .error e => pure e.toUInt32
+```
+
+`KernelError.toUInt32` already exists (per the `KernelError`
+discriminant table); confirm by reading `Prelude.lean`.
+
+*R2.B.4 — Rust comment alignment.* After R2.B.1 lands, the Rust
+comment at `svc_dispatch.rs:308` becomes accurate **as written**
+because `syscallDispatchFromAbi` now exists in Lean. No edit
+required UNLESS the symbol-name discrepancy
+(`sele4n_syscall_dispatch_inner` vs bare `syscall_dispatch_inner`)
+is real. Resolution sequence:
+1. Read the Rust comment verbatim.
+2. Read the Lean export name (`@[export syscall_dispatch_inner]`).
+3. If Rust says `sele4n_syscall_dispatch_inner` and Lean says
+   `syscall_dispatch_inner`, prefer the Lean side as canonical and
+   update the Rust comment. Renaming the Lean export would require
+   updating the Rust `extern "C"` block (more files touched).
+
+*R2.B.5 — Correctness theorems.* Three theorems witness the
+bridge's correctness; their statements should be:
+
+```lean
+theorem syscallDispatchFromAbi_ok_iff_syscallEntryChecked_ok
+    (syscallId : UInt32) (msgInfo : UInt64) (regs : Array UInt64)
+    (ipcBufferAddr : UInt64) (st : SystemState)
+    (sid : SyscallId) (args : TypedArgs)
+    (hSid : RegisterDecode.decodeSyscallId syscallId = .ok sid)
+    (hArgs : SyscallArgDecode.decodeSyscallArgs sid msgInfo regs ipcBufferAddr = .ok args) :
+    (∃ encoded st', syscallDispatchFromAbi syscallId msgInfo regs ipcBufferAddr st
+                      = .ok (encoded, st'))
+    ↔ (∃ result st', syscallEntryChecked sid args st = .ok (result, st'))
+
+theorem syscallDispatchFromAbi_preserves_well_typed_invariant
+    (syscallId : UInt32) (msgInfo : UInt64) (regs : Array UInt64)
+    (ipcBufferAddr : UInt64) (st : SystemState)
+    (hInv : systemInvariant st)
+    (encoded : UInt64) (st' : SystemState)
+    (hOk : syscallDispatchFromAbi syscallId msgInfo regs ipcBufferAddr st = .ok (encoded, st')) :
+    systemInvariant st'
+
+theorem syscallDispatchInner_eq_syscallDispatchFromAbi_after_state_io :
+    -- relates the BaseIO wrapper to the pure Kernel function
+    -- via a state-passing equivalence
+    ...
+```
+
+These theorems live in `FFI.lean` (or a sibling proof file
+`FFI/Bridge.lean` if the proofs are non-trivial). Their proofs
+unfold `syscallDispatchFromAbi`, case-split on the decode arms,
+and chain through `syscallEntryChecked`'s existing invariant-
+preservation theorems.
+
+*R2.B.6 — Re-export verification.* `Kernel/API.lean:1244` already
+exports `syscallEntryChecked`. Verify with
+`grep -n "syscallEntryChecked" SeLe4n/Kernel/API.lean`. If the
+export is missing, add it; otherwise this task is verification-only.
 
 **Validation.** `lake build SeLe4n.Platform.FFI`, `lake build SeLe4n.Platform.Staged` (the staged anchor), `test_full.sh`.
 
@@ -726,17 +996,132 @@ SeLe4n/Platform/RPi5/VSpaceBoot.lean:272-297  bootSafeVSpaceRoot predicate
 | R3.7 | `tests/TwoPhaseArchSuite.lean` | Add a regression test confirming that post-boot the kernel state contains a VSpaceRoot ObjId entry whose `wxExclusiveInvariant` holds. |
 | R3.8 | `tests/An9HardwareBindingSuite.lean` (renamed in R8) | Update or extend hardware-binding tests to exercise the new boot-time VSpace admission. |
 
-### 7.4 Validation
+### 7.4 Implementation walkthrough
+
+*R3.1 — `bootSafeObject` rewrite.* The current arm at line 551
+explicitly rejects every VSpaceRoot:
+
+```lean
+| .vspaceRoot _ => false
+```
+
+The replacement admits VSpaceRoots that satisfy the W^X-compliance
+predicate:
+
+```lean
+| .vspaceRoot vsr => bootSafeVSpaceRoot vsr
+```
+
+Where `bootSafeVSpaceRoot` is defined at
+`Platform/RPi5/VSpaceBoot.lean:272–297`. Verify by reading the
+function before the edit; ensure it returns `Bool` (not `Prop`)
+for `bootSafeObject` consistency.
+
+*R3.2 — Admission witness theorem.* Add immediately after the
+`bootSafeObject` definition:
+
+```lean
+theorem bootSafeObject_admits_rpi5BootVSpaceRoot :
+    bootSafeObject (.vspaceRoot rpi5BootVSpaceRoot) = true := by
+  unfold bootSafeObject
+  exact rpi5BootVSpaceRoot_satisfies_bootSafeVSpaceRoot
+```
+
+The supporting theorem `rpi5BootVSpaceRoot_satisfies_bootSafeVSpaceRoot`
+already exists in `VSpaceBoot.lean` (per audit §6.2 verification
+that the structure is "proven W^X-compliant"); confirm by reading
+the file.
+
+*R3.3 — Object-store admission in `bootFromPlatformChecked`.* The
+current implementation builds the initial object store from
+`config.objects` only. The change is to inject `rpi5BootVSpaceRoot`
+into the store at a reserved ObjId. The cleanest approach is to
+extend `PlatformConfig` with an optional `bootVSpaceRoot :
+Option (ObjId × VSpaceRoot)` field, defaulting to
+`some (rpi5BootVSpaceRootObjId, rpi5BootVSpaceRoot)` for the RPi5
+binding and `none` for sim (or a sim equivalent). Implementation
+steps:
+
+1. Add `bootVSpaceRoot : Option (ObjId × VSpaceRoot)` to
+   `PlatformConfig` in `Platform/Contract.lean`.
+2. In `bootFromPlatformChecked`, after gate (3) (IRQ handlers
+   reference notifications), if `cfg.bootVSpaceRoot = some (oid, vsr)`,
+   insert `KernelObject.vspaceRoot vsr` at `oid` in the
+   under-construction object store. Use `IntermediateState`'s
+   builder API.
+3. Verify the gate (1) `objectIdsUnique` check still passes (the
+   reserved ObjId must not collide with `config.objects` ObjIds).
+4. Record the VSpaceRoot reference in `SystemState.scheduler` (or
+   wherever the kernel looks up "the boot VSpace") so subsequent
+   VSpace operations can find it without re-scanning the store.
+
+*R3.4 — RPi5 contract wiring.* In `Platform/RPi5/Contract.lean`,
+update the `PlatformBinding` instance's `config` field to include
+`bootVSpaceRoot := some (rpi5BootVSpaceRootObjId, rpi5BootVSpaceRoot)`.
+Verify the import path of `rpi5BootVSpaceRoot`.
+
+*R3.5 — Sim contract parity.* Two options:
+
+- **Option A (recommended)**: define `simBootVSpaceRoot` in
+  `Platform/Sim/Contract.lean` as a minimal VSpaceRoot satisfying
+  `bootSafeVSpaceRoot` (e.g., empty page tables, default ASID).
+  Wire into `Sim/Contract.lean`'s `PlatformBinding` instance.
+- **Option B**: leave Sim's `bootVSpaceRoot := none`. This means
+  the Sim platform admits no boot VSpace, which is acceptable
+  because Sim does not exercise hardware page-table operations.
+  Less symmetric but simpler.
+
+Recommended: Option A for parity. Cost: ~30 lines of new code.
+
+*R3.6 — Correctness theorem update.* The existing theorem
+`bootFromPlatformChecked_eq_bootFromPlatform` at line 747 proves
+that the checked boot path produces the same result as the
+unchecked path. With R3.3 admitting an additional object, the
+proof must be widened. Approach:
+
+1. Read the existing theorem statement and proof.
+2. The proof likely case-splits on each gate; the new admission
+   branch becomes a new case. The unchecked `bootFromPlatform`
+   may also need to admit the VSpaceRoot to maintain the equality.
+3. If the unchecked function does not admit the root, the
+   equality theorem becomes a conditional implication: "checked
+   = unchecked when `cfg.bootVSpaceRoot = none`". This is
+   acceptable but should be documented in the theorem name (e.g.,
+   `bootFromPlatformChecked_eq_bootFromPlatform_no_vspace`) and
+   a sibling theorem
+   `bootFromPlatformChecked_admits_vspace` proves the new arm.
+
+*R3.7 — Regression test.* In `tests/TwoPhaseArchSuite.lean`, add:
+
+```lean
+def test_post_boot_state_contains_rpi5_vspace_root : IO TestResult := do
+  let cfg := simulationConfigWithBootVSpace
+  match bootFromPlatformChecked cfg with
+  | .ok (st, _) =>
+    -- Look up the boot VSpaceRoot ObjId and assert
+    -- (a) it exists in the object store, (b) wxExclusiveInvariant holds.
+    ...
+  | .error e => failTest s!"boot failed: {repr e}"
+```
+
+*R3.8 — Hardware-binding regression.* The renamed
+`HardwareBindingClosureSuite` (post-R8) already exercises the
+hardware-binding closure end-to-end; extend it to assert the
+post-boot state has a VSpaceRoot.
+
+### 7.5 Validation
 
 ```bash
 source ~/.elan/env
 lake build SeLe4n.Platform.Boot
+lake build SeLe4n.Platform.Contract
 lake build SeLe4n.Platform.RPi5.Contract
 lake build SeLe4n.Platform.RPi5.VSpaceBoot
+lake build SeLe4n.Platform.Sim.Contract
 ./scripts/test_full.sh
 ```
 
-### 7.5 Risk
+### 7.6 Risk
 
 **Medium.** The change touches a 5-gate validation chain in
 `bootFromPlatformChecked` and a correctness theorem
@@ -753,7 +1138,7 @@ lake build SeLe4n.Platform.RPi5.VSpaceBoot
   parity with RPi5 is non-trivial, a `simBootVSpaceRoot` stub
   satisfying `bootSafeVSpaceRoot` is acceptable.
 
-### 7.6 Commit message
+### 7.7 Commit message
 
 ```
 WS-RC R3: thread rpi5BootVSpaceRoot through bootSafeObject (DEEP-BOOT-01)
@@ -774,13 +1159,19 @@ the boot path must consume it.
 
 ---
 
-## 8. Phase R4 — Structural-invariant promotions (DEEP-MODEL-01, DEEP-CAP-04, DEEP-IPC-05)
+## 8. Phase R4 — Structural-invariant promotions (DEEP-MODEL-01, DEEP-CAP-04, DEEP-IPC-05, DEEP-CAP-02, DEEP-IPC-01)
 
 ### 8.1 Goal
 
 Promote three currently-implicit invariants to structural / type-level
-enforcement so the proof obligation is discharged constructively at
-construction time rather than maintained by upstream convention.
+enforcement (R4.A/B/C) so the proof obligation is discharged
+constructively at construction time rather than maintained by upstream
+convention. Add a witness theorem (R4.D) for the cspaceMutate null-cap
+guard so the deep audit's §11.1 manual verification of DEEP-CAP-02 is
+codified at the proof-system level rather than relying on a future
+auditor's manual `grep`. Subsumes the DEEP-IPC-01 false positive
+because the type-level NoDup (R4.C) makes its runtime-only guard
+strictly stronger.
 
 ### 8.2 Verified targets
 
@@ -790,6 +1181,9 @@ SeLe4n/Model/Builder.lean:290-291     slotsUnique proof obligation site
 SeLe4n/Model/Object/Types.lean        Notification.waitingThreads : List ThreadId
 SeLe4n/Kernel/IPC/Operations/Endpoint.lean:723  runtime O(1) duplicate guard
 SeLe4n/Kernel/Capability/Invariant/Defs.lean:345-367  RetypeTarget phantom witness
+SeLe4n/Kernel/Capability/Operations.lean:1081-1111  cspaceMutate definition (R4.D target)
+SeLe4n/Kernel/Capability/Operations.lean:1093       runtime null-cap guard (R4.D witness target)
+SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean  R4.D theorem placement
 ```
 
 ### 8.3 Sub-task R4.A — `slotsUnique` structural enforcement
@@ -812,7 +1206,7 @@ SeLe4n/Kernel/Capability/Invariant/Defs.lean:345-367  RetypeTarget phantom witne
 | R4.B.4 | Add a no-bypass theorem: `theorem retypeTarget_implies_scrubbed : ∀ rt : RetypeTarget, afterScrub rt.toKernelObject`. |
 | R4.B.5 | Update every consumer of `RetypeTarget` construction (Lifecycle/Operations/RetypeWrappers.lean, etc.) to invoke `mkRetypeTarget` with the scrub witness. |
 
-### 8.5 Sub-task R4.C — `NoDup` on `waitingThreads`
+### 8.5 Sub-task R4.C — `NoDup` on `waitingThreads` (subsumes DEEP-IPC-01 false positive)
 
 | # | Action |
 |---|---|
@@ -821,37 +1215,118 @@ SeLe4n/Kernel/Capability/Invariant/Defs.lean:345-367  RetypeTarget phantom witne
 | R4.C.3 | Update the runtime guard at `Operations/Endpoint.lean:723` to consume the constructive `NoDupList.insert` (returns `Option (NoDupList ThreadId)` so duplicate insertion is statically rejected). The runtime check is preserved as a fast-path optimisation; the type-level discharge eliminates the `uniqueWaiters` upstream-convention obligation. |
 | R4.C.4 | Update every consumer of `notification.waitingThreads` (notification-wait/signal/cancel paths) to use `NoDupList` accessors. |
 | R4.C.5 | Add the structural witness theorem: `theorem notification_waiters_nodup : ∀ (n : Notification), n.waitingThreads.val.Nodup`. |
+| R4.C.6 | **Subsumption note for DEEP-IPC-01**: the deep audit's §11.1 verified that `Operations/Endpoint.lean:723` performs an O(1) duplicate guard at runtime. R4.C makes the duplicate **statically impossible**, so the audit's runtime-only verification is replaced by a stronger type-level guarantee. Record the closure in `AUDIT_v0.30.11_DISCHARGE_INDEX.md` with the citation: "DEEP-IPC-01 closed structurally by R4.C; runtime check at line 723 retained as defence-in-depth and proven equivalent to the type-level NoDup discharge by `notificationWait_runtime_check_implied_by_nodup`." |
 
-### 8.6 Validation
+### 8.6 Sub-task R4.D — `cspaceMutate` null-cap witness theorem (closes DEEP-CAP-02 false positive structurally)
+
+**Goal.** The deep audit's §11.1 verified that `cspaceMutate` does
+validate non-nullness at `Capability/Operations.lean:1093`. Per the
+§1.5 structural-fix policy, the verification's correctness is
+codified as a Lean witness theorem that a future auditor (or a
+future contributor refactoring the function) cannot accidentally
+delete without breaking the build.
+
+The optimal fix scope-bounded for v0.31.0 is the witness theorem.
+A larger fix (changing `cspaceLookupSlot` to return `NonNullCap`
+or adding a `slotsNonNull` invariant to CNode) is rejected because
+seL4 semantics legitimately allow a slot to contain
+`Capability.null` (an empty-slot representation); the runtime
+guard exists specifically to block the *mutation* of such a slot,
+which is the operation-level invariant we want to prove.
+
+**Verified targets.**
+
+```text
+SeLe4n/Kernel/Capability/Operations.lean:1081-1111  cspaceMutate definition
+SeLe4n/Kernel/Capability/Operations.lean:1093       runtime null-cap guard
+SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean  preservation theorem placement
+```
+
+**Tasks.**
+
+| # | Action |
+|---|---|
+| R4.D.1 | At `Capability/Invariant/Preservation/CopyMoveMutate.lean`, add the witness theorem: `theorem cspaceMutate_rejects_null_cap (addr : CSpaceAddr) (rights : AccessRightSet) (badge : Option Badge) (st : SystemState) : ∀ st', cspaceMutate addr rights badge st = .ok ((), st') → ∃ cap, cspaceLookupSlot addr st = .ok (cap, st) ∧ ¬cap.isNull`. The proof unfolds `cspaceMutate`, threads through the `match cspaceLookupSlot` arm, and discharges the `if cap.isNull then .error` branch as a contradiction with the success-result hypothesis. |
+| R4.D.2 | Add a complementary witness for the converse direction: `theorem cspaceMutate_null_cap_rejected (addr : CSpaceAddr) (rights : AccessRightSet) (badge : Option Badge) (st : SystemState) (hCap : ∃ cap, cspaceLookupSlot addr st = .ok (cap, st) ∧ cap.isNull) : cspaceMutate addr rights badge st = .error .nullCapability`. This proves the rejection is total: every null-cap input produces the explicit error code. |
+| R4.D.3 | Add a docstring to `cspaceMutate` (Operations.lean:1069–1080) cross-referencing the two theorems by name so a future auditor reading the function definition immediately sees the witness link. The docstring sentence: "**Null-cap rejection is structurally witnessed**: see `cspaceMutate_rejects_null_cap` and `cspaceMutate_null_cap_rejected` in `Capability/Invariant/Preservation/CopyMoveMutate.lean`." |
+| R4.D.4 | Update `tests/NegativeStateSuite.lean` to include a regression test that exercises the null-cap rejection path and asserts `.error .nullCapability`. (One new test function; ~10 lines.) |
+| R4.D.5 | Record the structural closure in `AUDIT_v0.30.11_DISCHARGE_INDEX.md` with the citation: "DEEP-CAP-02 closed structurally by R4.D; the runtime check at `Capability/Operations.lean:1093` is now witnessed by `cspaceMutate_rejects_null_cap` and `cspaceMutate_null_cap_rejected`. A future audit's `grep` for the validation can be re-derived from these theorem names without re-reading the function body." |
+
+**Implementation steps (per task).**
+
+- *R4.D.1 implementation*: read lines 1081–1111 to confirm the
+  current shape; write the theorem with a `by unfold cspaceMutate;
+  intro st' hOk; ...` proof structure; build via `lake build
+  SeLe4n.Kernel.Capability.Invariant.Preservation.CopyMoveMutate`
+  to confirm elaboration.
+- *R4.D.2 implementation*: same file; case-split on the lookup
+  result; if non-null path is taken the `.ok` arm fires else
+  `.error .nullCapability` fires.
+- *R4.D.3 implementation*: Edit `Operations.lean` docstring at
+  lines 1069–1080 to append the cross-reference paragraph; do not
+  modify the function body.
+- *R4.D.4 implementation*: locate an existing capability-error
+  test in `NegativeStateSuite.lean` (e.g., one of the `cspaceCopy`
+  null-cap tests) and mirror it for `cspaceMutate`. Use
+  `Testing/Helpers.lean::expectError`.
+- *R4.D.5 implementation*: append a row to the discharge index
+  file (created at R0.3) under a "False-positive structural
+  closures" subsection.
+
+**Validation.**
+
+```bash
+lake build SeLe4n.Kernel.Capability.Invariant.Preservation.CopyMoveMutate
+lake build SeLe4n.Kernel.Capability.Operations
+lake exe NegativeStateSuite
+./scripts/test_full.sh
+```
+
+**Risk.** Very low. The two theorems are additive proof obligations
+on top of an already-correct function; they cannot regress runtime
+behaviour. The only risk vector is proof-elaboration time, which is
+bounded by the small theorem statement.
+
+### 8.7 Phase R4 cumulative validation
 
 ```bash
 lake build SeLe4n.Model.Object.Structures
 lake build SeLe4n.Model.Object.Types
 lake build SeLe4n.Kernel.Capability.Invariant.Defs
+lake build SeLe4n.Kernel.Capability.Invariant.Preservation.CopyMoveMutate
 lake build SeLe4n.Kernel.Capability.Operations
 lake build SeLe4n.Kernel.IPC.Operations.Endpoint
 ./scripts/test_full.sh
 ```
 
-### 8.7 Risk
+### 8.8 Phase R4 risk
 
-**High by surface area, low by per-change complexity.** Each promotion
-touches every consumer of the underlying field. Mitigations:
+**High by surface area, low by per-change complexity.** R4.A..R4.C
+each touch every consumer of an underlying field; R4.D is purely
+additive (two new theorems + docstring update). Mitigations:
 
-- Sub-tasks R4.A/B/C are independently shippable; recommended to land
-  as three sub-PRs even though the phase is one logical slice.
+- Sub-tasks R4.A/B/C/D are independently shippable; recommended to
+  land as four sub-PRs even though the phase is one logical slice.
 - The smart-constructor pattern is already used elsewhere in the
-  kernel (e.g., `NonNullCap`); contributors should mirror that style.
-- `Capability/Operations.lean` (1858 LoC) is the largest consumer;
-  build verification must exercise the full proof tree on every
-  intermediate commit.
+  kernel (e.g., `NonNullCap`); contributors should mirror that style
+  for R4.A and R4.B.
+- `Capability/Operations.lean` (1858 LoC) is the largest consumer
+  for R4.A; build verification must exercise the full proof tree on
+  every intermediate commit.
+- R4.D is the cheapest sub-task and a good first PR for a contributor
+  new to WS-RC; the witness-theorem pattern it introduces is the
+  template for the false-positive structural-fix policy elsewhere
+  in the workstream.
 
-### 8.8 Commit messages
+### 8.9 Commit messages
 
 ```
 WS-RC R4.A: enforce CNode.slotsUnique via UniqueSlotMap (DEEP-MODEL-01)
 WS-RC R4.B: make RetypeTarget construction non-bypassable (DEEP-CAP-04)
-WS-RC R4.C: type-level NoDup on Notification.waitingThreads (DEEP-IPC-05)
+WS-RC R4.C: type-level NoDup on Notification.waitingThreads
+            (DEEP-IPC-05; subsumes DEEP-IPC-01 false positive)
+WS-RC R4.D: witness theorems for cspaceMutate null-cap rejection
+            (closes DEEP-CAP-02 false positive structurally)
 ```
 
 
@@ -937,7 +1412,127 @@ SeLe4n/Kernel/SchedContext/Operations.lean:110-187          schedContextConfigur
 | R5.G.3 | Update the `schedContextConfigure_preserves_boundThreadDomainConsistent` invariant proof (or add it if absent) in `SchedContext/Invariant/Preservation.lean`. |
 | R5.G.4 | Add a regression test confirming the propagation. |
 
-### 9.10 Validation
+### 9.10 Implementation walkthrough (high-complexity sub-tasks)
+
+*R5.B (PIP recomputation on resume) — implementation steps.*
+
+The current `resumeThread` flow at `Suspend.lean:290+` clears the
+suspended state and re-enqueues. The PIP recomputation is added
+before the re-enqueue:
+
+```lean
+def resumeThread (tid : ThreadId) : Kernel Unit :=
+  fun st =>
+    match st.getTcb? tid with
+    | none => .error .objectNotFound
+    | some tcb =>
+      if tcb.threadState != .suspended then .error .illegalState
+      else
+        -- NEW (R5.B): re-derive pipBoost from the post-suspend
+        -- blocking graph. The chain may have changed during the
+        -- thread's suspension (other threads acquired/released
+        -- locks the suspended thread holds).
+        let newPipBoost := computeMaxWaiterPriority st.scheduler.blockingGraph tid
+        let tcb' := { tcb with
+                      threadState := .ready
+                      pipBoost := newPipBoost }
+        let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
+        -- ... existing re-enqueue logic ...
+```
+
+`computeMaxWaiterPriority` already exists in
+`PriorityInheritance/Compute.lean`; verify the signature and
+import path.
+
+The two preservation theorems (R5.B.2):
+
+```lean
+theorem resumeThread_preserves_blockingAcyclic
+    (tid : ThreadId) (st st' : SystemState) (hAcyclic : blockingAcyclic st)
+    (hOk : resumeThread tid st = .ok ((), st')) :
+    blockingAcyclic st'
+
+theorem resumeThread_pipBoost_consistent_with_blocking_graph
+    (tid : ThreadId) (st st' : SystemState)
+    (hOk : resumeThread tid st = .ok ((), st')) :
+    ∀ tcb, st'.getTcb? tid = some tcb →
+    tcb.pipBoost = computeMaxWaiterPriority st'.scheduler.blockingGraph tid
+```
+
+*R5.G (domain propagation) — implementation steps.*
+
+Read `SchedContext/Operations.lean:110–187` to confirm the
+priority-propagation pattern; the domain propagation mirrors it:
+
+```lean
+-- After the priority-propagation block at lines 168–186, add:
+match sc.boundThread with
+| none => stProp  -- no bound thread: nothing to propagate
+| some boundTid =>
+  match stProp.getTcb? boundTid with
+  | some boundTcb =>
+    if boundTcb.domain.val = domain then stProp
+    else
+      let newDom : SeLe4n.DomainId := ⟨domain⟩
+      let boundTcb' := { boundTcb with domain := newDom }
+      { stProp with objects :=
+        stProp.objects.insert boundTid.toObjId (.tcb boundTcb') }
+  | none => stProp  -- bound TCB missing: leave as-is (consistent with priority block)
+```
+
+The new preservation theorem (R5.G.3) statement:
+
+```lean
+theorem schedContextConfigure_preserves_boundThreadDomainConsistent
+    (vScId : ValidObjId) (budget period priority deadline domain : Nat)
+    (st st' : SystemState)
+    (hInv : boundThreadDomainConsistent st)
+    (hOk : schedContextConfigure vScId budget period priority deadline domain st = .ok ((), st')) :
+    boundThreadDomainConsistent st'
+```
+
+The proof unfolds `schedContextConfigure`, threads through the
+new domain-propagation block, and uses the parent invariant to
+discharge the `boundTid → tid` conjunct.
+
+*R5.A (cancelDonation split) — implementation steps.*
+
+Current shape at `Suspend.lean:88–105`:
+
+```lean
+def cancelDonation (tcb : TCB) : Kernel Unit := fun st =>
+  match tcb.schedContextBinding with
+  | .bound _ => -- in-place unbind
+  | .donated _ => -- return to original owner via cleanupDonatedSchedContext
+  | _ => .ok ((), st)
+```
+
+After the split:
+
+```lean
+def cancelBoundDonation (tcb : TCB) : Kernel Unit := fun st =>
+  match tcb.schedContextBinding with
+  | .bound scId => -- in-place unbind logic
+  | _ => .error .illegalState  -- caller must dispatch correctly
+
+def cancelDonatedDonation (tcb : TCB) : Kernel Unit := fun st =>
+  match tcb.schedContextBinding with
+  | .donated scId => cleanupDonatedSchedContext scId tcb st
+  | _ => .error .illegalState
+
+-- Optional thin dispatcher (or inline at call sites):
+def cancelDonation (tcb : TCB) : Kernel Unit := fun st =>
+  match tcb.schedContextBinding with
+  | .bound _ => cancelBoundDonation tcb st
+  | .donated _ => cancelDonatedDonation tcb st
+  | _ => .ok ((), st)
+```
+
+Caller updates: in `suspendThread` and any other consumer, replace
+the implicit dispatch with explicit calls. This makes the
+two-arm semantics legible at the call site.
+
+### 9.11 Validation
 
 ```bash
 lake build SeLe4n.Kernel.Lifecycle.Suspend
@@ -950,7 +1545,7 @@ lake build SeLe4n.Kernel.SchedContext.Invariant.Preservation
 ./scripts/test_full.sh
 ```
 
-### 9.11 Risk
+### 9.12 Risk
 
 **Medium.** Seven distinct fixes, some of which (R5.B PIP, R5.G
 domain propagation) introduce new proof obligations; others
@@ -1007,18 +1602,142 @@ cleanup-error-unreachable proof for IPC pre-receive donation.
 | R6.D.2 | If the theorem exists and is sorry-free, this sub-task closes by recording the witness in `AUDIT_v0.30.11_DISCHARGE_INDEX.md`. |
 | R6.D.3 | If the theorem is missing or contains `sorry`, prove it. The docstring at `Operations/Endpoint.lean:485` claims the error branch is unreachable under `ipcInvariantFull`; the implement-the-improvement rule mandates proving the claim, not weakening the docstring. |
 
-### 10.6 Validation
+### 10.6 Implementation walkthrough
+
+*R6.A — GIC bridge.* Decompose into two atomic commits:
+
+1. **R6.A.1a** — Define `interruptDispatchSequence : InterruptId →
+   List InterruptOp` enumerating the GIC-400 acknowledge → handle →
+   EOI ordering. The `InterruptOp` algebra is small (`.ack id`,
+   `.handle id`, `.eoi id`) and matches the existing Rust HAL
+   `gic.rs::dispatch_irq` flow.
+2. **R6.A.1b** — Add the bridge theorem proper:
+
+   ```lean
+   theorem exception_irq_dispatches_via_interrupt_dispatch :
+       ∀ (exc : ExceptionFrame) (id : InterruptId),
+       classifyException exc = .irq id →
+       interruptDispatchSequence id =
+         [.ack id, .handle id, .eoi id]
+   ```
+
+   The proof is `intro exc id hCls; rfl` if the function is
+   defined to literally produce that list. If the function does
+   anything more sophisticated (e.g., conditional EOI for level-
+   triggered IRQs), the proof case-splits on the trigger mode.
+
+3. **R6.A.3** — Bundle into `Architecture/Invariant.lean` as a
+   conjunct of `architectureInvariantBundle`. Adding a conjunct
+   requires updating every consumer of the bundle; budget ~3 hours
+   for proof re-elaboration.
+
+*R6.B — `DeclassificationPolicy` location/definition.* Begin with
+verification:
+
+```bash
+grep -rn "structure DeclassificationPolicy\|class DeclassificationPolicy" SeLe4n
+```
+
+If the structure is found in an unaudited file, R6.B closes
+immediately by ensuring `Soundness.lean` imports it. If absent,
+define it at `InformationFlow/Policy.lean`:
+
+```lean
+/-- WS-RC R6.B / DEEP-IF-01: Declassification policy carries the
+    predicate that decides which `declassifyStore` invocations are
+    permitted. The single declassification site (Soundness.lean:516)
+    consults this policy to gate writes that lower a value's
+    security domain. -/
+structure DeclassificationPolicy where
+  /-- The set of allowed declassification edges. A pair
+      `(src, dst)` denotes "data tagged with security domain `src`
+      may be re-tagged with `dst`". -/
+  allowedEdges : List (SecurityDomain × SecurityDomain)
+  /-- Decidable membership predicate. -/
+  decideEdge : DecidableEq (SecurityDomain × SecurityDomain)
+```
+
+Then update `Soundness.lean:516` (or wherever the existing import
+fails) to consume the new structure. Run the existing soundness
+proofs; they should re-elaborate without changes because the
+structure shape matches what they expected.
+
+*R6.C — SecurityDomain lattice completion.* This is the genuine
+new proof work in R6. Four atomic commits:
+
+1. **R6.C.1a** — Define the supremum operation:
+
+   ```lean
+   def SecurityDomain.sup (a b : SecurityDomain) : SecurityDomain :=
+     -- Per the SecurityDomain definition (read Policy.lean:400-484),
+     -- this is the join in the flowsTo lattice. For a two-component
+     -- domain (confidentiality × integrity), sup = (max conf, min int).
+     ⟨a.confidentiality.max b.confidentiality,
+      a.integrity.min b.integrity⟩
+   ```
+
+2. **R6.C.1b** — Define the infimum operation symmetrically.
+
+3. **R6.C.2** — Provide the four lattice-law theorems:
+
+   ```lean
+   theorem SecurityDomain.sup_assoc (a b c : SecurityDomain) :
+     (a.sup b).sup c = a.sup (b.sup c)
+   theorem SecurityDomain.sup_comm (a b : SecurityDomain) :
+     a.sup b = b.sup a
+   theorem SecurityDomain.absorb_sup_inf (a b : SecurityDomain) :
+     a.sup (a.inf b) = a
+   theorem SecurityDomain.absorb_inf_sup (a b : SecurityDomain) :
+     a.inf (a.sup b) = a
+   ```
+
+   Each proof is mechanical: unfold `sup`/`inf`, apply
+   `Nat.max_assoc`/`Nat.min_assoc`/etc.
+
+4. **R6.C.3** — Bridge to `flowsTo`:
+
+   ```lean
+   theorem flowsTo_iff_sup_eq (a b : SecurityDomain) :
+     flowsTo a b ↔ a.sup b = b
+   ```
+
+   This is the conventional definition of "≤ via sup"; the proof
+   unfolds both sides and applies a `decide` if the lattice is
+   finite.
+
+*R6.D — Cleanup-error proof verification.* Verification-first:
+
+```bash
+grep -rn "cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull" SeLe4n
+```
+
+Three outcomes:
+
+- **Theorem exists, sorry-free**: record discharge in
+  `AUDIT_v0.30.11_DISCHARGE_INDEX.md`, close R6.D.
+- **Theorem exists, contains sorry**: prove it. The proof
+  requires `ipcInvariantFull` to imply that
+  `returnDonatedSchedContext` succeeds; case-split on the
+  donation arm.
+- **Theorem missing**: add it. Same proof shape as above.
+
+The docstring at `Operations/Endpoint.lean:485` claims the error
+branch is unreachable; making the claim true via the theorem is
+the implement-the-improvement remediation.
+
+### 10.7 Validation
 
 ```bash
 lake build SeLe4n.Kernel.Architecture.ExceptionModel
 lake build SeLe4n.Kernel.Architecture.InterruptDispatch
+lake build SeLe4n.Kernel.Architecture.Invariant
 lake build SeLe4n.Kernel.InformationFlow.Soundness
 lake build SeLe4n.Kernel.InformationFlow.Policy
 lake build SeLe4n.Kernel.IPC.Invariant.Defs
 ./scripts/test_full.sh
 ```
 
-### 10.7 Risk
+### 10.8 Risk
 
 **Medium.** The SecurityDomain lattice completion (R6.C) is genuine
 new proof work. The GIC bridge (R6.A) requires careful attention to
@@ -1346,36 +2065,326 @@ Closes: DEEP-DOC-01..04, DEEP-DOC-06, DEBT-DOC-01, DEBT-FR-01.
 
 ---
 
-## 16. Phase R12 — CI hygiene (DEEP-CI-01)
+## 16. Phase R12 — CI hygiene + structural enforcement gates (DEEP-CI-01, DEEP-ARCH-01, DEEP-RUST-01/02, DEEP-ARCH-02)
 
 ### 16.1 Goal
 
-Add `concurrency:` blocks to the four non-Lean GitHub workflows so
-pushes to main do not queue redundant jobs.
+Add `concurrency:` blocks to the four non-Lean GitHub workflows
+(R12.A) AND introduce three CI gates that codify the verification
+of false-positive findings so they cannot recur (R12.B/C/D, per
+the §1.5 structural-fix policy). Phase R12 is the workstream's
+"prevent-recurrence" tier.
 
-### 16.2 Tasks
+### 16.2 Sub-task R12.A — Concurrency blocks (DEEP-CI-01)
 
 | # | File | Action |
 |---|---|---|
-| R12.1 | `.github/workflows/platform_security_baseline.yml` | Add `concurrency: { group: platform-security-${{ github.ref }}, cancel-in-progress: true }` at the top level. |
-| R12.2 | `.github/workflows/lean_toolchain_update_proposal.yml` | Same pattern with group prefix `lean-toolchain-update`. |
-| R12.3 | `.github/workflows/nightly_determinism.yml` | Same pattern with group prefix `nightly-determinism`. (Verify the nightly schedule still triggers; nightly runs by their nature are not redundant if scheduled distinctly.) |
-| R12.4 | `.github/workflows/codebase_map_sync.yml` | Same pattern with group prefix `codebase-map-sync`. |
-| R12.5 | Confirm the existing `lean_action_ci.yml` already has the block (it does, per deep audit §8.3). |
+| R12.A.1 | `.github/workflows/platform_security_baseline.yml` | Add `concurrency: { group: platform-security-${{ github.ref }}, cancel-in-progress: true }` at the top level. |
+| R12.A.2 | `.github/workflows/lean_toolchain_update_proposal.yml` | Same pattern with group prefix `lean-toolchain-update`. |
+| R12.A.3 | `.github/workflows/nightly_determinism.yml` | Same pattern with group prefix `nightly-determinism`. (Verify the nightly schedule still triggers; nightly runs by their nature are not redundant if scheduled distinctly.) |
+| R12.A.4 | `.github/workflows/codebase_map_sync.yml` | Same pattern with group prefix `codebase-map-sync`. |
+| R12.A.5 | Confirm the existing `lean_action_ci.yml` already has the block (it does, per deep audit §8.3). |
 
-### 16.3 Validation
+### 16.3 Sub-task R12.B — Production/staged partition gate (closes DEEP-ARCH-01 false positive)
 
-Push a no-op commit to a feature branch; verify GitHub UI shows the
-correct concurrency group on the resulting workflow run.
+**Goal.** Convert the deep audit's §11.3 manual "trace transitive
+imports from `SeLe4n.lean`" verification (which was performed
+incorrectly, leading to the DEEP-ARCH-01 false positive) into a
+machine-checked CI gate.
 
-### 16.4 Risk
+**Verified prerequisites (re-confirmed by this plan author).**
 
-**Very low.** Adding concurrency groups is non-functional —
-worst-case it cancels an in-flight build that should have completed.
-Mitigations: keep `cancel-in-progress: false` if any workflow's
-output is consumed by a later step that depends on the cancelled
-artefact; in practice, none of the four target workflows have such
-dependencies.
+```text
+SeLe4n.lean transitive-import closure: 144 modules.
+Platform/Staged.lean transitive-import closure: 154 modules (= 144 production + 10 staged).
+Modules in Staged \ Production: CacheModel, TimerModel, ExceptionModel,
+                                 TlbCacheComposition, BarrierComposition,
+                                 (5 more if/when staged set grows).
+"STATUS: staged" markers in source: CacheModel.lean, TimerModel.lean, ExceptionModel.lean.
+```
+
+**Tasks.**
+
+| # | File | Action |
+|---|---|---|
+| R12.B.1 | `scripts/check_production_staging_partition.sh` (new) | Implement a bash script that: (a) computes `production_set` = transitive-closure of `^import SeLe4n\.` from `SeLe4n.lean`; (b) computes `staged_set` = transitive-closure from `Platform/Staged.lean`; (c) computes `staged_only := staged_set \ production_set`; (d) for every `.lean` file in `staged_only`, verifies the file contains a `> **STATUS: staged` marker in lines 1–40; (e) for every file with the marker, verifies it is in `staged_only` (NOT in `production_set`); (f) exits non-zero with a diff on any partition violation. |
+| R12.B.2 | `scripts/test_tier0_hygiene.sh` | Wire `scripts/check_production_staging_partition.sh` into the Tier-0 hygiene checks so it runs on every CI cycle and every pre-push. |
+| R12.B.3 | `scripts/website_link_manifest.txt` | Add `scripts/check_production_staging_partition.sh` to the manifest (the script is referenced by Tier 0 hygiene and may be linked from the website). |
+| R12.B.4 | `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` | Add a row: "DEEP-ARCH-01 closed structurally by R12.B; the production/staged partition is now machine-checked at every CI run." |
+| R12.B.5 | `CLAUDE.md` | Add a one-paragraph note under "Module build verification (mandatory)" explaining that the partition gate is the canonical source-of-truth for the production-vs-staged classification, and any contributor adding a new "STATUS: staged" marker must verify the file is reachable only via `Platform/Staged.lean`. |
+
+**Implementation steps for R12.B.1 (the gate script).**
+
+```bash
+#!/usr/bin/env bash
+# scripts/check_production_staging_partition.sh
+# Per WS-RC R12.B: enforce the production/staged module partition.
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT"
+
+trace_imports() {
+  local entry="$1"
+  declare -A seen
+  local queue=("$entry")
+  while [ ${#queue[@]} -gt 0 ]; do
+    local curr="${queue[0]}"; queue=("${queue[@]:1}")
+    [ -n "${seen[$curr]:-}" ] && continue
+    seen[$curr]=1
+    local file="${curr//.//}.lean"
+    [ ! -f "$file" ] && continue
+    while IFS= read -r imp; do queue+=("$imp"); done \
+      < <(grep -E "^import SeLe4n\." "$file" | awk '{print $2}')
+  done
+  for k in "${!seen[@]}"; do echo "$k"; done | sort -u
+}
+
+production_set="$(trace_imports SeLe4n)"
+staged_set="$(trace_imports SeLe4n.Platform.Staged)"
+staged_only="$(comm -23 <(echo "$staged_set") <(echo "$production_set"))"
+
+errors=0
+# Check 1: every staged-only module has the marker
+while IFS= read -r mod; do
+  [ -z "$mod" ] && continue
+  file="${mod//.//}.lean"
+  if [ -f "$file" ] && ! grep -qE "^>?\s*\*\*STATUS: staged" "$file" \
+        && ! grep -qE "^--\s*STATUS: staged" "$file"; then
+    # Only flag user-authored leaves; hub re-exports are exempt.
+    if grep -qE "^(def|theorem|inductive|structure|class)" "$file"; then
+      echo "ERROR: $file is in staged_only set but lacks 'STATUS: staged' marker"
+      errors=$((errors + 1))
+    fi
+  fi
+done <<< "$staged_only"
+
+# Check 2: every "STATUS: staged" file is in staged_only (not in production)
+while IFS= read -r file; do
+  [ -z "$file" ] && continue
+  mod="$(echo "$file" | sed 's|^\./||; s|\.lean$||; s|/|.|g')"
+  if echo "$production_set" | grep -qx "$mod"; then
+    echo "ERROR: $file has 'STATUS: staged' marker but is reachable from production (SeLe4n.lean)"
+    errors=$((errors + 1))
+  fi
+done < <(grep -rlE "^>?\s*\*\*STATUS: staged|^--\s*STATUS: staged" SeLe4n)
+
+if [ "$errors" -gt 0 ]; then
+  echo "FAIL: production/staged partition violation ($errors errors)"
+  exit 1
+fi
+echo "OK: production/staged partition consistent"
+```
+
+**Validation.**
+
+```bash
+./scripts/check_production_staging_partition.sh   # MUST pass on current tree
+# Synthesised positive test: temporarily add "STATUS: staged" marker to a
+# production file and verify the gate fails:
+echo '/-! > **STATUS: staged for test** -/' >> SeLe4n/Prelude.lean
+./scripts/check_production_staging_partition.sh   # MUST fail
+git checkout -- SeLe4n/Prelude.lean
+```
+
+**Risk.** Low. The gate is additive; the only failure mode is on
+the synthetic test case above. Mitigation: include the synthesised
+test as part of R12.B.1's test suite.
+
+### 16.4 Sub-task R12.C — ARM-ARM citation gate (closes DEEP-RUST-01/02 false positives)
+
+**Goal.** Convert the deep audit's §11.1 manual verification ("MMIO
+unsafe blocks cite ARM ARM B2.1; mrs/msr asm! blocks cite ARM ARM
+C5.2") into a machine-checked CI gate that runs on every push.
+
+**Verified prerequisites.**
+
+```text
+HAL unsafe-block locations (from audit §11.1 verification, re-confirmed):
+  rust/sele4n-hal/src/mmio.rs:54-57, 76-79, 96-98, 117-119  → cite (ARM ARM B2.1)
+  rust/sele4n-hal/src/registers.rs:20-21, 45-46              → cite (ARM ARM C5.2)
+Total HAL unsafe blocks: 53 (per deep audit §2; each cites ARM ARM section)
+```
+
+**Tasks.**
+
+| # | File | Action |
+|---|---|---|
+| R12.C.1 | `scripts/check_arm_arm_citations.sh` (new) | Implement a bash script that scans every `.rs` file under `rust/sele4n-hal/src/`, finds each `unsafe {` line and each `unsafe fn` declaration, then verifies the preceding 5 lines contain `(ARM ARM <section>)` (regex `\(ARM ARM [A-Z][0-9]+(\.[0-9]+)*\)`). Exits non-zero on any unsafe block lacking a citation. |
+| R12.C.2 | `scripts/test_tier0_hygiene.sh` | Wire `scripts/check_arm_arm_citations.sh` into Tier 0 so it runs on every push and PR. |
+| R12.C.3 | `scripts/website_link_manifest.txt` | Add the new script. |
+| R12.C.4 | `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` | Add: "DEEP-RUST-01 + DEEP-RUST-02 closed structurally by R12.C; every HAL `unsafe` block's ARM-ARM citation is machine-verified at every CI run." |
+| R12.C.5 | `rust/sele4n-hal/src/lib.rs` | Add a module-level doc comment cross-referencing the gate, so a contributor adding a new `unsafe` block knows the citation requirement is enforced (not just a convention). |
+
+**Implementation steps for R12.C.1 (the gate script).**
+
+```bash
+#!/usr/bin/env bash
+# scripts/check_arm_arm_citations.sh
+# Per WS-RC R12.C: every HAL unsafe block must cite an ARM ARM section.
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT"
+
+errors=0
+PATTERN='\(ARM ARM [A-Z][0-9]+(\.[0-9]+)*\)'
+LOOKBACK=5
+
+while IFS= read -r file; do
+  # Find every line containing 'unsafe {' or 'unsafe fn ' or 'unsafe impl '
+  while IFS=: read -r lineno _; do
+    [ -z "$lineno" ] && continue
+    start=$((lineno - LOOKBACK))
+    [ "$start" -lt 1 ] && start=1
+    if ! sed -n "${start},${lineno}p" "$file" | grep -qE "$PATTERN"; then
+      echo "ERROR: $file:$lineno — unsafe block lacks (ARM ARM <section>) citation in preceding $LOOKBACK lines"
+      errors=$((errors + 1))
+    fi
+  done < <(grep -nE 'unsafe \{|unsafe fn |unsafe impl ' "$file")
+done < <(find rust/sele4n-hal/src -name '*.rs' -type f)
+
+if [ "$errors" -gt 0 ]; then
+  echo "FAIL: $errors unsafe block(s) lack ARM ARM citations"
+  exit 1
+fi
+echo "OK: every HAL unsafe block has an ARM ARM citation"
+```
+
+**Validation.**
+
+```bash
+./scripts/check_arm_arm_citations.sh   # MUST pass on current tree
+# Synthetic negative test:
+sed -i '$a unsafe { core::ptr::read_volatile::<u32>(0 as *const _) };' \
+  rust/sele4n-hal/src/lib.rs
+./scripts/check_arm_arm_citations.sh   # MUST fail
+git checkout -- rust/sele4n-hal/src/lib.rs
+```
+
+**Risk.** Low. Additive CI gate. One subtle risk vector: the
+5-line lookback may miss a citation that lives further above (e.g.,
+in a function-level `///` doc comment). Mitigation: the gate
+reports the offending line so a developer can add a more local
+citation; the deep audit's verification confirmed every existing
+block has a citation within 5 lines.
+
+### 16.5 Sub-task R12.D — `_fields` consumer gate (closes DEEP-ARCH-02 false positive)
+
+**Goal.** Convert the deep audit's §11.1 manual verification ("each
+`*_fields : List StateField` definition has 3..26 consumers") into a
+machine-checked CI gate so the next audit cycle does not re-discover
+the false positive.
+
+**Verified prerequisites.**
+
+```text
+CrossSubsystem.lean:887-930 contains 11 *_fields definitions:
+  registryEndpointValid_fields, registryInterfaceValid_fields,
+  registryDependencyConsistent_fields, noStaleEndpointQueueReferences_fields,
+  noStaleNotificationWaitReferences_fields, serviceGraphInvariant_fields,
+  schedContextStoreConsistent_fields, schedContextNotDualBound_fields,
+  schedContextRunQueueConsistent_fields, blockingAcyclic_fields,
+  lifecycleObjectTypeLockstep_fields
+Each has 3..26 consumers per audit §11.1 verification.
+```
+
+**Tasks.**
+
+| # | File | Action |
+|---|---|---|
+| R12.D.1 | `scripts/check_no_orphan_fields.sh` (new) | Implement a bash script that: (a) finds every `def <name>_fields :` in `SeLe4n/Kernel/CrossSubsystem.lean` (and any sibling files under `SeLe4n/Kernel/` — extensible via a list); (b) for each, runs `grep -rn "<name>_fields" SeLe4n/` and counts hits OUTSIDE the file the def lives in; (c) fails if the count is < 1 (orphan definition). |
+| R12.D.2 | `scripts/test_tier0_hygiene.sh` | Wire the gate into Tier 0. |
+| R12.D.3 | `scripts/website_link_manifest.txt` | Add the new script. |
+| R12.D.4 | `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` | Add: "DEEP-ARCH-02 closed structurally by R12.D; orphan `*_fields` definitions cause CI failure." |
+| R12.D.5 | (Optional) Extend the gate to all `*_fields : List` definitions across the kernel if any exist outside `CrossSubsystem.lean`. The current scope is `CrossSubsystem.lean` per the deep audit's locus. |
+
+**Implementation steps for R12.D.1 (the gate script).**
+
+```bash
+#!/usr/bin/env bash
+# scripts/check_no_orphan_fields.sh
+# Per WS-RC R12.D: every *_fields : List StateField definition must have
+# at least one consumer outside its declaring file.
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$ROOT"
+
+errors=0
+TARGETS=(SeLe4n/Kernel/CrossSubsystem.lean)
+
+for file in "${TARGETS[@]}"; do
+  while IFS=: read -r lineno _; do
+    name="$(grep -nE "^def [A-Za-z_]+_fields\s*:" "$file" | sed -n "${lineno}s/.*def \([A-Za-z_]\+_fields\).*/\1/p")"
+    [ -z "$name" ] && continue
+    out_of_file_hits="$(grep -rn "\b${name}\b" SeLe4n/ | grep -v "^${file}:" | wc -l)"
+    if [ "$out_of_file_hits" -lt 1 ]; then
+      echo "ERROR: $file:$lineno — '$name' has no consumer outside its declaring file"
+      errors=$((errors + 1))
+    fi
+  done < <(grep -nE "^def [A-Za-z_]+_fields\s*:" "$file")
+done
+
+if [ "$errors" -gt 0 ]; then
+  echo "FAIL: $errors orphan *_fields definition(s)"
+  exit 1
+fi
+echo "OK: every *_fields definition has consumers"
+```
+
+**Validation.**
+
+```bash
+./scripts/check_no_orphan_fields.sh   # MUST pass on current tree
+# Synthetic negative: temporarily add an orphan def and verify failure
+echo 'def orphan_fields : List StateField := []' >> SeLe4n/Kernel/CrossSubsystem.lean
+./scripts/check_no_orphan_fields.sh   # MUST fail
+git checkout -- SeLe4n/Kernel/CrossSubsystem.lean
+```
+
+**Risk.** Low. Additive. One subtle risk: a *_fields def used only
+within its declaring file (intentional locality) would trip the
+gate; mitigation is to extend the gate to allow same-file consumers
+if a `private` modifier is present, but the current scope is
+"public defs must have public consumers" which matches the deep
+audit's verification expectation.
+
+### 16.6 Phase R12 cumulative validation
+
+```bash
+./scripts/check_production_staging_partition.sh
+./scripts/check_arm_arm_citations.sh
+./scripts/check_no_orphan_fields.sh
+./scripts/test_tier0_hygiene.sh    # exercises all three above + existing checks
+./scripts/check_website_links.sh
+```
+
+### 16.7 Phase R12 risk
+
+**Very low.** R12.A is non-functional concurrency configuration.
+R12.B/C/D are additive CI gates that run on every push; their only
+failure mode is when a real partition violation, missing citation,
+or orphan def exists — which is exactly when the gate should fail.
+
+The structural-fix policy in §1.5 means that **the next audit
+cannot re-raise DEEP-ARCH-01, DEEP-RUST-01/02, or DEEP-ARCH-02 as
+new findings** without first explaining why the corresponding gate
+did not catch the issue. This is the policy's primary value: it
+forces audit findings to be either novel or paired with a gate
+weakness, never recycled.
+
+### 16.8 Commit messages
+
+```
+WS-RC R12.A: add concurrency: blocks to non-Lean workflows (DEEP-CI-01)
+WS-RC R12.B: production/staged partition CI gate
+             (closes DEEP-ARCH-01 false positive structurally)
+WS-RC R12.C: ARM-ARM citation CI gate
+             (closes DEEP-RUST-01 + DEEP-RUST-02 false positives structurally)
+WS-RC R12.D: *_fields consumer CI gate
+             (closes DEEP-ARCH-02 false positive structurally)
+```
 
 ---
 
@@ -1562,11 +2571,11 @@ The following events would NOT push v1.0:
 
 | Phase | Exit criteria |
 |---|---|
-| R0 | Baseline file landed; ERRATA records DEEP-ARCH-01 withdrawal; DEBT-RUST-02 closure annotated in archived discharge index; `test_full.sh` clean. |
+| R0 | Baseline file landed; ERRATA records DEEP-ARCH-01 withdrawal-as-finding (with cross-reference to R12.B for the structural fix); DEBT-RUST-02 closure annotated in archived discharge index; `test_full.sh` clean. |
 | R1 | `endpointCallWithCaps:198` returns `.error .invalidCapability`; AK1-I-style comment block in place; IPC suite passes. |
 | R2 | `syscall_dispatch_inner` invokes `syscallEntryChecked` end-to-end; `syscallDispatchFromAbi` exists and is referenced by Rust comment; `@[export]` symbols gated by `hwTarget`; `SyscallDispatchSuite` exercises every variant. |
 | R3 | `bootSafeObject` admits `bootSafeVSpaceRoot`-compliant VSpaceRoots; `rpi5BootVSpaceRoot` threaded into boot result; correctness theorem extended; sim parity preserved. |
-| R4 | `slotsUnique`, RetypeTarget non-bypass, NoDup `waitingThreads` enforced structurally; downstream consumers updated; theorems witness the discharge. |
+| R4 | R4.A `slotsUnique`, R4.B RetypeTarget non-bypass, R4.C NoDup `waitingThreads` enforced structurally (subsumes DEEP-IPC-01); R4.D `cspaceMutate_rejects_null_cap` witness theorem (closes DEEP-CAP-02 structurally); downstream consumers updated; theorems witness each discharge. |
 | R5 | Seven scheduler/lifecycle items closed; preservation proofs updated; regression tests added. |
 | R6 | GIC bridge in place; `DeclassificationPolicy` defined; SecurityDomain lattice complete; `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull` proved or witnessed. |
 | R7 | AK8-K LOW-tier items closed in scope; residue lifted to deferred file; header comment shrinks to one paragraph. |
@@ -1574,7 +2583,7 @@ The following events would NOT push v1.0:
 | R9 | `check_sorry.lean` tokeniser-based check replaces regex; pre-commit hook tests pass. |
 | R10 | All R10 sub-tasks landed; AK10 rename complete; license header on `SeLe4n.lean`; `test_full.sh` and `test_rust.sh` clean. |
 | R11 | README/CLAUDE.md/AGENTS.md/SECURITY_ADVISORY synchronised with post-implementation tree; `check_version_sync.sh` clean; FrozenOps experimental status surfaced. |
-| R12 | Four non-Lean workflows have `concurrency:` blocks; CI verified on next push. |
+| R12 | R12.A: four non-Lean workflows have `concurrency:` blocks. R12.B: `check_production_staging_partition.sh` wired into Tier 0 (closes DEEP-ARCH-01 structurally). R12.C: `check_arm_arm_citations.sh` wired into Tier 0 (closes DEEP-RUST-01/02 structurally). R12.D: `check_no_orphan_fields.sh` wired into Tier 0 (closes DEEP-ARCH-02 structurally). All four gates pass on next push. |
 | R13 | Reserved (closes empty unless emergent items appear). |
 | R14 | Migrated to `AUDIT_v0.30.11_DEFERRED.md` and `WORKSTREAM_HISTORY.md` as the v1.x backlog; **not part of v1.0 closure**. |
 
@@ -1584,35 +2593,67 @@ Tagging `v0.31.0` "verified specification release" requires:
 
 - [ ] R0 landed (baseline + errata + DEBT-RUST-02 closure).
 - [ ] R1 landed (one-line NI symmetry fix; quick credibility).
-- [ ] R8..R12 landed in any order (documentation, tests, hygiene,
-      CI). The release does NOT require the FFI dispatch wiring.
+- [ ] R8 landed (test renames + Rust conformance extension).
+- [ ] R9 landed (pre-commit hardening with Lean tokeniser).
+- [ ] R10 landed (inline polish + AK10 rename + SPDX header).
+- [ ] R11 landed (documentation accuracy + AGENTS.md + CLAUDE.md
+      source-layout + FrozenOps experimental annotation).
+- [ ] R12 landed:
+  - [ ] R12.A: concurrency blocks on four non-Lean workflows.
+  - [ ] R12.B: `check_production_staging_partition.sh` wired into
+        Tier 0 (DEEP-ARCH-01 structural close).
+  - [ ] R12.C: `check_arm_arm_citations.sh` wired into Tier 0
+        (DEEP-RUST-01/02 structural close).
+  - [ ] R12.D: `check_no_orphan_fields.sh` wired into Tier 0
+        (DEEP-ARCH-02 structural close).
 - [ ] `./scripts/test_full.sh` clean.
 - [ ] `./scripts/test_rust.sh` clean.
+- [ ] `./scripts/test_tier0_hygiene.sh` clean (now includes the
+      three new gates from R12.B/C/D).
 - [ ] `./scripts/check_website_links.sh` clean.
 - [ ] `./scripts/check_version_sync.sh` clean.
 - [ ] `lakefile.toml` version bumped to 0.31.0.
-- [ ] `CHANGELOG.md` entry summarising WS-RC R1, R8..R12 closures.
+- [ ] `CHANGELOG.md` entry summarising WS-RC R1, R8..R12 closures
+      AND the false-positive structural-fix policy from §1.5.
 - [ ] No new `sorry`/`axiom`; `Classical.byContradiction` count ≤ 1
       (pre-existing).
+- [ ] Synthesised positive-and-negative tests for each new CI gate
+      (R12.B/C/D) pass and fail as expected.
 
 ### 21.3 Workstream-level closure checklist (v1.0.0 release)
 
 Tagging `v1.0.0` "bootable verified microkernel" additionally requires:
 
-- [ ] R2 landed (FFI dispatch wired through `syscallEntryChecked`).
-- [ ] R3 landed (boot VSpace threaded).
-- [ ] R4 landed (structural-invariant promotions).
-- [ ] R5 landed (scheduler/lifecycle symmetry).
-- [ ] R6 landed (architecture/info-flow completeness).
+- [ ] R2 landed (FFI dispatch wired through `syscallEntryChecked`):
+  - [ ] R2.A: `IO.Ref SystemState` threading.
+  - [ ] R2.B: `syscallDispatchFromAbi` body + correctness theorems.
+  - [ ] R2.C: uniform `hwTarget` gating + `SyscallDispatchSuite`.
+- [ ] R3 landed (boot VSpace threaded; `bootSafeObject` admits
+      `bootSafeVSpaceRoot`-compliant VSpaceRoots).
+- [ ] R4 landed:
+  - [ ] R4.A: `slotsUnique` structural via `UniqueSlotMap`.
+  - [ ] R4.B: `RetypeTarget` non-bypassable.
+  - [ ] R4.C: type-level NoDup `waitingThreads` (subsumes
+        DEEP-IPC-01).
+  - [ ] R4.D: `cspaceMutate_rejects_null_cap` witness theorem
+        (closes DEEP-CAP-02 structurally).
+- [ ] R5 landed (scheduler/lifecycle symmetry, all seven sub-tasks).
+- [ ] R6 landed (architecture/info-flow completeness, all four
+      sub-tasks).
 - [ ] CLAUDE.md "First hardware target: Raspberry Pi 5" is literally
       true (i.e., `syscall_dispatch_inner` invokes
       `syscallEntryChecked`, not the stub).
 - [ ] `tests/SyscallDispatchSuite.lean` exercises every `SyscallId`
       variant.
 - [ ] `lakefile.toml` version bumped to 1.0.0.
-- [ ] `CHANGELOG.md` entry summarising WS-RC R2..R6 closures.
+- [ ] `CHANGELOG.md` entry summarising WS-RC R2..R6 closures
+      including R4.D (CAP-02 structural) alongside R4.A/B/C.
 - [ ] R14 contents migrated to `AUDIT_v0.30.11_DEFERRED.md` and
       logged in `WORKSTREAM_HISTORY.md` as v1.x backlog.
+- [ ] All six false-positive structural fixes (R4.C subsumes IPC-01,
+      R4.D for CAP-02, R12.B for ARCH-01, R12.C for RUST-01/02,
+      R12.D for ARCH-02) are demonstrably enforced — a synthesised
+      regression test exists for each gate.
 
 ### 21.4 Workstream archival
 
@@ -1710,10 +2751,39 @@ not-yet-production modules. All three "STATUS: staged" markers
 
 ### A.3 Disposition
 
-- DEEP-ARCH-01 is **WITHDRAWN as a false positive** (audit
+- DEEP-ARCH-01 is **WITHDRAWN as an active finding** (audit
   verification error in §11.3).
-- No remediation in any phase.
+- **Structural remediation lands in R12.B** — a CI gate
+  (`scripts/check_production_staging_partition.sh`) computes the
+  transitive closure from `SeLe4n.lean` and `Platform/Staged.lean`,
+  cross-checks against the "STATUS: staged" markers in source, and
+  fails the build on any partition violation.
+- The structural gate is the implement-the-improvement remediation
+  for the false positive: instead of relying on a future auditor to
+  manually re-derive the 144-module trace (and possibly make the
+  same verification error the deep audit's §11.3 made), the
+  partition is machine-checked at every CI run.
 - Recorded in `AUDIT_v0.30.11_ERRATA.md` (Phase R0) for permanence.
+
+### A.4 Why this matters operationally
+
+The deep audit's verification error in §11.3 was caused by the
+auditor reading `BarrierComposition.lean`'s namespace declaration
+(line 10) as an `import` line. A future auditor performing the
+same trace by hand could make the same error. The R12.B gate
+removes the human from the loop:
+
+- Every PR runs `check_production_staging_partition.sh`.
+- A new "STATUS: staged" marker on a file that is reachable from
+  `SeLe4n.lean` fails the build immediately.
+- A new module added to `Platform/Staged.lean` without the marker
+  also fails the build.
+- The partition is a hard CI gate, not an audit-time guideline.
+
+This is the canonical pattern for the §1.5 structural-fix policy:
+manual verification → machine-checked invariant. The same pattern
+applies to R12.C (ARM-ARM citations) and R12.D (`_fields`
+consumers).
 
 ---
 
@@ -1737,6 +2807,23 @@ The only remediation that explicitly preserves documentation
 unchanged is DEEP-DOC-05 (the "First hardware target: Raspberry
 Pi 5" claim), which is made true by the R2 implementation rather
 than weakened.
+
+**Extension to false positives.** The original §12.5 preflight
+applied to active findings only. This plan extends it to the six
+withdrawn-as-false-positive findings via the §1.5 structural-fix
+policy: each false positive's manual verification is converted to
+a machine-checked invariant (witness theorem or CI gate) so the
+verification's correctness becomes immune to the auditor-error
+that produced the false positive in the first place. See R4.D
+(witness theorem for DEEP-CAP-02) and R12.B/C/D (CI gates for
+DEEP-ARCH-01, DEEP-RUST-01/02, DEEP-ARCH-02). DEEP-IPC-01 is
+subsumed structurally by R4.C (NoDup at type level).
+
+This extension is itself an instance of the implement-the-
+improvement rule: the deep audit's §11.1/§11.3 verification is
+"the better state" (the code is correct), and the structural fix
+makes that verification's correctness a perpetual property rather
+than a single-audit-cycle artifact.
 
 
 ---
@@ -1783,7 +2870,7 @@ v0.31.0 release boundary.
 | DEEP-SCH-06 | Deep §5.4, §12 | `SchedContext/Operations.lean:110-187` | R5 | – | YES |
 | DEEP-SUSP-01 | Deep §5.5, §12 | `Lifecycle/Suspend.lean:290+` | R5 | – | YES |
 | DEEP-SUSP-02 | Deep §5.5, §12 | `Lifecycle/Suspend.lean:88-105` | R5 | – | YES |
-| DEEP-ARCH-01 | Deep §5.6, §11.3 | **WITHDRAWN by this plan** | – | – | – |
+| DEEP-ARCH-01 | Deep §5.6, §11.3 | **WITHDRAWN as finding (this plan); structural fix in R12.B** | R12.B | YES | YES |
 | DEEP-ARCH-03 | Deep §5.6, §12 | `Architecture/ExceptionModel.lean` | R6 | – | YES |
 | DEEP-ARCH-04 | Deep §5.6 | NO-ACTION (verified production-wired) | – | – | – |
 | DEEP-FDT-01 | Deep §6.2 | `Platform/DeviceTree.lean:695-740` | R10 | YES | YES |
@@ -1800,9 +2887,30 @@ v0.31.0 release boundary.
 | DEEP-BOOT-01 | Deep §6.2, §12 | `Platform/Boot.lean:551`; `RPi5/VSpaceBoot.lean` | R3 | – | YES |
 | DEEP-SCRIPT-01 | Deep §8.2 | `scripts/website_link_manifest.txt:18` | R10 | YES | YES |
 | DEEP-SCRIPT-02 | Deep §8.2 | NO-ACTION (verified clean) | – | – | – |
-| DEEP-CI-01 | Deep §8.3 | 4 non-Lean workflows | R12 | optional | optional |
+| DEEP-CI-01 | Deep §8.3 | 4 non-Lean workflows | R12.A | optional | optional |
 
-### C.2 Predecessor DEBT-* findings
+### C.2 False-positive structural fixes (per §1.5 policy)
+
+The six findings classified as false positives by either the deep
+audit's §11.1 or this plan's §2.2 each receive a machine-checked
+enforcement gate in WS-RC. The mapping:
+
+| False positive | Audit verification | WS-RC structural fix | Phase | v0.31.0 | v1.0.0 |
+|---|---|---|---|---|---|
+| DEEP-CAP-02 | `Operations.lean:1093` runtime null-cap guard | Witness theorem `cspaceMutate_rejects_null_cap` + companion in `Capability/Invariant/Preservation/CopyMoveMutate.lean` | R4.D | – | YES |
+| DEEP-ARCH-02 | 11 `*_fields` defs all consumed (3..26 consumers each) | `scripts/check_no_orphan_fields.sh` Tier-0 gate | R12.D | YES | YES |
+| DEEP-RUST-01 | MMIO unsafe blocks cite `(ARM ARM B2.1)` | `scripts/check_arm_arm_citations.sh` Tier-0 gate (covers all HAL) | R12.C | YES | YES |
+| DEEP-RUST-02 | mrs/msr asm! blocks cite `(ARM ARM C5.2)` | Same gate (R12.C) | R12.C | YES | YES |
+| DEEP-IPC-01 | `Operations/Endpoint.lean:723` runtime duplicate guard | Type-level `NoDupList ThreadId` on `Notification.waitingThreads` (R4.C) | R4.C | – | YES |
+| DEEP-ARCH-01 | All "STATUS: staged" markers correct (this plan's §2.2) | `scripts/check_production_staging_partition.sh` Tier-0 gate | R12.B | YES | YES |
+
+The R12.B/C/D gates are bundled into a single PR ("WS-RC R12: CI
+hygiene + structural gates"). R4.D is bundled with the R4 PR. The
+v0.31.0 set includes R12.B/C/D so the gates run from the very next
+audit cycle; the R4.C and R4.D fixes land with v1.0.0 since they
+require the broader R4 structural refactor.
+
+### C.3 Predecessor DEBT-* findings
 
 | Finding | Audit § | Phase | Notes |
 |---|---|---|---|
