@@ -43,6 +43,16 @@ Once the workstream closes:
   pre-1.0 actions (DEBT-DOC-01 metric refresh, DEBT-RUST-02 H-24
   reconfirmation) plus the post-1.0 DEBT register are the seed of that
   next workstream.
+- `AUDIT_v0.30.11_DEEP_VERIFICATION.md` — **deep verification pass on
+  the same v0.30.11 cut (2026-04-28)**, done at user request to
+  re-derive every claim from source rather than trust the comprehensive
+  audit's documented findings. Builds on (does not supersede) the
+  comprehensive audit; introduces 50+ new finding IDs (DEEP-*) including
+  two H-severity items the predecessor missed: DEEP-FFI-01 (Lean ↔
+  Rust syscall-dispatch glue is a stub returning `NotImplemented = 17`
+  on hardware) and DEEP-DOC-01 (README internally inconsistent on the
+  proved-declaration count). Both predecessor and verification audit
+  feed the next remediation workstream's plan.
 
 ## Recently archived (WS-AN closure, v0.30.11)
 
