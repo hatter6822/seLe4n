@@ -149,7 +149,7 @@ within each tier:
    pointer to FFI.lean's stub-status docstring.
 3. **DEEP-DOC-01** — reconcile the 3,186 vs 2,725 declaration
    counts. Best approach: drop both inline numbers and replace
-   with "see [`docs/codebase_map.json`](docs/codebase_map.json) for
+   with "see [`docs/codebase_map.json`](../codebase_map.json) for
    current metrics", removing the README's responsibility to
    stay synchronised. Or: pick a single number, sync both
    instances, and add a CI check that runs the
