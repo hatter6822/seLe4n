@@ -504,6 +504,84 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   `an2f3_*`, etc.) stay as-is until touched by a workstream that can rename
   them in the same commit; new code must comply with this rule from day one.
 
+## Implement-the-improvement rule (audit and review remediation)
+
+When an audit, code review, or any reading of the codebase surfaces a
+discrepancy between the **code** on one side and the **documentation,
+docstring, comment, type signature, or design intent** that describes it
+on the other side, and the description represents an *improvement* over
+the actual code (e.g., a more complete behaviour, a more symmetric API,
+a stronger invariant, a routed dispatch where the code is a stub, a
+function that "should" exist but does not), the remediation is **always**
+to implement the improvement so the description becomes true.
+
+It is **forbidden** to weaken, dilute, qualify, or rewrite the
+documentation to match inferior code. Documenting incorrect or
+incomplete code in lieu of fixing it is not an acceptable engineering
+outcome on this project.
+
+Concretely:
+
+- A comment that says "this resolves to function `X`" while `X` does
+  not exist → **implement `X`**, never "update the comment to remove
+  the reference."
+- A docstring describing a complete specification while the
+  implementation is truncated → **complete the implementation**, never
+  "document that the spec section is intentionally truncated."
+- A stub returning `NotImplemented` while the design says it should
+  route to a verified entry point → **wire up the routing**, never
+  "disclose the stub in release notes."
+- Two API call paths handling the same condition asymmetrically while
+  the design calls for symmetry → **make them symmetric**, never
+  "document the asymmetry."
+- A structure carrying an implicit invariant maintained only by
+  convention → **enforce the invariant structurally** (record field,
+  refinement type, smart-constructor proof obligation, opaque type
+  whose constructors discharge the invariant), never "add an inline
+  comment about the convention."
+- A function with two distinct semantic arms compressed into one
+  identifier → **split into two named functions**, never "document
+  both arms in the docstring."
+- A predicate documented as "phantom-like; correctness depends on no
+  caller bypassing the cleanup hook" → **make bypass structurally
+  impossible** (opaque type whose only constructor invokes cleanup),
+  never "make the warning louder."
+- A computed-and-proven data structure that the surrounding code does
+  not consume → **wire it into the consumer** so the proof carries
+  through to runtime, never "remove the unwired data structure."
+- Deferred work items buried in source comments → **fix them** if the
+  current scope permits; otherwise lift them into the project debt
+  register (`docs/audits/`, `docs/WORKSTREAM_HISTORY.md`) so they are
+  tracked to closure. Never leave them as in-source TODOs that age
+  out with the surrounding workstream.
+- A "first hardware target" or similar capability claim while the
+  hardware path is non-functional → **make the hardware path
+  functional**, never "qualify the claim with a stub-status caveat."
+
+The single legitimate exception is when the documentation describes a
+**worse** state than the code (e.g., a stale `STATUS: staged` marker on
+a file that has since been wired into production, or a deprecation
+note on a function the project has decided to keep). In that direction,
+the documentation is the inferior artefact and updating it to match
+the better code is correct.
+
+**Audit reports and remediation plans must apply this rule.** Findings
+of the form "documentation describes feature X; code lacks feature X;
+recommendation: weaken the documentation" are not acceptable. The
+recommendation must instead be "implement feature X" — and where the
+implementation is non-trivial, the audit must split the work into the
+proper sequence of PRs (each one a coherent slice per the PR
+checklist) rather than treating documentation surgery as a substitute
+for the code change.
+
+When the optimal implementation is genuinely out of scope for the
+current cut (e.g., it requires architectural work that the release
+window cannot accommodate), the correct outcome is to **defer the
+release**, not to ship a documentation-only patch. If a release date
+forces the choice, the deferral must be recorded as a tracked debt
+item with an explicit closure target, not absorbed silently into a
+weaker public claim.
+
 ## Documentation rules
 
 When changing behavior, theorems, or workstream status, update in the same PR:

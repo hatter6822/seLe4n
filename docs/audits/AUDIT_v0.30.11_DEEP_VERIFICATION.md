@@ -17,17 +17,37 @@ workflows, 221 documentation files. Roughly 142,000 lines of source.
 > finding issues the prior audit missed, with explicit instruction not to
 > trust documentation. This audit therefore re-derives every claim from
 > source. It surfaces **8 new findings** the predecessor missed, including
-> two MEDIUM-severity gaps that materially affect v1.0 release readiness on
-> hardware (the FFI dispatch stubs).
+> one HIGH-severity dispatch-stub gap and one MEDIUM-severity stale-comment
+> gap that together materially affect v1.0 release readiness on hardware
+> (the FFI dispatch stubs and the dishonest Rust comment).
+
+> **Remediation principle (added 2026-04-28, post-publication revision).**
+> Where a finding identifies a discrepancy between code and the
+> documentation/comment/design that describes it, the remediation is
+> **always** to implement the description if the description represents
+> an improvement, **never** to weaken the documentation to match
+> inferior code. This rule is now codified in
+> `CLAUDE.md` ("Implement-the-improvement rule"). Earlier drafts of
+> this audit recommended documentation-only patches for findings such
+> as DEEP-FFI-01 ("disclose the stub in release notes"), DEEP-DOC-05
+> ("qualify the hardware-target claim"), DEEP-BOOT-01 ("thread the
+> VSpaceRoot OR remove the unwired data structure"), DEEP-IF-02
+> ("document the spec truncation"), and several others. Every such
+> finding has been re-issued below with an
+> implementation-first remediation. The "or remove" / "or document"
+> alternatives have been struck. The release scheduling implication
+> (a v1.0 cut is contingent on the implementation work landing,
+> not on documentation surgery) is reflected in §10.3 and §10.4.
 
 ## Headline conclusion
 
 The Lean kernel is **proof-sound** and **correctness-clean**: zero `sorry`,
-zero `axiom`, one isolated `Classical.byContradiction` (witnessed and
-removable, not unsound), zero `native_decide` over hardcoded models, zero
-`partial def` in production source. All single-core invariants hold; the
-information-flow composition theorem and the WCRT bound are both faithful
-and parametric.
+zero `axiom`, one isolated `Classical.byContradiction` (witnessed; not
+unsound; per the §12 implement-the-improvement rule the constructive
+restructuring is scheduled for v1.x rather than relaxed via documentation),
+zero `native_decide` over hardcoded models, zero `partial def` in
+production source. All single-core invariants hold; the information-flow
+composition theorem and the WCRT bound are both faithful and parametric.
 
 However, the project is **not bootable to a working state on hardware** as
 of v0.30.11. The FFI bridge from the Rust HAL into the Lean kernel
@@ -38,42 +58,78 @@ of v0.30.11. The FFI bridge from the Rust HAL into the Lean kernel
 invoked from the hardware path**. A separate Rust-side comment in
 `rust/sele4n-hal/src/svc_dispatch.rs:308` claims production "resolves to
 the Lean kernel's `syscallDispatchFromAbi`" — a function name that **does
-not exist** anywhere in the Lean source tree. This documentation lie
-masked the gap from the predecessor audit.
+not exist** anywhere in the Lean source tree. This documentation
+discrepancy masked the gap from the predecessor audit.
 
-The kernel therefore enters v1.0 as a **fully proven kernel specification
-plus a hardware shim that does not yet route into it**. This is acceptable
-for a "v1.0 = proof artefact" cut, but unacceptable for a "v1.0 = bootable
-microkernel" cut. The two interpretations should be made explicit in the
-release notes before tagging.
+Per the implement-the-improvement rule (CLAUDE.md), the remediation for
+this gap is to **implement the dispatch routing** so that
+`syscall_dispatch_inner` actually invokes `syscallEntryChecked`,
+`suspend_thread_inner` actually invokes `suspendThread`, and the Rust
+comment's reference to `syscallDispatchFromAbi` becomes true (either by
+adding that function or by aligning both sides on the
+`syscall_dispatch_inner` name and threading the typed ABI decode
+through it). It is **not** an acceptable remediation to leave the
+stubs in place and add release-note disclosure of the gap. The work to
+thread `SystemState` through the FFI is non-trivial (it requires a
+v1.x architectural slice; see DEEP-FFI-01 in §10), but the audit's
+recommended action is the architectural slice, not the disclosure
+patch.
+
+The release-readiness conclusion of v1.0 is therefore: **v1.0 cannot
+ship until DEEP-FFI-01 lands**. The predecessor's "v1.0 = proof
+artefact" framing is rejected on this audit cycle: a microkernel
+that cannot dispatch syscalls on its named hardware target is not
+v1.0, regardless of how thoroughly its specification is verified.
+The proof artefact is a substantial milestone in its own right and
+deserves a tagged release (e.g., `v0.31.0` "verified specification
+release"), but `v1.0.0` should remain reserved for the bootable
+cut.
 
 Beyond the FFI gap, this audit finds (after the §11 verification
-pass that withdrew 5 false positives and refined severities):
+pass that withdrew 5 false positives and refined severities, and
+the §12 implement-the-improvement revision that re-issued
+documentation-only recommendations as implementation slices):
 
 - **0 critical (C)** correctness defects.
 - **2 high-severity (H)** findings: FFI dispatch gap with silent
-  stub (DEEP-FFI-01); IPC capability-transfer NI asymmetry on the
-  call path (DEEP-IPC-03, narrowed from 3 paths to 1).
+  stub (DEEP-FFI-01 — remediation re-issued as
+  *implement the dispatch routing*, not "disclose the stub");
+  IPC capability-transfer NI asymmetry on the call path
+  (DEEP-IPC-03, narrowed from 3 paths to 1).
 - **~10 medium-severity (M)** findings: stale Rust↔Lean
-  function-name comment (DEEP-FFI-02), AGENTS.md comprehensively
-  stale (DEEP-DOC-02), missing CLAUDE.md source-layout entries
-  (DEEP-DOC-03), README metric inconsistency (DEEP-DOC-01,
-  downgraded H→M), test-naming workstream-ID violations
-  (DEEP-TEST-01), thin checked-syscall test coverage
-  (DEEP-TEST-03), boot VSpaceRoot rejection (DEEP-BOOT-01),
-  pre-commit regex over-zealousness (DEEP-PRECOM-01, severity
-  inverted L→M for fragility), IPC linter-suppression hygiene
-  (DEEP-IPC-02), 17-conjunct accessor refactor (DEEP-MODEL-02).
+  function-name comment (DEEP-FFI-02 — remediation re-issued as
+  *implement `syscallDispatchFromAbi`*, not "fix the comment"),
+  AGENTS.md comprehensively stale (DEEP-DOC-02), missing
+  CLAUDE.md source-layout entries (DEEP-DOC-03), README metric
+  inconsistency (DEEP-DOC-01, downgraded H→M), test-naming
+  workstream-ID violations (DEEP-TEST-01), thin checked-syscall
+  test coverage (DEEP-TEST-03), boot VSpaceRoot rejection
+  (DEEP-BOOT-01 — remediation re-issued as
+  *thread the verified VSpaceRoot through boot*, not "thread or
+  remove"), pre-commit regex over-zealousness (DEEP-PRECOM-01,
+  severity inverted L→M for fragility), IPC linter-suppression
+  hygiene (DEEP-IPC-02), 17-conjunct accessor refactor
+  (DEEP-MODEL-02).
 - **~18 low-severity (L)** findings — including
   DEEP-PROOF-01 (the lone `Classical.byContradiction`,
   downgraded M→L after re-analysis), DEEP-CAP-01 (docstring
   promotion), and several LoC-hygiene items.
 - **~18 informational (I)** findings — documentation gaps,
-  consistency nits, post-1.0 maintainability hooks.
+  consistency nits, post-1.0 maintainability hooks. Note that
+  §12 re-issued **9 originally-informational/low-severity findings**
+  as implementation work: DEEP-MODEL-01 (L), DEEP-CAP-04 (I),
+  DEEP-IPC-05 (I), DEEP-SCH-02 (I), DEEP-SCH-06 (I),
+  DEEP-SUSP-01 (I), DEEP-SUSP-02 (I), DEEP-IF-02 (I), DEEP-ARCH-03 (I).
+  Their I/L classification reflects the *quality risk* of the
+  current code state (low — invariants hold by upstream
+  convention), not the *priority of the remediation* (which is
+  pre-1.0 because the documentation describes the better state
+  and should be made true).
 
 The full register is in §10; the verification-pass corrections
 (5 false positives withdrawn, 2 narrowed, 2 inverted-or-adjusted-severity)
-are catalogued in §11.
+are catalogued in §11; the implement-the-improvement re-issues
+are catalogued in §12.
 
 ## Document layout
 
@@ -89,6 +145,10 @@ are catalogued in §11.
 8. Tests, scripts, CI, documentation
 9. Cross-cutting findings (proof debt, hygiene, security checklist)
 10. Findings register (DEEP-* IDs) + recommendations + sign-off
+11. Verification-pass corrections (false positives, severity adjusts)
+12. Implement-the-improvement revision (every documentation-only
+    recommendation re-issued as the corresponding implementation
+    slice, per the rule codified in CLAUDE.md)
 
 ## 1. Severity table and findings index
 
@@ -96,25 +156,30 @@ Severity legend — **C** critical (must fix before tag), **H** high (should
 fix before tag), **M** medium (post-1.0 maintainability with material
 risk), **L** low (cosmetic / cleanup), **I** informational.
 
-### NEW findings introduced by this audit (not in predecessor) — POST-VERIFICATION
+### NEW findings introduced by this audit (not in predecessor) — POST-VERIFICATION, POST-REVISION
 
 > Note: the table below shows severities **after** the §11 verification
-> pass. Findings withdrawn as false positives (DEEP-CAP-02, DEEP-ARCH-02,
-> DEEP-RUST-01, DEEP-RUST-02, DEEP-IPC-01) are listed in §11.1 with full
-> rationale.
+> pass and the §12 implement-the-improvement revision. Findings withdrawn
+> as false positives (DEEP-CAP-02, DEEP-ARCH-02, DEEP-RUST-01,
+> DEEP-RUST-02, DEEP-IPC-01) are listed in §11.1 with full rationale.
+> The "Action shape" column flags whether the remediation is
+> *implementation* (code change), *documentation* (text change with no
+> code counterpart), or *both* (a coordinated PR). Per CLAUDE.md's
+> implement-the-improvement rule, no row should read "documentation"
+> when the documentation describes a better state than the code.
 
-| ID | Sev | Area | One-line summary |
-|---|---|---|---|
-| DEEP-FFI-01 | H | Platform/FFI + Rust HAL | `syscall_dispatch_inner` and `suspend_thread_inner` Lean exports are stubs returning `NotImplemented = 17`; verified hardware path never reaches `syscallEntryChecked`. Plan acknowledges deferral; release-notes wording must too. |
-| DEEP-IPC-03 | H | IPC/DualQueue/WithCaps:198 | `endpointCallWithCaps` returns `.ok ({ results := #[] }, st')` on missing receiver-CSpace-root; AK1-I closed send and receive paths but the call path remains asymmetric. NI covert-channel risk. |
-| DEEP-FFI-02 | M | Rust HAL | `rust/sele4n-hal/src/svc_dispatch.rs:308` comment claims production resolves to Lean fn `syscallDispatchFromAbi` — **that name does not exist** in the Lean tree (only in archived audit plans). Comment also misnames the `@[export]` directionality as `@[extern]`. |
-| DEEP-DOC-01 | M | README (was H, downgraded §11.4) | README internally inconsistent: line 92 says "3,186 theorem/lemma declarations"; line 213 says "2,725 proved declarations" — same page. Documentation hygiene; one-PR refresh. |
-| DEEP-DOC-02 | M | AGENTS.md | `AGENTS.md` line 7 declares project version **0.12.4** vs actual **0.30.11**. The entire file is from ~v0.12.x — it references audits at v0.11.0/v0.12.2 and a "WS-F (v0.12.2 audit remediation)" workstream. Best fix: delete and redirect to CLAUDE.md (§11.5). |
-| DEEP-DOC-03 | M | CLAUDE.md | Source-layout section omits `SeLe4n/Platform/FFI.lean` (245 LoC, contains the stub bridges flagged as DEEP-FFI-01), `SeLe4n/Platform/Staged.lean` (the build-anchor that pulls FFI into CI), and `SeLe4n/Platform/RPi5/VSpaceBoot.lean`. Verified by `grep -c "FFI" CLAUDE.md` → 0. |
-| DEEP-TEST-01 | M | tests/Ak8CoverageSuite.lean | 25+ test functions named `test_AK8_E_*`, `test_AK8_F_*`, `test_AK8_G_*`, `test_AK8_H_*`, `test_AK8_I_*`. CLAUDE.md identifier policy bans workstream IDs in identifiers. Filename `Ak8CoverageSuite.lean` is also a violation. |
-| DEEP-TEST-02 | L | README + codebase_map.json | Test-suite count drift: README says "25 test suites" (line 38) and elsewhere "24 test suites" (source layout); actual is 28. |
-| DEEP-PROOF-01 | L | Scheduler/Operations/Preservation (was M, downgraded §11.4) | `Classical.byContradiction` at `Preservation.lean:1720` (single explicit Classical use). Surrounding `by_cases` already invokes `Classical.em` implicitly; full elimination requires proof restructuring, not one-line rewrite. Lean stdlib Classical is foundationally safe. |
-| DEEP-PRECOM-01 | M | scripts/pre-commit-lean-build.sh | The `sorry`-detection regex chain is fragile against block-comment syntax. Verification pass found the failure mode is OVER-zealous (rejects legitimate doc references to `sorry` in `/-…-/` blocks), not UNDER-zealous as initially documented. Best fix: replace with a Lean-tokeniser-based check. |
+| ID | Sev | Area | Action shape | One-line summary |
+|---|---|---|---|---|
+| DEEP-FFI-01 | H | Platform/FFI + Rust HAL | implementation | `syscall_dispatch_inner` and `suspend_thread_inner` Lean exports are stubs returning `NotImplemented = 17`; verified hardware path never reaches `syscallEntryChecked`. Wire the routing — disclosure-only patches are rejected. |
+| DEEP-IPC-03 | H | IPC/DualQueue/WithCaps:198 | implementation | `endpointCallWithCaps` returns `.ok ({ results := #[] }, st')` on missing receiver-CSpace-root; AK1-I closed send and receive paths but the call path remains asymmetric. NI covert-channel risk. |
+| DEEP-FFI-02 | M | Rust HAL | implementation | `rust/sele4n-hal/src/svc_dispatch.rs:308` comment describes Lean fn `syscallDispatchFromAbi`. The function should exist (it is the typed-ABI entry point that Tier 2 of the must-fix sequence builds). Implement the function, not edit the comment. |
+| DEEP-DOC-01 | M | README (was H, downgraded §11.4) | documentation | README internally inconsistent: line 92 says "3,186 theorem/lemma declarations"; line 213 says "2,725 proved declarations" — same page. Pure documentation drift; one-PR refresh. |
+| DEEP-DOC-02 | M | AGENTS.md | documentation | `AGENTS.md` line 7 declares project version **0.12.4** vs actual **0.30.11**. The entire file is from ~v0.12.x — it references audits at v0.11.0/v0.12.2 and a "WS-F (v0.12.2 audit remediation)" workstream. Best fix: rewrite to mirror CLAUDE.md or replace with a 10-line redirect (§11.5). |
+| DEEP-DOC-03 | M | CLAUDE.md | documentation | Source-layout section omits `SeLe4n/Platform/FFI.lean` (245 LoC, contains the stub bridges flagged as DEEP-FFI-01), `SeLe4n/Platform/Staged.lean` (the build-anchor that pulls FFI into CI), and `SeLe4n/Platform/RPi5/VSpaceBoot.lean`. Verified by `grep -c "FFI" CLAUDE.md` → 0. |
+| DEEP-TEST-01 | M | tests/Ak8CoverageSuite.lean | implementation | 25+ test functions named `test_AK8_E_*`, `test_AK8_F_*`, `test_AK8_G_*`, `test_AK8_H_*`, `test_AK8_I_*`. CLAUDE.md identifier policy bans workstream IDs in identifiers. Filename `Ak8CoverageSuite.lean` is also a violation. Mechanical rename PR. |
+| DEEP-TEST-02 | L | README + codebase_map.json | documentation | Test-suite count drift: README says "25 test suites" (line 38) and elsewhere "24 test suites" (source layout); actual is 28. |
+| DEEP-PROOF-01 | L | Scheduler/Operations/Preservation (was M, downgraded §11.4) | implementation (post-1.0) | `Classical.byContradiction` at `Preservation.lean:1720` (single explicit Classical use). Surrounding `by_cases` already invokes `Classical.em` implicitly; full elimination requires proof restructuring. The implement-the-improvement rule prefers restructuring over weakening the "constructive Lean kernel" claim, but Lean stdlib Classical is foundationally safe — restructure scheduled for v1.x. |
+| DEEP-PRECOM-01 | M | scripts/pre-commit-lean-build.sh | implementation | The `sorry`-detection regex chain is fragile against block-comment syntax. Verification pass found the failure mode is OVER-zealous (rejects legitimate doc references to `sorry` in `/-…-/` blocks), not UNDER-zealous as initially documented. Replace with a Lean-tokeniser-based check. |
 
 ### Findings re-confirmed from predecessor (still applicable)
 
@@ -125,79 +190,261 @@ DEBT-TST-01, DEBT-BOOT-01) is re-confirmed by this audit unless flagged
 otherwise below in the per-subsystem narrative. None of those items have
 been silently discharged in the 2 days between the two audits.
 
-### Pre-1.0 must-fix list (proposed, post-verification)
+### Pre-1.0 must-fix list (proposed, post-verification, post-revision)
 
-To keep the v1.0 cut credible. Order chosen by smallest-PR-first
-within each tier:
+To keep the v1.0 cut credible. Tier ordering reflects the
+implement-the-improvement rule: every "documentation-only" tier
+that previously stood in lieu of a code fix has been replaced with
+the corresponding implementation slice. Tiers are ordered so that
+the smallest implementation slice precedes the largest, with the
+strictly-documentation items (those that genuinely have no code
+counterpart) at the end.
 
-**Tier 1 — Honesty PR (one PR; documentation only):**
+**Tier 1 — IPC NI symmetry (one-line code change, smallest slice):**
 
-1. **DEEP-FFI-01 disclosure** — add a "Hardware integration status"
-   section to README, SECURITY_ADVISORY, and v1.0 release notes
-   stating: "On real hardware, syscalls currently return
-   `NotImplemented`; the verified Lean dispatcher is compiled by CI
-   but not yet wired into the hardware exception vector. The
-   AN9-D / AN9-F closure landing in v1.x will route
-   `syscall_dispatch_inner` and `suspend_thread_inner` to the
-   verified `syscallEntryChecked` and `suspendThread` entry points
-   respectively." Cite `SeLe4n/Platform/FFI.lean:186, 217`.
-2. **DEEP-FFI-02 fix** — in `rust/sele4n-hal/src/svc_dispatch.rs:305-309`,
-   replace the misnamed reference to "the Lean kernel's
-   `syscallDispatchFromAbi`" with the actual exported symbol name
-   (`syscall_dispatch_inner`), and correct the attribute reference
-   from `@[extern …]` to `@[export syscall_dispatch_inner]`. Add a
-   pointer to FFI.lean's stub-status docstring.
-3. **DEEP-DOC-01** — reconcile the 3,186 vs 2,725 declaration
-   counts. Best approach: drop both inline numbers and replace
-   with "see [`docs/codebase_map.json`](../codebase_map.json) for
-   current metrics", removing the README's responsibility to
-   stay synchronised. Or: pick a single number, sync both
-   instances, and add a CI check that runs the
-   `report_current_state.py` script and fails if README differs.
-4. **DEEP-DOC-02** — replace `AGENTS.md` with a 10-line redirect
-   stub pointing to `CLAUDE.md`, OR rewrite to mirror CLAUDE.md
-   content with a CI-enforced sync check. The current file is
-   stale enough that a version-bump alone is insufficient.
-5. **DEEP-DOC-03** — add the three missing Platform files
-   (`FFI.lean`, `Staged.lean`, `RPi5/VSpaceBoot.lean`) to
-   `CLAUDE.md` source-layout section.
-6. **DEEP-LICENSE-01** — add `-- SPDX-License-Identifier:
-   GPL-3.0-or-later` as line 1 of `SeLe4n.lean` (the only of 248
-   sources missing it).
-7. **DEBT-DOC-01 (predecessor)** — refresh
-   README ↔ codebase_map.json metric drift; sync test-suite
-   count, file count, LoC.
-
-**Tier 2 — NI symmetry (one-line code change):**
-
-8. **DEEP-IPC-03** — at `SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean:198`,
+1. **DEEP-IPC-03** — at `SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean:198`,
    replace `.ok ({ results := #[] }, st')` with
    `.error .invalidCapability`. Mirror the AK1-I comment block
    from line 113-125. This closes the last NI asymmetry between
    send/receive/call cap-transfer paths.
 
-**Tier 3 — Test rename (mechanical, large churn):**
+**Tier 2 — Hardware-dispatch implementation (the headline pre-1.0
+work; no longer a documentation tier):**
 
-9. **DEEP-TEST-01 / DEEP-TEST-02** — rename `Ak8CoverageSuite.lean`
-   and its 25+ workstream-ID-prefixed tests to semantic names.
-   Update `lakefile.toml`'s `lean_exe` declaration and any
-   test-runner references.
+2. **DEEP-FFI-01 IMPLEMENTATION (was: disclosure).** Wire
+   `@[export syscall_dispatch_inner]` (`SeLe4n/Platform/FFI.lean:217`)
+   into `syscallEntryChecked` (`Kernel/API.lean:1244`) and
+   `@[export suspend_thread_inner]` (line 186) into `suspendThread`
+   (`Kernel/Lifecycle/Suspend.lean`). This requires:
+   - Threading the active `SystemState` through the FFI boundary
+     (the v1.x work item the docstring already names). Options
+     considered: (a) a `BaseIO` reference cell holding the global
+     state; (b) a Lean-side `IO.Ref SystemState` initialised at
+     boot; (c) a thread-local register-decoded snapshot. Option
+     (b) is the simplest and aligns with how the simulation
+     trace harness already manages state.
+   - Per-call `RegisterDecode` + `SyscallArgDecode` to construct
+     typed arguments from the eight `UInt64` register slots, then
+     dispatch through `syscallEntryChecked` and re-encode the
+     result.
+   - Equivalent threading for `suspend_thread_inner`.
+   - Tests: a hardware-mode integration suite that exercises
+     each syscall on a simulated boot path (the existing
+     `KernelErrorMatrixSuite` provides a starting matrix).
+   The verified `syscallEntryChecked` already exists; the
+   work is plumbing, not new proofs. **The v1.0 cut is
+   contingent on this PR landing.** A "ship the proof artefact
+   and disclose the stub" path is rejected per the
+   implement-the-improvement rule.
 
-**Tier 4 — Hook hardening (small but tooling change):**
+3. **DEEP-FFI-02 IMPLEMENTATION (was: comment fix).** The Rust
+   comment at `rust/sele4n-hal/src/svc_dispatch.rs:308` describes
+   a Lean function `syscallDispatchFromAbi` that does not exist.
+   Per the implement-the-improvement rule, the remediation is to
+   **add** `syscallDispatchFromAbi` as the typed-ABI entry point
+   the comment describes — the function that takes the eight
+   register slots, calls `decodeSyscall` and `decodeSyscallArgs`,
+   invokes `syscallEntryChecked`, and re-encodes. This becomes
+   the body of `syscallDispatchInner` (FFI.lean) once Tier 2
+   item 2 lands; the Rust comment is then accurate as written.
+   (Documentation surgery to remove the reference is rejected:
+   the comment was not aspirational, it was describing the
+   design the audit itself agrees should exist.)
 
-10. **DEEP-PRECOM-01** — replace the `sorry`-detection regex chain
-    in `scripts/pre-commit-lean-build.sh:59,61` with a
-    Lean-tokeniser-based check. Either invoke `lean --run` on a
-    small Lean script that uses the parser to find `sorry`
-    identifiers outside strings/comments, or use a robust
-    bash-side preprocessor that strips comments before
-    grepping.
+3a. **DEEP-FFI-03 IMPLEMENTATION (was: docstring clarification).**
+    Wrap the two `@[export]` declarations in
+    `SeLe4n/Platform/FFI.lean` (lines 185–190 and 216–223) in the
+    same `hwTarget`-conditional `section` already used for the
+    `@[extern]` declarations. After this, the FFI.lean docstring's
+    claim "the `@[extern]` attribute is only active when building
+    with `-DhwTarget=true`" generalises uniformly to both
+    directions of the FFI bridge, and the docstring is accurate
+    end-to-end.
 
-The remainder of the predecessor debt register and the
-LOW/INFORMATIONAL items here can ship as post-1.0 maintainability
-workstreams. **DEEP-PROOF-01 (Classical use) and DEEP-MODEL-02
-(accessor refactor) are explicitly post-1.0** in this audit's
-recommendation.
+**Tier 3 — Boot VSpace wiring + spec completeness (medium slice):**
+
+4. **DEEP-BOOT-01 IMPLEMENTATION (was: thread or remove).**
+   At `SeLe4n/Platform/Boot.lean:551`, rewrite `bootSafeObject`
+   to admit `VSpaceRoot` objects that satisfy
+   `bootSafeVSpaceRoot` (RPi5/VSpaceBoot.lean:272–297). Then
+   thread `rpi5BootVSpaceRoot` (RPi5/VSpaceBoot.lean) into the
+   boot result so the W^X-compliance proof carries through to
+   runtime. The "or remove the unwired data structure" alternative
+   in the original audit is struck — `rpi5BootVSpaceRoot` is the
+   verified data structure that the rest of the boot path was
+   built around; removing it would discard finished proof work.
+
+5. **DEEP-IF-02 IMPLEMENTATION (was: document the truncation).**
+   Complete the parameterised `SecurityDomain` lattice section at
+   `Policy.lean:484–500` so the spec is end-to-end. The originally
+   recommended "document that the section is intentionally
+   truncated as a post-1.0 hook" is struck per the
+   implement-the-improvement rule.
+
+6. **DEEP-ARCH-03 IMPLEMENTATION (was: document the boundary).**
+   Add the formal Lean-level bridge from `ExceptionModel`'s
+   classification to `InterruptDispatch`'s
+   acknowledge→handle→EOI flow. The originally recommended
+   "document that the boundary lives between Lean and Rust
+   HAL" is struck.
+
+**Tier 4 — Structural invariant enforcement (medium slice):**
+
+7. **DEEP-MODEL-01 IMPLEMENTATION (was: inline comment).** Refactor
+   the CNode `slots : RHTable Slot Capability` field (or its
+   constructors) so the `slotsUnique` invariant is structurally
+   enforced rather than maintained by Builder convention. Options:
+   (a) replace `RHTable` with an opaque type whose constructors
+   discharge `slotsUnique`; (b) bundle `slots` with an
+   accompanying `slotsUnique` proof field so the predicate is
+   carried at the type level. The originally recommended "inline
+   comment on the slots field flagging the proof obligation" is
+   struck.
+
+8. **DEEP-CAP-04 IMPLEMENTATION (was: louder comment).** Make the
+   `RetypeTarget` "phantom witness" predicate
+   (`Capability/Invariant/Defs.lean:345–367`) non-bypassable. Wrap
+   the construction in a smart-constructor helper whose only
+   public form requires invocation of the cleanup hook
+   (`scrubLifecycleObject`); make the underlying `structure`
+   private. Direct construction by manually proving the two
+   component properties is then statically prevented. The
+   originally recommended "strengthen the warning comment" is
+   struck.
+
+9. **DEEP-IPC-05 IMPLEMENTATION (was: cross-reference).** Add a
+   type-level NoDup constraint to the notification
+   `waitingThreads` field, so the `uniqueWaiters` predicate is
+   discharged structurally rather than maintained by upstream
+   convention. The runtime guard at `Operations/Endpoint.lean:723`
+   continues to reject duplicate enqueue attempts; the new
+   constraint additionally proves no future code path can
+   bypass the guard without a corresponding type-level
+   discharge.
+
+**Tier 5 — Behaviour symmetry and split (small per-PR slices):**
+
+10. **DEEP-SUSP-01 IMPLEMENTATION (was: document/handle).** Add
+    a PIP-recomputation step to `resumeThread`
+    (`Lifecycle/Suspend.lean:290+`) so a thread whose blocking
+    chain changed during suspension has its `pipBoost` correctly
+    re-derived on resume. Required for H4 readiness; needed
+    in v1.0 if any non-trivial blocking chain can include a
+    suspended holder.
+
+11. **DEEP-SUSP-02 IMPLEMENTATION (was: document or split).**
+    Split `cancelDonation` (`Lifecycle/Suspend.lean:88–105`)
+    into `cancelBoundDonation` and `cancelDonatedDonation`.
+    The two arms have distinct semantics ("unbind in place" vs
+    "return to original owner") that should not be compressed
+    under a single name.
+
+12. **DEEP-SCH-02 IMPLEMENTATION (was: document the asymmetry).**
+    Make `effectivePriority` (`Selection.lean:225–241`) and
+    `resolveEffectivePrioDeadline` (line 327) share a single
+    fail-safe convention. Either both return `Option`, or both
+    are total under invariants; the asymmetric API contract is
+    a structural smell.
+
+13. **DEEP-SCH-04 IMPLEMENTATION** (already an implementation
+    finding in the original audit). Surface
+    `.missingSchedContext` from `Operations/Core.lean:715–717`
+    instead of the silent no-preempt fallback.
+
+14. **DEEP-SCH-05 IMPLEMENTATION** (already an implementation
+    finding). Replace the `RunQueue.lean:238` defensive
+    priority-0 fallback with explicit error or assertion.
+
+15. **DEEP-SCH-06 IMPLEMENTATION (was: verify).** If
+    `boundThreadDomainConsistent` requires it, wire domain
+    propagation into `schedContextConfigure`
+    (`SchedContext/Operations.lean:141–185`); if the invariant
+    does not require it, prove the domain field on the bound
+    TCB is reachable without it. Either way, the "stale field"
+    risk must be discharged structurally.
+
+16. **DEEP-CAP-05 IMPLEMENTATION (was: move to debt register).**
+    Address the "AK8-K LOW-tier" deferred items currently
+    documented in the `Capability/Operations.lean:12–62`
+    header. Items whose fix fits inside this audit cycle are
+    closed in this tier; items that genuinely cannot ship in
+    v1.0 are lifted into the project debt register
+    (`docs/audits/`) and CHANGELOG with explicit closure
+    targets — never left as in-source comments that age out.
+
+**Tier 6 — Hook hardening, license, and identifier hygiene
+(small implementation slices):**
+
+17. **DEEP-PRECOM-01** — replace the fragile `sorry`-detection
+    regex chain in `scripts/pre-commit-lean-build.sh:59,61`
+    with a Lean-tokeniser-based check.
+18. **DEEP-LICENSE-01** — add `-- SPDX-License-Identifier:
+    GPL-3.0-or-later` as line 1 of `SeLe4n.lean`.
+19. **DEEP-TEST-01 / DEEP-TEST-02** — rename
+    `Ak8CoverageSuite.lean`, `An9HardwareBindingSuite.lean`,
+    `Ak9PlatformSuite.lean`, `An10CascadeSuite.lean` and their
+    workstream-ID-prefixed test functions.
+
+**Tier 7 — Documentation accuracy (the genuinely-documentation
+tier; restricted to cases where the code is correct and the docs
+are wrong, never the inverse):**
+
+20. **DEEP-DOC-03** — add the three missing Platform files
+    (`FFI.lean`, `Staged.lean`, `RPi5/VSpaceBoot.lean`) to
+    `CLAUDE.md` source-layout section. (CLAUDE.md describes a
+    *worse* state than the code — files exist that the doc
+    omits — so the doc is the inferior artefact and the
+    legitimate-exception clause of the rule applies.)
+21. **DEEP-DOC-04** — annotate archived audit links in README.
+22. **DEEP-DOC-06** — fix the README test-suite count drift
+    (25/24 → 28).
+23. **DEEP-DOC-01** — reconcile the 3,186 vs 2,725 declaration
+    counts. Best approach: drop both inline numbers and replace
+    with a single CI-synchronised reference to
+    `codebase_map.json`.
+24. **DEEP-ARCH-01 (CacheModel marker)** — the file's "STATUS:
+    staged" marker describes a worse state than the code;
+    update the marker to reflect production use.
+25. **DEEP-DOC-05 (REVISED).** The original audit recommended
+    qualifying "First hardware target: Raspberry Pi 5" with a
+    stub-status caveat. Per the implement-the-improvement rule,
+    the original phrasing is correct and the **code** is what
+    must change (DEEP-FFI-01 / Tier 2). Once Tier 2 lands, no
+    documentation change is needed. Until then, the README and
+    CLAUDE.md may either keep the original phrasing
+    (consistent with the implement-the-improvement
+    commitment) or be silent about the hardware target — but
+    they must not say the kernel "currently runs on RPi5"
+    while Tier 2 is open. No "stub-status caveat" should be
+    added.
+26. **DEBT-DOC-01 (predecessor)** — refresh
+    README ↔ codebase_map.json metric drift; sync test-suite
+    count, file count, LoC.
+
+**Tier 8 — AGENTS.md disposition:**
+
+27. **DEEP-DOC-02** — `AGENTS.md` is from ~v0.12.x and is
+    stale enough that a version bump is insufficient. The
+    canonical agent-guidance file is `CLAUDE.md`. Best fix:
+    rewrite `AGENTS.md` to mirror `CLAUDE.md` with a
+    CI-enforced sync check, **or** replace with a 10-line
+    redirect stub pointing to `CLAUDE.md`. Either keeps the
+    discoverability some agent frameworks expect; both
+    eliminate the divergence-rot risk. The redirect-stub
+    option is acceptable here because the duplicated content
+    has no proof or correctness payload — it is purely a
+    navigation aid.
+
+**Post-1.0 maintainability (deferred, but not relaxed):**
+DEEP-PROOF-01 (Classical-use restructuring; the implement-the-
+improvement rule mandates the proof rewrite, but the v1.x
+window is acceptable because the single use is Lean-stdlib safe
+and not unsound), DEEP-MODEL-02 (record-shaped 17-conjunct
+invariant), and the remaining informational items not enumerated
+above. **None of these are absorbed into documentation
+disclaimers.** Each remains tracked as known debt with an
+explicit closure target, per the implement-the-improvement
+rule.
 
 ## 2. Verified codebase shape (re-counted at audit time)
 
@@ -887,22 +1134,36 @@ all the IF-checked dispatch theorems below it) is currently exercised
 only by the simulation trace harness (`MainTraceHarness.lean`) and the
 `KernelErrorMatrixSuite` — never by hardware execution.
 
-**This is acknowledged debt** (AN9-D, AN9-F → v1.x). The criticism is
-not the deferral; it is that:
-1. Public-facing documentation (README, AGENTS.md, project tagline)
-   does not surface this state to readers.
-2. The Rust-side comment is incorrect about how the glue resolves.
-3. The predecessor audit's headline ("the kernel is production-ready
-   for a v1.0 cut") is at minimum ambiguous: yes if v1.0 means "the
-   proof artefact"; no if v1.0 means "a bootable microkernel".
+**This is acknowledged debt** (AN9-D, AN9-F → v1.x). The §12
+revision restates the criticism per the implement-the-improvement
+rule:
+1. The Lean docstrings, the Rust comment, the design intent, and
+   the project documentation (README, CLAUDE.md) all describe a
+   working hardware-syscall path. The code is the inferior
+   artefact.
+2. The remediation is to **implement the dispatch routing** so
+   the documentation becomes true (§10.3 PR 2). The earlier-draft
+   recommendation of "surface the state via release-note
+   disclosure" is struck.
+3. The Rust-side comment's reference to a Lean function
+   `syscallDispatchFromAbi` should be made true by **adding the
+   function**, not by deleting the reference (§10.3 PR 2 builds
+   the typed-ABI entry point under that name).
+4. v1.0 is no longer reinterpreted as "the proof artefact" —
+   v1.0 = bootable verified microkernel. A pre-v1.0 release
+   tag (`v0.31.0` "verified specification release") covers the
+   current state honestly.
 
 **Compilation gating gap.** FFI.lean docstring (lines 34–39) says
 "`@[extern]` is only active when building with `-DhwTarget=true`."
 This is true for the `@[extern]` declarations (Lean → Rust). It is
 **silent** about `@[export]` declarations (Rust ← Lean), which are
 **always compiled**. Even on simulation builds, the compiled stubs
-exist; if any simulation path were ever to call into them they would
-return NotImplemented. **DEEP-FFI-03 (I)**: clarify the docstring.
+exist; if any simulation path were ever to call into them they
+would return NotImplemented. **DEEP-FFI-03 (I)**: per §12, the
+remediation is to **implement uniform `hwTarget` gating** so the
+docstring is accurate end-to-end, not to clarify the docstring's
+asymmetric description.
 
 ### 6.2 Other Platform findings
 
@@ -915,13 +1176,17 @@ return NotImplemented. **DEEP-FFI-03 (I)**: clarify the docstring.
   rejects all `VSpaceRoot` objects (`| .vspaceRoot _ => false`). This
   means the checked boot path admits **no kernel VSpace** at boot.
   The actual mapping is loaded later via Rust HAL hardcoded tables
-  in `mmu.rs` (post-BSS init). For v1.0 acceptable; AN9-E rewrites
-  `bootSafeObject` to admit boot VSpace roots that satisfy
-  `bootSafeVSpaceRoot` (VSpaceBoot.lean:272–297). Until then,
-  `rpi5BootVSpaceRoot` (VSpaceBoot.lean) is computed and proved
-  W^X-compliant but **not threaded** into the boot result. This is a
-  silent gap — the file produces a verified data structure that
-  nothing consumes.
+  in `mmu.rs` (post-BSS init). `rpi5BootVSpaceRoot`
+  (VSpaceBoot.lean) is computed and proved W^X-compliant but
+  **not threaded** into the boot result — a silent gap where a
+  verified data structure has no consumer. **§12-revised
+  remediation:** implement the AN9-E rewrite of `bootSafeObject`
+  so the verified VSpaceRoot is admitted, then thread
+  `rpi5BootVSpaceRoot` through. The earlier-draft "or remove the
+  unwired data structure" alternative is struck per the
+  implement-the-improvement rule — the verified data structure is
+  the better state and removing finished proof work to match
+  inferior boot code is rejected.
 
 **`SeLe4n/Platform/DeviceTree.lean` (~1530 LoC).** Bounds-checked FDT
 parser. Predecessor §2.4 verified `readBE32`/`readBE64` use
@@ -1160,14 +1425,20 @@ New findings:
   re-point links to the active audit
   `docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md` (and to this
   document, post-merge).
-- **DEEP-DOC-05 (I)**: Project description in `CLAUDE.md` line 9
-  reads: "First hardware target: Raspberry Pi 5." This is consistent
-  with the kernel's design intent and roadmap, but in the absence of
-  the FFI dispatch wiring (DEEP-FFI-01) the kernel cannot service
-  syscalls on RPi5 in v1.0. The phrasing should be qualified:
-  "First hardware target (proof-artefact ready for v1.0; full
-  syscall dispatch on hardware lands in v1.x via AN9-D/AN9-F
-  glue closure)."
+- **DEEP-DOC-05 (I)** — REVISED §12: Project description in
+  `CLAUDE.md` line 9 reads: "First hardware target: Raspberry Pi
+  5." Earlier drafts of this audit recommended qualifying the
+  phrasing with a "proof-artefact ready for v1.0; full syscall
+  dispatch on hardware lands in v1.x" caveat. **§12 strikes that
+  recommendation** per the implement-the-improvement rule. The
+  CLAUDE.md statement is the project's design intent; making it
+  true is DEEP-FFI-01 (the dispatch routing). Adding a stub-status
+  caveat to the documentation while leaving the code as a stub is
+  rejected. **No documentation change is required for DEEP-DOC-05.**
+  v1.0 readiness is contingent on DEEP-FFI-01 landing; if v1.0 is
+  tagged before that, the project's release scope itself is
+  miscommitted (see §10.4 — pre-v1.0 release `v0.31.0` is
+  available for the current state).
 - **DEEP-DOC-06 (L)**: README test-suite count drift. Line 38 says
   "Test Lean LoC | 16,168 across 25 test suites"; the source-layout
   table elsewhere says "tests/ — 24 test suites"; actual is 28. The
@@ -1239,9 +1510,12 @@ New findings:
 | Single declassification site, gated | ✓ | `declassifyStore` |
 | Service dependency acyclicity | ✓ | declarative `serviceDependencyAcyclic` |
 | FDT parser bounds-checked | ✓ | `readBE32`/`readBE64` + `parseFdtHeader` |
-| Hardware syscall dispatch wired | **✗** | DEEP-FFI-01: `syscall_dispatch_inner` returns `NotImplemented` |
+| Hardware syscall dispatch wired | **✗** | DEEP-FFI-01: `syscall_dispatch_inner` returns `NotImplemented`; §12 mandates implementation, not disclosure |
 
-The last row is the audit's headline correction.
+The last row is the audit's headline correction. Per §12 and the
+implement-the-improvement rule, this row should read ✓ before a
+v1.0 tag. A v0.31.0 "verified specification release" can ship
+without the ✓; a v1.0.0 cannot.
 
 ### 9.5 Architectural concerns (general)
 
@@ -1256,10 +1530,16 @@ The single **architectural rough edge** is the Platform layer:
 `FFI.lean` and `Staged.lean` were added late (post-AN7-D / AN9 cycles)
 and the source-layout documentation was not updated. The FFI bridge
 as currently shaped has **two distinct directions** (`@[extern]` and
-`@[export]`) under one file, which can confuse readers. A future
-refactor splitting `Platform/FFI/{LeanCallsRust,RustCallsLean}.lean`
-would make the deferred `@[export]` stubs more obviously
-under-implemented.
+`@[export]`) under one file, which can confuse readers. The §12
+recommendation (per the implement-the-improvement rule) is to
+**both** (a) implement the dispatch routing so the `@[export]`
+stubs become real (PR 2 in §10.3) and (b) refactor the bridge into
+`Platform/FFI/{LeanCallsRust,RustCallsLean}.lean` so the two
+directions are separately auditable. The earlier-draft framing
+("a future refactor would make the deferred stubs more obviously
+under-implemented") is partially struck — the stubs should not
+remain "under-implemented" past v1.0; the refactor is a separate
+clarity improvement.
 
 ### 9.6 Dead-code summary
 
@@ -1277,11 +1557,14 @@ Dead-code findings, consolidated:
   declared with `#[allow(dead_code)]`. Used only in test stub;
   consider inlining.
 - **`SeLe4n/Platform/RPi5/VSpaceBoot.lean rpi5BootVSpaceRoot`** —
-  computed and proven W^X-compliant but not threaded into the boot
-  result (DEEP-BOOT-01). The verified data structure has no
+  computed and proven W^X-compliant but not threaded into the
+  boot result (DEEP-BOOT-01). The verified data structure has no
   consumer in the boot path until AN9-E rewires
   `bootSafeObject` to admit boot VSpace roots. Not "dead" in the
-  malicious sense; just inert and surprising.
+  malicious sense; just inert and surprising. **§12 remediation:
+  thread it through (do not remove it).** Per the
+  implement-the-improvement rule, removing finished proof work
+  to match inferior boot code is rejected.
 
 The kernel's overall dead-code rate is **very low**. Predecessor's
 spot checks of theorem/def reachability for IF, Service, IPC,
@@ -1299,18 +1582,18 @@ only real candidates this audit found.
 > false positives. The §11.6 table has the post-correction
 > headline counts.
 
-| DEEP-FFI-01 | H | Platform/FFI + Rust HAL | Disclose hardware-dispatch gap in README, SECURITY_ADVISORY, release notes; do not ship a "v1.0 = bootable kernel" cut without first wiring `syscall_dispatch_inner`/`suspend_thread_inner` to the verified Lean dispatchers. Acknowledged debt under AN9-D / AN9-F → v1.x. |
-| DEEP-FFI-02 | M | rust/sele4n-hal/src/svc_dispatch.rs:308 | Replace `syscallDispatchFromAbi` reference with the actual exported symbol (`syscall_dispatch_inner`) and link to FFI.lean docstring. |
-| DEEP-FFI-03 | I | SeLe4n/Platform/FFI.lean:34–39 | Clarify in docstring that the `-DhwTarget=true` gating applies only to `@[extern]` (Lean→Rust) declarations; `@[export]` (Rust→Lean) stubs are always compiled. |
-| DEEP-DOC-01 | M | README.md:92 vs :213 | (DOWNGRADED H→M §11.4) Reconcile "3,186" and "2,725" theorem-count numbers. Best fix: drop both, link to `codebase_map.json`, add CI sync check (§10.3 PR 1). |
+| DEEP-FFI-01 | H | Platform/FFI + Rust HAL | **Implement the dispatch routing.** Wire `syscall_dispatch_inner` (`Platform/FFI.lean:217`) into `syscallEntryChecked` (`Kernel/API.lean:1244`) and `suspend_thread_inner` (line 186) into `suspendThread` (`Kernel/Lifecycle/Suspend.lean`). Threading `SystemState` through the FFI is the v1.x work item the docstring already names; per CLAUDE.md's implement-the-improvement rule, this work is what unblocks v1.0 — release-note disclosure is not a substitute. (Original recommendation "disclose the gap in release notes" struck per §12.) |
+| DEEP-FFI-02 | M | rust/sele4n-hal/src/svc_dispatch.rs:308 | **Implement `syscallDispatchFromAbi`** as the typed-ABI Lean entry point that the comment describes. Once DEEP-FFI-01 lands, this function is the body of `syscallDispatchInner` (FFI.lean) — it decodes the eight `UInt64` register slots via `RegisterDecode`/`SyscallArgDecode`, calls `syscallEntryChecked`, and re-encodes the result. Then the Rust comment is true as written. (Original recommendation "replace the reference with the existing exported symbol name" struck per §12 — the comment was describing the better state, and the better state is what we should implement.) |
+| DEEP-FFI-03 | I | SeLe4n/Platform/FFI.lean:34–39 | **Implement uniform compile-time gating.** The docstring asserts `@[extern]` is gated by `-DhwTarget=true`, but `@[export]` symbols are always compiled. Wrap the two `@[export]` declarations (lines 185–190 and 216–223) in the same `hwTarget`-conditional `section`/`end` so both directions of the FFI bridge share a single gating mechanism. Then the docstring is accurate end-to-end. (Original recommendation "clarify the docstring asymmetry" struck per §12.) |
+| DEEP-DOC-01 | M | README.md:92 vs :213 | (DOWNGRADED H→M §11.4) Reconcile "3,186" and "2,725" theorem-count numbers. Best fix: drop both, link to `codebase_map.json`, add CI sync check (§10.3 PR 11 post-§12). Pure documentation drift (the docs are inferior to the code; legitimate-exception clause of the implement-the-improvement rule). |
 | DEEP-DOC-02 | M | AGENTS.md (entire file) | (REFINED §11.5) Entire file is from ~v0.12.x — version bump alone is insufficient. Best fix: replace with a 10-line redirect stub pointing to CLAUDE.md, OR full rewrite mirroring CLAUDE.md with CI-enforced sync check. |
 | DEEP-DOC-03 | M | CLAUDE.md source-layout section | Add entries for `SeLe4n/Platform/FFI.lean`, `SeLe4n/Platform/Staged.lean`, `SeLe4n/Platform/RPi5/VSpaceBoot.lean`. |
 | DEEP-DOC-04 | L | README.md audit-history table | Annotate `AUDIT_v0.29.0_*` and `AUDIT_v0.30.6_*` links as "archived". |
-| DEEP-DOC-05 | I | CLAUDE.md project description | Qualify "First hardware target: Raspberry Pi 5" with v1.0 dispatch-stub note. |
+| DEEP-DOC-05 | I | CLAUDE.md project description | (REVISED §12.) The original "qualify with v1.0 dispatch-stub note" recommendation is struck per the implement-the-improvement rule. The CLAUDE.md statement "First hardware target: Raspberry Pi 5" is the design intent and must be made true via DEEP-FFI-01, not weakened. No documentation change is required as long as v1.0 is contingent on the FFI implementation landing. If v1.0 ships without DEEP-FFI-01, the project's release-readiness premise is itself broken and the audit's recommendation is to defer the tag, not to soften the documentation. |
 | DEEP-DOC-06 | L | README.md test-suite count | Update 25/24 → 28; resync from `codebase_map.json`. |
-| DEEP-PROOF-01 | L | Scheduler/Operations/Preservation.lean:1711-1721 | (DOWNGRADED M→L §11.4) The surrounding `by_cases hNe` (line 1711) on a non-decidable proposition already invokes `Classical.em` implicitly. Removing only the explicit `Classical.byContradiction` is cosmetic; full elimination requires restructuring around case-analysis on `Option ThreadId`. Either restructure for v1.x, or add a CLAUDE.md note clarifying that Lean stdlib Classical is permitted. |
+| DEEP-PROOF-01 | L | Scheduler/Operations/Preservation.lean:1711-1721 | (DOWNGRADED M→L §11.4; REVISED §12.) Restructure the proof constructively (case-analysis on `Option ThreadId`) so the explicit `Classical.byContradiction` and the surrounding implicit `Classical.em` from `by_cases` both go away. The "or add a CLAUDE.md note clarifying that Lean stdlib Classical is permitted" alternative is struck per the implement-the-improvement rule: if the project's stated "constructive Lean kernel" discipline is the design intent, the kernel must conform — the documentation must not be relaxed to match a single non-constructive site. Severity remains L because Lean-stdlib `Classical.byContradiction` is foundationally safe; pre-1.0 priority is *medium-low* and the work is a v1.x research-style task. |
 | DEEP-LICENSE-01 | I | SeLe4n.lean | Add `-- SPDX-License-Identifier: GPL-3.0-or-later` as line 1 (matches the 247 other files). |
-| DEEP-MODEL-01 | L | Model/Object/Structures.lean CNode | Inline comment on `slots` field flagging `slotsUnique` proof obligation. |
+| DEEP-MODEL-01 | L | Model/Object/Structures.lean CNode | (REVISED §12.) **Enforce the `slotsUnique` invariant structurally.** Either (a) replace `slots : RHTable Slot Capability` with an opaque `UniqueSlotMap` whose constructors discharge `slotsUnique`, or (b) bundle `slots` with a paired `slotsUnique : ...` proof field so the predicate is type-level. Original "inline comment on the slots field flagging the proof obligation" recommendation struck per §12 — the documentation already implies the invariant; the code should make it structurally inviolable rather than merely advertised. |
 | DEEP-MODEL-02 | L | Model/State.lean + Builder.lean | (REFINED §11.5) Best fix: refactor `allTablesInvExtK` from a 17-tuple conjunction to a `structure` with named `Prop` fields. Then call sites use `h.objects`/`h.scheduler` etc.; adding a new RHTable field becomes a one-line structure change with compile-time enforcement. The public-accessor option is a stepping-stone, not the proper fix. Subsumes DEBT-ST-01. |
 | DEEP-MODEL-03 | I | Model/State.lean:146 | Cross-reference `replenishQueueSorted` invariant defined in SchedContext/ReplenishQueue.lean. |
 | DEEP-MODEL-04 | I | Model/State.lean LifecycleMetadata | Document mutation sites for `capabilityRefs`. |
@@ -1319,28 +1602,28 @@ only real candidates this audit found.
 | DEEP-CAP-01 | L | Capability/Operations.lean:959, 1002 | (REFINED §11.5) The null-cap guards ARE documented — but in inline `--` comments inside the function body (lines 964–968 for cspaceCopy, 998–1001 for cspaceMove). Best fix: promote these inline rationale blocks UP into the formal `/-- ... -/` docstring above each function. No code change. |
 | ~~DEEP-CAP-02~~ | ~~L~~ | ~~Capability/Operations.lean:1081–1111~~ | **WITHDRAWN (§11.1)** — `cspaceMutate` DOES enforce the precondition via the `cap.isNull` guard at line 1093. False positive. |
 | ~~DEEP-CAP-03~~ | I | Capability/Operations.lean:740–747 | (NO-ACTION §11.5) Guard order rationale already documented in the existing docstring at lines 740–747. No additional documentation needed. |
-| DEEP-CAP-04 | I | Capability/Invariant/Defs.lean:345–367 | Strengthen `RetypeTarget` "phantom witness" comment. |
-| DEEP-CAP-05 | I | Capability/Operations.lean:12–62 | Move "AK8-K LOW-tier" deferred items from header comment to the project debt register. |
+| DEEP-CAP-04 | I | Capability/Invariant/Defs.lean:345–367 | (REVISED §12.) **Make the `RetypeTarget` predicate non-bypassable.** Wrap construction in a smart-constructor whose only public form requires invocation of the cleanup hook (`scrubLifecycleObject`); make the underlying structure private. Direct construction by manually proving the two component properties is then statically prevented. Original "strengthen the warning comment" recommendation struck per §12 — the comment admitted a real bypass route, and the bypass route is what should be closed, not merely louder-warned. |
+| DEEP-CAP-05 | I | Capability/Operations.lean:12–62 | (REVISED §12.) **Address the deferred items.** Each "AK8-K LOW-tier" comment in the header describes a known issue with a known fix; per the implement-the-improvement rule, those whose fix fits the current scope are closed in this audit cycle, and those that genuinely cannot ship in v1.0 are lifted into the project debt register with explicit closure targets. Original "move from header comment to project debt register" recommendation is the *minimum* acceptable action — fixing them is the optimal action and is preferred wherever effort permits. |
 | ~~DEEP-IPC-01~~ | ~~M~~ | ~~Model/Object/Types.lean Notification, IPC ops~~ | **WITHDRAWN (§11.1)** — `notificationWait` already has an O(1) duplicate guard at `Operations/Endpoint.lean:723` (`tcb.ipcState = .blockedOnNotification` test → `.error .alreadyWaiting`). False positive. |
 | DEEP-IPC-02 | M | 7 files in IPC/Invariant | Add a one-line justification comment beside each `set_option linter.unusedVariables false`. |
 | DEEP-IPC-03 | H | IPC/DualQueue/WithCaps.lean:**198 only** (NARROWED §11.3) | At `:198`, replace `.ok ({ results := #[] }, st')` with `.error .invalidCapability`. AK1-I closure already fixed the send (line 125) and receive (line 158) paths; only the `endpointCallWithCaps` path still has the asymmetry. One-line fix mirroring AK1-I comment block. |
-| DEEP-IPC-04 | I | IPC/Operations/Endpoint.lean:485 | Verify the formal proof `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull` exists and is sorry-free. |
-| DEEP-IPC-05 | I | (cross-references DEEP-IPC-01) | covered above. |
+| DEEP-IPC-04 | I | IPC/Operations/Endpoint.lean:485 | Verify the formal proof `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull` exists and is sorry-free. If the proof is missing, **prove it** rather than weaken the docstring claim that "the error branch is unreachable under `ipcInvariantFull`" — per the implement-the-improvement rule the docstring describes the better state. |
+| DEEP-IPC-05 | I | Model/Object/Types.lean Notification | (REVISED §12.) **Make NoDup type-level on `waitingThreads`.** The `uniqueWaiters` predicate is currently asserted (and operationally enforced via the runtime guard at `Operations/Endpoint.lean:723` per §11.1's withdrawal of DEEP-IPC-01). The improvement is to make NoDup statically discharged (e.g., refinement type, opaque NoDupList). Original "cross-references DEEP-IPC-01" treatment struck per §12 — the cross-reference described the runtime guard but did not propose making the upstream invariant type-level, which is what the implement-the-improvement rule requires. |
 | ~~DEEP-SCH-01~~ | I | Scheduler/RunQueue.lean:66–72 | (NO-ACTION §11.5) The implicit invariant is already documented in a 6-line comment at lines 66–72 inside the structure body, with a reference to `InvariantChecks.runQueueThreadPriorityConsistentB`. |
-| DEEP-SCH-02 | I | Scheduler/Operations/Selection.lean:225–241 vs :327 | Document fail-open vs fail-safe API contract. |
-| DEEP-SCH-03 | I | Lifecycle/Suspend.lean:75–84 / :290+ | Extract shared "restore-to-ready" helper. |
-| DEEP-SCH-04 | I | Scheduler/Operations/Core.lean:715–717 | Surface `.missingSchedContext` instead of silent no-preempt fallback. |
-| DEEP-SCH-05 | I | Scheduler/RunQueue.lean:238 | Replace defensive priority-0 fallback with explicit error or assertion. |
-| DEEP-SCH-06 | I | SchedContext/Operations.lean:141–185 | Verify domain propagation for `schedContextConfigure`. |
-| DEEP-SUSP-01 | I | Lifecycle/Suspend.lean resumeThread | Document/handle PIP recomputation on resume if blocking chain changed during suspension. |
-| DEEP-SUSP-02 | I | Lifecycle/Suspend.lean:88–105 | Document `cancelDonation` two-arm semantics or split into `cancelBoundDonation`/`cancelDonatedDonation`. |
+| DEEP-SCH-02 | I | Scheduler/Operations/Selection.lean:225–241 vs :327 | (REVISED §12.) **Make the API contract uniform.** Either `effectivePriority` and `resolveEffectivePrioDeadline` both return `Option`, or both are total under invariants; the asymmetric contract is a structural smell. Original "document fail-open vs fail-safe" recommendation struck per §12 — symmetric APIs are the better state and should be implemented, not asymmetric APIs labelled with disclaimers. |
+| DEEP-SCH-03 | I | Lifecycle/Suspend.lean:75–84 / :290+ | Extract shared "restore-to-ready" helper. (Already implementation-first; no §12 revision needed.) |
+| DEEP-SCH-04 | I | Scheduler/Operations/Core.lean:715–717 | Surface `.missingSchedContext` instead of silent no-preempt fallback. (Already implementation-first; no §12 revision needed.) |
+| DEEP-SCH-05 | I | Scheduler/RunQueue.lean:238 | Replace defensive priority-0 fallback with explicit error or assertion. (Already implementation-first; no §12 revision needed.) |
+| DEEP-SCH-06 | I | SchedContext/Operations.lean:141–185 | (REVISED §12.) **Implement domain propagation** for `schedContextConfigure` if `boundThreadDomainConsistent` requires it; if not, prove the field is reachable without it. Either way, the "stale field" risk is discharged structurally. Original "verify domain propagation" recommendation struck per §12 — verification alone leaves the gap latent if the answer is "yes, propagation is required." The fix must follow the verification step. |
+| DEEP-SUSP-01 | I | Lifecycle/Suspend.lean resumeThread | (REVISED §12.) **Implement PIP recomputation on resume.** A thread whose blocking chain changed during suspension must have its `pipBoost` re-derived when resumed. Original "document/handle PIP recomputation" recommendation struck per §12 — the documented design implies the recomputation is required, and per the implement-the-improvement rule the code must conform. |
+| DEEP-SUSP-02 | I | Lifecycle/Suspend.lean:88–105 | (REVISED §12.) **Split `cancelDonation` into `cancelBoundDonation` and `cancelDonatedDonation`.** The two semantic arms ("unbind in place" vs "return to original owner") are distinct enough that compressing them under a single name is a readability and correctness hazard. Original "document the two-arm semantics OR split" recommendation: the "or" branch is struck per §12. |
 | DEEP-ARCH-01 | L | **CacheModel.lean only** (NARROWED §11.3) | Reclassify "STATUS: staged for H3" marker on `CacheModel.lean` — it IS in the production chain via `BarrierComposition` ← `TlbModel` ← `SeLe4n.lean`. TimerModel and ExceptionModel are genuinely staged-only; their markers are correct. |
 | ~~DEEP-ARCH-02~~ | ~~L~~ | ~~CrossSubsystem.lean:887–930~~ | **WITHDRAWN (§11.1)** — every one of the 11 `_fields` definitions has 3–26 active consumers in the kernel (verified by `grep -rn`). False positive. |
-| DEEP-ARCH-03 | I | Architecture/ExceptionModel.lean | Document GIC dispatch flow boundary — formal model is in InterruptDispatch.lean. |
-| DEEP-ARCH-04 | I | Architecture/IpcBufferValidation.lean | Either add "STATUS: staged" marker or confirm production. |
-| DEEP-IF-01 | I | InformationFlow/Soundness.lean | Verify import path of `DeclassificationPolicy` structure. |
-| DEEP-IF-02 | I | Policy.lean:484–500 | Document that the parameterised `SecurityDomain` lattice section is intentionally truncated as post-1.0 hook. |
-| DEEP-BOOT-01 | M | Platform/Boot.lean:551 + RPi5/VSpaceBoot.lean | Either thread `rpi5BootVSpaceRoot` into the boot result via the AN9-E rewire of `bootSafeObject`, or remove the unwired data structure. |
+| DEEP-ARCH-03 | I | Architecture/ExceptionModel.lean | (REVISED §12.) **Add the formal Lean-level bridge** from `ExceptionModel`'s classification to `InterruptDispatch`'s acknowledge→handle→EOI flow. Original "document the boundary" recommendation struck per §12 — the documentation's framing assumes the boundary will eventually be bridged formally; that's the implementation work. |
+| DEEP-ARCH-04 | I | Architecture/IpcBufferValidation.lean | The marker is either correct or stale. If the file is in production, **remove the stale marker** (legitimate-exception clause: doc is the inferior artefact). If the file is genuinely staged-only, **add the marker** (so the staged state is visible to readers and the file is enrolled in `Platform/Staged.lean`). Verification first, then the corresponding action. |
+| DEEP-IF-01 | I | InformationFlow/Soundness.lean | Verify import path of `DeclassificationPolicy` structure. If missing, **define it** rather than weaken the soundness theorem statement. |
+| DEEP-IF-02 | I | Policy.lean:484–500 | (REVISED §12.) **Complete the parameterised `SecurityDomain` lattice section.** Original "document that the section is intentionally truncated as a post-1.0 hook" recommendation struck per §12 — the spec implies a complete lattice; the implementation must finish it rather than the spec be re-framed as deliberately truncated. |
+| DEEP-BOOT-01 | M | Platform/Boot.lean:551 + RPi5/VSpaceBoot.lean | (REVISED §12.) **Thread `rpi5BootVSpaceRoot` through the boot result** by rewriting `bootSafeObject` (line 551) to admit `VSpaceRoot` objects that satisfy `bootSafeVSpaceRoot` (RPi5/VSpaceBoot.lean:272–297). Original "thread it OR remove the unwired data structure" alternative struck per §12 — the verified data structure is the better state and the code must consume it; removing finished proof work to match an inferior boot path is rejected. |
 | DEEP-FDT-01 | L | Platform/DeviceTree.lean:695–740 | Distinguish fuel exhaustion from malformed-blob in `findMemoryRegPropertyChecked`. |
 | ~~DEEP-RUST-01~~ | ~~L~~ | ~~rust/sele4n-hal/src/mmio.rs~~ | **WITHDRAWN (§11.1)** — every MMIO unsafe block already cites `(ARM ARM B2.1)`. False positive. |
 | ~~DEEP-RUST-02~~ | ~~L~~ | ~~rust/sele4n-hal/src/registers.rs~~ | **WITHDRAWN (§11.1)** — `mrs`/`msr` `asm!` blocks already cite `(ARM ARM C5.2)`, the correct section for system register access mnemonics. False positive. |
@@ -1375,62 +1658,136 @@ only real candidates this audit found.
 | DEBT-TST-01 | **OPEN** | NegativeStateSuite split. |
 | DEBT-BOOT-01 | **OPEN** (interacts with DEEP-BOOT-01) | AF3-F minimum-config validation. |
 
-### 10.3 Recommended pre-1.0 must-fix sequence
+### 10.3 Recommended pre-1.0 must-fix sequence (post-§12 revision)
 
-The pre-1.0 cleanup PR plan (in priority order):
+The pre-1.0 cleanup PR plan, ordered smallest implementation slice
+first. The predecessor's "Honesty PR" (a documentation-only patch
+for the FFI gap) has been replaced with the corresponding
+**implementation** PRs per the implement-the-improvement rule. The
+genuinely-documentation items (README metric drift, source-layout
+omissions, archived-link annotation) ride at the end of the
+sequence rather than the beginning, because they have no
+documented-better-state-than-code conflict.
 
-1. **PR 1 — Honesty.** Update README, AGENTS.md, CLAUDE.md (closes
-   DEEP-DOC-01, -02, -03, -05, -06, DEEP-LICENSE-01, DEEP-FFI-03,
-   DEEP-FFI-02, DEBT-DOC-01). One PR; all documentation.
-2. **PR 2 — Safety symmetry in IPC.** Close DEEP-IPC-03 (AK1-I) by
-   aligning send/call cap-transfer error with receive. Information-flow
-   covert-channel hardening.
-3. **PR 3 — Classical removal.** Rewrite `Preservation.lean:1720`
-   constructively (DEEP-PROOF-01). Closes the project's stated
-   "constructive Lean kernel" discipline.
-4. **PR 4 — Test rename.** Strip workstream IDs from test
-   filenames and identifiers (DEEP-TEST-01/02). Pure rename PR; large
-   churn but mechanical.
-5. **PR 5 — Pre-commit hardening.** Replace the regex `sorry` check
-   with a Lean tokenizer-based check (DEEP-PRECOM-01).
+1. **PR 1 — IPC NI symmetry (one line).** Close DEEP-IPC-03 by
+   aligning the call cap-transfer error with the send/receive
+   pattern at `IPC/DualQueue/WithCaps.lean:198`.
+2. **PR 2 — Hardware syscall dispatch wiring (substantive).**
+   Close DEEP-FFI-01 + DEEP-FFI-02 + DEEP-FFI-03 + DEEP-DOC-05
+   together: thread `SystemState` through the FFI, implement
+   `syscallDispatchFromAbi` (the typed-ABI Lean entry point the
+   Rust comment already described), wire
+   `syscall_dispatch_inner` and `suspend_thread_inner` to
+   `syscallEntryChecked` and `suspendThread` respectively, and
+   apply uniform `hwTarget` gating to `@[export]` declarations.
+   This is the headline implementation slice the v1.0 cut is
+   contingent on.
+3. **PR 3 — Boot VSpace threading.** Close DEEP-BOOT-01 by
+   rewriting `bootSafeObject` to admit
+   `bootSafeVSpaceRoot`-compliant VSpaceRoot objects, then
+   threading `rpi5BootVSpaceRoot` into the boot result.
+4. **PR 4 — Structural-invariant promotions.** Close
+   DEEP-MODEL-01, DEEP-CAP-04, DEEP-IPC-05 by promoting the
+   currently-implicit invariants (`slotsUnique`, RetypeTarget
+   non-bypass, NoDup on `waitingThreads`) to type-level.
+5. **PR 5 — Behaviour symmetry & function splits.** Close
+   DEEP-SUSP-01 (PIP recomputation on resume), DEEP-SUSP-02
+   (cancelDonation split), DEEP-SCH-02 (uniform priority API),
+   DEEP-SCH-04, DEEP-SCH-05, DEEP-SCH-06, DEEP-SCH-03.
+6. **PR 6 — Architecture/InformationFlow completeness.**
+   Close DEEP-ARCH-03 (Lean-level GIC bridge), DEEP-IF-02
+   (complete SecurityDomain lattice), DEEP-IF-01 (verify or
+   define DeclassificationPolicy).
+7. **PR 7 — Capability deferred-items closure.** Close
+   DEEP-CAP-05 by addressing the AK8-K LOW-tier items inline
+   where the fix fits, lifting the residue into the project
+   debt register.
+8. **PR 8 — Test rename.** Strip workstream IDs from
+   `Ak8CoverageSuite.lean`, `An9HardwareBindingSuite.lean`,
+   `Ak9PlatformSuite.lean`, `An10CascadeSuite.lean` and their
+   workstream-ID-prefixed test functions. Mechanical rename
+   PR; large churn (DEEP-TEST-01/02).
+9. **PR 9 — Pre-commit hardening.** Replace the regex `sorry`
+   check with a Lean tokeniser-based check (DEEP-PRECOM-01).
+10. **PR 10 — License header sweep.** Add SPDX header to
+    `SeLe4n.lean` (DEEP-LICENSE-01).
+11. **PR 11 — Documentation accuracy (genuinely-doc tier).**
+    Close DEEP-DOC-01 (README metric drift), DEEP-DOC-02
+    (AGENTS.md disposition — rewrite or redirect),
+    DEEP-DOC-03 (CLAUDE.md source-layout entries),
+    DEEP-DOC-04 (archived-audit link annotation),
+    DEEP-DOC-06 (test-suite count drift), DEEP-ARCH-01
+    (CacheModel marker correction), DEBT-DOC-01.
+12. **PR 12 — CI hygiene.** Add `concurrency:` blocks to
+    non-Lean workflows (DEEP-CI-01).
 
-Items 1–5 plus the predecessor's must-fix lane (refresh metrics,
-re-confirm H-24) constitute the v1.0 readiness PR set.
+PRs 1–6 are the v1.0 readiness set. PRs 7–12 may ship as a
+v1.0 follow-up or be folded into the v1.0 cut if effort
+permits. **Crucially, no documentation-only patch is now
+proposed as a substitute for an implementation slice.**
 
-### 10.4 Hardware-readiness recommendation (the bigger picture)
+The post-1.0 maintainability backlog continues to include
+DEEP-PROOF-01 (Classical removal restructuring),
+DEEP-MODEL-02 (record-shaped 17-conjunct invariant),
+DEBT-CAP-01/02, DEBT-SCH-01/02, DEBT-IF-01/02, DEBT-SVC-01,
+DEBT-IPC-01/02, DEBT-RT-01, DEBT-FR-01, DEBT-RUST-01,
+DEBT-TST-01, DEBT-BOOT-01.
 
-The kernel today is, in effect, **two artefacts shipped together**:
+### 10.4 Hardware-readiness recommendation (the bigger picture, post-§12 revision)
+
+The kernel today is, in effect, **two artefacts assembled into one
+release candidate**:
 
 1. **The proof artefact** — 109,787 lines of Lean, 0 sorry/axiom,
-   parametric WCRT, faithful information-flow composition,
-   verified data structures, ARM-architectural correctness boundaries
-   (ASID uniqueness, W^X, TLB+cache coherency, FDT bounds-checking,
-   boot hardening). This is **production-ready** for academic and
+   parametric WCRT, faithful information-flow composition, verified
+   data structures, ARM-architectural correctness boundaries (ASID
+   uniqueness, W^X, TLB+cache coherency, FDT bounds-checking, boot
+   hardening). The proof artefact is **complete** for academic and
    industrial consumption as a verified microkernel specification.
 2. **The hardware shim** — Rust HAL with 53 careful `unsafe` blocks
-   (each ARM-ARM-cited with two missing references — DEEP-RUST-01/02),
-   GIC-400 init, MMU bringup, MMIO accessors, exception vectors. This
-   is **mostly production-ready** for hardware boot, but the SVC
-   dispatch glue (`syscall_dispatch_inner` and `suspend_thread_inner`)
-   is currently a stub that returns NotImplemented for every call.
+   (each ARM-ARM-cited; DEEP-RUST-01/02 withdrawn in §11.1), GIC-400
+   init, MMU bringup, MMIO accessors, exception vectors. The shim is
+   complete *except* for the SVC dispatch glue
+   (`syscall_dispatch_inner` and `suspend_thread_inner`), which is
+   currently a stub returning `NotImplemented` for every call.
 
-Tagging v1.0 today is honest if and only if the release notes
-explicitly state which artefact is being released. The most defensible
-path:
+The predecessor audit and earlier drafts of this document recommended
+splitting v1.0 into two interpretations ("v1.0 = proof artefact" vs
+"v1.0 = bootable kernel") and tagging the proof-artefact cut now,
+deferring the bootable cut to v1.x. **The §12 revision rejects this
+approach.** Per the implement-the-improvement rule:
 
-- **v1.0.0** = "verified microkernel **specification** — the proof
-  artefact, with a working simulation harness and a hardware boot
-  shim that wires interrupts and MMU but does not yet route syscalls
-  to the verified dispatcher."
-- **v1.x.0** = the AN9-D / AN9-F closure — wires
-  `syscallDispatchInner` and `suspendThreadInner` to
-  `syscallEntryChecked` and `suspendThread` respectively, threading
-  `SystemState` through the FFI as required by the docstring's own
-  v1.x roadmap.
+- The project's documentation, README headline, and CLAUDE.md
+  description all describe a microkernel that runs on Raspberry Pi 5
+  hardware. That is the better state.
+- The remediation is to make the hardware path functional (PR 2 in
+  the §10.3 sequence) so the documentation becomes true, **not** to
+  dilute the documentation to match a stub.
+- A v1.0 tag on a kernel that cannot dispatch syscalls on its named
+  hardware target — regardless of how comprehensive its specification
+  proofs are — is incompatible with the project's defining property
+  of honesty about correctness.
 
-Calling the v1.0 cut a "fully verified bootable microkernel" without
-this clarification would be a credibility risk for a project whose
-defining property is honesty about correctness.
+The recommended release path, post-§12:
+
+- **`v0.31.0` "verified specification release"** — tag the current
+  state. Include the §10.3 PR 8–12 documentation/hygiene work if
+  effort permits. This release is correctly described as a verified
+  microkernel specification + simulation harness + hardware boot
+  shim. No claims about hardware syscall dispatch. **No
+  documentation-surgery is needed** because the release is named
+  for what it actually is.
+- **`v1.0.0` "bootable verified microkernel"** — tag once §10.3 PRs
+  1–6 land. The defining v1.0 property is that
+  `syscallEntryChecked` is reachable from a real RPi5 SVC; the
+  CLAUDE.md "First hardware target: Raspberry Pi 5" statement is
+  then literally true.
+
+This separation costs one extra release tag in exchange for
+honesty about scope. Tagging v1.0 today and patching the
+documentation to "explain" why the kernel cannot service syscalls
+on hardware would violate the implement-the-improvement rule and
+the project's own correctness-honesty premise.
 
 ### 10.5 Sign-off
 
@@ -1445,28 +1802,40 @@ The audit finds **two H-severity findings** affecting v1.0 readiness
 (post-verification): DEEP-FFI-01 (the syscall-dispatch stub on
 hardware) and DEEP-IPC-03 (the call-path NI asymmetry, narrowed to
 one line at `IPC/DualQueue/WithCaps.lean:198`). The first is
-acknowledged debt that needs honest disclosure in release notes; the
-second is a one-line code change mirroring AK1-I's pattern.
+acknowledged debt that, per the §12 revision and CLAUDE.md's
+implement-the-improvement rule, must be **closed by implementing
+the dispatch routing**, not by release-note disclosure. The second
+H finding (DEEP-IPC-03) is a one-line code change mirroring AK1-I's
+pattern.
 DEEP-DOC-01 (the README inconsistency) was downgraded H→M during
 the verification pass — still pre-1.0 must-fix as a credibility item.
 
 Beyond that, this audit refines the predecessor's debt register with
-50+ specific, actionable findings (DEEP-* IDs above), most of which
-are documentation-hygiene or post-1.0 maintainability work. None of
-them block a v1.0 tag if the release-notes wording correctly
-distinguishes "proof artefact" from "bootable kernel."
+50+ specific, actionable findings (DEEP-* IDs above). Per the §12
+implement-the-improvement revision, **a v1.0 tag is contingent on
+§10.3 PRs 1–6 landing** — the proof artefact alone is not v1.0;
+v1.0 is the bootable verified microkernel that the project's own
+documentation describes. The genuinely-documentation findings
+(README/CLAUDE.md/AGENTS.md hygiene; archived-link annotation;
+SPDX header; CI concurrency) ride PR 11–12 and may follow the
+v1.0 tag if effort dictates.
 
 The prior audit's headline ("the kernel exhibits mature proof
-discipline … explicit hardware-correctness boundaries … and disciplined
-Rust safety") **stands**, with one substantive correction: the
-hardware-correctness boundary is **not yet wired into the syscall
-fast path**, and the documentation should say so.
+discipline … explicit hardware-correctness boundaries … and
+disciplined Rust safety") **stands**, with one substantive
+correction: the hardware-correctness boundary is **not yet wired
+into the syscall fast path**, and the project must close that gap
+in code rather than dilute the documentation that asserts it.
 
 — Audit closed 2026-04-28 on branch
-`claude/comprehensive-project-audit-E6NYp`. Successor audit cycle
-should re-verify DEEP-FFI-01 (closed when AN9-D/AN9-F glue lands)
-and the documentation findings (closed when the must-fix PR set
-merges).
+`claude/comprehensive-project-audit-E6NYp`; revised 2026-04-28 on
+branch `claude/fix-audit-findings-Feksd` to apply the
+implement-the-improvement rule (CLAUDE.md). Successor audit cycle
+should re-verify DEEP-FFI-01 (closed when the dispatch wiring
+lands), the §12-revised structural findings (DEEP-MODEL-01,
+DEEP-CAP-04, DEEP-IPC-05, DEEP-SUSP-01/02, DEEP-SCH-02/06,
+DEEP-IF-02, DEEP-ARCH-03, DEEP-BOOT-01), and the
+genuinely-documentation findings (closed when PR 11 merges).
 
 ---
 
@@ -1480,8 +1849,7 @@ corrections strictly tighten the audit** — no new high-severity
 findings emerged from the verification pass; several findings were
 **withdrawn** because they were false positives.
 
-### 11.1 Findings WITHDRAWN (false positives — remove from any
-remediation plan)
+### 11.1 Findings WITHDRAWN (false positives — remove from any remediation plan)
 
 - **DEEP-CAP-02 — WITHDRAWN.** Claim was that `cspaceMutate` does
   not validate "slot already contains a capability" before mutation.
@@ -1610,12 +1978,16 @@ remediation plan)
   ultimately backed by `Classical.choice` (an axiom in Lean's
   standard library, not in this project's code). The project's
   "no axiom" policy in CLAUDE.md is ambiguous on whether stdlib
-  Classical primitives count. Severity reduced to L; the
-  recommendation now is "either restructure the proof to be
-  fully constructive (and document the technique as a model for
-  similar future cases), OR add a one-line note in CLAUDE.md
-  clarifying that Lean stdlib's Classical.* primitives are
-  permitted but not encouraged."
+  Classical primitives count. Severity reduced to L.
+  **§12 revision:** the original §11.4 alternative
+  ("OR add a one-line note in CLAUDE.md clarifying that Lean
+  stdlib Classical primitives are permitted") is **struck** per
+  the implement-the-improvement rule. The project's
+  "constructive Lean kernel" discipline is design intent and
+  must be made true via proof restructuring, not relaxed via
+  a CLAUDE.md note. The restructuring is scheduled as a v1.x
+  task; until it lands, the single Classical use is recorded
+  as known debt, not endorsed.
 
 ### 11.5 Findings with RECOMMENDATIONS refined for optimality
 
@@ -1713,38 +2085,242 @@ The updated headline: **0 critical, 2 high, 10 medium, 18 low,
 18 informational, 48 total** new DEEP-* findings, with 5
 withdrawn for false positives.
 
-### 11.7 Recommendation: proceed with the §10.3 must-fix sequence
-with the following adjustments
+### 11.7 Verification-pass adjustments to the original §10.3 sequence (superseded by §12)
 
-- **PR 1 (Honesty)**: now closes 6 items, not 8 — drop DEEP-CAP-02,
-  DEEP-IPC-01 from the documentation PR (they were code findings
-  to begin with and are now withdrawn). Add the AGENTS.md
-  delete-or-stub action.
-- **PR 2 (NI symmetry)**: scope reduced to a single file edit at
-  `IPC/DualQueue/WithCaps.lean:198`, replacing
-  `.ok ({ results := #[] }, st')` with `.error .invalidCapability`
-  (matching the AK1-I pattern at line 125).
-- **PR 3 (Classical removal)**: re-evaluate whether to do this at
-  all. Since the use is L-severity and Lean stdlib's Classical
-  primitives are foundationally safe, deferring this to v1.x
-  with a CLAUDE.md note clarifying policy is acceptable.
-- **PR 4 (Test rename)**: unchanged.
-- **PR 5 (Pre-commit hardening)**: scope reframed to
-  "**replace the fragile regex with a Lean tokeniser-based
-  check**" (the over-zealous failure mode is the symptom; the
-  root cause is using a regex on a comment-syntax-sensitive
-  language).
+The verification pass produced this list of adjustments to the
+original 5-PR §10.3 sequence:
+
+- PR 1 (Honesty): 6 items, not 8.
+- PR 2 (NI symmetry): scope reduced to a single file edit.
+- PR 3 (Classical removal): consider deferring with a CLAUDE.md
+  note that Lean-stdlib Classical is permitted.
+- PR 4 (Test rename): unchanged.
+- PR 5 (Pre-commit hardening): regex → Lean tokeniser.
+
+**§12 supersedes this list.** The PR 1 "Honesty" tier is dissolved
+into PR 2 (Hardware syscall dispatch wiring) and PR 11
+(Documentation accuracy). The PR 3 "defer with a CLAUDE.md note"
+proposal is **struck** per the implement-the-improvement rule —
+the only acceptable resolution is the proof restructuring (see
+DEEP-PROOF-01 row in §10.1). PRs 2, 4, and 5 carry forward into
+the §10.3 post-§12 sequence as PRs 1, 8, and 9 respectively. See
+§10.3 for the canonical post-§12 PR plan and §12 for the
+governing principle.
 
 ### 11.8 Verification pass sign-off
 
-The verification pass increases confidence in the audit by
+The verification pass increased confidence in the audit by
 removing false positives and tightening recommendations toward
 the genuinely optimal fix in each case. **No new high-severity
-findings emerged.** The headline conclusion of §10 stands:
-proof artefact is clean and release-ready; hardware-bootable
-kernel is not, pending AN9-D / AN9-F closure of the FFI
-dispatch glue.
+findings emerged from the verification pass.** A subsequent
+**§12 implement-the-improvement revision** (same day) re-issued
+the documentation-only recommendations as their corresponding
+implementation slices and re-shaped the §10.3 must-fix sequence
+and §10.4 release recommendation accordingly. The post-§12
+headline: proof artefact is clean; the v1.0 cut requires §10.3
+PRs 1–6 to land; tagging v1.0 with a documentation-only patch
+of the FFI gap is rejected.
 
 — Verification pass closed 2026-04-28 on the same branch as
-the original audit.
+the original audit; superseded by §12 the same day.
+
+---
+
+## 12. Implement-the-improvement revision (2026-04-28, same day)
+
+After the §11 verification pass closed, a final review of the
+audit's recommendations identified that several findings were
+recommending **documentation-only patches** for cases where the
+documentation already described the *better* state and the code
+was the *inferior* artefact. Examples in the original audit:
+
+- DEEP-FFI-01 recommended "disclose the hardware-dispatch gap in
+  release notes" — but the FFI docstrings, the design intent, and
+  the Rust comment all describe a working dispatch routing. The
+  documentation describes the better state; the code is the stub.
+- DEEP-FFI-02 recommended "replace the Rust comment's reference to
+  `syscallDispatchFromAbi` with the actual exported symbol name" —
+  but the comment was describing the typed-ABI Lean entry point
+  the design calls for. The documentation describes the better
+  state; the code lacks the function.
+- DEEP-DOC-05 recommended "qualify the CLAUDE.md statement 'First
+  hardware target: Raspberry Pi 5' with a v1.0 dispatch-stub
+  caveat" — but the statement is the project's design intent. The
+  documentation describes the better state; the code lacks the
+  hardware path.
+- DEEP-BOOT-01 offered the alternative "thread the verified
+  VSpaceRoot OR remove the unwired data structure" — but the
+  proven-W^X-compliant data structure is the better state. The
+  "remove" alternative would discard finished proof work to match
+  inferior boot code.
+- DEEP-MODEL-01 recommended "inline comment flagging the
+  `slotsUnique` proof obligation" — but the proof obligation
+  describes a stronger invariant than the field type advertises.
+  Structural enforcement is the better state.
+- DEEP-CAP-04 recommended "strengthen the warning comment on the
+  `RetypeTarget` phantom witness" — but the comment admits a real
+  bypass route, and structural prevention of that bypass is the
+  better state.
+- DEEP-IPC-05, DEEP-SCH-02, DEEP-SCH-06, DEEP-SUSP-01,
+  DEEP-SUSP-02, DEEP-IF-02, DEEP-ARCH-03 — same pattern in each
+  case.
+- DEEP-PROOF-01's secondary recommendation ("add a CLAUDE.md note
+  clarifying that Lean stdlib Classical is permitted") would
+  weaken the project's "constructive Lean kernel" discipline to
+  match a single non-constructive proof site, exactly the failure
+  mode the rule prohibits.
+
+These patterns violate the engineering principle the user
+articulated and which is now codified in CLAUDE.md as the
+**Implement-the-improvement rule**:
+
+> When an audit, code review, or any reading of the codebase
+> surfaces a discrepancy between the **code** on one side and the
+> **documentation, docstring, comment, type signature, or design
+> intent** that describes it on the other side, and the
+> description represents an *improvement* over the actual code,
+> the remediation is **always** to implement the improvement so
+> the description becomes true. It is **forbidden** to weaken,
+> dilute, qualify, or rewrite the documentation to match
+> inferior code.
+
+### 12.1 Findings revised by §12
+
+Every finding listed below has been re-issued with an
+implementation-first remediation in §10.1. The bullets here are
+the canonical record of *what changed* in each row:
+
+| Finding | Before §12 | After §12 |
+|---|---|---|
+| DEEP-FFI-01 | "Disclose hardware-dispatch gap in release notes" | "Implement dispatch routing into `syscallEntryChecked`/`suspendThread`" |
+| DEEP-FFI-02 | "Fix the Rust comment's misnamed reference" | "Implement `syscallDispatchFromAbi` (the typed-ABI entry point the comment described)" |
+| DEEP-FFI-03 | "Clarify the docstring's gating asymmetry" | "Implement uniform `hwTarget` gating for `@[export]` declarations" |
+| DEEP-DOC-05 | "Qualify 'First hardware target: Raspberry Pi 5' with stub-status caveat" | "No documentation change; make the original statement true via DEEP-FFI-01" |
+| DEEP-BOOT-01 | "Thread the VSpaceRoot OR remove the unwired data structure" | "Thread `rpi5BootVSpaceRoot` through `bootSafeObject`" (the "or remove" alternative struck) |
+| DEEP-MODEL-01 | "Inline comment flagging the proof obligation" | "Enforce `slotsUnique` structurally (opaque type or paired proof field)" |
+| DEEP-CAP-04 | "Strengthen the warning comment" | "Wrap `RetypeTarget` construction in a smart-constructor that requires cleanup invocation" |
+| DEEP-CAP-05 | "Move deferred items from header comment to debt register" | "Address the deferred items where scope permits; lift the residue to the debt register only as a fallback" |
+| DEEP-IPC-04 | "Verify the proof exists" | "Verify; if missing, **prove it** rather than weaken the docstring claim" |
+| DEEP-IPC-05 | "Cross-references DEEP-IPC-01" (no action) | "Promote NoDup on `waitingThreads` to type-level enforcement" |
+| DEEP-SCH-02 | "Document the asymmetric API contract" | "Make the API uniform" |
+| DEEP-SCH-06 | "Verify domain propagation" | "Implement domain propagation if required; if not, prove it isn't required" |
+| DEEP-SUSP-01 | "Document/handle PIP recomputation" | "Implement PIP recomputation on resume" |
+| DEEP-SUSP-02 | "Document the two-arm semantics OR split into two functions" | "Split `cancelDonation` into `cancelBoundDonation` and `cancelDonatedDonation`" (the "or document" alternative struck) |
+| DEEP-IF-01 | "Verify import path of `DeclassificationPolicy`" | "Verify; if missing, **define** the structure rather than weaken the soundness theorem" |
+| DEEP-IF-02 | "Document that the SecurityDomain lattice is intentionally truncated" | "Complete the parameterised SecurityDomain lattice section" |
+| DEEP-ARCH-03 | "Document the GIC dispatch flow boundary" | "Add the formal Lean-level bridge from `ExceptionModel` to `InterruptDispatch`" |
+| DEEP-PROOF-01 (secondary recommendation) | "Add a CLAUDE.md note that Lean stdlib Classical is permitted" | Struck. Restructure the proof constructively (deferred to v1.x as known debt; not endorsed via documentation) |
+
+### 12.2 Findings NOT revised by §12 (legitimate exceptions and clean cases)
+
+Some findings remained untouched by the §12 revision because
+their existing recommendation already conformed to the
+implement-the-improvement rule, or because they fell under the
+rule's legitimate-exception clause (documentation describing a
+*worse* state than the code, where the doc is the inferior
+artefact and updating it to match the code is correct):
+
+- **DEEP-IPC-03** — already implementation-first in original audit
+  (one-line code change at `IPC/DualQueue/WithCaps.lean:198`).
+- **DEEP-SCH-03/04/05** — already implementation-first.
+- **DEEP-FDT-01** — already implementation-first.
+- **DEEP-PRECOM-01** — already implementation-first (replace
+  regex with tokeniser).
+- **DEEP-RUST-06** — already implementation-first (extend
+  conformance tests).
+- **DEEP-LICENSE-01** — already implementation-first (add SPDX
+  header).
+- **DEEP-MODEL-02** — already implementation-first per §11.5
+  refinement (record-shaped invariant).
+- **DEEP-TEST-01/02/03/04** — implementation actions
+  (rename / extend / verify).
+- **DEEP-CI-01** — already implementation-first.
+- **DEEP-DOC-01, DEEP-DOC-02, DEEP-DOC-03, DEEP-DOC-04,
+  DEEP-DOC-06** — pure documentation drift (the docs describe a
+  *worse* state than the code, e.g., omitted source-layout
+  entries for files that exist; mis-stated test-suite count;
+  stale archived-link annotations). Legitimate-exception clause:
+  the documentation is the inferior artefact and updating it to
+  match the better code is correct.
+- **DEEP-ARCH-01 (CacheModel marker)** — same legitimate-exception
+  case: the "STATUS: staged" marker describes a worse state than
+  the code (the file is in the production import chain). Update
+  the marker.
+- **DEEP-RUST-03/04/05** — comment accuracy and module-level doc
+  additions (no code↔doc improvement asymmetry that the rule
+  governs).
+- **DEEP-SCRIPT-01** — manifest timestamp staleness.
+- **DEEP-PRELUDE-01/02** — code refactor improvements (no
+  doc↔code conflict).
+- **DEEP-CAP-01** — verification pass already chose the
+  implementation-conforming fix (promote inline rationale to
+  formal docstring; no code change because code is correct).
+- **DEEP-CAP-03 / DEEP-SCH-01** — demoted to no-action by §11.5
+  (existing documentation already accurate).
+
+### 12.3 Severity counts (post-§12)
+
+| Severity | Post-§11 | Post-§12 | Reshaped remediations |
+|---|---|---|---|
+| Critical (C) | 0 | 0 | – |
+| High (H) | 2 | 2 | DEEP-FFI-01 |
+| Medium (M) | ~10 | ~10 | DEEP-FFI-02, DEEP-BOOT-01 |
+| Low (L) | ~18 | ~18 | DEEP-MODEL-01, DEEP-PROOF-01 |
+| Informational (I) | ~18 | ~18 | DEEP-FFI-03, DEEP-DOC-05, DEEP-CAP-04, DEEP-CAP-05, DEEP-IPC-04, DEEP-IPC-05, DEEP-SCH-02, DEEP-SCH-06, DEEP-SUSP-01, DEEP-SUSP-02, DEEP-IF-01, DEEP-IF-02, DEEP-ARCH-03 |
+| **Total DEEP-* findings** | ~48 | ~48 | **18 reshaped** |
+
+The §12 revision **does not change severity counts.** It changes
+the *shape of the remediation* for 18 findings (those listed in
+§12.1 and the rightmost column above). The reshaped remediations
+are typically larger code slices than the original documentation
+patches, so the **PR plan in §10.3 grew from 5 PRs to 12 PRs** —
+one of the §12 revision's most visible effects.
+
+Crucially, the *informational* severity rating of (e.g.)
+DEEP-SUSP-01 remains accurate: the current code state is low-risk
+because the missing PIP recomputation is masked by upstream
+invariants. The reshaped remediation (implement the recomputation
+rather than document it) is pre-1.0 priority **not** because the
+bug is high-severity but because the implement-the-improvement
+rule mandates that the documented design intent be made true
+rather than relaxed.
+
+### 12.4 Audit conclusion under the §12 revision
+
+The audit's headline is unchanged at the severity level: 0 C, 2
+H, ~10 M, ~18 L, ~18 I. What changes is the **release path**.
+
+Pre-§12: the audit recommended a v1.0 cut with documentation
+disclosure of the hardware-dispatch gap.
+
+Post-§12: a v1.0 cut requires the gap to be **closed** rather
+than disclosed. The release path now includes a
+`v0.31.0` "verified specification release" tag for the current
+state and a `v1.0.0` "bootable verified microkernel" tag once
+§10.3 PRs 1–6 land. This separation is the audit's
+post-§12 recommendation and reflects the project's defining
+property of honesty about correctness.
+
+### 12.5 Forward-looking note
+
+Future audits on this project should apply the implement-the-
+improvement rule from the outset rather than as a post-hoc
+revision. The following preflight question should accompany
+every audit finding:
+
+> "Does my recommendation make the documentation true (by
+> changing code), or does it make the code's current behaviour
+> defensible (by changing documentation)? If the latter, am I
+> certain the documentation describes a *worse* state than the
+> code, not a *better* one?"
+
+If the answer is "the documentation describes a better state,"
+the recommendation must be the code change. The CLAUDE.md
+section "Implement-the-improvement rule" is the canonical
+reference.
+
+— Implement-the-improvement revision closed 2026-04-28 on
+branch `claude/fix-audit-findings-Feksd`. This is the
+authoritative version of the audit; §10–§11 are retained for
+provenance but are superseded where they conflict with §12.
 
