@@ -15,23 +15,124 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
-**WS-AN portfolio: COMPLETE at v0.30.11.** All 13 phases (AN0–AN12), 95
-top-level sub-tasks, and ~253 sub-sub-task commits landed; the kernel is
-at v1.0.0-release-candidate parity. Final tag application is a separate
-manual maintainer action per the AK10-C precedent (no automated tag).
+**WS-RC remediation workstream IN FLIGHT (v0.30.11 → v0.31.0 →
+v1.0.0).** Remediates the v0.30.11 audit cycle (comprehensive + deep
+verification) via 15 phases (R0..R14). The pre-v1.0 must-fix tier
+spans R0..R6; the release-aligned cleanup tier spans R7..R12; R13 is
+reserved for emergent items; R14 is the post-1.0 maintainability
+backlog. Plan:
+[`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md).
+Baseline:
+[`docs/audits/AUDIT_v0.30.11_WS_RC_BASELINE.txt`](audits/AUDIT_v0.30.11_WS_RC_BASELINE.txt).
+Errata:
+[`docs/audits/AUDIT_v0.30.11_ERRATA.md`](audits/AUDIT_v0.30.11_ERRATA.md).
+Discharge index seed:
+[`docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`](audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md).
 
-**No currently-active workstream**: 14 of 15 absorbed deferred items are
-RESOLVED (DEF-F-L9 17-tuple refactor retained as a post-1.0 cosmetic
-improvement; tracked at the bottom of
+**Release path:**
+- `v0.31.0` "verified specification release" — R0+R1+R8..R12 land.
+- `v1.0.0` "bootable verified microkernel" — additionally R2..R6 land
+  (FFI dispatch wiring, boot VSpace threading, structural-invariant
+  promotions, scheduler/lifecycle behaviour symmetry, architecture /
+  information-flow completeness).
+
+**WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
+below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
+refactor retained as a post-1.0 cosmetic improvement; tracked at the
+bottom of
 [`docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md`](dev_history/audits/AUDIT_v0.29.0_DEFERRED.md)).
 Zero items carry past v1.0.0 with correctness impact.
 
 **Next hardware milestone**: Raspberry Pi 5 hardware binding — ARMv8
 page table walk, GIC-400 interrupt routing, boot sequence. All
 pre-benchmark workstreams (WS-B through WS-U Phase U8) are complete;
-the remaining hardware-binding gaps (TLB+cache composition, SVC FFI
-wiring, secondary-core bring-up / SMP) are absorbed into WS-AN Phase
-AN9 as pre-1.0 work rather than carried past v1.0.0.
+the remaining hardware-binding gaps (Lean ↔ Rust syscall-dispatch
+FFI wiring under DEEP-FFI-01..03, boot VSpace threading under
+DEEP-BOOT-01) are scheduled for WS-RC R2 (v1.0.0-blocking) and
+WS-RC R3 (v1.0.0-blocking) respectively. Cleanups for TLB+cache
+composition, secondary-core bring-up / SMP and the explicit
+single-core kernel model were closed in WS-AN AN9.
+
+## WS-RC — Pre-1.0 Audit Remediation (v0.30.11 → v0.31.0 → v1.0.0, **IN FLIGHT**)
+
+**Audit (comprehensive):** [`docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md`](audits/AUDIT_v0.30.11_COMPREHENSIVE.md)
+**Audit (deep verification):** [`docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md`](audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md)
+**Plan:** [`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)
+**Baseline:** [`docs/audits/AUDIT_v0.30.11_WS_RC_BASELINE.txt`](audits/AUDIT_v0.30.11_WS_RC_BASELINE.txt) (R0.1 snapshot, 2026-04-29)
+**Errata:** [`docs/audits/AUDIT_v0.30.11_ERRATA.md`](audits/AUDIT_v0.30.11_ERRATA.md) (E-1..E-4)
+**Discharge index:** [`docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`](audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md) (R0.3 seed)
+**Phases:** 15 (R0..R14). v0.31.0 set: R0+R1+R8..R12. v1.0.0 set: + R2..R6. Optional: R7. Reserved: R13. Post-1.0: R14.
+**Active items:** ~68 (~45 DEEP-* + 6 false-positive structural fixes + 17 predecessor DEBT-*).
+
+### R0 — Audit baseline and bookkeeping (v0.30.11, **COMPLETE**)
+
+R0 cuts the WS-RC numeric baseline so monotonicity gates have a stable
+anchor; verifies the audit errata (E-1..E-4) against the live tree;
+seeds the closure-form discharge index for R1..R12 increments; lands
+the predecessor DEBT-RUST-02 / H-24 closure annotation in the archived
+v0.30.6 discharge index; updates `docs/audits/README.md` to reflect
+the four new live artefacts; opens the WS-RC entry in this file.
+
+- **R0.1 (baseline cut)**:
+  [`docs/audits/AUDIT_v0.30.11_WS_RC_BASELINE.txt`](audits/AUDIT_v0.30.11_WS_RC_BASELINE.txt)
+  records 12 sections of canonical metrics (provenance, build/test gate,
+  source-purity, fixture verification, production tree shape,
+  production/staged partition, Rust HAL unsafe-block census, workstream-
+  scope severity tally, DEBT-RUST-02 reconfirmation, AL0 carry-over note,
+  test harness inventory, verification commands, machine-diffable
+  KEY=value tail). Headline numbers: 302 lake jobs / 462 cargo tests /
+  0 clippy warnings / 0 sorry / 0 axiom / 0 partial def / 167 production
+  Lean files / 109,791 production lines / 168 production modules
+  (including Main.lean) / 158 production-chain modules / 10
+  staged-only modules / 59 HAL unsafe blocks / source digest
+  `0ac75f31…`.
+- **R0.2 (errata verification)**: ERRATA E-1..E-4 re-verified against
+  the live tree. E-1 (DEEP-ARCH-01): `BarrierComposition.lean` has 0
+  imports — confirms CacheModel/TimerModel/ExceptionModel/
+  TlbCacheComposition correctly outside the production chain
+  (`SeLe4n.lean` reaches 158 modules; the four staged ones are not
+  among them). E-2 (DEEP-ARCH-02): all 11 `*_fields` defs have ≥3
+  in-file consumers, 0 out-of-file consumers — the consumer gate
+  counts in-file + out-of-file ≥ 2. E-3 (DEEP-RUST-01/02): 59 unsafe
+  blocks total in HAL, 42 of which carry MMIO/asm! tokens
+  (`read_volatile` / `write_volatile` / `asm!`); the two-tier rule is
+  the correct shape for R12.C. E-4 (plan corrections): `PlatformConfig`
+  lives in `Platform/Boot.lean:81`, `bootSafeObjectCheck` (`Bool`) at
+  line 534 and `bootSafeObject` (`Prop`) at line 1456; `RetypeTarget`
+  fields are `id : ObjId` and `cleanupHookDischarged : ...`.
+- **R0.3 (discharge index seed)**:
+  [`docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`](audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md)
+  carries forward §3.A–§3.C from the predecessor index unchanged; opens
+  §3.D (NoDup / structural promotions, R4.A/B/C), §3.E (predecessor
+  reroutings, R4.C subsumes DEEP-IPC-01), §3.F (false-positive
+  structural witnesses, R4.D / R12.B/C/D), and §3.G (predecessor
+  closure reconfirmations, populated at R0.4) as seeds. Update
+  protocol documented in §6.
+- **R0.4 (DEBT-RUST-02 / H-24 reconfirmation)**: archived
+  [`docs/dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md`](dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md)
+  receives a new §6 documenting the WS-RC reconfirmation: three grep
+  passes (comprehensive 2026-04-26, deep 2026-04-28, baseline R0.1
+  2026-04-29) all return 0 hits for `WS-V` / `AG10` markers in
+  `rust/sele4n-hal/src/{trap,lib}.rs`. Cross-references the WS-RC
+  discharge index §3.G row G.1 as the canonical artefact.
+- **R0.5 ([`docs/audits/README.md`](audits/README.md) sync)**: "Files
+  currently live" updated to list all six WS-RC-active artefacts
+  (comprehensive + deep verification + plan + errata + baseline +
+  discharge index seed) with one-line summaries each.
+- **R0.6 (this entry)**: WS-RC opening recorded with R0 phase
+  breakdown and forward links to R1..R14.
+
+### R1..R14 — TBD
+
+Per plan §3 phase summary; rows will be appended to this section as
+each phase lands a coherent slice. The recommended ordering is R1
+first (one-line NI symmetry fix on the IPC call path; closes
+DEEP-IPC-03 for v0.31.0), then R2/R3 (the v1.0.0 implementation tier:
+hardware syscall dispatch wiring + boot VSpace threading), then
+R4/R5/R6 (v1.0.0 invariant / behaviour symmetry / spec-completeness
+work), then R7..R12 (cleanup/hygiene tier in any order, with R11
+landing last among hygiene phases per plan §3.2 so the metric refresh
+runs against the post-implementation tree).
 
 ## WS-AN — Pre-1.0 Audit Remediation (v0.30.6 → v0.30.11, **COMPLETE — ARCHIVED**)
 

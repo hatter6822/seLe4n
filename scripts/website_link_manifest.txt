@@ -15,7 +15,7 @@
 #   - All other lines denote files (checked with -f).
 #
 # Source: https://github.com/hatter6822/hatter6822.github.io  index.html
-# Last synchronized: 2026-03-02
+# Last synchronized: 2026-04-29 (WS-RC R0 — adds WS_RC_BASELINE.txt + DISCHARGE_INDEX.md)
 
 # ── Repository root files ────────────────────────────────────────────
 LICENSE
@@ -102,6 +102,8 @@ docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md
 docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md
 docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md
 docs/audits/AUDIT_v0.30.11_ERRATA.md
+docs/audits/AUDIT_v0.30.11_WS_RC_BASELINE.txt
+docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md
 docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md
 docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md
 docs/dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md
