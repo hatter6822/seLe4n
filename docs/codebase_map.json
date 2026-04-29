@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/organize-audit-documents-AI9pW",
-      "commit_sha": "90f96631b93b19d300daede299fe1454de26cea3",
-      "tree_sha": "24966c4a32ee482c6543b645001ad4d05193734a",
-      "committed_at_utc": "2026-04-26T22:32:51+00:00"
+      "branch": "claude/audit-workstream-planning-XsmKS",
+      "commit_sha": "d9348344168bb18569850737196a8d422e014c6d",
+      "tree_sha": "1a7a3d79f1b6a1f00765eceecd79d4aee7b2da1f",
+      "committed_at_utc": "2026-04-29T00:37:32+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "13e1b1b6bb25704bf6769011f4c2d2f0b9b283388876089c83fc84d032223cde"
+    "source_digest": "0ac75f312399d8c55d64ebbed24d3e0426952f213f1b51480963ee7eb4a77a20"
   },
   "summary": {
     "module_count": 196,
@@ -27,7 +27,7 @@
     "version": "0.30.11",
     "lean_toolchain": "v4.28.0",
     "production_files": 168,
-    "production_loc": 109801,
+    "production_loc": 109805,
     "test_files": 28,
     "test_loc": 18925,
     "proved_theorem_lemma_decls": 3199,
@@ -62013,19 +62013,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.RPi5",
-          "line": 49,
+          "line": 51,
           "called": []
         },
         {
           "kind": "structure",
           "name": "RPi5Platform",
-          "line": 52,
+          "line": 54,
           "called": []
         },
         {
           "kind": "instance",
           "name": "rpi5PlatformBinding",
-          "line": 56,
+          "line": 58,
           "called": [
             "PlatformBinding",
             "RPi5Platform",
@@ -63593,19 +63593,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Sim",
-          "line": 40,
+          "line": 42,
           "called": []
         },
         {
           "kind": "structure",
           "name": "SimPlatform",
-          "line": 43,
+          "line": 45,
           "called": []
         },
         {
           "kind": "def",
           "name": "simMachineConfig",
-          "line": 54,
+          "line": 56,
           "called": [
             "MachineConfig",
             "simSubstantiveMemoryMap"
@@ -63614,7 +63614,7 @@
         {
           "kind": "instance",
           "name": "simPlatformBinding",
-          "line": 65,
+          "line": 67,
           "called": [
             "PlatformBinding",
             "SimPlatform",
@@ -63627,13 +63627,13 @@
         {
           "kind": "structure",
           "name": "SimRestrictivePlatform",
-          "line": 73,
+          "line": 75,
           "called": []
         },
         {
           "kind": "instance",
           "name": "simRestrictivePlatformBinding",
-          "line": 86,
+          "line": 88,
           "called": [
             "PlatformBinding",
             "SimRestrictivePlatform",
@@ -63646,7 +63646,7 @@
         {
           "kind": "theorem",
           "name": "simSubstantiveMemoryMap_eq_machineConfig",
-          "line": 99,
+          "line": 101,
           "called": [
             "simSubstantiveMemoryMap"
           ]
