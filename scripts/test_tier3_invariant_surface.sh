@@ -927,6 +927,42 @@ run_check "INVARIANT" rg -n 'syscallNI_coverage_witness' SeLe4n/Kernel/Informati
 run_check "INVARIANT" rg -n 'lifecycleRevokeDeleteRetype_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n 'cspaceRevoke_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 
+# WS-RC R2 (DEEP-FFI-01/02/03): hardware syscall dispatch FFI bridge anchors.
+# Pin the post-R2 surface so a regression that strips the substantive
+# routing or renames the bridge symbols fails Tier 3 instead of silently
+# downgrading to a stub return.
+run_check "INVARIANT" rg -n '^def KernelError.toUInt32' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n 'def encodeError' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n 'def encodeOk' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^initialize kernelStateRef' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^initialize kernelLabelingContextRef' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def initialiseKernelState' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def getKernelState' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def updateKernelState' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def initialiseKernelLabelingContext' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def getKernelLabelingContext' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def bootAndInitialiseFromPlatform' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def writeFfiRegistersToTcb' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def readReturnValue' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def syscallDispatchFromAbi' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^@\[export suspend_thread_inner\]' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^@\[export syscall_dispatch_inner\]' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def suspendThreadInner' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def syscallDispatchInner' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem encodeError_high_bit_set' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem encodeOk_high_bit_clear' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_total' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_error_of_syscallEntryChecked_error' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_illegalState_when_no_current' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_abiMismatch_rejected' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem writeFfiRegistersToTcb_id_when_not_tcb' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem readReturnValue_zero_when_not_tcb' SeLe4n/Platform/FFI.lean
+# WS-RC R2.B.4: Rust comment alignment — the FFI inner symbol the
+# Rust HAL extern-imports must match the Lean @[export] name.
+run_check "INVARIANT" rg -n 'fn syscall_dispatch_inner' rust/sele4n-hal/src/svc_dispatch.rs
+run_check "INVARIANT" rg -n 'fn suspend_thread_inner' rust/sele4n-hal/src/ffi.rs
+
 # WS-I2/R-05: Lean #check correctness anchors (type-level validation).
 # D5: The Liveness module is proof-only and not imported from Main.lean,
 # so `lake build` (default target) does not produce its .olean files.

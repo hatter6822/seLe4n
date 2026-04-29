@@ -1,3 +1,346 @@
+## v0.30.11 — WS-RC R2 audit: DispatchError fidelity, comprehensive discriminant pinning, Nonempty scope tightening
+
+This is a deep-audit follow-up to the WS-RC R2 commit set
+(e10fc7e + d2132e8).  The audit identified four issues; all are
+addressed below.
+
+### Issue 1 (HIGH): Rust `dispatch_svc` silently coarsens 49 of 52
+KernelError variants to `NotImplemented = 17`.
+
+The pre-WS-RC R2 `dispatch_svc` mapping was:
+```rust
+match disc {
+    6 => DispatchError::InvalidArgument,    // = 6
+    7 => DispatchError::InvalidSyscallId,   // = 7
+    _ => DispatchError::NotImplemented,     // = 17
+}
+```
+
+This mapping was historically benign: pre-WS-RC R2 the Lean kernel's
+FFI stub always returned `NotImplemented = 17`, so the catch-all
+correctly forwarded that single discriminant.  Post-WS-RC R2 the
+Lean kernel returns substantively any of 52 `KernelError`
+discriminants (0..51), and the catch-all silently coarsens 49 of
+them to 17, losing user-mode-visible error information.
+
+Fix: refactored `DispatchError` to drop `#[repr(u32)]` (it never
+crossed the FFI boundary anyway) and replace the `NotImplemented`
+variant with `Kernel(u32)` that wraps the raw kernel-error
+discriminant.  The mapping at `dispatch_svc:295` now forwards the
+raw `disc` verbatim via `DispatchError::Kernel(disc)`, so user-mode
+sees exactly the `KernelError` discriminant the Lean kernel
+emitted.  `to_u32()` returns the legacy values 6/7 for the
+dispatcher-internal variants and the wrapped `disc` for the kernel
+variant.
+
+The legacy AN9-F discriminant overlap (`InvalidArgument = 6` collides
+with `KernelError::SchedulerInvariantViolation = 6`;
+`InvalidSyscallId = 7` collides with
+`KernelError::EndpointStateMismatch = 7`) is preserved for backward-
+compatible test coverage and trap-frame reporting; documented as a
+post-1.0 ABI cleanup in the new `DispatchError` docstring.
+
+New cross-language pin test:
+`dispatch_error_kernel_variant_preserves_all_kernel_error_discriminants`
+exercises every `KernelError` discriminant 0..=51 + the 255 sentinel.
+
+### Issue 2: `KernelError.toUInt32` test only pinned 6 of 52 variants.
+
+A regression that re-orders the Lean `inductive KernelError` (or the
+`toUInt32` arms) silently could break the cross-language ABI without
+running into the Rust-side `from_u32_roundtrip` (which only verifies
+Rust enum self-consistency, not Lean→Rust agreement).
+
+Fix: expanded `tests/SyscallDispatchSuite.lean::sd001_kernelErrorDiscriminants`
+to pin **all 52 variants** explicitly.  Combined with the new
+Rust-side `dispatch_error_kernel_variant_preserves_all_kernel_error_discriminants`
+test, the cross-language KernelError ABI is now fully pinned.
+
+### Issue 3: `encodeOk` test only verified bit 63 is clear; did not
+verify low-bit preservation.
+
+Without a positive correctness check, an `encodeOk` regression that
+zeros all bits (not just bit 63) would still pass `sd003`.
+
+Fix: expanded `sd003_encodeOk` to three phases:
+* Phase A: bit 63 is clear for all inputs (existing).
+* Phase B: identity preservation when bit 63 is already 0
+  (`encodeOk v = v` for v < 2^63).
+* Phase C: bit-63 stripping when bit 63 is 1 (truncation behavior
+  documented as a defensive correctness gate; in practice the
+  kernel never returns x0 ≥ 2^63 because the FFI ABI reserves bit 63).
+
+### Issue 4: `Inhabited LabelingContext` polluted downstream `default`.
+
+The original WS-RC R2 commit declared an `Inhabited LabelingContext`
+instance to satisfy the `initialize` syntax for
+`kernelLabelingContextRef`.  This caused
+`(default : LabelingContext)` to resolve to
+`Kernel.testLabelingContext` for every module that imports
+`SeLe4n.Platform.FFI`.  Since `testLabelingContext` is a non-secure
+context shaped for testing (only ID 0 is `kernelTrusted`), having
+it be the implicit `default` could lead downstream code to
+accidentally use it instead of failing closed.
+
+Fix: changed `Inhabited LabelingContext` to `Nonempty LabelingContext`.
+`Nonempty` is sufficient for the `initialize` synthesis (which only
+needs the existential witness, not a concrete `default`) and does
+NOT propagate as `(default : LabelingContext)`.  Downstream code
+must now obtain a labeling context explicitly (via
+`Kernel.testLabelingContext`, `Kernel.defaultLabelingContext`, or a
+production policy).
+
+### Additional improvement: `sd012_labelingContextRoundtrip` strengthened.
+
+The original test only checked that `getKernelLabelingContext`
+succeeded after `initialiseKernelLabelingContext`; it did not verify
+the value was actually held.  Updated to:
+* Install `testLabelingContext`, verify
+  `isInsecureDefaultContext = false`.
+* Install `defaultLabelingContext`, verify
+  `isInsecureDefaultContext = true`.
+* Restore `testLabelingContext` for downstream tests.
+
+### Additional improvement: `sd002_encodeError` pins low 32 bits.
+
+Expanded to verify bit 63 is set AND the low 32 bits exactly match
+`KernelError.toUInt32 v` for every one of the 52 variants.
+
+### Files changed
+
+* `SeLe4n/Platform/FFI.lean` — `Inhabited` → `Nonempty` for
+  `LabelingContext`.
+* `tests/SyscallDispatchSuite.lean` — expanded `sd001` to all 52
+  variants; expanded `sd002` to pin low 32 bits; expanded `sd003`
+  with positive identity + truncation tests; strengthened `sd012`.
+* `rust/sele4n-hal/src/svc_dispatch.rs` — `DispatchError` reshaped
+  from `#[repr(u32)]` enum with 3 fixed-discriminant variants to a
+  regular enum with a `Kernel(u32)` wrapping variant; mapping in
+  `dispatch_svc` rewritten to forward raw kernel-error discriminants
+  verbatim; tests updated to match; new pin test added.
+* `README.md`, `docs/spec/SELE4N_SPEC.md`, `docs/codebase_map.json` —
+  auto-synced metrics.
+
+### Validation
+
+* `lake build` (304 jobs): 0 warnings, 0 errors.
+* `lake exe syscall_dispatch_suite`: 195 PASS / 0 FAIL (up from 41).
+* `cargo test --workspace`: 463 tests pass (94 + 93 conformance + 201
+  + 13 + 54 + 1 + 5 + 1 + 1).
+* `./scripts/test_smoke.sh` passes.
+* `./scripts/test_full.sh` passes (all Tier-3 anchors).
+* `./scripts/test_rust.sh` passes (93 conformance tests).
+* 0 sorry / 0 axiom in modified files.
+
+## v0.30.11 — WS-RC Phase R2: Hardware syscall dispatch wiring (DEEP-FFI-01/02/03 + DEEP-TEST-03)
+
+WS-RC R2 closes the largest implementation slice in the v0.30.11 audit
+remediation: the hardware SVC path now substantively routes through the
+verified `syscallEntryChecked` and `Lifecycle.Suspend.suspendThread`
+entry points instead of returning the historical
+`KernelError::NotImplemented = 17` stub.  Per the implement-the-improvement
+rule of `CLAUDE.md`, this remediation is implementation, not disclosure:
+the prior path's "not yet wired" comment is replaced by code that
+actually wires it.
+
+### Addressed (`AUDIT_v0.30.11_DEEP_VERIFICATION.md`)
+
+- DEEP-FFI-01 — `suspend_thread_inner` and `syscall_dispatch_inner`
+  Lean exports were stubs returning `NotImplemented`; the verified
+  hardware path never reached `syscallEntryChecked`.  CLOSED.
+- DEEP-FFI-02 — `rust/sele4n-hal/src/svc_dispatch.rs:308` referenced
+  a Lean function (`syscallDispatchFromAbi`) that did not exist; the
+  function is now defined in `SeLe4n/Platform/FFI.lean` and the Rust
+  comment is aligned with the actual `@[export syscall_dispatch_inner]`
+  symbol name.  CLOSED.
+- DEEP-FFI-03 — the FFI module's docstring claimed uniform
+  `hwTarget`-based gating that did not match the source; the docstring
+  is rewritten to honestly describe the link-time gating semantics
+  (Rust HAL linked or not), and the gating is uniform for both
+  `@[extern]` and `@[export]` directions.  CLOSED.
+- DEEP-TEST-03 — `syscallEntryChecked` had only sparse test
+  coverage on the FFI bridge.  Added
+  `tests/SyscallDispatchSuite.lean` (41 assertions across 18 test
+  functions) covering the IO.Ref bootstrap, KernelError discriminant
+  table, encoded-UInt64 contract, suspend bridge, dispatch bridge,
+  ABI-mismatch reject path, and sequential dispatch state
+  evolution.  CLOSED.
+
+### Architectural choice (R2.A)
+
+Hardware SVC entry is C-callable and ABI-fixed: `SystemState` cannot
+be threaded through the argument list the way `MainTraceHarness`
+threads it.  Three options were evaluated:
+
+1. **IO.Ref (chosen)** — single mutable cell; sequential SVC
+   semantics on hardware (Rust HAL serialises every entry through
+   `with_interrupts_disabled`); zero per-syscall FFI overhead.
+2. **Thread-local register-decoded snapshot** — rejected; multiplies
+   FFI symbols per syscall and forces typed-arg encoding at every
+   entry.
+3. **Pure functional re-construction** — rejected; forces
+   serialise/deserialise of the full `SystemState` at every SVC
+   entry, making cost unbounded in object-store size.
+
+The `IO.Ref SystemState` lives at `SeLe4n.Platform.FFI.kernelStateRef`,
+companioned by `kernelLabelingContextRef` so the deployment's
+labeling policy survives the FFI boundary.  The boot wrapper
+`bootAndInitialiseFromPlatform` runs `bootFromPlatformChecked` and
+seeds the IO.Refs in lockstep.
+
+### Behavioural changes
+
+- `@[export suspend_thread_inner]` (`SeLe4n/Platform/FFI.lean`) now
+  reads the live `SystemState` via `getKernelState`, resolves the
+  `tid : UInt64` argument through `ThreadId.toValid?` (sentinel
+  rejected as `.invalidArgument` without invoking the verified
+  handler), invokes `Kernel.Lifecycle.Suspend.suspendThread`, writes
+  the post-state back to `kernelStateRef` on success, and encodes
+  the result as the `KernelError` discriminant (`0` on success, the
+  Rust `KernelError as u32` discriminant otherwise).
+- `@[export syscall_dispatch_inner]` is a thin BaseIO wrapper around
+  the new pure typed-ABI entry point `syscallDispatchFromAbi`, which
+  spills the FFI register values (`syscallId, msgInfo, x0..x5`) into
+  the current thread's TCB register file via `writeFfiRegistersToTcb`,
+  invokes `syscallEntryChecked` with the deployment's labeling
+  context and `arm64DefaultLayout`, and encodes the result as a
+  `UInt64` per the bit-63 error-flag contract (matching
+  `rust/sele4n-hal/src/svc_dispatch.rs::dispatch_svc`).
+- The Rust comment at `rust/sele4n-hal/src/svc_dispatch.rs:308`
+  originally referenced `sele4n_syscall_dispatch_inner` and
+  `@[extern ...]`; corrected to reference the actual
+  `syscall_dispatch_inner` symbol and the `@[export ...]` attribute
+  (DEEP-FFI-02).  Symmetric correction at
+  `rust/sele4n-hal/src/ffi.rs:247-249` for `suspend_thread_inner`.
+
+### New code surface
+
+- `SeLe4n.Platform.FFI.KernelError.toUInt32` — mirrors discriminants
+  0..51 of `rust/sele4n-types/src/error.rs::KernelError`.
+- `SeLe4n.Platform.FFI.encodeError` / `encodeOk` — UInt64 encoding
+  helpers per the FFI contract (bit 63 = error flag).
+- `SeLe4n.Platform.FFI.kernelStateRef`,
+  `kernelLabelingContextRef` — `IO.Ref` holders for the live
+  hardware-mode kernel state and the deployment's labeling policy.
+- `SeLe4n.Platform.FFI.initialiseKernelState`,
+  `getKernelState`, `updateKernelState`,
+  `initialiseKernelLabelingContext`, `getKernelLabelingContext` —
+  the minimal API exposed to the boot path and to the substantive
+  `@[export]` bodies.
+- `SeLe4n.Platform.FFI.bootAndInitialiseFromPlatform` — boot wrapper
+  composing `bootFromPlatformChecked` with the IO.Ref initialisation.
+- `SeLe4n.Platform.FFI.writeFfiRegistersToTcb`,
+  `readReturnValue` — pure helpers spilling/reading the
+  trap-handler-provided register values into/from the current TCB.
+- `SeLe4n.Platform.FFI.syscallDispatchFromAbi` — the typed-ABI entry
+  point named in the `svc_dispatch.rs:308` comment.
+
+### New theorems (closure-form properties of the bridge)
+
+- `encodeError_high_bit_set` — every `KernelError` variant produces
+  an encoded UInt64 whose bit 63 is set (the Rust caller's
+  error-flag check is structurally guaranteed to succeed).
+- `encodeOk_high_bit_clear` — every `UInt64` argument to `encodeOk`
+  produces an encoded value whose bit 63 is clear (the Rust caller's
+  success path `(raw >> 63) & 1 == 0` is structurally guaranteed).
+  Proved via `bv_decide` on the `BitVec` projection.
+- `syscallDispatchFromAbi_total` — the pure typed-ABI entry point
+  never returns `Except.error`; every kernel rejection is encoded
+  on the `.ok` branch with the error flag set.
+- `syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok` — when
+  `syscallEntryChecked` succeeds, `syscallDispatchFromAbi` returns
+  `(encodeOk (readReturnValue st' tid), st')`.
+- `syscallDispatchFromAbi_error_of_syscallEntryChecked_error` —
+  when `syscallEntryChecked` rejects, `syscallDispatchFromAbi`
+  returns `(encodeError ke, stRegs)` (preserves the spilled
+  registers so the trap-handler-spilled state is visible).
+- `syscallDispatchFromAbi_illegalState_when_no_current` — when
+  `scheduler.current = none`, surface `.illegalState` without
+  invoking `syscallEntryChecked` and without mutating state.
+- `syscallDispatchFromAbi_abiMismatch_rejected` — when the FFI
+  ABI invariant `msgInfo == x1` is violated, surface
+  `.invalidSyscallArgument` without invoking the verified handler
+  and without mutating state.
+- `writeFfiRegistersToTcb_id_when_not_tcb`,
+  `readReturnValue_zero_when_not_tcb` — totality witnesses for the
+  helpers when the lookup target is not a TCB.
+
+### Test coverage (R2.C)
+
+- `tests/SyscallDispatchSuite.lean` (NEW, 41 assertions across 18 test
+  functions, 7 groups):
+  - SD-001..003: `KernelError → UInt32` discriminant pinning at
+    representative variants (matches Rust enum); `encodeError` always
+    sets bit 63; `encodeOk` always clears bit 63 (positive sample
+    including `0xFFFFFFFFFFFFFFFF`).
+  - SD-010..012: `kernelStateRef`/`kernelLabelingContextRef`
+    bootstrap round-trip; `updateKernelState` identity + substantive
+    transformations.
+  - SD-020..023: `suspendThreadInner` integration — Ready→Inactive
+    transition, Inactive rejection, missing-thread rejection,
+    sentinel rejection without invoking `suspendThread`.
+  - SD-030..035: `syscallDispatchInner` integration — no-current
+    rejection (encodes `IllegalState`), register spill into TCB
+    pre-call, unmodeled-syscall rejection, totality witness via
+    direct `syscallDispatchFromAbi` invocation, ABI-mismatch reject
+    (`msgInfo ≠ x1`) without spilling registers, sequential dispatch
+    state evolution.
+  - SD-040..041: `bootAndInitialiseFromPlatform` integration — empty
+    config success path; success path with optional labeling context.
+- Wired into `scripts/test_tier2_negative.sh` (executed every PR
+  via `test_smoke.sh` Tier 2).
+- Anchor checks added to `scripts/test_tier3_invariant_surface.sh`
+  (every new public name in `SeLe4n/Platform/FFI.lean` is grep-pinned;
+  Rust extern symbol names cross-checked against the Lean `@[export]`
+  declarations).
+
+### Code changes
+
+- `SeLe4n/Platform/FFI.lean` — module rewritten end-to-end (still in
+  the `SeLe4n.Platform.FFI` namespace).  Old surface preserved
+  (timer/GIC/TLB/MMIO/UART/interrupts/cache `@[extern]`
+  declarations); `@[export]` stubs replaced with substantive
+  bodies; new R2.A/R2.B infrastructure added; correctness theorems
+  added at the end of the file.  Imports: `SeLe4n.Kernel.API`,
+  `SeLe4n.Kernel.Lifecycle.Suspend`, `SeLe4n.Platform.Boot`.
+- `rust/sele4n-hal/src/svc_dispatch.rs` — comment at lines 305-312
+  rewritten to align with the actual Lean export
+  (`syscallDispatchInner` thin wrapper around
+  `syscallDispatchFromAbi`); symbol name `syscall_dispatch_inner`
+  matches the Lean `@[export]`.
+- `rust/sele4n-hal/src/ffi.rs` — comment at lines 247-252 corrected
+  (was: `sele4n_suspend_thread_inner`; now: `suspend_thread_inner`);
+  notes the post-R2.B substantive routing.
+- `tests/SyscallDispatchSuite.lean` — NEW; 41 regression assertions
+  across 18 test functions.
+- `lakefile.toml` — registers `syscall_dispatch_suite` as a
+  `lean_exe` per R2.C.5.
+- `scripts/test_tier2_negative.sh` — runs the new suite per R2.C.6.
+- `scripts/test_tier3_invariant_surface.sh` — anchor checks for
+  every public name in the post-R2 FFI surface.
+- `CLAUDE.md` — active-workstream context updated for R2 landing;
+  source-layout entry added for `SeLe4n/Platform/FFI.lean` and
+  `SeLe4n/Platform/Staged.lean`; test-suite count bumped to 19.
+
+### Validation
+
+- `lake build SeLe4n.Platform.FFI` ✓
+- `lake build SeLe4n.Platform.Staged` ✓
+- `lake build` (default target, 296 jobs) ✓
+- `lake exe syscall_dispatch_suite` (41/41 assertions pass) ✓
+- `./scripts/test_smoke.sh` ✓
+- `./scripts/test_full.sh` ✓ (all Tier-3 anchors pass including the
+  new R2 anchor block)
+- `./scripts/test_rust.sh` ✓
+- `lake exe sele4n` byte-identical to
+  `tests/fixtures/main_trace_smoke.expected` ✓
+- 0 sorry / 0 axiom in the modified files
+
+### Cross-references
+
+- Plan: [`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md) §6
+- WORKSTREAM_HISTORY: [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md) WS-RC R2 entry
+
 ## v0.30.11 — WS-RC Phase R1: IPC call-path NI symmetry (DEEP-IPC-03)
 
 WS-RC R1 closes the last NI asymmetry between the three IPC capability-

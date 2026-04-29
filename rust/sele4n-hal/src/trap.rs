@@ -184,17 +184,26 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
 
     match exception_class {
         ec::SVC_AARCH64 => {
-            // CLOSED at AN9-F: Wire Lean FFI dispatch via
-            // `sele4n_syscall_dispatch` (closes DEF-R-HAL-L14 per
+            // CLOSED at AN9-F: Wire Lean FFI dispatch via the
+            // `dispatch_svc` shim (closes DEF-R-HAL-L14 per
             // docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12 AN9-F).
+            // CLOSED at WS-RC R2.B: Lean side substantively routes
+            // into `Kernel.syscallEntryChecked` (closes DEEP-FFI-01).
             //
             // The seLe4n ABI uses x7 for the syscall number (Lean
-            // `arm64DefaultLayout.syscallNumReg = ⟨7⟩`).  The dispatcher
-            // reads x0..x5 + msg_info from the trap frame, validates
-            // argument count against `MessageInfo.length`, and routes
-            // through the typed `dispatch_svc` shim into the Lean
-            // kernel.  Errors are surfaced via x0 with the canonical
-            // KernelError discriminant (matching `sele4n-types`).
+            // `arm64DefaultLayout.syscallNumReg = ⟨7⟩`).  The
+            // dispatcher reads x0..x5 + msg_info from the trap frame,
+            // validates argument count against `MessageInfo.length`,
+            // and forwards via the `syscall_dispatch_inner`
+            // `extern "C"` symbol (Lean-emitted by
+            // `@[export syscall_dispatch_inner]` in
+            // `SeLe4n/Platform/FFI.lean`) into the Lean kernel.
+            // Errors are surfaced via x0 with the canonical
+            // KernelError discriminant (matching `sele4n-types`):
+            // post-WS-RC R2 the `dispatch_svc` shim wraps the raw
+            // discriminant in `DispatchError::Kernel(disc)` so
+            // user-mode sees exactly the value the Lean kernel
+            // emitted.
             let syscall_id = frame.x7() as u32;
             let args = crate::svc_dispatch::SyscallArgs::from_trap_frame(frame);
             match crate::svc_dispatch::dispatch_svc(syscall_id, &args) {

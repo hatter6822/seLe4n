@@ -175,15 +175,114 @@ fault.
   `lake exe sele4n` trace is byte-identical to
   `tests/fixtures/main_trace_smoke.expected`.
 
-### R2..R14 — TBD
+### R2 — Hardware syscall dispatch wiring (DEEP-FFI-01/02/03 + DEEP-TEST-03, v1.0.0, **COMPLETE**)
+
+R2 closes the largest implementation slice in WS-RC: the hardware SVC
+path now substantively routes through the verified `syscallEntryChecked`
+and `Lifecycle.Suspend.suspendThread` entry points instead of
+returning the historical `KernelError::NotImplemented = 17` stub.
+Per the `CLAUDE.md` implement-the-improvement rule, this remediation
+is implementation, not disclosure: the prior path's "not yet wired"
+comment is replaced by code that actually wires it.
+
+- **R2.A — Kernel-state IO.Ref + boot integration**:
+  `SeLe4n/Platform/FFI.lean` gains `kernelStateRef : IO.Ref SystemState`
+  and `kernelLabelingContextRef : IO.Ref LabelingContext` companions,
+  with the API trio `initialiseKernelState` / `getKernelState` /
+  `updateKernelState` (and the labeling-context analogues), plus the
+  `bootAndInitialiseFromPlatform` boot wrapper that runs
+  `Platform.Boot.bootFromPlatformChecked` and seeds the IO.Refs in
+  lockstep.  Three alternatives were evaluated; the IO.Ref design
+  was chosen because the Rust HAL serialises every SVC entry through
+  `with_interrupts_disabled`, the alternative thread-local
+  register-decoded snapshot would multiply FFI symbols per syscall,
+  and pure functional re-construction at every entry would force
+  serialise/deserialise of the full `SystemState` (object store,
+  scheduler, CDT, …) at each syscall — making cost unbounded in
+  object-store size.
+- **R2.B — `syscallDispatchFromAbi` and substantive `@[export]`
+  bodies**: a new pure typed-ABI entry point
+  `SeLe4n.Platform.FFI.syscallDispatchFromAbi` spills the FFI
+  register values (`syscallId, msgInfo, x0..x5`) into the current
+  thread's TCB register file via `writeFfiRegistersToTcb`, invokes
+  `syscallEntryChecked` with the deployment's labeling context and
+  `arm64DefaultLayout`, and encodes the result as a `UInt64` per the
+  bit-63 error-flag contract.  The two `@[export]` declarations
+  (`suspend_thread_inner`, `syscall_dispatch_inner`) are replaced
+  with thin BaseIO wrappers that read the IO.Refs, call the
+  verified handler, and write the post-state back.  Adds
+  `KernelError.toUInt32` (mirroring discriminants 0..51 of
+  `rust/sele4n-types/src/error.rs::KernelError`), `encodeError`,
+  and `encodeOk` UInt64 encoding helpers.  Aligns the Rust comments
+  at `rust/sele4n-hal/src/svc_dispatch.rs:308` and
+  `rust/sele4n-hal/src/ffi.rs:247-249` with the actual
+  `syscall_dispatch_inner` / `suspend_thread_inner` symbol names.
+  Adds an ABI consistency check that rejects with
+  `.invalidSyscallArgument` if `msgInfo ≠ x1` (both must equal
+  `frame.x1()` per the Rust caller's `SyscallArgs::from_trap_frame`),
+  with no kernel state mutation on the reject path.  Adds nine
+  correctness theorems
+  (`encodeError_high_bit_set`,
+  `encodeOk_high_bit_clear`,
+  `syscallDispatchFromAbi_total`,
+  `syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok`,
+  `syscallDispatchFromAbi_error_of_syscallEntryChecked_error`,
+  `syscallDispatchFromAbi_illegalState_when_no_current`,
+  `syscallDispatchFromAbi_abiMismatch_rejected`,
+  `writeFfiRegistersToTcb_id_when_not_tcb`,
+  `readReturnValue_zero_when_not_tcb`).
+- **R2.C — Gating uniformity + integration suite**: the FFI
+  module's docstring is rewritten to honestly describe link-time
+  gating (Rust HAL linked or not) instead of the previously claimed
+  but absent `hwTarget` preprocessor switch.  The new
+  `tests/SyscallDispatchSuite.lean` regression suite (195 assertions
+  across 18 test functions) exercises all 52 `KernelError`
+  discriminants pinned 1:1 against the Rust enum, `encodeError`
+  bit-63-set + low-32-bits-match-discriminant for every variant,
+  `encodeOk` bit-63-clear + identity-preservation when bit 63 is
+  already clear + truncation when bit 63 is set, the IO.Ref
+  bootstrap path, `suspendThreadInner` integration (Ready→Inactive
+  transition; Inactive / missing-thread / sentinel rejections),
+  `syscallDispatchInner` integration (no-current rejection, register
+  spill into TCB, unmodeled-syscall rejection, totality witness,
+  ABI-mismatch reject for `msgInfo ≠ x1`, sequential dispatch state
+  evolution), and `bootAndInitialiseFromPlatform` integration
+  (empty config + optional labeling context).  Wired into
+  `scripts/test_tier2_negative.sh` per R2.C.6 and into
+  `scripts/test_tier3_invariant_surface.sh` with grep-pinned anchors
+  for every public name in the post-R2 FFI surface plus Rust-side
+  `extern "C"` symbol names.
+- **Files touched**: `SeLe4n/Platform/FFI.lean` (rewrite — old
+  `@[extern]` surface preserved, `@[export]` stubs replaced by
+  substantive bodies, R2.A/R2.B infrastructure added, R2.B.5
+  theorems added at end of file); `rust/sele4n-hal/src/svc_dispatch.rs`
+  (comment alignment); `rust/sele4n-hal/src/ffi.rs` (comment
+  alignment); `tests/SyscallDispatchSuite.lean` (NEW — 195
+  assertions across 18 test functions);
+  `lakefile.toml` (`syscall_dispatch_suite` registration);
+  `scripts/test_tier2_negative.sh` (suite invocation);
+  `scripts/test_tier3_invariant_surface.sh` (anchor checks);
+  `CLAUDE.md` (active-workstream context, source layout,
+  test-suite count); `docs/codebase_map.json` (regenerated);
+  `CHANGELOG.md` (R2 entry).
+- **Validation**: `lake build SeLe4n.Platform.FFI` and
+  `lake build SeLe4n.Platform.Staged` pass; `lake build` (default
+  target, 296 jobs) passes; `lake exe syscall_dispatch_suite`
+  reports 195/195 assertions pass; `./scripts/test_smoke.sh` and
+  `./scripts/test_full.sh` pass; the executable `lake exe sele4n`
+  trace remains byte-identical to
+  `tests/fixtures/main_trace_smoke.expected`; 0 sorry / 0 axiom in
+  the modified files.
+
+### R3..R14 — TBD
 
 Per plan §3 phase summary; remaining rows will be appended to this
-section as each phase lands a coherent slice. R2/R3 are the v1.0.0
-implementation tier (hardware syscall dispatch wiring + boot VSpace
-threading), then R4/R5/R6 (v1.0.0 invariant / behaviour symmetry /
-spec-completeness work), then R7..R12 (cleanup/hygiene tier in any
-order, with R11 landing last among hygiene phases per plan §3.2 so
-the metric refresh runs against the post-implementation tree).
+section as each phase lands a coherent slice. R3 is the next v1.0.0
+implementation tier (boot VSpace threading), then R4/R5/R6 (v1.0.0
+invariant / behaviour symmetry / spec-completeness work), then
+R7..R12 (cleanup/hygiene tier in any order, with R11 landing last
+among hygiene phases per plan §3.2 so the metric refresh runs
+against the post-implementation tree).
 
 ## WS-AN — Pre-1.0 Audit Remediation (v0.30.6 → v0.30.11, **COMPLETE — ARCHIVED**)
 

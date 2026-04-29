@@ -196,14 +196,15 @@ currently-active plan file tracks them.**
   required to include a VSpaceRoot — but boots that DO include
   one go through the canonical closure path.
 
-### DEF-R-HAL-L14 — SVC `_syscall_id` FFI Wiring **[RESOLVED AT v0.30.10]**
+### DEF-R-HAL-L14 — SVC `_syscall_id` FFI Wiring **[RESOLVED AT v0.30.10 (Rust side) and v0.30.11 / WS-RC R2.B (Lean side)]**
 
 - **Audit finding:** R-HAL-L14 (LOW). SVC handler currently returns
   `NOT_IMPLEMENTED` (17) instead of dispatching the kernel syscall
   table; the stub was placed in AI1-B.
-- **Disposition:** **RESOLVED** at v0.30.10 by WS-AN Phase AN9-F.
-  Previous disposition was DEFER+DOC.
-- **Resolution artefacts (AN9-F):**
+- **Disposition:** **RESOLVED** at v0.30.10 by WS-AN Phase AN9-F (Rust
+  side) and at v0.30.11 by WS-RC Phase R2.B (Lean side).  Previous
+  disposition was DEFER+DOC.
+- **Resolution artefacts (AN9-F, Rust side):**
   - New `rust/sele4n-hal/src/svc_dispatch.rs` module owns typed
     argument marshalling (`SyscallArgs::from_trap_frame`,
     `SyscallId` 25-variant enum mirroring `sele4n-types`,
@@ -217,6 +218,36 @@ currently-active plan file tracks them.**
   - 9 unit tests in `svc_dispatch::tests` cover round-trip,
     invalid-id rejection, argument-count rejection, and the
     inner-stub forwarding path.
+- **Resolution artefacts (WS-RC R2.B, Lean side):**
+  - Replaces the `@[export syscall_dispatch_inner]` stub body in
+    `SeLe4n/Platform/FFI.lean` (which was returning
+    `NotImplemented = 17` until the kernel-state IO.Ref was
+    threaded) with a thin BaseIO wrapper around the new pure
+    `syscallDispatchFromAbi` typed-ABI entry point.  The wrapper
+    reads `kernelStateRef`, calls `syscallDispatchFromAbi`, writes
+    the post-state back to the IO.Ref, and returns the encoded
+    UInt64 per the bit-63 error-flag contract.
+  - `syscallDispatchFromAbi` spills the FFI register values into
+    the current TCB via `writeFfiRegistersToTcb`, then invokes the
+    verified `Kernel.syscallEntryChecked` with the deployment's
+    labeling context and the canonical `arm64DefaultLayout`.
+  - The companion `@[export suspend_thread_inner]` is similarly
+    resolved (was DEF-C-M04 RESOLVED AT v0.30.10 for the Rust
+    bracket; the Lean inner now substantively routes into
+    `Kernel.Lifecycle.Suspend.suspendThread`).
+  - Adds `KernelError.toUInt32` (mirrors
+    `rust/sele4n-types/src/error.rs::KernelError`),
+    `encodeError` / `encodeOk` UInt64 helpers, the boot wrapper
+    `bootAndInitialiseFromPlatform`, and seven correctness
+    theorems pinning the bridge's behaviour.
+  - 195 regression assertions across 18 test functions in
+    `tests/SyscallDispatchSuite.lean` cover all 52 KernelError
+    discriminants pinned 1:1 against the Rust enum, encoding
+    contracts (bit 63 set/clear + identity / truncation), the IO.Ref
+    bootstrap, both `@[export]` bodies, the ABI-mismatch reject path,
+    sequential dispatch state evolution, and the boot wrapper.
+    Wired into `test_tier2_negative.sh` and
+    `test_tier3_invariant_surface.sh`.
 
 ### DEF-R-HAL-L17 — Bounded WFE Timeout Guard **[RESOLVED AT v0.30.10]**
 

@@ -76,5 +76,10 @@ run_check_with_timeout "TRACE" lake exe kernel_error_matrix_suite
 # AN11-E.1 (TST-M01): AK8 sub-item runtime coverage — 13 tests covering
 # AK8-E/F/G/H/I (every AK8 sub-item with a runtime-observable surface).
 run_check_with_timeout "TRACE" lake exe ak8_coverage_suite
+# WS-RC R2.C (DEEP-TEST-03): hardware syscall dispatch FFI bridge regression
+# suite — exercises `suspendThreadInner`, `syscallDispatchInner`,
+# `KernelError → UInt32`, encoded-UInt64 contract, and the kernel-state
+# IO.Ref bootstrap.  See `tests/SyscallDispatchSuite.lean`.
+run_check_with_timeout "TRACE" lake exe syscall_dispatch_suite
 
 finalize_report
