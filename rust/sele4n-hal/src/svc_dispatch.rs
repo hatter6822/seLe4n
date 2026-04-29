@@ -305,8 +305,12 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<u64, Dispatch
 // AN9-F.3 inner — Lean-emitted SVC dispatch entry.
 //
 // In production builds this resolves to the Lean kernel's
-// `syscallDispatchFromAbi` (declared via `@[extern
-// "sele4n_syscall_dispatch_inner"]` in `SeLe4n/Platform/FFI.lean`).
+// `syscallDispatchInner` (a thin BaseIO wrapper around the verified
+// `syscallDispatchFromAbi`), emitted as the C-callable symbol
+// `syscall_dispatch_inner` via `@[export syscall_dispatch_inner]` in
+// `SeLe4n/Platform/FFI.lean`.  The Lean wrapper reads the live
+// `SystemState` from the kernel-state IO.Ref and dispatches into the
+// verified `syscallEntryChecked` entry point.
 // In test builds (`#[cfg(test)]`) a Rust-side stub returns the error
 // flag set with `DispatchError::NotImplemented` so dispatch logic can
 // be exercised on host.

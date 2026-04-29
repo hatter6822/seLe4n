@@ -22,7 +22,7 @@ developed with this target in mind.
 | **H1** | Architecture-boundary interfaces and adapters | **Complete** | M6 |
 | **H2** | Audit-driven proof deepening | **Complete** (WS-F1..F8, all findings closed) | Close CRIT/HIGH findings |
 | **H3** | Platform binding — Raspberry Pi 5 hardware | **AG9 complete** (testing + validation) | ~~WS-F1..F4~~ (done) |
-| **H3.5** | Hardware-binding closure (TLB/cache composition, SVC FFI, SMP) | **AN9 complete (v0.30.10)** | ~~AG9~~ (done), AN6/AN8 (done) |
+| **H3.5** | Hardware-binding closure (TLB/cache composition, SVC FFI, SMP) | **AN9 complete (v0.30.10)**; **WS-RC R2 complete (v0.30.11)** wired Lean ↔ Rust SVC dispatch | ~~AG9~~ (done), AN6/AN8 (done) |
 | **H4** | Evidence convergence — connect proofs to platform | Planned | H3.5 complete |
 
 ### H3.5 — Hardware-binding closure (WS-AN Phase AN9, v0.30.10)
@@ -38,9 +38,17 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   enum mirror; `dsb osh`/`dsb oshst` for outer-shareable /
   cross-cluster ordering (DEF-A-M08, M09, R-HAL-L18, L19).
 - **SuspendThread atomicity** (AN9-D / DEF-C-M04): FFI bracket via
-  `interrupts::with_interrupts_disabled`.
+  `interrupts::with_interrupts_disabled`.  WS-RC R2.B closes the
+  Lean side: `@[export suspend_thread_inner]` now substantively
+  routes into `Kernel.Lifecycle.Suspend.suspendThread` via the
+  `kernelStateRef` IO.Ref instead of returning a stub.
 - **SVC FFI dispatch** (AN9-F / DEF-R-HAL-L14): typed
-  `SyscallArgs` + `SyscallId` + `dispatch_svc`.
+  `SyscallArgs` + `SyscallId` + `dispatch_svc`.  WS-RC R2.B closes
+  the Lean side: `@[export syscall_dispatch_inner]` is a thin
+  BaseIO wrapper around the new pure `syscallDispatchFromAbi`
+  entry point, which spills the FFI register values into the
+  current TCB and invokes the verified `syscallEntryChecked`
+  instead of returning the historical `NotImplemented = 17` stub.
 - **Bounded WFE** (AN9-G / DEF-R-HAL-L17): `wfe_bounded` with
   10 ms default at 54 MHz.
 - **SMP scaffolding** (AN9-J / DEF-R-HAL-L20): PSCI `cpu_on` +

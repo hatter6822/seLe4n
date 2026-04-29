@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/audit-ipc-symmetry-yhdIu",
-      "commit_sha": "acfffaf1eeb77a0304c54606056281f3b2d4ea74",
-      "tree_sha": "a49a1254f95604662bcec0e171f7b52eeeb4c6a7",
-      "committed_at_utc": "2026-04-29T03:16:47+00:00"
+      "branch": "claude/review-hardware-syscall-phase-FfbvV",
+      "commit_sha": "3fa97636fa6de72e1ae20c9ff57beb950a8474f4",
+      "tree_sha": "9ff4bb9b53485847104e849c3c983a52c353945a",
+      "committed_at_utc": "2026-04-29T01:02:28-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "49d8b8fabfdf45ef03dd4173dd86d4f752da5030a1d363d2e9bec3052707d47b"
+    "source_digest": "9695ad9f9846c5d2b84e71241bc58e3458f026aa1cd7268725cb6b511defbc38"
   },
   "summary": {
-    "module_count": 196,
-    "declaration_count": 6158
+    "module_count": 197,
+    "declaration_count": 6202
   },
   "readme_sync": {
     "version": "0.30.11",
     "lean_toolchain": "v4.28.0",
     "production_files": 168,
-    "production_loc": 109837,
-    "test_files": 28,
-    "test_loc": 19112,
-    "proved_theorem_lemma_decls": 3199,
+    "production_loc": 110408,
+    "test_files": 29,
+    "test_loc": 19483,
+    "proved_theorem_lemma_decls": 3206,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -60972,7 +60972,8 @@
           "line": 192,
           "called": [
             "none",
-            "size"
+            "size",
+            "toUInt32"
           ]
         },
         {
@@ -61564,145 +61565,410 @@
     {
       "module": "SeLe4n.Platform.FFI",
       "path": "SeLe4n/Platform/FFI.lean",
-      "declaration_count": 23,
+      "declaration_count": 45,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.FFI",
-          "line": 41,
+          "line": 104,
           "called": []
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:118>",
+          "line": 118,
+          "called": [
+            "LabelingContext",
+            "testLabelingContext"
+          ]
         },
         {
           "kind": "opaque",
           "name": "ffiTimerReadCounter",
-          "line": 51,
+          "line": 128,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiTimerReprogram",
-          "line": 57,
-          "called": []
-        },
-        {
-          "kind": "opaque",
-          "name": "ffiTimerGetTickCount",
-          "line": 62,
-          "called": []
-        },
-        {
-          "kind": "opaque",
-          "name": "ffiGicAcknowledge",
-          "line": 72,
-          "called": []
-        },
-        {
-          "kind": "opaque",
-          "name": "ffiGicEoi",
-          "line": 77,
-          "called": []
-        },
-        {
-          "kind": "opaque",
-          "name": "ffiGicIsSpurious",
-          "line": 82,
-          "called": []
-        },
-        {
-          "kind": "opaque",
-          "name": "ffiTlbiAll",
-          "line": 91,
-          "called": []
-        },
-        {
-          "kind": "opaque",
-          "name": "ffiTlbiByAsid",
-          "line": 96,
-          "called": []
-        },
-        {
-          "kind": "opaque",
-          "name": "ffiTlbiByVaddr",
-          "line": 101,
-          "called": []
-        },
-        {
-          "kind": "opaque",
-          "name": "ffiMmioRead32",
-          "line": 110,
-          "called": []
-        },
-        {
-          "kind": "opaque",
-          "name": "ffiMmioWrite32",
-          "line": 115,
-          "called": []
-        },
-        {
-          "kind": "opaque",
-          "name": "ffiMmioRead64",
-          "line": 120,
-          "called": []
-        },
-        {
-          "kind": "opaque",
-          "name": "ffiMmioWrite64",
-          "line": 125,
-          "called": []
-        },
-        {
-          "kind": "opaque",
-          "name": "ffiUartPutc",
           "line": 134,
           "called": []
         },
         {
           "kind": "opaque",
+          "name": "ffiTimerGetTickCount",
+          "line": 139,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiGicAcknowledge",
+          "line": 149,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiGicEoi",
+          "line": 154,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiGicIsSpurious",
+          "line": 159,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiTlbiAll",
+          "line": 168,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiTlbiByAsid",
+          "line": 173,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiTlbiByVaddr",
+          "line": 178,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiMmioRead32",
+          "line": 187,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiMmioWrite32",
+          "line": 192,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiMmioRead64",
+          "line": 197,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiMmioWrite64",
+          "line": 202,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiUartPutc",
+          "line": 211,
+          "called": []
+        },
+        {
+          "kind": "opaque",
           "name": "ffiDisableInterrupts",
-          "line": 143,
+          "line": 220,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRestoreInterrupts",
-          "line": 148,
+          "line": 225,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiEnableInterrupts",
-          "line": 153,
+          "line": 230,
           "called": []
+        },
+        {
+          "kind": "def",
+          "name": "KernelError.toUInt32",
+          "line": 260,
+          "called": [
+            "KernelError"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "encodeError",
+          "line": 320,
+          "called": [
+            "KernelError",
+            "KernelError.toUInt32"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "encodeOk",
+          "line": 330,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "encodeError_high_bit_set",
+          "line": 345,
+          "called": [
+            "KernelError",
+            "KernelError.toUInt32",
+            "encodeError"
+          ]
+        },
+        {
+          "kind": "initialize",
+          "name": "kernelStateRef",
+          "line": 365,
+          "called": [
+            "SystemState",
+            "default"
+          ]
+        },
+        {
+          "kind": "initialize",
+          "name": "kernelLabelingContextRef",
+          "line": 375,
+          "called": [
+            "LabelingContext",
+            "testLabelingContext"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "initialiseKernelState",
+          "line": 384,
+          "called": [
+            "SystemState",
+            "set"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "getKernelState",
+          "line": 391,
+          "called": [
+            "SystemState",
+            "get"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "updateKernelState",
+          "line": 396,
+          "called": [
+            "SystemState",
+            "modify"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "initialiseKernelLabelingContext",
+          "line": 403,
+          "called": [
+            "LabelingContext",
+            "set"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "getKernelLabelingContext",
+          "line": 407,
+          "called": [
+            "LabelingContext",
+            "get"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bootAndInitialiseFromPlatform",
+          "line": 426,
+          "called": [
+            "LabelingContext",
+            "PlatformConfig",
+            "SystemState",
+            "bootFromPlatformChecked",
+            "config",
+            "initialiseKernelLabelingContext",
+            "initialiseKernelState",
+            "none",
+            "pure"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "writeFfiRegistersToTcb",
+          "line": 452,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "arm64DefaultLayout",
+            "insert",
+            "toNat",
+            "toObjId",
+            "writeReg"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "readReturnValue",
+          "line": 483,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "syscallDispatchFromAbi",
+          "line": 515,
+          "called": [
+            "Kernel",
+            "LabelingContext",
+            "arm64DefaultLayout",
+            "encodeError",
+            "encodeOk",
+            "none",
+            "readReturnValue",
+            "syscallEntryChecked",
+            "writeFfiRegistersToTcb"
+          ]
         },
         {
           "kind": "opaque",
           "name": "ffiSuspendThread",
-          "line": 169,
+          "line": 544,
           "called": []
         },
         {
           "kind": "def",
           "name": "suspendThreadInner",
-          "line": 186,
-          "called": []
+          "line": 574,
+          "called": [
+            "KernelError.toUInt32",
+            "getKernelState",
+            "initialiseKernelState",
+            "none",
+            "ofNat",
+            "pure",
+            "suspendThread",
+            "toNat",
+            "toValid"
+          ]
         },
         {
           "kind": "def",
           "name": "syscallDispatchInner",
-          "line": 217,
-          "called": []
+          "line": 623,
+          "called": [
+            "encodeError",
+            "getKernelLabelingContext",
+            "getKernelState",
+            "initialiseKernelState",
+            "pure",
+            "syscallDispatchFromAbi"
+          ]
         },
         {
           "kind": "opaque",
           "name": "ffiCacheCleanPagetableRange",
-          "line": 235,
+          "line": 651,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcIallu",
-          "line": 242,
+          "line": 658,
           "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallDispatchFromAbi_total",
+          "line": 674,
+          "called": [
+            "LabelingContext",
+            "SystemState",
+            "arm64DefaultLayout",
+            "encodeError",
+            "encodeOk",
+            "none",
+            "readReturnValue",
+            "syscallDispatchFromAbi",
+            "syscallEntryChecked",
+            "writeFfiRegistersToTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok",
+          "line": 713,
+          "called": [
+            "LabelingContext",
+            "SystemState",
+            "ThreadId",
+            "arm64DefaultLayout",
+            "encodeOk",
+            "readReturnValue",
+            "syscallDispatchFromAbi",
+            "syscallEntryChecked",
+            "writeFfiRegistersToTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallDispatchFromAbi_error_of_syscallEntryChecked_error",
+          "line": 733,
+          "called": [
+            "KernelError",
+            "LabelingContext",
+            "SystemState",
+            "ThreadId",
+            "arm64DefaultLayout",
+            "encodeError",
+            "syscallDispatchFromAbi",
+            "syscallEntryChecked",
+            "writeFfiRegistersToTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "syscallDispatchFromAbi_illegalState_when_no_current",
+          "line": 755,
+          "called": [
+            "LabelingContext",
+            "SystemState",
+            "encodeError",
+            "none",
+            "syscallDispatchFromAbi"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "writeFfiRegistersToTcb_id_when_not_tcb",
+          "line": 773,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "none",
+            "toObjId",
+            "writeFfiRegistersToTcb"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "readReturnValue_zero_when_not_tcb",
+          "line": 797,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "none",
+            "readReturnValue",
+            "toObjId"
+          ]
         }
       ]
     },
@@ -62380,7 +62646,8 @@
             "isDeviceRangeWithinRegion",
             "mem",
             "ofNat",
-            "toNat"
+            "toNat",
+            "toUInt32"
           ]
         },
         {
@@ -62495,7 +62762,8 @@
             "PAddr",
             "mem",
             "ofNat",
-            "toNat"
+            "toNat",
+            "toUInt32"
           ]
         },
         {
@@ -80600,6 +80868,295 @@
             "sr019_resumeEndpoint",
             "sr020_frozenResumeReady",
             "sr021_frozenRoundtrip"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "tests.SyscallDispatchSuite",
+      "path": "tests/SyscallDispatchSuite.lean",
+      "declaration_count": 22,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.SyscallDispatchSuite",
+          "line": 48,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "passLine",
+          "line": 50,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "failLine",
+          "line": 53,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "expect",
+          "line": 57,
+          "called": [
+            "failLine",
+            "passLine"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkTcb",
+          "line": 60,
+          "called": [
+            "TCB",
+            "ThreadState",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "mkState",
+          "line": 66,
+          "called": [
+            "BootstrapBuilder",
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "buildChecked",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sd001_kernelErrorDiscriminants",
+          "line": 81,
+          "called": [
+            "KernelError.toUInt32",
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sd002_encodeErrorHighBit",
+          "line": 102,
+          "called": [
+            "KernelError",
+            "encodeError",
+            "expect",
+            "set"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sd003_encodeOkHighBitClear",
+          "line": 116,
+          "called": [
+            "encodeOk",
+            "expect"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sd010_initialiseAndGet",
+          "line": 132,
+          "called": [
+            "ThreadId",
+            "expect",
+            "failLine",
+            "getKernelState",
+            "initialiseKernelState",
+            "mkState",
+            "mkTcb",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sd011_updateKernelState",
+          "line": 145,
+          "called": [
+            "ThreadId",
+            "expect",
+            "getKernelState",
+            "initialiseKernelState",
+            "mkState",
+            "mkTcb",
+            "updateKernelState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sd012_labelingContextRoundtrip",
+          "line": 159,
+          "called": [
+            "expect",
+            "getKernelLabelingContext",
+            "initialiseKernelLabelingContext",
+            "testLabelingContext"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sd020_suspendThreadInner_ready",
+          "line": 175,
+          "called": [
+            "ThreadId",
+            "expect",
+            "failLine",
+            "getKernelState",
+            "initialiseKernelState",
+            "mkState",
+            "mkTcb",
+            "suspendThreadInner",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sd021_suspendThreadInner_inactive",
+          "line": 192,
+          "called": [
+            "KernelError.toUInt32",
+            "ThreadId",
+            "expect",
+            "initialiseKernelState",
+            "mkState",
+            "mkTcb",
+            "suspendThreadInner"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sd022_suspendThreadInner_missing",
+          "line": 203,
+          "called": [
+            "KernelError.toUInt32",
+            "expect",
+            "initialiseKernelState",
+            "mkState",
+            "mkTcb",
+            "suspendThreadInner"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sd023_suspendThreadInner_sentinel",
+          "line": 213,
+          "called": [
+            "KernelError.toUInt32",
+            "ObjId",
+            "expect",
+            "failLine",
+            "getKernelState",
+            "initialiseKernelState",
+            "mkState",
+            "mkTcb",
+            "sentinel",
+            "suspendThreadInner"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sd030_syscallDispatchInner_noCurrent",
+          "line": 240,
+          "called": [
+            "KernelError.toUInt32",
+            "expect",
+            "initialiseKernelLabelingContext",
+            "initialiseKernelState",
+            "mkState",
+            "none",
+            "syscallDispatchInner",
+            "testLabelingContext",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sd031_syscallDispatchInner_spillsRegs",
+          "line": 258,
+          "called": [
+            "TCB",
+            "ThreadId",
+            "expect",
+            "failLine",
+            "getKernelState",
+            "initialiseKernelLabelingContext",
+            "initialiseKernelState",
+            "mkState",
+            "mkTcb",
+            "syscallDispatchInner",
+            "testLabelingContext",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sd032_syscallDispatchInner_invalidSyscall",
+          "line": 282,
+          "called": [
+            "ThreadId",
+            "expect",
+            "initialiseKernelLabelingContext",
+            "initialiseKernelState",
+            "mkState",
+            "mkTcb",
+            "syscallDispatchInner",
+            "testLabelingContext"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sd033_dispatchFromAbi_total",
+          "line": 297,
+          "called": [
+            "ThreadId",
+            "failLine",
+            "mkState",
+            "mkTcb",
+            "passLine",
+            "syscallDispatchFromAbi",
+            "testLabelingContext"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sd040_bootInitialise_malformed",
+          "line": 314,
+          "called": [
+            "PlatformConfig",
+            "ThreadId",
+            "bootAndInitialiseFromPlatform",
+            "expect",
+            "getKernelState",
+            "initialiseKernelState",
+            "mkState",
+            "mkTcb",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 349,
+          "called": [
+            "sd001_kernelErrorDiscriminants",
+            "sd002_encodeErrorHighBit",
+            "sd003_encodeOkHighBitClear",
+            "sd010_initialiseAndGet",
+            "sd011_updateKernelState",
+            "sd012_labelingContextRoundtrip",
+            "sd020_suspendThreadInner_ready",
+            "sd021_suspendThreadInner_inactive",
+            "sd022_suspendThreadInner_missing",
+            "sd023_suspendThreadInner_sentinel",
+            "sd030_syscallDispatchInner_noCurrent",
+            "sd031_syscallDispatchInner_spillsRegs",
+            "sd032_syscallDispatchInner_invalidSyscall",
+            "sd033_dispatchFromAbi_total",
+            "sd040_bootInitialise_malformed"
           ]
         }
       ]

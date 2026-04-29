@@ -205,6 +205,15 @@ SeLe4n/Kernel/Concurrency/Assumptions.lean  AN12-B SMP-latent assumption invento
 SeLe4n/Kernel/API.lean           Public kernel interface + syscall wrappers
 SeLe4n/Platform/Contract.lean    PlatformBinding typeclass (H3-prep)
 SeLe4n/Platform/DeviceTree.lean  FDT parsing with bounds-checked helpers
+SeLe4n/Platform/FFI.lean         WS-RC R2: Lean ↔ Rust HAL bridge — `@[extern]` C-bridge
+                                 declarations (timer/GIC/TLB/MMIO/UART/interrupts/cache)
+                                 plus the substantive `@[export]` bodies for
+                                 `suspend_thread_inner` and `syscall_dispatch_inner`
+                                 routing through `kernelStateRef` IO.Ref into
+                                 `Lifecycle.Suspend.suspendThread` and
+                                 `Kernel.syscallEntryChecked`
+SeLe4n/Platform/Staged.lean      AN7-D.6 (PLT-M07): build anchor pulling staged
+                                 platform-binding modules into CI
 SeLe4n/Platform/Sim/*            Simulation platform contracts + proof hooks
   Sim/RuntimeContract.lean       Permissive + restrictive runtime contracts
   Sim/BootContract.lean          Boot + interrupt contracts (all True)
@@ -225,12 +234,17 @@ SeLe4n/Testing/*                 Test harness, state builder, fixtures
   MainTraceHarness.lean          Main trace test harness
   RuntimeContractFixtures.lean   Platform contract test fixtures
 Main.lean                        Executable entry point
-tests/                           Executable test suites + fixtures (18 suites)
+tests/                           Executable test suites + fixtures (19 suites)
   DecodingSuite.lean             T-03/AC6-A + AK4-A: 57 tests for RegisterDecode + SyscallArgDecode + IPC-buffer merge
   AbiRoundtripSuite.lean         AK4-G: End-to-end ABI encode/decode integration (25 assertions)
   BadgeOverflowSuite.lean        AG9-E: 22 tests for Badge Nat↔UInt64 round-trip
   An9HardwareBindingSuite.lean   AN9: 23 surface-anchor tests for hardware-binding closure (DEF-A-M04..M09, DEF-C-M04, DEF-R-HAL-L14..L20)
   LivenessSuite.lean             D5: 58 surface anchor tests for liveness/WCRT theorems
+  SyscallDispatchSuite.lean      WS-RC R2.C / DEEP-TEST-03: 33 regression tests
+                                 covering `suspendThreadInner`, `syscallDispatchInner`,
+                                 `KernelError → UInt32` discriminants, the
+                                 encoded-UInt64 high-bit-error contract, and
+                                 the `kernelStateRef` IO.Ref bootstrap path.
 ```
 
 Note: Files marked "Re-export hub" are thin import-only files that preserve
@@ -674,6 +688,40 @@ under `docs/` and `docs/gitbook/`.
   `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/ReplyRecv.lean`;
   test coverage in `tests/InformationFlowSuite.lean` +
   `tests/NegativeStateSuite.lean::runR1IpcCallPathSymmetryChecks`.
+  **R2 (DEEP-FFI-01/02/03 + DEEP-TEST-03) LANDED on branch
+  `claude/review-hardware-syscall-phase-FfbvV`**: closes the
+  hardware-syscall-dispatch gap by replacing the
+  `suspend_thread_inner` and `syscall_dispatch_inner` `@[export]`
+  stubs (previously returning `KernelError::NotImplemented = 17`)
+  with substantive bodies that route through
+  `Kernel.Lifecycle.Suspend.suspendThread` and the verified
+  `syscallEntryChecked` entry point.  R2.A: kernel-state IO.Ref
+  threading (`kernelStateRef`, `kernelLabelingContextRef`,
+  `initialiseKernelState`, `getKernelState`, `updateKernelState`,
+  `bootAndInitialiseFromPlatform` boot wrapper).  R2.B: pure typed-ABI
+  entry point `syscallDispatchFromAbi` (writes FFI register values
+  into the current TCB, invokes `syscallEntryChecked`, encodes the
+  result via the bit-63 error-flag UInt64 contract); replaced bodies
+  for the two `@[export]` declarations.  Adds `KernelError.toUInt32`
+  (mirroring `rust/sele4n-types/src/error.rs` discriminants 0..51),
+  `encodeError` / `encodeOk` UInt64 encoding helpers, and seven
+  correctness theorems (`encodeError_high_bit_set`,
+  `syscallDispatchFromAbi_total`,
+  `syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok`,
+  `syscallDispatchFromAbi_error_of_syscallEntryChecked_error`,
+  `syscallDispatchFromAbi_illegalState_when_no_current`,
+  `writeFfiRegistersToTcb_id_when_not_tcb`,
+  `readReturnValue_zero_when_not_tcb`).  Aligns the Rust comments at
+  `rust/sele4n-hal/src/svc_dispatch.rs:308` and
+  `rust/sele4n-hal/src/ffi.rs:247-249` with the actual
+  `syscall_dispatch_inner` / `suspend_thread_inner` symbol names.
+  R2.C: makes the FFI docstring's gating claim honest (link-time, not
+  preprocessor); adds the dedicated `tests/SyscallDispatchSuite.lean`
+  regression suite (33 tests covering `KernelError` discriminants,
+  encoding round-trips, the IO.Ref bootstrap path,
+  `suspendThreadInner` integration, and `syscallDispatchInner`
+  integration) wired into `scripts/test_tier2_negative.sh` and
+  `scripts/test_tier3_invariant_surface.sh`.
 
 - **WS-AN portfolio COMPLETE (v0.30.11, branch `claude/review-codebase-phase-an12-JBPQN`)**:
   Phase AN12 — Documentation, themes, closure — landed the cross-cutting

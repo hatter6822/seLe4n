@@ -148,3 +148,11 @@ root = "tests.KernelErrorMatrixSuite"
 [[lean_exe]]
 name = "ak8_coverage_suite"
 root = "tests.Ak8CoverageSuite"
+
+# WS-RC R2.C (DEEP-TEST-03): hardware syscall dispatch FFI bridge suite.
+# Exercises `suspendThreadInner`, `syscallDispatchInner`,
+# `KernelError → UInt32` discriminants, the encoded-UInt64 return
+# contract, and the `kernelStateRef` IO.Ref bootstrap path.
+[[lean_exe]]
+name = "syscall_dispatch_suite"
+root = "tests.SyscallDispatchSuite"

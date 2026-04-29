@@ -244,12 +244,14 @@ pub extern "C" fn ffi_enable_interrupts() {
 /// satisfies the
 /// `suspendThread_atomicity_precondition` from the Lean model.
 ///
-/// The inner symbol `sele4n_suspend_thread_inner` is provided by the
-/// Lean compiler from the kernel's `@[export]` declaration (see
-/// `SeLe4n/Platform/FFI.lean`).  A direct call to the inner symbol
-/// from outside this wrapper bypasses the atomicity guarantee and
-/// flagged with the `#[must_use]` discipline note in the Lean
-/// docstring.
+/// The inner symbol `suspend_thread_inner` is provided by the Lean
+/// compiler from the kernel's `@[export suspend_thread_inner]`
+/// declaration (see `SeLe4n/Platform/FFI.lean`).  A direct call to
+/// the inner symbol from outside this wrapper bypasses the atomicity
+/// guarantee and flagged with the `#[must_use]` discipline note in
+/// the Lean docstring.  After WS-RC R2.B the Lean wrapper substantively
+/// routes into `Kernel.Lifecycle.Suspend.suspendThread` via the
+/// kernel-state IO.Ref rather than returning a stub error.
 ///
 /// Returns: `KernelError::Ok = 0` on success, the kernel-error
 /// discriminant otherwise.

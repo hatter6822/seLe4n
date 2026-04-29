@@ -51,9 +51,9 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.30.11` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 108,891 across 167 Lean files |
-| **Test LoC** | 16,168 across 25 Lean test suites |
-| **Proved declarations** | 3,186 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 110,408 across 168 Lean files |
+| **Test LoC** | 19,483 across 29 Lean test suites |
+| **Proved declarations** | 3,206 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
 | **Active workstream** | **WS-AK Phase AK10 COMPLETE** (v0.30.6). Portfolio-closure phase landing fixture re-verification, documentation synchronization, audit errata and deferred tracking, version bump (patch-only per maintainer direction: v0.30.5 → v0.30.6; v1.0.0 release-tag deferred to a separate maintainer action), residual LOW-tier review, website link manifest audit, dead-code removal in `rust/sele4n-hal/src/trap.S` (both SError entries now `b .` after `bl handle_serror`, completing the R-HAL-M12 remediation per the audit's original guidance), and final regression gate. `docs/dev_history/audits/AUDIT_v0.29.0_ERRATA.md` formalises audit-text corrections E-1..E-6 (S-H03 verification clarification, R-HAL-M12 dead-code removal, A-H01 layering extends to three layers, R-HAL-H02 partial DSB/ISB + missing `tlbi vmalle1`/D-cache clean, NI-H02 composition theorem scope, finding-count arithmetic 202 not 201). `docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md` formalises 11 deferred items (7 hardware-binding: A-M04 TLB+cache composition, A-M06/AK3-I `tlbBarrierComplete`, A-M08/A-M09/AK3-K MMU/Device-memory `BarrierKind`, C-M04 `suspendThread` atomicity, P-L9 VSpaceRoot boot exclusion, R-HAL-L14 SVC FFI; 4 proof-hygiene: F-L9 17-deep tuple, AK2-K.4 `eventuallyExits` by-design, AK7-E.cascade/AK7-F.cascade migrations) — all recorded as **post-1.0 hardening candidates; no currently-active plan file tracks them**, matching the convention from the AK8 second-pass audit (avoiding misleading references to the closed workstreams WS-V and AG10). Fixture byte-identical to `tests/fixtures/main_trace_smoke.expected` (227 lines, unchanged — AK1-AK9 semantic changes kept observable trace stable). Portfolio AK1..AK10 addresses 2 CRITICAL + 23 HIGH + 76 MEDIUM + 101 LOW = 202 findings across 10 phases, 86 sub-tasks. Plan: [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) §13. Prior: WS-AM (v0.30.0), WS-AJ (v0.28.1–v0.29.0), WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG–WS-B. **Next:** hardware-binding / proof-hygiene items are tracked per-ID in `AUDIT_v0.29.0_DEFERRED.md`; a future workstream picking any up should reference the file and update its row. |
@@ -589,14 +589,24 @@ layout; the Lean-side `trapFrameLayout` in `ExceptionModel.lean`
 **AI1-A/AI1-B (v0.27.7)**: The Rust exception handler error codes match the
 Lean model exactly. Alignment faults (`PC_ALIGN`, `SP_ALIGN`) and unknown
 exceptions return discriminant 45 (`UserException`), matching
-`ExceptionModel.lean:175-177`. The SVC handler returns `NotImplemented` (17)
-as a pre-FFI stub, signaling that syscall dispatch is not yet wired to the Lean
-kernel (SVC FFI bridge tracked as DEF-R-HAL-L14 in
-[`docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md`](../dev_history/audits/AUDIT_v0.29.0_DEFERRED.md);
-WS-V and AG10 are both closed workstreams per `docs/WORKSTREAM_HISTORY.md`).
+`ExceptionModel.lean:175-177`. The SVC handler now substantively dispatches
+to `Kernel.syscallEntryChecked` via the FFI bridge — see §6.5.5 below.
 Named constants in `trap.rs`
 (`error_code::VM_FAULT`, `USER_EXCEPTION`, `NOT_IMPLEMENTED`) replace bare
 numeric literals for cross-reference clarity.
+
+**WS-RC R2 (v0.30.11)**: the FFI bridge that the audit tracked under
+`DEF-R-HAL-L14` in `AUDIT_v0.29.0_DEFERRED.md` is now substantively
+wired.  `@[export syscall_dispatch_inner]` (`SeLe4n/Platform/FFI.lean`)
+reads the live `SystemState` from `kernelStateRef`, spills the FFI
+register values into the current TCB via `writeFfiRegistersToTcb`,
+invokes the verified `Kernel.syscallEntryChecked`, encodes the result
+into the bit-63 error-flag UInt64 contract, and writes the post-state
+back to the IO.Ref.  `@[export suspend_thread_inner]` is the analogous
+substantive bridge into `Kernel.Lifecycle.Suspend.suspendThread`.  The
+`NotImplemented = 17` discriminant is no longer emitted by either
+bridge on any non-error code path — every error now corresponds to a
+substantive kernel rejection.
 
 #### 6.5.0 Panic Discipline (AK5-A)
 
@@ -696,8 +706,12 @@ generation tracking, free list reuse, and `asidPoolUnique` invariant.
 
 #### 6.5.5 FFI Bridge (Lean ↔ Rust)
 
-The FFI bridge (`SeLe4n/Platform/FFI.lean`, AG7) declares 17 `@[extern]`
-functions mapping Lean kernel operations to Rust HAL implementations:
+The FFI bridge (`SeLe4n/Platform/FFI.lean`, AG7 + WS-RC R2) crosses the
+Lean ↔ Rust boundary in two directions:
+
+**Lean → Rust** (`@[extern]` `opaque` declarations): the verified Lean
+kernel calls into the Rust HAL.  After WS-RC R2 the surface remains
+the same set of HAL primitives:
 
 - **UART**: `ffi_uart_putchar`, `ffi_uart_getchar`
 - **Timer**: `ffi_timer_get_count`, `ffi_timer_set_comparator`,
@@ -707,6 +721,46 @@ functions mapping Lean kernel operations to Rust HAL implementations:
 - **CPU**: `ffi_cpu_wfe`, `ffi_cpu_dsb`, `ffi_cpu_isb`, `ffi_cpu_dmb`
 - **Context switch**: `ffi_context_switch`
 - **Interrupts**: `ffi_interrupts_disable`, `ffi_interrupts_restore`
+
+**Rust → Lean** (`@[export]` declarations, WS-RC R2): the Rust HAL
+calls back into the verified kernel after handling an exception
+bracket.  Two such bridges exist:
+
+- `@[export suspend_thread_inner]` (named `suspend_thread_inner` on
+  the C side) — substantively routes into
+  `Kernel.Lifecycle.Suspend.suspendThread` after sentinel rejection
+  via `ThreadId.toValid?`.  Returns `0` on success or the
+  `KernelError as u32` discriminant on failure.
+- `@[export syscall_dispatch_inner]` (named `syscall_dispatch_inner`
+  on the C side) — a thin BaseIO wrapper around the pure typed-ABI
+  entry point `syscallDispatchFromAbi`, which spills the FFI
+  register values into the current TCB and invokes
+  `syscallEntryChecked` with the deployment's `LabelingContext` and
+  `arm64DefaultLayout`.  Returns a UInt64 per the bit-63 error-flag
+  contract: bit 63 = 1 with the low 32 bits encoding the
+  `KernelError` discriminant on the error path; bit 63 = 0 with the
+  low 63 bits carrying the success return value.
+
+Hardware-mode kernel state lives in two `IO.Ref` cells:
+
+- `kernelStateRef : IO.Ref SystemState` — the live kernel state.
+  Initialised by `bootAndInitialiseFromPlatform` (which composes
+  `bootFromPlatformChecked` with the IO.Ref seed) on hardware boot.
+- `kernelLabelingContextRef : IO.Ref LabelingContext` — the
+  deployment's information-flow labeling policy.  Defaults to
+  `Kernel.testLabelingContext` (which passes the
+  `isInsecureDefaultContext` runtime gate); production deployments
+  override it with their domain-specific policy at boot.
+
+The IO.Ref design was chosen over thread-local register-decoded
+snapshots and pure functional reconstruction because (a) the Rust
+HAL serialises every SVC entry through `with_interrupts_disabled`,
+giving the IO.Ref the sequential semantics it needs without
+atomicity overhead; (b) thread-local snapshots would multiply FFI
+symbols per syscall; (c) pure reconstruction would force
+serialise/deserialise of the full `SystemState` (object store,
+scheduler, CDT, …) at every syscall, making cost unbounded in
+object-store size.
 
 Production `AdapterProofHooks` (`rpi5ProductionAdapterProofHooks` in
 `Platform/RPi5/ProofHooks.lean`) provides substantive preservation proofs
