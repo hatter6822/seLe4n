@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-ipc-symmetry-yhdIu",
-      "commit_sha": "c93e2dcb3e3c5f685054d292298d54f975d18c65",
-      "tree_sha": "50675e0ab5bdef7311d063bb8cbaec1723d6c528",
-      "committed_at_utc": "2026-04-28T22:07:37-04:00"
+      "commit_sha": "acfffaf1eeb77a0304c54606056281f3b2d4ea74",
+      "tree_sha": "a49a1254f95604662bcec0e171f7b52eeeb4c6a7",
+      "committed_at_utc": "2026-04-29T03:16:47+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ab3b20a32b8e2ba18402d81a4ad9909390b3d0933e441d6e5304ed08ee8296f3"
+    "source_digest": "49d8b8fabfdf45ef03dd4173dd86d4f752da5030a1d363d2e9bec3052707d47b"
   },
   "summary": {
     "module_count": 196,
@@ -29,7 +29,7 @@
     "production_files": 168,
     "production_loc": 109837,
     "test_files": 28,
-    "test_loc": 19107,
+    "test_loc": 19112,
     "proved_theorem_lemma_decls": 3199,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -73604,7 +73604,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1610,
+          "line": 1615,
           "called": [
             "runAk6Suite",
             "runInformationFlowChecks",

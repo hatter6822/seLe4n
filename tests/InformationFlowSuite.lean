@@ -1330,9 +1330,10 @@ def runInformationFlowChecks : IO Unit := do
        | .error _ => true)
     -- Test 2: Direct verification of the symmetric `.error .invalidCapability`
     -- code path. Construct the exact missing-TCB scenario that triggers the
-    -- `lookupCspaceRoot = none` branch in BOTH send and receive WithCaps
-    -- wrappers. This is done by deleting the peer's TCB via a state splice —
-    -- simulating the structural fault the NI audit flagged.
+    -- `lookupCspaceRoot = none` branch in ALL THREE WithCaps wrappers
+    -- (`endpointSendDualWithCaps`, `endpointReceiveDualWithCaps`,
+    -- `endpointCallWithCaps`). This is done by deleting the peer's TCB via
+    -- a state splice — simulating the structural fault the NI audit flagged.
     let epId : SeLe4n.ObjId := ⟨3700⟩
     let senderTid : SeLe4n.ThreadId := ⟨3710⟩
     let receiverTid : SeLe4n.ThreadId := ⟨3711⟩
@@ -1360,10 +1361,14 @@ def runInformationFlowChecks : IO Unit := do
       -- Splice out the receiver TCB (simulates missing-TCB structural fault).
       let stFaulty : SystemState := { stQueued with
         objects := stQueued.objects.erase receiverTid.toObjId }
-      -- Now trigger send-path. `endpointSendDual` will internally fail or succeed
-      -- depending on whether the dequeue finds a TCB. Regardless of intermediate
-      -- outcome, the cap-transfer `.error .invalidCapability` arm symmetry is
-      -- the property under test — both code paths exercise the same arm shape.
+      -- Verify the structural-fault predicate: `lookupCspaceRoot` returns
+      -- `none` on the missing-TCB peer. This is the precise predicate the
+      -- guarded `| none => .error .invalidCapability` arm in all three
+      -- WithCaps wrappers fires on. The structural-fault pre-condition is
+      -- excluded by `intrusiveQueueWellFormed` (which forces every
+      -- enqueued thread to have a TCB) on the normal IPC path; the
+      -- guarded arm is fail-closed defense-in-depth against invariant
+      -- drift.
       let lookupResult := SeLe4n.Kernel.lookupCspaceRoot stFaulty receiverTid
       expect "lookupCspaceRoot returns none on missing-TCB peer"
         (lookupResult = none)
