@@ -61,6 +61,7 @@ errors=0
 extras="$(comm -23 <(echo "$staged_only") <(echo "$allowed"))"
 if [ -n "$extras" ]; then
     echo "ERROR: modules in staged_only but NOT in allowlist:"
+    # shellcheck disable=SC2001  # sed pipe is the clearest way to indent multi-line text
     echo "$extras" | sed 's/^/    /'
     echo "  Add to $(basename "$ALLOWLIST") with rationale, OR"
     echo "  remove the import from Platform/Staged.lean."
@@ -69,6 +70,7 @@ fi
 missing="$(comm -13 <(echo "$staged_only") <(echo "$allowed"))"
 if [ -n "$missing" ]; then
     echo "ERROR: modules in allowlist but NOT staged-only (entered production?):"
+    # shellcheck disable=SC2001  # sed pipe is the clearest way to indent multi-line text
     echo "$missing" | sed 's/^/    /'
     echo "  Remove from $(basename "$ALLOWLIST"), OR"
     echo "  re-stage the module."
