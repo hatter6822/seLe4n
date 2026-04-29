@@ -110,13 +110,16 @@ def endpointSendDualWithCaps
                 let grantRight := endpointRights.mem .grant
                 ipcUnwrapCaps msg senderCspaceRoot recvRoot receiverSlotBase grantRight st'
               | none =>
-                -- AK1-I (I-M07 / MEDIUM, NI L-1): Symmetric with the receive
-                -- path below. Previous behavior returned `.ok ({ results := #[] }, st')`
-                -- — a silent success on missing receiver CSpace root. This
-                -- asymmetry was an NI distinguisher: send and receive
+                -- AK1-I (I-M07 / MEDIUM, NI L-1): Symmetric with the
+                -- `endpointReceiveDualWithCaps` and `endpointCallWithCaps`
+                -- arms below. Previous behavior returned
+                -- `.ok ({ results := #[] }, st')` — a silent success on
+                -- missing receiver CSpace root. This asymmetry was an NI
+                -- distinguisher: send and receive (and later call)
                 -- observed different kernel-result shapes for the same
-                -- structural fault, giving a per-domain covert channel.
-                -- Now both paths fail closed with `.invalidCapability`,
+                -- structural fault, giving a per-domain covert channel
+                -- via `KernelError`. All three IPC capability-transfer
+                -- paths now fail closed with `.invalidCapability`,
                 -- preserving NI symmetry. The message payload itself was
                 -- already delivered by `endpointSendDual` at line above;
                 -- the `.error` indicates the capability-transfer side
@@ -152,8 +155,20 @@ def endpointReceiveDualWithCaps
                   .ok ((senderId, { results := #[] }), st')
                 else
                   -- Sender was dequeued — get sender's cspaceRoot for CDT tracking.
-                  -- U-H13: Missing CSpace root returns explicit error instead of
-                  -- silently falling back to senderId.toObjId, which could mask bugs.
+                  -- AK1-I (I-M07 / MEDIUM, NI L-1) + U-H13: Symmetric with
+                  -- the `endpointSendDualWithCaps` arm above and the
+                  -- `endpointCallWithCaps` arm below. Previous behavior
+                  -- fell back silently to `senderId.toObjId` on missing
+                  -- sender CSpace root — a silent success that could mask
+                  -- bugs and gave a per-domain covert channel via
+                  -- `KernelError`. Now all three IPC capability-transfer
+                  -- paths fail closed with `.invalidCapability` on this
+                  -- structural fault, preserving NI symmetry. The
+                  -- message payload itself was already delivered by
+                  -- `endpointReceiveDual` at line above; the `.error`
+                  -- indicates the capability-transfer side channel
+                  -- failed and allows the caller to surface a clean
+                  -- protocol-level error.
                   match lookupCspaceRoot st' senderId with
                   | none => .error .invalidCapability
                   | some senderRoot =>
@@ -195,7 +210,24 @@ def endpointCallWithCaps
               | some recvRoot =>
                 let grantRight := endpointRights.mem .grant
                 ipcUnwrapCaps msg callerCspaceRoot recvRoot receiverSlotBase grantRight st'
-              | none => .ok ({ results := #[] }, st')
+              | none =>
+                -- WS-RC R1 (DEEP-IPC-03 / MEDIUM, NI L-1): Symmetric with
+                -- the `endpointSendDualWithCaps` and
+                -- `endpointReceiveDualWithCaps` arms above. Previous
+                -- behavior returned `.ok ({ results := #[] }, st')` — a
+                -- silent success on missing receiver CSpace root. This
+                -- asymmetry was an NI distinguisher: the call path
+                -- observed a different kernel-result shape from the
+                -- send/receive paths for the same structural fault,
+                -- giving a per-domain covert channel via `KernelError`.
+                -- All three IPC capability-transfer paths now fail
+                -- closed with `.invalidCapability` on this branch,
+                -- preserving NI symmetry. The message payload itself
+                -- was already delivered by `endpointCall` at line
+                -- above; the `.error` indicates the capability-transfer
+                -- side channel failed and allows the caller to surface
+                -- a clean protocol-level error.
+                .error .invalidCapability
             | none => .ok ({ results := #[] }, st')
           | none => .ok ({ results := #[] }, st')
 

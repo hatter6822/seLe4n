@@ -444,7 +444,8 @@ Composite preservation (all 6 compound IPC operations):
 - `endpointReplyRecv_preserves_dualQueueSystemInvariant`,
 - `ipcUnwrapCaps_preserves_dualQueueSystemInvariant` (M3-E4: CNode precondition, composes per-step ep/tcb preservation),
 - `endpointSendDualWithCaps_preserves_dualQueueSystemInvariant` (M3-E4: composes send + ipcUnwrapCaps),
-- `endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant` (M3-E4: composes receive + ipcUnwrapCaps).
+- `endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant` (M3-E4: composes receive + ipcUnwrapCaps),
+- `endpointCallWithCaps_preserves_ipcInvariant` (M3-E4: composes call + ipcUnwrapCaps; **post WS-RC R1**: `lookupCspaceRoot = none` arm vacuous via `simp [hLookup] at hStep`, mirroring the post-AK1-I send-path tactic — closes DEEP-IPC-03 NI distinguisher).
 
 Helper lemmas: `storeTcbQueueLinks_noprevnext_preserves_linkInteg`, `storeTcbQueueLinks_append_tail_preserves_linkInteg`, `storeTcbQueueLinks_endpoint_backward`.
 

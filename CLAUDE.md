@@ -662,7 +662,18 @@ under `docs/` and `docs/gitbook/`.
   allowlist + partition gate (R12.B.1/2), orphan-fields gate (R12.D.1),
   contract-marker text correction (R12.B side effect — partition
   gate caught 2 stale "STATUS: staged" markers on production-wired
-  contract files).
+  contract files). **R1 (DEEP-IPC-03) LANDED on branch
+  `claude/audit-ipc-symmetry-yhdIu`**: closes the call-path NI
+  asymmetry by aligning `endpointCallWithCaps` with the AK1-I
+  fail-closed shape — all three IPC capability-transfer paths
+  (`endpointSendDualWithCaps`, `endpointReceiveDualWithCaps`,
+  `endpointCallWithCaps` in
+  `SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean`) now return
+  `.error .invalidCapability` on the missing-CSpace-root
+  structural fault. Proof discharge updated in
+  `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/ReplyRecv.lean`;
+  test coverage in `tests/InformationFlowSuite.lean` +
+  `tests/NegativeStateSuite.lean::runR1IpcCallPathSymmetryChecks`.
 
 - **WS-AN portfolio COMPLETE (v0.30.11, branch `claude/review-codebase-phase-an12-JBPQN`)**:
   Phase AN12 — Documentation, themes, closure — landed the cross-cutting

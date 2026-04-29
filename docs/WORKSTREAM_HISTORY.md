@@ -122,17 +122,68 @@ the four new live artefacts; opens the WS-RC entry in this file.
 - **R0.6 (this entry)**: WS-RC opening recorded with R0 phase
   breakdown and forward links to R1..R14.
 
-### R1..R14 — TBD
+### R1 — IPC call-path NI symmetry (DEEP-IPC-03, v0.31.0, **COMPLETE**)
 
-Per plan §3 phase summary; rows will be appended to this section as
-each phase lands a coherent slice. The recommended ordering is R1
-first (one-line NI symmetry fix on the IPC call path; closes
-DEEP-IPC-03 for v0.31.0), then R2/R3 (the v1.0.0 implementation tier:
-hardware syscall dispatch wiring + boot VSpace threading), then
-R4/R5/R6 (v1.0.0 invariant / behaviour symmetry / spec-completeness
-work), then R7..R12 (cleanup/hygiene tier in any order, with R11
-landing last among hygiene phases per plan §3.2 so the metric refresh
-runs against the post-implementation tree).
+R1 closes the last NI asymmetry between the three IPC capability-
+transfer paths. AK1-I (I-M07) had previously aligned
+`endpointSendDualWithCaps` and `endpointReceiveDualWithCaps` on the
+missing-CSpace-root structural fault: both returned
+`.error .invalidCapability` instead of one silently succeeding while
+the other failed. The call path
+(`endpointCallWithCaps` at
+`SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean`) was the remaining
+outlier — it returned `.ok ({ results := #[] }, st')` on the same
+fault, giving a per-domain covert channel via `KernelError`. R1
+brings the call path to `.error .invalidCapability` parity, so all
+three operations fail closed identically on the same structural
+fault.
+
+- **R1.1 / R1.2 / R1.3 (call-path semantics)**: the
+  `match lookupCspaceRoot st' receiverId with | none => ...` arm of
+  `endpointCallWithCaps` now returns `.error .invalidCapability`
+  with a 16-line AK1-I-style comment block explaining the NI-
+  symmetry rationale. The two adjacent `| none =>` arms (for
+  `ep.receiveQ.head` and `getEndpoint?`) are left as `.ok` because
+  they encode a different invariant (no receiver enqueued ≠ missing
+  CSpace root) and the send path keeps them as `.ok` for the same
+  reason.
+- **R1.4 (comment scaffolding parity)**: the previously-terse
+  receive-path comment is expanded to match the AK1-I send-path
+  scaffolding so all three WithCaps arms carry identical NI-
+  symmetry rationale; line-number cross-references in the comments
+  are replaced by function-name cross-references for robustness.
+- **R1 (proof update)**: the discharged proof for
+  `endpointCallWithCaps_preserves_ipcInvariant`
+  (`SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/ReplyRecv.lean`) is
+  updated so the `lookupCspaceRoot = none` arm becomes vacuous —
+  matching the existing send-path
+  (`endpointSendDualWithCaps_preserves_ipcInvariant`) tactic shape
+  — in line with the implement-the-improvement rule (the proof
+  follows the implementation, not vice versa).
+- **R1.5 (test coverage)**: the AK1-I regression in
+  `tests/InformationFlowSuite.lean` is extended to assert the
+  send/receive/call symmetry (Test 3 directly invokes
+  `endpointCallWithCaps` on a missing-TCB receiver state to verify
+  the wrapper never silently succeeds); a new
+  `runR1IpcCallPathSymmetryChecks` runner in
+  `tests/NegativeStateSuite.lean` runs three focused checks
+  (R1-NEG-01 healthy state succeeds; R1-NEG-02 wrapper propagates
+  an error on missing-TCB receiver; R1-NEG-03
+  `lookupCspaceRoot = none` witnesses the guarded fault arm).
+- **Validation**: `lake build SeLe4n.Kernel.IPC.DualQueue.WithCaps`
+  passes; `test_smoke.sh` and `test_full.sh` pass; the executable
+  `lake exe sele4n` trace is byte-identical to
+  `tests/fixtures/main_trace_smoke.expected`.
+
+### R2..R14 — TBD
+
+Per plan §3 phase summary; remaining rows will be appended to this
+section as each phase lands a coherent slice. R2/R3 are the v1.0.0
+implementation tier (hardware syscall dispatch wiring + boot VSpace
+threading), then R4/R5/R6 (v1.0.0 invariant / behaviour symmetry /
+spec-completeness work), then R7..R12 (cleanup/hygiene tier in any
+order, with R11 landing last among hygiene phases per plan §3.2 so
+the metric refresh runs against the post-implementation tree).
 
 ## WS-AN — Pre-1.0 Audit Remediation (v0.30.6 → v0.30.11, **COMPLETE — ARCHIVED**)
 

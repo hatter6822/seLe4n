@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/audit-workstream-planning-XsmKS",
-      "commit_sha": "d9348344168bb18569850737196a8d422e014c6d",
-      "tree_sha": "1a7a3d79f1b6a1f00765eceecd79d4aee7b2da1f",
-      "committed_at_utc": "2026-04-29T00:37:32+00:00"
+      "branch": "claude/audit-ipc-symmetry-yhdIu",
+      "commit_sha": "c93e2dcb3e3c5f685054d292298d54f975d18c65",
+      "tree_sha": "50675e0ab5bdef7311d063bb8cbaec1723d6c528",
+      "committed_at_utc": "2026-04-28T22:07:37-04:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "0ac75f312399d8c55d64ebbed24d3e0426952f213f1b51480963ee7eb4a77a20"
+    "source_digest": "ab3b20a32b8e2ba18402d81a4ad9909390b3d0933e441d6e5304ed08ee8296f3"
   },
   "summary": {
     "module_count": 196,
-    "declaration_count": 6142
+    "declaration_count": 6158
   },
   "readme_sync": {
     "version": "0.30.11",
     "lean_toolchain": "v4.28.0",
     "production_files": 168,
-    "production_loc": 109805,
+    "production_loc": 109837,
     "test_files": 28,
-    "test_loc": 18925,
+    "test_loc": 19107,
     "proved_theorem_lemma_decls": 3199,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -18141,7 +18141,7 @@
         {
           "kind": "def",
           "name": "endpointReceiveDualWithCaps",
-          "line": 136,
+          "line": 139,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
@@ -18162,7 +18162,7 @@
         {
           "kind": "def",
           "name": "endpointCallWithCaps",
-          "line": 173,
+          "line": 188,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
@@ -73547,6 +73547,7 @@
             "domainFlowsTo",
             "embedLegacyLabel",
             "empty",
+            "endpointCallWithCaps",
             "endpointFlowCheck",
             "endpointReceiveDual",
             "endpointReceiveDualChecked",
@@ -73603,7 +73604,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1543,
+          "line": 1610,
           "called": [
             "runAk6Suite",
             "runInformationFlowChecks",
@@ -76583,7 +76584,7 @@
     {
       "module": "tests.NegativeStateSuite",
       "path": "tests/NegativeStateSuite.lean",
-      "declaration_count": 54,
+      "declaration_count": 70,
       "declarations": [
         {
           "kind": "instance",
@@ -77580,8 +77581,189 @@
         },
         {
           "kind": "def",
+          "name": "r1EpId",
+          "line": 3692,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1CallerTid",
+          "line": 3693,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1ReceiverTid",
+          "line": 3694,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1CallerCNode",
+          "line": 3695,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1ReceiverCNode",
+          "line": 3696,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1TargetObj",
+          "line": 3697,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1Cap",
+          "line": 3699,
+          "called": [
+            "Capability",
+            "none",
+            "ofList",
+            "r1TargetObj"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1MsgWithCaps",
+          "line": 3704,
+          "called": [
+            "IpcMessage",
+            "none",
+            "r1Cap"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1EndpointRights",
+          "line": 3707,
+          "called": [
+            "AccessRightSet",
+            "ofList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1BaseState",
+          "line": 3710,
+          "called": [
+            "RHTable.ofList",
+            "SystemState",
+            "buildChecked",
+            "empty",
+            "none",
+            "ofNat",
+            "r1CallerCNode",
+            "r1CallerTid",
+            "r1Cap",
+            "r1EpId",
+            "r1ReceiverCNode",
+            "r1ReceiverTid",
+            "r1TargetObj",
+            "toObjId",
+            "withObject",
+            "withRunnable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1QueuedState",
+          "line": 3731,
+          "called": [
+            "KernelError",
+            "SystemState",
+            "endpointReceiveDual",
+            "r1BaseState",
+            "r1EpId",
+            "r1ReceiverTid"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1FaultyState",
+          "line": 3736,
+          "called": [
+            "SystemState",
+            "erase",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1CheckHealthyState",
+          "line": 3739,
+          "called": [
+            "SystemState",
+            "endpointCallWithCaps",
+            "ofNat",
+            "r1CallerCNode",
+            "r1CallerTid",
+            "r1EndpointRights",
+            "r1EpId",
+            "r1MsgWithCaps",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1CheckFaultyState",
+          "line": 3749,
+          "called": [
+            "SystemState",
+            "endpointCallWithCaps",
+            "ofNat",
+            "r1CallerCNode",
+            "r1CallerTid",
+            "r1EndpointRights",
+            "r1EpId",
+            "r1MsgWithCaps",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "r1CheckLookupCspaceRoot",
+          "line": 3760,
+          "called": [
+            "SystemState",
+            "lookupCspaceRoot",
+            "none",
+            "r1ReceiverTid",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runR1IpcCallPathSymmetryChecks",
+          "line": 3790,
+          "called": [
+            "r1CheckFaultyState",
+            "r1CheckHealthyState",
+            "r1CheckLookupCspaceRoot",
+            "r1FaultyState",
+            "r1QueuedState",
+            "throw"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "main",
-          "line": 3690,
+          "line": 3804,
           "called": [
             "runAC1BudgetFailClosedChecks",
             "runAC1CdtTrackingChecks",
@@ -77590,6 +77772,7 @@
             "runH2NegativeChecks",
             "runL13CapTransferShortCircuitChecks",
             "runNegativeChecks",
+            "runR1IpcCallPathSymmetryChecks",
             "runS2GCapabilityErrorTests",
             "runS2HLifecycleErrorTests",
             "runWSH11Checks",

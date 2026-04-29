@@ -536,7 +536,7 @@ theorem endpointCallWithCaps_preserves_ipcInvariant
         · simp [hEmpty] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
         · simp [hEmpty] at hStep
           cases hLookup : lookupCspaceRoot stMid receiverId with
-          | none => simp [hLookup] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInvMid
+          | none => simp [hLookup] at hStep -- WS-RC R1 (DEEP-IPC-03): fail-closed, vacuous
           | some recvRoot =>
             simp [hLookup] at hStep
             exact ipcUnwrapCaps_preserves_ipcInvariant msg callerCspaceRoot recvRoot
