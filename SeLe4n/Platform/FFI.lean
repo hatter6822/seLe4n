@@ -9,6 +9,10 @@
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Platform.Boot
+-- WS-RC R2 audit: `bv_decide` for `encodeOk_high_bit_clear`.  The
+-- tactic discharges closed `BitVec` propositions arising from
+-- `UInt64`'s bitwise operations.
+import Std.Tactic.BVDecide
 
 /-!
 # FFI Bridge: Lean Kernel ↔ Rust HAL
@@ -351,6 +355,26 @@ theorem encodeError_high_bit_set (e : KernelError) :
   unfold encodeError KernelError.toUInt32
   cases e <;> decide
 
+/-- WS-RC R2.B.0: Round-trip of `encodeOk` — the encoded value's
+    bit 63 is clear for every `UInt64` argument.
+
+The mask `0x7FFFFFFFFFFFFFFF` zeroes bit 63 unconditionally; the
+underlying `UInt64` AND/SHR semantics propagate via `BitVec`.  This
+is the structural witness that the Rust side's success-vs-error
+disambiguation (`(raw >> 63) & 1 == 0`) succeeds for every encoded
+success value, complementing `encodeError_high_bit_set`.
+
+The proof reduces to a closed BitVec proposition that `decide`
+solves via the `UInt64.toBitVec` lemmas. -/
+theorem encodeOk_high_bit_clear (v : UInt64) :
+    (encodeOk v >>> 63) &&& 1 = 0 := by
+  unfold encodeOk
+  -- Reduce to BitVec arithmetic via UInt64.toBitVec; the mask
+  -- `0x7FFF...FF` clears bit 63 of every input, so the SHR(63) AND 1
+  -- result is always 0.
+  apply UInt64.eq_of_toBitVec_eq
+  bv_decide
+
 /-- WS-RC R2.A.1: The kernel-state holder used by the `@[export]`
     bodies on hardware.
 
@@ -488,16 +512,37 @@ def writeFfiRegistersToTcb
 /-- WS-RC R2.B.1 helper: Read the syscall return value from a thread's
     `x0` register, per AAPCS64.
 
-Verified syscall handlers that produce a result write it to the
-current thread's `x0` register before returning.  Handlers that return
-`Unit` leave `x0` unchanged (typically `0` after boot).  The FFI
-encodes whatever is in `x0` post-call as the success return value. -/
+Reads `tcb.registerContext.gpr ⟨0⟩` (the AAPCS64 / seL4 return-value
+slot) from the post-syscall TCB and converts to a `UInt64`.  The
+conversion truncates to the low 64 bits (the abstract model uses
+`Nat` but the hardware register is 64-bit).
+
+**Semantic note**: per the seL4 ABI, `x0` holds the syscall return
+value on exit (e.g., a badge for `notificationWait`, a slot for
+`cspaceMint`, or `0` for `Unit`-returning syscalls).  The verified
+Lean syscall handlers that produce a return value are expected to
+write it to the current thread's `x0` before returning.  Handlers
+that return `Unit` (the majority) leave `x0` unchanged; in our
+post-WS-RC R2 dispatch path, `x0` post-syscall therefore equals the
+caller's own pre-syscall `x0` (since `writeFfiRegistersToTcb`
+populates `pos[0]` with the FFI-passed `x0` argument before
+`syscallEntryChecked` is invoked).  This is the documented current
+behaviour — full seL4-ABI x0 compliance for value-returning syscalls
+is tracked as a future refinement when each verified handler's
+return-value semantics are formalised.
+
+If the target object is not a TCB (or the lookup fails) the function
+returns `0` — `syscallEntryChecked` should never produce a `.ok`
+result with such a state, so the `0` arm is a totality witness, not
+a behavioural shortcut. -/
 def readReturnValue (st : SystemState) (tid : SeLe4n.ThreadId) : UInt64 :=
   match st.objects[tid.toObjId]? with
   | some (.tcb tcb) =>
       let v := tcb.registerContext.gpr ⟨0⟩
       -- Take low 64 bits explicitly; the model uses `Nat` but the FFI
-      -- contract is 64-bit.
+      -- contract is 64-bit.  Values ≥ 2^64 cannot be produced by
+      -- well-typed verified handlers because `RegValue` is constructed
+      -- from `UInt64.toNat` everywhere it's written.
       v.toNat.toUInt64
   | _ => 0
 

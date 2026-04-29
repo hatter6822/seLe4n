@@ -240,6 +240,10 @@ seeds the IO.Refs in lockstep.
 - `encodeError_high_bit_set` — every `KernelError` variant produces
   an encoded UInt64 whose bit 63 is set (the Rust caller's
   error-flag check is structurally guaranteed to succeed).
+- `encodeOk_high_bit_clear` — every `UInt64` argument to `encodeOk`
+  produces an encoded value whose bit 63 is clear (the Rust caller's
+  success path `(raw >> 63) & 1 == 0` is structurally guaranteed).
+  Proved via `bv_decide` on the `BitVec` projection.
 - `syscallDispatchFromAbi_total` — the pure typed-ABI entry point
   never returns `Except.error`; every kernel rejection is encoded
   on the `.ok` branch with the error flag set.

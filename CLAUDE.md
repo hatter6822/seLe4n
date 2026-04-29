@@ -712,8 +712,9 @@ under `docs/` and `docs/gitbook/`.
   consistency gate that rejects with `.invalidSyscallArgument` if
   `msgInfo ≠ x1` (both must equal `frame.x1()` per the Rust caller's
   `SyscallArgs::from_trap_frame`) without spilling registers or
-  mutating kernel state, and eight correctness theorems
+  mutating kernel state, and nine correctness theorems
   (`encodeError_high_bit_set`,
+  `encodeOk_high_bit_clear`,
   `syscallDispatchFromAbi_total`,
   `syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok`,
   `syscallDispatchFromAbi_error_of_syscallEntryChecked_error`,

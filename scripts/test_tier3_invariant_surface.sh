@@ -950,6 +950,7 @@ run_check "INVARIANT" rg -n '^@\[export syscall_dispatch_inner\]' SeLe4n/Platfor
 run_check "INVARIANT" rg -n '^def suspendThreadInner' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def syscallDispatchInner' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem encodeError_high_bit_set' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem encodeOk_high_bit_clear' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_total' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_error_of_syscallEntryChecked_error' SeLe4n/Platform/FFI.lean

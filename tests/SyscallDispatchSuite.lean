@@ -548,6 +548,41 @@ private def sd041_bootInitialise_withLabelingContext : IO Unit := do
       failLine "sd041_bootInitialise_unexpected_error"
         s!"empty config + labeling context should succeed, got: {e}"
 
+/-- SD-042: `bootAndInitialiseFromPlatform` on a malformed config
+    returns `.error` and does NOT mutate `kernelStateRef`.
+
+The malformed config has duplicate IRQ entries, which fails
+`PlatformConfig.wellFormed`'s `irqsUnique` check.  The boot wrapper
+must surface the error string and leave the IO.Ref unchanged. -/
+private def sd042_bootInitialise_malformed_config_rejects : IO Unit := do
+  -- Seed the IO.Ref with a sentinel state so we can detect mutation.
+  let sentinelTid : SeLe4n.ThreadId := ⟨321⟩
+  let sentinelSt := mkState [(⟨321⟩, .tcb (mkTcb 321 .Ready))] (some sentinelTid)
+  initialiseKernelState sentinelSt
+  -- Construct a malformed config: two IrqEntries with the same IRQ id.
+  -- This trips the `irqsUnique` check inside `PlatformConfig.wellFormed`,
+  -- so `bootFromPlatformChecked` returns `.error`.
+  let cfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable :=
+        [ { irq := ⟨1⟩, handler := ⟨42⟩ }
+        , { irq := ⟨1⟩, handler := ⟨43⟩ }  -- duplicate IRQ id
+        ]
+      initialObjects := [] }
+  match ← bootAndInitialiseFromPlatform cfg with
+  | Except.ok _ =>
+      failLine "sd042_unexpected_success"
+        "malformed config (duplicate IRQ) must fail bootFromPlatformChecked"
+  | Except.error _ =>
+      passLine "sd042_malformed_config_rejected"
+      -- Verify the IO.Ref was NOT mutated on the failure path.
+      let st' ← getKernelState
+      expect "sd042_io_ref_unchanged_on_error"
+        (st'.scheduler.current == some sentinelTid)
+        "bootAndInitialiseFromPlatform must NOT mutate kernelStateRef on failure"
+      -- Restore a clean state for downstream tests.
+      let cleanSt := mkState [] none
+      initialiseKernelState cleanSt
+
 -- ============================================================================
 -- Driver
 -- ============================================================================
@@ -580,4 +615,5 @@ def main : IO Unit := do
   IO.println "--- R2.A: bootAndInitialiseFromPlatform integration ---"
   sd040_bootInitialise_emptyConfig_succeeds
   sd041_bootInitialise_withLabelingContext
+  sd042_bootInitialise_malformed_config_rejects
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="

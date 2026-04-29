@@ -220,9 +220,10 @@ comment is replaced by code that actually wires it.
   Adds an ABI consistency check that rejects with
   `.invalidSyscallArgument` if `msgInfo ≠ x1` (both must equal
   `frame.x1()` per the Rust caller's `SyscallArgs::from_trap_frame`),
-  with no kernel state mutation on the reject path.  Adds eight
+  with no kernel state mutation on the reject path.  Adds nine
   correctness theorems
   (`encodeError_high_bit_set`,
+  `encodeOk_high_bit_clear`,
   `syscallDispatchFromAbi_total`,
   `syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok`,
   `syscallDispatchFromAbi_error_of_syscallEntryChecked_error`,
