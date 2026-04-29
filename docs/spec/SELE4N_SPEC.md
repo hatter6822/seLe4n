@@ -1676,15 +1676,57 @@ The checked boot path `bootFromPlatformChecked` validates per-object
 well-formedness (uniqueness via `wellFormed`) AND structural boot safety
 (via `bootSafeObjectCheck`, added in AJ3-C). The `bootSafeObjectCheck`
 Bool-valued function verifies empty endpoint queues, idle notifications,
-CNode bounds, clean TCB state, VSpaceRoot exclusion, and SchedContext
-well-formedness. A soundness bridge theorem
-`bootSafeObjectCheck_sound_structural` proves the Bool check implies the
-structural conjuncts of `bootSafeObject` (all except CNode badge validity).
-The full `bootFromPlatform_proofLayerInvariantBundle_general` theorem
-composes `bootSafe` with boot preservation to discharge the complete
-10-component invariant bundle.
+CNode bounds, clean TCB state, **boot-safe VSpaceRoot admission**
+(WS-RC R3 / DEEP-BOOT-01), and SchedContext well-formedness. A
+soundness bridge theorem `bootSafeObjectCheck_sound_structural` proves
+the Bool check implies the structural conjuncts of `bootSafeObject`
+(all except CNode badge validity). The full
+`bootFromPlatform_proofLayerInvariantBundle_general` theorem composes
+`bootSafe` with boot preservation to discharge the complete 10-component
+invariant bundle (with the WS-RC R3 precondition that no VSpaceRoots are
+present in `initialObjects` — the canonical boot VSpace is installed
+via the dedicated `bootVSpaceRoot` field, not the standard fold).
 
-**Source**: Boot.lean.
+**WS-RC R3 (DEEP-BOOT-01) — Boot VSpaceRoot threading.**  Pre-R3 the
+`.vspaceRoot _ => false` arm of `bootSafeObjectCheck` rendered the
+proven-W^X-compliant `rpi5BootVSpaceRoot` data structure inert at boot
+time.  R3 closes the gap by:
+
+1. Adding `bootSafeVSpaceRootCheck : VSpaceRoot → Bool` (in
+   `Platform/RPi5/VSpaceBoot.lean`) and the equivalence theorem
+   `bootSafeVSpaceRootCheck_iff` so the four `VSpaceRootWellFormed`
+   conjuncts (asid bounded, every mapping W^X compliant, non-empty
+   mappings, paddr bounded) are simultaneously available in Bool
+   form (for the runtime check) and Prop form (for the structural
+   invariant).
+2. Rewriting the `.vspaceRoot` arm of `bootSafeObjectCheck` and
+   `bootSafeObject` to admit roots passing the boot-safety
+   predicate.
+3. Adding the `installBootVSpaceRoot` builder operation to
+   `Platform/Boot.lean` that composes `Builder.createObject` with an
+   `asidTable` insertion so the boot VSpace is resolvable by ASID
+   after boot, mirroring the runtime `storeObject` semantics.
+4. Adding the `bootVSpaceRoot : Option BootVSpaceRootEntry := none`
+   field to `PlatformConfig`, plus two runtime gates
+   (`bootVSpaceRootObjIdDistinct`, `bootVSpaceRootSafe`) wired into
+   `bootFromPlatformChecked`.  When the field is `some entry`, the
+   gated boot path installs the entry via `installBootVSpaceRoot`
+   between the `initialObjects` fold and the interrupts-enable step.
+5. Threading `bootVSpaceRoot := some rpi5BootVSpaceRootEntry` into
+   the RPi5 `PlatformBinding` instance (and a parallel
+   `simBootVSpaceRoot` into the Sim platform instances), so the
+   platform binding now carries the canonical boot VSpace from the
+   typeclass.
+
+The correctness theorem
+`bootFromPlatformChecked_eq_bootFromPlatform` retains its existing
+shape with an additional `bootVSpaceRoot = none` precondition; the
+sibling `bootFromPlatformChecked_admits_bootVSpace` covers the
+`some entry` case.
+
+**Source**: `Platform/Boot.lean`, `Platform/Contract.lean`,
+`Platform/RPi5/VSpaceBoot.lean`, `Platform/RPi5/Contract.lean`,
+`Platform/Sim/Contract.lean`.
 
 ### 8.14.3 MMIO Model Limitations (AI6 / M-10)
 

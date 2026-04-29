@@ -11,6 +11,11 @@ import SeLe4n.Kernel.Architecture.BarrierComposition
 import SeLe4n.Kernel.Architecture.TlbCacheComposition
 import SeLe4n.Kernel.Architecture.TlbModel
 import SeLe4n.Kernel.Lifecycle.Suspend
+-- WS-RC R3 (DEEP-BOOT-01): Hardware-binding closure now exercises the
+-- boot VSpaceRoot threading via `bootFromPlatformChecked`.
+import SeLe4n.Platform.Boot
+import SeLe4n.Platform.RPi5.Contract
+import SeLe4n.Platform.RPi5.VSpaceBoot
 
 /-!
 # AN9 Hardware Binding regression suite
@@ -173,8 +178,71 @@ def main : IO Unit := do
      decide (restoredState.machine.lastTlbBarrierKind &&& 0x05 = 0x05))
     "dirty→barriered round-trip must restore the bracket witness"
 
-  -- All AN9 substantive surface anchors verified.
+  -- ============================================================================
+  -- WS-RC R3 (DEEP-BOOT-01): Boot VSpaceRoot threading
+  -- ============================================================================
+
+  -- The canonical RPi5 boot VSpaceRoot is now threaded through
+  -- `bootFromPlatformChecked` via the `bootVSpaceRoot` PlatformConfig
+  -- field.  These regression tests confirm that the proven-W^X-compliant
+  -- structure is admitted by the gated boot path and that downstream
+  -- VSpace lookup paths can resolve it.
+
+  let r3Cfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := []
+      initialObjects := []
+      machineConfig := SeLe4n.defaultMachineConfig
+      bootVSpaceRoot := some SeLe4n.Platform.RPi5.rpi5BootVSpaceRootEntry }
+
+  -- R3-1: bootFromPlatformChecked succeeds with the canonical RPi5 boot VSpace.
+  match SeLe4n.Platform.Boot.bootFromPlatformChecked r3Cfg with
+  | .ok ist =>
+      passLine "wsrc_r3_bootFromPlatformChecked_succeeds_with_rpi5_bootVSpace"
+      -- R3-2: post-boot objects table contains the boot VSpace at the
+      -- reserved ObjId, with a VSpaceRoot kernel object whose ASID
+      -- matches the canonical root's ASID.
+      let oid := SeLe4n.Platform.RPi5.rpi5BootVSpaceRootObjId
+      match ist.state.objects[oid]? with
+      | some (KernelObject.vspaceRoot vsr) =>
+          expect "wsrc_r3_postboot_state_has_rpi5BootVSpaceRoot"
+            (vsr.asid == SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot.asid)
+            "post-boot VSpaceRoot ASID must match rpi5BootVSpaceRoot.asid"
+      | _ =>
+          failLine "wsrc_r3_postboot_state_has_rpi5BootVSpaceRoot"
+            "no VSpaceRoot found at reserved boot ObjId"
+      -- R3-3: post-boot wxExclusiveInvariant holds for the boot VSpace
+      -- (witness: every mapping passes wxCompliant).
+      match ist.state.objects[oid]? with
+      | some (KernelObject.vspaceRoot vsr) =>
+          let allWx : Bool :=
+            vsr.mappings.fold true (fun acc _ entry => acc && entry.2.wxCompliant)
+          expect "wsrc_r3_postboot_wxExclusiveInvariant_holds"
+            allWx "every mapping in the post-boot VSpaceRoot must be W^X compliant"
+      | _ =>
+          failLine "wsrc_r3_postboot_wxExclusiveInvariant_holds"
+            "no VSpaceRoot to validate"
+      -- R3-4: asidTable maps the boot VSpace ASID to the reserved ObjId.
+      let asid := SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot.asid
+      match ist.state.asidTable[asid]? with
+      | some recordedOid =>
+          expect "wsrc_r3_asidTable_registers_boot_vspace"
+            (recordedOid == oid)
+            "asidTable lookup of rpi5BootVSpaceRoot.asid must yield the reserved ObjId"
+      | none =>
+          failLine "wsrc_r3_asidTable_registers_boot_vspace"
+            "asidTable does not register the boot VSpace ASID"
+  | .error e =>
+      failLine "wsrc_r3_bootFromPlatformChecked_succeeds_with_rpi5_bootVSpace"
+        s!"boot failed: {e}"
+
+  -- R3-5: bootSafeObjectCheck admits the canonical RPi5 boot VSpace.
+  expect "wsrc_r3_bootSafeObjectCheck_admits_rpi5BootVSpaceRoot"
+    (SeLe4n.Platform.Boot.bootSafeObjectCheck
+      (KernelObject.vspaceRoot SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot))
+    "bootSafeObjectCheck must admit rpi5BootVSpaceRoot"
+
+  -- All AN9 + WS-RC R3 substantive surface anchors verified.
   IO.println ""
   IO.println "========================================"
-  IO.println "AN9 Hardware Binding suite: ALL PASS"
+  IO.println "AN9 + WS-RC R3 Hardware Binding suite: ALL PASS"
   IO.println "========================================"

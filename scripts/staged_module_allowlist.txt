@@ -17,14 +17,14 @@
 #   infra               — platform infrastructure (bridges, anchors, helpers)
 #   anchor              — the staging anchor file itself
 #
-# Last verified: WS-RC R2 closure (v0.30.11 HEAD with Platform.FFI promoted).
+# Last verified: WS-RC R3 closure (v0.30.11 HEAD with
+# Platform.RPi5.VSpaceBoot + Architecture.AsidManager promoted to
+# production via the bootSafeObject admission of boot VSpaceRoots).
 
-SeLe4n.Kernel.Architecture.AsidManager        # transitively-staged via Platform.RPi5.VSpaceBoot
 SeLe4n.Kernel.Architecture.CacheModel         # marker (STATUS: staged for H3)
 SeLe4n.Kernel.Architecture.ExceptionModel     # marker (STATUS: staged for H3)
 SeLe4n.Kernel.Architecture.InterruptDispatch  # transitively-staged via ExceptionModel
 SeLe4n.Kernel.Architecture.TimerModel         # marker (STATUS: staged for H3)
 SeLe4n.Kernel.Architecture.TlbCacheComposition # transitively-staged via Staged
 SeLe4n.Kernel.Concurrency.Assumptions         # infra (SMP-latent assumption inventory)
-SeLe4n.Platform.RPi5.VSpaceBoot               # infra (boot VSpace; promotes after WS-RC R3)
 SeLe4n.Platform.Staged                        # anchor (the staging entry point itself)

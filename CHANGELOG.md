@@ -1,3 +1,105 @@
+## v0.30.11 — WS-RC R3: thread rpi5BootVSpaceRoot through bootSafeObject (DEEP-BOOT-01)
+
+`bootSafeObject` and `bootSafeObjectCheck` at
+`Platform/Boot.lean` previously rejected ALL VSpaceRoot variants,
+rendering the proven-W^X-compliant `rpi5BootVSpaceRoot` data
+structure (defined in `Platform/RPi5/VSpaceBoot.lean`) inert at
+boot time.  Per the implement-the-improvement rule, the verified
+structure is the better state and the boot path now consumes it.
+
+### What changed
+
+- **`Platform/RPi5/VSpaceBoot.lean`**: added Bool-valued boot-safety
+  check `bootSafeVSpaceRootCheck`, the equivalence theorem
+  `bootSafeVSpaceRootCheck_iff`, and `rpi5BootVSpaceRoot_mappings_invExt`
+  (the `RHTable.invExt` discharge witness for the canonical six-mapping
+  boot root).  The module is now in the production import chain
+  (removed from `scripts/staged_module_allowlist.txt` together with
+  its transitive `Architecture.AsidManager` dependency).
+- **`Platform/Boot.lean`**: rewrote the `.vspaceRoot` arm of
+  `bootSafeObjectCheck` (Bool) and `bootSafeObject` (Prop) to admit
+  VSpaceRoots that pass the boot-safety predicate.  Added the
+  `installBootVSpaceRoot` builder operation that composes
+  `Builder.createObject` with an `asidTable` insertion so the boot
+  VSpace is resolvable by ASID after boot.  Added `BootVSpaceRootEntry`
+  alias re-exporting the structure now defined in `Platform/Contract.lean`.
+  Added the `bootVSpaceRoot : Option BootVSpaceRootEntry := none`
+  field to `PlatformConfig`, plus two runtime gates
+  (`bootVSpaceRootObjIdDistinct`, `bootVSpaceRootSafe`) wired into
+  `bootFromPlatformChecked`.  When the field is `some entry`, the
+  gated boot path now installs the entry via `installBootVSpaceRoot`
+  between the `initialObjects` fold and the interrupts-enable step.
+  The correctness theorem `bootFromPlatformChecked_eq_bootFromPlatform`
+  gains a `bootVSpaceRoot = none` precondition (preserving its existing
+  shape for the no-boot-VSpace case); the new sibling
+  `bootFromPlatformChecked_admits_bootVSpace` covers the `some entry`
+  case.  Added witness theorems `bootSafeObjectCheck_admits_rpi5BootVSpaceRoot`
+  and `bootSafeObject_admits_rpi5BootVSpaceRoot`.
+- **`Platform/Contract.lean`**: lifted `BootVSpaceRootEntry`
+  (id + root + `mappings.invExt` proof obligation) to the platform
+  contract module so platform bindings can expose the optional
+  canonical boot VSpace from the typeclass without pulling in the
+  heavy `Platform.Boot` dependency.  Added
+  `bootVSpaceRoot : Option BootVSpaceRootEntry := none` to the
+  `PlatformBinding` typeclass, with a companion accessor
+  `PlatformBinding.bootVSpace`.
+- **`Platform/RPi5/Contract.lean`**: defined
+  `rpi5BootVSpaceRootObjId : ObjId := ObjId.ofNat 0` (kernel-reserved
+  low ObjId) and `rpi5BootVSpaceRootEntry : BootVSpaceRootEntry`
+  composing the reserved ObjId with the canonical boot VSpace.
+  Wired `bootVSpaceRoot := some rpi5BootVSpaceRootEntry` into the
+  `rpi5PlatformBinding` instance so the RPi5 production binding now
+  exposes the canonical boot VSpace from the typeclass.
+- **`Platform/Sim/Contract.lean`**: defined the simulation's minimal
+  `simBootVSpaceRoot` (a single read-only identity mapping at ASID 0,
+  paddr `0x1000`) plus the `simBootVSpaceRoot_bootSafe`,
+  `simBootVSpaceRoot_bootSafeCheck`, and
+  `simBootVSpaceRoot_mappings_invExt` discharge theorems.  Wired the
+  derived `simBootVSpaceRootEntry` into both `simPlatformBinding`
+  and `simRestrictivePlatformBinding`, so the simulation harness
+  exercises the same `installBootVSpaceRoot` path as RPi5
+  (audit plan §7.4 R3.5 Option A — recommended for parity).
+- **`tests/TwoPhaseArchSuite.lean`** (TPH-015 group, 8 new tests):
+  end-to-end regression coverage for the boot-VSpace threading.
+  Asserts (a) `bootFromPlatformChecked` succeeds for the canonical
+  RPi5 boot config, (b) the post-state objects table contains the
+  boot VSpaceRoot at the reserved ObjId, (c) every mapping in the
+  post-state boot VSpace is W^X compliant (witness for
+  `wxExclusiveInvariant`), (d) the post-state asidTable maps the
+  boot ASID to the reserved ObjId, (e) `bootVSpaceRoot = none`
+  configs preserve the pre-R3 behaviour, (f) ObjId collisions
+  between `initialObjects` and `bootVSpaceRoot` are rejected by
+  the new gate, (g) the `bootSafeObjectCheck` admission witness
+  evaluates to `true` at runtime, (h) sim-platform parity holds.
+- **`tests/An9HardwareBindingSuite.lean`**: extended the
+  hardware-binding closure suite with the same end-to-end boot
+  regression (5 new assertions: boot succeeds, post-state has
+  VSpaceRoot, W^X invariant, asidTable registration, admission
+  witness).
+
+### Theorem catalog additions
+
+| Theorem | File | Discharge |
+|---|---|---|
+| `bootSafeVSpaceRootCheck_iff` | `Platform/RPi5/VSpaceBoot.lean` | `simp [Bool.and_eq_true, decide_eq_true_eq, and_assoc]` |
+| `rpi5BootVSpaceRoot_bootSafeCheck` | `Platform/RPi5/VSpaceBoot.lean` | `bootSafeVSpaceRootCheck_iff.mpr rpi5BootVSpaceRoot_bootSafe` |
+| `rpi5BootVSpaceRoot_mappings_invExt` | `Platform/RPi5/VSpaceBoot.lean` | iterated `RHTable.insert_preserves_invExt` |
+| `installBootVSpaceRoot_objects_lookup` | `Platform/Boot.lean` | `RHTable.getElem?_insert_self` |
+| `installBootVSpaceRoot_asidTable_lookup` | `Platform/Boot.lean` | `RHTable.getElem?_insert_self` |
+| `bootSafeObjectCheck_admits_rpi5BootVSpaceRoot` | `Platform/Boot.lean` | unfold + `rpi5BootVSpaceRoot_bootSafeCheck` |
+| `bootSafeObject_admits_rpi5BootVSpaceRoot` | `Platform/Boot.lean` | refine + `rpi5BootVSpaceRoot_bootSafe` |
+| `bootFromPlatformChecked_admits_bootVSpace` | `Platform/Boot.lean` | `simp [bootFromPlatformChecked, ...]` |
+| `simBootVSpaceRoot_bootSafe` | `Platform/Sim/Contract.lean` | refine + `decide` |
+| `simBootVSpaceRoot_mappings_invExt` | `Platform/Sim/Contract.lean` | `RHTable.insert_preserves_invExt` |
+
+The pre-R3 theorem `bootFromPlatform_proofLayerInvariantBundle_general`
+gains a precondition `hNoVSpaceInInitial` (no VSpaceRoots in
+`initialObjects`).  Boot VSpaceRoots are now exclusively introduced
+via the gated `bootFromPlatformChecked` path, so the unchecked
+variant continues to apply only to VSpace-clean configs.  The
+existing call site in `bootToRuntime_invariantBridge_general`
+threads the new precondition through.
+
 ## v0.30.11 — WS-RC R2 audit: DispatchError fidelity, comprehensive discriminant pinning, Nonempty scope tightening
 
 This is a deep-audit follow-up to the WS-RC R2 commit set

@@ -297,4 +297,72 @@ theorem rpi5BootVSpaceRoot_admits_bootSafe :
   ⟨rpi5BootVSpaceRoot, rpi5BootVSpaceRoot_bootSafe, rpi5BootVSpaceRoot_asid,
     rpi5BootVSpaceRoot_wellFormed.2.2.1⟩
 
+-- ============================================================================
+-- WS-RC R3 (DEEP-BOOT-01) — Bool-valued boot-safety check
+-- ============================================================================
+
+/-- **WS-RC R3 (DEEP-BOOT-01)**: Bool-valued mirror of `bootSafeVSpaceRoot`,
+    used by the runtime-decidable `bootSafeObjectCheck` sweep to admit
+    well-formed boot VSpaceRoots into the initial object store.
+
+    Returns `true` iff the four `VSpaceRootWellFormed` conjuncts hold:
+
+    1. `asid.val ≤ maxAsidValue` — ASID within hardware bounds
+       (ASID 0 is the kernel ASID and explicitly allowed).
+    2. Every mapping satisfies `PagePermissions.wxCompliant` — no W+X
+       page may be installed in a boot root.
+    3. `mappings.size > 0` — the root must contain at least one mapping
+       (an empty L1 table cannot serve the kernel's first instruction
+       fetch after MMU enable).
+    4. Every mapping's physical address fits within the BCM2712 44-bit
+       PA space (`paddr.toNat < 2^44`).
+
+    Companion equivalence theorem `bootSafeVSpaceRootCheck_iff` proves
+    this Bool form coincides with the Prop-level `bootSafeVSpaceRoot`
+    predicate, so callers in proof contexts can use either form. -/
+def bootSafeVSpaceRootCheck (root : VSpaceRoot) : Bool :=
+  decide (root.asid.val ≤ maxAsidValue) &&
+  (root.mappings.fold true (fun acc _ entry => acc && entry.2.wxCompliant)) &&
+  decide (root.mappings.size > 0) &&
+  (root.mappings.fold true (fun acc _ entry => acc && decide (entry.1.toNat < 2^44)))
+
+/-- **WS-RC R3**: The Bool-valued check coincides with the Prop-level
+    boot-safety predicate.  Both forms unfold to the same four
+    decidable conjuncts. -/
+theorem bootSafeVSpaceRootCheck_iff (root : VSpaceRoot) :
+    bootSafeVSpaceRootCheck root = true ↔ bootSafeVSpaceRoot root := by
+  unfold bootSafeVSpaceRootCheck bootSafeVSpaceRoot VSpaceRootWellFormed
+    VSpaceRootWxCompliant VSpaceRootPaddrBounded
+  simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc]
+
+/-- **WS-RC R3**: The canonical RPi5 boot root passes the Bool-valued
+    boot-safety check.  Direct consequence of `rpi5BootVSpaceRoot_bootSafe`
+    via the equivalence theorem. -/
+theorem rpi5BootVSpaceRoot_bootSafeCheck :
+    bootSafeVSpaceRootCheck rpi5BootVSpaceRoot = true :=
+  (bootSafeVSpaceRootCheck_iff rpi5BootVSpaceRoot).mpr rpi5BootVSpaceRoot_bootSafe
+
+-- ============================================================================
+-- WS-RC R3 — RHTable.invExt witness for the boot root's mappings
+-- ============================================================================
+
+/-- **WS-RC R3**: The canonical RPi5 boot root's `mappings` table satisfies
+    `invExt` (Robin Hood load-factor + key uniqueness invariants).  Six
+    sequential `RHTable.insert` operations starting from
+    `RHTable.empty 16` preserve `invExt` at every step.  Discharged by
+    chaining the empty-table base case with `insert_preserves_invExt`
+    through each insertion. -/
+theorem rpi5BootVSpaceRoot_mappings_invExt :
+    rpi5BootVSpaceRoot.mappings.invExt := by
+  unfold rpi5BootVSpaceRoot insertIdentity emptyBootRoot
+  -- Six iterated `RHTable.insert` calls, each preserving `invExt`.
+  -- Base case: empty table at capacity 16.
+  exact RHTable.insert_preserves_invExt _ _ _ <|
+        RHTable.insert_preserves_invExt _ _ _ <|
+        RHTable.insert_preserves_invExt _ _ _ <|
+        RHTable.insert_preserves_invExt _ _ _ <|
+        RHTable.insert_preserves_invExt _ _ _ <|
+        RHTable.insert_preserves_invExt _ _ _ <|
+        RHTable.empty_invExt 16 (by omega)
+
 end SeLe4n.Platform.RPi5.VSpaceBoot

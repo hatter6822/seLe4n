@@ -218,15 +218,50 @@ SeLe4n/Platform/Sim/*            Simulation platform contracts + proof hooks
   Sim/RuntimeContract.lean       Permissive + restrictive runtime contracts
   Sim/BootContract.lean          Boot + interrupt contracts (all True)
   Sim/ProofHooks.lean            AdapterProofHooks for restrictive contract
-  Sim/Contract.lean              PlatformBinding instance (re-export hub)
-SeLe4n/Platform/Boot.lean        Q3-C: Boot sequence (PlatformConfig → IntermediateState)
+  Sim/Contract.lean              PlatformBinding instance (re-export hub).
+                                 WS-RC R3 (DEEP-BOOT-01): defines
+                                 `simBootVSpaceRoot` (single read-only
+                                 mapping at ASID 0) and the matching
+                                 `bootSafe`, `bootSafeCheck`, and
+                                 `mappings.invExt` discharge theorems;
+                                 both `simPlatformBinding` and
+                                 `simRestrictivePlatformBinding` now
+                                 set
+                                 `bootVSpaceRoot := some simBootVSpaceRootEntry`
+                                 for parity with RPi5.
+SeLe4n/Platform/Boot.lean        Q3-C: Boot sequence (PlatformConfig → IntermediateState).
+                                 WS-RC R3 (DEEP-BOOT-01): hosts the
+                                 `installBootVSpaceRoot` builder
+                                 operation, the `bootVSpaceRoot`
+                                 field on `PlatformConfig`, the
+                                 `bootVSpaceRootObjIdDistinct` /
+                                 `bootVSpaceRootSafe` runtime gates
+                                 in `bootFromPlatformChecked`, the
+                                 `BootVSpaceRootEntry` re-export, and
+                                 the new admission witness theorems
+                                 (`bootSafeObject(Check)_admits_rpi5BootVSpaceRoot`,
+                                 `bootFromPlatformChecked_admits_bootVSpace`).
 SeLe4n/Platform/RPi5/*           Raspberry Pi 5 platform (BCM2712)
   RPi5/Board.lean                BCM2712 addresses, MMIO, MachineConfig
   RPi5/RuntimeContract.lean      Substantive runtime + restrictive contract
   RPi5/BootContract.lean         Boot + interrupt contracts (GIC-400)
   RPi5/MmioAdapter.lean           MMIO adapter for RPi5
   RPi5/ProofHooks.lean           AdapterProofHooks for restrictive contract
-  RPi5/Contract.lean             PlatformBinding instance (re-export hub)
+  RPi5/Contract.lean             PlatformBinding instance (re-export hub).
+                                 WS-RC R3 (DEEP-BOOT-01): defines
+                                 `rpi5BootVSpaceRootObjId` and
+                                 `rpi5BootVSpaceRootEntry`; the
+                                 binding now sets
+                                 `bootVSpaceRoot := some rpi5BootVSpaceRootEntry`.
+  RPi5/VSpaceBoot.lean           AN7-D.2 / WS-RC R3: canonical RPi5
+                                 boot VSpaceRoot (six identity
+                                 mappings: kernel text RX, kernel
+                                 data RW, kernel stack RW, UART0,
+                                 GIC distributor, GIC CPU interface).
+                                 Promoted to production at WS-RC R3.
+                                 Hosts `bootSafeVSpaceRootCheck`,
+                                 `bootSafeVSpaceRootCheck_iff`, and
+                                 `rpi5BootVSpaceRoot_mappings_invExt`.
 SeLe4n/Testing/*                 Test harness, state builder, fixtures
   Helpers.lean                   Shared test helpers (expectError, expectOk, expectCond)
   StateBuilder.lean              Test state construction
@@ -741,6 +776,48 @@ under `docs/` and `docs/gitbook/`.
   `NotImplemented`, so user-mode now sees the exact `KernelError`
   the Lean kernel emitted (pre-fix: 49 of 52 variants were silently
   collapsed to `17 = NotImplemented`).
+  **R3 (DEEP-BOOT-01) LANDED on branch
+  `claude/vspace-threading-boot-G0GAp`**: closes the boot-VSpace
+  threading gap by admitting boot-safe VSpaceRoots into the
+  `bootSafeObject` / `bootSafeObjectCheck` predicates and threading
+  the canonical `rpi5BootVSpaceRoot` through `bootFromPlatformChecked`
+  via the new `installBootVSpaceRoot` builder operation.  Pre-R3 the
+  `.vspaceRoot _ => false` arm rendered the proven-W^X-compliant
+  data structure inert; per the implement-the-improvement rule, the
+  verified structure is the better state and the boot path now
+  consumes it.  R3.0a-b: `bootSafeVSpaceRootCheck` (Bool mirror)
+  and `bootSafeVSpaceRootCheck_iff` equivalence in
+  `Platform/RPi5/VSpaceBoot.lean`; `installBootVSpaceRoot` builder
+  in `Platform/Boot.lean` composing `Builder.createObject` with
+  `asidTable` insertion so the boot VSpace is resolvable by ASID;
+  `rpi5BootVSpaceRoot_mappings_invExt` discharge witness.  R3.1:
+  rewrote `.vspaceRoot` arm of `bootSafeObjectCheck` (Bool) and
+  `bootSafeObject` (Prop) to admit boot-safe VSpaceRoots.  R3.2:
+  added witness theorems `bootSafeObjectCheck_admits_rpi5BootVSpaceRoot`
+  and `bootSafeObject_admits_rpi5BootVSpaceRoot`.  R3.3: added
+  `bootVSpaceRoot : Option BootVSpaceRootEntry := none` to
+  `PlatformConfig`, two runtime gates
+  (`bootVSpaceRootObjIdDistinct`, `bootVSpaceRootSafe`), and
+  threaded through `bootFromPlatformChecked`.  R3.4: wired
+  `rpi5BootVSpaceRootEntry` into the RPi5 `PlatformBinding`
+  instance via the new typeclass `bootVSpaceRoot` field.  R3.5:
+  defined `simBootVSpaceRoot` (single-mapping boot-safe root) and
+  wired into both `simPlatformBinding` and
+  `simRestrictivePlatformBinding` for parity.  R3.6:
+  `bootFromPlatformChecked_eq_bootFromPlatform` gains a
+  `bootVSpaceRoot = none` precondition; sibling theorem
+  `bootFromPlatformChecked_admits_bootVSpace` covers the
+  `some entry` case.  R3.7: added 8 TPH-015 tests in
+  `tests/TwoPhaseArchSuite.lean` exercising the end-to-end
+  threading.  R3.8: extended `tests/An9HardwareBindingSuite.lean`
+  with 5 new boot-VSpace assertions.  Removed
+  `Platform.RPi5.VSpaceBoot` and `Architecture.AsidManager` from
+  `scripts/staged_module_allowlist.txt` — they enter production
+  via Boot.lean's import.  Pre-R3 theorem
+  `bootFromPlatform_proofLayerInvariantBundle_general` gains a
+  `hNoVSpaceInInitial` precondition; boot VSpaceRoots are now
+  exclusively introduced via the gated `bootFromPlatformChecked`
+  path.
 
 - **WS-AN portfolio COMPLETE (v0.30.11, branch `claude/review-codebase-phase-an12-JBPQN`)**:
   Phase AN12 — Documentation, themes, closure — landed the cross-cutting

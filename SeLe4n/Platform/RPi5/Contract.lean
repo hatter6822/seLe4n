@@ -12,6 +12,10 @@ import SeLe4n.Platform.RPi5.RuntimeContract
 import SeLe4n.Platform.RPi5.BootContract
 import SeLe4n.Platform.RPi5.ProofHooks
 import SeLe4n.Platform.RPi5.MmioAdapter
+-- WS-RC R3 (DEEP-BOOT-01): the canonical RPi5 boot VSpaceRoot exposed
+-- to the platform binding so `bootFromPlatformChecked` can install it
+-- via `installBootVSpaceRoot` during the gated boot pipeline.
+import SeLe4n.Platform.RPi5.VSpaceBoot
 
 /-!
 # Raspberry Pi 5 — Platform Binding
@@ -54,12 +58,41 @@ namespace SeLe4n.Platform.RPi5
 structure RPi5Platform where
   deriving Repr
 
-/-- The Raspberry Pi 5 platform binding instance. -/
+/-- **WS-RC R3 (DEEP-BOOT-01)**: Reserved ObjId for the canonical RPi5
+    boot VSpaceRoot.  Production boot configs (and the trace harness
+    when exercising the hardware path) should NOT reuse this ObjId for
+    any `initialObjects` entry — `bootVSpaceRootObjIdDistinct` (in
+    `Platform.Boot`) enforces this at the gated boot path.  Chosen as
+    `0` to land in the kernel-reserved low-ObjId range; user-mode
+    objects are typically allocated above 1024 by the seL4 reference
+    boot. -/
+def rpi5BootVSpaceRootObjId : SeLe4n.ObjId := SeLe4n.ObjId.ofNat 0
+
+/-- **WS-RC R3 (DEEP-BOOT-01)**: The canonical RPi5
+    `BootVSpaceRootEntry` — composes the reserved ObjId with the
+    proven-W^X-compliant `rpi5BootVSpaceRoot` data structure and its
+    `mappings.invExt` discharge witness. -/
+def rpi5BootVSpaceRootEntry : SeLe4n.Platform.BootVSpaceRootEntry where
+  id := rpi5BootVSpaceRootObjId
+  root := SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot
+  hMappings := SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot_mappings_invExt
+
+/-- The Raspberry Pi 5 platform binding instance.
+
+    **WS-RC R3 (DEEP-BOOT-01)**: `bootVSpaceRoot` is now populated with
+    the canonical RPi5 boot VSpaceRoot entry, threading the
+    proven-W^X-compliant `rpi5BootVSpaceRoot` through the platform
+    binding so `bootFromPlatformChecked` can install it via
+    `installBootVSpaceRoot` during gated boot.  The standalone
+    pre-R3 binding left this field implicit (`none`) and the verified
+    boot VSpace data structure was inert; per the implement-the-
+    improvement rule, the verified structure is the better state. -/
 instance rpi5PlatformBinding : SeLe4n.Platform.PlatformBinding RPi5Platform where
   name := "Raspberry Pi 5 (BCM2712 / ARM64)"
   machineConfig := rpi5MachineConfig
   runtimeContract := rpi5RuntimeContract
   bootContract := rpi5BootContract
   interruptContract := rpi5InterruptContract
+  bootVSpaceRoot := some rpi5BootVSpaceRootEntry
 
 end SeLe4n.Platform.RPi5
