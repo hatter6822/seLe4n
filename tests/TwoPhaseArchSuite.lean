@@ -585,12 +585,16 @@ private def tph015e_noBootVSpaceCompat : IO Unit := do
       bootVSpaceRoot := none }
   match bootFromPlatformChecked cfg with
   | .ok ist =>
-      -- No VSpaceRoot in the post-boot state.
-      let oid := SeLe4n.ObjId.ofNat 0
+      -- No VSpaceRoot in the post-boot state — verify by checking
+      -- the reserved boot ObjId AND the entire object store size.
+      let oid := SeLe4n.Platform.RPi5.rpi5BootVSpaceRootObjId
       let absent : Bool := match ist.state.objects[oid]? with
         | some (KernelObject.vspaceRoot _) => false
         | _ => true
-      expect "bootVSpaceRoot = none yields VSpace-free boot state" absent
+      expect "bootVSpaceRoot = none yields no VSpace at reserved ObjId" absent
+      -- Stronger: object store should be empty since initialObjects is empty.
+      expect "bootVSpaceRoot = none yields empty object store"
+        (ist.state.objects.size == 0)
   | .error e =>
       throw <| IO.userError s!"tph015e: bootFromPlatformChecked (no boot VSpace) failed: {e}"
 
@@ -598,15 +602,18 @@ private def tph015e_noBootVSpaceCompat : IO Unit := do
     boot VSpaceRoot at the same ObjId as an `initialObjects` entry
     must be rejected by the new `bootVSpaceRootObjIdDistinct` gate. -/
 private def tph015f_objIdCollisionRejected : IO Unit := do
-  -- Construct an initial object (a TCB) at ObjId 0, then try to
-  -- install the boot VSpaceRoot at the same ObjId.  Per audit plan
-  -- §7.3 R3.3, this collision must surface as a config error.
+  -- Construct an initial object (a TCB) at the same ObjId as the
+  -- canonical RPi5 boot VSpace (`rpi5BootVSpaceRootObjId`).  Per
+  -- audit plan §7.3 R3.3, this collision must surface as a config
+  -- error.  WS-RC R3 audit fix: tracked ObjIds are now ObjId 1 (not
+  -- the reserved sentinel ObjId 0), so the test exercises a real
+  -- non-sentinel collision.
   let tcb : KernelObject := KernelObject.tcb
-    { tid := ⟨0⟩, priority := ⟨0⟩, domain := ⟨0⟩,
+    { tid := ⟨1⟩, priority := ⟨0⟩, domain := ⟨0⟩,
       cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
       ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
   let entry : ObjectEntry := {
-    id := SeLe4n.ObjId.ofNat 0
+    id := SeLe4n.Platform.RPi5.rpi5BootVSpaceRootObjId
     obj := tcb
     hSlots := fun _ h => nomatch h
     hMappings := fun _ h => nomatch h }
@@ -619,6 +626,76 @@ private def tph015f_objIdCollisionRejected : IO Unit := do
       throw <| IO.userError "tph015f: ObjId collision should be rejected, but boot succeeded"
   | .error _ =>
       expect "ObjId collision between initialObjects and bootVSpaceRoot rejected" true
+
+/-- TPH-015i (audit fix for Issue #2): VSpaceRoot in `initialObjects`
+    rejected.  The `noVSpaceRootsInInitialObjects` gate forbids
+    putting any VSpaceRoot kernel object in the `initialObjects` list
+    because `Builder.createObject` does NOT update `asidTable` —
+    the dedicated `bootVSpaceRoot` field + `installBootVSpaceRoot` is
+    the ONLY path that maintains asidTable/objects consistency. -/
+private def tph015i_vspaceRootInInitialObjectsRejected : IO Unit := do
+  -- Place the canonical RPi5 boot VSpace in `initialObjects` (instead
+  -- of in the dedicated `bootVSpaceRoot` field).  The new gate must
+  -- reject this misconfiguration.
+  let entry : ObjectEntry := {
+    id := SeLe4n.ObjId.ofNat 7  -- arbitrary non-sentinel ObjId
+    obj := KernelObject.vspaceRoot SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot
+    hSlots := fun _ h => nomatch h
+    hMappings := fun _ h => by
+      cases h
+      exact SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot_mappings_invExt }
+  let cfg : PlatformConfig :=
+    { irqTable := [], initialObjects := [entry],
+      machineConfig := SeLe4n.defaultMachineConfig
+      bootVSpaceRoot := none }
+  match bootFromPlatformChecked cfg with
+  | .ok _ =>
+      throw <| IO.userError "tph015i: VSpaceRoot in initialObjects should be rejected, but boot succeeded"
+  | .error _ =>
+      expect "VSpaceRoot in initialObjects rejected (audit fix Issue #2)" true
+
+/-- TPH-015j (audit fix for Issue #3): Sentinel ObjId for boot
+    VSpaceRoot rejected.  The `bootVSpaceRootObjIdNonSentinel` gate
+    forbids using `ObjId.sentinel` (= ObjId 0) for the boot VSpace
+    since the sentinel is reserved as "unallocated" per H-06/WS-E3. -/
+private def tph015j_sentinelBootVSpaceObjIdRejected : IO Unit := do
+  -- Construct a boot VSpaceRoot entry at the reserved sentinel ObjId.
+  let entry : SeLe4n.Platform.BootVSpaceRootEntry := {
+    id := SeLe4n.ObjId.sentinel
+    root := SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot
+    hMappings := SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot_mappings_invExt }
+  let cfg : PlatformConfig :=
+    { irqTable := [], initialObjects := [],
+      machineConfig := SeLe4n.defaultMachineConfig
+      bootVSpaceRoot := some entry }
+  match bootFromPlatformChecked cfg with
+  | .ok _ =>
+      throw <| IO.userError "tph015j: sentinel boot VSpace ObjId should be rejected, but boot succeeded"
+  | .error _ =>
+      expect "sentinel boot VSpace ObjId rejected (audit fix Issue #3)" true
+
+/-- TPH-015k (audit fix): Boot-safety gate rejects malformed boot
+    VSpaceRoot.  An empty-mappings root fails `bootSafeVSpaceRootCheck`
+    because the non-empty conjunct is required (an empty L1 table
+    cannot serve the kernel's first instruction fetch). -/
+private def tph015k_unsafeBootVSpaceRejected : IO Unit := do
+  -- Build a malformed root with empty mappings (size = 0).
+  let unsafeRoot : VSpaceRoot :=
+    { asid := SeLe4n.ASID.ofNat 0
+      mappings := (SeLe4n.Kernel.RobinHood.RHTable.empty 16) }
+  let entry : SeLe4n.Platform.BootVSpaceRootEntry := {
+    id := SeLe4n.ObjId.ofNat 1
+    root := unsafeRoot
+    hMappings := SeLe4n.Kernel.RobinHood.RHTable.empty_invExt 16 (by omega) }
+  let cfg : PlatformConfig :=
+    { irqTable := [], initialObjects := [],
+      machineConfig := SeLe4n.defaultMachineConfig
+      bootVSpaceRoot := some entry }
+  match bootFromPlatformChecked cfg with
+  | .ok _ =>
+      throw <| IO.userError "tph015k: unsafe boot VSpace (empty mappings) should be rejected, but boot succeeded"
+  | .error _ =>
+      expect "unsafe boot VSpace rejected by bootVSpaceRootSafe gate" true
 
 /-- TPH-015g: Witness theorem connection.  The Bool-level admission
     witness `bootSafeObjectCheck_admits_rpi5BootVSpaceRoot` evaluates
@@ -689,7 +766,10 @@ def main : IO Unit := do
   tph015f_objIdCollisionRejected
   tph015g_admissionWitness
   tph015h_simBootVSpaceRoot
+  tph015i_vspaceRootInInitialObjectsRejected
+  tph015j_sentinelBootVSpaceObjIdRejected
+  tph015k_unsafeBootVSpaceRejected
 
   IO.println "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  IO.println "  All 23 two-phase architecture tests passed!"
+  IO.println "  All 26 two-phase architecture tests passed!"
   IO.println "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

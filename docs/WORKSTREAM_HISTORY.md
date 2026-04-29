@@ -368,6 +368,40 @@ gates.
   has VSpaceRoot, W^X invariant, asidTable registration,
   admission witness).
 
+- **R3 post-landing audit pass.**  A deep audit of the R3 commit
+  surfaced two HIGH security/correctness issues and four LOW
+  documentation issues:
+  - **Issue #2 (HIGH)**: VSpaceRoots in `initialObjects` bypass
+    `asidTable` update.  R3.1 admits VSpaceRoots in
+    `bootSafeObjectCheck`, but `Builder.createObject` does NOT
+    update `asidTable` (unlike runtime `storeObject`).  A config
+    placing a VSpaceRoot in `initialObjects` would create an
+    asidTable/objects inconsistency.  Fixed by adding the
+    `noVSpaceRootsInInitialObjects` runtime gate in
+    `bootFromPlatformChecked`; boot VSpaceRoots are now
+    exclusively threaded via the dedicated `bootVSpaceRoot`
+    field.
+  - **Issue #3 (HIGH)**: `rpi5BootVSpaceRootObjId` and
+    `simBootVSpaceRootObjId` were `ObjId.ofNat 0` — but
+    `ObjId.sentinel = ⟨0⟩` is reserved as the "unallocated"
+    sentinel per Prelude.lean H-06/WS-E3.  Fixed by changing both
+    to `ObjId.ofNat 1` and adding the
+    `bootVSpaceRootObjIdNonSentinel` defense-in-depth gate that
+    rejects any `BootVSpaceRootEntry` with `id = ObjId.sentinel`.
+  - **Issues #1, #4, #5, #7 (LOW)**: documentation accuracy
+    fixes (Contract.lean docstring on sim binding, MmioAdapter
+    P-L9 status, RPi5 Contract Status section, removal of
+    speculative reference to unimplemented sibling theorem).
+  Three new TPH-015 regression tests (TPH-015i/j/k) cover the
+  new gates plus a pre-existing `bootVSpaceRootSafe` gate.
+  Theorem signatures
+  (`bootFromPlatformChecked_eq_bootFromPlatform`,
+  `bootFromPlatformChecked_admits_bootVSpace`) gained the new
+  preconditions; chain-of-splits proofs
+  (`bootFromPlatformChecked_ok_implies_*`,
+  `bootFromPlatformChecked_ok_interruptsEnabled`) updated to
+  traverse the two additional gates.
+
 #### R3 collateral
 
 - `Platform/Contract.lean` gains a `bootVSpaceRoot : Option

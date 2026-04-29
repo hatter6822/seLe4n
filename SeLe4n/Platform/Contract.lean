@@ -90,14 +90,21 @@ class PlatformBinding (platform : Type) where
   interruptContract : InterruptBoundaryContract
   /-- **WS-RC R3 (DEEP-BOOT-01)**: Optional canonical boot VSpaceRoot.
       Platforms with a hardware-specific identity-mapped boot VSpace
-      (RPi5: `rpi5BootVSpaceRoot`) populate this with an entry; the
-      simulation platform leaves it as `none` because the trace harness
-      does not exercise hardware page-table operations.
+      (RPi5: `rpi5BootVSpaceRoot`) populate this with an entry.  The
+      simulation platform also populates it with `simBootVSpaceRoot`
+      (a minimal single-mapping root) for parity with the RPi5
+      hardware path, so the trace harness exercises the same
+      `installBootVSpaceRoot` code path.
 
       When set, `Platform.Boot.bootFromPlatformChecked` threads the
       entry through `installBootVSpaceRoot` after the standard
       `initialObjects` fold, registering the VSpace's ASID in
-      `asidTable` so subsequent VSpace operations can resolve it. -/
+      `asidTable` so subsequent VSpace operations can resolve it.
+
+      The default `none` is kept on the typeclass field for
+      compatibility with future bare-metal platforms that boot in
+      EL3/SECURE mode without an MMU; current production bindings
+      (RPi5, sim) all override the default. -/
   bootVSpaceRoot : Option BootVSpaceRootEntry := none
 
 /-- Extract the runtime contract from a platform binding instance. -/

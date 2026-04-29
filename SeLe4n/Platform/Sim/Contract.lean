@@ -61,11 +61,14 @@ open SeLe4n.Model
 -- ============================================================================
 
 /-- **WS-RC R3 (DEEP-BOOT-01)**: Reserved ObjId for the simulation
-    boot VSpaceRoot.  Distinct from `rpi5BootVSpaceRootObjId` only
-    by namespace; the simulation harness allocates user-mode ObjIds
-    starting from a higher range (test fixtures use 1, 2, 3, ...).
-    Uses `0` to land in the kernel-reserved low-ObjId range. -/
-def simBootVSpaceRootObjId : SeLe4n.ObjId := SeLe4n.ObjId.ofNat 0
+    boot VSpaceRoot.  Same numeric value as `rpi5BootVSpaceRootObjId`
+    by convention — the boot VSpace ObjId is platform-reserved on
+    every platform binding.  `ObjId.ofNat 1` is the smallest
+    non-sentinel ObjId (`ObjId.sentinel = ⟨0⟩` per Prelude.lean
+    H-06/WS-E3 is reserved as "unallocated").  The
+    `bootVSpaceRootObjIdDistinct` runtime gate in `Platform.Boot`
+    rejects configs whose `initialObjects` collide with this ObjId. -/
+def simBootVSpaceRootObjId : SeLe4n.ObjId := SeLe4n.ObjId.ofNat 1
 
 /-- **WS-RC R3**: Minimal page-permissions used by the simulation boot
     VSpaceRoot — a read-only, non-executable, kernel-only entry.

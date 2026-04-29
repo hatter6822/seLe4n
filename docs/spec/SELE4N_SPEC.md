@@ -1690,7 +1690,7 @@ via the dedicated `bootVSpaceRoot` field, not the standard fold).
 **WS-RC R3 (DEEP-BOOT-01) — Boot VSpaceRoot threading.**  Pre-R3 the
 `.vspaceRoot _ => false` arm of `bootSafeObjectCheck` rendered the
 proven-W^X-compliant `rpi5BootVSpaceRoot` data structure inert at boot
-time.  R3 closes the gap by:
+time.  R3 (with post-landing audit fixes) closes the gap by:
 
 1. Adding `bootSafeVSpaceRootCheck : VSpaceRoot → Bool` (in
    `Platform/RPi5/VSpaceBoot.lean`) and the equivalence theorem
@@ -1707,11 +1707,17 @@ time.  R3 closes the gap by:
    `asidTable` insertion so the boot VSpace is resolvable by ASID
    after boot, mirroring the runtime `storeObject` semantics.
 4. Adding the `bootVSpaceRoot : Option BootVSpaceRootEntry := none`
-   field to `PlatformConfig`, plus two runtime gates
-   (`bootVSpaceRootObjIdDistinct`, `bootVSpaceRootSafe`) wired into
-   `bootFromPlatformChecked`.  When the field is `some entry`, the
-   gated boot path installs the entry via `installBootVSpaceRoot`
-   between the `initialObjects` fold and the interrupts-enable step.
+   field to `PlatformConfig`, plus four runtime gates
+   (`noVSpaceRootsInInitialObjects` — forbids VSpaceRoots in
+   `initialObjects` since `Builder.createObject` doesn't update
+   `asidTable`; `bootVSpaceRootObjIdDistinct` — forbids ObjId
+   collision with `initialObjects`; `bootVSpaceRootObjIdNonSentinel` —
+   forbids the `ObjId.sentinel` value (`⟨0⟩` per Prelude.lean
+   H-06/WS-E3); `bootVSpaceRootSafe` — requires the boot root passes
+   `bootSafeVSpaceRootCheck`) wired into `bootFromPlatformChecked`.
+   When the `bootVSpaceRoot` field is `some entry`, the gated boot
+   path installs the entry via `installBootVSpaceRoot` between the
+   `initialObjects` fold and the interrupts-enable step.
 5. Threading `bootVSpaceRoot := some rpi5BootVSpaceRootEntry` into
    the RPi5 `PlatformBinding` instance (and a parallel
    `simBootVSpaceRoot` into the Sim platform instances), so the

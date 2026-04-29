@@ -818,6 +818,23 @@ under `docs/` and `docs/gitbook/`.
   `hNoVSpaceInInitial` precondition; boot VSpaceRoots are now
   exclusively introduced via the gated `bootFromPlatformChecked`
   path.
+  **WS-RC R3 audit pass** (post-LANDING audit):
+  closed two HIGH security/correctness issues (#2 VSpaceRoots in
+  `initialObjects` bypass `asidTable` update — fixed by adding
+  `noVSpaceRootsInInitialObjects` gate; #3 boot VSpace ObjId was
+  the reserved `ObjId.sentinel` (`⟨0⟩`) — changed to
+  `ObjId.ofNat 1` and added defense-in-depth
+  `bootVSpaceRootObjIdNonSentinel` gate).  Plus four LOW
+  documentation accuracy fixes (#1 sim binding docstring, #4 P-L9
+  resolved status in MmioAdapter, #5 RPi5 Contract Status section,
+  #7 speculative reference to unimplemented sibling theorem).
+  Three new regression tests (TPH-015i/j/k) cover the new gates.
+  All theorem proofs that traverse `bootFromPlatformChecked`'s
+  gates updated for the two new splits
+  (`bootFromPlatformChecked_eq_bootFromPlatform`,
+  `bootFromPlatformChecked_admits_bootVSpace`,
+  `bootFromPlatformChecked_ok_implies_*`,
+  `bootFromPlatformChecked_ok_interruptsEnabled`).
 
 - **WS-AN portfolio COMPLETE (v0.30.11, branch `claude/review-codebase-phase-an12-JBPQN`)**:
   Phase AN12 — Documentation, themes, closure — landed the cross-cutting

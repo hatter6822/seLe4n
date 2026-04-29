@@ -1,3 +1,96 @@
+## v0.30.11 — WS-RC R3 audit pass: tighten boot-VSpace gates, fix sentinel ObjId
+
+A deep audit of the WS-RC R3 commit (ac638ee) surfaced four issues
+that needed correction before the implementation can be considered
+"completely and optimally implemented" per the project's audit
+discipline.  All four are addressed below.
+
+### Issue #2 (HIGH — security/correctness): VSpaceRoots in `initialObjects` bypass `asidTable` update
+
+R3.1 admits boot-safe VSpaceRoots into the `bootSafeObjectCheck`
+predicate so the proven-W^X-compliant boot root can be witnessed at
+the boot-pipeline layer.  However, `Builder.createObject` (which
+processes `initialObjects` entries via `foldObjects`) does NOT
+update `asidTable`, while the runtime `storeObject` semantics for
+`.vspaceRoot` inserts DO update `asidTable`.  If a config placed a
+VSpaceRoot in `initialObjects`, the post-state would have an entry in
+`objects` with no corresponding entry in `asidTable`, violating the
+runtime `asidTableConsistent` invariant.
+
+**Fix**: added `noVSpaceRootsInInitialObjects` runtime gate to
+`bootFromPlatformChecked`.  Boot VSpaceRoots are now exclusively
+introduced via the dedicated `PlatformConfig.bootVSpaceRoot` field,
+which routes through `installBootVSpaceRoot` (the only path that
+maintains asidTable/objects consistency).  Configs that put a
+VSpaceRoot in `initialObjects` are rejected with a descriptive error
+message.  New TPH-015i regression test exercises the rejection.
+
+### Issue #3 (HIGH — security/correctness): boot VSpace ObjId was the reserved sentinel
+
+The original R3 commit set `rpi5BootVSpaceRootObjId` and
+`simBootVSpaceRootObjId` to `ObjId.ofNat 0`.  Per Prelude.lean
+H-06/WS-E3, `ObjId.sentinel = ⟨0⟩` is reserved as the "unallocated"
+sentinel value: `toObjIdChecked` (used at syscall entry) rejects it,
+`BootstrapBuilder.withObject` panics on it, and the code-base
+convention is that no real object should use this ObjId.  Using the
+sentinel for the boot VSpace was a convention violation that would
+confuse code readers and could break future invariants.
+
+**Fix**: changed both ObjIds to `ObjId.ofNat 1` (the smallest
+non-sentinel value).  Added a defense-in-depth runtime gate
+`bootVSpaceRootObjIdNonSentinel` to `bootFromPlatformChecked` that
+rejects any `BootVSpaceRootEntry` with `id = ObjId.sentinel`,
+catching third-party misuse of the public API.  New TPH-015j
+regression test exercises the rejection.
+
+### Issue #1, #4, #5, #7 (LOW — documentation accuracy)
+
+- `Platform/Contract.lean`: docstring incorrectly claimed the
+  simulation platform leaves `bootVSpaceRoot` as `none`; updated to
+  reflect the WS-RC R3 R3.5 wiring (sim now uses
+  `simBootVSpaceRootEntry` for parity).
+- `Platform/RPi5/MmioAdapter.lean`: P-L9 status updated from
+  "post-1.0 hardening candidate" to **RESOLVED** (WS-RC R3 /
+  DEEP-BOOT-01) with cross-reference.
+- `Platform/RPi5/Contract.lean`: updated the Status section from
+  "H3-prep stub" language to reflect the post-R3 production state
+  (all five typeclass fields populated, including `bootVSpaceRoot`).
+- `Platform/Boot.lean`: removed speculative references to a sibling
+  invariant-bundle theorem `..._with_boot_vspace` that was never
+  implemented; replaced with honest description of the R3 deliverable
+  scope and explicit "post-R3 hardening item" annotation for the
+  full bundle proof in the with-boot-VSpace case.
+
+### Test coverage additions
+
+Three new TPH-015 regression tests:
+- TPH-015i: VSpaceRoot in `initialObjects` rejected (Issue #2 gate).
+- TPH-015j: sentinel boot VSpace ObjId rejected (Issue #3 gate).
+- TPH-015k: malformed boot VSpace (empty mappings) rejected by
+  `bootVSpaceRootSafe` gate.
+
+Plus TPH-015e strengthened to assert `objects.size = 0` for the
+no-boot-VSpace case (instead of merely checking the reserved ObjId).
+Total TPH-015 test count: 11 (was 8).
+
+### Theorem signature updates
+
+- `bootFromPlatformChecked_eq_bootFromPlatform` gains the
+  `hNoVSpaceObj : noVSpaceRootsInInitialObjects config = true`
+  precondition.
+- `bootFromPlatformChecked_admits_bootVSpace` gains `hNoVSpaceObj`
+  and `hNonSentinel : bootVSpaceRootObjIdNonSentinel config = true`.
+- `bootFromPlatformChecked_ok_implies_*` proofs traverse the new
+  gate-split structure (one extra `split at hOk` per gate).
+
+### Validation
+
+`lake build` (308 jobs) passes.  `lake exe two_phase_arch_suite`
+reports 26/26 tests pass (was 23, added the 3 new audit-fix tests).
+`lake exe an9_hardware_binding_suite` passes.  `./scripts/test_smoke.sh`
+and `./scripts/test_full.sh` pass.  Zero sorry / zero axiom in
+modified files.
+
 ## v0.30.11 — WS-RC R3: thread rpi5BootVSpaceRoot through bootSafeObject (DEEP-BOOT-01)
 
 `bootSafeObject` and `bootSafeObjectCheck` at
