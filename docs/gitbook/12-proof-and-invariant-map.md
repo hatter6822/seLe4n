@@ -445,6 +445,7 @@ Composite preservation (all 6 compound IPC operations):
 - `ipcUnwrapCaps_preserves_dualQueueSystemInvariant` (M3-E4: CNode precondition, composes per-step ep/tcb preservation),
 - `endpointSendDualWithCaps_preserves_dualQueueSystemInvariant` (M3-E4: composes send + ipcUnwrapCaps),
 - `endpointReceiveDualWithCaps_preserves_dualQueueSystemInvariant` (M3-E4: composes receive + ipcUnwrapCaps).
+- *(Note: the call wrapper has no standalone `endpointCallWithCaps_preserves_dualQueueSystemInvariant` — its `_preserves_ipcInvariantFull` in `Structural/DualQueueMembership.lean` accepts `dualQueueSystemInvariant st'` as a closure-form hypothesis. This is a pre-WS-RC asymmetry retained as proof-engineering scope, separate from the WS-RC R1 NI symmetry close described below.)*
 
 Helper lemmas: `storeTcbQueueLinks_noprevnext_preserves_linkInteg`, `storeTcbQueueLinks_append_tail_preserves_linkInteg`, `storeTcbQueueLinks_endpoint_backward`.
 
@@ -485,6 +486,7 @@ Preservation shape:
 - R3-A/M-16 notification badge delivery (v0.18.2): `notificationSignal` wake path now delivers the signaled badge to the woken thread via `storeTcbIpcStateAndMessage` with `{ IpcMessage.empty with badge := some badge }`. All preservation proofs updated to use `storeTcbIpcStateAndMessage` instead of `storeTcbIpcState`.
 - R3-C/M-19 `notificationWaiterConsistent` preservation: `storeObject_notification_preserves_notificationWaiterConsistent` (subset waiting list), `storeObject_nonNotification_preserves_notificationWaiterConsistent` (frame for TCB stores), `storeTcbIpcStateAndMessage_preserves_notificationWaiterConsistent` (TCB ipc state change with wait-list exclusion), `notificationSignal_preserves_notificationWaiterConsistent` (wake path + merge path), `frame_preserves_notificationWaiterConsistent` (general frame lemma for endpoint operations), `endpointReply_preserves_notificationWaiterConsistent` (reply path).
 - R3-E/L-08 linter: `set_option linter.all false` removed from `Structural.lean`; replaced with targeted `set_option linter.unusedVariables false`.
+- WS-RC R1 / DEEP-IPC-03 (v0.30.11) IPC call-path NI symmetry: `endpointCallWithCaps` `lookupCspaceRoot = none` arm now returns `.error .invalidCapability` (was `.ok ({ results := #[] }, st')` — covert channel via `KernelError`). All three IPC capability-transfer wrappers (`endpointSendDualWithCaps`, `endpointReceiveDualWithCaps`, `endpointCallWithCaps`) now fail closed identically on the missing-CSpace-root structural fault. The arm is structurally unreachable under `intrusiveQueueWellFormed` (a sub-clause of `dualQueueSystemInvariant`); the new `.error` is fail-closed defense-in-depth. `endpointCallWithCaps_preserves_ipcInvariant` (`Kernel/IPC/Invariant/CallReplyRecv/ReplyRecv.lean`) updated so the arm becomes vacuous via `simp [hLookup] at hStep`, mirroring the post-AK1-I send-path tactic.
 
 ### 4.2 IPC message payload bounds (WS-H12d)
 

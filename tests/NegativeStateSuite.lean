@@ -3685,6 +3685,120 @@ def runAC1CdtTrackingChecks : IO Unit := do
 
   IO.println "all AC1-H CDT tracking checks passed"
 
+-- ============================================================================
+-- WS-RC R1 (DEEP-IPC-03): IPC call-path NI symmetry on missing-CSpace-root
+-- ============================================================================
+
+private def r1EpId        : SeLe4n.ObjId    := ⟨6700⟩
+private def r1CallerTid   : SeLe4n.ThreadId := ⟨6710⟩
+private def r1ReceiverTid : SeLe4n.ThreadId := ⟨6711⟩
+private def r1CallerCNode : SeLe4n.ObjId    := ⟨6720⟩
+private def r1ReceiverCNode : SeLe4n.ObjId  := ⟨6721⟩
+private def r1TargetObj   : SeLe4n.ObjId    := ⟨6730⟩
+
+private def r1Cap : Capability :=
+  { target := .object r1TargetObj,
+    rights := AccessRightSet.ofList [.read],
+    badge := none }
+
+private def r1MsgWithCaps : IpcMessage :=
+  { registers := #[], caps := #[r1Cap], badge := none }
+
+private def r1EndpointRights : AccessRightSet :=
+  AccessRightSet.ofList [.write, .grant]
+
+private def r1BaseState : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject r1EpId (.endpoint {})
+    |>.withObject r1TargetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+    |>.withObject r1CallerCNode (.cnode
+        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [((SeLe4n.Slot.ofNat 0), r1Cap)] })
+    |>.withObject r1ReceiverCNode (.cnode
+        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [] })
+    |>.withObject r1CallerTid.toObjId (.tcb
+        { tid := r1CallerTid, priority := ⟨1⟩, domain := ⟨0⟩,
+          cspaceRoot := r1CallerCNode, vspaceRoot := ⟨0⟩,
+          ipcBuffer := (SeLe4n.VAddr.ofNat 0), ipcState := .ready })
+    |>.withObject r1ReceiverTid.toObjId (.tcb
+        { tid := r1ReceiverTid, priority := ⟨1⟩, domain := ⟨0⟩,
+          cspaceRoot := r1ReceiverCNode, vspaceRoot := ⟨0⟩,
+          ipcBuffer := (SeLe4n.VAddr.ofNat 0), ipcState := .ready })
+    |>.withRunnable [r1CallerTid, r1ReceiverTid]
+    |>.buildChecked)
+
+private def r1QueuedState : Except KernelError SystemState :=
+  match SeLe4n.Kernel.endpointReceiveDual r1EpId r1ReceiverTid r1BaseState with
+  | .error e => .error e
+  | .ok (_, st) => .ok st
+
+private def r1FaultyState (st : SystemState) : SystemState :=
+  { st with objects := st.objects.erase r1ReceiverTid.toObjId }
+
+private def r1CheckHealthyState (stQueued : SystemState) : IO Unit := do
+  let result := SeLe4n.Kernel.endpointCallWithCaps r1EpId r1CallerTid
+    r1MsgWithCaps r1EndpointRights r1CallerCNode (SeLe4n.Slot.ofNat 0) stQueued
+  match result with
+  | .ok _ =>
+      IO.println "positive check passed [R1-NEG-01 endpointCallWithCaps healthy state succeeds]"
+  | .error e =>
+      throw <| IO.userError
+        s!"R1-NEG-01: endpointCallWithCaps on healthy state should succeed, got error {toString e}"
+
+private def r1CheckFaultyState (stFaulty : SystemState) : IO Unit := do
+  let result := SeLe4n.Kernel.endpointCallWithCaps r1EpId r1CallerTid
+    r1MsgWithCaps r1EndpointRights r1CallerCNode (SeLe4n.Slot.ofNat 0) stFaulty
+  match result with
+  | .ok _ =>
+      throw <| IO.userError
+        "R1-NEG-02: endpointCallWithCaps must NEVER silently succeed on missing-TCB receiver (covert channel)"
+  | .error _ =>
+      IO.println
+        "negative check passed [R1-NEG-02 endpointCallWithCaps fail-closed on missing-TCB receiver]"
+
+private def r1CheckLookupCspaceRoot (stFaulty : SystemState) : IO Unit := do
+  if SeLe4n.Kernel.lookupCspaceRoot stFaulty r1ReceiverTid = none then
+    IO.println
+      "negative check passed [R1-NEG-03 lookupCspaceRoot none witnesses guarded fault arm]"
+  else
+    throw <| IO.userError
+      "R1-NEG-03: lookupCspaceRoot should return none on missing-TCB receiver"
+
+/-- WS-RC R1 (DEEP-IPC-03): Confirm `endpointCallWithCaps` shares the
+fail-closed semantics of `endpointSendDualWithCaps` and
+`endpointReceiveDualWithCaps` on the missing-CSpace-root structural fault.
+
+Background: AK1-I (I-M07) closed the asymmetry between the send and
+receive WithCaps wrappers — both fail closed with `.error .invalidCapability`
+when the dequeued peer's CSpace root cannot be resolved. The call path was
+the remaining outlier, returning `.ok ({ results := #[] }, st')` and giving
+a per-domain covert channel via `KernelError`. This test exercises the
+post-R1 invariant: the call wrapper must never silently succeed under the
+missing-TCB structural fault.
+
+Three cases are checked:
+- R1-NEG-01: Healthy state with a properly enqueued receiver — wrapper
+  returns success.
+- R1-NEG-02: Faulty state with the receiver's TCB erased after enqueue —
+  wrapper MUST return `.error _` (any error code; the inner `endpointCall`
+  will surface `.objectNotFound` from `endpointQueuePopHead` before the
+  `lookupCspaceRoot = none` arm fires, but the wrapper never returns `.ok`).
+- R1-NEG-03: `lookupCspaceRoot` returns `none` on the faulty state, which
+  is exactly the invariant-violating predicate that the new `.error`
+  arm guards against in source. -/
+def runR1IpcCallPathSymmetryChecks : IO Unit := do
+  IO.println "\n=== WS-RC R1 (DEEP-IPC-03): IPC call-path NI symmetry ==="
+  match r1QueuedState with
+  | .error e =>
+    throw <| IO.userError s!"R1-NEG-setup: receive-enqueue failed: {toString e}"
+  | .ok stQueued =>
+    r1CheckHealthyState stQueued
+    let stFaulty := r1FaultyState stQueued
+    r1CheckFaultyState stFaulty
+    r1CheckLookupCspaceRoot stFaulty
+  IO.println "all WS-RC R1 IPC call-path NI symmetry checks passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -3712,3 +3826,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runZ8SchedContextNegativeChecks
   SeLe4n.Testing.runAC1BudgetFailClosedChecks
   SeLe4n.Testing.runAC1CdtTrackingChecks
+  SeLe4n.Testing.runR1IpcCallPathSymmetryChecks

@@ -238,7 +238,7 @@ withdrawn-as-finding; per §1.5 the structural fix lands in **R12.B**.
 | DEEP-FFI-02 | M | R2 | `rust/sele4n-hal/src/svc_dispatch.rs:308`; new Lean fn `syscallDispatchFromAbi` |
 | DEEP-FFI-03 | I | R2 | `SeLe4n/Platform/FFI.lean:185–190, 216–223` (gating section) |
 | DEEP-IPC-02 | M | R10 | 7 IPC files: `QueueNextBlocking.lean:24`, `QueueNoDup.lean:25`, `QueueMembership.lean:13`, `Structural/StoreObjectFrame.lean:37`, `Structural/DualQueueMembership.lean:38`, `Structural/PerOperation.lean:38`, `Structural/QueueNextTransport.lean:36` |
-| DEEP-IPC-03 | H | R1 | `Kernel/IPC/DualQueue/WithCaps.lean:198` |
+| DEEP-IPC-03 | H | R1 | `Kernel/IPC/DualQueue/WithCaps.lean:198` (**CLOSED at R1 landing**) |
 | DEEP-IPC-04 | I | R6 | `Kernel/IPC/Operations/Endpoint.lean:485`; theorem `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull` in `Invariant/Defs.lean` |
 | DEEP-IPC-05 | I | R4 | `Model/Object/Types.lean` `Notification.waitingThreads` |
 | DEEP-DOC-01 | M | R11 | `README.md:92, :213` |
@@ -554,7 +554,11 @@ WS-RC R0: cut baseline + audit errata + DEBT-RUST-02 closure
 
 ---
 
-## 5. Phase R1 — IPC call-path NI symmetry (DEEP-IPC-03)
+## 5. Phase R1 — IPC call-path NI symmetry (DEEP-IPC-03) — **LANDED**
+
+**Status:** COMPLETE on branch `claude/audit-ipc-symmetry-yhdIu`
+(2026-04-29). All R1.1..R1.5 tasks discharged; build/test pipeline
+green; main trace fixture unchanged.
 
 ### 5.1 Goal
 
@@ -620,6 +624,60 @@ and receive (line 158) paths were already aligned with
 to the same shape.
 ```
 
+### 5.7 Landing summary
+
+The R1.1, R1.2, R1.3 tasks were applied to the call path's
+`lookupCspaceRoot = none` arm: it now returns `.error
+.invalidCapability` accompanied by a 16-line WS-RC R1 comment block
+modeled on the AK1-I send-path comment. The two adjacent `| none =>`
+arms (for `ep.receiveQ.head = none` and `getEndpoint? = none`) are
+intentionally kept as `.ok` because they encode the unrelated
+invariant "no receiver enqueued" — the send path keeps them as
+`.ok` for the same reason, so symmetry is preserved.
+
+R1.4 (parity scaffolding) was applied beyond the literal text of the
+plan: in addition to confirming send/receive parity, the receive
+path's previously-terse U-H13 comment was expanded to match the
+AK1-I-shape comment block, and line-number cross-references in all
+three comment blocks (send, receive, call) were replaced with
+function-name cross-references so they stay correct under future
+line-number drift. This was an incidental robustness improvement
+flowing from the implement-the-improvement rule (CLAUDE.md §"Implement-
+the-improvement rule").
+
+R1.5 (test extension) was applied to both targets:
+
+- `tests/InformationFlowSuite.lean`: the existing AK1-I regression
+  was extended to assert send/receive/**call** structural symmetry,
+  and a new Test 3 directly invokes `endpointCallWithCaps` on a
+  missing-TCB receiver state to verify the wrapper never silently
+  succeeds (the pre-R1 covert-channel shape).
+- `tests/NegativeStateSuite.lean`: a new
+  `runR1IpcCallPathSymmetryChecks` runner adds three focused checks
+  (R1-NEG-01 / R1-NEG-02 / R1-NEG-03) covering the healthy state,
+  the missing-TCB fault state, and the
+  `lookupCspaceRoot = none` predicate.
+
+The proof-side update was not in the plan's task list but is
+required by the implement-the-improvement rule: the
+`endpointCallWithCaps_preserves_ipcInvariant` theorem in
+`SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/ReplyRecv.lean` was
+updated so the `lookupCspaceRoot = none` arm becomes vacuous
+(`simp [hLookup] at hStep`), matching the post-AK1-I send-path
+tactic. Without this update the theorem would have failed to
+elaborate.
+
+**Validation evidence:**
+
+- `lake build SeLe4n.Kernel.IPC.DualQueue.WithCaps` ✓
+- `lake build SeLe4n.Kernel.IPC.Invariant.CallReplyRecv.ReplyRecv` ✓
+- `lake build SeLe4n.Kernel.IPC.Invariant.Structural.DualQueueMembership` ✓
+- `lake build` (default target, 302 jobs) ✓
+- `./scripts/test_smoke.sh` ✓
+- `./scripts/test_full.sh` ✓
+- `lake exe sele4n` byte-identical to
+  `tests/fixtures/main_trace_smoke.expected` ✓
+- 0 sorry / 0 axiom in modified files
 
 ---
 
@@ -2797,8 +2855,8 @@ The following events would NOT push v1.0:
 
 | Phase | Exit criteria |
 |---|---|
-| R0 | Baseline file landed; ERRATA records DEEP-ARCH-01 withdrawal-as-finding (with cross-reference to R12.B for the structural fix); DEBT-RUST-02 closure annotated in archived discharge index; `test_full.sh` clean. |
-| R1 | `endpointCallWithCaps:198` returns `.error .invalidCapability`; AK1-I-style comment block in place; IPC suite passes. |
+| R0 | Baseline file landed; ERRATA records DEEP-ARCH-01 withdrawal-as-finding (with cross-reference to R12.B for the structural fix); DEBT-RUST-02 closure annotated in archived discharge index; `test_full.sh` clean. **LANDED** at WS-RC R0. |
+| R1 | `endpointCallWithCaps` `lookupCspaceRoot = none` arm returns `.error .invalidCapability`; AK1-I-style comment block in place; receive-path comment expanded for parity; `endpointCallWithCaps_preserves_ipcInvariant` updated for new vacuous arm; `tests/InformationFlowSuite.lean` AK1-I regression extended for send/receive/**call** symmetry; `tests/NegativeStateSuite.lean::runR1IpcCallPathSymmetryChecks` adds 3 focused checks; smoke + full test pipelines clean. **LANDED** on branch `claude/audit-ipc-symmetry-yhdIu`. |
 | R2 | `syscall_dispatch_inner` invokes `syscallEntryChecked` end-to-end; `syscallDispatchFromAbi` exists and is referenced by Rust comment; `@[export]` symbols gated by `hwTarget`; `SyscallDispatchSuite` exercises every variant. |
 | R3 | `bootSafeObject` admits `bootSafeVSpaceRoot`-compliant VSpaceRoots; `rpi5BootVSpaceRoot` threaded into boot result; correctness theorem extended; sim parity preserved. |
 | R4 | R4.A `slotsUnique`, R4.B RetypeTarget non-bypass, R4.C NoDup `waitingThreads` enforced structurally (subsumes DEEP-IPC-01); R4.D `cspaceMutate_rejects_null_cap` witness theorem (closes DEEP-CAP-02 structurally); downstream consumers updated; theorems witness each discharge. |
@@ -3068,7 +3126,7 @@ v0.31.0 release boundary.
 | DEEP-FFI-02 | Deep §7.2 | `rust/sele4n-hal/src/svc_dispatch.rs:308` (no Lean fn) | R2 | – | YES |
 | DEEP-FFI-03 | Deep §6.1 | `Platform/FFI.lean:34-39` | R2 | – | YES |
 | DEEP-IPC-02 | Deep §5.2 | 7 IPC files w/ `set_option linter.unusedVariables false` | R10 | YES | YES |
-| DEEP-IPC-03 | Deep §5.2, §11.3 | `IPC/DualQueue/WithCaps.lean:198` | R1 | YES | YES |
+| DEEP-IPC-03 | Deep §5.2, §11.3 | `IPC/DualQueue/WithCaps.lean:198` | R1 | **CLOSED** | **CLOSED** |
 | DEEP-IPC-04 | Deep §5.2 | `IPC/Operations/Endpoint.lean:485` | R6 | – | YES |
 | DEEP-IPC-05 | Deep §5.2, §12 | `Model/Object/Types.lean Notification.waitingThreads` | R4 | – | YES |
 | DEEP-DOC-01 | Deep §8.4, §11.4 | `README.md:92, :213` | R11 | YES | YES |

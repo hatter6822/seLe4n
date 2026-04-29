@@ -1,3 +1,81 @@
+## v0.30.11 — WS-RC Phase R1: IPC call-path NI symmetry (DEEP-IPC-03)
+
+WS-RC R1 closes the last NI asymmetry between the three IPC capability-
+transfer paths. AK1-I (I-M07) had previously aligned
+`endpointSendDualWithCaps` and `endpointReceiveDualWithCaps` so both fail
+closed with `.error .invalidCapability` when the dequeued peer's CSpace
+root cannot be resolved (the missing-TCB structural fault). The call
+path (`endpointCallWithCaps`,
+`SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean`) was the remaining outlier:
+it returned `.ok ({ results := #[] }, st')` on the same fault, giving a
+per-domain covert channel via `KernelError`. This change brings the
+call path to the same fail-closed shape so all three IPC paths observe
+identical kernel-result semantics on the structural fault, removing
+the cross-domain distinguisher.
+
+### Addressed (`AUDIT_v0.30.11_DEEP_VERIFICATION.md`)
+
+- DEEP-IPC-03 — NI distinguisher between IPC call and send/receive
+  paths on missing receiver CSpace root. CLOSED.
+
+### Behavioural change
+
+- `endpointCallWithCaps` now returns `.error .invalidCapability` when
+  `lookupCspaceRoot` returns `none` for the receiver of an immediate
+  rendezvous. Previous behaviour (`.ok` with empty cap-transfer
+  summary) is removed. Inner `endpointCall` already errors with
+  `.objectNotFound` in production paths reaching this fault, so the
+  visible-error-code change applies only on invariant-violating drift,
+  but the source-level shape now matches the send/receive paths.
+- The two adjacent `| none =>` arms in `endpointCallWithCaps` (for
+  `ep.receiveQ.head` and `getEndpoint?`) intentionally remain `.ok`
+  to preserve the existing "no receiver enqueued ≠ missing CSpace
+  root" invariant distinction; the send path is identical.
+
+### Code changes
+
+- `SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean` — call-path
+  `lookupCspaceRoot = none` arm now returns `.error
+  .invalidCapability` with a WS-RC R1 comment block explaining the
+  NI-symmetry rationale, mirroring the existing AK1-I comment on
+  the send path. The receive path's previously-terse U-H13 comment
+  is expanded for full parity. Line-number cross-references in all
+  three comment blocks are replaced by function-name cross-
+  references for refactoring robustness.
+- `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/ReplyRecv.lean` —
+  `endpointCallWithCaps_preserves_ipcInvariant` updated so the
+  `lookupCspaceRoot = none` arm becomes vacuous (`simp [hLookup]
+  at hStep`), matching the post-AK1-I send-path tactic shape.
+
+### Test coverage (R1.5)
+
+- `tests/InformationFlowSuite.lean` AK1-I regression extended to
+  cover all three WithCaps wrappers (Test 3 directly invokes
+  `endpointCallWithCaps` on a missing-TCB receiver state, asserting
+  the wrapper never silently succeeds).
+- `tests/NegativeStateSuite.lean` adds
+  `runR1IpcCallPathSymmetryChecks` with three focused checks:
+  R1-NEG-01 healthy state (`.ok`), R1-NEG-02 faulty state must
+  error (the `.ok` covert-channel shape is rejected), R1-NEG-03
+  `lookupCspaceRoot = none` witnesses the guarded fault arm.
+
+### Validation
+
+- `lake build SeLe4n.Kernel.IPC.DualQueue.WithCaps` ✓
+- `lake build SeLe4n.Kernel.IPC.Invariant.CallReplyRecv.ReplyRecv` ✓
+- `lake build SeLe4n.Kernel.IPC.Invariant.Structural.DualQueueMembership` ✓
+- `lake build` (default target, 302 jobs) ✓
+- `./scripts/test_smoke.sh` ✓
+- `./scripts/test_full.sh` ✓
+- `lake exe sele4n` byte-identical to
+  `tests/fixtures/main_trace_smoke.expected` ✓
+- 0 sorry / 0 axiom in the modified files
+
+### Cross-references
+
+- Plan: [`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md) §5
+- WORKSTREAM_HISTORY: [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md) WS-RC R1 entry
+
 ## v0.30.11 — WS-AN Phase AN12: Documentation, themes, closure (WS-AN COMPLETE)
 
 WS-AN closes with the documentation-and-closure phase landing the two

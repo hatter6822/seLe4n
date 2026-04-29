@@ -1216,6 +1216,51 @@ channel.
   `decodeSyscallArgsFromState`.
 - `SeLe4n/Kernel/API.lean` — `syscallEntry`, `syscallEntryChecked`.
 
+### 8.10.6 IPC Capability-Transfer NI Symmetry (AK1-I + WS-RC R1 / DEEP-IPC-03)
+
+The three IPC capability-transfer wrappers in
+`SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean` —
+`endpointSendDualWithCaps`, `endpointReceiveDualWithCaps`, and
+`endpointCallWithCaps` — all read the dequeued peer's `cspaceRoot`
+via `lookupCspaceRoot` after the rendezvous. When that lookup
+returns `none` (the dequeued peer's TCB is missing or has been
+corrupted to a non-TCB object — a structural fault excluded on the
+normal IPC path by `intrusiveQueueWellFormed` + `tcbQueueLinkIntegrity`,
+the dual-queue sub-clauses of `dualQueueSystemInvariant` /
+`ipcInvariantFull`), the wrappers must fail closed identically;
+otherwise an attacker observing kernel-result shapes from two
+domains can use the disagreement as a covert channel via
+`KernelError`.
+
+AK1-I (I-M07) brought `endpointSendDualWithCaps` and
+`endpointReceiveDualWithCaps` to fail closed with
+`.error .invalidCapability` on this fault. WS-RC R1 (DEEP-IPC-03)
+extends the same fail-closed shape to `endpointCallWithCaps`,
+which previously returned `.ok ({ results := #[] }, st')` on the
+same fault. After WS-RC R1, all three wrappers return
+`.error .invalidCapability` on the missing-CSpace-root branch and
+the per-domain covert channel via `KernelError` is closed.
+
+The two adjacent `| none =>` arms in each wrapper (for
+`ep.receiveQ.head = none` and `getEndpoint? = none`) intentionally
+remain `.ok` because they encode an unrelated invariant ("no
+receiver enqueued ≠ missing CSpace root"). All three wrappers
+preserve this distinction symmetrically.
+
+**Proof impact**: `endpointCallWithCaps_preserves_ipcInvariant`
+(`SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/ReplyRecv.lean`) was
+updated so the `lookupCspaceRoot = none` arm becomes vacuous via
+`simp [hLookup] at hStep`, matching the post-AK1-I send-path
+tactic. The full-invariant theorem
+`endpointCallWithCaps_preserves_ipcInvariantFull` in
+`Structural/DualQueueMembership.lean` forwards through unchanged.
+
+**Test coverage**: `tests/InformationFlowSuite.lean` AK1-I
+regression extended for send/receive/call symmetry;
+`tests/NegativeStateSuite.lean::runR1IpcCallPathSymmetryChecks`
+provides three runtime-observable checks (healthy state, faulty
+state must error, `lookupCspaceRoot` returns `none`).
+
 ### 8.11 buildChecked Runtime Invariant Validation (WS-T Phase T7)
 
 All test states use `BootstrapBuilder.buildChecked` instead of `build`:

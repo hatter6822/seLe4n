@@ -1280,13 +1280,15 @@ def runInformationFlowChecks : IO Unit := do
 
   IO.println "extended enforcement boundary verified"
 
-  -- AK1-I (I-M07 / MEDIUM, NI L-1): NI regression for symmetric cap-root error.
+  -- AK1-I (I-M07 / MEDIUM, NI L-1) + WS-RC R1 (DEEP-IPC-03): NI regression for
+  -- symmetric cap-root error across all three IPC capability-transfer paths.
   -- Prior to AK1-I, `endpointSendDualWithCaps` returned `.ok ({results := #[]}, _)`
   -- on a missing receiver CSpace root while `endpointReceiveDualWithCaps`
   -- returned `.error .invalidCapability` on the analogous sender-side miss.
-  -- That asymmetry was an NI distinguisher observable across domains. After
-  -- AK1-I, both operations fail closed with `.error .invalidCapability` in
-  -- the same structural-fault case.
+  -- AK1-I closed the send/receive asymmetry. WS-RC R1 (DEEP-IPC-03) closes the
+  -- last asymmetry by aligning `endpointCallWithCaps` with the same fail-closed
+  -- semantics. Now all three operations fail closed with
+  -- `.error .invalidCapability` in the same structural-fault case.
   --
   -- Because the `lookupCspaceRoot = none` branch is reachable only when the
   -- dequeued peer's TCB is missing (or corrupted to a non-TCB object), which
@@ -1296,11 +1298,13 @@ def runInformationFlowChecks : IO Unit := do
   -- receiverCspaceRoot pointing to a non-CNode object, exercising the
   -- cap-transfer error path. The symmetry property at the kernel API level
   -- is formally witnessed by the preservation proofs in
-  -- `IPC/Invariant/Structural.lean` and
-  -- `IPC/Invariant/EndpointPreservation.lean` (the `.error .invalidCapability`
-  -- arm is discharged identically for both endpointSendDualWithCaps and
-  -- endpointReceiveDualWithCaps — see the `| none => simp [hLookup] at hStep`
-  -- vacuous-case tactics in `endpointSendDualWithCaps_preserves_*`).
+  -- `IPC/Invariant/Structural.lean`,
+  -- `IPC/Invariant/EndpointPreservation.lean`, and
+  -- `IPC/Invariant/CallReplyRecv/ReplyRecv.lean` (the `.error .invalidCapability`
+  -- arm is discharged identically for all three of
+  -- `endpointSendDualWithCaps`, `endpointReceiveDualWithCaps`, and
+  -- `endpointCallWithCaps` — see the `| none => simp [hLookup] at hStep`
+  -- vacuous-case tactics in `endpoint*WithCaps_preserves_*`).
   do
     -- Test 1: `ipcUnwrapCaps` (the shared subroutine) with a non-CNode
     -- receiverCspaceRoot — exercised identically by both cap-transfer callers.
@@ -1326,9 +1330,10 @@ def runInformationFlowChecks : IO Unit := do
        | .error _ => true)
     -- Test 2: Direct verification of the symmetric `.error .invalidCapability`
     -- code path. Construct the exact missing-TCB scenario that triggers the
-    -- `lookupCspaceRoot = none` branch in BOTH send and receive WithCaps
-    -- wrappers. This is done by deleting the peer's TCB via a state splice —
-    -- simulating the structural fault the NI audit flagged.
+    -- `lookupCspaceRoot = none` branch in ALL THREE WithCaps wrappers
+    -- (`endpointSendDualWithCaps`, `endpointReceiveDualWithCaps`,
+    -- `endpointCallWithCaps`). This is done by deleting the peer's TCB via
+    -- a state splice — simulating the structural fault the NI audit flagged.
     let epId : SeLe4n.ObjId := ⟨3700⟩
     let senderTid : SeLe4n.ThreadId := ⟨3710⟩
     let receiverTid : SeLe4n.ThreadId := ⟨3711⟩
@@ -1356,20 +1361,87 @@ def runInformationFlowChecks : IO Unit := do
       -- Splice out the receiver TCB (simulates missing-TCB structural fault).
       let stFaulty : SystemState := { stQueued with
         objects := stQueued.objects.erase receiverTid.toObjId }
-      -- Now trigger send-path. `endpointSendDual` will internally fail or succeed
-      -- depending on whether the dequeue finds a TCB. Regardless of intermediate
-      -- outcome, the cap-transfer `.error .invalidCapability` arm symmetry is
-      -- the property under test — both code paths exercise the same arm shape.
+      -- Verify the structural-fault predicate: `lookupCspaceRoot` returns
+      -- `none` on the missing-TCB peer. This is the precise predicate the
+      -- guarded `| none => .error .invalidCapability` arm in all three
+      -- WithCaps wrappers fires on. The structural-fault pre-condition is
+      -- excluded by `intrusiveQueueWellFormed` (which forces every
+      -- enqueued thread to have a TCB) on the normal IPC path; the
+      -- guarded arm is fail-closed defense-in-depth against invariant
+      -- drift.
       let lookupResult := SeLe4n.Kernel.lookupCspaceRoot stFaulty receiverTid
       expect "lookupCspaceRoot returns none on missing-TCB peer"
         (lookupResult = none)
-      -- Verify both `endpointSendDualWithCaps` and `endpointReceiveDualWithCaps`
-      -- are defined such that `lookupCspaceRoot = none` on the peer yields
+      -- Verify all three WithCaps wrappers
+      -- (`endpointSendDualWithCaps`, `endpointReceiveDualWithCaps`,
+      -- `endpointCallWithCaps`) are defined such that
+      -- `lookupCspaceRoot = none` on the peer yields
       -- `.error .invalidCapability`. This is a code-structural assertion
-      -- (the two operations share an identical `| none => .error .invalidCapability`
-      -- arm in the source — see `IPC/DualQueue/WithCaps.lean:111, 152`).
-      IO.println "symmetric .error .invalidCapability branch structurally verified"
-    IO.println "NI-symmetric cap-root error behaviour verified"
+      -- — the three operations share an identical
+      -- `| none => .error .invalidCapability` arm in the source
+      -- (`SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean`). The vacuous-case
+      -- branch is discharged in
+      -- `endpointSendDualWithCaps_preserves_ipcInvariant`,
+      -- `endpointReceiveDualWithCaps_preserves_ipcInvariant`, and
+      -- `endpointCallWithCaps_preserves_ipcInvariant` with identical
+      -- `simp [hLookup] at hStep` tactics.
+      IO.println "symmetric .error .invalidCapability branch structurally verified for send/receive/call"
+    -- Test 3 (WS-RC R1 / DEEP-IPC-03): Direct invocation of
+    -- `endpointCallWithCaps` exercises the early-error propagation. With a
+    -- missing receiver TCB, `endpointCall`'s internal `endpointQueuePopHead`
+    -- fails with `.objectNotFound` before the `lookupCspaceRoot` check can
+    -- fire. The point of the runtime test is to confirm that the call path
+    -- never silently succeeds on the missing-TCB fault — it must always
+    -- propagate an error. This complements the `lookupCspaceRoot = none`
+    -- structural assertion above with a runtime-observable property.
+    do
+      let epId : SeLe4n.ObjId := ⟨3700⟩
+      let callerTid : SeLe4n.ThreadId := ⟨3712⟩
+      let receiverTid : SeLe4n.ThreadId := ⟨3713⟩
+      let callerCNode : SeLe4n.ObjId := ⟨3521⟩
+      let cap1 : Capability :=
+        { target := .object ⟨3530⟩, rights := AccessRightSet.ofList [.read], badge := none }
+      let baseSt :=
+        (BootstrapBuilder.empty
+          |>.withObject epId (.endpoint {})
+          |>.withObject callerCNode (.cnode
+              { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+                slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [((SeLe4n.Slot.ofNat 0), cap1)] })
+          |>.withObject callerTid.toObjId (.tcb
+              { tid := callerTid, priority := ⟨1⟩, domain := ⟨0⟩,
+                cspaceRoot := callerCNode, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
+                ipcState := .ready })
+          |>.withObject receiverTid.toObjId (.tcb
+              { tid := receiverTid, priority := ⟨1⟩, domain := ⟨0⟩,
+                cspaceRoot := ⟨3799⟩, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
+                ipcState := .ready })
+          |>.withRunnable [callerTid, receiverTid]
+          |>.buildChecked)
+      -- Enqueue the receiver via API.
+      match SeLe4n.Kernel.endpointReceiveDual epId receiverTid baseSt with
+      | .error _ => expect "call-path receive-enqueue setup should succeed" false
+      | .ok (_, stQueued) =>
+        -- Splice out the receiver TCB to create the structural fault.
+        let stFaulty : SystemState := { stQueued with
+          objects := stQueued.objects.erase receiverTid.toObjId }
+        -- Confirm `lookupCspaceRoot` returns none on the call-path receiver too.
+        expect "call-path lookupCspaceRoot returns none on missing-TCB receiver"
+          (SeLe4n.Kernel.lookupCspaceRoot stFaulty receiverTid = none)
+        -- Invoke `endpointCallWithCaps` directly. Because `endpointCall` will
+        -- internally fail on the missing-TCB peer (via `endpointQueuePopHead`
+        -- → `lookupTcb`), the wrapper propagates an error. The wrapper MUST
+        -- NOT return `.ok` — that would be the pre-R1 covert-channel shape.
+        let msgWithCaps : IpcMessage :=
+          { registers := #[], caps := #[cap1], badge := none }
+        let callResult := SeLe4n.Kernel.endpointCallWithCaps epId callerTid
+          msgWithCaps (AccessRightSet.ofList [.write, .grant]) callerCNode
+          (SeLe4n.Slot.ofNat 0) stFaulty
+        expect "endpointCallWithCaps never silently succeeds on missing-TCB receiver"
+          (match callResult with
+           | .ok _ => false
+           | .error _ => true)
+        IO.println "endpointCallWithCaps fail-closed under missing-TCB fault verified"
+    IO.println "NI-symmetric cap-root error behaviour verified for send/receive/call"
 
   -- ======================================================================
   -- AK6-G (NI-M01): projectKernelObject strips pendingMessage + timedOut
