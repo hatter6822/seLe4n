@@ -236,3 +236,35 @@ No closure-form obligation is orphaned at v0.30.11: every `hCdtPost`,
 `hProjEq`, `hSchedProj`, `hServiceProjEq` parameter in the proof surface
 either has a substantively proven discharge bridge (§3.A) or a documented
 discharge recipe via named frame lemmas (§3.B / §3.C).
+
+## 6. WS-RC reconfirmation: DEBT-RUST-02 / H-24 (LANDED at WS-RC R0.4, v0.30.11)
+
+The predecessor audit's H-24 finding raised concerns about residual
+workstream-ID markers (`WS-V` / `AG10`) in
+`rust/sele4n-hal/src/{trap.rs:186, lib.rs:89}`. **Reconfirmed closed
+at v0.30.11 audit cycle**: three independent grep passes — the v0.30.11
+comprehensive audit (DEBT-RUST-02 row, 2026-04-26), the v0.30.11 deep
+verification audit (2026-04-28), and the WS-RC R0 baseline cut
+(2026-04-29) — all return **0 hits** for the `WS-V` / `AG10` marker
+pattern.
+
+```text
+$ grep -rn 'WS-V\|AG10' rust/sele4n-hal/src/trap.rs rust/sele4n-hal/src/lib.rs
+(no output — zero hits)
+```
+
+The cited line numbers (`trap.rs:186`, `lib.rs:89`) at v0.30.11 carry
+unrelated content (`AN9-F` FFI dispatch comment and an `R-HAL-L11`
+SCTLR.A explanation respectively); the predecessor's H-24 marker
+spelling either was discharged silently in a prior workstream or used
+a different token that is no longer present in the tree.
+
+**WS-RC discharge index cross-reference:**
+[`docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`](../../audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md)
+§3.G row G.1 records this closure under WS-RC's canonical artefact.
+The annotation here in the archived predecessor index is the
+back-reference required by the §1.5 structural-fix policy of
+[`AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](../../audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)
+(see plan §4 R0.4).
+
+This file is otherwise unchanged from its WS-AN AN12-A landing.

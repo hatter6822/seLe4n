@@ -32,27 +32,49 @@ Once the workstream closes:
    "Latest audit" link points at the next active audit (or its archived
    location while there is no successor).
 
-## Files currently live (v0.30.11 pre-1.0 cut)
+## Files currently live (v0.30.11 pre-1.0 cut, WS-RC IN FLIGHT)
 
 - `AUDIT_v0.30.11_COMPREHENSIVE.md` — **active pre-1.0 readiness audit
   cut (2026-04-26)**. Succeeds `AUDIT_v0.30.6_COMPREHENSIVE.md` (now
-  archived under `docs/dev_history/audits/`). Has no paired
-  `WORKSTREAM_PLAN.md`/`*_BASELINE.txt` yet because no remediation
-  workstream has opened; per the lifecycle table above, those artefacts
-  will be added when the next workstream opens. This audit's two
-  pre-1.0 actions (DEBT-DOC-01 metric refresh, DEBT-RUST-02 H-24
-  reconfirmation) plus the post-1.0 DEBT register are the seed of that
-  next workstream.
+  archived under `docs/dev_history/audits/`). Identifies the DEBT-*
+  inventory (17 items: 3 pre-v1.0, 1 v1.0, 13 post-1.0).
 - `AUDIT_v0.30.11_DEEP_VERIFICATION.md` — **deep verification pass on
   the same v0.30.11 cut (2026-04-28)**, done at user request to
   re-derive every claim from source rather than trust the comprehensive
   audit's documented findings. Builds on (does not supersede) the
-  comprehensive audit; introduces 50+ new finding IDs (DEEP-*) including
+  comprehensive audit; introduces ~52 new finding IDs (DEEP-*) including
   two H-severity items the predecessor missed: DEEP-FFI-01 (Lean ↔
   Rust syscall-dispatch glue is a stub returning `NotImplemented = 17`
   on hardware) and DEEP-DOC-01 (README internally inconsistent on the
   proved-declaration count). Both predecessor and verification audit
-  feed the next remediation workstream's plan.
+  feed the WS-RC remediation plan.
+- `AUDIT_v0.30.11_WORKSTREAM_PLAN.md` — **WS-RC remediation plan**
+  (15 phases R0..R14, ~68 active items). Decomposes the comprehensive
+  + deep audits into per-phase implementation slices with verified
+  file/line targets, validation gates, dependencies, and commit-message
+  scaffolding. Applies the CLAUDE.md "implement-the-improvement rule"
+  uniformly: even false-positive audit findings receive structural
+  enforcement gates (§1.5 policy).
+- `AUDIT_v0.30.11_ERRATA.md` — audit-text corrections discovered during
+  WS-RC remediation planning (E-1: DEEP-ARCH-01 verification rationale
+  incorrect; E-2: DEEP-ARCH-02 consumer count refined; E-3: DEEP-RUST-01/02
+  partial verification refined to two-tier rule; E-4: plan-internal
+  corrections from live-tree verification).
+- `AUDIT_v0.30.11_WS_RC_BASELINE.txt` — **WS-RC numeric baseline at
+  workstream start (R0.1, 2026-04-29)**. LoC, file/module counts,
+  declaration histogram, source-purity metrics (sorry/axiom/Classical/
+  native_decide/partial def all 0 or comment-only), Rust unsafe-block
+  census, build/test gate state (302 lake jobs / 462 cargo tests / 0
+  clippy warnings), production/staged module partition (158/10),
+  audit-finding tally, predecessor closure reconfirmation
+  (DEBT-RUST-02 / H-24, 0 hits). Machine-diffable KEY=value tail.
+- `AUDIT_v0.30.11_DISCHARGE_INDEX.md` — **WS-RC closure-form discharge
+  index (R0.3 seed)**. Empty at R0; populated incrementally as R4 / R12
+  produce closure-form theorems and structural witnesses. §3.A–§3.C
+  carry forward the predecessor v0.30.6 inventory unchanged; §3.D
+  (NoDup / structural promotions), §3.E (predecessor reroutings), §3.F
+  (false-positive structural witnesses) are WS-RC-introduced sections;
+  §3.G records the DEBT-RUST-02 / H-24 reconfirmation landed at R0.4.
 
 ## Recently archived (WS-AN closure, v0.30.11)
 

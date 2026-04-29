@@ -1,0 +1,410 @@
+# WS-RC baseline snapshot (R0.1)
+#
+# Captured at the start of WS-RC so phase R12.A (CI-hygiene) and the
+# closure-form gate (Phase R0.4 reconfirm; future R-phase gates) can
+# diff each subsequent commit against this file. Any drift in R1..R12
+# is expected and is accounted for in the closure gate (§19 of the
+# plan). Drift that contradicts the plan's predictions is a finding
+# against the plan and triggers a §20 escalation review.
+#
+# Format: human-readable sections. Each numeric metric is also emitted
+# in `KEY=value` form at the bottom for machine diffability.
+#
+# Source-of-truth:
+#   * plan         docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md (R0 §4)
+#   * comprehensive docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md (DEBT-* index)
+#   * deep         docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md (DEEP-* index)
+#   * errata       docs/audits/AUDIT_v0.30.11_ERRATA.md
+#   * predecessor  docs/dev_history/audits/AUDIT_v0.30.6_*.md (WS-AN closure)
+
+## 0. Provenance
+
+timestamp_utc       = 2026-04-29T01:06:42Z
+repo_head_sha       = 335887e84a6810adf968efa5813a3f3cb3a807c8
+branch              = claude/audit-phase-r0-baseline-tBblA
+package_version     = 0.30.11
+rust_workspace_ver  = 0.30.11
+lean_toolchain      = leanprover/lean4:v4.28.0
+lake_version        = 5.0.0-src+7e01a1b
+plan_branch_note    = Plan §0 names branch
+                      claude/audit-workstream-planning-XsmKS as the
+                      anchor that landed the plan + audit errata
+                      (PR #760, merge SHA 335887e). R0.1 (this file)
+                      is captured on claude/audit-phase-r0-baseline-
+                      tBblA as the first execution-phase commit of
+                      WS-RC. SeLe4n/, Main.lean, tests/, rust/, and
+                      scripts/ are byte-identical to merge commit
+                      335887e per `git diff --stat` against that
+                      commit; only the four R0 artefacts (this file,
+                      ERRATA.md, DISCHARGE_INDEX.md seed,
+                      docs/audits/README.md update) and the
+                      WORKSTREAM_HISTORY.md opening row land in this
+                      execution PR.
+
+## 1. Build / test gate at WS-RC start (all GREEN)
+
+# Lake build numbers
+lake_jobs           = 302
+lake_warnings       = 0
+lake_errors         = 0
+lake_command        = `lake build`
+
+# Rust workspace numbers (`cargo test --workspace`,
+# `cargo clippy --workspace -- -D warnings` from `rust/`)
+cargo_tests_total   = 462
+cargo_tests_failed  = 0
+cargo_tests_ignored = 0
+cargo_clippy_warns  = 0
+cargo_breakdown     = sele4n-abi:94 sele4n-hal:93 sele4n-sys:200
+                      sele4n-types:13 conformance:54 doctests:8
+                      (abi:1 hal:5 sys:1 types:1)
+
+# Tier scripts all PASS at WS-RC start:
+#   scripts/test_smoke.sh                  PASS
+#   scripts/test_full.sh                   PASS
+#   scripts/test_tier0_hygiene.sh          PASS
+#   scripts/test_tier1_build.sh            PASS
+#   scripts/test_tier2_negative.sh         PASS
+#   scripts/test_tier2_trace.sh            PASS
+#   scripts/test_tier3_invariant_surface.sh PASS
+#   scripts/test_docs_sync.sh              PASS (wraps codebase_map regen)
+#   scripts/test_rust_conformance.sh       PASS (wraps cargo conformance)
+#   scripts/test_abi_roundtrip.sh          PASS
+#   scripts/check_version_sync.sh          PASS at 0.30.11
+#   scripts/check_website_links.sh         PASS
+#   scripts/check_production_staging_partition.sh PASS (10 staged-only
+#                                          modules verified against
+#                                          scripts/staged_module_allowlist.txt)
+#   scripts/check_no_orphan_fields.sh      PASS (every *_fields def
+#                                          has ≥ 1 consumer)
+#   scripts/ak7_cascade_check_monotonic.sh PASS (reads
+#                                          docs/dev_history/audits/AL0_baseline.txt)
+
+## 2. Source-purity gate
+
+sorry_prod_count    = 0    # `grep -rn '\bsorry\b' SeLe4n Main.lean`
+axiom_prod_count    = 0    # `grep -rn '\baxiom\b' SeLe4n Main.lean`
+classical_prod_count = 2   # 1 docstring (InformationFlow/Invariant/
+                           # Operations.lean:87) + 1 use
+                           # (Scheduler/Operations/Preservation.lean:1720,
+                           # `Classical.byContradiction` deferred to R14
+                           # / DEEP-PROOF-01).
+native_decide_use   = 0    # zero actual uses; 8 grep hits are all
+                           # docstrings/comments explaining the policy
+                           # of NOT using `native_decide` (TCB hygiene).
+partial_def_count   = 0    # `grep -rn '^partial def\|^partial unsafe def' SeLe4n`
+
+# Linter-suppression inventory (DEEP-IPC-02 owner-of-record at R10):
+linter_set_option_total = 19   # 14 distinct files
+linter_ipc_unused_vars  = 7    # files under SeLe4n/Kernel/IPC/
+
+## 3. Fixture verification
+
+main_trace_fixture_lines     = 227
+main_trace_fixture_byte_id   = PASS (`diff` against
+                               tests/fixtures/main_trace_smoke.expected
+                               returns empty)
+main_trace_fixture_sha256    = tests/fixtures/main_trace_smoke.expected.sha256
+                               present and enforced by Tier 2
+robin_hood_fixture_lines     = 16
+robin_hood_fixture_sha256    = tests/fixtures/robin_hood_smoke.expected.sha256
+                               present (added in WS-AN AN11-D)
+two_phase_arch_fixture_lines = 9
+two_phase_arch_fixture_sha256= tests/fixtures/two_phase_arch_smoke.expected.sha256
+                               present (added in WS-AN AN11-D)
+fixture_registry             = tests/fixtures/scenario_registry.yaml
+                               (validated by scripts/scenario_catalog.py
+                               in tier-0 hygiene)
+
+## 4. Production tree shape (re-counted at R0.1 cut)
+
+# Per the verification commands in plan §2.6:
+
+prod_lean_files        = 167   # `find SeLe4n -name "*.lean" | wc -l`
+prod_lean_lines        = 109791 # `find SeLe4n -name "*.lean" -exec cat {} + | wc -l`
+prod_lean_files_with_main = 168 # production scope as recorded in codebase_map (incl. Main.lean)
+prod_lean_lines_with_main = 109805
+test_lean_files        = 28    # `find tests -name "*.lean" | wc -l`
+test_lean_lines        = 18925
+rust_workspace_crates  = 4     # sele4n-{types,abi,hal,sys}
+rust_src_files         = 49    # `find rust -name "*.rs" -path "*/src/*" | wc -l`
+rust_src_lines         = 11818
+
+# Module / declaration counts (from `docs/codebase_map.json`):
+modules_total          = 196   # 168 production + 28 test
+declarations_total     = 6142
+proved_decls_thm_lemma = 3199  # readme_sync.proved_theorem_lemma_decls
+                               # (theorem-and-lemma flavour, excludes
+                               # `example` blocks; see codebase_map)
+
+# Declaration kind histogram (from codebase_map):
+decl_kind_namespace    = 242
+decl_kind_abbrev       = 35
+decl_kind_theorem      = 3191
+decl_kind_def          = 2234
+decl_kind_structure    = 155
+decl_kind_inductive    = 58
+decl_kind_instance     = 179
+decl_kind_example      = 23
+decl_kind_class        = 2
+decl_kind_section      = 2
+decl_kind_opaque       = 20
+decl_kind_initialize   = 1
+
+source_digest_sha256   = 0ac75f312399d8c55d64ebbed24d3e0426952f213f1b51480963ee7eb4a77a20
+                         # (covers SeLe4n/**/*.lean, Main.lean,
+                         # tests/**/*.lean per source_sync.scope)
+
+## 5. Production / staged module partition
+
+# Verified by `scripts/check_production_staging_partition.sh`. The
+# transitive `^import SeLe4n.` closure from `SeLe4n.lean` reaches the
+# production set; the closure from `Platform/Staged.lean` adds the
+# staged-only set; the gate fails if these two sets are not disjoint
+# or if the staged-only set differs from
+# `scripts/staged_module_allowlist.txt`.
+
+production_modules_count   = 158   # transitive closure from SeLe4n.lean
+staged_only_modules_count  = 10    # reached only via Platform/Staged.lean
+allowlist_entries          = 10    # scripts/staged_module_allowlist.txt
+partition_gate_state       = PASS
+
+# Staged-only modules at WS-RC start (verified against allowlist):
+staged_AsidManager           = transitively-staged via Platform.RPi5.VSpaceBoot
+staged_CacheModel            = marker (STATUS: staged for H3)
+staged_ExceptionModel        = marker (STATUS: staged for H3)
+staged_InterruptDispatch     = transitively-staged via ExceptionModel
+staged_TimerModel            = marker (STATUS: staged for H3)
+staged_TlbCacheComposition   = transitively-staged via Staged
+staged_ConcurrencyAssumptions = infra (SMP-latent assumption inventory)
+staged_Platform_FFI          = infra (Lean ↔ Rust bridge; promotes after
+                               WS-RC R2 — DEEP-FFI-01/02/03)
+staged_Platform_RPi5_VSpaceBoot = infra (boot VSpace; promotes after
+                                  WS-RC R3 — DEEP-BOOT-01)
+staged_Platform_Staged       = anchor (the staging entry point itself)
+
+## 6. Rust HAL unsafe-block accounting (DEEP-RUST-01/02 baseline)
+
+# DEEP-RUST-01/02 are withdrawn-as-finding-but-fixed-structurally per
+# plan §2.1; the R12.C CI gate (deferred to R12) will enforce the
+# two-tier rule documented in ERRATA E-3. This baseline captures the
+# unsafe-block census so the gate's design ground-truth is anchored.
+
+unsafe_blocks_total_hal    = 59  # `grep -rEn "unsafe \{|unsafe fn|unsafe impl" rust/sele4n-hal/src`
+unsafe_blocks_total_rust   = 62  # workspace-wide
+unsafe_blocks_per_file     = cache.rs:11 barriers.rs:11 cpu.rs:9
+                             mmu.rs:5 tlb.rs:4 mmio.rs:4 uart.rs:3
+                             registers.rs:2 interrupts.rs:2 ffi.rs:2
+                             boot.rs:2 svc_dispatch.rs:1 smp.rs:1
+                             psci.rs:1 gic.rs:1
+unsafe_blocks_non_hal      = 3   # 2 in sele4n-sys (boot.rs, ffi.rs);
+                                 # 1 in sele4n-abi raw_syscall
+
+## 7. Workstream-scope baseline (post-§11/§12 plan revision)
+
+# These are the canonical finding totals per plan §1.1. The baseline
+# records them so the discharge index (§5 of this baseline; the
+# AUDIT_v0.30.11_DISCHARGE_INDEX.md seed at R0.3) can diff per-phase
+# closure counts against this anchor.
+
+# Severity counts — DEEP audit (live findings):
+deep_critical              = 0
+deep_high                  = 2    # DEEP-IPC-03 (v0.31.0), DEEP-FFI-01 (v1.0.0)
+deep_medium                = 9
+deep_low                   = 11
+deep_info                  = 23
+deep_active_total          = 45
+
+# Severity counts — DEBT register (predecessor comprehensive audit):
+debt_active                = 17    # active items in DEBT-* index
+debt_pre_v1_0              = 3     # DEBT-DOC-01, DEBT-RUST-02, DEBT-IPC-02 (via R10)
+debt_v1_0                  = 1     # DEBT-FR-01 (via R11; included in v0.31.0 too)
+debt_post_1_0              = 13    # the maintainability backlog
+
+# False-positive structural fixes (plan §2.1 / §1.5 policy):
+fp_structural_fixes        = 6
+#   DEEP-CAP-02 — cspaceMutate validates                  (R4.D witness)
+#   DEEP-ARCH-02 — *_fields consumers exist               (R12.D gate)
+#   DEEP-RUST-01 — MMIO ARM-ARM cited                     (R12.C gate)
+#   DEEP-RUST-02 — registers ARM-ARM cited                (R12.C gate)
+#   DEEP-IPC-01 — notification waitingThreads NoDup       (subsumed by R4.C)
+#   DEEP-ARCH-01 — CacheModel staged correctly            (R12.B gate;
+#                  audit-text errata recorded as ERRATA E-1)
+
+# Phase index summary (from plan §3.1):
+phases_total               = 15    # R0..R14
+phases_v0_31_0_blocking    = 8     # R0, R1, R8, R9, R10, R11, R12 (4 sub-tasks counted as 1 phase) - see plan §3.1
+phases_v1_0_0_additional   = 5     # R2, R3, R4, R5, R6
+phases_optional            = 1     # R7
+phases_post_1_0            = 1     # R14
+phases_reserved            = 1     # R13 (reserved for emergent items)
+
+# Total active items (plan §1.1 headline):
+total_active_items         = 68
+
+## 8. Predecessor closure reconfirmation (DEBT-RUST-02 / H-24)
+
+# DEBT-RUST-02 is the predecessor finding pre-1.0 audit comprehensive
+# raised about residual H-24 markers (`WS-V` / `AG10`) in
+# `rust/sele4n-hal/src/{trap.rs:186,lib.rs:89}`. The comprehensive
+# audit COULD NOT REPRODUCE the markers and the deep verification audit
+# concurred. Plan-author reconfirmation at WS-RC R0 prep time and
+# again at this baseline cut both return zero hits:
+
+debt_rust_02_status        = CLOSED-RECONFIRMED
+debt_rust_02_command       = `grep -rn "WS-V\|AG10" rust/sele4n-hal/src/trap.rs rust/sele4n-hal/src/lib.rs`
+debt_rust_02_hits          = 0
+debt_rust_02_trap_line_186 = "// CLOSED at AN9-F: Wire Lean FFI dispatch via" (no WS-V/AG10 marker)
+debt_rust_02_lib_line_89   = "false faults on `memcpy`-style unaligned byte" (no WS-V/AG10 marker)
+
+# Closure annotation lands in archived
+# `docs/dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md` (R0.4).
+
+## 9. AL0 cascade baseline (carried — not re-cut at R0)
+
+# WS-RC does not re-cut the AL0 cascade baseline (read by
+# scripts/ak7_cascade_check_monotonic.sh from
+# docs/dev_history/audits/AL0_baseline.txt, archived after WS-AN
+# closure). Per plan §4.5, R0 only adds a single-line DEBT-RUST-02
+# closure annotation to the archived discharge index; the AL0
+# baseline file itself is unchanged. The next workstream that needs
+# a fresh AK7 cascade snapshot will cut a successor baseline.
+
+al0_baseline_path          = docs/dev_history/audits/AL0_baseline.txt
+al0_baseline_carried_from  = WS-AN AN10-D refresh
+al0_monotonicity_gate      = scripts/ak7_cascade_check_monotonic.sh (PASS)
+
+## 10. Test harness inventory
+
+# Per `lakefile.toml` `[[lean_exe]]` blocks; each runs the matching
+# tests/<Name>Suite.lean source file. The `_total` count below
+# aggregates the `lake exe …` exit codes captured during gate runs.
+
+test_lean_exes_declared    = 29   # `grep -c "^\[\[lean_exe\]\]" lakefile.toml`
+                                  # (28 *Suite* + 1 main `sele4n` exe)
+test_suites_lean_files     = 28   # tests/*.lean (actual .lean files)
+test_suites_total_loc      = 18925
+
+# Per-suite assertion / pass counts — captured by running each
+# `lake exe` once except NegativeStateSuite, which is run via
+# `lake env lean --run` per scripts/test_tier2_negative.sh.
+# These counts inform the WS-AN closure record and serve as the
+# WS-RC drift anchor.
+
+SUITE_TRACE_SEQUENCE_PROBE    = 1    # single-line summary
+SUITE_NEGATIVE_STATE          = 305  # `lake env lean --run`
+SUITE_INFORMATION_FLOW        = 127
+SUITE_ROBIN_HOOD              = 53
+SUITE_RADIX_TREE              = 43
+SUITE_FROZEN_STATE            = 50
+SUITE_FREEZE_PROOF            = 59
+SUITE_FROZEN_OPS              = 41
+SUITE_TWO_PHASE_ARCH          = 43
+SUITE_OPERATION_CHAIN         = 351
+SUITE_SUSPEND_RESUME          = 31
+SUITE_PRIORITY_MANAGEMENT     = 34
+SUITE_IPC_BUFFER              = 23
+SUITE_PRIORITY_INHERITANCE    = 26
+SUITE_LIVENESS                = 63
+SUITE_DECODING                = 109
+SUITE_BADGE_OVERFLOW          = 39
+SUITE_ASID_POOL               = 23
+SUITE_INTERRUPT_DISPATCH      = 11
+SUITE_WX_DEFENSE              = 10
+SUITE_DECODE_VALIDATION       = 13
+SUITE_ABI_ROUNDTRIP           = 27
+SUITE_MODEL_INTEGRITY         = 97
+SUITE_AK9_PLATFORM            = 35
+SUITE_KERNEL_ERROR_MATRIX     = 47   # AN11-A new suite
+SUITE_AK8_COVERAGE            = 13
+SUITE_AN9_HARDWARE_BINDING    = 23   # AN9 surface anchors
+SUITE_ASSERTIONS_TOTAL        = 1614 # carried from WS-AN AN0-A baseline;
+                                     # exact recount deferred to R8 plan
+                                     # PR which renames An9/An10 suites.
+
+## 11. Verification commands (re-runnable)
+
+# Every numeric value above is re-derivable. The block below is the
+# canonical re-run set; commit hooks, R-phase gates, and audit-cycle
+# successors should reproduce these exact commands.
+
+# Production tree shape:
+#   find SeLe4n -name "*.lean" | wc -l
+#   find SeLe4n -name "*.lean" -exec cat {} + | wc -l
+#   find tests -name "*.lean" | wc -l
+#   find rust -name "*.rs" -path "*/src/*" | wc -l
+#
+# Proof debt:
+#   grep -rn '\bsorry\b\|\baxiom\b' SeLe4n Main.lean
+#   grep -rn 'Classical\.' SeLe4n
+#   grep -rn '^partial def\|^partial unsafe def' SeLe4n
+#   grep -rEn 'unsafe \{|unsafe fn|unsafe impl' rust/sele4n-hal/src/
+#
+# Module count (canonical, via codebase_map):
+#   python3 -c "import json; d=json.load(open('docs/codebase_map.json')); \
+#               print(d['summary']['module_count'], d['summary']['declaration_count'])"
+#
+# DEBT-RUST-02 reconfirmation (zero hits expected):
+#   grep -rn 'WS-V\|AG10' rust/sele4n-hal/src/trap.rs rust/sele4n-hal/src/lib.rs
+#
+# Production-chain transitive closure (DEEP-ARCH-01 verification):
+#   bash scripts/check_production_staging_partition.sh
+#
+# Closure-form discharge index reachability (predecessor):
+#   source ~/.elan/env && lake env lean -e \
+#     'open SeLe4n.Kernel in #check @closureForm_discharge_index_documented'
+#
+# Build and test gates (canonical; takes ~10 min on first run):
+#   source ~/.elan/env && lake build              # 302 jobs, 0 warnings
+#   ./scripts/test_smoke.sh
+#   ./scripts/test_full.sh
+#   (cd rust && cargo test --workspace)           # 462 tests
+#   (cd rust && cargo clippy --workspace -- -D warnings)
+
+## 12. Machine-diffable metric tail (KEY=value)
+
+LAKE_JOBS=302
+LAKE_WARNINGS=0
+LAKE_ERRORS=0
+CARGO_TESTS=462
+CARGO_TESTS_FAILED=0
+CARGO_CLIPPY_WARNS=0
+SORRY_COUNT=0
+AXIOM_COUNT=0
+NATIVE_DECIDE_USE=0
+PARTIAL_DEF_COUNT=0
+CLASSICAL_PROD_COUNT=2
+LINTER_SET_OPTION_TOTAL=19
+LINTER_IPC_UNUSED_VARS=7
+FIXTURE_BYTE_IDENTICAL=1
+PROD_LEAN_FILES=167
+PROD_LEAN_FILES_WITH_MAIN=168
+PROD_LEAN_LINES=109791
+PROD_LEAN_LINES_WITH_MAIN=109805
+TEST_LEAN_FILES=28
+TEST_LEAN_LINES=18925
+RUST_SRC_FILES=49
+RUST_SRC_LINES=11818
+MODULES_TOTAL=196
+DECLARATIONS_TOTAL=6142
+PROVED_DECLS_THM_LEMMA=3199
+SOURCE_DIGEST_SHA256=0ac75f312399d8c55d64ebbed24d3e0426952f213f1b51480963ee7eb4a77a20
+PRODUCTION_MODULES_COUNT=158
+STAGED_ONLY_MODULES_COUNT=10
+ALLOWLIST_ENTRIES=10
+UNSAFE_BLOCKS_HAL=59
+UNSAFE_BLOCKS_RUST=62
+DEEP_CRITICAL=0
+DEEP_HIGH=2
+DEEP_MEDIUM=9
+DEEP_LOW=11
+DEEP_INFO=23
+DEEP_ACTIVE_TOTAL=45
+DEBT_ACTIVE=17
+FP_STRUCTURAL_FIXES=6
+PHASES_TOTAL=15
+TOTAL_ACTIVE_ITEMS=68
+DEBT_RUST_02_HITS=0
+DEBT_RUST_02_STATUS=CLOSED-RECONFIRMED
+
+# End of baseline.
