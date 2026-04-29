@@ -240,12 +240,14 @@ currently-active plan file tracks them.**
     `encodeError` / `encodeOk` UInt64 helpers, the boot wrapper
     `bootAndInitialiseFromPlatform`, and seven correctness
     theorems pinning the bridge's behaviour.
-  - 41 regression assertions across 18 test functions in
-    `tests/SyscallDispatchSuite.lean` cover discriminant
-    round-trips, encoding contracts, the IO.Ref bootstrap, both
-    `@[export]` bodies, the ABI-mismatch reject path, sequential
-    dispatch state evolution, and the boot wrapper.  Wired into
-    `test_tier2_negative.sh` and `test_tier3_invariant_surface.sh`.
+  - 195 regression assertions across 18 test functions in
+    `tests/SyscallDispatchSuite.lean` cover all 52 KernelError
+    discriminants pinned 1:1 against the Rust enum, encoding
+    contracts (bit 63 set/clear + identity / truncation), the IO.Ref
+    bootstrap, both `@[export]` bodies, the ABI-mismatch reject path,
+    sequential dispatch state evolution, and the boot wrapper.
+    Wired into `test_tier2_negative.sh` and
+    `test_tier3_invariant_surface.sh`.
 
 ### DEF-R-HAL-L17 — Bounded WFE Timeout Guard **[RESOLVED AT v0.30.10]**
 

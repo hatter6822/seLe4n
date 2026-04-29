@@ -111,11 +111,15 @@ open SeLe4n.Platform.Boot
 
 /-- WS-RC R2.A: Provide a `Nonempty` witness for `LabelingContext` so an
     `IO.Ref LabelingContext` may be created at module load time via
-    `initialize`.  The witness is `Kernel.testLabelingContext`, the same
-    context used by `MainTraceHarness` and the dispatch test suite — it
-    passes the `isInsecureDefaultContext` gate that
+    `initialize`.  We use `Nonempty` (not `Inhabited`) so the witness
+    does NOT propagate as `(default : LabelingContext)` to downstream
+    code that imports this module — preventing accidental use of the
+    test labeling context as a "default" in contexts that should fail
+    closed instead.  The witness value is `Kernel.testLabelingContext`,
+    the same context used by `MainTraceHarness` and the dispatch test
+    suite — it passes the `isInsecureDefaultContext` gate that
     `syscallEntryChecked` enforces. -/
-instance : Inhabited LabelingContext := ⟨Kernel.testLabelingContext⟩
+instance : Nonempty LabelingContext := ⟨Kernel.testLabelingContext⟩
 
 -- ============================================================================
 -- AG7-A-iii: Timer FFI declarations

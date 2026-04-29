@@ -75,53 +75,151 @@ private def mkState (objs : List (ObjId × KernelObject))
 -- R2.B.0 — KernelError ↔ UInt32 round-trip and Rust contract checks
 -- ============================================================================
 
-/-- SD-001: `KernelError.toUInt32` matches the Rust enum's discriminants
-    for a representative sample of variants (full coverage is via the
-    Rust-side `from_u32_roundtrip` test). -/
-private def sd001_kernelErrorDiscriminants : IO Unit := do
-  expect "sd001a_invalidCapability_0"
-    (KernelError.toUInt32 .invalidCapability == 0)
-    "InvalidCapability must be discriminant 0"
-  expect "sd001b_objectNotFound_1"
-    (KernelError.toUInt32 .objectNotFound == 1)
-    "ObjectNotFound must be discriminant 1"
-  expect "sd001c_illegalState_2"
-    (KernelError.toUInt32 .illegalState == 2)
-    "IllegalState must be discriminant 2"
-  expect "sd001d_notImplemented_17"
-    (KernelError.toUInt32 .notImplemented == 17)
-    "NotImplemented must be discriminant 17 (historical stub slot)"
-  expect "sd001e_invalidArgument_39"
-    (KernelError.toUInt32 .invalidArgument == 39)
-    "InvalidArgument must be discriminant 39"
-  expect "sd001f_partialResolution_51"
-    (KernelError.toUInt32 .partialResolution == 51)
-    "PartialResolution must be discriminant 51 (highest variant)"
+/-- SD-001: `KernelError.toUInt32` matches the Rust enum's discriminants.
 
-/-- SD-002: `encodeError` sets bit 63 for every variant. -/
-private def sd002_encodeErrorHighBit : IO Unit := do
+Pins ALL 52 variants (0..51) explicitly so a regression that
+re-orders the Lean `inductive KernelError` or the `toUInt32` arms
+silently is caught here.  The Rust side's
+`from_u32_roundtrip` test pins the Rust enum self-consistency; this
+test is the cross-language pin against
+`rust/sele4n-types/src/error.rs::KernelError`. -/
+private def sd001_kernelErrorDiscriminants : IO Unit := do
+  let pin (name : String) (e : KernelError) (expected : UInt32) : IO Unit :=
+    expect name
+      (KernelError.toUInt32 e == expected)
+      s!"{name}: expected {expected}, got {KernelError.toUInt32 e}"
+  pin "sd001_00_invalidCapability"            .invalidCapability             0
+  pin "sd001_01_objectNotFound"               .objectNotFound                1
+  pin "sd001_02_illegalState"                 .illegalState                  2
+  pin "sd001_03_illegalAuthority"             .illegalAuthority              3
+  pin "sd001_04_policyDenied"                 .policyDenied                  4
+  pin "sd001_05_dependencyViolation"          .dependencyViolation           5
+  pin "sd001_06_schedulerInvariantViolation"  .schedulerInvariantViolation   6
+  pin "sd001_07_endpointStateMismatch"        .endpointStateMismatch         7
+  pin "sd001_08_endpointQueueEmpty"           .endpointQueueEmpty            8
+  pin "sd001_09_asidNotBound"                 .asidNotBound                  9
+  pin "sd001_10_vspaceRootInvalid"            .vspaceRootInvalid            10
+  pin "sd001_11_mappingConflict"              .mappingConflict              11
+  pin "sd001_12_translationFault"             .translationFault             12
+  pin "sd001_13_flowDenied"                   .flowDenied                   13
+  pin "sd001_14_declassificationDenied"       .declassificationDenied       14
+  pin "sd001_15_alreadyWaiting"               .alreadyWaiting               15
+  pin "sd001_16_cyclicDependency"             .cyclicDependency             16
+  pin "sd001_17_notImplemented"               .notImplemented               17
+  pin "sd001_18_targetSlotOccupied"           .targetSlotOccupied           18
+  pin "sd001_19_replyCapInvalid"              .replyCapInvalid              19
+  pin "sd001_20_untypedRegionExhausted"       .untypedRegionExhausted       20
+  pin "sd001_21_untypedTypeMismatch"          .untypedTypeMismatch          21
+  pin "sd001_22_untypedDeviceRestriction"     .untypedDeviceRestriction     22
+  pin "sd001_23_untypedAllocSizeTooSmall"     .untypedAllocSizeTooSmall     23
+  pin "sd001_24_childIdSelfOverwrite"         .childIdSelfOverwrite         24
+  pin "sd001_25_childIdCollision"             .childIdCollision             25
+  pin "sd001_26_addressOutOfBounds"           .addressOutOfBounds           26
+  pin "sd001_27_ipcMessageTooLarge"           .ipcMessageTooLarge           27
+  pin "sd001_28_ipcMessageTooManyCaps"        .ipcMessageTooManyCaps        28
+  pin "sd001_29_backingObjectMissing"         .backingObjectMissing         29
+  pin "sd001_30_invalidRegister"              .invalidRegister              30
+  pin "sd001_31_invalidSyscallNumber"         .invalidSyscallNumber         31
+  pin "sd001_32_invalidMessageInfo"           .invalidMessageInfo           32
+  pin "sd001_33_invalidTypeTag"               .invalidTypeTag               33
+  pin "sd001_34_resourceExhausted"            .resourceExhausted            34
+  pin "sd001_35_invalidCapPtr"                .invalidCapPtr                35
+  pin "sd001_36_objectStoreCapacityExceeded"  .objectStoreCapacityExceeded  36
+  pin "sd001_37_allocationMisaligned"         .allocationMisaligned         37
+  pin "sd001_38_revocationRequired"           .revocationRequired           38
+  pin "sd001_39_invalidArgument"              .invalidArgument              39
+  pin "sd001_40_mmioUnaligned"                .mmioUnaligned                40
+  pin "sd001_41_invalidSyscallArgument"       .invalidSyscallArgument       41
+  pin "sd001_42_ipcTimeout"                   .ipcTimeout                   42
+  pin "sd001_43_alignmentError"               .alignmentError               43
+  pin "sd001_44_vmFault"                      .vmFault                      44
+  pin "sd001_45_userException"                .userException                45
+  pin "sd001_46_hardwareFault"                .hardwareFault                46
+  pin "sd001_47_notSupported"                 .notSupported                 47
+  pin "sd001_48_invalidIrq"                   .invalidIrq                   48
+  pin "sd001_49_invalidObjectType"            .invalidObjectType            49
+  pin "sd001_50_nullCapability"               .nullCapability               50
+  pin "sd001_51_partialResolution"            .partialResolution            51
+
+/-- SD-002: `encodeError` sets bit 63 for every variant AND embeds
+    the discriminant in the low 32 bits.
+
+The runtime check exercises every one of the 52 `KernelError`
+variants exactly once.  The structural witness for "bit 63 set" lives
+at `SeLe4n.Platform.FFI.encodeError_high_bit_set` in `FFI.lean`. -/
+private def sd002_encodeError : IO Unit := do
   let variants : List KernelError :=
     [ .invalidCapability, .objectNotFound, .illegalState
-    , .notImplemented, .invalidArgument, .partialResolution ]
+    , .illegalAuthority, .policyDenied, .dependencyViolation
+    , .schedulerInvariantViolation, .endpointStateMismatch
+    , .endpointQueueEmpty, .asidNotBound, .vspaceRootInvalid
+    , .mappingConflict, .translationFault, .flowDenied
+    , .declassificationDenied, .alreadyWaiting, .cyclicDependency
+    , .notImplemented, .targetSlotOccupied, .replyCapInvalid
+    , .untypedRegionExhausted, .untypedTypeMismatch
+    , .untypedDeviceRestriction, .untypedAllocSizeTooSmall
+    , .childIdSelfOverwrite, .childIdCollision, .addressOutOfBounds
+    , .ipcMessageTooLarge, .ipcMessageTooManyCaps
+    , .backingObjectMissing, .invalidRegister, .invalidSyscallNumber
+    , .invalidMessageInfo, .invalidTypeTag, .resourceExhausted
+    , .invalidCapPtr, .objectStoreCapacityExceeded
+    , .allocationMisaligned, .revocationRequired, .invalidArgument
+    , .mmioUnaligned, .invalidSyscallArgument, .ipcTimeout
+    , .alignmentError, .vmFault, .userException, .hardwareFault
+    , .notSupported, .invalidIrq, .invalidObjectType
+    , .nullCapability, .partialResolution ]
+  -- Pin variant count: matches the Lean inductive (52 variants 0..51).
+  expect "sd002_variant_count_is_52"
+    (variants.length == 52)
+    s!"variants list should have 52 entries, got {variants.length}"
   for v in variants do
     let encoded := encodeError v
+    -- Phase A: bit 63 is set.
     let highBitSet := (encoded >>> 63) &&& 1 == 1
-    expect s!"sd002_high_bit_set_{repr v}"
+    expect s!"sd002a_high_bit_set_{repr v}"
       highBitSet
       s!"encodeError {repr v} must have bit 63 set"
+    -- Phase B: low 32 bits equal the toUInt32 discriminant.
+    let lowDisc : UInt32 := (encoded.toNat % (2 ^ 32)).toUInt32
+    expect s!"sd002b_disc_matches_{repr v}"
+      (lowDisc == KernelError.toUInt32 v)
+      s!"encodeError {repr v}: low 32 bits ({lowDisc}) must equal toUInt32 ({KernelError.toUInt32 v})"
 
 /-- SD-003: `encodeOk` clears bit 63 for representative success
-    values, including values whose UInt64 representation has bit 63
-    set in the unmasked form. -/
-private def sd003_encodeOkHighBitClear : IO Unit := do
+    values, AND preserves the low 63 bits when bit 63 was already 0.
+
+The masking is the FFI-level implementation of the bit-63=error-flag
+contract: the kernel's "successful return value" must fit in 63 bits.
+For values < 2^63, encoding must be the identity.  For values ≥ 2^63,
+encoding silently strips bit 63 (a documented FFI ABI constraint;
+practical syscalls never return values ≥ 2^63). -/
+private def sd003_encodeOk : IO Unit := do
+  -- Phase A: bit 63 is clear for all inputs.
   let values : List UInt64 :=
     [ 0, 1, 42, 0xFFFFFFFF, 0x7FFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF ]
   for v in values do
     let encoded := encodeOk v
     let highBitSet := (encoded >>> 63) &&& 1 == 1
-    expect s!"sd003_high_bit_clear_{v}"
+    expect s!"sd003a_high_bit_clear_{v}"
       (¬ highBitSet)
       s!"encodeOk {v} must have bit 63 clear"
+  -- Phase B: identity preservation for inputs whose bit 63 is 0.
+  let inRangeValues : List UInt64 :=
+    [ 0, 1, 42, 0xFFFFFFFF, 0x7FFFFFFFFFFFFFFF ]
+  for v in inRangeValues do
+    expect s!"sd003b_identity_when_high_bit_clear_{v}"
+      (encodeOk v == v)
+      s!"encodeOk {v} must equal {v} when bit 63 is already clear"
+  -- Phase C: bit-63 stripping for inputs whose bit 63 is 1.
+  expect "sd003c_strips_bit_63_for_max"
+    (encodeOk 0xFFFFFFFFFFFFFFFF == 0x7FFFFFFFFFFFFFFF)
+    "encodeOk 0xFFFF...FFFF must equal 0x7FFF...FFFF (bit 63 stripped)"
+  expect "sd003d_strips_bit_63_for_high_only"
+    (encodeOk 0x8000000000000000 == 0)
+    "encodeOk 0x8000...0000 must equal 0 (bit 63 stripped, low bits 0)"
+  expect "sd003e_strips_bit_63_preserves_low"
+    (encodeOk 0x8000000000000042 == 0x42)
+    "encodeOk 0x8000...0042 must equal 0x42 (bit 63 stripped, low bits preserved)"
 
 -- ============================================================================
 -- R2.A — Kernel-state IO.Ref bootstrap path
@@ -167,15 +265,32 @@ private def sd011_updateKernelState : IO Unit := do
   initialiseKernelState st
 
 /-- SD-012: `initialiseKernelLabelingContext` installs the given
-    context; `getKernelLabelingContext` reads it. -/
+    context; `getKernelLabelingContext` reads it.
+
+Indirectly verifies the round-trip via `isInsecureDefaultContext`:
+- Installing `defaultLabelingContext` (insecure) makes
+  `isInsecureDefaultContext` return `true`.
+- Installing `testLabelingContext` (secure-shaped) makes it return
+  `false`.
+
+Two different installed contexts producing two different gate
+results witnesses that the read API observes the most recently
+installed value. -/
 private def sd012_labelingContextRoundtrip : IO Unit := do
+  -- Install the test context: insecure-default detector should be false.
   initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
-  let _ctx ← getKernelLabelingContext
-  -- We can't structurally compare LabelingContexts (functions don't
-  -- have decidable equality), but we can probe a known sentinel.
-  expect "sd012_labeling_context_held"
-    true  -- read succeeded; the value was held
-    "getKernelLabelingContext must return the installed context"
+  let ctx1 ← getKernelLabelingContext
+  expect "sd012a_test_context_not_insecure"
+    (¬ SeLe4n.Kernel.isInsecureDefaultContext ctx1)
+    "testLabelingContext must NOT be detected as insecure-default"
+  -- Install the default (insecure) context: detector should now be true.
+  initialiseKernelLabelingContext SeLe4n.Kernel.defaultLabelingContext
+  let ctx2 ← getKernelLabelingContext
+  expect "sd012b_default_context_insecure"
+    (SeLe4n.Kernel.isInsecureDefaultContext ctx2)
+    "defaultLabelingContext must BE detected as insecure-default"
+  -- Restore the test context for downstream tests.
+  initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
 
 -- ============================================================================
 -- R2.B — suspendThreadInner integration via IO.Ref
@@ -444,8 +559,8 @@ def main : IO Unit := do
   IO.println "=== WS-RC R2.C SyscallDispatch Test Suite ==="
   IO.println "--- R2.B.0: KernelError discriminant + UInt64 encoding ---"
   sd001_kernelErrorDiscriminants
-  sd002_encodeErrorHighBit
-  sd003_encodeOkHighBitClear
+  sd002_encodeError
+  sd003_encodeOk
   IO.println "--- R2.A: Kernel-state IO.Ref ---"
   sd010_initialiseAndGet
   sd011_updateKernelState

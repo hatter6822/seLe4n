@@ -234,11 +234,14 @@ comment is replaced by code that actually wires it.
   module's docstring is rewritten to honestly describe link-time
   gating (Rust HAL linked or not) instead of the previously claimed
   but absent `hwTarget` preprocessor switch.  The new
-  `tests/SyscallDispatchSuite.lean` regression suite (41 assertions
-  across 18 test functions) exercises `KernelError` discriminants,
-  encoding round-trips, the IO.Ref bootstrap path,
-  `suspendThreadInner` integration (Ready→Inactive transition;
-  Inactive / missing-thread / sentinel rejections),
+  `tests/SyscallDispatchSuite.lean` regression suite (195 assertions
+  across 18 test functions) exercises all 52 `KernelError`
+  discriminants pinned 1:1 against the Rust enum, `encodeError`
+  bit-63-set + low-32-bits-match-discriminant for every variant,
+  `encodeOk` bit-63-clear + identity-preservation when bit 63 is
+  already clear + truncation when bit 63 is set, the IO.Ref
+  bootstrap path, `suspendThreadInner` integration (Ready→Inactive
+  transition; Inactive / missing-thread / sentinel rejections),
   `syscallDispatchInner` integration (no-current rejection, register
   spill into TCB, unmodeled-syscall rejection, totality witness,
   ABI-mismatch reject for `msgInfo ≠ x1`, sequential dispatch state
@@ -253,8 +256,8 @@ comment is replaced by code that actually wires it.
   substantive bodies, R2.A/R2.B infrastructure added, R2.B.5
   theorems added at end of file); `rust/sele4n-hal/src/svc_dispatch.rs`
   (comment alignment); `rust/sele4n-hal/src/ffi.rs` (comment
-  alignment); `tests/SyscallDispatchSuite.lean` (NEW — 41 assertions
-  across 18 test functions);
+  alignment); `tests/SyscallDispatchSuite.lean` (NEW — 195
+  assertions across 18 test functions);
   `lakefile.toml` (`syscall_dispatch_suite` registration);
   `scripts/test_tier2_negative.sh` (suite invocation);
   `scripts/test_tier3_invariant_surface.sh` (anchor checks);
@@ -264,7 +267,7 @@ comment is replaced by code that actually wires it.
 - **Validation**: `lake build SeLe4n.Platform.FFI` and
   `lake build SeLe4n.Platform.Staged` pass; `lake build` (default
   target, 296 jobs) passes; `lake exe syscall_dispatch_suite`
-  reports 41/41 assertions pass; `./scripts/test_smoke.sh` and
+  reports 195/195 assertions pass; `./scripts/test_smoke.sh` and
   `./scripts/test_full.sh` pass; the executable `lake exe sele4n`
   trace remains byte-identical to
   `tests/fixtures/main_trace_smoke.expected`; 0 sorry / 0 axiom in

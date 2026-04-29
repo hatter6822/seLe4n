@@ -34,31 +34,71 @@
 
 use crate::trap::TrapFrame;
 
-/// AN9-F: kernel-error discriminant returned by [`dispatch_svc`].
+/// AN9-F + WS-RC R2: kernel-error discriminant returned by
+/// [`dispatch_svc`].
 ///
-/// Mirrors the active subset of `sele4n-types::KernelError`.  The
-/// enum is `#[repr(u32)]` so it can cross the FFI boundary without
-/// padding ambiguity; the discriminants match the Lean
-/// `KernelError.toNat` encoding.
+/// The shape carries dispatcher-internal rejections (
+/// [`InvalidSyscallId`], [`InvalidArgument`]) plus a wrapper variant
+/// [`Kernel`] that forwards the raw `u32` discriminant emitted by the
+/// Lean kernel via the bit-63-error-flag UInt64 contract.  The
+/// wrapper variant is required because, post-WS-RC R2, the Lean
+/// kernel can emit any of 52 `KernelError` discriminants; without
+/// wrapping, the pre-WS-RC R2 enum (which had 3 fixed-discriminant
+/// variants `= 6 / = 7 / = 17`) silently coarsened 49 of them to
+/// `NotImplemented`, losing user-mode-visible error information.
+///
+/// The dispatcher-internal variants [`InvalidSyscallId`] (= 7) and
+/// [`InvalidArgument`] (= 6) keep their historical discriminants for
+/// backward-compatible test coverage and trap-frame reporting.  In
+/// practice they collide with the Lean `KernelError` discriminants
+/// `EndpointStateMismatch = 7` and `SchedulerInvariantViolation = 6`,
+/// so user-mode cannot distinguish "dispatch arg-count error" from
+/// "kernel scheduler invariant violation".  This is a legacy
+/// constraint of the AN9-F design tracked in the deferred file as a
+/// post-1.0 ABI cleanup; the Lean `KernelError` discriminant set is
+/// authoritative on the wire.
+///
+/// `to_u32` returns the wire-level `u32` that the trap handler sets
+/// in `x0`; for [`Kernel(disc)`] that is `disc` directly so the
+/// post-WS-RC R2 substantive routing preserves error fidelity all
+/// the way to user-mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u32)]
 pub enum DispatchError {
     /// Caller passed a syscall id outside the valid 0..=24 range.
-    InvalidSyscallId = 7,
+    /// `to_u32` returns 7 (legacy AN9-F discriminant; collides with
+    /// `KernelError::EndpointStateMismatch` on the wire).
+    InvalidSyscallId,
     /// Caller passed an argument count that did not match the syscall's
     /// expected count (validated against `MessageInfo.length`).
-    InvalidArgument = 6,
-    /// Syscall recognised but the Lean dispatcher is not yet wired to
-    /// handle it (placeholder return until the FFI symbol is provided
-    /// at link time).
-    NotImplemented = 17,
+    /// `to_u32` returns 6 (legacy AN9-F discriminant; collides with
+    /// `KernelError::SchedulerInvariantViolation` on the wire).
+    InvalidArgument,
+    /// The Lean kernel rejected the syscall with the given raw
+    /// `KernelError` discriminant (per `sele4n-types::KernelError`,
+    /// 0..=51 with reserved sentinel 255).  `to_u32` forwards the
+    /// raw discriminant unchanged so user-mode sees the same value
+    /// the Lean kernel emitted.
+    ///
+    /// Post-WS-RC R2 this is the variant returned for every Lean
+    /// kernel rejection — the previous "narrowing" mapping (which
+    /// silently coarsened 49 KernelError variants to `NotImplemented`)
+    /// is removed.
+    Kernel(u32),
 }
 
 impl DispatchError {
     /// Raw `u32` representation matching the FFI return convention.
+    ///
+    /// For the dispatcher-internal variants this returns the legacy
+    /// AN9-F discriminant; for [`Kernel(disc)`] it forwards `disc`
+    /// directly.
     #[inline]
     pub const fn to_u32(self) -> u32 {
-        self as u32
+        match self {
+            DispatchError::InvalidSyscallId => 7,
+            DispatchError::InvalidArgument => 6,
+            DispatchError::Kernel(disc) => disc,
+        }
     }
 }
 
@@ -239,9 +279,11 @@ impl SyscallArgs {
 /// which after WS-RC R2.B substantively routes into the verified
 /// `Kernel.syscallEntryChecked`).
 ///
-/// In test builds the inner symbol is a Rust-side stub returning
-/// `DispatchError::NotImplemented` so the bracketing logic can be
-/// exercised on host without pulling in the Lean kernel build.
+/// In test builds the inner symbol is a Rust-side stub returning the
+/// encoded `KernelError::NotImplemented = 17` value so the
+/// bracketing logic can be exercised on host without pulling in the
+/// Lean kernel build.  Post-WS-RC R2 this surfaces as
+/// `DispatchError::Kernel(17)`.
 ///
 /// Returns:
 ///   `Ok(value)`     — successful dispatch; `value` is the kernel
@@ -263,10 +305,13 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<u64, Dispatch
 
     // AN9-F.2: forward to the Lean-emitted dispatcher.
     //
-    // The Lean side returns a 64-bit value where:
-    //   bit 63       — error flag (1 = error)
-    //   bits [62:32] — KernelError discriminant on error path
-    //   bits [31: 0] — return value on success path
+    // The Lean side returns a 64-bit value where (matching
+    // `SeLe4n.Platform.FFI.encodeError` / `encodeOk`):
+    //   bit 63       — error flag (1 = error, 0 = success)
+    //   bits [31: 0] — KernelError discriminant on error path
+    //                  (high bits [62:32] are zero on this path)
+    //   bits [62: 0] — return value on success path
+    //                  (Lean side masks bit 63 via `encodeOk`)
     //
     // We decode this into the Result here so callers consume a clean
     // Rust shape.
@@ -291,16 +336,17 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<u64, Dispatch
     };
 
     if (raw >> 63) & 1 == 1 {
-        // Error path: low 32 bits hold the error discriminant.
+        // Error path: low 32 bits hold the raw `KernelError`
+        // discriminant.  Forward it verbatim via
+        // `DispatchError::Kernel(disc)` so user-mode sees the
+        // KernelError value the Lean kernel emitted (52 distinct
+        // variants post-WS-RC R2; pre-WS-RC R2 always 17).
         let disc = raw as u32;
-        // Map the kernel error discriminant into our DispatchError
-        // shape; the only domain-specific arm is NotImplemented (17).
-        Err(match disc {
-            6 => DispatchError::InvalidArgument,
-            7 => DispatchError::InvalidSyscallId,
-            _ => DispatchError::NotImplemented,
-        })
+        Err(DispatchError::Kernel(disc))
     } else {
+        // Success path: bit 63 is clear; return the full u64
+        // (the Lean side `encodeOk` masks bit 63 so this is always
+        // < 2^63).
         Ok(raw)
     }
 }
@@ -315,8 +361,9 @@ pub fn dispatch_svc(syscall_id: u32, args: &SyscallArgs) -> Result<u64, Dispatch
 // `SystemState` from the kernel-state IO.Ref and dispatches into the
 // verified `syscallEntryChecked` entry point.
 // In test builds (`#[cfg(test)]`) a Rust-side stub returns the error
-// flag set with `DispatchError::NotImplemented` so dispatch logic can
-// be exercised on host.
+// flag set with the encoded `KernelError::NotImplemented = 17` so
+// dispatch logic can be exercised on host.  Post-WS-RC R2 the
+// outer dispatcher decodes this as `DispatchError::Kernel(17)`.
 #[cfg(not(test))]
 extern "C" {
     fn syscall_dispatch_inner(
@@ -437,18 +484,40 @@ mod tests {
     #[test]
     fn dispatch_svc_routes_to_inner_dispatcher() {
         // Send takes 0 inline args so any frame is accepted; the inner
-        // stub returns NotImplemented under #[cfg(test)].
+        // stub returns the encoded `NotImplemented = 17` error under
+        // `#[cfg(test)]`.  Post-WS-RC R2 the dispatcher forwards the
+        // raw discriminant via `DispatchError::Kernel(17)`.
         let frame = zero_frame();
         let args = SyscallArgs::from_trap_frame(&frame);
         let result = dispatch_svc(SyscallId::Send.to_u32(), &args);
-        assert_eq!(result, Err(DispatchError::NotImplemented));
+        assert_eq!(result, Err(DispatchError::Kernel(17)));
     }
 
     #[test]
     fn dispatch_error_to_u32_is_stable() {
         assert_eq!(DispatchError::InvalidArgument.to_u32(), 6);
         assert_eq!(DispatchError::InvalidSyscallId.to_u32(), 7);
-        assert_eq!(DispatchError::NotImplemented.to_u32(), 17);
+        // Post-WS-RC R2: KernelError discriminants are forwarded
+        // verbatim through `DispatchError::Kernel(disc)`.
+        assert_eq!(DispatchError::Kernel(17).to_u32(), 17);
+        assert_eq!(DispatchError::Kernel(0).to_u32(), 0);
+        assert_eq!(DispatchError::Kernel(51).to_u32(), 51);
+        assert_eq!(DispatchError::Kernel(44).to_u32(), 44); // VmFault
+        assert_eq!(DispatchError::Kernel(45).to_u32(), 45); // UserException
+    }
+
+    #[test]
+    fn dispatch_error_kernel_variant_preserves_all_kernel_error_discriminants() {
+        // WS-RC R2: Verify that every raw `KernelError` discriminant
+        // 0..=51 and the `UnknownKernelError = 255` sentinel is
+        // forwarded verbatim by `DispatchError::Kernel(disc).to_u32()`.
+        // This is the cross-language pin against
+        // `rust/sele4n-types/src/error.rs::KernelError` and
+        // `SeLe4n.Platform.FFI.KernelError.toUInt32` on the Lean side.
+        for disc in 0..=51u32 {
+            assert_eq!(DispatchError::Kernel(disc).to_u32(), disc);
+        }
+        assert_eq!(DispatchError::Kernel(255).to_u32(), 255);
     }
 
     #[test]

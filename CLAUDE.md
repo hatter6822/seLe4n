@@ -240,11 +240,12 @@ tests/                           Executable test suites + fixtures (29 suites)
   BadgeOverflowSuite.lean        AG9-E: 22 tests for Badge Nat↔UInt64 round-trip
   An9HardwareBindingSuite.lean   AN9: 23 surface-anchor tests for hardware-binding closure (DEF-A-M04..M09, DEF-C-M04, DEF-R-HAL-L14..L20)
   LivenessSuite.lean             D5: 58 surface anchor tests for liveness/WCRT theorems
-  SyscallDispatchSuite.lean      WS-RC R2.C / DEEP-TEST-03: 41 regression
+  SyscallDispatchSuite.lean      WS-RC R2.C / DEEP-TEST-03: 195 regression
                                  assertions across 18 test functions covering
                                  `suspendThreadInner`, `syscallDispatchInner`,
-                                 `KernelError → UInt32` discriminants, the
-                                 encoded-UInt64 high-bit-error contract, the
+                                 all 52 `KernelError → UInt32` discriminants,
+                                 the encoded-UInt64 high-bit-error contract
+                                 (positive identity + truncation), the
                                  `kernelStateRef` IO.Ref bootstrap path, the
                                  ABI-mismatch reject path, and sequential
                                  dispatch state evolution.
@@ -725,12 +726,20 @@ under `docs/` and `docs/gitbook/`.
   `syscall_dispatch_inner` / `suspend_thread_inner` symbol names.
   R2.C: makes the FFI docstring's gating claim honest (link-time, not
   preprocessor); adds the dedicated `tests/SyscallDispatchSuite.lean`
-  regression suite (41 assertions across 18 test functions covering
-  `KernelError` discriminants, encoding round-trips, the IO.Ref
-  bootstrap path, `suspendThreadInner` integration, `syscallDispatchInner`
-  integration, the ABI-mismatch reject path, and sequential dispatch
-  state evolution) wired into `scripts/test_tier2_negative.sh` and
-  `scripts/test_tier3_invariant_surface.sh`.
+  regression suite (195 assertions across 18 test functions covering
+  all 52 `KernelError` discriminants pinned 1:1 against the Rust enum,
+  `encodeError` low-32-bits-match-discriminant proofs, `encodeOk`
+  identity-when-bit-63-clear and bit-63-truncation properties, the
+  IO.Ref bootstrap path, `suspendThreadInner` integration,
+  `syscallDispatchInner` integration, the ABI-mismatch reject path,
+  and sequential dispatch state evolution) wired into
+  `scripts/test_tier2_negative.sh` and
+  `scripts/test_tier3_invariant_surface.sh`.  Audit follow-up
+  refactored the Rust `DispatchError` enum to wrap the raw kernel-
+  error discriminant via `Kernel(u32)` instead of coarsening to
+  `NotImplemented`, so user-mode now sees the exact `KernelError`
+  the Lean kernel emitted (pre-fix: 49 of 52 variants were silently
+  collapsed to `17 = NotImplemented`).
 
 - **WS-AN portfolio COMPLETE (v0.30.11, branch `claude/review-codebase-phase-an12-JBPQN`)**:
   Phase AN12 — Documentation, themes, closure — landed the cross-cutting

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-hardware-syscall-phase-FfbvV",
-      "commit_sha": "e10fc7ef4033968e21da2547a31e149531005a40",
-      "tree_sha": "99ca23d755b59db97040a5558c2c6de1f3a1b81d",
-      "committed_at_utc": "2026-04-29T07:43:27+00:00"
+      "commit_sha": "d2132e81b660109248b7c785ab79a56dd408a321",
+      "tree_sha": "ec1e2c7c98fb09d6ba6479ae65294c545fe0d252",
+      "committed_at_utc": "2026-04-29T19:10:21+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a072ca228f7560cfb3806c9770e9fbff163a75fcd5b4f08ffebcc70ba0862eb6"
+    "source_digest": "e1eac660d669695e17bf4e3af50e4bda7c3f3c14b91d500eaa2c4a70b91b281b"
   },
   "summary": {
     "module_count": 197,
@@ -27,9 +27,9 @@
     "version": "0.30.11",
     "lean_toolchain": "v4.28.0",
     "production_files": 168,
-    "production_loc": 110460,
+    "production_loc": 110464,
     "test_files": 29,
-    "test_loc": 19580,
+    "test_loc": 19695,
     "proved_theorem_lemma_decls": 3207,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -61575,8 +61575,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:118>",
-          "line": 118,
+          "name": "<anonymous:instance:122>",
+          "line": 122,
           "called": [
             "LabelingContext",
             "testLabelingContext"
@@ -61585,109 +61585,109 @@
         {
           "kind": "opaque",
           "name": "ffiTimerReadCounter",
-          "line": 128,
+          "line": 132,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiTimerReprogram",
-          "line": 134,
+          "line": 138,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiTimerGetTickCount",
-          "line": 139,
+          "line": 143,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiGicAcknowledge",
-          "line": 149,
+          "line": 153,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiGicEoi",
-          "line": 154,
+          "line": 158,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiGicIsSpurious",
-          "line": 159,
+          "line": 163,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiTlbiAll",
-          "line": 168,
+          "line": 172,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiTlbiByAsid",
-          "line": 173,
+          "line": 177,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiTlbiByVaddr",
-          "line": 178,
+          "line": 182,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiMmioRead32",
-          "line": 187,
+          "line": 191,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiMmioWrite32",
-          "line": 192,
+          "line": 196,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiMmioRead64",
-          "line": 197,
+          "line": 201,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiMmioWrite64",
-          "line": 202,
+          "line": 206,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiUartPutc",
-          "line": 211,
+          "line": 215,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiDisableInterrupts",
-          "line": 220,
+          "line": 224,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiRestoreInterrupts",
-          "line": 225,
+          "line": 229,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiEnableInterrupts",
-          "line": 230,
+          "line": 234,
           "called": []
         },
         {
           "kind": "def",
           "name": "KernelError.toUInt32",
-          "line": 260,
+          "line": 264,
           "called": [
             "KernelError"
           ]
@@ -61695,7 +61695,7 @@
         {
           "kind": "def",
           "name": "encodeError",
-          "line": 320,
+          "line": 324,
           "called": [
             "KernelError",
             "KernelError.toUInt32"
@@ -61704,13 +61704,13 @@
         {
           "kind": "def",
           "name": "encodeOk",
-          "line": 330,
+          "line": 334,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "encodeError_high_bit_set",
-          "line": 345,
+          "line": 349,
           "called": [
             "KernelError",
             "KernelError.toUInt32",
@@ -61720,7 +61720,7 @@
         {
           "kind": "initialize",
           "name": "kernelStateRef",
-          "line": 365,
+          "line": 369,
           "called": [
             "SystemState",
             "default"
@@ -61729,7 +61729,7 @@
         {
           "kind": "initialize",
           "name": "kernelLabelingContextRef",
-          "line": 375,
+          "line": 379,
           "called": [
             "LabelingContext",
             "testLabelingContext"
@@ -61738,7 +61738,7 @@
         {
           "kind": "def",
           "name": "initialiseKernelState",
-          "line": 384,
+          "line": 388,
           "called": [
             "SystemState",
             "set"
@@ -61747,7 +61747,7 @@
         {
           "kind": "def",
           "name": "getKernelState",
-          "line": 391,
+          "line": 395,
           "called": [
             "SystemState",
             "get"
@@ -61756,7 +61756,7 @@
         {
           "kind": "def",
           "name": "updateKernelState",
-          "line": 396,
+          "line": 400,
           "called": [
             "SystemState",
             "modify"
@@ -61765,7 +61765,7 @@
         {
           "kind": "def",
           "name": "initialiseKernelLabelingContext",
-          "line": 403,
+          "line": 407,
           "called": [
             "LabelingContext",
             "set"
@@ -61774,7 +61774,7 @@
         {
           "kind": "def",
           "name": "getKernelLabelingContext",
-          "line": 407,
+          "line": 411,
           "called": [
             "LabelingContext",
             "get"
@@ -61783,7 +61783,7 @@
         {
           "kind": "def",
           "name": "bootAndInitialiseFromPlatform",
-          "line": 426,
+          "line": 430,
           "called": [
             "LabelingContext",
             "PlatformConfig",
@@ -61799,7 +61799,7 @@
         {
           "kind": "def",
           "name": "writeFfiRegistersToTcb",
-          "line": 463,
+          "line": 467,
           "called": [
             "SystemState",
             "ThreadId",
@@ -61813,7 +61813,7 @@
         {
           "kind": "def",
           "name": "readReturnValue",
-          "line": 491,
+          "line": 495,
           "called": [
             "SystemState",
             "ThreadId",
@@ -61823,7 +61823,7 @@
         {
           "kind": "def",
           "name": "syscallDispatchFromAbi",
-          "line": 528,
+          "line": 532,
           "called": [
             "Kernel",
             "LabelingContext",
@@ -61839,13 +61839,13 @@
         {
           "kind": "opaque",
           "name": "ffiSuspendThread",
-          "line": 565,
+          "line": 569,
           "called": []
         },
         {
           "kind": "def",
           "name": "suspendThreadInner",
-          "line": 595,
+          "line": 599,
           "called": [
             "KernelError.toUInt32",
             "getKernelState",
@@ -61861,7 +61861,7 @@
         {
           "kind": "def",
           "name": "syscallDispatchInner",
-          "line": 644,
+          "line": 648,
           "called": [
             "encodeError",
             "getKernelLabelingContext",
@@ -61874,19 +61874,19 @@
         {
           "kind": "opaque",
           "name": "ffiCacheCleanPagetableRange",
-          "line": 672,
+          "line": 676,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcIallu",
-          "line": 679,
+          "line": 683,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_total",
-          "line": 695,
+          "line": 699,
           "called": [
             "LabelingContext",
             "SystemState",
@@ -61903,7 +61903,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok",
-          "line": 738,
+          "line": 742,
           "called": [
             "LabelingContext",
             "SystemState",
@@ -61919,7 +61919,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_error_of_syscallEntryChecked_error",
-          "line": 759,
+          "line": 763,
           "called": [
             "KernelError",
             "LabelingContext",
@@ -61935,7 +61935,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_illegalState_when_no_current",
-          "line": 782,
+          "line": 786,
           "called": [
             "LabelingContext",
             "SystemState",
@@ -61947,7 +61947,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_abiMismatch_rejected",
-          "line": 804,
+          "line": 808,
           "called": [
             "LabelingContext",
             "SystemState",
@@ -61958,7 +61958,7 @@
         {
           "kind": "theorem",
           "name": "writeFfiRegistersToTcb_id_when_not_tcb",
-          "line": 825,
+          "line": 829,
           "called": [
             "SystemState",
             "TCB",
@@ -61971,7 +61971,7 @@
         {
           "kind": "theorem",
           "name": "readReturnValue_zero_when_not_tcb",
-          "line": 849,
+          "line": 853,
           "called": [
             "SystemState",
             "TCB",
@@ -80942,27 +80942,31 @@
         {
           "kind": "def",
           "name": "sd001_kernelErrorDiscriminants",
-          "line": 81,
+          "line": 86,
           "called": [
+            "KernelError",
             "KernelError.toUInt32",
             "expect"
           ]
         },
         {
           "kind": "def",
-          "name": "sd002_encodeErrorHighBit",
-          "line": 102,
+          "name": "sd002_encodeError",
+          "line": 150,
           "called": [
             "KernelError",
+            "KernelError.toUInt32",
             "encodeError",
             "expect",
-            "set"
+            "set",
+            "toNat",
+            "toUInt32"
           ]
         },
         {
           "kind": "def",
-          "name": "sd003_encodeOkHighBitClear",
-          "line": 116,
+          "name": "sd003_encodeOk",
+          "line": 196,
           "called": [
             "encodeOk",
             "expect"
@@ -80971,7 +80975,7 @@
         {
           "kind": "def",
           "name": "sd010_initialiseAndGet",
-          "line": 132,
+          "line": 230,
           "called": [
             "ThreadId",
             "expect",
@@ -80986,7 +80990,7 @@
         {
           "kind": "def",
           "name": "sd011_updateKernelState",
-          "line": 150,
+          "line": 248,
           "called": [
             "ThreadId",
             "expect",
@@ -81001,18 +81005,20 @@
         {
           "kind": "def",
           "name": "sd012_labelingContextRoundtrip",
-          "line": 171,
+          "line": 279,
           "called": [
+            "defaultLabelingContext",
             "expect",
             "getKernelLabelingContext",
             "initialiseKernelLabelingContext",
+            "isInsecureDefaultContext",
             "testLabelingContext"
           ]
         },
         {
           "kind": "def",
           "name": "sd020_suspendThreadInner_ready",
-          "line": 187,
+          "line": 302,
           "called": [
             "ThreadId",
             "expect",
@@ -81028,7 +81034,7 @@
         {
           "kind": "def",
           "name": "sd021_suspendThreadInner_inactive",
-          "line": 204,
+          "line": 319,
           "called": [
             "KernelError.toUInt32",
             "ThreadId",
@@ -81042,7 +81048,7 @@
         {
           "kind": "def",
           "name": "sd022_suspendThreadInner_missing",
-          "line": 215,
+          "line": 330,
           "called": [
             "KernelError.toUInt32",
             "expect",
@@ -81055,7 +81061,7 @@
         {
           "kind": "def",
           "name": "sd023_suspendThreadInner_sentinel",
-          "line": 231,
+          "line": 346,
           "called": [
             "KernelError.toUInt32",
             "ObjId",
@@ -81073,7 +81079,7 @@
         {
           "kind": "def",
           "name": "sd030_syscallDispatchInner_noCurrent",
-          "line": 261,
+          "line": 376,
           "called": [
             "KernelError.toUInt32",
             "expect",
@@ -81089,7 +81095,7 @@
         {
           "kind": "def",
           "name": "sd031_syscallDispatchInner_spillsRegs",
-          "line": 279,
+          "line": 394,
           "called": [
             "TCB",
             "ThreadId",
@@ -81108,7 +81114,7 @@
         {
           "kind": "def",
           "name": "sd032_syscallDispatchInner_invalidSyscall",
-          "line": 303,
+          "line": 418,
           "called": [
             "ThreadId",
             "expect",
@@ -81123,7 +81129,7 @@
         {
           "kind": "def",
           "name": "sd033_dispatchFromAbi_total",
-          "line": 318,
+          "line": 433,
           "called": [
             "ThreadId",
             "failLine",
@@ -81137,7 +81143,7 @@
         {
           "kind": "def",
           "name": "sd034_dispatchInner_abiMismatch",
-          "line": 337,
+          "line": 452,
           "called": [
             "KernelError.toUInt32",
             "ThreadId",
@@ -81157,7 +81163,7 @@
         {
           "kind": "def",
           "name": "sd035_sequentialDispatches",
-          "line": 369,
+          "line": 484,
           "called": [
             "ThreadId",
             "expect",
@@ -81175,7 +81181,7 @@
         {
           "kind": "def",
           "name": "sd040_bootInitialise_emptyConfig_succeeds",
-          "line": 399,
+          "line": 514,
           "called": [
             "PlatformConfig",
             "ThreadId",
@@ -81194,7 +81200,7 @@
         {
           "kind": "def",
           "name": "sd041_bootInitialise_withLabelingContext",
-          "line": 424,
+          "line": 539,
           "called": [
             "PlatformConfig",
             "bootAndInitialiseFromPlatform",
@@ -81208,11 +81214,11 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 443,
+          "line": 558,
           "called": [
             "sd001_kernelErrorDiscriminants",
-            "sd002_encodeErrorHighBit",
-            "sd003_encodeOkHighBitClear",
+            "sd002_encodeError",
+            "sd003_encodeOk",
             "sd010_initialiseAndGet",
             "sd011_updateKernelState",
             "sd012_labelingContextRoundtrip",

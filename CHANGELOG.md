@@ -1,3 +1,137 @@
+## v0.30.11 — WS-RC R2 audit: DispatchError fidelity, comprehensive discriminant pinning, Nonempty scope tightening
+
+This is a deep-audit follow-up to the WS-RC R2 commit set
+(e10fc7e + d2132e8).  The audit identified four issues; all are
+addressed below.
+
+### Issue 1 (HIGH): Rust `dispatch_svc` silently coarsens 49 of 52
+KernelError variants to `NotImplemented = 17`.
+
+The pre-WS-RC R2 `dispatch_svc` mapping was:
+```rust
+match disc {
+    6 => DispatchError::InvalidArgument,    // = 6
+    7 => DispatchError::InvalidSyscallId,   // = 7
+    _ => DispatchError::NotImplemented,     // = 17
+}
+```
+
+This mapping was historically benign: pre-WS-RC R2 the Lean kernel's
+FFI stub always returned `NotImplemented = 17`, so the catch-all
+correctly forwarded that single discriminant.  Post-WS-RC R2 the
+Lean kernel returns substantively any of 52 `KernelError`
+discriminants (0..51), and the catch-all silently coarsens 49 of
+them to 17, losing user-mode-visible error information.
+
+Fix: refactored `DispatchError` to drop `#[repr(u32)]` (it never
+crossed the FFI boundary anyway) and replace the `NotImplemented`
+variant with `Kernel(u32)` that wraps the raw kernel-error
+discriminant.  The mapping at `dispatch_svc:295` now forwards the
+raw `disc` verbatim via `DispatchError::Kernel(disc)`, so user-mode
+sees exactly the `KernelError` discriminant the Lean kernel
+emitted.  `to_u32()` returns the legacy values 6/7 for the
+dispatcher-internal variants and the wrapped `disc` for the kernel
+variant.
+
+The legacy AN9-F discriminant overlap (`InvalidArgument = 6` collides
+with `KernelError::SchedulerInvariantViolation = 6`;
+`InvalidSyscallId = 7` collides with
+`KernelError::EndpointStateMismatch = 7`) is preserved for backward-
+compatible test coverage and trap-frame reporting; documented as a
+post-1.0 ABI cleanup in the new `DispatchError` docstring.
+
+New cross-language pin test:
+`dispatch_error_kernel_variant_preserves_all_kernel_error_discriminants`
+exercises every `KernelError` discriminant 0..=51 + the 255 sentinel.
+
+### Issue 2: `KernelError.toUInt32` test only pinned 6 of 52 variants.
+
+A regression that re-orders the Lean `inductive KernelError` (or the
+`toUInt32` arms) silently could break the cross-language ABI without
+running into the Rust-side `from_u32_roundtrip` (which only verifies
+Rust enum self-consistency, not Lean→Rust agreement).
+
+Fix: expanded `tests/SyscallDispatchSuite.lean::sd001_kernelErrorDiscriminants`
+to pin **all 52 variants** explicitly.  Combined with the new
+Rust-side `dispatch_error_kernel_variant_preserves_all_kernel_error_discriminants`
+test, the cross-language KernelError ABI is now fully pinned.
+
+### Issue 3: `encodeOk` test only verified bit 63 is clear; did not
+verify low-bit preservation.
+
+Without a positive correctness check, an `encodeOk` regression that
+zeros all bits (not just bit 63) would still pass `sd003`.
+
+Fix: expanded `sd003_encodeOk` to three phases:
+* Phase A: bit 63 is clear for all inputs (existing).
+* Phase B: identity preservation when bit 63 is already 0
+  (`encodeOk v = v` for v < 2^63).
+* Phase C: bit-63 stripping when bit 63 is 1 (truncation behavior
+  documented as a defensive correctness gate; in practice the
+  kernel never returns x0 ≥ 2^63 because the FFI ABI reserves bit 63).
+
+### Issue 4: `Inhabited LabelingContext` polluted downstream `default`.
+
+The original WS-RC R2 commit declared an `Inhabited LabelingContext`
+instance to satisfy the `initialize` syntax for
+`kernelLabelingContextRef`.  This caused
+`(default : LabelingContext)` to resolve to
+`Kernel.testLabelingContext` for every module that imports
+`SeLe4n.Platform.FFI`.  Since `testLabelingContext` is a non-secure
+context shaped for testing (only ID 0 is `kernelTrusted`), having
+it be the implicit `default` could lead downstream code to
+accidentally use it instead of failing closed.
+
+Fix: changed `Inhabited LabelingContext` to `Nonempty LabelingContext`.
+`Nonempty` is sufficient for the `initialize` synthesis (which only
+needs the existential witness, not a concrete `default`) and does
+NOT propagate as `(default : LabelingContext)`.  Downstream code
+must now obtain a labeling context explicitly (via
+`Kernel.testLabelingContext`, `Kernel.defaultLabelingContext`, or a
+production policy).
+
+### Additional improvement: `sd012_labelingContextRoundtrip` strengthened.
+
+The original test only checked that `getKernelLabelingContext`
+succeeded after `initialiseKernelLabelingContext`; it did not verify
+the value was actually held.  Updated to:
+* Install `testLabelingContext`, verify
+  `isInsecureDefaultContext = false`.
+* Install `defaultLabelingContext`, verify
+  `isInsecureDefaultContext = true`.
+* Restore `testLabelingContext` for downstream tests.
+
+### Additional improvement: `sd002_encodeError` pins low 32 bits.
+
+Expanded to verify bit 63 is set AND the low 32 bits exactly match
+`KernelError.toUInt32 v` for every one of the 52 variants.
+
+### Files changed
+
+* `SeLe4n/Platform/FFI.lean` — `Inhabited` → `Nonempty` for
+  `LabelingContext`.
+* `tests/SyscallDispatchSuite.lean` — expanded `sd001` to all 52
+  variants; expanded `sd002` to pin low 32 bits; expanded `sd003`
+  with positive identity + truncation tests; strengthened `sd012`.
+* `rust/sele4n-hal/src/svc_dispatch.rs` — `DispatchError` reshaped
+  from `#[repr(u32)]` enum with 3 fixed-discriminant variants to a
+  regular enum with a `Kernel(u32)` wrapping variant; mapping in
+  `dispatch_svc` rewritten to forward raw kernel-error discriminants
+  verbatim; tests updated to match; new pin test added.
+* `README.md`, `docs/spec/SELE4N_SPEC.md`, `docs/codebase_map.json` —
+  auto-synced metrics.
+
+### Validation
+
+* `lake build` (304 jobs): 0 warnings, 0 errors.
+* `lake exe syscall_dispatch_suite`: 195 PASS / 0 FAIL (up from 41).
+* `cargo test --workspace`: 463 tests pass (94 + 93 conformance + 201
+  + 13 + 54 + 1 + 5 + 1 + 1).
+* `./scripts/test_smoke.sh` passes.
+* `./scripts/test_full.sh` passes (all Tier-3 anchors).
+* `./scripts/test_rust.sh` passes (93 conformance tests).
+* 0 sorry / 0 axiom in modified files.
+
 ## v0.30.11 — WS-RC Phase R2: Hardware syscall dispatch wiring (DEEP-FFI-01/02/03 + DEEP-TEST-03)
 
 WS-RC R2 closes the largest implementation slice in the v0.30.11 audit
