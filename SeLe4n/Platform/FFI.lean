@@ -441,29 +441,37 @@ def bootAndInitialiseFromPlatform
     given thread's TCB register file.
 
 Mirrors what the ARM64 trap handler does on hardware: at SVC entry the
-user's x0..x5, x7 (syscall number), and msg-info (x1) are spilled into
-the current thread's saved register context.  The `decodeSyscallArgsFromState`
+user's x0..x5 and x7 (syscall number) are spilled into the current
+thread's saved register context.  The `decodeSyscallArgsFromState`
 function (called downstream by `syscallEntryChecked`) reads from this
 register file via `readReg layout.capPtrReg`, etc.
+
+The FFI also passes a separate `msgInfo` parameter for ABI parity with
+the Rust side, where `args.msg_info == args.msg_regs[1] == frame.x1()`
+(see `rust/sele4n-hal/src/svc_dispatch.rs::SyscallArgs::from_trap_frame`).
+We do **not** write `msgInfo` to the register file separately because
+`x1` already populates the `layout.msgInfoReg = ⟨1⟩` slot that
+`decodeMsgInfo` reads — writing both would be a redundant overwrite,
+and the resulting `msgInfo` decoded by `syscallEntryChecked` is
+extracted from `x1`'s bit pattern via `MessageInfo.decode`.  The
+`msgInfo` parameter remains in `syscallDispatchFromAbi`'s signature
+for FFI ABI parity but is not consulted inside this helper.
 
 If the target object is not a TCB (or the lookup fails) the state is
 returned unchanged — `syscallEntryChecked` will surface the error
 (`.illegalState` or `.objectNotFound`) on the very next step. -/
 def writeFfiRegistersToTcb
     (st : SystemState) (tid : SeLe4n.ThreadId)
-    (syscallId : UInt32) (msgInfo : UInt64)
+    (syscallId : UInt32)
     (x0 x1 x2 x3 x4 x5 : UInt64) : SystemState :=
   match st.objects[tid.toObjId]? with
   | some (.tcb tcb) =>
       let layout := SeLe4n.arm64DefaultLayout
       let rf := tcb.registerContext
+      -- x0 → capPtrReg (= ⟨0⟩); x1 → msgInfoReg (= ⟨1⟩) — `decodeMsgInfo`
+      -- decodes the msgInfo from this slot via `MessageInfo.decode`.
       let rf := writeReg rf layout.capPtrReg     ⟨x0.toNat⟩
-      let rf := writeReg rf layout.msgInfoReg    ⟨msgInfo.toNat⟩
-      -- x1 is also passed in the msg-regs slot; msgInfoReg already
-      -- captures it, but writing both makes the register file
-      -- match the trap-frame snapshot exactly.  No semantic effect
-      -- because both writes target the same RegName (⟨1⟩).
-      let rf := writeReg rf ⟨1⟩                  ⟨x1.toNat⟩
+      let rf := writeReg rf layout.msgInfoReg    ⟨x1.toNat⟩
       let rf := writeReg rf ⟨2⟩                  ⟨x2.toNat⟩
       let rf := writeReg rf ⟨3⟩                  ⟨x3.toNat⟩
       let rf := writeReg rf ⟨4⟩                  ⟨x4.toNat⟩
@@ -499,12 +507,17 @@ substantively true: the symbol's body is the BaseIO wrapper around
 this function.
 
 Pipeline:
-  1. Look up `st.scheduler.current` (must be `some` on a real syscall).
-  2. Spill the FFI register values into the current thread's TCB
+  1. Verify the FFI ABI invariant `msgInfo == x1` (both come from
+     `frame.x1()` on the Rust side per
+     `rust/sele4n-hal/src/svc_dispatch.rs::SyscallArgs::from_trap_frame`).
+     A mismatch indicates a malformed FFI call and is rejected with
+     `.invalidSyscallArgument`.
+  2. Look up `st.scheduler.current` (must be `some` on a real syscall).
+  3. Spill the FFI register values into the current thread's TCB
      `registerContext` (matches the ARM64 trap handler's spill).
-  3. Invoke `syscallEntryChecked` with the deployment's labeling
+  4. Invoke `syscallEntryChecked` with the deployment's labeling
      context and the canonical `arm64DefaultLayout`.
-  4. Encode the result as `UInt64`: `encodeOk x0` on success,
+  5. Encode the result as `UInt64`: `encodeOk x0` on success,
      `encodeError ke` on failure.
 
 `ipcBufferAddr` is passed for parity with the seL4 ABI; the verified
@@ -518,14 +531,22 @@ def syscallDispatchFromAbi
     (x0 x1 x2 x3 x4 x5 : UInt64)
     (_ipcBufferAddr : UInt64) : Kernel UInt64 :=
   fun st =>
-    match st.scheduler.current with
-    | none => .ok (encodeError .illegalState, st)
-    | some tid =>
-      let stRegs := writeFfiRegistersToTcb st tid syscallId msgInfo x0 x1 x2 x3 x4 x5
-      let layout := SeLe4n.arm64DefaultLayout
-      match syscallEntryChecked ctx layout 32 stRegs with
-      | .error ke => .ok (encodeError ke, stRegs)
-      | .ok ((), st') => .ok (encodeOk (readReturnValue st' tid), st')
+    -- ABI consistency check: the Rust caller guarantees
+    -- `msg_info == msg_regs[1] == frame.x1()` when constructing the
+    -- `SyscallArgs` struct.  If the Lean side observes a mismatch,
+    -- the FFI boundary has been violated and we reject before
+    -- touching kernel state.
+    if msgInfo != x1 then
+      .ok (encodeError .invalidSyscallArgument, st)
+    else
+      match st.scheduler.current with
+      | none => .ok (encodeError .illegalState, st)
+      | some tid =>
+        let stRegs := writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5
+        let layout := SeLe4n.arm64DefaultLayout
+        match syscallEntryChecked ctx layout 32 stRegs with
+        | .error ke => .ok (encodeError ke, stRegs)
+        | .ok ((), st') => .ok (encodeOk (readReturnValue st' tid), st')
 
 -- ============================================================================
 -- AN9-D (DEF-C-M04): suspendThread atomicity bracket
@@ -680,24 +701,28 @@ theorem syscallDispatchFromAbi_total
       syscallDispatchFromAbi ctx syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
         = Except.ok (encoded, st') := by
   unfold syscallDispatchFromAbi
-  -- The match on `st.scheduler.current` is symbolic; we case-split
-  -- on the option directly because subsequent arms take different
-  -- shapes.  The `cases ... with` form substitutes the scrutinee
-  -- into the goal so no `rw` is needed.
-  cases st.scheduler.current with
-  | none =>
-      exact ⟨encodeError .illegalState, st, rfl⟩
-  | some tid =>
-      cases hSyscall : syscallEntryChecked ctx SeLe4n.arm64DefaultLayout 32
-              (writeFfiRegistersToTcb st tid syscallId msgInfo x0 x1 x2 x3 x4 x5) with
-      | error ke =>
-          refine ⟨encodeError ke,
-                  writeFfiRegistersToTcb st tid syscallId msgInfo x0 x1 x2 x3 x4 x5, ?_⟩
-          simp [hSyscall]
-      | ok r =>
-          obtain ⟨_, st'⟩ := r
-          refine ⟨encodeOk (readReturnValue st' tid), st', ?_⟩
-          simp [hSyscall]
+  -- The function first checks the ABI invariant `msgInfo == x1`,
+  -- then case-splits on `st.scheduler.current`, then on the
+  -- `syscallEntryChecked` result.  Every branch produces `.ok`.
+  by_cases hMsg : msgInfo != x1
+  · -- ABI mismatch path: returns `.ok (encodeError .invalidSyscallArgument, st)`.
+    exact ⟨encodeError .invalidSyscallArgument, st, by simp [hMsg]⟩
+  · -- ABI consistency holds: drive the if-then-else into the else branch
+    -- using `hMsg` so the goal exposes the next match.
+    cases st.scheduler.current with
+    | none =>
+        exact ⟨encodeError .illegalState, st, by simp [hMsg]⟩
+    | some tid =>
+        cases hSyscall : syscallEntryChecked ctx SeLe4n.arm64DefaultLayout 32
+                (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) with
+        | error ke =>
+            exact ⟨encodeError ke,
+                   writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5,
+                   by simp [hMsg, hSyscall]⟩
+        | ok r =>
+            obtain ⟨_, st'⟩ := r
+            exact ⟨encodeOk (readReturnValue st' tid), st',
+                   by simp [hMsg, hSyscall]⟩
 
 /-- WS-RC R2.B.5: When `syscallEntryChecked` succeeds on the
     register-spilled state, `syscallDispatchFromAbi` returns the
@@ -715,15 +740,16 @@ theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok
     (syscallId : UInt32) (msgInfo : UInt64)
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (st' : SystemState)
+    (hMsg : msgInfo = x1)
     (hCur : st.scheduler.current = some tid)
     (hSyscall :
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout 32
-          (writeFfiRegistersToTcb st tid syscallId msgInfo x0 x1 x2 x3 x4 x5)
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
         = Except.ok ((), st')) :
     syscallDispatchFromAbi ctx syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
       = Except.ok (encodeOk (readReturnValue st' tid), st') := by
   unfold syscallDispatchFromAbi
-  simp [hCur, hSyscall]
+  simp [hMsg, hCur, hSyscall]
 
 /-- WS-RC R2.B.5: When `syscallEntryChecked` rejects on the
     register-spilled state, `syscallDispatchFromAbi` propagates the
@@ -735,16 +761,17 @@ theorem syscallDispatchFromAbi_error_of_syscallEntryChecked_error
     (syscallId : UInt32) (msgInfo : UInt64)
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
     (st : SystemState) (tid : SeLe4n.ThreadId) (ke : KernelError)
+    (hMsg : msgInfo = x1)
     (hCur : st.scheduler.current = some tid)
     (hSyscall :
       syscallEntryChecked ctx SeLe4n.arm64DefaultLayout 32
-          (writeFfiRegistersToTcb st tid syscallId msgInfo x0 x1 x2 x3 x4 x5)
+          (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5)
         = Except.error ke) :
     syscallDispatchFromAbi ctx syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
       = Except.ok (encodeError ke,
-                   writeFfiRegistersToTcb st tid syscallId msgInfo x0 x1 x2 x3 x4 x5) := by
+                   writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5) := by
   unfold syscallDispatchFromAbi
-  simp [hCur, hSyscall]
+  simp [hMsg, hCur, hSyscall]
 
 /-- WS-RC R2.B.5: When the scheduler has no current thread, the FFI
     surfaces `.illegalState` without invoking `syscallEntryChecked`.
@@ -757,11 +784,36 @@ theorem syscallDispatchFromAbi_illegalState_when_no_current
     (syscallId : UInt32) (msgInfo : UInt64)
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
     (st : SystemState)
+    (hMsg : msgInfo = x1)
     (hCur : st.scheduler.current = none) :
     syscallDispatchFromAbi ctx syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
       = Except.ok (encodeError .illegalState, st) := by
   unfold syscallDispatchFromAbi
-  simp [hCur]
+  simp [hMsg, hCur]
+
+/-- WS-RC R2.B.5: When the FFI ABI invariant `msgInfo == x1` is
+    violated, the dispatcher rejects with `.invalidSyscallArgument`
+    without touching kernel state.
+
+This is the structural witness that ABI inconsistencies are detected
+and rejected at the FFI boundary before any verified kernel handler
+is invoked.  The ABI invariant holds by construction on the Rust
+side (see `SyscallArgs::from_trap_frame`); a violation indicates
+either a malformed caller or memory corruption — either way, the
+safe response is to refuse the syscall. -/
+theorem syscallDispatchFromAbi_abiMismatch_rejected
+    (ctx : LabelingContext)
+    (syscallId : UInt32) (msgInfo : UInt64)
+    (x0 x1 x2 x3 x4 x5 ipcBufferAddr : UInt64)
+    (st : SystemState)
+    (hMsg : msgInfo ≠ x1) :
+    syscallDispatchFromAbi ctx syscallId msgInfo x0 x1 x2 x3 x4 x5 ipcBufferAddr st
+      = Except.ok (encodeError .invalidSyscallArgument, st) := by
+  unfold syscallDispatchFromAbi
+  -- `msgInfo ≠ x1` ⟹ `msgInfo != x1 = true` ⟹ the if-branch is taken.
+  have : (msgInfo != x1) = true := by
+    simp [bne_iff_ne, hMsg]
+  simp [this]
 
 /-- WS-RC R2.B.5: `writeFfiRegistersToTcb` reduces to the original
     state when the target object is not a TCB (or absent).  The
@@ -772,10 +824,10 @@ The proof is a definitional unfolding — the `match` arm for
 non-TCB / missing objects returns `st` unchanged. -/
 theorem writeFfiRegistersToTcb_id_when_not_tcb
     (st : SystemState) (tid : SeLe4n.ThreadId)
-    (syscallId : UInt32) (msgInfo : UInt64)
+    (syscallId : UInt32)
     (x0 x1 x2 x3 x4 x5 : UInt64)
     (hNotTcb : ∀ tcb : TCB, st.objects[tid.toObjId]? ≠ some (.tcb tcb)) :
-    writeFfiRegistersToTcb st tid syscallId msgInfo x0 x1 x2 x3 x4 x5 = st := by
+    writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 = st := by
   unfold writeFfiRegistersToTcb
   cases h : st.objects[tid.toObjId]? with
   | none => rfl

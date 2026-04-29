@@ -141,18 +141,30 @@ private def sd010_initialiseAndGet : IO Unit := do
         "TCB threadState must round-trip through the IO.Ref"
   | _ => failLine "sd010_tcb_lookup" "TCB lookup after IO.Ref round-trip failed"
 
-/-- SD-011: `updateKernelState` applies a pure function in-place. -/
+/-- SD-011: `updateKernelState` applies a pure function in-place.
+
+Verifies both the no-op (identity) case and a substantive transformation
+that clears `scheduler.current`.  This is the API surface the future
+hardware boot path uses to rotate the live state without going through
+`initialiseKernelState`. -/
 private def sd011_updateKernelState : IO Unit := do
   let tid : SeLe4n.ThreadId := ⟨2⟩
   let st := mkState [(⟨2⟩, .tcb (mkTcb 2 .Ready))] (some tid)
   initialiseKernelState st
-  -- Apply an identity update; the IO.Ref should still hold the same
-  -- state.
+  -- Identity update: the IO.Ref should still hold the same state.
   updateKernelState id
   let st' ← getKernelState
-  expect "sd011_identity_update_preserves_current"
+  expect "sd011a_identity_update_preserves_current"
     (st'.scheduler.current == some tid)
     "identity updateKernelState must preserve scheduler.current"
+  -- Substantive transformation: clear scheduler.current.
+  updateKernelState (fun s => { s with scheduler := { s.scheduler with current := none } })
+  let st'' ← getKernelState
+  expect "sd011b_substantive_update_clears_current"
+    (st''.scheduler.current == none)
+    "substantive updateKernelState must apply the transformation"
+  -- Restore the original state to avoid affecting downstream tests.
+  initialiseKernelState st
 
 /-- SD-012: `initialiseKernelLabelingContext` installs the given
     context; `getKernelLabelingContext` reads it. -/
@@ -208,12 +220,21 @@ private def sd022_suspendThreadInner_missing : IO Unit := do
     (result == KernelError.toUInt32 .invalidArgument)
     s!"suspendThreadInner of a missing thread must return InvalidArgument (39), got {result}"
 
-/-- SD-023: `suspendThreadInner` on the sentinel `tid = 0xFFFFFFFFFFFFFFFF`
-    returns InvalidArgument WITHOUT invoking `suspendThread`. -/
+/-- SD-023: `suspendThreadInner` on the reserved sentinel `tid = 0`
+    returns InvalidArgument WITHOUT invoking `suspendThread`.
+
+`ThreadId.sentinel` is defined as `⟨0⟩` (`H-06/WS-E3` in `Prelude.lean`),
+so `tid : UInt64 = 0` flows through `ThreadId.ofNat 0 = ThreadId.sentinel`,
+and `ThreadId.toValid?` returns `none` for this case (the smart
+constructor refuses the reserved value).  The test verifies the FFI
+boundary's sentinel rejection is non-bypassable. -/
 private def sd023_suspendThreadInner_sentinel : IO Unit := do
   let st := mkState [(⟨6⟩, .tcb (mkTcb 6 .Ready))] (some ⟨6⟩)
   initialiseKernelState st
-  -- ThreadId.sentinel has val = 0xFFFFFFFFFFFFFFFF on a 64-bit machine.
+  -- Verify our understanding of the sentinel value first.
+  expect "sd023_sentinel_is_zero"
+    (SeLe4n.ThreadId.sentinel.toNat == 0)
+    "ThreadId.sentinel must be value 0"
   let sentinel : UInt64 := SeLe4n.ThreadId.sentinel.toNat.toUInt64
   let result ← suspendThreadInner sentinel
   expect "sd023_returns_invalidArgument"
@@ -305,39 +326,112 @@ private def sd033_dispatchFromAbi_total : IO Unit := do
       failLine "sd033_dispatchFromAbi_returns_ok"
         "syscallDispatchFromAbi must never return Except.error"
 
+/-- SD-034: ABI consistency check — when `msgInfo ≠ x1`, the dispatch
+    rejects with `.invalidSyscallArgument` without invoking
+    `syscallEntryChecked`.
+
+The Rust caller's `SyscallArgs::from_trap_frame` constructs `msg_info`
+and `msg_regs[1]` from the same `frame.x1()` slot, so they should always
+be equal at the ABI boundary.  A divergence indicates either a malformed
+caller or memory corruption — the FFI rejects rather than proceeding. -/
+private def sd034_dispatchInner_abiMismatch : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨10⟩
+  let st := mkState [(⟨10⟩, .tcb (mkTcb 10 .Ready))] (some tid)
+  initialiseKernelState st
+  initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
+  -- Pass msgInfo=0xAAAA and x1=0xBBBB (≠ msgInfo).  Per the FFI ABI
+  -- contract these must agree; the dispatcher rejects.
+  let raw ← syscallDispatchInner 0 0xAAAA 0 0xBBBB 0 0 0 0 0
+  let highBitSet := (raw >>> 63) &&& 1 == 1
+  let disc := raw.toNat % (2 ^ 32)
+  expect "sd034a_high_bit_set" highBitSet
+    "ABI-mismatched dispatch must surface as an error"
+  expect "sd034b_disc_invalidSyscallArgument"
+    (disc == (KernelError.toUInt32 .invalidSyscallArgument).toNat)
+    s!"ABI-mismatch must yield InvalidSyscallArgument (41), got {disc}"
+  -- Verify the kernel state is NOT mutated on the ABI-mismatch path.
+  let st' ← getKernelState
+  match st'.objects[tid.toObjId]? with
+  | some (.tcb tcb) =>
+      -- TCB.registerContext.gpr ⟨0⟩ should still be the default value (0)
+      -- because the dispatch rejected before writeFfiRegistersToTcb was called.
+      expect "sd034c_no_register_spill_on_abi_mismatch"
+        (tcb.registerContext.gpr ⟨0⟩ == ⟨0⟩)
+        "ABI-mismatch must reject before spilling registers"
+  | _ => failLine "sd034_tcb_missing" "TCB missing after ABI-mismatch dispatch"
+
+/-- SD-035: Sequential dispatches — the IO.Ref state evolves
+    correctly across multiple syscall invocations.
+
+This regression-tests that the `kernelStateRef` mutation in
+`syscallDispatchInner` is observable to the next syscall (the
+hardware path's authoritative state update). -/
+private def sd035_sequentialDispatches : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨11⟩
+  let st := mkState [(⟨11⟩, .tcb (mkTcb 11 .Ready))] (some tid)
+  initialiseKernelState st
+  initialiseKernelLabelingContext SeLe4n.Kernel.testLabelingContext
+  -- First dispatch: spills x0=0x111 into the TCB.
+  let _ ← syscallDispatchInner 99 0 0x111 0 0 0 0 0 0
+  let st1 ← getKernelState
+  match st1.objects[tid.toObjId]? with
+  | some (.tcb tcb1) =>
+      expect "sd035a_first_dispatch_spilled"
+        (tcb1.registerContext.gpr ⟨0⟩ == ⟨0x111⟩)
+        "first dispatch must spill x0=0x111"
+  | _ => failLine "sd035_tcb_missing_1" "TCB missing after first dispatch"
+  -- Second dispatch: spills x0=0x222 into the (now-updated) TCB.
+  let _ ← syscallDispatchInner 99 0 0x222 0 0 0 0 0 0
+  let st2 ← getKernelState
+  match st2.objects[tid.toObjId]? with
+  | some (.tcb tcb2) =>
+      expect "sd035b_second_dispatch_spilled"
+        (tcb2.registerContext.gpr ⟨0⟩ == ⟨0x222⟩)
+        "second dispatch must spill x0=0x222 (state evolved)"
+  | _ => failLine "sd035_tcb_missing_2" "TCB missing after second dispatch"
+
 -- ============================================================================
 -- R2.A — bootAndInitialiseFromPlatform integration
 -- ============================================================================
 
-/-- SD-040: `bootAndInitialiseFromPlatform` on a malformed config
-    returns `.error` and does NOT mutate the IO.Ref. -/
-private def sd040_bootInitialise_malformed : IO Unit := do
+/-- SD-040: `bootAndInitialiseFromPlatform` on a well-formed (empty)
+    config installs the post-boot state into `kernelStateRef`. -/
+private def sd040_bootInitialise_emptyConfig_succeeds : IO Unit := do
   -- Seed the IO.Ref with a sentinel state so we can detect mutation.
   let sentinelTid : SeLe4n.ThreadId := ⟨123⟩
   let st := mkState [(⟨123⟩, .tcb (mkTcb 123 .Ready))] (some sentinelTid)
   initialiseKernelState st
   -- A PlatformConfig with empty IRQ + initialObjects tables is the
   -- minimally well-formed config (`PlatformConfig.wellFormed_empty`
-  -- in Boot.lean).  We use this to verify the success path of the
-  -- IO.Ref bootstrap.
+  -- in Boot.lean).
   let cfg : SeLe4n.Platform.Boot.PlatformConfig :=
     { irqTable := [], initialObjects := [] }
   match ← bootAndInitialiseFromPlatform cfg with
   | Except.ok _ =>
       -- The IO.Ref has been overwritten with the post-boot state.
-      -- This is the success path; the post-boot state has no
-      -- objects, so `scheduler.current` is `none`.
+      -- The post-boot state has no objects, so `scheduler.current`
+      -- is `none` (the sentinel TCB is gone).
       let st' ← getKernelState
-      expect "sd040_bootInitialise_success"
+      expect "sd040_bootInitialise_success_clears_sentinel"
         (st'.scheduler.current == none)
         "post-empty-boot state must have no current thread"
-  | Except.error _ =>
-      -- IO.Ref is not mutated on the failure path; verify the
-      -- sentinel state is still in place.
-      let st' ← getKernelState
-      expect "sd040_no_mutation_on_error"
-        (st'.scheduler.current == some sentinelTid)
-        "bootAndInitialiseFromPlatform must not mutate the IO.Ref on error"
+  | Except.error e =>
+      failLine "sd040_bootInitialise_unexpected_error"
+        s!"empty config should be well-formed, got error: {e}"
+
+/-- SD-041: `bootAndInitialiseFromPlatform` accepts an optional
+    labeling context and installs it into `kernelLabelingContextRef`. -/
+private def sd041_bootInitialise_withLabelingContext : IO Unit := do
+  let cfg : SeLe4n.Platform.Boot.PlatformConfig :=
+    { irqTable := [], initialObjects := [] }
+  -- Use the test labeling context as a proxy for a production policy.
+  match ← bootAndInitialiseFromPlatform cfg
+        (some SeLe4n.Kernel.testLabelingContext) with
+  | Except.ok _ =>
+      passLine "sd041_bootInitialise_with_labeling_context"
+  | Except.error e =>
+      failLine "sd041_bootInitialise_unexpected_error"
+        s!"empty config + labeling context should succeed, got: {e}"
 
 -- ============================================================================
 -- Driver
@@ -366,6 +460,9 @@ def main : IO Unit := do
   sd031_syscallDispatchInner_spillsRegs
   sd032_syscallDispatchInner_invalidSyscall
   sd033_dispatchFromAbi_total
+  sd034_dispatchInner_abiMismatch
+  sd035_sequentialDispatches
   IO.println "--- R2.A: bootAndInitialiseFromPlatform integration ---"
-  sd040_bootInitialise_malformed
+  sd040_bootInitialise_emptyConfig_succeeds
+  sd041_bootInitialise_withLabelingContext
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="

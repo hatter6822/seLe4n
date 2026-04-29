@@ -26,9 +26,11 @@ actually wires it.
   `@[extern]` and `@[export]` directions.  CLOSED.
 - DEEP-TEST-03 — `syscallEntryChecked` had only sparse test
   coverage on the FFI bridge.  Added
-  `tests/SyscallDispatchSuite.lean` (33 tests) covering the IO.Ref
-  bootstrap, KernelError discriminant table, encoded-UInt64
-  contract, suspend bridge, and dispatch bridge.  CLOSED.
+  `tests/SyscallDispatchSuite.lean` (41 assertions across 18 test
+  functions) covering the IO.Ref bootstrap, KernelError discriminant
+  table, encoded-UInt64 contract, suspend bridge, dispatch bridge,
+  ABI-mismatch reject path, and sequential dispatch state
+  evolution.  CLOSED.
 
 ### Architectural choice (R2.A)
 
@@ -117,29 +119,36 @@ seeds the IO.Refs in lockstep.
 - `syscallDispatchFromAbi_illegalState_when_no_current` — when
   `scheduler.current = none`, surface `.illegalState` without
   invoking `syscallEntryChecked` and without mutating state.
+- `syscallDispatchFromAbi_abiMismatch_rejected` — when the FFI
+  ABI invariant `msgInfo == x1` is violated, surface
+  `.invalidSyscallArgument` without invoking the verified handler
+  and without mutating state.
 - `writeFfiRegistersToTcb_id_when_not_tcb`,
   `readReturnValue_zero_when_not_tcb` — totality witnesses for the
   helpers when the lookup target is not a TCB.
 
 ### Test coverage (R2.C)
 
-- `tests/SyscallDispatchSuite.lean` (NEW, 33 tests across 7 groups):
-  - SD-001..006: `KernelError → UInt32` discriminant pinning at
-    representative variants (matches Rust enum).
-  - SD-002..003: `encodeError` always sets bit 63;
-    `encodeOk` always clears bit 63 (positive sample including
-    `0xFFFFFFFFFFFFFFFF`).
+- `tests/SyscallDispatchSuite.lean` (NEW, 41 assertions across 18 test
+  functions, 7 groups):
+  - SD-001..003: `KernelError → UInt32` discriminant pinning at
+    representative variants (matches Rust enum); `encodeError` always
+    sets bit 63; `encodeOk` always clears bit 63 (positive sample
+    including `0xFFFFFFFFFFFFFFFF`).
   - SD-010..012: `kernelStateRef`/`kernelLabelingContextRef`
-    bootstrap round-trip.
+    bootstrap round-trip; `updateKernelState` identity + substantive
+    transformations.
   - SD-020..023: `suspendThreadInner` integration — Ready→Inactive
     transition, Inactive rejection, missing-thread rejection,
     sentinel rejection without invoking `suspendThread`.
-  - SD-030..033: `syscallDispatchInner` integration — no-current
+  - SD-030..035: `syscallDispatchInner` integration — no-current
     rejection (encodes `IllegalState`), register spill into TCB
     pre-call, unmodeled-syscall rejection, totality witness via
-    direct `syscallDispatchFromAbi` invocation.
-  - SD-040: `bootAndInitialiseFromPlatform` integration — empty
-    config success path, IO.Ref no-mutation guarantee on error.
+    direct `syscallDispatchFromAbi` invocation, ABI-mismatch reject
+    (`msgInfo ≠ x1`) without spilling registers, sequential dispatch
+    state evolution.
+  - SD-040..041: `bootAndInitialiseFromPlatform` integration — empty
+    config success path; success path with optional labeling context.
 - Wired into `scripts/test_tier2_negative.sh` (executed every PR
   via `test_smoke.sh` Tier 2).
 - Anchor checks added to `scripts/test_tier3_invariant_surface.sh`
@@ -164,7 +173,8 @@ seeds the IO.Refs in lockstep.
 - `rust/sele4n-hal/src/ffi.rs` — comment at lines 247-252 corrected
   (was: `sele4n_suspend_thread_inner`; now: `suspend_thread_inner`);
   notes the post-R2.B substantive routing.
-- `tests/SyscallDispatchSuite.lean` — NEW; 33 regression tests.
+- `tests/SyscallDispatchSuite.lean` — NEW; 41 regression assertions
+  across 18 test functions.
 - `lakefile.toml` — registers `syscall_dispatch_suite` as a
   `lean_exe` per R2.C.5.
 - `scripts/test_tier2_negative.sh` — runs the new suite per R2.C.6.
@@ -179,7 +189,7 @@ seeds the IO.Refs in lockstep.
 - `lake build SeLe4n.Platform.FFI` ✓
 - `lake build SeLe4n.Platform.Staged` ✓
 - `lake build` (default target, 296 jobs) ✓
-- `lake exe syscall_dispatch_suite` (33/33 tests pass) ✓
+- `lake exe syscall_dispatch_suite` (41/41 assertions pass) ✓
 - `./scripts/test_smoke.sh` ✓
 - `./scripts/test_full.sh` ✓ (all Tier-3 anchors pass including the
   new R2 anchor block)

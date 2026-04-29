@@ -234,17 +234,20 @@ SeLe4n/Testing/*                 Test harness, state builder, fixtures
   MainTraceHarness.lean          Main trace test harness
   RuntimeContractFixtures.lean   Platform contract test fixtures
 Main.lean                        Executable entry point
-tests/                           Executable test suites + fixtures (19 suites)
+tests/                           Executable test suites + fixtures (29 suites)
   DecodingSuite.lean             T-03/AC6-A + AK4-A: 57 tests for RegisterDecode + SyscallArgDecode + IPC-buffer merge
   AbiRoundtripSuite.lean         AK4-G: End-to-end ABI encode/decode integration (25 assertions)
   BadgeOverflowSuite.lean        AG9-E: 22 tests for Badge Nat↔UInt64 round-trip
   An9HardwareBindingSuite.lean   AN9: 23 surface-anchor tests for hardware-binding closure (DEF-A-M04..M09, DEF-C-M04, DEF-R-HAL-L14..L20)
   LivenessSuite.lean             D5: 58 surface anchor tests for liveness/WCRT theorems
-  SyscallDispatchSuite.lean      WS-RC R2.C / DEEP-TEST-03: 33 regression tests
-                                 covering `suspendThreadInner`, `syscallDispatchInner`,
+  SyscallDispatchSuite.lean      WS-RC R2.C / DEEP-TEST-03: 41 regression
+                                 assertions across 18 test functions covering
+                                 `suspendThreadInner`, `syscallDispatchInner`,
                                  `KernelError → UInt32` discriminants, the
-                                 encoded-UInt64 high-bit-error contract, and
-                                 the `kernelStateRef` IO.Ref bootstrap path.
+                                 encoded-UInt64 high-bit-error contract, the
+                                 `kernelStateRef` IO.Ref bootstrap path, the
+                                 ABI-mismatch reject path, and sequential
+                                 dispatch state evolution.
 ```
 
 Note: Files marked "Re-export hub" are thin import-only files that preserve
@@ -704,23 +707,29 @@ under `docs/` and `docs/gitbook/`.
   result via the bit-63 error-flag UInt64 contract); replaced bodies
   for the two `@[export]` declarations.  Adds `KernelError.toUInt32`
   (mirroring `rust/sele4n-types/src/error.rs` discriminants 0..51),
-  `encodeError` / `encodeOk` UInt64 encoding helpers, and seven
-  correctness theorems (`encodeError_high_bit_set`,
+  `encodeError` / `encodeOk` UInt64 encoding helpers, an ABI
+  consistency gate that rejects with `.invalidSyscallArgument` if
+  `msgInfo ≠ x1` (both must equal `frame.x1()` per the Rust caller's
+  `SyscallArgs::from_trap_frame`) without spilling registers or
+  mutating kernel state, and eight correctness theorems
+  (`encodeError_high_bit_set`,
   `syscallDispatchFromAbi_total`,
   `syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok`,
   `syscallDispatchFromAbi_error_of_syscallEntryChecked_error`,
   `syscallDispatchFromAbi_illegalState_when_no_current`,
+  `syscallDispatchFromAbi_abiMismatch_rejected`,
   `writeFfiRegistersToTcb_id_when_not_tcb`,
   `readReturnValue_zero_when_not_tcb`).  Aligns the Rust comments at
-  `rust/sele4n-hal/src/svc_dispatch.rs:308` and
-  `rust/sele4n-hal/src/ffi.rs:247-249` with the actual
+  `rust/sele4n-hal/src/svc_dispatch.rs:237-244,305-312` and
+  `rust/sele4n-hal/src/ffi.rs:247-254` with the actual
   `syscall_dispatch_inner` / `suspend_thread_inner` symbol names.
   R2.C: makes the FFI docstring's gating claim honest (link-time, not
   preprocessor); adds the dedicated `tests/SyscallDispatchSuite.lean`
-  regression suite (33 tests covering `KernelError` discriminants,
-  encoding round-trips, the IO.Ref bootstrap path,
-  `suspendThreadInner` integration, and `syscallDispatchInner`
-  integration) wired into `scripts/test_tier2_negative.sh` and
+  regression suite (41 assertions across 18 test functions covering
+  `KernelError` discriminants, encoding round-trips, the IO.Ref
+  bootstrap path, `suspendThreadInner` integration, `syscallDispatchInner`
+  integration, the ABI-mismatch reject path, and sequential dispatch
+  state evolution) wired into `scripts/test_tier2_negative.sh` and
   `scripts/test_tier3_invariant_surface.sh`.
 
 - **WS-AN portfolio COMPLETE (v0.30.11, branch `claude/review-codebase-phase-an12-JBPQN`)**:

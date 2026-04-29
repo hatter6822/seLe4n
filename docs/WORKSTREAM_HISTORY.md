@@ -217,34 +217,44 @@ comment is replaced by code that actually wires it.
   at `rust/sele4n-hal/src/svc_dispatch.rs:308` and
   `rust/sele4n-hal/src/ffi.rs:247-249` with the actual
   `syscall_dispatch_inner` / `suspend_thread_inner` symbol names.
-  Adds seven correctness theorems
+  Adds an ABI consistency check that rejects with
+  `.invalidSyscallArgument` if `msgInfo ≠ x1` (both must equal
+  `frame.x1()` per the Rust caller's `SyscallArgs::from_trap_frame`),
+  with no kernel state mutation on the reject path.  Adds eight
+  correctness theorems
   (`encodeError_high_bit_set`,
   `syscallDispatchFromAbi_total`,
   `syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok`,
   `syscallDispatchFromAbi_error_of_syscallEntryChecked_error`,
   `syscallDispatchFromAbi_illegalState_when_no_current`,
+  `syscallDispatchFromAbi_abiMismatch_rejected`,
   `writeFfiRegistersToTcb_id_when_not_tcb`,
   `readReturnValue_zero_when_not_tcb`).
 - **R2.C — Gating uniformity + integration suite**: the FFI
   module's docstring is rewritten to honestly describe link-time
   gating (Rust HAL linked or not) instead of the previously claimed
   but absent `hwTarget` preprocessor switch.  The new
-  `tests/SyscallDispatchSuite.lean` regression suite (33 tests)
-  exercises `KernelError` discriminants, encoding round-trips, the
-  IO.Ref bootstrap path, `suspendThreadInner` integration
-  (Ready→Inactive transition; Inactive / missing-thread / sentinel
-  rejections), and `syscallDispatchInner` integration (no-current
-  rejection, register spill into TCB, unmodeled-syscall rejection,
-  totality witness).  Wired into `scripts/test_tier2_negative.sh`
-  per R2.C.6 and into `scripts/test_tier3_invariant_surface.sh`
-  with grep-pinned anchors for every public name in the post-R2
-  FFI surface plus Rust-side `extern "C"` symbol names.
+  `tests/SyscallDispatchSuite.lean` regression suite (41 assertions
+  across 18 test functions) exercises `KernelError` discriminants,
+  encoding round-trips, the IO.Ref bootstrap path,
+  `suspendThreadInner` integration (Ready→Inactive transition;
+  Inactive / missing-thread / sentinel rejections),
+  `syscallDispatchInner` integration (no-current rejection, register
+  spill into TCB, unmodeled-syscall rejection, totality witness,
+  ABI-mismatch reject for `msgInfo ≠ x1`, sequential dispatch state
+  evolution), and `bootAndInitialiseFromPlatform` integration
+  (empty config + optional labeling context).  Wired into
+  `scripts/test_tier2_negative.sh` per R2.C.6 and into
+  `scripts/test_tier3_invariant_surface.sh` with grep-pinned anchors
+  for every public name in the post-R2 FFI surface plus Rust-side
+  `extern "C"` symbol names.
 - **Files touched**: `SeLe4n/Platform/FFI.lean` (rewrite — old
   `@[extern]` surface preserved, `@[export]` stubs replaced by
   substantive bodies, R2.A/R2.B infrastructure added, R2.B.5
   theorems added at end of file); `rust/sele4n-hal/src/svc_dispatch.rs`
   (comment alignment); `rust/sele4n-hal/src/ffi.rs` (comment
-  alignment); `tests/SyscallDispatchSuite.lean` (NEW — 33 tests);
+  alignment); `tests/SyscallDispatchSuite.lean` (NEW — 41 assertions
+  across 18 test functions);
   `lakefile.toml` (`syscall_dispatch_suite` registration);
   `scripts/test_tier2_negative.sh` (suite invocation);
   `scripts/test_tier3_invariant_surface.sh` (anchor checks);
@@ -254,7 +264,7 @@ comment is replaced by code that actually wires it.
 - **Validation**: `lake build SeLe4n.Platform.FFI` and
   `lake build SeLe4n.Platform.Staged` pass; `lake build` (default
   target, 296 jobs) passes; `lake exe syscall_dispatch_suite`
-  reports 33/33 tests pass; `./scripts/test_smoke.sh` and
+  reports 41/41 assertions pass; `./scripts/test_smoke.sh` and
   `./scripts/test_full.sh` pass; the executable `lake exe sele4n`
   trace remains byte-identical to
   `tests/fixtures/main_trace_smoke.expected`; 0 sorry / 0 axiom in

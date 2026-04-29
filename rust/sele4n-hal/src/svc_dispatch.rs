@@ -234,7 +234,10 @@ impl SyscallArgs {
 /// Routes the trap through [`SyscallId::from_u32`] and validates the
 /// inline-argument count against [`SyscallId::min_inline_args`] before
 /// delegating to the Lean kernel via the
-/// `sele4n_syscall_dispatch_inner` extern symbol.
+/// `syscall_dispatch_inner` extern symbol (Lean-emitted via
+/// `@[export syscall_dispatch_inner]` in `SeLe4n/Platform/FFI.lean`,
+/// which after WS-RC R2.B substantively routes into the verified
+/// `Kernel.syscallEntryChecked`).
 ///
 /// In test builds the inner symbol is a Rust-side stub returning
 /// `DispatchError::NotImplemented` so the bracketing logic can be

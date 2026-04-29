@@ -954,6 +954,7 @@ run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_total' SeLe4n/Platf
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_error_of_syscallEntryChecked_error' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_illegalState_when_no_current' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_abiMismatch_rejected' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem writeFfiRegistersToTcb_id_when_not_tcb' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem readReturnValue_zero_when_not_tcb' SeLe4n/Platform/FFI.lean
 # WS-RC R2.B.4: Rust comment alignment — the FFI inner symbol the
