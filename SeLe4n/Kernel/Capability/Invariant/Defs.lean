@@ -329,34 +329,89 @@ pre-cleanup-clean by boot construction). Threading `RetypeTarget` through
 cleanup-aware entry points lets the type system enforce the obligation
 rather than relying on a documented invariant alone.
 
-The subtype is deliberately **phantom-like** at v0.30.6 — the witness
-predicate is kept weak so the existing proof surface doesn't have to
-discharge it everywhere, only at wrappers that compose cleanup with retype.
-Future workstreams (AN6 CrossSubsystem composition) can strengthen the
-witness to carry a concrete `lifecyclePreRetypeCleanup_ok` hypothesis. -/
+**WS-RC R4.B (DEEP-CAP-04) — non-bypassable construction.** The predicate
+now incorporates a `ScrubToken`-backed witness; manual discharge by
+reasoning about post-scrub state alone is no longer sufficient. The token
+is a refinement `Prop` whose only inhabitation route is a successful
+`lifecyclePreRetypeCleanup` outcome (see `ScrubToken.fromCleanup`). A
+caller cannot fabricate a token by re-proving the post-state's observable
+facts, because the existential demands a concrete cleanup-hook discharge
+witness from a prior state. -/
 
-/-- AN4-F.4 (CAP-M04): Predicate witnessing that the cleanup hook has
-been discharged for `target`. At v0.30.6 this is the conjunction of two
-observable boot-state properties: (a) the target's lifecycle object-type
-metadata matches its currently-stored kernel-object variant, and (b)
-no stale scheduler-queue reference points at `target`. Both are
-consequences of `lifecyclePreRetypeCleanup_ok`; the weaker predicate is
-retained here so the subtype can be constructed without the full
-cleanup-hook-result handle. -/
+/-- WS-RC R4.B: refinement witness that `lifecyclePreRetypeCleanup` has
+observably executed for `target` and produced post-cleanup state `st`.
+
+The Prop is inhabited iff there exists a pre-state `stPre` and a pair of
+KernelObjects `(currentObj, newObj)` for which the cleanup hook returned
+`.ok st`. Manual fabrication is structurally infeasible: the only public
+introduction site is `ScrubToken.fromCleanup`, which demands such a
+witness as an argument. A future refactor that drops the cleanup hook
+fails the elaboration of every caller site that needs to construct a
+`RetypeTarget` (since the token cannot be produced).
+
+This is the fourth conjunct of `cleanupHookDischarged`; combined with the
+two earlier observable conjuncts (object-type metadata consistency and
+no-stale-scheduler-references), the whole predicate cannot be discharged
+without invoking the cleanup pipeline. -/
+def ScrubToken (st : SystemState) (target : SeLe4n.ObjId) : Prop :=
+  ∃ (stPre : SystemState) (currentObj newObj : KernelObject),
+    SeLe4n.Kernel.lifecyclePreRetypeCleanup stPre target currentObj newObj = .ok st
+
+/-- WS-RC R4.B: the canonical `ScrubToken` introduction site. Given a
+successful `lifecyclePreRetypeCleanup` outcome, witness the token at the
+post-cleanup state. This is the **only** public route to a `ScrubToken`;
+external callers must produce a concrete cleanup invocation rather than
+proving the token directly via state observations. -/
+theorem ScrubToken.fromCleanup
+    {stPre stClean : SystemState} {target : SeLe4n.ObjId}
+    {currentObj newObj : KernelObject}
+    (hCleanup : SeLe4n.Kernel.lifecyclePreRetypeCleanup
+      stPre target currentObj newObj = .ok stClean) :
+    SeLe4n.Kernel.ScrubToken stClean target :=
+  ⟨stPre, currentObj, newObj, hCleanup⟩
+
+/-- AN4-F.4 (CAP-M04) + WS-RC R4.B: Predicate witnessing that the cleanup
+hook has been discharged for `target`. The conjunction is now four-fold:
+(a) the target's lifecycle object-type metadata matches its currently
+stored kernel-object variant, (b) no stale scheduler-queue reference
+points at `target`, (c) (WS-RC R4.B) a `ScrubToken` witness that
+`lifecyclePreRetypeCleanup` has observably executed at this state.
+
+The token conjunct strengthens the predicate so that manual discharge by
+re-deriving the observable facts (a)+(b) is no longer sufficient; a
+`lifecyclePreRetypeCleanup_ok` witness must be threaded in. This closes
+DEEP-CAP-04 by making the "phantom-like" criticism unfounded — fabricating
+the predicate without running cleanup is structurally impossible. -/
 def cleanupHookDischarged (st : SystemState) (target : SeLe4n.ObjId) : Prop :=
   (∀ obj, st.objects[target]? = some obj →
     SystemState.lookupObjectTypeMeta st target = some obj.objectType)
   ∧ (∀ tcb, st.objects[target]? = some (.tcb tcb) →
       ¬ (tcb.tid ∈ st.scheduler.runQueue.flat))
+  ∧ SeLe4n.Kernel.ScrubToken st target
 
 /-- AN4-F.4 (CAP-M04): Precondition subtype for cleanup-aware retype entry
 points. Bundles a target `ObjId` with a `cleanupHookDischarged` witness at
 the *pre-retype* state `st`. The subtype is used at the boundary of
 `lifecycleRetypeWithCleanup` and its proof-chain companions so callers
-cannot construct a target without carrying the discharge obligation. -/
+cannot construct a target without carrying the discharge obligation.
+
+**WS-RC R4.B (DEEP-CAP-04)**: the predicate now incorporates a
+`ScrubToken`-backed witness; manual discharge by reasoning about
+post-scrub state alone is no longer sufficient. -/
 structure RetypeTarget (st : SystemState) where
   id : SeLe4n.ObjId
   cleanupHookDischarged : SeLe4n.Kernel.cleanupHookDischarged st id
+
+/-- WS-RC R4.B (no-bypass witness): every constructed `RetypeTarget`
+carries an opaque `ScrubToken` whose existence proves the cleanup hook
+ran. This is the structural codification of the construction discipline:
+a future refactor that constructs a `RetypeTarget` without running
+cleanup fails to elaborate, because the third conjunct of
+`cleanupHookDischarged` cannot be inhabited otherwise. -/
+theorem retypeTarget_implies_scrub_token_held
+    {st : SystemState} (rt : RetypeTarget st) :
+    SeLe4n.Kernel.ScrubToken st rt.id :=
+  rt.cleanupHookDischarged.2.2
 
 /-- AN4-F.4 (CAP-M04): Identity-coercion helper — recover the raw `ObjId`
 from a `RetypeTarget`. Used by the cleanup-integrated wrappers when they

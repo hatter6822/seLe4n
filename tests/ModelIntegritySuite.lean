@@ -390,6 +390,23 @@ def cspaceMove_from_null_rejected : IO Unit := do
   | .ok _ =>
       throw <| IO.userError "move from null should have been rejected"
 
+/-- WS-RC R4.D: `cspaceMutate` against a null-cap slot returns
+`.nullCapability`. The runtime guard at `Capability/Operations.lean:1093` is
+exercised; the structural witness theorems
+`cspaceMutate_rejects_null_cap` and `cspaceMutate_null_cap_rejected` (in
+`Capability/Invariant/Preservation/CopyMoveMutate.lean`) prove that this
+behaviour holds across all inputs. -/
+def cspaceMutate_from_null_rejected : IO Unit := do
+  let st := al1bStateWithNullCapSlot
+  let addr : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := (SeLe4n.Slot.ofNat 0) }
+  match SeLe4n.Kernel.cspaceMutate addr AccessRightSet.empty none st with
+  | .error .nullCapability =>
+      expect "mutate against null → .nullCapability" true
+  | .error e =>
+      throw <| IO.userError s!"wrong error: expected nullCapability, got {repr e}"
+  | .ok _ =>
+      throw <| IO.userError "mutate against null should have been rejected"
+
 /-- Error-code distinctness — `.nullCapability` is NOT
 `.invalidCapability`. Confirms the fix for the prior bad design that
 overloaded `.invalidCapability` with three different failure modes. -/
@@ -1549,6 +1566,7 @@ def main : IO Unit := do
   cspaceMint_from_null_rejected
   cspaceCopy_from_null_rejected
   cspaceMove_from_null_rejected
+  cspaceMutate_from_null_rejected
   nullCapability_distinct_from_invalidCapability
   -- kind-verified lookup helpers discriminate by variant
   getTcb_discriminates_variants

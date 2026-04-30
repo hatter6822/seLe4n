@@ -928,6 +928,106 @@ under `docs/` and `docs/gitbook/`.
 - [ ] `test_smoke.sh` passes (minimum); `test_full.sh` for theorem changes
 - [ ] Documentation synchronized
 - [ ] No website-linked paths renamed or removed (see `scripts/website_link_manifest.txt`)
+- [ ] No `claude.ai/code/session_*` URL in commit messages or PR
+      title/body/summary (see "Session URL hygiene" below)
+
+## Session URL hygiene in commits, PRs, and other repository artifacts
+
+When this codebase is edited from inside the Claude Agent SDK / Claude Code
+on the web, the runtime exposes a per-session URL of the form
+`https://claude.ai/code/session_<id>`. **This URL must never appear in any
+artifact that ships to the public repository or to GitHub.**
+
+### Forbidden locations
+
+The session URL must not appear in:
+
+1. **Pull request titles, descriptions, summaries, or any update to a PR
+   body.** PR bodies are surfaced to every reviewer and indexed by GitHub
+   search; a session URL here leaks an opaque internal identifier and
+   provides no useful navigation.
+2. **Commit messages**, including the subject line, body paragraphs, any
+   `Refs:` line, any footer, and any `Co-Authored-By` trailer. Commit
+   metadata is permanent in the git history; once pushed to a public ref
+   it is effectively unrewritable. A session URL there pollutes the
+   history forever.
+3. **In-tree documentation, `CHANGELOG.md` entries, source comments,
+   docstrings, or test fixtures.** None of these benefit from a session
+   URL — by the time a future contributor reads them, the session is
+   unreachable, and the URL just adds noise to the artifact.
+4. **GitHub issue bodies, issue comments, PR review bodies, PR review
+   comments, or any other rendered text** posted via the GitHub MCP tools
+   (`mcp__github__add_issue_comment`, `mcp__github__pull_request_review_write`,
+   `mcp__github__create_pull_request`, `mcp__github__update_pull_request`,
+   etc.).
+5. **Plan files or task descriptions** that get checked into the repo
+   (e.g. `docs/planning/*.md`, `docs/audits/*.md`).
+
+### Why this matters
+
+- **Session URLs are unstable.** They may rotate, expire, or change format
+  without notice. A "permanent" `Refs:` link to a session URL becomes a
+  dead-link on the next platform change.
+- **No human value.** A reviewer reading a PR cannot open the session,
+  cannot see what happened, and cannot derive any audit value from the
+  identifier — the URL is opaque to anyone outside the original session.
+- **Privacy / minimum disclosure.** The session URL is an internal handle
+  for the agent runtime. There is no business reason to publish it. Per
+  the "minimum disclosure" engineering norm, internal handles do not
+  belong in shared artifacts.
+- **Displaces useful cross-references.** A line that could carry a
+  meaningful `Refs:` (audit plan section, workstream history entry,
+  related PR or issue number) instead carries an unhelpful URL.
+
+### What to use instead
+
+Cite the canonical document or identifier the work traces to:
+
+```
+Refs: docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md §8 (Phase R4)
+Refs: docs/WORKSTREAM_HISTORY.md WS-RC R3 closeout
+Refs: #761                            # related GitHub PR or issue
+Refs: 7da2572                         # related commit SHA
+```
+
+A commit message or PR body should typically include exactly one such
+`Refs:` line pointing at the most-specific canonical document for the
+change. Multiple `Refs:` lines are acceptable when the change touches
+several closure cites (e.g. an audit-plan section AND a discharge-index
+row).
+
+### Remediation when a session URL has already been published
+
+- **Local commit not yet pushed**: amend the commit message
+  (`git commit --amend`) to remove the URL, then push.
+- **Pushed commit on a feature branch the agent owns**: do **not**
+  force-push to rewrite the history of a public ref. The commit message
+  is treated as immutable on the public branch; instead, ensure every
+  subsequent commit on that branch complies, and document the lesson in
+  a follow-up commit if the branch is large.
+- **Pushed commit on `main` or any shared ref**: same as above — never
+  force-push a shared ref to scrub a session URL. Treat it as a
+  one-time leak and ensure the rule is followed going forward.
+- **PR title or body**: edit the PR via the GitHub UI or
+  `mcp__github__update_pull_request` to remove the URL. PR bodies are
+  freely editable; this is the standard recovery path.
+- **Issue / review comment**: edit the comment to remove the URL (issues
+  and comments are also freely editable on GitHub).
+
+### Scope of the rule
+
+This rule applies regardless of who or what added the URL:
+
+- The agent itself (e.g. as part of a generated commit message
+  scaffolding, a PR-creation template, or an autocomplete suggestion).
+- A repository hook, GitHub Action, or local automation script.
+- A user copy-paste from another window.
+- A plan or task description checked into the repo and later quoted.
+
+If a default template or scaffolding (e.g. the `gh pr create` heredoc
+example in any in-repo guide) ever appears to instruct including a
+`claude.ai/code/session_*` URL, treat the example as obsolete and update
+that guide to the canonical `Refs:` form in the same PR.
 
 ## Vulnerability reporting
 
