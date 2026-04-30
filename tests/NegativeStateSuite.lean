@@ -2655,17 +2655,8 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
 -- WS-M4-A: Multi-level resolveCapAddress edge case tests (M-T01)
 -- ============================================================================
 
-/-- WS-M4-A (M-T01): Multi-level `resolveCapAddress` edge case tests.
-
-Scenarios exercised:
-- SCN-RESOLVE-GUARD-ONLY (M4-A1): Guard-only CNode (radixWidth=0)
-- SCN-RESOLVE-MAX-DEPTH (M4-A2): 64-bit resolution across 8 CNodes
-- SCN-RESOLVE-GUARD-MISMATCH-MID (M4-A3): Guard mismatch at intermediate level
-- SCN-RESOLVE-PARTIAL-BITS (M4-A4): Insufficient bits for CNode consumption
-- SCN-RESOLVE-SINGLE-LEVEL (M4-A5): Single-level leaf resolution -/
-def runWSM4ResolveEdgeCaseChecks : IO Unit := do
-  IO.println "\n=== WS-M4-A: resolveCapAddress edge case tests ==="
-
+/-- M4-A1: guard-only CNode (radixWidth=0). -/
+private def runWSM4GuardOnlyChecks : IO Unit := do
   -- M4-A1: Guard-only CNode (radixWidth=0, guardWidth=4, guardValue=0xA)
   -- With radixWidth=0, slot index = addr % 2^0 = addr % 1 = 0 always.
   let guardOnlyRoot : SeLe4n.ObjId := ⟨6000⟩
@@ -2705,6 +2696,10 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .ok _ =>
       throw <| IO.userError "expected error for wrong guard, got success"
 
+
+/-- M4-A4 + M4-A5: single-level leaf, partial bits, zero bits.  Folded because
+    A4 and A5 share the leafRoot/leafTarget/stLeaf setup. -/
+private def runWSM4SmallBitsChecks : IO Unit := do
   -- M4-A5: Single-level leaf resolution (guardWidth=0, radixWidth=4)
   -- addr=5 → slot 5, consumed = 4 bits, bitsRemaining - consumed = 0 → leaf
   let leafRoot : SeLe4n.ObjId := ⟨6010⟩
@@ -2766,6 +2761,9 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .ok _ =>
       throw <| IO.userError "zero: expected error for zero bits, got success"
 
+
+/-- M4-A3: guard mismatch at intermediate level. -/
+private def runWSM4GuardMismatchChecks : IO Unit := do
   -- M4-A3: Guard mismatch at intermediate level
   -- 3-level chain: level0 (guard=3, gw=2, rw=2, 4 bits) →
   --               level1 (guard=1, gw=2, rw=2, 4 bits) →
@@ -2842,6 +2840,11 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .ok _ =>
       throw <| IO.userError "expected error for wrong mid guard, got success"
 
+
+/-- M4-A2: maximum depth (8 CNodes × 8 bits each = 64-bit address chain).
+    Isolated because the inner `for i in List.range 7 do` loop builder
+    generates per-iteration nesting that compounds heavily in C codegen. -/
+private def runWSM4MaxDepthLoopChecks : IO Unit := do
   -- M4-A2: Maximum depth (64 bits) — 8 CNodes each consuming 8 bits
   -- Build chain of 8 CNodes (radixWidth=8, guardWidth=0 each)
   -- addr encodes slot index for each level in 8-bit chunks
@@ -2904,6 +2907,9 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .ok _ =>
       throw <| IO.userError "overflow: expected error for 65 bits, got success"
 
+
+/-- M4-A6 + M4-A7: empty intermediate slot + non-CNode at intermediate level. -/
+private def runWSM4SlotEdgeChecks : IO Unit := do
   -- M4-A6: Empty slot at intermediate (non-leaf) level.
   -- resolveCapAddress only checks slot occupancy during recursion (bitsRemaining >
   -- consumed). At leaf level (bitsRemaining = consumed) it returns the slot ref
@@ -2976,6 +2982,28 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .ok _ =>
       throw <| IO.userError "expected error for non-CNode mid target, got success"
 
+
+/-- M4-A8: cspaceLookupMultiLevel wrapper integration.  Rebuilds leafRoot/
+    leafTarget/stLeaf locally (was reused from M4-A5; rebuild keeps the
+    helper self-contained without parameter threading). -/
+private def runWSM4WrapperIntegrationChecks : IO Unit := do
+  -- M4-A8 rebuild: leafRoot/leafTarget/stLeaf (originally shared with M4-A5).
+  let leafRoot : SeLe4n.ObjId := ⟨6010⟩
+  let leafTarget : SeLe4n.ObjId := ⟨6011⟩
+  let stLeaf :=
+    (BootstrapBuilder.empty
+      |>.withObject leafRoot (.cnode {
+          depth := 4
+          guardWidth := 0
+          guardValue := 0
+          radixWidth := 4
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+            (SeLe4n.Slot.ofNat 5, { target := .object leafTarget, rights := AccessRightSet.ofList [.read, .write], badge := none })
+          ]
+        })
+      |>.withObject leafTarget (.endpoint {})
+      |>.buildChecked)
+
   -- M4-A8: cspaceLookupMultiLevel wrapper integration — verify full pipeline
   -- Reuse the single-level leaf state (stLeaf): leafRoot slot 5 → leafTarget endpoint
   let resultWrapper := SeLe4n.Kernel.cspaceLookupMultiLevel leafRoot (SeLe4n.CPtr.ofNat 5) 4 stLeaf
@@ -2998,7 +3026,25 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .ok _ =>
       throw <| IO.userError "neg: expected error for empty slot wrapper, got success"
 
+
+/-- WS-M4-A (M-T01): Multi-level `resolveCapAddress` edge case tests.
+
+Scenarios exercised:
+- SCN-RESOLVE-GUARD-ONLY (M4-A1): Guard-only CNode (radixWidth=0)
+- SCN-RESOLVE-MAX-DEPTH (M4-A2): 64-bit resolution across 8 CNodes
+- SCN-RESOLVE-GUARD-MISMATCH-MID (M4-A3): Guard mismatch at intermediate level
+- SCN-RESOLVE-PARTIAL-BITS (M4-A4): Insufficient bits for CNode consumption
+- SCN-RESOLVE-SINGLE-LEVEL (M4-A5): Single-level leaf resolution -/
+def runWSM4ResolveEdgeCaseChecks : IO Unit := do
+  IO.println "\n=== WS-M4-A: resolveCapAddress edge case tests ==="
+  runWSM4GuardOnlyChecks                -- [was 2669-2707: M4-A1]
+  runWSM4SmallBitsChecks                -- [was 2708-2768: M4-A5/A4/A4-zero, folded]
+  runWSM4GuardMismatchChecks            -- [was 2769-2844: M4-A3]
+  runWSM4MaxDepthLoopChecks             -- [was 2845-2906: M4-A2 max-depth for-loop, isolated]
+  runWSM4SlotEdgeChecks                 -- [was 2907-2978: M4-A6/A7, folded]
+  runWSM4WrapperIntegrationChecks       -- [was 2979-3000: M4-A8 wrapper]
   IO.println "all WS-M4-A resolveCapAddress edge case tests passed"
+
 
 -- ============================================================================
 -- WS-R2: Revocation error propagation & fuel exhaustion tests
