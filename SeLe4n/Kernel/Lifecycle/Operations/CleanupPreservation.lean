@@ -227,9 +227,13 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
   | _ => .ok st
 
 /-- AN4-G.2 (LIF-M02) — **named `lifecycleCleanupPipeline` wrapper** over
-`lifecyclePreRetypeCleanup`. Takes a `RetypeTarget` (AN4-F.4 subtype) so
-the caller must already carry the `cleanupHookDischarged` witness OR
-establish it after a successful run. The wrapper composes the four
+`lifecyclePreRetypeCleanup`. The companion `RetypeTarget` subtype
+(AN4-F.4, defined in `Capability/Invariant/Defs.lean`) requires callers
+to carry the `cleanupHookDischarged` witness; under WS-RC R4.B that
+witness now demands a `ScrubToken` produced by a successful invocation
+of this very pipeline (see `ScrubToken.fromCleanup`). External
+discharge of the predicate by re-deriving observable post-state facts
+alone is structurally impossible. The wrapper composes the four
 per-step primitives:
 
 1. `cleanupDonatedSchedContext` (return donated SC before destroying TCB)

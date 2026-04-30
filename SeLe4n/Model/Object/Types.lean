@@ -880,7 +880,23 @@ structure Notification where
       recently blocked waiter). This LIFO order is deliberate: seL4 does not
       guarantee FIFO for notification waiters, and prepend gives O(1) enqueue.
       Thread removal during lifecycle cleanup uses `List.filter` (O(n), acceptable
-      for ≤8 waiters per notification). -/
+      for ≤8 waiters per notification).
+
+      **WS-RC R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01)**: list-level no-duplicate
+      preservation is enforced state-globally via the
+      `SeLe4n.Kernel.uniqueWaiters` invariant defined in
+      `IPC/Invariant/Defs.lean`, with per-operation preservation theorems
+      (`notificationWait_preserves_uniqueWaiters`,
+      `notificationSignal_preserves_uniqueWaiters`, etc.) discharged for every
+      kernel transition. The runtime guard at
+      `IPC/Operations/Endpoint.lean:723` (TCB `ipcState`-based duplicate
+      check) is bridged to list non-membership through the
+      `notificationWaiterConsistent` cross-subsystem invariant, so the
+      Nodup property holds structurally for every notification reachable
+      from boot. The structural-witness theorem
+      `notification_waitingThreads_nodup_witness` (in
+      `IPC/Invariant/QueueNoDup.lean`) codifies this closure at the proof
+      surface, per the WS-RC §1.5 structural-fix policy. -/
   waitingThreads : List SeLe4n.ThreadId
   pendingBadge : Option SeLe4n.Badge := none
   deriving Repr, DecidableEq

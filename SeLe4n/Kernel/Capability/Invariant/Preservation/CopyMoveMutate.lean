@@ -350,5 +350,86 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
   exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique',
     hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩
 
+-- ============================================================================
+-- WS-RC R4.D: `cspaceMutate` null-capability rejection — structural witnesses
+-- ============================================================================
+
+/-- WS-RC R4.D: every successful `cspaceMutate` outcome witnesses that the
+    target slot held a non-null capability at the pre-state.
+
+    The runtime guard at `Capability/Operations.lean:1093` rejects mutation of
+    a slot that contains the `Capability.null` sentinel; this theorem codifies
+    that guard at the proof system so a refactor that accidentally drops the
+    `if cap.isNull then .error .nullCapability` branch is rejected by the
+    Lean elaborator (the theorem fails to elaborate without that branch).
+
+    Discharge recipe for callers reasoning about a successful mutation:
+    obtain `hOk : cspaceMutate addr rights badge st = .ok ((), st')`, apply
+    this theorem to recover the witness `cap` together with proofs that
+    `cspaceLookupSlot addr st = .ok (cap, st)` and `cap.isNull = false`.
+
+    Companion: `cspaceMutate_null_cap_rejected` proves the converse — every
+    null-cap input produces the explicit `.nullCapability` error. -/
+theorem cspaceMutate_rejects_null_cap
+    (addr : CSpaceAddr) (rights : AccessRightSet)
+    (badge : Option SeLe4n.Badge) (st : SystemState) :
+    ∀ st', cspaceMutate addr rights badge st = .ok ((), st') →
+      ∃ cap, cspaceLookupSlot addr st = .ok (cap, st) ∧ cap.isNull = false := by
+  intro st' hOk
+  -- Extract a witness `cap` and the lookup equation via the `lookupSlotCap`
+  -- bridge: `cspaceLookupSlot` succeeds iff `lookupSlotCap` returns `some _`,
+  -- and the bridge avoids the `cases`-driven goal rewrite that would turn the
+  -- target equation into a tautology.
+  have hExists : ∃ cap, SystemState.lookupSlotCap st addr = some cap := by
+    unfold cspaceMutate at hOk
+    cases hL : cspaceLookupSlot addr st with
+    | error e => rw [hL] at hOk; simp at hOk
+    | ok pair =>
+        rcases pair with ⟨cap, st1⟩
+        have : SystemState.lookupSlotCap st addr = some cap := by
+          unfold cspaceLookupSlot at hL
+          cases hLook : SystemState.lookupSlotCap st addr with
+          | none =>
+              cases hCN : st.getCNode? addr.cnode with
+              | none => simp [hLook, hCN] at hL
+              | some _ => simp [hLook, hCN] at hL
+          | some cap' =>
+              simp [hLook] at hL; rcases hL with ⟨hCap, _⟩; subst hCap; rfl
+        exact ⟨cap, this⟩
+  obtain ⟨cap, hLook⟩ := hExists
+  have hLkp : cspaceLookupSlot addr st = .ok (cap, st) :=
+    (cspaceLookupSlot_ok_iff_lookupSlotCap st addr cap).2 hLook
+  refine ⟨cap, hLkp, ?_⟩
+  -- Now derive non-nullness from `hOk` using `hLkp`.
+  unfold cspaceMutate at hOk
+  rw [hLkp] at hOk
+  simp only at hOk
+  by_cases hNull : cap.isNull
+  · simp [hNull] at hOk
+  · exact Bool.not_eq_true _ |>.mp hNull
+
+/-- WS-RC R4.D: complement to `cspaceMutate_rejects_null_cap`.
+
+    Whenever the lookup at the pre-state returns a null capability, the
+    mutation totalises to the `.nullCapability` error code — independent of
+    the requested rights or badge. This proves the rejection is total: every
+    null-cap input produces the explicit error code rather than a generic
+    `.invalidCapability` (which would mask the guard's intent) or silent
+    success (which would corrupt the slot).
+
+    Together with `cspaceMutate_rejects_null_cap`, the runtime check at
+    `Capability/Operations.lean:1093` is now witnessed by the proof surface;
+    a future audit's `grep` for the validation can be re-derived from these
+    theorem names without re-reading the function body. -/
+theorem cspaceMutate_null_cap_rejected
+    (addr : CSpaceAddr) (rights : AccessRightSet)
+    (badge : Option SeLe4n.Badge) (st : SystemState)
+    (hCap : ∃ cap, cspaceLookupSlot addr st = .ok (cap, st) ∧ cap.isNull = true) :
+    cspaceMutate addr rights badge st = .error .nullCapability := by
+  obtain ⟨cap, hLkp, hNull⟩ := hCap
+  unfold cspaceMutate
+  rw [hLkp]
+  simp [hNull]
+
 
 end SeLe4n.Kernel

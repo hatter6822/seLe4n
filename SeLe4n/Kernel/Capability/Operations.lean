@@ -1077,7 +1077,17 @@ semantics: the badge is part of the capability *value* (like rights), not the
 derivation *relationship*. The CDT tracks parent→child lineage for revocation;
 badge changes don't affect which capabilities should be revoked when an ancestor
 is deleted. The `cspaceMintWithCdt` operation (below) *does* track derivation
-edges because minting creates a new capability slot, not an in-place mutation. -/
+edges because minting creates a new capability slot, not an in-place mutation.
+
+**WS-RC R4.D — null-cap rejection is structurally witnessed**: the runtime
+guard at the line-1093 `if cap.isNull then .error .nullCapability` arm is
+proven by two companion theorems in
+`Capability/Invariant/Preservation/CopyMoveMutate.lean`:
+`cspaceMutate_rejects_null_cap` (every successful mutation witnesses a
+non-null pre-state capability) and `cspaceMutate_null_cap_rejected` (every
+null-cap input totalises to `.nullCapability`). A future refactor that drops
+the guard fails the Lean elaboration of these theorems, so the runtime check
+cannot be silently weakened. -/
 def cspaceMutate (addr : CSpaceAddr) (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge) : Kernel Unit :=
   fun st =>
