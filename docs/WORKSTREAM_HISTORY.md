@@ -329,12 +329,16 @@ gates.
   `Platform/Contract.lean` so platform bindings can expose it
   from the typeclass.
 - **R3.4 — RPi5 platform binding.**  Defined
-  `rpi5BootVSpaceRootObjId := ObjId.ofNat 0` (kernel-reserved low
-  ObjId) and `rpi5BootVSpaceRootEntry` in
+  `rpi5BootVSpaceRootObjId` and `rpi5BootVSpaceRootEntry` in
   `Platform/RPi5/Contract.lean`, then wired
   `bootVSpaceRoot := some rpi5BootVSpaceRootEntry` into the
   `rpi5PlatformBinding` instance so the RPi5 production binding
-  exposes the canonical boot VSpace from the typeclass.
+  exposes the canonical boot VSpace from the typeclass.  The
+  initial commit used `ObjId.ofNat 0` for the reserved ObjId; the
+  R3 audit-pass (Issue #3) corrected this to `ObjId.ofNat 1`
+  because `ObjId.ofNat 0 = ObjId.sentinel` is reserved as the
+  "unallocated" sentinel per Prelude.lean H-06/WS-E3.  See the
+  R3 post-landing audit pass section below for full details.
 - **R3.5 — Sim platform parity.**  Defined the simulation's
   minimal `simBootVSpaceRoot` (a single read-only identity
   mapping at ASID 0, paddr `0x1000`) plus the corresponding
