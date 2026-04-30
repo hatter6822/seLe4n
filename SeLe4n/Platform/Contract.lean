@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Architecture.Assumptions
+import SeLe4n.Model.Object.Structures
 
 /-!
 # Platform Binding Contract (H3 preparation)
@@ -49,6 +50,26 @@ and test harnesses instantiate a concrete platform.
 namespace SeLe4n.Platform
 
 open SeLe4n.Kernel.Architecture
+open SeLe4n.Model
+
+/-- **WS-RC R3 (DEEP-BOOT-01)**: Boot VSpaceRoot entry threaded through
+    `PlatformConfig.bootVSpaceRoot` and `PlatformBinding.bootVSpaceRoot`.
+
+    Carries the ObjId at which the boot VSpace will be installed, the
+    VSpaceRoot itself, and the `mappings.invExt` proof obligation that
+    `installBootVSpaceRoot` (defined in `Platform.Boot`) consumes when
+    threading the root through the builder.
+
+    Distinct from `Platform.Boot.ObjectEntry` because the boot VSpaceRoot
+    has special `asidTable` registration semantics — handled by
+    `installBootVSpaceRoot` rather than the standard `createObject`
+    builder.  Lifted to `Platform.Contract` so platform bindings can
+    expose the optional boot root via the typeclass without pulling in
+    the heavy `Platform.Boot` dependency. -/
+structure BootVSpaceRootEntry where
+  id : SeLe4n.ObjId
+  root : VSpaceRoot
+  hMappings : root.mappings.invExt
 
 /-- A complete platform binding bundles all architecture-boundary contracts
     together with the platform's machine configuration.
@@ -67,6 +88,24 @@ class PlatformBinding (platform : Type) where
   bootContract : BootBoundaryContract
   /-- Interrupt routing contract governing IRQ line support and handler mapping. -/
   interruptContract : InterruptBoundaryContract
+  /-- **WS-RC R3 (DEEP-BOOT-01)**: Optional canonical boot VSpaceRoot.
+      Platforms with a hardware-specific identity-mapped boot VSpace
+      (RPi5: `rpi5BootVSpaceRoot`) populate this with an entry.  The
+      simulation platform also populates it with `simBootVSpaceRoot`
+      (a minimal single-mapping root) for parity with the RPi5
+      hardware path, so the trace harness exercises the same
+      `installBootVSpaceRoot` code path.
+
+      When set, `Platform.Boot.bootFromPlatformChecked` threads the
+      entry through `installBootVSpaceRoot` after the standard
+      `initialObjects` fold, registering the VSpace's ASID in
+      `asidTable` so subsequent VSpace operations can resolve it.
+
+      The default `none` is kept on the typeclass field for
+      compatibility with future bare-metal platforms that boot in
+      EL3/SECURE mode without an MMU; current production bindings
+      (RPi5, sim) all override the default. -/
+  bootVSpaceRoot : Option BootVSpaceRootEntry := none
 
 /-- Extract the runtime contract from a platform binding instance. -/
 @[inline] def PlatformBinding.runtime [PlatformBinding platform] : RuntimeBoundaryContract :=
@@ -83,5 +122,11 @@ class PlatformBinding (platform : Type) where
 /-- Extract the machine configuration from a platform binding instance. -/
 @[inline] def PlatformBinding.config [PlatformBinding platform] : SeLe4n.MachineConfig :=
   PlatformBinding.machineConfig (platform := platform)
+
+/-- **WS-RC R3 (DEEP-BOOT-01)**: Extract the optional boot VSpaceRoot
+    entry from a platform binding instance. -/
+@[inline] def PlatformBinding.bootVSpace [PlatformBinding platform] :
+    Option BootVSpaceRootEntry :=
+  PlatformBinding.bootVSpaceRoot (platform := platform)
 
 end SeLe4n.Platform

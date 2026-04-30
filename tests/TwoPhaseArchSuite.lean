@@ -11,6 +11,14 @@ import SeLe4n
 import SeLe4n.Model.FrozenState
 import SeLe4n.Model.Builder
 import SeLe4n.Kernel.FrozenOps
+-- WS-RC R3 (DEEP-BOOT-01): regression coverage for the boot VSpaceRoot
+-- threading exercises `bootFromPlatformChecked`, the canonical RPi5
+-- boot VSpace, and the `installBootVSpaceRoot` post-state.
+import SeLe4n.Platform.Boot
+import SeLe4n.Platform.RPi5.Contract
+import SeLe4n.Platform.RPi5.VSpaceBoot
+import SeLe4n.Platform.Sim.Contract
+import SeLe4n.Kernel.Architecture.VSpaceInvariant
 
 /-!
 # Q9-A: Two-Phase Architecture Integration Test Suite
@@ -29,6 +37,7 @@ pipeline. Each test maps to a TPH-* scenario from the WS-Q master plan.
 | 010 | Commutativity: builder→freeze=freeze→op  | tph010_*           |
 | 012 | Pre-allocated slot retype in frozen      | tph012_*           |
 | 014 | RunQueue operations in frozen state      | tph014_*           |
+| 015 | WS-RC R3 boot VSpaceRoot threading       | tph015_*           |
 
 Tests for TPH-002,004,007,008,009,011,013 are already covered in
 FrozenStateSuite, FreezeProofSuite, and FrozenOpsSuite.
@@ -39,6 +48,9 @@ open SeLe4n.Kernel.RadixTree
 open SeLe4n.Kernel.FrozenOps
 open SeLe4n.Model
 open SeLe4n.Model.Builder
+open SeLe4n.Platform
+open SeLe4n.Platform.Boot
+open SeLe4n.Kernel.Architecture
 
 namespace SeLe4n.Testing.TwoPhaseArchSuite
 
@@ -477,6 +489,268 @@ private def tph014c_scheduleNoEligible : IO Unit := do
       expect "no thread selected" (fst'.scheduler.current == none)
   | .error e => throw <| IO.userError s!"should succeed: {toString e}"
 
+-- ============================================================================
+-- TPH-015 (WS-RC R3 / DEEP-BOOT-01): Boot VSpaceRoot threading
+-- ============================================================================
+
+/-- WS-RC R3 baseline: build a minimal `PlatformConfig` carrying the
+    canonical RPi5 boot VSpaceRoot.  Empty `irqTable` and
+    `initialObjects` keep the test scope narrow — we are exclusively
+    exercising the new `installBootVSpaceRoot` step. -/
+private def tph015BootConfig : PlatformConfig :=
+  { irqTable := []
+    initialObjects := []
+    machineConfig := SeLe4n.defaultMachineConfig
+    bootVSpaceRoot := some SeLe4n.Platform.RPi5.rpi5BootVSpaceRootEntry }
+
+/-- TPH-015a: `bootFromPlatformChecked` succeeds on a config carrying
+    the canonical RPi5 boot VSpaceRoot.  The empty-irq, empty-objects
+    config trivially passes all gates; the new R3 gates
+    (`bootVSpaceRootObjIdDistinct`, `bootVSpaceRootSafe`) succeed
+    because the canonical root passes the boot-safety predicate and
+    its ObjId does not collide with any (empty) initialObjects entry. -/
+private def tph015a_bootSucceeds : IO Unit := do
+  match bootFromPlatformChecked tph015BootConfig with
+  | .ok _ => expect "boot succeeds with rpi5BootVSpaceRoot" true
+  | .error e =>
+      throw <| IO.userError s!"tph015a: bootFromPlatformChecked failed: {e}"
+
+/-- TPH-015b: After a successful checked boot, the post-state object
+    store contains a VSpaceRoot at the reserved boot ObjId.  This is
+    the headline assertion of plan §7.3 R3.7: "post-boot the kernel
+    state contains a VSpaceRoot ObjId entry". -/
+private def tph015b_postBootHasVSpaceRoot : IO Unit := do
+  match bootFromPlatformChecked tph015BootConfig with
+  | .ok ist =>
+      let oid := SeLe4n.Platform.RPi5.rpi5BootVSpaceRootObjId
+      match ist.state.objects[oid]? with
+      | some (KernelObject.vspaceRoot vsr) =>
+          expect "post-boot objects has rpi5BootVSpaceRoot at reserved ObjId"
+            (vsr.asid == SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot.asid)
+      | some other =>
+          throw <| IO.userError s!"tph015b: object at {repr oid} is not a VSpaceRoot: {repr other}"
+      | none =>
+          throw <| IO.userError "tph015b: no object at reserved boot VSpace ObjId"
+  | .error e =>
+      throw <| IO.userError s!"tph015b: bootFromPlatformChecked failed: {e}"
+
+/-- TPH-015c: After a successful checked boot, the `wxExclusiveInvariant`
+    holds for the post-state.  This validates that the boot VSpaceRoot's
+    proven W^X compliance carries through to the runtime invariant
+    surface — the headline correctness claim of WS-RC R3. -/
+private def tph015c_postBootWxInvariantHolds : IO Unit := do
+  match bootFromPlatformChecked tph015BootConfig with
+  | .ok ist =>
+      -- We cannot evaluate the invariant directly (it's a Prop), but
+      -- we can witness its discharge by inspecting the boot VSpace
+      -- root's mappings and checking each is wxCompliant — exactly
+      -- what `wxExclusiveInvariant` quantifies over.
+      let oid := SeLe4n.Platform.RPi5.rpi5BootVSpaceRootObjId
+      match ist.state.objects[oid]? with
+      | some (KernelObject.vspaceRoot vsr) =>
+          let allWxCompliant : Bool :=
+            vsr.mappings.fold true (fun acc _ entry => acc && entry.2.wxCompliant)
+          expect "post-boot rpi5BootVSpaceRoot satisfies wxExclusiveInvariant"
+            allWxCompliant
+      | _ =>
+          throw <| IO.userError "tph015c: no boot VSpaceRoot found"
+  | .error e =>
+      throw <| IO.userError s!"tph015c: bootFromPlatformChecked failed: {e}"
+
+/-- TPH-015d: After a successful checked boot, the asidTable maps the
+    boot VSpaceRoot's ASID to the reserved ObjId.  This validates that
+    `installBootVSpaceRoot` correctly registers the ASID for downstream
+    `resolveAsidRoot`-based VSpace operations. -/
+private def tph015d_asidTableHasBootRoot : IO Unit := do
+  match bootFromPlatformChecked tph015BootConfig with
+  | .ok ist =>
+      let asid := SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot.asid
+      let oid := SeLe4n.Platform.RPi5.rpi5BootVSpaceRootObjId
+      match ist.state.asidTable[asid]? with
+      | some recordedOid =>
+          expect "post-boot asidTable maps boot VSpace ASID to reserved ObjId"
+            (recordedOid == oid)
+      | none =>
+          throw <| IO.userError "tph015d: asidTable does not register boot VSpace ASID"
+  | .error e =>
+      throw <| IO.userError s!"tph015d: bootFromPlatformChecked failed: {e}"
+
+/-- TPH-015e: `bootVSpaceRoot = none` configs preserve the pre-R3
+    behaviour: `bootFromPlatformChecked` matches `bootEnableInterruptsOp
+    (bootFromPlatform _)` with no boot VSpaceRoot installed.  This is
+    the equality-theorem regression for `bootFromPlatformChecked_eq_bootFromPlatform`. -/
+private def tph015e_noBootVSpaceCompat : IO Unit := do
+  let cfg : PlatformConfig :=
+    { irqTable := [], initialObjects := [], machineConfig := SeLe4n.defaultMachineConfig
+      bootVSpaceRoot := none }
+  match bootFromPlatformChecked cfg with
+  | .ok ist =>
+      -- No VSpaceRoot in the post-boot state — verify by checking
+      -- the reserved boot ObjId AND the entire object store size.
+      let oid := SeLe4n.Platform.RPi5.rpi5BootVSpaceRootObjId
+      let absent : Bool := match ist.state.objects[oid]? with
+        | some (KernelObject.vspaceRoot _) => false
+        | _ => true
+      expect "bootVSpaceRoot = none yields no VSpace at reserved ObjId" absent
+      -- Stronger: object store should be empty since initialObjects is empty.
+      expect "bootVSpaceRoot = none yields empty object store"
+        (ist.state.objects.size == 0)
+  | .error e =>
+      throw <| IO.userError s!"tph015e: bootFromPlatformChecked (no boot VSpace) failed: {e}"
+
+/-- TPH-015f: ObjId collision rejection.  A config that places a
+    boot VSpaceRoot at the same ObjId as an `initialObjects` entry
+    must be rejected by the new `bootVSpaceRootObjIdDistinct` gate. -/
+private def tph015f_objIdCollisionRejected : IO Unit := do
+  -- Construct an initial object (a TCB) at the same ObjId as the
+  -- canonical RPi5 boot VSpace (`rpi5BootVSpaceRootObjId`).  Per
+  -- audit plan §7.3 R3.3, this collision must surface as a config
+  -- error.  WS-RC R3 audit fix: tracked ObjIds are now ObjId 1 (not
+  -- the reserved sentinel ObjId 0), so the test exercises a real
+  -- non-sentinel collision.
+  let tcb : KernelObject := KernelObject.tcb
+    { tid := ⟨1⟩, priority := ⟨0⟩, domain := ⟨0⟩,
+      cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+      ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
+  let entry : ObjectEntry := {
+    id := SeLe4n.Platform.RPi5.rpi5BootVSpaceRootObjId
+    obj := tcb
+    hSlots := fun _ h => nomatch h
+    hMappings := fun _ h => nomatch h }
+  let cfg : PlatformConfig :=
+    { irqTable := [], initialObjects := [entry],
+      machineConfig := SeLe4n.defaultMachineConfig
+      bootVSpaceRoot := some SeLe4n.Platform.RPi5.rpi5BootVSpaceRootEntry }
+  match bootFromPlatformChecked cfg with
+  | .ok _ =>
+      throw <| IO.userError "tph015f: ObjId collision should be rejected, but boot succeeded"
+  | .error _ =>
+      expect "ObjId collision between initialObjects and bootVSpaceRoot rejected" true
+
+/-- TPH-015i (audit fix for Issue #2): VSpaceRoot in `initialObjects`
+    rejected.  The `noVSpaceRootsInInitialObjects` gate forbids
+    putting any VSpaceRoot kernel object in the `initialObjects` list
+    because `Builder.createObject` does NOT update `asidTable` —
+    the dedicated `bootVSpaceRoot` field + `installBootVSpaceRoot` is
+    the ONLY path that maintains asidTable/objects consistency. -/
+private def tph015i_vspaceRootInInitialObjectsRejected : IO Unit := do
+  -- Place the canonical RPi5 boot VSpace in `initialObjects` (instead
+  -- of in the dedicated `bootVSpaceRoot` field).  The new gate must
+  -- reject this misconfiguration.
+  let entry : ObjectEntry := {
+    id := SeLe4n.ObjId.ofNat 7  -- arbitrary non-sentinel ObjId
+    obj := KernelObject.vspaceRoot SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot
+    hSlots := fun _ h => nomatch h
+    hMappings := fun _ h => by
+      cases h
+      exact SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot_mappings_invExt }
+  let cfg : PlatformConfig :=
+    { irqTable := [], initialObjects := [entry],
+      machineConfig := SeLe4n.defaultMachineConfig
+      bootVSpaceRoot := none }
+  match bootFromPlatformChecked cfg with
+  | .ok _ =>
+      throw <| IO.userError "tph015i: VSpaceRoot in initialObjects should be rejected, but boot succeeded"
+  | .error _ =>
+      expect "VSpaceRoot in initialObjects rejected (audit fix Issue #2)" true
+
+/-- TPH-015j (audit fix for Issue #3): Sentinel ObjId for boot
+    VSpaceRoot rejected.  The `bootVSpaceRootObjIdNonSentinel` gate
+    forbids using `ObjId.sentinel` (= ObjId 0) for the boot VSpace
+    since the sentinel is reserved as "unallocated" per H-06/WS-E3. -/
+private def tph015j_sentinelBootVSpaceObjIdRejected : IO Unit := do
+  -- Construct a boot VSpaceRoot entry at the reserved sentinel ObjId.
+  let entry : SeLe4n.Platform.BootVSpaceRootEntry := {
+    id := SeLe4n.ObjId.sentinel
+    root := SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot
+    hMappings := SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot_mappings_invExt }
+  let cfg : PlatformConfig :=
+    { irqTable := [], initialObjects := [],
+      machineConfig := SeLe4n.defaultMachineConfig
+      bootVSpaceRoot := some entry }
+  match bootFromPlatformChecked cfg with
+  | .ok _ =>
+      throw <| IO.userError "tph015j: sentinel boot VSpace ObjId should be rejected, but boot succeeded"
+  | .error _ =>
+      expect "sentinel boot VSpace ObjId rejected (audit fix Issue #3)" true
+
+/-- TPH-015k (audit fix): Boot-safety gate rejects malformed boot
+    VSpaceRoot.  An empty-mappings root fails `bootSafeVSpaceRootCheck`
+    because the non-empty conjunct is required (an empty L1 table
+    cannot serve the kernel's first instruction fetch). -/
+private def tph015k_unsafeBootVSpaceRejected : IO Unit := do
+  -- Build a malformed root with empty mappings (size = 0).
+  let unsafeRoot : VSpaceRoot :=
+    { asid := SeLe4n.ASID.ofNat 0
+      mappings := (SeLe4n.Kernel.RobinHood.RHTable.empty 16) }
+  let entry : SeLe4n.Platform.BootVSpaceRootEntry := {
+    id := SeLe4n.ObjId.ofNat 1
+    root := unsafeRoot
+    hMappings := SeLe4n.Kernel.RobinHood.RHTable.empty_invExt 16 (by omega) }
+  let cfg : PlatformConfig :=
+    { irqTable := [], initialObjects := [],
+      machineConfig := SeLe4n.defaultMachineConfig
+      bootVSpaceRoot := some entry }
+  match bootFromPlatformChecked cfg with
+  | .ok _ =>
+      throw <| IO.userError "tph015k: unsafe boot VSpace (empty mappings) should be rejected, but boot succeeded"
+  | .error _ =>
+      expect "unsafe boot VSpace rejected by bootVSpaceRootSafe gate" true
+
+/-- TPH-015l (third-audit fix for canonical-VAddr gap): Boot-safety
+    gate rejects boot VSpaceRoots whose mappings contain a
+    non-canonical virtual address (vaddr ≥ 2^48).  Defense-in-depth:
+    on ARMv8-A hardware, vaddrs in `[2^48, 2^64 - 2^48)` translation-
+    fault before the kernel can intercept them, so a config that
+    leaks a non-canonical vaddr through the boot VSpace would crash
+    the kernel before it could surface a runtime error. -/
+private def tph015l_nonCanonicalVAddrRejected : IO Unit := do
+  -- Construct a root with a single mapping at a non-canonical vaddr
+  -- (2^48 is the first non-canonical address — it lies in the
+  -- ARMv8-A reserved gap).  paddr stays within 2^44 so paddrBounded
+  -- alone passes; the only failing conjunct is vaddrCanonical.
+  let safePerms : PagePermissions :=
+    { read := true, write := false, execute := false, user := false, cacheable := false }
+  let nonCanonicalRoot : VSpaceRoot :=
+    { asid := SeLe4n.ASID.ofNat 0
+      mappings := (SeLe4n.Kernel.RobinHood.RHTable.empty 16
+                    : SeLe4n.Kernel.RobinHood.RHTable VAddr (PAddr × PagePermissions)).insert
+        (VAddr.ofNat (2^48)) (PAddr.ofNat 0x1000, safePerms) }
+  let entry : SeLe4n.Platform.BootVSpaceRootEntry := {
+    id := SeLe4n.ObjId.ofNat 1
+    root := nonCanonicalRoot
+    hMappings :=
+      SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _
+        (SeLe4n.Kernel.RobinHood.RHTable.empty_invExt 16 (by omega)) }
+  let cfg : PlatformConfig :=
+    { irqTable := [], initialObjects := [],
+      machineConfig := SeLe4n.defaultMachineConfig
+      bootVSpaceRoot := some entry }
+  match bootFromPlatformChecked cfg with
+  | .ok _ =>
+      throw <| IO.userError "tph015l: non-canonical vaddr boot VSpace should be rejected, but boot succeeded"
+  | .error _ =>
+      expect "non-canonical vaddr boot VSpace rejected by vaddrCanonical conjunct" true
+
+/-- TPH-015g: Witness theorem connection.  The Bool-level admission
+    witness `bootSafeObjectCheck_admits_rpi5BootVSpaceRoot` evaluates
+    to `true` at runtime, providing executable evidence that the
+    proven-W^X-compliant boot VSpaceRoot is admitted by the boot
+    pipeline's runtime gate. -/
+private def tph015g_admissionWitness : IO Unit := do
+  expect "bootSafeObjectCheck admits rpi5BootVSpaceRoot at runtime"
+    (bootSafeObjectCheck (KernelObject.vspaceRoot
+      SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot))
+
+/-- TPH-015h: Sim-platform parity.  The simulation boot VSpaceRoot
+    (defined in `Platform.Sim.Contract`) also passes the runtime
+    boot-safety check, providing parity between the RPi5 hardware
+    binding and the simulation harness. -/
+private def tph015h_simBootVSpaceRoot : IO Unit := do
+  expect "bootSafeObjectCheck admits simBootVSpaceRoot"
+    (bootSafeObjectCheck (KernelObject.vspaceRoot
+      SeLe4n.Platform.Sim.simBootVSpaceRoot))
+
 end SeLe4n.Testing.TwoPhaseArchSuite
 
 -- ============================================================================
@@ -518,6 +792,20 @@ def main : IO Unit := do
   tph014b_frozenYield
   tph014c_scheduleNoEligible
 
+  IO.println "--- TPH-015: WS-RC R3 Boot VSpaceRoot Threading ---"
+  tph015a_bootSucceeds
+  tph015b_postBootHasVSpaceRoot
+  tph015c_postBootWxInvariantHolds
+  tph015d_asidTableHasBootRoot
+  tph015e_noBootVSpaceCompat
+  tph015f_objIdCollisionRejected
+  tph015g_admissionWitness
+  tph015h_simBootVSpaceRoot
+  tph015i_vspaceRootInInitialObjectsRejected
+  tph015j_sentinelBootVSpaceObjIdRejected
+  tph015k_unsafeBootVSpaceRejected
+  tph015l_nonCanonicalVAddrRejected
+
   IO.println "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  IO.println "  All 15 two-phase architecture tests passed!"
+  IO.println "  All 27 two-phase architecture tests passed!"
   IO.println "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

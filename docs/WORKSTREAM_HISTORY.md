@@ -274,12 +274,175 @@ comment is replaced by code that actually wires it.
   `tests/fixtures/main_trace_smoke.expected`; 0 sorry / 0 axiom in
   the modified files.
 
-### R3..R14 — TBD
+### R3 — Boot VSpaceRoot threading (DEEP-BOOT-01, v1.0.0, **COMPLETE**)
+
+R3 closes the second of WS-RC's v1.0.0 implementation slices: the
+proven-W^X-compliant `rpi5BootVSpaceRoot` data structure (defined
+in `Platform/RPi5/VSpaceBoot.lean`) is now threaded through
+`bootSafeObject` and `bootFromPlatformChecked` so the boot pipeline
+admits the canonical RPi5 boot VSpace at runtime.  Previously the
+`.vspaceRoot _ => false` arm of `bootSafeObjectCheck` rendered the
+verified structure inert; per the implement-the-improvement rule,
+the verified structure is the better state and the boot path now
+consumes it.
+
+Each sub-phase is a coherent slice that compiles, validates, and
+preserves the determinism, no-sorry / no-axiom, and trace-fidelity
+gates.
+
+- **R3.0a — `bootSafeVSpaceRootCheck` Bool helper.**  Added the
+  Bool-valued mirror of `bootSafeVSpaceRoot` plus the
+  `bootSafeVSpaceRootCheck_iff` equivalence theorem in
+  `Platform/RPi5/VSpaceBoot.lean`.  Also added
+  `rpi5BootVSpaceRoot_mappings_invExt` (the `RHTable.invExt`
+  discharge witness for the canonical boot root's 6-entry
+  page-mapping table — six iterated `RHTable.insert_preserves_invExt`
+  applications).
+- **R3.0b — `installBootVSpaceRoot` builder operation.**  Added a
+  new builder operation in `Platform/Boot.lean` that composes
+  `Builder.createObject` (object-store insertion + lifecycle
+  metadata bookkeeping) with an `asidTable` insertion so the boot
+  VSpace is resolvable by ASID.  Discharges all four
+  `IntermediateState` invariant witnesses.
+- **R3.1 — `bootSafeObject*` admission rewrite.**  Rewrote the
+  `.vspaceRoot` arm of `bootSafeObjectCheck` (Bool) and
+  `bootSafeObject` (Prop) to admit VSpaceRoots that satisfy the
+  boot-safety predicate.  Updated the
+  `bootSafeObjectCheck_sound_structural` soundness bridge to
+  reflect the new admission policy (replacing the old
+  `(∀ vs, obj ≠ .vspaceRoot vs)` clause with
+  `(∀ vs, obj = .vspaceRoot vs → bootSafeVSpaceRoot vs)`).
+- **R3.2 — Admission witness theorems.**  Added
+  `bootSafeObjectCheck_admits_rpi5BootVSpaceRoot` (Bool form) and
+  `bootSafeObject_admits_rpi5BootVSpaceRoot` (Prop form) so the
+  connection between the verified data structure and the runtime
+  gate is proof-witnessed at the boot-pipeline layer.
+- **R3.3 — `PlatformConfig` + `bootFromPlatformChecked` integration.**
+  Added the `bootVSpaceRoot : Option BootVSpaceRootEntry := none`
+  field to `PlatformConfig` (default preserves backward
+  compatibility for empty/sim configs).  Added two runtime gates
+  (`bootVSpaceRootObjIdDistinct`, `bootVSpaceRootSafe`) and wired
+  them into `bootFromPlatformChecked`.  When the field is
+  `some entry`, the gated boot path now installs the entry via
+  `installBootVSpaceRoot` between the `initialObjects` fold and
+  the interrupts-enable step.  Lifted `BootVSpaceRootEntry` to
+  `Platform/Contract.lean` so platform bindings can expose it
+  from the typeclass.
+- **R3.4 — RPi5 platform binding.**  Defined
+  `rpi5BootVSpaceRootObjId` and `rpi5BootVSpaceRootEntry` in
+  `Platform/RPi5/Contract.lean`, then wired
+  `bootVSpaceRoot := some rpi5BootVSpaceRootEntry` into the
+  `rpi5PlatformBinding` instance so the RPi5 production binding
+  exposes the canonical boot VSpace from the typeclass.  The
+  initial commit used `ObjId.ofNat 0` for the reserved ObjId; the
+  R3 audit-pass (Issue #3) corrected this to `ObjId.ofNat 1`
+  because `ObjId.ofNat 0 = ObjId.sentinel` is reserved as the
+  "unallocated" sentinel per Prelude.lean H-06/WS-E3.  See the
+  R3 post-landing audit pass section below for full details.
+- **R3.5 — Sim platform parity.**  Defined the simulation's
+  minimal `simBootVSpaceRoot` (a single read-only identity
+  mapping at ASID 0, paddr `0x1000`) plus the corresponding
+  `bootSafe`, `bootSafeCheck`, and `mappings.invExt` discharge
+  theorems in `Platform/Sim/Contract.lean`.  Wired the derived
+  `simBootVSpaceRootEntry` into both `simPlatformBinding` and
+  `simRestrictivePlatformBinding`, so the simulation harness
+  exercises the same `installBootVSpaceRoot` path as RPi5
+  (audit plan §7.4 R3.5 Option A — recommended for parity).
+- **R3.6 — Correctness theorem update.**  Rewrote
+  `bootFromPlatformChecked_eq_bootFromPlatform` with an additional
+  precondition `config.bootVSpaceRoot = none`, narrowing the
+  equality to the no-boot-VSpace case.  Added the sibling theorem
+  `bootFromPlatformChecked_admits_bootVSpace` covering the
+  `bootVSpaceRoot = some entry` case.  This split follows the
+  audit plan §7.4 R3.6 explicit guidance: "If the unchecked
+  function does not admit the root, the equality theorem becomes
+  a conditional implication."
+- **R3.7 — Two-phase regression suite.**  Added 8 TPH-015 tests
+  to `tests/TwoPhaseArchSuite.lean` exercising the end-to-end
+  boot-VSpace threading: bootFromPlatformChecked succeeds with
+  the canonical RPi5 entry, post-boot objects table contains the
+  VSpaceRoot at the reserved ObjId, every mapping passes
+  `wxCompliant` (W^X invariant witness), asidTable registers the
+  boot VSpace ASID, `bootVSpaceRoot = none` configs preserve
+  pre-R3 behaviour, ObjId collisions are rejected, the admission
+  witness evaluates to `true`, and sim-platform parity holds.
+- **R3.8 — Hardware-binding regression.**  Extended
+  `tests/An9HardwareBindingSuite.lean` with 5 new assertions
+  covering the same boot-VSpace path (boot succeeds, post-state
+  has VSpaceRoot, W^X invariant, asidTable registration,
+  admission witness).
+
+- **R3 post-landing audit pass.**  A deep audit of the R3 commit
+  surfaced two HIGH security/correctness issues and four LOW
+  documentation issues:
+  - **Issue #2 (HIGH)**: VSpaceRoots in `initialObjects` bypass
+    `asidTable` update.  R3.1 admits VSpaceRoots in
+    `bootSafeObjectCheck`, but `Builder.createObject` does NOT
+    update `asidTable` (unlike runtime `storeObject`).  A config
+    placing a VSpaceRoot in `initialObjects` would create an
+    asidTable/objects inconsistency.  Fixed by adding the
+    `noVSpaceRootsInInitialObjects` runtime gate in
+    `bootFromPlatformChecked`; boot VSpaceRoots are now
+    exclusively threaded via the dedicated `bootVSpaceRoot`
+    field.
+  - **Issue #3 (HIGH)**: `rpi5BootVSpaceRootObjId` and
+    `simBootVSpaceRootObjId` were `ObjId.ofNat 0` — but
+    `ObjId.sentinel = ⟨0⟩` is reserved as the "unallocated"
+    sentinel per Prelude.lean H-06/WS-E3.  Fixed by changing both
+    to `ObjId.ofNat 1` and adding the
+    `bootVSpaceRootObjIdNonSentinel` defense-in-depth gate that
+    rejects any `BootVSpaceRootEntry` with `id = ObjId.sentinel`.
+  - **Issues #1, #4, #5, #7 (LOW)**: documentation accuracy
+    fixes (Contract.lean docstring on sim binding, MmioAdapter
+    P-L9 status, RPi5 Contract Status section, removal of
+    speculative reference to unimplemented sibling theorem).
+  Three new TPH-015 regression tests (TPH-015i/j/k) cover the
+  new gates plus a pre-existing `bootVSpaceRootSafe` gate.
+  Theorem signatures
+  (`bootFromPlatformChecked_eq_bootFromPlatform`,
+  `bootFromPlatformChecked_admits_bootVSpace`) gained the new
+  preconditions; chain-of-splits proofs
+  (`bootFromPlatformChecked_ok_implies_*`,
+  `bootFromPlatformChecked_ok_interruptsEnabled`) updated to
+  traverse the two additional gates.
+
+#### R3 collateral
+
+- `Platform/Contract.lean` gains a `bootVSpaceRoot : Option
+  BootVSpaceRootEntry := none` field on the `PlatformBinding`
+  typeclass and a companion `PlatformBinding.bootVSpace` accessor.
+- `Platform/RPi5/VSpaceBoot.lean` and
+  `Architecture/AsidManager.lean` are removed from
+  `scripts/staged_module_allowlist.txt` — they enter production
+  via Boot.lean's import.
+- The pre-R3 theorem
+  `bootFromPlatform_proofLayerInvariantBundle_general` gains a
+  precondition `hNoVSpaceInInitial` (no VSpaceRoots in
+  `initialObjects`).  Boot VSpaceRoots are now exclusively
+  introduced via the gated `bootFromPlatformChecked` path.
+- `bootFromPlatformChecked_ok_interruptsEnabled` updated to
+  traverse the two new gates and the inner `match` on
+  `config.bootVSpaceRoot`.
+
+#### R3 validation
+
+- `lake build` (default + `SeLe4n.Platform.Boot`,
+  `SeLe4n.Platform.RPi5.Contract`, `SeLe4n.Platform.Sim.Contract`)
+  passes; 308 jobs.
+- `lake exe two_phase_arch_suite` reports 23/23 tests pass
+  (including the 8 new TPH-015 cases).
+- `lake exe an9_hardware_binding_suite` reports all assertions
+  pass (including the 5 new WS-RC R3 cases).
+- `./scripts/test_smoke.sh` and `./scripts/test_full.sh` pass on
+  the substantive surface; 0 sorry / 0 axiom in the modified
+  files.
+
+### R4..R14 — TBD
 
 Per plan §3 phase summary; remaining rows will be appended to this
-section as each phase lands a coherent slice. R3 is the next v1.0.0
-implementation tier (boot VSpace threading), then R4/R5/R6 (v1.0.0
-invariant / behaviour symmetry / spec-completeness work), then
+section as each phase lands a coherent slice. R4/R5/R6 are the
+remaining v1.0.0 implementation-tier work (structural-invariant
+promotions, behavioural symmetry, spec completeness), then
 R7..R12 (cleanup/hygiene tier in any order, with R11 landing last
 among hygiene phases per plan §3.2 so the metric refresh runs
 against the post-implementation tree).

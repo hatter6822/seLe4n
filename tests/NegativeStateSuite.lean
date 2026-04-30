@@ -244,7 +244,9 @@ private def f2DeviceState : SystemState :=
     |>.withLifecycleCapabilityRef f2UntypedAuthSlot (.object f2DeviceUntypedId)
     |>.buildChecked)
 
-private def runNegativeChecks : IO Unit := do
+/-- Baseline `cspaceLookup*` negative checks (wrong type, depth/guard mismatch).
+    Extracted from `runNegativeChecks` (Phase 1; was lines 248-262). -/
+private def runBaselineLookupNegativeChecks : IO Unit := do
   assertStateInvariantsFor "negative suite baseState" invariantObjectIds baseState
   expectErr "lookup wrong object type"
     (SeLe4n.Kernel.cspaceLookupSlot badSlot baseState)
@@ -260,6 +262,12 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.cspaceLookupPath guardedPathBadGuard baseState)
     .invalidCapability
 
+
+/-- WS-E4/C-02/C-03 cspaceMove + cspaceDeleteSlot CDT cleanup, WS-E4/C-04 strict
+    revokeCdt variant, AK8-B/WS-AK/C-M02 cspaceRevokeCdtTransactional atomicity
+    (3 cases).  Extracted from `runNegativeChecks` (Phase 1; was lines 263-461).
+    Sections combined because both reuse `strictSeed`/`strictRootSlot`. -/
+private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
   -- WS-E4/C-02/C-03 refinement: move updates slot↔node mappings without rewriting edges.
   let moveDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 2 }
   let moveSrcNode : CdtNodeId := ⟨0⟩
@@ -460,6 +468,15 @@ private def runNegativeChecks : IO Unit := do
   | .error _ =>
       throw <| IO.userError "validateRevokeCdtDescendants should succeed on empty descendant list"
 
+/-- F-03 fix chain: dual-queue receive on non-endpoint/missing-object, vspace lookup
+    missing asid, vspace map+lookup roundtrip + duplicate conflict, notification
+    wait #1 + signal wake, badge accumulation, notification wait #2.
+    Extracted from `runNegativeChecks` (Phase 1; was lines 463-565).
+
+    Returns `stN1` (the post-first-wait state) because the inline F-12 double-wait
+    test in `runNegativeChecks` consumes it.  Returning rather than rebuilding
+    preserves byte-for-byte stdout equivalence with the pre-refactor capture. -/
+private def runVSpaceAndNotificationF03NegativeChecks : IO SystemState := do
   expectErr "dual-queue receive on non-endpoint object"
     (SeLe4n.Kernel.endpointReceiveDual cnodeId (SeLe4n.ThreadId.ofNat 1) baseState)
     .invalidCapability
@@ -564,6 +581,11 @@ private def runNegativeChecks : IO Unit := do
         throw <| IO.userError s!"notification wait #2 expected consumer ipcState ready, got {toString tcb.ipcState}"
   | _ => throw <| IO.userError "notification wait #2 expected consumer tcb"
 
+  pure stN1
+
+/-- WS-F5/D1e: Badge > 2^64 word-truncation semantics + small bridging tests.
+    Extracted from `runNegativeChecks` (Phase 1; was lines 567-607). -/
+private def runBadgeTruncationNegativeChecks : IO Unit := do
   -- ==========================================================================
   -- WS-F5/D1e: Badge > 2^64 word-truncation semantics
   -- ==========================================================================
@@ -605,6 +627,11 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.endpointSendDual (SeLe4n.ObjId.ofNat 9998) (SeLe4n.ThreadId.ofNat 8)
       { registers := #[], caps := #[], badge := none } baseState)
     .objectNotFound
+
+/-- WS-H12d/A-09: IPC message payload bounds enforcement (registers > 120 / caps > 3
+    across send/call/reply/replyRecv).
+    Extracted from `runNegativeChecks` (Phase 1; was lines 608-700). -/
+private def runIpcPayloadBoundsNegativeChecks : IO Unit := do
 
   -- ==========================================================================
   -- WS-H12d/A-09: IPC message payload bounds enforcement
@@ -699,6 +726,10 @@ private def runNegativeChecks : IO Unit := do
     throw <| IO.userError "boundary message (120 regs, 3 caps) incorrectly rejected as too many caps"
   | _ => IO.println "positive check passed [boundary message not rejected by bounds]"
 
+/-- WS-E4 M-01: dual-queue endpoint FIFO/handshake coverage.  Largest sub-helper
+    at 333 lines — Phase 1b candidate if the C-depth probe still trips clang.
+    Extracted from `runNegativeChecks` (Phase 1; was lines 702-1034). -/
+private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
   -- ==========================================================================
   -- WS-E4 M-01 refinement: dual-queue endpoint FIFO/handshake coverage
   -- ==========================================================================
@@ -1033,15 +1064,9 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.schedule malformedOffDomain)
     .schedulerInvariantViolation
 
-  -- ==========================================================================
-  -- WS-D4 F-12: Double-wait prevention in notificationWait
-  -- ==========================================================================
-
-  -- stN1 already has thread 7 in the waiting list (from "notification wait blocks with none")
-  expectErr "notification double-wait prevention"
-    (SeLe4n.Kernel.notificationWait notificationId (SeLe4n.ThreadId.ofNat 7) stN1)
-    .alreadyWaiting
-
+/-- WS-D4 F-07: Service dependency cycle detection.
+    Extracted from `runNegativeChecks` (Phase 1; was lines 1045-1091). -/
+private def runServiceCycleNegativeChecks : IO Unit := do
   -- ==========================================================================
   -- WS-D4 F-07: Service dependency cycle detection
   -- ==========================================================================
@@ -1090,6 +1115,9 @@ private def runNegativeChecks : IO Unit := do
   | .error err =>
     throw <| IO.userError s!"service dependency A→B registration failed: {toString err}"
 
+/-- WS-F2 + S5-G: Untyped memory negative tests + page-alignment misalignment.
+    Extracted from `runNegativeChecks` (Phase 1; was lines 1093-1163). -/
+private def runUntypedF2NegativeChecks : IO Unit := do
   -- ── WS-F2: Untyped memory negative tests ──────────────────────────
   -- F2-NEG-01: retype from non-existent object
   expectErr "F2 retype from non-existent object"
@@ -1160,6 +1188,27 @@ private def runNegativeChecks : IO Unit := do
     .allocationMisaligned
 
   IO.println "untyped memory negative checks passed (incl. S5-G alignment)"
+
+
+private def runNegativeChecks : IO Unit := do
+  runBaselineLookupNegativeChecks                       -- [was 248-262]
+  runCspaceMutationAndRevokeNegativeChecks              -- [was 263-461; sections 2+3 combined for strictSeed/strictRootSlot reuse]
+  let stN1 ← runVSpaceAndNotificationF03NegativeChecks  -- [was 463-565; returns stN1 for F-12 double-wait below]
+  runBadgeTruncationNegativeChecks                      -- [was 567-607]
+  runIpcPayloadBoundsNegativeChecks                     -- [was 608-700]
+  runDualQueueEndpointFifoNegativeChecks                -- [was 702-1034]
+
+  -- ==========================================================================
+  -- WS-D4 F-12: Double-wait prevention in notificationWait (was 1036-1043).
+  -- Stays inline because it consumes `stN1` returned by
+  -- `runVSpaceAndNotificationF03NegativeChecks` above.
+  -- ==========================================================================
+  expectErr "notification double-wait prevention"
+    (SeLe4n.Kernel.notificationWait notificationId (SeLe4n.ThreadId.ofNat 7) stN1)
+    .alreadyWaiting
+
+  runServiceCycleNegativeChecks                         -- [was 1045-1091]
+  runUntypedF2NegativeChecks                            -- [was 1093-1163]
 
 /-- WS-H2: Lifecycle safety guards negative tests.
     Split into a separate function to avoid maxRecDepth limits in the main do block. -/
@@ -2103,17 +2152,8 @@ def runWSJ1DecodeChecks : IO Unit := do
 -- WS-K-G: Comprehensive testing for WS-K syscall dispatch surface
 -- ============================================================================
 
-/-- WS-K-G: Negative-state, determinism, and boundary tests for all new decode,
-dispatch, and error paths introduced in WS-K-A through WS-K-F.
-
-Organized into sub-phases:
-- K-G1: CSpace decode/dispatch error paths
-- K-G2: Lifecycle/VSpace decode/dispatch error paths
-- K-G3: Service policy and IPC message population boundaries
-- K-G4: Determinism verification across full decode pipeline -/
-def runWSKGChecks : IO Unit := do
-  IO.println "\n=== WS-K-G: Comprehensive syscall dispatch testing ==="
-
+/-- K-G1: CSpace decode/dispatch error paths. -/
+private def runWSKGCSpaceChecks : IO Unit := do
   -- ---- K-G1: CSpace negative tests ----
 
   -- K-G-NEG-01: decodeCSpaceMintArgs with insufficient msgRegs (< 4) → invalidMessageInfo
@@ -2179,6 +2219,9 @@ def runWSKGChecks : IO Unit := do
 
   IO.println "CSpace negative tests passed"
 
+
+/-- K-G2: Lifecycle/VSpace decode/dispatch error paths. -/
+private def runWSKGLifecycleVSpaceChecks : IO Unit := do
   -- ---- K-G2: Lifecycle/VSpace negative tests ----
 
   -- K-G-NEG-07: decodeLifecycleRetypeArgs with insufficient msgRegs (< 3) → invalidMessageInfo
@@ -2253,6 +2296,9 @@ def runWSKGChecks : IO Unit := do
 
   IO.println "lifecycle/VSpace negative tests passed"
 
+
+/-- K-G3: Service policy and IPC message population boundaries. -/
+private def runWSKGServiceIpcChecks : IO Unit := do
   -- ---- K-G3: Service policy and IPC boundary tests ----
 
   -- K-G-NEG-14: Service registry: store and lookup roundtrip
@@ -2302,6 +2348,9 @@ def runWSKGChecks : IO Unit := do
 
   IO.println "service/IPC boundary tests passed"
 
+
+/-- K-G4: Determinism verification across full decode pipeline. -/
+private def runWSKGDeterminismChecks : IO Unit := do
   -- ---- K-G4: Determinism verification ----
 
   -- K-G-DET-01: Layer 1+2 decode determinism (double invocation)
@@ -2364,7 +2413,23 @@ def runWSKGChecks : IO Unit := do
       throw <| IO.userError s!"K-G-DET-03: objectOfTypeTag tag {tag} not deterministic"
   IO.println "determinism check passed [K-G-DET-03 objectOfTypeTag deterministic]"
 
+
+/-- WS-K-G: Negative-state, determinism, and boundary tests for all new decode,
+dispatch, and error paths introduced in WS-K-A through WS-K-F.
+
+Organized into sub-phases:
+- K-G1: CSpace decode/dispatch error paths
+- K-G2: Lifecycle/VSpace decode/dispatch error paths
+- K-G3: Service policy and IPC message population boundaries
+- K-G4: Determinism verification across full decode pipeline -/
+def runWSKGChecks : IO Unit := do
+  IO.println "\n=== WS-K-G: Comprehensive syscall dispatch testing ==="
+  runWSKGCSpaceChecks                   -- [was 2166-2230: K-G1 CSpace]
+  runWSKGLifecycleVSpaceChecks          -- [was 2231-2304: K-G2 Lifecycle/VSpace]
+  runWSKGServiceIpcChecks               -- [was 2305-2353: K-G3 Service/IPC]
+  runWSKGDeterminismChecks              -- [was 2354-2415: K-G4 Determinism]
   IO.println "all WS-K-G comprehensive tests passed"
+
 
 -- ============================================================================
 -- WS-L4-C: Blocked thread IPC rejection tests
@@ -2606,17 +2671,8 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
 -- WS-M4-A: Multi-level resolveCapAddress edge case tests (M-T01)
 -- ============================================================================
 
-/-- WS-M4-A (M-T01): Multi-level `resolveCapAddress` edge case tests.
-
-Scenarios exercised:
-- SCN-RESOLVE-GUARD-ONLY (M4-A1): Guard-only CNode (radixWidth=0)
-- SCN-RESOLVE-MAX-DEPTH (M4-A2): 64-bit resolution across 8 CNodes
-- SCN-RESOLVE-GUARD-MISMATCH-MID (M4-A3): Guard mismatch at intermediate level
-- SCN-RESOLVE-PARTIAL-BITS (M4-A4): Insufficient bits for CNode consumption
-- SCN-RESOLVE-SINGLE-LEVEL (M4-A5): Single-level leaf resolution -/
-def runWSM4ResolveEdgeCaseChecks : IO Unit := do
-  IO.println "\n=== WS-M4-A: resolveCapAddress edge case tests ==="
-
+/-- M4-A1: guard-only CNode (radixWidth=0). -/
+private def runWSM4GuardOnlyChecks : IO Unit := do
   -- M4-A1: Guard-only CNode (radixWidth=0, guardWidth=4, guardValue=0xA)
   -- With radixWidth=0, slot index = addr % 2^0 = addr % 1 = 0 always.
   let guardOnlyRoot : SeLe4n.ObjId := ⟨6000⟩
@@ -2656,6 +2712,10 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .ok _ =>
       throw <| IO.userError "expected error for wrong guard, got success"
 
+
+/-- M4-A4 + M4-A5: single-level leaf, partial bits, zero bits.  Folded because
+    A4 and A5 share the leafRoot/leafTarget/stLeaf setup. -/
+private def runWSM4SmallBitsChecks : IO Unit := do
   -- M4-A5: Single-level leaf resolution (guardWidth=0, radixWidth=4)
   -- addr=5 → slot 5, consumed = 4 bits, bitsRemaining - consumed = 0 → leaf
   let leafRoot : SeLe4n.ObjId := ⟨6010⟩
@@ -2717,6 +2777,9 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .ok _ =>
       throw <| IO.userError "zero: expected error for zero bits, got success"
 
+
+/-- M4-A3: guard mismatch at intermediate level. -/
+private def runWSM4GuardMismatchChecks : IO Unit := do
   -- M4-A3: Guard mismatch at intermediate level
   -- 3-level chain: level0 (guard=3, gw=2, rw=2, 4 bits) →
   --               level1 (guard=1, gw=2, rw=2, 4 bits) →
@@ -2793,6 +2856,11 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .ok _ =>
       throw <| IO.userError "expected error for wrong mid guard, got success"
 
+
+/-- M4-A2: maximum depth (8 CNodes × 8 bits each = 64-bit address chain).
+    Isolated because the inner `for i in List.range 7 do` loop builder
+    generates per-iteration nesting that compounds heavily in C codegen. -/
+private def runWSM4MaxDepthLoopChecks : IO Unit := do
   -- M4-A2: Maximum depth (64 bits) — 8 CNodes each consuming 8 bits
   -- Build chain of 8 CNodes (radixWidth=8, guardWidth=0 each)
   -- addr encodes slot index for each level in 8-bit chunks
@@ -2855,6 +2923,9 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .ok _ =>
       throw <| IO.userError "overflow: expected error for 65 bits, got success"
 
+
+/-- M4-A6 + M4-A7: empty intermediate slot + non-CNode at intermediate level. -/
+private def runWSM4SlotEdgeChecks : IO Unit := do
   -- M4-A6: Empty slot at intermediate (non-leaf) level.
   -- resolveCapAddress only checks slot occupancy during recursion (bitsRemaining >
   -- consumed). At leaf level (bitsRemaining = consumed) it returns the slot ref
@@ -2927,6 +2998,28 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .ok _ =>
       throw <| IO.userError "expected error for non-CNode mid target, got success"
 
+
+/-- M4-A8: cspaceLookupMultiLevel wrapper integration.  Rebuilds leafRoot/
+    leafTarget/stLeaf locally (was reused from M4-A5; rebuild keeps the
+    helper self-contained without parameter threading). -/
+private def runWSM4WrapperIntegrationChecks : IO Unit := do
+  -- M4-A8 rebuild: leafRoot/leafTarget/stLeaf (originally shared with M4-A5).
+  let leafRoot : SeLe4n.ObjId := ⟨6010⟩
+  let leafTarget : SeLe4n.ObjId := ⟨6011⟩
+  let stLeaf :=
+    (BootstrapBuilder.empty
+      |>.withObject leafRoot (.cnode {
+          depth := 4
+          guardWidth := 0
+          guardValue := 0
+          radixWidth := 4
+          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+            (SeLe4n.Slot.ofNat 5, { target := .object leafTarget, rights := AccessRightSet.ofList [.read, .write], badge := none })
+          ]
+        })
+      |>.withObject leafTarget (.endpoint {})
+      |>.buildChecked)
+
   -- M4-A8: cspaceLookupMultiLevel wrapper integration — verify full pipeline
   -- Reuse the single-level leaf state (stLeaf): leafRoot slot 5 → leafTarget endpoint
   let resultWrapper := SeLe4n.Kernel.cspaceLookupMultiLevel leafRoot (SeLe4n.CPtr.ofNat 5) 4 stLeaf
@@ -2949,7 +3042,25 @@ def runWSM4ResolveEdgeCaseChecks : IO Unit := do
   | .ok _ =>
       throw <| IO.userError "neg: expected error for empty slot wrapper, got success"
 
+
+/-- WS-M4-A (M-T01): Multi-level `resolveCapAddress` edge case tests.
+
+Scenarios exercised:
+- SCN-RESOLVE-GUARD-ONLY (M4-A1): Guard-only CNode (radixWidth=0)
+- SCN-RESOLVE-MAX-DEPTH (M4-A2): 64-bit resolution across 8 CNodes
+- SCN-RESOLVE-GUARD-MISMATCH-MID (M4-A3): Guard mismatch at intermediate level
+- SCN-RESOLVE-PARTIAL-BITS (M4-A4): Insufficient bits for CNode consumption
+- SCN-RESOLVE-SINGLE-LEVEL (M4-A5): Single-level leaf resolution -/
+def runWSM4ResolveEdgeCaseChecks : IO Unit := do
+  IO.println "\n=== WS-M4-A: resolveCapAddress edge case tests ==="
+  runWSM4GuardOnlyChecks                -- [was 2669-2707: M4-A1]
+  runWSM4SmallBitsChecks                -- [was 2708-2768: M4-A5/A4/A4-zero, folded]
+  runWSM4GuardMismatchChecks            -- [was 2769-2844: M4-A3]
+  runWSM4MaxDepthLoopChecks             -- [was 2845-2906: M4-A2 max-depth for-loop, isolated]
+  runWSM4SlotEdgeChecks                 -- [was 2907-2978: M4-A6/A7, folded]
+  runWSM4WrapperIntegrationChecks       -- [was 2979-3000: M4-A8 wrapper]
   IO.println "all WS-M4-A resolveCapAddress edge case tests passed"
+
 
 -- ============================================================================
 -- WS-R2: Revocation error propagation & fuel exhaustion tests

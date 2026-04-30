@@ -10,6 +10,14 @@
 import SeLe4n.Model.Builder
 import SeLe4n.Model.FreezeProofs
 import SeLe4n.Kernel.API
+-- WS-RC R3 (DEEP-BOOT-01): boot-VSpaceRoot threading reaches into the
+-- canonical RPi5 boot root + boot-safety predicate so that
+-- `bootSafeObjectCheck` can admit a well-formed boot VSpaceRoot.
+-- `Platform.Contract` provides the lightweight `BootVSpaceRootEntry`
+-- structure so platform bindings (RPi5, sim) can expose the optional
+-- canonical boot VSpaceRoot from the typeclass.
+import SeLe4n.Platform.Contract
+import SeLe4n.Platform.RPi5.VSpaceBoot
 
 /-!
 # Q3-C: Boot Sequence — IntermediateState from Platform Configuration
@@ -67,6 +75,17 @@ structure ObjectEntry where
   hSlots : ∀ cn, obj = KernelObject.cnode cn → cn.slotsUnique
   hMappings : ∀ vs, obj = KernelObject.vspaceRoot vs → vs.mappings.invExt
 
+/-- **WS-RC R3 (DEEP-BOOT-01)**: Boot VSpaceRoot entry alias.
+
+    The structure itself lives in `Platform.Contract` so platform
+    bindings can expose it without pulling in the heavier
+    `Platform.Boot` dependency.  This `abbrev` re-exports the type
+    under the boot pipeline's namespace so existing call sites
+    (`PlatformConfig.bootVSpaceRoot`, `installBootVSpaceRoot`,
+    `bootFromPlatformChecked_admits_bootVSpace`) keep their existing
+    naming. -/
+abbrev BootVSpaceRootEntry := SeLe4n.Platform.BootVSpaceRootEntry
+
 /-- Q3-C: Platform boot configuration — IRQ table and initial objects.
 
 This is the minimal configuration needed to construct a valid
@@ -77,11 +96,18 @@ separately via `applyMachineConfig` after boot.
 
 AH2-E: `machineConfig` field added so `bootFromPlatform` can automatically
 apply machine configuration without requiring a separate manual call.
-Defaults to `defaultMachineConfig` for backward compatibility. -/
+Defaults to `defaultMachineConfig` for backward compatibility.
+
+WS-RC R3 (DEEP-BOOT-01): `bootVSpaceRoot` field added so platform
+bindings (RPi5 in particular) can thread the canonical, W^X-compliant
+boot VSpaceRoot through the boot pipeline.  Defaults to `none` to
+preserve backward compatibility for empty/sim configs that exercise the
+hardware-free trace harness. -/
 structure PlatformConfig where
   irqTable : List IrqEntry
   initialObjects : List ObjectEntry
   machineConfig : MachineConfig := defaultMachineConfig
+  bootVSpaceRoot : Option BootVSpaceRootEntry := none
 
 -- V7-I: O(n) duplicate detection via HashSet accumulation.
 -- Replaces the O(n²) per-element `List.any` scan with a single-pass fold.
@@ -392,6 +418,97 @@ theorem bootEnableInterruptsOp_memoryMap_eq (ist : IntermediateState) :
     (bootEnableInterruptsOp ist).state.machine.memoryMap =
       ist.state.machine.memoryMap := rfl
 
+-- ============================================================================
+-- WS-RC R3 (DEEP-BOOT-01) — installBootVSpaceRoot builder operation
+-- ============================================================================
+
+/-- **WS-RC R3 (DEEP-BOOT-01)**: Install a boot VSpaceRoot into the
+    builder state.
+
+    Composes `Builder.createObject` (object-store insertion + lifecycle
+    metadata bookkeeping + objectIndex maintenance) with an `asidTable`
+    update that registers the VSpaceRoot's ASID, mirroring the runtime
+    `storeObject` semantics for VSpaceRoot inserts.  Without the
+    `asidTable` update, downstream VSpace operations
+    (`resolveAsidRoot`, etc.) would fail to find the boot root by ASID.
+
+    **Precondition** — `vsr.mappings.invExt` (Robin Hood load-factor +
+    key-uniqueness invariants on the page-mapping table).  This is
+    guaranteed by every well-formed boot root because boot roots are
+    constructed via sequential `RHTable.insert` operations starting
+    from `RHTable.empty`, which preserve `invExt` at every step.
+
+    The four `IntermediateState` invariant witnesses thread through
+    cleanly: `hAllTables` is updated by composing the existing
+    `createObject` proof with `RHTable.insert_preserves_invExtK` for
+    the new `asidTable` entry; `hPerObjectSlots`, `hPerObjectMappings`,
+    and `hLifecycleConsistent` carry over because the `asidTable`
+    update only touches a field that none of these invariants
+    quantify over. -/
+def installBootVSpaceRoot (ist : IntermediateState)
+    (id : SeLe4n.ObjId) (vsr : VSpaceRoot)
+    (hMappings : vsr.mappings.invExt)
+    : IntermediateState :=
+  let withObj : IntermediateState :=
+    Builder.createObject ist id (KernelObject.vspaceRoot vsr)
+      (fun _ hEq => by cases hEq)
+      (fun vs hEq => by cases hEq; exact hMappings)
+  { state := { withObj.state with
+      asidTable := withObj.state.asidTable.insert vsr.asid id }
+    hAllTables := by
+      have h := withObj.hAllTables
+      unfold SystemState.allTablesInvExtK at h ⊢
+      refine ⟨h.1, h.2.1,
+              RHTable.insert_preserves_invExtK _ _ _ h.2.2.1,
+              h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1, h.2.2.2.2.2.2.1,
+              h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
+              h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
+              h.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.1,
+              h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+              h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+              h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+              h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+    hPerObjectSlots := by
+      intro oid cn hLookup
+      exact withObj.hPerObjectSlots oid cn hLookup
+    hPerObjectMappings := by
+      intro oid vs hLookup
+      exact withObj.hPerObjectMappings oid vs hLookup
+    hLifecycleConsistent := by
+      rcases withObj.hLifecycleConsistent with ⟨hObjType, hCapRef⟩
+      exact ⟨hObjType, hCapRef⟩ }
+
+/-- **WS-RC R3**: `installBootVSpaceRoot` registers `vsr` in the object
+    store at `id`.  Witnesses the post-state object-store entry for
+    downstream lookup proofs (e.g., the `bootFromPlatformChecked`
+    regression test in `TwoPhaseArchSuite`). -/
+theorem installBootVSpaceRoot_objects_lookup
+    (ist : IntermediateState) (id : SeLe4n.ObjId) (vsr : VSpaceRoot)
+    (hMappings : vsr.mappings.invExt) :
+    (installBootVSpaceRoot ist id vsr hMappings).state.objects[id]? =
+      some (KernelObject.vspaceRoot vsr) := by
+  -- After `createObject`, the object store has `id ↦ KernelObject.vspaceRoot vsr`.
+  -- The asidTable update does not touch `objects`, so the post-state
+  -- objects table is `ist.state.objects.insert id (KernelObject.vspaceRoot vsr)`.
+  show (ist.state.objects.insert id (KernelObject.vspaceRoot vsr))[id]? =
+    some (KernelObject.vspaceRoot vsr)
+  have hObjK : ist.state.objects.invExtK := ist.hAllTables.1
+  exact RHTable.getElem?_insert_self ist.state.objects id _ hObjK.1
+
+/-- **WS-RC R3**: `installBootVSpaceRoot` registers the VSpaceRoot's
+    ASID in `asidTable` at the boot root's ObjId.  Witnesses the
+    post-state ASID resolution path. -/
+theorem installBootVSpaceRoot_asidTable_lookup
+    (ist : IntermediateState) (id : SeLe4n.ObjId) (vsr : VSpaceRoot)
+    (hMappings : vsr.mappings.invExt) :
+    (installBootVSpaceRoot ist id vsr hMappings).state.asidTable[vsr.asid]? =
+      some id := by
+  -- The asidTable was previously unchanged by `createObject`, so the
+  -- post-state asidTable is `ist.state.asidTable.insert vsr.asid id`.
+  show (ist.state.asidTable.insert vsr.asid id)[vsr.asid]? = some id
+  have hAsidK : ist.state.asidTable.invExtK := ist.hAllTables.2.2.1
+  exact RHTable.getElem?_insert_self _ vsr.asid id hAsidK.1
+
 /-- Q3-C: Construct an `IntermediateState` from platform configuration.
 
 Starts from the empty state and applies:
@@ -406,7 +523,19 @@ validation. Use `bootFromPlatformChecked` for production boot paths,
 which validates `PlatformConfig.wellFormed` and rejects duplicates.
 Minimum-configuration validation (e.g., at least one initial thread,
 valid scheduler state) is recorded as a post-1.0 hardening candidate;
-no currently-active plan file tracks it. -/
+no currently-active plan file tracks it.
+
+WS-RC R3 (DEEP-BOOT-01): The unchecked path deliberately does NOT
+install `config.bootVSpaceRoot`.  Boot VSpaceRoot threading is
+performed only by `bootFromPlatformChecked`, which composes the
+unchecked fold with `installBootVSpaceRoot` after gate validation.
+This split keeps all pre-R3 invariant-bridge proofs about
+`bootFromPlatform` intact (they assume no VSpaceRoots in the
+post-state) and concentrates the new boot-VSpace machinery in the
+gated boot path.  See `bootFromPlatformChecked_eq_bootFromPlatform`
+(when `bootVSpaceRoot = none`) and
+`bootFromPlatformChecked_admits_bootVSpace` (when
+`bootVSpaceRoot = some _`) for the bridging theorems. -/
 def bootFromPlatform (config : PlatformConfig) : IntermediateState :=
   let initial := mkEmptyIntermediateState
   let withIrqs := foldIrqs config.irqTable initial
@@ -530,7 +659,16 @@ theorem objectIdsUniqueTransparent_empty : objectIdsUniqueTransparent [] = true 
     validity. Badge validity requires iterating over all CNode slot entries
     with a `get? → toList` bridge that would add complexity for a property
     that is vacuously true for empty boot-config CNodes. Badge validity
-    remains checked at the Prop level via `bootFromPlatform_proofLayerInvariantBundle_general`. -/
+    remains checked at the Prop level via `bootFromPlatform_proofLayerInvariantBundle_general`.
+
+    **WS-RC R3 (DEEP-BOOT-01)**: VSpaceRoots are now admitted iff they
+    pass `Platform.RPi5.VSpaceBoot.bootSafeVSpaceRootCheck` (asid bounded,
+    every mapping W^X compliant, at least one mapping present, every
+    physical address fits within the BCM2712 44-bit PA space, and — per
+    the third-audit hardening — every virtual address is canonical
+    (< 2^48)).  Previously the boot path rejected ALL VSpaceRoots,
+    rendering the proven-W^X-compliant `rpi5BootVSpaceRoot` data
+    structure inert at runtime. -/
 def bootSafeObjectCheck (obj : KernelObject) : Bool :=
   match obj with
   | .endpoint ep =>
@@ -548,7 +686,8 @@ def bootSafeObjectCheck (obj : KernelObject) : Bool :=
     tcb.queueNext.isNone && tcb.queuePrev.isNone &&
     tcb.timeoutBudget.isNone &&
     decide (tcb.schedContextBinding = .unbound)
-  | .vspaceRoot _ => false
+  | .vspaceRoot vsr =>
+    SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRootCheck vsr
   | .untyped _ => true
   | .schedContext sc =>
     sc.period.isPositive &&
@@ -583,8 +722,9 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
       tcb.queueNext = none ∧ tcb.queuePrev = none ∧
       tcb.timeoutBudget = none ∧
       tcb.schedContextBinding = .unbound) ∧
-    -- VSpaceRoots: excluded
-    (∀ vs, obj ≠ .vspaceRoot vs) ∧
+    -- WS-RC R3 (DEEP-BOOT-01): VSpaceRoots admitted iff bootSafeVSpaceRoot
+    (∀ vs, obj = .vspaceRoot vs →
+      SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRoot vs) ∧
     -- SchedContexts: well-formed and unbound
     (∀ sc, obj = .schedContext sc →
       schedContextWellFormed sc ∧ sc.boundThread = none) := by
@@ -618,8 +758,15 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
            fun _ he => by injection he,
            fun _ he => by injection he; subst_vars; exact ⟨Option.eq_none_of_isNone h1, h2, Option.eq_none_of_isNone h3, Option.eq_none_of_isNone h4, Option.eq_none_of_isNone h5, h6⟩,
            fun _ he => by injection he, fun _ he => by injection he⟩
-  | vspaceRoot _ =>
-    simp [bootSafeObjectCheck] at h
+  | vspaceRoot vsr =>
+    -- WS-RC R3: bootSafeObjectCheck for VSpaceRoot reduces to
+    -- `bootSafeVSpaceRootCheck vsr = true`, which is iff `bootSafeVSpaceRoot vsr`.
+    simp only [bootSafeObjectCheck] at h
+    have hBoot := (SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRootCheck_iff vsr).mp h
+    exact ⟨fun _ he => by injection he, fun _ he => by injection he,
+           fun _ he => by injection he, fun _ he => by injection he,
+           fun v hv => by injection hv; subst_vars; exact hBoot,
+           fun _ he => by injection he⟩
   | untyped _ =>
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
@@ -638,6 +785,35 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
       · intro r hr; exact decide_eq_true_eq.mp (List.all_eq_true.mp hRepPos r hr)
       · intro r hr; exact decide_eq_true_eq.mp (List.all_eq_true.mp hRepBound r hr)
     · exact Option.eq_none_of_isNone hUnbound
+
+-- ============================================================================
+-- WS-RC R3 (DEEP-BOOT-01) — Boot-safety admission witness theorems
+-- ============================================================================
+
+/-- **WS-RC R3 (DEEP-BOOT-01)**: The canonical RPi5 boot VSpaceRoot
+    passes the runtime-decidable `bootSafeObjectCheck`.  Direct
+    consequence of `rpi5BootVSpaceRoot_bootSafeCheck` via the matching
+    `.vspaceRoot` arm of `bootSafeObjectCheck`.
+
+    This theorem witnesses at the boot-pipeline layer the connection
+    between the proven-W^X-compliant boot VSpaceRoot data structure
+    (`Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot`) and its admission
+    into the boot path's runtime check.  Previously the
+    `.vspaceRoot _ => false` arm of `bootSafeObjectCheck` rendered the
+    structure inert; per the implement-the-improvement rule, the
+    verified structure is the better state and the boot path now
+    consumes it. -/
+theorem bootSafeObjectCheck_admits_rpi5BootVSpaceRoot :
+    bootSafeObjectCheck
+        (KernelObject.vspaceRoot SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot) =
+      true := by
+  unfold bootSafeObjectCheck
+  exact SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot_bootSafeCheck
+
+-- The Prop-level mirror `bootSafeObject_admits_rpi5BootVSpaceRoot`
+-- lives further down the file, immediately after the `bootSafeObject`
+-- definition (which is itself defined later in this module — see
+-- the V4-A4 section).
 
 -- ============================================================================
 -- AK9-C (P-M01): IRQ Handler Existence Validation
@@ -671,6 +847,100 @@ theorem irqHandlersReferenceNotifications_empty_irqs
     irqHandlersReferenceNotifications { irqTable := [], initialObjects := objs } = true := by
   unfold irqHandlersReferenceNotifications; rfl
 
+-- ============================================================================
+-- WS-RC R3 (DEEP-BOOT-01) — bootVSpaceRoot config-level gates
+-- ============================================================================
+
+/-- **WS-RC R3 (DEEP-BOOT-01)**: Boot-VSpaceRoot ObjId distinctness gate.
+    Returns `true` iff the boot VSpaceRoot entry (if any) carries an
+    ObjId that does not collide with any entry in `initialObjects`.
+
+    The collision check is necessary because `installBootVSpaceRoot`
+    runs AFTER the `foldObjects` step.  Without this gate, a colliding
+    ObjId would silently overwrite the prior `initialObjects` entry
+    (last-wins on `RHTable.insert`), losing kernel state.  Returns
+    `true` vacuously when `bootVSpaceRoot = none`. -/
+def bootVSpaceRootObjIdDistinct (config : PlatformConfig) : Bool :=
+  match config.bootVSpaceRoot with
+  | none => true
+  | some entry =>
+      ! config.initialObjects.any (fun e => e.id == entry.id)
+
+/-- **WS-RC R3 (DEEP-BOOT-01)**: Boot-VSpaceRoot boot-safety gate.
+    Returns `true` iff the boot VSpaceRoot entry (if any) passes the
+    runtime-decidable `bootSafeVSpaceRootCheck`.  Returns `true`
+    vacuously when `bootVSpaceRoot = none`. -/
+def bootVSpaceRootSafe (config : PlatformConfig) : Bool :=
+  match config.bootVSpaceRoot with
+  | none => true
+  | some entry =>
+      SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRootCheck entry.root
+
+/-- **WS-RC R3**: Empty/no-boot-VSpace config trivially passes ObjId
+    distinctness. -/
+theorem bootVSpaceRootObjIdDistinct_none
+    (config : PlatformConfig) (h : config.bootVSpaceRoot = none) :
+    bootVSpaceRootObjIdDistinct config = true := by
+  unfold bootVSpaceRootObjIdDistinct; rw [h]
+
+/-- **WS-RC R3**: Empty/no-boot-VSpace config trivially passes boot-safety. -/
+theorem bootVSpaceRootSafe_none
+    (config : PlatformConfig) (h : config.bootVSpaceRoot = none) :
+    bootVSpaceRootSafe config = true := by
+  unfold bootVSpaceRootSafe; rw [h]
+
+/-- **WS-RC R3 (DEEP-BOOT-01) — security/correctness audit fix**: gate
+    forbidding VSpaceRoot kernel objects in `initialObjects`.
+
+    **Why this gate exists.**  R3.1 admits boot-safe VSpaceRoots into the
+    `bootSafeObjectCheck` predicate so the proven-W^X-compliant boot
+    root can be witnessed at the boot-pipeline layer.  However,
+    `Builder.createObject` (the function that processes
+    `initialObjects` entries) does NOT update `asidTable`, while the
+    runtime `storeObject` semantics for `.vspaceRoot` inserts DO
+    update `asidTable`.  If a config placed a VSpaceRoot in
+    `initialObjects`, the post-state would have an entry in `objects`
+    with no corresponding entry in `asidTable`, violating the
+    runtime `asidTableConsistent` invariant.  The dedicated
+    `bootVSpaceRoot` field + `installBootVSpaceRoot` builder operation
+    is the ONLY path that maintains the asidTable/objects
+    correspondence at boot.
+
+    Returns `true` iff no entry in `initialObjects` is a VSpaceRoot
+    kernel object. -/
+def noVSpaceRootsInInitialObjects (config : PlatformConfig) : Bool :=
+  ! config.initialObjects.any (fun entry =>
+    match entry.obj with
+    | .vspaceRoot _ => true
+    | _ => false)
+
+/-- **WS-RC R3**: Empty initialObjects trivially has no VSpaceRoots. -/
+theorem noVSpaceRootsInInitialObjects_empty (config : PlatformConfig)
+    (h : config.initialObjects = []) :
+    noVSpaceRootsInInitialObjects config = true := by
+  unfold noVSpaceRootsInInitialObjects; rw [h]; rfl
+
+/-- **WS-RC R3 — security/correctness audit fix**: gate forbidding the
+    boot VSpaceRoot ObjId from being the reserved `ObjId.sentinel`
+    value (`⟨0⟩` per Prelude.lean H-06/WS-E3 — meaning "unallocated").
+
+    Defense-in-depth: the canonical `rpi5BootVSpaceRootEntry` and
+    `simBootVSpaceRootEntry` use ObjId 1 (non-sentinel), but a
+    third-party `BootVSpaceRootEntry` constructed via the public API
+    could use the sentinel.  This gate catches such misuse at the
+    boot pipeline. -/
+def bootVSpaceRootObjIdNonSentinel (config : PlatformConfig) : Bool :=
+  match config.bootVSpaceRoot with
+  | none => true
+  | some entry => ! entry.id.isReserved
+
+/-- **WS-RC R3**: Empty/no-boot-VSpace config trivially passes the
+    non-sentinel check. -/
+theorem bootVSpaceRootObjIdNonSentinel_none
+    (config : PlatformConfig) (h : config.bootVSpaceRoot = none) :
+    bootVSpaceRootObjIdNonSentinel config = true := by
+  unfold bootVSpaceRootObjIdNonSentinel; rw [h]
+
 /-- U6-E/F: Checked boot — rejects configs with duplicate IRQs, duplicate object
     IDs, or unsafe initial objects.
 
@@ -697,33 +967,73 @@ def bootFromPlatformChecked (config : PlatformConfig) :
     Except String IntermediateState :=
   if config.wellFormed then
     if config.initialObjects.all (fun entry => bootSafeObjectCheck entry.obj) then
-      -- AK9-C (P-M01): Validate that every IRQ handler ObjId references a
-      -- notification object in the config. This is verified as a final step
-      -- after the per-object bootSafe check so the error message identifies
-      -- the specific misconfiguration.
-      if irqHandlersReferenceNotifications config then
-        -- AK9-F (P-M05): Validate MachineConfig well-formedness + PA width
-        -- bound (ARMv8 LPA max = 52). Prevents the production boot path
-        -- from silently accepting a malformed MachineConfig that would leave
-        -- the runtime in an inconsistent state (region overlap, non-power-of-
-        -- two page size, PA width > 52).
-        if config.machineConfig.wellFormed then
-          if config.machineConfig.physicalAddressWidth ≤ 52 then
-            -- AK9-G (P-M06): Enable interrupts at the end of the checked
-            -- boot path, mirroring the Rust HAL Phase-3 IRQ re-enable
-            -- after GIC + timer initialization. The runtime begins with
-            -- `interruptsEnabled = true`, matching post-HAL hardware
-            -- state. The raw `bootFromPlatform` pre-interrupts image is
-            -- still accessible (callers can inspect it by composing
-            -- `bootFromPlatform` directly) for negative-state or
-            -- boot-invariant-bridge contexts.
-            .ok (bootEnableInterruptsOp (bootFromPlatform config))
+      -- WS-RC R3 (DEEP-BOOT-01) — audit fix: forbid VSpaceRoot
+      -- kernel objects in `initialObjects`.  The dedicated
+      -- `bootVSpaceRoot` field + `installBootVSpaceRoot` is the ONLY
+      -- path that maintains the asidTable/objects correspondence at
+      -- boot (Builder.createObject does NOT update asidTable, but
+      -- the runtime semantics for `.vspaceRoot` inserts do — letting
+      -- VSpaceRoots flow through `initialObjects` would create an
+      -- inconsistency).
+      if noVSpaceRootsInInitialObjects config then
+        -- AK9-C (P-M01): Validate that every IRQ handler ObjId references a
+        -- notification object in the config. This is verified as a final step
+        -- after the per-object bootSafe check so the error message identifies
+        -- the specific misconfiguration.
+        if irqHandlersReferenceNotifications config then
+          -- AK9-F (P-M05): Validate MachineConfig well-formedness + PA width
+          -- bound (ARMv8 LPA max = 52). Prevents the production boot path
+          -- from silently accepting a malformed MachineConfig that would leave
+          -- the runtime in an inconsistent state (region overlap, non-power-of-
+          -- two page size, PA width > 52).
+          if config.machineConfig.wellFormed then
+            if config.machineConfig.physicalAddressWidth ≤ 52 then
+              -- WS-RC R3 (DEEP-BOOT-01): Validate boot-VSpaceRoot
+              -- entry (if present): the ObjId must not collide with
+              -- any `initialObjects` entry, must not be the
+              -- reserved sentinel value, and the root must satisfy
+              -- the runtime-decidable boot-safety predicate.
+              if bootVSpaceRootObjIdDistinct config then
+                if bootVSpaceRootObjIdNonSentinel config then
+                  if bootVSpaceRootSafe config then
+                    -- AK9-G (P-M06): Enable interrupts at the end of the
+                    -- checked boot path, mirroring the Rust HAL Phase-3
+                    -- IRQ re-enable after GIC + timer initialization.
+                    -- The runtime begins with `interruptsEnabled = true`,
+                    -- matching post-HAL hardware state.  The raw
+                    -- `bootFromPlatform` pre-interrupts image is still
+                    -- accessible (callers can inspect it by composing
+                    -- `bootFromPlatform` directly) for negative-state or
+                    -- boot-invariant-bridge contexts.
+                    --
+                    -- WS-RC R3 (DEEP-BOOT-01): When `bootVSpaceRoot`
+                    -- carries an entry, install it via
+                    -- `installBootVSpaceRoot` AFTER the standard fold
+                    -- but BEFORE the interrupts step.  The install
+                    -- registers the ASID in `asidTable` so subsequent
+                    -- VSpace operations (`resolveAsidRoot`, etc.) can
+                    -- find the boot root via the standard lookup path.
+                    let basePost := bootFromPlatform config
+                    let withBootVSpace : IntermediateState :=
+                      match config.bootVSpaceRoot with
+                      | none => basePost
+                      | some entry =>
+                          installBootVSpaceRoot basePost entry.id entry.root entry.hMappings
+                    .ok (bootEnableInterruptsOp withBootVSpace)
+                  else
+                    .error "boot: bootVSpaceRoot fails boot-safety check (W^X / asid / paddr / non-empty mappings) (WS-RC R3 / DEEP-BOOT-01)"
+                else
+                  .error "boot: bootVSpaceRoot uses reserved ObjId.sentinel (WS-RC R3 / DEEP-BOOT-01 audit fix; H-06/WS-E3 sentinel is reserved as 'unallocated')"
+              else
+                .error "boot: bootVSpaceRoot ObjId collides with an initialObjects entry (WS-RC R3 / DEEP-BOOT-01)"
+            else
+              .error s!"boot: MachineConfig.physicalAddressWidth {config.machineConfig.physicalAddressWidth} > 52 (ARMv8 LPA max) (AK9-F / P-M05)"
           else
-            .error s!"boot: MachineConfig.physicalAddressWidth {config.machineConfig.physicalAddressWidth} > 52 (ARMv8 LPA max) (AK9-F / P-M05)"
+            .error "boot: MachineConfig fails well-formedness (AK9-F / P-M05)"
         else
-          .error "boot: MachineConfig fails well-formedness (AK9-F / P-M05)"
+          .error "boot: IRQ handler does not reference a notification object in initialObjects (AK9-C)"
       else
-        .error "boot: IRQ handler does not reference a notification object in initialObjects (AK9-C)"
+        .error "boot: VSpaceRoot kernel object found in initialObjects — boot VSpaceRoots must use the dedicated PlatformConfig.bootVSpaceRoot field so asidTable consistency is maintained (WS-RC R3 / DEEP-BOOT-01 audit fix)"
     else
       .error "boot: object fails bootSafe check (invalid state for boot)"
   else if ¬ irqsUnique config.irqTable then
@@ -731,32 +1041,81 @@ def bootFromPlatformChecked (config : PlatformConfig) :
   else
     .error "boot: duplicate object ID detected in platform config"
 
-/-- U6-E/F/AJ3-C/AK9-C/AK9-F/AK9-G: Checked boot agrees with
+/-- U6-E/F/AJ3-C/AK9-C/AK9-F/AK9-G + WS-RC R3: Checked boot agrees with
     `bootFromPlatformWithInterrupts` on well-formed, boot-safe,
-    IRQ-handler-valid, MachineConfig-valid, PA-width-valid configs.
+    IRQ-handler-valid, MachineConfig-valid, PA-width-valid configs that
+    do NOT install a boot VSpaceRoot.
 
     Precondition chain: `config.wellFormed` (AJ3-C)
     ∧ all objects are boot-safe (AJ3-C)
     ∧ every IRQ handler references a notification (AK9-C)
     ∧ `config.machineConfig.wellFormed` (AK9-F / P-M05)
-    ∧ `config.machineConfig.physicalAddressWidth ≤ 52` (AK9-F / P-M05).
+    ∧ `config.machineConfig.physicalAddressWidth ≤ 52` (AK9-F / P-M05)
+    ∧ `config.bootVSpaceRoot = none` (WS-RC R3 / DEEP-BOOT-01).
 
-    Conclusion now emits the post-interrupts state (AK9-G / P-M06) that
-    the production path produces — a behavioural change vs pre-AK9 where
-    interrupts stayed disabled. -/
+    The trailing precondition restricts the equality to the
+    no-boot-VSpace case.  Configs that install a boot VSpaceRoot
+    (RPi5 production binding) are covered by the sibling
+    `bootFromPlatformChecked_admits_bootVSpace` theorem.  This split
+    follows the implementation plan §7.4 R3.6: "If the unchecked
+    function does not admit the root, the equality theorem becomes a
+    conditional implication."
+
+    Conclusion emits the post-interrupts state (AK9-G / P-M06) that
+    the production path produces. -/
 theorem bootFromPlatformChecked_eq_bootFromPlatform (config : PlatformConfig)
     (hWf : config.wellFormed = true)
     (hSafe : config.initialObjects.all (fun entry => bootSafeObjectCheck entry.obj) = true)
+    (hNoVSpaceObj : noVSpaceRootsInInitialObjects config = true)
     (hIrq : irqHandlersReferenceNotifications config = true)
     (hMc : config.machineConfig.wellFormed = true)
-    (hPa : config.machineConfig.physicalAddressWidth ≤ 52) :
+    (hPa : config.machineConfig.physicalAddressWidth ≤ 52)
+    (hNoBootVSpace : config.bootVSpaceRoot = none) :
     bootFromPlatformChecked config =
       .ok (bootEnableInterruptsOp (bootFromPlatform config)) := by
-  simp [bootFromPlatformChecked, hWf, hSafe, hIrq, hMc, hPa]
+  have hDistinct : bootVSpaceRootObjIdDistinct config = true :=
+    bootVSpaceRootObjIdDistinct_none config hNoBootVSpace
+  have hNonSentinel : bootVSpaceRootObjIdNonSentinel config = true :=
+    bootVSpaceRootObjIdNonSentinel_none config hNoBootVSpace
+  have hSafeBVR : bootVSpaceRootSafe config = true :=
+    bootVSpaceRootSafe_none config hNoBootVSpace
+  simp [bootFromPlatformChecked, hWf, hSafe, hNoVSpaceObj, hIrq, hMc, hPa,
+        hDistinct, hNonSentinel, hSafeBVR, hNoBootVSpace]
+
+/-- **WS-RC R3 (DEEP-BOOT-01)**: Checked boot with a boot VSpaceRoot
+    threads `installBootVSpaceRoot` between the standard fold and the
+    interrupts-enable step.  Sibling theorem to
+    `bootFromPlatformChecked_eq_bootFromPlatform` for the
+    `bootVSpaceRoot = some _` case.
+
+    Precondition chain mirrors `bootFromPlatformChecked_eq_bootFromPlatform`
+    plus the two new R3 gates: `bootVSpaceRootObjIdDistinct` and
+    `bootVSpaceRootSafe`. -/
+theorem bootFromPlatformChecked_admits_bootVSpace (config : PlatformConfig)
+    (hWf : config.wellFormed = true)
+    (hSafe : config.initialObjects.all (fun entry => bootSafeObjectCheck entry.obj) = true)
+    (hNoVSpaceObj : noVSpaceRootsInInitialObjects config = true)
+    (hIrq : irqHandlersReferenceNotifications config = true)
+    (hMc : config.machineConfig.wellFormed = true)
+    (hPa : config.machineConfig.physicalAddressWidth ≤ 52)
+    (hDistinct : bootVSpaceRootObjIdDistinct config = true)
+    (hNonSentinel : bootVSpaceRootObjIdNonSentinel config = true)
+    (hSafeBVR : bootVSpaceRootSafe config = true)
+    (entry : BootVSpaceRootEntry)
+    (hEntry : config.bootVSpaceRoot = some entry) :
+    bootFromPlatformChecked config =
+      .ok (bootEnableInterruptsOp
+        (installBootVSpaceRoot (bootFromPlatform config)
+          entry.id entry.root entry.hMappings)) := by
+  simp [bootFromPlatformChecked, hWf, hSafe, hNoVSpaceObj, hIrq, hMc, hPa,
+        hDistinct, hNonSentinel, hSafeBVR, hEntry]
 
 /-- AK9-C: Successful checked boot implies IRQ handlers reference notifications.
     If `bootFromPlatformChecked` returns `.ok`, the `irqHandlersReferenceNotifications`
-    predicate was true — a key witness for downstream interrupt dispatch proofs. -/
+    predicate was true — a key witness for downstream interrupt dispatch proofs.
+
+    WS-RC R3 audit fix: traverse the new `noVSpaceRootsInInitialObjects`
+    gate that precedes `irqHandlersReferenceNotifications`. -/
 theorem bootFromPlatformChecked_ok_implies_irqHandlersValid (config : PlatformConfig)
     (ist : IntermediateState)
     (hOk : bootFromPlatformChecked config = .ok ist) :
@@ -765,12 +1124,17 @@ theorem bootFromPlatformChecked_ok_implies_irqHandlersValid (config : PlatformCo
   split at hOk
   · split at hOk
     · split at hOk
-      · rename_i hIrq; exact hIrq
+      · split at hOk
+        · rename_i hIrq; exact hIrq
+        · cases hOk
       · cases hOk
     · cases hOk
   · split at hOk <;> cases hOk
 
-/-- AK9-F (P-M05): Successful checked boot implies `MachineConfig.wellFormed`. -/
+/-- AK9-F (P-M05): Successful checked boot implies `MachineConfig.wellFormed`.
+
+    WS-RC R3 audit fix: traverse the new `noVSpaceRootsInInitialObjects`
+    gate that precedes `machineConfig.wellFormed`. -/
 theorem bootFromPlatformChecked_ok_implies_machineConfigWellFormed
     (config : PlatformConfig) (ist : IntermediateState)
     (hOk : bootFromPlatformChecked config = .ok ist) :
@@ -780,18 +1144,23 @@ theorem bootFromPlatformChecked_ok_implies_machineConfigWellFormed
   · split at hOk
     · split at hOk
       · split at hOk
-        · rename_i hMc
-          -- pull the Bool out of the if-condition
-          exact (by
-            rcases hMcB : config.machineConfig.wellFormed with _ | _
-            · simp [hMcB] at hMc
-            · rfl)
+        · split at hOk
+          · rename_i hMc
+            -- pull the Bool out of the if-condition
+            exact (by
+              rcases hMcB : config.machineConfig.wellFormed with _ | _
+              · simp [hMcB] at hMc
+              · rfl)
+          · cases hOk
         · cases hOk
       · cases hOk
     · cases hOk
   · split at hOk <;> cases hOk
 
-/-- AK9-F (P-M05): Successful checked boot implies `physicalAddressWidth ≤ 52`. -/
+/-- AK9-F (P-M05): Successful checked boot implies `physicalAddressWidth ≤ 52`.
+
+    WS-RC R3 audit fix: traverse the new `noVSpaceRootsInInitialObjects`
+    gate that precedes `physicalAddressWidth`. -/
 theorem bootFromPlatformChecked_ok_implies_physicalAddressWidth_bound
     (config : PlatformConfig) (ist : IntermediateState)
     (hOk : bootFromPlatformChecked config = .ok ist) :
@@ -802,7 +1171,9 @@ theorem bootFromPlatformChecked_ok_implies_physicalAddressWidth_bound
     · split at hOk
       · split at hOk
         · split at hOk
-          · rename_i hPa; exact hPa
+          · split at hOk
+            · rename_i hPa; exact hPa
+            · cases hOk
           · cases hOk
         · cases hOk
       · cases hOk
@@ -810,7 +1181,12 @@ theorem bootFromPlatformChecked_ok_implies_physicalAddressWidth_bound
   · split at hOk <;> cases hOk
 
 /-- AK9-G (P-M06): Successful checked boot produces a state with interrupts
-    enabled. Matches the post-HAL hardware state. -/
+    enabled. Matches the post-HAL hardware state.
+
+    WS-RC R3: Updated to traverse the four new boot-VSpace gates
+    (`noVSpaceRootsInInitialObjects`, `bootVSpaceRootObjIdDistinct`,
+    `bootVSpaceRootObjIdNonSentinel`, `bootVSpaceRootSafe`) and the
+    inner `match` on `config.bootVSpaceRoot`. -/
 theorem bootFromPlatformChecked_ok_interruptsEnabled (config : PlatformConfig)
     (ist : IntermediateState)
     (hOk : bootFromPlatformChecked config = .ok ist) :
@@ -821,8 +1197,22 @@ theorem bootFromPlatformChecked_ok_interruptsEnabled (config : PlatformConfig)
     · split at hOk
       · split at hOk
         · split at hOk
-          · cases hOk
-            exact bootEnableInterruptsOp_interruptsEnabled _
+          · split at hOk
+            · split at hOk
+              · split at hOk
+                · split at hOk
+                  · -- All gates pass; case on bootVSpaceRoot
+                    split at hOk
+                    · -- bootVSpaceRoot = none
+                      cases hOk
+                      exact bootEnableInterruptsOp_interruptsEnabled _
+                    · -- bootVSpaceRoot = some entry
+                      cases hOk
+                      exact bootEnableInterruptsOp_interruptsEnabled _
+                  · cases hOk
+                · cases hOk
+              · cases hOk
+            · cases hOk
           · cases hOk
         · cases hOk
       · cases hOk
@@ -1438,21 +1828,21 @@ theorem bootFromPlatform_cdtNodeSlot_eq (config : PlatformConfig) :
     **Tradeoff**: All address spaces must be configured post-boot via `vspaceMap`
     syscalls. This prevents pre-populating address space mappings during boot.
 
-    **AN9-E (DEF-P-L9 — RESOLVED via AN7-D.2)**: a canonical RPi5 boot
-    VSpaceRoot is now provided by `SeLe4n.Platform.RPi5.VSpaceBoot`
-    (`rpi5BootVSpaceRoot`).  The companion theorem
-    `rpi5BootVSpaceRoot_bootSafe` in that module witnesses a single
-    well-formed boot VSpaceRoot at ASID 0; non-empty boot configs that
-    include this canonical root therefore satisfy the
-    `PlatformConfig.bootSafe` precondition.  The `bootSafeObject`
-    predicate here retains the `(∀ vs, obj ≠ .vspaceRoot vs)` clause
-    as a *structural* exclusion — i.e., we do not require every
-    config to include any VSpaceRoot — but boots that DO include the
-    canonical root via `RPi5.VSpaceBoot` discharge the constraint via
-    that module's bridge.
+    **WS-RC R3 (DEEP-BOOT-01)**: VSpaceRoots are now admitted iff they
+    satisfy `Platform.RPi5.VSpaceBoot.bootSafeVSpaceRoot` (asid bounded,
+    every mapping W^X compliant, at least one mapping present, every
+    physical address fits within the BCM2712 44-bit PA space, and — per
+    the third-audit hardening — every virtual address is canonical
+    (< 2^48)).  The `installBootVSpaceRoot` builder operation (defined
+    above) registers the boot VSpaceRoot's ASID in `asidTable` so
+    subsequent VSpace operations can resolve it via the standard
+    `resolveAsidRoot` path.  Previously this clause was
+    `(∀ vs, obj ≠ .vspaceRoot vs)`, rendering the proven-W^X-compliant
+    `rpi5BootVSpaceRoot` data structure inert at boot time.
 
     See `SeLe4n/Platform/RPi5/VSpaceBoot.lean` for the substantive
-    closure. -/
+    well-formedness predicates and the
+    `rpi5BootVSpaceRoot_bootSafe` discharge witness. -/
 def bootSafeObject (obj : KernelObject) : Prop :=
   -- Endpoints must have empty queues (no thread references)
   (∀ ep, obj = .endpoint ep →
@@ -1474,8 +1864,9 @@ def bootSafeObject (obj : KernelObject) : Prop :=
     tcb.queueNext = none ∧ tcb.queuePrev = none ∧
     tcb.timeoutBudget = none ∧
     tcb.schedContextBinding = .unbound) ∧
-  -- VSpaceRoots excluded (require asidTable registration not available at boot)
-  (∀ vs, obj ≠ .vspaceRoot vs) ∧
+  -- WS-RC R3 (DEEP-BOOT-01): VSpaceRoots admitted iff bootSafeVSpaceRoot
+  (∀ vs, obj = .vspaceRoot vs →
+    SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRoot vs) ∧
   -- Z9-I: SchedContexts must be well-formed and unbound at boot
   (∀ sc, obj = .schedContext sc →
     schedContextWellFormed sc ∧ sc.boundThread = none)
@@ -1485,6 +1876,26 @@ def bootSafeObject (obj : KernelObject) : Prop :=
     extending the invariant bridge to non-empty configs. -/
 def PlatformConfig.bootSafe (config : PlatformConfig) : Prop :=
   ∀ entry, entry ∈ config.initialObjects → bootSafeObject entry.obj
+
+/-- **WS-RC R3 (DEEP-BOOT-01)**: Prop-level admission witness for the
+    canonical RPi5 boot VSpaceRoot.  Every conjunct of `bootSafeObject`
+    discharges either by absurdity (object-kind mismatch with `vspaceRoot`)
+    or, for the `.vspaceRoot` clause, by appealing to the W^X-compliant
+    `rpi5BootVSpaceRoot_bootSafe` proof in `Platform.RPi5.VSpaceBoot`. -/
+theorem bootSafeObject_admits_rpi5BootVSpaceRoot :
+    bootSafeObject
+        (KernelObject.vspaceRoot
+          SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot) := by
+  unfold bootSafeObject
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro _ he; cases he
+  · intro _ he; cases he
+  · intro _ he; cases he
+  · intro _ he; cases he
+  · intro vs hv
+    cases hv
+    exact SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot_bootSafe
+  · intro _ he; cases he
 
 /-- AK8-A (WS-AK / C-M01): Cross-untyped physical-region disjointness for
 boot configs. For any two distinct `.untyped` entries in `initialObjects`
@@ -1677,7 +2088,24 @@ component to the already-proved `default_*` case.
 -/
 theorem bootFromPlatform_proofLayerInvariantBundle_general
     (config : PlatformConfig) (hSafe : config.bootSafe)
-    (hUntypedDisj : config.untypedRegionsDisjoint) :
+    (hUntypedDisj : config.untypedRegionsDisjoint)
+    -- WS-RC R3 (DEEP-BOOT-01): Boot VSpaceRoots are introduced via the
+    -- dedicated `installBootVSpaceRoot` builder operation (extending
+    -- `bootFromPlatformChecked`), NOT through `initialObjects`.  This
+    -- precondition restricts the present (unchecked) bridge theorem to
+    -- VSpace-clean configs — `bootFromPlatform` itself does NOT install
+    -- a boot VSpaceRoot, so its post-state is necessarily VSpace-free
+    -- when `initialObjects` is also VSpace-free.  Substantive proof
+    -- of the full `proofLayerInvariantBundle` for the
+    -- `bootFromPlatformChecked` post-state with a boot VSpaceRoot
+    -- installed (i.e., a sibling theorem that handles the
+    -- `installBootVSpaceRoot` step) is a post-R3 hardening item;
+    -- the current R3 deliverable is the RUNTIME wiring + per-step
+    -- witness theorems (`installBootVSpaceRoot_objects_lookup`,
+    -- `installBootVSpaceRoot_asidTable_lookup`).
+    (hNoVSpaceInInitial :
+      ∀ entry, entry ∈ config.initialObjects → ∀ vs,
+        entry.obj ≠ KernelObject.vspaceRoot vs) :
     Architecture.proofLayerInvariantBundle
       (bootFromPlatform config).state := by
   -- The post-boot state equals default on all fields that the 9 invariant
@@ -1730,10 +2158,33 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   -- Boot-safe object bridge and shared helpers
   have hBS := bootFromPlatform_objects_bootSafe config hSafe
   have hCdtNS := bootFromPlatform_cdtNodeSlot_eq config
-  -- No VSpaceRoots in boot state (bootSafe excludes them)
-  have hNoVSpace : ∀ oid vs,
-      (bootFromPlatform config).state.objects[oid]? ≠ some (KernelObject.vspaceRoot vs) :=
-    fun oid vs hObj => (hBS oid _ hObj).2.2.2.2.1 vs rfl
+  -- WS-RC R3 (DEEP-BOOT-01): No VSpaceRoots in boot state.  With R3.1
+  -- admitting boot-safe VSpaceRoots into the `bootSafeObject` predicate,
+  -- absurdity is no longer immediate from the bootSafe witness; instead
+  -- we trace any post-boot VSpaceRoot back to `initialObjects` via
+  -- `foldObjects_objects_reachable` and contradict `hNoVSpaceInInitial`.
+  have hNoVSpace : ∀ (oid : SeLe4n.ObjId) (vs : VSpaceRoot),
+      (bootFromPlatform config).state.objects.get? oid ≠
+        some (KernelObject.vspaceRoot vs) := by
+    intro oid vs hObj
+    -- Trace the post-boot lookup back to initialObjects.
+    unfold bootFromPlatform at hObj
+    -- applyMachineConfig preserves objects.
+    rw [applyMachineConfig_objects_eq] at hObj
+    have hObj' : (foldObjects config.initialObjects
+        (foldIrqs config.irqTable mkEmptyIntermediateState)).state.objects[oid]? =
+          some (KernelObject.vspaceRoot vs) := by
+      simp only [RHTable_getElem?_eq_get?]; exact hObj
+    rcases foldObjects_objects_reachable config.initialObjects
+        (foldIrqs config.irqTable mkEmptyIntermediateState) oid _ hObj' with
+      ⟨entry, hMem, _hId, hObjEq⟩ | hBase
+    · -- Entry came from initialObjects with `entry.obj = .vspaceRoot vs`.
+      exact hNoVSpaceInInitial entry hMem vs (by rw [hObjEq])
+    · -- Base state: `foldIrqs` over the empty intermediate state has no objects.
+      rw [foldIrqs_objects, mkEmpty_state_eq_default] at hBase
+      have hEmpty : (default : SystemState).objects[oid]? = none := by
+        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+      rw [hEmpty] at hBase; exact absurd hBase (by simp)
   -- lookupService returns none (services empty)
   have hLookupSvcNone : ∀ sid,
       lookupService (bootFromPlatform config).state sid = none := by
@@ -2102,14 +2553,32 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
 
     AK8-A: Requires the additional config-level precondition
     `config.untypedRegionsDisjoint` to establish the 12th conjunct of
-    `crossSubsystemInvariant`. -/
+    `crossSubsystemInvariant`.
+
+    WS-RC R3 (DEEP-BOOT-01): Threads the new `hNoVSpaceInInitial`
+    precondition through the bridge composition.  Boot VSpaceRoots
+    are not introduced via `initialObjects` (the
+    `noVSpaceRootsInInitialObjects` runtime gate in
+    `bootFromPlatformChecked` enforces this); they are installed by
+    `installBootVSpaceRoot` consumed by the gated boot path
+    `bootFromPlatformChecked` via the dedicated
+    `PlatformConfig.bootVSpaceRoot` field.  Substantive proof of
+    the freeze-equivalent for the `bootFromPlatformChecked` post-state
+    with a boot VSpaceRoot installed is a post-R3 hardening item;
+    the current R3 deliverable is the RUNTIME wiring + per-step
+    witness theorems plus this VSpace-clean bridge composition. -/
 theorem bootToRuntime_invariantBridge_general (config : PlatformConfig)
-    (hSafe : config.bootSafe) (hUntypedDisj : config.untypedRegionsDisjoint) :
+    (hSafe : config.bootSafe) (hUntypedDisj : config.untypedRegionsDisjoint)
+    (hNoVSpaceInInitial :
+      ∀ entry, entry ∈ config.initialObjects → ∀ vs,
+        entry.obj ≠ KernelObject.vspaceRoot vs) :
     let ist := bootFromPlatform config
     Architecture.proofLayerInvariantBundle ist.state ∧
     SeLe4n.Model.apiInvariantBundle_frozen (SeLe4n.Model.freeze ist) :=
-  ⟨bootFromPlatform_proofLayerInvariantBundle_general config hSafe hUntypedDisj,
+  ⟨bootFromPlatform_proofLayerInvariantBundle_general config hSafe hUntypedDisj
+     hNoVSpaceInInitial,
    SeLe4n.Model.freeze_preserves_invariants _
-     (bootFromPlatform_proofLayerInvariantBundle_general config hSafe hUntypedDisj)⟩
+     (bootFromPlatform_proofLayerInvariantBundle_general config hSafe hUntypedDisj
+        hNoVSpaceInInitial)⟩
 
 end SeLe4n.Platform.Boot

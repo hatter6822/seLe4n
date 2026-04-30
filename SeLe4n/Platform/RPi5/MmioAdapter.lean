@@ -1112,12 +1112,17 @@ theorem dsb_guarantees_mmio_completion (st st' : SystemState)
   boot-only cost; the RPi5 `irqTable` is at most ~20 entries, and boot
   runs once. Documented as accepted cost.
 
-- **P-L9** VSpaceRoot boot exclusion: recorded here as a post-1.0
-  hardening candidate; no currently-active plan file tracks it. The
-  `bootSafeObject` predicate excludes `.vspaceRoot` variants because
-  ASID-table registration in `storeObject` requires a fully-initialized
-  ASID manager which is not available during builder-phase boot. All
-  address spaces are configured post-boot via `vspaceMap` syscalls.
+- **P-L9** VSpaceRoot boot exclusion: **RESOLVED** (WS-RC R3 /
+  DEEP-BOOT-01, v0.30.11).  `bootSafeObject` and `bootSafeObjectCheck`
+  now admit boot-safe `.vspaceRoot` variants via the
+  `bootSafeVSpaceRoot` predicate (`Platform/RPi5/VSpaceBoot.lean`).
+  Boot VSpaceRoots are threaded through the dedicated
+  `PlatformConfig.bootVSpaceRoot` field via `installBootVSpaceRoot`
+  in `Platform/Boot.lean`, which composes `Builder.createObject` with
+  an `asidTable` insertion so the post-state has consistent
+  objects/asidTable bookkeeping.  See
+  `bootFromPlatformChecked_admits_bootVSpace` for the integration
+  theorem and the WS-RC R3 entry in `docs/WORKSTREAM_HISTORY.md`.
 
 - **P-L10** `registerContextStableCheck` ignores pre-state: deliberate.
   The predicate examines post-state only; pre-state is retained in the
