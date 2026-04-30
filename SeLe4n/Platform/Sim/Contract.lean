@@ -78,11 +78,11 @@ private def simBootPerms : PagePermissions :=
 
 /-- **WS-RC R3**: Simulation boot VSpaceRoot — a minimal VSpaceRoot at
     ASID 0 with a single read-only identity mapping at virtual /
-    physical address `0x1000`.  Satisfies the four
+    physical address `0x1000`.  Satisfies the five
     `bootSafeVSpaceRoot` conjuncts (asid bounded, W^X compliant,
-    non-empty mappings, paddr < 2^44) but does not exercise any
-    hardware-specific MMIO regions because the simulation harness
-    runs entirely in software.
+    non-empty mappings, paddr < 2^44, vaddr canonical < 2^48) but
+    does not exercise any hardware-specific MMIO regions because the
+    simulation harness runs entirely in software.
 
     Structurally parallel to RPi5's `rpi5BootVSpaceRoot` so the
     simulation `PlatformBinding` instance can also exercise the
@@ -97,17 +97,18 @@ def simBootVSpaceRoot : VSpaceRoot :=
 /-- **WS-RC R3**: The simulation boot VSpaceRoot is in ASID 0. -/
 theorem simBootVSpaceRoot_asid : simBootVSpaceRoot.asid = ASID.ofNat 0 := rfl
 
-/-- **WS-RC R3**: The simulation boot root passes the boot-safety
-    predicate.  Discharged by `decide` on the four-element fold over
-    the single-mapping table. -/
+/-- **WS-RC R3 / third-audit hardening**: The simulation boot root
+    passes the boot-safety predicate.  Discharged by `decide` on the
+    five-element fold over the single-mapping table. -/
 theorem simBootVSpaceRoot_bootSafe :
     SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRoot simBootVSpaceRoot := by
   unfold SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRoot
     SeLe4n.Platform.RPi5.VSpaceBoot.VSpaceRootWellFormed
     SeLe4n.Platform.RPi5.VSpaceBoot.VSpaceRootWxCompliant
     SeLe4n.Platform.RPi5.VSpaceBoot.VSpaceRootPaddrBounded
+    SeLe4n.Platform.RPi5.VSpaceBoot.VSpaceRootVaddrCanonical
     simBootVSpaceRoot simBootPerms
-  refine ⟨?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
   · -- asid = 0 ≤ maxAsidValue
     show (0 : Nat) ≤ maxAsidValue
     unfold maxAsidValue; omega
@@ -116,6 +117,8 @@ theorem simBootVSpaceRoot_bootSafe :
   · -- non-empty mappings
     decide
   · -- paddr < 2^44
+    decide
+  · -- vaddr canonical (0x1000 < 2^48)
     decide
 
 /-- **WS-RC R3**: The simulation boot root passes the runtime-decidable

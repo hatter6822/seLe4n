@@ -29,10 +29,12 @@ exclusion deferred item) by providing:
    non-executable.  All mappings use ASID 0 (reserved for the kernel).
 
 2. `VSpaceRootWellFormed` — a freshly-defined structural predicate on
-   the root with **four conjuncts**: ASID within hardware bounds, every
-   mapping's permissions satisfy W^X, at least one mapping is present,
-   and every mapping's `paddr.toNat` lies within the BCM2712 44-bit
-   physical address space.
+   the root with **five conjuncts** (third-audit hardening, WS-RC R3):
+   ASID within hardware bounds, every mapping's permissions satisfy
+   W^X, at least one mapping is present, every mapping's
+   `paddr.toNat` lies within the BCM2712 44-bit physical address
+   space, and every mapping's virtual address is canonical
+   (`vaddr.val < 2^48`).
 
 3. `VSpaceRootWxCompliant` — per-root W^X: every mapping's permissions
    satisfy the `PagePermissions.wxCompliant` predicate (checked via an
@@ -205,8 +207,28 @@ def VSpaceRootPaddrBounded (root : VSpaceRoot) : Prop :=
   root.mappings.fold true
     (fun acc _ entry => acc && decide (entry.1.toNat < 2^44)) = true
 
-/-- **AN7-D.2.2**: structural well-formedness predicate for a VSpaceRoot used
-    at kernel boot.  Four conjuncts:
+/-- **WS-RC R3 (DEEP-BOOT-01) — third-audit hardening**: per-root virtual-
+    address canonical-form predicate.  Every mapping's virtual-address
+    key must fit within the ARMv8-A 48-bit canonical user-half address
+    range (`vaddr.val < VAddr.canonicalBound = 2^48`).  ARMv8-A reserves
+    the gap `[2^48, 2^64 - 2^48)` for non-canonical addresses; a boot
+    VSpaceRoot containing such a vaddr would translation-fault on real
+    hardware before the kernel could intercept it.
+
+    Defense-in-depth: the canonical `rpi5BootVSpaceRoot` and
+    `simBootVSpaceRoot` use `insertIdentity vaddr := VAddr.ofNat
+    paddr.toNat` with `paddr < 2^44`, so vaddr `< 2^44 < 2^48` holds
+    incidentally.  But a third-party `BootVSpaceRootEntry` (constructed
+    via the public structure constructor on `Platform.Contract`) could
+    embed an arbitrary vaddr; this predicate catches the violation at
+    `bootSafeVSpaceRootCheck` time before `installBootVSpaceRoot` runs.
+    The fold form is closed under `decide` on a fixed-shape boot root. -/
+def VSpaceRootVaddrCanonical (root : VSpaceRoot) : Prop :=
+  root.mappings.fold true
+    (fun acc vaddr _ => acc && VAddr.isCanonical vaddr) = true
+
+/-- **AN7-D.2.2 / WS-RC R3**: structural well-formedness predicate for a
+    VSpaceRoot used at kernel boot.  Five conjuncts:
 
     - `asidBounded`: `asid.val ≤ maxAsidValue` (ARM64 reserves ASID=0 for
       the kernel address space, so ASID 0 is explicitly allowed).
@@ -215,12 +237,16 @@ def VSpaceRootPaddrBounded (root : VSpaceRoot) : Prop :=
       L1 table cannot serve the kernel's first instruction fetch after MMU
       enable, so an empty boot root is actively unsafe).
     - `paddrBounded`: every mapping's `paddr.toNat` fits within the
-      BCM2712 44-bit PA space (pa < 2^44). -/
+      BCM2712 44-bit PA space (pa < 2^44).
+    - `vaddrCanonical` (WS-RC R3 third-audit hardening): every mapping's
+      virtual address fits within the ARMv8-A 48-bit canonical-form
+      range (`vaddr.val < 2^48`). -/
 def VSpaceRootWellFormed (root : VSpaceRoot) : Prop :=
   root.asid.val ≤ maxAsidValue ∧
   VSpaceRootWxCompliant root ∧
   root.mappings.size > 0 ∧
-  VSpaceRootPaddrBounded root
+  VSpaceRootPaddrBounded root ∧
+  VSpaceRootVaddrCanonical root
 
 /-- **AN7-D.2.3**: The canonical RPi5 boot root satisfies per-root W^X.
 
@@ -248,11 +274,25 @@ theorem rpi5BootVSpaceRoot_paddrBounded :
   unfold VSpaceRootPaddrBounded
   decide
 
-/-- **AN7-D.2.2**: The canonical RPi5 boot root is well-formed (all four
-    conjuncts hold). -/
+/-- **WS-RC R3 (DEEP-BOOT-01) — third-audit hardening**: The canonical
+    RPi5 boot root's mapped virtual addresses all fit within the
+    ARMv8-A 48-bit canonical-form range.  `insertIdentity` constructs
+    each vaddr from the matching paddr (`vaddr := VAddr.ofNat
+    paddr.toNat`), so `paddr < 2^44 < 2^48` directly implies
+    `vaddr < 2^48`.  Discharged by `decide` on the finite six-element
+    fold. -/
+theorem rpi5BootVSpaceRoot_vaddrCanonical :
+    VSpaceRootVaddrCanonical rpi5BootVSpaceRoot := by
+  unfold VSpaceRootVaddrCanonical
+  decide
+
+/-- **AN7-D.2.2 / WS-RC R3**: The canonical RPi5 boot root is well-formed
+    (all five conjuncts hold). -/
 theorem rpi5BootVSpaceRoot_wellFormed :
     VSpaceRootWellFormed rpi5BootVSpaceRoot := by
-  refine ⟨?_, rpi5BootVSpaceRoot_wxCompliant, ?_, rpi5BootVSpaceRoot_paddrBounded⟩
+  refine ⟨?_, rpi5BootVSpaceRoot_wxCompliant, ?_,
+          rpi5BootVSpaceRoot_paddrBounded,
+          rpi5BootVSpaceRoot_vaddrCanonical⟩
   · -- asid = 0 ≤ maxAsidValue
     rw [rpi5BootVSpaceRoot_asid]
     show (0 : Nat) ≤ maxAsidValue
@@ -265,11 +305,14 @@ theorem rpi5BootVSpaceRoot_wellFormed :
 -- AN7-D.2.4 — `bootSafeVSpaceRoot` + `rpi5BootVSpaceRoot_bootSafe`
 -- ============================================================================
 
-/-- **AN7-D.2.4**: Per-VSpaceRoot boot-safety predicate.  A VSpaceRoot is
-    boot-safe iff it is well-formed (ASID bounded, all mappings W^X, at
-    least one mapping present).  Callers that wish to admit VSpaceRoots in
-    the `bootFromPlatformChecked` object sweep compose this predicate with
-    the per-object `bootSafeObject` exclusion. -/
+/-- **AN7-D.2.4 / WS-RC R3**: Per-VSpaceRoot boot-safety predicate.  A
+    VSpaceRoot is boot-safe iff it is well-formed: ASID bounded, all
+    mappings W^X compliant, at least one mapping present, all
+    physical addresses fit within the BCM2712 44-bit PA space, and
+    all virtual addresses canonical (< 2^48; third-audit hardening).
+    Callers that wish to admit VSpaceRoots in the
+    `bootFromPlatformChecked` object sweep compose this predicate
+    with the per-object `bootSafeObject` exclusion. -/
 def bootSafeVSpaceRoot (root : VSpaceRoot) : Prop :=
   VSpaceRootWellFormed root
 
@@ -305,7 +348,7 @@ theorem rpi5BootVSpaceRoot_admits_bootSafe :
     used by the runtime-decidable `bootSafeObjectCheck` sweep to admit
     well-formed boot VSpaceRoots into the initial object store.
 
-    Returns `true` iff the four `VSpaceRootWellFormed` conjuncts hold:
+    Returns `true` iff the five `VSpaceRootWellFormed` conjuncts hold:
 
     1. `asid.val ≤ maxAsidValue` — ASID within hardware bounds
        (ASID 0 is the kernel ASID and explicitly allowed).
@@ -316,6 +359,11 @@ theorem rpi5BootVSpaceRoot_admits_bootSafe :
        fetch after MMU enable).
     4. Every mapping's physical address fits within the BCM2712 44-bit
        PA space (`paddr.toNat < 2^44`).
+    5. **WS-RC R3 third-audit hardening** — every mapping's virtual
+       address is canonical (`vaddr.val < 2^48`).  Non-canonical
+       addresses fall in the ARMv8-A reserved gap `[2^48, 2^64 - 2^48)`
+       and translation-fault on hardware before the kernel can
+       intercept them.
 
     Companion equivalence theorem `bootSafeVSpaceRootCheck_iff` proves
     this Bool form coincides with the Prop-level `bootSafeVSpaceRoot`
@@ -324,15 +372,16 @@ def bootSafeVSpaceRootCheck (root : VSpaceRoot) : Bool :=
   decide (root.asid.val ≤ maxAsidValue) &&
   (root.mappings.fold true (fun acc _ entry => acc && entry.2.wxCompliant)) &&
   decide (root.mappings.size > 0) &&
-  (root.mappings.fold true (fun acc _ entry => acc && decide (entry.1.toNat < 2^44)))
+  (root.mappings.fold true (fun acc _ entry => acc && decide (entry.1.toNat < 2^44))) &&
+  (root.mappings.fold true (fun acc vaddr _ => acc && VAddr.isCanonical vaddr))
 
 /-- **WS-RC R3**: The Bool-valued check coincides with the Prop-level
-    boot-safety predicate.  Both forms unfold to the same four
+    boot-safety predicate.  Both forms unfold to the same five
     decidable conjuncts. -/
 theorem bootSafeVSpaceRootCheck_iff (root : VSpaceRoot) :
     bootSafeVSpaceRootCheck root = true ↔ bootSafeVSpaceRoot root := by
   unfold bootSafeVSpaceRootCheck bootSafeVSpaceRoot VSpaceRootWellFormed
-    VSpaceRootWxCompliant VSpaceRootPaddrBounded
+    VSpaceRootWxCompliant VSpaceRootPaddrBounded VSpaceRootVaddrCanonical
   simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc]
 
 /-- **WS-RC R3**: The canonical RPi5 boot root passes the Bool-valued

@@ -1,3 +1,76 @@
+## v0.30.11 — WS-RC R3 third-audit pass: canonical-VAddr defense-in-depth gate
+
+A third deep audit of the WS-RC R3 implementation surfaced one
+defense-in-depth gap in `bootSafeVSpaceRootCheck` that did not
+verify the canonical-form bound on virtual addresses
+(`vaddr.val < 2^48`).  The four pre-existing conjuncts were
+correct (asid bounded, W^X compliant, non-empty mappings,
+paddr < 2^44), but a third-party `BootVSpaceRootEntry` constructed
+with a non-canonical vaddr (one in the ARMv8-A reserved gap
+`[2^48, 2^64 - 2^48)`) would pass the gate yet translation-fault
+on hardware before the kernel could intercept the misconfiguration.
+Per implement-the-improvement, the predicate's design intent —
+"verify a VSpaceRoot is safe to use at boot" — implies catching
+this class of failure structurally rather than relying on the
+incidental property that the canonical `rpi5BootVSpaceRoot` and
+`simBootVSpaceRoot` happen to use canonical vaddrs by construction.
+
+### What changed
+
+- **`Platform/RPi5/VSpaceBoot.lean`**: added a fifth predicate
+  `VSpaceRootVaddrCanonical` (Prop form, RHTable.fold over keys
+  with `VAddr.isCanonical`).  Threaded through `VSpaceRootWellFormed`
+  (now five conjuncts), `bootSafeVSpaceRootCheck` (Bool form,
+  fifth `RHTable.fold` clause), and the equivalence theorem
+  `bootSafeVSpaceRootCheck_iff` (now decomposes five conjuncts via
+  `Bool.and_eq_true`/`decide_eq_true_eq`/`and_assoc`).  Added the
+  standalone discharge witness
+  `rpi5BootVSpaceRoot_vaddrCanonical : VSpaceRootVaddrCanonical
+  rpi5BootVSpaceRoot := by decide` and updated the five-conjunct
+  refine in `rpi5BootVSpaceRoot_wellFormed`.
+- **`Platform/Sim/Contract.lean`**: updated `simBootVSpaceRoot_bootSafe`
+  to refine five conjuncts (was four), with the fifth discharged by
+  `decide` since `simBootVSpaceRoot`'s single mapping at vaddr=0x1000
+  is well within canonical range.  Updated the `simBootVSpaceRoot`
+  docstring to enumerate all five conjuncts.
+- **`Platform/Boot.lean`**: updated the `bootSafeObjectCheck`
+  `.vspaceRoot` arm docstring to list the fifth conjunct
+  (canonical vaddr) alongside the existing four.
+
+### Test coverage addition
+
+`tests/TwoPhaseArchSuite.lean` adds a new TPH-015l regression test
+`tph015l_nonCanonicalVAddrRejected` that constructs a
+`BootVSpaceRootEntry` with a single mapping at `vaddr = 2^48` (the
+first non-canonical address in the ARMv8-A reserved gap) and a
+canonical paddr.  All other gates pass; the new `vaddrCanonical`
+conjunct is the only failing one.  Total TPH-015 test count is
+now 12 (was 11).
+
+### Validation
+
+`lake build` (308 jobs) passes with zero warnings or errors.
+`lake exe two_phase_arch_suite` reports 27/27 tests pass (was 26).
+`./scripts/test_smoke.sh` passes after `docs/codebase_map.json`
+regeneration (the new theorems are auto-detected by the codebase
+map generator).  Zero sorry / zero axiom in modified files.
+
+### Why this is the right fix (implement-the-improvement)
+
+The current concrete VSpaceRoots use `insertIdentity` with
+`vaddr := VAddr.ofNat paddr.toNat` and `paddr < 2^44`, so vaddr
+`< 2^44 < 2^48` holds incidentally.  The pre-fix predicate worked
+for current usage, but its design intent ("boot-safe VSpaceRoot")
+covers a broader contract than its four conjuncts enforced.
+Documenting the gap rather than fixing it would have been the
+implement-the-improvement anti-pattern (weakening docs to match
+weaker code); the predicate's domain naturally includes
+canonical-form verification, so the predicate's body should
+reflect that.  Future `BootVSpaceRootEntry` constructions (e.g.,
+non-identity mappings for a different platform with a high-half
+kernel mapping) are now defense-in-depth-protected against the
+non-canonical-vaddr failure mode.
+
 ## tests/NegativeStateSuite: split 3 large helpers to fix clang nesting limit
 
 `lake exe negative_state_suite` previously failed with clang's

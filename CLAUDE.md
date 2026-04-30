@@ -863,6 +863,32 @@ under `docs/` and `docs/gitbook/`.
   `bootFromPlatformChecked_admits_bootVSpace`,
   `bootFromPlatformChecked_ok_implies_*`,
   `bootFromPlatformChecked_ok_interruptsEnabled`).
+  **WS-RC R3 third-audit pass** (post-LANDING audit, v0.30.11
+  hardening):  closed a defense-in-depth gap in
+  `bootSafeVSpaceRootCheck` that did not verify the canonical-form
+  bound on virtual addresses (`vaddr.val < 2^48`).  Pre-fix the
+  predicate verified four conjuncts (asid bounded, W^X compliant,
+  non-empty mappings, paddr < 2^44); a third-party
+  `BootVSpaceRootEntry` constructed with a vaddr in the ARMv8-A
+  reserved gap `[2^48, 2^64 - 2^48)` would pass the gate yet
+  translation-fault on hardware before the kernel could intercept
+  the misconfiguration.  Per implement-the-improvement, added a
+  fifth `VSpaceRootVaddrCanonical` predicate to the
+  `VSpaceRootWellFormed` conjunction and threaded it through both
+  Bool (`bootSafeVSpaceRootCheck`) and Prop (`bootSafeVSpaceRoot`)
+  forms, the equivalence theorem (`bootSafeVSpaceRootCheck_iff`),
+  the canonical RPi5 boot root proof
+  (`rpi5BootVSpaceRoot_vaddrCanonical` discharge witness and the
+  five-conjunct `rpi5BootVSpaceRoot_wellFormed` refine), the
+  simulation boot root proof (`simBootVSpaceRoot_bootSafe` — fifth
+  `decide`), and the `Platform.Boot.bootSafeObjectCheck` `.vspaceRoot`
+  arm docstring.  New regression test
+  `TPH-015l_nonCanonicalVAddrRejected` exercises the gate with a
+  malformed entry at `vaddr = 2^48` (the first non-canonical
+  address); the existing `TPH-015a..k` tests continue to pass
+  because canonical vaddrs (rpi5BootVSpaceRoot via insertIdentity
+  with paddr<2^44, simBootVSpaceRoot at vaddr=0x1000) trivially
+  satisfy the new conjunct via `decide`.
 
 - **WS-AN portfolio COMPLETE (v0.30.11, branch `claude/review-codebase-phase-an12-JBPQN`)**:
   Phase AN12 — Documentation, themes, closure — landed the cross-cutting

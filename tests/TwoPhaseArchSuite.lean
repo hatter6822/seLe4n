@@ -697,6 +697,41 @@ private def tph015k_unsafeBootVSpaceRejected : IO Unit := do
   | .error _ =>
       expect "unsafe boot VSpace rejected by bootVSpaceRootSafe gate" true
 
+/-- TPH-015l (third-audit fix for canonical-VAddr gap): Boot-safety
+    gate rejects boot VSpaceRoots whose mappings contain a
+    non-canonical virtual address (vaddr ≥ 2^48).  Defense-in-depth:
+    on ARMv8-A hardware, vaddrs in `[2^48, 2^64 - 2^48)` translation-
+    fault before the kernel can intercept them, so a config that
+    leaks a non-canonical vaddr through the boot VSpace would crash
+    the kernel before it could surface a runtime error. -/
+private def tph015l_nonCanonicalVAddrRejected : IO Unit := do
+  -- Construct a root with a single mapping at a non-canonical vaddr
+  -- (2^48 is the first non-canonical address — it lies in the
+  -- ARMv8-A reserved gap).  paddr stays within 2^44 so paddrBounded
+  -- alone passes; the only failing conjunct is vaddrCanonical.
+  let safePerms : PagePermissions :=
+    { read := true, write := false, execute := false, user := false, cacheable := false }
+  let nonCanonicalRoot : VSpaceRoot :=
+    { asid := SeLe4n.ASID.ofNat 0
+      mappings := (SeLe4n.Kernel.RobinHood.RHTable.empty 16
+                    : SeLe4n.Kernel.RobinHood.RHTable VAddr (PAddr × PagePermissions)).insert
+        (VAddr.ofNat (2^48)) (PAddr.ofNat 0x1000, safePerms) }
+  let entry : SeLe4n.Platform.BootVSpaceRootEntry := {
+    id := SeLe4n.ObjId.ofNat 1
+    root := nonCanonicalRoot
+    hMappings :=
+      SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _
+        (SeLe4n.Kernel.RobinHood.RHTable.empty_invExt 16 (by omega)) }
+  let cfg : PlatformConfig :=
+    { irqTable := [], initialObjects := [],
+      machineConfig := SeLe4n.defaultMachineConfig
+      bootVSpaceRoot := some entry }
+  match bootFromPlatformChecked cfg with
+  | .ok _ =>
+      throw <| IO.userError "tph015l: non-canonical vaddr boot VSpace should be rejected, but boot succeeded"
+  | .error _ =>
+      expect "non-canonical vaddr boot VSpace rejected by vaddrCanonical conjunct" true
+
 /-- TPH-015g: Witness theorem connection.  The Bool-level admission
     witness `bootSafeObjectCheck_admits_rpi5BootVSpaceRoot` evaluates
     to `true` at runtime, providing executable evidence that the
@@ -769,7 +804,8 @@ def main : IO Unit := do
   tph015i_vspaceRootInInitialObjectsRejected
   tph015j_sentinelBootVSpaceObjIdRejected
   tph015k_unsafeBootVSpaceRejected
+  tph015l_nonCanonicalVAddrRejected
 
   IO.println "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  IO.println "  All 26 two-phase architecture tests passed!"
+  IO.println "  All 27 two-phase architecture tests passed!"
   IO.println "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

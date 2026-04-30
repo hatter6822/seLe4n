@@ -664,9 +664,11 @@ theorem objectIdsUniqueTransparent_empty : objectIdsUniqueTransparent [] = true 
     **WS-RC R3 (DEEP-BOOT-01)**: VSpaceRoots are now admitted iff they
     pass `Platform.RPi5.VSpaceBoot.bootSafeVSpaceRootCheck` (asid bounded,
     every mapping W^X compliant, at least one mapping present, every
-    physical address fits within the BCM2712 44-bit PA space).  Previously
-    the boot path rejected ALL VSpaceRoots, rendering the proven-W^X-
-    compliant `rpi5BootVSpaceRoot` data structure inert at runtime. -/
+    physical address fits within the BCM2712 44-bit PA space, and — per
+    the third-audit hardening — every virtual address is canonical
+    (< 2^48)).  Previously the boot path rejected ALL VSpaceRoots,
+    rendering the proven-W^X-compliant `rpi5BootVSpaceRoot` data
+    structure inert at runtime. -/
 def bootSafeObjectCheck (obj : KernelObject) : Bool :=
   match obj with
   | .endpoint ep =>
@@ -1829,13 +1831,14 @@ theorem bootFromPlatform_cdtNodeSlot_eq (config : PlatformConfig) :
     **WS-RC R3 (DEEP-BOOT-01)**: VSpaceRoots are now admitted iff they
     satisfy `Platform.RPi5.VSpaceBoot.bootSafeVSpaceRoot` (asid bounded,
     every mapping W^X compliant, at least one mapping present, every
-    physical address fits within the BCM2712 44-bit PA space).  The
-    `installBootVSpaceRoot` builder operation (defined above) registers
-    the boot VSpaceRoot's ASID in `asidTable` so subsequent VSpace
-    operations can resolve it via the standard `resolveAsidRoot` path.
-    Previously this clause was `(∀ vs, obj ≠ .vspaceRoot vs)`, rendering
-    the proven-W^X-compliant `rpi5BootVSpaceRoot` data structure inert
-    at boot time.
+    physical address fits within the BCM2712 44-bit PA space, and — per
+    the third-audit hardening — every virtual address is canonical
+    (< 2^48)).  The `installBootVSpaceRoot` builder operation (defined
+    above) registers the boot VSpaceRoot's ASID in `asidTable` so
+    subsequent VSpace operations can resolve it via the standard
+    `resolveAsidRoot` path.  Previously this clause was
+    `(∀ vs, obj ≠ .vspaceRoot vs)`, rendering the proven-W^X-compliant
+    `rpi5BootVSpaceRoot` data structure inert at boot time.
 
     See `SeLe4n/Platform/RPi5/VSpaceBoot.lean` for the substantive
     well-formedness predicates and the
