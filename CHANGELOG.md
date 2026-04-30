@@ -1,3 +1,61 @@
+## tests/NegativeStateSuite: split 3 large helpers to fix clang nesting limit
+
+`lake exe negative_state_suite` previously failed with clang's
+`bracket nesting level exceeded maximum of 256` at
+`.lake/build/ir/tests/NegativeStateSuite.c:13750`.  Sequential
+`expectErr`/`do` chains in three helpers (notably `runNegativeChecks`
+at 919 Lean lines) compiled to deeply nested C `if`-trees that
+exceeded clang's default 256-deep limit.  Refactored to a
+thin-dispatcher pattern: each large helper becomes a 6-12 line
+dispatcher calling per-area sub-helpers, with each sub-helper getting
+its own C function so nesting depth resets between sections.
+
+**Empirical**: pre-refactor `max_depth=259 at line 13780` in
+`runNegativeChecks` (tripping the limit by 3); post-refactor
+`max_depth=123` (margin of 133 below the limit).
+
+Helpers split (18 new sub-helpers; existing dispatcher names retained
+with thin bodies):
+
+- `runNegativeChecks` (919 → 8 sub-helpers + slim 13-line dispatcher)
+  - `runBaselineLookupNegativeChecks`,
+    `runCspaceMutationAndRevokeNegativeChecks` (sections 2+3 combined
+    for `strictSeed`/`strictRootSlot` reuse),
+    `runVSpaceAndNotificationF03NegativeChecks` (returns `IO SystemState`
+    threading `stN1` to the inline F-12 double-wait test),
+    `runBadgeTruncationNegativeChecks`,
+    `runIpcPayloadBoundsNegativeChecks`,
+    `runDualQueueEndpointFifoNegativeChecks`,
+    `runServiceCycleNegativeChecks`,
+    `runUntypedF2NegativeChecks`.
+- `runWSM4ResolveEdgeCaseChecks` (346 → 6 sub-helpers)
+  - `runWSM4GuardOnlyChecks`, `runWSM4SmallBitsChecks`,
+    `runWSM4GuardMismatchChecks`, `runWSM4MaxDepthLoopChecks`
+    (isolates the per-iteration `for` loop nesting),
+    `runWSM4SlotEdgeChecks`,
+    `runWSM4WrapperIntegrationChecks` (rebuilds shared
+    `leafRoot`/`leafTarget`/`stLeaf` locally).
+- `runWSKGChecks` (261 → 4 sub-helpers along the existing K-G1..K-G4
+  sub-section headers): `runWSKGCSpaceChecks`,
+  `runWSKGLifecycleVSpaceChecks`, `runWSKGServiceIpcChecks`,
+  `runWSKGDeterminismChecks`.
+
+The remaining 7 helpers in the 100-200-line range (`runWSH11Checks`,
+`runWSH16LifecycleChecks`, `runWSJ1DecodeChecks`,
+`runWSR4CoherenceChecks`, `runS2GCapabilityErrorTests`,
+`runX2RuntimeInvariantTests`, `runWSR2RevocationChecks`) all share
+fixture state across multiple sub-sections; splitting cleanly would
+require either parameter threading or fixture duplication, with no
+nesting-depth benefit since the clang fix is already achieved.  These
+are deferred — if any individual helper ever approaches the 256-deep
+limit, it can be split then.
+
+CI marker preserved: `^private def runNegativeChecks` still matches
+exactly once (verified via grep -c → 1).  Pure structural change:
+zero test logic modified; `lake env lean --run` and `lake exe`
+output byte-identical pre/post refactor (md5
+`937ce12c05fc8e7998b69edcc45c313e`, 363 lines).  Zero `sorry`/`axiom`.
+
 ## v0.30.11 — WS-RC R3 audit pass: tighten boot-VSpace gates, fix sentinel ObjId
 
 A deep audit of the WS-RC R3 commit (ac638ee) surfaced four issues

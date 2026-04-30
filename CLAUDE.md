@@ -314,7 +314,7 @@ Read(file_path, offset=501, limit=500)   # lines 501-1000
 - `docs/WORKSTREAM_HISTORY.md` (~4200 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~3857 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3779 lines, AN5-B SCH-M03)
-- `tests/NegativeStateSuite.lean` (~3660 lines)
+- `tests/NegativeStateSuite.lean` (~3940 lines; thin-dispatcher pattern after the clang-nesting refactor split runNegativeChecks/runWSM4ResolveEdgeCaseChecks/runWSKGChecks into 18 sub-helpers)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~3309 lines, AN12-A marker)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3159 lines)
 - `docs/gitbook/12-proof-and-invariant-map.md` (~2821 lines)
@@ -445,6 +445,34 @@ Edit(file_path="SeLe4n/Kernel/NewModule/Operations.lean",
 
 # Step 4: Verify
 Bash("wc -l SeLe4n/Kernel/NewModule/Operations.lean")
+```
+
+### Known build-fragile pattern: deep `do`-chain nesting in test suites
+
+Lean test suites with hundreds of sequential `expectErr` / `expectOkSt`
+calls inside a single `do`-block compile to deeply nested C `if`-trees
+that can exceed clang's default `-fbracket-depth=256` limit.  Symptom:
+`lake build <suite>:exe` fails with
+`fatal error: bracket nesting level exceeded maximum of 256`, even
+though `lake env lean --run <suite>.lean` (interpretation path) works
+fine.
+
+**Mitigation**: keep test helper functions ≤ ~150 Lean lines and use
+the thin-dispatcher pattern.  `tests/NegativeStateSuite.lean`'s
+`runNegativeChecks` is the canonical example: a 13-line dispatcher
+calling 8 per-area sub-helpers.  C-scope nesting depth resets at each
+function boundary in the codegen, so each sub-helper stays well below
+the limit even if the original monolith would have blown past it.
+
+When a test author finds themselves writing a 200+ line `do`-block,
+factor it into per-area `private def`s up front rather than waiting
+for the build to break.  Empirical depth probe (read-only):
+
+```bash
+awk 'BEGIN{d=0;m=0;ml=0} {for(i=1;i<=length($0);i++){c=substr($0,i,1); \
+       if(c=="{")d++; else if(c=="}")d--; if(d>m){m=d; ml=NR}}} \
+     END{print "max_depth="m" at_line="ml}' \
+  .lake/build/ir/tests/<Suite>.c
 ```
 
 ## Handling large search and command output
