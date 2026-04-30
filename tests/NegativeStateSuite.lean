@@ -2152,17 +2152,8 @@ def runWSJ1DecodeChecks : IO Unit := do
 -- WS-K-G: Comprehensive testing for WS-K syscall dispatch surface
 -- ============================================================================
 
-/-- WS-K-G: Negative-state, determinism, and boundary tests for all new decode,
-dispatch, and error paths introduced in WS-K-A through WS-K-F.
-
-Organized into sub-phases:
-- K-G1: CSpace decode/dispatch error paths
-- K-G2: Lifecycle/VSpace decode/dispatch error paths
-- K-G3: Service policy and IPC message population boundaries
-- K-G4: Determinism verification across full decode pipeline -/
-def runWSKGChecks : IO Unit := do
-  IO.println "\n=== WS-K-G: Comprehensive syscall dispatch testing ==="
-
+/-- K-G1: CSpace decode/dispatch error paths. -/
+private def runWSKGCSpaceChecks : IO Unit := do
   -- ---- K-G1: CSpace negative tests ----
 
   -- K-G-NEG-01: decodeCSpaceMintArgs with insufficient msgRegs (< 4) → invalidMessageInfo
@@ -2228,6 +2219,9 @@ def runWSKGChecks : IO Unit := do
 
   IO.println "CSpace negative tests passed"
 
+
+/-- K-G2: Lifecycle/VSpace decode/dispatch error paths. -/
+private def runWSKGLifecycleVSpaceChecks : IO Unit := do
   -- ---- K-G2: Lifecycle/VSpace negative tests ----
 
   -- K-G-NEG-07: decodeLifecycleRetypeArgs with insufficient msgRegs (< 3) → invalidMessageInfo
@@ -2302,6 +2296,9 @@ def runWSKGChecks : IO Unit := do
 
   IO.println "lifecycle/VSpace negative tests passed"
 
+
+/-- K-G3: Service policy and IPC message population boundaries. -/
+private def runWSKGServiceIpcChecks : IO Unit := do
   -- ---- K-G3: Service policy and IPC boundary tests ----
 
   -- K-G-NEG-14: Service registry: store and lookup roundtrip
@@ -2351,6 +2348,9 @@ def runWSKGChecks : IO Unit := do
 
   IO.println "service/IPC boundary tests passed"
 
+
+/-- K-G4: Determinism verification across full decode pipeline. -/
+private def runWSKGDeterminismChecks : IO Unit := do
   -- ---- K-G4: Determinism verification ----
 
   -- K-G-DET-01: Layer 1+2 decode determinism (double invocation)
@@ -2413,7 +2413,23 @@ def runWSKGChecks : IO Unit := do
       throw <| IO.userError s!"K-G-DET-03: objectOfTypeTag tag {tag} not deterministic"
   IO.println "determinism check passed [K-G-DET-03 objectOfTypeTag deterministic]"
 
+
+/-- WS-K-G: Negative-state, determinism, and boundary tests for all new decode,
+dispatch, and error paths introduced in WS-K-A through WS-K-F.
+
+Organized into sub-phases:
+- K-G1: CSpace decode/dispatch error paths
+- K-G2: Lifecycle/VSpace decode/dispatch error paths
+- K-G3: Service policy and IPC message population boundaries
+- K-G4: Determinism verification across full decode pipeline -/
+def runWSKGChecks : IO Unit := do
+  IO.println "\n=== WS-K-G: Comprehensive syscall dispatch testing ==="
+  runWSKGCSpaceChecks                   -- [was 2166-2230: K-G1 CSpace]
+  runWSKGLifecycleVSpaceChecks          -- [was 2231-2304: K-G2 Lifecycle/VSpace]
+  runWSKGServiceIpcChecks               -- [was 2305-2353: K-G3 Service/IPC]
+  runWSKGDeterminismChecks              -- [was 2354-2415: K-G4 Determinism]
   IO.println "all WS-K-G comprehensive tests passed"
+
 
 -- ============================================================================
 -- WS-L4-C: Blocked thread IPC rejection tests
