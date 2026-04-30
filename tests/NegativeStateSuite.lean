@@ -244,7 +244,9 @@ private def f2DeviceState : SystemState :=
     |>.withLifecycleCapabilityRef f2UntypedAuthSlot (.object f2DeviceUntypedId)
     |>.buildChecked)
 
-private def runNegativeChecks : IO Unit := do
+/-- Baseline `cspaceLookup*` negative checks (wrong type, depth/guard mismatch).
+    Extracted from `runNegativeChecks` (Phase 1; was lines 248-262). -/
+private def runBaselineLookupNegativeChecks : IO Unit := do
   assertStateInvariantsFor "negative suite baseState" invariantObjectIds baseState
   expectErr "lookup wrong object type"
     (SeLe4n.Kernel.cspaceLookupSlot badSlot baseState)
@@ -260,6 +262,12 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.cspaceLookupPath guardedPathBadGuard baseState)
     .invalidCapability
 
+
+/-- WS-E4/C-02/C-03 cspaceMove + cspaceDeleteSlot CDT cleanup, WS-E4/C-04 strict
+    revokeCdt variant, AK8-B/WS-AK/C-M02 cspaceRevokeCdtTransactional atomicity
+    (3 cases).  Extracted from `runNegativeChecks` (Phase 1; was lines 263-461).
+    Sections combined because both reuse `strictSeed`/`strictRootSlot`. -/
+private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
   -- WS-E4/C-02/C-03 refinement: move updates slot↔node mappings without rewriting edges.
   let moveDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 2 }
   let moveSrcNode : CdtNodeId := ⟨0⟩
@@ -460,6 +468,15 @@ private def runNegativeChecks : IO Unit := do
   | .error _ =>
       throw <| IO.userError "validateRevokeCdtDescendants should succeed on empty descendant list"
 
+/-- F-03 fix chain: dual-queue receive on non-endpoint/missing-object, vspace lookup
+    missing asid, vspace map+lookup roundtrip + duplicate conflict, notification
+    wait #1 + signal wake, badge accumulation, notification wait #2.
+    Extracted from `runNegativeChecks` (Phase 1; was lines 463-565).
+
+    Returns `stN1` (the post-first-wait state) because the inline F-12 double-wait
+    test in `runNegativeChecks` consumes it.  Returning rather than rebuilding
+    preserves byte-for-byte stdout equivalence with the pre-refactor capture. -/
+private def runVSpaceAndNotificationF03NegativeChecks : IO SystemState := do
   expectErr "dual-queue receive on non-endpoint object"
     (SeLe4n.Kernel.endpointReceiveDual cnodeId (SeLe4n.ThreadId.ofNat 1) baseState)
     .invalidCapability
@@ -564,6 +581,11 @@ private def runNegativeChecks : IO Unit := do
         throw <| IO.userError s!"notification wait #2 expected consumer ipcState ready, got {toString tcb.ipcState}"
   | _ => throw <| IO.userError "notification wait #2 expected consumer tcb"
 
+  pure stN1
+
+/-- WS-F5/D1e: Badge > 2^64 word-truncation semantics + small bridging tests.
+    Extracted from `runNegativeChecks` (Phase 1; was lines 567-607). -/
+private def runBadgeTruncationNegativeChecks : IO Unit := do
   -- ==========================================================================
   -- WS-F5/D1e: Badge > 2^64 word-truncation semantics
   -- ==========================================================================
@@ -605,6 +627,11 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.endpointSendDual (SeLe4n.ObjId.ofNat 9998) (SeLe4n.ThreadId.ofNat 8)
       { registers := #[], caps := #[], badge := none } baseState)
     .objectNotFound
+
+/-- WS-H12d/A-09: IPC message payload bounds enforcement (registers > 120 / caps > 3
+    across send/call/reply/replyRecv).
+    Extracted from `runNegativeChecks` (Phase 1; was lines 608-700). -/
+private def runIpcPayloadBoundsNegativeChecks : IO Unit := do
 
   -- ==========================================================================
   -- WS-H12d/A-09: IPC message payload bounds enforcement
@@ -699,6 +726,10 @@ private def runNegativeChecks : IO Unit := do
     throw <| IO.userError "boundary message (120 regs, 3 caps) incorrectly rejected as too many caps"
   | _ => IO.println "positive check passed [boundary message not rejected by bounds]"
 
+/-- WS-E4 M-01: dual-queue endpoint FIFO/handshake coverage.  Largest sub-helper
+    at 333 lines — Phase 1b candidate if the C-depth probe still trips clang.
+    Extracted from `runNegativeChecks` (Phase 1; was lines 702-1034). -/
+private def runDualQueueEndpointFifoNegativeChecks : IO Unit := do
   -- ==========================================================================
   -- WS-E4 M-01 refinement: dual-queue endpoint FIFO/handshake coverage
   -- ==========================================================================
@@ -1033,15 +1064,9 @@ private def runNegativeChecks : IO Unit := do
     (SeLe4n.Kernel.schedule malformedOffDomain)
     .schedulerInvariantViolation
 
-  -- ==========================================================================
-  -- WS-D4 F-12: Double-wait prevention in notificationWait
-  -- ==========================================================================
-
-  -- stN1 already has thread 7 in the waiting list (from "notification wait blocks with none")
-  expectErr "notification double-wait prevention"
-    (SeLe4n.Kernel.notificationWait notificationId (SeLe4n.ThreadId.ofNat 7) stN1)
-    .alreadyWaiting
-
+/-- WS-D4 F-07: Service dependency cycle detection.
+    Extracted from `runNegativeChecks` (Phase 1; was lines 1045-1091). -/
+private def runServiceCycleNegativeChecks : IO Unit := do
   -- ==========================================================================
   -- WS-D4 F-07: Service dependency cycle detection
   -- ==========================================================================
@@ -1090,6 +1115,9 @@ private def runNegativeChecks : IO Unit := do
   | .error err =>
     throw <| IO.userError s!"service dependency A→B registration failed: {toString err}"
 
+/-- WS-F2 + S5-G: Untyped memory negative tests + page-alignment misalignment.
+    Extracted from `runNegativeChecks` (Phase 1; was lines 1093-1163). -/
+private def runUntypedF2NegativeChecks : IO Unit := do
   -- ── WS-F2: Untyped memory negative tests ──────────────────────────
   -- F2-NEG-01: retype from non-existent object
   expectErr "F2 retype from non-existent object"
@@ -1160,6 +1188,27 @@ private def runNegativeChecks : IO Unit := do
     .allocationMisaligned
 
   IO.println "untyped memory negative checks passed (incl. S5-G alignment)"
+
+
+private def runNegativeChecks : IO Unit := do
+  runBaselineLookupNegativeChecks                       -- [was 248-262]
+  runCspaceMutationAndRevokeNegativeChecks              -- [was 263-461; sections 2+3 combined for strictSeed/strictRootSlot reuse]
+  let stN1 ← runVSpaceAndNotificationF03NegativeChecks  -- [was 463-565; returns stN1 for F-12 double-wait below]
+  runBadgeTruncationNegativeChecks                      -- [was 567-607]
+  runIpcPayloadBoundsNegativeChecks                     -- [was 608-700]
+  runDualQueueEndpointFifoNegativeChecks                -- [was 702-1034]
+
+  -- ==========================================================================
+  -- WS-D4 F-12: Double-wait prevention in notificationWait (was 1036-1043).
+  -- Stays inline because it consumes `stN1` returned by
+  -- `runVSpaceAndNotificationF03NegativeChecks` above.
+  -- ==========================================================================
+  expectErr "notification double-wait prevention"
+    (SeLe4n.Kernel.notificationWait notificationId (SeLe4n.ThreadId.ofNat 7) stN1)
+    .alreadyWaiting
+
+  runServiceCycleNegativeChecks                         -- [was 1045-1091]
+  runUntypedF2NegativeChecks                            -- [was 1093-1163]
 
 /-- WS-H2: Lifecycle safety guards negative tests.
     Split into a separate function to avoid maxRecDepth limits in the main do block. -/
