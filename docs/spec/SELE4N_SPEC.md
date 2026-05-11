@@ -1315,6 +1315,69 @@ regression extended for send/receive/call symmetry;
 provides three runtime-observable checks (healthy state, faulty
 state must error, `lookupCspaceRoot` returns `none`).
 
+### 8.10.7 Structural-Fix Discharge Index (WS-RC R4)
+
+WS-RC R4 (Structural-invariant promotions —
+[`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)
+§8) lands four sub-tasks under the structural-fix policy (`§1.5` of
+the WS-RC plan).  **All four sub-tasks are COMPLETE** with full
+type-level structural promotion:
+
+* **R4.A (DEEP-MODEL-01)** — `CNode.slots : RHTable Slot Capability`
+  → `CNode.slots : SeLe4n.UniqueSlotMap Capability`.  The wrapper
+  (`SeLe4n/Model/Object/UniqueSlotMap.lean`) carries
+  `RHTable.invExtK` (no-duplicate-keys ∧ `size < capacity` ∧
+  `4 ≤ capacity`) **structurally** at construction time via the
+  smart constructors `empty`, `insert`, `erase`, `filter`, and
+  `ofListWF`.  The state-level `cspaceSlotUnique` invariant is now
+  **trivially derivable** via `SeLe4n.Model.CNode.slotsUnique_holds :
+  ∀ (cn : CNode), cn.slotsUnique` (a one-liner projection of
+  `cn.slots.hWF`).  The corresponding preservation theorems
+  (`empty/insert/remove/revokeTargetLocal_slotsUnique`) likewise
+  collapse to projections of the smart-constructor result's
+  `hWF` field.  Structural witness theorem
+  `SeLe4n.UniqueSlotMap.keys_unique`.
+* **R4.B (DEEP-CAP-04)** — `RetypeTarget` non-bypassable
+  construction.  The `cleanupHookDischarged` predicate requires an
+  opaque `ScrubToken` whose only public introduction is
+  `SeLe4n.Kernel.ScrubToken.fromCleanup`, gated on a successful
+  `lifecyclePreRetypeCleanup` outcome.  No-bypass property codified
+  by `SeLe4n.Kernel.retypeTarget_implies_scrub_token_held :
+  ∀ st (rt : RetypeTarget st), SeLe4n.Kernel.ScrubToken st rt.id`.
+  Defined in `SeLe4n/Kernel/Capability/Invariant/Defs.lean`.
+* **R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01)** —
+  `Notification.waitingThreads : List ThreadId` →
+  `Notification.waitingThreads : SeLe4n.NoDupList SeLe4n.ThreadId`.
+  The wrapper (`SeLe4n/Model/Object/NoDupList.lean`) carries
+  `List.Nodup` **structurally** at construction time.  `notificationSignal`
+  pops via `NoDupList.tail?`; `notificationWait` cons site is
+  gated by `NoDupList.consWithGuard?` (runtime membership check
+  returning `Option`) so the duplicate rejection at line 723 is
+  structural rather than upstream-convention.  The state-level
+  `uniqueWaiters` invariant is now **trivially derivable** via
+  `SeLe4n.Kernel.uniqueWaiters_holds`.  Structural witness theorems:
+  `SeLe4n.NoDupList.nodup_witness`,
+  `SeLe4n.Kernel.notification_waitingThreads_nodup_witness`, and
+  `SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup`.
+* **R4.D (DEEP-CAP-02)** — `cspaceMutate` null-cap rejection.  Two
+  witness theorems in
+  `SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean`:
+  `cspaceMutate_rejects_null_cap` (every successful mutation
+  witnesses a non-null pre-state capability) and
+  `cspaceMutate_null_cap_rejected` (every null-cap input totalises
+  to `.nullCapability`).  Regression tests in both
+  `tests/ModelIntegritySuite.lean::cspaceMutate_from_null_rejected`
+  and `tests/NegativeStateSuite.lean::NEG-MUTATE-NULL`.
+
+The R4 closure-form discharge index is anchored by
+`SeLe4n.Kernel.r4_structural_fix_discharge_index_documented` in
+`SeLe4n/Kernel/CrossSubsystem.lean`, with cross-references to the
+canonical
+[`docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`](../audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md)
+§3 (sections D/E/F).  Companion foundation-readiness markers:
+`SeLe4n.Kernel.uniqueSlotMap_module_ready` and
+`SeLe4n.Kernel.noDupList_module_ready`.
+
 ### 8.11 buildChecked Runtime Invariant Validation (WS-T Phase T7)
 
 All test states use `BootstrapBuilder.buildChecked` instead of `build`:

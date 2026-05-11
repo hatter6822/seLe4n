@@ -52,7 +52,7 @@ private def baseState : SystemState :=
       guardWidth := 0
       guardValue := 0
       radixWidth := 0
-      slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+      slots := SeLe4n.UniqueSlotMap.ofListWF [
         (SeLe4n.Slot.ofNat 0, {
           target := .object endpointId
           rights := AccessRightSet.ofList [.read, .write]
@@ -66,7 +66,7 @@ private def baseState : SystemState :=
       guardWidth := 1
       guardValue := 1
       radixWidth := 2
-      slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+      slots := SeLe4n.UniqueSlotMap.ofListWF [
         (SeLe4n.Slot.ofNat 1, {
           target := .object endpointId
           rights := AccessRightSet.ofList [.read]
@@ -110,7 +110,7 @@ private def baseState : SystemState :=
       ipcBuffer := (SeLe4n.VAddr.ofNat 12288)
       ipcState := .ready
     })
-    |>.withObject notificationId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+    |>.withObject notificationId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
     |>.withObject ⟨20⟩ (.vspaceRoot { asid := asidPrimary, mappings := {} })
     |>.withLifecycleObjectType endpointId .endpoint
     |>.withLifecycleObjectType cnodeId .cnode
@@ -202,7 +202,7 @@ private def f2UntypedState : SystemState :=
       guardWidth := 0
       guardValue := 0
       radixWidth := 0
-      slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+      slots := SeLe4n.UniqueSlotMap.ofListWF [
         (SeLe4n.Slot.ofNat 0, {
           target := .object f2UntypedObjId
           rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
@@ -231,7 +231,7 @@ private def f2DeviceState : SystemState :=
       guardWidth := 0
       guardValue := 0
       radixWidth := 0
-      slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+      slots := SeLe4n.UniqueSlotMap.ofListWF [
         (SeLe4n.Slot.ofNat 0, {
           target := .object f2DeviceUntypedId
           rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
@@ -347,7 +347,7 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
             guardWidth := 0
             guardValue := 0
             radixWidth := 0
-            slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+            slots := SeLe4n.UniqueSlotMap.ofListWF [
               (strictRootSlot.slot, {
                 target := .object endpointId
                 rights := AccessRightSet.ofList [.read, .write]
@@ -432,7 +432,7 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
     baseState with
       objects := baseState.objects.insert cnodeId (.cnode {
         depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
-        slots := ((SeLe4n.Kernel.RobinHood.RHTable.empty 16
+        slots := ((SeLe4n.UniqueSlotMap.empty
           |>.insert txRootSlot.slot rootCap)
           |>.insert txChildSlotA.slot rootCap)
           |>.insert txChildSlotB.slot rootCap
@@ -1170,7 +1170,7 @@ private def runUntypedF2NegativeChecks : IO Unit := do
         guardWidth := 0
         guardValue := 0
         radixWidth := 0
-        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        slots := SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, {
             target := .object f2UntypedObjId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
@@ -1240,7 +1240,7 @@ private def runH2NegativeChecks : IO Unit := do
         guardWidth := 0
         guardValue := 0
         radixWidth := 0
-        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        slots := SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, {
             target := .object f2UntypedObjId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
@@ -1340,6 +1340,27 @@ private def runAuditCoverageChecks : IO Unit := do
         throw <| IO.userError s!"cspaceMutate: expected badge 77, got {toString cap.badge}"
   | .error err =>
       throw <| IO.userError s!"cspaceMutate: lookup after badge mutate failed: {toString err}"
+
+  -- WS-RC R4.D (NEG-MUTATE-NULL): mutate against a null-cap slot rejects
+  -- with `.nullCapability`. Codifies the structural witness theorems
+  -- `cspaceMutate_rejects_null_cap` and `cspaceMutate_null_cap_rejected`
+  -- (in `Capability/Invariant/Preservation/CopyMoveMutate.lean`) at the
+  -- runtime-test surface. Constructs a small CNode with `Capability.null`
+  -- in slot 0 and asserts the rejection path returns the explicit
+  -- `.nullCapability` error code.
+  let nullSrcCnode : CNode := {
+    depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
+    slots := SeLe4n.UniqueSlotMap.ofListWF
+      [(SeLe4n.Slot.ofNat 0, Capability.null)]
+  }
+  let nullCnodeId : SeLe4n.ObjId := ⟨200⟩
+  let nullSlot : SeLe4n.Kernel.CSpaceAddr :=
+    { cnode := nullCnodeId, slot := SeLe4n.Slot.ofNat 0 }
+  let nullState : SystemState :=
+    { baseState with objects := baseState.objects.insert nullCnodeId (.cnode nullSrcCnode) }
+  expectErr "cspaceMutate against null-cap slot → .nullCapability (R4.D)"
+    (SeLe4n.Kernel.cspaceMutate nullSlot (AccessRightSet.ofList [.read]) none nullState)
+    .nullCapability
   IO.println "cspaceMutate coverage checks passed"
 
 
@@ -1360,16 +1381,16 @@ private def runWSH7Checks : IO Unit := do
   let capB : Capability := { target := .object notificationId, rights := AccessRightSet.ofList [.read, .write], badge := none }
   let cn1 : CNode :=
     { depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2
-      slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(SeLe4n.Slot.ofNat 1, capA), (SeLe4n.Slot.ofNat 2, capB)] }
+      slots := SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 1, capA), (SeLe4n.Slot.ofNat 2, capB)] }
   let cn2 : CNode :=
     { depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2
-      slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(SeLe4n.Slot.ofNat 2, capB), (SeLe4n.Slot.ofNat 1, capA)] }
+      slots := SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 2, capB), (SeLe4n.Slot.ofNat 1, capA)] }
   if cn1 == cn2 then
     IO.println "positive check passed [WS-H7 CNode BEq ignores insertion order]"
   else
     throw <| IO.userError "CNode BEq ignores insertion order: expected true"
 
-  let lifecycleCnode : KernelObject := .cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(SeLe4n.Slot.ofNat 0, capA)] }
+  let lifecycleCnode : KernelObject := .cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 0, capA)] }
   let lifecycleEndpoint : KernelObject := .endpoint {}
 
   let stAfterCnode :=
@@ -1639,7 +1660,7 @@ private def runWSH15Checks : IO Unit := do
   let readOnlyCap : Capability := { target := .object epId, rights := AccessRightSet.ofList [.read], badge := none }
   let cn : CNode := {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+    slots := SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0, writeCap),
       (SeLe4n.Slot.ofNat 1, readOnlyCap)
     ]
@@ -1788,7 +1809,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         guardWidth := 0
         guardValue := 0
         radixWidth := 0
-        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        slots := SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, {
             target := .object h16TargetId
             rights := AccessRightSet.ofList [.read, .write]
@@ -1832,7 +1853,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         guardWidth := 0
         guardValue := 0
         radixWidth := 0
-        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        slots := SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, {
             target := .object h16TargetId
             rights := AccessRightSet.ofList [.read, .write]
@@ -1847,13 +1868,13 @@ def runWSH16LifecycleChecks : IO Unit := do
       |>.withLifecycleCapabilityRef h16AuthSlot (.object h16TargetId)
       |>.build)
   expectErr "H16 lifecycleRetypeObject metadata mismatch"
-    (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16AuthSlot h16TargetId (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) h16MismatchState)
+    (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16AuthSlot h16TargetId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }) h16MismatchState)
     .illegalState
 
   -- H16-NEG-03: lifecycleRetypeObject with insufficient authority (read-only cap) → illegalAuthority
   let h16ReadOnlySlot : SeLe4n.Kernel.CSpaceAddr := { cnode := h16CnodeId, slot := SeLe4n.Slot.ofNat 1 }
   expectErr "H16 lifecycleRetypeObject insufficient authority"
-    (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16ReadOnlySlot h16TargetId (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) h16State)
+    (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16ReadOnlySlot h16TargetId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }) h16State)
     .illegalAuthority
 
   -- H16-NEG-04: lifecycleRetypeObject with bad authority CNode → objectNotFound
@@ -1891,7 +1912,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         guardWidth := 0
         guardValue := 0
         radixWidth := 0
-        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        slots := SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, {
             target := .object h16ExhaustedUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
@@ -1935,7 +1956,7 @@ def runWSH16LifecycleChecks : IO Unit := do
         guardWidth := 0
         guardValue := 0
         radixWidth := 0
-        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        slots := SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, {
             target := .object h16DeviceUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
@@ -1984,7 +2005,7 @@ def runAN4A5LifecycleVisibilityChecks : IO Unit := do
       |>.withObject a5RetypeTcbId (.tcb a5Tcb)
       |>.withObject a5CnodeId (.cnode {
         depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
-        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        slots := SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, {
             target := .object a5RetypeTcbId
             rights := AccessRightSet.ofList [.read, .write, .retype]
@@ -2207,7 +2228,7 @@ private def runWSKGCSpaceChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject ⟨200⟩ (.cnode {
         depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
-        slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16  -- no slots occupied
+        slots := SeLe4n.UniqueSlotMap.empty  -- no slots occupied
       })
       |>.withLifecycleObjectType ⟨200⟩ .cnode
       |>.buildChecked)
@@ -2263,7 +2284,7 @@ private def runWSKGLifecycleVSpaceChecks : IO Unit := do
     badge := none
   }
   expectErr "K-G-NEG-10 lifecycleRetypeDirect wrong authority"
-    (SeLe4n.Kernel.lifecycleRetypeDirect wrongAuthCap ⟨300⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) retypeState)
+    (SeLe4n.Kernel.lifecycleRetypeDirect wrongAuthCap ⟨300⟩ (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }) retypeState)
     .illegalAuthority
 
   -- K-G-NEG-11: decodeVSpaceMapArgs with insufficient msgRegs (< 4) → invalidMessageInfo
@@ -2448,7 +2469,7 @@ def runWSL4BlockedThreadChecks : IO Unit := do
   let blockedState : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint { sendQ := {}, receiveQ := {} })
-      |>.withObject ntfnId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject ntfnId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
       |>.withObject ⟨7⟩ (.tcb {
         tid := ⟨7⟩, priority := ⟨10⟩, domain := ⟨0⟩,
         cspaceRoot := ⟨10⟩, vspaceRoot := ⟨20⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096),
@@ -2527,7 +2548,7 @@ def runWSM3CapTransferNegativeChecks : IO Unit := do
   -- CNode with radixWidth=2 → slotCount=4; fill all 4 slots
   let fullCNode : CNode := {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 2,
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+    slots := SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0, cap), (SeLe4n.Slot.ofNat 1, cap), (SeLe4n.Slot.ofNat 2, cap), (SeLe4n.Slot.ofNat 3, cap)
     ]
   }
@@ -2537,9 +2558,9 @@ def runWSM3CapTransferNegativeChecks : IO Unit := do
       |>.withObject receiverRoot (.cnode fullCNode)
       |>.withObject senderRoot (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(SeLe4n.Slot.ofNat 0, cap)]
+          slots := SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 0, cap)]
         })
-      |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
       |>.buildChecked)
 
   -- ipcTransferSingleCap with scanLimit covering all 4 slots → should get .noSlot
@@ -2605,14 +2626,14 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
 
   let senderCNode : CNode := {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [(SeLe4n.Slot.ofNat 0, cap), (SeLe4n.Slot.ofNat 1, cap), (SeLe4n.Slot.ofNat 2, cap)]
+    slots := SeLe4n.UniqueSlotMap.ofListWF [(SeLe4n.Slot.ofNat 0, cap), (SeLe4n.Slot.ofNat 1, cap), (SeLe4n.Slot.ofNat 2, cap)]
   }
 
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject receiverRoot (.tcb tcbObj)
       |>.withObject senderRoot (.cnode senderCNode)
-      |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
       |>.buildChecked)
 
   let caps : Array Capability := #[cap, cap, cap]
@@ -2645,7 +2666,7 @@ def runL13CapTransferShortCircuitChecks : IO Unit := do
   let st1 :=
     (BootstrapBuilder.empty
       |>.withObject senderRoot (.cnode senderCNode)
-      |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
       |>.buildChecked)
 
   let result1 := SeLe4n.Kernel.ipcUnwrapCapsLoop #[cap] senderRoot missingRoot
@@ -2684,7 +2705,7 @@ private def runWSM4GuardOnlyChecks : IO Unit := do
           guardWidth := 4
           guardValue := 0xA
           radixWidth := 0
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          slots := SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 0, { target := .object guardOnlyTarget, rights := AccessRightSet.ofList [.read], badge := none })
           ]
         })
@@ -2727,7 +2748,7 @@ private def runWSM4SmallBitsChecks : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 4
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          slots := SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 5, { target := .object leafTarget, rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
         })
@@ -2754,7 +2775,7 @@ private def runWSM4SmallBitsChecks : IO Unit := do
           guardWidth := 2
           guardValue := 0
           radixWidth := 4
-          slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
+          slots := SeLe4n.UniqueSlotMap.empty
         })
       |>.buildChecked)
 
@@ -2810,7 +2831,7 @@ private def runWSM4GuardMismatchChecks : IO Unit := do
           guardWidth := 2
           guardValue := 3
           radixWidth := 2
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          slots := SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 0, { target := .object lvl1, rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
         })
@@ -2819,7 +2840,7 @@ private def runWSM4GuardMismatchChecks : IO Unit := do
           guardWidth := 2
           guardValue := 1
           radixWidth := 2
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          slots := SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 0, { target := .object lvl2, rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
         })
@@ -2828,7 +2849,7 @@ private def runWSM4GuardMismatchChecks : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 4
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          slots := SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 7, { target := .object lvl2Target, rights := AccessRightSet.ofList [.read], badge := none })
           ]
         })
@@ -2882,7 +2903,7 @@ private def runWSM4MaxDepthLoopChecks : IO Unit := do
       guardWidth := 0
       guardValue := 0
       radixWidth := 8
-      slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+      slots := SeLe4n.UniqueSlotMap.ofListWF [
         (SeLe4n.Slot.ofNat 1, { target := .object nextId, rights := AccessRightSet.ofList [.read, .write], badge := none })
       ]
     })
@@ -2892,7 +2913,7 @@ private def runWSM4MaxDepthLoopChecks : IO Unit := do
     guardWidth := 0
     guardValue := 0
     radixWidth := 8
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+    slots := SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 1, { target := .object maxDepthLeafTarget, rights := AccessRightSet.ofList [.read], badge := none })
     ]
   })
@@ -2944,7 +2965,7 @@ private def runWSM4SlotEdgeChecks : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 4
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          slots := SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 3, { target := .object emptyMidChild, rights := AccessRightSet.ofList [.read], badge := none })
           ]
         })
@@ -2953,7 +2974,7 @@ private def runWSM4SlotEdgeChecks : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 4
-          slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16  -- all slots empty
+          slots := SeLe4n.UniqueSlotMap.empty  -- all slots empty
         })
       |>.buildChecked)
 
@@ -2980,7 +3001,7 @@ private def runWSM4SlotEdgeChecks : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 4
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          slots := SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 1, { target := .object nonCnodeMidEp, rights := AccessRightSet.ofList [.read], badge := none })
           ]
         })
@@ -3013,7 +3034,7 @@ private def runWSM4WrapperIntegrationChecks : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 4
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          slots := SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 5, { target := .object leafTarget, rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
         })
@@ -3082,7 +3103,7 @@ def runWSR2RevocationChecks : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject r2CnodeId (.cnode {
             depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
-            slots := SeLe4n.Kernel.RobinHood.RHTable.ofList []
+            slots := SeLe4n.UniqueSlotMap.ofListWF []
           })
       |>.buildChecked)
   let r2Seed := { r2State with
@@ -3136,7 +3157,7 @@ def runWSR2RevocationChecks : IO Unit := do
     { r2State with
       objects := r2State.objects.insert r2CnodeId (.cnode {
             depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
-            slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+            slots := SeLe4n.UniqueSlotMap.ofListWF [
               (r2RootSlot.slot, {
                 target := .object ⟨40⟩
                 rights := AccessRightSet.ofList [.read, .write]
@@ -3319,7 +3340,7 @@ private def runS2GCapabilityErrorTests : IO Unit := do
     guardWidth := 0
     guardValue := 0
     radixWidth := 0
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+    slots := SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0, {
         target := .object endpointId
         rights := AccessRightSet.ofList [.read]
@@ -3364,7 +3385,7 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   let fullCnodeId : SeLe4n.ObjId := ⟨70⟩
   let fullCnode : KernelObject := .cnode {
     depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+    slots := SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0, { target := .object endpointId, rights := AccessRightSet.ofList [.read, .write], badge := none }),
       (SeLe4n.Slot.ofNat 1, { target := .object endpointId, rights := AccessRightSet.ofList [.read], badge := none }),
       (SeLe4n.Slot.ofNat 2, { target := .object endpointId, rights := AccessRightSet.ofList [.write], badge := none }),
@@ -3478,7 +3499,7 @@ private def runS2HLifecycleErrorTests : IO Unit := do
       })
       |>.withObject exhaustedAuthCnode (.cnode {
         depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
-        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        slots := SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, {
             target := .object exhaustedUntypedId
             rights := AccessRightSet.ofList [.read, .write, .grant, .retype]
@@ -3759,13 +3780,13 @@ def runAC1CdtTrackingChecks : IO Unit := do
     badge := none }
 
   -- Create CNodes with proper structure
-  let srcSlots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 |>.insert srcSlot cap
+  let srcSlots := SeLe4n.UniqueSlotMap.empty.insert srcSlot cap
   let srcCnode : CNode := {
     depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 4,
     slots := srcSlots }
   let dstCnode : CNode := {
     depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 }
+    slots := SeLe4n.UniqueSlotMap.empty }
 
   let st1 := { st0 with
     objects := st0.objects
@@ -3821,13 +3842,13 @@ private def r1EndpointRights : AccessRightSet :=
 private def r1BaseState : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject r1EpId (.endpoint {})
-    |>.withObject r1TargetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+    |>.withObject r1TargetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
     |>.withObject r1CallerCNode (.cnode
         { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [((SeLe4n.Slot.ofNat 0), r1Cap)] })
+          slots := SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), r1Cap)] })
     |>.withObject r1ReceiverCNode (.cnode
         { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [] })
+          slots := SeLe4n.UniqueSlotMap.ofListWF [] })
     |>.withObject r1CallerTid.toObjId (.tcb
         { tid := r1CallerTid, priority := ⟨1⟩, domain := ⟨0⟩,
           cspaceRoot := r1CallerCNode, vspaceRoot := ⟨0⟩,

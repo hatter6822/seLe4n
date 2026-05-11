@@ -52,7 +52,7 @@ private def publicServiceEntry : ServiceGraphEntry :=
 private def sampleState : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject ⟨1⟩ (.endpoint {})
-    |>.withObject ⟨2⟩ (.notification { state := .active, waitingThreads := [], pendingBadge := some (SeLe4n.Badge.ofNatMasked 7) })
+    |>.withObject ⟨2⟩ (.notification { state := .active, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := some (SeLe4n.Badge.ofNatMasked 7) })
     |>.withService ⟨1⟩ sampleServiceEntry
     |>.withService ⟨2⟩ publicServiceEntry
     -- Y3-A: current thread set for projection tests (not in runnable → check 8 passes).
@@ -81,7 +81,7 @@ private def altState : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject ⟨1⟩ (.endpoint {})
     -- Secret object differs: different notification state and no pending badge
-    |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+    |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
     |>.withService ⟨1⟩ sampleServiceEntry
     |>.withService ⟨2⟩ publicServiceEntry
     -- Current thread differs: none (vs some tid=2 in sampleState).
@@ -290,10 +290,10 @@ def test_dispatchCapabilityOnly_projection_invariant : IO Bool := do
   let publicObj : KernelObject := .endpoint {}
   -- Distinct secret content in each state (must NOT show through).
   let secretA : KernelObject := .notification
-    { state := .active, waitingThreads := []
+    { state := .active, waitingThreads := SeLe4n.NoDupList.empty
       pendingBadge := some (SeLe4n.Badge.ofNatMasked 7) }
   let secretB : KernelObject := .notification
-    { state := .idle, waitingThreads := [], pendingBadge := none }
+    { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
   let stA : SystemState :=
     { (default : SystemState) with
       objects := ((default : SystemState).objects.insert publicOid publicObj).insert
@@ -562,8 +562,8 @@ def runInformationFlowChecks : IO Unit := do
   -- cspaceMintChecked: same-domain mint should be allowed
   let mintState :=
     (BootstrapBuilder.empty
-      |>.withObject ⟨100⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.Kernel.RobinHood.RHTable.ofList [((SeLe4n.Slot.ofNat 0), { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })]) })
-      |>.withObject ⟨101⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.Kernel.RobinHood.RHTable.ofList []) })
+      |>.withObject ⟨100⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), { target := .object ⟨200⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })]) })
+      |>.withObject ⟨101⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.UniqueSlotMap.ofListWF []) })
       |>.buildChecked)
 
   let sameDomainMintCtx : SeLe4n.Kernel.LabelingContext :=
@@ -746,7 +746,7 @@ def runInformationFlowChecks : IO Unit := do
   let irqState :=
     (BootstrapBuilder.empty
       |>.withObject ⟨1⟩ (.endpoint {})
-      |>.withObject ⟨2⟩ (.notification { state := .active, waitingThreads := [], pendingBadge := some (SeLe4n.Badge.ofNatMasked 7) })
+      |>.withObject ⟨2⟩ (.notification { state := .active, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := some (SeLe4n.Badge.ofNatMasked 7) })
       |>.withIrqHandler ⟨0⟩ ⟨1⟩   -- IRQ 0 → oid 1 (public object)
       |>.withIrqHandler ⟨1⟩ ⟨2⟩   -- IRQ 1 → oid 2 (secret object)
       |>.buildChecked)
@@ -805,8 +805,8 @@ def runInformationFlowChecks : IO Unit := do
   let cnodeState :=
     (BootstrapBuilder.empty
       |>.withObject ⟨1⟩ (.endpoint {})  -- public target
-      |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })  -- secret target
-      |>.withObject ⟨50⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.Kernel.RobinHood.RHTable.ofList
+      |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })  -- secret target
+      |>.withObject ⟨50⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.UniqueSlotMap.ofListWF
           [ ((SeLe4n.Slot.ofNat 0), { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none })
           , ((SeLe4n.Slot.ofNat 1), { target := .object ⟨2⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
           , ((SeLe4n.Slot.ofNat 2), { target := .replyCap ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none })
@@ -861,8 +861,8 @@ def runInformationFlowChecks : IO Unit := do
   let cnodeSlotState :=
     (BootstrapBuilder.empty
       |>.withObject ⟨1⟩ (.endpoint {})  -- public target
-      |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })  -- secret target
-      |>.withObject ⟨60⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.Kernel.RobinHood.RHTable.ofList
+      |>.withObject ⟨2⟩ (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })  -- secret target
+      |>.withObject ⟨60⟩ (.cnode { depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8, slots := (SeLe4n.UniqueSlotMap.ofListWF
           [ ((SeLe4n.Slot.ofNat 0), { target := .cnodeSlot ⟨1⟩ (SeLe4n.Slot.ofNat 0), rights := AccessRightSet.ofList [.read], badge := none })
           , ((SeLe4n.Slot.ofNat 1), { target := .cnodeSlot ⟨2⟩ (SeLe4n.Slot.ofNat 0), rights := AccessRightSet.ofList [.read], badge := none })
           ]) })
@@ -951,7 +951,7 @@ def runInformationFlowChecks : IO Unit := do
       |>.withObject ⟨30⟩ (.notification {
           state := .idle
           pendingBadge := none
-          waitingThreads := [] })
+          waitingThreads := SeLe4n.NoDupList.empty })
       |>.buildChecked)
 
   -- Same-domain signal (public signaler → public notification) should succeed
@@ -1083,8 +1083,8 @@ def runInformationFlowChecks : IO Unit := do
 
   let declassState :=
     (BootstrapBuilder.empty
-      |>.withObject ⟨901⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
-      |>.withObject ⟨902⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject ⟨901⟩ (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
+      |>.withObject ⟨902⟩ (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
       |>.buildChecked)
 
   let allowDecl : SeLe4n.Kernel.DeclassificationPolicy :=
@@ -1092,7 +1092,7 @@ def runInformationFlowChecks : IO Unit := do
   let denyDecl : SeLe4n.Kernel.DeclassificationPolicy :=
     { canDeclassify := fun _ _ => false }
 
-  let declassObj : KernelObject := .notification { state := .active, waitingThreads := [], pendingBadge := some (SeLe4n.Badge.ofNatMasked 0xAA) }
+  let declassObj : KernelObject := .notification { state := .active, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := some (SeLe4n.Badge.ofNatMasked 0xAA) }
 
   let allowedDeclass :=
     SeLe4n.Kernel.declassifyStore declassCtx allowDecl ⟨2⟩ ⟨0⟩ ⟨902⟩ declassObj declassState
@@ -1315,11 +1315,11 @@ def runInformationFlowChecks : IO Unit := do
       { target := .object targetObj, rights := AccessRightSet.ofList [.read], badge := none }
     let st :=
       (BootstrapBuilder.empty
-        |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
-        |>.withObject nonCNodeRoot (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+        |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
+        |>.withObject nonCNodeRoot (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
         |>.withObject senderCNode (.cnode
             { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-              slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [((SeLe4n.Slot.ofNat 0), cap1)] })
+              slots := SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)] })
         |>.buildChecked)
     let msgWithCaps : IpcMessage := { registers := #[], caps := #[cap1], badge := none }
     let result := SeLe4n.Kernel.ipcUnwrapCaps msgWithCaps senderCNode nonCNodeRoot
@@ -1340,10 +1340,10 @@ def runInformationFlowChecks : IO Unit := do
     let baseSt :=
       (BootstrapBuilder.empty
         |>.withObject epId (.endpoint {})
-        |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+        |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
         |>.withObject senderCNode (.cnode
             { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-              slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [((SeLe4n.Slot.ofNat 0), cap1)] })
+              slots := SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)] })
         |>.withObject senderTid.toObjId (.tcb
             { tid := senderTid, priority := ⟨1⟩, domain := ⟨0⟩,
               cspaceRoot := senderCNode, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),
@@ -1406,7 +1406,7 @@ def runInformationFlowChecks : IO Unit := do
           |>.withObject epId (.endpoint {})
           |>.withObject callerCNode (.cnode
               { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-                slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [((SeLe4n.Slot.ofNat 0), cap1)] })
+                slots := SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)] })
           |>.withObject callerTid.toObjId (.tcb
               { tid := callerTid, priority := ⟨1⟩, domain := ⟨0⟩,
                 cspaceRoot := callerCNode, vspaceRoot := ⟨0⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 0),

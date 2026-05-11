@@ -807,15 +807,22 @@ theorem notificationSignal_projection_preserved
     | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
     | notification ntfn =>
       simp [hObj] at hStep
-      cases hWaiters : ntfn.waitingThreads with
-      | nil =>
+      -- WS-RC R4.C: signal pops via `NoDupList.tail?`.
+      cases hWaiters : ntfn.waitingThreads.tail? with
+      | none =>
         -- No waiters: just storeObject on notification
         simp [hWaiters] at hStep
         exact storeObject_preserves_projection ctx observer st st' notificationId _ hNtfnHigh hObjInv hStep
-      | cons waiter rest =>
+      | some headTail =>
+        obtain ⟨waiter, rest⟩ := headTail
         simp [hWaiters] at hStep
         -- Waiter path: storeObject + storeTcbIpcStateAndMessage + ensureRunnable (R3-A/M-16)
-        have hWaiterHigh := hWaiterDomain ntfn waiter hObj (hWaiters ▸ List.Mem.head rest)
+        -- WS-RC R4.C: waiter is in the underlying list (List.Mem.head from cons equation).
+        have hValEq : ntfn.waitingThreads.val = waiter :: rest.val :=
+          (SeLe4n.NoDupList.tail?_eq_some_iff ntfn.waitingThreads waiter rest).mp hWaiters
+        have hWaiterIn : waiter ∈ ntfn.waitingThreads := by
+          show waiter ∈ ntfn.waitingThreads.val; rw [hValEq]; exact List.Mem.head _
+        have hWaiterHigh := hWaiterDomain ntfn waiter hObj hWaiterIn
         have hWaiterObjHigh := hCoherent waiter hWaiterHigh
         revert hStep
         cases hStore : storeObject notificationId _ st with
@@ -908,7 +915,11 @@ theorem notificationWait_projection_preserved
           simp only [hLk] at hStep
           by_cases hBlocked : tcb.ipcState = .blockedOnNotification notificationId
           · simp [hBlocked] at hStep
-          · simp [hBlocked] at hStep; revert hStep
+          · -- WS-RC R4.C: consWithGuard? case-split
+            cases hCons : ntfn.waitingThreads.consWithGuard? waiter with
+            | none => simp [hBlocked, hCons] at hStep
+            | some wt' =>
+            simp [hBlocked, hCons] at hStep; revert hStep
             cases hStore : storeObject notificationId _ st with
             | error e => simp
             | ok pair =>

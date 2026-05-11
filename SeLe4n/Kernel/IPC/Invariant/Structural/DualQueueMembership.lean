@@ -1851,8 +1851,10 @@ theorem notificationSignal_preserves_ipcStateQueueConsistent
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
-      cases hWaiters : ntfn.waitingThreads with
-      | cons waiter rest =>
+      -- WS-RC R4.C: signal pops via `NoDupList.tail?`.
+      cases hWaiters : ntfn.waitingThreads.tail? with
+      | some headTail =>
+        obtain ⟨waiter, rest⟩ := headTail
         -- Wake path: storeObject (notification) → storeTcbIpcStateAndMessage (waiter, .ready) → ensureRunnable
         simp only [hWaiters] at hStep
         generalize hStore1 : storeObject notificationId _ st = r1 at hStep
@@ -1871,7 +1873,7 @@ theorem notificationSignal_preserves_ipcStateQueueConsistent
               storeTcbIpcStateAndMessage_preserves_ipcStateQueueConsistent _ _ _ _ _ hObjInv1 hMsg
                 (storeObject_notification_preserves_ipcStateQueueConsistent st pair1.2 notificationId _
                   ⟨ntfn, hObj⟩ hObjInv hStore1 hInv) trivial
-      | nil =>
+      | none =>
         -- Accumulate path: storeObject (notification) only
         simp only [hWaiters] at hStep
         exact storeObject_notification_preserves_ipcStateQueueConsistent st st' notificationId _
@@ -1921,8 +1923,11 @@ theorem notificationWait_preserves_ipcStateQueueConsistent
           simp only [hLookup] at hStep
           split at hStep
           · simp at hStep -- already waiting → error
-          · generalize hStore1 : storeObject notificationId _ st = r1 at hStep
-            cases r1 with
+          · -- WS-RC R4.C: consWithGuard? case-split
+            split at hStep
+            · simp at hStep -- consWithGuard? = none → .alreadyWaiting
+            · generalize hStore1 : storeObject notificationId _ st = r1 at hStep
+              cases r1 with
             | error e => simp at hStep
             | ok pair1 =>
               simp only [] at hStep

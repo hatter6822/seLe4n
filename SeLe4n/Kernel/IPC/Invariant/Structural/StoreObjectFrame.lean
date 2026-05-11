@@ -1045,12 +1045,14 @@ theorem notificationSignal_preserves_allPendingMessagesBounded
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
-      cases hWaiters : ntfn.waitingThreads with
-      | cons waiter rest =>
+      -- WS-RC R4.C: signal pops via `NoDupList.tail?`.
+      cases hWaiters : ntfn.waitingThreads.tail? with
+      | some headTail =>
+          obtain ⟨waiter, rest⟩ := headTail
           simp only [hWaiters] at hStep
           revert hStep
           cases hStore : storeObject notificationId
-              (.notification { state := if rest.isEmpty then .idle else .waiting,
+              (.notification { state := if rest.val.isEmpty then .idle else .waiting,
                                waitingThreads := rest, pendingBadge := none }) st with
           | error e => simp
           | ok pair =>
@@ -1071,7 +1073,7 @@ theorem notificationSignal_preserves_allPendingMessagesBounded
                     (fun m hm => by cases hm; exact IpcMessage.empty_bounded)
                     hObjInvPair hIpc hInv1
                   exact ensureRunnable_preserves_allPendingMessagesBounded st'' waiter hInv2
-      | nil =>
+      | none =>
           simp only [hWaiters] at hStep
           exact storeObject_notification_preserves_allPendingMessagesBounded
             st st' notificationId _ hObjInv hStep hInv
@@ -1099,7 +1101,9 @@ theorem notificationWait_preserves_allPendingMessagesBounded
           simp only [hBadge] at hStep
           revert hStep
           cases hStore : storeObject notificationId
-              (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) st with
+              (.notification
+                { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+                  pendingBadge := none }) st with
           | error e => simp
           | ok pair =>
               simp only []
@@ -1122,11 +1126,11 @@ theorem notificationWait_preserves_allPendingMessagesBounded
               simp only [hLk] at hStep
               split at hStep
               · simp at hStep
-              · revert hStep
-                cases hStore : storeObject notificationId
-                    (.notification { state := .waiting,
-                                     waitingThreads := waiter :: ntfn.waitingThreads,
-                                     pendingBadge := none }) st with
+              · -- WS-RC R4.C: consWithGuard? case-split
+                split at hStep
+                · simp at hStep
+                · revert hStep
+                  cases hStore : storeObject notificationId _ st with
                 | error e => simp
                 | ok pair =>
                     simp only []
@@ -1217,11 +1221,13 @@ theorem notificationSignal_preserves_dualQueueSystemInvariant
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
-      cases hWaiters : ntfn.waitingThreads with
-      | cons waiter rest =>
+      -- WS-RC R4.C: signal pops via `NoDupList.tail?`.
+      cases hWaiters : ntfn.waitingThreads.tail? with
+      | some headTail =>
+        obtain ⟨waiter, rest⟩ := headTail
         simp only [hWaiters] at hStep; revert hStep
         cases hStore : storeObject notificationId
-            (.notification { state := if rest.isEmpty then .idle else .waiting,
+            (.notification { state := if rest.val.isEmpty then .idle else .waiting,
                              waitingThreads := rest, pendingBadge := none }) st with
         | error e => simp
         | ok pair =>
@@ -1237,7 +1243,7 @@ theorem notificationSignal_preserves_dualQueueSystemInvariant
             exact ensureRunnable_preserves_dualQueueSystemInvariant st'' waiter
               (storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant
                 pair.2 st'' waiter .ready _ hObjInv1 hTcb hInv1)
-      | nil =>
+      | none =>
         simp only [hWaiters] at hStep
         exact storeObject_notification_preserves_dualQueueSystemInvariant
           st st' notificationId _ hObjInv hStep (.inl ⟨ntfn, hObj⟩) hInv
@@ -1263,7 +1269,9 @@ theorem notificationWait_preserves_dualQueueSystemInvariant
       | some pendBadge =>
         simp only [hPending] at hStep; revert hStep
         cases hStore : storeObject notificationId
-            (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) st with
+            (.notification
+              { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+                pendingBadge := none }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -1283,11 +1291,11 @@ theorem notificationWait_preserves_dualQueueSystemInvariant
         | some tcb =>
           simp only []; split
           · simp
-          · intro hStep; revert hStep
-            cases hStore : storeObject notificationId
-                (.notification { state := .waiting,
-                                 waitingThreads := waiter :: ntfn.waitingThreads,
-                                 pendingBadge := none }) st with
+          · -- WS-RC R4.C: consWithGuard? case-split
+            split
+            · simp
+            · intro hStep; revert hStep
+              cases hStore : storeObject notificationId _ st with
             | error e => simp
             | ok pair =>
               simp only []

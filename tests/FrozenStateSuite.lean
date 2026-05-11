@@ -115,7 +115,7 @@ private def fs009_freezeCNode : IO Unit := do
   let cn : CNode :=
     { depth := 16, guardWidth := 4, guardValue := 0
       radixWidth := 4
-      slots := (RHTable.empty 16).insert (SeLe4n.Slot.ofNat 3) cap }
+      slots := SeLe4n.UniqueSlotMap.empty.insert (SeLe4n.Slot.ofNat 3) cap }
   let frozen := freezeObject (.cnode cn)
   expect "frozen CNode has correct type" (frozen.objectType == .cnode)
   -- Verify the frozen CNode slots use CNodeRadix (flat array)

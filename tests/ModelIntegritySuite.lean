@@ -339,10 +339,10 @@ NonNullCap end-to-end tests. -/
 private def al1bStateWithNullCapSlot : SystemState :=
   let srcCnode : CNode := {
     depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [((SeLe4n.Slot.ofNat 0), Capability.null)] }
+    slots := SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), Capability.null)] }
   let dstCnode : CNode := {
     depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList ([] : List (Slot × Capability)) }
+    slots := SeLe4n.UniqueSlotMap.ofListWF ([] : List (Slot × Capability)) }
   let base : SystemState := default
   let st1 : SystemState :=
     { base with objects := base.objects.insert ⟨10⟩ (.cnode srcCnode) }
@@ -418,6 +418,174 @@ def nullCapability_distinct_from_invalidCapability : IO Unit := do
   expect ".nullCapability ≠ .invalidCapability" true
 
 -- ============================================================================
+-- WS-RC R4.A (DEEP-MODEL-01) — UniqueSlotMap structural API coverage
+-- ============================================================================
+
+/-- WS-RC R4.A: `UniqueSlotMap.empty` produces an empty map. -/
+def r4a_uniqueSlotMap_empty_size_zero : IO Unit := do
+  let u : SeLe4n.UniqueSlotMap Capability := SeLe4n.UniqueSlotMap.empty
+  expect "UniqueSlotMap.empty.size = 0" (u.size = 0)
+  expect "UniqueSlotMap.empty.get? returns none" (u.get? (SeLe4n.Slot.ofNat 0) = none)
+
+/-- WS-RC R4.A: `UniqueSlotMap.insert` then `.get?` round-trips. -/
+def r4a_uniqueSlotMap_insert_then_get : IO Unit := do
+  let cap : Capability :=
+    { target := .object ⟨1⟩, rights := AccessRightSet.empty, badge := none }
+  let u : SeLe4n.UniqueSlotMap Capability :=
+    SeLe4n.UniqueSlotMap.empty.insert (SeLe4n.Slot.ofNat 5) cap
+  expect "UniqueSlotMap.insert: get? returns inserted cap"
+    (u.get? (SeLe4n.Slot.ofNat 5) = some cap)
+  expect "UniqueSlotMap.insert: other slots return none"
+    (u.get? (SeLe4n.Slot.ofNat 6) = none)
+
+/-- WS-RC R4.A: `UniqueSlotMap.erase` removes the slot. -/
+def r4a_uniqueSlotMap_erase_removes : IO Unit := do
+  let cap : Capability :=
+    { target := .object ⟨1⟩, rights := AccessRightSet.empty, badge := none }
+  let u := (SeLe4n.UniqueSlotMap.empty.insert (SeLe4n.Slot.ofNat 3) cap).erase
+    (SeLe4n.Slot.ofNat 3)
+  expect "UniqueSlotMap.erase: removed slot returns none"
+    (u.get? (SeLe4n.Slot.ofNat 3) = none)
+
+/-- WS-RC R4.A: `UniqueSlotMap.ofListWF` builds from a list of (slot, cap)
+    pairs and exposes every entry via `get?`. -/
+def r4a_uniqueSlotMap_ofListWF_roundtrip : IO Unit := do
+  let cap1 : Capability :=
+    { target := .object ⟨10⟩, rights := AccessRightSet.empty, badge := none }
+  let cap2 : Capability :=
+    { target := .object ⟨11⟩, rights := AccessRightSet.empty, badge := none }
+  let u : SeLe4n.UniqueSlotMap Capability :=
+    SeLe4n.UniqueSlotMap.ofListWF
+      [(SeLe4n.Slot.ofNat 0, cap1), (SeLe4n.Slot.ofNat 1, cap2)]
+  expect "ofListWF roundtrip: slot 0 returns cap1" (u.get? (SeLe4n.Slot.ofNat 0) = some cap1)
+  expect "ofListWF roundtrip: slot 1 returns cap2" (u.get? (SeLe4n.Slot.ofNat 1) = some cap2)
+  expect "ofListWF roundtrip: slot 2 returns none" (u.get? (SeLe4n.Slot.ofNat 2) = none)
+
+/-- WS-RC R4.A: `UniqueSlotMap.keys_unique` is the structural discharge for
+    `cspaceSlotUnique`; verifies that every `UniqueSlotMap` satisfies
+    `invExtK` by construction. -/
+def r4a_uniqueSlotMap_keys_unique_witness : IO Unit := do
+  let cap : Capability :=
+    { target := .object ⟨1⟩, rights := AccessRightSet.empty, badge := none }
+  let u : SeLe4n.UniqueSlotMap Capability :=
+    SeLe4n.UniqueSlotMap.empty.insert (SeLe4n.Slot.ofNat 0) cap
+  -- The hWF field is propositional; if the structure is inhabited, the
+  -- invariant is satisfied. Verify by extracting the witness.
+  let _hWF : u.table.invExtK := SeLe4n.UniqueSlotMap.keys_unique u
+  expect "UniqueSlotMap.keys_unique is reachable" true
+
+/-- WS-RC R4.A: `CNode.slotsUnique_holds` discharges the state-level
+    `cspaceSlotUnique` invariant trivially via `.slots.hWF`. -/
+def r4a_cnode_slotsUnique_holds_witness : IO Unit := do
+  let cap : Capability :=
+    { target := .object ⟨1⟩, rights := AccessRightSet.empty, badge := none }
+  let cn : CNode :=
+    { depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
+      slots := SeLe4n.UniqueSlotMap.empty.insert (SeLe4n.Slot.ofNat 0) cap }
+  let _hUniq : cn.slotsUnique := SeLe4n.Model.CNode.slotsUnique_holds cn
+  expect "CNode.slotsUnique_holds is reachable" true
+
+-- ============================================================================
+-- WS-RC R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01) — NoDupList structural API coverage
+-- ============================================================================
+
+/-- WS-RC R4.C: `NoDupList.empty` is empty. -/
+def r4c_noDupList_empty_isEmpty : IO Unit := do
+  let l : SeLe4n.NoDupList ThreadId := SeLe4n.NoDupList.empty
+  expect "NoDupList.empty.val = []" (l.val = [])
+  expect "NoDupList.empty.isEmpty" l.isEmpty
+
+/-- WS-RC R4.C: `NoDupList.consWithGuard?` returns `some` for a fresh
+    element. -/
+def r4c_noDupList_consWithGuard?_fresh_element : IO Unit := do
+  let l : SeLe4n.NoDupList ThreadId := SeLe4n.NoDupList.empty
+  let tid : ThreadId := ⟨42⟩
+  match l.consWithGuard? tid with
+  | some l' =>
+    expect "consWithGuard? on fresh element returns some"
+      (l'.val = [tid])
+  | none =>
+    throw <| IO.userError "consWithGuard? rejected fresh element"
+
+/-- WS-RC R4.C: `NoDupList.consWithGuard?` returns `none` for a duplicate
+    element. This is the operational duplicate-guard subsumption. -/
+def r4c_noDupList_consWithGuard?_duplicate_rejected : IO Unit := do
+  let tid : ThreadId := ⟨42⟩
+  -- Build a NoDupList containing `tid` via the smart constructor.
+  match (SeLe4n.NoDupList.empty : SeLe4n.NoDupList ThreadId).consWithGuard? tid with
+  | none => throw <| IO.userError "fresh insert should succeed"
+  | some l =>
+    -- Now attempt to insert `tid` again. Should return `none`.
+    match l.consWithGuard? tid with
+    | none => expect "consWithGuard? rejects duplicate" true
+    | some _ => throw <| IO.userError "consWithGuard? accepted duplicate"
+
+/-- WS-RC R4.C: `NoDupList.tail?` returns `none` for empty list. -/
+def r4c_noDupList_tail?_empty : IO Unit := do
+  let l : SeLe4n.NoDupList ThreadId := SeLe4n.NoDupList.empty
+  match l.tail? with
+  | none => expect "tail? on empty returns none" true
+  | some _ => throw <| IO.userError "tail? returned some on empty"
+
+/-- WS-RC R4.C: `NoDupList.tail?` pops the head correctly. -/
+def r4c_noDupList_tail?_pop_head : IO Unit := do
+  let tid1 : ThreadId := ⟨1⟩
+  let tid2 : ThreadId := ⟨2⟩
+  match (SeLe4n.NoDupList.empty : SeLe4n.NoDupList ThreadId).consWithGuard? tid2 with
+  | none => throw <| IO.userError "step 1 failed"
+  | some l1 =>
+    match l1.consWithGuard? tid1 with
+    | none => throw <| IO.userError "step 2 failed"
+    | some l2 =>
+      -- l2.val = [tid1, tid2] (LIFO order from cons)
+      match l2.tail? with
+      | none => throw <| IO.userError "tail? returned none on non-empty"
+      | some (head, rest) =>
+        expect "tail? head is tid1" (head = tid1)
+        expect "tail? tail.val = [tid2]" (rest.val = [tid2])
+
+/-- WS-RC R4.C: `NoDupList.filter` preserves Nodup unconditionally. -/
+def r4c_noDupList_filter_preserves_membership : IO Unit := do
+  let tid1 : ThreadId := ⟨1⟩
+  let tid2 : ThreadId := ⟨2⟩
+  match (SeLe4n.NoDupList.empty : SeLe4n.NoDupList ThreadId).consWithGuard? tid2 with
+  | none => throw <| IO.userError "setup step 1"
+  | some l1 =>
+    match l1.consWithGuard? tid1 with
+    | none => throw <| IO.userError "setup step 2"
+    | some l2 =>
+      let filtered := l2.filter (· != tid1)
+      expect "filter removes tid1" (filtered.val = [tid2])
+      expect "filter result is Nodup (structural)" true
+
+/-- WS-RC R4.C: `NoDupList.nodup_witness` is the structural discharge for
+    `uniqueWaiters`. -/
+def r4c_noDupList_nodup_witness : IO Unit := do
+  let l : SeLe4n.NoDupList ThreadId := SeLe4n.NoDupList.empty
+  let _hNd : l.val.Nodup := SeLe4n.NoDupList.nodup_witness l
+  expect "NoDupList.nodup_witness is reachable" true
+
+/-- WS-RC R4.C: `consWithGuard?_eq_some_iff` bridge — links runtime `some`
+    return to underlying-list cons equation. -/
+def r4c_consWithGuard?_eq_some_iff_bridge : IO Unit := do
+  let tid : ThreadId := ⟨7⟩
+  match (SeLe4n.NoDupList.empty : SeLe4n.NoDupList ThreadId).consWithGuard? tid with
+  | none => throw <| IO.userError "consWithGuard? rejected fresh"
+  | some l' =>
+    -- Elaborate the bridge theorem at this concrete instantiation; if it
+    -- typechecks, the bridge is reachable from user code.
+    let _hBridge :=
+      (SeLe4n.NoDupList.consWithGuard?_eq_some_iff tid SeLe4n.NoDupList.empty l').mp
+    expect "consWithGuard?_eq_some_iff bridge reachable" true
+
+/-- WS-RC R4.C: `tail?_eq_none_iff` bridge for empty list. -/
+def r4c_tail?_eq_none_iff_bridge_empty : IO Unit := do
+  let l : SeLe4n.NoDupList ThreadId := SeLe4n.NoDupList.empty
+  let _hForward : l.tail? = none ↔ l.val = [] :=
+    SeLe4n.NoDupList.tail?_eq_none_iff l
+  expect "tail?_eq_none_iff bridge reachable on empty" true
+
+-- ============================================================================
 -- Runtime coverage for the 5 per-variant typed lookup helpers
 -- getX? helpers. Each test stores a single KernelObject at a known ObjId
 -- and verifies (1) the matching typed helper returns `some`, (2) every
@@ -483,7 +651,7 @@ def getEndpoint_discriminates_variants : IO Unit := do
 getEndpoint? fails. -/
 def getNotification_discriminates_variants : IO Unit := do
   let id : ObjId := ⟨50⟩
-  let ntfn : Notification := { state := .idle, waitingThreads := [] }
+  let ntfn : Notification := { state := .idle, waitingThreads := SeLe4n.NoDupList.empty }
   let base : SystemState := default
   let st : SystemState :=
     { base with objects := base.objects.insert id (.notification ntfn) }
@@ -1568,6 +1736,23 @@ def main : IO Unit := do
   cspaceMove_from_null_rejected
   cspaceMutate_from_null_rejected
   nullCapability_distinct_from_invalidCapability
+  -- WS-RC R4.A (DEEP-MODEL-01) — UniqueSlotMap structural API coverage
+  r4a_uniqueSlotMap_empty_size_zero
+  r4a_uniqueSlotMap_insert_then_get
+  r4a_uniqueSlotMap_erase_removes
+  r4a_uniqueSlotMap_ofListWF_roundtrip
+  r4a_uniqueSlotMap_keys_unique_witness
+  r4a_cnode_slotsUnique_holds_witness
+  -- WS-RC R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01) — NoDupList structural API coverage
+  r4c_noDupList_empty_isEmpty
+  r4c_noDupList_consWithGuard?_fresh_element
+  r4c_noDupList_consWithGuard?_duplicate_rejected
+  r4c_noDupList_tail?_empty
+  r4c_noDupList_tail?_pop_head
+  r4c_noDupList_filter_preserves_membership
+  r4c_noDupList_nodup_witness
+  r4c_consWithGuard?_eq_some_iff_bridge
+  r4c_tail?_eq_none_iff_bridge_empty
   -- kind-verified lookup helpers discriminate by variant
   getTcb_discriminates_variants
   getSchedContext_discriminates_variants

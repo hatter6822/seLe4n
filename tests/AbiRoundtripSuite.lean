@@ -101,7 +101,7 @@ private def buildAbiState
       })
       |>.withObject cnodeId (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList []
+          slots := SeLe4n.UniqueSlotMap.ofListWF []
       })
       |>.withObject vsId (.vspaceRoot vsRoot)
       |>.withLifecycleObjectType tid.toObjId .tcb

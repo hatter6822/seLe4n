@@ -10,6 +10,8 @@
 import SeLe4n.Machine
 import SeLe4n.Kernel.RobinHood
 import SeLe4n.Kernel.SchedContext
+import SeLe4n.Model.Object.NoDupList
+import SeLe4n.Model.Object.UniqueSlotMap
 
 namespace SeLe4n.Model
 
@@ -325,13 +327,19 @@ inductive CapTarget where
   | replyCap (senderTcb : SeLe4n.ThreadId)
   deriving Repr, DecidableEq
 
+/-- WS-RC R4.A: `Inhabited CapTarget` for the `Capability` Inhabited
+    derivation needed by the `UniqueSlotMap` `GetElem?` `[s]` total-access
+    fallback. The chosen default is `.object SeLe4n.ObjId.sentinel`, matching
+    the H-06/WS-E3 sentinel convention. -/
+instance : Inhabited CapTarget := ⟨.object SeLe4n.ObjId.sentinel⟩
+
 /-- WS-F5/D2b: Capability with order-independent rights set.
     `rights` is an `AccessRightSet` (bitmask), replacing the prior `List AccessRight`. -/
 structure Capability where
   target : CapTarget
   rights : AccessRightSet
   badge : Option SeLe4n.Badge := none
-  deriving Repr, DecidableEq
+  deriving Repr, DecidableEq, Inhabited
 
 namespace Capability
 
@@ -882,22 +890,26 @@ structure Notification where
       Thread removal during lifecycle cleanup uses `List.filter` (O(n), acceptable
       for ≤8 waiters per notification).
 
-      **WS-RC R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01)**: list-level no-duplicate
-      preservation is enforced state-globally via the
-      `SeLe4n.Kernel.uniqueWaiters` invariant defined in
-      `IPC/Invariant/Defs.lean`, with per-operation preservation theorems
-      (`notificationWait_preserves_uniqueWaiters`,
-      `notificationSignal_preserves_uniqueWaiters`, etc.) discharged for every
-      kernel transition. The runtime guard at
-      `IPC/Operations/Endpoint.lean:723` (TCB `ipcState`-based duplicate
-      check) is bridged to list non-membership through the
-      `notificationWaiterConsistent` cross-subsystem invariant, so the
-      Nodup property holds structurally for every notification reachable
-      from boot. The structural-witness theorem
-      `notification_waitingThreads_nodup_witness` (in
-      `IPC/Invariant/QueueNoDup.lean`) codifies this closure at the proof
+      **WS-RC R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01)**: the list-level
+      no-duplicate property is carried **structurally** by
+      `SeLe4n.NoDupList SeLe4n.ThreadId`, materialised in
+      `SeLe4n/Model/Object/NoDupList.lean`. The wrapper exposes
+      `val : List SeLe4n.ThreadId` plus a proof `hNodup : val.Nodup`, so
+      every reachable notification has a duplicate-free waiter list by
+      construction. The smart constructors `NoDupList.empty`,
+      `NoDupList.consWithGuard?`, `NoDupList.filter`, and `NoDupList.tail?`
+      discharge the obligation at every mutation site (`Endpoint.lean`,
+      `Cleanup.lean`, `FrozenOps/Operations.lean`).  The runtime duplicate
+      guard at `IPC/Operations/Endpoint.lean` is subsumed by
+      `NoDupList.consWithGuard?` (which returns `none` for a duplicate and
+      is consumed as `.error .alreadyWaiting`); the state-level invariant
+      `SeLe4n.Kernel.uniqueWaiters` collapses to a trivial projection of
+      `hNodup`. The structural-witness theorems
+      `SeLe4n.Kernel.notification_waitingThreads_nodup_witness` and
+      `SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup` (in
+      `IPC/Invariant/QueueNoDup.lean`) codify this closure at the proof
       surface, per the WS-RC §1.5 structural-fix policy. -/
-  waitingThreads : List SeLe4n.ThreadId
+  waitingThreads : SeLe4n.NoDupList SeLe4n.ThreadId
   pendingBadge : Option SeLe4n.Badge := none
   deriving Repr, DecidableEq
 
@@ -909,15 +921,20 @@ A large `guardWidth` compresses an unbranched path prefix into a single
 guard comparison, avoiding chains of intermediate CNodes (Patricia-trie
 optimisation matching seL4's real CSpace implementation).
 
-`slots` is backed by `RHTable Slot Capability` — a formally verified Robin Hood
-hash table providing O(1) amortized lookup, insert, and delete with machine-checked
-proofs (WS-N). Key uniqueness is enforced by the `noDupKeys` invariant. -/
+`slots` is backed by `SeLe4n.UniqueSlotMap Capability` — a smart-constructor
+wrapper around `RHTable Slot Capability` (the formally verified Robin Hood
+hash table providing O(1) amortized lookup, insert, and delete with
+machine-checked proofs).  The wrapper carries `RHTable.invExtK`
+(no-duplicate-keys ∧ `size < capacity` ∧ `4 ≤ capacity`) structurally at
+construction time, so the state-level `cspaceSlotUnique` invariant
+collapses to a trivial projection of `hWF`.  Defined in
+`SeLe4n/Model/Object/UniqueSlotMap.lean`. -/
 structure CNode where
   depth      : Nat          -- maximum remaining depth in bits from this node to any leaf
   guardWidth : Nat          -- width of guard field in bits
   guardValue : Nat          -- expected guard value to match
   radixWidth : Nat          -- width of slot index in bits (2^radixWidth slots)
-  slots      : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.Slot Capability
+  slots      : SeLe4n.UniqueSlotMap Capability
   deriving Repr
 
 /-- Maximum CSpace address width (matching ARM64 word size). -/

@@ -280,8 +280,10 @@ theorem projectKernelObject_idempotent
     | _, _ => True := by
   cases obj with
   | cnode cn =>
-    simp only [projectKernelObject, CNode.lookup]
-    exact SeLe4n.Kernel.RobinHood.RHTable.filter_filter_getElem? cn.slots _ slot (hUniq cn rfl).1
+    simp only [projectKernelObject, CNode.lookup, SeLe4n.UniqueSlotMap.get?,
+      SeLe4n.UniqueSlotMap.filter]
+    -- WS-RC R4.A: project to `.table` for the underlying RHTable lemma.
+    exact SeLe4n.Kernel.RobinHood.RHTable.filter_filter_getElem? cn.slots.table _ slot (hUniq cn rfl).1
   | _ => trivial
 
 /-- WS-F3/F-22: `projectKernelObject` preserves object type. -/

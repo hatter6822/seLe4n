@@ -3306,4 +3306,47 @@ Component map:
 8. `handleInterrupt_timer_preserves_interruptsEnabled`
 -/
 
+/-! ## WS-RC R4 structural-fix discharge markers (LANDED)
+
+The R4 phase (structural-invariant promotions) lands four sub-tasks
+under the structural-fix policy (`§1.5 false-positive structural
+closures`).  **All four sub-tasks are LANDED with full type-level
+structural promotion.**
+
+* **R4.A (DEEP-MODEL-01)** — `CNode.slots : SeLe4n.UniqueSlotMap
+  Capability` carries `RHTable.invExtK` structurally at construction
+  time via the smart constructors `empty`, `insert`, `erase`,
+  `filter`, `ofListWF` (in `SeLe4n/Model/Object/UniqueSlotMap.lean`).
+  The state-level `cspaceSlotUnique` invariant is now trivially
+  derivable via `SeLe4n.Model.CNode.slotsUnique_holds`.  Structural
+  witness: `SeLe4n.UniqueSlotMap.keys_unique`.
+* **R4.B (DEEP-CAP-04)** — `RetypeTarget` carries a `ScrubToken`
+  witness derivable only from `lifecyclePreRetypeCleanup_ok`. The
+  no-bypass property is codified by
+  `SeLe4n.Kernel.retypeTarget_implies_scrub_token_held`.
+* **R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01)** —
+  `Notification.waitingThreads : SeLe4n.NoDupList SeLe4n.ThreadId`
+  carries `List.Nodup` structurally at construction time
+  (`SeLe4n/Model/Object/NoDupList.lean`).  `notificationSignal` pops
+  via `NoDupList.tail?`; `notificationWait` cons site is gated by
+  `NoDupList.consWithGuard?`.  The state-level `uniqueWaiters` is
+  now trivially derivable via `SeLe4n.Kernel.uniqueWaiters_holds`.
+  Structural witnesses: `SeLe4n.NoDupList.nodup_witness`,
+  `SeLe4n.Kernel.notification_waitingThreads_nodup_witness`, and
+  `SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup`
+  (the operational↔structural bridge).
+* **R4.D (DEEP-CAP-02)** — `cspaceMutate`'s runtime null-cap guard is
+  witnessed by `SeLe4n.Kernel.cspaceMutate_rejects_null_cap` (positive
+  direction) and `SeLe4n.Kernel.cspaceMutate_null_cap_rejected`
+  (totality direction).
+
+This marker theorem exists so the tier-3 invariant-surface gate can
+locate the R4 closure by name; the body is `trivial` per the
+marker-theorem pattern (the closure content is in the cited theorems
+and in `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`). The companion
+`#check` reachability tests are exercised by
+`scripts/test_tier3_invariant_surface.sh`. -/
+theorem r4_structural_fix_discharge_index_documented : True := trivial
+-- Cross-reference: docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md §3 (R4.A/B/C/D)
+
 end SeLe4n.Kernel

@@ -57,7 +57,7 @@ private def mkEmptyEndpoint : Endpoint := {}
 
 /-- Helper: construct a minimal test Notification. -/
 private def mkEmptyNotification : Notification :=
-  { state := NotificationState.idle, waitingThreads := [] }
+  { state := NotificationState.idle, waitingThreads := SeLe4n.NoDupList.empty }
 
 /-- Helper: construct a minimal test SchedContext. -/
 private def mkEmptySchedContext (id : Nat := 200) : Kernel.SchedContext :=
@@ -144,7 +144,7 @@ def an10_b_getCNode_populated : IO Bool := do
     , guardWidth := 0
     , guardValue := 0
     , radixWidth := 8
-    , slots      := SeLe4n.Kernel.RobinHood.RHTable.empty 16 }
+    , slots      := SeLe4n.UniqueSlotMap.empty }
   let st : SystemState := { (default : SystemState) with
     objects := (default : SystemState).objects.insert id (.cnode cn) }
   return st.getCNode? id |>.isSome
