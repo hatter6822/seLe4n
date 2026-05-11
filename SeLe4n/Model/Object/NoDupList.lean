@@ -18,24 +18,33 @@ runtime duplicate-guard responsibility into the type system itself, so a
 caller cannot insert a duplicate without explicitly handling the `none`
 result.
 
-`Notification.waitingThreads` (in `SeLe4n.Model.Object.Types`) carries this
-wrapper around `List SeLe4n.ThreadId`. The corresponding state-level
-invariant `uniqueWaiters` is preserved by `NoDupList.hNodup` structurally —
+`Notification.waitingThreads` (in `SeLe4n.Model.Object.Types`) carries
+this wrapper around `List SeLe4n.ThreadId`. The state-level invariant
+`SeLe4n.Kernel.uniqueWaiters` is now trivially derivable via
+`SeLe4n.Kernel.uniqueWaiters_holds` from the structural `hNodup` field —
 no preservation theorem is required for the wrapper's no-duplicate
 property since it cannot be violated at construction.
 
 ## Operational vs. proof-side API
 
 * Operational sites (kernel transitions) use `consWithGuard?` (runtime
-  membership check) or `empty` (boot/initial state).
-* Proof sites (preservation theorems) use `consWithGuard` (proof-carrying
-  cons) or destructure `.val` to recover the underlying `List α` for
-  pattern-matching tactics.
+  membership check returning `Option`) at cons sites,
+  `tail?` (NoDupList smart accessor) at pop sites, `filter` for
+  multi-element removal, and `empty` for boot/initial state. The
+  smart constructors discharge `Nodup` inline.
+* Proof sites (preservation theorems) destructure `.val` to recover the
+  underlying `List α` for pattern-matching tactics, or use the bridge
+  lemmas `tail?_eq_{none,some}_iff` and `consWithGuard?_eq_{none,some}_iff`
+  to align the operational match shapes with `.val`-based reasoning.
+  The proof-carrying `consWithGuard` is reserved for future proof
+  sites that have a non-membership witness in scope from another
+  cross-subsystem invariant.
 
-The two paths are linked by the existing in-tree bridge
-`notificationWait_runtime_check_implied_by_nodup`
-(in `IPC/Invariant/QueueNoDup.lean`), which proves that the runtime guard
-condition implies the structural Nodup precondition.
+The operational↔proof bridge for the runtime guard is the existing
+in-tree theorem `notificationWait_runtime_check_implied_by_nodup`
+(in `IPC/Invariant/QueueNoDup.lean`), which proves that the
+TCB-state-based duplicate guard at `Endpoint.lean` implies the
+structural Nodup precondition under `notificationWaiterConsistent`.
 -/
 
 namespace SeLe4n
@@ -289,16 +298,16 @@ end SeLe4n
 /-! ## WS-RC R4.C discharge-index marker
 
 The `SeLe4n.NoDupList α` wrapper carries `List.Nodup` invariantly at
-construction time. Once `Notification.waitingThreads` is migrated to
-`SeLe4n.NoDupList SeLe4n.ThreadId` (planned in 8 atomic sub-PRs per
-`docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`), the state-level
-`uniqueWaiters` invariant collapses to a trivial projection of
-`hNodup`. This marker theorem exists so the tier-3 invariant-surface
-gate can locate the structural-promotion foundation by name. -/
+construction time.  `Notification.waitingThreads` has been migrated to
+`SeLe4n.NoDupList SeLe4n.ThreadId` (R4.C LANDED — see
+`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` §8.5), so the
+state-level `uniqueWaiters` invariant is now a trivial projection of
+`hNodup` via `SeLe4n.Kernel.uniqueWaiters_holds`. This marker theorem
+exists so the tier-3 invariant-surface gate can locate the
+structural-promotion foundation by name. -/
 namespace SeLe4n.Kernel
 
 theorem noDupList_module_ready : True := trivial
--- Cross-reference: docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md §C
--- (Track C — NoDupList ThreadId)
+-- Cross-reference: docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md §3.D D.4
 
 end SeLe4n.Kernel

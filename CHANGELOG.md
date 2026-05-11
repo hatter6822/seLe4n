@@ -93,13 +93,24 @@ type-level promotions** for all four sub-tasks of the WS-RC R4 slice:
 
 ### Validation
 
-- `lake build` (default target, 312 jobs) passes; 0 sorry / 0 axiom
-  in the modified files.
+- `lake build` (default target, 312 jobs) passes with **zero warnings**;
+  0 sorry / 0 axiom in the modified files.
 - `./scripts/test_smoke.sh` passes (all tiers 0+1+2).
 - `./scripts/test_full.sh` passes (tier 3 invariant surface).
 - All 29 test suites pass against the migrated codebase; new
   Tier-2 `NEG-MUTATE-NULL` regression observed in the
   `negative_state_suite` output.
+- **15 new dedicated R4 API tests** added to
+  `tests/ModelIntegritySuite.lean` exercising the structural foundation
+  APIs end-to-end:
+  - R4.A: `r4a_uniqueSlotMap_{empty_size_zero,insert_then_get,
+    erase_removes,ofListWF_roundtrip,keys_unique_witness}` and
+    `r4a_cnode_slotsUnique_holds_witness`.
+  - R4.C: `r4c_noDupList_{empty_isEmpty,consWithGuard?_fresh_element,
+    consWithGuard?_duplicate_rejected,tail?_empty,tail?_pop_head,
+    filter_preserves_membership,nodup_witness}`,
+    `r4c_consWithGuard?_eq_some_iff_bridge`, and
+    `r4c_tail?_eq_none_iff_bridge_empty`.
 
 ### Files changed at this commit
 

@@ -150,6 +150,25 @@ theorems (`empty/insert/remove/revokeTargetLocal_slotsUnique`,
 `notificationWait_preserves_uniqueWaiters`) collapse to one-liner
 projections of the relevant `hWF` / `hNodup` fields.
 
+**Runtime API coverage** (`tests/ModelIntegritySuite.lean`):
+15 dedicated tests exercise the new R4.A/R4.C foundation APIs end-to-end:
+
+* R4.A: `r4a_uniqueSlotMap_empty_size_zero`,
+  `r4a_uniqueSlotMap_insert_then_get`,
+  `r4a_uniqueSlotMap_erase_removes`,
+  `r4a_uniqueSlotMap_ofListWF_roundtrip`,
+  `r4a_uniqueSlotMap_keys_unique_witness`,
+  `r4a_cnode_slotsUnique_holds_witness`.
+* R4.C: `r4c_noDupList_empty_isEmpty`,
+  `r4c_noDupList_consWithGuard?_fresh_element`,
+  `r4c_noDupList_consWithGuard?_duplicate_rejected`,
+  `r4c_noDupList_tail?_empty`,
+  `r4c_noDupList_tail?_pop_head`,
+  `r4c_noDupList_filter_preserves_membership`,
+  `r4c_noDupList_nodup_witness`,
+  `r4c_consWithGuard?_eq_some_iff_bridge`,
+  `r4c_tail?_eq_none_iff_bridge_empty`.
+
 ### §3.E — Predecessor reroutings (LANDED — R4.C subsumes DEEP-IPC-01 structurally)
 
 DEEP-IPC-01 (notification waiters NoDup runtime-only verification) is
