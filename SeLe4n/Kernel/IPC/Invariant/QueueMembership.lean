@@ -456,8 +456,10 @@ theorem notificationSignal_preserves_ipcStateQueueMembershipConsistent
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
-      cases hWaiters : ntfn.waitingThreads with
-      | cons waiter rest =>
+      -- WS-RC R4.C: `notificationSignal` pops via `tail?`.
+      cases hWaiters : ntfn.waitingThreads.tail? with
+      | some headTail =>
+        obtain ⟨waiter, rest⟩ := headTail
         simp only [hWaiters] at hStep
         generalize hStore1 : storeObject notificationId _ st = r1 at hStep
         cases r1 with
@@ -480,7 +482,7 @@ theorem notificationSignal_preserves_ipcStateQueueMembershipConsistent
               storeTcbIpcStateAndMessage_preserves_ipcStateQueueMembershipConsistent _ _ _ _ _ hInv1 hObjInv1
                 (fun epId => by intro h; cases h) (fun epId => by intro h; cases h)
                 (fun epId => by intro h; cases h) hMsg
-      | nil =>
+      | none =>
         simp only [hWaiters] at hStep
         exact storeObject_non_ep_non_tcb_preserves_ipcStateQueueMembershipConsistent
           st st' notificationId _ hInv hObjInv
@@ -534,7 +536,12 @@ theorem notificationWait_preserves_ipcStateQueueMembershipConsistent
           simp only [hLookup] at hStep
           split at hStep
           · simp at hStep
-          · generalize hStore1 : storeObject notificationId _ st = r1 at hStep
+          · -- WS-RC R4.C: case-split on consWithGuard?
+            cases hCons : ntfn.waitingThreads.consWithGuard? waiter with
+            | none => simp [hCons] at hStep
+            | some wt' =>
+            simp only [hCons] at hStep
+            generalize hStore1 : storeObject notificationId _ st = r1 at hStep
             cases r1 with
             | error e => simp at hStep
             | ok pair1 =>

@@ -641,9 +641,14 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
   fun st =>
     match st.objects[notificationId]? with
     | some (.notification ntfn) =>
-        match ntfn.waitingThreads with
-        | waiter :: rest =>
-            let nextState : NotificationState := if rest.isEmpty then .idle else .waiting
+        -- WS-RC R4.C: pop via the structural `NoDupList.tail?` smart accessor;
+        -- it returns the head and a `NoDupList`-typed tail with the Nodup
+        -- proof discharged inline. Proof-side preservation theorems use the
+        -- `tail?_eq_{none,some}_iff` bridge lemmas to align with the
+        -- underlying `.val` cons/nil case-split.
+        match ntfn.waitingThreads.tail? with
+        | some (waiter, rest) =>
+            let nextState : NotificationState := if rest.val.isEmpty then .idle else .waiting
             let ntfn' : Notification := {
               state := nextState
               waitingThreads := rest
@@ -658,7 +663,7 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
                 match storeTcbIpcStateAndMessage st' waiter .ready (some badgeMsg) with
                 | .error e => .error e
                 | .ok st'' => .ok ((), ensureRunnable st'' waiter)
-        | [] =>
+        | none =>
             -- WS-F5/D1c: Use word-bounded Badge.bor for accumulation.
             -- U8-C/U-L24: Notification word overflow note: Badge.bor uses
             -- unbounded Lean Nat internally (bitwise OR). In the formal model
@@ -678,7 +683,7 @@ def notificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge) : 
               | none => SeLe4n.Badge.ofNatMasked badge.toNat
             let ntfn' : Notification := {
               state := .active
-              waitingThreads := []
+              waitingThreads := SeLe4n.NoDupList.empty
               pendingBadge := some mergedBadge
             }
             storeObject notificationId (.notification ntfn') st
@@ -708,7 +713,8 @@ def notificationWait
     | some (.notification ntfn) =>
         match ntfn.pendingBadge with
         | some badge =>
-            let ntfn' : Notification := { state := .idle, waitingThreads := [], pendingBadge := none }
+            let ntfn' : Notification :=
+              { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
             match storeObject notificationId (.notification ntfn') st with
             | .error e => .error e
             | .ok ((), st') =>
@@ -716,26 +722,41 @@ def notificationWait
                 | .error e => .error e
                 | .ok st'' => .ok (some badge, st'')
         | none =>
-            -- WS-G7/F-P11: O(1) duplicate check via TCB ipcState instead of O(n) list membership
+            -- WS-G7/F-P11/WS-RC R4.C: O(1) duplicate check via TCB ipcState
+            -- (fast-path) PLUS structural duplicate guarantee via
+            -- `NoDupList.consWithGuard?`. The TCB-state check fires first
+            -- (cheaper, fail-fast on the common case); the consWithGuard?
+            -- discharge is the type-level invariant carrier that makes the
+            -- Nodup property structural rather than upstream-convention.
             match lookupTcb st waiter with
             | none => .error .objectNotFound
             | some tcb =>
                 if tcb.ipcState = .blockedOnNotification notificationId then
                   .error .alreadyWaiting
                 else
-                  let ntfn' : Notification := {
-                    state := .waiting
-                    waitingThreads := waiter :: ntfn.waitingThreads
-                    pendingBadge := none
-                  }
-                  match storeObject notificationId (.notification ntfn') st with
-                  | .error e => .error e
-                  | .ok ((), st') =>
-                      -- WS-L1/L1-C: Use _fromTcb — storeObject at notificationId
-                      -- does not modify waiter's TCB, so tcb is still valid in st'
-                      match storeTcbIpcState_fromTcb st' waiter tcb (.blockedOnNotification notificationId) with
+                  match ntfn.waitingThreads.consWithGuard? waiter with
+                  | none =>
+                      -- WS-RC R4.C: structurally unreachable under
+                      -- `notificationWaiterConsistent` because the TCB
+                      -- ipcState check above implies non-membership, but
+                      -- preserved as defence-in-depth — if a future
+                      -- refactor weakens the invariant chain, this branch
+                      -- still fails closed with the explicit error code.
+                      .error .alreadyWaiting
+                  | some wt' =>
+                      let ntfn' : Notification := {
+                        state := .waiting
+                        waitingThreads := wt'
+                        pendingBadge := none
+                      }
+                      match storeObject notificationId (.notification ntfn') st with
                       | .error e => .error e
-                      | .ok st'' => .ok (none, removeRunnable st'' waiter)
+                      | .ok ((), st') =>
+                          -- WS-L1/L1-C: Use _fromTcb — storeObject at notificationId
+                          -- does not modify waiter's TCB, so tcb is still valid in st'
+                          match storeTcbIpcState_fromTcb st' waiter tcb (.blockedOnNotification notificationId) with
+                          | .error e => .error e
+                          | .ok st'' => .ok (none, removeRunnable st'' waiter)
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
@@ -1012,7 +1033,11 @@ theorem notificationWait_error_alreadyWaiting
   simp [hObj, hNoBadge, hTcb, hBlocked]
 
 /-- Decomposition: on the badge-consumed path, the post-state notification
-has an empty waiting list. -/
+has an empty waiting list.
+
+WS-RC R4.C: the conclusion references `.val` (the underlying `List
+ThreadId`) because the field type is `NoDupList ThreadId`.  Equivalently,
+`ntfn'.waitingThreads = SeLe4n.NoDupList.empty`. -/
 theorem notificationWait_badge_path_notification
     (st st' : SystemState)
     (notifId : SeLe4n.ObjId)
@@ -1020,7 +1045,8 @@ theorem notificationWait_badge_path_notification
     (badge : SeLe4n.Badge)
     (hObjInv : st.objects.invExt)
     (hStep : notificationWait notifId waiter st = .ok (some badge, st')) :
-    ∃ ntfn', st'.objects[notifId]? = some (.notification ntfn') ∧ ntfn'.waitingThreads = [] := by
+    ∃ ntfn', st'.objects[notifId]? = some (.notification ntfn') ∧
+      ntfn'.waitingThreads.val = [] := by
   unfold notificationWait at hStep
   cases hObj : st.objects[notifId]? with
   | none => simp [hObj] at hStep
@@ -1040,25 +1066,31 @@ theorem notificationWait_badge_path_notification
           simp only [hLookup] at hStep
           split at hStep
           · simp at hStep
-          · revert hStep
-            cases hStore : storeObject notifId _ st with
-            | error e => simp
-            | ok pair =>
-              simp only []
-              intro hStep
-              -- WS-L1: rewrite _fromTcb back to original for proof compatibility
-              have hLookup' := lookupTcb_preserved_by_storeObject_notification hLookup hObj hObjInv hStore
-              rw [storeTcbIpcState_fromTcb_eq hLookup'] at hStep
+          · -- WS-RC R4.C: also case-split on consWithGuard?
+            cases hCons : ntfn.waitingThreads.consWithGuard? waiter with
+            | none => simp [hCons] at hStep
+            | some wt' =>
+              simp only [hCons] at hStep
               revert hStep
-              cases hTcb : storeTcbIpcState pair.2 waiter _ with
+              cases hStore : storeObject notifId _ st with
               | error e => simp
-              | ok st2 =>
-                simp only [Except.ok.injEq, Prod.mk.injEq]
-                intro ⟨h, _⟩
-                exact absurd h (by simp)
+              | ok pair =>
+                simp only []
+                intro hStep
+                -- WS-L1: rewrite _fromTcb back to original for proof compatibility
+                have hLookup' := lookupTcb_preserved_by_storeObject_notification hLookup hObj hObjInv hStore
+                rw [storeTcbIpcState_fromTcb_eq hLookup'] at hStep
+                revert hStep
+                cases hTcb : storeTcbIpcState pair.2 waiter _ with
+                | error e => simp
+                | ok st2 =>
+                  simp only [Except.ok.injEq, Prod.mk.injEq]
+                  intro ⟨h, _⟩
+                  exact absurd h (by simp)
       | some b =>
         simp only [hBadge] at hStep
-        let newNtfn : Notification := { state := .idle, waitingThreads := [], pendingBadge := none }
+        let newNtfn : Notification :=
+          { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
         revert hStep
         cases hStore : storeObject notifId (.notification newNtfn) st with
         | error e => simp
@@ -1081,9 +1113,13 @@ theorem notificationWait_badge_path_notification
               storeTcbIpcState_preserves_notification pair.2 st2 waiter .ready notifId newNtfn hNtfnStored hPairObjInv hTcb
             exact ⟨newNtfn, hNtfnPreserved, rfl⟩
 
-/-- WS-G7/F-P11: Decomposition: on the wait path, the post-state notification has the
-waiter prepended. The waiter's TCB existed and was not already blocked on this
-notification. -/
+/-- WS-G7/F-P11/WS-RC R4.C: Decomposition: on the wait path, the post-state
+notification has the waiter prepended.  The waiter's TCB existed and was
+not already blocked on this notification.
+
+WS-RC R4.C: the conclusion references `.val` (the underlying `List
+ThreadId`) because the field type is now `NoDupList ThreadId`.  The
+prepend witness is derived from `NoDupList.consWithGuard?_eq_some_iff`. -/
 theorem notificationWait_wait_path_notification
     (st st' : SystemState)
     (notifId : SeLe4n.ObjId)
@@ -1094,7 +1130,7 @@ theorem notificationWait_wait_path_notification
       st.objects[notifId]? = some (.notification ntfn) ∧
       ntfn.pendingBadge = none ∧
       st'.objects[notifId]? = some (.notification ntfn') ∧
-      ntfn'.waitingThreads = waiter :: ntfn.waitingThreads := by
+      ntfn'.waitingThreads.val = waiter :: ntfn.waitingThreads.val := by
   unfold notificationWait at hStep
   cases hObj : st.objects[notifId]? with
   | none => simp [hObj] at hStep
@@ -1108,7 +1144,9 @@ theorem notificationWait_wait_path_notification
       | some b =>
         simp only [hBadge] at hStep
         revert hStep
-        cases hStore : storeObject notifId (.notification { state := .idle, waitingThreads := [], pendingBadge := none }) st with
+        cases hStore : storeObject notifId (.notification
+            { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+              pendingBadge := none }) st with
         | error e => simp
         | ok pair =>
           simp only []
@@ -1131,32 +1169,43 @@ theorem notificationWait_wait_path_notification
           by_cases hBlocked : tcb.ipcState = .blockedOnNotification notifId
           · simp [hBlocked] at hStep
           · simp only [hBlocked, ite_false] at hStep
-            let ntfn' : Notification := { state := .waiting, waitingThreads := waiter :: ntfn.waitingThreads, pendingBadge := none }
-            revert hStep
-            cases hStore : storeObject notifId (.notification ntfn') st with
-            | error e => simp
-            | ok pair =>
-              simp only []
-              intro hStep
-              -- WS-L1: rewrite _fromTcb back to original for proof compatibility
-              have hLookup' := lookupTcb_preserved_by_storeObject_notification hLookup hObj hObjInv hStore
-              rw [storeTcbIpcState_fromTcb_eq hLookup'] at hStep
+            -- WS-RC R4.C: structural consWithGuard? case-split
+            cases hCons : ntfn.waitingThreads.consWithGuard? waiter with
+            | none => simp [hCons] at hStep
+            | some wt' =>
+              simp only [hCons] at hStep
+              -- Recover wt'.val = waiter :: ntfn.waitingThreads.val from the
+              -- structural smart-constructor equation.
+              have hConsEq : wt'.val = waiter :: ntfn.waitingThreads.val :=
+                ((SeLe4n.NoDupList.consWithGuard?_eq_some_iff waiter
+                  ntfn.waitingThreads wt').mp hCons).2
+              let ntfn' : Notification :=
+                { state := .waiting, waitingThreads := wt', pendingBadge := none }
               revert hStep
-              cases hTcb : storeTcbIpcState pair.2 waiter (.blockedOnNotification notifId) with
+              cases hStore : storeObject notifId (.notification ntfn') st with
               | error e => simp
-              | ok st2 =>
-                simp only [Except.ok.injEq, Prod.mk.injEq]
-                intro ⟨_, hStEq⟩
-                have hRemObj : (removeRunnable st2 waiter).objects = st2.objects := rfl
-                have hNtfnStored : pair.2.objects[notifId]? = some (.notification ntfn') :=
-                  storeObject_objects_eq st pair.2 notifId (.notification ntfn') hObjInv hStore
-                have hPairObjInv : pair.2.objects.invExt := by
-                  unfold storeObject at hStore; cases hStore
-                  exact RHTable_insert_preserves_invExt _ _ _ hObjInv
-                have hNtfnPreserved : st2.objects[notifId]? = some (.notification ntfn') :=
-                  storeTcbIpcState_preserves_notification pair.2 st2 waiter
-                    (.blockedOnNotification notifId) notifId ntfn' hNtfnStored hPairObjInv hTcb
-                refine ⟨ntfn, ntfn', rfl, hBadge, ?_, rfl⟩
-                rw [← hStEq, hRemObj]
-                exact hNtfnPreserved
+              | ok pair =>
+                simp only []
+                intro hStep
+                -- WS-L1: rewrite _fromTcb back to original for proof compatibility
+                have hLookup' := lookupTcb_preserved_by_storeObject_notification hLookup hObj hObjInv hStore
+                rw [storeTcbIpcState_fromTcb_eq hLookup'] at hStep
+                revert hStep
+                cases hTcb : storeTcbIpcState pair.2 waiter (.blockedOnNotification notifId) with
+                | error e => simp
+                | ok st2 =>
+                  simp only [Except.ok.injEq, Prod.mk.injEq]
+                  intro ⟨_, hStEq⟩
+                  have hRemObj : (removeRunnable st2 waiter).objects = st2.objects := rfl
+                  have hNtfnStored : pair.2.objects[notifId]? = some (.notification ntfn') :=
+                    storeObject_objects_eq st pair.2 notifId (.notification ntfn') hObjInv hStore
+                  have hPairObjInv : pair.2.objects.invExt := by
+                    unfold storeObject at hStore; cases hStore
+                    exact RHTable_insert_preserves_invExt _ _ _ hObjInv
+                  have hNtfnPreserved : st2.objects[notifId]? = some (.notification ntfn') :=
+                    storeTcbIpcState_preserves_notification pair.2 st2 waiter
+                      (.blockedOnNotification notifId) notifId ntfn' hNtfnStored hPairObjInv hTcb
+                  refine ⟨ntfn, ntfn', rfl, hBadge, ?_, hConsEq⟩
+                  rw [← hStEq, hRemObj]
+                  exact hNtfnPreserved
 

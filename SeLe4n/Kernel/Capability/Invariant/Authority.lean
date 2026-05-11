@@ -124,10 +124,13 @@ theorem cspaceRevoke_local_target_reduction
               simp [CNode.lookup] at hLookupStored
               exact hLookupStored
             -- Convert to get? form for RHTable bridge lemmas
-            have hFilterGet : (cn.slots.filter (fun s c => s == addr.slot || !(c.target == parent.target))).get? slot = some cap := by
-              rw [CNode.revokeTargetLocal, CNode.lookup] at hFilterLookup; exact hFilterLookup
+            -- WS-RC R4.A: project to `.table` for the underlying RHTable bridge.
+            have hFilterGet : (cn.slots.filter (fun s c => s == addr.slot || !(c.target == parent.target))).table.get? slot = some cap := by
+              rw [CNode.revokeTargetLocal, CNode.lookup] at hFilterLookup
+              simp only [SeLe4n.UniqueSlotMap.get?, SeLe4n.UniqueSlotMap.filter] at hFilterLookup
+              exact hFilterLookup
             -- By filter_get_pred, the predicate holds for (slot, cap)
-            have hPredTrue := SeLe4n.Kernel.RobinHood.RHTable.filter_get_pred cn.slots
+            have hPredTrue := SeLe4n.Kernel.RobinHood.RHTable.filter_get_pred cn.slots.table
               (fun s c => s == addr.slot || !(c.target == parent.target)) slot cap hUniq.1 hFilterGet
             -- hPredTrue : (slot == addr.slot || !(cap.target == parent.target)) = true
             by_cases hSlot : slot = addr.slot
@@ -511,7 +514,7 @@ theorem notificationSignal_badge_stored_fresh
     (badge : SeLe4n.Badge)
     (ntfn : Notification)
     (hObj : st.objects[notifId]? = some (.notification ntfn))
-    (hNoWaiters : ntfn.waitingThreads = [])
+    (hNoWaiters : ntfn.waitingThreads.val = [])
     (hNoPending : ntfn.pendingBadge = none)
     (hObjInv : st.objects.invExt)
     (hSignal : notificationSignal notifId badge st = .ok ((), st')) :
@@ -519,8 +522,11 @@ theorem notificationSignal_badge_stored_fresh
       st'.objects[notifId]? = some (.notification ntfn') ∧
       ntfn'.pendingBadge = some (SeLe4n.Badge.ofNatMasked badge.toNat) := by
   unfold notificationSignal at hSignal
-  simp [hObj, hNoWaiters, hNoPending] at hSignal
-  exact ⟨{ state := .active, waitingThreads := [],
+  -- WS-RC R4.C: rewrite via the structural `tail?` derived from the empty `.val`.
+  have hTailNone : ntfn.waitingThreads.tail? = none :=
+    (SeLe4n.NoDupList.tail?_eq_none_iff _).mpr hNoWaiters
+  simp [hObj, hTailNone, hNoPending] at hSignal
+  exact ⟨{ state := .active, waitingThreads := SeLe4n.NoDupList.empty,
            pendingBadge := some (SeLe4n.Badge.ofNatMasked badge.toNat) },
     by rw [← storeObject_objects_eq st st' notifId _ hObjInv hSignal], rfl⟩
 
@@ -554,8 +560,11 @@ theorem notificationWait_recovers_pending_badge
                 simp only [hLk] at hWait
                 split at hWait
                 · simp at hWait
-                · revert hWait
-                  cases hStore : storeObject notifId _ st with
+                · -- WS-RC R4.C: consWithGuard? case-split
+                  split at hWait
+                  · simp at hWait
+                  · revert hWait
+                    cases hStore : storeObject notifId _ st with
                   | error e => simp
                   | ok pair =>
                       simp only []
@@ -572,7 +581,8 @@ theorem notificationWait_recovers_pending_badge
           | some b =>
               simp only [hPending] at hWait
               let newNtfn : Notification :=
-                { state := .idle, waitingThreads := [], pendingBadge := none }
+                { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+                  pendingBadge := none }
               revert hWait
               cases hStore : storeObject notifId (.notification newNtfn) st with
               | error e => simp
@@ -605,7 +615,7 @@ theorem badge_notification_routing_consistent
     (ntfn : Notification)
     (_hMint : cspaceMint src dst rights (some badge) st₁ = .ok ((), st₂))
     (hNtfnObj : st₂.objects[notifId]? = some (.notification ntfn))
-    (hNoWaiters : ntfn.waitingThreads = [])
+    (hNoWaiters : ntfn.waitingThreads.val = [])
     (hNoPending : ntfn.pendingBadge = none)
     (hObjInv2 : st₂.objects.invExt)
     (hSignal : notificationSignal notifId badge st₂ = .ok ((), st₃))

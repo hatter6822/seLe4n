@@ -437,16 +437,23 @@ gates.
   the substantive surface; 0 sorry / 0 axiom in the modified
   files.
 
-### R4 — Structural-invariant promotions (partial landing)
+### R4 — Structural-invariant promotions (COMPLETE — full type-level landing)
 
 R4 lands four sub-tasks under the structural-fix policy (`§1.5` of
-the WS-RC plan). Three sub-tasks (R4.B, R4.D, R4.C witness theorems)
-landed at commit `7da2572`; the full type-level field-type switch
-for R4.A (`CNode.slots` → `UniqueSlotMap`) and R4.C
-(`Notification.waitingThreads` → `NoDupList ThreadId`) is partitioned
-in
-[`docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`](planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md)
-as 15 atomic sub-PRs across two tracks (A: 7 sub-PRs, C: 8 sub-PRs).
+the WS-RC plan). All four sub-tasks (R4.A, R4.B, R4.C, R4.D) are
+COMPLETE with full type-level structural promotion:
+
+* `CNode.slots : SeLe4n.UniqueSlotMap Capability` (R4.A) — carries
+  `RHTable.invExtK` structurally at construction time.
+* `Notification.waitingThreads : SeLe4n.NoDupList SeLe4n.ThreadId`
+  (R4.C) — carries `List.Nodup` structurally at construction time.
+
+The state-level invariants `cspaceSlotUnique` and `uniqueWaiters`
+are now **trivially derivable** from the wrappers' `hWF` / `hNodup`
+fields (`slotsUnique_holds`, `uniqueWaiters_holds`).  The runtime
+duplicate guard at `notificationWait` is now backed by
+`NoDupList.consWithGuard?`, making the duplicate rejection
+structural.
 
 #### R4 landed work (this commit)
 
@@ -502,20 +509,18 @@ as 15 atomic sub-PRs across two tracks (A: 7 sub-PRs, C: 8 sub-PRs).
   index `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` §3 (D/E/F
   sections).
 
-#### R4 pending work (multi-PR scope)
+#### R4 pending work
 
-- **R4.A — `UniqueSlotMap` promotion of `CNode.slots`** (track A,
-  7 sub-PRs, ~890 LoC, ~30 files): the type-level uniqueness
-  invariant for `CNode.slots`.  Foundation file
-  `SeLe4n/Model/Object/UniqueSlotMap.lean` not yet created;
-  scheduled as the first sub-PR of track A.
-- **R4.C field-type switch** —
-  `Notification.waitingThreads : List ThreadId` →
-  `SeLe4n.NoDupList SeLe4n.ThreadId`, with proof-body migration
-  across ~25 files (track C sub-PRs C.2–C.8): the foundation is
-  in place via the `NoDupList` module landed at this commit; the
-  field switch and consumer migrations remain scheduled per the
-  multi-PR plan.
+None.  All four R4 sub-tasks LANDED at this commit:
+
+- R4.A foundation + `CNode.slots` field-type switch + all ~20
+  consumer file migrations LANDED.
+- R4.B `ScrubToken` LANDED at `7da2572`; re-verified.
+- R4.C foundation + `Notification.waitingThreads` field-type switch
+  + all ~25 consumer file migrations + operational `consWithGuard?`
+  duplicate guard at `notificationWait` LANDED.
+- R4.D `cspaceMutate` null-cap witnesses LANDED at `7da2572`;
+  Tier-2 `NEG-MUTATE-NULL` regression test LANDED this commit.
 
 #### R4 validation
 

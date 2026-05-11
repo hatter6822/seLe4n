@@ -126,7 +126,7 @@ private def fp010_cnodeRadixSingle : IO Unit := do
   let cn : CNode :=
     { depth := 16, guardWidth := 4, guardValue := 0
       radixWidth := 4
-      slots := (RHTable.empty 16).insert (SeLe4n.Slot.ofNat 3) cap }
+      slots := SeLe4n.UniqueSlotMap.empty.insert (SeLe4n.Slot.ofNat 3) cap }
   let frozen := freezeObject (.cnode cn)
   match frozen with
   | .cnode fc =>
@@ -145,7 +145,7 @@ private def fp011_cnodeRadixMulti : IO Unit := do
   let cn : CNode :=
     { depth := 16, guardWidth := 0, guardValue := 0
       radixWidth := 4
-      slots := ((RHTable.empty 16).insert (SeLe4n.Slot.ofNat 1) (mkCap 1))
+      slots := (SeLe4n.UniqueSlotMap.empty.insert (SeLe4n.Slot.ofNat 1) (mkCap 1))
         |>.insert (SeLe4n.Slot.ofNat 2) (mkCap 2)
         |>.insert (SeLe4n.Slot.ofNat 5) (mkCap 5) }
   let frozen := freezeObject (.cnode cn)
@@ -162,7 +162,7 @@ private def fp012_cnodeRadixEmpty : IO Unit := do
   let cn : CNode :=
     { depth := 16, guardWidth := 4, guardValue := 0
       radixWidth := 4
-      slots := RHTable.empty 16 }
+      slots := SeLe4n.UniqueSlotMap.empty }
   let frozen := freezeObject (.cnode cn)
   match frozen with
   | .cnode fc =>
@@ -179,7 +179,7 @@ private def fp013_cnodeRadixStructure : IO Unit := do
   let cn : CNode :=
     { depth := 16, guardWidth := 2, guardValue := 1
       radixWidth := 3
-      slots := (RHTable.empty 16).insert (SeLe4n.Slot.ofNat 4) cap }
+      slots := SeLe4n.UniqueSlotMap.empty.insert (SeLe4n.Slot.ofNat 4) cap }
   let frozen := freezeObject (.cnode cn)
   match frozen with
   | .cnode fc =>

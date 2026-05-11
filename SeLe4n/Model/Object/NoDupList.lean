@@ -74,13 +74,14 @@ variable {α : Type} [DecidableEq α]
     This **subsumes** the line-723 runtime duplicate guard at
     `IPC/Operations/Endpoint.lean`: the typed smart constructor IS the
     duplicate guard. Callers translate the `none` branch into the
-    appropriate kernel error (e.g., `.alreadyWaiting`). -/
+    appropriate kernel error (e.g., `.alreadyWaiting`).
+
+    Uses `if h :` so the negative branch's `h : x ∉ l.val` discharges
+    the Nodup obligation for the produced cons. -/
 @[inline] def consWithGuard? (x : α) (l : NoDupList α) :
     Option (NoDupList α) :=
   if h : x ∈ l.val then
-    -- Use `h` to avoid an unused-variable warning while keeping the
-    -- runtime check intentional and visible to readers.
-    (fun _ => none) h
+    none
   else
     some ⟨x :: l.val, List.nodup_cons.mpr ⟨h, l.hNodup⟩⟩
 

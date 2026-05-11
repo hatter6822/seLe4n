@@ -53,13 +53,13 @@ private def chain1RetypeMintRevoke : IO Unit := do
   let dstSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := (SeLe4n.Slot.ofNat 1) }
   let st0 :=
     (BootstrapBuilder.empty
-      |>.withObject targetId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject targetId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
       |>.withObject cnodeId (.cnode {
           depth := 0
           guardWidth := 0
           guardValue := 0
           radixWidth := 1
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          slots := SeLe4n.UniqueSlotMap.ofListWF [
             ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant, .retype], badge := none })
           ]
         })
@@ -130,7 +130,7 @@ private def chain4ServiceRegistryDependencyGraph : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject ⟨500⟩ (.endpoint {})
-      |>.withObject ⟨501⟩ (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject ⟨501⟩ (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
       |>.withService baseSid {
           identity := { sid := baseSid, backingObject := ⟨500⟩, owner := ⟨1⟩ }
           dependencies := []
@@ -163,7 +163,7 @@ private def chain5CopyMoveDelete : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 2
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          slots := SeLe4n.UniqueSlotMap.ofListWF [
             ((SeLe4n.Slot.ofNat 0), { target := .object target, rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
         })
@@ -194,7 +194,7 @@ private def chain6NotificationBadgeAccumulation : IO Unit := do
   let waiter : SeLe4n.ThreadId := ⟨11⟩
   let st0 :=
     (BootstrapBuilder.empty
-      |>.withObject ntfnId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject ntfnId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
       |>.withObject waiter.toObjId (.tcb {
           tid := waiter
           priority := ⟨20⟩
@@ -329,12 +329,12 @@ private def chain9LifecycleCascadingRevokeAndAttenuation : IO Unit := do
           guardWidth := 0
           guardValue := 0
           radixWidth := 4
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          slots := SeLe4n.UniqueSlotMap.ofListWF [
             ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
           ]
         })
-      |>.withObject childCNode (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 })
-      |>.withObject grandCNode (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 })
+      |>.withObject childCNode (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := SeLe4n.UniqueSlotMap.empty })
+      |>.withObject grandCNode (.cnode { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := SeLe4n.UniqueSlotMap.empty })
       |>.buildChecked)
 
   let (_, st1) ← expectOkSt "chain9: mint root→child with CDT"
@@ -401,7 +401,7 @@ private def buildParameterizedTopology
     (List.range threadCount).map fun i =>
       (SeLe4n.Slot.ofNat i, { target := .object ⟨1000 + i⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
   let cnodeObj : KernelObject :=
-    .cnode { depth := radix, guardWidth := 0, guardValue := 0, radixWidth := radix, slots := SeLe4n.Kernel.RobinHood.RHTable.ofList cnodeSlots }
+    .cnode { depth := radix, guardWidth := 0, guardValue := 0, radixWidth := radix, slots := SeLe4n.UniqueSlotMap.ofListWF cnodeSlots }
   let vspaceRoots : List (SeLe4n.ObjId × KernelObject) :=
     (List.range asidCount).map fun i =>
       let oid : SeLe4n.ObjId := ⟨3000 + i⟩
@@ -433,7 +433,7 @@ private def schedulerStressChecks : IO Unit := do
 
   let samePrioState :=
     (BootstrapBuilder.empty
-      |>.withObject ⟨260⟩ (.cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 })
+      |>.withObject ⟨260⟩ (.cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := SeLe4n.UniqueSlotMap.empty })
       |>.withObject ⟨3000⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
       |>.withObject ⟨2600⟩ (.tcb { tid := ⟨2600⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready })
       |>.withObject ⟨2601⟩ (.tcb { tid := ⟨2601⟩, priority := ⟨100⟩, domain := ⟨0⟩, cspaceRoot := ⟨260⟩, vspaceRoot := ⟨3000⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), ipcState := .ready })
@@ -471,7 +471,7 @@ private def schedulerStressChecks : IO Unit := do
     (List.range 16).map fun i => ⟨4200 + i⟩
   let domainStateBaseBuilder :=
     (BootstrapBuilder.empty
-      |>.withObject ⟨4000⟩ (.cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 })
+      |>.withObject ⟨4000⟩ (.cnode { depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1, slots := SeLe4n.UniqueSlotMap.empty })
       |>.withObject ⟨4100⟩ (.vspaceRoot { asid := ⟨4⟩, mappings := {} })
       |>.withObject ⟨4101⟩ (.vspaceRoot { asid := ⟨5⟩, mappings := {} })
       |>.withObject ⟨4102⟩ (.vspaceRoot { asid := ⟨6⟩, mappings := {} })
@@ -555,7 +555,7 @@ private def chain10RegisterDecodeMultiSyscall : IO Unit := do
       |>.withObject epId (.endpoint {})
       |>.withObject cnodeId (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        slots := SeLe4n.UniqueSlotMap.ofListWF [
           ((SeLe4n.Slot.ofNat 0), { target := .object epId, rights := AccessRightSet.ofList [.read, .write], badge := none }),
           ((SeLe4n.Slot.ofNat 1), { target := .object epId, rights := AccessRightSet.ofList [.read], badge := none })
         ]
@@ -628,7 +628,7 @@ private def chain11RegisterDecodeIpcTransfer : IO Unit := do
       |>.withObject epId (.endpoint {})
       |>.withObject cnodeId (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        slots := SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, ({ target := .object epId, rights := AccessRightSet.ofList [.read, .write], badge := some badgeVal } : Capability))
         ]
       })
@@ -691,10 +691,10 @@ private def chain12IpcCapTransfer : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          slots := SeLe4n.UniqueSlotMap.ofListWF [
             ((SeLe4n.Slot.ofNat 0), cap1),
             ((SeLe4n.Slot.ofNat 1), cap2),
             ((SeLe4n.Slot.ofNat 2), cap3)
@@ -702,7 +702,7 @@ private def chain12IpcCapTransfer : IO Unit := do
         })
       |>.withObject receiverCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
+          slots := SeLe4n.UniqueSlotMap.empty
         })
       |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3240⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready })
       |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3241⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), ipcState := .ready })
@@ -747,14 +747,14 @@ private def chain13IpcCapTransferNoGrant : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [((SeLe4n.Slot.ofNat 0), cap1)]
+          slots := SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap1)]
         })
       |>.withObject receiverCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
+          slots := SeLe4n.UniqueSlotMap.empty
         })
       |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3340⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready })
       |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3341⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), ipcState := .ready })
@@ -802,18 +802,18 @@ private def chain14IpcBadgeAndCapTransfer : IO Unit := do
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
-      |>.withObject targetObj1 (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
-      |>.withObject targetObj2 (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject targetObj1 (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
+      |>.withObject targetObj2 (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
       |>.withObject senderCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          slots := SeLe4n.UniqueSlotMap.ofListWF [
             ((SeLe4n.Slot.ofNat 0), cap1),
             ((SeLe4n.Slot.ofNat 1), cap2)
           ]
         })
       |>.withObject receiverCNode (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
+          slots := SeLe4n.UniqueSlotMap.empty
         })
       |>.withObject sender.toObjId (.tcb { tid := sender, priority := ⟨40⟩, domain := ⟨0⟩, cspaceRoot := senderCNode, vspaceRoot := ⟨3440⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 4096), ipcState := .ready })
       |>.withObject receiver.toObjId (.tcb { tid := receiver, priority := ⟨39⟩, domain := ⟨0⟩, cspaceRoot := receiverCNode, vspaceRoot := ⟨3441⟩, ipcBuffer := (SeLe4n.VAddr.ofNat 8192), ipcState := .ready })
@@ -881,13 +881,13 @@ private def chain15StrictRevokeDeepChain : IO Unit := do
   builder := builder.withObject targetId (.endpoint {})
   builder := builder.withObject rootCNode (.cnode {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+    slots := SeLe4n.UniqueSlotMap.ofListWF [
       ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
     ]
   })
   for cid in childIds do
     builder := builder.withObject cid (.cnode {
-      depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
+      depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := SeLe4n.UniqueSlotMap.empty
     })
   let st0 := builder.buildChecked
 
@@ -958,13 +958,13 @@ private def chain16StrictRevokePartialFail : IO Unit := do
   builder := builder.withObject targetId (.endpoint {})
   builder := builder.withObject rootCNode (.cnode {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+    slots := SeLe4n.UniqueSlotMap.ofListWF [
       ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
     ]
   })
   for cid in childIds do
     builder := builder.withObject cid (.cnode {
-      depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
+      depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4, slots := SeLe4n.UniqueSlotMap.empty
     })
   let st0 := builder.buildChecked
 
@@ -1076,10 +1076,10 @@ private def chain17StrictRevokeOrdering : IO Unit := do
     builder := builder.withObject cid (.cnode {
       depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
       slots := if cid = rootCNode then
-        SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        SeLe4n.UniqueSlotMap.ofListWF [
           ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
         ]
-      else SeLe4n.Kernel.RobinHood.RHTable.empty 16
+      else SeLe4n.UniqueSlotMap.empty
     })
   let st0 := builder.buildChecked
 
@@ -1190,10 +1190,10 @@ private def chain18StreamingRevokeBFS : IO Unit := do
     builder := builder.withObject cid (.cnode {
       depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
       slots := if cid = rootCNode then
-        SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        SeLe4n.UniqueSlotMap.ofListWF [
           ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
         ]
-      else SeLe4n.Kernel.RobinHood.RHTable.empty 16
+      else SeLe4n.UniqueSlotMap.empty
     })
   let st0 := builder.buildChecked
 
@@ -1252,7 +1252,7 @@ private def chain19StreamingRevokeEmpty : IO Unit := do
   builder := builder.withObject targetId (.endpoint {})
   builder := builder.withObject rootCNode (.cnode {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+    slots := SeLe4n.UniqueSlotMap.ofListWF [
       ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
     ]
   })
@@ -1291,10 +1291,10 @@ private def chain20StreamingRevokeDeepChain : IO Unit := do
     builder := builder.withObject cid (.cnode {
       depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
       slots := if cid = rootCNode then
-        SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        SeLe4n.UniqueSlotMap.ofListWF [
           ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
         ]
-      else SeLe4n.Kernel.RobinHood.RHTable.empty 16
+      else SeLe4n.UniqueSlotMap.empty
     })
   let st0 := builder.buildChecked
 
@@ -1349,10 +1349,10 @@ private def chain21StreamingRevokeEquivalence : IO Unit := do
       builder := builder.withObject cid (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
         slots := if cid = rootCNode then
-          SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          SeLe4n.UniqueSlotMap.ofListWF [
             ((SeLe4n.Slot.ofNat 0), { target := .object targetId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
           ]
-        else SeLe4n.Kernel.RobinHood.RHTable.empty 16
+        else SeLe4n.UniqueSlotMap.empty
       })
     let st0 := builder.buildChecked
     let (_, st1) ← expectOkSt "chain21: mint root→A"
@@ -1398,7 +1398,7 @@ private def chain22NotificationBadgeDelivery : IO Unit := do
   let badge := SeLe4n.Badge.ofNatMasked 0xCAFE
   let st0 :=
     (BootstrapBuilder.empty
-      |>.withObject ntfnId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject ntfnId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
       |>.withObject waiter.toObjId (.tcb {
           tid := waiter
           priority := ⟨20⟩
@@ -1450,13 +1450,13 @@ private def chain23CdtDeepCascadeWithMidDelete : IO Unit := do
   let slot1 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeChild, slot := (SeLe4n.Slot.ofNat 0) }
   let slot2 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeGrand, slot := (SeLe4n.Slot.ofNat 0) }
   let slot3 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeGreat, slot := (SeLe4n.Slot.ofNat 0) }
-  let emptyCNode := SeLe4n.Kernel.RobinHood.RHTable.empty 16
+  let emptyCNode := SeLe4n.UniqueSlotMap.empty
   let st0 :=
     (BootstrapBuilder.empty
       |>.withObject targetEp (.endpoint {})
       |>.withObject cnodeRoot (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        slots := SeLe4n.UniqueSlotMap.ofListWF [
           ((SeLe4n.Slot.ofNat 0), { target := .object targetEp, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
         ]
       })
@@ -1603,7 +1603,7 @@ private def chain25IrqHandlerDispatch : IO Unit := do
   let irq : SeLe4n.Irq := ⟨5⟩
   let st0 :=
     (BootstrapBuilder.empty
-      |>.withObject ntfnId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject ntfnId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
       |>.withIrqHandler irq ntfnId
       |>.withLifecycleObjectType ntfnId .notification
       |>.buildChecked)
@@ -1637,7 +1637,7 @@ private def chain26BootSequence : IO Unit := do
   -- For non-CNode/non-VSpace objects, the proof is vacuously true.
   let ntfnEntry : SeLe4n.Platform.Boot.ObjectEntry := {
     id := ntfnId
-    obj := .notification { state := .idle, waitingThreads := [], pendingBadge := none }
+    obj := .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
     hSlots := by intro cn h; cases h
     hMappings := by intro vs h; cases h
   }
@@ -1712,7 +1712,7 @@ private def buildSyscallState (syscallNum : Nat) (capAddr : Nat)
     |>.withObject targetId (match extraObjects with | (_, obj) :: _ => obj | [] => .endpoint {})
     |>.withObject cnodeId (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        slots := SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat capAddr, ({ target := .object targetId, rights := capRights, badge := none } : Capability))
         ]
     })
@@ -1739,7 +1739,7 @@ private def chain27SyscallCSpaceOps : IO Unit := do
   -- CNode with a cap at slot 0 pointing to endpoint, and empty slots 1-3
   let cnode : SeLe4n.Model.CNode := {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+    slots := SeLe4n.UniqueSlotMap.ofListWF [
       ((SeLe4n.Slot.ofNat 0), { target := .object epId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
     ]
   }
@@ -1936,7 +1936,7 @@ private def chain31SyscallReply : IO Unit := do
       |>.withObject epId (.endpoint {})
       |>.withObject cnodeId (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          slots := SeLe4n.UniqueSlotMap.ofListWF [
             -- Slot 0: reply cap targeting the blocked sender
             ((SeLe4n.Slot.ofNat 0), { target := .replyCap ⟨503⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
           ]
@@ -2010,7 +2010,7 @@ private def chain33ServiceLifecycle : IO Unit := do
     (BootstrapBuilder.empty
       |>.withObject epId1 (.endpoint {})
       |>.withObject epId2 (.endpoint {})
-      |>.withObject nonEpId (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject nonEpId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
       |>.withLifecycleObjectType epId1 .endpoint
       |>.withLifecycleObjectType epId2 .endpoint
       |>.withLifecycleObjectType nonEpId .notification
@@ -2115,10 +2115,10 @@ private def chain34ResolveExtraCapsSilentDrop : IO Unit := do
   let cap1 : Capability := { target := .object targetObj, rights := AccessRightSet.ofList [.write], badge := none }
   let st :=
     (BootstrapBuilder.empty
-      |>.withObject targetObj (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+      |>.withObject targetObj (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
       |>.withObject cnodeId (.cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          slots := SeLe4n.UniqueSlotMap.ofListWF [
             ((SeLe4n.Slot.ofNat 0), cap0),
             ((SeLe4n.Slot.ofNat 1), cap1)
             -- slot 2 intentionally empty

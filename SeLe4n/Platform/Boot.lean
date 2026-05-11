@@ -710,8 +710,9 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
       ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
       ep.receiveQ.head = none ∧ ep.receiveQ.tail = none) ∧
     -- Notifications: idle + empty
+    -- WS-RC R4.C: `.val = []` references the underlying List projection.
     (∀ notif, obj = .notification notif →
-      notif.state = .idle ∧ notif.waitingThreads = [] ∧ notif.pendingBadge = none) ∧
+      notif.state = .idle ∧ notif.waitingThreads.val = [] ∧ notif.pendingBadge = none) ∧
     -- CNodes: structural (excluding badge validity)
     (∀ cn, obj = .cnode cn →
       cn.slotCountBounded ∧ cn.depth ≤ maxCSpaceDepth ∧
@@ -1849,8 +1850,9 @@ def bootSafeObject (obj : KernelObject) : Prop :=
     ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
     ep.receiveQ.head = none ∧ ep.receiveQ.tail = none) ∧
   -- Notifications must be idle with empty wait lists and no pending badge
+  -- WS-RC R4.C: `.val = []` references the underlying List projection.
   (∀ notif, obj = .notification notif →
-    notif.state = .idle ∧ notif.waitingThreads = [] ∧ notif.pendingBadge = none) ∧
+    notif.state = .idle ∧ notif.waitingThreads.val = [] ∧ notif.pendingBadge = none) ∧
   -- CNodes must satisfy slot-count bound, depth consistency, and badge validity
   (∀ cn, obj = .cnode cn →
     cn.slotCountBounded ∧ cn.depth ≤ maxCSpaceDepth ∧
@@ -2418,7 +2420,9 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     · -- noStaleNotificationWaitReferences
       intro oid notif hObj tid hMem
       have hNtfn := (hBS oid _ hObj).2.1 notif rfl
-      rw [hNtfn.2.1] at hMem; simp at hMem
+      -- WS-RC R4.C: hMem : tid ∈ notif.waitingThreads is `tid ∈ .val` via Membership.
+      have hMemVal : tid ∈ notif.waitingThreads.val := hMem
+      rw [hNtfn.2.1] at hMemVal; simp at hMemVal
     · -- serviceGraphInvariant
       constructor
       · -- serviceDependencyAcyclic
@@ -2538,7 +2542,9 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   have hNtfnWaiter : notificationWaiterConsistent (bootFromPlatform config).state := by
     intro oid ntfn tid hObj hMem
     have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
-    rw [hNtfn.2.1] at hMem; simp at hMem
+    -- WS-RC R4.C: hMem : tid ∈ ntfn.waitingThreads via Membership instance.
+    have hMemVal : tid ∈ ntfn.waitingThreads.val := hMem
+    rw [hNtfn.2.1] at hMemVal; simp at hMemVal
   -- Compose all 11 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,

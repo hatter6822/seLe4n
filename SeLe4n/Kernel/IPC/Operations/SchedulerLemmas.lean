@@ -789,14 +789,16 @@ theorem donateSchedContext_ok_server_donated
 theorem notificationSignal_respects_pipBoost
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (st st' : SystemState)
-    (waiter : SeLe4n.ThreadId) (rest : List SeLe4n.ThreadId)
+    (waiter : SeLe4n.ThreadId) (rest : SeLe4n.NoDupList SeLe4n.ThreadId)
     (ntfn : Notification)
     (hObjInv : st.objects.invExt)
     (hNtfn : st.objects[notificationId]? = some (.notification ntfn))
-    (hWaiters : ntfn.waitingThreads = waiter :: rest)
+    (hWaiters : ntfn.waitingThreads.tail? = some (waiter, rest))
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     waiter ∈ st'.scheduler.runQueue := by
   unfold notificationSignal at hStep
+  -- WS-RC R4.C: `notificationSignal` pops via `tail?`; the hypothesis
+  -- `hWaiters` reduces the `match` directly to the cons branch.
   simp only [hNtfn, hWaiters] at hStep
   cases hStore : storeObject notificationId _ st with
   | error e => rw [hStore] at hStep; cases hStep

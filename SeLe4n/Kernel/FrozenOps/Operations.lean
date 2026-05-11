@@ -219,9 +219,10 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Bad
   fun st =>
     match st.objects.get? notificationId with
     | some (.notification ntfn) =>
-        match ntfn.waitingThreads with
-        | waiter :: rest =>
-            let nextState : NotificationState := if rest.isEmpty then .idle else .waiting
+        -- WS-RC R4.C: pop via `NoDupList.tail?`.
+        match ntfn.waitingThreads.tail? with
+        | some (waiter, rest) =>
+            let nextState : NotificationState := if rest.val.isEmpty then .idle else .waiting
             let ntfn' : Notification := {
               state := nextState, waitingThreads := rest, pendingBadge := none }
             match st.objects.set notificationId (.notification ntfn') with
@@ -231,13 +232,14 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Bad
                 | .error e => .error e
                 | .ok st'' => .ok ((), st'')
             | none => .error .objectNotFound
-        | [] =>
+        | none =>
             let mergedBadge : SeLe4n.Badge :=
               match ntfn.pendingBadge with
               | some existing => SeLe4n.Badge.bor existing badge
               | none => SeLe4n.Badge.ofNatMasked badge.toNat
             let ntfn' : Notification := {
-              state := .active, waitingThreads := [], pendingBadge := some mergedBadge }
+              state := .active, waitingThreads := SeLe4n.NoDupList.empty,
+              pendingBadge := some mergedBadge }
             match st.objects.set notificationId (.notification ntfn') with
             | some objects' => .ok ((), { st with objects := objects' })
             | none => .error .objectNotFound
@@ -258,7 +260,9 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
     | some (.notification ntfn) =>
         match ntfn.pendingBadge with
         | some badge =>
-            let ntfn' : Notification := { state := .idle, waitingThreads := [], pendingBadge := none }
+            let ntfn' : Notification :=
+              { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+                pendingBadge := none }
             match st.objects.set notificationId (.notification ntfn') with
             | some objects' =>
                 let st' := { st with objects := objects' }
@@ -273,17 +277,21 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
                 if tcb.ipcState = .blockedOnNotification notificationId then
                   .error .alreadyWaiting
                 else
-                  let ntfn' : Notification := {
-                    state := .waiting
-                    waitingThreads := waiter :: ntfn.waitingThreads
-                    pendingBadge := none }
-                  match st.objects.set notificationId (.notification ntfn') with
-                  | some objects' =>
-                      let st' := { st with objects := objects' }
-                      match frozenStoreTcbIpcState st' waiter (.blockedOnNotification notificationId) with
-                      | .error e => .error e
-                      | .ok st'' => .ok (none, st'')
-                  | none => .error .objectNotFound
+                  -- WS-RC R4.C: structural duplicate guard via consWithGuard?
+                  match ntfn.waitingThreads.consWithGuard? waiter with
+                  | none => .error .alreadyWaiting
+                  | some wt' =>
+                      let ntfn' : Notification := {
+                        state := .waiting
+                        waitingThreads := wt'
+                        pendingBadge := none }
+                      match st.objects.set notificationId (.notification ntfn') with
+                      | some objects' =>
+                          let st' := { st with objects := objects' }
+                          match frozenStoreTcbIpcState st' waiter (.blockedOnNotification notificationId) with
+                          | .error e => .error e
+                          | .ok st'' => .ok (none, st'')
+                      | none => .error .objectNotFound
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 

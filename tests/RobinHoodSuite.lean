@@ -248,7 +248,7 @@ open CNode in
 private def rhInt005_cspaceResolution : IO Unit := do
   -- Create a CNode with specific guard/radix for resolution testing
   let cap : Capability := { target := .object ⟨42⟩, rights := AccessRightSet.ofList [.read, .write], badge := none }
-  let cn := CNode.mk' 4 0 0 2 (RHTable.ofList [((SeLe4n.Slot.ofNat 0), cap), ((SeLe4n.Slot.ofNat 1), cap), ((SeLe4n.Slot.ofNat 3), cap)])
+  let cn := CNode.mk' 4 0 0 2 (SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), cap), ((SeLe4n.Slot.ofNat 1), cap), ((SeLe4n.Slot.ofNat 3), cap)])
   -- Resolve slot from CPtr
   let result := cn.resolveSlot (SeLe4n.CPtr.ofNat 3) 4
   match result with

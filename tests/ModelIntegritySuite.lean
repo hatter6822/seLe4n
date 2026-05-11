@@ -339,10 +339,10 @@ NonNullCap end-to-end tests. -/
 private def al1bStateWithNullCapSlot : SystemState :=
   let srcCnode : CNode := {
     depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [((SeLe4n.Slot.ofNat 0), Capability.null)] }
+    slots := SeLe4n.UniqueSlotMap.ofListWF [((SeLe4n.Slot.ofNat 0), Capability.null)] }
   let dstCnode : CNode := {
     depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList ([] : List (Slot × Capability)) }
+    slots := SeLe4n.UniqueSlotMap.ofListWF ([] : List (Slot × Capability)) }
   let base : SystemState := default
   let st1 : SystemState :=
     { base with objects := base.objects.insert ⟨10⟩ (.cnode srcCnode) }
@@ -483,7 +483,7 @@ def getEndpoint_discriminates_variants : IO Unit := do
 getEndpoint? fails. -/
 def getNotification_discriminates_variants : IO Unit := do
   let id : ObjId := ⟨50⟩
-  let ntfn : Notification := { state := .idle, waitingThreads := [] }
+  let ntfn : Notification := { state := .idle, waitingThreads := SeLe4n.NoDupList.empty }
   let base : SystemState := default
   let st : SystemState :=
     { base with objects := base.objects.insert id (.notification ntfn) }

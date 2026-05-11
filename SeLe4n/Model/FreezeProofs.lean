@@ -910,51 +910,53 @@ value. Requires `slotsUnique` (for `noDupKeys`) and `UniqueRadixIndices`
 (distinct slot keys map to distinct radix array positions). -/
 theorem lookup_freeze_cnode_slots_some (cn : CNode) (slot : SeLe4n.Slot)
     (cap : Capability) (h : cn.slotsUnique)
-    (hUri : UniqueRadixIndices cn.slots cn.radixWidth)
+    (hUri : UniqueRadixIndices cn.slots.table cn.radixWidth)
     (hGet : cn.slots.get? slot = some cap) :
     (freezeCNodeSlots cn).lookup slot = some cap := by
+  -- WS-RC R4.A: unfold `UniqueSlotMap.get?` to underlying RHTable get?.
+  have hGetTable : cn.slots.table.get? slot = some cap := hGet
   have ⟨p, hp, e, hSlotP, hKeyE, hValE⟩ :=
-    RHTable.get_some_slot_entry cn.slots slot cap hGet
+    RHTable.get_some_slot_entry cn.slots.table slot cap hGetTable
   have hKeyEq := eq_of_beq hKeyE
   -- Unfold to Array.foldl form, then convert to List.foldl
   unfold freezeCNodeSlots CNodeRadix.ofCNode buildCNodeRadix CNodeConfig.ofCNode
   unfold RHTable.fold; rw [← Array.foldl_toList]
   -- Use generic helper (avoids match compilation identity issues)
-  have hSlotsSz : p < cn.slots.slots.size := by rw [cn.slots.hSlotsLen]; exact hp
-  have hP' : p < cn.slots.slots.toList.length := by
+  have hSlotsSz : p < cn.slots.table.slots.size := by rw [cn.slots.table.hSlotsLen]; exact hp
+  have hP' : p < cn.slots.table.slots.toList.length := by
     rw [Array.length_toList]; exact hSlotsSz
-  refine foldl_generic_establishes_lookup cn.slots.slots.toList
+  refine foldl_generic_establishes_lookup cn.slots.table.slots.toList
     (CNodeRadix.empty _ _ _) slot cap _ (fun acc => rfl) (fun acc e => rfl) ?_ ?_ ?_
   · -- hOcc: entry exists at position p
     exact ⟨p, hP', e, by rw [Array.getElem_toList]; exact hSlotP,
       hKeyEq, hValE⟩
   · -- hNoDup: keys unique across occupied slots
     intro i j hi hj ei ej hSi hSj hK
-    have hi' : i < cn.slots.slots.size := by rw [Array.length_toList] at hi; exact hi
-    have hj' : j < cn.slots.slots.size := by rw [Array.length_toList] at hj; exact hj
-    have hi'' : i < cn.slots.capacity := by rw [← cn.slots.hSlotsLen]; exact hi'
-    have hj'' : j < cn.slots.capacity := by rw [← cn.slots.hSlotsLen]; exact hj'
-    have hSi' : cn.slots.slots[i]'hi' = some ei := by
+    have hi' : i < cn.slots.table.slots.size := by rw [Array.length_toList] at hi; exact hi
+    have hj' : j < cn.slots.table.slots.size := by rw [Array.length_toList] at hj; exact hj
+    have hi'' : i < cn.slots.table.capacity := by rw [← cn.slots.table.hSlotsLen]; exact hi'
+    have hj'' : j < cn.slots.table.capacity := by rw [← cn.slots.table.hSlotsLen]; exact hj'
+    have hSi' : cn.slots.table.slots[i]'hi' = some ei := by
       rw [← Array.getElem_toList]; exact hSi
-    have hSj' : cn.slots.slots[j]'hj' = some ej := by
+    have hSj' : cn.slots.table.slots[j]'hj' = some ej := by
       rw [← Array.getElem_toList]; exact hSj
     exact h.1.2.2.1 i j hi'' hj'' ei ej hSi' hSj' (beq_of_eq hK)
   · -- hRadixUniq: distinct entries have distinct radix indices
     intro i j hi hj ei ej hSi hSj hNe
-    have hi' : i < cn.slots.slots.size := by rw [Array.length_toList] at hi; exact hi
-    have hj' : j < cn.slots.slots.size := by rw [Array.length_toList] at hj; exact hj
-    have hi'' : i < cn.slots.capacity := by rw [← cn.slots.hSlotsLen]; exact hi'
-    have hj'' : j < cn.slots.capacity := by rw [← cn.slots.hSlotsLen]; exact hj'
-    have hSi' : cn.slots.slots[i]'hi' = some ei := by
+    have hi' : i < cn.slots.table.slots.size := by rw [Array.length_toList] at hi; exact hi
+    have hj' : j < cn.slots.table.slots.size := by rw [Array.length_toList] at hj; exact hj
+    have hi'' : i < cn.slots.table.capacity := by rw [← cn.slots.table.hSlotsLen]; exact hi'
+    have hj'' : j < cn.slots.table.capacity := by rw [← cn.slots.table.hSlotsLen]; exact hj'
+    have hSi' : cn.slots.table.slots[i]'hi' = some ei := by
       rw [← Array.getElem_toList]; exact hSi
-    have hSj' : cn.slots.slots[j]'hj' = some ej := by
+    have hSj' : cn.slots.table.slots[j]'hj' = some ej := by
       rw [← Array.getElem_toList]; exact hSj
     have hKeyNe : ei.key ≠ ej.key := by
       intro hEq
       exact absurd (h.1.2.2.1 i j hi'' hj'' ei ej hSi' hSj'
         (beq_of_eq hEq)) hNe
-    have hGetEi := get_ne_none_of_slot_occupied cn.slots h.1 i hi'' ei hSi'
-    have hGetEj := get_ne_none_of_slot_occupied cn.slots h.1 j hj'' ej hSj'
+    have hGetEi := get_ne_none_of_slot_occupied cn.slots.table h.1 i hi'' ei hSi'
+    have hGetEj := get_ne_none_of_slot_occupied cn.slots.table h.1 j hj'' ej hSj'
     show extractBits ei.key.toNat 0
         (CNodeRadix.empty cn.guardWidth cn.guardValue cn.radixWidth).radixWidth ≠
       extractBits ej.key.toNat 0
@@ -974,14 +976,14 @@ theorem lookup_freeze_cnode_slots_none (cn : CNode) (slot : SeLe4n.Slot)
     (freezeCNodeSlots cn).lookup slot = none := by
   unfold freezeCNodeSlots CNodeRadix.ofCNode buildCNodeRadix CNodeConfig.ofCNode
   unfold RHTable.fold; rw [← Array.foldl_toList]
-  refine foldl_generic_preserves_none cn.slots.slots.toList
+  refine foldl_generic_preserves_none cn.slots.table.slots.toList
     (CNodeRadix.empty _ _ _) slot _ (fun acc => rfl) (fun acc e => rfl)
     (CNodeRadix.lookup_empty cn.guardWidth cn.guardValue cn.radixWidth slot) ?_
   intro i hi ei hSi
   simp [CNodeRadix.empty]
-  have hi' : i < cn.slots.slots.size := by rw [Array.length_toList] at hi; exact hi
-  have hi'' : i < cn.slots.capacity := by rw [← cn.slots.hSlotsLen]; exact hi'
-  have hSi' : cn.slots.slots[i]'hi' = some ei := by
+  have hi' : i < cn.slots.table.slots.size := by rw [Array.length_toList] at hi; exact hi
+  have hi'' : i < cn.slots.table.capacity := by rw [← cn.slots.table.hSlotsLen]; exact hi'
+  have hSi' : cn.slots.table.slots[i]'hi' = some ei := by
     rw [← Array.getElem_toList]; exact hSi
   have hGetNe := get_ne_none_of_slot_occupied cn.slots h.1 i hi'' ei hSi'
   have hKeyNe : ei.key ≠ slot := by intro hEq; rw [hEq] at hGetNe; exact hGetNe hNone

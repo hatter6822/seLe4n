@@ -75,9 +75,9 @@ theorem not_runnable_membership_of_endpoint_store
 
 def notificationQueueWellFormed (ntfn : Notification) : Prop :=
   match ntfn.state with
-  | .idle => ntfn.waitingThreads = [] ∧ ntfn.pendingBadge = none
-  | .waiting => ntfn.waitingThreads ≠ [] ∧ ntfn.pendingBadge = none
-  | .active => ntfn.waitingThreads = [] ∧ ntfn.pendingBadge.isSome
+  | .idle => ntfn.waitingThreads.val = [] ∧ ntfn.pendingBadge = none
+  | .waiting => ntfn.waitingThreads.val ≠ [] ∧ ntfn.pendingBadge = none
+  | .active => ntfn.waitingThreads.val = [] ∧ ntfn.pendingBadge.isSome
 
 def notificationInvariant (ntfn : Notification) : Prop :=
   notificationQueueWellFormed ntfn
@@ -581,8 +581,22 @@ theorem not_mem_waitingThreads_of_ipcState_ne
 -- Notification uniqueness (F-12 / WS-D4 / WS-G7)
 -- ============================================================================
 
+/-- WS-RC R4.C: state-level Nodup invariant.  Now trivially derivable from
+    the structural `Notification.waitingThreads.hNodup`; retained as a
+    named predicate for caller compatibility (preservation theorems in
+    `NotificationPreservation/{Signal,Wait}.lean` still consume it as a
+    hypothesis).  Every instance specialises to
+    `ntfn.waitingThreads.hNodup`. -/
 def uniqueWaiters (st : SystemState) : Prop :=
-  ∀ (oid : SeLe4n.ObjId) (ntfn : Notification), st.objects[oid]? = some (KernelObject.notification ntfn) → ntfn.waitingThreads.Nodup
+  ∀ (oid : SeLe4n.ObjId) (ntfn : Notification),
+    st.objects[oid]? = some (KernelObject.notification ntfn) →
+      ntfn.waitingThreads.val.Nodup
+
+/-- WS-RC R4.C: `uniqueWaiters` is now trivially derivable from the
+    structural `NoDupList.hNodup`; the state-level invariant is no longer
+    a separate proof obligation. -/
+theorem uniqueWaiters_holds (st : SystemState) : uniqueWaiters st :=
+  fun _ ntfn _ => ntfn.waitingThreads.hNodup
 
 /-- AJ1-B (M-04): Every thread in `blockedOnReply` state has an explicit
 `replyTarget`. All production paths (`endpointCall`, `endpointReceiveDual`)
@@ -614,109 +628,28 @@ theorem blockedOnReplyHasTarget_implies_some_replyTarget
   | none => simp at h
   | some t => exact ⟨t, rfl⟩
 
-/-- WS-G7/F-P11: notificationWait preserves uniqueWaiters.
-Now requires `notificationWaiterConsistent` to bridge the TCB ipcState
-duplicate check to list non-membership. -/
+/-- WS-G7/F-P11/WS-RC R4.C: notificationWait preserves uniqueWaiters.
+
+    WS-RC R4.C: the proof collapses to the structural witness
+    `uniqueWaiters_holds`.  The state-level invariant is unconditionally
+    derivable from `Notification.waitingThreads.hNodup` because the field
+    type `NoDupList ThreadId` carries the Nodup proof at construction
+    time.  The hypothesis set is retained unchanged for caller
+    compatibility — callers still pass `hConsist` and `hInv` because
+    larger frame contexts depend on those hypotheses being threaded
+    through; they are simply not consumed by this preservation arm
+    after the structural promotion. -/
 theorem notificationWait_preserves_uniqueWaiters
     (st st' : SystemState)
     (notificationId : SeLe4n.ObjId)
     (waiter : SeLe4n.ThreadId)
     (badge : Option SeLe4n.Badge)
-    (hInv : uniqueWaiters st)
-    (hConsist : notificationWaiterConsistent st)
-    (hObjInv : st.objects.invExt)
-    (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
-    uniqueWaiters st' := by
-  intro oid ntfn hObj
-  by_cases hEq : oid = notificationId
-  · rw [hEq] at hObj
-    cases hBadge : badge with
-    | some b =>
-      rcases notificationWait_badge_path_notification st st' notificationId waiter b hObjInv
-        (by rw [← hBadge]; exact hStep) with ⟨ntfn', hObj', hEmpty⟩
-      rw [hObj] at hObj'; cases hObj'
-      rw [hEmpty]; exact .nil
-    | none =>
-      rcases notificationWait_wait_path_notification st st' notificationId waiter hObjInv
-        (by rw [← hBadge]; exact hStep) with ⟨ntfnOld, ntfnNew, hObjOld, hNoBadge, hObjNew, hPrepend⟩
-      rw [hObj] at hObjNew; cases hObjNew
-      rw [hPrepend]
-      -- WS-G7: need to show waiter ∉ ntfnOld.waitingThreads via notificationWaiterConsistent
-      -- Extract the TCB check from the successful path
-      have hStep2 : notificationWait notificationId waiter st = .ok (none, st') := by
-        rw [← hBadge]; exact hStep
-      unfold notificationWait at hStep2
-      simp only [hObjOld, hNoBadge] at hStep2
-      cases hLookup : lookupTcb st waiter with
-      | none => simp [hLookup] at hStep2
-      | some tcb =>
-        simp only [hLookup] at hStep2
-        by_cases hBlocked : tcb.ipcState = .blockedOnNotification notificationId
-        · simp [hBlocked] at hStep2
-        · have hTcbObj := lookupTcb_some_objects st waiter tcb hLookup
-          have hNotMem := not_mem_waitingThreads_of_ipcState_ne
-            st notificationId ntfnOld waiter tcb hConsist hObjOld hTcbObj hBlocked
-          exact List.nodup_cons.mpr ⟨hNotMem, hInv notificationId ntfnOld hObjOld⟩
-  · -- At other IDs, the notification is preserved backward to pre-state
-    unfold notificationWait at hStep
-    cases hLookup : st.objects[notificationId]? with
-    | none => simp [hLookup] at hStep
-    | some obj =>
-      cases obj with
-      | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hLookup] at hStep
-      | notification ntfnOrig =>
-        simp only [hLookup] at hStep
-        cases hPend : ntfnOrig.pendingBadge with
-        | some b =>
-          simp only [hPend] at hStep
-          revert hStep
-          cases hStore : storeObject notificationId _ st with
-          | error e => simp
-          | ok pair =>
-            simp only []
-            cases hTcb : storeTcbIpcState pair.2 waiter _ with
-            | error e => simp
-            | ok st2 =>
-              simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hStEq⟩; subst hStEq
-              have hPairObjInv : pair.2.objects.invExt :=
-                storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
-              have hPre : st.objects[oid]? = some (.notification ntfn) := by
-                have h2 := storeTcbIpcState_notification_backward pair.2 st2 waiter _ oid ntfn hPairObjInv hTcb hObj
-                by_cases hEq2 : oid = notificationId
-                · exact absurd hEq2 hEq
-                · rwa [storeObject_objects_ne st pair.2 notificationId oid _ hEq hObjInv hStore] at h2
-              exact hInv oid ntfn hPre
-        | none =>
-          simp only [hPend] at hStep
-          -- WS-G7: match on lookupTcb
-          cases hLk : lookupTcb st waiter with
-          | none => simp [hLk] at hStep
-          | some tcb =>
-            simp only [hLk] at hStep
-            by_cases hBlocked : tcb.ipcState = .blockedOnNotification notificationId
-            · simp [hBlocked] at hStep
-            · simp only [hBlocked, ite_false] at hStep
-              revert hStep
-              cases hStore : storeObject notificationId _ st with
-              | error e => simp
-              | ok pair =>
-                -- WS-L1: rewrite _fromTcb back to original for proof compatibility
-                have hPairObjInv : pair.2.objects.invExt :=
-                  storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
-                have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hLookup hObjInv hStore
-                simp only [storeTcbIpcState_fromTcb_eq hLk']
-                cases hTcb : storeTcbIpcState pair.2 waiter _ with
-                | error e => simp
-                | ok st2 =>
-                  simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hStEq⟩
-                  have hPre : st.objects[oid]? = some (.notification ntfn) := by
-                    have hRemObj : (removeRunnable st2 waiter).objects = st2.objects := rfl
-                    rw [← hStEq, hRemObj] at hObj
-                    have h2 := storeTcbIpcState_notification_backward pair.2 st2 waiter _ oid ntfn hPairObjInv hTcb hObj
-                    by_cases hEq2 : oid = notificationId
-                    · exact absurd hEq2 hEq
-                    · rwa [storeObject_objects_ne st pair.2 notificationId oid _ hEq hObjInv hStore] at h2
-                  exact hInv oid ntfn hPre
+    (_hInv : uniqueWaiters st)
+    (_hConsist : notificationWaiterConsistent st)
+    (_hObjInv : st.objects.invExt)
+    (_hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
+    uniqueWaiters st' :=
+  uniqueWaiters_holds st'
 
 -- ============================================================================
 -- WS-G7: notificationWaiterConsistent — base case + documentation
@@ -783,26 +716,32 @@ The base case (`default_notificationWaiterConsistent`) and the runtime check
 -- Notification operation ipcInvariant preservation (WS-E4 preparation)
 -- ============================================================================
 
-/-- notificationSignal result notification is well-formed:
+/-- WS-RC R4.C: notificationSignal result notification is well-formed.
     - Wake path: remaining waiters determine idle/waiting state, badge cleared.
-    - Merge path: no waiters, active state with merged badge. -/
+    - Merge path: no waiters, active state with merged badge.
+
+    `rest` is the `NoDupList`-typed tail produced by `tail?`; emptiness
+    is detected via `rest.val.isEmpty`. -/
 theorem notificationSignal_result_wellFormed_wake
-    (rest : List SeLe4n.ThreadId) :
+    (rest : SeLe4n.NoDupList SeLe4n.ThreadId) :
     notificationQueueWellFormed
-      { state := if rest.isEmpty then NotificationState.idle else .waiting,
+      { state := if rest.val.isEmpty then NotificationState.idle else .waiting,
         waitingThreads := rest,
         pendingBadge := none } := by
   unfold notificationQueueWellFormed
-  by_cases hEmpty : rest = []
+  by_cases hEmpty : rest.val = []
   · simp [hEmpty, List.isEmpty]
-  · have : rest.isEmpty = false := by simp [List.isEmpty]; cases rest <;> simp_all
-    simp [this, hEmpty]
+  · have hNotEmpty : rest.val.isEmpty = false := by
+      cases hL : rest.val with
+      | nil => exact absurd hL hEmpty
+      | cons _ _ => rfl
+    simp [hNotEmpty, hEmpty]
 
 theorem notificationSignal_result_wellFormed_merge
     (mergedBadge : SeLe4n.Badge) :
     notificationQueueWellFormed
       { state := .active,
-        waitingThreads := [],
+        waitingThreads := SeLe4n.NoDupList.empty,
         pendingBadge := some mergedBadge } := by
   unfold notificationQueueWellFormed; simp
 
@@ -810,20 +749,29 @@ theorem notificationSignal_result_wellFormed_merge
     idle state, empty waiters, no badge. -/
 theorem notificationWait_result_wellFormed_badge :
     notificationQueueWellFormed
-      { state := NotificationState.idle, waitingThreads := [], pendingBadge := none } := by
+      { state := NotificationState.idle,
+        waitingThreads := SeLe4n.NoDupList.empty,
+        pendingBadge := none } := by
   unfold notificationQueueWellFormed; simp
 
-/-- WS-G7/F-P11: notificationWait result notification is well-formed (wait path):
-    waiting state, non-empty waiter list (prepended), no badge. -/
+/-- WS-G7/F-P11/WS-RC R4.C: notificationWait result notification is well-formed
+    (wait path): waiting state, non-empty waiter list (prepended), no badge.
+
+    The prepended list is the smart-constructor result
+    `consWithGuard? waiter waiters = some wt'`; `wt'.val = waiter ::
+    waiters.val` follows from `NoDupList.consWithGuard?_eq_some_iff`. -/
 theorem notificationWait_result_wellFormed_wait
     (waiter : SeLe4n.ThreadId)
-    (waiters : List SeLe4n.ThreadId) :
+    (waiters : SeLe4n.NoDupList SeLe4n.ThreadId)
+    (wt' : SeLe4n.NoDupList SeLe4n.ThreadId)
+    (hCons : wt'.val = waiter :: waiters.val) :
     notificationQueueWellFormed
-      { state := .waiting, waitingThreads := waiter :: waiters, pendingBadge := none } := by
+      { state := .waiting, waitingThreads := wt', pendingBadge := none } := by
   unfold notificationQueueWellFormed
-  constructor
-  · intro h; cases h
-  · rfl
+  refine ⟨?_, rfl⟩
+  intro h
+  rw [hCons] at h
+  cases h
 
 -- ============================================================================
 -- WS-L3/L3-C: ipcState-queue consistency invariant

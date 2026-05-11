@@ -245,7 +245,7 @@ private def fo013_cspaceDelete : IO Unit := do
 
 /-- FO-014: frozenNotificationSignal — accumulate badge on idle notification -/
 private def fo014_notificationSignal : IO Unit := do
-  let ntfn : Notification := { state := .idle, waitingThreads := [], pendingBadge := none }
+  let ntfn : Notification := { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
   let fst := mkFrozenState [(⟨5⟩, .notification ntfn)]
   match frozenNotificationSignal ⟨5⟩ (Badge.ofNatMasked 0xFF) fst with
   | .ok ((), fst') =>
@@ -258,7 +258,7 @@ private def fo014_notificationSignal : IO Unit := do
 
 /-- FO-015: frozenNotificationWait — consume pending badge -/
 private def fo015_notificationWait : IO Unit := do
-  let ntfn : Notification := { state := .active, waitingThreads := [], pendingBadge := some (Badge.ofNatMasked 42) }
+  let ntfn : Notification := { state := .active, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := some (Badge.ofNatMasked 42) }
   let waiterTcb := mkTcb 2
   let fst := mkFrozenState [(⟨5⟩, .notification ntfn), (⟨2⟩, .tcb waiterTcb)]
   match frozenNotificationWait ⟨5⟩ ⟨2⟩ fst with

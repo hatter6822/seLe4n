@@ -1,9 +1,9 @@
 # WS-RC R4.A + R4.C — Type-level Structural Promotion of `CNode.slots` and `Notification.waitingThreads`
 
-**Status**: PARTIAL — `NoDupList` smart-constructor foundation LANDED; field-type switch PENDING (Track A and Track C field switch)
+**Status**: **COMPLETE** — both R4.A (`UniqueSlotMap`-backed `CNode.slots`) and R4.C (`NoDupList ThreadId`-backed `Notification.waitingThreads`) landed; foundation modules + field-type switches + all consumer migrations + tests all green.
 **Workstream**: WS-RC (audit remediation v0.30.11 → v0.31.0 → v1.0.0)
-**Audit findings remediated**: DEEP-MODEL-01 (R4.A), DEEP-IPC-05 (R4.C), DEEP-IPC-01 (subsumed by R4.C)
-**Predecessors landed**: WS-RC R4.B (DEEP-CAP-04 — `RetypeTarget` ScrubToken), WS-RC R4.D (DEEP-CAP-02 — `cspaceMutate` null-cap witnesses), R4.B/C/D structural-witness commit `7da2572`. The R4.C foundation module `SeLe4n/Model/Object/NoDupList.lean` is LANDED at the current commit with the complete API surface (`empty`, `consWithGuard`, `consWithGuard?`, `tail?`, `filter`, equation lemmas, `Membership`/`CoeHead`/`DecidableEq` instances) ready for consumption by the field-type-switch sub-PRs.
+**Audit findings remediated**: DEEP-MODEL-01 (R4.A) — LANDED; DEEP-IPC-05 (R4.C) — LANDED; DEEP-IPC-01 (subsumed by R4.C) — LANDED structurally.
+**Predecessors landed**: WS-RC R4.B (DEEP-CAP-04 — `RetypeTarget` ScrubToken) and WS-RC R4.D (DEEP-CAP-02 — `cspaceMutate` null-cap witnesses) at commit `7da2572`. The R4.A foundation module `SeLe4n/Model/Object/UniqueSlotMap.lean` and the R4.C foundation module `SeLe4n/Model/Object/NoDupList.lean` are LANDED at the current commit with the complete API surfaces (`empty`, `insert`, `erase`, `filter`, `ofListWF` for `UniqueSlotMap`; `empty`, `consWithGuard`, `consWithGuard?`, `tail?`, `filter` for `NoDupList`); the field-type switches on `CNode.slots` and `Notification.waitingThreads` are LANDED; all ~55 consumer files migrated; `lake build` (312 jobs) + `./scripts/test_smoke.sh` + `./scripts/test_full.sh` all green.
 **Target version**: v0.31.0 — verified-specification release
 **Sub-PR count**: 15 atomic units across 2 parallel tracks (R4.A: 7, R4.C: 8)
 **Estimated LoC**: ~1860 net (R4.A ~890, R4.C ~970)

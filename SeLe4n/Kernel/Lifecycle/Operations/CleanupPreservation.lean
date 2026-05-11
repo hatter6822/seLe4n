@@ -173,7 +173,7 @@ theorem detachCNodeSlots_objects_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).objects = st.objects := by
   simp only [detachCNodeSlots]
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots st _ (fun acc => acc.objects = st.objects)
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _ (fun acc => acc.objects = st.objects)
     rfl (fun acc slot _cap hAcc => (detachSlotFromCdt_objects_eq acc
       { cnode := cnodeId, slot := slot }).trans hAcc)
 
@@ -182,7 +182,7 @@ theorem detachCNodeSlots_lifecycle_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).lifecycle = st.lifecycle := by
   simp only [detachCNodeSlots]
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots st _ (fun acc => acc.lifecycle = st.lifecycle)
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _ (fun acc => acc.lifecycle = st.lifecycle)
     rfl (fun acc slot _cap hAcc => (detachSlotFromCdt_lifecycle_eq acc
       { cnode := cnodeId, slot := slot }).trans hAcc)
 
@@ -276,7 +276,7 @@ theorem detachCNodeSlots_scheduler_eq
     (st : SystemState) (cnodeId : SeLe4n.ObjId) (cn : CNode) :
     (detachCNodeSlots st cnodeId cn).scheduler = st.scheduler := by
   simp only [detachCNodeSlots]
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots st _ (fun acc => acc.scheduler = st.scheduler)
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _ (fun acc => acc.scheduler = st.scheduler)
     rfl (fun acc slot _cap hAcc => by
       have : (SystemState.detachSlotFromCdt acc { cnode := cnodeId, slot := slot }).scheduler
           = acc.scheduler := by unfold SystemState.detachSlotFromCdt; split <;> rfl

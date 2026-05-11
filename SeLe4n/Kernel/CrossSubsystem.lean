@@ -3306,30 +3306,35 @@ Component map:
 8. `handleInterrupt_timer_preserves_interruptsEnabled`
 -/
 
-/-! ## WS-RC R4 structural-fix discharge markers
+/-! ## WS-RC R4 structural-fix discharge markers (LANDED)
 
 The R4 phase (structural-invariant promotions) lands four sub-tasks
 under the structural-fix policy (`§1.5 false-positive structural
-closures`):
+closures`).  **All four sub-tasks are LANDED with full type-level
+structural promotion.**
 
+* **R4.A (DEEP-MODEL-01)** — `CNode.slots : SeLe4n.UniqueSlotMap
+  Capability` carries `RHTable.invExtK` structurally at construction
+  time via the smart constructors `empty`, `insert`, `erase`,
+  `filter`, `ofListWF` (in `SeLe4n/Model/Object/UniqueSlotMap.lean`).
+  The state-level `cspaceSlotUnique` invariant is now trivially
+  derivable via `SeLe4n.Model.CNode.slotsUnique_holds`.  Structural
+  witness: `SeLe4n.UniqueSlotMap.keys_unique`.
 * **R4.B (DEEP-CAP-04)** — `RetypeTarget` carries a `ScrubToken`
   witness derivable only from `lifecyclePreRetypeCleanup_ok`. The
   no-bypass property is codified by
   `SeLe4n.Kernel.retypeTarget_implies_scrub_token_held`.
-* **R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01)** — the `uniqueWaiters`
-  state-level invariant is witnessed by
-  `SeLe4n.Kernel.notification_waitingThreads_nodup_witness`, and the
-  runtime duplicate guard at `IPC/Operations/Endpoint.lean` is
-  bridged to type-level Nodup non-membership via
-  `SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup`.
-  The follow-on type-level promotion to `SeLe4n.NoDupList ThreadId`
-  is planned in `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`
-  (8 atomic sub-PRs); the structural foundation is in place via the
-  `SeLe4n.NoDupList` smart-constructor module
-  (`SeLe4n/Model/Object/NoDupList.lean`), which exposes
-  `empty`, `consWithGuard`, `consWithGuard?`, `tail?`, `filter`,
-  and `Membership`/`CoeHead`/`DecidableEq` instances ready for
-  consumption by the field-type switch.
+* **R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01)** —
+  `Notification.waitingThreads : SeLe4n.NoDupList SeLe4n.ThreadId`
+  carries `List.Nodup` structurally at construction time
+  (`SeLe4n/Model/Object/NoDupList.lean`).  `notificationSignal` pops
+  via `NoDupList.tail?`; `notificationWait` cons site is gated by
+  `NoDupList.consWithGuard?`.  The state-level `uniqueWaiters` is
+  now trivially derivable via `SeLe4n.Kernel.uniqueWaiters_holds`.
+  Structural witnesses: `SeLe4n.NoDupList.nodup_witness`,
+  `SeLe4n.Kernel.notification_waitingThreads_nodup_witness`, and
+  `SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup`
+  (the operational↔structural bridge).
 * **R4.D (DEEP-CAP-02)** — `cspaceMutate`'s runtime null-cap guard is
   witnessed by `SeLe4n.Kernel.cspaceMutate_rejects_null_cap` (positive
   direction) and `SeLe4n.Kernel.cspaceMutate_null_cap_rejected`
@@ -3342,6 +3347,6 @@ and in `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`). The companion
 `#check` reachability tests are exercised by
 `scripts/test_tier3_invariant_surface.sh`. -/
 theorem r4_structural_fix_discharge_index_documented : True := trivial
--- Cross-reference: docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md §3 (R4.B/C/D)
+-- Cross-reference: docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md §3 (R4.A/B/C/D)
 
 end SeLe4n.Kernel

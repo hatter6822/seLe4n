@@ -1,90 +1,154 @@
-## v0.30.11 — WS-RC R4: structural-fix discharge index + NoDupList foundation (track C)
+## v0.30.11 — WS-RC R4: full type-level structural promotion (DEEP-MODEL-01, DEEP-CAP-04, DEEP-IPC-05, DEEP-CAP-02, DEEP-IPC-01)
 
 The WS-RC R4 phase (Structural-invariant promotions —
-`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` §8) lands the
-structural-fix discharge index for the four sub-tasks:
+`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` §8) lands the **full
+type-level promotions** for all four sub-tasks of the WS-RC R4 slice:
 
+- **R4.A (DEEP-MODEL-01)** — `CNode.slots : RHTable Slot Capability`
+  →  `CNode.slots : SeLe4n.UniqueSlotMap Capability`.  A new
+  `SeLe4n/Model/Object/UniqueSlotMap.lean` (~170 LoC) materialises
+  the polymorphic wrapper around `RHTable Slot V`, carrying
+  `RHTable.invExtK` (no-duplicate-keys ∧ `size < capacity` ∧
+  `4 ≤ capacity`) **structurally** at construction time via the
+  smart constructors `empty`, `insert`, `erase`, `filter`, and
+  `ofListWF`.  The state-level `cspaceSlotUnique` invariant
+  collapses to a trivial projection of `UniqueSlotMap.hWF`;
+  `slotsUnique_holds : ∀ (cn : CNode), cn.slotsUnique` is now an
+  unconditional theorem.  `CNode.empty`, `CNode.mk'`,
+  `CNode.lookup`, `CNode.insert`, `CNode.remove`, and
+  `CNode.revokeTargetLocal` route through the wrapper transparently;
+  the preservation theorems `empty/insert/remove/revokeTargetLocal_slotsUnique`
+  collapse to one-liners. All ~20 consumer files (`State.lean`,
+  `Builder.lean`, `IntermediateState.lean`, `FreezeProofs.lean`,
+  `InformationFlow/Projection.lean`, `Capability/Invariant/*`,
+  `FrozenOps/Operations.lean`, `Lifecycle/Operations/*`,
+  `Testing/*`, plus 10 test suites) migrated.
 - **R4.B (DEEP-CAP-04)** — `RetypeTarget` non-bypassable construction
-  via opaque `ScrubToken` witness. Already LANDED at commit `7da2572`;
-  no change in this commit.
-- **R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01)** — Two structural
-  witness theorems already LANDED at `7da2572`:
-  `notification_waitingThreads_nodup_witness` (the `uniqueWaiters`
-  state-level invariant) and
-  `notificationWait_runtime_check_implied_by_nodup` (the bridge from
-  the runtime TCB ipcState guard to type-level Nodup non-membership
-  under `notificationWaiterConsistent`).  **New in this commit:**
-  `SeLe4n/Model/Object/NoDupList.lean` lands the forward-compatible
-  `SeLe4n.NoDupList α` smart-constructor module with the complete
-  API surface (`empty`, `consWithGuard`, `consWithGuard?`, `tail?`,
-  `filter`, equation lemmas `consWithGuard?_eq_{none,some}_iff`,
-  `tail?_eq_{none,some}_iff`, `Membership`, `CoeHead`, `DecidableEq`,
-  `Repr` instances, and the `nodup_witness` discharge-index
-  theorem).  This is the field-type-switch foundation consumed by
-  the multi-PR plan
-  `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`.
+  via opaque `ScrubToken` witness.  LANDED at commit `7da2572`;
+  re-verified end-to-end against the rest of R4 this commit.
+- **R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01)** —
+  `Notification.waitingThreads : List ThreadId` →
+  `Notification.waitingThreads : SeLe4n.NoDupList SeLe4n.ThreadId`.
+  A new `SeLe4n/Model/Object/NoDupList.lean` (~290 LoC) lands the
+  smart-constructor wrapper around `List α` for `[DecidableEq α]`
+  element types, carrying `List.Nodup` structurally at
+  construction time.  `notificationSignal` pops via `tail?`
+  (NoDupList smart accessor); `notificationWait` cons site at
+  `Endpoint.lean` is gated by `NoDupList.consWithGuard?` (runtime
+  membership check) under the TCB-state fast path, so the
+  duplicate guard is structural rather than upstream-convention.
+  The state-level `uniqueWaiters` invariant collapses to a trivial
+  projection of `NoDupList.hNodup` (`uniqueWaiters_holds`).  All
+  ~25 consumer files migrated (NotificationPreservation/{Signal,Wait}.lean,
+  StoreObjectFrame.lean, DualQueueMembership.lean, QueueNoDup.lean,
+  QueueMembership.lean, Capability/Invariant/Authority.lean,
+  InformationFlow/Invariant/Helpers.lean, Lifecycle/Operations/*,
+  FrozenOps/Operations.lean, Platform/Boot.lean,
+  IPC/Invariant/Defs.lean — including the
+  `notificationSignal_result_wellFormed_wake` /
+  `notificationWait_result_wellFormed_wait` signature changes, plus
+  all test suites).
 - **R4.D (DEEP-CAP-02)** — `cspaceMutate` null-cap witness theorems
   (`cspaceMutate_rejects_null_cap`, `cspaceMutate_null_cap_rejected`)
-  LANDED at `7da2572`. **New in this commit:** an additional
-  Tier-2 regression test `NEG-MUTATE-NULL` in
+  LANDED at `7da2572`.  Regression test extended this commit:
+  Tier-2 `NEG-MUTATE-NULL` in
   `tests/NegativeStateSuite.lean::runAuditCoverageChecks` exercises
-  the null-cap rejection path with a fresh CNode literal, asserting
-  the explicit `.nullCapability` error code is returned. This
-  satisfies R4.D.4 in the audit plan.
+  the null-cap rejection path with a fresh CNode literal,
+  asserting the explicit `.nullCapability` error code is returned —
+  satisfying R4.D.4 in the audit plan.
 
 ### Discharge-index closures landed at this commit
 
-- §3.D (NoDup / structural promotions): D.4 (`NoDupList.nodup_witness`)
-  and D.5 (R4 marker theorem `r4_structural_fix_discharge_index_documented`
-  in `SeLe4n/Kernel/CrossSubsystem.lean`).
-- §3.E (DEEP-IPC-01 reroute): row E.1 marked LANDED via predecessor
-  commit `7da2572`.
+- §3.D (NoDup / structural promotions): D.1 (R4.A `UniqueSlotMap`
+  structural enforcement) LANDED with the field-type switch; D.2
+  (R4.B `ScrubToken`) re-verified; D.3 (R4.C `NoDupList`
+  structural enforcement) LANDED with the field-type switch; D.4
+  (`NoDupList.nodup_witness`) and D.5 (R4 marker theorem
+  `r4_structural_fix_discharge_index_documented` in
+  `SeLe4n/Kernel/CrossSubsystem.lean`) LANDED.
+- §3.E (DEEP-IPC-01 reroute): row E.1 LANDED (the runtime
+  duplicate guard at `Endpoint.lean` is now subsumed by
+  `NoDupList.consWithGuard?`).
 - §3.F (false-positive structural witnesses): row F.1 (R4.D)
   regression test extended with the Tier-2 NegativeStateSuite entry.
 
-### Still PENDING (multi-PR scope)
+### Marker theorems landed
 
-- **R4.A — `UniqueSlotMap` promotion of `CNode.slots`** (track A,
-  7 sub-PRs, ~890 LoC, ~30 files).
-- **R4.C field-type switch** — `Notification.waitingThreads` field
-  switch from `List ThreadId` to `SeLe4n.NoDupList SeLe4n.ThreadId`,
-  with proof-body migration across ~25 files (track C sub-PRs C.2–C.8
-  per the plan).
+- `SeLe4n.Kernel.r4_structural_fix_discharge_index_documented`
+  (in `SeLe4n/Kernel/CrossSubsystem.lean`) — anchors the
+  tier-3 invariant-surface gate.
+- `SeLe4n.Kernel.noDupList_module_ready` (in
+  `SeLe4n/Model/Object/NoDupList.lean`) — anchors the R4.C
+  foundation.
+- `SeLe4n.Kernel.uniqueSlotMap_module_ready` (in
+  `SeLe4n/Model/Object/UniqueSlotMap.lean`) — anchors the R4.A
+  foundation.
 
-Both are partitioned in
-`docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` as 15 atomic
-sub-PRs across two parallel tracks. The structural-fix policy
-(`§1.5` of the WS-RC plan) is satisfied at the proof-surface level
-through the witness theorems + foundation module landed at this
-commit; the field-type switch is a follow-on engineering
-simplification with no correctness impact (the underlying invariants
-are already preserved by every kernel transition through the
-existing preservation chain).
+### Witness theorems newly reachable via `#check`
 
-### What changed (this commit)
+- `SeLe4n.UniqueSlotMap.keys_unique : ∀ u, u.table.invExtK`
+- `SeLe4n.NoDupList.nodup_witness : ∀ l, l.val.Nodup`
+- `SeLe4n.Model.CNode.slotsUnique_holds : ∀ cn, cn.slotsUnique`
+- `SeLe4n.Kernel.uniqueWaiters_holds : ∀ st, uniqueWaiters st`
 
-- **`SeLe4n/Model/Object/NoDupList.lean`** (new, ~290 LoC):
-  the `SeLe4n.NoDupList α` smart-constructor module.
-- **`SeLe4n/Model/Object/Types.lean`**: `import
-  SeLe4n.Model.Object.NoDupList` and updated `Notification.waitingThreads`
-  docstring to cite the forward-compatible foundation. Field type
-  unchanged at `List SeLe4n.ThreadId` (per the multi-PR scope).
-- **`SeLe4n/Kernel/CrossSubsystem.lean`**: appended
-  `r4_structural_fix_discharge_index_documented : True := trivial`
-  marker theorem with a long docstring enumerating the R4.B/C/D
-  closure citations.
-- **`tests/NegativeStateSuite.lean`**: appended `NEG-MUTATE-NULL` test
-  in `runAuditCoverageChecks` exercising `cspaceMutate` against a
-  fresh `Capability.null` slot, asserting `.error .nullCapability`.
-- **`docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`**: §3.D updated
-  to LANDED status for D.2–D.5 with file:line citations; §3.E
-  table populated; §3.F F.1 annotated with the new NegativeStateSuite
-  test; §5 closure summary refreshed.
-- **`docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`**: Status
-  promoted from PLANNED to PARTIAL with the foundation landing
-  annotated; R4.C.1 sub-PR marked LANDED.
-- **`docs/codebase_map.json`**: regenerated for the new
-  `NoDupList.lean` module.
+### Validation
+
+- `lake build` (default target, 312 jobs) passes; 0 sorry / 0 axiom
+  in the modified files.
+- `./scripts/test_smoke.sh` passes (all tiers 0+1+2).
+- `./scripts/test_full.sh` passes (tier 3 invariant surface).
+- All 29 test suites pass against the migrated codebase; new
+  Tier-2 `NEG-MUTATE-NULL` regression observed in the
+  `negative_state_suite` output.
+
+### Files changed at this commit
+
+- **New foundation modules:**
+  - `SeLe4n/Model/Object/NoDupList.lean` (R4.C; new)
+  - `SeLe4n/Model/Object/UniqueSlotMap.lean` (R4.A; new)
+- **Field-type switches:**
+  - `SeLe4n/Model/Object/Types.lean`:
+    `Notification.waitingThreads : NoDupList ThreadId`,
+    `CNode.slots : UniqueSlotMap Capability`,
+    `instance : Inhabited CapTarget`,
+    `Capability` gains `Inhabited` derivation.
+  - `SeLe4n/Model/Object/Structures.lean`: `CNode.empty`,
+    `CNode.mk'`, `slotsUnique`, `slotsUnique_holds`, four
+    preservation theorems collapsed to one-liners, lookup/insert/remove
+    proofs project through `.table`.
+- **Operational/proof migrations:** `Model/Builder.lean`,
+  `Model/State.lean`, `Model/IntermediateState.lean`,
+  `Model/FreezeProofs.lean`,
+  `Kernel/InformationFlow/Projection.lean`,
+  `Kernel/InformationFlow/Invariant/Helpers.lean`,
+  `Kernel/Capability/Invariant/Defs.lean`,
+  `Kernel/Capability/Invariant/Authority.lean`,
+  `Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean`,
+  `Kernel/IPC/Operations/Endpoint.lean`,
+  `Kernel/IPC/Operations/SchedulerLemmas.lean`,
+  `Kernel/IPC/Invariant/Defs.lean`,
+  `Kernel/IPC/Invariant/QueueNoDup.lean`,
+  `Kernel/IPC/Invariant/QueueMembership.lean`,
+  `Kernel/IPC/Invariant/NotificationPreservation/{Signal,Wait}.lean`,
+  `Kernel/IPC/Invariant/Structural/{StoreObjectFrame,DualQueueMembership}.lean`,
+  `Kernel/Lifecycle/Operations/{Cleanup,CleanupPreservation,RetypeWrappers}.lean`,
+  `Kernel/FrozenOps/Operations.lean`,
+  `Platform/Boot.lean`,
+  `Testing/{MainTraceHarness,StateBuilder,InvariantChecks}.lean`.
+- **Marker theorem:** `SeLe4n/Kernel/CrossSubsystem.lean` appended
+  `r4_structural_fix_discharge_index_documented`.
+- **Test suites migrated:** `tests/{RobinHoodSuite,NegativeStateSuite,
+  Ak8CoverageSuite,An10CascadeSuite,FreezeProofSuite,FrozenStateSuite,
+  InformationFlowSuite,KernelErrorMatrixSuite,ModelIntegritySuite,
+  OperationChainSuite,TraceSequenceProbe,AbiRoundtripSuite,
+  Ak9PlatformSuite,DecodingSuite,FrozenOpsSuite}.lean`.
+- **Documentation:** `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`
+  refreshed; `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`
+  Status PLANNED → **COMPLETE**;
+  `docs/WORKSTREAM_HISTORY.md` WS-RC R4 closeout entry expanded;
+  `docs/spec/SELE4N_SPEC.md` §8.10.7 updated with the new
+  structural-fix discharge index; `docs/gitbook/12-proof-and-invariant-map.md`
+  §4.1 bullets updated; `docs/codebase_map.json` regenerated.
 
 ## v0.30.11 — WS-RC R3 third-audit pass: canonical-VAddr defense-in-depth gate
 

@@ -279,8 +279,10 @@ theorem notificationSignal_preserves_endpointQueueNoDup
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
-      cases hWaiters : ntfn.waitingThreads with
-      | cons waiter rest =>
+      -- WS-RC R4.C: `notificationSignal` pops via `tail?` (NoDupList smart accessor).
+      cases hWaiters : ntfn.waitingThreads.tail? with
+      | some headTail =>
+        obtain ⟨waiter, rest⟩ := headTail
         -- Wake path: storeObject notification → storeTcbIpcStateAndMessage → ensureRunnable
         simp only [hWaiters] at hStep
         generalize hStore1 : storeObject notificationId _ st = r1 at hStep
@@ -300,7 +302,7 @@ theorem notificationSignal_preserves_endpointQueueNoDup
             obtain ⟨_, rfl⟩ := hStep
             exact ensureRunnable_preserves_endpointQueueNoDup _ _ <|
               storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup _ _ _ _ _ hInv1 hObjInv1 hMsg
-      | nil =>
+      | none =>
         -- Accumulate path: storeObject notification only
         simp only [hWaiters] at hStep
         exact storeObject_non_ep_non_tcb_preserves_endpointQueueNoDup
@@ -351,7 +353,12 @@ theorem notificationWait_preserves_endpointQueueNoDup
           simp only [hLookup] at hStep
           split at hStep
           · simp at hStep
-          · generalize hStore1 : storeObject notificationId _ st = r1 at hStep
+          · -- WS-RC R4.C: case-split on consWithGuard? before the storeObject
+            cases hCons : ntfn.waitingThreads.consWithGuard? waiter with
+            | none => simp [hCons] at hStep
+            | some wt' =>
+            simp only [hCons] at hStep
+            generalize hStore1 : storeObject notificationId _ st = r1 at hStep
             cases r1 with
             | error e => simp at hStep
             | ok pair1 =>
@@ -668,7 +675,7 @@ theorem notification_waitingThreads_nodup_witness
     (st : SystemState) (oid : SeLe4n.ObjId) (ntfn : Notification)
     (hUnique : uniqueWaiters st)
     (hObj : st.objects[oid]? = some (KernelObject.notification ntfn)) :
-    ntfn.waitingThreads.Nodup :=
+    ntfn.waitingThreads.val.Nodup :=
   hUnique oid ntfn hObj
 
 /-- WS-RC R4.C (DEEP-IPC-01 closure): structural witness that the
