@@ -1,11 +1,17 @@
 # CLAUDE.md — seLe4n project guidance
 
+> A mirror of this file lives at `AGENTS.md` so that non-Claude coding
+> agents (and any tool that follows the AGENTS.md convention) get the
+> same project rules. If you edit one, edit the other in the same PR —
+> the two files must stay byte-identical apart from this header.
+
 ## What this project is
 
-seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
-proofs, improving on seL4 architecture. Every kernel transition is an executable
-pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.30.11.
+seLe4n is a production-oriented microkernel written in Lean 4 with
+machine-checked proofs, improving on seL4 architecture. Every kernel
+transition is an executable pure function with zero `sorry`/`axiom`. First
+hardware target: Raspberry Pi 5. Toolchain: Lean 4.28.0 (`lean-toolchain`),
+Lake build system. Project version lives in the `lakefile`.
 
 ## Build and run
 
@@ -44,378 +50,132 @@ module compiles:
 source ~/.elan/env && lake build <Module.Path>
 ```
 
-For example, if you modified `SeLe4n/Kernel/RobinHood/Bridge.lean`:
+For example, after editing `SeLe4n/Kernel/RobinHood/Bridge.lean`:
+
 ```bash
 lake build SeLe4n.Kernel.RobinHood.Bridge
 ```
 
 **`lake build` (default target) is NOT sufficient.** The default target only
-builds modules reachable from `Main.lean` and test executables. Modules that
-are not yet imported by the main kernel (e.g., `RobinHood` before N4
-integration) will silently pass `lake build` even with broken proofs.
+builds modules reachable from `Main.lean` and the test executables. Modules
+not yet imported by the main kernel will silently pass `lake build` even
+with broken proofs.
 
-A pre-commit hook enforces this automatically. Install it by running
-`./scripts/install_git_hooks.sh` (invoked automatically by `setup_lean_env.sh`
-and by the Lean Action CI workflow, so fresh clones and CI-cloned checkouts
-are guarded without manual action). For CI contexts, `--check` verifies the
-installer has run:
+A pre-commit hook enforces this automatically. Install with
+`./scripts/install_git_hooks.sh` (invoked automatically by
+`setup_lean_env.sh` and by the Lean Action CI workflow, so fresh clones
+and CI checkouts are guarded without manual action). For CI contexts:
 
 ```bash
 ./scripts/install_git_hooks.sh          # install (idempotent no-op if present)
-./scripts/install_git_hooks.sh --check  # verify installation (non-zero if absent/diverging)
-./scripts/install_git_hooks.sh --force  # overwrite; backs up any diverging hook first
+./scripts/install_git_hooks.sh --check  # verify installation (non-zero if absent)
+./scripts/install_git_hooks.sh --force  # overwrite; backs up any diverging hook
 ```
 
-The hook:
-1. Detects staged `.lean` files
-2. Builds each modified module via `lake build <Module.Path>`
-3. Checks for `sorry` in staged content
-4. **Blocks the commit** if any build fails or sorry is found
-
-Do NOT bypass the hook with `--no-verify`.
+The hook detects staged `.lean` files, builds each modified module, checks
+for `sorry` in staged content, and **blocks the commit** if any build fails
+or sorry is found. Do NOT bypass it with `--no-verify`.
 
 ## Source layout
+
+Top-level subsystems (the filesystem is the authoritative file list — it
+changes more often than this map can track):
 
 ```
 SeLe4n/Prelude.lean              Typed identifiers, monad foundations
 SeLe4n/Machine.lean              Machine state primitives
-SeLe4n/Model/Object.lean         Kernel objects (re-export hub)
-  Object/Types.lean              Core data types, TCB, Endpoint, Notification
-  Object/Structures.lean         VSpaceRoot, CNode, KernelObject, CDT helpers
-SeLe4n/Model/State.lean          Kernel/system state representation
-SeLe4n/Model/IntermediateState.lean  Q3-A: Builder-phase state with invariant witnesses
-SeLe4n/Model/Builder.lean        Q3-B: Builder operations (invariant-preserving state construction)
-SeLe4n/Model/FrozenState.lean    Q5: FrozenMap, FrozenSet, FrozenSystemState, freeze function
-SeLe4n/Model/FreezeProofs.lean   Q6: Freeze correctness proofs (lookup equiv, radix equiv, invariant transfer)
-SeLe4n/Kernel/Scheduler/*        Scheduler transitions + invariants
-  Operations.lean                Re-export hub
-    Operations/Selection.lean    EDF predicates, thread selection
-    Operations/Core.lean         Core transitions (schedule, handleYield, timerTick)
-    Operations/Preservation.lean Scheduler invariant preservation theorems
-  PriorityInheritance.lean       Re-export hub (D4)
-    PriorityInheritance/BlockingGraph.lean   Blocking relation, chain walk, acyclicity, depth bound
-    PriorityInheritance/Compute.lean         computeMaxWaiterPriority
-    PriorityInheritance/Propagate.lean       updatePipBoost, propagate/revert priority inheritance
-    PriorityInheritance/Preservation.lean    Frame lemmas (scheduler, IPC, cross-subsystem)
-    PriorityInheritance/BoundedInversion.lean Parametric WCRT bound, determinism
-  Liveness.lean                  Re-export hub (D5)
-    Liveness/TraceModel.lean     Trace model types, query predicates, counting functions
-    Liveness/TimerTick.lean      Timer-tick budget monotonicity, preemption bounds
-    Liveness/Replenishment.lean  CBS replenishment timing bounds
-    Liveness/Yield.lean          Yield/rotation semantics, FIFO progress bounds
-    Liveness/BandExhaustion.lean Priority-band exhaustion analysis
-    Liveness/DomainRotation.lean Domain rotation bounds
-    Liveness/WCRT.lean           WCRT hypotheses, main theorem, PIP enhancement
-SeLe4n/Kernel/Capability/*       CSpace/capability ops + invariants
-  Invariant.lean                 Re-export hub
-    Invariant/Defs.lean          Core invariant definitions, transfer theorems
-    Invariant/Authority.lean     Authority reduction, badge routing
-    Invariant/Preservation.lean  Operation preservation, lifecycle integration
-SeLe4n/Kernel/IPC/*              IPC subsystem
-  Operations.lean                Re-export hub
-    Operations/Endpoint.lean     Core endpoint/notification ops
-    Operations/CapTransfer.lean  IPC capability transfer (WS-M3)
-    Operations/Timeout.lean      Z6 timeout-driven IPC unblocking
-    Operations/Donation.lean     Z7: SchedContext donation wrappers + preservation proofs
-    Operations/SchedulerLemmas.lean Scheduler preservation lemmas
-  DualQueue.lean                 Re-export hub
-    DualQueue/Core.lean          Dual-queue operations
-    DualQueue/Transport.lean     Transport lemmas
-    DualQueue/WithCaps.lean      DualQueue with capability transfer
-  Invariant.lean                 Re-export hub
-    Invariant/Defs.lean          Core IPC invariant definitions
-    Invariant/EndpointPreservation.lean Endpoint preservation proofs
-    Invariant/CallReplyRecv.lean Call/ReplyRecv preservation proofs
-    Invariant/WaitingThreadHelpers.lean Primitive waitingThreadsPendingMessageNone helpers
-    Invariant/NotificationPreservation.lean Notification preservation proofs
-    Invariant/QueueNoDup.lean    V3-K: No self-loops, send/receive head disjointness
-    Invariant/QueueMembership.lean V3-J: Queue membership consistency proofs
-    Invariant/QueueNextBlocking.lean V3-J-cross: queueNext blocking consistency proofs
-    Invariant/Structural.lean    Structural invariants, composition theorems
-SeLe4n/Kernel/Lifecycle/*        Lifecycle/retype transitions + invariants
-  Suspend.lean                   D1: Thread suspension/resumption operations
-  Invariant/SuspendPreservation.lean  D1: Transport lemmas for suspend/resume
-SeLe4n/Kernel/Service/*          Service orchestration + policy
-  Interface.lean                 Service interface definitions
-  Operations.lean                Service operations
-  Registry.lean                  Service registry
-  Registry/Invariant.lean        Registry invariant proofs
-  Invariant.lean                 Re-export hub
-    Invariant/Policy.lean        Policy surface, bridge theorems
-    Invariant/Acyclicity.lean    Dependency acyclicity proofs
-SeLe4n/Kernel/Architecture/*     Architecture assumptions + VSpace + VSpaceBackend + RegisterDecode
-  VSpace.lean                    VSpace HashMap map/unmap/lookup, W^X enforcement
-  VSpaceBackend.lean             VSpace backend operations + HashMap instance (AG3-H)
-  VSpaceInvariant.lean           VSpace invariant proofs
-  TlbModel.lean                  TLB flush model + hardware adapter integration (AG6-F/G; AN9-B substantive `tlbBarrierComplete`)
-  CacheModel.lean                AG8-B: Cache coherency model (D-cache/I-cache states, maintenance ops)
-  BarrierComposition.lean        AN9-C: BarrierKind algebra + page-table / MMIO ordering theorems (DEF-A-M08/M09)
-  TlbCacheComposition.lean       AN9-A: TLB+Cache composition theorem `pageTableUpdate_full_coherency` (DEF-A-M04)
-  PageTable.lean                 AG6-A/B: ARMv8 4-level page table types, walk, W^X bridge
-  VSpaceARMv8.lean               AG6-C/D: VSpaceBackend ARMv8 instance, shadow-based refinement
-  AsidManager.lean               AG6-H: ASID pool allocator, rollover, uniqueness proof
-  Adapter.lean                   Architecture adapter
-  Assumptions.lean               Architecture assumptions
-  Invariant.lean                 Architecture invariant re-export hub
-  RegisterDecode.lean            Total deterministic decode: raw registers → typed kernel IDs
-  SyscallArgDecode.lean          Per-syscall typed argument decode (msgRegs → typed structs)
-  IpcBufferRead.lean             AK4-A: IPC-buffer overflow read helper (R-ABI-C01)
-  IpcBufferValidation.lean       D3: IPC buffer address validation and setIPCBufferOp
-  ExceptionModel.lean            AG3-C/F: ARM64 exception types, ESR classification, dispatch, EL0/EL1
-  InterruptDispatch.lean         AG3-D: GIC-400 interrupt dispatch (acknowledge→handle→EOI)
-  TimerModel.lean                AG3-E: Hardware timer binding (54 MHz RPi5, monotonicity proof)
-SeLe4n/Kernel/InformationFlow/*  Security labels, projection, non-interference
-  Enforcement.lean               Re-export hub
-    Enforcement/Wrappers.lean    Policy-gated operation wrappers
-    Enforcement/Soundness.lean   Correctness theorems, declassification
-  Invariant.lean                 Re-export hub
-    Invariant/Helpers.lean       Shared NI proof infrastructure
-    Invariant/Operations.lean    Per-operation NI proofs
-    Invariant/Composition.lean   Trace composition, declassification
-SeLe4n/Kernel/RobinHood/*        Robin Hood hash table verified implementation
-  Core.lean                      Types, operations, proofs (N1 complete)
-  Set.lean                       RHSet type (hash-set wrapper over RHTable)
-  Bridge.lean                    Kernel API bridge: instances, bridge lemmas, filter (N3)
-  Invariant.lean                 Re-export hub (N2)
-    Invariant/Defs.lean          Invariant definitions, empty table proofs, probeChainDominant
-    Invariant/Preservation.lean  WF, distCorrect, noDupKeys, PCD preservation (all ops), helpers
-    Invariant/Lookup.lean        Functional correctness (get after insert/erase), key absence
-SeLe4n/Kernel/SchedContext/*      Scheduling context types, CBS budget engine, replenishment queue, operations (Z1–Z5)
-  Types.lean                     Budget, Period, SchedContext, SchedContextBinding, BEq instances
-  Budget.lean                    CBS budget operations: consume, replenish, admission control
-  ReplenishQueue.lean            System-wide replenishment queue: sorted insert, popDue, remove, invariants (Z3)
-  Operations.lean                Capability-controlled SchedContext operations: configure, bind, unbind, yieldTo (Z5)
-  PriorityManagement.lean        D2: setPriorityOp, setMCPriorityOp, MCP authority validation, run queue migration
-  Invariant.lean                 Re-export hub (Z2)
-    Invariant/Defs.lean          Invariant definitions, preservation proofs, bandwidth theorems
-    Invariant/Preservation.lean  Per-operation preservation theorems for SchedContext operations (Z5)
-    Invariant/PriorityPreservation.lean  D2: Transport lemmas, authority non-escalation proofs for priority ops
-SeLe4n/Kernel/SchedContext.lean  Re-export hub
-SeLe4n/Kernel/RadixTree/*        CNode radix tree verified flat array (Q4)
-  Core.lean                      CNodeRadix type, extractBits, O(1) lookup/insert/erase/fold/toList
-  Invariant.lean                 24 correctness proofs (lookup, WF, size, toList, fold)
-  Bridge.lean                    buildCNodeRadix (RHTable → CNodeRadix), freezeCNodeSlots, bridge lemmas
-SeLe4n/Kernel/FrozenOps/*        Frozen kernel operations (Q7, experimental — not in production chain)
-  Core.lean                      FrozenKernel monad, lookup/store primitives
-  Operations.lean                15 per-subsystem frozen operations
-  Commutativity.lean             FrozenMap set/get? roundtrip proofs, frame lemmas
-  Invariant.lean                 frozenStoreObject preservation theorems
-SeLe4n/Kernel/CrossSubsystem.lean Cross-subsystem invariants (R4-E; AN12-A discharge index marker)
-SeLe4n/Kernel/Concurrency/Assumptions.lean  AN12-B SMP-latent assumption inventory (Theme 4.4)
+SeLe4n/Model/                    Object types, kernel/system state, builder, freeze
+SeLe4n/Kernel/Scheduler/         Scheduler transitions, run queues, EDF, PIP, liveness
+SeLe4n/Kernel/Capability/        CSpace/capability ops + invariants
+SeLe4n/Kernel/IPC/               Endpoint/notification IPC, dual-queue, capability transfer
+SeLe4n/Kernel/Lifecycle/         Thread suspend/resume, retype, cleanup
+SeLe4n/Kernel/Service/           Service orchestration + policy
+SeLe4n/Kernel/Architecture/      ARM64 page tables, exceptions, interrupts, TLB/cache,
+                                 register/syscall decode, IPC buffer validation
+SeLe4n/Kernel/InformationFlow/   Security labels, projection, non-interference
+SeLe4n/Kernel/RobinHood/         Verified Robin Hood hash table
+SeLe4n/Kernel/RadixTree/         Verified flat-array CNode radix tree
+SeLe4n/Kernel/SchedContext/      CBS budgets, replenishment queue, MCP authority
+SeLe4n/Kernel/FrozenOps/         Frozen-state kernel operations (experimental)
+SeLe4n/Kernel/Concurrency/       SMP-latent assumption inventory
+SeLe4n/Kernel/CrossSubsystem.lean  Cross-subsystem invariants, discharge index marker
 SeLe4n/Kernel/API.lean           Public kernel interface + syscall wrappers
-SeLe4n/Platform/Contract.lean    PlatformBinding typeclass (H3-prep)
-SeLe4n/Platform/DeviceTree.lean  FDT parsing with bounds-checked helpers
-SeLe4n/Platform/FFI.lean         WS-RC R2: Lean ↔ Rust HAL bridge — `@[extern]` C-bridge
-                                 declarations (timer/GIC/TLB/MMIO/UART/interrupts/cache)
-                                 plus the substantive `@[export]` bodies for
-                                 `suspend_thread_inner` and `syscall_dispatch_inner`
-                                 routing through `kernelStateRef` IO.Ref into
-                                 `Lifecycle.Suspend.suspendThread` and
-                                 `Kernel.syscallEntryChecked`
-SeLe4n/Platform/Staged.lean      AN7-D.6 (PLT-M07): build anchor pulling staged
-                                 platform-binding modules into CI
-SeLe4n/Platform/Sim/*            Simulation platform contracts + proof hooks
-  Sim/RuntimeContract.lean       Permissive + restrictive runtime contracts
-  Sim/BootContract.lean          Boot + interrupt contracts (all True)
-  Sim/ProofHooks.lean            AdapterProofHooks for restrictive contract
-  Sim/Contract.lean              PlatformBinding instance (re-export hub).
-                                 WS-RC R3 (DEEP-BOOT-01): defines
-                                 `simBootVSpaceRoot` (single read-only
-                                 mapping at ASID 0) and the matching
-                                 `bootSafe`, `bootSafeCheck`, and
-                                 `mappings.invExt` discharge theorems;
-                                 both `simPlatformBinding` and
-                                 `simRestrictivePlatformBinding` now
-                                 set
-                                 `bootVSpaceRoot := some simBootVSpaceRootEntry`
-                                 for parity with RPi5.
-SeLe4n/Platform/Boot.lean        Q3-C: Boot sequence (PlatformConfig → IntermediateState).
-                                 WS-RC R3 (DEEP-BOOT-01): hosts the
-                                 `installBootVSpaceRoot` builder
-                                 operation, the `bootVSpaceRoot`
-                                 field on `PlatformConfig`, the
-                                 `bootVSpaceRootObjIdDistinct` /
-                                 `bootVSpaceRootSafe` runtime gates
-                                 in `bootFromPlatformChecked`, the
-                                 `BootVSpaceRootEntry` re-export, and
-                                 the new admission witness theorems
-                                 (`bootSafeObject(Check)_admits_rpi5BootVSpaceRoot`,
-                                 `bootFromPlatformChecked_admits_bootVSpace`).
-SeLe4n/Platform/RPi5/*           Raspberry Pi 5 platform (BCM2712)
-  RPi5/Board.lean                BCM2712 addresses, MMIO, MachineConfig
-  RPi5/RuntimeContract.lean      Substantive runtime + restrictive contract
-  RPi5/BootContract.lean         Boot + interrupt contracts (GIC-400)
-  RPi5/MmioAdapter.lean           MMIO adapter for RPi5
-  RPi5/ProofHooks.lean           AdapterProofHooks for restrictive contract
-  RPi5/Contract.lean             PlatformBinding instance (re-export hub).
-                                 WS-RC R3 (DEEP-BOOT-01): defines
-                                 `rpi5BootVSpaceRootObjId` and
-                                 `rpi5BootVSpaceRootEntry`; the
-                                 binding now sets
-                                 `bootVSpaceRoot := some rpi5BootVSpaceRootEntry`.
-  RPi5/VSpaceBoot.lean           AN7-D.2 / WS-RC R3: canonical RPi5
-                                 boot VSpaceRoot (six identity
-                                 mappings: kernel text RX, kernel
-                                 data RW, kernel stack RW, UART0,
-                                 GIC distributor, GIC CPU interface).
-                                 Promoted to production at WS-RC R3.
-                                 Hosts `bootSafeVSpaceRootCheck`,
-                                 `bootSafeVSpaceRootCheck_iff`, and
-                                 `rpi5BootVSpaceRoot_mappings_invExt`.
-SeLe4n/Testing/*                 Test harness, state builder, fixtures
-  Helpers.lean                   Shared test helpers (expectError, expectOk, expectCond)
-  StateBuilder.lean              Test state construction
-  InvariantChecks.lean           Runtime invariant check helpers
-  MainTraceHarness.lean          Main trace test harness
-  RuntimeContractFixtures.lean   Platform contract test fixtures
+SeLe4n/Platform/Contract.lean    PlatformBinding typeclass
+SeLe4n/Platform/DeviceTree.lean  FDT parsing
+SeLe4n/Platform/FFI.lean         Lean ↔ Rust HAL bridge (`@[extern]` / `@[export]`)
+SeLe4n/Platform/Boot.lean        Boot sequence (PlatformConfig → IntermediateState)
+SeLe4n/Platform/Sim/             Simulation platform contracts
+SeLe4n/Platform/RPi5/            Raspberry Pi 5 (BCM2712) bindings, boot VSpace
+SeLe4n/Platform/Staged.lean      Build anchor pulling staged platform modules into CI
+SeLe4n/Testing/                  Test harness, state builder, fixtures
 Main.lean                        Executable entry point
-tests/                           Executable test suites + fixtures (29 suites)
-  DecodingSuite.lean             T-03/AC6-A + AK4-A: 57 tests for RegisterDecode + SyscallArgDecode + IPC-buffer merge
-  AbiRoundtripSuite.lean         AK4-G: End-to-end ABI encode/decode integration (25 assertions)
-  BadgeOverflowSuite.lean        AG9-E: 22 tests for Badge Nat↔UInt64 round-trip
-  An9HardwareBindingSuite.lean   AN9: 23 surface-anchor tests for hardware-binding closure (DEF-A-M04..M09, DEF-C-M04, DEF-R-HAL-L14..L20)
-  LivenessSuite.lean             D5: 58 surface anchor tests for liveness/WCRT theorems
-  SyscallDispatchSuite.lean      WS-RC R2.C / DEEP-TEST-03: 195 regression
-                                 assertions across 18 test functions covering
-                                 `suspendThreadInner`, `syscallDispatchInner`,
-                                 all 52 `KernelError → UInt32` discriminants,
-                                 the encoded-UInt64 high-bit-error contract
-                                 (positive identity + truncation), the
-                                 `kernelStateRef` IO.Ref bootstrap path, the
-                                 ABI-mismatch reject path, and sequential
-                                 dispatch state evolution.
+tests/                           Executable test suites + fixtures
+rust/                            ARM64 boot assembly + HAL crates
 ```
 
-Note: Files marked "Re-export hub" are thin import-only files that preserve
-backward compatibility. All existing `import` statements continue to work
-unchanged. Actual implementations live in the listed submodules.
+Each subsystem follows the **Operations / Invariant split**: `Operations.lean`
+holds the transitions, `Invariant.lean` holds the proofs. Both may be
+re-export hubs over per-concern submodules in a sibling directory of the
+same name. Re-export hubs are import-only files that preserve backward
+compatibility — existing `import` statements keep working unchanged.
 
 ## Reading large files
 
 Several files in this repo exceed 500 lines (invariant suites, audit plans,
-specs). When reading any file, always use `offset` and `limit` parameters to
-read in chunks rather than attempting the entire file at once:
+specs). When reading any file, always use `offset` and `limit` parameters
+to read in chunks rather than attempting the whole file at once:
 
 ```
 Read(file_path, offset=1,   limit=500)   # lines 1-500
 Read(file_path, offset=501, limit=500)   # lines 501-1000
 ```
 
-**Known large files** (read in ≤500-line chunks) — refreshed v0.30.11 (AN12-I):
-- `CHANGELOG.md` (~12592 lines)
-- `tests/InformationFlowSuite.lean` (~1479 lines, AN11-D AK6 named tests)
-- `tests/KernelErrorMatrixSuite.lean` (~957 lines, AN11-A new suite)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~2070 lines, AN3-C child)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~1984 lines, AN3-C child)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~1885 lines, AN3-C child)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~1859 lines, AN3-C child)
-- `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
-- `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines, WS-AN canonical plan, archived at WS-AN closure)
-- `docs/WORKSTREAM_HISTORY.md` (~4200 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~3857 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3779 lines, AN5-B SCH-M03)
-- `tests/NegativeStateSuite.lean` (~3940 lines; thin-dispatcher pattern after the clang-nesting refactor split runNegativeChecks/runWSM4ResolveEdgeCaseChecks/runWSKGChecks into 18 sub-helpers)
-- `SeLe4n/Kernel/CrossSubsystem.lean` (~3309 lines, AN12-A marker)
-- `SeLe4n/Testing/MainTraceHarness.lean` (~3159 lines)
-- `docs/gitbook/12-proof-and-invariant-map.md` (~2821 lines)
-- `SeLe4n/Model/Object/Structures.lean` (~2772 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~2745 lines)
-- `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
-- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~2369 lines)
-- `SeLe4n/Kernel/API.lean` (~2374 lines)
-- `tests/OperationChainSuite.lean` (~2208 lines)
-- `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2186 lines)
-- `SeLe4n/Model/State.lean` (~2226 lines)
-- `SeLe4n/Platform/Boot.lean` (~2115 lines)
-- `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~1785 lines)
-- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~1753 lines)
-- `SeLe4n/Model/Object/Types.lean` (~1759 lines)
-- `SeLe4n/Model/FreezeProofs.lean` (~1661 lines)
-- `SeLe4n/Kernel/Capability/Operations.lean` (~1858 lines)
-- `SeLe4n/Prelude.lean` (~1830 lines)
-- `docs/spec/SELE4N_SPEC.md` (~1904 lines)
-- `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1590 lines)
-- `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~850 lines, AN3-D child)
-- `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Wait.lean` (~688 lines, AN3-D child)
-- `SeLe4n/Kernel/Capability/Invariant/Preservation/BadgeIpcCapsAndCdtMaps.lean` (~675 lines, AN4-F.3 child)
-- `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~622 lines, AN4-F.3 child)
-- `SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean` (~459 lines, AN4-F.3 child)
-- `SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean` (~353 lines, AN4-F.3 child)
-- `SeLe4n/Kernel/Capability/Invariant/Preservation/Delete.lean` (~284 lines, AN4-F.3 child)
-- `SeLe4n/Kernel/Capability/Invariant/Preservation/Insert.lean` (~229 lines, AN4-F.3 child)
-- `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~764 lines, AN4-G.5 child)
-- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~460 lines, AN4-G.5 child)
-- `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~279 lines, AN4-G.5 child)
-- `SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean` (~204 lines, AN4-G.5 child)
-- `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
-- `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/Call.lean` (~530 lines, AN3-D child)
-- `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/ReplyRecv.lean` (~558 lines, AN3-D child)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1181 lines)
-- `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1018 lines)
-- `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1111 lines)
-- `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1032 lines)
-- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~983 lines)
-- `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1056 lines)
-- `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~883 lines)
-- `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
-- `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
+To find files that need pagination today, run:
 
-When editing large files, read the specific region around the target lines
-first (e.g., `offset=380, limit=40`) rather than the whole file. This avoids
+```bash
+./scripts/find_large_lean_files.sh
+```
+
+Get the live list from that script rather than relying on a snapshot here
+— the snapshot ages out within a single workstream cycle. When editing
+large files, read the specific region around the target lines first
+(e.g. `offset=380, limit=40`) rather than the whole file. This avoids
 context-window pressure and "file too large" errors.
 
 ## Writing and editing large files
 
-The Write tool replaces an entire file in one call. For files over ~100 lines
-this is error-prone: the tool call **times out**, content gets silently
-truncated, sections are accidentally dropped, and the context window fills up.
-**Prefer the Edit tool for all changes to existing files**, regardless of size.
+The Write tool replaces an entire file in one call. For files over ~100
+lines this is error-prone: the call **times out**, content gets silently
+truncated, sections are accidentally dropped, and the context window
+fills up. **Prefer the Edit tool for all changes to existing files**,
+regardless of size.
 
-**Hard limit — Write tool timeout prevention:**
+**Hard rules:**
 
-The Write tool will time out if the inline content is too large. To avoid this:
+- **Never pass more than 100 lines of content in a single Write call.**
+  Files at or above this threshold must be built incrementally
+  (skeleton + Edit appends) or written via Bash `cat <<'EOF'` heredoc.
+- **For existing files, never use Write at all.** Always use Edit with
+  targeted `old_string`/`new_string` pairs. Edit calls do not carry the
+  full file content and therefore do not time out.
+- **One logical change per Edit call.** Three function changes → three
+  Edit calls, not one whole-file replacement.
+- **Read before you edit.** Always Read the specific region first
+  (e.g. `offset=350, limit=50`) so the `old_string` matches exactly,
+  including indentation and whitespace.
+- **Adding large new sections.** Break inserts >80 lines into multiple
+  sequential Edit calls, each anchored to context already present in
+  the file.
+- **Creating new large files.** Either build incrementally (small Write
+  skeleton → successive Edit appends ≤80 lines each, ending with
+  `wc -l` verification) or use Bash heredoc
+  (`cat <<'EOF' > path/file.lean ... EOF`) to write the file in one
+  shot — Bash has no content-size timeout.
+- **Post-write verification.** After any large write or series of edits,
+  spot-check by reading the modified region (and the file's last few
+  lines) to confirm nothing was truncated or duplicated.
 
-- **Never pass more than 100 lines of content in a single Write call.** Files
-  at or above this threshold must be built incrementally (skeleton + Edit
-  appends) or written via Bash `cat <<'HEREDOC'` to a file.
-- **For existing files, never use Write at all.** Always use Edit with targeted
-  `old_string`/`new_string` pairs. Edit calls do not carry the full file
-  content and therefore do not time out.
-- **If a Write call times out or fails**, do not retry with the same large
-  content. Switch to the incremental approach below.
-
-**Rules for large-file changes:**
-
-1. **Never rewrite a large file with Write.** Use Edit with a precise
-   `old_string`/`new_string` pair targeting only the lines that change. This is
-   safer, faster, and avoids timeouts.
-2. **One logical change per Edit call.** If you need to change three separate
-   functions, make three Edit calls rather than one giant replacement that spans
-   the whole file.
-3. **Read before you edit.** Always Read the specific region first
-   (e.g., `offset=350, limit=50`) so the `old_string` matches exactly,
-   including indentation and whitespace.
-4. **Adding large new sections.** If you must insert more than ~80 new lines
-   into an existing file, break the insertion into multiple sequential Edit
-   calls (each ≤80 lines), anchoring each one to context already present in the
-   file.
-5. **Creating new large files.** When a new file must exceed ~100 lines, build
-   it incrementally:
-   - Write an initial skeleton (imports, structure, first section) with Write,
-     keeping the content **under 100 lines**.
-   - Use successive Edit calls to append remaining sections, using the end of
-     the previously written content as the `old_string` anchor.
-   - Each Edit append should add no more than ~80 lines at a time.
-   - Verify the final line count with `wc -l` via Bash.
-   - **Alternative**: use Bash with a heredoc to write the full file in one
-     shot (`cat <<'EOF' > path/to/file.lean`). Bash does not have the same
-     content-size timeout as the Write tool.
-6. **Post-write verification.** After any large write or series of edits, spot-
-   check the result by reading the modified region (and the file's last few
-   lines) to confirm nothing was truncated or duplicated.
-
-**Example — appending a new theorem block to an invariant file:**
+**Example — appending a theorem block to an invariant file:**
 
 ```
 # Step 1: Read the anchor region at the end of the file
@@ -430,125 +190,87 @@ Edit(file_path="SeLe4n/Kernel/Capability/Invariant.lean",
 Bash("wc -l SeLe4n/Kernel/Capability/Invariant.lean")
 ```
 
-**Example — creating a new 300-line file without timing out:**
-
-```
-# Step 1: Write skeleton (under 100 lines)
-Write("SeLe4n/Kernel/NewModule/Operations.lean", "<imports + first ~80 lines>")
-
-# Step 2: Append next section via Edit
-Edit(file_path="SeLe4n/Kernel/NewModule/Operations.lean",
-     old_string="<last 2-3 lines from step 1>",
-     new_string="<those same lines>\n<next ~80 lines>")
-
-# Step 3: Repeat Edit appends until complete
-
-# Step 4: Verify
-Bash("wc -l SeLe4n/Kernel/NewModule/Operations.lean")
-```
-
-### Known build-fragile pattern: deep `do`-chain nesting in test suites
+### Build-fragile pattern: deep `do`-chain nesting in test suites
 
 Lean test suites with hundreds of sequential `expectErr` / `expectOkSt`
 calls inside a single `do`-block compile to deeply nested C `if`-trees
-that can exceed clang's default `-fbracket-depth=256` limit.  Symptom:
-`lake build <suite>:exe` fails with
-`fatal error: bracket nesting level exceeded maximum of 256`, even
-though `lake env lean --run <suite>.lean` (interpretation path) works
-fine.
+that can exceed clang's default `-fbracket-depth=256`. Symptom:
+`lake build <suite>:exe` fails with `fatal error: bracket nesting level
+exceeded maximum of 256`, even though `lake env lean --run <suite>.lean`
+(the interpretation path) works fine.
 
-**Mitigation**: keep test helper functions ≤ ~150 Lean lines and use
-the thin-dispatcher pattern.  `tests/NegativeStateSuite.lean`'s
+**Mitigation**: keep test helper functions ≤ ~150 Lean lines and use the
+thin-dispatcher pattern. `tests/NegativeStateSuite.lean`'s
 `runNegativeChecks` is the canonical example: a 13-line dispatcher
-calling 8 per-area sub-helpers.  C-scope nesting depth resets at each
+calling 8 per-area sub-helpers. C-scope nesting depth resets at each
 function boundary in the codegen, so each sub-helper stays well below
-the limit even if the original monolith would have blown past it.
-
-When a test author finds themselves writing a 200+ line `do`-block,
-factor it into per-area `private def`s up front rather than waiting
-for the build to break.  Empirical depth probe (read-only):
-
-```bash
-awk 'BEGIN{d=0;m=0;ml=0} {for(i=1;i<=length($0);i++){c=substr($0,i,1); \
-       if(c=="{")d++; else if(c=="}")d--; if(d>m){m=d; ml=NR}}} \
-     END{print "max_depth="m" at_line="ml}' \
-  .lake/build/ir/tests/<Suite>.c
-```
+the limit. Factor large `do`-blocks into per-area `private def`s up
+front rather than waiting for the build to break.
 
 ## Handling large search and command output
 
-Grep and other search tools can return oversized results in this codebase.
-Always constrain output to avoid truncation and context-window pressure:
+Search and command output can saturate context if unbounded. Constrain
+upfront:
 
-- **Grep**: Use `head_limit` to cap results (e.g., `head_limit=30`). If more
-  results exist, paginate with `offset` (e.g., `offset=30, head_limit=30` for
-  the next batch). Prefer `output_mode: "files_with_matches"` first to identify
-  relevant files, then switch to `output_mode: "content"` on specific files.
-- **Glob**: Use `path` to narrow the search directory instead of searching the
-  entire repo. If results are numerous, combine with Grep on specific matches.
-- **Bash commands** (`lake build`, test scripts, etc.): Pipe through `head` or
-  `tail` when output may be large (e.g., `lake build 2>&1 | tail -80`). For
-  very large output, redirect to a temp file and read in chunks:
-  ```bash
-  lake build 2>&1 > /tmp/build.log
-  ```
-  Then use `Read("/tmp/build.log", offset=1, limit=500)` to page through it.
+- **Grep**: Use `head_limit` (e.g. `head_limit=30`); paginate with
+  `offset`. Prefer `output_mode: "files_with_matches"` first to identify
+  relevant files, then switch to `output_mode: "content"` on specific
+  files.
+- **Glob**: Narrow with `path` instead of searching the whole repo.
+- **Bash**: Pipe through `head` or `tail`
+  (e.g. `lake build 2>&1 | tail -80`). For very large output, redirect
+  to a temp file: `lake build 2>&1 > /tmp/build.log` then
+  `Read("/tmp/build.log", offset=1, limit=500)`.
 
-**Rule of thumb**: if a command or search might return more than ~100 lines,
-limit it upfront. Paginate through results rather than requesting everything
-at once.
+**Rule of thumb**: if a command or search might return more than ~100
+lines, limit it upfront. Paginate rather than requesting everything at
+once.
 
 ## Background agent file-change protection
 
-Background agents (launched via the Task tool with `run_in_background: true`)
-run concurrently and may finish after the foreground agent has already modified
-the same files. When this happens the background agent's stale writes silently
-overwrite the foreground agent's progress. **You must prevent this.**
+Background agents (launched via the Agent tool with
+`run_in_background: true`) run concurrently and may finish after the
+foreground agent has already modified the same files. Their stale writes
+will silently overwrite the foreground agent's progress. **You must
+prevent this.**
 
 **Rules:**
 
-1. **Never delegate file writes to a background agent for files you may also
-   edit.** Before launching a background agent, identify every file it might
-   create or modify. If there is any chance the foreground agent (you) will
-   touch the same file while the background agent runs, do **not** run that
-   agent in the background — run it in the foreground instead, or restructure
-   the work so there is no file overlap.
-2. **Partition files strictly.** When parallel work is genuinely needed, assign
-   each agent a disjoint set of files. Document the partition in your task
-   prompt to the background agent (e.g., "You own `Foo.lean` and `Bar.lean`
-   only — do not modify any other file"). The foreground agent must not touch
-   those files until the background agent completes.
-3. **Use background agents only for read-only or independent-file tasks.** Safe
-   uses include: running builds/tests, searching the codebase, reading files
-   for research, or writing to files that the foreground agent will never edit
-   during this session. Unsafe uses include: editing shared source files,
-   modifying configuration files, or any task where the output files overlap
-   with foreground work.
-4. **Check background results before acting on shared state.** When a background
-   agent finishes, read its output and verify whether it touched any files. If
-   it wrote to a file you have since modified, discard the background agent's
-   version and redo that work on top of your current file state.
-5. **When in doubt, run in foreground.** The performance benefit of background
-   execution is never worth the risk of silently lost work. Prefer sequential
-   correctness over parallel speed.
+1. **Never delegate file writes to a background agent for files you may
+   also edit.** If there is any chance the foreground agent will touch
+   the same file, run the agent in the foreground or restructure the
+   work so there is no file overlap.
+2. **Partition files strictly** when parallel work is genuinely needed.
+   Spell the partition out in the agent's prompt (e.g. "You own
+   `Foo.lean` and `Bar.lean` only — do not modify any other file"), and
+   do not touch those files yourself until the agent completes.
+3. **Use background agents only for read-only or independent-file
+   tasks**: running builds/tests, searching the codebase, or writing
+   files the foreground will never touch. Unsafe uses include editing
+   shared source files or modifying configuration.
+4. **Check background results before acting on shared state.** If the
+   agent wrote to a file you have since modified, discard its version
+   and redo that work on top of your current file state.
+5. **When in doubt, run in foreground.** The performance benefit is
+   never worth silently lost work.
 
-**Example — safe background usage:**
+**Safe pattern:**
 
 ```
 # Background agent runs tests (read-only, no file writes)
-Task(subagent_type="Bash", run_in_background=true,
-     prompt="Run ./scripts/test_smoke.sh and report results")
+Agent(subagent_type="general-purpose", run_in_background=true,
+      prompt="Run ./scripts/test_smoke.sh and report results")
 
 # Meanwhile, foreground edits Operations.lean — no conflict
 Edit("SeLe4n/Kernel/Scheduler/Operations.lean", ...)
 ```
 
-**Example — unsafe pattern to avoid:**
+**Unsafe pattern to avoid:**
 
 ```
 # WRONG: background agent will edit Invariant.lean
-Task(subagent_type="general-purpose", run_in_background=true,
-     prompt="Add theorem X to Invariant.lean")
+Agent(subagent_type="general-purpose", run_in_background=true,
+      prompt="Add theorem X to Invariant.lean")
 
 # Foreground also edits Invariant.lean — background will overwrite!
 Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
@@ -556,45 +278,47 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
 
 ## Key conventions
 
-- **Invariant/Operations split**: each kernel subsystem has `Operations.lean`
-  (transitions) and `Invariant.lean` (proofs). Keep this separation.
-- **No axiom/sorry**: forbidden in production proof surface. Tracked exceptions
-  must carry a `TPI-D*` annotation.
-- **Deterministic semantics**: all transitions return explicit success/failure.
-  Never introduce non-deterministic branches.
+- **Invariant/Operations split**: each kernel subsystem has
+  `Operations.lean` (transitions) and `Invariant.lean` (proofs). Keep
+  this separation.
+- **No axiom/sorry**: forbidden in production proof surface. Tracked
+  exceptions must carry a `TPI-D*` annotation.
+- **Deterministic semantics**: all transitions return explicit
+  success/failure. Never introduce non-deterministic branches.
 - **Fixture-backed evidence**: `Main.lean` output must match
-  `tests/fixtures/main_trace_smoke.expected`. Update fixture only with rationale.
-- **Typed identifiers**: `ThreadId`, `ObjId`, `CPtr`, `Slot`, `DomainId`, etc.
-  are wrapper structures, not `Nat` aliases. Use explicit `.toNat`/`.ofNat`.
-- **Internal-first naming**: every identifier in the codebase — theorems,
-  functions, definitions, structures, fields, test runners, file names, and
-  directory names — must describe the semantics of what it is (state update
-  shape, preserved invariant, transition path, test subject). Workstream IDs,
-  audit IDs, phase codes, and sub-task numbers (`WS-*`, `wsH*`, `AN3-*`, `AK7-*`,
-  `ak9ce_01`, `an3b_02`, `I-H01`, etc.) **must not** appear in any identifier
-  or file name. Example: rename a test from `an3b_02_projection_typing` to
-  `ipc_invariant_full_projection_signatures`; rename a theorem from
-  `ak7_cdt_hypothesis_discharge_index` to `cdt_hypothesis_discharge_index`.
-  Rationale: workstream IDs are commit-time labels and age out as soon as a
-  workstream closes — encoding them in identifiers creates documentation debt
-  (every rename on workstream closure) and hides what the code actually
-  means from anyone reading it outside the audit's temporal window.
-  Legitimate places to reference a workstream ID: docstrings, commit messages,
-  CHANGELOG entries, and `CLAUDE.md` / `docs/WORKSTREAM_HISTORY.md` prose.
-  Historical identifiers that already encode workstream IDs (`ak8a_*`,
-  `an2f3_*`, etc.) stay as-is until touched by a workstream that can rename
-  them in the same commit; new code must comply with this rule from day one.
+  `tests/fixtures/main_trace_smoke.expected`. Update fixture only with
+  rationale.
+- **Typed identifiers**: `ThreadId`, `ObjId`, `CPtr`, `Slot`,
+  `DomainId`, etc. are wrapper structures, not `Nat` aliases. Use
+  explicit `.toNat`/`.ofNat`.
+- **Internal-first naming**: every identifier — theorems, functions,
+  definitions, structures, fields, test runners, file names, directory
+  names — must describe the semantics of what it is (state update
+  shape, preserved invariant, transition path, test subject).
+  Workstream IDs, audit IDs, phase codes, and sub-task numbers
+  (`WS-*`, `AN3-*`, `AK7-*`, `ak9ce_01`, `I-H01`, etc.) **must not**
+  appear in any identifier or file name. Example: rename a test from
+  `an3b_02_projection_typing` to
+  `ipc_invariant_full_projection_signatures`. Workstream IDs are
+  commit-time labels and age out as soon as a workstream closes —
+  encoding them in identifiers creates documentation debt and hides
+  what the code actually means. Legitimate places to reference a
+  workstream ID: docstrings, commit messages, CHANGELOG entries, and
+  `CLAUDE.md` / `docs/WORKSTREAM_HISTORY.md` prose. Historical
+  identifiers that already encode workstream IDs stay as-is until
+  touched by a workstream that can rename them in the same commit;
+  new code must comply from day one.
 
-## Implement-the-improvement rule (audit and review remediation)
+## Implement-the-improvement rule
 
 When an audit, code review, or any reading of the codebase surfaces a
-discrepancy between the **code** on one side and the **documentation,
-docstring, comment, type signature, or design intent** that describes it
-on the other side, and the description represents an *improvement* over
-the actual code (e.g., a more complete behaviour, a more symmetric API,
-a stronger invariant, a routed dispatch where the code is a stub, a
-function that "should" exist but does not), the remediation is **always**
-to implement the improvement so the description becomes true.
+discrepancy between the **code** and the **documentation, docstring,
+comment, type signature, or design intent** that describes it, and the
+description represents an *improvement* over the actual code (a more
+complete behaviour, a more symmetric API, a stronger invariant, a
+routed dispatch where the code is a stub, a function that "should"
+exist but does not), the remediation is **always** to implement the
+improvement so the description becomes true.
 
 It is **forbidden** to weaken, dilute, qualify, or rewrite the
 documentation to match inferior code. Documenting incorrect or
@@ -603,321 +327,139 @@ outcome on this project.
 
 Concretely:
 
-- A comment that says "this resolves to function `X`" while `X` does
-  not exist → **implement `X`**, never "update the comment to remove
-  the reference."
-- A docstring describing a complete specification while the
-  implementation is truncated → **complete the implementation**, never
-  "document that the spec section is intentionally truncated."
+- A comment referencing a function `X` that does not exist →
+  **implement `X`**, never "remove the reference."
+- A docstring describing a complete spec while the implementation is
+  truncated → **complete the implementation**, never "document the
+  truncation."
 - A stub returning `NotImplemented` while the design says it should
-  route to a verified entry point → **wire up the routing**, never
-  "disclose the stub in release notes."
-- Two API call paths handling the same condition asymmetrically while
-  the design calls for symmetry → **make them symmetric**, never
-  "document the asymmetry."
-- A structure carrying an implicit invariant maintained only by
-  convention → **enforce the invariant structurally** (record field,
-  refinement type, smart-constructor proof obligation, opaque type
-  whose constructors discharge the invariant), never "add an inline
-  comment about the convention."
-- A function with two distinct semantic arms compressed into one
-  identifier → **split into two named functions**, never "document
-  both arms in the docstring."
-- A predicate documented as "phantom-like; correctness depends on no
-  caller bypassing the cleanup hook" → **make bypass structurally
-  impossible** (opaque type whose only constructor invokes cleanup),
-  never "make the warning louder."
+  route to a verified entry point → **wire up the routing.**
+- Two API call paths handling the same condition asymmetrically →
+  **make them symmetric**, never "document the asymmetry."
+- An implicit invariant maintained only by convention → **enforce it
+  structurally** (record field, refinement type, smart-constructor
+  obligation, opaque type whose constructors discharge the invariant),
+  never "add an inline comment about the convention."
 - A computed-and-proven data structure that the surrounding code does
   not consume → **wire it into the consumer** so the proof carries
-  through to runtime, never "remove the unwired data structure."
-- Deferred work items buried in source comments → **fix them** if the
+  through to runtime, never "remove the unwired structure."
+- Deferred items buried in source comments → **fix them** if the
   current scope permits; otherwise lift them into the project debt
-  register (`docs/audits/`, `docs/WORKSTREAM_HISTORY.md`) so they are
-  tracked to closure. Never leave them as in-source TODOs that age
-  out with the surrounding workstream.
-- A "first hardware target" or similar capability claim while the
-  hardware path is non-functional → **make the hardware path
-  functional**, never "qualify the claim with a stub-status caveat."
+  register (`docs/audits/`, `docs/WORKSTREAM_HISTORY.md`). Never leave
+  in-source TODOs that age out with the surrounding workstream.
+- A "first hardware target" or similar capability claim while the path
+  is non-functional → **make the path functional**, never qualify the
+  claim with a stub-status caveat.
 
 The single legitimate exception is when the documentation describes a
-**worse** state than the code (e.g., a stale `STATUS: staged` marker on
-a file that has since been wired into production, or a deprecation
-note on a function the project has decided to keep). In that direction,
-the documentation is the inferior artefact and updating it to match
-the better code is correct.
+**worse** state than the code (e.g. a stale `STATUS: staged` marker on
+a file that has since been wired into production, or a deprecation note
+on a function the project has decided to keep). In that direction the
+documentation is the inferior artefact and updating it to match the
+better code is correct.
 
 **Audit reports and remediation plans must apply this rule.** Findings
 of the form "documentation describes feature X; code lacks feature X;
 recommendation: weaken the documentation" are not acceptable. The
 recommendation must instead be "implement feature X" — and where the
 implementation is non-trivial, the audit must split the work into the
-proper sequence of PRs (each one a coherent slice per the PR
-checklist) rather than treating documentation surgery as a substitute
-for the code change.
+proper sequence of PRs (each one a coherent slice per the PR checklist)
+rather than treating documentation surgery as a substitute for the
+code change.
 
 When the optimal implementation is genuinely out of scope for the
-current cut (e.g., it requires architectural work that the release
-window cannot accommodate), the correct outcome is to **defer the
-release**, not to ship a documentation-only patch. If a release date
-forces the choice, the deferral must be recorded as a tracked debt
-item with an explicit closure target, not absorbed silently into a
-weaker public claim.
+current cut, the correct outcome is to **defer the release**, not to
+ship a documentation-only patch. Forced deferrals must be recorded as
+tracked debt with an explicit closure target, not absorbed silently
+into a weaker public claim.
 
 ## Documentation rules
 
-When changing behavior, theorems, or workstream status, update in the same PR:
-1. `README.md` — metrics sync from `docs/codebase_map.json` (`readme_sync` key)
+When changing behavior, theorems, or workstream status, update in the
+same PR:
+
+1. `README.md` — metrics sync from `docs/codebase_map.json`
+   (`readme_sync` key)
 2. `docs/spec/SELE4N_SPEC.md`
 3. `docs/DEVELOPMENT.md`
-4. Affected GitBook chapter(s) — canonical root docs take priority over GitBook
+4. Affected GitBook chapter(s) — canonical root docs take priority
+   over GitBook
 5. `docs/CLAIM_EVIDENCE_INDEX.md` if claims change
 6. `docs/WORKSTREAM_HISTORY.md` if workstream status changes
 7. Regenerate `docs/codebase_map.json` if Lean sources changed
 
-Canonical ownership: root `docs/` files own policy/spec text. GitBook chapters
-under `docs/gitbook/` are mirrors that summarize and link to canonical sources.
-`docs/WORKSTREAM_HISTORY.md` is the single canonical source for workstream
-planning, status, and history.
+Canonical ownership: root `docs/` files own policy/spec text. GitBook
+chapters under `docs/gitbook/` are mirrors that summarize and link to
+canonical sources. `docs/WORKSTREAM_HISTORY.md` is the single canonical
+source for workstream planning, status, and history.
 
 ## Third-party attribution
 
-seLe4n is GPLv3+ licensed (see `LICENSE`). The Rust workspace pulls a small
-set of **build-time only** crates (`cc`, `find-msvc-tools`, `shlex`) to
-assemble ARM64 boot assembly; no third-party code is linked into the
-runtime kernel binary. Their upstream MIT copyright and permission notices
-are reproduced verbatim in `THIRD_PARTY_LICENSES.md` at repo root. Rules:
+seLe4n is GPLv3+ licensed (see `LICENSE`). The Rust workspace pulls a
+small set of **build-time only** crates (`cc`, `find-msvc-tools`,
+`shlex`) to assemble ARM64 boot assembly; no third-party code is linked
+into the runtime kernel binary. Their upstream MIT copyright and
+permission notices are reproduced verbatim in
+`THIRD_PARTY_LICENSES.md` at repo root. Rules:
 
-1. If you add a runtime dependency (`[dependencies]` of any crate under
-   `rust/`), update `THIRD_PARTY_LICENSES.md` in the same PR with the
-   verbatim upstream MIT/Apache copyright lines and add the path to
-   `scripts/website_link_manifest.txt` if it's not already there.
+1. If you add a runtime dependency (`[dependencies]` of any crate
+   under `rust/`), update `THIRD_PARTY_LICENSES.md` in the same PR
+   with the verbatim upstream MIT/Apache copyright lines and add the
+   path to `scripts/website_link_manifest.txt` if it's not already
+   there.
 2. If you bump an existing external crate, re-check the upstream
-   `LICENSE-MIT` and upstream Cargo.toml for authorship/copyright changes
-   and sync `THIRD_PARTY_LICENSES.md` accordingly. Also re-check for a
+   `LICENSE-MIT` and Cargo.toml for authorship/copyright changes and
+   sync `THIRD_PARTY_LICENSES.md` accordingly. Also re-check for a
    new upstream `NOTICE` file (Apache-2.0 § 4(d) propagation).
-3. Prefer `core::*` and hand-written minimal code over pulling in a crate.
-   A microkernel's trusted computing base must stay small.
+3. Prefer `core::*` and hand-written minimal code over pulling in a
+   crate. A microkernel's trusted computing base must stay small.
 
 ## Website link protection
 
-The project website ([sele4n.org](https://github.com/hatter6822/hatter6822.github.io))
-links to source files, documentation, scripts, assets, and directories in this
-repository.  Renaming or deleting any of these paths will produce 404 errors on
-the website.
+The project website
+([sele4n.org](https://github.com/hatter6822/hatter6822.github.io))
+links to source files, documentation, scripts, assets, and directories
+in this repository. Renaming or deleting any of these paths produces
+404 errors on the website.
 
-**Protected paths** are listed in `scripts/website_link_manifest.txt`.  The
+Protected paths are listed in `scripts/website_link_manifest.txt`. The
 Tier 0 hygiene check (`scripts/check_website_links.sh`, called from
-`test_tier0_hygiene.sh`) verifies that every listed path still exists.  This
-runs on every PR and push to main via CI.
+`test_tier0_hygiene.sh`) verifies that every listed path still exists,
+on every PR and push to main.
 
-**If you need to rename or remove a protected path:**
-1. Update the website (`hatter6822.github.io`) to use the new path first.
+To rename or remove a protected path:
+
+1. Update the website (`hatter6822.github.io`) to use the new path
+   first.
 2. Then update `scripts/website_link_manifest.txt` to match.
-3. CI will pass only when the manifest and the repo tree are consistent.
+3. CI will pass only when the manifest and the repo tree are
+   consistent.
 
 ## Ignoring dev_history
 
-The `docs/dev_history/` directory contains milestone closeouts, prior audit reports
-(v0.8.0–v0.9.32), completed workstream plans, and legacy GitBook chapters
-retained only for historical traceability. **Do not read or reference files in
-`docs/dev_history/` unless explicitly instructed.** All active documentation lives
-under `docs/` and `docs/gitbook/`.
+The `docs/dev_history/` directory contains milestone closeouts, prior
+audit reports, completed workstream plans, and legacy GitBook chapters
+retained only for historical traceability. **Do not read or reference
+files in `docs/dev_history/` unless explicitly instructed.** All active
+documentation lives under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **WS-RC remediation workstream IN FLIGHT (v0.30.11 → v0.31.0 → v1.0.0,
-  branch `claude/audit-workstream-planning-XsmKS`)**:
-  Remediates the v0.30.11 audit cycle (comprehensive + deep verification)
-  via 15 phases (R0..R14). Plan:
-  [`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md).
-  Errata recording the audit-text corrections discovered during planning:
-  [`docs/audits/AUDIT_v0.30.11_ERRATA.md`](docs/audits/AUDIT_v0.30.11_ERRATA.md).
-  Release path: `v0.31.0` "verified specification release" (R0+R1+R8..R12)
-  → `v1.0.0` "bootable verified microkernel" (+ R2..R6). The plan applies
-  the implement-the-improvement rule uniformly: even false-positive
-  audit findings receive structural enforcement gates (R12.B for
-  production/staged partition, R12.C for ARM-ARM citations, R12.D for
-  `_fields` consumer presence; R4.D for cspaceMutate witness theorem).
-  Plan-author audit at WS-RC R0 prep landed: SPDX header on
-  `SeLe4n.lean` (R10.1), audit errata file (R0.2), staged-module
-  allowlist + partition gate (R12.B.1/2), orphan-fields gate (R12.D.1),
-  contract-marker text correction (R12.B side effect — partition
-  gate caught 2 stale "STATUS: staged" markers on production-wired
-  contract files). **R1 (DEEP-IPC-03) LANDED on branch
-  `claude/audit-ipc-symmetry-yhdIu`**: closes the call-path NI
-  asymmetry by aligning `endpointCallWithCaps` with the AK1-I
-  fail-closed shape — all three IPC capability-transfer paths
-  (`endpointSendDualWithCaps`, `endpointReceiveDualWithCaps`,
-  `endpointCallWithCaps` in
-  `SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean`) now return
-  `.error .invalidCapability` on the missing-CSpace-root
-  structural fault. Proof discharge updated in
-  `SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/ReplyRecv.lean`;
-  test coverage in `tests/InformationFlowSuite.lean` +
-  `tests/NegativeStateSuite.lean::runR1IpcCallPathSymmetryChecks`.
-  **R2 (DEEP-FFI-01/02/03 + DEEP-TEST-03) LANDED on branch
-  `claude/review-hardware-syscall-phase-FfbvV`**: closes the
-  hardware-syscall-dispatch gap by replacing the
-  `suspend_thread_inner` and `syscall_dispatch_inner` `@[export]`
-  stubs (previously returning `KernelError::NotImplemented = 17`)
-  with substantive bodies that route through
-  `Kernel.Lifecycle.Suspend.suspendThread` and the verified
-  `syscallEntryChecked` entry point.  R2.A: kernel-state IO.Ref
-  threading (`kernelStateRef`, `kernelLabelingContextRef`,
-  `initialiseKernelState`, `getKernelState`, `updateKernelState`,
-  `bootAndInitialiseFromPlatform` boot wrapper).  R2.B: pure typed-ABI
-  entry point `syscallDispatchFromAbi` (writes FFI register values
-  into the current TCB, invokes `syscallEntryChecked`, encodes the
-  result via the bit-63 error-flag UInt64 contract); replaced bodies
-  for the two `@[export]` declarations.  Adds `KernelError.toUInt32`
-  (mirroring `rust/sele4n-types/src/error.rs` discriminants 0..51),
-  `encodeError` / `encodeOk` UInt64 encoding helpers, an ABI
-  consistency gate that rejects with `.invalidSyscallArgument` if
-  `msgInfo ≠ x1` (both must equal `frame.x1()` per the Rust caller's
-  `SyscallArgs::from_trap_frame`) without spilling registers or
-  mutating kernel state, and nine correctness theorems
-  (`encodeError_high_bit_set`,
-  `encodeOk_high_bit_clear`,
-  `syscallDispatchFromAbi_total`,
-  `syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok`,
-  `syscallDispatchFromAbi_error_of_syscallEntryChecked_error`,
-  `syscallDispatchFromAbi_illegalState_when_no_current`,
-  `syscallDispatchFromAbi_abiMismatch_rejected`,
-  `writeFfiRegistersToTcb_id_when_not_tcb`,
-  `readReturnValue_zero_when_not_tcb`).  Aligns the Rust comments at
-  `rust/sele4n-hal/src/svc_dispatch.rs:237-244,305-312` and
-  `rust/sele4n-hal/src/ffi.rs:247-254` with the actual
-  `syscall_dispatch_inner` / `suspend_thread_inner` symbol names.
-  R2.C: makes the FFI docstring's gating claim honest (link-time, not
-  preprocessor); adds the dedicated `tests/SyscallDispatchSuite.lean`
-  regression suite (195 assertions across 18 test functions covering
-  all 52 `KernelError` discriminants pinned 1:1 against the Rust enum,
-  `encodeError` low-32-bits-match-discriminant proofs, `encodeOk`
-  identity-when-bit-63-clear and bit-63-truncation properties, the
-  IO.Ref bootstrap path, `suspendThreadInner` integration,
-  `syscallDispatchInner` integration, the ABI-mismatch reject path,
-  and sequential dispatch state evolution) wired into
-  `scripts/test_tier2_negative.sh` and
-  `scripts/test_tier3_invariant_surface.sh`.  Audit follow-up
-  refactored the Rust `DispatchError` enum to wrap the raw kernel-
-  error discriminant via `Kernel(u32)` instead of coarsening to
-  `NotImplemented`, so user-mode now sees the exact `KernelError`
-  the Lean kernel emitted (pre-fix: 49 of 52 variants were silently
-  collapsed to `17 = NotImplemented`).
-  **R3 (DEEP-BOOT-01) LANDED on branch
-  `claude/vspace-threading-boot-G0GAp`**: closes the boot-VSpace
-  threading gap by admitting boot-safe VSpaceRoots into the
-  `bootSafeObject` / `bootSafeObjectCheck` predicates and threading
-  the canonical `rpi5BootVSpaceRoot` through `bootFromPlatformChecked`
-  via the new `installBootVSpaceRoot` builder operation.  Pre-R3 the
-  `.vspaceRoot _ => false` arm rendered the proven-W^X-compliant
-  data structure inert; per the implement-the-improvement rule, the
-  verified structure is the better state and the boot path now
-  consumes it.  R3.0a-b: `bootSafeVSpaceRootCheck` (Bool mirror)
-  and `bootSafeVSpaceRootCheck_iff` equivalence in
-  `Platform/RPi5/VSpaceBoot.lean`; `installBootVSpaceRoot` builder
-  in `Platform/Boot.lean` composing `Builder.createObject` with
-  `asidTable` insertion so the boot VSpace is resolvable by ASID;
-  `rpi5BootVSpaceRoot_mappings_invExt` discharge witness.  R3.1:
-  rewrote `.vspaceRoot` arm of `bootSafeObjectCheck` (Bool) and
-  `bootSafeObject` (Prop) to admit boot-safe VSpaceRoots.  R3.2:
-  added witness theorems `bootSafeObjectCheck_admits_rpi5BootVSpaceRoot`
-  and `bootSafeObject_admits_rpi5BootVSpaceRoot`.  R3.3: added
-  `bootVSpaceRoot : Option BootVSpaceRootEntry := none` to
-  `PlatformConfig`, two runtime gates
-  (`bootVSpaceRootObjIdDistinct`, `bootVSpaceRootSafe`), and
-  threaded through `bootFromPlatformChecked`.  R3.4: wired
-  `rpi5BootVSpaceRootEntry` into the RPi5 `PlatformBinding`
-  instance via the new typeclass `bootVSpaceRoot` field.  R3.5:
-  defined `simBootVSpaceRoot` (single-mapping boot-safe root) and
-  wired into both `simPlatformBinding` and
-  `simRestrictivePlatformBinding` for parity.  R3.6:
-  `bootFromPlatformChecked_eq_bootFromPlatform` gains a
-  `bootVSpaceRoot = none` precondition; sibling theorem
-  `bootFromPlatformChecked_admits_bootVSpace` covers the
-  `some entry` case.  R3.7: added 8 TPH-015 tests in
-  `tests/TwoPhaseArchSuite.lean` exercising the end-to-end
-  threading.  R3.8: extended `tests/An9HardwareBindingSuite.lean`
-  with 5 new boot-VSpace assertions.  Removed
-  `Platform.RPi5.VSpaceBoot` and `Architecture.AsidManager` from
-  `scripts/staged_module_allowlist.txt` — they enter production
-  via Boot.lean's import.  Pre-R3 theorem
-  `bootFromPlatform_proofLayerInvariantBundle_general` gains a
-  `hNoVSpaceInInitial` precondition; boot VSpaceRoots are now
-  exclusively introduced via the gated `bootFromPlatformChecked`
-  path.
-  **WS-RC R3 audit pass** (post-LANDING audit):
-  closed two HIGH security/correctness issues (#2 VSpaceRoots in
-  `initialObjects` bypass `asidTable` update — fixed by adding
-  `noVSpaceRootsInInitialObjects` gate; #3 boot VSpace ObjId was
-  the reserved `ObjId.sentinel` (`⟨0⟩`) — changed to
-  `ObjId.ofNat 1` and added defense-in-depth
-  `bootVSpaceRootObjIdNonSentinel` gate).  Plus four LOW
-  documentation accuracy fixes (#1 sim binding docstring, #4 P-L9
-  resolved status in MmioAdapter, #5 RPi5 Contract Status section,
-  #7 speculative reference to unimplemented sibling theorem).
-  Three new regression tests (TPH-015i/j/k) cover the new gates.
-  All theorem proofs that traverse `bootFromPlatformChecked`'s
-  gates updated for the two new splits
-  (`bootFromPlatformChecked_eq_bootFromPlatform`,
-  `bootFromPlatformChecked_admits_bootVSpace`,
-  `bootFromPlatformChecked_ok_implies_*`,
-  `bootFromPlatformChecked_ok_interruptsEnabled`).
-  **WS-RC R3 third-audit pass** (post-LANDING audit, v0.30.11
-  hardening):  closed a defense-in-depth gap in
-  `bootSafeVSpaceRootCheck` that did not verify the canonical-form
-  bound on virtual addresses (`vaddr.val < 2^48`).  Pre-fix the
-  predicate verified four conjuncts (asid bounded, W^X compliant,
-  non-empty mappings, paddr < 2^44); a third-party
-  `BootVSpaceRootEntry` constructed with a vaddr in the ARMv8-A
-  reserved gap `[2^48, 2^64 - 2^48)` would pass the gate yet
-  translation-fault on hardware before the kernel could intercept
-  the misconfiguration.  Per implement-the-improvement, added a
-  fifth `VSpaceRootVaddrCanonical` predicate to the
-  `VSpaceRootWellFormed` conjunction and threaded it through both
-  Bool (`bootSafeVSpaceRootCheck`) and Prop (`bootSafeVSpaceRoot`)
-  forms, the equivalence theorem (`bootSafeVSpaceRootCheck_iff`),
-  the canonical RPi5 boot root proof
-  (`rpi5BootVSpaceRoot_vaddrCanonical` discharge witness and the
-  five-conjunct `rpi5BootVSpaceRoot_wellFormed` refine), the
-  simulation boot root proof (`simBootVSpaceRoot_bootSafe` — fifth
-  `decide`), and the `Platform.Boot.bootSafeObjectCheck` `.vspaceRoot`
-  arm docstring.  New regression test
-  `TPH-015l_nonCanonicalVAddrRejected` exercises the gate with a
-  malformed entry at `vaddr = 2^48` (the first non-canonical
-  address); the existing `TPH-015a..k` tests continue to pass
-  because canonical vaddrs (rpi5BootVSpaceRoot via insertIdentity
-  with paddr<2^44, simBootVSpaceRoot at vaddr=0x1000) trivially
-  satisfy the new conjunct via `decide`.
+Per-workstream narrative — branch names, phase status, audit-pass
+details — lives in canonical sources, not here. Encoding it in this
+file creates documentation debt that ages out within a single
+workstream cycle.
 
-- **WS-AN portfolio COMPLETE (v0.30.11, branch `claude/review-codebase-phase-an12-JBPQN`)**:
-  Phase AN12 — Documentation, themes, closure — landed the cross-cutting
-  Theme 4.1 closure-form discharge index
-  (`docs/dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md`, archived at
-  WS-AN closure; marker theorem
-  `closureForm_discharge_index_documented` in `SeLe4n/Kernel/CrossSubsystem.lean`),
-  Theme 4.4 SMP-latent assumption inventory
-  (`SeLe4n/Kernel/Concurrency/Assumptions.lean` with `smpLatentInventory`
-  aggregator + `_count : length = 8` size witness, wired into
-  `Platform.Staged`; mirrored at `docs/spec/SELE4N_SPEC.md` §6.8),
-  the DOC-M01..M08 batch (SPDX-License-Identifier headers added to all
-  247 `.lean`/`.rs` source files; `CONTRIBUTING.md` rewritten),
-  the DOC LOW batch (`docs/audits/README.md` documenting the
-  "one active audit at a time" lifecycle convention; `docs/CLAUDE_HISTORY.md`
-  archive convention established), in-place RESOLVED annotations on
-  14 of 15 absorbed `AUDIT_v0.29.0_DEFERRED.md` rows (now archived under
-  `docs/dev_history/audits/`; DEF-F-L9 retained
-  as a post-1.0 readability/maintainability refactor with no correctness
-  impact), and the closure summary in `docs/WORKSTREAM_HISTORY.md`.
-  Version bumped 0.30.10 → 0.30.11. Items deferred past v1.0.0 with
-  correctness impact: NONE.
+Read the canonical sources before assuming what phase the project is
+in:
 
-- **Older WS-AN entries (AN0..AN11) and pre-WS-AN portfolios (WS-AK
-  through WS-AA)** — archived to
-  [`docs/CLAUDE_HISTORY.md`](docs/CLAUDE_HISTORY.md). Canonical
-  per-phase record:
-  [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md) +
-  [`CHANGELOG.md`](CHANGELOG.md).
+- **Active plan and per-phase status**: `docs/WORKSTREAM_HISTORY.md`
+- **Active audit plan**: `docs/audits/AUDIT_v*.*_WORKSTREAM_PLAN.md`
+  (the highest-version unresolved file; `docs/audits/README.md`
+  documents the "one active audit at a time" lifecycle)
+- **Per-version closeout narrative**: `CHANGELOG.md`
+- **Older WS-AN portfolio details and pre-WS-AN history**:
+  `docs/CLAUDE_HISTORY.md`
 
 ## PR checklist
 
@@ -925,63 +467,47 @@ under `docs/` and `docs/gitbook/`.
 - [ ] Scope is one coherent slice
 - [ ] Transitions are explicit and deterministic
 - [ ] Invariant/theorem updates paired with implementation
-- [ ] `test_smoke.sh` passes (minimum); `test_full.sh` for theorem changes
-- [ ] Documentation synchronized
-- [ ] No website-linked paths renamed or removed (see `scripts/website_link_manifest.txt`)
+- [ ] Module build verified (pre-commit hook installed and not
+      bypassed)
+- [ ] `test_smoke.sh` passes (minimum); `test_full.sh` for theorem
+      changes
+- [ ] Documentation synchronized (see "Documentation rules")
+- [ ] No website-linked paths renamed or removed (see
+      `scripts/website_link_manifest.txt`)
 - [ ] No `claude.ai/code/session_*` URL in commit messages or PR
       title/body/summary (see "Session URL hygiene" below)
 
-## Session URL hygiene in commits, PRs, and other repository artifacts
+## Session URL hygiene
 
-When this codebase is edited from inside the Claude Agent SDK / Claude Code
-on the web, the runtime exposes a per-session URL of the form
-`https://claude.ai/code/session_<id>`. **This URL must never appear in any
-artifact that ships to the public repository or to GitHub.**
+When this codebase is edited from inside the Claude Agent SDK / Claude
+Code on the web, the runtime exposes a per-session URL of the form
+`https://claude.ai/code/session_<id>`. **This URL must never appear in
+any artifact that ships to the public repository or to GitHub.**
 
-### Forbidden locations
+**Forbidden locations:**
 
-The session URL must not appear in:
-
-1. **Pull request titles, descriptions, summaries, or any update to a PR
-   body.** PR bodies are surfaced to every reviewer and indexed by GitHub
-   search; a session URL here leaks an opaque internal identifier and
-   provides no useful navigation.
-2. **Commit messages**, including the subject line, body paragraphs, any
-   `Refs:` line, any footer, and any `Co-Authored-By` trailer. Commit
-   metadata is permanent in the git history; once pushed to a public ref
-   it is effectively unrewritable. A session URL there pollutes the
-   history forever.
-3. **In-tree documentation, `CHANGELOG.md` entries, source comments,
-   docstrings, or test fixtures.** None of these benefit from a session
-   URL — by the time a future contributor reads them, the session is
-   unreachable, and the URL just adds noise to the artifact.
-4. **GitHub issue bodies, issue comments, PR review bodies, PR review
-   comments, or any other rendered text** posted via the GitHub MCP tools
-   (`mcp__github__add_issue_comment`, `mcp__github__pull_request_review_write`,
-   `mcp__github__create_pull_request`, `mcp__github__update_pull_request`,
-   etc.).
-5. **Plan files or task descriptions** that get checked into the repo
+1. PR titles, descriptions, summaries, or any update to a PR body.
+2. Commit messages — subject, body, footers, `Refs:` lines, and
+   `Co-Authored-By` trailers. Once pushed, commit metadata is
+   effectively unrewritable.
+3. In-tree documentation, `CHANGELOG.md` entries, source comments,
+   docstrings, or test fixtures.
+4. GitHub issue bodies, issue comments, PR review bodies, PR review
+   comments, or any other rendered text posted via GitHub MCP tools
+   (`mcp__github__add_issue_comment`,
+   `mcp__github__pull_request_review_write`,
+   `mcp__github__create_pull_request`,
+   `mcp__github__update_pull_request`, etc.).
+5. Plan files or task descriptions checked into the repo
    (e.g. `docs/planning/*.md`, `docs/audits/*.md`).
 
-### Why this matters
+**Why**: session URLs are unstable (rotate or expire without notice),
+opaque to anyone outside the original session (no audit value), and
+displace useful cross-references. Internal handles do not belong in
+shared artifacts. Per the minimum-disclosure norm, the URL gives a
+reviewer nothing they can act on.
 
-- **Session URLs are unstable.** They may rotate, expire, or change format
-  without notice. A "permanent" `Refs:` link to a session URL becomes a
-  dead-link on the next platform change.
-- **No human value.** A reviewer reading a PR cannot open the session,
-  cannot see what happened, and cannot derive any audit value from the
-  identifier — the URL is opaque to anyone outside the original session.
-- **Privacy / minimum disclosure.** The session URL is an internal handle
-  for the agent runtime. There is no business reason to publish it. Per
-  the "minimum disclosure" engineering norm, internal handles do not
-  belong in shared artifacts.
-- **Displaces useful cross-references.** A line that could carry a
-  meaningful `Refs:` (audit plan section, workstream history entry,
-  related PR or issue number) instead carries an unhelpful URL.
-
-### What to use instead
-
-Cite the canonical document or identifier the work traces to:
+**Use instead** — cite the canonical document or identifier:
 
 ```
 Refs: docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md §8 (Phase R4)
@@ -990,83 +516,69 @@ Refs: #761                            # related GitHub PR or issue
 Refs: 7da2572                         # related commit SHA
 ```
 
-A commit message or PR body should typically include exactly one such
-`Refs:` line pointing at the most-specific canonical document for the
-change. Multiple `Refs:` lines are acceptable when the change touches
-several closure cites (e.g. an audit-plan section AND a discharge-index
-row).
+A commit message or PR body should typically include exactly one
+`Refs:` line pointing at the most-specific canonical document.
+Multiple `Refs:` lines are acceptable when the change touches several
+closure cites.
 
-### Remediation when a session URL has already been published
+**Remediation when a session URL has already been published:**
 
-- **Local commit not yet pushed**: amend the commit message
-  (`git commit --amend`) to remove the URL, then push.
-- **Pushed commit on a feature branch the agent owns**: do **not**
-  force-push to rewrite the history of a public ref. The commit message
-  is treated as immutable on the public branch; instead, ensure every
-  subsequent commit on that branch complies, and document the lesson in
-  a follow-up commit if the branch is large.
-- **Pushed commit on `main` or any shared ref**: same as above — never
-  force-push a shared ref to scrub a session URL. Treat it as a
-  one-time leak and ensure the rule is followed going forward.
-- **PR title or body**: edit the PR via the GitHub UI or
-  `mcp__github__update_pull_request` to remove the URL. PR bodies are
-  freely editable; this is the standard recovery path.
-- **Issue / review comment**: edit the comment to remove the URL (issues
-  and comments are also freely editable on GitHub).
+- **Local commit not yet pushed**: amend (`git commit --amend`) and
+  push.
+- **Pushed commit (any branch)**: do **not** force-push to scrub it.
+  Treat it as a one-time leak; ensure subsequent commits comply.
+- **PR title/body or issue/review comment**: edit via the GitHub UI
+  or `mcp__github__update_pull_request` — these are freely editable.
 
-### Scope of the rule
-
-This rule applies regardless of who or what added the URL:
-
-- The agent itself (e.g. as part of a generated commit message
-  scaffolding, a PR-creation template, or an autocomplete suggestion).
-- A repository hook, GitHub Action, or local automation script.
-- A user copy-paste from another window.
-- A plan or task description checked into the repo and later quoted.
-
-If a default template or scaffolding (e.g. the `gh pr create` heredoc
-example in any in-repo guide) ever appears to instruct including a
-`claude.ai/code/session_*` URL, treat the example as obsolete and update
-that guide to the canonical `Refs:` form in the same PR.
+This rule applies regardless of who or what added the URL — the agent
+itself, a hook or GitHub Action, a copy-paste, or a checked-in plan
+that gets quoted later. If any in-repo template appears to instruct
+including a session URL, treat the example as obsolete and update that
+template in the same PR.
 
 ## Vulnerability reporting
 
-While executing any task in this codebase, if you discover a possible software
-vulnerability that could reasonably warrant a CVE (Common Vulnerabilities and
-Exposures) designation, you **must** immediately report it to the user before
-continuing. This applies to vulnerabilities found in:
+While executing any task in this codebase, if you discover a possible
+software vulnerability that could reasonably warrant a CVE designation,
+you **must** immediately report it to the user before continuing. This
+applies to vulnerabilities found in:
 
-- **This project's code** — logic errors in transition semantics, capability
-  checks, information-flow enforcement, or any other component that could lead
-  to privilege escalation, information leakage, denial of service, or violation
-  of security invariants.
-- **Dependencies and toolchain** — known or suspected vulnerabilities in Lean,
-  Lake, elan, or any vendored/imported library encountered during builds,
-  updates, or code review.
-- **Build and CI infrastructure** — insecure script patterns (e.g., command
-  injection in shell scripts, unsafe file permissions, unvalidated inputs in
-  test harnesses) that could be exploited in a development or CI environment.
-- **Model/specification gaps** — cases where the formal model fails to capture
-  a security-relevant behavior of the real seL4 kernel, creating a false
-  assurance gap that could mask a real-world vulnerability.
+- **Project code** — logic errors in transition semantics, capability
+  checks, information-flow enforcement, or any component that could
+  lead to privilege escalation, information leakage, denial of
+  service, or violation of security invariants.
+- **Dependencies and toolchain** — known or suspected vulnerabilities
+  in Lean, Lake, elan, or any vendored/imported library encountered
+  during builds, updates, or code review.
+- **Build and CI infrastructure** — insecure patterns (command
+  injection in shell scripts, unsafe file permissions, unvalidated
+  inputs in test harnesses) that could be exploited in a development
+  or CI environment.
+- **Model/specification gaps** — cases where the formal model fails
+  to capture a security-relevant behavior of the real seL4 kernel,
+  creating a false assurance gap that could mask a real-world
+  vulnerability.
 
 **What to report:**
 
-1. **Summary** — a concise description of the vulnerability.
-2. **Location** — file path(s) and line number(s) where the issue exists.
-3. **Severity estimate** — your assessment of impact (Critical / High / Medium
-   / Low) and exploitability.
-4. **Reproduction or evidence** — how the issue manifests or could be triggered.
-5. **Suggested remediation** — if apparent, a recommended fix or mitigation.
+1. **Summary** — concise description of the vulnerability.
+2. **Location** — file path(s) and line number(s).
+3. **Severity estimate** — Critical / High / Medium / Low + your
+   exploitability assessment.
+4. **Reproduction or evidence** — how the issue manifests or could be
+   triggered.
+5. **Suggested remediation** — if apparent.
 
 **How to report:**
 
-- Stop current work and surface the finding in your response immediately.
-- Do **not** silently fix a CVE-worthy vulnerability — always flag it explicitly
-  so it can be tracked, triaged, and disclosed appropriately.
-- If the vulnerability is in a third-party dependency, note whether an upstream
-  advisory already exists.
+- Stop current work and surface the finding in your response
+  immediately.
+- Do **not** silently fix a CVE-worthy vulnerability — always flag it
+  explicitly so it can be tracked, triaged, and disclosed
+  appropriately.
+- If the vulnerability is in a third-party dependency, note whether an
+  upstream advisory already exists.
 
-This requirement applies regardless of whether the vulnerability is directly
-related to the current task. Vigilance during routine work is one of the most
-effective ways to catch security issues early.
+This requirement applies regardless of whether the vulnerability is
+directly related to the current task. Vigilance during routine work is
+one of the most effective ways to catch security issues early.
