@@ -10,8 +10,16 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with
 machine-checked proofs, improving on seL4 architecture. Every kernel
 transition is an executable pure function with zero `sorry`/`axiom`. First
-hardware target: Raspberry Pi 5. Toolchain: Lean 4.28.0 (`lean-toolchain`),
-Lake build system. Project version lives in the `lakefile`.
+hardware target: Raspberry Pi 5.
+
+Lean 4.28.0 toolchain, Lake build system, version 0.30.11.
+
+> The version line above is **CI-enforced** by
+> `scripts/check_version_sync.sh` (a Tier 0 gate). When you bump
+> `lakefile.toml`, you must bump that line in the same PR, on a single
+> line, with the canonical trigger phrase intact. Do not reword the
+> sentence and do not split it across a line wrap — the script greps
+> for the literal phrase on one line.
 
 ## Build and run
 
@@ -136,12 +144,114 @@ To find files that need pagination today, run:
 ./scripts/find_large_lean_files.sh
 ```
 
-Get the live list from that script rather than relying on a snapshot here
-— the snapshot ages out within a single workstream cycle. When editing
-large files, read the specific region around the target lines first
-(e.g. `offset=380, limit=40`) rather than the whole file. This avoids
-context-window pressure and "file too large" errors.
+**Known large files** (read in ≤500-line chunks, threshold ~800 lines):
+- `CHANGELOG.md` (~13479 lines)
+- `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
+- `docs/WORKSTREAM_HISTORY.md` (~4617 lines)
+- `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
+- `tests/NegativeStateSuite.lean` (~3940 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~3857 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3779 lines)
+- `SeLe4n/Kernel/CrossSubsystem.lean` (~3309 lines)
+- `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3303 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~3159 lines)
+- `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
+- `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
+- `docs/gitbook/12-proof-and-invariant-map.md` (~3002 lines)
+- `SeLe4n/Model/Object/Structures.lean` (~2772 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~2745 lines)
+- `SeLe4n/Platform/Boot.lean` (~2584 lines)
+- `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
+- `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
+- `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
+- `SeLe4n/Kernel/API.lean` (~2374 lines)
+- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~2369 lines)
+- `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
+- `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
+- `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2326 lines)
+- `SeLe4n/Model/State.lean` (~2226 lines)
+- `tests/OperationChainSuite.lean` (~2208 lines)
+- `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2187 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~2071 lines)
+- `docs/spec/SELE4N_SPEC.md` (~2051 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~1983 lines)
+- `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
+- `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
+- `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
+- `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~1885 lines)
+- `SeLe4n/Kernel/Capability/Operations.lean` (~1868 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~1860 lines)
+- `SeLe4n/Prelude.lean` (~1830 lines)
+- `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
+- `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
+- `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~1785 lines)
+- `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
+- `SeLe4n/Model/Object/Types.lean` (~1775 lines)
+- `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~1753 lines)
+- `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
+- `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
+- `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
+- `SeLe4n/Model/FreezeProofs.lean` (~1661 lines)
+- `tests/ModelIntegritySuite.lean` (~1643 lines)
+- `tests/InformationFlowSuite.lean` (~1623 lines)
+- `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1590 lines)
+- `SeLe4n/Kernel/Architecture/Invariant.lean` (~1524 lines)
+- `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
+- `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
+- `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
+- `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
+- `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
+- `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
+- `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
+- `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1181 lines)
+- `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~1162 lines)
+- `SeLe4n/Platform/DeviceTree.lean` (~1154 lines)
+- `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1153 lines)
+- `tests/KernelErrorMatrixSuite.lean` (~1139 lines)
+- `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1111 lines)
+- `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1111 lines)
+- `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` (~1102 lines)
+- `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
+- `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
+- `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1032 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~1025 lines)
+- `SeLe4n/Kernel/InformationFlow/Policy.lean` (~1023 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1018 lines)
+- `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~983 lines)
+- `SeLe4n/Machine.lean` (~977 lines)
+- `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
+- `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant.lean` (~922 lines)
+- `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
+- `SeLe4n/Platform/FFI.lean` (~916 lines)
+- `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
+- `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
+- `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
+- `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~883 lines)
+- `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
+- `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~851 lines)
+- `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~834 lines)
+- `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~827 lines)
+- `tests/TwoPhaseArchSuite.lean` (~811 lines)
+- `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
+- `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
 
+This bullet block is a **curated snapshot**, not a static enumeration.
+`scripts/find_large_lean_files.sh --check` (called from
+`scripts/sync_documentation_metrics.sh`) compares it against the live
+tree and emits a warning when drift is detected. To refresh after a
+substantial source-tree change, run
+`./scripts/find_large_lean_files.sh --format bullets` and replace the
+bullets above. The literal `**Known large files**` header anchors the
+script's awk-based extraction — do not rename or rewrap it.
+
+When editing large files, read the specific region around the target
+lines first (e.g. `offset=380, limit=40`) rather than the whole file.
+This avoids context-window pressure and "file too large" errors.
 ## Writing and editing large files
 
 The Write tool replaces an entire file in one call. For files over ~100
