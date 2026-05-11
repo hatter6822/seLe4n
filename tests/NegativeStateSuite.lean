@@ -1340,6 +1340,27 @@ private def runAuditCoverageChecks : IO Unit := do
         throw <| IO.userError s!"cspaceMutate: expected badge 77, got {toString cap.badge}"
   | .error err =>
       throw <| IO.userError s!"cspaceMutate: lookup after badge mutate failed: {toString err}"
+
+  -- WS-RC R4.D (NEG-MUTATE-NULL): mutate against a null-cap slot rejects
+  -- with `.nullCapability`. Codifies the structural witness theorems
+  -- `cspaceMutate_rejects_null_cap` and `cspaceMutate_null_cap_rejected`
+  -- (in `Capability/Invariant/Preservation/CopyMoveMutate.lean`) at the
+  -- runtime-test surface. Constructs a small CNode with `Capability.null`
+  -- in slot 0 and asserts the rejection path returns the explicit
+  -- `.nullCapability` error code.
+  let nullSrcCnode : CNode := {
+    depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
+    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList
+      [(SeLe4n.Slot.ofNat 0, Capability.null)]
+  }
+  let nullCnodeId : SeLe4n.ObjId := ⟨200⟩
+  let nullSlot : SeLe4n.Kernel.CSpaceAddr :=
+    { cnode := nullCnodeId, slot := SeLe4n.Slot.ofNat 0 }
+  let nullState : SystemState :=
+    { baseState with objects := baseState.objects.insert nullCnodeId (.cnode nullSrcCnode) }
+  expectErr "cspaceMutate against null-cap slot → .nullCapability (R4.D)"
+    (SeLe4n.Kernel.cspaceMutate nullSlot (AccessRightSet.ofList [.read]) none nullState)
+    .nullCapability
   IO.println "cspaceMutate coverage checks passed"
 
 

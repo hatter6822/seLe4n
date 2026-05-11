@@ -3306,4 +3306,42 @@ Component map:
 8. `handleInterrupt_timer_preserves_interruptsEnabled`
 -/
 
+/-! ## WS-RC R4 structural-fix discharge markers
+
+The R4 phase (structural-invariant promotions) lands four sub-tasks
+under the structural-fix policy (`§1.5 false-positive structural
+closures`):
+
+* **R4.B (DEEP-CAP-04)** — `RetypeTarget` carries a `ScrubToken`
+  witness derivable only from `lifecyclePreRetypeCleanup_ok`. The
+  no-bypass property is codified by
+  `SeLe4n.Kernel.retypeTarget_implies_scrub_token_held`.
+* **R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01)** — the `uniqueWaiters`
+  state-level invariant is witnessed by
+  `SeLe4n.Kernel.notification_waitingThreads_nodup_witness`, and the
+  runtime duplicate guard at `IPC/Operations/Endpoint.lean` is
+  bridged to type-level Nodup non-membership via
+  `SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup`.
+  The follow-on type-level promotion to `SeLe4n.NoDupList ThreadId`
+  is planned in `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`
+  (8 atomic sub-PRs); the structural foundation is in place via the
+  `SeLe4n.NoDupList` smart-constructor module
+  (`SeLe4n/Model/Object/NoDupList.lean`), which exposes
+  `empty`, `consWithGuard`, `consWithGuard?`, `tail?`, `filter`,
+  and `Membership`/`CoeHead`/`DecidableEq` instances ready for
+  consumption by the field-type switch.
+* **R4.D (DEEP-CAP-02)** — `cspaceMutate`'s runtime null-cap guard is
+  witnessed by `SeLe4n.Kernel.cspaceMutate_rejects_null_cap` (positive
+  direction) and `SeLe4n.Kernel.cspaceMutate_null_cap_rejected`
+  (totality direction).
+
+This marker theorem exists so the tier-3 invariant-surface gate can
+locate the R4 closure by name; the body is `trivial` per the
+marker-theorem pattern (the closure content is in the cited theorems
+and in `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`). The companion
+`#check` reachability tests are exercised by
+`scripts/test_tier3_invariant_surface.sh`. -/
+theorem r4_structural_fix_discharge_index_documented : True := trivial
+-- Cross-reference: docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md §3 (R4.B/C/D)
+
 end SeLe4n.Kernel

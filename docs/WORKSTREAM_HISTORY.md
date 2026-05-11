@@ -437,15 +437,104 @@ gates.
   the substantive surface; 0 sorry / 0 axiom in the modified
   files.
 
-### R4..R14 — TBD
+### R4 — Structural-invariant promotions (partial landing)
+
+R4 lands four sub-tasks under the structural-fix policy (`§1.5` of
+the WS-RC plan). Three sub-tasks (R4.B, R4.D, R4.C witness theorems)
+landed at commit `7da2572`; the full type-level field-type switch
+for R4.A (`CNode.slots` → `UniqueSlotMap`) and R4.C
+(`Notification.waitingThreads` → `NoDupList ThreadId`) is partitioned
+in
+[`docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`](planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md)
+as 15 atomic sub-PRs across two tracks (A: 7 sub-PRs, C: 8 sub-PRs).
+
+#### R4 landed work (this commit)
+
+- **R4.B (DEEP-CAP-04) — RetypeTarget non-bypassable.** LANDED at
+  commit `7da2572`. Strengthened `cleanupHookDischarged` to require an
+  opaque `ScrubToken` whose only public introduction is
+  `ScrubToken.fromCleanup` (gated on a successful
+  `lifecyclePreRetypeCleanup` outcome).  Added
+  `retypeTarget_implies_scrub_token_held` witness theorem proving
+  every constructed `RetypeTarget` carries an opaque cleanup-hook
+  discharge witness.  Updated `lifecycleCleanupPipeline` docstring
+  to drop the "phantom-like" caveat per the implement-the-improvement
+  rule.
+- **R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01) — witness theorems.**
+  LANDED at commit `7da2572`.  Two named witness theorems in
+  `IPC/Invariant/QueueNoDup.lean`:
+  `notification_waitingThreads_nodup_witness` projects `uniqueWaiters`
+  for a single notification, and
+  `notificationWait_runtime_check_implied_by_nodup` re-exports the
+  existing `not_mem_waitingThreads_of_ipcState_ne` bridge under the
+  WS-RC discharge-index name.  **New in this commit:**
+  `SeLe4n/Model/Object/NoDupList.lean` (~290 LoC) lands the
+  forward-compatible `SeLe4n.NoDupList α` smart-constructor module —
+  the foundation for the future field-type switch.  The module
+  exposes `empty`, `consWithGuard`, `consWithGuard?`, `tail?`,
+  `filter`, equation lemmas
+  `consWithGuard?_eq_{none,some}_iff` and
+  `tail?_eq_{none,some}_iff`, the read-only accessor wrappers,
+  `Membership`/`CoeHead`/`DecidableEq`/`Repr` instances, and the
+  `nodup_witness` discharge-index theorem.  `Notification.waitingThreads`
+  retains its `List ThreadId` field type at this commit; the
+  type-level promotion is scheduled per the multi-PR plan.  The
+  module's introduction unblocks the field-type-switch sub-PRs to
+  land independently in subsequent commits without re-introducing
+  the foundation.
+- **R4.D (DEEP-CAP-02) — cspaceMutate null-cap witness theorems.**
+  LANDED at commit `7da2572`.  Two witness theorems in
+  `Capability/Invariant/Preservation/CopyMoveMutate.lean`:
+  `cspaceMutate_rejects_null_cap` proves every successful mutation
+  witnesses a non-null pre-state capability;
+  `cspaceMutate_null_cap_rejected` proves every null-cap input
+  totalises to `.nullCapability`.  Regression test
+  `cspaceMutate_from_null_rejected` in `tests/ModelIntegritySuite.lean`
+  exercises the rejection path.  **New in this commit:** an
+  additional Tier-2 regression test `NEG-MUTATE-NULL` in
+  `tests/NegativeStateSuite.lean::runAuditCoverageChecks` exercises
+  the null-cap rejection with a fresh CNode literal carrying
+  `Capability.null` in slot 0.
+- **R4 discharge-index marker.** New marker theorem
+  `r4_structural_fix_discharge_index_documented` in
+  `SeLe4n/Kernel/CrossSubsystem.lean` so the tier-3 invariant-surface
+  gate can `#check` the R4 closure.  Cross-references the canonical
+  index `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` §3 (D/E/F
+  sections).
+
+#### R4 pending work (multi-PR scope)
+
+- **R4.A — `UniqueSlotMap` promotion of `CNode.slots`** (track A,
+  7 sub-PRs, ~890 LoC, ~30 files): the type-level uniqueness
+  invariant for `CNode.slots`.  Foundation file
+  `SeLe4n/Model/Object/UniqueSlotMap.lean` not yet created;
+  scheduled as the first sub-PR of track A.
+- **R4.C field-type switch** —
+  `Notification.waitingThreads : List ThreadId` →
+  `SeLe4n.NoDupList SeLe4n.ThreadId`, with proof-body migration
+  across ~25 files (track C sub-PRs C.2–C.8): the foundation is
+  in place via the `NoDupList` module landed at this commit; the
+  field switch and consumer migrations remain scheduled per the
+  multi-PR plan.
+
+#### R4 validation
+
+- `lake build` (default target, 310 jobs) passes.
+- `./scripts/test_smoke.sh` passes (all tiers 0+1+2).
+- `./scripts/test_full.sh` passes (tier 3 invariant surface).
+- `lake exe negative_state_suite` reports the new `NEG-MUTATE-NULL`
+  check passes alongside the pre-existing capability-error tests.
+- `bash scripts/check_website_links.sh` passes (no manifest path
+  renames in this commit).
+
+### R5..R14 — TBD
 
 Per plan §3 phase summary; remaining rows will be appended to this
-section as each phase lands a coherent slice. R4/R5/R6 are the
-remaining v1.0.0 implementation-tier work (structural-invariant
-promotions, behavioural symmetry, spec completeness), then
-R7..R12 (cleanup/hygiene tier in any order, with R11 landing last
-among hygiene phases per plan §3.2 so the metric refresh runs
-against the post-implementation tree).
+section as each phase lands a coherent slice. R5/R6 are the
+remaining v1.0.0 implementation-tier work (behavioural symmetry,
+spec completeness), then R7..R12 (cleanup/hygiene tier in any
+order, with R11 landing last among hygiene phases per plan §3.2 so
+the metric refresh runs against the post-implementation tree).
 
 ## WS-AN — Pre-1.0 Audit Remediation (v0.30.6 → v0.30.11, **COMPLETE — ARCHIVED**)
 

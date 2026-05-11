@@ -1,9 +1,9 @@
 # WS-RC R4.A + R4.C — Type-level Structural Promotion of `CNode.slots` and `Notification.waitingThreads`
 
-**Status**: PLANNED
+**Status**: PARTIAL — `NoDupList` smart-constructor foundation LANDED; field-type switch PENDING (Track A and Track C field switch)
 **Workstream**: WS-RC (audit remediation v0.30.11 → v0.31.0 → v1.0.0)
 **Audit findings remediated**: DEEP-MODEL-01 (R4.A), DEEP-IPC-05 (R4.C), DEEP-IPC-01 (subsumed by R4.C)
-**Predecessors landed**: WS-RC R4.B (DEEP-CAP-04 — `RetypeTarget` ScrubToken), WS-RC R4.D (DEEP-CAP-02 — `cspaceMutate` null-cap witnesses), R4.B/C/D structural-witness commit `7da2572`
+**Predecessors landed**: WS-RC R4.B (DEEP-CAP-04 — `RetypeTarget` ScrubToken), WS-RC R4.D (DEEP-CAP-02 — `cspaceMutate` null-cap witnesses), R4.B/C/D structural-witness commit `7da2572`. The R4.C foundation module `SeLe4n/Model/Object/NoDupList.lean` is LANDED at the current commit with the complete API surface (`empty`, `consWithGuard`, `consWithGuard?`, `tail?`, `filter`, equation lemmas, `Membership`/`CoeHead`/`DecidableEq` instances) ready for consumption by the field-type-switch sub-PRs.
 **Target version**: v0.31.0 — verified-specification release
 **Sub-PR count**: 15 atomic units across 2 parallel tracks (R4.A: 7, R4.C: 8)
 **Estimated LoC**: ~1860 net (R4.A ~890, R4.C ~970)
@@ -367,10 +367,19 @@ Every `_preserves_cspaceSlotUnique` theorem body collapses to `cspaceSlotUnique_
 
 ### R4.C.1 — Introduce `NoDupList`, smart constructors, `consWithGuard` and `consWithGuard?` APIs
 
-**Scope:** ~200 LoC, all-additive new file.
+**Status: LANDED** at current commit. `SeLe4n/Model/Object/NoDupList.lean`
+materialised with the complete API surface (slightly extended over the
+original sketch with `tail?_{nil,cons}_eq_{none,some}` equation
+lemmas, a `nodup_witness` discharge-index theorem, and inline
+`@[inline]` accessor wrappers for `length`, `head?`, `isEmpty`,
+`contains`, `all`, `any`, `foldr`). `lake build SeLe4n.Model.Object.NoDupList`
+is green; the module is imported by `SeLe4n/Model/Object/Types.lean`
+so `SeLe4n.NoDupList` is in scope for the field-switch sub-PRs.
+
+**Scope:** ~290 LoC, all-additive new file.
 
 **Files:**
-- `SeLe4n/Model/Object/NoDupList.lean` (new)
+- `SeLe4n/Model/Object/NoDupList.lean` (LANDED)
 
 **Sketch:**
 ```lean

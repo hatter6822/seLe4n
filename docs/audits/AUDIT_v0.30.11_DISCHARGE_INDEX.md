@@ -119,38 +119,46 @@ CARRIED FROM PREDECESSOR. See
 [`AUDIT_v0.30.6_DISCHARGE_INDEX.md`](../dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md)
 §3.C for the canonical 5-row table (rows C.1..C.5).
 
-### §3.D — NoDup / structural promotions (PENDING — R4.A / R4.B / R4.C)
+### §3.D — NoDup / structural promotions (R4.A PENDING / R4.B LANDED / R4.C LANDED witness, type-level promotion PENDING)
 
-**Status at R0:** EMPTY (seed). Phases R4.A (DEEP-MODEL-01,
-`UniqueSlotMap` smart constructor), R4.B (DEEP-CAP-04, `RetypeTarget`
-opaque `ScrubToken`), and R4.C (DEEP-IPC-05, `Notification.waitingThreads`
-`NoDupList` promotion) will append rows here as each lands.
+**Status:** R4.B and R4.D have landed structural witnesses (commit
+`7da2572`); the R4.C witness theorems plus the `SeLe4n.NoDupList`
+smart-constructor foundation have landed; the full type-level promotion
+of `Notification.waitingThreads : List ThreadId` →
+`SeLe4n.NoDupList SeLe4n.ThreadId` (and the parallel R4.A
+`UniqueSlotMap` promotion of `CNode.slots`) are partitioned in
+[`docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`](../planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md)
+as 15 atomic sub-PRs and remain scheduled for completion in dedicated
+multi-PR slices.
 
-Expected row template (final shape determined by the R4.A/B/C
-implementation):
+| # | Theorem | File:Line | Promoted invariant | Discharge site | Reachability check | Status |
+|---|---------|-----------|--------------------|----------------|--------------------|--------|
+| D.1 | (planned) `UniqueSlotMap.insert_preserves_uniqueness` | `SeLe4n/Model/Object/UniqueSlotMap.lean` (new) | `cspaceSlotUnique` (state-level, currently maintained by preservation theorems) | smart-constructor body (R4.A.1 sub-PR) | `#check @SeLe4n.UniqueSlotMap.insert_preserves_uniqueness` | **PENDING — Track A** |
+| D.2 | `retypeTarget_implies_scrub_token_held` | `SeLe4n/Kernel/Capability/Invariant/Defs.lean:411` | `ScrubToken` existence (was phantom-only `cleanupHookDischarged`) | `RetypeTarget` smart constructor (third conjunct `ScrubToken.fromCleanup`) | `#check @SeLe4n.Kernel.retypeTarget_implies_scrub_token_held` | **LANDED** (commit `7da2572`) |
+| D.3 | `notification_waitingThreads_nodup_witness` | `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean:667` | `Notification.waitingThreads.Nodup` (state-level via `uniqueWaiters`) | preservation chain (`notificationWait/Signal_preserves_uniqueWaiters`) | `#check @SeLe4n.Kernel.notification_waitingThreads_nodup_witness` | **LANDED witness; type-level promotion PENDING (Track C)** |
+| D.4 | `SeLe4n.NoDupList.nodup_witness` | `SeLe4n/Model/Object/NoDupList.lean` | `List.Nodup` carried by smart constructor at construction time | `NoDupList.empty`, `consWithGuard`, `consWithGuard?`, `filter`, `tail?` | `#check @SeLe4n.NoDupList.nodup_witness` | **LANDED foundation** (this commit) |
+| D.5 | `r4_structural_fix_discharge_index_documented` | `SeLe4n/Kernel/CrossSubsystem.lean` | R4.B/C/D closure-form discharge index | marker theorem (tier-3 invariant-surface gate) | `#check @SeLe4n.Kernel.r4_structural_fix_discharge_index_documented` | **LANDED** (this commit) |
 
-| # | Theorem | File:Line | Promoted invariant | Discharge site | Reachability check |
-|---|---------|-----------|--------------------|----------------|--------------------|
-| D.1 | `UniqueSlotMap.insert_preserves_uniqueness` | `SeLe4n/Model/Object/Structures.lean:TBD` | `slotsUnique` (was Builder.lean line 290–291 obligation) | smart-constructor body | `#check @SeLe4n.UniqueSlotMap.insert_preserves_uniqueness` |
-| D.2 | `retypeTarget_implies_scrub_token_held` | `SeLe4n/Kernel/Capability/Invariant/Defs.lean:TBD` | `ScrubToken` existence (was phantom-only `cleanupHookDischarged`) | `RetypeTarget` smart constructor | `#check @SeLe4n.Kernel.retypeTarget_implies_scrub_token_held` |
-| D.3 | `notification_waiters_nodup` | `SeLe4n/Model/Object/Types.lean:TBD` | `Notification.waitingThreads.val.Nodup` (was upstream-convention) | `NoDupList.insert` smart constructor | `#check @SeLe4n.notification_waiters_nodup` |
+The `SeLe4n.NoDupList` module (`SeLe4n/Model/Object/NoDupList.lean`)
+is the forward-compatible foundation for the R4.C field-type switch.
+It exposes a complete API surface (`empty`, `consWithGuard`,
+`consWithGuard?`, `tail?`, `filter`, `length`, `head?`, `isEmpty`,
+`all`, `any`, `foldr`, `Membership`, `CoeHead`, `DecidableEq`, `Repr`),
+the `consWithGuard?_eq_{none,some}_iff` equation lemmas, the
+`tail?_{nil,cons}_eq_{none,some}` equation lemmas, and the `nodup_witness`
+discharge-index witness, all ready for consumption by the
+field-type-switch sub-PRs.
 
-The placeholder line numbers and theorem names are derived from plan
-§8 (R4.A.1–R4.C.6); they will be refreshed against the live tree at
-R4 landing time.
+### §3.E — Predecessor reroutings (LANDED witness — R4.C subsumes DEEP-IPC-01)
 
-### §3.E — Predecessor reroutings (PENDING — R4.C subsumes DEEP-IPC-01)
+DEEP-IPC-01 (notification waiters NoDup runtime-only verification) is
+rerouted to the R4.C structural promotion (§3.D D.3). The
+witness-theorem bridge is in place; the type-level promotion remains
+scheduled per the multi-PR plan.
 
-**Status at R0:** EMPTY (seed). DEEP-IPC-01 (notification waiters NoDup
-runtime-only verification) is rerouted to a structural promotion under
-R4.C (D.3 above). When R4.C lands, this section captures the
-"runtime-check-equivalent-to-structural-discharge" witness:
-
-Expected row template:
-
-| # | Subsumed finding | Subsuming structural promotion | Equivalence theorem | Reachability check |
-|---|------------------|-------------------------------|---------------------|--------------------|
-| E.1 | DEEP-IPC-01 (`notificationWait` runtime NoDup at `IPC/Operations/Endpoint.lean:723`) | R4.C (§3.D D.3) | `notificationWait_runtime_check_implied_by_nodup` | `#check @SeLe4n.Kernel.IPC.notificationWait_runtime_check_implied_by_nodup` |
+| # | Subsumed finding | Subsuming structural promotion | Equivalence theorem | Reachability check | Status |
+|---|------------------|-------------------------------|---------------------|--------------------|--------|
+| E.1 | DEEP-IPC-01 (`notificationWait` runtime NoDup at `IPC/Operations/Endpoint.lean:723`) | R4.C (§3.D D.3) | `notificationWait_runtime_check_implied_by_nodup` (in `IPC/Invariant/QueueNoDup.lean:691`) | `#check @SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup` | **LANDED** (commit `7da2572`) |
 
 The runtime check at line 723 is preserved as defence-in-depth; the
 type-level NoDup discharge becomes the primary correctness story.
@@ -168,7 +176,7 @@ Expected rows:
 
 | # | Verified finding | Owning sub-phase | Structural artefact | Discharge mechanism | Reachability check |
 |---|------------------|------------------|---------------------|---------------------|--------------------|
-| F.1 | DEEP-CAP-02 (`cspaceMutate` rejects null caps; runtime guard at `Capability/Operations.lean:1093`) | R4.D | Two Lean theorems: `cspaceMutate_rejects_null_cap`, `cspaceMutate_null_cap_rejected` (in `Capability/Invariant/Preservation/CopyMoveMutate.lean`) | Lean elaborator (proof obligation) | `#check @SeLe4n.Kernel.cspaceMutate_rejects_null_cap` and `#check @SeLe4n.Kernel.cspaceMutate_null_cap_rejected` |
+| F.1 | DEEP-CAP-02 (`cspaceMutate` rejects null caps; runtime guard at `Capability/Operations.lean:1093`) | R4.D | Two Lean theorems: `cspaceMutate_rejects_null_cap`, `cspaceMutate_null_cap_rejected` (in `Capability/Invariant/Preservation/CopyMoveMutate.lean:373,424`) + regression tests `cspaceMutate_from_null_rejected` (`tests/ModelIntegritySuite.lean:399`) and `NEG-MUTATE-NULL` (`tests/NegativeStateSuite.lean::runAuditCoverageChecks`) | Lean elaborator (proof obligation) + Tier-2 negative suite | `#check @SeLe4n.Kernel.cspaceMutate_rejects_null_cap` and `#check @SeLe4n.Kernel.cspaceMutate_null_cap_rejected` (**LANDED** commit `7da2572`, regression test extended this commit) |
 | F.2 | DEEP-ARCH-01 (audit-text verification error; CacheModel/TimerModel/ExceptionModel/TlbCacheComposition correctly outside production chain) | R12.B | CI gate `scripts/check_production_staging_partition.sh` (already LANDED — verified at R0.1 baseline) | tier-0 hygiene script (gate run on every CI) | `bash scripts/check_production_staging_partition.sh` |
 | F.3 | DEEP-RUST-01 / DEEP-RUST-02 (MMIO + register `unsafe` blocks have ARM ARM citations) | R12.C | CI gate `scripts/check_arm_arm_citations.sh` (NEW — added in R12.C PR) | tier-0 hygiene script | `bash scripts/check_arm_arm_citations.sh` |
 | F.4 | DEEP-ARCH-02 (`*_fields` defs all have ≥1 consumer; not dead code) | R12.D | CI gate `scripts/check_no_orphan_fields.sh` (already LANDED — verified at R0.1 baseline) | tier-0 hygiene script | `bash scripts/check_no_orphan_fields.sh` |
@@ -221,7 +229,7 @@ At R0, the predecessor index is already registered; this WS-RC index is
 registered as part of R0.5 (the `docs/audits/README.md` "Files currently
 live" sync).
 
-## 5. Closure summary (R0 seed)
+## 5. Closure summary (post-R4 partial landing)
 
 - **§3.A — 6 of 6 rows** carried forward from predecessor; no WS-RC
   modification.
@@ -229,20 +237,34 @@ live" sync).
   WS-RC modification.
 - **§3.C — 5 closure-form rows** carried forward from predecessor; no
   WS-RC modification.
-- **§3.D — 0 rows at R0**, expected 3 rows at R4.A/B/C landing.
-- **§3.E — 0 rows at R0**, expected 1 row at R4.C landing
-  (DEEP-IPC-01 reroute).
-- **§3.F — 0 substantive rows at R0**; 2 of 4 expected gates already
-  LANDED at R0 prep (partition + orphan-fields), 1 expected at R4.D
-  landing (`cspaceMutate` witness theorem), 1 expected at R12.C
-  landing (ARM-ARM citation gate).
+- **§3.D — 5 rows**: D.2 (R4.B `ScrubToken`) **LANDED** at commit
+  `7da2572`; D.3 (R4.C `notification_waitingThreads_nodup_witness`)
+  **LANDED** at commit `7da2572` (witness only — the type-level
+  promotion of `Notification.waitingThreads` to `NoDupList ThreadId`
+  remains scheduled per the multi-PR plan); D.4 (`NoDupList.nodup_witness`)
+  **LANDED** at the current commit (forward-compatible smart-constructor
+  module published with the full API surface); D.5 (R4 marker theorem
+  `r4_structural_fix_discharge_index_documented`) **LANDED** at the
+  current commit. D.1 (R4.A `UniqueSlotMap` smart constructor) remains
+  **PENDING** — track A of the multi-PR plan.
+- **§3.E — 1 of 1 row** LANDED at commit `7da2572` (DEEP-IPC-01
+  rerouted to R4.C witness `notificationWait_runtime_check_implied_by_nodup`).
+- **§3.F — F.1 (R4.D) LANDED** at commit `7da2572`, regression test
+  extended at the current commit (NegativeStateSuite NEG-MUTATE-NULL);
+  F.2 (R12.B) and F.4 (R12.D) **LANDED at R0 prep** (partition +
+  orphan-fields gates); F.3 (R12.C ARM-ARM citation gate) **PENDING**
+  per the multi-PR plan.
 - **§3.G — 1 of 1 row** LANDED at R0.4 (DEBT-RUST-02 / H-24
   reconfirmation; closure annotation in archived predecessor index).
 
-**No closure-form obligation introduced by WS-RC is orphaned at R0**:
-every R-phase that produces a closure-form theorem or structural
-witness includes a discharge-index update in the same PR (per CLAUDE.md
-"Documentation rules" §3 and the §1.5 structural-fix policy).
+**No closure-form obligation introduced by WS-RC is orphaned**: every
+R-phase that produces a closure-form theorem or structural witness
+includes a discharge-index update in the same PR (per CLAUDE.md
+"Documentation rules" §3 and the §1.5 structural-fix policy). The
+deferred items (D.1 R4.A, D.3-type-level-promotion R4.C, F.3 R12.C)
+are tracked in `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`
+and `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` §8/§16 with
+explicit closure targets.
 
 ## 6. Update protocol
 

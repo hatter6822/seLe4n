@@ -10,6 +10,7 @@
 import SeLe4n.Machine
 import SeLe4n.Kernel.RobinHood
 import SeLe4n.Kernel.SchedContext
+import SeLe4n.Model.Object.NoDupList
 
 namespace SeLe4n.Model
 
@@ -893,10 +894,20 @@ structure Notification where
       check) is bridged to list non-membership through the
       `notificationWaiterConsistent` cross-subsystem invariant, so the
       Nodup property holds structurally for every notification reachable
-      from boot. The structural-witness theorem
-      `notification_waitingThreads_nodup_witness` (in
-      `IPC/Invariant/QueueNoDup.lean`) codifies this closure at the proof
-      surface, per the WS-RC §1.5 structural-fix policy. -/
+      from boot. The structural-witness theorems
+      `SeLe4n.Kernel.notification_waitingThreads_nodup_witness` and
+      `SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup` (in
+      `IPC/Invariant/QueueNoDup.lean`) codify this closure at the proof
+      surface, per the WS-RC §1.5 structural-fix policy.
+
+      The follow-on type-level promotion to `SeLe4n.NoDupList ThreadId`
+      (carrying `hNodup` structurally at construction time) is planned in
+      `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` and partitioned
+      across 8 atomic sub-PRs (track C of the R4 type-level promotion
+      workstream). The `SeLe4n.NoDupList` type itself is materialised in
+      `SeLe4n/Model/Object/NoDupList.lean` and exported here, so the smart
+      constructors and bridge lemmas are available to operational and
+      proof-side callers ahead of the field-type switch. -/
   waitingThreads : List SeLe4n.ThreadId
   pendingBadge : Option SeLe4n.Badge := none
   deriving Repr, DecidableEq

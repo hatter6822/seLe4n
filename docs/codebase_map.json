@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/audit-phase-r4-review-Tuawd",
-      "commit_sha": "0af452464c6650211771f286aa2ead94ec02148c",
-      "tree_sha": "fb98b245e33fd2127c2cb8ff448a36fa69268b71",
-      "committed_at_utc": "2026-04-30T01:38:02-04:00"
+      "branch": "claude/review-codebase-audit-78WmZ",
+      "commit_sha": "787f5a525d61f7713d9cd305f84d59948dbd4999",
+      "tree_sha": "eefdc3b48caf1b6c2c1e4f8daead13075e28eadf",
+      "committed_at_utc": "2026-05-11T15:06:18-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "c6cbb30de2a62a8267eb06b960213080167f873cfb5a459dbcfd1a6af485b1b7"
+    "source_digest": "eb822c6703bb529d7d80aaa29561ba12709be2effaf3279785e5e9ad9b051ea0"
   },
   "summary": {
-    "module_count": 197,
-    "declaration_count": 6280
+    "module_count": 198,
+    "declaration_count": 6317
   },
   "readme_sync": {
     "version": "0.30.11",
     "lean_toolchain": "v4.28.0",
-    "production_files": 168,
-    "production_loc": 111542,
+    "production_files": 169,
+    "production_loc": 111894,
     "test_files": 29,
-    "test_loc": 20216,
-    "proved_theorem_lemma_decls": 3233,
+    "test_loc": 20237,
+    "proved_theorem_lemma_decls": 3248,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -409,6 +409,7 @@
             "endpointSendDualWithCaps",
             "extractMessageRegisters",
             "getEndpoint",
+            "head",
             "none",
             "notificationSignal",
             "notificationWait",
@@ -460,6 +461,7 @@
             "endpointSendDualChecked",
             "extractMessageRegisters",
             "getEndpoint",
+            "head",
             "none",
             "notificationSignal",
             "notificationSignalChecked",
@@ -1083,6 +1085,7 @@
             "endpointCallWithCaps",
             "extractMessageRegisters",
             "getEndpoint",
+            "head",
             "none",
             "propagatePriorityInheritance",
             "resolveExtraCaps",
@@ -1581,6 +1584,7 @@
           "line": 214,
           "called": [
             "AsidPool",
+            "length",
             "maxAsidValue"
           ]
         },
@@ -1623,6 +1627,7 @@
             "AsidPool",
             "AsidPool.wellFormed_free_valid",
             "allocate",
+            "head",
             "maxAsidValue",
             "wellFormed"
           ]
@@ -1635,7 +1640,9 @@
             "AsidAllocResult",
             "AsidPool",
             "allocate",
+            "head",
             "maxAsidValue",
+            "tail",
             "wellFormed"
           ]
         },
@@ -1725,6 +1732,7 @@
             "AsidAllocResult",
             "AsidPool",
             "allocate",
+            "head",
             "wellFormed"
           ]
         },
@@ -1750,6 +1758,9 @@
             "AsidPool",
             "erase",
             "free",
+            "head",
+            "length",
+            "tail",
             "wellFormed"
           ]
         }
@@ -3792,7 +3803,8 @@
             "get",
             "ipcInvariantFull",
             "ipcStateQueueMembershipConsistent_of_objects_eq",
-            "scId"
+            "scId",
+            "tail"
           ]
         },
         {
@@ -3872,6 +3884,7 @@
             "ipcInvariantFull",
             "ipcStateQueueMembershipConsistent_of_objects_eq",
             "scId",
+            "tail",
             "writeRegisterState"
           ]
         },
@@ -3911,7 +3924,8 @@
             "get",
             "ipcInvariantFull",
             "ipcStateQueueMembershipConsistent_of_objects_eq",
-            "scId"
+            "scId",
+            "tail"
           ]
         },
         {
@@ -4931,6 +4945,7 @@
             "MessageInfo",
             "RegValue",
             "count",
+            "length",
             "maxMessageRegisters",
             "size"
           ]
@@ -5015,6 +5030,7 @@
             "ThreadId",
             "decodeSyscallArgs",
             "ipcBufferReadMr",
+            "length",
             "pure",
             "size",
             "toNat"
@@ -5055,6 +5071,7 @@
             "decodeMsgInfo",
             "encodeMsgInfo",
             "encode_decode_roundtrip",
+            "length",
             "maxExtraCaps",
             "maxLabel",
             "maxMessageRegisters"
@@ -5076,6 +5093,7 @@
             "encodeMsgInfo",
             "encodeSyscallId",
             "isWord64",
+            "length",
             "maxExtraCaps",
             "maxLabel",
             "maxMessageRegisters",
@@ -5118,6 +5136,7 @@
             "RegValue",
             "ext",
             "extractMessageRegisters",
+            "length",
             "maxMessageRegisters",
             "size"
           ]
@@ -5194,6 +5213,7 @@
           "line": 343,
           "called": [
             "bind",
+            "length",
             "pure"
           ]
         },
@@ -5344,6 +5364,7 @@
             "bind",
             "decodeSyscallArgs",
             "decodeSyscallArgsFromState",
+            "length",
             "list_mapM_except_length",
             "pure",
             "size"
@@ -5906,6 +5927,7 @@
           "called": [
             "RegValue",
             "SyscallDecodeResult",
+            "length",
             "ofNat"
           ]
         },
@@ -6600,6 +6622,7 @@
             "CPtr",
             "SyscallDecodeResult",
             "count",
+            "length",
             "maxExtraCaps",
             "ofNat",
             "rv"
@@ -13166,6 +13189,7 @@
             "Kernel",
             "childrenOf",
             "cspaceRevoke",
+            "length",
             "lookupCdtNodeOfSlot",
             "none",
             "streamingRevokeBFS"
@@ -13643,7 +13667,9 @@
           "kind": "theorem",
           "name": "smpLatentInventory_count",
           "line": 210,
-          "called": []
+          "called": [
+            "length"
+          ]
         },
         {
           "kind": "theorem",
@@ -13666,7 +13692,7 @@
     {
       "module": "SeLe4n.Kernel.CrossSubsystem",
       "path": "SeLe4n/Kernel/CrossSubsystem.lean",
-      "declaration_count": 166,
+      "declaration_count": 167,
       "declarations": [
         {
           "kind": "namespace",
@@ -13724,7 +13750,9 @@
             "RHTable",
             "ThreadId",
             "collectQueueMembers",
+            "length",
             "none",
+            "tail",
             "toObjId",
             "zero"
           ]
@@ -13738,8 +13766,10 @@
             "ObjId",
             "SystemState",
             "collectQueueMembers",
+            "head",
             "none",
             "size",
+            "tail",
             "toObjId"
           ]
         },
@@ -14054,6 +14084,7 @@
             "default_serviceGraphInvariant",
             "default_untypedRegionsDisjoint",
             "get",
+            "length",
             "none",
             "runnable",
             "scId",
@@ -14633,7 +14664,9 @@
           "kind": "theorem",
           "name": "crossSubsystemFieldSets_count",
           "line": 1342,
-          "called": []
+          "called": [
+            "length"
+          ]
         },
         {
           "kind": "theorem",
@@ -14694,6 +14727,7 @@
           "line": 1440,
           "called": [
             "SystemState",
+            "length",
             "lookupService",
             "serviceCountBounded_monotone",
             "serviceEdge",
@@ -15217,6 +15251,7 @@
             "SystemState",
             "blockingAcyclic",
             "crossSubsystemInvariant",
+            "length",
             "lifecycleObjectTypeLockstep",
             "noStaleEndpointQueueReferences",
             "noStaleNotificationWaitReferences",
@@ -15543,6 +15578,7 @@
             "blockingAcyclic",
             "crossSubsystemInvariant",
             "crossSubsystemInvariant_retype_bridge",
+            "length",
             "lifecycleObjectTypeLockstep",
             "noStaleEndpointQueueReferences",
             "noStaleNotificationWaitReferences",
@@ -15562,6 +15598,7 @@
             "blockingAcyclic",
             "crossSubsystemInvariant",
             "crossSubsystemInvariant_retype_bridge",
+            "length",
             "lifecycleObjectTypeLockstep",
             "noStaleEndpointQueueReferences",
             "noStaleNotificationWaitReferences",
@@ -15581,6 +15618,7 @@
             "blockingAcyclic",
             "crossSubsystemInvariant",
             "crossSubsystemInvariant_retype_bridge",
+            "length",
             "lifecycleObjectTypeLockstep",
             "noStaleEndpointQueueReferences",
             "noStaleNotificationWaitReferences",
@@ -15711,6 +15749,7 @@
           "called": [
             "ObjId",
             "SystemState",
+            "length",
             "untypedAncestorChain",
             "zero"
           ]
@@ -15765,6 +15804,7 @@
             "ThreadId",
             "collectQueueMembers",
             "none",
+            "tail",
             "toObjId",
             "zero"
           ]
@@ -15779,7 +15819,9 @@
             "RHTable",
             "ThreadId",
             "collectQueueMembers",
+            "head",
             "none",
+            "tail",
             "toObjId",
             "zero"
           ]
@@ -15789,10 +15831,17 @@
           "name": "bootFromPlatform_singleCore_witness",
           "line": 3266,
           "called": [
-            "Kernel",
             "SchedulerState",
             "ThreadId",
             "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "r4_structural_fix_discharge_index_documented",
+          "line": 3344,
+          "called": [
+            "Kernel"
           ]
         }
       ]
@@ -16327,8 +16376,10 @@
             "contains",
             "endpointId",
             "get",
+            "head",
             "none",
             "set",
+            "tail",
             "toObjId"
           ]
         },
@@ -16708,8 +16759,10 @@
             "frozenLookupTcb",
             "frozenStoreTcb",
             "get",
+            "head",
             "none",
-            "set"
+            "set",
+            "tail"
           ]
         },
         {
@@ -16727,6 +16780,7 @@
             "frozenQueuePushTail",
             "frozenStoreTcb",
             "get",
+            "head",
             "maxExtraCaps",
             "maxMessageRegisters",
             "none",
@@ -16747,6 +16801,7 @@
             "frozenQueuePushTail",
             "frozenStoreTcb",
             "get",
+            "head",
             "none"
           ]
         },
@@ -16765,6 +16820,7 @@
             "frozenQueuePushTail",
             "frozenStoreTcb",
             "get",
+            "head",
             "maxExtraCaps",
             "maxMessageRegisters",
             "none",
@@ -17037,6 +17093,7 @@
             "cspaceMove",
             "filter",
             "frozenOpCoverage",
+            "length",
             "notificationSignal",
             "notificationWait",
             "schedContextBind",
@@ -17289,10 +17346,12 @@
             "TCB",
             "ThreadId",
             "endpointId",
+            "head",
             "lookupTcb",
             "none",
             "storeObject",
-            "storeTcbQueueLinks"
+            "storeTcbQueueLinks",
+            "tail"
           ]
         },
         {
@@ -17307,10 +17366,12 @@
             "SystemState",
             "ThreadId",
             "endpointId",
+            "head",
             "lookupTcb",
             "none",
             "storeObject",
-            "storeTcbQueueLinks"
+            "storeTcbQueueLinks",
+            "tail"
           ]
         },
         {
@@ -17324,6 +17385,7 @@
             "ThreadId",
             "endpointId",
             "endpointQueuePopHead",
+            "head",
             "invExt",
             "lookupTcb",
             "none",
@@ -17349,7 +17411,8 @@
             "storeObject",
             "storeObject_preserves_objects_invExt'",
             "storeTcbQueueLinks",
-            "storeTcbQueueLinks_preserves_objects_invExt"
+            "storeTcbQueueLinks_preserves_objects_invExt",
+            "tail"
           ]
         },
         {
@@ -17363,9 +17426,11 @@
             "SystemState",
             "ThreadId",
             "endpointId",
+            "head",
             "insert",
             "lookupTcb",
             "none",
+            "tail",
             "toObjId"
           ]
         },
@@ -17445,6 +17510,7 @@
             "ThreadId",
             "endpointId",
             "endpointQueuePopHead",
+            "head",
             "lookupTcb",
             "none",
             "storeObject",
@@ -17464,6 +17530,7 @@
             "ThreadId",
             "endpointId",
             "endpointQueuePopHead",
+            "head",
             "invExt",
             "lookupTcb",
             "none",
@@ -17487,6 +17554,7 @@
             "ThreadId",
             "endpointId",
             "endpointQueuePopHead",
+            "head",
             "invExt",
             "lookupTcb",
             "none",
@@ -17510,6 +17578,7 @@
             "ThreadId",
             "endpointId",
             "endpointQueuePopHead",
+            "head",
             "invExt",
             "lookupTcb",
             "none",
@@ -17533,6 +17602,7 @@
             "ThreadId",
             "endpointId",
             "endpointQueuePopHead",
+            "head",
             "invExt",
             "lookupTcb",
             "none",
@@ -17555,6 +17625,7 @@
             "ThreadId",
             "endpointId",
             "endpointQueuePopHead",
+            "head",
             "invExt",
             "lookupTcb",
             "none",
@@ -17583,7 +17654,8 @@
             "storeObject",
             "storeObject_scheduler_eq",
             "storeTcbQueueLinks",
-            "storeTcbQueueLinks_scheduler_eq"
+            "storeTcbQueueLinks_scheduler_eq",
+            "tail"
           ]
         },
         {
@@ -17605,7 +17677,8 @@
             "storeObject_preserves_objects_invExt'",
             "storeTcbQueueLinks",
             "storeTcbQueueLinks_endpoint_backward",
-            "storeTcbQueueLinks_preserves_objects_invExt"
+            "storeTcbQueueLinks_preserves_objects_invExt",
+            "tail"
           ]
         },
         {
@@ -17628,7 +17701,8 @@
             "storeObject_preserves_objects_invExt'",
             "storeTcbQueueLinks",
             "storeTcbQueueLinks_endpoint_forward",
-            "storeTcbQueueLinks_preserves_objects_invExt"
+            "storeTcbQueueLinks_preserves_objects_invExt",
+            "tail"
           ]
         },
         {
@@ -17651,7 +17725,8 @@
             "storeObject_preserves_objects_invExt'",
             "storeTcbQueueLinks",
             "storeTcbQueueLinks_notification_backward",
-            "storeTcbQueueLinks_preserves_objects_invExt"
+            "storeTcbQueueLinks_preserves_objects_invExt",
+            "tail"
           ]
         },
         {
@@ -17673,7 +17748,8 @@
             "storeObject_preserves_objects_invExt'",
             "storeTcbQueueLinks",
             "storeTcbQueueLinks_preserves_objects_invExt",
-            "storeTcbQueueLinks_tcb_forward"
+            "storeTcbQueueLinks_tcb_forward",
+            "tail"
           ]
         },
         {
@@ -17697,6 +17773,7 @@
             "storeTcbQueueLinks",
             "storeTcbQueueLinks_preserves_objects_invExt",
             "storeTcbQueueLinks_tcb_ipcState_backward",
+            "tail",
             "toObjId"
           ]
         },
@@ -17721,6 +17798,7 @@
             "storeTcbQueueLinks",
             "storeTcbQueueLinks_preserves_objects_invExt",
             "storeTcbQueueLinks_tcb_pendingMessage_backward",
+            "tail",
             "toObjId"
           ]
         },
@@ -17737,10 +17815,12 @@
             "SystemState",
             "ThreadId",
             "endpointId",
+            "head",
             "lookupTcb",
             "none",
             "storeObject",
-            "storeTcbQueueLinks"
+            "storeTcbQueueLinks",
+            "tail"
           ]
         },
         {
@@ -17865,6 +17945,7 @@
             "endpointQueueEnqueue",
             "endpointQueuePopHead",
             "ensureRunnable",
+            "head",
             "maxExtraCaps",
             "maxMessageRegisters",
             "none",
@@ -17886,6 +17967,7 @@
             "endpointQueueEnqueue",
             "endpointQueuePopHead",
             "ensureRunnable",
+            "head",
             "none",
             "removeRunnable",
             "storeTcbIpcState",
@@ -17905,6 +17987,7 @@
             "endpointQueueEnqueue",
             "endpointQueuePopHead",
             "ensureRunnable",
+            "head",
             "maxExtraCaps",
             "maxMessageRegisters",
             "none",
@@ -17972,6 +18055,7 @@
             "storeTcbQueueLinks",
             "storeTcbQueueLinks_preserves_objects_invExt",
             "storeTcbQueueLinks_preserves_objects_ne",
+            "tail",
             "toObjId"
           ]
         },
@@ -17997,6 +18081,7 @@
             "storeTcbQueueLinks",
             "storeTcbQueueLinks_preserves_objects_invExt",
             "storeTcbQueueLinks_preserves_objects_ne",
+            "tail",
             "toObjId"
           ]
         },
@@ -18011,6 +18096,7 @@
             "ThreadId",
             "endpointId",
             "endpointQueueEnqueue",
+            "head",
             "invExt",
             "lookupTcb",
             "lookupTcb_some_objects",
@@ -18020,6 +18106,7 @@
             "storeObject_preserves_objects_invExt'",
             "storeTcbQueueLinks",
             "storeTcbQueueLinks_preserves_objects_ne",
+            "tail",
             "toObjId"
           ]
         },
@@ -18044,6 +18131,7 @@
             "storeObject_preserves_objects_invExt'",
             "storeTcbQueueLinks",
             "storeTcbQueueLinks_tcb_forward",
+            "tail",
             "tcbWithQueueLinks",
             "toObjId"
           ]
@@ -18097,6 +18185,7 @@
             "storeObject",
             "storeObject_objects_ne'",
             "storeTcbQueueLinks",
+            "tail",
             "tid_not_reserved_of_enqueue",
             "toObjId"
           ]
@@ -18197,6 +18286,7 @@
             "endpointId",
             "endpointSendDual",
             "getEndpoint",
+            "head",
             "ipcUnwrapCaps",
             "isEmpty",
             "lookupCspaceRoot",
@@ -18240,6 +18330,7 @@
             "endpointCall",
             "endpointId",
             "getEndpoint",
+            "head",
             "ipcUnwrapCaps",
             "isEmpty",
             "lookupCspaceRoot",
@@ -18285,6 +18376,7 @@
             "endpointQueuePopHead_preserves_objects_invExt",
             "ensureRunnable",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "ipcInvariant",
             "maxExtraCaps",
@@ -18325,6 +18417,7 @@
             "ensureRunnable_not_mem_of_not_mem",
             "ensureRunnable_preserves_objects",
             "ensureRunnable_scheduler_current",
+            "head",
             "invExt",
             "maxExtraCaps",
             "maxMessageRegisters",
@@ -18371,6 +18464,7 @@
             "ensureRunnable",
             "ensureRunnable_mem_reverse",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "ipcSchedulerContractPredicates",
             "maxExtraCaps",
@@ -18405,6 +18499,7 @@
             "endpointQueueEnqueue",
             "endpointQueuePopHead",
             "ensureRunnable",
+            "head",
             "maxExtraCaps",
             "maxMessageRegisters",
             "none",
@@ -18576,6 +18671,7 @@
             "endpointQueuePopHead_preserves_objects_invExt",
             "ensureRunnable",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "maxExtraCaps",
             "maxMessageRegisters",
@@ -18605,6 +18701,7 @@
             "endpointCall_preserves_objects_invExt",
             "endpointId",
             "getEndpoint",
+            "head",
             "invExt",
             "ipcInvariant",
             "ipcUnwrapCaps_preserves_ipcInvariant",
@@ -18740,7 +18837,9 @@
           "called": [
             "IntrusiveQueue",
             "SystemState",
+            "head",
             "none",
+            "tail",
             "toObjId"
           ]
         },
@@ -19043,6 +19142,7 @@
             "Endpoint",
             "ObjId",
             "SystemState",
+            "head",
             "none"
           ]
         },
@@ -19079,6 +19179,7 @@
             "ThreadId",
             "endpointId",
             "endpointQueuePopHead",
+            "head",
             "lookupTcb",
             "none",
             "storeObject",
@@ -19097,6 +19198,7 @@
             "ThreadId",
             "endpointId",
             "endpointQueuePopHead",
+            "head",
             "lookupTcb",
             "lookupTcb_some_objects",
             "none",
@@ -19303,6 +19405,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "head",
             "toObjId"
           ]
         },
@@ -19316,6 +19419,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "head",
             "none",
             "toObjId"
           ]
@@ -19350,6 +19454,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "head",
             "toObjId"
           ]
         },
@@ -20492,6 +20597,7 @@
             "endpointQueuePopHead_preserves_objects_invExt",
             "endpointSendDual",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "ipcInvariant",
             "maxExtraCaps",
@@ -20596,6 +20702,7 @@
             "ensureRunnable_not_mem_of_not_mem",
             "ensureRunnable_preserves_objects",
             "ensureRunnable_scheduler_current",
+            "head",
             "invExt",
             "maxExtraCaps",
             "maxMessageRegisters",
@@ -20639,6 +20746,7 @@
             "endpointSendDual",
             "ensureRunnable_mem_reverse",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "ipcSchedulerContractPredicates",
             "maxExtraCaps",
@@ -20680,6 +20788,7 @@
             "endpointReceiveDual",
             "ensureRunnable",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "ipcInvariant",
             "none",
@@ -20726,6 +20835,7 @@
             "ensureRunnable_not_mem_of_not_mem",
             "ensureRunnable_preserves_objects",
             "ensureRunnable_scheduler_current",
+            "head",
             "invExt",
             "none",
             "queueCurrentConsistent",
@@ -20798,6 +20908,7 @@
             "ensureRunnable",
             "ensureRunnable_mem_reverse",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "ipcSchedulerContractPredicates",
             "none",
@@ -20904,6 +21015,7 @@
             "endpointQueuePopHead_preserves_objects_invExt",
             "endpointSendDual",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "maxExtraCaps",
             "maxMessageRegisters",
@@ -20934,6 +21046,7 @@
             "endpointReceiveDual",
             "ensureRunnable",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "none",
             "removeRunnable_preserves_objects",
@@ -20961,6 +21074,7 @@
             "endpointSendDual_preserves_ipcInvariant",
             "endpointSendDual_preserves_objects_invExt",
             "getEndpoint",
+            "head",
             "invExt",
             "ipcInvariant",
             "ipcUnwrapCaps_preserves_ipcInvariant",
@@ -21508,6 +21622,7 @@
             "bor",
             "empty",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "isEmpty",
             "none",
@@ -21627,6 +21742,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "head",
             "invExt",
             "ipcStateQueueMembershipConsistent",
             "storeObject",
@@ -21744,6 +21860,7 @@
             "ThreadId",
             "ThreadId.toObjId_injective",
             "ThreadIpcState",
+            "head",
             "invExt",
             "ipcStateQueueMembershipConsistent",
             "lookupTcb",
@@ -21856,6 +21973,7 @@
             "ThreadId",
             "ThreadId.toObjId_injective",
             "ThreadIpcState",
+            "head",
             "invExt",
             "ipcStateQueueMembershipConsistent",
             "lookupTcb",
@@ -21879,6 +21997,7 @@
             "TCB",
             "ThreadId",
             "endpointId",
+            "head",
             "invExt",
             "ipcStateQueueMembershipConsistent",
             "none",
@@ -21921,6 +22040,7 @@
             "dualQueueEndpointWellFormed",
             "endpointId",
             "endpointQueueEnqueue",
+            "head",
             "intrusiveQueueWellFormed",
             "invExt",
             "ipcStateQueueMembershipConsistent",
@@ -21937,6 +22057,7 @@
             "storeTcbQueueLinks_preserves_objects_invExt",
             "storeTcbQueueLinks_preserves_objects_ne",
             "storeTcbQueueLinks_tcb_ipcState_backward",
+            "tail",
             "toObjId"
           ]
         },
@@ -21969,6 +22090,7 @@
             "ThreadId",
             "ThreadId.toObjId_injective",
             "ThreadIpcState",
+            "head",
             "invExt",
             "ipcStateQueueMembershipConsistent",
             "lookupTcb",
@@ -21993,6 +22115,7 @@
             "ThreadId.toObjId_injective",
             "endpointId",
             "endpointQueueEnqueue",
+            "head",
             "invExt",
             "lookupTcb",
             "lookupTcb_some_objects",
@@ -22005,6 +22128,7 @@
             "storeTcbQueueLinks_preserves_objects_ne",
             "storeTcbQueueLinks_stored_queueNext",
             "storeTcbQueueLinks_tcb_forward",
+            "tail",
             "toObjId"
           ]
         },
@@ -22019,6 +22143,7 @@
             "ThreadId",
             "endpointId",
             "endpointQueuePopHead",
+            "head",
             "invExt",
             "lookupTcb",
             "lookupTcb_some_objects",
@@ -22045,6 +22170,7 @@
             "ThreadId",
             "endpointId",
             "endpointQueuePopHead",
+            "head",
             "invExt",
             "lookupTcb",
             "lookupTcb_some_objects",
@@ -22078,6 +22204,7 @@
             "endpointQueuePopHead_returns_head",
             "endpointQueuePopHead_returns_pre_tcb",
             "endpointQueuePopHead_tcb_ipcState_backward",
+            "head",
             "invExt",
             "ipcStateQueueMembershipConsistent",
             "queueNextBlockingConsistent",
@@ -22321,6 +22448,7 @@
             "ThreadId",
             "ThreadId.toObjId_injective",
             "ThreadIpcState",
+            "head",
             "invExt",
             "lookupTcb",
             "none",
@@ -22413,6 +22541,7 @@
             "ObjId",
             "SystemState",
             "endpointQueueNoDup",
+            "head",
             "invExt",
             "none",
             "storeObject",
@@ -22620,6 +22749,7 @@
             "endpointQueueEnqueue",
             "endpointQueueEnqueue_endpoint_backward_ne",
             "endpointQueueNoDup",
+            "head",
             "invExt",
             "lookupTcb",
             "none",
@@ -22629,6 +22759,7 @@
             "storeTcbQueueLinks",
             "storeTcbQueueLinks_endpoint_backward",
             "storeTcbQueueLinks_preserves_objects_invExt",
+            "tail",
             "tcbQueueChainAcyclic_no_self_loop"
           ]
         },
@@ -22647,6 +22778,7 @@
             "endpointQueueNoDup",
             "endpointQueuePopHead",
             "endpointQueuePopHead_endpoint_backward_ne",
+            "head",
             "invExt",
             "lookupTcb",
             "lookupTcb_some_objects",
@@ -22814,6 +22946,7 @@
             "endpointQueuePopHead_preserves_objects_invExt",
             "endpointSendDual",
             "ensureRunnable_preserves_endpointQueueNoDup",
+            "head",
             "invExt",
             "maxExtraCaps",
             "maxMessageRegisters",
@@ -22821,7 +22954,8 @@
             "removeRunnable_preserves_endpointQueueNoDup",
             "size",
             "storeTcbIpcStateAndMessage",
-            "storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup"
+            "storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup",
+            "tail"
           ]
         },
         {
@@ -22856,6 +22990,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_endpointQueueNoDup",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "none",
             "removeRunnable_preserves_endpointQueueNoDup",
@@ -22863,7 +22998,8 @@
             "storeTcbIpcStateAndMessage",
             "storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup",
             "storeTcbIpcStateAndMessage_preserves_objects_invExt",
-            "storeTcbIpcState_preserves_endpointQueueNoDup"
+            "storeTcbIpcState_preserves_endpointQueueNoDup",
+            "tail"
           ]
         },
         {
@@ -22891,6 +23027,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_endpointQueueNoDup",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "maxExtraCaps",
             "maxMessageRegisters",
@@ -22899,7 +23036,8 @@
             "size",
             "storeTcbIpcStateAndMessage",
             "storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup",
-            "storeTcbIpcStateAndMessage_preserves_objects_invExt"
+            "storeTcbIpcStateAndMessage_preserves_objects_invExt",
+            "tail"
           ]
         },
         {
@@ -22923,6 +23061,7 @@
             "ensureRunnable_preserves_endpointQueueNoDup",
             "ensureRunnable_preserves_objects",
             "ext",
+            "head",
             "invExt",
             "lookupTcb",
             "maxExtraCaps",
@@ -22934,7 +23073,8 @@
             "storeTcbIpcStateAndMessage_fromTcb_eq",
             "storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant",
             "storeTcbIpcStateAndMessage_preserves_endpointQueueNoDup",
-            "storeTcbIpcStateAndMessage_preserves_objects_invExt"
+            "storeTcbIpcStateAndMessage_preserves_objects_invExt",
+            "tail"
           ]
         },
         {
@@ -22962,6 +23102,7 @@
             "endpointQueuePopHead_returns_pre_tcb",
             "endpointSendDual",
             "ensureRunnable_preserves_ipcStateQueueMembershipConsistent",
+            "head",
             "invExt",
             "ipcInvariantFull",
             "ipcStateQueueMembershipConsistent",
@@ -22976,6 +23117,7 @@
             "storeTcbIpcStateAndMessage_general_preserves_ipcStateQueueMembershipConsistent",
             "storeTcbIpcStateAndMessage_partial_preserves_ipcStateQueueMembershipConsistent",
             "storeTcbIpcStateAndMessage_preserves_objects_ne",
+            "tail",
             "tcbQueueChainAcyclic_no_self_loop",
             "toObjId"
           ]
@@ -23016,6 +23158,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_ipcStateQueueMembershipConsistent",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "ipcStateQueueMembershipConsistent",
             "lookupTcb",
@@ -23031,6 +23174,7 @@
             "storeTcbIpcStateAndMessage_preserves_objects_invExt",
             "storeTcbIpcState_general_preserves_ipcStateQueueMembershipConsistent",
             "storeTcbIpcState_preserves_objects_ne",
+            "tail",
             "tcbQueueChainAcyclic_no_self_loop",
             "toObjId"
           ]
@@ -23062,6 +23206,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_ipcStateQueueMembershipConsistent",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "ipcInvariantFull",
             "ipcStateQueueMembershipConsistent",
@@ -23078,6 +23223,7 @@
             "storeTcbIpcStateAndMessage_preserves_ipcStateQueueMembershipConsistent",
             "storeTcbIpcStateAndMessage_preserves_objects_invExt",
             "storeTcbIpcStateAndMessage_preserves_objects_ne",
+            "tail",
             "tcbQueueChainAcyclic_no_self_loop",
             "toObjId"
           ]
@@ -23103,6 +23249,7 @@
             "ensureRunnable_preserves_queueHeadBlockedConsistent",
             "ensureRunnable_preserves_queueNextBlockingConsistent",
             "ext",
+            "head",
             "invExt",
             "ipcInvariantFull",
             "ipcStateQueueMembershipConsistent",
@@ -23119,7 +23266,8 @@
             "storeTcbIpcStateAndMessage_preserves_ipcStateQueueMembershipConsistent",
             "storeTcbIpcStateAndMessage_preserves_objects_invExt",
             "storeTcbIpcStateAndMessage_preserves_queueHeadBlockedConsistent",
-            "storeTcbIpcStateAndMessage_ready_preserves_queueNextBlockingConsistent"
+            "storeTcbIpcStateAndMessage_ready_preserves_queueNextBlockingConsistent",
+            "tail"
           ]
         },
         {
@@ -23401,7 +23549,9 @@
             "endpointId",
             "endpointQueueEnqueue",
             "endpointQueueEnqueue_preserves_dualQueueSystemInvariant",
+            "head",
             "invExt",
+            "tail",
             "tcbQueueLinkIntegrity"
           ]
         },
@@ -23531,6 +23681,7 @@
             "endpointQueuePopHead_preserves_objects_invExt",
             "endpointSendDual",
             "ensureRunnable_preserves_ipcStateQueueConsistent",
+            "head",
             "invExt",
             "ipcStateQueueConsistent",
             "maxExtraCaps",
@@ -23568,6 +23719,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_ipcStateQueueConsistent",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "ipcStateQueueConsistent",
             "none",
@@ -23686,6 +23838,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_ipcStateQueueConsistent",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "ipcStateQueueConsistent",
             "maxExtraCaps",
@@ -23784,11 +23937,13 @@
             "endpointSendDual_preserves_dualQueueSystemInvariant",
             "endpointSendDual_preserves_objects_invExt",
             "getEndpoint",
+            "head",
             "invExt",
             "ipcUnwrapCaps_preserves_dualQueueSystemInvariant",
             "isEmpty",
             "lookupCspaceRoot",
-            "none"
+            "none",
+            "tail"
           ]
         },
         {
@@ -23810,11 +23965,13 @@
             "endpointReceiveDual_preserves_dualQueueSystemInvariant",
             "endpointReceiveDual_preserves_objects_invExt",
             "getTcb",
+            "head",
             "invExt",
             "ipcUnwrapCaps_preserves_dualQueueSystemInvariant",
             "isEmpty",
             "lookupCspaceRoot",
-            "none"
+            "none",
+            "tail"
           ]
         },
         {
@@ -23833,6 +23990,7 @@
             "dualQueueSystemInvariant",
             "endpointId",
             "endpointQueueRemoveDual",
+            "head",
             "intrusiveQueueWellFormed",
             "intrusiveQueueWellFormed_empty",
             "invExt",
@@ -23855,6 +24013,7 @@
             "storeTcbQueueLinks_preserves_objects_invExt",
             "storeTcbQueueLinks_preserves_objects_ne",
             "storeTcbQueueLinks_result_tcb",
+            "tail",
             "tcbQueueChainAcyclic",
             "tcbQueueLinkIntegrity",
             "tcbWithQueueLinks",
@@ -23873,6 +24032,7 @@
             "ThreadId",
             "endpointId",
             "endpointQueuePopHead",
+            "head",
             "invExt",
             "lookupTcb",
             "none",
@@ -23923,6 +24083,7 @@
             "endpointQueuePopHead_preserves_waitingThreadsPendingMessageNone",
             "endpointSendDual",
             "ensureRunnable_preserves_waitingThreadsPendingMessageNone",
+            "head",
             "invExt",
             "maxExtraCaps",
             "maxMessageRegisters",
@@ -23960,6 +24121,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_objects",
             "ensureRunnable_preserves_waitingThreadsPendingMessageNone",
+            "head",
             "invExt",
             "isReserved",
             "lookupTcb",
@@ -23997,6 +24159,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_objects",
             "ensureRunnable_preserves_waitingThreadsPendingMessageNone",
+            "head",
             "invExt",
             "none",
             "removeRunnable_preserves_waitingThreadsPendingMessageNone",
@@ -24150,6 +24313,7 @@
             "IntrusiveQueue",
             "SystemState",
             "ThreadId",
+            "head",
             "intrusiveQueueWellFormed",
             "toObjId"
           ]
@@ -24165,6 +24329,7 @@
             "ThreadId",
             "dualQueueEndpointWellFormed",
             "endpointQueuePopHead_sender_exists",
+            "head",
             "toObjId"
           ]
         },
@@ -24177,6 +24342,7 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "head",
             "intrusiveQueueWellFormed",
             "none",
             "tcbQueueLinkIntegrity",
@@ -24621,12 +24787,14 @@
             "QueuePPrev",
             "SystemState",
             "ThreadId",
+            "head",
             "intrusiveQueueWellFormed",
             "invExt",
             "none",
             "storeTcbQueueLinks",
             "storeTcbQueueLinks_preserves_objects_ne",
             "storeTcbQueueLinks_result_tcb",
+            "tail",
             "tcbWithQueueLinks",
             "toObjId"
           ]
@@ -24767,6 +24935,7 @@
             "dualQueueSystemInvariant",
             "endpointId",
             "endpointQueuePopHead",
+            "head",
             "intrusiveQueueWellFormed",
             "intrusiveQueueWellFormed_empty",
             "invExt",
@@ -24789,6 +24958,7 @@
             "storeTcbQueueLinks_preserves_objects_invExt",
             "storeTcbQueueLinks_preserves_objects_ne",
             "storeTcbQueueLinks_result_tcb",
+            "tail",
             "tcbWithQueueLinks",
             "threadId_toObjId_injective",
             "toObjId"
@@ -24809,6 +24979,7 @@
             "dualQueueSystemInvariant",
             "endpointId",
             "endpointQueueEnqueue",
+            "head",
             "intrusiveQueueWellFormed",
             "invExt",
             "lookupTcb",
@@ -24830,6 +25001,7 @@
             "storeTcbQueueLinks_preserves_iqwf",
             "storeTcbQueueLinks_preserves_objects_invExt",
             "storeTcbQueueLinks_result_tcb",
+            "tail",
             "tcbWithQueueLinks",
             "threadId_toObjId_injective",
             "toObjId"
@@ -24868,6 +25040,7 @@
             "endpointQueuePopHead_preserves_objects_invExt",
             "endpointSendDual",
             "ensureRunnable_preserves_dualQueueSystemInvariant",
+            "head",
             "invExt",
             "maxExtraCaps",
             "maxMessageRegisters",
@@ -24875,7 +25048,8 @@
             "removeRunnable_preserves_dualQueueSystemInvariant",
             "size",
             "storeTcbIpcStateAndMessage",
-            "storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant"
+            "storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant",
+            "tail"
           ]
         },
         {
@@ -24905,6 +25079,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_dualQueueSystemInvariant",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "none",
             "removeRunnable_preserves_dualQueueSystemInvariant",
@@ -24912,7 +25087,8 @@
             "storeTcbIpcStateAndMessage",
             "storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant",
             "storeTcbIpcStateAndMessage_preserves_objects_invExt",
-            "storeTcbIpcState_preserves_dualQueueSystemInvariant"
+            "storeTcbIpcState_preserves_dualQueueSystemInvariant",
+            "tail"
           ]
         },
         {
@@ -24934,6 +25110,7 @@
             "ensureRunnable_preserves_dualQueueSystemInvariant",
             "ensureRunnable_preserves_objects",
             "ext",
+            "head",
             "invExt",
             "lookupTcb",
             "maxExtraCaps",
@@ -24944,7 +25121,8 @@
             "storeTcbIpcStateAndMessage_endpoint_backward",
             "storeTcbIpcStateAndMessage_fromTcb_eq",
             "storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant",
-            "storeTcbIpcStateAndMessage_preserves_objects_invExt"
+            "storeTcbIpcStateAndMessage_preserves_objects_invExt",
+            "tail"
           ]
         },
         {
@@ -24969,6 +25147,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_dualQueueSystemInvariant",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "maxExtraCaps",
             "maxMessageRegisters",
@@ -24977,7 +25156,8 @@
             "size",
             "storeTcbIpcStateAndMessage",
             "storeTcbIpcStateAndMessage_preserves_dualQueueSystemInvariant",
-            "storeTcbIpcStateAndMessage_preserves_objects_invExt"
+            "storeTcbIpcStateAndMessage_preserves_objects_invExt",
+            "tail"
           ]
         },
         {
@@ -25258,6 +25438,7 @@
             "allPendingMessagesBounded",
             "endpointId",
             "endpointQueuePopHead",
+            "head",
             "invExt",
             "lookupTcb",
             "none",
@@ -25281,6 +25462,7 @@
             "badgeWellFormed",
             "endpointId",
             "endpointQueuePopHead",
+            "head",
             "invExt",
             "lookupTcb",
             "none",
@@ -25311,7 +25493,8 @@
             "storeObject_preserves_objects_invExt'",
             "storeTcbQueueLinks",
             "storeTcbQueueLinks_preserves_allPendingMessagesBounded",
-            "storeTcbQueueLinks_preserves_objects_invExt"
+            "storeTcbQueueLinks_preserves_objects_invExt",
+            "tail"
           ]
         },
         {
@@ -25333,7 +25516,8 @@
             "storeObject_preserves_objects_invExt'",
             "storeTcbQueueLinks",
             "storeTcbQueueLinks_preserves_badgeWellFormed",
-            "storeTcbQueueLinks_preserves_objects_invExt"
+            "storeTcbQueueLinks_preserves_objects_invExt",
+            "tail"
           ]
         },
         {
@@ -25523,6 +25707,7 @@
             "endpointQueuePopHead_preserves_objects_invExt",
             "endpointSendDual",
             "ensureRunnable_preserves_allPendingMessagesBounded",
+            "head",
             "invExt",
             "maxExtraCaps",
             "maxMessageRegisters",
@@ -25552,6 +25737,7 @@
             "endpointQueuePopHead_preserves_objects_invExt",
             "endpointSendDual",
             "ensureRunnable_preserves_badgeWellFormed",
+            "head",
             "invExt",
             "maxExtraCaps",
             "maxMessageRegisters",
@@ -25589,6 +25775,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_allPendingMessagesBounded",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "none",
             "removeRunnable_preserves_allPendingMessagesBounded",
@@ -25624,6 +25811,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_badgeWellFormed",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "none",
             "removeRunnable_preserves_badgeWellFormed",
@@ -25656,6 +25844,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_allPendingMessagesBounded",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "maxExtraCaps",
             "maxMessageRegisters",
@@ -25688,6 +25877,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_badgeWellFormed",
             "ensureRunnable_preserves_objects",
+            "head",
             "invExt",
             "maxExtraCaps",
             "maxMessageRegisters",
@@ -26561,6 +26751,7 @@
             "endpointCall",
             "endpointId",
             "getEndpoint",
+            "head",
             "none",
             "propagatePriorityInheritance",
             "toValid"
@@ -28451,7 +28642,9 @@
           "kind": "theorem",
           "name": "enforcementBoundaryExtended_count",
           "line": 320,
-          "called": []
+          "called": [
+            "length"
+          ]
         },
         {
           "kind": "theorem",
@@ -28466,7 +28659,9 @@
           "kind": "theorem",
           "name": "enforcementBoundaryExtended_matches_canonical",
           "line": 331,
-          "called": []
+          "called": [
+            "length"
+          ]
         },
         {
           "kind": "theorem",
@@ -28769,7 +28964,9 @@
           "kind": "theorem",
           "name": "checkedDispatchEnforcementCoverage_complete",
           "line": 727,
-          "called": []
+          "called": [
+            "length"
+          ]
         },
         {
           "kind": "theorem",
@@ -28966,6 +29163,7 @@
           "line": 287,
           "called": [
             "all",
+            "any",
             "readOnly",
             "syscallIdToEnforcementName"
           ]
@@ -29236,6 +29434,7 @@
             "ensureRunnable",
             "handleInterrupt",
             "handleYield",
+            "head",
             "lifecycleRetypeObject",
             "lifecycleRevokeDeleteRetype",
             "notificationId",
@@ -29252,6 +29451,7 @@
             "storeObject",
             "storeTcbIpcStateAndMessage",
             "storeTcbQueueLinks",
+            "tail",
             "threadObservable",
             "timerTick",
             "toObjId",
@@ -29630,6 +29830,7 @@
             "endpointSendDual",
             "handleInterrupt",
             "handleYield",
+            "length",
             "lifecycleRevokeDeleteRetype",
             "notificationSignal",
             "notificationWait",
@@ -29722,6 +29923,7 @@
             "handleInterrupt",
             "handleYield",
             "kernelOperationNiConstructor",
+            "length",
             "lifecycleRevokeDeleteRetype",
             "notificationSignal",
             "notificationWait",
@@ -29761,6 +29963,7 @@
             "handleInterrupt",
             "handleYield",
             "kernelOperationNiConstructor",
+            "length",
             "lifecycleRevokeDeleteRetype",
             "notificationSignal",
             "notificationWait",
@@ -30273,6 +30476,7 @@
             "ThreadId",
             "empty",
             "ensureRunnable_preserves_projection",
+            "head",
             "invExt",
             "none",
             "notificationId",
@@ -30785,6 +30989,7 @@
             "filter",
             "insert",
             "invExt",
+            "length",
             "lowEquivalent",
             "none",
             "projectDomainSchedule",
@@ -31210,6 +31415,7 @@
             "ThreadId",
             "endpointId",
             "endpointQueuePopHead",
+            "head",
             "invExt",
             "lookupTcb",
             "none",
@@ -31247,6 +31453,7 @@
             "storeTcbQueueLinks",
             "storeTcbQueueLinks_preserves_objects_invExt",
             "storeTcbQueueLinks_preserves_projection",
+            "tail",
             "toObjId"
           ]
         },
@@ -31272,6 +31479,7 @@
             "endpointQueuePopHead_returns_pre_tcb",
             "endpointSendDual",
             "ensureRunnable_preserves_projection",
+            "head",
             "invExt",
             "maxExtraCaps",
             "maxMessageRegisters",
@@ -31282,6 +31490,7 @@
             "size",
             "storeTcbIpcStateAndMessage",
             "storeTcbIpcStateAndMessage_preserves_projection",
+            "tail",
             "threadObservable",
             "toObjId"
           ]
@@ -31362,6 +31571,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_objects",
             "ensureRunnable_preserves_projection",
+            "head",
             "invExt",
             "lookupTcb",
             "none",
@@ -31376,6 +31586,7 @@
             "storeTcbIpcStateAndMessage_preserves_objects_invExt",
             "storeTcbIpcStateAndMessage_preserves_projection",
             "storeTcbIpcState_preserves_projection",
+            "tail",
             "threadObservable",
             "toObjId"
           ]
@@ -31451,6 +31662,7 @@
             "ensureRunnable",
             "ensureRunnable_preserves_objects",
             "ensureRunnable_preserves_projection",
+            "head",
             "invExt",
             "maxExtraCaps",
             "maxMessageRegisters",
@@ -31462,6 +31674,7 @@
             "storeTcbIpcStateAndMessage",
             "storeTcbIpcStateAndMessage_preserves_objects_invExt",
             "storeTcbIpcStateAndMessage_preserves_projection",
+            "tail",
             "threadObservable",
             "toObjId"
           ]
@@ -31487,6 +31700,7 @@
             "ensureRunnable_preserves_objectIndexSet_invExt",
             "ensureRunnable_preserves_objects",
             "ensureRunnable_preserves_projection",
+            "head",
             "invExt",
             "lookupTcb",
             "lookupTcb_some_objects",
@@ -31505,6 +31719,7 @@
             "storeTcbIpcStateAndMessage_preserves_objects_invExt",
             "storeTcbIpcStateAndMessage_preserves_objects_ne",
             "storeTcbIpcStateAndMessage_preserves_projection",
+            "tail",
             "threadObservable",
             "toObjId"
           ]
@@ -33248,6 +33463,7 @@
           "called": [
             "DeclassificationAuditLog",
             "DeclassificationEvent",
+            "length",
             "recordDeclassification"
           ]
         },
@@ -34509,6 +34725,7 @@
             "KernelObject",
             "ObjId",
             "SystemState",
+            "length",
             "maxObjects",
             "none",
             "retypeFromUntyped"
@@ -34523,6 +34740,8 @@
             "KernelObject",
             "ObjId",
             "SystemState",
+            "any",
+            "length",
             "maxObjects",
             "retypeFromUntyped",
             "retypeFromUntyped_ok_childId_ne"
@@ -34616,8 +34835,10 @@
             "IntrusiveQueue",
             "SystemState",
             "ThreadId",
+            "head",
             "lookupTcb",
-            "none"
+            "none",
+            "tail"
           ]
         },
         {
@@ -34629,8 +34850,10 @@
             "SystemState",
             "TCB",
             "ThreadId",
+            "head",
             "lookupTcb",
-            "removeThreadFromQueue"
+            "removeThreadFromQueue",
+            "tail"
           ]
         },
         {
@@ -35310,7 +35533,9 @@
             "ObjId",
             "allocate",
             "allocationBasePageAligned",
+            "any",
             "cspaceLookupSlot",
+            "length",
             "lifecycleRetypeAuthority",
             "maxObjects",
             "none",
@@ -35329,6 +35554,7 @@
             "KernelObject",
             "ObjId",
             "SystemState",
+            "length",
             "maxObjects",
             "none",
             "retypeFromUntyped"
@@ -35357,7 +35583,9 @@
             "ObjId",
             "SystemState",
             "allocate",
+            "any",
             "cspaceLookupSlot",
+            "length",
             "lifecycleRetypeAuthority",
             "maxObjects",
             "none",
@@ -35403,6 +35631,8 @@
             "ObjId",
             "SystemState",
             "UntypedObject",
+            "any",
+            "length",
             "maxObjects",
             "objectType",
             "objectTypeAllocSize",
@@ -35422,7 +35652,9 @@
             "UntypedObject",
             "allocate",
             "allocationBasePageAligned",
+            "any",
             "cspaceLookupSlot",
+            "length",
             "lifecycleRetypeAuthority",
             "maxObjects",
             "none",
@@ -36212,6 +36444,7 @@
             "get_ne_none_of_slot_occupied",
             "insert",
             "invExt",
+            "length",
             "lookup",
             "none",
             "size",
@@ -36856,6 +37089,7 @@
           "line": 257,
           "called": [
             "countSome",
+            "length",
             "none",
             "set",
             "zero"
@@ -36867,6 +37101,7 @@
           "line": 276,
           "called": [
             "countSome",
+            "length",
             "none",
             "set",
             "zero"
@@ -36885,6 +37120,7 @@
             "extractBits",
             "extractBits_lt",
             "insert",
+            "length",
             "size",
             "size_eq_countSome",
             "toNat"
@@ -36902,6 +37138,7 @@
             "erase",
             "extractBits",
             "extractBits_lt",
+            "length",
             "size",
             "size_eq_countSome",
             "toNat"
@@ -36950,6 +37187,7 @@
           "called": [
             "Capability",
             "collectEntries",
+            "length",
             "none",
             "ofNat",
             "zero"
@@ -37255,6 +37493,7 @@
             "RHTable.empty",
             "filter",
             "insertNoResize",
+            "length",
             "list_fold_filter_size_le",
             "none",
             "size",
@@ -38375,7 +38614,8 @@
           "name": "List.countP_eq_length",
           "line": 705,
           "called": [
-            "get"
+            "get",
+            "length"
           ]
         },
         {
@@ -38384,6 +38624,7 @@
           "line": 719,
           "called": [
             "get",
+            "length",
             "none"
           ]
         },
@@ -38395,6 +38636,7 @@
             "RHEntry",
             "countOccupied",
             "get",
+            "length",
             "list_exists_none_of_countP_lt",
             "none",
             "size",
@@ -38882,6 +39124,7 @@
           "name": "List.countP_set_of_same",
           "line": 18,
           "called": [
+            "length",
             "set",
             "zero"
           ]
@@ -38891,6 +39134,7 @@
           "name": "List.countP_set_of_false_to_true",
           "line": 34,
           "called": [
+            "length",
             "set",
             "zero"
           ]
@@ -38900,6 +39144,7 @@
           "name": "List.countP_set_of_true_to_false",
           "line": 50,
           "called": [
+            "length",
             "set",
             "zero"
           ]
@@ -38979,7 +39224,9 @@
           "kind": "theorem",
           "name": "List.countP_le_len",
           "line": 194,
-          "called": []
+          "called": [
+            "length"
+          ]
         },
         {
           "kind": "theorem",
@@ -39676,6 +39923,7 @@
           "name": "List.exists_none_of_countP_lt",
           "line": 2309,
           "called": [
+            "length",
             "none"
           ]
         },
@@ -39687,6 +39935,7 @@
             "List.exists_none_of_countP_lt",
             "RHEntry",
             "countOccupied",
+            "length",
             "none",
             "size",
             "toList"
@@ -40186,6 +40435,7 @@
           "line": 77,
           "called": [
             "ReplenishmentEntry",
+            "length",
             "maxReplenishments"
           ]
         },
@@ -40195,6 +40445,7 @@
           "line": 81,
           "called": [
             "ReplenishmentEntry",
+            "length",
             "maxReplenishments",
             "truncateReplenishments"
           ]
@@ -40225,6 +40476,7 @@
           "line": 110,
           "called": [
             "ReplenishmentEntry",
+            "length",
             "partitionEligible"
           ]
         },
@@ -40343,6 +40595,7 @@
           "line": 55,
           "called": [
             "SchedContext",
+            "length",
             "maxReplenishments"
           ]
         },
@@ -40619,6 +40872,7 @@
           "line": 421,
           "called": [
             "ReplenishmentEntry",
+            "length",
             "sumReplenishments"
           ]
         },
@@ -40629,6 +40883,7 @@
           "called": [
             "SchedContext",
             "filter",
+            "length",
             "maxReplenishments",
             "replenishmentAmountsBounded",
             "sumReplenishments",
@@ -40670,7 +40925,8 @@
           "line": 516,
           "called": [
             "SchedContext",
-            "filter"
+            "filter",
+            "length"
           ]
         },
         {
@@ -40681,6 +40937,7 @@
             "SchedContext",
             "cbsWindowReplenishmentsBounded",
             "filter",
+            "length",
             "replenishmentAmountsBounded",
             "sumReplenishments",
             "sumReplenishments_le_count_mul_max",
@@ -40748,6 +41005,7 @@
             "SchedContext",
             "applyConfigureParams",
             "isPositive",
+            "length",
             "maxReplenishments",
             "validateSchedContextParams",
             "validateSchedContextParams_implies_wellFormed",
@@ -41424,7 +41682,8 @@
           "line": 70,
           "called": [
             "SchedContextId",
-            "scId"
+            "scId",
+            "tail"
           ]
         },
         {
@@ -41445,7 +41704,8 @@
           "line": 102,
           "called": [
             "SchedContextId",
-            "scId"
+            "scId",
+            "tail"
           ]
         },
         {
@@ -41455,6 +41715,7 @@
           "called": [
             "ReplenishQueue",
             "SchedContextId",
+            "length",
             "size",
             "splitDue"
           ]
@@ -41467,6 +41728,7 @@
             "ReplenishQueue",
             "SchedContextId",
             "filter",
+            "length",
             "scId",
             "size"
           ]
@@ -41519,6 +41781,7 @@
           "line": 171,
           "called": [
             "ReplenishQueue",
+            "length",
             "size"
           ]
         },
@@ -41564,6 +41827,7 @@
           "line": 201,
           "called": [
             "SchedContextId",
+            "head",
             "pairwiseSortedBy"
           ]
         },
@@ -41575,7 +41839,8 @@
             "SchedContextId",
             "pairwiseSortedBy",
             "pairwiseSortedBy_head_le_second",
-            "pairwiseSortedBy_tail"
+            "pairwiseSortedBy_tail",
+            "tail"
           ]
         },
         {
@@ -41585,7 +41850,8 @@
           "called": [
             "SchedContextId",
             "insertSorted",
-            "scId"
+            "scId",
+            "tail"
           ]
         },
         {
@@ -41594,8 +41860,10 @@
           "line": 257,
           "called": [
             "SchedContextId",
+            "head",
             "insertSorted",
-            "scId"
+            "scId",
+            "tail"
           ]
         },
         {
@@ -41610,7 +41878,8 @@
             "pairwiseSortedBy_cons",
             "pairwiseSortedBy_head_le_all",
             "pairwiseSortedBy_tail",
-            "scId"
+            "scId",
+            "tail"
           ]
         },
         {
@@ -41635,7 +41904,8 @@
             "pairwiseSortedBy",
             "pairwiseSortedBy_tail",
             "scId",
-            "splitDue"
+            "splitDue",
+            "tail"
           ]
         },
         {
@@ -41655,8 +41925,10 @@
           "line": 335,
           "called": [
             "SchedContextId",
+            "length",
             "scId",
-            "splitDue"
+            "splitDue",
+            "tail"
           ]
         },
         {
@@ -41677,6 +41949,7 @@
           "called": [
             "SchedContextId",
             "filter",
+            "head",
             "pairwiseSortedBy",
             "pairwiseSortedBy_head_le_all"
           ]
@@ -41691,7 +41964,8 @@
             "filter_head_time_ge",
             "pairwiseSortedBy",
             "pairwiseSortedBy_cons",
-            "pairwiseSortedBy_tail"
+            "pairwiseSortedBy_tail",
+            "tail"
           ]
         },
         {
@@ -41755,7 +42029,9 @@
           "called": [
             "SchedContextId",
             "insertSorted",
-            "scId"
+            "length",
+            "scId",
+            "tail"
           ]
         },
         {
@@ -41790,7 +42066,8 @@
           "called": [
             "SchedContextId",
             "insertSorted",
-            "scId"
+            "scId",
+            "tail"
           ]
         },
         {
@@ -41801,7 +42078,8 @@
             "Kernel",
             "SchedContextId",
             "insertSorted",
-            "scId"
+            "scId",
+            "tail"
           ]
         }
       ]
@@ -42016,6 +42294,7 @@
           "called": [
             "SchedContext",
             "isPositive",
+            "length",
             "maxReplenishments"
           ]
         },
@@ -42472,7 +42751,8 @@
           "name": "domainScheduleEntriesPositive",
           "line": 573,
           "called": [
-            "SystemState"
+            "SystemState",
+            "length"
           ]
         },
         {
@@ -42966,7 +43246,8 @@
           "name": "maxDomainLength",
           "line": 25,
           "called": [
-            "DomainScheduleEntry"
+            "DomainScheduleEntry",
+            "length"
           ]
         },
         {
@@ -42974,7 +43255,8 @@
           "name": "domainRotationTotal",
           "line": 30,
           "called": [
-            "DomainScheduleEntry"
+            "DomainScheduleEntry",
+            "length"
           ]
         },
         {
@@ -42983,6 +43265,7 @@
           "line": 35,
           "called": [
             "DomainScheduleEntry",
+            "length",
             "schedule",
             "switchDomain_index_in_bounds"
           ]
@@ -43009,8 +43292,11 @@
           "line": 53,
           "called": [
             "DomainScheduleEntry",
+            "head",
+            "length",
             "maxDomainLength",
-            "schedule"
+            "schedule",
+            "tail"
           ]
         },
         {
@@ -43021,6 +43307,7 @@
             "DomainScheduleEntry",
             "domainRotationBound",
             "domainRotationTotal",
+            "length",
             "maxDomainLength",
             "schedule"
           ]
@@ -43179,6 +43466,7 @@
             "bounded_scheduling_latency_exists",
             "contains",
             "domainRotationBound",
+            "length",
             "maxDomainLength",
             "none",
             "selectedAt",
@@ -43335,6 +43623,7 @@
           "line": 79,
           "called": [
             "ReplenishmentEntry",
+            "length",
             "maxReplenishments",
             "truncateReplenishments",
             "truncateReplenishments_length_le"
@@ -43509,6 +43798,7 @@
             "handleYieldWithBudget",
             "hasDue",
             "isZero",
+            "length",
             "processReplenishmentsDue",
             "scId",
             "schedule",
@@ -43741,6 +44031,7 @@
             "contains",
             "countHigherOrEqualEffectivePriority",
             "hasSufficientBudget",
+            "length",
             "maxBudgetInBand",
             "maxPeriodInBand",
             "toObjId"
@@ -43783,6 +44074,7 @@
           "line": 121,
           "called": [
             "SystemState",
+            "length",
             "maxDomainLength",
             "wcrtBound"
           ]
@@ -43795,6 +44087,7 @@
             "SystemState",
             "ThreadId",
             "WCRTHypotheses",
+            "length",
             "maxDomainLength",
             "wcrtBound"
           ]
@@ -43812,6 +44105,7 @@
             "bandExhaustionBound",
             "contains",
             "domainRotationBound",
+            "length",
             "maxDomainLength",
             "none",
             "selectedAt",
@@ -43829,6 +44123,7 @@
             "WCRTHypotheses",
             "bandExhaustionBound",
             "domainRotationBound",
+            "length",
             "maxDomainLength",
             "wcrtBound"
           ]
@@ -44337,6 +44632,7 @@
             "Kernel",
             "effectiveRunQueuePriority",
             "insert",
+            "length",
             "none",
             "saveOutgoingContext",
             "schedule",
@@ -44349,6 +44645,7 @@
           "line": 931,
           "called": [
             "DomainScheduleEntry",
+            "length",
             "schedule"
           ]
         },
@@ -44359,6 +44656,7 @@
           "called": [
             "DomainScheduleEntry",
             "getElem",
+            "length",
             "schedule",
             "switchDomain_index_in_bounds"
           ]
@@ -45216,6 +45514,7 @@
           "called": [
             "SystemState",
             "contextMatchesCurrent",
+            "length",
             "none",
             "switchDomain"
           ]
@@ -45477,6 +45776,7 @@
           "called": [
             "SystemState",
             "domainTimeRemainingPositive",
+            "length",
             "switchDomain"
           ]
         },
@@ -46229,8 +46529,10 @@
           "line": 3717,
           "called": [
             "SchedContextId",
+            "head",
             "pairwiseSortedBy",
-            "pairwiseSortedBy_head_le_second"
+            "pairwiseSortedBy_head_le_second",
+            "tail"
           ]
         },
         {
@@ -46756,6 +47058,7 @@
           "called": [
             "SystemState",
             "ThreadId",
+            "length",
             "toObjId"
           ]
         },
@@ -46764,7 +47067,8 @@
           "name": "chainContains",
           "line": 105,
           "called": [
-            "ThreadId"
+            "ThreadId",
+            "any"
           ]
         },
         {
@@ -46880,7 +47184,8 @@
             "SystemState",
             "blockingAcyclic",
             "blockingChain_congr",
-            "blockingServer"
+            "blockingServer",
+            "length"
           ]
         },
         {
@@ -46891,6 +47196,7 @@
             "SystemState",
             "ThreadId",
             "blockingChain",
+            "length",
             "none",
             "toObjId",
             "zero"
@@ -46904,7 +47210,8 @@
             "SystemState",
             "ThreadId",
             "blockingChain",
-            "blockingChain_length_le_fuel"
+            "blockingChain_length_le_fuel",
+            "length"
           ]
         },
         {
@@ -46961,6 +47268,7 @@
             "WCRT",
             "blockingChain",
             "blockingChain_bounded",
+            "length",
             "pipSingleLinkBound"
           ]
         },
@@ -47703,6 +48011,7 @@
             "SystemState",
             "ThreadId",
             "blockingServer",
+            "length",
             "none",
             "updatePipBoost"
           ]
@@ -47715,6 +48024,7 @@
             "SystemState",
             "ThreadId",
             "blockingServer",
+            "length",
             "none",
             "updatePipBoost"
           ]
@@ -48855,7 +49165,8 @@
           "name": "filter_mono",
           "line": 298,
           "called": [
-            "filter"
+            "filter",
+            "length"
           ]
         },
         {
@@ -48864,7 +49175,8 @@
           "line": 313,
           "called": [
             "filter",
-            "filter_mono"
+            "filter_mono",
+            "length"
           ]
         },
         {
@@ -48878,7 +49190,8 @@
             "contains",
             "filter",
             "filter_strict",
-            "insert"
+            "insert",
+            "length"
           ]
         },
         {
@@ -48944,6 +49257,7 @@
             "go_skip_eq",
             "go_tgt_eq",
             "insert",
+            "length",
             "lookupDeps",
             "reach_in_universe",
             "serviceReachable",
@@ -48958,6 +49272,7 @@
             "ServiceId",
             "SystemState",
             "bfsUniverse",
+            "length",
             "serviceBfsFuel"
           ]
         },
@@ -49229,7 +49544,9 @@
           "kind": "theorem",
           "name": "subsystemModules_count",
           "line": 888,
-          "called": []
+          "called": [
+            "length"
+          ]
         },
         {
           "kind": "theorem",
@@ -49259,6 +49576,7 @@
           "line": 924,
           "called": [
             "SystemState",
+            "length",
             "lookupDeps",
             "lookupService",
             "serviceBfsFuel",
@@ -49271,6 +49589,7 @@
           "line": 981,
           "called": [
             "SystemState",
+            "length",
             "serviceCountBounded",
             "serviceCountBounded_monotone",
             "serviceCountBounded_of_eq"
@@ -49282,6 +49601,7 @@
           "line": 1002,
           "called": [
             "SystemState",
+            "length",
             "serviceBfsFuel"
           ]
         },
@@ -49576,6 +49896,7 @@
           "called": [
             "ServiceId",
             "SystemState",
+            "any",
             "erase",
             "filter",
             "fold",
@@ -49637,7 +49958,8 @@
           "name": "serviceBfsFuel",
           "line": 124,
           "called": [
-            "SystemState"
+            "SystemState",
+            "length"
           ]
         },
         {
@@ -49716,6 +50038,7 @@
           "line": 294,
           "called": [
             "SystemState",
+            "length",
             "serviceBfsFuel"
           ]
         },
@@ -49725,6 +50048,7 @@
           "line": 313,
           "called": [
             "SystemState",
+            "length",
             "serviceBfsFuel",
             "size"
           ]
@@ -50988,6 +51312,7 @@
           "called": [
             "MachineState",
             "PAddr",
+            "any",
             "contains",
             "toNat"
           ]
@@ -51912,7 +52237,9 @@
           "line": 59,
           "called": [
             "RHEntry",
-            "none"
+            "head",
+            "none",
+            "tail"
           ]
         },
         {
@@ -51921,7 +52248,9 @@
           "line": 89,
           "called": [
             "RHEntry",
-            "none"
+            "head",
+            "none",
+            "tail"
           ]
         },
         {
@@ -51936,6 +52265,7 @@
             "foldl_toList_mem_backward",
             "get",
             "invExt",
+            "length",
             "size",
             "toList"
           ]
@@ -51952,6 +52282,7 @@
             "foldl_toList_mem_forward",
             "get",
             "invExt",
+            "length",
             "none",
             "size",
             "toList"
@@ -51963,7 +52294,10 @@
           "line": 190,
           "called": [
             "RHEntry",
-            "none"
+            "head",
+            "length",
+            "none",
+            "tail"
           ]
         },
         {
@@ -51976,6 +52310,7 @@
             "RHTable.toList",
             "foldl_noDupKeys_inv",
             "invExt",
+            "length",
             "size",
             "toList"
           ]
@@ -51988,10 +52323,12 @@
             "RHTable",
             "RHTable.getElem",
             "get",
+            "head",
             "insert",
             "insert_preserves_invExt",
             "invExt",
-            "none"
+            "none",
+            "tail"
           ]
         },
         {
@@ -52002,10 +52339,12 @@
             "RHTable",
             "RHTable.getElem",
             "get",
+            "head",
             "insert",
             "insert_preserves_invExt",
             "invExt",
-            "none"
+            "none",
+            "tail"
           ]
         },
         {
@@ -52017,10 +52356,13 @@
             "RHTable.getElem",
             "freezeMap_indexMap_head",
             "get",
+            "head",
             "insert",
             "insert_preserves_invExt",
             "invExt",
-            "none"
+            "length",
+            "none",
+            "tail"
           ]
         },
         {
@@ -52038,6 +52380,7 @@
             "freezeMap_indexMap_at_pos",
             "get",
             "invExt",
+            "length",
             "none",
             "size",
             "toList",
@@ -52088,6 +52431,7 @@
             "get",
             "insert",
             "invExt",
+            "length",
             "map_snd_map_pair",
             "none"
           ]
@@ -52329,6 +52673,7 @@
             "Slot",
             "extractBits",
             "insert",
+            "length",
             "lookup",
             "none",
             "toNat"
@@ -52347,6 +52692,7 @@
             "Slot",
             "extractBits",
             "insert",
+            "length",
             "lookup",
             "none",
             "toNat"
@@ -52366,6 +52712,7 @@
             "extractBits",
             "foldl_generic_preserves_lookup",
             "insert",
+            "length",
             "lookup",
             "none",
             "toNat",
@@ -52392,6 +52739,7 @@
             "freezeCNodeSlots",
             "get",
             "get_ne_none_of_slot_occupied",
+            "length",
             "lookup",
             "size",
             "slotsUnique",
@@ -52433,6 +52781,7 @@
             "FrozenMap.size",
             "RHTable",
             "freezeMap",
+            "length",
             "size"
           ]
         },
@@ -52455,6 +52804,7 @@
           "called": [
             "RHTable",
             "invExt",
+            "length",
             "toList",
             "toList_noDupKeys"
           ]
@@ -52469,7 +52819,8 @@
             "get",
             "insert",
             "insert_preserves_invExt",
-            "invExt"
+            "invExt",
+            "length"
           ]
         },
         {
@@ -53364,6 +53715,7 @@
           "called": [
             "RHTable",
             "freezeMap",
+            "length",
             "size"
           ]
         },
@@ -53373,7 +53725,8 @@
           "line": 479,
           "called": [
             "RHTable",
-            "insert"
+            "insert",
+            "length"
           ]
         },
         {
@@ -53427,6 +53780,7 @@
             "freezeMap_data_size",
             "freezeMap_indexMap_invExtK",
             "invExtK",
+            "length",
             "size"
           ]
         },
@@ -53590,6 +53944,303 @@
             "mkEmptyIntermediateState",
             "perObjectMappingsInvariant",
             "perObjectSlotsInvariant"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Model.Object.NoDupList",
+      "path": "SeLe4n/Model/Object/NoDupList.lean",
+      "declaration_count": 36,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n",
+          "line": 41,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "NoDupList",
+          "line": 50,
+          "called": []
+        },
+        {
+          "kind": "namespace",
+          "name": "NoDupList",
+          "line": 54,
+          "called": []
+        },
+        {
+          "kind": "variable",
+          "name": "<anonymous:variable:56>",
+          "line": 56,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "empty",
+          "line": 61,
+          "called": [
+            "NoDupList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "consWithGuard",
+          "line": 68,
+          "called": [
+            "NoDupList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "consWithGuard",
+          "line": 78,
+          "called": [
+            "NoDupList",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "nodup_filter",
+          "line": 89,
+          "called": [
+            "filter"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "filter",
+          "line": 105,
+          "called": [
+            "NoDupList",
+            "nodup_filter"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "tail",
+          "line": 116,
+          "called": [
+            "NoDupList",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tail",
+          "line": 125,
+          "called": [
+            "NoDupList",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tail",
+          "line": 135,
+          "called": [
+            "NoDupList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "length",
+          "line": 151,
+          "called": [
+            "NoDupList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "head",
+          "line": 153,
+          "called": [
+            "NoDupList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "isEmpty",
+          "line": 155,
+          "called": [
+            "NoDupList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "contains",
+          "line": 157,
+          "called": [
+            "NoDupList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "all",
+          "line": 160,
+          "called": [
+            "NoDupList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "any",
+          "line": 162,
+          "called": [
+            "NoDupList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "foldr",
+          "line": 164,
+          "called": [
+            "NoDupList"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:169>",
+          "line": 169,
+          "called": [
+            "NoDupList"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:172>",
+          "line": 172,
+          "called": [
+            "NoDupList",
+            "empty"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:174>",
+          "line": 174,
+          "called": [
+            "NoDupList",
+            "mem"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:177>",
+          "line": 177,
+          "called": [
+            "NoDupList"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:182>",
+          "line": 182,
+          "called": [
+            "NoDupList"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "val_empty",
+          "line": 187,
+          "called": [
+            "NoDupList",
+            "empty"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "val_consWithGuard",
+          "line": 189,
+          "called": [
+            "NoDupList",
+            "consWithGuard"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "val_filter",
+          "line": 192,
+          "called": [
+            "NoDupList",
+            "filter"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "mem_iff",
+          "line": 195,
+          "called": [
+            "NoDupList"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "eq_iff",
+          "line": 200,
+          "called": [
+            "NoDupList"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tail",
+          "line": 212,
+          "called": [
+            "NoDupList",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tail",
+          "line": 228,
+          "called": [
+            "NoDupList",
+            "head"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "consWithGuard",
+          "line": 259,
+          "called": [
+            "NoDupList",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "consWithGuard",
+          "line": 268,
+          "called": [
+            "NoDupList"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "nodup_witness",
+          "line": 283,
+          "called": [
+            "NoDupList"
+          ]
+        },
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 297,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "noDupList_module_ready",
+          "line": 299,
+          "called": [
+            "Kernel"
           ]
         }
       ]
@@ -54750,7 +55401,8 @@
             "childrenOf",
             "contains",
             "filter",
-            "insert"
+            "insert",
+            "length"
           ]
         },
         {
@@ -54777,7 +55429,9 @@
           "line": 1210,
           "called": [
             "CapDerivationTree",
-            "CdtNodeId"
+            "CdtNodeId",
+            "head",
+            "length"
           ]
         },
         {
@@ -54818,7 +55472,9 @@
             "DerivationOp",
             "addEdge",
             "edgeWellFounded",
-            "getElem"
+            "getElem",
+            "head",
+            "length"
           ]
         },
         {
@@ -54837,7 +55493,9 @@
           "line": 1330,
           "called": [
             "CapDerivationTree",
-            "CdtNodeId"
+            "CdtNodeId",
+            "head",
+            "length"
           ]
         },
         {
@@ -54847,7 +55505,9 @@
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
-            "cdtReachable"
+            "cdtReachable",
+            "head",
+            "length"
           ]
         },
         {
@@ -54884,6 +55544,7 @@
             "RHTable.getElem",
             "addEdge",
             "childMapConsistent",
+            "head",
             "invExt"
           ]
         },
@@ -54919,6 +55580,7 @@
             "RHTable.getElem",
             "addEdge",
             "get",
+            "head",
             "insert",
             "invExt",
             "none",
@@ -54952,7 +55614,9 @@
             "RHTable.getElem",
             "erase",
             "erase_preserves_invExtK",
-            "invExtK"
+            "head",
+            "invExtK",
+            "tail"
           ]
         },
         {
@@ -55061,7 +55725,9 @@
             "DerivationOp",
             "addEdge",
             "edgeWellFounded",
-            "getElem"
+            "getElem",
+            "head",
+            "length"
           ]
         },
         {
@@ -55264,7 +55930,8 @@
             "CdtNodeId",
             "childrenOf",
             "descendantsOf",
-            "descendantsOf_go_children_found"
+            "descendantsOf_go_children_found",
+            "length"
           ]
         },
         {
@@ -55314,7 +55981,8 @@
             "CdtNodeId",
             "childrenOf",
             "descendantsOf",
-            "descendantsOf_children_subset"
+            "descendantsOf_children_subset",
+            "length"
           ]
         },
         {
@@ -55330,6 +55998,7 @@
             "descendantsOf_go_head_children_found",
             "filter",
             "insert",
+            "length",
             "sync_after_extend"
           ]
         },
@@ -55349,6 +56018,7 @@
             "childrenOf",
             "contains",
             "descendantsOf_go_queue_pos_children_found",
+            "length",
             "list_mem_split"
           ]
         },
@@ -55376,7 +56046,9 @@
             "cdtMapsConsistent",
             "cdtReachable",
             "childrenOf_to_edge",
-            "getElem"
+            "getElem",
+            "head",
+            "length"
           ]
         },
         {
@@ -55530,7 +56202,8 @@
             "CapDerivationTree",
             "CdtNodeId",
             "DerivationOp",
-            "addEdge"
+            "addEdge",
+            "length"
           ]
         },
         {
@@ -55543,6 +56216,7 @@
             "DerivationOp",
             "addEdge",
             "addEdge_edges_length",
+            "length",
             "maxCdtDepth"
           ]
         }
@@ -55556,13 +56230,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Model",
-          "line": 14,
+          "line": 15,
           "called": []
         },
         {
           "kind": "structure",
           "name": "ServiceIdentity",
-          "line": 18,
+          "line": 19,
           "called": [
             "ObjId",
             "ServiceId"
@@ -55571,7 +56245,7 @@
         {
           "kind": "structure",
           "name": "ServiceGraphEntry",
-          "line": 29,
+          "line": 30,
           "called": [
             "ServiceId",
             "ServiceIdentity"
@@ -55580,19 +56254,19 @@
         {
           "kind": "inductive",
           "name": "AccessRight",
-          "line": 35,
+          "line": 36,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "AccessRight",
-          "line": 50,
+          "line": 51,
           "called": []
         },
         {
           "kind": "def",
           "name": "toBit",
-          "line": 54,
+          "line": 55,
           "called": [
             "AccessRight"
           ]
@@ -55600,7 +56274,7 @@
         {
           "kind": "def",
           "name": "all",
-          "line": 62,
+          "line": 63,
           "called": [
             "AccessRight"
           ]
@@ -55608,19 +56282,19 @@
         {
           "kind": "structure",
           "name": "AccessRightSet",
-          "line": 102,
+          "line": 103,
           "called": []
         },
         {
           "kind": "namespace",
           "name": "AccessRightSet",
-          "line": 107,
+          "line": 108,
           "called": []
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:111>",
-          "line": 111,
+          "name": "<anonymous:instance:112>",
+          "line": 112,
           "called": [
             "AccessRightSet"
           ]
@@ -55628,13 +56302,13 @@
         {
           "kind": "def",
           "name": "maxBits",
-          "line": 115,
+          "line": 116,
           "called": []
         },
         {
           "kind": "def",
           "name": "valid",
-          "line": 120,
+          "line": 121,
           "called": [
             "AccessRightSet",
             "maxBits"
@@ -55642,8 +56316,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:122>",
-          "line": 122,
+          "name": "<anonymous:instance:123>",
+          "line": 123,
           "called": [
             "AccessRightSet",
             "maxBits",
@@ -55653,7 +56327,7 @@
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 127,
+          "line": 128,
           "called": [
             "AccessRightSet",
             "maxBits"
@@ -55662,7 +56336,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_valid",
-          "line": 130,
+          "line": 131,
           "called": [
             "maxBits",
             "ofNat",
@@ -55672,7 +56346,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_idempotent",
-          "line": 135,
+          "line": 136,
           "called": [
             "AccessRightSet",
             "maxBits",
@@ -55683,7 +56357,7 @@
         {
           "kind": "def",
           "name": "mk_checked",
-          "line": 144,
+          "line": 145,
           "called": [
             "AccessRightSet"
           ]
@@ -55691,7 +56365,7 @@
         {
           "kind": "theorem",
           "name": "mk_checked_valid",
-          "line": 150,
+          "line": 151,
           "called": [
             "maxBits",
             "mk_checked",
@@ -55701,7 +56375,7 @@
         {
           "kind": "theorem",
           "name": "eta",
-          "line": 158,
+          "line": 159,
           "called": [
             "AccessRightSet",
             "ofNat",
@@ -55712,7 +56386,7 @@
         {
           "kind": "def",
           "name": "empty",
-          "line": 162,
+          "line": 163,
           "called": [
             "AccessRightSet"
           ]
@@ -55720,7 +56394,7 @@
         {
           "kind": "theorem",
           "name": "empty_valid",
-          "line": 165,
+          "line": 166,
           "called": [
             "valid"
           ]
@@ -55728,7 +56402,7 @@
         {
           "kind": "def",
           "name": "singleton",
-          "line": 168,
+          "line": 169,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -55738,7 +56412,7 @@
         {
           "kind": "theorem",
           "name": "singleton_valid",
-          "line": 171,
+          "line": 172,
           "called": [
             "AccessRight",
             "singleton",
@@ -55748,7 +56422,7 @@
         {
           "kind": "def",
           "name": "ofList",
-          "line": 176,
+          "line": 177,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -55758,7 +56432,7 @@
         {
           "kind": "def",
           "name": "mem",
-          "line": 180,
+          "line": 181,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -55767,8 +56441,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:183>",
-          "line": 183,
+          "name": "<anonymous:instance:184>",
+          "line": 184,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -55777,8 +56451,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:186>",
-          "line": 186,
+          "name": "<anonymous:instance:187>",
+          "line": 187,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -55788,7 +56462,7 @@
         {
           "kind": "def",
           "name": "subset",
-          "line": 191,
+          "line": 192,
           "called": [
             "AccessRightSet"
           ]
@@ -55796,7 +56470,7 @@
         {
           "kind": "def",
           "name": "union",
-          "line": 199,
+          "line": 200,
           "called": [
             "AccessRightSet"
           ]
@@ -55804,7 +56478,7 @@
         {
           "kind": "def",
           "name": "inter",
-          "line": 205,
+          "line": 206,
           "called": [
             "AccessRightSet"
           ]
@@ -55812,7 +56486,7 @@
         {
           "kind": "theorem",
           "name": "union_valid",
-          "line": 208,
+          "line": 209,
           "called": [
             "AccessRightSet",
             "maxBits",
@@ -55824,7 +56498,7 @@
         {
           "kind": "theorem",
           "name": "inter_valid",
-          "line": 220,
+          "line": 221,
           "called": [
             "AccessRightSet",
             "inter",
@@ -55835,7 +56509,7 @@
         {
           "kind": "theorem",
           "name": "subset_sound",
-          "line": 229,
+          "line": 230,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -55847,7 +56521,7 @@
         {
           "kind": "theorem",
           "name": "mem_bit_bounded",
-          "line": 251,
+          "line": 252,
           "called": [
             "AccessRight",
             "toBit"
@@ -55856,7 +56530,7 @@
         {
           "kind": "theorem",
           "name": "isWord5_of_valid",
-          "line": 260,
+          "line": 261,
           "called": [
             "AccessRightSet",
             "valid"
@@ -55865,7 +56539,7 @@
         {
           "kind": "def",
           "name": "toList",
-          "line": 263,
+          "line": 264,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -55875,8 +56549,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:266>",
-          "line": 266,
+          "name": "<anonymous:instance:267>",
+          "line": 267,
           "called": [
             "AccessRightSet"
           ]
@@ -55884,7 +56558,7 @@
         {
           "kind": "theorem",
           "name": "ofList_comm",
-          "line": 270,
+          "line": 271,
           "called": [
             "AccessRight",
             "ofList",
@@ -55894,7 +56568,7 @@
         {
           "kind": "theorem",
           "name": "singleton_lt_maxBits",
-          "line": 278,
+          "line": 279,
           "called": [
             "AccessRight",
             "maxBits",
@@ -55904,13 +56578,13 @@
         {
           "kind": "theorem",
           "name": "or_lt_two_pow",
-          "line": 284,
+          "line": 285,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "or_lt_maxBits",
-          "line": 288,
+          "line": 289,
           "called": [
             "maxBits",
             "or_lt_two_pow"
@@ -55919,7 +56593,7 @@
         {
           "kind": "theorem",
           "name": "foldl_or_lt_maxBits",
-          "line": 294,
+          "line": 295,
           "called": [
             "AccessRight",
             "maxBits",
@@ -55931,7 +56605,7 @@
         {
           "kind": "theorem",
           "name": "ofList_valid",
-          "line": 312,
+          "line": 313,
           "called": [
             "AccessRight",
             "AccessRightSet",
@@ -55944,7 +56618,7 @@
         {
           "kind": "inductive",
           "name": "CapTarget",
-          "line": 322,
+          "line": 323,
           "called": [
             "ObjId",
             "Slot",
@@ -55954,7 +56628,7 @@
         {
           "kind": "structure",
           "name": "Capability",
-          "line": 330,
+          "line": 331,
           "called": [
             "AccessRightSet",
             "Badge",
@@ -55965,13 +56639,13 @@
         {
           "kind": "namespace",
           "name": "Capability",
-          "line": 336,
+          "line": 337,
           "called": []
         },
         {
           "kind": "def",
           "name": "hasRight",
-          "line": 339,
+          "line": 340,
           "called": [
             "AccessRight",
             "Capability",
@@ -55981,7 +56655,7 @@
         {
           "kind": "def",
           "name": "isNull",
-          "line": 355,
+          "line": 356,
           "called": [
             "Capability",
             "isReserved"
@@ -55990,7 +56664,7 @@
         {
           "kind": "def",
           "name": "isNotNull",
-          "line": 364,
+          "line": 365,
           "called": [
             "Capability",
             "isNull"
@@ -55999,7 +56673,7 @@
         {
           "kind": "theorem",
           "name": "isNotNull_iff",
-          "line": 367,
+          "line": 368,
           "called": [
             "Capability",
             "isNotNull",
@@ -56009,7 +56683,7 @@
         {
           "kind": "def",
           "name": "null",
-          "line": 374,
+          "line": 375,
           "called": [
             "Capability",
             "empty",
@@ -56020,7 +56694,7 @@
         {
           "kind": "theorem",
           "name": "null_isNull",
-          "line": 378,
+          "line": 379,
           "called": [
             "empty",
             "isNull",
@@ -56032,7 +56706,7 @@
         {
           "kind": "def",
           "name": "requireNotNull",
-          "line": 391,
+          "line": 392,
           "called": [
             "Capability",
             "isNull",
@@ -56042,7 +56716,7 @@
         {
           "kind": "theorem",
           "name": "requireNotNull_isSome_iff",
-          "line": 395,
+          "line": 396,
           "called": [
             "Capability",
             "isNull",
@@ -56052,7 +56726,7 @@
         {
           "kind": "theorem",
           "name": "requireNotNull_null",
-          "line": 401,
+          "line": 402,
           "called": [
             "none",
             "null",
@@ -56063,7 +56737,7 @@
         {
           "kind": "theorem",
           "name": "requireNotNull_some_not_null",
-          "line": 405,
+          "line": 406,
           "called": [
             "Capability",
             "isNull",
@@ -56073,7 +56747,7 @@
         {
           "kind": "abbrev",
           "name": "NonNullCap",
-          "line": 432,
+          "line": 433,
           "called": [
             "Capability",
             "isNull"
@@ -56082,13 +56756,13 @@
         {
           "kind": "namespace",
           "name": "Capability",
-          "line": 434,
+          "line": 435,
           "called": []
         },
         {
           "kind": "def",
           "name": "ofNonNull",
-          "line": 438,
+          "line": 439,
           "called": [
             "Capability",
             "NonNullCap"
@@ -56097,7 +56771,7 @@
         {
           "kind": "def",
           "name": "toNonNull",
-          "line": 443,
+          "line": 444,
           "called": [
             "Capability",
             "NonNullCap",
@@ -56107,7 +56781,7 @@
         {
           "kind": "def",
           "name": "toNonNull",
-          "line": 454,
+          "line": 455,
           "called": [
             "Capability",
             "NonNullCap",
@@ -56118,7 +56792,7 @@
         {
           "kind": "theorem",
           "name": "Capability.toNonNull",
-          "line": 460,
+          "line": 461,
           "called": [
             "Capability",
             "isNull"
@@ -56127,7 +56801,7 @@
         {
           "kind": "theorem",
           "name": "Capability.toNonNull",
-          "line": 470,
+          "line": 471,
           "called": [
             "none",
             "null",
@@ -56137,7 +56811,7 @@
         {
           "kind": "theorem",
           "name": "Capability.toNonNull",
-          "line": 476,
+          "line": 477,
           "called": [
             "NonNullCap",
             "ofNonNull"
@@ -56146,7 +56820,7 @@
         {
           "kind": "theorem",
           "name": "Capability.toNonNull",
-          "line": 484,
+          "line": 485,
           "called": [
             "Capability",
             "isNull"
@@ -56154,8 +56828,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:495>",
-          "line": 495,
+          "name": "<anonymous:instance:496>",
+          "line": 496,
           "called": [
             "Capability",
             "NonNullCap"
@@ -56164,19 +56838,19 @@
         {
           "kind": "def",
           "name": "maxMessageRegisters",
-          "line": 500,
+          "line": 501,
           "called": []
         },
         {
           "kind": "def",
           "name": "maxExtraCaps",
-          "line": 504,
+          "line": 505,
           "called": []
         },
         {
           "kind": "structure",
           "name": "IpcMessage",
-          "line": 512,
+          "line": 513,
           "called": [
             "Badge",
             "Capability",
@@ -56187,13 +56861,13 @@
         {
           "kind": "namespace",
           "name": "IpcMessage",
-          "line": 522,
+          "line": 523,
           "called": []
         },
         {
           "kind": "def",
           "name": "empty",
-          "line": 524,
+          "line": 525,
           "called": [
             "IpcMessage",
             "RegValue",
@@ -56203,7 +56877,7 @@
         {
           "kind": "def",
           "name": "bounded",
-          "line": 528,
+          "line": 529,
           "called": [
             "IpcMessage",
             "maxExtraCaps",
@@ -56214,7 +56888,7 @@
         {
           "kind": "def",
           "name": "checkBounds",
-          "line": 534,
+          "line": 535,
           "called": [
             "IpcMessage",
             "maxExtraCaps",
@@ -56225,7 +56899,7 @@
         {
           "kind": "theorem",
           "name": "empty_bounded",
-          "line": 538,
+          "line": 539,
           "called": [
             "bounded",
             "empty",
@@ -56237,7 +56911,7 @@
         {
           "kind": "theorem",
           "name": "checkBounds_iff_bounded",
-          "line": 542,
+          "line": 543,
           "called": [
             "IpcMessage",
             "bounded",
@@ -56249,7 +56923,7 @@
         {
           "kind": "inductive",
           "name": "CapTransferResult",
-          "line": 554,
+          "line": 555,
           "called": [
             "ObjId",
             "Slot"
@@ -56258,7 +56932,7 @@
         {
           "kind": "structure",
           "name": "CapTransferSummary",
-          "line": 565,
+          "line": 566,
           "called": [
             "CapTransferResult"
           ]
@@ -56266,7 +56940,7 @@
         {
           "kind": "inductive",
           "name": "IpcTimeoutResult",
-          "line": 572,
+          "line": 573,
           "called": [
             "IpcMessage"
           ]
@@ -56274,7 +56948,7 @@
         {
           "kind": "inductive",
           "name": "ThreadIpcState",
-          "line": 590,
+          "line": 591,
           "called": [
             "ObjId",
             "ThreadId",
@@ -56284,13 +56958,13 @@
         {
           "kind": "inductive",
           "name": "ThreadState",
-          "line": 613,
+          "line": 614,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "QueuePPrev",
-          "line": 629,
+          "line": 630,
           "called": [
             "ThreadId"
           ]
@@ -56298,7 +56972,7 @@
         {
           "kind": "structure",
           "name": "TCB",
-          "line": 634,
+          "line": 635,
           "called": [
             "CPtr",
             "Deadline",
@@ -56320,8 +56994,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:736>",
-          "line": 736,
+          "name": "<anonymous:instance:737>",
+          "line": 737,
           "called": [
             "TCB"
           ]
@@ -56329,7 +57003,7 @@
         {
           "kind": "def",
           "name": "TCB.isUnconfigured",
-          "line": 758,
+          "line": 759,
           "called": [
             "TCB",
             "isReserved"
@@ -56338,7 +57012,7 @@
         {
           "kind": "theorem",
           "name": "TCB.not_lawfulBEq",
-          "line": 766,
+          "line": 767,
           "called": [
             "ObjId",
             "RegName",
@@ -56352,7 +57026,7 @@
         {
           "kind": "theorem",
           "name": "TCB.ext",
-          "line": 799,
+          "line": 800,
           "called": [
             "TCB"
           ]
@@ -56360,16 +57034,18 @@
         {
           "kind": "structure",
           "name": "IntrusiveQueue",
-          "line": 824,
+          "line": 825,
           "called": [
             "ThreadId",
-            "none"
+            "head",
+            "none",
+            "tail"
           ]
         },
         {
           "kind": "structure",
           "name": "Endpoint",
-          "line": 835,
+          "line": 836,
           "called": [
             "IntrusiveQueue"
           ]
@@ -56377,13 +57053,13 @@
         {
           "kind": "inductive",
           "name": "NotificationState",
-          "line": 840,
+          "line": 841,
           "called": []
         },
         {
           "kind": "structure",
           "name": "Notification",
-          "line": 875,
+          "line": 876,
           "called": [
             "Badge",
             "NotificationState",
@@ -56394,7 +57070,7 @@
         {
           "kind": "structure",
           "name": "CNode",
-          "line": 915,
+          "line": 926,
           "called": [
             "Capability",
             "RHTable",
@@ -56404,13 +57080,13 @@
         {
           "kind": "def",
           "name": "maxCSpaceDepth",
-          "line": 924,
+          "line": 935,
           "called": []
         },
         {
           "kind": "structure",
           "name": "UntypedChild",
-          "line": 929,
+          "line": 940,
           "called": [
             "ObjId",
             "size"
@@ -56419,7 +57095,7 @@
         {
           "kind": "structure",
           "name": "UntypedObject",
-          "line": 944,
+          "line": 955,
           "called": [
             "ObjId",
             "PAddr",
@@ -56430,13 +57106,13 @@
         {
           "kind": "namespace",
           "name": "UntypedObject",
-          "line": 977,
+          "line": 988,
           "called": []
         },
         {
           "kind": "def",
           "name": "freeSpace",
-          "line": 980,
+          "line": 991,
           "called": [
             "UntypedObject"
           ]
@@ -56444,7 +57120,7 @@
         {
           "kind": "def",
           "name": "canAllocate",
-          "line": 984,
+          "line": 995,
           "called": [
             "UntypedObject",
             "size"
@@ -56453,7 +57129,7 @@
         {
           "kind": "def",
           "name": "allocate",
-          "line": 995,
+          "line": 1006,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -56465,7 +57141,7 @@
         {
           "kind": "def",
           "name": "allocateChecked",
-          "line": 1017,
+          "line": 1028,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -56476,7 +57152,7 @@
         {
           "kind": "theorem",
           "name": "allocateChecked_eq_allocate",
-          "line": 1024,
+          "line": 1035,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -56488,7 +57164,7 @@
         {
           "kind": "def",
           "name": "reset",
-          "line": 1029,
+          "line": 1040,
           "called": [
             "UntypedObject"
           ]
@@ -56496,7 +57172,7 @@
         {
           "kind": "def",
           "name": "watermarkValid",
-          "line": 1033,
+          "line": 1044,
           "called": [
             "UntypedObject"
           ]
@@ -56504,7 +57180,7 @@
         {
           "kind": "def",
           "name": "childrenWithinWatermark",
-          "line": 1037,
+          "line": 1048,
           "called": [
             "UntypedObject",
             "size"
@@ -56513,7 +57189,7 @@
         {
           "kind": "def",
           "name": "childrenNonOverlap",
-          "line": 1041,
+          "line": 1052,
           "called": [
             "UntypedObject",
             "size"
@@ -56522,7 +57198,7 @@
         {
           "kind": "def",
           "name": "childrenUniqueIds",
-          "line": 1046,
+          "line": 1057,
           "called": [
             "UntypedObject"
           ]
@@ -56530,7 +57206,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 1051,
+          "line": 1062,
           "called": [
             "UntypedObject",
             "childrenNonOverlap",
@@ -56542,7 +57218,7 @@
         {
           "kind": "theorem",
           "name": "empty_watermarkValid",
-          "line": 1055,
+          "line": 1066,
           "called": [
             "PAddr",
             "none",
@@ -56553,7 +57229,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenWithinWatermark",
-          "line": 1059,
+          "line": 1070,
           "called": [
             "PAddr",
             "childrenWithinWatermark",
@@ -56564,7 +57240,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenNonOverlap",
-          "line": 1064,
+          "line": 1075,
           "called": [
             "PAddr",
             "childrenNonOverlap",
@@ -56575,7 +57251,7 @@
         {
           "kind": "theorem",
           "name": "empty_childrenUniqueIds",
-          "line": 1069,
+          "line": 1080,
           "called": [
             "PAddr",
             "childrenUniqueIds",
@@ -56586,7 +57262,7 @@
         {
           "kind": "theorem",
           "name": "empty_wellFormed",
-          "line": 1074,
+          "line": 1085,
           "called": [
             "PAddr",
             "empty_childrenNonOverlap",
@@ -56601,7 +57277,7 @@
         {
           "kind": "theorem",
           "name": "canAllocate_implies_fits",
-          "line": 1088,
+          "line": 1099,
           "called": [
             "UntypedObject",
             "canAllocate",
@@ -56611,7 +57287,7 @@
         {
           "kind": "theorem",
           "name": "allocate_some_iff",
-          "line": 1095,
+          "line": 1106,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -56623,7 +57299,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_advance",
-          "line": 1114,
+          "line": 1125,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -56635,7 +57311,7 @@
         {
           "kind": "theorem",
           "name": "allocate_offset_eq_watermark",
-          "line": 1123,
+          "line": 1134,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -56647,7 +57323,7 @@
         {
           "kind": "theorem",
           "name": "allocate_watermark_monotone",
-          "line": 1130,
+          "line": 1141,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -56659,7 +57335,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_watermarkValid",
-          "line": 1137,
+          "line": 1148,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -56673,7 +57349,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_region",
-          "line": 1148,
+          "line": 1159,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -56685,7 +57361,7 @@
         {
           "kind": "theorem",
           "name": "allocate_children_extends",
-          "line": 1160,
+          "line": 1171,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -56697,7 +57373,7 @@
         {
           "kind": "theorem",
           "name": "allocate_children_new",
-          "line": 1174,
+          "line": 1185,
           "called": [
             "ObjId",
             "UntypedChild",
@@ -56710,7 +57386,7 @@
         {
           "kind": "theorem",
           "name": "allocate_children_eq",
-          "line": 1188,
+          "line": 1199,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -56722,7 +57398,7 @@
         {
           "kind": "theorem",
           "name": "allocate_child_fits_parent",
-          "line": 1202,
+          "line": 1213,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -56735,7 +57411,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenWithinWatermark",
-          "line": 1215,
+          "line": 1226,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -56748,7 +57424,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenNonOverlap",
-          "line": 1233,
+          "line": 1244,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -56762,7 +57438,7 @@
         {
           "kind": "theorem",
           "name": "allocate_preserves_childrenUniqueIds",
-          "line": 1255,
+          "line": 1266,
           "called": [
             "ObjId",
             "UntypedObject",
@@ -56775,7 +57451,7 @@
         {
           "kind": "theorem",
           "name": "reset_watermarkValid",
-          "line": 1274,
+          "line": 1285,
           "called": [
             "UntypedObject",
             "reset",
@@ -56785,7 +57461,7 @@
         {
           "kind": "theorem",
           "name": "reset_wellFormed",
-          "line": 1278,
+          "line": 1289,
           "called": [
             "UntypedObject",
             "reset",
@@ -56796,7 +57472,7 @@
         {
           "kind": "def",
           "name": "UntypedObjectValid",
-          "line": 1302,
+          "line": 1313,
           "called": [
             "UntypedObject",
             "wellFormed"
@@ -56805,13 +57481,13 @@
         {
           "kind": "namespace",
           "name": "UntypedObjectValid",
-          "line": 1304,
+          "line": 1315,
           "called": []
         },
         {
           "kind": "def",
           "name": "toUntyped",
-          "line": 1307,
+          "line": 1318,
           "called": [
             "UntypedObject",
             "UntypedObjectValid"
@@ -56820,7 +57496,7 @@
         {
           "kind": "def",
           "name": "wf",
-          "line": 1310,
+          "line": 1321,
           "called": [
             "UntypedObjectValid",
             "wellFormed"
@@ -56829,7 +57505,7 @@
         {
           "kind": "def",
           "name": "empty",
-          "line": 1314,
+          "line": 1325,
           "called": [
             "PAddr",
             "UntypedObjectValid",
@@ -56840,8 +57516,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1319>",
-          "line": 1319,
+          "name": "<anonymous:instance:1330>",
+          "line": 1330,
           "called": [
             "UntypedObject",
             "UntypedObjectValid",
@@ -56851,7 +57527,7 @@
         {
           "kind": "inductive",
           "name": "SyscallId",
-          "line": 1328,
+          "line": 1339,
           "called": [
             "cspaceCopy",
             "cspaceMint",
@@ -56866,13 +57542,13 @@
         {
           "kind": "namespace",
           "name": "SyscallId",
-          "line": 1356,
+          "line": 1367,
           "called": []
         },
         {
           "kind": "def",
           "name": "toNat",
-          "line": 1360,
+          "line": 1371,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -56888,13 +57564,13 @@
         {
           "kind": "def",
           "name": "count",
-          "line": 1388,
+          "line": 1399,
           "called": []
         },
         {
           "kind": "def",
           "name": "ofNat",
-          "line": 1392,
+          "line": 1403,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -56910,8 +57586,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1420>",
-          "line": 1420,
+          "name": "<anonymous:instance:1431>",
+          "line": 1431,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -56927,7 +57603,7 @@
         {
           "kind": "def",
           "name": "all",
-          "line": 1452,
+          "line": 1463,
           "called": [
             "SyscallId",
             "cspaceCopy",
@@ -56943,15 +57619,16 @@
         {
           "kind": "theorem",
           "name": "all_length",
-          "line": 1464,
+          "line": 1475,
           "called": [
-            "count"
+            "count",
+            "length"
           ]
         },
         {
           "kind": "theorem",
           "name": "all_complete",
-          "line": 1467,
+          "line": 1478,
           "called": [
             "SyscallId",
             "all"
@@ -56960,7 +57637,7 @@
         {
           "kind": "theorem",
           "name": "ofNat_toNat",
-          "line": 1471,
+          "line": 1482,
           "called": [
             "SyscallId",
             "ofNat",
@@ -56970,7 +57647,7 @@
         {
           "kind": "theorem",
           "name": "toNat_ofNat",
-          "line": 1483,
+          "line": 1494,
           "called": [
             "SyscallId",
             "ofNat",
@@ -56980,7 +57657,7 @@
         {
           "kind": "theorem",
           "name": "toNat_injective",
-          "line": 1495,
+          "line": 1506,
           "called": [
             "SyscallId",
             "ofNat_toNat",
@@ -56990,27 +57667,30 @@
         {
           "kind": "structure",
           "name": "MessageInfo",
-          "line": 1516,
-          "called": []
+          "line": 1527,
+          "called": [
+            "length"
+          ]
         },
         {
           "kind": "namespace",
           "name": "MessageInfo",
-          "line": 1522,
+          "line": 1533,
           "called": []
         },
         {
           "kind": "def",
           "name": "maxLabel",
-          "line": 1527,
+          "line": 1538,
           "called": []
         },
         {
           "kind": "def",
           "name": "mkChecked",
-          "line": 1541,
+          "line": 1552,
           "called": [
             "MessageInfo",
+            "length",
             "maxExtraCaps",
             "maxLabel",
             "maxMessageRegisters",
@@ -57020,8 +57700,9 @@
         {
           "kind": "theorem",
           "name": "mkChecked_isSome_iff",
-          "line": 1549,
+          "line": 1560,
           "called": [
+            "length",
             "maxExtraCaps",
             "maxLabel",
             "maxMessageRegisters",
@@ -57031,9 +57712,10 @@
         {
           "kind": "theorem",
           "name": "mkChecked_bounded",
-          "line": 1558,
+          "line": 1569,
           "called": [
             "MessageInfo",
+            "length",
             "maxExtraCaps",
             "maxLabel",
             "maxMessageRegisters",
@@ -57043,9 +57725,10 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 1581,
+          "line": 1592,
           "called": [
             "MessageInfo",
+            "length",
             "maxExtraCaps",
             "maxLabel",
             "maxMessageRegisters"
@@ -57053,8 +57736,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1586>",
-          "line": 1586,
+          "name": "<anonymous:instance:1597>",
+          "line": 1597,
           "called": [
             "MessageInfo",
             "wellFormed"
@@ -57063,9 +57746,10 @@
         {
           "kind": "theorem",
           "name": "mkChecked_wellFormed",
-          "line": 1590,
+          "line": 1601,
           "called": [
             "MessageInfo",
+            "length",
             "mkChecked",
             "mkChecked_bounded",
             "wellFormed"
@@ -57074,17 +57758,19 @@
         {
           "kind": "def",
           "name": "encode",
-          "line": 1600,
+          "line": 1611,
           "called": [
-            "MessageInfo"
+            "MessageInfo",
+            "length"
           ]
         },
         {
           "kind": "def",
           "name": "decode",
-          "line": 1606,
+          "line": 1617,
           "called": [
             "MessageInfo",
+            "length",
             "maxExtraCaps",
             "maxLabel",
             "maxMessageRegisters",
@@ -57093,16 +57779,17 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:1615>",
-          "line": 1615,
+          "name": "<anonymous:instance:1626>",
+          "line": 1626,
           "called": [
-            "MessageInfo"
+            "MessageInfo",
+            "length"
           ]
         },
         {
           "kind": "theorem",
           "name": "decode_wellFormed",
-          "line": 1621,
+          "line": 1632,
           "called": [
             "MessageInfo",
             "decode",
@@ -57113,30 +57800,31 @@
         {
           "kind": "theorem",
           "name": "and_mask_127",
-          "line": 1640,
+          "line": 1651,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "shift7_and_mask_3",
-          "line": 1665,
+          "line": 1676,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "shift9_extracts_label",
-          "line": 1697,
+          "line": 1708,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "encode_decode_roundtrip",
-          "line": 1726,
+          "line": 1737,
           "called": [
             "MessageInfo",
             "and_mask_127",
             "decode",
             "encode",
+            "length",
             "maxExtraCaps",
             "maxLabel",
             "maxMessageRegisters",
@@ -57147,7 +57835,7 @@
         {
           "kind": "structure",
           "name": "SyscallDecodeResult",
-          "line": 1751,
+          "line": 1762,
           "called": [
             "CPtr",
             "MessageInfo",
@@ -57193,7 +57881,8 @@
           "name": "DomainScheduleEntry",
           "line": 117,
           "called": [
-            "DomainId"
+            "DomainId",
+            "length"
           ]
         },
         {
@@ -57227,6 +57916,7 @@
           "called": [
             "DomainScheduleEntry",
             "all",
+            "length",
             "schedule"
           ]
         },
@@ -57499,6 +58189,7 @@
           "line": 523,
           "called": [
             "SystemState",
+            "length",
             "maxObjects"
           ]
         },
@@ -57517,6 +58208,7 @@
           "called": [
             "SystemState",
             "default",
+            "length",
             "maxObjects",
             "objectCount_le_maxObjects",
             "objectIndexBounded"
@@ -57566,6 +58258,7 @@
             "KernelObject",
             "ObjId",
             "SystemState",
+            "length",
             "objectIndexBounded",
             "storeObject"
           ]
@@ -57579,6 +58272,7 @@
             "KernelObject",
             "ObjId",
             "contains",
+            "length",
             "maxObjects",
             "storeObject"
           ]
@@ -57592,6 +58286,7 @@
             "ObjId",
             "SystemState",
             "contains",
+            "length",
             "maxObjects",
             "objectIndexBounded",
             "storeObject",
@@ -57619,6 +58314,7 @@
             "KernelObject",
             "ObjId",
             "SystemState",
+            "length",
             "maxObjects",
             "storeObject",
             "storeObjectChecked"
@@ -57684,6 +58380,7 @@
             "ObjId",
             "SystemState",
             "contains",
+            "length",
             "storeObject"
           ]
         },
@@ -59855,6 +60552,7 @@
             "guardBounded",
             "isEmpty",
             "isPositive",
+            "length",
             "maxCSpaceDepth",
             "maxReplenishments",
             "size",
@@ -59871,10 +60569,12 @@
             "bootSafeObjectCheck",
             "bootSafeVSpaceRoot",
             "bootSafeVSpaceRootCheck_iff",
+            "head",
             "maxCSpaceDepth",
             "none",
             "schedContextWellFormed",
             "slotCountBounded",
+            "tail",
             "wellFormed"
           ]
         },
@@ -59914,6 +60614,7 @@
           "line": 863,
           "called": [
             "PlatformConfig",
+            "any",
             "config",
             "none"
           ]
@@ -59957,6 +60658,7 @@
           "line": 911,
           "called": [
             "PlatformConfig",
+            "any",
             "config"
           ]
         },
@@ -60890,11 +61592,13 @@
             "KernelObject",
             "bitsConsumed",
             "bootSafeVSpaceRoot",
+            "head",
             "lookup",
             "maxCSpaceDepth",
             "none",
             "schedContextWellFormed",
             "slotCountBounded",
+            "tail",
             "valid",
             "wellFormed"
           ]
@@ -61066,6 +61770,7 @@
             "intrusiveQueueWellFormed",
             "ipcInvariantFull",
             "ipcSchedulerCouplingInvariantBundle",
+            "length",
             "lifecycleInvariantBundle",
             "lifecycleInvariantBundle_of_metadata_consistent",
             "lookupCNode",
@@ -62750,6 +63455,7 @@
           "called": [
             "MmioRegionDesc",
             "PAddr",
+            "any",
             "contains"
           ]
         },
@@ -62833,6 +63539,7 @@
           "name": "uartRegion_mem",
           "line": 207,
           "called": [
+            "head",
             "rpi5MmioRegionDescs",
             "uartRegion"
           ]
@@ -62843,7 +63550,9 @@
           "line": 209,
           "called": [
             "gicDistRegion",
-            "rpi5MmioRegionDescs"
+            "head",
+            "rpi5MmioRegionDescs",
+            "tail"
           ]
         },
         {
@@ -62852,7 +63561,9 @@
           "line": 211,
           "called": [
             "gicCpuRegion",
-            "rpi5MmioRegionDescs"
+            "head",
+            "rpi5MmioRegionDescs",
+            "tail"
           ]
         },
         {
@@ -62903,6 +63614,7 @@
           "line": 333,
           "called": [
             "PAddr",
+            "any",
             "contains"
           ]
         },
@@ -63148,6 +63860,7 @@
           "called": [
             "MemoryRegion",
             "PAddr",
+            "any",
             "contains",
             "findDeviceRegion",
             "isDeviceAddress",
@@ -63696,6 +64409,7 @@
           "line": 139,
           "called": [
             "RuntimeBoundaryContract",
+            "any",
             "contains",
             "registerContextStablePred",
             "registerContextStablePred_decidable",
@@ -63709,6 +64423,7 @@
           "line": 173,
           "called": [
             "RuntimeBoundaryContract",
+            "any",
             "contains",
             "rpi5MachineConfig",
             "rpi5MemoryMap"
@@ -63721,6 +64436,7 @@
           "called": [
             "PAddr",
             "SystemState",
+            "any",
             "contains"
           ]
         },
@@ -64604,6 +65320,7 @@
           "line": 93,
           "called": [
             "RuntimeBoundaryContract",
+            "any",
             "contains",
             "simSubstantiveMemoryMap"
           ]
@@ -67800,7 +68517,8 @@
             "SystemState",
             "ThreadId",
             "lookupQueueTcbB",
-            "none"
+            "none",
+            "tail"
           ]
         },
         {
@@ -67810,9 +68528,12 @@
           "called": [
             "IntrusiveQueue",
             "SystemState",
+            "head",
             "intrusiveQueueReachable",
+            "length",
             "lookupQueueTcbB",
-            "none"
+            "none",
+            "tail"
           ]
         },
         {
@@ -67869,6 +68590,7 @@
           "called": [
             "ObjId",
             "SystemState",
+            "foldr",
             "getTcb",
             "inferThreadState",
             "none",
@@ -67884,6 +68606,7 @@
             "ObjId",
             "SystemState",
             "fold",
+            "foldr",
             "toObjId"
           ]
         },
@@ -67897,6 +68620,7 @@
             "SystemState",
             "empty",
             "fold",
+            "foldr",
             "none"
           ]
         },
@@ -67907,6 +68631,7 @@
           "called": [
             "ObjId",
             "SystemState",
+            "foldr",
             "objectType"
           ]
         },
@@ -67918,6 +68643,7 @@
             "ServiceId",
             "SystemState",
             "acyclic",
+            "any",
             "lookupService",
             "none",
             "serviceHasPathTo"
@@ -67958,6 +68684,7 @@
             "ObjId",
             "SystemState",
             "all",
+            "foldr",
             "getUntyped",
             "none",
             "size",
@@ -67971,6 +68698,7 @@
           "called": [
             "ObjId",
             "SystemState",
+            "foldr",
             "getNotification",
             "getTcb",
             "none",
@@ -67993,6 +68721,7 @@
           "called": [
             "ObjId",
             "SystemState",
+            "foldr",
             "getTcb",
             "none",
             "runnable",
@@ -68006,6 +68735,7 @@
           "called": [
             "ObjId",
             "SystemState",
+            "foldr",
             "getTcb",
             "none",
             "runnable",
@@ -68030,6 +68760,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "foldr",
             "getNotification",
             "isEmpty",
             "none"
@@ -68041,6 +68772,8 @@
           "line": 296,
           "called": [
             "SystemState",
+            "any",
+            "foldr",
             "none"
           ]
         },
@@ -68050,6 +68783,7 @@
           "line": 313,
           "called": [
             "SystemState",
+            "any",
             "none"
           ]
         },
@@ -68072,11 +68806,13 @@
             "currentThreadInActiveDomainB",
             "currentThreadValidB",
             "endpointDualQueueWellFormedB",
+            "foldr",
             "getEndpoint",
             "getNotification",
             "getTcb",
             "intrusiveQueueWellFormedB",
             "invariant",
+            "length",
             "lifecycleMetadataChecks",
             "none",
             "notificationQueueWellFormedB",
@@ -68173,6 +68909,8 @@
             "collectQueueMembersB",
             "getEndpoint",
             "getTcb",
+            "head",
+            "length",
             "none"
           ]
         },
@@ -68247,6 +68985,7 @@
             "SystemState",
             "all",
             "getTcb",
+            "length",
             "none",
             "toNat",
             "toObjId"
@@ -68280,7 +69019,9 @@
             "SystemState",
             "acyclic",
             "all",
+            "any",
             "bounded",
+            "length",
             "none",
             "serviceHasPathTo",
             "size"
@@ -68338,6 +69079,7 @@
             "SystemState",
             "checkCrossSubsystemInvariant",
             "isEmpty",
+            "length",
             "none"
           ]
         }
@@ -68589,6 +69331,7 @@
             "checkInvariants",
             "count",
             "default",
+            "length",
             "lookup",
             "ofNat",
             "pure",
@@ -68634,6 +69377,7 @@
             "endpointSendDualChecked",
             "hasIsolationEdge",
             "insert",
+            "length",
             "lookup",
             "lookupService",
             "lookupServiceByCap",
@@ -68670,6 +69414,7 @@
           "called": [
             "ObjId",
             "SystemState",
+            "any",
             "checkInvariants",
             "cspaceLookupSlot",
             "cspaceMintChecked",
@@ -68710,6 +69455,7 @@
             "ObjId",
             "SystemState",
             "ThreadId",
+            "any",
             "checkInvariants",
             "cspaceCopy",
             "cspaceInsertSlot",
@@ -68741,6 +69487,7 @@
             "chooseThread",
             "decrement",
             "insert",
+            "length",
             "mkRunQueue",
             "none",
             "ofNat",
@@ -68811,6 +69558,7 @@
             "count",
             "demoUntyped",
             "insert",
+            "length",
             "lifecycleAuthSlot",
             "none",
             "objectType",
@@ -68832,6 +69580,7 @@
             "KernelObject",
             "Priority",
             "SystemState",
+            "any",
             "checkInvariants",
             "insert",
             "none",
@@ -68985,6 +69734,7 @@
             "decodeVSpaceMapArgs",
             "empty",
             "extractMessageRegisters",
+            "length",
             "lifecycleRetypeDirect",
             "lookup",
             "lookupService",
@@ -69022,6 +69772,7 @@
             "empty",
             "invariant",
             "isEmpty",
+            "length",
             "modify",
             "none",
             "ofList",
@@ -69056,6 +69807,7 @@
             "decode",
             "decodeCSpaceMoveArgs",
             "empty",
+            "length",
             "lookupSlotCap",
             "none",
             "ofList",
@@ -69153,6 +69905,7 @@
             "get",
             "insert",
             "isBound",
+            "length",
             "mkRunQueue",
             "none",
             "ofNat",
@@ -69183,12 +69936,15 @@
             "contains",
             "empty",
             "endpointQueueRemove",
+            "head",
             "insert",
             "isEmpty",
+            "length",
             "none",
             "ofNat",
             "scId",
             "scThreadIndexAdd",
+            "tail",
             "timeoutAwareReceive",
             "timeoutBlockedThreads",
             "timeoutThread",
@@ -69358,6 +70114,7 @@
             "encode",
             "encodeCSpaceMintArgs",
             "encodeSetIPCBufferArgs",
+            "length",
             "none",
             "notificationSignal",
             "notificationWait",
@@ -69585,9 +70342,11 @@
             "BootstrapBuilder",
             "SystemState",
             "TCB",
+            "any",
             "build",
             "contains",
             "filter",
+            "length",
             "none",
             "objectType",
             "runnable",
@@ -70137,7 +70896,8 @@
           "name": "runAll",
           "line": 399,
           "called": [
-            "ak8Tests"
+            "ak8Tests",
+            "length"
           ]
         },
         {
@@ -70672,8 +71432,10 @@
           "line": 578,
           "called": [
             "FdtNode",
+            "any",
             "expect",
             "extractPeripherals",
+            "length",
             "mkPeripheral"
           ]
         },
@@ -70685,6 +71447,7 @@
             "FdtNode",
             "expect",
             "extractPeripherals",
+            "length",
             "mkPeripheral"
           ]
         },
@@ -70695,7 +71458,8 @@
           "called": [
             "FdtNode",
             "expect",
-            "extractPeripherals"
+            "extractPeripherals",
+            "length"
           ]
         },
         {
@@ -70704,8 +71468,10 @@
           "line": 626,
           "called": [
             "FdtNode",
+            "any",
             "expect",
             "extractPeripherals",
+            "length",
             "mkPeripheral",
             "mkRegProperty"
           ]
@@ -71702,6 +72468,7 @@
             "AsidPool",
             "all",
             "allocate",
+            "length",
             "maxAsidValue",
             "none",
             "throw"
@@ -71741,6 +72508,8 @@
             "allocate",
             "expectCond",
             "free",
+            "head",
+            "length",
             "none",
             "throw"
           ]
@@ -72201,6 +72970,7 @@
           "line": 34,
           "called": [
             "SyscallDecodeResult",
+            "length",
             "ofNat"
           ]
         },
@@ -72400,7 +73170,8 @@
             "decodeMsgInfo",
             "encodeMsgInfo",
             "expect",
-            "isOkEq"
+            "isOkEq",
+            "length"
           ]
         },
         {
@@ -72412,7 +73183,8 @@
             "decodeMsgInfo",
             "encodeMsgInfo",
             "expect",
-            "isOkEq"
+            "isOkEq",
+            "length"
           ]
         },
         {
@@ -72461,6 +73233,7 @@
             "encodeMsgInfo",
             "encodeSyscallId",
             "expect",
+            "length",
             "ofNat",
             "size",
             "toNat",
@@ -72488,6 +73261,7 @@
             "RegValue",
             "expect",
             "extractMessageRegisters",
+            "length",
             "size"
           ]
         },
@@ -72516,6 +73290,7 @@
           "called": [
             "RegValue",
             "SyscallDecodeResult",
+            "length",
             "ofNat"
           ]
         },
@@ -72826,6 +73601,7 @@
             "SyscallDecodeResult",
             "decodeExtraCapAddrs",
             "expect",
+            "length",
             "ofNat",
             "size",
             "toNat"
@@ -73333,6 +74109,7 @@
           "called": [
             "expect",
             "freeze",
+            "length",
             "mkEmptyIntermediateState",
             "none",
             "size"
@@ -73674,10 +74451,12 @@
             "frozenEndpointSend",
             "frozenLookupTcb",
             "get",
+            "head",
             "mkFrozenState",
             "mkTcb",
             "none",
             "ofNatMasked",
+            "tail",
             "throw"
           ]
         },
@@ -73691,9 +74470,11 @@
             "frozenEndpointReceive",
             "frozenLookupTcb",
             "get",
+            "head",
             "mkFrozenState",
             "mkTcb",
             "none",
+            "tail",
             "throw"
           ]
         },
@@ -73708,10 +74489,12 @@
             "frozenEndpointCall",
             "frozenLookupTcb",
             "get",
+            "head",
             "mkFrozenState",
             "mkTcb",
             "none",
             "ofNatMasked",
+            "tail",
             "throw"
           ]
         },
@@ -73991,6 +74774,7 @@
           "called": [
             "expect",
             "freeze",
+            "length",
             "mkEmptyIntermediateState",
             "none",
             "size"
@@ -74189,6 +74973,8 @@
           "called": [
             "SchedContext",
             "applyConfigureParamsFull",
+            "head",
+            "length",
             "none",
             "ofNat",
             "scId"
@@ -74201,6 +74987,7 @@
           "called": [
             "SchedContext",
             "applyConfigureParamsFull",
+            "head",
             "none",
             "ofNat",
             "scId"
@@ -74369,6 +75156,7 @@
             "ipcUnwrapCaps",
             "isInsecureDefaultContext",
             "kernelOperationNiConstructor",
+            "length",
             "linearOrder",
             "lookupCspaceRoot",
             "noStaleEndpointQueueReferences_fields",
@@ -75060,6 +75848,7 @@
             "SyscallDecodeResult",
             "SyscallId",
             "cspaceMint",
+            "length",
             "ofNat",
             "size"
           ]
@@ -75829,7 +76618,9 @@
           "kind": "theorem",
           "name": "errorMatrix_covers_at_least_35",
           "line": 1056,
-          "called": []
+          "called": [
+            "length"
+          ]
         },
         {
           "kind": "def",
@@ -75851,7 +76642,8 @@
           "line": 1084,
           "called": [
             "KernelError",
-            "contains"
+            "contains",
+            "foldr"
           ]
         },
         {
@@ -75874,6 +76666,7 @@
             "errorMatrixFloor",
             "filter",
             "isEmpty",
+            "length",
             "runRow"
           ]
         },
@@ -76239,6 +77032,7 @@
           "called": [
             "MessageInfo",
             "expect",
+            "length",
             "wellFormed"
           ]
         },
@@ -76811,6 +77605,7 @@
             "checkCrossSubsystemInvariant",
             "default",
             "expect",
+            "length",
             "none",
             "throw"
           ]
@@ -76994,7 +77789,8 @@
           "called": [
             "SystemState",
             "default",
-            "expect"
+            "expect",
+            "length"
           ]
         },
         {
@@ -77024,6 +77820,7 @@
           "called": [
             "ObjId",
             "UntypedObject",
+            "any",
             "expect",
             "ofNat",
             "size"
@@ -77037,7 +77834,9 @@
             "UntypedChild",
             "UntypedObject",
             "allocate",
+            "any",
             "expect",
+            "length",
             "none",
             "ofNat",
             "size",
@@ -77063,7 +77862,8 @@
           "line": 1037,
           "called": [
             "PlatformConfig",
-            "expect"
+            "expect",
+            "length"
           ]
         },
         {
@@ -77238,6 +78038,7 @@
             "SystemState",
             "default",
             "expect",
+            "length",
             "maxRetypeDepth",
             "ofNat",
             "untypedAncestorChain",
@@ -77254,6 +78055,8 @@
             "build",
             "empty",
             "expect",
+            "head",
+            "length",
             "none",
             "ofNat",
             "untypedAncestorChain",
@@ -77283,6 +78086,7 @@
             "default",
             "default_untypedAncestorRegionsDisjoint",
             "expect",
+            "length",
             "ofNat",
             "untypedAncestorChain",
             "untypedAncestorChain_collapses_when_all_parents_none",
@@ -77855,13 +78659,16 @@
             "expectOkVal",
             "expectThreadQueueLinks",
             "handleYield",
+            "head",
             "insert",
+            "length",
             "none",
             "ofNat",
             "remove",
             "runnable",
             "schedule",
             "scheduleDomain",
+            "tail",
             "throw",
             "toObjId",
             "withCurrent",
@@ -77961,7 +78768,12 @@
           "name": "runAuditCoverageChecks",
           "line": 1264,
           "called": [
+            "CNode",
+            "CSpaceAddr",
             "KernelObject",
+            "ObjId",
+            "RHTable.ofList",
+            "SystemState",
             "baseState",
             "cspaceLookupSlot",
             "cspaceMutate",
@@ -77972,8 +78784,10 @@
             "endpointReplyRecv",
             "expectErr",
             "expectOkSt",
+            "insert",
             "lookup",
             "none",
+            "null",
             "ofList",
             "ofNat",
             "ofNatMasked",
@@ -77985,7 +78799,7 @@
         {
           "kind": "def",
           "name": "runWSH7Checks",
-          "line": 1347,
+          "line": 1368,
           "called": [
             "CNode",
             "Capability",
@@ -78012,7 +78826,7 @@
         {
           "kind": "def",
           "name": "runWSH11Checks",
-          "line": 1404,
+          "line": 1425,
           "called": [
             "ASID",
             "ObjId",
@@ -78030,6 +78844,7 @@
             "empty",
             "expectErr",
             "expectOkSt",
+            "length",
             "lookup",
             "ofNat",
             "roPerms",
@@ -78049,7 +78864,7 @@
         {
           "kind": "def",
           "name": "runWSH13Checks",
-          "line": 1591,
+          "line": 1612,
           "called": [
             "ServiceId",
             "SystemState",
@@ -78065,7 +78880,7 @@
         {
           "kind": "def",
           "name": "runWSH15Checks",
-          "line": 1633,
+          "line": 1654,
           "called": [
             "CNode",
             "Capability",
@@ -78094,7 +78909,7 @@
         {
           "kind": "def",
           "name": "runWSH15PlatformChecks",
-          "line": 1717,
+          "line": 1738,
           "called": [
             "CapTarget",
             "Irq",
@@ -78112,7 +78927,7 @@
         {
           "kind": "def",
           "name": "runWSH16LifecycleChecks",
-          "line": 1773,
+          "line": 1794,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -78136,7 +78951,7 @@
         {
           "kind": "def",
           "name": "runAN4A5LifecycleVisibilityChecks",
-          "line": 1971,
+          "line": 1992,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -78163,7 +78978,7 @@
         {
           "kind": "def",
           "name": "runWSJ1DecodeChecks",
-          "line": 2026,
+          "line": 2047,
           "called": [
             "RegValue",
             "RegisterFile",
@@ -78187,7 +79002,7 @@
         {
           "kind": "def",
           "name": "runWSKGCSpaceChecks",
-          "line": 2156,
+          "line": 2177,
           "called": [
             "CSpaceAddr",
             "RHTable.empty",
@@ -78202,6 +79017,7 @@
             "decodeCSpaceMoveArgs",
             "empty",
             "expectErr",
+            "length",
             "none",
             "ofNat",
             "withLifecycleObjectType",
@@ -78211,7 +79027,7 @@
         {
           "kind": "def",
           "name": "runWSKGLifecycleVSpaceChecks",
-          "line": 2224,
+          "line": 2245,
           "called": [
             "ASID",
             "Capability",
@@ -78223,6 +79039,7 @@
             "decodeVSpaceMapArgs",
             "empty",
             "expectErr",
+            "length",
             "lifecycleRetypeDirect",
             "none",
             "objectOfTypeTag",
@@ -78238,7 +79055,7 @@
         {
           "kind": "def",
           "name": "runWSKGServiceIpcChecks",
-          "line": 2301,
+          "line": 2322,
           "called": [
             "ObjId",
             "ServiceId",
@@ -78247,6 +79064,7 @@
             "empty",
             "expectErr",
             "extractMessageRegisters",
+            "length",
             "lookupService",
             "objectOfTypeTag",
             "ofNat",
@@ -78262,7 +79080,7 @@
         {
           "kind": "def",
           "name": "runWSKGDeterminismChecks",
-          "line": 2353,
+          "line": 2374,
           "called": [
             "MessageInfo",
             "RegValue",
@@ -78278,6 +79096,7 @@
             "decodeVSpaceUnmapArgs",
             "default",
             "extractMessageRegisters",
+            "length",
             "objectOfTypeTag",
             "tag",
             "throw"
@@ -78286,7 +79105,7 @@
         {
           "kind": "def",
           "name": "runWSKGChecks",
-          "line": 2425,
+          "line": 2446,
           "called": [
             "runWSKGCSpaceChecks",
             "runWSKGDeterminismChecks",
@@ -78297,7 +79116,7 @@
         {
           "kind": "def",
           "name": "runWSL4BlockedThreadChecks",
-          "line": 2440,
+          "line": 2461,
           "called": [
             "ObjId",
             "SystemState",
@@ -78319,7 +79138,7 @@
         {
           "kind": "def",
           "name": "runWSM3CapTransferNegativeChecks",
-          "line": 2514,
+          "line": 2535,
           "called": [
             "CNode",
             "CSpaceAddr",
@@ -78339,7 +79158,7 @@
         {
           "kind": "def",
           "name": "runL13CapTransferShortCircuitChecks",
-          "line": 2580,
+          "line": 2601,
           "called": [
             "CNode",
             "Capability",
@@ -78361,7 +79180,7 @@
         {
           "kind": "def",
           "name": "runWSM4GuardOnlyChecks",
-          "line": 2675,
+          "line": 2696,
           "called": [
             "ObjId",
             "RHTable.ofList",
@@ -78378,7 +79197,7 @@
         {
           "kind": "def",
           "name": "runWSM4SmallBitsChecks",
-          "line": 2718,
+          "line": 2739,
           "called": [
             "ObjId",
             "RHTable.empty",
@@ -78397,7 +79216,7 @@
         {
           "kind": "def",
           "name": "runWSM4GuardMismatchChecks",
-          "line": 2782,
+          "line": 2803,
           "called": [
             "ObjId",
             "RHTable.ofList",
@@ -78414,7 +79233,7 @@
         {
           "kind": "def",
           "name": "runWSM4MaxDepthLoopChecks",
-          "line": 2863,
+          "line": 2884,
           "called": [
             "CPtr",
             "ObjId",
@@ -78433,7 +79252,7 @@
         {
           "kind": "def",
           "name": "runWSM4SlotEdgeChecks",
-          "line": 2928,
+          "line": 2949,
           "called": [
             "ObjId",
             "RHTable.empty",
@@ -78451,7 +79270,7 @@
         {
           "kind": "def",
           "name": "runWSM4WrapperIntegrationChecks",
-          "line": 3005,
+          "line": 3026,
           "called": [
             "ObjId",
             "RHTable.ofList",
@@ -78468,7 +79287,7 @@
         {
           "kind": "def",
           "name": "runWSM4ResolveEdgeCaseChecks",
-          "line": 3054,
+          "line": 3075,
           "called": [
             "runWSM4GuardMismatchChecks",
             "runWSM4GuardOnlyChecks",
@@ -78481,7 +79300,7 @@
         {
           "kind": "def",
           "name": "runWSR2RevocationChecks",
-          "line": 3074,
+          "line": 3095,
           "called": [
             "CSpaceAddr",
             "CdtNodeId",
@@ -78505,7 +79324,7 @@
         {
           "kind": "def",
           "name": "runWSR4CoherenceChecks",
-          "line": 3175,
+          "line": 3196,
           "called": [
             "Capability",
             "InterfaceId",
@@ -78513,6 +79332,7 @@
             "ObjId",
             "ServiceId",
             "ServiceRegistration",
+            "any",
             "buildChecked",
             "cleanupEndpointServiceRegistrations",
             "empty",
@@ -78533,7 +79353,7 @@
         {
           "kind": "def",
           "name": "runS2GCapabilityErrorTests",
-          "line": 3311,
+          "line": 3332,
           "called": [
             "CSpaceAddr",
             "CdtNodeId",
@@ -78552,6 +79372,7 @@
             "expectErr",
             "expectOkSt",
             "insert",
+            "length",
             "none",
             "ofList",
             "ofNat",
@@ -78561,7 +79382,7 @@
         {
           "kind": "def",
           "name": "runS2HLifecycleErrorTests",
-          "line": 3438,
+          "line": 3459,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -78592,7 +79413,7 @@
         {
           "kind": "def",
           "name": "runX2RuntimeInvariantTests",
-          "line": 3515,
+          "line": 3536,
           "called": [
             "ASID",
             "DomainScheduleEntry",
@@ -78609,6 +79430,7 @@
             "expectErr",
             "handleYieldChecked",
             "insert",
+            "length",
             "none",
             "ofNat",
             "rpi5MachineConfig",
@@ -78625,7 +79447,7 @@
         {
           "kind": "def",
           "name": "runZ8SchedContextNegativeChecks",
-          "line": 3621,
+          "line": 3642,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -78647,7 +79469,7 @@
         {
           "kind": "def",
           "name": "runAC1BudgetFailClosedChecks",
-          "line": 3689,
+          "line": 3710,
           "called": [
             "ObjId",
             "SystemState",
@@ -78665,7 +79487,7 @@
         {
           "kind": "def",
           "name": "runAC1CdtTrackingChecks",
-          "line": 3745,
+          "line": 3766,
           "called": [
             "CNode",
             "CSpaceAddr",
@@ -78678,6 +79500,7 @@
             "cspaceMintWithCdt",
             "default",
             "insert",
+            "length",
             "none",
             "ofList",
             "ofNat",
@@ -78687,7 +79510,7 @@
         {
           "kind": "def",
           "name": "r1EpId",
-          "line": 3803,
+          "line": 3824,
           "called": [
             "ObjId"
           ]
@@ -78695,7 +79518,7 @@
         {
           "kind": "def",
           "name": "r1CallerTid",
-          "line": 3804,
+          "line": 3825,
           "called": [
             "ThreadId"
           ]
@@ -78703,7 +79526,7 @@
         {
           "kind": "def",
           "name": "r1ReceiverTid",
-          "line": 3805,
+          "line": 3826,
           "called": [
             "ThreadId"
           ]
@@ -78711,7 +79534,7 @@
         {
           "kind": "def",
           "name": "r1CallerCNode",
-          "line": 3806,
+          "line": 3827,
           "called": [
             "ObjId"
           ]
@@ -78719,7 +79542,7 @@
         {
           "kind": "def",
           "name": "r1ReceiverCNode",
-          "line": 3807,
+          "line": 3828,
           "called": [
             "ObjId"
           ]
@@ -78727,7 +79550,7 @@
         {
           "kind": "def",
           "name": "r1TargetObj",
-          "line": 3808,
+          "line": 3829,
           "called": [
             "ObjId"
           ]
@@ -78735,7 +79558,7 @@
         {
           "kind": "def",
           "name": "r1Cap",
-          "line": 3810,
+          "line": 3831,
           "called": [
             "Capability",
             "none",
@@ -78746,7 +79569,7 @@
         {
           "kind": "def",
           "name": "r1MsgWithCaps",
-          "line": 3815,
+          "line": 3836,
           "called": [
             "IpcMessage",
             "none",
@@ -78756,7 +79579,7 @@
         {
           "kind": "def",
           "name": "r1EndpointRights",
-          "line": 3818,
+          "line": 3839,
           "called": [
             "AccessRightSet",
             "ofList"
@@ -78765,7 +79588,7 @@
         {
           "kind": "def",
           "name": "r1BaseState",
-          "line": 3821,
+          "line": 3842,
           "called": [
             "RHTable.ofList",
             "SystemState",
@@ -78788,7 +79611,7 @@
         {
           "kind": "def",
           "name": "r1QueuedState",
-          "line": 3842,
+          "line": 3863,
           "called": [
             "KernelError",
             "SystemState",
@@ -78801,7 +79624,7 @@
         {
           "kind": "def",
           "name": "r1FaultyState",
-          "line": 3847,
+          "line": 3868,
           "called": [
             "SystemState",
             "erase",
@@ -78811,7 +79634,7 @@
         {
           "kind": "def",
           "name": "r1CheckHealthyState",
-          "line": 3850,
+          "line": 3871,
           "called": [
             "SystemState",
             "endpointCallWithCaps",
@@ -78827,7 +79650,7 @@
         {
           "kind": "def",
           "name": "r1CheckFaultyState",
-          "line": 3860,
+          "line": 3881,
           "called": [
             "SystemState",
             "endpointCallWithCaps",
@@ -78843,7 +79666,7 @@
         {
           "kind": "def",
           "name": "r1CheckLookupCspaceRoot",
-          "line": 3871,
+          "line": 3892,
           "called": [
             "SystemState",
             "lookupCspaceRoot",
@@ -78855,7 +79678,7 @@
         {
           "kind": "def",
           "name": "runR1IpcCallPathSymmetryChecks",
-          "line": 3901,
+          "line": 3922,
           "called": [
             "r1CheckFaultyState",
             "r1CheckHealthyState",
@@ -78868,7 +79691,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 3915,
+          "line": 3936,
           "called": [
             "runAC1BudgetFailClosedChecks",
             "runAC1CdtTrackingChecks",
@@ -79142,8 +79965,10 @@
             "endpointSendDual",
             "expect",
             "expectOkSt",
+            "head",
             "none",
             "ofNat",
+            "tail",
             "toObjId",
             "withObject",
             "withRunnable"
@@ -79232,6 +80057,7 @@
             "empty",
             "expect",
             "expectOkSt",
+            "length",
             "none",
             "ofNat",
             "pure",
@@ -79401,6 +80227,7 @@
             "empty",
             "expect",
             "expectOkSt",
+            "length",
             "lookupCdtNodeOfSlot",
             "lookupSlotCap",
             "none",
@@ -79419,6 +80246,7 @@
             "ObjId",
             "RHTable.empty",
             "RHTable.ofList",
+            "any",
             "buildChecked",
             "cspaceMintWithCdt",
             "cspaceRevokeCdtStrict",
@@ -79426,6 +80254,7 @@
             "expect",
             "expectOkSt",
             "insert",
+            "length",
             "lookupCdtNodeOfSlot",
             "lookupSlotCap",
             "none",
@@ -79453,6 +80282,7 @@
             "empty",
             "expect",
             "expectOkSt",
+            "length",
             "lookupCdtNodeOfSlot",
             "lookupSlotCap",
             "none",
@@ -79603,6 +80433,7 @@
             "empty",
             "expect",
             "expectOkSt",
+            "length",
             "lookupSlotCap",
             "none",
             "ofList",
@@ -79692,6 +80523,7 @@
             "empty",
             "none",
             "ofNat",
+            "tail",
             "toObjId",
             "withCurrent",
             "withLifecycleObjectType",
@@ -79763,6 +80595,7 @@
             "ObjId",
             "arm64DefaultLayout",
             "buildSyscallState",
+            "length",
             "ofList",
             "syscallEntry"
           ]
@@ -79817,6 +80650,7 @@
             "RHTable.ofList",
             "ServiceId",
             "ServiceRegistration",
+            "any",
             "assertInvariants",
             "buildChecked",
             "empty",
@@ -80013,6 +80847,7 @@
           "line": 80,
           "called": [
             "expect",
+            "length",
             "mkState",
             "mkTcb",
             "waitersOf"
@@ -80024,6 +80859,7 @@
           "line": 89,
           "called": [
             "expect",
+            "length",
             "mkState",
             "mkTcb",
             "waitersOf"
@@ -80062,6 +80898,7 @@
           "called": [
             "blockingChain",
             "expect",
+            "length",
             "mkState",
             "mkTcb"
           ]
@@ -80073,6 +80910,7 @@
           "called": [
             "blockingChain",
             "expect",
+            "length",
             "mkState",
             "mkTcb"
           ]
@@ -80144,6 +80982,8 @@
           "called": [
             "blockingGraphEdges",
             "expect",
+            "head",
+            "length",
             "mkState",
             "mkTcb",
             "none",
@@ -80874,8 +81714,10 @@
           "called": [
             "CNodeRadix.empty",
             "Capability",
+            "any",
             "expect",
             "insert",
+            "length",
             "none",
             "ofList",
             "ofNat",
@@ -81173,9 +82015,11 @@
           "called": [
             "RHTable",
             "RHTable.empty",
+            "any",
             "expect",
             "fold",
             "insert",
+            "length",
             "toList"
           ]
         },
@@ -81784,6 +82628,7 @@
             "KernelError.toUInt32",
             "encodeError",
             "expect",
+            "length",
             "set",
             "toNat",
             "toUInt32"
@@ -82321,6 +83166,7 @@
             "ProbeStats",
             "default",
             "isEmpty",
+            "length",
             "pickThreadCount",
             "probeBaseState",
             "runProbeLoop"
@@ -82500,10 +83346,12 @@
             "expect",
             "frozenEndpointCall",
             "frozenLookupTcb",
+            "head",
             "mkFrozenState",
             "mkTcb",
             "none",
             "ofNatMasked",
+            "tail",
             "throw"
           ]
         },

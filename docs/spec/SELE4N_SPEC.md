@@ -1315,6 +1315,66 @@ regression extended for send/receive/call symmetry;
 provides three runtime-observable checks (healthy state, faulty
 state must error, `lookupCspaceRoot` returns `none`).
 
+### 8.10.7 Structural-Fix Discharge Index (WS-RC R4)
+
+WS-RC R4 (Structural-invariant promotions —
+[`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)
+§8) lands four sub-tasks under the structural-fix policy (`§1.5` of
+the WS-RC plan). Three sub-tasks already provide proof-surface
+closures via witness theorems:
+
+* **R4.B (DEEP-CAP-04)** — `RetypeTarget` non-bypassable
+  construction.  The `cleanupHookDischarged` predicate now requires
+  an opaque `ScrubToken` whose only public introduction is
+  `SeLe4n.Kernel.ScrubToken.fromCleanup`, gated on a successful
+  `lifecyclePreRetypeCleanup` outcome.  The no-bypass property is
+  codified by
+  `SeLe4n.Kernel.retypeTarget_implies_scrub_token_held :
+  ∀ st (rt : RetypeTarget st), SeLe4n.Kernel.ScrubToken st rt.id`.
+  Defined in `SeLe4n/Kernel/Capability/Invariant/Defs.lean`.
+* **R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01)** — Notification
+  `waitingThreads` Nodup.  Two witness theorems in
+  `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean`:
+  `notification_waitingThreads_nodup_witness` projects the
+  `uniqueWaiters` state-level invariant to per-notification Nodup,
+  and `notificationWait_runtime_check_implied_by_nodup` bridges the
+  runtime TCB ipcState guard at `IPC/Operations/Endpoint.lean:723`
+  to type-level non-membership under `notificationWaiterConsistent`.
+  **Foundation module**: `SeLe4n/Model/Object/NoDupList.lean`
+  materialises the `SeLe4n.NoDupList α` smart-constructor wrapper
+  with the complete API surface (`empty`, `consWithGuard`,
+  `consWithGuard?`, `tail?`, `filter`, equation lemmas,
+  `Membership`/`CoeHead`/`DecidableEq`/`Repr` instances, and the
+  `nodup_witness` discharge-index theorem).  The full type-level
+  promotion of `Notification.waitingThreads : List ThreadId` to
+  `SeLe4n.NoDupList SeLe4n.ThreadId` is partitioned in
+  [`docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`](../planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md)
+  as 8 atomic sub-PRs and is scheduled for completion in subsequent
+  commits.
+* **R4.D (DEEP-CAP-02)** — `cspaceMutate` null-cap rejection.  Two
+  witness theorems in
+  `SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean`:
+  `cspaceMutate_rejects_null_cap` (every successful mutation
+  witnesses a non-null pre-state capability) and
+  `cspaceMutate_null_cap_rejected` (every null-cap input totalises
+  to `.nullCapability`).  Regression tests in both
+  `tests/ModelIntegritySuite.lean::cspaceMutate_from_null_rejected`
+  and `tests/NegativeStateSuite.lean::NEG-MUTATE-NULL`.
+
+The R4 closure-form discharge index is anchored by
+`SeLe4n.Kernel.r4_structural_fix_discharge_index_documented` in
+`SeLe4n/Kernel/CrossSubsystem.lean`, with cross-references to the
+canonical
+[`docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`](../audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md)
+§3 (sections D/E/F).
+
+**R4.A — `UniqueSlotMap` promotion of `CNode.slots`** is the fourth
+sub-task (track A of the type-level promotion plan).  Its
+foundation module `SeLe4n/Model/Object/UniqueSlotMap.lean` is
+scheduled per the multi-PR plan; the state-level
+`cspaceSlotUnique` invariant is currently maintained by the
+preservation chain in `SeLe4n/Kernel/Capability/Invariant/`.
+
 ### 8.11 buildChecked Runtime Invariant Validation (WS-T Phase T7)
 
 All test states use `BootstrapBuilder.buildChecked` instead of `build`:

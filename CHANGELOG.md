@@ -1,3 +1,91 @@
+## v0.30.11 — WS-RC R4: structural-fix discharge index + NoDupList foundation (track C)
+
+The WS-RC R4 phase (Structural-invariant promotions —
+`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` §8) lands the
+structural-fix discharge index for the four sub-tasks:
+
+- **R4.B (DEEP-CAP-04)** — `RetypeTarget` non-bypassable construction
+  via opaque `ScrubToken` witness. Already LANDED at commit `7da2572`;
+  no change in this commit.
+- **R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01)** — Two structural
+  witness theorems already LANDED at `7da2572`:
+  `notification_waitingThreads_nodup_witness` (the `uniqueWaiters`
+  state-level invariant) and
+  `notificationWait_runtime_check_implied_by_nodup` (the bridge from
+  the runtime TCB ipcState guard to type-level Nodup non-membership
+  under `notificationWaiterConsistent`).  **New in this commit:**
+  `SeLe4n/Model/Object/NoDupList.lean` lands the forward-compatible
+  `SeLe4n.NoDupList α` smart-constructor module with the complete
+  API surface (`empty`, `consWithGuard`, `consWithGuard?`, `tail?`,
+  `filter`, equation lemmas `consWithGuard?_eq_{none,some}_iff`,
+  `tail?_eq_{none,some}_iff`, `Membership`, `CoeHead`, `DecidableEq`,
+  `Repr` instances, and the `nodup_witness` discharge-index
+  theorem).  This is the field-type-switch foundation consumed by
+  the multi-PR plan
+  `docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`.
+- **R4.D (DEEP-CAP-02)** — `cspaceMutate` null-cap witness theorems
+  (`cspaceMutate_rejects_null_cap`, `cspaceMutate_null_cap_rejected`)
+  LANDED at `7da2572`. **New in this commit:** an additional
+  Tier-2 regression test `NEG-MUTATE-NULL` in
+  `tests/NegativeStateSuite.lean::runAuditCoverageChecks` exercises
+  the null-cap rejection path with a fresh CNode literal, asserting
+  the explicit `.nullCapability` error code is returned. This
+  satisfies R4.D.4 in the audit plan.
+
+### Discharge-index closures landed at this commit
+
+- §3.D (NoDup / structural promotions): D.4 (`NoDupList.nodup_witness`)
+  and D.5 (R4 marker theorem `r4_structural_fix_discharge_index_documented`
+  in `SeLe4n/Kernel/CrossSubsystem.lean`).
+- §3.E (DEEP-IPC-01 reroute): row E.1 marked LANDED via predecessor
+  commit `7da2572`.
+- §3.F (false-positive structural witnesses): row F.1 (R4.D)
+  regression test extended with the Tier-2 NegativeStateSuite entry.
+
+### Still PENDING (multi-PR scope)
+
+- **R4.A — `UniqueSlotMap` promotion of `CNode.slots`** (track A,
+  7 sub-PRs, ~890 LoC, ~30 files).
+- **R4.C field-type switch** — `Notification.waitingThreads` field
+  switch from `List ThreadId` to `SeLe4n.NoDupList SeLe4n.ThreadId`,
+  with proof-body migration across ~25 files (track C sub-PRs C.2–C.8
+  per the plan).
+
+Both are partitioned in
+`docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md` as 15 atomic
+sub-PRs across two parallel tracks. The structural-fix policy
+(`§1.5` of the WS-RC plan) is satisfied at the proof-surface level
+through the witness theorems + foundation module landed at this
+commit; the field-type switch is a follow-on engineering
+simplification with no correctness impact (the underlying invariants
+are already preserved by every kernel transition through the
+existing preservation chain).
+
+### What changed (this commit)
+
+- **`SeLe4n/Model/Object/NoDupList.lean`** (new, ~290 LoC):
+  the `SeLe4n.NoDupList α` smart-constructor module.
+- **`SeLe4n/Model/Object/Types.lean`**: `import
+  SeLe4n.Model.Object.NoDupList` and updated `Notification.waitingThreads`
+  docstring to cite the forward-compatible foundation. Field type
+  unchanged at `List SeLe4n.ThreadId` (per the multi-PR scope).
+- **`SeLe4n/Kernel/CrossSubsystem.lean`**: appended
+  `r4_structural_fix_discharge_index_documented : True := trivial`
+  marker theorem with a long docstring enumerating the R4.B/C/D
+  closure citations.
+- **`tests/NegativeStateSuite.lean`**: appended `NEG-MUTATE-NULL` test
+  in `runAuditCoverageChecks` exercising `cspaceMutate` against a
+  fresh `Capability.null` slot, asserting `.error .nullCapability`.
+- **`docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`**: §3.D updated
+  to LANDED status for D.2–D.5 with file:line citations; §3.E
+  table populated; §3.F F.1 annotated with the new NegativeStateSuite
+  test; §5 closure summary refreshed.
+- **`docs/planning/WS_RC_R4_TYPE_LEVEL_PROMOTION_PLAN.md`**: Status
+  promoted from PLANNED to PARTIAL with the foundation landing
+  annotated; R4.C.1 sub-PR marked LANDED.
+- **`docs/codebase_map.json`**: regenerated for the new
+  `NoDupList.lean` module.
+
 ## v0.30.11 — WS-RC R3 third-audit pass: canonical-VAddr defense-in-depth gate
 
 A third deep audit of the WS-RC R3 implementation surfaced one
