@@ -1,6 +1,6 @@
 # WS-RC R4 Close-out Workstream Plan
 
-**Status:** PLANNED
+**Status:** LANDED (v0.31.0, branch `claude/review-closeout-plan-HToSk`)
 **Workstream:** WS-RC (audit remediation v0.30.11 → v0.31.0 → v1.0.0)
 **Predecessors landed:** WS-RC R4 partial landing at commits `7da2572` (R4.B/D witness theorems), `f27defd` (NoDupList foundation + audit-pass marker), `6f3188a` (full R4.A/R4.C type-level field-type switches + ~55 consumer migrations), `7dd1958` (15 dedicated R4 API regression tests + stale-docstring fixes); see PR #769.
 **Audit findings remediated by close-out:** DEEP-MODEL-01 (R4.A) — close-out only; DEEP-CAP-04 (R4.B) — opacity + token-threading completion; DEEP-IPC-05 (R4.C) — close-out only; structural-fix policy §1.5.

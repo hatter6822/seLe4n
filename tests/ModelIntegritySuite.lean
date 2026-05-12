@@ -585,6 +585,83 @@ def r4c_tail?_eq_none_iff_bridge_empty : IO Unit := do
     SeLe4n.NoDupList.tail?_eq_none_iff l
   expect "tail?_eq_none_iff bridge reachable on empty" true
 
+/-- WS-RC R4 close-out P1: plan-named theorem reachability gate.
+    Confirms that the six named theorems specified in the close-out plan
+    are all reachable via `#check`-style ascription. -/
+def r4_close_out_named_theorems_reachable : IO Unit := do
+  let _ : ∀ (cn : CNode), cn.slotsUnique :=
+    @SeLe4n.Model.CNode.cnode_slots_unique
+  let _ : ∀ (st : SystemState), SeLe4n.Kernel.cspaceSlotUnique st :=
+    @SeLe4n.Kernel.cspaceSlotUnique_trivial
+  let _ : ∀ (st : SystemState), SeLe4n.Kernel.uniqueWaiters st :=
+    @SeLe4n.Kernel.uniqueWaiters_trivial
+  let _ : ∀ (n : Notification), n.waitingThreads.val.Nodup :=
+    @SeLe4n.Kernel.notification_waiters_nodup
+  let _ : True := @SeLe4n.Kernel.cspaceSlotUnique_promoted_to_structural
+  let _ : True := @SeLe4n.Kernel.uniqueWaiters_promoted_to_structural
+  expect "WS-RC R4 close-out P1: plan-named theorems reachable" true
+
+/-- WS-RC R4 close-out B1: ScrubToken structural-opacity security pin.
+    Confirms that `ScrubToken.fromCleanup` is reachable as the canonical
+    introduction site, and that a freshly synthesised `ScrubToken` value
+    can be exercised through the public predicate.  The underlying
+    `ScrubTokenImpl` constructor is `private`, so the only path from
+    user code to `ScrubToken` is via `fromCleanup`. -/
+def r4b_scrubToken_canonical_introduction_only : IO Unit := do
+  -- Type-level reachability: `ScrubToken.fromCleanup` accepts a cleanup
+  -- equation and produces a `ScrubToken` at the post-state.  The
+  -- signature ascription pins the symbol; if anyone deletes
+  -- `fromCleanup` or weakens its precondition, this test fails to
+  -- elaborate.
+  let _ : ∀ {stPre stClean : SystemState} {target : SeLe4n.ObjId}
+            {currentObj newObj : KernelObject},
+          SeLe4n.Kernel.lifecyclePreRetypeCleanup stPre target currentObj newObj
+              = .ok stClean →
+          SeLe4n.Kernel.ScrubToken stClean target :=
+    @SeLe4n.Kernel.ScrubToken.fromCleanup
+  expect "WS-RC R4 close-out B1: ScrubToken.fromCleanup is the canonical introduction" true
+
+/-- WS-RC R4 close-out B2: tokenized cleanup wrapper reachability gate.
+    Confirms that `lifecyclePreRetypeCleanupWithToken` is reachable as
+    the cleanup pipeline's tokenized companion, that it produces a
+    Subtype-wrapped post-state carrying the matching ScrubToken, and
+    that the bridge `lifecyclePreRetypeCleanupWithToken_state_eq`
+    extracts the bare cleanup equation when called on a successful
+    tokenized outcome. -/
+def r4b_lifecyclePreRetypeCleanupWithToken_reachable : IO Unit := do
+  let _ : ∀ {st : SystemState} {target : SeLe4n.ObjId}
+            {currentObj newObj : KernelObject}
+            {stClean : SystemState}
+            {token : SeLe4n.Kernel.ScrubToken stClean target},
+          SeLe4n.Kernel.lifecyclePreRetypeCleanupWithToken st target currentObj newObj
+              = .ok ⟨stClean, token⟩ →
+          SeLe4n.Kernel.lifecyclePreRetypeCleanup st target currentObj newObj
+              = .ok stClean :=
+    @SeLe4n.Kernel.lifecyclePreRetypeCleanupWithToken_state_eq
+  expect "WS-RC R4 close-out B2: lifecyclePreRetypeCleanupWithToken + bridge reachable" true
+
+/-- WS-RC R4 close-out B3: `mkRetypeTarget` smart-constructor pin.
+    Confirms that `mkRetypeTarget` is reachable, takes the three
+    `cleanupHookDischarged` conjuncts plus a `ScrubToken`, produces a
+    `RetypeTarget st`, and that the resulting target records the supplied
+    `target` ObjId via `mkRetypeTarget_id`. -/
+def r4b_mkRetypeTarget_reachable : IO Unit := do
+  let _ : ∀ (st : SystemState) (target : SeLe4n.ObjId)
+            (_hTypeMeta : ∀ obj, st.objects[target]? = some obj →
+              SystemState.lookupObjectTypeMeta st target = some obj.objectType)
+            (_hNoStaleRefs : ∀ tcb, st.objects[target]? = some (.tcb tcb) →
+              ¬ (tcb.tid ∈ st.scheduler.runQueue.flat))
+            (_token : SeLe4n.Kernel.ScrubToken st target),
+          SeLe4n.Kernel.RetypeTarget st :=
+    @SeLe4n.Kernel.mkRetypeTarget
+  let _ : ∀ (st : SystemState) (target : SeLe4n.ObjId)
+            (hTypeMeta : _) (hNoStaleRefs : _)
+            (token : SeLe4n.Kernel.ScrubToken st target),
+          (SeLe4n.Kernel.mkRetypeTarget st target hTypeMeta hNoStaleRefs token).id
+              = target :=
+    @SeLe4n.Kernel.mkRetypeTarget_id
+  expect "WS-RC R4 close-out B3: mkRetypeTarget + id witness reachable" true
+
 -- ============================================================================
 -- Runtime coverage for the 5 per-variant typed lookup helpers
 -- getX? helpers. Each test stores a single KernelObject at a known ObjId
@@ -1370,11 +1447,10 @@ def ipc_invariant_full_named_projection_signatures : IO Unit := do
     @ipcInvariantFull.passiveServerIdle
   let _ : ∀ {st : SystemState}, ipcInvariantFull st -> donationBudgetTransfer st :=
     @ipcInvariantFull.donationBudgetTransfer
-  let _ : ∀ {st : SystemState}, ipcInvariantFull st -> uniqueWaiters st :=
-    @ipcInvariantFull.uniqueWaiters
+  -- WS-RC R4.C.7: uniqueWaiters projection removed (conjunct retired in C2).
   let _ : ∀ {st : SystemState}, ipcInvariantFull st -> blockedOnReplyHasTarget st :=
     @ipcInvariantFull.blockedOnReplyHasTarget
-  expect "all 16 ipcInvariantFull named projection signatures typecheck" (True == True)
+  expect "all 15 ipcInvariantFull named projection signatures typecheck" (True == True)
 
 
 open SeLe4n.Model in
@@ -1753,6 +1829,14 @@ def main : IO Unit := do
   r4c_noDupList_nodup_witness
   r4c_consWithGuard?_eq_some_iff_bridge
   r4c_tail?_eq_none_iff_bridge_empty
+  -- WS-RC R4 close-out P1: plan-named theorem reachability gate
+  r4_close_out_named_theorems_reachable
+  -- WS-RC R4 close-out B1: ScrubToken structural-opacity security pin
+  r4b_scrubToken_canonical_introduction_only
+  -- WS-RC R4 close-out B2: tokenized cleanup wrapper reachability gate
+  r4b_lifecyclePreRetypeCleanupWithToken_reachable
+  -- WS-RC R4 close-out B3: mkRetypeTarget smart-constructor pin
+  r4b_mkRetypeTarget_reachable
   -- kind-verified lookup helpers discriminate by variant
   getTcb_discriminates_variants
   getSchedContext_discriminates_variants

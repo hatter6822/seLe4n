@@ -37,10 +37,11 @@ theorem capabilityInvariantBundle_of_cdt_update
     (hInv : capabilityInvariantBundle st)
     (hAcyclic' : cdt'.edgeWellFounded) :
     capabilityInvariantBundle { st with cdt := cdt' } := by
-  rcases hInv with ⟨hU, _, hBnd, hComp, _, hDepthPre, hObjInvPre⟩
+  rcases hInv with ⟨_, hBnd, hComp, _, hDepthPre, hObjInvPre⟩
   have hObjEq : ({ st with cdt := cdt' } : SystemState).objects = st.objects := rfl
-  exact ⟨cspaceSlotUnique_of_objects_eq st _ hU hObjEq,
-    cspaceLookupSound_of_cspaceSlotUnique _ (cspaceSlotUnique_of_objects_eq st _ hU hObjEq),
+  -- WS-RC R4.A.6: cspaceSlotUnique conjunct removed from bundle; the new
+  -- 6-tuple skips the legacy uniqueness slot.
+  exact ⟨cspaceLookupSound_of_cspaceSlotUnique _ trivial,
     hBnd, hComp, hAcyclic',
     cspaceDepthConsistent_of_objects_eq st _ hDepthPre hObjEq,
     hObjEq ▸ hObjInvPre⟩
@@ -94,7 +95,7 @@ theorem processRevokeNode_preserves_capabilityInvariantBundle
   | none =>
     simp [hSlot] at hStep; cases hStep
     exact capabilityInvariantBundle_of_cdt_update st _ hInv
-      (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub st.cdt node))
+      (CapDerivationTree.edgeWellFounded_sub _ _ hInv.2.2.2.1 (CapDerivationTree.removeNode_edges_sub st.cdt node))
   | some descAddr =>
     simp [hSlot] at hStep
     cases hDel : cspaceDeleteSlotCore descAddr st with
@@ -110,7 +111,7 @@ theorem processRevokeNode_preserves_capabilityInvariantBundle
       have hKDel :=
         cspaceDeleteSlotCore_preserves_cdtNodeSlot st stDel descAddr hNodeSlotK hDel
       exact capabilityInvariantBundle_of_cdt_update _ _ hDelInv
-        (CapDerivationTree.edgeWellFounded_sub _ _ hDelInv.2.2.2.2.1
+        (CapDerivationTree.edgeWellFounded_sub _ _ hDelInv.2.2.2.1
           (CapDerivationTree.removeNode_edges_sub stDel.cdt node))
 
 /-- Fold body function for cspaceRevokeCdt: processes one CDT descendant node.
@@ -339,7 +340,7 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
             simp
             exact ih rep { stAcc with cdt := stAcc.cdt.removeNode node }
               (capabilityInvariantBundle_of_cdt_update stAcc _ hI
-                (CapDerivationTree.edgeWellFounded_sub _ _ hI.2.2.2.2.1 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node)))
+                (CapDerivationTree.edgeWellFounded_sub _ _ hI.2.2.2.1 (CapDerivationTree.removeNode_edges_sub stAcc.cdt node)))
               hKAcc
           | some descAddr =>
             simp
@@ -358,7 +359,7 @@ theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle
               have hKDel := cspaceDeleteSlotCore_preserves_cdtNodeSlot stAcc stDel
                 descAddr hKAcc hDel
               exact ih _ _ (capabilityInvariantBundle_of_cdt_update _ _ hDelInv
-                (CapDerivationTree.edgeWellFounded_sub _ _ hDelInv.2.2.2.2.1
+                (CapDerivationTree.edgeWellFounded_sub _ _ hDelInv.2.2.2.1
                   (CapDerivationTree.removeNode_edges_sub stDel.cdt node)))
                 hKDel
 

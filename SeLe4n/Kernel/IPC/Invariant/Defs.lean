@@ -581,22 +581,37 @@ theorem not_mem_waitingThreads_of_ipcState_ne
 -- Notification uniqueness (F-12 / WS-D4 / WS-G7)
 -- ============================================================================
 
-/-- WS-RC R4.C: state-level Nodup invariant.  Now trivially derivable from
-    the structural `Notification.waitingThreads.hNodup`; retained as a
-    named predicate for caller compatibility (preservation theorems in
-    `NotificationPreservation/{Signal,Wait}.lean` still consume it as a
-    hypothesis).  Every instance specialises to
-    `ntfn.waitingThreads.hNodup`. -/
-def uniqueWaiters (st : SystemState) : Prop :=
-  ∀ (oid : SeLe4n.ObjId) (ntfn : Notification),
-    st.objects[oid]? = some (KernelObject.notification ntfn) →
-      ntfn.waitingThreads.val.Nodup
+/-- WS-RC R4.C.6: state-level Nodup invariant — now structurally trivial.
+    The substantive content has been promoted to
+    `Notification.waitingThreads : NoDupList ThreadId`, whose
+    `hNodup` field carries the `List.Nodup` witness at construction
+    time.  Every preservation theorem that historically required this
+    invariant now discharges trivially via
+    `SeLe4n.NoDupList.nodup_witness` or
+    `SeLe4n.Kernel.notification_waiters_nodup`.
 
-/-- WS-RC R4.C: `uniqueWaiters` is now trivially derivable from the
-    structural `NoDupList.hNodup`; the state-level invariant is no longer
-    a separate proof obligation. -/
-theorem uniqueWaiters_holds (st : SystemState) : uniqueWaiters st :=
-  fun _ ntfn _ => ntfn.waitingThreads.hNodup
+    The state-level alias is retained as `True` rather than deleted
+    because preservation theorems take it as a vestigial hypothesis
+    parameter to document the historical proof obligation. Each
+    occurrence is harmlessly satisfied by `trivial` /
+    `uniqueWaiters_trivial`; the bundle conjunct itself has been
+    excised in Phase C2 of the close-out (no longer part of
+    `ipcInvariantFull`). -/
+def uniqueWaiters (_ : SystemState) : Prop := True
+
+/-- WS-RC R4.C.6: trivial-discharge of `uniqueWaiters` after the
+    Phase-C1 collapse to `True`.  The structural content lives in the
+    `NoDupList.hNodup` field carried by every
+    `Notification.waitingThreads`; callers that previously consumed
+    `uniqueWaiters st` as a hypothesis should switch to
+    `SeLe4n.NoDupList.nodup_witness` (per-Notification) or use this
+    theorem to discharge the state-level form directly. -/
+theorem uniqueWaiters_holds (st : SystemState) : uniqueWaiters st := trivial
+
+/-- WS-RC R4.C.6: plan-named alias for the structural state-level Nodup
+    discharge.  Phase P1 introduces the named identifier; Phase C1's
+    collapse to `True` makes the body `trivial`. -/
+theorem uniqueWaiters_trivial (st : SystemState) : uniqueWaiters st := trivial
 
 /-- AJ1-B (M-04): Every thread in `blockedOnReply` state has an explicit
 `replyTarget`. All production paths (`endpointCall`, `endpointReceiveDual`)
@@ -1182,11 +1197,14 @@ Z7 extends the bundle with 4 donation invariants:
 - `passiveServerIdle`: unbound non-runnable threads are idle/receiving
 - `donationBudgetTransfer`: at most one thread per SchedContext
 
-AG1-C adds `uniqueWaiters` as the 15th conjunct:
-- `uniqueWaiters`: notification waiting thread lists have no duplicates
-
-AJ1-B adds `blockedOnReplyHasTarget` as the 16th conjunct:
-- `blockedOnReplyHasTarget`: every blockedOnReply thread has replyTarget = some _ -/
+WS-RC R4.C.7 (close-out C2): the `uniqueWaiters` conjunct previously
+listed as the 15th slot was removed when `Notification.waitingThreads`
+was promoted from `List ThreadId` to `SeLe4n.NoDupList ThreadId`. The
+per-Notification `List.Nodup` witness is now carried structurally at
+construction time via `NoDupList.hNodup`; the state-level invariant is
+trivially derivable via `SeLe4n.Kernel.uniqueWaiters_trivial` and is no
+longer a separate proof obligation. The bundle now has 15 conjuncts
+(was 16); `blockedOnReplyHasTarget` is the 15th. -/
 def ipcInvariantFull (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
   badgeWellFormed st ∧ waitingThreadsPendingMessageNone st ∧
@@ -1195,7 +1213,6 @@ def ipcInvariantFull (st : SystemState) : Prop :=
   blockedThreadTimeoutConsistent st ∧
   donationChainAcyclic st ∧ donationOwnerValid st ∧
   passiveServerIdle st ∧ donationBudgetTransfer st ∧
-  uniqueWaiters st ∧
   blockedOnReplyHasTarget st
 
 -- ============================================================================
@@ -1243,7 +1260,6 @@ structure IpcInvariantFull (st : SystemState) : Prop where
   donationOwnerValid : donationOwnerValid st
   passiveServerIdle : passiveServerIdle st
   donationBudgetTransfer : donationBudgetTransfer st
-  uniqueWaiters : uniqueWaiters st
   blockedOnReplyHasTarget : blockedOnReplyHasTarget st
 
 namespace ipcInvariantFull
@@ -1326,15 +1342,10 @@ elaborator. -/
     _root_.SeLe4n.Kernel.donationBudgetTransfer st :=
   h.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
-@[simp] theorem uniqueWaiters {st : SystemState}
-    (h : ipcInvariantFull st) :
-    _root_.SeLe4n.Kernel.uniqueWaiters st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-
 @[simp] theorem blockedOnReplyHasTarget {st : SystemState}
     (h : ipcInvariantFull st) :
     _root_.SeLe4n.Kernel.blockedOnReplyHasTarget st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 end ipcInvariantFull
 
@@ -1353,7 +1364,7 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.queueNextBlockingConsistent, h.queueHeadBlockedConsistent,
            h.blockedThreadTimeoutConsistent, h.donationChainAcyclic,
            h.donationOwnerValid, h.passiveServerIdle,
-           h.donationBudgetTransfer, h.uniqueWaiters,
+           h.donationBudgetTransfer,
            h.blockedOnReplyHasTarget⟩
   · intro h
     exact ⟨h.ipcInvariant, h.dualQueueSystemInvariant,
@@ -1363,7 +1374,7 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.queueNextBlockingConsistent, h.queueHeadBlockedConsistent,
            h.blockedThreadTimeoutConsistent, h.donationChainAcyclic,
            h.donationOwnerValid, h.passiveServerIdle,
-           h.donationBudgetTransfer, h.uniqueWaiters,
+           h.donationBudgetTransfer,
            h.blockedOnReplyHasTarget⟩
 
 /-- AN3-B.1: forward direction of the bridge, as a convenience coercion.

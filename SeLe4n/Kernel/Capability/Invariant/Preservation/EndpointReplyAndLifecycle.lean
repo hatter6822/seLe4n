@@ -41,7 +41,7 @@ theorem capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
     (st st1 : SystemState) (target : SeLe4n.ThreadId)
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (tcb : TCB)
-    (hUnique : cspaceSlotUnique st)
+    (_hUnique : cspaceSlotUnique st)
     (hBounded : cspaceSlotCountBounded st)
     (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st)
     (hDepthPre : cspaceDepthConsistent st)
@@ -64,10 +64,6 @@ theorem capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
       rcases hTcbPost with ⟨tcb', hTcb'⟩
       rw [hTcb'] at hCn1; cases hCn1
     · rw [storeTcbIpcStateAndMessage_preserves_objects_ne st st1 target ipc msg cnodeId hEq hObjInv hTcb] at hCn1; exact hCn1
-  have hU1 : cspaceSlotUnique st1 := by
-    intro cnodeId cn hCn1; exact hUnique cnodeId cn (hCnodeBackward cnodeId cn hCn1)
-  have hU := cspaceSlotUnique_of_objects_eq st1 (ensureRunnable st1 target)
-    hU1 (ensureRunnable_preserves_objects st1 target)
   have ⟨hBndE, hCompE, hAcyclicE⟩ :=
     cdtPredicates_through_reply_path st st1 target ipc msg hBounded hComp hAcyclic hObjInv hTcb
   have hDepth1 : cspaceDepthConsistent st1 := by
@@ -77,7 +73,9 @@ theorem capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
   have hObjInv1 := storeTcbIpcStateAndMessage_preserves_objects_invExt st st1 target ipc msg hObjInv hTcb
   have hObjInvE : (ensureRunnable st1 target).objects.invExt :=
     (ensureRunnable_preserves_objects st1 target) ▸ hObjInv1
-  exact ⟨hU, cspaceLookupSound_of_cspaceSlotUnique _ hU,
+  -- WS-RC R4.A.6: cspaceSlotUnique conjunct removed from bundle; the
+  -- predicate is structurally trivial.
+  exact ⟨cspaceLookupSound_of_cspaceSlotUnique _ trivial,
     hBndE, hCompE, hAcyclicE, hDepthE, hObjInvE⟩
 
 /-- WS-F1/WS-E4/M-12/WS-H1: endpointReply preserves capabilityInvariantBundle.
@@ -91,7 +89,7 @@ theorem endpointReply_preserves_capabilityInvariantBundle
     (hInv : capabilityInvariantBundle st)
     (hStep : endpointReply replier target msg st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨hUnique, _hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv⟩
+  rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv⟩
   unfold endpointReply at hStep
   -- WS-H12d: Eliminate bounds-check if-branches (error cases contradict hStep : ... = .ok ...)
   simp only [show ¬(maxMessageRegisters < msg.registers.size) from by
@@ -133,7 +131,7 @@ theorem endpointReply_preserves_capabilityInvariantBundle
           intro st1 hTcb
           exact capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
             st st1 target .ready (some msg) tcb
-            hUnique hBounded hComp hAcyclic hDepthPre hObjInv hTcb hLookup
+            trivial hBounded hComp hAcyclic hDepthPre hObjInv hTcb hLookup
 
 /-- M3 composed bundle entrypoint: M1 scheduler + M2 capability + M3 IPC.
 
@@ -216,15 +214,18 @@ theorem coreIpcInvariantBundle_to_donationBudgetTransfer {st : SystemState}
     (h : coreIpcInvariantBundle st) : donationBudgetTransfer st :=
   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
-/-- AG1-C: Extract `uniqueWaiters` from the core bundle. -/
+/-- WS-RC R4.C.7: Extract `uniqueWaiters` from the core bundle.  The
+state-level predicate is now trivially `True` (the bundle conjunct has
+been dropped); kept for caller-side compatibility with the same
+signature. -/
 theorem coreIpcInvariantBundle_to_uniqueWaiters {st : SystemState}
-    (h : coreIpcInvariantBundle st) : uniqueWaiters st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+    (_h : coreIpcInvariantBundle st) : uniqueWaiters st := trivial
 
-/-- AJ1-B: Extract `blockedOnReplyHasTarget` from the core bundle. -/
+/-- AJ1-B: Extract `blockedOnReplyHasTarget` from the core bundle.
+WS-RC R4.C.7: index shifted after `uniqueWaiters` conjunct removal. -/
 theorem coreIpcInvariantBundle_to_blockedOnReplyHasTarget {st : SystemState}
     (h : coreIpcInvariantBundle st) : blockedOnReplyHasTarget st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 /-- Named M3.5 coherence component: runnable threads stay IPC-ready. -/
 def ipcSchedulerRunnableReadyComponent (st : SystemState) : Prop :=
@@ -309,22 +310,7 @@ theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
       cn.depth ≤ maxCSpaceDepth ∧ (cn.bitsConsumed > 0 → cn.wellFormed))
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨hUnique, _hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv⟩
-  have hUnique' : cspaceSlotUnique st' := by
-    rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
-      ⟨_, _, _, _, _, _, hStore⟩
-    intro cnodeId cn hObj
-    by_cases hEq : cnodeId = target
-    · rw [hEq] at hObj
-      have hObjAtTarget := lifecycle_storeObject_objects_eq st st' target newObj hObjInv hStore
-      rw [hObjAtTarget] at hObj
-      cases newObj with
-      | cnode _ => cases hObj; exact hNewObjCNodeUniq cn rfl
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => cases hObj
-    · have hPreserved := lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target
-        cnodeId newObj hEq hObjInv hStep
-      rw [hPreserved] at hObj
-      exact hUnique cnodeId cn hObj
+  rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv⟩
   -- WS-H4: lifecycleRetypeObject delegates to storeObject, which preserves CDT fields
   have ⟨hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩ :
       cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' ∧ st'.objects.invExt := by
@@ -351,7 +337,8 @@ theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
       · rw [lifecycleRetypeObject_ok_lookup_preserved_ne st st' authority target cnodeId newObj hEq hObjInv hStep] at hObj
         exact hDepthPre cnodeId cn hObj
     · exact storeObject_preserves_objects_invExt st st' target newObj hObjInv hStore
-  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique',
+  -- WS-RC R4.A.6: cspaceSlotUnique conjunct removed from bundle.
+  exact ⟨cspaceLookupSound_of_cspaceSlotUnique st' trivial,
     hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩
 
 theorem lifecycleRetypeObject_preserves_ipcInvariant
@@ -406,7 +393,6 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hDBT' : donationBudgetTransfer st')
-    (hUW' : uniqueWaiters st')
     (hBRT' : blockedOnReplyHasTarget st')
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
     coreIpcInvariantBundle st' := by
@@ -418,7 +404,7 @@ theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle
       hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hStep
   · exact ⟨lifecycleRetypeObject_preserves_ipcInvariant st st' authority target newObj hIpcFull.1 hNewObjNotificationInv (objects_invExt_of_capabilityInvariantBundle st hCap) hStep,
            hDualQueue', hBounded', hBadge', hWtpmn', hNoDup', hQMC', hQNBC', hQHBC', hBlockedTimeout',
-           hDCA', hDOV', hPSI', hDBT', hUW', hBRT'⟩
+           hDCA', hDOV', hPSI', hDBT', hBRT'⟩
 
 theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
     (st st' : SystemState)
@@ -448,7 +434,6 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
     (hDOV' : donationOwnerValid st')
     (hPSI' : passiveServerIdle st')
     (hDBT' : donationBudgetTransfer st')
-    (hUW' : uniqueWaiters st')
     (hBRT' : blockedOnReplyHasTarget st')
     (hObjTypesInv : st.lifecycle.objectTypes.invExt)
     (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
@@ -457,7 +442,7 @@ theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle
   rcases hM35 with ⟨hM3, _hCoherence, _hCtx, _hDeq⟩
   have hM3' : coreIpcInvariantBundle st' :=
     lifecycleRetypeObject_preserves_coreIpcInvariantBundle st st' authority target newObj hM3
-      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hBadge' hWtpmn' hNoDup' hQMC' hQNBC' hQHBC' hBlockedTimeout' hDCA' hDOV' hPSI' hDBT' hUW' hBRT' hStep
+      hNewObjNotificationInv hNewObjCNodeUniq hNewObjCNodeBounded hNewObjCNodeDepth hCurrentValid hDualQueue' hBounded' hBadge' hWtpmn' hNoDup' hQMC' hQNBC' hQHBC' hBlockedTimeout' hDCA' hDOV' hPSI' hDBT' hBRT' hStep
   have hLifecycle' : lifecycleInvariantBundle st' :=
     SeLe4n.Kernel.lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target
       newObj hLifecycle (objects_invExt_of_capabilityInvariantBundle st hM3.2.1) hObjTypesInv hStep
@@ -555,7 +540,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityI
       (hObjTypesInvAfterCleanup stRevoked stDeleted hRevoke hDelete)
       hRetype
   exact lifecycleCapabilityStaleAuthorityInvariant_of_bundles st' hLifecycle' hCap'
-    (lifecycleAuthorityMonotonicity_holds st' hCap'.1 hObjInvFinal)
+    (lifecycleAuthorityMonotonicity_holds st' trivial hObjInvFinal)
 
 theorem lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvariantBundle
     (st : SystemState)

@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.30.11.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.0.
 
 ## Build and run
 
@@ -889,6 +889,31 @@ under `docs/` and `docs/gitbook/`.
   because canonical vaddrs (rpi5BootVSpaceRoot via insertIdentity
   with paddr<2^44, simBootVSpaceRoot at vaddr=0x1000) trivially
   satisfy the new conjunct via `decide`.
+  **WS-RC R4 close-out COMPLETE (v0.31.0, branch
+  `claude/review-closeout-plan-HToSk`)**:  the 9-sub-PR close-out
+  ([`docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md`](docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md))
+  completes the four R4 sub-tasks left open after the v0.30.11
+  partial landing.  Phase P1: 6 plan-named witnesses
+  (`cnode_slots_unique`, `cspaceSlotUnique_trivial`,
+  `uniqueWaiters_trivial`, `notification_waiters_nodup`,
+  `cspaceSlotUnique_promoted_to_structural`,
+  `uniqueWaiters_promoted_to_structural`).  Phases A1/A2:
+  `cspaceSlotUnique` retired (state-level predicate → `True`;
+  `capabilityInvariantBundle` 7→6 conjuncts; the substantive
+  content is now `UniqueSlotMap.hWF` on every `CNode.slots`).
+  Phases B1/B2/B3: `ScrubTokenImpl` made `private structure`
+  (manual fabrication structurally infeasible);
+  `lifecyclePreRetypeCleanupWithToken` wrapper threading the
+  token through cleanup; `mkRetypeTarget` smart constructor.
+  Phases C1/C2: `uniqueWaiters` retired (state-level predicate
+  → `True`; `ipcInvariantFull` 16→15 conjuncts; the substantive
+  content is now `NoDupList.hNodup` on every
+  `Notification.waitingThreads`).  Phase V1: version bumped
+  0.30.11 → 0.31.0 across `lakefile.toml`, `README.md`,
+  `CHANGELOG.md`, `CLAUDE.md`, `docs/spec/SELE4N_SPEC.md`,
+  `rust/Cargo.{toml,lock}`, `rust/sele4n-hal/src/boot.rs`, all
+  10 `docs/i18n/<lang>/README.md`, `docs/codebase_map.json`.
+  Items deferred past v1.0.0 with correctness impact: NONE.
 
 - **WS-AN portfolio COMPLETE (v0.30.11, branch `claude/review-codebase-phase-an12-JBPQN`)**:
   Phase AN12 — Documentation, themes, closure — landed the cross-cutting

@@ -532,6 +532,68 @@ None.  All four R4 sub-tasks LANDED at this commit:
 - `bash scripts/check_website_links.sh` passes (no manifest path
   renames in this commit).
 
+#### R4 close-out (v0.31.0, COMPLETE)
+
+Following the partial landing of R4 at v0.30.11, the close-out
+(branch `claude/review-closeout-plan-HToSk`,
+plan: [`docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md`](audits/WS_RC_R4_CLOSEOUT_PLAN.md))
+retires the historical state-level `cspaceSlotUnique` and
+`uniqueWaiters` invariants whose substantive content has been promoted
+to the structural witnesses `UniqueSlotMap.hWF` and `NoDupList.hNodup`.
+The 9 sub-PRs across 5 phases (P, A, B, C, V) land the following
+concrete changes:
+
+- **Phase P1**: `SeLe4n.Model.CNode.cnode_slots_unique`,
+  `SeLe4n.Kernel.cspaceSlotUnique_trivial`,
+  `SeLe4n.Kernel.uniqueWaiters_trivial`,
+  `SeLe4n.Kernel.notification_waiters_nodup`,
+  `cspaceSlotUnique_promoted_to_structural`,
+  `uniqueWaiters_promoted_to_structural` (plan-named marker theorems)
+  and the reachability gate `r4_close_out_named_theorems_reachable`
+  in `tests/ModelIntegritySuite.lean`.
+- **Phase A1**: `cspaceSlotUnique` collapsed to `True`; ~12 substantive
+  `hUnique cnodeId cn hObj` application sites migrated to
+  `SeLe4n.Model.CNode.slotsUnique_holds`; transfer theorems
+  `cspaceSlotUnique_of_storeObject_*` collapsed to `trivial`.
+- **Phase A2**: `cspaceSlotUnique` removed from
+  `capabilityInvariantBundle` and `CapabilityInvariantBundle` (bundle
+  now 6 conjuncts, was 7); all preservation theorem bodies and
+  destructure-then-rebuild sites updated.
+- **Phase B1**: `ScrubTokenImpl` made `private structure`;
+  `ScrubToken.fromCleanup` is the sole public introduction route.
+- **Phase B2**: `lifecyclePreRetypeCleanupWithToken` wrapper added
+  with `Subtype`-paired return; bridge lemmas
+  `lifecyclePreRetypeCleanupWithToken_state_eq` /
+  `lifecyclePreRetypeCleanupWithToken_error_eq` connect to the bare
+  form.
+- **Phase B3**: `mkRetypeTarget` smart constructor + `mkRetypeTarget_id`
+  companion theorem added.
+- **Phase C1**: `uniqueWaiters` collapsed to `True`; substantive
+  applications migrated; `notification_waitingThreads_nodup_witness`
+  discharges structurally via `NoDupList.hNodup`.
+- **Phase C2**: `uniqueWaiters` removed from `ipcInvariantFull` and
+  `IpcInvariantFull` (bundle now 15 conjuncts, was 16); `hUW' :
+  uniqueWaiters st'` parameter removed from 11 preservation theorems
+  in `IPC/Invariant/Structural/DualQueueMembership.lean` plus the
+  `lifecycleRetypeObject` core/composition variants; index shifts in
+  `Architecture/Invariant.lean` and `Platform/Boot.lean`.
+- **Phase V1**: version bump 0.30.11 → 0.31.0 (`lakefile.toml`,
+  `README.md`, `CHANGELOG.md` v0.31.0 header, `rust/Cargo.toml` +
+  `rust/Cargo.lock` + `rust/sele4n-hal/src/boot.rs` KERNEL_VERSION,
+  `CLAUDE.md` version line, `docs/spec/SELE4N_SPEC.md` package
+  version row, all 10 `docs/i18n/<lang>/README.md` version badges,
+  `docs/codebase_map.json` regenerated).
+
+##### R4 close-out validation
+
+- `lake build` (default target, 312 jobs) passes; zero warnings.
+- `./scripts/test_smoke.sh` passes end-to-end.
+- `./scripts/test_full.sh` passes (tier 3 invariant surface
+  including new R4 close-out reachability gates).
+- `lake exe model_integrity_suite` reports the three new
+  `r4b_*` gates (B1/B2/B3) plus the `r4_close_out_named_theorems_reachable`
+  P1 gate pass alongside the pre-existing R4 structural tests.
+
 ### R5..R14 — TBD
 
 Per plan §3 phase summary; remaining rows will be appended to this

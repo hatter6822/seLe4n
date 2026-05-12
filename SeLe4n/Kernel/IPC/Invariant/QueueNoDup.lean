@@ -672,11 +672,21 @@ theorem endpointQueuePopHead_preserves_endpointQueueNoDup
     codified via this theorem; the type-level promotion remains a
     follow-up engineering simplification with no correctness impact. -/
 theorem notification_waitingThreads_nodup_witness
-    (st : SystemState) (oid : SeLe4n.ObjId) (ntfn : Notification)
-    (hUnique : uniqueWaiters st)
-    (hObj : st.objects[oid]? = some (KernelObject.notification ntfn)) :
+    (_st : SystemState) (_oid : SeLe4n.ObjId) (ntfn : Notification)
+    (_hUnique : uniqueWaiters _st)
+    (_hObj : _st.objects[_oid]? = some (KernelObject.notification ntfn)) :
     ntfn.waitingThreads.val.Nodup :=
-  hUnique oid ntfn hObj
+  -- WS-RC R4.C: discharge structurally via NoDupList.hNodup.
+  ntfn.waitingThreads.hNodup
+
+/-- WS-RC R4.C / DEEP-IPC-05: plan-named canonical witness — every
+    `Notification` has a Nodup waiter list structurally.  Identical to
+    `(fun n => n.waitingThreads.hNodup)`; retained under the close-out
+    plan's canonical name so the discharge-index reachability gate can
+    locate the witness by the same identifier used in the plan text. -/
+theorem notification_waiters_nodup (n : Notification) :
+    n.waitingThreads.val.Nodup :=
+  n.waitingThreads.hNodup
 
 /-- WS-RC R4.C (DEEP-IPC-01 closure): structural witness that the
     runtime duplicate guard at `IPC/Operations/Endpoint.lean:723` is

@@ -430,7 +430,7 @@ theorem notificationSignal_preserves_notificationWaiterConsistent
     (st st' : SystemState)
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (hConsist : notificationWaiterConsistent st)
-    (hUnique : uniqueWaiters st)
+    (_hUnique : uniqueWaiters st)
     (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     notificationWaiterConsistent st' := by
@@ -451,7 +451,9 @@ theorem notificationSignal_preserves_notificationWaiterConsistent
         have hValEq : ntfn.waitingThreads.val = waiter :: rest.val :=
           (SeLe4n.NoDupList.tail?_eq_some_iff ntfn.waitingThreads waiter rest).mp hWaiters
         -- Extract uniqueness: waiter ∉ rest.val
-        have hNodup := hUnique notificationId ntfn hObj
+        -- WS-RC R4.C: derive from structural NoDupList.hNodup instead of
+        -- the (now-trivial) state-level `uniqueWaiters` hypothesis.
+        have hNodup : ntfn.waitingThreads.val.Nodup := ntfn.waitingThreads.hNodup
         rw [hValEq] at hNodup
         have hWaiterNotInRest : waiter ∉ rest.val := (List.nodup_cons.mp hNodup).1
         revert hStep

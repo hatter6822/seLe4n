@@ -77,7 +77,7 @@ theorem cspaceMint_preserves_badgeWellFormed
     (st st' : SystemState) (src dst : CSpaceAddr)
     (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
     (hInv : badgeWellFormed st)
-    (hSlotUniq : cspaceSlotUnique st)
+    (_hSlotUniq : cspaceSlotUnique st)
     (hObjInv : st.objects.invExt)
     (hBadgeValid : ∀ b, badge = some b → b.valid)
     (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
@@ -109,7 +109,7 @@ theorem cspaceMint_preserves_badgeWellFormed
       | some obj =>
         cases obj with
         | cnode cn =>
-          have hUniq := hSlotUniq dst.cnode cn hObj
+          have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
           simp only [hObj] at hStep
           split at hStep
           · simp at hStep  -- slot occupied
@@ -148,7 +148,7 @@ theorem cspaceMutate_preserves_badgeWellFormed
     (st st' : SystemState) (addr : CSpaceAddr)
     (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
     (hInv : badgeWellFormed st)
-    (hSlotUniq : cspaceSlotUnique st)
+    (_hSlotUniq : cspaceSlotUnique st)
     (hObjInv : st.objects.invExt)
     (hBadgeValid : ∀ b, badge = some b → b.valid)
     (hStep : cspaceMutate addr rights badge st = .ok ((), st')) :
@@ -172,7 +172,7 @@ theorem cspaceMutate_preserves_badgeWellFormed
       | some obj =>
         cases obj with
         | cnode cn =>
-          have hUniq := hSlotUniq addr.cnode cn hObj
+          have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
           simp [hObj] at hStep
           cases hStore : storeObject addr.cnode
               (.cnode (cn.insert addr.slot
@@ -261,7 +261,7 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
             { cnode := receiverRoot, slot := emptySlot } cap hInv
             (fun cn' hObj' => hSlotCapacity cn' (by rw [hObj] at hObj'; cases hObj'; exact hObj) emptySlot)
             (objects_invExt_of_capabilityInvariantBundle st hInv) hIns
-          rcases hBundleSt2 with ⟨hU2, _, hBnd2, _, _, hDepth2, hObjInv2⟩
+          rcases hBundleSt2 with ⟨_, hBnd2, _, _, hDepth2, hObjInv2⟩
           cases hEnsSrc : SystemState.ensureCdtNodeForSlot st2 senderSlot with
           | mk srcNode stSrc =>
             cases hEnsDst : SystemState.ensureCdtNodeForSlot stSrc { cnode := receiverRoot, slot := emptySlot } with
@@ -274,8 +274,8 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
                 simpa [hEnsDst] using SystemState.ensureCdtNodeForSlot_objects_eq stSrc { cnode := receiverRoot, slot := emptySlot }
               have hObjFinal : ({ stDst with cdt := stDst.cdt.addEdge srcNode dstNode .ipcTransfer } : SystemState).objects = st2.objects := by
                 simp [hObjDst, hObjSrc]
-              have hU' := cspaceSlotUnique_of_objects_eq st2 _ hU2 hObjFinal
-              exact ⟨hU', cspaceLookupSound_of_cspaceSlotUnique _ hU',
+              -- WS-RC R4.A.6: cspaceSlotUnique conjunct removed from bundle.
+              exact ⟨cspaceLookupSound_of_cspaceSlotUnique _ trivial,
                 cspaceSlotCountBounded_of_objects_eq st2 _ hBnd2 hObjFinal,
                 hCdtPost.1, hCdtPost.2,
                 cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 hObjFinal,

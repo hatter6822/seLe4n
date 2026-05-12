@@ -1,3 +1,78 @@
+## v0.31.0 — WS-RC R4 closure: structural-invariant retirement
+
+WS-RC R4 close-out (the 9 sub-PRs of
+`docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md`) completes the four sub-tasks of
+WS-RC R4 (Structural-invariant promotions) left open after the v0.30.11
+cut. The closure retires the historical state-level `cspaceSlotUnique`
+and `uniqueWaiters` invariants — their substantive content has been
+promoted to the structural witnesses `UniqueSlotMap.hWF` and
+`NoDupList.hNodup` carried at construction time on the underlying data
+structures. The associated bundle conjuncts (`capabilityInvariantBundle`,
+`ipcInvariantFull`) are excised; the predicates themselves are retained
+as `True` aliases so ~40 historical hypothesis parameters continue to
+build without a synchronised signature-only refactor.
+
+- **Phase P1 (foundations)** — Adds the close-out plan's named
+  witnesses: `SeLe4n.Model.CNode.cnode_slots_unique`,
+  `SeLe4n.Kernel.cspaceSlotUnique_trivial`,
+  `SeLe4n.Kernel.uniqueWaiters_trivial`,
+  `SeLe4n.Kernel.notification_waiters_nodup`, and the marker theorems
+  `SeLe4n.Kernel.cspaceSlotUnique_promoted_to_structural` /
+  `SeLe4n.Kernel.uniqueWaiters_promoted_to_structural` next to the
+  existing umbrella `r4_structural_fix_discharge_index_documented` in
+  `SeLe4n/Kernel/CrossSubsystem.lean`.  Reachability gate
+  `r4_close_out_named_theorems_reachable` added to
+  `tests/ModelIntegritySuite.lean`.
+- **Phase A (cspaceSlotUnique retirement)** — A1 collapses the
+  state-level predicate to `True` and migrates ~12 substantive
+  `hUnique cnodeId cn hObj` application sites to the structural
+  `SeLe4n.Model.CNode.slotsUnique_holds` projection
+  (in `Authority.lean`, `Preservation/{Insert,Delete,CopyMoveMutate,
+  EndpointReplyAndLifecycle,BadgeIpcCapsAndCdtMaps}.lean`,
+  `Service/Invariant/Policy.lean`).  A2 drops the `cspaceSlotUnique`
+  conjunct from `capabilityInvariantBundle` and from the named-
+  projection structure `CapabilityInvariantBundle` (bundle now 6
+  conjuncts, was 7).  The `cspaceSlotUnique_of_storeObject_nonCNode`,
+  `_cnode`, `_endpoint_store`, and `_objects_eq` transfer theorems
+  collapse to `trivial`.
+- **Phase B (ScrubToken structural close-out)** — B1 makes
+  `ScrubTokenImpl` a `private structure`, making
+  `SeLe4n.Kernel.ScrubToken.fromCleanup` the only public introduction
+  route (manual fabrication is structurally infeasible).  B2 adds the
+  tokenized wrapper `lifecyclePreRetypeCleanupWithToken` returning
+  `Except KernelError { stClean // ScrubToken stClean target }` plus
+  the bridge lemmas `lifecyclePreRetypeCleanupWithToken_state_eq` and
+  `lifecyclePreRetypeCleanupWithToken_error_eq`.  B3 adds the smart
+  constructor `SeLe4n.Kernel.mkRetypeTarget` with companion theorem
+  `mkRetypeTarget_id` (id-of-built-target = supplied target).
+  Reachability gates `r4b_scrubToken_canonical_introduction_only`,
+  `r4b_lifecyclePreRetypeCleanupWithToken_reachable`, and
+  `r4b_mkRetypeTarget_reachable` added to
+  `tests/ModelIntegritySuite.lean`.
+- **Phase C (uniqueWaiters retirement)** — C1 collapses the
+  state-level predicate to `True`, migrates the substantive
+  `notificationSignal_preserves_notificationWaiterConsistent` site
+  to `Notification.waitingThreads.hNodup`, and updates
+  `notification_waitingThreads_nodup_witness` to discharge
+  structurally.  C2 drops the `uniqueWaiters` conjunct from
+  `ipcInvariantFull` and from the named-projection structure
+  `IpcInvariantFull` (bundle now 15 conjuncts, was 16), removes the
+  `hUW' : uniqueWaiters st'` parameter from 11 preservation
+  theorems in `IPC/Invariant/Structural/DualQueueMembership.lean`
+  plus the `lifecycleRetypeObject` core/composition variants in
+  `Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean`,
+  and reindexes `default_ipcInvariantFull` /
+  `advanceTimerState_preserves_ipcInvariantFull` /
+  `writeRegisterState_preserves_ipcInvariantFull` /
+  `contextSwitchState_preserves_ipcInvariantFull` /
+  `bootFromPlatform_proofLayerInvariantBundle_general`'s IPC sub-arm.
+  `coreIpcInvariantBundle_to_uniqueWaiters` returns `trivial`.
+
+Version bumped 0.30.11 → 0.31.0 (`lakefile.toml`, `README.md` version
+badge + metrics row, `CHANGELOG.md` v0.31.0 header).
+
+Refs: docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md §§5..9
+
 ## v0.30.11 — WS-RC R4: full type-level structural promotion (DEEP-MODEL-01, DEEP-CAP-04, DEEP-IPC-05, DEEP-CAP-02, DEEP-IPC-01)
 
 The WS-RC R4 phase (Structural-invariant promotions —

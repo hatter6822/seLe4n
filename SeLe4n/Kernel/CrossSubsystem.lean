@@ -2893,7 +2893,7 @@ that discharges the `hCdtPost` hypothesis at its preservation theorem
 theorem cspaceCopy_cdt_hypothesis_discharged_at
     (st' : SystemState) (hBundle : capabilityInvariantBundle st') :
     cdtCompleteness st' ∧ cdtAcyclicity st' :=
-  ⟨hBundle.2.2.2.1, hBundle.2.2.2.2.1⟩
+  ⟨hBundle.2.2.1, hBundle.2.2.2.1⟩
 
 /-- AN4-C (H-04): `cspaceMove` companion — same bridge as `cspaceCopy`;
 both are in-place CNode mutations that take `hCdtPost` at
@@ -2901,14 +2901,14 @@ both are in-place CNode mutations that take `hCdtPost` at
 theorem cspaceMove_cdt_hypothesis_discharged_at
     (st' : SystemState) (hBundle : capabilityInvariantBundle st') :
     cdtCompleteness st' ∧ cdtAcyclicity st' :=
-  ⟨hBundle.2.2.2.1, hBundle.2.2.2.2.1⟩
+  ⟨hBundle.2.2.1, hBundle.2.2.2.1⟩
 
 /-- AN4-C (H-04): `cspaceMintWithCdt` companion — CDT-expanding mint path
 takes `hCdtPost` at `Capability/Invariant/Preservation.lean:627`. -/
 theorem cspaceMintWithCdt_cdt_hypothesis_discharged_at
     (st' : SystemState) (hBundle : capabilityInvariantBundle st') :
     cdtCompleteness st' ∧ cdtAcyclicity st' :=
-  ⟨hBundle.2.2.2.1, hBundle.2.2.2.2.1⟩
+  ⟨hBundle.2.2.1, hBundle.2.2.2.1⟩
 
 /-- AN4-C (H-04): `cspaceMutate` companion — does not expand the CDT; the
 CDT predicates transfer through `_preserves_capabilityInvariantBundle`
@@ -2917,7 +2917,7 @@ completeness. -/
 theorem cspaceMutate_cdt_hypothesis_discharged_at
     (st' : SystemState) (hBundle : capabilityInvariantBundle st') :
     cdtCompleteness st' ∧ cdtAcyclicity st' :=
-  ⟨hBundle.2.2.2.1, hBundle.2.2.2.2.1⟩
+  ⟨hBundle.2.2.1, hBundle.2.2.2.1⟩
 
 /-- AN4-C (H-04): `cspaceDeleteSlot` companion — the delete path transfers
 the CDT predicates through its preservation theorem without a dedicated
@@ -2925,7 +2925,7 @@ the CDT predicates through its preservation theorem without a dedicated
 theorem cspaceDeleteSlot_cdt_hypothesis_discharged_at
     (st' : SystemState) (hBundle : capabilityInvariantBundle st') :
     cdtCompleteness st' ∧ cdtAcyclicity st' :=
-  ⟨hBundle.2.2.2.1, hBundle.2.2.2.2.1⟩
+  ⟨hBundle.2.2.1, hBundle.2.2.2.1⟩
 
 /-- AN4-C (H-04): `cspaceRevoke` companion — bulk revoke loops the delete
 path over every descendant; the CDT predicates transfer through the
@@ -2934,7 +2934,7 @@ Included for Theme 4.1 index completeness. -/
 theorem cspaceRevoke_cdt_hypothesis_discharged_at
     (st' : SystemState) (hBundle : capabilityInvariantBundle st') :
     cdtCompleteness st' ∧ cdtAcyclicity st' :=
-  ⟨hBundle.2.2.2.1, hBundle.2.2.2.2.1⟩
+  ⟨hBundle.2.2.1, hBundle.2.2.2.1⟩
 
 /-- AN12-A (Theme 4.1) — closure-form discharge index marker.
 
@@ -3348,5 +3348,23 @@ and in `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`). The companion
 `scripts/test_tier3_invariant_surface.sh`. -/
 theorem r4_structural_fix_discharge_index_documented : True := trivial
 -- Cross-reference: docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md §3 (R4.A/B/C/D)
+
+/-- WS-RC R4.A.7 close-out: state-level `cspaceSlotUnique` promoted to
+    structural via `UniqueSlotMap.hWF`.  Marker theorem for the
+    discharge-index reachability gate; sibling of the umbrella marker
+    `r4_structural_fix_discharge_index_documented`.  The body is `trivial`
+    per the marker-theorem pattern (the structural promotion is witnessed
+    by `SeLe4n.Model.CNode.cnode_slots_unique` and
+    `SeLe4n.Kernel.cspaceSlotUnique_trivial`). -/
+theorem cspaceSlotUnique_promoted_to_structural : True := trivial
+
+/-- WS-RC R4.C.8 close-out: state-level `uniqueWaiters` promoted to
+    structural via `NoDupList.hNodup`.  Marker theorem for the
+    discharge-index reachability gate; sibling of the umbrella marker
+    `r4_structural_fix_discharge_index_documented`.  The body is `trivial`
+    per the marker-theorem pattern (the structural promotion is witnessed
+    by `SeLe4n.Kernel.notification_waiters_nodup` and
+    `SeLe4n.Kernel.uniqueWaiters_trivial`). -/
+theorem uniqueWaiters_promoted_to_structural : True := trivial
 
 end SeLe4n.Kernel

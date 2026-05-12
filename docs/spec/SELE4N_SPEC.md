@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.30.11` (`lakefile.toml`) |
+| **Package version** | `0.31.0` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 110,464 across 168 Lean files |
 | **Test LoC** | 19,695 across 29 Lean test suites |
@@ -765,7 +765,8 @@ object-store size.
 Production `AdapterProofHooks` (`rpi5ProductionAdapterProofHooks` in
 `Platform/RPi5/ProofHooks.lean`) provides substantive preservation proofs
 for all 4 adapter paths. The `proofLayerInvariantBundle` (11 conjuncts)
-and `ipcInvariantFull` (16 conjuncts) are preserved through the FFI boundary.
+and `ipcInvariantFull` (15 conjuncts after WS-RC R4.C.7 close-out)
+are preserved through the FFI boundary.
 
 **AI1-D (v0.27.7)**: The `BOOT_UART` global in `sele4n-hal/src/uart.rs` is now
 synchronized via an `AtomicBool`-based `UartLock` spinlock, which disables
@@ -1528,15 +1529,22 @@ instead of being silently swallowed. All 7 call sites in `API.lean` and
 `applyReplyDonation_machine_eq`, `applyCallDonation_preserves_projection`)
 carry an explicit `h : ... = .ok st'` success hypothesis.
 
-**Invariants** (`ipcInvariantFull` extended from 10 to 16 conjuncts):
+**Invariants** (`ipcInvariantFull` 15 conjuncts after WS-RC R4.C.7 close-out
+retired the `uniqueWaiters` state-level slot to a structural witness on
+`Notification.waitingThreads : SeLe4n.NoDupList ThreadId`):
 - `donationChainAcyclic`: no circular donation chains (A→B and B→A)
 - `donationOwnerValid`: donated bindings reference valid objects with
   bidirectional consistency (`sc.boundThread = some server`,
   `owner.schedContextBinding = .bound scId`, `owner.ipcState = .blockedOnReply`)
 - `passiveServerIdle`: unbound non-runnable threads are ready/receiving
 - `donationBudgetTransfer`: at most one thread per SchedContext
-- `uniqueWaiters`: no notification has duplicate thread IDs in `waitingThreads`
-  (AG1-C, F-T02)
+- `uniqueWaiters` (RETIRED at WS-RC R4.C.7): no notification has duplicate
+  thread IDs in `waitingThreads` (AG1-C, F-T02) — content now carried
+  structurally by `NoDupList.hNodup` on every `Notification.waitingThreads`.
+  The state-level predicate is retained as a `True` alias for backward
+  compatibility with vestigial hypothesis parameters; discharge via
+  `SeLe4n.Kernel.uniqueWaiters_trivial` or the per-Notification
+  `SeLe4n.Kernel.notification_waiters_nodup` witness.
 
 **Production receive cleanup** (AI4-A, v0.27.11): `cleanupPreReceiveDonation` is
 wired into the `endpointReceiveDual` no-sender branch (Transport.lean). When a
