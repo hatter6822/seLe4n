@@ -8,6 +8,9 @@
 -/
 
 import SeLe4n.Kernel.Scheduler.Liveness
+import SeLe4n.Kernel.Lifecycle.Suspend
+import SeLe4n.Kernel.Lifecycle.Invariant.SuspendPreservation
+import SeLe4n.Kernel.SchedContext.Invariant.Preservation
 
 /-!
 # Liveness Suite — Invariant Surface Anchor Tests
@@ -83,6 +86,9 @@ open SeLe4n.Model
 #check @fifoProgressBound_mono
 #check @fifoProgressBound_succ
 #check @fifoProgressBound_mono_interval
+-- WS-RC R5.F (DEEP-SCH-05): rotateToBack membership precondition surface
+#check @SeLe4n.Kernel.RunQueue.rotateToBack_requires_membership
+#check @SeLe4n.Kernel.RunQueue.rotateToBack_priority_eq_threadPriority
 
 -- ============================================================================
 -- Surface anchor: Band exhaustion
@@ -143,6 +149,35 @@ open SeLe4n.Model
 #check @SeLe4n.Kernel.PriorityInheritance.blockingAcyclic_frame
 #check @SeLe4n.Kernel.PriorityInheritance.pip_congruence
 #check @SeLe4n.Kernel.PriorityInheritance.pip_revert_congruence
+
+-- ============================================================================
+-- Surface anchor: WS-RC R5 (Phase R5) — Scheduler / Lifecycle behaviour symmetry
+-- ============================================================================
+-- R5.A (DEEP-SUSP-02): cancelDonation split into two named arms.
+#check @SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation
+#check @SeLe4n.Kernel.Lifecycle.Suspend.cancelDonatedDonation
+#check @SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation_scheduler_runQueue_eq
+#check @SeLe4n.Kernel.Lifecycle.Suspend.cancelDonatedDonation_scheduler_runQueue_eq
+#check @SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation_serviceRegistry_eq
+#check @SeLe4n.Kernel.Lifecycle.Suspend.cancelDonatedDonation_serviceRegistry_eq
+-- R5.B (DEEP-SUSP-01): PIP recomputation on resume — structural witnesses.
+#check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_objectIndex_eq
+#check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_objects_eq_at_tid
+#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThread_pipBoost_consistent_post_restore
+-- R5.C (DEEP-SCH-02): total effectiveSchedParams + bridge witness.
+#check @SeLe4n.Kernel.effectiveSchedParams
+#check @SeLe4n.Kernel.effectiveSchedParams_priority_deadline_eq_resolve
+#check @SeLe4n.Kernel.effectivePriority_some_eq_effectiveSchedParams
+#check @SeLe4n.Kernel.effectiveSchedParams_total
+-- R5.D (DEEP-SCH-03): restoreToReady shared helper + back-compat lemmas.
+#check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady
+#check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_scheduler_eq
+#check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_serviceRegistry_eq
+#check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_lifecycle_eq
+#check @SeLe4n.Kernel.Lifecycle.Suspend.clearTcbIpcFields_eq_restoreToReady
+-- R5.G (DEEP-SCH-06): schedContextConfigure domain propagation witnesses.
+#check @SeLe4n.Kernel.SchedContextOps.schedContextConfigure_bound_tcb_domain_eq
+#check @SeLe4n.Kernel.SchedContextOps.schedContextConfigure_domain_noop_when_eq
 
 -- ============================================================================
 -- AN5-E: RPi5 canonical deployment — eventuallyExits closure (DEF-AK2-K.4)
@@ -301,5 +336,6 @@ def main : IO Unit := do
   IO.println "  ✓ AN5-E.1: DeploymentSchedulingConfig.wellFormed rejects degenerate configs"
   IO.println "  ✓ AN5-E.3: functional tests — concrete CanonicalDeploymentProgress"
   IO.println "  ✓ AN5-D: rpi5_cbs_window_replenishments_bounded + _concrete (SC-M01)"
-  IO.println "=== All 95 surface anchors verified ==="
+  IO.println "  ✓ WS-RC R5: cancelDonation split, restoreToReady, effectiveSchedParams, domain propagation"
+  IO.println "=== All surface anchors verified (95 base + R5 additions) ==="
   return ()

@@ -37,8 +37,9 @@ pub fn decode_response(regs: [u64; 7]) -> KernelResult<SyscallResponse> {
         if regs[0] > u32::MAX as u64 {
             return Err(KernelError::InvalidSyscallNumber);
         }
-        // Kernel error codes are 0–51 (AN7-E: +PartialResolution at 51).
-        // AF6-A: Unrecognized codes (≥52, excluding sentinel 255) map to
+        // Kernel error codes are 0–52 (R5.E: +MissingSchedContext at 52;
+        // AN7-E: +PartialResolution at 51).
+        // AF6-A: Unrecognized codes (≥53, excluding sentinel 255) map to
         // UnknownKernelError — semantically correct fallback instead of
         // InvalidSyscallNumber which implies a different kind of protocol error.
         let err = KernelError::from_u32(regs[0] as u32)
@@ -104,9 +105,18 @@ mod tests {
 
     #[test]
     fn decode_unknown_error_code() {
-        // AN7-E (API-M01): 51 is PartialResolution. The first unrecognized code is 52.
-        let regs = [52, 0, 0, 0, 0, 0, 0];
+        // R5.E (DEEP-SCH-04): 52 is MissingSchedContext.  The first
+        // unrecognized code is now 53 (AN7-E previously stood at 51 with
+        // PartialResolution).
+        let regs = [53, 0, 0, 0, 0, 0, 0];
         assert_eq!(decode_response(regs), Err(KernelError::UnknownKernelError));
+    }
+
+    #[test]
+    fn decode_missing_sched_context_error() {
+        // R5.E (DEEP-SCH-04): discriminant 52 round-trips to MissingSchedContext.
+        let regs = [52, 0, 0, 0, 0, 0, 0];
+        assert_eq!(decode_response(regs), Err(KernelError::MissingSchedContext));
     }
 
     #[test]

@@ -318,6 +318,7 @@ def KernelError.toUInt32 : KernelError → UInt32
   | .invalidObjectType             => 49
   | .nullCapability                => 50
   | .partialResolution             => 51
+  | .missingSchedContext           => 52
 
 /-- WS-RC R2.B.0: Encode a `KernelError` into the FFI return contract.
 

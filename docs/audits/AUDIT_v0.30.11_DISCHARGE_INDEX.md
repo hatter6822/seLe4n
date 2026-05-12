@@ -236,6 +236,42 @@ correctness is now machine-checked"; the cross-reference is required
 by the §1.5 structural-fix policy. F.3 (the ARM-ARM citation gate) is
 genuinely pending — it is scheduled for R12.C.
 
+### §3.H — Scheduler / Lifecycle behaviour symmetry (LANDED at WS-RC R5)
+
+WS-RC R5 (`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md §9`) closes the
+seven scheduler/lifecycle audit findings whose remediation is a
+behavioural symmetry or function-split. Eight new structural witnesses /
+preservation theorems anchor the closure-form discharge for R5.A, R5.B,
+R5.D, R5.C, R5.F, R5.G:
+
+| # | Spec source | Closure-form theorem | Location | Status |
+|---|-------------|----------------------|----------|--------|
+| H.1 | DEEP-SUSP-02 (R5.A) | `cancelBoundDonation_scheduler_runQueue_eq` | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED |
+| H.2 | DEEP-SUSP-02 (R5.A) | `cancelDonatedDonation_scheduler_runQueue_eq` | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED |
+| H.3 | DEEP-SUSP-02 (R5.A) | `cancelBoundDonation_serviceRegistry_eq` | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED |
+| H.4 | DEEP-SUSP-02 (R5.A) | `cancelDonatedDonation_serviceRegistry_eq` | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED |
+| H.5 | DEEP-SUSP-01 (R5.B) | `restoreToReady_objectIndex_eq` | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED |
+| H.6 | DEEP-SUSP-01 (R5.B) | `restoreToReady_objects_eq_at_tid` | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED |
+| H.7 | DEEP-SUSP-01 (R5.B) | `resumeThread_pipBoost_consistent_post_restore` | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED |
+| H.8 | DEEP-SCH-02 (R5.C) | `effectiveSchedParams_priority_deadline_eq_resolve` | `Scheduler/Operations/Selection.lean` | LANDED |
+| H.9 | DEEP-SCH-02 (R5.C) | `effectivePriority_some_eq_effectiveSchedParams` | `Scheduler/Operations/Selection.lean` | LANDED |
+| H.10 | DEEP-SCH-03 (R5.D) | `restoreToReady_scheduler_eq` / `restoreToReady_serviceRegistry_eq` / `restoreToReady_lifecycle_eq` | `Kernel/Lifecycle/Suspend.lean` | LANDED |
+| H.11 | DEEP-SCH-03 (R5.D) | `clearTcbIpcFields_eq_restoreToReady` (back-compat bridge) | `Kernel/Lifecycle/Suspend.lean` | LANDED |
+| H.12 | DEEP-SCH-05 (R5.F) | `rotateToBack_requires_membership` | `Scheduler/RunQueue.lean` | LANDED |
+| H.13 | DEEP-SCH-05 (R5.F) | `rotateToBack_priority_eq_threadPriority` | `Scheduler/RunQueue.lean` | LANDED |
+| H.14 | DEEP-SCH-06 (R5.G) | `schedContextConfigure_bound_tcb_domain_eq` | `SchedContext/Invariant/Preservation.lean` | LANDED |
+| H.15 | DEEP-SCH-06 (R5.G) | `schedContextConfigure_domain_noop_when_eq` | `SchedContext/Invariant/Preservation.lean` | LANDED |
+
+DEEP-SCH-04 (R5.E — `KernelError.missingSchedContext` surfacing) does
+not produce a closure-form theorem because it is a behavioural-state
+fix (replacing a silent fallback with an explicit `.error`); the
+correctness witness is operational, anchored by the regression test
+`tests/NegativeStateSuite.lean::runR5EOrphanedSchedContextChecks` and
+the cross-language discriminant pin
+`tests/SyscallDispatchSuite.lean::sd001_52_missingSchedContext` +
+Rust `decode_missing_sched_context_error` /
+`missing_sched_context_decode`.
+
 ### §3.G — Predecessor closure reconfirmations (LANDED at R0.4)
 
 DEBT-RUST-02 / H-24 reconfirmation. The predecessor audit's H-24
@@ -304,6 +340,13 @@ live" sync).
   per the multi-PR plan.
 - **§3.G — 1 of 1 row** LANDED at R0.4 (DEBT-RUST-02 / H-24
   reconfirmation; closure annotation in archived predecessor index).
+- **§3.H — 15 of 15 rows LANDED at WS-RC R5** (scheduler / lifecycle
+  behaviour symmetry — DEEP-SUSP-01/02, DEEP-SCH-02/03/05/06). The
+  remaining DEEP-SCH-04 (R5.E) row is operational-witness only (no
+  closure-form theorem); its regression test
+  `runR5EOrphanedSchedContextChecks` provides the runtime-observable
+  witness. AK7 cascade monotonicity baseline retained at the v0.30.11
+  floor.
 
 **No closure-form obligation introduced by WS-RC is orphaned**: every
 R-phase that produces a closure-form theorem or structural witness

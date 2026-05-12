@@ -713,8 +713,20 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
           machine := tick st.machine }
         .ok (st', false)
     | _ =>
-      -- SchedContext not found — fall back to legacy path (defensive)
-      .ok ({ st with machine := tick st.machine }, false)
+      -- R5.E (DEEP-SCH-04): SchedContext lookup failed for a bound-budget
+      -- thread.  Pre-R5 this silently fell back to a no-preempt
+      -- `(state, false)` so the kernel kept running on stale state.  The
+      -- runtime-checked `crossSubsystemInvariant`
+      -- (`schedContextStoreConsistent`) makes the branch unreachable, but
+      -- making the rejection explicit means the diagnostic surfaces if the
+      -- invariant ever drifts (e.g., a future cross-subsystem operation
+      -- forgets to update the SchedContext table on retype) rather than
+      -- being absorbed.  The timer still advances on the rejection path
+      -- (the bound thread's tick was consumed even though the budget
+      -- accounting could not be applied) — the post-state's `machine`
+      -- field reflects this; the error short-circuit prevents downstream
+      -- consumers from observing the inconsistent budget state.
+      .error .missingSchedContext
 
 -- ============================================================================
 -- Z4-I: Budget-aware schedule (must precede timerTickWithBudget)

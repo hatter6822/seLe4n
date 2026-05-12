@@ -769,8 +769,16 @@ def frozenTimerTickBudget : FrozenKernel Unit :=
                   .ok ((), st')
               | none => .error .objectNotFound
             | _ =>
-              -- SchedContext not found — fall back to legacy behavior
-              frozenTimerTick st
+              -- R5.E (DEEP-SCH-04): SchedContext lookup failed for a bound-
+              -- budget thread.  Pre-R5 this silently fell back to the legacy
+              -- (unbound) path so the kernel kept running on stale state.
+              -- The frozen-state mirror of the production path surfaces the
+              -- same `.missingSchedContext` error for consistency.  Under the
+              -- runtime-checked invariant `schedContextStoreConsistent` (part
+              -- of `crossSubsystemInvariant`) the branch is unreachable; the
+              -- explicit rejection makes the discrepancy observable if the
+              -- invariant ever drifts.
+              .error .missingSchedContext
           | .unbound =>
             -- Legacy path: use time-slice
             frozenTimerTick st

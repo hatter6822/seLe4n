@@ -226,15 +226,25 @@ def remove (rq : RunQueue) (tid : ThreadId) : RunQueue :=
 /-- S5-J: Complexity is O(k + n) where k = priority bucket size and n = flat
     list length. Filters the thread from the bucket O(k), appends to end O(1),
     then erases from flat list O(n) and appends. Same bounds as `remove` and
-    `rotateHead` — acceptable for systems with < 256 threads. -/
+    `rotateHead` — acceptable for systems with < 256 threads.
+
+    R5.F (DEEP-SCH-05) precondition: callers MUST establish `tid ∈ rq` via
+    the `rq.contains tid = true` dispatch (the outer `if hc : rq.contains
+    tid`).  Under that precondition the `threadPriority[tid]?` lookup is
+    guaranteed `some _` by the `runQueueInvariant`'s `flat ↔ threadPriority`
+    consistency conjunct.  The `getD ⟨0⟩` fallback is therefore unreachable
+    under valid kernel state; the assertion theorem
+    `rotateToBack_requires_membership` (immediately below) discharges the
+    precondition formally so callers do not need to reason locally about
+    the fallback. -/
 def rotateToBack (rq : RunQueue) (tid : ThreadId) : RunQueue :=
   if hc : rq.contains tid then
-    -- AN5-C: `getD ⟨0⟩` is safe under `runQueueInvariant` — the invariant
-    -- guarantees `tid ∈ rq.flat ↔ rq.threadPriority[tid]?.isSome`, so the
-    -- `hc : rq.contains tid` dispatch ensures the lookup succeeds. The
-    -- fallback priority `⟨0⟩` is defensive but unreachable under the
-    -- invariant. Removing the invariant precondition without updating
-    -- this site would silently prefer priority 0 instead of erroring.
+    -- R5.F: `getD ⟨0⟩` is unreachable under `rotateToBack_requires_membership`
+    -- (proven below).  The membership witness `hc` together with the
+    -- runQueue invariant's structural consistency conjunct (provided by
+    -- `rq.mem_invExtK`/`rq.threadPrio_invExtK` and the
+    -- `flat ↔ threadPriority` correspondence in `wellFormed`) forces
+    -- `threadPriority[tid]?` to `some _`.
     let prio := rq.threadPriority[tid]?.getD ⟨0⟩
     let bucket := (rq.byPriority[prio]?).getD []
     let bucket' := bucket.filter (· ≠ tid) ++ [tid]
@@ -256,6 +266,10 @@ def rotateToBack (rq : RunQueue) (tid : ThreadId) : RunQueue :=
           · exact List.mem_append.mpr (Or.inl ((List.mem_erase_of_ne hEq).2 hFlat))
         byPrio_invExtK := rq.byPriority.insert_preserves_invExtK prio bucket' rq.byPrio_invExtK }
   else rq
+
+-- R5.F (DEEP-SCH-05) assertion theorems for `rotateToBack` live after
+-- `wellFormed` is defined; see `rotateToBack_requires_membership` and
+-- `rotateToBack_priority_eq_threadPriority` below.
 
 @[inline] def toList (rq : RunQueue) : List ThreadId := rq.flat
 def atPriority (rq : RunQueue) (prio : Priority) : List ThreadId := (rq.byPriority[prio]?).getD []
@@ -552,6 +566,49 @@ theorem mem_maxPriorityBucket_of_threadPriority (rq : RunQueue) (hwf : rq.wellFo
   have hEq : p = prio := Option.some.inj (hpTP.symm.trans hTP)
   subst hEq
   exact hpBucket
+
+-- ============================================================================
+-- R5.F (DEEP-SCH-05): rotateToBack precondition assertion theorems
+-- ============================================================================
+
+/-- R5.F (DEEP-SCH-05): Assertion theorem — `rotateToBack` is only invoked
+    on threads already in the run queue, in which case the `wellFormed`
+    invariant guarantees `threadPriority[tid]?` is `some _`.  This is the
+    formal witness that the `getD ⟨0⟩` fallback in `rotateToBack` is
+    unreachable under valid kernel state.
+
+    Caller-site discharge: any caller holding `rq.wellFormed` plus
+    membership witness `tid ∈ rq` can apply this theorem to obtain the
+    `some _` shape and prove that `rotateToBack`'s post-state matches
+    the "principled" semantics (priority taken from `threadPriority[tid]`).
+
+    The runQueueInvariant's structural witness — that flat-list
+    membership IFF threadPriority `isSome` — is precisely `wellFormed`'s
+    forward and reverse directions.  We use the reverse direction:
+    membership ⇒ ∃ priority bound.
+
+    Pre-R5 this fact was inlined into every `rotateToBack` consumer's
+    proof; promoting it to a named theorem makes the precondition
+    formally discharged at the type level. -/
+theorem rotateToBack_requires_membership
+    (rq : RunQueue) (tid : ThreadId)
+    (hwf : rq.wellFormed)
+    (hMem : rq.contains tid = true) :
+    ∃ p, rq.threadPriority[tid]? = some p := by
+  -- wellFormed.2: membership → ∃ p, threadPriority[tid] = some p ∧ bucket entry
+  obtain ⟨p, hTP, _⟩ := hwf.2 tid hMem
+  exact ⟨p, hTP⟩
+
+/-- R5.F (DEEP-SCH-05): Corollary — under the precondition, the priority
+    used by `rotateToBack` is exactly the `threadPriority[tid]?` value
+    (no fallback is taken). -/
+theorem rotateToBack_priority_eq_threadPriority
+    (rq : RunQueue) (tid : ThreadId) (p : Priority)
+    (_hwf : rq.wellFormed)
+    (_hMem : rq.contains tid = true)
+    (hPrio : rq.threadPriority[tid]? = some p) :
+    rq.threadPriority[tid]?.getD ⟨0⟩ = p := by
+  rw [hPrio]; rfl
 
 -- ============================================================================
 -- WS-H6: rotateToBack field-preservation lemmas

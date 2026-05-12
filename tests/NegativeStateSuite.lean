@@ -3931,6 +3931,73 @@ def runR1IpcCallPathSymmetryChecks : IO Unit := do
     r1CheckLookupCspaceRoot stFaulty
   IO.println "all WS-RC R1 IPC call-path NI symmetry checks passed"
 
+-- ============================================================================
+-- WS-RC R5.E (DEEP-SCH-04): missingSchedContext surface on orphan binding
+-- ============================================================================
+
+/-- WS-RC R5.E (DEEP-SCH-04): `timerTickBudget` rejects with
+`.missingSchedContext` when a bound-budget thread references an absent
+SchedContext.  Pre-R5 the path silently fell back to `(state, false)` —
+no-preempt — masking the cross-subsystem invariant drift.
+
+Setup: a TCB with `schedContextBinding := .bound scId` where `scId`'s
+backing object has been erased from the kernel store (simulating an
+invariant violation in `schedContextStoreConsistent`).  The expected
+result is `.error .missingSchedContext`, not a silent identity. -/
+private def r5eOrphanedScId : SeLe4n.SchedContextId := ⟨7777⟩
+
+private def r5eOrphanedTid : SeLe4n.ThreadId := ⟨42⟩
+
+private def r5eOrphanedBoundState : SystemState :=
+  -- Build a state with only the TCB referencing the (absent) SchedContext.
+  -- Note: we intentionally do NOT add the SchedContext object — the bound
+  -- thread's SC binding is dangling.
+  (BootstrapBuilder.empty
+    |>.withObject r5eOrphanedTid.toObjId (.tcb
+        { tid := r5eOrphanedTid, priority := ⟨1⟩, domain := ⟨0⟩,
+          cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+          ipcBuffer := (SeLe4n.VAddr.ofNat 0),
+          ipcState := .ready,
+          schedContextBinding := .bound r5eOrphanedScId,
+          timeSlice := 1 })
+    |>.withCurrent r5eOrphanedTid
+    |>.buildChecked)
+
+/-- The TCB extracted from the fixture state, or a stub TCB if the fixture
+construction is broken (the stub triggers the runtime-failure
+`.invalidArgument` rather than `.missingSchedContext`, which would surface
+the misconstructed fixture rather than silently masking it). -/
+private def r5eOrphanedTcb : TCB :=
+  match r5eOrphanedBoundState.objects[r5eOrphanedTid.toObjId]? with
+  | some (.tcb t) => t
+  | _ =>
+    -- Fallback stub — fixture broken; the resulting test will see this
+    -- shape and surface a meaningful error rather than panic at compile.
+    { tid := r5eOrphanedTid, priority := ⟨0⟩, domain := ⟨0⟩,
+      cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
+      ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
+
+private def runR5EOrphanedSchedContextChecks : IO Unit := do
+  IO.println "\n=== WS-RC R5.E (DEEP-SCH-04): missingSchedContext surface ==="
+  let result := SeLe4n.Kernel.timerTickBudget
+    r5eOrphanedBoundState r5eOrphanedTid r5eOrphanedTcb
+  match result with
+  | .ok _ =>
+      throw <| IO.userError
+        ("R5.E-NEG-01: timerTickBudget must NOT silently succeed on orphaned "
+         ++ "SchedContext binding (pre-R5 fallback was `(state, false)` — "
+         ++ "this regression-tests the explicit `.error .missingSchedContext` "
+         ++ "rejection)")
+  | .error e =>
+      if e == .missingSchedContext then
+        IO.println
+          ("negative check passed [R5.E-NEG-01 timerTickBudget rejects "
+           ++ "orphaned SchedContext binding with .missingSchedContext]")
+      else
+        throw <| IO.userError
+          s!"R5.E-NEG-01: expected .missingSchedContext, got {toString e}"
+  IO.println "all WS-RC R5.E missingSchedContext surface checks passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -3959,3 +4026,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runAC1BudgetFailClosedChecks
   SeLe4n.Testing.runAC1CdtTrackingChecks
   SeLe4n.Testing.runR1IpcCallPathSymmetryChecks
+  SeLe4n.Testing.runR5EOrphanedSchedContextChecks

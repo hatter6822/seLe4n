@@ -103,6 +103,17 @@ inductive KernelError where
                            -- under the noisy option the kernel surfaces this
                            -- variant so callers can distinguish a *partial*
                            -- resolution from a *complete* success.
+  | missingSchedContext    -- R5.E (DEEP-SCH-04): a bound-budget scheduler
+                           -- path lost track of its bound `SchedContext`
+                           -- (object not found in `objects` table).  Pre-R5,
+                           -- the timer-tick budget branch silently fell back
+                           -- to a no-preempt path on this case; under the
+                           -- runtime-checked `crossSubsystemInvariant`
+                           -- (specifically `schedContextStoreConsistent`) the
+                           -- branch is unreachable, but exposing it as a
+                           -- distinct discriminant lets observability layers
+                           -- surface the invariant violation instead of
+                           -- absorbing it.
   deriving Repr, DecidableEq
 
 /-- S2-A: Low-priority blanket `ToString` from `Repr`. Enables standard

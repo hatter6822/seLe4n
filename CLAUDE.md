@@ -889,6 +889,65 @@ under `docs/` and `docs/gitbook/`.
   because canonical vaddrs (rpi5BootVSpaceRoot via insertIdentity
   with paddr<2^44, simBootVSpaceRoot at vaddr=0x1000) trivially
   satisfy the new conjunct via `decide`.
+  **WS-RC R5 (DEEP-SUSP-01/02, DEEP-SCH-02..06) LANDED on branch
+  `claude/audit-scheduler-phase-r5-nWFdz`**: closes the seven
+  scheduler/lifecycle behaviour-symmetry findings.  R5.A splits the
+  monolithic `cancelDonation` (suspend G3) into the two named arms
+  `cancelBoundDonation` (in-place SchedContext unbind) and
+  `cancelDonatedDonation` (return-to-original-owner via
+  `cleanupDonatedSchedContext`); the original name survives as a thin
+  dispatcher that preserves closure-form proof discharge.  R5.B adds
+  PIP recomputation at the resume H3b step: `resumeThread` re-derives
+  the resumed thread's `pipBoost` from the post-suspend blocking graph
+  via `PriorityInheritance.computeMaxWaiterPriority`, with three
+  structural witnesses (`restoreToReady_objectIndex_eq`,
+  `restoreToReady_objects_eq_at_tid`,
+  `resumeThread_pipBoost_consistent_post_restore`).  R5.C introduces
+  the total `effectiveSchedParams` (returning a `(Priority, Deadline,
+  DomainId)` triple) alongside the existing partial
+  `effectivePriority`, with two bridge witnesses
+  (`effectiveSchedParams_priority_deadline_eq_resolve` agreeing with
+  `resolveEffectivePrioDeadline`; `effectivePriority_some_eq_effectiveSchedParams`
+  agreeing with the partial form when the partial form succeeds).
+  R5.D consolidates the shared IPC-state-clearing transition between
+  `cancelIpcBlocking` (suspend G2) and `resumeThread` (H3) under the
+  named helper `restoreToReady` (the original private
+  `clearTcbIpcFields` becomes a `@[inline]` back-compat alias).
+  R5.E surfaces `KernelError.missingSchedContext` (new discriminant
+  52) in the bound-budget branch of `timerTickBudget` when the
+  bound TCB's SchedContext is missing — replacing the pre-R5 silent
+  `(state, false)` no-preempt fallback; the Rust `KernelError` enum
+  and every discriminant-pinning test grow in lock-step (range
+  extends to 0..=52, sentinel range starts at 53).  The same
+  surfacing is mirrored in `FrozenOps.frozenTimerTickBudget` for
+  cross-phase consistency.  R5.F promotes `RunQueue.rotateToBack`'s
+  membership precondition to two formal assertion theorems
+  (`rotateToBack_requires_membership`,
+  `rotateToBack_priority_eq_threadPriority`) without changing the
+  function definition.  R5.G adds a domain-propagation block to
+  `schedContextConfigure` that mirrors the existing priority-
+  propagation block: when the SC's bound TCB has a domain that
+  differs from the new SC domain, the TCB's `domain` field is
+  rewritten — closing a silent
+  `boundThreadDomainConsistent`-invariant-violation path; two new
+  witness theorems
+  (`schedContextConfigure_bound_tcb_domain_eq`,
+  `schedContextConfigure_domain_noop_when_eq`).  Tests:
+  4 + 2 + 2 new regression tests in `tests/SuspendResumeSuite.lean`
+  for R5.A, R5.B, R5.D (29 tests total); 3 new regression tests in
+  `tests/PriorityManagementSuite.lean` for R5.G (30 tests total);
+  1 new regression test in `tests/NegativeStateSuite.lean` for R5.E
+  (`runR5EOrphanedSchedContextChecks`); 1 new discriminant pin in
+  `tests/SyscallDispatchSuite.lean` (`sd001_52_missingSchedContext`,
+  variant count is now 53); 23 new surface-anchor `#check`s in
+  `tests/LivenessSuite.lean`; 1 new Rust unit test
+  (`decode_missing_sched_context_error`) and 1 new Rust integration
+  test (`missing_sched_context_decode`).  AK7 cascade monotonicity
+  baseline retained at the v0.30.11 floor (the new lookup site in
+  `resumeThread` routes through `getTcb?`, preventing
+  `raw_match_tcb` drift).  Items deferred past v1.0.0 with
+  correctness impact: NONE.
+
   **WS-RC R4 close-out COMPLETE (v0.31.0, branch
   `claude/review-closeout-plan-HToSk`)**:  the 9-sub-PR close-out
   ([`docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md`](docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md))

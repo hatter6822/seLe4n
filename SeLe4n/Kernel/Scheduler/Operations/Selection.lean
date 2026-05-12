@@ -247,6 +247,7 @@ theorem effectivePriority_unbound (st : SystemState) (tcb : TCB)
     effectivePriority st tcb = some (tcb.priority, tcb.deadline, tcb.domain) := by
   simp [effectivePriority, h, hPip]
 
+
 /-- D4-B: If `pipBoost = some p`, effective priority ≥ `p`. -/
 theorem effectivePriority_ge_pipBoost (st : SystemState) (tcb : TCB)
     (p : SeLe4n.Priority) (prio : SeLe4n.Priority) (dl : SeLe4n.Deadline)
@@ -346,6 +347,112 @@ theorem effectiveRunQueuePriority_eq_resolve_unbound (st : SystemState) (tcb : T
     effectiveRunQueuePriority tcb = (resolveEffectivePrioDeadline st tcb).1 := by
   simp [effectiveRunQueuePriority, resolveEffectivePrioDeadline, hUnbound]
   cases tcb.pipBoost <;> simp_all
+
+-- ============================================================================
+-- R5.C (DEEP-SCH-02): Total effective-scheduling-parameter resolution
+-- ============================================================================
+--
+-- Pre-R5, the two helpers `effectivePriority` (returns `Option (Priority ×
+-- Deadline × DomainId)`) and `resolveEffectivePrioDeadline` (returns total
+-- `Priority × Deadline`) diverged on how to handle a "bound thread with
+-- missing SchedContext" — the former returned `none`, the latter fell back
+-- to TCB fields.  The runtime-checked invariant
+-- `schedContextStoreConsistent` (part of `crossSubsystemInvariant`) makes
+-- this case unreachable, so both helpers were arguably correct in their
+-- domains, but callers seeing one or the other API had to thread the
+-- distinction.
+--
+-- R5.C unifies the convention by introducing `effectiveSchedParams` — a
+-- total variant of `effectivePriority` that always returns a triple by
+-- falling back to TCB fields on SC-lookup failure (matching
+-- `resolveEffectivePrioDeadline`'s discipline).  A witness theorem proves
+-- that both helpers agree on the priority component, and the original
+-- `effectivePriority` is retained for backward compatibility with PIP and
+-- waiter-priority callers that expected the `Option` shape.
+
+/-- R5.C (DEEP-SCH-02): Total effective-scheduling-parameter resolution.
+
+Returns `(priority, deadline, domain)` unconditionally:
+- For bound/donated threads with a resolvable SchedContext, the SC fields
+  are used.
+- For unbound threads or threads whose SC lookup fails (unreachable under
+  `schedContextStoreConsistent`), the TCB fields are used.
+- PIP boost (`tcb.pipBoost`) is applied via `Nat.max` against the base
+  priority, mirroring `resolveEffectivePrioDeadline`'s composition.
+
+This is the recommended call-side API for any consumer that wants to read
+"the thread's effective scheduling parameters" without threading
+`Option`-propagation through downstream code. Existing callers using
+`effectivePriority` (PIP `computeMaxWaiterPriority`) and
+`resolveEffectivePrioDeadline` (scheduler selection) continue to compile
+unchanged; new code should prefer this helper. -/
+@[inline] def effectiveSchedParams (st : SystemState) (tcb : TCB)
+    : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId :=
+  match tcb.schedContextBinding with
+  | .unbound =>
+    match tcb.pipBoost with
+    | none => (tcb.priority, tcb.deadline, tcb.domain)
+    | some boost => (⟨Nat.max tcb.priority.val boost.val⟩, tcb.deadline, tcb.domain)
+  | .bound scId | .donated scId _ =>
+    match st.getSchedContext? scId with
+    | some sc =>
+      match tcb.pipBoost with
+      | none => (sc.priority, sc.deadline, sc.domain)
+      | some boost => (⟨Nat.max sc.priority.val boost.val⟩, sc.deadline, sc.domain)
+    | none =>
+      match tcb.pipBoost with
+      | none => (tcb.priority, tcb.deadline, tcb.domain)
+      | some boost => (⟨Nat.max tcb.priority.val boost.val⟩, tcb.deadline, tcb.domain)
+
+/-- R5.C: `effectiveSchedParams` agrees with `resolveEffectivePrioDeadline`
+on the `(priority, deadline)` pair. The third component (`domain`) is
+unique to `effectiveSchedParams`. This is the bridge that lets callers
+switch between the two without changing behaviour. -/
+theorem effectiveSchedParams_priority_deadline_eq_resolve
+    (st : SystemState) (tcb : TCB) :
+    ((effectiveSchedParams st tcb).1, (effectiveSchedParams st tcb).2.1)
+      = resolveEffectivePrioDeadline st tcb := by
+  -- The two helpers compose the same priority/deadline shape over identical
+  -- branches; the difference is only on the third (domain) component, which
+  -- is projected away on the LHS.
+  simp only [effectiveSchedParams, resolveEffectivePrioDeadline]
+  split <;>
+    (first
+      | (split <;> rfl)
+      | (split <;> (split <;> rfl)))
+
+/-- R5.C: When `effectivePriority` returns `some triple`, that triple equals
+`effectiveSchedParams`. The total form `effectiveSchedParams` extends the
+partial `effectivePriority` over the unreachable SC-missing path.
+
+Proof structure: `effectivePriority` and `effectiveSchedParams` share an
+identical branching tree (on `schedContextBinding`, then on
+`getSchedContext?` for bound/donated, then on `pipBoost`); the only
+divergence is the SC-missing branch where `effectivePriority` returns
+`none`. The hypothesis `h` rules out that branch, so the remaining
+branches agree pointwise. We close each branch by `split <;> rfl` on
+the RHS match-tree, extracting the `triple` value from `h` and comparing
+constructors. -/
+theorem effectivePriority_some_eq_effectiveSchedParams
+    (st : SystemState) (tcb : TCB)
+    (triple : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId)
+    (h : effectivePriority st tcb = some triple) :
+    triple = effectiveSchedParams st tcb := by
+  unfold effectivePriority effectiveSchedParams at *
+  -- Rather than `cases` on the binding, we let `split` reduce the matches
+  -- on both sides of the goal simultaneously, then close each branch.
+  split at h <;>
+    (first
+      | (split at h <;> simp at h <;> rw [← h] <;> split <;> rfl)
+      | (split at h <;>
+         (first
+           | (split at h <;> simp at h <;> rw [← h] <;> split <;> rfl)
+           | (simp at h))))
+
+/-- R5.C: `effectiveSchedParams` is total. -/
+theorem effectiveSchedParams_total (st : SystemState) (tcb : TCB) :
+    ∃ triple, effectiveSchedParams st tcb = triple :=
+  ⟨_, rfl⟩
 
 /-- AG1-A: Resolve the effective insertion priority for RunQueue re-enqueue.
 
