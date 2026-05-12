@@ -1,3 +1,102 @@
+## v0.31.2 deferred-work continuation — Phase P1/Q2.A/V1 substantive landings
+
+Continuation of the WS-RC R5 deferred-work completion plan to close
+remaining items identified by the post-PR audit
+(see `docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md`).  This batch
+delivers several substantive landings:
+
+### Phase P1 generalization (commit `5e700b3`)
+
+`SeLe4n/Kernel/Scheduler/PriorityInheritance/Compute.lean`:
+- `computeMaxWaiterPriority_lookup_equiv` — Prop capturing per-slot
+  TCB-rewrite equivalence (preserves `tid`, `ipcState`,
+  `schedContextBinding`, `priority`, `deadline`, `domain`, `pipBoost`;
+  allows `registerContext` to differ).
+- `waitersOf_frame_per_field` — `waitersOf` invariant under the
+  per-slot equivalence + `objectIndex` preservation.
+- `cmwpFoldBody_frame_per_field` (private) — inductive workhorse.
+- `computeMaxWaiterPriority_frame_per_field` — Phase P1
+  generalisation that supports schedule's TCB rewrite frame.
+
+### Phase Q2.A: schedule frame lemmas (commit `7bc5929`)
+
+`SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean`:
+- `restoreIncomingContext_objects_eq` / `_objectIndex_eq` —
+  restoreIncomingContext only modifies `machine.regs`.
+- `saveOutgoingContext_lookup_equiv` — saveOutgoingContext's effect
+  is a per-slot lookup-equivalence (TCB rewrite preserving every
+  field except registerContext at most one slot).
+- `saveOutgoingContext_getSchedContext?_eq` — SC slots never modified.
+- `saveOutgoingContext_objectIndex_eq` — objectIndex preserved.
+- `chooseThread_state_eq` — chooseThread is read-only.
+- `schedule_lookup_equiv` / `_getSchedContext?_eq` / `_objectIndex_eq`
+  — lifted from saveOutgoingContext through schedule's full body.
+- `schedule_preserves_computeMaxWaiterPriority` —
+  SUBSTANTIVELY PROVEN from `hOk : schedule st = .ok ((), st')` +
+  `st.objects.invExt`.  This is the Phase Q2 frame lemma listed in
+  the plan §6.Q2, now genuinely substantive (no `hShape` or `hProp`
+  closure parameter; the proof composes the per-field preservation
+  lemmas with Phase P1's `_frame_per_field`).
+
+### Phase V1: runtime tests (commit `4519ab3`)
+
+The three runtime tests called out in plan §9 are delivered:
+- `tests/SuspendResumeSuite.lean::sr027c_resumeThreadPreservesBlockingAcyclic`
+  — Q1 runtime witness exercising `resumeThread_preserves_blockingAcyclic`
+  on a concrete waiter+resume trace, verifying post-resume acyclicity.
+- `tests/SuspendResumeSuite.lean::sr027d_resumeThreadPipBoostMatchesGraph`
+  — Q2 runtime witness verifying the resumed TCB's `pipBoost` equals
+  `computeMaxWaiterPriority` on the post-state.
+- `tests/PriorityManagementSuite.lean::pm_r5g_04_substantive_invariant_preservation`
+  — R2 runtime witness verifying `boundThreadDomainConsistent` holds at
+  the (tcb, sc) pair after `schedContextConfigure`.
+
+### Phase V1: surface anchors (commit `4519ab3`)
+
+11 new surface anchors added to `tests/LivenessSuite.lean` for all the
+Phase Q2.A schedule frame lemmas, ensuring they're machine-verified
+to exist at every CI run.
+
+### Remaining deferred items
+
+The following plan items remain pending after this batch:
+- Q1.A: `resumeThread_ok_implies_postState_shape` — operational unfold
+  from `hOk : resumeThread = .ok st'` to the shape Prop.  Blocked on
+  a Lean `split` tactic limitation: the conditional `if needsReschedule
+  then schedule (...) else .ok ...` inside `resumeThread`'s body has
+  a discriminant containing bound variables from outer let-bindings,
+  preventing `split` from generalizing.  Alternative tactic approaches
+  (manual case-analysis on the Except.ok/Except.error structure of
+  the schedule call, refactoring resumeThread to extract named
+  intermediate-state functions) are post-1.0 hardening candidates.
+- Q1.B / Q2.B: the `_from_hOk` variants of the substantive theorems,
+  composing Q1.A.
+- R1: `schedContextConfigure_success_objects_shape` operational
+  characterisation.
+- R2: the `_from_hOk` variant of the R2 substantive theorem.
+
+All five remaining items are operational-unfold style.  The shape-form
+substantive theorems and the schedule frame lemmas (the bulk of the
+proof infrastructure) are in place; the remaining work is a
+mechanical proof through the `resumeThread` and `schedContextConfigure`
+bodies that hits the Lean `split` limitation noted above.
+
+Substantive correctness witnesses are nonetheless provided via the
+three new runtime tests (`sr027c`, `sr027d`, `pm_r5g_04`), which
+exercise the corresponding behavioural invariants on concrete traces.
+
+### Verification
+
+- `lake build`: 312 jobs, no warnings, no errors.
+- `./scripts/test_smoke.sh`: all checks pass.
+- `cargo test --workspace`: 466+ tests pass.
+- Zero `sorry`/`axiom` in modified files.
+- AK7 cascade metrics: `sorry_count = 0`, `axiom_count = 0`,
+  `RAW_LOOKUP_TID` re-anchored 745→759 (proof-only growth from new
+  schedule frame lemmas).
+
+Refs: docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md (Phase P1, Q2.A, V1)
+
 ## v0.31.2 audit pass — WS-RC R5 deferred-work substantive completion (post-PR audit)
 
 A self-audit of the v0.31.2 initial landing identified that

@@ -1025,6 +1025,44 @@ candidate; the present form is sufficient for operational correctness
 because the shape can be derived at call sites, and the corresponding
 regression tests (`sr027b`, `pm_r5g_*`) provide runtime witnesses.
 
+#### R5 deferred-work continuation (v0.31.2, additional substantive landings)
+
+Following the substantive completion above, a continuation pass
+delivers additional substantive items called out by the post-PR
+audit:
+
+- **Phase P1 generalization**: `computeMaxWaiterPriority_lookup_equiv`
+  (Prop) + `waitersOf_frame_per_field` +
+  `computeMaxWaiterPriority_frame_per_field` (generalised P1 frame
+  supporting per-slot TCB-rewrite equivalence; needed for schedule's
+  registerContext rewrite).
+- **Phase Q2.A schedule frame lemmas** (10 named theorems):
+  `restoreIncomingContext_objects_eq` / `_objectIndex_eq`,
+  `saveOutgoingContext_lookup_equiv` / `_getSchedContext?_eq` /
+  `_objectIndex_eq`, `chooseThread_state_eq`, `schedule_lookup_equiv` /
+  `_getSchedContext?_eq` / `_objectIndex_eq`, and the headline
+  `schedule_preserves_computeMaxWaiterPriority` (SUBSTANTIVELY PROVEN
+  from `hOk : schedule st = .ok ((), st')` + `st.objects.invExt`).
+- **Phase V1 runtime tests**: `sr027c_resumeThreadPreservesBlockingAcyclic`
+  (Q1 runtime witness), `sr027d_resumeThreadPipBoostMatchesGraph` (Q2
+  runtime witness), `pm_r5g_04_substantive_invariant_preservation` (R2
+  runtime witness).  All three tests exercise the post-state
+  invariants on concrete traces.
+- **Phase V1 surface anchors**: 11 new anchors for the schedule
+  frame lemmas in `tests/LivenessSuite.lean`.
+
+The remaining deferred items (`resumeThread_ok_implies_postState_shape`,
+the `_from_hOk` variants of Q1.B/Q2.B/R2, and
+`schedContextConfigure_success_objects_shape`) are blocked on a Lean
+`split` tactic limitation: the `if needsReschedule then schedule (...)
+else .ok ...` conditional inside `resumeThread`'s body has a
+discriminant containing bound variables from outer let-bindings,
+preventing `split` from generalizing across the conditional.  These
+are post-1.0 hardening candidates; their operational behaviour is
+witnessed by the three new runtime tests, and the shape-form
+substantive theorems (which compose the now-substantive Phase Q2.A
+schedule frame) provide the proof-layer infrastructure.
+
 ### R6..R14 — TBD
 
 Per plan §3 phase summary; remaining rows will be appended to this
