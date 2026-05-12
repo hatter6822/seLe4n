@@ -526,17 +526,10 @@ theorem restoreIncomingContext_objects_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreIncomingContext st tid).objects = st.objects := by
   unfold restoreIncomingContext
-  cases hLook : st.objects[tid.toObjId]? with
-  | none => simp [hLook]
-  | some obj =>
-    cases obj with
-    | tcb _ => simp [hLook]
-    | endpoint _ => simp [hLook]
-    | notification _ => simp [hLook]
-    | cnode _ => simp [hLook]
-    | vspaceRoot _ => simp [hLook]
-    | untyped _ => simp [hLook]
-    | schedContext _ => simp [hLook]
+  split
+  · rfl
+  · rename_i obj _
+    cases obj <;> rfl
 
 /-- WS-RC R5.B.2 / Phase Q2: `restoreIncomingContext` preserves
     `objectIndex`. -/
@@ -544,17 +537,10 @@ theorem restoreIncomingContext_objectIndex_eq
     (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreIncomingContext st tid).objectIndex = st.objectIndex := by
   unfold restoreIncomingContext
-  cases hLook : st.objects[tid.toObjId]? with
-  | none => simp [hLook]
-  | some obj =>
-    cases obj with
-    | tcb _ => simp [hLook]
-    | endpoint _ => simp [hLook]
-    | notification _ => simp [hLook]
-    | cnode _ => simp [hLook]
-    | vspaceRoot _ => simp [hLook]
-    | untyped _ => simp [hLook]
-    | schedContext _ => simp [hLook]
+  split
+  · rfl
+  · rename_i obj _
+    cases obj <;> rfl
 
 -- ============================================================================
 -- WS-RC R5.B.2 / Phase Q2: schedule frame lemmas (auxiliary)
@@ -583,15 +569,15 @@ theorem saveOutgoingContext_lookup_equiv
   unfold PriorityInheritance.computeMaxWaiterPriority_lookup_equiv
   unfold saveOutgoingContext
   cases hCurr : st.scheduler.current with
-  | none => left; simp only [hCurr]
+  | none => left; simp only []
   | some outTid =>
-    simp only [hCurr]
+    simp only []
     cases hOut : st.objects[outTid.toObjId]? with
-    | none => left; simp only [hOut]
+    | none => left; simp only []
     | some outObj =>
       cases outObj with
       | tcb outTcb =>
-        simp only [hOut]
+        simp only []
         let outTcbNew : TCB := { outTcb with registerContext := st.machine.regs }
         let stPost : SystemState := { st with objects := st.objects.insert outTid.toObjId
                                                             (.tcb outTcbNew) }
@@ -613,12 +599,12 @@ theorem saveOutgoingContext_lookup_equiv
               intro h; apply hEq; exact (beq_iff_eq.mp h).symm
             exact RobinHood.RHTable.getElem?_insert_ne _ outTid.toObjId objId _ hNe hObjInv
           exact hLookPost
-      | endpoint _ => left; simp only [hOut]
-      | notification _ => left; simp only [hOut]
-      | cnode _ => left; simp only [hOut]
-      | vspaceRoot _ => left; simp only [hOut]
-      | untyped _ => left; simp only [hOut]
-      | schedContext _ => left; simp only [hOut]
+      | endpoint _ => left; simp only []
+      | notification _ => left; simp only []
+      | cnode _ => left; simp only []
+      | vspaceRoot _ => left; simp only []
+      | untyped _ => left; simp only []
+      | schedContext _ => left; simp only []
 
 /-- WS-RC R5.B.2 / Phase Q2: `saveOutgoingContext` preserves the
     `getSchedContext?` lookup at every SchedContextId.  Only TCB slots
@@ -629,15 +615,15 @@ theorem saveOutgoingContext_getSchedContext?_eq
     (saveOutgoingContext st).getSchedContext? scId = st.getSchedContext? scId := by
   unfold SystemState.getSchedContext? saveOutgoingContext
   cases hCurr : st.scheduler.current with
-  | none => simp only [hCurr]
+  | none => simp only []
   | some outTid =>
-    simp only [hCurr]
+    simp only []
     cases hOut : st.objects[outTid.toObjId]? with
-    | none => simp only [hOut]
+    | none => simp only []
     | some outObj =>
       cases outObj with
       | tcb outTcb =>
-        simp only [hOut]
+        simp only []
         let outTcbNew : TCB := { outTcb with registerContext := st.machine.regs }
         let stPost : SystemState := { st with objects := st.objects.insert outTid.toObjId
                                                             (.tcb outTcbNew) }
@@ -656,12 +642,12 @@ theorem saveOutgoingContext_getSchedContext?_eq
               intro h; apply hScEq; exact (beq_iff_eq.mp h).symm
             exact RobinHood.RHTable.getElem?_insert_ne _ outTid.toObjId scId.toObjId _ hNe hObjInv
           rw [hLookPost]
-      | endpoint _ => simp only [hOut]
-      | notification _ => simp only [hOut]
-      | cnode _ => simp only [hOut]
-      | vspaceRoot _ => simp only [hOut]
-      | untyped _ => simp only [hOut]
-      | schedContext _ => simp only [hOut]
+      | endpoint _ => simp only []
+      | notification _ => simp only []
+      | cnode _ => simp only []
+      | vspaceRoot _ => simp only []
+      | untyped _ => simp only []
+      | schedContext _ => simp only []
 
 /-- WS-RC R5.B.2 / Phase Q2: `saveOutgoingContext` preserves
     `objectIndex`. -/
@@ -670,21 +656,12 @@ theorem saveOutgoingContext_objectIndex_eq (st : SystemState) :
   unfold saveOutgoingContext
   -- saveOutgoingContext returns either st (in three branches) or a record-with
   -- on objects only.  In every branch, .objectIndex agrees with st.objectIndex.
-  -- Use simp on the result of the match to reduce each branch.
-  cases hCurr : st.scheduler.current with
-  | none => simp [hCurr]
-  | some outTid =>
-    cases hOut : st.objects[outTid.toObjId]? with
-    | none => simp [hCurr, hOut]
-    | some obj =>
-      cases obj with
-      | tcb _ => simp [hCurr, hOut]
-      | endpoint _ => simp [hCurr, hOut]
-      | notification _ => simp [hCurr, hOut]
-      | cnode _ => simp [hCurr, hOut]
-      | vspaceRoot _ => simp [hCurr, hOut]
-      | untyped _ => simp [hCurr, hOut]
-      | schedContext _ => simp [hCurr, hOut]
+  split
+  · rfl
+  · split
+    · rfl
+    · rename_i obj _
+      cases obj <;> rfl
 
 /-- WS-RC R5.B.2 / Phase Q2: chooseThread doesn't modify the state. -/
 theorem chooseThread_state_eq (st : SystemState) (optTid : Option SeLe4n.ThreadId)
