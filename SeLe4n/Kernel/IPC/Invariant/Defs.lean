@@ -681,7 +681,8 @@ R3-C/M-19: Formal preservation theorems are proved in
 - `storeTcbIpcStateAndMessage_preserves_notificationWaiterConsistent` — TCB ipc
   state change when target thread is not in any notification wait list
 - `notificationSignal_preserves_notificationWaiterConsistent` — R3-C.1: wake path
-  (removes head waiter, uses `uniqueWaiters` Nodup) + merge path (vacuous)
+  (removes head waiter; structural `NoDupList.hNodup` ensures the woken
+  thread does not appear elsewhere) + merge path (vacuous)
 - `frame_preserves_notificationWaiterConsistent` — R3-C.2: general frame lemma
   for operations that preserve notification objects and waiter TCBs
 - `endpointReply_preserves_notificationWaiterConsistent` — R3-C.2: concrete
@@ -1184,12 +1185,13 @@ def ipcInvariantFull (st : SystemState) : Prop :=
 --
 -- The legacy tuple form above is preserved as the primary definition so
 -- every existing consumer that destructures `ipcInvariantFull` via tuple
--- projections continues to typecheck. The block below layers a named
--- `structure IpcInvariantFull` over the same 16 conjuncts, a bidirectional
--- `ipcInvariantFull_iff_IpcInvariantFull` bridge, and per-field projection
--- theorems (installed as `@[simp]`) so callers can write
--- `hInv.donationOwnerValid` (or any other conjunct name) in place of the
--- fragile `hInv.2.2.2.2.2.2.2.2.2.2.2.1` chain.
+-- projections continues to typecheck.  The block below layers a named
+-- `structure IpcInvariantFull` over the same 15 conjuncts (was 16
+-- before the WS-RC R4.C.7 close-out retired `uniqueWaiters`), a
+-- bidirectional `ipcInvariantFull_iff_IpcInvariantFull` bridge, and
+-- per-field projection theorems (installed as `@[simp]`) so callers
+-- can write `hInv.donationOwnerValid` (or any other conjunct name) in
+-- place of the fragile `hInv.2.2.2.2.2.2.2.2.2.2.2.1` chain.
 --
 -- The projection theorems live in the `SeLe4n.Kernel.ipcInvariantFull`
 -- namespace so that Lean 4 dot notation (`h.foo` elaborates to
@@ -1202,8 +1204,10 @@ def ipcInvariantFull (st : SystemState) : Prop :=
 
 /-- AN3-B.1: Named-field counterpart of `ipcInvariantFull`.
 
-All 16 fields mirror the conjuncts of the legacy tuple form, one-for-one
-in declaration order. The bidirectional bridge
+All 15 fields mirror the conjuncts of the legacy tuple form, one-for-one
+in declaration order (the 15th-slot `uniqueWaiters` conjunct was retired
+in the WS-RC R4.C.7 close-out, leaving `blockedOnReplyHasTarget` as the
+final field). The bidirectional bridge
 `ipcInvariantFull_iff_IpcInvariantFull` establishes that the two Prop-level
 forms are interchangeable; new theorems should prefer this structure because
 adding or removing a conjunct (a frequent audit-remediation operation) only

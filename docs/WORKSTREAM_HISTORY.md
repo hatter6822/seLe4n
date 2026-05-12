@@ -449,9 +449,12 @@ COMPLETE with full type-level structural promotion:
   (R4.C) — carries `List.Nodup` structurally at construction time.
 
 The state-level invariants `cspaceSlotUnique` and `uniqueWaiters`
-are now **trivially derivable** from the wrappers' `hWF` / `hNodup`
-fields (`slotsUnique_holds`, `uniqueWaiters_holds`).  The runtime
-duplicate guard at `notificationWait` is now backed by
+were retired in the v0.31.0 close-out (R4.A.6 / R4.C.7); per-CNode
+slot uniqueness is now discharged via
+`SeLe4n.Model.CNode.slotsUnique_holds` (or its plan-named alias
+`cnode_slots_unique`), and per-Notification Nodup is discharged via
+`SeLe4n.Kernel.notification_waiters_nodup`. The runtime duplicate
+guard at `notificationWait` is now backed by
 `NoDupList.consWithGuard?`, making the duplicate rejection
 structural.
 
@@ -468,13 +471,17 @@ structural.
   to drop the "phantom-like" caveat per the implement-the-improvement
   rule.
 - **R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01) — witness theorems.**
-  LANDED at commit `7da2572`.  Two named witness theorems in
-  `IPC/Invariant/QueueNoDup.lean`:
-  `notification_waitingThreads_nodup_witness` projects `uniqueWaiters`
-  for a single notification, and
-  `notificationWait_runtime_check_implied_by_nodup` re-exports the
-  existing `not_mem_waitingThreads_of_ipcState_ne` bridge under the
-  WS-RC discharge-index name.  **New in this commit:**
+  LANDED at commit `7da2572`. Originally introduced two named witness
+  theorems in `IPC/Invariant/QueueNoDup.lean`:
+  `notification_waitingThreads_nodup_witness` and
+  `notificationWait_runtime_check_implied_by_nodup`.
+  `notification_waitingThreads_nodup_witness` was deleted in the
+  v0.31.0 close-out (subsumed by the plan-named `notification_waiters_nodup`,
+  which discharges directly via `NoDupList.hNodup` without any
+  vestigial `uniqueWaiters` precondition).
+  `notificationWait_runtime_check_implied_by_nodup` survives — it
+  re-exports the existing `not_mem_waitingThreads_of_ipcState_ne`
+  bridge under the WS-RC discharge-index name.  **New in this commit:**
   `SeLe4n/Model/Object/NoDupList.lean` (~290 LoC) lands the
   forward-compatible `SeLe4n.NoDupList α` smart-constructor module —
   the foundation for the future field-type switch.  The module

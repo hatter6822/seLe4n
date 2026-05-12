@@ -179,18 +179,19 @@ def capabilityInvariantBundle (st : SystemState) : Prop :=
 
 /-! ## AN4-F.5 (CAP-M05) — Named-projection refactor of `capabilityInvariantBundle`
 
-Mirror of the AN3-B playbook for IPC's `ipcInvariantFull`. The 7-conjunct
-right-associative `∧` chain above is fragile to reason about — consumers
-write `.2.2.2.1` to reach `cdtCompleteness`, `.2.2.2.2.1` for
+Mirror of the AN3-B playbook for IPC's `ipcInvariantFull`. The 6-conjunct
+right-associative `∧` chain above (was 7 before the WS-RC R4.A.6
+close-out retired `cspaceSlotUnique`) is fragile to reason about —
+consumers write `.2.2.1` to reach `cdtCompleteness`, `.2.2.2.1` for
 `cdtAcyclicity`, and so on. The audit's CAP-M05 finding calls for a named
 structure that exposes each field by name.
 
-At v0.30.6 the tuple form remains the primary definition so the 243 existing
+At v0.30.6 the tuple form remains the primary definition so the existing
 consumer sites do not have to migrate in a single commit. The named
 structure below is **derived** from the tuple via a bidirectional bridge
 (`capabilityInvariantBundle_iff_CapabilityInvariantBundle`), and each field
 has a `@[simp]` projection abbrev so consumers can migrate incrementally —
-`bundle.cdtCompleteness` replaces `bundle.2.2.2.1`, and `simp` unfolds the
+`bundle.cdtCompleteness` replaces `bundle.2.2.1`, and `simp` unfolds the
 abbrev to the underlying tuple projection automatically.
 
 A follow-up workstream (AN4-F.5.3..F.5.6, tracked for a subsequent commit

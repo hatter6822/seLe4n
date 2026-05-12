@@ -683,8 +683,8 @@ theorem notification_waiters_nodup (n : Notification) :
 
     The runtime guard at line 723 is retained as defence-in-depth and
     is now provably equivalent to the type-level Nodup discharge by
-    composing this theorem with
-    `notification_waitingThreads_nodup_witness`. -/
+    composing this theorem with `notification_waiters_nodup` (the
+    plan-named structural discharge from `NoDupList.hNodup`). -/
 theorem notificationWait_runtime_check_implied_by_nodup
     (st : SystemState) (notifId : SeLe4n.ObjId) (ntfn : Notification)
     (waiter : SeLe4n.ThreadId) (tcb : TCB)
