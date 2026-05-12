@@ -223,6 +223,34 @@ def remove (rq : RunQueue) (tid : ThreadId) : RunQueue :=
         · exact rq.byPriority.insert_preserves_invExtK p _ rq.byPrio_invExtK
     threadPrio_invExtK := rq.threadPriority.erase_preserves_invExtK tid rq.threadPrio_invExtK }
 
+/-- R5.F (DEEP-SCH-05): Helper that extracts a thread's recorded priority,
+    surfacing the impossible "missing priority" branch with an explicit
+    `panic!` instead of silently defaulting to `⟨0⟩`.
+
+    Under `RunQueue.wellFormed`, every thread in `rq.flat` has a `some _`
+    entry in `rq.threadPriority` (the second conjunct of `wellFormed`).
+    The `none` branch is therefore invariant-unreachable on the
+    rotation-applies path of `rotateToBack`.
+
+    On a correctly-functioning kernel the `panic!` is never invoked.
+    If it ever fires, it means `runQueueInvariant` has drifted (some
+    other operation forgot to update `threadPriority` in lockstep with
+    `membership`); halting loudly is preferable to silently mis-placing
+    the rotated thread in the priority-0 bucket. -/
+@[inline] private def lookupPriorityOrPanic (rq : RunQueue) (tid : ThreadId)
+    : Priority :=
+  match rq.threadPriority[tid]? with
+  | some p => p
+  | none => panic! "rotateToBack: invariant violation — tid in rq.flat but threadPriority has no entry (runQueueInvariant.flat_threadPriority_consistency breach)"
+
+/-- R5.F: under the well-formed invariant + membership witness, the
+    helper reduces to the threadPriority lookup value (no panic). -/
+@[simp] theorem lookupPriorityOrPanic_of_some (rq : RunQueue) (tid : ThreadId)
+    (p : Priority) (h : rq.threadPriority[tid]? = some p) :
+    lookupPriorityOrPanic rq tid = p := by
+  unfold lookupPriorityOrPanic
+  rw [h]
+
 /-- S5-J: Complexity is O(k + n) where k = priority bucket size and n = flat
     list length. Filters the thread from the bucket O(k), appends to end O(1),
     then erases from flat list O(n) and appends. Same bounds as `remove` and
@@ -232,20 +260,20 @@ def remove (rq : RunQueue) (tid : ThreadId) : RunQueue :=
     the `rq.contains tid = true` dispatch (the outer `if hc : rq.contains
     tid`).  Under that precondition the `threadPriority[tid]?` lookup is
     guaranteed `some _` by the `runQueueInvariant`'s `flat ↔ threadPriority`
-    consistency conjunct.  The `getD ⟨0⟩` fallback is therefore unreachable
-    under valid kernel state; the assertion theorem
-    `rotateToBack_requires_membership` (immediately below) discharges the
-    precondition formally so callers do not need to reason locally about
-    the fallback. -/
+    consistency conjunct.  The body extracts the priority via
+    `lookupPriorityOrPanic`, which surfaces the impossible `none` branch
+    via an explicit `panic!` rather than silently defaulting to `⟨0⟩` (the
+    pre-R5 behaviour that masked invariant violations as priority-0
+    bucket placements). -/
 def rotateToBack (rq : RunQueue) (tid : ThreadId) : RunQueue :=
   if hc : rq.contains tid then
-    -- R5.F: `getD ⟨0⟩` is unreachable under `rotateToBack_requires_membership`
-    -- (proven below).  The membership witness `hc` together with the
-    -- runQueue invariant's structural consistency conjunct (provided by
-    -- `rq.mem_invExtK`/`rq.threadPrio_invExtK` and the
-    -- `flat ↔ threadPriority` correspondence in `wellFormed`) forces
-    -- `threadPriority[tid]?` to `some _`.
-    let prio := rq.threadPriority[tid]?.getD ⟨0⟩
+    -- R5.F (DEEP-SCH-05): `lookupPriorityOrPanic` surfaces the impossible
+    -- branch with an explicit `panic!` instead of silently defaulting to
+    -- `⟨0⟩`.  Under `wellFormed + hc`, the panic is invariant-
+    -- unreachable; the `rotateToBack_requires_membership` and
+    -- `lookupPriorityOrPanic_of_some` theorems provide the formal
+    -- discharge.
+    let prio := lookupPriorityOrPanic rq tid
     let bucket := (rq.byPriority[prio]?).getD []
     let bucket' := bucket.filter (· ≠ tid) ++ [tid]
     { rq with
@@ -600,15 +628,15 @@ theorem rotateToBack_requires_membership
   exact ⟨p, hTP⟩
 
 /-- R5.F (DEEP-SCH-05): Corollary — under the precondition, the priority
-    used by `rotateToBack` is exactly the `threadPriority[tid]?` value
-    (no fallback is taken). -/
+    extracted by `rotateToBack` is exactly the `threadPriority[tid]?` value
+    (no panic is taken). -/
 theorem rotateToBack_priority_eq_threadPriority
     (rq : RunQueue) (tid : ThreadId) (p : Priority)
     (_hwf : rq.wellFormed)
     (_hMem : rq.contains tid = true)
     (hPrio : rq.threadPriority[tid]? = some p) :
-    rq.threadPriority[tid]?.getD ⟨0⟩ = p := by
-  rw [hPrio]; rfl
+    lookupPriorityOrPanic rq tid = p :=
+  lookupPriorityOrPanic_of_some rq tid p hPrio
 
 -- ============================================================================
 -- WS-H6: rotateToBack field-preservation lemmas
@@ -643,8 +671,9 @@ theorem rotateToBack_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed) 
   · -- tid is in the run queue; rotation applies
     have hTidMem : rq.membership.contains tid = true := hc
     obtain ⟨tidPrio, hTidTP, hTidBucket⟩ := hwf.2 tid hTidMem
-    have hPrioVal : rq.threadPriority[tid]?.getD ⟨0⟩ = tidPrio := by
-      simp only [hTidTP, Option.getD]
+    -- R5.F: under `hTidTP`, the helper reduces to `tidPrio` (no panic).
+    have hPrioVal : lookupPriorityOrPanic rq tid = tidPrio :=
+      lookupPriorityOrPanic_of_some rq tid tidPrio hTidTP
     -- Fully unfold the rotated wellFormed to access raw fields
     unfold wellFormed
     simp only [rotateToBack, hc, dite_true]
@@ -658,7 +687,7 @@ theorem rotateToBack_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed) 
       intro p t hMem
       rw [hGetElem] at hMem
       -- Case split on whether the inserted prio matches p
-      by_cases hPEq : ((rq.threadPriority[tid]?.getD ⟨0⟩) == p) = true
+      by_cases hPEq : (lookupPriorityOrPanic rq tid == p) = true
       · -- prio == p: bucket was replaced
         have hPrioEq := eq_of_beq hPEq
         rw [hPrioEq, RHTable_get?_insert_self rq.byPriority p _ hByPrioInv] at hMem
@@ -673,7 +702,7 @@ theorem rotateToBack_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed) 
           have hPeq : tidPrio = p := hPrioVal.symm.trans hPrioEq
           exact ⟨hTidMem, by rw [hPeq] at hTidTP; exact hTidTP⟩
       · -- prio ≠ p: bucket unchanged
-        rw [RHTable_get?_insert_ne rq.byPriority (rq.threadPriority[tid]?.getD ⟨0⟩)
+        rw [RHTable_get?_insert_ne rq.byPriority (lookupPriorityOrPanic rq tid)
             p _ hPEq hByPrioInv] at hMem
         have hMem' : t ∈ (rq.byPriority[p]?).getD [] := by exact hMem
         exact hwf.1 p t hMem'
@@ -682,7 +711,7 @@ theorem rotateToBack_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed) 
       obtain ⟨p, hTP, hBucket⟩ := hwf.2 t hMem
       refine ⟨p, hTP, ?_⟩
       rw [hGetElem]
-      by_cases hPEq : ((rq.threadPriority[tid]?.getD ⟨0⟩) == p) = true
+      by_cases hPEq : (lookupPriorityOrPanic rq tid == p) = true
       · -- prio == p
         have hPrioEq := eq_of_beq hPEq
         rw [hPrioEq, RHTable_get?_insert_self rq.byPriority p _ hByPrioInv]
@@ -690,7 +719,7 @@ theorem rotateToBack_preserves_wellFormed (rq : RunQueue) (hwf : rq.wellFormed) 
         by_cases hTEq : t = tid
         · exact Or.inr hTEq
         · exact Or.inl (List.mem_filter.mpr ⟨hBucket, by simp [hTEq]⟩)
-      · rw [RHTable_get?_insert_ne rq.byPriority (rq.threadPriority[tid]?.getD ⟨0⟩)
+      · rw [RHTable_get?_insert_ne rq.byPriority (lookupPriorityOrPanic rq tid)
             p _ hPEq hByPrioInv]
         show t ∈ (rq.byPriority[p]?).getD []
         exact hBucket

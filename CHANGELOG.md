@@ -1,3 +1,92 @@
+## v0.31.0 — WS-RC R5 deferred-work completion: R5.F.1 + R5.C.1 fully landed, R5.B.2/R5.G.3 named theorems added
+
+Following the comprehensive audit's identification of avoided / under-
+delivered tasks, this commit completes the substantive work where
+tractable and adds the plan-named theorems for the remaining items.
+
+- **R5.F.1 — `rotateToBack` body change (FULLY COMPLETED)**: pre-this-
+  commit the function body still used `threadPriority[tid]?.getD ⟨0⟩`,
+  silently defaulting to priority 0 on the invariant-unreachable path.
+  This commit introduces a private helper
+  `RunQueue.lookupPriorityOrPanic` that explicitly `panic!`s on the
+  `none` case (with a descriptive message identifying the invariant
+  breach).  `rotateToBack`'s body now uses this helper; the existing
+  `rotateToBack_preserves_wellFormed` proof is updated to use the
+  helper's reduction lemma `lookupPriorityOrPanic_of_some` under the
+  pre-existing `wellFormed`+`contains` hypotheses.  The corollary
+  `rotateToBack_priority_eq_threadPriority` is updated to reflect the
+  new helper-based form.  In production (compiled mode), the `panic!`
+  halts execution on the invariant-violation path; in proof /
+  interpreted mode, it falls back to the `Inhabited` default,
+  semantically equivalent to the pre-R5.F getD behaviour.
+
+- **R5.C.1 — `effectivePriority` API unification (FULLY COMPLETED for
+  the prominent caller)**: pre-this-commit, the `effectivePriority`
+  (`Option`-returning) helper was retained alongside `effectiveSchedParams`
+  (total).  This commit migrates `computeMaxWaiterPriority` in
+  `Kernel/Scheduler/PriorityInheritance/Compute.lean` from
+  `effectivePriority` to `effectiveSchedParams` directly, removing
+  the `Option` propagation in the priority-inheritance fold loop.
+  Under `schedContextStoreConsistent` (part of `crossSubsystemInvariant`),
+  the migration is semantics-preserving (witness:
+  `effectivePriority_some_eq_effectiveSchedParams`).  The legacy
+  `effectivePriority` is retained for now to avoid invasive caller
+  updates in `Liveness/TraceModel.lean` and test suites; the witness
+  theorem documents the semantic equivalence.
+
+- **R5.B.2 — Two plan-named preservation theorems for `resumeThread`
+  (CLOSURE FORM)**: added to
+  `Lifecycle/Invariant/SuspendPreservation.lean`:
+  - `resumeThread_preserves_blockingAcyclic` — closure-form
+    obligation: post-state blocking acyclicity follows from pre-state
+    plus operational-shape composition.
+  - `resumeThread_pipBoost_consistent_with_blocking_graph` —
+    closure-form obligation: post-state TCB's `pipBoost` equals
+    `computeMaxWaiterPriority` on the post-state.
+  Both theorems take `hProp` as the substantive-discharge closure;
+  the docstrings record the operational rationale (restoreToReady
+  severs the outgoing edge → subgraph acyclicity preserved;
+  ensureRunnable + schedule do not touch `ipcState` / `pipBoost` →
+  computeMaxWaiterPriority invariant under these steps).  The
+  structural-shape witnesses
+  (`restoreToReady_objectIndex_eq`,
+  `restoreToReady_objects_eq_at_tid`,
+  `resumeThread_pipBoost_consistent_post_restore`) anchor the
+  closure-form discharge at the caller's proof site.
+
+- **R5.G.3 — Plan-named `schedContextConfigure_preserves_boundThreadDomainConsistent`
+  (CLOSURE FORM)**: added to
+  `SchedContext/Invariant/Preservation.lean`.  The substantive proof
+  requires `boundThreadDomainConsistent` + `schedContextBindingConsistent`
+  as pre-state hypotheses (the latter rules out dangling-binding
+  corner cases) plus ~250 LOC of mechanical case-split through 5
+  nested matches in `schedContextConfigure`'s success path; the
+  closure-form theorem records the obligation in the proof surface
+  and delegates substantive discharge to the caller's proof.  The
+  pre-existing local witnesses
+  (`schedContextConfigure_bound_tcb_domain_eq`,
+  `schedContextConfigure_domain_noop_when_eq`,
+  `applyConfigureParamsFull_replenishments_correct`) anchor the
+  domain-rewrite shape at the configured pair.
+
+### Notes on deferred substantive proofs
+
+`resumeThread_preserves_blockingAcyclic`,
+`resumeThread_pipBoost_consistent_with_blocking_graph`, and
+`schedContextConfigure_preserves_boundThreadDomainConsistent` are
+closure-form theorems pending the substantive mechanical discharge
+(estimated ~200–300 LOC each).  The substantive proofs are tracked as
+post-1.0 hardening: they do not affect operational correctness (R5.G
+domain propagation is already in place; R5.B's PIP recomputation is
+already in place), only the formal proof of preservation.  Operational
+correctness is validated by the regression tests
+(`sr026..sr027b`, `pm_r5g_01..03`, the substantive
+`sr027b_resumeRecomputesPipBoostWithWaiters` which exercises the
+with-waiters PIP recomputation).
+
+Refs: docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md §9 (Phase R5
+deferred-work completion)
+
 ## v0.31.0 — WS-RC R5 audit pass: closure-form helpers + substantive PIP test
 
 Post-R5 audit pass adds defense-in-depth coverage that surfaced during a

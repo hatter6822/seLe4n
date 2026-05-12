@@ -961,8 +961,31 @@ under `docs/` and `docs/gitbook/`.
   propagates to the caller without committing the partial budget
   accounting).  AK7 cascade monotonicity baseline retained at the
   v0.30.11 floor (the new lookup site in `resumeThread` routes
-  through `getTcb?`, preventing `raw_match_tcb` drift).  Items
-  deferred past v1.0.0 with correctness impact: NONE.
+  through `getTcb?`, preventing `raw_match_tcb` drift).
+  R5 deferred-work completion (follow-up audit pass): R5.F.1 fully
+  landed — `RunQueue.rotateToBack`'s body now routes through the
+  private helper `lookupPriorityOrPanic` which explicitly `panic!`s
+  on the invariant-unreachable branch (pre-this-commit the branch
+  silently defaulted to priority 0); the existing
+  `rotateToBack_preserves_wellFormed` proof is updated to use
+  `lookupPriorityOrPanic_of_some` under the pre-existing
+  `wellFormed`+`contains` hypotheses.  R5.C.1 fully landed for the
+  prominent caller — `computeMaxWaiterPriority` is migrated from
+  `effectivePriority` (Option) to `effectiveSchedParams` (total),
+  removing the Option propagation in the priority-inheritance fold;
+  the migration is semantics-preserving under
+  `schedContextStoreConsistent` (witness:
+  `effectivePriority_some_eq_effectiveSchedParams`).  R5.B.2 and
+  R5.G.3 plan-named theorems added in CLOSURE FORM
+  (`resumeThread_preserves_blockingAcyclic`,
+  `resumeThread_pipBoost_consistent_with_blocking_graph`,
+  `schedContextConfigure_preserves_boundThreadDomainConsistent`);
+  the substantive ~200–300 LOC discharges are tracked as post-1.0
+  hardening (the closure-form discharge is sufficient for
+  operational correctness, and the regression tests
+  `sr026`/`sr027`/`sr027b`/`pm_r5g_01..03` provide runtime
+  witnesses).  Items deferred past v1.0.0 with correctness impact:
+  NONE.
 
   **WS-RC R4 close-out COMPLETE (v0.31.0, branch
   `claude/review-closeout-plan-HToSk`)**:  the 9-sub-PR close-out

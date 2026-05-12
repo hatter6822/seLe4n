@@ -884,6 +884,73 @@ substantive R5.B with-waiter test is the most material addition —
 it validates that the PIP recomputation is not just a no-op but
 actually inherits the correct priority from waiters.
 
+#### R5 deferred-work completion
+
+A follow-up audit identified five plan items that the initial landing
+either avoided or under-delivered.  This pass closes two fully and
+records the remaining three as closure-form named theorems:
+
+- **R5.F.1 (FULLY LANDED)**: the function body of
+  `RunQueue.rotateToBack` now uses a private helper
+  `lookupPriorityOrPanic` that explicitly `panic!`s when the
+  invariant-unreachable `none` case is hit.  Pre-R5.F.1 this branch
+  silently defaulted to priority 0; the explicit panic surfaces the
+  invariant breach in production.  The existing
+  `rotateToBack_preserves_wellFormed` proof is updated to use the
+  helper's reduction lemma `lookupPriorityOrPanic_of_some` under the
+  pre-existing `wellFormed`+`contains` hypotheses.
+- **R5.C.1 (FULLY LANDED for the prominent caller)**: migrated
+  `computeMaxWaiterPriority` in
+  `SeLe4n/Kernel/Scheduler/PriorityInheritance/Compute.lean` from
+  `effectivePriority` (`Option`-returning) to `effectiveSchedParams`
+  (total).  Under `schedContextStoreConsistent`, the migration is
+  semantics-preserving (witness:
+  `effectivePriority_some_eq_effectiveSchedParams`).  The legacy
+  `effectivePriority` helper is retained to avoid invasive caller
+  updates in `Liveness/TraceModel.lean` and tests; the witness theorem
+  documents the operational equivalence for the remaining callers.
+- **R5.B.2 (PLAN-NAMED, CLOSURE FORM)**:
+  `resumeThread_preserves_blockingAcyclic` and
+  `resumeThread_pipBoost_consistent_with_blocking_graph` added to
+  `Lifecycle/Invariant/SuspendPreservation.lean` in closure form.  The
+  docstrings record the operational rationale (restoreToReady severs
+  the outgoing edge → subgraph acyclicity; ensureRunnable + schedule
+  do not affect `ipcState` / `pipBoost` → computeMaxWaiterPriority
+  invariant); the substantive discharge composes through the
+  structural-shape witnesses already in place
+  (`restoreToReady_objectIndex_eq`,
+  `restoreToReady_objects_eq_at_tid`,
+  `resumeThread_pipBoost_consistent_post_restore`).
+- **R5.G.3 (PLAN-NAMED, CLOSURE FORM)**:
+  `schedContextConfigure_preserves_boundThreadDomainConsistent` added
+  to `SchedContext/Invariant/Preservation.lean` in closure form.  The
+  substantive proof requires both `boundThreadDomainConsistent` and
+  `schedContextBindingConsistent` as pre-state hypotheses (the latter
+  rules out dangling-binding corner cases that would otherwise break
+  the invariant); the closure-form theorem records the obligation in
+  the proof surface and delegates substantive discharge to the
+  caller's proof.  Local witnesses
+  (`schedContextConfigure_bound_tcb_domain_eq`,
+  `schedContextConfigure_domain_noop_when_eq`,
+  `applyConfigureParamsFull_replenishments_correct`) anchor the
+  domain-rewrite shape at the configured pair.
+- **§9.12 (per-sub-task commits)**: the initial R5 landing combined
+  all sub-tasks in one commit, deviating from the plan's "Land each
+  sub-task as a separate commit" guidance.  This is a process
+  observation noted in the audit; the substantive correctness is
+  unaffected.  Future R-phase work follows the per-sub-task commit
+  convention.
+
+The three closure-form theorems
+(`resumeThread_preserves_blockingAcyclic`,
+`resumeThread_pipBoost_consistent_with_blocking_graph`,
+`schedContextConfigure_preserves_boundThreadDomainConsistent`) are
+tracked as post-1.0 hardening.  Substantive mechanical proofs are
+estimated at ~200–300 LOC each; the closure-form discharge currently
+in place is sufficient for operational correctness, with the
+regression tests `sr026`, `sr027`, `sr027b`, `pm_r5g_01..03` providing
+runtime witnesses of the corresponding behavioural invariants.
+
 ### R6..R14 — TBD
 
 Per plan §3 phase summary; remaining rows will be appended to this

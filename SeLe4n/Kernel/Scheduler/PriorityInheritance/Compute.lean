@@ -21,20 +21,27 @@ open SeLe4n.Model
 /-- D4-F: Compute the maximum effective priority among all threads
 directly blocked on `tid` via Reply IPC. Returns `none` if no waiters.
 
-Uses `effectivePriority` resolution (incorporating SchedContext binding
-and any existing PIP boost) for each waiter, ensuring transitivity. -/
+WS-RC R5.C (DEEP-SCH-02): migrated from the partial `effectivePriority`
+helper (which returned `Option`) to the total `effectiveSchedParams`
+helper.  Under `schedContextStoreConsistent` (part of
+`crossSubsystemInvariant`), the pre-R5 `effectivePriority` `none` branch
+was unreachable; under `effectiveSchedParams`, the SC-missing case falls
+back to the waiter's TCB priority/deadline/domain.  The two helpers
+agree pointwise where `effectivePriority` returns `some _` (witness:
+`effectivePriority_some_eq_effectiveSchedParams`), so this migration is
+semantics-preserving under the runtime invariant.  The migration is
+part of R5.C's API-uniformity goal: callers no longer thread `Option`
+propagation through the priority-inheritance fold. -/
 def computeMaxWaiterPriority (st : SystemState) (tid : ThreadId)
     : Option Priority :=
   let waiters := waitersOf st tid
   waiters.foldl (fun acc waiterTid =>
     match st.objects[waiterTid.toObjId]? with
     | some (KernelObject.tcb waiterTcb) =>
-      match effectivePriority st waiterTcb with
-      | some (prio, _, _) =>
-        match acc with
-        | none => some prio
-        | some curMax => some ⟨Nat.max curMax.val prio.val⟩
-      | none => acc
+      let (prio, _, _) := effectiveSchedParams st waiterTcb
+      match acc with
+      | none => some prio
+      | some curMax => some ⟨Nat.max curMax.val prio.val⟩
     | _ => acc) none
 
 /-- D4-F: computeMaxWaiterPriority of a thread with no waiters is none. -/

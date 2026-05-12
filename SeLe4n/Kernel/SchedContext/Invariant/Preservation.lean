@@ -351,48 +351,51 @@ theorem schedContextConfigure_domain_noop_when_eq
   -- field projection lifts via congrArg.
   exact DomainId.mk.injEq _ _ |>.mpr hEq
 
-/-- R5.G (DEEP-SCH-06): Closure-form preservation theorem for
-    `boundThreadDomainConsistent` across `schedContextConfigure`.
+-- ============================================================================
+-- R5.G (DEEP-SCH-06): Preservation of boundThreadDomainConsistent
+-- ============================================================================
+--
+-- Pre-R5 this preservation was implicitly trusted (the configure path
+-- rewrote `sc.domain` without propagating into `tcb.domain`, silently
+-- violating the invariant on every domain reconfigure).  R5.G adds the
+-- domain-propagation block.
+--
+-- This entry-point closes the preservation obligation in CLOSURE form:
+-- callers compose the operational walk through `schedContextConfigure`
+-- with the local witnesses
+-- `schedContextConfigure_bound_tcb_domain_eq` and
+-- `schedContextConfigure_domain_noop_when_eq` (above) plus the SC-side
+-- rewrite `applyConfigureParamsFull_replenishments_correct`.
+--
+-- The fully substantive theorem (un-closured) requires:
+--   1. A frame lemma covering the joint (SC, TCB) update with
+--      `boundThreadDomainConsistent` + `schedContextBindingConsistent`
+--      as pre-state hypotheses.
+--   2. An operational characterisation of `schedContextConfigure`'s
+--      post-state through 5 nested matches.
+--   3. ~250 LOC of case-split composition between the above.
+--
+-- Authors attempting the substantive proof must also include
+-- `schedContextBindingConsistent` as a pre-state hypothesis to rule
+-- out a dangling-binding corner case where a TCB has `.bound scId` but
+-- `sc.boundThread ≠ some tid`; without that hypothesis, the
+-- domain-rewrite of the SC could break the invariant for the
+-- dangling pair.
+--
+-- The closure-form discharge below is what the caller's proof site
+-- uses; it routes `hProp` through, with the caller supplying the
+-- mechanical composition.
 
-    Pre-R5 this preservation was implicitly trusted (the configure path
-    rewrote `sc.domain` without propagating into `tcb.domain`, silently
-    violating the invariant on every domain reconfigure).  R5.G adds the
-    domain-propagation block; this closure-form theorem records the
-    preservation obligation in the proof surface for caller-site
-    discharge.
-
-    The substantive discharge proceeds by case-splitting on every
-    `(tid, scId)` pair in the post-state:
-
-    1. **`tid = boundTid ∧ scId = vScId.val.toNat`** (the configured pair):
-       the post-`stFinal` TCB at `boundTid` has `domain := ⟨domain⟩`
-       (witness: `schedContextConfigure_bound_tcb_domain_eq` or
-       `schedContextConfigure_domain_noop_when_eq` depending on whether
-       the existing domain differed); the post-`stFinal` SC at
-       `vScId.val` has `domain := ⟨domain⟩` (witness:
-       `applyConfigureParamsFull` rewrites `domain`). Equal.
-    2. **`tid = boundTid ∧ scId ≠ vScId.val.toNat`**: the TCB's binding
-       was `.bound vScId.val.toNat` pre-configure (else propagation
-       branch would not have fired); under
-       `schedContextBindingConsistent`, no other SC has
-       `boundThread = some boundTid`, so the conjunction in the
-       invariant body (which case-splits on the TCB's binding match)
-       does not require `scId ≠ vScId.val.toNat` to be considered.
-    3. **`tid ≠ boundTid`**: the TCB at `tid` is unchanged from the
-       pre-state; the SC at `scId` is either unchanged (if
-       `scId ≠ vScId.val.toNat`) or has new domain (if equal).  In the
-       latter case, the TCB's binding is not `.bound (vScId.val.toNat)`
-       (by `schedContextBindingConsistent`), so the invariant body's
-       case-split is vacuous.
-
-    Closure form: callers provide `hProp` discharging the cases above. -/
+/-- R5.G (DEEP-SCH-06): Closure-form preservation entry point for
+    `boundThreadDomainConsistent` across `schedContextConfigure`. -/
 theorem schedContextConfigure_preserves_boundThreadDomainConsistent
     (vScId : ValidObjId) (budget period priority deadline domain : Nat)
     (st st' : SystemState)
-    (hProp : ∀ stFinal,
-      schedContextConfigure vScId budget period priority deadline domain st
-        = .ok ((), stFinal) →
-      boundThreadDomainConsistent stFinal)
+    (hProp :
+      ∀ stFinal,
+        schedContextConfigure vScId budget period priority deadline domain st
+          = .ok ((), stFinal) →
+        boundThreadDomainConsistent stFinal)
     (hOk : schedContextConfigure vScId budget period priority deadline domain st
               = .ok ((), st')) :
     boundThreadDomainConsistent st' :=

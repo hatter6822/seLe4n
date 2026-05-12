@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-scheduler-phase-r5-nWFdz",
-      "commit_sha": "d8e03b9a1bc91e8e2baf7041ce1fa0e6e99e3bac",
-      "tree_sha": "c479d9501b3b58ede9f8bf0a1d6a5cb04e4e2e46",
-      "committed_at_utc": "2026-05-12T06:19:48+00:00"
+      "commit_sha": "7ffeaf45c5743c1df4c9cbc699d201150fcd849d",
+      "tree_sha": "8f13ca34967cd14604c09ebe4329a05759cc34a9",
+      "committed_at_utc": "2026-05-12T07:23:49+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5fc682559dc7c015358d44347112b67f3eb6c7ae3678c0cba3f41d56e35d4b4d"
+    "source_digest": "96a78784d686779386655622f9d102da758368d4a3547316365b7f3b3c585c3b"
   },
   "summary": {
     "module_count": 199,
-    "declaration_count": 6402
+    "declaration_count": 6406
   },
   "readme_sync": {
     "version": "0.31.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 170,
-    "production_loc": 112708,
+    "production_loc": 112844,
     "test_files": 29,
     "test_loc": 20939,
-    "proved_theorem_lemma_decls": 3273,
+    "proved_theorem_lemma_decls": 3276,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -34060,7 +34060,7 @@
     {
       "module": "SeLe4n.Kernel.Lifecycle.Invariant.SuspendPreservation",
       "path": "SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean",
-      "declaration_count": 19,
+      "declaration_count": 21,
       "declarations": [
         {
           "kind": "namespace",
@@ -34288,6 +34288,29 @@
             "getTcb",
             "none",
             "restoreToReady"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "resumeThread_preserves_blockingAcyclic",
+          "line": 402,
+          "called": [
+            "SystemState",
+            "ValidThreadId",
+            "blockingAcyclic",
+            "resumeThread"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "resumeThread_pipBoost_consistent_with_blocking_graph",
+          "line": 432,
+          "called": [
+            "SystemState",
+            "ValidThreadId",
+            "computeMaxWaiterPriority",
+            "getTcb",
+            "resumeThread"
           ]
         }
       ]
@@ -41342,7 +41365,7 @@
         {
           "kind": "theorem",
           "name": "schedContextConfigure_preserves_boundThreadDomainConsistent",
-          "line": 389,
+          "line": 391,
           "called": [
             "SystemState",
             "ValidObjId",
@@ -47558,12 +47581,12 @@
         {
           "kind": "def",
           "name": "computeMaxWaiterPriority",
-          "line": 26,
+          "line": 35,
           "called": [
             "Priority",
             "SystemState",
             "ThreadId",
-            "effectivePriority",
+            "effectiveSchedParams",
             "none",
             "toObjId",
             "waitersOf"
@@ -47572,7 +47595,7 @@
         {
           "kind": "theorem",
           "name": "computeMaxWaiterPriority_no_waiters",
-          "line": 41,
+          "line": 48,
           "called": [
             "SystemState",
             "ThreadId",
@@ -48401,7 +48424,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.RunQueue",
       "path": "SeLe4n/Kernel/Scheduler/RunQueue.lean",
-      "declaration_count": 55,
+      "declaration_count": 57,
       "declarations": [
         {
           "kind": "namespace",
@@ -48560,8 +48583,30 @@
         },
         {
           "kind": "def",
-          "name": "rotateToBack",
+          "name": "lookupPriorityOrPanic",
           "line": 240,
+          "called": [
+            "Priority",
+            "RunQueue",
+            "ThreadId",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lookupPriorityOrPanic_of_some",
+          "line": 248,
+          "called": [
+            "Priority",
+            "RunQueue",
+            "ThreadId",
+            "lookupPriorityOrPanic"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rotateToBack",
+          "line": 268,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -48569,13 +48614,14 @@
             "erase",
             "filter",
             "insert",
-            "insert_preserves_invExtK"
+            "insert_preserves_invExtK",
+            "lookupPriorityOrPanic"
           ]
         },
         {
           "kind": "def",
           "name": "toList",
-          "line": 274,
+          "line": 302,
           "called": [
             "RunQueue",
             "ThreadId"
@@ -48584,7 +48630,7 @@
         {
           "kind": "def",
           "name": "atPriority",
-          "line": 275,
+          "line": 303,
           "called": [
             "Priority",
             "RunQueue",
@@ -48594,7 +48640,7 @@
         {
           "kind": "def",
           "name": "maxPriorityBucket",
-          "line": 279,
+          "line": 307,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -48605,7 +48651,7 @@
         {
           "kind": "def",
           "name": "ofList",
-          "line": 289,
+          "line": 317,
           "called": [
             "Priority",
             "RunQueue",
@@ -48617,7 +48663,7 @@
         {
           "kind": "theorem",
           "name": "mem_iff_contains",
-          "line": 294,
+          "line": 322,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -48627,7 +48673,7 @@
         {
           "kind": "theorem",
           "name": "contains_false_of_not_mem",
-          "line": 297,
+          "line": 325,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -48637,7 +48683,7 @@
         {
           "kind": "theorem",
           "name": "not_mem_empty",
-          "line": 301,
+          "line": 329,
           "called": [
             "RHSet",
             "RHSet.contains_empty",
@@ -48652,7 +48698,7 @@
         {
           "kind": "theorem",
           "name": "mem_insert",
-          "line": 310,
+          "line": 338,
           "called": [
             "Priority",
             "RHSet.contains_insert_ne",
@@ -48666,7 +48712,7 @@
         {
           "kind": "theorem",
           "name": "mem_remove",
-          "line": 334,
+          "line": 362,
           "called": [
             "RHSet.contains_erase_ne_K",
             "RHSet.contains_erase_self",
@@ -48679,7 +48725,7 @@
         {
           "kind": "theorem",
           "name": "mem_rotateToBack",
-          "line": 354,
+          "line": 382,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -48690,7 +48736,7 @@
         {
           "kind": "theorem",
           "name": "not_mem_remove_self",
-          "line": 362,
+          "line": 390,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -48701,7 +48747,7 @@
         {
           "kind": "theorem",
           "name": "not_mem_toList_of_not_mem",
-          "line": 368,
+          "line": 396,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -48712,7 +48758,7 @@
         {
           "kind": "theorem",
           "name": "membership_implies_flat",
-          "line": 376,
+          "line": 404,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -48723,7 +48769,7 @@
         {
           "kind": "theorem",
           "name": "mem_toList_iff_mem",
-          "line": 382,
+          "line": 410,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -48735,7 +48781,7 @@
         {
           "kind": "theorem",
           "name": "toList_empty",
-          "line": 390,
+          "line": 418,
           "called": [
             "RunQueue",
             "empty",
@@ -48745,7 +48791,7 @@
         {
           "kind": "theorem",
           "name": "toList_insert_not_mem",
-          "line": 392,
+          "line": 420,
           "called": [
             "Priority",
             "RunQueue",
@@ -48759,7 +48805,7 @@
         {
           "kind": "theorem",
           "name": "filter_filter_ne_of_false",
-          "line": 403,
+          "line": 431,
           "called": [
             "filter"
           ]
@@ -48767,7 +48813,7 @@
         {
           "kind": "theorem",
           "name": "toList_filter_insert_neg",
-          "line": 416,
+          "line": 444,
           "called": [
             "Priority",
             "RunQueue",
@@ -48780,7 +48826,7 @@
         {
           "kind": "theorem",
           "name": "toList_filter_insert_neg'",
-          "line": 425,
+          "line": 453,
           "called": [
             "Priority",
             "RunQueue",
@@ -48795,7 +48841,7 @@
         {
           "kind": "theorem",
           "name": "toList_filter_remove_neg",
-          "line": 434,
+          "line": 462,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -48808,7 +48854,7 @@
         {
           "kind": "theorem",
           "name": "not_mem_remove_toList",
-          "line": 443,
+          "line": 471,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -48819,7 +48865,7 @@
         {
           "kind": "theorem",
           "name": "toList_rotateToBack_nodup",
-          "line": 452,
+          "line": 480,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -48833,7 +48879,7 @@
         {
           "kind": "theorem",
           "name": "filter_erase_of_false",
-          "line": 470,
+          "line": 498,
           "called": [
             "erase",
             "filter"
@@ -48842,7 +48888,7 @@
         {
           "kind": "theorem",
           "name": "toList_filter_rotateToBack_neg",
-          "line": 485,
+          "line": 513,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -48855,7 +48901,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 524,
+          "line": 552,
           "called": [
             "RunQueue",
             "contains"
@@ -48864,7 +48910,7 @@
         {
           "kind": "theorem",
           "name": "maxPriorityBucket_subset",
-          "line": 533,
+          "line": 561,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -48877,7 +48923,7 @@
         {
           "kind": "theorem",
           "name": "maxPriorityBucket_threadPriority",
-          "line": 545,
+          "line": 573,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -48889,7 +48935,7 @@
         {
           "kind": "theorem",
           "name": "mem_maxPriorityBucket_of_threadPriority",
-          "line": 557,
+          "line": 585,
           "called": [
             "Priority",
             "RunQueue",
@@ -48903,7 +48949,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_requires_membership",
-          "line": 593,
+          "line": 621,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -48914,19 +48960,21 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_priority_eq_threadPriority",
-          "line": 605,
+          "line": 633,
           "called": [
             "Priority",
             "RunQueue",
             "ThreadId",
             "contains",
+            "lookupPriorityOrPanic",
+            "lookupPriorityOrPanic_of_some",
             "wellFormed"
           ]
         },
         {
           "kind": "theorem",
           "name": "rotateToBack_membership",
-          "line": 618,
+          "line": 646,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -48936,7 +48984,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_threadPriority",
-          "line": 624,
+          "line": 652,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -48946,7 +48994,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_contains",
-          "line": 630,
+          "line": 658,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -48958,7 +49006,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_mem_iff",
-          "line": 635,
+          "line": 663,
           "called": [
             "RunQueue",
             "ThreadId",
@@ -48970,7 +49018,7 @@
         {
           "kind": "theorem",
           "name": "rotateToBack_preserves_wellFormed",
-          "line": 640,
+          "line": 668,
           "called": [
             "Priority",
             "RHTable",
@@ -48979,6 +49027,8 @@
             "ThreadId",
             "contains",
             "get",
+            "lookupPriorityOrPanic",
+            "lookupPriorityOrPanic_of_some",
             "rotateToBack",
             "wellFormed"
           ]
@@ -48986,7 +49036,7 @@
         {
           "kind": "theorem",
           "name": "insert_threadPriority",
-          "line": 706,
+          "line": 735,
           "called": [
             "Priority",
             "RunQueue",
@@ -48998,7 +49048,7 @@
         {
           "kind": "theorem",
           "name": "insert_preserves_wellFormed",
-          "line": 716,
+          "line": 745,
           "called": [
             "Priority",
             "RHSet.contains_insert_ne",
@@ -49016,7 +49066,7 @@
         {
           "kind": "theorem",
           "name": "remove_byPrio_to_orig",
-          "line": 807,
+          "line": 836,
           "called": [
             "Priority",
             "RHTable_get",
@@ -49030,7 +49080,7 @@
         {
           "kind": "theorem",
           "name": "remove_byPrio_from_orig",
-          "line": 828,
+          "line": 857,
           "called": [
             "Priority",
             "RHTable_get",
@@ -49045,7 +49095,7 @@
         {
           "kind": "theorem",
           "name": "remove_tid_not_in_bucket",
-          "line": 862,
+          "line": 891,
           "called": [
             "Priority",
             "RHTable_get",
@@ -49060,7 +49110,7 @@
         {
           "kind": "theorem",
           "name": "remove_preserves_wellFormed",
-          "line": 896,
+          "line": 925,
           "called": [
             "Kernel",
             "RHSet.contains_erase_ne_K",
