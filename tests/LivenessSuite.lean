@@ -178,6 +178,7 @@ open SeLe4n.Model
 -- R5.G (DEEP-SCH-06): schedContextConfigure domain propagation witnesses.
 #check @SeLe4n.Kernel.SchedContextOps.schedContextConfigure_bound_tcb_domain_eq
 #check @SeLe4n.Kernel.SchedContextOps.schedContextConfigure_domain_noop_when_eq
+#check @SeLe4n.Kernel.SchedContextOps.schedContextConfigure_preserves_boundThreadDomainConsistent
 
 -- ============================================================================
 -- AN5-E: RPi5 canonical deployment — eventuallyExits closure (DEF-AK2-K.4)

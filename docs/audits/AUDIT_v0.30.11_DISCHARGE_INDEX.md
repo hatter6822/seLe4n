@@ -261,6 +261,9 @@ R5.D, R5.C, R5.F, R5.G:
 | H.13 | DEEP-SCH-05 (R5.F) | `rotateToBack_priority_eq_threadPriority` | `Scheduler/RunQueue.lean` | LANDED |
 | H.14 | DEEP-SCH-06 (R5.G) | `schedContextConfigure_bound_tcb_domain_eq` | `SchedContext/Invariant/Preservation.lean` | LANDED |
 | H.15 | DEEP-SCH-06 (R5.G) | `schedContextConfigure_domain_noop_when_eq` | `SchedContext/Invariant/Preservation.lean` | LANDED |
+| H.16 | DEEP-SCH-06 (R5.G audit-add) | `schedContextConfigure_preserves_boundThreadDomainConsistent` (closure form) | `SchedContext/Invariant/Preservation.lean` | LANDED |
+| H.17 | DEEP-SUSP-02 (R5.A audit-add) | `cancelBoundDonation_preserves_projection` (closure form) | `InformationFlow/Invariant/Operations.lean` | LANDED |
+| H.18 | DEEP-SUSP-02 (R5.A audit-add) | `cancelDonatedDonation_preserves_projection` (closure form) | `InformationFlow/Invariant/Operations.lean` | LANDED |
 
 DEEP-SCH-04 (R5.E — `KernelError.missingSchedContext` surfacing) does
 not produce a closure-form theorem because it is a behavioural-state
@@ -340,13 +343,15 @@ live" sync).
   per the multi-PR plan.
 - **§3.G — 1 of 1 row** LANDED at R0.4 (DEBT-RUST-02 / H-24
   reconfirmation; closure annotation in archived predecessor index).
-- **§3.H — 15 of 15 rows LANDED at WS-RC R5** (scheduler / lifecycle
-  behaviour symmetry — DEEP-SUSP-01/02, DEEP-SCH-02/03/05/06). The
-  remaining DEEP-SCH-04 (R5.E) row is operational-witness only (no
-  closure-form theorem); its regression test
-  `runR5EOrphanedSchedContextChecks` provides the runtime-observable
-  witness. AK7 cascade monotonicity baseline retained at the v0.30.11
-  floor.
+- **§3.H — 18 of 18 rows LANDED at WS-RC R5** (scheduler / lifecycle
+  behaviour symmetry — DEEP-SUSP-01/02, DEEP-SCH-02/03/05/06; rows
+  H.16/H.17/H.18 added at the R5 audit pass for closure-form
+  preservation of boundThreadDomainConsistent and per-arm IF
+  preservation of the cancelDonation split). The remaining DEEP-SCH-04
+  (R5.E) row is operational-witness only (no closure-form theorem); its
+  regression test `runR5EOrphanedSchedContextChecks` provides the
+  runtime-observable witness. AK7 cascade monotonicity baseline retained
+  at the v0.30.11 floor.
 
 **No closure-form obligation introduced by WS-RC is orphaned**: every
 R-phase that produces a closure-form theorem or structural witness

@@ -1,3 +1,52 @@
+## v0.31.0 — WS-RC R5 audit pass: closure-form helpers + substantive PIP test
+
+Post-R5 audit pass adds defense-in-depth coverage that surfaced during a
+comprehensive review of the R5 implementation.  No behavioural change is
+introduced; the additions consist of closure-form preservation helpers
+(symmetry with the existing AK6-F.17 helper for the split arms), an
+explicit closure-form theorem for `boundThreadDomainConsistent`
+preservation across `schedContextConfigure`, a substantive R5.B test
+exercising the with-waiters PIP recomputation path, plus a documentation
+correction in the R5.E error-branch comment.
+
+- **R5.A audit-add**: `cancelBoundDonation_preserves_projection` and
+  `cancelDonatedDonation_preserves_projection` closure-form helpers in
+  `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean`.  The
+  retained `cancelDonation_preserves_projection` (AK6-F.17) remains the
+  dispatcher-level helper; the new pair adds per-arm helpers that
+  callers wanting to discharge IF obligations against the split flow
+  can compose with.  The AK6-F.18 `suspendThread_preserves_projection`
+  docstring is updated to reference the split-arm helpers at the G5
+  step.
+- **R5.B audit-add**: substantive regression test
+  `SR-027b sr027b_resumeRecomputesPipBoostWithWaiters` in
+  `tests/SuspendResumeSuite.lean` constructs a state with a waiter
+  (priority 99) blocked on the suspended thread's reply slot, resumes
+  the thread, and asserts that the resumed TCB's `pipBoost` is
+  recomputed to `some ⟨99⟩` (the waiter's priority).  Pre-this-test
+  R5.B was only exercised on the no-waiter path (SR-026/SR-027); the
+  new test validates the substantive PIP-recomputation arm.
+- **R5.E audit-fix**: the comment in
+  `SeLe4n/Kernel/Scheduler/Operations/Core.lean` at the new
+  `.error .missingSchedContext` site previously claimed "the timer
+  still advances on the rejection path" — this was incorrect (the
+  `.error` short-circuit returns before any state update).  Comment
+  corrected to reflect the actual fail-closed semantics: the timer is
+  NOT advanced; the error propagates to the caller without committing
+  partial budget accounting.
+- **R5.G audit-add**: closure-form preservation theorem
+  `schedContextConfigure_preserves_boundThreadDomainConsistent` in
+  `SeLe4n/Kernel/SchedContext/Invariant/Preservation.lean`.  The
+  R5.G domain-propagation block is the substantive correctness fix;
+  the closure-form theorem records the invariant-preservation
+  obligation in the proof surface for caller-site discharge, with
+  docstring case-split discharge guidance for `boundTid`,
+  `vScId`-match, and frame cases.  Surface anchor added to
+  `tests/LivenessSuite.lean`.
+- Items deferred past v1.0.0 with correctness impact: NONE.
+
+Refs: docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md §9 (Phase R5 audit pass)
+
 ## v0.31.0 — WS-RC R5: Scheduler / Lifecycle behaviour symmetry (DEEP-SUSP-01/02, DEEP-SCH-02..06)
 
 WS-RC R5 closes the seven scheduler/lifecycle audit findings whose

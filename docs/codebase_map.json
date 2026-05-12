@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-scheduler-phase-r5-nWFdz",
-      "commit_sha": "2e0572c6639d224aa23ee913bae0bf7160aca3e1",
-      "tree_sha": "d39e0258c21d4d8081b239529bebb780fc35b239",
-      "committed_at_utc": "2026-05-11T23:12:41-04:00"
+      "commit_sha": "d8e03b9a1bc91e8e2baf7041ce1fa0e6e99e3bac",
+      "tree_sha": "c479d9501b3b58ede9f8bf0a1d6a5cb04e4e2e46",
+      "committed_at_utc": "2026-05-12T06:19:48+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "98571a0ae735eaa6d37d67816ef110f1214ec5b70dc4b6c2f56edfcab0446cbd"
+    "source_digest": "5fc682559dc7c015358d44347112b67f3eb6c7ae3678c0cba3f41d56e35d4b4d"
   },
   "summary": {
     "module_count": 199,
-    "declaration_count": 6398
+    "declaration_count": 6402
   },
   "readme_sync": {
     "version": "0.31.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 170,
-    "production_loc": 112606,
+    "production_loc": 112708,
     "test_files": 29,
-    "test_loc": 20903,
-    "proved_theorem_lemma_decls": 3270,
+    "test_loc": 20939,
+    "proved_theorem_lemma_decls": 3273,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -30463,7 +30463,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Invariant.Operations",
       "path": "SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean",
-      "declaration_count": 98,
+      "declaration_count": 100,
       "declarations": [
         {
           "kind": "namespace",
@@ -32431,8 +32431,36 @@
         },
         {
           "kind": "theorem",
+          "name": "cancelBoundDonation_preserves_projection",
+          "line": 3774,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelBoundDonation",
+            "projectState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelDonatedDonation_preserves_projection",
+          "line": 3796,
+          "called": [
+            "IfObserver",
+            "LabelingContext",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelDonatedDonation",
+            "projectState"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "suspendThread_preserves_projection",
-          "line": 3786,
+          "line": 3839,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32445,7 +32473,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_frame_insert",
-          "line": 3805,
+          "line": 3858,
           "called": [
             "IfObserver",
             "KernelObject",
@@ -32463,7 +32491,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_frame_ensureRunnable",
-          "line": 3819,
+          "line": 3872,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -32478,7 +32506,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_preserves_projection",
-          "line": 3844,
+          "line": 3897,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -41108,7 +41136,7 @@
     {
       "module": "SeLe4n.Kernel.SchedContext.Invariant.Preservation",
       "path": "SeLe4n/Kernel/SchedContext/Invariant/Preservation.lean",
-      "declaration_count": 19,
+      "declaration_count": 20,
       "declarations": [
         {
           "kind": "namespace",
@@ -41309,6 +41337,17 @@
           "line": 346,
           "called": [
             "TCB"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedContextConfigure_preserves_boundThreadDomainConsistent",
+          "line": 389,
+          "called": [
+            "SystemState",
+            "ValidObjId",
+            "boundThreadDomainConsistent",
+            "schedContextConfigure"
           ]
         }
       ]
@@ -44730,7 +44769,7 @@
         {
           "kind": "def",
           "name": "scheduleEffective",
-          "line": 743,
+          "line": 745,
           "called": [
             "Kernel",
             "chooseThreadEffective",
@@ -44745,7 +44784,7 @@
         {
           "kind": "def",
           "name": "timerTickWithBudget",
-          "line": 781,
+          "line": 783,
           "called": [
             "Kernel",
             "none",
@@ -44759,7 +44798,7 @@
         {
           "kind": "def",
           "name": "handleYieldWithBudget",
-          "line": 821,
+          "line": 823,
           "called": [
             "Budget",
             "Kernel",
@@ -44778,7 +44817,7 @@
         {
           "kind": "def",
           "name": "chooseThreadInDomain",
-          "line": 868,
+          "line": 870,
           "called": [
             "Kernel",
             "ThreadId",
@@ -44788,7 +44827,7 @@
         {
           "kind": "def",
           "name": "switchDomain",
-          "line": 897,
+          "line": 899,
           "called": [
             "Kernel",
             "effectiveRunQueuePriority",
@@ -44803,7 +44842,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_index_in_bounds",
-          "line": 943,
+          "line": 945,
           "called": [
             "DomainScheduleEntry",
             "length",
@@ -44813,7 +44852,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_index_lookup_isSome",
-          "line": 955,
+          "line": 957,
           "called": [
             "DomainScheduleEntry",
             "getElem",
@@ -44825,7 +44864,7 @@
         {
           "kind": "theorem",
           "name": "switchDomain_preserves_objects_invExt",
-          "line": 965,
+          "line": 967,
           "called": [
             "SystemState",
             "invExt",
@@ -44836,7 +44875,7 @@
         {
           "kind": "def",
           "name": "scheduleDomain",
-          "line": 982,
+          "line": 984,
           "called": [
             "Kernel",
             "schedule",
@@ -44846,7 +44885,7 @@
         {
           "kind": "def",
           "name": "inferThreadState",
-          "line": 1004,
+          "line": 1006,
           "called": [
             "SystemState",
             "TCB",
@@ -44857,7 +44896,7 @@
         {
           "kind": "def",
           "name": "syncThreadStates",
-          "line": 1019,
+          "line": 1021,
           "called": [
             "SystemState",
             "fold",
@@ -44869,7 +44908,7 @@
         {
           "kind": "def",
           "name": "threadStateConsistent",
-          "line": 1031,
+          "line": 1033,
           "called": [
             "Kernel",
             "ObjId",
@@ -77200,8 +77239,8 @@
       "declarations": [
         {
           "kind": "example",
-          "name": "<anonymous:example:205>",
-          "line": 205,
+          "name": "<anonymous:example:206>",
+          "line": 206,
           "called": [
             "rpi5CanonicalConfig_wellFormed",
             "wellFormed"
@@ -77209,8 +77248,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:206>",
-          "line": 206,
+          "name": "<anonymous:example:207>",
+          "line": 207,
           "called": [
             "isRPi5CanonicalConfig",
             "rpi5CanonicalConfig",
@@ -77219,17 +77258,11 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:207>",
-          "line": 207,
+          "name": "<anonymous:example:208>",
+          "line": 208,
           "called": [
             "timerFrequencyHz"
           ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:208>",
-          "line": 208,
-          "called": []
         },
         {
           "kind": "example",
@@ -77257,8 +77290,14 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:216>",
-          "line": 216,
+          "name": "<anonymous:example:213>",
+          "line": 213,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:217>",
+          "line": 217,
           "called": [
             "isRPi5CanonicalConfig",
             "rpi5CanonicalConfig"
@@ -77266,8 +77305,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:220>",
-          "line": 220,
+          "name": "<anonymous:example:221>",
+          "line": 221,
           "called": [
             "isRPi5CanonicalConfig",
             "rpi5CanonicalConfig",
@@ -77276,8 +77315,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:226>",
-          "line": 226,
+          "name": "<anonymous:example:227>",
+          "line": 227,
           "called": [
             "DeploymentSchedulingConfig",
             "rpi5CanonicalConfig",
@@ -77287,8 +77326,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:231>",
-          "line": 231,
+          "name": "<anonymous:example:232>",
+          "line": 232,
           "called": [
             "DeploymentSchedulingConfig",
             "rpi5CanonicalConfig",
@@ -77297,8 +77336,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:236>",
-          "line": 236,
+          "name": "<anonymous:example:237>",
+          "line": 237,
           "called": [
             "DeploymentSchedulingConfig",
             "rpi5CanonicalConfig",
@@ -77307,8 +77346,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:247>",
-          "line": 247,
+          "name": "<anonymous:example:248>",
+          "line": 248,
           "called": [
             "SchedulerTrace",
             "ThreadId",
@@ -77321,8 +77360,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:264>",
-          "line": 264,
+          "name": "<anonymous:example:265>",
+          "line": 265,
           "called": [
             "SchedulerTrace",
             "ThreadId",
@@ -77338,7 +77377,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 287,
+          "line": 288,
           "called": [
             "canonical",
             "cbs_bandwidth_bounded_tight",
@@ -83077,7 +83116,7 @@
     {
       "module": "tests.SuspendResumeSuite",
       "path": "tests/SuspendResumeSuite.lean",
-      "declaration_count": 36,
+      "declaration_count": 37,
       "declarations": [
         {
           "kind": "namespace",
@@ -83543,8 +83582,24 @@
         },
         {
           "kind": "def",
+          "name": "sr027b_resumeRecomputesPipBoostWithWaiters",
+          "line": 509,
+          "called": [
+            "ObjId",
+            "ThreadId",
+            "endpointId",
+            "expect",
+            "mkState",
+            "mkTcb",
+            "resumeThread",
+            "throw",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "sr028_restoreToReadyClearsIpcFields",
-          "line": 510,
+          "line": 544,
           "called": [
             "ThreadId",
             "expect",
@@ -83558,7 +83613,7 @@
         {
           "kind": "def",
           "name": "sr029_restoreToReadyAbsentIdentity",
-          "line": 529,
+          "line": 563,
           "called": [
             "ThreadId",
             "expect",
@@ -83571,7 +83626,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 540,
+          "line": 574,
           "called": [
             "sr001_suspendReady",
             "sr002_suspendInactive",
@@ -83600,6 +83655,7 @@
             "sr025_cancelDonationUnboundIdentity",
             "sr026_resumePipBoostRecomputedNoWaiters",
             "sr027_suspendResumePipReroundtrip",
+            "sr027b_resumeRecomputesPipBoostWithWaiters",
             "sr028_restoreToReadyClearsIpcFields",
             "sr029_restoreToReadyAbsentIdentity"
           ]

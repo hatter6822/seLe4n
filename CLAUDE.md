@@ -933,20 +933,36 @@ under `docs/` and `docs/gitbook/`.
   witness theorems
   (`schedContextConfigure_bound_tcb_domain_eq`,
   `schedContextConfigure_domain_noop_when_eq`).  Tests:
-  4 + 2 + 2 new regression tests in `tests/SuspendResumeSuite.lean`
-  for R5.A, R5.B, R5.D (29 tests total); 3 new regression tests in
-  `tests/PriorityManagementSuite.lean` for R5.G (30 tests total);
-  1 new regression test in `tests/NegativeStateSuite.lean` for R5.E
+  4 + 3 + 2 new regression tests in `tests/SuspendResumeSuite.lean`
+  for R5.A, R5.B, R5.D (30 tests total — R5.B gains the substantive
+  audit-pass test `sr027b_resumeRecomputesPipBoostWithWaiters`
+  exercising the with-waiter PIP recomputation path); 3 new
+  regression tests in `tests/PriorityManagementSuite.lean` for R5.G
+  (30 tests total); 1 new regression test in
+  `tests/NegativeStateSuite.lean` for R5.E
   (`runR5EOrphanedSchedContextChecks`); 1 new discriminant pin in
   `tests/SyscallDispatchSuite.lean` (`sd001_52_missingSchedContext`,
-  variant count is now 53); 23 new surface-anchor `#check`s in
-  `tests/LivenessSuite.lean`; 1 new Rust unit test
+  variant count is now 53); 24 new surface-anchor `#check`s in
+  `tests/LivenessSuite.lean` (R5.A/B/C/D/G witness theorems +
+  closure-form preservation); 1 new Rust unit test
   (`decode_missing_sched_context_error`) and 1 new Rust integration
-  test (`missing_sched_context_decode`).  AK7 cascade monotonicity
-  baseline retained at the v0.30.11 floor (the new lookup site in
-  `resumeThread` routes through `getTcb?`, preventing
-  `raw_match_tcb` drift).  Items deferred past v1.0.0 with
-  correctness impact: NONE.
+  test (`missing_sched_context_decode`).  Audit-pass additions land
+  `cancelBoundDonation_preserves_projection` /
+  `cancelDonatedDonation_preserves_projection` closure-form helpers
+  in `InformationFlow/Invariant/Operations.lean` for IF discharge
+  symmetry with the AK6-F.17 retained dispatcher helper, and
+  `schedContextConfigure_preserves_boundThreadDomainConsistent`
+  closure-form preservation in
+  `SchedContext/Invariant/Preservation.lean` for caller-site
+  invariant discharge.  The R5.E error-branch docstring is
+  corrected (pre-audit version misclaimed "timer still advances on
+  the rejection path"; the `.error` short-circuit returns before
+  any state update, so the timer is NOT advanced and the error
+  propagates to the caller without committing the partial budget
+  accounting).  AK7 cascade monotonicity baseline retained at the
+  v0.30.11 floor (the new lookup site in `resumeThread` routes
+  through `getTcb?`, preventing `raw_match_tcb` drift).  Items
+  deferred past v1.0.0 with correctness impact: NONE.
 
   **WS-RC R4 close-out COMPLETE (v0.31.0, branch
   `claude/review-closeout-plan-HToSk`)**:  the 9-sub-PR close-out

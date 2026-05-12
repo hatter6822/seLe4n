@@ -823,8 +823,10 @@ domain-only, priority+domain joint, and no-op-when-equal scenarios.
 - `./scripts/test_smoke.sh` (Tier 0-2: + trace + negative-state) passes.
 - `./scripts/test_full.sh` (Tier 0-3: + invariant surface anchors) passes.
 - `cargo test --workspace` passes (462 tests, 0 ignored).
-- `tests/SuspendResumeSuite.lean` reports 29 tests passed (was 21
-  pre-R5; +4 R5.A + +2 R5.B + +2 R5.D).
+- `tests/SuspendResumeSuite.lean` reports 30 tests passed (was 21
+  pre-R5; +4 R5.A + +3 R5.B + +2 R5.D, with the audit-pass
+  `sr027b_resumeRecomputesPipBoostWithWaiters` adding the substantive
+  with-waiter PIP-recomputation case).
 - `tests/PriorityManagementSuite.lean` reports 30 tests passed (was 27
   pre-R5; +3 R5.G).
 - `tests/SyscallDispatchSuite.lean` reports the new variant pin
@@ -834,10 +836,53 @@ domain-only, priority+domain joint, and no-op-when-equal scenarios.
   passes — `raw_match_tcb` stays at 44 baseline; `raw_lookup_tid` at
   675 baseline (R5 routes new lookups through the typed `getTcb?`
   helper, not raw `match objects[id]?`).
-- Surface anchors: `tests/LivenessSuite.lean` registers 23 new R5
+- Surface anchors: `tests/LivenessSuite.lean` registers 24 new R5
   `#check`s (cancelDonation split, restoreToReady frame lemmas,
   effectiveSchedParams bridges, rotateToBack precondition assertions,
-  schedContextConfigure domain-propagation witnesses).
+  schedContextConfigure domain-propagation witnesses + closure-form
+  preservation `schedContextConfigure_preserves_boundThreadDomainConsistent`).
+
+#### R5 audit pass
+
+A post-landing comprehensive audit of R5 surfaced four
+defense-in-depth additions that are non-behavioural but improve the
+proof surface and test coverage:
+
+- **R5.A audit-add**: `cancelBoundDonation_preserves_projection` and
+  `cancelDonatedDonation_preserves_projection` closure-form helpers in
+  `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` provide
+  per-arm IF preservation hooks symmetric with the retained
+  `cancelDonation_preserves_projection` (AK6-F.17) dispatcher helper.
+  The AK6-F.18 `suspendThread_preserves_projection` docstring is
+  refreshed to reference the split-arm helpers at the G5 step.
+- **R5.B audit-add**: substantive regression test
+  `SR-027b sr027b_resumeRecomputesPipBoostWithWaiters` in
+  `tests/SuspendResumeSuite.lean` constructs a state with a waiter
+  (priority 99) blocked on the suspended thread's reply slot and
+  asserts the resumed TCB's `pipBoost` is recomputed to `some ⟨99⟩`
+  (the waiter's priority).  Pre-this-test R5.B was exercised only on
+  the no-waiter path (SR-026/SR-027); the new test validates the
+  substantive PIP-recomputation arm.
+- **R5.E audit-fix**: the comment in
+  `SeLe4n/Kernel/Scheduler/Operations/Core.lean` at the new
+  `.error .missingSchedContext` site previously claimed "the timer
+  still advances on the rejection path".  This was incorrect — the
+  `.error` short-circuit returns before any state update, so the
+  timer is NOT advanced; the comment is corrected to reflect the
+  actual fail-closed semantics (error propagates to the caller
+  without committing partial budget accounting).
+- **R5.G audit-add**: closure-form preservation theorem
+  `schedContextConfigure_preserves_boundThreadDomainConsistent` in
+  `SeLe4n/Kernel/SchedContext/Invariant/Preservation.lean` records
+  the invariant-preservation obligation in the proof surface, with
+  docstring case-split discharge guidance (`boundTid` /
+  `vScId`-match / frame cases).  Surface anchor added to
+  `tests/LivenessSuite.lean`.
+
+The audit pass is purely additive (no behavioural change); the
+substantive R5.B with-waiter test is the most material addition —
+it validates that the PIP recomputation is not just a no-op but
+actually inherits the correct priority from waiters.
 
 ### R6..R14 — TBD
 

@@ -721,11 +721,13 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
       -- making the rejection explicit means the diagnostic surfaces if the
       -- invariant ever drifts (e.g., a future cross-subsystem operation
       -- forgets to update the SchedContext table on retype) rather than
-      -- being absorbed.  The timer still advances on the rejection path
-      -- (the bound thread's tick was consumed even though the budget
-      -- accounting could not be applied) — the post-state's `machine`
-      -- field reflects this; the error short-circuit prevents downstream
-      -- consumers from observing the inconsistent budget state.
+      -- being absorbed.  The timer is NOT advanced on the error path: the
+      -- `.error` short-circuit returns before any state update, so the
+      -- caller (`timerTickWithBudget`) propagates the error to its caller
+      -- without committing the partial budget accounting.  This is the
+      -- correct fail-closed semantics — a kernel that cannot account for
+      -- the current thread's tick must halt the operation cleanly rather
+      -- than advance time on an inconsistent budget state.
       .error .missingSchedContext
 
 -- ============================================================================

@@ -501,6 +501,40 @@ private def sr027_suspendResumePipReroundtrip : IO Unit := do
     | .error e => throw <| IO.userError s!"resume failed: {repr e}"
   | .error e => throw <| IO.userError s!"suspend failed: {repr e}"
 
+/-- SR-027b: Substantive R5.B case — resume a thread that has waiters.
+    A waiter (priority 99) is blocked on `tid`'s reply slot.  After resume,
+    `pipBoost` should be re-derived to `some ⟨99⟩` (the waiter's priority)
+    rather than the stale `some ⟨50⟩` set pre-suspend.  This validates the
+    H3b step's substantive recomputation. -/
+private def sr027b_resumeRecomputesPipBoostWithWaiters : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let waiterTid : SeLe4n.ThreadId := ⟨2⟩
+  let endpointId : SeLe4n.ObjId := ⟨50⟩
+  -- Construct an Inactive TCB with a stale pipBoost.
+  let tidTcb := { mkTcb 1 .Inactive with pipBoost := some ⟨50⟩ }
+  -- Construct a waiter blocked on tid's reply slot at priority 99.
+  -- `waitersOf` reads `tcb.tid` (not the ObjId key), so set tcb.tid to
+  -- waiterTid and ensure its ipcState targets `tid`.
+  let waiterBaseTcb := mkTcb 2 .Ready 99
+  let waiterTcb := { waiterBaseTcb with
+    ipcState := .blockedOnReply endpointId (some tid) }
+  let st := mkState [
+    (⟨1⟩, .tcb tidTcb),
+    (⟨2⟩, .tcb waiterTcb)
+  ]
+  match resumeThread st ⟨tid, by decide⟩ with
+  | .ok st' =>
+    match st'.objects[tid.toObjId]? with
+    | some (.tcb tcb') =>
+      -- The waiter is blocked on tid at priority 99.
+      -- computeMaxWaiterPriority(st', tid) = some ⟨99⟩.
+      -- Resumed TCB's pipBoost should be some ⟨99⟩, NOT the stale some ⟨50⟩.
+      expect "pipBoost recomputed from current waiter (not stale)"
+        (tcb'.pipBoost == some ⟨99⟩)
+      expect "threadState is Ready after resume" (tcb'.threadState == .Ready)
+    | _ => throw <| IO.userError "TCB not found after resume"
+  | .error e => throw <| IO.userError s!"resume failed: {repr e}"
+
 -- ============================================================================
 -- R5.D (DEEP-SCH-03): restoreToReady shared helper
 -- ============================================================================
@@ -575,7 +609,8 @@ def main : IO Unit := do
   IO.println "--- R5.B: PIP recomputation on resume ---"
   sr026_resumePipBoostRecomputedNoWaiters
   sr027_suspendResumePipReroundtrip
+  sr027b_resumeRecomputesPipBoostWithWaiters
   IO.println "--- R5.D: restoreToReady shared helper ---"
   sr028_restoreToReadyClearsIpcFields
   sr029_restoreToReadyAbsentIdentity
-  IO.println "=== All D1 suspend/resume tests passed (29 tests) ==="
+  IO.println "=== All D1 suspend/resume tests passed (30 tests) ==="
