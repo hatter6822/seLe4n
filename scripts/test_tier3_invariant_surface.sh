@@ -1128,8 +1128,8 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.schedContextBindingConsistent
 #check @SeLe4n.Kernel.effectiveParamsMatchRunQueue
 #check @SeLe4n.Kernel.schedulerInvariantBundleExtended
--- WS-RC R5.C.1: `effectivePriority` retired (full deprecation); only
--- `effectiveSchedParams` remains as the canonical scheduling-param API.
+-- WS-RC R5.C.1: effectivePriority retired (full deprecation); only
+-- effectiveSchedParams remains as the canonical scheduling-param API.
 #check @SeLe4n.Kernel.effectiveSchedParams
 #check @SeLe4n.Kernel.hasSufficientBudget
 #check @SeLe4n.Kernel.chooseThreadEffective
