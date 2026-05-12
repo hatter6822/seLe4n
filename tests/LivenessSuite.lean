@@ -173,8 +173,8 @@ open SeLe4n.Model
 #check @SeLe4n.Kernel.Lifecycle.Suspend.ensureRunnable_blockingServer_eq
 #check @SeLe4n.Kernel.Lifecycle.Suspend.ensureRunnable_preserves_computeMaxWaiterPriority
 #check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThread_postState_shape
-#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThread_preserves_blockingAcyclic_of_shape
-#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThread_pipBoost_consistent_with_blocking_graph_of_shape
+#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThread_preserves_blockingAcyclic
+#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThread_pipBoost_consistent_with_blocking_graph
 -- Phase Q2.A deferred completion: schedule frame lemmas
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreIncomingContext_objects_eq
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreIncomingContext_objectIndex_eq

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-closeout-plan-UCrc7",
-      "commit_sha": "fb1a8955d96bf3cca95c7ece90b92023e7cfadf9",
-      "tree_sha": "881aed05cc29a549e932165c8c5badf49fade1e8",
-      "committed_at_utc": "2026-05-12T22:09:15+00:00"
+      "commit_sha": "4519ab3938a303ea2ab15494f2a29ee88a873993",
+      "tree_sha": "2cce838e83ff255ff3bef57b4ddaaa1e07fc7261",
+      "committed_at_utc": "2026-05-12T23:24:00+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "375a495d3fbb5db18983802576f0b49be25367d89282b5cf56c1cb1aa52e3c22"
+    "source_digest": "63edb714fedf7a8f679efa7743cba31a792096bd9e99e81256ff1d3e5e8bf8e3"
   },
   "summary": {
     "module_count": 199,
-    "declaration_count": 6424
+    "declaration_count": 6441
   },
   "readme_sync": {
     "version": "0.31.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 170,
-    "production_loc": 113724,
+    "production_loc": 114216,
     "test_files": 29,
-    "test_loc": 20964,
-    "proved_theorem_lemma_decls": 3293,
+    "test_loc": 21084,
+    "proved_theorem_lemma_decls": 3306,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -34060,7 +34060,7 @@
     {
       "module": "SeLe4n.Kernel.Lifecycle.Invariant.SuspendPreservation",
       "path": "SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean",
-      "declaration_count": 29,
+      "declaration_count": 39,
       "declarations": [
         {
           "kind": "namespace",
@@ -34386,9 +34386,170 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "restoreIncomingContext_objects_eq",
+          "line": 525,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "none",
+            "restoreIncomingContext",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "restoreIncomingContext_objectIndex_eq",
+          "line": 543,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "none",
+            "restoreIncomingContext",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "saveOutgoingContext_lookup_equiv",
+          "line": 578,
+          "called": [
+            "RHTable.getElem",
+            "SystemState",
+            "TCB",
+            "computeMaxWaiterPriority_lookup_equiv",
+            "get",
+            "insert",
+            "invExt",
+            "none",
+            "saveOutgoingContext",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "saveOutgoingContext_getSchedContext",
+          "line": 626,
+          "called": [
+            "RHTable.getElem",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "get",
+            "getSchedContext",
+            "insert",
+            "invExt",
+            "none",
+            "saveOutgoingContext",
+            "scId",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "saveOutgoingContext_objectIndex_eq",
+          "line": 668,
+          "called": [
+            "SystemState",
+            "none",
+            "saveOutgoingContext",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "chooseThread_state_eq",
+          "line": 690,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "chooseBestInBucket",
+            "chooseThread",
+            "get",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_lookup_equiv",
+          "line": 711,
+          "called": [
+            "SystemState",
+            "chooseThread",
+            "chooseThread_state_eq",
+            "computeMaxWaiterPriority_lookup_equiv",
+            "invExt",
+            "none",
+            "remove",
+            "restoreIncomingContext",
+            "restoreIncomingContext_objects_eq",
+            "saveOutgoingContext",
+            "saveOutgoingContext_lookup_equiv",
+            "schedule",
+            "setCurrentThread",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_getSchedContext",
+          "line": 769,
+          "called": [
+            "SchedContextId",
+            "SystemState",
+            "chooseThread",
+            "chooseThread_state_eq",
+            "getSchedContext",
+            "invExt",
+            "none",
+            "remove",
+            "restoreIncomingContext",
+            "restoreIncomingContext_objects_eq",
+            "saveOutgoingContext",
+            "saveOutgoingContext_getSchedContext",
+            "scId",
+            "schedule",
+            "setCurrentThread",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_objectIndex_eq",
+          "line": 821,
+          "called": [
+            "SystemState",
+            "chooseThread",
+            "chooseThread_state_eq",
+            "none",
+            "restoreIncomingContext_objectIndex_eq",
+            "saveOutgoingContext_objectIndex_eq",
+            "schedule",
+            "setCurrentThread",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedule_preserves_computeMaxWaiterPriority",
+          "line": 873,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "computeMaxWaiterPriority",
+            "computeMaxWaiterPriority_frame_per_field",
+            "invExt",
+            "scId",
+            "schedule",
+            "schedule_getSchedContext",
+            "schedule_lookup_equiv",
+            "schedule_objectIndex_eq"
+          ]
+        },
+        {
           "kind": "def",
           "name": "resumeThread_postState_shape",
-          "line": 557,
+          "line": 923,
           "called": [
             "SystemState",
             "TCB",
@@ -34400,7 +34561,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_preserves_blockingAcyclic",
-          "line": 570,
+          "line": 936,
           "called": [
             "SystemState",
             "ValidThreadId",
@@ -34415,7 +34576,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_pipBoost_consistent_with_blocking_graph",
-          "line": 626,
+          "line": 992,
           "called": [
             "SystemState",
             "ValidThreadId",
@@ -47733,7 +47894,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.PriorityInheritance.Compute",
       "path": "SeLe4n/Kernel/Scheduler/PriorityInheritance/Compute.lean",
-      "declaration_count": 12,
+      "declaration_count": 16,
       "declarations": [
         {
           "kind": "namespace",
@@ -47878,6 +48039,66 @@
             "effectiveSchedParams",
             "getSchedContext",
             "scId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "computeMaxWaiterPriority_lookup_equiv",
+          "line": 222,
+          "called": [
+            "ObjId",
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "waitersOf_frame_per_field",
+          "line": 236,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "computeMaxWaiterPriority_lookup_equiv",
+            "head",
+            "tail",
+            "waitersOf"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cmwpFoldBody_frame_per_field",
+          "line": 267,
+          "called": [
+            "Priority",
+            "SystemState",
+            "ThreadId",
+            "cmwpFoldBody",
+            "computeMaxWaiterPriority_lookup_equiv",
+            "effectiveSchedParams",
+            "effectiveSchedParams_frame_per_field",
+            "getSchedContext",
+            "head",
+            "none",
+            "scId",
+            "tail",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "computeMaxWaiterPriority_frame_per_field",
+          "line": 323,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "cmwpFoldBody_frame_per_field",
+            "computeMaxWaiterPriority",
+            "computeMaxWaiterPriority_eq_cmwpFoldBody",
+            "computeMaxWaiterPriority_lookup_equiv",
+            "getSchedContext",
+            "none",
+            "scId",
+            "waitersOf",
+            "waitersOf_frame_per_field"
           ]
         }
       ]
@@ -77565,8 +77786,8 @@
       "declarations": [
         {
           "kind": "example",
-          "name": "<anonymous:example:232>",
-          "line": 232,
+          "name": "<anonymous:example:243>",
+          "line": 243,
           "called": [
             "rpi5CanonicalConfig_wellFormed",
             "wellFormed"
@@ -77574,8 +77795,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:233>",
-          "line": 233,
+          "name": "<anonymous:example:244>",
+          "line": 244,
           "called": [
             "isRPi5CanonicalConfig",
             "rpi5CanonicalConfig",
@@ -77584,46 +77805,46 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:234>",
-          "line": 234,
+          "name": "<anonymous:example:245>",
+          "line": 245,
           "called": [
             "timerFrequencyHz"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:235>",
-          "line": 235,
+          "name": "<anonymous:example:246>",
+          "line": 246,
           "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:236>",
-          "line": 236,
+          "name": "<anonymous:example:247>",
+          "line": 247,
           "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:237>",
-          "line": 237,
+          "name": "<anonymous:example:248>",
+          "line": 248,
           "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:238>",
-          "line": 238,
+          "name": "<anonymous:example:249>",
+          "line": 249,
           "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:239>",
-          "line": 239,
+          "name": "<anonymous:example:250>",
+          "line": 250,
           "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:243>",
-          "line": 243,
+          "name": "<anonymous:example:254>",
+          "line": 254,
           "called": [
             "isRPi5CanonicalConfig",
             "rpi5CanonicalConfig"
@@ -77631,8 +77852,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:247>",
-          "line": 247,
+          "name": "<anonymous:example:258>",
+          "line": 258,
           "called": [
             "isRPi5CanonicalConfig",
             "rpi5CanonicalConfig",
@@ -77641,8 +77862,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:253>",
-          "line": 253,
+          "name": "<anonymous:example:264>",
+          "line": 264,
           "called": [
             "DeploymentSchedulingConfig",
             "rpi5CanonicalConfig",
@@ -77652,18 +77873,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:258>",
-          "line": 258,
-          "called": [
-            "DeploymentSchedulingConfig",
-            "rpi5CanonicalConfig",
-            "wellFormed"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:263>",
-          "line": 263,
+          "name": "<anonymous:example:269>",
+          "line": 269,
           "called": [
             "DeploymentSchedulingConfig",
             "rpi5CanonicalConfig",
@@ -77674,6 +77885,16 @@
           "kind": "example",
           "name": "<anonymous:example:274>",
           "line": 274,
+          "called": [
+            "DeploymentSchedulingConfig",
+            "rpi5CanonicalConfig",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:285>",
+          "line": 285,
           "called": [
             "SchedulerTrace",
             "ThreadId",
@@ -77686,8 +77907,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:291>",
-          "line": 291,
+          "name": "<anonymous:example:302>",
+          "line": 302,
           "called": [
             "SchedulerTrace",
             "ThreadId",
@@ -77703,7 +77924,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 314,
+          "line": 325,
           "called": [
             "canonical",
             "cbs_bandwidth_bounded_tight",
@@ -82332,7 +82553,7 @@
     {
       "module": "tests.PriorityManagementSuite",
       "path": "tests/PriorityManagementSuite.lean",
-      "declaration_count": 37,
+      "declaration_count": 38,
       "declarations": [
         {
           "kind": "namespace",
@@ -82742,8 +82963,26 @@
         },
         {
           "kind": "def",
+          "name": "pm_r5g_04_substantive_invariant_preservation",
+          "line": 573,
+          "called": [
+            "ObjId",
+            "SchedContext",
+            "SchedContextId",
+            "ThreadId",
+            "expect",
+            "mkState",
+            "mkTcb",
+            "scId",
+            "schedContextConfigure",
+            "throw",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "pm_ak2e_01_utilizationCeiling",
-          "line": 572,
+          "line": 611,
           "called": [
             "Bandwidth",
             "expect",
@@ -82753,7 +82992,7 @@
         {
           "kind": "def",
           "name": "pm_ak2e_02_utilizationExact",
-          "line": 580,
+          "line": 619,
           "called": [
             "Bandwidth",
             "expect",
@@ -82763,7 +83002,7 @@
         {
           "kind": "def",
           "name": "pm_ak2e_03_utilizationZeroPeriod",
-          "line": 585,
+          "line": 624,
           "called": [
             "Bandwidth",
             "expect",
@@ -82773,7 +83012,7 @@
         {
           "kind": "def",
           "name": "pm_ak2f_01_replenishFifoOnTie",
-          "line": 596,
+          "line": 635,
           "called": [
             "ReplenishQueue",
             "SchedContextId",
@@ -82786,7 +83025,7 @@
         {
           "kind": "def",
           "name": "pm_ak2f_02_replenishSortedAcrossTimes",
-          "line": 616,
+          "line": 655,
           "called": [
             "ReplenishQueue",
             "SchedContextId",
@@ -82798,7 +83037,7 @@
         {
           "kind": "def",
           "name": "pm_ak8d_01_hardwarePriorityCeilingRejects",
-          "line": 634,
+          "line": 673,
           "called": [
             "ThreadId",
             "expect",
@@ -82811,7 +83050,7 @@
         {
           "kind": "def",
           "name": "pm_ak8d_02_maxHardwarePriorityAccepts",
-          "line": 648,
+          "line": 687,
           "called": [
             "ThreadId",
             "expect",
@@ -82824,7 +83063,7 @@
         {
           "kind": "def",
           "name": "pm_ak8d_03_setMCPriorityHardwareCeilingRejects",
-          "line": 662,
+          "line": 701,
           "called": [
             "ThreadId",
             "expect",
@@ -82837,7 +83076,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 676,
+          "line": 715,
           "called": [
             "pm001_setPriorityWithinMCP",
             "pm002_setPriorityAtMCP",
@@ -82868,7 +83107,8 @@
             "pm_ak8d_03_setMCPriorityHardwareCeilingRejects",
             "pm_r5g_01_configurePropagatesDomain",
             "pm_r5g_02_configureDomainNoopWhenEqual",
-            "pm_r5g_03_configurePropagatesBothFields"
+            "pm_r5g_03_configurePropagatesBothFields",
+            "pm_r5g_04_substantive_invariant_preservation"
           ]
         }
       ]
@@ -83434,7 +83674,7 @@
     {
       "module": "tests.SuspendResumeSuite",
       "path": "tests/SuspendResumeSuite.lean",
-      "declaration_count": 37,
+      "declaration_count": 39,
       "declarations": [
         {
           "kind": "namespace",
@@ -83916,8 +84156,44 @@
         },
         {
           "kind": "def",
+          "name": "sr027c_resumeThreadPreservesBlockingAcyclic",
+          "line": 548,
+          "called": [
+            "ObjId",
+            "ThreadId",
+            "blockingChain",
+            "chainContains",
+            "endpointId",
+            "expect",
+            "length",
+            "mkState",
+            "mkTcb",
+            "resumeThread",
+            "throw",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "sr027d_resumeThreadPipBoostMatchesGraph",
+          "line": 584,
+          "called": [
+            "ObjId",
+            "ThreadId",
+            "computeMaxWaiterPriority",
+            "endpointId",
+            "expect",
+            "mkState",
+            "mkTcb",
+            "resumeThread",
+            "throw",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "sr028_restoreToReadyClearsIpcFields",
-          "line": 544,
+          "line": 611,
           "called": [
             "ThreadId",
             "expect",
@@ -83931,7 +84207,7 @@
         {
           "kind": "def",
           "name": "sr029_restoreToReadyAbsentIdentity",
-          "line": 563,
+          "line": 630,
           "called": [
             "ThreadId",
             "expect",
@@ -83944,7 +84220,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 574,
+          "line": 641,
           "called": [
             "sr001_suspendReady",
             "sr002_suspendInactive",
@@ -83974,6 +84250,8 @@
             "sr026_resumePipBoostRecomputedNoWaiters",
             "sr027_suspendResumePipReroundtrip",
             "sr027b_resumeRecomputesPipBoostWithWaiters",
+            "sr027c_resumeThreadPreservesBlockingAcyclic",
+            "sr027d_resumeThreadPipBoostMatchesGraph",
             "sr028_restoreToReadyClearsIpcFields",
             "sr029_restoreToReadyAbsentIdentity"
           ]
