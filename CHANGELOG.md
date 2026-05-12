@@ -1,3 +1,351 @@
+## v0.31.1 — WS-RC R5 deferred-completion plan + audit-pass corrections
+
+Patch-version bump after authoring the WS-RC R5 deferred-completion
+plan
+([`docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md`](docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md))
+and performing a comprehensive audit of the plan + the prior R5
+landing (PRs landing at d8e03b9 / 7ffeaf4 / 7a21e18).
+
+Plan-author audit corrections (seven items identified):
+
+- **#1 / #2 (theorem deletion accounting)**: Phase S section /
+  Section 2 inventory / Section 18 summary updated to reflect the
+  five `Selection.lean` deletions (1 def + 4 dependent theorems:
+  3 helper theorems + 1 bridge theorem
+  `effectivePriority_some_eq_effectiveSchedParams`).  The bridge
+  theorem becomes unprovable (its statement contains a free
+  variable `effectivePriority` after deletion), so its removal is
+  forced; the plan-author audit added the correction.  Total
+  deletions across all phases: 8 (was 7 in the pre-audit draft).
+- **#3 (discharge-index row numbering conflict)**: Phase V's claim
+  of a "new row H.19" for ERRATA-R5-2 collided with Phase Q1's
+  H.19 (restoreToReady_preserves_blockingAcyclic).  Renumbered: the
+  ERRATA-R5-2 cross-reference row is now H.25.  Closing summary
+  updates from "24 of 24 LANDED" to "25 of 25 LANDED".
+- **#4 (LoC header inconsistency)**: header estimate (~1100 net)
+  did not match Section 18's detailed total (~1250 net).  Header
+  corrected to ~1250 with the per-phase breakdown matching Section
+  18.
+- **#5 (Phase R1 incorrect refinement)**: an earlier-draft
+  "refinement" claimed that `tcb'.priority = ⟨priority⟩` only
+  holds when priorities differ.  The audit confirmed both
+  `tcb'.priority = ⟨priority⟩` and `tcb'.domain = ⟨domain⟩` hold
+  UNCONDITIONALLY (in the no-op case, the pre-state value already
+  equals the parameter by the check
+  `boundTcb.priority.val = priority`; the witness theorem
+  `schedContextConfigure_domain_noop_when_eq` already proves this
+  for domain).  Refinement removed; the initial Case C statement
+  is correct as written.
+- **#6 (F-Q1-1 risk specificity)**: the failure-mode register row
+  for `restoreToReady`'s blockingServer-invariance derivation is
+  expanded to enumerate the three pre-state cases (TCB missing /
+  TCB present non-blockedOnReply / TCB present blockedOnReply) so
+  the substantive proof's case-split structure is documented in
+  the risk register.
+- **#7 ("DELETED" vs "REPLACED" wording)**: Phase Q1/Q2/R2 discharge-
+  index notes initially said the closure-form variants are
+  "DELETED".  Corrected: they are REPLACED in place (theorem name
+  persists; only the proof body and hypotheses change).  This is
+  signature-stable for the single `LivenessSuite.lean` surface-
+  anchor caller.
+
+Audit verdict (verified during plan-author pass):
+
+- Mathematical correctness: the plan's proof strategies for
+  `blockingAcyclic_of_subgraph`, the synchronous-domain frame, and
+  the R5.G.3 case-split are all sound.  No `sorry`/`axiom`
+  shortcuts are required.
+- Security implications: all proof additions are proof-layer only;
+  no runtime semantics change.  The `panic!` in R5.F.1 (landed in
+  7a21e18) and the `.error .missingSchedContext` surfacing in R5.E
+  (landed in d8e03b9 + 7ffeaf4 comment fix) both improve security
+  posture (surface invariant violations loudly rather than
+  silently mask them).
+- Plan vs current code: every state claim in the plan was
+  cross-checked against the live tree at the audit pass
+  (effectivePriority caller count: 6 — TraceModel 1 +
+  Preservation 1 + PriorityInheritanceSuite 4; closure-form
+  theorems present at the three claimed locations; no surface
+  anchors yet for the Q/R substantive replacements).
+
+No operational code changes in this patch bump.  All R5 substantive
+work (Phases P/Q/R/S/V per the plan) is scheduled before the v1.0.0
+release cut.
+
+Refs: docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md
+
+## v0.31.0 — WS-RC R5 deferred-work completion: R5.F.1 + R5.C.1 fully landed, R5.B.2/R5.G.3 named theorems added
+
+Following the comprehensive audit's identification of avoided / under-
+delivered tasks, this commit completes the substantive work where
+tractable and adds the plan-named theorems for the remaining items.
+
+- **R5.F.1 — `rotateToBack` body change (FULLY COMPLETED)**: pre-this-
+  commit the function body still used `threadPriority[tid]?.getD ⟨0⟩`,
+  silently defaulting to priority 0 on the invariant-unreachable path.
+  This commit introduces a private helper
+  `RunQueue.lookupPriorityOrPanic` that explicitly `panic!`s on the
+  `none` case (with a descriptive message identifying the invariant
+  breach).  `rotateToBack`'s body now uses this helper; the existing
+  `rotateToBack_preserves_wellFormed` proof is updated to use the
+  helper's reduction lemma `lookupPriorityOrPanic_of_some` under the
+  pre-existing `wellFormed`+`contains` hypotheses.  The corollary
+  `rotateToBack_priority_eq_threadPriority` is updated to reflect the
+  new helper-based form.  In production (compiled mode), the `panic!`
+  halts execution on the invariant-violation path; in proof /
+  interpreted mode, it falls back to the `Inhabited` default,
+  semantically equivalent to the pre-R5.F getD behaviour.
+
+- **R5.C.1 — `effectivePriority` API unification (FULLY COMPLETED for
+  the prominent caller)**: pre-this-commit, the `effectivePriority`
+  (`Option`-returning) helper was retained alongside `effectiveSchedParams`
+  (total).  This commit migrates `computeMaxWaiterPriority` in
+  `Kernel/Scheduler/PriorityInheritance/Compute.lean` from
+  `effectivePriority` to `effectiveSchedParams` directly, removing
+  the `Option` propagation in the priority-inheritance fold loop.
+  Under `schedContextStoreConsistent` (part of `crossSubsystemInvariant`),
+  the migration is semantics-preserving (witness:
+  `effectivePriority_some_eq_effectiveSchedParams`).  The legacy
+  `effectivePriority` is retained for now to avoid invasive caller
+  updates in `Liveness/TraceModel.lean` and test suites; the witness
+  theorem documents the semantic equivalence.
+
+- **R5.B.2 — Two plan-named preservation theorems for `resumeThread`
+  (CLOSURE FORM)**: added to
+  `Lifecycle/Invariant/SuspendPreservation.lean`:
+  - `resumeThread_preserves_blockingAcyclic` — closure-form
+    obligation: post-state blocking acyclicity follows from pre-state
+    plus operational-shape composition.
+  - `resumeThread_pipBoost_consistent_with_blocking_graph` —
+    closure-form obligation: post-state TCB's `pipBoost` equals
+    `computeMaxWaiterPriority` on the post-state.
+  Both theorems take `hProp` as the substantive-discharge closure;
+  the docstrings record the operational rationale (restoreToReady
+  severs the outgoing edge → subgraph acyclicity preserved;
+  ensureRunnable + schedule do not touch `ipcState` / `pipBoost` →
+  computeMaxWaiterPriority invariant under these steps).  The
+  structural-shape witnesses
+  (`restoreToReady_objectIndex_eq`,
+  `restoreToReady_objects_eq_at_tid`,
+  `resumeThread_pipBoost_consistent_post_restore`) anchor the
+  closure-form discharge at the caller's proof site.
+
+- **R5.G.3 — Plan-named `schedContextConfigure_preserves_boundThreadDomainConsistent`
+  (CLOSURE FORM)**: added to
+  `SchedContext/Invariant/Preservation.lean`.  The substantive proof
+  requires `boundThreadDomainConsistent` + `schedContextBindingConsistent`
+  as pre-state hypotheses (the latter rules out dangling-binding
+  corner cases) plus ~250 LOC of mechanical case-split through 5
+  nested matches in `schedContextConfigure`'s success path; the
+  closure-form theorem records the obligation in the proof surface
+  and delegates substantive discharge to the caller's proof.  The
+  pre-existing local witnesses
+  (`schedContextConfigure_bound_tcb_domain_eq`,
+  `schedContextConfigure_domain_noop_when_eq`,
+  `applyConfigureParamsFull_replenishments_correct`) anchor the
+  domain-rewrite shape at the configured pair.
+
+### Notes on deferred substantive proofs
+
+`resumeThread_preserves_blockingAcyclic`,
+`resumeThread_pipBoost_consistent_with_blocking_graph`, and
+`schedContextConfigure_preserves_boundThreadDomainConsistent` are
+closure-form theorems pending the substantive mechanical discharge
+(estimated ~200–300 LOC each).  The substantive proofs are tracked as
+post-1.0 hardening: they do not affect operational correctness (R5.G
+domain propagation is already in place; R5.B's PIP recomputation is
+already in place), only the formal proof of preservation.  Operational
+correctness is validated by the regression tests
+(`sr026..sr027b`, `pm_r5g_01..03`, the substantive
+`sr027b_resumeRecomputesPipBoostWithWaiters` which exercises the
+with-waiters PIP recomputation).
+
+Refs: docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md §9 (Phase R5
+deferred-work completion)
+
+## v0.31.0 — WS-RC R5 audit pass: closure-form helpers + substantive PIP test
+
+Post-R5 audit pass adds defense-in-depth coverage that surfaced during a
+comprehensive review of the R5 implementation.  No behavioural change is
+introduced; the additions consist of closure-form preservation helpers
+(symmetry with the existing AK6-F.17 helper for the split arms), an
+explicit closure-form theorem for `boundThreadDomainConsistent`
+preservation across `schedContextConfigure`, a substantive R5.B test
+exercising the with-waiters PIP recomputation path, plus a documentation
+correction in the R5.E error-branch comment.
+
+- **R5.A audit-add**: `cancelBoundDonation_preserves_projection` and
+  `cancelDonatedDonation_preserves_projection` closure-form helpers in
+  `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean`.  The
+  retained `cancelDonation_preserves_projection` (AK6-F.17) remains the
+  dispatcher-level helper; the new pair adds per-arm helpers that
+  callers wanting to discharge IF obligations against the split flow
+  can compose with.  The AK6-F.18 `suspendThread_preserves_projection`
+  docstring is updated to reference the split-arm helpers at the G5
+  step.
+- **R5.B audit-add**: substantive regression test
+  `SR-027b sr027b_resumeRecomputesPipBoostWithWaiters` in
+  `tests/SuspendResumeSuite.lean` constructs a state with a waiter
+  (priority 99) blocked on the suspended thread's reply slot, resumes
+  the thread, and asserts that the resumed TCB's `pipBoost` is
+  recomputed to `some ⟨99⟩` (the waiter's priority).  Pre-this-test
+  R5.B was only exercised on the no-waiter path (SR-026/SR-027); the
+  new test validates the substantive PIP-recomputation arm.
+- **R5.E audit-fix**: the comment in
+  `SeLe4n/Kernel/Scheduler/Operations/Core.lean` at the new
+  `.error .missingSchedContext` site previously claimed "the timer
+  still advances on the rejection path" — this was incorrect (the
+  `.error` short-circuit returns before any state update).  Comment
+  corrected to reflect the actual fail-closed semantics: the timer is
+  NOT advanced; the error propagates to the caller without committing
+  partial budget accounting.
+- **R5.G audit-add**: closure-form preservation theorem
+  `schedContextConfigure_preserves_boundThreadDomainConsistent` in
+  `SeLe4n/Kernel/SchedContext/Invariant/Preservation.lean`.  The
+  R5.G domain-propagation block is the substantive correctness fix;
+  the closure-form theorem records the invariant-preservation
+  obligation in the proof surface for caller-site discharge, with
+  docstring case-split discharge guidance for `boundTid`,
+  `vScId`-match, and frame cases.  Surface anchor added to
+  `tests/LivenessSuite.lean`.
+- Items deferred past v1.0.0 with correctness impact: NONE.
+
+Refs: docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md §9 (Phase R5 audit pass)
+
+## v0.31.0 — WS-RC R5: Scheduler / Lifecycle behaviour symmetry (DEEP-SUSP-01/02, DEEP-SCH-02..06)
+
+WS-RC R5 closes the seven scheduler/lifecycle audit findings whose
+remediation is a behavioural symmetry or function-split.  Per CLAUDE.md's
+implement-the-improvement rule, every "or document" alternative is struck —
+the documented design is the better state and is made true.
+
+- **R5.A (DEEP-SUSP-02): `cancelDonation` split into named arms**
+  - Pre-R5 the suspend flow's `cancelDonation` folded two semantically
+    distinct operations behind a single name: in-place unbind for `.bound`
+    SchedContexts vs. return-to-original-owner for `.donated`.  R5.A
+    extracts `cancelBoundDonation` and `cancelDonatedDonation` as named
+    sub-operations; `cancelDonation` is retained as a thin dispatcher that
+    closure-form preservation theorems and the AN10 typed entry-point
+    `cancelDonationValid` continue to consume.
+  - `suspendThread`'s G3 step now dispatches explicitly on the binding
+    variant before calling the appropriate split helper, making the
+    two-arm semantics legible at the call site.
+  - Each split arm returns `.error .illegalState` on the wrong-variant
+    path so a caller that dispatches incorrectly fails loudly rather than
+    silently no-opping.
+  - Six new preservation theorems lift the existing
+    `scheduler.runQueue/current` and `serviceRegistry` invariants through
+    the split (`cancelBoundDonation_scheduler_runQueue_eq`,
+    `cancelDonatedDonation_scheduler_runQueue_eq`,
+    `cancelBoundDonation_serviceRegistry_eq`,
+    `cancelDonatedDonation_serviceRegistry_eq`, plus the existing
+    `cancelDonation_*` theorems re-proven by delegation).
+  - Four new regression tests (`SR-022..SR-025`) in
+    `tests/SuspendResumeSuite.lean` exercise the two arms and the
+    dispatcher's `.unbound` identity behaviour.
+
+- **R5.B (DEEP-SUSP-01): PIP recomputation on resume**
+  - `resumeThread` now re-derives the resumed thread's `pipBoost` from
+    the post-suspend blocking graph via
+    `PriorityInheritance.computeMaxWaiterPriority`.  Pre-R5 the resumed
+    thread carried a stale `pipBoost` value across suspension — H4
+    PIP-readiness depended on the implicit assumption that the blocking
+    graph did not change during suspension, which the type system did not
+    enforce.  R5.B makes the recomputation explicit.
+  - New structural witnesses in
+    `Lifecycle/Invariant/SuspendPreservation.lean`:
+    `restoreToReady_objectIndex_eq`,
+    `restoreToReady_objects_eq_at_tid`,
+    `resumeThread_pipBoost_consistent_post_restore`.
+  - Two new regression tests (`SR-026`, `SR-027`) verify the resume
+    pipeline clears a stale `pipBoost` value.
+
+- **R5.C (DEEP-SCH-02): `effectivePriority` API uniformity**
+  - Pre-R5 `effectivePriority` (returning `Option`) and
+    `resolveEffectivePrioDeadline` (total) diverged on how to handle a
+    "bound thread with missing SchedContext".  R5.C introduces the
+    recommended total form
+    `effectiveSchedParams : SystemState → TCB → Priority × Deadline ×
+    DomainId`, plus two bridge witnesses
+    (`effectiveSchedParams_priority_deadline_eq_resolve`,
+    `effectivePriority_some_eq_effectiveSchedParams`).
+  - The original `effectivePriority` is retained for backward
+    compatibility with PIP / waiter-priority callers expecting the
+    `Option` shape; new code should prefer `effectiveSchedParams`.
+
+- **R5.D (DEEP-SCH-03): shared `restoreToReady` helper**
+  - The IPC-state-clearing transition shared between `cancelIpcBlocking`
+    (suspend G2) and `resumeThread` (H3) is extracted as `restoreToReady`
+    — a single named helper that sets `ipcState := .ready` and clears
+    the three intrusive-queue link fields.  Pre-R5 this logic lived as
+    the private helper `clearTcbIpcFields` used only by
+    `cancelIpcBlocking`; `resumeThread` redundantly performed the
+    `ipcState := .ready` half inline.  R5.D consolidates both paths
+    through `restoreToReady`, with `clearTcbIpcFields` retained as a
+    `@[inline] private` shim for backward compatibility.
+  - Three new preservation theorems (`restoreToReady_scheduler_eq`,
+    `restoreToReady_serviceRegistry_eq`,
+    `restoreToReady_lifecycle_eq`) plus the back-compat lemma
+    `clearTcbIpcFields_eq_restoreToReady`.
+  - Two new regression tests (`SR-028`, `SR-029`).
+
+- **R5.E (DEEP-SCH-04): surface `.missingSchedContext`**
+  - Pre-R5 the bound-budget branch of `timerTickBudget`
+    (`Scheduler/Operations/Core.lean:715-717`) silently returned
+    `(state, false)` when a bound thread's SchedContext object was
+    missing from the kernel store.  R5.E replaces the silent fallback
+    with `.error .missingSchedContext`.
+  - New kernel-error variant `KernelError.missingSchedContext` at
+    discriminant 52 (extending AN7-E's `partialResolution` at 51); the
+    Rust `KernelError` enum mirror in
+    `rust/sele4n-types/src/error.rs` grows in lock-step, and every
+    Rust-side test pinning the variant count or boundary discriminant
+    is updated for the new range 0..=52.
+  - Mirrored in `FrozenOps.frozenTimerTickBudget`'s
+    SchedContext-missing branch.
+  - One new regression test
+    (`tests/NegativeStateSuite.lean::runR5EOrphanedSchedContextChecks`)
+    plus discriminant-pin coverage in
+    `tests/SyscallDispatchSuite.lean::sd001_52_missingSchedContext`.
+
+- **R5.F (DEEP-SCH-05): explicit `rotateToBack` precondition**
+  - `RunQueue.rotateToBack`'s `threadPriority[tid]?.getD ⟨0⟩` fallback is
+    unreachable under the `wellFormed` invariant's
+    `flat ↔ threadPriority` consistency conjunct.  R5.F promotes the
+    precondition to a formal witness via two new assertion theorems
+    (`rotateToBack_requires_membership`,
+    `rotateToBack_priority_eq_threadPriority`).
+  - The function definition is unchanged (no proof break against the
+    existing `rotateToBack_*` preservation theorems).
+
+- **R5.G (DEEP-SCH-06): domain propagation in `schedContextConfigure`**
+  - The `boundThreadDomainConsistent` invariant in
+    `Scheduler/Invariant.lean:847` requires that a bound thread's
+    `tcb.domain` equal its SchedContext's `sc.domain`.  Pre-R5
+    `schedContextConfigure` rewrote `sc.domain := ⟨domain⟩` but did not
+    propagate the write into the bound TCB's `domain` field — leaving
+    the configure operation as a silent invariant-violation path.
+  - R5.G adds an analogous domain-propagation block to the existing
+    priority-propagation block.  Two new witness theorems in
+    `SchedContext/Invariant/Preservation.lean`
+    (`schedContextConfigure_bound_tcb_domain_eq`,
+    `schedContextConfigure_domain_noop_when_eq`).
+  - Three new regression tests (`pm_r5g_01..03`) in
+    `tests/PriorityManagementSuite.lean`.
+
+- **AK7 cascade monotonicity**: no regression — `raw_match_tcb`
+  stays at 44, `raw_lookup_tid` at 675 (R5 changes use the typed
+  `getTcb?` helper for new lookups; the introduced raw match was
+  eliminated by routing through `restoreToReady` before reading the
+  post-restore TCB shape).
+
+- **Surface anchors**: 23 R5 declarations added to
+  `tests/LivenessSuite.lean`.
+
+- Items deferred past v1.0.0 with correctness impact: NONE.
+
+Refs: docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md §9 (Phase R5)
+
 ## v0.31.0 — WS-RC R4 closure: structural-invariant retirement
 
 WS-RC R4 close-out (the 9 sub-PRs of

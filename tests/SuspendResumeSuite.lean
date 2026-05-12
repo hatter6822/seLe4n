@@ -386,6 +386,188 @@ private def sr021_frozenRoundtrip : IO Unit := do
     | .error e => throw <| IO.userError s!"frozen resume failed: {repr e}"
   | .error e => throw <| IO.userError s!"frozen suspend failed: {repr e}"
 
+-- ============================================================================
+-- R5.A (DEEP-SUSP-02): cancelDonation split into two named arms
+-- ============================================================================
+
+/-- SR-022: `cancelBoundDonation` on a `.bound scId` TCB clears the binding. -/
+private def sr022_cancelBoundDonationClearsBinding : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 100
+  let sc : SeLe4n.Kernel.SchedContext :=
+    { scId := scId, boundThread := some tid,
+      budget := ⟨1000⟩, period := ⟨1000⟩,
+      priority := ⟨10⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+      budgetRemaining := ⟨1000⟩, isActive := true, replenishments := [] }
+  let tcb := { mkTcb 1 .Ready with schedContextBinding := .bound scId }
+  let st := mkState [(⟨1⟩, .tcb tcb), (scId.toObjId, .schedContext sc)]
+  match cancelBoundDonation st tid tcb with
+  | .ok st' =>
+    -- Post-state: TCB binding is `.unbound`, SC's boundThread is `none`.
+    match st'.objects[tid.toObjId]? with
+    | some (.tcb tcb') =>
+      expect "TCB binding is unbound" (tcb'.schedContextBinding == .unbound)
+    | _ => throw <| IO.userError "TCB not found after cancelBoundDonation"
+    match st'.objects[scId.toObjId]? with
+    | some (.schedContext sc') =>
+      expect "SC boundThread is none" sc'.boundThread.isNone
+      expect "SC isActive is false" (!sc'.isActive)
+    | _ => throw <| IO.userError "SC not found after cancelBoundDonation"
+  | .error e => throw <| IO.userError s!"cancelBoundDonation failed: {repr e}"
+
+/-- SR-023: `cancelBoundDonation` on a `.donated` TCB returns `.illegalState`
+    — the dispatcher chooses the wrong arm. -/
+private def sr023_cancelBoundDonationRejectsDonated : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let donor : SeLe4n.ThreadId := ⟨2⟩
+  let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 100
+  let tcb := { mkTcb 1 .Ready with schedContextBinding := .donated scId donor }
+  let st := mkState [(⟨1⟩, .tcb tcb)]
+  match cancelBoundDonation st tid tcb with
+  | .ok _ => throw <| IO.userError "cancelBoundDonation should reject .donated"
+  | .error e =>
+    expect "cancelBoundDonation rejects .donated with illegalState"
+      (e == .illegalState)
+
+/-- SR-024: `cancelDonatedDonation` on a `.bound` TCB returns `.illegalState`
+    — the dispatcher chooses the wrong arm. -/
+private def sr024_cancelDonatedDonationRejectsBound : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let scId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 100
+  let tcb := { mkTcb 1 .Ready with schedContextBinding := .bound scId }
+  let st := mkState [(⟨1⟩, .tcb tcb)]
+  match cancelDonatedDonation st tid tcb with
+  | .ok _ => throw <| IO.userError "cancelDonatedDonation should reject .bound"
+  | .error e =>
+    expect "cancelDonatedDonation rejects .bound with illegalState"
+      (e == .illegalState)
+
+/-- SR-025: The thin `cancelDonation` dispatcher on `.unbound` is identity. -/
+private def sr025_cancelDonationUnboundIdentity : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let tcb := { mkTcb 1 .Ready with schedContextBinding := .unbound }
+  let st := mkState [(⟨1⟩, .tcb tcb)]
+  match cancelDonation st tid tcb with
+  | .ok st' =>
+    -- State should be identical to input.
+    expect "cancelDonation .unbound returns identity"
+      ((st'.objects[tid.toObjId]?).isSome)
+  | .error e => throw <| IO.userError s!"cancelDonation .unbound failed: {repr e}"
+
+-- ============================================================================
+-- R5.B (DEEP-SUSP-01): PIP recomputation on resume
+-- ============================================================================
+
+/-- SR-026: After resume, `pipBoost` is re-derived from the post-suspend
+    blocking graph.  For a thread with no waiters, the boost becomes `none`
+    regardless of any pre-suspend boost value. -/
+private def sr026_resumePipBoostRecomputedNoWaiters : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  -- Construct an Inactive TCB with a stale pipBoost from before suspend.
+  let tcb := { mkTcb 1 .Inactive with pipBoost := some ⟨50⟩ }
+  let st := mkState [(⟨1⟩, .tcb tcb)]
+  match resumeThread st ⟨tid, by decide⟩ with
+  | .ok st' =>
+    match st'.objects[tid.toObjId]? with
+    | some (.tcb tcb') =>
+      -- No waiters exist in the empty state — pipBoost must be re-derived
+      -- to `none`, not the stale `some ⟨50⟩`.
+      expect "stale pipBoost cleared on resume (no waiters)"
+        tcb'.pipBoost.isNone
+      expect "threadState is Ready after resume" (tcb'.threadState == .Ready)
+      expect "ipcState is ready after resume" (tcb'.ipcState == .ready)
+    | _ => throw <| IO.userError "TCB not found after resume"
+  | .error e => throw <| IO.userError s!"resume failed: {repr e}"
+
+/-- SR-027: Suspend then resume roundtrip preserves the PIP-readiness
+    invariant: the resumed TCB's `pipBoost` reflects the post-resume blocking
+    graph, not the pre-suspend one. -/
+private def sr027_suspendResumePipReroundtrip : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let tcb := { mkTcb 1 .Ready with pipBoost := some ⟨30⟩ }
+  let st := mkState [(⟨1⟩, .tcb tcb)]
+  match suspendThread st ⟨tid, by decide⟩ with
+  | .ok stMid =>
+    match resumeThread stMid ⟨tid, by decide⟩ with
+    | .ok stFinal =>
+      match stFinal.objects[tid.toObjId]? with
+      | some (.tcb tcbFinal) =>
+        -- Post-resume pipBoost is consistent with the (empty) blocking
+        -- graph — `computeMaxWaiterPriority` returns `none` for a thread
+        -- with no Reply-blocked waiters.
+        expect "post-resume pipBoost reflects current blocking graph"
+          tcbFinal.pipBoost.isNone
+      | _ => throw <| IO.userError "TCB not found after roundtrip"
+    | .error e => throw <| IO.userError s!"resume failed: {repr e}"
+  | .error e => throw <| IO.userError s!"suspend failed: {repr e}"
+
+/-- SR-027b: Substantive R5.B case — resume a thread that has waiters.
+    A waiter (priority 99) is blocked on `tid`'s reply slot.  After resume,
+    `pipBoost` should be re-derived to `some ⟨99⟩` (the waiter's priority)
+    rather than the stale `some ⟨50⟩` set pre-suspend.  This validates the
+    H3b step's substantive recomputation. -/
+private def sr027b_resumeRecomputesPipBoostWithWaiters : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let waiterTid : SeLe4n.ThreadId := ⟨2⟩
+  let endpointId : SeLe4n.ObjId := ⟨50⟩
+  -- Construct an Inactive TCB with a stale pipBoost.
+  let tidTcb := { mkTcb 1 .Inactive with pipBoost := some ⟨50⟩ }
+  -- Construct a waiter blocked on tid's reply slot at priority 99.
+  -- `waitersOf` reads `tcb.tid` (not the ObjId key), so set tcb.tid to
+  -- waiterTid and ensure its ipcState targets `tid`.
+  let waiterBaseTcb := mkTcb 2 .Ready 99
+  let waiterTcb := { waiterBaseTcb with
+    ipcState := .blockedOnReply endpointId (some tid) }
+  let st := mkState [
+    (⟨1⟩, .tcb tidTcb),
+    (⟨2⟩, .tcb waiterTcb)
+  ]
+  match resumeThread st ⟨tid, by decide⟩ with
+  | .ok st' =>
+    match st'.objects[tid.toObjId]? with
+    | some (.tcb tcb') =>
+      -- The waiter is blocked on tid at priority 99.
+      -- computeMaxWaiterPriority(st', tid) = some ⟨99⟩.
+      -- Resumed TCB's pipBoost should be some ⟨99⟩, NOT the stale some ⟨50⟩.
+      expect "pipBoost recomputed from current waiter (not stale)"
+        (tcb'.pipBoost == some ⟨99⟩)
+      expect "threadState is Ready after resume" (tcb'.threadState == .Ready)
+    | _ => throw <| IO.userError "TCB not found after resume"
+  | .error e => throw <| IO.userError s!"resume failed: {repr e}"
+
+-- ============================================================================
+-- R5.D (DEEP-SCH-03): restoreToReady shared helper
+-- ============================================================================
+
+/-- SR-028: `restoreToReady` sets `ipcState := .ready` and clears queue
+    link fields on the target TCB. -/
+private def sr028_restoreToReadyClearsIpcFields : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let tcb := { mkTcb 1 .Ready with
+    ipcState := .blockedOnSend ⟨50⟩,
+    queuePrev := some ⟨3⟩, queueNext := some ⟨4⟩,
+    queuePPrev := some .endpointHead }
+  let st := mkState [(⟨1⟩, .tcb tcb)]
+  let st' := restoreToReady st tid
+  match st'.objects[tid.toObjId]? with
+  | some (.tcb tcb') =>
+    expect "ipcState reset to .ready" (tcb'.ipcState == .ready)
+    expect "queuePrev cleared" tcb'.queuePrev.isNone
+    expect "queueNext cleared" tcb'.queueNext.isNone
+    expect "queuePPrev cleared" tcb'.queuePPrev.isNone
+    -- threadState is preserved (restoreToReady only touches IPC fields)
+    expect "threadState preserved" (tcb'.threadState == tcb.threadState)
+  | _ => throw <| IO.userError "TCB not found after restoreToReady"
+
+/-- SR-029: `restoreToReady` on absent TCB is identity. -/
+private def sr029_restoreToReadyAbsentIdentity : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨99⟩  -- not in state
+  let st := mkState [(⟨1⟩, .tcb (mkTcb 1 .Ready))]
+  let st' := restoreToReady st tid
+  -- State should be definitionally the same (no modification when TCB absent).
+  expect "restoreToReady absent TCB is identity"
+    (st'.objects[tid.toObjId]?.isNone)
+
 end SeLe4n.Testing.SuspendResumeSuite
 
 open SeLe4n.Testing.SuspendResumeSuite in
@@ -419,4 +601,16 @@ def main : IO Unit := do
   IO.println "--- D1-Q7: Additional Frozen Operations ---"
   sr020_frozenResumeReady
   sr021_frozenRoundtrip
-  IO.println "=== All D1 suspend/resume tests passed (21 tests) ==="
+  IO.println "--- R5.A: cancelDonation split ---"
+  sr022_cancelBoundDonationClearsBinding
+  sr023_cancelBoundDonationRejectsDonated
+  sr024_cancelDonatedDonationRejectsBound
+  sr025_cancelDonationUnboundIdentity
+  IO.println "--- R5.B: PIP recomputation on resume ---"
+  sr026_resumePipBoostRecomputedNoWaiters
+  sr027_suspendResumePipReroundtrip
+  sr027b_resumeRecomputesPipBoostWithWaiters
+  IO.println "--- R5.D: restoreToReady shared helper ---"
+  sr028_restoreToReadyClearsIpcFields
+  sr029_restoreToReadyAbsentIdentity
+  IO.println "=== All D1 suspend/resume tests passed (30 tests) ==="

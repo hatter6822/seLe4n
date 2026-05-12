@@ -472,6 +472,96 @@ private def pm_ak2b_03_configureRebucketsBoundThread : IO Unit := do
     throw <| IO.userError s!"schedContextConfigure failed: {repr e}"
 
 -- =============================================================================
+-- R5.G (DEEP-SCH-06): Domain propagation in schedContextConfigure
+-- =============================================================================
+
+/-- R5.G-01: `schedContextConfigure` propagates a new domain into the bound
+    TCB.  Pre-R5 the `boundThreadDomainConsistent` invariant could drift on
+    every reconfigure that changed `sc.domain` without touching `tcb.domain`. -/
+private def pm_r5g_01_configurePropagatesDomain : IO Unit := do
+  let targetTid : SeLe4n.ThreadId := ⟨42⟩
+  let scObjId : SeLe4n.ObjId := ⟨100⟩
+  let scId : SeLe4n.SchedContextId := ⟨100⟩
+  -- Pre-state: sc.domain = 0, tcb.domain = 0 (consistent at bind time).
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
+    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := ⟨100⟩, boundThread := some targetTid
+  }
+  let st := mkState [
+    (targetTid.toObjId, .tcb (mkTcb 42 (prio := 50) (mcp := 200)
+      (binding := .bound scId))),
+    (scObjId, .schedContext sc)
+  ]
+  -- Reconfigure to domain = 3 (priority unchanged at 50).
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 50 0 3 st with
+  | .ok ((), st') =>
+    match st'.objects[targetTid.toObjId]? with
+    | some (.tcb tcb) =>
+      expect "tcb.domain propagated from new sc.domain (0 -> 3)"
+        (tcb.domain == ⟨3⟩)
+    | _ => throw <| IO.userError "bound TCB not found"
+    match st'.objects[scObjId]? with
+    | some (.schedContext sc') =>
+      expect "sc.domain updated to 3" (sc'.domain == ⟨3⟩)
+    | _ => throw <| IO.userError "SC not found"
+  | .error e =>
+    throw <| IO.userError s!"schedContextConfigure failed: {repr e}"
+
+/-- R5.G-02: When the new domain matches the existing TCB domain, the
+    propagation block is a no-op (state otherwise unchanged). -/
+private def pm_r5g_02_configureDomainNoopWhenEqual : IO Unit := do
+  let targetTid : SeLe4n.ThreadId := ⟨42⟩
+  let scObjId : SeLe4n.ObjId := ⟨100⟩
+  let scId : SeLe4n.SchedContextId := ⟨100⟩
+  -- Pre-state: both at domain = 5.
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
+    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨5⟩,
+    budgetRemaining := ⟨100⟩, boundThread := some targetTid
+  }
+  let st := mkState [
+    (targetTid.toObjId, .tcb { mkTcb 42 (prio := 50) (mcp := 200)
+      (binding := .bound scId) with domain := ⟨5⟩ }),
+    (scObjId, .schedContext sc)
+  ]
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 50 0 5 st with
+  | .ok ((), st') =>
+    match st'.objects[targetTid.toObjId]? with
+    | some (.tcb tcb) =>
+      expect "tcb.domain preserved at 5 (no-op propagation)"
+        (tcb.domain == ⟨5⟩)
+    | _ => throw <| IO.userError "bound TCB not found"
+  | .error e =>
+    throw <| IO.userError s!"schedContextConfigure failed: {repr e}"
+
+/-- R5.G-03: Joint priority+domain reconfigure propagates both fields. -/
+private def pm_r5g_03_configurePropagatesBothFields : IO Unit := do
+  let targetTid : SeLe4n.ThreadId := ⟨42⟩
+  let scObjId : SeLe4n.ObjId := ⟨100⟩
+  let scId : SeLe4n.SchedContextId := ⟨100⟩
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
+    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := ⟨100⟩, boundThread := some targetTid
+  }
+  let st := mkState [
+    (targetTid.toObjId, .tcb (mkTcb 42 (prio := 50) (mcp := 200)
+      (binding := .bound scId))),
+    (scObjId, .schedContext sc)
+  ]
+  -- Reconfigure to priority = 123, domain = 7.
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 123 0 7 st with
+  | .ok ((), st') =>
+    match st'.objects[targetTid.toObjId]? with
+    | some (.tcb tcb) =>
+      expect "tcb.priority updated to 123" (tcb.priority == ⟨123⟩)
+      expect "tcb.domain updated to 7" (tcb.domain == ⟨7⟩)
+    | _ => throw <| IO.userError "bound TCB not found"
+  | .error e =>
+    throw <| IO.userError s!"schedContextConfigure failed: {repr e}"
+
+-- =============================================================================
 -- AK2-E: CBS admission ceiling-round regression
 -- =============================================================================
 
@@ -623,4 +713,8 @@ def main : IO Unit := do
   pm_ak8d_01_hardwarePriorityCeilingRejects
   pm_ak8d_02_maxHardwarePriorityAccepts
   pm_ak8d_03_setMCPriorityHardwareCeilingRejects
-  IO.println "=== All D2 priority management tests passed (27 tests) ==="
+  IO.println "--- R5.G: schedContextConfigure domain propagation ---"
+  pm_r5g_01_configurePropagatesDomain
+  pm_r5g_02_configureDomainNoopWhenEqual
+  pm_r5g_03_configurePropagatesBothFields
+  IO.println "=== All D2 priority management tests passed (30 tests) ==="

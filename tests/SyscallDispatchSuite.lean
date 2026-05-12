@@ -140,6 +140,7 @@ private def sd001_kernelErrorDiscriminants : IO Unit := do
   pin "sd001_49_invalidObjectType"            .invalidObjectType            49
   pin "sd001_50_nullCapability"               .nullCapability               50
   pin "sd001_51_partialResolution"            .partialResolution            51
+  pin "sd001_52_missingSchedContext"          .missingSchedContext          52
 
 /-- SD-002: `encodeError` sets bit 63 for every variant AND embeds
     the discriminant in the low 32 bits.
@@ -167,11 +168,12 @@ private def sd002_encodeError : IO Unit := do
     , .mmioUnaligned, .invalidSyscallArgument, .ipcTimeout
     , .alignmentError, .vmFault, .userException, .hardwareFault
     , .notSupported, .invalidIrq, .invalidObjectType
-    , .nullCapability, .partialResolution ]
-  -- Pin variant count: matches the Lean inductive (52 variants 0..51).
-  expect "sd002_variant_count_is_52"
-    (variants.length == 52)
-    s!"variants list should have 52 entries, got {variants.length}"
+    , .nullCapability, .partialResolution, .missingSchedContext ]
+  -- Pin variant count: matches the Lean inductive (53 variants 0..52).
+  -- R5.E (DEEP-SCH-04): added `.missingSchedContext` at discriminant 52.
+  expect "sd002_variant_count_is_53"
+    (variants.length == 53)
+    s!"variants list should have 53 entries, got {variants.length}"
   for v in variants do
     let encoded := encodeError v
     -- Phase A: bit 63 is set.

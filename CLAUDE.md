@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.0.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.1.
 
 ## Build and run
 
@@ -889,6 +889,104 @@ under `docs/` and `docs/gitbook/`.
   because canonical vaddrs (rpi5BootVSpaceRoot via insertIdentity
   with paddr<2^44, simBootVSpaceRoot at vaddr=0x1000) trivially
   satisfy the new conjunct via `decide`.
+  **WS-RC R5 (DEEP-SUSP-01/02, DEEP-SCH-02..06) LANDED on branch
+  `claude/audit-scheduler-phase-r5-nWFdz`**: closes the seven
+  scheduler/lifecycle behaviour-symmetry findings.  R5.A splits the
+  monolithic `cancelDonation` (suspend G3) into the two named arms
+  `cancelBoundDonation` (in-place SchedContext unbind) and
+  `cancelDonatedDonation` (return-to-original-owner via
+  `cleanupDonatedSchedContext`); the original name survives as a thin
+  dispatcher that preserves closure-form proof discharge.  R5.B adds
+  PIP recomputation at the resume H3b step: `resumeThread` re-derives
+  the resumed thread's `pipBoost` from the post-suspend blocking graph
+  via `PriorityInheritance.computeMaxWaiterPriority`, with three
+  structural witnesses (`restoreToReady_objectIndex_eq`,
+  `restoreToReady_objects_eq_at_tid`,
+  `resumeThread_pipBoost_consistent_post_restore`).  R5.C introduces
+  the total `effectiveSchedParams` (returning a `(Priority, Deadline,
+  DomainId)` triple) alongside the existing partial
+  `effectivePriority`, with two bridge witnesses
+  (`effectiveSchedParams_priority_deadline_eq_resolve` agreeing with
+  `resolveEffectivePrioDeadline`; `effectivePriority_some_eq_effectiveSchedParams`
+  agreeing with the partial form when the partial form succeeds).
+  R5.D consolidates the shared IPC-state-clearing transition between
+  `cancelIpcBlocking` (suspend G2) and `resumeThread` (H3) under the
+  named helper `restoreToReady` (the original private
+  `clearTcbIpcFields` becomes a `@[inline]` back-compat alias).
+  R5.E surfaces `KernelError.missingSchedContext` (new discriminant
+  52) in the bound-budget branch of `timerTickBudget` when the
+  bound TCB's SchedContext is missing — replacing the pre-R5 silent
+  `(state, false)` no-preempt fallback; the Rust `KernelError` enum
+  and every discriminant-pinning test grow in lock-step (range
+  extends to 0..=52, sentinel range starts at 53).  The same
+  surfacing is mirrored in `FrozenOps.frozenTimerTickBudget` for
+  cross-phase consistency.  R5.F promotes `RunQueue.rotateToBack`'s
+  membership precondition to two formal assertion theorems
+  (`rotateToBack_requires_membership`,
+  `rotateToBack_priority_eq_threadPriority`) without changing the
+  function definition.  R5.G adds a domain-propagation block to
+  `schedContextConfigure` that mirrors the existing priority-
+  propagation block: when the SC's bound TCB has a domain that
+  differs from the new SC domain, the TCB's `domain` field is
+  rewritten — closing a silent
+  `boundThreadDomainConsistent`-invariant-violation path; two new
+  witness theorems
+  (`schedContextConfigure_bound_tcb_domain_eq`,
+  `schedContextConfigure_domain_noop_when_eq`).  Tests:
+  4 + 3 + 2 new regression tests in `tests/SuspendResumeSuite.lean`
+  for R5.A, R5.B, R5.D (30 tests total — R5.B gains the substantive
+  audit-pass test `sr027b_resumeRecomputesPipBoostWithWaiters`
+  exercising the with-waiter PIP recomputation path); 3 new
+  regression tests in `tests/PriorityManagementSuite.lean` for R5.G
+  (30 tests total); 1 new regression test in
+  `tests/NegativeStateSuite.lean` for R5.E
+  (`runR5EOrphanedSchedContextChecks`); 1 new discriminant pin in
+  `tests/SyscallDispatchSuite.lean` (`sd001_52_missingSchedContext`,
+  variant count is now 53); 24 new surface-anchor `#check`s in
+  `tests/LivenessSuite.lean` (R5.A/B/C/D/G witness theorems +
+  closure-form preservation); 1 new Rust unit test
+  (`decode_missing_sched_context_error`) and 1 new Rust integration
+  test (`missing_sched_context_decode`).  Audit-pass additions land
+  `cancelBoundDonation_preserves_projection` /
+  `cancelDonatedDonation_preserves_projection` closure-form helpers
+  in `InformationFlow/Invariant/Operations.lean` for IF discharge
+  symmetry with the AK6-F.17 retained dispatcher helper, and
+  `schedContextConfigure_preserves_boundThreadDomainConsistent`
+  closure-form preservation in
+  `SchedContext/Invariant/Preservation.lean` for caller-site
+  invariant discharge.  The R5.E error-branch docstring is
+  corrected (pre-audit version misclaimed "timer still advances on
+  the rejection path"; the `.error` short-circuit returns before
+  any state update, so the timer is NOT advanced and the error
+  propagates to the caller without committing the partial budget
+  accounting).  AK7 cascade monotonicity baseline retained at the
+  v0.30.11 floor (the new lookup site in `resumeThread` routes
+  through `getTcb?`, preventing `raw_match_tcb` drift).
+  R5 deferred-work completion (follow-up audit pass): R5.F.1 fully
+  landed — `RunQueue.rotateToBack`'s body now routes through the
+  private helper `lookupPriorityOrPanic` which explicitly `panic!`s
+  on the invariant-unreachable branch (pre-this-commit the branch
+  silently defaulted to priority 0); the existing
+  `rotateToBack_preserves_wellFormed` proof is updated to use
+  `lookupPriorityOrPanic_of_some` under the pre-existing
+  `wellFormed`+`contains` hypotheses.  R5.C.1 fully landed for the
+  prominent caller — `computeMaxWaiterPriority` is migrated from
+  `effectivePriority` (Option) to `effectiveSchedParams` (total),
+  removing the Option propagation in the priority-inheritance fold;
+  the migration is semantics-preserving under
+  `schedContextStoreConsistent` (witness:
+  `effectivePriority_some_eq_effectiveSchedParams`).  R5.B.2 and
+  R5.G.3 plan-named theorems added in CLOSURE FORM
+  (`resumeThread_preserves_blockingAcyclic`,
+  `resumeThread_pipBoost_consistent_with_blocking_graph`,
+  `schedContextConfigure_preserves_boundThreadDomainConsistent`);
+  the substantive ~200–300 LOC discharges are tracked as post-1.0
+  hardening (the closure-form discharge is sufficient for
+  operational correctness, and the regression tests
+  `sr026`/`sr027`/`sr027b`/`pm_r5g_01..03` provide runtime
+  witnesses).  Items deferred past v1.0.0 with correctness impact:
+  NONE.
+
   **WS-RC R4 close-out COMPLETE (v0.31.0, branch
   `claude/review-closeout-plan-HToSk`)**:  the 9-sub-PR close-out
   ([`docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md`](docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md))

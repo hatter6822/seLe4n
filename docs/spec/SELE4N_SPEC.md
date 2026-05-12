@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.31.0` (`lakefile.toml`) |
+| **Package version** | `0.31.1` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 110,464 across 168 Lean files |
 | **Test LoC** | 19,695 across 29 Lean test suites |
@@ -1378,6 +1378,74 @@ canonical
 §3 (sections D/E/F).  Companion foundation-readiness markers:
 `SeLe4n.Kernel.uniqueSlotMap_module_ready` and
 `SeLe4n.Kernel.noDupList_module_ready`.
+
+### 8.10.8 Scheduler / Lifecycle Behaviour Symmetry (WS-RC R5)
+
+WS-RC R5 closes the seven scheduler/lifecycle audit findings whose
+remediation is a behavioural symmetry or function-split. The phase
+implements seven coherent slices (R5.A..R5.G) and lands them on the
+v0.31.0 release path; see
+[`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)
+§9 for the canonical task breakdown and the closure record in
+[`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) `WS-RC R5`
+for the per-sub-task narrative.
+
+* **R5.A (DEEP-SUSP-02) — `cancelDonation` split**: the suspend G3
+  step's `cancelDonation` is split into `cancelBoundDonation` (in-place
+  unbind) and `cancelDonatedDonation` (return-to-original-owner via
+  `cleanupDonatedSchedContext`); the original name survives as a thin
+  dispatcher.  Source: `SeLe4n/Kernel/Lifecycle/Suspend.lean`.  Six
+  new preservation theorems in
+  `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean`.
+* **R5.B (DEEP-SUSP-01) — PIP recomputation on resume**: `resumeThread`
+  re-derives `pipBoost` from the post-suspend blocking graph via
+  `PriorityInheritance.computeMaxWaiterPriority`.  Three structural
+  witnesses (`restoreToReady_objectIndex_eq`,
+  `restoreToReady_objects_eq_at_tid`,
+  `resumeThread_pipBoost_consistent_post_restore`) in
+  `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean`.
+* **R5.C (DEEP-SCH-02) — `effectivePriority` API uniformity**: new
+  total form `effectiveSchedParams` returning
+  `Priority × Deadline × DomainId`; two bridge witnesses
+  (`effectiveSchedParams_priority_deadline_eq_resolve` and
+  `effectivePriority_some_eq_effectiveSchedParams`) in
+  `SeLe4n/Kernel/Scheduler/Operations/Selection.lean`.
+* **R5.D (DEEP-SCH-03) — shared `restoreToReady` helper**: the
+  IPC-state-clearing transition shared between `cancelIpcBlocking`
+  (suspend G2) and `resumeThread` (H3) extracted as `restoreToReady`
+  (`SeLe4n/Kernel/Lifecycle/Suspend.lean`).  The private
+  `clearTcbIpcFields` retained as a `@[inline]` back-compat shim with
+  `clearTcbIpcFields_eq_restoreToReady` bridging the two names for
+  proof discharge.
+* **R5.E (DEEP-SCH-04) — surface `.missingSchedContext`**:
+  `timerTickBudget` rejects with `KernelError.missingSchedContext`
+  (new discriminant 52) when a bound-budget thread references an
+  absent SchedContext, replacing the pre-R5 silent `(state, false)`
+  no-preempt fallback.  The Rust `KernelError` enum mirror in
+  `rust/sele4n-types/src/error.rs` grows in lock-step (range
+  0..=52, sentinel range 53..=254).  Mirrored in
+  `FrozenOps.frozenTimerTickBudget` for cross-phase consistency.
+* **R5.F (DEEP-SCH-05) — explicit `rotateToBack` precondition**:
+  two new assertion theorems
+  (`rotateToBack_requires_membership`,
+  `rotateToBack_priority_eq_threadPriority`) in
+  `SeLe4n/Kernel/Scheduler/RunQueue.lean` discharge the
+  membership precondition formally.  Function definition unchanged.
+* **R5.G (DEEP-SCH-06) — domain propagation in
+  `schedContextConfigure`**: domain-propagation block mirroring the
+  existing priority-propagation block, closing the
+  `boundThreadDomainConsistent` invariant-drift path.  Two witness
+  theorems in `SeLe4n/Kernel/SchedContext/Invariant/Preservation.lean`
+  (`schedContextConfigure_bound_tcb_domain_eq`,
+  `schedContextConfigure_domain_noop_when_eq`).
+
+R5 test coverage: 4 + 2 + 2 + 3 + 1 = 12 new Lean regression tests
+(in `SuspendResumeSuite`, `PriorityManagementSuite`,
+`NegativeStateSuite`), 1 new discriminant pin in
+`SyscallDispatchSuite`, 23 surface anchors in `LivenessSuite`, and 2
+new Rust tests (`decode_missing_sched_context_error` unit,
+`missing_sched_context_decode` conformance).  AK7 cascade monotonicity
+baseline retained at the v0.30.11 floor.
 
 ### 8.11 buildChecked Runtime Invariant Validation (WS-T Phase T7)
 
