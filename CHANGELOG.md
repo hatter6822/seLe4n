@@ -1,3 +1,79 @@
+## v0.31.1 — WS-RC R5 deferred-completion plan + audit-pass corrections
+
+Patch-version bump after authoring the WS-RC R5 deferred-completion
+plan
+([`docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md`](docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md))
+and performing a comprehensive audit of the plan + the prior R5
+landing (PRs landing at d8e03b9 / 7ffeaf4 / 7a21e18).
+
+Plan-author audit corrections (seven items identified):
+
+- **#1 / #2 (theorem deletion accounting)**: Phase S section /
+  Section 2 inventory / Section 18 summary updated to reflect the
+  five `Selection.lean` deletions (1 def + 4 dependent theorems:
+  3 helper theorems + 1 bridge theorem
+  `effectivePriority_some_eq_effectiveSchedParams`).  The bridge
+  theorem becomes unprovable (its statement contains a free
+  variable `effectivePriority` after deletion), so its removal is
+  forced; the plan-author audit added the correction.  Total
+  deletions across all phases: 8 (was 7 in the pre-audit draft).
+- **#3 (discharge-index row numbering conflict)**: Phase V's claim
+  of a "new row H.19" for ERRATA-R5-2 collided with Phase Q1's
+  H.19 (restoreToReady_preserves_blockingAcyclic).  Renumbered: the
+  ERRATA-R5-2 cross-reference row is now H.25.  Closing summary
+  updates from "24 of 24 LANDED" to "25 of 25 LANDED".
+- **#4 (LoC header inconsistency)**: header estimate (~1100 net)
+  did not match Section 18's detailed total (~1250 net).  Header
+  corrected to ~1250 with the per-phase breakdown matching Section
+  18.
+- **#5 (Phase R1 incorrect refinement)**: an earlier-draft
+  "refinement" claimed that `tcb'.priority = ⟨priority⟩` only
+  holds when priorities differ.  The audit confirmed both
+  `tcb'.priority = ⟨priority⟩` and `tcb'.domain = ⟨domain⟩` hold
+  UNCONDITIONALLY (in the no-op case, the pre-state value already
+  equals the parameter by the check
+  `boundTcb.priority.val = priority`; the witness theorem
+  `schedContextConfigure_domain_noop_when_eq` already proves this
+  for domain).  Refinement removed; the initial Case C statement
+  is correct as written.
+- **#6 (F-Q1-1 risk specificity)**: the failure-mode register row
+  for `restoreToReady`'s blockingServer-invariance derivation is
+  expanded to enumerate the three pre-state cases (TCB missing /
+  TCB present non-blockedOnReply / TCB present blockedOnReply) so
+  the substantive proof's case-split structure is documented in
+  the risk register.
+- **#7 ("DELETED" vs "REPLACED" wording)**: Phase Q1/Q2/R2 discharge-
+  index notes initially said the closure-form variants are
+  "DELETED".  Corrected: they are REPLACED in place (theorem name
+  persists; only the proof body and hypotheses change).  This is
+  signature-stable for the single `LivenessSuite.lean` surface-
+  anchor caller.
+
+Audit verdict (verified during plan-author pass):
+
+- Mathematical correctness: the plan's proof strategies for
+  `blockingAcyclic_of_subgraph`, the synchronous-domain frame, and
+  the R5.G.3 case-split are all sound.  No `sorry`/`axiom`
+  shortcuts are required.
+- Security implications: all proof additions are proof-layer only;
+  no runtime semantics change.  The `panic!` in R5.F.1 (landed in
+  7a21e18) and the `.error .missingSchedContext` surfacing in R5.E
+  (landed in d8e03b9 + 7ffeaf4 comment fix) both improve security
+  posture (surface invariant violations loudly rather than
+  silently mask them).
+- Plan vs current code: every state claim in the plan was
+  cross-checked against the live tree at the audit pass
+  (effectivePriority caller count: 6 — TraceModel 1 +
+  Preservation 1 + PriorityInheritanceSuite 4; closure-form
+  theorems present at the three claimed locations; no surface
+  anchors yet for the Q/R substantive replacements).
+
+No operational code changes in this patch bump.  All R5 substantive
+work (Phases P/Q/R/S/V per the plan) is scheduled before the v1.0.0
+release cut.
+
+Refs: docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md
+
 ## v0.31.0 — WS-RC R5 deferred-work completion: R5.F.1 + R5.C.1 fully landed, R5.B.2/R5.G.3 named theorems added
 
 Following the comprehensive audit's identification of avoided / under-

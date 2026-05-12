@@ -19,8 +19,9 @@ closes the remaining four.
 release.  Per the user directive, **all R5 sub-tasks must be
 substantively complete prior to the v1.0.0 cut**.
 **Sub-PR count:** 8 atomic units across 5 phases (P, Q, R, S, V).
-**Estimated LoC:** ~1100 net (Phase P ≈ 200; Phase Q ≈ 350; Phase R ≈
-350; Phase S ≈ 100; Phase V ≈ 100).
+**Estimated LoC:** ~1250 net (Phase P ≈ 290; Phase Q ≈ 370; Phase R ≈
+380; Phase S ≈ 100; Phase V ≈ 110).  See §18 for the detailed
+breakdown.
 **Files touched:** ~12 source modules + 4 test suites + 4
 documentation files.
 **Axiom / sorry budget:** 0 (every proof obligation discharged via
@@ -149,7 +150,7 @@ inadequately from the live source.
 | R | §9.9 R5.G.3 | `schedContextConfigure_post_state_shape` (or equivalent decomposition) | Operational characterisation of the success path | Substantive | 100–150 | R1 |
 | R | §9.9 R5.G.3 | `schedContextConfigure_preserves_boundThreadDomainConsistent` | Full composition via Phase P frame lemmas | Substantive | 150–250 | R2 |
 | S | §9.5 R5.C.1 | Migrate remaining `effectivePriority` callers | `TraceModel.lean`, `Preservation.lean`, 4× `PriorityInheritanceSuite.lean` | Mechanical | 40–60 | S1 |
-| S | §9.5 R5.C.1 | Delete `effectivePriority` definition + its 3 helper theorems | Once migrations land, the helper is dead code | Mechanical | 30–50 | S1 |
+| S | §9.5 R5.C.1 | Delete `effectivePriority` definition + its 4 dependent theorems (3 helpers + 1 bridge) | Once migrations land, all are dead code (statements reference the deleted `effectivePriority`) | Mechanical | 30–50 | S1 |
 | V | All | Test additions (substantive surface anchors) | `LivenessSuite.lean` adds 6 new surface anchors for the new theorems | Mechanical | 10–15 | V1 |
 | V | All | Discharge index, errata, CHANGELOG, CLAUDE.md, WORKSTREAM_HISTORY | Document the substantive landing | Mechanical | 60–100 | V1 |
 
@@ -809,25 +810,28 @@ into operational characterisation (R1) + invariant composition (R2).
          )
    ```
 
-   Wait — Case C's `tcb'.priority = ⟨priority⟩` is **only** true when
-   `boundTcb.priority.val ≠ priority` (otherwise the priority
-   propagation block is a no-op).  Similarly, `tcb'.domain = ⟨domain⟩`
-   is only true when `boundTcb.domain.val ≠ domain` (else no-op).
+   **Plan-author observation**: at first glance, Case C's
+   `tcb'.priority = ⟨priority⟩` and `tcb'.domain = ⟨domain⟩` only
+   appear to hold when the corresponding propagation block fires
+   (i.e., when the existing value differs from the new value).
+   However, on closer inspection both hold UNCONDITIONALLY:
 
-   Refined Case C statement:
+   - **No-op case (priorities or domains equal)**: the propagation
+     block returns the pre-state TCB unchanged.  But the check is
+     `boundTcb.priority.val = priority` (resp. `domain.val =
+     domain`), which by definition implies
+     `boundTcb.priority = ⟨priority⟩` (resp.
+     `boundTcb.domain = ⟨domain⟩`) — see
+     `schedContextConfigure_domain_noop_when_eq` (already proven).
+     So `tcb'.priority = boundTcb.priority = ⟨priority⟩` even in
+     the no-op case.
+   - **Rewrite case (priorities or domains differ)**: the
+     propagation block writes `tcb'.priority := ⟨priority⟩` (resp.
+     `tcb'.domain := ⟨domain⟩`) directly.
 
-   ```lean
-   -- Case C: sc.boundThread = some boundTid, bound TCB exists.
-   -- The post-state TCB at boundTid has domain = ⟨domain⟩ regardless
-   -- (by either R5.G's propagation or the no-op identity).
-   (∃ boundTid boundTcb,
-     sc.boundThread = some boundTid ∧
-     st.getTcb? boundTid = some boundTcb ∧
-     ∃ tcb',
-       tcb'.schedContextBinding = boundTcb.schedContextBinding ∧
-       tcb'.domain = ⟨domain⟩ ∧  -- ALWAYS — by `schedContextConfigure_bound_tcb_domain_eq` or `_domain_noop_when_eq`
-       st'.objects = ...
-   ```
+   In both cases, the post-state TCB has `tcb'.priority =
+   ⟨priority⟩` and `tcb'.domain = ⟨domain⟩`.  No refinement is
+   needed; the statement of Case C as written is correct.
 
    Proof: unfold `schedContextConfigure`; `split at hOk` on each
    nested match; assemble the witnesses.  Each branch's discharge is
@@ -1091,8 +1095,8 @@ plan-author audit observations.
   Q1/Q2 landing.
 - §3.H row H.16 (R5.G.3): mark as SUBSTANTIVE after R2 landing;
   remove the closure-form parenthetical.
-- §3.H new row H.19: ERRATA-R5-2 cross-reference for the
-  `schedContextBindingConsistent` strengthening.
+- §3.H new row H.25: ERRATA-R5-2 cross-reference for the
+  `schedContextBindingConsistent` strengthening on R5.G.3.
 
 **Errata update** in `docs/audits/AUDIT_v0.30.11_ERRATA.md`:
 
@@ -1216,7 +1220,7 @@ Sub-PR is **NOT mergeable** until all six commands return 0.
 | F-P1-1 | P1 | `blockingChain` induction termination check fails | Low | High (blocks Q1, Q2) | Use `Nat.rec` with explicit motive; if still failing, prove via fuel-decreasing well-founded recursion. |
 | F-P1-2 | P1 | `computeMaxWaiterPriority_frame`'s hypothesis is too strong (caller can't easily satisfy) | Medium | Medium | Iterate the hypothesis shape; weaken to per-field invariance using `effectiveSchedParams_frame` as an intermediate. |
 | F-P2-1 | P2 | `objects.invExt` projection fails — invExt is a Prop, not a structure | Low | Low | Pass `invExt` explicitly as a hypothesis (consistent with VSpaceInvariant.lean pattern). |
-| F-Q1-1 | Q1 | `restoreToReady_objects_eq_at_tid` (existing) needs strengthening to derive blockingServer-invariance | Medium | Medium | Add a derived corollary `restoreToReady_blockingServer` in Q1's prep step. |
+| F-Q1-1 | Q1 | Deriving `blockingServer (restoreToReady st tid) tid = none` requires case-splitting on `st.getTcb? tid`: the existing pre-state TCB could be missing (returns `st` unchanged → blockingServer's projection still reads pre-state's ipcState — which could be any value) or already non-`.blockedOnReply` (blockingServer was `none` pre-state) or `.blockedOnReply` (blockingServer was `some _` pre-state, becomes `none` post-state).  All three cases satisfy "blockingServer post-state ∈ {none, blockingServer pre-state}", but the proof must enumerate them. | Medium | Medium | Add a derived corollary `restoreToReady_blockingServer` in Q1's prep step; case-split on `getTcb?` success. |
 | F-Q1-2 | Q1 | H5 schedule's `saveOutgoingContext` may modify objects.ipcState transitively (no — it doesn't, but the proof gate must verify) | Low | Medium | Use `saveOutgoingContext_ipcState_eq` (add in Q2 if not present). |
 | F-Q2-1 | Q2 | `ensureRunnable_preserves_computeMaxWaiterPriority` requires `ensureRunnable_objects_eq` | Low | Low | Add the prerequisite lemma in Q2's prep step. |
 | F-R1-1 | R1 | 5-level `split at hOk` produces branches in wrong order | Medium | Medium | Use `rename_i` aggressively; if confusion persists, restructure as explicit `match hOk` with named patterns. |
@@ -1234,26 +1238,33 @@ Sub-PR is **NOT mergeable** until all six commands return 0.
 After every Phase Q / R / V sub-PR lands, update
 `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` §3.H:
 
+Note on "replaced in place": Q1, Q2, R2 do not delete and re-add
+theorems by name — they redefine the body of the existing closure-form
+theorem to the substantive proof.  The theorem's *name* persists; only
+the proof body and hypotheses change.  This is signature-stable for
+the (single, surface-anchor) caller in `LivenessSuite.lean`.
+
 **At Q1 landing**:
 - Row H.5 (`restoreToReady_objectIndex_eq`): unchanged.
 - Row H.6 (`restoreToReady_objects_eq_at_tid`): unchanged.
 - Row H.7 (`resumeThread_pipBoost_consistent_post_restore`): unchanged.
 - **NEW row H.19**: `restoreToReady_preserves_blockingAcyclic` — LANDED at Q1.
-- **NEW row H.20**: `resumeThread_preserves_blockingAcyclic` (substantive) — LANDED at Q1.  Closure-form variant DELETED.
+- **NEW row H.20**: `resumeThread_preserves_blockingAcyclic` (substantive) — LANDED at Q1.  Closure-form body REPLACED with substantive proof (theorem name reused; signature drops `hProp`).
 
 **At Q2 landing**:
 - **NEW row H.21**: `ensureRunnable_preserves_computeMaxWaiterPriority` — LANDED at Q2.
 - **NEW row H.22**: `schedule_preserves_computeMaxWaiterPriority` — LANDED at Q2.
-- **NEW row H.23**: `resumeThread_pipBoost_consistent_with_blocking_graph` (substantive) — LANDED at Q2.  Closure-form variant DELETED.
+- **NEW row H.23**: `resumeThread_pipBoost_consistent_with_blocking_graph` (substantive) — LANDED at Q2.  Closure-form body REPLACED.
 
 **At R1 landing**:
 - **NEW row H.24**: `schedContextConfigure_success_objects_shape` (operational characterisation) — LANDED at R1.
 
 **At R2 landing**:
-- Row H.16 (`schedContextConfigure_preserves_boundThreadDomainConsistent`): SUBSTANTIVE landing; closure-form parenthetical removed; hypothesis updated to mention `schedContextBindingConsistent`.
+- Row H.16 (`schedContextConfigure_preserves_boundThreadDomainConsistent`): closure-form body REPLACED with substantive proof; hypothesis strengthened to require both `boundThreadDomainConsistent` and `schedContextBindingConsistent` (plus `hObjInv : st.objects.invExt`).  Closure-form parenthetical removed.
+- **NEW row H.25**: ERRATA-R5-2 cross-reference for the `schedContextBindingConsistent` strengthening (records the hypothesis change as a plan-text correction).
 
 **Closing summary update**:
-- §3.H rolls from "18 of 18 rows LANDED (closure form on H.16/H.17/H.18)" to **"24 of 24 rows LANDED (all substantive)"**.
+- §3.H rolls from "18 of 18 rows LANDED (closure form on H.16/H.17/H.18)" to **"25 of 25 rows LANDED (all substantive)"**.
 
 ---
 
@@ -1347,8 +1358,12 @@ The deferred-work completion is **DONE** when:
 3. **`effectivePriority` deleted**: the definition is not in the
    codebase; grep returns zero substantive matches outside
    documentation.
-4. **Discharge index §3.H**: 24 of 24 rows LANDED; closure-form
-   parentheticals removed.
+4. **Discharge index §3.H**: 25 of 25 rows LANDED (H.1–H.18
+   pre-existing + H.19–H.25 added by this completion plan;
+   H.25 cross-references ERRATA-R5-2); closure-form parentheticals
+   on H.16/H.17/H.18 either removed (H.16) or replaced with
+   substantive-name renames (H.17/H.18 retained for the per-arm IF
+   helpers).
 5. **All tests pass**: `test_full.sh` exits 0.
 6. **No regressions**: AK7 baseline preserved; cargo test passes;
    no new warnings.
@@ -1363,14 +1378,14 @@ The deferred-work completion is **DONE** when:
 
 ## 18. Total scope summary
 
-| Phase | Sub-PRs | LoC (proof + test) | Files touched | Theorems added | Theorems deleted |
+| Phase | Sub-PRs | LoC (proof + test) | Files touched | Theorems added | Theorems / defs deleted |
 |---|---|---|---|---|---|
 | P | P1, P2 | ~290 | 3 | 4 (frame lemmas) | 0 |
-| Q | Q1, Q2 | ~370 | 1 | 5 (3 substantive + 2 auxiliary) | 2 (closure forms) |
-| R | R1, R2 | ~380 | 1 | 2 (1 substantive + 1 shape) | 1 (closure form) |
-| S | S1 | ~100 | 4 | 0 | 4 (effectivePriority + 3 helpers) |
+| Q | Q1, Q2 | ~370 | 1 | 5 (3 substantive + 2 auxiliary) | 2 (closure forms — replaced in place) |
+| R | R1, R2 | ~380 | 1 | 2 (1 substantive + 1 shape) | 1 (closure form — replaced in place) |
+| S | S1 | ~100 | 4 | 0 | 5 (`effectivePriority` def + 3 helpers + 1 bridge theorem `effectivePriority_some_eq_effectiveSchedParams`) |
 | V | V1 | ~110 | 4 + 5 docs | 0 | 0 |
-| **TOTAL** | **8** | **~1250** | **~13** | **11** | **7** |
+| **TOTAL** | **8** | **~1250** | **~13** | **11** | **8** |
 
 **Axiom / sorry budget**: 0 introduced, 0 retained.  AK7 monotonicity
 preserved at the v0.30.11 floor.  No backwards-compatibility shims

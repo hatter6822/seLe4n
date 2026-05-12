@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/audit-scheduler-phase-r5-nWFdz",
-      "commit_sha": "7ffeaf45c5743c1df4c9cbc699d201150fcd849d",
-      "tree_sha": "8f13ca34967cd14604c09ebe4329a05759cc34a9",
-      "committed_at_utc": "2026-05-12T07:23:49+00:00"
+      "commit_sha": "2b9d2ce2b06ff4077bc0469a56838ae44933e8e8",
+      "tree_sha": "898b16da84645fd251dbbbdd4b49df5b963ec1f4",
+      "committed_at_utc": "2026-05-12T17:51:12+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 6406
   },
   "readme_sync": {
-    "version": "0.31.0",
+    "version": "0.31.1",
     "lean_toolchain": "v4.28.0",
     "production_files": 170,
     "production_loc": 112844,
