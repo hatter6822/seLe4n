@@ -204,4 +204,130 @@ theorem effectiveSchedParams_frame_per_field
   · rename_i scId _ _
     rw [hSc scId]
 
+-- ============================================================================
+-- WS-RC R5.B.2 / Phase P1: Per-field frame for waitersOf
+-- ============================================================================
+
+/-- The per-slot equivalence we need to frame `waitersOf` and
+    `computeMaxWaiterPriority`.  An object lookup at `objId` is either:
+    - Identical in both states, or
+    - A TCB rewrite preserving every field read by `waitersOf` and
+      `effectiveSchedParams` (i.e., `tid`, `ipcState`,
+      `schedContextBinding`, `priority`, `deadline`, `domain`,
+      `pipBoost`).
+
+    This captures the schedule-induced frame where one TCB's
+    `registerContext` (NOT read by `waitersOf`/`effectiveSchedParams`)
+    may have been rewritten. -/
+def computeMaxWaiterPriority_lookup_equiv
+    (st st' : SystemState) (objId : ObjId) : Prop :=
+  st'.objects[objId]? = st.objects[objId]? ∨
+  ∃ tcb tcb',
+    st.objects[objId]? = some (.tcb tcb) ∧
+    st'.objects[objId]? = some (.tcb tcb') ∧
+    tcb'.tid = tcb.tid ∧
+    tcb'.ipcState = tcb.ipcState ∧
+    tcb'.schedContextBinding = tcb.schedContextBinding ∧
+    tcb'.priority = tcb.priority ∧
+    tcb'.deadline = tcb.deadline ∧
+    tcb'.domain = tcb.domain ∧
+    tcb'.pipBoost = tcb.pipBoost
+
+theorem waitersOf_frame_per_field
+    (st st' : SystemState) (tid : ThreadId)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hEquiv : ∀ objId, computeMaxWaiterPriority_lookup_equiv st st' objId) :
+    waitersOf st' tid = waitersOf st tid := by
+  unfold waitersOf
+  rw [hObjIdx]
+  -- Induction on the object index list.  At each objId, the filterMap body
+  -- reads objects[objId]? and (if TCB) tcb.ipcState and tcb.tid — all preserved.
+  induction st.objectIndex with
+  | nil => rfl
+  | cons head tail ih =>
+    simp only [List.filterMap]
+    -- Case-split on the lookup equivalence at `head` and on the result.
+    rcases hEquiv head with hSame | ⟨tcb, tcb', hPre, hPost, hTid, hIpc, _, _, _, _, _⟩
+    · -- Same lookup: rewrite st' to st in the discriminant.  Then both sides have
+      -- the same outer match; split on it.
+      rw [hSame]
+      split
+      · exact ih
+      · rw [ih]
+    · -- TCB rewrite preserving tid + ipcState.
+      rw [hPre, hPost]
+      simp only [hIpc, hTid]
+      split
+      · exact ih
+      · rw [ih]
+
+/-- Helper: pointwise-equal closures produce equal `cmwpFoldBody` folds
+    under the per-field equivalence frame.  This is the inductive
+    workhorse for `computeMaxWaiterPriority_frame_per_field`. -/
+private theorem cmwpFoldBody_frame_per_field
+    (st st' : SystemState) (ws : List ThreadId)
+    (hEquiv : ∀ objId, computeMaxWaiterPriority_lookup_equiv st st' objId)
+    (hSc : ∀ scId, st'.getSchedContext? scId = st.getSchedContext? scId) :
+    ∀ acc : Option SeLe4n.Priority,
+      ws.foldl (cmwpFoldBody st') acc = ws.foldl (cmwpFoldBody st) acc := by
+  induction ws with
+  | nil => intro acc; rfl
+  | cons head tail ih =>
+    intro acc
+    simp only [List.foldl_cons]
+    have hStep : cmwpFoldBody st' acc head = cmwpFoldBody st acc head := by
+      unfold cmwpFoldBody
+      rcases hEquiv head.toObjId with hSame | ⟨tcb, tcb', hPre, hPost, _, _, hBind, hPrio, hDl, hDom, hPip⟩
+      · rw [hSame]
+        -- After rewriting, both sides have same discriminant.  The inner bodies
+        -- differ on effectiveSchedParams st' vs st.  Bridge via frame_per_field.
+        cases hLook : st.objects[head.toObjId]? with
+        | none => rfl
+        | some obj =>
+          cases obj with
+          | tcb waiterTcb =>
+            simp only
+            rw [effectiveSchedParams_frame_per_field st st' waiterTcb hSc]
+          | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
+            | schedContext _ => rfl
+      · rw [hPre, hPost]
+        -- After rw, both sides have `match some (.tcb tcb') with ...` and
+        -- `match some (.tcb tcb) with ...`.  Reduce both matches via simp.
+        simp only
+        -- Now goal is `effectiveSchedParams st' tcb' = effectiveSchedParams st tcb`.
+        -- Show this by transitivity through `effectiveSchedParams st tcb'`.
+        have hESP : effectiveSchedParams st' tcb' = effectiveSchedParams st tcb := by
+          have h1 : effectiveSchedParams st' tcb' = effectiveSchedParams st tcb' :=
+            effectiveSchedParams_frame_per_field st st' tcb' hSc
+          have h2 : effectiveSchedParams st tcb' = effectiveSchedParams st tcb := by
+            unfold effectiveSchedParams
+            simp only [hBind, hPip, hPrio, hDl, hDom]
+          exact h1.trans h2
+        rw [hESP]
+    rw [hStep]
+    exact ih _
+
+/-- WS-RC R5.B.2 / Phase P1: `computeMaxWaiterPriority` is invariant
+    under a per-slot lookup-equivalence frame.
+
+    For each `objId`, the lookup either is unchanged or is a TCB rewrite
+    preserving every field read by `waitersOf` (`tid`, `ipcState`) and
+    by `effectiveSchedParams` (`schedContextBinding`, `priority`,
+    `deadline`, `domain`, `pipBoost`).  Together with `objectIndex`
+    preservation and `getSchedContext?` preservation, this implies
+    `computeMaxWaiterPriority` is preserved.
+
+    Used by `schedule_preserves_computeMaxWaiterPriority` (Phase Q2):
+    `schedule` may rewrite one TCB's `registerContext` (NOT read by
+    `computeMaxWaiterPriority`), so the per-field frame applies. -/
+theorem computeMaxWaiterPriority_frame_per_field
+    (st st' : SystemState) (tid : ThreadId)
+    (hObjIdx : st'.objectIndex = st.objectIndex)
+    (hEquiv : ∀ objId, computeMaxWaiterPriority_lookup_equiv st st' objId)
+    (hSc : ∀ scId, st'.getSchedContext? scId = st.getSchedContext? scId) :
+    computeMaxWaiterPriority st' tid = computeMaxWaiterPriority st tid := by
+  rw [computeMaxWaiterPriority_eq_cmwpFoldBody, computeMaxWaiterPriority_eq_cmwpFoldBody,
+      waitersOf_frame_per_field st st' tid hObjIdx hEquiv]
+  exact cmwpFoldBody_frame_per_field st st' (waitersOf st tid) hEquiv hSc none
+
 end SeLe4n.Kernel.PriorityInheritance
