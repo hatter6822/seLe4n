@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.30.11.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.0.
 
 ## Build and run
 
@@ -889,6 +889,47 @@ under `docs/` and `docs/gitbook/`.
   because canonical vaddrs (rpi5BootVSpaceRoot via insertIdentity
   with paddr<2^44, simBootVSpaceRoot at vaddr=0x1000) trivially
   satisfy the new conjunct via `decide`.
+  **WS-RC R4 close-out COMPLETE (v0.31.0, branch
+  `claude/review-closeout-plan-HToSk`)**:  the 9-sub-PR close-out
+  ([`docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md`](docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md))
+  plus an audit-driven deep cleanup completes the four R4 sub-tasks
+  left open after the v0.30.11 partial landing and **fully retires**
+  the historical state-level `cspaceSlotUnique` and `uniqueWaiters`
+  predicates per the plan's A2.c4 / C2.c4 deletion mandate.  Phase
+  P1: the close-out plan's 6 plan-named witnesses are landed (4 of
+  them survive the deep cleanup — `cnode_slots_unique`,
+  `notification_waiters_nodup`,
+  `cspaceSlotUnique_promoted_to_structural`,
+  `uniqueWaiters_promoted_to_structural` — and the 2 transitional
+  `_trivial` helpers are deleted in A2/C2).  Phases A1/A2/deep
+  cleanup: `cspaceSlotUnique` retired (state-level predicate
+  removed entirely from the codebase; per-CNode discharge is now
+  via the structural `UniqueSlotMap.hWF` carried by every
+  `CNode.slots`; 22 vestigial hypothesis parameters and 8 transfer
+  theorems deleted; `cspaceLookupSound_of_cspaceSlotUnique` renamed
+  to the unconditional `cspaceLookupSound_holds`).  Phases B1/B2/B3:
+  `ScrubTokenImpl` made `private structure` with privacy verified by
+  external probe (`#check` of `ScrubTokenImpl` from outside the file
+  fails with "Unknown identifier"; `{...}` construction fails with
+  "constructor is marked as private");
+  `lifecyclePreRetypeCleanupWithToken` wrapper threading the token
+  through cleanup; `mkRetypeTarget` smart constructor.  Phases
+  C1/C2/deep cleanup: `uniqueWaiters` retired (state-level predicate
+  removed entirely; `ipcInvariantFull` 16→15 conjuncts; per-Notification
+  discharge is now via the structural `NoDupList.hNodup` carried by
+  every `Notification.waitingThreads`; the
+  `notificationWait_preserves_uniqueWaiters`,
+  `notification_waitingThreads_nodup_witness`,
+  `coreIpcInvariantBundle_to_uniqueWaiters`, and
+  `default_uniqueWaiters` helpers are deleted).  Phase V1: version
+  bumped 0.30.11 → 0.31.0 across `lakefile.toml`, `README.md`,
+  `CHANGELOG.md`, `CLAUDE.md`, `docs/spec/SELE4N_SPEC.md`,
+  `rust/Cargo.{toml,lock}`, `rust/sele4n-hal/src/boot.rs`, all 10
+  `docs/i18n/<lang>/README.md`, `docs/codebase_map.json`.  No
+  `True`-alias shims remain after the deep cleanup; the codebase is
+  free of backwards-compat hacks per CLAUDE.md's structural
+  enforcement rule.  Items deferred past v1.0.0 with correctness
+  impact: NONE.
 
 - **WS-AN portfolio COMPLETE (v0.30.11, branch `claude/review-codebase-phase-an12-JBPQN`)**:
   Phase AN12 — Documentation, themes, closure — landed the cross-cutting

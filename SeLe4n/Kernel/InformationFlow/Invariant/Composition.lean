@@ -76,7 +76,6 @@ inductive NonInterferenceStep
       (src dst : CSpaceAddr) (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
       (hSrcHigh : objectObservable ctx observer src.cnode = false)
       (hDstHigh : objectObservable ctx observer dst.cnode = false)
-      (hSlotUniq : cspaceSlotUnique st)
       (hStep : cspaceMint src dst rights badge st = .ok ((), st'))
     : NonInterferenceStep ctx observer st st'
   | cspaceRevoke
@@ -360,8 +359,8 @@ theorem step_preserves_projection
   | endpointSendDual eid sender msg hEH hSH hSOH hCo hOp hRQHH hRQNH hSQTH =>
     exact endpointSendDual_preserves_projection ctx observer eid sender msg st st'
       hEH hSH hSOH hCo hRQHH hRQNH hSQTH hObjInv hOp
-  | cspaceMint src dst rights badge hSrcH hDstH hSlotUniq hOp =>
-    rcases cspaceMint_child_attenuates st st' src dst rights badge hSlotUniq hObjInv hOp with
+  | cspaceMint src dst rights badge hSrcH hDstH hOp =>
+    rcases cspaceMint_child_attenuates st st' src dst rights badge hObjInv hOp with
       ⟨parent, child, hLookup, _, _⟩
     unfold cspaceMint at hOp; rw [hLookup] at hOp
     -- AL1b (AK7-I.cascade): promote parent via toNonNull?.

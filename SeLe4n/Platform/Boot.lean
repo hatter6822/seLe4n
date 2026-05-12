@@ -2194,7 +2194,12 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     exact RHTable_get?_empty 16 (by omega)
   -- 2. capabilityInvariantBundle
   have hCapBundle : capabilityInvariantBundle (bootFromPlatform config).state := by
-    refine ⟨hSlots, ?_, ?_, ?_, ?_, ?_, hAllTables.1.1⟩
+    -- WS-RC R4.A.6: bundle has 6 conjuncts (cspaceSlotUnique dropped).
+    -- The per-CNode `slotsUnique` invariant is carried structurally on every
+    -- `UniqueSlotMap` value; the builder-phase `hSlots` witness is preserved
+    -- by the boot path for backward compatibility but no longer flows through
+    -- this bundle.
+    refine ⟨?_, ?_, ?_, ?_, ?_, hAllTables.1.1⟩
     · -- cspaceLookupSound
       intro cnodeId cn slot cap hObj hLookupSlot
       show SystemState.lookupSlotCap _ _ = some cap
@@ -2218,9 +2223,9 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   have hLifeBundle : lifecycleInvariantBundle (bootFromPlatform config).state :=
     lifecycleInvariantBundle_of_metadata_consistent _
       (bootFromPlatform config).hLifecycleConsistent
-  -- 3. ipcInvariantFull (16 sub-components, AJ1-B: +blockedOnReplyHasTarget)
+  -- 3. ipcInvariantFull (WS-RC R4.C.7: 15 sub-components after uniqueWaiters retirement)
   have hIpcFull : ipcInvariantFull (bootFromPlatform config).state := by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- ipcInvariant: notifications well-formed
       intro oid ntfn hObj
       have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
@@ -2320,10 +2325,6 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       intro tid1 _ tcb1 _ _ h1 _ _ hB1 _
       have hTcb1 := (hBS tid1.toObjId _ h1).2.2.2.1 tcb1 rfl
       simp [hTcb1.2.2.2.2.2, SchedContextBinding.scId?] at hB1
-    · -- AG1-C: uniqueWaiters (boot notifications have empty waitingThreads)
-      intro oid ntfn hObj
-      have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
-      rw [hNtfn.2.1]; exact .nil
     · -- AJ1-B: blockedOnReplyHasTarget (boot TCBs have ipcState = .ready)
       intro tid tcb _ _ hObj hIpc
       have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl

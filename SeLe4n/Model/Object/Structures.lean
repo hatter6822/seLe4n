@@ -766,6 +766,13 @@ def slotsUnique (cn : CNode) : Prop := cn.slots.table.invExtK
     `UniqueSlotMap.hWF`. -/
 theorem slotsUnique_holds (cn : CNode) : cn.slotsUnique := cn.slots.hWF
 
+/-- WS-RC R4.A / DEEP-MODEL-01: plan-named alias for the structural
+    CNode-level uniqueness witness.  Identical to `slotsUnique_holds`;
+    retained under the canonical plan name (`cnode_slots_unique`) so the
+    discharge-index reachability gate can locate it by the same identifier
+    used in the close-out plan. -/
+theorem cnode_slots_unique (cn : CNode) : cn.slotsUnique := slotsUnique_holds cn
+
 /-- WS-G5: After removing a slot, lookup returns `none`.
 Maps directly to `RHTable.getElem?_erase_self`. Requires slot invariant
 (invExt) to guarantee erase+lookup correctness. -/

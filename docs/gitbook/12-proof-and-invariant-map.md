@@ -158,16 +158,31 @@ Documented semantics:
 
 Component level:
 
-- `cspaceSlotUnique` — structural CNode slot-index uniqueness (reformulated in WS-E2; WS-G5: trivially true with `Std.HashMap` key uniqueness),
+- `cspaceSlotUnique` (RETIRED — WS-RC R4.A close-out, v0.31.0): the
+  historical state-level predicate and its trivial discharge helpers were
+  deleted entirely.  Per-CNode slot uniqueness is now carried structurally
+  on every `CNode.slots : SeLe4n.UniqueSlotMap Capability` via
+  `UniqueSlotMap.hWF`.  Per-CNode discharge:
+  `SeLe4n.Model.CNode.slotsUnique_holds` (canonical) /
+  `SeLe4n.Model.CNode.cnode_slots_unique` (plan-named alias).  No
+  backwards-compatibility shims remain.
 - `cspaceLookupSound` — lookup completeness grounded in slot membership (reformulated in WS-E2; non-tautological),
 - `cspaceAttenuationRule` — minted capabilities attenuate rights,
 - `lifecycleAuthorityMonotonicity` — authority only decreases through lifecycle operations.
 
-Bridge theorem: `cspaceLookupSound_of_cspaceSlotUnique` derives lookup soundness from slot uniqueness.
+Bridge theorem: `cspaceLookupSound_holds` (renamed from
+`cspaceLookupSound_of_cspaceSlotUnique` in the WS-RC R4.A close-out)
+discharges lookup completeness unconditionally — `CNode.lookup`
+delegates directly to `HashMap.getElem?` via the `UniqueSlotMap`
+backing, so no preconditions are needed.
 
 Bundle level:
 
-- `capabilityInvariantBundle` (WS-H4 + WS-H13 + WS-F6/D1: 6-tuple conjunction — `cspaceSlotUnique`, `cspaceLookupSound`, `cspaceSlotCountBounded`, `cdtCompleteness`, `cdtAcyclicity`, `cspaceDepthConsistent`; 2 tautological predicates removed by WS-F6)
+- `capabilityInvariantBundle` (WS-RC R4.A.6 close-out: 6-tuple conjunction —
+  `cspaceLookupSound`, `cspaceSlotCountBounded`, `cdtCompleteness`,
+  `cdtAcyclicity`, `cspaceDepthConsistent`, `st.objects.invExt`; the legacy
+  `cspaceSlotUnique` 1st-slot conjunct was retired when the per-CNode
+  uniqueness witness was promoted to `UniqueSlotMap.hWF`)
 - `capabilityInvariantBundleWithCdtMaps` (S3-D: base bundle + `cdtMapsConsistent`)
 - `capabilityInvariantBundleFull` (S3-D: base bundle + `cdtMapsConsistent` + `cdtMintCompleteness`)
 
@@ -451,12 +466,12 @@ Helper lemmas: `storeTcbQueueLinks_noprevnext_preserves_linkInteg`, `storeTcbQue
 
 Bundle level:
 
-- `ipcInvariantFull` (16-conjunct: `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded ∧ badgeWellFormed ∧ waitingThreadsPendingMessageNone ∧ endpointQueueNoDup ∧ ipcStateQueueMembershipConsistent ∧ queueNextBlockingConsistent ∧ queueHeadBlockedConsistent ∧ blockedThreadTimeoutConsistent ∧ donationChainAcyclic ∧ donationOwnerValid ∧ passiveServerIdle ∧ donationBudgetTransfer ∧ uniqueWaiters ∧ blockedOnReplyHasTarget`, WS-H12c + WS-H12d + WS-F5 + V3-G6 + V3-K + V3-J + V3-J-cross + Z6-J + Z7-F/G/H/I + AG1-C + AJ1-B)
+- `ipcInvariantFull` (WS-RC R4.C.7 close-out: 15-conjunct — `ipcInvariant ∧ dualQueueSystemInvariant ∧ allPendingMessagesBounded ∧ badgeWellFormed ∧ waitingThreadsPendingMessageNone ∧ endpointQueueNoDup ∧ ipcStateQueueMembershipConsistent ∧ queueNextBlockingConsistent ∧ queueHeadBlockedConsistent ∧ blockedThreadTimeoutConsistent ∧ donationChainAcyclic ∧ donationOwnerValid ∧ passiveServerIdle ∧ donationBudgetTransfer ∧ blockedOnReplyHasTarget`. The legacy 15th-slot `uniqueWaiters` conjunct was retired when `Notification.waitingThreads` was promoted to `SeLe4n.NoDupList ThreadId`, carrying the `List.Nodup` witness structurally via `NoDupList.hNodup`. WS-H12c + WS-H12d + WS-F5 + V3-G6 + V3-K + V3-J + V3-J-cross + Z6-J + Z7-F/G/H/I + AG1-C + AJ1-B + WS-RC R4.C.7)
 - `badgeWellFormed` (WS-F5/D1d): `notificationBadgesWellFormed ∧ capabilityBadgesWellFormed` — all badge values in notification pending badges and capability slots satisfy word-boundedness
 
 Cross-subsystem composition (WS-H12e + WS-F5):
 
-- `coreIpcInvariantBundle` — upgraded from `ipcInvariant` to `ipcInvariantFull` (16-conjunct, AJ1-B: +`blockedOnReplyHasTarget`), closing the gap where `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, `waitingThreadsPendingMessageNone`, `endpointQueueNoDup`, `ipcStateQueueMembershipConsistent`, `queueNextBlockingConsistent`, `queueHeadBlockedConsistent`, `blockedThreadTimeoutConsistent`, `donationChainAcyclic`, `donationOwnerValid`, `passiveServerIdle`, `donationBudgetTransfer`, `uniqueWaiters`, and `blockedOnReplyHasTarget` were defined but not composed into the cross-subsystem proof surface
+- `coreIpcInvariantBundle` — upgraded from `ipcInvariant` to `ipcInvariantFull` (WS-RC R4.C.7 close-out: 15-conjunct after `uniqueWaiters` retirement, AJ1-B: +`blockedOnReplyHasTarget`), closing the gap where `dualQueueSystemInvariant`, `allPendingMessagesBounded`, `badgeWellFormed`, `waitingThreadsPendingMessageNone`, `endpointQueueNoDup`, `ipcStateQueueMembershipConsistent`, `queueNextBlockingConsistent`, `queueHeadBlockedConsistent`, `blockedThreadTimeoutConsistent`, `donationChainAcyclic`, `donationOwnerValid`, `passiveServerIdle`, `donationBudgetTransfer`, and `blockedOnReplyHasTarget` were defined but not composed into the cross-subsystem proof surface
 - Backward-compatible extraction theorems: `coreIpcInvariantBundle_to_ipcInvariant`, `coreIpcInvariantBundle_to_dualQueueSystemInvariant`, `coreIpcInvariantBundle_to_allPendingMessagesBounded`, `coreIpcInvariantBundle_to_badgeWellFormed`, `coreIpcInvariantBundle_to_waitingThreadsPendingMessageNone`, `coreIpcInvariantBundle_to_endpointQueueNoDup`, `coreIpcInvariantBundle_to_ipcStateQueueMembershipConsistent`, `coreIpcInvariantBundle_to_queueNextBlockingConsistent`, `coreIpcInvariantBundle_to_queueHeadBlockedConsistent`
 - AI4-A frame lemma suite for `cleanupPreReceiveDonation` (Defs.lean): `cleanupPreReceiveDonation_scheduler_eq`, `cleanupPreReceiveDonation_preserves_objects_invExt`, `returnDonatedSchedContext_notification_backward`, `returnDonatedSchedContext_endpoint_backward`, `cleanupPreReceiveDonation_tcb_forward`, `cleanupPreReceiveDonation_tcb_ipcState_backward`, `cleanupPreReceiveDonation_frame_helper` — proves cleanup is transparent to all IPC/scheduler invariants
 
@@ -491,6 +506,12 @@ Preservation shape:
 - WS-RC R4.B / DEEP-CAP-04 (v0.30.11) `RetypeTarget` non-bypassable construction: `cleanupHookDischarged` now requires an opaque `ScrubToken` whose only public introduction is `ScrubToken.fromCleanup` (gated on a successful `lifecyclePreRetypeCleanup` outcome). The no-bypass property is codified by `retypeTarget_implies_scrub_token_held : ∀ st (rt : RetypeTarget st), ScrubToken st rt.id`. Defined in `Kernel/Capability/Invariant/Defs.lean`.
 - WS-RC R4.C / DEEP-IPC-05 (subsumes DEEP-IPC-01; v0.30.11) `Notification.waitingThreads` structural promotion: `Notification.waitingThreads : SeLe4n.NoDupList SeLe4n.ThreadId` (wraps `List ThreadId` with `List.Nodup` carried structurally at construction time). Foundation module `SeLe4n/Model/Object/NoDupList.lean` exposes `empty`, `consWithGuard`, `consWithGuard?`, `tail?`, `filter` smart constructors. `notificationSignal` pops via `NoDupList.tail?`; `notificationWait` cons site is gated by `NoDupList.consWithGuard?` so the duplicate rejection at the operational entry point is structural. The `notificationWait_runtime_check_implied_by_nodup` theorem bridges the runtime TCB ipcState guard at `Endpoint.lean:723` to type-level non-membership under `notificationWaiterConsistent`. State-level `uniqueWaiters` invariant is now trivially derivable via `SeLe4n.Kernel.uniqueWaiters_holds`. Structural witness theorems: `NoDupList.nodup_witness`, `notification_waitingThreads_nodup_witness`, `notificationWait_runtime_check_implied_by_nodup`.
 - WS-RC R4.D / DEEP-CAP-02 (v0.30.11) `cspaceMutate` null-cap witness theorems: `cspaceMutate_rejects_null_cap` (every successful mutation witnesses a non-null pre-state capability) and `cspaceMutate_null_cap_rejected` (every null-cap input totalises to `.nullCapability`), both in `Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean`. Regression tests in `tests/ModelIntegritySuite.lean::cspaceMutate_from_null_rejected` and `tests/NegativeStateSuite.lean::NEG-MUTATE-NULL`.
+- **WS-RC R4 close-out (v0.31.0)** — completes the structural-invariant retirement that the v0.30.11 R4 partial landing left open.  **The state-level `cspaceSlotUnique` and `uniqueWaiters` predicates have been deleted entirely**; the substantive content is carried structurally by `UniqueSlotMap.hWF` (on `CNode.slots`) and `NoDupList.hNodup` (on `Notification.waitingThreads`).  No backwards-compatibility shims remain.
+  - **R4.A.5/.6/.7**: `cspaceSlotUnique` predicate, its `cspaceSlotUnique_trivial` discharge helper, and the entire `cspaceSlotUnique_of_storeObject_{nonCNode,cnode,endpoint_store}` / `_objects_eq` / `_of_storeTcbIpcState` / `_through_{blocking,handshake}_path` transfer chain (8 theorems) are all deleted.  The historical bridge `cspaceLookupSound_of_cspaceSlotUnique` is renamed to the unconditional `cspaceLookupSound_holds`.  `capabilityInvariantBundle` shrunk from 7 to 6 conjuncts.  22 vestigial `(_hSlotUniq : cspaceSlotUnique st)` parameters across 5 files removed.  Plan-named witnesses `cnode_slots_unique` and `cspaceSlotUnique_promoted_to_structural` are retained.
+  - **R4.B.1/.2/.3/.6**: `ScrubTokenImpl` is now a `private structure` (B1) — privacy verified by external probe; `lifecyclePreRetypeCleanupWithToken` wraps the cleanup pipeline with token capture (B2); `mkRetypeTarget` smart constructor with `mkRetypeTarget_id` companion (B3); bridge lemmas `lifecyclePreRetypeCleanupWithToken_state_eq` / `_error_eq` connect the tokenized form to the bare cleanup.  All in `Kernel/Capability/Invariant/Defs.lean`.
+  - **R4.C.5/.6/.7/.8**: `uniqueWaiters` predicate, its `uniqueWaiters_holds` / `uniqueWaiters_trivial` discharge helpers, the `notificationWait_preserves_uniqueWaiters`, `notification_waitingThreads_nodup_witness`, `coreIpcInvariantBundle_to_uniqueWaiters`, and `default_uniqueWaiters` companions are all deleted.  `ipcInvariantFull` shrunk from 16 to 15 conjuncts.  `hUW' : uniqueWaiters st'` parameter removed from 11 preservation theorems in `IPC/Invariant/Structural/DualQueueMembership.lean` plus the `lifecycleRetypeObject` core/composition variants.  Plan-named witnesses `notification_waiters_nodup` and `uniqueWaiters_promoted_to_structural` are retained.
+  - **R4 close-out reachability**: 5 new R4 close-out gates in `tests/ModelIntegritySuite.lean`: `r4_close_out_named_theorems_reachable` (P1), `r4b_scrubToken_canonical_introduction_only` (B1), `r4b_lifecyclePreRetypeCleanupWithToken_reachable` (B2), `r4b_mkRetypeTarget_reachable` (B3), `r4b_scrubToken_to_retypeTarget_endToEnd` (end-to-end chain).
+  - Plan: [`docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md`](../audits/WS_RC_R4_CLOSEOUT_PLAN.md). Version bumped 0.30.11 → 0.31.0.
 
 ### 4.2 IPC message payload bounds (WS-H12d)
 

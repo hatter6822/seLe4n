@@ -2893,7 +2893,7 @@ that discharges the `hCdtPost` hypothesis at its preservation theorem
 theorem cspaceCopy_cdt_hypothesis_discharged_at
     (st' : SystemState) (hBundle : capabilityInvariantBundle st') :
     cdtCompleteness st' ∧ cdtAcyclicity st' :=
-  ⟨hBundle.2.2.2.1, hBundle.2.2.2.2.1⟩
+  ⟨hBundle.2.2.1, hBundle.2.2.2.1⟩
 
 /-- AN4-C (H-04): `cspaceMove` companion — same bridge as `cspaceCopy`;
 both are in-place CNode mutations that take `hCdtPost` at
@@ -2901,14 +2901,14 @@ both are in-place CNode mutations that take `hCdtPost` at
 theorem cspaceMove_cdt_hypothesis_discharged_at
     (st' : SystemState) (hBundle : capabilityInvariantBundle st') :
     cdtCompleteness st' ∧ cdtAcyclicity st' :=
-  ⟨hBundle.2.2.2.1, hBundle.2.2.2.2.1⟩
+  ⟨hBundle.2.2.1, hBundle.2.2.2.1⟩
 
 /-- AN4-C (H-04): `cspaceMintWithCdt` companion — CDT-expanding mint path
 takes `hCdtPost` at `Capability/Invariant/Preservation.lean:627`. -/
 theorem cspaceMintWithCdt_cdt_hypothesis_discharged_at
     (st' : SystemState) (hBundle : capabilityInvariantBundle st') :
     cdtCompleteness st' ∧ cdtAcyclicity st' :=
-  ⟨hBundle.2.2.2.1, hBundle.2.2.2.2.1⟩
+  ⟨hBundle.2.2.1, hBundle.2.2.2.1⟩
 
 /-- AN4-C (H-04): `cspaceMutate` companion — does not expand the CDT; the
 CDT predicates transfer through `_preserves_capabilityInvariantBundle`
@@ -2917,7 +2917,7 @@ completeness. -/
 theorem cspaceMutate_cdt_hypothesis_discharged_at
     (st' : SystemState) (hBundle : capabilityInvariantBundle st') :
     cdtCompleteness st' ∧ cdtAcyclicity st' :=
-  ⟨hBundle.2.2.2.1, hBundle.2.2.2.2.1⟩
+  ⟨hBundle.2.2.1, hBundle.2.2.2.1⟩
 
 /-- AN4-C (H-04): `cspaceDeleteSlot` companion — the delete path transfers
 the CDT predicates through its preservation theorem without a dedicated
@@ -2925,7 +2925,7 @@ the CDT predicates through its preservation theorem without a dedicated
 theorem cspaceDeleteSlot_cdt_hypothesis_discharged_at
     (st' : SystemState) (hBundle : capabilityInvariantBundle st') :
     cdtCompleteness st' ∧ cdtAcyclicity st' :=
-  ⟨hBundle.2.2.2.1, hBundle.2.2.2.2.1⟩
+  ⟨hBundle.2.2.1, hBundle.2.2.2.1⟩
 
 /-- AN4-C (H-04): `cspaceRevoke` companion — bulk revoke loops the delete
 path over every descendant; the CDT predicates transfer through the
@@ -2934,7 +2934,7 @@ Included for Theme 4.1 index completeness. -/
 theorem cspaceRevoke_cdt_hypothesis_discharged_at
     (st' : SystemState) (hBundle : capabilityInvariantBundle st') :
     cdtCompleteness st' ∧ cdtAcyclicity st' :=
-  ⟨hBundle.2.2.2.1, hBundle.2.2.2.2.1⟩
+  ⟨hBundle.2.2.1, hBundle.2.2.2.1⟩
 
 /-- AN12-A (Theme 4.1) — closure-form discharge index marker.
 
@@ -3317,22 +3317,33 @@ structural promotion.**
   Capability` carries `RHTable.invExtK` structurally at construction
   time via the smart constructors `empty`, `insert`, `erase`,
   `filter`, `ofListWF` (in `SeLe4n/Model/Object/UniqueSlotMap.lean`).
-  The state-level `cspaceSlotUnique` invariant is now trivially
-  derivable via `SeLe4n.Model.CNode.slotsUnique_holds`.  Structural
-  witness: `SeLe4n.UniqueSlotMap.keys_unique`.
+  The historical state-level `cspaceSlotUnique` predicate (and its
+  trivial discharge helper) were deleted in the WS-RC R4.A close-out;
+  per-CNode discharge is now directly via
+  `SeLe4n.Model.CNode.slotsUnique_holds` (or its plan-named alias
+  `SeLe4n.Model.CNode.cnode_slots_unique`).  Structural witness:
+  `SeLe4n.UniqueSlotMap.keys_unique`.
 * **R4.B (DEEP-CAP-04)** — `RetypeTarget` carries a `ScrubToken`
-  witness derivable only from `lifecyclePreRetypeCleanup_ok`. The
+  witness derivable only from `lifecyclePreRetypeCleanup_ok`.  The
   no-bypass property is codified by
-  `SeLe4n.Kernel.retypeTarget_implies_scrub_token_held`.
+  `SeLe4n.Kernel.retypeTarget_implies_scrub_token_held`.  Phase B1
+  of the close-out made `ScrubTokenImpl` a `private structure`, so
+  the only public introduction route is `ScrubToken.fromCleanup`.
+  Phase B2 added `lifecyclePreRetypeCleanupWithToken` (the tokenized
+  cleanup wrapper).  Phase B3 added the `mkRetypeTarget` smart
+  constructor.
 * **R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01)** —
   `Notification.waitingThreads : SeLe4n.NoDupList SeLe4n.ThreadId`
   carries `List.Nodup` structurally at construction time
   (`SeLe4n/Model/Object/NoDupList.lean`).  `notificationSignal` pops
   via `NoDupList.tail?`; `notificationWait` cons site is gated by
-  `NoDupList.consWithGuard?`.  The state-level `uniqueWaiters` is
-  now trivially derivable via `SeLe4n.Kernel.uniqueWaiters_holds`.
-  Structural witnesses: `SeLe4n.NoDupList.nodup_witness`,
-  `SeLe4n.Kernel.notification_waitingThreads_nodup_witness`, and
+  `NoDupList.consWithGuard?`.  The historical state-level
+  `uniqueWaiters` predicate (and its `uniqueWaiters_holds` /
+  `uniqueWaiters_trivial` discharge helpers) were deleted in the
+  WS-RC R4.C close-out; per-Notification discharge is now directly
+  via `SeLe4n.Kernel.notification_waiters_nodup`.  Structural
+  witnesses: `SeLe4n.NoDupList.nodup_witness`,
+  `SeLe4n.Kernel.notification_waiters_nodup`, and
   `SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup`
   (the operational↔structural bridge).
 * **R4.D (DEEP-CAP-02)** — `cspaceMutate`'s runtime null-cap guard is
@@ -3348,5 +3359,26 @@ and in `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`). The companion
 `scripts/test_tier3_invariant_surface.sh`. -/
 theorem r4_structural_fix_discharge_index_documented : True := trivial
 -- Cross-reference: docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md §3 (R4.A/B/C/D)
+
+/-- WS-RC R4.A.7 close-out: state-level `cspaceSlotUnique` promoted to
+    structural via `UniqueSlotMap.hWF` and deleted.  Marker theorem for
+    the discharge-index reachability gate; sibling of the umbrella
+    marker `r4_structural_fix_discharge_index_documented`.  The body is
+    `trivial` per the marker-theorem pattern (the structural promotion
+    is witnessed by `SeLe4n.Model.CNode.cnode_slots_unique`; the
+    historical state-level predicate and its `_trivial` discharge
+    helper have both been deleted in the close-out's A2 phase). -/
+theorem cspaceSlotUnique_promoted_to_structural : True := trivial
+
+/-- WS-RC R4.C.8 close-out: state-level `uniqueWaiters` promoted to
+    structural via `NoDupList.hNodup` and deleted.  Marker theorem for
+    the discharge-index reachability gate; sibling of the umbrella
+    marker `r4_structural_fix_discharge_index_documented`.  The body is
+    `trivial` per the marker-theorem pattern (the structural promotion
+    is witnessed by `SeLe4n.Kernel.notification_waiters_nodup`; the
+    historical state-level predicate and its `_holds` / `_trivial`
+    discharge helpers have all been deleted in the close-out's C2
+    phase). -/
+theorem uniqueWaiters_promoted_to_structural : True := trivial
 
 end SeLe4n.Kernel

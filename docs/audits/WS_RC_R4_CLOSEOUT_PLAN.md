@@ -1,6 +1,18 @@
 # WS-RC R4 Close-out Workstream Plan
 
-**Status:** PLANNED
+**Status:** LANDED + DEEP-CLEANUP COMPLETE (v0.31.0, branch
+`claude/review-closeout-plan-HToSk`).  The 9-sub-PR close-out plus a
+follow-up audit-driven deep cleanup completes the four R4 sub-tasks
+**per the plan's A2.c4 / C2.c4 deletion mandate**: the historical
+state-level `cspaceSlotUnique` / `uniqueWaiters` predicates and their
+discharge helpers (`*_holds`, `*_trivial`) are deleted, all vestigial
+hypothesis parameters across ~24 theorem signatures are removed, and
+the dependent transfer-theorem chain (8 theorems) is deleted.
+ScrubToken privacy is verified externally (probe shows
+`ScrubTokenImpl` invisible from outside `Defs.lean` and its
+constructor marked as private).  No `True`-alias shims remain.  All
+`lake build`, `test_smoke`, and `test_full` checks green; 5 R4
+close-out reachability gates pass.
 **Workstream:** WS-RC (audit remediation v0.30.11 → v0.31.0 → v1.0.0)
 **Predecessors landed:** WS-RC R4 partial landing at commits `7da2572` (R4.B/D witness theorems), `f27defd` (NoDupList foundation + audit-pass marker), `6f3188a` (full R4.A/R4.C type-level field-type switches + ~55 consumer migrations), `7dd1958` (15 dedicated R4 API regression tests + stale-docstring fixes); see PR #769.
 **Audit findings remediated by close-out:** DEEP-MODEL-01 (R4.A) — close-out only; DEEP-CAP-04 (R4.B) — opacity + token-threading completion; DEEP-IPC-05 (R4.C) — close-out only; structural-fix policy §1.5.

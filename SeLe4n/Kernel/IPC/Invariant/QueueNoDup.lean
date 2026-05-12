@@ -650,33 +650,23 @@ theorem endpointQueuePopHead_preserves_endpointQueueNoDup
 -- runtime guard or the invariant chain without breaking the build.
 -- ============================================================================
 
-/-- WS-RC R4.C (DEEP-IPC-05): structural witness that under the
-    state-global `uniqueWaiters` invariant, every notification reachable
-    from `st` carries a `Nodup` waiting-thread list.
+/-- WS-RC R4.C / DEEP-IPC-05: plan-named canonical witness — every
+    `Notification` has a Nodup waiter list structurally, derived
+    directly from `NoDupList.hNodup` on the underlying
+    `Notification.waitingThreads` field.
 
-    This theorem is the **canonical reachability check** for the DEEP-IPC-05
-    finding: an auditor or contributor refactoring `Notification` can
-    re-derive the closure by elaborating this theorem alone, without
-    re-reading the full preservation chain in
+    This is the canonical discharge for the DEEP-IPC-05 finding: an
+    auditor or contributor refactoring `Notification` can re-derive
+    the closure by elaborating this theorem alone, without re-reading
+    the full preservation chain in
     `NotificationPreservation/Wait.lean` and
-    `NotificationPreservation/Signal.lean`.
-
-    The state-level invariant `uniqueWaiters` (defined in `Defs.lean:584`)
-    is preserved by every kernel transition that mutates a notification
-    (`notificationWait_preserves_uniqueWaiters`,
-    `notificationSignal_preserves_uniqueWaiters`, etc.); combined with
-    the boot-time empty-waiters discharge, this means every notification
-    reachable at runtime satisfies `waitingThreads.Nodup`. The full
-    type-level promotion (changing `waitingThreads : List ThreadId` to
-    `NoDupList ThreadId`) is structurally redundant once the witness is
-    codified via this theorem; the type-level promotion remains a
-    follow-up engineering simplification with no correctness impact. -/
-theorem notification_waitingThreads_nodup_witness
-    (st : SystemState) (oid : SeLe4n.ObjId) (ntfn : Notification)
-    (hUnique : uniqueWaiters st)
-    (hObj : st.objects[oid]? = some (KernelObject.notification ntfn)) :
-    ntfn.waitingThreads.val.Nodup :=
-  hUnique oid ntfn hObj
+    `NotificationPreservation/Signal.lean`.  The state-level
+    `uniqueWaiters` predicate and its substantive
+    `notification_waitingThreads_nodup_witness` were deleted in the
+    WS-RC R4.C close-out; structural codification subsumes them. -/
+theorem notification_waiters_nodup (n : Notification) :
+    n.waitingThreads.val.Nodup :=
+  n.waitingThreads.hNodup
 
 /-- WS-RC R4.C (DEEP-IPC-01 closure): structural witness that the
     runtime duplicate guard at `IPC/Operations/Endpoint.lean:723` is
@@ -693,8 +683,8 @@ theorem notification_waitingThreads_nodup_witness
 
     The runtime guard at line 723 is retained as defence-in-depth and
     is now provably equivalent to the type-level Nodup discharge by
-    composing this theorem with
-    `notification_waitingThreads_nodup_witness`. -/
+    composing this theorem with `notification_waiters_nodup` (the
+    plan-named structural discharge from `NoDupList.hNodup`). -/
 theorem notificationWait_runtime_check_implied_by_nodup
     (st : SystemState) (notifId : SeLe4n.ObjId) (ntfn : Notification)
     (waiter : SeLe4n.ThreadId) (tcb : TCB)

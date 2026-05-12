@@ -449,9 +449,12 @@ COMPLETE with full type-level structural promotion:
   (R4.C) — carries `List.Nodup` structurally at construction time.
 
 The state-level invariants `cspaceSlotUnique` and `uniqueWaiters`
-are now **trivially derivable** from the wrappers' `hWF` / `hNodup`
-fields (`slotsUnique_holds`, `uniqueWaiters_holds`).  The runtime
-duplicate guard at `notificationWait` is now backed by
+were retired in the v0.31.0 close-out (R4.A.6 / R4.C.7); per-CNode
+slot uniqueness is now discharged via
+`SeLe4n.Model.CNode.slotsUnique_holds` (or its plan-named alias
+`cnode_slots_unique`), and per-Notification Nodup is discharged via
+`SeLe4n.Kernel.notification_waiters_nodup`. The runtime duplicate
+guard at `notificationWait` is now backed by
 `NoDupList.consWithGuard?`, making the duplicate rejection
 structural.
 
@@ -468,13 +471,17 @@ structural.
   to drop the "phantom-like" caveat per the implement-the-improvement
   rule.
 - **R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01) — witness theorems.**
-  LANDED at commit `7da2572`.  Two named witness theorems in
-  `IPC/Invariant/QueueNoDup.lean`:
-  `notification_waitingThreads_nodup_witness` projects `uniqueWaiters`
-  for a single notification, and
-  `notificationWait_runtime_check_implied_by_nodup` re-exports the
-  existing `not_mem_waitingThreads_of_ipcState_ne` bridge under the
-  WS-RC discharge-index name.  **New in this commit:**
+  LANDED at commit `7da2572`. Originally introduced two named witness
+  theorems in `IPC/Invariant/QueueNoDup.lean`:
+  `notification_waitingThreads_nodup_witness` and
+  `notificationWait_runtime_check_implied_by_nodup`.
+  `notification_waitingThreads_nodup_witness` was deleted in the
+  v0.31.0 close-out (subsumed by the plan-named `notification_waiters_nodup`,
+  which discharges directly via `NoDupList.hNodup` without any
+  vestigial `uniqueWaiters` precondition).
+  `notificationWait_runtime_check_implied_by_nodup` survives — it
+  re-exports the existing `not_mem_waitingThreads_of_ipcState_ne`
+  bridge under the WS-RC discharge-index name.  **New in this commit:**
   `SeLe4n/Model/Object/NoDupList.lean` (~290 LoC) lands the
   forward-compatible `SeLe4n.NoDupList α` smart-constructor module —
   the foundation for the future field-type switch.  The module
@@ -531,6 +538,97 @@ None.  All four R4 sub-tasks LANDED at this commit:
   check passes alongside the pre-existing capability-error tests.
 - `bash scripts/check_website_links.sh` passes (no manifest path
   renames in this commit).
+
+#### R4 close-out (v0.31.0, COMPLETE)
+
+Following the partial landing of R4 at v0.30.11, the close-out
+(branch `claude/review-closeout-plan-HToSk`,
+plan: [`docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md`](audits/WS_RC_R4_CLOSEOUT_PLAN.md))
+**fully retires** the historical state-level `cspaceSlotUnique` and
+`uniqueWaiters` invariants — the definitions, trivial discharge
+helpers, all vestigial hypothesis parameters, and the dependent
+transfer-theorem chain are all **deleted**.  The substantive content
+has been promoted to the structural witnesses `UniqueSlotMap.hWF` and
+`NoDupList.hNodup` carried at construction time on the underlying data
+structures.  The 9 sub-PRs across 5 phases (P, A, B, C, V), plus a
+follow-up audit-driven deep cleanup, land the following concrete
+changes:
+
+- **Phase P1**: `SeLe4n.Model.CNode.cnode_slots_unique`,
+  `SeLe4n.Kernel.cspaceSlotUnique_trivial`,
+  `SeLe4n.Kernel.uniqueWaiters_trivial`,
+  `SeLe4n.Kernel.notification_waiters_nodup`,
+  `cspaceSlotUnique_promoted_to_structural`,
+  `uniqueWaiters_promoted_to_structural` (plan-named marker theorems)
+  and the reachability gate `r4_close_out_named_theorems_reachable`
+  in `tests/ModelIntegritySuite.lean`.
+- **Phase A1**: `cspaceSlotUnique` collapsed to `True`; ~12 substantive
+  `hUnique cnodeId cn hObj` application sites migrated to
+  `SeLe4n.Model.CNode.slotsUnique_holds`.
+- **Phase A2 (including deep cleanup)**: `cspaceSlotUnique` removed
+  from `capabilityInvariantBundle` and `CapabilityInvariantBundle`
+  (bundle now 6 conjuncts, was 7); all preservation theorem bodies
+  and destructure-then-rebuild sites updated.  The audit-driven deep
+  cleanup additionally **deletes** the `cspaceSlotUnique` definition
+  and `cspaceSlotUnique_trivial` helper entirely, removes the
+  vestigial `(_hSlotUniq : cspaceSlotUnique st)` parameter from 22
+  theorem signatures, deletes the entire
+  `cspaceSlotUnique_of_storeObject_{nonCNode,cnode,endpoint_store}` /
+  `_objects_eq` / `_of_storeTcbIpcState` /
+  `_through_{blocking,handshake}_path` transfer chain (8 theorems),
+  renames the historical bridge `cspaceLookupSound_of_cspaceSlotUnique`
+  to the unconditional `cspaceLookupSound_holds`, and renames
+  `capabilityInvariantBundle_of_slotUnique` to
+  `capabilityInvariantBundle_of_components`.  The `cspaceMint`
+  non-interference cluster
+  (`NonInterferenceStep.cspaceMint`,
+  `cspaceMintChecked_NI`,
+  `cspaceMint_preserves_lowEquivalent`)
+  is simplified by removing the `hSlotUniq` field/parameter.
+- **Phase B1**: `ScrubTokenImpl` made `private structure`;
+  `ScrubToken.fromCleanup` is the sole public introduction route.
+- **Phase B2**: `lifecyclePreRetypeCleanupWithToken` wrapper added
+  with `Subtype`-paired return; bridge lemmas
+  `lifecyclePreRetypeCleanupWithToken_state_eq` /
+  `lifecyclePreRetypeCleanupWithToken_error_eq` connect to the bare
+  form.
+- **Phase B3**: `mkRetypeTarget` smart constructor + `mkRetypeTarget_id`
+  companion theorem added.
+- **Phase C1**: `uniqueWaiters` collapsed to `True`; substantive
+  applications migrated to `NoDupList.hNodup`.
+- **Phase C2 (including deep cleanup)**: `uniqueWaiters` removed from
+  `ipcInvariantFull` and `IpcInvariantFull` (bundle now 15 conjuncts,
+  was 16); `hUW' : uniqueWaiters st'` parameter removed from 11
+  preservation theorems in
+  `IPC/Invariant/Structural/DualQueueMembership.lean` plus the
+  `lifecycleRetypeObject` core/composition variants; index shifts in
+  `Architecture/Invariant.lean` and `Platform/Boot.lean`.  The
+  audit-driven deep cleanup additionally **deletes** the
+  `uniqueWaiters` definition along with `uniqueWaiters_holds`,
+  `uniqueWaiters_trivial`,
+  `notificationWait_preserves_uniqueWaiters`,
+  `notification_waitingThreads_nodup_witness`,
+  `coreIpcInvariantBundle_to_uniqueWaiters`, and
+  `default_uniqueWaiters`; the residual `_hUnique : uniqueWaiters st`
+  parameter on
+  `notificationSignal_preserves_notificationWaiterConsistent`
+  is removed.
+- **Phase V1**: version bump 0.30.11 → 0.31.0 (`lakefile.toml`,
+  `README.md`, `CHANGELOG.md` v0.31.0 header, `rust/Cargo.toml` +
+  `rust/Cargo.lock` + `rust/sele4n-hal/src/boot.rs` KERNEL_VERSION,
+  `CLAUDE.md` version line, `docs/spec/SELE4N_SPEC.md` package
+  version row, all 10 `docs/i18n/<lang>/README.md` version badges,
+  `docs/codebase_map.json` regenerated).
+
+##### R4 close-out validation
+
+- `lake build` (default target, 312 jobs) passes; zero warnings.
+- `./scripts/test_smoke.sh` passes end-to-end.
+- `./scripts/test_full.sh` passes (tier 3 invariant surface
+  including new R4 close-out reachability gates).
+- `lake exe model_integrity_suite` reports the three new
+  `r4b_*` gates (B1/B2/B3) plus the `r4_close_out_named_theorems_reachable`
+  P1 gate pass alongside the pre-existing R4 structural tests.
 
 ### R5..R14 — TBD
 

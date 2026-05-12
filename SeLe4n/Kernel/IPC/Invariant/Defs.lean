@@ -581,22 +581,14 @@ theorem not_mem_waitingThreads_of_ipcState_ne
 -- Notification uniqueness (F-12 / WS-D4 / WS-G7)
 -- ============================================================================
 
-/-- WS-RC R4.C: state-level Nodup invariant.  Now trivially derivable from
-    the structural `Notification.waitingThreads.hNodup`; retained as a
-    named predicate for caller compatibility (preservation theorems in
-    `NotificationPreservation/{Signal,Wait}.lean` still consume it as a
-    hypothesis).  Every instance specialises to
-    `ntfn.waitingThreads.hNodup`. -/
-def uniqueWaiters (st : SystemState) : Prop :=
-  ∀ (oid : SeLe4n.ObjId) (ntfn : Notification),
-    st.objects[oid]? = some (KernelObject.notification ntfn) →
-      ntfn.waitingThreads.val.Nodup
-
-/-- WS-RC R4.C: `uniqueWaiters` is now trivially derivable from the
-    structural `NoDupList.hNodup`; the state-level invariant is no longer
-    a separate proof obligation. -/
-theorem uniqueWaiters_holds (st : SystemState) : uniqueWaiters st :=
-  fun _ ntfn _ => ntfn.waitingThreads.hNodup
+-- WS-RC R4.C close-out (Phase C2.c4): the historical state-level
+-- `uniqueWaiters` predicate, its `uniqueWaiters_holds` substantive
+-- discharge, and its `uniqueWaiters_trivial` plan-named alias have all
+-- been deleted.  Per-Notification Nodup is now carried structurally by
+-- `Notification.waitingThreads : NoDupList ThreadId` via the
+-- `NoDupList.hNodup` field; the canonical discharge is
+-- `SeLe4n.NoDupList.nodup_witness` (or its plan-named alias
+-- `SeLe4n.Kernel.notification_waiters_nodup`).
 
 /-- AJ1-B (M-04): Every thread in `blockedOnReply` state has an explicit
 `replyTarget`. All production paths (`endpointCall`, `endpointReceiveDual`)
@@ -628,28 +620,11 @@ theorem blockedOnReplyHasTarget_implies_some_replyTarget
   | none => simp at h
   | some t => exact ⟨t, rfl⟩
 
-/-- WS-G7/F-P11/WS-RC R4.C: notificationWait preserves uniqueWaiters.
-
-    WS-RC R4.C: the proof collapses to the structural witness
-    `uniqueWaiters_holds`.  The state-level invariant is unconditionally
-    derivable from `Notification.waitingThreads.hNodup` because the field
-    type `NoDupList ThreadId` carries the Nodup proof at construction
-    time.  The hypothesis set is retained unchanged for caller
-    compatibility — callers still pass `hConsist` and `hInv` because
-    larger frame contexts depend on those hypotheses being threaded
-    through; they are simply not consumed by this preservation arm
-    after the structural promotion. -/
-theorem notificationWait_preserves_uniqueWaiters
-    (st st' : SystemState)
-    (notificationId : SeLe4n.ObjId)
-    (waiter : SeLe4n.ThreadId)
-    (badge : Option SeLe4n.Badge)
-    (_hInv : uniqueWaiters st)
-    (_hConsist : notificationWaiterConsistent st)
-    (_hObjInv : st.objects.invExt)
-    (_hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
-    uniqueWaiters st' :=
-  uniqueWaiters_holds st'
+-- WS-RC R4.C close-out: `notificationWait_preserves_uniqueWaiters` was
+-- deleted along with the `uniqueWaiters` predicate it preserved.  The
+-- per-notification Nodup invariant now holds structurally via
+-- `Notification.waitingThreads.hNodup`; the state-level predicate has
+-- no remaining role in the proof surface.
 
 -- ============================================================================
 -- WS-G7: notificationWaiterConsistent — base case + documentation
@@ -682,9 +657,12 @@ transition surface is sketched here for documentation:
    notifications are unchanged.
 
 3. **`notificationSignal`** (wake path): Removes the head waiter and sets its
-   ipcState to `.ready`. Requires `uniqueWaiters` to ensure the woken thread
-   does not appear elsewhere in the remaining list. Remaining threads' TCBs
-   are unchanged, so their ipcState is preserved.
+   ipcState to `.ready`. The woken thread does not appear elsewhere in the
+   remaining list — guaranteed structurally by `NoDupList.hNodup` on
+   `Notification.waitingThreads` (WS-RC R4.C close-out; the historical
+   state-level `uniqueWaiters` precondition is no longer required since the
+   field-level invariant is unconditional). Remaining threads' TCBs are
+   unchanged, so their ipcState is preserved.
 
 4. **`notificationSignal`** (merge path): No TCB modification; only the
    notification badge is updated. All waiting lists are unchanged.
@@ -703,7 +681,8 @@ R3-C/M-19: Formal preservation theorems are proved in
 - `storeTcbIpcStateAndMessage_preserves_notificationWaiterConsistent` — TCB ipc
   state change when target thread is not in any notification wait list
 - `notificationSignal_preserves_notificationWaiterConsistent` — R3-C.1: wake path
-  (removes head waiter, uses `uniqueWaiters` Nodup) + merge path (vacuous)
+  (removes head waiter; structural `NoDupList.hNodup` ensures the woken
+  thread does not appear elsewhere) + merge path (vacuous)
 - `frame_preserves_notificationWaiterConsistent` — R3-C.2: general frame lemma
   for operations that preserve notification objects and waiter TCBs
 - `endpointReply_preserves_notificationWaiterConsistent` — R3-C.2: concrete
@@ -1182,11 +1161,15 @@ Z7 extends the bundle with 4 donation invariants:
 - `passiveServerIdle`: unbound non-runnable threads are idle/receiving
 - `donationBudgetTransfer`: at most one thread per SchedContext
 
-AG1-C adds `uniqueWaiters` as the 15th conjunct:
-- `uniqueWaiters`: notification waiting thread lists have no duplicates
-
-AJ1-B adds `blockedOnReplyHasTarget` as the 16th conjunct:
-- `blockedOnReplyHasTarget`: every blockedOnReply thread has replyTarget = some _ -/
+WS-RC R4.C.7 (close-out C2): the `uniqueWaiters` conjunct previously
+listed as the 15th slot was removed when `Notification.waitingThreads`
+was promoted from `List ThreadId` to `SeLe4n.NoDupList ThreadId`.  The
+per-Notification `List.Nodup` witness is now carried structurally at
+construction time via `NoDupList.hNodup`; per-Notification discharge is
+direct via `SeLe4n.Kernel.notification_waiters_nodup`.  The bundle now
+has 15 conjuncts (was 16); `blockedOnReplyHasTarget` is the 15th.  The
+historical `uniqueWaiters` state-level predicate (and its `_holds` /
+`_trivial` discharge helpers) were deleted in the close-out. -/
 def ipcInvariantFull (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
   badgeWellFormed st ∧ waitingThreadsPendingMessageNone st ∧
@@ -1195,7 +1178,6 @@ def ipcInvariantFull (st : SystemState) : Prop :=
   blockedThreadTimeoutConsistent st ∧
   donationChainAcyclic st ∧ donationOwnerValid st ∧
   passiveServerIdle st ∧ donationBudgetTransfer st ∧
-  uniqueWaiters st ∧
   blockedOnReplyHasTarget st
 
 -- ============================================================================
@@ -1203,12 +1185,13 @@ def ipcInvariantFull (st : SystemState) : Prop :=
 --
 -- The legacy tuple form above is preserved as the primary definition so
 -- every existing consumer that destructures `ipcInvariantFull` via tuple
--- projections continues to typecheck. The block below layers a named
--- `structure IpcInvariantFull` over the same 16 conjuncts, a bidirectional
--- `ipcInvariantFull_iff_IpcInvariantFull` bridge, and per-field projection
--- theorems (installed as `@[simp]`) so callers can write
--- `hInv.donationOwnerValid` (or any other conjunct name) in place of the
--- fragile `hInv.2.2.2.2.2.2.2.2.2.2.2.1` chain.
+-- projections continues to typecheck.  The block below layers a named
+-- `structure IpcInvariantFull` over the same 15 conjuncts (was 16
+-- before the WS-RC R4.C.7 close-out retired `uniqueWaiters`), a
+-- bidirectional `ipcInvariantFull_iff_IpcInvariantFull` bridge, and
+-- per-field projection theorems (installed as `@[simp]`) so callers
+-- can write `hInv.donationOwnerValid` (or any other conjunct name) in
+-- place of the fragile `hInv.2.2.2.2.2.2.2.2.2.2.2.1` chain.
 --
 -- The projection theorems live in the `SeLe4n.Kernel.ipcInvariantFull`
 -- namespace so that Lean 4 dot notation (`h.foo` elaborates to
@@ -1221,8 +1204,10 @@ def ipcInvariantFull (st : SystemState) : Prop :=
 
 /-- AN3-B.1: Named-field counterpart of `ipcInvariantFull`.
 
-All 16 fields mirror the conjuncts of the legacy tuple form, one-for-one
-in declaration order. The bidirectional bridge
+All 15 fields mirror the conjuncts of the legacy tuple form, one-for-one
+in declaration order (the 15th-slot `uniqueWaiters` conjunct was retired
+in the WS-RC R4.C.7 close-out, leaving `blockedOnReplyHasTarget` as the
+final field). The bidirectional bridge
 `ipcInvariantFull_iff_IpcInvariantFull` establishes that the two Prop-level
 forms are interchangeable; new theorems should prefer this structure because
 adding or removing a conjunct (a frequent audit-remediation operation) only
@@ -1243,7 +1228,6 @@ structure IpcInvariantFull (st : SystemState) : Prop where
   donationOwnerValid : donationOwnerValid st
   passiveServerIdle : passiveServerIdle st
   donationBudgetTransfer : donationBudgetTransfer st
-  uniqueWaiters : uniqueWaiters st
   blockedOnReplyHasTarget : blockedOnReplyHasTarget st
 
 namespace ipcInvariantFull
@@ -1326,15 +1310,10 @@ elaborator. -/
     _root_.SeLe4n.Kernel.donationBudgetTransfer st :=
   h.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
-@[simp] theorem uniqueWaiters {st : SystemState}
-    (h : ipcInvariantFull st) :
-    _root_.SeLe4n.Kernel.uniqueWaiters st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-
 @[simp] theorem blockedOnReplyHasTarget {st : SystemState}
     (h : ipcInvariantFull st) :
     _root_.SeLe4n.Kernel.blockedOnReplyHasTarget st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 end ipcInvariantFull
 
@@ -1353,7 +1332,7 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.queueNextBlockingConsistent, h.queueHeadBlockedConsistent,
            h.blockedThreadTimeoutConsistent, h.donationChainAcyclic,
            h.donationOwnerValid, h.passiveServerIdle,
-           h.donationBudgetTransfer, h.uniqueWaiters,
+           h.donationBudgetTransfer,
            h.blockedOnReplyHasTarget⟩
   · intro h
     exact ⟨h.ipcInvariant, h.dualQueueSystemInvariant,
@@ -1363,7 +1342,7 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.queueNextBlockingConsistent, h.queueHeadBlockedConsistent,
            h.blockedThreadTimeoutConsistent, h.donationChainAcyclic,
            h.donationOwnerValid, h.passiveServerIdle,
-           h.donationBudgetTransfer, h.uniqueWaiters,
+           h.donationBudgetTransfer,
            h.blockedOnReplyHasTarget⟩
 
 /-- AN3-B.1: forward direction of the bridge, as a convenience coercion.

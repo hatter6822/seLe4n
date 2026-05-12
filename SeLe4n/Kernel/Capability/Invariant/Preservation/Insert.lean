@@ -73,8 +73,10 @@ theorem cspaceLookupSlot_preserves_capabilityInvariantBundle
   simpa using hInv
 
 /-- WS-E2 / H-01: Compositional preservation of `cspaceInsertSlot`.
-Uses pre-state `cspaceSlotUnique` + `CNode.insert_slotsUnique` to derive post-state
-uniqueness, rather than re-proving from scratch. -/
+WS-RC R4.A close-out: slot-uniqueness is now carried structurally on
+`CNode.slots : UniqueSlotMap` (`UniqueSlotMap.hWF`), so per-CNode
+discharge via `slotsUnique_holds` is direct; the historical state-level
+`cspaceSlotUnique` predicate is no longer threaded as a precondition. -/
 theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (addr : CSpaceAddr)
@@ -85,42 +87,7 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
     (_hObjInv : st.objects.invExt)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
-  rcases hInv with ⟨hUnique, _hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv⟩
-  -- Compositionally derive post-state uniqueness (WS-E2 / H-01)
-  have hUnique' : cspaceSlotUnique st' := by
-    intro cnodeId cn hObj
-    by_cases hEq : cnodeId = addr.cnode
-    · -- Modified CNode: derive uniqueness via CNode.insert_slotsUnique
-      unfold cspaceInsertSlot at hStep
-      rw [hEq] at hObj
-      cases hPre : st.objects[addr.cnode]? with
-      | none => simp [hPre] at hStep
-      | some preObj =>
-        cases preObj with
-        | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hPre] at hStep
-        | cnode preCn =>
-          simp [hPre] at hStep
-          -- WS-E4/H-02: case split on occupied-slot guard
-          cases hLookup : preCn.lookup addr.slot with
-          | some _ => simp [hLookup] at hStep
-          | none =>
-            simp [hLookup] at hStep
-            cases hStore : storeObject addr.cnode (.cnode (preCn.insert addr.slot cap)) st with
-            | error e => simp [hStore] at hStep
-            | ok pair =>
-              obtain ⟨_, stMid⟩ := pair
-              simp [hStore] at hStep
-              have hObjRef := storeCapabilityRef_preserves_objects stMid st' addr (some cap.target) hStep
-              have hObjMid := storeObject_objects_eq st stMid addr.cnode
-                (.cnode (preCn.insert addr.slot cap)) hObjInv hStore
-              have hFinal : st'.objects[addr.cnode]? = some (.cnode (preCn.insert addr.slot cap)) := by
-                rw [← hObjMid]; exact congrArg (·[addr.cnode]?) hObjRef
-              rw [hFinal] at hObj; cases hObj
-              exact CNode.insert_slotsUnique preCn addr.slot cap (hUnique addr.cnode preCn hPre)
-    · -- Unmodified CNodes: transfer directly from pre-state
-      have hPreObj := cspaceInsertSlot_preserves_objects_ne st st' addr cap cnodeId hEq hObjInv hStep
-      rw [hPreObj] at hObj
-      exact hUnique cnodeId cn hObj
+  rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv⟩
   -- WS-H4: Transfer new components through storeObject(CNode) → storeCapabilityRef chain
   have ⟨hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩ :
       cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' ∧ st'.objects.invExt := by
@@ -155,7 +122,7 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
                 (by rw [hRefCdt]; exact storeObject_cdt_eq st stMid addr.cnode _ hStore),
               cspaceDepthConsistent_of_objects_eq stMid st' hDepthMid hRefObj,
               hRefObj ▸ hObjInvMid⟩
-  exact ⟨hUnique', cspaceLookupSound_of_cspaceSlotUnique st' hUnique',
+  exact ⟨cspaceLookupSound_holds st',
     hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩
 
 /-- S3-D: `cspaceInsertSlot` preserves `cdtMapsConsistent`. Insert only calls

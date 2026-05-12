@@ -134,21 +134,43 @@ is now `SeLe4n.UniqueSlotMap Capability` (R4.A);
 |---|---------|-----------|--------------------|----------------|--------------------|--------|
 | D.1 | `SeLe4n.UniqueSlotMap.keys_unique` | `SeLe4n/Model/Object/UniqueSlotMap.lean` | `cspaceSlotUnique` (now trivially derivable via `slotsUnique_holds`) | structural — `UniqueSlotMap.hWF` carried at construction time by `empty`, `insert`, `erase`, `filter`, `ofListWF` | `#check @SeLe4n.UniqueSlotMap.keys_unique` | **LANDED** (this commit) |
 | D.2 | `retypeTarget_implies_scrub_token_held` | `SeLe4n/Kernel/Capability/Invariant/Defs.lean:411` | `ScrubToken` existence (was phantom-only `cleanupHookDischarged`) | `RetypeTarget` smart constructor (third conjunct `ScrubToken.fromCleanup`) | `#check @SeLe4n.Kernel.retypeTarget_implies_scrub_token_held` | **LANDED** (commit `7da2572`; re-verified this commit) |
-| D.3 | `notification_waitingThreads_nodup_witness` | `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean:667` | `Notification.waitingThreads.val.Nodup` — now trivially derivable via `uniqueWaiters_holds` | structural — `NoDupList.hNodup` carried at construction time by `empty`, `consWithGuard?`, `filter`, `tail?` | `#check @SeLe4n.Kernel.notification_waitingThreads_nodup_witness` | **LANDED** (witness `7da2572`; field-type switch this commit) |
+| D.3 | `notification_waitingThreads_nodup_witness` | (DELETED — v0.31.0 close-out, C2.c4) | `Notification.waitingThreads.val.Nodup` — historical witness with vestigial `uniqueWaiters` precondition; subsumed by D.11 (`notification_waiters_nodup`) which discharges structurally via `NoDupList.hNodup` without preconditions | n/a — deleted | n/a — deleted | **DELETED** (v0.31.0 close-out, subsumed by D.11) |
 | D.4 | `SeLe4n.NoDupList.nodup_witness` | `SeLe4n/Model/Object/NoDupList.lean` | `List.Nodup` carried by smart constructor at construction time | `NoDupList.empty`, `consWithGuard`, `consWithGuard?`, `filter`, `tail?` | `#check @SeLe4n.NoDupList.nodup_witness` | **LANDED** (this commit) |
 | D.5 | `r4_structural_fix_discharge_index_documented` | `SeLe4n/Kernel/CrossSubsystem.lean` | R4.A/B/C/D closure-form discharge index | marker theorem (tier-3 invariant-surface gate) | `#check @SeLe4n.Kernel.r4_structural_fix_discharge_index_documented` | **LANDED** (this commit) |
 | D.6 | `SeLe4n.Model.CNode.slotsUnique_holds` | `SeLe4n/Model/Object/Structures.lean` | `cspaceSlotUnique` trivial via `UniqueSlotMap.hWF` | structural projection | `#check @SeLe4n.Model.CNode.slotsUnique_holds` | **LANDED** (this commit) |
-| D.7 | `SeLe4n.Kernel.uniqueWaiters_holds` | `SeLe4n/Kernel/IPC/Invariant/Defs.lean` | `uniqueWaiters` trivial via `NoDupList.hNodup` | structural projection | `#check @SeLe4n.Kernel.uniqueWaiters_holds` | **LANDED** (this commit) |
+| D.7 | `SeLe4n.Kernel.uniqueWaiters_holds` | (DELETED — v0.31.0 close-out, C2.c4) | `uniqueWaiters` state-level discharge — subsumed by D.11 (`notification_waiters_nodup`) which discharges per-Notification structurally | n/a — deleted | n/a — deleted | **DELETED** (v0.31.0 close-out, subsumed by D.11) |
+| D.8 | `SeLe4n.Model.CNode.cnode_slots_unique` | `SeLe4n/Model/Object/Structures.lean` | plan-named alias for `slotsUnique_holds` (D.6) | structural projection | `#check @SeLe4n.Model.CNode.cnode_slots_unique` | **LANDED** (v0.31.0 close-out, P1) |
+| D.9 | `SeLe4n.Kernel.cspaceSlotUnique_trivial` | (DELETED — v0.31.0 close-out, A2.c4) | state-level discharge of the retired `cspaceSlotUnique` — deleted along with the predicate it discharged | n/a — deleted | n/a — deleted | **DELETED** (v0.31.0 close-out, subsumed by D.6/D.8) |
+| D.10 | `SeLe4n.Kernel.uniqueWaiters_trivial` | (DELETED — v0.31.0 close-out, C2.c4) | state-level discharge of the retired `uniqueWaiters` — deleted along with the predicate it discharged | n/a — deleted | n/a — deleted | **DELETED** (v0.31.0 close-out, subsumed by D.11) |
+| D.11 | `SeLe4n.Kernel.notification_waiters_nodup` | `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean` | plan-named per-Notification Nodup witness — discharges structurally via `NoDupList.hNodup` | structural projection | `#check @SeLe4n.Kernel.notification_waiters_nodup` | **LANDED** (v0.31.0 close-out, P1) |
+| D.12 | `SeLe4n.Kernel.cspaceSlotUnique_promoted_to_structural` | `SeLe4n/Kernel/CrossSubsystem.lean` | R4.A.7 marker — `cspaceSlotUnique` retired to structural `UniqueSlotMap.hWF` | marker theorem (tier-3 invariant-surface gate) | `#check @SeLe4n.Kernel.cspaceSlotUnique_promoted_to_structural` | **LANDED** (v0.31.0 close-out, P1) |
+| D.13 | `SeLe4n.Kernel.uniqueWaiters_promoted_to_structural` | `SeLe4n/Kernel/CrossSubsystem.lean` | R4.C.8 marker — `uniqueWaiters` retired to structural `NoDupList.hNodup` | marker theorem (tier-3 invariant-surface gate) | `#check @SeLe4n.Kernel.uniqueWaiters_promoted_to_structural` | **LANDED** (v0.31.0 close-out, P1) |
+| D.14 | `SeLe4n.Kernel.lifecyclePreRetypeCleanupWithToken` | `SeLe4n/Kernel/Capability/Invariant/Defs.lean` | R4.B.2 tokenized cleanup wrapper — produces `{stClean // ScrubToken stClean target}` | `match` on bare `lifecyclePreRetypeCleanup` + `ScrubToken.fromCleanup` | `#check @SeLe4n.Kernel.lifecyclePreRetypeCleanupWithToken` | **LANDED** (v0.31.0 close-out, B2) |
+| D.15 | `SeLe4n.Kernel.lifecyclePreRetypeCleanupWithToken_state_eq` | `SeLe4n/Kernel/Capability/Invariant/Defs.lean` | R4.B.2 bridge from tokenized form to bare cleanup equation | direct projection via `Except.ok.inj` + `Subtype.val` | `#check @SeLe4n.Kernel.lifecyclePreRetypeCleanupWithToken_state_eq` | **LANDED** (v0.31.0 close-out, B2) |
+| D.16 | `SeLe4n.Kernel.mkRetypeTarget` | `SeLe4n/Kernel/Capability/Invariant/Defs.lean` | R4.B.3 smart constructor for `RetypeTarget` from `cleanupHookDischarged` conjuncts + `ScrubToken` | structure literal | `#check @SeLe4n.Kernel.mkRetypeTarget` | **LANDED** (v0.31.0 close-out, B3) |
+| D.17 | `SeLe4n.Kernel.mkRetypeTarget_id` | `SeLe4n/Kernel/Capability/Invariant/Defs.lean` | R4.B.3 — `(mkRetypeTarget st target ... ...).id = target` | `rfl` | `#check @SeLe4n.Kernel.mkRetypeTarget_id` | **LANDED** (v0.31.0 close-out, B3) |
 
 The two foundation modules
 (`SeLe4n/Model/Object/UniqueSlotMap.lean`,
 `SeLe4n/Model/Object/NoDupList.lean`) materialise the polymorphic
 wrappers.  Every kernel transition that previously needed to discharge
 `cspaceSlotUnique` / `uniqueWaiters` via a preservation theorem now
-discharges it structurally via the smart constructor; the preservation
-theorems (`empty/insert/remove/revokeTargetLocal_slotsUnique`,
-`notificationWait_preserves_uniqueWaiters`) collapse to one-liner
-projections of the relevant `hWF` / `hNodup` fields.
+discharges it structurally via the smart constructor.
+
+**WS-RC R4 close-out (v0.31.0)**: the historical state-level
+`cspaceSlotUnique` / `uniqueWaiters` predicates and their discharge
+helpers (D.7, D.9, D.10) have been **deleted** along with the
+`notification_waitingThreads_nodup_witness` historical witness (D.3),
+the `cspaceSlotUnique_of_storeObject_*` / `_endpoint_store` /
+`_objects_eq` / `_through_*` transfer chain (8 theorems), and the
+`notificationWait_preserves_uniqueWaiters`,
+`coreIpcInvariantBundle_to_uniqueWaiters`, `default_uniqueWaiters`
+helpers.  The `cspaceLookupSound_of_cspaceSlotUnique` bridge was
+renamed to the unconditional `cspaceLookupSound_holds`.  The
+22 vestigial `(_hSlotUniq : cspaceSlotUnique st)` parameters across
+`Authority.lean`, `Preservation/BadgeIpcCapsAndCdtMaps.lean`, and
+`InformationFlow/{Composition,Helpers,Operations}.lean` were removed
+along with their call-site arguments.
 
 **Runtime API coverage** (`tests/ModelIntegritySuite.lean`):
 15 dedicated tests exercise the new R4.A/R4.C foundation APIs end-to-end:

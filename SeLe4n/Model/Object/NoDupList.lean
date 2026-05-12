@@ -19,11 +19,15 @@ caller cannot insert a duplicate without explicitly handling the `none`
 result.
 
 `Notification.waitingThreads` (in `SeLe4n.Model.Object.Types`) carries
-this wrapper around `List SeLe4n.ThreadId`. The state-level invariant
-`SeLe4n.Kernel.uniqueWaiters` is now trivially derivable via
-`SeLe4n.Kernel.uniqueWaiters_holds` from the structural `hNodup` field —
-no preservation theorem is required for the wrapper's no-duplicate
-property since it cannot be violated at construction.
+this wrapper around `List SeLe4n.ThreadId`. Per-Notification Nodup is
+discharged directly from `hNodup` via
+`SeLe4n.Kernel.notification_waiters_nodup` (the plan-named close-out
+witness in `SeLe4n.Kernel.IPC.Invariant.QueueNoDup`) — no preservation
+theorem is required for the wrapper's no-duplicate property since it
+cannot be violated at construction.  The historical state-level
+`uniqueWaiters` predicate and `uniqueWaiters_holds` discharge helper
+were deleted in the WS-RC R4.C close-out (replaced by the structural
+field-level discharge).
 
 ## Operational vs. proof-side API
 
@@ -300,10 +304,12 @@ end SeLe4n
 The `SeLe4n.NoDupList α` wrapper carries `List.Nodup` invariantly at
 construction time.  `Notification.waitingThreads` has been migrated to
 `SeLe4n.NoDupList SeLe4n.ThreadId` (R4.C LANDED — see
-`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` §8.5), so the
-state-level `uniqueWaiters` invariant is now a trivial projection of
-`hNodup` via `SeLe4n.Kernel.uniqueWaiters_holds`. This marker theorem
-exists so the tier-3 invariant-surface gate can locate the
+`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` §8.5).  The historical
+state-level `uniqueWaiters` predicate and its `uniqueWaiters_holds`
+discharge helper were deleted in the WS-RC R4.C close-out; the
+per-Notification Nodup property is now discharged directly from
+`hNodup` via `SeLe4n.Kernel.notification_waiters_nodup`.  This marker
+theorem exists so the tier-3 invariant-surface gate can locate the
 structural-promotion foundation by name. -/
 namespace SeLe4n.Kernel
 

@@ -540,16 +540,14 @@ theorem cspaceMint_preserves_lowEquivalent
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (_hSrcHigh : objectObservable ctx observer src.cnode = false)
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
-    (hSlotUniq₁ : cspaceSlotUnique s₁)
-    (hSlotUniq₂ : cspaceSlotUnique s₂)
     (hObjInv₁ : s₁.objects.invExt)
     (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : cspaceMint src dst rights badge s₁ = .ok ((), s₁'))
     (hStep₂ : cspaceMint src dst rights badge s₂ = .ok ((), s₂')) :
     lowEquivalent ctx observer s₁' s₂' := by
-  rcases cspaceMint_child_attenuates s₁ s₁' src dst rights badge hSlotUniq₁ hObjInv₁ hStep₁ with
+  rcases cspaceMint_child_attenuates s₁ s₁' src dst rights badge hObjInv₁ hStep₁ with
     ⟨parent₁, child₁, hLookup₁, _, _⟩
-  rcases cspaceMint_child_attenuates s₂ s₂' src dst rights badge hSlotUniq₂ hObjInv₂ hStep₂ with
+  rcases cspaceMint_child_attenuates s₂ s₂' src dst rights badge hObjInv₂ hStep₂ with
     ⟨parent₂, child₂, hLookup₂, _, _⟩
   unfold cspaceMint at hStep₁ hStep₂
   rw [hLookup₁] at hStep₁; rw [hLookup₂] at hStep₂

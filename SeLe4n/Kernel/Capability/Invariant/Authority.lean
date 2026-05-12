@@ -17,7 +17,6 @@ open SeLe4n.Model
 private theorem cspaceDeleteSlotCore_authority_reduction
     (st st' : SystemState)
     (addr : CSpaceAddr)
-    (hSlotUniq : cspaceSlotUnique st)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     SystemState.lookupSlotCap st' addr = none := by
@@ -34,7 +33,7 @@ private theorem cspaceDeleteSlotCore_authority_reduction
       | untyped _ => simp [hObj] at hStep
       | schedContext _ => simp [hObj] at hStep
       | cnode cn =>
-          have hUniq := hSlotUniq cnodeId cn hObj
+          have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
           simp [hObj] at hStep
           cases hStep
           simp only [SystemState.lookupSlotCap, SystemState.lookupCNode,
@@ -46,14 +45,13 @@ private theorem cspaceDeleteSlotCore_authority_reduction
 private theorem cspaceDeleteSlot_authority_reduction
     (st st' : SystemState)
     (addr : CSpaceAddr)
-    (hSlotUniq : cspaceSlotUnique st)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     SystemState.lookupSlotCap st' addr = none := by
   simp only [cspaceDeleteSlot] at hStep
   split at hStep
   · simp at hStep
-  · exact cspaceDeleteSlotCore_authority_reduction st st' addr hSlotUniq hObjInv hStep
+  · exact cspaceDeleteSlotCore_authority_reduction st st' addr hObjInv hStep
 
 /-- Revoke transition authority reduction clause: no sibling slot in the same CNode may retain
 the revoked target. -/
@@ -61,7 +59,6 @@ theorem cspaceRevoke_local_target_reduction
     (st st' : SystemState)
     (addr : CSpaceAddr)
     (parent : Capability)
-    (hSlotUniq : cspaceSlotUnique st)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceRevoke addr st = .ok ((), st'))
     (hParent : cspaceLookupSlot addr st = .ok (parent, st))
@@ -115,7 +112,7 @@ theorem cspaceRevoke_local_target_reduction
               have hEq := SystemState.lookupSlotCap_eq_of_objects_eq st' storedState
                 { cnode := addr.cnode, slot := slot } hObjEq
               simpa [hEq] using hLookup
-            have hUniq := hSlotUniq addr.cnode cn hObj
+            have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
             -- Extract that the filtered table lookup succeeds at `slot`
             have hFilterLookup : (cn.revokeTargetLocal addr.slot parent.target).lookup slot = some cap := by
               simp only [storedState, revokedObj, SystemState.lookupSlotCap, SystemState.lookupCNode,
@@ -159,7 +156,6 @@ private theorem cspaceInsertSlot_lookup_eq
     (st st' : SystemState)
     (addr : CSpaceAddr)
     (cap : Capability)
-    (hSlotUniq : cspaceSlotUnique st)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     cspaceLookupSlot addr st' = .ok (cap, st') := by
@@ -175,7 +171,7 @@ private theorem cspaceInsertSlot_lookup_eq
       | untyped _ => simp [cspaceInsertSlot, hObj] at hStep
       | schedContext _ => simp [cspaceInsertSlot, hObj] at hStep
       | cnode cn =>
-          have hUniq := hSlotUniq cnodeId cn hObj
+          have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
           simp [cspaceInsertSlot, hObj] at hStep
           cases hLookupGuard : cn.lookup slot with
           | some _ => simp [hLookupGuard] at hStep
@@ -194,18 +190,16 @@ theorem cspaceInsertSlot_establishes_ownsSlot
     (st st' : SystemState)
     (addr : CSpaceAddr)
     (cap : Capability)
-    (hSlotUniq : cspaceSlotUnique st)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     SystemState.ownsSlot st' addr.cnode addr := by
   have hLookup : cspaceLookupSlot addr st' = .ok (cap, st') :=
-    cspaceInsertSlot_lookup_eq st st' addr cap hSlotUniq hObjInv hStep
+    cspaceInsertSlot_lookup_eq st st' addr cap hObjInv hStep
   exact cspaceLookupSlot_ok_implies_ownsSlot st' addr cap hLookup
 
 theorem cspaceDeleteSlotCore_lookup_eq_none
     (st st' : SystemState)
     (addr : CSpaceAddr)
-    (hSlotUniq : cspaceSlotUnique st)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     cspaceLookupSlot addr st' = .error .invalidCapability := by
@@ -222,7 +216,7 @@ theorem cspaceDeleteSlotCore_lookup_eq_none
       | untyped _ => simp [hObj] at hStep
       | schedContext _ => simp [hObj] at hStep
       | cnode cn =>
-          have hUniq := hSlotUniq cnodeId cn hObj
+          have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
           simp [hObj] at hStep
           cases hStep
           -- AN10-residual (R1): include `getCNode?` so the inner match
@@ -236,19 +230,17 @@ theorem cspaceDeleteSlotCore_lookup_eq_none
 theorem cspaceDeleteSlot_lookup_eq_none
     (st st' : SystemState)
     (addr : CSpaceAddr)
-    (hSlotUniq : cspaceSlotUnique st)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceDeleteSlot addr st = .ok ((), st')) :
     cspaceLookupSlot addr st' = .error .invalidCapability := by
   simp only [cspaceDeleteSlot] at hStep
   split at hStep
   · simp at hStep
-  · exact cspaceDeleteSlotCore_lookup_eq_none st st' addr hSlotUniq hObjInv hStep
+  · exact cspaceDeleteSlotCore_lookup_eq_none st st' addr hObjInv hStep
 
 theorem cspaceRevoke_preserves_source
     (st st' : SystemState)
     (addr : CSpaceAddr)
-    (hSlotUniq : cspaceSlotUnique st)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceRevoke addr st = .ok ((), st')) :
     ∃ cap, cspaceLookupSlot addr st' = .ok (cap, st') := by
@@ -270,7 +262,7 @@ theorem cspaceRevoke_preserves_source
           | untyped _ => simp [hLookup, hObj] at hStep
           | schedContext _ => simp [hLookup, hObj] at hStep
           | cnode cn =>
-              have hUniq := hSlotUniq addr.cnode cn hObj
+              have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
               let revokedObj := KernelObject.cnode (cn.revokeTargetLocal addr.slot parent.target)
               let storedState : SystemState :=
                 { st with
@@ -381,7 +373,6 @@ theorem cspaceMint_child_attenuates
     (src dst : CSpaceAddr)
     (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
-    (hSlotUniq : cspaceSlotUnique st)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
     ∃ parent child,
@@ -415,7 +406,7 @@ theorem cspaceMint_child_attenuates
             simpa [hMint] using hStep
           refine ⟨parent, child, ?_, ?_, hAtt⟩
           · rfl
-          · exact cspaceInsertSlot_lookup_eq st st' dst child hSlotUniq hObjInv hInsert
+          · exact cspaceInsertSlot_lookup_eq st st' dst child hObjInv hInsert
 
 /-- Composed badge-override safety for `cspaceMint`: after a successful mint with
 arbitrary badge override, the derived capability in the destination slot has the
@@ -428,7 +419,6 @@ theorem cspaceMint_badge_override_safe
     (src dst : CSpaceAddr)
     (rights : AccessRightSet)
     (badge : Option SeLe4n.Badge)
-    (hSlotUniq : cspaceSlotUnique st)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
     ∃ parent child,
@@ -436,7 +426,7 @@ theorem cspaceMint_badge_override_safe
       cspaceLookupSlot dst st' = .ok (child, st') ∧
       child.target = parent.target ∧
       (∀ right, right ∈ child.rights → right ∈ parent.rights) := by
-  rcases cspaceMint_child_attenuates st st' src dst rights badge hSlotUniq hObjInv hStep with
+  rcases cspaceMint_child_attenuates st st' src dst rights badge hObjInv hStep with
     ⟨parent, child, hSrc, hDst, hAtt⟩
   exact ⟨parent, child, hSrc, hDst, hAtt.1, hAtt.2⟩
 
@@ -472,7 +462,6 @@ theorem cspaceMint_child_badge_preserved
     (src dst : CSpaceAddr)
     (rights : AccessRightSet)
     (badge : SeLe4n.Badge)
-    (hSlotUniq : cspaceSlotUnique st)
     (hObjInv : st.objects.invExt)
     (hStep : cspaceMint src dst rights (some badge) st = .ok ((), st')) :
     ∃ child,
@@ -497,7 +486,7 @@ theorem cspaceMint_child_badge_preserved
       | error e => simp [hMint] at hStep
       | ok child =>
           simp [hMint] at hStep
-          have hDst := cspaceInsertSlot_lookup_eq st st' dst child hSlotUniq hObjInv hStep
+          have hDst := cspaceInsertSlot_lookup_eq st st' dst child hObjInv hStep
           refine ⟨child, hDst, ?_⟩
           -- AN4-E (H-06): discharge child.badge = some badge via the
           -- badge-propagation companion theorem, which already walks through
@@ -644,78 +633,19 @@ theorem badge_merge_idempotent
 -- WS-E2 / C-01: Derivation infrastructure for reformulated invariants
 -- ============================================================================
 
-/-- Derive `cspaceLookupSound` from `cspaceSlotUnique` for any state.
-
-WS-G5: With HashMap-backed slots, `CNode.lookup` delegates directly to
-`HashMap.getElem?`, making lookup completeness trivial by definition.
-The bridge from `slotsUnique` to `lookupSound` is now immediate. -/
-theorem cspaceLookupSound_of_cspaceSlotUnique
-    (st : SystemState) (_hUniq : cspaceSlotUnique st) :
-    cspaceLookupSound st := by
+/-- WS-RC R4.A close-out: Lookup soundness holds unconditionally for
+every system state.  `CNode.lookup` delegates directly to
+`HashMap.getElem?` via the `UniqueSlotMap` backing, so the equation
+`CNode.lookup slot = cn.slots[slot]?` is definitional and
+`SystemState.lookupSlotCap` simply forwards the witness.  No
+preconditions are needed; this theorem replaces the historical bridge
+`cspaceLookupSound_of_cspaceSlotUnique` from `cspaceSlotUnique` to
+`cspaceLookupSound`, deleted along with the rest of the
+`cspaceSlotUnique` retirement in Phase A2 of the close-out. -/
+theorem cspaceLookupSound_holds (st : SystemState) : cspaceLookupSound st := by
   intro cnodeId cn slot cap hObj hLookup
   simp [SystemState.lookupSlotCap, SystemState.lookupCNode, hObj, CNode.lookup]
   exact hLookup
-
-/-- WS-E2 / H-01: Transfer `cspaceSlotUnique` across a non-CNode `storeObject`.
-
-When `storeObject` writes a non-CNode object, all CNode entries in the store are
-preserved from the pre-state and uniqueness transfers directly. -/
-theorem cspaceSlotUnique_of_storeObject_nonCNode
-    (st st' : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
-    (hUniq : cspaceSlotUnique st)
-    (hObjInv : st.objects.invExt)
-    (hStore : storeObject oid obj st = .ok ((), st'))
-    (hNotCNode : ∀ cn, obj ≠ .cnode cn) :
-    cspaceSlotUnique st' := by
-  intro cnodeId cn hObj
-  by_cases hEq : cnodeId = oid
-  · rw [hEq] at hObj
-    have hEqObj := storeObject_objects_eq st st' oid obj hObjInv hStore
-    rw [hEqObj] at hObj
-    have : obj = .cnode cn := by injection hObj
-    exact absurd this (hNotCNode cn)
-  · have hPre := storeObject_objects_ne st st' oid cnodeId obj hEq hObjInv hStore
-    rw [hPre] at hObj
-    exact hUniq cnodeId cn hObj
-
-/-- WS-E2 / H-01: Transfer `cspaceSlotUnique` across a CNode `storeObject`,
-given that the new CNode satisfies `slotsUnique`. -/
-theorem cspaceSlotUnique_of_storeObject_cnode
-    (st st' : SystemState) (oid : SeLe4n.ObjId) (cn' : CNode)
-    (hUniq : cspaceSlotUnique st)
-    (hObjInv : st.objects.invExt)
-    (hStore : storeObject oid (.cnode cn') st = .ok ((), st'))
-    (hNewUniq : cn'.slotsUnique) :
-    cspaceSlotUnique st' := by
-  intro cnodeId cn hObj
-  by_cases hEq : cnodeId = oid
-  · subst hEq
-    have := storeObject_objects_eq st st' cnodeId (.cnode cn') hObjInv hStore
-    rw [this] at hObj
-    cases hObj
-    exact hNewUniq
-  · have hPre := storeObject_objects_ne st st' oid cnodeId (.cnode cn') hEq hObjInv hStore
-    rw [hPre] at hObj
-    exact hUniq cnodeId cn hObj
-
-/-- WS-E2 / H-01: Transfer `cspaceSlotUnique` across endpoint-object stores. -/
-theorem cspaceSlotUnique_of_endpoint_store
-    (st st' : SystemState) (oid : SeLe4n.ObjId) (ep : Endpoint)
-    (hUniq : cspaceSlotUnique st)
-    (hObjInv : st.objects.invExt)
-    (hStore : storeObject oid (.endpoint ep) st = .ok ((), st')) :
-    cspaceSlotUnique st' :=
-  cspaceSlotUnique_of_storeObject_nonCNode st st' oid (.endpoint ep) hUniq hObjInv hStore
-    (fun cn h => by cases h)
-
-/-- WS-E2 / H-01: Transfer `cspaceSlotUnique` when objects are unchanged. -/
-theorem cspaceSlotUnique_of_objects_eq
-    (st st' : SystemState)
-    (hUniq : cspaceSlotUnique st)
-    (hObjEq : st'.objects = st.objects) :
-    cspaceSlotUnique st' := by
-  intro cnodeId cn hObj
-  exact hUniq cnodeId cn (by rwa [hObjEq] at hObj)
 
 -- ============================================================================
 -- WS-F6/D1: Operation Correctness Lemmas
@@ -730,28 +660,29 @@ theorem cspaceAttenuationRule_holds :
 
 
 theorem lifecycleAuthorityMonotonicity_holds (st : SystemState)
-    (hSlotUniq : cspaceSlotUnique st)
     (hObjInv : st.objects.invExt) :
     lifecycleAuthorityMonotonicity st := by
   refine ⟨?_, ?_⟩
   · intro addr st' hDelete
-    exact cspaceDeleteSlot_authority_reduction st st' addr hSlotUniq hObjInv hDelete
+    exact cspaceDeleteSlot_authority_reduction st st' addr hObjInv hDelete
   · intro addr st' parent hRevoke hParent slot cap hLookup hTarget
-    exact cspaceRevoke_local_target_reduction st st' addr parent hSlotUniq hObjInv hRevoke hParent slot cap hLookup hTarget
+    exact cspaceRevoke_local_target_reduction st st' addr parent hObjInv hRevoke hParent slot cap hLookup hTarget
 
-/-- Establish the capability invariant bundle from a slot-index uniqueness witness.
-Unlike the prior tautological version, this requires a genuine hypothesis:
-the caller must supply evidence that all CNodes have unique slot keys.
-(WS-E2 / C-01 + H-01 remediation) -/
-theorem capabilityInvariantBundle_of_slotUnique
+/-- WS-RC R4 close-out: explicit constructor for `capabilityInvariantBundle`
+from the 5 remaining state-level proof obligations.
+
+The slot-uniqueness witness is no longer a state-level conjunct — it
+lives structurally on `CNode.slots : UniqueSlotMap` (every `CNode` value
+carries `UniqueSlotMap.hWF` by construction).  Callers that need to
+build a bundle from primitive ingredients use this helper. -/
+theorem capabilityInvariantBundle_of_components
     (st : SystemState)
-    (hUnique : cspaceSlotUnique st)
     (hBounded : cspaceSlotCountBounded st)
     (hComp : cdtCompleteness st)
     (hAcyclic : cdtAcyclicity st)
     (hDepth : cspaceDepthConsistent st)
     (hObjInv : st.objects.invExt) :
     capabilityInvariantBundle st :=
-  ⟨hUnique, cspaceLookupSound_of_cspaceSlotUnique st hUnique,
+  ⟨cspaceLookupSound_holds st,
     hBounded, hComp, hAcyclic, hDepth, hObjInv⟩
 
