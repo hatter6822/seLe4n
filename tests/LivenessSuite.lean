@@ -173,8 +173,19 @@ open SeLe4n.Model
 #check @SeLe4n.Kernel.Lifecycle.Suspend.ensureRunnable_blockingServer_eq
 #check @SeLe4n.Kernel.Lifecycle.Suspend.ensureRunnable_preserves_computeMaxWaiterPriority
 #check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThread_postState_shape
-#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThread_preserves_blockingAcyclic
-#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThread_pipBoost_consistent_with_blocking_graph
+#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThread_preserves_blockingAcyclic_of_shape
+#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThread_pipBoost_consistent_with_blocking_graph_of_shape
+-- Phase Q2.A deferred completion: schedule frame lemmas
+#check @SeLe4n.Kernel.Lifecycle.Suspend.restoreIncomingContext_objects_eq
+#check @SeLe4n.Kernel.Lifecycle.Suspend.restoreIncomingContext_objectIndex_eq
+#check @SeLe4n.Kernel.Lifecycle.Suspend.saveOutgoingContext_lookup_equiv
+#check @SeLe4n.Kernel.Lifecycle.Suspend.saveOutgoingContext_getSchedContext?_eq
+#check @SeLe4n.Kernel.Lifecycle.Suspend.saveOutgoingContext_objectIndex_eq
+#check @SeLe4n.Kernel.Lifecycle.Suspend.chooseThread_state_eq
+#check @SeLe4n.Kernel.Lifecycle.Suspend.schedule_lookup_equiv
+#check @SeLe4n.Kernel.Lifecycle.Suspend.schedule_getSchedContext?_eq
+#check @SeLe4n.Kernel.Lifecycle.Suspend.schedule_objectIndex_eq
+#check @SeLe4n.Kernel.Lifecycle.Suspend.schedule_preserves_computeMaxWaiterPriority
 -- Phase P1 foundational lemmas:
 #check @SeLe4n.Kernel.PriorityInheritance.blockingAcyclic_of_subgraph
 #check @SeLe4n.Kernel.PriorityInheritance.blockingChain_subgraph_prefix

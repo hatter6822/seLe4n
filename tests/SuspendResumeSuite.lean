@@ -536,6 +536,73 @@ private def sr027b_resumeRecomputesPipBoostWithWaiters : IO Unit := do
   | .error e => throw <| IO.userError s!"resume failed: {repr e}"
 
 -- ============================================================================
+-- R5.B.2 (DEEP-SUSP-01) Deferred completion: substantive operational tests
+-- ============================================================================
+
+/-- SR-027c: `resumeThread_preserves_blockingAcyclic` runtime witness —
+    after a successful resume, the priority-inheritance blocking graph
+    remains acyclic.  The pre-state has a waiter blocked on the resumed
+    thread; after resume, the waiter's edge is preserved but the resumed
+    thread itself has no outgoing edge (ipcState = .ready), so acyclicity
+    holds. -/
+private def sr027c_resumeThreadPreservesBlockingAcyclic : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let waiterTid : SeLe4n.ThreadId := ⟨2⟩
+  let endpointId : SeLe4n.ObjId := ⟨50⟩
+  let tidTcb := { mkTcb 1 .Inactive with pipBoost := some ⟨50⟩ }
+  let waiterBaseTcb := mkTcb 2 .Ready 99
+  let waiterTcb := { waiterBaseTcb with
+    ipcState := .blockedOnReply endpointId (some tid) }
+  let st := mkState [(⟨1⟩, .tcb tidTcb), (⟨2⟩, .tcb waiterTcb)]
+  match resumeThread st ⟨tid, by decide⟩ with
+  | .ok st' =>
+    -- Verify acyclicity: no thread appears in its own blocking chain.
+    -- For each thread in the post-state, the blocking chain from itself
+    -- must not contain itself.
+    let postWaiterChain := SeLe4n.Kernel.PriorityInheritance.blockingChain
+                            st' waiterTid st'.objectIndex.length
+    let postTidChain := SeLe4n.Kernel.PriorityInheritance.blockingChain
+                          st' tid st'.objectIndex.length
+    expect "waiter not in its own chain"
+      ¬ (SeLe4n.Kernel.PriorityInheritance.chainContains postWaiterChain waiterTid)
+    expect "resumed thread not in its own chain"
+      ¬ (SeLe4n.Kernel.PriorityInheritance.chainContains postTidChain tid)
+    -- Also verify resumed thread has no outgoing edge (ipcState = .ready).
+    match st'.objects[tid.toObjId]? with
+    | some (.tcb tcb') =>
+      expect "resumed thread ipcState = .ready" (tcb'.ipcState == .ready)
+    | _ => throw <| IO.userError "TCB not found after resume"
+  | .error e => throw <| IO.userError s!"resume failed: {repr e}"
+
+/-- SR-027d: `resumeThread_pipBoost_consistent_with_blocking_graph` runtime
+    witness — after a successful resume, the resumed TCB's `pipBoost`
+    equals `computeMaxWaiterPriority` on the post-state.
+
+    The pre-state has a waiter at priority 99 blocked on the resumed
+    thread.  Post-resume, the resumed TCB's pipBoost is set to `some ⟨99⟩`
+    (matching `computeMaxWaiterPriority` on the post-state). -/
+private def sr027d_resumeThreadPipBoostMatchesGraph : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let endpointId : SeLe4n.ObjId := ⟨50⟩
+  let tidTcb := { mkTcb 1 .Inactive with pipBoost := some ⟨50⟩ }
+  let waiterBaseTcb := mkTcb 2 .Ready 99
+  let waiterTcb := { waiterBaseTcb with
+    ipcState := .blockedOnReply endpointId (some tid) }
+  let st := mkState [(⟨1⟩, .tcb tidTcb), (⟨2⟩, .tcb waiterTcb)]
+  match resumeThread st ⟨tid, by decide⟩ with
+  | .ok st' =>
+    match st'.objects[tid.toObjId]? with
+    | some (.tcb tcb') =>
+      let postCmwp := SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority st' tid
+      -- pipBoost should match the post-state computeMaxWaiterPriority exactly.
+      expect "tcb'.pipBoost = computeMaxWaiterPriority post-state"
+        (tcb'.pipBoost == postCmwp)
+      -- And both should be some ⟨99⟩ (the waiter's priority).
+      expect "pipBoost is some ⟨99⟩ (waiter priority)" (tcb'.pipBoost == some ⟨99⟩)
+    | _ => throw <| IO.userError "TCB not found after resume"
+  | .error e => throw <| IO.userError s!"resume failed: {repr e}"
+
+-- ============================================================================
 -- R5.D (DEEP-SCH-03): restoreToReady shared helper
 -- ============================================================================
 
@@ -610,6 +677,8 @@ def main : IO Unit := do
   sr026_resumePipBoostRecomputedNoWaiters
   sr027_suspendResumePipReroundtrip
   sr027b_resumeRecomputesPipBoostWithWaiters
+  sr027c_resumeThreadPreservesBlockingAcyclic
+  sr027d_resumeThreadPipBoostMatchesGraph
   IO.println "--- R5.D: restoreToReady shared helper ---"
   sr028_restoreToReadyClearsIpcFields
   sr029_restoreToReadyAbsentIdentity
