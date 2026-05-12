@@ -76,6 +76,20 @@ Once the workstream closes:
   (false-positive structural witnesses) are WS-RC-introduced sections;
   §3.G records the DEBT-RUST-02 / H-24 reconfirmation landed at R0.4.
 
+- `WS_RC_R4_CLOSEOUT_PLAN.md` — **WS-RC R4 close-out plan** (9 sub-PR
+  decomposition) landed at v0.31.0.  Closure is recorded in
+  `docs/WORKSTREAM_HISTORY.md` "WS-RC R4 close-out".  Retained in
+  `docs/audits/` as an exemplar of the per-sub-task plan convention.
+
+- `WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` — **WS-RC R5 deferred-work
+  completion plan** (8 sub-PR decomposition across P/Q/R/S/V phases).
+  Closes the four substantive obligations (R5.B.2 × 2 named theorems,
+  R5.G.3 substantive preservation, R5.C.1 full
+  `effectivePriority` deprecation) deferred from PR #771 + commit
+  `7a21e18`.  **Target**: v1.0.0 cut.  Tracks the substantive
+  closure-form removals so R5 is fully complete prior to the first
+  major launch.
+
 ## Recently archived (WS-AN closure, v0.30.11)
 
 The following predecessor artefacts were archived to
