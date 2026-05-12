@@ -586,15 +586,27 @@ def r4c_tail?_eq_none_iff_bridge_empty : IO Unit := do
   expect "tail?_eq_none_iff bridge reachable on empty" true
 
 /-- WS-RC R4 close-out P1: plan-named theorem reachability gate.
-    Confirms that the six named theorems specified in the close-out plan
-    are all reachable via `#check`-style ascription. -/
+
+    After the A2/C2 cleanup retired the state-level `cspaceSlotUnique` and
+    `uniqueWaiters` predicates along with their `_trivial` discharge
+    helpers, four plan-named theorems remain reachable as the canonical
+    discharge witnesses for the structural promotion:
+
+    1. `SeLe4n.Model.CNode.cnode_slots_unique` — per-CNode slot-uniqueness
+       discharge via `UniqueSlotMap.hWF`.
+    2. `SeLe4n.Kernel.notification_waiters_nodup` — per-Notification Nodup
+       discharge via `NoDupList.hNodup`.
+    3. `SeLe4n.Kernel.cspaceSlotUnique_promoted_to_structural` — R4.A.7
+       marker theorem (companion of the umbrella
+       `r4_structural_fix_discharge_index_documented`).
+    4. `SeLe4n.Kernel.uniqueWaiters_promoted_to_structural` — R4.C.8
+       marker theorem.
+
+    If any of these four named identifiers is deleted or renamed, this
+    test fails to elaborate. -/
 def r4_close_out_named_theorems_reachable : IO Unit := do
   let _ : ∀ (cn : CNode), cn.slotsUnique :=
     @SeLe4n.Model.CNode.cnode_slots_unique
-  let _ : ∀ (st : SystemState), SeLe4n.Kernel.cspaceSlotUnique st :=
-    @SeLe4n.Kernel.cspaceSlotUnique_trivial
-  let _ : ∀ (st : SystemState), SeLe4n.Kernel.uniqueWaiters st :=
-    @SeLe4n.Kernel.uniqueWaiters_trivial
   let _ : ∀ (n : Notification), n.waitingThreads.val.Nodup :=
     @SeLe4n.Kernel.notification_waiters_nodup
   let _ : True := @SeLe4n.Kernel.cspaceSlotUnique_promoted_to_structural
@@ -661,6 +673,30 @@ def r4b_mkRetypeTarget_reachable : IO Unit := do
               = target :=
     @SeLe4n.Kernel.mkRetypeTarget_id
   expect "WS-RC R4 close-out B3: mkRetypeTarget + id witness reachable" true
+
+/-- WS-RC R4 close-out: end-to-end chain B1+B2+B3 with concrete values.
+    Constructs a `ScrubToken` via `fromCleanup` on a hypothetical
+    cleanup outcome, builds a `RetypeTarget` via `mkRetypeTarget`, and
+    verifies the chain is closed (the resulting target's `id` matches
+    the supplied target id).  This is a positive end-to-end probe
+    that exercises the structural discipline at the type level. -/
+def r4b_scrubToken_to_retypeTarget_endToEnd : IO Unit := do
+  -- WS-RC R4.B: the only public route from a cleanup outcome to a
+  -- RetypeTarget is via fromCleanup + mkRetypeTarget.  Confirm the
+  -- chain elaborates and the resulting target records the supplied id.
+  let target : SeLe4n.ObjId := ⟨42⟩
+  let _chain : ∀ (st stClean : SystemState) (currentObj newObj : KernelObject),
+      SeLe4n.Kernel.lifecyclePreRetypeCleanup st target currentObj newObj
+          = .ok stClean →
+      (∀ obj, stClean.objects[target]? = some obj →
+        SystemState.lookupObjectTypeMeta stClean target = some obj.objectType) →
+      (∀ tcb, stClean.objects[target]? = some (.tcb tcb) →
+        ¬ (tcb.tid ∈ stClean.scheduler.runQueue.flat)) →
+      SeLe4n.Kernel.RetypeTarget stClean :=
+    fun _ stClean _ _ hCleanup hTypeMeta hNoStaleRefs =>
+      SeLe4n.Kernel.mkRetypeTarget stClean target hTypeMeta hNoStaleRefs
+        (SeLe4n.Kernel.ScrubToken.fromCleanup hCleanup)
+  expect "WS-RC R4 close-out: end-to-end ScrubToken→RetypeTarget chain reachable" true
 
 -- ============================================================================
 -- Runtime coverage for the 5 per-variant typed lookup helpers
@@ -1837,6 +1873,8 @@ def main : IO Unit := do
   r4b_lifecyclePreRetypeCleanupWithToken_reachable
   -- WS-RC R4 close-out B3: mkRetypeTarget smart-constructor pin
   r4b_mkRetypeTarget_reachable
+  -- WS-RC R4 close-out: end-to-end B1+B2+B3 chain pin
+  r4b_scrubToken_to_retypeTarget_endToEnd
   -- kind-verified lookup helpers discriminate by variant
   getTcb_discriminates_variants
   getSchedContext_discriminates_variants

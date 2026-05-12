@@ -430,7 +430,6 @@ theorem notificationSignal_preserves_notificationWaiterConsistent
     (st st' : SystemState)
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (hConsist : notificationWaiterConsistent st)
-    (_hUnique : uniqueWaiters st)
     (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     notificationWaiterConsistent st' := by

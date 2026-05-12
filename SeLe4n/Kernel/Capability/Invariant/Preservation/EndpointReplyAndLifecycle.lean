@@ -13,12 +13,14 @@ import SeLe4n.Kernel.Capability.Invariant.Preservation.Revoke
 AN4-F.3 (CAP-M03) child module extracted from
 `SeLe4n.Kernel.Capability.Invariant.Preservation`. Contains the IPC/lifecycle
 composition stratum: `endpointReply` capability preservation, the
-`coreIpcInvariantBundle` definition + its 16 projection theorems, the M3.5
+`coreIpcInvariantBundle` definition + its projection theorems (now 15
+after WS-RC R4.C.7 `uniqueWaiters` retirement), the M3.5
 IPC-scheduler coherence components, the `lifecycleCompositionInvariantBundle`
 definition, and the full family of `lifecycleRetypeObject` and
-`lifecycleRevokeDeleteRetype` preservation theorems. The file closes with
-the private `cspaceSlotUnique` helpers shared by IPC proof callers.
-All declarations retain their original names, order, and proofs.
+`lifecycleRevokeDeleteRetype` preservation theorems.  The historical
+`cspaceSlotUnique` transfer-theorem cluster that previously closed the
+file was deleted in the WS-RC R4.A close-out.
+All remaining declarations retain their original names, order, and proofs.
 -/
 
 namespace SeLe4n.Kernel
@@ -41,7 +43,6 @@ theorem capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
     (st st1 : SystemState) (target : SeLe4n.ThreadId)
     (ipc : ThreadIpcState) (msg : Option IpcMessage)
     (tcb : TCB)
-    (_hUnique : cspaceSlotUnique st)
     (hBounded : cspaceSlotCountBounded st)
     (hComp : cdtCompleteness st) (hAcyclic : cdtAcyclicity st)
     (hDepthPre : cspaceDepthConsistent st)
@@ -75,7 +76,7 @@ theorem capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
     (ensureRunnable_preserves_objects st1 target) ▸ hObjInv1
   -- WS-RC R4.A.6: cspaceSlotUnique conjunct removed from bundle; the
   -- predicate is structurally trivial.
-  exact ⟨cspaceLookupSound_of_cspaceSlotUnique _ trivial,
+  exact ⟨cspaceLookupSound_holds _,
     hBndE, hCompE, hAcyclicE, hDepthE, hObjInvE⟩
 
 /-- WS-F1/WS-E4/M-12/WS-H1: endpointReply preserves capabilityInvariantBundle.
@@ -131,7 +132,7 @@ theorem endpointReply_preserves_capabilityInvariantBundle
           intro st1 hTcb
           exact capabilityInvariantBundle_of_storeTcbAndEnsureRunnable
             st st1 target .ready (some msg) tcb
-            trivial hBounded hComp hAcyclic hDepthPre hObjInv hTcb hLookup
+            hBounded hComp hAcyclic hDepthPre hObjInv hTcb hLookup
 
 /-- M3 composed bundle entrypoint: M1 scheduler + M2 capability + M3 IPC.
 
@@ -214,12 +215,8 @@ theorem coreIpcInvariantBundle_to_donationBudgetTransfer {st : SystemState}
     (h : coreIpcInvariantBundle st) : donationBudgetTransfer st :=
   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
-/-- WS-RC R4.C.7: Extract `uniqueWaiters` from the core bundle.  The
-state-level predicate is now trivially `True` (the bundle conjunct has
-been dropped); kept for caller-side compatibility with the same
-signature. -/
-theorem coreIpcInvariantBundle_to_uniqueWaiters {st : SystemState}
-    (_h : coreIpcInvariantBundle st) : uniqueWaiters st := trivial
+-- WS-RC R4.C close-out: `coreIpcInvariantBundle_to_uniqueWaiters` was
+-- deleted along with the `uniqueWaiters` predicate it extracted.
 
 /-- AJ1-B: Extract `blockedOnReplyHasTarget` from the core bundle.
 WS-RC R4.C.7: index shifted after `uniqueWaiters` conjunct removal. -/
@@ -338,7 +335,7 @@ theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle
         exact hDepthPre cnodeId cn hObj
     · exact storeObject_preserves_objects_invExt st st' target newObj hObjInv hStore
   -- WS-RC R4.A.6: cspaceSlotUnique conjunct removed from bundle.
-  exact ⟨cspaceLookupSound_of_cspaceSlotUnique st' trivial,
+  exact ⟨cspaceLookupSound_holds st',
     hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩
 
 theorem lifecycleRetypeObject_preserves_ipcInvariant
@@ -540,7 +537,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_lifecycleCapabilityStaleAuthorityI
       (hObjTypesInvAfterCleanup stRevoked stDeleted hRevoke hDelete)
       hRetype
   exact lifecycleCapabilityStaleAuthorityInvariant_of_bundles st' hLifecycle' hCap'
-    (lifecycleAuthorityMonotonicity_holds st' trivial hObjInvFinal)
+    (lifecycleAuthorityMonotonicity_holds st' hObjInvFinal)
 
 theorem lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvariantBundle
     (st : SystemState)
@@ -554,55 +551,13 @@ theorem lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvarian
     lifecycleRevokeDeleteRetype_error_authority_cleanup_alias st authority cleanup target newObj hAlias
   exact hInv
 
-/-- WS-E3/H-09: storeTcbIpcState stores a TCB (not a CNode), so cspaceSlotUnique is preserved. -/
-theorem cspaceSlotUnique_of_storeTcbIpcState
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
-    (hUniq : cspaceSlotUnique st)
-    (hObjInv : st.objects.invExt)
-    (hStep : storeTcbIpcState st tid ipc = .ok st') :
-    cspaceSlotUnique st' := by
-  unfold storeTcbIpcState at hStep
-  cases hLookup : lookupTcb st tid with
-  | none => simp [hLookup] at hStep
-  | some tcb =>
-    simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc }) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      simp only [hStore] at hStep
-      have := Except.ok.inj hStep; subst this
-      exact cspaceSlotUnique_of_storeObject_nonCNode st pair.2 tid.toObjId _ hUniq hObjInv hStore
-        (fun cn h => by cases h)
-
-/-- WS-E3/H-09: cspaceSlotUnique through storeObject + storeTcbIpcState + removeRunnable chain. -/
-theorem cspaceSlotUnique_through_blocking_path
-    (st st1 st2 : SystemState) (endpointId : SeLe4n.ObjId) (target : SeLe4n.ThreadId)
-    (ipc : ThreadIpcState) (ep : Endpoint)
-    (hUniq : cspaceSlotUnique st)
-    (hObjInv : st.objects.invExt)
-    (hStore : storeObject endpointId (.endpoint ep) st = .ok ((), st1))
-    (hTcb : storeTcbIpcState st1 target ipc = .ok st2) :
-    cspaceSlotUnique (removeRunnable st2 target) :=
-  cspaceSlotUnique_of_objects_eq st2 (removeRunnable st2 target)
-    (cspaceSlotUnique_of_storeTcbIpcState st1 st2 target ipc
-      (cspaceSlotUnique_of_endpoint_store st st1 endpointId ep hUniq hObjInv hStore)
-      (storeObject_preserves_objects_invExt st st1 endpointId _ hObjInv hStore)
-      hTcb) rfl
-
-/-- WS-E3/H-09: cspaceSlotUnique through storeObject + storeTcbIpcState + ensureRunnable chain. -/
-theorem cspaceSlotUnique_through_handshake_path
-    (st st1 st2 : SystemState) (endpointId : SeLe4n.ObjId) (target : SeLe4n.ThreadId)
-    (ep : Endpoint)
-    (hUniq : cspaceSlotUnique st)
-    (hObjInv : st.objects.invExt)
-    (hStore : storeObject endpointId (.endpoint ep) st = .ok ((), st1))
-    (hTcb : storeTcbIpcState st1 target .ready = .ok st2) :
-    cspaceSlotUnique (ensureRunnable st2 target) :=
-  cspaceSlotUnique_of_objects_eq st2 (ensureRunnable st2 target)
-    (cspaceSlotUnique_of_storeTcbIpcState st1 st2 target .ready
-      (cspaceSlotUnique_of_endpoint_store st st1 endpointId ep hUniq hObjInv hStore)
-      (storeObject_preserves_objects_invExt st st1 endpointId _ hObjInv hStore)
-      hTcb) (ensureRunnable_preserves_objects st2 target)
-
+-- WS-RC R4 close-out: the historical transfer theorems
+-- `cspaceSlotUnique_of_storeTcbIpcState`,
+-- `cspaceSlotUnique_through_blocking_path`, and
+-- `cspaceSlotUnique_through_handshake_path` were deleted along with the
+-- `cspaceSlotUnique` predicate they discharged.  Per the CLAUDE.md
+-- structural-promotion convention, every `CNode.slots : UniqueSlotMap`
+-- value satisfies the slot-uniqueness invariant by construction; no
+-- transfer theorems are needed.
 
 end SeLe4n.Kernel

@@ -902,10 +902,11 @@ structure Notification where
       `Cleanup.lean`, `FrozenOps/Operations.lean`).  The runtime duplicate
       guard at `IPC/Operations/Endpoint.lean` is subsumed by
       `NoDupList.consWithGuard?` (which returns `none` for a duplicate and
-      is consumed as `.error .alreadyWaiting`); the state-level invariant
-      `SeLe4n.Kernel.uniqueWaiters` collapses to a trivial projection of
-      `hNodup`. The structural-witness theorems
-      `SeLe4n.Kernel.notification_waitingThreads_nodup_witness` and
+      is consumed as `.error .alreadyWaiting`); the historical state-level
+      `SeLe4n.Kernel.uniqueWaiters` predicate was deleted in the WS-RC R4.C
+      close-out (per-Notification discharge is now via
+      `SeLe4n.Kernel.notification_waiters_nodup`).  The structural-witness
+      theorems `SeLe4n.Kernel.notification_waiters_nodup` and
       `SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup` (in
       `IPC/Invariant/QueueNoDup.lean`) codify this closure at the proof
       surface, per the WS-RC §1.5 structural-fix policy. -/
@@ -926,8 +927,9 @@ wrapper around `RHTable Slot Capability` (the formally verified Robin Hood
 hash table providing O(1) amortized lookup, insert, and delete with
 machine-checked proofs).  The wrapper carries `RHTable.invExtK`
 (no-duplicate-keys ∧ `size < capacity` ∧ `4 ≤ capacity`) structurally at
-construction time, so the state-level `cspaceSlotUnique` invariant
-collapses to a trivial projection of `hWF`.  Defined in
+construction time.  The historical state-level `cspaceSlotUnique`
+predicate was deleted in the WS-RC R4.A close-out; per-CNode discharge
+is now via `SeLe4n.Model.CNode.slotsUnique_holds`.  Defined in
 `SeLe4n/Model/Object/UniqueSlotMap.lean`. -/
 structure CNode where
   depth      : Nat          -- maximum remaining depth in bits from this node to any leaf

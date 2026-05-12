@@ -77,7 +77,6 @@ theorem cspaceMint_preserves_badgeWellFormed
     (st st' : SystemState) (src dst : CSpaceAddr)
     (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
     (hInv : badgeWellFormed st)
-    (_hSlotUniq : cspaceSlotUnique st)
     (hObjInv : st.objects.invExt)
     (hBadgeValid : ∀ b, badge = some b → b.valid)
     (hStep : cspaceMint src dst rights badge st = .ok ((), st')) :
@@ -148,7 +147,6 @@ theorem cspaceMutate_preserves_badgeWellFormed
     (st st' : SystemState) (addr : CSpaceAddr)
     (rights : AccessRightSet) (badge : Option SeLe4n.Badge)
     (hInv : badgeWellFormed st)
-    (_hSlotUniq : cspaceSlotUnique st)
     (hObjInv : st.objects.invExt)
     (hBadgeValid : ∀ b, badge = some b → b.valid)
     (hStep : cspaceMutate addr rights badge st = .ok ((), st')) :
@@ -275,7 +273,7 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
               have hObjFinal : ({ stDst with cdt := stDst.cdt.addEdge srcNode dstNode .ipcTransfer } : SystemState).objects = st2.objects := by
                 simp [hObjDst, hObjSrc]
               -- WS-RC R4.A.6: cspaceSlotUnique conjunct removed from bundle.
-              exact ⟨cspaceLookupSound_of_cspaceSlotUnique _ trivial,
+              exact ⟨cspaceLookupSound_holds _,
                 cspaceSlotCountBounded_of_objects_eq st2 _ hBnd2 hObjFinal,
                 hCdtPost.1, hCdtPost.2,
                 cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 hObjFinal,

@@ -3,14 +3,18 @@
 WS-RC R4 close-out (the 9 sub-PRs of
 `docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md`) completes the four sub-tasks of
 WS-RC R4 (Structural-invariant promotions) left open after the v0.30.11
-cut. The closure retires the historical state-level `cspaceSlotUnique`
-and `uniqueWaiters` invariants — their substantive content has been
-promoted to the structural witnesses `UniqueSlotMap.hWF` and
+cut.  The closure **fully retires** the historical state-level
+`cspaceSlotUnique` and `uniqueWaiters` invariants — their definitions,
+trivial discharge helpers (`_trivial`, `_holds`), all vestigial
+hypothesis parameters on ~24 theorem signatures, and the entire chain
+of `cspaceSlotUnique_of_storeObject_*` / `cspaceSlotUnique_through_*`
+transfer theorems are all **deleted**.  The substantive content has
+been promoted to the structural witnesses `UniqueSlotMap.hWF` and
 `NoDupList.hNodup` carried at construction time on the underlying data
-structures. The associated bundle conjuncts (`capabilityInvariantBundle`,
-`ipcInvariantFull`) are excised; the predicates themselves are retained
-as `True` aliases so ~40 historical hypothesis parameters continue to
-build without a synchronised signature-only refactor.
+structures; per-CNode and per-Notification discharge are direct via the
+plan-named witnesses `slotsUnique_holds` / `cnode_slots_unique` and
+`notification_waiters_nodup`.  This is the full A2.c4/C2.c4 deletion
+the close-out plan called for; no `True`-alias shims remain.
 
 - **Phase P1 (foundations)** — Adds the close-out plan's named
   witnesses: `SeLe4n.Model.CNode.cnode_slots_unique`,
@@ -32,9 +36,21 @@ build without a synchronised signature-only refactor.
   `Service/Invariant/Policy.lean`).  A2 drops the `cspaceSlotUnique`
   conjunct from `capabilityInvariantBundle` and from the named-
   projection structure `CapabilityInvariantBundle` (bundle now 6
-  conjuncts, was 7).  The `cspaceSlotUnique_of_storeObject_nonCNode`,
-  `_cnode`, `_endpoint_store`, and `_objects_eq` transfer theorems
-  collapse to `trivial`.
+  conjuncts, was 7); the audit-driven cleanup then **deletes** the
+  `cspaceSlotUnique` definition itself along with
+  `cspaceSlotUnique_trivial`, the historical bridge theorem
+  `cspaceLookupSound_of_cspaceSlotUnique` (renamed to the
+  unconditional `cspaceLookupSound_holds`), the
+  `cspaceSlotUnique_of_storeObject_{nonCNode,cnode,endpoint_store}` +
+  `cspaceSlotUnique_of_objects_eq` +
+  `cspaceSlotUnique_of_storeTcbIpcState` +
+  `cspaceSlotUnique_through_{blocking,handshake}_path` chain (8
+  transfer theorems), and **removes the vestigial
+  `(_hSlotUniq : cspaceSlotUnique st)` parameters from 22 theorem
+  signatures** plus their `trivial`/`hSlotUniq` call-site arguments in
+  the InformationFlow non-interference proof family
+  (`NonInterferenceStep.cspaceMint`, `cspaceMintChecked_NI`,
+  `cspaceMint_preserves_lowEquivalent`).
 - **Phase B (ScrubToken structural close-out)** — B1 makes
   `ScrubTokenImpl` a `private structure`, making
   `SeLe4n.Kernel.ScrubToken.fromCleanup` the only public introduction
@@ -52,21 +68,29 @@ build without a synchronised signature-only refactor.
 - **Phase C (uniqueWaiters retirement)** — C1 collapses the
   state-level predicate to `True`, migrates the substantive
   `notificationSignal_preserves_notificationWaiterConsistent` site
-  to `Notification.waitingThreads.hNodup`, and updates
-  `notification_waitingThreads_nodup_witness` to discharge
-  structurally.  C2 drops the `uniqueWaiters` conjunct from
-  `ipcInvariantFull` and from the named-projection structure
-  `IpcInvariantFull` (bundle now 15 conjuncts, was 16), removes the
-  `hUW' : uniqueWaiters st'` parameter from 11 preservation
-  theorems in `IPC/Invariant/Structural/DualQueueMembership.lean`
-  plus the `lifecycleRetypeObject` core/composition variants in
+  to `Notification.waitingThreads.hNodup`.  C2 drops the
+  `uniqueWaiters` conjunct from `ipcInvariantFull` and from the
+  named-projection structure `IpcInvariantFull` (bundle now 15
+  conjuncts, was 16), removes the `hUW' : uniqueWaiters st'`
+  parameter from 11 preservation theorems in
+  `IPC/Invariant/Structural/DualQueueMembership.lean` plus the
+  `lifecycleRetypeObject` core/composition variants in
   `Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean`,
   and reindexes `default_ipcInvariantFull` /
   `advanceTimerState_preserves_ipcInvariantFull` /
   `writeRegisterState_preserves_ipcInvariantFull` /
   `contextSwitchState_preserves_ipcInvariantFull` /
   `bootFromPlatform_proofLayerInvariantBundle_general`'s IPC sub-arm.
-  `coreIpcInvariantBundle_to_uniqueWaiters` returns `trivial`.
+  The audit-driven cleanup then **deletes** the `uniqueWaiters`
+  definition itself along with `uniqueWaiters_holds` and
+  `uniqueWaiters_trivial`, removes the `notificationWait_preserves_uniqueWaiters`
+  preservation theorem (no callers), removes the
+  `notification_waitingThreads_nodup_witness` historical theorem
+  (subsumed by the plan-named `notification_waiters_nodup`),
+  removes `coreIpcInvariantBundle_to_uniqueWaiters` and the
+  `default_uniqueWaiters` boot discharge, and removes the
+  `_hUnique : uniqueWaiters st` parameter from
+  `notificationSignal_preserves_notificationWaiterConsistent`.
 
 Version bumped 0.30.11 → 0.31.0 (`lakefile.toml`, `README.md` version
 badge + metrics row, `CHANGELOG.md` v0.31.0 header).

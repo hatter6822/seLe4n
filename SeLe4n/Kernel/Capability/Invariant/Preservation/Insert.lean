@@ -73,8 +73,10 @@ theorem cspaceLookupSlot_preserves_capabilityInvariantBundle
   simpa using hInv
 
 /-- WS-E2 / H-01: Compositional preservation of `cspaceInsertSlot`.
-Uses pre-state `cspaceSlotUnique` + `CNode.insert_slotsUnique` to derive post-state
-uniqueness, rather than re-proving from scratch. -/
+WS-RC R4.A close-out: slot-uniqueness is now carried structurally on
+`CNode.slots : UniqueSlotMap` (`UniqueSlotMap.hWF`), so per-CNode
+discharge via `slotsUnique_holds` is direct; the historical state-level
+`cspaceSlotUnique` predicate is no longer threaded as a precondition. -/
 theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (addr : CSpaceAddr)
@@ -120,7 +122,7 @@ theorem cspaceInsertSlot_preserves_capabilityInvariantBundle
                 (by rw [hRefCdt]; exact storeObject_cdt_eq st stMid addr.cnode _ hStore),
               cspaceDepthConsistent_of_objects_eq stMid st' hDepthMid hRefObj,
               hRefObj ▸ hObjInvMid⟩
-  exact ⟨cspaceLookupSound_of_cspaceSlotUnique st' trivial,
+  exact ⟨cspaceLookupSound_holds st',
     hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩
 
 /-- S3-D: `cspaceInsertSlot` preserves `cdtMapsConsistent`. Insert only calls

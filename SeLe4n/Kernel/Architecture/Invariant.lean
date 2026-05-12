@@ -431,8 +431,8 @@ private theorem default_donationBudgetTransfer :
     donationBudgetTransfer (default : SystemState) := by
   intro _ _ _ _ _ h; exact default_objects_absurd h
 
-private theorem default_uniqueWaiters :
-    uniqueWaiters (default : SystemState) := trivial
+-- WS-RC R4.C close-out: `default_uniqueWaiters` was deleted along with
+-- the `uniqueWaiters` predicate it discharged.
 
 private theorem default_blockedOnReplyHasTarget :
     blockedOnReplyHasTarget (default : SystemState) := by

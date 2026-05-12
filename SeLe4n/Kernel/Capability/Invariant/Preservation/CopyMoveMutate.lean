@@ -78,7 +78,7 @@ theorem cspaceCopy_preserves_capabilityInvariantBundle
                   -- WS-RC R4.A.6: cspaceSlotUnique conjunct removed from bundle.
                   -- WS-H4: cspaceSlotCountBounded transfers via objects equality
                   -- cdtCompleteness and cdtAcyclicity for CDT-modifying ops taken as hypotheses
-                  exact ⟨cspaceLookupSound_of_cspaceSlotUnique _ trivial,
+                  exact ⟨cspaceLookupSound_holds _,
                     cspaceSlotCountBounded_of_objects_eq st2 _ hBnd2 hObjFinal,
                     hCdtPost.1, hCdtPost.2,
                     cspaceDepthConsistent_of_objects_eq st2 _ hDepth2 hObjFinal,
@@ -153,7 +153,7 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
               | none =>
                   simp [hSrc, hToNN, hInsert, hDelete, hNode] at hStep
                   cases hStep
-                  exact ⟨cspaceLookupSound_of_cspaceSlotUnique _ trivial,
+                  exact ⟨cspaceLookupSound_holds _,
                     hBnd3, hCdtPost.1, hCdtPost.2, hDepth3, hObjInv3⟩
               | some srcNode =>
                   simp [hSrc, hToNN, hInsert, hDelete, hNode] at hStep
@@ -161,7 +161,7 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
                   have hObjEq : (SystemState.attachSlotToCdtNode st3 dst srcNode).objects = st3.objects :=
                     SystemState.attachSlotToCdtNode_objects_eq st3 dst srcNode
                   -- WS-RC R4.A.6: cspaceSlotUnique conjunct removed from bundle.
-                  exact ⟨cspaceLookupSound_of_cspaceSlotUnique _ trivial,
+                  exact ⟨cspaceLookupSound_holds _,
                     cspaceSlotCountBounded_of_objects_eq st3 _ hBnd3 hObjEq,
                     hCdtPost.1, hCdtPost.2,
                     cspaceDepthConsistent_of_objects_eq st3 _ hDepth3 hObjEq,
@@ -201,7 +201,7 @@ theorem cspaceMintWithCdt_preserves_capabilityInvariantBundle
               have hObjFinal : ({ stDst with cdt := stDst.cdt.addEdge srcNode dstNode .mint }).objects = st1.objects := by
                 simp [hObjDst, hObjSrc]
               -- WS-RC R4.A.6: cspaceSlotUnique conjunct removed from bundle.
-              exact ⟨cspaceLookupSound_of_cspaceSlotUnique _ trivial,
+              exact ⟨cspaceLookupSound_holds _,
                 cspaceSlotCountBounded_of_objects_eq st1 _ hBnd1 hObjFinal,
                 hCdtPost.1, hCdtPost.2,
                 cspaceDepthConsistent_of_objects_eq st1 _ hDepth1 hObjFinal,
@@ -291,7 +291,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
                 cspaceDepthConsistent_of_objects_eq stMid st' hDepthMid hRefObj,
                 hRefObj ▸ hObjInvMid⟩
       · simp_all
-  exact ⟨cspaceLookupSound_of_cspaceSlotUnique st' trivial,
+  exact ⟨cspaceLookupSound_holds st',
     hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩
 
 -- ============================================================================

@@ -239,8 +239,6 @@ theorem cspaceMintChecked_NI
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hSrcHigh : objectObservable ctx observer src.cnode = false)
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
-    (hSlotUniq₁ : cspaceSlotUnique s₁)
-    (hSlotUniq₂ : cspaceSlotUnique s₂)
     (hObjInv₁ : s₁.objects.invExt)
     (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : cspaceMintChecked ctx src dst rights badge s₁ = .ok ((), s₁'))
@@ -270,7 +268,7 @@ theorem cspaceMintChecked_NI
       obtain ⟨_, rfl⟩ := hStep₂
       -- cspaceMint results preserve lowEquivalent
       have hMintLow := cspaceMint_preserves_lowEquivalent ctx observer src dst rights badge
-        s₁ s₂ pair₁.2 pair₂.2 hLow hSrcHigh hDstHigh hSlotUniq₁ hSlotUniq₂ hObjInv₁ hObjInv₂
+        s₁ s₂ pair₁.2 pair₂.2 hLow hSrcHigh hDstHigh hObjInv₁ hObjInv₂
         hMint₁ hMint₂
       -- CDT pipeline (ensureCdtNodeForSlot × 2 + addEdge) only modifies CDT
       -- fields — none appear in projectState. Use early-defined helpers.

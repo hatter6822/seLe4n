@@ -14,30 +14,13 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- WS-RC R4.A.5: state-level CNode slot-uniqueness invariant — now
-    structurally trivial.  The substantive content has been promoted to
-    the structural witness `UniqueSlotMap.hWF` carried by `CNode.slots`;
-    every `CNode` value satisfies the corresponding `slotsUnique`
-    predicate by construction (`SeLe4n.Model.CNode.slotsUnique_holds` /
-    `SeLe4n.Model.CNode.cnode_slots_unique`).
-
-    The state-level alias is retained as `True` rather than deleted
-    because ~40 substantive preservation theorems take it as a vestigial
-    hypothesis parameter to document the historical proof obligation.
-    Each such occurrence is harmlessly satisfied by `trivial` /
-    `cspaceSlotUnique_trivial`; the bundle conjunct itself has been
-    excised in Phase A2 of the close-out (no longer part of
-    `capabilityInvariantBundle`). -/
-def cspaceSlotUnique (_ : SystemState) : Prop := True
-
-/-- WS-RC R4.A.5: trivial-discharge of the state-level `cspaceSlotUnique`
-    alias.  The structural content lives in the `UniqueSlotMap.hWF`
-    field carried by every `CNode.slots`; callers that previously
-    consumed `cspaceSlotUnique st` as a hypothesis should switch to
-    `SeLe4n.Model.CNode.slotsUnique_holds` (per-CNode) or use this
-    theorem to discharge the state-level form directly. -/
-theorem cspaceSlotUnique_trivial (st : SystemState) : cspaceSlotUnique st :=
-  trivial
+-- WS-RC R4.A close-out (Phase A2.c4): the historical state-level
+-- `cspaceSlotUnique` predicate and its `cspaceSlotUnique_trivial`
+-- discharge helper have been deleted.  Per-CNode slot uniqueness is now
+-- carried structurally by `CNode.slots : UniqueSlotMap Capability` via
+-- the `UniqueSlotMap.hWF` field; the canonical discharge is
+-- `SeLe4n.Model.CNode.slotsUnique_holds` (or its plan-named alias
+-- `SeLe4n.Model.CNode.cnode_slots_unique`).
 
 /-- Lookup completeness: every capability stored in a CNode's slot HashMap is
 retrievable via `lookupSlotCap`.
@@ -186,9 +169,9 @@ standalone operation-correctness lemmas in `Authority.lean`.
 
 WS-RC R4.A.6: The historical `cspaceSlotUnique` conjunct was removed when
 `CNode.slots : SeLe4n.UniqueSlotMap Capability` carried the slot-uniqueness
-witness structurally at construction time (via `UniqueSlotMap.hWF`). The
-bundle now has 6 conjuncts; `cspaceSlotUnique_trivial` discharges the
-state-level form for any caller that still asks for it. -/
+witness structurally at construction time (via `UniqueSlotMap.hWF`).  The
+bundle now has 6 conjuncts; per-CNode slot uniqueness is discharged
+directly via `SeLe4n.Model.CNode.slotsUnique_holds`. -/
 def capabilityInvariantBundle (st : SystemState) : Prop :=
   cspaceLookupSound st ∧
     cspaceSlotCountBounded st ∧ cdtCompleteness st ∧ cdtAcyclicity st ∧
@@ -361,6 +344,15 @@ fabricates a `ScrubToken` without invoking the cleanup pipeline fails to
 elaborate (it cannot wrap arbitrary observations in `ScrubTokenImpl`
 without producing a real cleanup witness). -/
 private structure ScrubTokenImpl (st : SystemState) (target : SeLe4n.ObjId) where
+  -- Constructor is `mk` with file-private visibility inherited from the
+  -- `private structure` declaration.  External code cannot reference
+  -- this type by name (the `private` modifier blocks it) and therefore
+  -- cannot invoke the constructor via anonymous-constructor `⟨...⟩`
+  -- syntax, since the anonymous constructor's resolution requires
+  -- naming the structure type.  Within this file (`Defs.lean`), only
+  -- `ScrubToken.fromCleanup` constructs values of this type; the
+  -- inhabitation route is therefore unique.
+  mk ::
   /-- The pre-cleanup state from which the recorded cleanup invocation
       began. -/
   stPre : SystemState

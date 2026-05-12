@@ -257,11 +257,20 @@ run_check "INVARIANT" rg -n '^theorem lookup_mem_of_some' SeLe4n/Model/Object/St
 run_check "INVARIANT" rg -n '^theorem mem_lookup_of_slotsUnique' SeLe4n/Model/Object/Structures.lean
 # C-01/H-01 remediation: reformulated invariant definitions (non-tautological).
 run_check "INVARIANT" rg -n 'cn.slotsUnique' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^theorem cspaceLookupSound_of_cspaceSlotUnique' SeLe4n/Kernel/Capability/Invariant/Authority.lean
-run_check "INVARIANT" rg -n '^theorem capabilityInvariantBundle_of_slotUnique' SeLe4n/Kernel/Capability/Invariant/Authority.lean
-# H-01 remediation: compositional storeObject transfer lemmas.
-run_check "INVARIANT" rg -n '^theorem cspaceSlotUnique_of_storeObject_nonCNode' SeLe4n/Kernel/Capability/Invariant/Authority.lean
-run_check "INVARIANT" rg -n '^theorem cspaceSlotUnique_of_storeObject_cnode' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+# WS-RC R4.A close-out: `cspaceLookupSound_of_cspaceSlotUnique` was renamed
+# to `cspaceLookupSound_holds` (no preconditions; the historical
+# `cspaceSlotUnique` precondition was deleted as a vestigial alias).
+run_check "INVARIANT" rg -n '^theorem cspaceLookupSound_holds' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+# WS-RC R4.A close-out: `capabilityInvariantBundle_of_slotUnique` was renamed
+# to `capabilityInvariantBundle_of_components` after the vestigial
+# `cspaceSlotUnique` parameter was deleted.
+run_check "INVARIANT" rg -n '^theorem capabilityInvariantBundle_of_components' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+# WS-RC R4.A close-out: the historical
+# `cspaceSlotUnique_of_storeObject_{nonCNode,cnode}` transfer theorems were
+# deleted along with the `cspaceSlotUnique` predicate.  Per-CNode discharge
+# is direct via `slotsUnique_holds`.
+run_check "INVARIANT" rg -n '^theorem slotsUnique_holds' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^theorem cnode_slots_unique' SeLe4n/Model/Object/Structures.lean
 # H-03 remediation: badge/notification routing consistency chain.
 run_check "INVARIANT" rg -n '^theorem mintDerivedCap_badge_propagated' SeLe4n/Kernel/Capability/Invariant/Authority.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignal_badge_stored_fresh' SeLe4n/Kernel/Capability/Invariant/Authority.lean
@@ -449,8 +458,12 @@ run_check "INVARIANT" rg -n '^\s*\| alreadyWaiting' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem notificationWait_error_alreadyWaiting' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^theorem notificationWait_badge_path_notification' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^theorem notificationWait_wait_path_notification' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^def uniqueWaiters' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_uniqueWaiters' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# WS-RC R4.C close-out: the state-level `uniqueWaiters` predicate and its
+# `notificationWait_preserves_uniqueWaiters` companion were deleted as part
+# of the structural promotion to `NoDupList.hNodup`.  The plan-named
+# canonical witness `notification_waiters_nodup` now discharges directly.
+run_check "INVARIANT" rg -n '^theorem notification_waiters_nodup' SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean
+run_check "INVARIANT" rg -n '^theorem notificationWait_runtime_check_implied_by_nodup' SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean
 
 # WS-E4/WS-F1 dual-queue IPC definition and theorem anchors must remain present.
 run_check "INVARIANT" rg -n '^def endpointSendDual' SeLe4n/Kernel/IPC/DualQueue/Transport.lean

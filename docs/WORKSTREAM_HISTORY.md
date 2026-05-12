@@ -537,11 +537,15 @@ None.  All four R4 sub-tasks LANDED at this commit:
 Following the partial landing of R4 at v0.30.11, the close-out
 (branch `claude/review-closeout-plan-HToSk`,
 plan: [`docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md`](audits/WS_RC_R4_CLOSEOUT_PLAN.md))
-retires the historical state-level `cspaceSlotUnique` and
-`uniqueWaiters` invariants whose substantive content has been promoted
-to the structural witnesses `UniqueSlotMap.hWF` and `NoDupList.hNodup`.
-The 9 sub-PRs across 5 phases (P, A, B, C, V) land the following
-concrete changes:
+**fully retires** the historical state-level `cspaceSlotUnique` and
+`uniqueWaiters` invariants — the definitions, trivial discharge
+helpers, all vestigial hypothesis parameters, and the dependent
+transfer-theorem chain are all **deleted**.  The substantive content
+has been promoted to the structural witnesses `UniqueSlotMap.hWF` and
+`NoDupList.hNodup` carried at construction time on the underlying data
+structures.  The 9 sub-PRs across 5 phases (P, A, B, C, V), plus a
+follow-up audit-driven deep cleanup, land the following concrete
+changes:
 
 - **Phase P1**: `SeLe4n.Model.CNode.cnode_slots_unique`,
   `SeLe4n.Kernel.cspaceSlotUnique_trivial`,
@@ -553,12 +557,27 @@ concrete changes:
   in `tests/ModelIntegritySuite.lean`.
 - **Phase A1**: `cspaceSlotUnique` collapsed to `True`; ~12 substantive
   `hUnique cnodeId cn hObj` application sites migrated to
-  `SeLe4n.Model.CNode.slotsUnique_holds`; transfer theorems
-  `cspaceSlotUnique_of_storeObject_*` collapsed to `trivial`.
-- **Phase A2**: `cspaceSlotUnique` removed from
-  `capabilityInvariantBundle` and `CapabilityInvariantBundle` (bundle
-  now 6 conjuncts, was 7); all preservation theorem bodies and
-  destructure-then-rebuild sites updated.
+  `SeLe4n.Model.CNode.slotsUnique_holds`.
+- **Phase A2 (including deep cleanup)**: `cspaceSlotUnique` removed
+  from `capabilityInvariantBundle` and `CapabilityInvariantBundle`
+  (bundle now 6 conjuncts, was 7); all preservation theorem bodies
+  and destructure-then-rebuild sites updated.  The audit-driven deep
+  cleanup additionally **deletes** the `cspaceSlotUnique` definition
+  and `cspaceSlotUnique_trivial` helper entirely, removes the
+  vestigial `(_hSlotUniq : cspaceSlotUnique st)` parameter from 22
+  theorem signatures, deletes the entire
+  `cspaceSlotUnique_of_storeObject_{nonCNode,cnode,endpoint_store}` /
+  `_objects_eq` / `_of_storeTcbIpcState` /
+  `_through_{blocking,handshake}_path` transfer chain (8 theorems),
+  renames the historical bridge `cspaceLookupSound_of_cspaceSlotUnique`
+  to the unconditional `cspaceLookupSound_holds`, and renames
+  `capabilityInvariantBundle_of_slotUnique` to
+  `capabilityInvariantBundle_of_components`.  The `cspaceMint`
+  non-interference cluster
+  (`NonInterferenceStep.cspaceMint`,
+  `cspaceMintChecked_NI`,
+  `cspaceMint_preserves_lowEquivalent`)
+  is simplified by removing the `hSlotUniq` field/parameter.
 - **Phase B1**: `ScrubTokenImpl` made `private structure`;
   `ScrubToken.fromCleanup` is the sole public introduction route.
 - **Phase B2**: `lifecyclePreRetypeCleanupWithToken` wrapper added
@@ -569,14 +588,24 @@ concrete changes:
 - **Phase B3**: `mkRetypeTarget` smart constructor + `mkRetypeTarget_id`
   companion theorem added.
 - **Phase C1**: `uniqueWaiters` collapsed to `True`; substantive
-  applications migrated; `notification_waitingThreads_nodup_witness`
-  discharges structurally via `NoDupList.hNodup`.
-- **Phase C2**: `uniqueWaiters` removed from `ipcInvariantFull` and
-  `IpcInvariantFull` (bundle now 15 conjuncts, was 16); `hUW' :
-  uniqueWaiters st'` parameter removed from 11 preservation theorems
-  in `IPC/Invariant/Structural/DualQueueMembership.lean` plus the
+  applications migrated to `NoDupList.hNodup`.
+- **Phase C2 (including deep cleanup)**: `uniqueWaiters` removed from
+  `ipcInvariantFull` and `IpcInvariantFull` (bundle now 15 conjuncts,
+  was 16); `hUW' : uniqueWaiters st'` parameter removed from 11
+  preservation theorems in
+  `IPC/Invariant/Structural/DualQueueMembership.lean` plus the
   `lifecycleRetypeObject` core/composition variants; index shifts in
-  `Architecture/Invariant.lean` and `Platform/Boot.lean`.
+  `Architecture/Invariant.lean` and `Platform/Boot.lean`.  The
+  audit-driven deep cleanup additionally **deletes** the
+  `uniqueWaiters` definition along with `uniqueWaiters_holds`,
+  `uniqueWaiters_trivial`,
+  `notificationWait_preserves_uniqueWaiters`,
+  `notification_waitingThreads_nodup_witness`,
+  `coreIpcInvariantBundle_to_uniqueWaiters`, and
+  `default_uniqueWaiters`; the residual `_hUnique : uniqueWaiters st`
+  parameter on
+  `notificationSignal_preserves_notificationWaiterConsistent`
+  is removed.
 - **Phase V1**: version bump 0.30.11 → 0.31.0 (`lakefile.toml`,
   `README.md`, `CHANGELOG.md` v0.31.0 header, `rust/Cargo.toml` +
   `rust/Cargo.lock` + `rust/sele4n-hal/src/boot.rs` KERNEL_VERSION,

@@ -41,7 +41,7 @@ theorem capabilityInvariantBundle_of_cdt_update
   have hObjEq : ({ st with cdt := cdt' } : SystemState).objects = st.objects := rfl
   -- WS-RC R4.A.6: cspaceSlotUnique conjunct removed from bundle; the new
   -- 6-tuple skips the legacy uniqueness slot.
-  exact ⟨cspaceLookupSound_of_cspaceSlotUnique _ trivial,
+  exact ⟨cspaceLookupSound_holds _,
     hBnd, hComp, hAcyclic',
     cspaceDepthConsistent_of_objects_eq st _ hDepthPre hObjEq,
     hObjEq ▸ hObjInvPre⟩

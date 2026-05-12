@@ -581,37 +581,14 @@ theorem not_mem_waitingThreads_of_ipcState_ne
 -- Notification uniqueness (F-12 / WS-D4 / WS-G7)
 -- ============================================================================
 
-/-- WS-RC R4.C.6: state-level Nodup invariant — now structurally trivial.
-    The substantive content has been promoted to
-    `Notification.waitingThreads : NoDupList ThreadId`, whose
-    `hNodup` field carries the `List.Nodup` witness at construction
-    time.  Every preservation theorem that historically required this
-    invariant now discharges trivially via
-    `SeLe4n.NoDupList.nodup_witness` or
-    `SeLe4n.Kernel.notification_waiters_nodup`.
-
-    The state-level alias is retained as `True` rather than deleted
-    because preservation theorems take it as a vestigial hypothesis
-    parameter to document the historical proof obligation. Each
-    occurrence is harmlessly satisfied by `trivial` /
-    `uniqueWaiters_trivial`; the bundle conjunct itself has been
-    excised in Phase C2 of the close-out (no longer part of
-    `ipcInvariantFull`). -/
-def uniqueWaiters (_ : SystemState) : Prop := True
-
-/-- WS-RC R4.C.6: trivial-discharge of `uniqueWaiters` after the
-    Phase-C1 collapse to `True`.  The structural content lives in the
-    `NoDupList.hNodup` field carried by every
-    `Notification.waitingThreads`; callers that previously consumed
-    `uniqueWaiters st` as a hypothesis should switch to
-    `SeLe4n.NoDupList.nodup_witness` (per-Notification) or use this
-    theorem to discharge the state-level form directly. -/
-theorem uniqueWaiters_holds (st : SystemState) : uniqueWaiters st := trivial
-
-/-- WS-RC R4.C.6: plan-named alias for the structural state-level Nodup
-    discharge.  Phase P1 introduces the named identifier; Phase C1's
-    collapse to `True` makes the body `trivial`. -/
-theorem uniqueWaiters_trivial (st : SystemState) : uniqueWaiters st := trivial
+-- WS-RC R4.C close-out (Phase C2.c4): the historical state-level
+-- `uniqueWaiters` predicate, its `uniqueWaiters_holds` substantive
+-- discharge, and its `uniqueWaiters_trivial` plan-named alias have all
+-- been deleted.  Per-Notification Nodup is now carried structurally by
+-- `Notification.waitingThreads : NoDupList ThreadId` via the
+-- `NoDupList.hNodup` field; the canonical discharge is
+-- `SeLe4n.NoDupList.nodup_witness` (or its plan-named alias
+-- `SeLe4n.Kernel.notification_waiters_nodup`).
 
 /-- AJ1-B (M-04): Every thread in `blockedOnReply` state has an explicit
 `replyTarget`. All production paths (`endpointCall`, `endpointReceiveDual`)
@@ -643,28 +620,11 @@ theorem blockedOnReplyHasTarget_implies_some_replyTarget
   | none => simp at h
   | some t => exact ⟨t, rfl⟩
 
-/-- WS-G7/F-P11/WS-RC R4.C: notificationWait preserves uniqueWaiters.
-
-    WS-RC R4.C: the proof collapses to the structural witness
-    `uniqueWaiters_holds`.  The state-level invariant is unconditionally
-    derivable from `Notification.waitingThreads.hNodup` because the field
-    type `NoDupList ThreadId` carries the Nodup proof at construction
-    time.  The hypothesis set is retained unchanged for caller
-    compatibility — callers still pass `hConsist` and `hInv` because
-    larger frame contexts depend on those hypotheses being threaded
-    through; they are simply not consumed by this preservation arm
-    after the structural promotion. -/
-theorem notificationWait_preserves_uniqueWaiters
-    (st st' : SystemState)
-    (notificationId : SeLe4n.ObjId)
-    (waiter : SeLe4n.ThreadId)
-    (badge : Option SeLe4n.Badge)
-    (_hInv : uniqueWaiters st)
-    (_hConsist : notificationWaiterConsistent st)
-    (_hObjInv : st.objects.invExt)
-    (_hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
-    uniqueWaiters st' :=
-  uniqueWaiters_holds st'
+-- WS-RC R4.C close-out: `notificationWait_preserves_uniqueWaiters` was
+-- deleted along with the `uniqueWaiters` predicate it preserved.  The
+-- per-notification Nodup invariant now holds structurally via
+-- `Notification.waitingThreads.hNodup`; the state-level predicate has
+-- no remaining role in the proof surface.
 
 -- ============================================================================
 -- WS-G7: notificationWaiterConsistent — base case + documentation
@@ -697,9 +657,12 @@ transition surface is sketched here for documentation:
    notifications are unchanged.
 
 3. **`notificationSignal`** (wake path): Removes the head waiter and sets its
-   ipcState to `.ready`. Requires `uniqueWaiters` to ensure the woken thread
-   does not appear elsewhere in the remaining list. Remaining threads' TCBs
-   are unchanged, so their ipcState is preserved.
+   ipcState to `.ready`. The woken thread does not appear elsewhere in the
+   remaining list — guaranteed structurally by `NoDupList.hNodup` on
+   `Notification.waitingThreads` (WS-RC R4.C close-out; the historical
+   state-level `uniqueWaiters` precondition is no longer required since the
+   field-level invariant is unconditional). Remaining threads' TCBs are
+   unchanged, so their ipcState is preserved.
 
 4. **`notificationSignal`** (merge path): No TCB modification; only the
    notification badge is updated. All waiting lists are unchanged.
@@ -1199,12 +1162,13 @@ Z7 extends the bundle with 4 donation invariants:
 
 WS-RC R4.C.7 (close-out C2): the `uniqueWaiters` conjunct previously
 listed as the 15th slot was removed when `Notification.waitingThreads`
-was promoted from `List ThreadId` to `SeLe4n.NoDupList ThreadId`. The
+was promoted from `List ThreadId` to `SeLe4n.NoDupList ThreadId`.  The
 per-Notification `List.Nodup` witness is now carried structurally at
-construction time via `NoDupList.hNodup`; the state-level invariant is
-trivially derivable via `SeLe4n.Kernel.uniqueWaiters_trivial` and is no
-longer a separate proof obligation. The bundle now has 15 conjuncts
-(was 16); `blockedOnReplyHasTarget` is the 15th. -/
+construction time via `NoDupList.hNodup`; per-Notification discharge is
+direct via `SeLe4n.Kernel.notification_waiters_nodup`.  The bundle now
+has 15 conjuncts (was 16); `blockedOnReplyHasTarget` is the 15th.  The
+historical `uniqueWaiters` state-level predicate (and its `_holds` /
+`_trivial` discharge helpers) were deleted in the close-out. -/
 def ipcInvariantFull (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
   badgeWellFormed st ∧ waitingThreadsPendingMessageNone st ∧

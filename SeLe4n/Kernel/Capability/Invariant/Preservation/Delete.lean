@@ -80,7 +80,7 @@ theorem cspaceDeleteSlotCore_preserves_capabilityInvariantBundle
               cdtAcyclicity_of_detachSlotFromCdt stRef addr hAcyclicRef,
               cspaceDepthConsistent_of_detachSlotFromCdt stRef addr hDepthRef,
               (SystemState.detachSlotFromCdt_objects_eq stRef addr) ▸ hObjInvRef⟩
-  exact ⟨cspaceLookupSound_of_cspaceSlotUnique st' trivial,
+  exact ⟨cspaceLookupSound_holds st',
     hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩
 
 /-- WS-E2 / H-01: Compositional preservation of `cspaceDeleteSlot` (guarded wrapper).
@@ -148,8 +148,10 @@ theorem cspaceDeleteSlot_preserves_cdtNodeSlot
   · exact cspaceDeleteSlotCore_preserves_cdtNodeSlot st st' addr hNodeSlotK hStep
 
 /-- WS-E2 / H-01: Compositional preservation of `cspaceRevoke`.
-Uses pre-state `cspaceSlotUnique` + `CNode.revokeTargetLocal_slotsUnique` to derive
-post-state uniqueness. -/
+WS-RC R4.A close-out: slot-uniqueness is now carried structurally on
+`CNode.slots : UniqueSlotMap` (`UniqueSlotMap.hWF`); the historical
+state-level `cspaceSlotUnique` predicate is no longer threaded as a
+precondition. -/
 theorem cspaceRevoke_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (addr : CSpaceAddr)
@@ -197,7 +199,7 @@ theorem cspaceRevoke_preserves_capabilityInvariantBundle
               cdtAcyclicity_of_cdt_eq stMid _ hAcyclicMid hClearCdt,
               cspaceDepthConsistent_of_objects_eq stMid _ hDepthMid hClearObj,
               hClearObj ▸ hObjInvMid⟩
-  exact ⟨cspaceLookupSound_of_cspaceSlotUnique st' trivial,
+  exact ⟨cspaceLookupSound_holds st',
     hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩
 
 
