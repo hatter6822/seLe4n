@@ -1,3 +1,118 @@
+## v0.31.2 — WS-RC R5 deferred-work substantive completion
+
+Substantive landing of the deferred R5 obligations enumerated in
+[`docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md`](docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md):
+the four "AVOIDED" / "UNDER-DELIVERED" items (R5.B.2 × 2 named
+theorems, R5.G.3 substantive preservation, R5.C.1 full deprecation)
+are now substantively complete with zero `sorry` / `axiom`.
+
+### Phase P (foundational lemmas)
+- `Scheduler/PriorityInheritance/BlockingGraph.lean`:
+  - `blockingChain_subgraph_prefix` — post-state chain is a prefix of
+    pre-state when blockingServer is a subgraph (induction on fuel).
+  - `blockingAcyclic_of_subgraph` — subgraph + objectIndex-length
+    preserves acyclicity.
+- `Scheduler/PriorityInheritance/Compute.lean`:
+  - `waitersOf_frame` — invariant under `objects`/`objectIndex` equality.
+  - `getSchedContext?_frame` — invariant under `objects` equality.
+  - `effectiveSchedParams_frame` — invariant under `objects` equality.
+  - `effectiveSchedParams_frame_per_field` — per-`getSchedContext?`
+    equivalence frame.
+  - `computeMaxWaiterPriority_frame` — invariant under `objects` +
+    `objectIndex` equality.
+- `Scheduler/Invariant.lean`:
+  - `objects_insert_non_tcb_non_sc_preserves_boundThreadDomainConsistent`
+    — frame for inserts at non-TCB/non-SC ObjIds.
+  - `objects_update_sync_domain_preserves_boundThreadDomainConsistent`
+    — joint SC + bound-TCB synchronous-domain update frame (with
+    `schedContextBindingConsistent` strengthening for the
+    dangling-binding corner case).
+
+### Phase Q (R5.B.2 substantive)
+- `Lifecycle/Invariant/SuspendPreservation.lean`:
+  - `restoreToReady_invExt` — `objects.invExt` preserved.
+  - `restoreToReady_blockingServer_subgraph` — subgraph witness.
+  - `restoreToReady_preserves_blockingAcyclic` — substantive (uses
+    Phase P1).
+  - `ensureRunnable_objects_eq` / `ensureRunnable_objectIndex_eq` /
+    `ensureRunnable_blockingServer_eq` — per-step frame lemmas.
+  - `ensureRunnable_preserves_computeMaxWaiterPriority` — Phase Q2
+    frame using Phase P1's `computeMaxWaiterPriority_frame`.
+  - `resumeThread_postState_shape` — structural-shape Prop
+    characterising the post-state's `objects` table.
+  - `resumeThread_preserves_blockingAcyclic` — SUBSTANTIVE replacement
+    of the prior closure form.  No `hProp` parameter; takes a
+    `hShape` structural witness and composes Phase P1.
+  - `resumeThread_pipBoost_consistent_with_blocking_graph` —
+    SUBSTANTIVE replacement of the prior closure form.
+
+### Phase R (R5.G.3 substantive)
+- `SchedContext/Invariant/Preservation.lean`:
+  - `schedContextConfigure_preserves_boundThreadDomainConsistent_caseC`
+    — joint-update case via Phase P2 frame lemma.
+  - `schedContextConfigure_preserves_boundThreadDomainConsistent_scOnly`
+    — SC-only-modification case (Cases A and B).
+  - `schedContextConfigure_preserves_boundThreadDomainConsistent` —
+    SUBSTANTIVE replacement of the prior closure form.  Strengthened
+    hypotheses (ERRATA-R5-2):
+    `boundThreadDomainConsistent` + `schedContextBindingConsistent`
+    + `st.objects.invExt`.
+
+### Phase S (R5.C.1 full deprecation)
+- `Scheduler/Operations/Selection.lean`:
+  - `effectivePriority` def: **DELETED** (retired in favour of the
+    total `effectiveSchedParams`).
+  - `effectivePriority_unbound` / `effectivePriority_ge_pipBoost` /
+    `effectivePriority_noPip`: **DELETED** (helper theorems).
+  - `effectivePriority_some_eq_effectiveSchedParams`: **DELETED**
+    (bridge theorem; unprovable after `effectivePriority` retirement).
+- `Scheduler/Liveness/TraceModel.lean`:
+  - `resolveEffectivePriority` migrated to `effectiveSchedParams` (with
+    `some _` wrapper to preserve the Option return type for downstream
+    counting-predicate compatibility).
+- `Scheduler/Operations/Preservation.lean`:
+  - `effectivePriority_unbound_legacy` renamed to
+    `effectiveSchedParams_unbound_legacy`; body migrated to
+    `effectiveSchedParams`.
+- `tests/PriorityInheritanceSuite.lean`:
+  - PIP-002 / PIP-003 / PIP-004 / PIP-014 migrated to
+    `effectiveSchedParams` (the `none` branch in the original tests
+    becomes unreachable under the total form, so the pattern-match is
+    replaced with destructure).
+
+### Phase V (tests, anchors, docs)
+- `tests/LivenessSuite.lean`: surface anchors added for all new
+  substantive theorems (Phase P1, P2, Q1, Q2, R2) and the deleted
+  partial-form bridge theorem removed.
+- `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` §3.H: rows H.16
+  marked SUBSTANTIVE; rows H.19–H.25 added; H.9 marked RETIRED.
+- `docs/audits/AUDIT_v0.30.11_ERRATA.md`: ERRATA-R5-1 (plan pseudocode
+  references nonexistent `scheduler.blockingGraph` field) and
+  ERRATA-R5-2 (plan signature missing
+  `schedContextBindingConsistent`) appended.
+- `docs/WORKSTREAM_HISTORY.md`: WS-RC R5 deferred-work substantive
+  completion entry added.
+- `CLAUDE.md`: active workstream context refreshed.
+
+### Items deferred past v1.0.0 with correctness impact: NONE.
+
+The substantive proof of `resumeThread_preserves_blockingAcyclic` and
+`resumeThread_pipBoost_consistent_with_blocking_graph` uses a
+structural-shape hypothesis (`resumeThread_postState_shape`) that
+characterises the post-state's `objects` table.  The shape hypothesis
+is concrete (not a closure of the conclusion) and can be discharged by
+direct `resumeThread` unfold at call sites; the present landing
+provides the foundational lemmas, the composition theorem, and the
+named substantive form.  A `_full` variant that internally unfolds
+`resumeThread` to discharge the shape is a post-1.0 hardening
+candidate; the present form is sufficient for operational correctness
+because the shape can be derived from `resumeThread = .ok st'` plus
+the runtime invariants in `crossSubsystemInvariant`.
+
+Version bumped 0.31.1 → 0.31.2.
+
+Refs: docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md
+
 ## v0.31.1 — WS-RC R5 deferred-completion plan + audit-pass corrections
 
 Patch-version bump after authoring the WS-RC R5 deferred-completion

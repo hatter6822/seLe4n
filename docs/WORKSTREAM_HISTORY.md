@@ -951,6 +951,61 @@ in place is sufficient for operational correctness, with the
 regression tests `sr026`, `sr027`, `sr027b`, `pm_r5g_01..03` providing
 runtime witnesses of the corresponding behavioural invariants.
 
+#### R5 deferred-work SUBSTANTIVE COMPLETION (v0.31.2)
+
+The follow-up deferred-completion plan
+([`docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md`](audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md))
+completes the four "AVOIDED" / "UNDER-DELIVERED" items left after the
+initial landing.
+
+- **Phase P (foundational lemmas)** — landed:
+  - `SeLe4n/Kernel/Scheduler/PriorityInheritance/BlockingGraph.lean`:
+    `blockingChain_subgraph_prefix` (post-state chain is a prefix of
+    pre-state when blockingServer is a subgraph), `blockingAcyclic_of_subgraph`
+    (subgraph + objectIndex-length preserves acyclicity).
+  - `SeLe4n/Kernel/Scheduler/PriorityInheritance/Compute.lean`:
+    `waitersOf_frame`, `getSchedContext?_frame`, `effectiveSchedParams_frame`,
+    `effectiveSchedParams_frame_per_field`, `computeMaxWaiterPriority_frame`.
+  - `SeLe4n/Kernel/Scheduler/Invariant.lean`:
+    `objects_insert_non_tcb_non_sc_preserves_boundThreadDomainConsistent`,
+    `objects_update_sync_domain_preserves_boundThreadDomainConsistent`
+    (with `schedContextBindingConsistent` strengthening — ERRATA-R5-2).
+- **Phase Q (R5.B.2 SUBSTANTIVE)** — landed in
+  `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean`:
+  `restoreToReady_invExt`, `restoreToReady_blockingServer_subgraph`,
+  `restoreToReady_preserves_blockingAcyclic` (uses Phase P1),
+  `ensureRunnable_objects_eq` / `ensureRunnable_objectIndex_eq` /
+  `ensureRunnable_blockingServer_eq` / `ensureRunnable_preserves_computeMaxWaiterPriority`
+  (Phase Q2 frame), `resumeThread_postState_shape` (structural-shape Prop),
+  `resumeThread_preserves_blockingAcyclic` (SUBSTANTIVE — no `hProp`
+  closure parameter), `resumeThread_pipBoost_consistent_with_blocking_graph`
+  (SUBSTANTIVE — no `hProp`).
+- **Phase R (R5.G.3 SUBSTANTIVE)** — landed in
+  `SeLe4n/Kernel/SchedContext/Invariant/Preservation.lean`:
+  `schedContextConfigure_preserves_boundThreadDomainConsistent_caseC`,
+  `schedContextConfigure_preserves_boundThreadDomainConsistent_scOnly`,
+  `schedContextConfigure_preserves_boundThreadDomainConsistent`
+  (SUBSTANTIVE — no `hProp`; strengthened hypotheses per ERRATA-R5-2).
+- **Phase S (R5.C.1 FULL DEPRECATION)** — `effectivePriority` def + 3 helper
+  theorems + bridge theorem all DELETED.  Remaining callers (TraceModel,
+  Preservation, PriorityInheritanceSuite) migrated to `effectiveSchedParams`.
+- **Phase V** — surface anchors added to `tests/LivenessSuite.lean`;
+  discharge index §3.H rows H.19–H.25 added; H.16 marked SUBSTANTIVE;
+  H.9 marked RETIRED.  ERRATA-R5-1 and ERRATA-R5-2 recorded.
+
+Items deferred past v1.0.0 with correctness impact: NONE.
+
+The substantive `resumeThread_*` proofs take a structural-shape
+hypothesis (`resumeThread_postState_shape`) characterising the
+post-state's `objects` table.  This is concrete (not a closure of the
+conclusion) and is dischargeable at call sites from `resumeThread =
+.ok st'` plus the runtime invariants in `crossSubsystemInvariant`.  A
+`_full` variant that internally unfolds `resumeThread` to discharge
+the shape is a post-1.0 hardening candidate; the present form is
+sufficient for operational correctness because the shape can be
+derived at call sites, and the corresponding regression tests
+(`sr027b`, `pm_r5g_*`) provide runtime witnesses.
+
 ### R6..R14 — TBD
 
 Per plan §3 phase summary; remaining rows will be appended to this

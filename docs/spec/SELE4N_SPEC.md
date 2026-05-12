@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.31.1` (`lakefile.toml`) |
+| **Package version** | `0.31.2` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 110,464 across 168 Lean files |
 | **Test LoC** | 19,695 across 29 Lean test suites |
@@ -333,7 +333,8 @@ resolving transitive priority inversion (SV-2). Key components:
   PIP for server when timed-out client was in `blockedOnReply`.
 - **Composition with SchedContext donation (Z7)**: PIP provides an
   additional boost beyond the donated SchedContext priority via the
-  `max(scPrio, pipBoost)` computation in `effectivePriority`.
+  `max(scPrio, pipBoost)` computation in `effectiveSchedParams` (the
+  total successor to the retired `effectivePriority`; see WS-RC R5.C.1).
 - **Bounded inversion**: `pip_bounded_inversion` proves priority inversion
   bounded by `objectIndex.length * WCRT`.
 - **16 frame preservation theorems**, determinism proofs, 22 test cases.
@@ -1406,10 +1407,13 @@ for the per-sub-task narrative.
   `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean`.
 * **R5.C (DEEP-SCH-02) — `effectivePriority` API uniformity**: new
   total form `effectiveSchedParams` returning
-  `Priority × Deadline × DomainId`; two bridge witnesses
-  (`effectiveSchedParams_priority_deadline_eq_resolve` and
-  `effectivePriority_some_eq_effectiveSchedParams`) in
-  `SeLe4n/Kernel/Scheduler/Operations/Selection.lean`.
+  `Priority × Deadline × DomainId`; bridge witness
+  `effectiveSchedParams_priority_deadline_eq_resolve` in
+  `SeLe4n/Kernel/Scheduler/Operations/Selection.lean`.  **R5.C.1 full
+  deprecation (v0.31.2)**: the partial `effectivePriority` def + 3
+  helper theorems + bridge `effectivePriority_some_eq_effectiveSchedParams`
+  are RETIRED.  All callers (`TraceModel.lean`, `Preservation.lean`,
+  `PriorityInheritanceSuite.lean`) migrated to `effectiveSchedParams`.
 * **R5.D (DEEP-SCH-03) — shared `restoreToReady` helper**: the
   IPC-state-clearing transition shared between `cancelIpcBlocking`
   (suspend G2) and `resumeThread` (H3) extracted as `restoreToReady`
@@ -1524,7 +1528,8 @@ including `insert_preserves_sorted`, `popDue_preserves_sorted`,
 #### 8.12.3 Scheduler Integration (WS-Z Phase Z4)
 
 The CBS budget engine and replenishment queue are wired into the scheduler via
-`effectivePriority` (resolves scheduling params from SchedContext if bound, TCB
+`effectiveSchedParams` (the total successor to the retired
+`effectivePriority`; resolves scheduling params from SchedContext if bound, TCB
 fields if unbound), `hasSufficientBudget` (budget eligibility predicate),
 `chooseThreadEffective` (budget-filtered selection chain), and `timerTickBudget`
 (3-branch: unbound legacy / bound decrement / bound exhaustion+preempt).
@@ -1662,12 +1667,13 @@ bounded by `objectIndex.length`.
   for both enforced (`dispatchWithCapChecked`) and non-enforced (`dispatchWithCap`)
   paths, ensuring consistent behavior regardless of information-flow enforcement
 
-**Composition with SchedContext donation (Z7)**: `effectivePriority` computes
+**Composition with SchedContext donation (Z7)**: `effectiveSchedParams`
+(the total successor to the retired `effectivePriority`) computes
 `max(scPrio, pipBoost)`, so PIP provides an additional boost when the transitive
 client priority exceeds the donated SchedContext priority.
 
 **Bounded inversion**: Priority inversion is bounded by
-`objectIndex.length × WCRT(effectivePriority)` ticks (parametric in WCRT).
+`objectIndex.length × WCRT(effectiveSchedParams)` ticks (parametric in WCRT).
 
 ### 8.14 Bounded Latency Theorem (WS-AB Phase D5)
 

@@ -164,10 +164,33 @@ open SeLe4n.Model
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_objectIndex_eq
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_objects_eq_at_tid
 #check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThread_pipBoost_consistent_post_restore
--- R5.C (DEEP-SCH-02): total effectiveSchedParams + bridge witness.
+-- R5.B.2 (DEEP-SUSP-01) substantive (Phase Q1/Q2 landing):
+#check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_invExt
+#check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_blockingServer_subgraph
+#check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_preserves_blockingAcyclic
+#check @SeLe4n.Kernel.Lifecycle.Suspend.ensureRunnable_objects_eq
+#check @SeLe4n.Kernel.Lifecycle.Suspend.ensureRunnable_objectIndex_eq
+#check @SeLe4n.Kernel.Lifecycle.Suspend.ensureRunnable_blockingServer_eq
+#check @SeLe4n.Kernel.Lifecycle.Suspend.ensureRunnable_preserves_computeMaxWaiterPriority
+#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThread_postState_shape
+#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThread_preserves_blockingAcyclic
+#check @SeLe4n.Kernel.Lifecycle.Suspend.resumeThread_pipBoost_consistent_with_blocking_graph
+-- Phase P1 foundational lemmas:
+#check @SeLe4n.Kernel.PriorityInheritance.blockingAcyclic_of_subgraph
+#check @SeLe4n.Kernel.PriorityInheritance.blockingChain_subgraph_prefix
+#check @SeLe4n.Kernel.PriorityInheritance.computeMaxWaiterPriority_frame
+#check @SeLe4n.Kernel.PriorityInheritance.waitersOf_frame
+#check @SeLe4n.Kernel.PriorityInheritance.effectiveSchedParams_frame
+#check @SeLe4n.Kernel.PriorityInheritance.effectiveSchedParams_frame_per_field
+#check @SeLe4n.Kernel.PriorityInheritance.getSchedContext?_frame
+-- Phase P2 foundational frame lemmas:
+#check @SeLe4n.Kernel.objects_insert_non_tcb_non_sc_preserves_boundThreadDomainConsistent
+#check @SeLe4n.Kernel.objects_update_sync_domain_preserves_boundThreadDomainConsistent
+-- R5.C (DEEP-SCH-02): total effectiveSchedParams.
+-- R5.C.1 full deprecation: the partial `effectivePriority` + bridge witness
+-- have been retired; only the total `effectiveSchedParams` form remains.
 #check @SeLe4n.Kernel.effectiveSchedParams
 #check @SeLe4n.Kernel.effectiveSchedParams_priority_deadline_eq_resolve
-#check @SeLe4n.Kernel.effectivePriority_some_eq_effectiveSchedParams
 #check @SeLe4n.Kernel.effectiveSchedParams_total
 -- R5.D (DEEP-SCH-03): restoreToReady shared helper + back-compat lemmas.
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady
@@ -179,6 +202,9 @@ open SeLe4n.Model
 #check @SeLe4n.Kernel.SchedContextOps.schedContextConfigure_bound_tcb_domain_eq
 #check @SeLe4n.Kernel.SchedContextOps.schedContextConfigure_domain_noop_when_eq
 #check @SeLe4n.Kernel.SchedContextOps.schedContextConfigure_preserves_boundThreadDomainConsistent
+-- R5.G.3 (DEEP-SCH-06) substantive (Phase R2 landing):
+#check @SeLe4n.Kernel.SchedContextOps.schedContextConfigure_preserves_boundThreadDomainConsistent_caseC
+#check @SeLe4n.Kernel.SchedContextOps.schedContextConfigure_preserves_boundThreadDomainConsistent_scOnly
 
 -- ============================================================================
 -- AN5-E: RPi5 canonical deployment — eventuallyExits closure (DEF-AK2-K.4)

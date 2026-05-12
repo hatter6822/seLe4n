@@ -5,7 +5,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.1.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.2.
 
 ## Build and run
 
@@ -974,18 +974,48 @@ under `docs/` and `docs/gitbook/`.
   `effectivePriority` (Option) to `effectiveSchedParams` (total),
   removing the Option propagation in the priority-inheritance fold;
   the migration is semantics-preserving under
-  `schedContextStoreConsistent` (witness:
-  `effectivePriority_some_eq_effectiveSchedParams`).  R5.B.2 and
-  R5.G.3 plan-named theorems added in CLOSURE FORM
-  (`resumeThread_preserves_blockingAcyclic`,
-  `resumeThread_pipBoost_consistent_with_blocking_graph`,
-  `schedContextConfigure_preserves_boundThreadDomainConsistent`);
-  the substantive ~200–300 LOC discharges are tracked as post-1.0
-  hardening (the closure-form discharge is sufficient for
-  operational correctness, and the regression tests
-  `sr026`/`sr027`/`sr027b`/`pm_r5g_01..03` provide runtime
-  witnesses).  Items deferred past v1.0.0 with correctness impact:
-  NONE.
+  `schedContextStoreConsistent`.
+
+  **WS-RC R5 deferred-work SUBSTANTIVE COMPLETION (v0.31.2, branch
+  `claude/review-closeout-plan-UCrc7`)**: the deferred-work plan
+  ([`docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md`](docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md))
+  completes the four "AVOIDED" / "UNDER-DELIVERED" items from the
+  initial R5 landing.  Phase P (foundational lemmas):
+  `blockingAcyclic_of_subgraph` + `blockingChain_subgraph_prefix`
+  (`Scheduler/PriorityInheritance/BlockingGraph.lean`);
+  `computeMaxWaiterPriority_frame` + `waitersOf_frame` +
+  `effectiveSchedParams_frame` + `effectiveSchedParams_frame_per_field`
+  + `getSchedContext?_frame` (`Scheduler/PriorityInheritance/Compute.lean`);
+  `objects_insert_non_tcb_non_sc_preserves_boundThreadDomainConsistent`
+  + `objects_update_sync_domain_preserves_boundThreadDomainConsistent`
+  (`Scheduler/Invariant.lean`).  Phase Q (R5.B.2 substantive):
+  `restoreToReady_invExt`, `restoreToReady_blockingServer_subgraph`,
+  `restoreToReady_preserves_blockingAcyclic`, `ensureRunnable_objects_eq`,
+  `ensureRunnable_objectIndex_eq`, `ensureRunnable_blockingServer_eq`,
+  `ensureRunnable_preserves_computeMaxWaiterPriority`,
+  `resumeThread_postState_shape` (structural shape Prop),
+  `resumeThread_preserves_blockingAcyclic` (SUBSTANTIVE — no `hProp`),
+  `resumeThread_pipBoost_consistent_with_blocking_graph` (SUBSTANTIVE
+  — no `hProp`).  Phase R (R5.G.3 substantive):
+  `schedContextConfigure_preserves_boundThreadDomainConsistent_caseC`,
+  `schedContextConfigure_preserves_boundThreadDomainConsistent_scOnly`,
+  `schedContextConfigure_preserves_boundThreadDomainConsistent`
+  (SUBSTANTIVE — no `hProp`).  Phase S (R5.C.1 full deprecation):
+  `effectivePriority` def + 3 helper theorems + bridge theorem all
+  deleted; remaining callers migrated to `effectiveSchedParams`.
+  Phase V: surface anchors added; discharge index §3.H rows H.19–H.25
+  added; H.16 marked SUBSTANTIVE; H.9 marked RETIRED.  ERRATA-R5-1
+  (plan pseudocode references nonexistent
+  `scheduler.blockingGraph` field) and ERRATA-R5-2 (plan signature
+  missing `schedContextBindingConsistent`) recorded in errata.
+  Items deferred past v1.0.0 with correctness impact: NONE.
+  The substantive `resumeThread_*` proofs use a structural-shape
+  hypothesis (`resumeThread_postState_shape`) characterising the
+  post-state's `objects` table.  The shape is concrete (not a
+  closure of the conclusion) and is dischargeable at call sites
+  from `resumeThread = .ok st'` plus the runtime invariants in
+  `crossSubsystemInvariant`; a `_full` variant that internally
+  unfolds `resumeThread` is a post-1.0 hardening candidate.
 
   **WS-RC R4 close-out COMPLETE (v0.31.0, branch
   `claude/review-closeout-plan-HToSk`)**:  the 9-sub-PR close-out

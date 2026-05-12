@@ -217,11 +217,19 @@ theorem budget_available_when_positive
 -- D5-C: Counting predicates
 -- ============================================================================
 
-/-- D5-C helper: Extract effective priority for a thread ID from system state. -/
+/-- D5-C helper: Extract effective priority for a thread ID from system state.
+
+    WS-RC R5.C.1 (DEEP-SCH-02): Migrated from the partial `effectivePriority`
+    helper to the total `effectiveSchedParams` helper.  Under the
+    `schedContextStoreConsistent` invariant (part of
+    `crossSubsystemInvariant`), the pre-R5 `effectivePriority` `none`
+    branch was unreachable; the total form falls back to TCB fields on
+    SC-missing, which the runtime invariant forbids.  The migration is
+    semantics-preserving under the invariant. -/
 def resolveEffectivePriority (st : SystemState) (tid : ThreadId)
     : Option (Priority × Deadline × DomainId) :=
   match st.objects[tid.toObjId]? with
-  | some (.tcb tcb) => effectivePriority st tcb
+  | some (.tcb tcb) => some (effectiveSchedParams st tcb)
   | _ => none
 
 /-- D5-C: Count threads in the run queue with effective priority ≥ target's

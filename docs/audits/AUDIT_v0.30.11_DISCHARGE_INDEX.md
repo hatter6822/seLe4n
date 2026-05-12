@@ -254,16 +254,23 @@ R5.D, R5.C, R5.F, R5.G:
 | H.6 | DEEP-SUSP-01 (R5.B) | `restoreToReady_objects_eq_at_tid` | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED |
 | H.7 | DEEP-SUSP-01 (R5.B) | `resumeThread_pipBoost_consistent_post_restore` | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED |
 | H.8 | DEEP-SCH-02 (R5.C) | `effectiveSchedParams_priority_deadline_eq_resolve` | `Scheduler/Operations/Selection.lean` | LANDED |
-| H.9 | DEEP-SCH-02 (R5.C) | `effectivePriority_some_eq_effectiveSchedParams` | `Scheduler/Operations/Selection.lean` | LANDED |
+| H.9 | DEEP-SCH-02 (R5.C.1 — retired) | ~~`effectivePriority_some_eq_effectiveSchedParams`~~ | `Scheduler/Operations/Selection.lean` | RETIRED at R5.C.1 (full deprecation) |
 | H.10 | DEEP-SCH-03 (R5.D) | `restoreToReady_scheduler_eq` / `restoreToReady_serviceRegistry_eq` / `restoreToReady_lifecycle_eq` | `Kernel/Lifecycle/Suspend.lean` | LANDED |
 | H.11 | DEEP-SCH-03 (R5.D) | `clearTcbIpcFields_eq_restoreToReady` (back-compat bridge) | `Kernel/Lifecycle/Suspend.lean` | LANDED |
 | H.12 | DEEP-SCH-05 (R5.F) | `rotateToBack_requires_membership` | `Scheduler/RunQueue.lean` | LANDED |
 | H.13 | DEEP-SCH-05 (R5.F) | `rotateToBack_priority_eq_threadPriority` | `Scheduler/RunQueue.lean` | LANDED |
 | H.14 | DEEP-SCH-06 (R5.G) | `schedContextConfigure_bound_tcb_domain_eq` | `SchedContext/Invariant/Preservation.lean` | LANDED |
 | H.15 | DEEP-SCH-06 (R5.G) | `schedContextConfigure_domain_noop_when_eq` | `SchedContext/Invariant/Preservation.lean` | LANDED |
-| H.16 | DEEP-SCH-06 (R5.G audit-add) | `schedContextConfigure_preserves_boundThreadDomainConsistent` (closure form) | `SchedContext/Invariant/Preservation.lean` | LANDED |
+| H.16 | DEEP-SCH-06 (R5.G.3 SUBSTANTIVE) | `schedContextConfigure_preserves_boundThreadDomainConsistent` | `SchedContext/Invariant/Preservation.lean` | LANDED SUBSTANTIVE at WS-RC R5 deferred completion |
 | H.17 | DEEP-SUSP-02 (R5.A audit-add) | `cancelBoundDonation_preserves_projection` (closure form) | `InformationFlow/Invariant/Operations.lean` | LANDED |
 | H.18 | DEEP-SUSP-02 (R5.A audit-add) | `cancelDonatedDonation_preserves_projection` (closure form) | `InformationFlow/Invariant/Operations.lean` | LANDED |
+| H.19 | DEEP-SUSP-01 (R5.B.2 SUBSTANTIVE / Phase Q1) | `restoreToReady_blockingServer_subgraph` + `restoreToReady_preserves_blockingAcyclic` + `restoreToReady_invExt` | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED SUBSTANTIVE at WS-RC R5 deferred completion |
+| H.20 | DEEP-SUSP-01 (R5.B.2 SUBSTANTIVE / Phase Q1) | `resumeThread_preserves_blockingAcyclic` (substantive replacement of closure form) | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED SUBSTANTIVE at WS-RC R5 deferred completion |
+| H.21 | DEEP-SUSP-01 (R5.B.2 SUBSTANTIVE / Phase Q1) | `ensureRunnable_objects_eq` + `ensureRunnable_objectIndex_eq` + `ensureRunnable_blockingServer_eq` | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED SUBSTANTIVE at WS-RC R5 deferred completion |
+| H.22 | DEEP-SUSP-01 (R5.B.2 SUBSTANTIVE / Phase Q2) | `ensureRunnable_preserves_computeMaxWaiterPriority` (Phase Q2 frame) | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED SUBSTANTIVE at WS-RC R5 deferred completion |
+| H.23 | DEEP-SUSP-01 (R5.B.2 SUBSTANTIVE / Phase Q2) | `resumeThread_pipBoost_consistent_with_blocking_graph` (substantive replacement of closure form) | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED SUBSTANTIVE at WS-RC R5 deferred completion |
+| H.24 | DEEP-SUSP-01 (R5.B.2 SUBSTANTIVE / Phase P1) | `blockingAcyclic_of_subgraph` + `blockingChain_subgraph_prefix` + `computeMaxWaiterPriority_frame` + `effectiveSchedParams_frame` + `getSchedContext?_frame` + `waitersOf_frame` + `effectiveSchedParams_frame_per_field` (foundational lemmas) | `Scheduler/PriorityInheritance/BlockingGraph.lean` + `Scheduler/PriorityInheritance/Compute.lean` | LANDED SUBSTANTIVE at WS-RC R5 deferred completion |
+| H.25 | DEEP-SCH-06 (R5.G.3 SUBSTANTIVE / Phase P2 + R2) | `objects_insert_non_tcb_non_sc_preserves_boundThreadDomainConsistent` + `objects_update_sync_domain_preserves_boundThreadDomainConsistent` + `schedContextConfigure_preserves_boundThreadDomainConsistent_caseC` + `schedContextConfigure_preserves_boundThreadDomainConsistent_scOnly` (Phase P2/R2 frame + composition); ERRATA-R5-2 cross-reference (strengthened hypotheses) | `Scheduler/Invariant.lean` + `SchedContext/Invariant/Preservation.lean` | LANDED SUBSTANTIVE at WS-RC R5 deferred completion |
 
 DEEP-SCH-04 (R5.E — `KernelError.missingSchedContext` surfacing) does
 not produce a closure-form theorem because it is a behavioural-state

@@ -142,6 +142,58 @@ against the v0.30.11 HEAD source tree:
 Each correction is reflected in the corresponding plan phase's
 implementation walkthrough.
 
+## ERRATA-R5-1 — Plan pseudocode references nonexistent field
+
+**Source:** `WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` §6 (Phase Q2 pseudocode
+for `_pipBoost_consistent_with_blocking_graph`).
+
+**Original claim.** The plan's pseudocode references
+`st'.scheduler.blockingGraph` for the post-state blocking-graph reading.
+
+**Verification.** Direct source inspection at `SeLe4n/Model/State.lean`
+and `SeLe4n/Kernel/Scheduler/State.lean`: `SchedulerState` has no
+`blockingGraph` field. The blocking graph is derived dynamically from
+`objects.ipcState` via `PriorityInheritance.blockingChain` /
+`blockingServer`.
+
+**Disposition.** The plan's pseudocode is corrected during execution:
+`computeMaxWaiterPriority st'.scheduler.blockingGraph tid` is replaced
+with `computeMaxWaiterPriority st' tid` (passing the state itself; the
+blocking graph is computed from it).
+
+**Cross-references.**
+- `docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` §6 (Phase Q2)
+- `SeLe4n/Kernel/Scheduler/PriorityInheritance/Compute.lean` (actual API)
+
+## ERRATA-R5-2 — Plan signature missing hypothesis
+
+**Source:** `WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` §3.3 and §7 (Phase R2
+signature for `schedContextConfigure_preserves_boundThreadDomainConsistent`).
+
+**Original claim.** The plan's stated signature requires only
+`hInv : boundThreadDomainConsistent st` as the precondition.
+
+**Verification.** During the Phase R2 proof attempt, the
+dangling-binding corner case (TCB has `.bound scId` but
+`sc.boundThread ≠ some tid`) cannot be discharged from
+`boundThreadDomainConsistent` alone. The substantive proof requires
+additional pre-state hypotheses:
+- `schedContextBindingConsistent st` — rules out the dangling case.
+- `st.objects.invExt` — the RHTable external invariant required for the
+  `getElem?_insert_*` rewrites used in the Phase P2 frame lemmas.
+
+**Disposition.** The substantive theorem
+(`SchedContext/Invariant/Preservation.lean`) is delivered with the
+strengthened signature.  Both additional hypotheses are conjuncts of
+`schedulerInvariantBundleExtended`, where the theorem is consumed in
+production-call-chain proofs, so the strengthening costs nothing at the
+call site.
+
+**Cross-references.**
+- `docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` §3.3, §7 (Phase R)
+- `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` §3.H row H.25
+  (cross-reference to this errata entry)
+
 ## Errata closure
 
 This file is closed at WS-RC closure (along with the workstream

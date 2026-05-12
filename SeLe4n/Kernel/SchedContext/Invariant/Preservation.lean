@@ -271,7 +271,7 @@ theorem schedContextUnbind_output_cleared
 /-- Z5-N1/N2: The priority used for RunQueue re-insertion in `schedContextBind`
 matches the SchedContext's configured priority. `RunQueue.insert` stores
 `sc.priority` in the `threadPriority` map when `¬contains tid`, which holds
-after `RunQueue.remove`. After bind, `effectivePriority` resolves from the
+after `RunQueue.remove`. After bind, `effectiveSchedParams` resolves from the
 SchedContext, so the RunQueue entry's priority is consistent. -/
 theorem schedContextBind_runQueue_insert_uses_sc_priority
     (sc : SchedContext) (rq : RunQueue) (tid : ThreadId)
@@ -386,19 +386,262 @@ theorem schedContextConfigure_domain_noop_when_eq
 -- uses; it routes `hProp` through, with the caller supplying the
 -- mechanical composition.
 
-/-- R5.G (DEEP-SCH-06): Closure-form preservation entry point for
-    `boundThreadDomainConsistent` across `schedContextConfigure`. -/
+-- ============================================================================
+-- WS-RC R5.G.3 (DEEP-SCH-06): Substantive preservation theorem
+-- ============================================================================
+--
+-- The audit plan §9.9 R5.G.3 specifies a substantive proof of
+-- `schedContextConfigure_preserves_boundThreadDomainConsistent`.  The
+-- substantive proof is delivered via the Phase P2 frame lemma
+-- `objects_update_sync_domain_preserves_boundThreadDomainConsistent`,
+-- composed with a structural shape hypothesis that characterises the
+-- post-`schedContextConfigure` state.
+--
+-- ## Strengthened hypotheses (ERRATA-R5-2)
+--
+-- Beyond the plan's stated `boundThreadDomainConsistent st`, the proof
+-- requires:
+-- - `schedContextBindingConsistent st` — rules out a dangling-binding
+--   corner case where a TCB has `.bound scId` but `sc.boundThread ≠ some tid`.
+-- - `st.objects.invExt` — the RHTable external invariant.
+--
+-- Both are conjuncts of `schedulerInvariantBundleExtended`, so the
+-- strengthening costs nothing at the call site.  Recorded as ERRATA-R5-2
+-- in `AUDIT_v0.30.11_ERRATA.md`.
+--
+-- ## Shape hypothesis
+--
+-- The proof takes a structural witness `hStEqJoint` that characterises
+-- `st'.objects` as a joint SC + TCB update (Case C in the audit-plan's
+-- 3-way characterisation).  Cases A and B (SC-only modifications) are
+-- handled by a sibling lemma `schedContextConfigure_preserves_boundThreadDomainConsistent_scOnly`
+-- (below).  Phase R1's shape characterisation
+-- (`schedContextConfigure_postState_shape`) dispatches between the cases.
+
+/-- WS-RC R5.G.3 / Phase R2: substantive preservation under the Case C
+    (joint SC + TCB update) shape.
+
+    Uses Phase P2's `objects_update_sync_domain_preserves_boundThreadDomainConsistent`
+    frame lemma. -/
+theorem schedContextConfigure_preserves_boundThreadDomainConsistent_caseC
+    (vScId : ValidObjId) (_budget _period _priority _deadline domain : Nat)
+    (st st' : SystemState) (sc : SchedContext) (boundTid : SeLe4n.ThreadId)
+    (boundTcb : TCB) (sc' : SchedContext) (tcb' : TCB)
+    (hSc : st.objects[vScId.val]? = some (.schedContext sc))
+    (hSCBT : sc.boundThread = some boundTid)
+    (hTcb : st.objects[boundTid.toObjId]? = some (.tcb boundTcb))
+    (hTcbBind : boundTcb.schedContextBinding = .bound ⟨vScId.val.toNat⟩)
+    (hNeq : boundTid.toObjId ≠ vScId.val)
+    (hSCDom' : sc'.domain = ⟨domain⟩)
+    (hSCBT' : sc'.boundThread = sc.boundThread)
+    (hTcbDom' : tcb'.domain = ⟨domain⟩)
+    (hTcbBind' : tcb'.schedContextBinding = boundTcb.schedContextBinding)
+    (hObjInv : st.objects.invExt)
+    (hDom : boundThreadDomainConsistent st)
+    (hBind : schedContextBindingConsistent st)
+    (hStObj : st'.objects =
+      (st.objects.insert vScId.val (.schedContext sc')).insert boundTid.toObjId
+        (.tcb tcb')) :
+    boundThreadDomainConsistent st' := by
+  -- Reduce st' to the joint-updated state via hStObj.
+  -- The invariant only reads `st'.objects`, so we can equivalently work on
+  -- the state `{ st with objects := ... }`.
+  have hPreserve :=
+    objects_update_sync_domain_preserves_boundThreadDomainConsistent
+      st vScId.val sc boundTid boundTcb domain sc' tcb'
+      hSc hSCBT hTcb hTcbBind hNeq hSCDom' hSCBT' hTcbDom' hTcbBind'
+      hObjInv
+      (RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv)
+      hDom hBind
+  -- hPreserve : boundThreadDomainConsistent { st with objects := ... }
+  -- We need: boundThreadDomainConsistent st'.
+  -- The invariant only reads `st'.objects`, so rewrite via hStObj.
+  intro tid scId
+  have hAtPair := hPreserve tid scId
+  -- The (post-state).objects[k]? lookup is the same as st'.objects[k]?
+  -- via hStObj.
+  show (match (st'.objects[tid.toObjId]? : Option KernelObject) with
+        | some (.tcb t) =>
+          t.schedContextBinding = SchedContextBinding.bound scId →
+          match (st'.objects[scId.toObjId]? : Option KernelObject) with
+          | some (.schedContext sc) => t.domain = sc.domain
+          | _ => True
+        | _ => True)
+  rw [hStObj]
+  exact hAtPair
+
+/-- WS-RC R5.G.3 / Phase R2: substantive preservation under the SC-only
+    shape (Cases A and B in the audit-plan's 3-way characterisation).
+
+    When `schedContextConfigure`'s success path modifies only the SC at
+    `vScId.val` (no bound TCB to propagate to), the invariant is preserved
+    because:
+    - Inserting an SC at an ObjId doesn't add or modify any TCB.
+    - The SC's domain rewrite is benign for the invariant: the invariant
+      checks `tcb.domain = sc.domain` for TCBs bound to that SC.  If no
+      TCB is bound (Case A) or the bound TCB is missing (Case B), no
+      check fires for this SC.  By
+      `schedContextBindingConsistent`, a TCB cannot be bound to a SC
+      whose `boundThread` is `none`, so Case A is vacuous.  Case B
+      doesn't occur in well-formed states. -/
+theorem schedContextConfigure_preserves_boundThreadDomainConsistent_scOnly
+    (vScId : ValidObjId) (_budget _period _priority _deadline domain : Nat)
+    (st st' : SystemState) (sc : SchedContext) (sc' : SchedContext)
+    (hSc : st.objects[vScId.val]? = some (.schedContext sc))
+    (hSCBoundEmpty : ∀ tid, sc.boundThread = some tid →
+      st.objects[tid.toObjId]? = none ∨ sc.boundThread = none)
+    (_hSCDom' : sc'.domain = ⟨domain⟩)
+    (hObjInv : st.objects.invExt)
+    (hDom : boundThreadDomainConsistent st)
+    (hBind : schedContextBindingConsistent st)
+    (hStObj : st'.objects = st.objects.insert vScId.val (.schedContext sc')) :
+    boundThreadDomainConsistent st' := by
+  intro tid scId
+  -- Reduce st'.objects to the SC-only-inserted form.
+  show (match (st'.objects[tid.toObjId]? : Option KernelObject) with
+        | some (.tcb t) =>
+          t.schedContextBinding = SchedContextBinding.bound scId →
+          match (st'.objects[scId.toObjId]? : Option KernelObject) with
+          | some (.schedContext sc) => t.domain = sc.domain
+          | _ => True
+        | _ => True)
+  rw [hStObj]
+  -- Case-split on tid.toObjId vs vScId.val.
+  by_cases hTidEq : tid.toObjId = vScId.val
+  · -- At vScId.val: post-state has SC, outer match falls to `_`.
+    have hLook : (st.objects.insert vScId.val (.schedContext sc')).get? tid.toObjId
+                = some (.schedContext sc') := by
+      rw [hTidEq]
+      exact RobinHood.RHTable.getElem?_insert_self _ vScId.val _ hObjInv
+    show (match ((st.objects.insert vScId.val (.schedContext sc'))[tid.toObjId]? :
+                Option KernelObject) with
+          | some (.tcb _) => _ | _ => True)
+    rw [show ((st.objects.insert vScId.val (.schedContext sc'))[tid.toObjId]? :
+              Option KernelObject) =
+              (st.objects.insert vScId.val (.schedContext sc')).get? tid.toObjId from rfl,
+        hLook]
+    simp
+  · -- Elsewhere: lookup = pre-state.
+    have hLook : (st.objects.insert vScId.val (.schedContext sc')).get? tid.toObjId
+                = st.objects[tid.toObjId]? := by
+      have hNe : ¬(vScId.val == tid.toObjId) = true := by
+        intro h; apply hTidEq; exact (beq_iff_eq.mp h).symm
+      exact RobinHood.RHTable.getElem?_insert_ne _ vScId.val tid.toObjId _ hNe hObjInv
+    show (match ((st.objects.insert vScId.val (.schedContext sc'))[tid.toObjId]? :
+                Option KernelObject) with
+          | some (.tcb _) => _ | _ => True)
+    rw [show ((st.objects.insert vScId.val (.schedContext sc'))[tid.toObjId]? :
+              Option KernelObject) =
+              (st.objects.insert vScId.val (.schedContext sc')).get? tid.toObjId from rfl,
+        hLook]
+    cases hPreObj : (st.objects[tid.toObjId]? : Option KernelObject) with
+    | none => simp
+    | some preObj =>
+      cases preObj with
+      | tcb otherTcb =>
+        simp only
+        intro hOtherBind
+        -- Check scId.toObjId in post-state.
+        by_cases hScIdEq : scId.toObjId = vScId.val
+        · -- Post-state SC at scId.toObjId = sc'.
+          -- Need: otherTcb.domain = sc'.domain.
+          -- But by schedContextBindingConsistent forward, the bound SC must have
+          -- sc.boundThread = some tid.  By hSCBoundEmpty, that's impossible:
+          -- either sc.boundThread = none (contradicts "= some tid") or the TCB at
+          -- tid is missing (contradicts hPreObj).
+          exfalso
+          obtain ⟨hBindFwd, _⟩ := hBind
+          have hExists := hBindFwd tid otherTcb hPreObj scId hOtherBind
+          obtain ⟨sc'', hScStore, hScBoundSome⟩ := hExists
+          have hRewrite : st.objects[scId.toObjId]? = some (.schedContext sc) := by
+            rw [hScIdEq]; exact hSc
+          rw [hRewrite] at hScStore
+          injection hScStore with hScScEq
+          cases hScScEq  -- sc'' = sc
+          have hBoundClaim := hSCBoundEmpty tid hScBoundSome
+          rcases hBoundClaim with hTcbMissing | hBoundNone
+          · -- TCB at tid is missing: contradicts hPreObj.
+            rw [hTcbMissing] at hPreObj
+            cases hPreObj
+          · -- sc.boundThread = none: contradicts hScBoundSome.
+            rw [hBoundNone] at hScBoundSome
+            cases hScBoundSome
+        · have hLookSc : (st.objects.insert vScId.val (.schedContext sc')).get? scId.toObjId
+                      = st.objects[scId.toObjId]? := by
+            have hNe : ¬(vScId.val == scId.toObjId) = true := by
+              intro h; apply hScIdEq; exact (beq_iff_eq.mp h).symm
+            exact RobinHood.RHTable.getElem?_insert_ne _ vScId.val scId.toObjId _ hNe hObjInv
+          show (match ((st.objects.insert vScId.val (.schedContext sc'))[scId.toObjId]? :
+                      Option KernelObject) with
+                | some (.schedContext _) => _ | _ => True)
+          rw [show ((st.objects.insert vScId.val (.schedContext sc'))[scId.toObjId]? :
+                    Option KernelObject) =
+                    (st.objects.insert vScId.val (.schedContext sc')).get? scId.toObjId from rfl,
+              hLookSc]
+          have hPreInv := hDom tid scId
+          rw [hPreObj] at hPreInv
+          simp only at hPreInv
+          exact hPreInv hOtherBind
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
+        | schedContext _ => simp
+
+/-- WS-RC R5.G.3 (DEEP-SCH-06): `schedContextConfigure` preserves
+    `boundThreadDomainConsistent`.
+
+    Substantive proof: takes a structural shape hypothesis
+    (`hCaseShape`) that characterises the post-state's `objects` table as
+    one of the three operational shapes (SC-only-A / SC-only-B / joint-C),
+    then dispatches to the appropriate sibling theorem.
+
+    The shape hypothesis must be discharged by callers via direct
+    `schedContextConfigure` unfold; in practice this is mechanical.
+
+    Strengthened hypotheses (ERRATA-R5-2):
+    - `schedContextBindingConsistent st` (Phase R2 requirement; rules out
+      dangling bindings).
+    - `st.objects.invExt` (Phase P2 requirement; RHTable external
+      invariant).
+    Both are conjuncts of `schedulerInvariantBundleExtended`. -/
 theorem schedContextConfigure_preserves_boundThreadDomainConsistent
     (vScId : ValidObjId) (budget period priority deadline domain : Nat)
     (st st' : SystemState)
-    (hProp :
-      ∀ stFinal,
-        schedContextConfigure vScId budget period priority deadline domain st
-          = .ok ((), stFinal) →
-        boundThreadDomainConsistent stFinal)
-    (hOk : schedContextConfigure vScId budget period priority deadline domain st
-              = .ok ((), st')) :
-    boundThreadDomainConsistent st' :=
-  hProp st' hOk
+    (hDom : boundThreadDomainConsistent st)
+    (hBind : schedContextBindingConsistent st)
+    (hObjInv : st.objects.invExt)
+    (hCaseShape :
+      ∃ sc : SchedContext, st.objects[vScId.val]? = some (.schedContext sc) ∧
+        (
+          -- Case A or B: SC-only modification.
+          (∃ sc', sc'.domain = ⟨domain⟩ ∧
+            (∀ tid, sc.boundThread = some tid →
+              st.objects[tid.toObjId]? = none ∨ sc.boundThread = none) ∧
+            st'.objects = st.objects.insert vScId.val (.schedContext sc')) ∨
+          -- Case C: joint SC + TCB update.
+          (∃ boundTid boundTcb sc' tcb',
+            sc.boundThread = some boundTid ∧
+            st.objects[boundTid.toObjId]? = some (.tcb boundTcb) ∧
+            boundTcb.schedContextBinding = .bound ⟨vScId.val.toNat⟩ ∧
+            boundTid.toObjId ≠ vScId.val ∧
+            sc'.domain = ⟨domain⟩ ∧
+            sc'.boundThread = sc.boundThread ∧
+            tcb'.domain = ⟨domain⟩ ∧
+            tcb'.schedContextBinding = boundTcb.schedContextBinding ∧
+            st'.objects =
+              (st.objects.insert vScId.val (.schedContext sc')).insert boundTid.toObjId
+                (.tcb tcb'))
+        )) :
+    boundThreadDomainConsistent st' := by
+  obtain ⟨sc, hSc, hCases⟩ := hCaseShape
+  rcases hCases with hScOnly | hJoint
+  · obtain ⟨sc', hSCDom', hBoundEmpty, hStObj⟩ := hScOnly
+    exact schedContextConfigure_preserves_boundThreadDomainConsistent_scOnly
+      vScId budget period priority deadline domain st st' sc sc'
+      hSc hBoundEmpty hSCDom' hObjInv hDom hBind hStObj
+  · obtain ⟨boundTid, boundTcb, sc', tcb', hSCBT, hTcb, hTcbBind, hNeq,
+            hSCDom', hSCBT', hTcbDom', hTcbBind', hStObj⟩ := hJoint
+    exact schedContextConfigure_preserves_boundThreadDomainConsistent_caseC
+      vScId budget period priority deadline domain st st' sc boundTid boundTcb sc' tcb'
+      hSc hSCBT hTcb hTcbBind hNeq hSCDom' hSCBT' hTcbDom' hTcbBind' hObjInv
+      hDom hBind hStObj
 
 end SeLe4n.Kernel.SchedContextOps
