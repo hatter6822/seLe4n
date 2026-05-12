@@ -53,21 +53,21 @@ private def pip001_defaultPipBoostNone : IO Unit := do
 -- WS-RC R5.C.1 (DEEP-SCH-02): Migrated from `effectivePriority` (Option) to
 -- `effectiveSchedParams` (total triple).  The total form returns the same
 -- triple on unbound threads.
-private def pip002_effectivePriorityNoPip : IO Unit := do
+private def pip002_effectiveSchedParamsNoPip : IO Unit := do
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 (prio := 50)))]
   let tcb := mkTcb 1 (prio := 50)
   let (prio, _, _) := effectiveSchedParams st tcb
   expect "effective priority = base priority" (prio == ⟨50⟩)
 
 -- PIP-003: effectiveSchedParams with pipBoost returns max(base, boost)
-private def pip003_effectivePriorityWithPip : IO Unit := do
+private def pip003_effectiveSchedParamsWithPip : IO Unit := do
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 (prio := 30) (pipBoost := some ⟨80⟩)))]
   let tcb := mkTcb 1 (prio := 30) (pipBoost := some ⟨80⟩)
   let (prio, _, _) := effectiveSchedParams st tcb
   expect "effective priority = max(30, 80) = 80" (prio == ⟨80⟩)
 
 -- PIP-004: effectiveSchedParams with lower pipBoost keeps base
-private def pip004_effectivePriorityLowerPip : IO Unit := do
+private def pip004_effectiveSchedParamsLowerPip : IO Unit := do
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 (prio := 80) (pipBoost := some ⟨30⟩)))]
   let tcb := mkTcb 1 (prio := 80) (pipBoost := some ⟨30⟩)
   let (prio, _, _) := effectiveSchedParams st tcb
@@ -195,7 +195,7 @@ private def pip013_doesNotAffectOthers : IO Unit := do
 -- `effectiveSchedParams` (total triple).  Under `schedContextStoreConsistent`,
 -- the bound thread's SC is always present, so the total form returns the
 -- same triple as the partial form's `some` branch.
-private def pip014_effectivePrioritySchedContextBound : IO Unit := do
+private def pip014_effectiveSchedParamsSchedContextBound : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := ⟨10⟩, budget := ⟨100⟩, period := ⟨1000⟩,
     priority := ⟨40⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
@@ -328,9 +328,9 @@ def main : IO Unit := do
   IO.println "=== Priority Inheritance Protocol Test Suite ==="
   IO.println ""
   pip001_defaultPipBoostNone
-  pip002_effectivePriorityNoPip
-  pip003_effectivePriorityWithPip
-  pip004_effectivePriorityLowerPip
+  pip002_effectiveSchedParamsNoPip
+  pip003_effectiveSchedParamsWithPip
+  pip004_effectiveSchedParamsLowerPip
   pip005_waitersOfEmpty
   pip006_waitersOfFound
   pip007_computeMaxWaiterPriority
@@ -340,7 +340,7 @@ def main : IO Unit := do
   pip011_propagateTransitive
   pip012_revertClearsPipBoost
   pip013_doesNotAffectOthers
-  pip014_effectivePrioritySchedContextBound
+  pip014_effectiveSchedParamsSchedContextBound
   pip015_blockingGraphEdges
   pip016_chainContains
   pip017_framePreservesCurrent

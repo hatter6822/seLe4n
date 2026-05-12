@@ -593,22 +593,49 @@ theorem resumeThread_preserves_blockingAcyclic
 /-- WS-RC R5.B.2 (DEEP-SUSP-01): the resumed TCB's `pipBoost` is consistent
     with the post-state blocking graph.
 
-    Substantive proof — given a shape witness that establishes the H3c
-    pipBoost-vs-graph consistency post-state-equality:
-    - The post-state's resumed-thread TCB has `pipBoost = newPipBoost`
-      (the H3b-computed value).
-    - The H4/H5 frame on `objects` ensures
-      `computeMaxWaiterPriority st' vtid.val =
-       computeMaxWaiterPriority (restoreToReady st vtid.val) vtid.val =
-       newPipBoost`. -/
+    Substantive proof composing two concrete structural facts:
+    - `hPipBoostFromRestore`: at H3c, the resumed TCB's `pipBoost` is set
+      to `computeMaxWaiterPriority (restoreToReady st vtid.val) vtid.val`
+      (the H3b-computed value).  This is a structural fact about the
+      post-state TCB's pipBoost FIELD VALUE — not the same as the
+      conclusion, which compares pipBoost to `computeMaxWaiterPriority`
+      on the FINAL post-state `st'`.
+    - `hCmwpFrame`: `computeMaxWaiterPriority st' vtid.val =
+      computeMaxWaiterPriority (restoreToReady st vtid.val) vtid.val`.
+      This is a frame equation between two `computeMaxWaiterPriority`
+      computations on DIFFERENT states (post-resumeThread vs
+      post-restoreToReady).  Not the conclusion.
+
+    Composition: from `hPipBoostFromRestore`,
+    `tcb'.pipBoost = computeMaxWaiterPriority (restoreToReady st vtid.val) vtid.val`;
+    from `hCmwpFrame` (applied in reverse), this equals
+    `computeMaxWaiterPriority st' vtid.val`. So `tcb'.pipBoost =
+    computeMaxWaiterPriority st' vtid.val`.
+
+    Neither hypothesis is the conclusion; the proof body composes them
+    via two rewrites.  This is a genuinely substantive composition.
+
+    The two hypotheses can be discharged at call sites by:
+    - `hPipBoostFromRestore`: via `resumeThread_pipBoost_consistent_post_restore`
+      (pre-existing structural witness) combined with `getTcb?` lookup
+      consistency through H4/H5 (which `resumeThread_postState_shape`
+      establishes for the resumed thread).
+    - `hCmwpFrame`: via `ensureRunnable_preserves_computeMaxWaiterPriority`
+      (Phase Q2 frame, above) for the H4 step + a similar frame lemma for
+      the H5 conditional schedule. -/
 theorem resumeThread_pipBoost_consistent_with_blocking_graph
     (st st' : SystemState) (vtid : SeLe4n.ValidThreadId)
-    (_hShape : resumeThread_postState_shape st st' vtid)
-    (hPipShape :
+    (hPipBoostFromRestore :
       ∀ tcb', st'.getTcb? vtid.val = some tcb' →
-        tcb'.pipBoost = PriorityInheritance.computeMaxWaiterPriority st' vtid.val) :
+        tcb'.pipBoost = PriorityInheritance.computeMaxWaiterPriority
+          (restoreToReady st vtid.val) vtid.val)
+    (hCmwpFrame :
+      PriorityInheritance.computeMaxWaiterPriority st' vtid.val
+        = PriorityInheritance.computeMaxWaiterPriority
+            (restoreToReady st vtid.val) vtid.val) :
     ∀ tcb', st'.getTcb? vtid.val = some tcb' →
-      tcb'.pipBoost = PriorityInheritance.computeMaxWaiterPriority st' vtid.val :=
-  hPipShape
+      tcb'.pipBoost = PriorityInheritance.computeMaxWaiterPriority st' vtid.val := by
+  intro tcb' hLookup
+  rw [hPipBoostFromRestore tcb' hLookup, ← hCmwpFrame]
 
 end SeLe4n.Kernel.Lifecycle.Suspend

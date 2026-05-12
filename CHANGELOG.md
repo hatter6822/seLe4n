@@ -1,3 +1,36 @@
+## v0.31.2 audit pass — WS-RC R5 deferred-work substantive completion (post-PR audit)
+
+A self-audit of the v0.31.2 initial landing identified that
+`resumeThread_pipBoost_consistent_with_blocking_graph` had been
+inadvertently delivered in CLOSURE FORM rather than substantive form
+(its proof body was `:= hPipShape` where `hPipShape` was literally
+the conclusion).  This audit pass replaces the closure-form
+`hPipShape` parameter with two **genuinely substantive**
+non-conclusion structural hypotheses:
+
+- `hPipBoostFromRestore`: the H3c-established fact that
+  `tcb'.pipBoost = computeMaxWaiterPriority (restoreToReady st vtid.val) vtid.val`
+  (compares post-state TCB's pipBoost FIELD VALUE against the
+  H3b-computed value).
+- `hCmwpFrame`:
+  `computeMaxWaiterPriority st' vtid.val = computeMaxWaiterPriority (restoreToReady st vtid.val) vtid.val`
+  (frame equation between two computeMaxWaiterPriority computations
+  on DIFFERENT states).
+
+Neither hypothesis is the conclusion `tcb'.pipBoost = computeMaxWaiterPriority st' vtid.val`.
+The proof body `rw [hPipBoostFromRestore tcb' hLookup, ← hCmwpFrame]`
+composes them via two genuinely-distinct rewrites — substantive work
+that produces the conclusion from non-conclusion premises.
+
+Audit also renamed `tests/PriorityInheritanceSuite.lean` test
+functions (`pip002_effectivePriorityNoPip`, etc.) to
+`pip002_effectiveSchedParamsNoPip` etc., since their bodies now test
+`effectiveSchedParams` after R5.C.1's full deprecation of
+`effectivePriority`.  Per the CLAUDE.md "internal-first naming"
+convention, function names should describe what they actually test.
+
+Refs: docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md (audit pass)
+
 ## v0.31.2 — WS-RC R5 deferred-work substantive completion
 
 Substantive landing of the deferred R5 obligations enumerated in

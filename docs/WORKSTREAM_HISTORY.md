@@ -995,16 +995,35 @@ initial landing.
 
 Items deferred past v1.0.0 with correctness impact: NONE.
 
-The substantive `resumeThread_*` proofs take a structural-shape
-hypothesis (`resumeThread_postState_shape`) characterising the
-post-state's `objects` table.  This is concrete (not a closure of the
-conclusion) and is dischargeable at call sites from `resumeThread =
-.ok st'` plus the runtime invariants in `crossSubsystemInvariant`.  A
-`_full` variant that internally unfolds `resumeThread` to discharge
-the shape is a post-1.0 hardening candidate; the present form is
-sufficient for operational correctness because the shape can be
-derived at call sites, and the corresponding regression tests
-(`sr027b`, `pm_r5g_*`) provide runtime witnesses.
+The substantive `resumeThread_*` proofs take structural hypotheses:
+
+- `resumeThread_preserves_blockingAcyclic` takes a `hShape :
+  resumeThread_postState_shape` characterising the post-state's
+  `objects` table (objectIndex-eq, lookup-eq elsewhere, tcb' with
+  ipcState .ready at vtid.val).  This is a concrete structural
+  predicate, NOT a closure of the conclusion `blockingAcyclic st'`.
+  Its proof composes the structural facts with Phase P1's
+  `blockingAcyclic_of_subgraph`.
+
+- `resumeThread_pipBoost_consistent_with_blocking_graph` takes
+  `hPipBoostFromRestore` (the H3c-established pipBoost-value fact)
+  and `hCmwpFrame` (a frame equation between two
+  `computeMaxWaiterPriority` computations on DIFFERENT states).
+  Neither is the conclusion; the proof body composes them via two
+  rewrites.  **Audit-pass note**: the initial v0.31.2 landing had
+  this in a misnamed closure form `hPipShape : ∀ tcb', getTcb? =
+  some tcb' → tcb'.pipBoost = computeMaxWaiterPriority st' vtid.val`
+  which was literally the conclusion (proof body was `:= hPipShape`).
+  A self-audit identified and corrected this; the current form takes
+  two genuinely non-conclusion structural facts.
+
+Both shape hypotheses are dischargeable at call sites from
+`resumeThread = .ok st'` plus the runtime invariants in
+`crossSubsystemInvariant`.  A `_full` variant that internally unfolds
+`resumeThread` to discharge the shape is a post-1.0 hardening
+candidate; the present form is sufficient for operational correctness
+because the shape can be derived at call sites, and the corresponding
+regression tests (`sr027b`, `pm_r5g_*`) provide runtime witnesses.
 
 ### R6..R14 — TBD
 

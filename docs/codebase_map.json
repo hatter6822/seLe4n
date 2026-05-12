@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-closeout-plan-UCrc7",
-      "commit_sha": "0837f57f91c8fdf56452e6c76f17d3bc3ef19888",
-      "tree_sha": "475638e498d77f4c68d807ad85a5a89746a94753",
-      "committed_at_utc": "2026-05-12T16:00:19-04:00"
+      "commit_sha": "fb1a8955d96bf3cca95c7ece90b92023e7cfadf9",
+      "tree_sha": "881aed05cc29a549e932165c8c5badf49fade1e8",
+      "committed_at_utc": "2026-05-12T22:09:15+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "8c7fb0e9859dfeddd8c2bbc3a755313dc8db163d68319aea5b3ddd20f69e9e02"
+    "source_digest": "375a495d3fbb5db18983802576f0b49be25367d89282b5cf56c1cb1aa52e3c22"
   },
   "summary": {
     "module_count": 199,
@@ -27,7 +27,7 @@
     "version": "0.31.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 170,
-    "production_loc": 113697,
+    "production_loc": 113724,
     "test_files": 29,
     "test_loc": 20964,
     "proved_theorem_lemma_decls": 3293,
@@ -34415,13 +34415,13 @@
         {
           "kind": "theorem",
           "name": "resumeThread_pipBoost_consistent_with_blocking_graph",
-          "line": 604,
+          "line": 626,
           "called": [
             "SystemState",
             "ValidThreadId",
             "computeMaxWaiterPriority",
             "getTcb",
-            "resumeThread_postState_shape"
+            "restoreToReady"
           ]
         }
       ]
@@ -82034,7 +82034,7 @@
         },
         {
           "kind": "def",
-          "name": "pip002_effectivePriorityNoPip",
+          "name": "pip002_effectiveSchedParamsNoPip",
           "line": 56,
           "called": [
             "effectiveSchedParams",
@@ -82045,7 +82045,7 @@
         },
         {
           "kind": "def",
-          "name": "pip003_effectivePriorityWithPip",
+          "name": "pip003_effectiveSchedParamsWithPip",
           "line": 63,
           "called": [
             "effectiveSchedParams",
@@ -82056,7 +82056,7 @@
         },
         {
           "kind": "def",
-          "name": "pip004_effectivePriorityLowerPip",
+          "name": "pip004_effectiveSchedParamsLowerPip",
           "line": 70,
           "called": [
             "effectiveSchedParams",
@@ -82183,7 +82183,7 @@
         },
         {
           "kind": "def",
-          "name": "pip014_effectivePrioritySchedContextBound",
+          "name": "pip014_effectiveSchedParamsSchedContextBound",
           "line": 198,
           "called": [
             "SchedContext",
@@ -82304,9 +82304,9 @@
           "line": 327,
           "called": [
             "pip001_defaultPipBoostNone",
-            "pip002_effectivePriorityNoPip",
-            "pip003_effectivePriorityWithPip",
-            "pip004_effectivePriorityLowerPip",
+            "pip002_effectiveSchedParamsNoPip",
+            "pip003_effectiveSchedParamsWithPip",
+            "pip004_effectiveSchedParamsLowerPip",
             "pip005_waitersOfEmpty",
             "pip006_waitersOfFound",
             "pip007_computeMaxWaiterPriority",
@@ -82316,7 +82316,7 @@
             "pip011_propagateTransitive",
             "pip012_revertClearsPipBoost",
             "pip013_doesNotAffectOthers",
-            "pip014_effectivePrioritySchedContextBound",
+            "pip014_effectiveSchedParamsSchedContextBound",
             "pip015_blockingGraphEdges",
             "pip016_chainContains",
             "pip017_framePreservesCurrent",
