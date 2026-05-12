@@ -517,6 +517,372 @@ theorem ensureRunnable_preserves_computeMaxWaiterPriority
   · exact ensureRunnable_objectIndex_eq st tid
 
 -- ============================================================================
+-- WS-RC R5.B.2 / Phase Q2: restoreIncomingContext helper frames
+-- ============================================================================
+
+/-- WS-RC R5.B.2 / Phase Q2: `restoreIncomingContext` doesn't touch the
+    `objects` table — it only writes to `machine.regs`. -/
+theorem restoreIncomingContext_objects_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreIncomingContext st tid).objects = st.objects := by
+  unfold restoreIncomingContext
+  cases hLook : st.objects[tid.toObjId]? with
+  | none => simp [hLook]
+  | some obj =>
+    cases obj with
+    | tcb _ => simp [hLook]
+    | endpoint _ => simp [hLook]
+    | notification _ => simp [hLook]
+    | cnode _ => simp [hLook]
+    | vspaceRoot _ => simp [hLook]
+    | untyped _ => simp [hLook]
+    | schedContext _ => simp [hLook]
+
+/-- WS-RC R5.B.2 / Phase Q2: `restoreIncomingContext` preserves
+    `objectIndex`. -/
+theorem restoreIncomingContext_objectIndex_eq
+    (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreIncomingContext st tid).objectIndex = st.objectIndex := by
+  unfold restoreIncomingContext
+  cases hLook : st.objects[tid.toObjId]? with
+  | none => simp [hLook]
+  | some obj =>
+    cases obj with
+    | tcb _ => simp [hLook]
+    | endpoint _ => simp [hLook]
+    | notification _ => simp [hLook]
+    | cnode _ => simp [hLook]
+    | vspaceRoot _ => simp [hLook]
+    | untyped _ => simp [hLook]
+    | schedContext _ => simp [hLook]
+
+-- ============================================================================
+-- WS-RC R5.B.2 / Phase Q2: schedule frame lemmas (auxiliary)
+-- ============================================================================
+--
+-- `schedule`'s effect on the kernel state is bounded:
+--   - `scheduler.runQueue`: dequeues current thread if dispatching.
+--   - `scheduler.current`: set to chosen tid (or none).
+--   - `machine.regs`: restored from incoming TCB's `registerContext`.
+--   - `objects`: at most one TCB modified (outgoing thread's
+--     `registerContext` written via `saveOutgoingContext`).  All other
+--     TCB fields are preserved.
+--   - `objectIndex`: unchanged.
+--
+-- These structural facts feed `schedule_preserves_computeMaxWaiterPriority`.
+
+/-- WS-RC R5.B.2 / Phase Q2: `saveOutgoingContext`'s effect on the
+    `objects` table is a per-slot lookup-equivalence: at every objId,
+    either the lookup is identical or it's a TCB rewrite preserving
+    every field except `registerContext`. -/
+theorem saveOutgoingContext_lookup_equiv
+    (st : SystemState) (hObjInv : st.objects.invExt) :
+    ∀ objId, PriorityInheritance.computeMaxWaiterPriority_lookup_equiv st
+              (saveOutgoingContext st) objId := by
+  intro objId
+  unfold PriorityInheritance.computeMaxWaiterPriority_lookup_equiv
+  unfold saveOutgoingContext
+  cases hCurr : st.scheduler.current with
+  | none => left; simp only [hCurr]
+  | some outTid =>
+    simp only [hCurr]
+    cases hOut : st.objects[outTid.toObjId]? with
+    | none => left; simp only [hOut]
+    | some outObj =>
+      cases outObj with
+      | tcb outTcb =>
+        simp only [hOut]
+        let outTcbNew : TCB := { outTcb with registerContext := st.machine.regs }
+        let stPost : SystemState := { st with objects := st.objects.insert outTid.toObjId
+                                                            (.tcb outTcbNew) }
+        by_cases hEq : objId = outTid.toObjId
+        · -- objId = outTid.toObjId: post-state TCB has registerContext changed.
+          right
+          have hLookPre : st.objects[objId]? = some (.tcb outTcb) := by
+            rw [hEq]; exact hOut
+          have hLookPost : stPost.objects[objId]? = some (.tcb outTcbNew) := by
+            show (st.objects.insert outTid.toObjId (.tcb outTcbNew)).get? objId = _
+            rw [hEq]
+            exact RobinHood.RHTable.getElem?_insert_self _ outTid.toObjId _ hObjInv
+          refine ⟨outTcb, outTcbNew, hLookPre, hLookPost, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+        · -- objId ≠ outTid.toObjId: lookup unchanged.
+          left
+          have hLookPost : stPost.objects[objId]? = st.objects[objId]? := by
+            show (st.objects.insert outTid.toObjId (.tcb outTcbNew)).get? objId = _
+            have hNe : ¬(outTid.toObjId == objId) = true := by
+              intro h; apply hEq; exact (beq_iff_eq.mp h).symm
+            exact RobinHood.RHTable.getElem?_insert_ne _ outTid.toObjId objId _ hNe hObjInv
+          exact hLookPost
+      | endpoint _ => left; simp only [hOut]
+      | notification _ => left; simp only [hOut]
+      | cnode _ => left; simp only [hOut]
+      | vspaceRoot _ => left; simp only [hOut]
+      | untyped _ => left; simp only [hOut]
+      | schedContext _ => left; simp only [hOut]
+
+/-- WS-RC R5.B.2 / Phase Q2: `saveOutgoingContext` preserves the
+    `getSchedContext?` lookup at every SchedContextId.  Only TCB slots
+    are modified. -/
+theorem saveOutgoingContext_getSchedContext?_eq
+    (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (hObjInv : st.objects.invExt) :
+    (saveOutgoingContext st).getSchedContext? scId = st.getSchedContext? scId := by
+  unfold SystemState.getSchedContext? saveOutgoingContext
+  cases hCurr : st.scheduler.current with
+  | none => simp only [hCurr]
+  | some outTid =>
+    simp only [hCurr]
+    cases hOut : st.objects[outTid.toObjId]? with
+    | none => simp only [hOut]
+    | some outObj =>
+      cases outObj with
+      | tcb outTcb =>
+        simp only [hOut]
+        let outTcbNew : TCB := { outTcb with registerContext := st.machine.regs }
+        let stPost : SystemState := { st with objects := st.objects.insert outTid.toObjId
+                                                            (.tcb outTcbNew) }
+        by_cases hScEq : scId.toObjId = outTid.toObjId
+        · -- Pre-state at scId.toObjId = outTid.toObjId is a TCB (outTcb), so getSchedContext? returns none.
+          have hLookPost : stPost.objects[scId.toObjId]? = some (.tcb outTcbNew) := by
+            show (st.objects.insert outTid.toObjId (.tcb outTcbNew)).get? scId.toObjId = _
+            rw [hScEq]
+            exact RobinHood.RHTable.getElem?_insert_self _ outTid.toObjId _ hObjInv
+          have hLookPre : st.objects[scId.toObjId]? = some (.tcb outTcb) := by
+            rw [hScEq]; exact hOut
+          rw [hLookPost, hLookPre]
+        · have hLookPost : stPost.objects[scId.toObjId]? = st.objects[scId.toObjId]? := by
+            show (st.objects.insert outTid.toObjId (.tcb outTcbNew)).get? scId.toObjId = _
+            have hNe : ¬(outTid.toObjId == scId.toObjId) = true := by
+              intro h; apply hScEq; exact (beq_iff_eq.mp h).symm
+            exact RobinHood.RHTable.getElem?_insert_ne _ outTid.toObjId scId.toObjId _ hNe hObjInv
+          rw [hLookPost]
+      | endpoint _ => simp only [hOut]
+      | notification _ => simp only [hOut]
+      | cnode _ => simp only [hOut]
+      | vspaceRoot _ => simp only [hOut]
+      | untyped _ => simp only [hOut]
+      | schedContext _ => simp only [hOut]
+
+/-- WS-RC R5.B.2 / Phase Q2: `saveOutgoingContext` preserves
+    `objectIndex`. -/
+theorem saveOutgoingContext_objectIndex_eq (st : SystemState) :
+    (saveOutgoingContext st).objectIndex = st.objectIndex := by
+  unfold saveOutgoingContext
+  -- saveOutgoingContext returns either st (in three branches) or a record-with
+  -- on objects only.  In every branch, .objectIndex agrees with st.objectIndex.
+  -- Use simp on the result of the match to reduce each branch.
+  cases hCurr : st.scheduler.current with
+  | none => simp [hCurr]
+  | some outTid =>
+    cases hOut : st.objects[outTid.toObjId]? with
+    | none => simp [hCurr, hOut]
+    | some obj =>
+      cases obj with
+      | tcb _ => simp [hCurr, hOut]
+      | endpoint _ => simp [hCurr, hOut]
+      | notification _ => simp [hCurr, hOut]
+      | cnode _ => simp [hCurr, hOut]
+      | vspaceRoot _ => simp [hCurr, hOut]
+      | untyped _ => simp [hCurr, hOut]
+      | schedContext _ => simp [hCurr, hOut]
+
+/-- WS-RC R5.B.2 / Phase Q2: chooseThread doesn't modify the state. -/
+theorem chooseThread_state_eq (st : SystemState) (optTid : Option SeLe4n.ThreadId)
+    (stChoose : SystemState) (hChoose : chooseThread st = .ok (optTid, stChoose)) :
+    stChoose = st := by
+  unfold chooseThread at hChoose
+  cases hPick : chooseBestInBucket st.objects.get? st.scheduler.runQueue
+                                   st.scheduler.activeDomain with
+  | error _ => simp [hPick] at hChoose
+  | ok best =>
+    cases best with
+    | none =>
+      rcases (by simpa [hPick] using hChoose : none = optTid ∧ st = stChoose) with ⟨_, h⟩
+      exact h.symm
+    | some triple =>
+      obtain ⟨tid, prio, dl⟩ := triple
+      rcases (by simpa [hPick] using hChoose : some tid = optTid ∧ st = stChoose) with ⟨_, h⟩
+      exact h.symm
+
+/-- WS-RC R5.B.2 / Phase Q2: `schedule`'s effect on the `objects` table
+    is a per-slot lookup-equivalence (same as
+    `saveOutgoingContext_lookup_equiv` — `schedule`'s only object
+    modification is via the embedded `saveOutgoingContext` call). -/
+theorem schedule_lookup_equiv
+    (st st' : SystemState) (hObjInv : st.objects.invExt)
+    (hOk : schedule st = .ok ((), st')) :
+    ∀ objId, PriorityInheritance.computeMaxWaiterPriority_lookup_equiv st st' objId := by
+  intro objId
+  -- We show: st'.objects = (saveOutgoingContext st).objects (since the post-saveOutgoingContext
+  -- state's objects survive through dequeue/restoreIncomingContext/setCurrentThread unchanged).
+  -- Then defer to saveOutgoingContext_lookup_equiv.
+  unfold schedule at hOk
+  cases hChoose : chooseThread st with
+  | error _ => simp [hChoose] at hOk
+  | ok pair =>
+    rcases pair with ⟨optTid, stChoose⟩
+    have hStChooseEq : stChoose = st := chooseThread_state_eq st optTid stChoose hChoose
+    cases hStChooseEq
+    cases optTid with
+    | none =>
+      simp only [hChoose] at hOk
+      unfold setCurrentThread at hOk
+      injection hOk with hUnit
+      injection hUnit with _ hStEq
+      subst hStEq
+      -- st' = { (saveOutgoingContext st) with scheduler := ... }; objects = saveOutgoingContext st.objects.
+      have hSave := saveOutgoingContext_lookup_equiv st hObjInv objId
+      unfold PriorityInheritance.computeMaxWaiterPriority_lookup_equiv at hSave ⊢
+      exact hSave
+    | some tid =>
+      simp only [hChoose] at hOk
+      cases hSchedLook : st.objects[tid.toObjId]? with
+      | none => simp [hSchedLook] at hOk
+      | some obj =>
+        cases obj with
+        | tcb _ =>
+          simp only [hSchedLook] at hOk
+          split at hOk
+          · unfold setCurrentThread at hOk
+            injection hOk with hUnit
+            injection hUnit with _ hStEq
+            subst hStEq
+            -- st'.objects = saveOutgoingContext st.objects (dequeue/restore/setCurrent don't change objects).
+            have hSave := saveOutgoingContext_lookup_equiv st hObjInv objId
+            unfold PriorityInheritance.computeMaxWaiterPriority_lookup_equiv at hSave ⊢
+            -- Goal: post-state lookup at objId is same as saveOutgoingContext's lookup.
+            -- Use restoreIncomingContext_objects_eq to propagate through dequeue+restoreIncomingContext.
+            have hObjEq :
+                ((restoreIncomingContext { (saveOutgoingContext st) with
+                      scheduler := { (saveOutgoingContext st).scheduler with
+                        runQueue := (saveOutgoingContext st).scheduler.runQueue.remove tid } }
+                      tid)).objects[objId]?
+                = (saveOutgoingContext st).objects[objId]? := by
+              rw [show (restoreIncomingContext _ tid).objects =
+                       _ from restoreIncomingContext_objects_eq _ tid]
+            rw [hObjEq]
+            exact hSave
+          · cases hOk
+        | _ => simp [hSchedLook] at hOk
+
+/-- WS-RC R5.B.2 / Phase Q2: `schedule` preserves `getSchedContext?`. -/
+theorem schedule_getSchedContext?_eq
+    (st st' : SystemState) (scId : SeLe4n.SchedContextId)
+    (hObjInv : st.objects.invExt)
+    (hOk : schedule st = .ok ((), st')) :
+    st'.getSchedContext? scId = st.getSchedContext? scId := by
+  unfold schedule at hOk
+  cases hChoose : chooseThread st with
+  | error _ => simp [hChoose] at hOk
+  | ok pair =>
+    rcases pair with ⟨optTid, stChoose⟩
+    have hStChooseEq : stChoose = st := chooseThread_state_eq st optTid stChoose hChoose
+    cases hStChooseEq
+    cases optTid with
+    | none =>
+      simp only [hChoose] at hOk
+      unfold setCurrentThread at hOk
+      injection hOk with hUnit
+      injection hUnit with _ hStEq
+      subst hStEq
+      show (saveOutgoingContext st).getSchedContext? scId = _
+      exact saveOutgoingContext_getSchedContext?_eq st scId hObjInv
+    | some tid =>
+      simp only [hChoose] at hOk
+      cases hSchedLook : st.objects[tid.toObjId]? with
+      | none => simp [hSchedLook] at hOk
+      | some obj =>
+        cases obj with
+        | tcb _ =>
+          simp only [hSchedLook] at hOk
+          split at hOk
+          · unfold setCurrentThread at hOk
+            injection hOk with hUnit
+            injection hUnit with _ hStEq
+            subst hStEq
+            show (_ : SystemState).getSchedContext? scId = _
+            unfold SystemState.getSchedContext?
+            have hObjEq :
+                ((restoreIncomingContext { (saveOutgoingContext st) with
+                      scheduler := { (saveOutgoingContext st).scheduler with
+                        runQueue := (saveOutgoingContext st).scheduler.runQueue.remove tid } }
+                      tid)).objects[scId.toObjId]?
+                = (saveOutgoingContext st).objects[scId.toObjId]? := by
+              rw [show (restoreIncomingContext _ tid).objects =
+                       _ from restoreIncomingContext_objects_eq _ tid]
+            rw [hObjEq]
+            have := saveOutgoingContext_getSchedContext?_eq st scId hObjInv
+            unfold SystemState.getSchedContext? at this
+            exact this
+          · cases hOk
+        | _ => simp [hSchedLook] at hOk
+
+/-- WS-RC R5.B.2 / Phase Q2: `schedule` preserves `objectIndex`. -/
+theorem schedule_objectIndex_eq
+    (st st' : SystemState) (hOk : schedule st = .ok ((), st')) :
+    st'.objectIndex = st.objectIndex := by
+  unfold schedule at hOk
+  cases hChoose : chooseThread st with
+  | error _ => simp [hChoose] at hOk
+  | ok pair =>
+    rcases pair with ⟨optTid, stChoose⟩
+    have hStChooseEq : stChoose = st := chooseThread_state_eq st optTid stChoose hChoose
+    cases hStChooseEq
+    cases optTid with
+    | none =>
+      simp only [hChoose] at hOk
+      unfold setCurrentThread at hOk
+      injection hOk with hUnit
+      injection hUnit with _ hStEq
+      subst hStEq
+      exact saveOutgoingContext_objectIndex_eq st
+    | some tid =>
+      simp only [hChoose] at hOk
+      cases hSchedLook : st.objects[tid.toObjId]? with
+      | none => simp [hSchedLook] at hOk
+      | some obj =>
+        cases obj with
+        | tcb _ =>
+          simp only [hSchedLook] at hOk
+          split at hOk
+          · unfold setCurrentThread at hOk
+            injection hOk with hUnit
+            injection hUnit with _ hStEq
+            subst hStEq
+            -- st'.objectIndex = (restoreIncomingContext (dequeued state) tid).objectIndex
+            --                 = (dequeued state).objectIndex (by restoreIncomingContext_objectIndex_eq)
+            --                 = (saveOutgoingContext st).objectIndex (dequeue is scheduler-only)
+            --                 = st.objectIndex (by saveOutgoingContext_objectIndex_eq).
+            rw [restoreIncomingContext_objectIndex_eq]
+            exact saveOutgoingContext_objectIndex_eq st
+          · cases hOk
+        | _ => simp [hSchedLook] at hOk
+
+/-- WS-RC R5.B.2 / Phase Q2 (PLAN-NAMED, SUBSTANTIVE): `schedule`
+    preserves `computeMaxWaiterPriority` at every thread.
+
+    Substantive proof: composes `schedule_lookup_equiv` (per-slot field
+    preservation), `schedule_getSchedContext?_eq`, and
+    `schedule_objectIndex_eq` to apply Phase P1's
+    `computeMaxWaiterPriority_frame_per_field`.
+
+    The conclusion follows because `computeMaxWaiterPriority` reads only
+    fields preserved by schedule (`waitersOf` reads `ipcState` + `tid` +
+    `objectIndex`; `effectiveSchedParams` reads bound TCB fields +
+    `getSchedContext?` for the bound SC). -/
+theorem schedule_preserves_computeMaxWaiterPriority
+    (st st' : SystemState) (target : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hOk : schedule st = .ok ((), st')) :
+    PriorityInheritance.computeMaxWaiterPriority st' target
+      = PriorityInheritance.computeMaxWaiterPriority st target := by
+  apply PriorityInheritance.computeMaxWaiterPriority_frame_per_field
+  · exact schedule_objectIndex_eq st st' hOk
+  · exact schedule_lookup_equiv st st' hObjInv hOk
+  · intro scId
+    exact schedule_getSchedContext?_eq st st' scId hObjInv hOk
+
+-- ============================================================================
 -- WS-RC R5.B.2 (DEEP-SUSP-01): Plan-named substantive preservation theorems
 -- ============================================================================
 --
