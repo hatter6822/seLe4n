@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-closeout-plan-UCrc7",
-      "commit_sha": "4519ab3938a303ea2ab15494f2a29ee88a873993",
-      "tree_sha": "2cce838e83ff255ff3bef57b4ddaaa1e07fc7261",
-      "committed_at_utc": "2026-05-12T23:24:00+00:00"
+      "commit_sha": "568e0381c5fdcfafc63d07b6b7bc3438f8cfbcf3",
+      "tree_sha": "bd2ea516137a78a65336dcdd786573953a9c073b",
+      "committed_at_utc": "2026-05-12T23:52:23+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "63edb714fedf7a8f679efa7743cba31a792096bd9e99e81256ff1d3e5e8bf8e3"
+    "source_digest": "28ac185919f9b89b2c1f300cee7348baa60801181ada04d86c79e8e978f76525"
   },
   "summary": {
     "module_count": 199,
@@ -27,7 +27,7 @@
     "version": "0.31.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 170,
-    "production_loc": 114216,
+    "production_loc": 114193,
     "test_files": 29,
     "test_loc": 21084,
     "proved_theorem_lemma_decls": 3306,
@@ -34392,27 +34392,23 @@
           "called": [
             "SystemState",
             "ThreadId",
-            "none",
-            "restoreIncomingContext",
-            "toObjId"
+            "restoreIncomingContext"
           ]
         },
         {
           "kind": "theorem",
           "name": "restoreIncomingContext_objectIndex_eq",
-          "line": 543,
+          "line": 536,
           "called": [
             "SystemState",
             "ThreadId",
-            "none",
-            "restoreIncomingContext",
-            "toObjId"
+            "restoreIncomingContext"
           ]
         },
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_lookup_equiv",
-          "line": 578,
+          "line": 564,
           "called": [
             "RHTable.getElem",
             "SystemState",
@@ -34429,7 +34425,7 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_getSchedContext",
-          "line": 626,
+          "line": 612,
           "called": [
             "RHTable.getElem",
             "SchedContextId",
@@ -34448,18 +34444,16 @@
         {
           "kind": "theorem",
           "name": "saveOutgoingContext_objectIndex_eq",
-          "line": 668,
+          "line": 654,
           "called": [
             "SystemState",
-            "none",
-            "saveOutgoingContext",
-            "toObjId"
+            "saveOutgoingContext"
           ]
         },
         {
           "kind": "theorem",
           "name": "chooseThread_state_eq",
-          "line": 690,
+          "line": 667,
           "called": [
             "SystemState",
             "ThreadId",
@@ -34472,7 +34466,7 @@
         {
           "kind": "theorem",
           "name": "schedule_lookup_equiv",
-          "line": 711,
+          "line": 688,
           "called": [
             "SystemState",
             "chooseThread",
@@ -34493,7 +34487,7 @@
         {
           "kind": "theorem",
           "name": "schedule_getSchedContext",
-          "line": 769,
+          "line": 746,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -34516,7 +34510,7 @@
         {
           "kind": "theorem",
           "name": "schedule_objectIndex_eq",
-          "line": 821,
+          "line": 798,
           "called": [
             "SystemState",
             "chooseThread",
@@ -34532,7 +34526,7 @@
         {
           "kind": "theorem",
           "name": "schedule_preserves_computeMaxWaiterPriority",
-          "line": 873,
+          "line": 850,
           "called": [
             "SystemState",
             "ThreadId",
@@ -34549,7 +34543,7 @@
         {
           "kind": "def",
           "name": "resumeThread_postState_shape",
-          "line": 923,
+          "line": 900,
           "called": [
             "SystemState",
             "TCB",
@@ -34561,7 +34555,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_preserves_blockingAcyclic",
-          "line": 936,
+          "line": 913,
           "called": [
             "SystemState",
             "ValidThreadId",
@@ -34576,7 +34570,7 @@
         {
           "kind": "theorem",
           "name": "resumeThread_pipBoost_consistent_with_blocking_graph",
-          "line": 992,
+          "line": 969,
           "called": [
             "SystemState",
             "ValidThreadId",
