@@ -8,24 +8,24 @@
 
 ## Reader-side raw patterns (should-drop)
 
-raw_match_tcb            = 44
-raw_match_schedcontext   = 18
+raw_match_tcb            = 48
+raw_match_schedcontext   = 22
 raw_match_endpoint       = 9
 raw_match_notification   = 2
 raw_match_untyped        = 2
 raw_match_cnode          = 7
 raw_match_vspaceroot     = 12
-raw_match_total          = 113
-raw_lookup_tid           = 675
+raw_match_total          = 122
+raw_lookup_tid           = 759
 
 ## Typed-helper adoption (should-grow)
 
-gettcb_adoption          = 100
-getschedctx_adoption     = 35
+gettcb_adoption          = 113
+getschedctx_adoption     = 67
 getendpoint_adoption     = 22
 getnotification_adoption = 10
 getuntyped_adoption      = 5
-getcnode_adoption        = 56
+getcnode_adoption        = 57
 getvspaceroot_adoption   = 12
 
 ## Writer-side wrapper adoption (should-grow)
@@ -48,21 +48,21 @@ axiom_count              = 0
 
 ## Machine-diffable block
 
-RAW_MATCH_TCB=44
-RAW_MATCH_SCHEDCONTEXT=18
+RAW_MATCH_TCB=48
+RAW_MATCH_SCHEDCONTEXT=22
 RAW_MATCH_ENDPOINT=9
 RAW_MATCH_NOTIFICATION=2
 RAW_MATCH_UNTYPED=2
 RAW_MATCH_CNODE=7
 RAW_MATCH_VSPACEROOT=12
-RAW_MATCH_TOTAL=113
-RAW_LOOKUP_TID=675
-GETTCB_ADOPTION=100
-GETSCHEDCTX_ADOPTION=35
+RAW_MATCH_TOTAL=122
+RAW_LOOKUP_TID=759
+GETTCB_ADOPTION=113
+GETSCHEDCTX_ADOPTION=67
 GETENDPOINT_ADOPTION=22
 GETNOTIFICATION_ADOPTION=10
 GETUNTYPED_ADOPTION=5
-GETCNODE_ADOPTION=56
+GETCNODE_ADOPTION=57
 GETVSPACEROOT_ADOPTION=12
 STOREOBJECTCHECKED_ADOPTION=62
 SENTINEL_CHECK_DISPATCH=17

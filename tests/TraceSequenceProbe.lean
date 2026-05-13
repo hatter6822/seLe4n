@@ -59,11 +59,11 @@ def probeBaseState (threadCount : Nat) : SystemState :=
       (SeLe4n.Slot.ofNat n, ({ target := .object probeEndpointId, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability))
   let cnodeObj : KernelObject := .cnode {
     depth := 8, guardWidth := 0, guardValue := 0, radixWidth := 8,
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList cnodeSlots }
+    slots := SeLe4n.UniqueSlotMap.ofListWF cnodeSlots }
   let allEntries :=
     (probeEndpointId, KernelObject.endpoint {}) ::
     (probeNotificationId, KernelObject.notification {
-      state := .idle, waitingThreads := [], pendingBadge := none }) ::
+      state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }) ::
     (probeCNodeId, cnodeObj) ::
     threadEntries
   let runnableThreads : List SeLe4n.ThreadId :=

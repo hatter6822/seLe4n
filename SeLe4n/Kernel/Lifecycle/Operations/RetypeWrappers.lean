@@ -149,11 +149,12 @@ def objectOfTypeTag (typeTag : Nat) (sizeHint : Nat)
     })
   | 1 => .ok (.endpoint { sendQ := {}, receiveQ := {} })
   | 2 => .ok (.notification {
-      state := .idle, waitingThreads := [], pendingBadge := none
+      state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+      pendingBadge := none
     })
   | 3 => .ok (.cnode {
       depth := 0, guardWidth := 0, guardValue := 0,
-      radixWidth := 0, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
+      radixWidth := 0, slots := SeLe4n.UniqueSlotMap.empty
     })
   | 4 => .ok (.vspaceRoot {
       asid := SeLe4n.ASID.ofNat 0, mappings := {}
@@ -184,11 +185,12 @@ def objectOfKernelType (objType : KernelObjectType) (sizeHint : Nat) : KernelObj
     }
   | .endpoint => .endpoint { sendQ := {}, receiveQ := {} }
   | .notification => .notification {
-      state := .idle, waitingThreads := [], pendingBadge := none
+      state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
+      pendingBadge := none
     }
   | .cnode => .cnode {
       depth := 0, guardWidth := 0, guardValue := 0,
-      radixWidth := 0, slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16
+      radixWidth := 0, slots := SeLe4n.UniqueSlotMap.empty
     }
   | .vspaceRoot => .vspaceRoot {
       asid := SeLe4n.ASID.ofNat 0, mappings := {}

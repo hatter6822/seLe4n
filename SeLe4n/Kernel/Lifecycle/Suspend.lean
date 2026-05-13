@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.Lifecycle.Operations
 import SeLe4n.Kernel.Scheduler.Operations
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.Compute
 
 /-! # D1: Thread Suspension & Resumption
 
@@ -41,12 +42,35 @@ open SeLe4n.Model
 open SeLe4n.Kernel
 
 -- ============================================================================
--- D1-C: cancelIpcBlocking
+-- D1-C: cancelIpcBlocking + R5.D shared IPC-clearing helper
 -- ============================================================================
 
-/-- Helper: update a TCB's ipcState and queue links to ready/detached.
-    Only modifies `objects` field of the state. -/
-private def clearTcbIpcFields (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+/-- R5.D (DEEP-SCH-03): Shared "restore-to-ready" helper. Clears the IPC-
+level transient fields on a TCB so that subsequent restoration paths
+(`resumeThread` H3) and IPC unblocking paths (`cancelIpcBlocking` G2) see
+the same TCB shape:
+
+  * `ipcState := .ready` (no longer blocked on an endpoint, notification,
+    or reply slot)
+  * `queuePrev`, `queueNext`, `queuePPrev` all `none` (no stale intrusive
+    queue links pointing at a freed slot)
+
+Only modifies the `objects` field. Idempotent on a TCB whose IPC fields
+are already cleared (record-update of `none ← none` is a no-op).
+
+Used by:
+  * `cancelIpcBlocking` (suspend flow G2) after the thread has been
+    removed from any endpoint/notification queue it was waiting on.
+  * `resumeThread` (H3) on transition from `.Inactive` → `.Ready`, where
+    the IPC fields were nominally cleared by `clearPendingState` during
+    suspend but the explicit re-clearing acts as defense-in-depth and
+    makes the post-resume invariant locally observable.
+
+Pre-R5 this logic lived as the private helper `clearTcbIpcFields`, used
+only by `cancelIpcBlocking`. `resumeThread` redundantly performed the
+`ipcState := .ready` half inline. R5.D promotes the helper to a shared
+top-level name and consolidates the resume path through it. -/
+def restoreToReady (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
   match st.getTcb? tid with
   | some tcb' =>
@@ -57,20 +81,49 @@ private def clearTcbIpcFields (st : SystemState) (tid : SeLe4n.ThreadId) : Syste
         queuePPrev := none }) }
   | none => st
 
-/-- Helper: clearTcbIpcFields preserves the scheduler. -/
+/-- R5.D / backward-compatibility shim. Pre-R5 the IPC-clearing helper was
+named `clearTcbIpcFields` and was `private`. The renamed helper is now
+`restoreToReady` (R5.D); this alias retains the old name so existing
+proofs and information-flow projection helpers continue to compile
+unchanged. Definitionally equal to `restoreToReady`. -/
+@[inline] private def clearTcbIpcFields (st : SystemState) (tid : SeLe4n.ThreadId)
+    : SystemState :=
+  restoreToReady st tid
+
+/-- Helper: restoreToReady preserves the scheduler. -/
+theorem restoreToReady_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreToReady st tid).scheduler = st.scheduler := by
+  unfold restoreToReady; split <;> rfl
+
+/-- Helper: restoreToReady preserves the serviceRegistry. -/
+theorem restoreToReady_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreToReady st tid).serviceRegistry = st.serviceRegistry := by
+  unfold restoreToReady; split <;> rfl
+
+/-- Helper: restoreToReady preserves lifecycle. -/
+theorem restoreToReady_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (restoreToReady st tid).lifecycle = st.lifecycle := by
+  unfold restoreToReady; split <;> rfl
+
+/-- R5.D back-compat: `clearTcbIpcFields = restoreToReady`. -/
+@[simp] theorem clearTcbIpcFields_eq_restoreToReady (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    clearTcbIpcFields st tid = restoreToReady st tid := rfl
+
+/-- Helper: clearTcbIpcFields preserves the scheduler (back-compat). -/
 theorem clearTcbIpcFields_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (clearTcbIpcFields st tid).scheduler = st.scheduler := by
-  unfold clearTcbIpcFields; split <;> rfl
+    (clearTcbIpcFields st tid).scheduler = st.scheduler :=
+  restoreToReady_scheduler_eq st tid
 
-/-- Helper: clearTcbIpcFields preserves the serviceRegistry. -/
+/-- Helper: clearTcbIpcFields preserves the serviceRegistry (back-compat). -/
 theorem clearTcbIpcFields_serviceRegistry_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (clearTcbIpcFields st tid).serviceRegistry = st.serviceRegistry := by
-  unfold clearTcbIpcFields; split <;> rfl
+    (clearTcbIpcFields st tid).serviceRegistry = st.serviceRegistry :=
+  restoreToReady_serviceRegistry_eq st tid
 
-/-- Helper: clearTcbIpcFields preserves lifecycle. -/
+/-- Helper: clearTcbIpcFields preserves lifecycle (back-compat). -/
 theorem clearTcbIpcFields_lifecycle_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
-    (clearTcbIpcFields st tid).lifecycle = st.lifecycle := by
-  unfold clearTcbIpcFields; split <;> rfl
+    (clearTcbIpcFields st tid).lifecycle = st.lifecycle :=
+  restoreToReady_lifecycle_eq st tid
 
 def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) : SystemState :=
@@ -84,18 +137,42 @@ def cancelIpcBlocking (st : SystemState) (tid : SeLe4n.ThreadId)
     clearTcbIpcFields (removeFromAllNotificationWaitLists st tid) tid
 
 -- ============================================================================
--- D1-D: cancelDonation
+-- D1-D: cancelDonation (split into two named arms — R5.A / DEEP-SUSP-02)
 -- ============================================================================
+--
+-- The two donation-cancellation arms are semantically distinct:
+--   * `cancelBoundDonation` performs an in-place unbind of a SchedContext
+--     that the suspended thread owns directly (mirrors `schedContextUnbind`
+--     restricted to the suspended-thread case).
+--   * `cancelDonatedDonation` returns a temporarily-donated SchedContext to
+--     its original owner via `cleanupDonatedSchedContext`.
+-- Pre-R5, both lived inside a single `cancelDonation` that branched on the
+-- `schedContextBinding` variant; the split exposes the two-arm semantics at
+-- the call site (`suspendThread` now dispatches explicitly) while a thin
+-- `cancelDonation` dispatcher is retained for backward compatibility with
+-- the existing closure-form preservation theorems
+-- (`cancelDonation_preserves_projection`, `cancelDonation_scheduler_eq`,
+-- etc.).
+--
+-- Each split arm returns `.error .illegalState` on the wrong-variant path so
+-- a caller that dispatches incorrectly fails loudly rather than silently
+-- no-opping; the dispatcher `cancelDonation` continues to return `.ok st`
+-- on `.unbound` to preserve the original suspend semantics.
 
-/-- D1-D / AJ1-A (M-14): Cancel any SchedContext donation for a thread being
-suspended. If `.donated`, return to original owner via
-`cleanupDonatedSchedContext`. If `.bound`, unbind the SchedContext. If
-`.unbound`, no-op. Returns `Except` to propagate cleanup errors from the
-`.donated` path — a failed return would leave dangling SchedContext refs. -/
-def cancelDonation (st : SystemState) (tid : SeLe4n.ThreadId)
+/-- D1-D / R5.A (DEEP-SUSP-02): Cancel an in-place SchedContext binding.
+
+The thread is the SchedContext's owner — clear the SchedContext's
+`boundThread`/`isActive`, drop it from the system replenish queue, drop the
+thread from the per-SchedContext thread index, and clear the TCB-side
+binding to `.unbound`.
+
+Returns `.error .illegalState` when invoked on a `.donated` or `.unbound`
+TCB — callers must dispatch on the variant explicitly. The unconditional
+caller path is `cancelDonation`, which handles the variant dispatch and
+preserves the original suspend semantics. -/
+def cancelBoundDonation (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) : Except KernelError SystemState :=
   match tcb.schedContextBinding with
-  | .unbound => .ok st
   | .bound scId =>
     -- Unbind: clear the SchedContext's boundThread and deactivate (AE3-B/U-15)
     -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
@@ -117,8 +194,43 @@ def cancelDonation (st : SystemState) (tid : SeLe4n.ThreadId)
       let tcb'' := { tcb' with schedContextBinding := .unbound }
       { st2 with objects := st2.objects.insert tid.toObjId (.tcb tcb'') }
     | none => st2)
-  | .donated _ _ =>
-    cleanupDonatedSchedContext st tid
+  | _ => .error .illegalState
+
+/-- D1-D / R5.A (DEEP-SUSP-02): Cancel a donated SchedContext binding.
+
+The thread is a temporary holder of someone else's SchedContext — route to
+`cleanupDonatedSchedContext` which transfers the SchedContext back to the
+original owner via `returnDonatedSchedContext` (sets `boundThread` to the
+original owner and re-establishes the owner's binding).
+
+Returns `.error .illegalState` when invoked on a `.bound` or `.unbound` TCB. -/
+def cancelDonatedDonation (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) : Except KernelError SystemState :=
+  match tcb.schedContextBinding with
+  | .donated _ _ => cleanupDonatedSchedContext st tid
+  | _ => .error .illegalState
+
+/-- D1-D / AJ1-A (M-14) / R5.A (DEEP-SUSP-02): Thin dispatcher.
+
+Pre-R5 this contained the in-place unbind logic directly; the bound and
+donated arms are now factored into `cancelBoundDonation` and
+`cancelDonatedDonation` for legibility at the suspend call site
+(`suspendThread` dispatches on `schedContextBinding` itself and chooses the
+specific arm). The dispatcher is retained so existing closure-form
+preservation theorems and the AN10 typed entry-point `cancelDonationValid`
+continue to compile unchanged.
+
+`.unbound` is a no-op (returns `.ok st`); the `.bound` and `.donated` arms
+delegate to the named sub-operations. The dispatcher's three branches match
+the three `SchedContextBinding` variants exhaustively, so the original
+"caller-controlled error" shape from the wrong-variant arms of the sub-ops
+is hidden behind the dispatcher's variant match. -/
+def cancelDonation (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) : Except KernelError SystemState :=
+  match tcb.schedContextBinding with
+  | .unbound => .ok st
+  | .bound _ => cancelBoundDonation st tid tcb
+  | .donated _ _ => cancelDonatedDonation st tid tcb
 
 -- ============================================================================
 -- D1-F: clearPendingState
@@ -242,9 +354,19 @@ def suspendThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- might modify additional TCB fields.
       let tcb' := match st.objects[tid.toObjId]? with
         | some (.tcb t) => t | _ => tcb
-      -- G3: Cancel donation (AJ1-A/M-14: propagate cleanup errors)
-      -- AN10-residual-1 (commit 3): typed entry-point.
-      match cancelDonationValid st vtid tcb' with
+      -- G3: Cancel donation (AJ1-A/M-14: propagate cleanup errors).
+      -- R5.A (DEEP-SUSP-02): Explicit dispatch on the binding variant —
+      -- `cancelBoundDonation` for the in-place unbind, `cancelDonatedDonation`
+      -- for the return-to-original-owner path, identity on `.unbound`. Pre-R5
+      -- the cancellation went through `cancelDonationValid` which folded both
+      -- arms behind a single name; the split makes the two-arm semantics
+      -- legible at the call site. The dispatcher `cancelDonationValid` is
+      -- retained for backward compatibility with closure-form preservation
+      -- theorems (see `cancelDonation` in Suspend.lean).
+      match (match tcb'.schedContextBinding with
+             | .unbound => (Except.ok st : Except KernelError SystemState)
+             | .bound _ => cancelBoundDonation st tid tcb'
+             | .donated _ _ => cancelDonatedDonation st tid tcb') with
       | .error e => .error e
       | .ok st =>
       -- G4: Remove from run queue — AN10-residual-1 (commit 2): typed entry-point.
@@ -296,8 +418,36 @@ def resumeThread (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     -- H2: State validation — must be Inactive
     if tcb.threadState != .Inactive then .error .illegalState
     else
-      -- H3: Set threadState := .Ready, ipcState := .ready
-      let tcb' := { tcb with threadState := .Ready, ipcState := .ready }
+      -- H3a: R5.D — clear IPC-state transients via shared `restoreToReady`
+      -- helper.  Sets `ipcState := .ready` and zeroes the three intrusive-
+      -- queue link fields (`queuePrev`, `queueNext`, `queuePPrev`).  Under
+      -- suspend's `clearPendingState` (G5) these were already cleared, so
+      -- this acts as defense-in-depth and ensures the post-resume TCB
+      -- shape is locally observable without the implicit suspend-side
+      -- invariant.
+      let st := restoreToReady st tid
+      -- H3b: R5.B (DEEP-SUSP-01) — re-derive `pipBoost` from the post-
+      -- suspend blocking graph.  While the resumed thread was `.Inactive`,
+      -- other threads may have acquired or released locks that involve
+      -- this thread as a holder, so its `pipBoost` carried over from the
+      -- pre-suspend state can be stale.  `computeMaxWaiterPriority`
+      -- aggregates the effective priorities of every thread currently
+      -- waiting on `tid`'s reply slot; passing this value into
+      -- `tcb.pipBoost` re-establishes the H4 PIP-readiness invariant
+      -- before the thread re-enters the run queue.
+      let newPipBoost : Option SeLe4n.Priority :=
+        PriorityInheritance.computeMaxWaiterPriority st tid
+      -- H3c: Set threadState := .Ready and refresh pipBoost on the
+      -- (now IPC-cleared) TCB.  Read through the typed `getTcb?` helper
+      -- so the post-`restoreToReady` TCB is observed via the
+      -- variant-aware lookup that already returns `none` on
+      -- non-TCB / absent.
+      let tcb' :=
+        match st.getTcb? tid with
+        | some t =>
+            { t with threadState := .Ready, pipBoost := newPipBoost }
+        | none =>
+            { tcb with threadState := .Ready, ipcState := .ready, pipBoost := newPipBoost }
       let st := { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
       -- H4: Insert into run queue at effective priority
       let st := ensureRunnable st tid

@@ -75,9 +75,9 @@ theorem not_runnable_membership_of_endpoint_store
 
 def notificationQueueWellFormed (ntfn : Notification) : Prop :=
   match ntfn.state with
-  | .idle => ntfn.waitingThreads = [] ∧ ntfn.pendingBadge = none
-  | .waiting => ntfn.waitingThreads ≠ [] ∧ ntfn.pendingBadge = none
-  | .active => ntfn.waitingThreads = [] ∧ ntfn.pendingBadge.isSome
+  | .idle => ntfn.waitingThreads.val = [] ∧ ntfn.pendingBadge = none
+  | .waiting => ntfn.waitingThreads.val ≠ [] ∧ ntfn.pendingBadge = none
+  | .active => ntfn.waitingThreads.val = [] ∧ ntfn.pendingBadge.isSome
 
 def notificationInvariant (ntfn : Notification) : Prop :=
   notificationQueueWellFormed ntfn
@@ -581,8 +581,14 @@ theorem not_mem_waitingThreads_of_ipcState_ne
 -- Notification uniqueness (F-12 / WS-D4 / WS-G7)
 -- ============================================================================
 
-def uniqueWaiters (st : SystemState) : Prop :=
-  ∀ (oid : SeLe4n.ObjId) (ntfn : Notification), st.objects[oid]? = some (KernelObject.notification ntfn) → ntfn.waitingThreads.Nodup
+-- WS-RC R4.C close-out (Phase C2.c4): the historical state-level
+-- `uniqueWaiters` predicate, its `uniqueWaiters_holds` substantive
+-- discharge, and its `uniqueWaiters_trivial` plan-named alias have all
+-- been deleted.  Per-Notification Nodup is now carried structurally by
+-- `Notification.waitingThreads : NoDupList ThreadId` via the
+-- `NoDupList.hNodup` field; the canonical discharge is
+-- `SeLe4n.NoDupList.nodup_witness` (or its plan-named alias
+-- `SeLe4n.Kernel.notification_waiters_nodup`).
 
 /-- AJ1-B (M-04): Every thread in `blockedOnReply` state has an explicit
 `replyTarget`. All production paths (`endpointCall`, `endpointReceiveDual`)
@@ -614,109 +620,11 @@ theorem blockedOnReplyHasTarget_implies_some_replyTarget
   | none => simp at h
   | some t => exact ⟨t, rfl⟩
 
-/-- WS-G7/F-P11: notificationWait preserves uniqueWaiters.
-Now requires `notificationWaiterConsistent` to bridge the TCB ipcState
-duplicate check to list non-membership. -/
-theorem notificationWait_preserves_uniqueWaiters
-    (st st' : SystemState)
-    (notificationId : SeLe4n.ObjId)
-    (waiter : SeLe4n.ThreadId)
-    (badge : Option SeLe4n.Badge)
-    (hInv : uniqueWaiters st)
-    (hConsist : notificationWaiterConsistent st)
-    (hObjInv : st.objects.invExt)
-    (hStep : notificationWait notificationId waiter st = .ok (badge, st')) :
-    uniqueWaiters st' := by
-  intro oid ntfn hObj
-  by_cases hEq : oid = notificationId
-  · rw [hEq] at hObj
-    cases hBadge : badge with
-    | some b =>
-      rcases notificationWait_badge_path_notification st st' notificationId waiter b hObjInv
-        (by rw [← hBadge]; exact hStep) with ⟨ntfn', hObj', hEmpty⟩
-      rw [hObj] at hObj'; cases hObj'
-      rw [hEmpty]; exact .nil
-    | none =>
-      rcases notificationWait_wait_path_notification st st' notificationId waiter hObjInv
-        (by rw [← hBadge]; exact hStep) with ⟨ntfnOld, ntfnNew, hObjOld, hNoBadge, hObjNew, hPrepend⟩
-      rw [hObj] at hObjNew; cases hObjNew
-      rw [hPrepend]
-      -- WS-G7: need to show waiter ∉ ntfnOld.waitingThreads via notificationWaiterConsistent
-      -- Extract the TCB check from the successful path
-      have hStep2 : notificationWait notificationId waiter st = .ok (none, st') := by
-        rw [← hBadge]; exact hStep
-      unfold notificationWait at hStep2
-      simp only [hObjOld, hNoBadge] at hStep2
-      cases hLookup : lookupTcb st waiter with
-      | none => simp [hLookup] at hStep2
-      | some tcb =>
-        simp only [hLookup] at hStep2
-        by_cases hBlocked : tcb.ipcState = .blockedOnNotification notificationId
-        · simp [hBlocked] at hStep2
-        · have hTcbObj := lookupTcb_some_objects st waiter tcb hLookup
-          have hNotMem := not_mem_waitingThreads_of_ipcState_ne
-            st notificationId ntfnOld waiter tcb hConsist hObjOld hTcbObj hBlocked
-          exact List.nodup_cons.mpr ⟨hNotMem, hInv notificationId ntfnOld hObjOld⟩
-  · -- At other IDs, the notification is preserved backward to pre-state
-    unfold notificationWait at hStep
-    cases hLookup : st.objects[notificationId]? with
-    | none => simp [hLookup] at hStep
-    | some obj =>
-      cases obj with
-      | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hLookup] at hStep
-      | notification ntfnOrig =>
-        simp only [hLookup] at hStep
-        cases hPend : ntfnOrig.pendingBadge with
-        | some b =>
-          simp only [hPend] at hStep
-          revert hStep
-          cases hStore : storeObject notificationId _ st with
-          | error e => simp
-          | ok pair =>
-            simp only []
-            cases hTcb : storeTcbIpcState pair.2 waiter _ with
-            | error e => simp
-            | ok st2 =>
-              simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hStEq⟩; subst hStEq
-              have hPairObjInv : pair.2.objects.invExt :=
-                storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
-              have hPre : st.objects[oid]? = some (.notification ntfn) := by
-                have h2 := storeTcbIpcState_notification_backward pair.2 st2 waiter _ oid ntfn hPairObjInv hTcb hObj
-                by_cases hEq2 : oid = notificationId
-                · exact absurd hEq2 hEq
-                · rwa [storeObject_objects_ne st pair.2 notificationId oid _ hEq hObjInv hStore] at h2
-              exact hInv oid ntfn hPre
-        | none =>
-          simp only [hPend] at hStep
-          -- WS-G7: match on lookupTcb
-          cases hLk : lookupTcb st waiter with
-          | none => simp [hLk] at hStep
-          | some tcb =>
-            simp only [hLk] at hStep
-            by_cases hBlocked : tcb.ipcState = .blockedOnNotification notificationId
-            · simp [hBlocked] at hStep
-            · simp only [hBlocked, ite_false] at hStep
-              revert hStep
-              cases hStore : storeObject notificationId _ st with
-              | error e => simp
-              | ok pair =>
-                -- WS-L1: rewrite _fromTcb back to original for proof compatibility
-                have hPairObjInv : pair.2.objects.invExt :=
-                  storeObject_preserves_objects_invExt' st notificationId _ pair hObjInv hStore
-                have hLk' := lookupTcb_preserved_by_storeObject_notification hLk hLookup hObjInv hStore
-                simp only [storeTcbIpcState_fromTcb_eq hLk']
-                cases hTcb : storeTcbIpcState pair.2 waiter _ with
-                | error e => simp
-                | ok st2 =>
-                  simp only [Except.ok.injEq, Prod.mk.injEq]; intro ⟨_, hStEq⟩
-                  have hPre : st.objects[oid]? = some (.notification ntfn) := by
-                    have hRemObj : (removeRunnable st2 waiter).objects = st2.objects := rfl
-                    rw [← hStEq, hRemObj] at hObj
-                    have h2 := storeTcbIpcState_notification_backward pair.2 st2 waiter _ oid ntfn hPairObjInv hTcb hObj
-                    by_cases hEq2 : oid = notificationId
-                    · exact absurd hEq2 hEq
-                    · rwa [storeObject_objects_ne st pair.2 notificationId oid _ hEq hObjInv hStore] at h2
-                  exact hInv oid ntfn hPre
+-- WS-RC R4.C close-out: `notificationWait_preserves_uniqueWaiters` was
+-- deleted along with the `uniqueWaiters` predicate it preserved.  The
+-- per-notification Nodup invariant now holds structurally via
+-- `Notification.waitingThreads.hNodup`; the state-level predicate has
+-- no remaining role in the proof surface.
 
 -- ============================================================================
 -- WS-G7: notificationWaiterConsistent — base case + documentation
@@ -749,9 +657,12 @@ transition surface is sketched here for documentation:
    notifications are unchanged.
 
 3. **`notificationSignal`** (wake path): Removes the head waiter and sets its
-   ipcState to `.ready`. Requires `uniqueWaiters` to ensure the woken thread
-   does not appear elsewhere in the remaining list. Remaining threads' TCBs
-   are unchanged, so their ipcState is preserved.
+   ipcState to `.ready`. The woken thread does not appear elsewhere in the
+   remaining list — guaranteed structurally by `NoDupList.hNodup` on
+   `Notification.waitingThreads` (WS-RC R4.C close-out; the historical
+   state-level `uniqueWaiters` precondition is no longer required since the
+   field-level invariant is unconditional). Remaining threads' TCBs are
+   unchanged, so their ipcState is preserved.
 
 4. **`notificationSignal`** (merge path): No TCB modification; only the
    notification badge is updated. All waiting lists are unchanged.
@@ -770,7 +681,8 @@ R3-C/M-19: Formal preservation theorems are proved in
 - `storeTcbIpcStateAndMessage_preserves_notificationWaiterConsistent` — TCB ipc
   state change when target thread is not in any notification wait list
 - `notificationSignal_preserves_notificationWaiterConsistent` — R3-C.1: wake path
-  (removes head waiter, uses `uniqueWaiters` Nodup) + merge path (vacuous)
+  (removes head waiter; structural `NoDupList.hNodup` ensures the woken
+  thread does not appear elsewhere) + merge path (vacuous)
 - `frame_preserves_notificationWaiterConsistent` — R3-C.2: general frame lemma
   for operations that preserve notification objects and waiter TCBs
 - `endpointReply_preserves_notificationWaiterConsistent` — R3-C.2: concrete
@@ -783,26 +695,32 @@ The base case (`default_notificationWaiterConsistent`) and the runtime check
 -- Notification operation ipcInvariant preservation (WS-E4 preparation)
 -- ============================================================================
 
-/-- notificationSignal result notification is well-formed:
+/-- WS-RC R4.C: notificationSignal result notification is well-formed.
     - Wake path: remaining waiters determine idle/waiting state, badge cleared.
-    - Merge path: no waiters, active state with merged badge. -/
+    - Merge path: no waiters, active state with merged badge.
+
+    `rest` is the `NoDupList`-typed tail produced by `tail?`; emptiness
+    is detected via `rest.val.isEmpty`. -/
 theorem notificationSignal_result_wellFormed_wake
-    (rest : List SeLe4n.ThreadId) :
+    (rest : SeLe4n.NoDupList SeLe4n.ThreadId) :
     notificationQueueWellFormed
-      { state := if rest.isEmpty then NotificationState.idle else .waiting,
+      { state := if rest.val.isEmpty then NotificationState.idle else .waiting,
         waitingThreads := rest,
         pendingBadge := none } := by
   unfold notificationQueueWellFormed
-  by_cases hEmpty : rest = []
+  by_cases hEmpty : rest.val = []
   · simp [hEmpty, List.isEmpty]
-  · have : rest.isEmpty = false := by simp [List.isEmpty]; cases rest <;> simp_all
-    simp [this, hEmpty]
+  · have hNotEmpty : rest.val.isEmpty = false := by
+      cases hL : rest.val with
+      | nil => exact absurd hL hEmpty
+      | cons _ _ => rfl
+    simp [hNotEmpty, hEmpty]
 
 theorem notificationSignal_result_wellFormed_merge
     (mergedBadge : SeLe4n.Badge) :
     notificationQueueWellFormed
       { state := .active,
-        waitingThreads := [],
+        waitingThreads := SeLe4n.NoDupList.empty,
         pendingBadge := some mergedBadge } := by
   unfold notificationQueueWellFormed; simp
 
@@ -810,20 +728,29 @@ theorem notificationSignal_result_wellFormed_merge
     idle state, empty waiters, no badge. -/
 theorem notificationWait_result_wellFormed_badge :
     notificationQueueWellFormed
-      { state := NotificationState.idle, waitingThreads := [], pendingBadge := none } := by
+      { state := NotificationState.idle,
+        waitingThreads := SeLe4n.NoDupList.empty,
+        pendingBadge := none } := by
   unfold notificationQueueWellFormed; simp
 
-/-- WS-G7/F-P11: notificationWait result notification is well-formed (wait path):
-    waiting state, non-empty waiter list (prepended), no badge. -/
+/-- WS-G7/F-P11/WS-RC R4.C: notificationWait result notification is well-formed
+    (wait path): waiting state, non-empty waiter list (prepended), no badge.
+
+    The prepended list is the smart-constructor result
+    `consWithGuard? waiter waiters = some wt'`; `wt'.val = waiter ::
+    waiters.val` follows from `NoDupList.consWithGuard?_eq_some_iff`. -/
 theorem notificationWait_result_wellFormed_wait
     (waiter : SeLe4n.ThreadId)
-    (waiters : List SeLe4n.ThreadId) :
+    (waiters : SeLe4n.NoDupList SeLe4n.ThreadId)
+    (wt' : SeLe4n.NoDupList SeLe4n.ThreadId)
+    (hCons : wt'.val = waiter :: waiters.val) :
     notificationQueueWellFormed
-      { state := .waiting, waitingThreads := waiter :: waiters, pendingBadge := none } := by
+      { state := .waiting, waitingThreads := wt', pendingBadge := none } := by
   unfold notificationQueueWellFormed
-  constructor
-  · intro h; cases h
-  · rfl
+  refine ⟨?_, rfl⟩
+  intro h
+  rw [hCons] at h
+  cases h
 
 -- ============================================================================
 -- WS-L3/L3-C: ipcState-queue consistency invariant
@@ -1234,11 +1161,15 @@ Z7 extends the bundle with 4 donation invariants:
 - `passiveServerIdle`: unbound non-runnable threads are idle/receiving
 - `donationBudgetTransfer`: at most one thread per SchedContext
 
-AG1-C adds `uniqueWaiters` as the 15th conjunct:
-- `uniqueWaiters`: notification waiting thread lists have no duplicates
-
-AJ1-B adds `blockedOnReplyHasTarget` as the 16th conjunct:
-- `blockedOnReplyHasTarget`: every blockedOnReply thread has replyTarget = some _ -/
+WS-RC R4.C.7 (close-out C2): the `uniqueWaiters` conjunct previously
+listed as the 15th slot was removed when `Notification.waitingThreads`
+was promoted from `List ThreadId` to `SeLe4n.NoDupList ThreadId`.  The
+per-Notification `List.Nodup` witness is now carried structurally at
+construction time via `NoDupList.hNodup`; per-Notification discharge is
+direct via `SeLe4n.Kernel.notification_waiters_nodup`.  The bundle now
+has 15 conjuncts (was 16); `blockedOnReplyHasTarget` is the 15th.  The
+historical `uniqueWaiters` state-level predicate (and its `_holds` /
+`_trivial` discharge helpers) were deleted in the close-out. -/
 def ipcInvariantFull (st : SystemState) : Prop :=
   ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
   badgeWellFormed st ∧ waitingThreadsPendingMessageNone st ∧
@@ -1247,7 +1178,6 @@ def ipcInvariantFull (st : SystemState) : Prop :=
   blockedThreadTimeoutConsistent st ∧
   donationChainAcyclic st ∧ donationOwnerValid st ∧
   passiveServerIdle st ∧ donationBudgetTransfer st ∧
-  uniqueWaiters st ∧
   blockedOnReplyHasTarget st
 
 -- ============================================================================
@@ -1255,12 +1185,13 @@ def ipcInvariantFull (st : SystemState) : Prop :=
 --
 -- The legacy tuple form above is preserved as the primary definition so
 -- every existing consumer that destructures `ipcInvariantFull` via tuple
--- projections continues to typecheck. The block below layers a named
--- `structure IpcInvariantFull` over the same 16 conjuncts, a bidirectional
--- `ipcInvariantFull_iff_IpcInvariantFull` bridge, and per-field projection
--- theorems (installed as `@[simp]`) so callers can write
--- `hInv.donationOwnerValid` (or any other conjunct name) in place of the
--- fragile `hInv.2.2.2.2.2.2.2.2.2.2.2.1` chain.
+-- projections continues to typecheck.  The block below layers a named
+-- `structure IpcInvariantFull` over the same 15 conjuncts (was 16
+-- before the WS-RC R4.C.7 close-out retired `uniqueWaiters`), a
+-- bidirectional `ipcInvariantFull_iff_IpcInvariantFull` bridge, and
+-- per-field projection theorems (installed as `@[simp]`) so callers
+-- can write `hInv.donationOwnerValid` (or any other conjunct name) in
+-- place of the fragile `hInv.2.2.2.2.2.2.2.2.2.2.2.1` chain.
 --
 -- The projection theorems live in the `SeLe4n.Kernel.ipcInvariantFull`
 -- namespace so that Lean 4 dot notation (`h.foo` elaborates to
@@ -1273,8 +1204,10 @@ def ipcInvariantFull (st : SystemState) : Prop :=
 
 /-- AN3-B.1: Named-field counterpart of `ipcInvariantFull`.
 
-All 16 fields mirror the conjuncts of the legacy tuple form, one-for-one
-in declaration order. The bidirectional bridge
+All 15 fields mirror the conjuncts of the legacy tuple form, one-for-one
+in declaration order (the 15th-slot `uniqueWaiters` conjunct was retired
+in the WS-RC R4.C.7 close-out, leaving `blockedOnReplyHasTarget` as the
+final field). The bidirectional bridge
 `ipcInvariantFull_iff_IpcInvariantFull` establishes that the two Prop-level
 forms are interchangeable; new theorems should prefer this structure because
 adding or removing a conjunct (a frequent audit-remediation operation) only
@@ -1295,7 +1228,6 @@ structure IpcInvariantFull (st : SystemState) : Prop where
   donationOwnerValid : donationOwnerValid st
   passiveServerIdle : passiveServerIdle st
   donationBudgetTransfer : donationBudgetTransfer st
-  uniqueWaiters : uniqueWaiters st
   blockedOnReplyHasTarget : blockedOnReplyHasTarget st
 
 namespace ipcInvariantFull
@@ -1378,15 +1310,10 @@ elaborator. -/
     _root_.SeLe4n.Kernel.donationBudgetTransfer st :=
   h.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
-@[simp] theorem uniqueWaiters {st : SystemState}
-    (h : ipcInvariantFull st) :
-    _root_.SeLe4n.Kernel.uniqueWaiters st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-
 @[simp] theorem blockedOnReplyHasTarget {st : SystemState}
     (h : ipcInvariantFull st) :
     _root_.SeLe4n.Kernel.blockedOnReplyHasTarget st :=
-  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 end ipcInvariantFull
 
@@ -1405,7 +1332,7 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.queueNextBlockingConsistent, h.queueHeadBlockedConsistent,
            h.blockedThreadTimeoutConsistent, h.donationChainAcyclic,
            h.donationOwnerValid, h.passiveServerIdle,
-           h.donationBudgetTransfer, h.uniqueWaiters,
+           h.donationBudgetTransfer,
            h.blockedOnReplyHasTarget⟩
   · intro h
     exact ⟨h.ipcInvariant, h.dualQueueSystemInvariant,
@@ -1415,7 +1342,7 @@ theorem ipcInvariantFull_iff_IpcInvariantFull (st : SystemState) :
            h.queueNextBlockingConsistent, h.queueHeadBlockedConsistent,
            h.blockedThreadTimeoutConsistent, h.donationChainAcyclic,
            h.donationOwnerValid, h.passiveServerIdle,
-           h.donationBudgetTransfer, h.uniqueWaiters,
+           h.donationBudgetTransfer,
            h.blockedOnReplyHasTarget⟩
 
 /-- AN3-B.1: forward direction of the bridge, as a convenience coercion.

@@ -710,8 +710,9 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
       ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
       ep.receiveQ.head = none ∧ ep.receiveQ.tail = none) ∧
     -- Notifications: idle + empty
+    -- WS-RC R4.C: `.val = []` references the underlying List projection.
     (∀ notif, obj = .notification notif →
-      notif.state = .idle ∧ notif.waitingThreads = [] ∧ notif.pendingBadge = none) ∧
+      notif.state = .idle ∧ notif.waitingThreads.val = [] ∧ notif.pendingBadge = none) ∧
     -- CNodes: structural (excluding badge validity)
     (∀ cn, obj = .cnode cn →
       cn.slotCountBounded ∧ cn.depth ≤ maxCSpaceDepth ∧
@@ -1849,8 +1850,9 @@ def bootSafeObject (obj : KernelObject) : Prop :=
     ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
     ep.receiveQ.head = none ∧ ep.receiveQ.tail = none) ∧
   -- Notifications must be idle with empty wait lists and no pending badge
+  -- WS-RC R4.C: `.val = []` references the underlying List projection.
   (∀ notif, obj = .notification notif →
-    notif.state = .idle ∧ notif.waitingThreads = [] ∧ notif.pendingBadge = none) ∧
+    notif.state = .idle ∧ notif.waitingThreads.val = [] ∧ notif.pendingBadge = none) ∧
   -- CNodes must satisfy slot-count bound, depth consistency, and badge validity
   (∀ cn, obj = .cnode cn →
     cn.slotCountBounded ∧ cn.depth ≤ maxCSpaceDepth ∧
@@ -2192,7 +2194,12 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     exact RHTable_get?_empty 16 (by omega)
   -- 2. capabilityInvariantBundle
   have hCapBundle : capabilityInvariantBundle (bootFromPlatform config).state := by
-    refine ⟨hSlots, ?_, ?_, ?_, ?_, ?_, hAllTables.1.1⟩
+    -- WS-RC R4.A.6: bundle has 6 conjuncts (cspaceSlotUnique dropped).
+    -- The per-CNode `slotsUnique` invariant is carried structurally on every
+    -- `UniqueSlotMap` value; the builder-phase `hSlots` witness is preserved
+    -- by the boot path for backward compatibility but no longer flows through
+    -- this bundle.
+    refine ⟨?_, ?_, ?_, ?_, ?_, hAllTables.1.1⟩
     · -- cspaceLookupSound
       intro cnodeId cn slot cap hObj hLookupSlot
       show SystemState.lookupSlotCap _ _ = some cap
@@ -2216,9 +2223,9 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   have hLifeBundle : lifecycleInvariantBundle (bootFromPlatform config).state :=
     lifecycleInvariantBundle_of_metadata_consistent _
       (bootFromPlatform config).hLifecycleConsistent
-  -- 3. ipcInvariantFull (16 sub-components, AJ1-B: +blockedOnReplyHasTarget)
+  -- 3. ipcInvariantFull (WS-RC R4.C.7: 15 sub-components after uniqueWaiters retirement)
   have hIpcFull : ipcInvariantFull (bootFromPlatform config).state := by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- ipcInvariant: notifications well-formed
       intro oid ntfn hObj
       have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
@@ -2318,10 +2325,6 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       intro tid1 _ tcb1 _ _ h1 _ _ hB1 _
       have hTcb1 := (hBS tid1.toObjId _ h1).2.2.2.1 tcb1 rfl
       simp [hTcb1.2.2.2.2.2, SchedContextBinding.scId?] at hB1
-    · -- AG1-C: uniqueWaiters (boot notifications have empty waitingThreads)
-      intro oid ntfn hObj
-      have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
-      rw [hNtfn.2.1]; exact .nil
     · -- AJ1-B: blockedOnReplyHasTarget (boot TCBs have ipcState = .ready)
       intro tid tcb _ _ hObj hIpc
       have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl
@@ -2418,7 +2421,9 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     · -- noStaleNotificationWaitReferences
       intro oid notif hObj tid hMem
       have hNtfn := (hBS oid _ hObj).2.1 notif rfl
-      rw [hNtfn.2.1] at hMem; simp at hMem
+      -- WS-RC R4.C: hMem : tid ∈ notif.waitingThreads is `tid ∈ .val` via Membership.
+      have hMemVal : tid ∈ notif.waitingThreads.val := hMem
+      rw [hNtfn.2.1] at hMemVal; simp at hMemVal
     · -- serviceGraphInvariant
       constructor
       · -- serviceDependencyAcyclic
@@ -2538,7 +2543,9 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   have hNtfnWaiter : notificationWaiterConsistent (bootFromPlatform config).state := by
     intro oid ntfn tid hObj hMem
     have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
-    rw [hNtfn.2.1] at hMem; simp at hMem
+    -- WS-RC R4.C: hMem : tid ∈ ntfn.waitingThreads via Membership instance.
+    have hMemVal : tid ∈ ntfn.waitingThreads.val := hMem
+    rw [hNtfn.2.1] at hMemVal; simp at hMemVal
   -- Compose all 11 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,

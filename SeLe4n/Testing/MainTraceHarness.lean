@@ -72,7 +72,7 @@ def bootstrapState : SystemState :=
       guardWidth := 0
       guardValue := 0
       radixWidth := 0
-      slots := SeLe4n.Kernel.RobinHood.RHTable.ofList
+      slots := SeLe4n.UniqueSlotMap.ofListWF
         [ (SeLe4n.Slot.ofNat 0, {
             target := .object ⟨1⟩
             rights := AccessRightSet.ofList [.read, .write, .grant]
@@ -102,7 +102,7 @@ def bootstrapState : SystemState :=
     |>.withObject ⟨11⟩ (.cnode CNode.empty)
     |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
     |>.withObject demoEndpoint (.endpoint {})
-    |>.withObject demoNotification (.notification { state := .idle, waitingThreads := [], pendingBadge := none })
+    |>.withObject demoNotification (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
     |>.withObject demoUntyped (.untyped {
       regionBase := (SeLe4n.PAddr.ofNat 0x100000)
       regionSize := 16384
@@ -405,7 +405,7 @@ private def runServiceAndStressTrace (counter : IO.Ref Nat) (st1 : SystemState) 
     guardWidth := 2
     guardValue := 3
     radixWidth := 12
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+    slots := SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 1, { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read], badge := none }),
       (SeLe4n.Slot.ofNat 1024, { target := .object ⟨12⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
     ]
@@ -1095,7 +1095,7 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
           watermark := 0, children := [], isDevice := true })
         |>.insert ⟨10⟩ (.cnode {
           depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
-          slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+          slots := SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 0, { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none }),
             (SeLe4n.Slot.ofNat 5, { target := .object ⟨12⟩, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }),
             (SeLe4n.Slot.ofNat 6, { target := .object demoUntyped, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }),
@@ -1295,7 +1295,7 @@ private def runSyscallGateTrace (counter : IO.Ref Nat) (st1 : SystemState) : IO 
   let retypeCap : Capability := { target := .object demoUntyped, rights := AccessRightSet.ofList [.retype], badge := none }
   let cn : CNode := {
     depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+    slots := SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0, writeCap),
       (SeLe4n.Slot.ofNat 1, readOnlyCap),
       (SeLe4n.Slot.ofNat 2, retypeCap)
@@ -1435,7 +1435,7 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withObject rdtEp (.endpoint {})
       |>.withObject rdtCn (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        slots := SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, ({ target := .object rdtEp, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability))
         ] })
       |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
@@ -1473,7 +1473,7 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withObject rdtEp (.endpoint {})
       |>.withObject rdtCn (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        slots := SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, ({ target := .object rdtEp, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability))
         ] })
       |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
@@ -1508,7 +1508,7 @@ private def runRegisterDecodeTrace (counter : IO.Ref Nat) (st1 : SystemState) : 
       |>.withObject rdtEp (.endpoint {})
       |>.withObject rdtCn (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        slots := SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, ({ target := .object rdtEp, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability))
         ] })
       |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
@@ -1554,7 +1554,7 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
       |>.withObject ksdEpId (.endpoint {})
       |>.withObject ksdCnodeId (.cnode {
         depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
-        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        slots := SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, { target := .object ksdEpId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
         ]
       })
@@ -1760,10 +1760,10 @@ private def runCheckedPipelineTrace (counter : IO.Ref Nat) (_st1 : SystemState) 
         ipcState := .ready, threadState := .Running,
         registerContext := pipeRegs })
       |>.withObject pipeEp (.endpoint {})
-      |>.withObject pipeNtfn (.notification { state := .idle, waitingThreads := [] })
+      |>.withObject pipeNtfn (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty })
       |>.withObject pipeCn (.cnode {
         depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
-        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        slots := SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, ({ target := .object pipeEp, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability)),
           (SeLe4n.Slot.ofNat 1, ({ target := .object pipeNtfn, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability)),
           (SeLe4n.Slot.ofNat 2, ({ target := .object pipeCn, rights := AccessRightSet.ofList [.read], badge := none } : Capability))
@@ -1843,7 +1843,7 @@ private def runCspaceMoveTrace (counter : IO.Ref Nat) (_st1 : SystemState) : IO 
       |>.withObject moveEpId (.endpoint {})
       |>.withObject moveCnId (.cnode {
         depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
-        slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+        slots := SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, ({ target := .object moveEpId, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability))
         ]
       })
@@ -1982,7 +1982,7 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
   let lcEp : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
   let lcCnode : KernelObject := .cnode {
     depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
-    slots := SeLe4n.Kernel.RobinHood.RHTable.ofList [
+    slots := SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0, ({ target := .object lcEpId, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none } : Capability))
     ]
   }
@@ -2034,7 +2034,7 @@ private def runEndpointLifecycleTrace (counter : IO.Ref Nat) (st1 : SystemState)
           -- B2: Delete endpoint via lifecycleRetypeObject (direct retype)
           -- Retype endpoint to a fresh notification (effectively deleting it)
           let newObj : KernelObject := .notification {
-            state := .idle, waitingThreads := [], pendingBadge := none }
+            state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }
           match SeLe4n.Kernel.Internal.lifecycleRetypeObject lcAuthSlot lcEpId newObj stBlk2 with
           | .error err =>
               IO.println s!"[ELC-002] lifecycle retype-delete error: {reprStr err}"
@@ -3002,7 +3002,7 @@ private def buildParameterizedTopology
   let cnodeSlots : List (SeLe4n.Slot × Capability) :=
     (List.range threadCount).map fun i =>
       (SeLe4n.Slot.ofNat i, { target := .object ⟨1000 + i⟩, rights := AccessRightSet.ofList [.read, .write], badge := none })
-  let cnodeObj : KernelObject := .cnode { depth := radix, guardWidth := 0, guardValue := 0, radixWidth := radix, slots := SeLe4n.Kernel.RobinHood.RHTable.ofList cnodeSlots }
+  let cnodeObj : KernelObject := .cnode { depth := radix, guardWidth := 0, guardValue := 0, radixWidth := radix, slots := SeLe4n.UniqueSlotMap.ofListWF cnodeSlots }
   let vspaceRoots : List (SeLe4n.ObjId × KernelObject) :=
     (List.range asidCount).map fun i =>
       let oid : SeLe4n.ObjId := ⟨3000 + i⟩
@@ -3010,7 +3010,7 @@ private def buildParameterizedTopology
   -- Add an idle endpoint and an idle notification for IPC invariant coverage.
   let ipcObjects : List (SeLe4n.ObjId × KernelObject) :=
     [ (⟨4000⟩, .endpoint {})
-    , (⟨4001⟩, .notification { state := .idle, waitingThreads := [], pendingBadge := none })
+    , (⟨4001⟩, .notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
     ]
   let allObjects := threads ++ [(⟨2000⟩, cnodeObj)] ++ vspaceRoots ++ ipcObjects
   let runnableThreads : List SeLe4n.ThreadId :=

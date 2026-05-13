@@ -103,6 +103,17 @@ inductive KernelError where
                            -- under the noisy option the kernel surfaces this
                            -- variant so callers can distinguish a *partial*
                            -- resolution from a *complete* success.
+  | missingSchedContext    -- R5.E (DEEP-SCH-04): a bound-budget scheduler
+                           -- path lost track of its bound `SchedContext`
+                           -- (object not found in `objects` table).  Pre-R5,
+                           -- the timer-tick budget branch silently fell back
+                           -- to a no-preempt path on this case; under the
+                           -- runtime-checked `crossSubsystemInvariant`
+                           -- (specifically `schedContextStoreConsistent`) the
+                           -- branch is unreachable, but exposing it as a
+                           -- distinct discriminant lets observability layers
+                           -- surface the invariant violation instead of
+                           -- absorbing it.
   deriving Repr, DecidableEq
 
 /-- S2-A: Low-priority blanket `ToString` from `Repr`. Enables standard
@@ -884,7 +895,7 @@ theorem revokeAndClearRefsState_preserves_objects
     (cnodeId : SeLe4n.ObjId) (st : SystemState) :
     (revokeAndClearRefsState cn sourceSlot target cnodeId st).objects = st.objects := by
   unfold revokeAndClearRefsState
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots st _ (fun acc => acc.objects = st.objects)
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _ (fun acc => acc.objects = st.objects)
     rfl (fun acc s c hAcc => by simp only []; split <;> exact hAcc)
 
 private theorem revokeAndClearRefsFoldBody_preserves_cdt
@@ -926,7 +937,7 @@ theorem revokeAndClearRefsState_cdt_eq
     (revokeAndClearRefsState cn sourceSlot target cnodeId st).cdtSlotNode = st.cdtSlotNode ∧
     (revokeAndClearRefsState cn sourceSlot target cnodeId st).objects = st.objects := by
   unfold revokeAndClearRefsState
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots st _
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _
     (fun acc => acc.cdt = st.cdt ∧ acc.cdtNodeSlot = st.cdtNodeSlot ∧
       acc.cdtSlotNode = st.cdtSlotNode ∧ acc.objects = st.objects)
     ⟨rfl, rfl, rfl, rfl⟩
@@ -965,7 +976,7 @@ private theorem revokeAndClearRefsState_preserves_allFields
     r.services = st.services ∧ r.irqHandlers = st.irqHandlers ∧
     r.objectIndex = st.objectIndex ∧ r.objectIndexSet = st.objectIndexSet := by
   unfold revokeAndClearRefsState
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots st _
+  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _
     (fun acc => acc.scheduler = st.scheduler ∧ acc.machine = st.machine ∧
       acc.services = st.services ∧ acc.irqHandlers = st.irqHandlers ∧
       acc.objectIndex = st.objectIndex ∧ acc.objectIndexSet = st.objectIndexSet)
@@ -1987,7 +1998,7 @@ theorem capabilityRefs_fold_preserves_invExt
     (hInv : cleared.invExt) :
     (cn.slots.fold (init := cleared) fun refs slot cap =>
       refs.insert { cnode := id, slot := slot } cap.target).invExt :=
-  RHTable.fold_preserves cn.slots cleared _ (fun t => t.invExt) hInv
+  RHTable.fold_preserves cn.slots.table cleared _ (fun t => t.invExt) hInv
     (fun acc _ _ hAcc => RHTable.insert_preserves_invExt acc _ _ hAcc)
 
 /-- V3-B: capabilityRefs fold insert preserves invExtK. -/
@@ -1998,7 +2009,7 @@ theorem capabilityRefs_fold_preserves_invExtK
     (hInvK : cleared.invExtK) :
     (cn.slots.fold (init := cleared) fun refs slot cap =>
       refs.insert { cnode := id, slot := slot } cap.target).invExtK :=
-  RHTable.fold_preserves cn.slots cleared _ (fun t => t.invExtK) hInvK
+  RHTable.fold_preserves cn.slots.table cleared _ (fun t => t.invExtK) hInvK
     (fun acc _ _ hAcc => RHTable.insert_preserves_invExtK acc _ _ hAcc)
 
 -- ============================================================================

@@ -2,8 +2,9 @@
 //! Kernel error enumeration — mirrors `SeLe4n.Model.KernelError`.
 //!
 //! Lean source: `SeLe4n/Model/State.lean` lines 19–97.
-//! Discriminants 0–51 are a 1:1 mapping from the Lean inductive (52 variants
-//! after AN7-E's `PartialResolution` at 51).
+//! Discriminants 0–52 are a 1:1 mapping from the Lean inductive (53 variants
+//! after R5.E's `MissingSchedContext` at 52, extending AN7-E's
+//! `PartialResolution` at 51).
 //! `UnknownKernelError` (255) is a Rust-only sentinel for forward compatibility.
 
 /// All kernel error variants, plus a Rust-only forward-compatibility sentinel.
@@ -100,8 +101,19 @@ pub enum KernelError {
     /// explicitly when the kernel is built with
     /// `set_option sele4n.debug.noisyResolution true` on the Lean side.
     PartialResolution = 51,
+    /// R5.E (DEEP-SCH-04): A bound-budget scheduler path lost track of
+    /// its bound `SchedContext` (object not found in the kernel `objects`
+    /// table).  Pre-R5, this case was silently absorbed by a no-preempt
+    /// fallback; under the runtime-checked `crossSubsystemInvariant`
+    /// (specifically `schedContextStoreConsistent`) the branch is
+    /// unreachable, but surfacing it as a distinct discriminant lets
+    /// observability layers report the invariant drift instead of
+    /// silently masking it.  Userspace handlers will typically treat
+    /// this as a fatal kernel-side invariant violation and surface it
+    /// as `SchedulerInvariantViolation` to the application.
+    MissingSchedContext = 52,
     /// AF6-A: Kernel returned an error code not recognized by this ABI version.
-    /// Discriminant 255 is a reserved sentinel outside the kernel range 0–51.
+    /// Discriminant 255 is a reserved sentinel outside the kernel range 0–52.
     UnknownKernelError = 255,
 }
 
@@ -161,6 +173,7 @@ impl KernelError {
             49 => Some(Self::InvalidObjectType),
             50 => Some(Self::NullCapability),
             51 => Some(Self::PartialResolution),
+            52 => Some(Self::MissingSchedContext),
             255 => Some(Self::UnknownKernelError),
             _ => None,
         }
@@ -223,6 +236,7 @@ impl std::fmt::Display for KernelError {
             Self::InvalidObjectType => write!(f, "invalid object type"),
             Self::NullCapability => write!(f, "null capability (seL4_CapNull sentinel)"),
             Self::PartialResolution => write!(f, "partial capability resolution (noisy-resolution debug mode)"),
+            Self::MissingSchedContext => write!(f, "scheduler bound thread references missing SchedContext (cross-subsystem invariant drift)"),
             Self::UnknownKernelError => write!(f, "unknown kernel error"),
         }
     }
@@ -237,10 +251,9 @@ mod tests {
 
     #[test]
     fn from_u32_roundtrip() {
-        // AN7-E (API-M01): variants 0-51 must roundtrip after
-        // PartialResolution was added at discriminant 51 (extending AL1b's
-        // range of 0..=50 with NullCapability at 50).
-        for i in 0..=51u32 {
+        // AN7-E (API-M01): variants 0-51 added through prior workstreams.
+        // R5.E (DEEP-SCH-04): MissingSchedContext added at discriminant 52.
+        for i in 0..=52u32 {
             let e = KernelError::from_u32(i).unwrap();
             assert_eq!(e as u32, i);
         }
@@ -249,7 +262,7 @@ mod tests {
     #[test]
     fn from_u32_out_of_range() {
         // T1-G: Discriminants in gaps and beyond range must return None
-        assert!(KernelError::from_u32(52).is_none());
+        assert!(KernelError::from_u32(53).is_none());
         assert!(KernelError::from_u32(254).is_none());
         // 255 is now UnknownKernelError (AF6-A sentinel)
         assert_eq!(KernelError::from_u32(255), Some(KernelError::UnknownKernelError));
@@ -282,6 +295,8 @@ mod tests {
         assert_eq!(KernelError::NullCapability as u32, 50);
         // AN7-E (API-M01): partial resolution under noisy-resolution debug
         assert_eq!(KernelError::PartialResolution as u32, 51);
+        // R5.E (DEEP-SCH-04): cross-subsystem invariant drift surfacing
+        assert_eq!(KernelError::MissingSchedContext as u32, 52);
     }
 
     /// T1-H: Cross-validation — verify Lean-Rust enum correspondence
@@ -292,22 +307,23 @@ mod tests {
     ///   | allocationMisaligned    (37)
     #[test]
     fn lean_rust_correspondence() {
-        // AN7-E (API-M01): 52 variants (0-51) — verify total
-        // variant count matches Lean (extends AL1b's range).
-        let max_valid = 51u32;
+        // R5.E (DEEP-SCH-04): 53 variants (0-52) — verify total
+        // variant count matches Lean (extends AN7-E's range of 0..=51).
+        let max_valid = 52u32;
         assert!(KernelError::from_u32(max_valid).is_some());
         assert!(KernelError::from_u32(max_valid + 1).is_none());
 
-        // Verify from_u32: unknown discriminants in the gap (52–254) return None
+        // Verify from_u32: unknown discriminants in the gap (53–254) return None
         assert!(KernelError::from_u32(100).is_none());
     }
 
-    /// T1-H: Discriminant ordering — kernel variants 0–51 are sequential
-    /// (AN7-E extended the range with PartialResolution at 51).
+    /// T1-H: Discriminant ordering — kernel variants 0–52 are sequential.
+    /// R5.E (DEEP-SCH-04) extended the range with MissingSchedContext at 52;
+    /// AN7-E previously extended it with PartialResolution at 51.
     #[test]
     fn discriminant_ordering() {
         let mut prev = None;
-        for i in 0..=51u32 {
+        for i in 0..=52u32 {
             let e = KernelError::from_u32(i);
             assert!(e.is_some(), "gap at discriminant {i}");
             if let Some(p) = prev {
@@ -317,14 +333,14 @@ mod tests {
         }
     }
 
-    /// AF6-A: UnknownKernelError sentinel at discriminant 255
-    /// (AN7-E: the 51 gap closed, so the None range starts at 52).
+    /// AF6-A: UnknownKernelError sentinel at discriminant 255.
+    /// R5.E: the 52 gap closed, so the None range starts at 53.
     #[test]
     fn unknown_kernel_error_sentinel() {
         assert_eq!(KernelError::UnknownKernelError as u32, 255);
         assert_eq!(KernelError::from_u32(255), Some(KernelError::UnknownKernelError));
-        // Gap between 51 and 255 is all None
-        for i in 52..255u32 {
+        // Gap between 52 and 255 is all None
+        for i in 53..255u32 {
             assert!(KernelError::from_u32(i).is_none(), "unexpected variant at {i}");
         }
     }

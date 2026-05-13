@@ -218,8 +218,10 @@ theorem notificationSignal_preserves_badgeWellFormed
     cases obj with
     | notification ntfnSrc =>
       simp only [hObjSrc] at hStep
-      cases hWaiters : ntfnSrc.waitingThreads with
-      | cons waiter rest =>
+      -- WS-RC R4.C: signal pops via `NoDupList.tail?`.
+      cases hWaiters : ntfnSrc.waitingThreads.tail? with
+      | some headTail =>
+        obtain ⟨waiter, rest⟩ := headTail
         simp only [hWaiters] at hStep; revert hStep
         cases hStore1 : storeObject notificationId _ st with
         | error e => simp
@@ -238,7 +240,7 @@ theorem notificationSignal_preserves_badgeWellFormed
                          storeObject_nonCNode_preserves_capabilityBadgesWellFormed
                           st pair1.2 notificationId _ hCap hObjInv hStore1 (fun cn h => by cases h)⟩
                         hObjInv1 hStoreTcb
-      | nil =>
+      | none =>
         simp only [hWaiters] at hStep
         exact ⟨storeObject_notification_preserves_notificationBadgesWellFormed
                  st st' notificationId _ hNtfn hObjInv hStep
@@ -292,8 +294,12 @@ theorem notificationWait_preserves_badgeWellFormed
         | some tcb =>
           simp only []; split
           · simp
-          · intro hStep; revert hStep
-            cases hStore1 : storeObject notificationId _ st with
+          · -- WS-RC R4.C: consWithGuard? case-split (operational duplicate guard)
+            split
+            · -- consWithGuard? = none → .error .alreadyWaiting; hStep contradicts
+              simp
+            · intro hStep; revert hStep
+              cases hStore1 : storeObject notificationId _ st with
             | error e => simp
             | ok pair1 =>
               simp only []
@@ -424,7 +430,6 @@ theorem notificationSignal_preserves_notificationWaiterConsistent
     (st st' : SystemState)
     (notificationId : SeLe4n.ObjId) (badge : SeLe4n.Badge)
     (hConsist : notificationWaiterConsistent st)
-    (hUnique : uniqueWaiters st)
     (hObjInv : st.objects.invExt)
     (hStep : notificationSignal notificationId badge st = .ok ((), st')) :
     notificationWaiterConsistent st' := by
@@ -435,41 +440,41 @@ theorem notificationSignal_preserves_notificationWaiterConsistent
     | tcb _ | cnode _ | endpoint _ | vspaceRoot _ | untyped _ | schedContext _ => simp [hObj] at hStep
     | notification ntfn =>
       simp only [hObj] at hStep
-      cases hWaiters : ntfn.waitingThreads with
-      | cons waiter rest =>
+      -- WS-RC R4.C: signal pops via `NoDupList.tail?`.
+      cases hWaiters : ntfn.waitingThreads.tail? with
+      | some headTail =>
+        obtain ⟨waiter, rest⟩ := headTail
         -- Wake path: storeObject → storeTcbIpcStateAndMessage → ensureRunnable
         simp only [hWaiters] at hStep
-        -- Extract uniqueness: waiter ∉ rest
-        have hNodup := hUnique notificationId ntfn hObj
-        rw [hWaiters] at hNodup
-        have hWaiterNotInRest : waiter ∉ rest := (List.nodup_cons.mp hNodup).1
+        -- WS-RC R4.C: derive the underlying cons equation from `tail?`.
+        have hValEq : ntfn.waitingThreads.val = waiter :: rest.val :=
+          (SeLe4n.NoDupList.tail?_eq_some_iff ntfn.waitingThreads waiter rest).mp hWaiters
+        -- Extract uniqueness: waiter ∉ rest.val
+        -- WS-RC R4.C: derive from structural NoDupList.hNodup instead of
+        -- the (now-trivial) state-level `uniqueWaiters` hypothesis.
+        have hNodup : ntfn.waitingThreads.val.Nodup := ntfn.waitingThreads.hNodup
+        rw [hValEq] at hNodup
+        have hWaiterNotInRest : waiter ∉ rest.val := (List.nodup_cons.mp hNodup).1
         revert hStep
         cases hStore : storeObject notificationId
-            (.notification { state := if rest.isEmpty then .idle else .waiting,
+            (.notification { state := if rest.val.isEmpty then .idle else .waiting,
                              waitingThreads := rest, pendingBadge := none }) st with
         | error e => simp
         | ok pair =>
           simp only []
-          -- Step 1: storeObject preserves notificationWaiterConsistent (subset rest ⊆ waiter::rest)
+          -- Step 1: storeObject preserves notificationWaiterConsistent (subset rest.val ⊆ waiter::rest.val).
           have hConsist1 := storeObject_notification_preserves_notificationWaiterConsistent
             st pair.2 notificationId ntfn
-            { state := if rest.isEmpty then .idle else .waiting,
+            { state := if rest.val.isEmpty then .idle else .waiting,
               waitingThreads := rest, pendingBadge := none }
             hConsist hObjInv hObj hStore
-            (fun tid hMem => hWaiters ▸ List.mem_cons_of_mem waiter hMem)
+            (fun tid hMem => by
+              show tid ∈ ntfn.waitingThreads.val
+              rw [hValEq]
+              exact List.mem_cons_of_mem waiter hMem)
           have hObjInv1 : pair.2.objects.invExt :=
             storeObject_preserves_objects_invExt st pair.2 notificationId _ hObjInv hStore
-          -- Step 2: storeTcbIpcStateAndMessage — waiter not in any wait list in pair.2
-          -- Because: in pair.2, the only modified notification is at notificationId
-          -- with rest as waiters. waiter ∉ rest. For other notifications, waiter was
-          -- in waiter::rest (original), but after storeObject the other notifications
-          -- are unchanged. We need to show waiter is not in any notification wait list
-          -- in pair.2. By hConsist (pre-state), waiter had ipcState .blockedOnNotification
-          -- notificationId. So waiter could only be in notificationId's wait list.
-          -- In pair.2, notificationId has rest (which excludes waiter). Other notifications
-          -- haven't changed, and waiter wasn't in their lists either (by notificationWaiterConsistent:
-          -- if waiter were in another notification noid's list, waiter's ipcState would be
-          -- .blockedOnNotification noid, but we know it's .blockedOnNotification notificationId).
+          -- Step 2: storeTcbIpcStateAndMessage — waiter not in any wait list in pair.2.
           have hWaiterNotInAny : ∀ (noid : SeLe4n.ObjId) (ntfn' : Notification),
               pair.2.objects[noid]? = some (.notification ntfn') →
               waiter ∉ ntfn'.waitingThreads := by
@@ -477,19 +482,19 @@ theorem notificationSignal_preserves_notificationWaiterConsistent
             by_cases hEq : noid = notificationId
             · subst hEq
               rw [storeObject_objects_eq st pair.2 noid _ hObjInv hStore] at hNtfn'
-              cases hNtfn'; exact hWaiterNotInRest
+              cases hNtfn'
+              show waiter ∉ rest.val
+              exact hWaiterNotInRest
             · have hNtfnPre : st.objects[noid]? = some (.notification ntfn') := by
                 rw [storeObject_objects_ne st pair.2 notificationId noid _ hEq hObjInv hStore] at hNtfn'
                 exact hNtfn'
-              -- If waiter were in ntfn'.waitingThreads, then by hConsist,
-              -- waiter's ipcState = .blockedOnNotification noid.
-              -- But waiter ∈ ntfn.waitingThreads (original), so by hConsist,
-              -- waiter's ipcState = .blockedOnNotification notificationId.
-              -- Since noid ≠ notificationId, contradiction.
               intro hMem
               obtain ⟨tcb1, hTcb1, hIpc1⟩ := hConsist noid ntfn' waiter hNtfnPre hMem
-              obtain ⟨tcb2, hTcb2, hIpc2⟩ := hConsist notificationId ntfn waiter hObj
-                (by rw [hWaiters]; exact .head rest)
+              -- waiter is at the head of ntfn.waitingThreads.val
+              have hWaiterInNtfn : waiter ∈ ntfn.waitingThreads := by
+                show waiter ∈ ntfn.waitingThreads.val
+                rw [hValEq]; exact List.mem_cons_self
+              obtain ⟨tcb2, hTcb2, hIpc2⟩ := hConsist notificationId ntfn waiter hObj hWaiterInNtfn
               rw [hTcb1] at hTcb2; cases hTcb2
               rw [hIpc1] at hIpc2; exact hEq (ThreadIpcState.blockedOnNotification.inj hIpc2)
           cases hTcb : storeTcbIpcStateAndMessage pair.2 waiter .ready
@@ -505,12 +510,12 @@ theorem notificationSignal_preserves_notificationWaiterConsistent
             have hNtfnSt := (ensureRunnable_preserves_objects st'' waiter) ▸ hNtfn'
             obtain ⟨tcb', hTcb', hIpc'⟩ := hConsist2 noid' ntfn' tid' hNtfnSt hMem'
             exact ⟨tcb', by rw [ensureRunnable_preserves_objects]; exact hTcb', hIpc'⟩
-      | nil =>
+      | none =>
         -- Merge path: storeObject only — empty wait list is vacuous subset
         simp only [hWaiters] at hStep
         exact storeObject_notification_preserves_notificationWaiterConsistent
           st st' notificationId ntfn
-          { state := .active, waitingThreads := [],
+          { state := .active, waitingThreads := SeLe4n.NoDupList.empty,
             pendingBadge := some (match ntfn.pendingBadge with
               | some existing => SeLe4n.Badge.bor existing badge
               | none => SeLe4n.Badge.ofNatMasked badge.toNat) }
@@ -578,9 +583,10 @@ theorem notificationSignal_preserves_waitingThreadsPendingMessageNone
   split at hStep
   · -- some (.notification ntfn)
     rename_i ntfn hObj
-    -- After first split: ntfn.waitingThreads branches
-    cases hWaiters : ntfn.waitingThreads with
-    | cons waiter rest =>
+    -- WS-RC R4.C: signal pops via `NoDupList.tail?`.
+    cases hWaiters : ntfn.waitingThreads.tail? with
+    | some headTail =>
+      obtain ⟨waiter, rest⟩ := headTail
       -- Wake path: storeObject → storeTcbIpcStateAndMessage (.ready) → ensureRunnable
       simp only [hWaiters] at hStep
       split at hStep
@@ -597,7 +603,7 @@ theorem notificationSignal_preserves_waitingThreadsPendingMessageNone
           have hInv2 := storeTcbIpcStateAndMessage_preserves_waitingThreadsPendingMessageNone
             st1 st2 waiter .ready _ hObjInv1 hSM hInv1 (by trivial)
           exact ensureRunnable_preserves_waitingThreadsPendingMessageNone st2 waiter hInv2
-    | nil =>
+    | none =>
       -- Merge path: storeObject only
       simp only [hWaiters] at hStep
       -- pendingBadge match produces two sub-cases, both are storeObject
@@ -645,9 +651,12 @@ theorem notificationWait_preserves_waitingThreadsPendingMessageNone
       · rename_i waiterTcb hLookup
         split at hStep
         · contradiction -- already waiting
-        · split at hStep
-          next => contradiction -- storeObject error
-          next st1 hSO =>
+        · -- WS-RC R4.C: consWithGuard? case-split
+          split at hStep
+          · contradiction -- consWithGuard? = none
+          · split at hStep
+            next => contradiction -- storeObject error
+            next st1 hSO =>
             have hInv1 := storeObject_nonTcb_preserves_waitingThreadsPendingMessageNone
               st st1 notificationId (.notification _) (fun tcb => by simp) hObjInv hSO hInv
             have hObjInv1 := storeObject_preserves_objects_invExt st st1 notificationId _ hObjInv hSO

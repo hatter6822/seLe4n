@@ -529,12 +529,16 @@ inductive ResolveError where
 
 def empty : CNode :=
   { depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
-    slots := RHTable.empty 16 }
+    slots := SeLe4n.UniqueSlotMap.empty }
 
-/-- Construct a CNode at a given depth with guard/radix parameters. -/
+/-- Construct a CNode at a given depth with guard/radix parameters.
+    WS-RC R4.A: `s` is now `UniqueSlotMap Capability` carrying `invExtK`
+    structurally. Callers that previously passed `RHTable.empty 16` should
+    pass `SeLe4n.UniqueSlotMap.empty`; callers that built tables from
+    literals via `RHTable.ofList` should use `SeLe4n.UniqueSlotMap.ofListWF`. -/
 
 def mk' (d gw gv rw : Nat)
-    (s : RHTable SeLe4n.Slot Capability := RHTable.empty 16) : CNode :=
+    (s : SeLe4n.UniqueSlotMap Capability := SeLe4n.UniqueSlotMap.empty) : CNode :=
   { depth := d, guardWidth := gw, guardValue := gv, radixWidth := rw, slots := s }
 
 /-- Number of addressable slots represented by this CNode radix width. -/
@@ -749,8 +753,25 @@ invariant (`invExt`) and are not full (`size < capacity`).
 
 WS-N4: With RHTable-backed slots, key uniqueness is enforced by the `noDupKeys`
 component of `invExt`. The `size < capacity` condition is maintained by the
-resize-at-75%-load policy and is required for erase correctness. -/
-def slotsUnique (cn : CNode) : Prop := cn.slots.invExtK
+resize-at-75%-load policy and is required for erase correctness.
+
+WS-RC R4.A: now a trivial projection of `UniqueSlotMap.hWF`, which carries
+`RHTable.invExtK` structurally at construction time. Every reachable
+`CNode` satisfies this property by construction; the named predicate is
+retained for caller compatibility (existing preservation theorems still
+take it as a hypothesis). -/
+def slotsUnique (cn : CNode) : Prop := cn.slots.table.invExtK
+
+/-- WS-RC R4.A: `slotsUnique` is trivially derivable from the structural
+    `UniqueSlotMap.hWF`. -/
+theorem slotsUnique_holds (cn : CNode) : cn.slotsUnique := cn.slots.hWF
+
+/-- WS-RC R4.A / DEEP-MODEL-01: plan-named alias for the structural
+    CNode-level uniqueness witness.  Identical to `slotsUnique_holds`;
+    retained under the canonical plan name (`cnode_slots_unique`) so the
+    discharge-index reachability gate can locate it by the same identifier
+    used in the close-out plan. -/
+theorem cnode_slots_unique (cn : CNode) : cn.slotsUnique := slotsUnique_holds cn
 
 /-- WS-G5: After removing a slot, lookup returns `none`.
 Maps directly to `RHTable.getElem?_erase_self`. Requires slot invariant
@@ -759,16 +780,16 @@ Maps directly to `RHTable.getElem?_erase_self`. Requires slot invariant
 theorem lookup_remove_eq_none (node : CNode) (slot : SeLe4n.Slot)
     (hUniq : node.slotsUnique) :
     (node.remove slot).lookup slot = none := by
-  simp only [remove, lookup]
-  exact RHTable.getElem?_erase_self node.slots slot hUniq.1
+  simp only [remove, lookup, SeLe4n.UniqueSlotMap.get?, SeLe4n.UniqueSlotMap.erase]
+  exact RHTable.getElem?_erase_self node.slots.table slot hUniq.1
 
 /-- WS-G5: If `lookup` returns `some`, the slot key is present in the RHTable.
 Replaces the list-era membership theorem with RHTable semantics. -/
 
 theorem lookup_mem_of_some (node : CNode) (slot : SeLe4n.Slot) (cap : Capability)
-    (h : node.lookup slot = some cap) : slot ∈ node.slots := by
-  simp [lookup] at h
-  exact (RHTable.mem_iff_isSome_getElem? node.slots slot).mpr (by simp [h])
+    (h : node.lookup slot = some cap) : slot ∈ node.slots.table := by
+  simp [lookup, SeLe4n.UniqueSlotMap.get?] at h
+  exact (RHTable.mem_iff_isSome_getElem? node.slots.table slot).mpr (by simp [h])
 
 theorem resolveSlot_depthMismatch
     (node : CNode)
@@ -824,8 +845,9 @@ theorem lookup_revokeTargetLocal_source_eq_lookup
     (target : CapTarget)
     (hUniq : node.slotsUnique) :
     (node.revokeTargetLocal sourceSlot target).lookup sourceSlot = node.lookup sourceSlot := by
-  simp only [revokeTargetLocal, lookup]
-  exact RHTable.filter_preserves_key node.slots _ sourceSlot
+  simp only [revokeTargetLocal, lookup, SeLe4n.UniqueSlotMap.get?,
+    SeLe4n.UniqueSlotMap.filter]
+  exact RHTable.filter_preserves_key node.slots.table _ sourceSlot
     (fun k' _ hBeq => by simp [eq_of_beq hBeq]) hUniq.1
 
 /-- T2-J (L-NEW-4): The empty CNode trivially satisfies `guardBounded`
@@ -833,34 +855,37 @@ theorem lookup_revokeTargetLocal_source_eq_lookup
 theorem empty_guardBounded : CNode.empty.guardBounded := by
   simp [empty, guardBounded]
 
-/-- WS-N4: The empty CNode's slots satisfy the slot invariant. -/
+/-- WS-N4/WS-RC R4.A: The empty CNode's slots satisfy the slot invariant.
+    Now trivial via `UniqueSlotMap.hWF`. -/
 theorem empty_slotsUnique : CNode.empty.slotsUnique :=
-  RHTable.empty_invExtK 16 (by omega)
+  CNode.empty.slots.hWF
 
-/-- WS-N4: Insert preserves the slot invariant. -/
+/-- WS-N4/WS-RC R4.A: Insert preserves the slot invariant.
+    Now trivial via `UniqueSlotMap.insert`'s structural discharge. -/
 
 theorem insert_slotsUnique
     (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability)
-    (hUniq : cn.slotsUnique) :
+    (_hUniq : cn.slotsUnique) :
     (cn.insert slot cap).slotsUnique :=
-  cn.slots.insert_preserves_invExtK slot cap hUniq
+  (cn.insert slot cap).slots.hWF
 
-/-- WS-N4: Erase preserves the slot invariant. -/
+/-- WS-N4/WS-RC R4.A: Erase preserves the slot invariant.
+    Now trivial via `UniqueSlotMap.erase`'s structural discharge. -/
 
 theorem remove_slotsUnique
     (cn : CNode) (slot : SeLe4n.Slot)
-    (hUniq : cn.slotsUnique) :
+    (_hUniq : cn.slotsUnique) :
     (cn.remove slot).slotsUnique :=
-  cn.slots.erase_preserves_invExtK slot hUniq
+  (cn.remove slot).slots.hWF
 
-/-- WS-N4: Filter preserves the slot invariant. -/
+/-- WS-N4/WS-RC R4.A: Filter preserves the slot invariant.
+    Now trivial via `UniqueSlotMap.filter`'s structural discharge. -/
 
 theorem revokeTargetLocal_slotsUnique
     (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (hUniq : cn.slotsUnique) :
+    (_hUniq : cn.slotsUnique) :
     (cn.revokeTargetLocal sourceSlot target).slotsUnique :=
-  cn.slots.filter_preserves_invExtK
-    (fun s c => s == sourceSlot || !(c.target == target)) hUniq
+  (cn.revokeTargetLocal sourceSlot target).slots.hWF
 
 -- ============================================================================
 -- WS-H4: Meaningful CNode slot-count bound predicate
@@ -869,23 +894,30 @@ theorem revokeTargetLocal_slotsUnique
 /-- WS-H4/C-03: Every CNode has at most `2^radixBits` occupied slots.
 This is the meaningful replacement for the trivially-true `slotsUnique`
 predicate — it captures the actual capacity constraint that the CNode
-guard/radix semantics enforce. -/
+guard/radix semantics enforce.
+
+WS-RC R4.A: `cn.slots.size` is the `UniqueSlotMap.size` accessor
+(forwarded to `cn.slots.table.size`). -/
 def slotCountBounded (cn : CNode) : Prop :=
   cn.slots.size ≤ cn.slotCount
 
 /-- Empty CNode satisfies slot-count bound (0 ≤ 2^0 = 1). -/
 theorem empty_slotCountBounded : CNode.empty.slotCountBounded := by
   unfold slotCountBounded empty slotCount
-  simp [RHTable.empty]
+  simp [SeLe4n.UniqueSlotMap.empty, SeLe4n.UniqueSlotMap.size, RHTable.empty]
 
-/-- Removing a slot preserves the slot-count bound (size can only decrease). -/
+/-- Removing a slot preserves the slot-count bound (size can only decrease).
+
+    WS-RC R4.A: now projects through `.table` for the underlying `RHTable`
+    monotonicity lemma. -/
 
 theorem remove_slotCountBounded
     (cn : CNode) (slot : SeLe4n.Slot)
     (hBounded : cn.slotCountBounded) :
     (cn.remove slot).slotCountBounded := by
-  show (cn.slots.erase slot).size ≤ 2 ^ cn.radixWidth
-  have h : (cn.slots.erase slot).size ≤ cn.slots.size := RHTable.size_erase_le cn.slots slot
+  show (cn.slots.erase slot).table.size ≤ 2 ^ cn.radixWidth
+  have h : (cn.slots.erase slot).table.size ≤ cn.slots.table.size :=
+    RHTable.size_erase_le cn.slots.table slot
   exact Nat.le_trans h hBounded
 
 /-- Revoking target-local preserves the slot-count bound (filter can only decrease size). -/
@@ -895,8 +927,11 @@ theorem revokeTargetLocal_slotCountBounded
     (hBounded : cn.slotCountBounded)
     (hUniq : cn.slotsUnique) :
     (cn.revokeTargetLocal sourceSlot target).slotCountBounded := by
-  show (cn.slots.filter (fun s c => s == sourceSlot || !(c.target == target))).size ≤ 2 ^ cn.radixWidth
-  have h := RHTable.size_filter_le_size cn.slots
+  -- WS-RC R4.A: cn.slots is `UniqueSlotMap`; `.filter` returns a
+  -- `UniqueSlotMap`. Size is forwarded to the underlying `RHTable`.
+  show (cn.slots.filter (fun s c => s == sourceSlot || !(c.target == target))).table.size
+    ≤ 2 ^ cn.radixWidth
+  have h := RHTable.size_filter_le_size cn.slots.table
     (fun s c => s == sourceSlot || !(c.target == target)) hUniq.1.1
   exact Nat.le_trans h hBounded
 
@@ -905,9 +940,9 @@ With RHTable-backed slots, key uniqueness is maintained by the `noDupKeys`
 component of `invExt` (part of `slotsUnique`). -/
 
 theorem mem_lookup_of_slotsUnique (node : CNode) (_hUniq : node.slotsUnique)
-    (slot : SeLe4n.Slot) (hMem : slot ∈ node.slots) :
+    (slot : SeLe4n.Slot) (hMem : slot ∈ node.slots.table) :
     ∃ v, node.lookup slot = some v := by
-  have := (RHTable.mem_iff_isSome_getElem? node.slots slot).mp hMem
+  have := (RHTable.mem_iff_isSome_getElem? node.slots.table slot).mp hMem
   simp [lookup, Option.isSome_iff_exists] at this ⊢
   exact this
 
@@ -942,7 +977,9 @@ theorem lookup_remove_ne
     (hUniq : cn.slotsUnique) :
     (cn.remove slot).lookup slot' = cn.lookup slot' := by
   simp only [remove, lookup]
-  exact RHTable.getElem?_erase_ne_K cn.slots slot slot'
+  -- WS-RC R4.A: cn.slots is `UniqueSlotMap`; project to `.table` for the
+  -- underlying `RHTable` lemma.
+  exact RHTable.getElem?_erase_ne_K cn.slots.table slot slot'
     (fun h => hNe (eq_of_beq h)) hUniq
 
 end CNode

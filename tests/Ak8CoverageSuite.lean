@@ -135,7 +135,7 @@ def test_AK8_F_returns_first_free_slot : IO Bool := do
       badge := none }
   let cn : CNode :=
     { depth := 16, guardWidth := 0, guardValue := 0, radixWidth := 4
-      slots := (SeLe4n.Kernel.RobinHood.RHTable.empty 16).insert
+      slots := SeLe4n.UniqueSlotMap.empty.insert
         (SeLe4n.Slot.ofNat 0) occupied }
   -- limit=10 is intentionally larger than 2^4-0 = 16; the checker should
   -- still bound the scan to the radix window.
@@ -148,7 +148,7 @@ range). -/
 def test_AK8_F_rejects_base_over_radix : IO Bool := do
   let cn : CNode :=
     { depth := 16, guardWidth := 0, guardValue := 0, radixWidth := 2
-      slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 }
+      slots := SeLe4n.UniqueSlotMap.empty }
   -- 2^2 = 4; base = 8 is out of range and must reject.
   match cn.findFirstEmptySlotChecked (SeLe4n.Slot.ofNat 8) 100 with
   | none => return true
@@ -239,7 +239,7 @@ def test_AK8_G_storeTcbChecked_cross_variant_rejected : IO Bool := do
 holding a Notification. -/
 def test_AK8_G_storeEndpointChecked_cross_variant_rejected : IO Bool := do
   let id : ObjId := ObjId.ofNat 52
-  let n : Notification := { state := .idle, waitingThreads := [] }
+  let n : Notification := { state := .idle, waitingThreads := SeLe4n.NoDupList.empty }
   let st := mkFrozenStateWith [(id, (.notification n))]
   let ep : Endpoint := {}
   match SeLe4n.Kernel.FrozenOps.frozenStoreEndpointChecked id ep st with
@@ -258,7 +258,7 @@ def test_AK8_G_storeNotificationChecked_cross_variant_rejected : IO Bool := do
       vspaceRoot := ObjId.ofNat 0
       ipcBuffer := SeLe4n.VAddr.ofNat 0 }
   let st := mkFrozenStateWith [(id, (.tcb tcb))]
-  let n : Notification := { state := .idle, waitingThreads := [] }
+  let n : Notification := { state := .idle, waitingThreads := SeLe4n.NoDupList.empty }
   match SeLe4n.Kernel.FrozenOps.frozenStoreNotificationChecked id n st with
   | .ok _ => return false
   | .error e => return e == KernelError.objectNotFound
@@ -342,7 +342,7 @@ def test_AK8_I_well_keyed_freeze_succeeds : IO Bool := do
       badge := none }
   let cn : CNode :=
     { depth := 16, guardWidth := 0, guardValue := 0, radixWidth := 4
-      slots := ((SeLe4n.Kernel.RobinHood.RHTable.empty 16).insert
+      slots := (SeLe4n.UniqueSlotMap.empty.insert
                   (SeLe4n.Slot.ofNat 0) cap).insert
                   (SeLe4n.Slot.ofNat 5) cap }
   -- 2^4 = 16; both keys (0, 5) are within range.
@@ -357,7 +357,7 @@ def test_AK8_I_phantom_key_freeze_rejected : IO Bool := do
   let cn : CNode :=
     { depth := 16, guardWidth := 0, guardValue := 0, radixWidth := 2
       -- 2^2 = 4; key 8 is a phantom (out of radix range).
-      slots := (SeLe4n.Kernel.RobinHood.RHTable.empty 16).insert
+      slots := SeLe4n.UniqueSlotMap.empty.insert
         (SeLe4n.Slot.ofNat 8) cap }
   return (SeLe4n.Kernel.RadixTree.freezeCNodeSlotsChecked cn).isNone
 

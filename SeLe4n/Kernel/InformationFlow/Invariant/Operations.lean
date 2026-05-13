@@ -239,8 +239,6 @@ theorem cspaceMintChecked_NI
     (hLow : lowEquivalent ctx observer s₁ s₂)
     (hSrcHigh : objectObservable ctx observer src.cnode = false)
     (hDstHigh : objectObservable ctx observer dst.cnode = false)
-    (hSlotUniq₁ : cspaceSlotUnique s₁)
-    (hSlotUniq₂ : cspaceSlotUnique s₂)
     (hObjInv₁ : s₁.objects.invExt)
     (hObjInv₂ : s₂.objects.invExt)
     (hStep₁ : cspaceMintChecked ctx src dst rights badge s₁ = .ok ((), s₁'))
@@ -270,7 +268,7 @@ theorem cspaceMintChecked_NI
       obtain ⟨_, rfl⟩ := hStep₂
       -- cspaceMint results preserve lowEquivalent
       have hMintLow := cspaceMint_preserves_lowEquivalent ctx observer src dst rights badge
-        s₁ s₂ pair₁.2 pair₂.2 hLow hSrcHigh hDstHigh hSlotUniq₁ hSlotUniq₂ hObjInv₁ hObjInv₂
+        s₁ s₂ pair₁.2 pair₂.2 hLow hSrcHigh hDstHigh hObjInv₁ hObjInv₂
         hMint₁ hMint₂
       -- CDT pipeline (ensureCdtNodeForSlot × 2 + addEdge) only modifies CDT
       -- fields — none appear in projectState. Use early-defined helpers.
@@ -3762,6 +3760,53 @@ theorem cancelDonation_preserves_projection
   hProjEq st' hStep
 
 -- ============================================================================
+-- WS-RC R5.A (DEEP-SUSP-02): split-arm preservation helpers (closure form)
+-- ============================================================================
+
+/-- WS-RC R5.A: closure-form preservation helper for `cancelBoundDonation`.
+    Mirrors `cancelDonation_preserves_projection` (AK6-F.17) for the
+    in-place-unbind arm of the split.  Substantive 1-arm discharge:
+    `.bound scId` case performs SC unbind via
+    `objects_insert_preserves_projection_high` at high scId +
+    `projectState_replenishQueue_eq` + `projectState_scThreadIndex_eq`;
+    wrong-variant inputs error out so no projection obligation arises.
+    Typical discharge: ≈30 LOC. -/
+theorem cancelBoundDonation_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hProjEq :
+        ∀ stFinal,
+          SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation st tid tcb
+            = .ok stFinal →
+          projectState ctx observer stFinal = projectState ctx observer st)
+    (hStep : SeLe4n.Kernel.Lifecycle.Suspend.cancelBoundDonation st tid tcb
+              = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st :=
+  hProjEq st' hStep
+
+/-- WS-RC R5.A: closure-form preservation helper for `cancelDonatedDonation`.
+    Mirrors `cancelDonation_preserves_projection` (AK6-F.17) for the
+    return-to-original-owner arm of the split.  Substantive 1-arm
+    discharge: `.donated scId donor` case delegates to
+    `cleanupDonatedSchedContext` (which calls `returnDonatedSchedContext`,
+    performing SC insert + donor TCB insert); requires donor high,
+    derivable from the SC invariant `donationOwnerValid` plus the
+    suspended TCB's high observability.  Wrong-variant inputs error out
+    so no projection obligation arises.  Typical discharge: ≈30 LOC. -/
+theorem cancelDonatedDonation_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hProjEq :
+        ∀ stFinal,
+          SeLe4n.Kernel.Lifecycle.Suspend.cancelDonatedDonation st tid tcb
+            = .ok stFinal →
+          projectState ctx observer stFinal = projectState ctx observer st)
+    (hStep : SeLe4n.Kernel.Lifecycle.Suspend.cancelDonatedDonation st tid tcb
+              = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st :=
+  hProjEq st' hStep
+
+-- ============================================================================
 -- AK6-F.18: suspendThread preservation (closure form)
 -- ============================================================================
 
@@ -3776,7 +3821,13 @@ theorem cancelDonation_preserves_projection
     - **G3 `cancelIpcBlocking`**: `storeObject` at TCB (stripped fields
       include `ipcState`, so `projectKernelObject` elides changes).
     - **G4 re-lookup**: no state change.
-    - **G5 `cancelDonation`**: see AK6F.17 helper.
+    - **G5 `cancelDonation` (WS-RC R5.A split)**: post-R5.A the G5 step
+      dispatches explicitly on `schedContextBinding`:
+      `.unbound` → identity (no projection obligation);
+      `.bound _` → `cancelBoundDonation_preserves_projection`;
+      `.donated _ _` → `cancelDonatedDonation_preserves_projection`.
+      AK6-F.17 `cancelDonation_preserves_projection` remains valid for
+      callers that route through the (retained) thin dispatcher.
     - **G6 `removeRunnable`**: `removeRunnable_preserves_projection`
       at thread-high tid.
     - **G7 `clearPendingState`**: `storeObject` at high TCB; `projectKernelObject`

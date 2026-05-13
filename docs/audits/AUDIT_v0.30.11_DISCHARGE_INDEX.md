@@ -119,41 +119,93 @@ CARRIED FROM PREDECESSOR. See
 [`AUDIT_v0.30.6_DISCHARGE_INDEX.md`](../dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md)
 §3.C for the canonical 5-row table (rows C.1..C.5).
 
-### §3.D — NoDup / structural promotions (PENDING — R4.A / R4.B / R4.C)
+### §3.D — NoDup / structural promotions (LANDED — full type-level R4.A + R4.B + R4.C)
 
-**Status at R0:** EMPTY (seed). Phases R4.A (DEEP-MODEL-01,
-`UniqueSlotMap` smart constructor), R4.B (DEEP-CAP-04, `RetypeTarget`
-opaque `ScrubToken`), and R4.C (DEEP-IPC-05, `Notification.waitingThreads`
-`NoDupList` promotion) will append rows here as each lands.
+**Status:** all four R4 sub-tasks have landed full structural
+witnesses **and** the type-level field-type switches.  `CNode.slots`
+is now `SeLe4n.UniqueSlotMap Capability` (R4.A);
+`Notification.waitingThreads` is now `SeLe4n.NoDupList SeLe4n.ThreadId`
+(R4.C).  The state-level invariants `cspaceSlotUnique` and
+`uniqueWaiters` are now **trivially derivable** from the structural
+`hWF`/`hNodup` fields of the wrappers (`slotsUnique_holds`,
+`uniqueWaiters_holds`).
 
-Expected row template (final shape determined by the R4.A/B/C
-implementation):
+| # | Theorem | File:Line | Promoted invariant | Discharge site | Reachability check | Status |
+|---|---------|-----------|--------------------|----------------|--------------------|--------|
+| D.1 | `SeLe4n.UniqueSlotMap.keys_unique` | `SeLe4n/Model/Object/UniqueSlotMap.lean` | `cspaceSlotUnique` (now trivially derivable via `slotsUnique_holds`) | structural — `UniqueSlotMap.hWF` carried at construction time by `empty`, `insert`, `erase`, `filter`, `ofListWF` | `#check @SeLe4n.UniqueSlotMap.keys_unique` | **LANDED** (this commit) |
+| D.2 | `retypeTarget_implies_scrub_token_held` | `SeLe4n/Kernel/Capability/Invariant/Defs.lean:411` | `ScrubToken` existence (was phantom-only `cleanupHookDischarged`) | `RetypeTarget` smart constructor (third conjunct `ScrubToken.fromCleanup`) | `#check @SeLe4n.Kernel.retypeTarget_implies_scrub_token_held` | **LANDED** (commit `7da2572`; re-verified this commit) |
+| D.3 | `notification_waitingThreads_nodup_witness` | (DELETED — v0.31.0 close-out, C2.c4) | `Notification.waitingThreads.val.Nodup` — historical witness with vestigial `uniqueWaiters` precondition; subsumed by D.11 (`notification_waiters_nodup`) which discharges structurally via `NoDupList.hNodup` without preconditions | n/a — deleted | n/a — deleted | **DELETED** (v0.31.0 close-out, subsumed by D.11) |
+| D.4 | `SeLe4n.NoDupList.nodup_witness` | `SeLe4n/Model/Object/NoDupList.lean` | `List.Nodup` carried by smart constructor at construction time | `NoDupList.empty`, `consWithGuard`, `consWithGuard?`, `filter`, `tail?` | `#check @SeLe4n.NoDupList.nodup_witness` | **LANDED** (this commit) |
+| D.5 | `r4_structural_fix_discharge_index_documented` | `SeLe4n/Kernel/CrossSubsystem.lean` | R4.A/B/C/D closure-form discharge index | marker theorem (tier-3 invariant-surface gate) | `#check @SeLe4n.Kernel.r4_structural_fix_discharge_index_documented` | **LANDED** (this commit) |
+| D.6 | `SeLe4n.Model.CNode.slotsUnique_holds` | `SeLe4n/Model/Object/Structures.lean` | `cspaceSlotUnique` trivial via `UniqueSlotMap.hWF` | structural projection | `#check @SeLe4n.Model.CNode.slotsUnique_holds` | **LANDED** (this commit) |
+| D.7 | `SeLe4n.Kernel.uniqueWaiters_holds` | (DELETED — v0.31.0 close-out, C2.c4) | `uniqueWaiters` state-level discharge — subsumed by D.11 (`notification_waiters_nodup`) which discharges per-Notification structurally | n/a — deleted | n/a — deleted | **DELETED** (v0.31.0 close-out, subsumed by D.11) |
+| D.8 | `SeLe4n.Model.CNode.cnode_slots_unique` | `SeLe4n/Model/Object/Structures.lean` | plan-named alias for `slotsUnique_holds` (D.6) | structural projection | `#check @SeLe4n.Model.CNode.cnode_slots_unique` | **LANDED** (v0.31.0 close-out, P1) |
+| D.9 | `SeLe4n.Kernel.cspaceSlotUnique_trivial` | (DELETED — v0.31.0 close-out, A2.c4) | state-level discharge of the retired `cspaceSlotUnique` — deleted along with the predicate it discharged | n/a — deleted | n/a — deleted | **DELETED** (v0.31.0 close-out, subsumed by D.6/D.8) |
+| D.10 | `SeLe4n.Kernel.uniqueWaiters_trivial` | (DELETED — v0.31.0 close-out, C2.c4) | state-level discharge of the retired `uniqueWaiters` — deleted along with the predicate it discharged | n/a — deleted | n/a — deleted | **DELETED** (v0.31.0 close-out, subsumed by D.11) |
+| D.11 | `SeLe4n.Kernel.notification_waiters_nodup` | `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean` | plan-named per-Notification Nodup witness — discharges structurally via `NoDupList.hNodup` | structural projection | `#check @SeLe4n.Kernel.notification_waiters_nodup` | **LANDED** (v0.31.0 close-out, P1) |
+| D.12 | `SeLe4n.Kernel.cspaceSlotUnique_promoted_to_structural` | `SeLe4n/Kernel/CrossSubsystem.lean` | R4.A.7 marker — `cspaceSlotUnique` retired to structural `UniqueSlotMap.hWF` | marker theorem (tier-3 invariant-surface gate) | `#check @SeLe4n.Kernel.cspaceSlotUnique_promoted_to_structural` | **LANDED** (v0.31.0 close-out, P1) |
+| D.13 | `SeLe4n.Kernel.uniqueWaiters_promoted_to_structural` | `SeLe4n/Kernel/CrossSubsystem.lean` | R4.C.8 marker — `uniqueWaiters` retired to structural `NoDupList.hNodup` | marker theorem (tier-3 invariant-surface gate) | `#check @SeLe4n.Kernel.uniqueWaiters_promoted_to_structural` | **LANDED** (v0.31.0 close-out, P1) |
+| D.14 | `SeLe4n.Kernel.lifecyclePreRetypeCleanupWithToken` | `SeLe4n/Kernel/Capability/Invariant/Defs.lean` | R4.B.2 tokenized cleanup wrapper — produces `{stClean // ScrubToken stClean target}` | `match` on bare `lifecyclePreRetypeCleanup` + `ScrubToken.fromCleanup` | `#check @SeLe4n.Kernel.lifecyclePreRetypeCleanupWithToken` | **LANDED** (v0.31.0 close-out, B2) |
+| D.15 | `SeLe4n.Kernel.lifecyclePreRetypeCleanupWithToken_state_eq` | `SeLe4n/Kernel/Capability/Invariant/Defs.lean` | R4.B.2 bridge from tokenized form to bare cleanup equation | direct projection via `Except.ok.inj` + `Subtype.val` | `#check @SeLe4n.Kernel.lifecyclePreRetypeCleanupWithToken_state_eq` | **LANDED** (v0.31.0 close-out, B2) |
+| D.16 | `SeLe4n.Kernel.mkRetypeTarget` | `SeLe4n/Kernel/Capability/Invariant/Defs.lean` | R4.B.3 smart constructor for `RetypeTarget` from `cleanupHookDischarged` conjuncts + `ScrubToken` | structure literal | `#check @SeLe4n.Kernel.mkRetypeTarget` | **LANDED** (v0.31.0 close-out, B3) |
+| D.17 | `SeLe4n.Kernel.mkRetypeTarget_id` | `SeLe4n/Kernel/Capability/Invariant/Defs.lean` | R4.B.3 — `(mkRetypeTarget st target ... ...).id = target` | `rfl` | `#check @SeLe4n.Kernel.mkRetypeTarget_id` | **LANDED** (v0.31.0 close-out, B3) |
 
-| # | Theorem | File:Line | Promoted invariant | Discharge site | Reachability check |
-|---|---------|-----------|--------------------|----------------|--------------------|
-| D.1 | `UniqueSlotMap.insert_preserves_uniqueness` | `SeLe4n/Model/Object/Structures.lean:TBD` | `slotsUnique` (was Builder.lean line 290–291 obligation) | smart-constructor body | `#check @SeLe4n.UniqueSlotMap.insert_preserves_uniqueness` |
-| D.2 | `retypeTarget_implies_scrub_token_held` | `SeLe4n/Kernel/Capability/Invariant/Defs.lean:TBD` | `ScrubToken` existence (was phantom-only `cleanupHookDischarged`) | `RetypeTarget` smart constructor | `#check @SeLe4n.Kernel.retypeTarget_implies_scrub_token_held` |
-| D.3 | `notification_waiters_nodup` | `SeLe4n/Model/Object/Types.lean:TBD` | `Notification.waitingThreads.val.Nodup` (was upstream-convention) | `NoDupList.insert` smart constructor | `#check @SeLe4n.notification_waiters_nodup` |
+The two foundation modules
+(`SeLe4n/Model/Object/UniqueSlotMap.lean`,
+`SeLe4n/Model/Object/NoDupList.lean`) materialise the polymorphic
+wrappers.  Every kernel transition that previously needed to discharge
+`cspaceSlotUnique` / `uniqueWaiters` via a preservation theorem now
+discharges it structurally via the smart constructor.
 
-The placeholder line numbers and theorem names are derived from plan
-§8 (R4.A.1–R4.C.6); they will be refreshed against the live tree at
-R4 landing time.
+**WS-RC R4 close-out (v0.31.0)**: the historical state-level
+`cspaceSlotUnique` / `uniqueWaiters` predicates and their discharge
+helpers (D.7, D.9, D.10) have been **deleted** along with the
+`notification_waitingThreads_nodup_witness` historical witness (D.3),
+the `cspaceSlotUnique_of_storeObject_*` / `_endpoint_store` /
+`_objects_eq` / `_through_*` transfer chain (8 theorems), and the
+`notificationWait_preserves_uniqueWaiters`,
+`coreIpcInvariantBundle_to_uniqueWaiters`, `default_uniqueWaiters`
+helpers.  The `cspaceLookupSound_of_cspaceSlotUnique` bridge was
+renamed to the unconditional `cspaceLookupSound_holds`.  The
+22 vestigial `(_hSlotUniq : cspaceSlotUnique st)` parameters across
+`Authority.lean`, `Preservation/BadgeIpcCapsAndCdtMaps.lean`, and
+`InformationFlow/{Composition,Helpers,Operations}.lean` were removed
+along with their call-site arguments.
 
-### §3.E — Predecessor reroutings (PENDING — R4.C subsumes DEEP-IPC-01)
+**Runtime API coverage** (`tests/ModelIntegritySuite.lean`):
+15 dedicated tests exercise the new R4.A/R4.C foundation APIs end-to-end:
 
-**Status at R0:** EMPTY (seed). DEEP-IPC-01 (notification waiters NoDup
-runtime-only verification) is rerouted to a structural promotion under
-R4.C (D.3 above). When R4.C lands, this section captures the
-"runtime-check-equivalent-to-structural-discharge" witness:
+* R4.A: `r4a_uniqueSlotMap_empty_size_zero`,
+  `r4a_uniqueSlotMap_insert_then_get`,
+  `r4a_uniqueSlotMap_erase_removes`,
+  `r4a_uniqueSlotMap_ofListWF_roundtrip`,
+  `r4a_uniqueSlotMap_keys_unique_witness`,
+  `r4a_cnode_slotsUnique_holds_witness`.
+* R4.C: `r4c_noDupList_empty_isEmpty`,
+  `r4c_noDupList_consWithGuard?_fresh_element`,
+  `r4c_noDupList_consWithGuard?_duplicate_rejected`,
+  `r4c_noDupList_tail?_empty`,
+  `r4c_noDupList_tail?_pop_head`,
+  `r4c_noDupList_filter_preserves_membership`,
+  `r4c_noDupList_nodup_witness`,
+  `r4c_consWithGuard?_eq_some_iff_bridge`,
+  `r4c_tail?_eq_none_iff_bridge_empty`.
 
-Expected row template:
+### §3.E — Predecessor reroutings (LANDED — R4.C subsumes DEEP-IPC-01 structurally)
 
-| # | Subsumed finding | Subsuming structural promotion | Equivalence theorem | Reachability check |
-|---|------------------|-------------------------------|---------------------|--------------------|
-| E.1 | DEEP-IPC-01 (`notificationWait` runtime NoDup at `IPC/Operations/Endpoint.lean:723`) | R4.C (§3.D D.3) | `notificationWait_runtime_check_implied_by_nodup` | `#check @SeLe4n.Kernel.IPC.notificationWait_runtime_check_implied_by_nodup` |
+DEEP-IPC-01 (notification waiters NoDup runtime-only verification) is
+**structurally subsumed** by the R4.C field-type switch.  The runtime
+guard at `IPC/Operations/Endpoint.lean` is now backed by
+`NoDupList.consWithGuard?` (runtime membership check returning
+`Option`); the typed smart constructor IS the duplicate guard.  The
+existing TCB-state fast-path check is preserved as a defence-in-depth
+optimisation and proven equivalent to the structural Nodup
+discharge under `notificationWaiterConsistent` via
+`notificationWait_runtime_check_implied_by_nodup`.
 
-The runtime check at line 723 is preserved as defence-in-depth; the
-type-level NoDup discharge becomes the primary correctness story.
+| # | Subsumed finding | Subsuming structural promotion | Equivalence theorem | Reachability check | Status |
+|---|------------------|-------------------------------|---------------------|--------------------|--------|
+| E.1 | DEEP-IPC-01 (`notificationWait` runtime NoDup at `IPC/Operations/Endpoint.lean:723`) | R4.C (§3.D D.3) — full type-level `NoDupList` field-type switch + `consWithGuard?` operational gating | `notificationWait_runtime_check_implied_by_nodup` (in `IPC/Invariant/QueueNoDup.lean:691`) | `#check @SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup` | **LANDED** (witness `7da2572`; field-type switch + `consWithGuard?` this commit) |
 
 ### §3.F — False-positive structural witnesses (PENDING — R4.D / R12.B / R12.C / R12.D)
 
@@ -168,7 +220,7 @@ Expected rows:
 
 | # | Verified finding | Owning sub-phase | Structural artefact | Discharge mechanism | Reachability check |
 |---|------------------|------------------|---------------------|---------------------|--------------------|
-| F.1 | DEEP-CAP-02 (`cspaceMutate` rejects null caps; runtime guard at `Capability/Operations.lean:1093`) | R4.D | Two Lean theorems: `cspaceMutate_rejects_null_cap`, `cspaceMutate_null_cap_rejected` (in `Capability/Invariant/Preservation/CopyMoveMutate.lean`) | Lean elaborator (proof obligation) | `#check @SeLe4n.Kernel.cspaceMutate_rejects_null_cap` and `#check @SeLe4n.Kernel.cspaceMutate_null_cap_rejected` |
+| F.1 | DEEP-CAP-02 (`cspaceMutate` rejects null caps; runtime guard at `Capability/Operations.lean:1093`) | R4.D | Two Lean theorems: `cspaceMutate_rejects_null_cap`, `cspaceMutate_null_cap_rejected` (in `Capability/Invariant/Preservation/CopyMoveMutate.lean:373,424`) + regression tests `cspaceMutate_from_null_rejected` (`tests/ModelIntegritySuite.lean:399`) and `NEG-MUTATE-NULL` (`tests/NegativeStateSuite.lean::runAuditCoverageChecks`) | Lean elaborator (proof obligation) + Tier-2 negative suite | `#check @SeLe4n.Kernel.cspaceMutate_rejects_null_cap` and `#check @SeLe4n.Kernel.cspaceMutate_null_cap_rejected` (**LANDED** commit `7da2572`, regression test extended this commit) |
 | F.2 | DEEP-ARCH-01 (audit-text verification error; CacheModel/TimerModel/ExceptionModel/TlbCacheComposition correctly outside production chain) | R12.B | CI gate `scripts/check_production_staging_partition.sh` (already LANDED — verified at R0.1 baseline) | tier-0 hygiene script (gate run on every CI) | `bash scripts/check_production_staging_partition.sh` |
 | F.3 | DEEP-RUST-01 / DEEP-RUST-02 (MMIO + register `unsafe` blocks have ARM ARM citations) | R12.C | CI gate `scripts/check_arm_arm_citations.sh` (NEW — added in R12.C PR) | tier-0 hygiene script | `bash scripts/check_arm_arm_citations.sh` |
 | F.4 | DEEP-ARCH-02 (`*_fields` defs all have ≥1 consumer; not dead code) | R12.D | CI gate `scripts/check_no_orphan_fields.sh` (already LANDED — verified at R0.1 baseline) | tier-0 hygiene script | `bash scripts/check_no_orphan_fields.sh` |
@@ -183,6 +235,55 @@ is the single canonical artefact that records "the verification's
 correctness is now machine-checked"; the cross-reference is required
 by the §1.5 structural-fix policy. F.3 (the ARM-ARM citation gate) is
 genuinely pending — it is scheduled for R12.C.
+
+### §3.H — Scheduler / Lifecycle behaviour symmetry (LANDED at WS-RC R5)
+
+WS-RC R5 (`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md §9`) closes the
+seven scheduler/lifecycle audit findings whose remediation is a
+behavioural symmetry or function-split. Eight new structural witnesses /
+preservation theorems anchor the closure-form discharge for R5.A, R5.B,
+R5.D, R5.C, R5.F, R5.G:
+
+| # | Spec source | Closure-form theorem | Location | Status |
+|---|-------------|----------------------|----------|--------|
+| H.1 | DEEP-SUSP-02 (R5.A) | `cancelBoundDonation_scheduler_runQueue_eq` | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED |
+| H.2 | DEEP-SUSP-02 (R5.A) | `cancelDonatedDonation_scheduler_runQueue_eq` | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED |
+| H.3 | DEEP-SUSP-02 (R5.A) | `cancelBoundDonation_serviceRegistry_eq` | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED |
+| H.4 | DEEP-SUSP-02 (R5.A) | `cancelDonatedDonation_serviceRegistry_eq` | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED |
+| H.5 | DEEP-SUSP-01 (R5.B) | `restoreToReady_objectIndex_eq` | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED |
+| H.6 | DEEP-SUSP-01 (R5.B) | `restoreToReady_objects_eq_at_tid` | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED |
+| H.7 | DEEP-SUSP-01 (R5.B) | `resumeThread_pipBoost_consistent_post_restore` | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED |
+| H.8 | DEEP-SCH-02 (R5.C) | `effectiveSchedParams_priority_deadline_eq_resolve` | `Scheduler/Operations/Selection.lean` | LANDED |
+| H.9 | DEEP-SCH-02 (R5.C.1 — retired) | ~~`effectivePriority_some_eq_effectiveSchedParams`~~ | `Scheduler/Operations/Selection.lean` | RETIRED at R5.C.1 (full deprecation) |
+| H.10 | DEEP-SCH-03 (R5.D) | `restoreToReady_scheduler_eq` / `restoreToReady_serviceRegistry_eq` / `restoreToReady_lifecycle_eq` | `Kernel/Lifecycle/Suspend.lean` | LANDED |
+| H.11 | DEEP-SCH-03 (R5.D) | `clearTcbIpcFields_eq_restoreToReady` (back-compat bridge) | `Kernel/Lifecycle/Suspend.lean` | LANDED |
+| H.12 | DEEP-SCH-05 (R5.F) | `rotateToBack_requires_membership` | `Scheduler/RunQueue.lean` | LANDED |
+| H.13 | DEEP-SCH-05 (R5.F) | `rotateToBack_priority_eq_threadPriority` | `Scheduler/RunQueue.lean` | LANDED |
+| H.14 | DEEP-SCH-06 (R5.G) | `schedContextConfigure_bound_tcb_domain_eq` | `SchedContext/Invariant/Preservation.lean` | LANDED |
+| H.15 | DEEP-SCH-06 (R5.G) | `schedContextConfigure_domain_noop_when_eq` | `SchedContext/Invariant/Preservation.lean` | LANDED |
+| H.16 | DEEP-SCH-06 (R5.G.3 SUBSTANTIVE) | `schedContextConfigure_preserves_boundThreadDomainConsistent` | `SchedContext/Invariant/Preservation.lean` | LANDED SUBSTANTIVE at WS-RC R5 deferred completion |
+| H.17 | DEEP-SUSP-02 (R5.A audit-add) | `cancelBoundDonation_preserves_projection` (closure form) | `InformationFlow/Invariant/Operations.lean` | LANDED |
+| H.18 | DEEP-SUSP-02 (R5.A audit-add) | `cancelDonatedDonation_preserves_projection` (closure form) | `InformationFlow/Invariant/Operations.lean` | LANDED |
+| H.19 | DEEP-SUSP-01 (R5.B.2 SUBSTANTIVE / Phase Q1) | `restoreToReady_blockingServer_subgraph` + `restoreToReady_preserves_blockingAcyclic` + `restoreToReady_invExt` | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED SUBSTANTIVE at WS-RC R5 deferred completion |
+| H.20 | DEEP-SUSP-01 (R5.B.2 SUBSTANTIVE / Phase Q1) | `resumeThread_preserves_blockingAcyclic` (substantive replacement of closure form) | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED SUBSTANTIVE at WS-RC R5 deferred completion |
+| H.21 | DEEP-SUSP-01 (R5.B.2 SUBSTANTIVE / Phase Q1) | `ensureRunnable_objects_eq` + `ensureRunnable_objectIndex_eq` + `ensureRunnable_blockingServer_eq` | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED SUBSTANTIVE at WS-RC R5 deferred completion |
+| H.22 | DEEP-SUSP-01 (R5.B.2 SUBSTANTIVE / Phase Q2) | `ensureRunnable_preserves_computeMaxWaiterPriority` (Phase Q2 frame) | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED SUBSTANTIVE at WS-RC R5 deferred completion |
+| H.23 | DEEP-SUSP-01 (R5.B.2 SUBSTANTIVE / Phase Q2) | `resumeThread_pipBoost_consistent_with_blocking_graph` (substantive replacement of closure form; audit-corrected to take two non-conclusion structural hypotheses `hPipBoostFromRestore` + `hCmwpFrame` instead of the initial-landing `hPipShape` which was inadvertently conclusion-shaped) | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED SUBSTANTIVE at WS-RC R5 deferred completion (audit-pass corrected) |
+| H.24 | DEEP-SUSP-01 (R5.B.2 SUBSTANTIVE / Phase P1) | `blockingAcyclic_of_subgraph` + `blockingChain_subgraph_prefix` + `computeMaxWaiterPriority_frame` + `effectiveSchedParams_frame` + `getSchedContext?_frame` + `waitersOf_frame` + `effectiveSchedParams_frame_per_field` (foundational lemmas) | `Scheduler/PriorityInheritance/BlockingGraph.lean` + `Scheduler/PriorityInheritance/Compute.lean` | LANDED SUBSTANTIVE at WS-RC R5 deferred completion |
+| H.25 | DEEP-SCH-06 (R5.G.3 SUBSTANTIVE / Phase P2 + R2) | `objects_insert_non_tcb_non_sc_preserves_boundThreadDomainConsistent` + `objects_update_sync_domain_preserves_boundThreadDomainConsistent` + `schedContextConfigure_preserves_boundThreadDomainConsistent_caseC` + `schedContextConfigure_preserves_boundThreadDomainConsistent_scOnly` (Phase P2/R2 frame + composition); ERRATA-R5-2 cross-reference (strengthened hypotheses) | `Scheduler/Invariant.lean` + `SchedContext/Invariant/Preservation.lean` | LANDED SUBSTANTIVE at WS-RC R5 deferred completion |
+| H.26 | DEEP-SUSP-01 (R5.B.2 SUBSTANTIVE / Phase P1 generalization) | `computeMaxWaiterPriority_lookup_equiv` (Prop) + `waitersOf_frame_per_field` + `computeMaxWaiterPriority_frame_per_field` + `cmwpFoldBody_frame_per_field` (private helper) | `Scheduler/PriorityInheritance/Compute.lean` | LANDED SUBSTANTIVE at WS-RC R5 deferred-work continuation |
+| H.27 | DEEP-SUSP-01 (R5.B.2 SUBSTANTIVE / Phase Q2.A) | `restoreIncomingContext_objects_eq` + `_objectIndex_eq` + `saveOutgoingContext_lookup_equiv` + `_getSchedContext?_eq` + `_objectIndex_eq` + `chooseThread_state_eq` + `schedule_lookup_equiv` + `_getSchedContext?_eq` + `_objectIndex_eq` + `schedule_preserves_computeMaxWaiterPriority` (substantive from `hOk` + `invExt`) | `Lifecycle/Invariant/SuspendPreservation.lean` | LANDED SUBSTANTIVE at WS-RC R5 deferred-work continuation |
+| H.28 | DEEP-SUSP-01 / DEEP-SCH-06 (R5.B.2 + R5.G.3 V1 runtime tests) | `sr027c_resumeThreadPreservesBlockingAcyclic` + `sr027d_resumeThreadPipBoostMatchesGraph` (Q1/Q2 runtime witnesses) + `pm_r5g_04_substantive_invariant_preservation` (R2 runtime witness) | `tests/SuspendResumeSuite.lean` + `tests/PriorityManagementSuite.lean` | LANDED at WS-RC R5 deferred-work continuation |
+
+DEEP-SCH-04 (R5.E — `KernelError.missingSchedContext` surfacing) does
+not produce a closure-form theorem because it is a behavioural-state
+fix (replacing a silent fallback with an explicit `.error`); the
+correctness witness is operational, anchored by the regression test
+`tests/NegativeStateSuite.lean::runR5EOrphanedSchedContextChecks` and
+the cross-language discriminant pin
+`tests/SyscallDispatchSuite.lean::sd001_52_missingSchedContext` +
+Rust `decode_missing_sched_context_error` /
+`missing_sched_context_decode`.
 
 ### §3.G — Predecessor closure reconfirmations (LANDED at R0.4)
 
@@ -221,7 +322,7 @@ At R0, the predecessor index is already registered; this WS-RC index is
 registered as part of R0.5 (the `docs/audits/README.md` "Files currently
 live" sync).
 
-## 5. Closure summary (R0 seed)
+## 5. Closure summary (post-R4 full landing)
 
 - **§3.A — 6 of 6 rows** carried forward from predecessor; no WS-RC
   modification.
@@ -229,20 +330,45 @@ live" sync).
   WS-RC modification.
 - **§3.C — 5 closure-form rows** carried forward from predecessor; no
   WS-RC modification.
-- **§3.D — 0 rows at R0**, expected 3 rows at R4.A/B/C landing.
-- **§3.E — 0 rows at R0**, expected 1 row at R4.C landing
-  (DEEP-IPC-01 reroute).
-- **§3.F — 0 substantive rows at R0**; 2 of 4 expected gates already
-  LANDED at R0 prep (partition + orphan-fields), 1 expected at R4.D
-  landing (`cspaceMutate` witness theorem), 1 expected at R12.C
-  landing (ARM-ARM citation gate).
+- **§3.D — 7 rows, all LANDED**: D.1 (R4.A `UniqueSlotMap`
+  structural promotion of `CNode.slots`) **LANDED** at the current
+  commit (full type-level field-type switch); D.2 (R4.B `ScrubToken`)
+  **LANDED** at commit `7da2572`, re-verified this commit; D.3 (R4.C
+  `notification_waitingThreads_nodup_witness` + the type-level
+  promotion of `Notification.waitingThreads` to
+  `NoDupList ThreadId`) **LANDED** (witness at `7da2572`, field-type
+  switch at the current commit); D.4 (`NoDupList.nodup_witness`)
+  **LANDED** at the current commit; D.5 (R4 marker theorem
+  `r4_structural_fix_discharge_index_documented`) **LANDED** at the
+  current commit; D.6/D.7 (`slotsUnique_holds`, `uniqueWaiters_holds`)
+  **LANDED** at the current commit (state-level invariants now
+  trivially derivable).
+- **§3.E — 1 of 1 row LANDED**: DEEP-IPC-01 structurally subsumed by
+  the R4.C field-type switch; the runtime guard at
+  `Endpoint.lean` is now `NoDupList.consWithGuard?`.
+- **§3.F — F.1 (R4.D) LANDED** at commit `7da2572`, regression test
+  extended at the current commit (NegativeStateSuite NEG-MUTATE-NULL);
+  F.2 (R12.B) and F.4 (R12.D) **LANDED at R0 prep** (partition +
+  orphan-fields gates); F.3 (R12.C ARM-ARM citation gate) **PENDING**
+  per the multi-PR plan.
 - **§3.G — 1 of 1 row** LANDED at R0.4 (DEBT-RUST-02 / H-24
   reconfirmation; closure annotation in archived predecessor index).
+- **§3.H — 18 of 18 rows LANDED at WS-RC R5** (scheduler / lifecycle
+  behaviour symmetry — DEEP-SUSP-01/02, DEEP-SCH-02/03/05/06; rows
+  H.16/H.17/H.18 added at the R5 audit pass for closure-form
+  preservation of boundThreadDomainConsistent and per-arm IF
+  preservation of the cancelDonation split). The remaining DEEP-SCH-04
+  (R5.E) row is operational-witness only (no closure-form theorem); its
+  regression test `runR5EOrphanedSchedContextChecks` provides the
+  runtime-observable witness. AK7 cascade monotonicity baseline retained
+  at the v0.30.11 floor.
 
-**No closure-form obligation introduced by WS-RC is orphaned at R0**:
-every R-phase that produces a closure-form theorem or structural
-witness includes a discharge-index update in the same PR (per CLAUDE.md
-"Documentation rules" §3 and the §1.5 structural-fix policy).
+**No closure-form obligation introduced by WS-RC is orphaned**: every
+R-phase that produces a closure-form theorem or structural witness
+includes a discharge-index update in the same PR (per CLAUDE.md
+"Documentation rules" §3 and the §1.5 structural-fix policy). The
+single deferred item is F.3 (R12.C ARM-ARM citation gate), scheduled
+for a dedicated R12.C PR per the multi-PR plan.
 
 ## 6. Update protocol
 

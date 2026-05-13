@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.30.11` (`lakefile.toml`) |
+| **Package version** | `0.31.2` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 110,464 across 168 Lean files |
 | **Test LoC** | 19,695 across 29 Lean test suites |
@@ -333,7 +333,8 @@ resolving transitive priority inversion (SV-2). Key components:
   PIP for server when timed-out client was in `blockedOnReply`.
 - **Composition with SchedContext donation (Z7)**: PIP provides an
   additional boost beyond the donated SchedContext priority via the
-  `max(scPrio, pipBoost)` computation in `effectivePriority`.
+  `max(scPrio, pipBoost)` computation in `effectiveSchedParams` (the
+  total successor to the retired `effectivePriority`; see WS-RC R5.C.1).
 - **Bounded inversion**: `pip_bounded_inversion` proves priority inversion
   bounded by `objectIndex.length * WCRT`.
 - **16 frame preservation theorems**, determinism proofs, 22 test cases.
@@ -765,7 +766,8 @@ object-store size.
 Production `AdapterProofHooks` (`rpi5ProductionAdapterProofHooks` in
 `Platform/RPi5/ProofHooks.lean`) provides substantive preservation proofs
 for all 4 adapter paths. The `proofLayerInvariantBundle` (11 conjuncts)
-and `ipcInvariantFull` (16 conjuncts) are preserved through the FFI boundary.
+and `ipcInvariantFull` (15 conjuncts after WS-RC R4.C.7 close-out)
+are preserved through the FFI boundary.
 
 **AI1-D (v0.27.7)**: The `BOOT_UART` global in `sele4n-hal/src/uart.rs` is now
 synchronized via an `AtomicBool`-based `UartLock` spinlock, which disables
@@ -1315,6 +1317,140 @@ regression extended for send/receive/call symmetry;
 provides three runtime-observable checks (healthy state, faulty
 state must error, `lookupCspaceRoot` returns `none`).
 
+### 8.10.7 Structural-Fix Discharge Index (WS-RC R4)
+
+WS-RC R4 (Structural-invariant promotions —
+[`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)
+§8) lands four sub-tasks under the structural-fix policy (`§1.5` of
+the WS-RC plan).  **All four sub-tasks are COMPLETE** with full
+type-level structural promotion:
+
+* **R4.A (DEEP-MODEL-01)** — `CNode.slots : RHTable Slot Capability`
+  → `CNode.slots : SeLe4n.UniqueSlotMap Capability`.  The wrapper
+  (`SeLe4n/Model/Object/UniqueSlotMap.lean`) carries
+  `RHTable.invExtK` (no-duplicate-keys ∧ `size < capacity` ∧
+  `4 ≤ capacity`) **structurally** at construction time via the
+  smart constructors `empty`, `insert`, `erase`, `filter`, and
+  `ofListWF`.  The state-level `cspaceSlotUnique` invariant is now
+  **trivially derivable** via `SeLe4n.Model.CNode.slotsUnique_holds :
+  ∀ (cn : CNode), cn.slotsUnique` (a one-liner projection of
+  `cn.slots.hWF`).  The corresponding preservation theorems
+  (`empty/insert/remove/revokeTargetLocal_slotsUnique`) likewise
+  collapse to projections of the smart-constructor result's
+  `hWF` field.  Structural witness theorem
+  `SeLe4n.UniqueSlotMap.keys_unique`.
+* **R4.B (DEEP-CAP-04)** — `RetypeTarget` non-bypassable
+  construction.  The `cleanupHookDischarged` predicate requires an
+  opaque `ScrubToken` whose only public introduction is
+  `SeLe4n.Kernel.ScrubToken.fromCleanup`, gated on a successful
+  `lifecyclePreRetypeCleanup` outcome.  No-bypass property codified
+  by `SeLe4n.Kernel.retypeTarget_implies_scrub_token_held :
+  ∀ st (rt : RetypeTarget st), SeLe4n.Kernel.ScrubToken st rt.id`.
+  Defined in `SeLe4n/Kernel/Capability/Invariant/Defs.lean`.
+* **R4.C (DEEP-IPC-05; subsumes DEEP-IPC-01)** —
+  `Notification.waitingThreads : List ThreadId` →
+  `Notification.waitingThreads : SeLe4n.NoDupList SeLe4n.ThreadId`.
+  The wrapper (`SeLe4n/Model/Object/NoDupList.lean`) carries
+  `List.Nodup` **structurally** at construction time.  `notificationSignal`
+  pops via `NoDupList.tail?`; `notificationWait` cons site is
+  gated by `NoDupList.consWithGuard?` (runtime membership check
+  returning `Option`) so the duplicate rejection at line 723 is
+  structural rather than upstream-convention.  The state-level
+  `uniqueWaiters` invariant is now **trivially derivable** via
+  `SeLe4n.Kernel.uniqueWaiters_holds`.  Structural witness theorems:
+  `SeLe4n.NoDupList.nodup_witness`,
+  `SeLe4n.Kernel.notification_waitingThreads_nodup_witness`, and
+  `SeLe4n.Kernel.notificationWait_runtime_check_implied_by_nodup`.
+* **R4.D (DEEP-CAP-02)** — `cspaceMutate` null-cap rejection.  Two
+  witness theorems in
+  `SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean`:
+  `cspaceMutate_rejects_null_cap` (every successful mutation
+  witnesses a non-null pre-state capability) and
+  `cspaceMutate_null_cap_rejected` (every null-cap input totalises
+  to `.nullCapability`).  Regression tests in both
+  `tests/ModelIntegritySuite.lean::cspaceMutate_from_null_rejected`
+  and `tests/NegativeStateSuite.lean::NEG-MUTATE-NULL`.
+
+The R4 closure-form discharge index is anchored by
+`SeLe4n.Kernel.r4_structural_fix_discharge_index_documented` in
+`SeLe4n/Kernel/CrossSubsystem.lean`, with cross-references to the
+canonical
+[`docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`](../audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md)
+§3 (sections D/E/F).  Companion foundation-readiness markers:
+`SeLe4n.Kernel.uniqueSlotMap_module_ready` and
+`SeLe4n.Kernel.noDupList_module_ready`.
+
+### 8.10.8 Scheduler / Lifecycle Behaviour Symmetry (WS-RC R5)
+
+WS-RC R5 closes the seven scheduler/lifecycle audit findings whose
+remediation is a behavioural symmetry or function-split. The phase
+implements seven coherent slices (R5.A..R5.G) and lands them on the
+v0.31.0 release path; see
+[`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)
+§9 for the canonical task breakdown and the closure record in
+[`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) `WS-RC R5`
+for the per-sub-task narrative.
+
+* **R5.A (DEEP-SUSP-02) — `cancelDonation` split**: the suspend G3
+  step's `cancelDonation` is split into `cancelBoundDonation` (in-place
+  unbind) and `cancelDonatedDonation` (return-to-original-owner via
+  `cleanupDonatedSchedContext`); the original name survives as a thin
+  dispatcher.  Source: `SeLe4n/Kernel/Lifecycle/Suspend.lean`.  Six
+  new preservation theorems in
+  `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean`.
+* **R5.B (DEEP-SUSP-01) — PIP recomputation on resume**: `resumeThread`
+  re-derives `pipBoost` from the post-suspend blocking graph via
+  `PriorityInheritance.computeMaxWaiterPriority`.  Three structural
+  witnesses (`restoreToReady_objectIndex_eq`,
+  `restoreToReady_objects_eq_at_tid`,
+  `resumeThread_pipBoost_consistent_post_restore`) in
+  `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean`.
+* **R5.C (DEEP-SCH-02) — `effectivePriority` API uniformity**: new
+  total form `effectiveSchedParams` returning
+  `Priority × Deadline × DomainId`; bridge witness
+  `effectiveSchedParams_priority_deadline_eq_resolve` in
+  `SeLe4n/Kernel/Scheduler/Operations/Selection.lean`.  **R5.C.1 full
+  deprecation (v0.31.2)**: the partial `effectivePriority` def + 3
+  helper theorems + bridge `effectivePriority_some_eq_effectiveSchedParams`
+  are RETIRED.  All callers (`TraceModel.lean`, `Preservation.lean`,
+  `PriorityInheritanceSuite.lean`) migrated to `effectiveSchedParams`.
+* **R5.D (DEEP-SCH-03) — shared `restoreToReady` helper**: the
+  IPC-state-clearing transition shared between `cancelIpcBlocking`
+  (suspend G2) and `resumeThread` (H3) extracted as `restoreToReady`
+  (`SeLe4n/Kernel/Lifecycle/Suspend.lean`).  The private
+  `clearTcbIpcFields` retained as a `@[inline]` back-compat shim with
+  `clearTcbIpcFields_eq_restoreToReady` bridging the two names for
+  proof discharge.
+* **R5.E (DEEP-SCH-04) — surface `.missingSchedContext`**:
+  `timerTickBudget` rejects with `KernelError.missingSchedContext`
+  (new discriminant 52) when a bound-budget thread references an
+  absent SchedContext, replacing the pre-R5 silent `(state, false)`
+  no-preempt fallback.  The Rust `KernelError` enum mirror in
+  `rust/sele4n-types/src/error.rs` grows in lock-step (range
+  0..=52, sentinel range 53..=254).  Mirrored in
+  `FrozenOps.frozenTimerTickBudget` for cross-phase consistency.
+* **R5.F (DEEP-SCH-05) — explicit `rotateToBack` precondition**:
+  two new assertion theorems
+  (`rotateToBack_requires_membership`,
+  `rotateToBack_priority_eq_threadPriority`) in
+  `SeLe4n/Kernel/Scheduler/RunQueue.lean` discharge the
+  membership precondition formally.  Function definition unchanged.
+* **R5.G (DEEP-SCH-06) — domain propagation in
+  `schedContextConfigure`**: domain-propagation block mirroring the
+  existing priority-propagation block, closing the
+  `boundThreadDomainConsistent` invariant-drift path.  Two witness
+  theorems in `SeLe4n/Kernel/SchedContext/Invariant/Preservation.lean`
+  (`schedContextConfigure_bound_tcb_domain_eq`,
+  `schedContextConfigure_domain_noop_when_eq`).
+
+R5 test coverage: 4 + 2 + 2 + 3 + 1 = 12 new Lean regression tests
+(in `SuspendResumeSuite`, `PriorityManagementSuite`,
+`NegativeStateSuite`), 1 new discriminant pin in
+`SyscallDispatchSuite`, 23 surface anchors in `LivenessSuite`, and 2
+new Rust tests (`decode_missing_sched_context_error` unit,
+`missing_sched_context_decode` conformance).  AK7 cascade monotonicity
+baseline retained at the v0.30.11 floor.
+
 ### 8.11 buildChecked Runtime Invariant Validation (WS-T Phase T7)
 
 All test states use `BootstrapBuilder.buildChecked` instead of `build`:
@@ -1392,7 +1528,8 @@ including `insert_preserves_sorted`, `popDue_preserves_sorted`,
 #### 8.12.3 Scheduler Integration (WS-Z Phase Z4)
 
 The CBS budget engine and replenishment queue are wired into the scheduler via
-`effectivePriority` (resolves scheduling params from SchedContext if bound, TCB
+`effectiveSchedParams` (the total successor to the retired
+`effectivePriority`; resolves scheduling params from SchedContext if bound, TCB
 fields if unbound), `hasSufficientBudget` (budget eligibility predicate),
 `chooseThreadEffective` (budget-filtered selection chain), and `timerTickBudget`
 (3-branch: unbound legacy / bound decrement / bound exhaustion+preempt).
@@ -1465,15 +1602,22 @@ instead of being silently swallowed. All 7 call sites in `API.lean` and
 `applyReplyDonation_machine_eq`, `applyCallDonation_preserves_projection`)
 carry an explicit `h : ... = .ok st'` success hypothesis.
 
-**Invariants** (`ipcInvariantFull` extended from 10 to 16 conjuncts):
+**Invariants** (`ipcInvariantFull` 15 conjuncts after WS-RC R4.C.7 close-out
+retired the `uniqueWaiters` state-level slot to a structural witness on
+`Notification.waitingThreads : SeLe4n.NoDupList ThreadId`):
 - `donationChainAcyclic`: no circular donation chains (A→B and B→A)
 - `donationOwnerValid`: donated bindings reference valid objects with
   bidirectional consistency (`sc.boundThread = some server`,
   `owner.schedContextBinding = .bound scId`, `owner.ipcState = .blockedOnReply`)
 - `passiveServerIdle`: unbound non-runnable threads are ready/receiving
 - `donationBudgetTransfer`: at most one thread per SchedContext
-- `uniqueWaiters`: no notification has duplicate thread IDs in `waitingThreads`
-  (AG1-C, F-T02)
+- `uniqueWaiters` (RETIRED at WS-RC R4.C.7): no notification has duplicate
+  thread IDs in `waitingThreads` (AG1-C, F-T02) — content now carried
+  structurally by `NoDupList.hNodup` on every `Notification.waitingThreads`.
+  The state-level predicate is retained as a `True` alias for backward
+  compatibility with vestigial hypothesis parameters; discharge via
+  `SeLe4n.Kernel.uniqueWaiters_trivial` or the per-Notification
+  `SeLe4n.Kernel.notification_waiters_nodup` witness.
 
 **Production receive cleanup** (AI4-A, v0.27.11): `cleanupPreReceiveDonation` is
 wired into the `endpointReceiveDual` no-sender branch (Transport.lean). When a
@@ -1523,12 +1667,13 @@ bounded by `objectIndex.length`.
   for both enforced (`dispatchWithCapChecked`) and non-enforced (`dispatchWithCap`)
   paths, ensuring consistent behavior regardless of information-flow enforcement
 
-**Composition with SchedContext donation (Z7)**: `effectivePriority` computes
+**Composition with SchedContext donation (Z7)**: `effectiveSchedParams`
+(the total successor to the retired `effectivePriority`) computes
 `max(scPrio, pipBoost)`, so PIP provides an additional boost when the transitive
 client priority exceeds the donated SchedContext priority.
 
 **Bounded inversion**: Priority inversion is bounded by
-`objectIndex.length × WCRT(effectivePriority)` ticks (parametric in WCRT).
+`objectIndex.length × WCRT(effectiveSchedParams)` ticks (parametric in WCRT).
 
 ### 8.14 Bounded Latency Theorem (WS-AB Phase D5)
 

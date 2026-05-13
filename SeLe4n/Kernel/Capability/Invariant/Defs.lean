@@ -14,20 +14,13 @@ namespace SeLe4n.Kernel
 
 open SeLe4n.Model
 
-/-- CNode slot-index uniqueness across all CNodes in the system state.
-
-WS-E2 / C-01 reformulation: this is a non-trivial structural invariant. Each slot
-index within a CNode maps to at most one capability. Without this, `CNode.lookup`
-(which uses `List.find?`) could return a different capability than what was stored
-at a given slot index, because `find?` returns only the first match.
-
-This invariant is maintained by `CNode.insert` (which removes the old entry before
-prepending), `CNode.remove` (which only filters), and `CNode.revokeTargetLocal`
-(which only filters). -/
-def cspaceSlotUnique (st : SystemState) : Prop :=
-  ∀ (cnodeId : SeLe4n.ObjId) (cn : CNode),
-    st.objects[cnodeId]? = some (KernelObject.cnode cn) →
-    cn.slotsUnique
+-- WS-RC R4.A close-out (Phase A2.c4): the historical state-level
+-- `cspaceSlotUnique` predicate and its `cspaceSlotUnique_trivial`
+-- discharge helper have been deleted.  Per-CNode slot uniqueness is now
+-- carried structurally by `CNode.slots : UniqueSlotMap Capability` via
+-- the `UniqueSlotMap.hWF` field; the canonical discharge is
+-- `SeLe4n.Model.CNode.slotsUnique_holds` (or its plan-named alias
+-- `SeLe4n.Model.CNode.cnode_slots_unique`).
 
 /-- Lookup completeness: every capability stored in a CNode's slot HashMap is
 retrievable via `lookupSlotCap`.
@@ -169,31 +162,36 @@ standalone operation-correctness lemmas in `Authority.lean`.
   validated at the caller; the hypothesis pattern correctly defers this obligation.
 - CDT-shrinking operations (revoke/delete) prove acyclicity via
   `CapDerivationTree.edgeWellFounded_sub` (edge subset preserves well-foundedness).
-- `cspaceSlotUnique` is retained alongside `cspaceSlotCountBounded` for backward
-  compatibility with the existing proof surface.
-- AF5-F (AF-26): This 7-property conjunction uses right-associative `∧` chains
+- AF5-F (AF-26): This conjunction uses right-associative `∧` chains
   accessed via `.2.2.2...` projections. Refactoring to a named structure is
   recorded as a post-1.0 hardening candidate; no currently-active plan file
-  tracks it (see Builder.lean AF5-F annotation for rationale). -/
+  tracks it (see Builder.lean AF5-F annotation for rationale).
+
+WS-RC R4.A.6: The historical `cspaceSlotUnique` conjunct was removed when
+`CNode.slots : SeLe4n.UniqueSlotMap Capability` carried the slot-uniqueness
+witness structurally at construction time (via `UniqueSlotMap.hWF`).  The
+bundle now has 6 conjuncts; per-CNode slot uniqueness is discharged
+directly via `SeLe4n.Model.CNode.slotsUnique_holds`. -/
 def capabilityInvariantBundle (st : SystemState) : Prop :=
-  cspaceSlotUnique st ∧ cspaceLookupSound st ∧
+  cspaceLookupSound st ∧
     cspaceSlotCountBounded st ∧ cdtCompleteness st ∧ cdtAcyclicity st ∧
     cspaceDepthConsistent st ∧ st.objects.invExt
 
 /-! ## AN4-F.5 (CAP-M05) — Named-projection refactor of `capabilityInvariantBundle`
 
-Mirror of the AN3-B playbook for IPC's `ipcInvariantFull`. The 7-conjunct
-right-associative `∧` chain above is fragile to reason about — consumers
-write `.2.2.2.1` to reach `cdtCompleteness`, `.2.2.2.2.1` for
+Mirror of the AN3-B playbook for IPC's `ipcInvariantFull`. The 6-conjunct
+right-associative `∧` chain above (was 7 before the WS-RC R4.A.6
+close-out retired `cspaceSlotUnique`) is fragile to reason about —
+consumers write `.2.2.1` to reach `cdtCompleteness`, `.2.2.2.1` for
 `cdtAcyclicity`, and so on. The audit's CAP-M05 finding calls for a named
 structure that exposes each field by name.
 
-At v0.30.6 the tuple form remains the primary definition so the 243 existing
+At v0.30.6 the tuple form remains the primary definition so the existing
 consumer sites do not have to migrate in a single commit. The named
 structure below is **derived** from the tuple via a bidirectional bridge
 (`capabilityInvariantBundle_iff_CapabilityInvariantBundle`), and each field
 has a `@[simp]` projection abbrev so consumers can migrate incrementally —
-`bundle.cdtCompleteness` replaces `bundle.2.2.2.1`, and `simp` unfolds the
+`bundle.cdtCompleteness` replaces `bundle.2.2.1`, and `simp` unfolds the
 abbrev to the underlying tuple projection automatically.
 
 A follow-up workstream (AN4-F.5.3..F.5.6, tracked for a subsequent commit
@@ -208,8 +206,6 @@ acyclicity, depth) plus the underlying `RHTable` kernel-level invariant
 on the object store. The structure is logically equivalent to the
 right-associative tuple form via the bridge below. -/
 structure CapabilityInvariantBundle (st : SystemState) : Prop where
-  /-- Every (cnode, slot) pair appears in at most one CNode slot table. -/
-  slotUnique : cspaceSlotUnique st
   /-- `cspaceLookupSlot` agrees with the direct-object-store projection
       on every present CNode/slot pair. -/
   lookupSound : cspaceLookupSound st
@@ -235,12 +231,12 @@ theorem capabilityInvariantBundle_iff_CapabilityInvariantBundle
     (st : SystemState) :
     capabilityInvariantBundle st ↔ CapabilityInvariantBundle st := by
   constructor
-  · rintro ⟨hU, hS, hB, hComp, hAcyc, hDep, hObj⟩
-    exact { slotUnique := hU, lookupSound := hS, slotCountBounded := hB
+  · rintro ⟨hS, hB, hComp, hAcyc, hDep, hObj⟩
+    exact { lookupSound := hS, slotCountBounded := hB
           , cdtCompleteness := hComp, cdtAcyclicity := hAcyc
           , depthConsistent := hDep, objectsInvExt := hObj }
   · intro h
-    exact ⟨h.slotUnique, h.lookupSound, h.slotCountBounded,
+    exact ⟨h.lookupSound, h.slotCountBounded,
            h.cdtCompleteness, h.cdtAcyclicity, h.depthConsistent,
            h.objectsInvExt⟩
 
@@ -252,33 +248,29 @@ definitional unfolding happens automatically during `simp`-closed goals. -/
 
 namespace capabilityInvariantBundle
 
-/-- Extract `cspaceSlotUnique` from the tuple form. -/
-@[simp] abbrev slotUnique {st : SystemState} (h : capabilityInvariantBundle st) :
-    cspaceSlotUnique st := h.1
-
 /-- Extract `cspaceLookupSound` from the tuple form. -/
 @[simp] abbrev lookupSound {st : SystemState} (h : capabilityInvariantBundle st) :
-    cspaceLookupSound st := h.2.1
+    cspaceLookupSound st := h.1
 
 /-- Extract `cspaceSlotCountBounded` from the tuple form. -/
 @[simp] abbrev slotCountBounded {st : SystemState} (h : capabilityInvariantBundle st) :
-    cspaceSlotCountBounded st := h.2.2.1
+    cspaceSlotCountBounded st := h.2.1
 
 /-- Extract `cdtCompleteness` from the tuple form. -/
 @[simp] abbrev cdtCompleteness {st : SystemState} (h : capabilityInvariantBundle st) :
-    _root_.SeLe4n.Kernel.cdtCompleteness st := h.2.2.2.1
+    _root_.SeLe4n.Kernel.cdtCompleteness st := h.2.2.1
 
 /-- Extract `cdtAcyclicity` from the tuple form. -/
 @[simp] abbrev cdtAcyclicity {st : SystemState} (h : capabilityInvariantBundle st) :
-    _root_.SeLe4n.Kernel.cdtAcyclicity st := h.2.2.2.2.1
+    _root_.SeLe4n.Kernel.cdtAcyclicity st := h.2.2.2.1
 
 /-- Extract `cspaceDepthConsistent` from the tuple form. -/
 @[simp] abbrev depthConsistent {st : SystemState} (h : capabilityInvariantBundle st) :
-    cspaceDepthConsistent st := h.2.2.2.2.2.1
+    cspaceDepthConsistent st := h.2.2.2.2.1
 
 /-- Extract `st.objects.invExt` from the tuple form. -/
 @[simp] abbrev objectsInvExt {st : SystemState} (h : capabilityInvariantBundle st) :
-    st.objects.invExt := h.2.2.2.2.2.2
+    st.objects.invExt := h.2.2.2.2.2
 
 end capabilityInvariantBundle
 
@@ -338,37 +330,138 @@ caller cannot fabricate a token by re-proving the post-state's observable
 facts, because the existential demands a concrete cleanup-hook discharge
 witness from a prior state. -/
 
-/-- WS-RC R4.B: refinement witness that `lifecyclePreRetypeCleanup` has
-observably executed for `target` and produced post-cleanup state `st`.
+/-- WS-RC R4.B (B1 close-out, private-structure backing): structurally
+opaque witness that `lifecyclePreRetypeCleanup` observably executed at
+state `st` for `target`.
 
-The Prop is inhabited iff there exists a pre-state `stPre` and a pair of
-KernelObjects `(currentObj, newObj)` for which the cleanup hook returned
-`.ok st`. Manual fabrication is structurally infeasible: the only public
-introduction site is `ScrubToken.fromCleanup`, which demands such a
-witness as an argument. A future refactor that drops the cleanup hook
-fails the elaboration of every caller site that needs to construct a
-`RetypeTarget` (since the token cannot be produced).
+The structure's constructor `private mk ::` is file-private, so external
+code cannot directly inhabit `ScrubTokenImpl`.  The only public
+introduction route for a `ScrubToken` is `ScrubToken.fromCleanup`, which
+demands a concrete `lifecyclePreRetypeCleanup ... = .ok ...` equation as
+its argument.
 
-This is the fourth conjunct of `cleanupHookDischarged`; combined with the
+This codifies the "no-bypass" property structurally: a refactor that
+fabricates a `ScrubToken` without invoking the cleanup pipeline fails to
+elaborate (it cannot wrap arbitrary observations in `ScrubTokenImpl`
+without producing a real cleanup witness). -/
+private structure ScrubTokenImpl (st : SystemState) (target : SeLe4n.ObjId) where
+  -- Constructor is `mk` with file-private visibility inherited from the
+  -- `private structure` declaration.  External code cannot reference
+  -- this type by name (the `private` modifier blocks it) and therefore
+  -- cannot invoke the constructor via anonymous-constructor `⟨...⟩`
+  -- syntax, since the anonymous constructor's resolution requires
+  -- naming the structure type.  Within this file (`Defs.lean`), only
+  -- `ScrubToken.fromCleanup` constructs values of this type; the
+  -- inhabitation route is therefore unique.
+  mk ::
+  /-- The pre-cleanup state from which the recorded cleanup invocation
+      began. -/
+  stPre : SystemState
+  /-- The kernel object stored at `target` in `stPre`. -/
+  currentObj : KernelObject
+  /-- The replacement kernel object that the cleanup pipeline was
+      preparing to install at `target`. -/
+  newObj : KernelObject
+  /-- The discharge equation: `lifecyclePreRetypeCleanup` succeeded at
+      `stPre` for `target` and returned the post-cleanup state `st`. -/
+  hCleanup : SeLe4n.Kernel.lifecyclePreRetypeCleanup stPre target
+    currentObj newObj = .ok st
+
+/-- WS-RC R4.B (B1 close-out): refinement witness that
+`lifecyclePreRetypeCleanup` has observably executed for `target` and
+produced post-cleanup state `st`.
+
+The Prop is inhabited iff some `ScrubTokenImpl st target` value exists.
+Manual fabrication is structurally infeasible because `ScrubTokenImpl`'s
+constructor is `private mk ::` — external code cannot wrap an arbitrary
+cleanup proof; the only public inhabitation route is
+`ScrubToken.fromCleanup`, which demands the canonical
+`lifecyclePreRetypeCleanup ... = .ok` witness from a prior state.
+
+This is the third conjunct of `cleanupHookDischarged`; combined with the
 two earlier observable conjuncts (object-type metadata consistency and
 no-stale-scheduler-references), the whole predicate cannot be discharged
 without invoking the cleanup pipeline. -/
 def ScrubToken (st : SystemState) (target : SeLe4n.ObjId) : Prop :=
-  ∃ (stPre : SystemState) (currentObj newObj : KernelObject),
-    SeLe4n.Kernel.lifecyclePreRetypeCleanup stPre target currentObj newObj = .ok st
+  Nonempty (ScrubTokenImpl st target)
 
-/-- WS-RC R4.B: the canonical `ScrubToken` introduction site. Given a
-successful `lifecyclePreRetypeCleanup` outcome, witness the token at the
-post-cleanup state. This is the **only** public route to a `ScrubToken`;
-external callers must produce a concrete cleanup invocation rather than
-proving the token directly via state observations. -/
+/-- WS-RC R4.B (B1 close-out): the canonical `ScrubToken` introduction
+site. Given a successful `lifecyclePreRetypeCleanup` outcome, witness the
+token at the post-cleanup state. This is the **only** public route to a
+`ScrubToken`; external callers must produce a concrete cleanup invocation
+rather than proving the token directly via state observations. -/
 theorem ScrubToken.fromCleanup
     {stPre stClean : SystemState} {target : SeLe4n.ObjId}
     {currentObj newObj : KernelObject}
     (hCleanup : SeLe4n.Kernel.lifecyclePreRetypeCleanup
       stPre target currentObj newObj = .ok stClean) :
     SeLe4n.Kernel.ScrubToken stClean target :=
-  ⟨stPre, currentObj, newObj, hCleanup⟩
+  ⟨{ stPre := stPre, currentObj := currentObj, newObj := newObj,
+     hCleanup := hCleanup }⟩
+
+/-- WS-RC R4.B.2 (B2 close-out): tokenized form of
+`lifecyclePreRetypeCleanup`.  Returns the post-cleanup state paired with a
+`ScrubToken` proving that the cleanup pipeline produced it.
+
+The returned `Subtype` carries the post-state alongside its matching
+token (the token's type depends on the value of the post-state, hence
+the `Subtype` rather than a plain product).  Callers that need to
+construct a `RetypeTarget` consume the token via `mkRetypeTarget`
+(WS-RC R4.B.3); callers that only need the post-state can use the bare
+`lifecyclePreRetypeCleanup` directly.
+
+The wrapper formulation avoids the recursive-fixpoint construction
+problem inherent in a direct return-type change of
+`lifecyclePreRetypeCleanup` — the bare function remains the canonical
+proof-side entry point, and the tokenized form is layered on top via
+`ScrubToken.fromCleanup`. -/
+def lifecyclePreRetypeCleanupWithToken
+    (st : SystemState) (target : SeLe4n.ObjId)
+    (currentObj newObj : KernelObject) :
+    Except KernelError
+      { stClean : SystemState // SeLe4n.Kernel.ScrubToken stClean target } :=
+  match h : SeLe4n.Kernel.lifecyclePreRetypeCleanup st target currentObj newObj with
+  | .error e => .error e
+  | .ok stClean => .ok ⟨stClean, SeLe4n.Kernel.ScrubToken.fromCleanup h⟩
+
+/-- WS-RC R4.B.2 (B2 close-out) bridge: the `WithToken` form is
+equivalent to the bare form on the state component.  Use when porting
+preservation proofs from the bare form to the tokenized form. -/
+theorem lifecyclePreRetypeCleanupWithToken_state_eq
+    {st : SystemState} {target : SeLe4n.ObjId}
+    {currentObj newObj : KernelObject}
+    {stClean : SystemState}
+    {token : SeLe4n.Kernel.ScrubToken stClean target}
+    (hWT : lifecyclePreRetypeCleanupWithToken st target currentObj newObj
+        = .ok ⟨stClean, token⟩) :
+    SeLe4n.Kernel.lifecyclePreRetypeCleanup st target currentObj newObj
+        = .ok stClean := by
+  unfold lifecyclePreRetypeCleanupWithToken at hWT
+  split at hWT
+  · cases hWT
+  · case _ stClean' hBare =>
+    -- `hWT : .ok ⟨stClean', ScrubToken.fromCleanup hBare⟩ = .ok ⟨stClean, token⟩`
+    -- Extract `stClean' = stClean` via `Except.ok.injEq` + `Subtype` projection.
+    have hEq := Except.ok.inj hWT
+    have hStEq : stClean' = stClean := congrArg Subtype.val hEq
+    subst hStEq
+    exact hBare
+
+/-- WS-RC R4.B.2 (B2 close-out): the `.error` case of the tokenized
+wrapper agrees with the bare form on the error value.  Companion to
+`lifecyclePreRetypeCleanupWithToken_state_eq`. -/
+theorem lifecyclePreRetypeCleanupWithToken_error_eq
+    {st : SystemState} {target : SeLe4n.ObjId}
+    {currentObj newObj : KernelObject} {e : KernelError}
+    (hWT : lifecyclePreRetypeCleanupWithToken st target currentObj newObj
+        = .error e) :
+    SeLe4n.Kernel.lifecyclePreRetypeCleanup st target currentObj newObj
+        = .error e := by
+  unfold lifecyclePreRetypeCleanupWithToken at hWT
+  split at hWT
+  · case _ e' hBare =>
+    cases hWT; exact hBare
+  · cases hWT
 
 /-- AN4-F.4 (CAP-M04) + WS-RC R4.B: Predicate witnessing that the cleanup
 hook has been discharged for `target`. The conjunction is now four-fold:
@@ -401,6 +494,41 @@ post-scrub state alone is no longer sufficient. -/
 structure RetypeTarget (st : SystemState) where
   id : SeLe4n.ObjId
   cleanupHookDischarged : SeLe4n.Kernel.cleanupHookDischarged st id
+
+/-- WS-RC R4.B.3 (B3 close-out): smart constructor for `RetypeTarget`
+that takes the three `cleanupHookDischarged` conjuncts and produces a
+`RetypeTarget st` whose `id = target`.
+
+The three explicit arguments mirror the structural conjuncts of
+`cleanupHookDischarged`:
+1. `hTypeMeta` — lifecycle object-type metadata matches the stored variant.
+2. `hNoStaleRefs` — no stale scheduler-queue references point at the target.
+3. `token` — the `ScrubToken` witness produced by `ScrubToken.fromCleanup`
+   on a successful `lifecyclePreRetypeCleanup` outcome.
+
+Callers obtaining the token via `lifecyclePreRetypeCleanupWithToken` can
+feed the third component directly without re-deriving the cleanup
+witness; the structural opacity of `ScrubToken` ensures the token's
+provenance is auditable. -/
+def mkRetypeTarget (st : SystemState) (target : SeLe4n.ObjId)
+    (hTypeMeta : ∀ obj, st.objects[target]? = some obj →
+      SystemState.lookupObjectTypeMeta st target = some obj.objectType)
+    (hNoStaleRefs : ∀ tcb, st.objects[target]? = some (.tcb tcb) →
+      ¬ (tcb.tid ∈ st.scheduler.runQueue.flat))
+    (token : SeLe4n.Kernel.ScrubToken st target) :
+    RetypeTarget st :=
+  { id := target,
+    cleanupHookDischarged := ⟨hTypeMeta, hNoStaleRefs, token⟩ }
+
+/-- WS-RC R4.B.3 (B3 close-out): a `RetypeTarget` built via
+`mkRetypeTarget` records the supplied `target` as its `id`. -/
+@[simp] theorem mkRetypeTarget_id (st : SystemState) (target : SeLe4n.ObjId)
+    (hTypeMeta : ∀ obj, st.objects[target]? = some obj →
+      SystemState.lookupObjectTypeMeta st target = some obj.objectType)
+    (hNoStaleRefs : ∀ tcb, st.objects[target]? = some (.tcb tcb) →
+      ¬ (tcb.tid ∈ st.scheduler.runQueue.flat))
+    (token : SeLe4n.Kernel.ScrubToken st target) :
+    (mkRetypeTarget st target hTypeMeta hNoStaleRefs token).id = target := rfl
 
 /-- WS-RC R4.B (no-bypass witness): every constructed `RetypeTarget`
 carries an opaque `ScrubToken` whose existence proves the cleanup hook
@@ -516,23 +644,23 @@ theorem lifecycleCapabilityStaleAuthorityInvariant_of_bundles
 
 theorem cspaceSlotCountBounded_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    cspaceSlotCountBounded st := hInv.2.2.1
+    cspaceSlotCountBounded st := hInv.2.1
 
 theorem cdtCompleteness_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    cdtCompleteness st := hInv.2.2.2.1
+    cdtCompleteness st := hInv.2.2.1
 
 theorem cdtAcyclicity_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    cdtAcyclicity st := hInv.2.2.2.2.1
+    cdtAcyclicity st := hInv.2.2.2.1
 
 theorem cspaceDepthConsistent_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    cspaceDepthConsistent st := hInv.2.2.2.2.2.1
+    cspaceDepthConsistent st := hInv.2.2.2.2.1
 
 theorem objects_invExt_of_capabilityInvariantBundle
     (st : SystemState) (hInv : capabilityInvariantBundle st) :
-    st.objects.invExt := hInv.2.2.2.2.2.2
+    st.objects.invExt := hInv.2.2.2.2.2
 
 -- ============================================================================
 -- WS-H4/M-G02: Transfer theorems for cdtMintCompleteness
@@ -908,22 +1036,24 @@ private theorem CNode.remove_radixWidth_eq (cn : CNode) (slot : SeLe4n.Slot) :
 
 private theorem CNode.remove_slots_sub (cn : CNode) (slot : SeLe4n.Slot)
     (hUniq : cn.slotsUnique) :
-    ∀ (s : SeLe4n.Slot) (cap : Capability), (cn.remove slot).slots[s]? = some cap → cn.slots[s]? = some cap := by
+    ∀ (s : SeLe4n.Slot) (cap : Capability),
+      (cn.remove slot).slots.get? s = some cap → cn.slots.get? s = some cap := by
   intro s cap hLookup
-  simp only [CNode.remove] at hLookup
-  -- Convert [·]? bracket notation to .get? for bridge lemma compatibility
-  change (cn.slots.erase slot).get? s = some cap at hLookup
+  simp only [CNode.remove, SeLe4n.UniqueSlotMap.get?,
+    SeLe4n.UniqueSlotMap.erase] at hLookup
   by_cases h : (slot == s) = true
   · -- s = slot: erase returns none, contradicting some cap
     have hEq : slot = s := eq_of_beq h
     rw [← hEq] at hLookup
-    have := SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self cn.slots slot hUniq.1
+    have := SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_self cn.slots.table slot hUniq.1
     rw [this] at hLookup; exact absurd hLookup (by simp)
   · -- s ≠ slot: erase preserves lookup
     have hNe : slot ≠ s := fun heq => h (beq_iff_eq.mpr heq)
-    have := SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K cn.slots slot s
+    have := SeLe4n.Kernel.RobinHood.RHTable.getElem?_erase_ne_K cn.slots.table slot s
       (fun hb => hNe (eq_of_beq hb)) hUniq
-    rw [this] at hLookup; change cn.slots.get? s = some cap at hLookup; exact hLookup
+    rw [this] at hLookup
+    show cn.slots.table.get? s = some cap
+    exact hLookup
 
 /-- WS-H13: CNode.revokeTargetLocal preserves depth/guardWidth/radixWidth and has slot subset. -/
 private theorem CNode.revokeTargetLocal_depth_eq (cn : CNode) (slot : SeLe4n.Slot) (target : CapTarget) :
@@ -937,11 +1067,13 @@ private theorem CNode.revokeTargetLocal_radixWidth_eq (cn : CNode) (slot : SeLe4
 
 private theorem CNode.revokeTargetLocal_slots_sub (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
     (hUniq : cn.slotsUnique) :
-    ∀ (s : SeLe4n.Slot) (cap : Capability), (cn.revokeTargetLocal sourceSlot target).slots[s]? = some cap → cn.slots[s]? = some cap := by
+    ∀ (s : SeLe4n.Slot) (cap : Capability),
+      (cn.revokeTargetLocal sourceSlot target).slots.get? s = some cap →
+      cn.slots.get? s = some cap := by
   intro s cap hLookup
-  simp only [CNode.revokeTargetLocal] at hLookup
-  change (cn.slots.filter (fun s c => s == sourceSlot || !(c.target == target))).get? s = some cap at hLookup
-  exact SeLe4n.Kernel.RobinHood.RHTable.filter_get_subset cn.slots _ s cap hUniq.1 hLookup
+  simp only [CNode.revokeTargetLocal, SeLe4n.UniqueSlotMap.get?,
+    SeLe4n.UniqueSlotMap.filter] at hLookup
+  exact SeLe4n.Kernel.RobinHood.RHTable.filter_get_subset cn.slots.table _ s cap hUniq.1 hLookup
 
 /-- WS-H13: CNode.insert preserves depth/guardWidth/radixWidth. -/
 private theorem CNode.insert_depth_eq (cn : CNode) (slot : SeLe4n.Slot) (cap : Capability) :

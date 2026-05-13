@@ -130,7 +130,7 @@ private def mkEmptyCNode (depth : Nat := 16) : CNode :=
     guardWidth := 0
     guardValue := 0
     radixWidth := 16
-    slots := SeLe4n.Kernel.RobinHood.RHTable.empty 16 }
+    slots := SeLe4n.UniqueSlotMap.empty }
 
 /-- Build a `SyscallDecodeResult` directly so decode-helper rows (rights >
 0x1F, etc.) do not need a register file.  `inlineCount = msgRegs.size` keeps
@@ -549,7 +549,7 @@ private def row_invalidCapability_send_to_nonEndpoint : KernelErrorRejection :=
                      " present but not an Endpoint (e.g., a Notification)"
     runScenario   := fun _ =>
       let endpointId : ObjId := ObjId.ofNat 140
-      let stuff : Notification := { state := .idle, waitingThreads := [] }
+      let stuff : Notification := { state := .idle, waitingThreads := SeLe4n.NoDupList.empty }
       let st : SystemState := { (default : SystemState) with
         objects := (default : SystemState).objects.insert endpointId
           (.notification stuff) }
@@ -905,7 +905,7 @@ private def row_untypedTypeMismatch : KernelErrorRejection :=
       let childId : ObjId := ObjId.ofNat 1001
       let cnodeId : ObjId := ObjId.ofNat 1002
       -- Source is a Notification, NOT an Untyped — triggers type mismatch.
-      let n : Notification := { state := .idle, waitingThreads := [] }
+      let n : Notification := { state := .idle, waitingThreads := SeLe4n.NoDupList.empty }
       -- Need a CSpace with the authority cap; build a minimal CNode.
       let authCap : Capability :=
         { target := .object untypedId
