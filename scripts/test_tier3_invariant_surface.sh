@@ -1128,7 +1128,9 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.schedContextBindingConsistent
 #check @SeLe4n.Kernel.effectiveParamsMatchRunQueue
 #check @SeLe4n.Kernel.schedulerInvariantBundleExtended
-#check @SeLe4n.Kernel.effectivePriority
+-- WS-RC R5.C.1: effectivePriority retired (full deprecation); only
+-- effectiveSchedParams remains as the canonical scheduling-param API.
+#check @SeLe4n.Kernel.effectiveSchedParams
 #check @SeLe4n.Kernel.hasSufficientBudget
 #check @SeLe4n.Kernel.chooseThreadEffective
 #check @SeLe4n.Kernel.timerTickBudget
@@ -1138,7 +1140,7 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.processReplenishmentsDue
 #check @SeLe4n.Kernel.chooseThreadEffective_state_unchanged
 #check @SeLe4n.Kernel.budgetPositive_subset
-#check @SeLe4n.Kernel.effectivePriority_unbound_legacy
+#check @SeLe4n.Kernel.effectiveSchedParams_unbound_legacy
 #check @SeLe4n.Kernel.hasSufficientBudget_unbound_legacy
 #check @SeLe4n.Kernel.consumeBudget_preserves_schedContextWellFormed_full
 #check @SeLe4n.Kernel.scheduleReplenishment_preserves_schedContextWellFormed_full

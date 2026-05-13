@@ -363,4 +363,71 @@ def countTCBs (st : SystemState) : Nat :=
     | some (KernelObject.tcb _) => acc + 1
     | _ => acc) 0
 
+-- ============================================================================
+-- WS-RC R5.B.2 / Phase P1: Subgraph acyclicity foundational lemma
+-- ============================================================================
+
+/-- WS-RC R5.B.2 / Phase P1: The post-state blocking chain is a prefix of the
+    pre-state chain, when every per-thread `blockingServer` in the post-state
+    is either `none` or equal to its pre-state value.
+
+    Operational intuition: the post-state's blocking graph is a strict
+    subgraph of the pre-state's (no new edges, possibly fewer).  A walk
+    from `tid` in the subgraph follows the same path as in the original
+    until it dead-ends at a thread whose post-state `blockingServer` is
+    `none`. -/
+theorem blockingChain_subgraph_prefix
+    (st st' : SystemState) (tid : ThreadId) (fuel : Nat)
+    (hServer : ∀ t,
+      blockingServer st' t = none ∨
+      blockingServer st' t = blockingServer st t) :
+    ∀ x, x ∈ blockingChain st' tid fuel → x ∈ blockingChain st tid fuel := by
+  induction fuel generalizing tid with
+  | zero =>
+    intro x hMem
+    simp [blockingChain] at hMem
+  | succ n ih =>
+    intro x hMem
+    rw [blockingChain_step] at hMem
+    rcases hServer tid with hNone | hEq
+    · -- post-state blockingServer at tid is none → empty chain → contradiction
+      rw [hNone] at hMem
+      simp at hMem
+    · -- post-state blockingServer at tid = pre-state's
+      rw [hEq] at hMem
+      cases hSrv : blockingServer st tid with
+      | none =>
+        rw [hSrv] at hMem
+        simp at hMem
+      | some server =>
+        rw [hSrv] at hMem
+        -- hMem : x ∈ server :: blockingChain st' server n
+        simp only [List.mem_cons] at hMem
+        rw [blockingChain_step, hSrv]
+        simp only [List.mem_cons]
+        rcases hMem with hEqHead | hTail
+        · exact Or.inl hEqHead
+        · exact Or.inr (ih server x hTail)
+
+/-- WS-RC R5.B.2 / Phase P1: If the post-state's blocking graph is a
+    subgraph of the pre-state's (each node either has no post-state server
+    or the same server as pre-state), and the object-index length is
+    preserved, then post-state acyclicity follows from pre-state acyclicity.
+
+    Proof: pre-state `tid ∉ blockingChain st tid fuel`, and post-state
+    `blockingChain st' tid fuel ⊆ blockingChain st tid fuel` by
+    `blockingChain_subgraph_prefix`, so `tid ∉ blockingChain st' tid fuel`. -/
+theorem blockingAcyclic_of_subgraph
+    (st st' : SystemState)
+    (hPre : blockingAcyclic st)
+    (hServer : ∀ tid,
+      blockingServer st' tid = none ∨
+      blockingServer st' tid = blockingServer st tid)
+    (hObjLen : st'.objectIndex.length = st.objectIndex.length) :
+    blockingAcyclic st' := by
+  intro tid hMem
+  -- Rewrite the fuel parameter to match the pre-state chain
+  rw [show st'.objectIndex.length = st.objectIndex.length from hObjLen] at hMem
+  exact hPre tid (blockingChain_subgraph_prefix st st' tid _ hServer tid hMem)
+
 end SeLe4n.Kernel.PriorityInheritance

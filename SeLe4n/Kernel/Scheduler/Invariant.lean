@@ -919,4 +919,292 @@ theorem schedulerInvariantBundleExtended_to_boundThreadDomainConsistent {st : Sy
     (h : schedulerInvariantBundleExtended st) : boundThreadDomainConsistent st :=
   h.2.2.2.2.2.2.2
 
+-- ============================================================================
+-- WS-RC R5.G.3 / Phase P2: boundThreadDomainConsistent frame lemmas
+-- ============================================================================
+--
+-- These frame lemmas characterise when an `objects` table update preserves
+-- `boundThreadDomainConsistent`.  They are the foundational building blocks
+-- for `schedContextConfigure_preserves_boundThreadDomainConsistent` (Phase
+-- R2), which composes them through the operation's nested writes.
+
+/-- WS-RC R5.G.3 / Phase P2: An object-table update at an ObjId of a NON-TCB,
+    NON-SC object preserves `boundThreadDomainConsistent`.
+
+    The invariant body case-splits on `objects[tid.toObjId]?` and (within
+    `.tcb`) on `objects[scId.toObjId]?`.  Inserting a non-TCB, non-SC
+    object at `oid`:
+    - At `oid`, the post-state lookup returns the non-TCB / non-SC object;
+      the outer match falls into the `_ => True` catch-all, vacuous.
+    - Elsewhere, `getElem?_insert_ne` gives the pre-state result.
+
+    Symmetrically for `scId.toObjId`: at `oid` the inner match falls into
+    `_ => True`. -/
+theorem objects_insert_non_tcb_non_sc_preserves_boundThreadDomainConsistent
+    (st : SystemState) (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (hNotTcb : ∀ tcb, obj ≠ .tcb tcb)
+    (hNotSc : ∀ sc, obj ≠ .schedContext sc)
+    (hObjInv : st.objects.invExt)
+    (hDom : boundThreadDomainConsistent st) :
+    boundThreadDomainConsistent
+      { st with objects := st.objects.insert oid obj } := by
+  intro tid scId
+  -- Case-split on whether `tid.toObjId = oid` and `scId.toObjId = oid`.
+  by_cases hTidEq : tid.toObjId = oid
+  · -- post-state at tid.toObjId is `obj`; not a TCB → outer match `_ => True`.
+    show (match ({ st with objects := st.objects.insert oid obj }.objects[tid.toObjId]? :
+              Option KernelObject) with
+          | some (.tcb tcb) => _
+          | _ => True)
+    have hLook : ({ st with objects := st.objects.insert oid obj }.objects)[tid.toObjId]?
+                  = some obj := by
+      show (st.objects.insert oid obj)[tid.toObjId]? = some obj
+      have hShow : (st.objects.insert oid obj)[tid.toObjId]? =
+                    (st.objects.insert oid obj).get? tid.toObjId := rfl
+      rw [hShow, hTidEq]
+      exact RobinHood.RHTable.getElem?_insert_self st.objects oid obj hObjInv
+    rw [hLook]
+    cases hObj : obj with
+    | tcb t => exact absurd hObj (hNotTcb t)
+    | _ => simp
+  · -- post-state at tid.toObjId equals pre-state at tid.toObjId.
+    have hTidNe : ¬(oid == tid.toObjId) = true := by
+      intro h
+      apply hTidEq
+      exact (beq_iff_eq.mp h).symm
+    have hLookTid : ({ st with objects := st.objects.insert oid obj }.objects)[tid.toObjId]?
+                    = st.objects[tid.toObjId]? := by
+      show (st.objects.insert oid obj)[tid.toObjId]? = st.objects[tid.toObjId]?
+      exact RobinHood.RHTable.getElem?_insert_ne st.objects oid tid.toObjId obj hTidNe hObjInv
+    show (match ({ st with objects := st.objects.insert oid obj }.objects[tid.toObjId]? :
+              Option KernelObject) with
+          | some (.tcb tcb) => _
+          | _ => True)
+    rw [hLookTid]
+    cases hPre : (st.objects[tid.toObjId]? : Option KernelObject) with
+    | none => simp
+    | some preObj =>
+      cases preObj with
+      | tcb tcb =>
+        simp only
+        intro hBind
+        -- Now check `scId.toObjId`:
+        by_cases hScEq : scId.toObjId = oid
+        · -- post-state at scId.toObjId is `obj`; not an SC → inner match `_ => True`.
+          show (match ({ st with objects := st.objects.insert oid obj }.objects[scId.toObjId]? :
+                    Option KernelObject) with
+                | some (.schedContext sc) => _
+                | _ => True)
+          have hLookSc : ({ st with objects := st.objects.insert oid obj }.objects)[scId.toObjId]?
+                          = some obj := by
+            show (st.objects.insert oid obj)[scId.toObjId]? = some obj
+            have hShow : (st.objects.insert oid obj)[scId.toObjId]? =
+                          (st.objects.insert oid obj).get? scId.toObjId := rfl
+            rw [hShow, hScEq]
+            exact RobinHood.RHTable.getElem?_insert_self st.objects oid obj hObjInv
+          rw [hLookSc]
+          cases hObj : obj with
+          | schedContext sc => exact absurd hObj (hNotSc sc)
+          | _ => simp
+        · -- post-state at scId.toObjId equals pre-state at scId.toObjId.
+          have hScNe : ¬(oid == scId.toObjId) = true := by
+            intro h; apply hScEq; exact (beq_iff_eq.mp h).symm
+          have hLookSc : ({ st with objects := st.objects.insert oid obj }.objects)[scId.toObjId]?
+                          = st.objects[scId.toObjId]? := by
+            show (st.objects.insert oid obj)[scId.toObjId]? = st.objects[scId.toObjId]?
+            exact RobinHood.RHTable.getElem?_insert_ne st.objects oid scId.toObjId obj hScNe hObjInv
+          show (match ({ st with objects := st.objects.insert oid obj }.objects[scId.toObjId]? :
+                    Option KernelObject) with
+                | some (.schedContext sc) => _
+                | _ => True)
+          rw [hLookSc]
+          -- Apply pre-state invariant
+          have hPreInv : boundThreadDomainConsistent st := hDom
+          have hLookTcb : st.objects[tid.toObjId]? = some (.tcb tcb) := hPre
+          have hAtPair := hPreInv tid scId
+          rw [hLookTcb] at hAtPair
+          simp only at hAtPair
+          exact hAtPair hBind
+      | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
+        | schedContext _ => simp
+
+/-- WS-RC R5.G.3 / Phase P2: A joint update that rewrites a SchedContext's
+    `domain` to `⟨domain⟩` AND rewrites its bound TCB's `domain` to
+    `⟨domain⟩` (synchronously) preserves `boundThreadDomainConsistent`,
+    under additional hypotheses:
+
+    - The SC's bound thread IS the TCB being rewritten.
+    - The TCB's `schedContextBinding` points back at this SC.
+    - The SC and TCB live at distinct ObjIds.
+    - The pre-state satisfies `boundThreadDomainConsistent` AND
+      `schedContextBindingConsistent` (the latter rules out a
+      dangling-binding corner case).
+
+    This is the workhorse frame lemma for R5.G.3's substantive
+    preservation proof. -/
+theorem objects_update_sync_domain_preserves_boundThreadDomainConsistent
+    (st : SystemState) (scObjId : SeLe4n.ObjId) (sc : SchedContext)
+    (boundTid : SeLe4n.ThreadId) (boundTcb : TCB) (domain : Nat)
+    (sc' : SchedContext) (tcb' : TCB)
+    (hSc : st.objects[scObjId]? = some (.schedContext sc))
+    (hSCBT : sc.boundThread = some boundTid)
+    (_hTcb : st.objects[boundTid.toObjId]? = some (.tcb boundTcb))
+    (hTcbBind : boundTcb.schedContextBinding = .bound ⟨scObjId.toNat⟩)
+    (hNeq : boundTid.toObjId ≠ scObjId)
+    (hSCDom' : sc'.domain = ⟨domain⟩)
+    (_hSCBT' : sc'.boundThread = sc.boundThread)
+    (hTcbDom' : tcb'.domain = ⟨domain⟩)
+    (hTcbBind' : tcb'.schedContextBinding = boundTcb.schedContextBinding)
+    (hObjInv : st.objects.invExt)
+    (hObjInvAfterSc : (st.objects.insert scObjId (.schedContext sc')).invExt)
+    (hDom : boundThreadDomainConsistent st)
+    (hBind : schedContextBindingConsistent st) :
+    boundThreadDomainConsistent
+      { st with objects :=
+        (st.objects.insert scObjId (.schedContext sc')).insert boundTid.toObjId (.tcb tcb') } := by
+  intro tid scId
+  -- The post-state's objects are `(insert scObjId sc').insert boundTid.toObjId tcb'`.
+  -- We case-split on `tid.toObjId` and `scId.toObjId` against `boundTid.toObjId` and
+  -- `scObjId`.
+  -- First, characterise lookups in the post-state's `objects`.
+  let obj2 := (st.objects.insert scObjId (.schedContext sc')).insert boundTid.toObjId (.tcb tcb')
+  have hLookBound : obj2[boundTid.toObjId]? = some (.tcb tcb') := by
+    show (obj2).get? boundTid.toObjId = _
+    exact RobinHood.RHTable.getElem?_insert_self _ boundTid.toObjId (.tcb tcb') hObjInvAfterSc
+  have hLookSc : obj2[scObjId]? = some (.schedContext sc') := by
+    show (obj2).get? scObjId = _
+    have hNeBE : ¬(boundTid.toObjId == scObjId) = true := by
+      intro h
+      apply hNeq
+      exact beq_iff_eq.mp h
+    rw [RobinHood.RHTable.getElem?_insert_ne _ boundTid.toObjId scObjId (.tcb tcb') hNeBE hObjInvAfterSc]
+    exact RobinHood.RHTable.getElem?_insert_self st.objects scObjId (.schedContext sc') hObjInv
+  have hLookOther : ∀ (k : SeLe4n.ObjId),
+      k ≠ boundTid.toObjId → k ≠ scObjId →
+      obj2[k]? = st.objects[k]? := by
+    intro k hkBd hkSc
+    show (obj2).get? k = _
+    have hNeBd : ¬(boundTid.toObjId == k) = true := by
+      intro h; apply hkBd; exact (beq_iff_eq.mp h).symm
+    have hNeSc : ¬(scObjId == k) = true := by
+      intro h; apply hkSc; exact (beq_iff_eq.mp h).symm
+    rw [RobinHood.RHTable.getElem?_insert_ne _ boundTid.toObjId k (.tcb tcb') hNeBd hObjInvAfterSc,
+        RobinHood.RHTable.getElem?_insert_ne _ scObjId k (.schedContext sc') hNeSc hObjInv]
+    rfl
+  -- Case on tid.toObjId vs (boundTid.toObjId, scObjId).
+  by_cases hTidBd : tid.toObjId = boundTid.toObjId
+  · -- tid = boundTid: post-state TCB is tcb'.
+    have hLookTid : obj2[tid.toObjId]? = some (.tcb tcb') := by
+      rw [hTidBd]; exact hLookBound
+    show (match (obj2[tid.toObjId]? : Option KernelObject) with
+          | some (.tcb tcb) => _
+          | _ => True)
+    rw [hLookTid]
+    simp only
+    intro hBindNew
+    -- hBindNew: tcb'.schedContextBinding = .bound scId
+    -- We have tcb'.schedContextBinding = boundTcb.schedContextBinding = .bound ⟨scObjId.toNat⟩
+    rw [hTcbBind', hTcbBind] at hBindNew
+    -- hBindNew : SchedContextBinding.bound ⟨scObjId.toNat⟩ = .bound scId
+    have hScIdEq : scId = ⟨scObjId.toNat⟩ := by
+      injection hBindNew with hScIdEq
+      exact hScIdEq.symm
+    -- Therefore scId.toObjId = scObjId.
+    have hScIdObj : scId.toObjId = scObjId := by
+      rw [hScIdEq]; rfl
+    show (match (obj2[scId.toObjId]? : Option KernelObject) with
+          | some (.schedContext sc) => _
+          | _ => True)
+    have hLookScId : obj2[scId.toObjId]? = some (.schedContext sc') := by
+      rw [hScIdObj]; exact hLookSc
+    rw [hLookScId]
+    simp only
+    -- Goal: tcb'.domain = sc'.domain
+    rw [hTcbDom', hSCDom']
+  · -- tid ≠ boundTid
+    -- Sub-case on tid.toObjId = scObjId:
+    by_cases hTidSc : tid.toObjId = scObjId
+    · -- tid.toObjId = scObjId: post-state is the SC, outer match `_ => True`.
+      have hLookTid : obj2[tid.toObjId]? = some (.schedContext sc') := by
+        rw [hTidSc]; exact hLookSc
+      show (match (obj2[tid.toObjId]? : Option KernelObject) with
+            | some (.tcb tcb) => _
+            | _ => True)
+      rw [hLookTid]; simp
+    · -- tid.toObjId is neither boundTid.toObjId nor scObjId: lookup = pre-state.
+      have hLookTid : obj2[tid.toObjId]? = st.objects[tid.toObjId]? :=
+        hLookOther tid.toObjId hTidBd hTidSc
+      show (match (obj2[tid.toObjId]? : Option KernelObject) with
+            | some (.tcb tcb) => _
+            | _ => True)
+      rw [hLookTid]
+      cases hPreObj : (st.objects[tid.toObjId]? : Option KernelObject) with
+      | none => simp
+      | some preObj =>
+        cases preObj with
+        | tcb otherTcb =>
+          simp only
+          intro hOtherBind
+          -- Need to show: at scId.toObjId, the (otherTcb, sc-in-post-state) pair satisfies domain match.
+          -- Use pre-state invariant on (tid, scId).
+          have hPreAt := hDom tid scId
+          rw [hPreObj] at hPreAt
+          simp only at hPreAt
+          have hPreSubBind := hPreAt hOtherBind
+          -- Now sub-case on scId.toObjId:
+          by_cases hScIdSc : scId.toObjId = scObjId
+          · -- scId.toObjId = scObjId: post-state SC is sc'.
+            -- We need: otherTcb.domain = sc'.domain.
+            -- Pre-state: otherTcb.domain = sc.domain (since pre-state SC at scObjId = sc).
+            -- But sc'.domain = ⟨domain⟩, while sc.domain might differ.
+            -- HOWEVER, by schedContextBindingConsistent, sc.boundThread = some tid.
+            -- But sc.boundThread = some boundTid, so tid = boundTid, contradicting hTidBd.
+            exfalso
+            -- From hOtherBind: otherTcb.schedContextBinding = .bound scId
+            -- scId.toObjId = scObjId means scId = ⟨scObjId.toNat⟩
+            -- So otherTcb.schedContextBinding = .bound ⟨scObjId.toNat⟩
+            -- By schedContextBindingConsistent (forward direction):
+            --   For TCB otherTcb at tid with binding .bound scId,
+            --   ∃ sc'', st.objects[scId.toObjId]? = some (.schedContext sc'') ∧ sc''.boundThread = some tid
+            -- scId.toObjId = scObjId, so by hSc: sc'' = sc.
+            -- So sc.boundThread = some tid, but sc.boundThread = some boundTid.
+            -- So tid = boundTid, contradicting hTidBd.
+            obtain ⟨hBindFwd, _⟩ := hBind
+            have hOtherInStore : st.objects[tid.toObjId]? = some (.tcb otherTcb) := hPreObj
+            have hExists := hBindFwd tid otherTcb hOtherInStore scId hOtherBind
+            obtain ⟨sc'', hScStore, hScBound⟩ := hExists
+            -- scId.toObjId = scObjId, so st.objects[scId.toObjId]? = st.objects[scObjId]? = some (.schedContext sc).
+            have hRewrite : st.objects[scId.toObjId]? = some (.schedContext sc) := by
+              rw [hScIdSc]; exact hSc
+            rw [hRewrite] at hScStore
+            injection hScStore with hScScEq
+            -- hScScEq : (.schedContext sc'' : KernelObject) = .schedContext sc, so sc'' = sc.
+            cases hScScEq
+            -- Now hScBound : sc.boundThread = some tid.
+            rw [hSCBT] at hScBound
+            injection hScBound with hTidEq
+            -- hTidEq : boundTid = tid; so tid = boundTid.
+            exact hTidBd (congrArg ThreadId.toObjId hTidEq.symm)
+          · -- scId.toObjId ≠ scObjId, so look up in pre-state.
+            -- Also need scId.toObjId ≠ boundTid.toObjId? Not necessarily, but if equal then
+            -- post-state would have a TCB, not SC, so inner match falls to `_ => True`.
+            by_cases hScIdBd : scId.toObjId = boundTid.toObjId
+            · -- post-state at scId.toObjId is tcb', not SC.
+              have hLookScId : obj2[scId.toObjId]? = some (.tcb tcb') := by
+                rw [hScIdBd]; exact hLookBound
+              show (match (obj2[scId.toObjId]? : Option KernelObject) with
+                    | some (.schedContext sc) => _
+                    | _ => True)
+              rw [hLookScId]; simp
+            · -- scId.toObjId neither bound nor sc: post-state = pre-state.
+              have hLookScId : obj2[scId.toObjId]? = st.objects[scId.toObjId]? :=
+                hLookOther scId.toObjId hScIdBd hScIdSc
+              show (match (obj2[scId.toObjId]? : Option KernelObject) with
+                    | some (.schedContext sc) => _
+                    | _ => True)
+              rw [hLookScId]
+              exact hPreSubBind
+        | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
+          | schedContext _ => simp
+
 end SeLe4n.Kernel

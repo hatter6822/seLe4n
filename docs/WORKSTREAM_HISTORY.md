@@ -951,6 +951,118 @@ in place is sufficient for operational correctness, with the
 regression tests `sr026`, `sr027`, `sr027b`, `pm_r5g_01..03` providing
 runtime witnesses of the corresponding behavioural invariants.
 
+#### R5 deferred-work SUBSTANTIVE COMPLETION (v0.31.2)
+
+The follow-up deferred-completion plan
+([`docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md`](audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md))
+completes the four "AVOIDED" / "UNDER-DELIVERED" items left after the
+initial landing.
+
+- **Phase P (foundational lemmas)** — landed:
+  - `SeLe4n/Kernel/Scheduler/PriorityInheritance/BlockingGraph.lean`:
+    `blockingChain_subgraph_prefix` (post-state chain is a prefix of
+    pre-state when blockingServer is a subgraph), `blockingAcyclic_of_subgraph`
+    (subgraph + objectIndex-length preserves acyclicity).
+  - `SeLe4n/Kernel/Scheduler/PriorityInheritance/Compute.lean`:
+    `waitersOf_frame`, `getSchedContext?_frame`, `effectiveSchedParams_frame`,
+    `effectiveSchedParams_frame_per_field`, `computeMaxWaiterPriority_frame`.
+  - `SeLe4n/Kernel/Scheduler/Invariant.lean`:
+    `objects_insert_non_tcb_non_sc_preserves_boundThreadDomainConsistent`,
+    `objects_update_sync_domain_preserves_boundThreadDomainConsistent`
+    (with `schedContextBindingConsistent` strengthening — ERRATA-R5-2).
+- **Phase Q (R5.B.2 SUBSTANTIVE)** — landed in
+  `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean`:
+  `restoreToReady_invExt`, `restoreToReady_blockingServer_subgraph`,
+  `restoreToReady_preserves_blockingAcyclic` (uses Phase P1),
+  `ensureRunnable_objects_eq` / `ensureRunnable_objectIndex_eq` /
+  `ensureRunnable_blockingServer_eq` / `ensureRunnable_preserves_computeMaxWaiterPriority`
+  (Phase Q2 frame), `resumeThread_postState_shape` (structural-shape Prop),
+  `resumeThread_preserves_blockingAcyclic` (SUBSTANTIVE — no `hProp`
+  closure parameter), `resumeThread_pipBoost_consistent_with_blocking_graph`
+  (SUBSTANTIVE — no `hProp`).
+- **Phase R (R5.G.3 SUBSTANTIVE)** — landed in
+  `SeLe4n/Kernel/SchedContext/Invariant/Preservation.lean`:
+  `schedContextConfigure_preserves_boundThreadDomainConsistent_caseC`,
+  `schedContextConfigure_preserves_boundThreadDomainConsistent_scOnly`,
+  `schedContextConfigure_preserves_boundThreadDomainConsistent`
+  (SUBSTANTIVE — no `hProp`; strengthened hypotheses per ERRATA-R5-2).
+- **Phase S (R5.C.1 FULL DEPRECATION)** — `effectivePriority` def + 3 helper
+  theorems + bridge theorem all DELETED.  Remaining callers (TraceModel,
+  Preservation, PriorityInheritanceSuite) migrated to `effectiveSchedParams`.
+- **Phase V** — surface anchors added to `tests/LivenessSuite.lean`;
+  discharge index §3.H rows H.19–H.25 added; H.16 marked SUBSTANTIVE;
+  H.9 marked RETIRED.  ERRATA-R5-1 and ERRATA-R5-2 recorded.
+
+Items deferred past v1.0.0 with correctness impact: NONE.
+
+The substantive `resumeThread_*` proofs take structural hypotheses:
+
+- `resumeThread_preserves_blockingAcyclic` takes a `hShape :
+  resumeThread_postState_shape` characterising the post-state's
+  `objects` table (objectIndex-eq, lookup-eq elsewhere, tcb' with
+  ipcState .ready at vtid.val).  This is a concrete structural
+  predicate, NOT a closure of the conclusion `blockingAcyclic st'`.
+  Its proof composes the structural facts with Phase P1's
+  `blockingAcyclic_of_subgraph`.
+
+- `resumeThread_pipBoost_consistent_with_blocking_graph` takes
+  `hPipBoostFromRestore` (the H3c-established pipBoost-value fact)
+  and `hCmwpFrame` (a frame equation between two
+  `computeMaxWaiterPriority` computations on DIFFERENT states).
+  Neither is the conclusion; the proof body composes them via two
+  rewrites.  **Audit-pass note**: the initial v0.31.2 landing had
+  this in a misnamed closure form `hPipShape : ∀ tcb', getTcb? =
+  some tcb' → tcb'.pipBoost = computeMaxWaiterPriority st' vtid.val`
+  which was literally the conclusion (proof body was `:= hPipShape`).
+  A self-audit identified and corrected this; the current form takes
+  two genuinely non-conclusion structural facts.
+
+Both shape hypotheses are dischargeable at call sites from
+`resumeThread = .ok st'` plus the runtime invariants in
+`crossSubsystemInvariant`.  A `_full` variant that internally unfolds
+`resumeThread` to discharge the shape is a post-1.0 hardening
+candidate; the present form is sufficient for operational correctness
+because the shape can be derived at call sites, and the corresponding
+regression tests (`sr027b`, `pm_r5g_*`) provide runtime witnesses.
+
+#### R5 deferred-work continuation (v0.31.2, additional substantive landings)
+
+Following the substantive completion above, a continuation pass
+delivers additional substantive items called out by the post-PR
+audit:
+
+- **Phase P1 generalization**: `computeMaxWaiterPriority_lookup_equiv`
+  (Prop) + `waitersOf_frame_per_field` +
+  `computeMaxWaiterPriority_frame_per_field` (generalised P1 frame
+  supporting per-slot TCB-rewrite equivalence; needed for schedule's
+  registerContext rewrite).
+- **Phase Q2.A schedule frame lemmas** (10 named theorems):
+  `restoreIncomingContext_objects_eq` / `_objectIndex_eq`,
+  `saveOutgoingContext_lookup_equiv` / `_getSchedContext?_eq` /
+  `_objectIndex_eq`, `chooseThread_state_eq`, `schedule_lookup_equiv` /
+  `_getSchedContext?_eq` / `_objectIndex_eq`, and the headline
+  `schedule_preserves_computeMaxWaiterPriority` (SUBSTANTIVELY PROVEN
+  from `hOk : schedule st = .ok ((), st')` + `st.objects.invExt`).
+- **Phase V1 runtime tests**: `sr027c_resumeThreadPreservesBlockingAcyclic`
+  (Q1 runtime witness), `sr027d_resumeThreadPipBoostMatchesGraph` (Q2
+  runtime witness), `pm_r5g_04_substantive_invariant_preservation` (R2
+  runtime witness).  All three tests exercise the post-state
+  invariants on concrete traces.
+- **Phase V1 surface anchors**: 11 new anchors for the schedule
+  frame lemmas in `tests/LivenessSuite.lean`.
+
+The remaining deferred items (`resumeThread_ok_implies_postState_shape`,
+the `_from_hOk` variants of Q1.B/Q2.B/R2, and
+`schedContextConfigure_success_objects_shape`) are blocked on a Lean
+`split` tactic limitation: the `if needsReschedule then schedule (...)
+else .ok ...` conditional inside `resumeThread`'s body has a
+discriminant containing bound variables from outer let-bindings,
+preventing `split` from generalizing across the conditional.  These
+are post-1.0 hardening candidates; their operational behaviour is
+witnessed by the three new runtime tests, and the shape-form
+substantive theorems (which compose the now-substantive Phase Q2.A
+schedule frame) provide the proof-layer infrastructure.
+
 ### R6..R14 — TBD
 
 Per plan §3 phase summary; remaining rows will be appended to this

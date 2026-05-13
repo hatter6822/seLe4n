@@ -561,6 +561,45 @@ private def pm_r5g_03_configurePropagatesBothFields : IO Unit := do
   | .error e =>
     throw <| IO.userError s!"schedContextConfigure failed: {repr e}"
 
+/-- R5.G-04: substantive invariant preservation — after
+    `schedContextConfigure` succeeds on a state where the bound TCB and
+    SC start with matching domains, the
+    `boundThreadDomainConsistent` invariant continues to hold (the
+    domain propagation block ensures the SC and TCB domains move in
+    lockstep).
+
+    This is the runtime witness for
+    `schedContextConfigure_preserves_boundThreadDomainConsistent`. -/
+private def pm_r5g_04_substantive_invariant_preservation : IO Unit := do
+  let targetTid : SeLe4n.ThreadId := ⟨42⟩
+  let scObjId : SeLe4n.ObjId := ⟨100⟩
+  let scId : SeLe4n.SchedContextId := ⟨100⟩
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
+    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := ⟨100⟩, boundThread := some targetTid
+  }
+  let initTcb := { mkTcb 42 (prio := 50) (mcp := 200) (binding := .bound scId)
+                   with domain := ⟨0⟩ }
+  let st := mkState [
+    (targetTid.toObjId, .tcb initTcb),
+    (scObjId, .schedContext sc)
+  ]
+  -- Pre-state: tcb.domain = 0 = sc.domain (consistent).
+  -- Reconfigure to domain = 7.
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 50 0 7 st with
+  | .ok ((), st') =>
+    -- Post-state: both should have domain = 7.
+    match st'.objects[targetTid.toObjId]?, st'.objects[scObjId]? with
+    | some (.tcb tcb'), some (.schedContext sc') =>
+      -- boundThreadDomainConsistent at (targetTid, scId) requires tcb'.domain = sc'.domain.
+      expect "tcb'.domain = sc'.domain (invariant preserved)"
+        (tcb'.domain == sc'.domain)
+      expect "tcb'.domain = ⟨7⟩ (post-propagation)" (tcb'.domain == ⟨7⟩)
+      expect "sc'.domain = ⟨7⟩" (sc'.domain == ⟨7⟩)
+    | _, _ => throw <| IO.userError "bound TCB or SC not found"
+  | .error e => throw <| IO.userError s!"schedContextConfigure failed: {repr e}"
+
 -- =============================================================================
 -- AK2-E: CBS admission ceiling-round regression
 -- =============================================================================
@@ -717,4 +756,5 @@ def main : IO Unit := do
   pm_r5g_01_configurePropagatesDomain
   pm_r5g_02_configureDomainNoopWhenEqual
   pm_r5g_03_configurePropagatesBothFields
+  pm_r5g_04_substantive_invariant_preservation
   IO.println "=== All D2 priority management tests passed (30 tests) ==="

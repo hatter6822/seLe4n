@@ -49,32 +49,29 @@ private def pip001_defaultPipBoostNone : IO Unit := do
   let tcb := mkTcb 1
   expect "pipBoost defaults to none" (tcb.pipBoost == none)
 
--- PIP-002: effectivePriority with no pipBoost returns base priority
-private def pip002_effectivePriorityNoPip : IO Unit := do
+-- PIP-002: effectiveSchedParams with no pipBoost returns base priority
+-- WS-RC R5.C.1 (DEEP-SCH-02): Migrated from `effectivePriority` (Option) to
+-- `effectiveSchedParams` (total triple).  The total form returns the same
+-- triple on unbound threads.
+private def pip002_effectiveSchedParamsNoPip : IO Unit := do
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 (prio := 50)))]
   let tcb := mkTcb 1 (prio := 50)
-  match effectivePriority st tcb with
-  | some (prio, _, _) =>
-    expect "effective priority = base priority" (prio == ⟨50⟩)
-  | none => throw <| IO.userError "effectivePriority returned none"
+  let (prio, _, _) := effectiveSchedParams st tcb
+  expect "effective priority = base priority" (prio == ⟨50⟩)
 
--- PIP-003: effectivePriority with pipBoost returns max(base, boost)
-private def pip003_effectivePriorityWithPip : IO Unit := do
+-- PIP-003: effectiveSchedParams with pipBoost returns max(base, boost)
+private def pip003_effectiveSchedParamsWithPip : IO Unit := do
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 (prio := 30) (pipBoost := some ⟨80⟩)))]
   let tcb := mkTcb 1 (prio := 30) (pipBoost := some ⟨80⟩)
-  match effectivePriority st tcb with
-  | some (prio, _, _) =>
-    expect "effective priority = max(30, 80) = 80" (prio == ⟨80⟩)
-  | none => throw <| IO.userError "effectivePriority returned none"
+  let (prio, _, _) := effectiveSchedParams st tcb
+  expect "effective priority = max(30, 80) = 80" (prio == ⟨80⟩)
 
--- PIP-004: effectivePriority with lower pipBoost keeps base
-private def pip004_effectivePriorityLowerPip : IO Unit := do
+-- PIP-004: effectiveSchedParams with lower pipBoost keeps base
+private def pip004_effectiveSchedParamsLowerPip : IO Unit := do
   let st := mkState [(⟨1⟩, .tcb (mkTcb 1 (prio := 80) (pipBoost := some ⟨30⟩)))]
   let tcb := mkTcb 1 (prio := 80) (pipBoost := some ⟨30⟩)
-  match effectivePriority st tcb with
-  | some (prio, _, _) =>
-    expect "effective priority = max(80, 30) = 80" (prio == ⟨80⟩)
-  | none => throw <| IO.userError "effectivePriority returned none"
+  let (prio, _, _) := effectiveSchedParams st tcb
+  expect "effective priority = max(80, 30) = 80" (prio == ⟨80⟩)
 
 -- PIP-005: waitersOf returns empty for thread with no waiters
 private def pip005_waitersOfEmpty : IO Unit := do
@@ -193,8 +190,12 @@ private def pip013_doesNotAffectOthers : IO Unit := do
     expect "thread 4 unaffected" (tcb4.pipBoost == none)
   | _ => throw <| IO.userError "thread 4 TCB not found"
 
--- PIP-014: effectivePriority with SchedContext-bound thread and pipBoost
-private def pip014_effectivePrioritySchedContextBound : IO Unit := do
+-- PIP-014: effectiveSchedParams with SchedContext-bound thread and pipBoost
+-- WS-RC R5.C.1 (DEEP-SCH-02): Migrated from `effectivePriority` (Option) to
+-- `effectiveSchedParams` (total triple).  Under `schedContextStoreConsistent`,
+-- the bound thread's SC is always present, so the total form returns the
+-- same triple as the partial form's `some` branch.
+private def pip014_effectiveSchedParamsSchedContextBound : IO Unit := do
   let sc : SeLe4n.Kernel.SchedContext := {
     scId := ⟨10⟩, budget := ⟨100⟩, period := ⟨1000⟩,
     priority := ⟨40⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
@@ -207,11 +208,9 @@ private def pip014_effectivePrioritySchedContextBound : IO Unit := do
     (⟨1⟩, .tcb tcb),
     (⟨10⟩, .schedContext sc)
   ]
-  match effectivePriority st tcb with
-  | some (prio, _, _) =>
-    -- base = 40 (from SC), boost = 90, so max(40, 90) = 90
-    expect "SC-bound + pipBoost: max(40,90) = 90" (prio == ⟨90⟩)
-  | none => throw <| IO.userError "effectivePriority returned none"
+  -- base = 40 (from SC), boost = 90, so max(40, 90) = 90
+  let (prio, _, _) := effectiveSchedParams st tcb
+  expect "SC-bound + pipBoost: max(40,90) = 90" (prio == ⟨90⟩)
 
 -- PIP-015: blockingGraphEdges returns correct edges
 private def pip015_blockingGraphEdges : IO Unit := do
@@ -329,9 +328,9 @@ def main : IO Unit := do
   IO.println "=== Priority Inheritance Protocol Test Suite ==="
   IO.println ""
   pip001_defaultPipBoostNone
-  pip002_effectivePriorityNoPip
-  pip003_effectivePriorityWithPip
-  pip004_effectivePriorityLowerPip
+  pip002_effectiveSchedParamsNoPip
+  pip003_effectiveSchedParamsWithPip
+  pip004_effectiveSchedParamsLowerPip
   pip005_waitersOfEmpty
   pip006_waitersOfFound
   pip007_computeMaxWaiterPriority
@@ -341,7 +340,7 @@ def main : IO Unit := do
   pip011_propagateTransitive
   pip012_revertClearsPipBoost
   pip013_doesNotAffectOthers
-  pip014_effectivePrioritySchedContextBound
+  pip014_effectiveSchedParamsSchedContextBound
   pip015_blockingGraphEdges
   pip016_chainContains
   pip017_framePreservesCurrent

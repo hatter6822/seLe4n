@@ -3645,14 +3645,18 @@ theorem budgetPositive_subset
 
 -- Z4-U: Backward compatibility and yield preservation.
 
-/-- Z4-U1: `effectivePriority_unbound` — unbound threads resolve to TCB fields.
-This confirms the backward-compatibility guarantee. -/
-theorem effectivePriority_unbound_legacy
+/-- Z4-U1: `effectiveSchedParams_unbound` — unbound threads resolve to TCB
+    fields.  This confirms the backward-compatibility guarantee.
+
+    WS-RC R5.C.1 (DEEP-SCH-02): Migrated from `effectivePriority` (Option) to
+    `effectiveSchedParams` (total).  The total form returns the same triple
+    on unbound threads without PIP boost. -/
+theorem effectiveSchedParams_unbound_legacy
     (st : SystemState) (tcb : TCB)
     (hUnbound : tcb.schedContextBinding = .unbound)
     (hNoPip : tcb.pipBoost = none := by rfl) :
-    effectivePriority st tcb = some (tcb.priority, tcb.deadline, tcb.domain) := by
-  simp [effectivePriority, hUnbound, hNoPip]
+    effectiveSchedParams st tcb = (tcb.priority, tcb.deadline, tcb.domain) := by
+  simp [effectiveSchedParams, hUnbound, hNoPip]
 
 /-- Z4-U2: `hasSufficientBudget_unbound` — unbound threads are always eligible. -/
 theorem hasSufficientBudget_unbound_legacy
