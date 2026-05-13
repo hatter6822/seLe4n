@@ -14,6 +14,13 @@ import SeLe4n.Testing.Helpers
 import SeLe4n.Platform.Boot
 import SeLe4n.Platform.RPi5.Board
 import SeLe4n.Platform.RPi5.BootContract
+-- WS-RC R6 (Phase R6): negative-state coverage for the staged
+-- `Architecture.ExceptionModel` (GIC bridge, `InterruptOp` algebra,
+-- `interruptDispatchPlan`).  `ExceptionModel` is not in the default
+-- `SeLe4n` top-level surface (it is staged via
+-- `SeLe4n.Platform.Staged`), so we explicitly import it here for the
+-- `runR6PhaseChecks` test function.
+import SeLe4n.Kernel.Architecture.ExceptionModel
 
 set_option maxRecDepth 1024
 
@@ -3998,6 +4005,99 @@ private def runR5EOrphanedSchedContextChecks : IO Unit := do
           s!"R5.E-NEG-01: expected .missingSchedContext, got {toString e}"
   IO.println "all WS-RC R5.E missingSchedContext surface checks passed"
 
+/-- WS-RC R6 (Phase R6) — negative-state guards.
+
+    R6.A-NEG-01: A malformed plan whose head is NOT `.ack` would
+    indicate the AN8-C ordering has been broken; this test catches
+    accidental list-construction errors at runtime by exercising the
+    canonical plan vs. a deliberate misorder.
+
+    R6.A-NEG-02: A plan whose middle is NOT `.eoi` would indicate the
+    AN8-C reordering (H-19) has been reverted to the pre-AN8-C `ack →
+    handle → EOI` ordering.
+
+    R6.C-NEG-01: `linearOrder.canFlow` is strictly antisymmetric — a
+    pair `(a, b)` with `a.id < b.id` should yield `canFlow a b = true`
+    but `canFlow b a = false`.  Symmetric failure here indicates the
+    pre-order has collapsed.
+
+    R6.C-NEG-02: The `sup`/`inf` operations must respect the ordering;
+    a `sup` of a smaller domain with a larger one cannot yield the
+    smaller domain.  This guards against accidental swap of `Nat.max`
+    with `Nat.min` in the implementation. -/
+private def runR6PhaseChecks : IO Unit := do
+  IO.println "\n=== WS-RC R6 (Phase R6): GIC bridge + SecurityDomain lattice negatives ==="
+  -- R6.A-NEG-01: head of canonical plan must be `.ack` (the AN8-C
+  -- ordering forbids any other first operation).
+  let id30 : SeLe4n.Kernel.Architecture.InterruptId := ⟨30, by omega⟩
+  let canonicalPlan := SeLe4n.Kernel.Architecture.interruptDispatchPlan id30
+  match canonicalPlan.head? with
+  | some (.ack actualId) =>
+      if actualId == id30 then
+        IO.println
+          "negative check passed [R6.A-NEG-01 plan head is .ack with correct id]"
+      else
+        throw <| IO.userError
+          "R6.A-NEG-01: plan head .ack carries wrong INTID"
+  | _ =>
+      throw <| IO.userError
+        "R6.A-NEG-01: plan head is NOT .ack — AN8-C ordering violated"
+  -- R6.A-NEG-02: middle of canonical plan must be `.eoi` (H-19 / AN8-C
+  -- reordering — pre-AN8-C this would have been `.handle`).  Match
+  -- pattern on the explicit list structure to avoid `get?` / GetElem?
+  -- inference issues at the IO monad's elaboration site.
+  match canonicalPlan with
+  | _ :: SeLe4n.Kernel.Architecture.InterruptOp.eoi actualId :: _ =>
+      if actualId == id30 then
+        IO.println
+          "negative check passed [R6.A-NEG-02 plan index 1 is .eoi (AN8-C)]"
+      else
+        throw <| IO.userError
+          "R6.A-NEG-02: plan .eoi carries wrong INTID"
+  | _ =>
+      throw <| IO.userError
+        ("R6.A-NEG-02: plan index 1 is NOT .eoi — AN8-C reordering reverted "
+         ++ "(or InterruptOp constructor moved)")
+  -- R6.A-NEG-03: a deliberate misorder is not equal to the canonical
+  -- plan — sanity check on the `≠` decidability of `List InterruptOp`.
+  let misorder : List SeLe4n.Kernel.Architecture.InterruptOp :=
+    [.handle id30, .eoi id30, .ack id30]
+  if canonicalPlan == misorder then
+    throw <| IO.userError
+      "R6.A-NEG-03: canonical plan equals a misorder — DecidableEq broken"
+  else
+    IO.println
+      "negative check passed [R6.A-NEG-03 misorder distinguishable from canonical plan]"
+  -- R6.C-NEG-01: linearOrder is strictly antisymmetric on distinct
+  -- domains.  A `(a < b)` pair must yield asymmetric canFlow results.
+  let d3 : SeLe4n.Kernel.SecurityDomain := SeLe4n.Kernel.SecurityDomain.ofNat 3
+  let d5 : SeLe4n.Kernel.SecurityDomain := SeLe4n.Kernel.SecurityDomain.ofNat 5
+  let fwd := SeLe4n.Kernel.DomainFlowPolicy.linearOrder.canFlow d3 d5
+  let rev := SeLe4n.Kernel.DomainFlowPolicy.linearOrder.canFlow d5 d3
+  if fwd = true ∧ rev = false then
+    IO.println
+      "negative check passed [R6.C-NEG-01 linearOrder asymmetric on distinct domains]"
+  else
+    throw <| IO.userError
+      "R6.C-NEG-01: linearOrder canFlow not asymmetric on (d3, d5) — pre-order collapsed"
+  -- R6.C-NEG-02: `sup d3 d5 ≠ d3` — the supremum of distinct domains
+  -- under linearOrder must be the larger.  Guards against accidental
+  -- Nat.max ↔ Nat.min swap.
+  if SeLe4n.Kernel.SecurityDomain.sup d3 d5 == d3 then
+    throw <| IO.userError
+      "R6.C-NEG-02: sup d3 d5 = d3 — Nat.max/min swap suspected"
+  else
+    IO.println
+      "negative check passed [R6.C-NEG-02 sup respects ordering — sup d3 d5 ≠ d3]"
+  -- R6.C-NEG-03: `inf d3 d5 ≠ d5` — symmetric guard.
+  if SeLe4n.Kernel.SecurityDomain.inf d3 d5 == d5 then
+    throw <| IO.userError
+      "R6.C-NEG-03: inf d3 d5 = d5 — Nat.max/min swap suspected"
+  else
+    IO.println
+      "negative check passed [R6.C-NEG-03 inf respects ordering — inf d3 d5 ≠ d5]"
+  IO.println "all WS-RC R6 (R6.A + R6.C) negative checks passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -4027,3 +4127,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runAC1CdtTrackingChecks
   SeLe4n.Testing.runR1IpcCallPathSymmetryChecks
   SeLe4n.Testing.runR5EOrphanedSchedContextChecks
+  SeLe4n.Testing.runR6PhaseChecks

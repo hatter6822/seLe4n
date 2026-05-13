@@ -1020,4 +1020,265 @@ theorem endpointFlowCheck_restricted_subset
     simp [hEP, domainFlowsTo] at hFlow
     exact hRestricted endpointId customPolicy hEP src dst hFlow
 
+-- ============================================================================
+-- WS-RC R6.C (DEEP-IF-02): SecurityDomain lattice completion
+-- ============================================================================
+
+/-! ## WS-RC R6.C — SecurityDomain Lattice Completion
+
+The H-04 section header (above) promised a parameterised domain model
+with "Lattice properties (reflexivity, transitivity, antisymmetry) ...
+proved generically under policy constraints."  Pre-R6.C the
+implementation delivered only a pre-order: reflexivity
+(`domainFlowsTo_refl`) and transitivity (`domainFlowsTo_trans`).  This
+section closes DEEP-IF-02 by completing the lattice over `SecurityDomain`
+under the canonical `linearOrder` policy:
+
+1. `SecurityDomain.sup` and `SecurityDomain.inf` — supremum (join) and
+   infimum (meet) over the natural `Nat`-indexed order on `id`.
+2. The four lattice-law theorems (associativity, commutativity, two
+   absorption laws) for each of `sup` and `inf`, plus their order-
+   characterising bridges.
+3. Antisymmetry of `linearOrder.canFlow` — the missing pre-order
+   completion to make it a partial order.
+4. The bridge theorem `linearOrder_canFlow_iff_sup_eq` connecting
+   `domainFlowsTo` to the lattice's `≤` (via `sup = b`).
+
+The canonical default lattice uses the `linearOrder` policy.  For
+arbitrary `DomainFlowPolicy` the order is policy-dependent (e.g.,
+`allowAll` makes every pair comparable, breaking antisymmetry); the
+lattice over a non-trivial policy is naturally definable as a quotient
+of `SecurityDomain` by the policy's symmetric closure, recorded here as
+a post-1.0 extension hook.
+
+Lean 4.28.0 ships without Mathlib in this codebase, so the lattice
+instances use Lean core's `Max` / `Min` typeclasses combined with
+direct `sup`/`inf` definitions and theorem-form lattice laws.  This
+gives every consumer the standard `max`/`min` notation while keeping
+the proof obligations available as named theorems. -/
+
+namespace SecurityDomain
+
+/-- WS-RC R6.C.1a (DEEP-IF-02): The supremum (join) of two security
+    domains under the canonical `Nat`-indexed order on `id`.  Matches
+    `Nat.max` componentwise.  Under `DomainFlowPolicy.linearOrder` this
+    is the least upper bound w.r.t. `canFlow`. -/
+@[inline] def sup (a b : SecurityDomain) : SecurityDomain :=
+  ⟨Nat.max a.id b.id⟩
+
+/-- WS-RC R6.C.1b (DEEP-IF-02): The infimum (meet) of two security
+    domains under the canonical `Nat`-indexed order on `id`.  Matches
+    `Nat.min` componentwise.  Under `DomainFlowPolicy.linearOrder` this
+    is the greatest lower bound w.r.t. `canFlow`. -/
+@[inline] def inf (a b : SecurityDomain) : SecurityDomain :=
+  ⟨Nat.min a.id b.id⟩
+
+/-- WS-RC R6.C: `Max` instance compatible with Lean core's `max`
+    notation.  Allows callers to write `max a b` instead of
+    `SecurityDomain.sup a b`. -/
+instance : Max SecurityDomain := ⟨sup⟩
+
+/-- WS-RC R6.C: `Min` instance compatible with Lean core's `min`
+    notation.  Allows callers to write `min a b` instead of
+    `SecurityDomain.inf a b`. -/
+instance : Min SecurityDomain := ⟨inf⟩
+
+/-- WS-RC R6.C: The `id` of a `sup` is the `max` of the components'
+    ids.  Useful for simp normalisation. -/
+@[simp] theorem sup_id (a b : SecurityDomain) :
+    (sup a b).id = Nat.max a.id b.id := rfl
+
+/-- WS-RC R6.C: The `id` of an `inf` is the `min` of the components'
+    ids.  Useful for simp normalisation. -/
+@[simp] theorem inf_id (a b : SecurityDomain) :
+    (inf a b).id = Nat.min a.id b.id := rfl
+
+-- ============================================================================
+-- WS-RC R6.C.2 (DEEP-IF-02): Lattice-law theorems
+-- ============================================================================
+
+/-- WS-RC R6.C.2 (DEEP-IF-02): `sup` is associative.  Lattice law 1. -/
+theorem sup_assoc (a b c : SecurityDomain) :
+    sup (sup a b) c = sup a (sup b c) := by
+  apply ext
+  simp [Nat.max_assoc]
+
+/-- WS-RC R6.C.2 (DEEP-IF-02): `sup` is commutative.  Lattice law 2. -/
+theorem sup_comm (a b : SecurityDomain) : sup a b = sup b a := by
+  apply ext
+  simp [Nat.max_comm]
+
+/-- WS-RC R6.C.2 (DEEP-IF-02): `sup` is idempotent.  Useful follow-on
+    lemma derived from the lattice laws. -/
+@[simp] theorem sup_self (a : SecurityDomain) : sup a a = a := by
+  apply ext; simp
+
+/-- WS-RC R6.C.2 (DEEP-IF-02): `inf` is associative.  Lattice law 1'. -/
+theorem inf_assoc (a b c : SecurityDomain) :
+    inf (inf a b) c = inf a (inf b c) := by
+  apply ext
+  simp [Nat.min_assoc]
+
+/-- WS-RC R6.C.2 (DEEP-IF-02): `inf` is commutative.  Lattice law 2'. -/
+theorem inf_comm (a b : SecurityDomain) : inf a b = inf b a := by
+  apply ext
+  simp [Nat.min_comm]
+
+/-- WS-RC R6.C.2 (DEEP-IF-02): `inf` is idempotent.  Follow-on lemma. -/
+@[simp] theorem inf_self (a : SecurityDomain) : inf a a = a := by
+  apply ext; simp
+
+/-- WS-RC R6.C.2 (DEEP-IF-02): Absorption law 1 — `a ⊔ (a ⊓ b) = a`. -/
+theorem absorb_sup_inf (a b : SecurityDomain) :
+    sup a (inf a b) = a := by
+  apply ext
+  simp [Nat.max_eq_left, Nat.min_le_left]
+
+/-- WS-RC R6.C.2 (DEEP-IF-02): Absorption law 2 — `a ⊓ (a ⊔ b) = a`. -/
+theorem absorb_inf_sup (a b : SecurityDomain) :
+    inf a (sup a b) = a := by
+  apply ext
+  simp [Nat.min_eq_left, Nat.le_max_left]
+
+-- ============================================================================
+-- WS-RC R6.C.3 (DEEP-IF-02): Bridge between `flowsTo` (linearOrder) and `sup`
+-- ============================================================================
+
+/-- WS-RC R6.C.3 (DEEP-IF-02): Under the canonical `linearOrder` flow
+    policy, the lattice's `sup` characterises `≤`: `a ≤ b` iff
+    `sup a b = b`.
+
+    This is the standard equivalence "x ≤ y iff x ∨ y = y" instantiated
+    to `SecurityDomain` under the `Nat.le` order.  Closes the R6.C.3
+    bridge by tying the lattice's order-theoretic structure to the
+    information-flow policy. -/
+theorem linearOrder_canFlow_iff_sup_eq (a b : SecurityDomain) :
+    DomainFlowPolicy.linearOrder.canFlow a b = true ↔ sup a b = b := by
+  simp [DomainFlowPolicy.linearOrder, sup]
+  constructor
+  · intro h
+    apply ext
+    show Nat.max a.id b.id = b.id
+    exact Nat.max_eq_right h
+  · intro h
+    have hId : Nat.max a.id b.id = b.id := congrArg SecurityDomain.id h
+    show a.id ≤ b.id
+    have hLe : a.id ≤ Nat.max a.id b.id := Nat.le_max_left a.id b.id
+    omega
+
+/-- WS-RC R6.C.3 (DEEP-IF-02): Dual bridge — `a ≤ b` iff
+    `inf a b = a`. -/
+theorem linearOrder_canFlow_iff_inf_eq (a b : SecurityDomain) :
+    DomainFlowPolicy.linearOrder.canFlow a b = true ↔ inf a b = a := by
+  simp [DomainFlowPolicy.linearOrder, inf]
+  constructor
+  · intro h
+    apply ext
+    show Nat.min a.id b.id = a.id
+    exact Nat.min_eq_left h
+  · intro h
+    have hId : Nat.min a.id b.id = a.id := congrArg SecurityDomain.id h
+    show a.id ≤ b.id
+    have hLe : Nat.min a.id b.id ≤ b.id := Nat.min_le_right a.id b.id
+    omega
+
+-- ============================================================================
+-- WS-RC R6.C: Antisymmetry of `linearOrder.canFlow`
+-- ============================================================================
+
+/-- WS-RC R6.C (DEEP-IF-02): Antisymmetry of `linearOrder.canFlow`.
+
+    Closes the third pre-order law promised by the H-04 section header:
+    if `a` can flow to `b` *and* `b` can flow to `a` under the canonical
+    `linearOrder` policy, then `a = b`.  Combined with the existing
+    `linearOrder_reflexive` and `linearOrder_transitive` theorems, this
+    makes `linearOrder` a partial order — the structural prerequisite
+    for the lattice (`sup`/`inf` of an antisymmetric pre-order is
+    unique). -/
+theorem linearOrder_canFlow_antisymm (a b : SecurityDomain)
+    (h₁ : DomainFlowPolicy.linearOrder.canFlow a b = true)
+    (h₂ : DomainFlowPolicy.linearOrder.canFlow b a = true) :
+    a = b := by
+  apply ext
+  simp [DomainFlowPolicy.linearOrder] at h₁ h₂
+  exact Nat.le_antisymm h₁ h₂
+
+/-- WS-RC R6.C (DEEP-IF-02): A flow policy is antisymmetric if every
+    bi-directional flow forces domain equality.  The canonical
+    `linearOrder` policy satisfies this; `allowAll` does not (it makes
+    every pair bi-directionally flow-permissive, collapsing distinct
+    domains modulo the policy's equivalence). -/
+def antisymmetric (p : DomainFlowPolicy) : Prop :=
+  ∀ a b : SecurityDomain,
+    p.canFlow a b = true → p.canFlow b a = true → a = b
+
+end SecurityDomain
+
+/-- WS-RC R6.C (DEEP-IF-02): `linearOrder` is antisymmetric — a strict
+    partial-order property bridging `DomainFlowPolicy.linearOrder`'s
+    pre-order (reflexive + transitive, already proven above) to a full
+    partial order.  Exported under the `DomainFlowPolicy` namespace for
+    symmetric placement alongside `linearOrder_reflexive` and
+    `linearOrder_transitive`. -/
+theorem DomainFlowPolicy.linearOrder_antisymm :
+    SecurityDomain.antisymmetric DomainFlowPolicy.linearOrder :=
+  SecurityDomain.linearOrder_canFlow_antisymm
+
+-- ============================================================================
+-- WS-RC R6.C: Completed-lattice witness bundle
+-- ============================================================================
+
+/-- WS-RC R6.C (DEEP-IF-02): Witness structure bundling the four lattice
+    laws plus the two order-characterising bridges plus antisymmetry of
+    the canonical policy.  Mirrors the spec promised by the H-04 section
+    header at `Policy.lean` lines 484–500.
+
+    Constructed unconditionally by `securityDomain_complete_lattice` —
+    every `SecurityDomain` carries all lattice operations and the four
+    laws as theorems.  Discharge-index citations point at this
+    structure as a single artifact summarising the completion. -/
+structure SecurityDomainLattice : Prop where
+  /-- `sup` is associative. -/
+  sup_assoc' : ∀ a b c : SecurityDomain,
+    SecurityDomain.sup (SecurityDomain.sup a b) c
+      = SecurityDomain.sup a (SecurityDomain.sup b c)
+  /-- `sup` is commutative. -/
+  sup_comm' : ∀ a b : SecurityDomain,
+    SecurityDomain.sup a b = SecurityDomain.sup b a
+  /-- `inf` is associative. -/
+  inf_assoc' : ∀ a b c : SecurityDomain,
+    SecurityDomain.inf (SecurityDomain.inf a b) c
+      = SecurityDomain.inf a (SecurityDomain.inf b c)
+  /-- `inf` is commutative. -/
+  inf_comm' : ∀ a b : SecurityDomain,
+    SecurityDomain.inf a b = SecurityDomain.inf b a
+  /-- Absorption law 1 — `a ⊔ (a ⊓ b) = a`. -/
+  absorb_sup_inf' : ∀ a b : SecurityDomain,
+    SecurityDomain.sup a (SecurityDomain.inf a b) = a
+  /-- Absorption law 2 — `a ⊓ (a ⊔ b) = a`. -/
+  absorb_inf_sup' : ∀ a b : SecurityDomain,
+    SecurityDomain.inf a (SecurityDomain.sup a b) = a
+  /-- The lattice's `≤` (via `sup = b`) coincides with
+      `linearOrder.canFlow`. -/
+  flowsTo_iff_sup_eq' : ∀ a b : SecurityDomain,
+    DomainFlowPolicy.linearOrder.canFlow a b = true
+      ↔ SecurityDomain.sup a b = b
+  /-- Antisymmetry of the canonical `linearOrder` policy — combined
+      with the existing reflexivity/transitivity, makes it a partial
+      order. -/
+  linearOrder_antisymm' : SecurityDomain.antisymmetric DomainFlowPolicy.linearOrder
+
+/-- WS-RC R6.C (DEEP-IF-02): The canonical lattice always holds.  This
+    is the single witness discharging the H-04 spec promise of a
+    "complete lattice" on `SecurityDomain`. -/
+theorem securityDomain_complete_lattice : SecurityDomainLattice where
+  sup_assoc' := SecurityDomain.sup_assoc
+  sup_comm' := SecurityDomain.sup_comm
+  inf_assoc' := SecurityDomain.inf_assoc
+  inf_comm' := SecurityDomain.inf_comm
+  absorb_sup_inf' := SecurityDomain.absorb_sup_inf
+  absorb_inf_sup' := SecurityDomain.absorb_inf_sup
+  flowsTo_iff_sup_eq' := SecurityDomain.linearOrder_canFlow_iff_sup_eq
+  linearOrder_antisymm' := SecurityDomain.linearOrder_canFlow_antisymm
+
 end SeLe4n.Kernel

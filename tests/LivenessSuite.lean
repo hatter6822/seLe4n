@@ -11,6 +11,14 @@ import SeLe4n.Kernel.Scheduler.Liveness
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Kernel.Lifecycle.Invariant.SuspendPreservation
 import SeLe4n.Kernel.SchedContext.Invariant.Preservation
+-- WS-RC R6 (Phase R6): surface anchors for the R6.A GIC bridge,
+-- R6.A.3 ArchitectureInvariantBundle composition, R6.C SecurityDomain
+-- lattice, R6.D cleanup-error-unreachable theorem, and R6.B
+-- DeclassificationPolicy.
+import SeLe4n.Kernel.Architecture.ExceptionModel
+import SeLe4n.Kernel.InformationFlow.Policy
+import SeLe4n.Kernel.InformationFlow.Enforcement.Soundness
+import SeLe4n.Kernel.IPC.Invariant.Defs
 
 /-!
 # Liveness Suite — Invariant Surface Anchor Tests
@@ -218,6 +226,62 @@ open SeLe4n.Model
 #check @SeLe4n.Kernel.SchedContextOps.schedContextConfigure_preserves_boundThreadDomainConsistent_scOnly
 
 -- ============================================================================
+-- Surface anchor: WS-RC R6 (Phase R6) — Architecture / InformationFlow completeness
+-- ============================================================================
+-- R6.A (DEEP-ARCH-03): GIC dispatch bridge — symbolic plan + bridge theorem.
+#check @SeLe4n.Kernel.Architecture.InterruptOp
+#check @SeLe4n.Kernel.Architecture.interruptDispatchPlan
+#check @SeLe4n.Kernel.Architecture.interruptDispatchPlan_length
+#check @SeLe4n.Kernel.Architecture.interruptDispatchPlan_ack_head
+#check @SeLe4n.Kernel.Architecture.interruptDispatchPlan_eoi_second
+#check @SeLe4n.Kernel.Architecture.interruptDispatchPlan_handle_third
+#check @SeLe4n.Kernel.Architecture.interruptDispatchPlan_decomposes
+#check @SeLe4n.Kernel.Architecture.exception_irq_dispatches_via_interrupt_dispatch
+#check @SeLe4n.Kernel.Architecture.exception_irq_dispatches_when_handled
+#check @SeLe4n.Kernel.Architecture.GICDispatchBridge
+#check @SeLe4n.Kernel.Architecture.gicDispatchBridge_holds
+#check @SeLe4n.Kernel.Architecture.gicDispatchPlanInvariant
+#check @SeLe4n.Kernel.Architecture.gicDispatchPlanInvariant_holds
+-- R6.A.3 (DEEP-ARCH-03): ArchitectureInvariantBundle composition.
+#check @SeLe4n.Kernel.Architecture.ArchitectureInvariantBundle
+#check @SeLe4n.Kernel.Architecture.ArchitectureInvariantBundle.of_proofLayer
+#check @SeLe4n.Kernel.Architecture.default_system_state_architectureInvariantBundle
+#check @SeLe4n.Kernel.Architecture.advanceTimerState_preserves_architectureInvariantBundle
+#check @SeLe4n.Kernel.Architecture.writeRegisterState_preserves_architectureInvariantBundle
+#check @SeLe4n.Kernel.Architecture.contextSwitchState_preserves_architectureInvariantBundle
+#check @SeLe4n.Kernel.Architecture.ArchitectureInvariantBundle.toProofLayer
+#check @SeLe4n.Kernel.Architecture.ArchitectureInvariantBundle.toGicDispatchPlan
+-- R6.B (DEEP-IF-01): DeclassificationPolicy structure (pre-existing,
+-- discharge-only).  The theorem witnesses are in Soundness.lean.
+#check @SeLe4n.Kernel.DeclassificationPolicy
+#check @SeLe4n.Kernel.DeclassificationPolicy.none
+#check @SeLe4n.Kernel.DeclassificationPolicy.isDeclassificationAuthorized
+-- R6.C (DEEP-IF-02): SecurityDomain lattice completion.
+#check @SeLe4n.Kernel.SecurityDomain.sup
+#check @SeLe4n.Kernel.SecurityDomain.inf
+#check @SeLe4n.Kernel.SecurityDomain.sup_id
+#check @SeLe4n.Kernel.SecurityDomain.inf_id
+#check @SeLe4n.Kernel.SecurityDomain.sup_assoc
+#check @SeLe4n.Kernel.SecurityDomain.sup_comm
+#check @SeLe4n.Kernel.SecurityDomain.sup_self
+#check @SeLe4n.Kernel.SecurityDomain.inf_assoc
+#check @SeLe4n.Kernel.SecurityDomain.inf_comm
+#check @SeLe4n.Kernel.SecurityDomain.inf_self
+#check @SeLe4n.Kernel.SecurityDomain.absorb_sup_inf
+#check @SeLe4n.Kernel.SecurityDomain.absorb_inf_sup
+#check @SeLe4n.Kernel.SecurityDomain.linearOrder_canFlow_iff_sup_eq
+#check @SeLe4n.Kernel.SecurityDomain.linearOrder_canFlow_iff_inf_eq
+#check @SeLe4n.Kernel.SecurityDomain.linearOrder_canFlow_antisymm
+#check @SeLe4n.Kernel.SecurityDomain.antisymmetric
+#check @SeLe4n.Kernel.DomainFlowPolicy.linearOrder_antisymm
+#check @SeLe4n.Kernel.SecurityDomainLattice
+#check @SeLe4n.Kernel.securityDomain_complete_lattice
+-- R6.D (DEEP-IPC-04): cleanupPreReceiveDonationChecked never errors
+-- under ipcInvariantFull (pre-existing theorem, discharge-only).
+#check @SeLe4n.Kernel.cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull
+#check @SeLe4n.Kernel.cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull
+
+-- ============================================================================
 -- AN5-E: RPi5 canonical deployment — eventuallyExits closure (DEF-AK2-K.4)
 -- ============================================================================
 
@@ -375,5 +439,9 @@ def main : IO Unit := do
   IO.println "  ✓ AN5-E.3: functional tests — concrete CanonicalDeploymentProgress"
   IO.println "  ✓ AN5-D: rpi5_cbs_window_replenishments_bounded + _concrete (SC-M01)"
   IO.println "  ✓ WS-RC R5: cancelDonation split, restoreToReady, effectiveSchedParams, domain propagation"
-  IO.println "=== All surface anchors verified (95 base + R5 additions) ==="
+  IO.println "  ✓ WS-RC R6.A (DEEP-ARCH-03): interruptDispatchPlan + GIC bridge + ArchitectureInvariantBundle"
+  IO.println "  ✓ WS-RC R6.B (DEEP-IF-01): DeclassificationPolicy structure (pre-existing, discharge)"
+  IO.println "  ✓ WS-RC R6.C (DEEP-IF-02): SecurityDomain lattice (sup/inf + 4 laws + bridge)"
+  IO.println "  ✓ WS-RC R6.D (DEEP-IPC-04): cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull"
+  IO.println "=== All surface anchors verified (95 base + R5 + R6 additions) ==="
   return ()

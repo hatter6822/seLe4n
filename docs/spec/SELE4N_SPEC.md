@@ -1451,6 +1451,102 @@ new Rust tests (`decode_missing_sched_context_error` unit,
 `missing_sched_context_decode` conformance).  AK7 cascade monotonicity
 baseline retained at the v0.30.11 floor.
 
+### 8.10.9 Architecture / InformationFlow Completeness (WS-RC R6)
+
+WS-RC R6 closes the four spec-completeness DEEP findings of the
+v0.30.11 audit (DEEP-ARCH-03, DEEP-IF-01, DEEP-IF-02, DEEP-IPC-04).
+See
+[`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](../audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)
+§10 for the canonical task breakdown and
+[`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md) `WS-RC R6`
+for the per-sub-task narrative.
+
+* **R6.A (DEEP-ARCH-03) — ExceptionModel ↔ InterruptDispatch GIC
+  bridge**: pre-R6.A the runtime delegation
+  (`dispatchException_irq`) existed but lacked a symbolic
+  representation of the GIC operation order at the type level.  R6.A
+  adds the `InterruptOp` algebra (`.ack id`, `.eoi id`,
+  `.handle id`), the symbolic plan
+  `interruptDispatchPlan : InterruptId → List InterruptOp` returning
+  the AN8-C-ordered list `[.ack id, .eoi id, .handle id]`, five
+  plan-ordering witnesses, and the bridge theorem
+  `exception_irq_dispatches_via_interrupt_dispatch` proving both the
+  plan ordering and the runtime delegation
+  `dispatchException .irq ≡ interruptDispatchSequence`.  Source:
+  `SeLe4n/Kernel/Architecture/ExceptionModel.lean`.  `GICDispatchBridge`
+  Prop bundle + `gicDispatchBridge_holds` witness package the bridge
+  for downstream consumers.
+
+* **R6.A.3 (DEEP-ARCH-03) — Architecture invariant bundle composition**:
+  promotes the GIC bridge into the architecture invariant family via
+  the composite `ArchitectureInvariantBundle (st : SystemState) : Prop`
+  joining `proofLayerInvariantBundle st` (from
+  `Architecture/Invariant.lean`) with the static
+  `gicDispatchPlanInvariant`.  Constructor
+  `ArchitectureInvariantBundle.of_proofLayer`, default-state witness,
+  three adapter-primitive preservation theorems
+  (`advanceTimerState_preserves_architectureInvariantBundle`,
+  `writeRegisterState_preserves_architectureInvariantBundle`,
+  `contextSwitchState_preserves_architectureInvariantBundle`), and
+  two projections (`toProofLayer`, `toGicDispatchPlan`) round out the
+  composition.  The composite lives in
+  `Architecture/ExceptionModel.lean` (not `Architecture/Invariant.lean`)
+  to avoid the import cycle
+  `Kernel.API` → `Architecture.Invariant` /
+  `Architecture.ExceptionModel` → `Kernel.API`; a "WS-RC R6.A.3"
+  cross-reference section in `Architecture/Invariant.lean` points
+  readers at the composite's actual location.
+
+* **R6.B (DEEP-IF-01) — DeclassificationPolicy structure
+  (discharge-only)**: `SeLe4n/Kernel/InformationFlow/Policy.lean:879`
+  already defines the `DeclassificationPolicy` structure with
+  `canDeclassify`, `isDeclassificationAuthorized`, and the `none`
+  (strictest) policy constructor; `Enforcement/Soundness.lean`
+  consumes it via `Enforcement/Wrappers.lean` →
+  `InformationFlow/Policy.lean`.  R6.B records the structure in the
+  discharge index (§3.I row I.11).
+
+* **R6.C (DEEP-IF-02) — SecurityDomain lattice completion**: the
+  H-04 section header at
+  `SeLe4n/Kernel/InformationFlow/Policy.lean:484` promised a
+  parameterised domain lattice with "reflexivity, transitivity,
+  antisymmetry ... proved generically under policy constraints."
+  Pre-R6.C the implementation delivered only a pre-order
+  (reflexivity + transitivity).  R6.C completes the lattice over
+  `SecurityDomain` under the canonical `linearOrder` policy:
+  `SecurityDomain.sup` and `_inf` (Nat-indexed sup/inf) + `Max` and
+  `Min` instances; six lattice laws (`sup_assoc`, `sup_comm`,
+  `sup_self`, `inf_assoc`, `inf_comm`, `inf_self`); two absorption
+  laws (`absorb_sup_inf`, `absorb_inf_sup`); the two
+  order-characterising bridges
+  (`linearOrder_canFlow_iff_sup_eq`, `_inf_eq`); antisymmetry
+  (`linearOrder_canFlow_antisymm` — the third pre-order law promised
+  by the spec header) + the `antisymmetric` predicate +
+  `DomainFlowPolicy.linearOrder_antisymm`; and the
+  `SecurityDomainLattice` Prop bundle + `securityDomain_complete_lattice`
+  witness discharging it unconditionally.
+
+* **R6.D (DEEP-IPC-04) — Cleanup-error-unreachable theorem
+  (discharge-only)**:
+  `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull`
+  at `SeLe4n/Kernel/IPC/Invariant/Defs.lean:2630` proves the
+  cleanup-error branch unreachable under `ipcInvariantFull` +
+  participant non-reservation, sorry-free.  The plan-named alias
+  `cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull` is
+  retained.  R6.D records both names in the discharge index
+  (§3.I row I.20).
+
+Tests:
+`tests/InformationFlowSuite.lean::runR6CSecurityDomainLatticeChecks`
+(17 lattice runtime assertions),
+`tests/InterruptDispatchSuite.lean::test_t14..t18` (5 GIC dispatch
+tests including bundle elaboration),
+`tests/NegativeStateSuite.lean::runR6PhaseChecks` (6 negative guards),
+and 32 new `#check` surface anchors in `tests/LivenessSuite.lean`
+covering every R6 theorem, structure, and bridge.  Discharge index
+[`docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`](../audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md)
+§3.I records 20 rows (I.1..I.20) spanning all four R6 sub-tasks.
+
 ### 8.11 buildChecked Runtime Invariant Validation (WS-T Phase T7)
 
 All test states use `BootstrapBuilder.buildChecked` instead of `build`:

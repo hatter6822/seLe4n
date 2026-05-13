@@ -1,3 +1,167 @@
+## v0.31.2 — WS-RC R6 (DEEP-ARCH-03 / DEEP-IF-01 / DEEP-IF-02 / DEEP-IPC-04): architecture and information-flow completeness
+
+Phase R6 closes the four spec-completeness audit findings identified by
+the v0.30.11 deep verification:
+
+- **DEEP-ARCH-03** — formal GIC dispatch bridge from `ExceptionModel` to
+  `InterruptDispatch` (R6.A).
+- **DEEP-IF-01** — `DeclassificationPolicy` structure verification
+  (R6.B, discharge-only — already implemented at
+  `Policy.lean:879`).
+- **DEEP-IF-02** — parameterised `SecurityDomain` lattice completion
+  (R6.C).
+- **DEEP-IPC-04** — `cleanupPreReceiveDonationChecked` cleanup-error
+  unreachable theorem verification (R6.D, discharge-only —
+  already implemented at `Defs.lean:2630`, sorry-free).
+
+Per the implement-the-improvement rule, R6.A and R6.C carry substantive
+new proof work; R6.B and R6.D are verification-first and resolve by
+recording the existing artefacts in the discharge index.
+
+### R6.A — ExceptionModel ↔ InterruptDispatch GIC bridge (DEEP-ARCH-03)
+
+`SeLe4n/Kernel/Architecture/ExceptionModel.lean`:
+
+- New `InterruptOp` inductive carrying the three GIC operations
+  (`.ack id`, `.eoi id`, `.handle id`) with `Repr`/`DecidableEq`.
+- `interruptDispatchPlan : InterruptId → List InterruptOp` returning
+  the AN8-C-ordered list `[.ack id, .eoi id, .handle id]` — H-19
+  ordering (handler runs on post-EOI state so a faulting handler cannot
+  leave the INTID active on the GIC).
+- Five AN8-C ordering witnesses: `interruptDispatchPlan_length`,
+  `_ack_head`, `_eoi_second`, `_handle_third`, `_decomposes`.
+- Bridge theorem `exception_irq_dispatches_via_interrupt_dispatch`
+  proving the plan ordering plus the runtime delegation
+  `dispatchException .irq ≡ interruptDispatchSequence`.
+- Convenience form `exception_irq_dispatches_when_handled` (raw-INTID
+  side).
+- `GICDispatchBridge` Prop bundle + `gicDispatchBridge_holds` witness
+  packaging the plan ordering and runtime delegation for downstream
+  consumers.
+
+### R6.A.3 — Architecture invariant bundle composition (DEEP-ARCH-03)
+
+`SeLe4n/Kernel/Architecture/ExceptionModel.lean` (composite bundle
+placement explained below):
+
+- `gicDispatchPlanInvariant : Prop := ∀ id : InterruptId, GICDispatchBridge id`
+  — the static architecture-family invariant the GIC bridge produces.
+  Discharged unconditionally by `gicDispatchPlanInvariant_holds`.
+- `ArchitectureInvariantBundle (st : SystemState) : Prop` — the
+  composite bundle joining `proofLayerInvariantBundle st` (from
+  `Architecture/Invariant.lean`) with `gicDispatchPlanInvariant`.
+- `ArchitectureInvariantBundle.of_proofLayer` — constructor lemma
+  promoting any `proofLayerInvariantBundle` witness into the composite.
+- `default_system_state_architectureInvariantBundle` — default-state
+  witness.
+- `advanceTimerState_preserves_architectureInvariantBundle` /
+  `writeRegisterState_preserves_architectureInvariantBundle` /
+  `contextSwitchState_preserves_architectureInvariantBundle` —
+  preservation through the three adapter primitives.
+- `ArchitectureInvariantBundle.toProofLayer` /
+  `_toGicDispatchPlan` — projection theorems.
+
+**Placement note:** the composite lives at `ExceptionModel.lean`
+rather than `Architecture/Invariant.lean` because the import DAG is
+`Kernel.API` → `Architecture.Invariant` and
+`Architecture.ExceptionModel` → `Kernel.API`, making the
+ExceptionModel file strictly downstream of `Architecture.Invariant`.
+Defining the composite in the downstream file resolves the cycle that
+would arise from importing the upstream file backward.
+`Architecture/Invariant.lean` carries a "WS-RC R6.A.3" cross-reference
+section pointing readers at the composite's actual location.
+
+### R6.B — DeclassificationPolicy structure (DEEP-IF-01, discharge-only)
+
+`SeLe4n/Kernel/InformationFlow/Policy.lean:879` already defines the
+`DeclassificationPolicy` structure with `canDeclassify`,
+`isDeclassificationAuthorized`, and the `none` (strictest) policy
+constructor.  `Enforcement/Soundness.lean` consumes it via
+`Enforcement/Wrappers.lean` → `InformationFlow/Policy.lean`.  R6.B
+records the structure in the discharge index (§3.I row I.11) so a
+future rename or signature drift is caught by the LivenessSuite
+surface anchor.
+
+### R6.C — SecurityDomain lattice completion (DEEP-IF-02)
+
+`SeLe4n/Kernel/InformationFlow/Policy.lean`:
+
+The H-04 section header (line 484) promised a parameterised domain
+lattice with "reflexivity, transitivity, antisymmetry ... proved
+generically under policy constraints."  Pre-R6.C the implementation
+delivered only a pre-order (reflexivity + transitivity).  R6.C
+completes the lattice over `SecurityDomain` under the canonical
+`linearOrder` policy:
+
+- `SecurityDomain.sup` (Nat-indexed supremum) + `Max` instance.
+- `SecurityDomain.inf` (Nat-indexed infimum) + `Min` instance.
+- Six lattice laws: `sup_assoc`, `sup_comm`, `sup_self` (idempotency),
+  `inf_assoc`, `inf_comm`, `inf_self` (idempotency).
+- Two absorption laws: `absorb_sup_inf` (`a ⊔ (a ⊓ b) = a`),
+  `absorb_inf_sup` (`a ⊓ (a ⊔ b) = a`).
+- Bridge theorems: `linearOrder_canFlow_iff_sup_eq`
+  (`a ≤ b` ↔ `sup a b = b`) + dual `_inf_eq`.
+- Antisymmetry: `linearOrder_canFlow_antisymm` (third pre-order law
+  promised by H-04) + the `antisymmetric` predicate +
+  `DomainFlowPolicy.linearOrder_antisymm`.
+- `SecurityDomainLattice` Prop bundle of the seven lattice laws plus
+  antisymmetry + the witness `securityDomain_complete_lattice`
+  discharging it unconditionally.
+
+The lattice is keyed off the `linearOrder` policy (the canonical
+Nat-indexed flow order).  Policy-parametric lattices over arbitrary
+`DomainFlowPolicy` are a post-1.0 extension hook.
+
+### R6.D — Cleanup-error-unreachable theorem (DEEP-IPC-04, discharge-only)
+
+`SeLe4n/Kernel/IPC/Invariant/Defs.lean:2630` already proves
+`cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull`
+sorry-free under the named projection
+`ipcInvariantFull.donationOwnerValid` (AN3-B.2 named-accessor
+pattern) plus the participant non-reservation predicates.  The
+plan-named alias
+`cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull` is
+provided as an `abbrev`.  R6.D records both names in the discharge
+index (§3.I row I.20).
+
+### Tests
+
+- `tests/InformationFlowSuite.lean::runR6CSecurityDomainLatticeChecks`
+  — 17 runtime assertions covering the four lattice laws, two
+  absorption laws, idempotency, the order-characterising bridge, and
+  the reflexivity/asymmetry of `linearOrder.canFlow`.  Plus the
+  `SecurityDomainLattice` bundle elaboration as a surface anchor.
+- `tests/InterruptDispatchSuite.lean::test_t14..t18` — five new
+  GIC-dispatch tests covering plan-ordering invariants, INTID
+  disambiguation, theorem-witness elaboration, the composite
+  `ArchitectureInvariantBundle` elaboration, and runtime construction
+  + projection of the bundle from the default-state witness.
+- `tests/NegativeStateSuite.lean::runR6PhaseChecks` — six negative
+  guards (plan head must be `.ack`, plan index 1 must be `.eoi`, misorder
+  distinguishable from canonical plan, `linearOrder` asymmetric on
+  distinct domains, `sup`/`inf` respect ordering — preventing
+  accidental `Nat.max`/`Nat.min` swap).
+- `tests/LivenessSuite.lean` — 32 new `#check` surface anchors
+  covering every WS-RC R6 theorem, structure, and bridge across R6.A,
+  R6.A.3, R6.B, R6.C, R6.D.
+
+### Build verification
+
+```bash
+lake build SeLe4n.Kernel.Architecture.ExceptionModel  # PASS
+lake build SeLe4n.Kernel.Architecture.Invariant       # PASS
+lake build SeLe4n.Kernel.InformationFlow.Policy       # PASS
+lake build SeLe4n.Kernel.InformationFlow.Enforcement.Soundness  # PASS (R6.B)
+lake build SeLe4n.Kernel.IPC.Invariant.Defs           # PASS (R6.D)
+lake build                                             # PASS (full)
+./scripts/test_smoke.sh                                # PASS
+./scripts/test_full.sh                                 # PASS
+```
+
+Refs: docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md §10 (Phase R6)
+
+---
+
 ## v0.31.2 deferred-work continuation — Phase P1/Q2.A/V1 substantive landings
 
 Continuation of the WS-RC R5 deferred-work completion plan to close

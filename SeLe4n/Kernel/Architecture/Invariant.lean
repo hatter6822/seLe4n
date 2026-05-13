@@ -1518,4 +1518,39 @@ theorem retypeFromUntyped_untypedRegionsDisjoint_retype_to_untyped_documented
       ut.regionBase = SeLe4n.PAddr.ofNat 0 :=
   objectOfKernelType_untyped_hardcodes_zero_regionBase sizeHint
 
+/-! ### WS-RC R6.A.3 (DEEP-ARCH-03) — Architecture invariant bundle composition (cross-reference)
+
+R6.A added the formal GIC dispatch bridge
+(`exception_irq_dispatches_via_interrupt_dispatch`,
+`gicDispatchPlanInvariant`, `GICDispatchBridge`) at
+`SeLe4n/Kernel/Architecture/ExceptionModel.lean`.  R6.A.3 promotes that
+bridge to the architecture invariant family by composing it with the
+existing per-state `proofLayerInvariantBundle` defined in this file.
+
+The composite bundle `ArchitectureInvariantBundle` lives at
+`Architecture/ExceptionModel.lean` rather than here because
+`Kernel.API` imports `Architecture.Invariant`, and
+`Architecture.ExceptionModel` imports `Kernel.API` — making
+`Architecture.ExceptionModel` strictly downstream of
+`Architecture.Invariant` in the import DAG.  The composite bundle
+therefore lives in `ExceptionModel.lean` where both
+`proofLayerInvariantBundle` (transitive import via
+`Kernel.API` → `Architecture.Invariant`) and
+`gicDispatchPlanInvariant` (defined locally in `ExceptionModel`) are in
+scope.
+
+See:
+
+- `Architecture.ArchitectureInvariantBundle` (`ExceptionModel.lean`) — the
+  composite Prop bundling per-state and static-GIC invariants.
+- `Architecture.ArchitectureInvariantBundle.of_proofLayer` — constructor
+  promoting any `proofLayerInvariantBundle` witness into the composite.
+- `Architecture.default_system_state_architectureInvariantBundle` —
+  default-state witness.
+- `Architecture.advanceTimerState_preserves_architectureInvariantBundle`,
+  `Architecture.writeRegisterState_preserves_architectureInvariantBundle`,
+  `Architecture.contextSwitchState_preserves_architectureInvariantBundle` —
+  preservation theorems through each adapter primitive.
+-/
+
 end SeLe4n.Kernel.Architecture

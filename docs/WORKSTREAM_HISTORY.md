@@ -1063,13 +1063,157 @@ witnessed by the three new runtime tests, and the shape-form
 substantive theorems (which compose the now-substantive Phase Q2.A
 schedule frame) provide the proof-layer infrastructure.
 
-### R6..R14 — TBD
+### R6 — Architecture / InformationFlow completeness (DEEP-ARCH-03, DEEP-IF-01/02, DEEP-IPC-04, v0.31.2, **COMPLETE**)
+
+Closes the four spec-completeness DEEP findings of the v0.30.11 audit:
+the formal Lean-level GIC dispatch bridge, the `DeclassificationPolicy`
+structure, the parameterised `SecurityDomain` lattice, and the
+verification of the cleanup-error-unreachable theorem for IPC
+pre-receive donation.
+
+Plan reference:
+[`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)
+§10.
+
+#### R6.A (DEEP-ARCH-03) — ExceptionModel ↔ InterruptDispatch GIC bridge
+
+Pre-R6.A, the runtime delegation
+(`dispatchException_irq` theorem in `ExceptionModel.lean`) already
+existed: dispatching an `.irq` exception called
+`interruptDispatchSequence`.  What was missing was a **symbolic
+representation** of the GIC operation order at the type level so the
+sequence "exception classified → interrupt dispatched" decomposes
+into the canonical operation list.
+
+R6.A adds the missing symbolic layer in
+`SeLe4n/Kernel/Architecture/ExceptionModel.lean`:
+
+- `InterruptOp` inductive (`.ack id`, `.eoi id`, `.handle id`) —
+  the algebra of GIC operations.
+- `interruptDispatchPlan : InterruptId → List InterruptOp`
+  returning `[.ack id, .eoi id, .handle id]` — AN8-C (H-19)
+  ordering: handler runs on post-EOI state so a faulting handler
+  cannot leave the INTID active on the GIC.
+- Five plan-ordering witnesses
+  (`interruptDispatchPlan_length`, `_ack_head`, `_eoi_second`,
+  `_handle_third`, `_decomposes`).
+- Bridge theorem `exception_irq_dispatches_via_interrupt_dispatch`
+  proving both the plan ordering (`rfl`) and the runtime delegation
+  (`dispatchException_irq`).
+- `GICDispatchBridge` Prop bundle + `gicDispatchBridge_holds`
+  witness packaging the plan ordering and runtime delegation for
+  downstream consumers.
+
+#### R6.A.3 (DEEP-ARCH-03) — Architecture invariant bundle composition
+
+`SeLe4n/Kernel/Architecture/ExceptionModel.lean` (composite bundle
+placement explained below):
+
+- `gicDispatchPlanInvariant : Prop := ∀ id : InterruptId, GICDispatchBridge id`
+  — the static architecture-family invariant. Discharged
+  unconditionally by `gicDispatchPlanInvariant_holds`.
+- `ArchitectureInvariantBundle (st : SystemState) : Prop` — the
+  composite bundle joining `proofLayerInvariantBundle st` (from
+  `Architecture/Invariant.lean`) with the static
+  `gicDispatchPlanInvariant`.
+- `ArchitectureInvariantBundle.of_proofLayer` — constructor
+  promoting any `proofLayerInvariantBundle` witness into the
+  composite.
+- `default_system_state_architectureInvariantBundle` —
+  default-state witness.
+- Preservation through three adapter primitives:
+  `advanceTimerState_preserves_architectureInvariantBundle`,
+  `writeRegisterState_preserves_architectureInvariantBundle`,
+  `contextSwitchState_preserves_architectureInvariantBundle`.
+- `ArchitectureInvariantBundle.toProofLayer` /
+  `_toGicDispatchPlan` — projection theorems.
+
+**Placement note:** the composite lives at `ExceptionModel.lean`
+rather than `Architecture/Invariant.lean` because the import DAG is
+`Kernel.API` → `Architecture.Invariant` and
+`Architecture.ExceptionModel` → `Kernel.API`, making the
+ExceptionModel file strictly downstream of `Architecture.Invariant`.
+Defining the composite in the downstream file resolves the cycle
+that would arise from importing the upstream file backward.
+`Architecture/Invariant.lean` carries a "WS-RC R6.A.3"
+cross-reference section pointing readers at the composite's actual
+location.
+
+#### R6.B (DEEP-IF-01) — DeclassificationPolicy structure (discharge-only)
+
+`SeLe4n/Kernel/InformationFlow/Policy.lean:879` already defines the
+`DeclassificationPolicy` structure with `canDeclassify`,
+`isDeclassificationAuthorized`, and the `none` (strictest) policy
+constructor.  `Enforcement/Soundness.lean` consumes it via
+`Enforcement/Wrappers.lean` → `InformationFlow/Policy.lean`.  R6.B
+records the structure in the discharge index (§3.I row I.11) so
+future rename or signature drift is caught by the LivenessSuite
+surface anchor.
+
+#### R6.C (DEEP-IF-02) — SecurityDomain lattice completion
+
+The H-04 section header at
+`SeLe4n/Kernel/InformationFlow/Policy.lean:484` promised a
+parameterised domain lattice with "reflexivity, transitivity,
+antisymmetry ... proved generically under policy constraints."
+Pre-R6.C the implementation delivered only a pre-order (reflexivity
++ transitivity).  R6.C completes the lattice over `SecurityDomain`
+under the canonical `linearOrder` policy:
+
+- `SecurityDomain.sup` / `SecurityDomain.inf` (Nat-indexed sup/inf)
+  + `Max` and `Min` instances.
+- Six lattice laws: `sup_assoc`, `sup_comm`, `sup_self`
+  (idempotency), `inf_assoc`, `inf_comm`, `inf_self`.
+- Two absorption laws: `absorb_sup_inf` and `absorb_inf_sup`.
+- Bridge theorems `linearOrder_canFlow_iff_sup_eq` and dual
+  `_inf_eq` connecting `canFlow` to the lattice's order.
+- Antisymmetry: `linearOrder_canFlow_antisymm` (third pre-order law
+  promised by the H-04 spec header) + the `antisymmetric`
+  predicate + `DomainFlowPolicy.linearOrder_antisymm`.
+- `SecurityDomainLattice` Prop bundle of the seven lattice laws +
+  antisymmetry + the witness `securityDomain_complete_lattice`
+  discharging it unconditionally.
+
+#### R6.D (DEEP-IPC-04) — Cleanup-error-unreachable theorem (discharge-only)
+
+`SeLe4n/Kernel/IPC/Invariant/Defs.lean:2630` already proves
+`cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull`
+sorry-free under the named projection
+`ipcInvariantFull.donationOwnerValid` (AN3-B.2 named-accessor
+pattern) plus the participant non-reservation predicates.  The
+plan-named alias
+`cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull` is
+provided as an `abbrev`.  R6.D records both names in the discharge
+index (§3.I row I.20).
+
+#### R6 validation
+
+- `lake build SeLe4n.Kernel.Architecture.ExceptionModel` — PASS
+- `lake build SeLe4n.Kernel.Architecture.Invariant` — PASS
+- `lake build SeLe4n.Kernel.InformationFlow.Policy` — PASS
+- `lake build SeLe4n.Kernel.InformationFlow.Enforcement.Soundness` — PASS (R6.B)
+- `lake build SeLe4n.Kernel.IPC.Invariant.Defs` — PASS (R6.D)
+- `lake build` — PASS (full build, 312 jobs)
+- `./scripts/test_smoke.sh` — PASS
+- `./scripts/test_full.sh` — PASS
+- New runtime tests
+  (`runR6CSecurityDomainLatticeChecks` — 17 assertions;
+  `test_t14..t18` — 5 GIC dispatch tests;
+  `runR6PhaseChecks` — 6 negative guards) — all PASS.
+- 32 new LivenessSuite `#check` surface anchors covering every R6
+  theorem/structure/bridge — all elaborate.
+
+#### R6 deferred items
+
+None.  All four DEEP findings (DEEP-ARCH-03, DEEP-IF-01, DEEP-IF-02,
+DEEP-IPC-04) are closed with full structural witnesses (R6.A, R6.C)
+or discharge-index entries (R6.B, R6.D).
+
+### R7..R14 — TBD
 
 Per plan §3 phase summary; remaining rows will be appended to this
-section as each phase lands a coherent slice. R6 is the remaining
-v1.0.0 implementation-tier work (spec completeness:
-DEEP-ARCH-03, DEEP-IF-01/02, DEEP-IPC-04), then R7..R12
-(cleanup/hygiene tier in any order, with R11 landing last among
+section as each phase lands a coherent slice. R7..R12 are the
+cleanup/hygiene tier (in any order, with R11 landing last among
 hygiene phases per plan §3.2 so the metric refresh runs against the
 post-implementation tree).
 

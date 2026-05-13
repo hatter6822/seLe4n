@@ -74,6 +74,7 @@ will be added in the same PR as the corresponding R-phase landing.
 | 3.E | Predecessor reroutings | – | R4.C subsumes DEEP-IPC-01 | DEEP-IPC-01 | **PENDING — populated at R4.C landing** |
 | 3.F | False-positive structural witnesses | runtime-guard equivalence | R4.D / R12.B / R12.C / R12.D | DEEP-CAP-02, DEEP-ARCH-01, DEEP-RUST-01/02, DEEP-ARCH-02 | **PENDING — populated as each gate / witness lands** |
 | 3.G | Predecessor closure reconfirmations | DEBT carry-over | R0.4 | DEBT-RUST-02 / H-24 | **LANDED at R0.4** (see annotation in [v0.30.6 index §5](../dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md#5-closure-summary)) |
+| 3.I | Architecture / InformationFlow completeness | GIC dispatch bridge + SecurityDomain lattice + DeclassificationPolicy + cleanup-error theorem | R6.A / R6.A.3 / R6.B / R6.C / R6.D | DEEP-ARCH-03, DEEP-IF-01, DEEP-IF-02, DEEP-IPC-04 | **LANDED at R6** (20 rows) |
 
 §3.A–§3.C are the predecessor inventory and continue to apply to WS-RC.
 The 6 substantively-discharged CDT post-state bridges, the 7 closure-form
@@ -285,6 +286,57 @@ the cross-language discriminant pin
 Rust `decode_missing_sched_context_error` /
 `missing_sched_context_decode`.
 
+### §3.I — Architecture / InformationFlow completeness (LANDED at WS-RC R6)
+
+WS-RC R6 (`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md §10`) closes
+the four DEEP findings for architecture and information-flow
+completeness.  R6.A delivers the formal GIC dispatch bridge, R6.A.3
+composes it into the architecture invariant family, R6.B confirms the
+`DeclassificationPolicy` structure (pre-existing, discharge-only),
+R6.C completes the parameterised `SecurityDomain` lattice with the
+four lattice laws plus the order-characterising bridge, and R6.D
+records the cleanup-error-unreachable theorem (pre-existing,
+discharge-only).
+
+| # | Spec source | Closure-form theorem / structural witness | Location | Status |
+|---|-------------|-------------------------------------------|----------|--------|
+| I.1  | DEEP-ARCH-03 (R6.A.1a) | `InterruptOp` algebra + `interruptDispatchPlan` | `Kernel/Architecture/ExceptionModel.lean` | LANDED |
+| I.2  | DEEP-ARCH-03 (R6.A.1a) | `interruptDispatchPlan_length` + `_ack_head` + `_eoi_second` + `_handle_third` + `_decomposes` (AN8-C ordering witnesses) | `Kernel/Architecture/ExceptionModel.lean` | LANDED |
+| I.3  | DEEP-ARCH-03 (R6.A.1b) | `exception_irq_dispatches_via_interrupt_dispatch` (bridge theorem) | `Kernel/Architecture/ExceptionModel.lean` | LANDED |
+| I.4  | DEEP-ARCH-03 (R6.A.1b) | `exception_irq_dispatches_when_handled` (raw-INTID convenience form) | `Kernel/Architecture/ExceptionModel.lean` | LANDED |
+| I.5  | DEEP-ARCH-03 (R6.A.1b) | `GICDispatchBridge` (Prop bundle) + `gicDispatchBridge_holds` | `Kernel/Architecture/ExceptionModel.lean` | LANDED |
+| I.6  | DEEP-ARCH-03 (R6.A.3) | `gicDispatchPlanInvariant` + `gicDispatchPlanInvariant_holds` (static architecture invariant) | `Kernel/Architecture/ExceptionModel.lean` | LANDED |
+| I.7  | DEEP-ARCH-03 (R6.A.3) | `ArchitectureInvariantBundle` (composite of `proofLayerInvariantBundle` + `gicDispatchPlanInvariant`) + `of_proofLayer` constructor | `Kernel/Architecture/ExceptionModel.lean` | LANDED |
+| I.8  | DEEP-ARCH-03 (R6.A.3) | `default_system_state_architectureInvariantBundle` (default-state witness) | `Kernel/Architecture/ExceptionModel.lean` | LANDED |
+| I.9  | DEEP-ARCH-03 (R6.A.3) | `advanceTimerState_preserves_architectureInvariantBundle` + `writeRegisterState_preserves_architectureInvariantBundle` + `contextSwitchState_preserves_architectureInvariantBundle` (preservation through three adapter primitives) | `Kernel/Architecture/ExceptionModel.lean` | LANDED |
+| I.10 | DEEP-ARCH-03 (R6.A.3) | `ArchitectureInvariantBundle.toProofLayer` + `_toGicDispatchPlan` (projection theorems) | `Kernel/Architecture/ExceptionModel.lean` | LANDED |
+| I.11 | DEEP-IF-01 (R6.B) | `DeclassificationPolicy` structure (pre-existing — confirmed wired via `Enforcement/Wrappers.lean` → `InformationFlow/Policy.lean`) | `Kernel/InformationFlow/Policy.lean:879` | LANDED (pre-existing, R6.B discharge-only) |
+| I.12 | DEEP-IF-02 (R6.C.1a) | `SecurityDomain.sup` (Nat-indexed supremum) + `Max` instance | `Kernel/InformationFlow/Policy.lean` | LANDED |
+| I.13 | DEEP-IF-02 (R6.C.1b) | `SecurityDomain.inf` (Nat-indexed infimum) + `Min` instance | `Kernel/InformationFlow/Policy.lean` | LANDED |
+| I.14 | DEEP-IF-02 (R6.C.2) | `SecurityDomain.sup_assoc` + `_sup_comm` + `_sup_self` (associativity / commutativity / idempotency for sup) | `Kernel/InformationFlow/Policy.lean` | LANDED |
+| I.15 | DEEP-IF-02 (R6.C.2) | `SecurityDomain.inf_assoc` + `_inf_comm` + `_inf_self` (dual laws for inf) | `Kernel/InformationFlow/Policy.lean` | LANDED |
+| I.16 | DEEP-IF-02 (R6.C.2) | `SecurityDomain.absorb_sup_inf` + `_absorb_inf_sup` (two absorption laws) | `Kernel/InformationFlow/Policy.lean` | LANDED |
+| I.17 | DEEP-IF-02 (R6.C.3) | `SecurityDomain.linearOrder_canFlow_iff_sup_eq` (bridge: `a ≤ b` ↔ `sup a b = b`) + dual `_inf_eq` | `Kernel/InformationFlow/Policy.lean` | LANDED |
+| I.18 | DEEP-IF-02 (R6.C audit-add) | `SecurityDomain.linearOrder_canFlow_antisymm` + `DomainFlowPolicy.linearOrder_antisymm` (antisymmetry — third pre-order law promised by H-04 spec header) | `Kernel/InformationFlow/Policy.lean` | LANDED |
+| I.19 | DEEP-IF-02 (R6.C) | `SecurityDomainLattice` (Prop bundle of the seven lattice laws + antisymmetry) + `securityDomain_complete_lattice` (witness) | `Kernel/InformationFlow/Policy.lean` | LANDED |
+| I.20 | DEEP-IPC-04 (R6.D) | `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull` (pre-existing — sorry-free, discharge-only) + plan-named alias `cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull` | `Kernel/IPC/Invariant/Defs.lean:2630` | LANDED (pre-existing, R6.D discharge-only) |
+
+R6.A.3's composite `ArchitectureInvariantBundle` is intentionally
+defined in `ExceptionModel.lean` rather than `Architecture/Invariant.lean`
+to avoid an import cycle (`Kernel.API` imports `Architecture.Invariant`,
+and `Architecture.ExceptionModel` imports `Kernel.API`; defining the
+composite in `Architecture.ExceptionModel` resolves the cycle while
+keeping both constituents in scope).  The placement is documented in
+`Architecture/Invariant.lean`'s "WS-RC R6.A.3" cross-reference section
+so consumers know where to find the composite.
+
+R6.B (`DeclassificationPolicy`) and R6.D
+(`cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull`)
+were verification-first sub-tasks per the audit plan §10.6: the
+structures and theorems already exist in the tree and are sorry-free.
+R6 records them in this index to anchor against future renaming or
+signature drift via the LivenessSuite surface anchors.
+
 ### §3.G — Predecessor closure reconfirmations (LANDED at R0.4)
 
 DEBT-RUST-02 / H-24 reconfirmation. The predecessor audit's H-24
@@ -362,6 +414,21 @@ live" sync).
   regression test `runR5EOrphanedSchedContextChecks` provides the
   runtime-observable witness. AK7 cascade monotonicity baseline retained
   at the v0.30.11 floor.
+- **§3.I — 20 of 20 rows LANDED at WS-RC R6** (architecture /
+  information-flow completeness — DEEP-ARCH-03, DEEP-IF-01, DEEP-IF-02,
+  DEEP-IPC-04). I.1–I.10 deliver the GIC dispatch bridge
+  (`InterruptOp` algebra, `interruptDispatchPlan`, bridge theorem,
+  `GICDispatchBridge` Prop bundle, `ArchitectureInvariantBundle`
+  composite + three preservation theorems + two projections).
+  I.11 confirms the pre-existing `DeclassificationPolicy` structure
+  (discharge-only).  I.12–I.19 complete the parameterised
+  `SecurityDomain` lattice (sup/inf operations, four lattice laws,
+  idempotency, two order-characterising bridges, antisymmetry of
+  `linearOrder` — the third pre-order law promised by the H-04 spec
+  header, and the `SecurityDomainLattice` bundled witness).
+  I.20 records the pre-existing
+  `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull`
+  theorem (sorry-free, discharge-only).
 
 **No closure-form obligation introduced by WS-RC is orphaned**: every
 R-phase that produces a closure-form theorem or structural witness

@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.Architecture.InterruptDispatch
+import SeLe4n.Kernel.Architecture.ExceptionModel
 import SeLe4n.Testing.Helpers
 import SeLe4n.Testing.StateBuilder
 
@@ -184,9 +185,64 @@ def test_t13_ordering_theorem_witness : IO Unit := do
   let _witness := @interruptDispatchSequence_eoi_before_handler
   IO.println "check passed [AN8-C.5 eoi_before_handler theorem elaborated]"
 
+/-- T14: WS-RC R6.A (DEEP-ARCH-03) — `interruptDispatchPlan` returns the
+    AN8-C-ordered list `[.ack id, .eoi id, .handle id]`.  Validates the
+    symbolic plan at runtime against arbitrary handled INTIDs. -/
+def test_t14_dispatch_plan_an8c_order : IO Unit := do
+  let intId : InterruptId := ⟨42, by omega⟩
+  let plan := interruptDispatchPlan intId
+  expectCond "interrupt-dispatch" "R6.A: plan length is 3"
+    (plan.length = 3)
+  expectCond "interrupt-dispatch" "R6.A: head is .ack"
+    (plan.head? == some (.ack intId))
+  expectCond "interrupt-dispatch" "R6.A: index 1 is .eoi (AN8-C)"
+    (plan[1]? == some (.eoi intId))
+  expectCond "interrupt-dispatch" "R6.A: index 2 is .handle"
+    (plan[2]? == some (.handle intId))
+
+/-- T15: WS-RC R6.A (DEEP-ARCH-03) — distinct INTIDs produce distinct
+    plans.  Verifies that the plan carries the INTID identity through
+    each operation, so the symbolic representation is faithful enough
+    to disambiguate parallel dispatch sequences. -/
+def test_t15_dispatch_plan_intid_disambig : IO Unit := do
+  let id30 : InterruptId := ⟨30, by omega⟩
+  let id99 : InterruptId := ⟨99, by omega⟩
+  expectCond "interrupt-dispatch" "R6.A: distinct INTIDs yield distinct plans"
+    (interruptDispatchPlan id30 ≠ interruptDispatchPlan id99)
+
+/-- T16: WS-RC R6.A.1b (DEEP-ARCH-03) — type-level witness verifying
+    the bridge theorem `exception_irq_dispatches_via_interrupt_dispatch`
+    exists with its precise signature.  A regression renaming or
+    removing the theorem fails this test at parse time. -/
+def test_t16_gic_bridge_theorem_witness : IO Unit := do
+  let _w := @exception_irq_dispatches_via_interrupt_dispatch
+  let _w2 := @gicDispatchBridge_holds
+  let _w3 := @gicDispatchPlanInvariant_holds
+  IO.println "check passed [R6.A.1b GIC bridge theorems elaborated]"
+
+/-- T17: WS-RC R6.A.3 (DEEP-ARCH-03) — type-level witness verifying the
+    composite `ArchitectureInvariantBundle` exists and its projection
+    helpers compile.  Pins R6.A.3 against regression. -/
+def test_t17_architecture_invariant_bundle_witness : IO Unit := do
+  let _w := @ArchitectureInvariantBundle.of_proofLayer
+  let _w2 := @default_system_state_architectureInvariantBundle
+  let _w3 := @ArchitectureInvariantBundle.toProofLayer
+  let _w4 := @ArchitectureInvariantBundle.toGicDispatchPlan
+  IO.println "check passed [R6.A.3 ArchitectureInvariantBundle elaborated]"
+
+/-- T18: WS-RC R6.A.3 (DEEP-ARCH-03) — runtime construction of the
+    composite bundle from the default-state witness, plus verification
+    that the projection theorems return the underlying components. -/
+def test_t18_architecture_invariant_bundle_runtime : IO Unit := do
+  let _h : ArchitectureInvariantBundle (default : SeLe4n.Model.SystemState) :=
+    default_system_state_architectureInvariantBundle
+  let _plan : gicDispatchPlanInvariant := _h.toGicDispatchPlan
+  let _bridge := _plan ⟨42, by omega⟩
+  IO.println "check passed [R6.A.3 bundle constructs + projects at runtime]"
+
 /-- Running entry. -/
 def runAllTests : IO Unit := do
-  IO.println "=== AK3-C + AK3-L + AN8-C InterruptDispatch regression suite ==="
+  IO.println "=== AK3-C + AK3-L + AN8-C + WS-RC R6.A InterruptDispatch regression suite ==="
   test_t01_ack_spurious
   test_t02_ack_out_of_range
   test_t03_ack_handled
@@ -200,6 +256,11 @@ def runAllTests : IO Unit := do
   test_t11_eoi_before_handler
   test_t12_eoi_filters_only_target_intid
   test_t13_ordering_theorem_witness
+  test_t14_dispatch_plan_an8c_order
+  test_t15_dispatch_plan_intid_disambig
+  test_t16_gic_bridge_theorem_witness
+  test_t17_architecture_invariant_bundle_witness
+  test_t18_architecture_invariant_bundle_runtime
   IO.println "=== All InterruptDispatch tests passed ==="
 
 end SeLe4n.Testing.InterruptDispatch

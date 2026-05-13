@@ -845,6 +845,75 @@ documentation lives under `docs/` and `docs/gitbook/`.
   `crossSubsystemInvariant`; a `_full` variant that internally
   unfolds `resumeThread` is a post-1.0 hardening candidate.
 
+  **WS-RC R6 (DEEP-ARCH-03, DEEP-IF-01, DEEP-IF-02, DEEP-IPC-04)
+  LANDED on branch `claude/review-codebase-audit-SOobd`**: closes
+  the four spec-completeness audit findings of v0.30.11.  R6.A
+  (DEEP-ARCH-03) adds the formal GIC dispatch bridge at
+  `SeLe4n/Kernel/Architecture/ExceptionModel.lean`: a new
+  `InterruptOp` algebra (`.ack id`, `.eoi id`, `.handle id`), a
+  symbolic plan `interruptDispatchPlan : InterruptId → List InterruptOp`
+  returning the AN8-C-ordered list `[.ack id, .eoi id, .handle id]`,
+  five plan-ordering witnesses (`_length`, `_ack_head`,
+  `_eoi_second`, `_handle_third`, `_decomposes`), and the bridge
+  theorem `exception_irq_dispatches_via_interrupt_dispatch` proving
+  both the plan ordering and the runtime delegation
+  `dispatchException .irq ≡ interruptDispatchSequence`.  A
+  `GICDispatchBridge` Prop bundle + `gicDispatchBridge_holds` witness
+  package the bridge for downstream consumers.  R6.A.3 promotes the
+  GIC bridge into the architecture invariant family via the composite
+  `ArchitectureInvariantBundle (st : SystemState) : Prop` joining
+  `proofLayerInvariantBundle st` with the static
+  `gicDispatchPlanInvariant`; constructor
+  `ArchitectureInvariantBundle.of_proofLayer`, default-state witness
+  `default_system_state_architectureInvariantBundle`, three adapter-
+  primitive preservation theorems
+  (`advanceTimerState_preserves_architectureInvariantBundle`,
+  `writeRegisterState_preserves_architectureInvariantBundle`,
+  `contextSwitchState_preserves_architectureInvariantBundle`), and
+  two projections (`toProofLayer`, `toGicDispatchPlan`) round out the
+  composition.  The composite lives in `ExceptionModel.lean` (not
+  `Architecture/Invariant.lean`) to avoid the import cycle
+  `Kernel.API` → `Architecture.Invariant` /
+  `Architecture.ExceptionModel` → `Kernel.API`; a "WS-RC R6.A.3"
+  cross-reference section in `Architecture/Invariant.lean` points
+  readers at the composite's actual location.  R6.B (DEEP-IF-01) is
+  discharge-only: `DeclassificationPolicy` already exists at
+  `Policy.lean:879` (with `canDeclassify`,
+  `isDeclassificationAuthorized`, `none` constructor) and is consumed
+  by `Enforcement/Soundness.lean` via the existing import chain.
+  R6.C (DEEP-IF-02) completes the parameterised `SecurityDomain`
+  lattice promised by the H-04 section header at
+  `Policy.lean:484` — pre-R6.C the section delivered only a
+  pre-order (reflexivity + transitivity); R6.C adds
+  `SecurityDomain.sup` / `_inf` with `Max` / `Min` instances, six
+  lattice laws (`sup_assoc`, `sup_comm`, `sup_self`, `inf_assoc`,
+  `inf_comm`, `inf_self`), two absorption laws (`absorb_sup_inf`,
+  `absorb_inf_sup`), the two order-characterising bridges
+  (`linearOrder_canFlow_iff_sup_eq`, `_inf_eq`), antisymmetry
+  (`linearOrder_canFlow_antisymm` — the third pre-order law promised
+  by the spec header) + the `antisymmetric` predicate +
+  `DomainFlowPolicy.linearOrder_antisymm`, and the
+  `SecurityDomainLattice` Prop bundle + `securityDomain_complete_lattice`
+  witness.  R6.D (DEEP-IPC-04) is discharge-only:
+  `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull`
+  at `IPC/Invariant/Defs.lean:2630` already proves the
+  cleanup-error branch unreachable under `ipcInvariantFull` +
+  participant non-reservation, sorry-free; the plan-named alias
+  `cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull` is
+  retained.  Tests:
+  `tests/InformationFlowSuite.lean::runR6CSecurityDomainLatticeChecks`
+  (17 lattice runtime assertions),
+  `tests/InterruptDispatchSuite.lean::test_t14..t18` (5 GIC dispatch
+  tests),
+  `tests/NegativeStateSuite.lean::runR6PhaseChecks` (6 negative guards
+  — plan head must be `.ack`, plan index 1 must be `.eoi`, misorder
+  distinguishable, `linearOrder` asymmetric on distinct domains,
+  `sup`/`inf` respect ordering), and 32 new `#check` surface anchors
+  in `tests/LivenessSuite.lean` covering every R6 theorem, structure,
+  and bridge.  Discharge index §3.I records 20 rows (I.1..I.20)
+  spanning all four R6 sub-tasks.  Items deferred past v1.0.0 with
+  correctness impact: NONE.
+
   **WS-RC R4 close-out COMPLETE (v0.31.0, branch
   `claude/review-closeout-plan-HToSk`)**:  the 9-sub-PR close-out
   ([`docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md`](docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md))

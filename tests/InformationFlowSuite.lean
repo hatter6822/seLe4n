@@ -396,6 +396,67 @@ def runAk6Suite : IO Bool := do
     IO.println "--- AK6 named sub-tests: FAILURES ---"
   return allOk
 
+/-- WS-RC R6.C (DEEP-IF-02): SecurityDomain lattice completion runtime
+    checks.  Pins the four lattice laws plus the order-characterising
+    bridge against runtime regression.  Factored out as a private
+    helper to keep `runInformationFlowChecks`'s `do` block within Lean's
+    elaboration depth budget. -/
+def runR6CSecurityDomainLatticeChecks : IO Unit := do
+  let d0 : SeLe4n.Kernel.SecurityDomain := SeLe4n.Kernel.SecurityDomain.ofNat 0
+  let d3 : SeLe4n.Kernel.SecurityDomain := SeLe4n.Kernel.SecurityDomain.ofNat 3
+  let d5 : SeLe4n.Kernel.SecurityDomain := SeLe4n.Kernel.SecurityDomain.ofNat 5
+  let d7 : SeLe4n.Kernel.SecurityDomain := SeLe4n.Kernel.SecurityDomain.ofNat 7
+  -- R6.C.1a: sup operates as Nat.max on the underlying id.
+  expect "R6.C: sup d3 d5 has id 5"
+    ((SeLe4n.Kernel.SecurityDomain.sup d3 d5).id = 5)
+  expect "R6.C: sup d5 d3 has id 5 (commutativity check)"
+    ((SeLe4n.Kernel.SecurityDomain.sup d5 d3).id = 5)
+  -- R6.C.1b: inf operates as Nat.min on the underlying id.
+  expect "R6.C: inf d3 d5 has id 3"
+    ((SeLe4n.Kernel.SecurityDomain.inf d3 d5).id = 3)
+  expect "R6.C: inf d5 d3 has id 3 (commutativity check)"
+    ((SeLe4n.Kernel.SecurityDomain.inf d5 d3).id = 3)
+  -- R6.C: idempotency simp lemmas
+  expect "R6.C: sup_self d5 = d5"
+    (SeLe4n.Kernel.SecurityDomain.sup d5 d5 == d5)
+  expect "R6.C: inf_self d5 = d5"
+    (SeLe4n.Kernel.SecurityDomain.inf d5 d5 == d5)
+  -- R6.C.2: lattice associativity (runtime check on concrete witnesses).
+  expect "R6.C: sup_assoc on (d3, d5, d7)"
+    (SeLe4n.Kernel.SecurityDomain.sup
+      (SeLe4n.Kernel.SecurityDomain.sup d3 d5) d7
+      == SeLe4n.Kernel.SecurityDomain.sup d3
+          (SeLe4n.Kernel.SecurityDomain.sup d5 d7))
+  expect "R6.C: inf_assoc on (d3, d5, d7)"
+    (SeLe4n.Kernel.SecurityDomain.inf
+      (SeLe4n.Kernel.SecurityDomain.inf d3 d5) d7
+      == SeLe4n.Kernel.SecurityDomain.inf d3
+          (SeLe4n.Kernel.SecurityDomain.inf d5 d7))
+  -- R6.C.2: absorption laws.
+  expect "R6.C: absorb_sup_inf d3 d5 = d3"
+    (SeLe4n.Kernel.SecurityDomain.sup d3
+      (SeLe4n.Kernel.SecurityDomain.inf d3 d5) == d3)
+  expect "R6.C: absorb_inf_sup d3 d5 = d3"
+    (SeLe4n.Kernel.SecurityDomain.inf d3
+      (SeLe4n.Kernel.SecurityDomain.sup d3 d5) == d3)
+  -- R6.C.3: bridge theorem at concrete witnesses.
+  expect "R6.C: linearOrder.canFlow d3 d5 = true (since 3 ≤ 5)"
+    (SeLe4n.Kernel.DomainFlowPolicy.linearOrder.canFlow d3 d5 = true)
+  expect "R6.C: sup d3 d5 = d5 (matches canFlow)"
+    (SeLe4n.Kernel.SecurityDomain.sup d3 d5 == d5)
+  expect "R6.C: linearOrder.canFlow d5 d3 = false (since 5 > 3)"
+    (SeLe4n.Kernel.DomainFlowPolicy.linearOrder.canFlow d5 d3 = false)
+  expect "R6.C: linearOrder is reflexive — canFlow d3 d3 = true"
+    (SeLe4n.Kernel.DomainFlowPolicy.linearOrder.canFlow d3 d3 = true)
+  -- R6.C: distinct lowest vs. higher domains.
+  expect "R6.C: lowest has id 0"
+    (SeLe4n.Kernel.SecurityDomain.lowest.id = 0)
+  expect "R6.C: lowest = d0"
+    (SeLe4n.Kernel.SecurityDomain.lowest == d0)
+  -- R6.C: the SecurityDomainLattice witness composition holds.
+  let _w := SeLe4n.Kernel.securityDomain_complete_lattice
+  IO.println "WS-RC R6.C (DEEP-IF-02) SecurityDomain lattice runtime checks passed"
+
 def runInformationFlowChecks : IO Unit := do
   -- === Policy relation checks ===
   expect "security flow is reflexive"
@@ -1607,6 +1668,13 @@ def runInformationFlowChecks : IO Unit := do
     IO.println "NI-L3/4 domainScheduleIndex covert channel guard verified"
 
   IO.println "AN6-E.2 (IF-M02 / NI-L3) negative-case regression tests passed"
+
+  -- WS-RC R6.C (DEEP-IF-02): SecurityDomain lattice completion runtime checks.
+  -- Delegated to a private helper to keep the host `do` block's
+  -- elaboration depth bounded (this file's `set_option maxRecDepth 1024`
+  -- already accommodates a large host block; the helper is the
+  -- canonical pattern used elsewhere in this suite, e.g. AK6 sub-tests).
+  runR6CSecurityDomainLatticeChecks
 
   IO.println "all V6 information-flow & cross-subsystem checks passed"
 
