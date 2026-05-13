@@ -537,6 +537,324 @@ theorem ext {a b : SecurityDomain} (h : a.id = b.id) : a = b := by
 
 end SecurityDomain
 
+-- ============================================================================
+-- WS-RC R6.C (DEEP-IF-02): SecurityDomain lattice completion
+-- ============================================================================
+
+/-! ## WS-RC R6.C — Parameterised SecurityDomain lattice
+
+The predecessor deep audit
+(`AUDIT_v0.30.11_DEEP_VERIFICATION.md` §5.7, DEEP-IF-02) flagged that
+`Policy.lean:484-500` introduced a parameterised `SecurityDomain`
+lattice but the section was truncated mid-spec — the lattice
+instances (`SemilatticeSup`, `SemilatticeInf`, `Lattice`) and the
+four lattice-law theorems (associativity, commutativity, absorption×2)
+were missing. The deep audit's original recommendation ("document that
+the section is intentionally truncated") was struck per the
+implement-the-improvement rule
+(`AUDIT_v0.30.11_DEEP_VERIFICATION.md` §12); the correct remediation
+is to **complete the parameterised lattice**.
+
+This section closes R6.C with:
+
+1. `SecurityDomain.le` / `SecurityDomain.lt` order on the Nat-indexed
+   domain identifier.
+2. `SecurityDomain.sup` / `SecurityDomain.inf` join / meet operations
+   via `Nat.max` / `Nat.min` on the underlying identifier.
+3. Lean core typeclass instances (`LE`, `LT`, `Max`, `Min`) providing
+   the standard `≤`, `<`, `⊔`, `⊓` notation.
+4. `SecurityDomain.IsSemilatticeSup` /
+   `SecurityDomain.IsSemilatticeInf` Prop bundles establishing the
+   semilattice laws (idempotence, commutativity, associativity).
+5. `SecurityDomain.IsLattice` Prop bundle establishing the full
+   lattice laws (the two semilattices plus the two absorption laws).
+6. `SecurityDomain.lattice_witness` — a witness theorem proving the
+   bundle is inhabited.
+7. Bridge theorem `flowsTo_iff_le` — the `DomainFlowPolicy.linearOrder`
+   flow relation is exactly the lattice's `≤`.
+
+The lattice is **total / linear** because `SecurityDomain` is
+Nat-indexed; for arbitrary `DomainFlowPolicy`s (which can be
+non-linear), the lattice structure of the codomain is independent
+of the policy. The `linearOrder` policy is the canonical example. -/
+
+namespace SecurityDomain
+
+/-- WS-RC R6.C: Order relation — domain `a` is `≤` domain `b` iff its
+    underlying identifier is `≤` in the natural-number order. -/
+def le (a b : SecurityDomain) : Prop := a.id ≤ b.id
+
+/-- WS-RC R6.C: Strict order relation. -/
+def lt (a b : SecurityDomain) : Prop := a.id < b.id
+
+/-- WS-RC R6.C: Join (least upper bound) — pointwise `max` on the
+    underlying identifier. -/
+def sup (a b : SecurityDomain) : SecurityDomain :=
+  ⟨Nat.max a.id b.id⟩
+
+/-- WS-RC R6.C: Meet (greatest lower bound) — pointwise `min` on the
+    underlying identifier. -/
+def inf (a b : SecurityDomain) : SecurityDomain :=
+  ⟨Nat.min a.id b.id⟩
+
+end SecurityDomain
+
+/-- WS-RC R6.C: Lean core `LE` instance providing `≤` notation on
+    `SecurityDomain`. -/
+instance : LE SecurityDomain := ⟨SecurityDomain.le⟩
+
+/-- WS-RC R6.C: Lean core `LT` instance providing `<` notation on
+    `SecurityDomain`. -/
+instance : LT SecurityDomain := ⟨SecurityDomain.lt⟩
+
+/-- WS-RC R6.C: Lean core `Max` instance — provides `max a b`
+    notation on `SecurityDomain` (Lean 4 core uses `max`/`min`; the
+    `⊔`/`⊓` notation is a Mathlib extension that this project does
+    not depend on). -/
+instance : Max SecurityDomain := ⟨SecurityDomain.sup⟩
+
+/-- WS-RC R6.C: Lean core `Min` instance — provides `min a b`
+    notation on `SecurityDomain`. -/
+instance : Min SecurityDomain := ⟨SecurityDomain.inf⟩
+
+/-- WS-RC R6.C: Decidable `≤` on `SecurityDomain` follows from
+    decidability on `Nat`. -/
+instance : DecidableRel (α := SecurityDomain) (· ≤ ·) := fun a b =>
+  inferInstanceAs (Decidable (a.id ≤ b.id))
+
+namespace SecurityDomain
+
+/-- WS-RC R6.C: `≤` unfolds to the underlying `Nat.le` — useful
+    reduction lemma. -/
+theorem le_def {a b : SecurityDomain} : a ≤ b ↔ a.id ≤ b.id := Iff.rfl
+
+/-- WS-RC R6.C: `max` (sup) unfolds to `Nat.max` on the underlying
+    identifier — useful reduction lemma. -/
+theorem max_def {a b : SecurityDomain} : max a b = ⟨max a.id b.id⟩ := rfl
+
+/-- WS-RC R6.C: `min` (inf) unfolds to `Nat.min` on the underlying
+    identifier — useful reduction lemma. -/
+theorem min_def {a b : SecurityDomain} : min a b = ⟨min a.id b.id⟩ := rfl
+
+-- ----------------------------------------------------------------------------
+-- Order laws (reflexive partial order)
+-- ----------------------------------------------------------------------------
+
+/-- WS-RC R6.C: `≤` is reflexive. -/
+theorem le_refl (a : SecurityDomain) : a ≤ a := Nat.le_refl a.id
+
+/-- WS-RC R6.C: `≤` is transitive. -/
+theorem le_trans {a b c : SecurityDomain} (hab : a ≤ b) (hbc : b ≤ c) : a ≤ c :=
+  Nat.le_trans hab hbc
+
+/-- WS-RC R6.C: `≤` is antisymmetric (i.e., a partial order). -/
+theorem le_antisymm {a b : SecurityDomain} (hab : a ≤ b) (hba : b ≤ a) : a = b := by
+  apply SecurityDomain.ext
+  exact Nat.le_antisymm hab hba
+
+-- ----------------------------------------------------------------------------
+-- Sup semilattice laws (idempotence, commutativity, associativity)
+-- ----------------------------------------------------------------------------
+
+/-- WS-RC R6.C: `sup` is idempotent: `max a a = a`. -/
+theorem sup_idem (a : SecurityDomain) : max a a = a := by
+  apply SecurityDomain.ext
+  show max a.id a.id = a.id
+  exact Nat.max_self a.id
+
+/-- WS-RC R6.C: `sup` is commutative: `max a b = max b a`. -/
+theorem sup_comm (a b : SecurityDomain) : max a b = max b a := by
+  apply SecurityDomain.ext
+  show max a.id b.id = max b.id a.id
+  exact Nat.max_comm a.id b.id
+
+/-- WS-RC R6.C: `sup` is associative: `max (max a b) c = max a (max b c)`. -/
+theorem sup_assoc (a b c : SecurityDomain) :
+    max (max a b) c = max a (max b c) := by
+  apply SecurityDomain.ext
+  show max (max a.id b.id) c.id = max a.id (max b.id c.id)
+  exact Nat.max_assoc a.id b.id c.id
+
+-- ----------------------------------------------------------------------------
+-- Inf semilattice laws (idempotence, commutativity, associativity)
+-- ----------------------------------------------------------------------------
+
+/-- WS-RC R6.C: `inf` is idempotent: `min a a = a`. -/
+theorem inf_idem (a : SecurityDomain) : min a a = a := by
+  apply SecurityDomain.ext
+  show min a.id a.id = a.id
+  exact Nat.min_self a.id
+
+/-- WS-RC R6.C: `inf` is commutative: `min a b = min b a`. -/
+theorem inf_comm (a b : SecurityDomain) : min a b = min b a := by
+  apply SecurityDomain.ext
+  show min a.id b.id = min b.id a.id
+  exact Nat.min_comm a.id b.id
+
+/-- WS-RC R6.C: `inf` is associative: `min (min a b) c = min a (min b c)`. -/
+theorem inf_assoc (a b c : SecurityDomain) :
+    min (min a b) c = min a (min b c) := by
+  apply SecurityDomain.ext
+  show min (min a.id b.id) c.id = min a.id (min b.id c.id)
+  exact Nat.min_assoc a.id b.id c.id
+
+-- ----------------------------------------------------------------------------
+-- Absorption laws (the lattice-law pair connecting sup and inf)
+-- ----------------------------------------------------------------------------
+
+/-- WS-RC R6.C: First absorption law: `max a (min a b) = a`. -/
+theorem absorb_sup_inf (a b : SecurityDomain) : max a (min a b) = a := by
+  apply SecurityDomain.ext
+  show max a.id (min a.id b.id) = a.id
+  rcases Nat.le_total a.id b.id with h | h
+  · rw [Nat.min_eq_left h, Nat.max_self]
+  · rw [Nat.min_eq_right h]
+    exact Nat.max_eq_left h
+
+/-- WS-RC R6.C: Second absorption law: `min a (max a b) = a`. -/
+theorem absorb_inf_sup (a b : SecurityDomain) : min a (max a b) = a := by
+  apply SecurityDomain.ext
+  show min a.id (max a.id b.id) = a.id
+  rcases Nat.le_total a.id b.id with h | h
+  · rw [Nat.max_eq_right h]
+    exact Nat.min_eq_left h
+  · rw [Nat.max_eq_left h, Nat.min_self]
+
+-- ----------------------------------------------------------------------------
+-- Sup / inf order characterisation
+-- ----------------------------------------------------------------------------
+
+/-- WS-RC R6.C: `a ≤ max a b` — the join is an upper bound for `a`. -/
+theorem le_sup_left (a b : SecurityDomain) : a ≤ max a b := Nat.le_max_left a.id b.id
+
+/-- WS-RC R6.C: `b ≤ max a b` — the join is an upper bound for `b`. -/
+theorem le_sup_right (a b : SecurityDomain) : b ≤ max a b := Nat.le_max_right a.id b.id
+
+/-- WS-RC R6.C: Join is the LEAST upper bound — `max a b` is `≤` any
+    upper bound of `a` and `b`. -/
+theorem sup_le {a b c : SecurityDomain} (hac : a ≤ c) (hbc : b ≤ c) : max a b ≤ c :=
+  Nat.max_le.mpr ⟨hac, hbc⟩
+
+/-- WS-RC R6.C: `min a b ≤ a` — the meet is a lower bound for `a`. -/
+theorem inf_le_left (a b : SecurityDomain) : min a b ≤ a := Nat.min_le_left a.id b.id
+
+/-- WS-RC R6.C: `min a b ≤ b` — the meet is a lower bound for `b`. -/
+theorem inf_le_right (a b : SecurityDomain) : min a b ≤ b := Nat.min_le_right a.id b.id
+
+/-- WS-RC R6.C: Meet is the GREATEST lower bound — any lower bound of
+    `a` and `b` is `≤ min a b`. -/
+theorem le_inf {a b c : SecurityDomain} (hca : c ≤ a) (hcb : c ≤ b) : c ≤ min a b :=
+  Nat.le_min.mpr ⟨hca, hcb⟩
+
+/-- WS-RC R6.C: `≤` characterisation via `sup` — `a ≤ b ↔ max a b = b`. -/
+theorem le_iff_sup_eq {a b : SecurityDomain} : a ≤ b ↔ max a b = b := by
+  constructor
+  · intro h
+    apply SecurityDomain.ext
+    show max a.id b.id = b.id
+    exact Nat.max_eq_right h
+  · intro h
+    have hLe := le_sup_left a b
+    rw [h] at hLe
+    exact hLe
+
+/-- WS-RC R6.C: `≤` characterisation via `inf` — `a ≤ b ↔ min a b = a`. -/
+theorem le_iff_inf_eq {a b : SecurityDomain} : a ≤ b ↔ min a b = a := by
+  constructor
+  · intro h
+    apply SecurityDomain.ext
+    show min a.id b.id = a.id
+    exact Nat.min_eq_left h
+  · intro h
+    have hLe := inf_le_right a b
+    rw [h] at hLe
+    exact hLe
+
+end SecurityDomain
+
+-- ----------------------------------------------------------------------------
+-- Lattice bundles (defined OUTSIDE the SecurityDomain namespace so the
+-- inner field references can use the bare `SecurityDomain` type name
+-- without colliding with the `SecurityDomain.sup` / `SecurityDomain.inf`
+-- value-level names)
+-- ----------------------------------------------------------------------------
+
+/-- WS-RC R6.C: Sup-semilattice law bundle (idempotent / commutative /
+    associative `max` with `≤` characterisation). The Lean core `Max`
+    typeclass provides only the operation; this bundle establishes
+    that the operation satisfies the standard semilattice laws. -/
+structure SecurityDomainIsSemilatticeSup : Prop where
+  sup_idem : ∀ (a : SecurityDomain), max a a = a
+  sup_comm : ∀ (a b : SecurityDomain), max a b = max b a
+  sup_assoc : ∀ (a b c : SecurityDomain), max (max a b) c = max a (max b c)
+  le_sup_left : ∀ (a b : SecurityDomain), a ≤ max a b
+  le_sup_right : ∀ (a b : SecurityDomain), b ≤ max a b
+  sup_le : ∀ {a b c : SecurityDomain}, a ≤ c → b ≤ c → max a b ≤ c
+
+/-- WS-RC R6.C: Inf-semilattice law bundle (idempotent / commutative /
+    associative `min` with `≤` characterisation). -/
+structure SecurityDomainIsSemilatticeInf : Prop where
+  inf_idem : ∀ (a : SecurityDomain), min a a = a
+  inf_comm : ∀ (a b : SecurityDomain), min a b = min b a
+  inf_assoc : ∀ (a b c : SecurityDomain), min (min a b) c = min a (min b c)
+  inf_le_left : ∀ (a b : SecurityDomain), min a b ≤ a
+  inf_le_right : ∀ (a b : SecurityDomain), min a b ≤ b
+  le_inf : ∀ {a b c : SecurityDomain}, c ≤ a → c ≤ b → c ≤ min a b
+
+/-- WS-RC R6.C: Full lattice law bundle. Combines the two semilattices
+    and adds the two absorption laws that bind `max` and `min` together. -/
+structure SecurityDomainIsLattice : Prop where
+  toSemilatticeSup : SecurityDomainIsSemilatticeSup
+  toSemilatticeInf : SecurityDomainIsSemilatticeInf
+  absorb_sup_inf : ∀ (a b : SecurityDomain), max a (min a b) = a
+  absorb_inf_sup : ∀ (a b : SecurityDomain), min a (max a b) = a
+
+/-- WS-RC R6.C: SecurityDomain forms a sup-semilattice. -/
+theorem securityDomain_isSemilatticeSup : SecurityDomainIsSemilatticeSup :=
+  { sup_idem := SecurityDomain.sup_idem
+    sup_comm := SecurityDomain.sup_comm
+    sup_assoc := SecurityDomain.sup_assoc
+    le_sup_left := SecurityDomain.le_sup_left
+    le_sup_right := SecurityDomain.le_sup_right
+    sup_le := SecurityDomain.sup_le }
+
+/-- WS-RC R6.C: SecurityDomain forms an inf-semilattice. -/
+theorem securityDomain_isSemilatticeInf : SecurityDomainIsSemilatticeInf :=
+  { inf_idem := SecurityDomain.inf_idem
+    inf_comm := SecurityDomain.inf_comm
+    inf_assoc := SecurityDomain.inf_assoc
+    inf_le_left := SecurityDomain.inf_le_left
+    inf_le_right := SecurityDomain.inf_le_right
+    le_inf := SecurityDomain.le_inf }
+
+/-- WS-RC R6.C (DEEP-IF-02): **Lattice witness theorem** — SecurityDomain
+    forms a lattice under `max` (sup) and `min` (inf). The four lattice
+    laws (sup associativity, sup commutativity, absorption × 2) plus the
+    inf-side dual laws (inf associativity, inf commutativity) plus the
+    `≤`-characterisation theorems are all provided.
+
+    This theorem closes DEEP-IF-02 per the implement-the-improvement
+    rule: the parameterised SecurityDomain lattice section
+    (`Policy.lean:484-500` in the predecessor audit's framing) is now
+    structurally complete. -/
+theorem securityDomain_isLattice : SecurityDomainIsLattice :=
+  { toSemilatticeSup := securityDomain_isSemilatticeSup
+    toSemilatticeInf := securityDomain_isSemilatticeInf
+    absorb_sup_inf := SecurityDomain.absorb_sup_inf
+    absorb_inf_sup := SecurityDomain.absorb_inf_sup }
+
+-- ----------------------------------------------------------------------------
+-- Bridge: flowsTo (linearOrder) ↔ lattice ≤
+--
+-- The bridge theorem proper is defined LATER in this file (after
+-- `DomainFlowPolicy.linearOrder` is declared), see
+-- `DomainFlowPolicy.linearOrder_canFlow_iff_le` and
+-- `domainFlowsTo_linearOrder_iff_le` below the `linearOrder_transitive`
+-- block. The lattice section above provides all the per-pair laws and
+-- the structural bundles; the bridge connects those to the existing
+-- `DomainFlowPolicy.linearOrder` policy.
+-- ----------------------------------------------------------------------------
+
 /-- WS-H14a: EquivBEq for SecurityDomain. -/
 instance : EquivBEq SecurityDomain := ⟨⟩
 /-- WS-H14a: LawfulBEq for SecurityDomain. -/
@@ -611,6 +929,17 @@ theorem DomainFlowPolicy.linearOrder_wellFormed :
     DomainFlowPolicy.linearOrder.wellFormed :=
   ⟨linearOrder_reflexive, linearOrder_transitive⟩
 
+/-- WS-RC R6.C (DEEP-IF-02): **Bridge theorem** — the
+    `DomainFlowPolicy.linearOrder` flow relation is exactly the
+    SecurityDomain lattice's `≤`. Closes R6.C.3 of the workstream
+    plan: the flow order on `SecurityDomain` under `linearOrder` is
+    the lattice's `≤`. -/
+theorem DomainFlowPolicy.linearOrder_canFlow_iff_le (a b : SecurityDomain) :
+    DomainFlowPolicy.linearOrder.canFlow a b = true ↔ a ≤ b := by
+  unfold DomainFlowPolicy.linearOrder
+  show decide (a.id ≤ b.id) = true ↔ a.id ≤ b.id
+  exact decide_eq_true_iff
+
 /-- WS-E5/H-04: Generic flow check using a domain flow policy.
 
 This is the parameterized replacement for `securityFlowsTo` that supports
@@ -631,6 +960,13 @@ theorem domainFlowsTo_trans
     (h₂ : domainFlowsTo policy b c = true) :
     domainFlowsTo policy a c = true :=
   hTrans a b c h₁ h₂
+
+/-- WS-RC R6.C (DEEP-IF-02): Bridge to the `domainFlowsTo` wrapper —
+    under `linearOrder`, the flow relation is exactly the lattice's
+    `≤`. -/
+theorem domainFlowsTo_linearOrder_iff_le (a b : SecurityDomain) :
+    domainFlowsTo DomainFlowPolicy.linearOrder a b = true ↔ a ≤ b :=
+  DomainFlowPolicy.linearOrder_canFlow_iff_le a b
 
 -- ============================================================================
 -- WS-E5/H-04: Generic labeling context
@@ -905,6 +1241,52 @@ theorem isDeclassificationAuthorized_not_reflexive
   simp [isDeclassificationAuthorized, hRefl d]
 
 end DeclassificationPolicy
+
+-- ============================================================================
+-- WS-RC R6.B (DEEP-IF-01): DeclassificationPolicy closure witness
+-- ============================================================================
+
+/-! ## WS-RC R6.B — `DeclassificationPolicy` discovery anchor
+
+The predecessor deep audit (`AUDIT_v0.30.11_DEEP_VERIFICATION.md` §5.7,
+DEEP-IF-01) flagged that the `DeclassificationPolicy` structure was
+"imported by `Soundness.lean` but the agent did not locate its
+definition in the audited scope." The audit recommended either
+locating the existing definition or adding it. Verification under
+WS-RC R6.B confirms: the structure is fully defined above
+(`structure DeclassificationPolicy` at line 879) and consumed via the
+import chain
+`InformationFlow.Enforcement.Soundness.lean` →
+`InformationFlow.Enforcement.Wrappers.lean` →
+`InformationFlow.Policy.lean`. The single declassification gate
+`declassifyStore` in `Enforcement/Soundness.lean:516-530` consumes
+the structure, producing the three correctness theorems (lines 586-603
+of `Enforcement/Soundness.lean`) that the deep audit re-confirmed.
+
+R6.B closes as **VERIFIED** (no new structure needed); the witness
+theorem below anchors the closure for the discharge index. -/
+
+/-- WS-RC R6.B (DEEP-IF-01): Closure witness — `DeclassificationPolicy`
+    is fully defined in this file (line 879) and consumed by
+    `declassifyStore` in `Enforcement/Soundness.lean:516-530`. This
+    theorem witnesses the existence of an inhabitant of the structure
+    (`DeclassificationPolicy.none`, the strictest policy) and is
+    referenced from §3.H.1 of `AUDIT_v0.30.11_DISCHARGE_INDEX.md` as
+    the discharge anchor for DEEP-IF-01. -/
+theorem r6b_declassificationPolicy_defined :
+    ∃ p : DeclassificationPolicy, p = DeclassificationPolicy.none :=
+  ⟨DeclassificationPolicy.none, rfl⟩
+
+/-- WS-RC R6.B (DEEP-IF-01): The strictest declassification policy
+    authorises zero downgrades. Combined with the existing
+    `isDeclassificationAuthorized_not_reflexive` theorem, this confirms
+    the structure's semantic content is non-trivial. -/
+theorem r6b_declassificationPolicy_none_denies_all
+    (basePolicy : DomainFlowPolicy) (src dst : SecurityDomain) :
+    DeclassificationPolicy.isDeclassificationAuthorized
+      basePolicy DeclassificationPolicy.none src dst = false := by
+  simp [DeclassificationPolicy.isDeclassificationAuthorized,
+        DeclassificationPolicy.none]
 
 -- ============================================================================
 -- WS-H10/M-16: Endpoint flow policy well-formedness

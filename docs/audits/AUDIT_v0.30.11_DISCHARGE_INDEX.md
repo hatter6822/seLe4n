@@ -74,6 +74,8 @@ will be added in the same PR as the corresponding R-phase landing.
 | 3.E | Predecessor reroutings | – | R4.C subsumes DEEP-IPC-01 | DEEP-IPC-01 | **PENDING — populated at R4.C landing** |
 | 3.F | False-positive structural witnesses | runtime-guard equivalence | R4.D / R12.B / R12.C / R12.D | DEEP-CAP-02, DEEP-ARCH-01, DEEP-RUST-01/02, DEEP-ARCH-02 | **PENDING — populated as each gate / witness lands** |
 | 3.G | Predecessor closure reconfirmations | DEBT carry-over | R0.4 | DEBT-RUST-02 / H-24 | **LANDED at R0.4** (see annotation in [v0.30.6 index §5](../dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md#5-closure-summary)) |
+| 3.H | Scheduler / Lifecycle behaviour symmetry | structural witness / preservation theorem | R5 (DEEP-SUSP/SCH) | DEEP-SUSP-01/02, DEEP-SCH-02..06 | **LANDED at R5** (28 rows H.1–H.28) |
+| 3.I | Architecture / InformationFlow completeness | structural bridge / lattice / decl-policy witness | R6 (DEEP-ARCH-03, DEEP-IF-01/02, DEEP-IPC-04) | DEEP-ARCH-03, DEEP-IF-01, DEEP-IF-02, DEEP-IPC-04 | **LANDED at R6** |
 
 §3.A–§3.C are the predecessor inventory and continue to apply to WS-RC.
 The 6 substantively-discharged CDT post-state bridges, the 7 closure-form
@@ -285,6 +287,59 @@ the cross-language discriminant pin
 Rust `decode_missing_sched_context_error` /
 `missing_sched_context_decode`.
 
+### §3.I — Architecture / InformationFlow completeness (LANDED at WS-RC R6)
+
+WS-RC R6 (`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md §10`) closes
+the four spec-completeness findings from the predecessor deep audit
+(DEEP-ARCH-03, DEEP-IF-01, DEEP-IF-02, DEEP-IPC-04). Twelve new
+witness theorems anchor the closure-form discharge across the four
+sub-tasks R6.A (GIC bridge), R6.B (DeclassificationPolicy verification),
+R6.C (SecurityDomain lattice completion), and R6.D (cleanup-error
+unreachable proof — verification-only).
+
+| # | Spec source | Closure-form theorem / witness | Location | Status |
+|---|-------------|--------------------------------|----------|--------|
+| I.1 | DEEP-ARCH-03 (R6.A.1) | `InterruptOp` algebra + `interruptDispatchSchedule` symbolic GIC schedule | `Kernel/Architecture/ExceptionModel.lean` | LANDED at WS-RC R6.A |
+| I.2 | DEEP-ARCH-03 (R6.A.1) | `interruptDispatchSchedule_eq` (canonical 3-step list — AN8-C ordering) | `Kernel/Architecture/ExceptionModel.lean` | LANDED at WS-RC R6.A |
+| I.3 | DEEP-ARCH-03 (R6.A.1) | `interruptDispatchSchedule_eoi_before_handle` (AN8-C structural invariant) | `Kernel/Architecture/ExceptionModel.lean` | LANDED at WS-RC R6.A |
+| I.4 | DEEP-ARCH-03 (R6.A.1) | `classifyIrqInterruptId` + `classifyIrqInterruptId_iff_acknowledgeInterrupt_ok` (classification ↔ acknowledge consistency) | `Kernel/Architecture/ExceptionModel.lean` | LANDED at WS-RC R6.A |
+| I.5 | DEEP-ARCH-03 (R6.A.2) | **`exception_irq_dispatches_via_interrupt_dispatch`** (the formal Lean-level GIC bridge promised by §10.2 of the workstream plan) | `Kernel/Architecture/ExceptionModel.lean` | LANDED at WS-RC R6.A |
+| I.6 | DEEP-ARCH-03 (R6.A.3) | `GicDispatchBridgeBundle` + `architectureGicDispatchBridgeBundle` (bundle composition) + `r6a_gicDispatchBridge_in_architecture_invariant_family` (architecture-invariant-family anchor in `Architecture/Invariant.lean`) | `Kernel/Architecture/ExceptionModel.lean` + `Kernel/Architecture/Invariant.lean` | LANDED at WS-RC R6.A.3 |
+| I.7 | DEEP-IF-01 (R6.B) | `r6b_declassificationPolicy_defined` (existence witness via `DeclassificationPolicy.none` inhabitation) + `r6b_declassificationPolicy_none_denies_all` (semantic non-triviality) | `Kernel/InformationFlow/Policy.lean` | LANDED at WS-RC R6.B (verification-only — structure pre-existed at line 879) |
+| I.8 | DEEP-IF-02 (R6.C.1) | `SecurityDomain.le`/`.lt`/`.sup`/`.inf` + `LE`/`LT`/`Max`/`Min` instances (Lean core; `⊔`/`⊓` symbols are Mathlib extensions this project does not depend on) | `Kernel/InformationFlow/Policy.lean` | LANDED at WS-RC R6.C |
+| I.9 | DEEP-IF-02 (R6.C.2) | `SecurityDomain.sup_assoc` + `.sup_comm` + `.sup_idem` + `.inf_assoc` + `.inf_comm` + `.inf_idem` (six semilattice laws) + `SecurityDomain.absorb_sup_inf` + `.absorb_inf_sup` (two absorption laws — the four genuinely *new* lattice laws called for in §10.4 of the plan are commutativity + associativity for `sup` plus the two absorption laws; the inf-side dual laws are added in parallel for symmetry) | `Kernel/InformationFlow/Policy.lean` | LANDED at WS-RC R6.C |
+| I.10 | DEEP-IF-02 (R6.C.2) | `SecurityDomainIsSemilatticeSup` + `SecurityDomainIsSemilatticeInf` + `SecurityDomainIsLattice` Prop bundles + `securityDomain_isLattice` witness theorem | `Kernel/InformationFlow/Policy.lean` | LANDED at WS-RC R6.C |
+| I.11 | DEEP-IF-02 (R6.C.3) | `DomainFlowPolicy.linearOrder_canFlow_iff_le` + `domainFlowsTo_linearOrder_iff_le` (bridge: `flowsTo` (linearOrder) ↔ lattice `≤`) | `Kernel/InformationFlow/Policy.lean` | LANDED at WS-RC R6.C |
+| I.12 | DEEP-IPC-04 (R6.D) | `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull` (theorem pre-existed at `IPC/Invariant/Defs.lean:2630`; verified sorry-free at WS-RC R6.D; closure consists of recording this row plus the plan-compliant alias `cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull`) | `Kernel/IPC/Invariant/Defs.lean:2630, 2669` | LANDED — verification-only (theorem pre-existed and was sorry-free) |
+
+The R6 closure pattern differs from R4/R5 in that two of the four
+sub-tasks (R6.B, R6.D) closed as **verification-only**:
+
+- **R6.B (DEEP-IF-01)**: the audit asked to locate or define
+  `DeclassificationPolicy`. Verification confirmed the structure was
+  already defined at `Policy.lean:879` and consumed via the import
+  chain
+  `InformationFlow.Enforcement.Soundness.lean` →
+  `InformationFlow.Enforcement.Wrappers.lean` →
+  `InformationFlow.Policy.lean`. The witness rows I.7 anchor the
+  closure in the discharge index without modifying the existing
+  structure.
+
+- **R6.D (DEEP-IPC-04)**: the audit asked to verify or prove
+  `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull`.
+  Verification confirmed the theorem existed at
+  `IPC/Invariant/Defs.lean:2630`, was sorry-free, and discharged via
+  the named projection `hInv.donationOwnerValid` (AN3-B.2 named-projection
+  migration). The witness row I.12 anchors the closure in the
+  discharge index without modifying the existing theorem.
+
+Per the implement-the-improvement rule (`CLAUDE.md` §
+"Implement-the-improvement rule"), the verification-only closure is
+the correct outcome when the existing artefact already matches the
+audit's expected better state. The rule's documentation-vs-code
+direction is preserved: when the code is already at the better state,
+no weakening of the audit description is needed.
+
 ### §3.G — Predecessor closure reconfirmations (LANDED at R0.4)
 
 DEBT-RUST-02 / H-24 reconfirmation. The predecessor audit's H-24
@@ -353,15 +408,32 @@ live" sync).
   per the multi-PR plan.
 - **§3.G — 1 of 1 row** LANDED at R0.4 (DEBT-RUST-02 / H-24
   reconfirmation; closure annotation in archived predecessor index).
-- **§3.H — 18 of 18 rows LANDED at WS-RC R5** (scheduler / lifecycle
+- **§3.H — 28 of 28 rows LANDED at WS-RC R5** (scheduler / lifecycle
   behaviour symmetry — DEEP-SUSP-01/02, DEEP-SCH-02/03/05/06; rows
   H.16/H.17/H.18 added at the R5 audit pass for closure-form
   preservation of boundThreadDomainConsistent and per-arm IF
-  preservation of the cancelDonation split). The remaining DEEP-SCH-04
+  preservation of the cancelDonation split; rows H.19–H.28 added at
+  the WS-RC R5 deferred-work landings). The remaining DEEP-SCH-04
   (R5.E) row is operational-witness only (no closure-form theorem); its
   regression test `runR5EOrphanedSchedContextChecks` provides the
   runtime-observable witness. AK7 cascade monotonicity baseline retained
   at the v0.30.11 floor.
+- **§3.I — 12 of 12 rows LANDED at WS-RC R6** (architecture /
+  InformationFlow completeness — DEEP-ARCH-03, DEEP-IF-01/02,
+  DEEP-IPC-04). R6.A (rows I.1–I.6) adds the formal Lean-level GIC
+  dispatch bridge (`InterruptOp` + `interruptDispatchSchedule` +
+  `exception_irq_dispatches_via_interrupt_dispatch` + the
+  `GicDispatchBridgeBundle` composition). R6.B (row I.7) closes
+  verification-only (DEEP-IF-01: `DeclassificationPolicy` pre-existed
+  at `Policy.lean:879`). R6.C (rows I.8–I.11) completes the
+  parameterised `SecurityDomain` lattice with all four lattice laws
+  (sup commutativity / associativity + the two absorption laws),
+  six semilattice laws, the structural Prop-bundle witnesses, and the
+  bridge to `DomainFlowPolicy.linearOrder`. R6.D (row I.12) closes
+  verification-only (DEEP-IPC-04: the
+  `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull`
+  theorem pre-existed at `IPC/Invariant/Defs.lean:2630` and was
+  sorry-free).
 
 **No closure-form obligation introduced by WS-RC is orphaned**: every
 R-phase that produces a closure-form theorem or structural witness

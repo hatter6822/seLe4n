@@ -11,6 +11,11 @@ import SeLe4n.Kernel.Scheduler.Liveness
 import SeLe4n.Kernel.Lifecycle.Suspend
 import SeLe4n.Kernel.Lifecycle.Invariant.SuspendPreservation
 import SeLe4n.Kernel.SchedContext.Invariant.Preservation
+-- WS-RC R6 invariant-surface anchors (DEEP-ARCH-03, DEEP-IF-01/02, DEEP-IPC-04)
+import SeLe4n.Kernel.Architecture.ExceptionModel
+import SeLe4n.Kernel.Architecture.Invariant
+import SeLe4n.Kernel.InformationFlow.Policy
+import SeLe4n.Kernel.IPC.Invariant.Defs
 
 /-!
 # Liveness Suite — Invariant Surface Anchor Tests
@@ -319,6 +324,73 @@ example :
   }
 
 -- ============================================================================
+-- WS-RC R6 surface anchors (DEEP-ARCH-03, DEEP-IF-01/02, DEEP-IPC-04)
+-- ============================================================================
+
+-- R6.A (DEEP-ARCH-03): GIC bridge surface
+#check @SeLe4n.Kernel.Architecture.InterruptOp
+#check @SeLe4n.Kernel.Architecture.interruptDispatchSchedule
+#check @SeLe4n.Kernel.Architecture.interruptDispatchSchedule_eq
+#check @SeLe4n.Kernel.Architecture.interruptDispatchSchedule_length
+#check @SeLe4n.Kernel.Architecture.interruptDispatchSchedule_head
+#check @SeLe4n.Kernel.Architecture.interruptDispatchSchedule_eoi_before_handle
+#check @SeLe4n.Kernel.Architecture.classifyIrqInterruptId
+#check @SeLe4n.Kernel.Architecture.classifyIrqInterruptId_iff_acknowledgeInterrupt_ok
+#check @SeLe4n.Kernel.Architecture.classifyIrqInterruptId_spurious
+#check @SeLe4n.Kernel.Architecture.classifyIrqInterruptId_outOfRange
+#check @SeLe4n.Kernel.Architecture.exception_irq_dispatches_via_interrupt_dispatch
+#check @SeLe4n.Kernel.Architecture.dispatchException_irq_eq_interruptDispatchSequence
+#check @SeLe4n.Kernel.Architecture.r6a_gicDispatchBridge_in_architectureInvariantFamily
+
+-- R6.A.3: bundle surface
+#check @SeLe4n.Kernel.Architecture.GicDispatchBridgeBundle
+#check @SeLe4n.Kernel.Architecture.architectureGicDispatchBridgeBundle
+#check @SeLe4n.Kernel.Architecture.r6a_gicDispatchBridge_in_architecture_invariant_family
+
+-- R6.B (DEEP-IF-01): DeclassificationPolicy witness surface
+#check @SeLe4n.Kernel.DeclassificationPolicy
+#check @SeLe4n.Kernel.DeclassificationPolicy.none
+#check @SeLe4n.Kernel.r6b_declassificationPolicy_defined
+#check @SeLe4n.Kernel.r6b_declassificationPolicy_none_denies_all
+
+-- R6.C (DEEP-IF-02): SecurityDomain lattice surface
+#check @SeLe4n.Kernel.SecurityDomain.le
+#check @SeLe4n.Kernel.SecurityDomain.lt
+#check @SeLe4n.Kernel.SecurityDomain.sup
+#check @SeLe4n.Kernel.SecurityDomain.inf
+#check @SeLe4n.Kernel.SecurityDomain.le_refl
+#check @SeLe4n.Kernel.SecurityDomain.le_trans
+#check @SeLe4n.Kernel.SecurityDomain.le_antisymm
+#check @SeLe4n.Kernel.SecurityDomain.sup_idem
+#check @SeLe4n.Kernel.SecurityDomain.sup_comm
+#check @SeLe4n.Kernel.SecurityDomain.sup_assoc
+#check @SeLe4n.Kernel.SecurityDomain.inf_idem
+#check @SeLe4n.Kernel.SecurityDomain.inf_comm
+#check @SeLe4n.Kernel.SecurityDomain.inf_assoc
+#check @SeLe4n.Kernel.SecurityDomain.absorb_sup_inf
+#check @SeLe4n.Kernel.SecurityDomain.absorb_inf_sup
+#check @SeLe4n.Kernel.SecurityDomain.le_sup_left
+#check @SeLe4n.Kernel.SecurityDomain.le_sup_right
+#check @SeLe4n.Kernel.SecurityDomain.sup_le
+#check @SeLe4n.Kernel.SecurityDomain.inf_le_left
+#check @SeLe4n.Kernel.SecurityDomain.inf_le_right
+#check @SeLe4n.Kernel.SecurityDomain.le_inf
+#check @SeLe4n.Kernel.SecurityDomain.le_iff_sup_eq
+#check @SeLe4n.Kernel.SecurityDomain.le_iff_inf_eq
+#check @SeLe4n.Kernel.SecurityDomainIsSemilatticeSup
+#check @SeLe4n.Kernel.SecurityDomainIsSemilatticeInf
+#check @SeLe4n.Kernel.SecurityDomainIsLattice
+#check @SeLe4n.Kernel.securityDomain_isSemilatticeSup
+#check @SeLe4n.Kernel.securityDomain_isSemilatticeInf
+#check @SeLe4n.Kernel.securityDomain_isLattice
+#check @SeLe4n.Kernel.DomainFlowPolicy.linearOrder_canFlow_iff_le
+#check @SeLe4n.Kernel.domainFlowsTo_linearOrder_iff_le
+
+-- R6.D (DEEP-IPC-04): cleanup-error unreachable theorem surface
+#check @SeLe4n.Kernel.cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull
+#check @SeLe4n.Kernel.cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull
+
+-- ============================================================================
 -- Executable entry point
 -- ============================================================================
 
@@ -375,5 +447,9 @@ def main : IO Unit := do
   IO.println "  ✓ AN5-E.3: functional tests — concrete CanonicalDeploymentProgress"
   IO.println "  ✓ AN5-D: rpi5_cbs_window_replenishments_bounded + _concrete (SC-M01)"
   IO.println "  ✓ WS-RC R5: cancelDonation split, restoreToReady, effectiveSchedParams, domain propagation"
-  IO.println "=== All surface anchors verified (95 base + R5 additions) ==="
+  IO.println "  ✓ WS-RC R6.A: InterruptOp, interruptDispatchSchedule, exception_irq bridge, GicDispatchBridgeBundle"
+  IO.println "  ✓ WS-RC R6.B: DeclassificationPolicy witness theorems"
+  IO.println "  ✓ WS-RC R6.C: SecurityDomain le/sup/inf, 6 semilattice laws + 2 absorption laws, lattice bundle, linearOrder ↔ ≤ bridge"
+  IO.println "  ✓ WS-RC R6.D: cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull"
+  IO.println "=== All surface anchors verified (95 base + R5 + R6 additions) ==="
   return ()

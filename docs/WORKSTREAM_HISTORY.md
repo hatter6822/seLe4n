@@ -1063,12 +1063,184 @@ witnessed by the three new runtime tests, and the shape-form
 substantive theorems (which compose the now-substantive Phase Q2.A
 schedule frame) provide the proof-layer infrastructure.
 
-### R6..R14 — TBD
+### R6 — Architecture / InformationFlow completeness (v0.31.3, **LANDED**)
+
+**Sub-tasks:** R6.A (DEEP-ARCH-03 GIC bridge), R6.B (DEEP-IF-01
+DeclassificationPolicy verification), R6.C (DEEP-IF-02 SecurityDomain
+lattice completion), R6.D (DEEP-IPC-04 cleanup-error unreachable proof
+verification).
+**Plan:** [`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md) §10
+**Discharge index:** [`docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`](audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md) §3.I (12 rows I.1–I.12)
+
+R6 closes the four spec-completeness findings from the predecessor
+deep audit. Two sub-tasks landed as new code (R6.A, R6.C) and two
+closed as verification-only (R6.B, R6.D) per the implement-the-improvement
+rule.
+
+#### R6.A — ExceptionModel ↔ InterruptDispatch GIC bridge (DEEP-ARCH-03)
+
+**File:** `SeLe4n/Kernel/Architecture/ExceptionModel.lean`
+(plus `SeLe4n/Kernel/Architecture/Invariant.lean` for the
+architecture-invariant-family anchor).
+
+Pre-R6 the correspondence between an `.irq` exception class and the
+GIC-400 acknowledge → EOI → handle flow was implicit: `dispatchException`
+routed `.irq` arms through `interruptDispatchSequence`, but no theorem
+stated the GIC-400 §3.1 ordering at the type level. The boundary
+between exception classification (Lean) and dispatch (mostly Rust HAL)
+was documented but not formally bridged.
+
+R6.A adds three artefacts:
+
+1. **`InterruptOp` algebra** — pure-data inductive `.ack | .eoi | .handle`,
+   each parameterised by an `InterruptId`.
+2. **`interruptDispatchSchedule : InterruptId → List InterruptOp`** —
+   canonical AN8-C ordering `[.ack id, .eoi id, .handle id]`. The
+   ordering is the post-AN8-C convention where EOI fires BEFORE the
+   handler body to prevent "handler panic leaves INTID active" on
+   the GIC. Five structural theorems (`_eq`, `_length`, `_head`,
+   `_eoi_before_handle`, plus the dispatch-vs-sequence equation
+   `dispatchException_irq_eq_interruptDispatchSequence`) document the
+   schedule's shape invariants.
+3. **`classifyIrqInterruptId : Nat → Option InterruptId`** — the
+   IRQ-arm analogue of `classifySynchronousException` for synchronous
+   exceptions, mirroring `acknowledgeInterrupt`'s `AckError`
+   decomposition. The
+   `classifyIrqInterruptId_iff_acknowledgeInterrupt_ok` theorem
+   establishes the consistency between the classification helper and
+   the executable.
+
+**Bridge theorem (R6.A.2):**
+`exception_irq_dispatches_via_interrupt_dispatch` — when the
+exception type is `.irq` and the raw INTID classifies to a valid
+GIC-400 INTID, three properties hold simultaneously: (1) the
+symbolic schedule is canonical, (2) the executable dispatch equals
+`interruptDispatchSequence`, and (3) the executable always succeeds
+at the kernel layer.
+
+**Bundle composition (R6.A.3):** `GicDispatchBridgeBundle` packages
+the four core bridge claims (schedule_canonical,
+schedule_eoi_before_handle, dispatch_eq_interrupt, dispatch_always_ok)
+into a single discoverable artefact. Co-located with the bridge in
+`ExceptionModel.lean` to avoid the `SeLe4n.Kernel.API` →
+`Architecture/Invariant.lean` → `Architecture/ExceptionModel.lean` →
+`SeLe4n.Kernel.API` import cycle that would arise if the bundle were
+placed in `Architecture/Invariant.lean`. The
+architecture-invariant-family anchor
+`r6a_gicDispatchBridge_in_architecture_invariant_family : True := trivial`
+in `Architecture/Invariant.lean` establishes the discovery surface
+without re-introducing the cycle.
+
+**Note on audit pseudocode:** The plan's R6.A.2 example signature
+(`interruptDispatchSequence id = ack id ++ handle id ++ eoi id`) was
+inaccurate in two respects: (a) `interruptDispatchSequence` is
+`Except KernelError (Unit × SystemState)`, not `List InterruptOp`
+(the symbolic schedule and the executable are separate artefacts in
+the landed implementation); (b) the ordering `ack ++ handle ++ eoi`
+predates the AN8-C reordering audit fix
+(`AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12`) that moved EOI before the
+handler body. The landed implementation follows the actual AN8-C
+ordering with `ack → EOI → handle` semantics.
+
+#### R6.B — `DeclassificationPolicy` verification (DEEP-IF-01)
+
+**File:** `SeLe4n/Kernel/InformationFlow/Policy.lean`
+
+The audit asked to locate or define `DeclassificationPolicy`.
+Verification confirmed the structure was already defined at
+`Policy.lean:879` and consumed via the import chain
+`InformationFlow.Enforcement.Soundness.lean` →
+`InformationFlow.Enforcement.Wrappers.lean` →
+`InformationFlow.Policy.lean`. The single declassification gate
+`declassifyStore` (`Enforcement/Soundness.lean:516-530`) consumes the
+structure, producing the three correctness theorems (lines 586-603)
+that the deep audit re-confirmed.
+
+R6.B closes as **VERIFIED** (no new structure needed). Two witness
+theorems anchor the closure for the discharge index:
+
+- `r6b_declassificationPolicy_defined` — existence witness via
+  `DeclassificationPolicy.none` inhabitation.
+- `r6b_declassificationPolicy_none_denies_all` — semantic
+  non-triviality: the strictest policy denies every cross-domain
+  edge.
+
+#### R6.C — SecurityDomain lattice completion (DEEP-IF-02)
+
+**File:** `SeLe4n/Kernel/InformationFlow/Policy.lean`
+
+The predecessor deep audit flagged that `Policy.lean:484-500`
+introduced a parameterised `SecurityDomain` lattice but the section
+was truncated mid-spec — the lattice instances
+(`SemilatticeSup`/`SemilatticeInf`/`Lattice`) and the four
+lattice-law theorems were missing. The deep audit's original
+recommendation ("document that the section is intentionally
+truncated") was struck per the implement-the-improvement rule
+(`AUDIT_v0.30.11_DEEP_VERIFICATION.md §12`); the correct remediation
+was to **complete the parameterised lattice**.
+
+R6.C adds:
+
+1. **Order / operation primitives**: `SecurityDomain.le`/`.lt`/`.sup`/`.inf`
+   on the Nat-indexed domain identifier via `Nat.max`/`Nat.min`.
+2. **Lean core typeclass instances**: `LE`/`LT`/`Max`/`Min`. Note: the
+   `⊔`/`⊓` notation is a Mathlib extension that this project does not
+   depend on; instead the project uses `max`/`min` (Lean core).
+3. **Eight per-pair lattice laws**: `sup_idem`/`sup_comm`/`sup_assoc` +
+   `inf_idem`/`inf_comm`/`inf_assoc` (six semilattice laws) +
+   `absorb_sup_inf`/`absorb_inf_sup` (two absorption laws — the
+   genuine lattice-binding pair). All proofs go via the underlying
+   `Nat.max_*`/`Nat.min_*` laws.
+4. **Order characterisation theorems**: `le_sup_left`/`le_sup_right`/`sup_le`
+   (join is the least upper bound), `inf_le_left`/`inf_le_right`/`le_inf`
+   (meet is the greatest lower bound), `le_iff_sup_eq`/`le_iff_inf_eq`.
+5. **Prop bundles**: `SecurityDomainIsSemilatticeSup`,
+   `SecurityDomainIsSemilatticeInf`, `SecurityDomainIsLattice` with
+   witness theorems `securityDomain_isSemilatticeSup`,
+   `securityDomain_isSemilatticeInf`, **`securityDomain_isLattice`**
+   (the **R6.C.2 lattice witness theorem** closing the audit's
+   "Lattice SecurityDomain" claim).
+6. **Bridge theorems (R6.C.3)**: `DomainFlowPolicy.linearOrder_canFlow_iff_le`
+   and `domainFlowsTo_linearOrder_iff_le` — the flow relation under
+   `linearOrder` is exactly the lattice's `≤`.
+
+#### R6.D — Cleanup-error unreachable proof verification (DEEP-IPC-04)
+
+**File:** `SeLe4n/Kernel/IPC/Invariant/Defs.lean:2630`
+
+Verification confirmed the theorem
+`cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull`
+existed at `IPC/Invariant/Defs.lean:2630`, was sorry-free, and
+discharged via the named projection `hInv.donationOwnerValid`
+(AN3-B.2 named-projection migration). The plan-compliant alias
+`cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull`
+(line 2669) provides the top-level function naming.
+
+R6.D closes as **VERIFIED** (no new proof needed). The witness row
+I.12 in `AUDIT_v0.30.11_DISCHARGE_INDEX.md` §3.I anchors the closure.
+
+#### R6 testing additions
+
+- `tests/InterruptDispatchSuite.lean`: 10 new R6.A tests
+  (`test_t14_schedule_canonical`, `test_t15_schedule_head_is_ack`,
+  `test_t16_schedule_eoi_before_handle`, `test_t17_classify_spurious`,
+  `test_t18_classify_out_of_range`, `test_t19_classify_valid`,
+  `test_t20_classify_iff_acknowledge`,
+  `test_t21_bridge_theorem_reachable`,
+  `test_t22_bridge_bundle_reachable`, `test_t23_architecture_anchor`).
+- `tests/InformationFlowSuite.lean`: new
+  `runR6InformationFlowCompletenessChecks` with 4 R6.B checks (r6b_01..04)
+  and 15 R6.C checks (r6c_01..15) wired into `main`.
+- `tests/LivenessSuite.lean`: 46 new R6 invariant-surface `#check`
+  anchors (13 R6.A bridge surface + 3 R6.A.3 bundle surface + 4 R6.B
+  witness surface + 24 R6.C lattice surface + 2 R6.D theorem surface),
+  plus 4 new lines in the surface-summary print block.
+
+### R7..R14 — TBD
 
 Per plan §3 phase summary; remaining rows will be appended to this
-section as each phase lands a coherent slice. R6 is the remaining
-v1.0.0 implementation-tier work (spec completeness:
-DEEP-ARCH-03, DEEP-IF-01/02, DEEP-IPC-04), then R7..R12
+section as each phase lands a coherent slice. R7 covers the
+DEEP-CAP-05 capability deferred items, then R8..R12
 (cleanup/hygiene tier in any order, with R11 landing last among
 hygiene phases per plan §3.2 so the metric refresh runs against the
 post-implementation tree).

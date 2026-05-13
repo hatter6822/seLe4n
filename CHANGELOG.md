@@ -1,3 +1,142 @@
+## v0.31.3 — WS-RC R6: Architecture / InformationFlow completeness
+
+Closes the four spec-completeness findings from
+[`AUDIT_v0.30.11_DEEP_VERIFICATION.md`](docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md)
+(DEEP-ARCH-03, DEEP-IF-01/02, DEEP-IPC-04) per
+[`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §10`](docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md).
+Twelve new witness theorems anchor the closure-form discharge across the
+four sub-tasks; see
+[`AUDIT_v0.30.11_DISCHARGE_INDEX.md §3.I`](docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md)
+(rows I.1–I.12).
+
+### R6.A (DEEP-ARCH-03) — ExceptionModel ↔ InterruptDispatch GIC bridge
+
+`SeLe4n/Kernel/Architecture/ExceptionModel.lean` gains the formal
+Lean-level bridge from exception classification to GIC-400 dispatch:
+
+- New `InterruptOp` algebra (`.ack | .eoi | .handle`) over `InterruptId`.
+- New `interruptDispatchSchedule : InterruptId → List InterruptOp`
+  encoding the canonical AN8-C ordering
+  `[.ack id, .eoi id, .handle id]` at the type level.
+- Five structural theorems (`interruptDispatchSchedule_eq`,
+  `_length`, `_head`, `_eoi_before_handle`,
+  `dispatchException_irq_eq_interruptDispatchSequence`) documenting
+  the schedule shape and its relation to the executable.
+- New `classifyIrqInterruptId : Nat → Option InterruptId` with the
+  consistency theorem
+  `classifyIrqInterruptId_iff_acknowledgeInterrupt_ok`, plus
+  spurious / out-of-range arm theorems.
+- **R6.A.2 bridge theorem** `exception_irq_dispatches_via_interrupt_dispatch`
+  — three properties hold simultaneously for a valid IRQ INTID:
+  schedule is canonical, executable equals
+  `interruptDispatchSequence`, dispatch always succeeds.
+- **R6.A.3 bundle composition** `GicDispatchBridgeBundle` packages
+  the four core bridge claims; the witness
+  `architectureGicDispatchBridgeBundle` makes the bundle discoverable.
+  Co-located with the bridge in `ExceptionModel.lean` (rather than
+  `Architecture/Invariant.lean`) to avoid the
+  `SeLe4n.Kernel.API → Architecture/Invariant → ExceptionModel → API`
+  import cycle. The architecture-invariant-family anchor
+  `r6a_gicDispatchBridge_in_architecture_invariant_family : True := trivial`
+  in `Architecture/Invariant.lean` establishes the discovery surface.
+
+### R6.B (DEEP-IF-01) — `DeclassificationPolicy` verification
+
+Verification-only closure: the structure pre-existed at
+`SeLe4n/Kernel/InformationFlow/Policy.lean:879` and is consumed via
+the import chain
+`Enforcement.Soundness.lean → Enforcement.Wrappers.lean → Policy.lean`.
+Two new witness theorems anchor the closure:
+
+- `r6b_declassificationPolicy_defined` — existence witness via
+  `DeclassificationPolicy.none` inhabitation.
+- `r6b_declassificationPolicy_none_denies_all` — semantic
+  non-triviality (strictest policy denies every cross-domain edge).
+
+### R6.C (DEEP-IF-02) — SecurityDomain lattice completion
+
+`SeLe4n/Kernel/InformationFlow/Policy.lean` completes the
+parameterised `SecurityDomain` lattice section flagged truncated by
+the predecessor audit. Per the implement-the-improvement rule, the
+truncation is replaced with a fully-defined lattice:
+
+- **Order / operation primitives**: `SecurityDomain.le`/`.lt`/`.sup`/`.inf`
+  on the Nat-indexed identifier via `Nat.max`/`Nat.min`.
+- **Lean core typeclass instances**: `LE`/`LT`/`Max`/`Min` providing
+  `≤`, `<`, `max`, `min` notation (the `⊔`/`⊓` notation is a Mathlib
+  extension that this project does not depend on).
+- **Eight per-pair lattice laws**: `sup_idem`/`sup_comm`/`sup_assoc`
+  + `inf_idem`/`inf_comm`/`inf_assoc` (six semilattice laws) +
+  `absorb_sup_inf`/`absorb_inf_sup` (two absorption laws — the
+  lattice-binding pair).
+- **Order characterisation theorems**:
+  `le_sup_left`/`le_sup_right`/`sup_le` (join is the least upper
+  bound), `inf_le_left`/`inf_le_right`/`le_inf` (meet is the
+  greatest lower bound), `le_iff_sup_eq`/`le_iff_inf_eq`.
+- **Prop bundles**: `SecurityDomainIsSemilatticeSup`,
+  `SecurityDomainIsSemilatticeInf`, `SecurityDomainIsLattice` with
+  witness theorems `securityDomain_isSemilatticeSup`,
+  `securityDomain_isSemilatticeInf`, **`securityDomain_isLattice`**
+  (the **R6.C.2 lattice witness theorem** closing the audit's
+  "Lattice SecurityDomain" claim).
+- **R6.C.3 bridge theorems**:
+  `DomainFlowPolicy.linearOrder_canFlow_iff_le` and
+  `domainFlowsTo_linearOrder_iff_le` — the flow relation under
+  `linearOrder` is exactly the lattice's `≤`.
+
+### R6.D (DEEP-IPC-04) — Cleanup-error unreachable proof verification
+
+Verification-only closure: the theorem
+`cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull`
+pre-existed at `SeLe4n/Kernel/IPC/Invariant/Defs.lean:2630`, was
+sorry-free, and discharged via the named projection
+`hInv.donationOwnerValid` (AN3-B.2 named-projection migration). The
+plan-compliant alias
+`cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull`
+(line 2669) provides the top-level naming. The discharge index entry
+(row I.12) anchors the closure.
+
+### Testing additions
+
+- `tests/InterruptDispatchSuite.lean`: 10 new R6.A tests
+  (t14_schedule_canonical, t15_schedule_head_is_ack,
+  t16_schedule_eoi_before_handle, t17_classify_spurious,
+  t18_classify_out_of_range, t19_classify_valid,
+  t20_classify_iff_acknowledge, t21_bridge_theorem_reachable,
+  t22_bridge_bundle_reachable, t23_architecture_anchor).
+- `tests/InformationFlowSuite.lean`: new
+  `runR6InformationFlowCompletenessChecks` function with 4 R6.B
+  checks (r6b_01..04) and 15 R6.C checks (r6c_01..15), wired into
+  `main`.
+- `tests/LivenessSuite.lean`: 46 new R6 invariant-surface `#check`
+  anchors (13 R6.A bridge surface + 3 R6.A.3 bundle surface + 4
+  R6.B witness surface + 24 R6.C lattice surface + 2 R6.D theorem
+  surface), plus 4 new lines in the surface-summary print block.
+
+### Documentation updates
+
+- `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`: new §3.I
+  (12 rows I.1–I.12); §2 theme index gains the 3.I row; §5
+  closure summary updates with R6 totals.
+- `docs/WORKSTREAM_HISTORY.md`: replaces the "R6..R14 — TBD"
+  placeholder with the substantive R6 closure section.
+- `docs/spec/SELE4N_SPEC.md`: package version bumped 0.31.2 → 0.31.3.
+- `README.md`: badge + version row + production_loc / test_loc
+  numbers refreshed (114,193→114,880; 21,084→21,394).
+- `docs/i18n/<lang>/README.md`: badge version bumped (all 10 locales).
+- `CLAUDE.md` / `AGENTS.md`: version line bumped 0.31.2 → 0.31.3.
+- `docs/codebase_map.json`: regenerated.
+- `rust/sele4n-hal/src/boot.rs`, `rust/Cargo.{toml,lock}`: version
+  bumped 0.31.2 → 0.31.3.
+
+### Items deferred past v1.0.0 with correctness impact
+
+NONE. R6 closes the four target findings completely; no
+correctness-impacting items deferred.
+
+Refs: docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md §10 (Phase R6)
+Refs: docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md §3.I
+
 ## v0.31.2 deferred-work continuation — Phase P1/Q2.A/V1 substantive landings
 
 Continuation of the WS-RC R5 deferred-work completion plan to close

@@ -12,7 +12,7 @@ machine-checked proofs, improving on seL4 architecture. Every kernel
 transition is an executable pure function with zero `sorry`/`axiom`. First
 hardware target: Raspberry Pi 5.
 
-Lean 4.28.0 toolchain, Lake build system, version 0.30.11.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.3.
 
 > The version line above is **CI-enforced** by
 > `scripts/check_version_sync.sh` (a Tier 0 gate). When you bump

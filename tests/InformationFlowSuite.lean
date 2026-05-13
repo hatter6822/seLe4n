@@ -1610,6 +1610,105 @@ def runInformationFlowChecks : IO Unit := do
 
   IO.println "all V6 information-flow & cross-subsystem checks passed"
 
+-- ============================================================================
+-- WS-RC R6.B (DEEP-IF-01) + R6.C (DEEP-IF-02): regression coverage
+-- ============================================================================
+
+/-- WS-RC R6.B / R6.C runtime regression checks. Exercises:
+
+    - R6.B: `DeclassificationPolicy` is reachable; `.none` is the
+      strictest policy and denies every flow.
+    - R6.C: SecurityDomain lattice — `max`/`min` operations agree with
+      Nat.max/Nat.min on the underlying identifier; the four lattice
+      laws (sup commutativity / associativity, two absorption laws)
+      compute correctly on concrete inputs; the `linearOrder` bridge
+      relates `canFlow` to `≤`. -/
+def runR6InformationFlowCompletenessChecks : IO Unit := do
+  IO.println "--- WS-RC R6 InformationFlow completeness regression checks ---"
+
+  -- R6.B (DEEP-IF-01): DeclassificationPolicy reachability
+  let _decl : SeLe4n.Kernel.DeclassificationPolicy :=
+    SeLe4n.Kernel.DeclassificationPolicy.none
+  IO.println "r6b_01: DeclassificationPolicy structure reachable"
+
+  -- R6.B: strict policy denies every cross-domain edge
+  let baseAllow : SeLe4n.Kernel.DomainFlowPolicy :=
+    SeLe4n.Kernel.DomainFlowPolicy.linearOrder
+  let d0 : SeLe4n.Kernel.SecurityDomain := ⟨0⟩
+  let d2 : SeLe4n.Kernel.SecurityDomain := ⟨2⟩
+  expect "r6b_02: DeclassificationPolicy.none denies 0 → 2"
+    (SeLe4n.Kernel.DeclassificationPolicy.isDeclassificationAuthorized
+       baseAllow SeLe4n.Kernel.DeclassificationPolicy.none d0 d2 == false)
+  expect "r6b_03: DeclassificationPolicy.none denies 2 → 0"
+    (SeLe4n.Kernel.DeclassificationPolicy.isDeclassificationAuthorized
+       baseAllow SeLe4n.Kernel.DeclassificationPolicy.none d2 d0 == false)
+
+  -- R6.B witness theorems reachable
+  let _w1 := SeLe4n.Kernel.r6b_declassificationPolicy_defined
+  let _w2 := SeLe4n.Kernel.r6b_declassificationPolicy_none_denies_all
+  IO.println "r6b_04: R6.B witness theorems reachable"
+
+  -- R6.C (DEEP-IF-02): SecurityDomain lattice operations
+  let a : SeLe4n.Kernel.SecurityDomain := ⟨3⟩
+  let b : SeLe4n.Kernel.SecurityDomain := ⟨7⟩
+  let c : SeLe4n.Kernel.SecurityDomain := ⟨5⟩
+
+  -- max / min operate on the underlying identifier
+  expect "r6c_01: max a b = ⟨7⟩"
+    ((max a b).id == 7)
+  expect "r6c_02: min a b = ⟨3⟩"
+    ((min a b).id == 3)
+
+  -- R6.C: ≤ reflects underlying Nat ≤
+  expect "r6c_03: a ≤ b iff a.id ≤ b.id"
+    (decide (a ≤ b) == decide (a.id ≤ b.id))
+
+  -- R6.C: idempotence
+  expect "r6c_04: sup idempotent (max a a = a)"
+    ((max a a) = a)
+  expect "r6c_05: inf idempotent (min a a = a)"
+    ((min a a) = a)
+
+  -- R6.C: commutativity
+  expect "r6c_06: sup commutative"
+    (max a b = max b a)
+  expect "r6c_07: inf commutative"
+    (min a b = min b a)
+
+  -- R6.C: associativity
+  expect "r6c_08: sup associative"
+    (max (max a b) c = max a (max b c))
+  expect "r6c_09: inf associative"
+    (min (min a b) c = min a (min b c))
+
+  -- R6.C: absorption (the genuinely lattice-binding laws)
+  expect "r6c_10: max a (min a b) = a (absorption)"
+    (max a (min a b) = a)
+  expect "r6c_11: min a (max a b) = a (absorption)"
+    (min a (max a b) = a)
+
+  -- R6.C: linearOrder ↔ ≤ bridge
+  expect "r6c_12: linearOrder canFlow a b iff a ≤ b"
+    (SeLe4n.Kernel.DomainFlowPolicy.linearOrder.canFlow a b == decide (a ≤ b))
+  expect "r6c_13: linearOrder canFlow b a iff b ≤ a"
+    (SeLe4n.Kernel.DomainFlowPolicy.linearOrder.canFlow b a == decide (b ≤ a))
+
+  -- R6.C: lattice bundle witnesses reachable
+  let _lattice : SeLe4n.Kernel.SecurityDomainIsLattice :=
+    SeLe4n.Kernel.securityDomain_isLattice
+  let _semiSup : SeLe4n.Kernel.SecurityDomainIsSemilatticeSup :=
+    SeLe4n.Kernel.securityDomain_isSemilatticeSup
+  let _semiInf : SeLe4n.Kernel.SecurityDomainIsSemilatticeInf :=
+    SeLe4n.Kernel.securityDomain_isSemilatticeInf
+  IO.println "r6c_14: R6.C lattice bundles reachable"
+
+  -- R6.C: bridge theorem reachable
+  let _bridge := @SeLe4n.Kernel.DomainFlowPolicy.linearOrder_canFlow_iff_le
+  let _bridge2 := @SeLe4n.Kernel.domainFlowsTo_linearOrder_iff_le
+  IO.println "r6c_15: R6.C linearOrder ↔ ≤ bridge theorems reachable"
+
+  IO.println "--- WS-RC R6 InformationFlow completeness regression checks passed ---"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -1621,3 +1720,13 @@ def main : IO Unit := do
   if !ok then
     throw <| IO.userError "InformationFlowSuite: AK6 sub-tests failed"
   SeLe4n.Testing.runInformationFlowChecks
+  -- WS-RC R6 (DEEP-IF-01/02): regression coverage for the
+  -- DeclassificationPolicy verification (R6.B) and the SecurityDomain
+  -- lattice completion (R6.C). DEEP-ARCH-03 (R6.A GIC bridge) lives in
+  -- `tests/InterruptDispatchSuite.lean::test_t14..t23` because that suite
+  -- already exercises the underlying `interruptDispatchSequence`. R6.D
+  -- (DEEP-IPC-04 cleanup-error unreachable) is a verification-only
+  -- closure — the underlying theorem in `IPC/Invariant/Defs.lean:2630`
+  -- is anchored by `tests/LivenessSuite.lean`'s invariant-surface
+  -- `#check`.
+  SeLe4n.Testing.runR6InformationFlowCompletenessChecks

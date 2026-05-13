@@ -8,13 +8,18 @@
 -/
 
 import SeLe4n.Kernel.Architecture.InterruptDispatch
+import SeLe4n.Kernel.Architecture.ExceptionModel
 import SeLe4n.Testing.Helpers
 import SeLe4n.Testing.StateBuilder
 
-/-! # AK3-C.5 / AK3-L: Interrupt Dispatch Regression Tests
+/-! # AK3-C.5 / AK3-L / WS-RC R6.A: Interrupt Dispatch Regression Tests
 
-Focused regression coverage for AK3-C (GIC EOI differentiation) and
-AK3-L (`eoiPending` audit trail). Exercises:
+Focused regression coverage for AK3-C (GIC EOI differentiation),
+AK3-L (`eoiPending` audit trail), AN8-C (ack → EOI → handle ordering),
+and **WS-RC R6.A** (DEEP-ARCH-03 — the formal Lean-level GIC bridge
+from `ExceptionModel` to `InterruptDispatch`).
+
+Exercises:
 
 - Spurious INTIDs (≥ 1020): no EOI, no state change
 - Out-of-range INTIDs ([224, 1020)): no handler dispatch at Lean layer,
@@ -22,6 +27,11 @@ AK3-L (`eoiPending` audit trail). Exercises:
 - In-range INTIDs: handler runs, EOI emitted via `endOfInterrupt`
 - `eoiPending` audit trail: populated on ack, drained on EOI, empty
   after round-trip
+- **WS-RC R6.A**: `interruptDispatchSchedule` symbolic ordering
+  (AN8-C `[.ack, .eoi, .handle]`); `classifyIrqInterruptId`
+  consistency with `acknowledgeInterrupt`;
+  `exception_irq_dispatches_via_interrupt_dispatch` bridge theorem
+  reachability; `GicDispatchBridgeBundle` composition.
 -/
 
 open SeLe4n.Kernel.Architecture
@@ -184,9 +194,114 @@ def test_t13_ordering_theorem_witness : IO Unit := do
   let _witness := @interruptDispatchSequence_eoi_before_handler
   IO.println "check passed [AN8-C.5 eoi_before_handler theorem elaborated]"
 
+-- ----------------------------------------------------------------------------
+-- WS-RC R6.A (DEEP-ARCH-03): GIC bridge regression tests
+-- ----------------------------------------------------------------------------
+
+/-- T14 (R6.A): `interruptDispatchSchedule` produces exactly the
+    AN8-C canonical 3-step list `[.ack, .eoi, .handle]`. -/
+def test_t14_schedule_canonical : IO Unit := do
+  let id : InterruptId := ⟨30, by omega⟩
+  let schedule := interruptDispatchSchedule id
+  expectCond "interrupt-dispatch" "schedule has 3 ops"
+    (schedule.length == 3)
+  expectCond "interrupt-dispatch" "schedule is canonical [ack, eoi, handle]"
+    (schedule = [InterruptOp.ack id, InterruptOp.eoi id, InterruptOp.handle id])
+
+/-- T15 (R6.A): The schedule's HEAD is `.ack` — encodes the GIC-400
+    §3.1 invariant that IAR read precedes all other GIC interactions. -/
+def test_t15_schedule_head_is_ack : IO Unit := do
+  let id : InterruptId := ⟨42, by omega⟩
+  let schedule := interruptDispatchSchedule id
+  match schedule with
+  | InterruptOp.ack idHead :: _ =>
+    expectCond "interrupt-dispatch" "head ack carries correct INTID"
+      (idHead.val == 42)
+  | _ =>
+    throw <| IO.userError "T15: schedule head is not .ack"
+
+/-- T16 (R6.A): AN8-C ordering — EOI precedes Handle in the schedule. -/
+def test_t16_schedule_eoi_before_handle : IO Unit := do
+  let id : InterruptId := ⟨123, by omega⟩
+  let schedule := interruptDispatchSchedule id
+  match schedule with
+  | _ :: InterruptOp.eoi _ :: InterruptOp.handle _ :: [] =>
+    IO.println "check passed [R6.A AN8-C eoi precedes handle]"
+  | _ =>
+    throw <| IO.userError "T16: schedule does not match [_, .eoi, .handle]"
+
+/-- T17 (R6.A): `classifyIrqInterruptId` for a spurious INTID returns
+    `none`. Mirrors `acknowledgeInterrupt`'s spurious arm. -/
+def test_t17_classify_spurious : IO Unit := do
+  match classifyIrqInterruptId 1023 with
+  | none => IO.println "check passed [R6.A classify spurious → none]"
+  | some _ =>
+    throw <| IO.userError "T17: spurious INTID classified to some"
+
+/-- T18 (R6.A): `classifyIrqInterruptId` for an out-of-range INTID
+    (224..1019) returns `none`. -/
+def test_t18_classify_out_of_range : IO Unit := do
+  match classifyIrqInterruptId 500 with
+  | none => IO.println "check passed [R6.A classify outOfRange → none]"
+  | some _ =>
+    throw <| IO.userError "T18: out-of-range INTID classified to some"
+
+/-- T19 (R6.A): `classifyIrqInterruptId` for a valid INTID (0..223)
+    returns `some intId` with the correct value. -/
+def test_t19_classify_valid : IO Unit := do
+  match classifyIrqInterruptId 30 with
+  | some intId =>
+    expectCond "interrupt-dispatch" "classify ok carries correct INTID"
+      (intId.val == 30)
+  | none =>
+    throw <| IO.userError "T19: valid INTID classified to none"
+
+/-- T20 (R6.A): Classification is consistent with `acknowledgeInterrupt`
+    — `classifyIrqInterruptId rawIntId = some intId` iff
+    `acknowledgeInterrupt rawIntId = .ok intId`. -/
+def test_t20_classify_iff_acknowledge : IO Unit := do
+  -- Valid INTID: both succeed with same value
+  match classifyIrqInterruptId 30, acknowledgeInterrupt 30 with
+  | some i1, .ok i2 =>
+    expectCond "interrupt-dispatch" "classify/ack agree on valid INTID"
+      (i1.val == i2.val)
+  | _, _ =>
+    throw <| IO.userError "T20a: classify/ack disagreed on 30"
+  -- Spurious: both fail
+  match classifyIrqInterruptId 1023, acknowledgeInterrupt 1023 with
+  | none, .error .spurious =>
+    IO.println "check passed [R6.A classify/ack agree on spurious]"
+  | _, _ =>
+    throw <| IO.userError "T20b: classify/ack disagreed on spurious"
+
+/-- T21 (R6.A): Bridge theorem
+    `exception_irq_dispatches_via_interrupt_dispatch` is reachable
+    with its exact signature. Compile-time witness. -/
+def test_t21_bridge_theorem_reachable : IO Unit := do
+  let _witness := @exception_irq_dispatches_via_interrupt_dispatch
+  IO.println "check passed [R6.A bridge theorem elaborated]"
+
+/-- T22 (R6.A.3): `GicDispatchBridgeBundle` composition witness
+    `architectureGicDispatchBridgeBundle` is reachable. -/
+def test_t22_bridge_bundle_reachable : IO Unit := do
+  let bundle : GicDispatchBridgeBundle := architectureGicDispatchBridgeBundle
+  let id : InterruptId := ⟨30, by omega⟩
+  -- Verify the bundle's fields produce the expected schedule.
+  let schedCanonical := bundle.schedule_canonical id
+  let _ : interruptDispatchSchedule id =
+      [InterruptOp.ack id, InterruptOp.eoi id, InterruptOp.handle id] :=
+    schedCanonical
+  IO.println "check passed [R6.A.3 bridge bundle composition witness reachable]"
+
+/-- T23 (R6.A): Architecture-invariant-family anchor theorem is
+    reachable. -/
+def test_t23_architecture_anchor : IO Unit := do
+  let _marker := r6a_gicDispatchBridge_in_architectureInvariantFamily
+  IO.println "check passed [R6.A architecture-invariant-family anchor]"
+
 /-- Running entry. -/
 def runAllTests : IO Unit := do
-  IO.println "=== AK3-C + AK3-L + AN8-C InterruptDispatch regression suite ==="
+  IO.println "=== AK3-C + AK3-L + AN8-C + WS-RC R6.A InterruptDispatch regression suite ==="
   test_t01_ack_spurious
   test_t02_ack_out_of_range
   test_t03_ack_handled
@@ -200,6 +315,16 @@ def runAllTests : IO Unit := do
   test_t11_eoi_before_handler
   test_t12_eoi_filters_only_target_intid
   test_t13_ordering_theorem_witness
+  test_t14_schedule_canonical
+  test_t15_schedule_head_is_ack
+  test_t16_schedule_eoi_before_handle
+  test_t17_classify_spurious
+  test_t18_classify_out_of_range
+  test_t19_classify_valid
+  test_t20_classify_iff_acknowledge
+  test_t21_bridge_theorem_reachable
+  test_t22_bridge_bundle_reachable
+  test_t23_architecture_anchor
   IO.println "=== All InterruptDispatch tests passed ==="
 
 end SeLe4n.Testing.InterruptDispatch

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.2.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.3.
 
 > The version line above is **CI-enforced** by
 > `scripts/check_version_sync.sh` (a Tier 0 gate). When you bump
@@ -908,6 +908,35 @@ documentation lives under `docs/` and `docs/gitbook/`.
   impact), and the closure summary in `docs/WORKSTREAM_HISTORY.md`.
   Version bumped 0.30.10 → 0.30.11. Items deferred past v1.0.0 with
   correctness impact: NONE.
+
+- **WS-RC R6 (DEEP-ARCH-03, DEEP-IF-01/02, DEEP-IPC-04) LANDED on
+  branch `claude/review-codebase-audit-43iIO`** (v0.31.3): closes the
+  four spec-completeness findings via the formal Lean-level GIC
+  bridge (R6.A — `InterruptOp` algebra + `interruptDispatchSchedule`
+  symbolic schedule encoding AN8-C ordering + the bridge theorem
+  `exception_irq_dispatches_via_interrupt_dispatch` +
+  `GicDispatchBridgeBundle` composition with the
+  architecture-invariant-family anchor in
+  `Architecture/Invariant.lean`), the DeclassificationPolicy
+  verification (R6.B — pre-existed at `Policy.lean:879`; closure
+  witnesses `r6b_declassificationPolicy_defined` +
+  `r6b_declassificationPolicy_none_denies_all`), the SecurityDomain
+  lattice completion (R6.C — Lean-core `LE`/`Max`/`Min` instances +
+  eight per-pair lattice laws (six semilattice + two absorption) +
+  the `SecurityDomainIsLattice` Prop bundle with witness theorem
+  `securityDomain_isLattice` + the `flowsTo` ↔ `≤` bridge theorems
+  `DomainFlowPolicy.linearOrder_canFlow_iff_le` /
+  `domainFlowsTo_linearOrder_iff_le`), and the cleanup-error
+  unreachable proof verification (R6.D — theorem pre-existed at
+  `IPC/Invariant/Defs.lean:2630`, sorry-free, discharged via the
+  named projection `hInv.donationOwnerValid`). Tests: 10 new R6.A
+  cases in `tests/InterruptDispatchSuite.lean` (test_t14..t23);
+  new `runR6InformationFlowCompletenessChecks` function in
+  `tests/InformationFlowSuite.lean` with 19 R6.B/R6.C cases;
+  46 new R6 invariant-surface `#check` anchors in
+  `tests/LivenessSuite.lean`. Discharge index:
+  `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` §3.I (12 rows
+  I.1–I.12). Items deferred past v1.0.0 with correctness impact: NONE.
 
 - **Older WS-AN entries (AN0..AN11) and pre-WS-AN portfolios (WS-AK
   through WS-AA)** — archived to

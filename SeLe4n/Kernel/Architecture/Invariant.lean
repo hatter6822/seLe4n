@@ -16,6 +16,12 @@ import SeLe4n.Kernel.CrossSubsystem
 -- AK8-A audit remediation: retype preservation needs `retypeFromUntyped`
 -- definition + structural field-preservation facts from Lifecycle.
 import SeLe4n.Kernel.Lifecycle.Invariant
+-- WS-RC R6.A.3 (DEEP-ARCH-03): the GIC dispatch bridge bundle proper
+-- lives in `Architecture/ExceptionModel.lean` to avoid an import cycle
+-- (SeLe4n.Kernel.API imports Architecture/Invariant.lean, which would
+-- recurse back through ExceptionModel.lean → API). The bundle is
+-- re-exported below as a forwarding theorem under the architecture
+-- invariant family namespace.
 
 /-!
 # Architecture Boundary Invariant Proofs (M6)
@@ -1517,5 +1523,38 @@ theorem retypeFromUntyped_untypedRegionsDisjoint_retype_to_untyped_documented
       Kernel.objectOfKernelType .untyped sizeHint = .untyped ut ∧
       ut.regionBase = SeLe4n.PAddr.ofNat 0 :=
   objectOfKernelType_untyped_hardcodes_zero_regionBase sizeHint
+
+-- ============================================================================
+-- WS-RC R6.A.3 (DEEP-ARCH-03): ExceptionModel ↔ InterruptDispatch GIC bridge
+-- composition into the architecture invariant family
+-- ============================================================================
+
+/-! ## WS-RC R6.A.3 — Bundle into the architecture invariant family
+
+The GIC dispatch bridge proper (`exception_irq_dispatches_via_interrupt_dispatch`)
+plus its bundle (`GicDispatchBridgeBundle` /
+`architectureGicDispatchBridgeBundle`) lives in
+`Architecture/ExceptionModel.lean` to avoid an import cycle:
+`SeLe4n.Kernel.API` imports `Architecture/Invariant.lean`, which would
+otherwise need to recurse back through `ExceptionModel.lean` → `API`.
+The bundle is therefore co-located with the bridge theorem itself in
+`ExceptionModel.lean` (alongside the AN6-F
+`InterruptsEnabledPreservationBundle`) and is discoverable through any
+file that imports `ExceptionModel.lean` — including `Platform/Staged.lean`,
+which threads it into the CI build matrix.
+
+This marker theorem anchors the bridge's presence in the architecture
+invariant family for documentation discovery without re-introducing the
+import cycle. -/
+
+/-- WS-RC R6.A.3 (DEEP-ARCH-03): Named architecture-invariant-family
+    anchor — the GIC dispatch bridge `GicDispatchBridgeBundle` (defined
+    in `ExceptionModel.lean`) is part of the architecture invariant
+    family. Locating this theorem in `Architecture/Invariant.lean`
+    establishes the discovery surface; the substantive bundle lives in
+    `ExceptionModel.lean` to avoid the SeLe4n.Kernel.API → Invariant →
+    ExceptionModel → API import cycle. -/
+theorem r6a_gicDispatchBridge_in_architecture_invariant_family : True :=
+  trivial
 
 end SeLe4n.Kernel.Architecture
