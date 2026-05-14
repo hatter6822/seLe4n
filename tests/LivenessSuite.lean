@@ -229,6 +229,10 @@ open SeLe4n.Model
 -- Surface anchor: WS-RC R6 (Phase R6) — Architecture / InformationFlow completeness
 -- ============================================================================
 -- R6.A (DEEP-ARCH-03): GIC dispatch bridge — symbolic plan + bridge theorem.
+-- (WS-RC R6 deferred-completion: `InterruptOp`, `interruptDispatchPlan`,
+-- the five plan-ordering witnesses, and `gicDispatchPlanStaticInvariant`
+-- moved to upstream module `Architecture/GicDispatchPlanCore.lean` so
+-- they can be referenced from `proofLayerInvariantBundle`.)
 #check @SeLe4n.Kernel.Architecture.InterruptOp
 #check @SeLe4n.Kernel.Architecture.interruptDispatchPlan
 #check @SeLe4n.Kernel.Architecture.interruptDispatchPlan_length
@@ -236,6 +240,8 @@ open SeLe4n.Model
 #check @SeLe4n.Kernel.Architecture.interruptDispatchPlan_eoi_second
 #check @SeLe4n.Kernel.Architecture.interruptDispatchPlan_handle_third
 #check @SeLe4n.Kernel.Architecture.interruptDispatchPlan_decomposes
+#check @SeLe4n.Kernel.Architecture.gicDispatchPlanStaticInvariant
+#check @SeLe4n.Kernel.Architecture.gicDispatchPlanStaticInvariant_holds
 #check @SeLe4n.Kernel.Architecture.exception_irq_dispatches_via_interrupt_dispatch
 #check @SeLe4n.Kernel.Architecture.exception_irq_dispatches_when_handled
 #check @SeLe4n.Kernel.Architecture.GICDispatchBridge
@@ -276,10 +282,35 @@ open SeLe4n.Model
 #check @SeLe4n.Kernel.DomainFlowPolicy.linearOrder_antisymm
 #check @SeLe4n.Kernel.SecurityDomainLattice
 #check @SeLe4n.Kernel.securityDomain_complete_lattice
+-- R6.C.2 (DEEP-IF-02 deferred-completion): in-house Mathlib-compatible
+-- typeclass hierarchy + instances for `SecurityDomain`.
+#check @SeLe4n.Kernel.Preorder
+#check @SeLe4n.Kernel.PartialOrder
+#check @SeLe4n.Kernel.Sup
+#check @SeLe4n.Kernel.Inf
+#check @SeLe4n.Kernel.SemilatticeSup
+#check @SeLe4n.Kernel.SemilatticeInf
+#check @SeLe4n.Kernel.Lattice
+#check @SeLe4n.Kernel.SemilatticeSup.sup_assoc'
+#check @SeLe4n.Kernel.SemilatticeSup.sup_comm'
+#check @SeLe4n.Kernel.Lattice.absorb_sup_inf'
+#check @SeLe4n.Kernel.Lattice.absorb_inf_sup'
+#check @SeLe4n.Kernel.SecurityDomain.instLE
+#check @SeLe4n.Kernel.SecurityDomain.instLT
+#check @SeLe4n.Kernel.SecurityDomain.le_iff_id_le
+#check @SeLe4n.Kernel.SecurityDomain.lt_iff_id_lt
+-- R6.C.3 (DEEP-IF-02 deferred-completion): plan-named aliases.
+#check @SeLe4n.Kernel.flowsTo_iff_sup_eq
+#check @SeLe4n.Kernel.flowsTo_iff_inf_eq
+#check @SeLe4n.Kernel.integrityFlowsTo_to_linearOrder_canFlow
+#check @SeLe4n.Kernel.securityFlowsTo_iff_embedded_sup_eq
 -- R6.D (DEEP-IPC-04): cleanupPreReceiveDonationChecked never errors
 -- under ipcInvariantFull (pre-existing theorem, discharge-only).
 #check @SeLe4n.Kernel.cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull
 #check @SeLe4n.Kernel.cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull
+-- WS-RC R6 deferred-completion: closure-form discharge index marker
+-- theorem for WS-RC extension sections (§3.D/§3.E/§3.F/§3.H/§3.I).
+#check @SeLe4n.Kernel.closureForm_ws_rc_extensions_documented
 
 -- ============================================================================
 -- AN5-E: RPi5 canonical deployment — eventuallyExits closure (DEF-AK2-K.4)
@@ -442,6 +473,10 @@ def main : IO Unit := do
   IO.println "  ✓ WS-RC R6.A (DEEP-ARCH-03): interruptDispatchPlan + GIC bridge + ArchitectureInvariantBundle"
   IO.println "  ✓ WS-RC R6.B (DEEP-IF-01): DeclassificationPolicy structure (pre-existing, discharge)"
   IO.println "  ✓ WS-RC R6.C (DEEP-IF-02): SecurityDomain lattice (sup/inf + 4 laws + bridge)"
+  IO.println "  ✓ WS-RC R6.C.2 deferred-completion: in-house Preorder/PartialOrder/SemilatticeSup/SemilatticeInf/Lattice typeclasses + instances"
+  IO.println "  ✓ WS-RC R6.C.3 deferred-completion: flowsTo_iff_sup_eq / flowsTo_iff_inf_eq plan-named aliases + integrity bridge"
   IO.println "  ✓ WS-RC R6.D (DEEP-IPC-04): cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull"
-  IO.println "=== All surface anchors verified (95 base + R5 + R6 additions) ==="
+  IO.println "  ✓ WS-RC R6 deferred-completion: closureForm_ws_rc_extensions_documented marker theorem"
+  IO.println "  ✓ WS-RC R6 deferred-completion: gicDispatchPlanStaticInvariant added as 12th conjunct of proofLayerInvariantBundle"
+  IO.println "=== All surface anchors verified (95 base + R5 + R6 + R6 deferred-completion additions) ==="
   return ()

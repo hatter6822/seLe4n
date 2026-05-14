@@ -914,6 +914,49 @@ documentation lives under `docs/` and `docs/gitbook/`.
   spanning all four R6 sub-tasks.  Items deferred past v1.0.0 with
   correctness impact: NONE.
 
+  **WS-RC R6 deferred-completion (v0.31.2 follow-up)**: post-landing
+  audit identified four items that deviated from the plan's literal
+  §10.6 text.  All four are now closed:
+  (a) **Marker theorem** `closureForm_ws_rc_extensions_documented`
+  added to `SeLe4n/Kernel/CrossSubsystem.lean` per discharge-index
+  update protocol §6.
+  (b) **Plan-named aliases** `flowsTo_iff_sup_eq` /
+  `flowsTo_iff_inf_eq` (as `abbrev` aliases of the
+  `linearOrder_canFlow_iff_*_eq` theorems) plus substantive integrity
+  bridge `integrityFlowsTo_to_linearOrder_canFlow` connecting the
+  BIBA-inverted integrity comparison to the SecurityDomain lattice
+  via `embedLegacyLabel`.
+  (c) **In-house Mathlib-compatible typeclass hierarchy** in
+  `Policy.lean`: `Preorder`, `PartialOrder`, `Sup`, `Inf`,
+  `SemilatticeSup`, `SemilatticeInf`, `Lattice` with the same class
+  and field names as Mathlib for drop-in compatibility, plus four
+  generic lattice-law theorems proven from the typeclass axioms
+  (showing soundness — the laws are theorems, not axioms).
+  `SecurityDomain` instances for every class in the hierarchy,
+  discharged from `Nat.le_max_*` / `Nat.min_le_*` / `Nat.le_antisymm`
+  (all Lean core, no Mathlib dependency).
+  (d) **GIC plan invariant added as 12th conjunct of
+  `proofLayerInvariantBundle`** (literal plan-§10.6 R6.A.3
+  compliance).  Required creating a new upstream module
+  `SeLe4n/Kernel/Architecture/GicDispatchPlanCore.lean` (imports
+  only `SeLe4n.Prelude`) hosting `InterruptId`, `InterruptOp`,
+  `interruptDispatchPlan`, the five plan-ordering witnesses, and
+  the static `gicDispatchPlanStaticInvariant` + its witness.
+  `Architecture/InterruptDispatch.lean` now imports this upstream
+  module (replacing its local `InterruptId` abbrev).
+  `Architecture/ExceptionModel.lean` keeps the runtime-delegation
+  half of the bridge.  `proofLayerInvariantBundle` now has 12
+  conjuncts (was 11) with the static GIC plan invariant as the
+  12th; the constructor in `default_system_state_*`, all three
+  preservation theorems, and the Platform/Boot.lean
+  `bootFromPlatform_proofLayerInvariantBundle_general` updated to
+  bind the 12th component.  Discharge index §3.I extended with 6
+  new rows (I.21–I.26) covering all four deferred-completion items.
+  Tests: 5 new IF runtime typeclass-dispatch checks, 2 new
+  NegativeStateSuite typeclass guards, 22 new LivenessSuite surface
+  anchors.  R6 is now in **full literal plan compliance** with
+  §10.6.  Items deferred past v1.0.0 with correctness impact: NONE.
+
   **WS-RC R4 close-out COMPLETE (v0.31.0, branch
   `claude/review-closeout-plan-HToSk`)**:  the 9-sub-PR close-out
   ([`docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md`](docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md))

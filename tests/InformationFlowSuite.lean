@@ -455,6 +455,36 @@ def runR6CSecurityDomainLatticeChecks : IO Unit := do
     (SeLe4n.Kernel.SecurityDomain.lowest == d0)
   -- R6.C: the SecurityDomainLattice witness composition holds.
   let _w := SeLe4n.Kernel.securityDomain_complete_lattice
+  -- R6.C.2 deferred-completion: typeclass instances dispatch correctly.
+  -- We exercise each instance by using the abstract operations and
+  -- verifying they coincide with the concrete `SecurityDomain.sup`/`inf`.
+  let supDispatch : SeLe4n.Kernel.SecurityDomain :=
+    SeLe4n.Kernel.Sup.sup d3 d5
+  expect "R6.C.2: Sup typeclass dispatches to SecurityDomain.sup"
+    (supDispatch == SeLe4n.Kernel.SecurityDomain.sup d3 d5)
+  let infDispatch : SeLe4n.Kernel.SecurityDomain :=
+    SeLe4n.Kernel.Inf.inf d3 d5
+  expect "R6.C.2: Inf typeclass dispatches to SecurityDomain.inf"
+    (infDispatch == SeLe4n.Kernel.SecurityDomain.inf d3 d5)
+  -- R6.C.2: LE/LT instances dispatch correctly.
+  expect "R6.C.2: LE typeclass returns true for d3 ≤ d5"
+    (decide (d3 ≤ d5) = true)
+  expect "R6.C.2: LE typeclass returns false for d5 ≤ d3"
+    (decide (d5 ≤ d3) = false)
+  expect "R6.C.2: LT typeclass returns true for d3 < d5"
+    (decide (d3 < d5) = true)
+  -- R6.C.2: generic Lattice law theorems hold for SecurityDomain via
+  -- the in-house typeclass hierarchy (proving the typeclass axioms
+  -- correctly imply the laws).  We exercise the witnesses at the
+  -- type level — the proof terms must elaborate without holes.
+  let _supAssocWit := SeLe4n.Kernel.SemilatticeSup.sup_assoc' d3 d5 d7
+  let _supCommWit := SeLe4n.Kernel.SemilatticeSup.sup_comm' d3 d5
+  let _absorbSupInfWit := SeLe4n.Kernel.Lattice.absorb_sup_inf' d3 d5
+  let _absorbInfSupWit := SeLe4n.Kernel.Lattice.absorb_inf_sup' d3 d5
+  -- R6.C.3: plan-named alias exists and behaves correctly.
+  let _planAlias := @SeLe4n.Kernel.flowsTo_iff_sup_eq
+  let _planAliasInf := @SeLe4n.Kernel.flowsTo_iff_inf_eq
+  let _planIntegrityBridge := @SeLe4n.Kernel.integrityFlowsTo_to_linearOrder_canFlow
   IO.println "WS-RC R6.C (DEEP-IF-02) SecurityDomain lattice runtime checks passed"
 
 def runInformationFlowChecks : IO Unit := do

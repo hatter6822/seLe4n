@@ -1547,6 +1547,57 @@ covering every R6 theorem, structure, and bridge.  Discharge index
 [`docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`](../audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md)
 §3.I records 20 rows (I.1..I.20) spanning all four R6 sub-tasks.
 
+#### 8.10.9.1 R6 deferred-completion (v0.31.2 follow-up)
+
+Four items identified by the post-R6-landing audit as not literally
+satisfying §10.6 are now closed:
+
+* **Marker theorem** `closureForm_ws_rc_extensions_documented` added
+  to `SeLe4n/Kernel/CrossSubsystem.lean` per the discharge-index
+  update protocol §6 (triggered by §3.D/§3.E/§3.F/§3.H/§3.I becoming
+  substantive).
+* **Plan-named aliases** `flowsTo_iff_sup_eq` / `flowsTo_iff_inf_eq`
+  added as `abbrev` aliases of
+  `SecurityDomain.linearOrder_canFlow_iff_*_eq` in
+  `SeLe4n/Kernel/InformationFlow/Policy.lean`.  Plus substantive
+  integrity bridges `integrityFlowsTo_to_linearOrder_canFlow` and
+  `securityFlowsTo_iff_embedded_sup_eq` connecting the legacy
+  BIBA-inverted `integrityFlowsTo` to the `SecurityDomain` lattice
+  via `embedLegacyLabel`.
+* **In-house Mathlib-compatible typeclass hierarchy** in
+  `SeLe4n/Kernel/InformationFlow/Policy.lean`: `Preorder`,
+  `PartialOrder`, `Sup`, `Inf`, `SemilatticeSup`, `SemilatticeInf`,
+  `Lattice` with the same class names and field names as Mathlib so
+  a future Mathlib import would be a drop-in replacement.  Four
+  generic lattice-law theorems proven from the typeclass axioms
+  (mathematical soundness — laws are theorems, not extra axioms).
+  `SecurityDomain` instances for every class in the hierarchy,
+  discharged by `Nat.le_max_left`, `Nat.le_max_right`,
+  `Nat.max_le.mpr`, `Nat.le_antisymm`, `Nat.min_le_left`,
+  `Nat.min_le_right`, `Nat.le_min.mpr` (all Lean core — no Mathlib
+  dependency).
+* **GIC plan invariant added as 12th conjunct of
+  `proofLayerInvariantBundle`** in `Kernel/Architecture/Invariant.lean`
+  (closing the audit plan's literal §10.6 R6.A.3 requirement).  New
+  upstream module `Kernel/Architecture/GicDispatchPlanCore.lean`
+  (imports only `SeLe4n.Prelude`) hosts `InterruptId`, `InterruptOp`,
+  `interruptDispatchPlan`, the five plan-ordering witnesses, and
+  `gicDispatchPlanStaticInvariant`.
+  `Architecture/InterruptDispatch.lean` imports the upstream
+  module; `Architecture/ExceptionModel.lean` keeps the runtime-
+  delegation half (`exception_irq_dispatches_via_interrupt_dispatch`,
+  `GICDispatchBridge`, `ArchitectureInvariantBundle`).
+  `proofLayerInvariantBundle` now has **12 conjuncts** (was 11) with
+  `gicDispatchPlanStaticInvariant` as the 12th; consumers in
+  `Architecture/Invariant.lean` and `Platform/Boot.lean` updated.
+
+Additional tests (5 IF typeclass-dispatch runtime checks + 2 NSS
+typeclass-dispatch negative guards + 22 LivenessSuite surface
+anchors) plus 6 new discharge-index rows (§3.I I.21–I.26) finalize
+the deferred-completion landing.  R6 is now in **full literal plan
+compliance** with §10.6; items deferred past v1.0.0 with correctness
+impact: **NONE**.
+
 ### 8.11 buildChecked Runtime Invariant Validation (WS-T Phase T7)
 
 All test states use `BootstrapBuilder.buildChecked` instead of `build`:

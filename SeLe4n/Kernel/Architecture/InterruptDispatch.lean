@@ -9,6 +9,14 @@
 
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.IPC.Operations
+-- WS-RC R6 deferred-completion: `InterruptId` moved to upstream
+-- `GicDispatchPlanCore` so it is reachable by `Architecture.Invariant`
+-- (which now carries the static GIC plan invariant as a conjunct of
+-- `proofLayerInvariantBundle`).  We re-export the type here for
+-- backward compatibility — downstream code that imports
+-- `Architecture.InterruptDispatch` continues to see `InterruptId` in
+-- the `Architecture` namespace unchanged.
+import SeLe4n.Kernel.Architecture.GicDispatchPlanCore
 
 /-!
 # AG3-D (FINDING-06): Interrupt Dispatch Model
@@ -43,12 +51,13 @@ open SeLe4n.Kernel
 -- AG3-D-i: Types and constants
 -- ============================================================================
 
-/-- AG3-D: GIC-400 interrupt ID for RPi5 (BCM2712).
-    Bounded to 224 INTIDs (0–223): SGIs (0–15), PPIs (16–31), SPIs (32–223).
-    This bound is RPi5/BCM2712-specific. The GIC-400 architecture supports
-    up to 480 INTIDs, but BCM2712 only implements 192 SPIs (32–223).
-    A future multi-platform build would parameterize this bound. -/
-abbrev InterruptId := Fin 224
+/-! ## InterruptId
+
+`InterruptId := Fin 224` is now defined in
+`Architecture.GicDispatchPlanCore` (imported above) so it is reachable
+by `Architecture.Invariant`'s `proofLayerInvariantBundle` conjunct
+(WS-RC R6 deferred completion).  Downstream code continues to see the
+type at `SeLe4n.Kernel.Architecture.InterruptId` unchanged. -/
 
 /-- AG3-D: Non-secure physical timer PPI (INTID 30). -/
 def timerInterruptId : InterruptId := ⟨30, by omega⟩

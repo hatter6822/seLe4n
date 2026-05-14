@@ -1205,9 +1205,90 @@ index (§3.I row I.20).
 
 #### R6 deferred items
 
-None.  All four DEEP findings (DEEP-ARCH-03, DEEP-IF-01, DEEP-IF-02,
-DEEP-IPC-04) are closed with full structural witnesses (R6.A, R6.C)
-or discharge-index entries (R6.B, R6.D).
+None at v0.31.2.  All four DEEP findings (DEEP-ARCH-03, DEEP-IF-01,
+DEEP-IF-02, DEEP-IPC-04) are closed with full structural witnesses
+(R6.A, R6.C) or discharge-index entries (R6.B, R6.D).
+
+#### R6 deferred-completion (v0.31.2 follow-up)
+
+Four items identified by the post-R6-landing audit as
+"deferred / not literally satisfied" are now **closed**:
+
+1. **Marker theorem** `closureForm_ws_rc_extensions_documented`
+   added to `SeLe4n/Kernel/CrossSubsystem.lean` per the discharge-
+   index update protocol §6 (triggered by §3.D/§3.E/§3.F/§3.H/§3.I
+   becoming substantive).
+
+2. **Plan-named aliases** `flowsTo_iff_sup_eq` and
+   `flowsTo_iff_inf_eq` added to
+   `SeLe4n/Kernel/InformationFlow/Policy.lean` as `abbrev` aliases of
+   the canonical `SecurityDomain.linearOrder_canFlow_iff_*_eq`
+   theorems.  Plus substantive integrity bridges
+   `integrityFlowsTo_to_linearOrder_canFlow` and
+   `securityFlowsTo_iff_embedded_sup_eq` connecting the legacy
+   BIBA-inverted integrity comparison to the `SecurityDomain`
+   lattice's `≤` via `embedLegacyLabel`.
+
+3. **In-house Mathlib-compatible typeclass hierarchy** added in
+   `SeLe4n/Kernel/InformationFlow/Policy.lean`:
+   `Preorder`, `PartialOrder`, `Sup`, `Inf`, `SemilatticeSup`,
+   `SemilatticeInf`, `Lattice` with the same class/field names as
+   Mathlib so a future Mathlib import would be a drop-in
+   replacement.  Plus the four generic lattice-law theorems
+   (`SemilatticeSup.sup_assoc'`, `_sup_comm'`,
+   `Lattice.absorb_sup_inf'`, `_absorb_inf_sup'`) **proven from**
+   the typeclass axioms — demonstrating the hierarchy is
+   mathematically sound (laws are theorems, not extra axioms).
+   `SecurityDomain` instances for every class in the hierarchy,
+   discharged by `Nat.le_max_*`, `Nat.min_le_*`, `Nat.le_antisymm`,
+   etc. (all in Lean core, no Mathlib required).
+
+4. **GIC plan invariant added as a conjunct of
+   `proofLayerInvariantBundle`** (closing the audit plan's literal
+   §10.6 R6.A.3 requirement).  Architecturally:
+   - New upstream module
+     `SeLe4n/Kernel/Architecture/GicDispatchPlanCore.lean` hosts
+     `InterruptId`, `InterruptOp`, `interruptDispatchPlan`, the
+     five plan-ordering witnesses, and the static
+     `gicDispatchPlanStaticInvariant : Prop` with witness
+     `gicDispatchPlanStaticInvariant_holds`.
+   - `Architecture/InterruptDispatch.lean` now imports
+     `GicDispatchPlanCore` (replacing its local `InterruptId`
+     abbrev).
+   - `Architecture/ExceptionModel.lean` keeps the
+     runtime-delegation half of the bridge
+     (`exception_irq_dispatches_via_interrupt_dispatch`,
+     `GICDispatchBridge`, `gicDispatchPlanInvariant`, the composite
+     `ArchitectureInvariantBundle`) which requires
+     `dispatchException` and the executable
+     `interruptDispatchSequence`.
+   - `proofLayerInvariantBundle` in `Architecture/Invariant.lean`
+     now has **12 conjuncts** (was 11) with
+     `gicDispatchPlanStaticInvariant` as the new 12th conjunct.
+     All consumers updated: the constructor in
+     `default_system_state_proofLayerInvariantBundle`, all three
+     preservation theorems
+     (`advanceTimerState_preserves_*`,
+     `writeRegisterState_preserves_*`,
+     `contextSwitchState_preserves_*`), and
+     `bootFromPlatform_proofLayerInvariantBundle_general` in
+     `Platform/Boot.lean`.
+
+Discharge index §3.I extended with six new rows (I.21–I.26).
+Tests: 5 new IF runtime checks (typeclass dispatch), 2 new
+NegativeStateSuite typeclass-dispatch guards + marker theorem
+witness, 22 new LivenessSuite surface anchors covering the
+typeclass hierarchy, instances, plan-named aliases, integrity
+bridge, upstream static invariant + holds, and the marker theorem.
+
+#### R6 deferred-completion validation
+
+- `lake build` — PASS (314 jobs).
+- `./scripts/test_smoke.sh` — PASS.
+- `./scripts/test_full.sh` — PASS.
+
+R6 is now in **full literal plan compliance** with §10.6.  Items
+deferred past v1.0.0 with correctness impact: **NONE**.
 
 ### R7..R14 — TBD
 

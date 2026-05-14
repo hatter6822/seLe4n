@@ -606,70 +606,34 @@ plan is a pure metadata-grade artifact (no state transformer) that
 callers and downstream tooling can project to inspect the operation
 ordering without re-deriving it from the implementation. -/
 
-/-- WS-RC R6.A: Symbolic algebra of GIC-400 operations performed during
-    interrupt dispatch.  Each constructor captures one hardware-level step
-    and carries the affected `InterruptId` so dispatch plans for distinct
-    INTIDs are distinguishable at the type level. -/
-inductive InterruptOp where
-  /-- Read GICC_IAR to acknowledge the interrupt. -/
-  | ack    (id : InterruptId)
-  /-- Write GICC_EOIR to retire the interrupt. -/
-  | eoi    (id : InterruptId)
-  /-- Run the registered handler for the interrupt. -/
-  | handle (id : InterruptId)
-  deriving Repr, DecidableEq
+/-! ## R6.A.1a — Upstream dispatch-plan algebra
 
-/-- WS-RC R6.A.1a (DEEP-ARCH-03): The canonical GIC dispatch plan for any
-    handled INTID.
+The `InterruptOp` algebra, `interruptDispatchPlan` symbolic plan, and
+the five plan-ordering witnesses (`interruptDispatchPlan_length`,
+`_ack_head`, `_eoi_second`, `_handle_third`, `_decomposes`) plus the
+static invariant `gicDispatchPlanStaticInvariant` and its witness now
+live in the upstream module
+`SeLe4n/Kernel/Architecture/GicDispatchPlanCore.lean`.
 
-    AN8-C (H-19) ordering: `acknowledge → EOI → handle`.  The handler
-    runs on the post-EOI state so a panicking or long-running handler
-    cannot leave the INTID active on the GIC.  See
-    `interruptDispatchSequence` (`Architecture/InterruptDispatch.lean`)
-    and `dispatch_irq` in `rust/sele4n-hal/src/gic.rs`.
+This relocation (WS-RC R6 deferred completion) was required to break
+the import cycle `Kernel.API → Architecture.Invariant` /
+`Architecture.ExceptionModel → Kernel.API`: the static piece of the
+bridge (`gicDispatchPlanStaticInvariant`) is now a conjunct of
+`proofLayerInvariantBundle` in `Architecture/Invariant.lean`, which
+requires the backing definitions to be upstream of `Invariant.lean`.
 
-    For spurious INTIDs (≥ 1020 per GIC-400 spec) and out-of-range INTIDs
-    (∈ [224, 1020)) the plan is **not** applicable — the dispatch returns
-    the input state unchanged at the Lean layer (the HAL emits a raw-IAR
-    EOI for out-of-range cases to prevent GIC lockup).  The plan applies
-    only when `acknowledgeInterrupt id.val = .ok id`, i.e. the dispatch
-    actually enters the handled branch. -/
-def interruptDispatchPlan (id : InterruptId) : List InterruptOp :=
-  [.ack id, .eoi id, .handle id]
+Downstream consumers continue to see `InterruptOp`,
+`interruptDispatchPlan`, and the five ordering witnesses at the
+`SeLe4n.Kernel.Architecture` namespace via the transitive
+`InterruptDispatch.lean → GicDispatchPlanCore.lean` import chain;
+nothing in their type or value has changed.
 
-/-- WS-RC R6.A.1a: The dispatch plan always contains exactly three
-    operations.  Used by downstream consumers that fold over the plan and
-    need a length bound up front. -/
-theorem interruptDispatchPlan_length (id : InterruptId) :
-    (interruptDispatchPlan id).length = 3 := rfl
-
-/-- WS-RC R6.A.1a: AN8-C ordering, first slot — the acknowledge operation
-    is always the head of the plan.  Captures the invariant that GIC
-    dispatch always begins by reading GICC_IAR. -/
-theorem interruptDispatchPlan_ack_head (id : InterruptId) :
-    (interruptDispatchPlan id).head? = some (.ack id) := rfl
-
-/-- WS-RC R6.A.1a: AN8-C ordering, second slot — the end-of-interrupt
-    operation always immediately follows the acknowledge.  Captures the
-    H-19 hardening that retires the INTID on the GIC *before* the handler
-    body runs, so a faulting or long-running handler cannot leave the
-    INTID active. -/
-theorem interruptDispatchPlan_eoi_second (id : InterruptId) :
-    (interruptDispatchPlan id)[1]? = some (.eoi id) := rfl
-
-/-- WS-RC R6.A.1a: AN8-C ordering, third slot — the handler operation
-    runs last in the plan, after the INTID has been retired on the GIC.
-    Mirrors the runtime behaviour of `interruptDispatchSequence` after
-    the AN8-C reordering. -/
-theorem interruptDispatchPlan_handle_third (id : InterruptId) :
-    (interruptDispatchPlan id)[2]? = some (.handle id) := rfl
-
-/-- WS-RC R6.A.1a: AN8-C ordering, decomposed structurally — the plan
-    splits as `[.ack id] ++ [.eoi id] ++ [.handle id]`.  This is the
-    cite-friendly decomposition matching the plan's pseudocode
-    (`ack id ++ eoi id ++ handle id`). -/
-theorem interruptDispatchPlan_decomposes (id : InterruptId) :
-    interruptDispatchPlan id = [.ack id] ++ [.eoi id] ++ [.handle id] := rfl
+The **runtime-delegation** half of the bridge stays in this file
+(`exception_irq_dispatches_via_interrupt_dispatch`,
+`exception_irq_dispatches_when_handled`, `GICDispatchBridge`,
+`gicDispatchBridge_holds`) because it references `dispatchException`
+and the executable `interruptDispatchSequence`, both of which require
+`Kernel.API`. -/
 
 /-- WS-RC R6.A.1b (DEEP-ARCH-03): Bridge theorem connecting an
     IRQ-classified exception to the GIC dispatch plan.

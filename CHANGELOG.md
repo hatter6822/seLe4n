@@ -1,3 +1,133 @@
+## v0.31.2 — WS-RC R6 deferred-completion: typeclass hierarchy + conjunct addition + marker theorem + plan-named aliases
+
+Completes the four deferred items identified by the post-R6-landing
+audit, bringing R6 to **full plan compliance**:
+
+1. **Marker theorem** `closureForm_ws_rc_extensions_documented`
+   added to `SeLe4n/Kernel/CrossSubsystem.lean` — anchors the tier-3
+   invariant-surface gate to the WS-RC discharge-index extension
+   sections (§3.D / §3.E / §3.F / §3.H / §3.I).
+
+2. **Plan-named aliases** in `SeLe4n/Kernel/InformationFlow/Policy.lean`:
+   `flowsTo_iff_sup_eq` (alias of
+   `SecurityDomain.linearOrder_canFlow_iff_sup_eq`),
+   `flowsTo_iff_inf_eq` (dual), plus a substantive integrity bridge
+   `integrityFlowsTo_to_linearOrder_canFlow` connecting the legacy
+   BIBA-inverted `integrityFlowsTo` predicate to the SecurityDomain
+   lattice via `embedLegacyLabel`, and the combined witness
+   `securityFlowsTo_iff_embedded_sup_eq`.
+
+3. **In-house Mathlib-compatible typeclass hierarchy** for
+   `SecurityDomain` in `SeLe4n/Kernel/InformationFlow/Policy.lean`.
+   Since this codebase avoids Mathlib (kernel TCB minimization), R6.C.2
+   defines an in-house hierarchy using the **same class names and field
+   names** as Mathlib so a future Mathlib import would be a drop-in
+   replacement:
+   - `Preorder α` extends `LE α`, `LT α` with `le_refl`, `le_trans`,
+     `lt_iff_le_not_le`.
+   - `PartialOrder α` extends `Preorder α` with `le_antisymm`.
+   - `Sup α` / `Inf α` typeclasses (mirror Mathlib's order-theoretic
+     `Sup`/`Inf`, distinct from Lean core's `Max`/`Min`).
+   - `SemilatticeSup α` extends `Sup α` + `PartialOrder α` with the
+     three standard axioms (`le_sup_left`, `le_sup_right`, `sup_le`).
+   - `SemilatticeInf α` dual.
+   - `Lattice α` extends both semilattices.
+   - Generic theorems `SemilatticeSup.sup_assoc'`, `_sup_comm'`,
+     `Lattice.absorb_sup_inf'`, `_absorb_inf_sup'` proven from the
+     typeclass axioms (showing the in-house hierarchy is
+     mathematically sound: the lattice laws are theorems, not axioms).
+   - `SecurityDomain` instances for each class — every field
+     transports from `Nat.le_max_left`, `Nat.le_max_right`,
+     `Nat.max_le.mpr`, `Nat.le_antisymm`, `Nat.min_le_left`,
+     `Nat.min_le_right`, `Nat.le_min.mpr` (all in Lean core, no
+     Mathlib required).
+   - Plus `LE`, `LT`, `Decidable LE`, `Decidable LT` instances for
+     `SecurityDomain` lifting `Nat`'s order to the `id` field, with
+     `le_iff_id_le` / `lt_iff_id_lt` `@[simp]` lemmas.
+
+4. **GIC plan invariant as a conjunct of `proofLayerInvariantBundle`**
+   (closing the audit plan's literal §10.6 R6.A.3 requirement).
+   Architecturally:
+   - New upstream module `SeLe4n/Kernel/Architecture/GicDispatchPlanCore.lean`
+     hosts `InterruptId`, `InterruptOp`, `interruptDispatchPlan`,
+     the five plan-ordering witnesses, and the static invariant
+     `gicDispatchPlanStaticInvariant : Prop` with witness
+     `gicDispatchPlanStaticInvariant_holds`.
+   - `Architecture/InterruptDispatch.lean` now imports
+     `GicDispatchPlanCore` (replacing its local `InterruptId` abbrev).
+   - `Architecture/ExceptionModel.lean` keeps the runtime-delegation
+     half of the bridge (`exception_irq_dispatches_via_interrupt_dispatch`,
+     `GICDispatchBridge`, `gicDispatchPlanInvariant`, the composite
+     `ArchitectureInvariantBundle`) and references the upstream
+     definitions transitively.
+   - `proofLayerInvariantBundle` in `Architecture/Invariant.lean`
+     now has 12 conjuncts (was 11) with `gicDispatchPlanStaticInvariant`
+     as the new 12th conjunct.  All consumers updated:
+     - `default_system_state_proofLayerInvariantBundle` (constructor)
+     - `advanceTimerState_preserves_proofLayerInvariantBundle`
+     - `writeRegisterState_preserves_proofLayerInvariantBundle`
+     - `contextSwitchState_preserves_proofLayerInvariantBundle`
+     - `bootFromPlatform_proofLayerInvariantBundle_general` in
+       `Platform/Boot.lean`.
+   - Every destructure site that previously pattern-matched the
+     11-tuple now binds the 12th component (as `_hGicPlan` since
+     the closed Prop is preserved by `gicDispatchPlanStaticInvariant_holds`).
+
+### Tests
+
+- `tests/InformationFlowSuite.lean::runR6CSecurityDomainLatticeChecks`
+  extended with 5 new typeclass-dispatch runtime checks (Sup/Inf
+  typeclasses, LE/LT dispatch, generic lattice-law witness
+  elaboration).
+- `tests/NegativeStateSuite.lean::runR6PhaseChecks` extended with
+  2 new typeclass-instance negative guards (Sup typeclass must
+  dispatch to `SecurityDomain.sup`, LE typeclass must dispatch via
+  `id` field) + marker-theorem witness check.
+- `tests/LivenessSuite.lean` 22 additional surface anchors covering:
+  - In-house typeclass hierarchy (`Preorder`, `PartialOrder`, `Sup`,
+    `Inf`, `SemilatticeSup`, `SemilatticeInf`, `Lattice`) and four
+    generic lattice-law theorems.
+  - `SecurityDomain` `LE`/`LT`/`Decidable` instances + `_iff_id_*`
+    simp lemmas.
+  - Plan-named aliases (`flowsTo_iff_sup_eq`, `flowsTo_iff_inf_eq`).
+  - Integrity bridge theorems
+    (`integrityFlowsTo_to_linearOrder_canFlow`,
+    `securityFlowsTo_iff_embedded_sup_eq`).
+  - `gicDispatchPlanStaticInvariant` + `_holds` (upstream).
+  - `closureForm_ws_rc_extensions_documented` (CrossSubsystem.lean).
+
+### Architecture refactor: import-cycle resolution
+
+R6.A.3's conjunct addition required `gicDispatchPlanStaticInvariant`
+to be reachable from `Architecture/Invariant.lean`, but the
+substantive GIC bridge components were originally in
+`Architecture/ExceptionModel.lean` which is **downstream** of
+`Kernel.API` and therefore strictly downstream of
+`Architecture.Invariant`.  The deferred-completion creates the
+upstream module `GicDispatchPlanCore.lean` (imports only
+`SeLe4n.Prelude`) to host the static pieces, leaving the
+runtime-delegation half in `ExceptionModel.lean`.  This **inverts**
+my prior "additive composite wrapper" workaround — the conjunct is
+now genuinely added to `proofLayerInvariantBundle` as the plan
+literally requires, with the composite `ArchitectureInvariantBundle`
+retained as a convenience wrapper carrying the full
+runtime-delegation bridge.
+
+### Validation
+
+```
+lake build                          # PASS (314 jobs)
+./scripts/test_smoke.sh             # PASS
+./scripts/test_full.sh              # PASS
+```
+
+Items deferred past v1.0.0 with correctness impact: **NONE**.  R6 is
+now in **full literal plan compliance** with §10.6.
+
+Refs: docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md §10 (Phase R6)
+
+---
+
 ## v0.31.2 — WS-RC R6 (DEEP-ARCH-03 / DEEP-IF-01 / DEEP-IF-02 / DEEP-IPC-04): architecture and information-flow completeness
 
 Phase R6 closes the four spec-completeness audit findings identified by

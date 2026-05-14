@@ -2954,6 +2954,32 @@ exercised by `scripts/test_tier3_invariant_surface.sh`. -/
 theorem closureForm_discharge_index_documented : True := trivial
 -- Cross-reference: docs/dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md
 
+/-- WS-RC closure-form discharge index — extensions marker.
+
+This marker theorem exists so that the tier-3 invariant-surface gate
+can locate the WS-RC extensions index sections (§3.D / §3.E / §3.F /
+§3.H / §3.I) by name and detect drift if a future commit drops a
+discharge row or renames the discharge artefact.
+
+Per the discharge-index update protocol (see
+`docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` §6 item 2), this
+marker is added when the WS-RC extension sections become substantive
+(any rows added).  At the WS-RC R6 landing the substantive sections
+are:
+
+- §3.D — NoDup / structural promotions (R4.A, R4.B, R4.C close-outs).
+- §3.E — Predecessor reroutings (R4.C subsumes DEEP-IPC-01).
+- §3.F — False-positive structural witnesses (R4.D, R12.B/D).
+- §3.H — Scheduler / Lifecycle behaviour symmetry (R5.A..R5.G).
+- §3.I — Architecture / InformationFlow completeness (R6.A..R6.D).
+
+The body is `trivial` per the marker-theorem pattern (the index
+content is in the markdown file).  Companion `#check` reachability
+tests are listed in `tests/LivenessSuite.lean` and exercised by
+`scripts/test_tier3_invariant_surface.sh`. -/
+theorem closureForm_ws_rc_extensions_documented : True := trivial
+-- Cross-reference: docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md
+
 -- ============================================================================
 -- AN6-F: Phase AN6 CrossSubsystem MEDIUM batch (CX-M01..M05)
 -- ============================================================================

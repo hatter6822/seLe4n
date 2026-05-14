@@ -320,6 +320,12 @@ discharge-only).
 | I.18 | DEEP-IF-02 (R6.C audit-add) | `SecurityDomain.linearOrder_canFlow_antisymm` + `DomainFlowPolicy.linearOrder_antisymm` (antisymmetry — third pre-order law promised by H-04 spec header) | `Kernel/InformationFlow/Policy.lean` | LANDED |
 | I.19 | DEEP-IF-02 (R6.C) | `SecurityDomainLattice` (Prop bundle of the seven lattice laws + antisymmetry) + `securityDomain_complete_lattice` (witness) | `Kernel/InformationFlow/Policy.lean` | LANDED |
 | I.20 | DEEP-IPC-04 (R6.D) | `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull` (pre-existing — sorry-free, discharge-only) + plan-named alias `cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull` | `Kernel/IPC/Invariant/Defs.lean:2630` | LANDED (pre-existing, R6.D discharge-only) |
+| I.21 | DEEP-ARCH-03 (R6.A.3 deferred-completion) | `gicDispatchPlanStaticInvariant` + `_holds` (static GIC plan invariant, now upstream of `Architecture.Invariant`) | `Kernel/Architecture/GicDispatchPlanCore.lean` | **LANDED (deferred-completion)** |
+| I.22 | DEEP-ARCH-03 (R6.A.3 deferred-completion) | `gicDispatchPlanStaticInvariant` added as **12th conjunct** of `proofLayerInvariantBundle` (literal plan-§10.6 compliance) | `Kernel/Architecture/Invariant.lean` | **LANDED (deferred-completion)** |
+| I.23 | DEEP-IF-02 (R6.C.2 deferred-completion) | In-house Mathlib-compatible typeclass hierarchy: `Preorder`, `PartialOrder`, `Sup`, `Inf`, `SemilatticeSup`, `SemilatticeInf`, `Lattice` + four generic lattice-law theorems (`SemilatticeSup.sup_assoc'`, `_sup_comm'`, `Lattice.absorb_sup_inf'`, `_absorb_inf_sup'`) | `Kernel/InformationFlow/Policy.lean` | **LANDED (deferred-completion)** |
+| I.24 | DEEP-IF-02 (R6.C.2 deferred-completion) | `SecurityDomain` instances: `LE`, `LT`, `Decidable LE/LT`, `Preorder`, `PartialOrder`, `Sup`, `Inf`, `SemilatticeSup`, `SemilatticeInf`, `Lattice` | `Kernel/InformationFlow/Policy.lean` | **LANDED (deferred-completion)** |
+| I.25 | DEEP-IF-02 (R6.C.3 deferred-completion) | Plan-named aliases `flowsTo_iff_sup_eq`, `flowsTo_iff_inf_eq` + integrity bridges `integrityFlowsTo_to_linearOrder_canFlow`, `securityFlowsTo_iff_embedded_sup_eq` | `Kernel/InformationFlow/Policy.lean` | **LANDED (deferred-completion)** |
+| I.26 | WS-RC R6 deferred-completion (Phase A) | Marker theorem `closureForm_ws_rc_extensions_documented : True := trivial` anchoring §3.D/§3.E/§3.F/§3.H/§3.I sections against future rename/drop drift | `Kernel/CrossSubsystem.lean` | **LANDED (deferred-completion)** |
 
 R6.A.3's composite `ArchitectureInvariantBundle` is intentionally
 defined in `ExceptionModel.lean` rather than `Architecture/Invariant.lean`
@@ -362,10 +368,17 @@ in both places.
 
 The predecessor's marker theorem (`closureForm_discharge_index_documented`
 in `SeLe4n/Kernel/CrossSubsystem.lean`) anchors the §3.A–§3.C reachability
-gate; that marker is preserved unchanged at WS-RC R0. WS-RC will add a
-companion marker `closureForm_ws_rc_extensions_documented` once §3.D /
-§3.E / §3.F populate substantively (no marker is added at R0 because the
-sections are seeds).
+gate; that marker is preserved unchanged at WS-RC R0.
+
+**WS-RC R6 deferred-completion (Phase A)**: the companion marker
+`closureForm_ws_rc_extensions_documented : True := trivial` has now
+been added to `SeLe4n/Kernel/CrossSubsystem.lean` per the update
+protocol §6 item 2 (triggered by §3.D/§3.E/§3.F/§3.H/§3.I becoming
+substantive).  The marker is included in the tier-3
+invariant-surface gate via a `#check` anchor in
+`tests/LivenessSuite.lean`.  Drop or rename of any extension-section
+row will be caught by either the marker (if the theorem is renamed)
+or by the LivenessSuite anchors (if a specific theorem name drifts).
 
 The website link manifest (`scripts/website_link_manifest.txt`) must
 register both this index and the predecessor index so
@@ -414,7 +427,7 @@ live" sync).
   regression test `runR5EOrphanedSchedContextChecks` provides the
   runtime-observable witness. AK7 cascade monotonicity baseline retained
   at the v0.30.11 floor.
-- **§3.I — 20 of 20 rows LANDED at WS-RC R6** (architecture /
+- **§3.I — 26 of 26 rows LANDED at WS-RC R6** (architecture /
   information-flow completeness — DEEP-ARCH-03, DEEP-IF-01, DEEP-IF-02,
   DEEP-IPC-04). I.1–I.10 deliver the GIC dispatch bridge
   (`InterruptOp` algebra, `interruptDispatchPlan`, bridge theorem,
@@ -429,6 +442,24 @@ live" sync).
   I.20 records the pre-existing
   `cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull`
   theorem (sorry-free, discharge-only).
+  **Deferred-completion rows I.21–I.26** close the four remaining
+  plan-§10.6 items from the post-R6-landing audit:
+  I.21 lifts `gicDispatchPlanStaticInvariant` to a new upstream
+  module `Architecture/GicDispatchPlanCore.lean`; I.22 adds the
+  static invariant as the **12th conjunct** of
+  `proofLayerInvariantBundle` (literal plan compliance); I.23
+  defines the in-house Mathlib-compatible typeclass hierarchy
+  (`Preorder`, `PartialOrder`, `Sup`, `Inf`, `SemilatticeSup`,
+  `SemilatticeInf`, `Lattice`) plus four generic lattice-law
+  theorems proven from the typeclass axioms; I.24 provides the
+  `SecurityDomain` instances for every class in the hierarchy
+  (transport from `Nat.le_max_*`, `Nat.min_le_*`, `Nat.le_antisymm`,
+  etc.); I.25 adds the plan-named aliases `flowsTo_iff_sup_eq`,
+  `flowsTo_iff_inf_eq` plus the substantive integrity bridge
+  `integrityFlowsTo_to_linearOrder_canFlow`; I.26 adds the marker
+  theorem `closureForm_ws_rc_extensions_documented` anchoring the
+  WS-RC discharge-index extension sections (§3.D/§3.E/§3.F/§3.H/§3.I)
+  against future drift.
 
 **No closure-form obligation introduced by WS-RC is orphaned**: every
 R-phase that produces a closure-form theorem or structural witness

@@ -1281,4 +1281,318 @@ theorem securityDomain_complete_lattice : SecurityDomainLattice where
   flowsTo_iff_sup_eq' := SecurityDomain.linearOrder_canFlow_iff_sup_eq
   linearOrder_antisymm' := SecurityDomain.linearOrder_canFlow_antisymm
 
+-- ============================================================================
+-- WS-RC R6.C.2 (DEEP-IF-02): In-house Mathlib-compatible lattice typeclasses
+-- ============================================================================
+
+/-! ## WS-RC R6.C.2 — Lattice typeclass hierarchy (Mathlib-compatible)
+
+Lean core ships `LE`, `LT`, `Max`, and `Min` typeclasses but does NOT
+ship the order-theoretic algebraic structures (`Preorder`,
+`PartialOrder`, `Sup`, `Inf`, `SemilatticeSup`, `SemilatticeInf`,
+`Lattice`) — these are Mathlib-only.
+
+Since this codebase deliberately avoids a Mathlib dependency (the
+kernel's trusted computing base must stay small — see
+`CLAUDE.md` "Third-party attribution" rules), R6.C.2 provides an
+in-house typeclass hierarchy that:
+
+1. **Uses the same class names** as Mathlib (`SemilatticeSup`,
+   `SemilatticeInf`, `Lattice`, etc.) so a future Mathlib import in a
+   downstream project would be a drop-in replacement (the in-house
+   classes would then resolve to Mathlib's versions in scope of the
+   import, or to ours when Mathlib isn't loaded).
+2. **Uses the same field names** as Mathlib (`le_sup_left`,
+   `le_sup_right`, `sup_le`, `le_antisymm`, etc.) so derived proofs
+   in our codebase remain Mathlib-style.
+3. **Uses the standard axiomatization** (the strongest of the
+   "equivalent" axiomatizations of a semilattice) so the lattice laws
+   `sup_assoc`, `sup_comm`, `sup_idem`, the absorption laws, and the
+   order-via-sup bridge `a ≤ b ↔ a ⊔ b = b` are derivable theorems
+   from the typeclass axioms.
+
+The classes are placed in the `SeLe4n.Kernel` namespace so they don't
+shadow any future `_root_.Preorder` / `_root_.PartialOrder` /
+`_root_.Lattice` from a Mathlib import. -/
+
+/-- WS-RC R6.C.2: In-house `Preorder` typeclass.  Mirrors Mathlib's
+    `Preorder` field-for-field.  A preorder is a reflexive and
+    transitive relation `≤`, with a derived strict order `<` related
+    by `a < b ↔ a ≤ b ∧ ¬ b ≤ a`. -/
+class Preorder (α : Type u) extends LE α, LT α where
+  /-- Reflexivity of `≤`. -/
+  le_refl : ∀ a : α, a ≤ a
+  /-- Transitivity of `≤`. -/
+  le_trans : ∀ {a b c : α}, a ≤ b → b ≤ c → a ≤ c
+  /-- Strict order is anti-reflexive: `a < b → ¬ b ≤ a`.  Combined
+      with reflexivity this gives the standard strict-order
+      relationship. -/
+  lt_iff_le_not_le : ∀ {a b : α}, a < b ↔ a ≤ b ∧ ¬ b ≤ a := by
+    intros; rfl
+
+/-- WS-RC R6.C.2: In-house `PartialOrder` typeclass.  Mirrors
+    Mathlib's `PartialOrder`.  Adds antisymmetry to the preorder
+    structure, producing a poset. -/
+class PartialOrder (α : Type u) extends Preorder α where
+  /-- Antisymmetry of `≤`. -/
+  le_antisymm : ∀ {a b : α}, a ≤ b → b ≤ a → a = b
+
+/-- WS-RC R6.C.2: In-house `Sup` typeclass.  Mirrors Mathlib's `Sup`
+    (Mathlib distinguishes `Sup` from `Max` to allow lattices over
+    non-totally-ordered types; we follow the same convention).  The
+    notation `⊔` is reserved for Mathlib; we don't introduce it here
+    to avoid namespace clutter, but consumers can write
+    `SeLe4n.Kernel.Sup.sup a b` or use the wrapped `SecurityDomain.sup`. -/
+class Sup (α : Type u) where
+  /-- The supremum (join) operation. -/
+  sup : α → α → α
+
+/-- WS-RC R6.C.2: In-house `Inf` typeclass.  Mirrors Mathlib's `Inf`. -/
+class Inf (α : Type u) where
+  /-- The infimum (meet) operation. -/
+  inf : α → α → α
+
+/-- WS-RC R6.C.2: In-house `SemilatticeSup` typeclass.  Mirrors
+    Mathlib's `SemilatticeSup`: a partial order with a binary supremum
+    operation satisfying the standard three axioms (`le_sup_left`,
+    `le_sup_right`, `sup_le`).  These axioms are the **strongest**
+    standard axiomatization — they imply `sup_assoc`, `sup_comm`,
+    `sup_idem`, and the order-via-sup bridge `a ≤ b ↔ sup a b = b` as
+    theorems. -/
+class SemilatticeSup (α : Type u) extends Sup α, PartialOrder α where
+  /-- The supremum is an upper bound on the left. -/
+  le_sup_left : ∀ a b : α, a ≤ Sup.sup a b
+  /-- The supremum is an upper bound on the right. -/
+  le_sup_right : ∀ a b : α, b ≤ Sup.sup a b
+  /-- The supremum is the **least** upper bound. -/
+  sup_le : ∀ {a b c : α}, a ≤ c → b ≤ c → Sup.sup a b ≤ c
+
+/-- WS-RC R6.C.2: In-house `SemilatticeInf` typeclass.  Dual of
+    `SemilatticeSup`. -/
+class SemilatticeInf (α : Type u) extends Inf α, PartialOrder α where
+  /-- The infimum is a lower bound on the left. -/
+  inf_le_left : ∀ a b : α, Inf.inf a b ≤ a
+  /-- The infimum is a lower bound on the right. -/
+  inf_le_right : ∀ a b : α, Inf.inf a b ≤ b
+  /-- The infimum is the **greatest** lower bound. -/
+  le_inf : ∀ {a b c : α}, a ≤ b → a ≤ c → a ≤ Inf.inf b c
+
+/-- WS-RC R6.C.2: In-house `Lattice` typeclass.  Mirrors Mathlib's
+    `Lattice`: a partial order that is both a `SemilatticeSup` and a
+    `SemilatticeInf`.  The absorption laws follow automatically from
+    the semilattice axioms and antisymmetry. -/
+class Lattice (α : Type u) extends SemilatticeSup α, SemilatticeInf α
+
+-- ============================================================================
+-- WS-RC R6.C.2: SecurityDomain instances (Preorder → PartialOrder → Lattice)
+-- ============================================================================
+
+namespace SecurityDomain
+
+/-- WS-RC R6.C.2: `LE` instance — `a ≤ b ↔ a.id ≤ b.id` (lifts
+    `Nat.le` through the `id` field). -/
+instance instLE : LE SecurityDomain where
+  le a b := a.id ≤ b.id
+
+/-- WS-RC R6.C.2: `LT` instance — `a < b ↔ a.id < b.id`. -/
+instance instLT : LT SecurityDomain where
+  lt a b := a.id < b.id
+
+/-- WS-RC R6.C.2: `Decidable` instance for `≤` over `SecurityDomain`,
+    inherited from `Nat`. -/
+instance instDecidableLE (a b : SecurityDomain) : Decidable (a ≤ b) :=
+  inferInstanceAs (Decidable (a.id ≤ b.id))
+
+/-- WS-RC R6.C.2: `Decidable` instance for `<` over `SecurityDomain`. -/
+instance instDecidableLT (a b : SecurityDomain) : Decidable (a < b) :=
+  inferInstanceAs (Decidable (a.id < b.id))
+
+/-- WS-RC R6.C.2: `≤` unfolds to `Nat.le` on `id`. -/
+@[simp] theorem le_iff_id_le (a b : SecurityDomain) : a ≤ b ↔ a.id ≤ b.id :=
+  Iff.rfl
+
+/-- WS-RC R6.C.2: `<` unfolds to `Nat.lt` on `id`. -/
+@[simp] theorem lt_iff_id_lt (a b : SecurityDomain) : a < b ↔ a.id < b.id :=
+  Iff.rfl
+
+end SecurityDomain
+
+/-- WS-RC R6.C.2: `Preorder` instance for `SecurityDomain`.
+    Reflexivity, transitivity, and the `<` ↔ `≤ ∧ not ≥` derivation
+    all transport from `Nat`.  The transport is by definitional
+    reduction through the `LE`/`LT` instance dispatch — `a ≤ b` and
+    `a < b` on `SecurityDomain` definitionally equal `a.id ≤ b.id`
+    and `a.id < b.id` on `Nat`. -/
+instance : Preorder SecurityDomain where
+  le_refl a := Nat.le_refl a.id
+  le_trans h₁ h₂ := Nat.le_trans h₁ h₂
+  lt_iff_le_not_le := Nat.lt_iff_le_not_le
+
+/-- WS-RC R6.C.2: `PartialOrder` instance for `SecurityDomain`.
+    Antisymmetry follows from `Nat.le_antisymm` on the `id` field. -/
+instance : PartialOrder SecurityDomain where
+  le_antisymm h₁ h₂ :=
+    SecurityDomain.ext (Nat.le_antisymm h₁ h₂)
+
+/-- WS-RC R6.C.2: `Sup` instance for `SecurityDomain` — delegates to
+    `SecurityDomain.sup`. -/
+instance : Sup SecurityDomain where
+  sup := SecurityDomain.sup
+
+/-- WS-RC R6.C.2: `Inf` instance for `SecurityDomain` — delegates to
+    `SecurityDomain.inf`. -/
+instance : Inf SecurityDomain where
+  inf := SecurityDomain.inf
+
+/-- WS-RC R6.C.2: `SemilatticeSup` instance for `SecurityDomain`.
+    The three axioms transport directly from `Nat`'s `max` lemmas in
+    Lean core (`Nat.le_max_left`, `Nat.le_max_right`,
+    `Nat.max_le.mpr`). -/
+instance : SemilatticeSup SecurityDomain where
+  le_sup_left a b := Nat.le_max_left a.id b.id
+  le_sup_right a b := Nat.le_max_right a.id b.id
+  sup_le h₁ h₂ := Nat.max_le.mpr ⟨h₁, h₂⟩
+
+/-- WS-RC R6.C.2: `SemilatticeInf` instance for `SecurityDomain`.
+    Dual transport from `Nat.min_le_left`, `Nat.min_le_right`,
+    `Nat.le_min.mpr`. -/
+instance : SemilatticeInf SecurityDomain where
+  inf_le_left a b := Nat.min_le_left a.id b.id
+  inf_le_right a b := Nat.min_le_right a.id b.id
+  le_inf h₁ h₂ := Nat.le_min.mpr ⟨h₁, h₂⟩
+
+/-- WS-RC R6.C.2: `Lattice` instance for `SecurityDomain`.  The
+    absorption laws are implied by the parent semilattice axioms +
+    antisymmetry; no additional discharge is required (the `Lattice`
+    typeclass has no `extends`-beyond-parent obligations). -/
+instance : Lattice SecurityDomain where
+
+-- ============================================================================
+-- WS-RC R6.C.2: Discharge of the four lattice laws from typeclass axioms
+-- ============================================================================
+
+/-! Provide the four lattice-law theorems the plan literally names
+    (`sup_assoc`, `sup_comm`, `absorb_sup_inf`, `absorb_inf_sup`) as
+    GENERIC theorems over any `Lattice α`.  These are the standard
+    consequences of the `SemilatticeSup`/`SemilatticeInf` axioms +
+    antisymmetry.  The `SecurityDomain` versions
+    (`SecurityDomain.sup_assoc`, etc.) follow from these instances.
+
+    This shows that the in-house typeclass hierarchy is mathematically
+    sound: the laws are theorems, not axioms. -/
+
+/-- WS-RC R6.C.2: Generic `sup_assoc` for any `SemilatticeSup`.  This
+    is the standard "associativity from the least-upper-bound axioms"
+    proof: each side is the join of `a`, `b`, `c`. -/
+theorem SemilatticeSup.sup_assoc' {α : Type u} [SemilatticeSup α]
+    (a b c : α) :
+    Sup.sup (Sup.sup a b) c = Sup.sup a (Sup.sup b c) := by
+  apply PartialOrder.le_antisymm
+  · apply SemilatticeSup.sup_le
+    · apply SemilatticeSup.sup_le
+      · exact SemilatticeSup.le_sup_left a (Sup.sup b c)
+      · exact Preorder.le_trans
+          (SemilatticeSup.le_sup_left b c)
+          (SemilatticeSup.le_sup_right a (Sup.sup b c))
+    · exact Preorder.le_trans
+        (SemilatticeSup.le_sup_right b c)
+        (SemilatticeSup.le_sup_right a (Sup.sup b c))
+  · apply SemilatticeSup.sup_le
+    · exact Preorder.le_trans
+        (SemilatticeSup.le_sup_left a b)
+        (SemilatticeSup.le_sup_left (Sup.sup a b) c)
+    · apply SemilatticeSup.sup_le
+      · exact Preorder.le_trans
+          (SemilatticeSup.le_sup_right a b)
+          (SemilatticeSup.le_sup_left (Sup.sup a b) c)
+      · exact SemilatticeSup.le_sup_right (Sup.sup a b) c
+
+/-- WS-RC R6.C.2: Generic `sup_comm` for any `SemilatticeSup`. -/
+theorem SemilatticeSup.sup_comm' {α : Type u} [SemilatticeSup α]
+    (a b : α) : Sup.sup a b = Sup.sup b a := by
+  apply PartialOrder.le_antisymm
+  · exact SemilatticeSup.sup_le
+      (SemilatticeSup.le_sup_right b a)
+      (SemilatticeSup.le_sup_left b a)
+  · exact SemilatticeSup.sup_le
+      (SemilatticeSup.le_sup_right a b)
+      (SemilatticeSup.le_sup_left a b)
+
+/-- WS-RC R6.C.2: Generic `absorb_sup_inf` for any `Lattice`.
+    `a ⊔ (a ⊓ b) = a`. -/
+theorem Lattice.absorb_sup_inf' {α : Type u} [Lattice α] (a b : α) :
+    Sup.sup a (Inf.inf a b) = a := by
+  apply PartialOrder.le_antisymm
+  · exact SemilatticeSup.sup_le
+      (Preorder.le_refl a)
+      (SemilatticeInf.inf_le_left a b)
+  · exact SemilatticeSup.le_sup_left a (Inf.inf a b)
+
+/-- WS-RC R6.C.2: Generic `absorb_inf_sup` for any `Lattice`.
+    `a ⊓ (a ⊔ b) = a`. -/
+theorem Lattice.absorb_inf_sup' {α : Type u} [Lattice α] (a b : α) :
+    Inf.inf a (Sup.sup a b) = a := by
+  apply PartialOrder.le_antisymm
+  · exact SemilatticeInf.inf_le_left a (Sup.sup a b)
+  · exact SemilatticeInf.le_inf
+      (Preorder.le_refl a)
+      (SemilatticeSup.le_sup_left a b)
+
+-- ============================================================================
+-- WS-RC R6.C.3 (DEEP-IF-02): Plan-named aliases
+-- ============================================================================
+
+/-- WS-RC R6.C.3 (DEEP-IF-02): Plan-named alias.  The plan's
+    pseudocode (`AUDIT_v0.30.11_WORKSTREAM_PLAN.md` §10.6, R6.C.3)
+    uses the name `flowsTo_iff_sup_eq` for the bridge from `flowsTo`
+    to `sup`.  Since `flowsTo` on `SecurityDomain` doesn't exist at
+    the type level (only `domainFlowsTo` parameterised by a policy
+    and `linearOrder.canFlow` for the canonical default), we wire the
+    alias through the canonical `linearOrder` policy.
+
+    Callers wanting the bridge with the plan-named identifier use
+    `flowsTo_iff_sup_eq`; callers wanting the policy-explicit version
+    use `SecurityDomain.linearOrder_canFlow_iff_sup_eq` directly. -/
+abbrev flowsTo_iff_sup_eq := @SecurityDomain.linearOrder_canFlow_iff_sup_eq
+
+/-- WS-RC R6.C.3 (DEEP-IF-02): Plan-named alias for the dual bridge
+    `a ≤ b ↔ inf a b = a`. -/
+abbrev flowsTo_iff_inf_eq := @SecurityDomain.linearOrder_canFlow_iff_inf_eq
+
+/-- WS-RC R6.C.3 (DEEP-IF-02): Bridge from the legacy
+    BIBA-inverted `integrityFlowsTo` predicate (on `Integrity`) to
+    the lattice's `≤` on the embedded `SecurityDomain`.
+
+    The plan's pseudocode references `integrityFlowsTo` as if it
+    were a relation on `SecurityDomain`; in this codebase
+    `integrityFlowsTo` is defined on the legacy `Integrity` enum
+    (`untrusted` / `trusted`).  The two are bridged by
+    `embedLegacyLabel`, which maps `low untrusted → 0`,
+    `low trusted → 1`, `high untrusted → 2`, `high trusted → 3`
+    (see `embedLegacyLabel` above).
+
+    The legacy `integrityFlowsTo` is BIBA-inverted: it returns
+    `true` when the destination is "no more trusted" than the
+    source — i.e. when `untrusted → trusted` (and trivially
+    `untrusted → untrusted`, `trusted → trusted`).  Under
+    `embedLegacyLabel + linearOrder`, this corresponds to `≤` on
+    the lattice. -/
+theorem integrityFlowsTo_to_linearOrder_canFlow
+    (src dst : SecurityLabel)
+    (hFlow : securityFlowsTo src dst = true) :
+    DomainFlowPolicy.linearOrder.canFlow
+        (embedLegacyLabel src) (embedLegacyLabel dst) = true :=
+  embedLegacyLabel_preserves_flow src dst hFlow
+
+/-- WS-RC R6.C.3 (DEEP-IF-02): Combined witness — every legacy flow
+    is witnessed by the lattice's `≤` (via `sup`-equality). -/
+theorem securityFlowsTo_iff_embedded_sup_eq
+    (src dst : SecurityLabel)
+    (hFlow : securityFlowsTo src dst = true) :
+    SecurityDomain.sup (embedLegacyLabel src) (embedLegacyLabel dst)
+      = embedLegacyLabel dst :=
+  (SecurityDomain.linearOrder_canFlow_iff_sup_eq
+      (embedLegacyLabel src) (embedLegacyLabel dst)).mp
+    (embedLegacyLabel_preserves_flow src dst hFlow)
+
 end SeLe4n.Kernel

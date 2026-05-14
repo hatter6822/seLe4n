@@ -4096,7 +4096,30 @@ private def runR6PhaseChecks : IO Unit := do
   else
     IO.println
       "negative check passed [R6.C-NEG-03 inf respects ordering — inf d3 d5 ≠ d5]"
-  IO.println "all WS-RC R6 (R6.A + R6.C) negative checks passed"
+  -- R6.C.2-NEG-01: the in-house `SemilatticeSup` instance for
+  -- `SecurityDomain` must dispatch to `SecurityDomain.sup`.  If the
+  -- typeclass instance silently uses a different operation (e.g.
+  -- `Nat.add` instead of `Nat.max`), `Sup.sup d3 d5` would not equal
+  -- the concrete witness.
+  if (SeLe4n.Kernel.Sup.sup d3 d5 : SeLe4n.Kernel.SecurityDomain) ==
+      SeLe4n.Kernel.SecurityDomain.sup d3 d5 then
+    IO.println
+      "negative check passed [R6.C.2-NEG-01 Sup typeclass dispatches to concrete sup]"
+  else
+    throw <| IO.userError
+      "R6.C.2-NEG-01: Sup typeclass instance does NOT dispatch to SecurityDomain.sup"
+  -- R6.C.2-NEG-02: the `LE` instance must dispatch through `Nat.le`
+  -- on the `id` field.  Misconfigured `LE` would make `d3 ≤ d5` false
+  -- (since 3 ≤ 5 in Nat).
+  if decide (d3 ≤ d5) = true then
+    IO.println
+      "negative check passed [R6.C.2-NEG-02 LE typeclass dispatches via id field]"
+  else
+    throw <| IO.userError
+      "R6.C.2-NEG-02: LE typeclass does NOT dispatch via Nat.le on id"
+  -- R6 marker theorem check.
+  let _markerWitness := @SeLe4n.Kernel.closureForm_ws_rc_extensions_documented
+  IO.println "all WS-RC R6 (R6.A + R6.C + R6.C.2 typeclass) negative checks passed"
 
 end SeLe4n.Testing
 

@@ -2546,10 +2546,12 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     -- WS-RC R4.C: hMem : tid ∈ ntfn.waitingThreads via Membership instance.
     have hMemVal : tid ∈ ntfn.waitingThreads.val := hMem
     rw [hNtfn.2.1] at hMemVal; simp at hMemVal
-  -- Compose all 11 components
+  -- Compose all 12 components (WS-RC R6 deferred-completion:
+  -- 12th conjunct `gicDispatchPlanStaticInvariant` discharged by
+  -- the universally-true witness from `Architecture.GicDispatchPlanCore`).
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,
-         hNtfnWaiter⟩
+         hNtfnWaiter, SeLe4n.Kernel.Architecture.gicDispatchPlanStaticInvariant_holds⟩
 
 -- ============================================================================
 -- V4-A9: End-to-end bridge for general configs

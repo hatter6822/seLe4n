@@ -16,6 +16,12 @@ import SeLe4n.Kernel.CrossSubsystem
 -- AK8-A audit remediation: retype preservation needs `retypeFromUntyped`
 -- definition + structural field-preservation facts from Lifecycle.
 import SeLe4n.Kernel.Lifecycle.Invariant
+-- WS-RC R6 deferred-completion: `Architecture.GicDispatchPlanCore` ships
+-- `gicDispatchPlanStaticInvariant`, now carried as the 12th conjunct of
+-- `proofLayerInvariantBundle` below (closing the audit plan's
+-- "bundle into Architecture/Invariant.lean as a conjunct of
+-- architectureInvariantBundle" requirement — §10.6 R6.A.3).
+import SeLe4n.Kernel.Architecture.GicDispatchPlanCore
 
 /-!
 # Architecture Boundary Invariant Proofs (M6)
@@ -72,7 +78,19 @@ WS-H12e: Cross-subsystem invariant reconciliation — uses `schedulerInvariantBu
 and `coreIpcInvariantBundle` now subsumes `ipcInvariantFull` (including
 `dualQueueSystemInvariant` and `allPendingMessagesBounded`). The
 `ipcSchedulerCouplingInvariantBundle` now includes `contextMatchesCurrent` and
-`currentThreadDequeueCoherent`. -/
+`currentThreadDequeueCoherent`.
+
+WS-RC R6 deferred-completion: `gicDispatchPlanStaticInvariant` added as
+the 12th conjunct (`AUDIT_v0.30.11_WORKSTREAM_PLAN.md` §10.6 R6.A.3).
+This is a closed Prop with no `SystemState` dependence — the
+universal property "every `InterruptId` yields the AN8-C-ordered plan
+`[.ack, .eoi, .handle]`" — so every state trivially satisfies it.
+Preservation through any kernel transition is discharged by the
+single witness `gicDispatchPlanStaticInvariant_holds`.  The
+**runtime-delegation** half of the GIC bridge (over `dispatchException`
+and the executable `interruptDispatchSequence`) lives in the
+composite `ArchitectureInvariantBundle` defined in
+`Architecture.ExceptionModel`. -/
 def proofLayerInvariantBundle (st : SystemState) : Prop :=
   schedulerInvariantBundleFull st ∧
     capabilityInvariantBundle st ∧
@@ -84,7 +102,8 @@ def proofLayerInvariantBundle (st : SystemState) : Prop :=
     crossSubsystemInvariant st ∧
     tlbConsistent st st.tlb ∧
     schedulerInvariantBundleExtended st ∧
-    notificationWaiterConsistent st
+    notificationWaiterConsistent st ∧
+    gicDispatchPlanStaticInvariant
 
 /-- Proof-carrying local preservation hooks required to compose adapter paths with invariant bundles. -/
 structure AdapterProofHooks (contract : RuntimeBoundaryContract) where
@@ -486,7 +505,7 @@ private theorem default_schedulerInvariantBundleFull :
 
 theorem default_system_state_proofLayerInvariantBundle :
     proofLayerInvariantBundle (default : SystemState) := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- 1. schedulerInvariantBundleFull (WS-H12e: now uses full bundle)
   · exact default_schedulerInvariantBundleFull
   -- 2. capabilityInvariantBundle (6-tuple: unique, sound, bounded, completeness, acyclicity, depth)
@@ -534,6 +553,10 @@ theorem default_system_state_proofLayerInvariantBundle :
            default_boundThreadDomainConsistent⟩
   -- 11. notificationWaiterConsistent (AG7-D: empty objects → vacuous)
   · intro oid _ _ hObj; exact default_objects_absurd hObj
+  -- 12. WS-RC R6 deferred-completion: gicDispatchPlanStaticInvariant
+  --     (closed Prop, no state dependence — universal property of
+  --     `interruptDispatchPlan`).
+  · exact gicDispatchPlanStaticInvariant_holds
 
 -- ============================================================================
 -- M-08/WS-E6: Architecture assumption consumption bridge theorems
@@ -790,10 +813,12 @@ theorem advanceTimerState_preserves_proofLayerInvariantBundle
     (ticks : Nat) (st : SystemState)
     (hInv : proofLayerInvariantBundle st) :
     proofLayerInvariantBundle (advanceTimerState ticks st) := by
-  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC⟩ := hInv
+  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC,
+          _hGicPlan⟩ := hInv
   refine ⟨by exact hSched,
          advanceTimerState_preserves_capabilityInvariantBundle ticks st hCap,
-         ?_, ?_, by exact hLife, ?_, ?_, ?_, by exact hTlb, by exact hExt, by exact hNWC⟩
+         ?_, ?_, by exact hLife, ?_, ?_, ?_, by exact hTlb, by exact hExt, by exact hNWC,
+         gicDispatchPlanStaticInvariant_holds⟩
   -- coreIpcInvariantBundle
   · obtain ⟨hS, hC, hI⟩ := hIpc
     exact ⟨by exact hS,
@@ -901,7 +926,8 @@ theorem writeRegisterState_preserves_proofLayerInvariantBundle
     (hInv : proofLayerInvariantBundle st)
     (hCtx : contextMatchesCurrent (writeRegisterState reg value st)) :
     proofLayerInvariantBundle (writeRegisterState reg value st) := by
-  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC⟩ := hInv
+  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC,
+          _hGicPlan⟩ := hInv
   -- writeRegisterState only changes machine.regs — establish definitional equalities
   have hEq : writeRegisterState reg value st =
       { st with machine := { st.machine with regs := SeLe4n.writeReg st.machine.regs reg value } } :=
@@ -910,7 +936,7 @@ theorem writeRegisterState_preserves_proofLayerInvariantBundle
   -- at the struct level; others need the rewrite for Lean to see through the record update
   refine ⟨?_, ?_, ?_, ?_, by exact hLife, ?_,
          writeRegisterState_preserves_vspaceInvariantBundle reg value st hVsp,
-         ?_, by exact hTlb, ?_, by exact hNWC⟩
+         ?_, by exact hTlb, ?_, by exact hNWC, gicDispatchPlanStaticInvariant_holds⟩
   -- schedulerInvariantBundleFull: swap contextMatchesCurrent
   · obtain ⟨hBase, hTs, hCts, hEdf, _, hRunn, hPri, hDom, hDomE⟩ := hSched
     exact ⟨hBase, hTs, hCts, hEdf, hCtx, hRunn, hPri, hDom, hDomE⟩
@@ -1065,7 +1091,8 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
     (hDeadline : tcb.deadline.toNat = 0)
     (hBudgetPost : currentBudgetPositive (contextSwitchState newTid newRegs st)) :
     proofLayerInvariantBundle (contextSwitchState newTid newRegs st) := by
-  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC⟩ := hInv
+  obtain ⟨hSched, hCap, hIpc, hCoupling, hLife, hSvc, hVsp, hCross, hTlb, hExt, hNWC,
+          _hGicPlan⟩ := hInv
   -- contextSwitchState changes machine.regs and scheduler.current; objects unchanged
   have hObjs : (contextSwitchState newTid newRegs st).objects = st.objects := rfl
   -- Extract currentThreadIpcReady from the coupling bundle (needed for passiveServerIdle)
@@ -1120,10 +1147,10 @@ theorem contextSwitchState_preserves_proofLayerInvariantBundle
       cases obj with
       | tcb _ => intro _ _ _; left; exact hDeadline
       | _ => trivial
-  -- Compose the 11-tuple
+  -- Compose the 12-tuple (WS-RC R6 deferred-completion: 12th conjunct added)
   refine ⟨?_, ?_, ?_, ?_, by exact hLife, ?_,
          contextSwitchState_preserves_vspaceInvariantBundle newTid newRegs st hVsp,
-         ?_, by exact hTlb, ?_, ?_⟩
+         ?_, by exact hTlb, ?_, ?_, gicDispatchPlanStaticInvariant_holds⟩
   -- 1. schedulerInvariantBundleFull
   · obtain ⟨⟨_, hUniq, _⟩, hTs, _, _, _, hRunn, hPri, hDom, hDomE⟩ := hSched
     have hQCC : queueCurrentConsistent

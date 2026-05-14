@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-codebase-audit-SOobd",
-      "commit_sha": "f7cbf039308d5fffb415c199c0df48987d4a7213",
-      "tree_sha": "8ea53fcbf21c1c6bd440b6146003a25b35797bda",
-      "committed_at_utc": "2026-05-12T20:47:27-04:00"
+      "commit_sha": "50957e7a3ce0bfab47d2d44d174da318cf571552",
+      "tree_sha": "fc273c727fd127044476571939e2b309b953e797",
+      "committed_at_utc": "2026-05-13T21:48:34+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "2d688b0501b81ae6ca44e58c9432df7e9f365226dc825f4a9a8aa8d185404368"
+    "source_digest": "41ee7d66dcceb09f094dbf2b171cd44365413d009623a409edb173c7a6d0eb32"
   },
   "summary": {
-    "module_count": 199,
-    "declaration_count": 6491
+    "module_count": 200,
+    "declaration_count": 6524
   },
   "readme_sync": {
     "version": "0.31.2",
     "lean_toolchain": "v4.28.0",
-    "production_files": 170,
-    "production_loc": 114802,
+    "production_files": 171,
+    "production_loc": 115324,
     "test_files": 29,
-    "test_loc": 21382,
-    "proved_theorem_lemma_decls": 3339,
+    "test_loc": 21470,
+    "proved_theorem_lemma_decls": 3350,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -2452,7 +2452,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.ExceptionModel",
       "path": "SeLe4n/Kernel/Architecture/ExceptionModel.lean",
-      "declaration_count": 59,
+      "declaration_count": 52,
       "declarations": [
         {
           "kind": "namespace",
@@ -2824,73 +2824,9 @@
           ]
         },
         {
-          "kind": "inductive",
-          "name": "InterruptOp",
-          "line": 613,
-          "called": [
-            "InterruptId"
-          ]
-        },
-        {
-          "kind": "def",
-          "name": "interruptDispatchPlan",
-          "line": 637,
-          "called": [
-            "InterruptId",
-            "InterruptOp"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "interruptDispatchPlan_length",
-          "line": 643,
-          "called": [
-            "InterruptId",
-            "interruptDispatchPlan",
-            "length"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "interruptDispatchPlan_ack_head",
-          "line": 649,
-          "called": [
-            "InterruptId",
-            "head",
-            "interruptDispatchPlan"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "interruptDispatchPlan_eoi_second",
-          "line": 657,
-          "called": [
-            "InterruptId",
-            "interruptDispatchPlan"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "interruptDispatchPlan_handle_third",
-          "line": 664,
-          "called": [
-            "InterruptId",
-            "interruptDispatchPlan"
-          ]
-        },
-        {
-          "kind": "theorem",
-          "name": "interruptDispatchPlan_decomposes",
-          "line": 671,
-          "called": [
-            "InterruptId",
-            "interruptDispatchPlan"
-          ]
-        },
-        {
           "kind": "theorem",
           "name": "exception_irq_dispatches_via_interrupt_dispatch",
-          "line": 691,
+          "line": 655,
           "called": [
             "ExceptionContext",
             "InterruptId",
@@ -2904,7 +2840,7 @@
         {
           "kind": "theorem",
           "name": "exception_irq_dispatches_when_handled",
-          "line": 709,
+          "line": 673,
           "called": [
             "ExceptionContext",
             "InterruptId",
@@ -2918,7 +2854,7 @@
         {
           "kind": "structure",
           "name": "GICDispatchBridge",
-          "line": 729,
+          "line": 693,
           "called": [
             "ExceptionContext",
             "InterruptId",
@@ -2931,7 +2867,7 @@
         {
           "kind": "theorem",
           "name": "gicDispatchBridge_holds",
-          "line": 738,
+          "line": 702,
           "called": [
             "GICDispatchBridge",
             "InterruptId",
@@ -2941,7 +2877,7 @@
         {
           "kind": "def",
           "name": "gicDispatchPlanInvariant",
-          "line": 749,
+          "line": 713,
           "called": [
             "GICDispatchBridge",
             "InterruptId"
@@ -2950,7 +2886,7 @@
         {
           "kind": "theorem",
           "name": "gicDispatchPlanInvariant_holds",
-          "line": 756,
+          "line": 720,
           "called": [
             "gicDispatchBridge_holds",
             "gicDispatchPlanInvariant"
@@ -2959,7 +2895,7 @@
         {
           "kind": "structure",
           "name": "ArchitectureInvariantBundle",
-          "line": 797,
+          "line": 761,
           "called": [
             "SystemState",
             "gicDispatchPlanInvariant",
@@ -2969,7 +2905,7 @@
         {
           "kind": "theorem",
           "name": "ArchitectureInvariantBundle.of_proofLayer",
-          "line": 812,
+          "line": 776,
           "called": [
             "ArchitectureInvariantBundle",
             "SystemState",
@@ -2980,7 +2916,7 @@
         {
           "kind": "theorem",
           "name": "default_system_state_architectureInvariantBundle",
-          "line": 820,
+          "line": 784,
           "called": [
             "ArchitectureInvariantBundle",
             "ArchitectureInvariantBundle.of_proofLayer",
@@ -2992,7 +2928,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_architectureInvariantBundle",
-          "line": 828,
+          "line": 792,
           "called": [
             "ArchitectureInvariantBundle",
             "SystemState",
@@ -3004,7 +2940,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_architectureInvariantBundle",
-          "line": 838,
+          "line": 802,
           "called": [
             "ArchitectureInvariantBundle",
             "RegName",
@@ -3019,7 +2955,7 @@
         {
           "kind": "theorem",
           "name": "contextSwitchState_preserves_architectureInvariantBundle",
-          "line": 850,
+          "line": 814,
           "called": [
             "ArchitectureInvariantBundle",
             "RegisterFile",
@@ -3038,7 +2974,7 @@
         {
           "kind": "theorem",
           "name": "ArchitectureInvariantBundle.toProofLayer",
-          "line": 872,
+          "line": 836,
           "called": [
             "ArchitectureInvariantBundle",
             "SystemState",
@@ -3048,7 +2984,7 @@
         {
           "kind": "theorem",
           "name": "ArchitectureInvariantBundle.toGicDispatchPlan",
-          "line": 881,
+          "line": 845,
           "called": [
             "ArchitectureInvariantBundle",
             "SystemState",
@@ -3058,26 +2994,120 @@
       ]
     },
     {
-      "module": "SeLe4n.Kernel.Architecture.InterruptDispatch",
-      "path": "SeLe4n/Kernel/Architecture/InterruptDispatch.lean",
-      "declaration_count": 26,
+      "module": "SeLe4n.Kernel.Architecture.GicDispatchPlanCore",
+      "path": "SeLe4n/Kernel/Architecture/GicDispatchPlanCore.lean",
+      "declaration_count": 11,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Architecture",
-          "line": 36,
+          "line": 63,
           "called": []
         },
         {
           "kind": "abbrev",
           "name": "InterruptId",
-          "line": 51,
+          "line": 78,
+          "called": []
+        },
+        {
+          "kind": "inductive",
+          "name": "InterruptOp",
+          "line": 85,
+          "called": [
+            "InterruptId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "interruptDispatchPlan",
+          "line": 111,
+          "called": [
+            "InterruptId",
+            "InterruptOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "interruptDispatchPlan_length",
+          "line": 117,
+          "called": [
+            "InterruptId",
+            "interruptDispatchPlan",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "interruptDispatchPlan_ack_head",
+          "line": 123,
+          "called": [
+            "InterruptId",
+            "head",
+            "interruptDispatchPlan"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "interruptDispatchPlan_eoi_second",
+          "line": 131,
+          "called": [
+            "InterruptId",
+            "interruptDispatchPlan"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "interruptDispatchPlan_handle_third",
+          "line": 138,
+          "called": [
+            "InterruptId",
+            "interruptDispatchPlan"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "interruptDispatchPlan_decomposes",
+          "line": 145,
+          "called": [
+            "InterruptId",
+            "interruptDispatchPlan"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "gicDispatchPlanStaticInvariant",
+          "line": 168,
+          "called": [
+            "InterruptId",
+            "interruptDispatchPlan"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "gicDispatchPlanStaticInvariant_holds",
+          "line": 176,
+          "called": [
+            "gicDispatchPlanStaticInvariant"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Architecture.InterruptDispatch",
+      "path": "SeLe4n/Kernel/Architecture/InterruptDispatch.lean",
+      "declaration_count": 25,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Architecture",
+          "line": 44,
           "called": []
         },
         {
           "kind": "def",
           "name": "timerInterruptId",
-          "line": 54,
+          "line": 63,
           "called": [
             "InterruptId"
           ]
@@ -3085,19 +3115,19 @@
         {
           "kind": "def",
           "name": "spuriousInterruptThreshold",
-          "line": 58,
+          "line": 67,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "AckError",
-          "line": 78,
+          "line": 87,
           "called": []
         },
         {
           "kind": "def",
           "name": "acknowledgeInterrupt",
-          "line": 87,
+          "line": 96,
           "called": [
             "AckError",
             "InterruptId",
@@ -3107,7 +3137,7 @@
         {
           "kind": "def",
           "name": "endOfInterrupt",
-          "line": 101,
+          "line": 110,
           "called": [
             "InterruptId",
             "SystemState",
@@ -3117,7 +3147,7 @@
         {
           "kind": "def",
           "name": "ackInterruptAudit",
-          "line": 108,
+          "line": 117,
           "called": [
             "SystemState"
           ]
@@ -3125,7 +3155,7 @@
         {
           "kind": "def",
           "name": "eoiPendingEmpty",
-          "line": 120,
+          "line": 129,
           "called": [
             "SystemState"
           ]
@@ -3133,7 +3163,7 @@
         {
           "kind": "theorem",
           "name": "ackInterruptAudit_eoiPending",
-          "line": 124,
+          "line": 133,
           "called": [
             "SystemState",
             "ackInterruptAudit"
@@ -3142,7 +3172,7 @@
         {
           "kind": "theorem",
           "name": "endOfInterrupt_eoiPending",
-          "line": 128,
+          "line": 137,
           "called": [
             "InterruptId",
             "SystemState",
@@ -3153,7 +3183,7 @@
         {
           "kind": "theorem",
           "name": "ack_eoi_round_trip_empty",
-          "line": 137,
+          "line": 146,
           "called": [
             "InterruptId",
             "SystemState",
@@ -3167,7 +3197,7 @@
         {
           "kind": "def",
           "name": "handleInterrupt",
-          "line": 168,
+          "line": 177,
           "called": [
             "InterruptId",
             "Irq",
@@ -3183,7 +3213,7 @@
         {
           "kind": "def",
           "name": "interruptDispatchSequence",
-          "line": 224,
+          "line": 233,
           "called": [
             "KernelError",
             "SystemState",
@@ -3196,7 +3226,7 @@
         {
           "kind": "theorem",
           "name": "interruptDispatchSequence_spurious",
-          "line": 254,
+          "line": 263,
           "called": [
             "SystemState",
             "acknowledgeInterrupt",
@@ -3207,7 +3237,7 @@
         {
           "kind": "theorem",
           "name": "interruptDispatchSequence_outOfRange",
-          "line": 261,
+          "line": 270,
           "called": [
             "SystemState",
             "acknowledgeInterrupt",
@@ -3218,7 +3248,7 @@
         {
           "kind": "theorem",
           "name": "endOfInterrupt_non_machine_eq",
-          "line": 272,
+          "line": 281,
           "called": [
             "InterruptId",
             "SystemState",
@@ -3228,7 +3258,7 @@
         {
           "kind": "theorem",
           "name": "endOfInterrupt_removes_from_eoiPending",
-          "line": 280,
+          "line": 289,
           "called": [
             "InterruptId",
             "SystemState",
@@ -3238,7 +3268,7 @@
         {
           "kind": "theorem",
           "name": "handleInterrupt_unmapped",
-          "line": 290,
+          "line": 299,
           "called": [
             "InterruptId",
             "Irq",
@@ -3251,7 +3281,7 @@
         {
           "kind": "theorem",
           "name": "interruptDispatchSequence_always_ok",
-          "line": 307,
+          "line": 316,
           "called": [
             "SystemState",
             "ackInterruptAudit",
@@ -3264,7 +3294,7 @@
         {
           "kind": "def",
           "name": "eoiEmitted",
-          "line": 343,
+          "line": 352,
           "called": [
             "InterruptId",
             "SystemState",
@@ -3275,7 +3305,7 @@
         {
           "kind": "theorem",
           "name": "interruptDispatchSequence_eoi_unless_spurious",
-          "line": 364,
+          "line": 373,
           "called": [
             "SystemState",
             "ackInterruptAudit",
@@ -3289,7 +3319,7 @@
         {
           "kind": "theorem",
           "name": "interruptDispatchSequence_eoi_before_handler",
-          "line": 432,
+          "line": 441,
           "called": [
             "InterruptId",
             "SystemState",
@@ -3303,7 +3333,7 @@
         {
           "kind": "def",
           "name": "timerInterruptHandler",
-          "line": 484,
+          "line": 493,
           "called": [
             "Kernel",
             "timerTick"
@@ -3312,7 +3342,7 @@
         {
           "kind": "theorem",
           "name": "timerInterruptHandler_eq_timerTick",
-          "line": 490,
+          "line": 499,
           "called": [
             "timerInterruptHandler",
             "timerTick"
@@ -3321,7 +3351,7 @@
         {
           "kind": "theorem",
           "name": "handleInterrupt_timer",
-          "line": 495,
+          "line": 504,
           "called": [
             "SystemState",
             "handleInterrupt",
@@ -3339,18 +3369,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Architecture",
-          "line": 59,
+          "line": 65,
           "called": []
         },
         {
           "kind": "def",
           "name": "proofLayerInvariantBundle",
-          "line": 76,
+          "line": 94,
           "called": [
             "SystemState",
             "capabilityInvariantBundle",
             "coreIpcInvariantBundle",
             "crossSubsystemInvariant",
+            "gicDispatchPlanStaticInvariant",
             "ipcSchedulerCouplingInvariantBundle",
             "lifecycleInvariantBundle",
             "notificationWaiterConsistent",
@@ -3364,7 +3395,7 @@
         {
           "kind": "structure",
           "name": "AdapterProofHooks",
-          "line": 90,
+          "line": 109,
           "called": [
             "RuntimeBoundaryContract",
             "advanceTimerState",
@@ -3376,7 +3407,7 @@
         {
           "kind": "theorem",
           "name": "adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle",
-          "line": 113,
+          "line": 132,
           "called": [
             "AdapterProofHooks",
             "RuntimeBoundaryContract",
@@ -3391,7 +3422,7 @@
         {
           "kind": "theorem",
           "name": "adapterWriteRegister_ok_preserves_proofLayerInvariantBundle",
-          "line": 135,
+          "line": 154,
           "called": [
             "AdapterProofHooks",
             "RegName",
@@ -3407,7 +3438,7 @@
         {
           "kind": "theorem",
           "name": "adapterReadMemory_ok_preserves_proofLayerInvariantBundle",
-          "line": 153,
+          "line": 172,
           "called": [
             "AdapterProofHooks",
             "PAddr",
@@ -3422,7 +3453,7 @@
         {
           "kind": "theorem",
           "name": "adapterContextSwitch_ok_preserves_proofLayerInvariantBundle",
-          "line": 172,
+          "line": 191,
           "called": [
             "AdapterProofHooks",
             "RegisterFile",
@@ -3438,7 +3469,7 @@
         {
           "kind": "theorem",
           "name": "adapterContextSwitch_error_unsupportedBinding_preserves_proofLayerInvariantBundle",
-          "line": 189,
+          "line": 208,
           "called": [
             "RegisterFile",
             "RuntimeBoundaryContract",
@@ -3453,7 +3484,7 @@
         {
           "kind": "theorem",
           "name": "adapterAdvanceTimer_error_invalidContext_preserves_proofLayerInvariantBundle",
-          "line": 200,
+          "line": 219,
           "called": [
             "RuntimeBoundaryContract",
             "SystemState",
@@ -3465,7 +3496,7 @@
         {
           "kind": "theorem",
           "name": "adapterAdvanceTimer_error_unsupportedBinding_preserves_proofLayerInvariantBundle",
-          "line": 208,
+          "line": 227,
           "called": [
             "RuntimeBoundaryContract",
             "SystemState",
@@ -3478,7 +3509,7 @@
         {
           "kind": "theorem",
           "name": "adapterWriteRegister_error_unsupportedBinding_preserves_proofLayerInvariantBundle",
-          "line": 219,
+          "line": 238,
           "called": [
             "RegName",
             "RegValue",
@@ -3493,7 +3524,7 @@
         {
           "kind": "theorem",
           "name": "adapterReadMemory_error_unsupportedBinding_preserves_proofLayerInvariantBundle",
-          "line": 230,
+          "line": 249,
           "called": [
             "PAddr",
             "RuntimeBoundaryContract",
@@ -3506,7 +3537,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_vspaceInvariantBundle",
-          "line": 242,
+          "line": 261,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -3516,7 +3547,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_vspaceInvariantBundle",
-          "line": 251,
+          "line": 270,
           "called": [
             "RegName",
             "RegValue",
@@ -3528,7 +3559,7 @@
         {
           "kind": "theorem",
           "name": "contextSwitchState_preserves_vspaceInvariantBundle",
-          "line": 265,
+          "line": 284,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -3540,7 +3571,7 @@
         {
           "kind": "theorem",
           "name": "contextSwitchState_preserves_contextMatchesCurrent",
-          "line": 279,
+          "line": 298,
           "called": [
             "RegisterFile",
             "RegisterFile.beq_self",
@@ -3555,7 +3586,7 @@
         {
           "kind": "theorem",
           "name": "contextSwitchState_preserves_currentThreadValid",
-          "line": 290,
+          "line": 309,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -3569,7 +3600,7 @@
         {
           "kind": "theorem",
           "name": "default_objects_none",
-          "line": 307,
+          "line": 326,
           "called": [
             "ObjId",
             "RHTable_get",
@@ -3581,7 +3612,7 @@
         {
           "kind": "theorem",
           "name": "default_objects_absurd",
-          "line": 314,
+          "line": 333,
           "called": [
             "KernelObject",
             "ObjId",
@@ -3593,7 +3624,7 @@
         {
           "kind": "theorem",
           "name": "default_schedulerInvariantBundle",
-          "line": 323,
+          "line": 342,
           "called": [
             "SystemState",
             "currentThreadValid",
@@ -3605,7 +3636,7 @@
         {
           "kind": "theorem",
           "name": "default_ipcInvariant",
-          "line": 335,
+          "line": 354,
           "called": [
             "SystemState",
             "default",
@@ -3616,7 +3647,7 @@
         {
           "kind": "theorem",
           "name": "default_lifecycleInvariantBundle",
-          "line": 339,
+          "line": 358,
           "called": [
             "SystemState",
             "default",
@@ -3628,7 +3659,7 @@
         {
           "kind": "theorem",
           "name": "default_ipcSchedulerContractPredicates",
-          "line": 343,
+          "line": 362,
           "called": [
             "SystemState",
             "default",
@@ -3639,7 +3670,7 @@
         {
           "kind": "theorem",
           "name": "default_capabilityInvariantBundle",
-          "line": 357,
+          "line": 376,
           "called": [
             "RHTable_empty_invExt",
             "RHTable_get",
@@ -3656,7 +3687,7 @@
         {
           "kind": "theorem",
           "name": "default_dualQueueSystemInvariant",
-          "line": 373,
+          "line": 392,
           "called": [
             "SystemState",
             "default",
@@ -3667,7 +3698,7 @@
         {
           "kind": "theorem",
           "name": "default_allPendingMessagesBounded",
-          "line": 385,
+          "line": 404,
           "called": [
             "SystemState",
             "allPendingMessagesBounded",
@@ -3678,7 +3709,7 @@
         {
           "kind": "theorem",
           "name": "default_badgeWellFormed",
-          "line": 389,
+          "line": 408,
           "called": [
             "SystemState",
             "badgeWellFormed",
@@ -3689,7 +3720,7 @@
         {
           "kind": "theorem",
           "name": "default_waitingThreadsPendingMessageNone",
-          "line": 394,
+          "line": 413,
           "called": [
             "SystemState",
             "default",
@@ -3700,7 +3731,7 @@
         {
           "kind": "theorem",
           "name": "default_endpointQueueNoDup",
-          "line": 398,
+          "line": 417,
           "called": [
             "SystemState",
             "default",
@@ -3711,7 +3742,7 @@
         {
           "kind": "theorem",
           "name": "default_ipcStateQueueMembershipConsistent",
-          "line": 402,
+          "line": 421,
           "called": [
             "SystemState",
             "default",
@@ -3722,7 +3753,7 @@
         {
           "kind": "theorem",
           "name": "default_queueNextBlockingConsistent",
-          "line": 406,
+          "line": 425,
           "called": [
             "SystemState",
             "default",
@@ -3733,7 +3764,7 @@
         {
           "kind": "theorem",
           "name": "default_queueHeadBlockedConsistent",
-          "line": 410,
+          "line": 429,
           "called": [
             "SystemState",
             "default",
@@ -3744,7 +3775,7 @@
         {
           "kind": "theorem",
           "name": "default_blockedThreadTimeoutConsistent",
-          "line": 414,
+          "line": 433,
           "called": [
             "SystemState",
             "blockedThreadTimeoutConsistent",
@@ -3756,7 +3787,7 @@
         {
           "kind": "theorem",
           "name": "default_donationChainAcyclic",
-          "line": 418,
+          "line": 437,
           "called": [
             "SystemState",
             "default",
@@ -3767,7 +3798,7 @@
         {
           "kind": "theorem",
           "name": "default_donationOwnerValid",
-          "line": 422,
+          "line": 441,
           "called": [
             "SystemState",
             "default",
@@ -3778,7 +3809,7 @@
         {
           "kind": "theorem",
           "name": "default_passiveServerIdle",
-          "line": 426,
+          "line": 445,
           "called": [
             "SystemState",
             "default",
@@ -3789,7 +3820,7 @@
         {
           "kind": "theorem",
           "name": "default_donationBudgetTransfer",
-          "line": 430,
+          "line": 449,
           "called": [
             "SystemState",
             "default",
@@ -3800,7 +3831,7 @@
         {
           "kind": "theorem",
           "name": "default_blockedOnReplyHasTarget",
-          "line": 437,
+          "line": 456,
           "called": [
             "SystemState",
             "blockedOnReplyHasTarget",
@@ -3811,7 +3842,7 @@
         {
           "kind": "theorem",
           "name": "default_ipcInvariantFull",
-          "line": 441,
+          "line": 460,
           "called": [
             "SystemState",
             "default",
@@ -3836,7 +3867,7 @@
         {
           "kind": "theorem",
           "name": "default_contextMatchesCurrent",
-          "line": 452,
+          "line": 471,
           "called": [
             "SystemState",
             "contextMatchesCurrent",
@@ -3846,7 +3877,7 @@
         {
           "kind": "theorem",
           "name": "default_currentThreadDequeueCoherent",
-          "line": 456,
+          "line": 475,
           "called": [
             "SystemState",
             "currentNotEndpointQueueHead",
@@ -3859,7 +3890,7 @@
         {
           "kind": "theorem",
           "name": "default_schedulerInvariantBundleFull",
-          "line": 466,
+          "line": 485,
           "called": [
             "SystemState",
             "currentTimeSlicePositive",
@@ -3880,7 +3911,7 @@
         {
           "kind": "theorem",
           "name": "default_system_state_proofLayerInvariantBundle",
-          "line": 487,
+          "line": 506,
           "called": [
             "RHTable_get",
             "SystemState",
@@ -3903,6 +3934,7 @@
             "default_schedContextsWellFormed",
             "default_schedulerInvariantBundle",
             "default_schedulerInvariantBundleFull",
+            "gicDispatchPlanStaticInvariant_holds",
             "lookupService",
             "none",
             "proofLayerInvariantBundle",
@@ -3913,7 +3945,7 @@
         {
           "kind": "theorem",
           "name": "deterministicTimerProgress_consumed_by_advanceTimer",
-          "line": 565,
+          "line": 588,
           "called": [
             "AdapterProofHooks",
             "RuntimeBoundaryContract",
@@ -3925,7 +3957,7 @@
         {
           "kind": "theorem",
           "name": "deterministicRegisterContext_consumed_by_writeRegister",
-          "line": 578,
+          "line": 601,
           "called": [
             "AdapterProofHooks",
             "RegName",
@@ -3939,7 +3971,7 @@
         {
           "kind": "theorem",
           "name": "memoryAccessSafety_consumed_by_readMemory",
-          "line": 591,
+          "line": 614,
           "called": [
             "AdapterProofHooks",
             "PAddr",
@@ -3950,8 +3982,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:623>",
-          "line": 623,
+          "name": "<anonymous:example:646>",
+          "line": 646,
           "called": [
             "AdapterProofHooks",
             "RuntimeBoundaryContract",
@@ -3963,8 +3995,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:634>",
-          "line": 634,
+          "name": "<anonymous:example:657>",
+          "line": 657,
           "called": [
             "AdapterProofHooks",
             "RegName",
@@ -3978,8 +4010,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:645>",
-          "line": 645,
+          "name": "<anonymous:example:668>",
+          "line": 668,
           "called": [
             "AdapterProofHooks",
             "PAddr",
@@ -3991,8 +4023,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:656>",
-          "line": 656,
+          "name": "<anonymous:example:679>",
+          "line": 679,
           "called": [
             "SystemState",
             "default",
@@ -4003,7 +4035,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_capabilityInvariantBundle",
-          "line": 692,
+          "line": 715,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -4013,7 +4045,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_ipcInvariantFull",
-          "line": 700,
+          "line": 723,
           "called": [
             "ObjId",
             "QueueNextPath",
@@ -4030,7 +4062,7 @@
         {
           "kind": "theorem",
           "name": "serviceEdge_of_services_eq",
-          "line": 758,
+          "line": 781,
           "called": [
             "ServiceId",
             "SystemState",
@@ -4041,7 +4073,7 @@
         {
           "kind": "theorem",
           "name": "serviceNontrivialPath_of_services_eq",
-          "line": 765,
+          "line": 788,
           "called": [
             "ServiceId",
             "SystemState",
@@ -4052,7 +4084,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_serviceGraphInvariant",
-          "line": 774,
+          "line": 797,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -4063,7 +4095,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_proofLayerInvariantBundle",
-          "line": 789,
+          "line": 812,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -4073,6 +4105,7 @@
             "advanceTimerState_preserves_vspaceInvariantBundle",
             "blockingAcyclic_frame",
             "blockingServer",
+            "gicDispatchPlanStaticInvariant_holds",
             "proofLayerInvariantBundle",
             "untypedRegionsDisjoint_frame"
           ]
@@ -4080,7 +4113,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_capabilityInvariantBundle",
-          "line": 840,
+          "line": 865,
           "called": [
             "RegName",
             "RegValue",
@@ -4092,7 +4125,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_ipcInvariantFull",
-          "line": 848,
+          "line": 873,
           "called": [
             "ObjId",
             "QueueNextPath",
@@ -4111,7 +4144,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_proofLayerInvariantBundle",
-          "line": 899,
+          "line": 924,
           "called": [
             "RegName",
             "RegValue",
@@ -4119,6 +4152,7 @@
             "blockingAcyclic_frame",
             "blockingServer",
             "contextMatchesCurrent",
+            "gicDispatchPlanStaticInvariant_holds",
             "proofLayerInvariantBundle",
             "serviceNontrivialPath_of_services_eq",
             "untypedRegionsDisjoint_frame",
@@ -4132,7 +4166,7 @@
         {
           "kind": "theorem",
           "name": "contextSwitchState_preserves_ipcInvariantFull",
-          "line": 978,
+          "line": 1004,
           "called": [
             "ObjId",
             "QueueNextPath",
@@ -4151,7 +4185,7 @@
         {
           "kind": "theorem",
           "name": "contextSwitchState_preserves_proofLayerInvariantBundle",
-          "line": 1056,
+          "line": 1082,
           "called": [
             "RegisterFile",
             "SystemState",
@@ -4171,6 +4205,7 @@
             "currentThreadValid",
             "currentTimeSlicePositive",
             "edfCurrentHasEarliestDeadline",
+            "gicDispatchPlanStaticInvariant_holds",
             "ipcInvariantFull",
             "none",
             "not_mem_waitingThreads_of_ipcState_ne",
@@ -4187,7 +4222,7 @@
         {
           "kind": "def",
           "name": "registerDecodeConsistent",
-          "line": 1224,
+          "line": 1251,
           "called": [
             "SystemState",
             "toObjId"
@@ -4196,7 +4231,7 @@
         {
           "kind": "theorem",
           "name": "default_registerDecodeConsistent",
-          "line": 1230,
+          "line": 1257,
           "called": [
             "SystemState",
             "default",
@@ -4206,7 +4241,7 @@
         {
           "kind": "theorem",
           "name": "registerDecodeConsistent_of_proofLayerInvariantBundle",
-          "line": 1237,
+          "line": 1264,
           "called": [
             "SystemState",
             "currentThreadValid",
@@ -4217,7 +4252,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_registerDecodeConsistent",
-          "line": 1251,
+          "line": 1278,
           "called": [
             "SystemState",
             "advanceTimerState",
@@ -4227,7 +4262,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_registerDecodeConsistent",
-          "line": 1259,
+          "line": 1286,
           "called": [
             "RegName",
             "RegValue",
@@ -4239,7 +4274,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_preserves_untypedRegionsDisjoint_nonUntypedChild",
-          "line": 1327,
+          "line": 1354,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -4260,7 +4295,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_objectOfKernelType_preserves_untypedRegionsDisjoint",
-          "line": 1381,
+          "line": 1408,
           "called": [
             "CSpaceAddr",
             "KernelObjectType",
@@ -4276,7 +4311,7 @@
         {
           "kind": "theorem",
           "name": "objectOfKernelType_untyped_hardcodes_zero_regionBase",
-          "line": 1458,
+          "line": 1485,
           "called": [
             "UntypedObject",
             "objectOfKernelType",
@@ -4286,7 +4321,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_via_objectOfKernelType_untyped_child_has_zero_regionBase",
-          "line": 1477,
+          "line": 1504,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -4305,7 +4340,7 @@
         {
           "kind": "theorem",
           "name": "retypeFromUntyped_untypedRegionsDisjoint_retype_to_untyped_documented",
-          "line": 1514,
+          "line": 1541,
           "called": [
             "UntypedObject",
             "objectOfKernelType",
@@ -13796,7 +13831,7 @@
     {
       "module": "SeLe4n.Kernel.CrossSubsystem",
       "path": "SeLe4n/Kernel/CrossSubsystem.lean",
-      "declaration_count": 169,
+      "declaration_count": 170,
       "declarations": [
         {
           "kind": "namespace",
@@ -15831,9 +15866,15 @@
           "called": []
         },
         {
+          "kind": "theorem",
+          "name": "closureForm_ws_rc_extensions_documented",
+          "line": 2980,
+          "called": []
+        },
+        {
           "kind": "def",
           "name": "untypedAncestorChain",
-          "line": 3042,
+          "line": 3068,
           "called": [
             "ObjId",
             "SystemState",
@@ -15843,13 +15884,13 @@
         {
           "kind": "def",
           "name": "maxRetypeDepth",
-          "line": 3063,
+          "line": 3089,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "untypedAncestorChain_bounded",
-          "line": 3066,
+          "line": 3092,
           "called": [
             "ObjId",
             "SystemState",
@@ -15861,7 +15902,7 @@
         {
           "kind": "def",
           "name": "untypedAncestorRegionsDisjoint",
-          "line": 3103,
+          "line": 3129,
           "called": [
             "ObjId",
             "SystemState",
@@ -15873,7 +15914,7 @@
         {
           "kind": "theorem",
           "name": "default_untypedAncestorRegionsDisjoint",
-          "line": 3116,
+          "line": 3142,
           "called": [
             "RHTable.getElem",
             "RHTable_getElem",
@@ -15887,7 +15928,7 @@
         {
           "kind": "theorem",
           "name": "untypedAncestorChain_collapses_when_all_parents_none",
-          "line": 3137,
+          "line": 3163,
           "called": [
             "ObjId",
             "SystemState",
@@ -15900,7 +15941,7 @@
         {
           "kind": "theorem",
           "name": "collectQueueMembers_some_start_nonEmpty_result",
-          "line": 3165,
+          "line": 3191,
           "called": [
             "KernelObject",
             "ObjId",
@@ -15916,7 +15957,7 @@
         {
           "kind": "theorem",
           "name": "collectQueueMembers_head_is_start",
-          "line": 3202,
+          "line": 3228,
           "called": [
             "KernelObject",
             "ObjId",
@@ -15933,7 +15974,7 @@
         {
           "kind": "theorem",
           "name": "bootFromPlatform_singleCore_witness",
-          "line": 3266,
+          "line": 3292,
           "called": [
             "SchedulerState",
             "ThreadId",
@@ -15943,19 +15984,19 @@
         {
           "kind": "theorem",
           "name": "r4_structural_fix_discharge_index_documented",
-          "line": 3360,
+          "line": 3386,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "cspaceSlotUnique_promoted_to_structural",
-          "line": 3371,
+          "line": 3397,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "uniqueWaiters_promoted_to_structural",
-          "line": 3382,
+          "line": 3408,
           "called": [
             "Kernel"
           ]
@@ -32759,7 +32800,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Policy",
       "path": "SeLe4n/Kernel/InformationFlow/Policy.lean",
-      "declaration_count": 121,
+      "declaration_count": 150,
       "declarations": [
         {
           "kind": "namespace",
@@ -33915,10 +33956,14 @@
           "line": 1240,
           "called": [
             "SecurityDomain",
+            "absorb_inf_sup'",
+            "absorb_sup_inf'",
             "antisymmetric",
             "inf",
             "linearOrder",
-            "sup"
+            "sup",
+            "sup_assoc'",
+            "sup_comm'"
           ]
         },
         {
@@ -33926,16 +33971,277 @@
           "name": "securityDomain_complete_lattice",
           "line": 1274,
           "called": [
-            "Kernel",
             "SecurityDomainLattice",
             "absorb_inf_sup",
+            "absorb_inf_sup'",
             "absorb_sup_inf",
+            "absorb_sup_inf'",
             "inf_assoc",
             "inf_comm",
             "linearOrder_canFlow_antisymm",
             "linearOrder_canFlow_iff_sup_eq",
             "sup_assoc",
-            "sup_comm"
+            "sup_assoc'",
+            "sup_comm",
+            "sup_comm'"
+          ]
+        },
+        {
+          "kind": "class",
+          "name": "Preorder",
+          "line": 1322,
+          "called": []
+        },
+        {
+          "kind": "class",
+          "name": "PartialOrder",
+          "line": 1336,
+          "called": [
+            "Preorder"
+          ]
+        },
+        {
+          "kind": "class",
+          "name": "Sup",
+          "line": 1346,
+          "called": [
+            "sup"
+          ]
+        },
+        {
+          "kind": "class",
+          "name": "Inf",
+          "line": 1351,
+          "called": [
+            "inf"
+          ]
+        },
+        {
+          "kind": "class",
+          "name": "SemilatticeSup",
+          "line": 1362,
+          "called": [
+            "PartialOrder",
+            "Sup",
+            "sup"
+          ]
+        },
+        {
+          "kind": "class",
+          "name": "SemilatticeInf",
+          "line": 1372,
+          "called": [
+            "Inf",
+            "PartialOrder",
+            "inf"
+          ]
+        },
+        {
+          "kind": "class",
+          "name": "Lattice",
+          "line": 1384,
+          "called": [
+            "SemilatticeInf",
+            "SemilatticeSup"
+          ]
+        },
+        {
+          "kind": "namespace",
+          "name": "SecurityDomain",
+          "line": 1390,
+          "called": []
+        },
+        {
+          "kind": "instance",
+          "name": "instLE",
+          "line": 1394,
+          "called": [
+            "SecurityDomain"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "instLT",
+          "line": 1398,
+          "called": [
+            "SecurityDomain"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "instDecidableLE",
+          "line": 1403,
+          "called": [
+            "SecurityDomain"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "instDecidableLT",
+          "line": 1407,
+          "called": [
+            "SecurityDomain"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "le_iff_id_le",
+          "line": 1411,
+          "called": [
+            "SecurityDomain"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lt_iff_id_lt",
+          "line": 1415,
+          "called": [
+            "SecurityDomain"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:1426>",
+          "line": 1426,
+          "called": [
+            "Preorder",
+            "SecurityDomain"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:1433>",
+          "line": 1433,
+          "called": [
+            "PartialOrder",
+            "SecurityDomain",
+            "ext"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:1439>",
+          "line": 1439,
+          "called": [
+            "SecurityDomain",
+            "Sup",
+            "sup"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:1444>",
+          "line": 1444,
+          "called": [
+            "Inf",
+            "SecurityDomain",
+            "inf"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:1451>",
+          "line": 1451,
+          "called": [
+            "SecurityDomain",
+            "SemilatticeSup"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:1459>",
+          "line": 1459,
+          "called": [
+            "SecurityDomain",
+            "SemilatticeInf"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:1468>",
+          "line": 1468,
+          "called": [
+            "Lattice",
+            "SecurityDomain"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "SemilatticeSup.sup_assoc'",
+          "line": 1487,
+          "called": [
+            "SemilatticeSup",
+            "sup"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "SemilatticeSup.sup_comm'",
+          "line": 1511,
+          "called": [
+            "SemilatticeSup",
+            "sup"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "Lattice.absorb_sup_inf'",
+          "line": 1523,
+          "called": [
+            "Lattice",
+            "inf",
+            "sup"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "Lattice.absorb_inf_sup'",
+          "line": 1533,
+          "called": [
+            "Lattice",
+            "inf",
+            "sup"
+          ]
+        },
+        {
+          "kind": "abbrev",
+          "name": "flowsTo_iff_sup_eq",
+          "line": 1556,
+          "called": [
+            "linearOrder_canFlow_iff_sup_eq"
+          ]
+        },
+        {
+          "kind": "abbrev",
+          "name": "flowsTo_iff_inf_eq",
+          "line": 1560,
+          "called": [
+            "linearOrder_canFlow_iff_inf_eq"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "integrityFlowsTo_to_linearOrder_canFlow",
+          "line": 1580,
+          "called": [
+            "SecurityLabel",
+            "embedLegacyLabel",
+            "embedLegacyLabel_preserves_flow",
+            "securityFlowsTo"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "securityFlowsTo_iff_embedded_sup_eq",
+          "line": 1589,
+          "called": [
+            "Kernel",
+            "SecurityLabel",
+            "embedLegacyLabel",
+            "embedLegacyLabel_preserves_flow",
+            "linearOrder_canFlow_iff_sup_eq",
+            "securityFlowsTo",
+            "sup"
           ]
         }
       ]
@@ -63307,6 +63613,7 @@
             "foldObjects",
             "foldObjects_objects_reachable",
             "get",
+            "gicDispatchPlanStaticInvariant_holds",
             "intrusiveQueueWellFormed",
             "ipcInvariantFull",
             "ipcSchedulerCouplingInvariantBundle",
@@ -63347,7 +63654,7 @@
         {
           "kind": "theorem",
           "name": "bootToRuntime_invariantBridge_general",
-          "line": 2577,
+          "line": 2579,
           "called": [
             "PlatformConfig",
             "apiInvariantBundle_frozen",
@@ -76642,9 +76949,16 @@
           "name": "runR6CSecurityDomainLatticeChecks",
           "line": 404,
           "called": [
+            "Lattice.absorb_inf_sup'",
+            "Lattice.absorb_sup_inf'",
             "SecurityDomain",
+            "SemilatticeSup.sup_assoc'",
+            "SemilatticeSup.sup_comm'",
             "expect",
+            "flowsTo_iff_inf_eq",
+            "flowsTo_iff_sup_eq",
             "inf",
+            "integrityFlowsTo_to_linearOrder_canFlow",
             "lowest",
             "ofNat",
             "securityDomain_complete_lattice",
@@ -76654,7 +76968,7 @@
         {
           "kind": "def",
           "name": "runInformationFlowChecks",
-          "line": 460,
+          "line": 490,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -76754,7 +77068,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1683,
+          "line": 1713,
           "called": [
             "runAk6Suite",
             "runInformationFlowChecks",
@@ -78307,8 +78621,8 @@
       "declarations": [
         {
           "kind": "example",
-          "name": "<anonymous:example:307>",
-          "line": 307,
+          "name": "<anonymous:example:338>",
+          "line": 338,
           "called": [
             "rpi5CanonicalConfig_wellFormed",
             "wellFormed"
@@ -78316,8 +78630,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:308>",
-          "line": 308,
+          "name": "<anonymous:example:339>",
+          "line": 339,
           "called": [
             "isRPi5CanonicalConfig",
             "rpi5CanonicalConfig",
@@ -78326,46 +78640,46 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:309>",
-          "line": 309,
+          "name": "<anonymous:example:340>",
+          "line": 340,
           "called": [
             "timerFrequencyHz"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:310>",
-          "line": 310,
+          "name": "<anonymous:example:341>",
+          "line": 341,
           "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:311>",
-          "line": 311,
+          "name": "<anonymous:example:342>",
+          "line": 342,
           "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:312>",
-          "line": 312,
+          "name": "<anonymous:example:343>",
+          "line": 343,
           "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:313>",
-          "line": 313,
+          "name": "<anonymous:example:344>",
+          "line": 344,
           "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:314>",
-          "line": 314,
+          "name": "<anonymous:example:345>",
+          "line": 345,
           "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:318>",
-          "line": 318,
+          "name": "<anonymous:example:349>",
+          "line": 349,
           "called": [
             "isRPi5CanonicalConfig",
             "rpi5CanonicalConfig"
@@ -78373,8 +78687,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:322>",
-          "line": 322,
+          "name": "<anonymous:example:353>",
+          "line": 353,
           "called": [
             "isRPi5CanonicalConfig",
             "rpi5CanonicalConfig",
@@ -78383,8 +78697,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:328>",
-          "line": 328,
+          "name": "<anonymous:example:359>",
+          "line": 359,
           "called": [
             "DeploymentSchedulingConfig",
             "rpi5CanonicalConfig",
@@ -78394,8 +78708,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:333>",
-          "line": 333,
+          "name": "<anonymous:example:364>",
+          "line": 364,
           "called": [
             "DeploymentSchedulingConfig",
             "rpi5CanonicalConfig",
@@ -78404,8 +78718,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:338>",
-          "line": 338,
+          "name": "<anonymous:example:369>",
+          "line": 369,
           "called": [
             "DeploymentSchedulingConfig",
             "rpi5CanonicalConfig",
@@ -78414,8 +78728,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:349>",
-          "line": 349,
+          "name": "<anonymous:example:380>",
+          "line": 380,
           "called": [
             "SchedulerTrace",
             "ThreadId",
@@ -78428,8 +78742,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:366>",
-          "line": 366,
+          "name": "<anonymous:example:397>",
+          "line": 397,
           "called": [
             "SchedulerTrace",
             "ThreadId",
@@ -78445,7 +78759,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 389,
+          "line": 420,
           "called": [
             "canonical",
             "cbs_bandwidth_bounded_tight",
@@ -81678,6 +81992,7 @@
             "InterruptId",
             "InterruptOp",
             "SecurityDomain",
+            "closureForm_ws_rc_extensions_documented",
             "head",
             "inf",
             "interruptDispatchPlan",
@@ -81689,7 +82004,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 4103,
+          "line": 4126,
           "called": [
             "runAC1BudgetFailClosedChecks",
             "runAC1CdtTrackingChecks",
