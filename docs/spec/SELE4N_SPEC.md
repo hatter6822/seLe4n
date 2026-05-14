@@ -1559,11 +1559,16 @@ satisfying §10.6 are now closed:
 * **Plan-named aliases** `flowsTo_iff_sup_eq` / `flowsTo_iff_inf_eq`
   added as `abbrev` aliases of
   `SecurityDomain.linearOrder_canFlow_iff_*_eq` in
-  `SeLe4n/Kernel/InformationFlow/Policy.lean`.  Plus substantive
-  integrity bridges `integrityFlowsTo_to_linearOrder_canFlow` and
-  `securityFlowsTo_iff_embedded_sup_eq` connecting the legacy
-  BIBA-inverted `integrityFlowsTo` to the `SecurityDomain` lattice
-  via `embedLegacyLabel`.
+  `SeLe4n/Kernel/InformationFlow/Policy.lean`.  Plus two renamed
+  legacy-label bridges: `securityFlowsTo_to_linearOrder_canFlow`
+  (one-directional bridge from `securityFlowsTo` to
+  `linearOrder.canFlow` on the embedded `SecurityDomain`) and
+  `securityFlowsTo_implies_embedded_sup_eq` (one-directional —
+  earlier misnamed as `_iff_`).  Plus a **substantive** integrity
+  bridge: the `integrityToNat` encoding, the equivalence theorem
+  `integrityFlowsTo_iff_integrityToNat_le` (BIBA-inverted equivalence
+  on the encoded integrity sub-lattice), and the full bridge
+  `integrityFlowsTo_iff_canFlow_via_integrityToNat`.
 * **In-house Mathlib-compatible typeclass hierarchy** in
   `SeLe4n/Kernel/InformationFlow/Policy.lean`: `Preorder`,
   `PartialOrder`, `Sup`, `Inf`, `SemilatticeSup`, `SemilatticeInf`,

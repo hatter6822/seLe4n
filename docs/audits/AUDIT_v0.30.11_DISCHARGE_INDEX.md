@@ -324,7 +324,7 @@ discharge-only).
 | I.22 | DEEP-ARCH-03 (R6.A.3 deferred-completion) | `gicDispatchPlanStaticInvariant` added as **12th conjunct** of `proofLayerInvariantBundle` (literal plan-§10.6 compliance) | `Kernel/Architecture/Invariant.lean` | **LANDED (deferred-completion)** |
 | I.23 | DEEP-IF-02 (R6.C.2 deferred-completion) | In-house Mathlib-compatible typeclass hierarchy: `Preorder`, `PartialOrder`, `Sup`, `Inf`, `SemilatticeSup`, `SemilatticeInf`, `Lattice` + four generic lattice-law theorems (`SemilatticeSup.sup_assoc'`, `_sup_comm'`, `Lattice.absorb_sup_inf'`, `_absorb_inf_sup'`) | `Kernel/InformationFlow/Policy.lean` | **LANDED (deferred-completion)** |
 | I.24 | DEEP-IF-02 (R6.C.2 deferred-completion) | `SecurityDomain` instances: `LE`, `LT`, `Decidable LE/LT`, `Preorder`, `PartialOrder`, `Sup`, `Inf`, `SemilatticeSup`, `SemilatticeInf`, `Lattice` | `Kernel/InformationFlow/Policy.lean` | **LANDED (deferred-completion)** |
-| I.25 | DEEP-IF-02 (R6.C.3 deferred-completion) | Plan-named aliases `flowsTo_iff_sup_eq`, `flowsTo_iff_inf_eq` + integrity bridges `integrityFlowsTo_to_linearOrder_canFlow`, `securityFlowsTo_iff_embedded_sup_eq` | `Kernel/InformationFlow/Policy.lean` | **LANDED (deferred-completion)** |
+| I.25 | DEEP-IF-02 (R6.C.3 deferred-completion) | Plan-named aliases `flowsTo_iff_sup_eq`, `flowsTo_iff_inf_eq` + renamed legacy bridges (`securityFlowsTo_to_linearOrder_canFlow`, `securityFlowsTo_implies_embedded_sup_eq`) + substantive integrity bridge (`integrityToNat`, `integrityFlowsTo_iff_integrityToNat_le`, `integrityFlowsTo_iff_canFlow_via_integrityToNat`) | `Kernel/InformationFlow/Policy.lean` | **LANDED (deferred-completion + audit-pass renames)** |
 | I.26 | WS-RC R6 deferred-completion (Phase A) | Marker theorem `closureForm_ws_rc_extensions_documented : True := trivial` anchoring §3.D/§3.E/§3.F/§3.H/§3.I sections against future rename/drop drift | `Kernel/CrossSubsystem.lean` | **LANDED (deferred-completion)** |
 
 R6.A.3's composite `ArchitectureInvariantBundle` is intentionally
@@ -456,7 +456,9 @@ live" sync).
   (transport from `Nat.le_max_*`, `Nat.min_le_*`, `Nat.le_antisymm`,
   etc.); I.25 adds the plan-named aliases `flowsTo_iff_sup_eq`,
   `flowsTo_iff_inf_eq` plus the substantive integrity bridge
-  `integrityFlowsTo_to_linearOrder_canFlow`; I.26 adds the marker
+  `integrityFlowsTo_iff_canFlow_via_integrityToNat` and renamed
+  legacy bridges (`securityFlowsTo_to_linearOrder_canFlow`,
+  `securityFlowsTo_implies_embedded_sup_eq`); I.26 adds the marker
   theorem `closureForm_ws_rc_extensions_documented` anchoring the
   WS-RC discharge-index extension sections (§3.D/§3.E/§3.F/§3.H/§3.I)
   against future drift.

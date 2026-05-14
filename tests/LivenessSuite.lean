@@ -299,11 +299,17 @@ open SeLe4n.Model
 #check @SeLe4n.Kernel.SecurityDomain.instLT
 #check @SeLe4n.Kernel.SecurityDomain.le_iff_id_le
 #check @SeLe4n.Kernel.SecurityDomain.lt_iff_id_lt
--- R6.C.3 (DEEP-IF-02 deferred-completion): plan-named aliases.
+-- R6.C.3 (DEEP-IF-02 deferred-completion): plan-named aliases +
+-- legacy bridges + substantive integrity bridge.
 #check @SeLe4n.Kernel.flowsTo_iff_sup_eq
 #check @SeLe4n.Kernel.flowsTo_iff_inf_eq
-#check @SeLe4n.Kernel.integrityFlowsTo_to_linearOrder_canFlow
-#check @SeLe4n.Kernel.securityFlowsTo_iff_embedded_sup_eq
+#check @SeLe4n.Kernel.securityFlowsTo_to_linearOrder_canFlow
+#check @SeLe4n.Kernel.securityFlowsTo_implies_embedded_sup_eq
+#check @SeLe4n.Kernel.integrityToNat
+#check @SeLe4n.Kernel.integrityFlowsTo_iff_integrityToNat_le
+#check @SeLe4n.Kernel.integrityFlowsTo_iff_canFlow_via_integrityToNat
+-- WS-RC R6 deferred-completion (relationship theorem):
+#check @SeLe4n.Kernel.Architecture.gicDispatchPlanInvariant_implies_static
 -- R6.D (DEEP-IPC-04): cleanupPreReceiveDonationChecked never errors
 -- under ipcInvariantFull (pre-existing theorem, discharge-only).
 #check @SeLe4n.Kernel.cleanupPreReceiveDonationChecked_never_errors_under_ipcInvariantFull

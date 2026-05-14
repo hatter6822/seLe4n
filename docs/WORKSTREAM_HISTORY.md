@@ -1223,11 +1223,17 @@ Four items identified by the post-R6-landing audit as
    `flowsTo_iff_inf_eq` added to
    `SeLe4n/Kernel/InformationFlow/Policy.lean` as `abbrev` aliases of
    the canonical `SecurityDomain.linearOrder_canFlow_iff_*_eq`
-   theorems.  Plus substantive integrity bridges
-   `integrityFlowsTo_to_linearOrder_canFlow` and
-   `securityFlowsTo_iff_embedded_sup_eq` connecting the legacy
-   BIBA-inverted integrity comparison to the `SecurityDomain`
-   lattice's `≤` via `embedLegacyLabel`.
+   theorems.  Plus two **renamed** legacy-label bridges
+   (`securityFlowsTo_to_linearOrder_canFlow` and
+   `securityFlowsTo_implies_embedded_sup_eq` — the original
+   "integrityFlowsTo_*" and "_iff_*" naming was misleading: the
+   hypothesis was actually `securityFlowsTo` and the embedding is
+   one-directional, not iff) and a **substantive** integrity bridge
+   (`integrityToNat` encoding, `integrityFlowsTo_iff_integrityToNat_le`
+   capturing the BIBA-inverted equivalence on the encoded integrity
+   sub-lattice, and `integrityFlowsTo_iff_canFlow_via_integrityToNat`
+   connecting `integrityFlowsTo` to the SecurityDomain lattice via
+   the encoded integrity component).
 
 3. **In-house Mathlib-compatible typeclass hierarchy** added in
    `SeLe4n/Kernel/InformationFlow/Policy.lean`:

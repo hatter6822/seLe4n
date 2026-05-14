@@ -1559,34 +1559,41 @@ abbrev flowsTo_iff_sup_eq := @SecurityDomain.linearOrder_canFlow_iff_sup_eq
     `a ≤ b ↔ inf a b = a`. -/
 abbrev flowsTo_iff_inf_eq := @SecurityDomain.linearOrder_canFlow_iff_inf_eq
 
-/-- WS-RC R6.C.3 (DEEP-IF-02): Bridge from the legacy
-    BIBA-inverted `integrityFlowsTo` predicate (on `Integrity`) to
-    the lattice's `≤` on the embedded `SecurityDomain`.
+-- ============================================================================
+-- WS-RC R6.C.3 (DEEP-IF-02): Legacy-label and pure-integrity bridges
+-- ============================================================================
 
-    The plan's pseudocode references `integrityFlowsTo` as if it
-    were a relation on `SecurityDomain`; in this codebase
-    `integrityFlowsTo` is defined on the legacy `Integrity` enum
-    (`untrusted` / `trusted`).  The two are bridged by
-    `embedLegacyLabel`, which maps `low untrusted → 0`,
-    `low trusted → 1`, `high untrusted → 2`, `high trusted → 3`
-    (see `embedLegacyLabel` above).
+/-- WS-RC R6.C.3 (DEEP-IF-02): Bridge from the legacy `securityFlowsTo`
+    relation on `SecurityLabel` to the lattice's `≤` on the embedded
+    `SecurityDomain`.
 
-    The legacy `integrityFlowsTo` is BIBA-inverted: it returns
-    `true` when the destination is "no more trusted" than the
-    source — i.e. when `untrusted → trusted` (and trivially
-    `untrusted → untrusted`, `trusted → trusted`).  Under
-    `embedLegacyLabel + linearOrder`, this corresponds to `≤` on
-    the lattice. -/
-theorem integrityFlowsTo_to_linearOrder_canFlow
+    The legacy `securityFlowsTo` combines both confidentiality and
+    BIBA-inverted integrity into a single boolean.  Under the
+    `embedLegacyLabel` map (`low untrusted → 0`, `low trusted → 1`,
+    `high untrusted → 2`, `high trusted → 3`), any allowed legacy
+    flow lifts to a `linearOrder.canFlow` on the embedded domains —
+    i.e. an `≤` step in the lattice.
+
+    Note: the **reverse direction does not hold** in general — the
+    embedding loses information.  Specifically, `(low, trusted)` and
+    `(high, untrusted)` embed to ids 1 and 2 respectively, so
+    `canFlow` returns `true` for the embedded pair, but `securityFlowsTo`
+    returns `false` (integrity component blocks `untrusted → trusted`).
+    Thus this bridge is one-directional. -/
+theorem securityFlowsTo_to_linearOrder_canFlow
     (src dst : SecurityLabel)
     (hFlow : securityFlowsTo src dst = true) :
     DomainFlowPolicy.linearOrder.canFlow
         (embedLegacyLabel src) (embedLegacyLabel dst) = true :=
   embedLegacyLabel_preserves_flow src dst hFlow
 
-/-- WS-RC R6.C.3 (DEEP-IF-02): Combined witness — every legacy flow
-    is witnessed by the lattice's `≤` (via `sup`-equality). -/
-theorem securityFlowsTo_iff_embedded_sup_eq
+/-- WS-RC R6.C.3 (DEEP-IF-02): Combined witness — every successful
+    legacy `securityFlowsTo` implies the embedded `sup`-equality
+    `sup (embed src) (embed dst) = embed dst`.  This is an
+    implication, not an iff (see the note on
+    `securityFlowsTo_to_linearOrder_canFlow` for why the reverse
+    direction fails). -/
+theorem securityFlowsTo_implies_embedded_sup_eq
     (src dst : SecurityLabel)
     (hFlow : securityFlowsTo src dst = true) :
     SecurityDomain.sup (embedLegacyLabel src) (embedLegacyLabel dst)
@@ -1594,5 +1601,45 @@ theorem securityFlowsTo_iff_embedded_sup_eq
   (SecurityDomain.linearOrder_canFlow_iff_sup_eq
       (embedLegacyLabel src) (embedLegacyLabel dst)).mp
     (embedLegacyLabel_preserves_flow src dst hFlow)
+
+/-- WS-RC R6.C.3 (DEEP-IF-02): Encode the integrity component into a
+    `Nat` (untrusted = 0, trusted = 1), giving the natural ordering
+    of the 2-element integrity lattice. -/
+def integrityToNat : Integrity → Nat
+  | .untrusted => 0
+  | .trusted   => 1
+
+/-- WS-RC R6.C.3 (DEEP-IF-02): Genuine `integrityFlowsTo` bridge.
+
+    The legacy `integrityFlowsTo a b` is the BIBA-inverted integrity
+    relation — it returns `true` when `a ≥ b` in the trust order
+    (where `trusted > untrusted`).  This corresponds exactly to
+    `integrityToNat b ≤ integrityToNat a` on the encoded integrity
+    sub-lattice.
+
+    Note the **argument order**: `integrityFlowsTo a b = true ↔
+    integrityToNat b ≤ integrityToNat a`.  This is the BIBA inversion
+    surfaced at the lattice level — the source must be at least as
+    trusted as the destination (allowing trusted → untrusted delegation
+    but denying untrusted → trusted escalation).
+
+    Bridged to the `SecurityDomain` lattice via
+    `integrityFlowsTo_iff_canFlow_via_integrityToNat`. -/
+theorem integrityFlowsTo_iff_integrityToNat_le (a b : Integrity) :
+    integrityFlowsTo a b = true ↔ integrityToNat b ≤ integrityToNat a := by
+  cases a <;> cases b <;> decide
+
+/-- WS-RC R6.C.3 (DEEP-IF-02): The full bridge from `integrityFlowsTo`
+    to the `SecurityDomain` lattice's `linearOrder.canFlow`: when
+    `integrityFlowsTo a b = true`, the encoded `SecurityDomain` lift
+    `⟨integrityToNat b⟩ ≤ ⟨integrityToNat a⟩` holds — i.e. the
+    BIBA-inverted argument order matches the lattice direction. -/
+theorem integrityFlowsTo_iff_canFlow_via_integrityToNat
+    (a b : Integrity) :
+    integrityFlowsTo a b = true ↔
+      DomainFlowPolicy.linearOrder.canFlow
+        ⟨integrityToNat b⟩ ⟨integrityToNat a⟩ = true := by
+  rw [integrityFlowsTo_iff_integrityToNat_le]
+  simp [DomainFlowPolicy.linearOrder]
 
 end SeLe4n.Kernel

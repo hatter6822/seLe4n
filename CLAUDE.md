@@ -923,9 +923,18 @@ documentation lives under `docs/` and `docs/gitbook/`.
   (b) **Plan-named aliases** `flowsTo_iff_sup_eq` /
   `flowsTo_iff_inf_eq` (as `abbrev` aliases of the
   `linearOrder_canFlow_iff_*_eq` theorems) plus substantive integrity
-  bridge `integrityFlowsTo_to_linearOrder_canFlow` connecting the
-  BIBA-inverted integrity comparison to the SecurityDomain lattice
-  via `embedLegacyLabel`.
+  bridges: `securityFlowsTo_to_linearOrder_canFlow` (renamed from
+  the misleading earlier `integrityFlowsTo_to_linearOrder_canFlow`
+  during audit pass — the hypothesis is `securityFlowsTo`, not
+  `integrityFlowsTo`), `securityFlowsTo_implies_embedded_sup_eq`
+  (renamed from `_iff_` to `_implies_` since it is a one-directional
+  implication — the embedding loses information so the reverse
+  doesn't hold), and a **substantive** integrity bridge:
+  `integrityToNat` encoding, `integrityFlowsTo_iff_integrityToNat_le`
+  (BIBA-inverted equivalence on the encoded sub-lattice), and
+  `integrityFlowsTo_iff_canFlow_via_integrityToNat` connecting the
+  BIBA-inverted integrity to the SecurityDomain lattice via the
+  encoded integrity component.
   (c) **In-house Mathlib-compatible typeclass hierarchy** in
   `Policy.lean`: `Preorder`, `PartialOrder`, `Sup`, `Inf`,
   `SemilatticeSup`, `SemilatticeInf`, `Lattice` with the same class

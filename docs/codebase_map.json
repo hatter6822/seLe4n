@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-codebase-audit-SOobd",
-      "commit_sha": "50957e7a3ce0bfab47d2d44d174da318cf571552",
-      "tree_sha": "fc273c727fd127044476571939e2b309b953e797",
-      "committed_at_utc": "2026-05-13T21:48:34+00:00"
+      "commit_sha": "948d27a034e3a86ecf74740f802415086122f716",
+      "tree_sha": "c68c5dea889357ef06934d2c98157bf423e8e895",
+      "committed_at_utc": "2026-05-14T01:52:14+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "41ee7d66dcceb09f094dbf2b171cd44365413d009623a409edb173c7a6d0eb32"
+    "source_digest": "fbab29da093e051125a30f6252fabc526daedc4a2afcabef922458465c13d687"
   },
   "summary": {
     "module_count": 200,
-    "declaration_count": 6524
+    "declaration_count": 6528
   },
   "readme_sync": {
     "version": "0.31.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 171,
-    "production_loc": 115324,
+    "production_loc": 115375,
     "test_files": 29,
-    "test_loc": 21470,
-    "proved_theorem_lemma_decls": 3350,
+    "test_loc": 21518,
+    "proved_theorem_lemma_decls": 3353,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -2452,7 +2452,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.ExceptionModel",
       "path": "SeLe4n/Kernel/Architecture/ExceptionModel.lean",
-      "declaration_count": 52,
+      "declaration_count": 53,
       "declarations": [
         {
           "kind": "namespace",
@@ -2826,7 +2826,7 @@
         {
           "kind": "theorem",
           "name": "exception_irq_dispatches_via_interrupt_dispatch",
-          "line": 655,
+          "line": 641,
           "called": [
             "ExceptionContext",
             "InterruptId",
@@ -2840,7 +2840,7 @@
         {
           "kind": "theorem",
           "name": "exception_irq_dispatches_when_handled",
-          "line": 673,
+          "line": 659,
           "called": [
             "ExceptionContext",
             "InterruptId",
@@ -2854,7 +2854,7 @@
         {
           "kind": "structure",
           "name": "GICDispatchBridge",
-          "line": 693,
+          "line": 679,
           "called": [
             "ExceptionContext",
             "InterruptId",
@@ -2867,7 +2867,7 @@
         {
           "kind": "theorem",
           "name": "gicDispatchBridge_holds",
-          "line": 702,
+          "line": 688,
           "called": [
             "GICDispatchBridge",
             "InterruptId",
@@ -2877,7 +2877,7 @@
         {
           "kind": "def",
           "name": "gicDispatchPlanInvariant",
-          "line": 713,
+          "line": 699,
           "called": [
             "GICDispatchBridge",
             "InterruptId"
@@ -2886,16 +2886,25 @@
         {
           "kind": "theorem",
           "name": "gicDispatchPlanInvariant_holds",
-          "line": 720,
+          "line": 706,
           "called": [
             "gicDispatchBridge_holds",
             "gicDispatchPlanInvariant"
           ]
         },
         {
+          "kind": "theorem",
+          "name": "gicDispatchPlanInvariant_implies_static",
+          "line": 715,
+          "called": [
+            "gicDispatchPlanInvariant",
+            "gicDispatchPlanStaticInvariant"
+          ]
+        },
+        {
           "kind": "structure",
           "name": "ArchitectureInvariantBundle",
-          "line": 761,
+          "line": 765,
           "called": [
             "SystemState",
             "gicDispatchPlanInvariant",
@@ -2905,7 +2914,7 @@
         {
           "kind": "theorem",
           "name": "ArchitectureInvariantBundle.of_proofLayer",
-          "line": 776,
+          "line": 780,
           "called": [
             "ArchitectureInvariantBundle",
             "SystemState",
@@ -2916,7 +2925,7 @@
         {
           "kind": "theorem",
           "name": "default_system_state_architectureInvariantBundle",
-          "line": 784,
+          "line": 788,
           "called": [
             "ArchitectureInvariantBundle",
             "ArchitectureInvariantBundle.of_proofLayer",
@@ -2928,7 +2937,7 @@
         {
           "kind": "theorem",
           "name": "advanceTimerState_preserves_architectureInvariantBundle",
-          "line": 792,
+          "line": 796,
           "called": [
             "ArchitectureInvariantBundle",
             "SystemState",
@@ -2940,7 +2949,7 @@
         {
           "kind": "theorem",
           "name": "writeRegisterState_preserves_architectureInvariantBundle",
-          "line": 802,
+          "line": 806,
           "called": [
             "ArchitectureInvariantBundle",
             "RegName",
@@ -2955,7 +2964,7 @@
         {
           "kind": "theorem",
           "name": "contextSwitchState_preserves_architectureInvariantBundle",
-          "line": 814,
+          "line": 818,
           "called": [
             "ArchitectureInvariantBundle",
             "RegisterFile",
@@ -2974,7 +2983,7 @@
         {
           "kind": "theorem",
           "name": "ArchitectureInvariantBundle.toProofLayer",
-          "line": 836,
+          "line": 840,
           "called": [
             "ArchitectureInvariantBundle",
             "SystemState",
@@ -2984,7 +2993,7 @@
         {
           "kind": "theorem",
           "name": "ArchitectureInvariantBundle.toGicDispatchPlan",
-          "line": 845,
+          "line": 849,
           "called": [
             "ArchitectureInvariantBundle",
             "SystemState",
@@ -32800,7 +32809,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Policy",
       "path": "SeLe4n/Kernel/InformationFlow/Policy.lean",
-      "declaration_count": 150,
+      "declaration_count": 153,
       "declarations": [
         {
           "kind": "namespace",
@@ -34221,8 +34230,8 @@
         },
         {
           "kind": "theorem",
-          "name": "integrityFlowsTo_to_linearOrder_canFlow",
-          "line": 1580,
+          "name": "securityFlowsTo_to_linearOrder_canFlow",
+          "line": 1583,
           "called": [
             "SecurityLabel",
             "embedLegacyLabel",
@@ -34232,16 +34241,46 @@
         },
         {
           "kind": "theorem",
-          "name": "securityFlowsTo_iff_embedded_sup_eq",
-          "line": 1589,
+          "name": "securityFlowsTo_implies_embedded_sup_eq",
+          "line": 1596,
           "called": [
-            "Kernel",
             "SecurityLabel",
             "embedLegacyLabel",
             "embedLegacyLabel_preserves_flow",
             "linearOrder_canFlow_iff_sup_eq",
             "securityFlowsTo",
             "sup"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "integrityToNat",
+          "line": 1608,
+          "called": [
+            "Integrity"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "integrityFlowsTo_iff_integrityToNat_le",
+          "line": 1628,
+          "called": [
+            "Integrity",
+            "integrityFlowsTo",
+            "integrityToNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "integrityFlowsTo_iff_canFlow_via_integrityToNat",
+          "line": 1637,
+          "called": [
+            "Integrity",
+            "Kernel",
+            "integrityFlowsTo",
+            "integrityFlowsTo_iff_integrityToNat_le",
+            "integrityToNat",
+            "linearOrder"
           ]
         }
       ]
@@ -76958,17 +76997,22 @@
             "flowsTo_iff_inf_eq",
             "flowsTo_iff_sup_eq",
             "inf",
-            "integrityFlowsTo_to_linearOrder_canFlow",
+            "integrityFlowsTo",
+            "integrityFlowsTo_iff_canFlow_via_integrityToNat",
+            "integrityFlowsTo_iff_integrityToNat_le",
+            "integrityToNat",
             "lowest",
             "ofNat",
             "securityDomain_complete_lattice",
+            "securityFlowsTo_implies_embedded_sup_eq",
+            "securityFlowsTo_to_linearOrder_canFlow",
             "sup"
           ]
         },
         {
           "kind": "def",
           "name": "runInformationFlowChecks",
-          "line": 490,
+          "line": 532,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -77068,7 +77112,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 1713,
+          "line": 1755,
           "called": [
             "runAk6Suite",
             "runInformationFlowChecks",
@@ -78621,8 +78665,8 @@
       "declarations": [
         {
           "kind": "example",
-          "name": "<anonymous:example:338>",
-          "line": 338,
+          "name": "<anonymous:example:344>",
+          "line": 344,
           "called": [
             "rpi5CanonicalConfig_wellFormed",
             "wellFormed"
@@ -78630,8 +78674,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:339>",
-          "line": 339,
+          "name": "<anonymous:example:345>",
+          "line": 345,
           "called": [
             "isRPi5CanonicalConfig",
             "rpi5CanonicalConfig",
@@ -78640,46 +78684,46 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:340>",
-          "line": 340,
+          "name": "<anonymous:example:346>",
+          "line": 346,
           "called": [
             "timerFrequencyHz"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:341>",
-          "line": 341,
+          "name": "<anonymous:example:347>",
+          "line": 347,
           "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:342>",
-          "line": 342,
-          "called": []
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:343>",
-          "line": 343,
-          "called": []
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:344>",
-          "line": 344,
-          "called": []
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:345>",
-          "line": 345,
+          "name": "<anonymous:example:348>",
+          "line": 348,
           "called": []
         },
         {
           "kind": "example",
           "name": "<anonymous:example:349>",
           "line": 349,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:350>",
+          "line": 350,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:351>",
+          "line": 351,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:355>",
+          "line": 355,
           "called": [
             "isRPi5CanonicalConfig",
             "rpi5CanonicalConfig"
@@ -78687,8 +78731,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:353>",
-          "line": 353,
+          "name": "<anonymous:example:359>",
+          "line": 359,
           "called": [
             "isRPi5CanonicalConfig",
             "rpi5CanonicalConfig",
@@ -78697,8 +78741,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:359>",
-          "line": 359,
+          "name": "<anonymous:example:365>",
+          "line": 365,
           "called": [
             "DeploymentSchedulingConfig",
             "rpi5CanonicalConfig",
@@ -78708,8 +78752,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:364>",
-          "line": 364,
+          "name": "<anonymous:example:370>",
+          "line": 370,
           "called": [
             "DeploymentSchedulingConfig",
             "rpi5CanonicalConfig",
@@ -78718,8 +78762,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:369>",
-          "line": 369,
+          "name": "<anonymous:example:375>",
+          "line": 375,
           "called": [
             "DeploymentSchedulingConfig",
             "rpi5CanonicalConfig",
@@ -78728,8 +78772,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:380>",
-          "line": 380,
+          "name": "<anonymous:example:386>",
+          "line": 386,
           "called": [
             "SchedulerTrace",
             "ThreadId",
@@ -78742,8 +78786,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:397>",
-          "line": 397,
+          "name": "<anonymous:example:403>",
+          "line": 403,
           "called": [
             "SchedulerTrace",
             "ThreadId",
@@ -78759,7 +78803,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 420,
+          "line": 426,
           "called": [
             "canonical",
             "cbs_bandwidth_bounded_tight",

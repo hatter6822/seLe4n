@@ -11,11 +11,20 @@ audit, bringing R6 to **full plan compliance**:
 2. **Plan-named aliases** in `SeLe4n/Kernel/InformationFlow/Policy.lean`:
    `flowsTo_iff_sup_eq` (alias of
    `SecurityDomain.linearOrder_canFlow_iff_sup_eq`),
-   `flowsTo_iff_inf_eq` (dual), plus a substantive integrity bridge
-   `integrityFlowsTo_to_linearOrder_canFlow` connecting the legacy
-   BIBA-inverted `integrityFlowsTo` predicate to the SecurityDomain
-   lattice via `embedLegacyLabel`, and the combined witness
-   `securityFlowsTo_iff_embedded_sup_eq`.
+   `flowsTo_iff_inf_eq` (dual), plus two renamed legacy bridges:
+   `securityFlowsTo_to_linearOrder_canFlow` (one-directional bridge
+   from `securityFlowsTo` to `linearOrder.canFlow` on the embedded
+   `SecurityDomain`) and `securityFlowsTo_implies_embedded_sup_eq`
+   (one-directional implication; the embedding loses information so
+   `_iff_` would have been mathematically wrong).  Plus a
+   **substantive integrity bridge**: the `integrityToNat` encoding
+   (`untrusted = 0`, `trusted = 1`), the equivalence theorem
+   `integrityFlowsTo_iff_integrityToNat_le` (`integrityFlowsTo a b
+   = true` iff `integrityToNat b ≤ integrityToNat a` — the BIBA
+   inversion surfaced at the lattice level), and the full bridge
+   `integrityFlowsTo_iff_canFlow_via_integrityToNat` connecting
+   `integrityFlowsTo` to `DomainFlowPolicy.linearOrder.canFlow` on
+   the encoded integrity component.
 
 3. **In-house Mathlib-compatible typeclass hierarchy** for
    `SecurityDomain` in `SeLe4n/Kernel/InformationFlow/Policy.lean`.
@@ -90,9 +99,12 @@ audit, bringing R6 to **full plan compliance**:
   - `SecurityDomain` `LE`/`LT`/`Decidable` instances + `_iff_id_*`
     simp lemmas.
   - Plan-named aliases (`flowsTo_iff_sup_eq`, `flowsTo_iff_inf_eq`).
-  - Integrity bridge theorems
-    (`integrityFlowsTo_to_linearOrder_canFlow`,
-    `securityFlowsTo_iff_embedded_sup_eq`).
+  - Renamed legacy bridges
+    (`securityFlowsTo_to_linearOrder_canFlow`,
+    `securityFlowsTo_implies_embedded_sup_eq`) + substantive
+    integrity bridge (`integrityToNat`,
+    `integrityFlowsTo_iff_integrityToNat_le`,
+    `integrityFlowsTo_iff_canFlow_via_integrityToNat`).
   - `gicDispatchPlanStaticInvariant` + `_holds` (upstream).
   - `closureForm_ws_rc_extensions_documented` (CrossSubsystem.lean).
 

@@ -473,18 +473,60 @@ def runR6CSecurityDomainLatticeChecks : IO Unit := do
     (decide (d5 ≤ d3) = false)
   expect "R6.C.2: LT typeclass returns true for d3 < d5"
     (decide (d3 < d5) = true)
-  -- R6.C.2: generic Lattice law theorems hold for SecurityDomain via
-  -- the in-house typeclass hierarchy (proving the typeclass axioms
-  -- correctly imply the laws).  We exercise the witnesses at the
-  -- type level — the proof terms must elaborate without holes.
+  -- R6.C.2: the generic Lattice law theorems exercised at runtime —
+  -- we use them to derive concrete equalities, not just elaborate
+  -- the proof terms.  Each `expect` exercises BOTH the typeclass
+  -- dispatch AND the law itself.
+  expect "R6.C.2: generic sup_assoc' via typeclass — (Sup.sup (Sup.sup d3 d5) d7) = (Sup.sup d3 (Sup.sup d5 d7))"
+    ((SeLe4n.Kernel.Sup.sup
+        (SeLe4n.Kernel.Sup.sup d3 d5 : SeLe4n.Kernel.SecurityDomain) d7
+      : SeLe4n.Kernel.SecurityDomain)
+      == (SeLe4n.Kernel.Sup.sup d3 (SeLe4n.Kernel.Sup.sup d5 d7) : SeLe4n.Kernel.SecurityDomain))
+  expect "R6.C.2: generic sup_comm' via typeclass — Sup.sup d3 d5 = Sup.sup d5 d3"
+    ((SeLe4n.Kernel.Sup.sup d3 d5 : SeLe4n.Kernel.SecurityDomain) ==
+       (SeLe4n.Kernel.Sup.sup d5 d3 : SeLe4n.Kernel.SecurityDomain))
+  expect "R6.C.2: generic absorb_sup_inf' via typeclass — Sup.sup d3 (Inf.inf d3 d5) = d3"
+    ((SeLe4n.Kernel.Sup.sup d3 (SeLe4n.Kernel.Inf.inf d3 d5) : SeLe4n.Kernel.SecurityDomain) == d3)
+  expect "R6.C.2: generic absorb_inf_sup' via typeclass — Inf.inf d3 (Sup.sup d3 d5) = d3"
+    ((SeLe4n.Kernel.Inf.inf d3 (SeLe4n.Kernel.Sup.sup d3 d5) : SeLe4n.Kernel.SecurityDomain) == d3)
+  -- R6.C.2: the proof witnesses themselves elaborate (additional
+  -- type-level check that the theorems exist with the expected
+  -- signatures).  The runtime expects above already exercise the
+  -- typeclass dispatch; these confirm the underlying theorem names.
   let _supAssocWit := SeLe4n.Kernel.SemilatticeSup.sup_assoc' d3 d5 d7
   let _supCommWit := SeLe4n.Kernel.SemilatticeSup.sup_comm' d3 d5
   let _absorbSupInfWit := SeLe4n.Kernel.Lattice.absorb_sup_inf' d3 d5
   let _absorbInfSupWit := SeLe4n.Kernel.Lattice.absorb_inf_sup' d3 d5
-  -- R6.C.3: plan-named alias exists and behaves correctly.
+  -- R6.C.3: plan-named aliases — these are `abbrev` so they should
+  -- be interchangeable with the underlying theorem at the type level.
   let _planAlias := @SeLe4n.Kernel.flowsTo_iff_sup_eq
   let _planAliasInf := @SeLe4n.Kernel.flowsTo_iff_inf_eq
-  let _planIntegrityBridge := @SeLe4n.Kernel.integrityFlowsTo_to_linearOrder_canFlow
+  -- R6.C.3 deferred-completion: renamed legacy-label bridges.
+  let _legacyBridge := @SeLe4n.Kernel.securityFlowsTo_to_linearOrder_canFlow
+  let _legacyImpl := @SeLe4n.Kernel.securityFlowsTo_implies_embedded_sup_eq
+  -- R6.C.3 deferred-completion: substantive integrity bridge —
+  -- exercise the equivalence at all 4 (a, b) ∈ Integrity²
+  -- combinations.  `integrityFlowsTo a b = true` iff
+  -- `integrityToNat b ≤ integrityToNat a`.
+  expect "R6.C.3: integrityFlowsTo trusted trusted = true"
+    (SeLe4n.Kernel.integrityFlowsTo .trusted .trusted = true)
+  expect "R6.C.3: integrityFlowsTo trusted untrusted = true (delegation)"
+    (SeLe4n.Kernel.integrityFlowsTo .trusted .untrusted = true)
+  expect "R6.C.3: integrityFlowsTo untrusted untrusted = true"
+    (SeLe4n.Kernel.integrityFlowsTo .untrusted .untrusted = true)
+  expect "R6.C.3: integrityFlowsTo untrusted trusted = false (escalation denied)"
+    (SeLe4n.Kernel.integrityFlowsTo .untrusted .trusted = false)
+  -- R6.C.3 deferred-completion: integrityToNat encoding matches the
+  -- BIBA-inverted semantics — trusted > untrusted in the trust order.
+  expect "R6.C.3: integrityToNat untrusted = 0"
+    (SeLe4n.Kernel.integrityToNat .untrusted = 0)
+  expect "R6.C.3: integrityToNat trusted = 1"
+    (SeLe4n.Kernel.integrityToNat .trusted = 1)
+  -- R6.C.3: substantive integrity bridge theorem at the type level.
+  let _integrityToNatBridge :=
+    @SeLe4n.Kernel.integrityFlowsTo_iff_integrityToNat_le
+  let _integrityCanFlowBridge :=
+    @SeLe4n.Kernel.integrityFlowsTo_iff_canFlow_via_integrityToNat
   IO.println "WS-RC R6.C (DEEP-IF-02) SecurityDomain lattice runtime checks passed"
 
 def runInformationFlowChecks : IO Unit := do

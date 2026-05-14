@@ -582,58 +582,44 @@ theorem archInvariant_interruptsEnabled_all_eight_bundle (st : SystemState) :
 /-! ## WS-RC R6.A — Formal GIC dispatch bridge
 
 Pre-R6.A, `ExceptionModel.lean` classified exception types
-(`ExceptionType.irq`) and `InterruptDispatch.lean` implemented the GIC-400
-acknowledge → EOI → handle flow as a state transformer
-(`interruptDispatchSequence`). The runtime delegation
-(`dispatchException_irq` theorem) already existed; what was missing was a
-**symbolic representation** of the dispatch ordering at the type level
-that decomposes the sequence "exception classified → interrupt
-dispatched" into the canonical GIC operation list.
+(`ExceptionType.irq`) and `InterruptDispatch.lean` implemented the
+GIC-400 acknowledge → EOI → handle flow as a state transformer
+(`interruptDispatchSequence`).  The runtime delegation
+(`dispatchException_irq` theorem) already existed; what was missing
+was a **symbolic representation** of the dispatch ordering at the
+type level that decomposes the sequence "exception classified →
+interrupt dispatched" into the canonical GIC operation list.
 
-This section closes DEEP-ARCH-03 by:
+DEEP-ARCH-03 closure is now distributed across two files:
 
-1. Defining the `InterruptOp` algebra capturing the three GIC operations
-   (`.ack id`, `.eoi id`, `.handle id`).
-2. Defining `interruptDispatchPlan : InterruptId → List InterruptOp` —
-   the AN8-C-ordered list `[.ack id, .eoi id, .handle id]`.
-3. Adding the bridge theorem
-   `exception_irq_dispatches_via_interrupt_dispatch` proving that the
-   `dispatchException .irq` semantics delegate to
-   `interruptDispatchSequence` and decompose along the symbolic plan.
+* **`Architecture/GicDispatchPlanCore.lean`** (upstream — imports only
+  `SeLe4n.Prelude`) — hosts the `InterruptOp` algebra, the symbolic
+  `interruptDispatchPlan`, the five plan-ordering witnesses
+  (`interruptDispatchPlan_length`, `_ack_head`, `_eoi_second`,
+  `_handle_third`, `_decomposes`), and the static
+  `gicDispatchPlanStaticInvariant` + its witness
+  `gicDispatchPlanStaticInvariant_holds`.
 
-The runtime executable path remains `interruptDispatchSequence`; the
-plan is a pure metadata-grade artifact (no state transformer) that
-callers and downstream tooling can project to inspect the operation
-ordering without re-deriving it from the implementation. -/
+* **This file** (downstream of `Kernel.API`) — hosts the
+  **runtime-delegation** half of the bridge:
+  `exception_irq_dispatches_via_interrupt_dispatch`,
+  `exception_irq_dispatches_when_handled`, the `GICDispatchBridge`
+  Prop bundle, the full-bridge witness `gicDispatchBridge_holds`,
+  `gicDispatchPlanInvariant` (full version including runtime
+  delegation), and the composite `ArchitectureInvariantBundle` that
+  joins `proofLayerInvariantBundle` with the full bridge.
 
-/-! ## R6.A.1a — Upstream dispatch-plan algebra
-
-The `InterruptOp` algebra, `interruptDispatchPlan` symbolic plan, and
-the five plan-ordering witnesses (`interruptDispatchPlan_length`,
-`_ack_head`, `_eoi_second`, `_handle_third`, `_decomposes`) plus the
-static invariant `gicDispatchPlanStaticInvariant` and its witness now
-live in the upstream module
-`SeLe4n/Kernel/Architecture/GicDispatchPlanCore.lean`.
-
-This relocation (WS-RC R6 deferred completion) was required to break
-the import cycle `Kernel.API → Architecture.Invariant` /
+The upstream/downstream split is required to break the import cycle
+`Kernel.API → Architecture.Invariant` /
 `Architecture.ExceptionModel → Kernel.API`: the static piece of the
 bridge (`gicDispatchPlanStaticInvariant`) is now a conjunct of
-`proofLayerInvariantBundle` in `Architecture/Invariant.lean`, which
-requires the backing definitions to be upstream of `Invariant.lean`.
+`proofLayerInvariantBundle` in `Architecture/Invariant.lean` (per
+the audit plan §10.6 R6.A.3), which requires the backing
+definitions to be upstream of `Invariant.lean`.
 
-Downstream consumers continue to see `InterruptOp`,
-`interruptDispatchPlan`, and the five ordering witnesses at the
-`SeLe4n.Kernel.Architecture` namespace via the transitive
-`InterruptDispatch.lean → GicDispatchPlanCore.lean` import chain;
-nothing in their type or value has changed.
-
-The **runtime-delegation** half of the bridge stays in this file
-(`exception_irq_dispatches_via_interrupt_dispatch`,
-`exception_irq_dispatches_when_handled`, `GICDispatchBridge`,
-`gicDispatchBridge_holds`) because it references `dispatchException`
-and the executable `interruptDispatchSequence`, both of which require
-`Kernel.API`. -/
+The runtime-delegation theorems stay in this file because they
+reference `dispatchException` and the executable
+`interruptDispatchSequence`, both of which require `Kernel.API`. -/
 
 /-- WS-RC R6.A.1b (DEEP-ARCH-03): Bridge theorem connecting an
     IRQ-classified exception to the GIC dispatch plan.
@@ -720,6 +706,17 @@ def gicDispatchPlanInvariant : Prop :=
 theorem gicDispatchPlanInvariant_holds : gicDispatchPlanInvariant :=
   fun id => gicDispatchBridge_holds id
 
+/-- WS-RC R6 deferred-completion: The full `gicDispatchPlanInvariant`
+    (with runtime delegation) implies the static
+    `gicDispatchPlanStaticInvariant` (plan-ordering only).  This
+    documents the relationship between the two — the full bridge
+    contains the static piece as the `planOrdering` field of
+    `GICDispatchBridge`. -/
+theorem gicDispatchPlanInvariant_implies_static
+    (h : gicDispatchPlanInvariant) :
+    gicDispatchPlanStaticInvariant :=
+  fun id => (h id).planOrdering
+
 -- ============================================================================
 -- WS-RC R6.A.3 (DEEP-ARCH-03): Architecture invariant bundle composition
 -- ============================================================================
@@ -727,24 +724,31 @@ theorem gicDispatchPlanInvariant_holds : gicDispatchPlanInvariant :=
 /-! ## WS-RC R6.A.3 — Architecture Invariant Bundle Composition
 
 The composite `ArchitectureInvariantBundle` joins the per-state
-`proofLayerInvariantBundle` (from `Architecture/Invariant.lean`) with
-the static `gicDispatchPlanInvariant` (defined above).  This file is
-the natural home for the composite because:
+`proofLayerInvariantBundle` (from `Architecture/Invariant.lean`,
+which now carries `gicDispatchPlanStaticInvariant` as its 12th
+conjunct) with the full `gicDispatchPlanInvariant` (the
+runtime-delegation-strengthened bridge, defined above).  This file
+is the natural home for the composite because:
 
-1. `Kernel.API` imports `Architecture.Invariant`, and this file imports
-   `Kernel.API`, so this file is strictly downstream of
+1. `Kernel.API` imports `Architecture.Invariant`, and this file
+   imports `Kernel.API`, so this file is strictly downstream of
    `Architecture.Invariant` in the DAG.  Placing the composite here
    avoids the cycle that would arise from importing this file into
    `Architecture/Invariant.lean`.
-2. The GIC bridge components (`gicDispatchPlanInvariant`,
-   `GICDispatchBridge`, `interruptDispatchPlan`) are defined in this
-   file, so the composite is co-located with one of its two
-   constituents.
+2. The full GIC bridge components (`gicDispatchPlanInvariant`,
+   `GICDispatchBridge`, the runtime-delegation theorems) are
+   defined in this file, so the composite is co-located with one of
+   its two constituents.
 
-The composite is **additive**: no existing consumer of
-`proofLayerInvariantBundle` (~10 destructure sites, 5 preservation
-theorems) needs to change.  Consumers that want the GIC bridge as part
-of the architecture invariant family use the new composite.
+After the WS-RC R6 deferred-completion, the static GIC plan
+invariant is **already carried** by `proofLayerInvariantBundle` (as
+its 12th conjunct), so consumers wanting only the static piece
+don't need this composite — they can project the 12th conjunct
+directly.  This composite **strengthens** the static piece to the
+full bridge by also carrying the runtime-delegation half
+(`dispatchException .irq ≡ interruptDispatchSequence`).  Use the
+composite when downstream proofs need both the per-state invariants
+AND the runtime delegation property at one cite.
 -/
 
 /-- WS-RC R6.A.3 (DEEP-ARCH-03): The architecture invariant family,
