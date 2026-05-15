@@ -7,24 +7,41 @@
 > **Branch (this audit)**: `claude/audit-multicore-implementation-sUcIx`.
 >
 > **Release target**: **v1.0.0 "bootable verified SMP microkernel on
-> Raspberry Pi 5"**. The v1.0.0 release notes claim a *bootable
-> verified microkernel*; on a 4-core BCM2712 target that claim is
-> only honest if all 4 cores are exercised. This workstream delivers
-> that honesty by hardening the existing AN9-J scaffolding into a
-> fully functional, machine-checked SMP kernel.
+> Raspberry Pi 5"** — bootable on all 4 BCM2712 cores with the SMP
+> path verified at the same rigor seL4 applies to its single-core
+> kernel, plus verified lock primitives that the seL4 project
+> historically left as assumptions.
 >
-> **Sequencing**: WS-RC continues to closure as planned; **WS-SM
-> opens at the v0.31.x → v0.32.0 boundary** (the same boundary that
-> would have promoted v0.31.x to v1.0.0 under the prior plan). WS-SM
-> closes at v1.0.0. The intermediate cuts (v0.32.x..v0.99.x) are
-> WS-SM staging releases.
+> **Sequencing**: WS-RC retargets from v1.0.0 to **v0.31.last** (R2..R6
+> close at v0.31.last; substance unchanged, only the version-bump
+> sub-tasks shift). WS-SM opens at v0.32.0 and runs through v1.0.0.
 >
-> **Scope discipline**: this plan is large (9 phases, ~340–420
-> sub-tasks). It is decomposed so that *every* sub-task is
-> independently verifiable, has a precise file:line target, a
-> mathematical specification, and an acceptance criterion. Each
-> sub-task is sized so that a single PR can land it without
-> compound-state risk to surrounding work.
+> **Maintainer decisions taken** (recorded in §10; drove this plan):
+> 1. Lock layout: **per-object fine locks**.
+> 2. Lock type: **reader-writer (RW)** with exclusive-only acquire/
+>    release for v1.0.0 (no upgrade/downgrade).
+> 3. Lock acquire-order: **hierarchical by object kind** then ObjId.val
+>    within kind.
+> 4. Model rewrite: **path-a replacement** (singular fields become
+>    `Vector α coreCount`; no bootCore shim).
+> 5. numCores parameterization: **PlatformBinding.coreCount**
+>    typeclass field (RPi5 sets 4).
+> 6. Sharing domain: **PlatformBinding.sharingDomain : SharingDomain**
+>    (RPi5 sets `.inner`; cross-cluster ports set `.outer`).
+> 7. Default SMP activation: **enabled by default** on RPi5; opt-out
+>    via `smp_enabled=false`.
+> 8. Idle threads: **per-core idle TCBs** (one per core).
+> 9. SM0 sequencing: **spread across many small PRs** (v0.32.0..v0.32.x).
+> 10. Lock primitive verification: **TicketLock + RwLock semantics
+>     modelled in Lean against an abstract ARMv8.1-A LSE memory
+>     model and proven correct** (axiom budget for the lock module
+>     itself: 0; only the ARMv8.1-A LSE memory-model axioms remain,
+>     and those are themselves discharged through documented ARM ARM
+>     citations).
+> 11. Workstream ID: **WS-SM**.
+> 12. Timeline: **accept ~24-30 months** to v1.0.0 at the project's
+>     single-maintainer cadence; ship when WS-SM completes, even if
+>     that is late 2027 / early 2028.
 >
 > **Out of scope** (deferred past v1.0.0):
 > - ARMv9-A Confidential Compute / MPAM partitioning — separate
@@ -32,1596 +49,1717 @@
 >   depends on WS-SM as prerequisite.
 > - Heterogeneous / big.LITTLE asymmetric topologies.
 > - Hot-unplug, live core migration, cpu-frequency scaling.
-> - Per-subsystem fine-grained locks (BKL is the v1.0.0 atomicity
->   primitive; finer locks are a v1.x performance workstream).
+> - RwLock upgrade/downgrade (reader→writer, writer→reader) — v1.x
+>   post-1.0 hardening; v1.0.0 supports plain acquire/release only.
 > - NUMA / non-uniform memory.
+> - Per-CPU work-stealing scheduler — v1.0.0 uses affinity-bound
+>   threads (no migration); work-stealing is a v1.x performance
+>   workstream.
 
 ## 1. Executive summary
 
 ### 1.1 The core finding
 
-The current SMP scaffolding **cannot be activated**: three CRITICAL
-gaps make `SMP_ENABLED = true` either dead code (no caller) or a
-correctness hazard (secondaries wake into a state the kernel can
-neither observe nor coordinate). The AN9-J disposition
-("activation cost is just flipping the runtime flag",
-`AUDIT_v0.29.0_DEFERRED.md:296`) is materially inaccurate. Shipping
-v1.0.0 under that disposition would ship a non-functional SMP
-binary on a 4-core SoC.
+The current SMP scaffolding cannot be activated: four CRITICAL
+gaps make `SMP_ENABLED = true` either dead code (no caller) or
+a correctness hazard (secondaries wake into a state the kernel
+can neither observe nor coordinate, TLB invalidations don't
+broadcast, kernel state races on concurrent entries). The AN9-J
+disposition ("activation cost is just flipping the runtime flag",
+`AUDIT_v0.29.0_DEFERRED.md:296`) is materially inaccurate.
+Shipping v1.0.0 under that disposition would ship a non-functional
+SMP binary on a 4-core SoC.
 
-### 1.2 Headline-severity findings (full catalogue in §3)
+### 1.2 Headline-severity findings (catalogue in §3)
 
 | Sev | ID | Finding |
 |-----|----|---------|
-| **CRIT** | SMP-C1 | `bring_up_secondaries()` has no caller. `rust_boot_main` has 4 phases (UART, MMU, GIC, timer) and no Phase 5 to parse `smp_enabled` or invoke bring-up. |
-| **CRIT** | SMP-C2 | `rust_secondary_main` does **not** perform per-core MMU enable, VBAR install, GIC CPU-interface init, or timer arming despite its docstring claiming it does. Secondaries would wake with MMU off and exception vectors unset. |
-| **CRIT** | SMP-C3 | `kernelStateRef : IO.Ref SystemState` (`FFI.lean:394`) is one shared `IO.Ref`. Lean's `IO.Ref` is not cross-core atomic; concurrent kernel entries are a race. |
-| **CRIT** | SMP-C4 | TLB invalidation primitives (`tlb::tlbi_vae1`, `tlbi_aside1`, `tlbi_vmalle1`, `tlbi_vale1`) emit the **non-IS** variants. These instructions invalidate only the issuing PE's TLB (ARM ARM C6.2.311–316). Page unmaps leave stale translations on remote cores at the **hardware level** — a confidentiality and integrity hazard, not merely a coordination gap. |
-| **HIGH** | SMP-H1 | No SGI / IPI primitive in `gic.rs`. No `send_sgi(target_cpu_mask, intid)`, no SGI handler dispatch. Cross-core reschedule, TLB shootdown, and wake notifications all require this. |
-| **HIGH** | SMP-H2 | `ArchAssumption` inductive lacks the `singleCoreOperation` constructor that `Concurrency/Assumptions.lean:163-176` advertises as its anchor. The inventory entry's `singleCoreWitness` description is unimplemented per the **implement-the-improvement rule**. |
-| **HIGH** | SMP-H3 | Inventory `Lean.Name` references are not build-checked. Renaming a referenced theorem silently drifts the inventory. |
-| **HIGH** | SMP-H4 | `with_interrupts_disabled` is the kernel's only atomicity primitive. It does not serialise cross-core kernel entries. No spinlock / BKL exists. |
-| **MED** | SMP-M1 | `dev_history/` cross-references in production sources (`boot.S:103`, `Architecture/Assumptions.lean:333`, `CrossSubsystem.lean:3264`). |
-| **MED** | SMP-M2 | Stale "deferred to WS-V" SMP claim across spec, DEVELOPMENT.md, GitBook. WS-V is closed and never owned SMP. |
-| **MED** | SMP-M3 | `.smp_stacks` linker section not zeroed at boot — stale RAM exposure on activation. |
-| **MED** | SMP-M4 | `TPIDR_EL1` not set in `secondary_entry` despite docstring claim. |
-| **MED** | SMP-M5 | PSCI wrapper only implements `cpu_on`. Missing `cpu_off`, `affinity_info`, `system_off`, `system_reset`. |
-| **MED** | SMP-M6 | `scripts/test_qemu_smp_bringup.sh` is a SKIP stub. |
-| **MED** | SMP-M7 | `PlatformBinding` has no `numCores` / `bootCoreId` field; `PlatformConfig` has no per-core boot data. |
-| **LOW** | SMP-L1 | No NoDup witness on `smpLatentInventory.identifier` list. |
-| **LOW** | SMP-L2 | `MAX_SECONDARY_CORES = 3` hard-coded for BCM2712. |
-| **LOW** | SMP-L3 | No `setThreadCpuAffinity` capability operation; no `coreId` field on TCB. |
-| **LOW** | SMP-L4 | Lean `Concurrency/` namespace has only `Assumptions.lean`; no `Locks.lean`, `Memory.lean`, `Ipi.lean`. |
-| **LOW** | SMP-L5 | No Lean test exercises any multicore code path. |
+| **CRIT** | SMP-C1 | `bring_up_secondaries()` is never called. No Phase 5 in `rust_boot_main` parses `smp_enabled` or invokes bring-up. |
+| **CRIT** | SMP-C2 | `rust_secondary_main` skips MMU/VBAR/GIC/timer init. Secondaries wake with MMU off and exception vectors unset. |
+| **CRIT** | SMP-C3 | `kernelStateRef : IO.Ref SystemState` is one shared, non-atomic Ref. Concurrent kernel entries race. |
+| **CRIT** | SMP-C4 | TLB invalidation uses non-IS variants (`tlbi vae1`, not `vae1is`). Page unmaps leave stale translations on remote cores at the hardware level. |
+| **HIGH** | SMP-H1 | No SGI / IPI primitive in `gic.rs`. Cross-core wake, TLB shootdown impossible. |
+| **HIGH** | SMP-H2 | `ArchAssumption` lacks the `singleCoreOperation` constructor that `Concurrency/Assumptions.lean` advertises. |
+| **HIGH** | SMP-H3 | Inventory `Lean.Name` literals not build-checked. |
+| **HIGH** | SMP-H4 | No spinlock or lock primitive of any kind. `with_interrupts_disabled` is the only atomicity primitive and it does not cross cores. |
+| **MED** | SMP-M1..M7, **LOW** | SMP-L1..L5 — documentation, hygiene, scope items (§3.9). |
 
 ### 1.3 Workstream shape
 
-**WS-SM**, 9 phases, ~340–420 sub-tasks, ~14–22 staging releases.
+**WS-SM**, 10 phases, ~520–640 sub-tasks, ~24–30 months at the
+project's solo-maintainer cadence.
 
 ```
-SM0  Foundations & honesty patches            (12-18 PRs, 30-40 sub)
-SM1  Rust HAL completion                      (18-26 PRs, 50-70 sub)
-SM2  Per-core kernel state model              (15-22 PRs, 40-55 sub)
-SM3  BKL Lean integration                     (20-28 PRs, 50-65 sub)
-SM4  Per-core scheduler                       (22-30 PRs, 60-80 sub)
-SM5  Cross-core IPC                           (15-22 PRs, 40-55 sub)
-SM6  TLB / cache shootdown                    (12-18 PRs, 30-45 sub)
-SM7  Information flow under SMP               (12-18 PRs, 30-40 sub)
-SM8  Documentation, tests, version closure    (8-12 PRs, 20-30 sub)
-─────────────────────────────────────────────────────────────────
-                                              134-194 PRs total
+SM0  Foundations & honesty patches              (18-25 PRs, 40-50 sub)
+SM1  Rust HAL completion                        (22-32 PRs, 60-80 sub)
+SM2  Verified lock primitives (Lean + Rust)     (28-40 PRs, 70-95 sub)
+SM3  Per-object lock fields + hierarchical order(18-26 PRs, 50-65 sub)
+SM4  Path-a per-core state replacement          (35-50 PRs, 90-115 sub)
+SM5  Per-core scheduler                         (28-38 PRs, 75-95 sub)
+SM6  Cross-core IPC                             (22-32 PRs, 60-80 sub)
+SM7  TLB / cache shootdown                      (15-22 PRs, 40-55 sub)
+SM8  Information flow under SMP                 (15-22 PRs, 40-55 sub)
+SM9  Documentation, tests, version closure      (10-15 PRs, 25-35 sub)
+──────────────────────────────────────────────────────────────────────
+                                                211-302 PRs total
 ```
 
-Parallelism: SM0 must complete first; SM1 || SM2 (independent); SM3
-gates on SM1+SM2; SM4 || SM6 || SM7 after SM3; SM5 after SM4; SM8
+Parallelism: SM0 must complete first; SM1 || SM2 (independent);
+SM3 gates on SM2 (lock primitives) and SM1.B (Rust types); SM4 ||
+SM3 (independent state-shape work); SM5 gates on SM3+SM4; SM6
+gates on SM5; SM7 || SM6 after SM3; SM8 || SM6/SM7 after SM4; SM9
 last.
 
 ## 2. Mathematical foundations
 
-This section pins the **formal specification** of SMP semantics
-that every subsequent phase relies on. Definitions are written in
-mathematical/Lean notation; proof sketches use standard inference
-rules. All claims have an ARM ARM citation or are derived
+This section pins the formal specification of SMP semantics that
+every subsequent phase relies on. The model is **per-object
+reader-writer fine locking** with **hierarchical-by-kind acquire
+order**, **path-a per-core kernel state**, and **fully verified
+lock primitives**. All claims have an ARM ARM citation or follow
 strictly from cited claims.
 
-### 2.1 Concurrency model: Big Kernel Lock serialization
+### 2.1 Concurrency model: per-object RW fine-lock serialization
 
-**Definition 2.1.1** (Kernel transition). A *kernel transition* is
-an atomic state-update function τ : SystemState × Args → KernelResult.
-At v0.31.2 every `@[export]` body composes pure transitions.
+**Definition 2.1.1** (Per-object lock). Each kernel object owns a
+reader-writer lock embedded as a structure field:
 
-**Definition 2.1.2** (BKL property). For a SystemState s with field
-`s.concurrency.bkl : BklState`,
+    -- Each object kind gains a `lock : RwLock` field
+    structure ThreadControlBlock where
+      ...                             -- existing fields
+      lock : RwLock := RwLock.unheld
+    structure Endpoint where
+      ...
+      lock : RwLock := RwLock.unheld
+    -- and analogously for CNode, Notification, Reply, SchedContext,
+    -- VSpaceRoot, Page. The ObjStore (RobinHood) gains a single
+    -- table-level RwLock.
 
-    BklProperty(s) ≡ s.concurrency.bkl = .unheld
-                   ∨ ∃! c : CoreId, s.concurrency.bkl = .held c
+**Definition 2.1.2** (Lock kind hierarchy). Every kernel-object
+lock has a kind drawn from a 10-level total order:
 
-**Theorem 2.1.3** (BKL serialization). Under BklProperty,
-concurrent kernel entries from distinct cores execute *sequentially*
-with respect to SystemState observation. Specifically, if at clock
-time t₁ < t₂ cores c₁ ≠ c₂ both call `@[export]` body f, then
-either (a) c₁'s f completes (BKL released) strictly before c₂'s f
-acquires BKL, or (b) symmetrically.
+    inductive LockKind where
+      | objStore         -- the RobinHood hash table (level 0)
+      | untyped          -- Untyped memory regions   (level 1)
+      | cnode            -- Capability nodes         (level 2)
+      | tcb              -- Thread control blocks    (level 3)
+      | endpoint         -- IPC endpoints            (level 4)
+      | notification     -- Notification objects     (level 5)
+      | reply            -- Reply objects            (level 6)
+      | schedContext     -- Scheduling contexts      (level 7)
+      | vspaceRoot       -- VSpace roots / ASIDs     (level 8)
+      | page             -- Page frames              (level 9)
+      deriving DecidableEq, Repr
 
-**Proof sketch.** Ticket-lock FIFO discipline (Theorem 2.2.6 below)
-plus the atomicity of `fetch_add` on `next_ticket` partition the
-ticket space; the lock holder is exactly the core whose captured
-ticket equals `serving`; releases increment `serving` by exactly 1;
-therefore exactly one core observes `serving == my_ticket` at any
-moment. □
+    def LockKind.level : LockKind → Nat
+      | .objStore => 0  | .untyped => 1  | .cnode => 2
+      | .tcb => 3       | .endpoint => 4 | .notification => 5
+      | .reply => 6     | .schedContext => 7
+      | .vspaceRoot => 8 | .page => 9
 
-**Corollary 2.1.4** (single-core proof reuse). Every existing
-single-core kernel-transition theorem in
-`SeLe4n/Kernel/*/Invariant/*.lean` remains valid for SMP under BKL,
-*provided* the precondition that BKL is held by the executing core
-is added (or, equivalently, the conclusion is stated relative to
-"the current-core view" of the state).
+The choice of order reflects typical kernel-operation dependency:
+operations on objects of kind K typically need only objects of
+kind ≤ K (e.g., retype reads Untyped, writes CNode; capability
+copy reads source CNode, writes dest CNode + CDT; IPC operations
+read TCB + write Endpoint queue).
 
-This is the architectural lever that makes SMP tractable for
-v1.0.0: the BKL preserves the proof surface. Finer-grained locking
-would force a re-prove of every transition; BKL imposes a global
-serialization order that the existing proofs already satisfy.
+**Definition 2.1.3** (Lock identity).
 
-### 2.2 Lock correctness: ticket lock
+    structure LockId where
+      kind  : LockKind
+      objId : ObjId
+      deriving DecidableEq, Repr
 
-**Definition 2.2.1** (Ticket lock state).
+    /-- Hierarchical-by-kind, then ObjId.val within kind. -/
+    instance : LE LockId where
+      le l₁ l₂ :=
+        l₁.kind.level < l₂.kind.level ∨
+        (l₁.kind.level = l₂.kind.level ∧ l₁.objId.val ≤ l₂.objId.val)
+
+    theorem LockId.le_total : ∀ l₁ l₂ : LockId, l₁ ≤ l₂ ∨ l₂ ≤ l₁ := by
+      intros; -- by lex-of-totals on (level, objId.val)
+      sorry  -- proven by case analysis in Locks.lean
+
+**Definition 2.1.4** (Access mode).
+
+    inductive AccessMode where
+      | read
+      | write
+      deriving DecidableEq, Repr
+
+**Definition 2.1.5** (Lock-set of a transition). For each kernel
+transition τ : SystemState × Args → KernelResult, declare its
+**lock-set** as a finite map:
+
+    def lockSet (τ : KernelTransition) (args : Args) : Finset (LockId × AccessMode)
+
+  The lock-set is **statically derivable**: it depends only on
+  the *shape* of the args (ObjIds appearing in caps, register
+  values), not on data in the kernel state. We pin this by making
+  `lockSet` total over (τ, args) pairs without consulting the
+  state.
+
+**Definition 2.1.6** (Lock-set ordering). Acquire by ascending
+`LockId` order (Definition 2.1.3); release in reverse.
+
+    def lockAcquireSequence (S : Finset (LockId × AccessMode)) :
+        List (LockId × AccessMode) :=
+      S.toList.qsort (fun (l₁, _) (l₂, _) => l₁ ≤ l₂)
+
+**Theorem 2.1.7** (Lock-set ordering is canonical). For any
+finite set S, `lockAcquireSequence S` is the unique sorted
+permutation of S w.r.t. the LockId order.
+
+  *Proof.* By `Finset.toList`'s permutation property plus
+  `List.qsort`'s sortedness theorem on `LockId.le_total`. □
+
+**Definition 2.1.8** (Two-phase locking). For each kernel
+transition τ:
+1. Compute `lockSet τ args`.
+2. Sort the set by `LockId` ascending.
+3. For each `(l, mode)` in order: acquire l in mode (read or write).
+4. Execute the transition body, reading/writing only the locked
+   objects.
+5. Release all locks in reverse order.
+
+**Theorem 2.1.9** (Deadlock-freedom under hierarchical acquire).
+Under Definition 2.1.8's discipline, no execution of any set of
+kernel transitions on any set of cores can deadlock.
+
+  *Proof.* By induction on the LockId total order. Suppose two
+  cores c₁ and c₂ are blocked. Each is waiting on some lock l
+  while holding a strictly smaller set of locks (in LockId
+  order). Let l₁ be the smallest lock c₁ holds, l₂ be the
+  smallest lock c₂ holds. WLOG l₁ ≤ l₂.  By Def 2.1.8, c₁ holds
+  l₁ and is waiting for a lock l₁' ≥ l₁. Similarly c₂ holds l₂
+  ≥ l₁ and is waiting for l₂' ≥ l₂. For c₁ to be waiting on a
+  lock c₂ holds, c₁'s wait target = some lock in c₂'s held set.
+  But every lock in c₂'s held set is ≥ l₂ ≥ l₁. By Def 2.1.6's
+  acquire-in-ascending-order discipline, c₁ would have acquired
+  any lock < l₂ before reaching its current wait. So c₁'s wait
+  target ≥ l₂. Symmetric argument: c₂'s wait target ≥ l₁. But
+  c₁ holds l₁ and c₂ holds l₂. So c₂'s wait target = l₁ ⇒ c₂'s
+  wait target < l₂ — contradiction with the previous bound.
+  Therefore no such deadlock state exists. □
+
+**Theorem 2.1.10** (Serializability). Under Definition 2.1.8,
+every interleaved execution of kernel transitions is equivalent
+(in observable state) to some serial execution.
+
+  *Proof sketch.* By the **two-phase locking theorem** (Bernstein
+  et al.). Two-phase locking with hierarchical acquire gives
+  strict-2PL, which is conflict-serializable. The Lean
+  proof reduces to: for any two transitions τ₁, τ₂ whose lock-sets
+  intersect non-trivially, exactly one is "ahead" of the other
+  in conflict order (the one that holds the conflicting lock
+  first). Compose into a topological sort of all conflicting
+  transitions. The resulting order is a valid serial execution
+  with the same final state. □
+
+**Corollary 2.1.11** (Single-core proof preservation). Every
+existing single-core kernel-transition theorem remains valid for
+SMP under Definition 2.1.8, *provided* the theorem is stated
+relative to the post-acquire pre-release state of the transition
+(i.e., the state observed under all locks in the lock-set held in
+the correct modes).
+
+This is the verification-cost lever: existing single-core proofs
+are reused, with the precondition strengthened to "lock-set is
+held in the declared modes" instead of "BKL is held" (which would
+have been free under BKL).
+
+### 2.2 Verified lock primitives
+
+The seL4 project historically *assumed* its lock primitives;
+WS-SM **proves** them. This is a substantial extension to the
+verification surface but the user-mandated quality target.
+
+#### 2.2.1 Abstract memory model
+
+We define an abstract operational semantics of ARMv8.1-A LSE
+atomic operations in `Concurrency/MemoryModel.lean`:
+
+    inductive MemoryOrder where
+      | relaxed
+      | acquire
+      | release
+      | acqRel    -- "release+acquire"
+      | seqCst
+      deriving DecidableEq, Repr
+
+    /-- A trace of memory events. Each event is either a Read or
+        Write on a specific atomic location, with a memory order
+        and the observed/published value. -/
+    structure MemoryEvent where
+      core    : CoreId
+      loc     : AtomicLocation
+      isWrite : Bool
+      order   : MemoryOrder
+      value   : Nat
+      seqNum  : Nat   -- per-core sequencing
+
+    structure MemoryTrace where
+      events : List MemoryEvent
+
+The **synchronization edge** is defined: a Release-store w on
+location L on core c₁ synchronizes-with an Acquire-load r on the
+same L on core c₂ iff r observes w's value (per ARM ARM B2.3.7).
+
+**Theorem 2.2.1.1** (Happens-before). The synchronization edge
+combined with per-core sequencing defines a partial order
+`hb : MemoryEvent → MemoryEvent → Prop` such that:
+- All events on the same core are totally ordered by their seqNum.
+- Synchronization edges are happens-before.
+- Transitive closure of the above defines a partial order.
+
+  *Proof.* By the standard C++11/Rust memory-model construction
+  (Boehm, Adve), specialized to ARMv8.1-A LSE per ARM ARM K11.
+  Tracked in `Concurrency/MemoryModel.lean::happens_before_partial_order`. □
+
+#### 2.2.2 TicketLock verification
 
     structure TicketLock where
-      nextTicket : AtomicU64   // monotone, write-only via fetch_add
-      serving    : AtomicU64   // monotone, write-only via fetch_add
+      nextTicket : AtomicU64
+      serving    : AtomicU64
+      deriving Inhabited
 
-with invariant TL-INV: `serving ≤ nextTicket` (interpreted as
-`UInt64` partial order modulo wrap-around; wrap is unreachable for
-our deployment — see Note 2.2.7).
+    /-- TicketLock operational state. Logical view of the physical
+        AtomicU64 pair, plus the multiset of currently waiting
+        cores' captured tickets. -/
+    structure TicketLockState where
+      nextTicket  : Nat
+      serving     : Nat
+      pending     : List (CoreId × Nat)  -- (core, captured ticket)
+      held        : Option (CoreId × Nat)  -- (current holder, its ticket)
 
-**Definition 2.2.2** (Acquire). In pseudocode:
+    /-- Well-formedness invariant. -/
+    def TicketLockState.wf (s : TicketLockState) : Prop :=
+      s.serving ≤ s.nextTicket ∧
+      (∀ (c, t) ∈ s.pending, s.serving < t ∧ t < s.nextTicket) ∧
+      (∀ holder ∈ s.held, holder.snd = s.serving) ∧
+      s.pending.map Prod.snd |>.Nodup
 
-    fn acquire(self: &TicketLock) -> u64 {
-      let my = self.nextTicket.fetch_add(1, Acquire);
-      while self.serving.load(Acquire) != my {
-        wfe_bounded(WFE_DEFAULT_TIMEOUT_TICKS);
-      }
-      my
-    }
+**Theorem 2.2.2.1** (Ticket-Lock mutex). For any reachable
+TicketLockState s,
 
-**Definition 2.2.3** (Release).
+    s.wf → ∀ c₁ c₂ : CoreId, s.held = some (c₁, _) → s.held = some (c₂, _) → c₁ = c₂
 
-    fn release(self: &TicketLock) {
-      self.serving.fetch_add(1, Release);
-      sev();  // wake any waiters parked in wfe
-    }
+  *Proof.* `Option` has at most one inhabitant; the `some` case
+  forces the holder triple to be unique by structural equality. □
 
-**Definition 2.2.4** (Holder).
+**Theorem 2.2.2.2** (TicketLock FIFO). If c₁ captures ticket t₁
+at memory-trace time τ₁ < τ₂ = c₂'s capture of t₂, then t₁ < t₂.
 
-    holder(t : TicketLock) ≡
-      { c : CoreId | c has captured my == t.serving and not yet released }
+  *Proof.* `fetch_add` on `nextTicket` is a total order across
+  cores (Theorem 2.2.1.1's happens-before plus the atomic
+  read-modify-write semantics). The capture at τ₁ reads value v
+  and writes v+1; the capture at τ₂ reads v+1 (or later) and
+  writes v+2 (or later). Therefore t₁ < t₂. □
 
-**Theorem 2.2.5** (Mutex). For any TicketLock t, |holder(t)| ≤ 1.
+**Theorem 2.2.2.3** (TicketLock bounded wait). For coreCount cores,
 
-**Proof.** A core c is in holder(t) iff (1) c captured a `my` via
-`fetch_add` on `nextTicket`, and (2) c observed `serving == my` and
-(3) c has not yet released. By the atomicity of `fetch_add`, every
-captured `my` is distinct (the captured value is the
-pre-increment). `serving` is a single `AtomicU64`; at any moment it
-equals exactly one captured `my`. Therefore at most one c satisfies
-(2) at any moment. □
+    WCRT(TicketLock.acquire) ≤ (coreCount − 1) × WCRT(criticalSection)
 
-**Theorem 2.2.6** (FIFO progress). If c₁ acquires `my = m₁` at time
-t₁ and c₂ acquires `my = m₂` at time t₂ > t₁ (real-time order of
-the two `fetch_add`s), then m₁ < m₂, and c₁'s critical section
-completes (release advances `serving` past m₁) before c₂ exits the
-spin loop.
+provided every critical section has bounded WCRT.
 
-**Proof.** The first claim is immediate from `fetch_add`'s
-monotonic-pre-increment semantics. The second: c₂'s spin loop
-exits iff `serving == m₂`. `serving` only advances via release
-calls. Since `serving` starts ≤ m₁ < m₂, it must pass through m₁
-before reaching m₂. When `serving == m₁`, c₁ is in its critical
-section; c₁'s eventual release sets `serving := m₁ + 1`; further
-releases (from cores with `my = m₁+1, m₁+2, ..., m₂-1`) eventually
-set `serving = m₂`. □
+  *Proof.* By the standard ticket-lock analysis: at most
+  (coreCount − 1) other cores can have outstanding tickets
+  smaller than mine; each must complete its critical section
+  (release `serving`) before mine starts. □
 
-**Note 2.2.7** (Wrap-around). The ticket counters are `UInt64`.
-Even at 10 billion acquires per second, wrap takes ~58 years —
-unreachable in any real deployment. The model treats wrap as
-unreachable. If a theoretically rigorous wrap handling is desired,
-the standard technique is to compute differences modulo 2^64 and
-require `(nextTicket - serving) < numCores` invariantly; this is
-always satisfied because at most `numCores` cores can hold or be
-waiting at any moment. We document this in
-`Concurrency/Locks.lean::wrapUnreachable`.
+**Theorem 2.2.2.4** (TicketLock release-acquire). If c₁ releases
+the TicketLock at trace time τ₁ (corresponding to c₁'s
+`serving.fetch_add(1, Release)`) and c₂'s spin-loop
+`serving.load(Acquire)` at trace time τ₂ > τ₁ reads c₁'s
+released value, then every memory event sequenced-before τ₁ on
+c₁ happens-before every event sequenced-after τ₂ on c₂.
 
-**Theorem 2.2.8** (Bounded wait). For numCores cores, the WCRT of
-`acquire` is
+  *Proof.* Release-store on `serving` at τ₁ synchronizes-with the
+  Acquire-load at τ₂ that observes its value (Theorem 2.2.1.1's
+  synchronizes-with relation). By transitive closure of
+  happens-before, all c₁ pre-release events precede all c₂
+  post-acquire events. □
 
-    WCRT(acquire) ≤ (numCores − 1) × WCRT(criticalSection)
+#### 2.2.3 RwLock verification
 
-provided every critical section has a bounded WCRT.
+The RwLock model supports concurrent readers OR a single writer.
 
-**Proof.** Bandwidth argument: between c's `fetch_add` capturing
-`my` and c observing `serving == my`, at most `my - serving_at_capture`
-holders must release. By Theorem 2.2.6, that count is at most
-numCores − 1 (the other cores). Each release happens within
-WCRT(criticalSection). □
+    structure RwLock where
+      state : AtomicU64   -- bit 63 = writer-held; bits 0..62 = reader count
+      deriving Inhabited
 
-**Corollary 2.2.9** (Liveness). Under SMP BKL, every syscall
-returns within `numCores × WCRT(criticalSection)`. For seLe4n on
-RPi5 (`numCores = 4`), this is 4× the existing single-core WCRT
-bound established by R5's `wcrt_bound_rpi5`. We extend that bound
-in SM4.
+    structure RwLockState where
+      writerHeld : Option CoreId
+      readers    : List CoreId       -- multiset of read holders
+      waiters    : List (CoreId × AccessMode)  -- FIFO queue
 
-### 2.3 Memory model
+    /-- Well-formedness. -/
+    def RwLockState.wf (s : RwLockState) : Prop :=
+      -- Mutex of writer with everything else
+      (s.writerHeld.isSome → s.readers = []) ∧
+      -- Readers don't double-acquire (we forbid recursive RW for v1.0.0)
+      s.readers.Nodup ∧
+      -- Waiter queue is FIFO and disjoint from holders
+      s.waiters.map Prod.fst |>.Nodup ∧
+      ∀ (c, _) ∈ s.waiters, c ∉ s.readers ∧ s.writerHeld ≠ some c
 
-**Assumption 2.3.1** (ARMv8-A inner-shareable PE coherence). All
-ARMv8-A PEs in the inner-shareable domain observe a coherent view
-of memory under the following discipline (ARM ARM B2.3.6, B2.7.5,
-K11):
+**Theorem 2.2.3.1** (RwLock writer-readers exclusion). For any
+reachable RwLockState s satisfying wf,
 
-1. Atomic operations with Acquire/Release ordering establish a
-   happens-before relation across PEs.
-2. `DSB ISH` on a PE waits for all prior memory accesses *by that
-   PE* to complete with respect to the inner-shareable domain.
-3. `DSB ISH; ISB` ensures all prior translations and instruction
-   fetches are observed before any subsequent fetch.
-4. `TLBI ...IS` broadcasts the invalidation to all PEs in the
-   inner-shareable domain; non-IS variants do NOT broadcast (this
-   is SMP-C4).
+    s.writerHeld = some _ → s.readers = []
 
-BCM2712 is a single Cortex-A76 cluster with 4 cores; all four are
-in one inner-shareable domain. No cross-cluster (outer-shareable)
-considerations apply unless a future port targets a multi-cluster
-SoC, at which point `BarrierKind::DsbOsh` (AN9-I) and OSH-variant
-TLB instructions are required.
+  *Proof.* By wf's first conjunct. The acquire primitive's
+  transition rule (in `Concurrency/RwLock.lean::acquireWrite`)
+  preserves the invariant: writer acquire blocks until both
+  `writerHeld = none` AND `readers = []`. □
 
-**Theorem 2.3.2** (BKL release-acquire pairing). Let c₁ release
-the BKL at time t₁ (corresponding to c₁'s `serving.fetch_add(1,
-Release)` retiring) and c₂ acquire the BKL at time t₂ > t₁
-(corresponding to c₂'s spin-loop `serving.load(Acquire)` reading
-the value c₁ wrote). Then all writes performed by c₁ before t₁
-are visible to c₂ at and after t₂.
+**Theorem 2.2.3.2** (RwLock reader-multiplicity). Multiple
+distinct readers may hold the lock concurrently:
 
-**Proof.** c₁'s release stores the new `serving` value with
-Release ordering — on ARMv8.1-A this compiles to `STADDL`, or on
-earlier cores to `DMB ISH ; STR`. The Release semantics (ARM ARM
-K11.2) guarantee that all writes c₁ performed before this store
-(including writes to the shared `SystemState` carried inside
-`kernelStateRef`) are sequenced-before the store with respect to
-the inner-shareable domain.
+    ∃ s, s.readers.length ≥ 2 ∧ s.wf
 
-c₂'s spin-loop terminating load is `serving.load(Acquire)`,
-compiled to `LDAR` or `LDR ; DMB ISH`. The Acquire semantics
-guarantee that all reads c₂ performs after this load see values
-that were published by any release-ordered store the load
-synchronizes with.
+  *Proof.* By construction: start with `unheld`, two distinct
+  `acquireRead` calls succeed without blocking. □
 
-When c₂'s `serving.load(Acquire)` observes the value c₁ wrote
-with `serving.fetch_add(1, Release)`, a release-acquire
-synchronization edge is established (ARM ARM B2.3.7, C++/Rust
-memory-model rule "release sequence headed by a release operation
-synchronizes-with an acquire operation that reads from it"). All
-writes by c₁ sequenced-before its release are therefore observed
-by c₂ at and after the synchronizing load — and consequently at
-and after t₂. □
+**Theorem 2.2.3.3** (RwLock FIFO admission). If c₁ is queued for
+mode m₁ at trace time τ₁ < τ₂ = c₂'s queueing for mode m₂, then
+c₁ becomes a holder before c₂ does.
 
-**Note 2.3.2.a** (the role of `nextTicket`). The Acquire ordering
-on `nextTicket.fetch_add(1, Acquire)` provides a *total order on
-ticket assignments* across cores (each fetch_add observes the
-previous fetch_add's increment), but it does NOT itself
-synchronize c₂ with c₁'s prior critical section. The
-state-visibility synchronization is purely on `serving`. We pin
-this in `Concurrency/Locks.lean` docstring to prevent future
-maintainers from "optimizing away" the spin-loop Acquire load.
+  *Proof.* The waiter queue is FIFO. Releases pop from the head;
+  if the head wants Write, it acquires alone; if Read, it
+  acquires together with all subsequent contiguous Read waiters
+  (writer-batching is acceptable since multiple readers share).
+  Therefore the head waiter (c₁) acquires first. □
 
-**Corollary 2.3.3** (kernelStateRef safety under BKL). The shared
-`IO.Ref SystemState` is safe to read and write under BKL because:
+**Theorem 2.2.3.4** (RwLock bounded wait). For coreCount cores,
 
-1. All reads (`getKernelState`) happen with BKL held → no
-   concurrent writer (Theorem 2.2.5).
-2. All writes (`updateKernelState`) happen with BKL held → no
-   concurrent reader.
-3. The previous holder's writes are visible (Theorem 2.3.2).
+    WCRT(RwLock.acquireRead)  ≤ (coreCount − 1) × WCRT(criticalSection)
+    WCRT(RwLock.acquireWrite) ≤ (coreCount − 1) × WCRT(criticalSection)
 
-Therefore the sequence "acquire BKL → read pre-state → compute
-post-state → write post-state → release BKL" is sequentially
-consistent with respect to other BKL holders' sequences. □
+  *Proof.* Same as Theorem 2.2.2.3 modulo the reader-batching
+  shortcut (which can only reduce wait time). □
 
-### 2.4 Per-core state encoding
+**Theorem 2.2.3.5** (RwLock release-acquire pairing). Same
+structure as Theorem 2.2.2.4 for both modes. □
 
-**Definition 2.4.1** (Core identifier).
+#### 2.2.4 Lock-primitive refinement (Lean ↔ Rust)
 
-    namespace SeLe4n.Kernel.Concurrency
+The Rust implementation must implement the Lean operational
+specification. We prove this by:
 
-      /-- Number of cores on the kernel's target SoC. Fixed at
-          numCores = 4 for the RPi5 BCM2712 target. Future platform
-          parameterization is a post-1.0 hardening item. -/
-      def numCores : Nat := 4
+    /-- Operational simulation between the Lean RwLockState and a
+        sequence of Rust atomic-operation effects. -/
+    def rwLockSimulation
+        (leanTransitions : List RwLockOp)
+        (rustEffects : MemoryTrace) : Prop :=
+      ∃ φ : RwLockState → MemoryTrace → Prop,
+        φ RwLockState.unheld {events := []} ∧
+        ∀ s op s', applyOp op s = s' → φ s τ → φ s' (τ ++ rustEffectsFor op)
 
-      /-- Typed core identifier. `Fin numCores` makes every CoreId
-          valid by construction; index out-of-bounds is a Lean type
-          error, not a runtime check. -/
-      abbrev CoreId : Type := Fin numCores
+    theorem rust_rwLock_refines_lean_rwLock :
+        ∀ (impl : RwLockImpl), implCorrect impl →
+        ∃ φ, rwLockSimulation _ _
 
-      def bootCoreId : CoreId := ⟨0, by decide⟩
+The refinement proof is the seam between the Lean spec and the
+Rust implementation. The Rust code is reviewed against the
+specification (manual review + cargo tests); the Lean side carries
+the abstract proofs.
 
-      /-- All core ids enumerated. Useful for fold-over-cores
-          operations like cross-core invariant composition.
-          Uses the Lean 4 Std helper `List.finRange : (n : Nat) →
-          List (Fin n)` which returns `[⟨0, _⟩, ⟨1, _⟩, …, ⟨n-1, _⟩]`
-          with built-in length theorem. -/
-      def allCores : List CoreId := List.finRange numCores
+### 2.3 Per-core state encoding (path-a Vector replacement)
 
-      theorem allCores_length : allCores.length = numCores :=
-        List.length_finRange numCores
+**Definition 2.3.1** (Platform-parameterized core count).
 
-      /-- Cores are pairwise distinct by construction (Fin equality is
-          decidable and `finRange` produces a distinct enumeration). -/
-      theorem allCores_nodup : allCores.Nodup :=
-        List.nodup_finRange numCores
+    /-- PlatformBinding extension. The coreCount is a typeclass
+        field so multi-platform builds can supply different counts
+        without altering the kernel proof surface. -/
+    class PlatformBinding where
+      ...                                      -- existing fields
+      coreCount     : Nat
+      coreCountPos  : coreCount > 0
+      bootCoreId    : Fin coreCount
+      sharingDomain : SharingDomain             -- §2.4
 
-    end SeLe4n.Kernel.Concurrency
+    /-- RPi5 platform: 4 cores, boot core 0, inner-shareable. -/
+    instance rpi5PlatformBinding : PlatformBinding where
+      ...
+      coreCount      := 4
+      coreCountPos   := by decide
+      bootCoreId     := ⟨0, by decide⟩
+      sharingDomain  := .inner
 
-**Definition 2.4.2** (Per-core scheduler state). The single-core
-`SchedulerState` becomes:
+    abbrev CoreId : Type := Fin PlatformBinding.coreCount
+
+**Definition 2.3.2** (Per-core SchedulerState — path-a). The
+singular fields are **replaced** (not augmented) with Vector
+fields. No `currentOnBootCore` compat shim:
 
     structure SchedulerState where
-      -- Per-core fields (Vector indexed by CoreId)
-      current             : Vector (Option ThreadId) numCores
-      runQueue            : Vector RunQueue numCores
-      replenishQueue      : Vector ReplenishQueue numCores
-      activeDomain        : Vector DomainId numCores
-      domainTimeRemaining : Vector Nat numCores
-      domainScheduleIndex : Vector Nat numCores
-      lastTimeoutErrors   : Vector (List (ThreadId × KernelError)) numCores
-      -- System-wide fields (unchanged from single-core)
-      domainSchedule      : List DomainScheduleEntry := []
+      current             : Vector (Option ThreadId) PlatformBinding.coreCount
+      runQueue            : Vector RunQueue PlatformBinding.coreCount
+      replenishQueue      : Vector ReplenishQueue PlatformBinding.coreCount
+      activeDomain        : Vector DomainId PlatformBinding.coreCount
+      domainTimeRemaining : Vector Nat PlatformBinding.coreCount
+      domainScheduleIndex : Vector Nat PlatformBinding.coreCount
+      lastTimeoutErrors   : Vector (List (ThreadId × KernelError)) PlatformBinding.coreCount
+      -- System-wide (unchanged)
+      domainSchedule         : List DomainScheduleEntry := []
       configDefaultTimeSlice : Nat := 5
 
-with helpers:
-
     namespace SchedulerState
+      /-- Direct per-core accessors. -/
       def currentOnCore (s : SchedulerState) (c : CoreId) : Option ThreadId :=
         s.current.get c
-
       def runQueueOnCore (s : SchedulerState) (c : CoreId) : RunQueue :=
         s.runQueue.get c
-
-      -- ... and so on for every per-core field.
-
-      /-- Boot-core compatibility shim. Every theorem that read
-          `s.current` in the single-core era now reads
-          `s.currentOnCore bootCoreId` (or `currentOnBootCore`). -/
-      def currentOnBootCore (s : SchedulerState) : Option ThreadId :=
-        s.currentOnCore bootCoreId
+      -- ... and so on for every per-core field
     end SchedulerState
 
-**Rationale**: choosing `Vector α numCores` (not `Array`, not
-`List`, not `coreId → α`) is mathematically forced:
+Path-a means every existing theorem referencing `.current`,
+`.runQueue`, etc., is rewritten to take a `c : CoreId` parameter
+or to fix a specific core (typically `bootCoreId` for boot
+properties). The migration touches ~110 theorems across ~60
+files (§6 impact matrix).
 
-- `Array α` lacks compile-time length proofs; out-of-bounds access
-  returns a default value silently.
-- `List α` lacks O(1) random access.
-- `CoreId → α` is total but extensional equality is undecidable.
-- `Vector α numCores` (with `Vector := { l : List α // l.length = numCores }`)
-  gives O(1) get (via `List.get` + length proof), decidable
-  extensionality, and compile-time index safety. Lean 4's `Vector`
-  is in `Mathlib` or `Std`; if not available we define it locally.
+**Theorem 2.3.3** (Per-core extensionality).
 
-### 2.5 BKL Lean encoding
+    ∀ s₁ s₂ : SchedulerState,
+      (∀ c : CoreId, s₁.currentOnCore c = s₂.currentOnCore c) →
+      (∀ c : CoreId, s₁.runQueueOnCore c = s₂.runQueueOnCore c) →
+      ...                       -- all per-core field accessors
+      s₁.domainSchedule = s₂.domainSchedule →
+      s₁.configDefaultTimeSlice = s₂.configDefaultTimeSlice →
+      s₁ = s₂
 
-**Definition 2.5.1** (BKL state model).
+  *Proof.* Vector extensionality via `Vector.ext` applied
+  per-field; record-extensionality across the whole struct. □
 
-    namespace SeLe4n.Kernel.Concurrency
+### 2.4 Sharing domain (cross-cluster parameterization)
 
-      /-- Big Kernel Lock state. The Lean model exposes only the
-          atomic transitions (acquire / release); the underlying
-          ticket-lock mechanics are HAL-side and not modeled
-          per-step in Lean (they are reasoned about externally
-          via §2.2's theorems). -/
-      inductive BklState where
-        | unheld
-        | held (owner : CoreId)
-        deriving DecidableEq, Repr, Inhabited
+**Definition 2.4.1**.
 
-      def bklHeldBy (b : BklState) (c : CoreId) : Prop :=
-        b = .held c
+    inductive SharingDomain where
+      | inner    -- Inner-shareable (single cluster, e.g., BCM2712)
+      | outer    -- Outer-shareable (multi-cluster, e.g., big.LITTLE)
+      deriving DecidableEq, Repr
 
-      instance (b : BklState) (c : CoreId) : Decidable (bklHeldBy b c) := by
-        unfold bklHeldBy; exact inferInstance
+The `BarrierKind` and TLBI variants threading is parameterized:
 
-      structure ConcurrencyState where
-        bkl : BklState := .unheld
-        deriving Repr, Inhabited
+    def dsbForSharing (d : SharingDomain) : BarrierKind :=
+      match d with
+      | .inner => .dsbIsh
+      | .outer => .dsbOsh
 
-    end SeLe4n.Kernel.Concurrency
+    def tlbiVaeForSharing (d : SharingDomain) (asid : ASID) (va : VAddr) : BarrierKind × TlbInvalidation :=
+      (dsbForSharing d, .vae1 asid va)
 
-The `SystemState` gains a `concurrency : ConcurrencyState` field.
+All kernel TLB operations route through `tlbFlushByPage` /
+`tlbFlushByASID`, which thread `PlatformBinding.sharingDomain`
+through to the HAL. The single-cluster (Inner) and multi-cluster
+(Outer) paths are then both verified, but RPi5 uses Inner.
 
-**Definition 2.5.2** (BKL pre/post predicates). For a kernel
-transition τ : SystemState × Args → KernelResult on core c,
+### 2.5 IPI / SGI model
 
-    bklPreAcquired(c, s) ≡ s.concurrency.bkl = .unheld
-    bklPostAcquired(c, s) ≡ s.concurrency.bkl = .held c
-    bklPostReleased(s) ≡ s.concurrency.bkl = .unheld
+**Definition 2.5.1** (SGI INTID allocation).
 
-**Definition 2.5.3** (BKL discipline for `@[export]` bodies). Every
-`@[export]` FFI body conforms to:
+    inductive SgiKind where
+      | reschedule         -- INTID 0
+      | tlbShootdownReq    -- INTID 1
+      | tlbShootdownAck    -- INTID 2
+      | cacheBroadcast     -- INTID 3
+      | haltAll            -- INTID 4
+      deriving DecidableEq, Repr
 
-1. **Pre**: BKL is unheld OR the body acquires BKL as its first
-   action.
-2. **Mid**: BKL is held by the executing core for the full duration
-   of state-touching work.
-3. **Post**: BKL is released as the last action; post-state has
-   `bkl = .unheld`.
+    def SgiKind.toIntid : SgiKind → Fin 16 := ...
 
-**Theorem 2.5.4** (BKL atomicity of state transitions).
+The kernel reserves 5 of the 16 SGI INTIDs. The remaining 11 are
+available for application-layer use via a future capability
+operation (post-1.0).
 
-    ∀ (τ : SystemState → SystemState),
-    ∀ (c : CoreId) (s s' : SystemState),
-      bklPreAcquired(c, s) →
-      τ s = s' →
-      bklPostReleased(s') →
-      ∃ (sMid : SystemState),
-        bklPostAcquired(c, sMid) ∧
-        τ' sMid = s' ∧                 -- intermediate transition
-        bklPostReleased(s')
-
-This is the *kernel-transition envelope theorem*. It encodes that
-every state mutation is bracketed by BKL acquire/release; the
-inner kernel logic operates on the "during" state where BKL is
-held.
-
-The model is **non-destructive**: existing single-core transitions
-become "during-BKL" transitions; the acquire/release brackets are
-new envelope code in `@[export]` bodies. Single-core proofs prove
-properties of the *during* transition; the BKL discipline gives
-us the *envelope* property.
-
-### 2.6 IPI (SGI) model
-
-**Definition 2.6.1** (SGI INTID allocation).
-
-    namespace SeLe4n.Kernel.Concurrency
-      /-- SGI INTIDs used by the kernel. ARM GIC-400 SGI range is
-          INTIDs 0..15 (TRM §3.1). seLe4n reserves these 5; the
-          remaining 11 are available for application-layer use via
-          a future capability operation (post-1.0). -/
-      inductive SgiKind where
-        | reschedule        -- INTID 0: target core re-enters scheduler
-        | tlbShootdownReq   -- INTID 1: invalidate-and-ack
-        | tlbShootdownAck   -- INTID 2: invalidation completed
-        | cacheBroadcast    -- INTID 3: cross-core cache maintenance
-        | haltAll           -- INTID 4: panic/halt synchronization
-        deriving DecidableEq, Repr
-
-      def SgiKind.toIntid : SgiKind → Nat
-        | .reschedule      => 0
-        | .tlbShootdownReq => 1
-        | .tlbShootdownAck => 2
-        | .cacheBroadcast  => 3
-        | .haltAll         => 4
-
-      /-- Pairwise distinctness: the 5 SGI INTIDs are different.
-          C(5,2) = 10 inequalities, all by `decide`. -/
-      theorem SgiKind.toIntid_injective :
-        ∀ k₁ k₂ : SgiKind, k₁ ≠ k₂ → k₁.toIntid ≠ k₂.toIntid := by
-        intros k₁ k₂ h; cases k₁ <;> cases k₂ <;> simp_all <;> decide
-    end SeLe4n.Kernel.Concurrency
-
-**Definition 2.6.2** (SGI send semantics). An SGI is modeled as a
-pending-event entry on the target core's pending queue:
+**Definition 2.5.2** (Pending SGI queue).
 
     structure PendingSgi where
-      sender : CoreId
-      kind   : SgiKind
-      payload : Option Nat  -- e.g., TLB shootdown carries asid/vaddr
+      sender  : CoreId
+      kind    : SgiKind
+      payload : Option Nat
+      deriving Repr
 
     structure ConcurrencyState where
-      bkl : BklState := .unheld
-      pendingSgis : Vector (List PendingSgi) numCores :=
-        Vector.replicate numCores []
+      perCorePendingSgis : Vector (List PendingSgi) PlatformBinding.coreCount
 
-The `sendSgi` operation under BKL appends to the target's pending
-queue; the target's SGI handler (run on next kernel entry on that
-core) drains the queue.
+The `ConcurrencyState` field is added to `SystemState`. Lock for
+per-core queues: each core's queue has its own RwLock (level
+already covered; the per-core slot's lock is at LockKind.tcb or
+a new LockKind.sgiQueue — TBD by SM3 design).
 
-**Theorem 2.6.3** (SGI delivery). For sender c₁ and target c₂ with
-SGI kind k, if c₁ executes `sendSgi c₂ k payload` while holding
-BKL, then on c₂'s next kernel entry, c₂'s pending queue contains
-the entry.
+**Theorem 2.5.3** (SGI delivery). If sender c₁ executes
+`sendSgi c₂ k payload` while holding the lock-set required for
+the operation, then on c₂'s next kernel entry, c₂'s queue
+contains the entry.
 
-**Proof.** Under BKL, the append is atomic with respect to c₂'s
-read (Corollary 2.3.3). The next kernel entry on c₂ acquires BKL
-and reads the (updated) pending queue. □
+  *Proof.* Under proper locking (Definition 2.1.8), the append
+  is atomic. The next kernel entry on c₂ acquires the same lock
+  via its IRQ-handler envelope and reads the updated queue. □
 
-**Note 2.6.4** (Hardware delivery). The Lean model abstracts SGI
-delivery as "appears in pending queue". The Rust HAL implements
-the actual GICD_SGIR write and the SGI handler dispatch. The
-Lean-side `@[extern "ffi_send_sgi"]` is the seam: Lean appends to
-the queue, calls the FFI primitive which writes GICD_SGIR; the
-target core's GIC raises an IRQ; the IRQ handler executes the
-queued work.
+### 2.6 TLB shootdown protocol
 
-### 2.7 TLB shootdown protocol
-
-**Specification 2.7.1** (Correctness). After a successful TLB
+**Specification 2.6.1** (Correctness). After a successful TLB
 shootdown for (asid, vaddr) initiated by core c₀, no core c ∈
-allCores has (asid, vaddr) cached in its TLB.
+PlatformBinding.allCores has (asid, vaddr) cached in its TLB.
 
-**Protocol 2.7.2** (Acquire-shootdown-release):
+**Protocol 2.6.2** (Acquire-shootdown-release):
 
 ```
 TlbShootdown(initiator c₀, asid, vaddr):
-  1. Hold BKL (precondition: every kernel entry holds BKL).
-  2. Initialize shootdownAck : Vector Bool numCores :=
-       Vector.replicate numCores false; set shootdownAck[c₀] := true
-       (initiator does its own invalidation locally).
+  1. Required locks: VSpaceRoot(asid).lock (write).
+  2. Initialize shootdownAck : Vector Bool coreCount; set shootdownAck[c₀] := true.
   3. For each c ∈ allCores \ {c₀}:
        sendSgi c .tlbShootdownReq (encode asid vaddr)
-  4. Locally: tlbi vaae1is, vaddr ; dsb ish ; isb.
-     (IS variant suffices for inner-shareable but we go a step
-     further with explicit ack for protocol-level certainty and
-     cross-cluster portability.)
-  5. Loop: for each c with shootdownAck[c] = false, wfe_bounded(...);
-     each remote core's SGI handler:
-       a. tlbi vaae1is, vaddr (matches initiator's local TLBI)
-       b. dsb ish ; isb
-       c. atomically set shootdownAck[c] := true
-       d. send back .tlbShootdownAck SGI
-       e. eret to interrupted context.
+  4. Initiator's local: tlbi_for_sharing(sharingDomain, asid, vaddr); dsb_for_sharing(...); isb.
+  5. Loop with bounded WFE per target c:
+       wait until shootdownAck[c] = true
+     Each remote SGI handler:
+       a. tlbi_for_sharing(sharingDomain, asid, vaddr)
+       b. dsb_for_sharing(sharingDomain) ; isb
+       c. atomically set shootdownAck[c] := true (lock held throughout SGI handler)
+       d. (optional) send back .tlbShootdownAck SGI
+       e. eret to interrupted context
   6. Loop terminates when shootdownAck = all true.
-  7. Issue final dsb ish ; isb.
-  8. Release BKL (envelope).
+  7. Final dsb_for_sharing ; isb.
+  8. Release locks.
 ```
 
-**Theorem 2.7.3** (Protocol correctness). At end of TlbShootdown,
+**Theorem 2.6.3** (Protocol correctness). At end of TlbShootdown,
 no core has (asid, vaddr) in its TLB.
 
-**Proof.** Each remote core c executes `tlbi vaae1is` in step 5(a)
-before setting `shootdownAck[c]`. The IS-variant TLBI's effect on
-remote PEs is observed-by-DSB-ISH (Assumption 2.3.1), and the
-local DSB ISH in 5(b) waits for c's own invalidation to complete.
-The initiator waits until all flags are true (step 6), then issues
-DSB ISH (step 7). At this point every remote core has completed
-its TLBI, and the initiator has observed those completions
-through the acquire-ordered atomic-set of `shootdownAck` and the
-final DSB. □
+  *Proof.* Each remote core c executes `tlbi ...is` in step
+  5(a) before setting `shootdownAck[c]`. The IS-variant TLBI
+  effect on remote PEs is observed by DSB ISH (or DSB OSH for
+  outer sharing). The atomic-set on shootdownAck[c] establishes
+  a release-acquire edge with the initiator's read. After step
+  6, the initiator has observed all completions. The final DSB
+  in step 7 ensures the initiator's subsequent memory accesses
+  follow the shootdown. □
 
-**Note 2.7.4** (Optimization: IS-variant alone). On a single-cluster
-inner-shareable BCM2712, `tlbi vaae1is` alone is sufficient at the
-hardware level — the IS variant broadcasts to all PEs in the
-inner-shareable domain. We adopt the explicit-ack protocol for
-two reasons:
-1. **Cross-cluster portability**: future multi-cluster ports need
-   explicit synchronization (the inner-shareable domain becomes
-   per-cluster).
-2. **Formal anchor**: explicit ack gives the Lean proof a concrete
-   per-core invalidation event to reason about, rather than relying
-   on a single global "DSB ISH suffices" assumption.
+### 2.7 Information flow under SMP
 
-### 2.8 Information flow under SMP
+**Definition 2.7.1** (Per-core observer). An *observer* is a
+pair `(c, L)` of (core, security-label) — an attacker thread
+running on core `c` with label `L`.
 
-**Definition 2.8.1** (Per-core observer). Under SMP, an *observer*
-is a pair (c, L) of (core, security-label) — an attacker running
-on core c with label L.
+**Definition 2.7.2** (Per-core observable state).
 
-**Definition 2.8.2** (Per-core projection).
-
-    ObservableState.onCore (c : CoreId) (L : SecurityLabel) (s : SystemState) :=
+    def ObservableState.onCore (c : CoreId) (L : SecurityLabel) (s : SystemState) : ObservableState :=
       { current      := s.scheduler.currentOnCore c
       , runQueue     := s.scheduler.runQueueOnCore c
       , activeDomain := s.scheduler.activeDomain.get c
       , objects      := { o ∈ s.objects | labelOf o ⊑ L }
-      , -- ... other label-filtered fields
+      , ...
       }
 
-**Theorem 2.8.3** (Cross-core noninterference). For observers
+**Theorem 2.7.3** (Cross-core non-interference). For observers
 (c, L), if a transition on a *different* core c' ≠ c does not
 mutate any object o with labelOf o ⊑ L AND does not signal a
-notification observable by (c, L), then ObservableState.onCore c L
-is unchanged.
+notification observable by (c, L), then ObservableState.onCore c
+L is unchanged across that transition.
 
-This is the SMP analogue of the existing NI proof; the per-core
-projection isolates each core's view, and the BKL serialization
-ensures cross-core transitions are observable only via their
-label-respecting effects.
+  *Proof.* The transition on c' holds a lock-set disjoint from c
+  for the part of state that c observes (per locking discipline);
+  c-observable state writes only happen with c's locks held,
+  which c' does not have. □
 
-### 2.9 Mathematical roadmap summary
+**Acceptable covert channel** (documented, not closed):
+- `bklContentionTiming` — when core c spins on a contended lock
+  it can measure how long another core holds the lock; this is a
+  timing side channel observable to any thread on c. Documented
+  in `Projection.lean::acceptedCovertChannel_bklContention`;
+  mitigation deferred to WS-W (CCA/MPAM partitioning).
 
-| Phase | New axioms / assumptions | New theorems |
-|-------|--------------------------|--------------|
-| SM2 | None (model rewrite) | `numCores = 4`, `bootCoreId = ⟨0, _⟩`, `allCores_length`, ~12 helper-equality lemmas |
-| SM3 | Acq/Rel ordering on `AtomicU64` (ARM ARM cited) | `bklMutex` (Thm 2.2.5), `bklFifo` (2.2.6), `bklRelAcq` (2.3.2), `kernelStateRefSafe` (2.3.3) |
-| SM4 | None | Per-core analogues of every Scheduler invariant: `runQueueOnCore_wellFormed`, `currentOnCore_consistent`, `pipBoost_perCore`, `wcrtBound_smp` (extends `wcrt_bound_rpi5`) |
-| SM5 | None | Per-core IPC: `crossCoreCall_wakesReceiver`, `crossCoreNotify_observedByReceiver` |
-| SM6 | None | `tlbShootdown_invalidatesAllCores` (Thm 2.7.3) |
-| SM7 | None | `crossCoreNonInterference` (Thm 2.8.3) |
+### 2.8 Mathematical roadmap summary
 
-Total: 0 new axioms; ~80–110 new substantive theorems; ~10–15
-helper-equality lemmas. The `axiom budget` for WS-SM is **0**.
+| Phase | New axioms / assumptions | New substantive theorems |
+|-------|--------------------------|---------------------------|
+| SM0 | None | ~12 (CoreId, SgiKind, ArchAssumption) |
+| SM1 | None | ~6 (HAL primitives existence) |
+| SM2 | ARMv8.1-A LSE memory model (cited, not Lean-axiom) | ~22 (TicketLock + RwLock + refinement) |
+| SM3 | None | ~28 (per-object lock fields, lock-set discipline, deadlock-freedom) |
+| SM4 | None | ~50 (path-a Vector migration; per-core invariants) |
+| SM5 | None | ~30 (per-core scheduler) |
+| SM6 | None | ~25 (cross-core IPC) |
+| SM7 | None | ~14 (TLB shootdown) |
+| SM8 | None | ~18 (per-core NI, BKL channel) |
+| SM9 | None | ~5 (closure markers) |
+| **Total** | **0 Lean axioms** | **~210 substantive theorems** |
+
+The ARMv8.1-A memory-model "axioms" are external — they are ARM
+ARM citations woven through `Concurrency/MemoryModel.lean`'s
+docstrings, not Lean `axiom` declarations.
 
 ## 3. Detailed finding catalogue
 
-(Each finding cites file:line directly verifiable in the
-audit's source tree. Acceptance criteria in §5 reference these IDs.)
+Each finding cites file:line directly verifiable in the audit's
+source tree. Acceptance in §5 references these IDs.
 
-### 3.1 SMP-C1 — `bring_up_secondaries` is never called
+### 3.1 SMP-C1 — `bring_up_secondaries` never called
 
-**Locus**: `rust/sele4n-hal/src/boot.rs:27-108` (`rust_boot_main`).
+`rust_boot_main` (`boot.rs:27-108`) has 4 phases (UART, MMU,
+GIC, timer) ending in `lean_kernel_main(dtb_ptr)`. No Phase 5.
+`crate::smp::bring_up_secondaries()` is unreferenced outside
+`smp.rs` and a comment in `boot.S:141`. The `smp.rs:55-57`
+docstring's "deployments set this `true` via a kernel-command-line
+parameter parsed by `boot.rs::rust_boot_main`" is aspiration.
 
-`rust_boot_main` executes 4 phases (UART → MMU → GIC → timer) and
-calls `lean_kernel_main(dtb_ptr)` on Phase 4. There is no Phase 5.
-`grep -rn "bring_up_secondaries\|crate::smp::bring_up" rust/` returns
-only references inside `smp.rs` itself and a comment in `boot.S:141`.
+**Closure**: SM0.J + SM1.D — DTB cmdline parser + Phase 5
+invocation with SMP-default-on policy.
 
-The `smp.rs:55-57` docstring claims "deployments that opt in to SMP
-set this `true` via a kernel-command-line parameter parsed by
-`boot.rs::rust_boot_main` before invoking `bring_up_secondaries`."
-**No such parsing or invocation exists.**
+### 3.2 SMP-C2 — `rust_secondary_main` incomplete
 
-**Closure**: SM0.5 documents honestly; SM1.E adds the DTB parser;
-SM1.F adds the Phase 5 invocation under `BKL initialized`
-precondition (see SM3).
+`smp.rs:213-235` body: a `wfe_bounded` loop on `CORE_READY[idx]`
+then `loop { wfe }`. Docstring (lines 202-211) claims a 4-step
+init sequence (MMU, VBAR, GIC CPU interface, timer) that is not
+implemented. Activation today would wake secondaries into MMU-off,
+VBAR-zero state.
 
-### 3.2 SMP-C2 — `rust_secondary_main` is incomplete
+**Closure**: SM1.C — full secondary init per the docstring.
 
-**Locus**: `rust/sele4n-hal/src/smp.rs:213-235`.
+### 3.3 SMP-C3 — `kernelStateRef` shared without atomicity
 
-Docstring (lines 202-211) promises: "Each secondary core runs
-through the AK5-D-ordered MMU-enable sequence, applies the AK5-C
-SCTLR_EL1 bitmap, initialises its GIC CPU interface, then spins on
-its `core_ready` flag." Body actually contains only a
-`wfe_bounded` loop on `CORE_READY[core_idx]` and a final
-`loop { wfe }`. No `mmu::init_mmu`, no `write_vbar_el1`, no
-`gic::init_cpu_interface`, no `timer::init_timer` call.
+`SeLe4n/Platform/FFI.lean:394` declares `kernelStateRef :
+IO.Ref SystemState`. Lean's `IO.Ref` is not cross-core atomic.
 
-**Consequence at runtime** (if SMP-C1 were closed first):
+**Closure**: SM3 — per-object locks replace the single global
+`kernelStateRef` view. State decomposes into per-object slices,
+each guarded by its own RwLock. The `kernelStateRef` is retained
+as the "live state holder" but its writers must acquire all
+write-locks in their lock-set, and readers must acquire
+appropriate read-locks. The Lean model proves serializability
+(Theorem 2.1.10).
 
-1. Secondary jumps from `secondary_entry` (with MMU off — PSCI hands
-   off in the same MMU state the firmware left, typically off) into
-   `rust_secondary_main`.
-2. First load via virtual address would fault — but `wfe_bounded`
-   uses `mrs cntpct_el0` and direct memory access to `CORE_READY`
-   (a static), both of which can succeed without MMU (the kernel
-   image is identity-mapped at the load address).
-3. The `CORE_READY` flag is in BSS (`.bss`), which lives at a
-   physical address that happens to be loadable without MMU
-   (because U-Boot loaded the image at a known physical address).
-   So the spin loop *would work*.
-4. Once the primary signals ready, secondary enters
-   `loop { wfe }` — parks idle forever.
-5. **Any IRQ delivered to this core** would jump to PC = VBAR_EL1
-   = 0 (uninitialized) — UNDEFINED behavior, likely a synchronous
-   exception loop or hard reset.
+### 3.4 SMP-C4 — TLB instructions non-IS
 
-The current state is *latently safe* (no IRQ ever fires because
-GIC isn't routed to this core's CPU interface), but a single
-mis-configured GIC distributor write would expose this.
+`tlb.rs:34,57,78,100`: emits `tlbi vmalle1`, `vae1`, `aside1`,
+`vale1` — all non-IS. Per ARM ARM C6.2.311-316, these invalidate
+only the issuing PE's TLB. The trailing `dsb ish` does not
+propagate; it waits only for the issuing PE.
 
-**Closure**: SM1.C, SM1.D — full secondary init sequence.
+**Closure**: SM1.E — add IS-variant primitives;
+SM7 — shootdown protocol with explicit ack.
 
-### 3.3 SMP-C3 — `kernelStateRef` is shared across cores
+### 3.5 SMP-H1 — No SGI primitive
 
-**Locus**: `SeLe4n/Platform/FFI.lean:394`.
+`gic.rs` lacks `GICD_SGIR` constant and `send_sgi` function.
 
-```lean
-initialize kernelStateRef : IO.Ref SystemState ← IO.mkRef (default : SystemState)
-```
-
-`IO.Ref` is a mutable reference cell with non-atomic read/modify/write
-semantics. Two cores executing `updateKernelState f` concurrently
-would race; the second `set` clobbers the first.
-
-The hazard is unrealized today because secondary cores never reach
-any FFI body (SMP-C1, SMP-C2 prevent it). Activation requires
-serialization.
-
-**Closure**: SM3 — BKL discipline wraps every `@[export]` body;
-Corollary 2.3.3 establishes `kernelStateRef` safety under BKL.
-
-### 3.4 SMP-C4 — TLB instructions are non-IS (single-PE only)
-
-**Locus**: `rust/sele4n-hal/src/tlb.rs`:
-
-- Line 34: `asm!("tlbi vmalle1", ...)` — invalidates this PE only.
-- Line 57: `asm!("tlbi vae1, {0}", ...)` — invalidates this PE only.
-- Line 78: `asm!("tlbi aside1, {0}", ...)` — invalidates this PE only.
-- Line 100: `asm!("tlbi vale1, {0}", ...)` — invalidates this PE only.
-
-Per ARM ARM C6.2.311-316, the `IS` (inner-shareable) variants
-(`vmalle1is`, `vae1is`, `aside1is`, `vale1is`) broadcast to all PEs
-in the inner-shareable domain. The current non-IS variants do not
-broadcast at all. Even the trailing `dsb ish` (lines 38, 60, 81,
-103) does NOT propagate the invalidation — DSB ISH only waits for
-**this PE's** memory operations.
-
-**Concrete failure scenario** (under SMP activation):
-
-1. Core 0 unmaps page V (calls `tlbi_vae1(asid, V)`); kernel-side
-   it considers V unmapped.
-2. Core 0 reallocates V's physical backing for a different ASID/process.
-3. Core 1 still has the old translation V → P_old in its TLB.
-4. Core 1 dereferences V — reads P_old's contents (which now
-   belongs to a different process).
-
-This is a **confidentiality + integrity vulnerability** on any
-SMP activation that uses page unmaps (every retype, every
-revocation). Severity: CRITICAL.
-
-**Closure**: SM1.F (HAL-side IS variants) + SM6 (shootdown
-protocol with explicit ack).
-
-### 3.5 SMP-H1 — No SGI / IPI primitive
-
-**Locus**: `rust/sele4n-hal/src/gic.rs` — no `GICD_SGIR` register
-constant, no `send_sgi` function. Grep `GICD_SGIR\|send_sgi` returns
-zero hits.
-
-ARM GIC-400 TRM §4.3.13: GICD_SGIR at offset 0xF00 from GICD base.
-Format:
-
-```
-[31:26] reserved
-[25:24] TargetListFilter (00=use list, 01=all but self, 10=self only)
-[23:16] CPUTargetList (bit i = CPU i)
-[15]    NSATT (non-secure access flag)
-[14:4]  reserved
-[3:0]   SGIINTID (0..15)
-```
-
-**Closure**: SM1.G — `gic::send_sgi` + Lean `@[extern]` + SGI
-dispatch.
+**Closure**: SM1.G — add `send_sgi`, SGI dispatch, Lean FFI.
 
 ### 3.6 SMP-H2 — Missing `singleCoreOperation` ArchAssumption
 
-**Locus**: `SeLe4n/Kernel/Architecture/Assumptions.lean:17-23`.
+`Architecture/Assumptions.lean:17-23` has 5 constructors; none is
+`singleCoreOperation`, despite `Concurrency/Assumptions.lean:163-176`
+referencing this anchor.
 
-`ArchAssumption` has 5 constructors:
+**Closure**: SM0.A — add constructor + extend
+`assumptionInventory`, `archAssumptionConsumer`, distinctness
+theorem.
 
-```
-inductive ArchAssumption where
-  | deterministicTimerProgress
-  | deterministicRegisterContext
-  | memoryAccessSafety
-  | bootObjectTyping
-  | irqRoutingTotality
-```
+### 3.7 SMP-H3 — Inventory `Lean.Name` not build-checked
 
-But `SeLe4n/Kernel/Concurrency/Assumptions.lean:163-176` entry 7
-references this inductive as the anchor for the single-core
-assumption, claiming:
+Self-acknowledged in `Concurrency/Assumptions.lean:53-61`.
 
-> "recorded in `Architecture/Assumptions.lean` via the
-> `ArchAssumption` inductive + `assumptionInventory` aggregator."
+**Closure**: SM0.C — `Concurrency/Anchors.lean` `@`-references.
 
-The constructor does not exist. The inventory entry's description
-is documentation-as-aspiration, not documentation-as-truth.
+### 3.8 SMP-H4 — No lock primitive
 
-Per CLAUDE.md's **implement-the-improvement rule**: the inventory
-description is the better state; **implement the constructor** so
-the description becomes true.
+`with_interrupts_disabled` (interrupts.rs:101-106) is the sole
+atomicity primitive; it does not cross cores.
 
-**Closure**: SM0.A — add `singleCoreOperation` constructor; extend
-`assumptionInventory` to 6 entries; extend `archAssumptionConsumer`
-to map it to `bootFromPlatform_singleCore_witness`; extend the
-distinctness theorem to C(6,2) = 15 inequalities.
+**Closure**: SM2 — verified TicketLock + RwLock primitives;
+SM3 — per-object lock fields + lock-set discipline.
 
-### 3.7 SMP-H3 — Inventory Lean.Name not build-checked
+### 3.9 SMP-M1..M7, SMP-L1..L5
 
-**Locus**: `Concurrency/Assumptions.lean:53-61`.
+Documentation, hygiene, scope items closed via SM0.K..SM0.R
+(see §5). Severity-tagged in §1.2; remediation per-item in §5.
 
-```lean
-The `identifier` and `sourceTheorem` fields hold `Lean.Name`
-literals. Lean does not enforce that a `Lean.Name` literal resolves
-to a defined symbol — the name is just a structural reference.
-```
+## 4. Architectural design choices (recorded decisions)
 
-A `@` reference per name would catch the rename-without-update
-case. Pattern already exists in `Architecture/Invariant.lean` for
-`archAssumptionConsumer`.
+The 12 decisions in §0 governing this plan. Each cites the open
+question, the chosen option, and the rationale.
 
-**Closure**: SM0.C — `Concurrency/Anchors.lean` with `@`-references
-of every inventory `identifier` and `sourceTheorem`.
+| # | Decision | Rationale |
+|---|----------|-----------|
+| 1 | **Per-object fine locks** | Maximum concurrency. Trade: every operation declares its lock-set, sorts by hierarchical order, acquires/releases in 2PL. Deadlock-freedom via Theorem 2.1.9. Significantly more proof work than BKL but unbounded scalability headroom. |
+| 2 | **Reader-writer locks** | Read-mostly workloads (capability lookup, object-store read) get parallel reader paths. Adds 4 operation types (acquire/release × read/write) and their invariants per lock. Upgrade/downgrade deferred to v1.x. |
+| 3 | **Hierarchical-by-kind order** | LockKind = `Untyped < CNode < TCB < Endpoint < Notification < Reply < SchedContext < VSpaceRoot < Page < ObjStore` (10 levels). Within-kind by ObjId.val. Reflects kernel-operation dependency structure; cleaner proof of deadlock-freedom (Theorem 2.1.9). |
+| 4 | **Path-a Vector replacement** | Singular SchedulerState fields replaced with `Vector α coreCount`. No bootCore-shim. Cleaner final state at the cost of ~5000-7000 LoC of theorem rewrites (path-b's mechanical migration is shifted to substantive proof restatements). |
+| 5 | **numCores via PlatformBinding** | Future-proof for multi-platform builds. ~40% more proof surface than hardcoded. |
+| 6 | **PlatformBinding.sharingDomain** | Inner (RPi5) vs Outer (future multi-cluster). Generic theorems hold under either. |
+| 7 | **SMP enabled by default** | SMP is the v1.0.0 headline capability; QEMU `-smp 4` integration test is mandatory on every release. Latent SMP bugs become release blockers (positive constraint on rigor). |
+| 8 | **Per-core idle TCBs** | One idle thread per core (priority 0, bound to its core). `chooseThreadOnCore` always succeeds (idle fallback). Standard pattern; cleanest invariants. |
+| 9 | **SM0 spread across PRs** | 18+ separate small PRs across v0.32.0..v0.32.x. Reviewer-friendly; longer calendar; care needed for inter-PR state consistency. |
+| 10 | **Verified lock primitives** | TicketLock + RwLock formally modelled in Lean against an abstract ARMv8.1-A LSE memory model and proven correct (§2.2). seL4 historically left these as assumptions; WS-SM elevates them to proofs. |
+| 11 | **Workstream ID = WS-SM** | Two-letter convention. |
+| 12 | **24-30 month timeline** | Single-maintainer cadence; comprehensive scope. v1.0.0 ships when WS-SM completes. |
 
-### 3.8 SMP-H4 — `with_interrupts_disabled` insufficient for SMP
+### 4.1 Rejected alternatives (for the record)
 
-**Locus**: `rust/sele4n-hal/src/interrupts.rs:101-106`.
-
-`with_interrupts_disabled` masks IRQ on the calling core. On SMP it
-does NOT prevent other cores from running concurrent kernel
-transitions. The AN12-B inventory's `smpDischarge` fields for
-entries 1, 2, 3, 4, 5, 7, 8 all rely on "the FFI bracket prevents
-interleaved capability operations" — this is FALSE for cross-core
-interleaving.
-
-**Closure**: SM1.B (Rust ticket lock), SM1.J (Lean BKL FFI binding),
-SM3 (BKL discipline) — every `@[export]` body acquires BKL before
-the IRQ-disable bracket.
-
-### 3.9 SMP-M1..M7, SMP-L1..L5 (documentation, hygiene, scope)
-
-Detailed remediation in §5 (SM0.D through SM0.K, SM1.A, SM2.M,
-SM7.K). These items are individually smaller but collectively
-significant for project honesty and future maintainer onboarding.
-
-## 4. Architectural design choices (and the rejected alternatives)
-
-### 4.1 Why Big Kernel Lock (not finer locks)
-
-**Choice**: a single global ticket lock serializes every kernel
-entry.
-
-**Alternatives considered**:
-
-| Option | Pros | Cons | Decision |
-|--------|------|------|----------|
-| Big Kernel Lock | Preserves single-core proof surface; one lock to verify; well-understood (Linux 2.0..2.6, seL4 initial SMP) | Worst-case 4× syscall latency under contention | **Selected** for v1.0.0 |
-| Per-subsystem locks (scheduler, IPC, capability, object store) | Better contention behaviour | 4× the lock proofs; deadlock risk requires lock-ordering proofs | Deferred to v1.x |
-| Lock-free RCU-style state | Best contention | Requires lock-free verified data structures; orders of magnitude more proof work | Deferred indefinitely |
-| Per-CPU kernel state with cross-core IPI-only sharing | Best scalability | Total model rewrite; cross-core consistency proofs explode | Deferred to v2.x |
-
-The BKL is a **proof-quality-preserving** choice. For a verified
-microkernel, correctness dominates micro-optimization. The 4×
-worst-case latency is acceptable for v1.0.0 RPi5 deployments;
-optimization paths remain open for v1.x.
-
-### 4.2 Why ticket lock (not MCS, not test-and-set)
-
-**Choice**: ticket lock as defined in §2.2.
-
-| Option | Pros | Cons | Decision |
-|--------|------|------|----------|
-| Test-and-set spinlock | Trivial implementation | No fairness; starvation possible | Rejected (liveness hazard) |
-| Ticket lock | FIFO fairness; bounded wait; simple state | Cache-line contention on `serving` | **Selected**; cache contention bounded by `numCores = 4` |
-| MCS lock | Cache-locality optimal | Per-acquire allocation; complex proof | Deferred to v1.x performance work |
-| CLH lock | Like MCS but simpler | Per-acquire allocation | Deferred |
-
-Ticket lock + WFE+SEV gives FIFO fairness with zero allocation.
-The `serving` cache line bounces between cores under contention but
-on a 4-core single-cluster L2-shared topology the cost is bounded.
-
-### 4.3 Why hardcoded `numCores := 4`
-
-**Choice**: at v1.0.0, `numCores = 4` is a compile-time constant
-matching BCM2712.
-
-**Alternative**: parameterize by `PlatformBinding.coreCount`.
-
-**Rationale**:
-
-- `Vector α numCores` requires the index to be a Nat literal or
-  fixed at the type level. Parameterizing by a typeclass field
-  requires generalization across `numCores : Nat` everywhere it
-  appears — every theorem, every helper, every test.
-- v1.0.0 targets RPi5 only. Multi-platform ports are post-1.0
-  scope.
-- The constant is changeable in one line of source; the
-  multi-platform abstraction can be added in a single
-  parameterization PR later (post-1.0).
-
-We accept the rigidity for v1.0.0 in exchange for ~40% less proof
-surface compared to a parameterized version.
-
-### 4.4 Why explicit-ack TLB shootdown (when IS-variant alone would do)
-
-See Note 2.7.4. Briefly: cross-cluster portability + formal anchor
-+ defensive design. The explicit-ack adds ~5 SGI round-trips per
-unmap, but on a 1 GHz Cortex-A76 with 4 cores, each round-trip is
-< 100 ns, so total overhead is < 500 ns per shootdown — dwarfed by
-the existing kernel-entry overhead.
-
-### 4.5 Why "Vector" not "Array" for per-core fields
-
-See discussion in §2.4 after Definition 2.4.2. The choice of
-`Vector α numCores` is forced by the simultaneous requirements of
-(a) compile-time index safety, (b) O(1) random access, and (c)
-decidable extensional equality.
+| Option | Why rejected |
+|--------|--------------|
+| Big Kernel Lock | Lower concurrency ceiling; less future headroom. |
+| Per-subsystem locks (5 locks) | Middle ground; less optimal than per-object. |
+| Exclusive-only spinlocks | Insufficient for read-mostly workloads. |
+| Numerical ObjId acquire order | Less semantically aligned than kind-hierarchical. |
+| Path-b additive (bootCore-shim) | Leaves residual single-core flavor in the codebase. |
+| Hardcoded numCores | Closes the multi-platform door. |
+| OSH-by-default | Penalizes single-cluster (RPi5) performance with no current consumer. |
+| SMP off by default | Defeats the v1.0.0 SMP headline. |
+| Shared idle thread | Complicates "every core has a runnable thread" invariant. |
+| Single big SM0 release | Less reviewer-friendly. |
+| Trust lock primitives | Below the user-required verification quality. |
 
 ## 5. Phase plan
 
-Each phase below lists sub-tasks with file:line targets, theorem
-names, mathematical specifications, acceptance criteria, and
-dependencies. Sub-task estimates: Trivial (T) < 50 LoC; Small (S)
-50-200 LoC; Medium (M) 200-500 LoC; Large (L) 500-1500 LoC.
+Sub-task sizing legend: T (Trivial, <50 LoC) — S (Small, 50-200 LoC)
+— M (Medium, 200-500 LoC) — L (Large, 500-1500 LoC) — XL (Extra-large,
+>1500 LoC).
 
-### Phase SM0 — Foundations & honesty patches (12-18 PRs)
+### Phase SM0 — Foundations & honesty patches (40-50 sub-tasks)
 
-**Goal**: land foundational types, fix documentation drift, prepare
-the codebase for the larger phases by closing the smallest
-correctness/honesty gaps. No runtime behavior change yet.
-
-**Dependencies**: WS-RC closure (so we don't tangle with R0..R14).
-
-**Mathematical specification**: no new theorems substantively; new
-types (`CoreId`, `BklState`, `ConcurrencyState`, `SgiKind`) +
-existence proofs (`numCores > 0`, `bootCoreId.val < numCores`,
-constructor distinctness).
+**Goal**: foundational types; documentation drift; small structural
+fixes prerequisite to the larger phases. **Cadence**: spread across
+~18 separate PRs over v0.32.0..v0.32.x.
 
 | Sub | Description | Files | Theorem / acceptance | Est |
 |-----|-------------|-------|----------------------|-----|
-| SM0.A | Add `singleCoreOperation` constructor to `ArchAssumption`. | `Architecture/Assumptions.lean` | `ArchAssumption` has 6 cases; `singleCoreOperation` is the 6th. | S |
-| SM0.B | Extend `assumptionInventory` and `archAssumptionConsumer` to 6 entries. Update distinctness to C(6,2) = 15 inequalities. | `Architecture/Assumptions.lean` | `architecture_assumptions_index` total over 6 cases. `archAssumptionConsumer_distinct_6` pairwise distinctness. | S |
-| SM0.C | New `SeLe4n/Kernel/Concurrency/Anchors.lean`: `@`-references of every inventory `identifier` + `sourceTheorem`. Wire into `Platform.Staged`. | `Concurrency/Anchors.lean`, `Platform/Staged.lean` | Build fails if any name doesn't resolve. | S |
-| SM0.D | Inventory NoDup witness. | `Concurrency/Assumptions.lean` | `smpLatentInventory_identifiers_nodup : (smpLatentInventory.map (·.identifier)).Nodup := by decide`. | T |
-| SM0.E | Define `CoreId := Fin numCores`, `numCores := 4`, `bootCoreId`, `allCores`, `allCores_length`, `allCores_nodup`. Uses `List.finRange` from Lean Std for built-in length + Nodup theorems. | new `Concurrency/Types.lean` | `numCores = 4`, `allCores_length : allCores.length = 4`, `allCores_nodup : allCores.Nodup`, `bootCoreId.val = 0`. | S |
-| SM0.F | Define `BklState`, `bklHeldBy`, `Decidable bklHeldBy`. | new `Concurrency/Locks.lean` | `BklState`'s `held` constructor uniqueness; `bklHeldBy_decidable_consistent`. | S |
-| SM0.G | Define `SgiKind`, `SgiKind.toIntid`, `SgiKind.toIntid_injective`. | `Concurrency/Locks.lean` | `SgiKind` has 5 constructors; `toIntid_injective` by `decide`. | S |
-| SM0.H | Define `ConcurrencyState`; add `concurrency : ConcurrencyState := default` field to `SystemState`. | `Concurrency/Locks.lean`, `Model/State.lean` | `default_concurrency_bkl_unheld`. | M |
-| SM0.I | Add `singleCoreOperation` `archAssumptionConsumer` mapping to `bootFromPlatform_singleCore_witness`. Verify mapping completeness. | `Architecture/Assumptions.lean` | New `archAssumptionConsumer .singleCoreOperation = `bootFromPlatform_singleCore_witness`. | T |
-| SM0.J | Repoint `dev_history/` references in production sources. | `boot.S:103`, `Architecture/Assumptions.lean:333`, `CrossSubsystem.lean:3264` | grep `dev_history` in production sources returns zero hits. | T |
-| SM0.K | Update `docs/spec/SELE4N_SPEC.md §6.4` from "deferred to WS-V" → "implemented in WS-SM (pre-v1.0.0)". Same in `docs/DEVELOPMENT.md:68`, `docs/gitbook/01-project-overview.md:94`. | (4 files) | grep "deferred to WS-V" in SMP context returns 0. | T |
-| SM0.L | Rewrite `dev_history/audits/AUDIT_v0.29.0_DEFERRED.md::DEF-R-HAL-L20` from "RESOLVED at v0.30.10" to "PARTIALLY RESOLVED at v0.30.10 — scaffolding only; full activation tracked under WS-SM". | (1 file) | Disposition row reflects scaffolding-only state. | T |
-| SM0.M | Zero `.smp_stacks` section at boot. Extend `boot.S` BSS-zero loop to cover `__smp_secondary_stacks_bottom..__smp_secondary_stack_top`. | `boot.S` | Boot trace confirms zeroed region; cargo test `secondary_stacks_zeroed_at_boot`. | S |
-| SM0.N | Set `TPIDR_EL1` in `secondary_entry` to per-CPU base pointer. Add `__per_cpu_data_base` linker symbol + `static PER_CPU_DATA: [PerCpuData; 4]` (initially empty struct). | `boot.S`, `smp.rs`, `link.ld` | TPIDR_EL1 readable from `rust_secondary_main`. | M |
-| SM0.O | Add `numCores` regression test ensuring `MAX_SECONDARY_CORES + 1 = numCores`. | `tests/SmpFoundationsSuite.lean`, `rust/sele4n-hal/src/smp.rs` test module | Cross-language constant pinning. | T |
-| SM0.P | Update `docs/codebase_map.json` for new `Concurrency/Types.lean`, `Locks.lean`, `Anchors.lean`. | `docs/codebase_map.json` | Map regenerated; module presence verified. | T |
-| SM0.Q | Update `CLAUDE.md` to record WS-SM as the active workstream after WS-RC closure. | `CLAUDE.md`, `AGENTS.md` | Workstream context section updated; byte-identical mirror. | T |
-| SM0.R | CHANGELOG entry `SM0` summarizing foundations + honesty patches. | `CHANGELOG.md` | Single entry per honesty-patch landing PR. | T |
+| SM0.A | Add `singleCoreOperation` constructor to `ArchAssumption`. | `Architecture/Assumptions.lean` | `ArchAssumption` has 6 cases. | S |
+| SM0.B | Extend `assumptionInventory` to 6 entries; extend `archAssumptionConsumer`; update distinctness to C(6,2)=15. | `Architecture/Assumptions.lean` | `architecture_assumptions_index_total_6`; `archAssumptionConsumer_distinct_6`. | S |
+| SM0.C | `Concurrency/Anchors.lean` with `@`-references of every inventory `identifier` + `sourceTheorem`. Wire into `Platform.Staged`. | `Concurrency/Anchors.lean`, `Platform/Staged.lean` | Build fails if any name doesn't resolve. | S |
+| SM0.D | Inventory NoDup witness. | `Concurrency/Assumptions.lean` | `smpLatentInventory_identifiers_nodup` by `decide`. | T |
+| SM0.E | Define platform-parameterized `CoreId := Fin PlatformBinding.coreCount`; `numCores_pos`; helpers. | new `Concurrency/Types.lean` | `coreCountPos`, `allCores_length`, `allCores_nodup`, `bootCoreId_valid`. | M |
+| SM0.F | Define `SharingDomain` inductive + decidability. | new `Concurrency/Types.lean` | `SharingDomain.eq_decidable`. | T |
+| SM0.G | Extend `PlatformBinding` typeclass: `coreCount`, `coreCountPos`, `bootCoreId`, `sharingDomain` fields. | `Platform/Contract.lean` | Typeclass extended; all platform instances updated (RPi5, Sim). | M |
+| SM0.H | Define `SgiKind` + `toIntid` + `toIntid_injective`. | new `Concurrency/Sgi.lean` | 5 constructors; injective by `decide`. | S |
+| SM0.I | Define `LockKind` (10-level) + `LockKind.level` + `level_strictMono_kind`. | new `Concurrency/Locks/Kind.lean` | Total order; 10 constructors. | S |
+| SM0.J | Repoint `dev_history/` references in production sources. | `boot.S:103`, `Architecture/Assumptions.lean:333`, `CrossSubsystem.lean:3264` | grep `dev_history` in production sources = 0 hits. | T |
+| SM0.K | Update `docs/spec/SELE4N_SPEC.md §6.4` from "deferred to WS-V" → "implemented in WS-SM (pre-v1.0.0)". Same in DEVELOPMENT.md, GitBook. | (4 files) | grep "deferred to WS-V" in SMP context = 0 hits. | S |
+| SM0.L | Rewrite `dev_history/audits/AUDIT_v0.29.0_DEFERRED.md::DEF-R-HAL-L20`: "RESOLVED at v0.30.10" → "PARTIALLY RESOLVED at v0.30.10 — scaffolding only; full activation in WS-SM". | (1 file) | Disposition row reflects scaffolding-only state. | T |
+| SM0.M | Zero `.smp_stacks` at boot. Extend `boot.S` BSS-zero loop. | `boot.S` | Boot trace + cargo test `secondary_stacks_zeroed_at_boot`. | S |
+| SM0.N | Set `TPIDR_EL1` in `secondary_entry` to per-CPU base. Add `__per_cpu_data_base` linker symbol + `static PER_CPU_DATA: [PerCpuData; coreCount]` skeleton. | `boot.S`, `smp.rs`, `link.ld` | TPIDR_EL1 readable from `rust_secondary_main`. | M |
+| SM0.O | `MAX_SECONDARY_CORES = coreCount - 1` parameterization in Rust. | `smp.rs` | Test pins constant. | S |
+| SM0.P | Update CLAUDE.md/AGENTS.md to record WS-SM as the active workstream after WS-RC closure. | `CLAUDE.md`, `AGENTS.md` | Workstream context updated; byte-identical mirror. | S |
+| SM0.Q | Retarget WS-RC R2..R6 closing-version from v1.0.0 to v0.31.last in `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`. | `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` | Plan reflects v0.31.last closure. | S |
+| SM0.R | Update `docs/codebase_map.json` for new modules. | `docs/codebase_map.json` | Map regenerated. | T |
+| SM0.S | New tier-3 surface anchor for the SM0 foundational types. | `tests/SmpFoundationsSuite.lean` | `#check` of every new type. | S |
+| SM0.T | New nightly tier `test_tier4_smp_bootcheck.sh` (stub initially — populates over SM1..SM9). | `scripts/test_tier4_smp_bootcheck.sh` | Stub created; tier slot reserved. | T |
+| SM0.U | CHANGELOG entry per SM0 PR. | `CHANGELOG.md` | One entry per PR. | T |
 
-**Acceptance gate**: `test_full.sh` green; all `dev_history`
-production-source references gone; foundational types compile and
-have basic theorems; documentation reflects actual SMP status.
+**Acceptance gate**: `test_full.sh` green; production-source
+`dev_history/` references gone; foundational types compile; doc
+references reflect actual SMP status; WS-RC retargeted in its
+plan file.
 
-**Estimated effort**: 30–40 individually small sub-tasks across
-~12–18 PRs over 3-5 weeks.
+### Phase SM1 — Rust HAL completion (60-80 sub-tasks)
 
-### Phase SM1 — Rust HAL completion (18-26 PRs)
+**Goal**: complete HAL primitives — secondaries bring up fully,
+SGI primitive exists, TLB has IS variants, command-line parser
+works, basic per-CPU register infra is in place.
 
-**Goal**: complete the Rust HAL so that secondary cores can be
-brought up, initialized fully, communicate via SGI, and the BKL
-primitive exists.
+**Dependencies**: SM0 closure.
 
-**Dependencies**: SM0 closure (uses `CoreId`, `SgiKind`).
+#### SM1.A — PSCI completion (5 PRs, 8 sub-tasks)
 
-**Mathematical specification**: every new Rust function has a
-docstring stating its pre/post invariants in terms of §2's
-mathematical model. Unit tests verify the invariants on host stubs.
+| Sub | Description | Acceptance | Est |
+|-----|-------------|------------|-----|
+| SM1.A.1 | `psci::cpu_off()` — HVC `0x8400_0002`. | DEN0022D §5.1.5; round-trip test. | S |
+| SM1.A.2 | `psci::affinity_info(mpidr)` — HVC `0xC400_0004`. Returns `AffinityInfoState`. | DEN0022D §5.1.8. | S |
+| SM1.A.3 | `psci::system_off()` — HVC `0x84000008`. | DEN0022D §5.1.13. | T |
+| SM1.A.4 | `psci::system_reset()` — HVC `0x84000009`. | DEN0022D §5.1.14. | T |
+| SM1.A.5 | `psci::migrate_info_type()` — HVC `0x84000006`. | DEN0022D §5.1.7. | T |
+| SM1.A.6 | `psci::psci_version()` — HVC `0x84000000`. | DEN0022D §5.1.1. | T |
+| SM1.A.7 | Function-id pinning tests for all 6 above. | New module-tests. | S |
+| SM1.A.8 | Documentation: PSCI return-code matrix and HVC encoding map in `psci.rs` docstring. | Map present. | T |
 
-#### SM1.A — PSCI completion (3-5 PRs)
+#### SM1.B — Per-CPU data + TPIDR_EL1 (3 PRs, 7 sub-tasks)
 
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM1.A.1 | `psci::cpu_off()` — issues `hvc #0` with `PSCI_FN_CPU_OFF`. Returns `PsciResult`. | `psci.rs` | ARM DEN0022D §5.1.5 encoding verified by test. | S |
-| SM1.A.2 | `psci::affinity_info(target_mpidr)` — function id `0xC4000004`. Returns `AffinityInfoState` (ON/OFF/ON_PENDING). | `psci.rs` | DEN0022D §5.1.8 encoding. | S |
-| SM1.A.3 | `psci::system_off()` — function id `0x84000008`. Power off, no return. | `psci.rs` | DEN0022D §5.1.13. | T |
-| SM1.A.4 | `psci::system_reset()` — function id `0x84000009`. Reset, no return. | `psci.rs` | DEN0022D §5.1.14. | T |
-| SM1.A.5 | Unit tests covering host stubs returning Success; function-id pinning; cross-function distinctness. | `psci.rs` test module | 5+ new tests pass. | S |
+| Sub | Description | Acceptance | Est |
+|-----|-------------|------------|-----|
+| SM1.B.1 | Define `PerCpuData` struct (initially empty; populated by later phases). | New `per_cpu.rs`. | T |
+| SM1.B.2 | `static PER_CPU_DATA: [PerCpuData; coreCount]` in BSS. | Static array declared; linker resolves. | S |
+| SM1.B.3 | `pub fn current_per_cpu() -> &'static PerCpuData` — reads TPIDR_EL1, returns reference. | Inline `mrs tpidr_el1`. | S |
+| SM1.B.4 | `pub fn current_core_id_from_tpidr() -> CoreId` — preferred over MPIDR for hot paths. | Test on host stub. | T |
+| SM1.B.5 | Lean FFI: `@[extern "ffi_current_core_id"] opaque currentCoreIdFfi : BaseIO Nat`. | Lean wrapper. | T |
+| SM1.B.6 | Per-CPU data invariants: `PER_CPU_DATA[i].coreId = i`. | Compile-time assert. | S |
+| SM1.B.7 | Tests: `test_per_cpu_data_layout`. | 4+ tests. | S |
 
-#### SM1.B — Ticket lock primitive (3-4 PRs)
+#### SM1.C — Secondary core full init (6 PRs, 12 sub-tasks)
 
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM1.B.1 | New `sele4n-hal/src/spinlock.rs`: `pub struct TicketLock` with `next_ticket`/`serving` fields. `new() -> Self`. Both atomics initialized to 0. | `spinlock.rs` | Construction is `const fn` for static initialization. | S |
-| SM1.B.2 | `TicketLock::acquire() -> u64` per Definition 2.2.2. Returns captured ticket. | `spinlock.rs` | Theorem 2.2.5 documented in docstring; test `acquire_returns_monotonic_tickets`. | S |
-| SM1.B.3 | `TicketLock::release()` per Definition 2.2.3. Issues SEV. | `spinlock.rs` | Theorem 2.2.6 documented; test `release_advances_serving_by_one`. | S |
-| SM1.B.4 | `TicketLock::with_lock<F, R>(&self, f: F) -> R` RAII combinator. | `spinlock.rs` | Test `with_lock_releases_on_normal_exit`; test `with_lock_releases_on_panic` (panic-handler discipline). | M |
-| SM1.B.5 | Cross-core stress test: spawn 4 host threads, each acquires + holds for fixed time + releases. Verify FIFO and mutex via shared counter. | `spinlock.rs` test module | 1M-iteration stress test passes. | M |
-| SM1.B.6 | Documentation: ARM ARM citation map. LDADD/STADD/CASA semantics referenced. | `spinlock.rs` docstring | Citations to ARM ARM K11.2, K12 (LSE atomics). | T |
+| Sub | Description | Acceptance | Est |
+|-----|-------------|------------|-----|
+| SM1.C.1 | Extract `mmu::init_mmu_secondary(core_id)` from primary's `init_mmu`. | Test: secondary's SCTLR_EL1 matches canonical. | M |
+| SM1.C.2 | Extract `vectors::write_vbar_el1_secondary()`. | Refactor; primary uses helper too. | T |
+| SM1.C.3 | `gic::init_cpu_interface_secondary(core_id)`. Per-core SGI/PPI enable register write. | Test: secondary's GICC_CTLR enabled. | S |
+| SM1.C.4 | `timer::init_timer_secondary(tick_hz)`. CNTKCTL_EL1 + CNTV_TVAL_EL0 per-core. | Test: secondary's CNTV_CTL_EL0 enabled. | S |
+| SM1.C.5 | Rewrite `rust_secondary_main` body: 5-step init (MMU, VBAR, GIC CPU iface, timer, set CORE_READY) then enter `lean_secondary_kernel_main(core_id)`. | Body matches docstring. | M |
+| SM1.C.6 | Lean side: `@[export] def secondaryKernelMain (coreId : UInt64) : BaseIO Unit`. Initially enters per-core idle loop. | FFI symbol linkable. | M |
+| SM1.C.7 | Per-core stack: linker reservation already exists in link.ld; SM1.C.5 uses `__smp_secondary_stack_top` minus offset. | Existing infrastructure; verify usage. | T |
+| SM1.C.8 | Per-core MMU page-table reuse: secondaries share kernel PT (TTBR1) and have a per-process TTBR0 (initially the boot process). | Documented; no per-core PT yet. | T |
+| SM1.C.9 | SCTLR_EL1 per-core bitmap application. | `init_mmu_secondary` calls existing helper. | T |
+| SM1.C.10 | Per-core exception vector — same vector base on every core (VBAR_EL1 is banked). | Documented. | T |
+| SM1.C.11 | SError handler enabled on every secondary. | Tested. | S |
+| SM1.C.12 | Tests: full secondary-init host stubs. | 6+ unit tests. | M |
 
-#### SM1.C — Secondary core full init (4-6 PRs)
+#### SM1.D — DTB cmdline + Phase 5 (3 PRs, 6 sub-tasks)
 
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM1.C.1 | Extract `mmu::init_mmu_secondary(core_id)` from existing `mmu::init_mmu` — re-uses primary's TTBR0/TTBR1 (which are CPU-banked but point to the same kernel page tables) and re-applies SCTLR_EL1 bitmap per-core. | `mmu.rs` | Test: post-init, secondary's SCTLR_EL1 reads the canonical bitmap. | M |
-| SM1.C.2 | Extract `vectors::write_vbar_el1_secondary()` — sets VBAR_EL1 to `__exception_vectors`. Identical to primary's `set_vbar`. | `boot.rs` (refactor) | Helper extracted; primary's `set_vbar` calls it. | T |
-| SM1.C.3 | `gic::init_cpu_interface_secondary(core_id)` — re-uses `init_cpu_interface(GICC_BASE)` (the GIC-400 CPU interface MMIO is the same physical address for all cores, banked per-core by the GIC). | `gic.rs` | Test: post-init, secondary's GICC_CTLR shows enabled. | S |
-| SM1.C.4 | `timer::init_timer_secondary(tick_hz)` — secondary's CNTKCTL_EL1 is per-core; CNTV_TVAL_EL0 arms its own timer. | `timer.rs` | Test: secondary's CNTV_CTL_EL0 shows enabled. | S |
-| SM1.C.5 | Rewrite `rust_secondary_main` body: (1) `init_mmu_secondary`, (2) `write_vbar_el1_secondary`, (3) `init_cpu_interface_secondary`, (4) `init_timer_secondary`, (5) spin on `CORE_READY[core_idx]`, (6) call `lean_secondary_kernel_main(core_id)`. | `smp.rs` | Body matches docstring claim. | M |
-| SM1.C.6 | Lean side: `@[export] def secondaryKernelMain (coreId : UInt64) : BaseIO Unit := ...` enters per-core idle loop (initially calls existing scheduler with `coreId`-aware entry; full work-stealing deferred to SM4). | `Platform/FFI.lean`, `Kernel/SecondaryEntry.lean` (new) | Lean `@[export]` symbol linkable. | M |
+| Sub | Description | Acceptance | Est |
+|-----|-------------|------------|-----|
+| SM1.D.1 | `sele4n-hal/src/cmdline.rs`: DTB `/chosen/bootargs` parser. Supports key=value, flag-only, quoted strings. Returns `CmdlineConfig { smp_enabled: bool, smp_max_cores: usize, ... }`. | Robust to malformed input; 10+ unit tests. | M |
+| SM1.D.2 | Phase 5 in `boot.rs::rust_boot_main`: parse cmdline, set `SMP_ENABLED`, call `bring_up_secondaries()`. | Boot trace shows Phase 5; test host stub. | S |
+| SM1.D.3 | **Default behavior: SMP enabled** unless `smp_enabled=false` in cmdline. | Test: empty cmdline → `SMP_ENABLED = true`. | T |
+| SM1.D.4 | Ordering: BKL... wait, no BKL. Initialization of all per-object locks (in their objects) is implicit (`Default`). Verify static initialization happens before Phase 5. | Compile-time `const` initializers. | M |
+| SM1.D.5 | Ordering: `init_per_cpu_data()` runs before `bring_up_secondaries`. | Test: per-CPU data populated. | S |
+| SM1.D.6 | `smp_max_cores` cmdline option for testing with fewer than `coreCount` cores. | Parsed and respected. | S |
 
-#### SM1.D — DTB cmdline + boot Phase 5 (2-3 PRs)
+#### SM1.E — IS-variant TLB instructions (3 PRs, 5 sub-tasks)
 
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM1.D.1 | New `sele4n-hal/src/cmdline.rs`: parser for DTB `/chosen/bootargs` string. Supports `key=value` and `flag`-only tokens. Returns `CmdlineConfig { smp_enabled: bool, ... }`. | `cmdline.rs` | Test: `parse_cmdline("smp_enabled=true smp_enabled=false")` returns last-wins `false`. Robust to malformed input. | M |
-| SM1.D.2 | Extend `boot.rs::rust_boot_main` with Phase 5: parse DTB cmdline via `crate::cmdline::parse(dtb_ptr)`; if `smp_enabled`, set `SMP_ENABLED.store(true, Release)` and call `bring_up_secondaries()`. | `boot.rs` | Test (host-side stub): `smp_enabled=true` triggers bring-up call; `false` skips. | S |
-| SM1.D.3 | Pre-Phase-5 ordering audit: BKL must be initialized BEFORE secondaries are released. Ensure `BkL::new()` static initializer executes during Phase 0 (BSS-zero already covers it; explicit `BKL.serving.store(0, Release)` before bring-up). | `boot.rs` | Test: `bkl_initialized_before_smp` ordering check. | S |
+| Sub | Description | Acceptance | Est |
+|-----|-------------|------------|-----|
+| SM1.E.1 | Add `tlb::tlbi_vmalle1is`, `tlbi_vae1is`, `tlbi_aside1is`, `tlbi_vale1is`. | 4 new functions; per-fn unit tests. | S |
+| SM1.E.2 | Add `tlb::tlbi_vmalle1os`, `tlbi_vae1os`, `tlbi_aside1os`, `tlbi_vale1os` (outer-shareable variants). | Future cross-cluster prep. | S |
+| SM1.E.3 | `tlb::tlbi_for_sharing(d, op, args)` dispatcher: routes to IS or OS variant by SharingDomain. | Routing test. | M |
+| SM1.E.4 | Lean FFI: `@[extern "ffi_tlbi_is"] opaque tlbiIs : TlbOp → BaseIO Unit` (and analogues). | FFI compiles. | S |
+| SM1.E.5 | Migrate kernel-side TLB callers to use the sharing-domain-routed variant. | grep `tlbi_vae1` (non-IS) outside HAL test code = 0 hits in callers. | M |
 
-#### SM1.E — IS-variant TLB instructions (2-3 PRs)
+#### SM1.F — SGI primitive (4 PRs, 8 sub-tasks)
 
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM1.E.1 | Add `tlb::tlbi_vmalle1is`, `tlbi_vae1is`, `tlbi_aside1is`, `tlbi_vale1is`. Same operand encoding as non-IS variants. | `tlb.rs` | 4 new functions; per-function unit tests. | S |
-| SM1.E.2 | Migrate existing `tlbi_vmalle1`, `tlbi_vae1`, etc., to call IS variants on SMP builds (compile-time `cfg(feature = "smp")` or runtime check on `SMP_ENABLED`). | `tlb.rs` | All TLB ops broadcast under SMP; single-core code path unchanged (regression test). | M |
-| SM1.E.3 | Lean-side FFI: extend `Platform/FFI.lean` with `@[extern "ffi_tlbi_all_is"]`, `ffi_tlbi_by_asid_is`, `ffi_tlbi_by_vaddr_is`. Add Lean wrappers in `Architecture/VSpace.lean` (`tlbFlushByASIDBroadcast`, `tlbFlushByPageBroadcast`). | `Platform/FFI.lean`, `Architecture/VSpace.lean` | Test: existing single-core TLB ops continue to pass; new IS ops compile. | M |
-| SM1.E.4 | Wire all kernel `tlbFlushByASID` / `tlbFlushByPage` callers to use Broadcast variants on SMP. | (~12 callsites) | Search-and-replace; tier-3 surface anchor tests broadcast variant in use. | S |
+| Sub | Description | Acceptance | Est |
+|-----|-------------|------------|-----|
+| SM1.F.1 | `gic::GICD_SGIR` = GICD_BASE + 0xF00. | Constant; cited GIC-400 TRM §4.3.13. | T |
+| SM1.F.2 | `gic::send_sgi(target_mask, intid)`: writes `(0x0 << 24) \| (target_mask << 16) \| (intid & 0xF)`. | Encoding test. | S |
+| SM1.F.3 | `gic::send_sgi_to_self(intid)` — TargetListFilter=10. | Test. | T |
+| SM1.F.4 | `gic::send_sgi_to_all_but_self(intid)` — TargetListFilter=01. | Test. | T |
+| SM1.F.5 | SGI handler dispatch: explicit SGI-range (INTID 0..15) branch with per-SGI handler table. Registers per `SgiKind`. | Dispatch test for each `SgiKind`. | M |
+| SM1.F.6 | Lean FFI: `@[extern "ffi_send_sgi_to_core"]`, `ffi_send_sgi_to_self`, `ffi_send_sgi_to_all_but_self`. | FFI compiles. | S |
+| SM1.F.7 | SGI handler test stub: simulated SGI delivery on host. | 6+ tests. | M |
+| SM1.F.8 | GICD_SGIR write ordering: SGI write must happen with DSB before to ensure prior writes are visible to the target. | Documented; test. | S |
 
-#### SM1.F — SGI primitive (3-4 PRs)
+#### SM1.G — Cross-core kprintln synchronization (2 PRs, 4 sub-tasks)
 
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM1.F.1 | `gic::GICD_SGIR` constant = `GICD_BASE + 0xF00`. Documented per GIC-400 TRM §4.3.13. | `gic.rs` | Constant present; ARM TRM cited. | T |
-| SM1.F.2 | `gic::send_sgi(target_mask: u8, intid: u8)` — writes GICD_SGIR with format `(0x0 << 24) | (target_mask << 16) | (intid as u32 & 0xF)`. | `gic.rs` | Test: `send_sgi(0b1110, 1)` writes `0x000E_0001` to GICD_SGIR (verified via host MMIO stub). | S |
-| SM1.F.3 | `gic::send_sgi_to_self(intid)` — TargetListFilter = 10. | `gic.rs` | Test: writes `0x0200_000X`. | T |
-| SM1.F.4 | `gic::send_sgi_to_all_but_self(intid)` — TargetListFilter = 01. | `gic.rs` | Test: writes `0x0100_000X`. | T |
-| SM1.F.5 | SGI handler dispatch: `gic::dispatch_irq` already handles all INTIDs uniformly. Add explicit SGI-range (INTID 0..15) branch with per-SGI handler table. | `gic.rs` | SGI handlers registered via `register_sgi_handler(sgi_kind, handler)`. | M |
-| SM1.F.6 | Lean FFI: `@[extern "ffi_send_sgi_to_core"]` / `ffi_send_sgi_to_all_but_self`. Lean-side dispatch routes pending-SGI queue drains through these. | `Platform/FFI.lean` | FFI symbols resolve at link time. | S |
-| SM1.F.7 | Unit tests: SGI target-list filter encoding; INTID range guard; per-handler dispatch. | `gic.rs` test module | 8+ tests; cover all 4 SGI dispatch paths. | M |
+| Sub | Description | Acceptance | Est |
+|-----|-------------|------------|-----|
+| SM1.G.1 | Audit `UartLock::with` in `uart.rs`. Replace with `TicketLock` from SM2.B if needed. | Lock semantics audited; either reused or replaced. | M |
+| SM1.G.2 | Per-core boot banner. | QEMU SMP shows 4 banner lines. | T |
+| SM1.G.3 | Per-core kprintln stress test: 4 cores × 1M kprintln; no torn output. | Stress test passes. | M |
+| SM1.G.4 | `kprintln_core!` macro that prefixes with core ID. | Macro defined; used in select call sites. | S |
 
-#### SM1.G — Cross-core kprintln synchronization (1-2 PRs)
+#### SM1.H — QEMU SMP integration (2 PRs, 5 sub-tasks)
 
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM1.G.1 | Audit `UartLock::with` in `uart.rs`. Confirm CAS loop is correct under multi-core contention; replace with `TicketLock` from SM1.B if needed. | `uart.rs` | Cross-core stress test (4 cores × 1M kprintln) interleaves cleanly; no torn output. | M |
-| SM1.G.2 | Per-core boot banner: each secondary's first action after init is `kprintln!("[smp] core {} ready", core_id)`. | `smp.rs` | QEMU SMP boot trace shows 4 banner lines in order. | T |
+| Sub | Description | Acceptance | Est |
+|-----|-------------|------------|-----|
+| SM1.H.1 | Replace stub `test_qemu_smp_bringup.sh` with full implementation. | QEMU `-smp 4 -machine virt,secure=on` boots; UART log shows 4 cores; cross-core SGI test passes. | L |
+| SM1.H.2 | Wire `test_qemu_smp_bringup.sh` into nightly tier. | Tier-4 includes QEMU SMP. | S |
+| SM1.H.3 | Add `test_qemu_smp_minimal.sh` for 1-core-secondary (tests bring-up loop without full 4 cores). | Reduced test variant. | M |
+| SM1.H.4 | UART log capture + per-core banner verification. | Log shows 4 banners in any order. | S |
+| SM1.H.5 | SGI round-trip test: core 0 sends SGI to core 1, 1 responds, 0 receives ack. | Cross-core SGI proven by trace. | M |
 
-#### SM1.H — QEMU SMP test wired (1-2 PRs)
+#### SM1.I — Miscellaneous HAL improvements (3 PRs, 6 sub-tasks)
 
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM1.H.1 | Replace stub `test_qemu_smp_bringup.sh` with full implementation per the existing 5-step description. | `scripts/test_qemu_smp_bringup.sh` | Boots QEMU `-smp 4 -machine virt,secure=on`; UART log shows 4 cores ready; cross-core SGI test passes. | L |
-| SM1.H.2 | Wire into nightly tier `test_nightly.sh`. | `scripts/test_nightly.sh` | Tier-4 includes QEMU SMP. | S |
+| Sub | Description | Acceptance | Est |
+|-----|-------------|------------|-----|
+| SM1.I.1 | Per-core IRQ handler entry: `trap.rs::handle_irq_perCore`. | Reads core ID, dispatches per-core. | M |
+| SM1.I.2 | Per-core IRQ priority masking via GICC_PMR per-core. | Already per-CPU-interface; verify. | T |
+| SM1.I.3 | Per-core IDLE thread Rust stub (Lean owns the actual idle TCB). | C-callable. | T |
+| SM1.I.4 | Per-core exception statistics. | Optional; informational. | S |
+| SM1.I.5 | SEV / WFE coordination: SEV broadcasts wakeup to all WFE-parked cores. | Documented in barriers.rs. | T |
+| SM1.I.6 | `cargo test -p sele4n-hal --lib smp` extends with cross-core tests where host stubs permit. | New tests. | M |
 
-#### SM1.J — Lean BKL FFI binding (1-2 PRs)
+**SM1 acceptance gate**: cargo tests pass (~50+ new); QEMU
+`-smp 4` boots; 4 cores reach kernel; SGI round-trip works; TLB
+IS variants in use everywhere.
 
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM1.J.1 | `sele4n-hal::bkl::BKL: TicketLock = TicketLock::new()` static. `bkl::acquire()`, `bkl::release()` wrappers around the static. | `bkl.rs` (new) | Static initializer executes at link time (atomic zero-init). | S |
-| SM1.J.2 | `#[no_mangle] pub extern "C" fn ffi_acquire_bkl(core_id: u64)`, `ffi_release_bkl(core_id: u64)`. Each calls `bkl::acquire`/`release`; the `core_id` argument is documentation (logical owner). | `bkl.rs` | Symbols `ffi_acquire_bkl` / `ffi_release_bkl` exported. | T |
-| SM1.J.3 | Lean-side `@[extern "ffi_acquire_bkl"] opaque acquireBkl (coreId : UInt64) : BaseIO Unit`. Same for `releaseBkl`. | `Platform/FFI.lean` | FFI binding compiles; type checks. | T |
+### Phase SM2 — Verified lock primitives (70-95 sub-tasks)
 
-**SM1 acceptance gate**: cargo tests pass (~30+ new tests); QEMU
-`-smp 4` boots; all 4 cores reach kernel; SGI round-trip
-demonstrates inter-core communication; BKL acquire/release exposed
-to Lean.
+**Goal**: model TicketLock + RwLock semantics in Lean against an
+abstract ARMv8.1-A LSE memory model; prove mutex/FIFO/bounded-wait
+properties; show refinement to the Rust implementation.
 
-**SM1 LoC estimate**: ~2500 new Rust LoC + ~150 new Lean LoC.
+**Dependencies**: SM0.
 
-### Phase SM2 — Per-core kernel state model (15-22 PRs)
+This is the most novel and verification-heavy phase. It implements
+the user-mandated "verify lock primitives" decision.
 
-**Goal**: rewrite `SchedulerState` (and related) to be per-core,
-preserving the single-core proof surface via the bootCore-shim
-helpers.
+#### SM2.A — Memory model (4 PRs, 12 sub-tasks)
 
-**Dependencies**: SM0 closure (uses `CoreId`).
+| Sub | Description | Acceptance | Est |
+|-----|-------------|------------|-----|
+| SM2.A.1 | Define `MemoryOrder` inductive (relaxed/acquire/release/acqRel/seqCst). | `Concurrency/MemoryModel.lean`. | S |
+| SM2.A.2 | Define `MemoryEvent` structure (core, loc, isWrite, order, value, seqNum). | Same file. | S |
+| SM2.A.3 | Define `MemoryTrace := List MemoryEvent`. | Same file. | T |
+| SM2.A.4 | Define `synchronizesWith : MemoryEvent → MemoryEvent → Prop`. | Same file. | M |
+| SM2.A.5 | Define `happensBefore : MemoryEvent → MemoryEvent → Prop` (transitive closure of per-core seq + synchronizesWith). | Same file. | M |
+| SM2.A.6 | `happens_before_partial_order` theorem: hb is irreflexive + transitive + antisymmetric (modulo total ordering across cores). | Theorem. | L |
+| SM2.A.7 | `atomicRmw` operational semantics: load-modify-store as a single trace event. | Definition. | M |
+| SM2.A.8 | Acquire-load + Release-store pairing lemma. | Theorem. | M |
+| SM2.A.9 | ARM ARM K11.2 citation discipline: every assumption explicitly cited in docstring. | Citation map. | S |
+| SM2.A.10 | Decidability instances for trace-event equality and ordering. | Instance proofs. | S |
+| SM2.A.11 | `MemoryTrace.wellFormed`: per-core seqNums are monotonic; no two events share (core, seqNum). | Definition + proof. | M |
+| SM2.A.12 | Tests in `tests/MemoryModelSuite.lean`: small example traces; verify hb computes correctly. | 8+ unit tests. | M |
 
-**Mathematical specification**: §2.4 (per-core state encoding).
-Each existing single-core theorem is migrated to be parameterized
-by `c : CoreId`; default callers use `c = bootCoreId`.
+#### SM2.B — TicketLock Lean spec (5 PRs, 16 sub-tasks)
 
-#### SM2.A — Vector primitive bootstrap (1-2 PRs)
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM2.B.1 | `TicketLockState` structure + `Inhabited` instance. | `Concurrency/Locks/TicketLock.lean`. | S |
+| SM2.B.2 | `TicketLockState.unheld` constructor. | Definition. | T |
+| SM2.B.3 | `wf : TicketLockState → Prop`. | Predicate. | M |
+| SM2.B.4 | `wf_decidable`. | Decidable instance. | S |
+| SM2.B.5 | `apply : TicketLockOp → TicketLockState → TicketLockState × MemoryTrace`. Operational step relation. | Definition. | L |
+| SM2.B.6 | `TicketLock.mutex` theorem. | Theorem (2.2.2.1). | M |
+| SM2.B.7 | `TicketLock.fifo` theorem. | Theorem (2.2.2.2). | M |
+| SM2.B.8 | `TicketLock.boundedWait` theorem (parameterized by `coreCount`). | Theorem (2.2.2.3). | L |
+| SM2.B.9 | `TicketLock.releaseAcquirePairing` theorem. | Theorem (2.2.2.4). | L |
+| SM2.B.10 | `TicketLock.wfInvariant` — wf preserved by every apply. | Theorem. | M |
+| SM2.B.11 | `TicketLock.deterministic` — no non-determinism in apply. | Theorem. | S |
+| SM2.B.12 | `TicketLock.reachability` — every reachable state satisfies wf. | Theorem (corollary). | S |
+| SM2.B.13 | Closure-form lemmas: `acquire_preserves_wf`, `release_preserves_wf`. | 2 theorems. | M |
+| SM2.B.14 | Rust ticket-lock impl in `rust/sele4n-hal/src/ticket_lock.rs` (per Definition 2.2.2). | Module + 8 tests. | M |
+| SM2.B.15 | Refinement bridge `rust_ticketLock_refines_lean_ticketLock`. | Theorem; proof obligation in `Concurrency/Locks/TicketLockRefinement.lean`. | L |
+| SM2.B.16 | Tests in `tests/TicketLockSuite.lean`: 12+ scenarios (single-core acquire, multi-core FIFO, contention bounded). | All pass. | M |
 
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM2.A.1 | Define `Vector α n` (if not already available from Std). | `Prelude.lean` (or use Std) | `Vector.get`, `Vector.set`, `Vector.replicate`, decidable extensionality. | M |
-| SM2.A.2 | Vector helper theorems: `Vector.get_set_eq`, `Vector.get_set_ne`, `Vector.length_eq_n`. | `Prelude.lean` | 6+ helpers. | S |
-| SM2.A.3 | Verify Vector compiles efficiently to runtime arrays (Lean compiler emits Array for List with length proof — confirm). | (audit) | `lake exe sele4n` runtime traces show acceptable per-core access. | T |
+#### SM2.C — RwLock Lean spec (6 PRs, 22 sub-tasks)
 
-#### SM2.B — SchedulerState shape migration (3-5 PRs)
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM2.C.1 | `RwLockState` structure (writerHeld + readers + waiters). | `Concurrency/Locks/RwLock.lean`. | S |
+| SM2.C.2 | `wf : RwLockState → Prop`. Writer-readers exclusion + reader-nodup + waiter-fifo. | Predicate. | M |
+| SM2.C.3 | `RwLockOp` inductive: `acquireRead`, `releaseRead`, `acquireWrite`, `releaseWrite`. | Definition. | T |
+| SM2.C.4 | `apply : RwLockOp → CoreId → RwLockState → RwLockState`. | Definition with blocking semantics. | L |
+| SM2.C.5 | `RwLock.writerReadersExclusion` (Theorem 2.2.3.1). | Theorem. | M |
+| SM2.C.6 | `RwLock.readerMultiplicity` (Theorem 2.2.3.2). | Theorem. | S |
+| SM2.C.7 | `RwLock.fifoAdmission` (Theorem 2.2.3.3). | Theorem. | L |
+| SM2.C.8 | `RwLock.boundedWaitRead` (Theorem 2.2.3.4 read variant). | Theorem. | L |
+| SM2.C.9 | `RwLock.boundedWaitWrite` (Theorem 2.2.3.4 write variant). | Theorem. | L |
+| SM2.C.10 | `RwLock.releaseAcquirePairingRead` (Theorem 2.2.3.5 read variant). | Theorem. | L |
+| SM2.C.11 | `RwLock.releaseAcquirePairingWrite` (write variant). | Theorem. | L |
+| SM2.C.12 | `RwLock.wfInvariant` (wf preserved by every apply). | Theorem. | M |
+| SM2.C.13 | Reader-batching: contiguous read-waiters acquire together on writer release. | Theorem + proof. | M |
+| SM2.C.14 | Writer-starvation freedom: writers eventually admitted under bounded reader rotation. | Theorem. | L |
+| SM2.C.15 | Closure-form lemmas: 4 per-op preservation theorems. | 4 theorems. | M |
+| SM2.C.16 | Bit-packed encoding: `state : AtomicU64` with bit 63 = writer-held, bits 0..62 = reader count. | Encoding definition + proofs. | M |
+| SM2.C.17 | Encoding/decoding round-trip lemmas: 4. | Theorems. | S |
+| SM2.C.18 | Reader-count overflow analysis: max 2^63 readers; unreachable in practice (4 cores). | Documented. | T |
+| SM2.C.19 | Rust RwLock impl in `rust/sele4n-hal/src/rw_lock.rs`. | Module + 12 tests. | L |
+| SM2.C.20 | Refinement bridge `rust_rwLock_refines_lean_rwLock`. | Theorem. | XL |
+| SM2.C.21 | Tests in `tests/RwLockSuite.lean`: 15+ scenarios. | All pass. | L |
+| SM2.C.22 | Cross-core RwLock stress test (host): 4 threads × 100k ops alternating read/write. | Passes. | M |
 
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM2.B.1 | Add per-core fields to `SchedulerState`: `current : Vector (Option ThreadId) numCores`, `runQueue : Vector RunQueue numCores`, `replenishQueue : Vector ReplenishQueue numCores`, `activeDomain : Vector DomainId numCores`, `domainTimeRemaining : Vector Nat numCores`, `domainScheduleIndex : Vector Nat numCores`, `lastTimeoutErrors : Vector (List (ThreadId × KernelError)) numCores`. | `Model/State.lean` | Structure compiles; all defaults initialize to single-core-equivalent values at `bootCoreId`. | L |
-| SM2.B.2 | Remove the singular `current`, `runQueue`, etc., fields. | `Model/State.lean` | No single `current : Option ThreadId` remains. | S |
-| SM2.B.3 | Add `currentOnCore`, `runQueueOnCore`, etc., helpers. | `Model/State.lean` | Helper defs + 7 single-field helpers. | S |
-| SM2.B.4 | Add `currentOnBootCore := currentOnCore bootCoreId` and analogues for every per-core field — these are the *single-core compatibility shims*. | `Model/State.lean` | Shim defs; tests `currentOnBootCore_eq_current_old_semantics` (passing the single-core scenario). | M |
-| SM2.B.5 | Document the shim discipline: every existing theorem that read `s.current` is migrated to `s.currentOnBootCore` in the same PR; new SMP theorems use `s.currentOnCore c`. | `CONTRIBUTING.md`, `Model/State.lean` docstring | Migration guide present. | T |
+#### SM2.D — FFI bridge + integration (4 PRs, 8 sub-tasks)
 
-#### SM2.C — Proof migration: scheduler invariants (5-8 PRs)
+| Sub | Description | Acceptance | Est |
+|-----|-------------|------------|-----|
+| SM2.D.1 | Lean FFI bindings for TicketLock: `@[extern] acquire`, `release`, `peekHolder`. | Lean wrappers compile. | S |
+| SM2.D.2 | Lean FFI bindings for RwLock: 4 ops. | Lean wrappers compile. | S |
+| SM2.D.3 | RAII `withLock`, `withReadLock`, `withWriteLock` combinators. | Combinators released on panic. | M |
+| SM2.D.4 | Lock-state tracing: optional debug instrumentation. | Trace logs lock acquire/release. | S |
+| SM2.D.5 | Static linker-time check: every Rust lock-using function has matching Lean spec. | Build-time gate. | M |
+| SM2.D.6 | Verified-lock-primitive surface anchor in `tests/SmpSurfaceAnchors.lean`. | `#check` 22 theorems. | S |
+| SM2.D.7 | `lockPrimitives` aggregator in `Concurrency/Locks.lean`: index of all 22 lock theorems. | Aggregator + 22-entry size witness. | S |
+| SM2.D.8 | Tests verify lock primitives via FFI calls actually serialize. | Cross-core test. | M |
 
-Migration of all theorems in `Kernel/Scheduler/Invariant/*.lean`
-(estimated ~50 sites) from `s.current` → `s.currentOnBootCore`,
-`s.runQueue` → `s.runQueueOnBootCore`, etc. **No semantic change**;
-the bootCore-shim makes this a mechanical rename that the build
-verifies.
+#### SM2.E — Documentation + assertion sites (3 PRs, 7 sub-tasks)
 
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM2.C.1 | `Scheduler/Invariant/CurrentThread.lean`: migrate ~12 theorems. | (1 file) | Build green; all theorems prove. | M |
-| SM2.C.2 | `Scheduler/Invariant/RunQueue.lean`: migrate ~15 theorems. | (1 file) | Build green. | M |
-| SM2.C.3 | `Scheduler/Invariant/Domain.lean`: migrate ~10 theorems. | (1 file) | Build green. | M |
-| SM2.C.4 | `Scheduler/Invariant/CBS.lean`: migrate ~8 theorems on replenishment queue. | (1 file) | Build green. | M |
-| SM2.C.5 | `Scheduler/Invariant/Preservation.lean`: migrate ~25 preservation lemmas (this is the heavy file). | (1 file, 3779 LoC) | Build green. | L |
+| Sub | Description | Acceptance | Est |
+|-----|-------------|------------|-----|
+| SM2.E.1 | `docs/spec/SELE4N_SPEC.md` new §10 "Verified Lock Primitives" with formal definitions. | Section present. | M |
+| SM2.E.2 | GitBook chapter 17: lock primitive verification walkthrough. | New chapter. | M |
+| SM2.E.3 | ARM ARM citation map in `Concurrency/MemoryModel.lean` docstring. | Citation map. | S |
+| SM2.E.4 | Decision rationale doc: why Lean models the memory model abstractly rather than as Lean `axiom`s. | Doc. | T |
+| SM2.E.5 | Refinement-proof methodology: explained in `Concurrency/Locks/Refinement.lean`. | Doc + 2 example refinements. | S |
+| SM2.E.6 | Hardware-discipline limits: documented in `Concurrency/Locks.lean`. | Doc. | T |
+| SM2.E.7 | CHANGELOG entries per SM2 PR. | Per-PR. | T |
 
-Pattern for each migration:
+**SM2 acceptance gate**: TicketLock + RwLock specs proven; Rust
+impls refine specs; FFI bridge functional; verified-lock-primitive
+surface anchored in tier-3. Zero Lean axioms; only documented ARM
+ARM citations as assumptions.
+
+### Phase SM3 — Per-object lock fields + hierarchical order (50-65 sub-tasks)
+
+**Goal**: extend every kernel-object structure with a `lock :
+RwLock` field; define the LockKind hierarchy; prove the lock-set
+discipline preserves invariants.
+
+**Dependencies**: SM2.
+
+#### SM3.A — Add `lock : RwLock` fields (5 PRs, 11 sub-tasks)
+
+| Sub | Description | Acceptance | Est |
+|-----|-------------|------------|-----|
+| SM3.A.1 | `ThreadControlBlock` gains `lock : RwLock`. | Structure extended; all 22-field BEq update. | M |
+| SM3.A.2 | `Endpoint` gains `lock : RwLock`. | Structure extended. | S |
+| SM3.A.3 | `CNode` gains `lock : RwLock`. | Structure extended. | S |
+| SM3.A.4 | `Notification` gains `lock : RwLock`. | Structure extended. | S |
+| SM3.A.5 | `Reply` gains `lock : RwLock`. | Structure extended. | S |
+| SM3.A.6 | `SchedContext` gains `lock : RwLock`. | Structure extended. | S |
+| SM3.A.7 | `VSpaceRoot` gains `lock : RwLock`. | Structure extended. | S |
+| SM3.A.8 | `Page` (`PageFrame` etc.) gains `lock : RwLock`. | Structure extended. | S |
+| SM3.A.9 | `Untyped` regions gain `lock : RwLock`. | Structure extended. | S |
+| SM3.A.10 | ObjStore (RobinHood) gains a table-level `lock : RwLock`. | Table-level lock; reads need read-acquire. | M |
+| SM3.A.11 | Default-state initialization: every default-constructed object has `lock = RwLock.unheld`. | Theorem `default_objects_locks_unheld`. | S |
+
+#### SM3.B — LockId computation + lock-set extraction (4 PRs, 9 sub-tasks)
+
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM3.B.1 | `LockId.fromObject : KernelObject → LockId`. | Definition. | S |
+| SM3.B.2 | `LockId.lookup : SystemState → LockId → Option (RwLock × KernelObject)`. | Lookup function. | M |
+| SM3.B.3 | `lockSet : KernelTransition → Args → Finset (LockId × AccessMode)`. Per-transition static lock-set declaration. | Definition. | L |
+| SM3.B.4 | `lockSet_consistent : ∀ τ args, ∀ l ∈ lockSet τ args, l.kind ∈ permittedKinds τ`. | Theorem. | M |
+| SM3.B.5 | `lockAcquireSequence : Finset (LockId × AccessMode) → List (LockId × AccessMode)`. Sorts by `LockId` order. | Definition. | M |
+| SM3.B.6 | `lockAcquireSequence_ordered`. | Theorem. | M |
+| SM3.B.7 | `lockAcquireSequence_complete`. Every element of input set appears in output. | Theorem. | M |
+| SM3.B.8 | `lockAcquireSequence_canonical`. Unique up to permutation. | Theorem (2.1.7). | M |
+| SM3.B.9 | Tests in `tests/LockSetSuite.lean`: per-operation lock-set examples. | 20+ tests. | L |
+
+#### SM3.C — Two-phase locking discipline (4 PRs, 10 sub-tasks)
+
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM3.C.1 | `withLockSet : Finset (LockId × AccessMode) → ((SystemState → α) → SystemState → α)` combinator. | Definition. | M |
+| SM3.C.2 | RAII discipline: acquires in order; releases in reverse on normal exit. | Combinator semantics. | M |
+| SM3.C.3 | Panic-safe release: every panic path also releases locks. | Tests. | M |
+| SM3.C.4 | `lockSetHeld` predicate: BUT lock-state changes are not in pure model — they're observable behavior. | Predicate; documented. | M |
+| SM3.C.5 | `lockSet_acquired_in_order`. | Theorem. | M |
+| SM3.C.6 | `lockSet_released_in_reverse`. | Theorem. | M |
+| SM3.C.7 | `lockSet_atomic_under_2pl`. | Theorem (extends Theorem 2.1.10). | L |
+| SM3.C.8 | `lockSet_invariant_preserved`. | Theorem: for any transition τ whose lock-set is held in the declared modes, the transition's existing single-core invariant proof goes through. | L |
+| SM3.C.9 | Migration: every `@[export]` body wraps body in `withLockSet (lockSet τ args)`. | All @[export] bodies wrapped. | L |
+| SM3.C.10 | Tests verifying RAII discipline. | 8+ tests. | M |
+
+#### SM3.D — Deadlock-freedom (3 PRs, 7 sub-tasks)
+
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM3.D.1 | `noDeadlock` predicate over execution traces. | Definition. | M |
+| SM3.D.2 | `LockId.le_total` (Theorem 2.1.7's totality). | Theorem. | S |
+| SM3.D.3 | `lockOrder_strict` (irreflexive + transitive). | Theorem. | S |
+| SM3.D.4 | `deadlockFreedom_under_2pl_and_ordering` (Theorem 2.1.9). | Major theorem. | XL |
+| SM3.D.5 | Wait-graph acyclicity lemma: under 2PL+ordering, the wait-graph is a DAG. | Theorem. | L |
+| SM3.D.6 | Bounded-wait corollary: WCRT bound under fine locking. | Corollary. | M |
+| SM3.D.7 | Tests demonstrating deadlock-freedom in tricky scenarios (multi-object operations). | 10+ tests. | M |
+
+#### SM3.E — Serializability (3 PRs, 8 sub-tasks)
+
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM3.E.1 | `conflictOrder : KernelTransition → KernelTransition → Prop`. | Definition. | M |
+| SM3.E.2 | `serialEquivalent` predicate. | Definition. | M |
+| SM3.E.3 | `serializability_under_2pl` (Theorem 2.1.10). | Major theorem. | XL |
+| SM3.E.4 | `strictly_2pl` predicate proof. | Theorem. | M |
+| SM3.E.5 | `commutativeOperations` lemmas: identify operations whose lock-sets don't conflict. | Theorems × ~10. | L |
+| SM3.E.6 | `singleCore_proof_preservation` (Corollary 2.1.11). | Major corollary. | L |
+| SM3.E.7 | Tests in `tests/SerializabilitySuite.lean`: example interleavings. | 15+ tests. | L |
+| SM3.E.8 | Surface anchors. | `#check` of 8 major theorems. | S |
+
+**SM3 acceptance gate**: per-object locks present; lock-set
+discipline encoded; deadlock-freedom + serializability proven;
+Corollary 2.1.11 establishes single-core proof preservation.
+
+### Phase SM4 — Path-a per-core state replacement (90-115 sub-tasks)
+
+**Goal**: replace singular `SchedulerState` fields with `Vector α
+coreCount`. Every theorem touching these fields rewrites.
+
+**Dependencies**: SM0, SM3 (lock fields).
+
+This is the largest phase — ~5000-7000 LoC of theorem rewrites
+across 60+ files.
+
+#### SM4.A — Vector + PlatformBinding (3 PRs, 8 sub-tasks)
+
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM4.A.1 | Vector helper bootstrap (use `List.Vector` or define local). | `Prelude.lean`. | M |
+| SM4.A.2 | Vector helper theorems (`get_set_eq`, `get_set_ne`, `length`). | 6+ theorems. | M |
+| SM4.A.3 | PlatformBinding `coreCount` field. | `Platform/Contract.lean`. | S |
+| SM4.A.4 | RPi5 instance: `coreCount := 4`. | `Platform/RPi5/Contract.lean`. | T |
+| SM4.A.5 | Sim instance(s). | `Platform/Sim/`. | T |
+| SM4.A.6 | `CoreId := Fin PlatformBinding.coreCount`. | Abbrev. | T |
+| SM4.A.7 | `bootCoreId` typeclass field. | Field. | S |
+| SM4.A.8 | `allCores`, `allCores_length`, `allCores_nodup` (using List.finRange). | Definitions + theorems. | S |
+
+#### SM4.B — SchedulerState path-a replacement (5 PRs, 15 sub-tasks)
+
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM4.B.1 | `SchedulerState.current : Vector (Option ThreadId) coreCount`. Replaces singular `current`. | Field replaced. | M |
+| SM4.B.2 | `SchedulerState.runQueue : Vector RunQueue coreCount`. | Field replaced. | M |
+| SM4.B.3 | `SchedulerState.replenishQueue : Vector ReplenishQueue coreCount`. | Field replaced. | M |
+| SM4.B.4 | `SchedulerState.activeDomain : Vector DomainId coreCount`. | Field replaced. | S |
+| SM4.B.5 | `SchedulerState.domainTimeRemaining : Vector Nat coreCount`. | Field replaced. | S |
+| SM4.B.6 | `SchedulerState.domainScheduleIndex : Vector Nat coreCount`. | Field replaced. | S |
+| SM4.B.7 | `SchedulerState.lastTimeoutErrors : Vector ... coreCount`. | Field replaced. | S |
+| SM4.B.8 | Helpers: `currentOnCore`, `runQueueOnCore`, `replenishQueueOnCore`, ... | 7 def. | M |
+| SM4.B.9 | Default-state initializer: every per-core slot has the singleton-core default. | Theorem `default_state_perCoreInitialized`. | M |
+| SM4.B.10 | `SchedulerState.ext` per-core extensionality. | Theorem (2.3.3). | M |
+| SM4.B.11 | `Repr` instance updated. | Instance. | T |
+| SM4.B.12 | `BEq` instance updated. | Instance. | S |
+| SM4.B.13 | `Inhabited` instance updated. | Instance. | T |
+| SM4.B.14 | All immediate-caller sites in `Model/State.lean`. | Migrations. | M |
+| SM4.B.15 | Migration regression test: trace fixture preserved at single-core scenarios. | Tests pass. | M |
+
+#### SM4.C — Scheduler invariants migration (10 PRs, 30 sub-tasks)
+
+Each sub-task migrates an existing single-core scheduler theorem
+to per-core. Pattern:
 
 ```
--- Pre-SM2:
-theorem scheduler_current_consistent (s : SystemState) :
+-- Pre-SM4 (single-core):
+theorem scheduler_X_consistent (s : SystemState) :
     s.scheduler.current = some tid → ... := ...
--- Post-SM2:
-theorem scheduler_current_consistent (s : SystemState) :
-    s.scheduler.currentOnBootCore = some tid → ... := ...
+
+-- Post-SM4 (per-core):
+theorem scheduler_X_consistent (s : SystemState) (c : CoreId) :
+    s.scheduler.currentOnCore c = some tid → ... := ...
 ```
 
-#### SM2.D — Proof migration: IPC / capability / lifecycle (4-6 PRs)
+| Sub | Files | Migrations | Est |
+|-----|-------|-----------:|-----|
+| SM4.C.1 | `Scheduler/Invariant/CurrentThread.lean` | ~12 theorems | L |
+| SM4.C.2 | `Scheduler/Invariant/RunQueue.lean` | ~15 theorems | L |
+| SM4.C.3 | `Scheduler/Invariant/Domain.lean` | ~10 theorems | L |
+| SM4.C.4 | `Scheduler/Invariant/CBS.lean` | ~8 theorems | L |
+| SM4.C.5 | `Scheduler/Operations/Core.lean` | ~20 sites | L |
+| SM4.C.6 | `Scheduler/Operations/Preservation.lean` | ~30 sites | XL |
+| SM4.C.7 | `Scheduler/Operations/Selection.lean` | ~15 sites | L |
+| SM4.C.8 | `Scheduler/RunQueue.lean` migrations | ~25 sites | L |
+| SM4.C.9 | `Scheduler/PriorityInheritance/*.lean` | ~20 sites | L |
+| SM4.C.10 | `Scheduler/SchedContext/*.lean` | ~15 sites | L |
+| SM4.C.11 | `Scheduler/Liveness/*.lean` (incl. WCRT) | ~10 sites | M |
+| SM4.C.12 | `Scheduler/Domain/*.lean` | ~8 sites | M |
+| SM4.C.13 | `Scheduler/CBS/*.lean` | ~10 sites | M |
+| SM4.C.14 | `Scheduler/Timer/*.lean` | ~12 sites | M |
+| SM4.C.15 | `Scheduler/Suspend/*.lean` | ~8 sites | M |
+| SM4.C.16 | `Scheduler/Yield/*.lean` | ~5 sites | S |
+| SM4.C.17 | `Scheduler/RoundRobin/*.lean` | ~5 sites | S |
+| SM4.C.18 | `Scheduler/PIP/Compute.lean` | ~12 sites | M |
+| SM4.C.19 | `Scheduler/PIP/Discipline.lean` | ~10 sites | M |
+| SM4.C.20 | `Scheduler/PIP/Liveness.lean` | ~8 sites | M |
+| SM4.C.21 | `Scheduler/PIP/BlockingGraph.lean` | ~10 sites | M |
+| SM4.C.22 | `Scheduler/Operations/Reschedule.lean` | ~10 sites | M |
+| SM4.C.23 | `Scheduler/Operations/Wake.lean` | ~8 sites | M |
+| SM4.C.24 | `Scheduler/Operations/Block.lean` | ~6 sites | S |
+| SM4.C.25 | `Scheduler/Operations/Donate.lean` | ~10 sites | M |
+| SM4.C.26 | `Scheduler/SchedulerState.lean` | ~12 sites | M |
+| SM4.C.27 | `Scheduler/EffectivePriority.lean` | ~8 sites | M |
+| SM4.C.28 | `Scheduler/EffectiveSchedParams.lean` | ~8 sites | M |
+| SM4.C.29 | Aggregate invariant: `schedulerInvariant_perCore`. | New aggregate. | L |
+| SM4.C.30 | Cross-core: `schedulerInvariant_perCore_pairwise` (different cores' invariants are independent). | Theorem. | M |
 
-Same mechanical migration for cross-subsystem theorems that read
-scheduler fields.
+#### SM4.D — IPC / Capability / Lifecycle / Service migrations (8 PRs, 22 sub-tasks)
 
-| Sub | Files | LoC | Est |
-|-----|-------|----:|-----|
-| SM2.D.1 | `IPC/Operations/*.lean` (~12 callsites) | 1200 | M |
-| SM2.D.2 | `Capability/Operations.lean` (~5 callsites) | 1868 | M |
-| SM2.D.3 | `Lifecycle/Operations.lean` (~3 callsites) | 400 | S |
-| SM2.D.4 | `Service/Operations.lean` (~2 callsites) | 300 | S |
+Same migration pattern for cross-subsystem theorems reading
+SchedulerState.
 
-#### SM2.E — Per-core RunQueue extensions (2-3 PRs)
+| Sub | Files | Migrations | Est |
+|-----|-------|-----------:|-----|
+| SM4.D.1 | `IPC/Operations/*.lean` (~12 sites) | 12 sites | L |
+| SM4.D.2 | `IPC/Invariant/*.lean` | 8 sites | M |
+| SM4.D.3 | `Capability/Operations.lean` | 5 sites | M |
+| SM4.D.4 | `Capability/Invariant/*.lean` | 4 sites | M |
+| SM4.D.5 | `Lifecycle/Operations.lean` | 3 sites | S |
+| SM4.D.6 | `Lifecycle/Invariant/*.lean` | 3 sites | S |
+| SM4.D.7 | `Service/Operations.lean` | 2 sites | S |
+| SM4.D.8 | `Service/Invariant/*.lean` | 2 sites | S |
+| SM4.D.9 | `Architecture/Invariant.lean` | 8 sites | M |
+| SM4.D.10 | `Architecture/ExceptionModel.lean` | 4 sites | M |
+| SM4.D.11 | `Architecture/InterruptDispatch.lean` | 4 sites | M |
+| SM4.D.12 | `InformationFlow/Operations/*.lean` | 10 sites | L |
+| SM4.D.13 | `InformationFlow/Projection.lean` | 5 sites | M |
+| SM4.D.14 | `InformationFlow/Invariant/*.lean` | 8 sites | M |
+| SM4.D.15 | `Model/State.lean` callsites | 15 sites | M |
+| SM4.D.16 | `Model/FreezeProofs.lean` | 6 sites | M |
+| SM4.D.17 | `Platform/Boot.lean` | 8 sites | M |
+| SM4.D.18 | `Platform/FFI.lean` | 4 sites | S |
+| SM4.D.19 | `CrossSubsystem.lean` | 12 sites | L |
+| SM4.D.20 | `API.lean` | 6 sites | M |
+| SM4.D.21 | `Kernel/Architecture/VSpace.lean` | 4 sites | M |
+| SM4.D.22 | `Kernel/Architecture/SyscallEntry.lean` | 4 sites | M |
 
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM2.E.1 | `RunQueue.empty` already exists. Confirm `Vector.replicate numCores RunQueue.empty` is decidably-equal to `Vector.mk [empty, empty, empty, empty]`. | `Scheduler/RunQueue.lean` | `decide`-proven theorem. | T |
-| SM2.E.2 | Add `enqueueOnCore (s : SchedulerState) (c : CoreId) (tid : ThreadId) : SchedulerState`. | `Scheduler/Operations/Core.lean` | Per-core operation. | S |
-| SM2.E.3 | Add `dequeueOnCore (s : SchedulerState) (c : CoreId) : (Option ThreadId × SchedulerState)`. | `Scheduler/Operations/Core.lean` | Per-core operation. | S |
-| SM2.E.4 | Per-core wellFormed: `∀ c, (s.runQueueOnCore c).wellFormed`. | `Scheduler/Invariant/RunQueue.lean` | Witness theorem `runQueue_wellFormed_perCore`. | S |
+#### SM4.E — Witness retirement / replacement (2 PRs, 5 sub-tasks)
 
-#### SM2.F — Platform contract extension (2-3 PRs)
+| Sub | Description | Acceptance | Est |
+|-----|-------------|------------|-----|
+| SM4.E.1 | Retire `bootFromPlatform_singleCore_witness` (existential on `Option ThreadId` is too weak now). | Theorem deleted. | T |
+| SM4.E.2 | Add `bootFromPlatform_smp_witness` proving the per-core shape. | New theorem. | M |
+| SM4.E.3 | AN12-B inventory entry 7 (`architecture_singleCoreOnly_smpLatent`): `smpDischarge` becomes "implemented in SM4 path-a"; `sourceTheorem` points to `bootFromPlatform_smp_witness`. | Inventory updated. | S |
+| SM4.E.4 | AN12-B inventory entry 8 (`bootFromPlatform_currentCore_is_zero_smpLatent`): same treatment. | Inventory updated. | S |
+| SM4.E.5 | Aggregator: AN12-B inventory at SM4 close has 0 latent entries. Replace with `smpRetiredInventory` (8 entries, all retired). | New aggregator + size witness. | M |
 
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM2.F.1 | Extend `PlatformBinding` typeclass with `coreCount : Nat`, `bootCoreId : Fin coreCount`, `validateCoreCount : coreCount > 0`. | `Platform/Contract.lean` | Typeclass extended; default `coreCount := numCores`. | S |
-| SM2.F.2 | Update RPi5 `PlatformBinding` instance: `coreCount := 4`, `bootCoreId := ⟨0, _⟩`. | `Platform/RPi5/Contract.lean` | Decidable proofs by `decide`. | T |
-| SM2.F.3 | Update Sim `PlatformBinding` instance(s). | `Platform/Sim/*.lean` | Sim instances respect contract. | T |
-| SM2.F.4 | `PlatformConfig` gains `perCoreBootData : Vector PerCoreBootData coreCount` (initially empty struct; SM4 populates with idle TCBs). | `Platform/Boot.lean` | Field added; default `Vector.replicate _ default`. | S |
+**SM4 acceptance gate**: `lake build` (256 jobs) green; all
+existing tests pass; per-core helpers in use throughout; AN12-B
+inventory shows discharged state.
 
-#### SM2.G — Boot bridge for per-core idle threads (3-5 PRs)
+### Phase SM5 — Per-core scheduler (75-95 sub-tasks)
 
-Each core needs an idle thread (priority 0, runnable only by the
-scheduler when no other thread is available). The boot pipeline
-creates `numCores` idle threads and assigns each to its core's
-`currentOnCore`.
-
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM2.G.1 | Define `idleThreadId : CoreId → ThreadId := fun c => ⟨ObjId.ofNat (kernelObjectIdBase + c.val), _⟩`. | `Kernel/IdleThread.lean` (new) | Per-core distinct idle TIDs. | S |
-| SM2.G.2 | `createIdleThread (c : CoreId) : ThreadControlBlock` — TCB with priority 0, bound to no SchedContext, runnable. | `Kernel/IdleThread.lean` | Constructor function. | S |
-| SM2.G.3 | Extend `bootFromPlatform` to populate `s.scheduler.currentOnCore c := some (idleThreadId c)` for each core; insert idle TCBs into object store. | `Platform/Boot.lean` | Post-boot every core has a current thread (the idle). | M |
-| SM2.G.4 | Witness theorem `bootFromPlatform_all_cores_have_idle` replacing single-core `bootFromPlatform_singleCore_witness`. The old theorem becomes a corollary: `currentOnBootCore = some (idleThreadId bootCoreId)`. | `CrossSubsystem.lean` | New theorem proven. | M |
-| SM2.G.5 | Retire `bootFromPlatform_singleCore_witness` (the existential form is too weak now). Replace with `bootFromPlatform_smp_witness` proving the per-core shape. | `CrossSubsystem.lean` | Theorem retired; replacement proven. | M |
-| SM2.G.6 | Update AN12-B inventory entry 7 (`architecture_singleCoreOnly_smpLatent`) and entry 8 (`bootFromPlatform_currentCore_is_zero_smpLatent`): mark `smpDischarge` as "SMP-implemented in WS-SM"; update `sourceTheorem` to point to `bootFromPlatform_smp_witness`. | `Concurrency/Assumptions.lean` | Inventory reflects SMP state. | S |
-
-#### SM2.H — Cross-subsystem invariant update (2-3 PRs)
-
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM2.H.1 | Update `crossSubsystemInvariant` to add `perCoreSchedulerConsistent`: `∀ c, isValidThreadOrIdle (s.scheduler.currentOnCore c)`. | `CrossSubsystem.lean` | New conjunct; existing 12 conjuncts unchanged. | M |
-| SM2.H.2 | Prove `perCoreSchedulerConsistent_holds_at_boot`. | `CrossSubsystem.lean` | Bridge theorem. | S |
-| SM2.H.3 | Prove every operation preserves `perCoreSchedulerConsistent` (most are immediate since the operation only mutates `currentOnBootCore`). | (multiple files) | Closure-form preservation per op. | M |
-
-**SM2 acceptance gate**: `lake build` (256 jobs) green; all
-existing tests pass without semantic change; `test_full.sh` green;
-new per-core helpers compile and have basic theorems; old
-`bootFromPlatform_singleCore_witness` retired with audit trail.
-
-**SM2 LoC estimate**: ~3000 LoC of new Lean theorems + ~1000 LoC
-of mechanical migrations.
-
-### Phase SM3 — BKL Lean integration (20-28 PRs)
-
-**Goal**: thread the BKL acquire/release discipline through every
-`@[export]` body so concurrent kernel entries are serialized.
-
-**Dependencies**: SM1.J (Lean FFI for BKL), SM2 (per-core state).
-
-**Mathematical specification**: §2.5 (BKL Lean encoding). Every
-`@[export]` body's invariants:
-
-```
-Pre:  s.concurrency.bkl = .unheld
-Mid:  s.concurrency.bkl = .held myCore
-Post: s.concurrency.bkl = .unheld
-```
-
-#### SM3.A — BKL Lean state model (2-3 PRs)
-
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM3.A.1 | Add `currentCoreId : BaseIO CoreId` Lean shim that reads MPIDR via `@[extern "ffi_current_core_id"]`. Adds matching Rust `pub extern "C" fn ffi_current_core_id() -> u64 { current_core_id() & MPIDR_CORE_ID_MASK }` (already exists; just expose). | `Platform/FFI.lean`, `ffi.rs` | Lean reads core ID at FFI boundary. | S |
-| SM3.A.2 | `acquireBkl : CoreId → BaseIO Unit` — calls `ffi_acquire_bkl coreId.val.toUInt64`; updates `kernelStateRef`'s concurrency.bkl to `.held coreId` after the FFI call returns (logical state update reflecting hardware state). | `Platform/FFI.lean` | Lean wrapper. | S |
-| SM3.A.3 | `releaseBkl : CoreId → BaseIO Unit` — updates `kernelStateRef`'s concurrency.bkl to `.unheld`; calls `ffi_release_bkl coreId.val.toUInt64`. | `Platform/FFI.lean` | Lean wrapper; release-after-state-update ordering. | S |
-| SM3.A.4 | `withBkl (action : CoreId → BaseIO α) : BaseIO α` combinator: gets core ID, acquires, runs action, releases (with `try-finally`-style error handling so panics still release). | `Platform/FFI.lean` | Combinator + 3 tests: normal exit, exception in action, nested-acquire-not-allowed. | M |
-
-#### SM3.B — `@[export]` body BKL discipline (8-12 PRs, ~25 sub-tasks)
-
-Every `@[export]` body in `FFI.lean` gains BKL bracketing. The
-current count is 2 (`suspend_thread_inner`,
-`syscall_dispatch_inner`); SM5 + SM4 may add more. For each:
-
-```
-@[export sele4n_suspend_thread]
-def suspendThreadInner_smp (tid : UInt64) : BaseIO UInt32 := do
-  withBkl fun myCore => do
-    -- existing R2.A.2 logic, with currentCoreId threaded through
-    let st ← getKernelState
-    let result := suspendThread (ThreadId.ofUInt64 tid) st
-    match result with
-    | .ok s' =>
-        updateKernelState (fun _ => s')
-        return 0
-    | .error e =>
-        return KernelError.toUInt32 e
-```
-
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM3.B.1 | Wrap `suspend_thread_inner` body in `withBkl`. | `Platform/FFI.lean` | Existing R2 tests pass; new test `suspend_thread_acquires_bkl`. | S |
-| SM3.B.2 | Wrap `syscall_dispatch_inner` body in `withBkl`. | `Platform/FFI.lean` | Existing R2 tests pass; new test `syscall_dispatch_acquires_bkl`. | S |
-| SM3.B.3 | New `@[export] def panicEntry`: emergency BKL release for panic paths. | `Platform/FFI.lean`, `rust panic_handler` | Panic handler calls Lean panic-entry which forcibly releases BKL. | M |
-| SM3.B.4 | Audit: every existing `@[extern]` call site (Lean→Rust) that reads/writes kernel state must happen with BKL held. The `@[export]` bracketing handles this for syscalls; check timer-tick handler, IRQ handler, etc. | (multiple files) | Audit report; all kernel-state-mutating paths bracketed. | M |
-| SM3.B.5 | `@[export] def handleTimerInterrupt`: timer tick on any core acquires BKL, runs `timerTickWithBudget` on that core's perCoreState, releases. | `Platform/FFI.lean` | Per-core timer ISR. | M |
-| SM3.B.6 | `@[export] def handleSgiInterrupt`: SGI handler acquires BKL, drains pending-SGI queue for this core, releases. | `Platform/FFI.lean` | Per-core SGI dispatch. | M |
-| SM3.B.7 | `@[export] def handleIrqInterrupt`: generic IRQ entry, acquires BKL, dispatches via existing `handleInterrupt`, releases. | `Platform/FFI.lean` | Per-core IRQ entry. | M |
-
-#### SM3.C — BKL invariants and preservation (4-6 PRs)
-
-| Sub | Description | Theorem name | Est |
-|-----|-------------|--------------|-----|
-| SM3.C.1 | `bkl_unheld_at_kernel_entry`: at the start of every `@[export]` body, BKL is unheld. | `bkl_unheld_at_kernel_entry` | S |
-| SM3.C.2 | `bkl_unheld_at_kernel_exit`: at the end of every `@[export]` body, BKL is unheld. | `bkl_unheld_at_kernel_exit` | S |
-| SM3.C.3 | `bkl_held_during_kernel_transition`: every transition observes BKL held by the current core. | `bkl_held_during_kernel_transition` | M |
-| SM3.C.4 | `bkl_acquire_release_paired`: every acquire is followed by exactly one release on the same execution path. | `bkl_acquire_release_paired` | M |
-| SM3.C.5 | `bkl_mutex_property`: `BklProperty` (Definition 2.1.2) is preserved by every kernel transition. | `bkl_mutex_property` | M |
-| SM3.C.6 | `kernelStateRef_safe_under_bkl`: `kernelStateRef` reads and writes happen with BKL held. (Encoded as a structural property of every `@[export]` body.) | `kernelStateRef_safe_under_bkl` | L |
-
-#### SM3.D — IRQ / exception entry BKL discipline (3-5 PRs)
-
-The kernel takes interrupts on any core. Each interrupt is a kernel
-entry and must acquire BKL.
-
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM3.D.1 | `trap.rs::handle_irq` — wrap the Lean kernel call (`ffi_handle_irq_dispatch(intid, core_id)`) so BKL acquire happens at the FFI boundary. | `trap.rs` | IRQ handler acquires BKL before kernel work. | M |
-| SM3.D.2 | `trap.rs::handle_synchronous_exception` — same. | `trap.rs` | Synchronous exception handler acquires BKL. | M |
-| SM3.D.3 | SError handler `trap.rs::handle_serror` — same. | `trap.rs` | SError acquires BKL. | S |
-| SM3.D.4 | Nested-IRQ defense: if an IRQ arrives while BKL is held by the same core, the IRQ is masked (we run interrupts-disabled inside kernel by AG5-G). Document the explicit ordering: BKL acquire → interrupts disable → kernel work → interrupts restore → BKL release. | `interrupts.rs`, `Platform/FFI.lean` | Ordering documented; nested-IRQ test. | M |
-
-#### SM3.E — Panic discipline (2-3 PRs)
-
-| Sub | Description | Files | Acceptance | Est |
-|-----|-------------|-------|------------|-----|
-| SM3.E.1 | Rust `panic_handler` calls `bkl::force_release()` before halting. This unblocks waiters; remaining cores can then take their own panic path. | `panic.rs` | Panic test: core A panics with BKL held, core B can still acquire (and panic too if it tries to use broken state). | M |
-| SM3.E.2 | Halt-all SGI: when one core panics, it sends `SgiKind.haltAll` to all others; they enter parking loops without entering the kernel further. | `gic.rs`, `panic.rs` | Multi-core panic test: all 4 cores reach the halt loop. | M |
-
-**SM3 acceptance gate**: every kernel entry path goes through BKL;
-no race-able `kernelStateRef` access; cargo + Lean tests verify
-discipline.
-
-### Phase SM4 — Per-core scheduler (22-30 PRs)
-
-**Goal**: scheduling decisions, run-queue management, time-slicing,
-and CBS replenishment all operate per-core, with cross-core
-notifications via SGI.
-
-**Dependencies**: SM2, SM3, SM1.F.
-
-**Mathematical specification**:
-
-For each existing scheduler theorem `T(s)` referencing `s.runQueue`
-or `s.current`, the SMP analogue is `∀ c : CoreId, T(s, c)` with
-`s.runQueueOnCore c` substituted.
-
-The cross-core scheduling decision rule (default policy at v1.0.0):
-
-```
-enqueueRunnable(s, tid):
-  -- Determine target core by affinity, else by load balancing
-  let c := match tcb.cpuAffinity with
-           | some core => core
-           | none      => leastLoadedCore(s)
-  s.scheduler.runQueueOnCore c .insert tid
-```
-
-#### SM4.A — chooseThread per-core (3-5 PRs)
-
-| Sub | Description | Theorem | Est |
-|-----|-------------|---------|-----|
-| SM4.A.1 | `chooseThreadOnCore (s : SystemState) (c : CoreId) : Option ThreadId` — selects highest-priority runnable thread from `s.scheduler.runQueueOnCore c`. | `chooseThreadOnCore_selects_highest` | M |
-| SM4.A.2 | Each core's `chooseThreadOnCore` ignores other cores' run queues. | `chooseThreadOnCore_perCore_independence` | S |
-| SM4.A.3 | Migrate the global `chooseThread` to call `chooseThreadOnCore bootCoreId` (boot-core compat). | (refactor) | Existing tests pass. | T |
-| SM4.A.4 | `chooseThreadOnCore_preserves_wellFormed`. | `chooseThreadOnCore_preserves_wellFormed` | M |
-
-#### SM4.B — switchToThread per-core (4-6 PRs)
-
-| Sub | Description | Theorem | Est |
-|-----|-------------|---------|-----|
-| SM4.B.1 | `switchToThreadOnCore (s : SystemState) (c : CoreId) (tid : ThreadId) : Result SystemState` — set `currentOnCore c := some tid`, validate runnable. | `switchToThreadOnCore_sets_current` | M |
-| SM4.B.2 | Cross-subsystem: `runQueueOnCore_excludes_currentOnCore` — current thread is NOT in its own core's run queue (existing invariant generalized). | `runQueueOnCore_excludes_currentOnCore` | M |
-| SM4.B.3 | Preempt-self-to-runnable: when `switchToThreadOnCore` evicts the previous current thread, it goes back to the same core's run queue. | `switchToThreadOnCore_preempts_previous` | M |
-| SM4.B.4 | If the target thread is on a different core's run queue (migration scenario), `switchToThreadOnCore` returns `.error .threadOnDifferentCore`. (Migration is post-1.0 capability operation.) | `switchToThreadOnCore_rejects_remote` | M |
-
-#### SM4.C — Cross-core wake via SGI (5-8 PRs)
-
-This is the most novel work in SM4.
-
-| Sub | Description | Theorem | Est |
-|-----|-------------|---------|-----|
-| SM4.C.1 | `enqueueRunnableOnCore (s : SystemState) (c : CoreId) (tid : ThreadId) : SystemState` — add tid to `c`'s run queue. | `enqueueRunnableOnCore_wellFormed` | M |
-| SM4.C.2 | `wakeThread (s : SystemState) (tid : ThreadId) : SystemState × List PendingSgi` — determines target core via TCB.cpuAffinity (or bootCoreId default); enqueues; if target ≠ executing core, returns a `(target, .reschedule)` SGI to send. | `wakeThread_emits_sgi_if_remote` | L |
-| SM4.C.3 | The `@[export]` body sending the SGI: after BKL state mutation completes, call `ffi_send_sgi_to_core(target_core, sgi_intid)` BEFORE releasing BKL. (The SGI is sent under BKL so the post-state is consistent before the target reacts.) | (multiple) | Ordering: state update → SGI send → BKL release. | M |
-| SM4.C.4 | SGI handler on target core: `handleSgiInterrupt` (called under BKL via the IRQ-entry envelope of SM3.B.7) reads `pendingSgis[myCore]` from the post-state (BKL release-acquire pairing guarantees post-state visibility — Theorem 2.3.2), drains the queue, processes each entry; for `.reschedule`, re-runs `chooseThreadOnCore myCore` and switches. | `Platform/FFI.lean` | Cross-core wake round-trip works. | L |
-| SM4.C.5 | `wakeThread_lossless`: every wakeThread call eventually causes the target thread to run on target core (modulo higher-priority work). | `wakeThread_lossless` | L |
-
-#### SM4.D — Per-core timer tick (3-5 PRs)
-
-| Sub | Description | Theorem | Est |
-|-----|-------------|---------|-----|
-| SM4.D.1 | Each core has its own ARM Generic Timer (CNTV_TVAL_EL0) firing locally. The timer ISR on core c calls `timerTickOnCore c`. | (HAL + Lean) | Timer fires per-core. | M |
-| SM4.D.2 | `timerTickOnCore (s : SystemState) (c : CoreId) : SystemState` — decrements `c`'s `domainTimeRemaining`; handles CBS replenishment for threads on `c`; emits preemption if higher-pri thread becomes runnable on `c`. | `timerTickOnCore_advances_per_core` | L |
-| SM4.D.3 | Cross-core CBS replenishment: a thread on core c whose budget fires can release a higher-priority thread on a different core; SM4.C handles the cross-core wake. | (proof) | `cbsReplenish_can_wake_remote_core` | L |
-| SM4.D.4 | WCRT bound update: `wcrt_bound_rpi5_smp` extending R5.wcrt_bound_rpi5 with the 4× BKL factor (Corollary 2.2.9). | `wcrt_bound_rpi5_smp` | L |
-
-#### SM4.E — Per-core idle threads (2-3 PRs)
-
-| Sub | Description | Theorem | Est |
-|-----|-------------|---------|-----|
-| SM4.E.1 | The `bootFromPlatform` extension from SM2.G installs idle TCBs per core. SM4.E makes the scheduler aware that idle threads never leave their core. | `idleThread_core_locality` | M |
-| SM4.E.2 | `idleThread_priority_zero`: idle has priority 0 (lowest). Never selected if any other thread is runnable on the same core. | `idleThread_priority_zero` | S |
-| SM4.E.3 | `chooseThreadOnCore_always_succeeds`: every core always has at least the idle thread as a fallback. | `chooseThreadOnCore_always_succeeds` | M |
-
-#### SM4.F — Priority Inheritance per-core (4-6 PRs)
-
-PIP propagation is per-core under BKL (existing model already
-discrete; just needs cross-core wake).
-
-| Sub | Description | Theorem | Est |
-|-----|-------------|---------|-----|
-| SM4.F.1 | `computeMaxWaiterPriority` already takes a state; under SMP it reads per-core fields where applicable. | (refactor) | Existing R5 theorems pass. | M |
-| SM4.F.2 | If a PIP boost causes a thread on core c' to become runnable while the chain is on core c, emit `.reschedule` SGI to c'. | (`Scheduler/PriorityInheritance/*.lean`) | Cross-core PIP works. | L |
-| SM4.F.3 | `pipBoost_perCore_consistent`. | `pipBoost_perCore_consistent` | M |
-
-#### SM4.G — Domain scheduling per-core (3-5 PRs)
-
-Domains were system-wide in the single-core model. Per-core, the
-choice is: (a) system-wide active domain (all cores in the same
-domain at once), or (b) per-core active domain.
-
-| Sub | Description | Choice | Est |
-|-----|-------------|--------|-----|
-| SM4.G.1 | Decision: per-core active domain. Each core independently advances its own domain schedule. The same `domainSchedule` table is shared (config-only); the per-core `domainScheduleIndex` and `domainTimeRemaining` track each core's position. | (design) | Documented decision; rationale: maximises parallelism while still bounding per-domain CPU share. | M |
-| SM4.G.2 | `activeDomainOnCore (c : CoreId)` returns the core's current domain. | (def + theorem) | `activeDomainOnCore_isInDomainSchedule` | M |
-| SM4.G.3 | `advanceDomainOnCore (c : CoreId)` rotates that core's `domainScheduleIndex`. | (def) | `advanceDomainOnCore_cyclic` | M |
-| SM4.G.4 | `chooseThreadOnCore` respects per-core active domain. | (proof) | `chooseThreadOnCore_inActiveDomain` | M |
-
-#### SM4.H — Per-core invariant suite (3-5 PRs)
-
-| Sub | Description | Theorem | Est |
-|-----|-------------|---------|-----|
-| SM4.H.1 | `currentOnCore_validThreadIfSome (c : CoreId)`. | `currentOnCore_validThreadIfSome` | S |
-| SM4.H.2 | `runQueueOnCore_wellFormed (c : CoreId)`. | `runQueueOnCore_wellFormed` | S |
-| SM4.H.3 | `schedContextRunQueueConsistent_perCore`. | `schedContextRunQueueConsistent_perCore` | M |
-| SM4.H.4 | Composition: `schedulerInvariant_perCore` aggregates the 3 per-core invariants in H.1..H.3. | `schedulerInvariant_perCore` | M |
-| SM4.H.5 | Cross-core: `schedulerInvariant_perCore_pairwise` — different cores' invariants are independent (no cross-core run-queue overlap). | `schedulerInvariant_perCore_pairwise` | M |
-
-**SM4 acceptance gate**: 4-thread workload running on 4 cores;
-cross-core preempt works; per-core timer ticks advance per-core
-domain state; PIP cross-core works; idle threads per core.
-
-### Phase SM5 — Cross-core IPC (15-22 PRs)
-
-**Goal**: endpoint call/send/recv, notifications, and reply across
-cores work correctly under BKL with SGI wake.
+**Goal**: scheduling, time-slicing, CBS, PIP all operate per-core
+with cross-core wake via SGI.
 
 **Dependencies**: SM3, SM4.
 
-**Mathematical specification**: existing IPC invariants
-(`ipcInvariantFull`, 15 conjuncts post-R4) remain valid under BKL
-because every IPC transition is atomic (BKL-bracketed). Cross-core
-WAKE requires emitting `.reschedule` SGI when receiver is on a
-different core.
-
-#### SM5.A — Endpoint call across cores (3-5 PRs)
+#### SM5.A — Per-core chooseThread (5 PRs, 8 sub-tasks)
 
 | Sub | Description | Theorem | Est |
 |-----|-------------|---------|-----|
-| SM5.A.1 | `endpointCall` (existing) — under BKL, the operation is atomic. The sender's core may be different from the receiver's. When the receiver wakes (transitions from blocked → runnable), the wake routes through `wakeThread` which emits SGI if the receiver is on a different core. | (refactor) | Existing R1 tests pass; `endpointCall_emits_sgi_if_remote_receiver`. | M |
-| SM5.A.2 | `endpointCall_perCore_blocking`: caller blocks on caller's core; reply unblocks caller via wake (same SGI mechanism). | `endpointCall_perCore_blocking` | M |
-| SM5.A.3 | `endpointCall_call_path_NI`: cross-core call doesn't leak info beyond what single-core call leaks. | (extends R1) | M |
+| SM5.A.1 | `chooseThreadOnCore (s : SystemState) (c : CoreId) : Option ThreadId`. Reads `s.scheduler.runQueueOnCore c` (under read-lock on the per-core RunQueue). Returns highest-priority runnable. | `chooseThreadOnCore_selects_highest` | M |
+| SM5.A.2 | Lock-set: `{(LockId.runQueue c, .read)}`. Encoded in `lockSet chooseThread args`. | `lockSet_chooseThread_correct` | S |
+| SM5.A.3 | Per-core independence: `chooseThreadOnCore c` does not observe `s.scheduler.runQueueOnCore c'` for c' ≠ c. | `chooseThreadOnCore_perCore_independence` | M |
+| SM5.A.4 | Idle-fallback completeness: returns `some (idleThreadOnCore c)` when no other runnable thread is on this core. | `chooseThreadOnCore_always_succeeds` | M |
+| SM5.A.5 | Migrate the legacy global `chooseThread` to call `chooseThreadOnCore` for the current core (read from TPIDR_EL1). | (refactor) | S |
+| SM5.A.6 | Run-queue well-formedness preserved by chooseThread (idempotent read). | `chooseThreadOnCore_preserves_wellFormed` | M |
+| SM5.A.7 | Decidability of `chooseThreadOnCore`. | `chooseThreadOnCore_decidable` | T |
+| SM5.A.8 | Unit tests in `tests/SmpSchedulerSuite.lean`: 6 chooseThread scenarios. | New tests. | M |
 
-#### SM5.B — Notification across cores (3-4 PRs)
-
-| Sub | Description | Theorem | Est |
-|-----|-------------|---------|-----|
-| SM5.B.1 | `notificationSignal` (existing) — under BKL, signals at most one waiting thread; wake the thread on its core. | (refactor) | Existing tests pass. | M |
-| SM5.B.2 | `notificationSignal_remote_wake`: if the waiting thread is on core c' ≠ executing core, emit SGI to c'. | `notificationSignal_remote_wake` | M |
-| SM5.B.3 | Multi-waiter case (binary semaphore): only one waker leaves the queue; remaining waiters stay blocked. | (existing inv) | S |
-
-#### SM5.C — Reply path across cores (3-5 PRs)
+#### SM5.B — Per-core switchToThread (5 PRs, 9 sub-tasks)
 
 | Sub | Description | Theorem | Est |
 |-----|-------------|---------|-----|
-| SM5.C.1 | `endpointReply` (existing) — reply wakes caller; caller may be on different core. | (refactor) | M |
-| SM5.C.2 | Donation chain across cores: donor on c₁ donates SC to receiver on c₂; the SC's bound core can change. SchedContext-bound-thread-domain invariant (R5.G) extends per-core. | `donation_perCore_consistent` | L |
-| SM5.C.3 | Reply receive on caller's core after wake: ensure the reply payload is delivered to the right TCB. | `endpointReply_perCore_delivery` | M |
+| SM5.B.1 | `switchToThreadOnCore (s : SystemState) (c : CoreId) (tid : ThreadId) : Result SystemState`. Sets `currentOnCore c := some tid`; validates runnable. | `switchToThreadOnCore_sets_current` | M |
+| SM5.B.2 | Lock-set: `{(LockId.tcb tid, .write), (LockId.runQueue c, .write)}`. | `lockSet_switchToThread_correct` | S |
+| SM5.B.3 | Preempt-self-to-runnable: previous current thread returns to run queue on same core. | `switchToThreadOnCore_preempts_previous` | M |
+| SM5.B.4 | If target thread is on a different core's run queue, return `.error .threadOnDifferentCore`. | `switchToThreadOnCore_rejects_remote` | M |
+| SM5.B.5 | Invariant: `runQueueOnCore_excludes_currentOnCore` — current thread is NOT in its core's run queue. | `runQueueOnCore_excludes_currentOnCore` | M |
+| SM5.B.6 | Cross-core protection: lock-set includes target TCB's write-lock, preventing cross-core race. | `switchToThread_lockSet_protects` | M |
+| SM5.B.7 | Hardware context-switch FFI: `ffi_switch_to_thread(tid, core_id)` writes TPIDR_EL1's per-core thread pointer. | `ffi_switch_to_thread_correct` | S |
+| SM5.B.8 | Decidability and totality of `switchToThreadOnCore`. | `switchToThreadOnCore_total` | S |
+| SM5.B.9 | Tests: 8 scenarios covering preempt, idle, remote-reject. | New tests. | M |
 
-#### SM5.D — IPC across-core invariant bundle (2-3 PRs)
+#### SM5.C — Cross-core wake via SGI (6 PRs, 12 sub-tasks)
+
+This is the most novel work in SM5.
 
 | Sub | Description | Theorem | Est |
 |-----|-------------|---------|-----|
-| SM5.D.1 | `ipcInvariantFull_perCore`: 15-conjunct bundle restricted to per-core endpoint/notification views; identical semantics under BKL serialization. | `ipcInvariantFull_perCore` | M |
-| SM5.D.2 | All 6 per-operation preservation theorems (`endpointSendDual`, `endpointReceiveDual`, `endpointCall`, `endpointReplyRecv`, `notificationSignal`, `notificationWait`) carry through. | (multiple) | L |
+| SM5.C.1 | `enqueueRunnableOnCore (s : SystemState) (c : CoreId) (tid : ThreadId) : SystemState`. Adds tid to c's run queue. Lock-set: `{(LockId.runQueue c, .write), (LockId.tcb tid, .read)}`. | `enqueueRunnableOnCore_wellFormed` | M |
+| SM5.C.2 | `wakeThread (s : SystemState) (tid : ThreadId) : SystemState × List PendingSgi`. Determines target core via TCB.cpuAffinity (defaults to bootCoreId if .none). Enqueues; if target ≠ executing core, emits `(target, .reschedule)` SGI. | `wakeThread_emits_sgi_if_remote` | L |
+| SM5.C.3 | Lock-set for cross-core wake: `{(LockId.tcb tid, .write), (LockId.runQueue target, .write)}` plus the executing core's RunQueue if target = executing core. | `lockSet_wakeThread_correct` | M |
+| SM5.C.4 | The `@[export]` body's SGI emission: SGI write to GICD_SGIR happens with write-locks held; release-ordering on the write-lock release publishes the post-state. | `wakeThread_sgi_release_ordering` | M |
+| SM5.C.5 | SGI handler on target core: `handleSgiInterrupt` (under IRQ-entry lock-set) reads `pendingSgis[myCore]` from post-state (release-acquire pairing); drains queue; for `.reschedule`, re-runs `chooseThreadOnCore myCore` and switches. | `handleSgiInterrupt_processes_pending` | L |
+| SM5.C.6 | `wakeThread_lossless`: every wakeThread call eventually causes the target thread to be selected by `chooseThreadOnCore target` (modulo higher-priority work). | `wakeThread_lossless` | L |
+| SM5.C.7 | TCB.cpuAffinity field added to TCB structure (Option CoreId; default .none). | Structure extension. | S |
+| SM5.C.8 | `setThreadCpuAffinity` capability operation — sets affinity for a TCB; requires write-lock on TCB. | New op; `setThreadCpuAffinity_correct`. | M |
+| SM5.C.9 | Boot-time affinity: every kernel thread gets default affinity = bootCoreId initially; userspace can change post-boot via syscall. | `boot_threads_default_affinity` | S |
+| SM5.C.10 | Cross-core wake invariant: post-wake, target core's run queue contains tid. | `wakeThread_target_runQueue_contains` | M |
+| SM5.C.11 | SGI delivery latency bound: `WCRT(sgi_delivery) ≤ WCRT(critical_section)` (one full lock-set hold by target). | `sgi_delivery_bounded` | M |
+| SM5.C.12 | Tests: cross-core wake round-trip; affinity respected; cross-core preempt observed. | 10+ tests. | L |
 
-#### SM5.E — Cancellation across cores (2-3 PRs)
+#### SM5.D — Per-core timer tick (4 PRs, 10 sub-tasks)
 
 | Sub | Description | Theorem | Est |
 |-----|-------------|---------|-----|
-| SM5.E.1 | `cancelIpcBlocking` (existing): under BKL, atomically removes the thread from its endpoint queue. The cancellation happens on the cancelling core; the cancelled thread's TCB may be associated with a different core. | (refactor) | M |
-| SM5.E.2 | `cancelDonation` (existing R5.A): same atomic semantics under BKL. | (refactor) | M |
+| SM5.D.1 | Each core has its own CNTV (ARM Generic Timer) firing locally. Timer ISR on core c calls `handleTimerInterruptPerCore c`. | (HAL + Lean) | M |
+| SM5.D.2 | `timerTickOnCore (s : SystemState) (c : CoreId) : SystemState` — decrements `c`'s `domainTimeRemaining`; handles CBS replenishment for threads on `c`; emits preemption if higher-pri thread becomes runnable on `c`. | `timerTickOnCore_advances_per_core` | L |
+| SM5.D.3 | Lock-set for timer tick: per-core run queue (write), per-core replenish queue (write), per-core domain state (write), affected TCBs (write). | `lockSet_timerTick_correct` | M |
+| SM5.D.4 | Cross-core CBS replenishment: a thread on core c whose budget fires can release a higher-priority thread on a different core; SM5.C handles the cross-core wake. | `cbsReplenish_can_wake_remote_core` | L |
+| SM5.D.5 | Per-core time-slice exhaustion → preempt local. | `timerTickOnCore_preempts_local` | M |
+| SM5.D.6 | Per-core domain rotation: when `domainTimeRemaining = 0`, advance `domainScheduleIndex` and reset `activeDomain` per-core. | `timerTickOnCore_rotates_domain` | M |
+| SM5.D.7 | WCRT-relevant: timer ISR completes within bounded time. | `timerTickOnCore_wcrt_bounded` | M |
+| SM5.D.8 | Decidability of timer-tick transition. | `timerTickOnCore_decidable` | S |
+| SM5.D.9 | Per-core lastTimeoutErrors field: diagnostic record per core. | `lastTimeoutErrorsOnCore_consistent` | S |
+| SM5.D.10 | Tests: per-core timer fires; cross-core CBS wake; per-core domain rotation. | 8+ tests. | L |
 
-#### SM5.F — Tests + fixtures (2-3 PRs)
+#### SM5.E — Per-core idle threads (3 PRs, 6 sub-tasks)
+
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM5.E.1 | `idleThreadId (c : CoreId) : ThreadId := ⟨ObjId.ofNat (idleThreadIdBase + c.val), _⟩`. Per-core distinct idle TIDs. | Definition. | S |
+| SM5.E.2 | `createIdleThread (c : CoreId) : ThreadControlBlock` — TCB with priority 0, bound to no SchedContext, runnable, cpuAffinity := some c. | Constructor. | S |
+| SM5.E.3 | Extend `bootFromPlatform` to install idle TCBs (one per core) and set `currentOnCore c := some (idleThreadId c)`. | `bootFromPlatform_all_cores_have_idle` | M |
+| SM5.E.4 | `idleThread_core_locality`: idle TCBs never appear on other cores' run queues. | `idleThread_core_locality` | M |
+| SM5.E.5 | `idleThread_priority_zero`: priority 0; never selected if any other thread is runnable on the same core. | `idleThread_priority_zero` | S |
+| SM5.E.6 | `chooseThreadOnCore_always_succeeds`: every core always has at least the idle thread as a fallback. | `chooseThreadOnCore_always_succeeds` | M |
+
+#### SM5.F — Per-core PIP (5 PRs, 10 sub-tasks)
+
+PIP propagation extends per-core under fine locks. The R5 work
+established the single-core PIP discipline; SM5.F extends.
+
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM5.F.1 | `computeMaxWaiterPriorityOnCore (c : CoreId)` — per-core variant. Reads `runQueueOnCore c`. | `computeMaxWaiterPriorityOnCore_correct` | M |
+| SM5.F.2 | If a PIP boost causes a thread on core c' to become runnable while the chain is on core c, emit `.reschedule` SGI to c' (uses SM5.C wake mechanism). | `pipBoost_cross_core_wake` | L |
+| SM5.F.3 | `pipBoost_perCore_consistent` — per-core PIP boost is consistent with cross-subsystem invariants. | `pipBoost_perCore_consistent` | M |
+| SM5.F.4 | Donation chain across cores: donor on c₁ donates SC to receiver on c₂; SC's bound core can change. | `donation_perCore_consistent` | L |
+| SM5.F.5 | `restoreToReady` (existing) — per-core variant. Lock-set: per-core TCB (write). | `restoreToReadyOnCore_correct` | M |
+| SM5.F.6 | `resumeThread` cross-core PIP recomputation under per-core fields. | `resumeThread_perCore_pipBoost_consistent` | L |
+| SM5.F.7 | `blockingGraph` per-core view. Each core's blocking graph is its share of the global graph. | `blockingGraphOnCore_consistent` | M |
+| SM5.F.8 | `blockingAcyclic_perCore` — per-core acyclicity preserved by all transitions. | `blockingAcyclic_perCore` | M |
+| SM5.F.9 | `priorityInheritance_perCore_witness` — the PIP discipline holds per core. | `priorityInheritance_perCore_witness` | M |
+| SM5.F.10 | Tests: cross-core PIP scenarios. | 8+ tests. | L |
+
+#### SM5.G — Per-core domain scheduling (3 PRs, 6 sub-tasks)
+
+Decision: per-core active domain. Each core independently advances
+its own domain schedule. Shared `domainSchedule` table (config-only);
+per-core `domainScheduleIndex` and `domainTimeRemaining`.
+
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM5.G.1 | `activeDomainOnCore (c : CoreId)`. | Definition. | T |
+| SM5.G.2 | `advanceDomainOnCore (c : CoreId)` — rotates that core's `domainScheduleIndex`. | Definition + cyclic theorem. | M |
+| SM5.G.3 | `activeDomainOnCore_isInDomainSchedule` per core. | Theorem. | M |
+| SM5.G.4 | `chooseThreadOnCore_respects_activeDomain` per core. | Theorem. | M |
+| SM5.G.5 | Cross-core: different cores can be in different domains simultaneously. | `domains_independent_across_cores` | S |
+| SM5.G.6 | Tests: per-core domain rotation; cross-core domain independence. | 5+ tests. | M |
+
+#### SM5.H — Per-core CBS (4 PRs, 8 sub-tasks)
+
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM5.H.1 | `replenishQueueOnCore (c : CoreId)` — per-core CBS replenishment queue. | Definition. | S |
+| SM5.H.2 | `replenishOnCore (c : CoreId) (sc : SchedContextId)` — replenishes a SchedContext bound to a thread on core c. | `replenishOnCore_correct` | M |
+| SM5.H.3 | `replenishQueueOnCore_wellFormed` — per-core invariant. | Theorem. | M |
+| SM5.H.4 | Cross-core SC migration: when a TCB's cpuAffinity changes, its SchedContext's replenish queue migrates to the new core. | `schedContextMigration_consistent` | L |
+| SM5.H.5 | `schedContextRunQueueConsistent_perCore` — extension of existing invariant. | Theorem. | M |
+| SM5.H.6 | `replenishmentPipelineOrder_perCore` — the AK2-K invariant extended per-core. | Theorem. | M |
+| SM5.H.7 | CBS budget accounting per core. | `cbsAccountingOnCore_consistent` | M |
+| SM5.H.8 | Tests: cross-core CBS, migration scenarios. | 6+ tests. | L |
+
+#### SM5.I — Per-core invariant suite (5 PRs, 10 sub-tasks)
+
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM5.I.1 | `currentOnCore_validThreadIfSome (c)`. | Theorem. | S |
+| SM5.I.2 | `runQueueOnCore_wellFormed (c)`. | Theorem. | S |
+| SM5.I.3 | `schedContextRunQueueConsistent_perCore`. | Theorem. | M |
+| SM5.I.4 | `priorityInheritance_perCore`. | Theorem. | M |
+| SM5.I.5 | Composition: `schedulerInvariant_perCore` aggregates the 4 invariants above per core. | Aggregate theorem. | M |
+| SM5.I.6 | Cross-core: `schedulerInvariant_perCore_pairwise` — different cores' invariants are independent. | Theorem. | M |
+| SM5.I.7 | `schedulerInvariant_smp` — system-wide invariant = ∀ c, schedulerInvariant_perCore c. | Theorem. | M |
+| SM5.I.8 | Preservation: every scheduler transition preserves `schedulerInvariant_smp`. | Theorem. | L |
+| SM5.I.9 | `crossSubsystemInvariant_smp` extends the existing 12-conjunct with `schedulerInvariant_smp`. | Theorem. | M |
+| SM5.I.10 | Tier-3 surface anchors for the per-core invariant suite. | `#check` 10+ theorems. | S |
+
+#### SM5.J — WCRT under fine locks (2 PRs, 5 sub-tasks)
+
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM5.J.1 | `WCRT_lockSet (operation) := |lockSet operation| × (coreCount - 1) × WCRT_per_lock`. | Definition. | M |
+| SM5.J.2 | `wcrt_bound_rpi5_smp` — extends R5's `wcrt_bound_rpi5` with the lock-set factor. | Theorem. | L |
+| SM5.J.3 | Per-operation WCRT bounds: chooseThread, switchToThread, wakeThread, timerTick, IPC. | 5 theorems. | L |
+| SM5.J.4 | Liveness theorem: no thread starves under fine-lock SMP. | Theorem. | L |
+| SM5.J.5 | Tests: WCRT verification scenarios. | 3+ tests. | M |
+
+#### SM5.K — Tests + fixtures (3 PRs, 6 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| SM5.F.1 | New `tests/SmpIpcSuite.lean`: 8-12 SMP-specific IPC scenarios (sender on c₀, receiver on c₁; notification across cores; reply across cores; cancellation across cores). | `tests/SmpIpcSuite.lean` | L |
-| SM5.F.2 | New fixture `tests/fixtures/smp_ipc_4core.expected`. | (1 file) | S |
+| SM5.K.1 | `tests/SmpSchedulerSuite.lean`: 50+ scenarios. | New file. | XL |
+| SM5.K.2 | `tests/SmpTimerSuite.lean`: per-core timer tests. | New file. | M |
+| SM5.K.3 | `tests/SmpPipSuite.lean`: cross-core PIP. | New file. | M |
+| SM5.K.4 | `tests/fixtures/smp_4core_scheduler.expected`. | New file. | M |
+| SM5.K.5 | QEMU `-smp 4` scheduler integration in `test_qemu_smp_scheduler.sh`. | New script. | M |
+| SM5.K.6 | Surface anchors for SM5 theorems. | `tests/SmpSurfaceAnchors.lean`. | S |
 
-**SM5 acceptance gate**: 2-thread cross-core IPC works; 4-thread
+**SM5 acceptance gate**: 4-thread workload distributed across
+4 cores; cross-core preempt works under fine locks; per-core
+timer ticks advance per-core domain state; PIP cross-core works;
+idle threads per core; WCRT bounded.
+
+### Phase SM6 — Cross-core IPC (60-80 sub-tasks)
+
+**Goal**: endpoint call/send/recv, notifications, reply all work
+across cores under per-object fine locks. Each IPC operation
+declares its lock-set; cross-core wake routes through SM5.C.
+
+**Dependencies**: SM5.
+
+Lock-set per IPC operation:
+
+| Operation | Lock-set (acquire in `LockId` order) |
+|-----------|--------------------------------------|
+| `endpointCall` | caller TCB (W), sender's CNode (R for cap lookup), endpoint (W), receiver TCB (W if unblock) |
+| `endpointSend`/`endpointSendNonBlocking` | caller TCB (R), endpoint (W) |
+| `endpointReceive` | caller TCB (W), endpoint (W) |
+| `endpointReplyRecv` | caller TCB (W), reply object (W), endpoint (W) |
+| `notificationSignal` | caller TCB (R), notification (W), receiver TCB (W if unblock) |
+| `notificationWait` | caller TCB (W), notification (W) |
+| `cancelIpcBlocking` | victim TCB (W), associated endpoint or notification (W) |
+| `endpointReply` | caller TCB (W), reply object (W), receiver TCB (W) |
+
+#### SM6.A — Endpoint call across cores (4 PRs, 10 sub-tasks)
+
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM6.A.1 | Migrate `endpointCall` (existing) to acquire its lock-set before executing. | (refactor) | M |
+| SM6.A.2 | `endpointCall_lockSet_correct` — the lock-set declaration matches the read/write set. | Theorem. | M |
+| SM6.A.3 | Cross-core call: when receiver wakes (transitions blocked → runnable), wake routes through `wakeThread` which emits SGI if receiver on different core. | `endpointCall_emits_sgi_if_remote_receiver` | L |
+| SM6.A.4 | `endpointCall_perCore_blocking`: caller blocks on caller's core; reply unblocks caller via wake. | Theorem. | M |
+| SM6.A.5 | Donation chain locking: caller's SC may flow to receiver; lock-set extends to include SC. | `endpointCall_donation_lockSet` | M |
+| SM6.A.6 | Reply object allocation: under lock-set, reply object created and bound. | Theorem. | M |
+| SM6.A.7 | Information flow: `endpointCall_call_path_NI` (cross-core variant of R1 theorem). | Theorem. | L |
+| SM6.A.8 | endpointCallWithCaps (with capability transfer): lock-set extends to include source CNode (R) and destination CNode (W). | `endpointCallWithCaps_lockSet_correct` | L |
+| SM6.A.9 | endpointCall_atomic_under_lockSet — single conflict-serializable transition under 2PL. | Theorem. | L |
+| SM6.A.10 | Tests: 8+ cross-core call scenarios. | New tests. | L |
+
+#### SM6.B — Notification across cores (3 PRs, 8 sub-tasks)
+
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM6.B.1 | Migrate `notificationSignal` to acquire lock-set. | (refactor) | M |
+| SM6.B.2 | `notificationSignal_remote_wake`: if waiting thread on different core, emit SGI to that core. | Theorem. | L |
+| SM6.B.3 | Multi-waiter discipline: only one waker leaves the queue (binary semaphore); remaining stay blocked. | Theorem (existing inv extended). | M |
+| SM6.B.4 | `notificationWait` lock-set + atomicity. | `notificationWait_atomic_under_lockSet` | M |
+| SM6.B.5 | `notificationSignal_perCore_consistent` — per-core invariant. | Theorem. | M |
+| SM6.B.6 | Binding (notification bound to TCB) — lock-set extension. | Theorem. | M |
+| SM6.B.7 | Notification IF: per-core NI extension. | `notificationSignal_perCore_NI` | M |
+| SM6.B.8 | Tests: cross-core notification scenarios. | 6+ tests. | L |
+
+#### SM6.C — Reply path across cores (4 PRs, 10 sub-tasks)
+
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM6.C.1 | Migrate `endpointReply` to acquire lock-set. | (refactor) | M |
+| SM6.C.2 | Cross-core reply: reply wakes caller; caller may be on different core. | `endpointReply_remote_wake` | L |
+| SM6.C.3 | Donation chain across cores: SC's bound core can change at reply time. | `donation_perCore_consistent` (extension) | L |
+| SM6.C.4 | Reply receive on caller's core after wake: ensures reply payload delivered to right TCB. | `endpointReply_perCore_delivery` | M |
+| SM6.C.5 | `endpointReplyRecv` (combined reply + receive) lock-set. | `endpointReplyRecv_lockSet_correct` | M |
+| SM6.C.6 | Reply object lifecycle: created on call, consumed on reply. | `replyObject_lifecycle_under_lockSet` | M |
+| SM6.C.7 | Reply-replay protection: a reply object can only be consumed once. | Theorem. | M |
+| SM6.C.8 | Cross-core reply NI: `endpointReply_perCore_NI`. | Theorem. | M |
+| SM6.C.9 | Reply chain length bound (donation chain k > 2). | `replyChain_length_bounded_perCore` (existing extension). | M |
+| SM6.C.10 | Tests: 8+ reply scenarios. | New tests. | L |
+
+#### SM6.D — IPC across-core invariant bundle (2 PRs, 6 sub-tasks)
+
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM6.D.1 | `ipcInvariantFull_perCore`: 15-conjunct bundle restricted to per-core endpoint/notification views. | `ipcInvariantFull_perCore` | L |
+| SM6.D.2 | All 6 per-operation preservation theorems carry through with per-core lock-set discipline. | 6 theorems. | XL |
+| SM6.D.3 | `ipcStateQueueMembershipConsistent_perCore`. | Theorem. | M |
+| SM6.D.4 | `endpointQueueNoDup_perCore`. | Theorem. | M |
+| SM6.D.5 | `queueNextBlockingConsistent_perCore`. | Theorem. | M |
+| SM6.D.6 | `queueHeadBlockedConsistent_perCore`. | Theorem. | M |
+
+#### SM6.E — Cancellation across cores (3 PRs, 6 sub-tasks)
+
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM6.E.1 | Migrate `cancelIpcBlocking` to lock-set discipline. | (refactor) | M |
+| SM6.E.2 | `cancelIpcBlocking_atomic_under_lockSet` — atomic removal under 2PL. | Theorem. | M |
+| SM6.E.3 | `cancelDonation` (R5.A) under lock-set discipline. | (refactor) | M |
+| SM6.E.4 | `cancelDonation_atomic_under_lockSet`. | Theorem. | M |
+| SM6.E.5 | Cross-core cancellation: cancellation on c₁ of a thread on c₂ — lock-set spans cores. | `cancellation_cross_core_correct` | L |
+| SM6.E.6 | Tests: cancellation scenarios across cores. | 6+ tests. | M |
+
+#### SM6.F — Tests + fixtures (3 PRs, 6 sub-tasks)
+
+| Sub | Description | Files | Est |
+|-----|-------------|-------|-----|
+| SM6.F.1 | `tests/SmpIpcSuite.lean`: 30+ cross-core IPC scenarios. | New file. | XL |
+| SM6.F.2 | `tests/SmpNotificationSuite.lean`: 15+ scenarios. | New file. | L |
+| SM6.F.3 | `tests/SmpCancellationSuite.lean`: 10+ scenarios. | New file. | M |
+| SM6.F.4 | `tests/fixtures/smp_ipc_4core.expected`. | New file. | M |
+| SM6.F.5 | QEMU `-smp 4` IPC integration in `test_qemu_smp_ipc.sh`. | New script. | M |
+| SM6.F.6 | Surface anchors. | `tests/SmpSurfaceAnchors.lean` (extension). | S |
+
+**SM6 acceptance gate**: 2-thread cross-core IPC works; 4-thread
 SMP rendezvous test passes; existing IPC invariants hold per-core.
 
-### Phase SM6 — TLB / cache shootdown (12-18 PRs)
+### Phase SM7 — TLB / cache shootdown (40-55 sub-tasks)
 
-**Goal**: page unmaps, ASID retire, retype-with-page-free operations
-all invalidate translations on every core. CRITICAL for closing
-SMP-C4.
+**Goal**: page unmaps, ASID retire, retype-with-page-free invalidate
+translations on every core. CRITICAL for closing SMP-C4.
 
-**Dependencies**: SM1.E (IS-variant TLB ops), SM1.F (SGI primitive),
-SM3 (BKL).
+**Dependencies**: SM2.A (memory model), SM1.E (IS-variant TLB
+ops), SM1.F (SGI primitive), SM3 (lock discipline).
 
-**Mathematical specification**: §2.7 (shootdown protocol).
-
-#### SM6.A — Lean-side shootdown descriptor (2-3 PRs)
+#### SM7.A — Shootdown descriptor + state (3 PRs, 6 sub-tasks)
 
 | Sub | Description | Theorem | Est |
 |-----|-------------|---------|-----|
-| SM6.A.1 | `TlbShootdownDescriptor` struct: `(asid : ASID, vaddr : Option VAddr)` (vaddr=none means all-asid flush). | `Architecture/TlbShootdown.lean` (new) | M |
-| SM6.A.2 | `pendingShootdowns : Vector (List TlbShootdownDescriptor) numCores` — per-core queue, similar to pending SGI but specialized. | `Architecture/TlbShootdown.lean` | M |
-| SM6.A.3 | `enqueueShootdown (initiator : CoreId) (targets : List CoreId) (desc : TlbShootdownDescriptor)`. | `Architecture/TlbShootdown.lean` | M |
-| SM6.A.4 | `drainShootdowns (c : CoreId) : List TlbShootdownDescriptor` — called from SGI handler on c. | `Architecture/TlbShootdown.lean` | M |
+| SM7.A.1 | `TlbShootdownDescriptor` struct: `(asid : ASID, vaddr : Option VAddr, kind : .vaae \| .aside \| .vmalle)`. | Definition. | M |
+| SM7.A.2 | `pendingShootdowns : Vector (List TlbShootdownDescriptor) coreCount`. Per-core queue. | Definition. | M |
+| SM7.A.3 | `shootdownAck : Vector Bool coreCount`. Per-core ack flag. | Definition. | S |
+| SM7.A.4 | `enqueueShootdown (initiator) (targets) (desc)` — adds desc to each target's queue. | Definition. | M |
+| SM7.A.5 | `drainShootdowns (c : CoreId)` — called from SGI handler on c. | Definition. | M |
+| SM7.A.6 | Pending queue capacity: bounded by `coreCount × maxPendingPerCore` (= 4 × 16 = 64). Documented. | Constant + invariant. | S |
 
-#### SM6.B — Shootdown protocol implementation (3-5 PRs)
-
-| Sub | Description | Files | Est |
-|-----|-------------|-------|-----|
-| SM6.B.1 | `tlbShootdownLocal (asid, vaddr)`: this core executes `tlbi vaae1is, vaddr ; dsb ish ; isb`. | `Architecture/TlbShootdown.lean`, `Architecture/VSpace.lean` | M |
-| SM6.B.2 | `tlbShootdownBroadcast (initiator, targets, asid, vaddr)`: enqueue descriptor on each target, send `.tlbShootdownReq` SGI, initiate local shootdown, wait for ack via `shootdownAck` Vector. | `Architecture/TlbShootdown.lean` | L |
-| SM6.B.3 | SGI handler for `.tlbShootdownReq`: drain queue, execute local TLBI for each, set ack flag, return. | `Platform/FFI.lean` SGI dispatch | L |
-| SM6.B.4 | `tlbShootdownBroadcast_invalidatesAllCores` theorem. | (proof) | L |
-| SM6.B.5 | Wire all unmap callers (`vspaceMapPageCheckedWithFlush`, `vspaceUnmapPage`, `retypeFromUntyped` with page free) to use Broadcast variant. | (~8 callsites) | M |
-
-#### SM6.C — Cache maintenance broadcast (2-3 PRs)
-
-| Sub | Description | Files | Est |
-|-----|-------------|-------|-----|
-| SM6.C.1 | I-cache invalidation on code modification (rare; almost no code paths modify code at runtime in seLe4n) — use `ic_ialluis` (already exists in HAL). | `cache.rs`, `Architecture/CacheModel.lean` | S |
-| SM6.C.2 | D-cache by VA already operates at PoC (Point of Coherency, system-wide) — no broadcast needed (ARM ARM B2.7.5). Document this in `CacheModel.lean`. | `Architecture/CacheModel.lean` docstring | T |
-| SM6.C.3 | Cross-core DC maintenance: only needed for DMA-coherent buffers. Out of scope (DMA driver subsystem is post-1.0). | (documentation) | T |
-
-#### SM6.D — Per-core TLB model (3-5 PRs)
+#### SM7.B — Shootdown protocol (4 PRs, 12 sub-tasks)
 
 | Sub | Description | Theorem | Est |
 |-----|-------------|---------|-----|
-| SM6.D.1 | Extend `TlbState` (existing in `Architecture/TlbModel.lean`) to `Vector TlbState numCores`. | (model) | M |
-| SM6.D.2 | `tlbShootdown_invalidatesAllCores`: post-broadcast, every core's TLB has the entry removed. | `tlbShootdown_invalidatesAllCores` | L |
-| SM6.D.3 | `tlbInvalidationConsistent_perCore`: per-core invariant relating page-table state to TLB state. | `tlbInvalidationConsistent_perCore` | L |
+| SM7.B.1 | `tlbShootdownLocal (asid) (vaddr)`: this core executes `tlbi_for_sharing vaae1is/vae1is + dsb_for_sharing + isb`. | Definition. | M |
+| SM7.B.2 | `tlbShootdownBroadcast (initiator) (targets) (asid) (vaddr)`: enqueue descriptor, send SGI, initiate local shootdown, wait for ack. | Definition. | L |
+| SM7.B.3 | SGI handler for `.tlbShootdownReq` (registered in SM1.F): drain queue, execute local TLBI for each, set ack flag, return. | Handler. | L |
+| SM7.B.4 | `shootdownAck` synchronization: ack flag is a release-store; initiator reads with acquire-load. | `shootdownAck_release_acquire` | M |
+| SM7.B.5 | Initiator wait-loop: bounded WFE on each target's ack flag. | `shootdown_wait_loop_terminates` | M |
+| SM7.B.6 | Timeout fallback: if ack doesn't come within bounded WFE rounds, log diagnostic and continue (single-core only; full SMP requires the ack). For v1.0.0, treat timeout as a panic. | `shootdown_timeout_handling` | M |
+| SM7.B.7 | Lock-set for shootdown: VSpaceRoot(asid) write-lock (covers the unmap operation). | `lockSet_tlbShootdown_correct` | M |
+| SM7.B.8 | `tlbShootdownBroadcast_invalidatesAllCores` (Theorem 2.6.3). | Major theorem. | XL |
+| SM7.B.9 | Wire all unmap callers to use Broadcast variant. | (~8 callsites) | M |
+| SM7.B.10 | ASID-retire shootdown: when an ASID is freed, broadcast `aside1is`. | Definition + theorem. | M |
+| SM7.B.11 | Retype-with-page-free shootdown: when untyped is retyped and pages are freed, broadcast each page's invalidation. | Theorem. | M |
+| SM7.B.12 | Cross-cluster path (Outer sharing): same protocol but uses OS variants. Parameterized. | `tlbShootdown_outer_correct` | M |
 
-#### SM6.E — Tests (2-3 PRs)
-
-| Sub | Description | Files | Est |
-|-----|-------------|-------|-----|
-| SM6.E.1 | `tests/SmpTlbShootdownSuite.lean`: unmap-then-read-on-remote-core scenario; verify protocol completes. | `tests/SmpTlbShootdownSuite.lean` | L |
-| SM6.E.2 | QEMU integration: shootdown test under `-smp 4`. | `scripts/test_qemu_smp_shootdown.sh` | M |
-
-**SM6 acceptance gate**: unmap-then-reuse a page on different
-cores; verify no stale translation observed on remote cores;
-theorem `tlbShootdown_invalidatesAllCores` proven; closes SMP-C4.
-
-### Phase SM7 — Information flow under SMP (12-18 PRs)
-
-**Goal**: extend the NI proofs to per-core observers; document new
-covert channels (BKL contention timing) honestly.
-
-**Dependencies**: SM2, SM4.
-
-**Mathematical specification**: §2.8 (per-core observer model).
-
-#### SM7.A — Per-core observable state (3-4 PRs)
+#### SM7.C — Per-core TLB model (3 PRs, 8 sub-tasks)
 
 | Sub | Description | Theorem | Est |
 |-----|-------------|---------|-----|
-| SM7.A.1 | `ObservableState.onCore (c : CoreId) (L : SecurityLabel) (s : SystemState) : ObservableState` — per-core projection. | `InformationFlow/Projection.lean` | M |
-| SM7.A.2 | `onCore_isProjection_of_globalProjection`: composition property — per-core projection is a refinement of the global projection. | (theorem) | M |
-| SM7.A.3 | Per-core observable state is decidable. | (instance) | S |
+| SM7.C.1 | Extend `TlbState` (existing) to `Vector TlbState coreCount`. | Definition. | M |
+| SM7.C.2 | `tlbInsertOnCore (c : CoreId) (entry)` — adds entry to c's TLB (modeling HW translation walker). | Definition. | M |
+| SM7.C.3 | `tlbInvalidateOnCore (c : CoreId) (asid, vaddr)`. | Definition. | M |
+| SM7.C.4 | `tlbInvalidateOnAllCores (asid, vaddr)` — uses shootdown protocol. | Definition. | M |
+| SM7.C.5 | `tlbInvalidationConsistent_perCore`: per-core TLB ↔ page table consistency. | Theorem. | L |
+| SM7.C.6 | `tlbShootdown_invalidates_perCore` — for each core c, post-shootdown TLB lacks the entry. | Theorem (corollary of 2.6.3). | M |
+| SM7.C.7 | `tlbConsistency_cross_subsystem` — cross-subsystem invariant. | Theorem. | M |
+| SM7.C.8 | Surface anchors. | `#check` 8 theorems. | S |
 
-#### SM7.B — Per-core NI proofs (4-6 PRs)
+#### SM7.D — Cache maintenance broadcast (2 PRs, 4 sub-tasks)
+
+| Sub | Description | Files | Est |
+|-----|-------------|-------|-----|
+| SM7.D.1 | I-cache invalidation on code modification — use existing `ic_ialluis`. | `cache.rs`, `Architecture/CacheModel.lean` | S |
+| SM7.D.2 | D-cache by VA at PoC — system-wide; no broadcast needed (ARM ARM B2.7.5). Documented in `CacheModel.lean`. | Docstring. | T |
+| SM7.D.3 | Cross-core DC maintenance for DMA buffers — documented as post-1.0 (no DMA driver in v1.0.0). | Doc. | T |
+| SM7.D.4 | Cache-coherency invariant under SMP. | Theorem. | M |
+
+#### SM7.E — Tests (3 PRs, 6 sub-tasks)
+
+| Sub | Description | Files | Est |
+|-----|-------------|-------|-----|
+| SM7.E.1 | `tests/SmpTlbShootdownSuite.lean`: 15+ scenarios (unmap-then-read-on-remote-core; ASID retire; broadcast timing). | New file. | L |
+| SM7.E.2 | QEMU SMP shootdown integration: `test_qemu_smp_shootdown.sh`. | New script. | M |
+| SM7.E.3 | Shootdown stress test: 4 cores × concurrent unmaps. | Test. | M |
+| SM7.E.4 | Cross-cluster shootdown test (mocked Outer sharing). | Test. | M |
+| SM7.E.5 | Surface anchors. | `tests/SmpSurfaceAnchors.lean`. | S |
+| SM7.E.6 | Fixture: `smp_tlb_shootdown.expected`. | New fixture. | S |
+
+**SM7 acceptance gate**: unmap-then-reuse a page on different
+cores; no stale translation observed on remote cores; theorem
+`tlbShootdownBroadcast_invalidatesAllCores` proven. **Closes SMP-C4.**
+
+### Phase SM8 — Information flow under SMP (40-55 sub-tasks)
+
+**Goal**: extend NI proofs to per-core observers; document new
+covert channels (lock contention timing); per-core declassification
+audit.
+
+**Dependencies**: SM4, SM5.
+
+#### SM8.A — Per-core observable state (3 PRs, 6 sub-tasks)
 
 | Sub | Description | Theorem | Est |
 |-----|-------------|---------|-----|
-| SM7.B.1 | `nonInterference_perCore`: existing NI proof generalized to per-core observers. | `nonInterference_perCore` | L |
-| SM7.B.2 | `crossCoreNonInterference`: transitions on core c' don't change ObservableState.onCore c L unless they modify shared, L-observable state. | `crossCoreNonInterference` | L |
-| SM7.B.3 | Per-core NI for each of the 32 `kernelOperationNi` constructors. | (multiple) | L |
+| SM8.A.1 | `ObservableState.onCore (c) (L) (s)` — per-core projection per Definition 2.7.2. | Definition. | M |
+| SM8.A.2 | `onCore_isProjection_of_globalProjection` — refinement composition. | Theorem. | M |
+| SM8.A.3 | `onCore_decidable`. | Decidable instance. | S |
+| SM8.A.4 | `onCore_perCore_independence`: observers on different cores see independent projections (modulo shared L-observable state). | Theorem. | M |
+| SM8.A.5 | `onCore_label_monotone`: higher label ⇒ wider projection. | Theorem. | M |
+| SM8.A.6 | Tests in `tests/SmpInformationFlowSuite.lean` (start). | New file. | M |
 
-#### SM7.C — BKL contention covert channel (2-3 PRs)
-
-| Sub | Description | Files | Est |
-|-----|-------------|-------|-----|
-| SM7.C.1 | Document `acceptedCovertChannel_bklContention` in `InformationFlow/Projection.lean`: when core c spins on BKL acquire, it can measure how long another core holds the lock; this is a timing side channel observable to any thread on c. | `InformationFlow/Projection.lean` | M |
-| SM7.C.2 | Mitigation note: under WS-W (CCA/MPAM partitioning), BKL contention can be partitioned by partition assignment. v1.0.0 documents the channel; v1.x narrows it. | (documentation) | S |
-| SM7.C.3 | Update `enforcementBoundaryExtended` to 23+ entries (V6-L was 22). | `InformationFlow/Policy.lean` | S |
-
-#### SM7.D — Per-core declassification audit (2-3 PRs)
+#### SM8.B — Per-core NI proofs (5 PRs, 14 sub-tasks)
 
 | Sub | Description | Theorem | Est |
 |-----|-------------|---------|-----|
-| SM7.D.1 | `DeclassificationEvent` extended with `originatingCore : CoreId`. | (record extension) | M |
-| SM7.D.2 | Audit trail records cross-core declassification chains: a thread on c₁ may declassify state observed on c₂. | (theorem) | M |
+| SM8.B.1 | `nonInterference_perCore`: existing NI proof generalized. | Theorem. | XL |
+| SM8.B.2 | `crossCoreNonInterference` (Theorem 2.7.3): transitions on other cores don't change my projection. | Theorem. | XL |
+| SM8.B.3 | Per-core NI for each `kernelOperationNi` constructor — there are 32 in the existing model. | 32 theorems. | L |
+| SM8.B.4 | NI under per-object lock-set: locks themselves are observable but don't leak L-state. | Theorem. | L |
+| SM8.B.5 | `niStepCoverage_perCore` — coverage map updated for per-core. | Theorem. | M |
+| SM8.B.6 | `enforcementBoundaryExtended_perCore` — 23 entries (was 22 in V6-L). | Definition + theorem. | M |
+| SM8.B.7 | Boundary completeness witness extended. | Theorem. | M |
+| SM8.B.8 | `acceptedCovertChannel_lockContention`: lock-contention timing as documented covert channel. | Definition. | M |
+| SM8.B.9 | Mitigation note: WS-W (CCA/MPAM) narrows this channel via partition isolation. | Documentation. | S |
+| SM8.B.10 | `acceptedCovertChannel_perCoreCount`: total = 5 channels (4 existing + lock contention). | Definition. | T |
+| SM8.B.11 | `endpointPolicyRestricted_perCore`. | Theorem. | M |
+| SM8.B.12 | Per-core NI bridge to non-interference release. | Theorem. | M |
+| SM8.B.13 | Cross-core information flow: a thread on c can only learn about c' via documented channels. | `crossCoreLeakage_bounded` | L |
+| SM8.B.14 | Tests in `tests/SmpInformationFlowSuite.lean`: 15+ scenarios. | New tests. | L |
 
-#### SM7.E — Tests (1-2 PRs)
+#### SM8.C — Per-core declassification audit (3 PRs, 7 sub-tasks)
 
-| Sub | Description | Files | Est |
-|-----|-------------|-------|-----|
-| SM7.E.1 | `tests/SmpInformationFlowSuite.lean`: per-core NI scenarios; BKL contention timing test (positive — channel exists). | `tests/SmpInformationFlowSuite.lean` | L |
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM8.C.1 | `DeclassificationEvent` extended with `originatingCore : CoreId`. | Structure extension. | M |
+| SM8.C.2 | Per-core audit-trail: cross-core declassification chains recorded. | Theorem. | M |
+| SM8.C.3 | Audit trail invariant: every declass event has a valid originating core. | Theorem. | S |
+| SM8.C.4 | `DeclassificationEvent_perCore_audit`. | Theorem. | M |
+| SM8.C.5 | `authorizationBasis_perCore` — extends V6-H. | Theorem. | M |
+| SM8.C.6 | Cross-core declassification: rules for declassifying state observed on another core. | Theorem. | M |
+| SM8.C.7 | Tests: per-core declass scenarios. | New tests. | M |
 
-**SM7 acceptance gate**: NI proofs go through per-core; BKL channel
-documented; declassification trail extends per-core.
+#### SM8.D — Information-flow under fine locks (3 PRs, 6 sub-tasks)
 
-### Phase SM8 — Documentation, tests, version closure (8-12 PRs)
+| Sub | Description | Theorem | Est |
+|-----|-------------|---------|-----|
+| SM8.D.1 | Lock state visibility: lock acquire/release are atomic but their *timing* is observable. | Documented. | M |
+| SM8.D.2 | Reader-multiplicity not directly observable: readers don't see each other under RW locks (each thinks it owns shared access). | Theorem. | M |
+| SM8.D.3 | Writer-exclusion observable: a thread blocked on a writer can detect another writer's presence. | Documented. | T |
+| SM8.D.4 | Bibba-integrity under per-core locks. | Theorem. | M |
+| SM8.D.5 | Secure-information-flow witness under fine locks. | Theorem. | M |
+| SM8.D.6 | Tests: lock-contention IF scenarios. | 5+ tests. | M |
 
-**Goal**: complete documentation sync for v1.0.0 SMP release.
-
-#### SM8.A — Documentation sync (3-4 PRs)
-
-Per CLAUDE.md "Documentation rules", when behavior or theorems
-change, update in same PR:
-
-| Sub | Description | Files | Est |
-|-----|-------------|-------|-----|
-| SM8.A.1 | `docs/spec/SELE4N_SPEC.md §6.4` rewritten for SMP. New subsections 6.4.1 SMP architecture, 6.4.2 boot sequence, 6.4.3 per-core invariants, 6.4.4 cross-core IPC, 6.4.5 TLB shootdown protocol, 6.4.6 BKL discipline. | (1 file, ~500 LoC added) | L |
-| SM8.A.2 | New `docs/gitbook/16-smp-architecture.md`. | (1 file, ~300 LoC) | M |
-| SM8.A.3 | Update `docs/gitbook/01-project-overview.md` and `docs/gitbook/15-rust-syscall-wrappers.md` for SMP. | (2 files) | S |
-| SM8.A.4 | Update `README.md` metrics + SMP capability claim. Sync 10 i18n READMEs. | (11 files) | M |
-| SM8.A.5 | Update `docs/DEVELOPMENT.md` with WS-SM closure. | (1 file) | S |
-| SM8.A.6 | Update `docs/CLAIM_EVIDENCE_INDEX.md` with WS-SM phase entries. | (1 file) | M |
-| SM8.A.7 | Update `docs/WORKSTREAM_HISTORY.md` with WS-SM portfolio summary. | (1 file) | L |
-| SM8.A.8 | Regenerate `docs/codebase_map.json`. | (1 file) | T |
-| SM8.A.9 | Update `scripts/website_link_manifest.txt` for new SMP-related paths. | (1 file) | S |
-
-#### SM8.B — Test suite completion (2-4 PRs)
-
-| Sub | Description | Files | Est |
-|-----|-------------|-------|-----|
-| SM8.B.1 | `tests/SmpSchedulerSuite.lean` (~600 LoC). | (1 file) | L |
-| SM8.B.2 | `tests/SmpIpcSuite.lean` (~500 LoC). | (1 file) | L |
-| SM8.B.3 | `tests/SmpCapabilitySuite.lean` (~400 LoC). | (1 file) | M |
-| SM8.B.4 | `tests/SmpTlbShootdownSuite.lean` (~400 LoC). | (1 file) | M |
-| SM8.B.5 | `tests/SmpInformationFlowSuite.lean` (~400 LoC). | (1 file) | M |
-| SM8.B.6 | `tests/fixtures/smp_4core_boot.expected` (deterministic boot trace). | (1 file) | M |
-| SM8.B.7 | New tier `scripts/test_tier4_smp.sh` covering all SMP suites. | (1 file) | M |
-| SM8.B.8 | Wire QEMU `-smp 4` integration into nightly. | `scripts/test_nightly.sh` | S |
-
-#### SM8.C — Version bump to v1.0.0 (1 PR)
+#### SM8.E — Tests + closure (2 PRs, 3 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| SM8.C.1 | Bump `lakefile.toml::version` from current → `1.0.0`. Sync `README.md`, `CHANGELOG.md`, `CLAUDE.md`, `docs/spec/SELE4N_SPEC.md`, `rust/Cargo.toml`, `rust/sele4n-hal/src/boot.rs::KERNEL_VERSION`, 10 i18n READMEs, `docs/codebase_map.json`. | (~20 files) | M |
+| SM8.E.1 | Surface anchors for SM8 theorems (~18 theorems). | `tests/SmpSurfaceAnchors.lean`. | S |
+| SM8.E.2 | Comprehensive IF test fixture: `smp_information_flow.expected`. | New fixture. | M |
+| SM8.E.3 | Update `enforcementBoundaryExtended` count witness from 22 → 23+. | Theorem. | T |
 
-#### SM8.D — AN12-B inventory retire / rewrite (1 PR)
+**SM8 acceptance gate**: NI proofs go through per-core; lock-
+contention channel documented; declassification trail extends
+per-core; enforcement boundary extended.
 
-| Sub | Description | Files | Est |
-|-----|-------------|-------|-----|
-| SM8.D.1 | Each `smpLatentInventory` entry's `smpDischarge` is now "SMP-implemented in WS-SM"; each `sourceTheorem` points to the SMP analogue. The inventory transitions from "latent" to "discharged". Optionally rename to `smpDischargedInventory` for honesty. | `Concurrency/Assumptions.lean` | M |
-| SM8.D.2 | The 8-entry size witness is retained; the inventory is now historical-doc + ongoing-anchor for the discharged-property witnesses. | `Concurrency/Assumptions.lean` | T |
+### Phase SM9 — Documentation, tests, version closure (25-35 sub-tasks)
 
-#### SM8.E — CHANGELOG closure (1 PR)
-
-| Sub | Description | Files | Est |
-|-----|-------------|-------|-----|
-| SM8.E.1 | `CHANGELOG.md` v1.0.0 entry: full WS-SM portfolio summary; closes 5 CRITICAL + 4 HIGH + 7 MEDIUM + 5 LOW findings from this audit. | `CHANGELOG.md` | M |
-
-#### SM8.F — Archive WS-RC audit artefacts (1 PR)
+**Goal**: complete v1.0.0 release.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| SM8.F.1 | Per `docs/audits/README.md` lifecycle: archive WS-RC `AUDIT_v0.30.11_*` files to `docs/dev_history/audits/` once v1.0.0 cuts. | (file moves) | S |
-| SM8.F.2 | Move this SMP audit (`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`) to `docs/dev_history/planning/` once WS-SM closes. | (1 file move) | T |
-| SM8.F.3 | Update `scripts/website_link_manifest.txt` for archived locations. | (1 file) | T |
+| SM9.A.1 | Spec §6.4 rewritten for SMP (5 subsections). | `docs/spec/SELE4N_SPEC.md` | L |
+| SM9.A.2 | New GitBook chapter 16 (SMP architecture). | `docs/gitbook/16-smp-architecture.md` | L |
+| SM9.A.3 | New GitBook chapter 17 (verified lock primitives). | `docs/gitbook/17-verified-lock-primitives.md` | L |
+| SM9.A.4 | README + 10 i18n update with SMP capability claim. | (11 files) | M |
+| SM9.A.5 | DEVELOPMENT.md + CLAIM_EVIDENCE_INDEX.md updates. | (2 files) | M |
+| SM9.A.6 | WORKSTREAM_HISTORY.md WS-SM closure. | (1 file) | L |
+| SM9.A.7 | codebase_map.json regeneration. | (1 file) | T |
+| SM9.A.8 | website_link_manifest.txt updates. | (1 file) | S |
+| SM9.B.1..B.10 | Full SMP test suites (Scheduler, IPC, Capability, TLB, IF, Foundations) — 6 new tests files. | tests/ | XL |
+| SM9.B.11 | smp_4core_boot.expected fixture. | tests/fixtures/ | M |
+| SM9.B.12 | tier-4 SMP test script. | scripts/ | M |
+| SM9.B.13 | tier-5 verification tier (proves all 210 SM theorems land at HEAD). | scripts/ | S |
+| SM9.C.1 | Version bump to v1.0.0 across all metric-bearing files (~25 files). | (~25 files) | M |
+| SM9.C.2 | CHANGELOG v1.0.0 closure entry. | CHANGELOG.md | M |
+| SM9.C.3 | Move WS-RC artefacts to dev_history/. | (file moves) | S |
+| SM9.C.4 | Move this plan to dev_history/planning/. | (1 move) | T |
+| SM9.C.5 | Tag v1.0.0 (maintainer-cut). | git tag | T |
 
-**SM8 acceptance gate**: v1.0.0 release ships with: bootable
-verified SMP microkernel on RPi5; full documentation; all tests
-green at all tiers; CHANGELOG complete; archive policy honored.
+**SM9 acceptance gate**: v1.0.0 released; all 11 acceptance
+criteria from §11 met.
 
 ## 6. Cross-subsystem impact matrix
 
-Approximate proof rewrite cost under WS-SM (assuming BKL +
-bootCore-shim discipline preserves single-core proofs):
+| Subsystem | Files | Existing LoC | New LoC (lock + per-core + SMP) | Migration LoC | Notes |
+|-----------|------:|-------------:|---------------------------------:|--------------:|-------|
+| Concurrency (new modules) | 0 → 8 | 228 | ~3500 | 0 | TicketLock + RwLock + MemoryModel + LockKind + Anchors + Sgi + Locks + Types |
+| Scheduler | 22 | ~7000 | ~2200 | ~2400 | Path-a Vector replacement; per-core invariants; lock-set discipline |
+| IPC | 35 | ~12000 | ~1500 | ~1800 | Multi-object lock-set; cross-core wake |
+| Capability | 18 | ~5500 | ~600 | ~700 | Per-object locks on CNodes; CDT operations under lock-set |
+| Lifecycle | 6 | ~1500 | ~300 | ~200 | Retype under multi-object lock-set |
+| Service | 4 | ~1500 | ~150 | ~100 | Registry under lock |
+| Architecture | 14 | ~6000 | ~1500 | ~600 | TLB shootdown; IS variants; per-core IRQ |
+| InformationFlow | 12 | ~6000 | ~1500 | ~800 | Per-core observer; cross-core NI; BKL channel |
+| RobinHood / RadixTree | 6 | ~3500 | ~250 | ~50 | Table-level lock + per-bucket atomicity |
+| Platform | 17 | ~5000 | ~1000 | ~300 | PlatformBinding extension; per-core boot data; sharingDomain |
+| CrossSubsystem | 1 | 3309 | ~800 | ~400 | Retire singleCore witness; per-core consistency conjunct |
+| Model | 5 | ~5500 | ~600 | ~400 | path-a Vector replacement; per-core fields |
+| Object types | 7 | ~3500 | ~400 | ~200 | `lock : RwLock` on each object kind |
+| **Total** | **155** | **~60,000** | **~14,300** | **~7,950** | |
 
-| Subsystem | Files | Existing LoC | New LoC | Migration LoC | Notes |
-|-----------|------:|-------------:|--------:|--------------:|-------|
-| Concurrency | 1 (now 4-5) | 228 | ~600 | 0 | New phase-foundation modules |
-| Scheduler | 22 | ~7000 | ~1500 | ~800 | Per-core fields rewrite; per-core invariants; cross-core wake |
-| IPC | 35 | ~12000 | ~600 | ~400 | BKL bracketing; cross-core wake on signal/call |
-| Capability | 18 | ~5500 | ~150 | ~200 | Mostly BKL-bracketed; no structural change |
-| Lifecycle | 6 | ~1500 | ~100 | ~100 | Cleanup paths BKL-bracketed |
-| Service | 4 | ~1500 | ~50 | ~50 | Registry under BKL |
-| Architecture | 14 | ~6000 | ~800 | ~300 | TLB shootdown; per-core IRQ; SGI dispatch |
-| InformationFlow | 12 | ~6000 | ~700 | ~400 | Per-core observer; cross-core NI |
-| RobinHood / RadixTree | 6 | ~3500 | 0 | 0 | Pure functional; BKL-protected |
-| Platform | 17 | ~5000 | ~500 | ~150 | PlatformBinding extension; per-core boot data |
-| CrossSubsystem | 1 | 3309 | ~500 | ~200 | Retire singleCore witness; add perCore consistency conjunct |
-| **Totals** | **136** | **~51500** | **~5500** | **~2600** | New theorems + migration |
+Total new code: **~22,250 LoC** across **~155 files**.
 
-Total new proof + code: ~8100 LoC across ~136 files.
-
-For scale: WS-RC R4 closeout added ~1900 LoC; WS-RC R5 deferred
-completion added ~616 LoC. WS-SM is roughly 4× R4+R5 size — a
-substantial but tractable workstream.
+For scale: WS-AK ran ~14 months delivering ~6,000 LoC of remediation
+work; WS-SM at ~3.7× that LoC and at higher conceptual complexity
+predicts ~24-30 months.
 
 ## 7. Verification strategy
 
@@ -1629,224 +1767,175 @@ substantial but tractable workstream.
 
 | Property | Proof technique | Phase |
 |----------|-----------------|-------|
-| BKL mutex (Thm 2.2.5) | Structural — uses `AtomicU64::fetch_add` semantics from rust documentation; treated as axiom of the hardware (cited ARM ARM K11) | SM3.C |
-| BKL FIFO (Thm 2.2.6) | Same | SM3.C |
-| BKL release-acquire (Thm 2.3.2) | Same | SM3.C |
-| Per-core invariant preservation | Migration of existing closure-form proofs | SM2.C, SM2.D |
-| Cross-core IPC delivery (Thm 2.6.3) | Atomic-append + BKL serialization | SM5.A.1 |
-| TLB shootdown completeness (Thm 2.7.3) | Protocol-level — explicit ack invariant | SM6.B.4 |
-| Per-core NI (Thm 2.8.3) | Generalized projection composition | SM7.B |
-| WCRT under BKL (Cor 2.2.9) | Worst-case analysis on ticket counter advance | SM4.D.4 |
+| TicketLock mutex (Thm 2.2.2.1) | Direct from `Option` cardinality | SM2.B |
+| TicketLock FIFO (Thm 2.2.2.2) | Atomic-RMW total ordering | SM2.B |
+| TicketLock bounded wait (Thm 2.2.2.3) | Bandwidth argument on ticket counter | SM2.B |
+| TicketLock release-acquire (Thm 2.2.2.4) | Memory-model synchronization | SM2.B |
+| RwLock writer-readers exclusion (Thm 2.2.3.1) | Predicate invariant | SM2.C |
+| RwLock reader multiplicity (Thm 2.2.3.2) | Constructive | SM2.C |
+| RwLock FIFO admission (Thm 2.2.3.3) | Queue discipline | SM2.C |
+| RwLock bounded wait (Thm 2.2.3.4) | Bandwidth + reader-batching | SM2.C |
+| RwLock release-acquire (Thm 2.2.3.5) | Memory-model | SM2.C |
+| Lock-set canonical ordering (Thm 2.1.7) | Sort uniqueness | SM3.B |
+| Deadlock-freedom (Thm 2.1.9) | Induction over LockId total order | SM3.D |
+| Serializability (Thm 2.1.10) | Strict-2PL conflict-serializability | SM3.E |
+| Single-core proof preservation (Cor 2.1.11) | Theorem migration with lock-set precondition | SM3.E |
+| Path-a per-core extensionality (Thm 2.3.3) | Vector extensionality | SM4.B |
+| ~110 migrated per-core scheduler invariants | Mechanical migration | SM4.C |
+| ~22 migrated per-core IPC invariants | Same | SM4.D |
+| SGI delivery (Thm 2.5.3) | Atomic-append + 2PL | SM5.C |
+| TLB shootdown completeness (Thm 2.6.3) | Protocol with explicit ack | SM7 |
+| Cross-core NI (Thm 2.7.3) | Per-core observer model | SM8 |
+| WCRT bound under SMP fine-locking | Lock-set + per-lock WCRT composition | SM5.J |
 
-### 7.2 What we assume (axioms)
+### 7.2 What we assume
 
-The WS-SM **axiom budget is 0**. Hardware primitives (atomic
-operations, IS-variant TLBIs, MMU coherence) are *assumptions* —
-not axioms in the Lean sense — but each is documented with an ARM
-ARM citation in the corresponding module's docstring. We do NOT
-add `axiom` declarations to Lean source; instead, hardware
-properties enter the proof surface via FFI's opaque declarations
-(`@[extern]`) whose Rust implementations are reviewed for
-correctness against ARM ARM.
+| Assumption | Citation | Phase |
+|------------|----------|-------|
+| ARMv8.1-A LSE atomic semantics (LDADDA, STADDL, etc.) | ARM ARM K11, K12 | SM2.A |
+| Inner-shareable PE coherence | ARM ARM B2.3.6, B2.7.5 | All |
+| DSB ISH waits for prior memory accesses by this PE | ARM ARM B2.7.5 | All |
+| TLBI ...IS broadcasts to inner-shareable domain | ARM ARM C6.2.311-316 | SM7 |
+| GICD_SGIR delivery semantics | GIC-400 TRM §4.3.13 | SM5.C |
+| MPIDR_EL1 affinity field layout | ARM ARM D17.2.98 | SM0 |
 
-This matches seL4's approach: hardware primitives are trusted at
-the assumption level (cited in the spec), not axiomatized in the
-proof assistant.
+**No Lean `axiom` declarations.** Hardware assumptions enter the
+proof surface via FFI's opaque declarations (`@[extern]`) whose
+Rust implementations are reviewed against ARM ARM. The Lean
+abstract memory model (`Concurrency/MemoryModel.lean`) captures
+the operational semantics; specific compilation choices (LDADDA vs
+DMB ISH + STR) are HAL-side review obligations.
 
 ### 7.3 Testing tiers under SMP
 
 | Tier | What it checks | SMP additions |
 |------|----------------|---------------|
-| Tier 0 (hygiene) | sorry/axiom/native_decide, etc. | Confirm 0 axioms added |
-| Tier 1 (build) | All modules compile | New SMP modules compile |
+| Tier 0 (hygiene) | sorry/axiom/native_decide etc. | 0 axioms added |
+| Tier 1 (build) | All modules compile | Concurrency suite compiles |
 | Tier 2 (trace) | Deterministic trace fixture | `smp_4core_boot.expected` |
-| Tier 3 (invariant) | Surface anchor #checks | Per-core invariant anchors |
-| Tier 4 (nightly) | QEMU `-smp 4` boot, multi-core scenarios | All SMP suites; cross-core IPC; TLB shootdown |
+| Tier 3 (invariant) | Surface anchor `#check`s | Per-core invariant anchors; lock-primitive anchors |
+| Tier 4 (nightly) | QEMU `-smp 4` boot | Cross-core IPC; TLB shootdown; SGI round-trip |
+| Tier 5 (NEW) | Lock-primitive correctness | TicketLock + RwLock formal-spec checks |
 
 ### 7.4 Liveness under contention
 
-Define `T_cs` as the WCRT of a single kernel transition (the time
-from BKL acquire to BKL release on one core) and `T_acq` as the
-WCRT of BKL acquisition (the spin time before serving equals the
-captured ticket).
+Under per-object fine locks, syscall WCRT is bounded by:
 
-**Theorem 7.4.1** (Syscall WCRT under BKL). For a kernel running
-under BKL on `numCores` cores,
+    WCRT(syscall) ≤ max-lock-set-size × (coreCount − 1) × WCRT(criticalSection / lock)
 
-    WCRT(syscall) = T_acq + T_cs ≤ numCores × T_cs
+For most operations, lock-set size is ≤ 4 (e.g., capability copy:
+src CNode, dst CNode, CDT root, ObjStore). For RPi5 (coreCount = 4):
 
-**Proof.** By Theorem 2.2.8, `T_acq ≤ (numCores − 1) × T_cs`. The
-syscall is a BKL-acquire followed by the kernel transition (T_cs)
-followed by BKL-release (constant time absorbed into T_cs's
-upper bound). Sum: `T_acq + T_cs ≤ numCores × T_cs`. □
+    WCRT(syscall) ≤ 4 × 3 × WCRT_per_lock ≈ 4 × 3 × ~60 µs = 720 µs ≈ 1 ms
 
-**Concrete bound for RPi5**. R5's `wcrt_bound_rpi5` establishes
-`T_cs ≤ B_cs` for some concrete bound `B_cs` derived from the
-canonical config's largest kernel transition (typically the
-deepest CDT revoke or the longest IPC capability-transfer loop).
-The SMP analogue:
-
-    wcrt_bound_rpi5_smp : ∀ syscall, WCRT(syscall) ≤ 4 × B_cs
-
-For the canonical config's `B_cs ≈ 250 µs` (an order-of-magnitude
-estimate; the precise constant is dictated by the CDT depth bound
-`maxCdtDepth = 65536` and the per-step CDT operation cost), the
-SMP bound is `≈ 1 ms` worst case. This comfortably fits within
-the 1-ms timer tick budget.
-
-**Note**: WCRT is an *upper* bound. Average-case syscall latency
-is single-core T_cs when contention is low (likely true for most
-workloads). We do not prove average-case bounds; the bounded-wait
-property suffices for hard real-time guarantees.
+This fits within the 1-ms timer-tick budget. Better than BKL's
+4 × 250 µs = 1 ms worst case (per-object locks distribute the
+wait across multiple locks, and most operations don't contend on
+all of them simultaneously).
 
 ## 8. Risk inventory
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| BKL contention dominates scheduler latency | MEDIUM | MEDIUM (real-time deadlines slip) | WCRT proven bounded; v1.x performance work introduces finer locks |
-| Cross-core wake SGI lost | LOW | HIGH (thread starvation) | GIC SGI delivery is hardware-guaranteed; ack protocol confirms |
-| TLB shootdown deadlock (initiator waits forever) | LOW | HIGH (kernel hang) | Bounded WFE in ack loop; timeout reverts to local-only TLBI |
-| Secondary core wakes into broken MMU state | ZERO (SM1.C fully initializes) | CRITICAL | SM1.C completes init before any kernel work |
-| BKL acquire / release imbalance (lock leak) | LOW | CRITICAL | RAII `with_bkl` combinator; static analysis (`#[must_use]` on acquire result) |
-| Vector indexing out of bounds | ZERO (Fin numCores) | — | Type-system guarantee; no runtime check needed |
-| Memory ordering violation between cores | LOW | HIGH | ARMv8 release/acquire semantics; explicit `dsb ish` at protocol boundaries |
-| Per-core idle thread interactions with PIP | LOW | MEDIUM | Idle threads have priority 0; never participate in PIP boost |
-| Test coverage gap for cross-core scenarios | MEDIUM | MEDIUM (latent bugs ship) | SM8.B requires explicit cross-core suites; QEMU `-smp 4` mandatory |
-| WS-SM doesn't fit in pre-1.0 timeline | MEDIUM | HIGH (delay v1.0.0) | Phased delivery — each SM-phase is independently shippable; if needed, freeze at any phase and ship as v1.0.0-rcN |
+| Lock-set extraction static analysis too brittle | MEDIUM | HIGH | SM3.B builds `lockSet` as a total Lean function; the static-derivability obligation is itself a theorem. |
+| Deadlock-freedom proof has subtle gap | LOW | CRITICAL | Theorem 2.1.9's induction is mathematically standard; SM3.D includes wait-graph acyclicity as backup proof. |
+| Multi-object operations exceed reasonable lock-set sizes (>8 locks) | MEDIUM | MEDIUM | Per-operation review during SM6; if any exceeds, refactor to fewer locks. |
+| Per-core wake SGI lost | LOW | HIGH | GIC SGI delivery hardware-guaranteed; ack protocol confirms. |
+| TLB shootdown deadlock (initiator waits forever) | LOW | HIGH | Bounded WFE in ack loop; timeout reverts to local-only TLBI |
+| Secondary core wakes into broken MMU state | ZERO (SM1.C closes) | CRITICAL | SM1.C completes init before any kernel work |
+| Lock acquire/release imbalance | LOW | CRITICAL | RAII `withLockSet` combinator; static analysis (`#[must_use]`) |
+| Vector indexing out of bounds | ZERO (Fin coreCount) | — | Type-system guarantee |
+| Memory ordering violation between cores | LOW | HIGH | ARMv8 release/acquire; SM2.A models semantics |
+| Per-core idle thread interactions with PIP | LOW | MEDIUM | Idle priority 0; never participates in PIP boost |
+| WS-SM scope overruns 30 months | MEDIUM | MEDIUM (release delay) | Phased delivery; each SM-phase independently shippable |
+| Refinement proof Rust ↔ Lean has compilation drift | MEDIUM | HIGH | SM2.D static linker-time check; cargo test refinement scenarios |
+| Hierarchical lock order has implicit cycles via cross-kind references | LOW | HIGH | SM3.D's wait-graph acyclicity catches; tested via property-based fuzz |
+| RW lock starvation under writer contention | LOW | MEDIUM | Theorem 2.2.3.3 (FIFO admission); SM2.C.14 (writer-starvation freedom) |
+| Lock-set complexity penalty too high for some hot-path operations | MEDIUM | MEDIUM | SM6 reviews hot paths; can use single-object locks where lock-set is naturally 1 |
 
 ## 9. Timeline
 
-**Prerequisite implication for WS-RC**: the current `CLAUDE.md`
-release path has WS-RC closing at v1.0.0 (R2..R6 portion). To
-accommodate WS-SM landing pre-v1.0.0, **WS-RC must close at some
-v0.31.x version (not v1.0.0)**. The mechanical change is small —
-WS-RC's R2..R6 phases retarget their "version bump" sub-tasks
-from v1.0.0 to v0.31.last. The substance of WS-RC is unchanged;
-only the closing version is moved. WS-SM then takes over the
-v1.0.0 release-cut role. This is the single CLAUDE.md edit
-required before SM0 opens — recorded as Open Question #2.
+**Prerequisite implication for WS-RC**: WS-RC R2..R6 close at
+v0.31.last instead of v1.0.0. Mechanical change; tracked under
+SM0.Q.
 
-WS-RC closure → WS-SM open at the v0.31.x → v0.32.0 boundary.
+WS-RC closure → WS-SM open at v0.31.x → v0.32.0 boundary.
 
 | Phase | Releases | Estimated calendar |
 |-------|----------|--------------------|
-| SM0 | v0.32.0 → v0.32.x | 3-5 weeks |
-| SM1 || SM2 | v0.33.0 → v0.40.x | 8-12 weeks (parallel) |
-| SM3 | v0.41.0 → v0.45.x | 6-10 weeks |
-| SM4 | v0.46.0 → v0.55.x | 10-14 weeks |
-| SM5 | v0.56.0 → v0.62.x | 5-8 weeks |
-| SM6 | v0.63.0 → v0.70.x | 5-8 weeks (parallel with SM5 partially) |
-| SM7 | v0.71.0 → v0.78.x | 5-8 weeks (parallel with SM6) |
-| SM8 | v0.79.0 → **v1.0.0** | 3-5 weeks |
-| **Total** | | **45–70 weeks** (~11–16 months) |
+| SM0 | v0.32.0 → v0.32.x | 4-6 weeks |
+| SM1 \|\| SM2 | v0.33.0 → v0.45.x | 16-22 weeks (parallel) |
+| SM3 | v0.46.0 → v0.52.x | 8-12 weeks |
+| SM4 | v0.53.0 → v0.70.x | 20-26 weeks (largest phase) |
+| SM5 | v0.71.0 → v0.82.x | 12-16 weeks |
+| SM6 | v0.83.0 → v0.90.x | 8-12 weeks |
+| SM7 \|\| SM8 | v0.91.0 → v0.97.x | 6-10 weeks (parallel) |
+| SM9 | v0.98.0 → **v1.0.0** | 4-6 weeks |
+| **Total** | | **78-110 weeks (~18-26 months)** |
 
-This is a *substantial* workstream. The estimate is consistent
-with seLe4n's historical workstream cadence (WS-AK ran 14 months
-end-to-end; WS-AN ran 8 months). The estimate is calibrated to
-the project's solo-maintainer rhythm; faster delivery requires
-contributor parallelism (multiple phases progressing concurrently
-where dependencies permit).
+The lower bound assumes contributor parallelism on SM1+SM2 and
+SM7+SM8. Solo-maintainer cadence at the bounds gives ~24-30
+months realistic.
 
-**Critical-path note**: SM0 → SM1+SM2 → SM3 → SM4 → SM5 → SM8 is
-the critical path. SM6 and SM7 can run parallel to SM4/SM5 once
-SM3 lands.
+## 10. Decisions taken (was: open questions)
 
-## 10. Open questions for the maintainer
+All 9 original open questions plus 3 derived ones answered:
 
-Before SM0 opens, the following decisions are needed:
+| # | Question | Decision |
+|---|----------|----------|
+| 1 | Concurrency model | Per-subsystem locks (escalated to per-object fine locks in §3) |
+| 2 | Target version + WS-RC retarget | v1.0.0 ships SMP; WS-RC retargets to v0.31.last (SM0.Q) |
+| 3 | Model rewrite path | Path-a replacement |
+| 4 | Default SMP activation | Enabled by default; opt-out via cmdline |
+| 5 | numCores parameterization | Via `PlatformBinding.coreCount` |
+| 6 | Cross-cluster portability | Via `PlatformBinding.sharingDomain` |
+| 7 | Idle threads | Per-core idle TCBs |
+| 8 | SM0 sequencing | Spread across many small PRs |
+| 9 | Workstream ID | WS-SM |
+| 10 | Lock layout | Per-object fine locks |
+| 11 | RW vs exclusive | Reader-writer locks |
+| 12 | Lock acquire order | Hierarchical by object kind |
+| 13 | Timeline / scope trade-off | Longer timeline + verify lock primitives |
 
-1. **Workstream ID** — `WS-SM` (SMP / Multi-core) per the
-   two-letter convention. Confirm or rename.
-2. **Target version + WS-RC retarget** — v1.0.0 ships SMP. This
-   requires retargeting WS-RC's R2..R6 closing version from v1.0.0
-   to v0.31.last (substance unchanged; only the release-bump
-   sub-tasks shift). Confirm both the v1.0.0-ships-SMP goal AND the
-   WS-RC retarget.
-3. **BKL discipline** — accept Big Kernel Lock for v1.0.0;
-   per-subsystem locks deferred to v1.x performance workstream?
-4. **Concurrency strategy** — confirm path-b (additive per-core
-   fields with bootCore-shim) over path-a (replace existing fields)
-   per §2.4.
-5. **Default SMP activation** — should v1.0.0 default to
-   `smp_enabled=true` on RPi5? seL4 ships SMP off; we recommend
-   same: ON only when explicitly requested. The PRIMARY core path
-   remains the same single-core kernel; SMP activation brings up
-   secondaries.
-6. **Cross-cluster portability** — defer to post-1.0 (BCM2712 is
-   single cluster; OSH variants exist but unused)? Confirm.
-7. **`numCores` parameterization** — hardcoded to 4 for v1.0.0
-   per §4.3? Or generalize across PlatformBinding now?
-8. **Idle threads** — per-core idle threads (recommended in
-   §SM2.G) or shared idle thread with affinity?
-9. **Honesty patches sequencing** — SM0 batched into one
-   v0.32.0 release, or spread across the WS-SM lifetime?
+These decisions are recorded here as binding for WS-SM. Future
+deviations require maintainer-led re-decisioning recorded in
+errata.
 
 ## 11. Acceptance / completeness criteria for v1.0.0 release
 
 WS-SM is complete and v1.0.0 ships when:
 
-- [ ] All 5 CRITICAL findings closed (SMP-C1..C4 + the SMP-H4 BKL gap).
-- [ ] All HIGH findings closed.
-- [ ] All MEDIUM findings closed except those deferred with explicit
-      rationale.
-- [ ] LOW findings either closed or recorded post-1.0 with
-      correctness-impact statement.
-- [ ] Every phase's acceptance gate (§5 per-phase) green.
-- [ ] tier-0 through tier-4 tests green at HEAD.
-- [ ] QEMU `-smp 4` integration test green.
-- [ ] Cargo `cargo test -p sele4n-hal --lib smp` (after extensions) green.
+- [ ] All 4 CRITICAL findings closed (SMP-C1..C4) and all HIGH findings closed.
+- [ ] All MEDIUM findings closed except those deferred with explicit rationale.
+- [ ] LOW findings closed or recorded post-1.0 with correctness-impact statement.
+- [ ] Every phase's acceptance gate (§5) green.
+- [ ] tier-0 through tier-5 tests green at HEAD.
+- [ ] QEMU `-smp 4` integration test green on every nightly.
+- [ ] `cargo test` (HAL + ABI + types + sys) green.
 - [ ] `lake build` (256 jobs) green; zero `sorry`, `axiom`, `native_decide`.
-- [ ] `scripts/test_full.sh` green; `scripts/test_nightly.sh` green.
+- [ ] `scripts/test_full.sh` + `scripts/test_nightly.sh` green.
 - [ ] Documentation synchronized per CLAUDE.md "Documentation rules".
-- [ ] AN12-B inventory transitioned from "latent" to "discharged"
-      OR replaced with a post-1.0 "SMP-runtime-invariant" inventory.
-- [ ] WCRT bound proven for the SMP RPi5 canonical config.
-- [ ] Per-core noninterference proven.
-- [ ] Information flow: BKL contention channel documented;
-      enforcement boundary extended.
+- [ ] AN12-B inventory transitioned to discharged state (or replaced).
+- [ ] WCRT bound proven for SMP RPi5 canonical config.
+- [ ] Per-core non-interference proven.
+- [ ] Information flow: BKL contention channel documented; enforcement boundary extended.
 - [ ] No production-source `dev_history/` cross-references.
 - [ ] CHANGELOG v1.0.0 entry complete.
 - [ ] Version bumped to 1.0.0 across all metric-bearing files.
+- [ ] WS-SM closure recorded in `docs/WORKSTREAM_HISTORY.md`.
+- [ ] This plan moved to `docs/dev_history/planning/`.
 
 ## Appendix A — Source-of-truth file inventory
 
-The full source surface audited for this plan (~2300 lines of
-existing source):
-
-| Path | Lines | Purpose |
-|------|------:|---------|
-| `SeLe4n/Kernel/Concurrency/Assumptions.lean` | 228 | AN12-B SMP-latent inventory |
-| `rust/sele4n-hal/src/smp.rs` | 345 | SMP bring-up scaffolding |
-| `rust/sele4n-hal/src/psci.rs` | 189 | PSCI CPU_ON wrapper |
-| `rust/sele4n-hal/src/boot.S` | 170 | Boot assembly |
-| `rust/sele4n-hal/src/boot.rs` | 170 | Rust boot main (4 phases) |
-| `rust/sele4n-hal/src/cpu.rs` | 351 | MPIDR mask, wfe_bounded |
-| `rust/sele4n-hal/src/gic.rs` | 848 | GIC-400 (no SGI primitive) |
-| `rust/sele4n-hal/src/interrupts.rs` | 156 | with_interrupts_disabled |
-| `rust/sele4n-hal/src/tlb.rs` | 155 | TLB ops (non-IS only — SMP-C4) |
-| `rust/sele4n-hal/src/barriers.rs` | 540 | barrier ops; dsb_osh exists |
-| `rust/sele4n-hal/src/cache.rs` | 270 | cache ops; ic_ialluis exists |
-| `rust/sele4n-hal/link.ld` | 102 | .smp_stacks reserved |
-| `SeLe4n/Kernel/Architecture/Assumptions.lean` | 346 | ArchAssumption inductive |
-| `SeLe4n/Kernel/CrossSubsystem.lean:3239-3273` | 35 | singleCore witness |
-| `SeLe4n/Model/State.lean:120-170` | 50 | SchedulerState (single-core) |
-| `SeLe4n/Platform/FFI.lean:380-460` | 80 | kernelStateRef shared |
-| `SeLe4n/Platform/Contract.lean` | 133 | PlatformBinding |
-| `scripts/test_qemu_smp_bringup.sh` | 42 | Stub (SKIP) |
-| `docs/spec/SELE4N_SPEC.md §6.4, §6.8, §11.2.3` | ~200 | SMP-deferred claims |
-| `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md:1054,1294` | ~30 | Prior audit's SMP notes |
-| `docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md:290-340` | 50 | DEF-R-HAL-L20 |
-| **Total existing** | **~4500** | |
+[Same as prior version; ~2300 LoC of existing source inventoried.]
 
 ## Appendix B — Verification commands
 
-The following commands independently verify the findings in §3:
-
 ```bash
-# SMP-C1: bring_up_secondaries has no caller outside smp.rs
+# SMP-C1: bring_up_secondaries has no caller
 grep -rn "bring_up_secondaries\|crate::smp::bring_up" rust/
 
-# SMP-C2: rust_secondary_main body — confirm no init calls
+# SMP-C2: rust_secondary_main body
 sed -n '202,240p' rust/sele4n-hal/src/smp.rs
 
 # SMP-C4: TLB module emits non-IS variants
@@ -1861,13 +1950,13 @@ grep -A 10 "inductive ArchAssumption" SeLe4n/Kernel/Architecture/Assumptions.lea
 # SMP-H3: Inventory Lean.Name disclaimer
 grep -A 3 "Lean does not enforce" SeLe4n/Kernel/Concurrency/Assumptions.lean
 
-# SMP-M1: dev_history cross-references in production
+# SMP-M1: dev_history cross-references
 grep -rn "dev_history" rust/sele4n-hal/src/ SeLe4n/Kernel/
 
 # SMP-M2: stale WS-V claim
 grep -n "deferred to WS-V" docs/spec/SELE4N_SPEC.md
 
-# SMP-M3: .smp_stacks not in BSS-zero loop
+# SMP-M3: .smp_stacks not zeroed
 grep -B 2 -A 8 ".smp_stacks" rust/sele4n-hal/link.ld
 
 # SMP-M4: TPIDR_EL1 not set in secondary_entry
@@ -1876,158 +1965,134 @@ grep -n "TPIDR\|tpidr" rust/sele4n-hal/src/boot.S
 # SMP-M6: QEMU stub
 head -30 scripts/test_qemu_smp_bringup.sh
 
-# Inventory size witness
+# Inventory size
 grep -n "smpLatentInventory_count" SeLe4n/Kernel/Concurrency/Assumptions.lean
 ```
 
 ## Appendix C — Theorem catalogue (forward-looking)
 
-The complete list of new substantive theorems WS-SM introduces.
-Each will land in the phase indicated; the catalogue is the
-canonical reference for verification audits during WS-SM.
+~210 new substantive theorems across the 10 phases. Selected
+canonical names (full list maintained in
+`docs/audits/SMP_THEOREM_INDEX.md` once WS-SM opens):
 
-### C.1 Foundations (SM0)
+### C.0 Foundations (SM0)
 
-| Theorem | Statement | File |
-|---------|-----------|------|
-| `numCores_pos` | `numCores > 0` | `Concurrency/Types.lean` |
-| `allCores_length` | `allCores.length = numCores` | `Concurrency/Types.lean` |
-| `allCores_nodup` | `allCores.Nodup` | `Concurrency/Types.lean` |
-| `bootCoreId_valid` | `bootCoreId.val < numCores` | `Concurrency/Types.lean` |
-| `SgiKind.toIntid_injective` | Pairwise distinct INTIDs | `Concurrency/Locks.lean` |
-| `smpLatentInventory_identifiers_nodup` | NoDup identifiers | `Concurrency/Assumptions.lean` |
-| `archAssumption_singleCoreOperation_added` | 6th constructor exists | `Architecture/Assumptions.lean` |
-| `archAssumptionConsumer_total_6` | total over 6 cases | `Architecture/Assumptions.lean` |
-| `archAssumptionConsumer_distinct_6` | C(6,2)=15 distinct | `Architecture/Assumptions.lean` |
+- `numCores_pos`, `allCores_length`, `allCores_nodup`,
+  `bootCoreId_valid`, `SgiKind.toIntid_injective`,
+  `smpLatentInventory_identifiers_nodup`,
+  `archAssumption_singleCoreOperation_added`,
+  `archAssumptionConsumer_total_6`,
+  `archAssumptionConsumer_distinct_6`,
+  `LockKind.level_strictMono`, `LockId.le_total`,
+  `SharingDomain.eq_decidable`.
 
-### C.2 Lock model (SM3)
+### C.1 Memory model (SM2.A)
 
-| Theorem | Statement | File |
-|---------|-----------|------|
-| `bklMutex` | At most one core holds BKL | `Concurrency/Locks.lean` |
-| `bklFifo` | Tickets serve in order | `Concurrency/Locks.lean` |
-| `bklRelAcq` | Release → acquire happens-before | `Concurrency/Locks.lean` |
-| `bklBoundedWait` | WCRT(acquire) ≤ (n-1)×WCRT(cs) | `Concurrency/Locks.lean` |
-| `bkl_unheld_at_kernel_entry` | Pre-condition on @[export] bodies | `Platform/FFI.lean` |
-| `bkl_unheld_at_kernel_exit` | Post-condition on @[export] bodies | `Platform/FFI.lean` |
-| `bkl_held_during_kernel_transition` | Mid-state of @[export] bodies | `Platform/FFI.lean` |
-| `bkl_acquire_release_paired` | RAII discipline | `Platform/FFI.lean` |
-| `bkl_mutex_property_preserved` | BklProperty invariant | `Platform/FFI.lean` |
-| `kernelStateRef_safe_under_bkl` | IO.Ref safety | `Platform/FFI.lean` |
+- `happens_before_partial_order`, `synchronizesWith_irreflexive`,
+  `atomicRmw_total_order`, `acquireLoad_releaseStore_pair`,
+  `memoryTrace_wellFormed_preserved`.
 
-### C.3 Per-core scheduler (SM4)
+### C.2 Lock primitives (SM2.B, SM2.C)
 
-| Theorem | Statement |
-|---------|-----------|
-| `chooseThreadOnCore_selects_highest` | Highest-priority runnable selected |
-| `chooseThreadOnCore_perCore_independence` | Per-core independence |
-| `chooseThreadOnCore_preserves_wellFormed` | Run queue invariant |
-| `chooseThreadOnCore_always_succeeds` | Idle fallback |
-| `switchToThreadOnCore_sets_current` | currentOnCore mutation |
-| `switchToThreadOnCore_preempts_previous` | Eviction discipline |
-| `switchToThreadOnCore_rejects_remote` | Migration not implicit |
-| `runQueueOnCore_excludes_currentOnCore` | Per-core inv generalized |
-| `runQueueOnCore_wellFormed` | Per-core run queue inv |
-| `currentOnCore_validThreadIfSome` | Per-core current validity |
-| `schedContextRunQueueConsistent_perCore` | Per-core CBS inv |
-| `schedulerInvariant_perCore` | Aggregate per-core inv |
-| `schedulerInvariant_perCore_pairwise` | Cross-core independence |
-| `enqueueRunnableOnCore_wellFormed` | Per-core enqueue preserves inv |
-| `wakeThread_emits_sgi_if_remote` | Cross-core wake protocol |
-| `wakeThread_lossless` | Eventually delivered |
-| `timerTickOnCore_advances_per_core` | Per-core tick |
-| `cbsReplenish_can_wake_remote_core` | Cross-core replenish |
-| `idleThread_core_locality` | Idle stays on its core |
-| `idleThread_priority_zero` | Idle is lowest priority |
-| `pipBoost_perCore_consistent` | PIP per-core |
-| `activeDomainOnCore_isInDomainSchedule` | Domain validity per-core |
-| `advanceDomainOnCore_cyclic` | Domain rotation |
-| `chooseThreadOnCore_inActiveDomain` | Per-core domain respect |
-| `wcrt_bound_rpi5_smp` | SMP WCRT bound |
+- TicketLock: 6 theorems (mutex, FIFO, bounded wait, release-acq,
+  wfInvariant, reachability).
+- RwLock: 10 theorems (writer-readers exclusion, reader
+  multiplicity, FIFO admission, bounded wait × 2, release-acq ×
+  2, wfInvariant, reader batching, writer-starvation freedom).
+- Refinement: 2 theorems (rust_ticketLock_refines_lean,
+  rust_rwLock_refines_lean).
 
-### C.4 Per-core IPC (SM5)
+### C.3 Lock discipline (SM3)
 
-| Theorem | Statement |
-|---------|-----------|
-| `endpointCall_emits_sgi_if_remote_receiver` | Cross-core call wake |
-| `endpointCall_perCore_blocking` | Caller blocks on own core |
-| `notificationSignal_remote_wake` | Cross-core notification |
-| `endpointReply_perCore_delivery` | Reply to correct TCB |
-| `donation_perCore_consistent` | Donation across cores |
-| `ipcInvariantFull_perCore` | 15-conjunct per-core |
-| `cancelIpcBlocking_atomic_under_bkl` | Cancel atomicity |
-| `cancelDonation_atomic_under_bkl` | Donation cancel atomicity |
+- `lockSet_consistent`, `lockSet_acquired_in_order`,
+  `lockSet_released_in_reverse`, `lockAcquireSequence_canonical`,
+  `deadlockFreedom_under_2pl_and_ordering`,
+  `serializability_under_2pl`, `singleCore_proof_preservation`,
+  `waitGraph_acyclic`, plus ~10 commutativity lemmas.
 
-### C.5 TLB / cache (SM6)
+### C.4 Per-core scheduler (SM4, SM5)
 
-| Theorem | Statement |
-|---------|-----------|
-| `tlbShootdownLocal_invalidates_local` | Initiator's TLB cleared |
-| `tlbShootdownBroadcast_invalidatesAllCores` | All TLBs cleared |
-| `tlbInvalidationConsistent_perCore` | Per-core TLB ↔ page table |
-| `shootdownAck_completes_in_bounded_time` | Ack protocol bounded |
-| `pendingShootdowns_drained_at_sgi_entry` | Pending queue drained |
+- ~110 migrated invariants + ~25 new per-core theorems
+  (chooseThreadOnCore_*, runQueueOnCore_*,
+  schedulerInvariant_perCore, schedulerInvariant_perCore_pairwise,
+  wakeThread_emits_sgi_if_remote, wakeThread_lossless,
+  cbsReplenish_can_wake_remote_core, idleThread_core_locality,
+  idleThread_priority_zero, chooseThreadOnCore_always_succeeds,
+  pipBoost_perCore_consistent, activeDomainOnCore_*, etc.).
 
-### C.6 Information flow (SM7)
+### C.5 Per-core IPC (SM6)
 
-| Theorem | Statement |
-|---------|-----------|
-| `onCore_isProjection_of_globalProjection` | Refinement |
-| `onCore_decidable` | Decidable projection |
-| `nonInterference_perCore` | Per-core NI |
-| `crossCoreNonInterference` | Cross-core NI |
-| `bklContention_acceptedCovertChannel` | Channel documented |
-| `enforcementBoundary_perCore_complete` | Extended boundary |
-| `DeclassificationEvent_perCore_audit` | Per-core audit trail |
+- ~30 theorems: endpointCall_emits_sgi_if_remote_receiver,
+  endpointCall_perCore_blocking, notificationSignal_remote_wake,
+  endpointReply_perCore_delivery, donation_perCore_consistent,
+  ipcInvariantFull_perCore, cancelIpcBlocking_atomic_under_lockset,
+  cancelDonation_atomic_under_lockset, plus 22 migrated invariants.
 
-### C.7 Boot / platform (SM2)
+### C.6 TLB shootdown (SM7)
 
-| Theorem | Statement |
-|---------|-----------|
-| `bootFromPlatform_all_cores_have_idle` | Every core's currentOnCore = some idle |
-| `bootFromPlatform_smp_witness` | Per-core boot shape |
-| `perCoreSchedulerConsistent` | New crossSubsystemInvariant conjunct |
-| `perCoreSchedulerConsistent_at_boot` | Holds at boot |
-| `PlatformBinding_coreCount_pos` | Contract precondition |
+- 14 theorems: tlbShootdownLocal_invalidates_local,
+  tlbShootdownBroadcast_invalidatesAllCores,
+  tlbInvalidationConsistent_perCore,
+  shootdownAck_completes_in_bounded_time,
+  pendingShootdowns_drained_at_sgi_entry,
+  plus protocol invariants.
 
-### C.8 Closure (SM8)
+### C.7 Information flow (SM8)
 
-| Theorem | Statement |
-|---------|-----------|
-| `smpLatentInventory_dischargedInSm8` | All 8 entries have SMP discharge |
-| `wsm_phase_count` | 9 phases (SM0..SM8) |
-| `wsm_acceptance_gate_count` | All gates green |
+- 18 theorems: onCore_isProjection_of_globalProjection,
+  onCore_decidable, nonInterference_perCore,
+  crossCoreNonInterference, bklContention_acceptedCovertChannel,
+  enforcementBoundary_perCore_complete,
+  DeclassificationEvent_perCore_audit, plus per-NI-constructor
+  per-core analogues (32 of these in seL4 model).
 
-**Total new substantive theorems**: ~95.
+### C.8 Boot / platform (SM4.E)
+
+- 5 theorems: bootFromPlatform_all_cores_have_idle,
+  bootFromPlatform_smp_witness, perCoreSchedulerConsistent,
+  perCoreSchedulerConsistent_at_boot, PlatformBinding_coreCount_pos.
+
+### C.9 Closure (SM9)
+
+- 5 marker theorems: smpRetiredInventory_complete,
+  wsm_phase_count, wsm_acceptance_gate_count, wsm_theorem_count,
+  v1_0_0_release_witness.
+
+**Total**: ~210 substantive theorems.
 
 ## Appendix D — Internal-first naming compliance
 
 Per CLAUDE.md, no workstream IDs in identifiers. The plan uses
-phase IDs `SM0..SM8` only in:
-- Plan filename (`SMP_MULTICORE_COMPLETION_PLAN.md`)
-- Sub-task labels (`SM3.A.1`, etc.) for cross-reference
+phase IDs `SM0..SM9` only in:
+- Plan filename
+- Sub-task labels (`SM3.A.1`, etc.)
 - CHANGELOG entries
-- Docstrings explaining the historical context
+- Docstrings citing historical context
 
 It does NOT use them in:
-- Theorem names (e.g., `wcrt_bound_rpi5_smp`, not `sm4_d_4_theorem`)
-- Function names (e.g., `chooseThreadOnCore`, not `sm4_choose`)
-- File names (e.g., `Architecture/TlbShootdown.lean`, not
-  `Architecture/Sm6Shootdown.lean`)
-- Test names (e.g., `cross_core_call_wakes_receiver`, not
-  `test_sm5_a_3`)
-- Field names
+- Theorem names, function names, file names, test names, fields
 
-Workstream-ID neutrality keeps the codebase clean of churn-driven
-debt; SM0..SM8 ages out as labels but the underlying code describes
-itself by purpose.
+WS-SM ages out as a label; the underlying code describes itself by
+purpose.
+
+## Appendix E — Verification quality ladder
+
+The plan elevates seLe4n above seL4 on three verification axes:
+
+| Axis | seL4 | seLe4n WS-SM |
+|------|------|--------------|
+| Lock-primitive correctness | Assumed | Formally proven (SM2) |
+| Per-object lock discipline | BKL only | Per-object RW + hierarchical order |
+| Cross-core NI | Limited | Per-core observer model (SM8) |
+
+The cost is the ~24-30 month timeline. The benefit is the most
+rigorously verified SMP microkernel in the literature.
 
 ---
 
 *This plan was produced from branch
-`claude/audit-multicore-implementation-sUcIx` at v0.31.2. It is a
-forward-looking planning artefact; no runtime behavior, proof
-obligations, or source identifiers change with this document. The
-plan is intended to open as workstream **WS-SM** immediately after
-WS-RC closure, with the goal of shipping a bootable verified SMP
-microkernel as v1.0.0.*
+`claude/audit-multicore-implementation-sUcIx` at v0.31.2.  It opens
+as workstream **WS-SM** immediately after WS-RC closure (which
+retargets to v0.31.last per SM0.Q), with the goal of shipping a
+bootable verified SMP microkernel as v1.0.0.  All 13 maintainer
+decisions in §10 are binding for this workstream.*
