@@ -25,15 +25,23 @@
 //!
 //! ## What this module owns
 //!
-//! - `SmpConfig` — runtime flag + secondary-core inventory
+//! - `SMP_ENABLED` — runtime SMP-enable flag (default `false`)
+//! - `SECONDARY_MPIDR_TABLE` — BCM2712 secondary-core MPIDR inventory
+//! - `MAX_SECONDARY_CORES` — number of secondaries (3 on RPi5)
 //! - `bring_up_secondaries` — primary-core entry point that issues
 //!   the CPU_ON loop
 //! - `rust_secondary_main` — placeholder Rust entry called from
 //!   `boot.S::secondary_entry`
-//! - Per-core readiness flags
+//! - Per-core readiness flags (`CORE_READY`, `SECONDARY_CORES_ONLINE`)
 //!
 //! ## What this module does NOT own
 //!
+//! - `PerCpuData`, `PER_CPU_DATA`, `PER_CPU_DATA_SLOT_SIZE*`,
+//!   `per_cpu_slot_addr`, `current_per_cpu`, `current_core_id_from_tpidr`,
+//!   `check_per_cpu_invariants` — these moved to `per_cpu.rs` at
+//!   **WS-SM SM1.B** and are re-exported here for backward
+//!   compatibility (see the `pub use crate::per_cpu::{...}` block
+//!   below).  New code should import from `crate::per_cpu::*` directly.
 //! - The boot.S secondary-entry assembly (lives in `boot.S`)
 //! - Per-core scheduler state (lives in the Lean kernel)
 //! - PSCI HVC encoding (lives in `psci.rs`)

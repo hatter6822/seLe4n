@@ -92,20 +92,35 @@ context" carries the live tracking.
 
 ### Added — Test coverage (SM1.B.7)
 
-- `rust/sele4n-hal/src/per_cpu.rs::tests` (NEW, 21 unit tests):
-  struct alignment + size, const-constructor semantics, byte-level
-  zero discharge, array layout/stride/distinct-addresses,
-  asm-stride observability, out-of-range panic via
+- `rust/sele4n-hal/src/per_cpu.rs::tests` (NEW, 25 unit tests; 10
+  migrated from the SM0.N `smp::tests::sm0n_*` block under
+  `sm1b_*` names with expanded coverage, 15 newly authored for
+  SM1.B-specific functionality): struct alignment + size,
+  const-constructor `new` and `zero` semantics, byte-level zero
+  discharge for the reserved tail, array layout / stride /
+  distinct-addresses, asm-stride observability via
+  `PER_CPU_DATA_SLOT_SIZE_SYM`, out-of-range panic via
   `#[should_panic(expected = "context_id out of range")]`,
-  accessor agreement with slot address,
-  `check_per_cpu_invariants` passes on the production initialiser.
+  `current_per_cpu` returns the boot slot on host, returned address
+  inside `PER_CPU_DATA`, returned address cache-line aligned,
+  `current_core_id_from_tpidr` returns 0 on host + in-range
+  invariant, `check_per_cpu_invariants` passes on the production
+  initialiser, pairwise-distinct + canonical-range cross-checks on
+  `core_id`, accessor agreement with `per_cpu_slot_addr`.
 - `rust/sele4n-hal/src/ffi.rs::tests` (3 new tests):
   `ffi_current_core_id_returns_zero_on_host`,
   `ffi_current_core_id_in_range`,
   `ffi_current_core_id_matches_per_cpu_accessor`.
-- `rust/sele4n-hal/src/smp.rs::tests` (4 new back-compat tests):
-  verifying the `crate::smp::*` re-exports still resolve so any
-  pre-SM1.B call site through the legacy module path keeps working.
+- `rust/sele4n-hal/src/smp.rs::tests` (4 new back-compat tests;
+  replace the 11 sm0n_* tests that migrated to `per_cpu::tests`):
+  verifying the `crate::smp::*` re-exports of `PerCpuData`,
+  `PER_CPU_DATA`, the slot-size constants, and `per_cpu_slot_addr`
+  still resolve so any pre-SM1.B call site through the legacy
+  module path keeps working.
+
+**Net delta**: 274 HAL tests post-SM1.B (was 253 at SM1.A close).
+Per-file math: +25 new in per_cpu.rs, +3 new in ffi.rs, +4 new in
+smp.rs, −11 retired from smp.rs (now in per_cpu.rs).  Net: +21.
 
 `tests/SmpFoundationsSuite.lean`:
 

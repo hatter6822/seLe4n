@@ -187,24 +187,25 @@ secondary_entry:
     and     sp, sp, #~0xF            // ensure 16-byte alignment
 
     // =====================================================================
-    // WS-SM SM0.N (closes SMP-M4): set TPIDR_EL1 to per-CPU data base.
+    // WS-SM SM0.N / SM1.B (closes SMP-M4): set TPIDR_EL1 to per-CPU data base.
     //
     // ARMv8-A reserves TPIDR_EL1 as the kernel's per-core scratch
     // register (ARM ARM D17.2.139).  At kernel-mode entry, every core
     // expects TPIDR_EL1 to point at its own `PerCpuData` slot in the
-    // `PER_CPU_DATA` array (smp.rs).  Loading the slot address here
-    // (before any Rust code executes on this core) gives `mrs xN,
-    // tpidr_el1` a defined value from the very first instruction of
-    // `rust_secondary_main`.
+    // `PER_CPU_DATA` array (per_cpu.rs — moved from smp.rs at SM1.B;
+    // the symbol name is unchanged thanks to `#[no_mangle]`).  Loading
+    // the slot address here (before any Rust code executes on this
+    // core) gives `mrs xN, tpidr_el1` a defined value from the very
+    // first instruction of `rust_secondary_main`.
     //
     // Slot offset = context_id * sizeof(PerCpuData) where the layout
     // is PER_CPU_DATA[0] = boot core, PER_CPU_DATA[1..3] = secondaries.
     // x0 already holds context_id from the PSCI calling convention.
     //
     // The slot stride is the Rust constant `PER_CPU_DATA_SLOT_SIZE`
-    // (smp.rs).  Rather than hard-code the literal here (which would
-    // silently drift if the Rust struct grew without updating the
-    // asm), the slot stride is read from the `.rodata` symbol
+    // (per_cpu.rs).  Rather than hard-code the literal here (which
+    // would silently drift if the Rust struct grew without updating
+    // the asm), the slot stride is read from the `.rodata` symbol
     // `PER_CPU_DATA_SLOT_SIZE_SYM` via the same `adrp`+`ldr` pattern
     // AN8-B uses for `MPIDR_CORE_ID_MASK_SYM`.  This makes the Rust
     // constant the single source of truth — any inconsistency between

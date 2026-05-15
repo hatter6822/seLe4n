@@ -10,14 +10,21 @@
 //!
 //! ## Boot ordering (closes SMP-M4)
 //!
-//! - **Boot core**: `boot.rs::rust_boot_main` writes
-//!   `&PER_CPU_DATA[0]` into `TPIDR_EL1` during Phase 4 (before
-//!   `enable_irq()`), then calls [`check_per_cpu_invariants`] to verify
-//!   the static layout (SM1.B.6).
+//! - **Boot core**: `boot.rs::rust_boot_main` first calls
+//!   [`check_per_cpu_invariants`] (SM1.B.6) so a regressed
+//!   const-initialiser fails at boot rather than at first kernel-mode
+//!   entry; then writes `&PER_CPU_DATA[0]` into `TPIDR_EL1`, emits
+//!   `isb`, and enters `enable_irq()`.  The whole sequence runs
+//!   before IRQs are unmasked so any future IRQ handler that consumes
+//!   `TPIDR_EL1` sees a defined value rather than the architectural
+//!   UNKNOWN state.
 //! - **Secondary cores**: `boot.S::secondary_entry` writes
 //!   `&PER_CPU_DATA[context_id]` into `TPIDR_EL1` *before* calling
 //!   `rust_secondary_main`, so the very first Rust instruction on
-//!   every secondary sees a valid `TPIDR_EL1`.
+//!   every secondary sees a valid `TPIDR_EL1`.  Secondaries do not
+//!   re-run [`check_per_cpu_invariants`] because [`PER_CPU_DATA`] is
+//!   a `static` (non-mutable) array — once the boot core's check
+//!   succeeds, the invariant holds for the program's lifetime.
 //!
 //! ## What this module owns
 //!

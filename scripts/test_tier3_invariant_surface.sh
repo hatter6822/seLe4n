@@ -1166,14 +1166,17 @@ EOF'
 # WS-SM SM0 — surface anchors for the Concurrency.* foundational types
 # (CoreId, SharingDomain, SgiKind, LockKind, LockId, BklState) plus the
 # AN12-B inventory hardening theorems (NoDup witnesses, 6-way ArchAssumption
-# distinctness, Anchors module).  Build the foundational + Anchors modules
-# first so the .olean files exist.
+# distinctness, Anchors module).  WS-SM SM1.B.5 adds the per-CPU FFI
+# wrapper surface (Concurrency.Runtime + Platform.FFI.ffiCurrentCoreId).
+# Build the foundational + Anchors + Runtime modules first so the .olean
+# files exist.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build \
   SeLe4n.Kernel.Concurrency.Types \
   SeLe4n.Kernel.Concurrency.Locks \
   SeLe4n.Kernel.Concurrency.Locks.Kind \
   SeLe4n.Kernel.Concurrency.Sgi \
-  SeLe4n.Kernel.Concurrency.Anchors'
+  SeLe4n.Kernel.Concurrency.Anchors \
+  SeLe4n.Kernel.Concurrency.Runtime'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.Concurrency.Types
 import SeLe4n.Kernel.Concurrency.Locks
@@ -1181,7 +1184,9 @@ import SeLe4n.Kernel.Concurrency.Locks.Kind
 import SeLe4n.Kernel.Concurrency.Sgi
 import SeLe4n.Kernel.Concurrency.Anchors
 import SeLe4n.Kernel.Concurrency.Assumptions
+import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Kernel.Architecture.Assumptions
+import SeLe4n.Platform.FFI
 import SeLe4n.Platform.RPi5.Contract
 
 -- SM0.E — CoreId enumeration
@@ -1235,6 +1240,11 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Platform.RPi5.numCores_eq_rpi5_coreCount
 #check @SeLe4n.Platform.RPi5.bootCoreId_val_eq_rpi5
 #check @SeLe4n.Platform.RPi5.rpi5_sharingDomain
+-- SM1.B.5 — Per-CPU core-id FFI wrapper (closes SMP-M4)
+#check @SeLe4n.Platform.FFI.ffiCurrentCoreId
+#check @SeLe4n.Kernel.Concurrency.currentCoreId
+#check @SeLe4n.Kernel.Concurrency.currentCoreId_in_range_marker
+#check @SeLe4n.Kernel.Concurrency.instInhabitedCoreId
 EOF'
 
 finalize_report
