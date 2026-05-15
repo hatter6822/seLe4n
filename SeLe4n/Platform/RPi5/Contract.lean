@@ -115,5 +115,49 @@ instance rpi5PlatformBinding : SeLe4n.Platform.PlatformBinding RPi5Platform wher
   bootContract := rpi5BootContract
   interruptContract := rpi5InterruptContract
   bootVSpaceRoot := some rpi5BootVSpaceRootEntry
+  -- WS-SM SM0.G: BCM2712 is a single-cluster quad-core Cortex-A76
+  -- SoC.  All four cores share the inner-shareable domain.  Boot
+  -- proceeds on Aff0 = 0 (the cluster's core-0); secondaries are
+  -- Aff0 = 1, 2, 3 (see `rust/sele4n-hal/src/smp.rs::SECONDARY_MPIDR_TABLE`).
+  coreCount := 4
+  coreCountPos := by decide
+  bootCoreId := ⟨0, by decide⟩
+  sharingDomain := .inner
+
+/-- **WS-SM SM0.E / SM0.G**: structural pinning of the
+    `Concurrency.numCores` literal to the RPi5 binding's
+    `coreCount` field.  Build-time `rfl` discharge — if either
+    side changes without the other being updated in lockstep, this
+    theorem fails to elaborate, blocking the offending PR.
+
+    The two values are intentionally pinned: SM0.E keeps
+    `Concurrency.numCores` as a platform-agnostic literal (no
+    Platform import in the foundational types module), while the
+    RPi5 binding is the single source of truth for the actual
+    core count.  This theorem is the bridge that makes the
+    drift-detection structural rather than convention-based. -/
+theorem numCores_eq_rpi5_coreCount :
+    SeLe4n.Kernel.Concurrency.numCores =
+      SeLe4n.Platform.PlatformBinding.coreCount (platform := RPi5Platform) := by
+  rfl
+
+/-- **WS-SM SM0.E / SM0.G**: parallel pinning for `bootCoreId.val`.
+    Both the SM0.E literal (`bootCoreId := ⟨0, _⟩`) and the RPi5
+    binding (`bootCoreId := ⟨0, _⟩`) agree on the underlying core
+    index; this theorem witnesses the agreement. -/
+theorem bootCoreId_val_eq_rpi5 :
+    SeLe4n.Kernel.Concurrency.bootCoreId.val =
+      (SeLe4n.Platform.PlatformBinding.bootCoreId (platform := RPi5Platform)).val := by
+  rfl
+
+/-- **WS-SM SM0.G**: RPi5 is single-cluster, so the sharing domain
+    is `.inner`.  Surfaced as a named theorem so SM3 lock primitives
+    can `rfl`-rewrite `PlatformBinding.sharingDomain RPi5Platform`
+    to `.inner` when emitting DSB ISH barriers on the RPi5 build
+    profile. -/
+theorem rpi5_sharingDomain :
+    SeLe4n.Platform.PlatformBinding.sharingDomain (platform := RPi5Platform) =
+      SeLe4n.Kernel.Concurrency.SharingDomain.inner := by
+  rfl
 
 end SeLe4n.Platform.RPi5

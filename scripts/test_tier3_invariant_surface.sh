@@ -1163,4 +1163,78 @@ import SeLe4n.Kernel.SchedContext.ReplenishQueue
 #check @SeLe4n.Kernel.crossSubsystemInvariant_to_blockingAcyclic
 EOF'
 
+# WS-SM SM0 — surface anchors for the Concurrency.* foundational types
+# (CoreId, SharingDomain, SgiKind, LockKind, LockId, BklState) plus the
+# AN12-B inventory hardening theorems (NoDup witnesses, 6-way ArchAssumption
+# distinctness, Anchors module).  Build the foundational + Anchors modules
+# first so the .olean files exist.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build \
+  SeLe4n.Kernel.Concurrency.Types \
+  SeLe4n.Kernel.Concurrency.Locks \
+  SeLe4n.Kernel.Concurrency.Locks.Kind \
+  SeLe4n.Kernel.Concurrency.Sgi \
+  SeLe4n.Kernel.Concurrency.Anchors'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.Types
+import SeLe4n.Kernel.Concurrency.Locks
+import SeLe4n.Kernel.Concurrency.Locks.Kind
+import SeLe4n.Kernel.Concurrency.Sgi
+import SeLe4n.Kernel.Concurrency.Anchors
+import SeLe4n.Kernel.Concurrency.Assumptions
+import SeLe4n.Kernel.Architecture.Assumptions
+import SeLe4n.Platform.RPi5.Contract
+
+-- SM0.E — CoreId enumeration
+#check @SeLe4n.Kernel.Concurrency.numCores
+#check @SeLe4n.Kernel.Concurrency.CoreId
+#check @SeLe4n.Kernel.Concurrency.bootCoreId
+#check @SeLe4n.Kernel.Concurrency.allCores
+#check @SeLe4n.Kernel.Concurrency.numCores_pos
+#check @SeLe4n.Kernel.Concurrency.allCores_length
+#check @SeLe4n.Kernel.Concurrency.allCores_nodup
+#check @SeLe4n.Kernel.Concurrency.bootCoreId_valid
+-- SM0.F — SharingDomain
+#check @SeLe4n.Kernel.Concurrency.SharingDomain
+#check @SeLe4n.Kernel.Concurrency.dsbForSharing
+#check @SeLe4n.Kernel.Concurrency.dsbStForSharing
+#check @SeLe4n.Kernel.Concurrency.dsbForSharing_injective
+#check @SeLe4n.Kernel.Concurrency.dsbStForSharing_injective
+-- SM0.H — SgiKind
+#check @SeLe4n.Kernel.Concurrency.SgiKind
+#check @SeLe4n.Kernel.Concurrency.SgiKind.toIntid
+#check @SeLe4n.Kernel.Concurrency.SgiKind.toIntid_injective
+#check @SeLe4n.Kernel.Concurrency.SgiKind.toIntid_in_range
+-- SM0.I — LockKind / LockId / BklState
+#check @SeLe4n.Kernel.Concurrency.LockKind
+#check @SeLe4n.Kernel.Concurrency.LockKind.level
+#check @SeLe4n.Kernel.Concurrency.LockKind.level_strictMono
+#check @SeLe4n.Kernel.Concurrency.LockKind.level_surjective
+#check @SeLe4n.Kernel.Concurrency.LockKind.level_bounded
+#check @SeLe4n.Kernel.Concurrency.LockId
+#check @SeLe4n.Kernel.Concurrency.LockId.le_total
+#check @SeLe4n.Kernel.Concurrency.LockId.le_refl
+#check @SeLe4n.Kernel.Concurrency.LockId.le_trans
+#check @SeLe4n.Kernel.Concurrency.LockId.le_antisymm
+#check @SeLe4n.Kernel.Concurrency.LockId.lt_trichotomy
+#check @SeLe4n.Kernel.Concurrency.BklState
+#check @SeLe4n.Kernel.Concurrency.bklHeldBy
+#check @SeLe4n.Kernel.Concurrency.bklState_unique_owner
+-- SM0.A/B — ArchAssumption 6-way machinery
+#check @SeLe4n.Kernel.Architecture.ArchAssumption
+#check @SeLe4n.Kernel.Architecture.assumptionInventory_count
+#check @SeLe4n.Kernel.Architecture.archAssumptionConsumer_distinct_6
+#check @SeLe4n.Kernel.Architecture.architecture_assumptions_index_total_6
+-- SM0.C/D — AN12-B inventory hardening
+#check @SeLe4n.Kernel.Concurrency.smpAnchorVerified
+#check @SeLe4n.Kernel.Concurrency.smpLatentInventory_identifiers_nodup
+#check @SeLe4n.Kernel.Concurrency.smpLatentInventory_sourceTheorems_nodup
+-- SM0.G — PlatformBinding extension
+#check @SeLe4n.Platform.PlatformBinding.coreCount
+#check @SeLe4n.Platform.PlatformBinding.bootCoreId
+#check @SeLe4n.Platform.PlatformBinding.sharingDomain
+#check @SeLe4n.Platform.RPi5.numCores_eq_rpi5_coreCount
+#check @SeLe4n.Platform.RPi5.bootCoreId_val_eq_rpi5
+#check @SeLe4n.Platform.RPi5.rpi5_sharingDomain
+EOF'
+
 finalize_report

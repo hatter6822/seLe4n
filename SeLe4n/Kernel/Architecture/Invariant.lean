@@ -50,10 +50,9 @@ maintain *simultaneous* coherency through compound operations (e.g., a page
 table update followed by TLB flush followed by I-cache invalidation) — is
 not yet proven. Per-subsystem preservation suffices for the sequential model
 where operations are atomic. The relational composition theorem is closed
-by AN9-A (DEF-A-M04 TLB+cache composition) and AN9-H (BarrierKind)
-per docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12, where non-atomic
-multi-step cache/TLB maintenance sequences require cross-subsystem
-coherency proofs.
+by WS-AN AN9-A (DEF-A-M04 TLB+cache composition) and AN9-H (BarrierKind),
+where non-atomic multi-step cache/TLB maintenance sequences require
+cross-subsystem coherency proofs.
 -/
 
 namespace SeLe4n.Kernel.Architecture

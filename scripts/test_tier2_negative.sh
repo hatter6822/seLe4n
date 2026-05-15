@@ -81,5 +81,10 @@ run_check_with_timeout "TRACE" lake exe ak8_coverage_suite
 # `KernelError → UInt32`, encoded-UInt64 contract, and the kernel-state
 # IO.Ref bootstrap.  See `tests/SyscallDispatchSuite.lean`.
 run_check_with_timeout "TRACE" lake exe syscall_dispatch_suite
+# WS-SM SM0.S — Foundations test suite for the SM0 typed identifiers
+# (CoreId, SharingDomain, SgiKind, LockKind, LockId, BklState) plus the
+# AN12-B inventory hardening + ArchAssumption 6-way machinery.  Runtime
+# assertions (~41) plus surface-anchor `#check`s of every public symbol.
+run_check_with_timeout "TRACE" lake exe smp_foundations_suite
 
 finalize_report

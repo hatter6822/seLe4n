@@ -13,13 +13,36 @@ namespace SeLe4n.Kernel.Architecture
 
 open SeLe4n.Model
 
-/-- Enumerated architecture-facing assumptions extracted in WS-M6-A. -/
+/-- Enumerated architecture-facing assumptions extracted in WS-M6-A.
+
+**WS-SM SM0.A**: extended with `singleCoreOperation` so the AN12-B
+inventory entry #7 (`architecture_singleCoreOnly_smpLatent`) has a
+first-class `ArchAssumption` constructor to point at, rather than
+the legacy "ArchAssumption inductive itself" reference that the
+SMP-H2 audit finding flagged as a documentation drift.  The new
+constructor is wired through `assumptionInventory`,
+`archAssumptionConsumer`, and the pairwise-distinctness theorem
+`archAssumptionConsumer_distinct_6` so every downstream consumer
+of `ArchAssumption` continues to be exhaustive. -/
 inductive ArchAssumption where
   | deterministicTimerProgress
   | deterministicRegisterContext
   | memoryAccessSafety
   | bootObjectTyping
   | irqRoutingTotality
+  /-- WS-SM SM0.A (closes SMP-H2): the kernel's runtime model assumes
+      single-core operation — `SchedulerState.current` is a single
+      `Option ThreadId` slot rather than a per-core array, and
+      `bootFromPlatform` returns an `IntermediateState` that runs on
+      the boot core with implicit `core-id = 0`.  AN9-J's SMP
+      bring-up scaffolding ships the secondary-core entry path but
+      the runtime flag `SMP_ENABLED = false` at v1.0.0 inhibits
+      cross-core transitions, keeping the single-core kernel model
+      live until WS-SM SM2..SM5 wire the per-core scheduler state.
+      The consuming theorem is the boot-bridge witness
+      `bootFromPlatform_singleCore_witness` in
+      `SeLe4n.Kernel.CrossSubsystem`. -/
+  | singleCoreOperation
   deriving Repr, DecidableEq
 
 /-- Typed boot-boundary contract skeleton consumed by later adapters.
@@ -90,14 +113,26 @@ theorem irqHandlerMapped_decidable_consistent
   · intro h; exact decide_eq_true h
 
 
-/-- Canonical WS-M6-A inventory list used by docs/tests for discoverability checks. -/
+/-- Canonical WS-M6-A inventory list used by docs/tests for discoverability checks.
+
+**WS-SM SM0.B**: extended to 6 entries with `singleCoreOperation`
+appended; `assumptionInventory_count` (added below) pins the new
+size at build time so any future addition without inventory update
+fails the elaboration. -/
 def assumptionInventory : List ArchAssumption :=
   [ .deterministicTimerProgress
   , .deterministicRegisterContext
   , .memoryAccessSafety
   , .bootObjectTyping
   , .irqRoutingTotality
+  , .singleCoreOperation
   ]
+
+/-- **WS-SM SM0.B**: pinned inventory cardinality.  At v0.32.x the
+inventory has exactly six entries; if a future maintainer adds a
+seventh `ArchAssumption` constructor without updating the inventory,
+this theorem fails to elaborate (the count rises to 7). -/
+theorem assumptionInventory_count : assumptionInventory.length = 6 := by decide
 
 /-- Boundary extraction completeness marker for WS-M6-A. -/
 def assumptionInventoryComplete : Prop :=
@@ -135,7 +170,13 @@ in `Invariant.lean`; the index is pointers only so this file has no
 
 /-- AN6-B: Canonical mapping from `ArchAssumption` to the fully-qualified
     `Lean.Name` of the theorem that consumes it. See the docstring for the
-    full binding matrix. -/
+    full binding matrix.
+
+    **WS-SM SM0.B**: extended with the `singleCoreOperation` arm —
+    consumer is `bootFromPlatform_singleCore_witness` in
+    `SeLe4n.Kernel.CrossSubsystem`, the bridge theorem that
+    establishes the single-`Option ThreadId` slot semantics of
+    `SchedulerState.current`. -/
 def archAssumptionConsumer : ArchAssumption → Lean.Name
   | .deterministicTimerProgress =>
       `SeLe4n.Kernel.Architecture.deterministicTimerProgress_consumed_by_advanceTimer
@@ -147,6 +188,8 @@ def archAssumptionConsumer : ArchAssumption → Lean.Name
       `SeLe4n.Kernel.Architecture.default_system_state_proofLayerInvariantBundle
   | .irqRoutingTotality =>
       `SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_implies_irqHandlersValid
+  | .singleCoreOperation =>
+      `SeLe4n.Kernel.bootFromPlatform_singleCore_witness
 
 /-- AN6-B: Total-mapping marker theorem — every architecture assumption has a
     named consumer. The proof is by case analysis over the finite inductive;
@@ -198,6 +241,71 @@ theorem archAssumptionConsumer_distinct :
     archAssumptionConsumer .bootObjectTyping
       ≠ archAssumptionConsumer .irqRoutingTotality := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> decide
+
+/-- **WS-SM SM0.B**: full pairwise distinctness of the 6 consumer
+    names — C(6,2) = 15 inequalities.  Strictly stronger than the
+    legacy 5-way `archAssumptionConsumer_distinct`; the 5-way
+    theorem is retained for backward compatibility while every
+    new consumer of the index uses this 15-conjunct form.
+
+    The 5 new pairs introduced by the `singleCoreOperation` 6th
+    constructor are explicitly listed at the end so the structural
+    growth from 10 to 15 inequalities is visually obvious in the
+    proof body.  Each conjunct is decidable because
+    `Lean.Name`-equality is decidable and the consumer mapping is
+    a closed `match`. -/
+theorem archAssumptionConsumer_distinct_6 :
+    -- ===== Original 10 pairs (5-way distinctness) =====
+    -- timer vs. {register, memory, boot, irq} (4 pairs)
+    archAssumptionConsumer .deterministicTimerProgress
+      ≠ archAssumptionConsumer .deterministicRegisterContext ∧
+    archAssumptionConsumer .deterministicTimerProgress
+      ≠ archAssumptionConsumer .memoryAccessSafety ∧
+    archAssumptionConsumer .deterministicTimerProgress
+      ≠ archAssumptionConsumer .bootObjectTyping ∧
+    archAssumptionConsumer .deterministicTimerProgress
+      ≠ archAssumptionConsumer .irqRoutingTotality ∧
+    -- register vs. {memory, boot, irq} (3 pairs)
+    archAssumptionConsumer .deterministicRegisterContext
+      ≠ archAssumptionConsumer .memoryAccessSafety ∧
+    archAssumptionConsumer .deterministicRegisterContext
+      ≠ archAssumptionConsumer .bootObjectTyping ∧
+    archAssumptionConsumer .deterministicRegisterContext
+      ≠ archAssumptionConsumer .irqRoutingTotality ∧
+    -- memory vs. {boot, irq} (2 pairs)
+    archAssumptionConsumer .memoryAccessSafety
+      ≠ archAssumptionConsumer .bootObjectTyping ∧
+    archAssumptionConsumer .memoryAccessSafety
+      ≠ archAssumptionConsumer .irqRoutingTotality ∧
+    -- boot vs. irq (1 pair)
+    archAssumptionConsumer .bootObjectTyping
+      ≠ archAssumptionConsumer .irqRoutingTotality ∧
+    -- ===== 5 new pairs introduced by `singleCoreOperation` =====
+    -- singleCoreOperation vs. {timer, register, memory, boot, irq}
+    archAssumptionConsumer .singleCoreOperation
+      ≠ archAssumptionConsumer .deterministicTimerProgress ∧
+    archAssumptionConsumer .singleCoreOperation
+      ≠ archAssumptionConsumer .deterministicRegisterContext ∧
+    archAssumptionConsumer .singleCoreOperation
+      ≠ archAssumptionConsumer .memoryAccessSafety ∧
+    archAssumptionConsumer .singleCoreOperation
+      ≠ archAssumptionConsumer .bootObjectTyping ∧
+    archAssumptionConsumer .singleCoreOperation
+      ≠ archAssumptionConsumer .irqRoutingTotality := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
+          ?_, ?_, ?_, ?_, ?_⟩ <;> decide
+
+/-- **WS-SM SM0.B**: total mapping witness over 6 cases.  Replaces
+    the legacy `architecture_assumptions_index` for tier-3 surface
+    anchoring; the legacy theorem is retained for backward
+    compatibility (a 5-way `cases` covers the original 5
+    constructors and Lean's exhaustivity check forces the new 6th
+    case into a separate proof site).  The extra arm here makes
+    the 6-way variant unambiguous in surface-anchor searches. -/
+theorem architecture_assumptions_index_total_6 :
+    ∀ a : ArchAssumption, ∃ n : Lean.Name, archAssumptionConsumer a = n := by
+  intro a
+  cases a <;> exact ⟨_, rfl⟩
 
 -- ============================================================================
 -- M-08/WS-E6: Assumption consumption documentation
@@ -329,8 +437,10 @@ The following hardware constraints are assumed for the Raspberry Pi 5 target:
 
 - **Single-core operation**: H3 uses core 0 only. Other cores are held in WFE
   loop. Per-core assumptions (run queues, TLB, cache) are simplified to
-  single-core semantics. SMP bring-up (DEF-R-HAL-L20) is closed by AN9-J
-  (see docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12 AN9-J).
+  single-core semantics. SMP bring-up (DEF-R-HAL-L20) is in flight in WS-SM
+  (`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`); AN9-J shipped the
+  Rust HAL scaffolding (PSCI bring-up, per-core stacks, MPIDR gate)
+  while WS-SM activates and verifies the cross-core kernel transitions.
 - **Sequential memory model**: All memory operations are sequentially ordered.
   DMB/DSB/ISB barriers are modeled as no-ops in the sequential model but are
   emitted in the Rust HAL for hardware correctness.

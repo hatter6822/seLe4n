@@ -100,8 +100,9 @@ verification, version bump to 0.28.0, and full regression gate.
 remaining Lean model gaps: timeout sentinel → `timedOut : Bool` TCB field
 (eliminates GPR x0 collision risk), cache coherency model (`CacheModel.lean`
 with 17 preservation theorems), memory barrier semantics formalization,
-FrozenOps deferred to WS-V, CDT `descendantsOf` fuel sufficiency placeholders
-(substantive proofs deferred to WS-V),
+FrozenOps production-promotion deferred to post-1.0 hardening,
+CDT `descendantsOf` fuel sufficiency placeholders
+(substantive proofs deferred to post-1.0 hardening),
 donation owner blocked-on-reply extraction (`donationChainAcyclic_general`),
 and donation atomicity under interrupt disable with symmetric machine state
 preservation (`donateSchedContext_machine_eq` + `returnDonatedSchedContext_machine_eq`).

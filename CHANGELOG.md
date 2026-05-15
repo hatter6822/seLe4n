@@ -1,3 +1,217 @@
+## v0.32.0 — WS-SM Phase SM0 closure (Foundations & honesty patches)
+
+Phase SM0 of the WS-SM (SMP multi-core completion) workstream lands as
+a single coherent cut.  21 sub-tasks across six categories deliver the
+type-level scaffolding and honesty patches WS-SM phases SM1..SM9
+build on top of — no runtime behavioural change at this cut, single-
+core boot path unchanged.  See
+[`docs/planning/SMP_FOUNDATIONS_PLAN.md`](docs/planning/SMP_FOUNDATIONS_PLAN.md)
+for the full plan; [`CLAUDE.md`](CLAUDE.md) §"Active workstream
+context" carries the live tracking.
+
+### Added — Foundational types (SM0.E + SM0.F + SM0.G + SM0.H + SM0.I)
+
+`SeLe4n/Kernel/Concurrency/Types.lean` (NEW, ~190 lines):
+- `numCores : Nat := 4` (SM0.E) — pinned to RPi5 PlatformBinding via
+  `numCores_eq_rpi5_coreCount` theorem.
+- `CoreId := Fin numCores` (SM0.E) — typed core identifier with
+  structural in-range guarantee.
+- `bootCoreId`, `allCores`, `numCores_pos`, `allCores_length`,
+  `allCores_nodup`, `bootCoreId_valid`, `bootCoreId_val_zero`,
+  `allCores_nonempty` (SM0.E) — enumeration helpers + 6 witnesses.
+- `SharingDomain` inductive (SM0.F) with `inner` / `outer`
+  constructors; `dsbForSharing` / `dsbStForSharing` `BarrierKind`
+  selectors plus 4 decidable witnesses + 2 injectivity proofs.
+
+`SeLe4n/Platform/Contract.lean` (extended, +30 lines):
+- `PlatformBinding` typeclass extended with `coreCount`,
+  `coreCountPos`, `bootCoreId : Fin coreCount`, and
+  `sharingDomain : SharingDomain` fields (SM0.G).
+- `PlatformBinding.cores`, `bootCore`, `sharing` extractor wrappers.
+
+`SeLe4n/Platform/RPi5/Contract.lean` (extended):
+- `rpi5PlatformBinding` instance gains `coreCount := 4`,
+  `bootCoreId := ⟨0, _⟩`, `sharingDomain := .inner`.
+- New theorems `numCores_eq_rpi5_coreCount`, `bootCoreId_val_eq_rpi5`,
+  `rpi5_sharingDomain` structurally pin the SM0.E literal to the
+  RPi5 binding.
+
+`SeLe4n/Platform/Sim/Contract.lean` (extended):
+- `simPlatformBinding` and `simRestrictivePlatformBinding` instances
+  gain the same SM0.G fields with matching values.
+
+`SeLe4n/Kernel/Concurrency/Sgi.lean` (NEW, ~100 lines):
+- `SgiKind` inductive (SM0.H): `reschedule`, `tlbShootdownReq`,
+  `tlbShootdownAck`, `cacheBroadcast`, `haltAll`.
+- `toIntid : SgiKind → Fin 16` mapping each kind to GIC-400 INTIDs
+  0..4.
+- `toIntid_injective` (C(5,2)=10 inequalities), `toIntid_in_range`,
+  `toIntid_lt_five`, `all` enumeration, `all_length`, `all_nodup`,
+  + 5 per-kind INTID witnesses.
+
+`SeLe4n/Kernel/Concurrency/Locks/Kind.lean` (NEW, ~270 lines):
+- `LockKind` 10-layer hierarchy (SM0.I): `objStore` (level 0,
+  coarsest) → `untyped` → `cnode` → `tcb` → `endpoint` →
+  `notification` → `reply` → `schedContext` → `vspaceRoot` → `page`
+  (level 9, finest).
+- `LockKind.level`, `LockKind.toFin : LockKind → Fin 10`.
+- `LockKind.level_strictMono`, `level_surjective` (10-case match
+  with `omega`-discharged > 9 case), `level_bounded`, `toFin_val`.
+- `LockId` structure pairing `kind` + `objId`; lexicographic
+  `(kind.level, objId.val)` order via `LE` / `LT` instances; both
+  `Decidable`.
+- `LockId.le_total`, `le_refl`, `le_trans` (4-case disjunction),
+  `le_antisymm` (with `LockKind.level_strictMono` contrapositive
+  via `Decidable.byContradiction`), `lt_trichotomy`, smart
+  constructor `LockId.mk'`.
+
+`SeLe4n/Kernel/Concurrency/Locks.lean` (NEW, ~110 lines):
+- `BklState` inductive (SM0.I): `unheld` / `held (owner : CoreId)`.
+- `bklHeldBy` predicate + `Decidable` instance.
+- `bklState_unique_owner` (constructor injectivity),
+  `bklUnheld_no_owner`, `bklAcquire`, `bklRelease`, plus per-arm
+  witnesses.
+
+### Added — AN12-B inventory hardening (SM0.A + SM0.B + SM0.C + SM0.D)
+
+`SeLe4n/Kernel/Architecture/Assumptions.lean` (extended):
+- `ArchAssumption` inductive grows from 5 to 6 cases with the new
+  `singleCoreOperation` constructor (SM0.A — closes SMP-H2 audit
+  finding).
+- `assumptionInventory` extended; `assumptionInventory_count`
+  pins length at 6 (SM0.B).
+- `archAssumptionConsumer` extended with the 6th arm pointing at
+  `SeLe4n.Kernel.bootFromPlatform_singleCore_witness`.
+- `archAssumptionConsumer_distinct_6` proves all 15 pairwise
+  inequalities (C(6,2)) by `decide` (SM0.B).
+- `architecture_assumptions_index_total_6` is the new exhaustivity
+  marker for the 6-way variant.
+
+`SeLe4n/Kernel/Concurrency/Anchors.lean` (NEW, ~80 lines):
+- Build-time `@`-references for every `smpLatentInventory`
+  entry's `identifier` and `sourceTheorem` (SM0.C — closes SMP-H3
+  audit finding).
+- `smpAnchorVerified : Unit` aggregator marker for tier-3 surface
+  anchoring.
+- Wired into `Platform.Staged` for CI enforcement.
+
+`SeLe4n/Kernel/Concurrency/Assumptions.lean` (extended):
+- `smpLatentInventory_identifiers_nodup` (SM0.D — closes SMP-L1)
+  proves the 8 identifiers are pairwise distinct.
+- `smpLatentInventory_sourceTheorems_nodup` (SM0.D) parallel NoDup
+  for the sourceTheorem projection.
+
+### Changed — Honesty patches (SM0.J + SM0.K + SM0.L)
+
+- All `docs/dev_history/audits/...` cross-references removed from
+  production sources (`rust/sele4n-hal/src/`, `SeLe4n/Kernel/`).
+  21 sites across 17 files updated to either drop the path
+  (keeping the workstream ID like `WS-AN AN9-J`) or repoint to the
+  active discharge index `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`.
+- All "deferred to WS-V" SMP-context claims (`docs/spec/SELE4N_SPEC.md`,
+  `docs/DEVELOPMENT.md`, `docs/gitbook/01-project-overview.md`,
+  `docs/hardware_validation/speculation_barriers.md`,
+  `docs/gitbook/10-path-to-real-hardware-mobile-first.md`,
+  `docs/gitbook/12-proof-and-invariant-map.md`) repointed to the
+  WS-SM phase plans (`docs/planning/SMP_*.md`).  Non-SMP "deferred
+  to WS-V" claims (PAC, BTI, shadow stack, FrozenOps promotion)
+  marked as post-1.0 hardening (separate workstream).
+- `docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md::DEF-R-HAL-L20`
+  rewritten from "RESOLVED at v0.30.10" to "PARTIALLY RESOLVED AT
+  v0.30.10 — scaffolding only; full activation in WS-SM" with
+  cross-references to the SM0.M/N/O scaffolding hardening and
+  the SM1..SM9 full-activation phase plans.
+
+### Changed — Structural fixes in the Rust HAL (SM0.M + SM0.N + SM0.O)
+
+`rust/sele4n-hal/src/boot.S` (extended):
+- `.smp_stacks` region zeroed at boot (SM0.M — closes SMP-M3:
+  defends against stale RAM contents leaking through to secondary
+  cores after PSCI CPU_ON).  Cost: ~12K cycles on Cortex-A76.
+- `secondary_entry` sets TPIDR_EL1 to its core's `PER_CPU_DATA`
+  slot (SM0.N — closes SMP-M4: the smp.rs docstring claimed
+  TPIDR_EL1 setup but the asm omitted it).
+
+`rust/sele4n-hal/src/smp.rs` (extended, +120 lines):
+- `PerCpuData` struct (SM0.N) with `repr(C, align(64))` for cache-
+  line isolation; `PerCpuData::zero()` constructor.
+- `PER_CPU_DATA: [PerCpuData; 4]` static array (SM0.N) — boot core
+  + 3 secondaries.
+- `per_cpu_slot_addr(context_id) -> usize` lookup helper with
+  bounds-check assertion (SM0.N).
+- `MAX_SECONDARY_CORES + 1 == 4` compile-time `const _: () =
+  assert!(...)` (SM0.O — closes SMP-L2: pins the Rust constant to
+  the Lean PlatformBinding.coreCount).
+- 10 new unit tests covering layout, alignment, zero-initialisation,
+  distinctness, stride, bounds-check panic, and the SM0.O assertion.
+
+### Added — Testing infrastructure (SM0.S + SM0.T + SM0.R)
+
+`tests/SmpFoundationsSuite.lean` (NEW, ~330 lines, SM0.S):
+- 50+ tier-3 surface-anchor `#check`s for every SM0 public symbol.
+- 41 decidable `example` proofs at the RPi5 default config.
+- Runtime assertion runner (`runFoundationsChecks`) — same 41
+  checks asserted at runtime via `lake exe smp_foundations_suite`.
+- Wired into `scripts/test_tier2_negative.sh` and the new
+  `scripts/test_tier3_invariant_surface.sh` SM0 surface-anchor
+  block.
+
+`scripts/test_tier4_smp_bootcheck.sh` (NEW, SM0.T):
+- Tier-4 SMP boot-check stub.  At SM0 a SKIP-only marker; populated
+  by SM1.H (QEMU bring-up), SM5.K (per-core scheduler), SM6.F
+  (cross-core IPC), SM7.E (TLB shootdown), SM8.E (information flow
+  under SMP).  Wired into `scripts/test_tier4_nightly_candidates.sh`.
+
+`docs/codebase_map.json` (regenerated, SM0.R):
+- Includes the 5 new `SeLe4n/Kernel/Concurrency/*` modules
+  (Types, Sgi, Locks, Locks/Kind, Anchors) plus the new
+  `tests/SmpFoundationsSuite.lean`.
+
+### Changed — WS-RC merge into WS-SM (SM0.P + SM0.Q + SM0.Q.1 + SM0.Q.2)
+
+- `CLAUDE.md` / `AGENTS.md` "Active workstream context" section
+  rewritten to track WS-SM as IN FLIGHT (SM0.P).  WS-RC R0..R5
+  closure narrative preserved verbatim immediately below for
+  historical traceability.  Body byte-identical between the two
+  files (apart from header) per CLAUDE.md mirror rule.
+- `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` front-matter
+  updated to record the WS-RC → WS-SM merge (SM0.Q); §15 added with
+  the per-phase R6..R14 absorption mapping into SM0..SM9 +
+  post-1.0 destinations (SM0.Q.1).
+- WS-RC sub-portfolio close-out plans archived to
+  `docs/dev_history/audits/` (SM0.Q.2):
+  `WS_RC_R4_CLOSEOUT_PLAN.md` (R4 close-out at v0.31.0),
+  `WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (R5 deferred-work
+  substantive completion at v0.31.2).
+- All cross-references in `CLAUDE.md`, `AGENTS.md`,
+  `docs/audits/README.md`, `docs/audits/AUDIT_v0.30.11_ERRATA.md`,
+  `docs/WORKSTREAM_HISTORY.md`, `docs/gitbook/12-proof-and-invariant-map.md`,
+  and `CHANGELOG.md` updated to point at the new dev_history
+  paths.
+- `docs/audits/README.md` "Recently archived" section extended
+  with the WS-RC sub-portfolio archive note.
+
+### Verification
+
+- Tier 0 hygiene: PASS (CLAUDE.md large-files list refreshed and
+  agreed; production/staged partition consistent with the new
+  Concurrency.* allowlist entries; no website-link breakage; no
+  `dev_history/` cross-references in production sources).
+- Tier 1 build: PASS (full `lake build` green; 314 jobs).
+- Tier 2 negative: PASS (SmpFoundationsSuite runs all 41 runtime
+  assertions PASS).
+- Tier 3 invariant surface: PASS (50+ SM0 `#check` anchors resolve;
+  the 6-way ArchAssumption distinctness theorem and the 2 NoDup
+  inventory witnesses surface-checked).
+- Tier 4 stub: PASS (SKIP marker at SM0; reserved for SM1.H+).
+- Cargo tests: 212/212 PASS (10 new SM0.N + SM0.O tests added).
+- Items deferred past v1.0.0 with correctness impact: NONE.
+
+Refs: docs/planning/SMP_FOUNDATIONS_PLAN.md
+Refs: docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md
+
+---
+
 ## v0.31.2 deferred-work continuation — Phase P1/Q2.A/V1 substantive landings
 
 Continuation of the WS-RC R5 deferred-work completion plan to close
@@ -133,7 +347,7 @@ Refs: docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md (audit pass)
 ## v0.31.2 — WS-RC R5 deferred-work substantive completion
 
 Substantive landing of the deferred R5 obligations enumerated in
-[`docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md`](docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md):
+[`docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md`](docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md):
 the four "AVOIDED" / "UNDER-DELIVERED" items (R5.B.2 × 2 named
 theorems, R5.G.3 substantive preservation, R5.C.1 full deprecation)
 are now substantively complete with zero `sorry` / `axiom`.
@@ -249,7 +463,7 @@ Refs: docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md
 
 Patch-version bump after authoring the WS-RC R5 deferred-completion
 plan
-([`docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md`](docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md))
+([`docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md`](docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md))
 and performing a comprehensive audit of the plan + the prior R5
 landing (PRs landing at d8e03b9 / 7ffeaf4 / 7a21e18).
 

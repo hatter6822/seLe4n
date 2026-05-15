@@ -162,7 +162,7 @@ with `computeMaxWaiterPriority st' tid` (passing the state itself; the
 blocking graph is computed from it).
 
 **Cross-references.**
-- `docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` §6 (Phase Q2)
+- `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` §6 (Phase Q2)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/Compute.lean` (actual API)
 
 ## ERRATA-R5-2 — Plan signature missing hypothesis
@@ -190,7 +190,7 @@ production-call-chain proofs, so the strengthening costs nothing at the
 call site.
 
 **Cross-references.**
-- `docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` §3.3, §7 (Phase R)
+- `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` §3.3, §7 (Phase R)
 - `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md` §3.H row H.25
   (cross-reference to this errata entry)
 

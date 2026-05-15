@@ -9,6 +9,10 @@
 
 import SeLe4n.Kernel.Architecture.Assumptions
 import SeLe4n.Model.Object.Structures
+-- WS-SM SM0.G: SharingDomain comes from the SM0.F foundational types
+-- module so the typeclass field can name it without copying the
+-- definition into the Platform namespace.
+import SeLe4n.Kernel.Concurrency.Types
 
 /-!
 # Platform Binding Contract (H3 preparation)
@@ -106,6 +110,32 @@ class PlatformBinding (platform : Type) where
       EL3/SECURE mode without an MMU; current production bindings
       (RPi5, sim) all override the default. -/
   bootVSpaceRoot : Option BootVSpaceRootEntry := none
+  /-- **WS-SM SM0.G**: number of cores the platform exposes.
+
+      Multi-core (SMP) coordination in WS-SM phases SM1..SM9
+      derives every per-core enumeration / iteration loop / lock
+      partition from this single value.  Bindings supply the
+      numeric value here; the SM0.E `Concurrency.Types.numCores`
+      constant is pinned to the RPi5 binding's `coreCount` via the
+      `numCores_eq_rpi5_coreCount` theorem in
+      `Platform.RPi5.Contract`. -/
+  coreCount : Nat
+  /-- **WS-SM SM0.G**: positivity witness for `coreCount`.  Required
+      because every consumer (bootCoreId, allCores enumeration,
+      `Fin coreCount` typed identifiers) needs at least one core to
+      inhabit `Fin coreCount`. -/
+  coreCountPos : coreCount > 0
+  /-- **WS-SM SM0.G**: the boot core id, scoped to `Fin coreCount`
+      so it is structurally in-range.  Always `0` in practice
+      (PSCI brings up secondaries from `Aff0 = 0`); typeclass-
+      supplied so a future multi-platform port that boots on a
+      non-zero affinity slot can override it. -/
+  bootCoreId : Fin coreCount
+  /-- **WS-SM SM0.G**: ARMv8 memory-shareability domain selecting
+      the right DSB barrier kind on this platform.  RPi5 BCM2712
+      is single-cluster Cortex-A76 (`.inner`); future big.LITTLE /
+      multi-cluster targets use `.outer`. -/
+  sharingDomain : SeLe4n.Kernel.Concurrency.SharingDomain
 
 /-- Extract the runtime contract from a platform binding instance. -/
 @[inline] def PlatformBinding.runtime [PlatformBinding platform] : RuntimeBoundaryContract :=
@@ -128,5 +158,22 @@ class PlatformBinding (platform : Type) where
 @[inline] def PlatformBinding.bootVSpace [PlatformBinding platform] :
     Option BootVSpaceRootEntry :=
   PlatformBinding.bootVSpaceRoot (platform := platform)
+
+/-- **WS-SM SM0.G**: extract the platform's core count.  Wrapper
+    `def` so consumers can write `PlatformBinding.cores (platform := P)`
+    without the verbose `coreCount`. -/
+@[inline] def PlatformBinding.cores [PlatformBinding platform] : Nat :=
+  PlatformBinding.coreCount (platform := platform)
+
+/-- **WS-SM SM0.G**: extract the platform's boot core id, typed as
+    `Fin (cores platform)`. -/
+@[inline] def PlatformBinding.bootCore [PlatformBinding platform] :
+    Fin (PlatformBinding.coreCount (platform := platform)) :=
+  PlatformBinding.bootCoreId (platform := platform)
+
+/-- **WS-SM SM0.G**: extract the platform's ARMv8 sharing domain. -/
+@[inline] def PlatformBinding.sharing [PlatformBinding platform] :
+    SeLe4n.Kernel.Concurrency.SharingDomain :=
+  PlatformBinding.sharingDomain (platform := platform)
 
 end SeLe4n.Platform

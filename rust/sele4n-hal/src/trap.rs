@@ -185,8 +185,7 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
     match exception_class {
         ec::SVC_AARCH64 => {
             // CLOSED at AN9-F: Wire Lean FFI dispatch via the
-            // `dispatch_svc` shim (closes DEF-R-HAL-L14 per
-            // docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12 AN9-F).
+            // `dispatch_svc` shim (closes DEF-R-HAL-L14 per WS-AN AN9-F).
             // CLOSED at WS-RC R2.B: Lean side substantively routes
             // into `Kernel.syscallEntryChecked` (closes DEEP-FFI-01).
             //

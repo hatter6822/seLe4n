@@ -91,7 +91,14 @@ Remediation — 5 phases (AH1–AH5), 27 sub-tasks.
 Remediation — 7 phases (AI1–AI7), 37 sub-tasks. All 60 findings from the
 v0.27.6 audit addressed (5 HIGH, 27 MEDIUM, 28 LOW).
 
-**Next major milestone**: WS-V — multi-core SMP, FrozenOps production promotion.
+**Next major milestone**: WS-SM — multi-core SMP completion through v1.0.0.
+Phase SM0 (foundations & honesty patches) closed at v0.32.0 with the
+type-level scaffolding (CoreId, LockKind, LockId, SgiKind, SharingDomain,
+BklState).  SM1..SM9 wire those types into runtime per-core scheduler
+state, verified ticket / RW lock primitives, TLB shootdown, and cross-core
+IPC.  Full plan in
+[`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](../planning/SMP_MULTICORE_COMPLETION_PLAN.md).
+Companion post-1.0 deferrals: FrozenOps production promotion.
 
 See [Specification & Roadmap](05-specification-and-roadmap.md) and
 [`docs/WORKSTREAM_HISTORY.md`](../WORKSTREAM_HISTORY.md).

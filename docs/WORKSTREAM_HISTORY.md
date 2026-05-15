@@ -15,12 +15,35 @@ previously spread across README.md, GitBook chapters, and audit plans.
 
 ## What's next
 
-**WS-RC remediation workstream IN FLIGHT (v0.30.11 → v0.31.0 →
-v1.0.0).** Remediates the v0.30.11 audit cycle (comprehensive + deep
-verification) via 15 phases (R0..R14). The pre-v1.0 must-fix tier
-spans R0..R6; the release-aligned cleanup tier spans R7..R12; R13 is
-reserved for emergent items; R14 is the post-1.0 maintainability
-backlog. Plan:
+**WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 →
+v0.32.x → v1.0.0).** Unified workstream merging WS-RC's remaining
+R6..R14 phases with the SMP-specific SM-phases (SM0..SM9).  Closes
+at v1.0.0 with a bootable verified SMP microkernel on Raspberry Pi 5.
+Plan:
+[`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](planning/SMP_MULTICORE_COMPLETION_PLAN.md).
+SM0 phase plan (foundations & honesty patches):
+[`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
+
+**WS-SM SM0 closure at v0.32.0 (this cut).** 21 sub-tasks across 6
+categories landed as one cut: foundational types
+(`Concurrency.Types`/`Locks/Kind`/`Locks`/`Sgi`), AN12-B inventory
+hardening (NoDup witnesses, build anchors, 6-way ArchAssumption
+machinery), Rust HAL scaffolding hardening (`.smp_stacks` zeroed,
+TPIDR_EL1 set on `secondary_entry`, `MAX_SECONDARY_CORES` pinned to
+PlatformBinding), documentation honesty patches (every dev_history
+cross-reference removed from production sources, every "deferred to
+WS-V" SMP claim repointed to the WS-SM phase plans, DEF-R-HAL-L20
+disposition rewritten to honestly reflect the partial-resolution
+state), testing infrastructure (`tests/SmpFoundationsSuite.lean`
+with 41 runtime assertions; tier-4 SMP boot-check stub), and the
+WS-RC merge (R0..R5 archived; R6..R14 absorbed into SM0..SM9 per the
+SM0.Q.1 absorption mapping; sub-portfolio plans archived to
+`docs/dev_history/audits/`).
+
+**WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 →
+v0.31.2).** Historical record retained for traceability.  R0..R5
+landed at v0.31.2 (closed every pre-WS-SM must-fix); R6..R14
+absorbed into WS-SM per the SM0.Q merge.  Plan (now historical):
 [`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md).
 Baseline:
 [`docs/audits/AUDIT_v0.30.11_WS_RC_BASELINE.txt`](audits/AUDIT_v0.30.11_WS_RC_BASELINE.txt).
@@ -28,13 +51,18 @@ Errata:
 [`docs/audits/AUDIT_v0.30.11_ERRATA.md`](audits/AUDIT_v0.30.11_ERRATA.md).
 Discharge index seed:
 [`docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`](audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md).
+Sub-portfolio close-out plans archived to
+[`docs/dev_history/audits/`](dev_history/audits/) per WS-SM SM0.Q.2.
 
-**Release path:**
-- `v0.31.0` "verified specification release" — R0+R1+R8..R12 land.
-- `v1.0.0` "bootable verified microkernel" — additionally R2..R6 land
-  (FFI dispatch wiring, boot VSpace threading, structural-invariant
-  promotions, scheduler/lifecycle behaviour symmetry, architecture /
-  information-flow completeness).
+**Release path (WS-SM):**
+- `v0.32.x` (this WS-SM SM0 cut) — Foundations & honesty patches.
+  Single-core boot path unchanged; type-level scaffolding for
+  SM1..SM9 in place.
+- `v0.33.x` (planned) — SM1 (Rust HAL) + SM2 (verified locks).
+- `v0.34.x` (planned) — SM3 (per-object locks) + SM4 (per-core state).
+- `v0.35.x` (planned) — SM5 (per-core scheduler) + SM6 (cross-core IPC).
+- `v0.36.x` (planned) — SM7 (TLB shootdown) + SM8 (info flow under SMP).
+- `v1.0.0` "bootable verified SMP microkernel" — SM9 closure cut.
 
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
@@ -543,7 +571,7 @@ None.  All four R4 sub-tasks LANDED at this commit:
 
 Following the partial landing of R4 at v0.30.11, the close-out
 (branch `claude/review-closeout-plan-HToSk`,
-plan: [`docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md`](audits/WS_RC_R4_CLOSEOUT_PLAN.md))
+plan: [`docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md`](dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md))
 **fully retires** the historical state-level `cspaceSlotUnique` and
 `uniqueWaiters` invariants — the definitions, trivial discharge
 helpers, all vestigial hypothesis parameters, and the dependent
@@ -954,7 +982,7 @@ runtime witnesses of the corresponding behavioural invariants.
 #### R5 deferred-work SUBSTANTIVE COMPLETION (v0.31.2)
 
 The follow-up deferred-completion plan
-([`docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md`](audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md))
+([`docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md`](dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md))
 completes the four "AVOIDED" / "UNDER-DELIVERED" items left after the
 initial landing.
 

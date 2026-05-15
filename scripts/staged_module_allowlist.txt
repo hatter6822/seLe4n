@@ -17,9 +17,9 @@
 #   infra               — platform infrastructure (bridges, anchors, helpers)
 #   anchor              — the staging anchor file itself
 #
-# Last verified: WS-RC R3 closure (v0.30.11 HEAD with
-# Platform.RPi5.VSpaceBoot + Architecture.AsidManager promoted to
-# production via the bootSafeObject admission of boot VSpaceRoots).
+# Last verified: WS-SM SM0 closure (v0.32.0 HEAD with five new
+# Concurrency/* foundational modules — Anchors, Types, Locks,
+# Locks.Kind, Sgi — entering staged via Platform.Staged).
 
 SeLe4n.Kernel.Architecture.CacheModel         # marker (STATUS: staged for H3)
 SeLe4n.Kernel.Architecture.ExceptionModel     # marker (STATUS: staged for H3)
@@ -27,4 +27,8 @@ SeLe4n.Kernel.Architecture.InterruptDispatch  # transitively-staged via Exceptio
 SeLe4n.Kernel.Architecture.TimerModel         # marker (STATUS: staged for H3)
 SeLe4n.Kernel.Architecture.TlbCacheComposition # transitively-staged via Staged
 SeLe4n.Kernel.Concurrency.Assumptions         # infra (SMP-latent assumption inventory)
+SeLe4n.Kernel.Concurrency.Anchors             # infra (WS-SM SM0.C inventory build anchor; SMP-H3 closure)
+SeLe4n.Kernel.Concurrency.Locks               # infra (WS-SM SM0.I BklState)
+SeLe4n.Kernel.Concurrency.Locks.Kind          # infra (WS-SM SM0.I LockKind + LockId total order)
+SeLe4n.Kernel.Concurrency.Sgi                 # infra (WS-SM SM0.H SgiKind)
 SeLe4n.Platform.Staged                        # anchor (the staging entry point itself)

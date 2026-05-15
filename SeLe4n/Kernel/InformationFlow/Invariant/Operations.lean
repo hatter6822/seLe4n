@@ -94,9 +94,9 @@ Callers invoking the closure-form theorems today discharge `hProjEq`
 with the recipe above; the interface is stable across the toolchain
 workarounds, so substantive discharge lands as future commits without
 touching the call sites. The AN6-A.2..A.7 follow-up workstream (per
-`docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` §9) retires the closure
-form arm-by-arm, replacing each with the recipe above, once the Lean
-toolchain ergonomics stabilise.
+WS-AN AN6-F; historical record in docs/WORKSTREAM_HISTORY.md) retires the
+closure form arm-by-arm, replacing each with the recipe above, once the
+Lean toolchain ergonomics stabilise.
 -/
 
 /-! ### WS-F3/K-F5: Capability CRUD and Lifecycle NI proofs — all completed

@@ -82,9 +82,9 @@ The following mitigations are deferred (not applicable to Cortex-A76):
 | Mitigation | Reason |
 |-----------|--------|
 | MTE (Memory Tagging Extension) | Not supported on Cortex-A76 |
-| PAC (Pointer Authentication) | Deferred to WS-V |
-| BTI (Branch Target Identification) | Deferred to WS-V |
-| Shadow call stack | Deferred to WS-V |
+| PAC (Pointer Authentication) | Post-v1.0 hardening (separate workstream; not in WS-SM SMP scope) |
+| BTI (Branch Target Identification) | Post-v1.0 hardening (separate workstream; not in WS-SM SMP scope) |
+| Shadow call stack | Post-v1.0 hardening (separate workstream; not in WS-SM SMP scope) |
 
 ## Verification
 

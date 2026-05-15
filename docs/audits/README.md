@@ -76,19 +76,16 @@ Once the workstream closes:
   (false-positive structural witnesses) are WS-RC-introduced sections;
   §3.G records the DEBT-RUST-02 / H-24 reconfirmation landed at R0.4.
 
-- `WS_RC_R4_CLOSEOUT_PLAN.md` — **WS-RC R4 close-out plan** (9 sub-PR
-  decomposition) landed at v0.31.0.  Closure is recorded in
-  `docs/WORKSTREAM_HISTORY.md` "WS-RC R4 close-out".  Retained in
-  `docs/audits/` as an exemplar of the per-sub-task plan convention.
-
-- `WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` — **WS-RC R5 deferred-work
-  completion plan** (8 sub-PR decomposition across P/Q/R/S/V phases).
-  Closes the four substantive obligations (R5.B.2 × 2 named theorems,
-  R5.G.3 substantive preservation, R5.C.1 full
-  `effectivePriority` deprecation) deferred from PR #771 + commit
-  `7a21e18`.  **Target**: v1.0.0 cut.  Tracks the substantive
-  closure-form removals so R5 is fully complete prior to the first
-  major launch.
+> **WS-SM SM0.Q.2 (v0.32.0)**: the two WS-RC sub-portfolio plans
+> (`WS_RC_R4_CLOSEOUT_PLAN.md`, `WS_RC_R5_DEFERRED_COMPLETION_PLAN.md`)
+> have been **archived to `docs/dev_history/audits/`** because the
+> work they describe is complete (R4 close-out at v0.31.0; R5
+> deferred-work substantive completion at v0.31.2).  WS-RC's
+> remaining R6..R14 phases absorb into the WS-SM unified workstream
+> per the SM0.Q merge — see `AUDIT_v0.30.11_WORKSTREAM_PLAN.md`
+> §15 for the absorption mapping.  The two archived plans remain
+> readable for historical traceability; new tracking happens in
+> the WS-SM phase plans (`docs/planning/SMP_*.md`).
 
 ## Recently archived (WS-AN closure, v0.30.11)
 
