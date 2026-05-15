@@ -28,9 +28,11 @@ use sele4n_host::dispatch::{
     SUCCESS_PAYLOAD_MASK,
 };
 use sele4n_host::fixture::{
-    FixtureBuilder, REG_X0, REG_X1, REG_X2, REG_X3, REG_X4, REG_X5, REG_X6, REG_X7, REGISTER_COUNT,
+    REG_X0, REG_X1, REG_X2, REG_X3, REG_X4, REG_X5, REG_X6, REG_X7, REGISTER_COUNT,
 };
-use sele4n_host::{HostRuntime, HostState, HostStateError};
+use sele4n_host::{
+    FixtureBuilder, FixtureSnapshot, HostRuntime, HostState, HostStateError,
+};
 use sele4n_types::{CPtr, KernelError, SyscallId};
 
 // -----------------------------------------------------------------
@@ -392,6 +394,48 @@ fn tcb_invariance_host_crate_is_std() {
     // the call exercises `std::collections::HashMap::<u32, u32>::new`,
     // which is provably unavailable in a no_std context.
     let _map: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+}
+
+#[test]
+fn public_types_are_send_and_sync() {
+    // Compile-time witness that every public type can cross thread
+    // boundaries.  Foundational test for future WS-RH phases that
+    // may use these types in multi-threaded test harnesses.  If any
+    // public type is changed to add interior mutability or a
+    // non-Send field, this test fails to compile.
+    fn assert_send<T: Send>() {}
+    fn assert_sync<T: Sync>() {}
+
+    assert_send::<HostRuntime>();
+    assert_sync::<HostRuntime>();
+    assert_send::<DispatchOutcome>();
+    assert_sync::<DispatchOutcome>();
+    assert_send::<DispatcherInternalError>();
+    assert_sync::<DispatcherInternalError>();
+    assert_send::<HostState>();
+    assert_sync::<HostState>();
+    assert_send::<HostStateError>();
+    assert_sync::<HostStateError>();
+    assert_send::<FixtureBuilder>();
+    assert_sync::<FixtureBuilder>();
+    assert_send::<FixtureSnapshot>();
+    assert_sync::<FixtureSnapshot>();
+}
+
+#[test]
+fn public_types_implement_debug() {
+    // Compile-time witness that every public type can be formatted
+    // for debug output.  Critical for diagnostic logging in later
+    // WS-RH phases.
+    fn assert_debug<T: std::fmt::Debug>() {}
+
+    assert_debug::<HostRuntime>();
+    assert_debug::<DispatchOutcome>();
+    assert_debug::<DispatcherInternalError>();
+    assert_debug::<HostState>();
+    assert_debug::<HostStateError>();
+    assert_debug::<FixtureBuilder>();
+    assert_debug::<FixtureSnapshot>();
 }
 
 #[test]

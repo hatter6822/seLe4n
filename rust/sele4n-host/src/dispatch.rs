@@ -65,7 +65,13 @@ pub const SUCCESS_PAYLOAD_MASK: u64 = !ERROR_FLAG_MASK;
 /// is the **structured shape** that callers consume after decoding a
 /// raw kernel return value; it is the host-runtime equivalent of
 /// `sele4n-hal::svc_dispatch::Result<u64, DispatchError>`.
+///
+/// `#[non_exhaustive]` is applied for forward compatibility: later
+/// WS-RH phases may add new variants (e.g., a host-side trap
+/// surface for ahead-of-time validation failures).  External
+/// `match` statements must include a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DispatchOutcome {
     /// The kernel returned success.  The payload is the low 63 bits
     /// of the encoded return value.
@@ -97,7 +103,13 @@ pub enum DispatchOutcome {
 /// kernel sees the syscall.  They are not encoded in the kernel
 /// return-value `UInt64` (the kernel never sees the syscall when
 /// these fire); the dispatcher emits them locally.
+///
+/// `#[non_exhaustive]` is applied for forward compatibility: later
+/// WS-RH phases may add new pre-kernel validation paths (e.g.,
+/// capability-shape validation in RH-E).  External `match`
+/// statements must include a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum DispatcherInternalError {
     /// The caller passed a syscall id outside the valid 0..=24 range.
     ///
@@ -363,6 +375,74 @@ mod tests {
             let outcome = DispatchOutcome::KernelError(e);
             assert_eq!(DispatchOutcome::decode(outcome.encode()), outcome);
         }
+    }
+
+    #[test]
+    fn encode_known_kernel_errors_sweep_all_discriminants() {
+        // Comprehensive encode-side sweep complementing
+        // `decode_total_for_all_known_discriminants`: for every
+        // discriminant 0..=52, construct the matching `KernelError`
+        // via `from_u32`, encode the outcome, and verify the
+        // resulting `u64` has bit 63 set AND its low 32 bits equal
+        // the original discriminant.  This pins the round-trip
+        // identity `from_u32(e as u32) == Some(e)` for every
+        // variant.
+        for disc in 0u32..=52 {
+            let e = KernelError::from_u32(disc).expect("known discriminant");
+            let outcome = DispatchOutcome::KernelError(e);
+            let raw = outcome.encode();
+            assert_eq!(
+                raw & ERROR_FLAG_MASK,
+                ERROR_FLAG_MASK,
+                "discriminant {disc} did not set the error flag"
+            );
+            assert_eq!(
+                raw & ERROR_DISCRIMINANT_MASK,
+                u64::from(disc),
+                "discriminant {disc} encode produced wrong low 32 bits"
+            );
+            // Full round-trip identity for the structured variant.
+            assert_eq!(
+                DispatchOutcome::decode(raw),
+                outcome,
+                "discriminant {disc} did not round-trip"
+            );
+        }
+    }
+
+    #[test]
+    fn decode_u64_max_routes_to_unknown_kernel_error() {
+        // u64::MAX has bit 63 set, so it enters the error path.
+        // The low 32 bits are u32::MAX = 0xFFFF_FFFF, which is
+        // outside the known 0..=52 + 255 range, so it routes to
+        // UnknownKernelError.
+        assert_eq!(
+            DispatchOutcome::decode(u64::MAX),
+            DispatchOutcome::KernelError(KernelError::UnknownKernelError)
+        );
+    }
+
+    #[test]
+    fn decode_ignores_bits_32_through_62_on_error_path() {
+        // Per the encodeError contract, the high bits 32..=62 are
+        // always zero on emit (the discriminant fits in u32).  A
+        // malformed caller might still send bits 32..=62 set; the
+        // decoder ignores them and extracts only the low 32 bits.
+        // This matches the HAL dispatcher's `raw as u32` truncation.
+        //
+        // Construct `raw = ERROR_FLAG_MASK | (junk << 32) | disc`
+        // and verify decode produces the variant for `disc`,
+        // ignoring the junk in bits 32..=62.
+        let disc: u64 = 2; // IllegalState
+        let junk_high: u64 = 0xFFFF; // bits 32..=47 set
+        let raw = ERROR_FLAG_MASK | (junk_high << 32) | disc;
+        // raw == 0x8000_FFFF_0000_0002; low 32 == 0x0000_0002 == 2
+        assert_eq!(raw & ERROR_DISCRIMINANT_MASK, disc);
+        let outcome = DispatchOutcome::decode(raw);
+        assert_eq!(
+            outcome,
+            DispatchOutcome::KernelError(KernelError::IllegalState)
+        );
     }
 
     #[test]

@@ -29,7 +29,7 @@ sub-tasks (RH-H.1..RH-H.10) all landed together at this cut.
 - No third-party runtime dependencies — preserves the kernel TCB
   supply-chain invariant.
 
-`rust/sele4n-host/src/lib.rs` (NEW, ~95 lines):
+`rust/sele4n-host/src/lib.rs` (NEW, ~100 lines):
 - SPDX header, crate-level docstring distinguishing the host-side
   runtime from `sele4n-sys` (guest-side syscall facade) and the
   kernel-side `sele4n-hal`.
@@ -41,14 +41,14 @@ sub-tasks (RH-H.1..RH-H.10) all landed together at this cut.
   `FixtureSnapshot`.
 - Doc-test exercising the full public surface end-to-end.
 
-`rust/sele4n-host/src/runtime.rs` (NEW, ~110 lines):
+`rust/sele4n-host/src/runtime.rs` (NEW, ~130 lines):
 - `HostRuntime` struct + `new` (const), `version`,
   `workspace_version_pinned` (const), `is_fresh`, `Default`.
 - Pins the workspace `CARGO_PKG_VERSION` (`"0.31.3"` at this cut)
   through both dynamic and const-fn accessors; version-drift is
   caught at every `cargo test` run.
 
-`rust/sele4n-host/src/dispatch.rs` (NEW, ~410 lines):
+`rust/sele4n-host/src/dispatch.rs` (NEW, ~435 lines):
 - `DispatchOutcome` enum with `Ok(u64)` / `KernelError(KernelError)`
   / `DispatcherInternal(DispatcherInternalError)` variants.
 - `DispatcherInternalError` enum with `InvalidSyscallId`,
@@ -66,14 +66,14 @@ sub-tasks (RH-H.1..RH-H.10) all landed together at this cut.
 - `is_ok` / `is_kernel_error` / `is_dispatcher_internal`
   predicates.
 
-`rust/sele4n-host/src/state.rs` (NEW, ~165 lines):
+`rust/sele4n-host/src/state.rs` (NEW, ~205 lines):
 - `HostState` placeholder type + `empty` (const) + `is_empty`
   (const) + `Default`.
 - `HostStateError` enum with `Uninitialised`, `BoundedCapacity`,
   `InvalidFixture` variants; `identifier`, `Display`, and
   `std::error::Error` impls.
 
-`rust/sele4n-host/src/fixture.rs` (NEW, ~325 lines):
+`rust/sele4n-host/src/fixture.rs` (NEW, ~455 lines):
 - `FixtureBuilder` with fluent `with_syscall_id`,
   `with_message_info`, `with_cap_addr`, `with_msg_reg`,
   `with_ipc_buffer_addr`, `build` (const) methods.
@@ -85,8 +85,8 @@ sub-tasks (RH-H.1..RH-H.10) all landed together at this cut.
 
 ### Added — Integration test suite
 
-`rust/sele4n-host/tests/scaffold.rs` (NEW, ~415 lines):
-- 23 integration tests covering every public item in the four
+`rust/sele4n-host/tests/scaffold.rs` (NEW, ~460 lines):
+- 25 integration tests covering every public item in the four
   scaffolding modules.
 - `runtime_version_matches_workspace`,
   `runtime_const_version_matches_runtime_version`,
@@ -116,15 +116,17 @@ sub-tasks (RH-H.1..RH-H.10) all landed together at this cut.
   index constants, IPC-buffer setter, chained setters preserved.
 - `host_runtime_*` (2 tests) — end-to-end public-API composition.
 
-Combined with the 48 in-crate unit tests (in
+Combined with the 51 in-crate unit tests (in
 `src/{runtime,dispatch,state,fixture}.rs::tests`) and the 1
-doc-test, the new crate contributes 72 new test cases.  Total Rust
-workspace test count grows from ~479 to 551 (workspace `cargo test`).
+doc-test, the new crate contributes 77 new test cases.  Total Rust
+workspace test count grows from ~479 to 556 (workspace `cargo test`).
 
 ### Audit-pass hardening
 
-The initial RH-H landing was followed by an audit pass that
+The initial RH-H landing was followed by two audit passes that
 strengthened correctness and documentation:
+
+**First audit pass** (panic-on-misuse + docstring honesty):
 
 - `FixtureBuilder::with_msg_reg(idx, value)`: previously silently
   ignored `idx > 3`; now panics with a diagnostic message naming
@@ -151,6 +153,38 @@ strengthened correctness and documentation:
   sync is owned by `scripts/check_version_sync.sh` (WS-AH Phase
   AH4-F).
 
+**Second audit pass** (`#[non_exhaustive]` + comprehensive sweeps
++ trait bounds + bit-manipulation pinning):
+
+- `DispatchOutcome` and `DispatcherInternalError` gain
+  `#[non_exhaustive]` for forward compatibility with later
+  WS-RH phases (RH-E may add new dispatcher-internal variants
+  for capability-shape validation).
+- `encode_known_kernel_errors_sweep_all_discriminants` (unit
+  test): exhaustively sweeps every `KernelError` discriminant
+  0..=52, verifying encode produces the correct bit-63-flagged
+  `u64` AND decode round-trips back to the original variant.
+  Complements `decode_total_for_all_known_discriminants` for
+  symmetric coverage.
+- `decode_u64_max_routes_to_unknown_kernel_error` (unit test):
+  pins the malformed-input fallback behaviour for the extreme
+  `u64::MAX` case.
+- `decode_ignores_bits_32_through_62_on_error_path` (unit test):
+  verifies the decoder ignores bits 32..62 (the "junk gap"
+  between the discriminant and the error flag), matching the
+  HAL dispatcher's `raw as u32` truncation.
+- `public_types_are_send_and_sync` (integration test):
+  compile-time witness that every public type (`HostRuntime`,
+  `DispatchOutcome`, `DispatcherInternalError`, `HostState`,
+  `HostStateError`, `FixtureBuilder`, `FixtureSnapshot`)
+  implements `Send + Sync` for multi-threaded test harness
+  compatibility.
+- `public_types_implement_debug` (integration test):
+  compile-time witness that every public type implements
+  `Debug` for diagnostic logging.
+- File-size approximations in CHANGELOG corrected to match
+  post-audit reality.
+
 ### Added — CI harness
 
 `scripts/test_rust.sh` (edited):
@@ -168,7 +202,7 @@ comment only):
 
 ### Added — Documentation
 
-`docs/planning/rust_host_runtime_plan.md` (NEW, ~470 lines):
+`docs/planning/rust_host_runtime_plan.md` (NEW, ~605 lines):
 - Canonical WS-RH plan with eight phases (RH-H + RH-A..RH-G), a
   forward-look sketch for RH-A..RH-G, and a per-sub-task
   decomposition of RH-H.
@@ -199,7 +233,7 @@ comment only):
 - Zero new third-party runtime deps (`THIRD_PARTY_LICENSES.md`
   unchanged).
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.
-- `cargo test --workspace` passes (551 tests total).
+- `cargo test --workspace` passes (556 tests total).
 - `./scripts/test_rust.sh` passes including the new step 4.
 - `RUSTDOCFLAGS="-D warnings" cargo doc -p sele4n-host --no-deps`
   builds without warnings.
