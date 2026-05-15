@@ -607,11 +607,21 @@ documentation lives under `docs/` and `docs/gitbook/`.
   documentation synchronised across README/spec/CLAIM_EVIDENCE_INDEX/
   WORKSTREAM_HISTORY/CHANGELOG/CLAUDE.md/AGENTS.md.
 
-  Test count: 67 new test cases (46 unit + 20 integration + 1
+  Test count: 72 new test cases (48 unit + 23 integration + 1
   doc-test).  Workspace `cargo test --workspace` total grows from
-  ~409 to ~476.  Zero `unsafe`, zero new third-party deps, zero
-  clippy warnings under `-D warnings`, kernel TCB byte-identical
-  pre- and post-RH-H.
+  ~479 to 551.  Zero `unsafe`, zero new third-party deps, zero
+  clippy warnings under `-D warnings`, zero rustdoc warnings
+  under `-D warnings`, kernel TCB byte-identical pre- and
+  post-RH-H (verified via `cargo tree -p sele4n-hal` — zero
+  dependencies, no transitive reach into `sele4n-host`).
+
+  Audit-pass hardening landed alongside RH-H: `with_msg_reg`
+  swapped silent-ignore for panic-on-out-of-range;
+  `with_message_info` swapped `unwrap_or(0)` for `.expect()`;
+  module docstrings rewritten to clearly distinguish
+  `arm64DefaultLayout` (x0/x1/x2..x5/x7) from the trap-frame
+  `x6` field (read from TPIDRRO_EL0 by the kernel-side
+  dispatcher).
 
 - **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 → v0.31.3 → v0.32.x → v1.0.0,
   branch `claude/complete-sm0-foundations-gldW8`)**:

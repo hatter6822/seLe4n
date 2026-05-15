@@ -360,12 +360,27 @@ compiles" without needing to plumb every field through.
 construction in later phases. At RH-H:
 
 - `FixtureBuilder::new()` — constructs a default builder.
-- `FixtureBuilder::with_syscall_id(id)` — sets the syscall id.
-- `FixtureBuilder::with_message_info(info)` — sets the message info.
+- `FixtureBuilder::with_syscall_id(id)` — sets the syscall id (`x7`).
+- `FixtureBuilder::with_message_info(info)` — sets the encoded
+  `msg_info` (`x1`).  Panics via `.expect()` on the
+  impossible-via-public-API encoding failure (defensive
+  programming; the bound is enforced at `MessageInfo`
+  construction time).
+- `FixtureBuilder::with_cap_addr(addr)` — sets the capability
+  address (`x0`).
+- `FixtureBuilder::with_msg_reg(idx, value)` — sets `x(idx + 2)`
+  for `idx in 0..=3`.  **Panics** on `idx > 3` — out-of-range
+  indices are programmer errors that would silently produce
+  fixtures diverging from `arm64DefaultLayout`.
+- `FixtureBuilder::with_ipc_buffer_addr(addr)` — sets `x6`.
+  The `x6` slot is **not** part of `arm64DefaultLayout` (which
+  only covers `x0`, `x1`, `x2..x5`, and `x7`); the kernel-side
+  trap handler reads it as the IPC-buffer address from
+  `TPIDRRO_EL0`.
 - `FixtureBuilder::build()` — produces a `FixtureSnapshot`.
-- `FixtureSnapshot` — a newtype around `[u64; 8]` (the eight-
-  register layout the kernel observes on syscall entry per
-  `arm64DefaultLayout`).
+- `FixtureSnapshot` — owns a `[u64; 8]` flat register array
+  indexed by canonical `x`-register number (the same indexing
+  the kernel-side dispatcher applies).
 - `FixtureSnapshot::registers()` — read-only register accessor.
 
 This is a thin facade. The real value comes in RH-B/RH-C/RH-D

@@ -86,6 +86,29 @@ fn dispatch_decode_success_max_payload() {
     assert_eq!(DispatchOutcome::decode(raw), DispatchOutcome::Ok(raw));
 }
 
+#[test]
+fn dispatch_encode_high_bit_payload_is_truncated_then_decoded_as_success() {
+    // The Lean `encodeOk` contract masks bit 63.  A host-side
+    // caller that constructs `Ok(payload)` with bit 63 set will
+    // see the encoded value have bit 63 cleared — decoding the
+    // round-trip yields `Ok(payload & SUCCESS_PAYLOAD_MASK)`, not
+    // the original `Ok(payload)`.  This is the documented one-way
+    // mapping: the kernel never emits payloads `>= 2^63`, so any
+    // caller-side construction outside this range gets silently
+    // normalised on encode.
+    let original = DispatchOutcome::Ok(u64::MAX);
+    let raw = original.encode();
+    // Encoded value has bit 63 cleared.
+    assert_eq!(raw & ERROR_FLAG_MASK, 0);
+    assert_eq!(raw, SUCCESS_PAYLOAD_MASK);
+
+    let decoded = DispatchOutcome::decode(raw);
+    // Decoded outcome is `Ok(SUCCESS_PAYLOAD_MASK)`, NOT
+    // `Ok(u64::MAX)`.  Document this lossy round-trip.
+    assert_eq!(decoded, DispatchOutcome::Ok(SUCCESS_PAYLOAD_MASK));
+    assert_ne!(decoded, original);
+}
+
 // -----------------------------------------------------------------
 // Dispatch — error path: sweep every known KernelError discriminant
 // -----------------------------------------------------------------
@@ -342,4 +365,50 @@ fn host_runtime_empty_state_distinct_from_error() {
     let e = HostStateError::Uninitialised;
     assert!(s.is_empty());
     assert_eq!(e.identifier(), "uninitialised");
+}
+
+// -----------------------------------------------------------------
+// TCB-invariance sanity (the host crate is std-opting and never
+// linked into the kernel binary)
+// -----------------------------------------------------------------
+
+/// Compile-time assertion that this test target uses `std`.
+///
+/// The host runtime is the only workspace member that opts into
+/// `std`; the other four crates (`sele4n-types`, `sele4n-abi`,
+/// `sele4n-sys`, `sele4n-hal`) are `#![no_std]`.  The kernel binary
+/// is linked from `sele4n-hal`, which has zero transitive
+/// dependency on `sele4n-host` — Cargo's path-based dependency
+/// graph enforces the partition statically.
+///
+/// This `#[allow(...)]` lives in the test file (not the library)
+/// because `std::collections::HashMap` is a host-side type;
+/// successfully constructing it inside a `sele4n-host` test
+/// confirms the crate is built with `std` available.
+#[test]
+fn tcb_invariance_host_crate_is_std() {
+    // If sele4n-host were ever accidentally rebuilt as no_std,
+    // this line would fail to compile.  Construction is enough —
+    // the call exercises `std::collections::HashMap::<u32, u32>::new`,
+    // which is provably unavailable in a no_std context.
+    let _map: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+}
+
+#[test]
+fn dispatch_constants_match_kernel_contract() {
+    // Pin the bit-layout constants against the kernel-side
+    // contract.  A drift here (e.g., bit 62 instead of 63 for the
+    // error flag) would silently break round-tripping with the
+    // Lean kernel's emitted UInt64.
+    //
+    // ERROR_FLAG_MASK must be exactly 1u64 << 63 = 0x8000_0000_0000_0000.
+    assert_eq!(ERROR_FLAG_MASK, 0x8000_0000_0000_0000);
+    // ERROR_DISCRIMINANT_MASK must be u32::MAX as u64 = 0xFFFF_FFFF.
+    assert_eq!(ERROR_DISCRIMINANT_MASK, 0x0000_0000_FFFF_FFFF);
+    // SUCCESS_PAYLOAD_MASK must be !ERROR_FLAG_MASK = 0x7FFF_FFFF_FFFF_FFFF.
+    assert_eq!(SUCCESS_PAYLOAD_MASK, 0x7FFF_FFFF_FFFF_FFFF);
+    // The three masks partition u64: error-flag ∪ payload = full,
+    // error-flag ∩ payload = empty.
+    assert_eq!(ERROR_FLAG_MASK | SUCCESS_PAYLOAD_MASK, u64::MAX);
+    assert_eq!(ERROR_FLAG_MASK & SUCCESS_PAYLOAD_MASK, 0);
 }

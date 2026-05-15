@@ -18,10 +18,10 @@
 //! `[workspace.package]` block.
 //!
 //! The integration test suite asserts these invariants on every
-//! `cargo test` run.  A regression — e.g., the workspace version
-//! diverging from the Lean lakefile version — fails the host
-//! runtime tests, which is the desired catch-early behaviour for
-//! WS-RC R8 version-sync drift.
+//! `cargo test` run.  This complements the canonical version-sync
+//! gate (`scripts/check_version_sync.sh`, owned by WS-AH Phase
+//! AH4-F) by catching drift at cargo-test time rather than waiting
+//! for the dedicated CI gate.
 
 /// Host-side runtime entry point.
 ///

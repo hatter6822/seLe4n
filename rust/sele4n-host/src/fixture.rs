@@ -3,30 +3,61 @@
 //!
 //! `FixtureBuilder` is the host-runtime entry point for declarative
 //! construction of register-file snapshots compatible with the
-//! `arm64DefaultLayout` register convention (the kernel-side view of
-//! a syscall trap frame's argument registers).
+//! `arm64DefaultLayout` register convention (the encoder-side view
+//! of a syscall trap frame's argument registers).
 //!
-//! Layout per `arm64DefaultLayout`:
+//! ## Register layout
+//!
+//! The Lean source `SeLe4n.arm64DefaultLayout`
+//! (`SeLe4n/Machine.lean:971`) declares four canonical register
+//! slots:
 //!
 //! ```text
-//!   index 0 = x0   (cap_addr or msg_regs[0])
-//!   index 1 = x1   (msg_info — encoded bitfield)
-//!   index 2 = x2   (msg_regs[1])
-//!   index 3 = x3   (msg_regs[2])
-//!   index 4 = x4   (msg_regs[3])
-//!   index 5 = x5   (msg_regs[4])
-//!   index 6 = x6   (ipc_buffer_addr)
-//!   index 7 = x7   (syscall_id)
+//!   x0 = capPtrReg     (cap_addr)
+//!   x1 = msgInfoReg    (encoded MessageInfo bitfield)
+//!   x2..x5 = msgRegs   (4 inline message registers)
+//!   x7 = syscallNumReg (syscall id)
 //! ```
 //!
-//! At the foundation phase (RH-H) the builder exposes the minimal
-//! surface needed to compose a snapshot:
+//! `arm64DefaultLayout` does not assign `x6` an encoder-side
+//! meaning.  The kernel-side trap handler
+//! (`sele4n-hal::svc_dispatch::SyscallArgs::from_trap_frame`)
+//! repurposes `x6` to carry the caller's IPC-buffer address (read
+//! from `TPIDRRO_EL0`), and the host fixture mirrors that
+//! convention so an off-target test can reconstruct the kernel-side
+//! trap-frame observation register-by-register.
 //!
-//! - `with_syscall_id(id)` — sets `x7`.
-//! - `with_message_info(info)` — sets `x1` to the encoded bitfield.
+//! ## Snapshot index → register mapping
+//!
+//! The snapshot is a `[u64; 8]` flat array indexed by the canonical
+//! `x`-register number:
+//!
+//! ```text
+//!   snapshot[0] = x0  (cap_addr)
+//!   snapshot[1] = x1  (encoded msg_info)
+//!   snapshot[2] = x2  (msg_regs[0])      ← idx 0 in `with_msg_reg`
+//!   snapshot[3] = x3  (msg_regs[1])      ← idx 1 in `with_msg_reg`
+//!   snapshot[4] = x4  (msg_regs[2])      ← idx 2 in `with_msg_reg`
+//!   snapshot[5] = x5  (msg_regs[3])      ← idx 3 in `with_msg_reg`
+//!   snapshot[6] = x6  (ipc_buffer_addr; kernel-side, not in
+//!                       arm64DefaultLayout)
+//!   snapshot[7] = x7  (syscall_id)
+//! ```
+//!
+//! The `msg_regs[i]` numbering follows the
+//! `sele4n-abi::SyscallRequest::msg_regs` convention
+//! (`[u64; 4]` indexed 0..=3, mapped to `x(i+2)`).  The Lean side
+//! refers to these as `arm64DefaultLayout.msgRegs` (`#[⟨2⟩, ⟨3⟩,
+//! ⟨4⟩, ⟨5⟩]`).
+//!
+//! ## Builder surface (RH-H)
+//!
 //! - `with_cap_addr(addr)` — sets `x0`.
-//! - `with_msg_reg(idx, value)` — sets `x[idx + 1]` for `idx in 0..5`.
+//! - `with_message_info(info)` — sets `x1` to the encoded bitfield.
+//! - `with_msg_reg(idx, value)` — sets `x(idx + 2)` for
+//!   `idx in 0..=3` (panics on out-of-range).
 //! - `with_ipc_buffer_addr(addr)` — sets `x6`.
+//! - `with_syscall_id(id)` — sets `x7`.
 //! - `build()` — produces a [`FixtureSnapshot`].
 //!
 //! Later WS-RH phases (RH-B: declarative fixture format; RH-D:
@@ -42,21 +73,23 @@ use sele4n_types::{CPtr, SyscallId};
 /// Equal to 8 (`x0..x7`).
 pub const REGISTER_COUNT: usize = 8;
 
-/// Register index for `x0` — capability address or first message register.
+/// Register index for `x0` — `cap_addr` (capability pointer).
 pub const REG_X0: usize = 0;
-/// Register index for `x1` — encoded `MessageInfo`.
+/// Register index for `x1` — encoded `MessageInfo` bitfield.
 pub const REG_X1: usize = 1;
-/// Register index for `x2` — `msg_regs[1]`.
+/// Register index for `x2` — `msg_regs[0]` (first inline message register).
 pub const REG_X2: usize = 2;
-/// Register index for `x3` — `msg_regs[2]`.
+/// Register index for `x3` — `msg_regs[1]`.
 pub const REG_X3: usize = 3;
-/// Register index for `x4` — `msg_regs[3]`.
+/// Register index for `x4` — `msg_regs[2]`.
 pub const REG_X4: usize = 4;
-/// Register index for `x5` — `msg_regs[4]`.
+/// Register index for `x5` — `msg_regs[3]` (last inline message register).
 pub const REG_X5: usize = 5;
-/// Register index for `x6` — IPC-buffer address (TPIDRRO_EL0).
+/// Register index for `x6` — IPC-buffer address (read from `TPIDRRO_EL0`
+/// on hardware).  Not part of `arm64DefaultLayout` proper; populated
+/// by the kernel-side trap handler.
 pub const REG_X6: usize = 6;
-/// Register index for `x7` — syscall id.
+/// Register index for `x7` — `syscall_id` discriminant.
 pub const REG_X7: usize = 7;
 
 /// Declarative builder for a [`FixtureSnapshot`].
@@ -93,21 +126,23 @@ impl FixtureBuilder {
     /// Set the message info (`x1`).
     ///
     /// The provided [`MessageInfo`] is encoded via
-    /// [`MessageInfo::encode`].  Encoding is infallible for a
-    /// `MessageInfo` constructed via `MessageInfo::new`, which
-    /// performs bounds checks on the label/length/extra_caps
-    /// fields; the builder therefore propagates the encoded value
-    /// directly into `x1` without re-validation.
+    /// [`MessageInfo::encode`].  Encoding is infallible for any
+    /// `MessageInfo` value reachable through the public API —
+    /// `MessageInfo::new`, `new_const`, and `decode` all enforce
+    /// the bounds (`length ≤ 120`, `extra_caps ≤ 3`,
+    /// `label < 2^20`) at construction time, so the `encode()`
+    /// `Result` is always `Ok`.
     ///
-    /// If the `MessageInfo` was constructed via a non-validated
-    /// path (e.g., direct field assignment in an internal helper),
-    /// `encode()` may fail; the builder treats that as a programmer
-    /// error and stores zero in `x1` to make the failure
-    /// observable in tests.  In production paths, this branch
-    /// never fires because `MessageInfo` carries its bounds
-    /// invariants by construction.
+    /// # Panics
+    ///
+    /// Panics if `info.encode()` returns `Err`.  This is
+    /// unreachable for any `MessageInfo` constructed through the
+    /// public API; the explicit panic protects against a future
+    /// internal helper that bypasses validation.
     pub fn with_message_info(mut self, info: MessageInfo) -> Self {
-        self.registers[REG_X1] = info.encode().unwrap_or(0);
+        self.registers[REG_X1] = info
+            .encode()
+            .expect("MessageInfo constructed via the public API always encodes");
         self
     }
 
@@ -119,27 +154,27 @@ impl FixtureBuilder {
 
     /// Set a message register.
     ///
-    /// `idx` selects the message register slot in the
-    /// `msg_regs[0..5]` window mapped to `x2..x6` per
-    /// `arm64DefaultLayout`.  Valid range is `0..=4`.  Out-of-range
-    /// indices are silently ignored to preserve the fluent API
-    /// (no error path); the unit test
-    /// `with_msg_reg_out_of_range_no_op` documents this contract.
+    /// `idx` selects one of the four inline `msg_regs[0..=3]` slots
+    /// per the `sele4n-abi::SyscallRequest` convention.  The slots
+    /// map to ARM64 registers `x2..=x5` per `arm64DefaultLayout`:
+    /// `idx 0 → x2`, `idx 1 → x3`, `idx 2 → x4`, `idx 3 → x5`.
     ///
-    /// `msg_regs[0]` is conventionally placed in `x2` (per
-    /// `arm64DefaultLayout`'s offset-by-2 convention); index 0 is
-    /// therefore stored at `REG_X2`.
+    /// # Panics
+    ///
+    /// Panics if `idx > 3`.  Out-of-range indices are a programmer
+    /// error and cannot be silently accepted without producing a
+    /// fixture that diverges from `arm64DefaultLayout`.  The
+    /// panic message names the offending index for diagnostics.
     pub fn with_msg_reg(mut self, idx: usize, value: u64) -> Self {
         let reg_idx = match idx {
             0 => REG_X2,
             1 => REG_X3,
             2 => REG_X4,
             3 => REG_X5,
-            // RH-H scaffold: msg_regs[4] would land in x6, which is
-            // ipc_buffer_addr.  The convention reserves x6 for the
-            // IPC buffer so we stop the message-register window at
-            // index 3.  Indices 4+ are silently ignored.
-            _ => return self,
+            _ => panic!(
+                "with_msg_reg: idx {idx} out of range; arm64DefaultLayout \
+                 has exactly 4 inline message registers (idx 0..=3 mapped to x2..=x5)"
+            ),
         };
         self.registers[reg_idx] = value;
         self
@@ -147,11 +182,16 @@ impl FixtureBuilder {
 
     /// Set the IPC-buffer address (`x6`).
     ///
-    /// Per `arm64DefaultLayout`, `x6` carries the caller's IPC
-    /// buffer address (read from `TPIDRRO_EL0` on hardware).  A
-    /// zero value signals "no IPC buffer registered" — the
-    /// kernel-side dispatcher converts this to `Option::None`
-    /// (see `sele4n-hal::svc_dispatch::SyscallArgs::from_trap_frame`).
+    /// The kernel-side trap handler
+    /// (`sele4n-hal::svc_dispatch::SyscallArgs::from_trap_frame`)
+    /// reads `x6` as the caller's IPC buffer address (set from
+    /// `TPIDRRO_EL0` on hardware).  This slot is **not** part of
+    /// `arm64DefaultLayout` (which only declares `x0`, `x1`,
+    /// `x2..x5`, and `x7`); it lives in the trap-frame layer
+    /// above the syscall-register layout.
+    ///
+    /// A zero value signals "no IPC buffer registered" — the
+    /// kernel-side dispatcher converts this to `Option::None`.
     pub fn with_ipc_buffer_addr(mut self, addr: u64) -> Self {
         self.registers[REG_X6] = addr;
         self
@@ -183,11 +223,11 @@ pub struct FixtureSnapshot {
 impl FixtureSnapshot {
     /// The full `[u64; 8]` register array.
     ///
-    /// Per `arm64DefaultLayout`:
+    /// Per `arm64DefaultLayout` + trap-frame convention:
     /// - `[0]` = `x0` (cap_addr)
     /// - `[1]` = `x1` (encoded message info)
-    /// - `[2..6]` = `x2..x5` (message registers)
-    /// - `[6]` = `x6` (IPC-buffer address)
+    /// - `[2..=5]` = `x2..=x5` (`msg_regs[0..=3]`, 4 inline message registers)
+    /// - `[6]` = `x6` (IPC-buffer address, kernel-side trap-frame field)
     /// - `[7]` = `x7` (syscall id)
     #[inline]
     pub const fn registers(&self) -> &[u64; REGISTER_COUNT] {
@@ -313,10 +353,25 @@ mod tests {
     }
 
     #[test]
-    fn with_msg_reg_out_of_range_no_op() {
-        let baseline = FixtureBuilder::new().build();
-        let mutated = FixtureBuilder::new().with_msg_reg(99, 0xFFFF).build();
-        assert_eq!(baseline, mutated);
+    #[should_panic(expected = "with_msg_reg: idx 4 out of range")]
+    fn with_msg_reg_idx_4_panics() {
+        // idx=4 is the first invalid index — arm64DefaultLayout has
+        // exactly 4 message registers (idx 0..=3 → x2..=x5).  An
+        // attempt to set idx=4 must panic loudly so the caller's
+        // mismatched expectation surfaces immediately.
+        let _ = FixtureBuilder::new().with_msg_reg(4, 0xFFFF);
+    }
+
+    #[test]
+    #[should_panic(expected = "with_msg_reg: idx 99 out of range")]
+    fn with_msg_reg_large_idx_panics() {
+        let _ = FixtureBuilder::new().with_msg_reg(99, 0xFFFF);
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn with_msg_reg_usize_max_panics() {
+        let _ = FixtureBuilder::new().with_msg_reg(usize::MAX, 0xFFFF);
     }
 
     #[test]

@@ -85,13 +85,16 @@ sub-tasks (RH-H.1..RH-H.10) all landed together at this cut.
 
 ### Added — Integration test suite
 
-`rust/sele4n-host/tests/scaffold.rs` (NEW, ~290 lines):
-- 20 integration tests covering every public item in the four
+`rust/sele4n-host/tests/scaffold.rs` (NEW, ~415 lines):
+- 23 integration tests covering every public item in the four
   scaffolding modules.
 - `runtime_version_matches_workspace`,
   `runtime_const_version_matches_runtime_version`,
   `runtime_version_is_pre_v1` — version-drift guards.
 - `dispatch_decode_success_*` (3 tests) — success-path decoding.
+- `dispatch_encode_high_bit_payload_is_truncated_then_decoded_as_success`
+  — documents the one-way lossy round-trip for payloads with bit 63
+  set (audit pass).
 - `dispatch_decode_kernel_error_sweep_known` — sweeps every known
   `KernelError` discriminant (0..=52).
 - `dispatch_decode_kernel_error_unknown_gap` — sweeps 53..=254 to
@@ -99,16 +102,54 @@ sub-tasks (RH-H.1..RH-H.10) all landed together at this cut.
 - `dispatch_decode_dispatcher_internal_round_trip` — verifies the
   documented one-way round-trip from `DispatcherInternal` →
   encoded `u64` → `KernelError`.
+- `dispatch_constants_match_kernel_contract` — pins
+  `ERROR_FLAG_MASK` / `ERROR_DISCRIMINANT_MASK` /
+  `SUCCESS_PAYLOAD_MASK` against the Lean `encodeError`/`encodeOk`
+  bit-layout contract; checks the `u64` partition property
+  (`ERROR_FLAG_MASK | SUCCESS_PAYLOAD_MASK == u64::MAX`, intersection
+  empty) (audit pass).
+- `tcb_invariance_host_crate_is_std` — compile-time witness that
+  the host crate is built with `std` available (audit pass).
 - `state_*` (3 tests) — empty-state predicate, distinct variants,
   stable identifiers.
 - `fixture_*` (5 tests) — round-trip, register-count, canonical
   index constants, IPC-buffer setter, chained setters preserved.
 - `host_runtime_*` (2 tests) — end-to-end public-API composition.
 
-Combined with the 46 in-crate unit tests (in
+Combined with the 48 in-crate unit tests (in
 `src/{runtime,dispatch,state,fixture}.rs::tests`) and the 1
-doc-test, the new crate contributes 67 new test cases.  Total Rust
-workspace test count grows from ~409 to ~476 (workspace `cargo test`).
+doc-test, the new crate contributes 72 new test cases.  Total Rust
+workspace test count grows from ~479 to 551 (workspace `cargo test`).
+
+### Audit-pass hardening
+
+The initial RH-H landing was followed by an audit pass that
+strengthened correctness and documentation:
+
+- `FixtureBuilder::with_msg_reg(idx, value)`: previously silently
+  ignored `idx > 3`; now panics with a diagnostic message naming
+  the offending index.  Silent truncation could produce fixtures
+  that diverge from `arm64DefaultLayout` without surfacing the
+  programmer error.  New tests `with_msg_reg_idx_4_panics`,
+  `with_msg_reg_large_idx_panics`, `with_msg_reg_usize_max_panics`
+  pin the new behaviour.
+- `FixtureBuilder::with_message_info(info)`: previously used
+  `info.encode().unwrap_or(0)` which silently substituted zero on
+  an impossible encoding failure; now `.expect(...)` panics with
+  a diagnostic message.  Since `MessageInfo` enforces its bounds
+  invariants at construction time, the `expect` branch is
+  unreachable from any public path.
+- `fixture.rs` module + per-constant docstrings: rewritten to
+  clearly distinguish `arm64DefaultLayout` (`x0`, `x1`, `x2..x5`,
+  `x7`) from the trap-frame `x6` field (read from `TPIDRRO_EL0`
+  by the kernel-side dispatcher; not part of `arm64DefaultLayout`).
+  The previous text inconsistently labelled `x6` as part of
+  `arm64DefaultLayout` and conflated `msg_regs[N]` numbering
+  between the encoder and decoder conventions.
+- `runtime.rs` docstring: removed an incorrect reference to "WS-RC
+  R8 version-sync drift" — R8 is the test-coverage phase; version
+  sync is owned by `scripts/check_version_sync.sh` (WS-AH Phase
+  AH4-F).
 
 ### Added — CI harness
 
@@ -158,8 +199,13 @@ comment only):
 - Zero new third-party runtime deps (`THIRD_PARTY_LICENSES.md`
   unchanged).
 - `cargo clippy --workspace --all-targets -- -D warnings` clean.
-- `cargo test --workspace` passes (~476 tests total).
+- `cargo test --workspace` passes (551 tests total).
 - `./scripts/test_rust.sh` passes including the new step 4.
+- `RUSTDOCFLAGS="-D warnings" cargo doc -p sele4n-host --no-deps`
+  builds without warnings.
+- TCB-invariance verified structurally via `cargo tree`: the
+  kernel-side `sele4n-hal` has zero dependencies; the kernel
+  binary is byte-identical pre- and post-RH-H.
 
 ### Out of scope for RH-H
 

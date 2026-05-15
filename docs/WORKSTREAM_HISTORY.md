@@ -35,17 +35,23 @@ affect the v1.0 correctness or completeness claims.  RH-H lands at
 v0.31.4 alongside (but not blocking) the WS-SM SM1..SM9 cadence.
 
 **WS-RH RH-H closure at v0.31.4 (this cut).** 10 sub-tasks
-(RH-H.1..RH-H.10) land as one cut: new workspace member
-`sele4n-host` (the first `std`-opting member), four scaffolding
-modules (`runtime`, `dispatch`, `state`, `fixture`) with documented
-public APIs, integration test suite covering every public item, CI
-harness step pinning the integration coverage, and full
-documentation synchronisation across README/spec/CLAIM_EVIDENCE_INDEX/
-WORKSTREAM_HISTORY/CHANGELOG/CLAUDE.md/AGENTS.md.  No runtime
-behavioural change to the kernel — the new crate is host-side,
-never linked into the kernel binary, never part of the kernel TCB.
-67 new test cases (46 unit + 20 integration + 1 doc-test); zero
-`unsafe`, zero new third-party deps.
+(RH-H.1..RH-H.10) plus a post-landing audit pass land as one
+cut: new workspace member `sele4n-host` (the first `std`-opting
+member), four scaffolding modules (`runtime`, `dispatch`,
+`state`, `fixture`) with documented public APIs, integration
+test suite covering every public item, CI harness step pinning
+the integration coverage, and full documentation synchronisation
+across README/spec/CLAIM_EVIDENCE_INDEX/WORKSTREAM_HISTORY/
+CHANGELOG/CLAUDE.md/AGENTS.md.  No runtime behavioural change to
+the kernel — the new crate is host-side, never linked into the
+kernel binary, never part of the kernel TCB.  72 new test cases
+(48 unit + 23 integration + 1 doc-test); zero `unsafe`, zero
+new third-party deps.  Audit pass hardened `FixtureBuilder`
+(silent-ignore → panic on out-of-range message-register index;
+`unwrap_or(0)` → `.expect()` on impossible MessageInfo encoding
+failure) and rewrote docstrings to clearly distinguish
+`arm64DefaultLayout` (x0/x1/x2..x5/x7) from the kernel-side
+trap-frame x6 (IPC-buffer address from TPIDRRO_EL0).
 
 **WS-SM SM0 closure at v0.31.3 (this cut).** 21 sub-tasks across 6
 categories landed as one cut: foundational types
@@ -113,14 +119,14 @@ single-core kernel model were closed in WS-AN AN9.
 ### RH-H — Workspace and CI harness (v0.31.4, **COMPLETE**)
 
 The foundation phase lands the new workspace member, four
-scaffolding modules with documented public APIs, a 20-test
+scaffolding modules with documented public APIs, a 23-test
 integration suite covering every public item, and CI hooks that
 exercise the new crate on every PR.  Per the workstream
 boundary, no kernel TCB inflation: the new crate is `std`-opting
 and only `sele4n-types` / `sele4n-abi` are its dependencies, both
 of which propagate the `std` feature path-isolated to the host
 consumer (the kernel-side `sele4n-hal` does NOT consume the
-host crate).
+host crate; `cargo tree -p sele4n-hal` shows zero dependencies).
 
 - **RH-H.1 (workspace member)**: `rust/Cargo.toml` appends
   `"sele4n-host"` to the workspace members list (now 5 members:
@@ -164,14 +170,21 @@ host crate).
   `with_msg_reg` / `with_ipc_buffer_addr` / `build` const) +
   `FixtureSnapshot` newtype around `[u64; 8]` matching
   `arm64DefaultLayout` (`REGISTER_COUNT = 8` + `REG_X0..REG_X7`
-  index constants).
+  index constants).  Audit pass: `with_msg_reg` panics on
+  out-of-range index (was: silent ignore); `with_message_info`
+  uses `.expect()` on the impossible-via-public-API encoding
+  failure (was: `.unwrap_or(0)` silent fallback).
 - **RH-H.8 (integration tests)**:
-  `rust/sele4n-host/tests/scaffold.rs` provides 20 integration
+  `rust/sele4n-host/tests/scaffold.rs` provides 23 integration
   tests covering every public item.  Includes a sweep of every
   known `KernelError` discriminant (0..=52), the
   unknown-discriminant gap (53..=254 → sentinel), the
   documented one-way round-trip from `DispatcherInternal` to
-  `KernelError`, and end-to-end public-API composition.
+  `KernelError`, the lossy high-bit-payload encode/decode
+  round-trip, the mask-constants pin against the Lean
+  `encodeError`/`encodeOk` contract, a TCB-invariance
+  compile-time witness (host crate builds with `std` available),
+  and end-to-end public-API composition.
 - **RH-H.9 (CI harness)**: `scripts/test_rust.sh` grows from 3
   to 4 steps; new step 4 invokes
   `cargo test -p sele4n-host --test scaffold` explicitly so a
