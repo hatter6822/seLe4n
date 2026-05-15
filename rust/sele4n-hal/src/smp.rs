@@ -553,18 +553,24 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::manual_is_multiple_of)]
     fn sm0n_per_cpu_data_size_is_multiple_of_align() {
         // WS-SM SM0.N: a struct's size is always a multiple of its
         // alignment in Rust.  At SM0 the struct holds [u64; 8] = 64
         // bytes, which is exactly one alignment unit.  This test
         // catches a future layout change that would shrink the struct
         // below the alignment unit (a footgun under repr(align(N))).
+        //
+        // The `sz % al == 0` form is intentional: `usize::is_multiple_of`
+        // is stable only since Rust 1.87, and the CI toolchain is
+        // pinned at 1.82.  Suppressing the clippy hint locally rather
+        // than using the newer API keeps the MSRV unchanged.
         use core::mem::{align_of, size_of};
         let sz = size_of::<PerCpuData>();
         let al = align_of::<PerCpuData>();
         assert!(sz >= al,
             "size_of::<PerCpuData>() = {} must be >= align_of = {}", sz, al);
-        assert!(sz.is_multiple_of(al),
+        assert!(sz % al == 0,
             "size_of::<PerCpuData>() = {} must be a multiple of align = {}",
             sz, al);
     }
