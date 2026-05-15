@@ -76,8 +76,7 @@
 //! target uses HVC.  A future port to a system that exposes PSCI via
 //! `smc #0` would parameterise the conduit through `PlatformBinding`;
 //! that parameterisation is post-1.0 work and is tracked in
-//! [`docs/planning/SMP_RUST_HAL_PLAN.md`](../../../docs/planning/SMP_RUST_HAL_PLAN.md)
-//! as a SM1 closure item.
+//! `docs/planning/SMP_RUST_HAL_PLAN.md` as a SM1 closure item.
 //!
 //! ## On host
 //!
@@ -93,13 +92,22 @@
 //!
 //! ## Cross-cluster ordering (AN9-I integration)
 //!
-//! Every PSCI call that affects another PE (`cpu_on`, `cpu_off`,
-//! `affinity_info`) emits `dsb osh` before the HVC so the target
-//! observes the correct memory state when it resumes execution on a
-//! potentially-different cluster.  `psci_version` and
-//! `migrate_info_type` are query-only and do not require the outer-
-//! shareable barrier; `system_off` / `system_reset` power down the
-//! whole system so the barrier is moot.
+//! `cpu_on` emits `dsb osh` before the HVC so the secondary core (on
+//! a potentially-different cluster) observes the correct page-table
+//! state when it resumes execution from the `entry_point`.  `cpu_off`,
+//! `system_off`, and `system_reset` emit `dsb osh` before the HVC so
+//! any pending stores from the calling PE (e.g., released locks, final
+//! UART output, journal writes) become visible in the outer-shareable
+//! domain before the PE / system leaves — this matters for other cores
+//! that remain running and observe the calling PE's last state.
+//!
+//! Pure queries (`psci_version`, `migrate_info_type`, `affinity_info`)
+//! do not require a cross-cluster barrier: the HVC does not transfer
+//! any caller state to the target, and the return value alone has no
+//! shared-memory ordering constraint.  `affinity_info` historically
+//! emitted `dsb osh` defensively (carried over from the plan
+//! skeleton); it is kept for now as a no-cost defensive measure (HVC
+//! latency dominates) but is not required for correctness.
 
 // ============================================================================
 // PSCI return codes (ARM DEN0022D Table 5)
@@ -186,10 +194,13 @@ pub const PSCI_FN_SYSTEM_OFF: u32 = 0x8400_0008;
 pub const PSCI_FN_SYSTEM_RESET: u32 = 0x8400_0009;
 
 // ============================================================================
-// SM1.A.1 — cpu_on (existing) + cpu_on context
+// AN9-J.1 (DEF-R-HAL-L20) — cpu_on (pre-existing PSCI wrapper)
 // ============================================================================
 
-/// WS-SM SM1.A.1: Issue a PSCI `CPU_ON` request to bring up a secondary core.
+/// AN9-J.1 (DEF-R-HAL-L20): Issue a PSCI `CPU_ON` request to bring up
+/// a secondary core.
+///
+/// ARM DEN0022D §5.1.4 (function id `0xC400_0003`, SMC64).
 ///
 /// `target_mpidr`  — the 64-bit MPIDR_EL1 mask of the target core
 ///                  (typically `Aff0|Aff1<<8|Aff2<<16` for Cortex-A76).
@@ -207,6 +218,12 @@ pub const PSCI_FN_SYSTEM_RESET: u32 = 0x8400_0009;
 /// AN9-I integration: a `dsb osh` is emitted before the HVC so the
 /// secondary core observes the correct page-table state when it
 /// resumes execution.
+///
+/// **Note**: `cpu_on` was originally landed as AN9-J.1 in the WS-AN
+/// portfolio (closing audit finding DEF-R-HAL-L20); it predates the
+/// WS-SM SM1.A PSCI completion that wraps the remaining six PSCI
+/// calls.  This wrapper's existing semantics, contract, and call
+/// graph are unchanged by SM1.A.
 #[inline]
 #[must_use]
 pub fn cpu_on(target_mpidr: u64, entry_point: usize, context_id: u64) -> PsciResult {
@@ -221,9 +238,11 @@ pub fn cpu_on(target_mpidr: u64, entry_point: usize, context_id: u64) -> PsciRes
         let ret: i32;
         // SAFETY: `hvc #0` is a defined hypervisor call.  Per ARM
         // DEN0022D, registers x0..x3 carry the PSCI call arguments;
-        // the return value comes back in x0.  We mark all clobbers
-        // explicitly and disable preserved-flags so the optimiser
-        // does not assume PSTATE invariance across the HVC.
+        // the return value comes back in x0.  We mark every C-ABI
+        // caller-saved register as clobbered via `clobber_abi("C")`
+        // (which covers x0..x18 plus x29/x30) and omit the
+        // `preserves_flags` option so the compiler does not assume
+        // PSTATE.NZCV survives the HVC.
         unsafe {
             core::arch::asm!(
                 "hvc #0",
@@ -400,14 +419,19 @@ pub const fn decode_affinity_info_result(raw: i32) -> Result<AffinityInfoState, 
 ///   an unknown MPIDR or `NotSupported` if the firmware lacks the
 ///   call.
 ///
-/// AN9-I integration: emits `dsb osh` before HVC for cross-cluster
-/// memory ordering of any state the caller wants the target PE to
-/// observe should the target be `OnPending`.
+/// AN9-I note: `dsb osh` is emitted before the HVC as a defensive
+/// measure carried over from the plan skeleton.  As a pure query the
+/// call does not transfer caller state to the target PE, so the
+/// barrier is not required for correctness; it is retained because
+/// HVC latency dominates the wrapper's cost (the barrier is a
+/// few-cycle no-op compared to the secure-monitor round-trip) and
+/// removing it would not measurably help.
 #[inline]
 pub fn affinity_info(
     target_affinity: u64,
     lowest_affinity_level: u32,
 ) -> Result<AffinityInfoState, PsciResult> {
+    // Defensive barrier (see docstring) — not required for correctness.
     crate::barriers::dsb_osh();
 
     #[cfg(target_arch = "aarch64")]
@@ -1078,14 +1102,16 @@ mod tests {
     }
 
     // ------------------------------------------------------------------------
-    // SM1.A.1 — cpu_on / cpu_off host-stub tests
+    // AN9-J.1 (cpu_on, pre-existing) + SM1.A.1 (cpu_off, new) — host-stub tests
     // ------------------------------------------------------------------------
 
     #[test]
     fn cpu_on_host_stub_returns_success() {
-        // On host, cpu_on is a no-op returning Success so the boot
-        // path's structure can be tested without HVC.
-        let r = cpu_on(0x0001_0000, 0x80000, 0);
+        // AN9-J.1: on host, cpu_on is a no-op returning Success so the
+        // boot path's structure can be tested without HVC.  MPIDR
+        // 0x0000_0001 = Aff0=1 = the first secondary core on RPi5
+        // BCM2712 (matching `smp::SECONDARY_MPIDR_TABLE[0]`).
+        let r = cpu_on(0x0000_0001, 0x80000, 0);
         assert_eq!(r, PsciResult::Success);
     }
 
@@ -1238,8 +1264,27 @@ mod tests {
     #[test]
     fn psci_version_roundtrip() {
         // SM1.A.5: encode → decode is the identity for every
-        // version we expect to encounter (0.2 .. 1.3).
-        for &(major, minor) in &[(0u16, 2u16), (1, 0), (1, 1), (1, 2), (1, 3)] {
+        // version we expect to encounter, plus boundary values
+        // (0.0, u16::MAX.u16::MAX, asymmetric high-major / high-
+        // minor combinations) so any bit-shift bug in the encoder
+        // / decoder pair is caught.
+        for &(major, minor) in &[
+            // Real versions
+            (0u16, 2u16),
+            (1, 0),
+            (1, 1),
+            (1, 2),
+            (1, 3),
+            // Boundary values
+            (0, 0),
+            (u16::MAX, u16::MAX),
+            (u16::MAX, 0),
+            (0, u16::MAX),
+            // Mid-range with non-zero in both halves to catch
+            // bit-shift overlap
+            (0x1234, 0xABCD),
+            (0x8000, 0x7FFF),
+        ] {
             let v = PsciVersion { major, minor };
             let decoded = PsciVersion::from_raw(v.to_raw());
             assert_eq!(decoded, v, "round-trip failed for {}.{}", major, minor);
@@ -1247,10 +1292,50 @@ mod tests {
     }
 
     #[test]
+    fn psci_version_from_raw_zero_is_zero_zero() {
+        // SM1.A.5: defense-in-depth — raw 0 should decode to
+        // major=0, minor=0 (the smallest representable version).
+        // A bug where the decoder mishandles the all-zero case
+        // would manifest here.
+        let v = PsciVersion::from_raw(0);
+        assert_eq!(v.major, 0);
+        assert_eq!(v.minor, 0);
+    }
+
+    #[test]
+    fn psci_version_to_raw_zero_zero_is_zero() {
+        // SM1.A.5: defense-in-depth — encoding (0, 0) should
+        // produce raw 0.
+        let v = PsciVersion { major: 0, minor: 0 };
+        assert_eq!(v.to_raw(), 0);
+    }
+
+    #[test]
+    fn psci_version_from_raw_u32_max_is_u16_max_u16_max() {
+        // SM1.A.5: defense-in-depth — raw u32::MAX (all bits set)
+        // should decode to (u16::MAX, u16::MAX).
+        let v = PsciVersion::from_raw(u32::MAX);
+        assert_eq!(v.major, u16::MAX);
+        assert_eq!(v.minor, u16::MAX);
+    }
+
+    #[test]
+    fn psci_version_to_raw_u16_max_u16_max_is_u32_max() {
+        // SM1.A.5: defense-in-depth — encoding (u16::MAX, u16::MAX)
+        // should produce raw u32::MAX.
+        let v = PsciVersion {
+            major: u16::MAX,
+            minor: u16::MAX,
+        };
+        assert_eq!(v.to_raw(), u32::MAX);
+    }
+
+    #[test]
     fn psci_version_at_least_compares_correctly() {
         // SM1.A.5: at_least is monotonic.  Used to gate optional
         // features behind a version probe.
         let v_1_1 = PsciVersion { major: 1, minor: 1 };
+        assert!(v_1_1.at_least(0, 0));
         assert!(v_1_1.at_least(0, 2));
         assert!(v_1_1.at_least(1, 0));
         assert!(v_1_1.at_least(1, 1));
@@ -1258,9 +1343,33 @@ mod tests {
         assert!(!v_1_1.at_least(2, 0));
 
         let v_0_2 = PsciVersion { major: 0, minor: 2 };
+        assert!(v_0_2.at_least(0, 0));
         assert!(v_0_2.at_least(0, 2));
         assert!(!v_0_2.at_least(0, 3));
         assert!(!v_0_2.at_least(1, 0));
+
+        // Edge: (0, 0) is the smallest representable PsciVersion.
+        // It is at_least(0, 0) but not at_least anything higher.
+        let v_0_0 = PsciVersion { major: 0, minor: 0 };
+        assert!(v_0_0.at_least(0, 0));
+        assert!(!v_0_0.at_least(0, 1));
+        assert!(!v_0_0.at_least(1, 0));
+
+        // Edge: u16::MAX.u16::MAX is the largest representable
+        // PsciVersion — at_least every smaller value.
+        let v_max = PsciVersion {
+            major: u16::MAX,
+            minor: u16::MAX,
+        };
+        assert!(v_max.at_least(0, 0));
+        assert!(v_max.at_least(u16::MAX, 0));
+        assert!(v_max.at_least(u16::MAX, u16::MAX));
+
+        // Major-only comparison: a higher major dominates regardless
+        // of minor.
+        let v_2_0 = PsciVersion { major: 2, minor: 0 };
+        assert!(v_2_0.at_least(1, u16::MAX),
+            "(2, 0) should be >= (1, u16::MAX) — major dominates");
     }
 
     #[test]
@@ -1373,6 +1482,93 @@ mod tests {
             decode_migrate_info_type_result(i32::MAX),
             Err(PsciResult::Unknown)
         );
+    }
+
+    // ------------------------------------------------------------------------
+    // SM1.A.2 / SM1.A.5 / SM1.A.6 — const-context evaluation test.
+    //
+    // The decoder / round-trip helpers are declared `const fn` so they
+    // can run at compile time.  We verify that property by forcing
+    // evaluation in `const` bindings (which fail to compile if the
+    // function ever loses its const-ness) and then asserting on the
+    // compile-time-evaluated values via runtime locals (sidestepping
+    // clippy's `assertions_on_constants` lint).  If any of the
+    // following `const` lines fails to elaborate, the test FAILS TO
+    // COMPILE — that IS the proof of const-ness.
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn const_context_decoders_evaluate() {
+        // PsciResult::from_raw is const fn.
+        const PR_SUCCESS: PsciResult = PsciResult::from_raw(0);
+        const PR_DENIED: PsciResult = PsciResult::from_raw(-3);
+        const PR_UNKNOWN: PsciResult = PsciResult::from_raw(42);
+
+        // AffinityInfoState::from_raw is const fn.
+        const AIS_ON: Option<AffinityInfoState> = AffinityInfoState::from_raw(0);
+        const AIS_NONE: Option<AffinityInfoState> = AffinityInfoState::from_raw(-1);
+
+        // MigrateInfoType::from_raw is const fn.
+        const MIT_UNI: Option<MigrateInfoType> = MigrateInfoType::from_raw(0);
+        const MIT_NONE: Option<MigrateInfoType> = MigrateInfoType::from_raw(5);
+
+        // The orchestrating decoders are also const fn.
+        const AIR_OK: Result<AffinityInfoState, PsciResult> = decode_affinity_info_result(2);
+        const AIR_ERR: Result<AffinityInfoState, PsciResult> = decode_affinity_info_result(-2);
+        const AIR_VEN: Result<AffinityInfoState, PsciResult> = decode_affinity_info_result(99);
+
+        const MIR_OK: Result<MigrateInfoType, PsciResult> = decode_migrate_info_type_result(2);
+        const MIR_ERR: Result<MigrateInfoType, PsciResult> = decode_migrate_info_type_result(-1);
+
+        // PsciVersion encoders are const fn.
+        const PV: PsciVersion = PsciVersion::from_raw(0x0001_0001);
+        const PV_RAW: u32 = PV.to_raw();
+        const PV_AT_LEAST_1_0: bool = PV.at_least(1, 0);
+        const PV_AT_LEAST_2_0: bool = PV.at_least(2, 0);
+
+        // Spot-check the compile-time-evaluated values via runtime
+        // locals (which is the form clippy accepts without
+        // `assertions_on_constants` complaints).  The compile-time
+        // proof was the bindings above; these assertions just confirm
+        // the semantics match the documented decoder contract.
+        let pr_success = PR_SUCCESS;
+        let pr_denied = PR_DENIED;
+        let pr_unknown = PR_UNKNOWN;
+        assert_eq!(pr_success, PsciResult::Success);
+        assert_eq!(pr_denied, PsciResult::Denied);
+        assert_eq!(pr_unknown, PsciResult::Unknown);
+
+        let ais_on = AIS_ON;
+        let ais_none = AIS_NONE;
+        assert_eq!(ais_on, Some(AffinityInfoState::On));
+        assert_eq!(ais_none, None);
+
+        let mit_uni = MIT_UNI;
+        let mit_none = MIT_NONE;
+        assert_eq!(mit_uni, Some(MigrateInfoType::UniProcessor));
+        assert_eq!(mit_none, None);
+
+        let air_ok = AIR_OK;
+        let air_err = AIR_ERR;
+        let air_ven = AIR_VEN;
+        assert_eq!(air_ok, Ok(AffinityInfoState::OnPending));
+        assert_eq!(air_err, Err(PsciResult::InvalidParameters));
+        assert_eq!(air_ven, Err(PsciResult::Unknown));
+
+        let mir_ok = MIR_OK;
+        let mir_err = MIR_ERR;
+        assert_eq!(mir_ok, Ok(MigrateInfoType::NotRequired));
+        assert_eq!(mir_err, Err(PsciResult::NotSupported));
+
+        let pv = PV;
+        let pv_raw = PV_RAW;
+        let pv_at_least_1_0 = PV_AT_LEAST_1_0;
+        let pv_at_least_2_0 = PV_AT_LEAST_2_0;
+        assert_eq!(pv.major, 1);
+        assert_eq!(pv.minor, 1);
+        assert_eq!(pv_raw, 0x0001_0001);
+        assert!(pv_at_least_1_0);
+        assert!(!pv_at_least_2_0);
     }
 
     // ------------------------------------------------------------------------

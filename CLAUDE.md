@@ -696,20 +696,28 @@ documentation lives under `docs/` and `docs/gitbook/`.
     ids, return-code matrix (Table 5), and the HVC-vs-SMC dispatch
     rationale.
 
-  **Test coverage**: 40 PSCI unit tests (38 active + 2 `#[ignore]`'d
+  **Test coverage**: 45 PSCI unit tests (43 active + 2 `#[ignore]`'d
   for `system_off` / `system_reset` since they return `!` and would
-  hang the test runner).  The audit pass added 8 decoder-failure-path
-  tests (`decode_affinity_info_result_*` and
+  hang the test runner).  Two audit passes added: 8 decoder-failure-
+  path tests (`decode_affinity_info_result_*` and
   `decode_migrate_info_type_result_*`) that exercise the i32 → Result
-  conversion branches without an HVC trap.  Total HAL tests: 248
-  (was 215).  Zero clippy warnings.  Full Tier 0+1+2 smoke test
-  passes.  Items deferred past v1.0.0 with correctness impact: NONE.
+  conversion branches without an HVC trap; plus 5 edge-case /
+  const-context tests (`psci_version_from_raw_zero_is_zero_zero`,
+  `psci_version_to_raw_zero_zero_is_zero`,
+  `psci_version_from_raw_u32_max_is_u16_max_u16_max`,
+  `psci_version_to_raw_u16_max_u16_max_is_u32_max`,
+  `const_context_decoders_evaluate`) covering boundary inputs and
+  forcing every `const fn` decoder into a compile-time `const`
+  binding (the binding is the proof of const-ness — non-const fns
+  fail to compile).  Total HAL tests: 253 (was 215).  Zero clippy
+  warnings.  Full Tier 0+1+2 smoke test passes.  Items deferred
+  past v1.0.0 with correctness impact: NONE.
   Follow-on: SM1.B..H (per-CPU data + TPIDR_EL1, secondary-core full
   init, DTB cmdline, IS-variant TLBI, SGI primitive, per-core UART,
   QEMU SMP integration) — see
   [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md) §§5.2..5.8.
 
-  **Audit-pass refinements** (post-initial-landing):
+  **Audit-pass-1 refinements** (post-initial-landing):
   - HIGH-severity soundness fix: dropped `options(..., noreturn)`
     from `system_off` / `system_reset` HVC asm blocks.  Per the
     Rust reference, `noreturn` is UB if the asm returns; per
@@ -740,6 +748,47 @@ documentation lives under `docs/` and `docs/gitbook/`.
     such field at v1.0.0); wrappers hard-code `hvc #0` because
     RPi5 is the only v1.0.0 hardware target.  Future conduit
     parameterisation is tracked as a post-1.0 SM1 closure item.
+
+  **Audit-pass-2 refinements** (second deep audit, post-pass-1):
+  - Labeling correctness: `cpu_on` was incorrectly labeled
+    `WS-SM SM1.A.1` in its section header and docstring.  Per the
+    plan, SM1.A.1 is `cpu_off`; `cpu_on` is the pre-existing
+    AN9-J.1 (DEF-R-HAL-L20) wrapper that predates SM1.A.  Re-
+    labeled accordingly.
+  - Documentation accuracy: rewrote the module docstring's
+    cross-cluster-ordering section to honestly distinguish PE-
+    affecting calls (`cpu_on`, `cpu_off`, `system_off`,
+    `system_reset` — barrier required for caller-state visibility
+    on the target) from pure queries (`psci_version`,
+    `migrate_info_type`, `affinity_info` — no state transfer to
+    target).  `affinity_info`'s wrong "should the target be
+    OnPending" rationale rewritten honestly.
+  - Broken rustdoc link to `docs/planning/SMP_RUST_HAL_PLAN.md`
+    replaced with plain-text reference (the `../../../` relative
+    path resolved to a non-existent target in rustdoc's HTML
+    output).
+  - SAFETY-comment clarity: `cpu_on`'s "disable preserved-flags"
+    wording reworked — the asm doesn't disable anything, it just
+    omits `preserves_flags` (default off).
+  - Test MPIDR realism: `cpu_on_host_stub_returns_success` now
+    uses `0x0000_0001` (Aff0=1, matching
+    `smp::SECONDARY_MPIDR_TABLE[0]`) instead of the unrealistic
+    `0x0001_0000` (Aff2=1).
+  - Missing `PsciVersion` edge-case tests added
+    (`from_raw(0)`, `from_raw(u32::MAX)`, `to_raw` inverse
+    directions; round-trip test extended with boundary inputs
+    `(0,0)`, `(u16::MAX, u16::MAX)`, asymmetric mid-range
+    bit-pattern combinations).
+  - Missing `at_least` edge cases added (`(0, 0)` on every
+    version, smallest `(0, 0)` version, largest
+    `(u16::MAX, u16::MAX)` version, major-only-dominates case).
+  - Const-context test (`const_context_decoders_evaluate`)
+    added: forces every `const fn` decoder into a `const`
+    binding.  A future PR that loses const-ness would fail to
+    compile — the binding itself is the proof.
+  - `lib.rs` annotation for `pub mod psci` extended to mention
+    WS-SM SM1.A and the full DEN0022D §5 surface (previously
+    only cited AN9-J.1).
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

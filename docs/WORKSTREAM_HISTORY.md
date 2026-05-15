@@ -106,22 +106,29 @@ sub-tasks landed in one cut:
   header lists all seven wrappers with their DEN0022D § references
   and function ids; the return-code matrix cites Table 5.
 
-**Test coverage**: 40 PSCI unit tests (38 active + 2 `#[ignore]`'d
+**Test coverage**: 45 PSCI unit tests (43 active + 2 `#[ignore]`'d
 for `system_off` / `system_reset` since they return `!` and would
-hang the test runner).  The 8-test audit-pass addendum
-(`decode_affinity_info_result_*` and
-`decode_migrate_info_type_result_*`) covers the i32 → Result
-failure-path branches without an HVC trap.  Total HAL tests: 248
-(was 215).  All function ids pinned in three layers: compile-time
-`const _: ()` assertions, runtime spec-exact constant matches,
-runtime pairwise-distinctness.  The `affinity_info` and
-`migrate_info_type` decoders refuse vendor-undocumented values by
-returning `None` (mapped by the caller to `PsciResult::Unknown`).
-No regressions: full Tier 0+1+2 smoke test passes (152-job Lean
-build, 248/248 HAL tests, 94/94 ABI conformance tests, 0 clippy
-warnings).
+hang the test runner).  Two audit passes added: 8 decoder-
+failure-path tests (`decode_affinity_info_result_*` and
+`decode_migrate_info_type_result_*`) covering the i32 → Result
+failure branches without an HVC trap; plus 5 edge-case /
+const-context tests
+(`psci_version_from_raw_zero_is_zero_zero`,
+`psci_version_to_raw_zero_zero_is_zero`,
+`psci_version_from_raw_u32_max_is_u16_max_u16_max`,
+`psci_version_to_raw_u16_max_u16_max_is_u32_max`,
+`const_context_decoders_evaluate`) covering boundary inputs and
+forcing every `const fn` decoder into a compile-time `const`
+binding.  Total HAL tests: 253 (was 215).  All function ids pinned
+in three layers: compile-time `const _: ()` assertions, runtime
+spec-exact constant matches, runtime pairwise-distinctness.  The
+`affinity_info` and `migrate_info_type` decoders refuse vendor-
+undocumented values by returning `None` (mapped by the caller to
+`PsciResult::Unknown`).  No regressions: full Tier 0+1+2 smoke
+test passes (152-job Lean build, 253/253 HAL tests, 94/94 ABI
+conformance tests, 0 clippy warnings).
 
-**Audit-pass refinements** (post-initial-landing).  Deep audit
+**Audit-pass-1 refinements** (post-initial-landing).  Deep audit
 of the SM1.A landing surfaced six findings (one HIGH soundness,
 two MEDIUM, three LOW), all addressed in-cut:
 
@@ -145,6 +152,44 @@ two MEDIUM, three LOW), all addressed in-cut:
 6. Documentation honesty: removed a false claim that wrappers
    route through `PlatformBinding.psciConduit = HVC` (no such
    field exists at v1.0.0).
+
+**Audit-pass-2 refinements** (second deep audit, post-pass-1).
+The second audit pass surfaced eight further findings (none
+above LOW since pass-1 closed the HIGH soundness bug):
+
+1. Labeling correctness: `cpu_on` was mis-labeled as
+   `WS-SM SM1.A.1` in its section header and docstring (per
+   the plan, SM1.A.1 is `cpu_off`).  `cpu_on` is the pre-
+   existing AN9-J.1 (DEF-R-HAL-L20) wrapper; re-labeled
+   accordingly.
+2. Documentation accuracy: rewrote the module docstring's
+   cross-cluster-ordering section to honestly distinguish PE-
+   affecting calls from pure queries.  `affinity_info`'s
+   incorrect "should the target be `OnPending`" rationale
+   rewritten.
+3. Broken rustdoc link to `docs/planning/SMP_RUST_HAL_PLAN.md`
+   (`../../../` resolved to a non-existent target in rustdoc
+   HTML) replaced with plain-text reference.
+4. SAFETY-comment clarity: `cpu_on`'s "disable preserved-flags"
+   wording reworked — the asm doesn't disable anything; it
+   simply omits `preserves_flags` (default off).
+5. Test MPIDR realism: `cpu_on_host_stub_returns_success` now
+   uses `0x0000_0001` (Aff0=1, matching
+   `smp::SECONDARY_MPIDR_TABLE[0]`) instead of the unrealistic
+   `0x0001_0000` (Aff2=1).
+6. Missing edge-case tests for `PsciVersion` added
+   (`from_raw(0)`, `from_raw(u32::MAX)`, `to_raw` inverse
+   directions; round-trip test extended to cover boundary
+   inputs).
+7. Missing `at_least` edge cases added (`(0, 0)` queries,
+   smallest/largest representable versions, major-only-
+   dominates case).
+8. Const-context test (`const_context_decoders_evaluate`)
+   added — forces every `const fn` decoder into a `const`
+   binding so future loss of const-ness fails to compile.
+
+Plus a stale `lib.rs` annotation (the `pub mod psci` line cited
+only AN9-J.1) extended to mention WS-SM SM1.A.
 
 Items deferred past v1.0.0 with correctness impact: NONE.
 Follow-on: SM1.B (Per-CPU data + TPIDR_EL1), SM1.C (Secondary

@@ -252,18 +252,21 @@ ARM DEN0022D §5 call the kernel needs:
   seven wrappers with their function ids and DEN0022D § references;
   return-code matrix cites Table 5.
 
-**Test coverage**: 40 unit tests (38 active + 2 `#[ignore]`'d for
+**Test coverage**: 45 unit tests (43 active + 2 `#[ignore]`'d for
 `system_off` / `system_reset` since they return `!` and would hang the
-test runner). The 8-test audit-pass addendum
+test runner). Two audit passes added: 8 decoder-failure-path tests
 (`decode_affinity_info_result_*` and `decode_migrate_info_type_result_*`)
-covers the i32 → Result failure-path branches without an HVC trap.
+covering the i32 → Result failure branches without an HVC trap, plus 5
+edge-case / const-context tests covering boundary inputs
+(`from_raw(0)`, `from_raw(u32::MAX)`, round-trip at u16::MAX) and
+forcing every `const fn` decoder into a compile-time `const` binding.
 All function ids pinned in three layers: compile-time `const _: ()`
 assertions, runtime `psci_function_ids_match_arm_den0022d`, runtime
 pairwise-distinctness. The `affinity_info` and `migrate_info_type`
 decoders refuse vendor-undocumented values by returning `None`
 (mapped by the caller to `PsciResult::Unknown`).
 
-**Audit-pass refinements** applied post-initial-landing:
+**Audit-pass-1 refinements** applied post-initial-landing:
 
 - **HIGH-severity soundness fix**: `system_off` / `system_reset` no
   longer use `options(..., noreturn)` on their HVC asm blocks (which
@@ -285,6 +288,45 @@ decoders refuse vendor-undocumented values by returning `None`
 - **Documentation honesty**: removed a false claim that wrappers
   route through `PlatformBinding.psciConduit = HVC` (no such field
   exists at v1.0.0).
+
+**Audit-pass-2 refinements** applied in a second deep audit:
+
+- **Labeling correctness**: `cpu_on` is the pre-existing AN9-J.1
+  (DEF-R-HAL-L20) wrapper, not SM1.A.1.  SM1.A.1 in this plan is
+  `cpu_off`.  Section header and docstring relabeled accordingly.
+- **Documentation accuracy — barrier rationale**: The module
+  docstring's cross-cluster-ordering section was rewritten to
+  honestly distinguish PE-affecting calls (`cpu_on`, `cpu_off`,
+  `system_off`, `system_reset` — barrier required so the
+  target/other cores see caller state) from pure queries
+  (`psci_version`, `migrate_info_type`, `affinity_info` — no
+  state transfer, barrier defensive but not required).
+- **Broken rustdoc link**: A link to
+  `docs/planning/SMP_RUST_HAL_PLAN.md` in the module docstring used
+  a relative path (`../../../`) that resolved to a non-existent
+  target in rustdoc's HTML output.  Replaced with plain-text
+  reference.
+- **SAFETY-comment clarity**: `cpu_on`'s "disable preserved-flags"
+  wording reworked — the asm doesn't disable anything; it simply
+  omits `preserves_flags` (default off).
+- **Test MPIDR realism**: `cpu_on_host_stub_returns_success` now
+  uses `0x0000_0001` (Aff0=1, matching
+  `smp::SECONDARY_MPIDR_TABLE[0]`) instead of `0x0001_0000`
+  (Aff2=1, no real BCM2712 core matches).
+- **Missing edge-case tests added**: `PsciVersion::from_raw(0)`,
+  `from_raw(u32::MAX)`, `to_raw` inverse directions; round-trip
+  extended to cover `(0, 0)`, `(u16::MAX, u16::MAX)`, and
+  asymmetric mid-range bit-pattern combinations.  `at_least`
+  edge cases (`(0, 0)` queries, smallest/largest representable,
+  major-only-dominates).
+- **Const-context evaluation test**: a new
+  `const_context_decoders_evaluate` test forces every `const fn`
+  decoder into a compile-time `const` binding.  A future PR that
+  loses const-ness would fail to compile — the binding itself is
+  the proof.
+- **Stale `lib.rs` annotation**: the `pub mod psci` line in
+  `lib.rs` cited only AN9-J.1 (DEF-R-HAL-L20).  Extended to
+  mention WS-SM SM1.A and the DEN0022D §5 surface it adds.
 
 #### SM1.A.1 — `psci::cpu_off()`
 

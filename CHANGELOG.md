@@ -155,7 +155,71 @@ gains a "LANDED" status block with per-sub-task summary.
 `CLAUDE.md` + `AGENTS.md` — Active workstream context block gains
 the SM1.A LANDED entry beneath the SM0 LANDED entry.
 
-### Audit-pass refinements (post-initial-landing)
+### Audit-pass-2 refinements (second deep audit, post-pass-1)
+
+A second deep audit surfaced eight further findings (none above
+LOW severity since pass-1 already closed the HIGH soundness bug):
+
+- **Labeling correctness**: `cpu_on` was incorrectly labeled
+  `WS-SM SM1.A.1` in its section header and docstring.  Per the
+  plan, SM1.A.1 is `cpu_off`; `cpu_on` is the pre-existing
+  AN9-J.1 (DEF-R-HAL-L20) wrapper that predates the WS-SM SM1.A
+  PSCI completion.  Re-labeled accordingly.  Also fixed the
+  per-id docstring above the constants and the test section
+  comment.
+- **Documentation accuracy — barrier rationale**: The module
+  docstring claimed `affinity_info` "affects another PE" — it's
+  a pure query that doesn't transfer any caller state.  The
+  function-level docstring's rationale ("memory ordering of any
+  state the caller wants the target PE to observe should the
+  target be `OnPending`") was incorrect.  Rewrote the module
+  docstring's cross-cluster-ordering section to honestly state
+  which calls require the barrier (`cpu_on`, `cpu_off`,
+  `system_off`, `system_reset`) and why pure queries don't
+  (`psci_version`, `migrate_info_type`, `affinity_info`).
+  `affinity_info` retains the `dsb osh` as a no-cost defensive
+  measure (HVC latency dominates) but the docstring now
+  acknowledges it is not required for correctness.
+- **Broken rustdoc link**: The module docstring contained a
+  markdown link pointing at `docs/planning/SMP_RUST_HAL_PLAN.md`
+  with a `../../../` relative URL prefix.  The relative path was
+  incorrect from rustdoc's HTML output perspective (would resolve
+  to `target/docs/planning/...`).  Replaced with a plain-text
+  reference so external link checkers don't follow it.
+- **SAFETY-comment clarity**: `cpu_on`'s SAFETY comment said
+  "We mark all clobbers explicitly and disable preserved-flags".
+  "disable preserved-flags" is misleading — we don't disable
+  anything; we simply omit the `preserves_flags` option (which
+  by default is off, so flags are not preserved).  Rewrote for
+  clarity.
+- **Test MPIDR realism**: `cpu_on_host_stub_returns_success`
+  used MPIDR `0x0001_0000` (Aff2=1) which doesn't match any
+  real BCM2712 core.  Changed to `0x0000_0001` (Aff0=1), the
+  first secondary per `smp::SECONDARY_MPIDR_TABLE[0]`.
+- **Missing edge-case tests for `PsciVersion`**: Added 4 new
+  tests covering raw=0 → (0,0), raw=u32::MAX → (u16::MAX,
+  u16::MAX), and the inverse encoder directions.  The
+  round-trip test gained 6 more inputs (0.0, asymmetric high-
+  half / low-half combinations, full-range edges).
+- **Missing edge-case tests for `at_least`**: Added cases
+  covering `at_least(0, 0)` on every test version, the
+  `(0, 0)` smallest representable version, the
+  `(u16::MAX, u16::MAX)` largest representable version, and a
+  major-only-dominates case `(2, 0) >= (1, u16::MAX)`.
+- **Const-context evaluation test**: Added
+  `const_context_decoders_evaluate` which forces every
+  decoder (`PsciResult::from_raw`, `AffinityInfoState::from_raw`,
+  `MigrateInfoType::from_raw`, `decode_affinity_info_result`,
+  `decode_migrate_info_type_result`, `PsciVersion::from_raw`,
+  `PsciVersion::to_raw`, `PsciVersion::at_least`) into a
+  `const` binding.  A future PR that loses const-ness would
+  fail to compile — the const bindings themselves are the
+  proof of const-callability.
+- **Stale `lib.rs` annotation**: The `pub mod psci` line in
+  `lib.rs` cited only AN9-J.1.  Extended to mention WS-SM SM1.A
+  and the full DEN0022D §5 surface it adds.
+
+## Round-1 audit-pass refinements (post-initial-landing)
 
 Deep audit of the SM1.A landing surfaced six findings (one HIGH
 soundness, two MEDIUM, three LOW), all addressed in-cut before the
@@ -215,10 +279,11 @@ PR is reviewed:
 
 ### Test impact
 
-- HAL unit tests: 248 (was 215 pre-SM1.A; +25 PSCI core tests
-  +8 decoder failure-path tests; 2 of the 40 PSCI tests
-  `#[ignore]`'d for `system_off` / `system_reset` `-> !`).
-- Workspace unit tests: 511 total (was 478 pre-SM1.A).
+- HAL unit tests: 253 (was 215 pre-SM1.A; +25 PSCI core tests
+  +8 decoder failure-path tests +5 edge-case/const-context
+  tests; 2 of the 45 PSCI tests `#[ignore]`'d for `system_off`
+  / `system_reset` `-> !`).
+- Workspace unit tests: 516 total (was 478 pre-SM1.A).
 - Clippy: 0 warnings.
 - Tier 0 (hygiene), Tier 1 (build), Tier 2 (trace + negative
   state + Rust): all pass.

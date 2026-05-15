@@ -145,7 +145,11 @@ pub mod ffi;
 pub mod profiling;
 // AN9-F (DEF-R-HAL-L14): typed SVC argument marshalling
 pub mod svc_dispatch;
-// AN9-J.1 (DEF-R-HAL-L20): PSCI wrapper for secondary-core bring-up
+// AN9-J.1 (DEF-R-HAL-L20): PSCI wrapper for secondary-core bring-up.
+// WS-SM SM1.A extends this to the full DEN0022D §5 surface
+// (cpu_off, affinity_info, psci_version, migrate_info_type,
+// system_off, system_reset); see psci.rs module docstring for the
+// function-id map.
 pub mod psci;
 // AN9-J (DEF-R-HAL-L20): SMP secondary-core scaffolding (off by default)
 pub mod smp;
