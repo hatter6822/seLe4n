@@ -1,3 +1,300 @@
+## Unreleased — WS-SM Phase SM1.A landing (PSCI completion)
+
+Branch `claude/implement-psci-completion-TUW1u`.  First sub-phase of
+WS-SM SM1 (Rust HAL).  Eight sub-tasks landed in one cut, closing
+SMP-M5 (PSCI completion) by wrapping the full ARM DEN0022D §5
+surface the kernel needs beyond the existing `cpu_on`.  Pre-SM1.A
+the only wrapped PSCI call was `cpu_on`; post-SM1.A the kernel can
+power down individual cores (`cpu_off`), query firmware version
+(`psci_version`), query per-PE state (`affinity_info`), query
+Trusted-OS migration requirements (`migrate_info_type`), power off
+the entire system (`system_off`), and cold-reset the system
+(`system_reset`).  See
+[`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+§5.1 for the full plan; [`CLAUDE.md`](CLAUDE.md) §"Active workstream
+context" carries the live tracking.
+
+### Added — PSCI wrappers (SM1.A.1..SM1.A.6)
+
+`rust/sele4n-hal/src/psci.rs` (extended from 190 LoC to 1246 LoC):
+
+- **SM1.A.1**: `psci::cpu_off()` — Issue PSCI CPU_OFF HVC.  Powers
+  down the calling PE.  Per ARM DEN0022D §5.1.4, SMC32 function id
+  `0x8400_0002`.  Caller must not return on success (the PE is off);
+  failure paths return a `PsciResult`.  Emits `dsb osh` before HVC
+  for cross-cluster ordering.
+- **SM1.A.2**: `psci::affinity_info(target_affinity, lowest_affinity_level)` —
+  Query a target PE's on/off state.  Per ARM DEN0022D §5.1.7, SMC64
+  function id `0xC400_0004`.  Returns
+  `Result<AffinityInfoState, PsciResult>`.  New `AffinityInfoState`
+  enum (`On=0`, `Off=1`, `OnPending=2`) with `from_raw` / `to_raw`
+  round-trip.
+- **SM1.A.3**: `psci::system_off() -> !` — Power off the entire
+  system.  Per ARM DEN0022D §5.1.10, SMC32 function id `0x8400_0008`.
+  Return type `!` documents the no-return contract at the type level.
+- **SM1.A.4**: `psci::system_reset() -> !` — Cold system reset.  Per
+  ARM DEN0022D §5.1.11, SMC32 function id `0x8400_0009`.
+- **SM1.A.5**: `psci::psci_version()` — Query firmware-implemented
+  PSCI revision.  Per ARM DEN0022D §5.1.1, SMC32 function id
+  `0x8400_0000`.  New `PsciVersion` struct with `major` / `minor`
+  u16 fields, `from_raw` / `to_raw` round-trip, and
+  `at_least(major, minor)` comparator for feature gating.
+- **SM1.A.6**: `psci::migrate_info_type()` — Query Trusted-OS
+  migration requirements.  Per ARM DEN0022D §5.1.8, SMC32 function
+  id `0x8400_0006`.  Returns `Result<MigrateInfoType, PsciResult>`.
+  New `MigrateInfoType` enum (`UniProcessor=0`, `Multiprocessor=1`,
+  `NotRequired=2`).
+
+### Added — Compile-time PSCI invariants (SM1.A.7)
+
+`rust/sele4n-hal/src/psci.rs` `const _: () = { ... }` block (~80
+lines): 21 compile-time assertions verify every PSCI function id
+satisfies the ARM SMCCC (DEN0028) encoding:
+
+- **Bit 31 (Fast call)**: must be `1` for every PSCI id (PSCI calls
+  are always fast).
+- **Bit 30 (SMC64)**: `1` for SMC64 ids (`CPU_ON`, `AFFINITY_INFO`
+  which take 64-bit MPIDR arguments), `0` for SMC32 ids (the other
+  five wrappers).
+- **Bits 29..24 (OEN)**: must be `4` (Standard Secure Service Calls,
+  the range PSCI lives in).
+- **Bits 23..16**: reserved, must be `0`.
+
+Plus three new module constants for reuse:
+- `PSCI_OEN_STANDARD_SECURE: u32 = 4 << 24`
+- `PSCI_OEN_MASK: u32 = 0x3F << 24`
+- `PSCI_RESERVED_MASK: u32 = 0x00FF_0000`
+
+### Added — PSCI test matrix (SM1.A.7 runtime layer)
+
+`rust/sele4n-hal/src/psci.rs` `#[cfg(test)] mod tests` (extended):
+40 unit tests (38 active + 2 `#[ignore]`'d for `system_off` /
+`system_reset` which return `!`).  The decoder-failure-path tests
+(`decode_affinity_info_result_*` and `decode_migrate_info_type_result_*`,
+8 tests total) were added during the audit pass — see "Audit-pass
+refinements" below.  New tests:
+
+- `psci_function_ids_match_arm_den0022d` — pins every constant to
+  the literal hex value from DEN0022D §5.1.
+- `psci_function_ids_pairwise_distinct` — verifies no two wrapped
+  ids collide.
+- `psci_all_function_ids_have_bit31_set_fast_call` — Fast-call
+  invariant.
+- `psci_smc64_function_ids_have_bit30_set` /
+  `psci_smc32_function_ids_have_bit30_clear` — SMC width
+  invariants.
+- `psci_function_ids_oen_is_standard_secure_service` — OEN=4
+  pin per SMCCC §5.2.
+- `psci_function_ids_reserved_bits_23_16_clear` — reserved-bits
+  invariant.
+- `affinity_info_state_from_raw_decodes_documented_values` /
+  `affinity_info_state_from_raw_rejects_undocumented_values` /
+  `affinity_info_state_to_raw_roundtrips` /
+  `affinity_info_host_stub_returns_on` — `AffinityInfoState`
+  decoder coverage.
+- `psci_version_from_raw_decodes_major_and_minor` /
+  `psci_version_from_raw_decodes_psci_0_2` /
+  `psci_version_roundtrip` /
+  `psci_version_at_least_compares_correctly` /
+  `psci_version_high_bits_extract_major` /
+  `psci_version_host_stub_returns_1_1` — `PsciVersion` decoder
+  coverage.
+- `migrate_info_type_from_raw_decodes_documented_values` /
+  `migrate_info_type_from_raw_rejects_undocumented_values` /
+  `migrate_info_type_to_raw_roundtrips` /
+  `migrate_info_host_stub_returns_not_required` —
+  `MigrateInfoType` decoder coverage.
+- `psci_cpu_off_returns_psci_result_type` —
+  `cpu_off` host-stub coverage.
+- `system_off_function_id_pinned` /
+  `system_reset_function_id_pinned` — additional belt-and-braces
+  pin alongside the matrix test.
+- `psci_documentation_map_constants_are_public` /
+  `psci_documentation_map_seven_distinct_wrappers` — documentation-
+  map coverage assertion (SM1.A.8).
+- `system_off_host_stub_spins` /
+  `system_reset_host_stub_spins` — `#[ignore]`'d direct-invocation
+  tests for the `-> !` wrappers (the test would hang otherwise).
+
+### Added — PSCI documentation map (SM1.A.8)
+
+`rust/sele4n-hal/src/psci.rs` module-level docstring (~80 lines):
+- Function-id encoding rationale per ARM SMCCC DEN0028 / DEN0022D
+  §5.2.1 (bits 31, 30, 29..24, 23..16, 15..0).
+- DEN0022D §5.1 function map table — seven wrappers, function ids,
+  return conventions.
+- Return-code matrix — ten `PsciResult` variants vs DEN0022D
+  Table 5.
+- HVC vs. SMC dispatch rationale (RPi5 firmware exposes PSCI at
+  EL2 via HVC; SMC routes to the secure monitor at EL3 which is
+  not configured on this platform).
+- Host-stub behavior matrix — each wrapper's test-build return
+  value documented.
+- Cross-cluster ordering (AN9-I) integration — which wrappers emit
+  `dsb osh` before HVC and why.
+
+### Changed — Documentation
+
+`rust/sele4n-hal/src/lib.rs` — `R-HAL-L16` annotation extended to
+record the WS-SM SM1.A completion alongside the original AN9-J.1.
+
+`docs/gitbook/15-rust-syscall-wrappers.md` — `psci` row in the
+HAL module table updated from `cpu_on` only to the full
+seven-wrapper set with all new types listed.
+
+`docs/gitbook/10-path-to-real-hardware-mobile-first.md` — H1
+section "PSCI completion (WS-SM SM1.A)" sub-bullet added beneath
+the existing "SMP scaffolding (AN9-J / DEF-R-HAL-L20)" bullet.
+
+`docs/planning/SMP_RUST_HAL_PLAN.md` — §5.1 PSCI completion section
+gains a "LANDED" status block with per-sub-task summary.
+
+`docs/WORKSTREAM_HISTORY.md` — WS-SM SM1.A entry added under the
+"What's next" / WS-SM block.
+
+`CLAUDE.md` + `AGENTS.md` — Active workstream context block gains
+the SM1.A LANDED entry beneath the SM0 LANDED entry.
+
+### Audit-pass-2 refinements (second deep audit, post-pass-1)
+
+A second deep audit surfaced eight further findings (none above
+LOW severity since pass-1 already closed the HIGH soundness bug):
+
+- **Labeling correctness**: `cpu_on` was incorrectly labeled
+  `WS-SM SM1.A.1` in its section header and docstring.  Per the
+  plan, SM1.A.1 is `cpu_off`; `cpu_on` is the pre-existing
+  AN9-J.1 (DEF-R-HAL-L20) wrapper that predates the WS-SM SM1.A
+  PSCI completion.  Re-labeled accordingly.  Also fixed the
+  per-id docstring above the constants and the test section
+  comment.
+- **Documentation accuracy — barrier rationale**: The module
+  docstring claimed `affinity_info` "affects another PE" — it's
+  a pure query that doesn't transfer any caller state.  The
+  function-level docstring's rationale ("memory ordering of any
+  state the caller wants the target PE to observe should the
+  target be `OnPending`") was incorrect.  Rewrote the module
+  docstring's cross-cluster-ordering section to honestly state
+  which calls require the barrier (`cpu_on`, `cpu_off`,
+  `system_off`, `system_reset`) and why pure queries don't
+  (`psci_version`, `migrate_info_type`, `affinity_info`).
+  `affinity_info` retains the `dsb osh` as a no-cost defensive
+  measure (HVC latency dominates) but the docstring now
+  acknowledges it is not required for correctness.
+- **Broken rustdoc link**: The module docstring contained a
+  markdown link pointing at `docs/planning/SMP_RUST_HAL_PLAN.md`
+  with a `../../../` relative URL prefix.  The relative path was
+  incorrect from rustdoc's HTML output perspective (would resolve
+  to `target/docs/planning/...`).  Replaced with a plain-text
+  reference so external link checkers don't follow it.
+- **SAFETY-comment clarity**: `cpu_on`'s SAFETY comment said
+  "We mark all clobbers explicitly and disable preserved-flags".
+  "disable preserved-flags" is misleading — we don't disable
+  anything; we simply omit the `preserves_flags` option (which
+  by default is off, so flags are not preserved).  Rewrote for
+  clarity.
+- **Test MPIDR realism**: `cpu_on_host_stub_returns_success`
+  used MPIDR `0x0001_0000` (Aff2=1) which doesn't match any
+  real BCM2712 core.  Changed to `0x0000_0001` (Aff0=1), the
+  first secondary per `smp::SECONDARY_MPIDR_TABLE[0]`.
+- **Missing edge-case tests for `PsciVersion`**: Added 4 new
+  tests covering raw=0 → (0,0), raw=u32::MAX → (u16::MAX,
+  u16::MAX), and the inverse encoder directions.  The
+  round-trip test gained 6 more inputs (0.0, asymmetric high-
+  half / low-half combinations, full-range edges).
+- **Missing edge-case tests for `at_least`**: Added cases
+  covering `at_least(0, 0)` on every test version, the
+  `(0, 0)` smallest representable version, the
+  `(u16::MAX, u16::MAX)` largest representable version, and a
+  major-only-dominates case `(2, 0) >= (1, u16::MAX)`.
+- **Const-context evaluation test**: Added
+  `const_context_decoders_evaluate` which forces every
+  decoder (`PsciResult::from_raw`, `AffinityInfoState::from_raw`,
+  `MigrateInfoType::from_raw`, `decode_affinity_info_result`,
+  `decode_migrate_info_type_result`, `PsciVersion::from_raw`,
+  `PsciVersion::to_raw`, `PsciVersion::at_least`) into a
+  `const` binding.  A future PR that loses const-ness would
+  fail to compile — the const bindings themselves are the
+  proof of const-callability.
+- **Stale `lib.rs` annotation**: The `pub mod psci` line in
+  `lib.rs` cited only AN9-J.1.  Extended to mention WS-SM SM1.A
+  and the full DEN0022D §5 surface it adds.
+
+## Round-1 audit-pass refinements (post-initial-landing)
+
+Deep audit of the SM1.A landing surfaced six findings (one HIGH
+soundness, two MEDIUM, three LOW), all addressed in-cut before the
+PR is reviewed:
+
+- **HIGH (soundness)**: `system_off` and `system_reset` originally
+  used `options(nostack, noreturn)` on their HVC asm blocks.  Per the
+  Rust reference, `noreturn` is undefined behaviour if the asm block
+  returns.  Per DEN0022D §5.1.9 / §5.1.10, a non-conforming firmware
+  that does not implement SYSTEM_OFF / SYSTEM_RESET returns
+  `NOT_SUPPORTED` (-1).  Combining these two facts means the
+  original code was UB on any platform where firmware returned
+  instead of powering off / resetting.  **Fix**: drop `noreturn`,
+  add `clobber_abi("C")`, and fall into an explicit
+  `loop { core::hint::spin_loop(); }` after the asm block.  The
+  function now honours `-> !` on every input — a conforming
+  firmware never reaches the loop (the HVC powers off / resets),
+  and a non-conforming firmware lands in the spin loop (the safest
+  state given the kernel is otherwise stuck).
+- **MEDIUM (documentation accuracy)**: DEN0022D sub-section
+  citations realigned to revision D numbering (CPU_OFF §5.1.3,
+  CPU_ON §5.1.4, AFFINITY_INFO §5.1.5, MIGRATE_INFO_TYPE §5.1.7,
+  SYSTEM_OFF §5.1.9, SYSTEM_RESET §5.1.10).  Earlier numbers were
+  carried over from the plan, which mixed revisions.  The function
+  IDs are stable across revisions and remain the canonical
+  identifier.
+- **MEDIUM (testability)**: extracted pure decoder functions
+  `decode_affinity_info_result(i32) -> Result<AffinityInfoState, PsciResult>`
+  and
+  `decode_migrate_info_type_result(i32) -> Result<MigrateInfoType, PsciResult>`
+  from the production wrappers.  The wrappers now read as
+  `asm! + decoder`, with the decoders unit-tested across success
+  values, negative documented codes, negative undocumented codes,
+  and out-of-range non-negative codes (8 new tests, lifting the
+  PSCI suite to 38 tests).  Pre-fix the failure paths
+  (`ret < 0` and `ret > 2`) were aarch64-only and unreachable on
+  host; post-fix they are covered by the decoder tests.
+- **LOW (API)**: `cpu_on`, `cpu_off`, and `psci_version` gain
+  `#[must_use]`.  The `Result`-returning functions (`affinity_info`,
+  `migrate_info_type`, and the new decoders) already inherit
+  `#[must_use]` from `Result`, so additional annotation is
+  redundant (and clippy's `double_must_use` lint flagged it).
+- **LOW (test coverage)**: `psci_result_is_success_only_for_zero`
+  expanded from 4 variants to all 10 (every `PsciResult` variant
+  is now individually asserted).
+- **LOW (style)**: `let ret: i32;` (without `mut`) for asm
+  `lateout` bindings — unified with the existing `psci_version`
+  style (`let raw: u32;`).  The `mut` was redundant; the asm's
+  `lateout` initialises the binding.
+- **LOW (documentation lie)**: removed a false claim in the
+  module-level docstring that wrappers route through
+  `PlatformBinding.psciConduit = HVC` — there is no such field on
+  `PlatformBinding` at v1.0.0.  Replaced with an accurate
+  description: wrappers hard-code `hvc #0` because RPi5 is the
+  only v1.0.0 hardware target.  Future conduit parameterisation
+  is tracked as a post-1.0 SM1 closure item.
+
+### Test impact
+
+- HAL unit tests: 253 (was 215 pre-SM1.A; +25 PSCI core tests
+  +8 decoder failure-path tests +5 edge-case/const-context
+  tests; 2 of the 45 PSCI tests `#[ignore]`'d for `system_off`
+  / `system_reset` `-> !`).
+- Workspace unit tests: 516 total (was 478 pre-SM1.A).
+- Clippy: 0 warnings.
+- Tier 0 (hygiene), Tier 1 (build), Tier 2 (trace + negative
+  state + Rust): all pass.
+- Lean build: 152 jobs, no regressions.
+
+### Items deferred past v1.0.0 with correctness impact
+
+NONE.
+
+---
+
 ## v0.31.3 — WS-SM Phase SM0 closure (Foundations & honesty patches)
 
 Phase SM0 of the WS-SM (SMP multi-core completion) workstream lands as

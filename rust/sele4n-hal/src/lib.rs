@@ -108,7 +108,7 @@
 //             NotImplemented stub.
 // - R-HAL-L15 MPIDR mask: handled by AK5-I.
 // - R-HAL-L16 Secondary core bring-up: CLOSED at AN9-J (DEF-R-HAL-L20).
-//             The new `psci` module exposes `cpu_on` (PSCI CPU_ON wrapper)
+//             The `psci` module exposes `cpu_on` (PSCI CPU_ON wrapper)
 //             and the `smp` module exposes `SMP_ENABLED` (runtime gate),
 //             `bring_up_secondaries` (primary-core entry), and
 //             `rust_secondary_main` (secondary-core entry).  Default
@@ -116,6 +116,17 @@
 //             is preserved; opting in is a kernel-command-line flag.
 //             QEMU `-smp 4` validation is gated on firmware PSCI
 //             support; host tests cover the call graph with stubs.
+//
+//             WS-SM SM1.A completes the PSCI surface beyond `cpu_on`:
+//             the module now wraps the full DEN0022D §5 subset the
+//             kernel needs — `cpu_off`, `affinity_info` (with
+//             `AffinityInfoState`), `psci_version` (with
+//             `PsciVersion`), `migrate_info_type` (with
+//             `MigrateInfoType`), `system_off`, `system_reset`.
+//             Compile-time assertions pin every function id to its
+//             ARM SMCCC encoding (Fast call + SMC32/64 + OEN=4 +
+//             reserved-bits-clear).  See `psci.rs` module docstring
+//             for the complete function-id map.
 
 pub mod cpu;
 pub mod barriers;
@@ -134,7 +145,11 @@ pub mod ffi;
 pub mod profiling;
 // AN9-F (DEF-R-HAL-L14): typed SVC argument marshalling
 pub mod svc_dispatch;
-// AN9-J.1 (DEF-R-HAL-L20): PSCI wrapper for secondary-core bring-up
+// AN9-J.1 (DEF-R-HAL-L20): PSCI wrapper for secondary-core bring-up.
+// WS-SM SM1.A extends this to the full DEN0022D §5 surface
+// (cpu_off, affinity_info, psci_version, migrate_info_type,
+// system_off, system_reset); see psci.rs module docstring for the
+// function-id map.
 pub mod psci;
 // AN9-J (DEF-R-HAL-L20): SMP secondary-core scaffolding (off by default)
 pub mod smp;

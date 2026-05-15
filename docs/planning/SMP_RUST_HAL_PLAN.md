@@ -218,7 +218,115 @@ extra MSR at boot.
 (Section structure mirrors SM0 — every sub-task gets goal,
 files, code skeleton, acceptance, PR template, estimate.)
 
-### 5.1 PSCI completion (SM1.A, 5 PRs, 8 sub-tasks)
+### 5.1 PSCI completion (SM1.A, 5 PRs, 8 sub-tasks) — **LANDED**
+
+**Status**: COMPLETE on branch `claude/implement-psci-completion-TUW1u`.
+All eight sub-tasks landed in one cut. The PSCI surface now wraps every
+ARM DEN0022D §5 call the kernel needs:
+
+- **SM1.A.1** `cpu_off()` — power down calling PE; emits `dsb osh` +
+  `hvc #0` with id `0x8400_0002`; returns `PsciResult`. Documented
+  failure codes: `Denied`, `InternalFailure`.
+- **SM1.A.2** `affinity_info(target_affinity, lowest_affinity_level)` —
+  query a target PE's on/off state; returns
+  `Result<AffinityInfoState, PsciResult>`. `AffinityInfoState`
+  enum: `On=0`, `Off=1`, `OnPending=2`. SMC64 id `0xC400_0004`.
+- **SM1.A.3** `system_off() -> !` — power off the system; SMC32 id
+  `0x8400_0008`; never returns.
+- **SM1.A.4** `system_reset() -> !` — cold system reset; SMC32 id
+  `0x8400_0009`; never returns.
+- **SM1.A.5** `psci_version() -> PsciVersion` — query firmware
+  version; SMC32 id `0x8400_0000`. `PsciVersion` carries `major` /
+  `minor` u16 fields with a `from_raw` / `to_raw` round-trip and an
+  `at_least(major, minor)` comparator for feature gating.
+- **SM1.A.6** `migrate_info_type() -> Result<MigrateInfoType, PsciResult>` —
+  Trusted-OS migration query; SMC32 id `0x8400_0006`. `MigrateInfoType`
+  enum: `UniProcessor=0`, `Multiprocessor=1`, `NotRequired=2`.
+- **SM1.A.7** Function-id pinning — compile-time `const _: () = { ... }`
+  assertions verify every PSCI id satisfies the ARM SMCCC encoding
+  (bit 31 Fast call, bit 30 SMC32/64, bits 29..24 OEN=4 for Standard
+  Secure Service Calls, bits 23..16 reserved-zero, bits 15..0 function
+  number). Plus the runtime test matrix in
+  `psci::tests::psci_function_ids_*`.
+- **SM1.A.8** Documentation map — module-level docstring lists all
+  seven wrappers with their function ids and DEN0022D § references;
+  return-code matrix cites Table 5.
+
+**Test coverage**: 45 unit tests (43 active + 2 `#[ignore]`'d for
+`system_off` / `system_reset` since they return `!` and would hang the
+test runner). Two audit passes added: 8 decoder-failure-path tests
+(`decode_affinity_info_result_*` and `decode_migrate_info_type_result_*`)
+covering the i32 → Result failure branches without an HVC trap, plus 5
+edge-case / const-context tests covering boundary inputs
+(`from_raw(0)`, `from_raw(u32::MAX)`, round-trip at u16::MAX) and
+forcing every `const fn` decoder into a compile-time `const` binding.
+All function ids pinned in three layers: compile-time `const _: ()`
+assertions, runtime `psci_function_ids_match_arm_den0022d`, runtime
+pairwise-distinctness. The `affinity_info` and `migrate_info_type`
+decoders refuse vendor-undocumented values by returning `None`
+(mapped by the caller to `PsciResult::Unknown`).
+
+**Audit-pass-1 refinements** applied post-initial-landing:
+
+- **HIGH-severity soundness fix**: `system_off` / `system_reset` no
+  longer use `options(..., noreturn)` on their HVC asm blocks (which
+  would be UB if firmware returns `NOT_SUPPORTED`).  Replaced with
+  `clobber_abi("C")` + an explicit `loop { spin_loop() }` post-asm
+  so `-> !` is honoured on every path.
+- **Documentation accuracy**: DEN0022D sub-section citations
+  realigned to revision D numbering throughout the module
+  (CPU_OFF §5.1.3, CPU_ON §5.1.4, AFFINITY_INFO §5.1.5,
+  MIGRATE_INFO_TYPE §5.1.7, SYSTEM_OFF §5.1.9, SYSTEM_RESET §5.1.10).
+- **Testability**: extracted pure decoders `decode_affinity_info_result`
+  and `decode_migrate_info_type_result` so the failure paths
+  (`ret < 0` and `ret > 2`) are unit-testable without an HVC trap.
+- **API**: `#[must_use]` added to `cpu_on`, `cpu_off`,
+  `psci_version` (Result-returning functions inherit `#[must_use]`
+  from `Result`).
+- **Test coverage**: `psci_result_is_success_only_for_zero` now
+  covers all 10 variants (was 4).
+- **Documentation honesty**: removed a false claim that wrappers
+  route through `PlatformBinding.psciConduit = HVC` (no such field
+  exists at v1.0.0).
+
+**Audit-pass-2 refinements** applied in a second deep audit:
+
+- **Labeling correctness**: `cpu_on` is the pre-existing AN9-J.1
+  (DEF-R-HAL-L20) wrapper, not SM1.A.1.  SM1.A.1 in this plan is
+  `cpu_off`.  Section header and docstring relabeled accordingly.
+- **Documentation accuracy — barrier rationale**: The module
+  docstring's cross-cluster-ordering section was rewritten to
+  honestly distinguish PE-affecting calls (`cpu_on`, `cpu_off`,
+  `system_off`, `system_reset` — barrier required so the
+  target/other cores see caller state) from pure queries
+  (`psci_version`, `migrate_info_type`, `affinity_info` — no
+  state transfer, barrier defensive but not required).
+- **Broken rustdoc link**: A link to
+  `docs/planning/SMP_RUST_HAL_PLAN.md` in the module docstring used
+  a relative path (`../../../`) that resolved to a non-existent
+  target in rustdoc's HTML output.  Replaced with plain-text
+  reference.
+- **SAFETY-comment clarity**: `cpu_on`'s "disable preserved-flags"
+  wording reworked — the asm doesn't disable anything; it simply
+  omits `preserves_flags` (default off).
+- **Test MPIDR realism**: `cpu_on_host_stub_returns_success` now
+  uses `0x0000_0001` (Aff0=1, matching
+  `smp::SECONDARY_MPIDR_TABLE[0]`) instead of `0x0001_0000`
+  (Aff2=1, no real BCM2712 core matches).
+- **Missing edge-case tests added**: `PsciVersion::from_raw(0)`,
+  `from_raw(u32::MAX)`, `to_raw` inverse directions; round-trip
+  extended to cover `(0, 0)`, `(u16::MAX, u16::MAX)`, and
+  asymmetric mid-range bit-pattern combinations.  `at_least`
+  edge cases (`(0, 0)` queries, smallest/largest representable,
+  major-only-dominates).
+- **Const-context evaluation test**: a new
+  `const_context_decoders_evaluate` test forces every `const fn`
+  decoder into a compile-time `const` binding.  A future PR that
+  loses const-ness would fail to compile — the binding itself is
+  the proof.
+- **Stale `lib.rs` annotation**: the `pub mod psci` line in
+  `lib.rs` cited only AN9-J.1 (DEF-R-HAL-L20).  Extended to
+  mention WS-SM SM1.A and the DEN0022D §5 surface it adds.
 
 #### SM1.A.1 — `psci::cpu_off()`
 
