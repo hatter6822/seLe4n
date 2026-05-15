@@ -3,7 +3,7 @@
 > **Phase**: SM0 of WS-SM
 > **Parent overview**: [`SMP_MULTICORE_COMPLETION_PLAN.md`](SMP_MULTICORE_COMPLETION_PLAN.md)
 > **Audited cut**: `v0.31.2`
-> **Target releases**: v0.32.0 .. v0.32.x (~18 small PRs)
+> **Target releases**: v0.31.3 (landed); SM1+ continues at v0.32.x (~18 small PRs)
 > **Calendar estimate**: 4-6 weeks
 > **Sub-task count**: 40-50
 
@@ -12,7 +12,7 @@
 SM0 lays the **foundational types, build-time anchors, and
 documentation-honesty patches** that the larger phases (SM1..SM9)
 depend on. No runtime behavioral change yet; no SMP activation;
-the v0.32.x staging releases boot single-core just as v0.31.2
+the v0.31.3 release boots single-core just as v0.31.2
 does today.
 
 Three substantive goals:
@@ -372,7 +372,7 @@ with RPi5 sets `coreCount := 4`, `bootCoreId := ⟨0, by decide⟩`,
 ### 4.3 Spread-across-PRs discipline
 
 Decision #9 ("spread across many small PRs") means SM0's ~21
-sub-tasks land as ~18 separate PRs over v0.32.0..v0.32.x. The
+sub-tasks landed in a single coherent cut at v0.31.3 (the maintainer redirected from the originally-planned ~18-PR spread once integration testing confirmed the SM0 closure was internally consistent). The
 ordering is:
 1. **Documentation honesty patches** first (low risk; no code
    change): SM0.J (dev_history refs), SM0.K (WS-V references),
@@ -541,7 +541,7 @@ the IN-FLIGHT status with WS-SM:
 ```
 ## Active workstream context
 
-- **WS-SM SMP multi-core completion (v0.32.0 → v1.0.0)**:
+- **WS-SM SMP multi-core completion (v0.31.3 [SM0 LANDED] → v1.0.0)**:
   Unified workstream merging WS-RC's remaining R6..R14 phases
   with the SMP-specific SM-phases (SM0..SM9). Closes at v1.0.0
   with a bootable verified SMP microkernel on Raspberry Pi 5.
@@ -1334,10 +1334,12 @@ Each PR's CHANGELOG entry (under `## [v0.32.X] - YYYY-MM-DD`):
 The SM0 closure aggregate entry:
 
 ```
-## [v0.32.x] - YYYY-MM-DD — WS-SM Phase SM0 closure
+## [v0.31.3] - 2026-05-15 — WS-SM Phase SM0 closure
 
 Phase SM0 (Foundations & honesty patches) closes. 21 sub-tasks
-landed across ~18 PRs from v0.32.0 to v0.32.x:
+landed in a single coherent cut at v0.31.3 (compressed from the
+originally-planned v0.32.0..v0.32.x ~18-PR spread per maintainer
+redirection):
 
 - 5 honesty patches: dev_history cross-references repointed,
   WS-V deferral claims updated, DEF-R-HAL-L20 disposition

@@ -91,7 +91,7 @@ architectural improvements enabled by the Lean 4 proof framework:
 | **Test Lean LoC** | 21,451 across 30 test suites |
 | **Proved declarations** | 3,352 theorem/lemma declarations (zero sorry/axiom) |
 | **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 48 source files |
-| **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) — single-core (core 0) at v0.32.0; SMP completion in flight in WS-SM (foundations landed at SM0; full activation through SM1..SM9 by v1.0.0) |
+| **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) — single-core (core 0) at v0.31.3; SMP completion in flight in WS-SM (foundations landed at SM0; full activation through SM1..SM9 by v1.0.0) |
 | **Hardware binding** | **H3 COMPLETE** (WS-AG AG1–AG10): HAL, GIC-400, timer, ARMv8 page tables, FFI bridge, QEMU boot |
 | **Canonical audit** | [`AUDIT_v0.29.0_COMPREHENSIVE`](docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — pre-1.0 comprehensive audit (202 findings; remediated by WS-AK AK1–AK10; archived) |
 | **Latest audit** | [`AUDIT_v0.30.11_COMPREHENSIVE`](docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — pre-1.0 readiness audit cut after WS-AN closure (succeeds the now-archived [`AUDIT_v0.30.6_COMPREHENSIVE`](docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) remediated by WS-AN AN0–AN12). WS-RC R0..R5 LANDED at v0.31.2; WS-RC R6..R14 absorbed into WS-SM per the SM0.Q.1 absorption mapping (see [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). Active workstream plan: [`SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |

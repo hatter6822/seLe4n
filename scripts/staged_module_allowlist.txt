@@ -17,7 +17,7 @@
 #   infra               — platform infrastructure (bridges, anchors, helpers)
 #   anchor              — the staging anchor file itself
 #
-# Last verified: WS-SM SM0 closure (v0.32.0 HEAD with five new
+# Last verified: WS-SM SM0 closure (v0.31.3 HEAD with five new
 # Concurrency/* foundational modules — Anchors, Types, Locks,
 # Locks.Kind, Sgi — entering staged via Platform.Staged).
 

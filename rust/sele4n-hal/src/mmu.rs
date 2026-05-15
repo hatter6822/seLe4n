@@ -627,9 +627,14 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::assertions_on_constants)]
     fn sctlr_bitmap_is_const_computable() {
         // `compute_sctlr_el1_bitmap` is `const fn` — usable in a
-        // compile-time assertion.
+        // compile-time assertion.  Clippy flags `assert!(SCTLR != 0)`
+        // as a constant assertion (`assertions_on_constants`); we keep
+        // the runtime assert so the property is observable in the
+        // test report.  The local `#[allow]` suppresses the lint at
+        // the test function level.
         const SCTLR: u64 = compute_sctlr_el1_bitmap();
         assert!(SCTLR != 0);
     }

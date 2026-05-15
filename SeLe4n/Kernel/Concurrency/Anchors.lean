@@ -35,10 +35,19 @@ would silently leave a dangling inventory entry.
 
 This module closes the gap audit-finding **SMP-H3** raised by
 forcing every named symbol to be `@`-referenced at elaboration.
-If any of the 14 referenced names (8 entries × `identifier` +
-`sourceTheorem`, modulo the 4 entries where the two coincide) is
-renamed without updating the inventory, the corresponding
-`@`-reference fails to elaborate and the build breaks.
+The build-anchor `example` below carries 19 `@`-references in
+total: 12 distinct symbols across the 8 inventory entries
+(several entries share a sourceTheorem name with their
+identifier — e.g., `lifecyclePreRetypeCleanup`, `serviceHasPathTo`,
+`typedIdDisjointness`, `bootFromPlatform`); 1 `ArchAssumption`
+constructor witness; and 6 surface-anchor references for the
+SM0.B / SM0.C / SM0.D theorems (`archAssumptionConsumer_distinct_6`,
+`architecture_assumptions_index_total_6`, `assumptionInventory_count`,
+`smpAnchorVerified`, `smpLatentInventory_identifiers_nodup`,
+`smpLatentInventory_sourceTheorems_nodup`).  If any of the 12
+inventory symbols is renamed without updating the inventory, the
+corresponding `@`-reference fails to elaborate and the build
+breaks.
 
 Wired into `SeLe4n.Platform.Staged` so every CI run forces this
 check.

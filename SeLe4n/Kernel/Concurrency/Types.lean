@@ -28,12 +28,19 @@ This module introduces the foundational typed identifiers WS-SM relies on:
   used to select the appropriate DSB barrier kind on cross-cluster
   topologies.
 
-`numCores` is defined as a literal `4` in this module so the file remains
-platform-agnostic.  A separate sanity theorem in
-`SeLe4n.Platform.RPi5.Contract` (`numCores_eq_rpi5_coreCount`) pins the
-constant to `PlatformBinding.coreCount` of the RPi5 binding.  Future
-multi-platform builds that change the value must update both sites in
-the same PR.
+`numCores` is defined as a literal `4` in this module so the file
+does not import `Platform.Contract` (which would create a cycle —
+`Platform.Contract` imports this module for `SharingDomain`).  The
+literal `4` matches the RPi5 BCM2712 production binding's
+`coreCount = 4`; the file is not "platform-agnostic" in the sense
+of supporting an arbitrary core count, but it IS independent of the
+`Platform.*` import closure.  The pinning theorem
+`numCores_eq_rpi5_coreCount` in `SeLe4n.Platform.RPi5.Contract`
+discharges `numCores = PlatformBinding.coreCount RPi5Platform` by
+`rfl`, so the two literals are structurally pinned at build time —
+any future multi-platform build that changes the value must update
+both sites in the same PR (the pinning theorem fails to elaborate
+otherwise).
 
 The `Concurrency.Sharing.outer` domain is required for cross-cluster
 ordering on multi-cluster SoCs (e.g., big.LITTLE).  RPi5 (BCM2712) is

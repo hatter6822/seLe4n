@@ -76,7 +76,7 @@ Once the workstream closes:
   (false-positive structural witnesses) are WS-RC-introduced sections;
   §3.G records the DEBT-RUST-02 / H-24 reconfirmation landed at R0.4.
 
-> **WS-SM SM0.Q.2 (v0.32.0)**: the two WS-RC sub-portfolio plans
+> **WS-SM SM0.Q.2 (v0.31.3)**: the two WS-RC sub-portfolio plans
 > (`WS_RC_R4_CLOSEOUT_PLAN.md`, `WS_RC_R5_DEFERRED_COMPLETION_PLAN.md`)
 > have been **archived to `docs/dev_history/audits/`** because the
 > work they describe is complete (R4 close-out at v0.31.0; R5

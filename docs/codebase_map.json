@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/complete-sm0-foundations-gldW8",
-      "commit_sha": "072838f8027641edee0b2baf98fde1b7c727ba5e",
-      "tree_sha": "d16febb79ce70c98b3c1609f47331c53edb36147",
-      "committed_at_utc": "2026-05-15T05:38:29+00:00"
+      "commit_sha": "2515e30e50faf53b699b6078272d749f23365f7e",
+      "tree_sha": "cf209f1ee7fe79a42b981e5622797798d02970fe",
+      "committed_at_utc": "2026-05-15T06:01:47+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "21bf63c33c2dfd141038409225752d0b8d147984204d170743de053bbff182a6"
+    "source_digest": "426ae7c5d7f387872b2f09670bc3cf8c9a2b82afc66ea6d41a92f0cea49803bd"
   },
   "summary": {
     "module_count": 205,
@@ -27,7 +27,7 @@
     "version": "0.31.3",
     "lean_toolchain": "v4.28.0",
     "production_files": 175,
-    "production_loc": 115266,
+    "production_loc": 115282,
     "test_files": 30,
     "test_loc": 21590,
     "proved_theorem_lemma_decls": 3352,
@@ -13451,13 +13451,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Concurrency",
-          "line": 47,
+          "line": 56,
           "called": []
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:58>",
-          "line": 58,
+          "name": "<anonymous:example:67>",
+          "line": 67,
           "called": [
             "ArchAssumption",
             "archAssumptionConsumer_distinct_6",
@@ -13482,7 +13482,7 @@
         {
           "kind": "def",
           "name": "smpAnchorVerified",
-          "line": 98,
+          "line": 107,
           "called": []
         }
       ]
@@ -14049,19 +14049,19 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Concurrency",
-          "line": 45,
+          "line": 52,
           "called": []
         },
         {
           "kind": "def",
           "name": "numCores",
-          "line": 61,
+          "line": 68,
           "called": []
         },
         {
           "kind": "abbrev",
           "name": "CoreId",
-          "line": 70,
+          "line": 77,
           "called": [
             "numCores"
           ]
@@ -14069,7 +14069,7 @@
         {
           "kind": "theorem",
           "name": "numCores_pos",
-          "line": 75,
+          "line": 82,
           "called": [
             "numCores"
           ]
@@ -14077,7 +14077,7 @@
         {
           "kind": "def",
           "name": "bootCoreId",
-          "line": 82,
+          "line": 89,
           "called": [
             "CoreId",
             "numCores_pos"
@@ -14086,7 +14086,7 @@
         {
           "kind": "def",
           "name": "allCores",
-          "line": 90,
+          "line": 97,
           "called": [
             "CoreId",
             "numCores"
@@ -14095,7 +14095,7 @@
         {
           "kind": "theorem",
           "name": "allCores_length",
-          "line": 94,
+          "line": 101,
           "called": [
             "allCores",
             "length",
@@ -14105,7 +14105,7 @@
         {
           "kind": "theorem",
           "name": "allCores_nodup",
-          "line": 101,
+          "line": 108,
           "called": [
             "allCores",
             "numCores"
@@ -14114,7 +14114,7 @@
         {
           "kind": "theorem",
           "name": "bootCoreId_valid",
-          "line": 107,
+          "line": 114,
           "called": [
             "numCores"
           ]
@@ -14122,13 +14122,13 @@
         {
           "kind": "theorem",
           "name": "bootCoreId_val_zero",
-          "line": 114,
+          "line": 121,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "allCores_nonempty",
-          "line": 119,
+          "line": 126,
           "called": [
             "allCores",
             "allCores_length",
@@ -14139,13 +14139,13 @@
         {
           "kind": "inductive",
           "name": "SharingDomain",
-          "line": 142,
+          "line": 149,
           "called": []
         },
         {
           "kind": "def",
           "name": "dsbForSharing",
-          "line": 150,
+          "line": 157,
           "called": [
             "BarrierKind",
             "SharingDomain"
@@ -14154,7 +14154,7 @@
         {
           "kind": "def",
           "name": "dsbStForSharing",
-          "line": 158,
+          "line": 165,
           "called": [
             "BarrierKind",
             "SharingDomain"
@@ -14163,7 +14163,7 @@
         {
           "kind": "theorem",
           "name": "dsbForSharing_inner",
-          "line": 165,
+          "line": 172,
           "called": [
             "dsbForSharing"
           ]
@@ -14171,7 +14171,7 @@
         {
           "kind": "theorem",
           "name": "dsbForSharing_outer",
-          "line": 169,
+          "line": 176,
           "called": [
             "dsbForSharing"
           ]
@@ -14179,7 +14179,7 @@
         {
           "kind": "theorem",
           "name": "dsbStForSharing_inner",
-          "line": 172,
+          "line": 179,
           "called": [
             "dsbStForSharing"
           ]
@@ -14187,7 +14187,7 @@
         {
           "kind": "theorem",
           "name": "dsbStForSharing_outer",
-          "line": 175,
+          "line": 182,
           "called": [
             "dsbStForSharing"
           ]
@@ -14195,7 +14195,7 @@
         {
           "kind": "theorem",
           "name": "dsbForSharing_injective",
-          "line": 179,
+          "line": 186,
           "called": [
             "SharingDomain",
             "dsbForSharing"
@@ -14204,7 +14204,7 @@
         {
           "kind": "theorem",
           "name": "dsbStForSharing_injective",
-          "line": 185,
+          "line": 192,
           "called": [
             "SharingDomain",
             "dsbStForSharing"

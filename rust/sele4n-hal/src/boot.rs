@@ -71,21 +71,26 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
     }
     crate::kprintln!("[boot] Timer initialized (54 MHz counter, 1ms ticks)");
 
-    // Enable IRQ delivery now that GIC and timer are configured
-    crate::interrupts::enable_irq();
-    crate::kprintln!("[boot] IRQ delivery enabled");
-
     // -----------------------------------------------------------------------
     // WS-SM SM0.N: set TPIDR_EL1 on the boot core (closes SMP-M4 for
     // the boot path).  Secondaries set their own TPIDR_EL1 in
     // `boot.S::secondary_entry` before calling `rust_secondary_main`;
-    // the boot core does it here, in the same place it sets VBAR_EL1.
+    // the boot core does it here, **before** enabling IRQ delivery so
+    // that any future IRQ handler that consumes TPIDR_EL1 sees a
+    // defined value rather than the architectural UNKNOWN state.
     //
     // Boot core's `PerCpuData` slot is `PER_CPU_DATA[0]` per the
     // PSCI context_id convention (0 = boot core, 1..3 = secondaries).
     // After this point, every core — boot and secondary — can
     // dispatch through `mrs xN, tpidr_el1` to find its own per-core
     // state without a context_id parameter.
+    //
+    // Audit note: an earlier draft of this hook ran *after*
+    // `enable_irq()`.  Today's IRQ handlers never read TPIDR_EL1, so
+    // that ordering was functionally safe, but it was fragile against
+    // future per-core handler additions (e.g., SM5's per-core timer
+    // tick).  Moving the write here makes the discipline robust by
+    // construction.
     // -----------------------------------------------------------------------
     #[cfg(target_arch = "aarch64")]
     {
@@ -94,6 +99,11 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
         crate::barriers::isb();
         crate::kprintln!("[boot] TPIDR_EL1 set to PER_CPU_DATA[0] = {:#x}", boot_per_cpu);
     }
+
+    // Enable IRQ delivery now that GIC, timer, and per-core base
+    // register (TPIDR_EL1) are configured.
+    crate::interrupts::enable_irq();
+    crate::kprintln!("[boot] IRQ delivery enabled");
 
     // -----------------------------------------------------------------------
     // Phase 4: Handoff summary

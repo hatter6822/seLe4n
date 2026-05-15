@@ -59,19 +59,31 @@ use crate::psci::{cpu_on, PsciResult};
 pub const MAX_SECONDARY_CORES: usize = 3;
 
 /// **WS-SM SM0.O** (closes SMP-L2): compile-time pin of the Rust
-/// `MAX_SECONDARY_CORES` constant against the Lean
-/// `Platform.RPi5.PlatformBinding.coreCount` value (`4`).
+/// `MAX_SECONDARY_CORES` constant to the literal `4`.
 ///
 /// `MAX_SECONDARY_CORES + 1` (boot core + N-1 secondaries) must equal
-/// the total core count exposed by the production platform binding.
-/// If a future PR bumps the Lean `coreCount` (for example, to support a
-/// hypothetical 8-core RPi6) without bumping this Rust constant, the
-/// assertion below fails to elaborate at build time, producing a
-/// compiler error that points the contributor straight at the drift.
+/// `4` — the total core count of the production RPi5 BCM2712 binding.
+/// If a future PR bumps `MAX_SECONDARY_CORES` past 3, the assertion
+/// below fails to elaborate at build time, producing a compiler
+/// error that points the contributor at the drift.
+///
+/// **Note on cross-language pinning**: Rust has no direct visibility
+/// into the Lean `PlatformBinding.coreCount` typeclass field at build
+/// time.  The Lean side has its own pinning theorem
+/// (`SeLe4n.Platform.RPi5.numCores_eq_rpi5_coreCount`) that asserts
+/// `Concurrency.numCores = PlatformBinding.coreCount RPi5Platform`,
+/// both equal to the literal `4`.  Cross-language consistency between
+/// Rust `MAX_SECONDARY_CORES + 1` and Lean `numCores` is therefore
+/// enforced by *both* sides asserting the same literal `4`; a future
+/// multi-platform port that changes the value must bump both
+/// constants in the same PR.  Each side's assertion catches drift
+/// within its own language; the literals together pin the two sides
+/// to each other by symbol-name identity.
 const _: () = assert!(
     MAX_SECONDARY_CORES + 1 == 4,
-    "WS-SM SM0.O: MAX_SECONDARY_CORES + 1 must equal \
-     PlatformBinding.coreCount (RPi5 = 4)"
+    "WS-SM SM0.O: MAX_SECONDARY_CORES + 1 must equal 4 (the RPi5 \
+     BCM2712 core count, pinned on the Lean side via \
+     numCores_eq_rpi5_coreCount)"
 );
 
 /// AN9-J: runtime SMP-enable flag.  At v1.0.0 the default is `false`
@@ -172,25 +184,46 @@ pub static PER_CPU_DATA: [PerCpuData; MAX_SECONDARY_CORES + 1] = [
 /// **WS-SM SM0.N**: structurally pinned size of `PerCpuData`.
 ///
 /// The `secondary_entry` assembly in `boot.S` computes a core's
-/// per-CPU slot address as `PER_CPU_DATA + context_id * 64` —
-/// the literal `64` is hard-coded into the asm because the
-/// `madd` instruction takes an immediate stride, not a symbol.
-/// This Rust-side compile-time assertion locks the Rust struct
-/// size to that literal, so any future PR that grows `PerCpuData`
-/// past 64 bytes (or shrinks it below 64) fails the build before
-/// the asm can compute a wrong address at runtime.
+/// per-CPU slot address as `PER_CPU_DATA + context_id *
+/// PER_CPU_DATA_SLOT_SIZE`.  Rather than hard-coding the stride
+/// as an immediate literal in the asm (which would silently
+/// drift if the Rust struct grew), the asm reads this constant
+/// from `.rodata` via an `adrp`+`ldr` pair against the
+/// `PER_CPU_DATA_SLOT_SIZE_SYM` symbol — the same pattern AN8-B
+/// uses for `MPIDR_CORE_ID_MASK_SYM`.  This makes the Rust
+/// constant the single source of truth.
 ///
-/// To grow the struct beyond 64 bytes safely, the contributor must
-/// in the same PR: (a) update this `PER_CPU_DATA_SLOT_SIZE`
-/// constant, (b) update the literal `#64` in
-/// `boot.S::secondary_entry`, and (c) re-run the
-/// `sm0n_per_cpu_slot_addr_stride_matches_struct_size` unit test.
+/// The compile-time assertions below additionally pin
+/// `size_of::<PerCpuData>()` and `align_of::<PerCpuData>()` to
+/// this value so a future PR that grows the struct without
+/// updating the constant fails the build at elaboration.
 pub const PER_CPU_DATA_SLOT_SIZE: usize = 64;
+
+/// **WS-SM SM0.N**: linkable symbol exposing
+/// [`PER_CPU_DATA_SLOT_SIZE`] for the `boot.S::secondary_entry`
+/// asm.  The asm reads this 64-bit value via
+/// `adrp + ldr [..., :lo12:PER_CPU_DATA_SLOT_SIZE_SYM]` and
+/// uses it as the `madd` multiplier when computing per-core
+/// slot addresses.
+///
+/// Using a `.rodata` symbol (instead of an asm-side immediate)
+/// gives a single source of truth: the build is structurally
+/// inconsistent if the Rust constant and the asm-observed value
+/// ever diverge, because there is no asm-observed value
+/// independent of the symbol.
+///
+/// `#[no_mangle]` preserves the symbol name; `#[used]` prevents
+/// the linker from dropping it; `pub static` (without `mut`) is
+/// the standard Rust idiom for read-only data.
+#[no_mangle]
+#[used]
+pub static PER_CPU_DATA_SLOT_SIZE_SYM: u64 = PER_CPU_DATA_SLOT_SIZE as u64;
 
 const _: () = assert!(
     core::mem::size_of::<PerCpuData>() == PER_CPU_DATA_SLOT_SIZE,
     "WS-SM SM0.N: size_of::<PerCpuData>() must equal PER_CPU_DATA_SLOT_SIZE; \
-     update boot.S::secondary_entry's `mov x5, #64` literal in the same PR"
+     boot.S::secondary_entry reads PER_CPU_DATA_SLOT_SIZE_SYM at runtime, so \
+     bumping the struct requires bumping PER_CPU_DATA_SLOT_SIZE in lockstep"
 );
 
 const _: () = assert!(
@@ -446,9 +479,11 @@ mod tests {
         assert_eq!(online, MAX_SECONDARY_CORES as u32);
         assert_eq!(count.load(Ordering::Acquire),
                    MAX_SECONDARY_CORES as u32);
-        // Each secondary's ready flag should now be true.
-        for idx in 1..=MAX_SECONDARY_CORES {
-            assert!(ready[idx].load(Ordering::Acquire),
+        // Each secondary's ready flag should now be true.  Iterate
+        // via `enumerate().skip(1)` rather than range-indexing so
+        // clippy's `needless_range_loop` lint stays clean.
+        for (idx, slot) in ready.iter().enumerate().skip(1) {
+            assert!(slot.load(Ordering::Acquire),
                 "core_ready[{}] must be true after successful bring-up", idx);
         }
     }
@@ -635,17 +670,38 @@ mod tests {
     #[test]
     fn sm0n_per_cpu_data_slot_size_matches_asm_literal() {
         // WS-SM SM0.N: the `PER_CPU_DATA_SLOT_SIZE` Rust constant is
-        // the single source of truth pinning the Rust struct size to
-        // the literal `#64` in boot.S::secondary_entry.  The
-        // compile-time assertion (in the parent module) already
-        // catches a struct-size drift at build time; this runtime
-        // assertion is a redundant double-check that the constant is
-        // observable from external test code and equals 64.
+        // the single source of truth for the slot stride the
+        // `secondary_entry` asm uses.  The asm reads it from the
+        // `.rodata` symbol `PER_CPU_DATA_SLOT_SIZE_SYM`, so the
+        // build is structurally inconsistent if Rust and asm
+        // disagree on the value.  Compile-time assertions (in the
+        // parent module) additionally pin `size_of::<PerCpuData>()`
+        // and `align_of::<PerCpuData>()` to the constant.  This
+        // runtime assertion is the external-observability check.
         use core::mem::size_of;
         assert_eq!(PER_CPU_DATA_SLOT_SIZE, 64,
-            "PER_CPU_DATA_SLOT_SIZE must equal the literal #64 in boot.S");
+            "PER_CPU_DATA_SLOT_SIZE must equal 64 (the SM0 cache-line stride)");
         assert_eq!(size_of::<PerCpuData>(), PER_CPU_DATA_SLOT_SIZE,
             "size_of::<PerCpuData>() must equal PER_CPU_DATA_SLOT_SIZE");
+    }
+
+    #[test]
+    fn sm0n_per_cpu_data_slot_size_sym_observable() {
+        // WS-SM SM0.N: the `PER_CPU_DATA_SLOT_SIZE_SYM` linkable
+        // symbol used by `boot.S::secondary_entry` for the `madd`
+        // stride must be observable from Rust at the value
+        // `PER_CPU_DATA_SLOT_SIZE`.  A future PR that drops the
+        // `#[used]` attribute (causing the linker to discard the
+        // symbol) would break this test before the asm could fault
+        // at runtime.
+        assert_eq!(PER_CPU_DATA_SLOT_SIZE_SYM, PER_CPU_DATA_SLOT_SIZE as u64,
+            "PER_CPU_DATA_SLOT_SIZE_SYM (consumed by boot.S) must equal \
+             PER_CPU_DATA_SLOT_SIZE (the Rust source of truth)");
+        // Also verify the symbol's address is non-null (linker
+        // placement check).
+        let sym_addr = &PER_CPU_DATA_SLOT_SIZE_SYM as *const u64 as usize;
+        assert!(sym_addr != 0,
+            "PER_CPU_DATA_SLOT_SIZE_SYM must have a valid linker-assigned address");
     }
 
     #[test]

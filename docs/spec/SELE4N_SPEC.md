@@ -536,7 +536,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      [`SMP_INFORMATION_FLOW_PLAN.md`](../planning/SMP_INFORMATION_FLOW_PLAN.md)
    WS-SM Phase SM0 (foundations & honesty patches) closes the type-level
    scaffolding (CoreId, LockKind, LockId, SgiKind, SharingDomain,
-   BklState) at v0.32.x; SM1..SM9 wire those types into runtime state.
+   BklState) at v0.31.3; SM1..SM9 wire those types into runtime state.
 
 3. **Sequential memory model**: Under single-core operation, all memory
    operations are sequentially ordered. DMB/DSB/ISB barriers are emitted in the

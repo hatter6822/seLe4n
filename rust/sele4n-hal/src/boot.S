@@ -201,24 +201,26 @@ secondary_entry:
     // is PER_CPU_DATA[0] = boot core, PER_CPU_DATA[1..3] = secondaries.
     // x0 already holds context_id from the PSCI calling convention.
     //
-    // sizeof(PerCpuData) is determined by the Rust struct layout
-    // (`#[repr(C, align(64))]` with an [u64; 8] field = 64 bytes).
-    // Encoded as a literal here — the Rust constant
-    // `PER_CPU_DATA_SLOT_SIZE` (smp.rs) is structurally pinned to
-    // this value via a compile-time `const _: () = assert!(...)`,
-    // and the SM0.N tests
-    // `sm0n_per_cpu_slot_addr_stride_matches_struct_size` plus
-    // `sm0n_per_cpu_data_slot_size_matches_asm_literal` catch
-    // drift at unit-test time.
+    // The slot stride is the Rust constant `PER_CPU_DATA_SLOT_SIZE`
+    // (smp.rs).  Rather than hard-code the literal here (which would
+    // silently drift if the Rust struct grew without updating the
+    // asm), the slot stride is read from the `.rodata` symbol
+    // `PER_CPU_DATA_SLOT_SIZE_SYM` via the same `adrp`+`ldr` pattern
+    // AN8-B uses for `MPIDR_CORE_ID_MASK_SYM`.  This makes the Rust
+    // constant the single source of truth — any inconsistency between
+    // the struct size and the asm-observed stride is structurally
+    // impossible because there is no asm-observed stride independent
+    // of the symbol.
     //
     // x4 = address of PER_CPU_DATA[0]
-    // x5 = sizeof(PerCpuData) = 64
-    // x6 = TPIDR_EL1 = PER_CPU_DATA + context_id * 64
+    // x5 = PER_CPU_DATA_SLOT_SIZE = sizeof(PerCpuData)
+    // x6 = TPIDR_EL1 = PER_CPU_DATA + context_id * PER_CPU_DATA_SLOT_SIZE
     // =====================================================================
     adrp    x4, PER_CPU_DATA
     add     x4, x4, :lo12:PER_CPU_DATA
-    mov     x5, #64                  // sizeof(PerCpuData)
-    madd    x6, x0, x5, x4           // x6 = x0 * 64 + x4
+    adrp    x5, PER_CPU_DATA_SLOT_SIZE_SYM
+    ldr     x5, [x5, :lo12:PER_CPU_DATA_SLOT_SIZE_SYM]
+    madd    x6, x0, x5, x4           // x6 = x0 * stride + x4
     msr     tpidr_el1, x6
 
     // Step 3: jump to Rust per-core init with the original context_id.

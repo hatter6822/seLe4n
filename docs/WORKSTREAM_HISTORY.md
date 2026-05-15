@@ -55,7 +55,7 @@ Sub-portfolio close-out plans archived to
 [`docs/dev_history/audits/`](dev_history/audits/) per WS-SM SM0.Q.2.
 
 **Release path (WS-SM):**
-- `v0.32.x` (this WS-SM SM0 cut at v0.31.3) — Foundations & honesty patches.
+- `v0.31.3` (this WS-SM SM0 cut) — Foundations & honesty patches.
   Single-core boot path unchanged; type-level scaffolding for
   SM1..SM9 in place.
 - `v0.33.x` (planned) — SM1 (Rust HAL) + SM2 (verified locks).
