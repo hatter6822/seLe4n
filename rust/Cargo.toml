@@ -5,6 +5,7 @@ members = [
     "sele4n-abi",
     "sele4n-sys",
     "sele4n-hal",
+    "sele4n-host",
 ]
 
 [workspace.package]

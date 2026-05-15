@@ -1,0 +1,19 @@
+[package]
+name = "sele4n-host"
+description = "Host-side runtime for the seLe4n verified microkernel — std, zero unsafe"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# WS-RH RH-H: this crate is the host-side runtime — std, zero unsafe.
+# It is the first `std`-opting workspace member.  It is NOT linked into
+# the kernel binary and does NOT participate in the kernel TCB.  See
+# `docs/planning/rust_host_runtime_plan.md` §2.2 for the workspace
+# partition rationale.
+[features]
+default = []
+
+[dependencies]
+sele4n-types = { path = "../sele4n-types", features = ["std"] }
+sele4n-abi   = { path = "../sele4n-abi",   features = ["std"] }

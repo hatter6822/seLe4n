@@ -2188,6 +2188,18 @@ crate (e.g., the deprecated `mmio` crate or the newer `safe-mmio`). This
 keeps the trusted computing base minimal and under unified GPLv3+
 governance.
 
+The `rust/` workspace also contains a fifth crate — `sele4n-host`
+(added at WS-RH Phase RH-H, v0.31.4) — which is a host-side runtime
+for off-target testing and ABI cross-validation.  `sele4n-host` is
+**`std`**-opting and is the only workspace member that opts into
+`std`.  It is **not** part of the runtime TCB: the kernel binary is
+linked from `sele4n-hal`, which has zero transitive dependency on
+`sele4n-host`.  Cargo's path-based dependency graph statically
+enforces this partition; the host crate has zero reverse
+dependencies inside the workspace.  See
+[`docs/planning/rust_host_runtime_plan.md`](../planning/rust_host_runtime_plan.md)
+§2.2 for the partition rationale and §2.6 risk register.
+
 ### 12.2 Build-time dependencies
 
 A small number of external crates are required at **build time only** to

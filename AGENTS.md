@@ -560,6 +560,59 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
+- **WS-RH Rust Host Runtime workstream IN FLIGHT (v0.31.4 → v0.32.x,
+  branch `claude/workspace-ci-harness-3C7fK`)**:
+  Adds a host-side Rust runtime crate (`sele4n-host`) to the `rust/`
+  workspace as the foundation for off-target ABI cross-validation,
+  declarative fixture construction, and structured trace replay.  The
+  host runtime is `std`-opting and is **not** part of the kernel TCB;
+  Cargo's path-based dependency graph statically enforces the
+  partition (the kernel-side `sele4n-hal` has zero transitive
+  dependency on `sele4n-host`).
+
+  **Plan**: [`docs/planning/rust_host_runtime_plan.md`](docs/planning/rust_host_runtime_plan.md).
+  Decomposed into 8 phases: RH-H (foundation), RH-A..RH-G (behaviour).
+  WS-RH is **post-v1.0** — it does not block the WS-SM SM1..SM9 cadence.
+
+  **WS-RH RH-H LANDED on branch `claude/workspace-ci-harness-3C7fK`**
+  (v0.31.4, workspace + CI harness foundation): 10 atomic sub-tasks
+  (RH-H.1..RH-H.10) land as one cut.  RH-H.1: workspace member
+  appended to `rust/Cargo.toml` (now 5 members).  RH-H.2: crate
+  `Cargo.toml` declares path deps on `sele4n-types` + `sele4n-abi`
+  with `"std"` feature enabled; no third-party runtime deps.
+  RH-H.3: `lib.rs` crate root with `#![deny(unsafe_code)]`,
+  `#![deny(missing_docs)]`, `#![deny(rust_2018_idioms)]`, module
+  declarations, canonical re-exports.  RH-H.4: `runtime` module —
+  `HostRuntime` + `new` (const) + `version` + `workspace_version_pinned`
+  (const) + `is_fresh` + `Default`; workspace version pinning catches
+  lakefile / Cargo.toml drift at every `cargo test` run.  RH-H.5:
+  `dispatch` module — `DispatchOutcome` enum (`Ok` / `KernelError` /
+  `DispatcherInternal`) + `DispatcherInternalError` enum + the
+  `ERROR_FLAG_MASK` / `ERROR_DISCRIMINANT_MASK` / `SUCCESS_PAYLOAD_MASK`
+  constants matching `SeLe4n.Platform.FFI.encodeError`/`encodeOk`;
+  `decode` is a total `const fn` that sweeps the unknown-discriminant
+  gap (53..=254) to `KernelError::UnknownKernelError`.  RH-H.6:
+  `state` module — `HostState` placeholder + `HostStateError` enum
+  with `identifier`, `Display`, and `std::error::Error` impls.
+  RH-H.7: `fixture` module — `FixtureBuilder` (fluent) +
+  `FixtureSnapshot` (`[u64; 8]` per `arm64DefaultLayout`) +
+  `REGISTER_COUNT` + `REG_X0..REG_X7` constants.  RH-H.8:
+  `tests/scaffold.rs` — 20 integration tests covering every public
+  item including a sweep of every known `KernelError` discriminant
+  (0..=52), the unknown-discriminant gap (53..=254 → sentinel), and
+  the documented one-way round-trip from `DispatcherInternal` →
+  encoded `u64` → `KernelError`.  RH-H.9: `scripts/test_rust.sh`
+  grows from 3 to 4 steps; new step 4 pins the host integration
+  coverage so a filtered CI lane cannot drop it.  RH-H.10:
+  documentation synchronised across README/spec/CLAIM_EVIDENCE_INDEX/
+  WORKSTREAM_HISTORY/CHANGELOG/CLAUDE.md/AGENTS.md.
+
+  Test count: 67 new test cases (46 unit + 20 integration + 1
+  doc-test).  Workspace `cargo test --workspace` total grows from
+  ~409 to ~476.  Zero `unsafe`, zero new third-party deps, zero
+  clippy warnings under `-D warnings`, kernel TCB byte-identical
+  pre- and post-RH-H.
+
 - **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 → v0.31.3 → v0.32.x → v1.0.0,
   branch `claude/complete-sm0-foundations-gldW8`)**:
   Unified workstream merging WS-RC's remaining R6..R14 phases with the

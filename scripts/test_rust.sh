@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 # test_rust.sh — Rust syscall wrapper build + test + conformance
 #
-# Q8-D: Validates that all three sele4n Rust crates build and pass tests.
+# Q8-D: Validates that all sele4n Rust crates build and pass tests.
 # Integrated into test_smoke.sh as a Tier 2 gate.
 #
 # R8-C (I-M03): Explicit skip warnings + proper error propagation from cargo.
+#
+# WS-RH RH-H: Extended to cover the host-runtime crate (sele4n-host).
+# The workspace test step (--all) already discovers the new crate;
+# the explicit scaffold-suite step below pins coverage so a future
+# CI lane that filters the workspace cannot accidentally drop the
+# host-runtime integration tests.
 
 set -euo pipefail
 
@@ -62,16 +68,24 @@ run_cargo_step() {
     fi
 }
 
-echo "[1/3] Building all crates (host target)..."
+echo "[1/4] Building all crates (host target)..."
 run_cargo_step "Build succeeded" cargo build --all
 echo ""
 
-echo "[2/3] Running unit tests..."
+echo "[2/4] Running unit tests..."
 run_cargo_step "Unit tests passed" cargo test --all --features std
 echo ""
 
-echo "[3/3] Running conformance tests (RUST-XVAL-001..014)..."
+echo "[3/4] Running conformance tests (RUST-XVAL-001..014)..."
 run_cargo_step "Conformance tests passed" cargo test -p sele4n-abi --features std --test conformance
+echo ""
+
+# WS-RH RH-H: explicit coverage of the host-runtime scaffold integration
+# tests.  The workspace --all of step 2 already runs them, but pinning
+# the package + test name catches the regression where a future CI
+# lane filters the workspace and silently drops host-runtime coverage.
+echo "[4/4] Running host-runtime scaffold integration tests (WS-RH RH-H)..."
+run_cargo_step "Host-runtime scaffold tests passed" cargo test -p sele4n-host --test scaffold
 echo ""
 
 echo "=== All Rust tests passed ==="

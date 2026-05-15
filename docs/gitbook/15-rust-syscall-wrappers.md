@@ -17,6 +17,11 @@ User-space crates:
 
 Kernel-side crate:
   sele4n-hal           (ARM64 HAL — boot, MMU, UART, trap, vectors)
+
+Host-side crate (WS-RH RH-H, v0.31.4):
+  sele4n-host          (host-side runtime — std, zero unsafe, never in TCB)
+    └── sele4n-abi     (path dep with std feature)
+          └── sele4n-types  (path dep with std feature)
 ```
 
 ### sele4n-types
@@ -152,9 +157,32 @@ Assembly files: `boot.S` (entry point), `vectors.S` (exception vector table),
 All AArch64-specific code gated behind `cfg(target_arch = "aarch64")` for
 cross-platform compilation and testing on x86_64.
 
+### sele4n-host (WS-RH RH-H, v0.31.4)
+
+Host-side runtime (`std`-opting, `#![deny(unsafe_code)]`).  Unlike the
+four kernel-side / guest-side crates, the host runtime is built and
+executed on the developer workstation; it is **not** part of the
+kernel binary and **not** part of the kernel TCB.  Cargo's path-based
+dependency graph statically enforces the partition (the kernel-side
+`sele4n-hal` has zero transitive dependency on `sele4n-host`).
+
+| Module | Purpose | Key Items |
+|--------|---------|-----------|
+| `runtime` | Entry point + workspace version pinning | `HostRuntime::new` (const), `version`, `workspace_version_pinned` (const), `is_fresh`, `Default` |
+| `dispatch` | Bit-63-flagged `UInt64` outcome decoding | `DispatchOutcome` (`Ok` / `KernelError` / `DispatcherInternal`), `DispatcherInternalError`, `decode` / `encode` (const fns), `ERROR_FLAG_MASK` / `ERROR_DISCRIMINANT_MASK` / `SUCCESS_PAYLOAD_MASK` constants |
+| `state` | Host-side state placeholder | `HostState::empty` (const), `is_empty` (const), `HostStateError` (`Uninitialised` / `BoundedCapacity` / `InvalidFixture`) with `identifier`, `Display`, `std::error::Error` impls |
+| `fixture` | Register-file fixture builder | `FixtureBuilder` (fluent: `with_syscall_id` / `with_message_info` / `with_cap_addr` / `with_msg_reg` / `with_ipc_buffer_addr`), `FixtureSnapshot` (`[u64; 8]` per `arm64DefaultLayout`), `REGISTER_COUNT = 8` + `REG_X0..REG_X7` index constants |
+
+Plan: [`docs/planning/rust_host_runtime_plan.md`](../planning/rust_host_runtime_plan.md).
+WS-RH RH-H is the foundation phase that scaffolds the crate; later
+WS-RH phases (RH-A..RH-G) extend each module with real fixture
+construction, structured trace replay, and cross-validation
+against the verified Lean kernel.
+
 ## Canonical Sources
 
 - Master plan: `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (Q8)
+- WS-RH plan: [`docs/planning/rust_host_runtime_plan.md`](../planning/rust_host_runtime_plan.md)
 - Lean ABI: `SeLe4n/Kernel/Architecture/RegisterDecode.lean`
 - Lean args: `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean`
-- Rust source: `rust/sele4n-types/`, `rust/sele4n-abi/`, `rust/sele4n-sys/`, `rust/sele4n-hal/`
+- Rust source: `rust/sele4n-types/`, `rust/sele4n-abi/`, `rust/sele4n-sys/`, `rust/sele4n-hal/`, `rust/sele4n-host/`

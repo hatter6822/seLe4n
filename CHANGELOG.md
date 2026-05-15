@@ -1,3 +1,175 @@
+## v0.31.4 (unreleased) — WS-RH Phase RH-H (Rust host runtime workspace + CI harness)
+
+Phase RH-H of the WS-RH (Rust Host Runtime) workstream lands as a
+single coherent cut.  Adds `sele4n-host`, a host-side Rust runtime
+crate, to the `rust/` workspace as the foundation for the WS-RH
+portfolio.  Scaffolds four modules (`runtime`, `dispatch`, `state`,
+`fixture`) with documented public APIs, an integration test suite
+covering every public item, and CI hooks that exercise the new crate
+on every PR.  No runtime behavioural change to the kernel — the new
+crate is host-side, never linked into the kernel binary, never part
+of the kernel TCB.  See
+[`docs/planning/rust_host_runtime_plan.md`](docs/planning/rust_host_runtime_plan.md)
+for the full plan; the foundation phase is decomposed into ten
+sub-tasks (RH-H.1..RH-H.10) all landed together at this cut.
+
+### Added — `sele4n-host` workspace member
+
+`rust/Cargo.toml` (edited, members list):
+- New workspace member `"sele4n-host"` appended after the existing
+  four members.  Workspace `[profile.dev|release]` `panic = "abort"`
+  setting applies automatically.
+
+`rust/sele4n-host/Cargo.toml` (NEW):
+- `package.name = "sele4n-host"`; description, version, edition,
+  license, repository all inherited from `[workspace.package]`.
+- Path deps on `sele4n-types` and `sele4n-abi`, both with the
+  `"std"` feature enabled (this is the first workspace member that
+  opts into `std`).
+- No third-party runtime dependencies — preserves the kernel TCB
+  supply-chain invariant.
+
+`rust/sele4n-host/src/lib.rs` (NEW, ~95 lines):
+- SPDX header, crate-level docstring distinguishing the host-side
+  runtime from `sele4n-sys` (guest-side syscall facade) and the
+  kernel-side `sele4n-hal`.
+- `#![deny(unsafe_code)]`, `#![deny(missing_docs)]`,
+  `#![deny(rust_2018_idioms)]`.
+- Module declarations + canonical `pub use` re-exports for
+  `HostRuntime`, `DispatchOutcome`, `DispatcherInternalError`,
+  `HostState`, `HostStateError`, `FixtureBuilder`,
+  `FixtureSnapshot`.
+- Doc-test exercising the full public surface end-to-end.
+
+`rust/sele4n-host/src/runtime.rs` (NEW, ~110 lines):
+- `HostRuntime` struct + `new` (const), `version`,
+  `workspace_version_pinned` (const), `is_fresh`, `Default`.
+- Pins the workspace `CARGO_PKG_VERSION` (`"0.31.3"` at this cut)
+  through both dynamic and const-fn accessors; version-drift is
+  caught at every `cargo test` run.
+
+`rust/sele4n-host/src/dispatch.rs` (NEW, ~410 lines):
+- `DispatchOutcome` enum with `Ok(u64)` / `KernelError(KernelError)`
+  / `DispatcherInternal(DispatcherInternalError)` variants.
+- `DispatcherInternalError` enum with `InvalidSyscallId`,
+  `InvalidArgument`, `AbiMismatch` — mirrors
+  `sele4n-hal::svc_dispatch::DispatchError` so off-target tests can
+  construct the same shape.
+- `ERROR_FLAG_MASK`, `ERROR_DISCRIMINANT_MASK`,
+  `SUCCESS_PAYLOAD_MASK` constants matching
+  `SeLe4n.Platform.FFI.encodeError`/`encodeOk`.
+- `DispatchOutcome::decode(raw: u64) -> Self` (const fn), total +
+  infallible; sweeps unknown discriminants (53..=254) to
+  `KernelError::UnknownKernelError`.
+- `DispatchOutcome::encode(&self) -> u64` (const fn), inverse of
+  `decode` for the `Ok` and `KernelError` cases.
+- `is_ok` / `is_kernel_error` / `is_dispatcher_internal`
+  predicates.
+
+`rust/sele4n-host/src/state.rs` (NEW, ~165 lines):
+- `HostState` placeholder type + `empty` (const) + `is_empty`
+  (const) + `Default`.
+- `HostStateError` enum with `Uninitialised`, `BoundedCapacity`,
+  `InvalidFixture` variants; `identifier`, `Display`, and
+  `std::error::Error` impls.
+
+`rust/sele4n-host/src/fixture.rs` (NEW, ~325 lines):
+- `FixtureBuilder` with fluent `with_syscall_id`,
+  `with_message_info`, `with_cap_addr`, `with_msg_reg`,
+  `with_ipc_buffer_addr`, `build` (const) methods.
+- `FixtureSnapshot` newtype around `[u64; 8]`; `registers`,
+  `register`, `x0` / `x1` / `x6` / `x7` accessors;
+  `decoded_syscall_id` / `decoded_message_info` decode helpers.
+- `REGISTER_COUNT = 8` plus `REG_X0..REG_X7` index constants
+  matching `arm64DefaultLayout`.
+
+### Added — Integration test suite
+
+`rust/sele4n-host/tests/scaffold.rs` (NEW, ~290 lines):
+- 20 integration tests covering every public item in the four
+  scaffolding modules.
+- `runtime_version_matches_workspace`,
+  `runtime_const_version_matches_runtime_version`,
+  `runtime_version_is_pre_v1` — version-drift guards.
+- `dispatch_decode_success_*` (3 tests) — success-path decoding.
+- `dispatch_decode_kernel_error_sweep_known` — sweeps every known
+  `KernelError` discriminant (0..=52).
+- `dispatch_decode_kernel_error_unknown_gap` — sweeps 53..=254 to
+  the `UnknownKernelError` sentinel.
+- `dispatch_decode_dispatcher_internal_round_trip` — verifies the
+  documented one-way round-trip from `DispatcherInternal` →
+  encoded `u64` → `KernelError`.
+- `state_*` (3 tests) — empty-state predicate, distinct variants,
+  stable identifiers.
+- `fixture_*` (5 tests) — round-trip, register-count, canonical
+  index constants, IPC-buffer setter, chained setters preserved.
+- `host_runtime_*` (2 tests) — end-to-end public-API composition.
+
+Combined with the 46 in-crate unit tests (in
+`src/{runtime,dispatch,state,fixture}.rs::tests`) and the 1
+doc-test, the new crate contributes 67 new test cases.  Total Rust
+workspace test count grows from ~409 to ~476 (workspace `cargo test`).
+
+### Added — CI harness
+
+`scripts/test_rust.sh` (edited):
+- Pipeline grows from 3 to 4 steps.  New step 4 invokes
+  `cargo test -p sele4n-host --test scaffold` explicitly so a
+  future CI lane that filters the workspace cannot accidentally
+  drop host-runtime coverage.
+- File header updated to reference WS-RH RH-H.
+
+`.github/workflows/lean_action_ci.yml` (edited, documentation
+comment only):
+- The existing `test-rust` job's `cargo test --workspace` step
+  already picks up the new crate; the comment explicitly states
+  this so a future maintainer doesn't add a duplicate step.
+
+### Added — Documentation
+
+`docs/planning/rust_host_runtime_plan.md` (NEW, ~470 lines):
+- Canonical WS-RH plan with eight phases (RH-H + RH-A..RH-G), a
+  forward-look sketch for RH-A..RH-G, and a per-sub-task
+  decomposition of RH-H.
+
+`docs/CLAIM_EVIDENCE_INDEX.md` (edited):
+- New WS-RH RH-H row citing the workspace member, integration test
+  suite, CI script, and CI workflow file.
+
+`docs/WORKSTREAM_HISTORY.md` (edited):
+- New WS-RH portfolio entry with the RH-H closure detail and the
+  RH-A..RH-G forward-look.
+
+`docs/spec/SELE4N_SPEC.md` (edited):
+- Adds a sub-section describing the host-runtime placement and
+  its TCB-non-membership.
+
+`README.md` (edited):
+- "Rust crates" row updated from 4 to 5 with the host crate
+  listed and a pointer to the plan document.
+
+`CLAUDE.md` + `AGENTS.md` (edited, byte-identical mirrors):
+- Active workstream block extended with WS-RH RH-H closure note.
+
+### Hygiene
+
+- Zero new `unsafe` code (the host crate carries
+  `#![deny(unsafe_code)]`).
+- Zero new third-party runtime deps (`THIRD_PARTY_LICENSES.md`
+  unchanged).
+- `cargo clippy --workspace --all-targets -- -D warnings` clean.
+- `cargo test --workspace` passes (~476 tests total).
+- `./scripts/test_rust.sh` passes including the new step 4.
+
+### Out of scope for RH-H
+
+- Linking the host runtime into the kernel binary — host-only, by
+  design.  The kernel TCB is byte-identical pre- and post-RH-H.
+- Real syscall semantics — RH-A populates the runtime; RH-H is
+  pure scaffolding.
+- Networking, persistence, or third-party dependencies — RH-H
+  preserves the minimal-supply-chain invariant.
+
 ## v0.31.3 — WS-SM Phase SM0 closure (Foundations & honesty patches)
 
 Phase SM0 of the WS-SM (SMP multi-core completion) workstream lands as

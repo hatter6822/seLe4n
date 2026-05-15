@@ -223,6 +223,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      # WS-RH RH-H: `cargo test --workspace` discovers every workspace
+      # member, including the host-runtime crate `sele4n-host` added at
+      # the WS-RH RH-H foundation phase.  No per-crate step is needed
+      # here; the explicit per-crate integration step lives in
+      # `scripts/test_rust.sh` step 4 so a filtered CI lane that does
+      # not run this workflow still pins the host coverage.
       - name: Run Rust tests
         working-directory: rust
         run: cargo test --workspace

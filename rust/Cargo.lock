@@ -34,6 +34,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sele4n-host"
+version = "0.31.3"
+dependencies = [
+ "sele4n-abi",
+ "sele4n-types",
+]
+
+[[package]]
 name = "sele4n-sys"
 version = "0.31.3"
 dependencies = [

@@ -24,6 +24,29 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
+**WS-RH Rust Host Runtime workstream IN FLIGHT (v0.31.4 → v0.32.x).**
+Adds a host-side Rust runtime crate (`sele4n-host`) to the `rust/`
+workspace as the foundation for off-target ABI cross-validation,
+declarative fixture construction, and structured trace replay.
+Eight phases (RH-H, RH-A..RH-G).  Plan:
+[`docs/planning/rust_host_runtime_plan.md`](planning/rust_host_runtime_plan.md).
+WS-RH is **post-v1.0** — it adds developer tooling and does not
+affect the v1.0 correctness or completeness claims.  RH-H lands at
+v0.31.4 alongside (but not blocking) the WS-SM SM1..SM9 cadence.
+
+**WS-RH RH-H closure at v0.31.4 (this cut).** 10 sub-tasks
+(RH-H.1..RH-H.10) land as one cut: new workspace member
+`sele4n-host` (the first `std`-opting member), four scaffolding
+modules (`runtime`, `dispatch`, `state`, `fixture`) with documented
+public APIs, integration test suite covering every public item, CI
+harness step pinning the integration coverage, and full
+documentation synchronisation across README/spec/CLAIM_EVIDENCE_INDEX/
+WORKSTREAM_HISTORY/CHANGELOG/CLAUDE.md/AGENTS.md.  No runtime
+behavioural change to the kernel — the new crate is host-side,
+never linked into the kernel binary, never part of the kernel TCB.
+67 new test cases (46 unit + 20 integration + 1 doc-test); zero
+`unsafe`, zero new third-party deps.
+
 **WS-SM SM0 closure at v0.31.3 (this cut).** 21 sub-tasks across 6
 categories landed as one cut: foundational types
 (`Concurrency.Types`/`Locks/Kind`/`Locks`/`Sgi`), AN12-B inventory
@@ -80,6 +103,113 @@ DEEP-BOOT-01) are scheduled for WS-RC R2 (v1.0.0-blocking) and
 WS-RC R3 (v1.0.0-blocking) respectively. Cleanups for TLB+cache
 composition, secondary-core bring-up / SMP and the explicit
 single-core kernel model were closed in WS-AN AN9.
+
+## WS-RH — Rust Host Runtime (v0.31.4 → v0.32.x, **IN FLIGHT**)
+
+**Plan:** [`docs/planning/rust_host_runtime_plan.md`](planning/rust_host_runtime_plan.md)
+**Phases:** 8 (RH-H, RH-A..RH-G). Foundation phase RH-H lands at v0.31.4; RH-A..RH-G are scheduled post-v1.0 alongside the WS-SM SM1..SM9 cadence.
+**Scope:** Host-side Rust runtime crate (`sele4n-host`) for off-target ABI cross-validation, declarative fixture construction, and structured trace replay. Distinct from `sele4n-sys` (guest-side `no_std` syscall facade) — the host runtime is `std`, never traps, never linked into the kernel binary.
+
+### RH-H — Workspace and CI harness (v0.31.4, **COMPLETE**)
+
+The foundation phase lands the new workspace member, four
+scaffolding modules with documented public APIs, a 20-test
+integration suite covering every public item, and CI hooks that
+exercise the new crate on every PR.  Per the workstream
+boundary, no kernel TCB inflation: the new crate is `std`-opting
+and only `sele4n-types` / `sele4n-abi` are its dependencies, both
+of which propagate the `std` feature path-isolated to the host
+consumer (the kernel-side `sele4n-hal` does NOT consume the
+host crate).
+
+- **RH-H.1 (workspace member)**: `rust/Cargo.toml` appends
+  `"sele4n-host"` to the workspace members list (now 5 members:
+  `sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`,
+  `sele4n-host`). Workspace `panic = "abort"` profile applies
+  automatically.
+- **RH-H.2 (crate Cargo.toml)**: `rust/sele4n-host/Cargo.toml`
+  declares the package, inherits workspace metadata, depends on
+  `sele4n-types` + `sele4n-abi` with the `"std"` feature
+  enabled, no third-party runtime deps.
+- **RH-H.3 (lib.rs root)**: `rust/sele4n-host/src/lib.rs` carries
+  the SPDX header, crate-level docstring distinguishing the
+  host-side runtime from `sele4n-sys` and `sele4n-hal`,
+  `#![deny(unsafe_code)]`, `#![deny(missing_docs)]`,
+  `#![deny(rust_2018_idioms)]`, module declarations, canonical
+  `pub use` re-exports.
+- **RH-H.4 (runtime module)**: `rust/sele4n-host/src/runtime.rs`
+  introduces `HostRuntime` + `new` (const), `version`,
+  `workspace_version_pinned` (const), `is_fresh`, `Default`.
+  Workspace version pinning catches lakefile / Cargo.toml
+  version drift at every `cargo test` run.
+- **RH-H.5 (dispatch module)**: `rust/sele4n-host/src/dispatch.rs`
+  introduces `DispatchOutcome` enum (`Ok` / `KernelError` /
+  `DispatcherInternal`) + `DispatcherInternalError` enum
+  (`InvalidSyscallId` / `InvalidArgument` / `AbiMismatch`) +
+  the `ERROR_FLAG_MASK` / `ERROR_DISCRIMINANT_MASK` /
+  `SUCCESS_PAYLOAD_MASK` constants matching
+  `SeLe4n.Platform.FFI.encodeError`/`encodeOk`.
+  `DispatchOutcome::decode` is a `const fn` that sweeps
+  unknown discriminants (53..=254) to
+  `KernelError::UnknownKernelError`.
+- **RH-H.6 (state module)**: `rust/sele4n-host/src/state.rs`
+  introduces `HostState` placeholder + `empty` (const) +
+  `is_empty` (const) + `HostStateError` enum
+  (`Uninitialised` / `BoundedCapacity` / `InvalidFixture`)
+  with `identifier`, `Display`, and `std::error::Error`
+  impls.
+- **RH-H.7 (fixture module)**: `rust/sele4n-host/src/fixture.rs`
+  introduces `FixtureBuilder` (fluent API:
+  `with_syscall_id` / `with_message_info` / `with_cap_addr` /
+  `with_msg_reg` / `with_ipc_buffer_addr` / `build` const) +
+  `FixtureSnapshot` newtype around `[u64; 8]` matching
+  `arm64DefaultLayout` (`REGISTER_COUNT = 8` + `REG_X0..REG_X7`
+  index constants).
+- **RH-H.8 (integration tests)**:
+  `rust/sele4n-host/tests/scaffold.rs` provides 20 integration
+  tests covering every public item.  Includes a sweep of every
+  known `KernelError` discriminant (0..=52), the
+  unknown-discriminant gap (53..=254 → sentinel), the
+  documented one-way round-trip from `DispatcherInternal` to
+  `KernelError`, and end-to-end public-API composition.
+- **RH-H.9 (CI harness)**: `scripts/test_rust.sh` grows from 3
+  to 4 steps; new step 4 invokes
+  `cargo test -p sele4n-host --test scaffold` explicitly so a
+  filtered CI lane cannot accidentally drop host-runtime
+  coverage. `.github/workflows/lean_action_ci.yml` already
+  exercises the new crate via the existing
+  `cargo test --workspace` invocation in `test-rust`; the
+  workflow grows a documentation comment noting this.
+- **RH-H.10 (documentation)**: synchronised across
+  `README.md`, `docs/spec/SELE4N_SPEC.md`,
+  `docs/CLAIM_EVIDENCE_INDEX.md`, this file,
+  `CHANGELOG.md`, `CLAUDE.md`, `AGENTS.md`.
+
+### Gate
+
+- `cargo build --workspace` clean (zero warnings).
+- `cargo test --workspace` passes; new crate contributes 67
+  test cases (46 unit + 20 integration + 1 doc-test).
+- `cargo clippy --workspace --all-targets -- -D warnings`
+  clean.
+- `./scripts/test_rust.sh` passes including the new step 4.
+- Lean Tier 0 hygiene passes (no new website-link manifest
+  entries needed; the rust crates were not previously listed
+  there and the new crate stays consistent).
+
+### Forward-look — RH-A..RH-G
+
+RH-A through RH-G are sketched at a high level in the plan
+document.  They are scheduled post-v1.0 and do not block the
+WS-SM cadence:
+
+- **RH-A** — Runtime context type + boot wiring.
+- **RH-B** — Register-file fixture + `SyscallRequest` host injection.
+- **RH-C** — `KernelError` decode path + host-side trap surface.
+- **RH-D** — IPC buffer fixtures + structured trace replay.
+- **RH-E** — Capability fixture builder + W^X regression replay.
+- **RH-F** — Cross-validation harness (Rust ↔ Lean parity).
+- **RH-G** — Documentation, GitBook chapter, closure.
 
 ## WS-RC — Pre-1.0 Audit Remediation (v0.30.11 → v0.31.0 → v1.0.0, **IN FLIGHT**)
 
