@@ -252,13 +252,39 @@ ARM DEN0022D §5 call the kernel needs:
   seven wrappers with their function ids and DEN0022D § references;
   return-code matrix cites Table 5.
 
-**Test coverage**: 30 unit tests (28 active + 2 `#[ignore]`'d for
+**Test coverage**: 40 unit tests (38 active + 2 `#[ignore]`'d for
 `system_off` / `system_reset` since they return `!` and would hang the
-test runner). All function ids pinned in three layers: compile-time
-`const _: ()` assertions, runtime `psci_function_ids_match_arm_den0022d`,
-runtime pairwise-distinctness. The `affinity_info` and
-`migrate_info_type` decoders refuse vendor-undocumented values by
-returning `None` (mapped by the caller to `PsciResult::Unknown`).
+test runner). The 8-test audit-pass addendum
+(`decode_affinity_info_result_*` and `decode_migrate_info_type_result_*`)
+covers the i32 → Result failure-path branches without an HVC trap.
+All function ids pinned in three layers: compile-time `const _: ()`
+assertions, runtime `psci_function_ids_match_arm_den0022d`, runtime
+pairwise-distinctness. The `affinity_info` and `migrate_info_type`
+decoders refuse vendor-undocumented values by returning `None`
+(mapped by the caller to `PsciResult::Unknown`).
+
+**Audit-pass refinements** applied post-initial-landing:
+
+- **HIGH-severity soundness fix**: `system_off` / `system_reset` no
+  longer use `options(..., noreturn)` on their HVC asm blocks (which
+  would be UB if firmware returns `NOT_SUPPORTED`).  Replaced with
+  `clobber_abi("C")` + an explicit `loop { spin_loop() }` post-asm
+  so `-> !` is honoured on every path.
+- **Documentation accuracy**: DEN0022D sub-section citations
+  realigned to revision D numbering throughout the module
+  (CPU_OFF §5.1.3, CPU_ON §5.1.4, AFFINITY_INFO §5.1.5,
+  MIGRATE_INFO_TYPE §5.1.7, SYSTEM_OFF §5.1.9, SYSTEM_RESET §5.1.10).
+- **Testability**: extracted pure decoders `decode_affinity_info_result`
+  and `decode_migrate_info_type_result` so the failure paths
+  (`ret < 0` and `ret > 2`) are unit-testable without an HVC trap.
+- **API**: `#[must_use]` added to `cpu_on`, `cpu_off`,
+  `psci_version` (Result-returning functions inherit `#[must_use]`
+  from `Result`).
+- **Test coverage**: `psci_result_is_success_only_for_zero` now
+  covers all 10 variants (was 4).
+- **Documentation honesty**: removed a false claim that wrappers
+  route through `PlatformBinding.psciConduit = HVC` (no such field
+  exists at v1.0.0).
 
 #### SM1.A.1 — `psci::cpu_off()`
 

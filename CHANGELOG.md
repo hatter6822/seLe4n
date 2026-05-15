@@ -68,8 +68,11 @@ Plus three new module constants for reuse:
 ### Added — PSCI test matrix (SM1.A.7 runtime layer)
 
 `rust/sele4n-hal/src/psci.rs` `#[cfg(test)] mod tests` (extended):
-30 unit tests (28 active + 2 `#[ignore]`'d for `system_off` /
-`system_reset` which return `!`).  New tests:
+40 unit tests (38 active + 2 `#[ignore]`'d for `system_off` /
+`system_reset` which return `!`).  The decoder-failure-path tests
+(`decode_affinity_info_result_*` and `decode_migrate_info_type_result_*`,
+8 tests total) were added during the audit pass — see "Audit-pass
+refinements" below.  New tests:
 
 - `psci_function_ids_match_arm_den0022d` — pins every constant to
   the literal hex value from DEN0022D §5.1.
@@ -152,11 +155,70 @@ gains a "LANDED" status block with per-sub-task summary.
 `CLAUDE.md` + `AGENTS.md` — Active workstream context block gains
 the SM1.A LANDED entry beneath the SM0 LANDED entry.
 
+### Audit-pass refinements (post-initial-landing)
+
+Deep audit of the SM1.A landing surfaced six findings (one HIGH
+soundness, two MEDIUM, three LOW), all addressed in-cut before the
+PR is reviewed:
+
+- **HIGH (soundness)**: `system_off` and `system_reset` originally
+  used `options(nostack, noreturn)` on their HVC asm blocks.  Per the
+  Rust reference, `noreturn` is undefined behaviour if the asm block
+  returns.  Per DEN0022D §5.1.9 / §5.1.10, a non-conforming firmware
+  that does not implement SYSTEM_OFF / SYSTEM_RESET returns
+  `NOT_SUPPORTED` (-1).  Combining these two facts means the
+  original code was UB on any platform where firmware returned
+  instead of powering off / resetting.  **Fix**: drop `noreturn`,
+  add `clobber_abi("C")`, and fall into an explicit
+  `loop { core::hint::spin_loop(); }` after the asm block.  The
+  function now honours `-> !` on every input — a conforming
+  firmware never reaches the loop (the HVC powers off / resets),
+  and a non-conforming firmware lands in the spin loop (the safest
+  state given the kernel is otherwise stuck).
+- **MEDIUM (documentation accuracy)**: DEN0022D sub-section
+  citations realigned to revision D numbering (CPU_OFF §5.1.3,
+  CPU_ON §5.1.4, AFFINITY_INFO §5.1.5, MIGRATE_INFO_TYPE §5.1.7,
+  SYSTEM_OFF §5.1.9, SYSTEM_RESET §5.1.10).  Earlier numbers were
+  carried over from the plan, which mixed revisions.  The function
+  IDs are stable across revisions and remain the canonical
+  identifier.
+- **MEDIUM (testability)**: extracted pure decoder functions
+  `decode_affinity_info_result(i32) -> Result<AffinityInfoState, PsciResult>`
+  and
+  `decode_migrate_info_type_result(i32) -> Result<MigrateInfoType, PsciResult>`
+  from the production wrappers.  The wrappers now read as
+  `asm! + decoder`, with the decoders unit-tested across success
+  values, negative documented codes, negative undocumented codes,
+  and out-of-range non-negative codes (8 new tests, lifting the
+  PSCI suite to 38 tests).  Pre-fix the failure paths
+  (`ret < 0` and `ret > 2`) were aarch64-only and unreachable on
+  host; post-fix they are covered by the decoder tests.
+- **LOW (API)**: `cpu_on`, `cpu_off`, and `psci_version` gain
+  `#[must_use]`.  The `Result`-returning functions (`affinity_info`,
+  `migrate_info_type`, and the new decoders) already inherit
+  `#[must_use]` from `Result`, so additional annotation is
+  redundant (and clippy's `double_must_use` lint flagged it).
+- **LOW (test coverage)**: `psci_result_is_success_only_for_zero`
+  expanded from 4 variants to all 10 (every `PsciResult` variant
+  is now individually asserted).
+- **LOW (style)**: `let ret: i32;` (without `mut`) for asm
+  `lateout` bindings — unified with the existing `psci_version`
+  style (`let raw: u32;`).  The `mut` was redundant; the asm's
+  `lateout` initialises the binding.
+- **LOW (documentation lie)**: removed a false claim in the
+  module-level docstring that wrappers route through
+  `PlatformBinding.psciConduit = HVC` — there is no such field on
+  `PlatformBinding` at v1.0.0.  Replaced with an accurate
+  description: wrappers hard-code `hvc #0` because RPi5 is the
+  only v1.0.0 hardware target.  Future conduit parameterisation
+  is tracked as a post-1.0 SM1 closure item.
+
 ### Test impact
 
-- HAL unit tests: 240 (was 215; +25 new PSCI tests, with 2 of the
-  30 PSCI tests `#[ignore]`'d).
-- Workspace unit tests: 503 total (was 478).
+- HAL unit tests: 248 (was 215 pre-SM1.A; +25 PSCI core tests
+  +8 decoder failure-path tests; 2 of the 40 PSCI tests
+  `#[ignore]`'d for `system_off` / `system_reset` `-> !`).
+- Workspace unit tests: 511 total (was 478 pre-SM1.A).
 - Clippy: 0 warnings.
 - Tier 0 (hygiene), Tier 1 (build), Tier 2 (trace + negative
   state + Rust): all pass.

@@ -33,15 +33,20 @@
 //!
 //! ## ARM DEN0022D §5.1 function map (subset wrapped by seLe4n)
 //!
+//! Section references are to ARM DEN0022D revision D (the publicly-
+//! available PSCI 1.1 specification).  Other revisions may renumber
+//! the sub-sections; the function IDs are stable across revisions and
+//! are the canonical identifiers.
+//!
 //! | DEN0022D §  | Function          | Wrapper                     | Function ID    | Return convention             |
 //! |-------------|-------------------|-----------------------------|----------------|-------------------------------|
 //! | 5.1.1       | `PSCI_VERSION`    | [`psci_version`]            | `0x8400_0000`  | u32 → [`PsciVersion`]         |
-//! | 5.1.4       | `CPU_OFF`         | [`cpu_off`]                 | `0x8400_0002`  | i32 → [`PsciResult`] (no ret on success) |
-//! | 5.1.6       | `CPU_ON`          | [`cpu_on`]                  | `0xC400_0003`  | i32 → [`PsciResult`]          |
-//! | 5.1.7       | `AFFINITY_INFO`   | [`affinity_info`]           | `0xC400_0004`  | i32 → `Result<AffinityInfoState, PsciResult>` |
-//! | 5.1.8       | `MIGRATE_INFO_TYPE` | [`migrate_info_type`]     | `0x8400_0006`  | i32 → `Result<MigrateInfoType, PsciResult>` |
-//! | 5.1.10      | `SYSTEM_OFF`      | [`system_off`]              | `0x8400_0008`  | never returns                 |
-//! | 5.1.11      | `SYSTEM_RESET`    | [`system_reset`]            | `0x8400_0009`  | never returns                 |
+//! | 5.1.3       | `CPU_OFF`         | [`cpu_off`]                 | `0x8400_0002`  | i32 → [`PsciResult`] (no ret on success) |
+//! | 5.1.4       | `CPU_ON`          | [`cpu_on`]                  | `0xC400_0003`  | i32 → [`PsciResult`]          |
+//! | 5.1.5       | `AFFINITY_INFO`   | [`affinity_info`]           | `0xC400_0004`  | i32 → `Result<AffinityInfoState, PsciResult>` |
+//! | 5.1.7       | `MIGRATE_INFO_TYPE` | [`migrate_info_type`]     | `0x8400_0006`  | i32 → `Result<MigrateInfoType, PsciResult>` |
+//! | 5.1.9       | `SYSTEM_OFF`      | [`system_off`]              | `0x8400_0008`  | never returns                 |
+//! | 5.1.10      | `SYSTEM_RESET`    | [`system_reset`]            | `0x8400_0009`  | never returns                 |
 //!
 //! ## Return-code matrix (ARM DEN0022D Table 5)
 //!
@@ -67,9 +72,12 @@
 //! RPi5 firmware (`armstub8-rpi5`) exposes PSCI at EL2 via the `hvc #0`
 //! instruction; SMC dispatches go to the secure monitor at EL3 which is
 //! not configured for PSCI on this platform.  All wrappers in this
-//! module emit `hvc #0` per `PlatformBinding.psciConduit = HVC`; a
-//! future port to a system that exposes PSCI via `smc #0` would
-//! parameterise the conduit (post-1.0).
+//! module hard-code `hvc #0` because seLe4n's only v1.0.0 hardware
+//! target uses HVC.  A future port to a system that exposes PSCI via
+//! `smc #0` would parameterise the conduit through `PlatformBinding`;
+//! that parameterisation is post-1.0 work and is tracked in
+//! [`docs/planning/SMP_RUST_HAL_PLAN.md`](../../../docs/planning/SMP_RUST_HAL_PLAN.md)
+//! as a SM1 closure item.
 //!
 //! ## On host
 //!
@@ -159,22 +167,22 @@ impl PsciResult {
 /// PSCI function id for the SMC32 `PSCI_VERSION` call.  ARM DEN0022D §5.1.1.
 pub const PSCI_FN_PSCI_VERSION: u32 = 0x8400_0000;
 
-/// PSCI function id for the SMC32 `CPU_OFF` call.  ARM DEN0022D §5.1.4.
+/// PSCI function id for the SMC32 `CPU_OFF` call.  ARM DEN0022D §5.1.3.
 pub const PSCI_FN_CPU_OFF: u32 = 0x8400_0002;
 
-/// PSCI function id for the SMC64 `CPU_ON` call.  ARM DEN0022D §5.1.6.
+/// PSCI function id for the SMC64 `CPU_ON` call.  ARM DEN0022D §5.1.4.
 pub const PSCI_FN_CPU_ON: u32 = 0xC400_0003;
 
-/// PSCI function id for the SMC64 `AFFINITY_INFO` call.  ARM DEN0022D §5.1.7.
+/// PSCI function id for the SMC64 `AFFINITY_INFO` call.  ARM DEN0022D §5.1.5.
 pub const PSCI_FN_AFFINITY_INFO: u32 = 0xC400_0004;
 
-/// PSCI function id for the SMC32 `MIGRATE_INFO_TYPE` call.  ARM DEN0022D §5.1.8.
+/// PSCI function id for the SMC32 `MIGRATE_INFO_TYPE` call.  ARM DEN0022D §5.1.7.
 pub const PSCI_FN_MIGRATE_INFO_TYPE: u32 = 0x8400_0006;
 
-/// PSCI function id for the SMC32 `SYSTEM_OFF` call.  ARM DEN0022D §5.1.10.
+/// PSCI function id for the SMC32 `SYSTEM_OFF` call.  ARM DEN0022D §5.1.9.
 pub const PSCI_FN_SYSTEM_OFF: u32 = 0x8400_0008;
 
-/// PSCI function id for the SMC32 `SYSTEM_RESET` call.  ARM DEN0022D §5.1.11.
+/// PSCI function id for the SMC32 `SYSTEM_RESET` call.  ARM DEN0022D §5.1.10.
 pub const PSCI_FN_SYSTEM_RESET: u32 = 0x8400_0009;
 
 // ============================================================================
@@ -200,6 +208,7 @@ pub const PSCI_FN_SYSTEM_RESET: u32 = 0x8400_0009;
 /// secondary core observes the correct page-table state when it
 /// resumes execution.
 #[inline]
+#[must_use]
 pub fn cpu_on(target_mpidr: u64, entry_point: usize, context_id: u64) -> PsciResult {
     // AN9-I: ensure cross-cluster ordering before the secondary core
     // observes the kernel image and shared boot data structures.  The
@@ -209,7 +218,7 @@ pub fn cpu_on(target_mpidr: u64, entry_point: usize, context_id: u64) -> PsciRes
 
     #[cfg(target_arch = "aarch64")]
     {
-        let mut ret: i32;
+        let ret: i32;
         // SAFETY: `hvc #0` is a defined hypervisor call.  Per ARM
         // DEN0022D, registers x0..x3 carry the PSCI call arguments;
         // the return value comes back in x0.  We mark all clobbers
@@ -244,12 +253,12 @@ pub fn cpu_on(target_mpidr: u64, entry_point: usize, context_id: u64) -> PsciRes
 
 /// WS-SM SM1.A.1: PSCI `CPU_OFF` — power down the calling PE.
 ///
-/// ARM DEN0022D §5.1.4 (function id `0x8400_0002`, SMC32).
+/// ARM DEN0022D §5.1.3 (function id `0x8400_0002`, SMC32).
 ///
 /// **Caller must not return on success.**  On success the calling PE
 /// is powered down and this function does not return.  On failure
 /// the function returns and the caller continues executing.
-/// Per DEN0022D §5.1.4, the only documented failure codes for CPU_OFF
+/// Per DEN0022D §5.1.3, the only documented failure codes for CPU_OFF
 /// are `Denied` (-3, not allowed in current state) and
 /// `InternalFailure` (-6, firmware bug).  On host this returns
 /// `Success` so the call graph can be exercised; production callers
@@ -272,12 +281,13 @@ pub fn cpu_on(target_mpidr: u64, entry_point: usize, context_id: u64) -> PsciRes
 /// locks, BKL state, run-queue updates the calling PE made before
 /// requesting CPU_OFF).
 #[inline]
+#[must_use]
 pub fn cpu_off() -> PsciResult {
     crate::barriers::dsb_osh();
 
     #[cfg(target_arch = "aarch64")]
     {
-        let mut ret: i32;
+        let ret: i32;
         // SAFETY: HVC #0 with PSCI calling convention.  Caller
         // guarantees the PE has nothing to lose by powering down
         // (caller has hand-off state to another core, e.g., the
@@ -311,7 +321,7 @@ pub fn cpu_off() -> PsciResult {
 
 /// WS-SM SM1.A.2: PSCI `AFFINITY_INFO` result.
 ///
-/// ARM DEN0022D §5.1.7 returns one of three non-negative values:
+/// ARM DEN0022D §5.1.5 returns one of three non-negative values:
 /// - 0 = `On`         (the target PE is on)
 /// - 1 = `Off`        (the target PE is off)
 /// - 2 = `OnPending`  (transitioning on)
@@ -347,10 +357,37 @@ impl AffinityInfoState {
     }
 }
 
+/// WS-SM SM1.A.2: pure decoder for the raw `AFFINITY_INFO` return.
+///
+/// Extracted from [`affinity_info`] so the failure path (`ret < 0` and
+/// `ret > 2`) is unit-testable without the HVC trap.  Semantics:
+///
+/// - `raw == 0`  ⇒ `Ok(On)`
+/// - `raw == 1`  ⇒ `Ok(Off)`
+/// - `raw == 2`  ⇒ `Ok(OnPending)`
+/// - `raw  < 0`  ⇒ `Err(PsciResult::from_raw(raw))` (firmware error)
+/// - `raw  > 2`  ⇒ `Err(PsciResult::Unknown)` (vendor extension)
+///
+/// The split between "negative → PsciResult::from_raw" and "non-negative
+/// out-of-range → PsciResult::Unknown" matters: a firmware that
+/// returns `-2` reports `InvalidParameters`, which the caller may
+/// recover from (try a different MPIDR); a firmware that returns `42`
+/// is a bug / extension we can only flag as `Unknown`.
+#[inline]
+pub const fn decode_affinity_info_result(raw: i32) -> Result<AffinityInfoState, PsciResult> {
+    if raw < 0 {
+        return Err(PsciResult::from_raw(raw));
+    }
+    match AffinityInfoState::from_raw(raw) {
+        Some(state) => Ok(state),
+        None => Err(PsciResult::Unknown),
+    }
+}
+
 /// WS-SM SM1.A.2: PSCI `AFFINITY_INFO` — query the on/off state of a
 /// target PE.
 ///
-/// ARM DEN0022D §5.1.7 (function id `0xC400_0004`, SMC64).
+/// ARM DEN0022D §5.1.5 (function id `0xC400_0004`, SMC64).
 ///
 /// `target_affinity` — the affinity-mask MPIDR_EL1 of the target PE.
 /// `lowest_affinity_level` — the lowest affinity level that is valid
@@ -375,9 +412,9 @@ pub fn affinity_info(
 
     #[cfg(target_arch = "aarch64")]
     {
-        let mut ret: i32;
+        let ret: i32;
         // SAFETY: HVC #0 with PSCI calling convention.  Per ARM
-        // DEN0022D §5.1.7, x1 carries target_affinity (MPIDR mask),
+        // DEN0022D §5.1.5, x1 carries target_affinity (MPIDR mask),
         // x2 carries lowest_affinity_level; return value comes back
         // in x0.
         unsafe {
@@ -391,16 +428,13 @@ pub fn affinity_info(
                 options(nostack)
             );
         }
-        if ret < 0 {
-            return Err(PsciResult::from_raw(ret));
-        }
-        AffinityInfoState::from_raw(ret).ok_or(PsciResult::Unknown)
+        decode_affinity_info_result(ret)
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
         // Host stub: assume the queried PE is on.  Tests that need to
-        // exercise the off / pending paths can call
-        // `AffinityInfoState::from_raw` directly to construct a
+        // exercise the off / pending / failure paths can call
+        // `decode_affinity_info_result` directly to construct a
         // synthetic response.
         let _ = (target_affinity, lowest_affinity_level);
         Ok(AffinityInfoState::On)
@@ -413,13 +447,28 @@ pub fn affinity_info(
 
 /// WS-SM SM1.A.3: PSCI `SYSTEM_OFF` — power off the entire system.
 ///
-/// ARM DEN0022D §5.1.10 (function id `0x8400_0008`, SMC32).
+/// ARM DEN0022D §5.1.9 (function id `0x8400_0008`, SMC32).
 ///
 /// **Does not return.**  The return type `!` documents this at the
 /// type level: any continuation after a `system_off()` call is
-/// unreachable code.  If the firmware fails to power off, the
-/// platform behavior is implementation-defined; the safest fallback
-/// is the spin loop the host stub uses.
+/// unreachable code.
+///
+/// ## Defensive design — handling `NOT_SUPPORTED` returns
+///
+/// Per DEN0022D §5.1.9, the call does not return on success, but a
+/// firmware that does not implement SYSTEM_OFF may return
+/// `NOT_SUPPORTED` (-1).  Therefore the asm block must NOT be marked
+/// `noreturn` — doing so would invoke undefined behaviour if the HVC
+/// returned (the Rust reference defines `noreturn` violation as UB).
+/// Instead the function emits the HVC and falls into an explicit
+/// `loop { spin_loop() }` so:
+///
+/// 1. On a conforming firmware, the HVC powers off and the trailing
+///    loop is never reached.
+/// 2. On a non-conforming firmware, the trailing loop guarantees
+///    `-> !` is honoured by spinning indefinitely (the safest state
+///    when power-off failed) rather than triggering UB or falling
+///    off the end of the function.
 ///
 /// AN9-I integration: emits `dsb osh` before HVC so any pending
 /// kernel state (e.g., journalled writes, final UART output) is
@@ -430,25 +479,26 @@ pub fn system_off() -> ! {
     #[cfg(target_arch = "aarch64")]
     {
         // SAFETY: HVC #0 with PSCI calling convention.  Per DEN0022D
-        // §5.1.10 the call does not return on success.  `noreturn`
-        // option tells the compiler the asm block does not return,
-        // which matches the `-> !` function signature.
+        // §5.1.9 a conforming firmware does not return; a non-
+        // conforming firmware may return `NOT_SUPPORTED`, in which
+        // case we fall through to the spin loop below.
         unsafe {
             core::arch::asm!(
                 "hvc #0",
                 in("x0") PSCI_FN_SYSTEM_OFF as u64,
-                options(nostack, noreturn)
+                clobber_abi("C"),
+                options(nostack)
             );
         }
     }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        // Host stub: infinite spin so the function does not return.
-        // Tests that exercise this path use `#[ignore]` (the test
-        // harness would otherwise hang).
-        loop {
-            core::hint::spin_loop();
-        }
+
+    // Spin-park.  Reached only if (a) the HVC firmware does not
+    // implement SYSTEM_OFF and returned NOT_SUPPORTED, or (b) we're
+    // running on host without aarch64 inline asm.  In either case,
+    // the kernel is stuck in the safest possible state — no further
+    // execution, no privilege escalation surface, no UB.
+    loop {
+        core::hint::spin_loop();
     }
 }
 
@@ -458,13 +508,22 @@ pub fn system_off() -> ! {
 
 /// WS-SM SM1.A.4: PSCI `SYSTEM_RESET` — perform a cold system reset.
 ///
-/// ARM DEN0022D §5.1.11 (function id `0x8400_0009`, SMC32).
+/// ARM DEN0022D §5.1.10 (function id `0x8400_0009`, SMC32).
 ///
 /// **Does not return.**  Like [`system_off`] the call powers the
 /// system down then back on; any continuation after the call is
 /// unreachable.  Used by the kernel panic handler when a fatal
 /// invariant violation is detected and the safest recovery is to
 /// boot fresh.
+///
+/// ## Defensive design — handling `NOT_SUPPORTED` returns
+///
+/// Per DEN0022D §5.1.10 a conforming firmware does not return, but a
+/// non-conforming firmware may return `NOT_SUPPORTED` (-1).  Same
+/// design as [`system_off`]: the asm block omits `noreturn` (which
+/// would be UB if firmware returns) and the trailing
+/// `loop { spin_loop() }` guarantees `-> !` even on non-conforming
+/// firmware.  See [`system_off`] for the full rationale.
 ///
 /// AN9-I integration: emits `dsb osh` before HVC so any pending
 /// kernel state is observable prior to reset.
@@ -474,21 +533,24 @@ pub fn system_reset() -> ! {
     #[cfg(target_arch = "aarch64")]
     {
         // SAFETY: HVC #0 with PSCI calling convention.  Per DEN0022D
-        // §5.1.11 the call does not return on success.
+        // §5.1.10 a conforming firmware does not return; a non-
+        // conforming firmware may return NOT_SUPPORTED, in which case
+        // we fall through to the spin loop below (same defensive
+        // pattern as `system_off`).
         unsafe {
             core::arch::asm!(
                 "hvc #0",
                 in("x0") PSCI_FN_SYSTEM_RESET as u64,
-                options(nostack, noreturn)
+                clobber_abi("C"),
+                options(nostack)
             );
         }
     }
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        // Host stub: infinite spin (see system_off for rationale).
-        loop {
-            core::hint::spin_loop();
-        }
+
+    // Spin-park.  Reached only if firmware doesn't implement
+    // SYSTEM_RESET, or on host.  See `system_off` for full rationale.
+    loop {
+        core::hint::spin_loop();
     }
 }
 
@@ -551,6 +613,7 @@ impl PsciVersion {
 ///
 /// On host this returns `PsciVersion { major: 1, minor: 1 }` (PSCI 1.1),
 /// matching the version reported by `armstub8-rpi5` on real hardware.
+#[must_use]
 pub fn psci_version() -> PsciVersion {
     #[cfg(target_arch = "aarch64")]
     {
@@ -583,7 +646,7 @@ pub fn psci_version() -> PsciVersion {
 
 /// WS-SM SM1.A.6: PSCI `MIGRATE_INFO_TYPE` result.
 ///
-/// ARM DEN0022D §5.1.8 returns one of three non-negative values:
+/// ARM DEN0022D §5.1.7 returns one of three non-negative values:
 /// - 0 = `UniProcessor` (Trusted OS is uniprocessor-only; migration required)
 /// - 1 = `Multiprocessor` (Trusted OS supports multiprocessor; migration not required)
 /// - 2 = `NotRequired` (no Trusted OS, or trust path is stateless)
@@ -622,10 +685,32 @@ impl MigrateInfoType {
     }
 }
 
+/// WS-SM SM1.A.6: pure decoder for the raw `MIGRATE_INFO_TYPE` return.
+///
+/// Extracted from [`migrate_info_type`] so the failure path (negative
+/// or out-of-range) is unit-testable without the HVC trap.  Semantics
+/// match [`decode_affinity_info_result`]:
+///
+/// - `raw == 0` ⇒ `Ok(UniProcessor)`
+/// - `raw == 1` ⇒ `Ok(Multiprocessor)`
+/// - `raw == 2` ⇒ `Ok(NotRequired)`
+/// - `raw  < 0` ⇒ `Err(PsciResult::from_raw(raw))`
+/// - `raw  > 2` ⇒ `Err(PsciResult::Unknown)`
+#[inline]
+pub const fn decode_migrate_info_type_result(raw: i32) -> Result<MigrateInfoType, PsciResult> {
+    if raw < 0 {
+        return Err(PsciResult::from_raw(raw));
+    }
+    match MigrateInfoType::from_raw(raw) {
+        Some(typ) => Ok(typ),
+        None => Err(PsciResult::Unknown),
+    }
+}
+
 /// WS-SM SM1.A.6: PSCI `MIGRATE_INFO_TYPE` — query Trusted-OS
 /// migration requirements.
 ///
-/// ARM DEN0022D §5.1.8 (function id `0x8400_0006`, SMC32).
+/// ARM DEN0022D §5.1.7 (function id `0x8400_0006`, SMC32).
 ///
 /// Returns:
 /// - `Ok(type)` on success — the firmware's migration-type
@@ -638,9 +723,9 @@ impl MigrateInfoType {
 pub fn migrate_info_type() -> Result<MigrateInfoType, PsciResult> {
     #[cfg(target_arch = "aarch64")]
     {
-        let mut ret: i32;
+        let ret: i32;
         // SAFETY: HVC #0 with PSCI calling convention.  Per DEN0022D
-        // §5.1.8 the call has no arguments beyond the function id;
+        // §5.1.7 the call has no arguments beyond the function id;
         // the migration-type word comes back in x0.
         unsafe {
             core::arch::asm!(
@@ -651,10 +736,7 @@ pub fn migrate_info_type() -> Result<MigrateInfoType, PsciResult> {
                 options(nostack)
             );
         }
-        if ret < 0 {
-            return Err(PsciResult::from_raw(ret));
-        }
-        MigrateInfoType::from_raw(ret).ok_or(PsciResult::Unknown)
+        decode_migrate_info_type_result(ret)
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
@@ -843,9 +925,20 @@ mod tests {
 
     #[test]
     fn psci_result_is_success_only_for_zero() {
+        // Exhaustive check: only the `Success` variant (encoded as 0)
+        // returns true from `is_success`.  Every other variant
+        // (including `Unknown`) returns false.  A future PR that
+        // accidentally redefines `is_success` to match on a wider
+        // pattern would fail this test.
         assert!(PsciResult::Success.is_success());
-        assert!(!PsciResult::AlreadyOn.is_success());
+        assert!(!PsciResult::NotSupported.is_success());
+        assert!(!PsciResult::InvalidParameters.is_success());
         assert!(!PsciResult::Denied.is_success());
+        assert!(!PsciResult::AlreadyOn.is_success());
+        assert!(!PsciResult::OnPending.is_success());
+        assert!(!PsciResult::InternalFailure.is_success());
+        assert!(!PsciResult::NotPresent.is_success());
+        assert!(!PsciResult::Disabled.is_success());
         assert!(!PsciResult::Unknown.is_success());
     }
 
@@ -858,14 +951,14 @@ mod tests {
         // ARM DEN0022D §5.1 function-id matrix.  Each constant is
         // pinned to the literal hex value in the spec; any drift
         // fails this test before the wrapper is ever invoked on
-        // hardware.
+        // hardware.  Sub-section numbers are per DEN0022D revision D.
         assert_eq!(PSCI_FN_PSCI_VERSION,    0x8400_0000); // §5.1.1
-        assert_eq!(PSCI_FN_CPU_OFF,         0x8400_0002); // §5.1.4
-        assert_eq!(PSCI_FN_CPU_ON,          0xC400_0003); // §5.1.6 SMC64
-        assert_eq!(PSCI_FN_AFFINITY_INFO,   0xC400_0004); // §5.1.7 SMC64
-        assert_eq!(PSCI_FN_MIGRATE_INFO_TYPE, 0x8400_0006); // §5.1.8
-        assert_eq!(PSCI_FN_SYSTEM_OFF,      0x8400_0008); // §5.1.10
-        assert_eq!(PSCI_FN_SYSTEM_RESET,    0x8400_0009); // §5.1.11
+        assert_eq!(PSCI_FN_CPU_OFF,         0x8400_0002); // §5.1.3
+        assert_eq!(PSCI_FN_CPU_ON,          0xC400_0003); // §5.1.4 SMC64
+        assert_eq!(PSCI_FN_AFFINITY_INFO,   0xC400_0004); // §5.1.5 SMC64
+        assert_eq!(PSCI_FN_MIGRATE_INFO_TYPE, 0x8400_0006); // §5.1.7
+        assert_eq!(PSCI_FN_SYSTEM_OFF,      0x8400_0008); // §5.1.9
+        assert_eq!(PSCI_FN_SYSTEM_RESET,    0x8400_0009); // §5.1.10
     }
 
     #[test]
@@ -1012,7 +1105,7 @@ mod tests {
 
     #[test]
     fn affinity_info_state_from_raw_decodes_documented_values() {
-        // SM1.A.2: ARM DEN0022D §5.1.7 documents three values.
+        // SM1.A.2: ARM DEN0022D §5.1.5 documents three values.
         assert_eq!(AffinityInfoState::from_raw(0), Some(AffinityInfoState::On));
         assert_eq!(AffinityInfoState::from_raw(1), Some(AffinityInfoState::Off));
         assert_eq!(AffinityInfoState::from_raw(2), Some(AffinityInfoState::OnPending));
@@ -1042,6 +1135,58 @@ mod tests {
         // SM1.A.2: host stub returns On for any MPIDR.
         let r = affinity_info(0x0000_0001, 0);
         assert_eq!(r, Ok(AffinityInfoState::On));
+    }
+
+    // ------------------------------------------------------------------------
+    // SM1.A.2 — decode_affinity_info_result coverage (failure paths).
+    //
+    // The pure decoder is exposed so the failure paths (`ret < 0` and
+    // `ret > 2`) can be unit-tested without the HVC trap.  The
+    // production wrapper `affinity_info` is just `asm! + this decoder`,
+    // so coverage on the decoder gives coverage on the wrapper's
+    // failure path.
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn decode_affinity_info_result_success_values() {
+        // SM1.A.2: 0/1/2 decode to On/Off/OnPending.
+        assert_eq!(decode_affinity_info_result(0), Ok(AffinityInfoState::On));
+        assert_eq!(decode_affinity_info_result(1), Ok(AffinityInfoState::Off));
+        assert_eq!(decode_affinity_info_result(2), Ok(AffinityInfoState::OnPending));
+    }
+
+    #[test]
+    fn decode_affinity_info_result_negative_codes_map_to_psci_result() {
+        // SM1.A.2: every documented negative PSCI return code decodes
+        // through `PsciResult::from_raw`.  This is the production path
+        // when firmware rejects the AFFINITY_INFO query with e.g.
+        // `InvalidParameters` for an unknown MPIDR.
+        assert_eq!(decode_affinity_info_result(-1), Err(PsciResult::NotSupported));
+        assert_eq!(decode_affinity_info_result(-2), Err(PsciResult::InvalidParameters));
+        assert_eq!(decode_affinity_info_result(-3), Err(PsciResult::Denied));
+        assert_eq!(decode_affinity_info_result(-6), Err(PsciResult::InternalFailure));
+        assert_eq!(decode_affinity_info_result(-7), Err(PsciResult::NotPresent));
+        assert_eq!(decode_affinity_info_result(-8), Err(PsciResult::Disabled));
+    }
+
+    #[test]
+    fn decode_affinity_info_result_negative_unknown_maps_to_unknown() {
+        // SM1.A.2: negative values outside the documented range
+        // (-9..) decode to PsciResult::Unknown via from_raw's catch-
+        // all arm.
+        assert_eq!(decode_affinity_info_result(-9), Err(PsciResult::Unknown));
+        assert_eq!(decode_affinity_info_result(-100), Err(PsciResult::Unknown));
+        assert_eq!(decode_affinity_info_result(i32::MIN), Err(PsciResult::Unknown));
+    }
+
+    #[test]
+    fn decode_affinity_info_result_out_of_range_maps_to_unknown() {
+        // SM1.A.2: a non-negative value outside [0, 2] is a vendor
+        // extension or firmware bug.  We map to PsciResult::Unknown
+        // rather than panicking.
+        assert_eq!(decode_affinity_info_result(3), Err(PsciResult::Unknown));
+        assert_eq!(decode_affinity_info_result(42), Err(PsciResult::Unknown));
+        assert_eq!(decode_affinity_info_result(i32::MAX), Err(PsciResult::Unknown));
     }
 
     // ------------------------------------------------------------------------
@@ -1142,7 +1287,7 @@ mod tests {
 
     #[test]
     fn migrate_info_type_from_raw_decodes_documented_values() {
-        // SM1.A.6: ARM DEN0022D §5.1.8 documents three values.
+        // SM1.A.6: ARM DEN0022D §5.1.7 documents three values.
         assert_eq!(MigrateInfoType::from_raw(0), Some(MigrateInfoType::UniProcessor));
         assert_eq!(MigrateInfoType::from_raw(1), Some(MigrateInfoType::Multiprocessor));
         assert_eq!(MigrateInfoType::from_raw(2), Some(MigrateInfoType::NotRequired));
@@ -1172,6 +1317,62 @@ mod tests {
         // SM1.A.6: host stub matches the RPi5 no-Trusted-OS state.
         let r = migrate_info_type();
         assert_eq!(r, Ok(MigrateInfoType::NotRequired));
+    }
+
+    // ------------------------------------------------------------------------
+    // SM1.A.6 — decode_migrate_info_type_result coverage (failure paths).
+    //
+    // Same rationale as `decode_affinity_info_result`: the pure
+    // decoder is exposed so production failure paths can be unit-tested
+    // without an HVC trap.
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn decode_migrate_info_type_result_success_values() {
+        // SM1.A.6: 0/1/2 decode to UniProcessor/Multiprocessor/NotRequired.
+        assert_eq!(decode_migrate_info_type_result(0), Ok(MigrateInfoType::UniProcessor));
+        assert_eq!(decode_migrate_info_type_result(1), Ok(MigrateInfoType::Multiprocessor));
+        assert_eq!(decode_migrate_info_type_result(2), Ok(MigrateInfoType::NotRequired));
+    }
+
+    #[test]
+    fn decode_migrate_info_type_result_negative_codes_map_to_psci_result() {
+        // SM1.A.6: NotSupported is the most common negative return
+        // (firmware lacks Trusted-OS migration awareness); other
+        // negative codes propagate through PsciResult::from_raw.
+        assert_eq!(
+            decode_migrate_info_type_result(-1),
+            Err(PsciResult::NotSupported)
+        );
+        assert_eq!(
+            decode_migrate_info_type_result(-2),
+            Err(PsciResult::InvalidParameters)
+        );
+        assert_eq!(
+            decode_migrate_info_type_result(-6),
+            Err(PsciResult::InternalFailure)
+        );
+    }
+
+    #[test]
+    fn decode_migrate_info_type_result_negative_unknown_maps_to_unknown() {
+        // SM1.A.6: negative values outside the documented PSCI range
+        // decode to PsciResult::Unknown.
+        assert_eq!(decode_migrate_info_type_result(-9), Err(PsciResult::Unknown));
+        assert_eq!(decode_migrate_info_type_result(i32::MIN), Err(PsciResult::Unknown));
+    }
+
+    #[test]
+    fn decode_migrate_info_type_result_out_of_range_maps_to_unknown() {
+        // SM1.A.6: a non-negative value outside [0, 2] is a vendor
+        // extension or firmware bug.  We map to PsciResult::Unknown
+        // rather than panicking.
+        assert_eq!(decode_migrate_info_type_result(3), Err(PsciResult::Unknown));
+        assert_eq!(decode_migrate_info_type_result(42), Err(PsciResult::Unknown));
+        assert_eq!(
+            decode_migrate_info_type_result(i32::MAX),
+            Err(PsciResult::Unknown)
+        );
     }
 
     // ------------------------------------------------------------------------

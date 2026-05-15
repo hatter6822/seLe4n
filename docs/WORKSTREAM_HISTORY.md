@@ -106,17 +106,45 @@ sub-tasks landed in one cut:
   header lists all seven wrappers with their DEN0022D § references
   and function ids; the return-code matrix cites Table 5.
 
-**Test coverage**: 30 PSCI unit tests (28 active + 2 `#[ignore]`'d
+**Test coverage**: 40 PSCI unit tests (38 active + 2 `#[ignore]`'d
 for `system_off` / `system_reset` since they return `!` and would
-hang the test runner).  Total HAL tests: 240 (was 215).  All
-function ids pinned in three layers: compile-time `const _: ()`
-assertions, runtime spec-exact constant matches, runtime
-pairwise-distinctness.  The `affinity_info` and
+hang the test runner).  The 8-test audit-pass addendum
+(`decode_affinity_info_result_*` and
+`decode_migrate_info_type_result_*`) covers the i32 → Result
+failure-path branches without an HVC trap.  Total HAL tests: 248
+(was 215).  All function ids pinned in three layers: compile-time
+`const _: ()` assertions, runtime spec-exact constant matches,
+runtime pairwise-distinctness.  The `affinity_info` and
 `migrate_info_type` decoders refuse vendor-undocumented values by
-returning `None` (mapped by the caller to
-`PsciResult::Unknown`).  No regressions: full Tier 0+1+2 smoke
-test passes (152-job Lean build, 240/240 HAL tests, 94/94 ABI
-conformance tests, 0 clippy warnings).
+returning `None` (mapped by the caller to `PsciResult::Unknown`).
+No regressions: full Tier 0+1+2 smoke test passes (152-job Lean
+build, 248/248 HAL tests, 94/94 ABI conformance tests, 0 clippy
+warnings).
+
+**Audit-pass refinements** (post-initial-landing).  Deep audit
+of the SM1.A landing surfaced six findings (one HIGH soundness,
+two MEDIUM, three LOW), all addressed in-cut:
+
+1. HIGH-severity soundness fix: dropped `options(..., noreturn)`
+   from `system_off` / `system_reset` HVC asm blocks (per the Rust
+   reference, `noreturn` is UB if the asm returns, and DEN0022D
+   §5.1.9 / §5.1.10 allows non-conforming firmware to return
+   `NOT_SUPPORTED`).  Replaced with `clobber_abi("C")` + explicit
+   `loop { spin_loop() }` post-asm so `-> !` is honoured on every
+   path.
+2. Documentation accuracy: DEN0022D sub-section citations
+   realigned to revision D numbering across the module.
+3. Testability: extracted pure decoders
+   `decode_affinity_info_result` and
+   `decode_migrate_info_type_result` so failure paths are
+   unit-testable without an HVC trap (8 new tests).
+4. API: `#[must_use]` added to non-Result-returning functions
+   (`cpu_on`, `cpu_off`, `psci_version`).
+5. Test coverage: `psci_result_is_success_only_for_zero` now
+   covers all 10 variants (was 4).
+6. Documentation honesty: removed a false claim that wrappers
+   route through `PlatformBinding.psciConduit = HVC` (no such
+   field exists at v1.0.0).
 
 Items deferred past v1.0.0 with correctness impact: NONE.
 Follow-on: SM1.B (Per-CPU data + TPIDR_EL1), SM1.C (Secondary

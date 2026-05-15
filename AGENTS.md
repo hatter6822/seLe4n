@@ -696,15 +696,50 @@ documentation lives under `docs/` and `docs/gitbook/`.
     ids, return-code matrix (Table 5), and the HVC-vs-SMC dispatch
     rationale.
 
-  **Test coverage**: 30 PSCI unit tests (28 active + 2 `#[ignore]`'d
+  **Test coverage**: 40 PSCI unit tests (38 active + 2 `#[ignore]`'d
   for `system_off` / `system_reset` since they return `!` and would
-  hang the test runner).  Total HAL tests: 240 (was 215).  Zero
-  clippy warnings.  Full Tier 0+1+2 smoke test passes.  Items
-  deferred past v1.0.0 with correctness impact: NONE.  Follow-on:
-  SM1.B..H (per-CPU data + TPIDR_EL1, secondary-core full init,
-  DTB cmdline, IS-variant TLBI, SGI primitive, per-core UART,
+  hang the test runner).  The audit pass added 8 decoder-failure-path
+  tests (`decode_affinity_info_result_*` and
+  `decode_migrate_info_type_result_*`) that exercise the i32 → Result
+  conversion branches without an HVC trap.  Total HAL tests: 248
+  (was 215).  Zero clippy warnings.  Full Tier 0+1+2 smoke test
+  passes.  Items deferred past v1.0.0 with correctness impact: NONE.
+  Follow-on: SM1.B..H (per-CPU data + TPIDR_EL1, secondary-core full
+  init, DTB cmdline, IS-variant TLBI, SGI primitive, per-core UART,
   QEMU SMP integration) — see
   [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md) §§5.2..5.8.
+
+  **Audit-pass refinements** (post-initial-landing):
+  - HIGH-severity soundness fix: dropped `options(..., noreturn)`
+    from `system_off` / `system_reset` HVC asm blocks.  Per the
+    Rust reference, `noreturn` is UB if the asm returns; per
+    DEN0022D §5.1.9 / §5.1.10 a non-conforming firmware that does
+    not implement SYSTEM_OFF / SYSTEM_RESET returns `NOT_SUPPORTED`
+    (-1).  Replaced with `clobber_abi("C")` + an explicit
+    `loop { core::hint::spin_loop(); }` after the asm so the `-> !`
+    type is honoured even on non-conforming firmware (the kernel
+    spin-parks in the safest possible state rather than triggering
+    UB).
+  - Documentation accuracy: DEN0022D sub-section citations
+    realigned to revision D numbering (CPU_OFF §5.1.3, CPU_ON
+    §5.1.4, AFFINITY_INFO §5.1.5, MIGRATE_INFO_TYPE §5.1.7,
+    SYSTEM_OFF §5.1.9, SYSTEM_RESET §5.1.10).  The function IDs
+    are stable across revisions and remain the canonical
+    identifier.
+  - Testability: extracted pure decoders
+    `decode_affinity_info_result(i32) -> Result<..., PsciResult>`
+    and `decode_migrate_info_type_result(i32) -> Result<..., PsciResult>`
+    so the failure paths are unit-testable without an HVC trap.
+  - API: `#[must_use]` added to `cpu_on` / `cpu_off` /
+    `psci_version` (Result-returning functions inherit
+    `#[must_use]` from `Result`).
+  - Test coverage: `psci_result_is_success_only_for_zero`
+    expanded from 4 variants to all 10.
+  - Documentation honesty: removed a false claim that wrappers
+    route through `PlatformBinding.psciConduit = HVC` (there is no
+    such field at v1.0.0); wrappers hard-code `hvc #0` because
+    RPi5 is the only v1.0.0 hardware target.  Future conduit
+    parameterisation is tracked as a post-1.0 SM1 closure item.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**
