@@ -19,6 +19,19 @@ import SeLe4n.Kernel.Architecture.BarrierComposition
 import SeLe4n.Kernel.Architecture.TlbCacheComposition
 -- AN12-B (Theme 4.4): SMP-latent single-core assumption inventory
 import SeLe4n.Kernel.Concurrency.Assumptions
+-- WS-SM SM0.C (closes SMP-H3): build-time `@`-references for every
+-- `smpLatentInventory` entry's `identifier` and `sourceTheorem` so a
+-- renamed underlying symbol fails the build instead of silently
+-- leaving a dangling inventory entry.  This is the post-AN12-B
+-- "audit-by-source-read" pattern's structural replacement.
+import SeLe4n.Kernel.Concurrency.Anchors
+-- WS-SM SM0.E/SM0.F/SM0.H/SM0.I: foundational typed-identifier modules
+-- pulled into Staged so the SM0 build closure is one unit.  No runtime
+-- behavior change at SM0; SM1..SM9 wire these into kernel transitions.
+import SeLe4n.Kernel.Concurrency.Types
+import SeLe4n.Kernel.Concurrency.Locks
+import SeLe4n.Kernel.Concurrency.Locks.Kind
+import SeLe4n.Kernel.Concurrency.Sgi
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph
@@ -43,6 +56,11 @@ The staged modules are:
 8. `SeLe4n.Kernel.Architecture.BarrierComposition` — AN9-C BarrierKind algebra
 9. `SeLe4n.Kernel.Architecture.TlbCacheComposition` — AN9-A page-table coherency
 10. `SeLe4n.Kernel.Concurrency.Assumptions`    — AN12-B SMP-latent inventory
+11. `SeLe4n.Kernel.Concurrency.Anchors`        — WS-SM SM0.C inventory build anchor (SMP-H3)
+12. `SeLe4n.Kernel.Concurrency.Types`          — WS-SM SM0.E/SM0.F CoreId + SharingDomain
+13. `SeLe4n.Kernel.Concurrency.Locks`          — WS-SM SM0.I BklState
+14. `SeLe4n.Kernel.Concurrency.Locks.Kind`     — WS-SM SM0.I LockKind + LockId
+15. `SeLe4n.Kernel.Concurrency.Sgi`            — WS-SM SM0.H SgiKind
 
 Per the plan (AN9-J will transition most of these from "SMP-latent" to
 "SMP-implemented, runtime-gated by smp_enabled=false at v1.0.0"), the

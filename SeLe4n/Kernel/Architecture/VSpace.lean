@@ -23,8 +23,8 @@ Object-level tautologies (`f x = f x` via `rfl`) are NOT accepted as semantic
 evidence. The four round-trip theorems above provide genuine semantic contracts
 that establish determinism through functional correctness.
 
-Historical: Originally tracked via TPI-001 in
-`docs/dev_history/audits/AUDIT_v0.9.32_TRACKED_PROOF_ISSUES.md`.
+Historical: Originally tracked via TPI-001 (the TPI registry has been
+absorbed into closed workstreams).
 -/
 
 namespace SeLe4n.Kernel.Architecture

@@ -251,6 +251,13 @@ mod tests {
     }
 
     #[test]
+    // `0 & MPIDR_CORE_ID_MASK == 0` is tautologically true (clippy
+    // `erasing_op`); the assert is retained as documentation of the
+    // property table — core 0 produces 0 after the mask, which is
+    // what the `_start::cbnz` branch in `boot.S` relies on to fall
+    // through to the boot path.  Suppressed locally rather than
+    // rewritten so the documentation table remains uniform.
+    #[allow(clippy::erasing_op)]
     fn mpidr_mask_distinguishes_clusters() {
         // {Aff0=0, Aff1=0, Aff2=0} → 0 (boot core)
         assert_eq!(0u64 & MPIDR_CORE_ID_MASK, 0);
@@ -330,9 +337,14 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::assertions_on_constants)]
     fn wfe_default_timeout_ticks_is_positive() {
         // Defense-in-depth: a zero default would silently disable the
-        // bounded check on every call site.
+        // bounded check on every call site.  Clippy flags this as a
+        // constant assertion (`assertions_on_constants`); we keep the
+        // runtime assert so the property is observable in the test
+        // report rather than only at compile time.  The local
+        // `#[allow]` suppresses the lint at the test function level.
         assert!(WFE_DEFAULT_TIMEOUT_TICKS > 0);
     }
 

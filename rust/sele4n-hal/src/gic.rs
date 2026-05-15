@@ -554,14 +554,14 @@ mod tests {
 
     #[test]
     fn num_register_banks() {
-        // 224 INTIDs / 32 per bank = 7 banks
-        assert_eq!((MAX_INTID + 31) / 32, 7);
+        // 224 INTIDs / 32 per bank = 7 banks (ceil-divide)
+        assert_eq!(MAX_INTID.div_ceil(32), 7);
     }
 
     #[test]
     fn num_priority_regs() {
-        // 224 INTIDs / 4 per register = 56 registers
-        assert_eq!((MAX_INTID + 3) / 4, 56);
+        // 224 INTIDs / 4 per register = 56 registers (ceil-divide)
+        assert_eq!(MAX_INTID.div_ceil(4), 56);
     }
 
     #[test]

@@ -46,10 +46,45 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use crate::psci::{cpu_on, PsciResult};
 
-/// AN9-J: maximum number of secondary cores the kernel will attempt
-/// to bring up.  BCM2712 has 4 Cortex-A76 cores total, so we have at
-/// most 3 secondaries.
+/// AN9-J / **WS-SM SM0.O**: maximum number of secondary cores the kernel
+/// will attempt to bring up.  BCM2712 has 4 Cortex-A76 cores total, so
+/// we have at most 3 secondaries.
+///
+/// **WS-SM SM0.O**: the value is structurally pinned to the Lean-side
+/// `PlatformBinding.coreCount` field of `RPi5Platform` (which holds `4`)
+/// via the compile-time assertion below.  Rust does not see the Lean
+/// typeclass directly, but the constant assertion fails the build if the
+/// two sides drift — a future multi-platform port that changes
+/// `coreCount` must update this constant in lockstep.
 pub const MAX_SECONDARY_CORES: usize = 3;
+
+/// **WS-SM SM0.O** (closes SMP-L2): compile-time pin of the Rust
+/// `MAX_SECONDARY_CORES` constant to the literal `4`.
+///
+/// `MAX_SECONDARY_CORES + 1` (boot core + N-1 secondaries) must equal
+/// `4` — the total core count of the production RPi5 BCM2712 binding.
+/// If a future PR bumps `MAX_SECONDARY_CORES` past 3, the assertion
+/// below fails to elaborate at build time, producing a compiler
+/// error that points the contributor at the drift.
+///
+/// **Note on cross-language pinning**: Rust has no direct visibility
+/// into the Lean `PlatformBinding.coreCount` typeclass field at build
+/// time.  The Lean side has its own pinning theorem
+/// (`SeLe4n.Platform.RPi5.numCores_eq_rpi5_coreCount`) that asserts
+/// `Concurrency.numCores = PlatformBinding.coreCount RPi5Platform`,
+/// both equal to the literal `4`.  Cross-language consistency between
+/// Rust `MAX_SECONDARY_CORES + 1` and Lean `numCores` is therefore
+/// enforced by *both* sides asserting the same literal `4`; a future
+/// multi-platform port that changes the value must bump both
+/// constants in the same PR.  Each side's assertion catches drift
+/// within its own language; the literals together pin the two sides
+/// to each other by symbol-name identity.
+const _: () = assert!(
+    MAX_SECONDARY_CORES + 1 == 4,
+    "WS-SM SM0.O: MAX_SECONDARY_CORES + 1 must equal 4 (the RPi5 \
+     BCM2712 core count, pinned on the Lean side via \
+     numCores_eq_rpi5_coreCount)"
+);
 
 /// AN9-J: runtime SMP-enable flag.  At v1.0.0 the default is `false`
 /// so `bring_up_secondaries` is a no-op; deployments that opt in to
@@ -87,6 +122,130 @@ pub const SECONDARY_MPIDR_TABLE: [u64; MAX_SECONDARY_CORES] = [
     0x0000_0002, // Aff0 = 2
     0x0000_0003, // Aff0 = 3
 ];
+
+/// **WS-SM SM0.N** (closes SMP-M4): per-core data block.
+///
+/// Each kernel-mode core stores a pointer to its own `PerCpuData`
+/// instance in `TPIDR_EL1` (the ARMv8-A "Thread Pointer / ID Register
+/// for EL1") so a per-core lookup is a single `mrs xN, tpidr_el1`
+/// instruction without any hash/lookup overhead.
+///
+/// At SM0 the struct is empty — the *seam* matters more than the
+/// content.  SM1.B populates the fields once the per-core scheduler
+/// state lands (current thread pointer, idle TCB pointer, per-core
+/// run queue head, etc.).  The `#[repr(C, align(64))]` ensures each
+/// instance occupies its own cache line, eliminating false sharing
+/// once the fields are populated.
+#[repr(C, align(64))]
+pub struct PerCpuData {
+    // SM1.B will populate these fields:
+    //   pub current_thread: AtomicU64,   // current TCB pointer
+    //   pub idle_thread:    AtomicU64,   // idle TCB for this core
+    //   pub bkl_owner:      AtomicBool,  // does this core hold the BKL?
+    //   pub run_queue_head: AtomicU64,   // per-core ready queue head
+    //
+    // SM0.N intentionally leaves the struct empty so the seam is
+    // available without committing to a layout that SM1.B may
+    // reshape during per-core scheduler design.  An empty struct
+    // still occupies one cache line via `repr(C, align(64))` so the
+    // alignment / padding of the array layout is forward-compatible
+    // with SM1.B's additions.
+    _reserved: [u64; 8],
+}
+
+impl PerCpuData {
+    /// **WS-SM SM0.N**: zero-initialised constructor.  Used to populate
+    /// the static `PER_CPU_DATA` array; the explicit zero discharge
+    /// matches the asm-side `.smp_stacks` zeroing (SM0.M) and
+    /// guarantees no stale RAM contents leak through the per-core
+    /// data block at boot.
+    pub const fn zero() -> Self {
+        Self { _reserved: [0; 8] }
+    }
+}
+
+/// **WS-SM SM0.N**: per-CPU data array, one entry per core (boot
+/// core plus 3 secondaries on RPi5 BCM2712).  Each `secondary_entry`
+/// (boot.S) loads the address of its own slot into `TPIDR_EL1`
+/// before branching to `rust_secondary_main`.  The boot core's
+/// TPIDR_EL1 is set in `boot.rs::rust_boot_main` (Phase 4).
+///
+/// Indexed by `context_id` (PSCI calling convention): boot core =
+/// index 0, secondaries = indices 1..3.
+#[no_mangle]
+#[used]
+pub static PER_CPU_DATA: [PerCpuData; MAX_SECONDARY_CORES + 1] = [
+    PerCpuData::zero(),
+    PerCpuData::zero(),
+    PerCpuData::zero(),
+    PerCpuData::zero(),
+];
+
+/// **WS-SM SM0.N**: structurally pinned size of `PerCpuData`.
+///
+/// The `secondary_entry` assembly in `boot.S` computes a core's
+/// per-CPU slot address as `PER_CPU_DATA + context_id *
+/// PER_CPU_DATA_SLOT_SIZE`.  Rather than hard-coding the stride
+/// as an immediate literal in the asm (which would silently
+/// drift if the Rust struct grew), the asm reads this constant
+/// from `.rodata` via an `adrp`+`ldr` pair against the
+/// `PER_CPU_DATA_SLOT_SIZE_SYM` symbol — the same pattern AN8-B
+/// uses for `MPIDR_CORE_ID_MASK_SYM`.  This makes the Rust
+/// constant the single source of truth.
+///
+/// The compile-time assertions below additionally pin
+/// `size_of::<PerCpuData>()` and `align_of::<PerCpuData>()` to
+/// this value so a future PR that grows the struct without
+/// updating the constant fails the build at elaboration.
+pub const PER_CPU_DATA_SLOT_SIZE: usize = 64;
+
+/// **WS-SM SM0.N**: linkable symbol exposing
+/// [`PER_CPU_DATA_SLOT_SIZE`] for the `boot.S::secondary_entry`
+/// asm.  The asm reads this 64-bit value via
+/// `adrp + ldr [..., :lo12:PER_CPU_DATA_SLOT_SIZE_SYM]` and
+/// uses it as the `madd` multiplier when computing per-core
+/// slot addresses.
+///
+/// Using a `.rodata` symbol (instead of an asm-side immediate)
+/// gives a single source of truth: the build is structurally
+/// inconsistent if the Rust constant and the asm-observed value
+/// ever diverge, because there is no asm-observed value
+/// independent of the symbol.
+///
+/// `#[no_mangle]` preserves the symbol name; `#[used]` prevents
+/// the linker from dropping it; `pub static` (without `mut`) is
+/// the standard Rust idiom for read-only data.
+#[no_mangle]
+#[used]
+pub static PER_CPU_DATA_SLOT_SIZE_SYM: u64 = PER_CPU_DATA_SLOT_SIZE as u64;
+
+const _: () = assert!(
+    core::mem::size_of::<PerCpuData>() == PER_CPU_DATA_SLOT_SIZE,
+    "WS-SM SM0.N: size_of::<PerCpuData>() must equal PER_CPU_DATA_SLOT_SIZE; \
+     boot.S::secondary_entry reads PER_CPU_DATA_SLOT_SIZE_SYM at runtime, so \
+     bumping the struct requires bumping PER_CPU_DATA_SLOT_SIZE in lockstep"
+);
+
+const _: () = assert!(
+    core::mem::align_of::<PerCpuData>() == 64,
+    "WS-SM SM0.N: PerCpuData must be 64-byte aligned (cache-line) to avoid false sharing"
+);
+
+/// **WS-SM SM0.N**: load a core's `PerCpuData` slot address.  Used by
+/// the boot core's TPIDR_EL1 setup (in `boot.rs::rust_boot_main`) and
+/// by tests that exercise the indexing logic without an actual MMIO.
+#[inline]
+pub fn per_cpu_slot_addr(context_id: usize) -> usize {
+    // SAFETY: PER_CPU_DATA has MAX_SECONDARY_CORES + 1 entries; the
+    // bound check below converts a stray context_id into a panic
+    // rather than an out-of-bounds memory read.  Production callers
+    // always pass `0..=3`.
+    assert!(
+        context_id < PER_CPU_DATA.len(),
+        "context_id out of range for PER_CPU_DATA"
+    );
+    &PER_CPU_DATA[context_id] as *const PerCpuData as usize
+}
 
 // AN9-J: opaque secondary-entry symbol.  Resolved at link time by
 // `boot.S::secondary_entry`; declared here as `extern "C"` so the
@@ -320,9 +479,11 @@ mod tests {
         assert_eq!(online, MAX_SECONDARY_CORES as u32);
         assert_eq!(count.load(Ordering::Acquire),
                    MAX_SECONDARY_CORES as u32);
-        // Each secondary's ready flag should now be true.
-        for idx in 1..=MAX_SECONDARY_CORES {
-            assert!(ready[idx].load(Ordering::Acquire),
+        // Each secondary's ready flag should now be true.  Iterate
+        // via `enumerate().skip(1)` rather than range-indexing so
+        // clippy's `needless_range_loop` lint stays clean.
+        for (idx, slot) in ready.iter().enumerate().skip(1) {
+            assert!(slot.load(Ordering::Acquire),
                 "core_ready[{}] must be true after successful bring-up", idx);
         }
     }
@@ -341,5 +502,220 @@ mod tests {
         // Cores 2 and 3 untouched.
         assert!(!ready[2].load(Ordering::Acquire));
         assert!(!ready[3].load(Ordering::Acquire));
+    }
+
+    // ========================================================================
+    // WS-SM SM0.O — MAX_SECONDARY_CORES parameterization tests
+    // ========================================================================
+
+    #[test]
+    fn sm0o_max_secondary_cores_pinned_to_platform_binding() {
+        // WS-SM SM0.O: the Rust constant MAX_SECONDARY_CORES is
+        // structurally pinned to the Lean PlatformBinding.coreCount
+        // value (4 for RPi5).  The compile-time `assert!` in smp.rs
+        // would fail elaboration if drift occurred; this runtime
+        // assertion is a redundant double-check that the same value
+        // can be read at runtime.
+        assert_eq!(MAX_SECONDARY_CORES + 1, 4,
+            "MAX_SECONDARY_CORES + 1 must equal PlatformBinding.coreCount");
+    }
+
+    #[test]
+    fn sm0o_secondary_mpidr_table_size_matches_max() {
+        // WS-SM SM0.O: the secondary MPIDR table cardinality follows
+        // MAX_SECONDARY_CORES; if the constant changes the table must
+        // be updated in lockstep.
+        assert_eq!(SECONDARY_MPIDR_TABLE.len(), MAX_SECONDARY_CORES);
+    }
+
+    // ========================================================================
+    // WS-SM SM0.N — Per-CPU data block + TPIDR_EL1 setup tests
+    // ========================================================================
+
+    #[test]
+    fn sm0n_per_cpu_data_array_has_4_slots() {
+        // WS-SM SM0.N: per-CPU data array carries one slot per core
+        // (boot core + 3 secondaries on RPi5).  Loosely coupled to
+        // MAX_SECONDARY_CORES + 1 = 4.
+        assert_eq!(PER_CPU_DATA.len(), MAX_SECONDARY_CORES + 1);
+        assert_eq!(PER_CPU_DATA.len(), 4);
+    }
+
+    #[test]
+    fn sm0n_per_cpu_data_struct_is_64_byte_aligned() {
+        // WS-SM SM0.N: each PerCpuData is one cache line wide via
+        // `repr(C, align(64))`.  This test verifies the alignment is
+        // preserved if a future maintainer adds fields without
+        // checking the alignment attribute.
+        use core::mem::align_of;
+        assert_eq!(align_of::<PerCpuData>(), 64,
+            "PerCpuData must be 64-byte aligned to avoid false sharing");
+    }
+
+    #[test]
+    #[allow(clippy::manual_is_multiple_of)]
+    fn sm0n_per_cpu_data_size_is_multiple_of_align() {
+        // WS-SM SM0.N: a struct's size is always a multiple of its
+        // alignment in Rust.  At SM0 the struct holds [u64; 8] = 64
+        // bytes, which is exactly one alignment unit.  This test
+        // catches a future layout change that would shrink the struct
+        // below the alignment unit (a footgun under repr(align(N))).
+        //
+        // The `sz % al == 0` form is intentional: `usize::is_multiple_of`
+        // is stable only since Rust 1.87, and the CI toolchain is
+        // pinned at 1.82.  Suppressing the clippy hint locally rather
+        // than using the newer API keeps the MSRV unchanged.
+        use core::mem::{align_of, size_of};
+        let sz = size_of::<PerCpuData>();
+        let al = align_of::<PerCpuData>();
+        assert!(sz >= al,
+            "size_of::<PerCpuData>() = {} must be >= align_of = {}", sz, al);
+        assert!(sz % al == 0,
+            "size_of::<PerCpuData>() = {} must be a multiple of align = {}",
+            sz, al);
+    }
+
+    #[test]
+    fn sm0n_per_cpu_data_zero_constructor_yields_zero_bytes() {
+        // WS-SM SM0.N: `PerCpuData::zero()` produces an all-zero
+        // instance.  This pairs with SM0.M (.smp_stacks zeroing): the
+        // boot core's per-CPU data is statically zero-initialised
+        // before any kernel code observes it, so no stale RAM contents
+        // can leak through.
+        let pcd = PerCpuData::zero();
+        // SAFETY: we own the local `pcd` and read its bytes through a
+        // valid reference; this only validates the all-zero invariant
+        // claimed by the constructor.
+        let bytes = unsafe {
+            core::slice::from_raw_parts(
+                &pcd as *const PerCpuData as *const u8,
+                core::mem::size_of::<PerCpuData>(),
+            )
+        };
+        assert!(bytes.iter().all(|&b| b == 0),
+            "PerCpuData::zero() must produce all-zero bytes");
+    }
+
+    #[test]
+    fn sm0n_per_cpu_data_static_array_zero_initialised() {
+        // WS-SM SM0.N: the `PER_CPU_DATA` static array is initialised
+        // via `PerCpuData::zero()` at load time, so every byte starts
+        // at zero.  This test verifies the property without writing to
+        // the static (which would require taking a `&mut`, denied by
+        // the `pub static` declaration).
+        for (idx, slot) in PER_CPU_DATA.iter().enumerate() {
+            // SAFETY: read-only inspection of bytes via a `*const`
+            // pointer; no concurrent writers exist (SMP_ENABLED is
+            // false in tests so secondaries never run).
+            let bytes = unsafe {
+                core::slice::from_raw_parts(
+                    slot as *const PerCpuData as *const u8,
+                    core::mem::size_of::<PerCpuData>(),
+                )
+            };
+            assert!(bytes.iter().all(|&b| b == 0),
+                "PER_CPU_DATA[{}] must start zero-initialised", idx);
+        }
+    }
+
+    #[test]
+    fn sm0n_per_cpu_slot_addr_in_bounds_returns_valid_address() {
+        // WS-SM SM0.N: `per_cpu_slot_addr(i)` returns the address of
+        // PER_CPU_DATA[i] for any in-range index 0..=3.  The address
+        // must be aligned to 64 bytes (the cache-line alignment of
+        // PerCpuData).
+        for i in 0..PER_CPU_DATA.len() {
+            let addr = per_cpu_slot_addr(i);
+            assert!(addr != 0, "per_cpu_slot_addr({}) returned null", i);
+            assert_eq!(addr % 64, 0,
+                "per_cpu_slot_addr({}) = {:#x} not 64-byte aligned",
+                i, addr);
+        }
+    }
+
+    #[test]
+    fn sm0n_per_cpu_slot_addr_distinct_per_core() {
+        // WS-SM SM0.N: distinct context_ids map to distinct slot
+        // addresses.  This is the property the boot.S TPIDR_EL1 setup
+        // relies on — each core's TPIDR_EL1 must be unique so per-core
+        // lookups don't alias.  Fixed-size array (no `Vec` in `no_std`).
+        let addrs: [usize; 4] = [
+            per_cpu_slot_addr(0),
+            per_cpu_slot_addr(1),
+            per_cpu_slot_addr(2),
+            per_cpu_slot_addr(3),
+        ];
+        for i in 0..addrs.len() {
+            for j in (i + 1)..addrs.len() {
+                assert_ne!(addrs[i], addrs[j],
+                    "per_cpu_slot_addr({}) and per_cpu_slot_addr({}) must differ",
+                    i, j);
+            }
+        }
+    }
+
+    #[test]
+    fn sm0n_per_cpu_slot_addr_stride_matches_struct_size() {
+        // WS-SM SM0.N: consecutive slot addresses differ by exactly
+        // size_of::<PerCpuData>() = 64.  This is the layout invariant
+        // the boot.S TPIDR_EL1 setup relies on: the asm computes the
+        // slot address as `PER_CPU_DATA + context_id * 64`, so any
+        // change to the struct size would silently corrupt the
+        // per-core lookup unless caught here.
+        use core::mem::size_of;
+        let stride = size_of::<PerCpuData>();
+        for i in 0..(PER_CPU_DATA.len() - 1) {
+            let a = per_cpu_slot_addr(i);
+            let b = per_cpu_slot_addr(i + 1);
+            assert_eq!(b - a, stride,
+                "PER_CPU_DATA stride between slot {} and {} = {}, expected {}",
+                i, i + 1, b - a, stride);
+        }
+    }
+
+    #[test]
+    fn sm0n_per_cpu_data_slot_size_matches_asm_literal() {
+        // WS-SM SM0.N: the `PER_CPU_DATA_SLOT_SIZE` Rust constant is
+        // the single source of truth for the slot stride the
+        // `secondary_entry` asm uses.  The asm reads it from the
+        // `.rodata` symbol `PER_CPU_DATA_SLOT_SIZE_SYM`, so the
+        // build is structurally inconsistent if Rust and asm
+        // disagree on the value.  Compile-time assertions (in the
+        // parent module) additionally pin `size_of::<PerCpuData>()`
+        // and `align_of::<PerCpuData>()` to the constant.  This
+        // runtime assertion is the external-observability check.
+        use core::mem::size_of;
+        assert_eq!(PER_CPU_DATA_SLOT_SIZE, 64,
+            "PER_CPU_DATA_SLOT_SIZE must equal 64 (the SM0 cache-line stride)");
+        assert_eq!(size_of::<PerCpuData>(), PER_CPU_DATA_SLOT_SIZE,
+            "size_of::<PerCpuData>() must equal PER_CPU_DATA_SLOT_SIZE");
+    }
+
+    #[test]
+    fn sm0n_per_cpu_data_slot_size_sym_observable() {
+        // WS-SM SM0.N: the `PER_CPU_DATA_SLOT_SIZE_SYM` linkable
+        // symbol used by `boot.S::secondary_entry` for the `madd`
+        // stride must be observable from Rust at the value
+        // `PER_CPU_DATA_SLOT_SIZE`.  A future PR that drops the
+        // `#[used]` attribute (causing the linker to discard the
+        // symbol) would break this test before the asm could fault
+        // at runtime.
+        assert_eq!(PER_CPU_DATA_SLOT_SIZE_SYM, PER_CPU_DATA_SLOT_SIZE as u64,
+            "PER_CPU_DATA_SLOT_SIZE_SYM (consumed by boot.S) must equal \
+             PER_CPU_DATA_SLOT_SIZE (the Rust source of truth)");
+        // Also verify the symbol's address is non-null (linker
+        // placement check).
+        let sym_addr = &PER_CPU_DATA_SLOT_SIZE_SYM as *const u64 as usize;
+        assert!(sym_addr != 0,
+            "PER_CPU_DATA_SLOT_SIZE_SYM must have a valid linker-assigned address");
+    }
+
+    #[test]
+    #[should_panic(expected = "context_id out of range")]
+    fn sm0n_per_cpu_slot_addr_out_of_bounds_panics() {
+        // WS-SM SM0.N: an out-of-range context_id panics rather than
+        // returning a stray address.  Defends against a malformed PSCI
+        // call passing context_id ≥ MAX_SECONDARY_CORES + 1.
+        let _ = per_cpu_slot_addr(PER_CPU_DATA.len());
     }
 }

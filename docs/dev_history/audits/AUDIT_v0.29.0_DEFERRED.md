@@ -293,26 +293,54 @@ currently-active plan file tracks them.**
   - `storeBarrierClosure` proves OSH+ISH composition subsumes both
     inner- and outer-shareable store ordering requirements.
 
-### DEF-R-HAL-L20 — Secondary-Core Bring-Up (SMP) **[RESOLVED AT v0.30.10]**
+### DEF-R-HAL-L20 — Secondary-Core Bring-Up (SMP) **[PARTIALLY RESOLVED AT v0.30.10 — scaffolding only; full activation in WS-SM]**
 
 - **Audit finding:** R-HAL-L20 (LOW, surfaced by AN1-C).
   Single-core boot is the only path; secondary cores are parked in
   the `boot.S` spin loop.
-- **Disposition:** **RESOLVED** at v0.30.10 by WS-AN Phase AN9-J.
-  v1.0.0 ships SMP code merged but **disabled by default**
-  (`SMP_ENABLED = false`); the activation cost is flipping the
-  runtime flag.
-- **Resolution artefacts (AN9-J):**
-  - New `rust/sele4n-hal/src/psci.rs` module: `cpu_on(target_mpidr,
+- **Disposition update (v0.31.3, WS-SM SM0.L):** The AN9-J landing
+  at v0.30.10 shipped Rust HAL **scaffolding** (PSCI wrapper, per-core
+  stacks, MPIDR gate, ready-flag array, host-side test harness).  It
+  did **not** activate SMP at runtime: `bring_up_secondaries()` is
+  never called from any boot path (cf. WS-SM finding SMP-C1) and
+  `rust_secondary_main` performs no per-core MMU / VBAR / GIC / timer
+  initialisation (SMP-C2).  Activation is the WS-SM workstream's
+  scope.  This entry's prior "RESOLVED" disposition was materially
+  inaccurate — it conflated "code merged behind a runtime flag" with
+  "feature implemented".  WS-SM SM0 (foundations & honesty patches)
+  rewrote this row to honestly reflect the partial state.
+- **Resolution artefacts (AN9-J — scaffolding):**
+  - `rust/sele4n-hal/src/psci.rs` — `cpu_on(target_mpidr,
     entry_point, context_id)` PSCI wrapper using `hvc #0`.
-  - New `rust/sele4n-hal/src/smp.rs` module:
-    `SMP_ENABLED: AtomicBool`, `CORE_READY: [AtomicBool; 4]`,
-    `SECONDARY_MPIDR_TABLE` (3 secondaries for BCM2712),
-    `bring_up_secondaries()` (primary entry),
-    `rust_secondary_main()` (secondary entry).
+  - `rust/sele4n-hal/src/smp.rs` — `SMP_ENABLED: AtomicBool` (false at
+    v1.0.0), `CORE_READY: [AtomicBool; 4]`, `SECONDARY_MPIDR_TABLE`,
+    `bring_up_secondaries()`, `rust_secondary_main()` placeholder.
   - 9 regression tests cover PSCI return-code roundtrip,
-    secondary-MPIDR table values, default-disabled bring-up, and
-    enabled-with-stub dispatch path.
+    secondary-MPIDR table values, default-disabled bring-up.
+- **Scaffolding hardening (WS-SM SM0.M/N/O — v0.31.3):**
+  - **SM0.M**: `.smp_stacks` zeroed at boot (closes SMP-M3: stale
+    RAM contents could leak through to secondary cores after PSCI
+    CPU_ON).
+  - **SM0.N**: TPIDR_EL1 set on `secondary_entry` to per-CPU data
+    block (closes SMP-M4: the smp.rs docstring claimed TPIDR_EL1
+    setup but the asm omitted it).  Adds `PerCpuData` struct +
+    `PER_CPU_DATA` array seam.
+  - **SM0.O**: `MAX_SECONDARY_CORES` pinned to
+    `PlatformBinding.coreCount - 1` via Rust compile-time assertion
+    (closes SMP-L2: legacy hard-coded `3` would silently drift from
+    Lean side).
+- **Full-activation remaining (WS-SM SM1..SM9):** per-core scheduler
+  state (SM1.B), verified ticket-lock + RW-lock primitives (SM2),
+  per-object lock acquisition discipline using SM0.I's LockId total
+  order (SM3), per-core kernel state migration (SM4), per-core
+  scheduler liveness (SM5), cross-core IPC fast-path (SM6), TLB
+  shootdown via SM0.H's SgiKind (SM7), information-flow projection
+  under SMP (SM8), final release closure (SM9).
+- **Cross-references:**
+  - WS-SM plan: `docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`.
+  - SM0 sub-plan: `docs/planning/SMP_FOUNDATIONS_PLAN.md`.
+  - SMP-C1..C4 findings (full-activation gap) are tracked inside
+    the WS-SM phase plans, not in this DEFERRED roll-up.
 
 ---
 

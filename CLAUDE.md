@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.2.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.3.
 
 > The version line above is **CI-enforced** by
 > `scripts/check_version_sync.sh` (a Tier 0 gate). When you bump
@@ -150,12 +150,12 @@ To find files that need pagination today, run:
 - `tests/NegativeStateSuite.lean` (~4029 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~3908 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3783 lines)
-- `SeLe4n/Kernel/CrossSubsystem.lean` (~3384 lines)
-- `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3303 lines)
+- `SeLe4n/Kernel/CrossSubsystem.lean` (~3390 lines)
+- `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3159 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
-- `docs/gitbook/12-proof-and-invariant-map.md` (~3039 lines)
+- `docs/gitbook/12-proof-and-invariant-map.md` (~3040 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~2809 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~2672 lines)
 - `SeLe4n/Platform/Boot.lean` (~2591 lines)
@@ -168,9 +168,9 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2326 lines)
 - `SeLe4n/Model/State.lean` (~2237 lines)
+- `docs/spec/SELE4N_SPEC.md` (~2216 lines)
 - `tests/OperationChainSuite.lean` (~2208 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~2204 lines)
-- `docs/spec/SELE4N_SPEC.md` (~2196 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2187 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~2065 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~1991 lines)
@@ -196,11 +196,11 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_FOUNDATIONS_PLAN.md` (~1646 lines)
 - `tests/InformationFlowSuite.lean` (~1623 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1590 lines)
-- `SeLe4n/Kernel/Architecture/Invariant.lean` (~1521 lines)
+- `SeLe4n/Kernel/Architecture/Invariant.lean` (~1520 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
-- `docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
+- `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
@@ -240,7 +240,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~836 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~827 lines)
-- `docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
+- `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `tests/TwoPhaseArchSuite.lean` (~811 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
@@ -560,10 +560,112 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **WS-RC remediation workstream IN FLIGHT (v0.30.11 → v0.31.0 → v1.0.0,
-  branch `claude/audit-workstream-planning-XsmKS`)**:
+- **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 → v0.31.3 → v0.32.x → v1.0.0,
+  branch `claude/complete-sm0-foundations-gldW8`)**:
+  Unified workstream merging WS-RC's remaining R6..R14 phases with the
+  SMP-specific SM-phases (SM0..SM9).  Closes at v1.0.0 with a bootable
+  verified SMP microkernel on Raspberry Pi 5.
+
+  **Plans**:
+  - Master overview:
+    [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md).
+  - SM0 (foundations & honesty patches) — CLOSED at v0.31.3 (foundational types and honesty patches landed; type-level scaffolding ready for SM1):
+    [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](docs/planning/SMP_FOUNDATIONS_PLAN.md).
+  - SM1+ phase plans (Rust HAL, verified locks, per-core state, per-core
+    scheduler, cross-core IPC, TLB shootdown, info-flow, release closure):
+    `docs/planning/SMP_*.md`.
+
+  **Decisions (binding)**: per-object RW fine locks; path-a Vector state
+  replacement; hierarchical-by-kind lock order (LockKind levels 0..9 from
+  SM0.I); SMP enabled by default at v1.0.0 once SM5 lands; numCores via
+  `PlatformBinding.coreCount` (RPi5 = 4); verified TicketLock + RwLock
+  primitives with formal mutex/fairness theorems; SGI INTID 0..4 reserved
+  for kernel SMP coordination (SM0.H).
+
+  **WS-SM SM0 LANDED on branch
+  `claude/complete-sm0-foundations-gldW8`** (v0.31.3, foundational types
+  + honesty patches): closes the type-level scaffolding for the SM1..SM9
+  follow-on phases.  21 sub-tasks across 6 categories landed in one cut:
+
+  - **SM0.E + SM0.F**: foundational types
+    `SeLe4n.Kernel.Concurrency.numCores` (`= 4`),
+    `CoreId := Fin numCores`, `bootCoreId`, `allCores` enumeration with
+    `numCores_pos` / `allCores_length` / `allCores_nodup` /
+    `bootCoreId_valid` witnesses;
+    `SharingDomain` inductive (`.inner` / `.outer`) plus
+    `dsbForSharing` / `dsbStForSharing` `BarrierKind` selectors.
+    Production-reachable via `Platform.Contract` (which now carries
+    `PlatformBinding.sharingDomain`).
+  - **SM0.G**: PlatformBinding extension — `coreCount`, `coreCountPos`,
+    `bootCoreId : Fin coreCount`, `sharingDomain : SharingDomain`
+    fields added to the typeclass; RPi5 (`coreCount := 4`,
+    `bootCoreId := ⟨0, _⟩`, `sharingDomain := .inner`) and Sim instances
+    updated.  Three pinning theorems
+    (`numCores_eq_rpi5_coreCount`, `bootCoreId_val_eq_rpi5`,
+    `rpi5_sharingDomain`) make the literal `Concurrency.numCores`
+    structurally agree with the RPi5 binding's `coreCount` via `rfl`.
+  - **SM0.H**: `SgiKind` enumeration (`reschedule`, `tlbShootdownReq`,
+    `tlbShootdownAck`, `cacheBroadcast`, `haltAll`) with
+    `toIntid : SgiKind → Fin 16` mapping to GIC-400 INTIDs 0..4;
+    `toIntid_injective`, `toIntid_in_range`, `toIntid_lt_five` proofs.
+  - **SM0.I**: `LockKind` 10-layer hierarchy (`objStore` → `untyped` →
+    `cnode` → `tcb` → `endpoint` → `notification` → `reply` →
+    `schedContext` → `vspaceRoot` → `page`) with
+    `level_strictMono`, `level_surjective`, `level_bounded` theorems;
+    `LockId` = `(kind, objId)` with lexicographic total order
+    (`le_total`, `le_refl`, `le_trans`, `le_antisymm`, `lt_trichotomy`);
+    `BklState` (`unheld` / `held CoreId`) with `bklState_unique_owner`.
+  - **SM0.A + SM0.B**: `ArchAssumption` inductive grows from 5 to 6
+    constructors with the new `singleCoreOperation` arm pointing at
+    `bootFromPlatform_singleCore_witness` (closes SMP-H2 audit
+    finding); `archAssumptionConsumer_distinct_6` proves all 15 pairs
+    (C(6,2)) are distinct; `architecture_assumptions_index_total_6`
+    is the new exhaustivity marker; `assumptionInventory_count`
+    pins the inventory size at 6.
+  - **SM0.C + SM0.D**: `SeLe4n.Kernel.Concurrency.Anchors` build-time
+    `@`-references every `smpLatentInventory` entry's `identifier` and
+    `sourceTheorem` so a renamed underlying symbol fails the build
+    (closes SMP-H3 audit finding); `smpLatentInventory_identifiers_nodup`
+    and `smpLatentInventory_sourceTheorems_nodup` close the NoDup gap
+    (SMP-L1).
+  - **SM0.J + SM0.K + SM0.L**: documentation honesty patches —
+    every `dev_history/audits/...` cross-reference removed from
+    production sources (`rust/sele4n-hal/src/`, `SeLe4n/Kernel/`); every
+    "deferred to WS-V" SMP claim repointed to WS-SM phase plans;
+    `AUDIT_v0.29.0_DEFERRED.md::DEF-R-HAL-L20` rewritten from
+    "RESOLVED" to "PARTIALLY RESOLVED — scaffolding only; full
+    activation in WS-SM" with cross-references to the WS-SM phase
+    plans.
+  - **SM0.M + SM0.N + SM0.O**: structural fixes in the Rust HAL —
+    `.smp_stacks` zeroed at boot (closes SMP-M3); TPIDR_EL1 set in
+    `secondary_entry` to per-CPU data block (closes SMP-M4) with new
+    `PerCpuData` struct + `PER_CPU_DATA[4]` array seam;
+    `MAX_SECONDARY_CORES` pinned to `PlatformBinding.coreCount - 1`
+    via Rust `const _: () = assert!(...)` (closes SMP-L2).  10 new
+    Rust unit tests cover layout, alignment, zero-initialisation,
+    distinctness, stride, and out-of-range panic.
+  - **SM0.S + SM0.T + SM0.R**: testing infrastructure —
+    `tests/SmpFoundationsSuite.lean` with 50+ surface-anchor `#check`s
+    plus 41 runtime decidable assertions (`lake exe smp_foundations_suite`),
+    wired into tier-2 negative + tier-3 invariant surface;
+    `scripts/test_tier4_smp_bootcheck.sh` SKIP-only stub reserves the
+    tier-4 slot for SM1.H..SM8.E to populate; `docs/codebase_map.json`
+    regenerated.
+
+  **WS-RC R0..R5 LANDED at v0.31.2** (historical record preserved in
+  [`docs/CLAUDE_HISTORY.md`](docs/CLAUDE_HISTORY.md) and
+  [`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md)).
+  R6..R14 absorbed into SM-prefixed sub-tasks per the SM0.Q merge —
+  see
+  [`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)
+  §15 for the per-phase absorption mapping.
+
+- **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
+  branch `claude/audit-workstream-planning-XsmKS` and successors)**
+  — historical detail retained for traceability:
   Remediates the v0.30.11 audit cycle (comprehensive + deep verification)
-  via 15 phases (R0..R14). Plan:
+  via 15 phases (R0..R14); R0..R5 landed at v0.31.2; R6..R14 absorbed
+  into WS-SM per the SM0.Q merge.  Plan:
   [`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md).
   Errata recording the audit-text corrections discovered during planning:
   [`docs/audits/AUDIT_v0.30.11_ERRATA.md`](docs/audits/AUDIT_v0.30.11_ERRATA.md).
@@ -813,7 +915,8 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
   **WS-RC R5 deferred-work SUBSTANTIVE COMPLETION (v0.31.2, branch
   `claude/review-closeout-plan-UCrc7`)**: the deferred-work plan
-  ([`docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md`](docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md))
+  ([`docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md`](docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md)
+  — archived to dev_history per WS-SM SM0.Q.2)
   completes the four "AVOIDED" / "UNDER-DELIVERED" items from the
   initial R5 landing.  Phase P (foundational lemmas):
   `blockingAcyclic_of_subgraph` + `blockingChain_subgraph_prefix`
@@ -854,7 +957,8 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
   **WS-RC R4 close-out COMPLETE (v0.31.0, branch
   `claude/review-closeout-plan-HToSk`)**:  the 9-sub-PR close-out
-  ([`docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md`](docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md))
+  ([`docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md`](docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md)
+  — archived to dev_history per WS-SM SM0.Q.2)
   plus an audit-driven deep cleanup completes the four R4 sub-tasks
   left open after the v0.30.11 partial landing and **fully retires**
   the historical state-level `cspaceSlotUnique` and `uniqueWaiters`

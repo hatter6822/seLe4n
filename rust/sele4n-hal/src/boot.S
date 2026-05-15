@@ -72,6 +72,33 @@ _start:
 
 .L_bss_done:
     // =====================================================================
+    // WS-SM SM0.M (closes SMP-M3): Zero the SMP secondary-core stacks.
+    //
+    // The `.smp_stacks` region (link.ld) is `(NOLOAD)` and therefore not
+    // zeroed by the BSS sweep above.  At v1.0.0 with `SMP_ENABLED = false`
+    // this is harmless (secondaries never enter), but once SM1 enables
+    // PSCI bring-up the stale RAM contents would be observable to
+    // secondary cores after PSCI CPU_ON — a defensive zeroing here
+    // closes the gap structurally rather than relying on the
+    // "secondaries never enter" runtime invariant.
+    //
+    // Cost on Cortex-A76: 192 KiB / 16 B = 12 288 stp instructions ≈
+    // 12 K cycles at one-issue-per-cycle for stp xzr, xzr — negligible
+    // compared to the rest of the boot pipeline.
+    // =====================================================================
+    adrp    x0, __smp_secondary_stacks_bottom
+    add     x0, x0, :lo12:__smp_secondary_stacks_bottom
+    adrp    x1, __smp_secondary_stack_top
+    add     x1, x1, :lo12:__smp_secondary_stack_top
+
+.L_smp_stacks_zero_loop:
+    cmp     x0, x1
+    b.ge    .L_smp_stacks_done
+    stp     xzr, xzr, [x0], #16
+    b       .L_smp_stacks_zero_loop
+
+.L_smp_stacks_done:
+    // =====================================================================
     // Step 4: Set up kernel stack
     //
     // __stack_top is defined in the linker script, pointing to the top of
@@ -99,16 +126,17 @@ _start:
 // Secondary core spin loop — park non-primary cores
 //
 // Secondary cores enter a low-power WFE loop. Multi-core support (SMP) is
-// closed by AN9-J (DEF-R-HAL-L20) per
-// docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12. To wake a secondary
-// core, write to a mailbox and issue SEV.
+// implemented in WS-SM (tracked in
+// docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). The AN9-J scaffolding
+// (DEF-R-HAL-L20) is the substrate; WS-SM activates and verifies it.
+// To wake a secondary core, write to a mailbox and issue SEV.
 //
 // AK5-N (R-HAL-L9 / R-HAL-L16): Wake-storm risk is latent because the
 // current kernel never issues SEV; any future WFE-aware spinlock must
 // ensure secondary cores gate on a mailbox value before exiting WFE so a
 // spurious SEV (or SEVL) does not cause all secondary cores to race into
-// boot simultaneously. Documented here until AN9-J adds the proper SMP
-// bring-up with a per-core parking mailbox (closes DEF-R-HAL-L20).
+// boot simultaneously. Documented here until WS-SM SM3 ships per-core
+// parking mailboxes alongside the verified TicketLock primitive.
 // =========================================================================
 .L_secondary_spin:
     wfe
@@ -157,6 +185,43 @@ secondary_entry:
     add     x2, x2, :lo12:__smp_secondary_stack_top
     sub     sp, x2, x1               // sp = stack_top - offset
     and     sp, sp, #~0xF            // ensure 16-byte alignment
+
+    // =====================================================================
+    // WS-SM SM0.N (closes SMP-M4): set TPIDR_EL1 to per-CPU data base.
+    //
+    // ARMv8-A reserves TPIDR_EL1 as the kernel's per-core scratch
+    // register (ARM ARM D17.2.139).  At kernel-mode entry, every core
+    // expects TPIDR_EL1 to point at its own `PerCpuData` slot in the
+    // `PER_CPU_DATA` array (smp.rs).  Loading the slot address here
+    // (before any Rust code executes on this core) gives `mrs xN,
+    // tpidr_el1` a defined value from the very first instruction of
+    // `rust_secondary_main`.
+    //
+    // Slot offset = context_id * sizeof(PerCpuData) where the layout
+    // is PER_CPU_DATA[0] = boot core, PER_CPU_DATA[1..3] = secondaries.
+    // x0 already holds context_id from the PSCI calling convention.
+    //
+    // The slot stride is the Rust constant `PER_CPU_DATA_SLOT_SIZE`
+    // (smp.rs).  Rather than hard-code the literal here (which would
+    // silently drift if the Rust struct grew without updating the
+    // asm), the slot stride is read from the `.rodata` symbol
+    // `PER_CPU_DATA_SLOT_SIZE_SYM` via the same `adrp`+`ldr` pattern
+    // AN8-B uses for `MPIDR_CORE_ID_MASK_SYM`.  This makes the Rust
+    // constant the single source of truth — any inconsistency between
+    // the struct size and the asm-observed stride is structurally
+    // impossible because there is no asm-observed stride independent
+    // of the symbol.
+    //
+    // x4 = address of PER_CPU_DATA[0]
+    // x5 = PER_CPU_DATA_SLOT_SIZE = sizeof(PerCpuData)
+    // x6 = TPIDR_EL1 = PER_CPU_DATA + context_id * PER_CPU_DATA_SLOT_SIZE
+    // =====================================================================
+    adrp    x4, PER_CPU_DATA
+    add     x4, x4, :lo12:PER_CPU_DATA
+    adrp    x5, PER_CPU_DATA_SLOT_SIZE_SYM
+    ldr     x5, [x5, :lo12:PER_CPU_DATA_SLOT_SIZE_SYM]
+    madd    x6, x0, x5, x4           // x6 = x0 * stride + x4
+    msr     tpidr_el1, x6
 
     // Step 3: jump to Rust per-core init with the original context_id.
     //

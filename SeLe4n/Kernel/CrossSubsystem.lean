@@ -2938,10 +2938,11 @@ theorem cspaceRevoke_cdt_hypothesis_discharged_at
 
 /-- AN12-A (Theme 4.1) — closure-form discharge index marker.
 
-The full index lives in `docs/dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md` and
-maps every closure-form hypothesis (`hCdtPost`, `hProjEq`, `hSchedProj`,
-`hServiceProjEq`) in the proof surface to either a substantively proven
-companion bridge (`{cspaceCopy,cspaceMove,cspaceMintWithCdt,cspaceMutate,
+The full index lives in `docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md`
+(active) and maps every closure-form hypothesis (`hCdtPost`,
+`hProjEq`, `hSchedProj`, `hServiceProjEq`) in the proof surface to
+either a substantively proven companion bridge
+(`{cspaceCopy,cspaceMove,cspaceMintWithCdt,cspaceMutate,
 cspaceDeleteSlot,cspaceRevoke}_cdt_hypothesis_discharged_at` above) or a
 named frame-lemma recipe in `SeLe4n/Kernel/InformationFlow/Invariant/
 Operations.lean`.
@@ -2952,7 +2953,7 @@ pattern (the index content is in the markdown file). The companion
 `#check` reachability tests are listed in §3 of the index file and
 exercised by `scripts/test_tier3_invariant_surface.sh`. -/
 theorem closureForm_discharge_index_documented : True := trivial
--- Cross-reference: docs/dev_history/audits/AUDIT_v0.30.6_DISCHARGE_INDEX.md
+-- Cross-reference: docs/audits/AUDIT_v0.30.11_DISCHARGE_INDEX.md
 
 -- ============================================================================
 -- AN6-F: Phase AN6 CrossSubsystem MEDIUM batch (CX-M01..M05)
@@ -3016,8 +3017,9 @@ AN6-C adds *transitive* ancestor tracking via a new
 `Model/Object/Types.lean`) plus a parent-chain walker and a transitive
 disjointness predicate. The full 13th-conjunct integration (preservation
 proofs + 130-site rename cascade) is a multi-day workstream and is
-tracked as follow-up AN6-C.5..C.10 per
-`docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` §9. This section lands
+tracked as follow-up AN6-C.5..C.10 (originally planned in WS-AN
+AN6-C; the historical record is in `docs/WORKSTREAM_HISTORY.md`).
+This section lands
 the foundation pieces (C.1 through C.4) so future commits can compose
 on the predicate without re-doing the design work.
 
@@ -3261,8 +3263,12 @@ theorem collectQueueMembers_head_is_start
     (DEF-R-HAL-L20 / AN9-J) to retire this single-core witness
     explicitly rather than letting the assumption slip silently.
 
-    SMP bring-up is tracked in `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md`
-    §12 (phase AN9-J). -/
+    SMP bring-up is in flight in WS-SM
+    (`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`); AN9-J shipped
+    the Rust HAL scaffolding while WS-SM SM2..SM5 wire the per-core
+    scheduler state and SM0.A registers `singleCoreOperation` as the
+    sixth `Architecture.ArchAssumption` constructor pointing at this
+    very theorem. -/
 theorem bootFromPlatform_singleCore_witness :
     ∀ (s : SchedulerState),
       s.current = none ∨ ∃ tid : SeLe4n.ThreadId, s.current = some tid := by

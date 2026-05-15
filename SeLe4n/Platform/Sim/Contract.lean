@@ -179,6 +179,15 @@ instance simPlatformBinding : SeLe4n.Platform.PlatformBinding SimPlatform where
   bootContract := simBootContract
   interruptContract := simInterruptContract
   bootVSpaceRoot := some simBootVSpaceRootEntry
+  -- WS-SM SM0.G: the simulation binding mirrors the RPi5 4-core
+  -- topology so trace harnesses exercise SM-phase code paths under
+  -- the same `coreCount` the production binding exposes.  A future
+  -- single-core simulation variant (for testing per-core code on a
+  -- minimal topology) can use `coreCount := 1` in its own binding.
+  coreCount := 4
+  coreCountPos := by decide
+  bootCoreId := ⟨0, by decide⟩
+  sharingDomain := .inner
 
 /-- S5-D: Marker type for the simulation restrictive (substantive) platform. -/
 structure SimRestrictivePlatform where
@@ -205,6 +214,11 @@ instance simRestrictivePlatformBinding :
   -- sim binding — the boot pipeline doesn't depend on which sim
   -- runtime contract is in effect.
   bootVSpaceRoot := some simBootVSpaceRootEntry
+  -- WS-SM SM0.G: same 4-core topology as the permissive sim binding.
+  coreCount := 4
+  coreCountPos := by decide
+  bootCoreId := ⟨0, by decide⟩
+  sharingDomain := .inner
 
 /-- U8-A/U-L16: Compile-time consistency theorem proving that the
     `simSubstantiveMemoryMap` used in `RuntimeContract.lean` is identical to

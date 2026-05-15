@@ -290,7 +290,7 @@ Each phase has its own dedicated planning document. The index:
 
 Document: [`SMP_FOUNDATIONS_PLAN.md`](SMP_FOUNDATIONS_PLAN.md).
 
-40-50 sub-tasks across ~18 PRs over v0.32.0..v0.32.x.
+21 sub-tasks landed in a single coherent cut at v0.31.3 (compressed from the originally-planned ~18-PR v0.32.x spread per maintainer redirection).
 Foundational types (`CoreId`, `LockKind`, `BklState`, `SgiKind`,
 `SharingDomain`); documentation drift; small structural fixes;
 WS-RC absorption. **Prerequisite**: WS-RC R0..R5 LANDED (true at
@@ -472,7 +472,7 @@ WS-RC and WS-SM are merged. Opens immediately at v0.31.2 boundary.
 
 | Phase | Releases | Estimated calendar |
 |-------|----------|--------------------|
-| SM0 | v0.32.0 → v0.32.x | 4-6 weeks |
+| SM0 | v0.31.3 (LANDED) | single cut (compressed from the original v0.32.0..v0.32.x ~18-PR spread per maintainer redirection) |
 | SM1 ‖ SM2 | v0.33.0 → v0.45.x | 16-22 weeks (parallel) |
 | SM3 | v0.46.0 → v0.52.x | 8-12 weeks |
 | SM4 | v0.53.0 → v0.70.x | 20-26 weeks (largest phase) |

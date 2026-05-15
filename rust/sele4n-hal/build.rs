@@ -108,7 +108,8 @@ fn scan_boot_s_for_legacy_mpidr_literal() {
             "AN8-B.5 (H-18) regression: `{path}` contains the legacy \
              literal encoding of MPIDR_CORE_ID_MASK. \
              Use `adrp`+`ldr` via `MPIDR_CORE_ID_MASK_SYM` instead \
-             (cpu.rs). See docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §11 AN8-B."
+             (cpu.rs).  See WS-AN AN8-B (historical record in \
+             docs/WORKSTREAM_HISTORY.md)."
         );
     }
 }

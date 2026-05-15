@@ -224,6 +224,29 @@ pub fn read_vbar_el1() -> u64 {
     read_sysreg!("vbar_el1")
 }
 
+/// **WS-SM SM0.N**: Read TPIDR_EL1 — Thread Pointer / ID Register (EL1).
+///
+/// ARM ARM D17.2.139.  EL1-scope per-core scratch register.  The seLe4n
+/// kernel stores each core's `PerCpuData` slot address here so a
+/// per-core lookup reduces to a single `mrs xN, tpidr_el1` instruction
+/// without any hash/lookup overhead.  Set by `boot.S::secondary_entry`
+/// on secondary cores and by `boot.rs::rust_boot_main` on the boot
+/// core.
+#[inline(always)]
+pub fn read_tpidr_el1() -> u64 {
+    read_sysreg!("tpidr_el1")
+}
+
+/// **WS-SM SM0.N**: Write TPIDR_EL1 — Thread Pointer / ID Register (EL1).
+///
+/// ARM ARM D17.2.139.  Used by the boot core in `rust_boot_main` to
+/// install the address of `PER_CPU_DATA[0]` so the boot core's per-core
+/// lookups go through the same `mrs xN, tpidr_el1` path as secondaries.
+#[inline(always)]
+pub fn write_tpidr_el1(val: u64) {
+    write_sysreg!("tpidr_el1", val);
+}
+
 // ============================================================================
 // AG7-B Tests
 // ============================================================================
@@ -319,5 +342,14 @@ mod tests {
     #[test]
     fn read_daif_no_panic() {
         let _ = read_daif();
+    }
+
+    /// WS-SM SM0.N: TPIDR_EL1 helpers compile and (on host stubs)
+    /// do not panic.  Production verification happens via boot
+    /// trace in QEMU once SM1 enables the runtime SMP path.
+    #[test]
+    fn read_write_tpidr_el1_no_panic() {
+        let _ = read_tpidr_el1();
+        write_tpidr_el1(0);
     }
 }

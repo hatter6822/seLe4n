@@ -46,9 +46,8 @@ keeping the hardware walk implementation separate for the FFI bridge.
 shadow HashMap model. End-to-end proofs against hardware page table walks
 require the module to be integrated into the main kernel execution path
 (currently orphaned — see §8.15.1 of SELE4N_SPEC.md for the activation
-roadmap). Hardware-integration activation closed by AN9-A (TLB+cache
-composition) and AN9-F (SVC FFI wiring) per
-docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12.
+roadmap). Hardware-integration activation closed by WS-AN AN9-A (TLB+cache
+composition) and AN9-F (SVC FFI wiring).
 -/
 
 namespace SeLe4n.Kernel.Architecture
@@ -82,7 +81,7 @@ The proof layer defines these barrier tokens (see AK3-G
 does not yet prove that every `mapPage`/`unmapPage` path composes them.
 Full state-machine binding to the Rust HAL (`rust/sele4n-hal/src/tlb.rs`
 and `cache.rs`) is closed by AN9-A / AN9-B / AN9-H (DEF-A-M04, DEF-A-M06,
-DEF-A-M08, DEF-A-M09) per docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12.
+DEF-A-M08, DEF-A-M09).
 
 Disposition: DEFER-WITH-ROADMAP. The Rust HAL already emits the required
 barriers in `tlb.rs` (AG6-F) and `cache.rs` (AG6-F/AG8-B); the proof-layer

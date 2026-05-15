@@ -15,10 +15,18 @@ cd "${REPO_ROOT}"
 
 if [[ "${NIGHTLY_ENABLE_EXPERIMENTAL:-0}" != "1" ]]; then
   log_section "META" "Tier 4 candidates staged but not enabled (set NIGHTLY_ENABLE_EXPERIMENTAL=1 to run)."
-  log_section "META" "Staged candidates: extended determinism seed probe + full suite replay."
+  log_section "META" "Staged candidates: extended determinism seed probe + full suite replay + WS-SM SMP boot-check stub."
   log_section "META" "Note: basic determinism validation is now mandatory in Tier 2 (WS-I1/R-02)."
   finalize_report
 fi
+
+# WS-SM SM0.T — Reserved tier-4 slot for the SMP boot-check evidence.
+# At SM0 this is a SKIP-only stub; SM1.H..SM8.E populate the checks.
+sm0t_sub_args=()
+if [[ "${CONTINUE_MODE:-0}" -eq 1 ]]; then
+  sm0t_sub_args+=("--continue")
+fi
+run_check "META" "${SCRIPT_DIR}/test_tier4_smp_bootcheck.sh" "${sm0t_sub_args[@]}"
 
 ensure_lake_available
 

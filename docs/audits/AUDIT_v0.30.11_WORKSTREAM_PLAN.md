@@ -1,5 +1,17 @@
 # AUDIT v0.30.11 — Remediation Workstream Plan (WS-RC)
 
+> **Status (v0.31.3 / WS-SM SM0.Q):** WS-RC R0..R5 LANDED at v0.31.2.
+> R6..R14 absorbed into the WS-SM unified workstream per the SM0.Q
+> merge.  Active WS-SM tracking lives at
+> [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](../planning/SMP_MULTICORE_COMPLETION_PLAN.md);
+> the SM0 phase plan (foundations & honesty patches, including the
+> SM0.Q.1 absorption mapping) is at
+> [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](../planning/SMP_FOUNDATIONS_PLAN.md).
+> See §15 below for the per-phase WS-RC → WS-SM absorption mapping.
+> This document is **historical for the R0..R5 record** and **a
+> source for R6..R14 absorbed scope**.  Future updates to R6..R14
+> happen in the WS-SM phase plans, not here.
+
 **Cut date:** 2026-04-28
 **Audited version:** 0.30.11
 **Source audits:**
@@ -10,6 +22,9 @@ identifier that does not encode an audit version (CLAUDE.md
 "Internal-first naming"); the audit version v0.30.11 anchors the plan in
 the artefact filename only.
 **Plan author branch:** `claude/audit-workstream-planning-XsmKS`
+**Successor workstream:** WS-SM (SMP multi-core completion) — absorbed
+WS-RC R6..R14 per the SM0.Q merge decision.  Successor branch:
+`claude/complete-sm0-foundations-gldW8`.
 **Governing engineering rule:** CLAUDE.md "Implement-the-improvement
 rule" — when documentation describes a *better* state than the code, the
 remediation is to implement the description, never to weaken the
@@ -3301,3 +3316,73 @@ opening, then cut a fresh `AUDIT_v<X>_WORKSTREAM_PLAN.md`.
 canonical decomposition of WS-RC. Successor workstreams should
 preserve the audit-error rationale in §2.2 and Appendix A as part
 of the project's "honesty about correctness" record.
+
+---
+
+## §15 — WS-RC R6..R14 absorption mapping into WS-SM (SM0.Q.1)
+
+> **Authored 2026-05-15 by WS-SM SM0.Q.1**.  WS-RC R0..R5 LANDED at
+> v0.31.2.  R6..R14 are absorbed into the WS-SM unified workstream;
+> per-phase remediation continues from inside the relevant WS-SM
+> phase plan (`docs/planning/SMP_*.md`) rather than from this
+> document.  The mapping below records the destination so reviewers
+> can locate the active tracking for any historical R-phase
+> finding.
+
+### §15.1 Per-phase mapping
+
+| WS-RC phase | Original scope summary | Absorbed into | Rationale |
+|-------------|------------------------|---------------|-----------|
+| **R6** — Architecture / InformationFlow completeness (DEEP-ARCH-03, DEEP-IF-01/02, DEEP-IPC-04) | Cross-syscall composition coverage; IF projection completeness; IPC fan-out drift | **SM8** (Information flow under SMP) for IF items; **SM6** (Cross-core IPC) for IPC fan-out | The IF and IPC completeness gaps surface differently under SMP — per-core projection (SM8) and per-core IPC fast-path (SM6) make them naturally part of the SMP scope rather than a standalone v0.31.x release item. |
+| **R7** — Capability deferred items (DEEP-CAP-05) | CDT `descendantsOf` fuel sufficiency proofs | **Post-1.0 hardening** (deferred past v1.0.0; tracked in `docs/audits/AUDIT_v0.30.11_DEFERRED.md` successor at WS-SM closure) | Pure proof-hygiene; no correctness impact at v1.0.0.  CDT operations remain sound under the current fuel-bound discipline; the sufficiency theorem is a defense-in-depth strengthening that doesn't gate the SMP release. |
+| **R8** — Test renames and conformance extensions (DEEP-TEST-01/02, DEEP-RUST-06) | Sub-task naming hygiene; Rust conformance gaps | **SM9** (Documentation, tests, version closure) | Test-suite hygiene naturally pairs with the WS-SM closure phase that rewrites the test-suite organization to mirror the per-core scheduler / per-object lock structure. |
+| **R9** — Pre-commit hardening (DEEP-PRECOM-01) | Pre-commit hook coverage extension | **SM9** (Documentation, tests, version closure) — sub-task SM9.E | Pre-commit hardening lands once with the v1.0.0 closure to avoid mid-WS-SM hook churn while individual phase PRs land. |
+| **R10** — Inline documentation and cleanup (large finding bundle) | SPDX header completeness; in-source doc cleanup; legacy reference removal | **SM0.J + SM0.U** for the dev_history-reference cleanup (LANDED v0.31.3); **SM9** for the post-SMP-merge sweep | The dev_history honesty patch is foundational (SM0.J already closed in this commit); the rest pairs with SM9's docs sweep so post-SMP code paths are documented in lockstep. |
+| **R11** — Documentation accuracy (DEEP-DOC-01..06, DEBT-DOC-01, DEBT-FR-01) | Spec / DEVELOPMENT.md / GitBook claim accuracy | **SM0.K + SM0.L** for the SMP-context "deferred to WS-V" claims (LANDED v0.31.3); **SM9** for the post-SMP rewrite of every claim that gains new SMP semantics | The SMP-specific claims close at SM0 (already done in this commit); claims that change *because* of SMP wait for SM9. |
+| **R12** — CI hygiene + structural enforcement gates (DEEP-CI-01, DEEP-ARCH-01, DEEP-RUST-01/02, DEEP-ARCH-02) | Production/staged partition gate; ARM-ARM citation index; orphan-fields gate; cspaceMutate witness | LANDED at v0.31.x as part of the original WS-RC R12.B/C/D set (preserved); the SM0 additions extend the partition gate to admit the new staged-only Concurrency modules | R12 is the only R6..R14 phase that already partly landed at v0.31.x; the WS-SM SM0 partition update extends rather than replaces. |
+| **R13** — Reserved (downstream emergent items) | Reserved slot for items emerging during R0..R12 implementation | **WS-SM SM-future** (per-phase emergent items routed to the owning SM phase) | Emergent items found during SM-phase implementation have a direct routing to that phase's "tail" tasks; no separate R13-style holding pen is needed under the WS-SM phase decomposition. |
+| **R14** — Post-1.0 maintainability backlog | Post-v1.0.0 cosmetic and maintainability items | **Post-1.0 deferred** (tracked in the successor audit cycle's deferred file) | Same disposition as the original R14 — by definition, items that land after v1.0.0.  WS-SM closes at v1.0.0; items beyond go to the next workstream's deferred backlog. |
+
+### §15.2 Absorption invariant
+
+Every WS-RC R6..R14 finding has exactly one absorbed destination
+(no orphans, no duplicates).  Verification:
+
+* The R6..R14 finding IDs are enumerated in their respective
+  `## Phase R<n>` sections of this document (sections 10–18).
+* The destinations in §15.1 are surjective onto the SM-phase set
+  `{SM0..SM9, post-1.0}`.
+* No R6..R14 finding is **left** in this document's tracking
+  loop — any future status update for an absorbed finding goes
+  into the destination SM-phase plan.
+
+### §15.3 Tracking handoff
+
+For reviewers tracking a historical WS-RC finding:
+
+1. Locate the R-phase that owned it in the §3 phase index (this
+   document, unchanged).
+2. Look up the absorbed destination in §15.1.
+3. Open the destination phase plan
+   (`docs/planning/SMP_<destination>_PLAN.md`) and search for the
+   finding ID — the SM-phase plan author cross-references the
+   original R-phase finding when adding the corresponding
+   sub-task.
+
+### §15.4 Sub-portfolio plan archive
+
+Per SM0.Q.2, the WS-RC sub-portfolio close-out plans (R4 close-out,
+R5 deferred completion) are **archived** to `docs/dev_history/audits/`
+because the work they describe is complete.  The active
+`docs/audits/` directory now holds only:
+
+* This plan (`AUDIT_v0.30.11_WORKSTREAM_PLAN.md`) — historical
+  with the SM0.Q absorption-mapping update.
+* `AUDIT_v0.30.11_COMPREHENSIVE.md`,
+  `AUDIT_v0.30.11_DEEP_VERIFICATION.md`,
+  `AUDIT_v0.30.11_DISCHARGE_INDEX.md`,
+  `AUDIT_v0.30.11_ERRATA.md`,
+  `AUDIT_v0.30.11_WS_RC_BASELINE.txt` — companion artefacts that
+  remain canonical references for the v0.30.11 audit cycle.
+* `README.md` — the active-audit lifecycle convention (records the
+  WS-RC → WS-SM handoff).

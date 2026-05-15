@@ -308,8 +308,7 @@ theorem pageTableUpdate_icache_coherent (cs : CacheState) (ptAddr : SeLe4n.PAddr
 /-- AK3-G (A-M04 / MEDIUM): A barrier token describing a memory ordering
     guarantee between cache operations. Mirrors the ARMv8-A DSB/ISB
     instruction family; full typeclass-level composition is closed by
-    AN9-A (TLB+cache composition — DEF-A-M04) in
-    docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12.
+    WS-AN AN9-A (TLB+cache composition — DEF-A-M04).
 
     The three variants used in D-cache → I-cache pipelines:
     - `dsb_ish`: Data Synchronization Barrier, Inner Shareable domain
@@ -337,8 +336,7 @@ inductive CacheBarrierKind where
 
     Partial closure: the proof layer records WHICH operations must compose
     under this predicate; the HAL discharges the instruction-level ordering.
-    Full binding closed by AN9-A (DEF-A-M04 TLB+cache composition) per
-    docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md §12. -/
+    Full binding closed by WS-AN AN9-A (DEF-A-M04 TLB+cache composition). -/
 def cacheCoherentForExecutable (_cs : CacheState) : Prop := True
 
 /-- AK3-G: In the sequential model, any cache state trivially satisfies

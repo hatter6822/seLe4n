@@ -225,4 +225,41 @@ theorem smpLatentInventory_identifiers_nonAnonymous :
           architecture_singleCoreOnly_smpLatent,
           bootFromPlatform_currentCore_is_zero_smpLatent]
 
+/-- **WS-SM SM0.D** (closes SMP-L1): structural pinning that no two
+inventory entries share an `identifier`.
+
+The 8-entry size is witnessed by `smpLatentInventory_count`, but a
+maintainer who *renames* one entry's `identifier` to collide with
+another existing entry would slip past the size check.  This NoDup
+witness catches the collision at build time: `decide` performs the
+8 × 7 / 2 = 28 pairwise inequality checks on the `Lean.Name`
+literals and fails to elaborate if any pair matches. -/
+theorem smpLatentInventory_identifiers_nodup :
+    (smpLatentInventory.map (·.identifier)).Nodup := by
+  unfold smpLatentInventory
+  simp only [List.map_cons, List.map_nil,
+    cspaceLookupMultiLevel_smpLatent, cspaceCopyMoveMutate_smpLatent,
+    lifecyclePreRetypeCleanup_smpLatent, serviceHasPathTo_smpLatent,
+    timerTickReplenishmentPipeline_smpLatent, typedIdDisjointness_smpLatent,
+    architecture_singleCoreOnly_smpLatent,
+    bootFromPlatform_currentCore_is_zero_smpLatent]
+  decide
+
+/-- **WS-SM SM0.D**: parallel NoDup witness for the `sourceTheorem`
+projection.  Catches collisions in the consumer-theorem mapping
+(distinct singleCore witnesses must point at distinct theorems)
+that the identifier-only NoDup misses — for example, two distinct
+inventory entries that document different singleCore properties
+but accidentally cite the same proof obligation. -/
+theorem smpLatentInventory_sourceTheorems_nodup :
+    (smpLatentInventory.map (·.sourceTheorem)).Nodup := by
+  unfold smpLatentInventory
+  simp only [List.map_cons, List.map_nil,
+    cspaceLookupMultiLevel_smpLatent, cspaceCopyMoveMutate_smpLatent,
+    lifecyclePreRetypeCleanup_smpLatent, serviceHasPathTo_smpLatent,
+    timerTickReplenishmentPipeline_smpLatent, typedIdDisjointness_smpLatent,
+    architecture_singleCoreOnly_smpLatent,
+    bootFromPlatform_currentCore_is_zero_smpLatent]
+  decide
+
 end SeLe4n.Kernel.Concurrency

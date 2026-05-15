@@ -65,8 +65,13 @@ Unless a PR explicitly proposes spec-level change control, preserve:
 - **D4** (v0.25.0): Priority Inheritance Protocol — `pipBoost` TCB field, blocking graph with acyclicity/depth bound, `propagatePriorityInheritance`/`revertPriorityInheritance` chain walk, 16 frame preservation theorems, parametric bounded inversion, 22 tests. Zero sorry/axiom.
 - **D5** (v0.25.0): Bounded Latency Theorem — proof-only phase, zero kernel code changes. Trace model (`SchedulerStep`, `SchedulerTrace`, `validTrace`), per-mechanism bounds (timer-tick budget, CBS replenishment, FIFO progress, domain rotation), main theorem `wcrtBound_unfold` / `bounded_scheduling_latency_exists`: WCRT = D*L_max + N*(B+P). PIP enhancement: `pip_enhanced_wcrt_le_base`. 58 surface anchor tests. New `Scheduler/Liveness/` directory. Zero sorry/axiom.
 
-**Next major milestone**: WS-V — multi-core SMP support, FrozenOps production
-promotion, CDT fuel sufficiency proofs, donation chain formal bridge.
+**Next major milestone**: WS-SM — multi-core SMP completion (foundations
+landed at v0.31.3 in Phase SM0; per-core scheduler / verified locks /
+TLB shootdown / cross-core IPC follow in SM1..SM9 through v1.0.0).
+Tracked in
+[`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](planning/SMP_MULTICORE_COMPLETION_PLAN.md).
+Companion post-1.0 deferrals: FrozenOps production promotion, CDT fuel
+sufficiency proofs, donation chain formal bridge.
 
 ### 3.0a Prior completed portfolios (summary)
 

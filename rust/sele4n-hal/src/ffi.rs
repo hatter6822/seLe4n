@@ -54,8 +54,8 @@
 #[cfg(all(not(panic = "abort"), not(debug_assertions)))]
 compile_error!(
     "seLe4n HAL requires panic = \"abort\" for release profiles. \
-     See rust/Cargo.toml [profile.release] and AK5-A in \
-     docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md."
+     See rust/Cargo.toml [profile.release] and AK5-A in the \
+     WS-AN AN9 portfolio (closed at v0.30.11; see docs/WORKSTREAM_HISTORY.md)."
 );
 
 // ============================================================================

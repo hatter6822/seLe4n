@@ -469,7 +469,8 @@ fn syscall_id_exhaustive_roundtrip() {
 #[test]
 fn kernel_error_exhaustive_roundtrip() {
     for i in 0..=52u32 {
-        let err = KernelError::from_u32(i).expect(&format!("valid error for discriminant {i}"));
+        let err = KernelError::from_u32(i)
+            .unwrap_or_else(|| panic!("valid error for discriminant {i}"));
         assert_eq!(err as u32, i);
     }
     assert!(KernelError::from_u32(53).is_none());
@@ -1272,7 +1273,11 @@ fn ipc_timeout_distinct() {
 fn ipc_timeout_result() {
     let result: KernelResult<()> = Err(KernelError::IpcTimeout);
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err(), KernelError::IpcTimeout);
+    // Compare the full Result via PartialEq rather than `.unwrap_err()`
+    // — clippy `unnecessary_literal_unwrap` flags the literal-Err
+    // unwrap as redundant, and the direct comparison is equally
+    // expressive.
+    assert_eq!(result, Err(KernelError::IpcTimeout));
 }
 
 /// AA1-H-4/AG3 + AL1b/WS-AL + AN7-E + R5.E: Boundary — discriminant 53 is
