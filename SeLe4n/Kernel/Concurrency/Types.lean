@@ -88,6 +88,14 @@ v0.31.3 this is the literal `0`, with `numCores_pos` discharging the
 in-range obligation. -/
 def bootCoreId : CoreId := ⟨0, numCores_pos⟩
 
+/-- WS-SM SM1.B.5: `Inhabited` instance for `CoreId`, witnessed by
+`bootCoreId`.  Used by `BaseIO`-monad `panic!` paths in
+`Concurrency.Runtime.currentCoreId` (which needs an `Inhabited`
+witness to discharge the `panic!` return-type obligation).  The
+boot core is the canonical default because every supported platform
+boots on it. -/
+instance : Inhabited CoreId := ⟨bootCoreId⟩
+
 /-- WS-SM SM0.E: enumeration of every core id.
 
 The list contains exactly `numCores` distinct entries — both witnessed

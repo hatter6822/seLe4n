@@ -790,6 +790,90 @@ documentation lives under `docs/` and `docs/gitbook/`.
     WS-SM SM1.A and the full DEN0022D §5 surface (previously
     only cited AN9-J.1).
 
+  **WS-SM SM1.B LANDED on branch
+  `claude/per-cpu-tpidr-el1-1OBHA`** (per-CPU data + TPIDR_EL1,
+  closes SMP-M4).  Seven sub-tasks landed in one cut, completing the
+  per-CPU base register seam introduced as an empty stub at SM0.N:
+
+  - **SM1.B.1**: `PerCpuData` struct migrated from `smp.rs` to the
+    dedicated module `rust/sele4n-hal/src/per_cpu.rs`.  The SM0.N
+    `_reserved: [u64; 8]` placeholder is replaced with a populated
+    `core_id: u64` first field plus a `_reserved: [u64; 7]` tail
+    (still one cache line wide for false-sharing avoidance).  Two
+    const constructors: `new(core_id)` and `zero()` (back-compat
+    alias for `new(0)`).
+  - **SM1.B.2**: Static array population — `PER_CPU_DATA[i].core_id
+    == i` for `i ∈ 0..MAX_SECONDARY_CORES`, via four
+    `PerCpuData::new(0..3)` invocations.  Three compile-time
+    `const _: ()` assertions pin `size_of::<PerCpuData>() == 64`,
+    `align_of::<PerCpuData>() == 64`, and
+    `PER_CPU_DATA.len() == MAX_SECONDARY_CORES + 1`.  Asm-visible
+    `PER_CPU_DATA_SLOT_SIZE_SYM` (consumed by `boot.S`'s `madd`
+    stride) survives the module move via `#[no_mangle]`.
+  - **SM1.B.3**: `current_per_cpu() -> &'static PerCpuData` —
+    reads `TPIDR_EL1` on aarch64, returns a static-lifetime
+    reference into `PER_CPU_DATA`.  Host stub returns
+    `&PER_CPU_DATA[0]`.  Safety invariants documented inline (EL1
+    reachability, TPIDR_EL1-pre-set, pointer-validity).
+  - **SM1.B.4**: `current_core_id_from_tpidr() -> u64` — fast
+    core-id lookup via `current_per_cpu().core_id`.  Preferred over
+    MPIDR + mask on hot paths.  Host stub returns 0.
+  - **SM1.B.5**: Lean FFI — Rust `#[no_mangle] pub extern "C" fn
+    ffi_current_core_id` in `ffi.rs`; Lean
+    `@[extern "ffi_current_core_id"] opaque
+    Platform.FFI.ffiCurrentCoreId : BaseIO UInt64`; Lean-side typed
+    wrapper `Concurrency.currentCoreId : BaseIO CoreId` in the new
+    file `SeLe4n/Kernel/Concurrency/Runtime.lean` with the standard
+    `if h : raw.toNat < numCores then ⟨raw.toNat, h⟩` discipline.
+    Out-of-range falls back to `panic!` (witnessed by the new
+    `Inhabited CoreId` instance in `Concurrency.Types` —
+    `bootCoreId`).  Unreachable on hardware under
+    `check_per_cpu_invariants`.
+  - **SM1.B.6**: `check_per_cpu_invariants()` runtime gate —
+    iterates `PER_CPU_DATA` and panics if any slot's `core_id`
+    disagrees with its array index.  Called from
+    `rust_boot_main` Phase 4 before the `TPIDR_EL1` write.
+    `boot.rs` also `kprintln`s the live core id post-TPIDR-set for
+    boot-log diagnostics on hardware.
+  - **SM1.B.7**: 21 new unit tests in `per_cpu::tests` (struct
+    alignment + size, const-constructor semantics, byte-level zero
+    discharge, array layout/stride/distinct-addresses,
+    asm-stride observability, out-of-range panic, accessor
+    agreement with slot address, `check_per_cpu_invariants` passes
+    on the production initialiser); 3 new tests in `ffi::tests`
+    (`ffi_current_core_id` host return 0, range invariant,
+    agreement with the per-CPU accessor); 4 back-compat tests in
+    `smp::tests` verifying the `crate::smp::*` re-exports still
+    resolve.
+
+  **Test coverage**: 274 HAL tests (up from 253 at SM1.A close),
+  zero clippy warnings workspace-wide.  4 new Lean surface-anchor
+  `#check`s plus 4 new decidable examples plus a runtime
+  `runCurrentCoreIdChecks` section in
+  `tests/SmpFoundationsSuite.lean` (Inhabited default = bootCoreId,
+  marker theorem discharge on every CoreId).  Full Tier 0+1+2
+  smoke test passes.  Items deferred past v1.0.0 with correctness
+  impact: NONE.
+
+  **Module reachability**: `Concurrency.Runtime` is in the
+  production import closure via `SeLe4n/Platform/Staged.lean`
+  (added to `scripts/staged_module_allowlist.txt` per the WS-RC
+  R12.B partition gate); SM5 will move it from staged →
+  production-reached when per-core scheduler state lands.
+
+  **FFI-link discipline note**: per the project's fail-closed FFI
+  convention (`Platform/FFI.lean` header docstring), the Lean test
+  executables do NOT link against `libsele4n_hal.a`.  Any path
+  that invokes an `@[extern] opaque` symbol from host code
+  surfaces as a link error rather than a silent stub call.  The
+  SmpFoundationsSuite test therefore exercises only the structural
+  properties of `currentCoreId` (typed signature, marker theorem,
+  Inhabited default).  The runtime behaviour of the host stub is
+  covered exhaustively by the Rust `per_cpu::tests` and
+  `ffi::tests` modules; the hardware behaviour (the actual `mrs
+  tpidr_el1` read) will be covered by SM1.H's QEMU `-smp 4`
+  boot-trace test.
+
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**
   — historical detail retained for traceability:

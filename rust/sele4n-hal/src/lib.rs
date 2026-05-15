@@ -127,6 +127,18 @@
 //             ARM SMCCC encoding (Fast call + SMC32/64 + OEN=4 +
 //             reserved-bits-clear).  See `psci.rs` module docstring
 //             for the complete function-id map.
+//
+//             WS-SM SM1.B (closes SMP-M4) completes the per-CPU data
+//             block + TPIDR_EL1 contract introduced as a stub at
+//             SM0.N.  `per_cpu.rs` owns the `PerCpuData` struct (with
+//             a populated `core_id` field instead of the SM0.N
+//             `_reserved` placeholder), the `current_per_cpu()` /
+//             `current_core_id_from_tpidr()` accessors, and the
+//             `check_per_cpu_invariants()` boot gate.  `ffi.rs`
+//             exposes `ffi_current_core_id` for the Lean kernel; the
+//             Lean side wraps it as `Concurrency.currentCoreId :
+//             BaseIO CoreId` with a range check that recovers the
+//             typed `Fin numCores` identifier.
 
 pub mod cpu;
 pub mod barriers;
@@ -153,3 +165,10 @@ pub mod svc_dispatch;
 pub mod psci;
 // AN9-J (DEF-R-HAL-L20): SMP secondary-core scaffolding (off by default)
 pub mod smp;
+// WS-SM SM1.B (closes SMP-M4): per-CPU data block + TPIDR_EL1
+// accessors.  The `PerCpuData` struct, the global `PER_CPU_DATA`
+// array, and the slot-stride symbols (`PER_CPU_DATA_SLOT_SIZE_SYM`)
+// live here; `boot.S::secondary_entry` resolves the asm-visible
+// names against this module's `#[no_mangle] static` items.  See the
+// module docstring in `per_cpu.rs` for the boot-ordering contract.
+pub mod per_cpu;

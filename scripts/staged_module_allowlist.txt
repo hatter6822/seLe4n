@@ -31,4 +31,5 @@ SeLe4n.Kernel.Concurrency.Anchors             # infra (WS-SM SM0.C inventory bui
 SeLe4n.Kernel.Concurrency.Locks               # infra (WS-SM SM0.I BklState)
 SeLe4n.Kernel.Concurrency.Locks.Kind          # infra (WS-SM SM0.I LockKind + LockId total order)
 SeLe4n.Kernel.Concurrency.Sgi                 # infra (WS-SM SM0.H SgiKind)
+SeLe4n.Kernel.Concurrency.Runtime             # infra (WS-SM SM1.B.5 currentCoreId FFI wrapper; SMP-M4 Lean side)
 SeLe4n.Platform.Staged                        # anchor (the staging entry point itself)
