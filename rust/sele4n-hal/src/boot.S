@@ -203,9 +203,13 @@ secondary_entry:
     //
     // sizeof(PerCpuData) is determined by the Rust struct layout
     // (`#[repr(C, align(64))]` with an [u64; 8] field = 64 bytes).
-    // Encoded as a literal here — if the struct layout changes, the
-    // SM0.N test `per_cpu_slot_addr_layout_matches` (smp.rs) catches
-    // the drift.
+    // Encoded as a literal here — the Rust constant
+    // `PER_CPU_DATA_SLOT_SIZE` (smp.rs) is structurally pinned to
+    // this value via a compile-time `const _: () = assert!(...)`,
+    // and the SM0.N tests
+    // `sm0n_per_cpu_slot_addr_stride_matches_struct_size` plus
+    // `sm0n_per_cpu_data_slot_size_matches_asm_literal` catch
+    // drift at unit-test time.
     //
     // x4 = address of PER_CPU_DATA[0]
     // x5 = sizeof(PerCpuData) = 64

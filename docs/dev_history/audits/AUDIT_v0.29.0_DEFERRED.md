@@ -298,7 +298,7 @@ currently-active plan file tracks them.**
 - **Audit finding:** R-HAL-L20 (LOW, surfaced by AN1-C).
   Single-core boot is the only path; secondary cores are parked in
   the `boot.S` spin loop.
-- **Disposition update (v0.32.0, WS-SM SM0.L):** The AN9-J landing
+- **Disposition update (v0.31.3, WS-SM SM0.L):** The AN9-J landing
   at v0.30.10 shipped Rust HAL **scaffolding** (PSCI wrapper, per-core
   stacks, MPIDR gate, ready-flag array, host-side test harness).  It
   did **not** activate SMP at runtime: `bring_up_secondaries()` is
@@ -317,7 +317,7 @@ currently-active plan file tracks them.**
     `bring_up_secondaries()`, `rust_secondary_main()` placeholder.
   - 9 regression tests cover PSCI return-code roundtrip,
     secondary-MPIDR table values, default-disabled bring-up.
-- **Scaffolding hardening (WS-SM SM0.M/N/O — v0.32.0):**
+- **Scaffolding hardening (WS-SM SM0.M/N/O — v0.31.3):**
   - **SM0.M**: `.smp_stacks` zeroed at boot (closes SMP-M3: stale
     RAM contents could leak through to secondary cores after PSCI
     CPU_ON).

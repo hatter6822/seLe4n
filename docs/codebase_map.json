@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/complete-sm0-foundations-gldW8",
-      "commit_sha": "28428888336944f84153895b00a60f127e04e09d",
-      "tree_sha": "c720f7c93f7449fb37f99f6827776d2164544daa",
-      "committed_at_utc": "2026-05-15T00:10:11-04:00"
+      "commit_sha": "072838f8027641edee0b2baf98fde1b7c727ba5e",
+      "tree_sha": "d16febb79ce70c98b3c1609f47331c53edb36147",
+      "committed_at_utc": "2026-05-15T05:38:29+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "1d9ef4f93c22f1f9c54cfd9359dbcfbd6870e88e8ef7a3c930e2310444e0497e"
+    "source_digest": "21bf63c33c2dfd141038409225752d0b8d147984204d170743de053bbff182a6"
   },
   "summary": {
     "module_count": 205,
-    "declaration_count": 6568
+    "declaration_count": 6573
   },
   "readme_sync": {
-    "version": "0.32.0",
+    "version": "0.31.3",
     "lean_toolchain": "v4.28.0",
     "production_files": 175,
     "production_loc": 115266,
     "test_files": 30,
-    "test_loc": 21451,
+    "test_loc": 21590,
     "proved_theorem_lemma_decls": 3352,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -84401,7 +84401,7 @@
     {
       "module": "tests.SmpFoundationsSuite",
       "path": "tests/SmpFoundationsSuite.lean",
-      "declaration_count": 50,
+      "declaration_count": 55,
       "declarations": [
         {
           "kind": "namespace",
@@ -84793,21 +84793,79 @@
           "called": [
             "RPi5Platform",
             "SimPlatform",
+            "SimRestrictivePlatform",
             "assertBool",
             "bootCoreId"
           ]
         },
         {
           "kind": "def",
-          "name": "runFoundationsChecks",
-          "line": 349,
+          "name": "runLockKindUniquenessChecks",
+          "line": 370,
           "called": [
+            "assertBool",
+            "level"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runLockIdAdditionalChecks",
+          "line": 403,
+          "called": [
+            "LockId.mk'",
+            "assertBool",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runSgiKindAdditionalChecks",
+          "line": 422,
+          "called": [
+            "all",
+            "assertBool"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runArchAssumptionAdditionalChecks",
+          "line": 441,
+          "called": [
+            "all",
+            "archAssumptionConsumer",
+            "assertBool",
+            "bootFromPlatform_singleCore_witness"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runBklStateAdditionalChecks",
+          "line": 460,
+          "called": [
+            "CoreId",
+            "assertBool",
+            "bklAcquire",
+            "bklHeldBy",
+            "bklRelease",
+            "bootCoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runFoundationsChecks",
+          "line": 483,
+          "called": [
+            "runArchAssumptionAdditionalChecks",
             "runArchAssumptionChecks",
+            "runBklStateAdditionalChecks",
             "runBklStateChecks",
             "runCoreIdChecks",
+            "runLockIdAdditionalChecks",
             "runLockIdChecks",
             "runLockKindChecks",
+            "runLockKindUniquenessChecks",
             "runPlatformBindingChecks",
+            "runSgiKindAdditionalChecks",
             "runSgiKindChecks",
             "runSharingDomainChecks",
             "runSmpInventoryChecks"
@@ -84816,7 +84874,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 366,
+          "line": 505,
           "called": [
             "runFoundationsChecks"
           ]

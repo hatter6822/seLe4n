@@ -152,11 +152,11 @@ impl PerCpuData {
     }
 }
 
-/// **WS-SM SM0.N**: per-CPU data array, one entry per core (boot core
-/// + 3 secondaries on RPi5 BCM2712).  Each `secondary_entry` (boot.S)
-/// loads the address of its own slot into `TPIDR_EL1` before
-/// branching to `rust_secondary_main`.  The boot core's TPIDR_EL1 is
-/// set in `boot.rs::rust_boot_main` (Phase 4).
+/// **WS-SM SM0.N**: per-CPU data array, one entry per core (boot
+/// core plus 3 secondaries on RPi5 BCM2712).  Each `secondary_entry`
+/// (boot.S) loads the address of its own slot into `TPIDR_EL1`
+/// before branching to `rust_secondary_main`.  The boot core's
+/// TPIDR_EL1 is set in `boot.rs::rust_boot_main` (Phase 4).
 ///
 /// Indexed by `context_id` (PSCI calling convention): boot core =
 /// index 0, secondaries = indices 1..3.
@@ -168,6 +168,35 @@ pub static PER_CPU_DATA: [PerCpuData; MAX_SECONDARY_CORES + 1] = [
     PerCpuData::zero(),
     PerCpuData::zero(),
 ];
+
+/// **WS-SM SM0.N**: structurally pinned size of `PerCpuData`.
+///
+/// The `secondary_entry` assembly in `boot.S` computes a core's
+/// per-CPU slot address as `PER_CPU_DATA + context_id * 64` —
+/// the literal `64` is hard-coded into the asm because the
+/// `madd` instruction takes an immediate stride, not a symbol.
+/// This Rust-side compile-time assertion locks the Rust struct
+/// size to that literal, so any future PR that grows `PerCpuData`
+/// past 64 bytes (or shrinks it below 64) fails the build before
+/// the asm can compute a wrong address at runtime.
+///
+/// To grow the struct beyond 64 bytes safely, the contributor must
+/// in the same PR: (a) update this `PER_CPU_DATA_SLOT_SIZE`
+/// constant, (b) update the literal `#64` in
+/// `boot.S::secondary_entry`, and (c) re-run the
+/// `sm0n_per_cpu_slot_addr_stride_matches_struct_size` unit test.
+pub const PER_CPU_DATA_SLOT_SIZE: usize = 64;
+
+const _: () = assert!(
+    core::mem::size_of::<PerCpuData>() == PER_CPU_DATA_SLOT_SIZE,
+    "WS-SM SM0.N: size_of::<PerCpuData>() must equal PER_CPU_DATA_SLOT_SIZE; \
+     update boot.S::secondary_entry's `mov x5, #64` literal in the same PR"
+);
+
+const _: () = assert!(
+    core::mem::align_of::<PerCpuData>() == 64,
+    "WS-SM SM0.N: PerCpuData must be 64-byte aligned (cache-line) to avoid false sharing"
+);
 
 /// **WS-SM SM0.N**: load a core's `PerCpuData` slot address.  Used by
 /// the boot core's TPIDR_EL1 setup (in `boot.rs::rust_boot_main`) and
@@ -500,7 +529,7 @@ mod tests {
         let al = align_of::<PerCpuData>();
         assert!(sz >= al,
             "size_of::<PerCpuData>() = {} must be >= align_of = {}", sz, al);
-        assert!(sz % al == 0,
+        assert!(sz.is_multiple_of(al),
             "size_of::<PerCpuData>() = {} must be a multiple of align = {}",
             sz, al);
     }
@@ -601,6 +630,22 @@ mod tests {
                 "PER_CPU_DATA stride between slot {} and {} = {}, expected {}",
                 i, i + 1, b - a, stride);
         }
+    }
+
+    #[test]
+    fn sm0n_per_cpu_data_slot_size_matches_asm_literal() {
+        // WS-SM SM0.N: the `PER_CPU_DATA_SLOT_SIZE` Rust constant is
+        // the single source of truth pinning the Rust struct size to
+        // the literal `#64` in boot.S::secondary_entry.  The
+        // compile-time assertion (in the parent module) already
+        // catches a struct-size drift at build time; this runtime
+        // assertion is a redundant double-check that the constant is
+        // observable from external test code and equals 64.
+        use core::mem::size_of;
+        assert_eq!(PER_CPU_DATA_SLOT_SIZE, 64,
+            "PER_CPU_DATA_SLOT_SIZE must equal the literal #64 in boot.S");
+        assert_eq!(size_of::<PerCpuData>(), PER_CPU_DATA_SLOT_SIZE,
+            "size_of::<PerCpuData>() must equal PER_CPU_DATA_SLOT_SIZE");
     }
 
     #[test]

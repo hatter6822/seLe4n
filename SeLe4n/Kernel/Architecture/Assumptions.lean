@@ -128,7 +128,7 @@ def assumptionInventory : List ArchAssumption :=
   , .singleCoreOperation
   ]
 
-/-- **WS-SM SM0.B**: pinned inventory cardinality.  At v0.32.x the
+/-- **WS-SM SM0.B**: pinned inventory cardinality.  At v0.31.3 the
 inventory has exactly six entries; if a future maintainer adds a
 seventh `ArchAssumption` constructor without updating the inventory,
 this theorem fails to elaborate (the count rises to 7). -/

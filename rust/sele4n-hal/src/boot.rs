@@ -9,7 +9,7 @@
 //! Phase 4: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.32.0";
+const KERNEL_VERSION: &str = "0.31.3";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
@@ -74,6 +74,26 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
     // Enable IRQ delivery now that GIC and timer are configured
     crate::interrupts::enable_irq();
     crate::kprintln!("[boot] IRQ delivery enabled");
+
+    // -----------------------------------------------------------------------
+    // WS-SM SM0.N: set TPIDR_EL1 on the boot core (closes SMP-M4 for
+    // the boot path).  Secondaries set their own TPIDR_EL1 in
+    // `boot.S::secondary_entry` before calling `rust_secondary_main`;
+    // the boot core does it here, in the same place it sets VBAR_EL1.
+    //
+    // Boot core's `PerCpuData` slot is `PER_CPU_DATA[0]` per the
+    // PSCI context_id convention (0 = boot core, 1..3 = secondaries).
+    // After this point, every core — boot and secondary — can
+    // dispatch through `mrs xN, tpidr_el1` to find its own per-core
+    // state without a context_id parameter.
+    // -----------------------------------------------------------------------
+    #[cfg(target_arch = "aarch64")]
+    {
+        let boot_per_cpu = crate::smp::per_cpu_slot_addr(0) as u64;
+        crate::registers::write_tpidr_el1(boot_per_cpu);
+        crate::barriers::isb();
+        crate::kprintln!("[boot] TPIDR_EL1 set to PER_CPU_DATA[0] = {:#x}", boot_per_cpu);
+    }
 
     // -----------------------------------------------------------------------
     // Phase 4: Handoff summary

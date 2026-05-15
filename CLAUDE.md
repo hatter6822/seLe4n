@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.32.0.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.3.
 
 > The version line above is **CI-enforced** by
 > `scripts/check_version_sync.sh` (a Tier 0 gate). When you bump
@@ -560,7 +560,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 → v0.32.x → v1.0.0,
+- **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 → v0.31.3 → v0.32.x → v1.0.0,
   branch `claude/complete-sm0-foundations-gldW8`)**:
   Unified workstream merging WS-RC's remaining R6..R14 phases with the
   SMP-specific SM-phases (SM0..SM9).  Closes at v1.0.0 with a bootable
@@ -569,7 +569,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   **Plans**:
   - Master overview:
     [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md).
-  - SM0 (foundations & honesty patches) — IN FLIGHT at v0.32.x:
+  - SM0 (foundations & honesty patches) — CLOSED at v0.31.3 (foundational types and honesty patches landed; type-level scaffolding ready for SM1):
     [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](docs/planning/SMP_FOUNDATIONS_PLAN.md).
   - SM1+ phase plans (Rust HAL, verified locks, per-core state, per-core
     scheduler, cross-core IPC, TLB shootdown, info-flow, release closure):
@@ -583,7 +583,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   for kernel SMP coordination (SM0.H).
 
   **WS-SM SM0 LANDED on branch
-  `claude/complete-sm0-foundations-gldW8`** (v0.32.0, foundational types
+  `claude/complete-sm0-foundations-gldW8`** (v0.31.3, foundational types
   + honesty patches): closes the type-level scaffolding for the SM1..SM9
   follow-on phases.  21 sub-tasks across 6 categories landed in one cut:
 

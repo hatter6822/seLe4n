@@ -1,4 +1,4 @@
-## v0.32.0 — WS-SM Phase SM0 closure (Foundations & honesty patches)
+## v0.31.3 — WS-SM Phase SM0 closure (Foundations & honesty patches)
 
 Phase SM0 of the WS-SM (SMP multi-core completion) workstream lands as
 a single coherent cut.  21 sub-tasks across six categories deliver the

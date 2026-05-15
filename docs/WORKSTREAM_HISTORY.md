@@ -16,7 +16,7 @@ previously spread across README.md, GitBook chapters, and audit plans.
 ## What's next
 
 **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 →
-v0.32.x → v1.0.0).** Unified workstream merging WS-RC's remaining
+v0.31.3 → v0.32.x → v1.0.0).** Unified workstream merging WS-RC's remaining
 R6..R14 phases with the SMP-specific SM-phases (SM0..SM9).  Closes
 at v1.0.0 with a bootable verified SMP microkernel on Raspberry Pi 5.
 Plan:
@@ -24,7 +24,7 @@ Plan:
 SM0 phase plan (foundations & honesty patches):
 [`docs/planning/SMP_FOUNDATIONS_PLAN.md`](planning/SMP_FOUNDATIONS_PLAN.md).
 
-**WS-SM SM0 closure at v0.32.0 (this cut).** 21 sub-tasks across 6
+**WS-SM SM0 closure at v0.31.3 (this cut).** 21 sub-tasks across 6
 categories landed as one cut: foundational types
 (`Concurrency.Types`/`Locks/Kind`/`Locks`/`Sgi`), AN12-B inventory
 hardening (NoDup witnesses, build anchors, 6-way ArchAssumption
@@ -55,7 +55,7 @@ Sub-portfolio close-out plans archived to
 [`docs/dev_history/audits/`](dev_history/audits/) per WS-SM SM0.Q.2.
 
 **Release path (WS-SM):**
-- `v0.32.x` (this WS-SM SM0 cut) — Foundations & honesty patches.
+- `v0.32.x` (this WS-SM SM0 cut at v0.31.3) — Foundations & honesty patches.
   Single-core boot path unchanged; type-level scaffolding for
   SM1..SM9 in place.
 - `v0.33.x` (planned) — SM1 (Rust HAL) + SM2 (verified locks).
