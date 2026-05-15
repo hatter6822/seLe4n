@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-codebase-audit-SOobd",
-      "commit_sha": "948d27a034e3a86ecf74740f802415086122f716",
-      "tree_sha": "c68c5dea889357ef06934d2c98157bf423e8e895",
-      "committed_at_utc": "2026-05-14T01:52:14+00:00"
+      "commit_sha": "36c83766cd3f018bc9b5744982cedee97d40cd2c",
+      "tree_sha": "958d63c3463cb09bbc47523364d0164540c5e0fb",
+      "committed_at_utc": "2026-05-14T03:13:41+00:00"
     }
   },
   "source_sync": {
@@ -17,11 +17,11 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "fbab29da093e051125a30f6252fabc526daedc4a2afcabef922458465c13d687"
+    "source_digest": "def7575667b58ef422835513719cabd9dcddac46301ea7d070ef9c2a29e5f604"
   },
   "summary": {
     "module_count": 200,
-    "declaration_count": 6528
+    "declaration_count": 6529
   },
   "readme_sync": {
     "version": "0.31.2",
@@ -29,7 +29,7 @@
     "production_files": 171,
     "production_loc": 115375,
     "test_files": 29,
-    "test_loc": 21518,
+    "test_loc": 21570,
     "proved_theorem_lemma_decls": 3353,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -77124,7 +77124,7 @@
     {
       "module": "tests.InterruptDispatchSuite",
       "path": "tests/InterruptDispatchSuite.lean",
-      "declaration_count": 21,
+      "declaration_count": 22,
       "declarations": [
         {
           "kind": "namespace",
@@ -77320,20 +77320,39 @@
         {
           "kind": "def",
           "name": "test_t18_architecture_invariant_bundle_runtime",
-          "line": 236,
+          "line": 238,
           "called": [
             "ArchitectureInvariantBundle",
+            "InterruptId",
             "SystemState",
             "default",
             "default_system_state_architectureInvariantBundle",
+            "expectCond",
             "gicDispatchPlanInvariant",
-            "toGicDispatchPlan"
+            "interruptDispatchPlan",
+            "toGicDispatchPlan",
+            "toProofLayer"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "test_t19_proofLayerInvariantBundle_12th_conjunct",
+          "line": 271,
+          "called": [
+            "InterruptId",
+            "SystemState",
+            "default",
+            "default_system_state_proofLayerInvariantBundle",
+            "expectCond",
+            "gicDispatchPlanStaticInvariant",
+            "interruptDispatchPlan",
+            "proofLayerInvariantBundle"
           ]
         },
         {
           "kind": "def",
           "name": "runAllTests",
-          "line": 244,
+          "line": 295,
           "called": [
             "test_t01_ack_spurious",
             "test_t02_ack_out_of_range",
@@ -77352,13 +77371,14 @@
             "test_t15_dispatch_plan_intid_disambig",
             "test_t16_gic_bridge_theorem_witness",
             "test_t17_architecture_invariant_bundle_witness",
-            "test_t18_architecture_invariant_bundle_runtime"
+            "test_t18_architecture_invariant_bundle_runtime",
+            "test_t19_proofLayerInvariantBundle_12th_conjunct"
           ]
         },
         {
           "kind": "def",
           "name": "main",
-          "line": 270,
+          "line": 322,
           "called": [
             "runAllTests"
           ]
