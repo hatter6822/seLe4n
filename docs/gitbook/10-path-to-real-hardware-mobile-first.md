@@ -54,6 +54,14 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
 - **SMP scaffolding** (AN9-J / DEF-R-HAL-L20): PSCI `cpu_on` +
   `smp.rs` secondary-core bring-up; **disabled by default** at
   v1.0.0 (`SMP_ENABLED = false`).
+- **PSCI completion** (WS-SM SM1.A): full DEN0022D §5 surface
+  wrapped — `cpu_off`, `affinity_info` (+ `AffinityInfoState`),
+  `psci_version` (+ `PsciVersion`), `migrate_info_type` (+
+  `MigrateInfoType`), `system_off` and `system_reset` (both
+  `-> !`).  Every function id pinned by compile-time assertions
+  to ARM SMCCC encoding (Fast call + SMC32/64 + OEN=4 + reserved
+  bits clear); host-stub coverage for all wrappers in 30 unit
+  tests.
 
 The **runtime** validation that complements these static guarantees
 (QEMU virt boots, RPi 5 silicon validation) is documented in

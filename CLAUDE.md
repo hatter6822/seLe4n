@@ -660,6 +660,52 @@ documentation lives under `docs/` and `docs/gitbook/`.
   [`docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`](docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)
   §15 for the per-phase absorption mapping.
 
+  **WS-SM SM1.A LANDED on branch
+  `claude/implement-psci-completion-TUW1u`** (PSCI completion, first
+  sub-phase of SM1).  Eight sub-tasks landed in one cut, closing
+  SMP-M5 (PSCI completion) by wrapping the full ARM DEN0022D §5
+  surface beyond `cpu_on`:
+
+  - **SM1.A.1**: `psci::cpu_off()` — power down the calling PE
+    (`hvc #0` SMC32 id `0x8400_0002`).  Successful calls do not
+    return (the PE is off); failure paths return a `PsciResult`.
+  - **SM1.A.2**: `psci::affinity_info()` — query a target PE's
+    on/off state.  New `AffinityInfoState` enum (`On`/`Off`/
+    `OnPending`) with `from_raw` / `to_raw` round-trip.  SMC64 id
+    `0xC400_0004`.
+  - **SM1.A.3**: `psci::system_off() -> !` — power off the system
+    (SMC32 id `0x8400_0008`).
+  - **SM1.A.4**: `psci::system_reset() -> !` — cold system reset
+    (SMC32 id `0x8400_0009`).
+  - **SM1.A.5**: `psci::psci_version()` — query firmware version.
+    New `PsciVersion` struct with `major` / `minor` u16, `from_raw`
+    / `to_raw` round-trip, `at_least(major, minor)` feature-gate
+    comparator.  SMC32 id `0x8400_0000`.
+  - **SM1.A.6**: `psci::migrate_info_type()` — Trusted-OS migration
+    query.  New `MigrateInfoType` enum (`UniProcessor`/
+    `Multiprocessor`/`NotRequired`).  SMC32 id `0x8400_0006`.
+  - **SM1.A.7**: Function-id pinning — compile-time `const _: () = { ... }`
+    assertions verify every PSCI id matches the ARM SMCCC encoding
+    (bit 31 Fast call, bit 30 SMC32/64, bits 29..24 OEN=4 for
+    Standard Secure Service Calls, bits 23..16 reserved-zero).
+    Plus seven runtime test functions (`psci_function_ids_*`)
+    covering literal match, pairwise distinctness, SMC width, OEN,
+    and reserved-bits-clear.
+  - **SM1.A.8**: Module-level documentation map — `psci.rs` header
+    lists all seven wrappers with DEN0022D § references, function
+    ids, return-code matrix (Table 5), and the HVC-vs-SMC dispatch
+    rationale.
+
+  **Test coverage**: 30 PSCI unit tests (28 active + 2 `#[ignore]`'d
+  for `system_off` / `system_reset` since they return `!` and would
+  hang the test runner).  Total HAL tests: 240 (was 215).  Zero
+  clippy warnings.  Full Tier 0+1+2 smoke test passes.  Items
+  deferred past v1.0.0 with correctness impact: NONE.  Follow-on:
+  SM1.B..H (per-CPU data + TPIDR_EL1, secondary-core full init,
+  DTB cmdline, IS-variant TLBI, SGI primitive, per-core UART,
+  QEMU SMP integration) — see
+  [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md) §§5.2..5.8.
+
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**
   — historical detail retained for traceability:

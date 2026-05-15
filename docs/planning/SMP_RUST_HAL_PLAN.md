@@ -218,7 +218,47 @@ extra MSR at boot.
 (Section structure mirrors SM0 — every sub-task gets goal,
 files, code skeleton, acceptance, PR template, estimate.)
 
-### 5.1 PSCI completion (SM1.A, 5 PRs, 8 sub-tasks)
+### 5.1 PSCI completion (SM1.A, 5 PRs, 8 sub-tasks) — **LANDED**
+
+**Status**: COMPLETE on branch `claude/implement-psci-completion-TUW1u`.
+All eight sub-tasks landed in one cut. The PSCI surface now wraps every
+ARM DEN0022D §5 call the kernel needs:
+
+- **SM1.A.1** `cpu_off()` — power down calling PE; emits `dsb osh` +
+  `hvc #0` with id `0x8400_0002`; returns `PsciResult`. Documented
+  failure codes: `Denied`, `InternalFailure`.
+- **SM1.A.2** `affinity_info(target_affinity, lowest_affinity_level)` —
+  query a target PE's on/off state; returns
+  `Result<AffinityInfoState, PsciResult>`. `AffinityInfoState`
+  enum: `On=0`, `Off=1`, `OnPending=2`. SMC64 id `0xC400_0004`.
+- **SM1.A.3** `system_off() -> !` — power off the system; SMC32 id
+  `0x8400_0008`; never returns.
+- **SM1.A.4** `system_reset() -> !` — cold system reset; SMC32 id
+  `0x8400_0009`; never returns.
+- **SM1.A.5** `psci_version() -> PsciVersion` — query firmware
+  version; SMC32 id `0x8400_0000`. `PsciVersion` carries `major` /
+  `minor` u16 fields with a `from_raw` / `to_raw` round-trip and an
+  `at_least(major, minor)` comparator for feature gating.
+- **SM1.A.6** `migrate_info_type() -> Result<MigrateInfoType, PsciResult>` —
+  Trusted-OS migration query; SMC32 id `0x8400_0006`. `MigrateInfoType`
+  enum: `UniProcessor=0`, `Multiprocessor=1`, `NotRequired=2`.
+- **SM1.A.7** Function-id pinning — compile-time `const _: () = { ... }`
+  assertions verify every PSCI id satisfies the ARM SMCCC encoding
+  (bit 31 Fast call, bit 30 SMC32/64, bits 29..24 OEN=4 for Standard
+  Secure Service Calls, bits 23..16 reserved-zero, bits 15..0 function
+  number). Plus the runtime test matrix in
+  `psci::tests::psci_function_ids_*`.
+- **SM1.A.8** Documentation map — module-level docstring lists all
+  seven wrappers with their function ids and DEN0022D § references;
+  return-code matrix cites Table 5.
+
+**Test coverage**: 30 unit tests (28 active + 2 `#[ignore]`'d for
+`system_off` / `system_reset` since they return `!` and would hang the
+test runner). All function ids pinned in three layers: compile-time
+`const _: ()` assertions, runtime `psci_function_ids_match_arm_den0022d`,
+runtime pairwise-distinctness. The `affinity_info` and
+`migrate_info_type` decoders refuse vendor-undocumented values by
+returning `None` (mapped by the caller to `PsciResult::Unknown`).
 
 #### SM1.A.1 — `psci::cpu_off()`
 

@@ -55,7 +55,7 @@ Sub-portfolio close-out plans archived to
 [`docs/dev_history/audits/`](dev_history/audits/) per WS-SM SM0.Q.2.
 
 **Release path (WS-SM):**
-- `v0.31.3` (this WS-SM SM0 cut) — Foundations & honesty patches.
+- `v0.31.3` (WS-SM SM0 cut) — Foundations & honesty patches.
   Single-core boot path unchanged; type-level scaffolding for
   SM1..SM9 in place.
 - `v0.33.x` (planned) — SM1 (Rust HAL) + SM2 (verified locks).
@@ -63,6 +63,67 @@ Sub-portfolio close-out plans archived to
 - `v0.35.x` (planned) — SM5 (per-core scheduler) + SM6 (cross-core IPC).
 - `v0.36.x` (planned) — SM7 (TLB shootdown) + SM8 (info flow under SMP).
 - `v1.0.0` "bootable verified SMP microkernel" — SM9 closure cut.
+
+**WS-SM SM1.A LANDED on branch
+`claude/implement-psci-completion-TUW1u`** (v0.31.3 +): PSCI
+completion — the first sub-phase of SM1 (Rust HAL).  Closes
+SMP-M5 (PSCI completion) by wrapping the full ARM DEN0022D §5
+surface the kernel needs beyond the existing `cpu_on`.  Eight
+sub-tasks landed in one cut:
+
+- **SM1.A.1**: `psci::cpu_off()` — power down the calling PE
+  (`hvc #0` with SMC32 id `0x8400_0002`).  Returns `PsciResult`;
+  successful calls do not return.
+- **SM1.A.2**: `psci::affinity_info(target_affinity, lowest_affinity_level)`
+  — query a target PE's on/off state.  New `AffinityInfoState`
+  enum (`On=0`, `Off=1`, `OnPending=2`) with
+  `from_raw` / `to_raw` round-trip.  SMC64 id `0xC400_0004`.
+- **SM1.A.3**: `psci::system_off() -> !` — power off the system.
+  SMC32 id `0x8400_0008`.  Return type `!` documents the
+  no-return contract at the type level.
+- **SM1.A.4**: `psci::system_reset() -> !` — cold system reset.
+  SMC32 id `0x8400_0009`.
+- **SM1.A.5**: `psci::psci_version()` — query firmware version.
+  New `PsciVersion` struct with `major` / `minor` u16 fields,
+  `from_raw` / `to_raw` round-trip, and
+  `at_least(major, minor)` comparator for feature gating.  SMC32
+  id `0x8400_0000`.
+- **SM1.A.6**: `psci::migrate_info_type()` — Trusted-OS migration
+  query.  New `MigrateInfoType` enum (`UniProcessor=0`,
+  `Multiprocessor=1`, `NotRequired=2`).  SMC32 id `0x8400_0006`.
+- **SM1.A.7**: Function-id pinning — compile-time `const _: () = { ... }`
+  assertions verify every PSCI id matches the ARM SMCCC encoding
+  (bit 31 Fast call, bit 30 SMC32/64, bits 29..24 OEN=4 for
+  Standard Secure Service Calls, bits 23..16 reserved-zero).  Plus
+  runtime tests `psci_function_ids_match_arm_den0022d`,
+  `psci_function_ids_pairwise_distinct`,
+  `psci_function_ids_oen_is_standard_secure_service`,
+  `psci_function_ids_reserved_bits_23_16_clear`,
+  `psci_all_function_ids_have_bit31_set_fast_call`,
+  `psci_smc64_function_ids_have_bit30_set`,
+  `psci_smc32_function_ids_have_bit30_clear`.
+- **SM1.A.8**: Module-level documentation map — the `psci.rs`
+  header lists all seven wrappers with their DEN0022D § references
+  and function ids; the return-code matrix cites Table 5.
+
+**Test coverage**: 30 PSCI unit tests (28 active + 2 `#[ignore]`'d
+for `system_off` / `system_reset` since they return `!` and would
+hang the test runner).  Total HAL tests: 240 (was 215).  All
+function ids pinned in three layers: compile-time `const _: ()`
+assertions, runtime spec-exact constant matches, runtime
+pairwise-distinctness.  The `affinity_info` and
+`migrate_info_type` decoders refuse vendor-undocumented values by
+returning `None` (mapped by the caller to
+`PsciResult::Unknown`).  No regressions: full Tier 0+1+2 smoke
+test passes (152-job Lean build, 240/240 HAL tests, 94/94 ABI
+conformance tests, 0 clippy warnings).
+
+Items deferred past v1.0.0 with correctness impact: NONE.
+Follow-on: SM1.B (Per-CPU data + TPIDR_EL1), SM1.C (Secondary
+core full init), SM1.D (DTB cmdline parsing), SM1.E (IS-variant
+TLBI), SM1.F (SGI primitive), SM1.G (Per-core UART), SM1.H (QEMU
+SMP integration test) — see
+[`docs/planning/SMP_RUST_HAL_PLAN.md`](planning/SMP_RUST_HAL_PLAN.md) §§5.2..5.8.
 
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
