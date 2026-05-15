@@ -78,7 +78,7 @@ SMP binary on a 4-core SoC.
 
 ### 1.3 Workstream shape
 
-**WS-SM**, 10 phases, ~520-640 sub-tasks, ~24-30 months. Each
+**WS-SM**, 10 phases, ~550-725 sub-tasks, ~24-30 months. Each
 phase has its own detailed plan (Appendix A directory).
 
 ```

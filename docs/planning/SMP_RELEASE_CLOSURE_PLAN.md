@@ -151,7 +151,9 @@ Closures (from the WS-SM audit):
 - SMP-H4: verified TicketLock + RwLock primitives.
 - 7 MEDIUM + 5 LOW findings closed.
 
-New theorem count: ~210 substantive theorems across SM2..SM8.
+New theorem count: ~210 substantive theorems across SM0..SM9
+(16 SM0 + 1 SM1 + 22 SM2 + 28 SM3 + ~50 SM4 + 30 SM5 + 25 SM6
++ 14 SM7 + 18 SM8 + 5 SM9 marker theorems = 209 ≈ 210).
 Zero Lean axioms.  Zero sorry/native_decide.  Tier 0..5 all
 green.
 
