@@ -12,9 +12,14 @@
 > kernel, plus verified lock primitives that the seL4 project
 > historically left as assumptions.
 >
-> **Sequencing**: WS-RC retargets from v1.0.0 to **v0.31.last** (R2..R6
-> close at v0.31.last; substance unchanged, only the version-bump
-> sub-tasks shift). WS-SM opens at v0.32.0 and runs through v1.0.0.
+> **Sequencing**: **WS-RC and WS-SM merge** into a single unified
+> workstream closing at v1.0.0. WS-RC's already-landed phases (R0..R5
+> at v0.31.2) stand; the remaining WS-RC phases (R6..R14) become
+> SM-prefixed foundational sub-tasks within WS-SM. The merged plan
+> opens immediately at the v0.31.2 boundary; SM0 honesty patches
+> land first; SM1..SM9 follow. There is no intermediate v0.31.last
+> release; the next milestone after v0.31.2 is v1.0.0 itself,
+> reached via WS-SM staging releases (v0.32.x..v0.99.x).
 >
 > **Maintainer decisions taken** (recorded in §10; drove this plan):
 > 1. Lock layout: **per-object fine locks**.
@@ -844,8 +849,10 @@ fixes prerequisite to the larger phases. **Cadence**: spread across
 | SM0.M | Zero `.smp_stacks` at boot. Extend `boot.S` BSS-zero loop. | `boot.S` | Boot trace + cargo test `secondary_stacks_zeroed_at_boot`. | S |
 | SM0.N | Set `TPIDR_EL1` in `secondary_entry` to per-CPU base. Add `__per_cpu_data_base` linker symbol + `static PER_CPU_DATA: [PerCpuData; coreCount]` skeleton. | `boot.S`, `smp.rs`, `link.ld` | TPIDR_EL1 readable from `rust_secondary_main`. | M |
 | SM0.O | `MAX_SECONDARY_CORES = coreCount - 1` parameterization in Rust. | `smp.rs` | Test pins constant. | S |
-| SM0.P | Update CLAUDE.md/AGENTS.md to record WS-SM as the active workstream after WS-RC closure. | `CLAUDE.md`, `AGENTS.md` | Workstream context updated; byte-identical mirror. | S |
-| SM0.Q | Retarget WS-RC R2..R6 closing-version from v1.0.0 to v0.31.last in `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`. | `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` | Plan reflects v0.31.last closure. | S |
+| SM0.P | Update CLAUDE.md/AGENTS.md to record WS-SM as the unified active workstream (replacing the WS-RC section; merging is annotated in `docs/WORKSTREAM_HISTORY.md`). | `CLAUDE.md`, `AGENTS.md` | Workstream context updated; byte-identical mirror. | S |
+| SM0.Q | **Merge WS-RC remainder into WS-SM.** Recategorize WS-RC's unlanded phases (R6..R14) as foundational SM-numbered sub-tasks. Update `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` to mark R0..R5 as LANDED (current state) and R6..R14 as "absorbed into WS-SM". The merged workstream closes at v1.0.0. | `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md`, this file | Plan shows the merge; no orphan WS-RC tracking remains. | M |
+| SM0.Q.1 | **Per-phase absorption mapping.** For each WS-RC R6..R14 phase, identify whether its objectives fit naturally inside an existing SM-phase (e.g., remaining proof-hygiene under SM4.D) or warrant a dedicated SM sub-section. Document the mapping in `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` §15. | `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` | Every R6..R14 finding has an SM-phase destination. | M |
+| SM0.Q.2 | Archive `docs/audits/WS_RC_R4_CLOSEOUT_PLAN.md` and `docs/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` to `docs/dev_history/audits/` once the merge lands (they document closed sub-portfolios). | (2 file moves) | Archived. | T |
 | SM0.R | Update `docs/codebase_map.json` for new modules. | `docs/codebase_map.json` | Map regenerated. | T |
 | SM0.S | New tier-3 surface anchor for the SM0 foundational types. | `tests/SmpFoundationsSuite.lean` | `#check` of every new type. | S |
 | SM0.T | New nightly tier `test_tier4_smp_bootcheck.sh` (stub initially — populates over SM1..SM9). | `scripts/test_tier4_smp_bootcheck.sh` | Stub created; tier slot reserved. | T |
@@ -1855,11 +1862,14 @@ all of them simultaneously).
 
 ## 9. Timeline
 
-**Prerequisite implication for WS-RC**: WS-RC R2..R6 close at
-v0.31.last instead of v1.0.0. Mechanical change; tracked under
-SM0.Q.
+**WS-RC and WS-SM are merged**: there is no separate WS-RC closure
+release. WS-RC's already-landed phases (R0..R5 at v0.31.2) stand;
+the remaining R6..R14 phases are recategorized into SM-phases per
+SM0.Q. The unified workstream opens immediately at v0.31.2 and
+closes at v1.0.0.
 
-WS-RC closure → WS-SM open at v0.31.x → v0.32.0 boundary.
+Sequencing: v0.31.2 (current) → SM0 honesty patches (v0.32.0..) →
+SM1..SM9 staging → v1.0.0.
 
 | Phase | Releases | Estimated calendar |
 |-------|----------|--------------------|
@@ -1884,7 +1894,7 @@ All 9 original open questions plus 3 derived ones answered:
 | # | Question | Decision |
 |---|----------|----------|
 | 1 | Concurrency model | Per-subsystem locks (escalated to per-object fine locks in §3) |
-| 2 | Target version + WS-RC retarget | v1.0.0 ships SMP; WS-RC retargets to v0.31.last (SM0.Q) |
+| 2 | Target version + WS-RC merge | v1.0.0 ships SMP; **WS-RC merges into WS-SM** (single unified workstream; SM0.Q recategorizes R6..R14 into SM-phases) |
 | 3 | Model rewrite path | Path-a replacement |
 | 4 | Default SMP activation | Enabled by default; opt-out via cmdline |
 | 5 | numCores parameterization | Via `PlatformBinding.coreCount` |
@@ -2091,8 +2101,9 @@ rigorously verified SMP microkernel in the literature.
 ---
 
 *This plan was produced from branch
-`claude/audit-multicore-implementation-sUcIx` at v0.31.2.  It opens
-as workstream **WS-SM** immediately after WS-RC closure (which
-retargets to v0.31.last per SM0.Q), with the goal of shipping a
-bootable verified SMP microkernel as v1.0.0.  All 13 maintainer
-decisions in §10 are binding for this workstream.*
+`claude/audit-multicore-implementation-sUcIx` at v0.31.2. WS-RC and
+WS-SM are **merged** into a single unified workstream that opens
+immediately at the v0.31.2 boundary; WS-RC R0..R5 (already LANDED)
+stand, R6..R14 absorb into SM-phases per SM0.Q. The workstream
+closes at v1.0.0 with a bootable verified SMP microkernel. All 13
+maintainer decisions in §10 are binding for this workstream.*
