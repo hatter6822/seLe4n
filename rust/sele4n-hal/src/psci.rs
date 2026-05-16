@@ -1615,29 +1615,36 @@ mod tests {
     }
 
     // ------------------------------------------------------------------------
-    // Direct-invocation tests for system_off / system_reset (#[ignore]).
+    // Signature checks for system_off / system_reset (`-> !`).
     //
-    // These functions return `!` and spin forever on the host stub, so
-    // we ignore them by default and provide a manual invocation
-    // recipe in the test name.  They exist purely to verify the
-    // function signatures compile and link.  Run with:
-    //
-    //     cargo test --lib psci::tests::system_off_host_stub_spins -- --ignored
-    //
-    // (the test will hang; press Ctrl-C to exit).
+    // These functions return `!` (the never type) and spin forever on
+    // the host stub (a defensive `loop { spin_loop() }` post-asm
+    // discharges the `-> !` contract even on non-conforming firmware
+    // that returns `NOT_SUPPORTED`).  An earlier landing exposed them
+    // as `#[ignore]`'d "direct-invocation" tests, but `#[ignore]`
+    // tests verify nothing automatically — they only show up in the
+    // ignored count.  Replace with compile-time signature bindings:
+    // the `let _: fn() -> ! = system_off;` form forces the compiler
+    // to check that `system_off`'s signature is exactly `fn() -> !`,
+    // and a future regression that loosened the return type (e.g.,
+    // back to `fn()`) would fail to elaborate the test.  This gives
+    // us the same regression-detection power without the hang.
     // ------------------------------------------------------------------------
 
     #[test]
-    #[ignore = "system_off does not return — host stub spins forever"]
-    fn system_off_host_stub_spins() {
-        // SM1.A.3: invokes the host stub; the test hangs (intentional).
-        system_off();
+    fn system_off_signature_is_diverging() {
+        // SM1.A.3: structural check — `system_off : fn() -> !`.
+        // Binding the function pointer to a typed slot forces the
+        // compiler to verify the signature.  We deliberately do NOT
+        // invoke it because the host stub spins forever (would hang
+        // the test runner).
+        let _f: fn() -> ! = system_off;
     }
 
     #[test]
-    #[ignore = "system_reset does not return — host stub spins forever"]
-    fn system_reset_host_stub_spins() {
-        // SM1.A.4: invokes the host stub; the test hangs (intentional).
-        system_reset();
+    fn system_reset_signature_is_diverging() {
+        // SM1.A.4: structural check — `system_reset : fn() -> !`.
+        // See `system_off_signature_is_diverging` for rationale.
+        let _f: fn() -> ! = system_reset;
     }
 }

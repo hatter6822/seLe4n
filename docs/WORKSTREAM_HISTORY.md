@@ -276,12 +276,19 @@ SM0.N:
   the 11 sm0n_* tests that migrated): verifying the
   `crate::smp::*` re-exports of `PerCpuData`, `PER_CPU_DATA`,
   the slot-size constants, and `per_cpu_slot_addr` still
-  resolve.  **Net delta**: 279 HAL tests (was 253 at SM1.A
-  close).  Math: +30 new in per_cpu.rs (25 at initial landing
-  + 5 at audit-pass-2), +3 new in ffi.rs, +4 new in smp.rs,
-  −11 retired from smp.rs (now in per_cpu.rs).  Net: +26.
+  resolve.  **Net delta**: 281 HAL tests (was 253 at SM1.A
+  close), zero `#[ignore]`'d.  Math: +30 new in per_cpu.rs (25
+  at initial landing + 5 at audit-pass-2), +3 new in ffi.rs,
+  +4 new in smp.rs, −11 retired from smp.rs (now in per_cpu.rs),
+  +2 in psci.rs (audit-pass-3: the 2 `#[ignore]`'d
+  `system_off` / `system_reset` direct-invocation tests
+  converted into compile-time fn-pointer signature checks at
+  v0.31.4 — verify the `-> !` return type without hanging the
+  test runner).  Net: +28 (all tests active).
 
-**Test coverage**: 279 HAL tests (up from 253 at SM1.A close),
+**Test coverage**: 281 HAL tests, zero `#[ignore]`'d (up from 253
+at SM1.A close, with 2 ignored tests converted to compile-time
+signature checks at v0.31.4 audit-pass-3),
 zero clippy warnings workspace-wide.  4 new Lean surface-anchor
 `#check`s plus 4 new decidable examples plus a runtime
 `runCurrentCoreIdChecks` section in

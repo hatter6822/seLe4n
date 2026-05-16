@@ -861,7 +861,9 @@ documentation lives under `docs/` and `docs/gitbook/`.
     `PerCpuData`, `PER_CPU_DATA`, the slot-size constants, and
     `per_cpu_slot_addr` still resolve.
 
-  **Test coverage**: 279 HAL tests (up from 253 at SM1.A close),
+  **Test coverage**: 281 HAL tests, zero `#[ignore]`'d (up from 253
+  at SM1.A close, which had 2 ignored tests — converted to
+  compile-time fn-pointer signature checks at v0.31.4 audit-pass-3),
   zero clippy warnings workspace-wide.  4 new Lean surface-anchor
   `#check`s plus 4 new decidable examples plus a runtime
   `runCurrentCoreIdChecks` section in

@@ -742,7 +742,9 @@ Lean ↔ Rust seam:
   `PER_CPU_DATA`, the slot-size constants, and `per_cpu_slot_addr`
   still resolve.
 
-**Test coverage**: 279 HAL tests (up from 253 at SM1.A close), zero
+**Test coverage**: 281 HAL tests, zero `#[ignore]`'d (up from 253 at
+SM1.A close, with 2 ignored tests converted to compile-time
+signature checks at v0.31.4 audit-pass-3), zero
 clippy warnings workspace-wide, zero new fmt diffs in modified files.
 4 new Lean surface-anchor `#check`s in `tests/SmpFoundationsSuite.lean`
 (`Platform.FFI.ffiCurrentCoreId`, `Concurrency.currentCoreId`,

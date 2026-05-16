@@ -128,10 +128,17 @@ context" carries the live tracking.
   still resolve so any pre-SM1.B call site through the legacy
   module path keeps working.
 
-**Net delta**: 279 HAL tests post-SM1.B (was 253 at SM1.A close).
+**Net delta**: 281 HAL tests post-SM1.B (was 253 at SM1.A close).
 Per-file math: +30 new in per_cpu.rs (25 at initial landing + 5 at
 audit-pass-2), +3 new in ffi.rs, +4 new in smp.rs, −11 retired from
-smp.rs (now in per_cpu.rs).  Net: +26.
+smp.rs (now in per_cpu.rs), +2 in psci.rs (audit-pass-3: the 2
+existing `#[ignore]`'d `system_off` / `system_reset` "direct
+invocation" tests converted into compile-time fn-pointer signature
+checks `system_off_signature_is_diverging` /
+`system_reset_signature_is_diverging` so the tests verify the
+`-> !` return type without hanging the test runner — the
+`#[ignore]` annotation, which verifies nothing automatically, is
+gone).  Net: +28 (with all tests now active, zero `#[ignore]`'d).
 
 `tests/SmpFoundationsSuite.lean`:
 
@@ -152,10 +159,18 @@ smp.rs (now in per_cpu.rs).  Net: +26.
 
 ### Test coverage summary
 
-- 279 HAL tests (up from 253 at SM1.A close).
+- 281 HAL tests, **zero `#[ignore]`'d** (up from 253 at SM1.A
+  close).  At v0.31.4 the 2 `#[ignore]`'d `system_off` /
+  `system_reset` "direct invocation" tests that came with SM1.A's
+  PSCI completion were converted into compile-time fn-pointer
+  signature checks (they verified nothing automatically as
+  `#[ignore]`'d, since invoking the `-> !` host stub would hang the
+  test runner forever); the new form `let _: fn() -> ! =
+  system_off;` exercises the signature contract at compile time
+  without invoking the function.
 - Zero clippy warnings workspace-wide.
 - Full Tier 0+1+2 smoke test passes
-  (Lean build, 279/279 HAL tests, 94/94 ABI conformance tests).
+  (Lean build, 281/281 HAL tests, 94/94 ABI conformance tests).
 - Lean test suite count and module count updated in
   `docs/codebase_map.json` and the README/SPEC tables.
 
