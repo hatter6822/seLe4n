@@ -1691,7 +1691,99 @@ fn init_timer_secondary_returns_ok_on_host() {
 
 **Size**: S (~60 LoC).
 
-### 5.4 DTB cmdline + Phase 5 (SM1.D, 3 PRs, 6 sub-tasks)
+### 5.4 DTB cmdline + Phase 5 (SM1.D, 3 PRs, 6 sub-tasks) — **LANDED at v0.31.6**
+
+**Status**: WS-SM SM1.D LANDED on branch
+`claude/review-dtb-cmdline-phase-EkoTA`.  All six sub-tasks
+landed in one cut with the implementation extending beyond the
+plan's stub-form sketch:
+
+- The original sketch returned an `&'static str` from
+  `extract_bootargs(dtb_ptr)` and acknowledged the body was a
+  TODO stub.  The landed form replaces that with a full
+  self-contained DTB walker (`extract_bootargs_into` and
+  `extract_bootargs_from_blob_into`) plus a one-shot
+  `parse_cmdline_from_dtb` entry point.  The lifetime issue is
+  resolved by using a caller-supplied buffer (the DTB memory is
+  not guaranteed `'static` once the kernel reclaims early-boot
+  allocations).  Per the `CLAUDE.md` "implement-the-improvement"
+  rule, the verified structure is the better state and the boot
+  path consumes it.
+- `smp_max_cores` is interpreted as a **total core count**
+  (boot core + secondaries), not a secondary count — clearer
+  semantics for QEMU `-smp N -append "smp_max_cores=N"`
+  symmetry.
+- The DTB walker is fuel-bounded (`FDT_WALK_FUEL = 4096`) and
+  depth-bounded (`FDT_MAX_DEPTH = 32`); malformed blobs fail
+  closed to "empty bootargs" → default config.
+- Phase 5 also threads through `apply_cmdline_and_start_smp`
+  which writes `smp::SMP_ENABLED` and dispatches to
+  `bring_up_secondaries_with_limit`.  The atomic stays `false`
+  at module load so a halted kernel never accidentally spawns
+  secondaries.
+- A new build.rs scanner
+  (`scan_boot_rs_phase5_uses_cmdline`) pins the Phase 5 call
+  sites at build time so a refactor cannot silently disable the
+  cmdline parse.
+
+**Test coverage delivered (initial landing)**: 54 cmdline tests +
+9 smp limit-aware tests + 5 boot Phase-5 tests = 68 new HAL
+tests.  Total HAL test count: 395 (was 327 at SM1.D start).
+
+**Audit-pass-1 refinements** (post-initial-landing deep audit,
+delivered in the same v0.31.6 patch release):
+
+- **HIGH-severity `/chosen` sub-node bootargs filtering**: the
+  walker now requires `depth == chosen_depth` so only direct
+  `/chosen/bootargs` is honoured.  Pre-audit a hostile DTB
+  could place `/chosen/sub/bootargs = "smp_enabled=false"` and
+  silently disable SMP.
+- **HIGH-severity `totalsize` slice-construction UB defense**:
+  `MAX_DTB_SIZE = 2 MiB` upper bound enforced before
+  `core::slice::from_raw_parts` (against `hdr.totalsize` on
+  aarch64; against `blob.len()` on host) — closes a UB vector
+  where a malicious bootloader-supplied huge `totalsize` would
+  trigger UB at slice construction.
+- **MEDIUM `last_comp_version` check**: DTBs requiring parser
+  version > 17 (the layout we parse) are rejected per FDT
+  spec §5.2.
+- **MEDIUM integer-overflow hardening**: every offset/length
+  addition uses `checked_add`; padding uses
+  `(4 - (len % 4)) % 4` instead of `(len + 3) & !3`.
+- **Test-isolation infrastructure**:
+  `bring_up_secondaries_with_limit_inner` and
+  `apply_cmdline_and_start_smp_inner` `pub(crate)` inner forms
+  added — the public functions become thin wrappers.
+- **Code-quality**: simplified boot.rs Phase 5 (unconditional
+  apply call); renamed `_dtb_ptr` → `dtb_ptr` in
+  `rust_boot_main`.
+
+**Audit-pass-1 test delta**: +25 audit-pass regression /
+isolation tests for a total of 420 HAL tests post-audit-pass-1.
+Zero clippy warnings workspace-wide.
+
+**Audit-pass-2 refinements** (second deep audit, also v0.31.6):
+
+- **MEDIUM `validate_fdt_header` boundary hardening**: reject
+  DTBs whose `off_dt_struct < FDT_HEADER_SIZE` or
+  `off_dt_strings < FDT_HEADER_SIZE`.  Block overlapping
+  header is malformed per FDT spec §5.2.
+- **MEDIUM walker fail-closed regression tests**: added
+  coverage for unknown FDT tokens, FDT_NOP-chain fuel
+  exhaustion, and deep-nesting depth bound.
+- **Cleanup**: removed obsolete pre-pass-1
+  `apply_disabled_returns_zero_online` test (no-op that didn't
+  call the function under test; pass-1 `apply_inner_*` tests
+  supersede).
+
+**Audit-pass-2 test delta**: +5 net (+6 regression − 1
+obsolete cleanup) for a total of 425 HAL tests post-audit-pass-2.
+Cumulative SM1.D additions: +98 (76 in cmdline.rs NEW FILE, 17
+in smp.rs sm1d6_*, 5 in boot.rs sm1d_*).
+
+The remaining sub-section text below describes the original
+plan skeleton; the landed implementation matches or exceeds
+every acceptance criterion.
 
 #### SM1.D.1 — `cmdline.rs` DTB parser
 

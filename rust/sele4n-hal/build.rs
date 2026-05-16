@@ -61,6 +61,16 @@ fn main() {
     // prevent (the Rust validator runs after the function prologue).
     scan_boot_s_for_secondary_entry_context_id_validation();
 
+    // WS-SM SM1.D (closes the DTB-cmdline / Phase-5 contract): verify
+    // `boot.rs::rust_boot_main` actually invokes the SM1.D Phase-5
+    // helpers (`cmdline::parse_cmdline_from_dtb` +
+    // `cmdline::apply_cmdline_and_start_smp`).  A regression that
+    // dropped Phase 5 would silently default to "no secondary cores"
+    // because `smp::SMP_ENABLED` stays `false` at module load — the
+    // production-vs-stub behaviour would diverge without any compile
+    // error.  Pinning the call sites at build time forces the contract.
+    scan_boot_rs_phase5_uses_cmdline();
+
     // Only build assembly for aarch64 targets
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     if target_arch != "aarch64" {
@@ -511,6 +521,79 @@ fn scan_boot_s_for_secondary_entry_context_id_validation() {
              WS-SM SM1.C audit-pass-2 in CHANGELOG.md.",
             sym = if has_symbol { "yes" } else { "MISSING" },
             lbl = if has_label { "yes" } else { "MISSING" },
+        );
+    }
+}
+
+/// **WS-SM SM1.D** regression guard: verify `boot.rs::rust_boot_main`
+/// invokes the SM1.D Phase-5 cmdline-parse + SMP-bring-up entry points.
+///
+/// The SM1.D contract is that Phase 5 of `rust_boot_main`:
+///   1. Parses the DTB-supplied bootargs via
+///      `cmdline::parse_cmdline_from_dtb(dtb_ptr)`.
+///   2. Applies the parsed config + brings up secondaries via
+///      `cmdline::apply_cmdline_and_start_smp(&cmdline_cfg)`.
+///
+/// A regression that silently drops either call would result in:
+///   - Either `SMP_ENABLED` stays at its module-load default
+///     (`false`), and the kernel boots single-core even with no
+///     `smp_enabled=false` cmdline override (silent disable).
+///   - Or the parser runs but the bring-up never happens, so the
+///     secondaries stay parked in `boot.S::.L_secondary_spin` forever.
+///
+/// Both failures are user-invisible without the cmdline scanner;
+/// pinning them at build time forces the contract.
+fn scan_boot_rs_phase5_uses_cmdline() {
+    let path = "src/boot.rs";
+    // Re-run hook already emitted by an earlier scanner; not duplicating.
+    let contents = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => panic!("WS-SM SM1.D scanner: failed to read {path}: {e}"),
+    };
+
+    let stripped: String = contents
+        .lines()
+        .map(|line| {
+            if let Some(idx) = line.find("//") {
+                &line[..idx]
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let normalised = stripped.to_ascii_lowercase();
+
+    // Required Phase-5 call sites.  Each entry is (call site, step name).
+    let required: &[(&str, &str)] = &[
+        (
+            "cmdline::parse_cmdline_from_dtb(",
+            "Phase 5 step 1: DTB cmdline parse",
+        ),
+        (
+            "cmdline::apply_cmdline_and_start_smp(",
+            "Phase 5 step 2: SMP bring-up dispatch",
+        ),
+    ];
+
+    let mut missing: Vec<&str> = Vec::new();
+    for (call, step) in required {
+        if !normalised.contains(call) {
+            missing.push(step);
+        }
+    }
+
+    if !missing.is_empty() {
+        panic!(
+            "WS-SM SM1.D regression: `{path}::rust_boot_main` is missing \
+             one or more required Phase 5 call sites.  Missing: \
+             {missing:?}.  Phase 5 must (1) parse the DTB cmdline via \
+             `cmdline::parse_cmdline_from_dtb` and (2) dispatch the SMP \
+             bring-up via `cmdline::apply_cmdline_and_start_smp`.  \
+             Without these, the kernel falls back to the module-load \
+             default `SMP_ENABLED=false`, silently boots single-core, \
+             and `smp_enabled=true` in the DTB bootargs has no effect.  \
+             See WS-SM SM1.D in `docs/planning/SMP_RUST_HAL_PLAN.md` §5.4."
         );
     }
 }

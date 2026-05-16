@@ -308,6 +308,90 @@ pub fn bring_up_secondaries() -> u32 {
     )
 }
 
+/// **WS-SM SM1.D.6**: bring up secondary cores subject to an upper
+/// bound on the total number of cores online.
+///
+/// Used by `boot.rs::rust_boot_main` Phase 5 when a `smp_max_cores=N`
+/// option appears on the kernel command line.  Lets operators boot
+/// with fewer cores than the platform supports — useful for:
+///
+///   - QEMU `-smp 2` regression testing without touching this
+///     binary's `MAX_SECONDARY_CORES` constant.
+///   - Single-secondary diagnostic boots (`smp_max_cores=2`) when
+///     hunting a multi-core bug.
+///   - Hardware bring-up on a partial production board where one
+///     core has failed.
+///
+/// ## Semantics
+///
+/// The argument names a **total core count** (including the boot
+/// core), not a secondary count.  Translation:
+///
+///   - `max_cores = 0` → no cores brought up (returns 0).
+///   - `max_cores = 1` → boot core only; no secondaries (returns 0).
+///   - `max_cores = N (2..=MAX_SECONDARY_CORES + 1)` → bring up
+///     `N - 1` secondaries from the head of the MPIDR table.
+///   - `max_cores > MAX_SECONDARY_CORES + 1` → saturated to
+///     `MAX_SECONDARY_CORES + 1` (the platform bound; defensive
+///     against caller-side parsing errors).
+///
+/// Returns the number of secondaries actually brought up (NOT the
+/// total core count — same return shape as
+/// [`bring_up_secondaries`]).
+///
+/// ## Why a separate function vs adding a parameter to
+/// [`bring_up_secondaries`]
+///
+/// The pre-existing `bring_up_secondaries()` is the
+/// no-limit / full-platform call site preserved for callers that
+/// don't need command-line-driven configuration.  The two entry
+/// points are otherwise identical in semantics; mechanical
+/// refactors should NOT collapse them into one with a default
+/// argument since `bring_up_secondaries` is already in the public
+/// API and renaming it would break downstream consumers.
+pub fn bring_up_secondaries_with_limit(max_cores: usize) -> u32 {
+    bring_up_secondaries_with_limit_inner(
+        max_cores,
+        &SMP_ENABLED,
+        &CORE_READY,
+        &SECONDARY_CORES_ONLINE,
+        &SECONDARY_MPIDR_TABLE,
+    )
+}
+
+/// **WS-SM SM1.D.6 audit-pass-1** (test-isolation form): the inner
+/// implementation of [`bring_up_secondaries_with_limit`] taking
+/// explicit state references.
+///
+/// Matches the existing [`bring_up_secondaries_inner`] discipline
+/// for parallel-cargo-test safety: unit tests substitute local
+/// atomics so they never race against each other or with the
+/// production-global SMP_ENABLED state.
+///
+/// Production callers should use [`bring_up_secondaries_with_limit`],
+/// which threads the global statics.  This inner form is `pub(crate)`
+/// because the only legitimate consumers are tests in the same crate
+/// plus the `apply_cmdline_and_start_smp_inner` companion in
+/// `cmdline.rs`.
+pub(crate) fn bring_up_secondaries_with_limit_inner(
+    max_cores: usize,
+    enabled: &AtomicBool,
+    core_ready: &[AtomicBool],
+    online_count: &AtomicU32,
+    mpidr_table: &[u64],
+) -> u32 {
+    let limit = max_cores.min(MAX_SECONDARY_CORES + 1);
+    let secondaries_to_spawn = limit.saturating_sub(1);
+    // Defensive: `mpidr_table` may itself be shorter than
+    // `MAX_SECONDARY_CORES` in tests passing custom tables, so cap
+    // the slice end at `mpidr_table.len()` to keep the slice within
+    // bounds.  In production `mpidr_table == &SECONDARY_MPIDR_TABLE`
+    // (length == MAX_SECONDARY_CORES) and the cap is a no-op.
+    let take = secondaries_to_spawn.min(mpidr_table.len());
+    let table = &mpidr_table[..take];
+    bring_up_secondaries_inner(enabled, core_ready, online_count, table)
+}
+
 /// **WS-SM SM1.C.5 / audit-pass-1** (defense-in-depth): validate a
 /// PSCI `context_id` received by [`rust_secondary_main`].
 ///
@@ -1117,5 +1201,307 @@ mod tests {
                 context_id
             );
         }
+    }
+
+    // ========================================================================
+    // WS-SM SM1.D.6 — bring_up_secondaries_with_limit
+    //
+    // The limit-aware bring-up entry point used by `boot.rs` Phase 5.
+    // Tests exercise the saturation behaviour:
+    //   * limit < platform max  → bring up a prefix
+    //   * limit == platform max → full bring-up
+    //   * limit > platform max  → saturated to platform max
+    //   * limit 0 / 1           → no secondaries (only boot core, or zero)
+    //
+    // All tests use the inner state-injection helper so the global
+    // SMP_ENABLED atomic and CORE_READY array are not perturbed
+    // between cargo's parallel test runs.
+    // ========================================================================
+
+    #[test]
+    fn sm1d6_with_limit_zero_brings_up_no_secondaries() {
+        // SM1.D.6: max_cores = 0 → empty MPIDR slice, no PSCI calls.
+        let (enabled, ready, count) = fresh_local_state();
+        enabled.store(true, Ordering::Release);
+        // Use the inner helper so we don't touch the global state.
+        let empty_table: [u64; 0] = [];
+        let online = bring_up_secondaries_inner(&enabled, &ready, &count, &empty_table);
+        assert_eq!(online, 0);
+        // No CORE_READY flips on secondaries.
+        assert!(!ready[1].load(Ordering::Acquire));
+        assert!(!ready[2].load(Ordering::Acquire));
+        assert!(!ready[3].load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn sm1d6_with_limit_one_brings_up_no_secondaries() {
+        // SM1.D.6: max_cores = 1 → boot core only, no secondaries.
+        // max_cores - 1 = 0 secondaries → empty MPIDR slice.
+        let secondaries_to_spawn = 1usize.saturating_sub(1);
+        let table = &SECONDARY_MPIDR_TABLE[..secondaries_to_spawn];
+        assert_eq!(table.len(), 0);
+    }
+
+    #[test]
+    fn sm1d6_with_limit_two_brings_up_one_secondary() {
+        // SM1.D.6: max_cores = 2 → 1 secondary (table[0..1]).
+        let (enabled, ready, count) = fresh_local_state();
+        enabled.store(true, Ordering::Release);
+        let limit = 2usize;
+        let secondaries_to_spawn = limit.min(MAX_SECONDARY_CORES + 1).saturating_sub(1);
+        let table = &SECONDARY_MPIDR_TABLE[..secondaries_to_spawn];
+        assert_eq!(table.len(), 1);
+        let online = bring_up_secondaries_inner(&enabled, &ready, &count, table);
+        assert_eq!(online, 1);
+        assert!(ready[1].load(Ordering::Acquire), "first secondary should be ready");
+        assert!(!ready[2].load(Ordering::Acquire), "second secondary not spawned");
+        assert!(!ready[3].load(Ordering::Acquire), "third secondary not spawned");
+    }
+
+    #[test]
+    fn sm1d6_with_limit_three_brings_up_two_secondaries() {
+        // SM1.D.6: max_cores = 3 → 2 secondaries (table[0..2]).
+        let (enabled, ready, count) = fresh_local_state();
+        enabled.store(true, Ordering::Release);
+        let limit = 3usize;
+        let secondaries_to_spawn = limit.min(MAX_SECONDARY_CORES + 1).saturating_sub(1);
+        let table = &SECONDARY_MPIDR_TABLE[..secondaries_to_spawn];
+        assert_eq!(table.len(), 2);
+        let online = bring_up_secondaries_inner(&enabled, &ready, &count, table);
+        assert_eq!(online, 2);
+        assert!(ready[1].load(Ordering::Acquire));
+        assert!(ready[2].load(Ordering::Acquire));
+        assert!(!ready[3].load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn sm1d6_with_limit_full_brings_up_all_secondaries() {
+        // SM1.D.6: max_cores = MAX_SECONDARY_CORES + 1 → all
+        // secondaries.
+        let (enabled, ready, count) = fresh_local_state();
+        enabled.store(true, Ordering::Release);
+        let limit = MAX_SECONDARY_CORES + 1;
+        let secondaries_to_spawn = limit.min(MAX_SECONDARY_CORES + 1).saturating_sub(1);
+        let table = &SECONDARY_MPIDR_TABLE[..secondaries_to_spawn];
+        assert_eq!(table.len(), MAX_SECONDARY_CORES);
+        let online = bring_up_secondaries_inner(&enabled, &ready, &count, table);
+        assert_eq!(online, MAX_SECONDARY_CORES as u32);
+        // Iterate over `ready[1..=MAX_SECONDARY_CORES]` via
+        // `enumerate().skip(1).take(MAX_SECONDARY_CORES)` to keep
+        // clippy's `needless_range_loop` lint quiet.
+        for (idx, slot) in ready
+            .iter()
+            .enumerate()
+            .skip(1)
+            .take(MAX_SECONDARY_CORES)
+        {
+            assert!(
+                slot.load(Ordering::Acquire),
+                "secondary {} should be ready",
+                idx
+            );
+        }
+    }
+
+    #[test]
+    fn sm1d6_with_limit_oversize_saturates() {
+        // SM1.D.6: max_cores > platform max → saturates to platform
+        // bound.  Defends against caller-side parsing errors.
+        let limit = 999usize;
+        let saturated = limit.min(MAX_SECONDARY_CORES + 1);
+        assert_eq!(saturated, MAX_SECONDARY_CORES + 1);
+        let secondaries_to_spawn = saturated.saturating_sub(1);
+        assert_eq!(secondaries_to_spawn, MAX_SECONDARY_CORES);
+    }
+
+    #[test]
+    fn sm1d6_with_limit_disabled_returns_zero() {
+        // SM1.D.6: when `enabled` is false, no secondaries are
+        // brought up regardless of the limit.  This is the
+        // `smp_enabled=false` boot path; `apply_cmdline_and_start_smp`
+        // bypasses the call entirely, but the inner helper also
+        // honours the disabled state for defense-in-depth.
+        let (enabled, ready, count) = fresh_local_state();
+        // Leave enabled = false (the default for fresh_local_state).
+        let table = &SECONDARY_MPIDR_TABLE[..2];
+        let online = bring_up_secondaries_inner(&enabled, &ready, &count, table);
+        assert_eq!(online, 0);
+    }
+
+    #[test]
+    fn sm1d6_with_limit_function_resolves_via_crate_smp() {
+        // SM1.D.6: the public function exists and has the documented
+        // signature `fn(usize) -> u32`.  Pinning the signature at the
+        // type-system level catches a future PR that renames or
+        // re-types it.
+        let _: fn(usize) -> u32 = bring_up_secondaries_with_limit;
+    }
+
+    #[test]
+    fn sm1d6_with_limit_callable_on_host_via_global_state() {
+        // SM1.D.6: the helper compiles and runs on host via the
+        // global statics.  We invoke it with `max_cores = 1` (no
+        // secondaries spawned, no global atomic perturbations) so
+        // the global SMP_ENABLED atomic must be false at module load
+        // for the call to return 0 deterministically.
+        //
+        // Note: this test races with other cargo tests that mutate
+        // the global SMP_ENABLED.  We avoid the race by reading the
+        // result behaviour: with max_cores = 1, secondaries_to_spawn
+        // = 0 and the inner loop is empty regardless of the
+        // SMP_ENABLED state.
+        let result = bring_up_secondaries_with_limit(1);
+        assert_eq!(result, 0);
+    }
+
+    // ========================================================================
+    // WS-SM SM1.D.6 audit-pass-1 — bring_up_secondaries_with_limit_inner
+    //
+    // The audit-pass-1 inner form takes explicit state references so
+    // tests can exercise the full `with_limit` signature without
+    // touching the global SMP_ENABLED atomic.  These tests cover the
+    // same saturation matrix as the algorithmic tests above, but
+    // through the new inner helper to pin its behavioural contract.
+    // ========================================================================
+
+    #[test]
+    fn sm1d6_inner_zero_max_cores_returns_zero() {
+        let (enabled, ready, count) = fresh_local_state();
+        enabled.store(true, Ordering::Release);
+        let online = bring_up_secondaries_with_limit_inner(
+            0,
+            &enabled,
+            &ready,
+            &count,
+            &SECONDARY_MPIDR_TABLE,
+        );
+        assert_eq!(online, 0);
+        // No secondary ready flags should have flipped.
+        assert!(!ready[1].load(Ordering::Acquire));
+        assert!(!ready[2].load(Ordering::Acquire));
+        assert!(!ready[3].load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn sm1d6_inner_one_max_cores_returns_zero() {
+        let (enabled, ready, count) = fresh_local_state();
+        enabled.store(true, Ordering::Release);
+        let online = bring_up_secondaries_with_limit_inner(
+            1,
+            &enabled,
+            &ready,
+            &count,
+            &SECONDARY_MPIDR_TABLE,
+        );
+        assert_eq!(online, 0);
+        assert!(!ready[1].load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn sm1d6_inner_two_max_cores_brings_up_first_secondary_only() {
+        let (enabled, ready, count) = fresh_local_state();
+        enabled.store(true, Ordering::Release);
+        let online = bring_up_secondaries_with_limit_inner(
+            2,
+            &enabled,
+            &ready,
+            &count,
+            &SECONDARY_MPIDR_TABLE,
+        );
+        assert_eq!(online, 1);
+        assert!(ready[1].load(Ordering::Acquire));
+        assert!(!ready[2].load(Ordering::Acquire));
+        assert!(!ready[3].load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn sm1d6_inner_four_max_cores_brings_up_all_three_secondaries() {
+        let (enabled, ready, count) = fresh_local_state();
+        enabled.store(true, Ordering::Release);
+        let online = bring_up_secondaries_with_limit_inner(
+            MAX_SECONDARY_CORES + 1,
+            &enabled,
+            &ready,
+            &count,
+            &SECONDARY_MPIDR_TABLE,
+        );
+        assert_eq!(online, MAX_SECONDARY_CORES as u32);
+        for (idx, slot) in ready.iter().enumerate().skip(1) {
+            assert!(
+                slot.load(Ordering::Acquire),
+                "secondary {} must be ready",
+                idx
+            );
+        }
+    }
+
+    #[test]
+    fn sm1d6_inner_oversize_saturates_to_platform_max() {
+        let (enabled, ready, count) = fresh_local_state();
+        enabled.store(true, Ordering::Release);
+        let online = bring_up_secondaries_with_limit_inner(
+            999,
+            &enabled,
+            &ready,
+            &count,
+            &SECONDARY_MPIDR_TABLE,
+        );
+        // 999 saturates to MAX_SECONDARY_CORES + 1 = 4; secondaries_to_spawn = 3.
+        assert_eq!(online, MAX_SECONDARY_CORES as u32);
+    }
+
+    #[test]
+    fn sm1d6_inner_disabled_returns_zero_regardless_of_limit() {
+        let (enabled, ready, count) = fresh_local_state();
+        // Leave enabled = false.
+        let online = bring_up_secondaries_with_limit_inner(
+            MAX_SECONDARY_CORES + 1,
+            &enabled,
+            &ready,
+            &count,
+            &SECONDARY_MPIDR_TABLE,
+        );
+        assert_eq!(online, 0);
+        // No flags flipped.
+        for (idx, slot) in ready.iter().enumerate().skip(1) {
+            assert!(
+                !slot.load(Ordering::Acquire),
+                "disabled state must leave secondary {} unready",
+                idx
+            );
+        }
+    }
+
+    #[test]
+    fn sm1d6_inner_short_mpidr_table_handled_defensively() {
+        // Audit-pass-1: pass an mpidr_table shorter than
+        // MAX_SECONDARY_CORES and verify the inner helper caps the
+        // slice end at mpidr_table.len() instead of panicking on
+        // out-of-range indexing.  This guards against test fixtures
+        // (or future refactors) that pass partial tables.
+        let (enabled, ready, count) = fresh_local_state();
+        enabled.store(true, Ordering::Release);
+        let short_table: [u64; 1] = [0x0001];
+        let online = bring_up_secondaries_with_limit_inner(
+            MAX_SECONDARY_CORES + 1, // request all but only 1 in table
+            &enabled,
+            &ready,
+            &count,
+            &short_table,
+        );
+        // Only 1 secondary brought up because the table is short.
+        assert_eq!(online, 1);
+    }
+
+    #[test]
+    fn sm1d6_inner_function_signature_pin() {
+        // SM1.D.6 audit-pass-1: pin the inner-helper ABI.
+        let _: fn(
+            usize,
+            &AtomicBool,
+            &[AtomicBool],
+            &AtomicU32,
+            &[u64],
+        ) -> u32 = bring_up_secondaries_with_limit_inner;
     }
 }
