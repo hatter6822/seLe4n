@@ -530,7 +530,7 @@ fn scan_boot_s_for_secondary_entry_context_id_validation() {
 ///
 /// The SM1.D contract is that Phase 5 of `rust_boot_main`:
 ///   1. Parses the DTB-supplied bootargs via
-///      `cmdline::parse_cmdline_from_dtb(_dtb_ptr)`.
+///      `cmdline::parse_cmdline_from_dtb(dtb_ptr)`.
 ///   2. Applies the parsed config + brings up secondaries via
 ///      `cmdline::apply_cmdline_and_start_smp(&cmdline_cfg)`.
 ///
