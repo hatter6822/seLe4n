@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/per-cpu-tpidr-el1-1OBHA",
-      "commit_sha": "afa5e6a2816f95792a7e0855ac86ac4db9a9a01c",
-      "tree_sha": "10e4f2510c5ece659b25afab0a28311479794ef8",
-      "committed_at_utc": "2026-05-15T17:04:18-04:00"
+      "commit_sha": "4887b91bceb1efb605b58fc9998a9523fb9bf4f4",
+      "tree_sha": "67e98951d310b925c6cc8f0363de6a9a8832c58b",
+      "committed_at_utc": "2026-05-16T00:39:09+00:00"
     }
   },
   "source_sync": {
@@ -17,14 +17,14 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "fe5c399ab9242edb1ade8ff102cc9997c01ecc0da8a520d7f2c8baa8d7115d05"
+    "source_digest": "901e06d276d803c03b202bc36a22971b3f7c017fdfab19539c3916d373b09dda"
   },
   "summary": {
     "module_count": 206,
     "declaration_count": 6583
   },
   "readme_sync": {
-    "version": "0.31.3",
+    "version": "0.31.4",
     "lean_toolchain": "v4.28.0",
     "production_files": 176,
     "production_loc": 115434,

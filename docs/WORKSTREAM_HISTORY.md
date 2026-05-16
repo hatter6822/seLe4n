@@ -198,7 +198,7 @@ SM1.E (IS-variant TLBI), SM1.F (SGI primitive), SM1.G (Per-core
 UART), SM1.H (QEMU SMP integration test) — see
 [`docs/planning/SMP_RUST_HAL_PLAN.md`](planning/SMP_RUST_HAL_PLAN.md) §§5.2..5.8.
 
-**WS-SM SM1.B LANDED on branch
+**WS-SM SM1.B LANDED at v0.31.4 on branch
 `claude/per-cpu-tpidr-el1-1OBHA`** (per-CPU data + TPIDR_EL1,
 closes SMP-M4).  Seven sub-tasks landed in one cut, completing
 the per-CPU base-register seam introduced as an empty stub at

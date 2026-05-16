@@ -656,11 +656,12 @@ DEN0022D function to its wrapper, with the return-code matrix.
 
 **Size**: T (~50 LoC of documentation).
 
-### 5.2 Per-CPU data + TPIDR_EL1 (SM1.B, 3 PRs, 7 sub-tasks) — **LANDED**
+### 5.2 Per-CPU data + TPIDR_EL1 (SM1.B, 3 PRs, 7 sub-tasks) — **LANDED at v0.31.4**
 
-**Status**: COMPLETE on branch `claude/per-cpu-tpidr-el1-1OBHA`.
-All seven sub-tasks landed in one cut, closing SMP-M4 (TPIDR_EL1
-per-CPU base) at the Lean ↔ Rust seam:
+**Status**: COMPLETE on branch `claude/per-cpu-tpidr-el1-1OBHA`,
+landed in patch release **v0.31.4**.  All seven sub-tasks landed in
+one coherent cut, closing SMP-M4 (TPIDR_EL1 per-CPU base) at the
+Lean ↔ Rust seam:
 
 - **SM1.B.1** `PerCpuData` struct — moved from `smp.rs` (where SM0.N
   parked the seam as an empty placeholder) into the new dedicated

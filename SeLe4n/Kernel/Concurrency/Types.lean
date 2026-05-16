@@ -59,7 +59,7 @@ open SeLe4n.Kernel.Architecture
 
 /-- WS-SM SM0.E: number of cores on the kernel's target platform.
 
-At v0.31.3 this is statically `4` (matching RPi5 BCM2712); the
+At v0.31.4 this is statically `4` (matching RPi5 BCM2712); the
 `numCores_eq_rpi5_coreCount` theorem in
 `SeLe4n.Platform.RPi5.Contract` pins it to the RPi5
 `PlatformBinding.coreCount` field.  A future multi-platform build that
@@ -84,7 +84,7 @@ theorem numCores_pos : numCores > 0 := by decide
 /-- WS-SM SM0.E: the boot core.  Always core `0` in practice;
 PlatformBinding-supplied at v1.0.0 so multi-platform builds that boot
 on a non-zero affinity slot (rare but possible) can override.  At
-v0.31.3 this is the literal `0`, with `numCores_pos` discharging the
+v0.31.4 this is the literal `0`, with `numCores_pos` discharging the
 in-range obligation. -/
 def bootCoreId : CoreId := ⟨0, numCores_pos⟩
 
@@ -111,7 +111,7 @@ theorem allCores_length : allCores.length = numCores := by
 
 /-- WS-SM SM0.E: `allCores` has no duplicate entries.  Lean 4.28's
 standard library does not export a `List.nodup_finRange` lemma; for
-the concrete `numCores = 4` of v0.31.3 the property is decidable
+the concrete `numCores = 4` of v0.31.4 the property is decidable
 directly on the literal four-element list `[0, 1, 2, 3]`. -/
 theorem allCores_nodup : allCores.Nodup := by
   unfold allCores numCores

@@ -1,4 +1,9 @@
-## Unreleased — WS-SM Phase SM1.B landing (Per-CPU data + TPIDR_EL1)
+## v0.31.4 — WS-SM Phase SM1.B landing (Per-CPU data + TPIDR_EL1)
+
+Patch release.  Bundles the WS-SM SM1.B initial landing plus two
+audit passes (audit-pass-1: documentation + test-count accuracy +
+tier-3 surface coverage; audit-pass-2: panic-path test coverage +
+build.rs regression scanner + lib.rs module overview).
 
 Branch `claude/per-cpu-tpidr-el1-1OBHA`.  Second sub-phase of
 WS-SM SM1 (Rust HAL).  Seven sub-tasks landed in one cut, closing

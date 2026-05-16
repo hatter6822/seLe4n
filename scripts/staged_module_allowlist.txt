@@ -17,9 +17,10 @@
 #   infra               — platform infrastructure (bridges, anchors, helpers)
 #   anchor              — the staging anchor file itself
 #
-# Last verified: WS-SM SM0 closure (v0.31.3 HEAD with five new
-# Concurrency/* foundational modules — Anchors, Types, Locks,
-# Locks.Kind, Sgi — entering staged via Platform.Staged).
+# Last verified: WS-SM SM1.B landing (v0.31.4 HEAD; adds
+# `Concurrency.Runtime` to the five SM0-staged Concurrency/*
+# foundational modules — Anchors, Types, Locks, Locks.Kind, Sgi —
+# entering staged via Platform.Staged).
 
 SeLe4n.Kernel.Architecture.CacheModel         # marker (STATUS: staged for H3)
 SeLe4n.Kernel.Architecture.ExceptionModel     # marker (STATUS: staged for H3)

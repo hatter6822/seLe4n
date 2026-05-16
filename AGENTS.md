@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.3.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.4.
 
 > The version line above is **CI-enforced** by
 > `scripts/check_version_sync.sh` (a Tier 0 gate). When you bump
@@ -560,8 +560,8 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 → v0.31.3 → v0.32.x → v1.0.0,
-  branch `claude/complete-sm0-foundations-gldW8`)**:
+- **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 → v0.31.3 → v0.31.4 → v0.32.x → v1.0.0,
+  branch `claude/per-cpu-tpidr-el1-1OBHA`)**:
   Unified workstream merging WS-RC's remaining R6..R14 phases with the
   SMP-specific SM-phases (SM0..SM9).  Closes at v1.0.0 with a bootable
   verified SMP microkernel on Raspberry Pi 5.
@@ -790,7 +790,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
     WS-SM SM1.A and the full DEN0022D §5 surface (previously
     only cited AN9-J.1).
 
-  **WS-SM SM1.B LANDED on branch
+  **WS-SM SM1.B LANDED at v0.31.4 on branch
   `claude/per-cpu-tpidr-el1-1OBHA`** (per-CPU data + TPIDR_EL1,
   closes SMP-M4).  Seven sub-tasks landed in one cut, completing the
   per-CPU base register seam introduced as an empty stub at SM0.N:
