@@ -62,6 +62,17 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   to ARM SMCCC encoding (Fast call + SMC32/64 + OEN=4 + reserved
   bits clear); host-stub coverage for all wrappers in 30 unit
   tests.
+- **Per-CPU data + TPIDR_EL1** (WS-SM SM1.B / closes SMP-M4):
+  `PerCpuData` struct with populated `core_id` field migrated to
+  `rust/sele4n-hal/src/per_cpu.rs`; `current_per_cpu()` and
+  `current_core_id_from_tpidr()` accessors read TPIDR_EL1 on
+  aarch64; `check_per_cpu_invariants()` boot gate verifies the
+  array's slot-id consistency before the first TPIDR_EL1 write.
+  Lean kernel exposure via new FFI export `ffi_current_core_id`
+  and typed wrapper `Concurrency.currentCoreId : BaseIO CoreId`
+  in `SeLe4n/Kernel/Concurrency/Runtime.lean`.  21 new unit tests
+  in `per_cpu::tests` + 3 in `ffi::tests` + 4 back-compat tests
+  in `smp::tests`.
 
 The **runtime** validation that complements these static guarantees
 (QEMU virt boots, RPi 5 silicon validation) is documented in

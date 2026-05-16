@@ -94,7 +94,14 @@ v0.27.6 audit addressed (5 HIGH, 27 MEDIUM, 28 LOW).
 **Next major milestone**: WS-SM — multi-core SMP completion through v1.0.0.
 Phase SM0 (foundations & honesty patches) closed at v0.31.3 with the
 type-level scaffolding (CoreId, LockKind, LockId, SgiKind, SharingDomain,
-BklState).  SM1..SM9 wire those types into runtime per-core scheduler
+BklState).  Phase SM1 (Rust HAL) is in flight: SM1.A (PSCI completion)
+landed at v0.31.3, and SM1.B (per-CPU data + TPIDR_EL1, closes SMP-M4)
+is the second sub-phase to land — `PerCpuData` struct with populated
+`core_id` field, `current_per_cpu()` / `current_core_id_from_tpidr()`
+accessors reading TPIDR_EL1 on aarch64, FFI export
+`ffi_current_core_id`, and the Lean-side typed wrapper
+`Concurrency.currentCoreId : BaseIO CoreId`.
+SM1.C..H plus SM2..SM9 wire those types into runtime per-core scheduler
 state, verified ticket / RW lock primitives, TLB shootdown, and cross-core
 IPC.  Full plan in
 [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](../planning/SMP_MULTICORE_COMPLETION_PLAN.md).

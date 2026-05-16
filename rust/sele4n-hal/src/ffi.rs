@@ -220,6 +220,35 @@ pub extern "C" fn ffi_enable_interrupts() {
 }
 
 // ============================================================================
+// WS-SM SM1.B.5 (closes SMP-M4): per-CPU core-id FFI export
+// ============================================================================
+
+/// **WS-SM SM1.B.5**: return the calling core's id, read from
+/// `TPIDR_EL1` on aarch64.
+///
+/// Routes through `per_cpu::current_core_id_from_tpidr` so the
+/// Lean kernel can identify which core it is running on without
+/// reading MPIDR + masking.  The Lean side wraps the raw `u64`
+/// return in a typed `CoreId = Fin numCores` via the
+/// `Concurrency.currentCoreId : BaseIO CoreId` definition; that
+/// wrapper performs the `core_id < numCores` range check (which
+/// always succeeds under the post-boot invariants enforced by
+/// `check_per_cpu_invariants`).
+///
+/// **Range invariant**: the returned value satisfies
+/// `result < PlatformBinding.coreCount`.  On aarch64 this is enforced
+/// by `check_per_cpu_invariants()` (verifying every slot's `core_id`
+/// matches its array index, where the index is itself
+/// `< MAX_SECONDARY_CORES + 1 = coreCount`).  On host the function
+/// returns 0 deterministically.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiCurrentCoreId`.
+#[no_mangle]
+pub extern "C" fn ffi_current_core_id() -> u64 {
+    crate::per_cpu::current_core_id_from_tpidr()
+}
+
+// ============================================================================
 // AN9-D (DEF-C-M04 / RESOLVED): suspendThread atomicity bracket
 // ============================================================================
 //
@@ -434,5 +463,47 @@ mod tests {
         let r1 = sele4n_suspend_thread(1);
         let r2 = sele4n_suspend_thread(2);
         assert_eq!(r1, r2, "bracket must be deterministic");
+    }
+
+    // ========================================================================
+    // WS-SM SM1.B.5 — ffi_current_core_id export tests
+    // ========================================================================
+
+    #[test]
+    fn ffi_current_core_id_returns_zero_on_host() {
+        // SM1.B.5: on host the FFI export returns 0 because
+        // `current_core_id_from_tpidr` reads from
+        // `PER_CPU_DATA[0].core_id` = 0.  Asserting equality (not
+        // just `<`) makes the host stub's behaviour explicit so a
+        // future regression that breaks the stub surfaces here.
+        assert_eq!(ffi_current_core_id(), 0);
+    }
+
+    #[test]
+    fn ffi_current_core_id_in_range() {
+        // SM1.B.5: the returned core_id must satisfy
+        // `core_id < PlatformBinding.coreCount`.  The Lean wrapper
+        // (`Concurrency.currentCoreId`) re-checks this to recover
+        // a typed `Fin numCores`; a regression that returned an
+        // out-of-range value would panic at the Lean side, but we
+        // double-check on the Rust side too.
+        let id = ffi_current_core_id();
+        assert!(
+            (id as usize) < crate::per_cpu::PER_CPU_DATA.len(),
+            "ffi_current_core_id() = {} ≥ coreCount = {}",
+            id,
+            crate::per_cpu::PER_CPU_DATA.len()
+        );
+    }
+
+    #[test]
+    fn ffi_current_core_id_matches_per_cpu_accessor() {
+        // SM1.B.5: the FFI export must agree with the underlying
+        // `current_core_id_from_tpidr` accessor.  This catches a
+        // future regression where one is updated but not the other.
+        assert_eq!(
+            ffi_current_core_id(),
+            crate::per_cpu::current_core_id_from_tpidr()
+        );
     }
 }

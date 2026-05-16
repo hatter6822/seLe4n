@@ -9,7 +9,7 @@
 //! Phase 4: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.31.3";
+const KERNEL_VERSION: &str = "0.31.4";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
@@ -72,18 +72,26 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
     crate::kprintln!("[boot] Timer initialized (54 MHz counter, 1ms ticks)");
 
     // -----------------------------------------------------------------------
-    // WS-SM SM0.N: set TPIDR_EL1 on the boot core (closes SMP-M4 for
-    // the boot path).  Secondaries set their own TPIDR_EL1 in
-    // `boot.S::secondary_entry` before calling `rust_secondary_main`;
-    // the boot core does it here, **before** enabling IRQ delivery so
-    // that any future IRQ handler that consumes TPIDR_EL1 sees a
-    // defined value rather than the architectural UNKNOWN state.
+    // WS-SM SM0.N / SM1.B (closes SMP-M4): set TPIDR_EL1 on the boot core.
+    //
+    // Secondaries set their own TPIDR_EL1 in `boot.S::secondary_entry`
+    // before calling `rust_secondary_main`; the boot core does it
+    // here, **before** enabling IRQ delivery so that any future IRQ
+    // handler that consumes TPIDR_EL1 sees a defined value rather
+    // than the architectural UNKNOWN state.
     //
     // Boot core's `PerCpuData` slot is `PER_CPU_DATA[0]` per the
     // PSCI context_id convention (0 = boot core, 1..3 = secondaries).
     // After this point, every core — boot and secondary — can
     // dispatch through `mrs xN, tpidr_el1` to find its own per-core
     // state without a context_id parameter.
+    //
+    // WS-SM SM1.B: before writing TPIDR_EL1, the runtime gate
+    // `check_per_cpu_invariants()` verifies every slot's `core_id`
+    // matches its array index — catching a regressed const-init
+    // table at boot rather than at first SMP wakeup.  The check is
+    // platform-independent (compiles on host stubs too) and runs in
+    // O(coreCount) = O(4), so it's cheap to leave in production.
     //
     // Audit note: an earlier draft of this hook ran *after*
     // `enable_irq()`.  Today's IRQ handlers never read TPIDR_EL1, so
@@ -92,12 +100,15 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
     // tick).  Moving the write here makes the discipline robust by
     // construction.
     // -----------------------------------------------------------------------
+    crate::per_cpu::check_per_cpu_invariants();
     #[cfg(target_arch = "aarch64")]
     {
-        let boot_per_cpu = crate::smp::per_cpu_slot_addr(0) as u64;
+        let boot_per_cpu = crate::per_cpu::per_cpu_slot_addr(0) as u64;
         crate::registers::write_tpidr_el1(boot_per_cpu);
         crate::barriers::isb();
         crate::kprintln!("[boot] TPIDR_EL1 set to PER_CPU_DATA[0] = {:#x}", boot_per_cpu);
+        let live_id = crate::per_cpu::current_core_id_from_tpidr();
+        crate::kprintln!("[boot] current_core_id_from_tpidr() = {}", live_id);
     }
 
     // Enable IRQ delivery now that GIC, timer, and per-core base

@@ -238,6 +238,28 @@ opaque ffiRestoreInterrupts : UInt64 → BaseIO Unit
 opaque ffiEnableInterrupts : BaseIO Unit
 
 -- ============================================================================
+-- WS-SM SM1.B.5 (closes SMP-M4): per-CPU core-id FFI declaration
+-- ============================================================================
+
+/-- **WS-SM SM1.B.5**: return the calling core's id, read from
+    `TPIDR_EL1` on aarch64.
+
+    On hardware the Rust side reads
+    `per_cpu::current_core_id_from_tpidr()`, which dereferences the
+    pointer stored in TPIDR_EL1 (set by `boot.rs::rust_boot_main` for
+    the boot core and `boot.S::secondary_entry` for secondaries) and
+    returns the `core_id` field of the resulting `PerCpuData` slot.
+
+    **Range contract** (mirrors the Rust comment):
+    `result.toNat < PlatformBinding.coreCount`.  The Lean-side
+    `Concurrency.currentCoreId` wrapper re-checks this to recover a
+    typed `Fin numCores`.
+
+    Rust: `ffi_current_core_id` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_current_core_id"]
+opaque ffiCurrentCoreId : BaseIO UInt64
+
+-- ============================================================================
 -- WS-RC R2 — Hardware-mode kernel state + SVC bridge infrastructure
 -- ============================================================================
 --

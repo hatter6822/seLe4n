@@ -8,20 +8,34 @@
 //!
 //! ## Module overview
 //!
-//! - `cpu`       — CPU instruction wrappers (WFE, WFI, NOP, ERET)
-//! - `barriers`  — Memory barrier wrappers (DMB, DSB, ISB)
-//! - `registers` — System register accessors (MRS/MSR)
-//! - `uart`      — PL011 UART driver for debug console
-//! - `mmu`       — MMU configuration (MAIR, TCR, TTBR, SCTLR)
-//! - `trap`      — Trap frame and handler dispatch
-//! - `boot`      — Boot sequence (BSS zero, stack, hardware init)
-//! - `gic`        — GIC-400 interrupt controller driver (AG5-A/B/C)
-//! - `timer`      — ARM Generic Timer driver (AG5-D)
+//! - `cpu` — CPU instruction wrappers (WFE, WFI, NOP, ERET,
+//!   bounded WFE primitive, MPIDR core-id read)
+//! - `barriers` — Memory barrier wrappers (DMB, DSB, ISB) and the
+//!   `BarrierKind` algebra (AN9-C/H/I)
+//! - `registers` — System register accessors (MRS/MSR), including
+//!   `read_tpidr_el1` / `write_tpidr_el1` (WS-SM SM0.N)
+//! - `uart` — PL011 UART driver for debug console
+//! - `mmu` — MMU configuration (MAIR, TCR, TTBR, SCTLR)
+//! - `trap` — Trap frame and handler dispatch
+//! - `boot` — Boot sequence (BSS zero, stack, hardware init,
+//!   TPIDR_EL1 setup, IRQ enable)
+//! - `gic` — GIC-400 interrupt controller driver (AG5-A/B/C)
+//! - `timer` — ARM Generic Timer driver (AG5-D)
 //! - `interrupts` — Interrupt management / critical sections (AG5-G)
-//! - `tlb`        — TLB maintenance instruction wrappers (AG6-E)
-//! - `cache`      — Cache maintenance operations (AG6-I)
-//! - `mmio`       — MMIO volatile read/write primitives (AG7-C)
-//! - `ffi`        — Lean FFI bridge exports (AG7-A)
+//! - `tlb` — TLB maintenance instruction wrappers (AG6-E)
+//! - `cache` — Cache maintenance operations (AG6-I)
+//! - `mmio` — MMIO volatile read/write primitives (AG7-C)
+//! - `ffi` — Lean FFI bridge exports (AG7-A + AN9-A/D +
+//!   WS-SM SM1.B.5 `ffi_current_core_id`)
+//! - `profiling` — Performance profiling (PMCCNTR_EL0 cycle counter,
+//!   AG9)
+//! - `svc_dispatch` — Typed SVC argument marshalling (AN9-F / DEF-R-HAL-L14)
+//! - `psci` — Power State Coordination Interface wrappers
+//!   (AN9-J.1 `cpu_on` + WS-SM SM1.A full DEN0022D §5 surface)
+//! - `smp` — SMP secondary-core scaffolding (AN9-J), runtime-gated
+//!   by `SMP_ENABLED` (default `false` at v1.0.0)
+//! - `per_cpu` — Per-CPU data block + TPIDR_EL1 accessors
+//!   (WS-SM SM1.B; closes SMP-M4)
 
 #![no_std]
 // HAL crate requires unsafe code for hardware instructions (MRS/MSR, MMIO,
@@ -127,6 +141,18 @@
 //             ARM SMCCC encoding (Fast call + SMC32/64 + OEN=4 +
 //             reserved-bits-clear).  See `psci.rs` module docstring
 //             for the complete function-id map.
+//
+//             WS-SM SM1.B (closes SMP-M4) completes the per-CPU data
+//             block + TPIDR_EL1 contract introduced as a stub at
+//             SM0.N.  `per_cpu.rs` owns the `PerCpuData` struct (with
+//             a populated `core_id` field instead of the SM0.N
+//             `_reserved` placeholder), the `current_per_cpu()` /
+//             `current_core_id_from_tpidr()` accessors, and the
+//             `check_per_cpu_invariants()` boot gate.  `ffi.rs`
+//             exposes `ffi_current_core_id` for the Lean kernel; the
+//             Lean side wraps it as `Concurrency.currentCoreId :
+//             BaseIO CoreId` with a range check that recovers the
+//             typed `Fin numCores` identifier.
 
 pub mod cpu;
 pub mod barriers;
@@ -153,3 +179,10 @@ pub mod svc_dispatch;
 pub mod psci;
 // AN9-J (DEF-R-HAL-L20): SMP secondary-core scaffolding (off by default)
 pub mod smp;
+// WS-SM SM1.B (closes SMP-M4): per-CPU data block + TPIDR_EL1
+// accessors.  The `PerCpuData` struct, the global `PER_CPU_DATA`
+// array, and the slot-stride symbols (`PER_CPU_DATA_SLOT_SIZE_SYM`)
+// live here; `boot.S::secondary_entry` resolves the asm-visible
+// names against this module's `#[no_mangle] static` items.  See the
+// module docstring in `per_cpu.rs` for the boot-ordering contract.
+pub mod per_cpu;

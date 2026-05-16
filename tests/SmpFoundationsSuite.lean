@@ -13,7 +13,9 @@ import SeLe4n.Kernel.Concurrency.Locks.Kind
 import SeLe4n.Kernel.Concurrency.Sgi
 import SeLe4n.Kernel.Concurrency.Anchors
 import SeLe4n.Kernel.Concurrency.Assumptions
+import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Kernel.Architecture.Assumptions
+import SeLe4n.Platform.FFI
 import SeLe4n.Platform.RPi5.Contract
 import SeLe4n.Platform.Sim.Contract
 
@@ -122,6 +124,12 @@ open SeLe4n.Platform.RPi5
 #check @SeLe4n.Platform.RPi5.bootCoreId_val_eq_rpi5
 #check @SeLe4n.Platform.RPi5.rpi5_sharingDomain
 
+/-! ## SM1.B.5 — currentCoreId FFI wrapper (closes SMP-M4) -/
+#check @SeLe4n.Platform.FFI.ffiCurrentCoreId
+#check @SeLe4n.Kernel.Concurrency.currentCoreId
+#check @SeLe4n.Kernel.Concurrency.currentCoreId_in_range_marker
+#check @SeLe4n.Kernel.Concurrency.instInhabitedCoreId
+
 -- ============================================================================
 -- §2 — Decidable examples: ground-truth checks at the RPi5 default
 -- ============================================================================
@@ -211,6 +219,22 @@ example : SeLe4n.Platform.PlatformBinding.coreCount
             (platform := SeLe4n.Platform.Sim.SimPlatform) = 4 := rfl
 example : (SeLe4n.Platform.PlatformBinding.bootCoreId
             (platform := SeLe4n.Platform.Sim.SimPlatform)).val = 0 := rfl
+
+-- §2.16 — SM1.B.5 currentCoreId typed wrapper
+-- The `Inhabited` instance witnesses that CoreId is always inhabited
+-- (so `panic!` inside `currentCoreId` can synthesise a fallback type).
+-- Default must equal `bootCoreId` for boot-core convention parity.
+example : (default : SeLe4n.Kernel.Concurrency.CoreId).val = 0 := rfl
+example : (default : SeLe4n.Kernel.Concurrency.CoreId)
+            = SeLe4n.Kernel.Concurrency.bootCoreId := rfl
+-- Range-marker theorem: every typed CoreId is < numCores.
+example (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    c.val < SeLe4n.Kernel.Concurrency.numCores := c.isLt
+-- Concrete-instance check: the range marker discharges on the boot core.
+example : SeLe4n.Kernel.Concurrency.bootCoreId.val
+            < SeLe4n.Kernel.Concurrency.numCores :=
+  SeLe4n.Kernel.Concurrency.currentCoreId_in_range_marker
+    SeLe4n.Kernel.Concurrency.bootCoreId
 
 -- ============================================================================
 -- §3 — Runtime assertions: every above example also runs in `main`
@@ -480,6 +504,42 @@ private def runBklStateAdditionalChecks : IO Unit := do
     (decide (SeLe4n.Kernel.Concurrency.bklAcquire c0 ≠
               SeLe4n.Kernel.Concurrency.bklAcquire c1))
 
+private def runCurrentCoreIdChecks : IO Unit := do
+  -- WS-SM SM1.B.5: typed FFI wrapper structural checks.
+  --
+  -- Per the project's fail-closed FFI convention (`SeLe4n/Platform/FFI.lean`
+  -- header docstring), `@[extern] opaque` declarations like
+  -- `ffiCurrentCoreId` are not linkable in test executables — invoking
+  -- them at host runtime would produce a link error rather than a
+  -- silent stub call.  The host-side runtime behaviour of
+  -- `ffi_current_core_id` is covered by `rust/sele4n-hal/src/ffi.rs`'s
+  -- unit tests (`ffi_current_core_id_*`), which exercise the host
+  -- stub returning 0 (boot core) deterministically.
+  --
+  -- This suite covers the Lean-side structural properties:
+  --   1. `Inhabited CoreId` instance discharges to `bootCoreId`.
+  --   2. The range-marker theorem `currentCoreId_in_range_marker`
+  --      witnesses `c.val < numCores` for every `CoreId`.
+  --   3. Both above are decidable at compile time and at runtime.
+  IO.println "--- §2.16 SM1.B.5 currentCoreId typed wrapper ---"
+  -- The `Inhabited` instance defaults to bootCoreId.
+  assertBool "Inhabited CoreId default = bootCoreId"
+    (decide ((default : SeLe4n.Kernel.Concurrency.CoreId) =
+              SeLe4n.Kernel.Concurrency.bootCoreId))
+  assertBool "Inhabited CoreId default.val = 0"
+    (decide ((default : SeLe4n.Kernel.Concurrency.CoreId).val = 0))
+  -- Range marker theorem discharges trivially on every CoreId
+  -- because `Fin numCores` carries the bound in its representation.
+  -- We exercise the bound directly on bootCoreId.
+  assertBool "currentCoreId_in_range_marker on bootCoreId discharges"
+    (decide (SeLe4n.Kernel.Concurrency.bootCoreId.val
+              < SeLe4n.Kernel.Concurrency.numCores))
+  -- Range marker discharges for every CoreId 0..3 (full enumeration
+  -- via allCores) — proves the marker is structurally total.
+  assertBool "currentCoreId_in_range_marker discharges on every CoreId"
+    (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
+      decide (c.val < SeLe4n.Kernel.Concurrency.numCores)))
+
 def runFoundationsChecks : IO Unit := do
   IO.println "WS-SM SM0.S — Foundations test suite"
   IO.println "===================================="
@@ -497,8 +557,9 @@ def runFoundationsChecks : IO Unit := do
   runSgiKindAdditionalChecks
   runArchAssumptionAdditionalChecks
   runBklStateAdditionalChecks
+  runCurrentCoreIdChecks
   IO.println "===================================="
-  IO.println "All SM0 foundation checks PASS."
+  IO.println "All SM0 + SM1.B foundation checks PASS."
 
 end SeLe4n.Testing.SmpFoundations
 

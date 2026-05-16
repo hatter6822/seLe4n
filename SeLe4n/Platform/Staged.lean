@@ -32,6 +32,12 @@ import SeLe4n.Kernel.Concurrency.Types
 import SeLe4n.Kernel.Concurrency.Locks
 import SeLe4n.Kernel.Concurrency.Locks.Kind
 import SeLe4n.Kernel.Concurrency.Sgi
+-- WS-SM SM1.B.5: typed FFI wrapper for `ffi_current_core_id`.  Pulled
+-- into Staged so CI builds the bridge (CoreId-typed wrapper around the
+-- Rust per-CPU base) on every push.  Reachability: production import
+-- closure runs through here even before per-core scheduler state lands
+-- at SM5.
+import SeLe4n.Kernel.Concurrency.Runtime
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph
@@ -61,6 +67,7 @@ The staged modules are:
 13. `SeLe4n.Kernel.Concurrency.Locks`          — WS-SM SM0.I BklState
 14. `SeLe4n.Kernel.Concurrency.Locks.Kind`     — WS-SM SM0.I LockKind + LockId
 15. `SeLe4n.Kernel.Concurrency.Sgi`            — WS-SM SM0.H SgiKind
+16. `SeLe4n.Kernel.Concurrency.Runtime`        — WS-SM SM1.B.5 currentCoreId FFI wrapper
 
 Per the plan (AN9-J will transition most of these from "SMP-latent" to
 "SMP-implemented, runtime-gated by smp_enabled=false at v1.0.0"), the

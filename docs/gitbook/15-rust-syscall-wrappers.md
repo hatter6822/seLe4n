@@ -131,7 +131,9 @@ ARM Architecture Reference Manual.
 | `barriers` | Memory barriers | `dmb_ish/sy`, `dsb_ish/sy`, `isb`, **`dsb_ishst`**, **`dsb_osh`**, **`dsb_oshst`** + parameterised **`BarrierKind`** enum with `emit()` + composite emitters `emit_armv8_page_table_update` / `emit_tlb_invalidation_bracket` / `emit_mmio_cross_cluster_barrier` (AN9-H/I v0.30.10 — DEF-R-HAL-L18/L19) |
 | `svc_dispatch` | SVC typed dispatch | `SyscallArgs::from_trap_frame`, 25-variant `SyscallId` enum, `dispatch_svc(id, args) -> Result<u64, DispatchError>` (AN9-F v0.30.10 — DEF-R-HAL-L14; replaces `NOT_IMPLEMENTED` SVC stub) |
 | `psci` | Power State Coordination Interface | `cpu_on`, `cpu_off`, `affinity_info` (+ `AffinityInfoState`), `psci_version` (+ `PsciVersion`), `migrate_info_type` (+ `MigrateInfoType`), `system_off`, `system_reset` — full DEN0022D §5 surface with compile-time function-id pinning (Fast call + SMC32/64 + OEN=4) (AN9-J.1 v0.30.10 — DEF-R-HAL-L20 + WS-SM SM1.A v0.32.0) |
-| `smp` | Secondary-core bring-up | `SMP_ENABLED: AtomicBool` (default `false`), `CORE_READY: [AtomicBool; 4]`, `bring_up_secondaries`, `rust_secondary_main` (AN9-J v0.30.10 — DEF-R-HAL-L20; v1.0.0 ships SMP merged but disabled) |
+| `smp` | Secondary-core bring-up | `SMP_ENABLED: AtomicBool` (default `false`), `CORE_READY: [AtomicBool; 4]`, `bring_up_secondaries`, `rust_secondary_main`; SM1.B back-compat re-exports of `PerCpuData`, `PER_CPU_DATA`, `PER_CPU_DATA_SLOT_SIZE*`, `per_cpu_slot_addr` (AN9-J v0.30.10 — DEF-R-HAL-L20; v1.0.0 ships SMP merged but disabled) |
+| `per_cpu` | Per-CPU data block + TPIDR_EL1 accessors | `PerCpuData` (`core_id: u64` + 56-byte reserved tail, cache-line aligned), `PER_CPU_DATA: [PerCpuData; 4]` (each slot pre-populated with its index as `core_id`), `PER_CPU_DATA_SLOT_SIZE` / `PER_CPU_DATA_SLOT_SIZE_SYM` (asm-visible stride), `per_cpu_slot_addr(context_id)`, `current_per_cpu() -> &'static PerCpuData`, `current_core_id_from_tpidr() -> u64`, `check_per_cpu_invariants()` boot gate (WS-SM SM1.B v0.32.0 — closes SMP-M4) |
+| `ffi::ffi_current_core_id` | Lean FFI: current core id via TPIDR_EL1 | `#[no_mangle] pub extern "C" fn ffi_current_core_id() -> u64`; Lean side: `@[extern] opaque Platform.FFI.ffiCurrentCoreId : BaseIO UInt64` + typed wrapper `Concurrency.currentCoreId : BaseIO CoreId` in `SeLe4n/Kernel/Concurrency/Runtime.lean` (WS-SM SM1.B.5 v0.32.0) |
 | `registers` | System register I/O | `read_sysreg!`/`write_sysreg!` macros, 11 typed accessors |
 | `uart` | PL011 UART driver | `Uart` struct, `kprint!`/`kprintln!` macros, 0xFE201000 base, `UartLock` spinlock (AI1-D), `UnsafeCell`-based safe static (AJ5-B), **`UartGuard<'a>` RAII pattern** (AN8-A v0.30.9 — H-17) |
 | `mmu` | MMU configuration | MAIR/TCR/TTBR/SCTLR, identity-mapped L1 boot tables |
@@ -143,7 +145,7 @@ ARM Architecture Reference Manual.
 | `tlb` | TLB maintenance | TLBI VMALLE1/VAE1/ASIDE1/VALE1 + DSB ISH + ISB (AG6) |
 | `cache` | Cache maintenance | DC CIVAC/CVAC/IVAC/ZVA, IC IALLU/IALLUIS, aligned `cache_range` (AG6), **`memory_fence()`** pure DSB ISH helper (AN8-D v0.30.9 — RUST-M07) |
 | `mmio` | MMIO volatile I/O | `mmio_read32/write32/read64/write64`, runtime alignment `assert!` (AJ5-A) |
-| `ffi` | Lean FFI bridge | 17 `#[no_mangle] extern "C"` exports for timer, GIC, TLB, MMIO, UART, interrupts (AG7) |
+| `ffi` | Lean FFI bridge | 21 `#[no_mangle] extern "C"` exports for timer, GIC, TLB, MMIO, UART, interrupts, suspendThread bracket, cache+TLB composition, per-CPU core id (`ffi_current_core_id` at SM1.B.5) (AG7 + AN9-A/D + WS-SM SM1.B) |
 | `profiling` | Performance profiling | `LatencyStats`, PMCCNTR_EL0 cycle counter (AG9) |
 
 Assembly files: `boot.S` (entry point), `vectors.S` (exception vector table),

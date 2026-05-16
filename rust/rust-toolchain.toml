@@ -1,0 +1,27 @@
+# Pin the Rust toolchain for the seLe4n project.
+#
+# This file is read automatically by `rustup` whenever any `cargo`/`rustc`/
+# `clippy`/`rustfmt` command runs from this directory (or any descendant).
+# `rustup` will:
+#   - Install the specified toolchain on first use if not present.
+#   - Use the specified toolchain regardless of the system default.
+#
+# This matches the `dtolnay/rust-toolchain@1.82.0` pin in
+# `.github/workflows/lean_action_ci.yml` so local `cargo test` matches the
+# CI environment exactly.  Without this file, a developer on a newer Rust
+# version (e.g., 1.94) could write code that depends on features stabilised
+# after 1.82 (e.g., `feature(const_refs_to_statics)`) and have it silently
+# pass local tests but fail CI — as happened on PR #777.
+#
+# When bumping MSRV, update **all three** sites in lockstep:
+#   1. `channel` below (this file)
+#   2. `[workspace.package].rust-version` in `Cargo.toml`
+#   3. `toolchain:` in `.github/workflows/lean_action_ci.yml`
+#      (the `dtolnay/rust-toolchain` step in the `Rust ABI Tests` job)
+# Plus the `RUST_TOOLCHAIN_VERSION` documentation variable in
+# `scripts/setup_lean_env.sh:49`.
+
+[toolchain]
+channel = "1.82.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"
