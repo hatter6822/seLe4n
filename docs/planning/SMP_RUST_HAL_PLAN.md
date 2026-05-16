@@ -1135,7 +1135,7 @@ Lean kernel with the same hardware posture as the primary):
 all green.  Items deferred past v1.0.0 with correctness impact:
 NONE.
 
-**Audit-pass refinements** (post-initial-landing):
+**Audit-pass-1 refinements** (post-initial-landing):
 - HIGH-portability fix: `enable_mmu`'s `pt_pa_raw < 2^44`
   debug_assert was unconditional and false-faulted on host
   x86_64 PIE binaries (whose base addresses routinely exceed
@@ -1146,6 +1146,98 @@ NONE.
   `scan_smp_rs_invokes_secondary_init_helpers`) pin the SM1.C.2
   primary/secondary symmetry and the SM1.C.5 init-helper call
   chain at build time.
+
+**Audit-pass-2 refinements** (deep-audit post-pass-1):
+- HIGH defense-in-depth: PSCI `context_id` validation (TWO-LAYER
+  defense — asm + Rust).  Pre-audit `rust_secondary_main` and
+  `boot.S::secondary_entry` accepted any `context_id` and
+  proceeded with hardware init / SP arithmetic.  Two failure
+  modes under malicious / malformed PSCI firmware:
+  (a) `context_id == 0` (boot-core slot) — would alias a
+      secondary's per-core state with the boot core's
+      `PerCpuData` slot.  The TPIDR_EL1 setup formula
+      `PER_CPU_DATA + context_id * stride` yields the boot slot
+      for `context_id = 0`.
+  (b) `context_id >= 4` (= MAX_SECONDARY_CORES + 1 on RPi5) —
+      would skip the `CORE_READY[i]` wait but still run the full
+      per-core init on an undefined slot.  Critically, the
+      asm-level SP arithmetic `__smp_secondary_stack_top -
+      (context_id - 1) * 64 KiB` for `context_id == 4` produces
+      `SP = __smp_secondary_stacks_bottom`, immediately adjacent
+      to the boot core's `.stack` region.
+      `rust_secondary_main`'s function prologue push would
+      corrupt boot-core stack frames BEFORE any Rust-level
+      validator could halt.
+  Defense: TWO layers reject the same conditions.
+
+  **Layer 1 (asm)** — `boot.S::secondary_entry` Step 1.5,
+  added at audit-pass-2:
+  ```
+  cbz x0, .L_secondary_invalid           // reject context_id == 0
+  adrp x3, MAX_CORE_COUNT_SYM
+  ldr x3, [x3, :lo12:MAX_CORE_COUNT_SYM]
+  cmp x0, x3
+  b.hs .L_secondary_invalid              // reject context_id >= 4
+  ```
+  Runs AFTER `msr daifset, #0xf` but BEFORE any SP / TPIDR_EL1
+  arithmetic uses `context_id`.  This is the load-bearing
+  defense: it prevents the stack-corruption failure mode that
+  the Rust validator alone cannot prevent (the Rust validator
+  runs after the function prologue, which has already pushed to
+  the corrupted SP).
+  Bound read from a new `MAX_CORE_COUNT_SYM: u64` `.rodata`
+  symbol (not a literal) for single-source-of-truth parity with
+  `PER_CPU_DATA_SLOT_SIZE_SYM` (SM1.B) and
+  `MPIDR_CORE_ID_MASK_SYM` (AN8-B).
+
+  **Layer 2 (Rust)** — `rust_secondary_main` Step 0, added at
+  audit-pass-1: `validate_secondary_context_id(context_id: u64)
+  -> Option<usize>` `const fn` validator with the same bounds.
+  Functionally redundant with Layer 1 (Layer 1 should always
+  fire first), but provides defense-in-depth in case a future
+  refactor regresses Layer 1 or someone adds a non-asm entry
+  point to `rust_secondary_main`.
+
+  Both layers halt the offending core in a low-power WFE loop
+  with DAIF still masked (boot.S left it that way).  Primary
+  and other secondaries continue running unaffected.
+
+  Test coverage: 13 new HAL tests across two test groups:
+  - `smp::tests::sm1c5_validate_context_id_*` (7 tests): cover
+    every Rust-layer rejection / acceptance case including
+    const-context evaluation.
+  - `smp::tests::sm1c5_max_core_count_sym_*` (6 tests): cover
+    the `.rodata` symbol value (= 4 on RPi5), address
+    observability, cross-layer bound consistency (asm and Rust
+    bounds agree), and that every asm-rejected context_id is
+    also validator-rejected.
+
+  Two new build-script scanners pin both layers' textual
+  presence:
+  - `scan_smp_rs_invokes_secondary_init_helpers` Step 0 entry
+    pins the `validate_secondary_context_id(` call site in
+    `rust_secondary_main`.
+  - `scan_boot_s_for_secondary_entry_context_id_validation`
+    verifies `boot.S::secondary_entry` references
+    `MAX_CORE_COUNT_SYM` and has a `.L_secondary_invalid` halt
+    label.  Fail-closed against a refactor that drops either.
+- **Stale docstring fixes**:
+  - `smp.rs` module docstring's "What this module owns" section
+    called `rust_secondary_main` a "placeholder" (stale
+    post-SM1.C since the body is now the full per-core init
+    pipeline); rewrote to describe actual responsibilities.
+  - `lib.rs` `smp` module description mentioned only "AN9-J
+    scaffolding"; extended to cite the WS-SM SM1.C
+    secondary-side full per-core init pipeline.
+- **Vestigial scanner-bait removal**: deleted `let
+  _kernel_entry_symbol_name: &str = "lean_secondary_kernel_main";`
+  from `rust_secondary_main`.  The cfg-gated `extern "C" { fn
+  lean_secondary_kernel_main(...) }` declaration plus the call
+  site `lean_secondary_kernel_main(core_id)` already provide the
+  textual presence the SM1.C.5 build-script scanner requires (the
+  scanner is a substring match over the source file, with
+  cfg-gating not affecting textual content).  The extra binding
+  was dead code.
 
 #### SM1.C original detailed sub-task breakdown (preserved for reference)
 

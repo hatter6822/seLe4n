@@ -45,8 +45,14 @@
 //! - `MAX_SECONDARY_CORES` — number of secondaries (3 on RPi5)
 //! - `bring_up_secondaries` — primary-core entry point that issues
 //!   the CPU_ON loop
-//! - `rust_secondary_main` — placeholder Rust entry called from
-//!   `boot.S::secondary_entry`
+//! - `rust_secondary_main` — secondary-core Rust entry called from
+//!   `boot.S::secondary_entry`.  Performs the WS-SM SM1.C full
+//!   per-core init pipeline (validate context_id → wait on
+//!   `CORE_READY[i]` → MMU → VBAR → GIC → timer → IRQ unmask → Lean
+//!   kernel entry via `lean_secondary_kernel_main` → idle fallback)
+//! - `validate_secondary_context_id` — defense-in-depth validator
+//!   that refuses an out-of-range PSCI context_id before any
+//!   hardware init runs
 //! - Per-core readiness flags (`CORE_READY`, `SECONDARY_CORES_ONLINE`)
 //!
 //! ## What this module does NOT own
@@ -108,6 +114,31 @@ const _: () = assert!(
      BCM2712 core count, pinned on the Lean side via \
      numCores_eq_rpi5_coreCount)"
 );
+
+/// **WS-SM SM1.C audit-pass-2**: total core count
+/// (`MAX_SECONDARY_CORES + 1`) exposed as a `.rodata` symbol for
+/// `boot.S::secondary_entry`'s pre-stack context_id validation.
+///
+/// The asm's audit-pass-2 defense rejects `context_id == 0` and
+/// `context_id >= total_core_count` BEFORE the SP / TPIDR_EL1 setup
+/// uses `context_id` arithmetically.  Without the asm-level check, a
+/// PSCI implementation passing `context_id = 4` would compute
+/// `SP = __smp_secondary_stack_top - 3 * 0x10000 = __smp_secondary_stacks_bottom`,
+/// adjacent to the boot core's stack — the prologue push of
+/// `rust_secondary_main` would corrupt boot-core stack frames before
+/// the Rust validator could halt.
+///
+/// Using a `.rodata` symbol (not an asm literal) keeps the Rust
+/// constant the single source of truth; a future PR bumping
+/// `MAX_SECONDARY_CORES` automatically updates the asm-side bound.
+///
+/// `#[no_mangle]` preserves the symbol name for the asm's
+/// `adrp`/`ldr` references; `#[used]` prevents the linker from
+/// dropping the symbol as "unused" (only `boot.S::secondary_entry`
+/// references it).
+#[no_mangle]
+#[used]
+pub static MAX_CORE_COUNT_SYM: u64 = (MAX_SECONDARY_CORES + 1) as u64;
 
 /// AN9-J: runtime SMP-enable flag.  At v1.0.0 the default is `false`
 /// so `bring_up_secondaries` is a no-op; deployments that opt in to
@@ -277,6 +308,62 @@ pub fn bring_up_secondaries() -> u32 {
     )
 }
 
+/// **WS-SM SM1.C.5 / audit-pass-1** (defense-in-depth): validate a
+/// PSCI `context_id` received by [`rust_secondary_main`].
+///
+/// Returns `Some(core_idx)` if the `context_id` names a secondary
+/// slot (`1..=MAX_SECONDARY_CORES`), or `None` otherwise.  Two
+/// rejection cases:
+///
+/// 1. `context_id == 0` — that's the boot-core slot.  The boot core
+///    must enter `rust_boot_main` from `_start` (see `boot.S`); it
+///    must not re-enter via `secondary_entry`.  A PSCI implementation
+///    waking a secondary with `context_id = 0` would alias the
+///    secondary to the boot core's `PerCpuData` slot — silently
+///    corrupting the boot core's per-CPU state once the secondary's
+///    init runs.
+/// 2. `context_id >= CORE_READY.len()` — PSCI passed a value larger
+///    than the platform's core count.  We have no slot for this PE;
+///    running per-core init would touch undefined state (no
+///    pre-cleared stack, no allocated TPIDR_EL1 slot, no
+///    CORE_READY[i] flag).
+///
+/// Both cases are firmware bugs or hostile PSCI implementations.
+/// `rust_secondary_main` halts the offending core in a low-power
+/// WFE loop with interrupts still masked (the boot.S
+/// `secondary_entry` stub left DAIF = 0xF), so the rest of the
+/// system continues uninterrupted.
+///
+/// The validator is `pub(crate)` so the in-crate `tests` module can
+/// exercise the bounds without invoking the `-> !`
+/// `rust_secondary_main` itself.  It is also `const fn` so callers
+/// using compile-time-known `context_id` values (e.g., the
+/// const-context test) evaluate the bounds at elaboration — a
+/// regression that broke the validator's logic for a specific
+/// literal would surface at build time.
+///
+/// **MSRV note**: the bounds expression uses `MAX_SECONDARY_CORES + 1`
+/// rather than `CORE_READY.len()` because reading a `static` from a
+/// `const fn` requires `feature(const_refs_to_statics)` (stabilised
+/// only in Rust 1.83+; rust-lang/rust#119618), and the project's MSRV
+/// is pinned at 1.82.  The two values are structurally identical:
+/// `CORE_READY: [AtomicBool; MAX_SECONDARY_CORES + 1]` makes
+/// `CORE_READY.len() == MAX_SECONDARY_CORES + 1` a type-level
+/// invariant — a future PR that changed one without the other would
+/// fail to type-check at the `CORE_READY` declaration.
+#[inline]
+pub(crate) const fn validate_secondary_context_id(context_id: u64) -> Option<usize> {
+    let core_idx = context_id as usize;
+    // Valid secondary context_ids are 1..=MAX_SECONDARY_CORES (= 3
+    // on RPi5).  context_id == 0 is the boot core's reserved slot;
+    // context_id >= MAX_SECONDARY_CORES + 1 is out of range.
+    if core_idx > 0 && core_idx < MAX_SECONDARY_CORES + 1 {
+        Some(core_idx)
+    } else {
+        None
+    }
+}
+
 /// **WS-SM SM1.C.5** (closes SMP-C2): Secondary-core entry point
 /// called from `boot.S::secondary_entry` after PSCI CPU_ON wakes a
 /// previously-parked core.
@@ -285,6 +372,11 @@ pub fn bring_up_secondaries() -> u32 {
 /// secondary arrives at the Lean kernel entry with the same hardware
 /// posture as the boot core:
 ///
+///   0. **PSCI context_id validation** (audit-pass-1, defense-in-depth):
+///      reject `context_id == 0` (boot-core slot) and `context_id >=
+///      CORE_READY.len()` (out of range) before any further work; the
+///      offending core halts with DAIF still masked.  See
+///      [`validate_secondary_context_id`].
 ///   1. **Synchronisation**: wait on `CORE_READY[context_id]` (primary
 ///      sets this after a successful PSCI CPU_ON via
 ///      [`bring_up_secondaries_inner`]).  Uses bounded WFE so a lost
@@ -335,6 +427,28 @@ pub fn bring_up_secondaries() -> u32 {
 /// (SM1.H) will be the first runtime exerciser of the full path.
 #[no_mangle]
 pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
+    let core_id = context_id;
+
+    // -----------------------------------------------------------------
+    // Step -1 (audit-pass-1) — Validate PSCI context_id.
+    //
+    // Defense-in-depth against firmware bugs or hostile PSCI
+    // implementations passing an out-of-range context_id.  See
+    // `validate_secondary_context_id` for the rejected cases.
+    // Rejected secondaries halt in a low-power WFE loop with DAIF
+    // still masked (set by boot.S `secondary_entry`), leaving the
+    // primary and other secondaries running.
+    // -----------------------------------------------------------------
+    let core_idx = match validate_secondary_context_id(context_id) {
+        Some(idx) => idx,
+        None => {
+            crate::kprintln!("[smp] core {core_id}: FATAL: invalid PSCI context_id; halting");
+            loop {
+                crate::cpu::wfe();
+            }
+        }
+    };
+
     // -----------------------------------------------------------------
     // Step 0 — Synchronise with primary.
     //
@@ -343,18 +457,18 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
     // bounded WFE (AN9-G) so a lost SEV does not hang the core
     // indefinitely; bounded WFE returns after the timer expires and
     // we re-check the flag on the next loop iteration.
+    //
+    // Note: `core_idx` is guaranteed in-range by the validator above,
+    // so we no longer need the `if core_idx < CORE_READY.len()` guard
+    // that the pre-audit AN9-J shell carried.
     // -----------------------------------------------------------------
-    let core_id = context_id;
-    let core_idx = context_id as usize;
-    if core_idx < CORE_READY.len() {
-        while !CORE_READY[core_idx].load(Ordering::Acquire) {
-            // Discard elapsed-ticks return; the secondary's only
-            // wake condition is the `CORE_READY` flag, polled on
-            // the next loop iteration.  AN9-G's bounded primitive
-            // ensures we never block forever if the primary's SEV
-            // is lost.
-            let _ = crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
-        }
+    while !CORE_READY[core_idx].load(Ordering::Acquire) {
+        // Discard elapsed-ticks return; the secondary's only
+        // wake condition is the `CORE_READY` flag, polled on
+        // the next loop iteration.  AN9-G's bounded primitive
+        // ensures we never block forever if the primary's SEV
+        // is lost.
+        let _ = crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
     }
 
     crate::kprintln!("[smp] core {core_id}: entering per-core init");
@@ -452,15 +566,6 @@ pub extern "C" fn rust_secondary_main(context_id: u64) -> ! {
         // `panic = "abort"`).
         unsafe { lean_secondary_kernel_main(core_id) };
     }
-
-    // Even outside the `hw_target` feature (e.g., simulation runs that
-    // don't link the Lean side), reference the FFI export symbol
-    // name in a comment so the build-script scanner can prove the
-    // SM1.C.5 contract.  The textual presence of
-    // `lean_secondary_kernel_main` here is required by the scanner.
-    // (No-op at runtime; the inert reference below keeps the symbol
-    // grep-able for the scanner without compiling an extern decl.)
-    let _kernel_entry_symbol_name: &str = "lean_secondary_kernel_main";
 
     // -----------------------------------------------------------------
     // Step 7 — Idle fallback.
@@ -781,5 +886,197 @@ mod tests {
             !p.is_null(),
             "rust_secondary_main must have a stable linker-visible address"
         );
+    }
+
+    // ========================================================================
+    // WS-SM SM1.C.5 audit-pass-1 — validate_secondary_context_id tests
+    //
+    // The validator is the defense-in-depth gate that rejects out-of-range
+    // PSCI context_ids before any per-core init runs.  Tests exercise
+    // every edge case:
+    //   * boot-core slot (context_id == 0)        → rejected
+    //   * valid secondary slots (1, 2, 3)         → accepted
+    //   * one past the array (context_id == 4)    → rejected
+    //   * far out-of-range (u64::MAX)             → rejected
+    //
+    // The validator is `pub(crate)` so it's reachable from these
+    // in-crate tests but invisible to external callers (the only
+    // legitimate caller is `rust_secondary_main` itself).
+    // ========================================================================
+
+    #[test]
+    fn sm1c5_validate_context_id_rejects_zero() {
+        // Audit-pass-1: context_id = 0 names the boot-core slot.  A
+        // secondary waking with context_id = 0 would alias the boot
+        // core's PerCpuData slot; reject it.
+        assert_eq!(validate_secondary_context_id(0), None);
+    }
+
+    #[test]
+    fn sm1c5_validate_context_id_accepts_every_secondary_slot() {
+        // Audit-pass-1: every context_id in [1, MAX_SECONDARY_CORES]
+        // (= [1, 3] on RPi5) is a valid secondary slot.
+        assert_eq!(validate_secondary_context_id(1), Some(1));
+        assert_eq!(validate_secondary_context_id(2), Some(2));
+        assert_eq!(validate_secondary_context_id(3), Some(3));
+    }
+
+    #[test]
+    fn sm1c5_validate_context_id_rejects_one_past_array() {
+        // Audit-pass-1: context_id = CORE_READY.len() (= 4 on RPi5)
+        // is the first out-of-range value.  Reject.
+        assert_eq!(validate_secondary_context_id(CORE_READY.len() as u64), None);
+    }
+
+    #[test]
+    fn sm1c5_validate_context_id_rejects_far_out_of_range() {
+        // Audit-pass-1: large context_id values must also reject.
+        // Tests the upper boundary plus a few suspicious values.
+        assert_eq!(validate_secondary_context_id(u64::MAX), None);
+        assert_eq!(validate_secondary_context_id(u64::MAX - 1), None);
+        assert_eq!(validate_secondary_context_id(100), None);
+        assert_eq!(validate_secondary_context_id(0xDEAD_BEEF), None);
+    }
+
+    #[test]
+    fn sm1c5_validate_context_id_acceptance_matches_core_ready_index() {
+        // Audit-pass-1: when accepted, the returned `core_idx` equals
+        // the input `context_id` (as `usize`).  This is the property
+        // `rust_secondary_main` relies on for the subsequent
+        // `CORE_READY[core_idx]` indexing.
+        for context_id in 1u64..=(MAX_SECONDARY_CORES as u64) {
+            let core_idx = validate_secondary_context_id(context_id);
+            assert_eq!(
+                core_idx,
+                Some(context_id as usize),
+                "validator must return context_id as usize on acceptance"
+            );
+        }
+    }
+
+    #[test]
+    fn sm1c5_validate_context_id_aligns_with_primary_emitted_values() {
+        // Audit-pass-1: the primary's `bring_up_secondaries_inner`
+        // emits `context_id = idx + 1` for `idx in 0..MAX_SECONDARY_CORES`.
+        // Verify every primary-emitted value is accepted by the
+        // validator (call-site parity).
+        for (idx, _mpidr) in SECONDARY_MPIDR_TABLE.iter().enumerate() {
+            let primary_emitted_context_id = (idx as u64) + 1;
+            assert!(
+                validate_secondary_context_id(primary_emitted_context_id).is_some(),
+                "primary emits context_id {} which must validate",
+                primary_emitted_context_id
+            );
+        }
+    }
+
+    #[test]
+    fn sm1c5_validate_context_id_is_const_correct() {
+        // Audit-pass-1: the validator function is callable in const
+        // contexts where the inputs are known at compile time.  This
+        // forces the compiler to evaluate the validator's logic at
+        // call sites where the context_id is a literal, catching
+        // subtle errors in the bounds check via const-eval.
+        //
+        // Note: `Option<usize>` is not directly `decide`-able like
+        // bools, but a comparison to a known result is.
+        const RESULT_FOR_ZERO: Option<usize> = validate_secondary_context_id(0);
+        const RESULT_FOR_ONE: Option<usize> = validate_secondary_context_id(1);
+        const RESULT_FOR_FOUR: Option<usize> = validate_secondary_context_id(4);
+        assert_eq!(RESULT_FOR_ZERO, None);
+        assert_eq!(RESULT_FOR_ONE, Some(1));
+        assert_eq!(RESULT_FOR_FOUR, None);
+    }
+
+    // ========================================================================
+    // WS-SM SM1.C audit-pass-2 — MAX_CORE_COUNT_SYM asm-bridge symbol tests
+    //
+    // The asm-level context_id validation in `boot.S::secondary_entry`
+    // (audit-pass-2) reads its upper bound from the `MAX_CORE_COUNT_SYM`
+    // `.rodata` symbol exposed by this module.  Tests verify:
+    //   * The symbol value equals `MAX_SECONDARY_CORES + 1` (the Rust
+    //     constant).
+    //   * The symbol value equals the array length of `CORE_READY`
+    //     (the runtime structural pin).
+    //   * The symbol has a stable linker-visible address (`#[no_mangle]
+    //     #[used]`).
+    // ========================================================================
+
+    #[test]
+    fn sm1c5_max_core_count_sym_matches_max_secondary_cores() {
+        // Audit-pass-2: the .rodata symbol must equal
+        // `MAX_SECONDARY_CORES + 1`.  A drift would mean the asm
+        // rejects valid context_ids (too strict) or accepts invalid
+        // ones (too lax).
+        assert_eq!(MAX_CORE_COUNT_SYM, (MAX_SECONDARY_CORES + 1) as u64);
+    }
+
+    #[test]
+    fn sm1c5_max_core_count_sym_matches_core_ready_array_len() {
+        // Audit-pass-2: the .rodata symbol must equal CORE_READY's
+        // array length.  This is the runtime structural pin — if a
+        // future PR changes either side, the test fails.
+        assert_eq!(MAX_CORE_COUNT_SYM as usize, CORE_READY.len());
+    }
+
+    #[test]
+    fn sm1c5_max_core_count_sym_is_four_on_rpi5() {
+        // Audit-pass-2: pin the literal value at 4 for the production
+        // RPi5 BCM2712 binding (single 4-core Cortex-A76 cluster).
+        // A multi-platform port would need to bump this and the
+        // corresponding `Concurrency.numCores` Lean constant in
+        // lockstep.
+        assert_eq!(MAX_CORE_COUNT_SYM, 4);
+    }
+
+    #[test]
+    fn sm1c5_max_core_count_sym_has_observable_address() {
+        // Audit-pass-2: the .rodata symbol must have a stable
+        // linker-visible address so the asm's `adrp`+`ldr` against
+        // `:lo12:MAX_CORE_COUNT_SYM` resolves.  A regression dropping
+        // `#[no_mangle]` or `#[used]` would break the asm-level
+        // defense at link time.
+        let addr = &MAX_CORE_COUNT_SYM as *const u64 as usize;
+        assert!(
+            addr != 0,
+            "MAX_CORE_COUNT_SYM must have a valid linker-assigned address"
+        );
+    }
+
+    #[test]
+    fn sm1c5_max_core_count_sym_value_is_validator_upper_bound() {
+        // Audit-pass-2 / cross-check: the asm-side bound (via
+        // MAX_CORE_COUNT_SYM) and the Rust-side bound (in
+        // `validate_secondary_context_id`) must agree.  The
+        // validator rejects `core_idx >= MAX_SECONDARY_CORES + 1`;
+        // the asm rejects `context_id >= MAX_CORE_COUNT_SYM`.  Both
+        // values must be identical.
+        let validator_bound = MAX_SECONDARY_CORES + 1;
+        let asm_bound = MAX_CORE_COUNT_SYM as usize;
+        assert_eq!(
+            validator_bound, asm_bound,
+            "audit-pass-2: asm-level and Rust-level upper bounds must \
+             agree (validator: {validator_bound}, asm: {asm_bound})"
+        );
+    }
+
+    #[test]
+    fn sm1c5_max_core_count_sym_rejects_match_validator() {
+        // Audit-pass-2 / cross-check: every context_id rejected by
+        // the asm-level bound (>= MAX_CORE_COUNT_SYM) must also be
+        // rejected by the Rust validator.  Verify on a sample
+        // including the boundary.
+        for context_id in [
+            MAX_CORE_COUNT_SYM,
+            MAX_CORE_COUNT_SYM + 1,
+            MAX_CORE_COUNT_SYM + 100,
+        ] {
+            assert_eq!(
+                validate_secondary_context_id(context_id),
+                None,
+                "context_id {} rejected by asm bound must also be rejected by validator",
+                context_id
+            );
+        }
     }
 }

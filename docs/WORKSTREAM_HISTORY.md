@@ -382,7 +382,7 @@ impact: NONE.
 allowlist); SM5 promotes it production-reached when per-core
 scheduler state lands.
 
-**Audit-pass refinements** (post-initial-landing):
+**Audit-pass-1 refinements** (post-initial-landing):
 - HIGH-portability fix: `enable_mmu`'s `pt_pa_raw < 2^44`
   debug_assert was unconditional and false-faulted on x86_64
   host PIE binaries.  Cfg-gated on aarch64.
@@ -391,6 +391,45 @@ scheduler state lands.
   `scan_smp_rs_uses_install_exception_vectors`,
   `scan_smp_rs_invokes_secondary_init_helpers` pin the
   primary/secondary symmetry and init-helper call chain.
+
+**Audit-pass-2 refinements** (deep-audit post-pass-1):
+- HIGH defense-in-depth: PSCI `context_id` validation (two-layer
+  defense).  Pre-audit `rust_secondary_main` and
+  `boot.S::secondary_entry` accepted any `context_id` and
+  proceeded with hardware init / SP arithmetic.  Two failure
+  modes under malicious / malformed PSCI firmware:
+  (a) `context_id == 0` would alias the secondary with the
+      boot core's `PerCpuData` slot once it ran per-core init.
+  (b) `context_id >= 4` produced an out-of-range SP that for
+      `context_id == 4` landed adjacent to the boot core's
+      `.stack` region — `rust_secondary_main`'s prologue push
+      would corrupt boot-core stack frames BEFORE any
+      Rust-level validator could halt.
+  Defense: TWO layers reject the same conditions.
+  * **Layer 1 (asm)** `boot.S::secondary_entry` Step 1.5:
+    `cbz x0, .L_secondary_invalid` + `cmp x0, MAX_CORE_COUNT_SYM`
+    / `b.hs .L_secondary_invalid`.  Runs BEFORE SP / TPIDR_EL1
+    arithmetic uses `context_id`, preventing the stack-corruption
+    failure mode that the Rust validator alone cannot prevent.
+    Bound read from `MAX_CORE_COUNT_SYM` `.rodata` symbol (not a
+    literal) for single-source-of-truth parity with
+    `PER_CPU_DATA_SLOT_SIZE_SYM` (SM1.B).
+  * **Layer 2 (Rust)** `rust_secondary_main` Step 0:
+    `validate_secondary_context_id` `const fn` validator.  Both
+    layers halt the offending core in a low-power WFE loop with
+    DAIF masked.  Primary and other secondaries continue
+    running.
+  13 new HAL tests + 2 new build-script scanners pin both
+  layers' textual presence and value consistency.
+- Stale docstring fixes: `smp.rs` module docstring's "What this
+  module owns" section called `rust_secondary_main` a
+  "placeholder" (stale post-SM1.C); rewrote.  `lib.rs` `smp`
+  module description extended to cite SM1.C.
+- Vestigial scanner-bait removal: deleted dead `let
+  _kernel_entry_symbol_name = "lean_secondary_kernel_main"`
+  binding; the cfg-gated `extern "C" { fn
+  lean_secondary_kernel_main(...) }` block and call site already
+  satisfy the build-script scanner.
 
 Follow-on: SM1.D..H (DTB cmdline, IS-variant TLBI, SGI primitive,
 per-core UART, QEMU SMP integration) — see

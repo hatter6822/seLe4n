@@ -32,7 +32,9 @@
 //! - `svc_dispatch` — Typed SVC argument marshalling (AN9-F / DEF-R-HAL-L14)
 //! - `psci` — Power State Coordination Interface wrappers
 //!   (AN9-J.1 `cpu_on` + WS-SM SM1.A full DEN0022D §5 surface)
-//! - `smp` — SMP secondary-core scaffolding (AN9-J), runtime-gated
+//! - `smp` — SMP secondary-core bring-up: AN9-J primary-side
+//!   `bring_up_secondaries` + WS-SM SM1.C secondary-side
+//!   `rust_secondary_main` full per-core init pipeline; runtime-gated
 //!   by `SMP_ENABLED` (default `false` at v1.0.0)
 //! - `per_cpu` — Per-CPU data block + TPIDR_EL1 accessors
 //!   (WS-SM SM1.B; closes SMP-M4)

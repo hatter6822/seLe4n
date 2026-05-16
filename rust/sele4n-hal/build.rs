@@ -53,6 +53,14 @@ fn main() {
     // contract.
     scan_smp_rs_invokes_secondary_init_helpers();
 
+    // WS-SM SM1.C audit-pass-2: verify the asm-level context_id
+    // defense in `boot.S::secondary_entry` is intact.  The asm
+    // rejects out-of-range PSCI context_ids BEFORE the SP and
+    // TPIDR_EL1 arithmetic uses them, preventing boot-core stack
+    // corruption that the Rust-level validator alone cannot
+    // prevent (the Rust validator runs after the function prologue).
+    scan_boot_s_for_secondary_entry_context_id_validation();
+
     // Only build assembly for aarch64 targets
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     if target_arch != "aarch64" {
@@ -391,7 +399,18 @@ fn scan_smp_rs_invokes_secondary_init_helpers() {
     // Required per-core init helpers.  Each entry is a (call site,
     // human-readable step name) pair so the diagnostic message names
     // exactly what's missing.
+    //
+    // Step 0 (`validate_secondary_context_id`) is the audit-pass-1
+    // defense-in-depth gate that rejects out-of-range PSCI
+    // context_ids before any per-core init runs.  A regression that
+    // dropped this validator (e.g., refactor that reintroduces the
+    // pre-audit raw `core_idx as usize` indexing) would bypass the
+    // defense.  Pinning the call site here forces the contract.
     let required: &[(&str, &str)] = &[
+        (
+            "validate_secondary_context_id(",
+            "Step 0: PSCI context_id defense-in-depth validation",
+        ),
         ("init_mmu_secondary(", "Step 1: MMU enable"),
         ("init_cpu_interface_secondary(", "Step 3: GIC CPU interface"),
         ("init_timer_secondary(", "Step 4: Timer arm"),
@@ -413,6 +432,85 @@ fn scan_smp_rs_invokes_secondary_init_helpers() {
              {missing:?}.  Each step must be invoked by name so a \
              refactor cannot accidentally short-circuit the boot path.  \
              See WS-SM SM1.C.5 (closes SMP-C2 full sequence)."
+        );
+    }
+}
+
+/// **WS-SM SM1.C audit-pass-2** regression guard: verify the
+/// `boot.S::secondary_entry` asm rejects out-of-range PSCI context_ids
+/// BEFORE the SP / TPIDR_EL1 setup uses them.
+///
+/// The audit-pass-2 contract is that every code path in
+/// `secondary_entry` that uses `context_id` (x0) arithmetically must
+/// be guarded by a prior bounds check.  Two textual checks codify
+/// this:
+///
+///   1. The asm must reference `MAX_CORE_COUNT_SYM` (the upper-bound
+///      symbol exposed from `smp.rs`).  Without this, the asm would
+///      use a hardcoded literal `4` that could drift from
+///      `MAX_SECONDARY_CORES + 1`.
+///   2. The asm must contain a `.L_secondary_invalid` halt label
+///      (the target of the rejection branches `cbz` and `b.hs`).
+///
+/// Without these, a malicious PSCI implementation passing
+/// `context_id == 0` or `context_id >= 4` could:
+///   * Alias a secondary's per-core state with the boot core's
+///     `PerCpuData` slot (TPIDR_EL1 = PER_CPU_DATA + 0 = boot slot).
+///   * Corrupt the boot core's stack (SP = stack_top - 3 * 64K =
+///     `__smp_secondary_stacks_bottom`, adjacent to `.stack`).
+///
+/// The Rust-side `validate_secondary_context_id` provides a second
+/// defense layer, but only catches the issue AFTER the function
+/// prologue has run — too late to prevent the SP corruption.
+fn scan_boot_s_for_secondary_entry_context_id_validation() {
+    let path = "src/boot.S";
+    let contents = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            panic!("WS-SM SM1.C audit-pass-2 scanner: failed to read {path}: {e}");
+        }
+    };
+
+    let stripped: String = contents
+        .lines()
+        .map(|line| {
+            if let Some(idx) = line.find("//") {
+                &line[..idx]
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let normalised = stripped.to_ascii_lowercase();
+
+    // We require the symbol reference (case-insensitive per GAS
+    // convention) and the invalid-halt label.  The actual branch
+    // instructions (`cbz`, `b.hs`) are not pinned by name because
+    // alternative encodings (`cmp` + `b.eq` or `tbz`) are also valid;
+    // the SYMBOL reference is the load-bearing structural pin.
+    let max_core_count_ref = "max_core_count_sym";
+    let invalid_label = ".l_secondary_invalid";
+
+    let has_symbol = normalised.contains(max_core_count_ref);
+    let has_label = normalised.contains(invalid_label);
+
+    if !has_symbol || !has_label {
+        panic!(
+            "WS-SM SM1.C audit-pass-2 regression: `{path}::secondary_entry` \
+             is missing the asm-level PSCI context_id defense.\n\
+             Expected:\n\
+             - reference to `MAX_CORE_COUNT_SYM` (Rust-side bound symbol; \
+             found: {sym})\n\
+             - `.L_secondary_invalid` halt label (target of the \
+             rejection branches; found: {lbl})\n\
+             Without these, a malformed `context_id` from PSCI could \
+             corrupt the boot core's stack (the SP arithmetic in Step 2 \
+             produces a SP inside `.stack` for `context_id == 4`).  See \
+             WS-SM SM1.C audit-pass-2 in CHANGELOG.md.",
+            sym = if has_symbol { "yes" } else { "MISSING" },
+            lbl = if has_label { "yes" } else { "MISSING" },
         );
     }
 }
