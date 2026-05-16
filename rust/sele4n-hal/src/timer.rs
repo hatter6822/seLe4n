@@ -201,6 +201,87 @@ pub fn init_timer(tick_hz: u32) -> Result<(), TimerError> {
     Ok(())
 }
 
+/// **WS-SM SM1.C.4** (closes SMP-C2 timer step): Per-core timer
+/// initialization for secondary cores.
+///
+/// Each ARM Generic Timer is per-core: `CNTPCT_EL0` (counter),
+/// `CNTP_CVAL_EL0` (comparator), `CNTP_CTL_EL0` (control) are all
+/// banked per-PE.  The shared `CNTFRQ_EL0` (frequency) is programmed
+/// once by firmware and is identical across cores on RPi5 (54 MHz).
+///
+/// Differs from [`init_timer`] in two ways:
+/// 1. Does **NOT** reset the global `TICK_COUNT` — that's a primary-owned
+///    monotonic counter; resetting it on secondary boot would corrupt
+///    the kernel's "ticks since boot" semantics.
+/// 2. Does **NOT** rewrite `TIMER_INTERVAL` — the primary's `init_timer`
+///    populated this with the canonical interval, and the same value
+///    holds for every core (CNTFRQ_EL0 is identical on RPi5).  We
+///    locally recompute the interval to set the comparator without
+///    perturbing the global, then exit; the recomputed value matches
+///    the primary's stored value by construction.
+///
+/// **Pre-condition**: the primary's `init_timer` must have run before
+/// any secondary calls this — the global `TIMER_INTERVAL` must hold
+/// the canonical value so `reprogram_timer` works on every core.
+///
+/// **Per-core invariants on success**:
+/// - `CNTP_CVAL_EL0` = `CNTPCT_EL0` + interval (next tick fires in
+///   `tick_hz`⁻¹ seconds from the call site).
+/// - `CNTP_CTL_EL0.ENABLE` = 1, `CNTP_CTL_EL0.IMASK` = 0 (interrupt
+///   delivery to this PE enabled; GIC PPI 30 routing handled by the
+///   distributor's PPI banking).
+///
+/// **Returns** `Ok(())` on success.  Error paths mirror [`init_timer`]:
+/// `Err(ZeroTickHz)` if `tick_hz == 0`, `Err(CntfrqNotProgrammed)` if
+/// `CNTFRQ_EL0` reads 0 on aarch64 (firmware misconfiguration).
+///
+/// References: ARM ARM D11.2 (CNTP* programmer's model), GIC-400 TRM
+/// §3.2.5 (PPI banking per-PE).
+pub fn init_timer_secondary(tick_hz: u32) -> Result<(), TimerError> {
+    if tick_hz == 0 {
+        return Err(TimerError::ZeroTickHz);
+    }
+
+    // AK5-J (R-HAL-M07): same CNTFRQ validation discipline as
+    // `init_timer`.  Real hardware: zero CNTFRQ is firmware
+    // misconfiguration; fail closed.  Host tests fall back to
+    // `COUNTER_FREQ_HZ` (54 MHz) for non-aarch64 builds.
+    let freq = read_frequency();
+    let effective_freq = if cfg!(target_arch = "aarch64") {
+        if freq == 0 {
+            return Err(TimerError::CntfrqNotProgrammed);
+        }
+        freq
+    } else if freq == 0 {
+        COUNTER_FREQ_HZ
+    } else {
+        freq
+    };
+    let interval = (effective_freq / tick_hz) as u64;
+
+    // SM1.C.4 deliberately does NOT write `TIMER_INTERVAL`: the
+    // primary's `init_timer` already populated it with the canonical
+    // value, and our locally-computed `interval` agrees with that
+    // value by construction (CNTFRQ_EL0 + tick_hz are identical on
+    // every core).  Writing the global would create a write storm
+    // under SMP bring-up with no semantic gain.
+
+    // Read this core's counter (banked per-PE) and arm the per-core
+    // comparator.  CNTP_CVAL_EL0 = now + interval — next tick fires
+    // one full interval from the call site, avoiding missed-tick
+    // accumulation on slow cores.
+    let now = read_counter();
+    set_comparator(now + interval);
+    enable_timer();
+
+    // SM1.C.4 deliberately does NOT reset `TICK_COUNT`: that's a
+    // primary-owned monotonic counter recording the kernel's wall-clock
+    // ticks since boot; resetting it on every secondary's bring-up
+    // would discard the primary's progress.
+
+    Ok(())
+}
+
 /// Reprogram the timer comparator for the next tick.
 ///
 /// Called from the timer interrupt handler after processing the current tick.
@@ -359,22 +440,119 @@ mod tests {
     #[test]
     fn timer_error_cntfrq_display_mentions_firmware() {
         use core::fmt::Write;
-        struct Buf { data: [u8; 256], pos: usize }
+        struct Buf {
+            data: [u8; 256],
+            pos: usize,
+        }
         impl Write for Buf {
             fn write_str(&mut self, s: &str) -> core::fmt::Result {
                 let b = s.as_bytes();
                 let end = self.pos + b.len();
-                if end > self.data.len() { return Err(core::fmt::Error); }
+                if end > self.data.len() {
+                    return Err(core::fmt::Error);
+                }
                 self.data[self.pos..end].copy_from_slice(b);
                 self.pos = end;
                 Ok(())
             }
         }
-        let mut buf = Buf { data: [0; 256], pos: 0 };
+        let mut buf = Buf {
+            data: [0; 256],
+            pos: 0,
+        };
         write!(buf, "{}", TimerError::CntfrqNotProgrammed).unwrap();
         let s = core::str::from_utf8(&buf.data[..buf.pos]).unwrap();
-        assert!(s.contains("CNTFRQ") && s.contains("firmware"),
-            "Display missing key phrase: {s}");
+        assert!(
+            s.contains("CNTFRQ") && s.contains("firmware"),
+            "Display missing key phrase: {s}"
+        );
+    }
+
+    // =====================================================================
+    // WS-SM SM1.C.4 — Per-core timer init (init_timer_secondary)
+    // =====================================================================
+
+    #[test]
+    fn sm1c4_init_timer_secondary_returns_ok_on_host_with_default_tick_hz() {
+        // SM1.C.4: on host (CNTFRQ_EL0 read returns 0 because of the
+        // host-stub `read_sysreg!`), `init_timer_secondary` falls back
+        // to `COUNTER_FREQ_HZ` and returns Ok.
+        let r = init_timer_secondary(DEFAULT_TICK_HZ);
+        assert_eq!(r, Ok(()));
+    }
+
+    #[test]
+    fn sm1c4_init_timer_secondary_rejects_zero_tick_hz() {
+        // SM1.C.4: shape parity with `init_timer` — a zero tick rate
+        // would cause division by zero in the interval computation, so
+        // we reject it explicitly with `TimerError::ZeroTickHz`.
+        assert_eq!(init_timer_secondary(0), Err(TimerError::ZeroTickHz));
+    }
+
+    #[test]
+    fn sm1c4_init_timer_secondary_does_not_reset_tick_count() {
+        // SM1.C.4 contract: `TICK_COUNT` is owned by the primary core;
+        // a secondary's bring-up must NOT reset it.  Pre-seed the
+        // counter with a sentinel value, run `init_timer_secondary`,
+        // and verify the counter survives.
+        TICK_COUNT.store(42, Ordering::Relaxed);
+        assert_eq!(init_timer_secondary(DEFAULT_TICK_HZ), Ok(()));
+        assert_eq!(
+            get_tick_count(),
+            42,
+            "init_timer_secondary must preserve TICK_COUNT (primary-owned monotonic counter)"
+        );
+        // Clean up for downstream tests.
+        TICK_COUNT.store(0, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn sm1c4_init_timer_secondary_does_not_perturb_timer_interval() {
+        // SM1.C.4 contract: the global `TIMER_INTERVAL` is populated
+        // by the primary's `init_timer`; the secondary's locally-
+        // computed interval matches that value, but we must NOT write
+        // the global from the secondary's path.  This test pre-seeds
+        // a sentinel value and verifies it survives.
+        //
+        // Using a value that does NOT match the host-stub default
+        // (which would be `COUNTER_FREQ_HZ / DEFAULT_TICK_HZ = 54_000`)
+        // so a regression where we do write the global is detectable.
+        TIMER_INTERVAL.store(99_999, Ordering::Relaxed);
+        assert_eq!(init_timer_secondary(DEFAULT_TICK_HZ), Ok(()));
+        assert_eq!(
+            TIMER_INTERVAL.load(Ordering::Relaxed),
+            99_999,
+            "init_timer_secondary must NOT write TIMER_INTERVAL — that's primary-only"
+        );
+        // Restore canonical value for downstream tests that depend on it.
+        TIMER_INTERVAL.store(0, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn sm1c4_init_timer_secondary_signature_returns_result() {
+        // SM1.C.4: return type matches `init_timer` exactly so call
+        // sites in `rust_secondary_main` can use the same `match`
+        // pattern.
+        let _: fn(u32) -> Result<(), TimerError> = init_timer_secondary;
+    }
+
+    #[test]
+    fn sm1c4_init_timer_secondary_accepts_full_tick_hz_range() {
+        // SM1.C.4: shape parity with `init_timer` — a 100 Hz tick
+        // rate (10ms ticks) must also work.  Verifies the function
+        // doesn't accidentally hard-code DEFAULT_TICK_HZ.
+        TIMER_INTERVAL.store(0, Ordering::Relaxed);
+        TICK_COUNT.store(0, Ordering::Relaxed);
+        assert_eq!(init_timer_secondary(100), Ok(()));
+        // Tick counter still zero (no reset on secondary).
+        assert_eq!(get_tick_count(), 0);
+    }
+
+    #[test]
+    fn sm1c4_init_timer_signature_unchanged() {
+        // SM1.C.4 / regression: the primary's `init_timer` signature
+        // must not drift — `rust_boot_main`'s call site depends on it.
+        let _: fn(u32) -> Result<(), TimerError> = init_timer;
     }
 
     #[test]
@@ -387,7 +565,12 @@ mod tests {
             pos: usize,
         }
         impl FmtBuf {
-            fn new() -> Self { Self { buf: [0u8; 128], pos: 0 } }
+            fn new() -> Self {
+                Self {
+                    buf: [0u8; 128],
+                    pos: 0,
+                }
+            }
             fn as_str(&self) -> &str {
                 core::str::from_utf8(&self.buf[..self.pos]).unwrap()
             }
@@ -396,7 +579,9 @@ mod tests {
             fn write_str(&mut self, s: &str) -> core::fmt::Result {
                 let bytes = s.as_bytes();
                 let end = self.pos + bytes.len();
-                if end > self.buf.len() { return Err(core::fmt::Error); }
+                if end > self.buf.len() {
+                    return Err(core::fmt::Error);
+                }
                 self.buf[self.pos..end].copy_from_slice(bytes);
                 self.pos = end;
                 Ok(())
@@ -404,7 +589,10 @@ mod tests {
         }
         let mut buf = FmtBuf::new();
         write!(buf, "{}", err).unwrap();
-        assert!(buf.as_str().contains("tick_hz must be > 0"),
-            "Display output was: {}", buf.as_str());
+        assert!(
+            buf.as_str().contains("tick_hz must be > 0"),
+            "Display output was: {}",
+            buf.as_str()
+        );
     }
 }

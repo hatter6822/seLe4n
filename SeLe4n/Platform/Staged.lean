@@ -38,6 +38,13 @@ import SeLe4n.Kernel.Concurrency.Sgi
 -- closure runs through here even before per-core scheduler state lands
 -- at SM5.
 import SeLe4n.Kernel.Concurrency.Runtime
+-- WS-SM SM1.C.6: secondary-core kernel-entry placeholder.  Pulled into
+-- Staged so CI verifies the `@[export lean_secondary_kernel_main]`
+-- attribute keeps emitting a C-callable wrapper that the Rust HAL's
+-- `rust_secondary_main` (smp.rs Step 6) resolves at link time.  At
+-- SM1.C the body is `pure ()`; SM5 replaces it with the per-core
+-- scheduler entry.
+import SeLe4n.Kernel.SecondaryEntry
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph
@@ -68,6 +75,7 @@ The staged modules are:
 14. `SeLe4n.Kernel.Concurrency.Locks.Kind`     — WS-SM SM0.I LockKind + LockId
 15. `SeLe4n.Kernel.Concurrency.Sgi`            — WS-SM SM0.H SgiKind
 16. `SeLe4n.Kernel.Concurrency.Runtime`        — WS-SM SM1.B.5 currentCoreId FFI wrapper
+17. `SeLe4n.Kernel.SecondaryEntry`             — WS-SM SM1.C.6 secondary-core kernel-entry placeholder
 
 Per the plan (AN9-J will transition most of these from "SMP-latent" to
 "SMP-implemented, runtime-gated by smp_enabled=false at v1.0.0"), the

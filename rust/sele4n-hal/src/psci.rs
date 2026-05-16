@@ -776,18 +776,6 @@ pub fn migrate_info_type() -> Result<MigrateInfoType, PsciResult> {
 // SM1.A.7 — Function-id pinning + invariant compile-time guards
 // ============================================================================
 
-/// WS-SM SM1.A.7: PSCI OEN (Owning Entity Number) per SMCCC §5.2.
-/// PSCI lives in the Standard Secure Service Calls range (OEN = 4),
-/// encoded in bits 29..24 of the function id.
-const PSCI_OEN_STANDARD_SECURE: u32 = 4 << 24;
-
-/// WS-SM SM1.A.7: bit-mask isolating the OEN field (bits 29..24).
-const PSCI_OEN_MASK: u32 = 0x3F << 24;
-
-/// WS-SM SM1.A.7: bit-mask of bits 23..16 (reserved per SMCCC §5.2;
-/// must be zero in every PSCI function id).
-const PSCI_RESERVED_MASK: u32 = 0x00FF_0000;
-
 /// WS-SM SM1.A.7: compile-time assertions on the PSCI function-id
 /// encoding per ARM SMCCC (DEN0028) and DEN0022D §5.2.1:
 ///
@@ -803,7 +791,22 @@ const PSCI_RESERVED_MASK: u32 = 0x00FF_0000;
 ///
 /// A future PR that violates any of these invariants fails the build
 /// at elaboration time.
+///
+/// **SMCCC encoding constants** are scoped inside this block so the
+/// dead_code lint sees them as "used".  Rust 1.82's dead_code analysis
+/// does not recognise uses inside top-level `const _: () = { ... }`
+/// blocks; keeping the locals scoped here keeps the crate warning-free
+/// without `#[allow(dead_code)]`.
 const _: () = {
+    // PSCI OEN (Owning Entity Number) per SMCCC §5.2.  PSCI lives in
+    // the Standard Secure Service Calls range (OEN = 4), encoded in
+    // bits 29..24 of the function id.
+    const PSCI_OEN_STANDARD_SECURE: u32 = 4 << 24;
+    // Bit-mask isolating the OEN field (bits 29..24).
+    const PSCI_OEN_MASK: u32 = 0x3F << 24;
+    // Bit-mask of bits 23..16 (reserved per SMCCC §5.2; must be zero
+    // in every PSCI function id).
+    const PSCI_RESERVED_MASK: u32 = 0x00FF_0000;
     // Bit 31 (Fast call) must be set on every PSCI function id.
     assert!(
         PSCI_FN_PSCI_VERSION & 0x8000_0000 != 0,
@@ -978,13 +981,13 @@ mod tests {
         // pinned to the literal hex value in the spec; any drift
         // fails this test before the wrapper is ever invoked on
         // hardware.  Sub-section numbers are per DEN0022D revision D.
-        assert_eq!(PSCI_FN_PSCI_VERSION,    0x8400_0000); // §5.1.1
-        assert_eq!(PSCI_FN_CPU_OFF,         0x8400_0002); // §5.1.3
-        assert_eq!(PSCI_FN_CPU_ON,          0xC400_0003); // §5.1.4 SMC64
-        assert_eq!(PSCI_FN_AFFINITY_INFO,   0xC400_0004); // §5.1.5 SMC64
+        assert_eq!(PSCI_FN_PSCI_VERSION, 0x8400_0000); // §5.1.1
+        assert_eq!(PSCI_FN_CPU_OFF, 0x8400_0002); // §5.1.3
+        assert_eq!(PSCI_FN_CPU_ON, 0xC400_0003); // §5.1.4 SMC64
+        assert_eq!(PSCI_FN_AFFINITY_INFO, 0xC400_0004); // §5.1.5 SMC64
         assert_eq!(PSCI_FN_MIGRATE_INFO_TYPE, 0x8400_0006); // §5.1.7
-        assert_eq!(PSCI_FN_SYSTEM_OFF,      0x8400_0008); // §5.1.9
-        assert_eq!(PSCI_FN_SYSTEM_RESET,    0x8400_0009); // §5.1.10
+        assert_eq!(PSCI_FN_SYSTEM_OFF, 0x8400_0008); // §5.1.9
+        assert_eq!(PSCI_FN_SYSTEM_RESET, 0x8400_0009); // §5.1.10
     }
 
     #[test]
@@ -1136,7 +1139,10 @@ mod tests {
         // SM1.A.2: ARM DEN0022D §5.1.5 documents three values.
         assert_eq!(AffinityInfoState::from_raw(0), Some(AffinityInfoState::On));
         assert_eq!(AffinityInfoState::from_raw(1), Some(AffinityInfoState::Off));
-        assert_eq!(AffinityInfoState::from_raw(2), Some(AffinityInfoState::OnPending));
+        assert_eq!(
+            AffinityInfoState::from_raw(2),
+            Some(AffinityInfoState::OnPending)
+        );
     }
 
     #[test]
@@ -1180,7 +1186,10 @@ mod tests {
         // SM1.A.2: 0/1/2 decode to On/Off/OnPending.
         assert_eq!(decode_affinity_info_result(0), Ok(AffinityInfoState::On));
         assert_eq!(decode_affinity_info_result(1), Ok(AffinityInfoState::Off));
-        assert_eq!(decode_affinity_info_result(2), Ok(AffinityInfoState::OnPending));
+        assert_eq!(
+            decode_affinity_info_result(2),
+            Ok(AffinityInfoState::OnPending)
+        );
     }
 
     #[test]
@@ -1189,10 +1198,19 @@ mod tests {
         // through `PsciResult::from_raw`.  This is the production path
         // when firmware rejects the AFFINITY_INFO query with e.g.
         // `InvalidParameters` for an unknown MPIDR.
-        assert_eq!(decode_affinity_info_result(-1), Err(PsciResult::NotSupported));
-        assert_eq!(decode_affinity_info_result(-2), Err(PsciResult::InvalidParameters));
+        assert_eq!(
+            decode_affinity_info_result(-1),
+            Err(PsciResult::NotSupported)
+        );
+        assert_eq!(
+            decode_affinity_info_result(-2),
+            Err(PsciResult::InvalidParameters)
+        );
         assert_eq!(decode_affinity_info_result(-3), Err(PsciResult::Denied));
-        assert_eq!(decode_affinity_info_result(-6), Err(PsciResult::InternalFailure));
+        assert_eq!(
+            decode_affinity_info_result(-6),
+            Err(PsciResult::InternalFailure)
+        );
         assert_eq!(decode_affinity_info_result(-7), Err(PsciResult::NotPresent));
         assert_eq!(decode_affinity_info_result(-8), Err(PsciResult::Disabled));
     }
@@ -1204,7 +1222,10 @@ mod tests {
         // all arm.
         assert_eq!(decode_affinity_info_result(-9), Err(PsciResult::Unknown));
         assert_eq!(decode_affinity_info_result(-100), Err(PsciResult::Unknown));
-        assert_eq!(decode_affinity_info_result(i32::MIN), Err(PsciResult::Unknown));
+        assert_eq!(
+            decode_affinity_info_result(i32::MIN),
+            Err(PsciResult::Unknown)
+        );
     }
 
     #[test]
@@ -1214,7 +1235,10 @@ mod tests {
         // rather than panicking.
         assert_eq!(decode_affinity_info_result(3), Err(PsciResult::Unknown));
         assert_eq!(decode_affinity_info_result(42), Err(PsciResult::Unknown));
-        assert_eq!(decode_affinity_info_result(i32::MAX), Err(PsciResult::Unknown));
+        assert_eq!(
+            decode_affinity_info_result(i32::MAX),
+            Err(PsciResult::Unknown)
+        );
     }
 
     // ------------------------------------------------------------------------
@@ -1370,8 +1394,10 @@ mod tests {
         // Major-only comparison: a higher major dominates regardless
         // of minor.
         let v_2_0 = PsciVersion { major: 2, minor: 0 };
-        assert!(v_2_0.at_least(1, u16::MAX),
-            "(2, 0) should be >= (1, u16::MAX) — major dominates");
+        assert!(
+            v_2_0.at_least(1, u16::MAX),
+            "(2, 0) should be >= (1, u16::MAX) — major dominates"
+        );
     }
 
     #[test]
@@ -1399,9 +1425,18 @@ mod tests {
     #[test]
     fn migrate_info_type_from_raw_decodes_documented_values() {
         // SM1.A.6: ARM DEN0022D §5.1.7 documents three values.
-        assert_eq!(MigrateInfoType::from_raw(0), Some(MigrateInfoType::UniProcessor));
-        assert_eq!(MigrateInfoType::from_raw(1), Some(MigrateInfoType::Multiprocessor));
-        assert_eq!(MigrateInfoType::from_raw(2), Some(MigrateInfoType::NotRequired));
+        assert_eq!(
+            MigrateInfoType::from_raw(0),
+            Some(MigrateInfoType::UniProcessor)
+        );
+        assert_eq!(
+            MigrateInfoType::from_raw(1),
+            Some(MigrateInfoType::Multiprocessor)
+        );
+        assert_eq!(
+            MigrateInfoType::from_raw(2),
+            Some(MigrateInfoType::NotRequired)
+        );
     }
 
     #[test]
@@ -1441,9 +1476,18 @@ mod tests {
     #[test]
     fn decode_migrate_info_type_result_success_values() {
         // SM1.A.6: 0/1/2 decode to UniProcessor/Multiprocessor/NotRequired.
-        assert_eq!(decode_migrate_info_type_result(0), Ok(MigrateInfoType::UniProcessor));
-        assert_eq!(decode_migrate_info_type_result(1), Ok(MigrateInfoType::Multiprocessor));
-        assert_eq!(decode_migrate_info_type_result(2), Ok(MigrateInfoType::NotRequired));
+        assert_eq!(
+            decode_migrate_info_type_result(0),
+            Ok(MigrateInfoType::UniProcessor)
+        );
+        assert_eq!(
+            decode_migrate_info_type_result(1),
+            Ok(MigrateInfoType::Multiprocessor)
+        );
+        assert_eq!(
+            decode_migrate_info_type_result(2),
+            Ok(MigrateInfoType::NotRequired)
+        );
     }
 
     #[test]
@@ -1469,8 +1513,14 @@ mod tests {
     fn decode_migrate_info_type_result_negative_unknown_maps_to_unknown() {
         // SM1.A.6: negative values outside the documented PSCI range
         // decode to PsciResult::Unknown.
-        assert_eq!(decode_migrate_info_type_result(-9), Err(PsciResult::Unknown));
-        assert_eq!(decode_migrate_info_type_result(i32::MIN), Err(PsciResult::Unknown));
+        assert_eq!(
+            decode_migrate_info_type_result(-9),
+            Err(PsciResult::Unknown)
+        );
+        assert_eq!(
+            decode_migrate_info_type_result(i32::MIN),
+            Err(PsciResult::Unknown)
+        );
     }
 
     #[test]
@@ -1479,7 +1529,10 @@ mod tests {
         // extension or firmware bug.  We map to PsciResult::Unknown
         // rather than panicking.
         assert_eq!(decode_migrate_info_type_result(3), Err(PsciResult::Unknown));
-        assert_eq!(decode_migrate_info_type_result(42), Err(PsciResult::Unknown));
+        assert_eq!(
+            decode_migrate_info_type_result(42),
+            Err(PsciResult::Unknown)
+        );
         assert_eq!(
             decode_migrate_info_type_result(i32::MAX),
             Err(PsciResult::Unknown)

@@ -119,11 +119,19 @@ impl SetIPCBufferArgs {
 
     /// Decode from message registers. Requires 1 register.
     /// Validates alignment to `IPC_BUFFER_ALIGNMENT` (512 bytes).
-    // CI pins Rust 1.82.0 where `u64::is_multiple_of` is unstable.
-    #[allow(clippy::manual_is_multiple_of)]
+    ///
+    /// Uses the bitwise-AND form `(addr & MASK) != 0` rather than
+    /// `addr % ALIGN != 0` so the check is lint-clean on the project's
+    /// pinned MSRV (Rust 1.82, predating clippy 1.87's
+    /// `manual_is_multiple_of` lint) without needing an
+    /// `#[allow(clippy::manual_is_multiple_of)]` workaround — and
+    /// without the paired `#[allow(unknown_lints)]` that would
+    /// otherwise be required to keep the inner allow lint-clean on
+    /// 1.82.  `IPC_BUFFER_ALIGNMENT = 512` is a power of 2, so the
+    /// two forms are mathematically equivalent.
     pub fn decode(regs: &[u64]) -> KernelResult<Self> {
         if regs.is_empty() { return Err(KernelError::InvalidMessageInfo); }
-        if regs[0] % IPC_BUFFER_ALIGNMENT != 0 {
+        if (regs[0] & (IPC_BUFFER_ALIGNMENT - 1)) != 0 {
             return Err(KernelError::AlignmentError);
         }
         Ok(Self { buffer_addr: regs[0] })

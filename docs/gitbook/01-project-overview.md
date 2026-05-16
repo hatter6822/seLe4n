@@ -94,16 +94,21 @@ v0.27.6 audit addressed (5 HIGH, 27 MEDIUM, 28 LOW).
 **Next major milestone**: WS-SM — multi-core SMP completion through v1.0.0.
 Phase SM0 (foundations & honesty patches) closed at v0.31.3 with the
 type-level scaffolding (CoreId, LockKind, LockId, SgiKind, SharingDomain,
-BklState).  Phase SM1 (Rust HAL) is in flight: SM1.A (PSCI completion)
-landed at v0.31.3, and SM1.B (per-CPU data + TPIDR_EL1, closes SMP-M4)
-is the second sub-phase to land — `PerCpuData` struct with populated
-`core_id` field, `current_per_cpu()` / `current_core_id_from_tpidr()`
-accessors reading TPIDR_EL1 on aarch64, FFI export
-`ffi_current_core_id`, and the Lean-side typed wrapper
-`Concurrency.currentCoreId : BaseIO CoreId`.
-SM1.C..H plus SM2..SM9 wire those types into runtime per-core scheduler
-state, verified ticket / RW lock primitives, TLB shootdown, and cross-core
-IPC.  Full plan in
+BklState).  Phase SM1 (Rust HAL) is in flight with three sub-phases
+landed: SM1.A (PSCI completion) at v0.31.3, SM1.B (per-CPU data +
+TPIDR_EL1, closes SMP-M4) at v0.31.4, and SM1.C (secondary-core full
+init, closes SMP-C2) at v0.31.5.  SM1.C rewrites `rust_secondary_main`
+into the full per-core boot sequence — MMU enable
+(`init_mmu_secondary` via shared `init_mmu_per_core`), exception
+vectors (`install_exception_vectors` shared with primary), GIC CPU
+interface (`init_cpu_interface_secondary`), per-core timer
+(`init_timer_secondary`), IRQ unmask, then jump into the Lean kernel
+via `secondaryKernelMain` (placeholder at SM1.C; SM5 replaces with
+per-core scheduler entry).
+SM1.D..H plus SM2..SM9 wire those types into the kernel-command-line
+SMP gate (DTB cmdline parser), TLB-shootdown IS variants, SGI primitive,
+per-core UART, QEMU `-smp 4` integration, verified ticket / RW lock
+primitives, and cross-core IPC.  Full plan in
 [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](../planning/SMP_MULTICORE_COMPLETION_PLAN.md).
 Companion post-1.0 deferrals: FrozenOps production promotion.
 

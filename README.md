@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.31.4-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.31.5-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -85,13 +85,13 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.31.4` |
+| **Version** | `0.31.5` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 115,434 across 176 files |
-| **Test Lean LoC** | 21,651 across 30 test suites |
-| **Proved declarations** | 3,353 theorem/lemma declarations (zero sorry/axiom) |
+| **Production Lean LoC** | 115,563 across 177 files |
+| **Test Lean LoC** | 21,731 across 30 test suites |
+| **Proved declarations** | 3,355 theorem/lemma declarations (zero sorry/axiom) |
 | **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 48 source files |
-| **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) — single-core (core 0) at v0.31.4; SMP completion in flight in WS-SM (foundations landed at SM0; full activation through SM1..SM9 by v1.0.0) |
+| **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) — single-core (core 0) at v0.31.5; SMP completion in flight in WS-SM (foundations + SM1.A/B/C landed; full activation through SM1.D..SM9 by v1.0.0) |
 | **Hardware binding** | **H3 COMPLETE** (WS-AG AG1–AG10): HAL, GIC-400, timer, ARMv8 page tables, FFI bridge, QEMU boot |
 | **Canonical audit** | [`AUDIT_v0.29.0_COMPREHENSIVE`](docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — pre-1.0 comprehensive audit (202 findings; remediated by WS-AK AK1–AK10; archived) |
 | **Latest audit** | [`AUDIT_v0.30.11_COMPREHENSIVE`](docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — pre-1.0 readiness audit cut after WS-AN closure (succeeds the now-archived [`AUDIT_v0.30.6_COMPREHENSIVE`](docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) remediated by WS-AN AN0–AN12). WS-RC R0..R5 LANDED at v0.31.2; WS-RC R6..R14 absorbed into WS-SM per the SM0.Q.1 absorption mapping (see [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). Active workstream plan: [`SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |

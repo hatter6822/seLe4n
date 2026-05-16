@@ -147,10 +147,7 @@ pub fn init_distributor(base: usize) {
     // 4 INTIDs per 32-bit register (8 bits each).
     let num_prio_regs = MAX_INTID.div_ceil(4) as usize;
     for i in 0..num_prio_regs {
-        mmio_write32(
-            base + gicd::IPRIORITYR_BASE + i * 4,
-            0xA0A0_A0A0,
-        );
+        mmio_write32(base + gicd::IPRIORITYR_BASE + i * 4, 0xA0A0_A0A0);
     }
 
     // Step 4: Route all SPIs to CPU 0
@@ -264,6 +261,44 @@ pub fn init_gic() {
     init_distributor(GICD_BASE);
     self_check_distributor(GICD_BASE);
     init_cpu_interface(GICC_BASE);
+}
+
+// ============================================================================
+// WS-SM SM1.C.3 — Secondary-core GIC CPU interface initialization
+// ============================================================================
+
+/// **WS-SM SM1.C.3** (closes SMP-C2 GIC step): Initialize the calling
+/// secondary core's GIC-400 CPU interface.
+///
+/// GIC-400's CPU interface registers (GICC_CTLR, GICC_PMR, GICC_BPR)
+/// are **banked per-core** even though they live at a single MMIO
+/// address ([`GICC_BASE`] on BCM2712).  Each core therefore writes
+/// them independently via its own banked view, configuring its own
+/// interrupt-delivery state without affecting other cores.
+///
+/// Reuses [`init_cpu_interface`] (which the primary's [`init_gic`]
+/// also calls) so primary and secondary CPU-interface init flow
+/// through the same code path.  The `core_id` argument is consumed
+/// only by the diagnostic `kprintln`; the actual register
+/// programming is identical on every core.
+///
+/// **Pre-condition**: the primary's `init_gic` (Phase 3 in
+/// `rust_boot_main`) must have already run, having initialised the
+/// shared distributor.  Secondary cores would otherwise observe
+/// uninitialised distributor state when receiving SPIs (cross-core
+/// interrupts).  PPIs (the timer's PPI 30, kernel SGIs 0..4) are
+/// fully functional on each core after this CPU-interface init,
+/// regardless of distributor state.
+///
+/// **GIC-400 TRM**: §4.4 describes the CPU interface register layout.
+/// §4.4.1 (GICC_CTLR.EnableGrp0 = 1) and §4.4.2 (GICC_PMR = 0xFF) are
+/// the substantive enables; §4.4.3 (GICC_BPR = 0) disables priority
+/// grouping so all 8 priority bits are honoured.
+pub fn init_cpu_interface_secondary(core_id: u64) {
+    init_cpu_interface(GICC_BASE);
+    crate::kprintln!(
+        "[smp] core {core_id}: GIC-400 CPU interface initialized (PMR=0xFF, BPR=0, CTLR=1)"
+    );
 }
 
 /// AN8-D (RUST-M05): boot-time GICD_ITARGETSR readback self-check.
@@ -525,11 +560,11 @@ mod tests {
     #[test]
     fn spurious_detection() {
         assert!(!is_spurious(0));
-        assert!(!is_spurious(30));    // timer PPI
-        assert!(!is_spurious(223));   // last valid SPI
-        assert!(!is_spurious(1019));  // just below threshold
-        assert!(is_spurious(1020));   // spurious threshold
-        assert!(is_spurious(1023));   // standard spurious ID
+        assert!(!is_spurious(30)); // timer PPI
+        assert!(!is_spurious(223)); // last valid SPI
+        assert!(!is_spurious(1019)); // just below threshold
+        assert!(is_spurious(1020)); // spurious threshold
+        assert!(is_spurious(1023)); // standard spurious ID
     }
 
     #[test]
@@ -637,8 +672,12 @@ mod tests {
     /// and a recorded "handler tick" can be compared directly.
     struct EventClock(AtomicU32);
     impl EventClock {
-        fn new() -> Self { Self(AtomicU32::new(0)) }
-        fn tick(&self) -> u32 { self.0.fetch_add(1, Ordering::SeqCst) }
+        fn new() -> Self {
+            Self(AtomicU32::new(0))
+        }
+        fn tick(&self) -> u32 {
+            self.0.fetch_add(1, Ordering::SeqCst)
+        }
     }
 
     #[test]
@@ -664,8 +703,10 @@ mod tests {
         let hnd = handler_tick.load(Ordering::SeqCst);
         assert_ne!(eoi, u32::MAX, "EOI was not invoked");
         assert_ne!(hnd, u32::MAX, "handler was not invoked");
-        assert!(eoi < hnd,
-            "AN8-C.1 violated: EOI tick {eoi} must precede handler tick {hnd}");
+        assert!(
+            eoi < hnd,
+            "AN8-C.1 violated: EOI tick {eoi} must precede handler tick {hnd}"
+        );
     }
 
     #[test]
@@ -688,10 +729,16 @@ mod tests {
         // OutOfRange is reported as "handled" in the dispatch lifecycle
         // (the IAR/EOI cycle completed), distinct from "Spurious".
         assert!(handled);
-        assert_eq!(eoi_count.load(Ordering::SeqCst), 1,
-            "EOI must fire exactly once for OutOfRange");
-        assert_eq!(handler_count.load(Ordering::SeqCst), 0,
-            "handler must NOT fire for OutOfRange (no valid INTID)");
+        assert_eq!(
+            eoi_count.load(Ordering::SeqCst),
+            1,
+            "EOI must fire exactly once for OutOfRange"
+        );
+        assert_eq!(
+            handler_count.load(Ordering::SeqCst),
+            0,
+            "handler must NOT fire for OutOfRange (no valid INTID)"
+        );
     }
 
     #[test]
@@ -711,10 +758,16 @@ mod tests {
             },
         );
         assert!(!handled, "Spurious must report `false` (no IAR/EOI cycle)");
-        assert_eq!(eoi_count.load(Ordering::SeqCst), 0,
-            "EOI MUST NOT fire for Spurious per GIC-400 §3.1");
-        assert_eq!(handler_count.load(Ordering::SeqCst), 0,
-            "handler MUST NOT fire for Spurious");
+        assert_eq!(
+            eoi_count.load(Ordering::SeqCst),
+            0,
+            "EOI MUST NOT fire for Spurious per GIC-400 §3.1"
+        );
+        assert_eq!(
+            handler_count.load(Ordering::SeqCst),
+            0,
+            "handler MUST NOT fire for Spurious"
+        );
     }
 
     #[test]
@@ -742,11 +795,16 @@ mod tests {
                 },
             )
         }));
-        assert!(result.is_err(),
-            "handler panic must propagate up out of dispatch_irq_inner");
-        assert_eq!(EOI_FIRED_BEFORE_PANIC.load(Ordering::SeqCst), 1,
+        assert!(
+            result.is_err(),
+            "handler panic must propagate up out of dispatch_irq_inner"
+        );
+        assert_eq!(
+            EOI_FIRED_BEFORE_PANIC.load(Ordering::SeqCst),
+            1,
             "AN8-C.1: EOI must have fired exactly once BEFORE the \
-             handler panic — the panic cannot un-fire it");
+             handler panic — the panic cannot un-fire it"
+        );
     }
 
     #[test]
@@ -821,11 +879,16 @@ mod tests {
         // a concrete BCM2712 base.
         let base = GICD_BASE; // 0xFF841000
         let expected = base + gicd::ITARGETSR_BASE + SELF_CHECK_TARGET_INDEX * 4;
-        assert_eq!(expected, 0xFF841000 + 0x800 + 8 * 4,
-            "self-check address arithmetic regressed");
-        assert_eq!(expected, 0xFF841820,
+        assert_eq!(
+            expected,
+            0xFF841000 + 0x800 + 8 * 4,
+            "self-check address arithmetic regressed"
+        );
+        assert_eq!(
+            expected, 0xFF841820,
             "self-check should target ITARGETSR[8] @ 0xFF841820 \
-             on BCM2712");
+             on BCM2712"
+        );
     }
 
     #[test]
@@ -845,4 +908,46 @@ mod tests {
         SELF_CHECK_TARGET_INDEX < 256,
         "AN8-D RUST-M05: self-check target index escapes ITARGETSR window",
     );
+
+    // =====================================================================
+    // WS-SM SM1.C.3 — Secondary-core CPU interface init tests
+    // =====================================================================
+
+    #[test]
+    fn sm1c3_init_cpu_interface_secondary_callable_on_host() {
+        // SM1.C.3: host stub of `init_cpu_interface_secondary` runs
+        // cleanly — the underlying `init_cpu_interface` calls
+        // `mmio_write32` which is a no-op on non-aarch64.  Catches a
+        // regression that introduces a host-side panic in the GIC
+        // CPU-interface init.
+        init_cpu_interface_secondary(1);
+    }
+
+    #[test]
+    fn sm1c3_init_cpu_interface_secondary_accepts_every_secondary_core_id() {
+        // SM1.C.3: every plausible secondary core_id (1..=3 on RPi5)
+        // must be callable.  A regression introducing an out-of-range
+        // bound (e.g., asserting core_id < 3) would fail one of these
+        // calls.
+        for core_id in [1u64, 2, 3] {
+            init_cpu_interface_secondary(core_id);
+        }
+    }
+
+    #[test]
+    fn sm1c3_init_cpu_interface_secondary_signature_takes_u64() {
+        // SM1.C.3: the helper takes a u64 core_id (PSCI context_id
+        // convention).  Pinning the signature here catches refactors
+        // to `usize` or `u32` that would break the FFI call from
+        // `rust_secondary_main`.
+        let _: fn(u64) = init_cpu_interface_secondary;
+    }
+
+    #[test]
+    fn sm1c3_init_cpu_interface_signature_is_pub() {
+        // SM1.C.3: the underlying `init_cpu_interface(base)` helper is
+        // shared with the primary's `init_gic()`.  Ensure the symbol
+        // remains accessible from the secondary's call path.
+        let _: fn(usize) = init_cpu_interface;
+    }
 }

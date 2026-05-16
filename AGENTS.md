@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.4.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.5.
 
 > The version line above is **CI-enforced** by
 > `scripts/check_version_sync.sh` (a Tier 0 gate). When you bump
@@ -560,8 +560,8 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 → v0.31.3 → v0.31.4 → v0.32.x → v1.0.0,
-  branch `claude/per-cpu-tpidr-el1-1OBHA`)**:
+- **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 → v0.31.3 → v0.31.4 → v0.31.5 → v0.32.x → v1.0.0,
+  branch `claude/review-codebase-secondary-core-PgqGR`)**:
   Unified workstream merging WS-RC's remaining R6..R14 phases with the
   SMP-specific SM-phases (SM0..SM9).  Closes at v1.0.0 with a bootable
   verified SMP microkernel on Raspberry Pi 5.
@@ -890,6 +890,131 @@ documentation lives under `docs/` and `docs/gitbook/`.
   `ffi::tests` modules; the hardware behaviour (the actual `mrs
   tpidr_el1` read) will be covered by SM1.H's QEMU `-smp 4`
   boot-trace test.
+
+  **WS-SM SM1.C LANDED at v0.31.5 on branch
+  `claude/review-codebase-secondary-core-PgqGR`** (secondary-core
+  full init, closes SMP-C2).  Twelve sub-tasks landed in one cut,
+  rewriting the previously-thin `rust_secondary_main` shell into the
+  full per-core boot sequence (MMU → VBAR → GIC → timer → IRQ →
+  Lean kernel) shared symmetrically with the primary boot path:
+
+  - **SM1.C.1**: `mmu::init_mmu_secondary(core_id)` plus extracted
+    `mmu::init_mmu_per_core(core_id)` helper.  The primary's
+    `init_mmu()` now routes through `init_mmu_per_core(0)` after
+    `build_identity_tables()`; secondaries call `init_mmu_secondary`
+    which skips the table-build step (the boot L1 table is a
+    read-only global populated once by the primary) and applies
+    the per-core MMU enable sequence — TLB invalidate, page-table
+    D-cache clean, TTBR0/1/TCR/MAIR programming, SCTLR_EL1 write
+    with the AK5-C full bitmap (M | C | I | SA | SA0 | WXN | EOS |
+    EIS | RES1).  Audit follow-up cfg-gated the `pt_pa_raw < 2^44`
+    debug_assert to aarch64 (host x86_64 binary base addresses
+    routinely exceed 2^44 on PIE builds; the assert false-faulted
+    on host test invocations).
+  - **SM1.C.2**: `boot::install_exception_vectors()` — VBAR_EL1
+    installation extracted from the formerly-private `set_vbar`
+    function and made `pub` so secondaries reach it via
+    `crate::boot::install_exception_vectors`.  The primary's
+    `rust_boot_main` Phase 2 now calls the same helper.  Two new
+    build.rs scanners pin the primary/secondary symmetry: one
+    rejects an inline `write_vbar_el1` in `boot.rs` (other than
+    the helper body itself), the other requires
+    `install_exception_vectors(` in `smp.rs`.
+  - **SM1.C.3**: `gic::init_cpu_interface_secondary(core_id)` —
+    wraps the existing `init_cpu_interface(GICC_BASE)` (banked
+    per-core; CTLR/PMR/BPR enables) with a per-core diagnostic
+    kprintln.  Primary's `init_gic` continues to handle the
+    global distributor.
+  - **SM1.C.4**: `timer::init_timer_secondary(tick_hz)` — per-core
+    timer arming (CNTP_CVAL_EL0 + CNTP_CTL_EL0.ENABLE).
+    Deliberately does NOT reset the global `TICK_COUNT` (primary-
+    owned monotonic counter) or rewrite `TIMER_INTERVAL`
+    (populated by primary; same value on every core via shared
+    CNTFRQ_EL0).  Returns `Result<(), TimerError>` for parity with
+    `init_timer`; failure (CntfrqNotProgrammed, ZeroTickHz) halts
+    just the affected secondary via WFE loop, leaving other cores
+    running.
+  - **SM1.C.5**: `rust_secondary_main` body rewrite — eight-step
+    sequence: (0) spin on CORE_READY[i] with bounded WFE; (1) MMU
+    via `init_mmu_secondary`; (2) VBAR via `install_exception_vectors`;
+    (3) GIC via `init_cpu_interface_secondary`; (4) timer via
+    `init_timer_secondary` (fatal-on-fail path halts the core); (5)
+    `enable_irq()` to unmask IRQ delivery; (6) Lean kernel entry
+    via `lean_secondary_kernel_main(context_id)` (gated on
+    `feature = "hw_target"`); (7) idle fallback `loop { wfe() }`.
+    Diagnostic `kprintln` after every step gives the boot trace a
+    deterministic banner pattern QEMU `-smp 4` (SM1.H) can grep.
+    A new build.rs scanner enumerates the six required call sites
+    by name (`init_mmu_secondary`, `init_cpu_interface_secondary`,
+    `init_timer_secondary`, `enable_irq`,
+    `lean_secondary_kernel_main`) and fails the build if any is
+    silently dropped.
+  - **SM1.C.6**: `SeLe4n.Kernel.SecondaryEntry.secondaryKernelMain
+    : UInt64 → BaseIO Unit` — new module
+    `SeLe4n/Kernel/SecondaryEntry.lean` with the
+    `@[export lean_secondary_kernel_main]` attribute that produces
+    the C-callable wrapper the Rust HAL's `rust_secondary_main`
+    resolves.  At SM1.C the body is `pure ()` (a deliberate
+    placeholder; SM5 replaces it with the per-core scheduler
+    entry).  Surface-anchor theorem
+    `secondaryKernelMain_returns_unit_marker` proves the
+    placeholder semantics by `rfl` for downstream Tier-3 scans.
+    Module reached via `SeLe4n/Platform/Staged.lean` (added to the
+    staged-module allowlist per WS-RC R12.B); SM5 moves it
+    production-reached.
+  - **SM1.C.7..C.11**: documentation-only sub-tasks — per-core
+    stack reservation in `link.ld` (already in place; verified
+    unchanged), MMU page-table reuse rationale (`mmu.rs` module
+    docstring), per-core SCTLR_EL1 bitmap (covered by SM1.C.1
+    via `init_mmu_per_core`), per-core VBAR_EL1 (covered by
+    SM1.C.2 via `install_exception_vectors`), SError handler
+    masked policy retained (per the existing single-core
+    convention).
+  - **SM1.C.12**: 32 new host tests — 6 in `mmu::tests` (sm1c1_*
+    suite: callable on host, accepts all secondary core_ids,
+    debug_assert panic on core 0, signature pinning), 4 in
+    `boot::tests` (sm1c2_* suite: callable on host, signature
+    pinning, idempotence), 4 in `gic::tests` (sm1c3_* suite:
+    same shape), 7 in `timer::tests` (sm1c4_* suite: Ok on host,
+    ZeroTickHz rejection, TICK_COUNT preservation,
+    TIMER_INTERVAL preservation, signature pinning), 11 in
+    `smp::tests` (sm1c5_* suite: ABI signature, every helper
+    resolves via its crate module, full-set callability,
+    aggregate idempotence, `#[no_mangle]` discipline).  Plus 12
+    new Lean assertions in `tests/SmpFoundationsSuite.lean`
+    (`#check` surface anchors for `secondaryKernelMain` and its
+    marker theorem; `runSecondaryKernelMainChecks` runtime
+    section with marker-theorem reachability, runtime BaseIO
+    invocation, and boundary UInt64 input tolerance).
+
+  **Test coverage**: 313 HAL tests (up from 281 at SM1.B close,
+  zero `#[ignore]`'d, zero clippy warnings workspace-wide).  Tier
+  0+1+2+3 all green.  Items deferred past v1.0.0 with correctness
+  impact: NONE.
+
+  **Module reachability**: `Kernel.SecondaryEntry` is staged via
+  `Platform.Staged` (added to the SM1.B/SM1.C closure in the
+  allowlist); SM5 promotes it production-reached when per-core
+  scheduler state lands.
+
+  **Audit-pass-1 refinements** (post-initial-landing):
+  - **`enable_mmu` host-portability fix**: the existing AK5-E.3
+    debug_assert `pt_pa_raw < (1usize << 44)` was unconditional.
+    On x86_64 host PIE binaries the static base address is
+    routinely `0x55...` (≥ 2^44), so SM1.C.1's per-core helper
+    tests that exercised `init_mmu_per_core(0)` on host triggered
+    a false-positive panic.  Gated the 44-bit-PA check on
+    `cfg!(target_arch = "aarch64")`.  The 4-KiB alignment check
+    (the first debug_assert) remains unconditional because
+    `repr(align(4096))` makes the property hold on every target.
+  - **Build-script regression scanners**: three new scanners in
+    `rust/sele4n-hal/build.rs` (`scan_boot_rs_uses_install_exception_vectors`,
+    `scan_smp_rs_uses_install_exception_vectors`, and
+    `scan_smp_rs_invokes_secondary_init_helpers`) pin the SM1.C.2
+    primary/secondary symmetry and the SM1.C.5 init-helper call
+    chain at build time.  A future refactor that drops any of
+    these contracts fails the build with an actionable
+    diagnostic.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

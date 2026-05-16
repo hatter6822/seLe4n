@@ -138,29 +138,29 @@ const TCR_VALUE: u64 = {
 /// |     |         | memory accesses.                                                  |
 mod sctlr_bits {
     #![allow(dead_code)]
-    pub const M:    u64 = 1 << 0;   // MMU enable
-    pub const A:    u64 = 1 << 1;   // Alignment check enable (EL0 + EL1)
-    pub const C:    u64 = 1 << 2;   // Data cache enable
-    pub const SA:   u64 = 1 << 3;   // SP alignment check enable (EL1)
-    pub const SA0:  u64 = 1 << 4;   // SP alignment check enable (EL0, RES1)
+    pub const M: u64 = 1 << 0; // MMU enable
+    pub const A: u64 = 1 << 1; // Alignment check enable (EL0 + EL1)
+    pub const C: u64 = 1 << 2; // Data cache enable
+    pub const SA: u64 = 1 << 3; // SP alignment check enable (EL1)
+    pub const SA0: u64 = 1 << 4; // SP alignment check enable (EL0, RES1)
     pub const CP15BEN: u64 = 1 << 5; // AArch32 CP15 barrier enable (RES0 at AArch64)
-    pub const NAA:  u64 = 1 << 6;   // Non-aligned access: 0 = faults preserved
-    pub const ITD:  u64 = 1 << 7;   // IT instruction disable (RES1 at AArch64)
-    pub const SED:  u64 = 1 << 8;   // SETEND disable (RES1 at AArch64)
-    pub const UMA:  u64 = 1 << 9;   // User Mask Access (PAN-related)
-    pub const EOS:  u64 = 1 << 11;  // Exception Exit Serialization (EL1, RES1)
-    pub const I:    u64 = 1 << 12;  // Instruction cache enable
-    pub const WXN:  u64 = 1 << 19;  // Write permission implies XN (HW W^X)
+    pub const NAA: u64 = 1 << 6; // Non-aligned access: 0 = faults preserved
+    pub const ITD: u64 = 1 << 7; // IT instruction disable (RES1 at AArch64)
+    pub const SED: u64 = 1 << 8; // SETEND disable (RES1 at AArch64)
+    pub const UMA: u64 = 1 << 9; // User Mask Access (PAN-related)
+    pub const EOS: u64 = 1 << 11; // Exception Exit Serialization (EL1, RES1)
+    pub const I: u64 = 1 << 12; // Instruction cache enable
+    pub const WXN: u64 = 1 << 19; // Write permission implies XN (HW W^X)
     /// Bit 20 — architecturally RES1 on ARMv8.0-A; defined as IESB (Implicit
     /// Error Synchronization Barrier) in ARMv8.2-A+. Cortex-A76 implements
     /// ARMv8.2, so setting this to 1 also enables the implicit ESB on
     /// exception entry/exit — a defensive hardening for fault containment.
     pub const RES1_BIT20: u64 = 1 << 20;
-    pub const EIS:  u64 = 1 << 22;  // Exception Entry Serialization (EL1, RES1)
-    pub const SPAN: u64 = 1 << 23;  // Set Privileged Access Never on exception (RES1)
-    pub const EE:   u64 = 1 << 25;  // Exception endianness: 0 = little-endian at EL1
-    pub const TSCXT:u64 = 1 << 28;  // Trap EL0 access to SCXTNUM_EL0 (RES1)
-    pub const RES1_BIT29: u64 = 1 << 29;  // Architecturally RES1
+    pub const EIS: u64 = 1 << 22; // Exception Entry Serialization (EL1, RES1)
+    pub const SPAN: u64 = 1 << 23; // Set Privileged Access Never on exception (RES1)
+    pub const EE: u64 = 1 << 25; // Exception endianness: 0 = little-endian at EL1
+    pub const TSCXT: u64 = 1 << 28; // Trap EL0 access to SCXTNUM_EL0 (RES1)
+    pub const RES1_BIT29: u64 = 1 << 29; // Architecturally RES1
 }
 
 /// AK5-C: Compute the exact SCTLR_EL1 value seLe4n wants on boot.
@@ -230,7 +230,9 @@ pub struct BootL1Table {
 
 impl BootL1Table {
     const fn new() -> Self {
-        Self { entries: [0; L1_ENTRIES] }
+        Self {
+            entries: [0; L1_ENTRIES],
+        }
     }
 }
 
@@ -257,7 +259,9 @@ unsafe impl Sync for PageTableCell {}
 
 impl PageTableCell {
     const fn new(table: BootL1Table) -> Self {
-        Self { inner: UnsafeCell::new(table) }
+        Self {
+            inner: UnsafeCell::new(table),
+        }
     }
 
     /// Run `f` with an `&mut BootL1Table`.
@@ -310,10 +314,14 @@ const _: () = assert!(core::mem::size_of::<BootL1Table>() == L1_ENTRIES * 8);
 // the number of 8-byte u64 slots in a 4 KiB page (512), which is what
 // `BootL1Table` declares. If a future refactor reduces `L1_ENTRIES`
 // to a smaller value, the size assertion above will fail.
-const _: () = assert!(L1_ENTRIES == 512,
-    "L1_ENTRIES must be 512 (4 KiB / 8 bytes/entry) per ARMv8 D8.3");
-const _: () = assert!(core::mem::size_of::<BootL1Table>() == 4096,
-    "BootL1Table must be exactly 4 KiB to fit a single TTBR0 page");
+const _: () = assert!(
+    L1_ENTRIES == 512,
+    "L1_ENTRIES must be 512 (4 KiB / 8 bytes/entry) per ARMv8 D8.3"
+);
+const _: () = assert!(
+    core::mem::size_of::<BootL1Table>() == 4096,
+    "BootL1Table must be exactly 4 KiB to fit a single TTBR0 page"
+);
 
 /// Build identity-mapped L1 page tables for boot.
 ///
@@ -412,12 +420,17 @@ fn enable_mmu() {
     let pt_pa_raw = BOOT_L1_TABLE.pa();
 
     // AK5-E.3: L1 table must be 4 KiB aligned for TTBR BAADDR.
-    debug_assert!(
-        pt_pa_raw & 0xFFF == 0,
-        "BOOT_L1_TABLE not 4 KiB-aligned"
-    );
+    // The `repr(align(4096))` on `PageTableCell` and `BootL1Table`
+    // guarantees this on every target (aarch64 production, x86_64
+    // host); the runtime check is therefore portable.
+    debug_assert!(pt_pa_raw & 0xFFF == 0, "BOOT_L1_TABLE not 4 KiB-aligned");
     // AK5-E.3: PA must be within the platform's physical address window
-    // (RPi5 BCM2712: 44-bit PA per AJ3-B).
+    // (RPi5 BCM2712: 44-bit PA per AJ3-B).  Only checked on aarch64
+    // because on host x86_64 the kernel-image base address is set by
+    // the host loader and routinely exceeds 2^44 (e.g., 0x55... on a
+    // PIE binary), which would false-fault the assert.  WS-SM SM1.C.1
+    // exposed this in the per-core MMU helper tests.
+    #[cfg(target_arch = "aarch64")]
     debug_assert!(
         pt_pa_raw != 0 && pt_pa_raw < (1usize << 44),
         "BOOT_L1_TABLE PA out of 44-bit range"
@@ -426,7 +439,9 @@ fn enable_mmu() {
     let pt_size = PageTableCell::size();
     // SAFETY: `BOOT_L1_TABLE` is a valid RAM address (identity-mapped);
     // `pt_size` is its full extent. No concurrent write per SAFETY bullet 5.
-    unsafe { crate::cache::clean_pagetable_range(pt_pa_raw, pt_size); }
+    unsafe {
+        crate::cache::clean_pagetable_range(pt_pa_raw, pt_size);
+    }
 
     // Step 3: Program TTBR and configuration registers.
     let ttbr_baaddr = (pt_pa_raw as u64) & TTBR_BAADDR_MASK;
@@ -459,7 +474,71 @@ fn enable_mmu() {
 /// write with the full AK5-C bitmap, serialization barriers).
 pub fn init_mmu() {
     build_identity_tables();
+    init_mmu_per_core(0);
+}
+
+/// **WS-SM SM1.C.1** (closes SMP-C2 MMU step): Per-core MMU enable
+/// sequence shared between primary and secondary boot.
+///
+/// Applies the full ARM ARM D8.11 enable-MMU sequence on the calling
+/// core: TLB invalidate, D-cache clean of the boot L1 page-table range,
+/// TCR/MAIR/TTBR programming, SCTLR write (the AK5-C bitmap including
+/// `M | C | I | SA | SA0 | WXN | EOS | EIS | RES1`), and the
+/// serialising barriers (`dsb_ish` + `isb`).
+///
+/// **Caller obligations**:
+/// - The primary must have called [`build_identity_tables`] before any
+///   per-core invocation.  The boot L1 table is then read-only — every
+///   secondary's TTBR0/TTBR1 point at the same physical address.
+/// - CPU at EL1, IRQs disabled, MMU disabled (the reset state for
+///   secondaries entering from PSCI CPU_ON satisfies this).
+///
+/// **`core_id` argument**: informational; the function does not branch
+/// on it.  The primary passes `0`; each secondary passes its PSCI
+/// `context_id`.  Future SM5+ work may use the parameter to populate
+/// per-core diagnostic state without changing the call site.
+///
+/// **Safety**: The shared boot L1 table is read-only post-build, so
+/// concurrent invocation from multiple secondaries is sound.  TTBR
+/// writes program banked per-core registers; TLB invalidate is local
+/// to the calling PE (ARM ARM C6.2.311).
+#[inline]
+pub fn init_mmu_per_core(core_id: u64) {
+    // The `enable_mmu()` body owns the full ARM ARM D8.11 sequence; the
+    // function is private because callers should always go through this
+    // per-core wrapper (or the primary `init_mmu()` wrapper that adds
+    // the table-build step).  Pass `core_id` through for symmetry — a
+    // future refactor that uses it (per-core diagnostic logging, BKL
+    // tracking, etc.) only needs to touch this function.
+    let _ = core_id;
     enable_mmu();
+}
+
+/// **WS-SM SM1.C.1** (closes SMP-C2 MMU step): Secondary-core MMU
+/// initialization.
+///
+/// Called from `smp::rust_secondary_main` Step 1 on every secondary
+/// core after PSCI CPU_ON.  Reuses the boot L1 page tables that the
+/// primary built (i.e., does NOT call `build_identity_tables` — the
+/// table is a global static populated exactly once on the boot core)
+/// and applies the per-core MMU enable sequence via
+/// [`init_mmu_per_core`].
+///
+/// **`core_id`** is the PSCI context_id (1..=`MAX_SECONDARY_CORES`).  A
+/// `debug_assert!` catches a misuse where `init_mmu_secondary` is
+/// called on the boot core (which should call [`init_mmu`] instead).
+///
+/// **Defense in depth**: the W^X bitmap, SP-alignment checks, and
+/// exception serialisation in `SCTLR_EL1` (encoded via
+/// [`compute_sctlr_el1_bitmap`]) are applied identically on every core
+/// — there is no "weaker bitmap on secondaries" path that would create
+/// a security asymmetry between cores.
+pub fn init_mmu_secondary(core_id: u64) {
+    debug_assert!(
+        core_id > 0,
+        "init_mmu_secondary called with core_id 0 — use init_mmu() for the primary"
+    );
+    init_mmu_per_core(core_id);
 }
 
 #[cfg(test)]
@@ -565,8 +644,11 @@ mod tests {
         // AK5-C: Bit 19 (WXN) MUST be set — HW layer of the four-layer
         // W^X defense-in-depth.
         let sctlr = compute_sctlr_el1_bitmap();
-        assert_ne!(sctlr & (1 << 19), 0,
-            "SCTLR_EL1.WXN is zero — HW W^X defeated");
+        assert_ne!(
+            sctlr & (1 << 19),
+            0,
+            "SCTLR_EL1.WXN is zero — HW W^X defeated"
+        );
     }
 
     #[test]
@@ -595,8 +677,11 @@ mod tests {
         // {4, 7, 8, 23}).
         let sctlr = compute_sctlr_el1_bitmap();
         for bit in [4u32, 7, 8, 11, 20, 22, 23, 28, 29] {
-            assert_ne!(sctlr & (1u64 << bit), 0,
-                "RES1 bit {bit} is zero in SCTLR bitmap");
+            assert_ne!(
+                sctlr & (1u64 << bit),
+                0,
+                "RES1 bit {bit} is zero in SCTLR bitmap"
+            );
         }
     }
 
@@ -608,8 +693,11 @@ mod tests {
         let sctlr = compute_sctlr_el1_bitmap();
         const LINUX_RES1: u64 =
             (1u64 << 11) | (1u64 << 20) | (1u64 << 22) | (1u64 << 28) | (1u64 << 29);
-        assert_eq!(sctlr & LINUX_RES1, LINUX_RES1,
-            "SCTLR bitmap missing a Linux SCTLR_EL1_RES1 bit");
+        assert_eq!(
+            sctlr & LINUX_RES1,
+            LINUX_RES1,
+            "SCTLR bitmap missing a Linux SCTLR_EL1_RES1 bit"
+        );
     }
 
     #[test]
@@ -623,7 +711,11 @@ mod tests {
         // EE (bit 25) — must be 0 (little-endian).
         assert_eq!(sctlr & (1 << 25), 0, "EE (EL1 big-endian) unexpectedly set");
         // E0E (bit 24) — must be 0 (EL0 little-endian).
-        assert_eq!(sctlr & (1 << 24), 0, "E0E (EL0 big-endian) unexpectedly set");
+        assert_eq!(
+            sctlr & (1 << 24),
+            0,
+            "E0E (EL0 big-endian) unexpectedly set"
+        );
     }
 
     #[test]
@@ -668,5 +760,75 @@ mod tests {
         // CnP bit 0 and any reserved low bits are cleared.
         let dirty: u64 = 0x1234_5FFF;
         assert_eq!(dirty & TTBR_BAADDR_MASK, 0x1234_5000);
+    }
+
+    // =====================================================================
+    // WS-SM SM1.C.1 — Per-core MMU helper tests
+    // =====================================================================
+
+    #[test]
+    fn sm1c1_init_mmu_per_core_callable_on_host() {
+        // SM1.C.1: host stub of `init_mmu_per_core` is a no-op chain
+        // through the MMIO/register write helpers (each of which is a
+        // no-op on non-aarch64).  This test exercises the call graph
+        // so a regression that adds a panic on the host path surfaces
+        // here.  `core_id = 0` is the boot-core slot.
+        init_mmu_per_core(0);
+    }
+
+    #[test]
+    fn sm1c1_init_mmu_per_core_accepts_secondary_core_ids() {
+        // SM1.C.1: every plausible secondary core_id (1..=3 on RPi5)
+        // must be callable.  This catches a regression where someone
+        // adds a precondition `core_id < MAX_SECONDARY_CORES` to the
+        // per-core helper itself (only `init_mmu_secondary` should
+        // gate on `core_id > 0`).
+        for core_id in [1u64, 2, 3] {
+            init_mmu_per_core(core_id);
+        }
+    }
+
+    #[test]
+    fn sm1c1_init_mmu_secondary_callable_with_secondary_core_id() {
+        // SM1.C.1: `init_mmu_secondary` is the production entry point
+        // for secondary-core MMU enable.  Verify host invocation
+        // succeeds for every secondary core_id.
+        for core_id in [1u64, 2, 3] {
+            init_mmu_secondary(core_id);
+        }
+    }
+
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "init_mmu_secondary called with core_id 0")]
+    fn sm1c1_init_mmu_secondary_panics_on_boot_core_id() {
+        // SM1.C.1: passing `core_id = 0` to `init_mmu_secondary` is a
+        // misuse (the boot core should call `init_mmu`).  The debug
+        // assertion catches this regression.  Release builds skip the
+        // assert so this test is gated on `debug_assertions`.
+        init_mmu_secondary(0);
+    }
+
+    #[test]
+    fn sm1c1_init_mmu_signature_is_no_arg_fn() {
+        // SM1.C.1: the primary `init_mmu` keeps its no-argument
+        // signature post-refactor so existing callers in
+        // `boot.rs::rust_boot_main` still resolve.
+        let _: fn() = init_mmu;
+    }
+
+    #[test]
+    fn sm1c1_init_mmu_per_core_signature_takes_u64() {
+        // SM1.C.1: the helper takes a u64 core_id (PSCI context_id
+        // convention).  A future refactor to `usize` would break the
+        // asm-side caller (`x0` from PSCI is u64), so we pin the
+        // signature at the type-system level.
+        let _: fn(u64) = init_mmu_per_core;
+    }
+
+    #[test]
+    fn sm1c1_init_mmu_secondary_signature_takes_u64() {
+        // SM1.C.1: same as above for the secondary entry point.
+        let _: fn(u64) = init_mmu_secondary;
     }
 }

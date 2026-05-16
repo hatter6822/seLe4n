@@ -73,6 +73,21 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   in `SeLe4n/Kernel/Concurrency/Runtime.lean`.  21 new unit tests
   in `per_cpu::tests` + 3 in `ffi::tests` + 4 back-compat tests
   in `smp::tests`.
+- **Secondary-core full init** (WS-SM SM1.C / closes SMP-C2):
+  `rust_secondary_main` rewritten as the full per-core boot
+  sequence — `mmu::init_mmu_secondary` (with the shared per-core
+  helper `init_mmu_per_core`), `boot::install_exception_vectors`
+  (shared with primary's `rust_boot_main`),
+  `gic::init_cpu_interface_secondary`, `timer::init_timer_secondary`
+  (preserving the primary's monotonic `TICK_COUNT`), IRQ unmask,
+  then `lean_secondary_kernel_main(context_id)`.  Lean side: new
+  module `SeLe4n/Kernel/SecondaryEntry.lean` with
+  `@[export lean_secondary_kernel_main]` placeholder
+  (`pure ()` at SM1.C; SM5 replaces with per-core scheduler entry).
+  Three new `build.rs` scanners pin the primary/secondary symmetry
+  at the call-site level.  32 new HAL unit tests + 12 new Lean
+  assertions in `SmpFoundationsSuite.lean` (surface anchors,
+  marker-theorem discharges, runtime BaseIO invocation).
 
 The **runtime** validation that complements these static guarantees
 (QEMU virt boots, RPi 5 silicon validation) is documented in

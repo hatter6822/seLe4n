@@ -316,6 +316,87 @@ covered exhaustively by the Rust `per_cpu::tests` and
 `mrs tpidr_el1` read) will be covered by SM1.H's QEMU `-smp 4`
 boot-trace test.
 
+**WS-SM SM1.C LANDED at v0.31.5 on branch
+`claude/review-codebase-secondary-core-PgqGR`** (secondary-core
+full init, closes SMP-C2).  Twelve sub-tasks landed in one cut,
+rewriting the previously-thin `rust_secondary_main` shell into
+the full per-core boot sequence (MMU → VBAR → GIC → timer → IRQ
+→ Lean kernel) shared symmetrically with the primary boot path:
+
+- **SM1.C.1**: `mmu::init_mmu_secondary(core_id)` + extracted
+  `mmu::init_mmu_per_core(core_id)` helper.  The primary's
+  `init_mmu()` now routes through `init_mmu_per_core(0)` after
+  `build_identity_tables()`; secondaries skip the table-build
+  step (boot L1 table is a read-only global) and apply the
+  per-core MMU enable sequence with the AK5-C SCTLR_EL1 bitmap.
+  Audit follow-up cfg-gated the `pt_pa_raw < 2^44` debug_assert
+  to aarch64 (host x86_64 PIE binaries routinely exceed 2^44).
+- **SM1.C.2**: `boot::install_exception_vectors()` — VBAR_EL1
+  install extracted from the formerly-private `set_vbar` and
+  made `pub` so the secondary path reaches it via the same
+  module name the primary uses.  Two new build.rs scanners pin
+  the primary/secondary call-site symmetry.
+- **SM1.C.3**: `gic::init_cpu_interface_secondary(core_id)` —
+  wraps the existing `init_cpu_interface(GICC_BASE)` (banked
+  per-core) with a per-core diagnostic kprintln.  The global
+  distributor is initialised once by the primary's `init_gic()`.
+- **SM1.C.4**: `timer::init_timer_secondary(tick_hz) ->
+  Result<(), TimerError>` — per-core timer arming.  Deliberately
+  does NOT reset the global `TICK_COUNT` (primary-owned monotonic
+  counter) or rewrite `TIMER_INTERVAL` (primary already populated
+  it; same value on every core).  Failure on a secondary halts
+  just that core via WFE loop.
+- **SM1.C.5**: `rust_secondary_main` body rewrite — eight-step
+  pipeline (CORE_READY wait, MMU, VBAR, GIC, timer, IRQ unmask,
+  Lean kernel entry, idle fallback).  A new build.rs scanner
+  enumerates the six required call sites by name and fails the
+  build if any is silently dropped.
+- **SM1.C.6**: Lean `SeLe4n.Kernel.SecondaryEntry.secondaryKernelMain
+  : UInt64 → BaseIO Unit` with `@[export lean_secondary_kernel_main]`
+  — new module file.  Body is `pure ()` at SM1.C (deliberate
+  placeholder; SM5 replaces with per-core scheduler entry).
+  Marker theorem `secondaryKernelMain_returns_unit_marker`
+  witnesses the placeholder by `rfl`.  Module reached via
+  `Platform.Staged`; added to staged-module allowlist.
+- **SM1.C.7..C.11**: documentation-only sub-tasks — per-core
+  stack reservation in `link.ld`, MMU page-table reuse rationale,
+  per-core SCTLR_EL1 + VBAR_EL1 (covered by SM1.C.1/SM1.C.2
+  helpers), SError handler masked policy retained.
+- **SM1.C.12**: 32 new host tests across `mmu::tests`,
+  `boot::tests`, `gic::tests`, `timer::tests`, `smp::tests`
+  (sm1c1_*, sm1c2_*, sm1c3_*, sm1c4_*, sm1c5_* prefixes
+  respectively) covering callability, signature pinning,
+  panic-path coverage, monotonic-counter preservation,
+  aggregate idempotence, and `#[no_mangle]` discipline.  Plus
+  12 new Lean assertions in `tests/SmpFoundationsSuite.lean`
+  (surface anchors + marker-theorem discharges + runtime
+  BaseIO invocation + boundary input tolerance).
+
+**Test coverage**: 313 HAL tests (was 281 at SM1.B close), zero
+`#[ignore]`'d, zero clippy warnings workspace-wide.  Tier
+0+1+2+3 all green.  Items deferred past v1.0.0 with correctness
+impact: NONE.
+
+**Module reachability**: `Kernel.SecondaryEntry` is staged via
+`Platform.Staged` (added to the SM1.B/SM1.C closure in the
+allowlist); SM5 promotes it production-reached when per-core
+scheduler state lands.
+
+**Audit-pass refinements** (post-initial-landing):
+- HIGH-portability fix: `enable_mmu`'s `pt_pa_raw < 2^44`
+  debug_assert was unconditional and false-faulted on x86_64
+  host PIE binaries.  Cfg-gated on aarch64.
+- Build-script regression scanners:
+  `scan_boot_rs_uses_install_exception_vectors`,
+  `scan_smp_rs_uses_install_exception_vectors`,
+  `scan_smp_rs_invokes_secondary_init_helpers` pin the
+  primary/secondary symmetry and init-helper call chain.
+
+Follow-on: SM1.D..H (DTB cmdline, IS-variant TLBI, SGI primitive,
+per-core UART, QEMU SMP integration) — see
+[`docs/planning/SMP_RUST_HAL_PLAN.md`](planning/SMP_RUST_HAL_PLAN.md)
+§§5.4..5.8.
+
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
 refactor retained as a post-1.0 cosmetic improvement; tracked at the
