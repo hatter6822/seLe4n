@@ -1762,6 +1762,25 @@ delivered in the same v0.31.6 patch release):
 isolation tests for a total of 420 HAL tests post-audit-pass-1.
 Zero clippy warnings workspace-wide.
 
+**Audit-pass-2 refinements** (second deep audit, also v0.31.6):
+
+- **MEDIUM `validate_fdt_header` boundary hardening**: reject
+  DTBs whose `off_dt_struct < FDT_HEADER_SIZE` or
+  `off_dt_strings < FDT_HEADER_SIZE`.  Block overlapping
+  header is malformed per FDT spec §5.2.
+- **MEDIUM walker fail-closed regression tests**: added
+  coverage for unknown FDT tokens, FDT_NOP-chain fuel
+  exhaustion, and deep-nesting depth bound.
+- **Cleanup**: removed obsolete pre-pass-1
+  `apply_disabled_returns_zero_online` test (no-op that didn't
+  call the function under test; pass-1 `apply_inner_*` tests
+  supersede).
+
+**Audit-pass-2 test delta**: +5 net (+6 regression − 1
+obsolete cleanup) for a total of 425 HAL tests post-audit-pass-2.
+Cumulative SM1.D additions: +98 (76 in cmdline.rs NEW FILE, 17
+in smp.rs sm1d6_*, 5 in boot.rs sm1d_*).
+
 The remaining sub-section text below describes the original
 plan skeleton; the landed implementation matches or exceeds
 every acceptance criterion.

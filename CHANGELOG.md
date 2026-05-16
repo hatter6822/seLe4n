@@ -311,16 +311,63 @@ discipline (including a regression test
 that guards against the obvious bug-shape where the disabled
 branch forgets to commit the false state).
 
-### Audit-pass-1 test coverage delta
+### Audit-pass-2 refinements (second deep audit, post-pass-1)
 
-- 420 HAL tests post-audit-pass-1 (+25 over the initial-landing
-  count of 395, all delivered in the same patch release; no
-  separate v0.31.7).  Per-file math: +17 audit-pass-1 tests in
-  cmdline.rs (4 chosen sub-node / version, 2 MAX_DTB_SIZE, 2
-  sanity, 1 padding stress, 6 apply_inner, 2 signature pins) +
-  8 inner-form tests in smp.rs (sm1d6_inner_*).
+A second deep audit caught additional defense-in-depth gaps and a
+small obsolescence:
+
+- **MEDIUM: header-offset boundary checks added to
+  `validate_fdt_header`**.  The pre-pass-2 form did not check
+  that `off_dt_struct >= FDT_HEADER_SIZE` or
+  `off_dt_strings >= FDT_HEADER_SIZE`.  A hostile DTB with
+  `off_dt_struct = 0` would have the structure block overlap
+  the 40-byte header; the walker would interpret magic bytes
+  (and other header fields) as FDT tokens, mostly failing as
+  unknown-token errors but structurally nonsense.  An
+  `off_dt_strings < FDT_HEADER_SIZE` would have a property's
+  nameoff lookup return a substring of header bytes as a
+  property name.  Both cases are now rejected at validate.
+  New regression tests
+  `dtb_with_struct_offset_below_header_rejected`,
+  `dtb_with_strings_offset_below_header_rejected`, and
+  `dtb_with_struct_offset_at_header_boundary_accepted` cover
+  the new bound on both sides.
+- **MEDIUM: fail-closed tests for malformed-walker paths**.
+  Added regression tests
+  `dtb_with_unknown_fdt_token_yields_empty` (unknown FDT token
+  causes None return),
+  `dtb_with_nop_chain_terminates_via_fuel_exhaustion` (a DTB
+  composed entirely of FDT_NOPs without FDT_END terminates via
+  fuel exhaustion rather than spinning), and
+  `dtb_with_deep_nesting_rejected_via_depth_bound` (a DTB
+  nesting > FDT_MAX_DEPTH nodes is rejected by the depth
+  bound).  All three closed coverage gaps in the malicious-DTB
+  threat model.
+- **Cleanup: removed obsolete `apply_disabled_returns_zero_online`
+  test**.  The pre-pass-1 test was a no-op (it didn't actually
+  call `apply_cmdline_and_start_smp` due to global-state race
+  concerns); the pass-1 `apply_inner_*` tests properly exercise
+  the function with explicit state references and supersede it.
+
+### Audit-pass-2 test coverage delta
+
+- 425 HAL tests post-audit-pass-2 (+5 over pass-1's 420, all
+  delivered in the same patch release).  Per-file math:
+  +6 audit-pass-2 regression tests in cmdline.rs (3 header-offset
+  bound, 1 unknown token, 1 NOP fuel exhaustion, 1 depth
+  exhaustion) − 1 obsolete `apply_disabled_returns_zero_online`
+  test.
+
+### Cumulative audit test coverage (v0.31.6 final)
+
+- 425 HAL tests, zero `#[ignore]`'d (up from 327 at SM1.D
+  start, total +98 across all SM1.D audit passes).  Per-file
+  totals: 76 in cmdline.rs (NEW FILE — all SM1.D-related: 54
+  initial landing + 17 audit-pass-1 + 5 audit-pass-2 net), 17
+  sm1d6_* tests in smp.rs (9 initial + 8 audit-pass-1
+  sm1d6_inner_*), 5 sm1d_* tests in boot.rs.
 - Zero clippy warnings workspace-wide.
-- Full Tier 0+1+2 smoke test passes (Lean build, 420/420 HAL
+- Full Tier 0+1+2 smoke test passes (Lean build, 425/425 HAL
   tests, 94/94 ABI conformance tests).
 
 ### Audit-pass-1 code-quality refinements

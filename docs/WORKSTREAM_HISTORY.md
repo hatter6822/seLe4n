@@ -536,6 +536,26 @@ shipped in the same v0.31.6 patch release):
 isolation tests for a total of 420 HAL tests post-audit.
 Zero clippy warnings workspace-wide; Tier 0+1+2+3 all green.
 
+**Audit-pass-2 refinements** (second deep audit, post-pass-1;
+also v0.31.6):
+- MEDIUM `validate_fdt_header` boundary hardening — reject
+  DTBs whose `off_dt_struct < FDT_HEADER_SIZE` or
+  `off_dt_strings < FDT_HEADER_SIZE` (block overlapping
+  header).
+- MEDIUM fail-closed regression tests for malformed-walker
+  paths (unknown FDT token, FDT_NOP fuel exhaustion, deep
+  nesting depth bound).
+- Cleanup: removed pre-pass-1 obsolete test
+  `apply_disabled_returns_zero_online` (no-op that didn't call
+  the function under test; pass-1 `apply_inner_*` tests
+  supersede).
+
+**Audit-pass-2 test delta**: 425 HAL tests (+5 net over
+pass-1's 420). Cumulative SM1.D test additions: +98 across
+cmdline.rs (NEW FILE, 76 tests), smp.rs sm1d6_* (17 tests),
+boot.rs sm1d_* (5 tests).  Zero clippy warnings; Tier 0+1+2+3
+all green.
+
 **Build-script regression scanner**:
 `scan_boot_rs_phase5_uses_cmdline` in `rust/sele4n-hal/build.rs`
 pins the textual presence of `cmdline::parse_cmdline_from_dtb(`

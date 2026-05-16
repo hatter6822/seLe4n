@@ -456,7 +456,13 @@ fn parse_fdt_header(blob: &[u8]) -> Option<FdtHeader> {
 ///   4. `totalsize >= FDT_HEADER_SIZE`.
 ///   5. Offsets `off_dt_struct` / `off_dt_strings` are 4-byte aligned
 ///      (FDT tokens require 4-byte alignment).
-///   6. Both blocks fit inside `totalsize`.
+///   6. Offsets `off_dt_struct` / `off_dt_strings` are at or beyond
+///      the header itself (audit-pass-2 defense-in-depth: a hostile
+///      DTB with `off_dt_struct = 0` would have the structure block
+///      overlap the header, causing the walker to interpret magic
+///      bytes as FDT tokens; the walker fails closed on the unknown
+///      token but we reject earlier for clarity).
+///   7. Both blocks fit inside `totalsize`.
 fn validate_fdt_header(hdr: &FdtHeader) -> bool {
     if hdr.magic != FDT_MAGIC {
         return false;
@@ -480,6 +486,21 @@ fn validate_fdt_header(hdr: &FdtHeader) -> bool {
         return false;
     }
     if hdr.off_dt_strings % 4 != 0 {
+        return false;
+    }
+    // Audit-pass-2: block offsets must be at or beyond the 40-byte
+    // header.  An `off_dt_struct < FDT_HEADER_SIZE` would have the
+    // structure block overlap the header — the walker would read
+    // header bytes (magic, totalsize, etc.) as FDT tokens, which
+    // would mostly fail as unknown-token errors but is structurally
+    // nonsense.  An `off_dt_strings < FDT_HEADER_SIZE` would have
+    // the strings block overlap the header — a property's nameoff
+    // lookup could return a substring of header bytes as the
+    // property name.  Both cases are malformed; reject at validate.
+    if (hdr.off_dt_struct as u64) < FDT_HEADER_SIZE as u64 {
+        return false;
+    }
+    if (hdr.off_dt_strings as u64) < FDT_HEADER_SIZE as u64 {
         return false;
     }
     // Block end must fit inside the total size.  Use u64 arithmetic
@@ -979,6 +1000,7 @@ pub(crate) fn apply_cmdline_and_start_smp_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::format;
     use std::vec;
     use std::vec::Vec;
 
@@ -1452,30 +1474,14 @@ mod tests {
 
     // ========================================================================
     // SM1.D.2 — apply_cmdline_and_start_smp behavioural tests
+    //
+    // The audit-pass-1 `apply_cmdline_and_start_smp_inner` form takes
+    // explicit state references so we can fully exercise the
+    // dispatch without racing against the global SMP_ENABLED atomic.
+    // Tests for that inner form are below in the
+    // "audit-pass-1 — apply_cmdline_and_start_smp_inner tests"
+    // section; this comment block is kept as a navigation anchor.
     // ========================================================================
-
-    #[test]
-    fn apply_disabled_returns_zero_online() {
-        // SM1.D.2: when cmdline says smp_enabled=false, no
-        // secondaries are brought up.  We don't touch the global
-        // atomic (which is shared between tests); reading it would
-        // race with parallel tests.  Instead we exercise the helper
-        // with a fresh local state via bring_up_secondaries_inner.
-        //
-        // This test only verifies the dispatch: the parser produces
-        // smp_enabled=false, the action helper sees it, and the
-        // CPU_ON loop is bypassed.  The behavioural test for
-        // bring_up_secondaries_with_limit is in smp::tests below.
-        let cfg = CmdlineConfig {
-            smp_enabled: false,
-            smp_max_cores: 4,
-        };
-        // We cannot call apply_cmdline_and_start_smp directly here
-        // because it mutates the global SMP_ENABLED atomic and races
-        // with other tests.  Instead we verify the dispatch logic by
-        // reading the cfg fields.
-        assert!(!cfg.smp_enabled);
-    }
 
     // ========================================================================
     // SM1.D.1 — Test fixtures (DTB blob builders)
@@ -1797,6 +1803,176 @@ mod tests {
     #[test]
     fn fdt_parser_version_is_seventeen() {
         assert_eq!(FDT_PARSER_VERSION, 17);
+    }
+
+    /// **Audit-pass-2 regression**: a DTB with `off_dt_struct < 40`
+    /// (the header size) overlaps the structure block with the
+    /// header.  This is malformed per FDT spec §5.2 (the structure
+    /// block comes after the header), and exploiting it could
+    /// confuse the walker — we reject at validate.
+    #[test]
+    fn dtb_with_struct_offset_below_header_rejected() {
+        let mut blob = build_dtb_with_bootargs(b"smp_enabled=false");
+        // Overwrite off_dt_struct (bytes 8..12) with 4 (in header).
+        // This is 4-byte aligned but inside the header.
+        blob[8..12].copy_from_slice(&4u32.to_be_bytes());
+        assert!(
+            find_bootargs_in_dtb(&blob).is_none(),
+            "DTB with off_dt_struct overlapping header must be rejected"
+        );
+    }
+
+    /// **Audit-pass-2 regression**: a DTB with `off_dt_strings < 40`
+    /// overlaps the strings block with the header.  A property's
+    /// nameoff lookup could return a substring of header bytes as
+    /// the property name (e.g., magic bytes followed by a null
+    /// somewhere in totalsize/offsets).  Reject at validate.
+    #[test]
+    fn dtb_with_strings_offset_below_header_rejected() {
+        let mut blob = build_dtb_with_bootargs(b"smp_enabled=false");
+        // Overwrite off_dt_strings (bytes 12..16) with 4 (in header).
+        blob[12..16].copy_from_slice(&4u32.to_be_bytes());
+        assert!(
+            find_bootargs_in_dtb(&blob).is_none(),
+            "DTB with off_dt_strings overlapping header must be rejected"
+        );
+    }
+
+    /// **Audit-pass-2 regression**: a DTB with `off_dt_struct ==
+    /// FDT_HEADER_SIZE` (exactly at the boundary) must be accepted
+    /// — this is the canonical layout where the structure block
+    /// starts immediately after the 40-byte header.
+    #[test]
+    fn dtb_with_struct_offset_at_header_boundary_accepted() {
+        let dtb = build_dtb_with_bootargs(b"smp_enabled=false");
+        // The default fixture has off_dt_struct = 40 = FDT_HEADER_SIZE.
+        let off_dt_struct = u32::from_be_bytes([dtb[8], dtb[9], dtb[10], dtb[11]]);
+        assert_eq!(off_dt_struct, FDT_HEADER_SIZE as u32);
+        assert!(
+            find_bootargs_in_dtb(&dtb).is_some(),
+            "DTB with off_dt_struct == FDT_HEADER_SIZE (canonical layout) \
+             must be accepted"
+        );
+    }
+
+    /// **Audit-pass-2 regression**: a DTB containing an unknown FDT
+    /// token (not BEGIN_NODE, END_NODE, PROP, NOP, or END) is
+    /// malformed and the walker must fail closed.
+    #[test]
+    fn dtb_with_unknown_fdt_token_yields_empty() {
+        // Build a normal DTB but inject an unknown token (0x42) at
+        // the start of the structure block.  The walker should see
+        // this and return None.
+        let mut dtb = build_dtb_with_bootargs(b"smp_enabled=false");
+        // Find the off_dt_struct value (header bytes 8..12).
+        let off_dt_struct =
+            u32::from_be_bytes([dtb[8], dtb[9], dtb[10], dtb[11]]) as usize;
+        // Overwrite the first 4 bytes of the structure block with an
+        // unknown token value (0x42).
+        let unknown_token = 0x42u32.to_be_bytes();
+        dtb[off_dt_struct..off_dt_struct + 4].copy_from_slice(&unknown_token);
+        assert!(
+            find_bootargs_in_dtb(&dtb).is_none(),
+            "DTB with unknown FDT token must fail closed"
+        );
+    }
+
+    /// **Audit-pass-2 regression**: fuel exhaustion check — a DTB
+    /// composed entirely of FDT_NOP tokens (with no FDT_END) would
+    /// consume fuel indefinitely without the FDT_WALK_FUEL bound.
+    /// The walker must terminate (returning None) after exhausting
+    /// fuel rather than spinning forever.
+    #[test]
+    fn dtb_with_nop_chain_terminates_via_fuel_exhaustion() {
+        // Build a DTB whose structure block is all NOPs.  We need
+        // more than FDT_WALK_FUEL bytes of NOPs to force fuel
+        // exhaustion (each NOP consumes 1 fuel and 4 bytes).
+        // 4096 NOPs * 4 bytes = 16384 bytes of NOPs.  We'll build a
+        // DTB with FDT_WALK_FUEL + 100 NOPs, so we hit fuel
+        // exhaustion before structure-block end.
+        let nop_count = FDT_WALK_FUEL + 100;
+        let mut s: Vec<u8> = Vec::with_capacity(nop_count * 4);
+        for _ in 0..nop_count {
+            s.extend_from_slice(&FDT_NOP.to_be_bytes());
+        }
+        // No FDT_END appended — fuel must exhaust.
+
+        let strings: Vec<u8> = Vec::new();
+        let off_dt_struct = FDT_HEADER_SIZE;
+        let off_dt_strings = off_dt_struct + s.len();
+        let totalsize = off_dt_strings + strings.len();
+        // Sanity: totalsize must be within MAX_DTB_SIZE for this test
+        // to make sense (otherwise the size guard rejects before
+        // the walker even runs).
+        assert!(totalsize <= MAX_DTB_SIZE);
+
+        let mut blob = Vec::with_capacity(totalsize);
+        blob.extend_from_slice(&FDT_MAGIC.to_be_bytes());
+        blob.extend_from_slice(&(totalsize as u32).to_be_bytes());
+        blob.extend_from_slice(&(off_dt_struct as u32).to_be_bytes());
+        blob.extend_from_slice(&(off_dt_strings as u32).to_be_bytes());
+        blob.extend_from_slice(&(FDT_HEADER_SIZE as u32).to_be_bytes());
+        blob.extend_from_slice(&17u32.to_be_bytes());
+        blob.extend_from_slice(&16u32.to_be_bytes());
+        blob.extend_from_slice(&0u32.to_be_bytes());
+        blob.extend_from_slice(&(strings.len() as u32).to_be_bytes());
+        blob.extend_from_slice(&(s.len() as u32).to_be_bytes());
+        blob.extend_from_slice(&s);
+        blob.extend_from_slice(&strings);
+
+        // Walker must terminate (returning None) — if fuel weren't
+        // bounded this test would hang.
+        assert!(
+            find_bootargs_in_dtb(&blob).is_none(),
+            "NOP-chain DTB must fail-close via fuel exhaustion"
+        );
+    }
+
+    /// **Audit-pass-2 regression**: depth-exhaustion check — a DTB
+    /// nesting nodes more than FDT_MAX_DEPTH (32) deep must be
+    /// rejected without stack-overflowing the walker.
+    #[test]
+    fn dtb_with_deep_nesting_rejected_via_depth_bound() {
+        // Build a DTB with FDT_MAX_DEPTH + 2 nested BEGIN_NODE
+        // tokens (no END_NODEs).  When depth exceeds FDT_MAX_DEPTH
+        // the walker returns None.
+        let depth_count = FDT_MAX_DEPTH + 2;
+        let mut s: Vec<u8> = Vec::with_capacity(depth_count * 8);
+        for i in 0..depth_count {
+            s.extend_from_slice(&FDT_BEGIN_NODE.to_be_bytes());
+            // Name "nN" + null + padding (4 bytes total for short names).
+            let name = format!("n{}\0", i);
+            s.extend_from_slice(name.as_bytes());
+            // Pad to 4-byte boundary.
+            while s.len() % 4 != 0 {
+                s.push(0);
+            }
+        }
+
+        let strings: Vec<u8> = Vec::new();
+        let off_dt_struct = FDT_HEADER_SIZE;
+        let off_dt_strings = off_dt_struct + s.len();
+        let totalsize = off_dt_strings + strings.len();
+        assert!(totalsize <= MAX_DTB_SIZE);
+
+        let mut blob = Vec::with_capacity(totalsize);
+        blob.extend_from_slice(&FDT_MAGIC.to_be_bytes());
+        blob.extend_from_slice(&(totalsize as u32).to_be_bytes());
+        blob.extend_from_slice(&(off_dt_struct as u32).to_be_bytes());
+        blob.extend_from_slice(&(off_dt_strings as u32).to_be_bytes());
+        blob.extend_from_slice(&(FDT_HEADER_SIZE as u32).to_be_bytes());
+        blob.extend_from_slice(&17u32.to_be_bytes());
+        blob.extend_from_slice(&16u32.to_be_bytes());
+        blob.extend_from_slice(&0u32.to_be_bytes());
+        blob.extend_from_slice(&(strings.len() as u32).to_be_bytes());
+        blob.extend_from_slice(&(s.len() as u32).to_be_bytes());
+        blob.extend_from_slice(&s);
+        blob.extend_from_slice(&strings);
+
+        assert!(
+            find_bootargs_in_dtb(&blob).is_none(),
+            "deeply-nested DTB must fail-close via depth bound"
+        );
     }
 
     /// **Audit-pass-1 sanity**: the LongPropertyLayout we use

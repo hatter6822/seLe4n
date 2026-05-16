@@ -1272,6 +1272,37 @@ documentation lives under `docs/` and `docs/gitbook/`.
   warnings workspace-wide; full Tier 0+1+2 smoke green; full
   Tier 3 invariant surface green.
 
+  **Audit-pass-2 refinements** (second deep audit, post-pass-1;
+  also in v0.31.6):
+  - **MEDIUM `validate_fdt_header` boundary hardening**: added
+    checks that `off_dt_struct >= FDT_HEADER_SIZE` and
+    `off_dt_strings >= FDT_HEADER_SIZE` so a hostile DTB with
+    `off_dt_struct = 0` (structure block overlapping the
+    header) is rejected at validate rather than fail-closing
+    in the walker.  An `off_dt_strings` overlapping the header
+    could also have a property's nameoff lookup return header
+    bytes as a property name — same rejection.
+  - **MEDIUM fail-closed regression tests for malformed-walker
+    paths**: added `dtb_with_unknown_fdt_token_yields_empty`
+    (unknown FDT token → None),
+    `dtb_with_nop_chain_terminates_via_fuel_exhaustion`
+    (FDT_NOP chain without FDT_END terminates via fuel
+    exhaustion rather than spinning), and
+    `dtb_with_deep_nesting_rejected_via_depth_bound` (>
+    FDT_MAX_DEPTH nested nodes rejected).  These close
+    coverage gaps in the malicious-DTB threat model.
+  - **Cleanup**: removed the obsolete pre-pass-1 test
+    `apply_disabled_returns_zero_online` (was a no-op that
+    didn't call the function under test; pass-1's
+    `apply_inner_*` tests supersede it).
+
+  **Audit-pass-2 test coverage delta**: 425 HAL tests (was 420
+  at audit-pass-1 close).  Per-file math: +6 audit-pass-2
+  regression tests in cmdline.rs (3 header-offset bound, 1
+  unknown token, 1 NOP fuel exhaustion, 1 depth bound) − 1
+  obsolete pre-pass-1 cleanup.  Net +5; full Tier 0+1+2+3 still
+  green.
+
   **Items deferred past v1.0.0 with correctness impact**: NONE.
 
   Follow-on: SM1.E (IS-variant TLBI), SM1.F (SGI primitive),
