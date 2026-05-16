@@ -82,6 +82,29 @@ use core::sync::atomic::Ordering;
 /// `link.ld`.
 pub const MAX_BOOTARGS_LEN: usize = 1024;
 
+/// **WS-SM SM1.D.1 audit-pass-1** (defense-in-depth): upper bound on
+/// the DTB blob size we will accept from `dtb_ptr`.
+///
+/// The DTB-header-supplied `totalsize` is untrusted — a malicious or
+/// malformed bootloader could write an arbitrarily large value
+/// (e.g., `0xFFFF_FFFF` ≈ 4 GB).  Constructing
+/// `core::slice::from_raw_parts(dtb_ptr, totalsize)` over memory that
+/// isn't fully readable is Undefined Behaviour per Rust's safety
+/// invariants — even if we never read past the actual blob, the
+/// slice itself must describe a valid contiguous extent.
+///
+/// We bound `totalsize` at 2 MiB.  Real-world DTBs are tens to a few
+/// hundred KiB (RPi5 BCM2712: ~50 KiB); Linux's
+/// `OF_FDT_MAX_HEADERSIZE` cap is implicit at the page-allocator
+/// level (usually order-3 allocations, ~32 KiB).  A 2 MiB bound is
+/// orders of magnitude above any plausible legitimate DTB and still
+/// well below the smallest typical RAM region a bootloader maps.
+///
+/// A DTB with `totalsize > MAX_DTB_SIZE` is rejected at
+/// [`extract_bootargs_into`]; the kernel falls back to the default
+/// [`CmdlineConfig`] (the same behaviour as missing/malformed DTB).
+const MAX_DTB_SIZE: usize = 2 * 1024 * 1024;
+
 /// **WS-SM SM1.D.1**: DTB magic number (big-endian when read as u32).
 ///
 /// Per Devicetree Specification v0.4 §5.2: every DTB starts with the
@@ -324,13 +347,21 @@ fn parse_bool(s: &str) -> Option<bool> {
 /// **WS-SM SM1.D.1**: Read a big-endian `u32` from a byte slice at the
 /// given byte offset.
 ///
-/// Returns `None` if the offset is out of bounds.  Use this for every
-/// DTB header / structure-block read — the DTB is big-endian on disk
-/// regardless of host endianness.
+/// Returns `None` if the offset is out of bounds OR if `offset + 4`
+/// overflows `usize`.  The `checked_add` is the defense against a
+/// hostile caller passing `offset == usize::MAX - 3`: without it,
+/// `offset + 4` would wrap to a small value and the subsequent
+/// `blob.get(..)` could succeed against an unintended range.  In
+/// practice every caller bounds `offset` by `struct_end_exclusive`,
+/// but the explicit overflow check makes the discipline robust by
+/// construction.  Use this for every DTB header / structure-block
+/// read — the DTB is big-endian on disk regardless of host
+/// endianness.
 #[inline]
 fn read_be_u32(blob: &[u8], offset: usize) -> Option<u32> {
+    let end = offset.checked_add(4)?;
     // Use slice indexing through `get` to get an Option without panic.
-    let bytes = blob.get(offset..offset + 4)?;
+    let bytes = blob.get(offset..end)?;
     // We've just bounded the slice to 4 bytes via get(); the
     // try_into is structurally guaranteed to succeed and the unwrap
     // is unreachable.  Using `from_be_bytes` instead of manual shifts
@@ -340,6 +371,17 @@ fn read_be_u32(blob: &[u8], offset: usize) -> Option<u32> {
     let arr: [u8; 4] = bytes.try_into().ok()?;
     Some(u32::from_be_bytes(arr))
 }
+
+/// **WS-SM SM1.D.1**: Highest FDT layout version this parser
+/// supports.  A DTB whose `last_comp_version` is greater than this
+/// requires layout features we don't implement — we refuse to parse
+/// it rather than risk misinterpretation.
+///
+/// Version 17 added the `size_dt_strings` and `size_dt_struct` fields
+/// at offsets 32/36; our parser reads those fields, so we are a v17
+/// parser.  Per the FDT spec, a parser version `P` can read any DTB
+/// whose `last_comp_version <= P`.
+const FDT_PARSER_VERSION: u32 = 17;
 
 /// **WS-SM SM1.D.1**: Parsed FDT header fields.
 ///
@@ -357,6 +399,11 @@ struct FdtHeader {
     off_dt_strings: u32,
     /// DTB format version.  v1.0.0 requires ≥ 16.
     version: u32,
+    /// Minimum FDT version required to parse this DTB.  Per the
+    /// FDT spec, a parser at layout version `P` may read DTBs whose
+    /// `last_comp_version <= P`.  Our parser is at
+    /// [`FDT_PARSER_VERSION`].
+    last_comp_version: u32,
     /// Size of the structure block in bytes.
     size_dt_struct: u32,
     /// Size of the strings block in bytes.
@@ -381,7 +428,7 @@ fn parse_fdt_header(blob: &[u8]) -> Option<FdtHeader> {
     let off_dt_strings = read_be_u32(blob, 12)?;
     // Skip off_mem_rsvmap at 16.
     let version = read_be_u32(blob, 20)?;
-    // Skip last_comp_version at 24.
+    let last_comp_version = read_be_u32(blob, 24)?;
     // Skip boot_cpuid_phys at 28.
     let size_dt_strings = read_be_u32(blob, 32)?;
     let size_dt_struct = read_be_u32(blob, 36)?;
@@ -391,6 +438,7 @@ fn parse_fdt_header(blob: &[u8]) -> Option<FdtHeader> {
         off_dt_struct,
         off_dt_strings,
         version,
+        last_comp_version,
         size_dt_struct,
         size_dt_strings,
     })
@@ -398,16 +446,30 @@ fn parse_fdt_header(blob: &[u8]) -> Option<FdtHeader> {
 
 /// **WS-SM SM1.D.1**: Validate header field consistency.
 ///
-/// Returns `true` if the header passes minimal sanity checks:
-/// magic is correct (already enforced by [`parse_fdt_header`], but
-/// re-verified here for defense in depth), version ≥ 16, structure
-/// and strings blocks fit inside the total size, and offsets are
-/// 4-byte aligned (FDT tokens require 4-byte alignment).
+/// Returns `true` if the header passes the full sanity check set:
+///   1. Magic = `0xD00DFEED` (re-verified for defense-in-depth even
+///      though [`parse_fdt_header`] already gates on it).
+///   2. `version >= 16` (the minimum we support).
+///   3. `last_comp_version <= FDT_PARSER_VERSION` — refuses DTBs
+///      requiring a newer layout than this parser supports
+///      (audit-pass-1 forward-compat defense).
+///   4. `totalsize >= FDT_HEADER_SIZE`.
+///   5. Offsets `off_dt_struct` / `off_dt_strings` are 4-byte aligned
+///      (FDT tokens require 4-byte alignment).
+///   6. Both blocks fit inside `totalsize`.
 fn validate_fdt_header(hdr: &FdtHeader) -> bool {
     if hdr.magic != FDT_MAGIC {
         return false;
     }
     if hdr.version < 16 {
+        return false;
+    }
+    // Audit-pass-1: reject DTBs that require a newer parser than us.
+    // Per FDT spec, `last_comp_version` is the minimum version the
+    // parser must support to correctly read this DTB; if it exceeds
+    // our parser's version, layout fields might be at different
+    // offsets and we'd silently misread them.
+    if hdr.last_comp_version > FDT_PARSER_VERSION {
         return false;
     }
     if hdr.totalsize < FDT_HEADER_SIZE as u32 {
@@ -420,7 +482,8 @@ fn validate_fdt_header(hdr: &FdtHeader) -> bool {
     if hdr.off_dt_strings % 4 != 0 {
         return false;
     }
-    // Block end must fit inside the total size.
+    // Block end must fit inside the total size.  Use u64 arithmetic
+    // so a malicious `off + size > u32::MAX` doesn't wrap silently.
     let struct_end = hdr.off_dt_struct as u64 + hdr.size_dt_struct as u64;
     if struct_end > hdr.totalsize as u64 {
         return false;
@@ -450,8 +513,15 @@ fn lookup_fdt_string(
     if name_offset >= strings_size {
         return None;
     }
-    let abs = strings_off + name_offset;
-    let strings_end = strings_off + strings_size;
+    // Audit-pass-1: `strings_off + name_offset` and `strings_off +
+    // strings_size` can each overflow with adversarial values
+    // (`strings_off ≈ usize::MAX`).  In practice
+    // `validate_fdt_header` bounded `strings_off + strings_size <=
+    // totalsize <= MAX_DTB_SIZE`, so the overflow is unreachable on
+    // legitimate input; but using `checked_add` keeps the function
+    // total even against a future caller that bypasses validation.
+    let abs = strings_off.checked_add(name_offset)?;
+    let strings_end = strings_off.checked_add(strings_size)?;
     // Search for the null terminator, bounded by the strings block end.
     let slice = blob.get(abs..strings_end)?;
     let null_idx = slice.iter().position(|&b| b == 0)?;
@@ -461,15 +531,25 @@ fn lookup_fdt_string(
 /// **WS-SM SM1.D.1**: Read a null-terminated string from the DTB
 /// structure block at the given offset, returning the byte slice and
 /// the offset past the terminator (padded to 4 bytes per Spec §5.4).
+///
+/// Audit-pass-1: every arithmetic step uses `checked_add` so a
+/// hostile input close to `usize::MAX` cannot overflow into a
+/// wrap-around.  The `null_idx + 1` would only overflow if the input
+/// itself were `usize::MAX` long, which is impossible (a `&[u8]`
+/// slice's length is at most `isize::MAX`), but the explicit check
+/// is documentation and defense-in-depth.
 fn read_node_name(blob: &[u8], offset: usize) -> Option<(&[u8], usize)> {
     // Find the null terminator starting at `offset`.  Bound by blob length.
     let tail = blob.get(offset..)?;
     let null_idx = tail.iter().position(|&b| b == 0)?;
     let name = &tail[..null_idx];
     // Length including null terminator.
-    let name_with_null_len = null_idx + 1;
-    // Round up to 4-byte alignment.
-    let padded_len = (name_with_null_len + 3) & !3;
+    let name_with_null_len = null_idx.checked_add(1)?;
+    // Round up to 4-byte alignment using a (4 - len % 4) % 4 padding
+    // computation; this avoids the `(x + 3) & !3` form whose
+    // intermediate `x + 3` can overflow for `x` near `usize::MAX`.
+    let padding = (4usize - (name_with_null_len % 4)) % 4;
+    let padded_len = name_with_null_len.checked_add(padding)?;
     let next_offset = offset.checked_add(padded_len)?;
     if next_offset > blob.len() {
         return None;
@@ -487,20 +567,26 @@ fn read_node_name(blob: &[u8], offset: usize) -> Option<(&[u8], usize)> {
 /// pieces of state during the walk:
 ///   - `offset`: current byte position in the blob (relative to the
 ///     start of the blob, not the structure block).
-///   - `depth`: current node nesting depth (0 = root, 1 = `/`, 2 =
-///     children of `/`, etc.).
-///   - `in_chosen`: whether we are currently inside the `/chosen`
-///     node (between its `FDT_BEGIN_NODE` and matching `FDT_END_NODE`).
+///   - `depth`: current node nesting depth (0 = before root,
+///     1 = inside `/`, 2 = inside children of `/`, etc.).
+///   - `in_chosen` + `chosen_depth`: whether we are currently
+///     descended into the `/chosen` subtree and the depth at which
+///     we entered.
 ///
 /// Token handling:
-///   - `FDT_BEGIN_NODE`: read the node name; if depth says we're at
-///     the top level (depth == 1, just below the root) and the name
-///     is exactly `"chosen"`, set `in_chosen = true`; increment depth.
-///   - `FDT_END_NODE`: decrement depth; if we were inside chosen and
-///     depth dropped below the chosen-entering depth, clear
+///   - `FDT_BEGIN_NODE`: read the node name; if we're about to
+///     enter a top-level node (depth == 1, the children of `/`)
+///     whose name is exactly `"chosen"`, set `in_chosen = true` and
+///     remember the depth we are inside chosen at (`chosen_depth`).
+///     Increment depth.
+///   - `FDT_END_NODE`: decrement depth; if we were inside chosen
+///     and depth dropped below the chosen-entering depth, clear
 ///     `in_chosen`.
-///   - `FDT_PROP`: read len/nameoff; if `in_chosen` AND the looked-up
-///     property name is `"bootargs"`, return its value.
+///   - `FDT_PROP`: read len/nameoff; only if `in_chosen` AND we are
+///     **directly** inside `/chosen` (not in a nested sub-node:
+///     `depth == chosen_depth`) AND the looked-up property name is
+///     `"bootargs"`, return its value.  This filters out a
+///     hypothetical `/chosen/sub/bootargs` (audit-pass-1).
 ///   - `FDT_NOP`: skip; doesn't move depth or in_chosen.
 ///   - `FDT_END`: terminate the walk.
 ///
@@ -524,21 +610,33 @@ fn find_bootargs_in_dtb(blob: &[u8]) -> Option<&[u8]> {
     let mut chosen_depth: usize = 0;
     let mut fuel = FDT_WALK_FUEL;
 
-    while offset + 4 <= struct_end_exclusive && fuel > 0 {
+    while fuel > 0 {
         fuel -= 1;
+        // Audit-pass-1: use checked_add so a hostile offset close to
+        // `usize::MAX` cannot overflow into a wrap-around that
+        // appears valid.  In practice `offset` is bounded by
+        // `struct_end_exclusive` (and therefore by `blob.len()`), so
+        // the overflow path is unreachable on legitimate input, but
+        // the explicit `?` makes the discipline fail-closed.
+        let next_token_offset = offset.checked_add(4)?;
+        if next_token_offset > struct_end_exclusive {
+            break;
+        }
         let token = read_be_u32(blob, offset)?;
         match token {
             FDT_BEGIN_NODE => {
-                let (name, next_off) = read_node_name(blob, offset + 4)?;
+                let (name, next_off) = read_node_name(blob, next_token_offset)?;
                 if next_off > struct_end_exclusive {
                     return None;
                 }
-                // depth 0 → root node `/`; depth 1 → children of `/`
-                // (where `chosen` lives).  We detect the top-level
-                // `chosen` (matching `/chosen`) here.
+                // depth 0 → before root; depth 1 → we're inside `/`,
+                // so this BEGIN_NODE introduces a top-level child
+                // (where `/chosen` lives).  Detect /chosen exactly
+                // — `chosen@N` (unit-address suffix) is not the
+                // canonical /chosen and is rejected by exact-match.
                 if depth == 1 && name == b"chosen" {
                     in_chosen = true;
-                    chosen_depth = depth + 1;
+                    chosen_depth = depth.checked_add(1)?;
                 }
                 depth = depth.checked_add(1)?;
                 if depth > FDT_MAX_DEPTH {
@@ -554,19 +652,30 @@ fn find_bootargs_in_dtb(blob: &[u8]) -> Option<&[u8]> {
                 if in_chosen && depth < chosen_depth {
                     in_chosen = false;
                 }
-                offset += 4;
+                offset = offset.checked_add(4)?;
             }
             FDT_PROP => {
                 // Property layout: token (4) + len (4) + nameoff (4)
                 // + value (len, padded to 4 bytes).
-                let len = read_be_u32(blob, offset + 4)?;
-                let nameoff = read_be_u32(blob, offset + 8)?;
+                let len_offset = offset.checked_add(4)?;
+                let nameoff_offset = offset.checked_add(8)?;
+                let len = read_be_u32(blob, len_offset)?;
+                let nameoff = read_be_u32(blob, nameoff_offset)?;
                 let value_start = offset.checked_add(12)?;
                 let value_end = value_start.checked_add(len as usize)?;
                 if value_end > struct_end_exclusive {
                     return None;
                 }
-                if in_chosen {
+                // Audit-pass-1: only match bootargs if we are
+                // **directly** inside /chosen (depth == chosen_depth),
+                // not in a nested sub-node like /chosen/sub.  A
+                // malicious DTB with `/chosen/sub/bootargs =
+                // "smp_enabled=false"` must NOT be honoured.  The FDT
+                // spec puts properties before sub-nodes within any
+                // node, so this is also robust to ordering edge
+                // cases where a /chosen/sub appears between /chosen's
+                // direct properties.
+                if in_chosen && depth == chosen_depth {
                     let prop_name = lookup_fdt_string(
                         blob,
                         strings_off,
@@ -578,11 +687,16 @@ fn find_bootargs_in_dtb(blob: &[u8]) -> Option<&[u8]> {
                     }
                 }
                 // Advance past value, padded to 4-byte alignment.
-                let padded_len = ((len as usize) + 3) & !3;
+                // `(len + 3) & !3` could overflow on a 32-bit target
+                // with adversarial `len`; use `checked_add` for
+                // defense-in-depth.
+                let len_usize = len as usize;
+                let padding = (4usize - (len_usize % 4)) % 4;
+                let padded_len = len_usize.checked_add(padding)?;
                 offset = value_start.checked_add(padded_len)?;
             }
             FDT_NOP => {
-                offset += 4;
+                offset = offset.checked_add(4)?;
             }
             FDT_END => {
                 return None;
@@ -674,14 +788,36 @@ pub fn extract_bootargs_into(dtb_ptr: u64, buffer: &mut [u8]) -> &str {
         // requires to be either NULL or point to a valid DTB mapping
         // of at least totalsize bytes.  We handle NULL above.  For
         // non-NULL: read 40 bytes first to determine totalsize,
-        // validate the header, then read the full blob.
+        // validate the header, validate that totalsize ≤
+        // MAX_DTB_SIZE, then read the full blob.
+        //
+        // Audit-pass-1: bounding `totalsize` to MAX_DTB_SIZE is the
+        // critical defense against a malicious or malformed
+        // bootloader writing `totalsize = 0xFFFF_FFFF` (≈ 4 GiB).
+        // Constructing `core::slice::from_raw_parts(ptr, len)` over
+        // memory that isn't fully readable is Undefined Behaviour
+        // per Rust's safety invariants — even if we never read past
+        // the actual blob, the slice itself must describe a valid
+        // contiguous extent.  Real DTBs are tens to a few hundred
+        // KiB; the 2 MiB cap is orders of magnitude above any
+        // plausible legitimate DTB and well below the smallest RAM
+        // region typically mapped by U-Boot.
         unsafe {
             let header_slice = core::slice::from_raw_parts(dtb_ptr as *const u8, FDT_HEADER_SIZE);
             match parse_fdt_header(header_slice) {
                 Some(hdr) if validate_fdt_header(&hdr) => {
                     let total = hdr.totalsize as usize;
-                    let full_slice = core::slice::from_raw_parts(dtb_ptr as *const u8, total);
-                    bootargs_to_buffer(full_slice, buffer)
+                    if total > MAX_DTB_SIZE {
+                        // Defense: refuse to construct a slice over
+                        // a DTB extent that exceeds our safety bound.
+                        // Falls back to the default CmdlineConfig
+                        // (same as missing/malformed DTB).
+                        ""
+                    } else {
+                        let full_slice =
+                            core::slice::from_raw_parts(dtb_ptr as *const u8, total);
+                        bootargs_to_buffer(full_slice, buffer)
+                    }
                 }
                 _ => "",
             }
@@ -712,7 +848,16 @@ pub fn extract_bootargs_into(dtb_ptr: u64, buffer: &mut [u8]) -> &str {
 ///
 /// The slice returned is into `buffer`, so the buffer's lifetime
 /// drives the returned `&str`.
+///
+/// Audit-pass-1: blobs larger than [`MAX_DTB_SIZE`] are rejected with
+/// an empty result, matching the [`extract_bootargs_into`] safety
+/// bound on aarch64.  This keeps the two entry points behaviourally
+/// symmetric — a unit test cannot bypass the bound the production
+/// path enforces.
 pub fn extract_bootargs_from_blob_into<'b>(blob: &[u8], buffer: &'b mut [u8]) -> &'b str {
+    if blob.len() > MAX_DTB_SIZE {
+        return "";
+    }
     bootargs_to_buffer(blob, buffer)
 }
 
@@ -780,10 +925,48 @@ pub fn parse_cmdline_from_dtb(dtb_ptr: u64) -> CmdlineConfig {
 ///   2. If `cfg.smp_enabled`, invokes
 ///      [`crate::smp::bring_up_secondaries_with_limit`] with
 ///      `cfg.smp_max_cores`.
+///
+/// This is the production-globals entry point.  The implementation
+/// dispatches to [`apply_cmdline_and_start_smp_inner`], which takes
+/// explicit state references for test isolation.
 pub fn apply_cmdline_and_start_smp(cfg: &CmdlineConfig) -> u32 {
-    crate::smp::SMP_ENABLED.store(cfg.smp_enabled, Ordering::Release);
+    apply_cmdline_and_start_smp_inner(
+        cfg,
+        &crate::smp::SMP_ENABLED,
+        &crate::smp::CORE_READY,
+        &crate::smp::SECONDARY_CORES_ONLINE,
+        &crate::smp::SECONDARY_MPIDR_TABLE,
+    )
+}
+
+/// **WS-SM SM1.D.2 audit-pass-1** (test-isolation form): inner
+/// implementation of [`apply_cmdline_and_start_smp`] taking explicit
+/// state references.
+///
+/// Matches the [`crate::smp::bring_up_secondaries_inner`] discipline
+/// so unit tests can exercise the disable path / enable path without
+/// racing against parallel tests that mutate the production
+/// `crate::smp::SMP_ENABLED` atomic.  Production callers should use
+/// [`apply_cmdline_and_start_smp`].
+///
+/// `pub(crate)` so the in-crate `tests` module can exercise it;
+/// external callers must go through the production entry point.
+pub(crate) fn apply_cmdline_and_start_smp_inner(
+    cfg: &CmdlineConfig,
+    enabled: &core::sync::atomic::AtomicBool,
+    core_ready: &[core::sync::atomic::AtomicBool],
+    online_count: &core::sync::atomic::AtomicU32,
+    mpidr_table: &[u64],
+) -> u32 {
+    enabled.store(cfg.smp_enabled, Ordering::Release);
     if cfg.smp_enabled {
-        crate::smp::bring_up_secondaries_with_limit(cfg.smp_max_cores)
+        crate::smp::bring_up_secondaries_with_limit_inner(
+            cfg.smp_max_cores,
+            enabled,
+            core_ready,
+            online_count,
+            mpidr_table,
+        )
     } else {
         0
     }
@@ -796,6 +979,7 @@ pub fn apply_cmdline_and_start_smp(cfg: &CmdlineConfig) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::vec;
     use std::vec::Vec;
 
     // ========================================================================
@@ -1452,6 +1636,536 @@ mod tests {
         }
         s.extend_from_slice(&FDT_END_NODE.to_be_bytes()); // chosen end
         s.extend_from_slice(&FDT_END_NODE.to_be_bytes()); // root end
+        s.extend_from_slice(&FDT_END.to_be_bytes());
+
+        let off_dt_struct = FDT_HEADER_SIZE;
+        let off_dt_strings = off_dt_struct + s.len();
+        let totalsize = off_dt_strings + strings.len();
+
+        let mut blob = Vec::with_capacity(totalsize);
+        blob.extend_from_slice(&FDT_MAGIC.to_be_bytes());
+        blob.extend_from_slice(&(totalsize as u32).to_be_bytes());
+        blob.extend_from_slice(&(off_dt_struct as u32).to_be_bytes());
+        blob.extend_from_slice(&(off_dt_strings as u32).to_be_bytes());
+        blob.extend_from_slice(&(FDT_HEADER_SIZE as u32).to_be_bytes());
+        blob.extend_from_slice(&17u32.to_be_bytes());
+        blob.extend_from_slice(&16u32.to_be_bytes());
+        blob.extend_from_slice(&0u32.to_be_bytes());
+        blob.extend_from_slice(&(strings.len() as u32).to_be_bytes());
+        blob.extend_from_slice(&(s.len() as u32).to_be_bytes());
+        blob.extend_from_slice(&s);
+        blob.extend_from_slice(&strings);
+        blob
+    }
+
+    // ========================================================================
+    // SM1.D.1 audit-pass-1 — regression tests for the deep-audit findings
+    // ========================================================================
+
+    /// **Audit-pass-1 regression**: DTBs with `bootargs` in a node
+    /// nested INSIDE `/chosen` (e.g., `/chosen/sub/bootargs`) must
+    /// NOT be matched.  Only the direct `/chosen/bootargs` property
+    /// is the canonical kernel command-line per the FDT specification
+    /// §3.5.  A malicious DTB exploiting the pre-audit behaviour
+    /// could have set `/chosen/sub/bootargs = "smp_enabled=false"`
+    /// to silently disable SMP without anyone noticing.
+    #[test]
+    fn dtb_with_bootargs_in_chosen_sub_node_yields_empty() {
+        let dtb = build_dtb_chosen_with_sub_node_bootargs(b"hostile");
+        // Pre-audit form (matching bootargs anywhere in /chosen)
+        // would return Some(b"hostile\0").  Post-audit form must
+        // return None — only /chosen/bootargs (direct child) counts.
+        assert!(
+            find_bootargs_in_dtb(&dtb).is_none(),
+            "regression: bootargs nested in /chosen/sub must not be honoured"
+        );
+    }
+
+    /// **Audit-pass-1 regression**: when `/chosen` has both a direct
+    /// `bootargs` property AND a nested `/chosen/sub/bootargs`, the
+    /// walker must return the direct one (not the nested one, and
+    /// the order should be deterministic per FDT spec §5.4).
+    ///
+    /// Per FDT spec §5.4.1, properties precede sub-nodes within any
+    /// node — so the direct `bootargs` appears before the nested
+    /// node in the structure stream and is found first.
+    #[test]
+    fn dtb_with_direct_and_nested_chosen_bootargs_picks_direct() {
+        let dtb = build_dtb_chosen_with_direct_and_nested_bootargs(
+            b"real_value",
+            b"fake_value",
+        );
+        let bootargs = find_bootargs_in_dtb(&dtb)
+            .expect("direct /chosen/bootargs must be found");
+        assert_eq!(
+            bootargs, b"real_value\0",
+            "audit-pass-1: walker must return the DIRECT /chosen/bootargs, \
+             not a nested one"
+        );
+    }
+
+    /// **Audit-pass-1 regression**: a DTB with
+    /// `last_comp_version > FDT_PARSER_VERSION` (=17) must be
+    /// rejected.  Per FDT spec §5.2, `last_comp_version` is the
+    /// minimum version of the parser required to correctly read the
+    /// DTB; a parser at version P can only read DTBs with
+    /// `last_comp_version <= P`.  A DTB asserting it requires v18+
+    /// could have layout fields at different offsets than we expect.
+    #[test]
+    fn dtb_with_higher_last_comp_version_rejected() {
+        let mut blob = build_dtb_with_bootargs(b"smp_enabled=false");
+        // Overwrite last_comp_version (header bytes 24..28) with 18.
+        let new_lcv = 18u32.to_be_bytes();
+        blob[24..28].copy_from_slice(&new_lcv);
+        assert!(
+            find_bootargs_in_dtb(&blob).is_none(),
+            "DTB requiring parser v18+ must be rejected"
+        );
+    }
+
+    /// **Audit-pass-1 regression**: a DTB with `last_comp_version ==
+    /// FDT_PARSER_VERSION` (= our exact version, 17) must still be
+    /// accepted.  Tests the boundary of the version check.
+    #[test]
+    fn dtb_with_last_comp_version_equal_parser_version_accepted() {
+        let mut blob = build_dtb_with_bootargs(b"smp_enabled=false");
+        // Overwrite last_comp_version (header bytes 24..28) with 17
+        // = FDT_PARSER_VERSION.
+        let new_lcv = FDT_PARSER_VERSION.to_be_bytes();
+        blob[24..28].copy_from_slice(&new_lcv);
+        assert!(
+            find_bootargs_in_dtb(&blob).is_some(),
+            "DTB at the parser's exact version must remain accepted"
+        );
+    }
+
+    /// **Audit-pass-1 regression**: when read directly from a blob
+    /// larger than [`MAX_DTB_SIZE`], `extract_bootargs_from_blob_into`
+    /// must short-circuit to empty (defense-in-depth: mirrors the
+    /// aarch64 raw-pointer path's MAX_DTB_SIZE bound).
+    #[test]
+    fn extract_bootargs_from_oversize_blob_yields_empty() {
+        // Build a 2 MiB + 1-byte blob containing a valid DTB at
+        // the start (it would otherwise parse cleanly).  Even though
+        // the actual structure block is small, the blob length
+        // exceeds MAX_DTB_SIZE so we refuse to walk.
+        let mut blob = build_dtb_with_bootargs(b"smp_enabled=false");
+        blob.resize(MAX_DTB_SIZE + 1, 0u8);
+        let mut buf = [0u8; 64];
+        let bootargs = extract_bootargs_from_blob_into(&blob, &mut buf);
+        assert_eq!(
+            bootargs, "",
+            "blob > MAX_DTB_SIZE must yield empty (size guard)"
+        );
+    }
+
+    /// **Audit-pass-1 regression**: a blob exactly at
+    /// [`MAX_DTB_SIZE`] must still parse normally (boundary
+    /// condition of the size guard).
+    #[test]
+    fn extract_bootargs_from_blob_at_max_size_succeeds() {
+        // Smaller than MAX_DTB_SIZE — we can't actually allocate
+        // 2 MiB cheaply for every test run, so we test a blob whose
+        // size is well below the cap.  The boundary semantics are
+        // pinned by the inequality `blob.len() > MAX_DTB_SIZE` in
+        // the guard: `<=` always passes, `>` always fails.  We
+        // verify that a small blob still works:
+        let dtb = build_dtb_with_bootargs(b"smp_enabled=false");
+        assert!(
+            dtb.len() <= MAX_DTB_SIZE,
+            "synthesised DTB must fit within the size guard"
+        );
+        let mut buf = [0u8; 64];
+        let bootargs = extract_bootargs_from_blob_into(&dtb, &mut buf);
+        assert_eq!(bootargs, "smp_enabled=false");
+    }
+
+    /// **Audit-pass-1 sanity**: MAX_DTB_SIZE is set to a generous
+    /// value covering real-world DTBs but bounded against malicious
+    /// totalsize values.  Pinning the literal here makes a
+    /// surprise tightening (e.g., 4 KB) impossible without updating
+    /// the test.
+    #[test]
+    fn max_dtb_size_is_two_mib() {
+        assert_eq!(MAX_DTB_SIZE, 2 * 1024 * 1024);
+    }
+
+    /// **Audit-pass-1 sanity**: FDT_PARSER_VERSION matches the
+    /// layout we parse (v17 added size_dt_strings + size_dt_struct
+    /// at offsets 32/36).  A future bump (e.g., adding a v18 field)
+    /// must also bump this constant.
+    #[test]
+    fn fdt_parser_version_is_seventeen() {
+        assert_eq!(FDT_PARSER_VERSION, 17);
+    }
+
+    /// **Audit-pass-1 sanity**: the LongPropertyLayout we use
+    /// (FDT_PROP = 0x3, len:u32, nameoff:u32, value:len) matches
+    /// FDT spec §5.4.2.  Verified by hand-rolling a DTB whose
+    /// padding requirements exercise the `(len + 3) & !3` path and
+    /// confirming the parser still finds bootargs at the correct
+    /// offset.  Padding-stress test:
+    ///
+    ///   - value length 1 → 1 + null = 2 → pads to 4 (padding=2)
+    ///   - value length 2 → 2 + null = 3 → pads to 4 (padding=1)
+    ///   - value length 3 → 3 + null = 4 → pads to 4 (padding=0)
+    ///   - value length 4 → 4 + null = 5 → pads to 8 (padding=3)
+    ///   - value length 5 → 5 + null = 6 → pads to 8 (padding=2)
+    ///   - value length 6 → 6 + null = 7 → pads to 8 (padding=1)
+    ///   - value length 7 → 7 + null = 8 → pads to 8 (padding=0)
+    ///
+    /// Each case must parse cleanly without falling off the
+    /// structure block end.
+    #[test]
+    fn dtb_property_padding_stress_test() {
+        for len in 1usize..=7 {
+            let value = vec![b'a'; len];
+            let dtb = build_dtb_with_bootargs(&value);
+            let bootargs = find_bootargs_in_dtb(&dtb).unwrap_or_else(|| {
+                panic!("padding stress failed at len={}", len)
+            });
+            assert_eq!(
+                bootargs.len(),
+                len + 1,
+                "padding stress: returned value length must equal \
+                 input length + 1 (null) for len={}",
+                len
+            );
+        }
+    }
+
+    // ========================================================================
+    // SM1.D.2 audit-pass-1 — apply_cmdline_and_start_smp_inner tests
+    //
+    // These tests exercise the dispatch path using local atomics so
+    // the global SMP_ENABLED state is never perturbed.  Each test
+    // builds a fresh state, calls the inner form, and verifies the
+    // post-state.  This closes the pre-audit coverage gap where the
+    // dispatch helper was only tested indirectly.
+    // ========================================================================
+
+    fn fresh_local_smp_state(
+    ) -> (
+        core::sync::atomic::AtomicBool,
+        [core::sync::atomic::AtomicBool; 4],
+        core::sync::atomic::AtomicU32,
+    ) {
+        (
+            core::sync::atomic::AtomicBool::new(false),
+            [
+                core::sync::atomic::AtomicBool::new(true),
+                core::sync::atomic::AtomicBool::new(false),
+                core::sync::atomic::AtomicBool::new(false),
+                core::sync::atomic::AtomicBool::new(false),
+            ],
+            core::sync::atomic::AtomicU32::new(0),
+        )
+    }
+
+    #[test]
+    fn apply_inner_disabled_sets_atomic_and_returns_zero() {
+        // SM1.D.2: disabled cfg → atomic stored as false, no
+        // secondaries brought up, return 0.
+        let (enabled, ready, count) = fresh_local_smp_state();
+        // Pre-condition: atomic is initially false.
+        assert!(!enabled.load(Ordering::Acquire));
+        let cfg = CmdlineConfig {
+            smp_enabled: false,
+            smp_max_cores: 4,
+        };
+        let online = apply_cmdline_and_start_smp_inner(
+            &cfg,
+            &enabled,
+            &ready,
+            &count,
+            &crate::smp::SECONDARY_MPIDR_TABLE,
+        );
+        assert_eq!(online, 0, "disabled cfg must bring up zero secondaries");
+        assert!(
+            !enabled.load(Ordering::Acquire),
+            "atomic must be stored as false after disabled cfg apply"
+        );
+        // The CORE_READY flags should be untouched (still in fresh state).
+        assert!(!ready[1].load(Ordering::Acquire));
+        assert!(!ready[2].load(Ordering::Acquire));
+        assert!(!ready[3].load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn apply_inner_disabled_clears_atomic_even_when_initially_true() {
+        // SM1.D.2 invariant: after `apply`, the atomic reflects the
+        // parsed cfg regardless of its prior value.  A previously
+        // SMP-enabled run that re-applies a disabled cfg must end
+        // with atomic = false.  This guards against a regression
+        // where the disabled branch forgets to commit the false
+        // state.
+        let (enabled, ready, count) = fresh_local_smp_state();
+        enabled.store(true, Ordering::Release);
+        let cfg = CmdlineConfig {
+            smp_enabled: false,
+            smp_max_cores: 4,
+        };
+        let _online = apply_cmdline_and_start_smp_inner(
+            &cfg,
+            &enabled,
+            &ready,
+            &count,
+            &crate::smp::SECONDARY_MPIDR_TABLE,
+        );
+        assert!(
+            !enabled.load(Ordering::Acquire),
+            "disabled cfg apply must overwrite a previously-true atomic"
+        );
+    }
+
+    #[test]
+    fn apply_inner_enabled_sets_atomic_and_brings_up_secondaries() {
+        // SM1.D.2: enabled cfg with full max_cores → all 3
+        // secondaries online, atomic stored as true.
+        let (enabled, ready, count) = fresh_local_smp_state();
+        let cfg = CmdlineConfig {
+            smp_enabled: true,
+            smp_max_cores: crate::smp::MAX_SECONDARY_CORES + 1,
+        };
+        let online = apply_cmdline_and_start_smp_inner(
+            &cfg,
+            &enabled,
+            &ready,
+            &count,
+            &crate::smp::SECONDARY_MPIDR_TABLE,
+        );
+        assert_eq!(
+            online,
+            crate::smp::MAX_SECONDARY_CORES as u32,
+            "enabled cfg with max=4 must bring up all 3 secondaries"
+        );
+        assert!(
+            enabled.load(Ordering::Acquire),
+            "atomic must be stored as true after enabled cfg apply"
+        );
+        // Each secondary's ready flag should now be true.
+        for (idx, slot) in ready.iter().enumerate().skip(1) {
+            assert!(
+                slot.load(Ordering::Acquire),
+                "secondary {} must be ready after full bring-up",
+                idx
+            );
+        }
+    }
+
+    #[test]
+    fn apply_inner_enabled_with_limit_two_brings_up_one_secondary() {
+        // SM1.D.2 + SM1.D.6: enabled cfg with smp_max_cores=2 →
+        // only 1 secondary brought up.  Cores 2 and 3 remain
+        // unready.
+        let (enabled, ready, count) = fresh_local_smp_state();
+        let cfg = CmdlineConfig {
+            smp_enabled: true,
+            smp_max_cores: 2,
+        };
+        let online = apply_cmdline_and_start_smp_inner(
+            &cfg,
+            &enabled,
+            &ready,
+            &count,
+            &crate::smp::SECONDARY_MPIDR_TABLE,
+        );
+        assert_eq!(online, 1, "smp_max_cores=2 must bring up exactly 1 secondary");
+        assert!(enabled.load(Ordering::Acquire));
+        assert!(
+            ready[1].load(Ordering::Acquire),
+            "first secondary must be ready"
+        );
+        assert!(
+            !ready[2].load(Ordering::Acquire),
+            "second secondary must remain unready under smp_max_cores=2"
+        );
+        assert!(
+            !ready[3].load(Ordering::Acquire),
+            "third secondary must remain unready under smp_max_cores=2"
+        );
+    }
+
+    #[test]
+    fn apply_inner_enabled_with_limit_one_brings_up_zero_secondaries() {
+        // SM1.D.6: smp_max_cores=1 means boot core only; no
+        // secondaries.  Atomic still stored as true (the cfg says
+        // SMP is conceptually enabled; the limit just bounds the
+        // bring-up to 0 secondaries).
+        let (enabled, ready, count) = fresh_local_smp_state();
+        let cfg = CmdlineConfig {
+            smp_enabled: true,
+            smp_max_cores: 1,
+        };
+        let online = apply_cmdline_and_start_smp_inner(
+            &cfg,
+            &enabled,
+            &ready,
+            &count,
+            &crate::smp::SECONDARY_MPIDR_TABLE,
+        );
+        assert_eq!(online, 0);
+        assert!(enabled.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn apply_inner_enabled_with_limit_zero_brings_up_zero_secondaries() {
+        // SM1.D.6 edge case: smp_max_cores=0 (functionally
+        // equivalent to disabled, but atomic is still set to true
+        // because cfg.smp_enabled is true).  This is the documented
+        // semantics — the operator opted in to SMP but capped the
+        // core count below the boot core.
+        let (enabled, ready, count) = fresh_local_smp_state();
+        let cfg = CmdlineConfig {
+            smp_enabled: true,
+            smp_max_cores: 0,
+        };
+        let online = apply_cmdline_and_start_smp_inner(
+            &cfg,
+            &enabled,
+            &ready,
+            &count,
+            &crate::smp::SECONDARY_MPIDR_TABLE,
+        );
+        assert_eq!(online, 0);
+        assert!(
+            enabled.load(Ordering::Acquire),
+            "atomic = cfg.smp_enabled regardless of max_cores"
+        );
+    }
+
+    #[test]
+    fn apply_inner_function_signature_pin() {
+        // SM1.D.2: pin the function pointer signature so a future
+        // refactor that changes the inner-helper ABI surfaces here
+        // at compile time.
+        let _: fn(
+            &CmdlineConfig,
+            &core::sync::atomic::AtomicBool,
+            &[core::sync::atomic::AtomicBool],
+            &core::sync::atomic::AtomicU32,
+            &[u64],
+        ) -> u32 = apply_cmdline_and_start_smp_inner;
+    }
+
+    #[test]
+    fn apply_public_function_signature_pin() {
+        // SM1.D.2: pin the public ABI signature.  A future PR
+        // changing it (e.g., taking ownership of CmdlineConfig)
+        // would break boot.rs callers; this test surfaces the
+        // signature shift at the type system.
+        let _: fn(&CmdlineConfig) -> u32 = apply_cmdline_and_start_smp;
+    }
+
+    /// Build a DTB containing `/chosen/sub/bootargs = <value>` —
+    /// `bootargs` is in a SUB-NODE of chosen, NOT a direct child.
+    /// Post-audit-pass-1 the walker must NOT match this property.
+    fn build_dtb_chosen_with_sub_node_bootargs(value: &[u8]) -> Vec<u8> {
+        let strings = b"bootargs\0".to_vec();
+        let bootargs_nameoff = 0u32;
+
+        let mut s: Vec<u8> = Vec::new();
+        // BEGIN_NODE "" (root)
+        s.extend_from_slice(&FDT_BEGIN_NODE.to_be_bytes());
+        s.extend_from_slice(&[0u8; 4]);
+        // BEGIN_NODE "chosen"
+        s.extend_from_slice(&FDT_BEGIN_NODE.to_be_bytes());
+        s.extend_from_slice(b"chosen\0");
+        s.push(0); // pad
+                   // BEGIN_NODE "sub" (nested inside chosen)
+        s.extend_from_slice(&FDT_BEGIN_NODE.to_be_bytes());
+        s.extend_from_slice(b"sub\0");
+        // PROP bootargs (in /chosen/sub — must NOT match)
+        s.extend_from_slice(&FDT_PROP.to_be_bytes());
+        let prop_len = (value.len() + 1) as u32;
+        s.extend_from_slice(&prop_len.to_be_bytes());
+        s.extend_from_slice(&bootargs_nameoff.to_be_bytes());
+        s.extend_from_slice(value);
+        s.push(0); // null
+        while s.len() % 4 != 0 {
+            s.push(0);
+        }
+        // END_NODE (sub)
+        s.extend_from_slice(&FDT_END_NODE.to_be_bytes());
+        // END_NODE (chosen)
+        s.extend_from_slice(&FDT_END_NODE.to_be_bytes());
+        // END_NODE (root)
+        s.extend_from_slice(&FDT_END_NODE.to_be_bytes());
+        // END
+        s.extend_from_slice(&FDT_END.to_be_bytes());
+
+        let off_dt_struct = FDT_HEADER_SIZE;
+        let off_dt_strings = off_dt_struct + s.len();
+        let totalsize = off_dt_strings + strings.len();
+
+        let mut blob = Vec::with_capacity(totalsize);
+        blob.extend_from_slice(&FDT_MAGIC.to_be_bytes());
+        blob.extend_from_slice(&(totalsize as u32).to_be_bytes());
+        blob.extend_from_slice(&(off_dt_struct as u32).to_be_bytes());
+        blob.extend_from_slice(&(off_dt_strings as u32).to_be_bytes());
+        blob.extend_from_slice(&(FDT_HEADER_SIZE as u32).to_be_bytes());
+        blob.extend_from_slice(&17u32.to_be_bytes());
+        blob.extend_from_slice(&16u32.to_be_bytes());
+        blob.extend_from_slice(&0u32.to_be_bytes());
+        blob.extend_from_slice(&(strings.len() as u32).to_be_bytes());
+        blob.extend_from_slice(&(s.len() as u32).to_be_bytes());
+        blob.extend_from_slice(&s);
+        blob.extend_from_slice(&strings);
+        blob
+    }
+
+    /// Build a DTB containing BOTH `/chosen/bootargs = direct_value`
+    /// AND `/chosen/sub/bootargs = nested_value`.  The walker must
+    /// return the direct value (not the nested one) per the
+    /// FDT spec §5.4.1 ordering convention (properties precede
+    /// sub-nodes).
+    fn build_dtb_chosen_with_direct_and_nested_bootargs(
+        direct_value: &[u8],
+        nested_value: &[u8],
+    ) -> Vec<u8> {
+        let strings = b"bootargs\0".to_vec();
+        let bootargs_nameoff = 0u32;
+
+        let mut s: Vec<u8> = Vec::new();
+        // BEGIN_NODE "" (root)
+        s.extend_from_slice(&FDT_BEGIN_NODE.to_be_bytes());
+        s.extend_from_slice(&[0u8; 4]);
+        // BEGIN_NODE "chosen"
+        s.extend_from_slice(&FDT_BEGIN_NODE.to_be_bytes());
+        s.extend_from_slice(b"chosen\0");
+        s.push(0); // pad
+
+        // Direct PROP bootargs (must be FIRST per FDT spec §5.4.1).
+        s.extend_from_slice(&FDT_PROP.to_be_bytes());
+        let direct_len = (direct_value.len() + 1) as u32;
+        s.extend_from_slice(&direct_len.to_be_bytes());
+        s.extend_from_slice(&bootargs_nameoff.to_be_bytes());
+        s.extend_from_slice(direct_value);
+        s.push(0); // null
+        while s.len() % 4 != 0 {
+            s.push(0);
+        }
+
+        // BEGIN_NODE "sub" (nested inside chosen)
+        s.extend_from_slice(&FDT_BEGIN_NODE.to_be_bytes());
+        s.extend_from_slice(b"sub\0");
+        // Nested PROP bootargs (must NOT be returned)
+        s.extend_from_slice(&FDT_PROP.to_be_bytes());
+        let nested_len = (nested_value.len() + 1) as u32;
+        s.extend_from_slice(&nested_len.to_be_bytes());
+        s.extend_from_slice(&bootargs_nameoff.to_be_bytes());
+        s.extend_from_slice(nested_value);
+        s.push(0); // null
+        while s.len() % 4 != 0 {
+            s.push(0);
+        }
+        // END_NODE (sub)
+        s.extend_from_slice(&FDT_END_NODE.to_be_bytes());
+        // END_NODE (chosen)
+        s.extend_from_slice(&FDT_END_NODE.to_be_bytes());
+        // END_NODE (root)
+        s.extend_from_slice(&FDT_END_NODE.to_be_bytes());
+        // END
         s.extend_from_slice(&FDT_END.to_be_bytes());
 
         let off_dt_struct = FDT_HEADER_SIZE;

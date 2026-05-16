@@ -29,7 +29,7 @@ const KERNEL_VERSION: &str = "0.31.6";
 /// function, `boot.S` must be updated in lockstep — `cargo build` would
 /// fail with an unresolved-symbol error before any binary is produced.
 #[no_mangle]
-pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
+pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // -----------------------------------------------------------------------
     // Phase 1: UART initialization, boot banner, per-CPU data verification
     //
@@ -178,27 +178,29 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
     // `smp_enabled=true`), all 4 RPi5 cores are online by the time
     // the Lean kernel main runs.
     // -----------------------------------------------------------------------
-    let cmdline_cfg = crate::cmdline::parse_cmdline_from_dtb(_dtb_ptr);
+    let cmdline_cfg = crate::cmdline::parse_cmdline_from_dtb(dtb_ptr);
     crate::kprintln!(
         "[boot] cmdline parsed: smp_enabled={}, smp_max_cores={}",
         cmdline_cfg.smp_enabled,
         cmdline_cfg.smp_max_cores
     );
+    // Always call `apply_cmdline_and_start_smp` — this both stores
+    // the parsed `smp_enabled` into `smp::SMP_ENABLED` (so later
+    // kernel paths see the canonical state) AND brings up
+    // secondaries when enabled.  Calling it unconditionally is
+    // simpler than branching and ensures the SMP_ENABLED atomic is
+    // always in sync with the parsed cmdline (defense against a
+    // future bug where the disabled-branch forgets to commit the
+    // false state to the atomic).
+    let online = crate::cmdline::apply_cmdline_and_start_smp(&cmdline_cfg);
     if cmdline_cfg.smp_enabled {
         crate::kprintln!(
-            "[boot] Phase 5: bringing up secondary cores (max={})...",
+            "[boot] Phase 5: {} secondary core(s) online (max requested: {})",
+            online,
             cmdline_cfg.smp_max_cores
         );
-        let online = crate::cmdline::apply_cmdline_and_start_smp(&cmdline_cfg);
-        crate::kprintln!("[boot] Phase 5: {} secondary cores online", online);
     } else {
-        // SM1.D.2: explicit opt-out path.  We still call
-        // `apply_cmdline_and_start_smp` so the global SMP_ENABLED
-        // atomic is set to `false` (and stays false for any kernel
-        // path that reads it later).  The bring-up loop is skipped
-        // internally based on `cfg.smp_enabled`.
         crate::kprintln!("[boot] Phase 5: SMP disabled by cmdline (single-core boot)");
-        let _ = crate::cmdline::apply_cmdline_and_start_smp(&cmdline_cfg);
     }
 
     // -----------------------------------------------------------------------
@@ -234,7 +236,7 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
         // SAFETY: lean_kernel_main is the Lean-compiled entry point linked from
         // libsele4n.a. The DTB pointer from U-Boot is passed through. The
         // function should not return; if it does, we fall through to idle.
-        unsafe { lean_kernel_main(_dtb_ptr) };
+        unsafe { lean_kernel_main(dtb_ptr) };
     }
 
     // Idle fallback: enter WFE loop when no kernel main is linked (simulation)

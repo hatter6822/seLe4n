@@ -207,7 +207,7 @@ tests):
   fails the build with an actionable diagnostic before any
   binary is produced.
 
-### Test coverage summary
+### Test coverage summary (initial landing)
 
 - 395 HAL tests, zero `#[ignore]`'d (up from 313 at SM1.C close).
   Per-file math: +54 new in cmdline.rs (NEW FILE), +9 new in
@@ -218,6 +218,125 @@ tests):
   tests, 94/94 ABI conformance tests).
 - Version sync check (`scripts/check_version_sync.sh`) PASS:
   every version-bearing file at v0.31.6.
+
+### Audit-pass-1 refinements (post-initial-landing deep audit)
+
+A deep code-level audit (walking the FDT walker by hand,
+considering hostile DTB inputs) surfaced four hardening
+opportunities.  All four are fixed in this same patch release.
+
+- **HIGH-severity: `/chosen` sub-node bootargs filtering**.  The
+  initial-landing form of `find_bootargs_in_dtb` matched a
+  `bootargs` property anywhere inside the `/chosen` subtree —
+  including a hypothetical `/chosen/sub/bootargs`.  Per the FDT
+  specification §3.5, only the direct child `/chosen/bootargs`
+  is the canonical kernel command-line; a malicious DTB
+  exploiting the pre-audit form could place
+  `/chosen/sub/bootargs = "smp_enabled=false"` and silently
+  disable SMP without modifying any visible top-level property.
+  Fixed by adding `depth == chosen_depth` to the PROP match
+  guard: only properties at the exact `/chosen` level (not
+  deeper sub-nodes) are now eligible.  New regression test
+  `dtb_with_bootargs_in_chosen_sub_node_yields_empty` builds a
+  hostile DTB and asserts the walker returns `None`; companion
+  test `dtb_with_direct_and_nested_chosen_bootargs_picks_direct`
+  verifies that when both exist the direct one wins (matching
+  the FDT §5.4.1 ordering convention that properties precede
+  sub-nodes).
+- **HIGH-severity: `totalsize` slice-construction UB defense**.
+  The aarch64 `extract_bootargs_into` constructed
+  `core::slice::from_raw_parts(dtb_ptr, totalsize)` over memory
+  whose extent equals the DTB-self-declared `totalsize`.  A
+  malicious bootloader writing `totalsize = 0xFFFF_FFFF`
+  (~4 GiB) would trigger Undefined Behaviour at the slice
+  construction itself (Rust's safety contract requires the full
+  extent to be valid memory, even if we never access past the
+  actual blob).  Fixed by adding a 2 MiB `MAX_DTB_SIZE` upper
+  bound — DTBs exceeding it fall back to the default
+  `CmdlineConfig` (same behaviour as missing/malformed DTB).
+  The bound is enforced symmetrically in the host-test entry
+  point `extract_bootargs_from_blob_into` so the two paths
+  behave identically.  New regression tests
+  `extract_bootargs_from_oversize_blob_yields_empty`,
+  `extract_bootargs_from_blob_at_max_size_succeeds`, and
+  `max_dtb_size_is_two_mib` pin both halves of the contract.
+- **MEDIUM: `last_comp_version` forward-compat check**.  Per
+  FDT spec §5.2, a DTB's `last_comp_version` field declares the
+  minimum parser version required to correctly read its layout.
+  The initial-landing form skipped this field; a future v18+
+  DTB (with new fields at offsets we expect to be v17 fields)
+  would be silently misread.  Fixed by adding a
+  `FDT_PARSER_VERSION = 17` constant and refusing DTBs with
+  `last_comp_version > FDT_PARSER_VERSION`.  New regression
+  tests `dtb_with_higher_last_comp_version_rejected`,
+  `dtb_with_last_comp_version_equal_parser_version_accepted`,
+  and `fdt_parser_version_is_seventeen` cover both sides of the
+  boundary plus the constant's value pin.
+- **MEDIUM: integer-overflow hardening in walker arithmetic**.
+  Several arithmetic operations in the walker used `+` rather
+  than `checked_add` (e.g., `offset + 4`, `(len + 3) & !3`).
+  On legitimate input these are bounded by validated header
+  fields; for defense-in-depth against future refactors that
+  bypass validation, every offset/length addition now uses
+  `checked_add` and the padding computation uses
+  `(4 - (len % 4)) % 4` instead of `(len + 3) & !3` (the latter
+  can overflow for adversarial `len` near `usize::MAX` on
+  32-bit targets).  New regression test
+  `dtb_property_padding_stress_test` exercises every padding
+  shape (lengths 1..=7) to confirm the new computation matches
+  the old on legitimate input.
+
+### Audit-pass-1 testability infrastructure
+
+To close the pre-audit test-isolation gap where the public
+`bring_up_secondaries_with_limit` and `apply_cmdline_and_start_smp`
+touched the global `smp::SMP_ENABLED` atomic (racing against
+parallel cargo tests), the audit pass introduces two new
+`pub(crate)` inner forms taking explicit state references:
+
+- `smp::bring_up_secondaries_with_limit_inner(max_cores, enabled,
+  core_ready, online_count, mpidr_table) -> u32`
+- `cmdline::apply_cmdline_and_start_smp_inner(cfg, enabled,
+  core_ready, online_count, mpidr_table) -> u32`
+
+The public functions become thin wrappers around these inner
+forms, threading the global statics.  Eight new tests in
+`smp::tests::sm1d6_inner_*` exercise the inner form's
+saturation matrix (zero/one/two/four max_cores, oversize
+saturation, disabled state, short-table defense, signature
+pin); seven new tests in `cmdline::tests::apply_inner_*`
+exercise the dispatch including the SMP_ENABLED atomic store
+discipline (including a regression test
+`apply_inner_disabled_clears_atomic_even_when_initially_true`
+that guards against the obvious bug-shape where the disabled
+branch forgets to commit the false state).
+
+### Audit-pass-1 test coverage delta
+
+- 420 HAL tests post-audit-pass-1 (+25 over the initial-landing
+  count of 395, all delivered in the same patch release; no
+  separate v0.31.7).  Per-file math: +17 audit-pass-1 tests in
+  cmdline.rs (4 chosen sub-node / version, 2 MAX_DTB_SIZE, 2
+  sanity, 1 padding stress, 6 apply_inner, 2 signature pins) +
+  8 inner-form tests in smp.rs (sm1d6_inner_*).
+- Zero clippy warnings workspace-wide.
+- Full Tier 0+1+2 smoke test passes (Lean build, 420/420 HAL
+  tests, 94/94 ABI conformance tests).
+
+### Audit-pass-1 code-quality refinements
+
+- Simplified the boot.rs Phase 5 dispatch.  The pre-audit form
+  branched on `smp_enabled` to call `apply_cmdline_and_start_smp`
+  in both arms; the post-audit form always calls it
+  unconditionally (the function internally short-circuits the
+  bring-up on `smp_enabled=false`) and uses the boolean only
+  for the diagnostic kprintln.  This eliminates the duplicate
+  call site, ensuring the global SMP_ENABLED atomic always
+  reflects the parsed cmdline regardless of branch taken.
+- Renamed `rust_boot_main`'s `_dtb_ptr` parameter to `dtb_ptr`
+  now that Phase 5 uses it unconditionally; the leading
+  underscore was a stale "may be unused" hint from before the
+  Phase 5 wiring.
 
 ### Items deferred past v1.0.0 with correctness impact
 

@@ -499,11 +499,42 @@ parses the cmdline, defaults to SMP-on (per maintainer decision
   core count.  Saturates over-platform values; `max_cores = 0`
   or `1` spawns no secondaries.
 
-**Test coverage**: 395 HAL tests (was 327 at SM1.D start); +54
-new in `cmdline::tests`, +9 in `smp::tests::sm1d6_*`, +5 in
-`boot::tests::sm1d_*` — total +68 new HAL tests.  Zero clippy
-warnings workspace-wide.  Tier 0+1+2+3 all green.  Items
-deferred past v1.0.0 with correctness impact: NONE.
+**Test coverage** (initial landing): 395 HAL tests (was 327 at
+SM1.D start); +54 new in `cmdline::tests`, +9 in
+`smp::tests::sm1d6_*`, +5 in `boot::tests::sm1d_*` — total +68
+new HAL tests at the initial landing.
+
+**Audit-pass-1 refinements** (post-initial-landing deep audit;
+shipped in the same v0.31.6 patch release):
+- HIGH-severity: `/chosen` sub-node bootargs filtering — the
+  walker now requires `depth == chosen_depth` so only direct
+  `/chosen/bootargs` is honoured.  Pre-audit a hostile DTB
+  could place `/chosen/sub/bootargs = "smp_enabled=false"` and
+  silently disable SMP.
+- HIGH-severity: `MAX_DTB_SIZE = 2 MiB` upper bound on
+  `totalsize` enforced before `core::slice::from_raw_parts` —
+  closes a UB vector where a malicious bootloader-supplied
+  `totalsize` (e.g., 4 GiB) would trigger UB at slice
+  construction (Rust requires full extent valid).
+- MEDIUM: `last_comp_version` check added — DTBs requiring a
+  parser version > 17 (the layout we parse) are rejected per
+  FDT spec §5.2.
+- MEDIUM: integer overflow hardening — every offset/length
+  addition uses `checked_add`; padding computation reworked to
+  avoid 32-bit overflow.
+- Test-isolation infrastructure: added `pub(crate)` inner forms
+  `bring_up_secondaries_with_limit_inner` and
+  `apply_cmdline_and_start_smp_inner` taking explicit state
+  references so tests exercise the full dispatch without
+  touching the global `smp::SMP_ENABLED` atomic.
+- Code-quality: simplified boot.rs Phase 5 (unconditional
+  `apply_cmdline_and_start_smp` call); renamed
+  `rust_boot_main` parameter from `_dtb_ptr` to `dtb_ptr` now
+  that it's used unconditionally.
+
+**Audit-pass-1 test delta**: +25 audit-pass regression /
+isolation tests for a total of 420 HAL tests post-audit.
+Zero clippy warnings workspace-wide; Tier 0+1+2+3 all green.
 
 **Build-script regression scanner**:
 `scan_boot_rs_phase5_uses_cmdline` in `rust/sele4n-hal/build.rs`
@@ -511,6 +542,8 @@ pins the textual presence of `cmdline::parse_cmdline_from_dtb(`
 and `cmdline::apply_cmdline_and_start_smp(` inside `boot.rs`,
 so a refactor that drops the Phase-5 call sites fails the build
 with an actionable diagnostic.
+
+Items deferred past v1.0.0 with correctness impact: NONE.
 
 Follow-on: SM1.E (IS-variant TLBI), SM1.F (SGI primitive),
 SM1.G (Per-core UART), SM1.H (QEMU SMP integration test) — see

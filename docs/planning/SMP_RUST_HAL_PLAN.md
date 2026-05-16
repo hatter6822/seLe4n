@@ -1726,9 +1726,41 @@ plan's stub-form sketch:
   sites at build time so a refactor cannot silently disable the
   cmdline parse.
 
-**Test coverage delivered**: 54 cmdline tests + 9 smp limit-
-aware tests + 5 boot Phase-5 tests = 68 new HAL tests at SM1.D
-close.  Total HAL test count: 395 (was 327 at SM1.D start).
+**Test coverage delivered (initial landing)**: 54 cmdline tests +
+9 smp limit-aware tests + 5 boot Phase-5 tests = 68 new HAL
+tests.  Total HAL test count: 395 (was 327 at SM1.D start).
+
+**Audit-pass-1 refinements** (post-initial-landing deep audit,
+delivered in the same v0.31.6 patch release):
+
+- **HIGH-severity `/chosen` sub-node bootargs filtering**: the
+  walker now requires `depth == chosen_depth` so only direct
+  `/chosen/bootargs` is honoured.  Pre-audit a hostile DTB
+  could place `/chosen/sub/bootargs = "smp_enabled=false"` and
+  silently disable SMP.
+- **HIGH-severity `totalsize` slice-construction UB defense**:
+  `MAX_DTB_SIZE = 2 MiB` upper bound enforced before
+  `core::slice::from_raw_parts` (against `hdr.totalsize` on
+  aarch64; against `blob.len()` on host) — closes a UB vector
+  where a malicious bootloader-supplied huge `totalsize` would
+  trigger UB at slice construction.
+- **MEDIUM `last_comp_version` check**: DTBs requiring parser
+  version > 17 (the layout we parse) are rejected per FDT
+  spec §5.2.
+- **MEDIUM integer-overflow hardening**: every offset/length
+  addition uses `checked_add`; padding uses
+  `(4 - (len % 4)) % 4` instead of `(len + 3) & !3`.
+- **Test-isolation infrastructure**:
+  `bring_up_secondaries_with_limit_inner` and
+  `apply_cmdline_and_start_smp_inner` `pub(crate)` inner forms
+  added — the public functions become thin wrappers.
+- **Code-quality**: simplified boot.rs Phase 5 (unconditional
+  apply call); renamed `_dtb_ptr` → `dtb_ptr` in
+  `rust_boot_main`.
+
+**Audit-pass-1 test delta**: +25 audit-pass regression /
+isolation tests for a total of 420 HAL tests post-audit-pass-1.
+Zero clippy warnings workspace-wide.
 
 The remaining sub-section text below describes the original
 plan skeleton; the landed implementation matches or exceeds

@@ -1211,6 +1211,67 @@ documentation lives under `docs/` and `docs/gitbook/`.
   fails the build with an actionable diagnostic before any
   binary is produced.
 
+  **Audit-pass-1 refinements** (post-initial-landing deep audit;
+  no separate version bump — refinements ship inside v0.31.6):
+  - **HIGH-severity `/chosen` sub-node bootargs filtering**:
+    the initial-landing walker matched `bootargs` anywhere in
+    the `/chosen` subtree (including `/chosen/sub/bootargs`).
+    A malicious DTB exploiting this could silently disable SMP
+    by placing `/chosen/sub/bootargs = "smp_enabled=false"`.
+    Fixed by adding `depth == chosen_depth` to the PROP match
+    guard so only direct `/chosen/bootargs` is honoured.  Per
+    FDT spec §3.5 the canonical property is the direct child;
+    per §5.4.1 properties precede sub-nodes, so the direct
+    bootargs is also found first when both exist.
+  - **HIGH-severity `totalsize` slice-construction UB defense**:
+    on aarch64 we constructed a slice over `totalsize` bytes
+    where `totalsize` is read from the DTB itself.  A malicious
+    `totalsize = 0xFFFF_FFFF` (~4 GiB) would trigger Undefined
+    Behaviour at slice construction (Rust requires the full
+    extent valid).  Added 2 MiB `MAX_DTB_SIZE` upper bound
+    enforced both on aarch64 (against `hdr.totalsize`) and on
+    the host test entry (against `blob.len()`).  DTBs exceeding
+    the bound fall back to the default `CmdlineConfig` (same
+    behaviour as missing DTB).
+  - **MEDIUM `last_comp_version` forward-compat check**: the
+    initial-landing form ignored the `last_comp_version` field
+    (FDT spec §5.2: minimum parser version required to read the
+    DTB).  A future v18+ DTB with new fields at v17 offsets
+    would be silently misread.  Added `FDT_PARSER_VERSION = 17`
+    constant and reject DTBs whose `last_comp_version > 17`.
+  - **MEDIUM integer-overflow hardening**: every offset/length
+    addition in the walker now uses `checked_add`; the property
+    padding computation uses `(4 - (len % 4)) % 4` instead of
+    `(len + 3) & !3` to avoid 32-bit overflow on adversarial
+    `len`.  In practice unreachable on legitimate input but
+    defends against future refactors that bypass validation.
+  - **Test-isolation infrastructure**: added `pub(crate) fn
+    bring_up_secondaries_with_limit_inner` (in `smp.rs`) and
+    `pub(crate) fn apply_cmdline_and_start_smp_inner` (in
+    `cmdline.rs`) — inner forms taking explicit state
+    references so tests exercise the dispatch chain without
+    touching the global `smp::SMP_ENABLED` atomic.  The
+    pre-audit tests verified the algorithm by computing the
+    expected slice manually; the post-audit tests go through
+    the actual function under test.
+  - **Code-quality**: simplified boot.rs Phase 5 (single
+    unconditional `apply_cmdline_and_start_smp` call instead of
+    duplicated calls in both arms of an `if`); renamed
+    `rust_boot_main`'s `_dtb_ptr` parameter to `dtb_ptr` now
+    that it's used unconditionally in Phase 5.
+
+  **Audit-pass-1 test coverage delta**: 420 HAL tests (was 395
+  at initial landing; +25 audit-pass tests across cmdline.rs
+  and smp.rs).  Per-file math: +17 audit-pass-1 tests in
+  cmdline.rs (4 chosen sub-node / version regression tests, 2
+  MAX_DTB_SIZE bound tests, 2 sanity / pin tests, 1 padding
+  stress, 6 apply_inner dispatch tests, 2 signature pins) + 8
+  inner-form tests in smp.rs (`sm1d6_inner_*` covering
+  zero/one/two/four max_cores, oversize saturation, disabled
+  state, short-table defense, signature pin).  Zero clippy
+  warnings workspace-wide; full Tier 0+1+2 smoke green; full
+  Tier 3 invariant surface green.
+
   **Items deferred past v1.0.0 with correctness impact**: NONE.
 
   Follow-on: SM1.E (IS-variant TLBI), SM1.F (SGI primitive),
