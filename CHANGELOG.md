@@ -1,5 +1,48 @@
 ## v0.31.7 — WS-SM Phases SM1.E/F/G/H landing (cross-core HAL completion)
 
+### Audit-pass-2 refinements (second deep audit pass)
+
+Four additional fixes landed inside v0.31.7 from a second deep
+audit (post-pass-1).  All extended the surface or improved
+correctness:
+
+- **HIGH: per-core GICD_IPRIORITYR0..7 + GICD_IGROUPR0 init**
+  (gic.rs `init_cpu_interface_secondary`).  Pass-1 added ISENABLER0,
+  but the per-core IPRIORITYR0..7 priorities and IGROUPR0 group bits
+  are ALSO banked per-core (GIC-400 TRM §4.3.11 / §4.3.4).  Without
+  per-core priority init, the secondary's PPI/SGI priorities are at
+  the implementation-defined reset value (often 0xFF = lowest,
+  MASKED by GICC_PMR=0xFF per TRM §4.4.2 "GICC_PMR=0xFF enables
+  delivery of all priority levels except level 0xFF").  Even with
+  ISENABLER0 enabled, a 0xFF priority would reject delivery, so the
+  SGI primitive would still silently fail.  Fix: explicitly write
+  priority 0xA0 (matching what primary's `init_distributor` does for
+  its banked view) to all 8 IPRIORITYR registers covering INTIDs
+  0..31, plus IGROUPR0=0 (Group 0 = IRQ delivery).
+- **LOW: QEMU script kernel-image path was misleading**
+  (`test_qemu_smp_*.sh`).  Pre-audit, the scripts defaulted
+  `KERNEL_IMAGE` to `rust/target/aarch64-unknown-none/release/sele4n-hal`
+  — a path that NEVER exists because `sele4n-hal` is a Rust library
+  (`[lib]`), not a binary.  `cargo build -p sele4n-hal` produces
+  `libsele4n_hal.rlib` (an archive).  The misleading path implied
+  the SKIP could be resolved by building; in reality, no kernel
+  binary target exists at SM1.H — that's SM5+ work.  Fix: require
+  explicit `SELE4N_KERNEL_IMAGE` env var; SKIP message honestly
+  explains the kernel binary target doesn't exist yet.
+- **LOW: SgiHandler docstring + off-by-one in assert message**
+  (gic.rs).  Pre-audit, the `SgiHandler` type lacked documentation
+  of the handler safety contract (no panic, no reentrancy, must be
+  fast).  The `register_sgi_handler_in` slice-length assert message
+  said "at least MAX_SGI_INTID + 1 entries" (off by one — should be
+  "at least MAX_SGI_INTID entries").  Both fixed with no
+  behavioural change.
+- **LOW: trap.rs SGI dispatch wiring note** (trap.rs).  The
+  `handle_irq` "unhandled INTID" branch is where SGIs currently
+  land — but the existing comment only mentioned device interrupts.
+  Updated to document the SM5+ SGI dispatch wiring requirement
+  (needs a `dispatch_irq` refactor to preserve source_cpu from
+  GICC_IAR).
+
 ### Audit-pass-1 refinements (post-initial-landing deep audit)
 
 Six correctness / security fixes landed inside v0.31.7 as the result

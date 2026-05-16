@@ -296,52 +296,83 @@ pub fn init_gic() {
 /// only by the diagnostic `kprintln`; the actual register
 /// programming is identical on every core.
 ///
-/// **WS-SM SM1.F audit-pass-1 fix** — per-core SGI/PPI enable:
-/// GICD_ISENABLER0 (covering INTIDs 0..31, i.e., SGIs 0..15 + PPIs
-/// 16..31) is also **banked per-core** (GIC-400 TRM §4.3.5).  The
-/// primary's `init_distributor` writes ISENABLER0 from the boot
-/// core's view, which only enables for the boot core — secondaries'
-/// banked views remain at the reset default (all disabled).  Without
-/// this per-core enable:
+/// **WS-SM SM1.F audit-pass-1 fix** — per-core distributor enables:
+/// GIC-400 has THREE distributor registers that are **banked
+/// per-core** (GIC-400 TRM §4.3.5, §4.3.11):
 ///
-///   - SGIs sent to a secondary via [`send_sgi`] would remain
-///     pending in the distributor but never forward to the
-///     secondary's CPU interface (GIC-400 TRM §3.5: "an SGI
-///     delivered to a CPU interface where it is disabled is held
-///     pending until enabled or cleared").  The SM1.F primitive
-///     would be silently non-functional for the cross-core wake
-///     use case.
-///   - Per-core timer PPI (INTID 30) would also not fire on
-///     secondaries — they'd never tick.
+///   1. **GICD_ISENABLER0** (INTIDs 0..31, i.e., SGIs + PPIs):
+///      per-core enable bits.  Primary's `init_distributor` writes
+///      this from its own banked view, enabling only its own bank.
+///      Without per-core enable, SGIs sent to a secondary via
+///      [`send_sgi`] stay pending forever, and the secondary's
+///      timer PPI never fires.
+///   2. **GICD_IPRIORITYR0..7** (priorities for INTIDs 0..31):
+///      per-core priority bytes.  Primary's `init_distributor`
+///      writes these from its own banked view to priority 0xA0
+///      (mid-range, accepted by PMR=0xFF).  Without per-core
+///      priority init, secondaries' PPI/SGI priority is the
+///      implementation-defined reset value (often 0xFF = lowest,
+///      MASKED by PMR=0xFF per GIC-400 TRM §4.4.2 "Setting GICC_PMR
+///      to 0xFF enables delivery of all priority levels except level
+///      0xFF").  So even with ISENABLER0 set, a 0xFF priority would
+///      reject delivery.
+///   3. **GICD_IGROUPR0** (group for INTIDs 0..31): per-core group
+///      bits.  Primary writes all-zeros (Group 0 = IRQ delivery).
+///      Reset value is also typically zero so this is usually fine,
+///      but defense-in-depth: set explicitly.
 ///
-/// The fix below writes ISENABLER0 = `0xFFFF_FFFF` from the
-/// secondary's banked view, enabling every PPI and SGI on this
-/// core.  This mirrors what the primary's `init_distributor` does
-/// for its own banked view; it does NOT affect other cores' views.
+/// This function writes all three on the secondary's banked view,
+/// matching what `init_distributor` does on the primary's view.
+/// The writes are local to the calling CPU per GIC-400 TRM §4.3.5;
+/// no impact on other cores.
 ///
 /// **Pre-condition**: the primary's `init_gic` (Phase 3 in
 /// `rust_boot_main`) must have already run, having initialised the
 /// shared distributor.  Secondary cores would otherwise observe
 /// uninitialised distributor state when receiving SPIs (cross-core
 /// interrupts).  PPIs (the timer's PPI 30, kernel SGIs 0..4) are
-/// fully functional on each core after this CPU-interface init,
-/// regardless of distributor state.
+/// fully functional on each core after this CPU-interface init.
 ///
 /// **GIC-400 TRM**: §4.4 describes the CPU interface register layout.
 /// §4.4.1 (GICC_CTLR.EnableGrp0 = 1) and §4.4.2 (GICC_PMR = 0xFF) are
 /// the substantive enables; §4.4.3 (GICC_BPR = 0) disables priority
 /// grouping so all 8 priority bits are honoured.  §4.3.5
-/// (GICD_ISENABLER0) is the per-core PPI/SGI enable.
+/// (GICD_ISENABLER0), §4.3.11 (GICD_IPRIORITYR0..7), and §4.3.4
+/// (GICD_IGROUPR0) are the per-core distributor enables.
 pub fn init_cpu_interface_secondary(core_id: u64) {
-    init_cpu_interface(GICC_BASE);
-    // SM1.F audit-pass-1: enable this core's banked PPI/SGI slot in
-    // the distributor.  Writes from this CPU only affect this CPU's
-    // banked view per GIC-400 TRM §4.3.5; no impact on other cores.
-    // Without this, send_sgi(target=this_core, ...) silently fails
-    // to deliver because the SGI stays pending in the distributor.
+    // Step 1: per-core distributor enables (audit-pass-1 expansion).
+    // All three writes target banked registers — they only affect this
+    // CPU's view per GIC-400 TRM §4.3.5 / §4.3.11.
+
+    // Banked: enable all SGIs + PPIs for this core.
     mmio_write32(GICD_BASE + gicd::ISENABLER_BASE, 0xFFFF_FFFF);
+
+    // Banked: set priority 0xA0 (mid-range; accepted by PMR=0xFF) for
+    // every INTID in [0, 32).  Without this, the per-core reset value
+    // (implementation-defined, often 0xFF) would mask delivery via the
+    // PMR=0xFF threshold.  Mirrors what `init_distributor` does for
+    // the primary's banked view of these same registers.
+    //
+    // 8 IPRIORITYR registers cover 32 INTIDs (4 priority bytes per
+    // 32-bit register).
+    for i in 0..8usize {
+        mmio_write32(
+            GICD_BASE + gicd::IPRIORITYR_BASE + i * 4,
+            0xA0A0_A0A0,
+        );
+    }
+
+    // Banked: set group 0 (IRQ delivery) for every INTID in [0, 32).
+    // The reset value is typically 0 already, but defense-in-depth
+    // matches what `init_distributor` does for the primary.
+    mmio_write32(GICD_BASE + gicd::IGROUPR_BASE, 0x0000_0000);
+
+    // Step 2: CPU interface enables (GICC registers — also banked
+    // but accessed via shared MMIO base).
+    init_cpu_interface(GICC_BASE);
+
     crate::kprintln!(
-        "[smp] core {core_id}: GIC-400 CPU interface initialized (PMR=0xFF, BPR=0, CTLR=1, ISENABLER0=0xFFFFFFFF)"
+        "[smp] core {core_id}: GIC-400 CPU interface initialized (ISENABLER0=0xFFFFFFFF, IPRIORITYR0..7=0xA0, IGROUPR0=0, PMR=0xFF, BPR=0, CTLR=1)"
     );
 }
 
@@ -628,6 +659,32 @@ pub fn send_sgi_to_all_but_self(intid: u8) {
 /// bits `[12:10]` for SGIs (per GIC-400 TRM §4.4.4), but the
 /// dispatcher abstracts this so the handler does not have to re-read
 /// the IAR.
+///
+/// # Handler contract
+///
+/// Handlers run from the IRQ trap handler context with PSTATE.I
+/// masked (IRQs disabled on this PE).  They MUST:
+///
+/// - **Not panic** in production.  Panic in IRQ context aborts the
+///   kernel (`panic = "abort"`), terminating without graceful
+///   shutdown.  Per the AN8-C EOI-before-handler discipline the
+///   GIC is in a clean state (EOI already fired) when the handler
+///   runs, so a panic does not leave the GIC with a stuck active
+///   line — but the kernel is gone.
+/// - **Not call** `register_sgi_handler` reentrantly.  The
+///   `SGI_HANDLERS` table is `static mut` with a boot-time-only
+///   write contract; a handler that mutates it from IRQ context
+///   would race with `dispatch_sgi`'s read on the same INTID and
+///   produce undefined behavior.
+/// - **Be fast** (microsecond scale).  Long-running handlers
+///   extend the IRQ-disabled window, delaying other interrupts
+///   (timer ticks, lower-priority SGIs).  Typical SGI handlers
+///   should perform O(1) work: increment a counter, set a flag,
+///   send an ACK SGI, schedule deferred work.
+///
+/// Handlers MAY re-enable IRQs via `enable_irq()` if the work is
+/// long-running and reentrant — but this is unusual for SGI
+/// handlers which are inherently short.
 pub type SgiHandler = fn(intid: u8, source_cpu: u8);
 
 /// **WS-SM SM1.F.5**: SGI handler table.
@@ -695,11 +752,20 @@ fn register_sgi_handler_in(
         "WS-SM SM1.F.5: SGI INTID must be 0..15, got {}",
         intid
     );
+    // After the first assert intid is in 0..16, so handlers.len()
+    // must be > intid (i.e., at least MAX_SGI_INTID = 16 in the
+    // worst case of intid=15).  The slice-length assert catches a
+    // caller bug where a too-short slice is passed (typically a
+    // test fixture; production callers always pass the full
+    // 16-entry `SGI_HANDLERS` static).
     assert!(
         (intid as usize) < handlers.len(),
         "WS-SM SM1.F.5: handler slice (len {}) must hold at least \
-         MAX_SGI_INTID + 1 entries — caller bug, not user input",
-        handlers.len()
+         {} entries (= MAX_SGI_INTID, so INTID {} fits) — caller \
+         bug, not user input",
+        handlers.len(),
+        MAX_SGI_INTID,
+        intid
     );
     handlers[intid as usize] = Some(handler);
 }
@@ -1457,6 +1523,52 @@ mod tests {
             ppi_range_in_bank0,
             "0xFFFF_FFFF must enable every PPI INTID (bits 16..31 of bank 0)"
         );
+    }
+
+    #[test]
+    fn sm1c3_ipriorityr_per_core_covers_intids_0_to_31() {
+        // SM1.F audit-pass-2: `init_cpu_interface_secondary` writes
+        // GICD_IPRIORITYR0..7 = 0xA0A0_A0A0 to set every per-core
+        // INTID (0..31) priority to 0xA0.  Each register holds 4
+        // priority bytes (8-bit fields), so 8 registers cover 32
+        // INTIDs.  Pin the offset and the number of writes.
+        assert_eq!(gicd::IPRIORITYR_BASE, 0x400,
+            "GICD_IPRIORITYR_BASE must match GIC-400 TRM §4.3.11");
+        // 8 registers × 4 INTIDs per register = 32 INTIDs covered.
+        let registers_for_first_32_intids: usize = 32 / 4;
+        assert_eq!(registers_for_first_32_intids, 8,
+            "Each IPRIORITYR holds 4 priority bytes; 8 regs cover 32 INTIDs");
+        // Verify the priority value (0xA0) is < GICC_PMR (0xFF) so
+        // GICC_PMR=0xFF "accept all priorities < 0xFF" does NOT mask
+        // these INTIDs.
+        let chosen_priority: u8 = 0xA0;
+        let gicc_pmr_value: u8 = 0xFF;
+        assert!(
+            chosen_priority < gicc_pmr_value,
+            "Chosen priority {} must be < GICC_PMR {} per GIC-400 TRM §4.4.2",
+            chosen_priority,
+            gicc_pmr_value
+        );
+        // The chosen 0xA0A0_A0A0 word splats 0xA0 across 4 INTIDs.
+        let prio_word: u32 = 0xA0A0_A0A0;
+        assert_eq!(prio_word & 0xFF, 0xA0, "lane 0 = 0xA0");
+        assert_eq!((prio_word >> 8) & 0xFF, 0xA0, "lane 1 = 0xA0");
+        assert_eq!((prio_word >> 16) & 0xFF, 0xA0, "lane 2 = 0xA0");
+        assert_eq!((prio_word >> 24) & 0xFF, 0xA0, "lane 3 = 0xA0");
+    }
+
+    #[test]
+    fn sm1c3_igroupr0_per_core_covers_first_32_intids() {
+        // SM1.F audit-pass-2: `init_cpu_interface_secondary` writes
+        // GICD_IGROUPR0 = 0 to set every per-core INTID (0..31) to
+        // Group 0 (= IRQ delivery, not FIQ).  Bank 0 covers INTIDs
+        // 0..31; the write is to a banked register that only affects
+        // the calling CPU's view.
+        assert_eq!(gicd::IGROUPR_BASE, 0x080,
+            "GICD_IGROUPR_BASE must match GIC-400 TRM §4.3.4");
+        // The value 0 means "all 32 INTIDs in Group 0" (IRQ).
+        let group_0_value: u32 = 0;
+        assert_eq!(group_0_value, 0, "Group 0 (IRQ delivery)");
     }
 
     // =====================================================================

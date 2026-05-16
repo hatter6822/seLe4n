@@ -13,8 +13,7 @@
 #
 # Skip conditions:
 #   * `qemu-system-aarch64` missing on PATH → SKIP (no QEMU)
-#   * Kernel image not built → SKIP (run `cargo build --target
-#     aarch64-unknown-none --release -p sele4n-hal` first)
+#   * `SELE4N_KERNEL_IMAGE` env var not set OR file not found → SKIP
 #
 # Pass condition:
 #   * Each of the 4 cores emits a per-core "ready" banner within the
@@ -27,6 +26,24 @@
 # Exit codes:
 #   0  PASS or SKIP (both are non-failure for CI tier-4)
 #   1  FAIL (boot trace incomplete)
+#
+# **Note on kernel image availability**: at SM1.H landing the
+# workspace has no kernel binary target — `sele4n-hal` is a Rust
+# library (`[lib]`, not `[[bin]]`), so `cargo build -p sele4n-hal`
+# produces `libsele4n_hal.rlib` (an archive), not a QEMU-bootable
+# ELF.  Producing a bootable kernel ELF requires a future binary
+# target that:
+#
+#   1. Declares `[[bin]]` linking against the HAL + Lean kernel
+#      object code.
+#   2. Uses `link.ld` (already present) and `boot.S::_start`.
+#   3. Resolves the `lean_kernel_main` symbol from the Lean
+#      compiler output.
+#
+# That binary target is part of the SM5+ Lean-kernel-integration
+# work.  Until it exists, this script SKIPs on every CI run.  Set
+# `SELE4N_KERNEL_IMAGE=/path/to/kernel.elf` to test a pre-built
+# kernel image once the target is added.
 
 set -euo pipefail
 
@@ -45,15 +62,28 @@ if ! command -v qemu-system-aarch64 &>/dev/null; then
   exit 0
 fi
 
-# Default kernel image location.  The Cargo target triple `aarch64-unknown-none`
-# produces a freestanding `.elf` that QEMU's `-kernel` flag understands directly.
-# Allow override via $SELE4N_KERNEL_IMAGE for downstream CI configurations.
-KERNEL_IMAGE="${SELE4N_KERNEL_IMAGE:-${REPO_ROOT}/rust/target/aarch64-unknown-none/release/sele4n-hal}"
+# Kernel image must be set explicitly via $SELE4N_KERNEL_IMAGE — at
+# SM1.H landing there is no kernel binary target in the workspace
+# (sele4n-hal is a library, not an executable).  See the script
+# header for the kernel-image-availability rationale.
+KERNEL_IMAGE="${SELE4N_KERNEL_IMAGE:-}"
+
+if [[ -z "${KERNEL_IMAGE}" ]]; then
+  echo "[SKIP] WS-SM SM1.H.1: SELE4N_KERNEL_IMAGE env var not set"
+  echo ""
+  echo "  Reason: the workspace has no kernel binary target at SM1.H —"
+  echo "          sele4n-hal is a Rust library, not an ELF executable."
+  echo "          A kernel binary requires a future SM5+ [[bin]] target"
+  echo "          that links the HAL + Lean kernel object code."
+  echo ""
+  echo "  To test with a pre-built kernel ELF, set:"
+  echo "    export SELE4N_KERNEL_IMAGE=/path/to/kernel.elf"
+  exit 0
+fi
 
 if [[ ! -f "${KERNEL_IMAGE}" ]]; then
   echo "[SKIP] WS-SM SM1.H.1: kernel image not found at ${KERNEL_IMAGE}"
-  echo "       Build with: (cd rust && cargo build --target aarch64-unknown-none --release)"
-  echo "       Or set SELE4N_KERNEL_IMAGE to point at a pre-built image."
+  echo "       (\$SELE4N_KERNEL_IMAGE = ${SELE4N_KERNEL_IMAGE})"
   exit 0
 fi
 

@@ -31,11 +31,20 @@ if ! command -v qemu-system-aarch64 &>/dev/null; then
   exit 0
 fi
 
-KERNEL_IMAGE="${SELE4N_KERNEL_IMAGE:-${REPO_ROOT}/rust/target/aarch64-unknown-none/release/sele4n-hal}"
+# Kernel image must be set explicitly via $SELE4N_KERNEL_IMAGE — at
+# SM1.H landing there is no kernel binary target (see
+# test_qemu_smp_bringup.sh header for details).
+KERNEL_IMAGE="${SELE4N_KERNEL_IMAGE:-}"
+
+if [[ -z "${KERNEL_IMAGE}" ]]; then
+  echo "[SKIP] WS-SM SM1.H.3: SELE4N_KERNEL_IMAGE env var not set"
+  echo "       Set SELE4N_KERNEL_IMAGE=/path/to/kernel.elf to enable."
+  echo "       See scripts/test_qemu_smp_bringup.sh for kernel-image-availability rationale."
+  exit 0
+fi
 
 if [[ ! -f "${KERNEL_IMAGE}" ]]; then
   echo "[SKIP] WS-SM SM1.H.3: kernel image not found at ${KERNEL_IMAGE}"
-  echo "       Build with: (cd rust && cargo build --target aarch64-unknown-none --release)"
   exit 0
 fi
 

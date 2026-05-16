@@ -1539,6 +1539,30 @@ documentation lives under `docs/` and `docs/gitbook/`.
   silent-fallback tests removed).  Zero clippy warnings workspace-
   wide.
 
+  **Audit-pass-2 refinements** (second deep audit, post-pass-1;
+  also in v0.31.7):
+  - HIGH: per-core GICD_IPRIORITYR0..7 + GICD_IGROUPR0 init in
+    `init_cpu_interface_secondary`.  Pass-1 added ISENABLER0, but
+    IPRIORITYR0..7 and IGROUPR0 are also banked per-core (GIC-400
+    TRM §4.3.11 / §4.3.4).  Without per-core priority init,
+    secondaries' PPI/SGI priorities reset to implementation-defined
+    values (often 0xFF = MASKED by GICC_PMR=0xFF per TRM §4.4.2).
+    Even with ISENABLER0 enabled, priority 0xFF rejects delivery
+    so SGIs to secondaries would still silently fail.  Fix:
+    write priority 0xA0 to all 8 IPRIORITYR registers + IGROUPR0=0.
+  - LOW: QEMU script kernel-image path misleading.
+    `${REPO_ROOT}/rust/target/aarch64-unknown-none/release/sele4n-hal`
+    never exists because `sele4n-hal` is `[lib]` not `[[bin]]`.
+    Require explicit `SELE4N_KERNEL_IMAGE` env var; SKIP message
+    documents that the kernel binary target is SM5+ work.
+  - LOW: SgiHandler docstring missing safety contract (no panic,
+    no reentrancy, must be fast).  Added.  Plus fixed off-by-one
+    in `register_sgi_handler_in` assert message ("at least
+    MAX_SGI_INTID + 1" → "at least MAX_SGI_INTID").
+  - LOW: trap.rs `handle_irq` "unhandled INTID" comment didn't
+    mention SGIs.  Updated to note SM5+ SGI dispatch wiring needs
+    a `dispatch_irq` refactor preserving source_cpu from GICC_IAR.
+
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**
   — historical detail retained for traceability:
