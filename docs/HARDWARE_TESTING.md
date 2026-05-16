@@ -35,6 +35,8 @@ verified** on every CI commit and **do not need hardware**:
 | **AN9-H**    | `BarrierKind::emit()` covers every Lean variant (parity test)    | `cargo test -p sele4n-hal --lib barriers` |
 | **AN9-I**    | `dsb_osh()`, `dsb_oshst()` callable; OSH algebra closed          | `cargo test -p sele4n-hal --lib barriers` |
 | **AN9-J**    | PSCI `cpu_on` round-trip, SMP table, `bring_up_secondaries`      | `cargo test -p sele4n-hal --lib smp` |
+| **WS-SM SM1.A** | PSCI full DEN0022D §5 surface — `cpu_off`, `affinity_info`, `psci_version`, `migrate_info_type`, `system_off`, `system_reset` | `cargo test -p sele4n-hal --lib psci` |
+| **WS-SM SM1.B** | `PerCpuData` struct (`core_id` first field), `PER_CPU_DATA` static array, `current_per_cpu()` + `current_core_id_from_tpidr()` accessors via TPIDR_EL1, `check_per_cpu_invariants()` boot gate, FFI export `ffi_current_core_id` | `cargo test -p sele4n-hal --lib per_cpu` + `lake exe smp_foundations_suite` |
 | **All AN9**  | 15 Lean surface-anchor tests + 36 Rust unit tests                | `lake exe an9_hardware_binding_suite`, `cargo test --workspace` |
 
 The Lean theorems above are machine-checked at build time with zero
@@ -368,6 +370,77 @@ PSCI return code (`PsciResult::Denied`, `AlreadyOn`, etc.) logged
 during `bring_up_secondaries`.  `Denied` typically indicates the
 firmware is not configured to accept PSCI calls from EL1; switch to
 EL2 or enable PSCI in the firmware build.
+
+### 4.9 WS-SM SM1.B — Per-CPU data + TPIDR_EL1 (closes SMP-M4)
+
+**What we're checking:** every core's `TPIDR_EL1` points at its own
+`PerCpuData` slot in the `PER_CPU_DATA` array, so a per-core
+identifier lookup is a single `mrs xN, tpidr_el1` instruction.
+
+**Boot core (always reachable, even with `SMP_ENABLED=false`):**
+
+```bash
+# QEMU boot — primary core only.
+./scripts/test_qemu_boot.sh
+```
+
+The kernel boot log on the primary core MUST contain (in this order):
+
+```
+[boot] Timer initialized (54 MHz counter, 1ms ticks)
+[boot] TPIDR_EL1 set to PER_CPU_DATA[0] = 0x<addr>
+[boot] current_core_id_from_tpidr() = 0
+[boot] IRQ delivery enabled
+```
+
+The `PER_CPU_DATA[0]` address must be 64-byte aligned (verified by
+the runtime `check_per_cpu_invariants()` immediately before the
+TPIDR_EL1 write; a misaligned address would have aborted boot before
+this line was emitted).  The `current_core_id_from_tpidr()` value
+must equal `0` (boot core's `core_id` field).
+
+**Secondary cores (requires `SMP_ENABLED=true`):**
+
+```bash
+# QEMU with -smp 4.
+./scripts/test_qemu_smp_bringup.sh
+```
+
+Each secondary core MUST emit its own `core_id = N` log line where
+`N == context_id` (1, 2, or 3).  This implicitly verifies that
+`boot.S::secondary_entry` correctly computed
+`TPIDR_EL1 = PER_CPU_DATA + context_id * PER_CPU_DATA_SLOT_SIZE`
+(the `madd` stride against the asm-visible
+`PER_CPU_DATA_SLOT_SIZE_SYM` symbol).
+
+**Host coverage (no QEMU required):**
+
+```bash
+cargo test -p sele4n-hal --lib per_cpu
+```
+
+Runs 30 unit tests in `per_cpu::tests` exercising the host stubs
+(struct alignment, const-constructor semantics, layout invariants,
+panic on out-of-range `context_id`, `check_per_cpu_invariants`
+happy path on the production static AND on well-formed / empty
+test slices, panic path on three distinct mis-population
+patterns via the inner `check_per_cpu_invariants_in` form).
+
+```bash
+lake exe smp_foundations_suite
+```
+
+Runs 66 PASS checks including the SM1.B.5 typed-FFI-wrapper
+surface (`Concurrency.currentCoreId : BaseIO CoreId`,
+`currentCoreId_in_range_marker`, `Inhabited CoreId` default).
+
+**Failure diagnostic:** if `check_per_cpu_invariants()` panics at
+boot, the panic message identifies which slot's `core_id` field
+diverges from its index (e.g.,
+`"PER_CPU_DATA[2].core_id = 99 ≠ 2"`).  This indicates a
+const-initialiser regression in `per_cpu.rs::PER_CPU_DATA`; revert
+the offending change and ensure each slot is populated with
+`PerCpuData::new(i)` where `i` matches the array index.
 
 ---
 

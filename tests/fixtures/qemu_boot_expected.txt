@@ -13,4 +13,6 @@ UART_INIT   | UART
 MMU_INIT    | MMU
 GIC_INIT    | GIC
 TIMER_INIT  | Timer
+TPIDR_SET   | TPIDR_EL1 set to PER_CPU_DATA
+PER_CPU_ID  | current_core_id_from_tpidr() =
 BOOT_DONE   | Boot complete

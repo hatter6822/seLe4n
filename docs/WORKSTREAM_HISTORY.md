@@ -251,32 +251,37 @@ SM0.N:
   Platform-independent (compiles + runs on host stubs too) and
   O(coreCount) = O(4).  `boot.rs` also `kprintln`s the live core
   id post-TPIDR-set for boot-log diagnostics on hardware.
-- **SM1.B.7**: 25 unit tests in `per_cpu::tests` (10 migrated
+- **SM1.B.7**: 30 unit tests in `per_cpu::tests` (10 migrated
   from the SM0.N `smp::tests::sm0n_*` block under `sm1b_*`
-  names with expanded coverage, 15 newly authored for
-  SM1.B-specific functionality): struct alignment + size,
-  const-constructor `new` and `zero` semantics, byte-level zero
-  discharge for the reserved tail, array
+  names with expanded coverage, 15 newly authored at SM1.B
+  landing for SM1.B-specific functionality, 5 added at
+  audit-pass-2 for the `check_per_cpu_invariants_in` inner
+  form + panic-path regression cases): struct alignment +
+  size, const-constructor `new` and `zero` semantics,
+  byte-level zero discharge for the reserved tail, array
   layout/stride/distinct-addresses, asm-stride observability via
   `PER_CPU_DATA_SLOT_SIZE_SYM`, out-of-range panic,
   `current_per_cpu` returns boot slot on host and points inside
   `PER_CPU_DATA` at a cache-line boundary,
   `current_core_id_from_tpidr` returns 0 on host and is
   in-range, `check_per_cpu_invariants` passes on the production
-  initialiser, pairwise-distinct + canonical-range cross-checks
-  on `core_id`, accessor agreement with `per_cpu_slot_addr`.
+  initialiser AND on well-formed / empty test slices, panics
+  on three distinct mis-population patterns (wrong-core-id,
+  first-slot-wrong, zero-default-regression),
+  pairwise-distinct + canonical-range cross-checks on
+  `core_id`, accessor agreement with `per_cpu_slot_addr`.
   3 new tests in `ffi::tests` (`ffi_current_core_id` host
   return 0, range invariant, agreement with the per-CPU
   accessor).  4 back-compat tests in `smp::tests` (replacing
   the 11 sm0n_* tests that migrated): verifying the
   `crate::smp::*` re-exports of `PerCpuData`, `PER_CPU_DATA`,
   the slot-size constants, and `per_cpu_slot_addr` still
-  resolve.  **Net delta**: 274 HAL tests (was 253 at SM1.A
-  close).  Math: +25 new in per_cpu.rs, +3 new in ffi.rs,
-  +4 new in smp.rs, −11 retired from smp.rs (now in per_cpu.rs).
-  Net: +21.
+  resolve.  **Net delta**: 279 HAL tests (was 253 at SM1.A
+  close).  Math: +30 new in per_cpu.rs (25 at initial landing
+  + 5 at audit-pass-2), +3 new in ffi.rs, +4 new in smp.rs,
+  −11 retired from smp.rs (now in per_cpu.rs).  Net: +26.
 
-**Test coverage**: 274 HAL tests (up from 253 at SM1.A close),
+**Test coverage**: 279 HAL tests (up from 253 at SM1.A close),
 zero clippy warnings workspace-wide.  4 new Lean surface-anchor
 `#check`s plus 4 new decidable examples plus a runtime
 `runCurrentCoreIdChecks` section in

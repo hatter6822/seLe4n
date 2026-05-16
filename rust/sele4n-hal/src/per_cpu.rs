@@ -374,8 +374,30 @@ pub fn current_core_id_from_tpidr() -> u64 {
 /// from the array index — a regression that would otherwise be
 /// invisible until SM5+ per-core scheduler code dereferences a
 /// wrong slot.
+///
+/// Thin wrapper over [`check_per_cpu_invariants_in`] — the latter
+/// takes a slice so the failure path is reachable from unit tests
+/// without mutating the production `PER_CPU_DATA` static (which is
+/// immutable from Rust code).
 pub fn check_per_cpu_invariants() {
-    for (i, slot) in PER_CPU_DATA.iter().enumerate() {
+    check_per_cpu_invariants_in(&PER_CPU_DATA);
+}
+
+/// **WS-SM SM1.B.6** (inner form, testable):  verify every slot's
+/// `core_id` matches its index in the supplied slice.
+///
+/// The production entry point [`check_per_cpu_invariants`] always
+/// passes `&PER_CPU_DATA`; this inner form lets tests construct a
+/// locally-allocated slice with intentionally-broken `core_id`
+/// values to exercise the panic path (e.g.,
+/// [`tests::sm1b_check_per_cpu_invariants_panics_on_mismatch`]).
+///
+/// Separating the inner form is the same pattern AN9-J's
+/// `bring_up_secondaries_inner` uses to make global-state-touching
+/// behaviour unit-testable.
+#[inline]
+pub fn check_per_cpu_invariants_in(slots: &[PerCpuData]) {
+    for (i, slot) in slots.iter().enumerate() {
         assert!(
             slot.core_id == i as u64,
             "WS-SM SM1.B: PER_CPU_DATA[{}].core_id = {} ≠ {}; \
@@ -711,6 +733,86 @@ mod tests {
         // initialiser — this is the property `rust_boot_main` Phase
         // 4 asserts at boot.
         check_per_cpu_invariants();
+    }
+
+    #[test]
+    fn sm1b_check_per_cpu_invariants_in_passes_on_well_formed_slice() {
+        // SM1.B.6 (inner form): a locally-allocated well-formed slice
+        // also passes the gate.  Verifies the inner function is a
+        // pure structural check, not coupled to the `PER_CPU_DATA`
+        // static.
+        let slots = [
+            PerCpuData::new(0),
+            PerCpuData::new(1),
+            PerCpuData::new(2),
+            PerCpuData::new(3),
+        ];
+        check_per_cpu_invariants_in(&slots);
+    }
+
+    #[test]
+    fn sm1b_check_per_cpu_invariants_in_passes_on_empty_slice() {
+        // SM1.B.6: an empty slice trivially passes the gate (the
+        // loop does not execute).  Edge case for forward-compat
+        // with single-core platforms that might use `coreCount = 1`
+        // (in which case the only slot is the boot core, but a
+        // zero-secondary configuration would still have one slot).
+        // We pass an empty array here as a stress test on the
+        // structural form; the production `PER_CPU_DATA` is never
+        // empty because `MAX_SECONDARY_CORES + 1 >= 1`.
+        let slots: [PerCpuData; 0] = [];
+        check_per_cpu_invariants_in(&slots);
+    }
+
+    #[test]
+    #[should_panic(expected = "per-CPU array is mis-populated")]
+    fn sm1b_check_per_cpu_invariants_in_panics_on_wrong_core_id() {
+        // SM1.B.6: the runtime gate panics if any slot's `core_id`
+        // disagrees with its array index.  This is the regression
+        // path that the production `PER_CPU_DATA` initialiser would
+        // hit if a future PR mis-populated the static (e.g., changed
+        // `PerCpuData::new(2)` to `PerCpuData::new(99)` in the
+        // initialiser).  The inner form lets us simulate this without
+        // mutating the immutable production static.
+        let slots = [
+            PerCpuData::new(0),
+            PerCpuData::new(1),
+            PerCpuData::new(99), // mis-populated — index 2 but core_id 99
+            PerCpuData::new(3),
+        ];
+        check_per_cpu_invariants_in(&slots);
+    }
+
+    #[test]
+    #[should_panic(expected = "per-CPU array is mis-populated")]
+    fn sm1b_check_per_cpu_invariants_in_panics_on_first_slot_wrong() {
+        // SM1.B.6: the gate also catches a regression on the boot
+        // slot.  Reorder-detection: if the slots are accidentally
+        // populated in reverse, the very first iteration catches it.
+        let slots = [
+            PerCpuData::new(3), // wrong: index 0 should be core_id 0
+            PerCpuData::new(2),
+            PerCpuData::new(1),
+            PerCpuData::new(0),
+        ];
+        check_per_cpu_invariants_in(&slots);
+    }
+
+    #[test]
+    #[should_panic(expected = "per-CPU array is mis-populated")]
+    fn sm1b_check_per_cpu_invariants_in_panics_on_zero_default_regression() {
+        // SM1.B.6: the gate catches the "every slot is zero" regression
+        // — the case where someone reverts SM1.B.2's per-slot
+        // initialiser back to the SM0.N `PerCpuData::zero()` pattern.
+        // Pre-SM1.B the SM0.N initialiser produced this exact layout;
+        // catching it at boot now is the SM1.B contract.
+        let slots = [
+            PerCpuData::zero(), // core_id = 0 ✓
+            PerCpuData::zero(), // core_id = 0 but index 1 — FAIL HERE
+            PerCpuData::zero(),
+            PerCpuData::zero(),
+        ];
+        check_per_cpu_invariants_in(&slots);
     }
 
     // ========================================================================

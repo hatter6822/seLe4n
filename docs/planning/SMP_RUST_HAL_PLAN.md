@@ -715,10 +715,12 @@ per-CPU base) at the Lean ↔ Rust seam:
   closes a defense-in-depth gap: a future regression that broke the
   const-init table would surface at boot rather than at first SMP
   wakeup.
-- **SM1.B.7** Test `test_per_cpu_data_layout` — 25 unit tests in
+- **SM1.B.7** Test `test_per_cpu_data_layout` — 30 unit tests in
   `per_cpu::tests` (10 migrated from the SM0.N `smp::tests::sm0n_*`
   block under `sm1b_*` names with expanded coverage, 15 newly
-  authored for SM1.B-specific functionality): struct alignment +
+  authored at SM1.B landing for SM1.B-specific functionality,
+  5 added at audit-pass-2 for the `check_per_cpu_invariants_in`
+  inner form + panic-path regression cases): struct alignment +
   size, const-constructor `new` and `zero` semantics, byte-level
   zero discharge for the reserved tail, array
   layout/stride/distinct-addresses, asm-stride observability via
@@ -726,17 +728,20 @@ per-CPU base) at the Lean ↔ Rust seam:
   `current_per_cpu` returns boot slot on host and points inside
   `PER_CPU_DATA` at a cache-line boundary,
   `current_core_id_from_tpidr` returns 0 on host and is in-range,
-  `check_per_cpu_invariants` passes on the production initialiser,
-  pairwise-distinct + canonical-range cross-checks on `core_id`,
-  accessor agreement with `per_cpu_slot_addr`.  Plus 3 new tests
-  in `ffi::tests` exercising `ffi_current_core_id` (host return 0,
-  range invariant, agreement with `current_core_id_from_tpidr`);
-  plus 4 back-compat tests in `smp::tests` (replacing the 11
-  sm0n_* tests that migrated): verifying the `crate::smp::*`
-  re-exports of `PerCpuData`, `PER_CPU_DATA`, the slot-size
-  constants, and `per_cpu_slot_addr` still resolve.
+  `check_per_cpu_invariants` passes on the production initialiser
+  AND on well-formed / empty test slices, panics on three distinct
+  mis-population patterns (wrong-core-id, first-slot-wrong,
+  zero-default-regression), pairwise-distinct + canonical-range
+  cross-checks on `core_id`, accessor agreement with
+  `per_cpu_slot_addr`.  Plus 3 new tests in `ffi::tests` exercising
+  `ffi_current_core_id` (host return 0, range invariant, agreement
+  with `current_core_id_from_tpidr`); plus 4 back-compat tests in
+  `smp::tests` (replacing the 11 sm0n_* tests that migrated):
+  verifying the `crate::smp::*` re-exports of `PerCpuData`,
+  `PER_CPU_DATA`, the slot-size constants, and `per_cpu_slot_addr`
+  still resolve.
 
-**Test coverage**: 274 HAL tests (up from 253 at SM1.A close), zero
+**Test coverage**: 279 HAL tests (up from 253 at SM1.A close), zero
 clippy warnings workspace-wide, zero new fmt diffs in modified files.
 4 new Lean surface-anchor `#check`s in `tests/SmpFoundationsSuite.lean`
 (`Platform.FFI.ffiCurrentCoreId`, `Concurrency.currentCoreId`,

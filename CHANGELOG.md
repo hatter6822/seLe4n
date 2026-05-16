@@ -92,10 +92,12 @@ context" carries the live tracking.
 
 ### Added — Test coverage (SM1.B.7)
 
-- `rust/sele4n-hal/src/per_cpu.rs::tests` (NEW, 25 unit tests; 10
+- `rust/sele4n-hal/src/per_cpu.rs::tests` (NEW, 30 unit tests; 10
   migrated from the SM0.N `smp::tests::sm0n_*` block under
-  `sm1b_*` names with expanded coverage, 15 newly authored for
-  SM1.B-specific functionality): struct alignment + size,
+  `sm1b_*` names with expanded coverage, 15 newly authored at
+  SM1.B landing for SM1.B-specific functionality, 5 added at
+  audit-pass-2 for the `check_per_cpu_invariants_in` inner form
+  and its panic path): struct alignment + size,
   const-constructor `new` and `zero` semantics, byte-level zero
   discharge for the reserved tail, array layout / stride /
   distinct-addresses, asm-stride observability via
@@ -105,8 +107,11 @@ context" carries the live tracking.
   inside `PER_CPU_DATA`, returned address cache-line aligned,
   `current_core_id_from_tpidr` returns 0 on host + in-range
   invariant, `check_per_cpu_invariants` passes on the production
-  initialiser, pairwise-distinct + canonical-range cross-checks on
-  `core_id`, accessor agreement with `per_cpu_slot_addr`.
+  initialiser AND on well-formed / empty test slices, panics on
+  three distinct mis-population patterns (wrong-core-id,
+  first-slot-wrong, zero-default-regression), pairwise-distinct +
+  canonical-range cross-checks on `core_id`, accessor agreement
+  with `per_cpu_slot_addr`.
 - `rust/sele4n-hal/src/ffi.rs::tests` (3 new tests):
   `ffi_current_core_id_returns_zero_on_host`,
   `ffi_current_core_id_in_range`,
@@ -118,9 +123,10 @@ context" carries the live tracking.
   still resolve so any pre-SM1.B call site through the legacy
   module path keeps working.
 
-**Net delta**: 274 HAL tests post-SM1.B (was 253 at SM1.A close).
-Per-file math: +25 new in per_cpu.rs, +3 new in ffi.rs, +4 new in
-smp.rs, −11 retired from smp.rs (now in per_cpu.rs).  Net: +21.
+**Net delta**: 279 HAL tests post-SM1.B (was 253 at SM1.A close).
+Per-file math: +30 new in per_cpu.rs (25 at initial landing + 5 at
+audit-pass-2), +3 new in ffi.rs, +4 new in smp.rs, −11 retired from
+smp.rs (now in per_cpu.rs).  Net: +26.
 
 `tests/SmpFoundationsSuite.lean`:
 
@@ -141,10 +147,10 @@ smp.rs, −11 retired from smp.rs (now in per_cpu.rs).  Net: +21.
 
 ### Test coverage summary
 
-- 274 HAL tests (up from 253 at SM1.A close).
+- 279 HAL tests (up from 253 at SM1.A close).
 - Zero clippy warnings workspace-wide.
 - Full Tier 0+1+2 smoke test passes
-  (Lean build, 274/274 HAL tests, 94/94 ABI conformance tests).
+  (Lean build, 279/279 HAL tests, 94/94 ABI conformance tests).
 - Lean test suite count and module count updated in
   `docs/codebase_map.json` and the README/SPEC tables.
 
