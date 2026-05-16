@@ -284,8 +284,10 @@ pub fn cpu_on(target_mpidr: u64, entry_point: usize, context_id: u64) -> PsciRes
 /// must treat any return (including `Success`) as the hardware
 /// failure case and park the PE:
 ///
-/// ```rust,ignore
-/// // power-off discipline
+/// ```text
+/// // power-off discipline (pseudocode — uses crate-internal kprintln
+/// // which is not reachable from a doctest's external-crate context,
+/// // hence `text` block rather than `rust,ignore` doctest)
 /// let res = psci::cpu_off();
 /// // We get here only if cpu_off failed (or we're on host stub);
 /// // log and park.

@@ -230,15 +230,29 @@ const _: () = assert!(
 );
 
 // Compile-time pin: `PER_CPU_DATA.len() == MAX_SECONDARY_CORES + 1`.
-// Pairs with the `MAX_SECONDARY_CORES + 1 == 4` assertion in `smp.rs`
-// (SM0.O), so transitively `PER_CPU_DATA.len() == PlatformBinding.coreCount`.
-// If a future multi-platform port changes `MAX_SECONDARY_CORES` past 3,
-// this assertion catches the slot-count drift at build time.
-const _: () = assert!(
-    PER_CPU_DATA.len() == MAX_SECONDARY_CORES + 1,
-    "WS-SM SM1.B: PER_CPU_DATA must have one slot per core \
-     (MAX_SECONDARY_CORES + 1 = PlatformBinding.coreCount)"
-);
+// Enforced by the **type definition** above
+// (`static PER_CPU_DATA: [PerCpuData; MAX_SECONDARY_CORES + 1] = [...]`)
+// — Rust's type checker verifies the array literal has exactly
+// `MAX_SECONDARY_CORES + 1` elements, so a regression that changed
+// `MAX_SECONDARY_CORES` without updating the literal would fail with
+// a type mismatch ("expected N elements, found M").  This is a
+// stronger guarantee than a `const _: () = assert!(...)` could
+// provide.
+//
+// We deliberately do NOT add a `const _: () = assert!(PER_CPU_DATA.len()
+// == MAX_SECONDARY_CORES + 1, ...)` here: that pattern requires
+// `feature(const_refs_to_statics)` (rust-lang/rust#119618), which only
+// stabilised in Rust 1.83.  The seLe4n MSRV is 1.82 (pinned in
+// `.github/workflows/lean_action_ci.yml` and CI's
+// `dtolnay/rust-toolchain@1.82.0`).  See `cpu.rs:204-213` for the
+// matching AN8-B.4 note on the same MSRV constraint.
+//
+// Transitively: the SM0.O assertion in `smp.rs:82-87`
+// (`MAX_SECONDARY_CORES + 1 == 4`) plus this type-level enforcement
+// pins `PER_CPU_DATA.len() == PlatformBinding.coreCount` structurally.
+// Runtime cross-checks in `tests/per_cpu::tests::sm1b_per_cpu_data_array_has_4_slots`
+// and `..._max_secondary_cores_plus_one_equals_array_len` provide
+// belt-and-suspenders coverage.
 
 /// **WS-SM SM1.B.2** / SM0.N: load a core's [`PerCpuData`] slot
 /// address.
