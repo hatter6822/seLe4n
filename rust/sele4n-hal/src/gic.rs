@@ -296,6 +296,29 @@ pub fn init_gic() {
 /// only by the diagnostic `kprintln`; the actual register
 /// programming is identical on every core.
 ///
+/// **WS-SM SM1.F audit-pass-1 fix** — per-core SGI/PPI enable:
+/// GICD_ISENABLER0 (covering INTIDs 0..31, i.e., SGIs 0..15 + PPIs
+/// 16..31) is also **banked per-core** (GIC-400 TRM §4.3.5).  The
+/// primary's `init_distributor` writes ISENABLER0 from the boot
+/// core's view, which only enables for the boot core — secondaries'
+/// banked views remain at the reset default (all disabled).  Without
+/// this per-core enable:
+///
+///   - SGIs sent to a secondary via [`send_sgi`] would remain
+///     pending in the distributor but never forward to the
+///     secondary's CPU interface (GIC-400 TRM §3.5: "an SGI
+///     delivered to a CPU interface where it is disabled is held
+///     pending until enabled or cleared").  The SM1.F primitive
+///     would be silently non-functional for the cross-core wake
+///     use case.
+///   - Per-core timer PPI (INTID 30) would also not fire on
+///     secondaries — they'd never tick.
+///
+/// The fix below writes ISENABLER0 = `0xFFFF_FFFF` from the
+/// secondary's banked view, enabling every PPI and SGI on this
+/// core.  This mirrors what the primary's `init_distributor` does
+/// for its own banked view; it does NOT affect other cores' views.
+///
 /// **Pre-condition**: the primary's `init_gic` (Phase 3 in
 /// `rust_boot_main`) must have already run, having initialised the
 /// shared distributor.  Secondary cores would otherwise observe
@@ -307,11 +330,18 @@ pub fn init_gic() {
 /// **GIC-400 TRM**: §4.4 describes the CPU interface register layout.
 /// §4.4.1 (GICC_CTLR.EnableGrp0 = 1) and §4.4.2 (GICC_PMR = 0xFF) are
 /// the substantive enables; §4.4.3 (GICC_BPR = 0) disables priority
-/// grouping so all 8 priority bits are honoured.
+/// grouping so all 8 priority bits are honoured.  §4.3.5
+/// (GICD_ISENABLER0) is the per-core PPI/SGI enable.
 pub fn init_cpu_interface_secondary(core_id: u64) {
     init_cpu_interface(GICC_BASE);
+    // SM1.F audit-pass-1: enable this core's banked PPI/SGI slot in
+    // the distributor.  Writes from this CPU only affect this CPU's
+    // banked view per GIC-400 TRM §4.3.5; no impact on other cores.
+    // Without this, send_sgi(target=this_core, ...) silently fails
+    // to deliver because the SGI stays pending in the distributor.
+    mmio_write32(GICD_BASE + gicd::ISENABLER_BASE, 0xFFFF_FFFF);
     crate::kprintln!(
-        "[smp] core {core_id}: GIC-400 CPU interface initialized (PMR=0xFF, BPR=0, CTLR=1)"
+        "[smp] core {core_id}: GIC-400 CPU interface initialized (PMR=0xFF, BPR=0, CTLR=1, ISENABLER0=0xFFFFFFFF)"
     );
 }
 
@@ -622,6 +652,115 @@ pub type SgiHandler = fn(intid: u8, source_cpu: u8);
 static mut SGI_HANDLERS: [Option<SgiHandler>; MAX_SGI_INTID as usize] =
     [None; MAX_SGI_INTID as usize];
 
+// ============================================================================
+// SM1.F.5 audit-pass-1 — Testable inner forms with explicit slice
+// ============================================================================
+//
+// The global `SGI_HANDLERS` is the production handler table.  Tests
+// that wrote to it directly raced on a shared `static mut`, producing
+// undefined behaviour under cargo test's default parallel execution
+// (two tests both registering at INTID 14 = concurrent writes to the
+// same memory).
+//
+// The audit-pass-1 fix factors the handler-table operations into
+// `_in`-suffixed inner forms that take an explicit slice reference.
+// Tests use a stack-local array, so each test owns its own table —
+// no cross-test contamination at the static-mut level.
+//
+// Production callers continue to use the global static via the
+// thin-wrapper `register_sgi_handler` / `lookup_sgi_handler` /
+// `dispatch_sgi` functions.  The wrappers route through the
+// `_in`-form helpers.
+
+/// **WS-SM SM1.F.5 audit-pass-1**: Register a handler at an INTID
+/// in an explicit slice.
+///
+/// `handlers` — the table slice to mutate.  Must have at least
+/// `MAX_SGI_INTID = 16` entries.  In production this is
+/// `&mut SGI_HANDLERS`; in tests it's a stack-local array.
+///
+/// # Panics
+///
+/// Panics if `intid >= 16` OR `intid >= handlers.len()` — both
+/// bounds are required because the test caller can pass a shorter
+/// slice.
+#[inline]
+fn register_sgi_handler_in(
+    handlers: &mut [Option<SgiHandler>],
+    intid: u8,
+    handler: SgiHandler,
+) {
+    assert!(
+        intid < MAX_SGI_INTID,
+        "WS-SM SM1.F.5: SGI INTID must be 0..15, got {}",
+        intid
+    );
+    assert!(
+        (intid as usize) < handlers.len(),
+        "WS-SM SM1.F.5: handler slice (len {}) must hold at least \
+         MAX_SGI_INTID + 1 entries — caller bug, not user input",
+        handlers.len()
+    );
+    handlers[intid as usize] = Some(handler);
+}
+
+/// **WS-SM SM1.F.5 audit-pass-1**: Look up a handler at an INTID
+/// in an explicit slice.
+///
+/// Returns `None` for out-of-range INTIDs OR if the slice is too
+/// short to hold the entry.  Production callers use the global
+/// slice; tests use stack-local arrays.
+#[inline]
+fn lookup_sgi_handler_in(
+    handlers: &[Option<SgiHandler>],
+    intid: u8,
+) -> Option<SgiHandler> {
+    if intid >= MAX_SGI_INTID {
+        return None;
+    }
+    if (intid as usize) >= handlers.len() {
+        return None;
+    }
+    handlers[intid as usize]
+}
+
+/// **WS-SM SM1.F.5 audit-pass-1**: Dispatch an SGI through an
+/// explicit handler slice.
+///
+/// `handlers` — the table to consult.  In production this is the
+/// global `SGI_HANDLERS`; in tests it's a stack-local array.
+/// `intid` — the SGI INTID `0..15`.
+/// `source_cpu` — the CPU interface that sent the SGI.
+///
+/// Out-of-range INTIDs return without dispatch; unregistered slots
+/// log a diagnostic and return.
+fn dispatch_sgi_in(
+    handlers: &[Option<SgiHandler>],
+    intid: u8,
+    source_cpu: u8,
+) {
+    if intid >= MAX_SGI_INTID {
+        // Defensive: dispatcher only valid for SGI range.  Caller
+        // should have classified non-SGI INTIDs already.
+        return;
+    }
+    match lookup_sgi_handler_in(handlers, intid) {
+        Some(handler) => handler(intid, source_cpu),
+        None => {
+            // SM1.F.5: log-only — many SGI INTIDs are unused by
+            // design (only 0..4 are kernel-reserved per SM0.H).  The
+            // diagnostic line catches misconfigured boot paths that
+            // failed to register a handler, without panicking the
+            // kernel on every spurious SGI from a buggy peer.
+            crate::kprintln!(
+                "[gic] no handler for SGI {} from cpu {}",
+                intid,
+                source_cpu
+            );
+        }
+    }
+}
+
 /// **WS-SM SM1.F.5**: Register a handler for a specific SGI INTID.
 ///
 /// MUST be called from boot, before any SGI can fire on this core.
@@ -643,15 +782,22 @@ static mut SGI_HANDLERS: [Option<SgiHandler>; MAX_SGI_INTID as usize] =
 ///
 /// Panics if `intid >= 16` (bounds match every other SGI primitive).
 pub unsafe fn register_sgi_handler(intid: u8, handler: SgiHandler) {
-    assert!(
-        intid < MAX_SGI_INTID,
-        "WS-SM SM1.F.5: SGI INTID must be 0..15, got {}",
-        intid
-    );
     // SAFETY: caller obligation — boot-time only, no concurrent access.
     // Documented exhaustively in the function's safety contract above.
+    //
+    // Audit-pass-1: route through the testable inner form so the
+    // global path is identical to the test path (just with a
+    // different slice).
+    //
+    // Use `&raw mut` to obtain a raw pointer without going through
+    // an intermediate `&mut SGI_HANDLERS` reference (which would
+    // trip the `static_mut_refs` lint, a hard error in edition 2024).
+    // The subsequent `&mut *ptr` dereference is sound under the
+    // boot-time-only contract documented on the SGI_HANDLERS static.
+    let handlers_ptr: *mut [Option<SgiHandler>; MAX_SGI_INTID as usize] =
+        &raw mut SGI_HANDLERS;
     unsafe {
-        SGI_HANDLERS[intid as usize] = Some(handler);
+        register_sgi_handler_in(&mut *handlers_ptr, intid, handler);
     }
 }
 
@@ -670,12 +816,18 @@ pub unsafe fn register_sgi_handler(intid: u8, handler: SgiHandler) {
 /// registrations on the same thread is also sound (no concurrent
 /// writes can occur in single-threaded test execution).
 pub fn lookup_sgi_handler(intid: u8) -> Option<SgiHandler> {
-    if intid >= MAX_SGI_INTID {
-        return None;
-    }
+    // Audit-pass-1: route through the testable inner form.
+    //
+    // Use `&raw const` to obtain a raw pointer without going through
+    // an intermediate `&SGI_HANDLERS` reference (which would trip
+    // the `static_mut_refs` lint, a hard error in edition 2024).
+    //
     // SAFETY: `SGI_HANDLERS` is read-only after the boot-time
-    // registration phase — see the static's docstring.
-    unsafe { SGI_HANDLERS[intid as usize] }
+    // registration phase — see the static's docstring.  The `&*ptr`
+    // dereference is sound under the boot-time-only-writes contract.
+    let handlers_ptr: *const [Option<SgiHandler>; MAX_SGI_INTID as usize] =
+        &raw const SGI_HANDLERS;
+    unsafe { lookup_sgi_handler_in(&*handlers_ptr, intid) }
 }
 
 /// **WS-SM SM1.F.5**: Dispatch an SGI to its registered handler.
@@ -696,26 +848,17 @@ pub fn lookup_sgi_handler(intid: u8) -> Option<SgiHandler> {
 /// per-core handler the source PE for handlers that need to
 /// originate ACK SGIs (e.g., TLB-shootdown ACK).
 pub fn dispatch_sgi(intid: u8, source_cpu: u8) {
-    if intid >= MAX_SGI_INTID {
-        // Defensive: dispatcher only valid for SGI range.  Caller
-        // should have classified non-SGI INTIDs already.
-        return;
-    }
-    match lookup_sgi_handler(intid) {
-        Some(handler) => handler(intid, source_cpu),
-        None => {
-            // SM1.F.5: log-only — many SGI INTIDs are unused by
-            // design (only 0..4 are kernel-reserved per SM0.H).  The
-            // diagnostic line catches misconfigured boot paths that
-            // failed to register a handler, without panicking the
-            // kernel on every spurious SGI from a buggy peer.
-            crate::kprintln!(
-                "[gic] no handler for SGI {} from cpu {}",
-                intid,
-                source_cpu
-            );
-        }
-    }
+    // Audit-pass-1: route through the testable inner form.
+    //
+    // Use `&raw const` to obtain a raw pointer without going through
+    // an intermediate `&SGI_HANDLERS` reference (which would trip the
+    // `static_mut_refs` lint, a hard error in edition 2024).
+    //
+    // SAFETY: `SGI_HANDLERS` is read-only after the boot-time
+    // registration phase.
+    let handlers_ptr: *const [Option<SgiHandler>; MAX_SGI_INTID as usize] =
+        &raw const SGI_HANDLERS;
+    unsafe { dispatch_sgi_in(&*handlers_ptr, intid, source_cpu) }
 }
 
 /// **WS-SM SM1.F.5**: Extract the source-CPU field from a raw
@@ -1279,6 +1422,43 @@ mod tests {
         let _: fn(usize) = init_cpu_interface;
     }
 
+    #[test]
+    fn sm1c3_isenabler0_offset_is_first_bank() {
+        // SM1.F audit-pass-1: the per-core ISENABLER0 enable in
+        // `init_cpu_interface_secondary` writes to
+        // `GICD_BASE + gicd::ISENABLER_BASE`, which is the first
+        // bank (covering INTIDs 0..31).  Pin this offset so a
+        // refactor that changes ISENABLER_BASE doesn't break the
+        // per-core SGI/PPI enable.
+        assert_eq!(gicd::ISENABLER_BASE, 0x100,
+            "GICD_ISENABLER_BASE must match GIC-400 TRM §4.3.5");
+        // Bank 0 = ISENABLER0 = first 32 INTIDs (SGIs 0..15 + PPIs 16..31).
+        // Verify the mask we use (0xFFFF_FFFF) actually covers every SGI
+        // INTID in 0..15 (low 16 bits of bank 0) AND the timer PPI.
+        let enable_all_mask: u32 = 0xFFFF_FFFF;
+        // 16 SGIs (0..15) fit in the low 16 bits of bank 0.
+        let sgi_range_in_bank0: u32 = 0x0000_FFFF;
+        assert_eq!(
+            enable_all_mask & sgi_range_in_bank0,
+            sgi_range_in_bank0,
+            "0xFFFF_FFFF must enable every SGI INTID (bits 0..15 of bank 0)"
+        );
+        // Timer PPI = INTID 30 → bit 30 of bank 0 (PPIs occupy bits 16..31).
+        let timer_bit_in_bank0: u32 = 1 << TIMER_PPI_ID;
+        assert_eq!(
+            enable_all_mask & timer_bit_in_bank0,
+            timer_bit_in_bank0,
+            "0xFFFF_FFFF must enable timer PPI (bit 30 of bank 0)"
+        );
+        // PPIs occupy bits 16..31; pin that range too.
+        let ppi_range_in_bank0: u32 = 0xFFFF_0000;
+        assert_eq!(
+            enable_all_mask & ppi_range_in_bank0,
+            ppi_range_in_bank0,
+            "0xFFFF_FFFF must enable every PPI INTID (bits 16..31 of bank 0)"
+        );
+    }
+
     // =====================================================================
     // WS-SM SM1.F — SGI primitive tests
     //
@@ -1482,81 +1662,171 @@ mod tests {
     }
 
     #[test]
-    fn sm1f5_lookup_returns_none_for_unregistered_intid() {
-        // SM1.F.5: an INTID with no registered handler returns None
-        // from `lookup_sgi_handler`.  We use INTID 15 (unused at
-        // SM1.F; SM3+ may register it) so this test is stable
-        // regardless of other tests' handler registrations.
-        //
-        // Note: this test races with other tests that might
-        // register handlers at INTID 15; we use 15 (the highest)
-        // because no kernel code claims it at SM1.F.  If a future
-        // SM7 cross-core test registers at 15, this test must move
-        // to a still-unclaimed INTID.
-        let h = lookup_sgi_handler(15);
-        assert!(h.is_none(), "INTID 15 should be unregistered at SM1.F");
-    }
-
-    #[test]
     fn sm1f5_lookup_returns_none_for_out_of_range_intid() {
         // SM1.F.5: out-of-range INTID returns None defensively.
+        // Tests the GLOBAL wrapper; no state mutation needed.
         assert!(lookup_sgi_handler(16).is_none());
         assert!(lookup_sgi_handler(100).is_none());
         assert!(lookup_sgi_handler(255).is_none());
     }
+    // Note: a per-INTID "is-unregistered" test against the global
+    // SGI_HANDLERS table would be race-prone under cargo test (any
+    // other test that registers a handler would observe a Some).
+    // Audit-pass-1 replaced such tests with stack-local-slice
+    // exercises via `sm1f5_inner_register_then_lookup_returns_handler`
+    // and `sm1f5_inner_lookup_returns_none_for_out_of_range_intid`.
 
-    static SM1F5_REGISTRATION_FIRED: AtomicU32 = AtomicU32::new(0);
-    fn sm1f5_registration_handler(intid: u8, source_cpu: u8) {
-        // Encode (intid, source_cpu) into the counter so we can
-        // verify the dispatcher passes both arguments correctly.
-        SM1F5_REGISTRATION_FIRED.store(((intid as u32) << 8) | (source_cpu as u32), Ordering::SeqCst);
+    // SM1.F.5 audit-pass-1: per-test handler state-recording.
+    //
+    // The pre-audit tests used a single `static AtomicU32` shared
+    // across multiple tests AND wrote to the global `SGI_HANDLERS`
+    // at the same INTID — both racy under cargo test's parallel
+    // execution.  The audit-pass-1 fix uses per-test static
+    // counters with unique-per-test names AND routes registration
+    // through the `_in`-form helpers with stack-local slices, so
+    // each test owns isolated state.
+    //
+    // To keep test handlers callable via the `fn(u8, u8)` pointer
+    // type (no captures), each test that exercises dispatch declares
+    // its own `static AtomicU32` and a paired handler function.
+    // The handlers store `(intid << 8) | source_cpu` so the test
+    // can verify the dispatcher passed both arguments correctly.
+
+    static SM1F5_INNER_LOOKUP_FIRED: AtomicU32 = AtomicU32::new(0);
+    fn sm1f5_inner_lookup_handler(intid: u8, source_cpu: u8) {
+        SM1F5_INNER_LOOKUP_FIRED
+            .store(((intid as u32) << 8) | (source_cpu as u32), Ordering::SeqCst);
     }
 
     #[test]
-    fn sm1f5_register_then_lookup_returns_handler() {
-        // SM1.F.5: registering a handler at INTID 14 is recoverable
-        // via lookup.  We use INTID 14 (and a unique handler) to
-        // avoid collision with tests that exercise INTID 15.
-        SM1F5_REGISTRATION_FIRED.store(0, Ordering::SeqCst);
-        // SAFETY: registration is normally boot-time only, but this
-        // test runs on a single thread (no concurrent SGI dispatch).
-        unsafe {
-            register_sgi_handler(14, sm1f5_registration_handler);
+    fn sm1f5_inner_register_then_lookup_returns_handler() {
+        // SM1.F.5 audit-pass-1: use the `_in`-form helpers with a
+        // stack-local handler table so this test cannot race with
+        // any other test on the global `SGI_HANDLERS`.
+        let mut handlers: [Option<SgiHandler>; MAX_SGI_INTID as usize] =
+            [None; MAX_SGI_INTID as usize];
+        // Pre-condition: empty table.
+        for i in 0..MAX_SGI_INTID {
+            assert!(
+                lookup_sgi_handler_in(&handlers, i).is_none(),
+                "fresh handler table must be all-None at INTID {}",
+                i
+            );
         }
-        let h = lookup_sgi_handler(14);
-        assert!(h.is_some(), "handler at INTID 14 must be retrievable");
-    }
-
-    #[test]
-    fn sm1f5_dispatch_invokes_registered_handler() {
-        // SM1.F.5: dispatch_sgi forwards to the registered handler
-        // with the correct (intid, source_cpu) pair.  We use INTID
-        // 14 (registered above) and a unique source_cpu of 7 so the
-        // counter encoding is unambiguous.
-        SM1F5_REGISTRATION_FIRED.store(0, Ordering::SeqCst);
-        unsafe {
-            register_sgi_handler(14, sm1f5_registration_handler);
+        register_sgi_handler_in(&mut handlers, 14, sm1f5_inner_lookup_handler);
+        assert!(
+            lookup_sgi_handler_in(&handlers, 14).is_some(),
+            "handler at INTID 14 must be retrievable after registration"
+        );
+        // Other slots untouched.
+        for i in 0..MAX_SGI_INTID {
+            if i == 14 {
+                continue;
+            }
+            assert!(
+                lookup_sgi_handler_in(&handlers, i).is_none(),
+                "registration at INTID 14 must NOT touch INTID {}",
+                i
+            );
         }
-        dispatch_sgi(14, 7);
-        let recorded = SM1F5_REGISTRATION_FIRED.load(Ordering::SeqCst);
-        assert_eq!(recorded, (14u32 << 8) | 7, "dispatcher passed wrong (intid, source_cpu)");
+    }
+
+    static SM1F5_INNER_DISPATCH_FIRED: AtomicU32 = AtomicU32::new(0);
+    fn sm1f5_inner_dispatch_handler(intid: u8, source_cpu: u8) {
+        SM1F5_INNER_DISPATCH_FIRED
+            .store(((intid as u32) << 8) | (source_cpu as u32), Ordering::SeqCst);
     }
 
     #[test]
-    fn sm1f5_dispatch_silent_for_unregistered_intid() {
-        // SM1.F.5: dispatching an SGI with no registered handler
-        // logs a diagnostic but does NOT panic.  We use INTID 13
-        // (no test registers it).
-        // The test passes if no panic occurs.
-        dispatch_sgi(13, 0);
+    fn sm1f5_inner_dispatch_invokes_registered_handler() {
+        // SM1.F.5 audit-pass-1: stack-local handler table again.
+        // Uses a per-test counter so concurrent tests do not
+        // observe each other's writes.
+        SM1F5_INNER_DISPATCH_FIRED.store(0, Ordering::SeqCst);
+        let mut handlers: [Option<SgiHandler>; MAX_SGI_INTID as usize] =
+            [None; MAX_SGI_INTID as usize];
+        register_sgi_handler_in(&mut handlers, 12, sm1f5_inner_dispatch_handler);
+        dispatch_sgi_in(&handlers, 12, 7);
+        let recorded = SM1F5_INNER_DISPATCH_FIRED.load(Ordering::SeqCst);
+        assert_eq!(
+            recorded,
+            (12u32 << 8) | 7,
+            "dispatcher passed wrong (intid, source_cpu) — expected (12, 7)"
+        );
     }
 
     #[test]
-    fn sm1f5_dispatch_silent_for_out_of_range_intid() {
-        // SM1.F.5: dispatching an out-of-range INTID is a no-op
-        // (the early return + boundary check protects the table).
+    fn sm1f5_inner_dispatch_silent_for_unregistered_intid() {
+        // SM1.F.5 audit-pass-1: dispatching to an unregistered slot
+        // logs but does not panic.  Stack-local table so we know
+        // INTID 13 is genuinely unregistered (independent of other
+        // tests).
+        let handlers: [Option<SgiHandler>; MAX_SGI_INTID as usize] =
+            [None; MAX_SGI_INTID as usize];
+        dispatch_sgi_in(&handlers, 13, 0);
+    }
+
+    #[test]
+    fn sm1f5_inner_dispatch_silent_for_out_of_range_intid() {
+        // SM1.F.5 audit-pass-1: out-of-range INTIDs early-return.
+        let handlers: [Option<SgiHandler>; MAX_SGI_INTID as usize] =
+            [None; MAX_SGI_INTID as usize];
+        dispatch_sgi_in(&handlers, 16, 0);
+        dispatch_sgi_in(&handlers, 100, 0);
+        dispatch_sgi_in(&handlers, 255, 0);
+    }
+
+    #[test]
+    fn sm1f5_inner_lookup_returns_none_for_out_of_range_intid() {
+        let handlers: [Option<SgiHandler>; MAX_SGI_INTID as usize] =
+            [None; MAX_SGI_INTID as usize];
+        assert!(lookup_sgi_handler_in(&handlers, 16).is_none());
+        assert!(lookup_sgi_handler_in(&handlers, 100).is_none());
+        assert!(lookup_sgi_handler_in(&handlers, 255).is_none());
+    }
+
+    #[test]
+    fn sm1f5_inner_lookup_returns_none_for_short_slice() {
+        // SM1.F.5 audit-pass-1: a too-short slice (less than the
+        // INTID we're looking up) returns None defensively.
+        let handlers: [Option<SgiHandler>; 4] = [None; 4];
+        // Slice has 4 entries; looking up INTID 5 returns None.
+        assert!(lookup_sgi_handler_in(&handlers, 5).is_none());
+        assert!(lookup_sgi_handler_in(&handlers, 15).is_none());
+    }
+
+    #[test]
+    #[should_panic(expected = "WS-SM SM1.F.5")]
+    fn sm1f5_inner_register_panics_on_short_slice() {
+        // SM1.F.5 audit-pass-1: registering at INTID 5 with a slice
+        // of length 4 panics defensively (caller bug).
+        let mut handlers: [Option<SgiHandler>; 4] = [None; 4];
+        register_sgi_handler_in(&mut handlers, 5, _sgi_test_handler_unused);
+    }
+
+    #[test]
+    fn sm1f5_inner_signature_pins() {
+        // SM1.F.5 audit-pass-1: pin the inner-form helper signatures.
+        let _: fn(&mut [Option<SgiHandler>], u8, SgiHandler) = register_sgi_handler_in;
+        let _: fn(&[Option<SgiHandler>], u8) -> Option<SgiHandler> = lookup_sgi_handler_in;
+        let _: fn(&[Option<SgiHandler>], u8, u8) = dispatch_sgi_in;
+    }
+
+    #[test]
+    fn sm1f5_global_wrapper_routes_through_inner_form() {
+        // SM1.F.5 audit-pass-1: the global `dispatch_sgi` /
+        // `lookup_sgi_handler` wrappers must route through the
+        // `_in`-form helpers so production and test exercise the
+        // same code path.
+        //
+        // We exercise the global wrappers on out-of-range INTIDs
+        // (no global state mutation), which the `_in`-form helpers
+        // handle identically.  This pins the wrapper-to-inner
+        // delegation at the type/behaviour level.
+        assert!(lookup_sgi_handler(16).is_none());
+        assert!(lookup_sgi_handler(255).is_none());
+        // Dispatching to an out-of-range INTID is a no-op (no panic).
         dispatch_sgi(16, 0);
-        dispatch_sgi(100, 0);
         dispatch_sgi(255, 0);
     }
 

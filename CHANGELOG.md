@@ -1,5 +1,105 @@
 ## v0.31.7 — WS-SM Phases SM1.E/F/G/H landing (cross-core HAL completion)
 
+### Audit-pass-1 refinements (post-initial-landing deep audit)
+
+Six correctness / security fixes landed inside v0.31.7 as the result
+of a deep audit pass on the SM1.E/F/G/H surface.  All fixes addressed
+defects that were either present at initial landing or pre-existing
+gaps surfaced by the new SM1.F primitive.
+
+- **HIGH-severity: TLB encoder mask was 48 bits, should be 44 bits**
+  (tlb.rs).  `encode_va_asid_operand` masked `vaddr >> 12` to 48 bits
+  (`0x0000_FFFF_FFFF_FFFF`).  Per ARM ARM C6.2.311 (DDI 0487), the
+  VA[55:12] field is **44 bits** [43:0]; bits [47:44] are RES0 in
+  ARMv8.0–8.3 (or TTL on FEAT_TTL hardware).  An adversarial vaddr
+  ≥ 2^56 with the 48-bit mask would leave bit 44 (or higher) set,
+  silently configuring TTL=0b0001 (skip level 1 hint) on FEAT_TTL
+  hardware.  For well-formed kernel inputs (vaddr < 2^48) the two
+  masks are observationally identical; the fix is defense-in-depth
+  against adversarial / corrupt inputs.  Mask tightened to 44 bits
+  (`0x0000_0FFF_FFFF_FFFF`); test
+  `sm1e_encode_va_asid_operand_masks_high_va_bits_to_44` exercises
+  the boundary; new tests
+  `sm1e_encode_va_asid_operand_preserves_full_44bit_va` and
+  `sm1e_encode_va_asid_operand_well_formed_vaddrs_unchanged`
+  confirm no production regression.
+
+- **HIGH-severity: `ffi_tlbi_for_sharing` silent fallback violated
+  fail-closed contract** (ffi.rs).  Pre-audit, unknown `domain_tag`
+  (≥ 2) silently fell back to `Inner` and unknown `op_tag` (≥ 4)
+  silently became a no-op.  Both were unsafe: the caller assumed
+  the TLB was invalidated, but the fallbacks silently changed the
+  broadcast scope (Inner on multi-cluster leaves stale translations)
+  or skipped the invalidation entirely.  Fix: refactored to use
+  `Option`-returning `decode_sharing_domain_tag` /
+  `decode_tlb_invalidation_tag` `const fn` helpers; the FFI wrapper
+  panics on `None` (fails closed under `panic = "abort"`).  Well-
+  formed Lean callers using `Architecture.tlbiForSharing` can never
+  trip the panic because `SharingDomain.toTag_in_range` and
+  `TlbInvalidation.toOpTag_in_range` prove every emitted tag is in
+  range.  8 new decoder tests cover the rejection paths; the bogus
+  "silent fallback" tests are removed.
+
+- **MEDIUM: `kprintln_core!` was NOT per-line atomic despite
+  documentation** (uart.rs).  Pre-audit, the macro expanded to
+  `kprintln!("[core {}] {}", ...)` which internally makes TWO
+  `kprint!` calls (body, then `"\n"`), each acquiring/releasing the
+  UART lock.  An IRQ between the two calls could insert its own
+  line, fragmenting the output (`[core 0] msg[core 1] irq\n\n`).
+  Fix: macro now uses a single `with_boot_uart` closure containing a
+  `writeln!`, holding the lock for the entire `[core N] <body>\n`
+  sequence.  3 new tests
+  (`sm1g4_kprintln_core_acquires_lock_exactly_once_per_call`,
+  `sm1g4_kprint_core_acquires_lock_exactly_once_per_call`,
+  `sm1g4_macro_expansion_text_uses_with_boot_uart_once`) pin the
+  new behaviour structurally.
+
+- **MEDIUM: SGI handler tests had cross-test data races on
+  `static mut SGI_HANDLERS`** (gic.rs).  Pre-audit, two tests
+  (`sm1f5_register_then_lookup_returns_handler` and
+  `sm1f5_dispatch_invokes_registered_handler`) both wrote to
+  `SGI_HANDLERS[14]` and shared a `static AtomicU32`.  Under cargo
+  test's default parallel execution, this was UB.  Fix: factored
+  `dispatch_sgi` / `register_sgi_handler` / `lookup_sgi_handler`
+  into testable `_in`-suffixed inner forms taking an explicit slice
+  reference.  Tests now use stack-local handler tables — fully
+  isolated, no static-mut contention.  7 new isolated tests
+  (`sm1f5_inner_*`) replace the racy ones.
+
+- **MEDIUM: `static_mut_refs` lint warnings from the new SGI
+  handler wrappers** (gic.rs).  After the audit-pass-1 refactor, the
+  global wrappers `register_sgi_handler` / `lookup_sgi_handler` /
+  `dispatch_sgi` created `&mut SGI_HANDLERS` / `&SGI_HANDLERS`
+  references, tripping the `static_mut_refs` lint (a hard error in
+  Rust edition 2024).  Fix: switched to `&raw mut SGI_HANDLERS` /
+  `&raw const SGI_HANDLERS` raw-pointer syntax (stable since Rust
+  1.82), then `unsafe { &mut *ptr }` / `unsafe { &*ptr }` to
+  dereference.  Zero warnings workspace-wide.
+
+- **HIGH-severity: SGI delivery to secondaries was non-functional**
+  (gic.rs `init_cpu_interface_secondary`).  Per GIC-400 TRM §4.3.5,
+  GICD_ISENABLER0 (covering INTIDs 0..31, i.e., SGIs 0..15 + PPIs
+  16..31) is **banked per-core**.  The primary's `init_distributor`
+  writes ISENABLER0 from the boot core's view, enabling only the
+  boot core's SGIs/PPIs.  Secondaries' banked views remain at the
+  reset default (all disabled).  Without this fix, SGIs sent to
+  secondaries via `send_sgi(0x02, intid)` would stay pending in the
+  distributor forever; secondary timer PPIs would never fire.  Fix:
+  `init_cpu_interface_secondary` now writes ISENABLER0 = 0xFFFF_FFFF
+  from the secondary's banked view, enabling all SGIs and PPIs on
+  that core.  New test `sm1c3_isenabler0_offset_is_first_bank` pins
+  the offset and verifies the mask covers SGIs + PPIs + timer.
+
+### Test coverage delta from audit pass
+
+- HAL tests: 510 → 527 (+17 net new defensive tests from audit-pass-1).
+- Zero clippy warnings workspace-wide; release + dev + test profiles
+  all clean.
+- Lean side: `tests/SmpFoundationsSuite.lean` extended at audit pass
+  with no regressions (same 60+ runtime assertions all PASS).
+
+
+
 Patch release.  Lands the four remaining sub-phases of WS-SM SM1
 (Rust HAL): SM1.E (IS-variant TLBI broadcast), SM1.F (GICD_SGIR-
 based SGI primitive surface), SM1.G (per-core kprintln macro +

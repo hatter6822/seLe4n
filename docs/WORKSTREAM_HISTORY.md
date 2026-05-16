@@ -636,12 +636,36 @@ fully-functional cross-core HAL.
   core SGI round-trip.  SKIPs at SM1.H if kernel-side handlers
   aren't wired (awaits SM5+ Lean integration).
 
-Test coverage: 510 HAL tests (up from 425 at SM1.D close, +85 new
-tests across `tlb.rs`, `gic.rs`, `ffi.rs`, `uart.rs`).  Lean-side:
-+18 surface anchors + 11 decidable examples + 16 runtime assertions
-in `tests/SmpFoundationsSuite.lean` covering SM1.E.4 tag encoding +
+Test coverage: 527 HAL tests (510 at initial SM1.E/F/G/H landing +
+17 net new defensive tests from audit-pass-1; up from 425 at SM1.D
+close, +102 net since SM1.D).  Lean-side: +18 surface anchors + 11
+decidable examples + 16 runtime assertions in
+`tests/SmpFoundationsSuite.lean` covering SM1.E.4 tag encoding +
 SM1.F.6 SGI FFI binding well-formedness.  Zero clippy warnings
 workspace-wide.
+
+**Audit-pass-1 refinements** (post-initial-landing deep audit, also
+in v0.31.7):
+
+- **HIGH**: TLB encoder mask was 48 bits, should be 44 bits per
+  ARM ARM C6.2.311 (VA[55:12]).  Adversarial vaddr ≥ 2^56 would
+  silently set the FEAT_TTL TTL=0b0001 (level-1 skip hint),
+  changing TLBI semantics.  Mask tightened to 44 bits.
+- **HIGH**: `ffi_tlbi_for_sharing` silent fallback violated
+  fail-closed.  Refactored to `Option`-returning decoder helpers;
+  FFI wrapper panics on unknown tags.
+- **HIGH**: SGI delivery to secondaries was non-functional —
+  GICD_ISENABLER0 is banked per-core (GIC-400 TRM §4.3.5) and the
+  primary's `init_distributor` only enabled its own bank.  Fixed
+  by enabling ISENABLER0 = 0xFFFFFFFF from each secondary's
+  `init_cpu_interface_secondary`.
+- **MEDIUM**: `kprintln_core!` was not per-line atomic despite
+  docs.  Fixed via single `with_boot_uart` + `writeln!`.
+- **MEDIUM**: SGI handler tests raced on `static mut SGI_HANDLERS`.
+  Refactored dispatch/register/lookup into `_in`-form helpers
+  taking explicit slices; tests use stack-local arrays.
+- **MEDIUM**: `static_mut_refs` lint warnings fixed via `&raw const` /
+  `&raw mut` syntax.
 
 Items deferred past v1.0.0 with correctness impact: NONE.
 

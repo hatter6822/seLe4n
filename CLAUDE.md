@@ -1493,6 +1493,52 @@ documentation lives under `docs/` and `docs/gitbook/`.
   §5.9 and the master overview
   [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md).
 
+  **Audit-pass-1 refinements** (post-initial-landing deep audit;
+  also in v0.31.7):
+  - HIGH-severity: TLB encoder mask was 48 bits, should be 44 bits
+    per ARM ARM C6.2.311 (VA[55:12] field; bits [47:44] are RES0 or
+    TTL on FEAT_TTL hardware).  Mask tightened from
+    `0x0000_FFFF_FFFF_FFFF` (48 bits) to `0x0000_0FFF_FFFF_FFFF`
+    (44 bits).  Adversarial vaddr ≥ 2^56 would have silently set
+    TTL=0b0001 (level-1 skip hint) on FEAT_TTL hardware,
+    changing TLBI semantics.
+  - HIGH-severity: `ffi_tlbi_for_sharing` silent fallback violated
+    fail-closed.  Unknown `domain_tag` (≥ 2) fell back to Inner;
+    unknown `op_tag` (≥ 4) silently became a no-op.  Both were
+    caller-correctness violations (silently changed broadcast scope
+    or skipped invalidation).  Refactored to use `Option`-returning
+    `decode_sharing_domain_tag` / `decode_tlb_invalidation_tag`
+    `const fn` helpers; FFI wrapper panics on None (fails closed
+    under `panic = "abort"`).  Well-formed Lean callers cannot trip
+    the panic (proven by `SharingDomain.toTag_in_range` /
+    `TlbInvalidation.toOpTag_in_range`).
+  - HIGH-severity: SGI delivery to secondaries was non-functional.
+    Per GIC-400 TRM §4.3.5, GICD_ISENABLER0 (covering INTIDs 0..31)
+    is banked per-core; primary's `init_distributor` only enabled
+    its own bank.  Without per-core enable, SGIs sent to
+    secondaries would stay pending forever, and secondary timer
+    PPIs would never fire.  Fix: `init_cpu_interface_secondary`
+    now writes ISENABLER0 = 0xFFFFFFFF from the secondary's bank.
+  - MEDIUM: `kprintln_core!` was NOT per-line atomic despite
+    documentation claiming it was.  Pre-audit macro expanded to two
+    `kprint!` calls (body + `"\n"`), each acquiring the lock
+    separately — IRQ between them could insert a torn line.
+    Fix: single `with_boot_uart` closure with `writeln!` holds the
+    lock for the entire `[core N] <body>\n` sequence.
+  - MEDIUM: SGI handler tests raced on `static mut SGI_HANDLERS`
+    (two tests both wrote to slot 14).  Refactored
+    `dispatch_sgi` / `register_sgi_handler` / `lookup_sgi_handler`
+    into testable `_in`-suffixed inner forms taking explicit slice
+    references; tests use stack-local handler tables.
+  - MEDIUM: `static_mut_refs` lint warnings from the new SGI
+    wrappers (would be hard errors in Rust edition 2024).  Fixed
+    by switching to `&raw mut` / `&raw const` syntax.
+
+  **Audit-pass-1 test coverage delta**: 527 HAL tests (was 510 at
+  initial landing; +17 net new defensive tests including the bogus
+  silent-fallback tests removed).  Zero clippy warnings workspace-
+  wide.
+
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**
   — historical detail retained for traceability:

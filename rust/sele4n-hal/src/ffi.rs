@@ -174,22 +174,76 @@ pub extern "C" fn ffi_tlbi_by_vaddr(asid: u16, vaddr: u64) {
 // (SharingDomain, TlbInvalidation) pair as a tag + operand pair
 // suitable for C-callable transmission.
 //
-// Discriminant encoding (matches `SeLe4n.Platform.FFI.TlbiOpTag`):
-//   0 = Vmalle1 (no operand)
-//   1 = Vae1    (asid, vaddr)
-//   2 = Aside1  (asid only)
-//   3 = Vale1   (asid, vaddr)
+// Discriminant encoding (matches `SeLe4n.Kernel.Architecture` Lean
+// wrapper; pinned by `tests/SmpFoundationsSuite.lean` runtime checks):
 //
-// SharingDomain encoding (matches `SeLe4n.Platform.FFI.SharingDomainTag`):
-//   0 = Inner
-//   1 = Outer
+//   domain_tag : 0 = Inner, 1 = Outer
+//   op_tag     : 0 = Vmalle1, 1 = Vae1, 2 = Aside1, 3 = Vale1
+//   asid       : 16-bit ASID (RES0 for Vmalle1)
+//   vaddr      : page-aligned VA (RES0 for Vmalle1, Aside1)
 //
-// Unrecognised tags fall through to a defensive no-op rather than
-// panicking — the FFI layer is the security boundary, and a misformed
-// call from a buggy or hostile Lean caller should not crash the
-// kernel.  The Lean side enforces well-formedness via the typed
-// `TlbInvalidation` enum, so any out-of-range tag at this boundary
-// indicates an upstream bug worth catching at the next FFI ABI test.
+// **Fail-closed contract**: unknown tags PANIC rather than silently
+// falling back.  Audit-pass-1 reasoning: the FFI is a security
+// boundary; silent fallbacks (e.g., "unknown op → no-op") create
+// silent correctness violations because the caller assumed the TLB
+// was invalidated.  Per the project's `panic = "abort"` release
+// profile, the panic halts the kernel — the correct response to a
+// corrupted FFI ABI call.  A well-formed Lean caller using
+// `Architecture.tlbiForSharing` cannot reach the panic arm because
+// the tag-encoding theorems (`SharingDomain.toTag_in_range`,
+// `TlbInvalidation.toOpTag_in_range`) prove every emitted tag is
+// in-range at the Lean type level.
+//
+// The decoder helpers below are factored out as `Option`-returning
+// pure functions so unit tests can verify their behaviour (including
+// the failure paths) without crossing the FFI boundary, which Rust
+// edition 2021 treats as `non-unwinding panic. aborting.` even
+// under the test profile.
+
+/// **WS-SM SM1.E.4 audit-pass-1**: Decode an FFI `domain_tag` into a
+/// typed `SharingDomain`, returning `None` on out-of-range input.
+///
+/// This is the testable inner form of the FFI dispatcher's first
+/// stage.  Calling `ffi_tlbi_for_sharing(2, _, _, _)` would panic
+/// (via the `expect` in the FFI wrapper); calling
+/// `decode_sharing_domain_tag(2)` returns `None` cleanly so tests
+/// can exercise the rejection path without crashing the test
+/// runner.
+#[inline]
+const fn decode_sharing_domain_tag(tag: u32) -> Option<crate::tlb::SharingDomain> {
+    match tag {
+        0 => Some(crate::tlb::SharingDomain::Inner),
+        1 => Some(crate::tlb::SharingDomain::Outer),
+        _ => None,
+    }
+}
+
+/// **WS-SM SM1.E.4 audit-pass-1**: Decode an FFI `(op_tag, asid, vaddr)`
+/// triple into a typed `TlbInvalidation`, returning `None` on
+/// out-of-range `op_tag`.
+///
+/// Testable inner form of the FFI dispatcher's second stage.  See
+/// `decode_sharing_domain_tag` for the rationale.
+///
+/// The unused operands for each variant are simply ignored: the
+/// resulting `TlbInvalidation::Vmalle1` (op_tag=0) discards both
+/// `asid` and `vaddr`; `Aside1` discards `vaddr`.  This matches the
+/// Lean-side `TlbInvalidation.toAsid` / `toVaddr` semantics which
+/// return `0` for unused fields.
+#[inline]
+const fn decode_tlb_invalidation_tag(
+    op_tag: u32,
+    asid: u16,
+    vaddr: u64,
+) -> Option<crate::tlb::TlbInvalidation> {
+    match op_tag {
+        0 => Some(crate::tlb::TlbInvalidation::Vmalle1),
+        1 => Some(crate::tlb::TlbInvalidation::Vae1 { asid, vaddr }),
+        2 => Some(crate::tlb::TlbInvalidation::Aside1 { asid }),
+        3 => Some(crate::tlb::TlbInvalidation::Vale1 { asid, vaddr }),
+        _ => None,
+    }
+}
 
 /// **WS-SM SM1.E.4**: Sharing-domain-routed TLBI dispatcher FFI export.
 ///
@@ -201,6 +255,16 @@ pub extern "C" fn ffi_tlbi_by_vaddr(asid: u16, vaddr: u64) {
 /// `Vmalle1` ignores both, `Aside1` ignores `vaddr`.  The Lean caller
 /// passes `0` for unused fields.
 ///
+/// # Panics
+///
+/// Panics (which under `panic = "abort"` aborts the kernel) if either
+/// `domain_tag >= 2` or `op_tag >= 4`.  Both bounds are structurally
+/// guaranteed by the Lean-side typed `Architecture.tlbiForSharing`
+/// wrapper via `SharingDomain.toTag_in_range` and
+/// `TlbInvalidation.toOpTag_in_range`, so a well-formed Lean caller
+/// never trips them — the panics are defense-in-depth against FFI
+/// ABI corruption.
+///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTlbiForSharing`
 #[no_mangle]
 pub extern "C" fn ffi_tlbi_for_sharing(
@@ -209,26 +273,24 @@ pub extern "C" fn ffi_tlbi_for_sharing(
     asid: u16,
     vaddr: u64,
 ) {
-    let domain = match domain_tag {
-        0 => crate::tlb::SharingDomain::Inner,
-        1 => crate::tlb::SharingDomain::Outer,
-        // Defensive: unknown domain → fall back to Inner (the more
-        // restrictive scope; safe for single-cluster RPi5).  A future
-        // FFI ABI test should fail closed rather than ever reach this
-        // arm in production.
-        _ => crate::tlb::SharingDomain::Inner,
+    // Audit-pass-1: fail-closed on unknown tags.  Silent fallback
+    // (the pre-audit behaviour) violated the kernel's correctness
+    // contract — the caller assumed the TLB was invalidated.
+    let domain = match decode_sharing_domain_tag(domain_tag) {
+        Some(d) => d,
+        None => panic!(
+            "WS-SM SM1.E.4: ffi_tlbi_for_sharing: domain_tag must be \
+             0 (Inner) or 1 (Outer), got {}",
+            domain_tag
+        ),
     };
-    let op = match op_tag {
-        0 => crate::tlb::TlbInvalidation::Vmalle1,
-        1 => crate::tlb::TlbInvalidation::Vae1 { asid, vaddr },
-        2 => crate::tlb::TlbInvalidation::Aside1 { asid },
-        3 => crate::tlb::TlbInvalidation::Vale1 { asid, vaddr },
-        // Defensive: unknown op → no-op.  The Lean caller has no way
-        // to construct an out-of-range tag through the typed
-        // `TlbInvalidation` enum, so this branch only fires if the
-        // FFI ABI itself is corrupt — in which case silently
-        // skipping is safer than emitting an unintended TLBI.
-        _ => return,
+    let op = match decode_tlb_invalidation_tag(op_tag, asid, vaddr) {
+        Some(o) => o,
+        None => panic!(
+            "WS-SM SM1.E.4: ffi_tlbi_for_sharing: op_tag must be 0..=3 \
+             (Vmalle1=0, Vae1=1, Aside1=2, Vale1=3), got {}",
+            op_tag
+        ),
     };
     crate::tlb::tlbi_for_sharing(domain, op);
 }
@@ -686,23 +748,132 @@ mod tests {
         ffi_tlbi_for_sharing(1, 3, 3, 0x4000);
     }
 
+    // ----------------------------------------------------------------
+    // SM1.E.4 audit-pass-1: fail-closed contract for unknown tags.
+    //
+    // The pre-audit `ffi_tlbi_for_sharing` had silent fallbacks for
+    // unknown domain_tag (→ Inner) and op_tag (→ no-op).  Both were
+    // unsafe: the caller assumed the TLB was invalidated, but the
+    // fallbacks silently changed the broadcast scope (Inner on a
+    // multi-cluster topology leaves stale translations on other
+    // clusters) or skipped the invalidation entirely.
+    //
+    // The post-audit dispatcher panics on out-of-range tags (fails
+    // closed under `panic = "abort"`).  The panic itself cannot be
+    // exercised here because Rust edition 2021 treats panic-across-
+    // `extern "C"` as `non-unwinding panic. aborting.` — the test
+    // process would abort with SIGABRT.
+    //
+    // Instead we test the FACTORED-OUT decoder helpers
+    // (`decode_sharing_domain_tag`, `decode_tlb_invalidation_tag`)
+    // which return `Option` and can be exercised cleanly.  The FFI
+    // wrapper's `match ... { Some => use, None => panic!() }`
+    // pattern means decoder coverage is a faithful proxy for FFI
+    // coverage.
+
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_unknown_domain_falls_back_to_inner() {
-        // Defensive fallback: unrecognised domain_tag (anything ≥ 2)
-        // routes through the Inner variant.  No panic; behaviour
-        // matches the `SharingDomain::Inner` arm.
-        ffi_tlbi_for_sharing(2, 0, 0, 0);
-        ffi_tlbi_for_sharing(99, 1, 1, 0x1000);
-        ffi_tlbi_for_sharing(u32::MAX, 2, 2, 0);
+    fn sm1e4_decode_sharing_domain_tag_accepts_0_and_1() {
+        // Audit-pass-1: the only valid tags are 0 (Inner) and 1 (Outer).
+        assert_eq!(
+            decode_sharing_domain_tag(0),
+            Some(crate::tlb::SharingDomain::Inner)
+        );
+        assert_eq!(
+            decode_sharing_domain_tag(1),
+            Some(crate::tlb::SharingDomain::Outer)
+        );
     }
 
     #[test]
-    fn sm1e4_ffi_tlbi_for_sharing_unknown_op_is_noop() {
-        // Defensive fallback: unrecognised op_tag (anything ≥ 4) is
-        // a no-op.  No panic; no TLBI emitted.
-        ffi_tlbi_for_sharing(0, 4, 0, 0);
-        ffi_tlbi_for_sharing(0, 99, 0, 0);
-        ffi_tlbi_for_sharing(1, u32::MAX, 0, 0);
+    fn sm1e4_decode_sharing_domain_tag_rejects_out_of_range() {
+        // Audit-pass-1: every other value rejects via None.  The FFI
+        // wrapper translates None into a panic that aborts the kernel.
+        assert_eq!(decode_sharing_domain_tag(2), None);
+        assert_eq!(decode_sharing_domain_tag(3), None);
+        assert_eq!(decode_sharing_domain_tag(99), None);
+        assert_eq!(decode_sharing_domain_tag(u32::MAX), None);
+    }
+
+    #[test]
+    fn sm1e4_decode_sharing_domain_tag_const_callable() {
+        // Audit-pass-1: decoder is `const fn` so call sites with
+        // literal arguments evaluate at compile time.
+        const D0: Option<crate::tlb::SharingDomain> = decode_sharing_domain_tag(0);
+        const D2: Option<crate::tlb::SharingDomain> = decode_sharing_domain_tag(2);
+        assert_eq!(D0, Some(crate::tlb::SharingDomain::Inner));
+        assert_eq!(D2, None);
+    }
+
+    #[test]
+    fn sm1e4_decode_tlb_invalidation_tag_accepts_0_to_3() {
+        // Audit-pass-1: the four valid op_tags map to typed variants.
+        assert_eq!(
+            decode_tlb_invalidation_tag(0, 0, 0),
+            Some(crate::tlb::TlbInvalidation::Vmalle1)
+        );
+        assert_eq!(
+            decode_tlb_invalidation_tag(1, 42, 0x1000),
+            Some(crate::tlb::TlbInvalidation::Vae1 { asid: 42, vaddr: 0x1000 })
+        );
+        assert_eq!(
+            decode_tlb_invalidation_tag(2, 7, 0),
+            Some(crate::tlb::TlbInvalidation::Aside1 { asid: 7 })
+        );
+        assert_eq!(
+            decode_tlb_invalidation_tag(3, 3, 0x4000),
+            Some(crate::tlb::TlbInvalidation::Vale1 { asid: 3, vaddr: 0x4000 })
+        );
+    }
+
+    #[test]
+    fn sm1e4_decode_tlb_invalidation_tag_rejects_out_of_range() {
+        // Audit-pass-1: any tag >= 4 returns None.  The FFI wrapper
+        // translates None into a panic.
+        assert_eq!(decode_tlb_invalidation_tag(4, 0, 0), None);
+        assert_eq!(decode_tlb_invalidation_tag(5, 0, 0), None);
+        assert_eq!(decode_tlb_invalidation_tag(99, 0, 0), None);
+        assert_eq!(decode_tlb_invalidation_tag(u32::MAX, 0, 0), None);
+    }
+
+    #[test]
+    fn sm1e4_decode_tlb_invalidation_tag_const_callable() {
+        // Audit-pass-1: decoder is `const fn`.
+        const OP_VMALLE1: Option<crate::tlb::TlbInvalidation> =
+            decode_tlb_invalidation_tag(0, 0, 0);
+        const OP_BAD: Option<crate::tlb::TlbInvalidation> =
+            decode_tlb_invalidation_tag(4, 0, 0);
+        assert_eq!(OP_VMALLE1, Some(crate::tlb::TlbInvalidation::Vmalle1));
+        assert_eq!(OP_BAD, None);
+    }
+
+    #[test]
+    fn sm1e4_decode_tlb_invalidation_tag_vmalle1_discards_operands() {
+        // Audit-pass-1: Vmalle1 (op_tag=0) ignores asid and vaddr.
+        // Verify the variant is identical regardless of operand inputs.
+        let with_zeros = decode_tlb_invalidation_tag(0, 0, 0);
+        let with_data = decode_tlb_invalidation_tag(0, 0xFFFF, 0xDEAD_BEEF);
+        assert_eq!(with_zeros, Some(crate::tlb::TlbInvalidation::Vmalle1));
+        assert_eq!(with_data, Some(crate::tlb::TlbInvalidation::Vmalle1));
+        assert_eq!(with_zeros, with_data);
+    }
+
+    #[test]
+    fn sm1e4_decode_tlb_invalidation_tag_aside1_discards_vaddr() {
+        // Audit-pass-1: Aside1 (op_tag=2) carries asid but ignores vaddr.
+        let with_zero = decode_tlb_invalidation_tag(2, 5, 0);
+        let with_data = decode_tlb_invalidation_tag(2, 5, 0xDEAD_BEEF);
+        assert_eq!(with_zero, Some(crate::tlb::TlbInvalidation::Aside1 { asid: 5 }));
+        assert_eq!(with_data, Some(crate::tlb::TlbInvalidation::Aside1 { asid: 5 }));
+        assert_eq!(with_zero, with_data);
+    }
+
+    #[test]
+    fn sm1e4_decode_signature_pins() {
+        // Audit-pass-1: pin decoder signatures so a future refactor
+        // (e.g., changing Option to Result) breaks compilation here.
+        let _: fn(u32) -> Option<crate::tlb::SharingDomain> = decode_sharing_domain_tag;
+        let _: fn(u32, u16, u64) -> Option<crate::tlb::TlbInvalidation> =
+            decode_tlb_invalidation_tag;
     }
 
     #[test]

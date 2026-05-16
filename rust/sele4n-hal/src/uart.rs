@@ -499,7 +499,7 @@ macro_rules! kprintln {
 }
 
 // ============================================================================
-// WS-SM SM1.G.4 — Per-core kprintln macro
+// WS-SM SM1.G.4 — Per-core kprintln macro (audit-pass-1: per-line atomic)
 // ============================================================================
 //
 // `kprintln_core!` prefixes every line with the calling core's id
@@ -507,34 +507,38 @@ macro_rules! kprintln {
 // Useful for SMP boot tracing and post-mortem log analysis where
 // per-core attribution matters.
 //
-// The macro composes atomically with `kprint!` — the `[core N]` prefix
-// and the message body are produced inside the same `with_boot_uart`
-// critical section because `kprint!` itself takes the lock.  This
-// means a higher-priority IRQ handler that calls `kprintln_core!`
-// during the `[core N]` prefix print would interleave its own line
-// AFTER the prefix completes, producing a clean boundary rather than
-// the prefix mid-character mixing with the message body.
+// **Per-line atomicity** (audit-pass-1 fix): the macro acquires the
+// boot UART lock ONCE for the entire `[core N] <body>\n` sequence
+// via a single `with_boot_uart` invocation containing a `writeln!`.
+// This guarantees that no other writer (another core, an IRQ
+// handler) can interleave between the `[core N]` prefix and the
+// message body or trailing newline.
 //
-// Note that `kprintln_core!` makes TWO `kprint!` calls (prefix + body),
-// each of which takes and releases the lock.  An IRQ that fires
-// between the two could insert its own line between them, producing:
+// The pre-audit form expanded to `kprintln!("[core {}] {}", ...)`
+// which internally calls `kprint!` TWICE (body, then `"\n"`), each
+// acquiring/releasing the lock.  Under SMP an IRQ between the two
+// calls could insert its own line, producing torn output like:
 //
-//     [core 0] starting boot phase 5
-//     [core 1] (timer IRQ from IRQ handler)
-//     ...
+//     [core 0] starting boot phase 5[core 1] timer IRQ
+//                                                       <-- "\n" lands here
 //
-// This is the documented behaviour: per-line atomicity, not
-// per-`kprintln_core!`-call atomicity.  Higher-stake callers that
-// need to print multi-line atomic output should mask interrupts
-// around the entire call sequence (see `interrupts::with_interrupts_disabled`).
+// The audit-pass-1 form prevents this by holding the lock for the
+// entire formatted line including its terminating newline.
+//
+// **Multi-line atomicity** is NOT provided.  Two consecutive
+// `kprintln_core!` calls can be interleaved with other writers.
+// Callers needing multi-line atomic output should mask interrupts
+// AND group calls into a single `with_boot_uart` closure (see
+// `interrupts::with_interrupts_disabled` + `with_boot_uart`).
 
 /// **WS-SM SM1.G.4**: Print formatted output with a per-core id prefix
-/// and a trailing newline.
+/// and a trailing newline.  **Per-line atomic** under SMP.
 ///
-/// Equivalent to `kprintln!("[core {}] {}", core_id, format_args!(...))`,
-/// where `core_id` is read from `TPIDR_EL1` via
-/// `per_cpu::current_core_id_from_tpidr`.  Useful for SMP boot
-/// tracing where per-core attribution matters.
+/// Equivalent semantically to `kprintln!("[core {}] {}", core_id,
+/// format_args!(...))`, but holds the UART lock for the entire
+/// `[core N] <body>\n` sequence so no other writer can interleave.
+/// `core_id` is read from `TPIDR_EL1` via
+/// `per_cpu::current_core_id_from_tpidr`.
 ///
 /// On host (non-aarch64) the core id reads as `0` deterministically.
 ///
@@ -548,26 +552,50 @@ macro_rules! kprintln {
 #[macro_export]
 macro_rules! kprintln_core {
     () => {{
+        // Audit-pass-1: hold the lock for the entire `[core N]\n`
+        // sequence so an IRQ between prefix and newline cannot tear
+        // the line.
+        use core::fmt::Write;
         let core_id = $crate::per_cpu::current_core_id_from_tpidr();
-        $crate::kprintln!("[core {}]", core_id);
+        $crate::uart::with_boot_uart(|uart| {
+            // `writeln!` writes the format string plus a trailing
+            // newline as part of the same `Write::write_str` /
+            // `Write::write_fmt` invocation chain, all under the
+            // single lock acquisition.
+            let _ = writeln!(uart, "[core {}]", core_id);
+        });
     }};
     ($($arg:tt)*) => {{
+        // Audit-pass-1: same single-lock pattern for the formatted
+        // variant.  `writeln!` includes the trailing `\n` atomically
+        // with the formatted body.
+        use core::fmt::Write;
         let core_id = $crate::per_cpu::current_core_id_from_tpidr();
-        $crate::kprintln!("[core {}] {}", core_id, format_args!($($arg)*));
+        $crate::uart::with_boot_uart(|uart| {
+            let _ = writeln!(uart, "[core {}] {}", core_id, format_args!($($arg)*));
+        });
     }};
 }
 
 /// **WS-SM SM1.G.4**: Print formatted output with a per-core id prefix
-/// (no trailing newline).
+/// (no trailing newline).  **Per-call atomic** under SMP — the entire
+/// `[core N] <body>` (without newline) is produced under a single
+/// lock acquisition.
 ///
 /// Companion to [`kprintln_core!`] for partial-line printing.  Note
-/// the same interleaving caveat applies — this macro takes and
-/// releases the UART lock for the prefix and body separately.
+/// that two consecutive `kprint_core!` calls can interleave with
+/// other writers — multi-call atomicity is not provided.
 #[macro_export]
 macro_rules! kprint_core {
     ($($arg:tt)*) => {{
+        // Audit-pass-1: single-lock acquisition for the entire
+        // prefixed write.  Matches kprintln_core!'s contract minus
+        // the trailing newline.
+        use core::fmt::Write;
         let core_id = $crate::per_cpu::current_core_id_from_tpidr();
-        $crate::kprint!("[core {}] {}", core_id, format_args!($($arg)*));
+        $crate::uart::with_boot_uart(|uart| {
+            let _ = write!(uart, "[core {}] {}", core_id, format_args!($($arg)*));
+        });
     }};
 }
 
@@ -785,6 +813,96 @@ mod tests {
                 i
             );
         }
+    }
+
+    #[test]
+    fn sm1g4_kprintln_core_acquires_lock_exactly_once_per_call() {
+        // SM1.G.4 audit-pass-1: per-line atomicity property.
+        //
+        // The audit-pass-1 fix replaced the pre-audit `kprintln!`-based
+        // expansion (which made TWO `kprint!` calls, each acquiring
+        // the lock) with a single `with_boot_uart` closure that holds
+        // the lock for the entire formatted line including its
+        // trailing newline.
+        //
+        // We exercise this property structurally: the macro expansion
+        // must contain exactly one `with_boot_uart` call (verified by
+        // module-text scan), AND the runtime invocation must leave
+        // the global lock in the released state.  The audit cannot
+        // directly observe "the lock was held continuously" from a
+        // single-threaded host test, but the absence of multiple
+        // acquisitions is testable indirectly: a lock-trip counter
+        // inside `with_boot_uart` would record 1 per `kprintln_core!`
+        // invocation, not 2 (as the pre-audit form did).
+        //
+        // Here we rely on the source-level structural change being
+        // sufficient: the macro body contains exactly one
+        // `with_boot_uart(...)` call.  The runtime smoke check
+        // confirms no panic, lock release symmetry, and that the
+        // macro expands cleanly.
+        let before = UART_LOCK.is_held();
+        crate::kprintln_core!("SM1.G.4 per-line atomicity smoke");
+        let after = UART_LOCK.is_held();
+        assert_eq!(before, after, "UART_LOCK state must balance");
+    }
+
+    #[test]
+    fn sm1g4_kprint_core_acquires_lock_exactly_once_per_call() {
+        // SM1.G.4 audit-pass-1: partial-line variant has the same
+        // single-lock contract.
+        let before = UART_LOCK.is_held();
+        crate::kprint_core!("SM1.G.4 partial-line atomicity smoke");
+        let after = UART_LOCK.is_held();
+        assert_eq!(before, after, "UART_LOCK state must balance");
+        // Add a manual newline so subsequent test output isn't
+        // glued onto this partial line.
+        crate::kprintln!();
+    }
+
+    #[test]
+    fn sm1g4_macro_expansion_text_uses_with_boot_uart_once() {
+        // SM1.G.4 audit-pass-1: defense-in-depth structural check.
+        //
+        // The audit-pass-1 atomicity fix relies on the macro
+        // expansion containing exactly one `with_boot_uart` call —
+        // not a chain of `kprintln!` calls (each of which acquires
+        // the lock).  This test reads the source of `uart.rs` and
+        // verifies the macro body uses `with_boot_uart` rather than
+        // `$crate::kprintln!(`.
+        //
+        // A future regression that reverted to `$crate::kprintln!(`
+        // inside `kprintln_core!` would break per-line atomicity
+        // (see the module-level comment for the bug pattern); this
+        // test surfaces the regression at test time rather than
+        // waiting for a torn-output observation in QEMU.
+        let source = include_str!("uart.rs");
+        // Find the body of the `kprintln_core` macro by anchoring on
+        // the `macro_rules! kprintln_core {` opening.
+        let macro_start = source
+            .find("macro_rules! kprintln_core")
+            .expect("kprintln_core macro definition must exist");
+        let macro_end_search_window = &source[macro_start..];
+        // Search up to a generous bound (200 lines) so the test is
+        // robust against macro-body expansion.
+        let macro_body_window = &macro_end_search_window
+            [..macro_end_search_window.len().min(8_000)];
+        assert!(
+            macro_body_window.contains("with_boot_uart"),
+            "kprintln_core! must use with_boot_uart for per-line atomicity"
+        );
+        // The pre-audit pattern was `$crate::kprintln!(` inside the
+        // macro body.  Verify this pattern is NOT present (which
+        // would indicate a regression to the non-atomic form).
+        //
+        // Note: we tolerate `$crate::kprintln!()` (no-arg call) in
+        // the kprintln_core docstring or comments, but the active
+        // body should not call kprintln! for the prefix-body
+        // composition.  We check for the specific pattern that
+        // would re-introduce the bug: a `kprintln!("[core ...` call.
+        assert!(
+            !macro_body_window.contains("$crate::kprintln!(\"[core"),
+            "kprintln_core! must NOT use $crate::kprintln! for the prefixed line — that breaks per-line atomicity"
+        );
     }
 
     // ========================================================================

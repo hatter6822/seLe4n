@@ -17,13 +17,15 @@
 //! - **WS-SM SM1.E.1**: IS-variant TLBI instructions (`tlbi_*is`) that
 //!   broadcast the invalidation to every PE in the inner-shareable
 //!   domain.  Required on any post-SM1.D kernel because multiple cores
-//!   may have cached the same translation.  Followed by `dsb ish`
-//!   (cheaper than the local variants' `dsb ish` because the broadcast
-//!   is the operative effect, not a global serialisation).
+//!   may have cached the same translation.  Followed by the same
+//!   `dsb ish` + `isb` bracket as the local variants — the difference
+//!   is the TLBI instruction itself (broadcast vs local-only), not the
+//!   barrier.
 //! - **WS-SM SM1.E.2**: OS-variant TLBI instructions (`tlbi_*os`) that
 //!   broadcast across the outer-shareable domain.  Pre-positioned for
 //!   future multi-cluster ports (BCM2712 is single-cluster, so
-//!   functionally identical to IS variants on RPi5).
+//!   functionally identical to IS variants on RPi5).  Followed by
+//!   `dsb osh` + `isb` (matching the broader scope).
 //! - **WS-SM SM1.E.3**: `tlbi_for_sharing` dispatcher routes to either
 //!   the IS or OS variant based on a `SharingDomain` enum, allowing
 //!   generic kernel code to emit the correct broadcast without per-call
@@ -53,12 +55,24 @@
 //! ## Operand encoding
 //!
 //! The TLBI VAE1/VAE1IS/VAE1OS family takes a single Xt register
-//! holding the encoded operand:
+//! holding the encoded operand per ARM ARM C6.2.311 (DDI 0487):
 //!
 //! ```text
 //! [63:48] = ASID (16 bits)
-//! [47:0]  = VA[55:12] (44 bits, page-aligned)
+//! [47:44] = RES0 in ARMv8.0–8.3; TTL (Translation Table Level hint)
+//!           in ARMv8.4+ (FEAT_TTL).  Cortex-A76 (RPi5) is ARMv8.2 so
+//!           these bits MUST be zero on this hardware — leaving them
+//!           non-zero is a contract violation and would silently
+//!           change semantics on a FEAT_TTL hardware port.
+//! [43:0]  = VA[55:12] (44 bits, page-aligned virtual address)
 //! ```
+//!
+//! Accordingly the encoder masks `vaddr >> 12` to the **44-bit**
+//! field [43:0] — NOT the 48-bit window — so adversarial vaddrs
+//! exceeding 2^56 cannot pollute the RES0/TTL bits.  For well-formed
+//! callers (vaddr < 2^48) the masked-vs-unmasked behaviour is
+//! identical because `vaddr >> 12 < 2^36`; the defensive masking
+//! exists to keep the encoder spec-compliant on every input.
 //!
 //! The TLBI ASIDE1/ASIDE1IS/ASIDE1OS family encodes only the ASID
 //! in [63:48]; bits [47:0] are RES0.
@@ -69,6 +83,7 @@
 //! - ARM ARM C6.2.311–316: TLBI instructions
 //! - ARM ARM D8.11: TLB maintenance requirements
 //! - ARM ARM B2.7: Memory shareability domains
+//! - ARM ARM D5.10.1 (FEAT_TTL): TTL field semantics in ARMv8.4+
 
 use crate::barriers;
 
@@ -79,14 +94,34 @@ use crate::barriers;
 /// TLBI operand encoding for VA-by-ASID forms (VAE1, VAE1IS, VAE1OS,
 /// VALE1, VALE1IS, VALE1OS).
 ///
-/// ARM ARM C6.2.311: bits [63:48] hold the 16-bit ASID, bits [47:0]
-/// hold the upper 44 bits of the page-aligned VA (i.e., `vaddr >> 12`).
-/// Higher bits of `vaddr` are masked away to keep the operand
-/// well-defined for 48-bit VA spaces (the only configuration the
-/// kernel supports — see `mmu::TCR_EL1.IPS`).
+/// ARM ARM C6.2.311 (DDI 0487): bits [63:48] hold the 16-bit ASID;
+/// bits [47:44] are RES0 in ARMv8.0–8.3 and TTL (Translation Table
+/// Level hint) in ARMv8.4+ (FEAT_TTL); bits [43:0] hold VA[55:12]
+/// (the upper 44 bits of the page-aligned VA, i.e., `vaddr >> 12`).
+///
+/// The encoder masks `vaddr >> 12` to the **44-bit** field [43:0],
+/// NOT the 48-bit window covering RES0/TTL.  Two reasons:
+///
+/// 1. **Spec compliance**: leaving the RES0 bits [47:44] non-zero on
+///    ARMv8.0–8.3 hardware (Cortex-A76 / RPi5) is a contract violation.
+///    Even though current hardware accepts the encoding, future
+///    revisions or microarchitectural changes are free to reject it.
+/// 2. **Forward-compatibility on FEAT_TTL hardware**: an adversarial
+///    `vaddr >= 2^56` would shift bit 44 (or higher) into the operand,
+///    which on FEAT_TTL hardware is the TTL "level 1 hint" — silently
+///    converting "invalidate all levels" into "invalidate level 1
+///    only", leaving level 2/3 translations stale.
+///
+/// For well-formed callers (`vaddr < 2^48`, enforced by `TCR_EL1.IPS =
+/// 0b101` = 48-bit IPA), `vaddr >> 12 < 2^36`, so masking with 44 vs
+/// 48 bits is observationally identical.  The defensive mask exists
+/// only to keep the encoder spec-compliant against adversarial inputs
+/// (memory corruption, FFI ABI errors, etc.).
 #[inline(always)]
 const fn encode_va_asid_operand(asid: u16, vaddr: u64) -> u64 {
-    ((asid as u64) << 48) | ((vaddr >> 12) & 0x0000_FFFF_FFFF_FFFF)
+    // 44-bit mask for VA[55:12] field per ARM ARM C6.2.311.  Higher
+    // bits (which would land in RES0/TTL on the operand) are zeroed.
+    ((asid as u64) << 48) | ((vaddr >> 12) & 0x0000_0FFF_FFFF_FFFF)
 }
 
 /// TLBI operand encoding for ASID-only forms (ASIDE1, ASIDE1IS,
@@ -578,12 +613,18 @@ mod tests {
     #[test]
     fn test_vae1_operand_encoding() {
         // ASID=5, VA=0x12345000
-        // Expected: ASID in bits [63:48], VA>>12 in bits [47:0]
+        // Expected: ASID in bits [63:48], VA[55:12] in bits [43:0]
+        // (RES0/TTL bits [47:44] = 0).
         let asid: u16 = 5;
         let vaddr: u64 = 0x12345000;
         let operand = encode_va_asid_operand(asid, vaddr);
         assert_eq!(operand >> 48, 5);
-        assert_eq!(operand & 0xFFFF_FFFF_FFFF, 0x12345);
+        // The VA field is 44 bits ([43:0]), not 48 — assert the
+        // narrower mask so a regression that loosens to 48 bits
+        // surfaces here.
+        assert_eq!(operand & 0x0FFF_FFFF_FFFF, 0x12345);
+        // RES0/TTL bits [47:44] must be zero for spec compliance.
+        assert_eq!((operand >> 44) & 0xF, 0, "RES0/TTL bits [47:44] must be 0");
     }
 
     #[test]
@@ -643,11 +684,15 @@ mod tests {
 
     #[test]
     fn sm1e1_tlbi_is_variants_accept_max_vaddr() {
-        // 48-bit VA space — the encoder masks `vaddr >> 12` to 44 bits,
-        // so the maximum representable VA is `0xFFFF_FFFF_F000`
-        // (not `0x0000_FFFF_FFFF_FFFF` shifted left 12 — that would
-        // overflow into the ASID field).  Exercise the upper boundary
-        // to verify the mask is in place.
+        // 48-bit VA space (TCR_EL1.IPS = 0b101).  The encoder masks
+        // `vaddr >> 12` to the 44-bit VA[55:12] field per ARM ARM
+        // C6.2.311.  For a 48-bit VA, vaddr >> 12 fits in 36 bits,
+        // well below the 44-bit field, so well-formed VAs encode
+        // losslessly.  The encoder's bit-shift cannot silently
+        // truncate the ASID or pollute the RES0/TTL bits.
+        //
+        // The max well-formed VA representable in 48-bit IPA is
+        // (2^48 - 4096) = 0x0000_FFFF_FFFF_F000.  Exercise it.
         tlbi_vae1is(1, 0x0000_FFFF_FFFF_F000);
         tlbi_vale1is(1, 0x0000_FFFF_FFFF_F000);
     }
@@ -832,7 +877,9 @@ mod tests {
         // a non-const operation in the encoder.
         const OPERAND: u64 = encode_va_asid_operand(0xCAFE, 0x12345000);
         assert_eq!(OPERAND >> 48, 0xCAFE);
-        assert_eq!(OPERAND & 0xFFFF_FFFF_FFFF, 0x12345);
+        // Narrow 44-bit mask check — RES0/TTL bits [47:44] must be 0.
+        assert_eq!(OPERAND & 0x0FFF_FFFF_FFFF, 0x12345);
+        assert_eq!((OPERAND >> 44) & 0xF, 0, "RES0/TTL bits [47:44] must be 0");
     }
 
     #[test]
@@ -842,14 +889,18 @@ mod tests {
     }
 
     #[test]
-    fn sm1e_encode_va_asid_operand_masks_high_va_bits() {
-        // The encoder takes the low 44 bits of `vaddr >> 12`.  A vaddr
-        // > 2^56 should NOT bleed into the ASID field.  Exercise an
-        // adversarial input that would, if the mask were absent,
-        // overwrite the ASID.
+    fn sm1e_encode_va_asid_operand_masks_high_va_bits_to_44() {
+        // SM1.E.1 audit fix: the encoder takes the low 44 bits of
+        // `vaddr >> 12` (bits [43:0] of the operand), per ARM ARM
+        // C6.2.311.  Bits [47:44] are RES0 (or TTL on FEAT_TTL
+        // hardware) and MUST be zero.  An adversarial vaddr >= 2^56
+        // would shift into the RES0/TTL field; the mask zeros those
+        // bits to keep the encoder spec-compliant.
         let asid: u16 = 0x1234;
-        // VA = 2^56 → vaddr >> 12 = 2^44 → bit 44 of operand → bit 60
-        // → would corrupt ASID bits 60..63 if unmasked.
+        // VA = 2^56 → vaddr >> 12 = 2^44 → bit 44 of operand →
+        // would land in TTL bit 0 if unmasked, silently corrupting
+        // the invalidation semantics on FEAT_TTL hardware (TTL=0b0001
+        // = "skip level 1 lookup").
         let vaddr: u64 = 1u64 << 56;
         let operand = encode_va_asid_operand(asid, vaddr);
         // ASID field must remain unchanged.
@@ -858,11 +909,81 @@ mod tests {
             0x1234,
             "ASID field corrupted by un-masked high vaddr bits"
         );
-        // Low 48 bits of the operand should be zero (vaddr >> 12 bit 44
-        // would land in operand bit 44, well below the ASID field;
-        // but the mask `0x0000_FFFF_FFFF_FFFF` is 48 bits — the encoder
-        // would only mask above bit 47 if the shift overran).  Bit 44
-        // is preserved.
-        assert_eq!(operand & 0xFFFF_FFFF_FFFF, 1u64 << 44);
+        // Bits [47:44] (RES0/TTL) must be zero.  The 44-bit mask
+        // ensures this.
+        assert_eq!(
+            (operand >> 44) & 0xF,
+            0,
+            "RES0/TTL bits [47:44] not masked — would corrupt TLBI \
+             semantics on FEAT_TTL hardware"
+        );
+        // Bits [43:0] (VA field) for this input: vaddr=2^56 yields
+        // vaddr>>12 = 2^44, which is OUTSIDE the 44-bit field.
+        // After masking, the entire VA field should be zero.
+        assert_eq!(
+            operand & 0x0FFF_FFFF_FFFF,
+            0,
+            "VA field [43:0] should be zero after 44-bit mask of 2^44"
+        );
+    }
+
+    #[test]
+    fn sm1e_encode_va_asid_operand_preserves_full_44bit_va() {
+        // SM1.E.1 audit: with a vaddr at exactly the 44-bit VA field
+        // boundary (vaddr = (2^44 - 1) << 12 ≈ 2^56 - 2^12), the
+        // VA[55:12] field should be all-1s (44 bits set) and the
+        // RES0/TTL bits should remain zero.
+        let asid: u16 = 0xABCD;
+        // (2^44 - 1) << 12 = 0x0FFF_FFFF_FFFF_F000 (highest valid VA
+        // representable in 44-bit VA[55:12] field).
+        let vaddr: u64 = (1u64 << 56) - (1u64 << 12);
+        let operand = encode_va_asid_operand(asid, vaddr);
+        assert_eq!(operand >> 48, 0xABCD, "ASID preserved");
+        assert_eq!((operand >> 44) & 0xF, 0, "RES0/TTL bits [47:44] zero");
+        assert_eq!(
+            operand & 0x0FFF_FFFF_FFFF,
+            0x0FFF_FFFF_FFFF,
+            "VA field [43:0] should hold full 44-bit VA[55:12]"
+        );
+    }
+
+    #[test]
+    fn sm1e_encode_va_asid_operand_well_formed_vaddrs_unchanged() {
+        // SM1.E.1 audit: confirm the 44-bit mask is observationally
+        // identical to the (incorrect) 48-bit mask for ALL well-formed
+        // VAs in the 48-bit IPA space the kernel actually uses.  This
+        // is the defensive-no-regression check: changing the mask must
+        // not break any production caller.
+        //
+        // For vaddr < 2^48, vaddr >> 12 < 2^36, which fits entirely
+        // within the 36 low bits of the operand — far below the
+        // [47:44] RES0/TTL field.  Mask change is observationally
+        // identical.
+        let cases: &[(u16, u64)] = &[
+            (0, 0),
+            (0, 0x1000),
+            (5, 0x12345000),
+            (0xFFFF, 0xFFFF_FFFF_F000),
+            (1, 0x0000_8000_0000_0000 - 0x1000),  // vaddr just below 2^47
+        ];
+        for &(asid, vaddr) in cases {
+            let operand = encode_va_asid_operand(asid, vaddr);
+            assert_eq!(operand >> 48, asid as u64, "ASID for ({:#x}, {:#x})", asid, vaddr);
+            assert_eq!(
+                (operand >> 44) & 0xF,
+                0,
+                "RES0/TTL bits zero for well-formed ({:#x}, {:#x})",
+                asid,
+                vaddr
+            );
+            // VA[55:12] field equals vaddr >> 12 (for well-formed input).
+            assert_eq!(
+                operand & 0x0FFF_FFFF_FFFF,
+                vaddr >> 12,
+                "VA field for ({:#x}, {:#x})",
+                asid,
+                vaddr
+            );
+        }
     }
 }
