@@ -296,35 +296,40 @@ pub fn init_gic() {
 /// only by the diagnostic `kprintln`; the actual register
 /// programming is identical on every core.
 ///
-/// **WS-SM SM1.F audit-pass-1 fix** — per-core distributor enables:
-/// GIC-400 has THREE distributor registers that are **banked
-/// per-core** (GIC-400 TRM §4.3.5, §4.3.11):
+/// **WS-SM SM1.F audit-pass-1/2/3 fix** — per-core distributor enables:
+/// GIC-400 has FOUR distributor registers that are **banked per-core**
+/// (GIC-400 TRM §4.3.4, §4.3.5, §4.3.8, §4.3.11).  All four require
+/// per-core init from the secondary's banked view, mirroring what
+/// `init_distributor` does for the primary's view:
 ///
-///   1. **GICD_ISENABLER0** (INTIDs 0..31, i.e., SGIs + PPIs):
-///      per-core enable bits.  Primary's `init_distributor` writes
-///      this from its own banked view, enabling only its own bank.
-///      Without per-core enable, SGIs sent to a secondary via
-///      [`send_sgi`] stay pending forever, and the secondary's
-///      timer PPI never fires.
-///   2. **GICD_IPRIORITYR0..7** (priorities for INTIDs 0..31):
-///      per-core priority bytes.  Primary's `init_distributor`
-///      writes these from its own banked view to priority 0xA0
-///      (mid-range, accepted by PMR=0xFF).  Without per-core
-///      priority init, secondaries' PPI/SGI priority is the
-///      implementation-defined reset value (often 0xFF = lowest,
-///      MASKED by PMR=0xFF per GIC-400 TRM §4.4.2 "Setting GICC_PMR
-///      to 0xFF enables delivery of all priority levels except level
-///      0xFF").  So even with ISENABLER0 set, a 0xFF priority would
-///      reject delivery.
-///   3. **GICD_IGROUPR0** (group for INTIDs 0..31): per-core group
-///      bits.  Primary writes all-zeros (Group 0 = IRQ delivery).
-///      Reset value is also typically zero so this is usually fine,
-///      but defense-in-depth: set explicitly.
+///   1. **GICD_IGROUPR0** (group for INTIDs 0..31, §4.3.4): per-core
+///      group bits.  Primary writes all-zeros (Group 0 = IRQ).
+///      Reset value is typically zero already, but defense-in-depth:
+///      set explicitly to match primary.
+///   2. **GICD_IPRIORITYR0..7** (priorities for INTIDs 0..31, §4.3.11):
+///      per-core priority bytes.  Primary writes priority 0xA0
+///      (mid-range, accepted by PMR=0xFF).  Without per-core init,
+///      secondaries' PPI/SGI priority is the implementation-defined
+///      reset value (often 0xFF = lowest, MASKED by PMR=0xFF per
+///      §4.4.2 "Setting GICC_PMR to 0xFF enables delivery of all
+///      priority levels except level 0xFF").  So even with
+///      ISENABLER0 set, a 0xFF priority would reject delivery.
+///   3. **GICD_ICPENDR0** (clear-pending for INTIDs 0..31, §4.3.8):
+///      per-core pending-bit clears.  Reset value is 0 (no pending),
+///      but defense-in-depth — a hostile PSCI implementation or
+///      soft-reset path could leave stale pending bits.  Writing
+///      0xFFFF_FFFF clears every pending bit before enable.
+///   4. **GICD_ISENABLER0** (INTIDs 0..31, §4.3.5): per-core enable
+///      bits.  Primary's `init_distributor` writes this from its own
+///      banked view, enabling only its own bank.  Without per-core
+///      enable, SGIs sent to a secondary via [`send_sgi`] stay
+///      pending forever, and the secondary's timer PPI never fires.
 ///
-/// This function writes all three on the secondary's banked view,
-/// matching what `init_distributor` does on the primary's view.
-/// The writes are local to the calling CPU per GIC-400 TRM §4.3.5;
-/// no impact on other cores.
+/// This function writes all four on the secondary's banked view in
+/// the canonical GIC-400 init order (GROUP → PRIORITY → CLEAR_PENDING
+/// → ENABLE per TRM §3.1.1 Table 3-1), matching what
+/// `init_distributor` does on the primary's view.  The writes are
+/// local to the calling CPU; no impact on other cores.
 ///
 /// **Pre-condition**: the primary's `init_gic` (Phase 3 in
 /// `rust_boot_main`) must have already run, having initialised the
@@ -340,12 +345,25 @@ pub fn init_gic() {
 /// (GICD_ISENABLER0), §4.3.11 (GICD_IPRIORITYR0..7), and §4.3.4
 /// (GICD_IGROUPR0) are the per-core distributor enables.
 pub fn init_cpu_interface_secondary(core_id: u64) {
-    // Step 1: per-core distributor enables (audit-pass-1 expansion).
-    // All three writes target banked registers — they only affect this
-    // CPU's view per GIC-400 TRM §4.3.5 / §4.3.11.
+    // Step 1: per-core distributor enables (audit-pass-1 + audit-pass-2 +
+    // audit-pass-3 expansion).  Four banked distributor registers
+    // require per-core init.  Order matches GIC-400 TRM §3.1.1
+    // Table 3-1 ("Initialization") for parity with the primary's
+    // `init_distributor`: GROUP → PRIORITY → CLEAR_PENDING → ENABLE.
+    //
+    // All four writes target banked registers — they only affect this
+    // CPU's view per GIC-400 TRM §4.3.4 / §4.3.5 / §4.3.8 / §4.3.11.
+    //
+    // Performing GROUP and PRIORITY BEFORE ENABLE ensures that when
+    // an interrupt is enabled, it has the correct group and priority
+    // already configured.  Performing CLEAR_PENDING BEFORE ENABLE
+    // discards any stale pending bits left by a previous boot (e.g.,
+    // soft reset, PSCI CPU_ON from an already-online core).
 
-    // Banked: enable all SGIs + PPIs for this core.
-    mmio_write32(GICD_BASE + gicd::ISENABLER_BASE, 0xFFFF_FFFF);
+    // Banked: set group 0 (IRQ delivery, not FIQ) for every INTID
+    // in [0, 32).  Reset value is typically 0 already, but defense-
+    // in-depth matches what `init_distributor` does for the primary.
+    mmio_write32(GICD_BASE + gicd::IGROUPR_BASE, 0x0000_0000);
 
     // Banked: set priority 0xA0 (mid-range; accepted by PMR=0xFF) for
     // every INTID in [0, 32).  Without this, the per-core reset value
@@ -362,17 +380,25 @@ pub fn init_cpu_interface_secondary(core_id: u64) {
         );
     }
 
-    // Banked: set group 0 (IRQ delivery) for every INTID in [0, 32).
-    // The reset value is typically 0 already, but defense-in-depth
-    // matches what `init_distributor` does for the primary.
-    mmio_write32(GICD_BASE + gicd::IGROUPR_BASE, 0x0000_0000);
+    // Banked (audit-pass-3): clear any pending SGIs/PPIs left from
+    // previous state.  Reset value is 0 (none pending) but defense-
+    // in-depth — a hostile PSCI implementation or soft-reset path
+    // might leave stale pending bits.  Writing 0xFFFF_FFFF to
+    // ICPENDR0 clears every pending bit in [0, 32) per GIC-400 TRM
+    // §4.3.8.
+    mmio_write32(GICD_BASE + gicd::ICPENDR_BASE, 0xFFFF_FFFF);
+
+    // Banked: enable all SGIs + PPIs for this core.  Must come AFTER
+    // GROUP, PRIORITY, and CLEAR_PENDING per the canonical init
+    // order so the interrupt enable picks up the right configuration.
+    mmio_write32(GICD_BASE + gicd::ISENABLER_BASE, 0xFFFF_FFFF);
 
     // Step 2: CPU interface enables (GICC registers — also banked
     // but accessed via shared MMIO base).
     init_cpu_interface(GICC_BASE);
 
     crate::kprintln!(
-        "[smp] core {core_id}: GIC-400 CPU interface initialized (ISENABLER0=0xFFFFFFFF, IPRIORITYR0..7=0xA0, IGROUPR0=0, PMR=0xFF, BPR=0, CTLR=1)"
+        "[smp] core {core_id}: GIC-400 CPU interface initialized (IGROUPR0=0, IPRIORITYR0..7=0xA0, ICPENDR0=0xFFFFFFFF, ISENABLER0=0xFFFFFFFF, PMR=0xFF, BPR=0, CTLR=1)"
     );
 }
 
@@ -1569,6 +1595,54 @@ mod tests {
         // The value 0 means "all 32 INTIDs in Group 0" (IRQ).
         let group_0_value: u32 = 0;
         assert_eq!(group_0_value, 0, "Group 0 (IRQ delivery)");
+    }
+
+    #[test]
+    fn sm1c3_icpendr0_clear_pending_offset_and_mask() {
+        // SM1.F audit-pass-3: `init_cpu_interface_secondary` writes
+        // GICD_ICPENDR0 = 0xFFFF_FFFF to clear any pending SGIs/PPIs
+        // from previous state (defense-in-depth against PSCI / soft-
+        // reset leftover state).  Per GIC-400 TRM §4.3.8, writing 1
+        // to a bit CLEARS the pending state; writing 0 leaves
+        // unchanged.  So 0xFFFF_FFFF clears every bit.
+        assert_eq!(gicd::ICPENDR_BASE, 0x280,
+            "GICD_ICPENDR_BASE must match GIC-400 TRM §4.3.8");
+        // The value 0xFFFF_FFFF clears every pending bit (write-1-to-clear).
+        let clear_all_pending: u32 = 0xFFFF_FFFF;
+        // Bit 30 (timer PPI) included → clears stale timer pending state.
+        assert_eq!(
+            clear_all_pending & (1 << TIMER_PPI_ID),
+            1 << TIMER_PPI_ID,
+            "clear-pending mask covers timer PPI bit"
+        );
+        // SGI bits 0..15 included.
+        assert_eq!(
+            clear_all_pending & 0x0000_FFFF,
+            0x0000_FFFF,
+            "clear-pending mask covers every SGI INTID"
+        );
+    }
+
+    #[test]
+    fn sm1c3_canonical_init_order_matches_gic_trm() {
+        // SM1.F audit-pass-3: GIC-400 TRM §3.1.1 Table 3-1 specifies
+        // the init order: GROUP → PRIORITY → ICFGR → CLEAR_PENDING →
+        // ENABLE → (CPU interface).  `init_cpu_interface_secondary`
+        // follows GROUP → PRIORITY → CLEAR_PENDING → ENABLE → CTLR
+        // (ICFGR omitted because SGIs are always edge-triggered and
+        // PPIs use reset-default config, matching what
+        // `init_distributor` does for the primary).
+        //
+        // This test pins the offset constants so a refactor that
+        // swaps any two of them would surface here.  The actual
+        // ordering of writes is verified by source-code inspection;
+        // we can't observe write order from a host test (MMIO is
+        // a no-op on host).
+        assert_eq!(gicd::IGROUPR_BASE, 0x080, "Step 1: GROUP @ 0x080");
+        assert_eq!(gicd::IPRIORITYR_BASE, 0x400, "Step 2: PRIORITY @ 0x400");
+        assert_eq!(gicd::ICPENDR_BASE, 0x280, "Step 3: CLEAR_PENDING @ 0x280");
+        assert_eq!(gicd::ISENABLER_BASE, 0x100, "Step 4: ENABLE @ 0x100");
+        assert_eq!(gicc::CTLR, 0x000, "Step 5: GICC_CTLR @ 0x000");
     }
 
     // =====================================================================

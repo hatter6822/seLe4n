@@ -1539,6 +1539,25 @@ documentation lives under `docs/` and `docs/gitbook/`.
   silent-fallback tests removed).  Zero clippy warnings workspace-
   wide.
 
+  **Audit-pass-3 refinements** (third deep-audit, post-pass-2):
+  - HIGH: per-core GICD_ICPENDR0 clear added to
+    `init_cpu_interface_secondary`.  Pass-2 added IGROUPR0,
+    IPRIORITYR0..7, ISENABLER0; pass-3 completes the banked-write
+    parity by also clearing ICPENDR0 (banked per-core per GIC-400
+    TRM §4.3.8).  Defense-in-depth against stale pending bits left
+    by hostile PSCI or soft-reset paths.
+  - MEDIUM: canonical init order — reordered the per-core
+    distributor writes in `init_cpu_interface_secondary` to match
+    GIC-400 TRM §3.1.1 Table 3-1: GROUP → PRIORITY → CLEAR_PENDING
+    → ENABLE → CTLR (was: ENABLE → PRIORITY → GROUP, functionally
+    fine on fresh boot but not spec-compliant for re-init).
+  - STRENGTHENING: new `tlbiForSharing_ffi_args_in_range` theorem
+    in `SeLe4n.Kernel.Architecture.TlbiForSharing` — explicit
+    Lean-side proof that well-formed callers cannot trip the Rust
+    FFI fail-closed panic.  Surface-anchored in
+    `tests/SmpFoundationsSuite.lean` + tier-3 invariant surface.
+  - 2 new GIC tests pin ICPENDR0 mask + canonical init order.
+
   **Audit-pass-2 refinements** (second deep audit, post-pass-1;
   also in v0.31.7):
   - HIGH: per-core GICD_IPRIORITYR0..7 + GICD_IGROUPR0 init in

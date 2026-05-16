@@ -1,5 +1,42 @@
 ## v0.31.7 — WS-SM Phases SM1.E/F/G/H landing (cross-core HAL completion)
 
+### Audit-pass-3 refinements (third deep audit pass)
+
+Three additional fixes landed inside v0.31.7 from a third deep audit
+(post-pass-2).  All extended the GIC init correctness or surfaced
+new structural witnesses:
+
+- **HIGH: per-core GICD_ICPENDR0 clear added** (gic.rs
+  `init_cpu_interface_secondary`).  Pass-2 added IGROUPR0,
+  IPRIORITYR0..7, and ISENABLER0 to match the primary's
+  `init_distributor` banked writes.  Pass-3 completes the parity
+  by adding GICD_ICPENDR0 (per GIC-400 TRM §4.3.8: banked per-core,
+  clears pending bits for INTIDs 0..31).  Defense-in-depth against
+  a hostile PSCI implementation or soft-reset path leaving stale
+  pending bits in the secondary's banked view.  Writing
+  0xFFFF_FFFF clears every pending bit (write-1-to-clear).
+- **MEDIUM: canonical init order** (gic.rs
+  `init_cpu_interface_secondary`).  Per GIC-400 TRM §3.1.1 Table 3-1
+  ("Initialization"), the canonical order is GROUP → PRIORITY →
+  CLEAR_PENDING → ENABLE → CTLR.  Pass-2 had the writes in the
+  order ENABLE → PRIORITY → GROUP, which is functionally OK on a
+  fresh boot (CTLR=0 throughout the distributor writes blocks any
+  delivery) but doesn't match the spec's recommended order and is
+  fragile for re-init scenarios (e.g., post-TLB-shootdown).
+  Pass-3 reorders to match: GROUP → PRIORITY → CLEAR_PENDING →
+  ENABLE → CTLR (mirroring `init_distributor`'s sequence).
+- **STRENGTHENING: new `tlbiForSharing_ffi_args_in_range` theorem**
+  (SeLe4n/Kernel/Architecture/TlbiForSharing.lean).  Explicit
+  Lean-side proof that well-formed callers cannot trip the Rust
+  FFI fail-closed panic.  Combines `SharingDomain.toTag_in_range`
+  (< 2) and `TlbInvalidation.toOpTag_in_range` (< 4) into a single
+  witness theorem.  Surface-anchored in
+  `tests/SmpFoundationsSuite.lean` (1 `#check` + 2 runtime
+  assertions) and `scripts/test_tier3_invariant_surface.sh`.
+- 2 new GIC tests pin the new ICPENDR0 mask and the canonical
+  init-order constant offsets (`sm1c3_icpendr0_clear_pending_offset_and_mask`,
+  `sm1c3_canonical_init_order_matches_gic_trm`).
+
 ### Audit-pass-2 refinements (second deep audit pass)
 
 Four additional fixes landed inside v0.31.7 from a second deep
