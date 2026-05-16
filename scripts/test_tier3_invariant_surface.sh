@@ -1270,6 +1270,7 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Kernel.Architecture.TlbInvalidation.toOpTag_in_range
 #check @SeLe4n.Kernel.Architecture.TlbInvalidation.toOpTag_distinct_constructors
 #check @SeLe4n.Kernel.Architecture.tlbiForSharing_total
+#check @SeLe4n.Kernel.Architecture.tlbiForSharing_ffi_args_in_range
 #check @SeLe4n.Platform.FFI.ffiTlbiForSharing
 -- SM1.F.6 — SGI primitive FFI bindings
 #check @SeLe4n.Platform.FFI.ffiSendSgi

@@ -152,6 +152,7 @@ open SeLe4n.Platform.RPi5
 #check @SeLe4n.Kernel.Architecture.TlbInvalidation.toOpTag_in_range
 #check @SeLe4n.Kernel.Architecture.TlbInvalidation.toOpTag_distinct_constructors
 #check @SeLe4n.Kernel.Architecture.tlbiForSharing_total
+#check @SeLe4n.Kernel.Architecture.tlbiForSharing_ffi_args_in_range
 
 /-! ## SM1.F.6 — SGI primitive FFI bindings -/
 #check @SeLe4n.Platform.FFI.ffiSendSgi
@@ -706,6 +707,19 @@ private def runTlbiForSharingChecks : IO Unit := do
   assertBool "TlbInvalidation.vmalle1 zero operands"
     (decide (SeLe4n.Kernel.Architecture.TlbInvalidation.vmalle1.toAsid = 0 ∧
               SeLe4n.Kernel.Architecture.TlbInvalidation.vmalle1.toVaddr = 0))
+  -- SM1.E.4 audit-pass-2: structural witness that well-formed Lean
+  -- callers cannot trip the Rust FFI's fail-closed panic.  The
+  -- Rust dispatcher panics on `domain_tag >= 2` or `op_tag >= 4`;
+  -- this theorem combines `SharingDomain.toTag_in_range` and
+  -- `TlbInvalidation.toOpTag_in_range` to prove every Lean-emitted
+  -- tag tuple is within the accepted range.  We exercise both
+  -- bounds for representative inputs.
+  assertBool "tlbiForSharing_ffi_args_in_range inner-vmalle1 bounds"
+    (decide (SeLe4n.Kernel.Concurrency.SharingDomain.inner.toTag.toNat < 2 ∧
+              SeLe4n.Kernel.Architecture.TlbInvalidation.vmalle1.toOpTag.toNat < 4))
+  assertBool "tlbiForSharing_ffi_args_in_range outer-vale1 bounds"
+    (decide (SeLe4n.Kernel.Concurrency.SharingDomain.outer.toTag.toNat < 2 ∧
+              (SeLe4n.Kernel.Architecture.TlbInvalidation.vale1 42 0x1000).toOpTag.toNat < 4))
 
 private def runSgiFfiBindingChecks : IO Unit := do
   -- WS-SM SM1.F.6: SGI FFI binding structural checks.

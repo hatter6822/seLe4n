@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-codebase-tlb-plan-L8PzR",
-      "commit_sha": "68ef2fb1bba4b2b33fbf93337935af6066725c47",
-      "tree_sha": "c3f2d51200deeb88b86cfcdeede92c2f77a06bf4",
-      "committed_at_utc": "2026-05-16T02:11:52-04:00"
+      "commit_sha": "38f21693ded8cdbc0b4d8ca02ee646eb332ab5a1",
+      "tree_sha": "c6a1ab5ca753ae19d68882543a4c80756ac51606",
+      "committed_at_utc": "2026-05-16T21:37:23+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "9f4cfe79dc642c8ce7b05b65fa15a967c6a7a700afdc63c3830802b8d01a7f31"
+    "source_digest": "17bc6748195caa56747f73291ccb73da0395a765264552f5f7132f1f3ffab03f"
   },
   "summary": {
     "module_count": 208,
-    "declaration_count": 6635
+    "declaration_count": 6636
   },
   "readme_sync": {
     "version": "0.31.7",
     "lean_toolchain": "v4.28.0",
     "production_files": 178,
-    "production_loc": 115963,
+    "production_loc": 115985,
     "test_files": 30,
-    "test_loc": 21850,
-    "proved_theorem_lemma_decls": 3370,
+    "test_loc": 21864,
+    "proved_theorem_lemma_decls": 3371,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -7913,7 +7913,7 @@
     {
       "module": "SeLe4n.Kernel.Architecture.TlbiForSharing",
       "path": "SeLe4n/Kernel/Architecture/TlbiForSharing.lean",
-      "declaration_count": 22,
+      "declaration_count": 23,
       "declarations": [
         {
           "kind": "namespace",
@@ -8026,8 +8026,20 @@
         },
         {
           "kind": "theorem",
+          "name": "tlbiForSharing_ffi_args_in_range",
+          "line": 281,
+          "called": [
+            "SharingDomain",
+            "SharingDomain.toTag_in_range",
+            "TlbInvalidation",
+            "TlbInvalidation.toOpTag_in_range",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "TlbInvalidation.vmalle1_opTag",
-          "line": 271,
+          "line": 293,
           "called": [
             "toOpTag"
           ]
@@ -8035,7 +8047,7 @@
         {
           "kind": "theorem",
           "name": "TlbInvalidation.vae1_opTag",
-          "line": 273,
+          "line": 295,
           "called": [
             "toOpTag"
           ]
@@ -8043,7 +8055,7 @@
         {
           "kind": "theorem",
           "name": "TlbInvalidation.aside1_opTag",
-          "line": 276,
+          "line": 298,
           "called": [
             "toOpTag"
           ]
@@ -8051,7 +8063,7 @@
         {
           "kind": "theorem",
           "name": "TlbInvalidation.vale1_opTag",
-          "line": 279,
+          "line": 301,
           "called": [
             "toOpTag"
           ]
@@ -8059,7 +8071,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.Kernel.Concurrency.SharingDomain.inner_toTag",
-          "line": 283,
+          "line": 305,
           "called": [
             "toTag"
           ]
@@ -8067,7 +8079,7 @@
         {
           "kind": "theorem",
           "name": "_root_.SeLe4n.Kernel.Concurrency.SharingDomain.outer_toTag",
-          "line": 286,
+          "line": 308,
           "called": [
             "toTag"
           ]
@@ -8075,7 +8087,7 @@
         {
           "kind": "theorem",
           "name": "TlbInvalidation.vae1_toAsid",
-          "line": 290,
+          "line": 312,
           "called": [
             "toAsid"
           ]
@@ -8083,7 +8095,7 @@
         {
           "kind": "theorem",
           "name": "TlbInvalidation.vae1_toVaddr",
-          "line": 293,
+          "line": 315,
           "called": [
             "toVaddr"
           ]
@@ -8091,7 +8103,7 @@
         {
           "kind": "theorem",
           "name": "TlbInvalidation.vmalle1_zero_operands",
-          "line": 296,
+          "line": 318,
           "called": [
             "toAsid",
             "toVaddr"
@@ -8100,7 +8112,7 @@
         {
           "kind": "theorem",
           "name": "TlbInvalidation.aside1_operands",
-          "line": 300,
+          "line": 322,
           "called": [
             "toAsid",
             "toVaddr"
@@ -84708,77 +84720,69 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.SmpFoundations",
-          "line": 165,
+          "line": 166,
           "called": []
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:168>",
-          "line": 168,
-          "called": [
-            "numCores"
-          ]
         },
         {
           "kind": "example",
           "name": "<anonymous:example:169>",
           "line": 169,
           "called": [
-            "length"
+            "numCores"
           ]
         },
         {
           "kind": "example",
           "name": "<anonymous:example:170>",
           "line": 170,
-          "called": []
+          "called": [
+            "length"
+          ]
         },
         {
           "kind": "example",
           "name": "<anonymous:example:171>",
           "line": 171,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:172>",
+          "line": 172,
           "called": [
             "numCores"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:174>",
-          "line": 174,
+          "name": "<anonymous:example:175>",
+          "line": 175,
           "called": [
             "dsbForSharing"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:176>",
-          "line": 176,
+          "name": "<anonymous:example:177>",
+          "line": 177,
           "called": [
             "dsbForSharing"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:178>",
-          "line": 178,
+          "name": "<anonymous:example:179>",
+          "line": 179,
           "called": [
             "dsbStForSharing"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:180>",
-          "line": 180,
+          "name": "<anonymous:example:181>",
+          "line": 181,
           "called": [
             "dsbStForSharing"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:184>",
-          "line": 184,
-          "called": [
-            "level"
           ]
         },
         {
@@ -84855,8 +84859,16 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:196>",
-          "line": 196,
+          "name": "<anonymous:example:194>",
+          "line": 194,
+          "called": [
+            "level"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:197>",
+          "line": 197,
           "called": [
             "LockId.mk'",
             "ofNat"
@@ -84864,8 +84876,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:201>",
-          "line": 201,
+          "name": "<anonymous:example:202>",
+          "line": 202,
           "called": [
             "LockId.mk'",
             "ofNat"
@@ -84873,18 +84885,12 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:206>",
-          "line": 206,
+          "name": "<anonymous:example:207>",
+          "line": 207,
           "called": [
             "LockId.mk'",
             "ofNat"
           ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:212>",
-          "line": 212,
-          "called": []
         },
         {
           "kind": "example",
@@ -84914,14 +84920,20 @@
           "kind": "example",
           "name": "<anonymous:example:217>",
           "line": 217,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:218>",
+          "line": 218,
           "called": [
             "length"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:220>",
-          "line": 220,
+          "name": "<anonymous:example:221>",
+          "line": 221,
           "called": [
             "bklHeldBy",
             "bootCoreId"
@@ -84929,19 +84941,11 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:224>",
-          "line": 224,
+          "name": "<anonymous:example:225>",
+          "line": 225,
           "called": [
             "bklHeldBy",
             "bootCoreId"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:229>",
-          "line": 229,
-          "called": [
-            "length"
           ]
         },
         {
@@ -84949,29 +84953,37 @@
           "name": "<anonymous:example:230>",
           "line": 230,
           "called": [
+            "length"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:231>",
+          "line": 231,
+          "called": [
             "assumptionInventory"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:234>",
-          "line": 234,
+          "name": "<anonymous:example:235>",
+          "line": 235,
           "called": [
             "length"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:237>",
-          "line": 237,
+          "name": "<anonymous:example:238>",
+          "line": 238,
           "called": [
             "RPi5Platform"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:239>",
-          "line": 239,
+          "name": "<anonymous:example:240>",
+          "line": 240,
           "called": [
             "RPi5Platform",
             "bootCoreId"
@@ -84979,36 +84991,27 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:241>",
-          "line": 241,
+          "name": "<anonymous:example:242>",
+          "line": 242,
           "called": [
             "RPi5Platform"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:246>",
-          "line": 246,
+          "name": "<anonymous:example:247>",
+          "line": 247,
           "called": [
             "SimPlatform"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:248>",
-          "line": 248,
+          "name": "<anonymous:example:249>",
+          "line": 249,
           "called": [
             "SimPlatform",
             "bootCoreId"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:255>",
-          "line": 255,
-          "called": [
-            "CoreId",
-            "default"
           ]
         },
         {
@@ -85017,14 +85020,23 @@
           "line": 256,
           "called": [
             "CoreId",
+            "default"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:257>",
+          "line": 257,
+          "called": [
+            "CoreId",
             "bootCoreId",
             "default"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:259>",
-          "line": 259,
+          "name": "<anonymous:example:260>",
+          "line": 260,
           "called": [
             "CoreId",
             "numCores"
@@ -85032,8 +85044,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:262>",
-          "line": 262,
+          "name": "<anonymous:example:263>",
+          "line": 263,
           "called": [
             "bootCoreId",
             "currentCoreId_in_range_marker",
@@ -85042,8 +85054,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:276>",
-          "line": 276,
+          "name": "<anonymous:example:277>",
+          "line": 277,
           "called": [
             "pure",
             "secondaryKernelMain",
@@ -85052,8 +85064,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:280>",
-          "line": 280,
+          "name": "<anonymous:example:281>",
+          "line": 281,
           "called": [
             "pure",
             "secondaryKernelMain",
@@ -85062,8 +85074,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:283>",
-          "line": 283,
+          "name": "<anonymous:example:284>",
+          "line": 284,
           "called": [
             "pure",
             "secondaryKernelMain",
@@ -85072,8 +85084,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:285>",
-          "line": 285,
+          "name": "<anonymous:example:286>",
+          "line": 286,
           "called": [
             "pure",
             "secondaryKernelMain",
@@ -85082,20 +85094,12 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:287>",
-          "line": 287,
+          "name": "<anonymous:example:288>",
+          "line": 288,
           "called": [
             "pure",
             "secondaryKernelMain",
             "secondaryKernelMain_returns_unit_marker"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:295>",
-          "line": 295,
-          "called": [
-            "toTag"
           ]
         },
         {
@@ -85111,7 +85115,7 @@
           "name": "<anonymous:example:297>",
           "line": 297,
           "called": [
-            "toOpTag"
+            "toTag"
           ]
         },
         {
@@ -85140,10 +85144,10 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:303>",
-          "line": 303,
+          "name": "<anonymous:example:301>",
+          "line": 301,
           "called": [
-            "toAsid"
+            "toOpTag"
           ]
         },
         {
@@ -85151,7 +85155,7 @@
           "name": "<anonymous:example:304>",
           "line": 304,
           "called": [
-            "toVaddr"
+            "toAsid"
           ]
         },
         {
@@ -85159,7 +85163,7 @@
           "name": "<anonymous:example:305>",
           "line": 305,
           "called": [
-            "toAsid"
+            "toVaddr"
           ]
         },
         {
@@ -85167,14 +85171,16 @@
           "name": "<anonymous:example:306>",
           "line": 306,
           "called": [
-            "toVaddr"
+            "toAsid"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:313>",
-          "line": 313,
-          "called": []
+          "name": "<anonymous:example:307>",
+          "line": 307,
+          "called": [
+            "toVaddr"
+          ]
         },
         {
           "kind": "example",
@@ -85201,9 +85207,15 @@
           "called": []
         },
         {
+          "kind": "example",
+          "name": "<anonymous:example:318>",
+          "line": 318,
+          "called": []
+        },
+        {
           "kind": "def",
           "name": "assertBool",
-          "line": 323,
+          "line": 324,
           "called": [
             "throw"
           ]
@@ -85211,7 +85223,7 @@
         {
           "kind": "def",
           "name": "runCoreIdChecks",
-          "line": 330,
+          "line": 331,
           "called": [
             "assertBool",
             "length",
@@ -85221,7 +85233,7 @@
         {
           "kind": "def",
           "name": "runSharingDomainChecks",
-          "line": 340,
+          "line": 341,
           "called": [
             "assertBool",
             "dsbForSharing",
@@ -85231,7 +85243,7 @@
         {
           "kind": "def",
           "name": "runLockKindChecks",
-          "line": 355,
+          "line": 356,
           "called": [
             "all",
             "assertBool",
@@ -85241,7 +85253,7 @@
         {
           "kind": "def",
           "name": "runLockIdChecks",
-          "line": 382,
+          "line": 383,
           "called": [
             "LockId.mk'",
             "assertBool",
@@ -85251,7 +85263,7 @@
         {
           "kind": "def",
           "name": "runSgiKindChecks",
-          "line": 394,
+          "line": 395,
           "called": [
             "assertBool",
             "length"
@@ -85260,7 +85272,7 @@
         {
           "kind": "def",
           "name": "runBklStateChecks",
-          "line": 409,
+          "line": 410,
           "called": [
             "assertBool",
             "bklHeldBy",
@@ -85270,7 +85282,7 @@
         {
           "kind": "def",
           "name": "runArchAssumptionChecks",
-          "line": 421,
+          "line": 422,
           "called": [
             "assertBool",
             "assumptionInventory",
@@ -85280,7 +85292,7 @@
         {
           "kind": "def",
           "name": "runSmpInventoryChecks",
-          "line": 429,
+          "line": 430,
           "called": [
             "assertBool",
             "length"
@@ -85289,7 +85301,7 @@
         {
           "kind": "def",
           "name": "runPlatformBindingChecks",
-          "line": 434,
+          "line": 435,
           "called": [
             "RPi5Platform",
             "SimPlatform",
@@ -85301,7 +85313,7 @@
         {
           "kind": "def",
           "name": "runLockKindUniquenessChecks",
-          "line": 474,
+          "line": 475,
           "called": [
             "assertBool",
             "level"
@@ -85310,7 +85322,7 @@
         {
           "kind": "def",
           "name": "runLockIdAdditionalChecks",
-          "line": 507,
+          "line": 508,
           "called": [
             "LockId.mk'",
             "assertBool",
@@ -85320,7 +85332,7 @@
         {
           "kind": "def",
           "name": "runSgiKindAdditionalChecks",
-          "line": 526,
+          "line": 527,
           "called": [
             "all",
             "assertBool"
@@ -85329,7 +85341,7 @@
         {
           "kind": "def",
           "name": "runArchAssumptionAdditionalChecks",
-          "line": 545,
+          "line": 546,
           "called": [
             "all",
             "archAssumptionConsumer",
@@ -85340,7 +85352,7 @@
         {
           "kind": "def",
           "name": "runBklStateAdditionalChecks",
-          "line": 564,
+          "line": 565,
           "called": [
             "CoreId",
             "assertBool",
@@ -85353,7 +85365,7 @@
         {
           "kind": "def",
           "name": "runCurrentCoreIdChecks",
-          "line": 587,
+          "line": 588,
           "called": [
             "CoreId",
             "all",
@@ -85366,7 +85378,7 @@
         {
           "kind": "def",
           "name": "runSecondaryKernelMainChecks",
-          "line": 623,
+          "line": 624,
           "called": [
             "assertBool",
             "ofNat",
@@ -85377,10 +85389,11 @@
         {
           "kind": "def",
           "name": "runTlbiForSharingChecks",
-          "line": 674,
+          "line": 675,
           "called": [
             "assertBool",
             "toAsid",
+            "toNat",
             "toOpTag",
             "toTag",
             "toVaddr"
@@ -85389,7 +85402,7 @@
         {
           "kind": "def",
           "name": "runSgiFfiBindingChecks",
-          "line": 710,
+          "line": 724,
           "called": [
             "all",
             "assertBool"
@@ -85398,7 +85411,7 @@
         {
           "kind": "def",
           "name": "runFoundationsChecks",
-          "line": 739,
+          "line": 753,
           "called": [
             "runArchAssumptionAdditionalChecks",
             "runArchAssumptionChecks",
@@ -85423,7 +85436,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 765,
+          "line": 779,
           "called": [
             "runFoundationsChecks"
           ]

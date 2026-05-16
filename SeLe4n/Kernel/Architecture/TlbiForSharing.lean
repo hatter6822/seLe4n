@@ -263,6 +263,28 @@ theorem tlbiForSharing_total (d : SharingDomain) (op : TlbInvalidation) :
       d.toTag op.toOpTag op.toAsid op.toVaddr := by
   rfl
 
+/-- **WS-SM SM1.E.4 audit-pass-2**: `tlbiForSharing` always produces
+FFI args within the Rust dispatcher's accepted range.
+
+The Rust-side `ffi_tlbi_for_sharing` (in
+`rust/sele4n-hal/src/ffi.rs`) PANICS on out-of-range tags
+(`domain_tag >= 2` or `op_tag >= 4`) per the fail-closed contract.
+This theorem proves that well-formed Lean callers — anyone using
+the typed `tlbiForSharing(d, op)` wrapper — can NEVER trip the
+Rust panic, because both tag-encoder values are structurally
+bounded.
+
+The theorem combines `SharingDomain.toTag_in_range` (proves
+`d.toTag.toNat < 2`) and `TlbInvalidation.toOpTag_in_range` (proves
+`op.toOpTag.toNat < 4`).  Together they witness the safety of the
+FFI bridge: from the Lean side, the panic arm is unreachable. -/
+theorem tlbiForSharing_ffi_args_in_range (d : SharingDomain)
+    (op : TlbInvalidation) :
+    d.toTag.toNat < 2 ∧ op.toOpTag.toNat < 4 := by
+  refine ⟨?_, ?_⟩
+  · exact SharingDomain.toTag_in_range d
+  · exact TlbInvalidation.toOpTag_in_range op
+
 -- ============================================================================
 -- WS-SM SM1.E.4 — Per-constructor decidable witnesses
 -- ============================================================================
