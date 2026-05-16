@@ -41,11 +41,18 @@ ELAN_INSTALLER_URL="https://raw.githubusercontent.com/leanprover/elan/87f5ec2f56
 # WS-B9 hardening anchor: commit-pinned installer URL + hash must be updated together intentionally.
 ELAN_INSTALLER_SHA256="4bacca9502cb89736fe63d2685abc2947cfbf34dc87673504f1bb4c43eda9264"
 
-# AA2-B (H-4): Rust toolchain version pinned in CI via dtolnay/rust-toolchain action.
-# This variable documents the pinned version for consistency with the Lean toolchain
-# SHA-pinning above. Update this when bumping the Rust version in
-# .github/workflows/lean_action_ci.yml (the `toolchain:` field).
-# shellcheck disable=SC2034  # documentation-only variable, not consumed by this script
+# AA2-B (H-4): Rust toolchain version pinned in CI via the
+# `dtolnay/rust-toolchain` action.  Also consumed by the Rust MSRV
+# install block near the end of this script (which calls
+# `rustup toolchain install ${RUST_TOOLCHAIN_VERSION}` so local cargo
+# runs match the CI environment).  The same version is duplicated in:
+#   - `rust/rust-toolchain.toml` (`channel`)
+#   - `rust/Cargo.toml` (`[workspace.package].rust-version` — sans patch)
+#   - `.github/workflows/lean_action_ci.yml` (`toolchain:` field)
+# When bumping MSRV, update all four sites in the same PR.  PR #777
+# (audit-pass-4) added the rustup integration after a CI failure showed
+# that local 1.94 was accepting `feature(const_refs_to_statics)` while
+# CI's 1.82 rejected it.
 RUST_TOOLCHAIN_VERSION="1.82.0"
 
 # R8-A (I-M01): Pin elan binary release version for direct download path.
@@ -105,6 +112,80 @@ fast_path_ready() {
   return 0
 }
 
+# ----------------------------------------------------------------------------
+# Rust MSRV pin — ensure local cargo invocations use the same toolchain as CI.
+#
+# The CI workflow `lean_action_ci.yml::Rust ABI Tests` installs Rust
+# `${RUST_TOOLCHAIN_VERSION}` (currently 1.82.0) via the
+# `dtolnay/rust-toolchain` action.  Local development must match this MSRV
+# so code that uses a feature stabilised in a newer Rust release (e.g.,
+# `feature(const_refs_to_statics)` stabilised in 1.83) fails locally
+# before pushing rather than failing in CI.  PR #777 hit exactly this
+# failure mode — local 1.94 accepted the unstable feature, CI's 1.82
+# rejected it — motivating this audit-pass-4 hardening.
+#
+# `rust/rust-toolchain.toml` pins the toolchain channel so `cargo` running
+# from the `rust/` directory automatically uses 1.82.0 (rustup reads the
+# file).  This function ensures the toolchain is *installed* so the first
+# `cargo build` doesn't wait on a network download mid-workflow.
+#
+# We only install if `rustup` is on PATH; we never bootstrap rustup itself
+# here because (a) the CI image already provides it and (b) we don't want
+# to pull a curl-pipe installer into the SessionStart hook surface (per
+# the AA2-A SHA-pinning discipline applied to elan above).  If `rustup` is
+# absent, we log a warning and skip — the developer can install it via
+# https://rustup.rs/ or `apt-get install rustup` and re-run this script.
+#
+# Idempotent on repeat invocation: `rustup toolchain install` short-
+# circuits when the toolchain is already present.  The
+# `rustup toolchain list | grep` pre-check avoids even that no-op when
+# the toolchain is already installed, keeping fast-path session-start
+# overhead at ~30 ms.
+# ----------------------------------------------------------------------------
+ensure_rust_msrv_toolchain() {
+  if ! command -v rustup >/dev/null 2>&1; then
+    log "[setup] note: rustup not found on PATH; skipping Rust toolchain pin."
+    log "[setup]       Local cargo runs may use a different Rust version than CI"
+    log "[setup]       (CI enforces ${RUST_TOOLCHAIN_VERSION}).  Install rustup via"
+    log "[setup]       https://rustup.rs/ and re-run this script to pin locally."
+    return 0
+  fi
+
+  if rustup toolchain list 2>/dev/null | grep -q "^${RUST_TOOLCHAIN_VERSION}-"; then
+    log_elapsed "Rust ${RUST_TOOLCHAIN_VERSION} toolchain already installed"
+  else
+    log_elapsed "installing Rust ${RUST_TOOLCHAIN_VERSION} toolchain (matches CI MSRV)"
+    # `--profile minimal` matches `rust-toolchain.toml`; adds clippy +
+    # rustfmt components explicitly so `cargo clippy` and `cargo fmt`
+    # work out of the box.  `--no-self-update` prevents rustup from
+    # bootstrapping a newer rustup binary mid-session (which would
+    # change behaviour we have not pinned).
+    if rustup toolchain install "${RUST_TOOLCHAIN_VERSION}" \
+        --profile minimal \
+        --component clippy \
+        --component rustfmt \
+        --no-self-update >/dev/null 2>&1; then
+      log_elapsed "Rust ${RUST_TOOLCHAIN_VERSION} toolchain installed"
+    else
+      log "[setup] WARNING: failed to install Rust ${RUST_TOOLCHAIN_VERSION}; \
+local cargo runs may diverge from CI's MSRV (CI will still enforce 1.82.0). \
+Manual recovery: rustup toolchain install ${RUST_TOOLCHAIN_VERSION} --component clippy --component rustfmt"
+      return 0  # non-fatal — Lean setup completed
+    fi
+  fi
+
+  # Cross-check: confirm the rust/ directory's rust-toolchain.toml is
+  # read.  The file pins `channel = "1.82.0"`; rustup will use it when
+  # cargo runs from any descendant of `rust/`.  Log the active version
+  # so a session-start glance at the log confirms the right toolchain
+  # is wired.
+  if [ -f "${ROOT_DIR}/rust/rust-toolchain.toml" ]; then
+    local active_rust
+    active_rust=$( (cd "${ROOT_DIR}/rust" && rustc --version 2>/dev/null) || echo "unknown" )
+    log_elapsed "rust/ active toolchain: ${active_rust}"
+  fi
+}
+
 if fast_path_ready; then
   log_elapsed "Lean environment already configured (fast-path)"
   # AN1-B.2 (C-03): install the pre-commit hook on every invocation so fresh
@@ -120,6 +201,13 @@ if fast_path_ready; then
   if [ ! -f "${ELAN_BOOTSTRAP_MARKER}" ]; then
     date -u +"%Y-%m-%dT%H:%M:%SZ" > "${ELAN_BOOTSTRAP_MARKER}" 2>/dev/null || true
   fi
+  # PR #777 audit-pass-4: ensure Rust MSRV toolchain is installed even on
+  # the Lean fast-path.  Idempotent: rustup short-circuits if the
+  # toolchain already exists.  See the matching block at the end of the
+  # full setup path for the detailed rationale + commentary; this
+  # duplicated tail call is intentional so a developer who hits the
+  # fast-path (Lean already set up) still gets MSRV-pinned Rust.
+  ensure_rust_msrv_toolchain
   if [ "${BUILD_REQUESTED}" -eq 1 ]; then
     log_elapsed "running lake build"
     (cd "${ROOT_DIR}" && lake build)
@@ -589,6 +677,9 @@ fi
 
 log_elapsed "Lean environment is ready"
 log_elapsed "lake version: $(lake --version)"
+
+# Ensure Rust MSRV toolchain matches CI; idempotent on repeat invocation.
+ensure_rust_msrv_toolchain
 
 # AN11-E.7 (TST-M07): write a sentinel marker so subsequent invocations
 # can short-circuit the bootstrap path with a single stat() call.  The

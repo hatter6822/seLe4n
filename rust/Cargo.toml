@@ -13,6 +13,12 @@ version = "0.31.4"
 edition = "2021"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/hatter6822/seLe4n"
+# MSRV — minimum supported Rust version.  Must be kept in lockstep with:
+#   - `rust/rust-toolchain.toml` (`channel`)
+#   - `.github/workflows/lean_action_ci.yml` (`toolchain:` field of the
+#     `dtolnay/rust-toolchain` step in the `Rust ABI Tests` job)
+#   - `scripts/setup_lean_env.sh` (`RUST_TOOLCHAIN_VERSION` variable)
+rust-version = "1.82"
 
 # `panic = "abort"` is required for `no_std` kernel builds — the
 # default `panic = "unwind"` is UB across `extern "C"` boundaries and
