@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.31.6.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.7.
 
 > The version line above is **CI-enforced** by
 > `scripts/check_version_sync.sh` (a Tier 0 gate). When you bump
@@ -1310,6 +1310,188 @@ documentation lives under `docs/` and `docs/gitbook/`.
   see
   [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
   §§5.5..5.8.
+
+  **WS-SM SM1.E/F/G/H LANDED at v0.31.7 on branch
+  `claude/review-codebase-tlb-plan-L8PzR`** (cross-core TLBI
+  broadcast + SGI primitives + per-core kprintln + QEMU SMP
+  integration tests).  Twenty-one sub-tasks across four phases
+  landed in one cut, completing the SM1 Rust HAL surface so SM5+
+  per-core kernel state lands on a fully-functional cross-core
+  HAL.
+
+  - **WS-SM SM1.E.1**: 4 IS-variant TLBI wrappers
+    (`tlbi_vmalle1is`, `tlbi_vae1is`, `tlbi_aside1is`,
+    `tlbi_vale1is`) with `dsb ish` + `isb` post-TLBI bracket per
+    ARM ARM D8.11.  Each broadcasts to every PE in the
+    inner-shareable domain, the operative cross-core TLB
+    invalidation primitive that SM7 (TLB shootdown) consumes.
+  - **WS-SM SM1.E.2**: 4 OS-variant TLBI wrappers
+    (`tlbi_vmalle1os`, `tlbi_vae1os`, `tlbi_aside1os`,
+    `tlbi_vale1os`) with `dsb osh` + `isb` post-TLBI bracket.
+    Pre-positioned for multi-cluster ports (BCM2712 is
+    single-cluster, so functionally identical to IS on RPi5).
+  - **WS-SM SM1.E.3**: `tlbi_for_sharing(domain, op)` dispatcher
+    with two new typed enums: `SharingDomain` (Inner/Outer
+    mirrors the Lean SM0.F enum) and `TlbInvalidation`
+    (Vmalle1/Vae1/Aside1/Vale1 op selector).  Routes to one of
+    the eight underlying IS/OS variants based on the platform's
+    binding.  Single entry point that kernel-side TLB
+    invalidation must use.
+  - **WS-SM SM1.E.4**: Lean FFI binding `ffiTlbiForSharing` +
+    typed `Architecture.tlbiForSharing` wrapper (in NEW FILE
+    `SeLe4n/Kernel/Architecture/TlbiForSharing.lean`, ~270 LoC
+    incl. tag-encoding theorems).  Encodes
+    `(SharingDomain, TlbInvalidation)` as `(domainTag, opTag,
+    asid, vaddr)` tuple for C-callable transmission.  Tag
+    encoding pinned at the type level via injectivity +
+    in-range theorems
+    (`SharingDomain.toTag_injective`,
+    `SharingDomain.toTag_in_range`,
+    `TlbInvalidation.toOpTag_in_range`,
+    `TlbInvalidation.toOpTag_distinct_constructors`).  Module
+    staged via `Platform.Staged` for SM7 consumption.
+  - **WS-SM SM1.E.5** (deferred to SM7): kernel-side caller
+    migration — at SM1.E the existing `ffi_tlbi_*` exports
+    (local non-broadcast TLBI) remain reserved for the boot-time
+    MMU-init path before secondaries start.  SM7 (TLB shootdown)
+    will migrate every kernel-side TLB callsite to route through
+    `tlbiForSharing` per the SMP-correctness contract documented
+    in `tlb.rs` module header.
+
+  - **WS-SM SM1.F.1**: `GICD_SGIR` register constant + 16-INTID
+    bound + 3 TargetListFilter discriminant constants
+    (`SGI_TLF_CPU_TARGET_LIST = 0b00`,
+    `SGI_TLF_ALL_BUT_SELF = 0b01`,
+    `SGI_TLF_SELF_ONLY = 0b10`) per GIC-400 TRM §4.3.13.
+    Encoder helper `encode_sgir(tlf, mask, intid) -> u32`
+    factored out for bit-level testing.
+  - **WS-SM SM1.F.2/3/4**: 3 send-SGI variants
+    (`send_sgi(target_mask, intid)` for explicit per-target
+    addressing; `send_sgi_to_self(intid)` for self-deferred
+    work; `send_sgi_to_all_but_self(intid)` for the most common
+    SMP-coordination broadcast).  All three panic on
+    `intid >= 16` and emit `dsb ish` BEFORE the GICD_SGIR
+    write per SM1.F.8 / ARM ARM B2.7.5 (prior kernel-state
+    writes must be visible on every IS-domain PE before the SGI
+    fires on the receiver).
+  - **WS-SM SM1.F.5**: SGI handler dispatch infrastructure.
+    `SgiHandler = fn(intid: u8, source_cpu: u8)` type;
+    `static mut SGI_HANDLERS: [Option<SgiHandler>; 16]` per-INTID
+    table (write-once at boot; read-only thereafter — the
+    discipline that makes `static mut` sound here);
+    `unsafe fn register_sgi_handler(intid, handler)` for
+    boot-time registration; `fn lookup_sgi_handler(intid)`
+    public reader; `fn dispatch_sgi(intid, source_cpu)`
+    invoked from the trap handler when an SGI INTID is acked.
+    `iar_source_cpu(iar) -> u8` extracts source-CPU bits
+    `[12:10]` from `GICC_IAR` per GIC-400 TRM §4.4.4.
+  - **WS-SM SM1.F.6**: 3 Lean FFI bindings
+    (`ffiSendSgi`, `ffiSendSgiToSelf`, `ffiSendSgiToAllButSelf`)
+    in `SeLe4n/Platform/FFI.lean` + matching Rust `#[no_mangle]
+    pub extern "C"` exports in `ffi.rs`.  Lean callers wrap
+    these via `SgiKind.toIntid` (typed `Fin 16`) so the
+    Rust-side bound check never trips on a well-formed call.
+  - **WS-SM SM1.F.7**: 33 new tests in `gic::tests::sm1f*`
+    covering encoder bit-fields, range enforcement, dispatch
+    routing, IAR source-CPU extraction, handler registration
+    + lookup; 9 new tests in `ffi::tests::sm1f6*` covering
+    every kernel-reserved INTID + signature pinning.
+  - **WS-SM SM1.F.8**: ARM ARM B2.7.5 ordering documentation +
+    NEW build-script scanner `scan_gic_rs_send_sgi_emits_dsb_ish`
+    in `rust/sele4n-hal/build.rs` that pins every send_sgi*
+    function body to emit `crate::barriers::dsb_ish()` BEFORE
+    `mmio_write32(GICD_BASE + gicd::SGIR, ...)`.  A regression
+    that drops the DSB or reorders it after the SGIR write
+    fails the build with an actionable diagnostic.
+
+  - **WS-SM SM1.G.1**: `UartLock` audit documentation block in
+    `uart.rs` header.  Documents the AtomicBool spinlock's
+    correctness under SMP via Acquire/Release semantics, plus
+    the IRQ-safety contract via per-acquire DAIF mask.  Documents
+    the FIFO-fairness gap that SM2's `TicketLock` will close
+    when SM2.B lands — at which point `UartLock` is replaced
+    structurally without changing the public `with_boot_uart`
+    interface.
+  - **WS-SM SM1.G.2**: Per-core boot banner verification.
+    Already done in SM1.C.5 (each secondary emits 7 banner
+    lines through MMU/VBAR/GIC/timer/IRQ-unmask init steps);
+    SM1.H.1 verifies them.
+  - **WS-SM SM1.G.3**: Per-core kprintln stress test.
+    `tests/test_qemu_smp_kprintln_stress.sh` boots QEMU `-smp 4`
+    and verifies the captured UART log has no torn output (no
+    line with two `[core N]` prefixes, every core emits at
+    least one stress line, etc.).  SKIPs at SM1.G if the
+    stress-test routine isn't wired in the kernel image
+    (kernel-side wiring is the SM5+ follow-on).
+  - **WS-SM SM1.G.4**: `kprintln_core!` + `kprint_core!` macros.
+    Prefix every line with `[core N]` where N is read from
+    TPIDR_EL1 via `per_cpu::current_core_id_from_tpidr`.
+    Useful for SMP boot tracing where per-core attribution
+    matters.  6 new tests in `uart::tests::sm1g4*` cover macro
+    expansion, the no-arg form, lock-balance discipline,
+    and repeated invocations.
+
+  - **WS-SM SM1.H.1**: `scripts/test_qemu_smp_bringup.sh` —
+    full QEMU `-smp 4` bringup test.  Replaces the SM0.T
+    SKIP-only stub.  Boots `-machine virt,secure=on,virtualization=on -cpu cortex-a76 -smp 4`,
+    captures UART log, verifies each of cores 0..3 reaches its
+    `[smp] core N: ready, entering kernel` banner.  Also
+    verifies the boot core emits the Phase 5 `secondary core(s)
+    online` banner.  SKIPs cleanly when QEMU or the kernel
+    image is missing.
+  - **WS-SM SM1.H.2**: Tier-4 nightly wiring.
+    `scripts/test_tier4_smp_bootcheck.sh` (was a SKIP-only stub
+    at SM0.T) now routes through SM1.H.1 + SM1.H.3 + SM1.H.5 +
+    SM1.G.3 sub-tests, each handling its own SKIP conditions.
+    Available via `NIGHTLY_ENABLE_EXPERIMENTAL=1
+    ./scripts/test_nightly.sh`.
+  - **WS-SM SM1.H.3**: `scripts/test_qemu_smp_minimal.sh` —
+    minimal `-smp 2` bringup (boot + 1 secondary).  Useful for
+    diagnostic boots after a HAL change without exercising
+    the full 4-core race.
+  - **WS-SM SM1.H.4**: UART log capture + banner verification.
+    Embedded in SM1.H.1.
+  - **WS-SM SM1.H.5**: `scripts/test_qemu_smp_sgi_roundtrip.sh`
+    — cross-core SGI round-trip test.  Boot core sends an SGI
+    to core 1; core 1's handler increments a shared counter
+    then sends an ACK SGI back.  SKIPs at SM1.H if the
+    kernel-side test handlers are not yet wired (Lean-side
+    handler registration requires SM5+ per-core scheduler state
+    to register from the verified kernel; the underlying HAL
+    primitives are present + unit-tested at SM1.F).
+
+  **Test coverage**: 510 HAL tests (up from 425 at SM1.D close;
+  +85 new tests across `tlb.rs`, `gic.rs`, `ffi.rs`, `uart.rs`).
+  Per-file: +32 in `tlb::tests::sm1e*` (operand encoding, IS/OS
+  variants, dispatcher), +9 in `ffi::tests::sm1e4*` (TLBI
+  dispatcher FFI), +33 in `gic::tests::sm1f*` (SGI primitives +
+  handler dispatch + IAR source-CPU extractor), +9 in
+  `ffi::tests::sm1f6*` (SGI FFI exports), +6 in `uart::tests::sm1g4*`
+  (kprintln_core! macro), +1 ignored in `uart::tests::sm1g3_*`
+  (cross-core stress placeholder).  Lean-side: +18 surface
+  anchors + 11 decidable examples + 16 runtime assertions in
+  `tests/SmpFoundationsSuite.lean` covering SM1.E.4 tag encoding
+  + SM1.F.6 SGI FFI binding well-formedness.  Zero clippy
+  warnings workspace-wide.
+
+  **Build-script regression scanner**: NEW
+  `scan_gic_rs_send_sgi_emits_dsb_ish` in
+  `rust/sele4n-hal/build.rs` pins the SM1.F.8 ordering contract
+  (every `send_sgi*` body must emit `crate::barriers::dsb_ish()`
+  BEFORE `mmio_write32(GICD_BASE + gicd::SGIR, ...)`).
+
+  **Module reachability**: `Architecture.TlbiForSharing` is
+  staged via `Platform.Staged` (added to the SM1.E
+  `staged_module_allowlist.txt` entry); SM7 promotes it
+  production-reached when cross-core TLB shootdown lands.
+
+  **Items deferred past v1.0.0 with correctness impact**: NONE.
+
+  Follow-on: SM1.I (miscellaneous HAL improvements) and the
+  SM2..SM9 phases — see
+  [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+  §5.9 and the master overview
+  [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md).
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**

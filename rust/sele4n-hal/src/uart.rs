@@ -228,6 +228,47 @@ impl fmt::Write for Uart {
 // that eliminates undefined behavior from unsynchronized mutable static
 // access after interrupts are enabled.
 // ============================================================================
+//
+// **WS-SM SM1.G.1 audit**: UART lock under SMP
+//
+// The `UartLock` below uses an `AtomicBool` with `compare_exchange_weak`
+// (Acquire on success, Relaxed on retry) and `store(false, Release)` on
+// release.  Combined with the per-acquire DAIF mask
+// (`disable_interrupts` / `restore_interrupts`), this protects the
+// shared PL011 UART against:
+//
+//   * Pre-emption by an IRQ handler that calls `kprintln!` while the
+//     main kernel path holds the lock.  The DAIF mask covers IRQ /
+//     FIQ delivery for the duration of the critical section.
+//   * Concurrent acquisition from multiple cores under SMP.  The
+//     CAS-based loop ensures exactly one core wins the lock; losers
+//     spin on the AtomicBool with `core::hint::spin_loop()` (which
+//     maps to `yield` on ARMv8.0 / `wfe` on ARMv8.5+).
+//
+// **Correctness under SMP**: the Acquire / Release semantics establish
+// the standard happens-before chain:
+//
+//     Core A: ... memory writes ... → Release(false → true)
+//     Core B: Acquire(true) → ... reads happen-after A's writes ...
+//
+// So a kernel-state mutation by core A that races with a
+// `kprintln!`-initiated lock acquisition by core B is correctly
+// ordered through the lock.
+//
+// **Fairness**: the CAS loop is NOT FIFO-fair.  Under heavy contention
+// (e.g., every core spinning to print boot diagnostics), some cores
+// may starve indefinitely.  The current production usage (boot-time
+// diagnostics + occasional IRQ-handler panics) does not exhibit this
+// pattern, so the simple CAS lock is sufficient at v1.0.0.
+//
+// **Future work**: WS-SM SM2 introduces a verified `TicketLock`
+// primitive (FIFO fairness, formal mutex theorem).  Once SM2.B lands,
+// this lock will be replaced with `TicketLock` to eliminate the
+// fairness gap.  At that point the `UartLock` struct itself can be
+// removed; the `with_boot_uart` interface is the stable public API
+// and will not change.  Until then, the AtomicBool-based design here
+// is the documented v1.0.0 contract.
+// ============================================================================
 
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -457,6 +498,79 @@ macro_rules! kprintln {
     }};
 }
 
+// ============================================================================
+// WS-SM SM1.G.4 — Per-core kprintln macro
+// ============================================================================
+//
+// `kprintln_core!` prefixes every line with the calling core's id
+// (read from TPIDR_EL1 via per_cpu::current_core_id_from_tpidr).
+// Useful for SMP boot tracing and post-mortem log analysis where
+// per-core attribution matters.
+//
+// The macro composes atomically with `kprint!` — the `[core N]` prefix
+// and the message body are produced inside the same `with_boot_uart`
+// critical section because `kprint!` itself takes the lock.  This
+// means a higher-priority IRQ handler that calls `kprintln_core!`
+// during the `[core N]` prefix print would interleave its own line
+// AFTER the prefix completes, producing a clean boundary rather than
+// the prefix mid-character mixing with the message body.
+//
+// Note that `kprintln_core!` makes TWO `kprint!` calls (prefix + body),
+// each of which takes and releases the lock.  An IRQ that fires
+// between the two could insert its own line between them, producing:
+//
+//     [core 0] starting boot phase 5
+//     [core 1] (timer IRQ from IRQ handler)
+//     ...
+//
+// This is the documented behaviour: per-line atomicity, not
+// per-`kprintln_core!`-call atomicity.  Higher-stake callers that
+// need to print multi-line atomic output should mask interrupts
+// around the entire call sequence (see `interrupts::with_interrupts_disabled`).
+
+/// **WS-SM SM1.G.4**: Print formatted output with a per-core id prefix
+/// and a trailing newline.
+///
+/// Equivalent to `kprintln!("[core {}] {}", core_id, format_args!(...))`,
+/// where `core_id` is read from `TPIDR_EL1` via
+/// `per_cpu::current_core_id_from_tpidr`.  Useful for SMP boot
+/// tracing where per-core attribution matters.
+///
+/// On host (non-aarch64) the core id reads as `0` deterministically.
+///
+/// # Example
+///
+/// ```ignore
+/// use sele4n_hal::kprintln_core;
+/// kprintln_core!("ready, entering kernel");
+/// // Output (on core 1): [core 1] ready, entering kernel
+/// ```
+#[macro_export]
+macro_rules! kprintln_core {
+    () => {{
+        let core_id = $crate::per_cpu::current_core_id_from_tpidr();
+        $crate::kprintln!("[core {}]", core_id);
+    }};
+    ($($arg:tt)*) => {{
+        let core_id = $crate::per_cpu::current_core_id_from_tpidr();
+        $crate::kprintln!("[core {}] {}", core_id, format_args!($($arg)*));
+    }};
+}
+
+/// **WS-SM SM1.G.4**: Print formatted output with a per-core id prefix
+/// (no trailing newline).
+///
+/// Companion to [`kprintln_core!`] for partial-line printing.  Note
+/// the same interleaving caveat applies — this macro takes and
+/// releases the UART lock for the prefix and body separately.
+#[macro_export]
+macro_rules! kprint_core {
+    ($($arg:tt)*) => {{
+        let core_id = $crate::per_cpu::current_core_id_from_tpidr();
+        $crate::kprint!("[core {}] {}", core_id, format_args!($($arg)*));
+    }};
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -598,5 +712,112 @@ mod tests {
         assert!(result.is_err(), "catch_unwind should have caught the panic");
         assert!(!lock.is_held(),
             "UartGuard::drop did not fire on unwind — lock leaked");
+    }
+
+    // ========================================================================
+    // WS-SM SM1.G.4 — Per-core kprintln macro tests
+    //
+    // The macros expand to a `kprint!` / `kprintln!` call sequence that
+    // takes the UART lock for each `[core N] ...` line.  We cannot
+    // intercept the formatted output from a host test (the Boot UART
+    // is `static`, not parameterisable), so the tests verify:
+    //
+    //   1. The macros expand cleanly (a regression in the macro syntax
+    //      would fail at the call site).
+    //   2. The macros do not panic on host (`current_core_id_from_tpidr`
+    //      reads the boot-core slot which is initialised to 0 deterministically).
+    //   3. The lock state is balanced after each macro invocation
+    //      (i.e., the guard's Drop fires).
+    //
+    // Hardware-level interleaving / cross-core attribution is exercised
+    // by SM1.G.3's `test_qemu_smp_kprintln_stress.sh` script (a
+    // hardware-only test under `scripts/test_qemu_smp_*`).
+    // ========================================================================
+
+    #[test]
+    fn sm1g4_kprintln_core_macro_expands_and_runs_on_host() {
+        // The macro reads core_id from TPIDR_EL1 (host stub: 0) and
+        // prints `[core 0] <msg>` to the boot UART.  On host the UART
+        // write is a no-op via the MMIO host stub.  Verify no panic.
+        crate::kprintln_core!("SM1.G.4 host smoke: macro expands cleanly");
+        crate::kprintln_core!("SM1.G.4 with arg: {}", 42);
+        crate::kprintln_core!("SM1.G.4 with multiple args: {} {} {}", 1, 2, 3);
+    }
+
+    #[test]
+    fn sm1g4_kprintln_core_no_arg_form_runs_on_host() {
+        // The no-argument form `kprintln_core!()` prints just the
+        // `[core N]` prefix on its own line.  Useful for a blank
+        // line in boot diagnostics.
+        crate::kprintln_core!();
+    }
+
+    #[test]
+    fn sm1g4_kprint_core_macro_expands_and_runs_on_host() {
+        // Companion partial-line macro — exercises the same code path
+        // but without the trailing newline.
+        crate::kprint_core!("SM1.G.4 partial line");
+        crate::kprintln!(); // Add a newline so subsequent output is clean.
+    }
+
+    #[test]
+    fn sm1g4_kprintln_core_balances_lock_state() {
+        // A `kprintln_core!` invocation acquires + releases the UART
+        // lock.  After the macro returns, the global UART_LOCK must
+        // be back in the not-held state.
+        let before = UART_LOCK.is_held();
+        assert!(!before, "precondition: global UART_LOCK not held");
+        crate::kprintln_core!("SM1.G.4 lock-balance smoke");
+        let after = UART_LOCK.is_held();
+        assert_eq!(before, after, "kprintln_core! left UART_LOCK held");
+    }
+
+    #[test]
+    fn sm1g4_kprintln_core_repeated_invocations_balance() {
+        // Multiple sequential invocations must each balance the lock.
+        // Catches a regression where one expansion arm forgets to
+        // release.
+        for i in 0..16 {
+            crate::kprintln_core!("SM1.G.4 iteration {}", i);
+            assert!(
+                !UART_LOCK.is_held(),
+                "UART_LOCK leaked after iteration {}",
+                i
+            );
+        }
+    }
+
+    // ========================================================================
+    // WS-SM SM1.G.3 — Hardware-only cross-core stress test stub
+    // ========================================================================
+
+    /// **WS-SM SM1.G.3**: Hardware-only cross-core kprintln stress test.
+    ///
+    /// `#[ignore]`'d because the test requires QEMU `-smp 4` (or
+    /// physical RPi5) where multiple cores can race on the UART
+    /// lock.  The host test profile runs single-threaded with one
+    /// core's `current_core_id_from_tpidr` always returning 0, so a
+    /// stress run here would not exercise the cross-core race.
+    ///
+    /// The actual hardware stress is in
+    /// `scripts/test_qemu_smp_kprintln_stress.sh` (added at SM1.H);
+    /// that script boots QEMU `-smp 4` and has each core emit 1M
+    /// `kprintln_core!` calls, then verifies the captured UART log
+    /// has no torn output (no `[core N]` prefix split across two
+    /// lines, no two prefixes back-to-back without a body, etc.).
+    ///
+    /// This test exists as a documentation anchor.  A regression
+    /// that broke the macro expansion would fail
+    /// `sm1g4_kprintln_core_macro_expands_and_runs_on_host` first;
+    /// the stress test catches finer-grained interleaving issues
+    /// that are hardware-visible only.
+    #[test]
+    #[ignore]
+    fn sm1g3_cross_core_kprintln_stress() {
+        // Placeholder: would call `kprintln_core!` in a tight loop
+        // from each of N spawned threads, but `std::thread` is not
+        // available in this `#![no_std]` crate.  See the QEMU
+        // script for the real test.
+        unimplemented!("SM1.G.3: see scripts/test_qemu_smp_kprintln_stress.sh");
     }
 }

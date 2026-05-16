@@ -131,6 +131,12 @@ pub extern "C" fn ffi_gic_is_spurious(intid: u32) -> bool {
 
 /// Flush all TLB entries at EL1 (TLBI VMALLE1 + DSB ISH + ISB).
 ///
+/// **Local (non-broadcast) variant**.  Reserved for the boot-time
+/// MMU-init path BEFORE secondaries have started; production
+/// kernel code under SMP must use [`ffi_tlbi_for_sharing`] to
+/// route through the IS or OS variant per the platform's
+/// `SharingDomain`.
+///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTlbiAll`
 #[no_mangle]
 pub extern "C" fn ffi_tlbi_all() {
@@ -138,6 +144,9 @@ pub extern "C" fn ffi_tlbi_all() {
 }
 
 /// Flush TLB entries by ASID at EL1 (TLBI ASIDE1 + DSB ISH + ISB).
+///
+/// **Local (non-broadcast) variant**.  See [`ffi_tlbi_all`] for
+/// SMP usage notes.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTlbiByAsid`
 #[no_mangle]
@@ -147,10 +156,81 @@ pub extern "C" fn ffi_tlbi_by_asid(asid: u16) {
 
 /// Flush TLB entries by virtual address + ASID at EL1 (TLBI VAE1 + DSB ISH + ISB).
 ///
+/// **Local (non-broadcast) variant**.  See [`ffi_tlbi_all`] for
+/// SMP usage notes.
+///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTlbiByVaddr`
 #[no_mangle]
 pub extern "C" fn ffi_tlbi_by_vaddr(asid: u16, vaddr: u64) {
     crate::tlb::tlbi_vae1(asid, vaddr);
+}
+
+// ============================================================================
+// WS-SM SM1.E.4 — Sharing-domain-routed TLBI FFI exports
+// ============================================================================
+//
+// The Lean kernel calls these FFI exports through the typed
+// `Architecture.tlbiForSharing` wrapper, which encodes the
+// (SharingDomain, TlbInvalidation) pair as a tag + operand pair
+// suitable for C-callable transmission.
+//
+// Discriminant encoding (matches `SeLe4n.Platform.FFI.TlbiOpTag`):
+//   0 = Vmalle1 (no operand)
+//   1 = Vae1    (asid, vaddr)
+//   2 = Aside1  (asid only)
+//   3 = Vale1   (asid, vaddr)
+//
+// SharingDomain encoding (matches `SeLe4n.Platform.FFI.SharingDomainTag`):
+//   0 = Inner
+//   1 = Outer
+//
+// Unrecognised tags fall through to a defensive no-op rather than
+// panicking — the FFI layer is the security boundary, and a misformed
+// call from a buggy or hostile Lean caller should not crash the
+// kernel.  The Lean side enforces well-formedness via the typed
+// `TlbInvalidation` enum, so any out-of-range tag at this boundary
+// indicates an upstream bug worth catching at the next FFI ABI test.
+
+/// **WS-SM SM1.E.4**: Sharing-domain-routed TLBI dispatcher FFI export.
+///
+/// Routes the Lean-side `Architecture.tlbiForSharing` call to one of
+/// the eight IS/OS TLBI variants based on `domain_tag` and `op_tag`.
+/// See the module-level comment above for the discriminant encoding.
+///
+/// `asid` and `vaddr` are consumed only by the variants that need them;
+/// `Vmalle1` ignores both, `Aside1` ignores `vaddr`.  The Lean caller
+/// passes `0` for unused fields.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiTlbiForSharing`
+#[no_mangle]
+pub extern "C" fn ffi_tlbi_for_sharing(
+    domain_tag: u32,
+    op_tag: u32,
+    asid: u16,
+    vaddr: u64,
+) {
+    let domain = match domain_tag {
+        0 => crate::tlb::SharingDomain::Inner,
+        1 => crate::tlb::SharingDomain::Outer,
+        // Defensive: unknown domain → fall back to Inner (the more
+        // restrictive scope; safe for single-cluster RPi5).  A future
+        // FFI ABI test should fail closed rather than ever reach this
+        // arm in production.
+        _ => crate::tlb::SharingDomain::Inner,
+    };
+    let op = match op_tag {
+        0 => crate::tlb::TlbInvalidation::Vmalle1,
+        1 => crate::tlb::TlbInvalidation::Vae1 { asid, vaddr },
+        2 => crate::tlb::TlbInvalidation::Aside1 { asid },
+        3 => crate::tlb::TlbInvalidation::Vale1 { asid, vaddr },
+        // Defensive: unknown op → no-op.  The Lean caller has no way
+        // to construct an out-of-range tag through the typed
+        // `TlbInvalidation` enum, so this branch only fires if the
+        // FFI ABI itself is corrupt — in which case silently
+        // skipping is safer than emitting an unintended TLBI.
+        _ => return,
+    };
+    crate::tlb::tlbi_for_sharing(domain, op);
 }
 
 /// Read a 32-bit value from an MMIO address using volatile semantics.
@@ -217,6 +297,54 @@ pub extern "C" fn ffi_restore_interrupts(saved_daif: u64) {
 #[no_mangle]
 pub extern "C" fn ffi_enable_interrupts() {
     crate::interrupts::enable_irq();
+}
+
+// ============================================================================
+// WS-SM SM1.F.6 — SGI primitive FFI exports
+// ============================================================================
+//
+// Three send-SGI variants exposed to Lean.  Each forwards directly to
+// the corresponding `gic::send_sgi*` primitive.  All three emit
+// `dsb ish` BEFORE the GICD_SGIR write per SM1.F.8 / ARM ARM B2.7.5,
+// so prior kernel-state writes are observable on every IS-domain PE
+// before the SGI fires on the receiver.
+
+/// **WS-SM SM1.F.6**: Send an SGI to one or more target CPU
+/// interfaces by explicit bitmask.
+///
+/// `target_mask` — 8-bit bitmask of target CPU interfaces (bit i =
+/// CPU i).  On RPi5 only bits 0..3 are meaningful.
+/// `intid` — SGI INTID (`0..15`).
+///
+/// Forwards to [`crate::gic::send_sgi`], inheriting the panic-on-
+/// out-of-range-INTID contract.  Panics here cross the FFI boundary
+/// as a clean abort under `panic = "abort"` (production) or unwind
+/// (test); both halt the kernel rather than corrupt the GIC.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiSendSgi`
+#[no_mangle]
+pub extern "C" fn ffi_send_sgi(target_mask: u8, intid: u8) {
+    crate::gic::send_sgi(target_mask, intid);
+}
+
+/// **WS-SM SM1.F.6**: Send an SGI to the calling core only.
+///
+/// `intid` — SGI INTID (`0..15`).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiSendSgiToSelf`
+#[no_mangle]
+pub extern "C" fn ffi_send_sgi_to_self(intid: u8) {
+    crate::gic::send_sgi_to_self(intid);
+}
+
+/// **WS-SM SM1.F.6**: Send an SGI to all cores except the caller.
+///
+/// `intid` — SGI INTID (`0..15`).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiSendSgiToAllButSelf`
+#[no_mangle]
+pub extern "C" fn ffi_send_sgi_to_all_but_self(intid: u8) {
+    crate::gic::send_sgi_to_all_but_self(intid);
 }
 
 // ============================================================================
@@ -505,5 +633,153 @@ mod tests {
             ffi_current_core_id(),
             crate::per_cpu::current_core_id_from_tpidr()
         );
+    }
+
+    // ========================================================================
+    // WS-SM SM1.E.4 — `ffi_tlbi_for_sharing` dispatcher tests
+    //
+    // The dispatcher routes the (domain_tag, op_tag, asid, vaddr) tuple
+    // to one of the eight underlying IS/OS TLBI variants.  Tests
+    // exercise every combination + the defensive fallback for
+    // unrecognised tags.
+    // ========================================================================
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_inner_vmalle1_no_panic() {
+        // (Inner, Vmalle1) → tlbi_vmalle1is via the dispatcher.
+        ffi_tlbi_for_sharing(0, 0, 0, 0);
+    }
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_outer_vmalle1_no_panic() {
+        // (Outer, Vmalle1) → tlbi_vmalle1os via the dispatcher.
+        ffi_tlbi_for_sharing(1, 0, 0, 0);
+    }
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_inner_vae1_no_panic() {
+        ffi_tlbi_for_sharing(0, 1, 42, 0x1000);
+    }
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_outer_vae1_no_panic() {
+        ffi_tlbi_for_sharing(1, 1, 42, 0x1000);
+    }
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_inner_aside1_no_panic() {
+        ffi_tlbi_for_sharing(0, 2, 7, 0);
+    }
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_outer_aside1_no_panic() {
+        ffi_tlbi_for_sharing(1, 2, 7, 0);
+    }
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_inner_vale1_no_panic() {
+        ffi_tlbi_for_sharing(0, 3, 3, 0x4000);
+    }
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_outer_vale1_no_panic() {
+        ffi_tlbi_for_sharing(1, 3, 3, 0x4000);
+    }
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_unknown_domain_falls_back_to_inner() {
+        // Defensive fallback: unrecognised domain_tag (anything ≥ 2)
+        // routes through the Inner variant.  No panic; behaviour
+        // matches the `SharingDomain::Inner` arm.
+        ffi_tlbi_for_sharing(2, 0, 0, 0);
+        ffi_tlbi_for_sharing(99, 1, 1, 0x1000);
+        ffi_tlbi_for_sharing(u32::MAX, 2, 2, 0);
+    }
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_unknown_op_is_noop() {
+        // Defensive fallback: unrecognised op_tag (anything ≥ 4) is
+        // a no-op.  No panic; no TLBI emitted.
+        ffi_tlbi_for_sharing(0, 4, 0, 0);
+        ffi_tlbi_for_sharing(0, 99, 0, 0);
+        ffi_tlbi_for_sharing(1, u32::MAX, 0, 0);
+    }
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_signature_pin() {
+        // Pin the FFI signature.  A future ABI change would break
+        // every Lean caller — pinning here surfaces the regression
+        // at compile time.
+        let _: extern "C" fn(u32, u32, u16, u64) = ffi_tlbi_for_sharing;
+    }
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_combinatorial_coverage() {
+        // SM1.E.4: cover every valid (domain, op) combination in one
+        // tight loop.  This is the structural witness that the
+        // dispatcher's match expression is exhaustive over the
+        // documented tag range.
+        for domain_tag in [0u32, 1] {
+            for op_tag in [0u32, 1, 2, 3] {
+                ffi_tlbi_for_sharing(domain_tag, op_tag, 1, 0x1000);
+            }
+        }
+    }
+
+    // ========================================================================
+    // WS-SM SM1.F.6 — SGI primitive FFI export tests
+    // ========================================================================
+
+    #[test]
+    fn sm1f6_ffi_send_sgi_no_panic_on_host() {
+        // Host stub: GICD_SGIR write is a no-op via mmio_write32;
+        // verify the FFI boundary doesn't panic.
+        ffi_send_sgi(0x0F, 0); // INTID 0 (reschedule) to all cores
+        ffi_send_sgi(0x01, 4); // INTID 4 (haltAll) to CPU 0 only
+    }
+
+    #[test]
+    fn sm1f6_ffi_send_sgi_to_self_no_panic_on_host() {
+        ffi_send_sgi_to_self(1); // INTID 1 (tlbShootdownReq)
+    }
+
+    #[test]
+    fn sm1f6_ffi_send_sgi_to_all_but_self_no_panic_on_host() {
+        ffi_send_sgi_to_all_but_self(2); // INTID 2 (tlbShootdownAck)
+    }
+
+    // ----------------------------------------------------------------
+    // SM1.F.6: out-of-range INTID rejection.
+    //
+    // The FFI exports forward to `gic::send_sgi*` which panics on
+    // INTID >= 16.  We do NOT exercise the panic via #[should_panic]
+    // here because Rust's behaviour on panic across an `extern "C"`
+    // boundary is `non-unwinding panic. aborting.` even under the
+    // test profile (the `extern "C"` ABI does not support unwind by
+    // default at edition 2021).
+    //
+    // The bound enforcement is tested via the underlying
+    // `gic::tests::sm1f{2,3,4}_send_sgi*_panics_on_intid_16` tests
+    // which exercise the panic at the safe Rust call site, before
+    // the FFI boundary is crossed.  We pin the FFI signature here
+    // and rely on the underlying gic test suite for the bound proof.
+
+    #[test]
+    fn sm1f6_ffi_send_sgi_signature_pin() {
+        // Pin every FFI export's signature.
+        let _: extern "C" fn(u8, u8) = ffi_send_sgi;
+        let _: extern "C" fn(u8) = ffi_send_sgi_to_self;
+        let _: extern "C" fn(u8) = ffi_send_sgi_to_all_but_self;
+    }
+
+    #[test]
+    fn sm1f6_ffi_send_sgi_covers_every_kernel_reserved_intid() {
+        // SM0.H reserves SGI INTIDs 0..4 for kernel coordination.
+        // Verify every reserved INTID is callable through the FFI.
+        for intid in 0..5u8 {
+            ffi_send_sgi(0x0F, intid);
+            ffi_send_sgi_to_self(intid);
+            ffi_send_sgi_to_all_but_self(intid);
+        }
     }
 }

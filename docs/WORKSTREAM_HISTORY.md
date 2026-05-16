@@ -193,10 +193,11 @@ only AN9-J.1) extended to mention WS-SM SM1.A.
 
 Items deferred past v1.0.0 with correctness impact: NONE.
 Follow-on: SM1.B (Per-CPU data + TPIDR_EL1) — **LANDED below**;
-SM1.C (Secondary core full init), SM1.D (DTB cmdline parsing),
+SM1.C (Secondary core full init) — **LANDED v0.31.5**;
+SM1.D (DTB cmdline parsing) — **LANDED v0.31.6**;
 SM1.E (IS-variant TLBI), SM1.F (SGI primitive), SM1.G (Per-core
-UART), SM1.H (QEMU SMP integration test) — see
-[`docs/planning/SMP_RUST_HAL_PLAN.md`](planning/SMP_RUST_HAL_PLAN.md) §§5.2..5.8.
+UART), SM1.H (QEMU SMP integration test) — **all four LANDED v0.31.7**.
+See [`docs/planning/SMP_RUST_HAL_PLAN.md`](planning/SMP_RUST_HAL_PLAN.md) §§5.2..5.8.
 
 **WS-SM SM1.B LANDED at v0.31.4 on branch
 `claude/per-cpu-tpidr-el1-1OBHA`** (per-CPU data + TPIDR_EL1,
@@ -569,6 +570,86 @@ Follow-on: SM1.E (IS-variant TLBI), SM1.F (SGI primitive),
 SM1.G (Per-core UART), SM1.H (QEMU SMP integration test) — see
 [`docs/planning/SMP_RUST_HAL_PLAN.md`](planning/SMP_RUST_HAL_PLAN.md)
 §§5.5..5.8.
+
+**WS-SM SM1.E + SM1.F + SM1.G + SM1.H LANDED at v0.31.7 on branch
+`claude/review-codebase-tlb-plan-L8PzR`** (cross-core TLBI broadcast
++ SGI primitives + per-core kprintln + QEMU SMP integration tests).
+Twenty-one sub-tasks across four phases landed in one cut, completing
+the SM1 Rust HAL surface so SM5+ per-core kernel state lands on a
+fully-functional cross-core HAL.
+
+- **SM1.E.1**: 4 IS-variant TLBI wrappers (`tlbi_vmalle1is`,
+  `tlbi_vae1is`, `tlbi_aside1is`, `tlbi_vale1is`) with `dsb ish` +
+  `isb` post-TLBI bracket per ARM ARM D8.11.  Operative cross-core
+  TLB invalidation primitive that SM7 (TLB shootdown) consumes.
+- **SM1.E.2**: 4 OS-variant TLBI wrappers (`tlbi_vmalle1os`,
+  `tlbi_vae1os`, `tlbi_aside1os`, `tlbi_vale1os`) with `dsb osh`
+  + `isb` bracket.  Pre-positioned for multi-cluster ports.
+- **SM1.E.3**: `tlbi_for_sharing(domain, op)` dispatcher with
+  `SharingDomain` (Inner/Outer mirrors Lean SM0.F) and
+  `TlbInvalidation` (Vmalle1/Vae1/Aside1/Vale1) typed enums.
+  Single entry point for kernel-side cross-core TLB invalidation.
+- **SM1.E.4**: Lean FFI binding `ffiTlbiForSharing` + typed
+  `Architecture.tlbiForSharing` wrapper in NEW FILE
+  `SeLe4n/Kernel/Architecture/TlbiForSharing.lean`.  Tag encoding
+  pinned via injectivity + in-range theorems
+  (`SharingDomain.toTag_injective`, `SharingDomain.toTag_in_range`,
+  `TlbInvalidation.toOpTag_in_range`,
+  `TlbInvalidation.toOpTag_distinct_constructors`).
+- **SM1.E.5** (deferred to SM7): kernel-side caller migration —
+  awaits TLB shootdown call sites becoming runtime-reachable.
+- **SM1.F.1**: `GICD_SGIR` constant + 16-INTID bound + 3
+  TargetListFilter discriminant constants per GIC-400 TRM §4.3.13.
+- **SM1.F.2/3/4**: 3 send-SGI variants (`send_sgi`,
+  `send_sgi_to_self`, `send_sgi_to_all_but_self`).  All emit
+  `dsb ish` BEFORE the GICD_SGIR write per ARM ARM B2.7.5.
+- **SM1.F.5**: SGI handler dispatch infrastructure (`SgiHandler`
+  type, `SGI_HANDLERS` per-INTID table, `register_sgi_handler`,
+  `lookup_sgi_handler`, `dispatch_sgi`, `iar_source_cpu`).
+- **SM1.F.6**: 3 Lean FFI bindings (`ffiSendSgi*`) + matching
+  Rust `#[no_mangle] pub extern "C"` exports.
+- **SM1.F.7**: 33 + 9 unit tests covering every send variant +
+  encoder bit-fields + handler dispatch routing.
+- **SM1.F.8**: ARM ARM B2.7.5 ordering documentation + NEW
+  build-script scanner `scan_gic_rs_send_sgi_emits_dsb_ish` pinning
+  every send_sgi* body to emit `dsb_ish()` BEFORE the SGIR write.
+- **SM1.G.1**: `UartLock` SMP-correctness audit documentation
+  block in `uart.rs`.  Documents Acquire/Release semantics + the
+  IRQ-safe DAIF mask + the FIFO-fairness gap that SM2's
+  `TicketLock` will close at SM2.B.
+- **SM1.G.2**: per-core boot banner verification (already done at
+  SM1.C.5; SM1.H.1 verifies them at boot trace).
+- **SM1.G.3**: per-core kprintln stress test
+  (`scripts/test_qemu_smp_kprintln_stress.sh`); SKIPs at SM1.G
+  if the stress routine isn't wired (awaits SM5+ Lean integration).
+- **SM1.G.4**: `kprintln_core!` + `kprint_core!` macros.  Prefix
+  every line with `[core N]` read from TPIDR_EL1 via
+  `per_cpu::current_core_id_from_tpidr`.
+- **SM1.H.1**: `scripts/test_qemu_smp_bringup.sh` — full QEMU
+  `-smp 4` bringup test.  Replaces the SM0.T SKIP-only stub.
+- **SM1.H.2**: `scripts/test_tier4_smp_bootcheck.sh` rewritten to
+  route through SM1.H.1 + SM1.H.3 + SM1.H.5 + SM1.G.3.
+- **SM1.H.3**: `scripts/test_qemu_smp_minimal.sh` — `-smp 2`
+  minimal bringup for diagnostics.
+- **SM1.H.4**: UART log capture + banner verification (in SM1.H.1).
+- **SM1.H.5**: `scripts/test_qemu_smp_sgi_roundtrip.sh` — cross-
+  core SGI round-trip.  SKIPs at SM1.H if kernel-side handlers
+  aren't wired (awaits SM5+ Lean integration).
+
+Test coverage: 510 HAL tests (up from 425 at SM1.D close, +85 new
+tests across `tlb.rs`, `gic.rs`, `ffi.rs`, `uart.rs`).  Lean-side:
++18 surface anchors + 11 decidable examples + 16 runtime assertions
+in `tests/SmpFoundationsSuite.lean` covering SM1.E.4 tag encoding +
+SM1.F.6 SGI FFI binding well-formedness.  Zero clippy warnings
+workspace-wide.
+
+Items deferred past v1.0.0 with correctness impact: NONE.
+
+Follow-on: SM1.I (miscellaneous HAL improvements) and the SM2..SM9
+phases — see
+[`docs/planning/SMP_RUST_HAL_PLAN.md`](planning/SMP_RUST_HAL_PLAN.md)
+§5.9 and the master overview
+[`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](planning/SMP_MULTICORE_COMPLETION_PLAN.md).
 
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple

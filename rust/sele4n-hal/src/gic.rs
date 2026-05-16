@@ -81,6 +81,20 @@ mod gicd {
     pub const IPRIORITYR_BASE: usize = 0x400;
     /// Interrupt Processor Targets Registers (8-bit per INTID, 4 per word).
     pub const ITARGETSR_BASE: usize = 0x800;
+    /// **WS-SM SM1.F.1**: Software Generated Interrupt Register.
+    /// Writing here injects an SGI to one or more CPU interfaces.
+    /// GIC-400 TRM §4.3.13: GICD_SGIR layout (32-bit):
+    ///   bits [31:26]  RES0
+    ///   bits [25:24]  TargetListFilter
+    ///                  00 = forward to CPUs in CPUTargetList
+    ///                  01 = forward to all PEs except the requesting PE
+    ///                  10 = forward to the requesting PE only
+    ///                  11 = reserved
+    ///   bits [23:16]  CPUTargetList (bitmask of target CPU interfaces 0..7)
+    ///   bit  [15]     NSATT (0 = Non-secure SGI on Group 0; ignored for our config)
+    ///   bits [14:4]   RES0
+    ///   bits [3:0]    SGIINTID (target SGI INTID, 0..15)
+    pub const SGIR: usize = 0xF00;
 }
 
 // ============================================================================
@@ -404,6 +418,320 @@ pub fn acknowledge_irq_classified(base: usize) -> AckResult {
     } else {
         AckResult::Handled(intid)
     }
+}
+
+// ============================================================================
+// WS-SM SM1.F — Software-Generated Interrupt (SGI) primitives
+//
+// SGIs are inter-processor interrupts in the GIC's INTID range [0, 16).
+// Per WS-SM SM0.H (`SeLe4n.Kernel.Concurrency.SgiKind`), the kernel
+// reserves the lowest 5 SGI slots for SMP coordination:
+//
+//   INTID 0 — reschedule
+//   INTID 1 — tlbShootdownReq
+//   INTID 2 — tlbShootdownAck
+//   INTID 3 — cacheBroadcast
+//   INTID 4 — haltAll
+//
+// Sending an SGI:  write the encoded value to GICD_SGIR.
+// Receiving an SGI: it appears as a normal IRQ with INTID 0..15 at the
+// GICC_IAR read; the trap handler dispatches it via `dispatch_sgi`.
+//
+// SM1.F is the underlying primitive; SM3 (per-object locks),
+// SM5 (per-core scheduler), SM7 (TLB shootdown) are the consumers.
+// ============================================================================
+
+/// **WS-SM SM1.F.1 / SM1.F.8**: maximum SGI INTID (exclusive).
+///
+/// GIC-400 §3.2.2 / Table 3-1: SGIs occupy INTIDs 0..15.  Anything
+/// outside this range is rejected by every SGI primitive in this
+/// module.
+pub const MAX_SGI_INTID: u8 = 16;
+
+/// **WS-SM SM1.F.1 / SM1.F.8**: TargetListFilter encoding for the
+/// CPUTargetList path.
+///
+/// `GICD_SGIR.TargetListFilter == 00` instructs the distributor to
+/// forward the SGI to the CPU interfaces named in `CPUTargetList`
+/// (bits [23:16]).  Used by [`send_sgi`] for explicit per-target
+/// addressing.
+const SGI_TLF_CPU_TARGET_LIST: u32 = 0b00;
+
+/// **WS-SM SM1.F.1 / SM1.F.8**: TargetListFilter encoding for
+/// "all PEs except requester".
+///
+/// `GICD_SGIR.TargetListFilter == 01` broadcasts to every CPU
+/// interface other than the calling PE.  Used by
+/// [`send_sgi_to_all_but_self`].
+const SGI_TLF_ALL_BUT_SELF: u32 = 0b01;
+
+/// **WS-SM SM1.F.1 / SM1.F.8**: TargetListFilter encoding for
+/// "self only".
+///
+/// `GICD_SGIR.TargetListFilter == 10` delivers the SGI only to the
+/// calling PE.  Used by [`send_sgi_to_self`].  Often used for
+/// re-scheduling notifications scoped to a single core.
+const SGI_TLF_SELF_ONLY: u32 = 0b10;
+
+/// **WS-SM SM1.F.1**: Encode a `GICD_SGIR` write.
+///
+/// Pure encoding helper used by every send-SGI variant — factored
+/// out so the bit-level layout is testable without hardware access.
+/// See the `gicd::SGIR` constant docstring for the bit-field layout.
+///
+/// `target_list_filter` MUST be `0..=2` (caller's responsibility);
+/// `target_mask` is the 8-bit CPUTargetList (only consulted when
+/// `target_list_filter == 0`); `intid` MUST be `0..15`
+/// (caller's responsibility — every send-SGI variant validates this
+/// upstream).
+///
+/// Bit 15 (NSATT) is hard-coded to 0 because the kernel runs all
+/// SGIs in Group 0 (matching the GICD_IGROUPR initialisation in
+/// `init_distributor`) and never crosses the secure/non-secure
+/// boundary.
+#[inline(always)]
+const fn encode_sgir(target_list_filter: u32, target_mask: u8, intid: u8) -> u32 {
+    (target_list_filter << 24) | ((target_mask as u32) << 16) | (intid as u32)
+}
+
+/// **WS-SM SM1.F.2 / SM1.F.8**: Send an SGI to one or more target
+/// CPU interfaces by explicit bitmask.
+///
+/// `target_mask` — bitmask of target CPU interfaces (bit i = CPU i),
+/// 8 bits maximum (GIC-400 supports up to 8 CPU interfaces).  On
+/// RPi5 the kernel uses bits 0..3 (cores 0..3); higher bits are
+/// reserved.
+/// `intid` — SGI INTID (`0..15`).  Reserved for kernel coordination
+/// per the SM0.H `SgiKind` enum (intids 0..4) plus future
+/// application-layer use (intids 5..15, post-1.0).
+///
+/// **GIC-400 TRM §4.3.13**: writes to `GICD_SGIR` with
+/// `TargetListFilter == 0b00` deliver the SGI to every CPU
+/// interface whose bit is set in `CPUTargetList`.
+///
+/// **Memory ordering (SM1.F.8)**: a `dsb ish` fires BEFORE the SGIR
+/// write so any kernel-state mutation that the receiving handler
+/// will read is observable on every IS-domain PE before the SGI
+/// triggers.  Per ARM ARM B2.7.5, writes prior to a DSB are observed
+/// by all PEs in the IS domain before subsequent operations begin;
+/// this is what makes the SGI a reliable "wake the receiver and
+/// have them see this state" primitive.
+///
+/// # Panics
+///
+/// Panics if `intid >= 16`.  The bound is enforced because writing
+/// an out-of-range SGI INTID would alias with PPI (16..31) or SPI
+/// (32+) INTIDs — silently corrupting the interrupt routing.  The
+/// caller MUST validate (typically by passing a `Fin 16` from the
+/// Lean side, which makes the bound a structural invariant).
+pub fn send_sgi(target_mask: u8, intid: u8) {
+    assert!(
+        intid < MAX_SGI_INTID,
+        "WS-SM SM1.F.2: SGI INTID must be 0..15, got {}",
+        intid
+    );
+    let encoding = encode_sgir(SGI_TLF_CPU_TARGET_LIST, target_mask, intid);
+    // SM1.F.8: ARM ARM B2.7.5 — `dsb ish` before the SGIR write so
+    // every PE in the IS domain observes prior kernel-state writes
+    // before the SGI triggers on the target.
+    crate::barriers::dsb_ish();
+    mmio_write32(GICD_BASE + gicd::SGIR, encoding);
+}
+
+/// **WS-SM SM1.F.3 / SM1.F.8**: Send an SGI to the calling CPU only.
+///
+/// Equivalent to [`send_sgi`] with `TargetListFilter = 0b10` (to-self
+/// — overrides any `CPUTargetList` value, which is RES0 in this mode).
+/// Useful when a kernel transition needs to defer work via an SGI
+/// without disturbing other cores.
+///
+/// # Panics
+///
+/// Panics if `intid >= 16` for the same reason as [`send_sgi`].
+pub fn send_sgi_to_self(intid: u8) {
+    assert!(
+        intid < MAX_SGI_INTID,
+        "WS-SM SM1.F.3: SGI INTID must be 0..15, got {}",
+        intid
+    );
+    let encoding = encode_sgir(SGI_TLF_SELF_ONLY, 0, intid);
+    crate::barriers::dsb_ish();
+    mmio_write32(GICD_BASE + gicd::SGIR, encoding);
+}
+
+/// **WS-SM SM1.F.4 / SM1.F.8**: Send an SGI to all CPUs except the
+/// caller.
+///
+/// Equivalent to [`send_sgi`] with `TargetListFilter = 0b01`
+/// (all-but-requester).  The most common SMP-coordination pattern:
+/// the calling core has just performed an action whose result every
+/// other core must observe (TLB shootdown, kernel-state quiesce,
+/// reschedule trigger).
+///
+/// # Panics
+///
+/// Panics if `intid >= 16`.
+pub fn send_sgi_to_all_but_self(intid: u8) {
+    assert!(
+        intid < MAX_SGI_INTID,
+        "WS-SM SM1.F.4: SGI INTID must be 0..15, got {}",
+        intid
+    );
+    let encoding = encode_sgir(SGI_TLF_ALL_BUT_SELF, 0, intid);
+    crate::barriers::dsb_ish();
+    mmio_write32(GICD_BASE + gicd::SGIR, encoding);
+}
+
+// ============================================================================
+// WS-SM SM1.F.5 — SGI handler dispatch
+//
+// The handler table lives as a `static` array of `Option<SgiHandler>`
+// per INTID, registered at boot and read-only thereafter.  Dispatch
+// is invoked from the trap handler when an IRQ in `[0, 16)` is
+// acknowledged.
+// ============================================================================
+
+/// **WS-SM SM1.F.5**: SGI handler signature.
+///
+/// Each handler receives the INTID it fired for plus the source CPU
+/// id.  GIC-400's `GICC_IAR` actually encodes the source CPU in
+/// bits `[12:10]` for SGIs (per GIC-400 TRM §4.4.4), but the
+/// dispatcher abstracts this so the handler does not have to re-read
+/// the IAR.
+pub type SgiHandler = fn(intid: u8, source_cpu: u8);
+
+/// **WS-SM SM1.F.5**: SGI handler table.
+///
+/// One slot per SGI INTID (`0..16`).  Slots are written exactly once
+/// during boot (via [`register_sgi_handler`]) and read-only
+/// thereafter.  Unregistered slots dispatch to a no-op log line.
+///
+/// **Concurrency**: the table is mutated only at boot (single-core,
+/// IRQs disabled) before any other core can fire an SGI.  Subsequent
+/// reads from secondary cores see the post-init values via the
+/// release-acquire publication semantics of the kernel-init →
+/// `bring_up_secondaries` handoff (the boot core's writes happen
+/// before the PSCI CPU_ON call that wakes secondaries).
+///
+/// `static mut` is the right primitive here despite its general
+/// reputation: every alternative (AtomicPtr, OnceLock, Mutex) would
+/// add either runtime overhead or `alloc` dependencies that the
+/// `#![no_std]` HAL cannot afford.  Access is read-only after boot,
+/// so the data race that `static mut` is famous for cannot occur in
+/// our discipline.
+static mut SGI_HANDLERS: [Option<SgiHandler>; MAX_SGI_INTID as usize] =
+    [None; MAX_SGI_INTID as usize];
+
+/// **WS-SM SM1.F.5**: Register a handler for a specific SGI INTID.
+///
+/// MUST be called from boot, before any SGI can fire on this core.
+/// Registering twice for the same INTID overwrites the previous
+/// handler — useful for boot-time wiring overrides, but a regression
+/// elsewhere would silently lose the original handler.
+///
+/// # Safety
+///
+/// MUST be called only during boot, before secondaries are brought
+/// up and before IRQs are unmasked on the calling PE.  The
+/// `static mut` `SGI_HANDLERS` is not synchronised; concurrent
+/// writes from multiple cores would race.  In practice every kernel
+/// SGI handler is registered in `rust_boot_main` (single-core,
+/// pre-IRQ-enable phase), so this constraint is honoured by
+/// construction.
+///
+/// # Panics
+///
+/// Panics if `intid >= 16` (bounds match every other SGI primitive).
+pub unsafe fn register_sgi_handler(intid: u8, handler: SgiHandler) {
+    assert!(
+        intid < MAX_SGI_INTID,
+        "WS-SM SM1.F.5: SGI INTID must be 0..15, got {}",
+        intid
+    );
+    // SAFETY: caller obligation — boot-time only, no concurrent access.
+    // Documented exhaustively in the function's safety contract above.
+    unsafe {
+        SGI_HANDLERS[intid as usize] = Some(handler);
+    }
+}
+
+/// **WS-SM SM1.F.5**: Look up the registered handler for an SGI INTID.
+///
+/// Returns `Some(handler)` if a handler was registered via
+/// [`register_sgi_handler`], else `None`.  Public so test code can
+/// verify registration without invoking the handler.
+///
+/// # Safety
+///
+/// Reading `static mut` is unsafe in general, but per the
+/// [`SGI_HANDLERS`] discipline (boot-time write-only, read-only
+/// thereafter), the read is sound after `bring_up_secondaries`
+/// completes.  Test code that calls this between handler
+/// registrations on the same thread is also sound (no concurrent
+/// writes can occur in single-threaded test execution).
+pub fn lookup_sgi_handler(intid: u8) -> Option<SgiHandler> {
+    if intid >= MAX_SGI_INTID {
+        return None;
+    }
+    // SAFETY: `SGI_HANDLERS` is read-only after the boot-time
+    // registration phase — see the static's docstring.
+    unsafe { SGI_HANDLERS[intid as usize] }
+}
+
+/// **WS-SM SM1.F.5**: Dispatch an SGI to its registered handler.
+///
+/// Called from the IRQ handler when an SGI INTID (`0..15`) is
+/// acknowledged at GICC_IAR.  Looks up the handler in
+/// [`SGI_HANDLERS`] and invokes it; if no handler is registered, logs
+/// a diagnostic line and returns (the IRQ has already been ack'd /
+/// EOI'd by the time this fires per the AN8-C EOI-before-handler
+/// pattern).
+///
+/// `intid` — the SGI INTID `0..15`.  Out-of-range values return
+/// without dispatch; the caller's bound check (in `dispatch_irq`)
+/// has already classified non-SGI INTIDs as `Handled` or `OutOfRange`
+/// and routed them elsewhere.
+/// `source_cpu` — the CPU interface that sent the SGI, extracted
+/// from `GICC_IAR[12:10]` per GIC-400 TRM §4.4.4.  Provides a
+/// per-core handler the source PE for handlers that need to
+/// originate ACK SGIs (e.g., TLB-shootdown ACK).
+pub fn dispatch_sgi(intid: u8, source_cpu: u8) {
+    if intid >= MAX_SGI_INTID {
+        // Defensive: dispatcher only valid for SGI range.  Caller
+        // should have classified non-SGI INTIDs already.
+        return;
+    }
+    match lookup_sgi_handler(intid) {
+        Some(handler) => handler(intid, source_cpu),
+        None => {
+            // SM1.F.5: log-only — many SGI INTIDs are unused by
+            // design (only 0..4 are kernel-reserved per SM0.H).  The
+            // diagnostic line catches misconfigured boot paths that
+            // failed to register a handler, without panicking the
+            // kernel on every spurious SGI from a buggy peer.
+            crate::kprintln!(
+                "[gic] no handler for SGI {} from cpu {}",
+                intid,
+                source_cpu
+            );
+        }
+    }
+}
+
+/// **WS-SM SM1.F.5**: Extract the source-CPU field from a raw
+/// `GICC_IAR` value for an SGI INTID.
+///
+/// Per GIC-400 TRM §4.4.4, when `GICC_IAR[9:0]` is in the SGI range
+/// (`0..16`), bits `[12:10]` carry the CPU interface number that
+/// asserted the SGI (`0..7`).  The dispatcher extracts this so a
+/// handler can route an ACK SGI back to the originator.
+///
+/// **Note**: for non-SGI INTIDs, bits `[12:10]` are RES0 per the
+/// spec, so calling this on a non-SGI IAR returns `0` — meaningless
+/// but harmless.  Callers MUST gate by `intid < 16` first.
+#[inline(always)]
+pub const fn iar_source_cpu(iar: u32) -> u8 {
+    ((iar >> 10) & 0x7) as u8
 }
 
 /// Handle an IRQ from the GIC: acknowledge → EOI → dispatch (handler
@@ -949,5 +1277,395 @@ mod tests {
         // shared with the primary's `init_gic()`.  Ensure the symbol
         // remains accessible from the secondary's call path.
         let _: fn(usize) = init_cpu_interface;
+    }
+
+    // =====================================================================
+    // WS-SM SM1.F — SGI primitive tests
+    //
+    // Tests cover encoding, range checking, dispatch routing, and the
+    // ARM ARM B2.7.5 ordering contract (DSB-before-SGIR).  We use the
+    // `encode_sgir` factored encoder for bit-level tests so the
+    // encoding can be verified without performing actual MMIO writes.
+    // =====================================================================
+
+    // ---------------------------------------------------------------------
+    // SM1.F.1: GICD_SGIR constant + register layout
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn sm1f1_gicd_sgir_offset_matches_gic_400_trm() {
+        // GIC-400 TRM §4.3.13: GICD_SGIR is at distributor-base + 0xF00.
+        assert_eq!(gicd::SGIR, 0xF00);
+    }
+
+    #[test]
+    fn sm1f1_max_sgi_intid_matches_gic_spec() {
+        // GIC-400 §3.2.2 / Table 3-1: SGIs occupy INTIDs 0..15 (16 slots).
+        assert_eq!(MAX_SGI_INTID, 16);
+    }
+
+    #[test]
+    fn sm1f1_sgi_target_list_filter_constants_match_gic_trm() {
+        // GIC-400 TRM §4.3.13: TargetListFilter encodes
+        //   00 = use CPUTargetList
+        //   01 = all-but-self
+        //   10 = self only
+        // The constants must exactly match these values.
+        assert_eq!(SGI_TLF_CPU_TARGET_LIST, 0b00);
+        assert_eq!(SGI_TLF_ALL_BUT_SELF, 0b01);
+        assert_eq!(SGI_TLF_SELF_ONLY, 0b10);
+    }
+
+    // ---------------------------------------------------------------------
+    // SM1.F.1 audit: encode_sgir bit-field correctness
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn sm1f1_encode_sgir_cputargetlist_path() {
+        // SM1.F.2 acceptance: send_sgi(0b1110, 1) → 0x000E_0001.
+        // (TargetListFilter=00, CPUTargetList=0b1110, INTID=1)
+        let enc = encode_sgir(SGI_TLF_CPU_TARGET_LIST, 0b1110, 1);
+        assert_eq!(enc, 0x000E_0001);
+    }
+
+    #[test]
+    fn sm1f1_encode_sgir_self_only_path() {
+        // SM1.F.3 acceptance: send_sgi_to_self(3) → 0x0200_0003.
+        // (TargetListFilter=10, CPUTargetList=0, INTID=3)
+        let enc = encode_sgir(SGI_TLF_SELF_ONLY, 0, 3);
+        assert_eq!(enc, 0x0200_0003);
+    }
+
+    #[test]
+    fn sm1f1_encode_sgir_all_but_self_path() {
+        // SM1.F.4 acceptance: send_sgi_to_all_but_self(0) → 0x0100_0000.
+        // (TargetListFilter=01, CPUTargetList=0, INTID=0)
+        let enc = encode_sgir(SGI_TLF_ALL_BUT_SELF, 0, 0);
+        assert_eq!(enc, 0x0100_0000);
+    }
+
+    #[test]
+    fn sm1f1_encode_sgir_isolates_intid_field() {
+        // The INTID field is bits [3:0]; bits [4:15] are RES0 in our
+        // encoding.  Verify every INTID 0..15 produces a value whose
+        // high bits are clean.
+        for intid in 0..MAX_SGI_INTID {
+            let enc = encode_sgir(SGI_TLF_CPU_TARGET_LIST, 0, intid);
+            assert_eq!(enc & 0xF, intid as u32, "INTID {} field corrupted", intid);
+            // Bits [4:15] must be 0 (no NSATT, no spurious bits).
+            assert_eq!(
+                (enc >> 4) & 0xFFF,
+                0,
+                "INTID {} encoding has dirty mid-bits",
+                intid
+            );
+        }
+    }
+
+    #[test]
+    fn sm1f1_encode_sgir_isolates_target_mask_field() {
+        // CPUTargetList is bits [23:16]; verify every 8-bit mask
+        // populates that field cleanly.
+        for mask in [0u8, 0x01, 0x03, 0x07, 0x0F, 0xF0, 0xFF, 0xAA, 0x55] {
+            let enc = encode_sgir(SGI_TLF_CPU_TARGET_LIST, mask, 0);
+            assert_eq!(
+                (enc >> 16) & 0xFF,
+                mask as u32,
+                "target mask {:#x} field corrupted",
+                mask
+            );
+        }
+    }
+
+    #[test]
+    fn sm1f1_encode_sgir_isolates_target_list_filter() {
+        // TargetListFilter is bits [25:24]; verify every TLF value
+        // populates that field cleanly.
+        for tlf in [SGI_TLF_CPU_TARGET_LIST, SGI_TLF_ALL_BUT_SELF, SGI_TLF_SELF_ONLY] {
+            let enc = encode_sgir(tlf, 0, 0);
+            assert_eq!(
+                (enc >> 24) & 0x3,
+                tlf,
+                "TargetListFilter {:#x} field corrupted",
+                tlf
+            );
+        }
+    }
+
+    #[test]
+    fn sm1f1_encode_sgir_const_callable() {
+        // The encoder is `const fn` — verify it evaluates at
+        // compile time so call sites with literal arguments are
+        // free at runtime.
+        const ENC_BOOT_RESCHEDULE: u32 = encode_sgir(SGI_TLF_ALL_BUT_SELF, 0, 0);
+        assert_eq!(ENC_BOOT_RESCHEDULE, 0x0100_0000);
+    }
+
+    // ---------------------------------------------------------------------
+    // SM1.F.2/.3/.4: send_sgi family — runs cleanly on host (MMIO no-op)
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn sm1f2_send_sgi_callable_for_every_valid_combo() {
+        // Exercise representative (mask, intid) combinations.  On
+        // host the MMIO write is a no-op; the test verifies no
+        // panic.
+        for intid in 0..MAX_SGI_INTID {
+            send_sgi(0x01, intid); // CPU 0
+            send_sgi(0x0F, intid); // all 4 RPi5 cores
+            send_sgi(0xFF, intid); // every 8-bit slot
+            send_sgi(0x00, intid); // empty mask (degenerate)
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "SGI INTID must be 0..15")]
+    fn sm1f2_send_sgi_panics_on_intid_16() {
+        // Bound enforcement: INTID 16 is the first PPI slot, not an
+        // SGI; passing it would silently fire a PPI on the target.
+        send_sgi(0x01, 16);
+    }
+
+    #[test]
+    #[should_panic(expected = "SGI INTID must be 0..15")]
+    fn sm1f2_send_sgi_panics_on_intid_max() {
+        send_sgi(0x01, u8::MAX);
+    }
+
+    #[test]
+    fn sm1f3_send_sgi_to_self_callable_for_every_valid_intid() {
+        for intid in 0..MAX_SGI_INTID {
+            send_sgi_to_self(intid);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "SGI INTID must be 0..15")]
+    fn sm1f3_send_sgi_to_self_panics_on_intid_16() {
+        send_sgi_to_self(16);
+    }
+
+    #[test]
+    fn sm1f4_send_sgi_to_all_but_self_callable_for_every_valid_intid() {
+        for intid in 0..MAX_SGI_INTID {
+            send_sgi_to_all_but_self(intid);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "SGI INTID must be 0..15")]
+    fn sm1f4_send_sgi_to_all_but_self_panics_on_intid_16() {
+        send_sgi_to_all_but_self(16);
+    }
+
+    #[test]
+    fn sm1f234_send_sgi_signatures_pinned() {
+        // Pin every public send_sgi signature.  A future refactor
+        // that changed the argument types or return type would
+        // fail to compile here.
+        let _: fn(u8, u8) = send_sgi;
+        let _: fn(u8) = send_sgi_to_self;
+        let _: fn(u8) = send_sgi_to_all_but_self;
+    }
+
+    // ---------------------------------------------------------------------
+    // SM1.F.5: handler dispatch — registration + lookup + dispatch
+    // ---------------------------------------------------------------------
+
+    /// Per-test handler stub that records its invocation by writing
+    /// into a static AtomicU64 (encoding intid in low byte, source_cpu
+    /// in second byte, and a "called" flag in bit 16).  Each test that
+    /// uses this owns a single static counter so concurrent test runs
+    /// do not cross-contaminate.
+    fn _sgi_test_handler_unused(_intid: u8, _source_cpu: u8) {
+        // Placeholder used in shapes-only tests.
+    }
+
+    #[test]
+    fn sm1f5_lookup_returns_none_for_unregistered_intid() {
+        // SM1.F.5: an INTID with no registered handler returns None
+        // from `lookup_sgi_handler`.  We use INTID 15 (unused at
+        // SM1.F; SM3+ may register it) so this test is stable
+        // regardless of other tests' handler registrations.
+        //
+        // Note: this test races with other tests that might
+        // register handlers at INTID 15; we use 15 (the highest)
+        // because no kernel code claims it at SM1.F.  If a future
+        // SM7 cross-core test registers at 15, this test must move
+        // to a still-unclaimed INTID.
+        let h = lookup_sgi_handler(15);
+        assert!(h.is_none(), "INTID 15 should be unregistered at SM1.F");
+    }
+
+    #[test]
+    fn sm1f5_lookup_returns_none_for_out_of_range_intid() {
+        // SM1.F.5: out-of-range INTID returns None defensively.
+        assert!(lookup_sgi_handler(16).is_none());
+        assert!(lookup_sgi_handler(100).is_none());
+        assert!(lookup_sgi_handler(255).is_none());
+    }
+
+    static SM1F5_REGISTRATION_FIRED: AtomicU32 = AtomicU32::new(0);
+    fn sm1f5_registration_handler(intid: u8, source_cpu: u8) {
+        // Encode (intid, source_cpu) into the counter so we can
+        // verify the dispatcher passes both arguments correctly.
+        SM1F5_REGISTRATION_FIRED.store(((intid as u32) << 8) | (source_cpu as u32), Ordering::SeqCst);
+    }
+
+    #[test]
+    fn sm1f5_register_then_lookup_returns_handler() {
+        // SM1.F.5: registering a handler at INTID 14 is recoverable
+        // via lookup.  We use INTID 14 (and a unique handler) to
+        // avoid collision with tests that exercise INTID 15.
+        SM1F5_REGISTRATION_FIRED.store(0, Ordering::SeqCst);
+        // SAFETY: registration is normally boot-time only, but this
+        // test runs on a single thread (no concurrent SGI dispatch).
+        unsafe {
+            register_sgi_handler(14, sm1f5_registration_handler);
+        }
+        let h = lookup_sgi_handler(14);
+        assert!(h.is_some(), "handler at INTID 14 must be retrievable");
+    }
+
+    #[test]
+    fn sm1f5_dispatch_invokes_registered_handler() {
+        // SM1.F.5: dispatch_sgi forwards to the registered handler
+        // with the correct (intid, source_cpu) pair.  We use INTID
+        // 14 (registered above) and a unique source_cpu of 7 so the
+        // counter encoding is unambiguous.
+        SM1F5_REGISTRATION_FIRED.store(0, Ordering::SeqCst);
+        unsafe {
+            register_sgi_handler(14, sm1f5_registration_handler);
+        }
+        dispatch_sgi(14, 7);
+        let recorded = SM1F5_REGISTRATION_FIRED.load(Ordering::SeqCst);
+        assert_eq!(recorded, (14u32 << 8) | 7, "dispatcher passed wrong (intid, source_cpu)");
+    }
+
+    #[test]
+    fn sm1f5_dispatch_silent_for_unregistered_intid() {
+        // SM1.F.5: dispatching an SGI with no registered handler
+        // logs a diagnostic but does NOT panic.  We use INTID 13
+        // (no test registers it).
+        // The test passes if no panic occurs.
+        dispatch_sgi(13, 0);
+    }
+
+    #[test]
+    fn sm1f5_dispatch_silent_for_out_of_range_intid() {
+        // SM1.F.5: dispatching an out-of-range INTID is a no-op
+        // (the early return + boundary check protects the table).
+        dispatch_sgi(16, 0);
+        dispatch_sgi(100, 0);
+        dispatch_sgi(255, 0);
+    }
+
+    #[test]
+    fn sm1f5_handler_signature_pinned() {
+        // SM1.F.5: SgiHandler is `fn(u8, u8)`.  A signature change
+        // would break every registered handler at compile time.
+        let _: SgiHandler = _sgi_test_handler_unused;
+        let _: fn(u8, u8) = _sgi_test_handler_unused;
+    }
+
+    #[test]
+    fn sm1f5_dispatch_function_signature_pinned() {
+        // SM1.F.5: pin the public dispatch_sgi signature.
+        let _: fn(u8, u8) = dispatch_sgi;
+    }
+
+    #[test]
+    fn sm1f5_register_signature_pinned() {
+        // SM1.F.5: pin the public registration ABI.  `unsafe fn`
+        // pointer types pin the unsafe contract too.
+        let _: unsafe fn(u8, SgiHandler) = register_sgi_handler;
+    }
+
+    #[test]
+    fn sm1f5_lookup_signature_pinned() {
+        // SM1.F.5: pin the public lookup ABI.
+        let _: fn(u8) -> Option<SgiHandler> = lookup_sgi_handler;
+    }
+
+    #[test]
+    #[should_panic(expected = "SGI INTID must be 0..15")]
+    fn sm1f5_register_panics_on_out_of_range_intid() {
+        // SM1.F.5: registering a handler for INTID 16 panics — the
+        // table only has 16 slots and an out-of-range write would
+        // trash unrelated data.
+        unsafe {
+            register_sgi_handler(16, _sgi_test_handler_unused);
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // SM1.F.5: iar_source_cpu extractor
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn sm1f5_iar_source_cpu_extracts_bits_12_to_10() {
+        // GIC-400 TRM §4.4.4: bits [12:10] carry the source CPU
+        // interface for SGI INTIDs.  Verify the extractor masks
+        // correctly against the full IAR bit pattern.
+        // IAR = 0b00001_010_0000_0010 (intid=2, source_cpu=2)
+        let iar = (2u32 << 10) | 2u32;
+        assert_eq!(iar_source_cpu(iar), 2);
+        // IAR with intid=15 (highest SGI), source_cpu=7 (highest)
+        let iar2 = (7u32 << 10) | 15u32;
+        assert_eq!(iar_source_cpu(iar2), 7);
+    }
+
+    #[test]
+    fn sm1f5_iar_source_cpu_masks_higher_bits() {
+        // The extractor masks to 3 bits — higher bits of the IAR
+        // (e.g., bits [13:31]) must not bleed into the result.
+        // Construct an IAR with bits 13..31 all set; the extractor
+        // must still return only bits [12:10].
+        let iar = 0xFFFF_F000u32 | (5u32 << 10);
+        // Bits [12:10] = 5; bits [13:31] are above the mask.
+        assert_eq!(iar_source_cpu(iar), 5);
+    }
+
+    #[test]
+    fn sm1f5_iar_source_cpu_const_callable() {
+        // The extractor is `const fn`.  Verify it evaluates at
+        // compile time when given a literal IAR.
+        const SOURCE: u8 = iar_source_cpu((3u32 << 10) | 5u32);
+        assert_eq!(SOURCE, 3);
+    }
+
+    // ---------------------------------------------------------------------
+    // SM1.F.8: Memory ordering — DSB-before-SGIR contract
+    //
+    // The send_sgi family emits `dsb ish` BEFORE writing GICD_SGIR so
+    // any kernel-state mutation that the receiving handler needs to
+    // observe is visible on every IS-domain PE before the SGI fires.
+    // We cannot inspect the actual barrier emission from a host test
+    // (the asm is cfg-gated to aarch64), but we can pin the property
+    // by reading the source — captured by the build.rs scanner
+    // `scan_gic_rs_send_sgi_emits_dsb_ish` (added in this PR).
+    //
+    // The runtime test here verifies the FUNCTIONAL property: the
+    // send_sgi family does not panic on host (i.e., the asm is
+    // properly cfg-gated for non-aarch64), so the production aarch64
+    // build can rely on the wrapper for ordering.
+    // ---------------------------------------------------------------------
+
+    #[test]
+    fn sm1f8_send_sgi_family_runs_on_host_without_panic() {
+        // Regression check: a future cfg gate that forgot to no-op
+        // on host would cause this test to abort.
+        send_sgi(0x0F, 0);
+        send_sgi_to_self(1);
+        send_sgi_to_all_but_self(2);
+    }
+
+    #[test]
+    fn sm1f_sgi_address_arithmetic_correct() {
+        // Sanity: GICD_BASE + gicd::SGIR resolves to the BCM2712
+        // GICD_SGIR MMIO address.
+        let addr = GICD_BASE + gicd::SGIR;
+        assert_eq!(addr, 0xFF841000 + 0xF00);
+        assert_eq!(addr, 0xFF841F00, "GICD_SGIR must be at 0xFF841F00 on BCM2712");
     }
 }

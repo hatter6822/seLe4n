@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.31.6` (`lakefile.toml`) |
+| **Package version** | `0.31.7` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 115,563 across 177 Lean files |
-| **Test LoC** | 21,731 across 30 Lean test suites |
-| **Proved declarations** | 3,355 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 115,963 across 178 Lean files |
+| **Test LoC** | 21,850 across 30 Lean test suites |
+| **Proved declarations** | 3,370 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | [`AUDIT_v0.27.6_COMPREHENSIVE`](../dev_history/audits/AUDIT_v0.27.6_COMPREHENSIVE.md) — full-kernel Lean + Rust audit (5 HIGH, 27 MED, 28 LOW). All actionable findings remediated via WS-AI (7 phases, 37 sub-tasks). |
 | **Active workstream** | **WS-AK Phase AK10 COMPLETE** (v0.30.6). Portfolio-closure phase landing fixture re-verification, documentation synchronization, audit errata and deferred tracking, version bump (patch-only per maintainer direction: v0.30.5 → v0.30.6; v1.0.0 release-tag deferred to a separate maintainer action), residual LOW-tier review, website link manifest audit, dead-code removal in `rust/sele4n-hal/src/trap.S` (both SError entries now `b .` after `bl handle_serror`, completing the R-HAL-M12 remediation per the audit's original guidance), and final regression gate. `docs/dev_history/audits/AUDIT_v0.29.0_ERRATA.md` formalises audit-text corrections E-1..E-6 (S-H03 verification clarification, R-HAL-M12 dead-code removal, A-H01 layering extends to three layers, R-HAL-H02 partial DSB/ISB + missing `tlbi vmalle1`/D-cache clean, NI-H02 composition theorem scope, finding-count arithmetic 202 not 201). `docs/dev_history/audits/AUDIT_v0.29.0_DEFERRED.md` formalises 11 deferred items (7 hardware-binding: A-M04 TLB+cache composition, A-M06/AK3-I `tlbBarrierComplete`, A-M08/A-M09/AK3-K MMU/Device-memory `BarrierKind`, C-M04 `suspendThread` atomicity, P-L9 VSpaceRoot boot exclusion, R-HAL-L14 SVC FFI; 4 proof-hygiene: F-L9 17-deep tuple, AK2-K.4 `eventuallyExits` by-design, AK7-E.cascade/AK7-F.cascade migrations) — all recorded as **post-1.0 hardening candidates; no currently-active plan file tracks them**, matching the convention from the AK8 second-pass audit (avoiding misleading references to the closed workstreams WS-V and AG10). Fixture byte-identical to `tests/fixtures/main_trace_smoke.expected` (227 lines, unchanged — AK1-AK9 semantic changes kept observable trace stable). Portfolio AK1..AK10 addresses 2 CRITICAL + 23 HIGH + 76 MEDIUM + 101 LOW = 202 findings across 10 phases, 86 sub-tasks. Plan: [`AUDIT_v0.29.0_WORKSTREAM_PLAN.md`](../dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md) §13. Prior: WS-AM (v0.30.0), WS-AJ (v0.28.1–v0.29.0), WS-AI (v0.27.7–v0.28.0), WS-AH (v0.27.2–v0.27.6), WS-AG–WS-B. **Next:** hardware-binding / proof-hygiene items are tracked per-ID in `AUDIT_v0.29.0_DEFERRED.md`; a future workstream picking any up should reference the file and update its row. |
@@ -591,6 +591,31 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    via the kernel command line.  A new `scan_boot_rs_phase5_uses_cmdline`
    build-script scanner pins the Phase-5 call sites textually so a
    refactor cannot silently disable the cmdline parse.
+
+   WS-SM Phases SM1.E/F/G/H (v0.31.7) complete the SM1 Rust HAL
+   surface required for SM5+ per-core kernel state to land on a
+   fully-functional cross-core HAL.  SM1.E adds 8 broadcast TLBI
+   wrappers (4 IS-variants `tlbi_*is` for inner-shareable
+   broadcast + 4 OS-variants `tlbi_*os` for outer-shareable) plus
+   the `tlbi_for_sharing(domain, op)` dispatcher with typed
+   `SharingDomain` and `TlbInvalidation` enums; the dispatcher is
+   surfaced to Lean via the typed wrapper
+   `SeLe4n.Kernel.Architecture.tlbiForSharing` (in
+   `TlbiForSharing.lean`) backed by `ffiTlbiForSharing` FFI export.
+   SM1.F adds the GICD_SGIR-based SGI primitive surface
+   (`gic::send_sgi`, `send_sgi_to_self`, `send_sgi_to_all_but_self`)
+   plus the `register_sgi_handler` / `dispatch_sgi` handler-table
+   infrastructure; each send-SGI variant emits `dsb ish` BEFORE
+   the GICD_SGIR write per ARM ARM B2.7.5, pinned by the
+   `scan_gic_rs_send_sgi_emits_dsb_ish` build scanner.  SM1.G
+   audits the `UartLock` for SMP correctness (Acquire/Release
+   semantics + per-acquire DAIF mask) and adds the
+   `kprintln_core!` macro for per-core attributed boot tracing.
+   SM1.H wires three QEMU SMP integration tests
+   (`test_qemu_smp_bringup.sh` for `-smp 4`,
+   `test_qemu_smp_minimal.sh` for `-smp 2`,
+   `test_qemu_smp_sgi_roundtrip.sh` for cross-core SGI) into the
+   tier-4 nightly slot, replacing the SM0.T SKIP-only stub.
 
 3. **Sequential memory model**: Under single-core operation, all memory
    operations are sequentially ordered. DMB/DSB/ISB barriers are emitted in the

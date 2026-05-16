@@ -45,6 +45,11 @@ import SeLe4n.Kernel.Concurrency.Runtime
 -- SM1.C the body is `pure ()`; SM5 replaces it with the per-core
 -- scheduler entry.
 import SeLe4n.Kernel.SecondaryEntry
+-- WS-SM SM1.E.4: typed `tlbiForSharing` FFI wrapper.  Pulled into
+-- Staged so CI builds the typed wrapper around the Rust
+-- `ffi_tlbi_for_sharing` dispatcher on every push.  Reachability:
+-- staged at SM1.E; SM7 (TLB shootdown) is the first runtime exerciser.
+import SeLe4n.Kernel.Architecture.TlbiForSharing
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph
@@ -76,6 +81,7 @@ The staged modules are:
 15. `SeLe4n.Kernel.Concurrency.Sgi`            — WS-SM SM0.H SgiKind
 16. `SeLe4n.Kernel.Concurrency.Runtime`        — WS-SM SM1.B.5 currentCoreId FFI wrapper
 17. `SeLe4n.Kernel.SecondaryEntry`             — WS-SM SM1.C.6 secondary-core kernel-entry placeholder
+18. `SeLe4n.Kernel.Architecture.TlbiForSharing` — WS-SM SM1.E.4 typed TLBI FFI dispatcher
 
 Per the plan (AN9-J will transition most of these from "SMP-latent" to
 "SMP-implemented, runtime-gated by smp_enabled=false at v1.0.0"), the

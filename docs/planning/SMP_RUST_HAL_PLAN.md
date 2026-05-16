@@ -1987,7 +1987,17 @@ pub fn bring_up_secondaries_with_limit(max_cores: usize) -> u32 {
 
 **Size**: S (~30 LoC).
 
-### 5.5 IS-variant TLB instructions (SM1.E, 3 PRs, 5 sub-tasks)
+### 5.5 IS-variant TLB instructions (SM1.E, 3 PRs, 5 sub-tasks) — **LANDED at v0.31.7**
+
+> **Landed**: SM1.E.1 (4 IS-variant TLBI wrappers), SM1.E.2 (4
+> OS-variant TLBI wrappers), SM1.E.3 (`tlbi_for_sharing`
+> dispatcher with `SharingDomain` + `TlbInvalidation` typed enums),
+> SM1.E.4 (Lean FFI binding `ffiTlbiForSharing` + typed
+> `Architecture.tlbiForSharing` wrapper in
+> `SeLe4n/Kernel/Architecture/TlbiForSharing.lean`).
+> SM1.E.5 (kernel-side caller migration) deferred to SM7 — at SM1.E
+> the local non-broadcast variants remain reserved for the boot-time
+> MMU-init path before secondaries start.
 
 #### SM1.E.1 — Add `tlbi_*is` variants
 
@@ -2146,7 +2156,16 @@ fi
 
 **Size**: M (~50 LoC of callsite migrations).
 
-### 5.6 SGI primitive (SM1.F, 4 PRs, 8 sub-tasks)
+### 5.6 SGI primitive (SM1.F, 4 PRs, 8 sub-tasks) — **LANDED at v0.31.7**
+
+> **Landed**: SM1.F.1 (`GICD_SGIR` constant + 16-INTID bound +
+> 3 TargetListFilter discriminants), SM1.F.2/3/4 (3 send-SGI
+> variants), SM1.F.5 (SGI handler dispatch infrastructure with
+> `SgiHandler`, `SGI_HANDLERS` table, `register_sgi_handler`,
+> `lookup_sgi_handler`, `dispatch_sgi`, `iar_source_cpu`),
+> SM1.F.6 (3 Lean FFI bindings `ffiSendSgi*`), SM1.F.7
+> (33 + 9 unit tests), SM1.F.8 (ARM ARM B2.7.5 ordering
+> documentation + new build-script scanner pinning DSB-before-SGIR).
 
 #### SM1.F.1 — `GICD_SGIR` constant
 
@@ -2353,7 +2372,18 @@ writes must be visible.
 
 **Size**: T.
 
-### 5.7 Cross-core kprintln synchronization (SM1.G, 2 PRs, 4 sub-tasks)
+### 5.7 Cross-core kprintln synchronization (SM1.G, 2 PRs, 4 sub-tasks) — **LANDED at v0.31.7**
+
+> **Landed**: SM1.G.1 (`UartLock` audit documentation block
+> documenting Acquire/Release semantics + IRQ-safe DAIF mask +
+> the FIFO-fairness gap that SM2's `TicketLock` will close at
+> SM2.B), SM1.G.2 (per-core boot banner verification, already
+> done at SM1.C.5; SM1.H.1 verifies them), SM1.G.3 (per-core
+> stress test script `test_qemu_smp_kprintln_stress.sh`; SKIPs
+> at SM1.G if the kernel-side stress routine isn't wired —
+> awaits SM5+ Lean integration), SM1.G.4 (`kprintln_core!` +
+> `kprint_core!` macros that prefix every line with `[core N]`
+> read from TPIDR_EL1).
 
 #### SM1.G.1 — Audit `UartLock::with`
 
@@ -2418,7 +2448,18 @@ macro_rules! kprintln_core {
 
 **Size**: S.
 
-### 5.8 QEMU SMP integration (SM1.H, 2 PRs, 5 sub-tasks)
+### 5.8 QEMU SMP integration (SM1.H, 2 PRs, 5 sub-tasks) — **LANDED at v0.31.7**
+
+> **Landed**: SM1.H.1 (full `test_qemu_smp_bringup.sh` —
+> replaces the SM0.T SKIP-only stub; QEMU `-smp 4` boot trace
+> verification with per-core ready banner check), SM1.H.2 (wired
+> into tier-4 `test_tier4_smp_bootcheck.sh` which now routes
+> through SM1.H.1 + SM1.H.3 + SM1.H.5 + SM1.G.3), SM1.H.3
+> (`test_qemu_smp_minimal.sh` — `-smp 2` minimal bringup for
+> diagnostics), SM1.H.4 (UART log capture + banner verification
+> embedded in SM1.H.1), SM1.H.5 (`test_qemu_smp_sgi_roundtrip.sh`
+> — cross-core SGI round-trip; SKIPs at SM1.H if kernel-side
+> handlers aren't wired — awaits SM5+ Lean integration).
 
 #### SM1.H.1 — Full `test_qemu_smp_bringup.sh` implementation
 
