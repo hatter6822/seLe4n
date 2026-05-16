@@ -17,10 +17,10 @@
 #   infra               — platform infrastructure (bridges, anchors, helpers)
 #   anchor              — the staging anchor file itself
 #
-# Last verified: WS-SM SM1.B landing (v0.31.4 HEAD; adds
-# `Concurrency.Runtime` to the five SM0-staged Concurrency/*
-# foundational modules — Anchors, Types, Locks, Locks.Kind, Sgi —
-# entering staged via Platform.Staged).
+# Last verified: WS-SM SM1.C landing (v0.31.5 HEAD; adds
+# `Kernel.SecondaryEntry` to the SM0+SM1.B staged-Concurrency-and-FFI
+# closure — the SM1.C.6 Lean entry-point placeholder for
+# `rust_secondary_main` enters staged via Platform.Staged).
 
 SeLe4n.Kernel.Architecture.CacheModel         # marker (STATUS: staged for H3)
 SeLe4n.Kernel.Architecture.ExceptionModel     # marker (STATUS: staged for H3)
@@ -33,4 +33,5 @@ SeLe4n.Kernel.Concurrency.Locks               # infra (WS-SM SM0.I BklState)
 SeLe4n.Kernel.Concurrency.Locks.Kind          # infra (WS-SM SM0.I LockKind + LockId total order)
 SeLe4n.Kernel.Concurrency.Sgi                 # infra (WS-SM SM0.H SgiKind)
 SeLe4n.Kernel.Concurrency.Runtime             # infra (WS-SM SM1.B.5 currentCoreId FFI wrapper; SMP-M4 Lean side)
+SeLe4n.Kernel.SecondaryEntry                  # infra (WS-SM SM1.C.6 secondary-core kernel-entry placeholder; SMP-C2 Lean side)
 SeLe4n.Platform.Staged                        # anchor (the staging entry point itself)

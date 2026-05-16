@@ -1,14 +1,23 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Alignment checks use `addr % N == 0` for Rust 1.82 compatibility.
-// `is_multiple_of()` was stabilized in Rust 1.85.
 //
-// AN8-E (R-HAL-L8): The workspace MSRV is currently 1.82 to support
-// long-tail toolchain availability on bare-metal targets. Once the
-// toolchain floor moves to >=1.85, remove this allow and migrate the
-// modulo checks to `addr.is_multiple_of(N)` for clarity. This is
-// tracked as a post-1.0 hygiene item; no currently-active plan file
-// schedules the migration.
-#![allow(clippy::manual_is_multiple_of)]
+// AN8-E (R-HAL-L8) + WS-SM SM1.C audit-pass: alignment checks use
+// the bitwise-AND form `(addr & (N - 1)) == 0` (for power-of-2 `N`)
+// rather than `addr % N == 0`.  Both are equivalent for power-of-2
+// alignments, but bitwise-AND has three advantages:
+//
+//   1. **Lint-clean**: it does not trigger
+//      `clippy::manual_is_multiple_of` (added in clippy 1.87),
+//      eliminating an `#[allow(...)]` workaround that previously
+//      required a paired `#[allow(unknown_lints)]` on the project's
+//      pinned MSRV (Rust 1.82).
+//   2. **Efficient**: on every aarch64 implementation the bitwise
+//      AND is single-cycle, whereas `%` may compile to a `udiv +
+//      msub` sequence depending on the compiler's constant-fold.
+//   3. **MSRV-independent**: works identically on every Rust version
+//      from 1.0.0 onward.
+//
+// The constants below name each alignment mask so the call sites
+// stay readable.  `_MASK = ALIGNMENT - 1` for every power-of-2 N.
 //! MMIO Volatile Read/Write Primitives for ARMv8-A.
 //!
 //! AG7-C: Provides generic volatile memory access functions for hardware
@@ -38,6 +47,16 @@
 //! On non-AArch64 hosts, functions return 0 (reads) or are no-ops (writes)
 //! for compilation and testing.
 
+/// Bitmask isolating the low 2 bits of an address; `(addr & MMIO32_ALIGN_MASK) == 0`
+/// is true iff `addr` is 4-byte aligned (equivalent to `addr % 4 == 0` for any
+/// non-negative `addr`, but avoids the modulo operator and the
+/// `clippy::manual_is_multiple_of` lint).
+const MMIO32_ALIGN_MASK: usize = 4 - 1;
+
+/// Bitmask isolating the low 3 bits of an address; `(addr & MMIO64_ALIGN_MASK) == 0`
+/// is true iff `addr` is 8-byte aligned (equivalent to `addr % 8 == 0`).
+const MMIO64_ALIGN_MASK: usize = 8 - 1;
+
 /// Read a 32-bit value from an MMIO address using volatile semantics.
 ///
 /// # Arguments
@@ -48,7 +67,11 @@
 /// Device-nGnRnE or Device-nGnRE in the page tables.
 #[inline(always)]
 pub fn mmio_read32(addr: usize) -> u32 {
-    assert!(addr % 4 == 0, "MMIO read32: address {:#x} not 4-byte aligned", addr);
+    assert!(
+        (addr & MMIO32_ALIGN_MASK) == 0,
+        "MMIO read32: address {:#x} not 4-byte aligned",
+        addr
+    );
     #[cfg(target_arch = "aarch64")]
     {
         // SAFETY: The caller provides a valid MMIO address within a mapped device
@@ -70,7 +93,11 @@ pub fn mmio_read32(addr: usize) -> u32 {
 /// * `val` - Value to write
 #[inline(always)]
 pub fn mmio_write32(addr: usize, val: u32) {
-    assert!(addr % 4 == 0, "MMIO write32: address {:#x} not 4-byte aligned", addr);
+    assert!(
+        (addr & MMIO32_ALIGN_MASK) == 0,
+        "MMIO write32: address {:#x} not 4-byte aligned",
+        addr
+    );
     #[cfg(target_arch = "aarch64")]
     {
         // SAFETY: The caller provides a valid MMIO address within a mapped device
@@ -90,7 +117,11 @@ pub fn mmio_write32(addr: usize, val: u32) {
 /// * `addr` - Physical address of the MMIO register (must be 8-byte aligned)
 #[inline(always)]
 pub fn mmio_read64(addr: usize) -> u64 {
-    assert!(addr % 8 == 0, "MMIO read64: address {:#x} not 8-byte aligned", addr);
+    assert!(
+        (addr & MMIO64_ALIGN_MASK) == 0,
+        "MMIO read64: address {:#x} not 8-byte aligned",
+        addr
+    );
     #[cfg(target_arch = "aarch64")]
     {
         // SAFETY: The caller provides a valid 8-byte-aligned MMIO address.
@@ -111,7 +142,11 @@ pub fn mmio_read64(addr: usize) -> u64 {
 /// * `val` - Value to write
 #[inline(always)]
 pub fn mmio_write64(addr: usize, val: u64) {
-    assert!(addr % 8 == 0, "MMIO write64: address {:#x} not 8-byte aligned", addr);
+    assert!(
+        (addr & MMIO64_ALIGN_MASK) == 0,
+        "MMIO write64: address {:#x} not 8-byte aligned",
+        addr
+    );
     #[cfg(target_arch = "aarch64")]
     {
         // SAFETY: The caller provides a valid 8-byte-aligned MMIO address.

@@ -1168,15 +1168,18 @@ EOF'
 # AN12-B inventory hardening theorems (NoDup witnesses, 6-way ArchAssumption
 # distinctness, Anchors module).  WS-SM SM1.B.5 adds the per-CPU FFI
 # wrapper surface (Concurrency.Runtime + Platform.FFI.ffiCurrentCoreId).
-# Build the foundational + Anchors + Runtime modules first so the .olean
-# files exist.
+# WS-SM SM1.C.6 adds the secondary-core kernel-entry placeholder
+# (Kernel.SecondaryEntry.secondaryKernelMain + marker theorem).
+# Build the foundational + Anchors + Runtime + SecondaryEntry modules
+# first so the .olean files exist.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build \
   SeLe4n.Kernel.Concurrency.Types \
   SeLe4n.Kernel.Concurrency.Locks \
   SeLe4n.Kernel.Concurrency.Locks.Kind \
   SeLe4n.Kernel.Concurrency.Sgi \
   SeLe4n.Kernel.Concurrency.Anchors \
-  SeLe4n.Kernel.Concurrency.Runtime'
+  SeLe4n.Kernel.Concurrency.Runtime \
+  SeLe4n.Kernel.SecondaryEntry'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.Concurrency.Types
 import SeLe4n.Kernel.Concurrency.Locks
@@ -1185,6 +1188,7 @@ import SeLe4n.Kernel.Concurrency.Sgi
 import SeLe4n.Kernel.Concurrency.Anchors
 import SeLe4n.Kernel.Concurrency.Assumptions
 import SeLe4n.Kernel.Concurrency.Runtime
+import SeLe4n.Kernel.SecondaryEntry
 import SeLe4n.Kernel.Architecture.Assumptions
 import SeLe4n.Platform.FFI
 import SeLe4n.Platform.RPi5.Contract
@@ -1245,6 +1249,9 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Kernel.Concurrency.currentCoreId
 #check @SeLe4n.Kernel.Concurrency.currentCoreId_in_range_marker
 #check @SeLe4n.Kernel.Concurrency.instInhabitedCoreId
+-- SM1.C.6 — Secondary-core kernel-entry placeholder (closes SMP-C2 Lean side)
+#check @SeLe4n.Kernel.secondaryKernelMain
+#check @SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker
 EOF'
 
 finalize_report

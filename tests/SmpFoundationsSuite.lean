@@ -14,6 +14,7 @@ import SeLe4n.Kernel.Concurrency.Sgi
 import SeLe4n.Kernel.Concurrency.Anchors
 import SeLe4n.Kernel.Concurrency.Assumptions
 import SeLe4n.Kernel.Concurrency.Runtime
+import SeLe4n.Kernel.SecondaryEntry
 import SeLe4n.Kernel.Architecture.Assumptions
 import SeLe4n.Platform.FFI
 import SeLe4n.Platform.RPi5.Contract
@@ -130,6 +131,10 @@ open SeLe4n.Platform.RPi5
 #check @SeLe4n.Kernel.Concurrency.currentCoreId_in_range_marker
 #check @SeLe4n.Kernel.Concurrency.instInhabitedCoreId
 
+/-! ## SM1.C.6 — Secondary-core kernel entry (closes SMP-C2 Lean side) -/
+#check @SeLe4n.Kernel.secondaryKernelMain
+#check @SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker
+
 -- ============================================================================
 -- §2 — Decidable examples: ground-truth checks at the RPi5 default
 -- ============================================================================
@@ -235,6 +240,29 @@ example : SeLe4n.Kernel.Concurrency.bootCoreId.val
             < SeLe4n.Kernel.Concurrency.numCores :=
   SeLe4n.Kernel.Concurrency.currentCoreId_in_range_marker
     SeLe4n.Kernel.Concurrency.bootCoreId
+
+-- §2.17 — SM1.C.6 secondaryKernelMain Lean entry placeholder
+-- The function must accept a UInt64 (the PSCI context_id) and return
+-- `BaseIO Unit`.  At SM1.C the body is `pure ()`; the
+-- `secondaryKernelMain_returns_unit_marker` theorem witnesses this.
+--
+-- Note: `BaseIO Unit` is not Decidable-equality (function types
+-- generally aren't), so these examples produce structural Prop
+-- witnesses rather than going through `decide`.  The witness is
+-- discharged by `rfl` inside the marker theorem.
+example (coreId : UInt64) :
+    SeLe4n.Kernel.secondaryKernelMain coreId = pure () :=
+  SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker coreId
+-- Concrete-instance check at boot-core context id (0).
+example : SeLe4n.Kernel.secondaryKernelMain 0 = pure () :=
+  SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker 0
+-- Concrete-instance check at each secondary context id (1, 2, 3).
+example : SeLe4n.Kernel.secondaryKernelMain 1 = pure () :=
+  SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker 1
+example : SeLe4n.Kernel.secondaryKernelMain 2 = pure () :=
+  SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker 2
+example : SeLe4n.Kernel.secondaryKernelMain 3 = pure () :=
+  SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker 3
 
 -- ============================================================================
 -- §3 — Runtime assertions: every above example also runs in `main`
@@ -540,8 +568,59 @@ private def runCurrentCoreIdChecks : IO Unit := do
     (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
       decide (c.val < SeLe4n.Kernel.Concurrency.numCores)))
 
+private def runSecondaryKernelMainChecks : IO Unit := do
+  -- WS-SM SM1.C.6: secondary-core kernel-entry placeholder.
+  --
+  -- The Lean entry point is the `@[export lean_secondary_kernel_main]`
+  -- function consumed by the Rust HAL's `rust_secondary_main`.  At
+  -- SM1.C the body is `pure ()`; we verify the structural property
+  -- via the `secondaryKernelMain_returns_unit_marker` theorem (which
+  -- is `rfl` because `pure ()` is the actual function body).  SM5+
+  -- replaces both the body and this proof with substantive
+  -- scheduler-entry correctness checks.
+  --
+  -- Note: `BaseIO Unit` is not Decidable-equality, so we cannot use
+  -- `decide` to compare two `BaseIO` actions.  Instead we exercise:
+  --   1. The marker-theorem call (typechecks ⟹ structural witness OK).
+  --   2. The runtime `BaseIO` execution (no fault ⟹ host-callable).
+  IO.println "--- §2.17 SM1.C.6 secondaryKernelMain entry placeholder ---"
+  -- Marker theorem discharges by `rfl` for every UInt64 input — we
+  -- type-check the call to confirm the theorem is in scope and
+  -- structurally total.  A regression that broke the placeholder
+  -- semantics (e.g., changed the body to something other than
+  -- `pure ()`) would fail to elaborate the marker theorem at the
+  -- module level, failing the build before this suite runs.
+  let _proof_0 :=
+    SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker 0
+  let _proof_1 :=
+    SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker 1
+  let _proof_2 :=
+    SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker 2
+  let _proof_3 :=
+    SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker 3
+  assertBool "secondaryKernelMain_returns_unit_marker reachable on every context_id 0..3"
+    true
+  -- Actually execute the BaseIO action at runtime to confirm it
+  -- doesn't fault.  Returns Unit on the simulation path (no FFI
+  -- call, no hardware access).  A regression that introduced a
+  -- panic, IO action, or non-terminating loop in the placeholder
+  -- would surface here.
+  let _ ← SeLe4n.Kernel.secondaryKernelMain 0
+  let _ ← SeLe4n.Kernel.secondaryKernelMain 1
+  let _ ← SeLe4n.Kernel.secondaryKernelMain 2
+  let _ ← SeLe4n.Kernel.secondaryKernelMain 3
+  assertBool "secondaryKernelMain runtime invocation on context_ids 0..3" true
+  -- Boundary inputs: confirm the function tolerates extreme context_id
+  -- values without aborting.  At SM1.C the body ignores the argument;
+  -- if SM5+ adds a range check it should fail closed via the typed
+  -- `CoreId` wrapper, not by panicking in `secondaryKernelMain`.
+  let _ ← SeLe4n.Kernel.secondaryKernelMain (UInt64.ofNat (Nat.pow 2 32))
+  let _ ← SeLe4n.Kernel.secondaryKernelMain (UInt64.ofNat (Nat.pow 2 63))
+  let _ ← SeLe4n.Kernel.secondaryKernelMain UInt64.size.toUInt64
+  assertBool "secondaryKernelMain tolerates boundary UInt64 inputs" true
+
 def runFoundationsChecks : IO Unit := do
-  IO.println "WS-SM SM0.S — Foundations test suite"
+  IO.println "WS-SM SM0.S + SM1.B + SM1.C — Foundations test suite"
   IO.println "===================================="
   runCoreIdChecks
   runSharingDomainChecks
@@ -558,8 +637,9 @@ def runFoundationsChecks : IO Unit := do
   runArchAssumptionAdditionalChecks
   runBklStateAdditionalChecks
   runCurrentCoreIdChecks
+  runSecondaryKernelMainChecks
   IO.println "===================================="
-  IO.println "All SM0 + SM1.B foundation checks PASS."
+  IO.println "All SM0 + SM1.B + SM1.C foundation checks PASS."
 
 end SeLe4n.Testing.SmpFoundations
 

@@ -1,3 +1,341 @@
+## v0.31.5 — WS-SM Phase SM1.C landing (Secondary-core full init)
+
+Patch release.  Lands the WS-SM SM1.C sub-phase, rewriting the
+previously-thin `rust_secondary_main` shell into the full per-core
+boot sequence (MMU → VBAR → GIC → timer → IRQ → Lean kernel) shared
+symmetrically with the primary boot path.  Closes SMP-C2 (the
+"secondary cores arrive at the kernel with the same hardware posture
+as the boot core" contract).
+
+Branch `claude/review-codebase-secondary-core-PgqGR`.  Third
+sub-phase of WS-SM SM1 (Rust HAL) after SM1.A (PSCI completion at
+v0.31.3-ish, landed via PR #776) and SM1.B (Per-CPU data + TPIDR_EL1
+at v0.31.4).  Twelve sub-tasks landed in one cut.  Pre-SM1.C the
+`rust_secondary_main` function spun on `CORE_READY[i]` then fell into
+a `wfe` loop — it never invoked the MMU/VBAR/GIC/timer init
+sequence, so a secondary core that reached this point would idle
+without translation enabled.  Post-SM1.C the function performs the
+full per-core boot, then jumps into the Lean kernel via
+`lean_secondary_kernel_main(context_id)` (a placeholder pass-through
+at SM1.C that SM5 will replace with the per-core scheduler entry).
+
+See [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+§5.3 for the full plan; [`CLAUDE.md`](CLAUDE.md) §"Active workstream
+context" carries the live tracking.
+
+### Added — Per-core MMU helper (SM1.C.1)
+
+`rust/sele4n-hal/src/mmu.rs`:
+
+- **SM1.C.1**: `pub fn init_mmu_per_core(core_id: u64)` — shared
+  per-core MMU enable helper.  Wraps the previously-private
+  `enable_mmu()` body so both primary and secondary boot routes go
+  through the same code path.  The primary's `init_mmu()` now
+  decomposes into `build_identity_tables()` (one-shot) +
+  `init_mmu_per_core(0)`.
+- **SM1.C.1**: `pub fn init_mmu_secondary(core_id: u64)` — the
+  production entry point for secondary cores.  `debug_assert!`s
+  that `core_id > 0` (the boot core must call `init_mmu`).  Reuses
+  the shared `BOOT_L1_TABLE` (read-only post-`build_identity_tables`)
+  so secondaries program TTBR0/1 to the same physical address the
+  primary set up.
+- The full per-core MMU enable sequence is shared verbatim with the
+  primary: `tlbi vmalle1` → page-table D-cache clean → TTBR0/1 +
+  TCR + MAIR programming → `dsb ish + isb` → SCTLR_EL1 with the
+  AK5-C bitmap (`M | C | I | SA | SA0 | WXN | EOS | EIS | RES1`) →
+  ISB.
+
+### Added — Shared exception vector installer (SM1.C.2)
+
+`rust/sele4n-hal/src/boot.rs`:
+
+- **SM1.C.2**: `pub fn install_exception_vectors()` — extracted
+  from the formerly-private `set_vbar` and made `pub` so
+  `smp::rust_secondary_main` can reach it via the same module
+  path the primary uses.  Performs the same dscb-sy + isb +
+  VBAR_EL1 write sequence on every core.
+- Primary `rust_boot_main` Phase 2 now calls
+  `install_exception_vectors()` instead of the private `set_vbar()`.
+- The `__exception_vectors` linker symbol is unchanged (`vectors.S`
+  with `.balign 2048`); the `debug_assert_eq!(vbar % 2048, 0)`
+  alignment check runs on every per-core invocation.
+
+### Added — Per-core GIC CPU interface init (SM1.C.3)
+
+`rust/sele4n-hal/src/gic.rs`:
+
+- **SM1.C.3**: `pub fn init_cpu_interface_secondary(core_id: u64)` —
+  wraps the existing `init_cpu_interface(GICC_BASE)` (which writes
+  the banked-per-core GICC_CTLR/PMR/BPR registers) with a per-core
+  diagnostic `kprintln`.  The global GIC distributor (GICD) is
+  initialised once by the primary's `init_gic()`; secondaries
+  only need to enable their own CPU interface.
+
+### Added — Per-core timer init (SM1.C.4)
+
+`rust/sele4n-hal/src/timer.rs`:
+
+- **SM1.C.4**: `pub fn init_timer_secondary(tick_hz: u32) ->
+  Result<(), TimerError>` — per-core timer arming (CNTP_CVAL_EL0 +
+  CNTP_CTL_EL0.ENABLE).  Returns the same error shape as
+  `init_timer` so call sites can use a uniform `match` pattern.
+- **Critical design**: deliberately does **NOT** reset the global
+  `TICK_COUNT` (primary-owned monotonic counter — resetting on
+  every secondary's bring-up would discard primary's tick history)
+  or rewrite `TIMER_INTERVAL` (primary already populated it with
+  the canonical value).  Two regression tests pin this behaviour
+  (pre-seed sentinel values, assert they survive the secondary's
+  call).
+- Failure path on a secondary (CntfrqNotProgrammed) halts just
+  that core via WFE loop, leaving the primary and any
+  already-initialised secondaries running.
+
+### Added — `rust_secondary_main` rewrite (SM1.C.5)
+
+`rust/sele4n-hal/src/smp.rs`:
+
+- **SM1.C.5**: `rust_secondary_main(context_id: u64) -> !` body
+  rewritten with the full per-core init pipeline.  Eight ordered
+  steps:
+  - Step 0: spin on `CORE_READY[i]` with bounded WFE (primary
+    releases this flag after a successful PSCI CPU_ON).
+  - Step 1: `crate::mmu::init_mmu_secondary(core_id)`.
+  - Step 2: `crate::boot::install_exception_vectors()`.
+  - Step 3: `crate::gic::init_cpu_interface_secondary(core_id)`.
+  - Step 4: `crate::timer::init_timer_secondary(DEFAULT_TICK_HZ)`
+    with a fatal-on-fail branch that halts just this core.
+  - Step 5: `crate::interrupts::enable_irq()` — IRQ unmask.
+  - Step 6: `lean_secondary_kernel_main(context_id)` —
+    `feature = "hw_target"`-gated Lean kernel entry.
+  - Step 7: idle fallback `loop { wfe() }` — unreachable on the
+    happy path, but `-> !` requires a terminal expression.
+- Diagnostic `kprintln`s after every step give the QEMU `-smp 4`
+  boot trace a deterministic banner pattern SM1.H tests will grep
+  against.
+
+### Added — Lean secondary-kernel entry (SM1.C.6)
+
+`SeLe4n/Kernel/SecondaryEntry.lean` (NEW FILE, 100+ LoC):
+
+- **SM1.C.6**: `secondaryKernelMain : UInt64 → BaseIO Unit` with
+  `@[export lean_secondary_kernel_main]`.  At SM1.C the body is
+  `pure ()` — a deliberate placeholder until SM5 lands the
+  per-core scheduler entry.  The `@[export]` attribute makes the
+  symbol C-callable so the Rust HAL's `rust_secondary_main` Step 6
+  resolves at link time.
+- Surface-anchor theorem `secondaryKernelMain_returns_unit_marker
+  : ∀ (coreId : UInt64), secondaryKernelMain coreId = pure ()`
+  witnesses the placeholder semantics by `rfl`.  Downstream Tier-3
+  scans assert the theorem's continued availability.
+
+### Added — Test coverage (SM1.C.12)
+
+- **Rust**: 32 new HAL unit tests — 6 in `mmu::tests` (sm1c1_*
+  prefix: callable on host, accepts all secondary core_ids,
+  `debug_assert!` panic on core 0, signature pinning); 4 in
+  `boot::tests` (sm1c2_* prefix: callable on host, signature
+  pinning, idempotence, primary-path symmetry); 4 in `gic::tests`
+  (sm1c3_* prefix: same shape); 7 in `timer::tests` (sm1c4_*
+  prefix: Ok on host, ZeroTickHz rejection, TICK_COUNT
+  preservation, TIMER_INTERVAL preservation, signature pinning);
+  11 in `smp::tests` (sm1c5_* prefix: ABI signature, every helper
+  resolves via its crate module, full-set callability, aggregate
+  idempotence, `#[no_mangle]` discipline).
+- **Lean**: 12 new assertions in `tests/SmpFoundationsSuite.lean`
+  — 2 `#check` surface anchors for `secondaryKernelMain` and its
+  marker theorem; 5 `example` discharges (the marker for every
+  context_id 0..3 and a generic case); 5 runtime checks in the
+  new `runSecondaryKernelMainChecks` section (marker-theorem
+  reachability, runtime `BaseIO` invocation on every context_id
+  0..3, boundary `UInt64` input tolerance).
+- **Total**: 313 HAL tests (was 281), zero `#[ignore]`'d, zero
+  clippy warnings workspace-wide.  Tier 0+1+2+3 all green.
+
+### Added — Build-script regression scanners (SM1.C audit pass)
+
+`rust/sele4n-hal/build.rs`:
+
+- `scan_boot_rs_uses_install_exception_vectors` — rejects
+  `boot.rs` if it stops calling `install_exception_vectors()` (the
+  primary's VBAR install must go through the shared helper) or if
+  more than one `write_vbar_el1(` call appears (only the helper
+  body should call it directly).
+- `scan_smp_rs_uses_install_exception_vectors` — rejects `smp.rs`
+  if `rust_secondary_main` no longer calls
+  `install_exception_vectors()`.
+- `scan_smp_rs_invokes_secondary_init_helpers` — enumerates the
+  six required call sites in `rust_secondary_main` and fails the
+  build with an actionable diagnostic if any is missing.  Audit-
+  pass-2 added the **Step 0** validator (`validate_secondary_context_id`)
+  to the list, alongside the SM1.C.5 init helpers
+  (`init_mmu_secondary`, `init_cpu_interface_secondary`,
+  `init_timer_secondary`, `enable_irq`, `lean_secondary_kernel_main`).
+
+### Added — PSCI context_id defense-in-depth (SM1.C audit-pass-2)
+
+Two-layer defense (asm + Rust) against malicious or malformed PSCI
+firmware passing out-of-range `context_id` values when waking a
+secondary core.  Rejected cases (both layers reject the same set):
+
+- `context_id == 0`: the boot-core slot.  A secondary waking with
+  `context_id = 0` would alias the secondary to the boot core's
+  `PerCpuData` slot (TPIDR_EL1 setup formula
+  `PER_CPU_DATA + context_id * stride` yields slot 0), silently
+  corrupting boot-core per-CPU state once the secondary's init
+  ran.
+- `context_id >= MAX_SECONDARY_CORES + 1` (= 4 on RPi5): out of
+  range.  The pre-audit code skipped the `CORE_READY[i]` wait but
+  still ran the full per-core init on an undefined slot, with no
+  allocated stack / TPIDR_EL1 slot.  Additionally, the asm-level
+  SP arithmetic `__smp_secondary_stack_top - (context_id - 1) *
+  64 KiB` for `context_id == 4` produced `SP =
+  __smp_secondary_stacks_bottom`, immediately adjacent to the
+  boot core's `.stack` region — `rust_secondary_main`'s prologue
+  push would corrupt boot-core stack frames.
+
+**Layer 1: asm-level gate** (`rust/sele4n-hal/src/boot.S`,
+`secondary_entry`):
+
+- Step 1.5: `cbz x0, .L_secondary_invalid` + `cmp x0, x3` /
+  `b.hs .L_secondary_invalid` (where `x3` is loaded from the
+  `MAX_CORE_COUNT_SYM` `.rodata` symbol, not a literal).  Runs
+  AFTER `msr daifset, #0xf` but BEFORE any SP or TPIDR_EL1
+  arithmetic uses `context_id`.
+- `.L_secondary_invalid:` halt label (`wfe` + branch-back), with
+  DAIF masked so the loop cannot be interrupted into a
+  partially-initialised state.
+- This layer prevents boot-core stack corruption for `context_id
+  == 4`, which the Rust-level validator alone cannot prevent
+  (the Rust validator runs after the function prologue, which has
+  already pushed to the corrupted SP).
+
+**Layer 2: Rust-level gate** (`rust/sele4n-hal/src/smp.rs`):
+
+- New `validate_secondary_context_id(context_id: u64) ->
+  Option<usize>` `const fn` validator.  `rust_secondary_main`'s
+  **Step 0** runs the validator; rejection halts the offending
+  core in a low-power WFE loop with DAIF still masked.
+- 7 new HAL tests in `smp::tests::sm1c5_validate_context_id_*`
+  cover every rejection / acceptance case including const-context
+  evaluation (a regression in the validator's bounds would fail
+  the build at elaboration via `const _: () = ...` bindings).
+
+**Cross-language pin** (`rust/sele4n-hal/src/smp.rs`):
+
+- `pub static MAX_CORE_COUNT_SYM: u64 = (MAX_SECONDARY_CORES + 1)
+  as u64` is the `.rodata` symbol the asm reads.  `#[no_mangle]
+  #[used]` preserves the symbol for the asm's `adrp + ldr`
+  references and prevents linker dead-code elimination.  6 new
+  HAL tests cover symbol value (= 4 on RPi5), symbol address
+  observability, cross-layer bound consistency (asm and Rust
+  bounds agree), and that every asm-rejected context_id is also
+  validator-rejected.
+
+**Build-script scanners** (`rust/sele4n-hal/build.rs`):
+
+- Two new scanners added at audit-pass-2:
+  - `scan_smp_rs_invokes_secondary_init_helpers` gains a Step 0
+    entry pinning the `validate_secondary_context_id(` call site
+    in `rust_secondary_main`.
+  - `scan_boot_s_for_secondary_entry_context_id_validation`
+    verifies `boot.S::secondary_entry` references
+    `MAX_CORE_COUNT_SYM` AND has a `.L_secondary_invalid` halt
+    label.  A regression dropping either fails the build with
+    an actionable diagnostic.
+
+### Fixed — `enable_mmu` host portability (SM1.C audit pass)
+
+`rust/sele4n-hal/src/mmu.rs`:
+
+- The AK5-E.3 `debug_assert!(pt_pa_raw < (1usize << 44))` was
+  unconditional.  On x86_64 host PIE binaries the static base
+  address is routinely ≥ 2^44 (`0x55...`), so SM1.C.1's per-core
+  helper tests that exercised `init_mmu_per_core(0)` on host
+  triggered a false-positive panic.
+- Cfg-gated the 44-bit-PA check on
+  `cfg!(target_arch = "aarch64")`.  The first debug_assert
+  (4-KiB alignment) remains unconditional because
+  `#[repr(align(4096))]` makes the property hold on every target.
+
+### Fixed — Stale docstrings (SM1.C audit pass-1)
+
+- `rust/sele4n-hal/src/smp.rs` module docstring's "What this
+  module owns" section called `rust_secondary_main` a
+  "placeholder" — stale post-SM1.C, since the body is now the
+  full per-core init pipeline.  Rewritten to describe the actual
+  responsibilities.
+- `rust/sele4n-hal/src/lib.rs` `smp` module description mentioned
+  only "AN9-J scaffolding".  Updated to also cite the WS-SM SM1.C
+  secondary-side full per-core init pipeline.
+
+### Removed — Vestigial scanner-bait line (SM1.C audit pass-1)
+
+`rust/sele4n-hal/src/smp.rs::rust_secondary_main`:
+
+- Removed `let _kernel_entry_symbol_name: &str =
+  "lean_secondary_kernel_main";`.  This line existed only to
+  satisfy the SM1.C.5 build-script scanner's textual presence
+  check, but the cfg-gated `extern "C" { fn
+  lean_secondary_kernel_main(...) }` block + the call site
+  `lean_secondary_kernel_main(core_id)` already provide the
+  required textual presence (the scanner is a substring match
+  over the source file, with cfg-gating not affecting textual
+  content).  Removing the dead line eliminates unnecessary
+  noise.
+
+### Fixed — Validator truncation under hypothetical 32-bit target (SM1.C audit pass-3)
+
+`rust/sele4n-hal/src/smp.rs::validate_secondary_context_id`:
+
+- Pre-audit-pass-3 form did `let core_idx = context_id as usize`
+  BEFORE the bounds check.  On a 64-bit target (where
+  `usize == u64`) this is identity; on a hypothetical 32-bit
+  port it would truncate to the low 32 bits, silently accepting
+  any `context_id` whose high bits were set but whose low 32
+  bits aliased a valid secondary slot (e.g., `0x1_0000_0001`
+  → core_idx = 1 → Some(1)).
+- Reformulated to do the bounds check in `u64` space first, then
+  narrow to `usize` only on the accepted path.  Mathematically
+  equivalent on 64-bit; strictly more correct on 32-bit.
+- Added test `sm1c5_validate_context_id_rejects_u64_with_high_bits_aliasing_secondary`
+  exercising the boundary cases (`0x1_0000_0001`,
+  `0x1_0000_0002`, `0x1_0000_0003`, `0x1_0000_0000`,
+  `0xFFFF_FFFF_0000_0000`) — all must reject.
+- Added Lean tier-3 invariant-surface anchors for
+  `secondaryKernelMain` and `secondaryKernelMain_returns_unit_marker`
+  in `scripts/test_tier3_invariant_surface.sh` so a future PR
+  that removes either fails tier-3 CI before reaching the test
+  suite.
+
+### Module reachability
+
+- **`SeLe4n.Kernel.SecondaryEntry`**: added to
+  `SeLe4n/Platform/Staged.lean` import closure and to
+  `scripts/staged_module_allowlist.txt` per the WS-RC R12.B
+  partition gate.  SM5 will move it from staged →
+  production-reached when per-core scheduler state lands.
+- `scripts/staged_module_allowlist.txt` is now 13 modules (was
+  12 at SM1.B close); the partition gate verifies the live
+  staged set matches the allowlist exactly.
+
+### Documentation
+
+- `CLAUDE.md` / `AGENTS.md`: added SM1.C LANDED record under the
+  active workstream context (mirrored byte-identical apart from
+  the header).
+- `README.md`: bumped version to v0.31.5; updated the
+  "Target hardware" row to reflect SM1.A/B/C landings.
+- `docs/spec/SELE4N_SPEC.md`: bumped package version to v0.31.5.
+- All 10 i18n READMEs (`docs/i18n/<lang>/README.md`): version
+  badge bumped.
+- `docs/codebase_map.json`: regenerated.
+
+### Items deferred past v1.0.0 with correctness impact
+
+NONE.
+
+---
+
 ## v0.31.4 — WS-SM Phase SM1.B landing (Per-CPU data + TPIDR_EL1)
 
 Patch release.  Bundles the WS-SM SM1.B initial landing plus two

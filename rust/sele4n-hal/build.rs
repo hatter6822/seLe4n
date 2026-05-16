@@ -36,6 +36,31 @@ fn main() {
     // assembled, on non-aarch64).
     scan_boot_s_for_per_cpu_data_setup();
 
+    // WS-SM SM1.C.2 (closes SMP-C2 VBAR step): verify `boot.rs` and
+    // `smp.rs` both route through the shared `install_exception_vectors`
+    // helper instead of inlining a `write_vbar_el1` call.  A regression
+    // that bypasses the helper would create a primary/secondary boot
+    // asymmetry — the helper is the single source of truth for VBAR_EL1
+    // initialisation order (write + dsb_sy + isb).
+    scan_boot_rs_uses_install_exception_vectors();
+    scan_smp_rs_uses_install_exception_vectors();
+
+    // WS-SM SM1.C.5 (closes SMP-C2 full sequence): verify that the
+    // secondary boot path in `smp.rs::rust_secondary_main` invokes
+    // every required per-core init helper.  A future refactor that
+    // accidentally drops one of MMU/VBAR/GIC/timer init would create
+    // a partial-init secondary that silently violates the SMP-C2
+    // contract.
+    scan_smp_rs_invokes_secondary_init_helpers();
+
+    // WS-SM SM1.C audit-pass-2: verify the asm-level context_id
+    // defense in `boot.S::secondary_entry` is intact.  The asm
+    // rejects out-of-range PSCI context_ids BEFORE the SP and
+    // TPIDR_EL1 arithmetic uses them, preventing boot-core stack
+    // corruption that the Rust-level validator alone cannot
+    // prevent (the Rust validator runs after the function prologue).
+    scan_boot_s_for_secondary_entry_context_id_validation();
+
     // Only build assembly for aarch64 targets
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     if target_arch != "aarch64" {
@@ -82,7 +107,11 @@ fn scan_boot_s_for_legacy_mpidr_literal() {
     let stripped: String = contents
         .lines()
         .map(|line| {
-            if let Some(idx) = line.find("//") { &line[..idx] } else { line }
+            if let Some(idx) = line.find("//") {
+                &line[..idx]
+            } else {
+                line
+            }
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -91,7 +120,13 @@ fn scan_boot_s_for_legacy_mpidr_literal() {
     // lowercase. This makes the match resilient to formatting changes.
     let normalised: String = stripped
         .chars()
-        .map(|c| if c.is_ascii_whitespace() { ' ' } else { c.to_ascii_lowercase() })
+        .map(|c| {
+            if c.is_ascii_whitespace() {
+                ' '
+            } else {
+                c.to_ascii_lowercase()
+            }
+        })
         .collect();
     let mut deduped = String::with_capacity(normalised.len());
     let mut prev_space = false;
@@ -213,6 +248,269 @@ fn scan_boot_s_for_per_cpu_data_setup() {
              module docstring; closes SMP-M4).",
             pcd = if has_per_cpu_data { "yes" } else { "MISSING" },
             sym = if has_slot_size_sym { "yes" } else { "MISSING" },
+        );
+    }
+}
+
+/// **WS-SM SM1.C.2** regression guard: verify `boot.rs::rust_boot_main`
+/// routes through `install_exception_vectors()` instead of inlining a
+/// `write_vbar_el1` call.
+///
+/// The SM1.C.2 contract is that the **same** code path installs the
+/// EL1 exception vector table on every core (primary in `boot.rs`,
+/// secondaries in `smp.rs::rust_secondary_main`).  A regression that
+/// reintroduces an inline `crate::registers::write_vbar_el1(...)` call
+/// in `boot.rs` would bypass the shared helper and could (intentionally
+/// or otherwise) diverge the primary's barrier ordering from the
+/// secondary's — silently creating a security asymmetry.
+///
+/// This scanner fails the build at the earliest point if `boot.rs`
+/// either (a) writes `vbar_el1` without going through the helper, or
+/// (b) loses the `install_exception_vectors()` call entirely.
+fn scan_boot_rs_uses_install_exception_vectors() {
+    let path = "src/boot.rs";
+    println!("cargo:rerun-if-changed={path}");
+    let contents = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => panic!("WS-SM SM1.C.2 scanner: failed to read {path}: {e}"),
+    };
+
+    // Strip `//` line comments before scanning so docstring mentions of
+    // the helper / register don't satisfy the check spuriously.
+    let stripped: String = contents
+        .lines()
+        .map(|line| {
+            if let Some(idx) = line.find("//") {
+                &line[..idx]
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let normalised = stripped.to_ascii_lowercase();
+
+    // We require the helper call to exist in boot.rs (in non-comment
+    // code).  Absence is a regression.
+    let has_helper_call = normalised.contains("install_exception_vectors(");
+    if !has_helper_call {
+        panic!(
+            "WS-SM SM1.C.2 regression: `{path}` no longer calls \
+             `install_exception_vectors()`.  The primary boot path must \
+             use the same VBAR_EL1 installation helper as \
+             `smp.rs::rust_secondary_main` to keep boot-time exception \
+             vector ordering symmetric between primary and secondary.  \
+             See WS-SM SM1.C.2 (closes SMP-C2 VBAR step)."
+        );
+    }
+
+    // Defense-in-depth: also reject a direct `write_vbar_el1` call in
+    // `boot.rs` (allowing only the helper to make that call from
+    // `install_exception_vectors`).  The helper itself lives in the
+    // same file, so we count occurrences: exactly one
+    // `write_vbar_el1(` is the helper body; more would indicate an
+    // inlined-bypass.
+    let write_count = normalised.matches("write_vbar_el1(").count();
+    if write_count > 1 {
+        panic!(
+            "WS-SM SM1.C.2 regression: `{path}` has {} non-comment \
+             references to `write_vbar_el1(` — only the body of \
+             `install_exception_vectors` should call it directly.  \
+             Other VBAR_EL1 writes must route through that helper to \
+             preserve the primary/secondary symmetry.  See WS-SM SM1.C.2.",
+            write_count
+        );
+    }
+}
+
+/// **WS-SM SM1.C.2** regression guard: verify `smp.rs::rust_secondary_main`
+/// invokes `install_exception_vectors()` so secondaries install the
+/// EL1 exception vectors via the shared helper.
+fn scan_smp_rs_uses_install_exception_vectors() {
+    let path = "src/smp.rs";
+    println!("cargo:rerun-if-changed={path}");
+    let contents = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => panic!("WS-SM SM1.C.2 scanner: failed to read {path}: {e}"),
+    };
+
+    let stripped: String = contents
+        .lines()
+        .map(|line| {
+            if let Some(idx) = line.find("//") {
+                &line[..idx]
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let normalised = stripped.to_ascii_lowercase();
+
+    let has_helper_call = normalised.contains("install_exception_vectors(");
+    if !has_helper_call {
+        panic!(
+            "WS-SM SM1.C.2 regression: `{path}` no longer calls \
+             `install_exception_vectors()`.  Every secondary core must \
+             install its EL1 exception vectors via the shared helper \
+             so primary and secondary VBAR_EL1 setup stay symmetric.  \
+             See WS-SM SM1.C.2 (closes SMP-C2 VBAR step)."
+        );
+    }
+}
+
+/// **WS-SM SM1.C.5** regression guard: verify
+/// `smp.rs::rust_secondary_main` invokes every per-core init helper.
+///
+/// The SM1.C.5 contract is that the full secondary boot path must
+/// initialise (in order):
+///   1. MMU       — `mmu::init_mmu_secondary`
+///   2. VBAR      — `boot::install_exception_vectors` (covered above)
+///   3. GIC       — `gic::init_cpu_interface_secondary`
+///   4. Timer     — `timer::init_timer_secondary`
+///   5. IRQ unmask — `interrupts::enable_irq`
+///   6. Lean kernel entry — `lean_secondary_kernel_main`
+///
+/// A regression that silently drops one of these steps would result
+/// in a secondary core entering Lean without (e.g.) the MMU enabled
+/// or the timer armed.  The build-script fires before any such
+/// regression can be linked.
+fn scan_smp_rs_invokes_secondary_init_helpers() {
+    let path = "src/smp.rs";
+    // Re-run hook already emitted above; not redoing here.
+    let contents = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => panic!("WS-SM SM1.C.5 scanner: failed to read {path}: {e}"),
+    };
+
+    let stripped: String = contents
+        .lines()
+        .map(|line| {
+            if let Some(idx) = line.find("//") {
+                &line[..idx]
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let normalised = stripped.to_ascii_lowercase();
+
+    // Required per-core init helpers.  Each entry is a (call site,
+    // human-readable step name) pair so the diagnostic message names
+    // exactly what's missing.
+    //
+    // Step 0 (`validate_secondary_context_id`) is the audit-pass-1
+    // defense-in-depth gate that rejects out-of-range PSCI
+    // context_ids before any per-core init runs.  A regression that
+    // dropped this validator (e.g., refactor that reintroduces the
+    // pre-audit raw `core_idx as usize` indexing) would bypass the
+    // defense.  Pinning the call site here forces the contract.
+    let required: &[(&str, &str)] = &[
+        (
+            "validate_secondary_context_id(",
+            "Step 0: PSCI context_id defense-in-depth validation",
+        ),
+        ("init_mmu_secondary(", "Step 1: MMU enable"),
+        ("init_cpu_interface_secondary(", "Step 3: GIC CPU interface"),
+        ("init_timer_secondary(", "Step 4: Timer arm"),
+        ("enable_irq(", "Step 5: IRQ unmask"),
+        ("lean_secondary_kernel_main", "Step 6: Lean kernel entry"),
+    ];
+
+    let mut missing: Vec<&str> = Vec::new();
+    for (call, step) in required {
+        if !normalised.contains(call) {
+            missing.push(step);
+        }
+    }
+
+    if !missing.is_empty() {
+        panic!(
+            "WS-SM SM1.C.5 regression: `{path}::rust_secondary_main` is \
+             missing one or more required per-core init steps.  Missing: \
+             {missing:?}.  Each step must be invoked by name so a \
+             refactor cannot accidentally short-circuit the boot path.  \
+             See WS-SM SM1.C.5 (closes SMP-C2 full sequence)."
+        );
+    }
+}
+
+/// **WS-SM SM1.C audit-pass-2** regression guard: verify the
+/// `boot.S::secondary_entry` asm rejects out-of-range PSCI context_ids
+/// BEFORE the SP / TPIDR_EL1 setup uses them.
+///
+/// The audit-pass-2 contract is that every code path in
+/// `secondary_entry` that uses `context_id` (x0) arithmetically must
+/// be guarded by a prior bounds check.  Two textual checks codify
+/// this:
+///
+///   1. The asm must reference `MAX_CORE_COUNT_SYM` (the upper-bound
+///      symbol exposed from `smp.rs`).  Without this, the asm would
+///      use a hardcoded literal `4` that could drift from
+///      `MAX_SECONDARY_CORES + 1`.
+///   2. The asm must contain a `.L_secondary_invalid` halt label
+///      (the target of the rejection branches `cbz` and `b.hs`).
+///
+/// Without these, a malicious PSCI implementation passing
+/// `context_id == 0` or `context_id >= 4` could:
+///   * Alias a secondary's per-core state with the boot core's
+///     `PerCpuData` slot (TPIDR_EL1 = PER_CPU_DATA + 0 = boot slot).
+///   * Corrupt the boot core's stack (SP = stack_top - 3 * 64K =
+///     `__smp_secondary_stacks_bottom`, adjacent to `.stack`).
+///
+/// The Rust-side `validate_secondary_context_id` provides a second
+/// defense layer, but only catches the issue AFTER the function
+/// prologue has run — too late to prevent the SP corruption.
+fn scan_boot_s_for_secondary_entry_context_id_validation() {
+    let path = "src/boot.S";
+    let contents = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            panic!("WS-SM SM1.C audit-pass-2 scanner: failed to read {path}: {e}");
+        }
+    };
+
+    let stripped: String = contents
+        .lines()
+        .map(|line| {
+            if let Some(idx) = line.find("//") {
+                &line[..idx]
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let normalised = stripped.to_ascii_lowercase();
+
+    // We require the symbol reference (case-insensitive per GAS
+    // convention) and the invalid-halt label.  The actual branch
+    // instructions (`cbz`, `b.hs`) are not pinned by name because
+    // alternative encodings (`cmp` + `b.eq` or `tbz`) are also valid;
+    // the SYMBOL reference is the load-bearing structural pin.
+    let max_core_count_ref = "max_core_count_sym";
+    let invalid_label = ".l_secondary_invalid";
+
+    let has_symbol = normalised.contains(max_core_count_ref);
+    let has_label = normalised.contains(invalid_label);
+
+    if !has_symbol || !has_label {
+        panic!(
+            "WS-SM SM1.C audit-pass-2 regression: `{path}::secondary_entry` \
+             is missing the asm-level PSCI context_id defense.\n\
+             Expected:\n\
+             - reference to `MAX_CORE_COUNT_SYM` (Rust-side bound symbol; \
+             found: {sym})\n\
+             - `.L_secondary_invalid` halt label (target of the \
+             rejection branches; found: {lbl})\n\
+             Without these, a malformed `context_id` from PSCI could \
+             corrupt the boot core's stack (the SP arithmetic in Step 2 \
+             produces a SP inside `.stack` for `context_id == 4`).  See \
+             WS-SM SM1.C audit-pass-2 in CHANGELOG.md.",
+            sym = if has_symbol { "yes" } else { "MISSING" },
+            lbl = if has_label { "yes" } else { "MISSING" },
         );
     }
 }

@@ -9,7 +9,7 @@
 //! Phase 4: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.31.4";
+const KERNEL_VERSION: &str = "0.31.5";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
@@ -45,8 +45,11 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
     crate::mmu::init_mmu();
     crate::kprintln!("[boot] MMU enabled (identity map, L1 block descriptors)");
 
-    // Set VBAR_EL1 to exception vector table
-    set_vbar();
+    // Set VBAR_EL1 to exception vector table.  WS-SM SM1.C.2 extracted
+    // the previously-private helper into `install_exception_vectors`
+    // (shared with `smp::rust_secondary_main`); the primary call site
+    // now uses the same code path the secondaries do.
+    install_exception_vectors();
     crate::kprintln!("[boot] VBAR_EL1 set to exception vector table");
 
     // -----------------------------------------------------------------------
@@ -106,7 +109,10 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
         let boot_per_cpu = crate::per_cpu::per_cpu_slot_addr(0) as u64;
         crate::registers::write_tpidr_el1(boot_per_cpu);
         crate::barriers::isb();
-        crate::kprintln!("[boot] TPIDR_EL1 set to PER_CPU_DATA[0] = {:#x}", boot_per_cpu);
+        crate::kprintln!(
+            "[boot] TPIDR_EL1 set to PER_CPU_DATA[0] = {:#x}",
+            boot_per_cpu
+        );
         let live_id = crate::per_cpu::current_core_id_from_tpidr();
         crate::kprintln!("[boot] current_core_id_from_tpidr() = {}", live_id);
     }
@@ -148,10 +154,32 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
     idle_loop()
 }
 
-/// Set VBAR_EL1 to point to our exception vector table.
+/// **WS-SM SM1.C.2** (closes SMP-C2 VBAR step): Install the EL1
+/// exception vector table at `VBAR_EL1`.  Shared between primary boot
+/// (`rust_boot_main` Phase 2) and secondary cores
+/// (`smp::rust_secondary_main` Step 2).
 ///
 /// The vector table is defined in `vectors.S` and exported as
-/// `__exception_vectors`. It must be 2048-byte aligned per ARM ARM D1.10.2.
+/// `__exception_vectors`.  It must be 2048-byte aligned per ARM ARM
+/// D1.10.2; the alignment is enforced statically by the `.balign 2048`
+/// directive in `vectors.S` plus the linker's section ordering
+/// (`.text.vectors : ALIGN(2048) { ... }` in `link.ld`).  A runtime
+/// `debug_assert!` re-checks the alignment before writing `VBAR_EL1`
+/// so a regressed assembler/linker chain surfaces as a clean halt
+/// rather than the architectural UNDEFINED instruction the next
+/// exception would produce (ARM ARM D17.2.135: writes with bits
+/// [10:0] non-zero are UNDEFINED).
+///
+/// **Caller obligations**: must be invoked at EL1 with IRQs disabled.
+/// The boot core and every secondary satisfy this on entry from PSCI
+/// CPU_ON / firmware (DAIF mask covers I/F at reset; the secondary
+/// stub in `boot.S::secondary_entry` re-applies `msr daifset, #0xf`
+/// defensively).
+///
+/// **Concurrency**: VBAR_EL1 is banked per-core; concurrent
+/// invocations from multiple secondaries are independent (each core
+/// programs its own banked register).  The shared `__exception_vectors`
+/// linker symbol is read-only.
 ///
 /// AN8-E (R-HAL-L9): The 2048-byte alignment of `__exception_vectors`
 /// is enforced at the assembly level by the `.balign 2048` directive in
@@ -160,12 +188,8 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
 /// `assert_eq!(align_of_val(...) % 2048, 0)` would require accessing
 /// the linker-provided symbol's value at compile time, which Rust does
 /// not currently support; the check is therefore deferred to runtime
-/// via `write_vbar_el1` (ARM ARM D17.2.135 mandates that VBAR_EL1
-/// writes with mis-aligned values are UNDEFINED, so a misalignment
-/// would manifest as an immediate Synchronous Exception on the next
-/// ERET — a hard halt that's easier to diagnose than a silent
-/// boot-loop).
-fn set_vbar() {
+/// via `write_vbar_el1`.
+pub fn install_exception_vectors() {
     #[cfg(target_arch = "aarch64")]
     {
         extern "C" {
@@ -179,8 +203,11 @@ fn set_vbar() {
         // address produces an UNDEFINED instruction on the next exception
         // entry. We catch this here so the kernel halts in a debuggable
         // state rather than at exception time.
-        debug_assert_eq!(vbar % 2048, 0,
-            "exception vector table must be 2048-byte aligned (ARM ARM D1.10.2)");
+        debug_assert_eq!(
+            vbar % 2048,
+            0,
+            "exception vector table must be 2048-byte aligned (ARM ARM D1.10.2)"
+        );
         crate::registers::write_vbar_el1(vbar);
     }
     crate::barriers::dsb_sy();
@@ -207,5 +234,64 @@ fn idle_loop() -> ! {
         // events arrived for an unexpectedly long stretch.  The
         // hook lives in this loop (not in `wfe_bounded`) so the
         // bounded primitive remains a thin shim.
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // =====================================================================
+    // WS-SM SM1.C.2 — install_exception_vectors() helper tests
+    // =====================================================================
+
+    #[test]
+    fn sm1c2_install_exception_vectors_callable_on_host() {
+        // SM1.C.2: the helper resolves and runs cleanly on host.  The
+        // `__exception_vectors` linker symbol is not available in
+        // `cargo test` (no `vectors.S` linked), so the aarch64 branch
+        // is cfg-gated out and only the barrier emissions execute.
+        // This test catches a regression that introduces a host-side
+        // panic in the barrier helpers.
+        install_exception_vectors();
+    }
+
+    #[test]
+    fn sm1c2_install_exception_vectors_signature_is_no_arg_fn() {
+        // SM1.C.2: the helper takes no arguments — VBAR_EL1 is banked
+        // per-core, and the `__exception_vectors` table is a single
+        // shared symbol.  A future refactor that adds a parameter
+        // would break the call sites in `rust_boot_main` and
+        // `rust_secondary_main` simultaneously; pinning the signature
+        // here surfaces such a regression at compile time.
+        let _: fn() = install_exception_vectors;
+    }
+
+    #[test]
+    fn sm1c2_install_exception_vectors_idempotent_on_host() {
+        // SM1.C.2: repeated invocation must be safe — the secondary
+        // bring-up path can in principle re-call this after a TLB
+        // shootdown (SM7) or post-resume.  Host-side `write_vbar_el1`
+        // is a no-op so repeated calls just emit redundant barriers,
+        // which is harmless.
+        for _ in 0..4 {
+            install_exception_vectors();
+        }
+    }
+
+    #[test]
+    fn sm1c2_primary_boot_path_uses_install_exception_vectors() {
+        // SM1.C.2 / regression: a future refactor of `rust_boot_main`
+        // that reintroduces an inline VBAR write (bypassing the shared
+        // helper) would create a primary/secondary asymmetry.  We pin
+        // the helper's existence at the type-system level so a removal
+        // breaks the build; the textual presence of the call inside
+        // `rust_boot_main` is checked by the SM1.C.2 build-script
+        // scanner (see `rust/sele4n-hal/build.rs`).
+        let _: fn() = install_exception_vectors;
     }
 }

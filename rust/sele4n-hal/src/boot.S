@@ -173,12 +173,51 @@ _start:
 // =========================================================================
 secondary_entry:
     // Step 1: mask all maskable interrupts.  PSCI returns with DAIF
-    // unset on some firmwares; do not assume.
+    // unset on some firmwares; do not assume.  Also mandatory before
+    // the Step 1.5 invalid-context_id halt so the halt loop cannot be
+    // interrupted into a partially-initialised state.
     msr     daifset, #0xf
+
+    // =====================================================================
+    // Step 1.5: WS-SM SM1.C audit-pass-2 defense-in-depth — validate the
+    // PSCI context_id BEFORE the per-core stack and TPIDR_EL1 setup.
+    //
+    // The Step 2 SP arithmetic uses `context_id` directly:
+    //   SP = __smp_secondary_stack_top - (context_id - 1) * 64 KiB
+    // For `context_id == 0` the offset wraps around (effectively
+    // +64 KiB above stack_top, into adjacent kernel memory); for
+    // `context_id >= 4` (= MAX_SECONDARY_CORES + 1 on RPi5) the SP
+    // falls inside or before the boot core's `.stack` region, so a
+    // subsequent push from `rust_secondary_main`'s prologue would
+    // corrupt the boot core's stack.
+    //
+    // The Rust-side `validate_secondary_context_id` (smp.rs) catches
+    // the same conditions, but only AFTER the prologue runs — too late
+    // to prevent the corruption.  This asm-level gate halts the
+    // offending core in `.L_secondary_invalid` before any SP /
+    // TPIDR_EL1 write that uses `context_id`.
+    //
+    // The bound is read from the Rust `MAX_CORE_COUNT_SYM` `.rodata`
+    // symbol (not a literal) so a future PR bumping
+    // `MAX_SECONDARY_CORES` automatically updates the asm-side bound
+    // — same single-source-of-truth pattern as
+    // `PER_CPU_DATA_SLOT_SIZE_SYM` (SM1.B) and `MPIDR_CORE_ID_MASK_SYM`
+    // (AN8-B).
+    //
+    // x3 = MAX_CORE_COUNT_SYM value (= MAX_SECONDARY_CORES + 1 = 4)
+    // =====================================================================
+    cbz     x0, .L_secondary_invalid  // reject context_id == 0 (boot slot)
+    adrp    x3, MAX_CORE_COUNT_SYM
+    ldr     x3, [x3, :lo12:MAX_CORE_COUNT_SYM]
+    cmp     x0, x3
+    b.hs    .L_secondary_invalid      // reject context_id >= total core count
 
     // Step 2: per-core stack.  Use `__smp_secondary_stack_top` defined
     // by the linker script + offset by (context_id - 1) * 64 KiB.
     // Since context_id is in x0, offset = (x0 - 1) * 0x10000.
+    // Step 1.5 has rejected `context_id == 0` and `context_id >= 4`,
+    // so `context_id` is in `[1, 3]` here and the SP arithmetic is
+    // structurally safe.
     sub     x1, x0, #1               // x1 = secondary index (0..=2)
     lsl     x1, x1, #16              // x1 = index * 0x10000 (64 KiB)
     adrp    x2, __smp_secondary_stack_top
@@ -234,3 +273,25 @@ secondary_entry:
     // rust_secondary_main is `-> !` so this should be unreachable.
     // If we ever fall through, halt the core in a low-power loop.
     b       .L_secondary_spin
+
+// =========================================================================
+// WS-SM SM1.C audit-pass-2: invalid PSCI context_id halt.
+//
+// Reached only when the PSCI firmware passes an out-of-range context_id
+// (== 0 or >= MAX_CORE_COUNT_SYM).  DAIF was masked at the top of
+// `secondary_entry`, so this loop runs uninterruptible.  We never wrote
+// SP or TPIDR_EL1 (the validation runs BEFORE those steps), so no
+// per-core state has been corrupted on this core.  The primary core and
+// any already-initialised secondaries continue running unaffected.
+//
+// This is the asm-layer companion to Rust-side
+// `validate_secondary_context_id`; both layers reject the same
+// conditions, but the asm layer catches them BEFORE the SP / TPIDR_EL1
+// arithmetic uses `context_id`, preventing boot-core stack corruption
+// (which would otherwise happen for context_id == 4 — the resulting SP
+// would land at __smp_secondary_stacks_bottom, adjacent to the boot
+// core's stack).
+// =========================================================================
+.L_secondary_invalid:
+    wfe
+    b       .L_secondary_invalid
