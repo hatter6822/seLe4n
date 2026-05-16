@@ -205,10 +205,12 @@ pub extern "C" fn ffi_tlbi_by_vaddr(asid: u16, vaddr: u64) {
 ///
 /// This is the testable inner form of the FFI dispatcher's first
 /// stage.  Calling `ffi_tlbi_for_sharing(2, _, _, _)` would panic
-/// (via the `expect` in the FFI wrapper); calling
-/// `decode_sharing_domain_tag(2)` returns `None` cleanly so tests
-/// can exercise the rejection path without crashing the test
-/// runner.
+/// (the FFI wrapper does `match decode_sharing_domain_tag(tag) {
+/// Some => use, None => panic! }`); calling
+/// `decode_sharing_domain_tag(2)` directly returns `None` cleanly
+/// so tests can exercise the rejection path without crashing the
+/// test runner (panic-across-`extern "C"` is `non-unwinding panic.
+/// aborting.` under Rust edition 2021).
 #[inline]
 const fn decode_sharing_domain_tag(tag: u32) -> Option<crate::tlb::SharingDomain> {
     match tag {
