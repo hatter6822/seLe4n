@@ -179,7 +179,9 @@ pub mod svc_dispatch;
 // system_off, system_reset); see psci.rs module docstring for the
 // function-id map.
 pub mod psci;
-// AN9-J (DEF-R-HAL-L20): SMP secondary-core scaffolding (off by default)
+// AN9-J (DEF-R-HAL-L20): SMP secondary-core scaffolding (off by default
+// at module load; opted into via WS-SM SM1.D cmdline parsing at
+// boot.rs Phase 5).
 pub mod smp;
 // WS-SM SM1.B (closes SMP-M4): per-CPU data block + TPIDR_EL1
 // accessors.  The `PerCpuData` struct, the global `PER_CPU_DATA`
@@ -188,3 +190,13 @@ pub mod smp;
 // names against this module's `#[no_mangle] static` items.  See the
 // module docstring in `per_cpu.rs` for the boot-ordering contract.
 pub mod per_cpu;
+// WS-SM SM1.D: DTB `/chosen/bootargs` parser + Phase 5 helpers.
+// Provides `CmdlineConfig` (typed cmdline options), `parse_cmdline`
+// (string → config), the self-contained DTB walker
+// `extract_bootargs_into`, and the Phase-5 entry helpers
+// `parse_cmdline_from_dtb` / `apply_cmdline_and_start_smp`.  Default
+// at v1.0.0 is `smp_enabled = true` (per maintainer decision #7);
+// operators opt out via `smp_enabled=false` on the kernel command
+// line.  See the module docstring in `cmdline.rs` for the option
+// inventory and the parser's robustness contract.
+pub mod cmdline;

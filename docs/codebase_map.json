@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-codebase-secondary-core-PgqGR",
-      "commit_sha": "5a4f32c9fc860e53bf01e8d94b755882cca09a8c",
-      "tree_sha": "673cbb3d24ea756503f4cefc2d3b096875056ebe",
-      "committed_at_utc": "2026-05-16T02:26:17+00:00"
+      "branch": "claude/review-dtb-cmdline-phase-EkoTA",
+      "commit_sha": "8e9208380a2a7f4a66c80dd703d75e3bdabce4cc",
+      "tree_sha": "6d1116f1ae589a32708c420487a971a65f4d866e",
+      "committed_at_utc": "2026-05-15T23:52:57-04:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 6592
   },
   "readme_sync": {
-    "version": "0.31.5",
+    "version": "0.31.6",
     "lean_toolchain": "v4.28.0",
     "production_files": 177,
     "production_loc": 115563,

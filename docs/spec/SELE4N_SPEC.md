@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.31.5` (`lakefile.toml`) |
+| **Package version** | `0.31.6` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 115,563 across 177 Lean files |
 | **Test LoC** | 21,731 across 30 Lean test suites |
@@ -578,6 +578,19 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    scheduler entry.  Three `build.rs` regression scanners pin the
    primary/secondary call-site symmetry and the SM1.C.5 init-helper
    call chain at build time.
+
+   WS-SM Phase SM1.D (v0.31.6) wires `rust_boot_main` Phase 5 to
+   parse the DTB-supplied `/chosen/bootargs` cmdline via the new
+   `cmdline.rs` module — a self-contained FDT walker (fuel-bounded,
+   depth-bounded) extracts the bootargs, the `parse_cmdline`
+   token parser produces a typed `CmdlineConfig`, and
+   `apply_cmdline_and_start_smp` writes `smp::SMP_ENABLED` then
+   dispatches `bring_up_secondaries_with_limit` (SM1.D.6 limit-aware
+   variant).  Default at v0.31.6+ is `smp_enabled=true
+   smp_max_cores=4` per maintainer decision #7 — operators opt out
+   via the kernel command line.  A new `scan_boot_rs_phase5_uses_cmdline`
+   build-script scanner pins the Phase-5 call sites textually so a
+   refactor cannot silently disable the cmdline parse.
 
 3. **Sequential memory model**: Under single-core operation, all memory
    operations are sequentially ordered. DMB/DSB/ISB barriers are emitted in the

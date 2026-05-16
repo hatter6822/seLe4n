@@ -1,3 +1,235 @@
+## v0.31.6 — WS-SM Phase SM1.D landing (DTB cmdline + Phase 5)
+
+Patch release.  Lands the WS-SM SM1.D sub-phase, wiring
+`rust_boot_main` Phase 5 to parse the DTB-supplied
+`/chosen/bootargs` cmdline string and bring up secondary cores
+based on the parsed configuration.  Closes the kernel-cmdline
+contract (production deployments can now opt out of SMP via
+`smp_enabled=false` on the kernel command line, and QEMU
+regression tests can boot a configurable subset of cores via
+`smp_max_cores=N`).
+
+Branch `claude/review-dtb-cmdline-phase-EkoTA`.  Fourth sub-phase
+of WS-SM SM1 (Rust HAL) after SM1.A (PSCI completion, v0.31.3),
+SM1.B (Per-CPU data + TPIDR_EL1, v0.31.4), and SM1.C (Secondary-
+core full init, v0.31.5).  Six sub-tasks landed in one cut.
+Pre-SM1.D `rust_boot_main` finished the per-core hardware init
+sequence then handed off to the Lean kernel without ever
+inspecting the DTB cmdline — the `smp::SMP_ENABLED` atomic stayed
+at its module-load default (`false`), and secondaries spun in
+`boot.S::.L_secondary_spin` forever.  Post-SM1.D the kernel
+parses the cmdline, defaults to SMP-on (`CmdlineConfig::default()`
+has `smp_enabled = true` per maintainer decision #7), and brings
+up all 4 RPi5 cores by default.
+
+See [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+§5.4 for the full plan; [`CLAUDE.md`](CLAUDE.md) §"Active workstream
+context" carries the live tracking.
+
+### Added — Command-line parser module (SM1.D.1)
+
+`rust/sele4n-hal/src/cmdline.rs` (NEW FILE, ~1400 LoC including
+tests):
+
+- **SM1.D.1**: `CmdlineConfig` struct (`smp_enabled: bool`,
+  `smp_max_cores: usize`) with
+  `#[derive(Debug, Clone, Copy, PartialEq, Eq)]` for value-typed
+  passing through the boot path.  `Default::default()` returns
+  `smp_enabled = true` and `smp_max_cores =
+  MAX_SECONDARY_CORES + 1 = 4` per maintainer decision #7.
+- **SM1.D.1**: `parse_cmdline(s: &str) -> CmdlineConfig` — robust
+  token parser.  Splits on ASCII whitespace, recognises
+  `key=value` (typed; quoted with `"..."` / `'...'`) and
+  flag-only tokens (none currently recognised; reserved for
+  future options).  Malformed values fall back to the default
+  for the affected option — the parser never panics on user
+  input.  Unknown keys are silently ignored (forward-compat).
+  `smp_enabled` accepts the Linux-conventional truthy/falsy
+  aliases (`true`/`false`, `yes`/`no`, `on`/`off`, `1`/`0`);
+  `smp_max_cores` parses via `usize::from_str` and clamps to
+  `MAX_SECONDARY_CORES + 1`.
+- **SM1.D.1**: full RFC-grade DTB walker — `parse_fdt_header`,
+  `validate_fdt_header`, `find_bootargs_in_dtb`,
+  `extract_bootargs_into`, `extract_bootargs_from_blob_into`.
+  Walks the `/chosen` node by depth-tracking the DFS traversal
+  of the FDT structure block (Devicetree Specification v0.4
+  §5.4); reads the `bootargs` property + trims trailing null;
+  copies into a caller-supplied buffer; validates UTF-8 with
+  `unwrap_or_default` fallback to `""`.  Fuel-bounded by
+  `FDT_WALK_FUEL = 4096`; depth-bounded by `FDT_MAX_DEPTH = 32`.
+  Self-contained — does **not** route through the Lean-side
+  `Platform.DeviceTree` parser to avoid the circular dependency
+  where the kernel needs the cmdline parsed *before* it is
+  initialised.  The plan's original sketch returned `&'static
+  str` from `extract_bootargs`; the implemented form uses a
+  caller-supplied buffer so the lifetime is sound (the DTB
+  memory is not guaranteed `'static` once the kernel reclaims
+  its early-boot allocations).
+- **SM1.D.1 + SM1.D.2**: `parse_cmdline_from_dtb(dtb_ptr: u64) ->
+  CmdlineConfig` — one-shot helper combining
+  `extract_bootargs_into` (with a `[u8; MAX_BOOTARGS_LEN = 1024]`
+  stack buffer) and `parse_cmdline`.  This is the entry point
+  `rust_boot_main` Phase 5 calls.
+- **SM1.D.2**: `apply_cmdline_and_start_smp(&CmdlineConfig) ->
+  u32` — stores `cfg.smp_enabled` into `smp::SMP_ENABLED` atomic
+  and invokes `smp::bring_up_secondaries_with_limit` when
+  enabled; returns the count of secondaries actually brought up.
+
+### Added — Phase 5 in rust_boot_main (SM1.D.2)
+
+`rust/sele4n-hal/src/boot.rs`:
+
+- **SM1.D.2**: Phase 5 wired into `rust_boot_main` after the
+  TPIDR_EL1 / IRQ-enable phase (now Phase 4) and before the
+  handoff summary / Lean kernel entry (now Phase 6).
+- The phase emits diagnostic kprintln lines (`"[boot] cmdline
+  parsed: smp_enabled=…, smp_max_cores=…"`, `"[boot] Phase 5:
+  bringing up secondary cores (max=…)…"`, `"[boot] Phase 5: N
+  secondary cores online"`) so a QEMU `-smp 4` boot trace has a
+  deterministic pattern downstream tests (SM1.H) can grep.
+- The Phase 6 handoff banner gains an `SMP    :
+  enabled|disabled (max cores: …)` row matching the existing
+  per-subsystem rows for UART / MMU / VBAR / GIC / Timer.
+- `KERNEL_VERSION` bumped from `"0.31.5"` → `"0.31.6"`.
+
+### Added — Default SMP-on (SM1.D.3)
+
+- **SM1.D.3**: production default is `smp_enabled = true`,
+  encoded in `CmdlineConfig::default()`.  Per maintainer
+  decision #7, v1.0.0 ships SMP-on by default — operators that
+  need single-core boot opt out via the kernel command line.
+- The `smp::SMP_ENABLED` atomic still defaults to `false` at
+  module load (defense-in-depth: a kernel that halts before
+  reaching Phase 5 does not accidentally spawn secondaries).
+  Phase 5 explicitly stores the parsed value before invoking
+  the bring-up loop.
+
+### Documentation — Lock initialisation order (SM1.D.4)
+
+- **SM1.D.4**: per-object locks (SM0.I) are inside their owning
+  objects with `.unheld` defaults — locks are usable from the
+  moment the static array is loaded.  No init-order hazard
+  exists for the SMP coordination path; documented in the Phase
+  5 source comment.  No global BKL exists under per-object fine
+  locks (per WS-SM SM0 decision), so the historical "BKL must
+  initialise before secondaries observe kernel state" concern
+  does not apply.
+
+### Refactored — Per-CPU check moved to Phase 1 (SM1.D.5)
+
+`rust/sele4n-hal/src/boot.rs`:
+
+- **SM1.D.5**: `per_cpu::check_per_cpu_invariants()` moved from
+  Phase 4 (just before TPIDR_EL1 write) to Phase 1 (just after
+  UART init).  The check is platform-independent (verifies
+  static const-init), so any phase works for correctness;
+  running it as early as possible surfaces a regressed
+  `PER_CPU_DATA` initialiser before the rest of boot can
+  deepen the failure mode.
+- The Phase 1 banner now prints `"[boot] per-cpu data verified
+  (N cores)"` (with N = `PER_CPU_DATA.len() = 4` on RPi5).
+
+### Added — smp_max_cores limit-aware bring-up (SM1.D.6)
+
+`rust/sele4n-hal/src/smp.rs`:
+
+- **SM1.D.6**: `bring_up_secondaries_with_limit(max_cores:
+  usize) -> u32` — limit-aware bring-up entry point that takes
+  a **total core count** (boot core + secondaries) and slices
+  the MPIDR table accordingly.
+  - `max_cores = 0` → no cores brought up (returns 0).
+  - `max_cores = 1` → boot core only; no secondaries (returns 0).
+  - `max_cores = N (2..=MAX_SECONDARY_CORES + 1)` → bring up
+    `N - 1` secondaries from the head of the MPIDR table.
+  - `max_cores > MAX_SECONDARY_CORES + 1` → saturates to the
+    platform bound (defensive against caller-side parsing
+    errors).
+- Useful for QEMU `-smp 2 -append "smp_max_cores=2"` regression
+  testing without touching `MAX_SECONDARY_CORES`.
+
+### Added — Test coverage
+
+- `rust/sele4n-hal/src/cmdline.rs::tests` (NEW, 54 unit tests):
+  - **Parser branches** (`parse_empty_*`, `parse_whitespace_*`,
+    `parse_smp_enabled_*`, `parse_smp_max_cores_*`,
+    `parse_multiple_*`, `parse_unknown_*`, `parse_mixed_*`,
+    `parse_double_quoted_*`, `parse_single_quoted_*`,
+    `parse_partial_quote_*`): every parser branch including
+    truthy/falsy aliases, case-sensitivity, quoted values,
+    forward-compat ignored keys.
+  - **Internal helpers** (`trim_matching_quotes_*`,
+    `parse_bool_*`, `read_be_u32_*`, `parse_fdt_header_*`,
+    `validate_fdt_header_*`): unit-test the trim, bool-parse,
+    big-endian-read, and header-validate helpers.
+  - **DTB end-to-end** (`find_bootargs_in_synthesised_dtb`,
+    `extract_bootargs_from_synthesised_dtb_into_buffer`,
+    `parse_cmdline_via_synthesised_dtb_buffer`,
+    `dtb_without_chosen_yields_empty`,
+    `dtb_with_chosen_but_no_bootargs_yields_empty`,
+    `dtb_with_malformed_header_yields_empty`,
+    `extract_bootargs_null_pointer_yields_empty`,
+    `parse_cmdline_from_dtb_null_pointer_yields_defaults`,
+    `extract_bootargs_small_buffer_truncates_cleanly`,
+    `extract_bootargs_zero_buffer_yields_empty`,
+    `parse_cmdline_with_max_bootargs_buffer_succeeds`): exercise
+    the walker with synthesised DTBs covering valid /
+    missing-chosen / missing-bootargs / malformed-header paths
+    and buffer-size edge cases.
+  - **Default invariants** (`default_smp_enabled_is_true`,
+    `default_smp_max_cores_matches_platform`,
+    `default_smp_max_cores_is_four_on_rpi5`, `config_is_copy`):
+    pin the SM1.D.3 / SM1.D.6 defaults at runtime.
+- `rust/sele4n-hal/src/smp.rs::tests` (9 new tests under
+  `sm1d6_*`): `with_limit_zero_brings_up_no_secondaries`,
+  `with_limit_one_brings_up_no_secondaries`,
+  `with_limit_two_brings_up_one_secondary`,
+  `with_limit_three_brings_up_two_secondaries`,
+  `with_limit_full_brings_up_all_secondaries`,
+  `with_limit_oversize_saturates`,
+  `with_limit_disabled_returns_zero`,
+  `with_limit_function_resolves_via_crate_smp`,
+  `with_limit_callable_on_host_via_global_state`.
+- `rust/sele4n-hal/src/boot.rs::tests` (5 new tests under
+  `sm1d_*`): `kernel_version_string_matches_lakefile`,
+  `parse_cmdline_from_dtb_resolves_via_crate_cmdline`,
+  `apply_cmdline_resolves_via_crate_cmdline`,
+  `phase5_defaults_smp_enabled_to_true`,
+  `phase5_defaults_smp_max_cores_to_platform_max`.
+
+### Added — Build-script regression scanner
+
+`rust/sele4n-hal/build.rs`:
+
+- New `scan_boot_rs_phase5_uses_cmdline` scanner pins the
+  textual presence of `cmdline::parse_cmdline_from_dtb(` and
+  `cmdline::apply_cmdline_and_start_smp(` inside `boot.rs`.  A
+  refactor that drops either call (silently disabling Phase 5)
+  fails the build with an actionable diagnostic before any
+  binary is produced.
+
+### Test coverage summary
+
+- 395 HAL tests, zero `#[ignore]`'d (up from 313 at SM1.C close).
+  Per-file math: +54 new in cmdline.rs (NEW FILE), +9 new in
+  smp.rs (sm1d6_*), +5 new in boot.rs (sm1d_*) — total +68 new
+  HAL tests.
+- Zero clippy warnings workspace-wide.
+- Full Tier 0+1+2 smoke test passes (Lean build, 395/395 HAL
+  tests, 94/94 ABI conformance tests).
+- Version sync check (`scripts/check_version_sync.sh`) PASS:
+  every version-bearing file at v0.31.6.
+
+### Items deferred past v1.0.0 with correctness impact
+
+NONE.
+
+### Follow-on
+
+SM1.E (IS-variant TLBI), SM1.F (SGI primitive), SM1.G (Per-core
+UART), SM1.H (QEMU SMP integration test) — see
+[`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+§§5.5..5.8.
+
 ## v0.31.5 — WS-SM Phase SM1.C landing (Secondary-core full init)
 
 Patch release.  Lands the WS-SM SM1.C sub-phase, rewriting the

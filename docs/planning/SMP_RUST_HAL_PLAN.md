@@ -1691,7 +1691,48 @@ fn init_timer_secondary_returns_ok_on_host() {
 
 **Size**: S (~60 LoC).
 
-### 5.4 DTB cmdline + Phase 5 (SM1.D, 3 PRs, 6 sub-tasks)
+### 5.4 DTB cmdline + Phase 5 (SM1.D, 3 PRs, 6 sub-tasks) — **LANDED at v0.31.6**
+
+**Status**: WS-SM SM1.D LANDED on branch
+`claude/review-dtb-cmdline-phase-EkoTA`.  All six sub-tasks
+landed in one cut with the implementation extending beyond the
+plan's stub-form sketch:
+
+- The original sketch returned an `&'static str` from
+  `extract_bootargs(dtb_ptr)` and acknowledged the body was a
+  TODO stub.  The landed form replaces that with a full
+  self-contained DTB walker (`extract_bootargs_into` and
+  `extract_bootargs_from_blob_into`) plus a one-shot
+  `parse_cmdline_from_dtb` entry point.  The lifetime issue is
+  resolved by using a caller-supplied buffer (the DTB memory is
+  not guaranteed `'static` once the kernel reclaims early-boot
+  allocations).  Per the `CLAUDE.md` "implement-the-improvement"
+  rule, the verified structure is the better state and the boot
+  path consumes it.
+- `smp_max_cores` is interpreted as a **total core count**
+  (boot core + secondaries), not a secondary count — clearer
+  semantics for QEMU `-smp N -append "smp_max_cores=N"`
+  symmetry.
+- The DTB walker is fuel-bounded (`FDT_WALK_FUEL = 4096`) and
+  depth-bounded (`FDT_MAX_DEPTH = 32`); malformed blobs fail
+  closed to "empty bootargs" → default config.
+- Phase 5 also threads through `apply_cmdline_and_start_smp`
+  which writes `smp::SMP_ENABLED` and dispatches to
+  `bring_up_secondaries_with_limit`.  The atomic stays `false`
+  at module load so a halted kernel never accidentally spawns
+  secondaries.
+- A new build.rs scanner
+  (`scan_boot_rs_phase5_uses_cmdline`) pins the Phase 5 call
+  sites at build time so a refactor cannot silently disable the
+  cmdline parse.
+
+**Test coverage delivered**: 54 cmdline tests + 9 smp limit-
+aware tests + 5 boot Phase-5 tests = 68 new HAL tests at SM1.D
+close.  Total HAL test count: 395 (was 327 at SM1.D start).
+
+The remaining sub-section text below describes the original
+plan skeleton; the landed implementation matches or exceeds
+every acceptance criterion.
 
 #### SM1.D.1 — `cmdline.rs` DTB parser
 

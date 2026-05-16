@@ -94,10 +94,11 @@ v0.27.6 audit addressed (5 HIGH, 27 MEDIUM, 28 LOW).
 **Next major milestone**: WS-SM — multi-core SMP completion through v1.0.0.
 Phase SM0 (foundations & honesty patches) closed at v0.31.3 with the
 type-level scaffolding (CoreId, LockKind, LockId, SgiKind, SharingDomain,
-BklState).  Phase SM1 (Rust HAL) is in flight with three sub-phases
+BklState).  Phase SM1 (Rust HAL) is in flight with four sub-phases
 landed: SM1.A (PSCI completion) at v0.31.3, SM1.B (per-CPU data +
-TPIDR_EL1, closes SMP-M4) at v0.31.4, and SM1.C (secondary-core full
-init, closes SMP-C2) at v0.31.5.  SM1.C rewrites `rust_secondary_main`
+TPIDR_EL1, closes SMP-M4) at v0.31.4, SM1.C (secondary-core full
+init, closes SMP-C2) at v0.31.5, and SM1.D (DTB cmdline + Phase 5)
+at v0.31.6.  SM1.C rewrites `rust_secondary_main`
 into the full per-core boot sequence — MMU enable
 (`init_mmu_secondary` via shared `init_mmu_per_core`), exception
 vectors (`install_exception_vectors` shared with primary), GIC CPU
@@ -105,10 +106,15 @@ interface (`init_cpu_interface_secondary`), per-core timer
 (`init_timer_secondary`), IRQ unmask, then jump into the Lean kernel
 via `secondaryKernelMain` (placeholder at SM1.C; SM5 replaces with
 per-core scheduler entry).
-SM1.D..H plus SM2..SM9 wire those types into the kernel-command-line
-SMP gate (DTB cmdline parser), TLB-shootdown IS variants, SGI primitive,
-per-core UART, QEMU `-smp 4` integration, verified ticket / RW lock
-primitives, and cross-core IPC.  Full plan in
+SM1.D adds Phase 5 to `rust_boot_main`: a full self-contained DTB
+walker parses `/chosen/bootargs`, produces a typed `CmdlineConfig`,
+and dispatches to `bring_up_secondaries_with_limit` to spawn the
+configured set of secondaries.  Default at v0.31.6+ is
+`smp_enabled=true smp_max_cores=4` per maintainer decision #7 —
+operators opt out via the kernel command line.
+SM1.E..H plus SM2..SM9 wire those types into TLB-shootdown IS
+variants, SGI primitive, per-core UART, QEMU `-smp 4` integration,
+verified ticket / RW lock primitives, and cross-core IPC.  Full plan in
 [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](../planning/SMP_MULTICORE_COMPLETION_PLAN.md).
 Companion post-1.0 deferrals: FrozenOps production promotion.
 

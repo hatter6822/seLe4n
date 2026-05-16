@@ -3,13 +3,18 @@
 //!
 //! Entry flow: ATF → U-Boot → `_start` (boot.S) → `rust_boot_main` (this file).
 //!
-//! Phase 1: UART initialization → boot banner
+//! Phase 1: UART initialization → boot banner → per-CPU data verification
+//!          (WS-SM SM1.D.5: `check_per_cpu_invariants` runs here, before
+//!           TPIDR_EL1 is set and before any code consumes per-core state)
 //! Phase 2: MMU initialization → VBAR_EL1 setup
 //! Phase 3: GIC-400 + ARM Generic Timer initialization (AG5)
-//! Phase 4: Handoff to Lean kernel (AG7 — FFI bridge)
+//! Phase 4: TPIDR_EL1 setup → IRQ enable
+//! Phase 5: WS-SM SM1.D — DTB cmdline parse → secondary-core bring-up
+//!          (when `smp_enabled=true`, which is the default at v0.31.6)
+//! Phase 6: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.31.5";
+const KERNEL_VERSION: &str = "0.31.6";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
@@ -26,7 +31,22 @@ const KERNEL_VERSION: &str = "0.31.5";
 #[no_mangle]
 pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
     // -----------------------------------------------------------------------
-    // Phase 1: UART initialization and boot banner
+    // Phase 1: UART initialization, boot banner, per-CPU data verification
+    //
+    // WS-SM SM1.D.5: `check_per_cpu_invariants()` runs in this phase
+    // (immediately after UART is online so the diagnostic kprintln can
+    // be written).  Verifying the `PER_CPU_DATA` const-initialiser
+    // before any subsequent phase prevents a regressed boot.S
+    // `secondary_entry` macro from putting a secondary into a slot
+    // whose `core_id` field disagrees with its array index — which
+    // would silently break per-CPU lookups for that core.  The check
+    // runs in O(coreCount) so the cost is negligible.
+    //
+    // Pre-SM1.D the check ran in Phase 4 (just before TPIDR_EL1 write);
+    // moving it earlier:
+    //   1. Surfaces a regressed initialiser earlier (Phase 1 vs Phase 4).
+    //   2. Lets Phase 5's `apply_cmdline_and_start_smp` rely on the
+    //      invariant having been verified at boot start.
     // -----------------------------------------------------------------------
     crate::uart::init_boot_uart();
     crate::kprintln!();
@@ -37,6 +57,15 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
     // Report current exception level
     let el = crate::registers::read_current_el();
     crate::kprintln!("[boot] Current exception level: EL{}", el);
+
+    // SM1.D.5: per-CPU data verification before any subsequent phase.
+    // The check is platform-independent (host stubs run identically),
+    // so it executes on every build profile.
+    crate::per_cpu::check_per_cpu_invariants();
+    crate::kprintln!(
+        "[boot] per-cpu data verified ({} cores)",
+        crate::per_cpu::PER_CPU_DATA.len()
+    );
 
     // -----------------------------------------------------------------------
     // Phase 2: MMU initialization
@@ -75,6 +104,8 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
     crate::kprintln!("[boot] Timer initialized (54 MHz counter, 1ms ticks)");
 
     // -----------------------------------------------------------------------
+    // Phase 4: TPIDR_EL1 setup → IRQ enable
+    //
     // WS-SM SM0.N / SM1.B (closes SMP-M4): set TPIDR_EL1 on the boot core.
     //
     // Secondaries set their own TPIDR_EL1 in `boot.S::secondary_entry`
@@ -89,12 +120,9 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
     // dispatch through `mrs xN, tpidr_el1` to find its own per-core
     // state without a context_id parameter.
     //
-    // WS-SM SM1.B: before writing TPIDR_EL1, the runtime gate
-    // `check_per_cpu_invariants()` verifies every slot's `core_id`
-    // matches its array index — catching a regressed const-init
-    // table at boot rather than at first SMP wakeup.  The check is
-    // platform-independent (compiles on host stubs too) and runs in
-    // O(coreCount) = O(4), so it's cheap to leave in production.
+    // SM1.D.5: the `check_per_cpu_invariants()` gate ran in Phase 1
+    // (after UART, before any other init), so the per-CPU table has
+    // already been validated by the time we reach this write.
     //
     // Audit note: an earlier draft of this hook ran *after*
     // `enable_irq()`.  Today's IRQ handlers never read TPIDR_EL1, so
@@ -103,7 +131,6 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
     // tick).  Moving the write here makes the discipline robust by
     // construction.
     // -----------------------------------------------------------------------
-    crate::per_cpu::check_per_cpu_invariants();
     #[cfg(target_arch = "aarch64")]
     {
         let boot_per_cpu = crate::per_cpu::per_cpu_slot_addr(0) as u64;
@@ -123,7 +150,59 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
     crate::kprintln!("[boot] IRQ delivery enabled");
 
     // -----------------------------------------------------------------------
-    // Phase 4: Handoff summary
+    // Phase 5: WS-SM SM1.D — DTB cmdline parse + secondary-core bring-up
+    //
+    // SM1.D.1: parse the kernel command-line from the DTB's
+    // `/chosen/bootargs` property (or use defaults if the DTB is
+    // absent / malformed / missing the property).  The default config
+    // (`CmdlineConfig::default()`) at v1.0.0 has `smp_enabled = true`
+    // and `smp_max_cores = 4` per maintainer decision #7.
+    //
+    // SM1.D.2: when `smp_enabled` is true, issue PSCI CPU_ON for each
+    // secondary up to `smp_max_cores`, then signal them via SEV.
+    // SM1.D.6: the `smp_max_cores` cap lets operators do partial
+    // bring-up (e.g., QEMU `-smp 2 -append "smp_max_cores=2"`).
+    //
+    // SM1.D.4: all locks needed for SMP coordination live inside
+    // their owning objects (per-object fine locks; SM0.I).  Object
+    // initialisers default-initialise locks to `.unheld`, so locks
+    // are usable from the moment the static is loaded — no separate
+    // "lock-init phase" is needed.  This is unlike a global-BKL
+    // design where the BKL static would need explicit initialisation
+    // before the first secondary touches kernel state.
+    //
+    // Pre-SM1.D the kernel reached Phase 5's predecessor "Handoff
+    // summary" without ever issuing CPU_ON, so secondaries stayed
+    // parked in the boot.S `.L_secondary_spin` loop forever and only
+    // the boot core ran kernel code.  Post-SM1.D (with the default
+    // `smp_enabled=true`), all 4 RPi5 cores are online by the time
+    // the Lean kernel main runs.
+    // -----------------------------------------------------------------------
+    let cmdline_cfg = crate::cmdline::parse_cmdline_from_dtb(_dtb_ptr);
+    crate::kprintln!(
+        "[boot] cmdline parsed: smp_enabled={}, smp_max_cores={}",
+        cmdline_cfg.smp_enabled,
+        cmdline_cfg.smp_max_cores
+    );
+    if cmdline_cfg.smp_enabled {
+        crate::kprintln!(
+            "[boot] Phase 5: bringing up secondary cores (max={})...",
+            cmdline_cfg.smp_max_cores
+        );
+        let online = crate::cmdline::apply_cmdline_and_start_smp(&cmdline_cfg);
+        crate::kprintln!("[boot] Phase 5: {} secondary cores online", online);
+    } else {
+        // SM1.D.2: explicit opt-out path.  We still call
+        // `apply_cmdline_and_start_smp` so the global SMP_ENABLED
+        // atomic is set to `false` (and stays false for any kernel
+        // path that reads it later).  The bring-up loop is skipped
+        // internally based on `cfg.smp_enabled`.
+        crate::kprintln!("[boot] Phase 5: SMP disabled by cmdline (single-core boot)");
+        let _ = crate::cmdline::apply_cmdline_and_start_smp(&cmdline_cfg);
+    }
+
+    // -----------------------------------------------------------------------
+    // Phase 6: Handoff summary + Lean kernel entry
     // -----------------------------------------------------------------------
     crate::kprintln!();
     crate::kprintln!("[boot] Hardware initialization complete:");
@@ -132,6 +211,15 @@ pub extern "C" fn rust_boot_main(_dtb_ptr: u64) -> ! {
     crate::kprintln!("  VBAR   : exception vectors installed");
     crate::kprintln!("  GIC    : GIC-400 distributor + CPU interface");
     crate::kprintln!("  Timer  : 1000 Hz (54 MHz / 54000 counts per tick)");
+    crate::kprintln!(
+        "  SMP    : {} (max cores: {})",
+        if cmdline_cfg.smp_enabled {
+            "enabled"
+        } else {
+            "disabled"
+        },
+        cmdline_cfg.smp_max_cores
+    );
     crate::kprintln!();
     crate::kprintln!("[boot] Boot complete, entering kernel");
 
@@ -293,5 +381,73 @@ mod tests {
         // `rust_boot_main` is checked by the SM1.C.2 build-script
         // scanner (see `rust/sele4n-hal/build.rs`).
         let _: fn() = install_exception_vectors;
+    }
+
+    // =====================================================================
+    // WS-SM SM1.D — Phase 5 wiring tests
+    //
+    // We cannot call `rust_boot_main` from host tests (it's `-> !` and
+    // would attempt UART writes / MMIO that abort on host).  These tests
+    // verify the Phase 5 helpers — `parse_cmdline_from_dtb` and
+    // `apply_cmdline_and_start_smp` — resolve through the `crate::cmdline`
+    // module path, and that `KERNEL_VERSION` stays in sync with
+    // `lakefile.toml`.
+    //
+    // The textual presence of the Phase 5 call sites inside
+    // `rust_boot_main` is enforced at build time by
+    // `scan_boot_rs_phase5_uses_cmdline` in `build.rs`.
+    // =====================================================================
+
+    #[test]
+    fn sm1d_kernel_version_string_matches_lakefile() {
+        // SM1.D: Phase 5 banner uses `KERNEL_VERSION`; pin it at
+        // v0.31.6 (the SM1.D landing version).  A future bump must
+        // update this test in lockstep with `lakefile.toml`.
+        // `scripts/check_version_sync.sh` (Tier 0) provides the
+        // canonical drift check; this test is the local pin.
+        assert_eq!(KERNEL_VERSION, "0.31.6");
+    }
+
+    #[test]
+    fn sm1d_parse_cmdline_from_dtb_resolves_via_crate_cmdline() {
+        // SM1.D: the Phase-5 entry point used by `rust_boot_main` is
+        // `crate::cmdline::parse_cmdline_from_dtb`.  Pin the symbol
+        // via fn-pointer coercion so a rename or signature drift
+        // surfaces at compile time.
+        let _: fn(u64) -> crate::cmdline::CmdlineConfig =
+            crate::cmdline::parse_cmdline_from_dtb;
+    }
+
+    #[test]
+    fn sm1d_apply_cmdline_resolves_via_crate_cmdline() {
+        // SM1.D: the Phase-5 SMP-start helper resolves through
+        // `crate::cmdline::apply_cmdline_and_start_smp` and accepts
+        // a `&CmdlineConfig`.
+        let _: fn(&crate::cmdline::CmdlineConfig) -> u32 =
+            crate::cmdline::apply_cmdline_and_start_smp;
+    }
+
+    #[test]
+    fn sm1d_phase5_defaults_smp_enabled_to_true() {
+        // SM1.D.3: per maintainer decision #7, defaults are SMP-on.
+        // The Phase-5 path constructs a `CmdlineConfig` via
+        // `parse_cmdline_from_dtb(0)` (NULL pointer → defaults).
+        let cfg = crate::cmdline::parse_cmdline_from_dtb(0);
+        assert!(
+            cfg.smp_enabled,
+            "Phase 5 default must be smp_enabled=true (SM1.D.3)"
+        );
+    }
+
+    #[test]
+    fn sm1d_phase5_defaults_smp_max_cores_to_platform_max() {
+        // SM1.D.6: the default `smp_max_cores` saturates to
+        // `MAX_SECONDARY_CORES + 1 = 4` on RPi5.
+        let cfg = crate::cmdline::parse_cmdline_from_dtb(0);
+        assert_eq!(
+            cfg.smp_max_cores,
+            crate::smp::MAX_SECONDARY_CORES + 1,
+            "Phase 5 default must be smp_max_cores=4 (SM1.D.6 / RPi5)"
+        );
     }
 }

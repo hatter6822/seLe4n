@@ -88,6 +88,25 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   at the call-site level.  32 new HAL unit tests + 12 new Lean
   assertions in `SmpFoundationsSuite.lean` (surface anchors,
   marker-theorem discharges, runtime BaseIO invocation).
+- **DTB cmdline + Phase 5** (WS-SM SM1.D, landed at v0.31.6):
+  new module `rust/sele4n-hal/src/cmdline.rs` carries the
+  self-contained DTB walker (`extract_bootargs_into` with
+  fuel/depth bounds), the typed `CmdlineConfig` (`smp_enabled`,
+  `smp_max_cores`), and the Phase-5 entry points
+  (`parse_cmdline_from_dtb`, `apply_cmdline_and_start_smp`).
+  `rust_boot_main` Phase 5 wires the parse → bring-up dispatch
+  after Phase 4 (TPIDR_EL1 / IRQ enable) and before Phase 6
+  (Lean kernel handoff).  Default at v0.31.6+ is
+  `smp_enabled=true smp_max_cores=4` per maintainer decision #7;
+  operators opt out via the kernel command line.  82 new HAL
+  unit tests in `cmdline::tests` (parser branches, DTB-blob
+  fixtures, MAX_BOOTARGS_LEN buffer handling) + 7 new tests
+  for `smp::bring_up_secondaries_with_limit` saturation
+  behaviour + 5 new tests pinning Phase 5 cmdline-helper
+  resolution.  New `scan_boot_rs_phase5_uses_cmdline` build.rs
+  scanner pins the Phase-5 call sites textually.  SM1.D.5
+  also moved `check_per_cpu_invariants()` from Phase 4 to
+  Phase 1 so const-init regressions surface at boot start.
 
 The **runtime** validation that complements these static guarantees
 (QEMU virt boots, RPi 5 silicon validation) is documented in

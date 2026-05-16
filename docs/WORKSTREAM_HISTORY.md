@@ -450,10 +450,72 @@ scheduler state lands.
   `secondaryKernelMain_returns_unit_marker`; previously the
   Lean module was exercised only by tier-2 (SmpFoundationsSuite).
 
-Follow-on: SM1.D..H (DTB cmdline, IS-variant TLBI, SGI primitive,
-per-core UART, QEMU SMP integration) — see
+**WS-SM SM1.D LANDED at v0.31.6 on branch
+`claude/review-dtb-cmdline-phase-EkoTA`** (DTB cmdline + Phase 5).
+Six sub-tasks landed in one cut, wiring `rust_boot_main` Phase 5
+to parse the DTB-supplied `/chosen/bootargs` cmdline and bring
+up secondary cores based on the parsed configuration.  Pre-SM1.D
+the kernel finished hardware init then handed off to Lean without
+ever inspecting the DTB cmdline — `smp::SMP_ENABLED` stayed at
+its module-load default (`false`), and secondaries spun in
+`boot.S::.L_secondary_spin` forever.  Post-SM1.D the kernel
+parses the cmdline, defaults to SMP-on (per maintainer decision
+#7), and brings up all 4 RPi5 cores by default:
+
+- **SM1.D.1**: `rust/sele4n-hal/src/cmdline.rs` (NEW FILE, ~1400
+  LoC including tests) — `CmdlineConfig` + `parse_cmdline` +
+  full self-contained DTB walker.  Self-contained walker
+  (`parse_fdt_header`, `validate_fdt_header`,
+  `find_bootargs_in_dtb`, `extract_bootargs_into`,
+  `extract_bootargs_from_blob_into`) deliberately does NOT route
+  through the Lean-side `Platform.DeviceTree` parser to avoid
+  the circular dependency where the kernel needs the cmdline
+  parsed BEFORE it is initialised.  Fuel-bounded
+  (`FDT_WALK_FUEL = 4096`) + depth-bounded
+  (`FDT_MAX_DEPTH = 32`) for safe handling of malformed blobs.
+  `parse_cmdline_from_dtb(dtb_ptr) -> CmdlineConfig` is the
+  Phase-5 entry point.  The plan's original sketch returned
+  `&'static str` from `extract_bootargs`; the landed form uses
+  a caller-supplied buffer so the lifetime is sound (the DTB
+  memory is not guaranteed `'static`).
+- **SM1.D.2**: Phase 5 wired into `rust_boot_main` after Phase
+  4 (TPIDR_EL1 / IRQ enable) and before Phase 6 (Lean kernel
+  handoff).  Emits diagnostic kprintln so a QEMU `-smp 4` boot
+  trace has a deterministic pattern for SM1.H grep.
+  `KERNEL_VERSION` bumped `0.31.5` → `0.31.6`.
+- **SM1.D.3**: `CmdlineConfig::default()` has
+  `smp_enabled = true` per maintainer decision #7.
+  `smp::SMP_ENABLED` atomic still defaults to `false` at module
+  load (defense-in-depth: a halted-pre-Phase-5 kernel does not
+  accidentally spawn secondaries).
+- **SM1.D.4**: documentation — per-object locks (SM0.I) inside
+  their owning objects with `.unheld` defaults; no global BKL
+  exists, no init-order hazard.
+- **SM1.D.5**: `per_cpu::check_per_cpu_invariants()` moved
+  from Phase 4 to Phase 1 so a regressed const-init table
+  surfaces at boot start rather than at first per-CPU lookup.
+- **SM1.D.6**: `smp::bring_up_secondaries_with_limit(max_cores:
+  usize) -> u32` — limit-aware variant accepting a total
+  core count.  Saturates over-platform values; `max_cores = 0`
+  or `1` spawns no secondaries.
+
+**Test coverage**: 395 HAL tests (was 327 at SM1.D start); +54
+new in `cmdline::tests`, +9 in `smp::tests::sm1d6_*`, +5 in
+`boot::tests::sm1d_*` — total +68 new HAL tests.  Zero clippy
+warnings workspace-wide.  Tier 0+1+2+3 all green.  Items
+deferred past v1.0.0 with correctness impact: NONE.
+
+**Build-script regression scanner**:
+`scan_boot_rs_phase5_uses_cmdline` in `rust/sele4n-hal/build.rs`
+pins the textual presence of `cmdline::parse_cmdline_from_dtb(`
+and `cmdline::apply_cmdline_and_start_smp(` inside `boot.rs`,
+so a refactor that drops the Phase-5 call sites fails the build
+with an actionable diagnostic.
+
+Follow-on: SM1.E (IS-variant TLBI), SM1.F (SGI primitive),
+SM1.G (Per-core UART), SM1.H (QEMU SMP integration test) — see
 [`docs/planning/SMP_RUST_HAL_PLAN.md`](planning/SMP_RUST_HAL_PLAN.md)
-§§5.4..5.8.
+§§5.5..5.8.
 
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple
