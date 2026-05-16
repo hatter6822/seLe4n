@@ -1066,6 +1066,30 @@ documentation lives under `docs/` and `docs/gitbook/`.
     already satisfy the build-script scanner's textual presence
     check; the extra binding was dead code.
 
+  **Audit-pass-3 refinements** (third deep-audit, post-pass-2):
+  - **Validator truncation defense**: `validate_secondary_context_id`
+    did `let core_idx = context_id as usize` BEFORE the bounds
+    check.  On a 64-bit target this is identity, but on a
+    hypothetical 32-bit port the cast truncates u64 to u32,
+    silently accepting any `context_id` whose high bits were
+    set but whose low 32 bits aliased a valid secondary slot
+    (e.g., `0x1_0000_0001` → `core_idx = 1` → `Some(1)`).
+    Reformulated to do the bounds check in `u64` space FIRST,
+    then narrow to `usize` only on the accepted path —
+    correct on every plausible `usize` width.  New test
+    `sm1c5_validate_context_id_rejects_u64_with_high_bits_aliasing_secondary`
+    exercises the boundary cases (`0x1_0000_0001`,
+    `0x1_0000_0002`, `0x1_0000_0003`, `0x1_0000_0000`,
+    `0xFFFF_FFFF_0000_0000`) — all must reject.
+  - **Tier-3 invariant-surface anchors for SecondaryEntry**:
+    `scripts/test_tier3_invariant_surface.sh` gained `#check`
+    lines for `secondaryKernelMain` and
+    `secondaryKernelMain_returns_unit_marker`.  Previously the
+    Lean SecondaryEntry module was exercised only by the
+    SmpFoundationsSuite (tier-2); the tier-3 surface check
+    catches a rename / removal of either symbol at the build
+    step, before reaching the test suite.
+
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**
   — historical detail retained for traceability:

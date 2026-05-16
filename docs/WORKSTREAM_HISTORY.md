@@ -431,6 +431,25 @@ scheduler state lands.
   lean_secondary_kernel_main(...) }` block and call site already
   satisfy the build-script scanner.
 
+**Audit-pass-3 refinements** (third deep-audit, post-pass-2):
+- Validator truncation defense: `validate_secondary_context_id`
+  pre-audit-pass-3 form did `let core_idx = context_id as
+  usize` BEFORE the bounds check.  On a 64-bit target this is
+  identity, but on a hypothetical 32-bit port the cast
+  truncates u64 to u32, silently accepting any `context_id`
+  whose high bits were set but whose low 32 bits aliased a
+  valid secondary slot (e.g., `0x1_0000_0001` → `core_idx = 1`
+  → `Some(1)`).  Reformulated to do the bounds check in `u64`
+  space first, then narrow to `usize` only on the accepted
+  path.  New test
+  `sm1c5_validate_context_id_rejects_u64_with_high_bits_aliasing_secondary`
+  exercises the boundary cases.
+- Tier-3 invariant-surface anchors for SecondaryEntry:
+  `scripts/test_tier3_invariant_surface.sh` gained `#check`
+  lines for `secondaryKernelMain` and
+  `secondaryKernelMain_returns_unit_marker`; previously the
+  Lean module was exercised only by tier-2 (SmpFoundationsSuite).
+
 Follow-on: SM1.D..H (DTB cmdline, IS-variant TLBI, SGI primitive,
 per-core UART, QEMU SMP integration) — see
 [`docs/planning/SMP_RUST_HAL_PLAN.md`](planning/SMP_RUST_HAL_PLAN.md)

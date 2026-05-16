@@ -353,12 +353,25 @@ pub fn bring_up_secondaries() -> u32 {
 /// fail to type-check at the `CORE_READY` declaration.
 #[inline]
 pub(crate) const fn validate_secondary_context_id(context_id: u64) -> Option<usize> {
-    let core_idx = context_id as usize;
+    // Audit-pass-3: do the bounds check in `u64` space FIRST, then
+    // narrow to `usize`.  The earlier `let core_idx = context_id as
+    // usize` form was defensible on the project's only target
+    // (aarch64, where `usize` == `u64`), but on a hypothetical
+    // 32-bit port the truncation would silently accept any
+    // `context_id` whose high bits were set but low bits aliased a
+    // valid secondary slot (e.g., `0x1_0000_0001` → core_idx = 1).
+    // Doing the comparison in `u64` makes the validator correct on
+    // every plausible `usize` width without depending on
+    // platform-specific assumptions.
+    const MAX_CORE_COUNT: u64 = (MAX_SECONDARY_CORES + 1) as u64;
     // Valid secondary context_ids are 1..=MAX_SECONDARY_CORES (= 3
     // on RPi5).  context_id == 0 is the boot core's reserved slot;
     // context_id >= MAX_SECONDARY_CORES + 1 is out of range.
-    if core_idx > 0 && core_idx < MAX_SECONDARY_CORES + 1 {
-        Some(core_idx)
+    if context_id > 0 && context_id < MAX_CORE_COUNT {
+        // Safe to narrow: 0 < context_id < 4 (or whatever
+        // MAX_SECONDARY_CORES + 1 is) fits in usize on every plausible
+        // target (1 ≤ value ≤ 2^32 - 1 on 32-bit; trivially on 64-bit).
+        Some(context_id as usize)
     } else {
         None
     }
@@ -986,6 +999,32 @@ mod tests {
         assert_eq!(RESULT_FOR_ZERO, None);
         assert_eq!(RESULT_FOR_ONE, Some(1));
         assert_eq!(RESULT_FOR_FOUR, None);
+    }
+
+    #[test]
+    fn sm1c5_validate_context_id_rejects_u64_with_high_bits_aliasing_secondary() {
+        // Audit-pass-3 (defense-in-depth): a `u64` `context_id` whose
+        // high bits are set but whose low 32 bits alias a valid
+        // secondary slot (1..=3) must be rejected.  The pre-audit-pass-3
+        // form `let core_idx = context_id as usize` would, on a
+        // hypothetical 32-bit port, truncate to the low 32 bits and
+        // erroneously accept these values.  The current form does the
+        // bounds check in `u64` space, so the high bits are honoured
+        // regardless of `usize` width.
+        //
+        // We exercise three values that have valid secondary slot
+        // numbers (1, 2, 3) in their low 32 bits but unambiguously
+        // belong out of range in `u64` space:
+        assert_eq!(validate_secondary_context_id(0x1_0000_0001), None);
+        assert_eq!(validate_secondary_context_id(0x1_0000_0002), None);
+        assert_eq!(validate_secondary_context_id(0x1_0000_0003), None);
+        // Also exercise a value whose low bits alias the boot-core
+        // slot (0).  Already rejected by the "context_id > 0" arm,
+        // but worth pinning explicitly.
+        assert_eq!(validate_secondary_context_id(0x1_0000_0000), None);
+        // And a u64 with bits only in the high half (low 32 bits
+        // exactly zero, high 32 bits set).
+        assert_eq!(validate_secondary_context_id(0xFFFF_FFFF_0000_0000), None);
     }
 
     // ========================================================================

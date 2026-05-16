@@ -1239,6 +1239,35 @@ NONE.
   cfg-gating not affecting textual content).  The extra binding
   was dead code.
 
+**Audit-pass-3 refinements** (third deep-audit, post-pass-2):
+- **Validator truncation defense**:
+  `validate_secondary_context_id`'s pre-audit-pass-3 form did
+  `let core_idx = context_id as usize` BEFORE the bounds check.
+  On a 64-bit target (where `usize == u64`) this is identity;
+  on a hypothetical 32-bit port the cast would truncate the u64
+  to its low 32 bits, silently accepting any `context_id` whose
+  high bits were set but whose low 32 bits aliased a valid
+  secondary slot.  For example:
+  - `context_id = 0x1_0000_0001` (u64) →
+    `core_idx = 1` (truncated to usize on 32-bit) →
+    accepted as a valid slot.
+  Reformulated to do the bounds check in `u64` space FIRST,
+  then narrow to `usize` on the accepted path.  Mathematically
+  equivalent on 64-bit; strictly more correct on 32-bit.
+  New test `sm1c5_validate_context_id_rejects_u64_with_high_bits_aliasing_secondary`
+  exercises five boundary cases (`0x1_0000_0001`,
+  `0x1_0000_0002`, `0x1_0000_0003`, `0x1_0000_0000`,
+  `0xFFFF_FFFF_0000_0000`) — all must reject.
+- **Tier-3 invariant-surface anchors for SecondaryEntry**:
+  `scripts/test_tier3_invariant_surface.sh` gained `#check`
+  lines for `secondaryKernelMain` and
+  `secondaryKernelMain_returns_unit_marker`.  Previously the
+  Lean SecondaryEntry module was exercised only by the
+  SmpFoundationsSuite (tier-2 negative).  Adding the tier-3
+  surface check catches a rename / removal of either symbol at
+  the build step — before reaching the test suite, faster CI
+  failure path on regression.
+
 #### SM1.C original detailed sub-task breakdown (preserved for reference)
 
 This section closed SMP-C2. Each sub-task extracts a helper from the

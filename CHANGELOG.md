@@ -283,6 +283,30 @@ secondary core.  Rejected cases (both layers reject the same set):
   content).  Removing the dead line eliminates unnecessary
   noise.
 
+### Fixed — Validator truncation under hypothetical 32-bit target (SM1.C audit pass-3)
+
+`rust/sele4n-hal/src/smp.rs::validate_secondary_context_id`:
+
+- Pre-audit-pass-3 form did `let core_idx = context_id as usize`
+  BEFORE the bounds check.  On a 64-bit target (where
+  `usize == u64`) this is identity; on a hypothetical 32-bit
+  port it would truncate to the low 32 bits, silently accepting
+  any `context_id` whose high bits were set but whose low 32
+  bits aliased a valid secondary slot (e.g., `0x1_0000_0001`
+  → core_idx = 1 → Some(1)).
+- Reformulated to do the bounds check in `u64` space first, then
+  narrow to `usize` only on the accepted path.  Mathematically
+  equivalent on 64-bit; strictly more correct on 32-bit.
+- Added test `sm1c5_validate_context_id_rejects_u64_with_high_bits_aliasing_secondary`
+  exercising the boundary cases (`0x1_0000_0001`,
+  `0x1_0000_0002`, `0x1_0000_0003`, `0x1_0000_0000`,
+  `0xFFFF_FFFF_0000_0000`) — all must reject.
+- Added Lean tier-3 invariant-surface anchors for
+  `secondaryKernelMain` and `secondaryKernelMain_returns_unit_marker`
+  in `scripts/test_tier3_invariant_surface.sh` so a future PR
+  that removes either fails tier-3 CI before reaching the test
+  suite.
+
 ### Module reachability
 
 - **`SeLe4n.Kernel.SecondaryEntry`**: added to
