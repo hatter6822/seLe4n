@@ -131,6 +131,12 @@ pub extern "C" fn ffi_gic_is_spurious(intid: u32) -> bool {
 
 /// Flush all TLB entries at EL1 (TLBI VMALLE1 + DSB ISH + ISB).
 ///
+/// **Local (non-broadcast) variant**.  Reserved for the boot-time
+/// MMU-init path BEFORE secondaries have started; production
+/// kernel code under SMP must use [`ffi_tlbi_for_sharing`] to
+/// route through the IS or OS variant per the platform's
+/// `SharingDomain`.
+///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTlbiAll`
 #[no_mangle]
 pub extern "C" fn ffi_tlbi_all() {
@@ -138,6 +144,9 @@ pub extern "C" fn ffi_tlbi_all() {
 }
 
 /// Flush TLB entries by ASID at EL1 (TLBI ASIDE1 + DSB ISH + ISB).
+///
+/// **Local (non-broadcast) variant**.  See [`ffi_tlbi_all`] for
+/// SMP usage notes.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTlbiByAsid`
 #[no_mangle]
@@ -147,10 +156,145 @@ pub extern "C" fn ffi_tlbi_by_asid(asid: u16) {
 
 /// Flush TLB entries by virtual address + ASID at EL1 (TLBI VAE1 + DSB ISH + ISB).
 ///
+/// **Local (non-broadcast) variant**.  See [`ffi_tlbi_all`] for
+/// SMP usage notes.
+///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTlbiByVaddr`
 #[no_mangle]
 pub extern "C" fn ffi_tlbi_by_vaddr(asid: u16, vaddr: u64) {
     crate::tlb::tlbi_vae1(asid, vaddr);
+}
+
+// ============================================================================
+// WS-SM SM1.E.4 — Sharing-domain-routed TLBI FFI exports
+// ============================================================================
+//
+// The Lean kernel calls these FFI exports through the typed
+// `Architecture.tlbiForSharing` wrapper, which encodes the
+// (SharingDomain, TlbInvalidation) pair as a tag + operand pair
+// suitable for C-callable transmission.
+//
+// Discriminant encoding (matches `SeLe4n.Kernel.Architecture` Lean
+// wrapper; pinned by `tests/SmpFoundationsSuite.lean` runtime checks):
+//
+//   domain_tag : 0 = Inner, 1 = Outer
+//   op_tag     : 0 = Vmalle1, 1 = Vae1, 2 = Aside1, 3 = Vale1
+//   asid       : 16-bit ASID (RES0 for Vmalle1)
+//   vaddr      : page-aligned VA (RES0 for Vmalle1, Aside1)
+//
+// **Fail-closed contract**: unknown tags PANIC rather than silently
+// falling back.  Audit-pass-1 reasoning: the FFI is a security
+// boundary; silent fallbacks (e.g., "unknown op → no-op") create
+// silent correctness violations because the caller assumed the TLB
+// was invalidated.  Per the project's `panic = "abort"` release
+// profile, the panic halts the kernel — the correct response to a
+// corrupted FFI ABI call.  A well-formed Lean caller using
+// `Architecture.tlbiForSharing` cannot reach the panic arm because
+// the tag-encoding theorems (`SharingDomain.toTag_in_range`,
+// `TlbInvalidation.toOpTag_in_range`) prove every emitted tag is
+// in-range at the Lean type level.
+//
+// The decoder helpers below are factored out as `Option`-returning
+// pure functions so unit tests can verify their behaviour (including
+// the failure paths) without crossing the FFI boundary, which Rust
+// edition 2021 treats as `non-unwinding panic. aborting.` even
+// under the test profile.
+
+/// **WS-SM SM1.E.4 audit-pass-1**: Decode an FFI `domain_tag` into a
+/// typed `SharingDomain`, returning `None` on out-of-range input.
+///
+/// This is the testable inner form of the FFI dispatcher's first
+/// stage.  Calling `ffi_tlbi_for_sharing(2, _, _, _)` would panic
+/// (the FFI wrapper does `match decode_sharing_domain_tag(tag) {
+/// Some => use, None => panic! }`); calling
+/// `decode_sharing_domain_tag(2)` directly returns `None` cleanly
+/// so tests can exercise the rejection path without crashing the
+/// test runner (panic-across-`extern "C"` is `non-unwinding panic.
+/// aborting.` under Rust edition 2021).
+#[inline]
+const fn decode_sharing_domain_tag(tag: u32) -> Option<crate::tlb::SharingDomain> {
+    match tag {
+        0 => Some(crate::tlb::SharingDomain::Inner),
+        1 => Some(crate::tlb::SharingDomain::Outer),
+        _ => None,
+    }
+}
+
+/// **WS-SM SM1.E.4 audit-pass-1**: Decode an FFI `(op_tag, asid, vaddr)`
+/// triple into a typed `TlbInvalidation`, returning `None` on
+/// out-of-range `op_tag`.
+///
+/// Testable inner form of the FFI dispatcher's second stage.  See
+/// `decode_sharing_domain_tag` for the rationale.
+///
+/// The unused operands for each variant are simply ignored: the
+/// resulting `TlbInvalidation::Vmalle1` (op_tag=0) discards both
+/// `asid` and `vaddr`; `Aside1` discards `vaddr`.  This matches the
+/// Lean-side `TlbInvalidation.toAsid` / `toVaddr` semantics which
+/// return `0` for unused fields.
+#[inline]
+const fn decode_tlb_invalidation_tag(
+    op_tag: u32,
+    asid: u16,
+    vaddr: u64,
+) -> Option<crate::tlb::TlbInvalidation> {
+    match op_tag {
+        0 => Some(crate::tlb::TlbInvalidation::Vmalle1),
+        1 => Some(crate::tlb::TlbInvalidation::Vae1 { asid, vaddr }),
+        2 => Some(crate::tlb::TlbInvalidation::Aside1 { asid }),
+        3 => Some(crate::tlb::TlbInvalidation::Vale1 { asid, vaddr }),
+        _ => None,
+    }
+}
+
+/// **WS-SM SM1.E.4**: Sharing-domain-routed TLBI dispatcher FFI export.
+///
+/// Routes the Lean-side `Architecture.tlbiForSharing` call to one of
+/// the eight IS/OS TLBI variants based on `domain_tag` and `op_tag`.
+/// See the module-level comment above for the discriminant encoding.
+///
+/// `asid` and `vaddr` are consumed only by the variants that need them;
+/// `Vmalle1` ignores both, `Aside1` ignores `vaddr`.  The Lean caller
+/// passes `0` for unused fields.
+///
+/// # Panics
+///
+/// Panics (which under `panic = "abort"` aborts the kernel) if either
+/// `domain_tag >= 2` or `op_tag >= 4`.  Both bounds are structurally
+/// guaranteed by the Lean-side typed `Architecture.tlbiForSharing`
+/// wrapper via `SharingDomain.toTag_in_range` and
+/// `TlbInvalidation.toOpTag_in_range`, so a well-formed Lean caller
+/// never trips them — the panics are defense-in-depth against FFI
+/// ABI corruption.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiTlbiForSharing`
+#[no_mangle]
+pub extern "C" fn ffi_tlbi_for_sharing(
+    domain_tag: u32,
+    op_tag: u32,
+    asid: u16,
+    vaddr: u64,
+) {
+    // Audit-pass-1: fail-closed on unknown tags.  Silent fallback
+    // (the pre-audit behaviour) violated the kernel's correctness
+    // contract — the caller assumed the TLB was invalidated.
+    let domain = match decode_sharing_domain_tag(domain_tag) {
+        Some(d) => d,
+        None => panic!(
+            "WS-SM SM1.E.4: ffi_tlbi_for_sharing: domain_tag must be \
+             0 (Inner) or 1 (Outer), got {}",
+            domain_tag
+        ),
+    };
+    let op = match decode_tlb_invalidation_tag(op_tag, asid, vaddr) {
+        Some(o) => o,
+        None => panic!(
+            "WS-SM SM1.E.4: ffi_tlbi_for_sharing: op_tag must be 0..=3 \
+             (Vmalle1=0, Vae1=1, Aside1=2, Vale1=3), got {}",
+            op_tag
+        ),
+    };
+    crate::tlb::tlbi_for_sharing(domain, op);
 }
 
 /// Read a 32-bit value from an MMIO address using volatile semantics.
@@ -217,6 +361,54 @@ pub extern "C" fn ffi_restore_interrupts(saved_daif: u64) {
 #[no_mangle]
 pub extern "C" fn ffi_enable_interrupts() {
     crate::interrupts::enable_irq();
+}
+
+// ============================================================================
+// WS-SM SM1.F.6 — SGI primitive FFI exports
+// ============================================================================
+//
+// Three send-SGI variants exposed to Lean.  Each forwards directly to
+// the corresponding `gic::send_sgi*` primitive.  All three emit
+// `dsb ish` BEFORE the GICD_SGIR write per SM1.F.8 / ARM ARM B2.7.5,
+// so prior kernel-state writes are observable on every IS-domain PE
+// before the SGI fires on the receiver.
+
+/// **WS-SM SM1.F.6**: Send an SGI to one or more target CPU
+/// interfaces by explicit bitmask.
+///
+/// `target_mask` — 8-bit bitmask of target CPU interfaces (bit i =
+/// CPU i).  On RPi5 only bits 0..3 are meaningful.
+/// `intid` — SGI INTID (`0..15`).
+///
+/// Forwards to [`crate::gic::send_sgi`], inheriting the panic-on-
+/// out-of-range-INTID contract.  Panics here cross the FFI boundary
+/// as a clean abort under `panic = "abort"` (production) or unwind
+/// (test); both halt the kernel rather than corrupt the GIC.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiSendSgi`
+#[no_mangle]
+pub extern "C" fn ffi_send_sgi(target_mask: u8, intid: u8) {
+    crate::gic::send_sgi(target_mask, intid);
+}
+
+/// **WS-SM SM1.F.6**: Send an SGI to the calling core only.
+///
+/// `intid` — SGI INTID (`0..15`).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiSendSgiToSelf`
+#[no_mangle]
+pub extern "C" fn ffi_send_sgi_to_self(intid: u8) {
+    crate::gic::send_sgi_to_self(intid);
+}
+
+/// **WS-SM SM1.F.6**: Send an SGI to all cores except the caller.
+///
+/// `intid` — SGI INTID (`0..15`).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiSendSgiToAllButSelf`
+#[no_mangle]
+pub extern "C" fn ffi_send_sgi_to_all_but_self(intid: u8) {
+    crate::gic::send_sgi_to_all_but_self(intid);
 }
 
 // ============================================================================
@@ -505,5 +697,262 @@ mod tests {
             ffi_current_core_id(),
             crate::per_cpu::current_core_id_from_tpidr()
         );
+    }
+
+    // ========================================================================
+    // WS-SM SM1.E.4 — `ffi_tlbi_for_sharing` dispatcher tests
+    //
+    // The dispatcher routes the (domain_tag, op_tag, asid, vaddr) tuple
+    // to one of the eight underlying IS/OS TLBI variants.  Tests
+    // exercise every combination + the defensive fallback for
+    // unrecognised tags.
+    // ========================================================================
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_inner_vmalle1_no_panic() {
+        // (Inner, Vmalle1) → tlbi_vmalle1is via the dispatcher.
+        ffi_tlbi_for_sharing(0, 0, 0, 0);
+    }
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_outer_vmalle1_no_panic() {
+        // (Outer, Vmalle1) → tlbi_vmalle1os via the dispatcher.
+        ffi_tlbi_for_sharing(1, 0, 0, 0);
+    }
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_inner_vae1_no_panic() {
+        ffi_tlbi_for_sharing(0, 1, 42, 0x1000);
+    }
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_outer_vae1_no_panic() {
+        ffi_tlbi_for_sharing(1, 1, 42, 0x1000);
+    }
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_inner_aside1_no_panic() {
+        ffi_tlbi_for_sharing(0, 2, 7, 0);
+    }
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_outer_aside1_no_panic() {
+        ffi_tlbi_for_sharing(1, 2, 7, 0);
+    }
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_inner_vale1_no_panic() {
+        ffi_tlbi_for_sharing(0, 3, 3, 0x4000);
+    }
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_outer_vale1_no_panic() {
+        ffi_tlbi_for_sharing(1, 3, 3, 0x4000);
+    }
+
+    // ----------------------------------------------------------------
+    // SM1.E.4 audit-pass-1: fail-closed contract for unknown tags.
+    //
+    // The pre-audit `ffi_tlbi_for_sharing` had silent fallbacks for
+    // unknown domain_tag (→ Inner) and op_tag (→ no-op).  Both were
+    // unsafe: the caller assumed the TLB was invalidated, but the
+    // fallbacks silently changed the broadcast scope (Inner on a
+    // multi-cluster topology leaves stale translations on other
+    // clusters) or skipped the invalidation entirely.
+    //
+    // The post-audit dispatcher panics on out-of-range tags (fails
+    // closed under `panic = "abort"`).  The panic itself cannot be
+    // exercised here because Rust edition 2021 treats panic-across-
+    // `extern "C"` as `non-unwinding panic. aborting.` — the test
+    // process would abort with SIGABRT.
+    //
+    // Instead we test the FACTORED-OUT decoder helpers
+    // (`decode_sharing_domain_tag`, `decode_tlb_invalidation_tag`)
+    // which return `Option` and can be exercised cleanly.  The FFI
+    // wrapper's `match ... { Some => use, None => panic!() }`
+    // pattern means decoder coverage is a faithful proxy for FFI
+    // coverage.
+
+    #[test]
+    fn sm1e4_decode_sharing_domain_tag_accepts_0_and_1() {
+        // Audit-pass-1: the only valid tags are 0 (Inner) and 1 (Outer).
+        assert_eq!(
+            decode_sharing_domain_tag(0),
+            Some(crate::tlb::SharingDomain::Inner)
+        );
+        assert_eq!(
+            decode_sharing_domain_tag(1),
+            Some(crate::tlb::SharingDomain::Outer)
+        );
+    }
+
+    #[test]
+    fn sm1e4_decode_sharing_domain_tag_rejects_out_of_range() {
+        // Audit-pass-1: every other value rejects via None.  The FFI
+        // wrapper translates None into a panic that aborts the kernel.
+        assert_eq!(decode_sharing_domain_tag(2), None);
+        assert_eq!(decode_sharing_domain_tag(3), None);
+        assert_eq!(decode_sharing_domain_tag(99), None);
+        assert_eq!(decode_sharing_domain_tag(u32::MAX), None);
+    }
+
+    #[test]
+    fn sm1e4_decode_sharing_domain_tag_const_callable() {
+        // Audit-pass-1: decoder is `const fn` so call sites with
+        // literal arguments evaluate at compile time.
+        const D0: Option<crate::tlb::SharingDomain> = decode_sharing_domain_tag(0);
+        const D2: Option<crate::tlb::SharingDomain> = decode_sharing_domain_tag(2);
+        assert_eq!(D0, Some(crate::tlb::SharingDomain::Inner));
+        assert_eq!(D2, None);
+    }
+
+    #[test]
+    fn sm1e4_decode_tlb_invalidation_tag_accepts_0_to_3() {
+        // Audit-pass-1: the four valid op_tags map to typed variants.
+        assert_eq!(
+            decode_tlb_invalidation_tag(0, 0, 0),
+            Some(crate::tlb::TlbInvalidation::Vmalle1)
+        );
+        assert_eq!(
+            decode_tlb_invalidation_tag(1, 42, 0x1000),
+            Some(crate::tlb::TlbInvalidation::Vae1 { asid: 42, vaddr: 0x1000 })
+        );
+        assert_eq!(
+            decode_tlb_invalidation_tag(2, 7, 0),
+            Some(crate::tlb::TlbInvalidation::Aside1 { asid: 7 })
+        );
+        assert_eq!(
+            decode_tlb_invalidation_tag(3, 3, 0x4000),
+            Some(crate::tlb::TlbInvalidation::Vale1 { asid: 3, vaddr: 0x4000 })
+        );
+    }
+
+    #[test]
+    fn sm1e4_decode_tlb_invalidation_tag_rejects_out_of_range() {
+        // Audit-pass-1: any tag >= 4 returns None.  The FFI wrapper
+        // translates None into a panic.
+        assert_eq!(decode_tlb_invalidation_tag(4, 0, 0), None);
+        assert_eq!(decode_tlb_invalidation_tag(5, 0, 0), None);
+        assert_eq!(decode_tlb_invalidation_tag(99, 0, 0), None);
+        assert_eq!(decode_tlb_invalidation_tag(u32::MAX, 0, 0), None);
+    }
+
+    #[test]
+    fn sm1e4_decode_tlb_invalidation_tag_const_callable() {
+        // Audit-pass-1: decoder is `const fn`.
+        const OP_VMALLE1: Option<crate::tlb::TlbInvalidation> =
+            decode_tlb_invalidation_tag(0, 0, 0);
+        const OP_BAD: Option<crate::tlb::TlbInvalidation> =
+            decode_tlb_invalidation_tag(4, 0, 0);
+        assert_eq!(OP_VMALLE1, Some(crate::tlb::TlbInvalidation::Vmalle1));
+        assert_eq!(OP_BAD, None);
+    }
+
+    #[test]
+    fn sm1e4_decode_tlb_invalidation_tag_vmalle1_discards_operands() {
+        // Audit-pass-1: Vmalle1 (op_tag=0) ignores asid and vaddr.
+        // Verify the variant is identical regardless of operand inputs.
+        let with_zeros = decode_tlb_invalidation_tag(0, 0, 0);
+        let with_data = decode_tlb_invalidation_tag(0, 0xFFFF, 0xDEAD_BEEF);
+        assert_eq!(with_zeros, Some(crate::tlb::TlbInvalidation::Vmalle1));
+        assert_eq!(with_data, Some(crate::tlb::TlbInvalidation::Vmalle1));
+        assert_eq!(with_zeros, with_data);
+    }
+
+    #[test]
+    fn sm1e4_decode_tlb_invalidation_tag_aside1_discards_vaddr() {
+        // Audit-pass-1: Aside1 (op_tag=2) carries asid but ignores vaddr.
+        let with_zero = decode_tlb_invalidation_tag(2, 5, 0);
+        let with_data = decode_tlb_invalidation_tag(2, 5, 0xDEAD_BEEF);
+        assert_eq!(with_zero, Some(crate::tlb::TlbInvalidation::Aside1 { asid: 5 }));
+        assert_eq!(with_data, Some(crate::tlb::TlbInvalidation::Aside1 { asid: 5 }));
+        assert_eq!(with_zero, with_data);
+    }
+
+    #[test]
+    fn sm1e4_decode_signature_pins() {
+        // Audit-pass-1: pin decoder signatures so a future refactor
+        // (e.g., changing Option to Result) breaks compilation here.
+        let _: fn(u32) -> Option<crate::tlb::SharingDomain> = decode_sharing_domain_tag;
+        let _: fn(u32, u16, u64) -> Option<crate::tlb::TlbInvalidation> =
+            decode_tlb_invalidation_tag;
+    }
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_signature_pin() {
+        // Pin the FFI signature.  A future ABI change would break
+        // every Lean caller — pinning here surfaces the regression
+        // at compile time.
+        let _: extern "C" fn(u32, u32, u16, u64) = ffi_tlbi_for_sharing;
+    }
+
+    #[test]
+    fn sm1e4_ffi_tlbi_for_sharing_combinatorial_coverage() {
+        // SM1.E.4: cover every valid (domain, op) combination in one
+        // tight loop.  This is the structural witness that the
+        // dispatcher's match expression is exhaustive over the
+        // documented tag range.
+        for domain_tag in [0u32, 1] {
+            for op_tag in [0u32, 1, 2, 3] {
+                ffi_tlbi_for_sharing(domain_tag, op_tag, 1, 0x1000);
+            }
+        }
+    }
+
+    // ========================================================================
+    // WS-SM SM1.F.6 — SGI primitive FFI export tests
+    // ========================================================================
+
+    #[test]
+    fn sm1f6_ffi_send_sgi_no_panic_on_host() {
+        // Host stub: GICD_SGIR write is a no-op via mmio_write32;
+        // verify the FFI boundary doesn't panic.
+        ffi_send_sgi(0x0F, 0); // INTID 0 (reschedule) to all cores
+        ffi_send_sgi(0x01, 4); // INTID 4 (haltAll) to CPU 0 only
+    }
+
+    #[test]
+    fn sm1f6_ffi_send_sgi_to_self_no_panic_on_host() {
+        ffi_send_sgi_to_self(1); // INTID 1 (tlbShootdownReq)
+    }
+
+    #[test]
+    fn sm1f6_ffi_send_sgi_to_all_but_self_no_panic_on_host() {
+        ffi_send_sgi_to_all_but_self(2); // INTID 2 (tlbShootdownAck)
+    }
+
+    // ----------------------------------------------------------------
+    // SM1.F.6: out-of-range INTID rejection.
+    //
+    // The FFI exports forward to `gic::send_sgi*` which panics on
+    // INTID >= 16.  We do NOT exercise the panic via #[should_panic]
+    // here because Rust's behaviour on panic across an `extern "C"`
+    // boundary is `non-unwinding panic. aborting.` even under the
+    // test profile (the `extern "C"` ABI does not support unwind by
+    // default at edition 2021).
+    //
+    // The bound enforcement is tested via the underlying
+    // `gic::tests::sm1f{2,3,4}_send_sgi*_panics_on_intid_16` tests
+    // which exercise the panic at the safe Rust call site, before
+    // the FFI boundary is crossed.  We pin the FFI signature here
+    // and rely on the underlying gic test suite for the bound proof.
+
+    #[test]
+    fn sm1f6_ffi_send_sgi_signature_pin() {
+        // Pin every FFI export's signature.
+        let _: extern "C" fn(u8, u8) = ffi_send_sgi;
+        let _: extern "C" fn(u8) = ffi_send_sgi_to_self;
+        let _: extern "C" fn(u8) = ffi_send_sgi_to_all_but_self;
+    }
+
+    #[test]
+    fn sm1f6_ffi_send_sgi_covers_every_kernel_reserved_intid() {
+        // SM0.H reserves SGI INTIDs 0..4 for kernel coordination.
+        // Verify every reserved INTID is callable through the FFI.
+        for intid in 0..5u8 {
+            ffi_send_sgi(0x0F, intid);
+            ffi_send_sgi_to_self(intid);
+            ffi_send_sgi_to_all_but_self(intid);
+        }
     }
 }

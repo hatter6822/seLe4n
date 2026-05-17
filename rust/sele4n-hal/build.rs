@@ -71,6 +71,15 @@ fn main() {
     // error.  Pinning the call sites at build time forces the contract.
     scan_boot_rs_phase5_uses_cmdline();
 
+    // WS-SM SM1.F.8 (closes the SGI ordering contract): verify that
+    // every send_sgi* function in `gic.rs` emits `dsb_ish` BEFORE the
+    // GICD_SGIR write.  Without the DSB, prior kernel-state writes by
+    // the sender are not guaranteed to be observable on the receiving
+    // PE before the SGI fires — a hard-to-debug race that would only
+    // manifest under heavy SMP load.  ARM ARM B2.7.5 mandates the
+    // DSB; this scanner ensures the source still honours it.
+    scan_gic_rs_send_sgi_emits_dsb_ish();
+
     // Only build assembly for aarch64 targets
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     if target_arch != "aarch64" {
@@ -595,5 +604,119 @@ fn scan_boot_rs_phase5_uses_cmdline() {
              and `smp_enabled=true` in the DTB bootargs has no effect.  \
              See WS-SM SM1.D in `docs/planning/SMP_RUST_HAL_PLAN.md` §5.4."
         );
+    }
+}
+
+/// **WS-SM SM1.F.8** regression guard: verify every `send_sgi*` function
+/// in `src/gic.rs` emits `crate::barriers::dsb_ish()` BEFORE the
+/// `GICD_SGIR` write.
+///
+/// The SM1.F.8 contract is grounded in ARM ARM B2.7.5: writes prior
+/// to a DSB are observed by all PEs in the IS domain before subsequent
+/// operations.  When the sender writes GICD_SGIR (which triggers SGI
+/// delivery on the receiver), the receiver's handler reads kernel-
+/// state slots that the sender just wrote.  Without the DSB, those
+/// writes may not be visible on the receiver yet, producing a
+/// silent SMP correctness bug.
+///
+/// This scanner pins the textual presence of `dsb_ish()` and
+/// `mmio_write32` calls in the three send_sgi* function bodies.  A
+/// regression that removed the DSB would fail the build before any
+/// SMP race could manifest.
+///
+/// Strategy: parse the source by section, locate each `pub fn
+/// send_sgi*(...)` body, and verify that BOTH `dsb_ish()` and
+/// `mmio_write32(GICD_BASE + gicd::SGIR` appear inside the body, in
+/// that order.  We use a simple line-scan rather than a real AST
+/// parser to avoid pulling `syn` into the build graph.
+fn scan_gic_rs_send_sgi_emits_dsb_ish() {
+    let path = "src/gic.rs";
+    println!("cargo:rerun-if-changed={path}");
+    let contents = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => panic!("WS-SM SM1.F.8 scanner: failed to read {path}: {e}"),
+    };
+
+    // Strip `//` line comments so docstring mentions of "dsb_ish"
+    // don't satisfy the check spuriously.
+    let stripped: String = contents
+        .lines()
+        .map(|line| {
+            if let Some(idx) = line.find("//") {
+                &line[..idx]
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Locate each public function body and verify the ordering
+    // contract.  We require:
+    //   1. `pub fn send_sgi(`           — the explicit-mask variant
+    //   2. `pub fn send_sgi_to_self(`   — self-only variant
+    //   3. `pub fn send_sgi_to_all_but_self(`  — all-but-self variant
+    //
+    // For each body, we verify `crate::barriers::dsb_ish()` appears
+    // BEFORE `mmio_write32(GICD_BASE + gicd::SGIR`.  We use simple
+    // substring search within the function body slice.
+    let required_fns: &[&str] = &[
+        "pub fn send_sgi(",
+        "pub fn send_sgi_to_self(",
+        "pub fn send_sgi_to_all_but_self(",
+    ];
+
+    for fn_sig in required_fns {
+        let Some(fn_start) = stripped.find(fn_sig) else {
+            panic!(
+                "WS-SM SM1.F.8 scanner: `{path}` no longer defines `{fn_sig}`.  \
+                 The SGI primitive was renamed or removed.  Update the build \
+                 scanner if intentional, otherwise restore the function."
+            );
+        };
+        // Find the closing `}` of the function body.  We approximate
+        // by scanning forward for the next `pub fn` (start of the
+        // next function) or end of file, whichever comes first.
+        let body_start = fn_start;
+        let body_end = stripped[body_start + fn_sig.len()..]
+            .find("\npub fn ")
+            .map(|off| body_start + fn_sig.len() + off)
+            .unwrap_or(stripped.len());
+        let body = &stripped[body_start..body_end];
+
+        // Check 1: `crate::barriers::dsb_ish()` must appear in the body.
+        let dsb_pos = match body.find("crate::barriers::dsb_ish()") {
+            Some(p) => p,
+            None => panic!(
+                "WS-SM SM1.F.8 regression: `{path}::{fn_sig}` body does NOT call \
+                 `crate::barriers::dsb_ish()` before the GICD_SGIR write.  ARM ARM \
+                 B2.7.5 requires a DSB before the SGIR write so prior kernel-state \
+                 writes are observable on every IS-domain PE before the receiver's \
+                 handler runs.  Restore the `crate::barriers::dsb_ish()` call \
+                 immediately before `mmio_write32(GICD_BASE + gicd::SGIR, ...)`. \
+                 See WS-SM SM1.F.8 in CHANGELOG.md."
+            ),
+        };
+
+        // Check 2: `mmio_write32(GICD_BASE + gicd::SGIR` must appear AFTER the DSB.
+        let sgir_write_pos = match body.find("mmio_write32(GICD_BASE + gicd::SGIR") {
+            Some(p) => p,
+            None => panic!(
+                "WS-SM SM1.F.8 regression: `{path}::{fn_sig}` body does NOT write \
+                 to `GICD_BASE + gicd::SGIR`.  The SGI primitive must produce an \
+                 SGI by writing GICD_SGIR; a refactor that removed this write \
+                 would break the entire SGI subsystem.  See WS-SM SM1.F."
+            ),
+        };
+
+        if dsb_pos >= sgir_write_pos {
+            panic!(
+                "WS-SM SM1.F.8 regression: `{path}::{fn_sig}` body has the DSB \
+                 AFTER the GICD_SGIR write.  The DSB must precede the write so \
+                 prior kernel-state writes are visible on every IS-domain PE \
+                 before the receiver's handler reads them.  See ARM ARM B2.7.5 \
+                 and WS-SM SM1.F.8."
+            );
+        }
     }
 }

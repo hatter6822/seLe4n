@@ -16,6 +16,7 @@ import SeLe4n.Kernel.Concurrency.Assumptions
 import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Kernel.SecondaryEntry
 import SeLe4n.Kernel.Architecture.Assumptions
+import SeLe4n.Kernel.Architecture.TlbiForSharing
 import SeLe4n.Platform.FFI
 import SeLe4n.Platform.RPi5.Contract
 import SeLe4n.Platform.Sim.Contract
@@ -134,6 +135,29 @@ open SeLe4n.Platform.RPi5
 /-! ## SM1.C.6 — Secondary-core kernel entry (closes SMP-C2 Lean side) -/
 #check @SeLe4n.Kernel.secondaryKernelMain
 #check @SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker
+
+/-! ## SM1.E.4 — Sharing-domain-routed TLBI dispatcher Lean wrapper -/
+#check @SeLe4n.Platform.FFI.ffiTlbiForSharing
+#check @SeLe4n.Kernel.Architecture.TlbInvalidation
+#check @SeLe4n.Kernel.Architecture.TlbInvalidation.toOpTag
+#check @SeLe4n.Kernel.Architecture.TlbInvalidation.toAsid
+#check @SeLe4n.Kernel.Architecture.TlbInvalidation.toVaddr
+-- SharingDomain.toTag lives in `SeLe4n.Kernel.Concurrency.SharingDomain`
+-- (declared via `_root_.` in TlbiForSharing.lean) so dot-notation
+-- resolves on values of type `SharingDomain`.
+#check @SeLe4n.Kernel.Concurrency.SharingDomain.toTag
+#check @SeLe4n.Kernel.Architecture.tlbiForSharing
+#check @SeLe4n.Kernel.Concurrency.SharingDomain.toTag_injective
+#check @SeLe4n.Kernel.Concurrency.SharingDomain.toTag_in_range
+#check @SeLe4n.Kernel.Architecture.TlbInvalidation.toOpTag_in_range
+#check @SeLe4n.Kernel.Architecture.TlbInvalidation.toOpTag_distinct_constructors
+#check @SeLe4n.Kernel.Architecture.tlbiForSharing_total
+#check @SeLe4n.Kernel.Architecture.tlbiForSharing_ffi_args_in_range
+
+/-! ## SM1.F.6 — SGI primitive FFI bindings -/
+#check @SeLe4n.Platform.FFI.ffiSendSgi
+#check @SeLe4n.Platform.FFI.ffiSendSgiToSelf
+#check @SeLe4n.Platform.FFI.ffiSendSgiToAllButSelf
 
 -- ============================================================================
 -- §2 — Decidable examples: ground-truth checks at the RPi5 default
@@ -263,6 +287,35 @@ example : SeLe4n.Kernel.secondaryKernelMain 2 = pure () :=
   SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker 2
 example : SeLe4n.Kernel.secondaryKernelMain 3 = pure () :=
   SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker 3
+
+-- §2.18 — SM1.E.4 TLBI dispatcher tag encoding witnesses
+-- Every variant of TlbInvalidation maps to a distinct op tag in [0, 4),
+-- and every SharingDomain maps to a distinct domain tag in [0, 2).  These
+-- are the structural invariants the Rust `ffi_tlbi_for_sharing` dispatcher
+-- relies on for its `match` arms to be exhaustive.
+example : SeLe4n.Kernel.Concurrency.SharingDomain.inner.toTag = 0 := rfl
+example : SeLe4n.Kernel.Concurrency.SharingDomain.outer.toTag = 1 := rfl
+example : SeLe4n.Kernel.Architecture.TlbInvalidation.vmalle1.toOpTag = 0 := rfl
+example : (SeLe4n.Kernel.Architecture.TlbInvalidation.vae1 0 0).toOpTag = 1 := rfl
+example : (SeLe4n.Kernel.Architecture.TlbInvalidation.aside1 0).toOpTag = 2 := rfl
+example : (SeLe4n.Kernel.Architecture.TlbInvalidation.vale1 0 0).toOpTag = 3 := rfl
+-- Operand extraction: vae1/vale1 carry asid + vaddr; aside1 carries asid only;
+-- vmalle1 carries no operand (returns 0 for both).
+example : (SeLe4n.Kernel.Architecture.TlbInvalidation.vae1 42 0x1000).toAsid = 42 := rfl
+example : (SeLe4n.Kernel.Architecture.TlbInvalidation.vae1 42 0x1000).toVaddr = 0x1000 := rfl
+example : SeLe4n.Kernel.Architecture.TlbInvalidation.vmalle1.toAsid = 0 := rfl
+example : SeLe4n.Kernel.Architecture.TlbInvalidation.vmalle1.toVaddr = 0 := rfl
+
+-- §2.19 — SM1.F.6 SGI INTID alignment with SgiKind
+-- Every SgiKind reserves an INTID < 16 (the SGI range).  When the kernel
+-- calls ffiSendSgi via the typed `SgiKind.toIntid`, the resulting UInt8
+-- is structurally `< 16` so the Rust-side bound check never panics on a
+-- well-formed call from Lean.
+example : SeLe4n.Kernel.Concurrency.SgiKind.reschedule.toIntid.val < 16 := by decide
+example : SeLe4n.Kernel.Concurrency.SgiKind.tlbShootdownReq.toIntid.val < 16 := by decide
+example : SeLe4n.Kernel.Concurrency.SgiKind.tlbShootdownAck.toIntid.val < 16 := by decide
+example : SeLe4n.Kernel.Concurrency.SgiKind.cacheBroadcast.toIntid.val < 16 := by decide
+example : SeLe4n.Kernel.Concurrency.SgiKind.haltAll.toIntid.val < 16 := by decide
 
 -- ============================================================================
 -- §3 — Runtime assertions: every above example also runs in `main`
@@ -619,8 +672,86 @@ private def runSecondaryKernelMainChecks : IO Unit := do
   let _ ← SeLe4n.Kernel.secondaryKernelMain UInt64.size.toUInt64
   assertBool "secondaryKernelMain tolerates boundary UInt64 inputs" true
 
+private def runTlbiForSharingChecks : IO Unit := do
+  -- WS-SM SM1.E.4: typed TLBI dispatcher tag-encoding witnesses.
+  --
+  -- `tlbiForSharing` is a `BaseIO Unit` action, so we cannot
+  -- `decide`-compare two invocations.  Instead we exercise the
+  -- pure tag-encoding helpers + structural inequalities at runtime.
+  IO.println "--- §2.18 SM1.E.4 tlbiForSharing tag encoding ---"
+  -- Domain encoding: 2 distinct values mapped to 0 and 1.
+  assertBool "SharingDomain.inner.toTag = 0"
+    (decide (SeLe4n.Kernel.Concurrency.SharingDomain.inner.toTag = 0))
+  assertBool "SharingDomain.outer.toTag = 1"
+    (decide (SeLe4n.Kernel.Concurrency.SharingDomain.outer.toTag = 1))
+  assertBool "SharingDomain tags distinct"
+    (decide (SeLe4n.Kernel.Concurrency.SharingDomain.inner.toTag ≠
+              SeLe4n.Kernel.Concurrency.SharingDomain.outer.toTag))
+  -- Op-tag encoding: 4 constructors mapped to 0..3.
+  assertBool "TlbInvalidation.vmalle1.toOpTag = 0"
+    (decide (SeLe4n.Kernel.Architecture.TlbInvalidation.vmalle1.toOpTag = 0))
+  assertBool "TlbInvalidation.vae1.toOpTag = 1"
+    (decide ((SeLe4n.Kernel.Architecture.TlbInvalidation.vae1 0 0).toOpTag = 1))
+  assertBool "TlbInvalidation.aside1.toOpTag = 2"
+    (decide ((SeLe4n.Kernel.Architecture.TlbInvalidation.aside1 0).toOpTag = 2))
+  assertBool "TlbInvalidation.vale1.toOpTag = 3"
+    (decide ((SeLe4n.Kernel.Architecture.TlbInvalidation.vale1 0 0).toOpTag = 3))
+  -- Operand extraction: vae1/vale1 carry asid + vaddr.
+  assertBool "TlbInvalidation.vae1 42 0x1000 .toAsid = 42"
+    (decide ((SeLe4n.Kernel.Architecture.TlbInvalidation.vae1 42 0x1000).toAsid = 42))
+  assertBool "TlbInvalidation.vae1 42 0x1000 .toVaddr = 0x1000"
+    (decide ((SeLe4n.Kernel.Architecture.TlbInvalidation.vae1 42 0x1000).toVaddr = 0x1000))
+  assertBool "TlbInvalidation.aside1 7 .toAsid = 7"
+    (decide ((SeLe4n.Kernel.Architecture.TlbInvalidation.aside1 7).toAsid = 7))
+  -- vmalle1 has zero operands.
+  assertBool "TlbInvalidation.vmalle1 zero operands"
+    (decide (SeLe4n.Kernel.Architecture.TlbInvalidation.vmalle1.toAsid = 0 ∧
+              SeLe4n.Kernel.Architecture.TlbInvalidation.vmalle1.toVaddr = 0))
+  -- SM1.E.4 audit-pass-2: structural witness that well-formed Lean
+  -- callers cannot trip the Rust FFI's fail-closed panic.  The
+  -- Rust dispatcher panics on `domain_tag >= 2` or `op_tag >= 4`;
+  -- this theorem combines `SharingDomain.toTag_in_range` and
+  -- `TlbInvalidation.toOpTag_in_range` to prove every Lean-emitted
+  -- tag tuple is within the accepted range.  We exercise both
+  -- bounds for representative inputs.
+  assertBool "tlbiForSharing_ffi_args_in_range inner-vmalle1 bounds"
+    (decide (SeLe4n.Kernel.Concurrency.SharingDomain.inner.toTag.toNat < 2 ∧
+              SeLe4n.Kernel.Architecture.TlbInvalidation.vmalle1.toOpTag.toNat < 4))
+  assertBool "tlbiForSharing_ffi_args_in_range outer-vale1 bounds"
+    (decide (SeLe4n.Kernel.Concurrency.SharingDomain.outer.toTag.toNat < 2 ∧
+              (SeLe4n.Kernel.Architecture.TlbInvalidation.vale1 42 0x1000).toOpTag.toNat < 4))
+
+private def runSgiFfiBindingChecks : IO Unit := do
+  -- WS-SM SM1.F.6: SGI FFI binding structural checks.
+  --
+  -- Per the FFI link discipline (no Rust HAL linked into Lean test
+  -- executables), we cannot invoke the FFI exports at host runtime —
+  -- the link would fail.  We exercise structural properties:
+  --
+  --   1. Every SgiKind's INTID is structurally `< 16` (the SGI
+  --      range), so `ffiSendSgi(_, k.toIntid.val.toUInt8)` would
+  --      never trip the Rust-side bound check.
+  --   2. Every SgiKind maps to a distinct INTID (SgiKind.toIntid_injective).
+  IO.println "--- §2.19 SM1.F.6 SGI FFI binding structural ---"
+  assertBool "SgiKind.reschedule.toIntid < 16"
+    (decide (SeLe4n.Kernel.Concurrency.SgiKind.reschedule.toIntid.val < 16))
+  assertBool "SgiKind.tlbShootdownReq.toIntid < 16"
+    (decide (SeLe4n.Kernel.Concurrency.SgiKind.tlbShootdownReq.toIntid.val < 16))
+  assertBool "SgiKind.tlbShootdownAck.toIntid < 16"
+    (decide (SeLe4n.Kernel.Concurrency.SgiKind.tlbShootdownAck.toIntid.val < 16))
+  assertBool "SgiKind.cacheBroadcast.toIntid < 16"
+    (decide (SeLe4n.Kernel.Concurrency.SgiKind.cacheBroadcast.toIntid.val < 16))
+  assertBool "SgiKind.haltAll.toIntid < 16"
+    (decide (SeLe4n.Kernel.Concurrency.SgiKind.haltAll.toIntid.val < 16))
+  -- Every SgiKind's INTID converted to UInt8 stays `< 16`.  This is the
+  -- "FFI bridge well-formedness" witness — SgiKind → UInt8 → ffiSendSgi
+  -- never trips the Rust-side bound on a well-formed Lean caller.
+  assertBool "every SgiKind INTID < 16 (UInt8)"
+    (SeLe4n.Kernel.Concurrency.SgiKind.all.all
+      (fun k => decide (k.toIntid.val < 16)))
+
 def runFoundationsChecks : IO Unit := do
-  IO.println "WS-SM SM0.S + SM1.B + SM1.C — Foundations test suite"
+  IO.println "WS-SM SM0.S + SM1.B + SM1.C + SM1.E + SM1.F — Foundations test suite"
   IO.println "===================================="
   runCoreIdChecks
   runSharingDomainChecks
@@ -638,8 +769,10 @@ def runFoundationsChecks : IO Unit := do
   runBklStateAdditionalChecks
   runCurrentCoreIdChecks
   runSecondaryKernelMainChecks
+  runTlbiForSharingChecks
+  runSgiFfiBindingChecks
   IO.println "===================================="
-  IO.println "All SM0 + SM1.B + SM1.C foundation checks PASS."
+  IO.println "All SM0 + SM1.B + SM1.C + SM1.E + SM1.F foundation checks PASS."
 
 end SeLe4n.Testing.SmpFoundations
 

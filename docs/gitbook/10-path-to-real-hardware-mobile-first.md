@@ -108,6 +108,56 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
   also moved `check_per_cpu_invariants()` from Phase 4 to
   Phase 1 so const-init regressions surface at boot start.
 
+- **Cross-core HAL completion** (WS-SM SM1.E/F/G/H, landed at
+  v0.31.7): closes the SM1 Rust HAL surface so SM5+ per-core
+  kernel state lands on a fully-functional cross-core HAL.
+  - **SM1.E** adds IS/OS-variant broadcast TLBI primitives
+    (`tlbi_*is` and `tlbi_*os` for vmalle1/vae1/aside1/vale1),
+    the typed `tlbi_for_sharing(domain, op)` dispatcher with
+    `SharingDomain` and `TlbInvalidation` enums, and the Lean
+    typed wrapper `Architecture.tlbiForSharing` in NEW module
+    `SeLe4n/Kernel/Architecture/TlbiForSharing.lean` (~330
+    lines incl. tag-encoding theorems).  Mask tightened to 44
+    bits per ARM ARM C6.2.311 (audit-pass-1) so adversarial
+    vaddrs ≥ 2^56 cannot pollute the RES0/TTL field.  FFI
+    boundary panics on unknown tags (audit-pass-1 fail-closed);
+    Lean wrapper proves panic is unreachable via
+    `tlbiForSharing_ffi_args_in_range` (audit-pass-3).
+  - **SM1.F** adds GICD_SGIR-based SGI send primitives
+    (`send_sgi`, `send_sgi_to_self`, `send_sgi_to_all_but_self`)
+    each emitting `dsb ish` BEFORE the SGIR write per ARM ARM
+    B2.7.5 (pinned by NEW build-script scanner
+    `scan_gic_rs_send_sgi_emits_dsb_ish`).  SGI handler dispatch
+    infrastructure (`SgiHandler` type, `SGI_HANDLERS` table,
+    `register_sgi_handler`, `lookup_sgi_handler`, `dispatch_sgi`,
+    `iar_source_cpu`).  Lean FFI bindings for each send variant.
+    Audit-pass-1 refactored to testable `_in`-form helpers
+    taking explicit slices so tests don't race on global state.
+  - **SM1.G** audits the `UartLock` for SMP correctness
+    (Acquire/Release semantics + per-acquire DAIF mask) and
+    adds `kprintln_core!` / `kprint_core!` macros that prefix
+    each line with `[core N]` from TPIDR_EL1.  Audit-pass-1
+    fixed the macro to hold the lock for the entire formatted
+    line (was non-atomic in the pre-audit form).
+  - **SM1.H** wires three QEMU SMP integration tests into the
+    tier-4 nightly slot (full `-smp 4` bringup, minimal `-smp 2`
+    smoke, cross-core SGI round-trip) — all SKIP cleanly when
+    no kernel ELF binary is available (which is the SM1.H
+    state; kernel binary target lands at SM5+).
+  - **Audit-pass-2/3 additions**: `init_cpu_interface_secondary`
+    now writes all FOUR banked distributor registers
+    (IGROUPR0, IPRIORITYR0..7, ICPENDR0, ISENABLER0) in the
+    canonical GIC-400 TRM §3.1.1 Table 3-1 order, mirroring
+    the primary's `init_distributor`.  Without per-core
+    distributor init, SGIs sent to secondaries would stay
+    pending forever and timer PPIs would never fire.
+  - **Test coverage**: 531 HAL tests (was 425 pre-SM1.E; +106
+    new tests across tlb.rs, gic.rs, ffi.rs, uart.rs after
+    three audit passes).  Lean-side: +20 surface anchors + 13
+    decidable examples + 18 runtime assertions in
+    `tests/SmpFoundationsSuite.lean`.  Zero clippy warnings
+    workspace-wide.
+
 The **runtime** validation that complements these static guarantees
 (QEMU virt boots, RPi 5 silicon validation) is documented in
 [`docs/HARDWARE_TESTING.md`](../HARDWARE_TESTING.md) with step-by-step

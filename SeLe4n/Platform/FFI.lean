@@ -186,6 +186,95 @@ opaque ffiTlbiByAsid : UInt16 → BaseIO Unit
 opaque ffiTlbiByVaddr : UInt16 → UInt64 → BaseIO Unit
 
 -- ============================================================================
+-- WS-SM SM1.E.4 — Sharing-domain-routed TLBI dispatcher FFI binding
+-- ============================================================================
+--
+-- The Lean-side typed `Architecture.tlbiForSharing` wrapper encodes
+-- a `(SharingDomain, TlbInvalidation)` pair into the (domainTag,
+-- opTag, asid, vaddr) tuple expected by the Rust-side
+-- `ffi_tlbi_for_sharing` dispatcher.
+--
+-- **Discriminant encoding** (mirrors `rust/sele4n-hal/src/ffi.rs`):
+--
+--   domainTag : UInt32   0 = Inner, 1 = Outer
+--   opTag     : UInt32   0 = Vmalle1, 1 = Vae1, 2 = Aside1, 3 = Vale1
+--   asid      : UInt16   16-bit ASID (RES0 for Vmalle1)
+--   vaddr     : UInt64   page-aligned VA (RES0 for Vmalle1, Aside1)
+--
+-- The encoding is fixed: a future change requires the Rust dispatcher
+-- and this declaration to be updated in lockstep, plus the
+-- corresponding FFI ABI test in `tests/SmpFoundationsSuite.lean`.
+
+/-- **WS-SM SM1.E.4**: Sharing-domain-routed TLBI dispatcher.
+    Routes the (domainTag, opTag, asid, vaddr) tuple to one of the
+    eight underlying IS/OS TLBI variants.
+
+    Production callers should use the typed Lean-side wrapper in
+    `SeLe4n.Kernel.Architecture` rather than calling this raw FFI
+    directly — the typed wrapper exhaustively covers the
+    `(SharingDomain, TlbInvalidation)` enumeration and prevents
+    encoding errors at the call site.
+
+    Rust: `ffi_tlbi_for_sharing` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_tlbi_for_sharing"]
+opaque ffiTlbiForSharing :
+    (domainTag : UInt32) → (opTag : UInt32) →
+    (asid : UInt16) → (vaddr : UInt64) → BaseIO Unit
+
+-- ============================================================================
+-- WS-SM SM1.F.6 — SGI primitive FFI bindings
+-- ============================================================================
+--
+-- The SGI primitives are inter-processor interrupt sends in the GIC's
+-- INTID range [0, 16).  The kernel reserves the lowest five slots
+-- (per `SeLe4n.Kernel.Concurrency.SgiKind`) for SMP coordination.
+--
+-- All three send variants emit `dsb ish` BEFORE writing GICD_SGIR per
+-- SM1.F.8 / ARM ARM B2.7.5: prior kernel-state writes must be visible
+-- on every IS-domain PE before the SGI fires on the receiver.
+--
+-- Lean callers should use the typed wrappers in a future
+-- `SeLe4n.Kernel.Concurrency.Sgi` companion module (post-SM1.F that
+-- builds on the `SgiKind` enum at SM0.H); the FFI declarations here
+-- are the link-time bridge.
+
+/-- **WS-SM SM1.F.6**: Send an SGI to one or more target CPU
+    interfaces by explicit bitmask.
+
+    `targetMask` — 8-bit bitmask of target CPU interfaces (bit i = CPU i).
+    On RPi5 only bits 0..3 are meaningful.
+    `intid` — SGI INTID (`0..15`).
+
+    Panics on the Rust side if `intid >= 16`.  The Lean caller MUST
+    constrain the intid to the SGI range (typically by passing
+    `SgiKind.toIntid k |>.val |>.toUInt8` for a kernel-reserved
+    SGI, which is structurally `< 16`).
+
+    Rust: `ffi_send_sgi` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_send_sgi"]
+opaque ffiSendSgi : (targetMask : UInt8) → (intid : UInt8) → BaseIO Unit
+
+/-- **WS-SM SM1.F.6**: Send an SGI to the calling core only.
+
+    `intid` — SGI INTID (`0..15`).  Useful for deferring work via an
+    SGI without disturbing other cores.
+
+    Rust: `ffi_send_sgi_to_self` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_send_sgi_to_self"]
+opaque ffiSendSgiToSelf : (intid : UInt8) → BaseIO Unit
+
+/-- **WS-SM SM1.F.6**: Send an SGI to all cores except the caller.
+
+    `intid` — SGI INTID (`0..15`).  Most common SMP-coordination
+    pattern: the caller has performed an action whose result every
+    other core must observe (TLB shootdown, kernel-state quiesce,
+    reschedule trigger).
+
+    Rust: `ffi_send_sgi_to_all_but_self` in `sele4n-hal/src/ffi.rs` -/
+@[extern "ffi_send_sgi_to_all_but_self"]
+opaque ffiSendSgiToAllButSelf : (intid : UInt8) → BaseIO Unit
+
+-- ============================================================================
 -- AG7-A-iii: MMIO FFI declarations
 -- ============================================================================
 

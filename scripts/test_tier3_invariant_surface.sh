@@ -1170,8 +1170,12 @@ EOF'
 # wrapper surface (Concurrency.Runtime + Platform.FFI.ffiCurrentCoreId).
 # WS-SM SM1.C.6 adds the secondary-core kernel-entry placeholder
 # (Kernel.SecondaryEntry.secondaryKernelMain + marker theorem).
-# Build the foundational + Anchors + Runtime + SecondaryEntry modules
-# first so the .olean files exist.
+# WS-SM SM1.E.4 adds the typed TLBI dispatcher wrapper
+# (Architecture.TlbiForSharing + tag encoding theorems).
+# WS-SM SM1.F.6 adds the SGI primitive FFI bindings
+# (Platform.FFI.ffiSendSgi*).
+# Build the foundational + Anchors + Runtime + SecondaryEntry +
+# TlbiForSharing modules first so the .olean files exist.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build \
   SeLe4n.Kernel.Concurrency.Types \
   SeLe4n.Kernel.Concurrency.Locks \
@@ -1179,7 +1183,8 @@ run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build \
   SeLe4n.Kernel.Concurrency.Sgi \
   SeLe4n.Kernel.Concurrency.Anchors \
   SeLe4n.Kernel.Concurrency.Runtime \
-  SeLe4n.Kernel.SecondaryEntry'
+  SeLe4n.Kernel.SecondaryEntry \
+  SeLe4n.Kernel.Architecture.TlbiForSharing'
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Kernel.Concurrency.Types
 import SeLe4n.Kernel.Concurrency.Locks
@@ -1190,6 +1195,7 @@ import SeLe4n.Kernel.Concurrency.Assumptions
 import SeLe4n.Kernel.Concurrency.Runtime
 import SeLe4n.Kernel.SecondaryEntry
 import SeLe4n.Kernel.Architecture.Assumptions
+import SeLe4n.Kernel.Architecture.TlbiForSharing
 import SeLe4n.Platform.FFI
 import SeLe4n.Platform.RPi5.Contract
 
@@ -1252,6 +1258,24 @@ import SeLe4n.Platform.RPi5.Contract
 -- SM1.C.6 — Secondary-core kernel-entry placeholder (closes SMP-C2 Lean side)
 #check @SeLe4n.Kernel.secondaryKernelMain
 #check @SeLe4n.Kernel.secondaryKernelMain_returns_unit_marker
+-- SM1.E.4 — Typed TLBI dispatcher wrapper (post-SM7 cross-core call sites)
+#check @SeLe4n.Kernel.Architecture.TlbInvalidation
+#check @SeLe4n.Kernel.Architecture.TlbInvalidation.toOpTag
+#check @SeLe4n.Kernel.Architecture.TlbInvalidation.toAsid
+#check @SeLe4n.Kernel.Architecture.TlbInvalidation.toVaddr
+#check @SeLe4n.Kernel.Concurrency.SharingDomain.toTag
+#check @SeLe4n.Kernel.Architecture.tlbiForSharing
+#check @SeLe4n.Kernel.Concurrency.SharingDomain.toTag_injective
+#check @SeLe4n.Kernel.Concurrency.SharingDomain.toTag_in_range
+#check @SeLe4n.Kernel.Architecture.TlbInvalidation.toOpTag_in_range
+#check @SeLe4n.Kernel.Architecture.TlbInvalidation.toOpTag_distinct_constructors
+#check @SeLe4n.Kernel.Architecture.tlbiForSharing_total
+#check @SeLe4n.Kernel.Architecture.tlbiForSharing_ffi_args_in_range
+#check @SeLe4n.Platform.FFI.ffiTlbiForSharing
+-- SM1.F.6 — SGI primitive FFI bindings
+#check @SeLe4n.Platform.FFI.ffiSendSgi
+#check @SeLe4n.Platform.FFI.ffiSendSgiToSelf
+#check @SeLe4n.Platform.FFI.ffiSendSgiToAllButSelf
 EOF'
 
 finalize_report

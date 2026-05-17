@@ -274,8 +274,25 @@ pub extern "C" fn handle_irq(_frame: &mut TrapFrame) {
             // until PSTATE.I clears on exception return.
             crate::timer::reprogram_timer();
         } else {
-            // Non-timer interrupt: log for debugging
-            // AG7 will wire device interrupts to notification signals via FFI
+            // Non-timer interrupt: log for debugging.
+            //
+            // WS-SM SM1.F note: SGIs (INTIDs 0..15) currently land
+            // in this "unhandled" branch.  The SM1.F primitive
+            // surface (send_sgi, dispatch_sgi, register_sgi_handler)
+            // is fully implemented in gic.rs, but `dispatch_irq` /
+            // `acknowledge_irq_classified` only return the INTID,
+            // not the source_cpu (bits [12:10] of GICC_IAR).
+            // Wiring SGIs into the trap handler requires:
+            //   1. A `dispatch_irq` variant that preserves the full
+            //      IAR (or extracts source_cpu via `iar_source_cpu`).
+            //   2. The kernel-side Lean handler registration logic
+            //      (per the SM5+ per-core scheduler state).
+            // Both are SM5+ follow-on work.  At SM1.F the SGI HAL
+            // primitives are unit-tested and ready; the trap-handler
+            // wiring is the next layer up.
+            //
+            // AG7 will additionally wire device interrupts (SPIs)
+            // to notification signals via FFI.
             crate::kprintln!("IRQ: unhandled INTID {}", intid);
         }
     });

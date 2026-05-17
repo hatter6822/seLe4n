@@ -94,11 +94,12 @@ v0.27.6 audit addressed (5 HIGH, 27 MEDIUM, 28 LOW).
 **Next major milestone**: WS-SM — multi-core SMP completion through v1.0.0.
 Phase SM0 (foundations & honesty patches) closed at v0.31.3 with the
 type-level scaffolding (CoreId, LockKind, LockId, SgiKind, SharingDomain,
-BklState).  Phase SM1 (Rust HAL) is in flight with four sub-phases
-landed: SM1.A (PSCI completion) at v0.31.3, SM1.B (per-CPU data +
-TPIDR_EL1, closes SMP-M4) at v0.31.4, SM1.C (secondary-core full
-init, closes SMP-C2) at v0.31.5, and SM1.D (DTB cmdline + Phase 5)
-at v0.31.6.  SM1.C rewrites `rust_secondary_main`
+BklState).  Phase SM1 (Rust HAL) closes at v0.31.7 with the eight
+sub-phases all landed: SM1.A (PSCI completion) at v0.31.3, SM1.B
+(per-CPU data + TPIDR_EL1, closes SMP-M4) at v0.31.4, SM1.C
+(secondary-core full init, closes SMP-C2) at v0.31.5, SM1.D (DTB
+cmdline + Phase 5) at v0.31.6, and SM1.E/F/G/H (cross-core HAL
+completion) at v0.31.7.  SM1.C rewrites `rust_secondary_main`
 into the full per-core boot sequence — MMU enable
 (`init_mmu_secondary` via shared `init_mmu_per_core`), exception
 vectors (`install_exception_vectors` shared with primary), GIC CPU
@@ -112,9 +113,24 @@ and dispatches to `bring_up_secondaries_with_limit` to spawn the
 configured set of secondaries.  Default at v0.31.6+ is
 `smp_enabled=true smp_max_cores=4` per maintainer decision #7 —
 operators opt out via the kernel command line.
-SM1.E..H plus SM2..SM9 wire those types into TLB-shootdown IS
-variants, SGI primitive, per-core UART, QEMU `-smp 4` integration,
-verified ticket / RW lock primitives, and cross-core IPC.  Full plan in
+SM1.E adds 8 broadcast TLBI wrappers (4 IS-variants `tlbi_*is` for
+inner-shareable broadcast + 4 OS-variants `tlbi_*os` for outer-
+shareable) plus the typed `tlbi_for_sharing(domain, op)` dispatcher
+exposed to Lean via `Architecture.tlbiForSharing` (in
+`SeLe4n/Kernel/Architecture/TlbiForSharing.lean`).  SM1.F adds the
+GICD_SGIR-based SGI primitive surface (`gic::send_sgi*` family +
+`register_sgi_handler` / `dispatch_sgi` infrastructure); each
+send-SGI variant emits `dsb ish` BEFORE the SGIR write per ARM ARM
+B2.7.5, pinned by a new build-script scanner.  SM1.G audits the
+`UartLock` for SMP correctness and adds the `kprintln_core!` macro
+for per-core attributed boot tracing.  SM1.H wires three QEMU SMP
+integration tests (full `-smp 4` bringup, minimal `-smp 2` smoke
+test, cross-core SGI round-trip) into the tier-4 nightly slot,
+replacing the SM0.T SKIP-only stub.
+SM2..SM9 wire those types and primitives into verified ticket / RW
+lock primitives, per-core scheduler state, cross-core IPC, TLB
+shootdown, info-flow non-interference under SMP, and the v1.0.0
+release closure.  Full plan in
 [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](../planning/SMP_MULTICORE_COMPLETION_PLAN.md).
 Companion post-1.0 deferrals: FrozenOps production promotion.
 
