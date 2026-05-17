@@ -353,6 +353,37 @@ example :
     let s := TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)
     s.observeServing = s.serving := rfl
 
+/-! ## §2.7f — Reachable / KernelStep constructive witnesses -/
+
+/-- The state after a successful `tryAcquire` from `unheld` is reachable
+via a single `KernelStep.acquire`.  This exercises the
+`Reachable` / `KernelStep` constructors and verifies they typecheck
+on a concrete witness. -/
+example : Reachable (TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)) :=
+  Reachable.step Reachable.base (KernelStep.acquire _ _)
+
+/-- The acquire-release cycle from `unheld` is reachable via two
+`KernelStep`s — `acquire` then `release` (composed via
+`releaseAndPromote`). -/
+example :
+    Reachable ((TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)).releaseAndPromote
+                 bootCoreId) :=
+  Reachable.step
+    (Reachable.step Reachable.base (KernelStep.acquire _ _))
+    (KernelStep.release _ _)
+
+/-- Any reachable state is wf — this is `ticketLock_reachability` applied
+to a concrete construction.  The conclusion `s.wf` is the runtime-
+checkable invariant the kernel relies on. -/
+example :
+    let s := (TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)).releaseAndPromote
+                bootCoreId
+    s.wf :=
+  ticketLock_reachability _
+    (Reachable.step
+      (Reachable.step Reachable.base (KernelStep.acquire _ _))
+      (KernelStep.release _ _))
+
 /-! ## §2.8 — Determinism (rfl-trivial) -/
 
 example :
@@ -520,13 +551,67 @@ private def runDeterminismChecks : IO Unit := do
     (decide (s1 = s2))
 
 private def runReachabilityShapeChecks : IO Unit := do
-  IO.println "--- §3.8 reachability shape (Reachable inhabits unheld) ---"
-  -- The Reachable predicate is a Prop, not Bool, so we can't directly
-  -- run decide on its inhabitation.  We check that the structural
-  -- witnesses (KernelStep + Reachable constructors) exist.
-  -- The ticketLock_reachability theorem itself is verified at
-  -- elaboration via the `#check` line in §1.
-  IO.println "  PASS: Reachable surface anchors verified at elaboration"
+  IO.println "--- §3.8 reachability witnesses (concrete chains satisfy wf) ---"
+  -- Reachable is a Prop (not Decidable in general because KernelStep is an
+  -- inductive over a possibly-infinite trace), but every concrete state we
+  -- construct via the operational semantics IS reachable by construction.
+  -- We verify the theorem `ticketLock_reachability` indirectly by checking
+  -- that every state produced by a known kernel-step chain is wf
+  -- (`decide` is decidable on closed states).
+  let c1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let c2 : SeLe4n.Kernel.Concurrency.CoreId := ⟨2, by decide⟩
+  let c3 : SeLe4n.Kernel.Concurrency.CoreId := ⟨3, by decide⟩
+  -- Chain 1: acquire + release (one cycle).
+  let chain1 :=
+    SeLe4n.Kernel.Concurrency.TicketLockState.unheld
+      |>.applyOp (.tryAcquire SeLe4n.Kernel.Concurrency.bootCoreId)
+      |>.releaseAndPromote SeLe4n.Kernel.Concurrency.bootCoreId
+  assertBool "chain 1 (acquire + release) is wf"
+    (decide chain1.wf)
+  -- Chain 2: acquire all 4 cores then release all 4.
+  let chain2 :=
+    SeLe4n.Kernel.Concurrency.TicketLockState.unheld
+      |>.applyOp (.tryAcquire SeLe4n.Kernel.Concurrency.bootCoreId)
+      |>.applyOp (.tryAcquire c1)
+      |>.applyOp (.tryAcquire c2)
+      |>.applyOp (.tryAcquire c3)
+      |>.releaseAndPromote SeLe4n.Kernel.Concurrency.bootCoreId
+      |>.releaseAndPromote c1
+      |>.releaseAndPromote c2
+      |>.releaseAndPromote c3
+  assertBool "chain 2 (4 acquires + 4 releases) is wf"
+    (decide chain2.wf)
+  -- Chain 3: interleaved (acquire boot, release boot, acquire c1, release c1, ...).
+  let chain3 :=
+    SeLe4n.Kernel.Concurrency.TicketLockState.unheld
+      |>.applyOp (.tryAcquire SeLe4n.Kernel.Concurrency.bootCoreId)
+      |>.releaseAndPromote SeLe4n.Kernel.Concurrency.bootCoreId
+      |>.applyOp (.tryAcquire c1)
+      |>.releaseAndPromote c1
+      |>.applyOp (.tryAcquire c2)
+      |>.releaseAndPromote c2
+  assertBool "chain 3 (interleaved acquire-release per core) is wf"
+    (decide chain3.wf)
+  -- Chain 4: only observeServing ops (identity transitions).
+  let chain4 :=
+    SeLe4n.Kernel.Concurrency.TicketLockState.unheld
+      |>.applyOp (.observeServing SeLe4n.Kernel.Concurrency.bootCoreId 0)
+      |>.applyOp (.observeServing c1 0)
+  assertBool "chain 4 (pure observation) is wf and equals unheld"
+    (decide (chain4 = SeLe4n.Kernel.Concurrency.TicketLockState.unheld
+             ∧ chain4.wf))
+  -- Chain 5: bounded-wait specific — fill all 4 slots (1 holder + 3 pending).
+  -- At this state, nextTicket = serving + numCores = 0 + 4 = 4 (tight bound).
+  let chain5 :=
+    SeLe4n.Kernel.Concurrency.TicketLockState.unheld
+      |>.applyOp (.tryAcquire SeLe4n.Kernel.Concurrency.bootCoreId)
+      |>.applyOp (.tryAcquire c1)
+      |>.applyOp (.tryAcquire c2)
+      |>.applyOp (.tryAcquire c3)
+  assertBool "chain 5 (all 4 cores in lock) is wf"
+    (decide chain5.wf)
+  assertBool "chain 5: nextTicket = serving + numCores (tight bound)"
+    (decide (chain5.nextTicket = chain5.serving + SeLe4n.Kernel.Concurrency.numCores))
 
 private def runBoundedWaitShapeChecks : IO Unit := do
   IO.println "--- §3.9 bounded wait (nextTicket ≤ serving + numCores for unheld) ---"

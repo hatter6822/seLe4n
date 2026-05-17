@@ -176,13 +176,18 @@ recommending `with_lock` for safe usage.  New test
 (`#[cfg(debug_assertions)]` + `#[should_panic]`) verifies the
 assert fires.
 
-Lean test suite extended (was 35 → 49 runtime assertions): edge-
-case tests for the second-if no-op (re-acquire by current
-holder), release-by-non-holder no-op (both held = none case and
-wrong-core case), and the full 3-acquire + 3-release promotion
-chain verifying every intermediate state's holder identity and
-wf preservation.  Rust test suite extended (was 17 → 22 tests):
-+5 audit-pass tests including the debug-assert verification.
+Lean test suite extended (was 35 runtime assertions at audit-pass-1
+close → 49 at audit-pass-2 close): edge-case tests for the
+second-if no-op (re-acquire by current holder), release-by-non-
+holder no-op (both held = none case and wrong-core case), the full
+3-acquire + 3-release promotion chain verifying every intermediate
+state's holder identity and wf preservation, and 5 concrete
+reachability-chain tests (acquire-release cycle, 4-core acquire-
+release, interleaved, pure observation, all-4-slots-tight-bound)
+replacing the audit-pass-1 fake "verified at elaboration" PASS
+with real `decide`-checks on the wf invariant.  Rust test suite
+extended (was 17 → 22 tests): +5 audit-pass tests including the
+debug-assert verification.
 
 ## v0.31.9 — WS-SM Phase SM2.A landing (abstract memory model for verified lock primitives)
 

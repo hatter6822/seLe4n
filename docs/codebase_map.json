@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-ticketlock-tasks-2ca8a",
-      "commit_sha": "0bae58777ca43fb3cc31887e7f5d69e086df0202",
-      "tree_sha": "05dab88c5ee201314a1758d7acf0abcaba9bed87",
-      "committed_at_utc": "2026-05-17T19:30:33+00:00"
+      "commit_sha": "259f675a715c3f6eeae10cf9fcb42729abbe9208",
+      "tree_sha": "7e69417d18766e3175acafdd13837933cac86a8b",
+      "committed_at_utc": "2026-05-17T19:43:53+00:00"
     }
   },
   "source_sync": {
@@ -17,11 +17,11 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "6260c9769ffd3de9252b00569a92f18eb6824ba619ead313d34bd0bfa0df7c11"
+    "source_digest": "efb0313047761aea3b4acc60f3379e298eb72f87199425b81221ad1d2e265efe"
   },
   "summary": {
     "module_count": 212,
-    "declaration_count": 6880
+    "declaration_count": 6883
   },
   "readme_sync": {
     "version": "0.31.9",
@@ -29,7 +29,7 @@
     "production_files": 180,
     "production_loc": 119002,
     "test_files": 32,
-    "test_loc": 23214,
+    "test_loc": 23299,
     "proved_theorem_lemma_decls": 3461,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -88469,7 +88469,7 @@
     {
       "module": "tests.TicketLockSuite",
       "path": "tests/TicketLockSuite.lean",
-      "declaration_count": 52,
+      "declaration_count": 55,
       "declarations": [
         {
           "kind": "example",
@@ -88801,8 +88801,41 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:358>",
-          "line": 358,
+          "name": "<anonymous:example:362>",
+          "line": 362,
+          "called": [
+            "Reachable",
+            "applyOp",
+            "bootCoreId"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:368>",
+          "line": 368,
+          "called": [
+            "Reachable",
+            "applyOp",
+            "bootCoreId",
+            "releaseAndPromote"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:378>",
+          "line": 378,
+          "called": [
+            "applyOp",
+            "bootCoreId",
+            "releaseAndPromote",
+            "ticketLock_reachability",
+            "wf"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:389>",
+          "line": 389,
           "called": [
             "applyOp",
             "bootCoreId"
@@ -88811,13 +88844,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.TicketLockSuite",
-          "line": 367,
+          "line": 398,
           "called": []
         },
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 369,
+          "line": 400,
           "called": [
             "throw"
           ]
@@ -88825,7 +88858,7 @@
         {
           "kind": "def",
           "name": "runUnheldChecks",
-          "line": 376,
+          "line": 407,
           "called": [
             "assertBool",
             "heldCount",
@@ -88840,7 +88873,7 @@
         {
           "kind": "def",
           "name": "runFastPathAcquireChecks",
-          "line": 399,
+          "line": 430,
           "called": [
             "applyOp",
             "assertBool",
@@ -88851,7 +88884,7 @@
         {
           "kind": "def",
           "name": "runSlowPathAcquireChecks",
-          "line": 414,
+          "line": 445,
           "called": [
             "CoreId",
             "applyOp",
@@ -88863,7 +88896,7 @@
         {
           "kind": "def",
           "name": "runReleaseAndPromoteChecks",
-          "line": 431,
+          "line": 462,
           "called": [
             "CoreId",
             "applyOp",
@@ -88876,7 +88909,7 @@
         {
           "kind": "def",
           "name": "runObserveServingChecks",
-          "line": 449,
+          "line": 480,
           "called": [
             "TicketLockState.unheld",
             "applyOp",
@@ -88888,7 +88921,7 @@
         {
           "kind": "def",
           "name": "runNoOpTryAcquireChecks",
-          "line": 456,
+          "line": 487,
           "called": [
             "CoreId",
             "applyOp",
@@ -88899,7 +88932,7 @@
         {
           "kind": "def",
           "name": "runNonHolderReleaseChecks",
-          "line": 471,
+          "line": 502,
           "called": [
             "CoreId",
             "TicketLockState.unheld",
@@ -88911,7 +88944,7 @@
         {
           "kind": "def",
           "name": "runPromotionChainChecks",
-          "line": 487,
+          "line": 518,
           "called": [
             "CoreId",
             "TicketLockState.unheld",
@@ -88926,7 +88959,7 @@
         {
           "kind": "def",
           "name": "runDeterminismChecks",
-          "line": 514,
+          "line": 545,
           "called": [
             "TicketLockState.unheld",
             "applyOp",
@@ -88937,13 +88970,23 @@
         {
           "kind": "def",
           "name": "runReachabilityShapeChecks",
-          "line": 522,
-          "called": []
+          "line": 553,
+          "called": [
+            "CoreId",
+            "TicketLockState.unheld",
+            "applyOp",
+            "assertBool",
+            "bootCoreId",
+            "numCores",
+            "observeServing",
+            "releaseAndPromote",
+            "wf"
+          ]
         },
         {
           "kind": "def",
           "name": "runBoundedWaitShapeChecks",
-          "line": 531,
+          "line": 616,
           "called": [
             "TicketLockState.unheld",
             "assertBool",
@@ -88953,7 +88996,7 @@
         {
           "kind": "def",
           "name": "runFifoChainChecks",
-          "line": 537,
+          "line": 622,
           "called": [
             "CoreId",
             "TicketLockState.unheld",
@@ -88965,7 +89008,7 @@
         {
           "kind": "def",
           "name": "runTicketLockChecks",
-          "line": 560,
+          "line": 645,
           "called": [
             "runBoundedWaitShapeChecks",
             "runDeterminismChecks",
@@ -88984,7 +89027,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 580,
+          "line": 665,
           "called": [
             "runTicketLockChecks"
           ]
