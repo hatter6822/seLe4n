@@ -2836,7 +2836,7 @@ All documented in module docstrings.
 
 SM1 is complete when:
 
-- [ ] All 8 PSCI primitives wrapped (`cpu_on`, `cpu_off`,
+- [ ] All 7 PSCI primitives wrapped (`cpu_on`, `cpu_off`,
       `affinity_info`, `system_off`, `system_reset`,
       `psci_version`, `migrate_info_type`).
 - [ ] PSCI function IDs pinned against ARM DEN0022D in unit test.
@@ -2956,7 +2956,7 @@ side-branch joining at SM1.H.5).
 
 **Acceptance gate** (§8) all items checked:
 
-- [x] All 8 PSCI primitives wrapped.
+- [x] All 7 PSCI primitives wrapped.
 - [x] PSCI function IDs pinned against ARM DEN0022D in unit test.
 - [x] `PerCpuData` struct + array, TPIDR_EL1 readable.
 - [x] `current_per_cpu()` + `current_core_id_from_tpidr()` work.

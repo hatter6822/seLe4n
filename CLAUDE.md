@@ -1837,6 +1837,76 @@ documentation lives under `docs/` and `docs/gitbook/`.
     normally and surface their own diagnostics.  21 occurrences
     converted across trap.rs / uart.rs / timer.rs.
 
+  **Audit-pass-5 refinements** (third external audit pass; also
+  in v0.31.8): closed one MEDIUM-severity documentation overclaim,
+  two LOW-severity scanner-robustness weaknesses, one LOW-severity
+  architectural inconsistency, and one LOW pre-existing plan
+  count mismatch.
+
+  - **MEDIUM (boot.rs docstring overclaim)**: the audit-pass-4
+    boot.rs commentary stated the Phase 1 TPIDR_EL1 write
+    "covers Phase 2 (MMU) and Phase 3 (GIC + timer)".  This
+    overstates the protected window — VBAR_EL1 is not installed
+    until mid-Phase 2 (after `init_mmu`), so EL1 synchronous
+    exceptions raised between the Phase 1 TPIDR_EL1 write and
+    the `install_exception_vectors` call go to firmware vectors,
+    not to `handle_synchronous_exception`.  Rewrote the comment
+    to honestly distinguish the unprotected window (Phase 1 →
+    mid-Phase 2) from the protected window (post-VBAR_EL1
+    install → end of boot).  Also added a "Pre-MMU memory
+    safety" paragraph documenting why writing the static
+    `PER_CPU_DATA[0]` virtual address to TPIDR_EL1 before MMU
+    enable is sound (kernel link at `0x80000` per link.ld;
+    identity mapping from boot.S makes virtual == physical).
+
+  - **LOW (scanner block-comment bypass)**: build-script
+    scanners stripped only `//` line comments.  A pathological
+    refactor wrapping the contract calls in `/* ... */` would
+    have compiled (block comment elides the body) AND defeated
+    the scanner (string match still finds the symbol names in
+    comments).  Added a new `strip_rust_comments` helper that
+    handles both comment styles; the SM1.I.1 scanner uses it
+    via `let stripped = strip_rust_comments(&contents)`.
+    Functionally verified by deliberately wrapping the
+    `record_irq_dispatch` and `current_core_id_from_tpidr`
+    calls in `/* */` — scanner correctly catches each
+    violation with an actionable diagnostic.
+
+  - **LOW (200-byte `#[no_mangle]` window fragile)**: the SM1.I.1
+    scanner's preamble window was 200 bytes — currently has ~88
+    bytes of margin, fragile against future docstring expansion.
+    Widened to 4096 bytes (one page) for resilience while
+    remaining tight enough that a stale `#[no_mangle]` on an
+    unrelated nearby function can't satisfy the check.
+
+  - **LOW (scanner-bait architectural inconsistency)**: the
+    `let _core_id = current_core_id_from_tpidr();` binding in
+    `handle_irq_per_core` was scanner-bait at audit-pass-4
+    (never consumed in the body).  This was inconsistent with
+    SM1.C.5 audit-pass-2 which explicitly removed similar
+    bait.  Audit-pass-5 makes the binding non-vestigial by
+    consuming it in a `debug_assert!` that pins the SM5
+    contract — "TPIDR_EL1 yields a valid PER_CPU_DATA index".
+    Zero release-build cost (debug_assert is elided in
+    release), provides actual defense-in-depth in test/dev
+    builds, and resolves the architectural inconsistency.
+
+  - **LOW (pre-existing plan count mismatch)**: plan §8
+    acceptance gate said "All 8 PSCI primitives wrapped" but
+    listed 7 names (`cpu_on`, `cpu_off`, `affinity_info`,
+    `system_off`, `system_reset`, `psci_version`,
+    `migrate_info_type`).  Pre-existing from SM1.A landing;
+    corrected to "All 7 PSCI primitives wrapped" in two
+    places in the plan.
+
+  **Test coverage after audit-pass-5**: 592 HAL tests + 1
+  ignored = 593 total (unchanged from audit-pass-2/3/4 — pass-5
+  added no new tests, only strengthened existing infrastructure).
+  Zero clippy warnings workspace-wide.  Full Tier 0+1+2+3 still
+  green.  Stress-tested 20/20 runs of the full Rust suite.
+  Build-script scanner functionally verified to catch both
+  `//` AND `/* */` contract-bypass attempts at elaboration time.
+
   **Items deferred past v1.0.0 with correctness impact**: NONE.
 
   **SM1 acceptance gate** (per

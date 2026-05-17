@@ -730,38 +730,53 @@ fn scan_gic_rs_send_sgi_emits_dsb_ish() {
     }
 }
 
-/// **WS-SM SM1.I.1**: verify `trap.rs::handle_irq_per_core` is intact.
-///
-/// SM1.I.1 adds the per-core IRQ handler entry as the SM5 landing seam
-/// — SM5 will redirect `trap.S`'s IRQ assembly entry from `handle_irq`
-/// to `handle_irq_per_core`.  This scanner forces the contract at
-/// elaboration time:
-///
-///   1. The function `pub extern "C" fn handle_irq_per_core` exists
-///      (a regression that removed or renamed it would fail SM5's
-///      assembly swap at link time; we catch it earlier).
-///   2. The `#[no_mangle]` attribute is preserved (otherwise the
-///      assembly entry cannot resolve the symbol at link time).
-///   3. The body invokes `crate::per_cpu_stats::record_irq_dispatch`
-///      so per-core IRQ attribution is wired (this is the
-///      substantive SM1.I.1 contract; a refactor that dropped the
-///      counter increment would silently break SM5+ per-core
-///      diagnostics).
-///   4. The body invokes
-///      `crate::per_cpu::current_core_id_from_tpidr` so the
-///      [core N] log prefix correctly identifies the calling core.
-fn scan_trap_rs_handle_irq_per_core_intact() {
-    let path = "src/trap.rs";
-    println!("cargo:rerun-if-changed={path}");
-    let contents = match std::fs::read_to_string(path) {
-        Ok(s) => s,
-        Err(e) => panic!("WS-SM SM1.I.1 scanner: failed to read {path}: {e}"),
-    };
-
-    // Strip `//` line comments so docstring mentions of these symbols
-    // don't satisfy the check spuriously.
-    let stripped: String = contents
-        .lines()
+// Audit-pass-5 helper: `strip_rust_comments` removes both `//` line
+// comments and `/* */` block comments from a Rust source string.
+//
+// The string-matching scanners below need to filter out comments so
+// docstring mentions of contract symbols don't satisfy the checks
+// spuriously.  Pre-audit-pass-5 only `//` was stripped, leaving a
+// theoretical bypass: a pathological refactor that wrapped the
+// contract calls in `/* ... */` would compile (the block comment
+// elides the body) and the scanner would still see the symbol
+// names in source — defeating the regression-detection purpose.
+//
+// This helper strips both comment styles.  It is intentionally
+// conservative: it doesn't try to handle nested block comments
+// (Rust supports them but they're rare in practice), and it
+// doesn't try to honour string-literal quoting that contains `//`
+// or `/*` (the scanners' search targets are always Rust identifier
+// paths like `crate::per_cpu_stats::record_irq_dispatch`, never
+// quoted strings).
+fn strip_rust_comments(src: &str) -> String {
+    // Step 1: strip `/* ... */` block comments.  We use a simple
+    // character scan rather than a full Rust lexer; nested block
+    // comments are not supported (rare in production code; would
+    // require a stack-based parser).
+    let mut out = String::with_capacity(src.len());
+    let mut chars = src.chars().peekable();
+    let mut in_block = false;
+    while let Some(c) = chars.next() {
+        if in_block {
+            if c == '*' && chars.peek() == Some(&'/') {
+                chars.next();
+                in_block = false;
+            }
+            // Preserve newlines inside block comments so line-based
+            // operations later in the pipeline don't misalign.
+            if c == '\n' {
+                out.push('\n');
+            }
+        } else if c == '/' && chars.peek() == Some(&'*') {
+            chars.next();
+            in_block = true;
+        } else {
+            out.push(c);
+        }
+    }
+    // Step 2: strip `//` line comments from the block-comment-stripped
+    // result.
+    out.lines()
         .map(|line| {
             if let Some(idx) = line.find("//") {
                 &line[..idx]
@@ -770,7 +785,42 @@ fn scan_trap_rs_handle_irq_per_core_intact() {
             }
         })
         .collect::<Vec<_>>()
-        .join("\n");
+        .join("\n")
+}
+
+/// **WS-SM SM1.I.1**: verify `trap.rs::handle_irq_per_core` is intact.
+///
+/// SM1.I.1 adds the per-core IRQ handler entry as the SM5 landing seam
+/// — SM5 will redirect `trap.S`'s IRQ assembly entry from `handle_irq`
+/// to `handle_irq_per_core`.  This scanner forces the contract at
+/// elaboration time.  Four checks:
+///
+/// 1. The function `pub extern "C" fn handle_irq_per_core` exists
+///    (a regression that removed or renamed it would fail SM5's
+///    assembly swap at link time; we catch it earlier).
+/// 2. The `#[no_mangle]` attribute is preserved (otherwise the
+///    assembly entry cannot resolve the symbol at link time).
+/// 3. The body invokes `crate::per_cpu_stats::record_irq_dispatch`
+///    so per-core IRQ attribution is wired (this is the
+///    substantive SM1.I.1 contract; a refactor that dropped the
+///    counter increment would silently break SM5+ per-core
+///    diagnostics).
+/// 4. The body invokes
+///    `crate::per_cpu::current_core_id_from_tpidr` so the
+///    `[core N]` log prefix correctly identifies the calling core.
+fn scan_trap_rs_handle_irq_per_core_intact() {
+    let path = "src/trap.rs";
+    println!("cargo:rerun-if-changed={path}");
+    let contents = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => panic!("WS-SM SM1.I.1 scanner: failed to read {path}: {e}"),
+    };
+
+    // Audit-pass-5: strip BOTH `//` line comments AND `/* */` block
+    // comments.  Pre-audit-pass-5 only `//` was stripped — a
+    // pathological refactor wrapping the contract calls in `/* ... */`
+    // would have defeated the scanner.
+    let stripped = strip_rust_comments(&contents);
 
     // Check 1: the function signature is present.
     let fn_sig = "pub extern \"C\" fn handle_irq_per_core(";
@@ -793,17 +843,27 @@ fn scan_trap_rs_handle_irq_per_core_intact() {
         .unwrap_or(stripped.len());
     let body = &stripped[body_start..body_end];
 
-    // Check 2: `#[no_mangle]` attribute precedes the function.  We
-    // look in the 200 bytes BEFORE `fn_start` for the attribute.
-    let preamble_start = fn_start.saturating_sub(200);
+    // Check 2: `#[no_mangle]` attribute precedes the function.
+    //
+    // Audit-pass-5 (L-2 fix): widened from 200 bytes to 4096 bytes
+    // for resilience against future docstring expansion.  At the
+    // current code state `#[no_mangle]` lives ~112 bytes back from
+    // `fn_start` after `strip_rust_comments`, well inside any
+    // reasonable window.  4096 bytes (1 page) gives ample margin
+    // for any plausible docstring growth while remaining tight
+    // enough that a stale `#[no_mangle]` on an unrelated nearby
+    // function couldn't satisfy the check.
+    const PREAMBLE_WINDOW: usize = 4096;
+    let preamble_start = fn_start.saturating_sub(PREAMBLE_WINDOW);
     let preamble = &stripped[preamble_start..fn_start];
     if !preamble.contains("#[no_mangle]") {
         panic!(
             "WS-SM SM1.I.1 regression: `{path}::handle_irq_per_core` no longer \
-             has the `#[no_mangle]` attribute.  Without it, the assembly entry \
-             vector (SM5 will redirect to this function) cannot resolve the \
-             symbol at link time.  Restore `#[no_mangle]` immediately above the \
-             function declaration."
+             has the `#[no_mangle]` attribute within {} bytes of its declaration. \
+             Without `#[no_mangle]`, the assembly entry vector (SM5 will redirect \
+             to this function) cannot resolve the symbol at link time.  Restore \
+             `#[no_mangle]` immediately above the function declaration.",
+            PREAMBLE_WINDOW
         );
     }
 

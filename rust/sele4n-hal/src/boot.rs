@@ -67,19 +67,36 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
         crate::per_cpu::PER_CPU_DATA.len()
     );
 
-    // WS-SM SM1.I audit-pass-4 (defense-in-depth for early-boot EL1
-    // exceptions): set TPIDR_EL1 here in Phase 1 (immediately after
-    // `check_per_cpu_invariants` has verified the static array) so
-    // that any subsequent EL1-originated synchronous exception during
-    // Phase 2 (MMU) or Phase 3 (GIC + timer) — caused by a kernel
-    // bug like a misaligned access or instruction-abort on an
-    // unmapped kernel page — reaches `handle_synchronous_exception`
-    // with a valid TPIDR_EL1.  Pre-audit-pass-4 the write lived in
-    // Phase 4 (just before `enable_irq`); since SM1.I.4 wired the
-    // synchronous-exception handler to read TPIDR_EL1 via
-    // `per_cpu_stats::record_*` → `current_per_cpu_stats` →
-    // `current_per_cpu`, an early-boot EL1 fault would have
-    // dereferenced uninitialised TPIDR_EL1 = UB.
+    // WS-SM SM1.I audit-pass-4 / audit-pass-5 (defense-in-depth for
+    // early-boot EL1 exceptions): set TPIDR_EL1 here in Phase 1
+    // (immediately after `check_per_cpu_invariants` has verified the
+    // static array) so that the synchronous-exception handler reads a
+    // valid TPIDR_EL1 from the earliest point it is reachable.
+    //
+    // **Protected window — audit-pass-5 honesty patch**: this fix
+    // covers the window from `install_exception_vectors` (mid-Phase 2,
+    // a few lines below) through every subsequent phase.  It does
+    // NOT cover Phases 1 and the first half of Phase 2 (between
+    // here and `install_exception_vectors`), because VBAR_EL1 has
+    // not been installed yet — synchronous exceptions raised in that
+    // narrow window would go to the firmware-provided vectors (or
+    // architectural reset value), not to `handle_synchronous_exception`,
+    // so the TPIDR_EL1 read inside our handler is unreachable until
+    // VBAR_EL1 points at `__exception_vectors`.
+    //
+    // The fix still has real value: once VBAR_EL1 IS installed, any
+    // EL1 sync exception (kernel bug: misaligned access, instruction
+    // abort on an unmapped kernel page) during the remainder of
+    // Phase 2 (post-`install_exception_vectors`), Phase 3 (GIC +
+    // timer init), Phase 4 (the redundant re-write below), Phase 5
+    // (cmdline + SMP bring-up), and Phase 6 (Lean kernel handoff)
+    // reaches `handle_synchronous_exception` with a valid TPIDR_EL1.
+    // Pre-audit-pass-4 the write lived in Phase 4 (just before
+    // `enable_irq`); since SM1.I.4 wired the sync-exception handler
+    // to read TPIDR_EL1 via `per_cpu_stats::record_*` →
+    // `current_per_cpu_stats` → `current_per_cpu`, any sync fault
+    // during the post-VBAR_EL1-install window of Phases 2/3 would
+    // have dereferenced uninitialised TPIDR_EL1 = UB.
     //
     // Phase 4's `write_tpidr_el1` is retained (now idempotent on
     // the boot core) as a defence-in-depth re-write, also providing
@@ -91,8 +108,17 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // that's still Phase 4's `enable_irq`.  Async exceptions (IRQ,
     // FIQ, SError) remain masked from boot through Phase 3 so they
     // cannot fire during Phases 1-3.  Only synchronous exceptions
-    // (caused by a kernel bug) could reach the handler during this
-    // window, and the early TPIDR_EL1 write makes that path safe.
+    // (caused by a kernel bug) could reach the handler during the
+    // post-VBAR_EL1-install window, and the early TPIDR_EL1 write
+    // makes that path safe.
+    //
+    // Pre-MMU memory safety: `per_cpu_slot_addr(0)` resolves at link
+    // time to a static address inside `.bss`.  The kernel link
+    // address is `0x80000` (per `link.ld`, low physical RAM); the
+    // identity mapping established by `boot.S` makes the virtual
+    // address == physical address, so writing this value to
+    // TPIDR_EL1 produces a stable pointer that remains valid both
+    // before and after Phase 2's MMU enable.
     #[cfg(target_arch = "aarch64")]
     {
         let boot_per_cpu = crate::per_cpu::per_cpu_slot_addr(0) as u64;

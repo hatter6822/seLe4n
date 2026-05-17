@@ -376,15 +376,31 @@ pub extern "C" fn handle_irq_per_core(_frame: &mut TrapFrame) {
     // `boot.S::secondary_entry` (secondaries) before any kernel-mode
     // code runs.  On host the stub returns 0.
     //
-    // Audit-pass-4: this binding is retained as the SM5 landing-seam
-    // contract (verified by `build.rs::scan_trap_rs_handle_irq_per_core_intact`).
-    // The current closure body uses `kprintln_core!` (which reads
-    // TPIDR_EL1 internally) for log lines, so `core_id` is not
-    // directly consumed today; SM5 will use it as the per-core
-    // scheduler-state dispatch key.  The single redundant `mrs
-    // tpidr_el1` (one cycle on Cortex-A76) is the cost of pinning
-    // the SM5 contract at the structural level.
-    let _core_id = crate::per_cpu::current_core_id_from_tpidr();
+    // Audit-pass-5: this binding is retained as the SM5 landing-seam
+    // contract (verified by `build.rs::scan_trap_rs_handle_irq_per_core_intact`)
+    // AND consumed by a `debug_assert!` that pins the range invariant
+    // expected by SM5+ per-core scheduler dispatch.  The current
+    // closure body uses `kprintln_core!` (which reads TPIDR_EL1
+    // internally) for log lines, so `core_id` is not directly used
+    // in the dispatch path today; the `debug_assert!` ensures the
+    // binding is non-vestigial (consumed in every build profile
+    // that runs `cargo test`, optimised away in release) and the
+    // SM5 contract — "TPIDR_EL1 yields a valid PER_CPU_DATA index"
+    // — is statically reaffirmed at this layer in addition to the
+    // `record_*` call's transitive `current_per_cpu_stats` assert.
+    //
+    // The single `mrs tpidr_el1` cycle is the cost of structurally
+    // pinning the SM5 contract; the `debug_assert!` adds zero
+    // release-build cost.
+    let core_id = crate::per_cpu::current_core_id_from_tpidr();
+    debug_assert!(
+        (core_id as usize) < crate::per_cpu::PER_CPU_DATA.len(),
+        "SM5 contract: TPIDR_EL1 returned core_id {} out of range \
+         (expected < {}); per-CPU state is corrupt or TPIDR_EL1 was \
+         clobbered by a non-kernel writer",
+        core_id,
+        crate::per_cpu::PER_CPU_DATA.len()
+    );
 
     crate::gic::dispatch_irq(|intid| {
         // WS-SM SM1.I.4 audit-pass-1: record the IRQ dispatch only
