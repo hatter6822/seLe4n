@@ -198,7 +198,7 @@ SM1.D (DTB cmdline parsing) — **LANDED v0.31.6**;
 SM1.E (IS-variant TLBI), SM1.F (SGI primitive), SM1.G (Per-core
 UART), SM1.H (QEMU SMP integration test) — **all four LANDED v0.31.7**;
 SM1.I (Miscellaneous HAL improvements) — **LANDED v0.31.8 — closes SM1**;
-SM2.A (Abstract memory model) — **LANDED v0.32.0** (the foundation
+SM2.A (Abstract memory model) — **LANDED v0.31.9** (the foundation
 that SM2.B TicketLock + SM2.C RwLock release-acquire pairing
 proofs consume).
 See [`docs/planning/SMP_RUST_HAL_PLAN.md`](planning/SMP_RUST_HAL_PLAN.md) §§5.2..5.9.
@@ -751,7 +751,7 @@ v0.31.8 with all nine sub-phases LANDED (SM1.A–SM1.I; 61 total
 sub-tasks).  Next: WS-SM SM2 (verified lock primitives) +
 SM3..SM9.
 
-**WS-SM SM2.A LANDED at v0.32.0 on branch
+**WS-SM SM2.A LANDED at v0.31.9 on branch
 `claude/review-codebase-memory-model-xxsh9`** (Abstract memory
 model — the foundation for SM2.B TicketLock + SM2.C RwLock
 release-acquire pairing proofs).  Twelve sub-tasks landed in one
@@ -805,7 +805,7 @@ cut:
   assertions via a runnable executable.  Wired into Tier 2
   (negative) and Tier 3 (invariant surface).
 
-**Audit-pass refinements (included in v0.32.0 landing)**:
+**Audit-pass refinements (included in v0.31.9 landing)**:
 
 - Non-strict `≤` per-core seqNum monotonicity in `wellFormed`
   (not strict `<` as in the plan pseudocode) to support

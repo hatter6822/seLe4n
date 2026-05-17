@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.32.0.
+Lean 4.28.0 toolchain, Lake build system, version 0.31.9.
 
 > The version line above is **CI-enforced** by
 > `scripts/check_version_sync.sh` (a Tier 0 gate). When you bump
@@ -560,7 +560,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
 ## Active workstream context
 
-- **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 → v0.31.3 → v0.31.4 → v0.31.5 → v0.31.6 → v0.31.7 → v0.31.8 → v0.32.0 → v1.0.0,
+- **WS-SM SMP multi-core completion workstream IN FLIGHT (v0.31.2 → v0.31.3 → v0.31.4 → v0.31.5 → v0.31.6 → v0.31.7 → v0.31.8 → v0.31.9 → v1.0.0,
   branch `claude/review-codebase-memory-model-xxsh9`)**:
   Unified workstream merging WS-RC's remaining R6..R14 phases with the
   SMP-specific SM-phases (SM0..SM9).  Closes at v1.0.0 with a bootable
@@ -1847,7 +1847,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
   cross-core IPC → TLB shootdown → info-flow → release closure)
   follow per the master overview.
 
-  **WS-SM SM2.A LANDED at v0.32.0 on branch
+  **WS-SM SM2.A LANDED at v0.31.9 on branch
   `claude/review-codebase-memory-model-xxsh9`** (abstract memory
   model; foundation for SM2.B TicketLock + SM2.C RwLock release-
   acquire pairing proofs).  Twelve sub-tasks landed in one cut,

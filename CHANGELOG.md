@@ -1,4 +1,4 @@
-## v0.32.0 — WS-SM Phase SM2.A landing (abstract memory model for verified lock primitives)
+## v0.31.9 — WS-SM Phase SM2.A landing (abstract memory model for verified lock primitives)
 
 WS-SM SM2.A (abstract memory model) landed in one cut on branch
 `claude/review-codebase-memory-model-xxsh9`, opening Phase SM2 of
@@ -7,7 +7,7 @@ landed in one cut, providing the operational ARMv8.1-A LSE memory
 model that SM2.B (TicketLock) and SM2.C (RwLock) release-acquire
 pairing proofs consume.
 
-**Audit-pass refinements** (included in v0.32.0): the per-core
+**Audit-pass refinements** (included in v0.31.9): the per-core
 seqNum monotonicity in `wellFormed` uses non-strict `≤` (not
 strict `<` as in the plan pseudocode) to support ARMv8.1-A LSE
 atomic Read-Modify-Write operations (see SM2.A.5 below).  Eight

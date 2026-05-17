@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.32.0` (`lakefile.toml`) |
+| **Package version** | `0.31.9` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 115,963 across 178 Lean files |
 | **Test LoC** | 21,850 across 30 Lean test suites |
@@ -639,7 +639,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    v0.31.7).  WS-SM SM1 acceptance gate (per
    `docs/planning/SMP_RUST_HAL_PLAN.md` §8) all items checked.
 
-   **WS-SM Phase SM2.A (v0.32.0) opens SM2** — the **verification-
+   **WS-SM Phase SM2.A (v0.31.9) opens SM2** — the **verification-
    quality elevation** that distinguishes seLe4n from seL4: the
    lock primitives themselves are formally specified in Lean
    against an abstract operational semantics of ARMv8.1-A LSE
@@ -690,7 +690,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    (allowlist entry per WS-RC R12.B partition gate); SM2.B
    (TicketLock) is the first runtime exerciser.
 
-   **Audit-pass refinements** (included in v0.32.0):
+   **Audit-pass refinements** (included in v0.31.9):
 
    - Non-strict `≤` per-core seqNum monotonicity in `wellFormed`
      (not strict `<` as in the plan pseudocode) to support

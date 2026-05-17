@@ -14,7 +14,7 @@
 //! Phase 6: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.32.0";
+const KERNEL_VERSION: &str = "0.31.9";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
@@ -477,11 +477,11 @@ mod tests {
     #[test]
     fn sm1d_kernel_version_string_matches_lakefile() {
         // SM1.D: Phase 5 banner uses `KERNEL_VERSION`; pin it at the
-        // current SM2.A landing version (v0.32.0).  A future bump must
+        // current SM2.A landing version (v0.31.9).  A future bump must
         // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.32.0");
+        assert_eq!(KERNEL_VERSION, "0.31.9");
     }
 
     #[test]

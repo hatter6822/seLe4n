@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-codebase-memory-model-xxsh9",
-      "commit_sha": "a9601ff82ad3ada07db7761e5c91ccd82a8b38b0",
-      "tree_sha": "b9fff1d24dc8c606fc0be9767e78d68529fd1e78",
-      "committed_at_utc": "2026-05-17T16:11:13+00:00"
+      "commit_sha": "4504406eb84f92c68b3a8c0da74b445eb58b9866",
+      "tree_sha": "40a3584cc1f7cd7b927dc4207cd633f42a553bfc",
+      "committed_at_utc": "2026-05-17T16:30:52+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 6759
   },
   "readme_sync": {
-    "version": "0.32.0",
+    "version": "0.31.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 179,
     "production_loc": 117102,
