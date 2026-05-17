@@ -94,6 +94,7 @@ open SeLe4n.Kernel.Concurrency
 /-! ## SM2.B.6 — Operations -/
 #check @SeLe4n.Kernel.Concurrency.TicketLockState.captureTicket
 #check @SeLe4n.Kernel.Concurrency.TicketLockState.observeServing
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.observeServing_eq_serving
 #check @SeLe4n.Kernel.Concurrency.TicketLockState.applyOp
 
 /-! ## SM2.B.7 — promotePending + releaseAndPromote -/

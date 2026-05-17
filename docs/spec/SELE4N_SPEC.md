@@ -718,6 +718,92 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    ARMv8.1-A LSE semantics enter operationally as constraints
    on the trace shape.
 
+2.5. **WS-SM Phase SM2.B (post-v0.31.9) completes SM2.B** — the
+   verified TicketLock primitive.  Closes the second sub-phase
+   of SM2 ("Verified Lock Primitives") with all 16 sub-tasks
+   landed.  See `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`
+   §5.2 for the full plan.
+
+   **Abstract spec** (`SeLe4n.Kernel.Concurrency.Locks.TicketLock`):
+   `TicketLockState` 4-field structure (`nextTicket`, `serving`,
+   `pending`, `held`) with `Repr`, `Inhabited`, `DecidableEq`
+   derived.  `unheld` canonical seed.  `TicketLockOp`
+   3-constructor inductive (`tryAcquire`, `release`,
+   `observeServing`).  Operational semantics: `captureTicket`,
+   `observeServing`, `applyOp` (with fast-path immediate-promote),
+   `promotePending`, `releaseAndPromote`.
+
+   **8-conjunct well-formedness** (improvement over plan's 7):
+   INV-T1 (counter monotonicity), INV-T2 (pending tickets in
+   `(serving, nextTicket)`), INV-T3 (holder ticket = serving),
+   INV-T4 (pending tickets Nodup), INV-T5 (holder ticket not in
+   pending), INV-T6 (pending cores Nodup), INV-T7 (holder core
+   not in pending), and the new **INV-T8 (count parity)**:
+   `nextTicket = serving + |pending| + heldCount`.  The
+   7-invariant form admits a non-reachable state
+   `(held = some _, serving = nextTicket)` that
+   `applyOp .tryAcquire` cannot exit via a wf-preserving step;
+   INV-T8 (the natural structural invariant — every issued
+   ticket is accounted for by being served, pending, or held)
+   closes the gap exactly.  Decidable via `unfold` plus
+   `inferInstance`, with Bool-encoded helpers
+   (`pendingInRange`, `heldCount`, `holderTicketIsServing`,
+   `holderTicketDisjointFromPending`,
+   `holderCoreDisjointFromPending`) plus 4 `*_iff` bridge
+   theorems for Prop-form use in proofs.
+
+   **6 substantive theorems** (plan §10 catalogue T-01..T-06):
+   * `ticketLock_mutex` — at most one holder per state.
+     `Option.some` injectivity argument.
+   * `ticketLock_wf_invariant` — wf preserved by every kernel-
+     facing transition (`tryAcquire`, `releaseAndPromote`,
+     `observeServing`).  Aggregates three per-op preservation
+     theorems with 4-branch case analyses and 8-invariant
+     verification per branch (~530 LoC total proof).
+   * `ticketLock_fifo` — `applyOp` is monotone on `nextTicket`.
+     `ticketLock_fifo_trace` folds over operation lists.
+   * `ticketLock_bounded_wait` — `nextTicket ≤ serving + numCores`
+     for any wf state.  Pigeonhole-style: pending cores plus
+     optional holder form a Nodup CoreId list ≤ numCores; INV-T8
+     gives the structural bound.
+   * `ticketLock_release_acquire_pairing` — bridges to SM2.A
+     `MemoryModel`.  Given matching events on the `serving`
+     location with matching value + positional ordering, the
+     events `synchronizesWith` per the abstract memory model.
+     Companion `_happensBefore` lifts to happens-before.
+   * `ticketLock_reachability` — every state reachable from
+     `unheld` via kernel transitions is wf.  Uses a
+     `KernelStep` inductive (3 constructors: `acquire` /
+     `release` / `observe`; raw `applyOp .release` excluded
+     because it doesn't preserve full wf) and `Reachable` (RT
+     closure).  Proof by induction citing per-op preservation.
+
+   Plus determinism witnesses (`ticketLock_applyOp_deterministic`,
+   `ticketLock_promotePending_deterministic`) and closure-form
+   aliases (`ticketLock_acquire_preserves_wf`,
+   `ticketLock_release_preserves_wf`) matching kernel-facing
+   API names.
+
+   **Rust impl** (`rust/sele4n-hal/src/ticket_lock.rs`):
+   structural refinement of the Lean spec.  `TicketLock`
+   `#[repr(C, align(64))]` (cache-line aligned), two
+   `AtomicU64` fields, three public methods (`acquire`,
+   `release`, `with_lock`), RAII `TicketLockGuard<'a>`.
+   `next_ticket.fetch_add(1, Acquire)` captures the ticket;
+   spin-loop on `serving.load(Acquire)` with `wfe_bounded`
+   parks waiters in low-power state.  `release` does
+   `serving.fetch_add(1, Release)` followed by `sev` broadcast.
+   21 unit tests including panic-safety
+   (`with_lock_releases_on_panic`), cross-thread mutex stress
+   (4 threads × 1000 ops, no lost updates), cross-thread FIFO
+   observation, cache-line alignment, signature pinning,
+   100-cycle monotone counter.  Zero clippy warnings.
+
+   **Axiom budget for SM2.B**: 0 Lean axioms, 0 sorries.
+   `TicketLock.lean` ~1830 LoC of which ~640 LoC are
+   substantive proofs (wf-preservation across all transitions
+   plus helper lemmas).
+
 3. **Sequential memory model**: Under single-core operation, all memory
    operations are sequentially ordered. DMB/DSB/ISB barriers are emitted in the
    Rust HAL (`sele4n-hal/src/cpu.rs`) for hardware correctness but are

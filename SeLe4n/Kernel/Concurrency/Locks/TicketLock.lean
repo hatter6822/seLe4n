@@ -467,6 +467,17 @@ the spec is lifted to a `MemoryTrace` and an Acquire-load event
 needs to be tagged with the observing core). -/
 def TicketLockState.observeServing (s : TicketLockState) : Nat := s.serving
 
+/-- **Witness (SM2.B.6)**: `observeServing` returns the current
+`serving` counter exactly.
+
+The function is the abstract counterpart to the Rust impl's
+`serving.load(Ordering::Acquire)` inside the spin-loop body.  The
+witness theorem makes the refinement relation explicit at the
+abstract-state level: the abstract observation matches the
+concrete read. -/
+theorem TicketLockState.observeServing_eq_serving (s : TicketLockState) :
+    s.observeServing = s.serving := rfl
+
 /-- **WS-SM SM2.B.6**: the operational-semantics step function.
 
 Each `TicketLockOp` maps to a single transition on the abstract

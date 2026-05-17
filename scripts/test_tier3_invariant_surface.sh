@@ -1409,6 +1409,7 @@ import SeLe4n.Kernel.Concurrency.Locks.TicketLock
 -- SM2.B.6 — Operational semantics
 #check @SeLe4n.Kernel.Concurrency.TicketLockState.captureTicket
 #check @SeLe4n.Kernel.Concurrency.TicketLockState.observeServing
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.observeServing_eq_serving
 #check @SeLe4n.Kernel.Concurrency.TicketLockState.applyOp
 -- SM2.B.7 — promotePending + releaseAndPromote
 #check @SeLe4n.Kernel.Concurrency.TicketLockState.promotePending

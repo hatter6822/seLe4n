@@ -201,8 +201,18 @@ SM1.I (Miscellaneous HAL improvements) — **LANDED v0.31.8 — closes SM1**;
 SM2.A (Abstract memory model) — **LANDED v0.31.9** (the foundation
 that SM2.B TicketLock + SM2.C RwLock release-acquire pairing
 proofs consume).
+SM2.B (Verified TicketLock spec + Rust impl) — **LANDED post-v0.31.9**
+on branch `claude/review-ticketlock-tasks-2ca8a` (all 16 sub-tasks:
+abstract operational spec with 8-conjunct wf invariant (incl.
+INV-T8 count parity strengthening), 6 substantive theorems
+(`mutex`, `wf_invariant`, `fifo`, `bounded_wait`,
+`release_acquire_pairing`, `reachability`), Rust impl with
+cache-line aligned `TicketLock` + RAII `TicketLockGuard`, 21
+cargo unit tests including panic-safety + cross-thread stress,
+Lean test suite with 35 runtime assertions).
 See [`docs/planning/SMP_RUST_HAL_PLAN.md`](planning/SMP_RUST_HAL_PLAN.md) §§5.2..5.9.
-See [`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) §5.1 for SM2.A.
+See [`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) §5.1 for SM2.A
+and §5.2 for SM2.B.
 
 **WS-SM SM1.B LANDED at v0.31.4 on branch
 `claude/per-cpu-tpidr-el1-1OBHA`** (per-CPU data + TPIDR_EL1,
