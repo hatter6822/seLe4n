@@ -377,13 +377,19 @@ pub extern "C" fn handle_irq_per_core(_frame: &mut TrapFrame) {
     // code runs.  On host the stub returns 0.
     let core_id = crate::per_cpu::current_core_id_from_tpidr();
 
-    // WS-SM SM1.I.4: record the dispatch on this core's stats slot.
-    // Wait-free, off the correctness path.  We discard the
-    // post-increment value; SM5+ may consume it as a per-core
-    // wall-clock identifier.
-    let _ = crate::per_cpu_stats::record_irq_dispatch();
-
     crate::gic::dispatch_irq(|intid| {
+        // WS-SM SM1.I.4 audit-pass-1: record the IRQ dispatch only
+        // on the non-spurious / non-out-of-range path (inside the
+        // dispatcher's `Handled` closure).  This matches the
+        // `record_irq_dispatch` docstring which states "called for
+        // every non-spurious IRQ that reaches the dispatcher".  If
+        // we incremented outside the closure (the pre-audit form),
+        // spurious IAR reads (INTID >= 1020) and out-of-range INTIDs
+        // (>= MAX_SUPPORTED_INTID) would inflate the per-core
+        // counter — useful for hardware-level diagnostics but
+        // misleading for SM5+ scheduler observability that wants to
+        // count actual dispatched IRQs.
+        let _ = crate::per_cpu_stats::record_irq_dispatch();
         if intid == crate::gic::TIMER_PPI_ID {
             // Timer interrupt: re-arm the hardware comparator only.
             // Tick accounting is performed by the Lean kernel via
@@ -398,7 +404,7 @@ pub extern "C" fn handle_irq_per_core(_frame: &mut TrapFrame) {
             // until PSTATE.I clears on exception return.
             let _ = crate::per_cpu_stats::record_timer_tick();
             crate::timer::reprogram_timer();
-        } else if (intid as u8) < crate::gic::MAX_SGI_INTID && intid < u32::from(crate::gic::MAX_SGI_INTID) {
+        } else if intid < u32::from(crate::gic::MAX_SGI_INTID) {
             // SGI dispatch range (INTIDs 0..15).  WS-SM SM1.I.1: at
             // this phase we increment the per-core SGI counter so
             // test infrastructure (SM1.H.5 round-trip; SM5+ scheduler
@@ -688,6 +694,47 @@ mod tests {
         // the per-core variant so SM5 only swaps a function pointer.
         let _: extern "C" fn(&mut TrapFrame) = handle_irq;
         let _: extern "C" fn(&mut TrapFrame) = handle_irq_per_core;
+    }
+
+    #[test]
+    fn sm1i1_handle_irq_per_core_runtime_call_does_not_panic() {
+        // SM1.I.1 audit-pass-1: actually invoke `handle_irq_per_core`
+        // on host and verify it returns without panicking.  The host
+        // GIC stub returns INTID 0 from `acknowledge_irq` (mmio_read32
+        // on a host base returns 0), which `dispatch_irq_classified`
+        // classifies as `Handled(0)`.  The closure then takes the
+        // SGI branch (INTID 0 < MAX_SGI_INTID = 16) and logs.  This
+        // exercises the full call path on host without requiring
+        // hardware.
+        let mut frame = zero_frame();
+        handle_irq_per_core(&mut frame);
+        // No assertion on counter values — those depend on the
+        // running test order and the global PER_CPU_STATS state.
+        // The property we're asserting is "doesn't panic".
+    }
+
+    #[test]
+    fn sm1i1_handle_irq_per_core_advances_per_core_irq_count() {
+        // SM1.I.1: a successful invocation must advance the per-core
+        // IRQ counter.  We compare before/after snapshots; the delta
+        // includes any concurrent IRQs from parallel tests, but the
+        // delta MUST be >= 1 (this thread's call).
+        //
+        // Because `dispatch_irq` only runs the closure on the
+        // `Handled` arm (and the host stub's INTID 0 IS handled), we
+        // expect exactly 1 increment from this thread.  Parallel
+        // tests can add more, so we check `after > before`.
+        let before = crate::per_cpu_stats::irq_count_for(0);
+        let mut frame = zero_frame();
+        handle_irq_per_core(&mut frame);
+        let after = crate::per_cpu_stats::irq_count_for(0);
+        assert!(
+            after > before,
+            "handle_irq_per_core must advance per-core irq_count \
+             (before={}, after={})",
+            before,
+            after
+        );
     }
 
     // ========================================================================

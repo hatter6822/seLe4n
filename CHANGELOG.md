@@ -179,6 +179,81 @@ fixes:
   `TIMER_GLOBAL_STATE_MUTEX` so concurrent timer tests don't
   overwrite each other's pre-conditions.
 
+### Audit-pass-2 refinements (deep post-audit-pass-1 audit)
+
+Five defense-in-depth + correctness improvements landed
+after a thorough re-read of the SM1.I surface (no shortcuts,
+mathematically sound, security-aware):
+
+- **CORRECTNESS** (counter semantics): moved
+  `record_irq_dispatch()` from the pre-dispatch path INTO the
+  `gic::dispatch_irq` closure.  Pre-audit, the counter
+  advanced on every IAR read including spurious INTIDs
+  (>= 1020) and out-of-range INTIDs (`[224, 1020)`); post-
+  audit, only the `Handled(intid)` arm advances the counter.
+  This matches the docstring's "non-spurious IRQ" claim and
+  produces a more useful aggregate for SM5+ scheduler
+  observability.
+
+- **CODE-QUALITY**: simplified the SGI branch condition in
+  `handle_irq_per_core` from `(intid as u8) < MAX_SGI_INTID &&
+  intid < u32::from(MAX_SGI_INTID)` (redundant) to just
+  `intid < u32::from(MAX_SGI_INTID)`.  The truncation form was
+  defensible (u8 truncation of intid >= 256 plus the second
+  check correctly rejected the alias) but the simpler form is
+  more obviously correct.
+
+- **DEFENSE-IN-DEPTH** (overflow at boundary): every `record_*`
+  function in `per_cpu_stats.rs` switched from
+  `fetch_add(1) + 1` to `fetch_add(1).wrapping_add(1)`.
+  Counter wrap at `u64::MAX` is practically unreachable (~200
+  years at GHz frequency) but the wrapping form has defined
+  behavior at every input, avoiding a debug-build panic at the
+  boundary.  3 new wrap tests (`sm1i4_record_*_in_slice_wraps_at_u64_max`)
+  pre-seed the counter to `u64::MAX - 1` / `u64::MAX` and
+  verify the wraparound.
+
+- **DEFENSE-IN-DEPTH** (FFI portability): every
+  `ffi_per_core_*_count(core_id: u64)` FFI export now performs
+  the bound check in `u64` space before the `as usize` cast.
+  Sele4n's only target is aarch64 (u64 == usize), so the cast
+  is identity in practice; the defense ensures a hypothetical
+  32-bit port wouldn't silently truncate the high bits and
+  alias an out-of-range probe (e.g., `core_id = 0x1_0000_0001`
+  truncated to `1`) to an in-range slot.  4 new truncation-
+  defense tests
+  (`sm1i4_ffi_per_core_*_rejects_u64_with_high_bits_aliasing_slot`)
+  cover the boundary at every accessor.
+
+- **TEST COVERAGE**: 2 new runtime invocation tests for
+  `handle_irq_per_core` (`sm1i1_handle_irq_per_core_runtime_call_does_not_panic`,
+  `sm1i1_handle_irq_per_core_advances_per_core_irq_count`)
+  exercise the actual function call on host with the GIC
+  stub, verifying no panic and that the per-core IRQ counter
+  advances.
+
+- **LEAN MARKER SYMMETRY**: 5 new structural marker theorems
+  in `Concurrency.Runtime` for sibling FFI wrappers
+  (`perCoreTimerTickCount_returns_baseio_uint64_marker`,
+  `perCoreSgiCount_returns_baseio_uint64_marker`,
+  `perCoreSyscallCount_returns_baseio_uint64_marker`,
+  `idleWait_returns_baseio_unit_marker`,
+  `idleWaitBounded_returns_baseio_uint64_marker`).  All
+  discharge by `rfl` — the structural guarantee is that the
+  Lean wrapper is a direct FFI pass-through (no logic in
+  between).  Surface-anchored in
+  `scripts/test_tier3_invariant_surface.sh` +
+  `tests/SmpFoundationsSuite.lean` so a regression that
+  added logic between the wrapper and the FFI would fail
+  elaboration.
+
+### Test coverage after audit-pass-2
+
+592 HAL tests (+9 over audit-pass-1, +82 over SM1.E/F/G/H
+baseline of 510).  Zero clippy warnings workspace-wide.
+Full Tier 0+1+2+3 still green.  Stress-tested 10/10 runs
+of the full Rust suite with `--features std`.
+
 ### Items deferred past v1.0.0 with correctness impact
 
 NONE.

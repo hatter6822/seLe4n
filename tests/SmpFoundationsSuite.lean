@@ -175,6 +175,11 @@ open SeLe4n.Platform.RPi5
 #check @SeLe4n.Kernel.Concurrency.perCoreSgiCount
 #check @SeLe4n.Kernel.Concurrency.perCoreSyscallCount
 #check @SeLe4n.Kernel.Concurrency.perCoreIrqCount_returns_baseio_uint64_marker
+#check @SeLe4n.Kernel.Concurrency.perCoreTimerTickCount_returns_baseio_uint64_marker
+#check @SeLe4n.Kernel.Concurrency.perCoreSgiCount_returns_baseio_uint64_marker
+#check @SeLe4n.Kernel.Concurrency.perCoreSyscallCount_returns_baseio_uint64_marker
+#check @SeLe4n.Kernel.Concurrency.idleWait_returns_baseio_unit_marker
+#check @SeLe4n.Kernel.Concurrency.idleWaitBounded_returns_baseio_uint64_marker
 
 -- ============================================================================
 -- §2 — Decidable examples: ground-truth checks at the RPi5 default
@@ -781,6 +786,31 @@ private def runPerCoreStatsChecks : IO Unit := do
     (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
       let _proof := SeLe4n.Kernel.Concurrency.perCoreIrqCount_returns_baseio_uint64_marker c
       true))
+  -- Audit-pass-1: the three sibling marker theorems get the same
+  -- per-CoreId exercise so an inadvertent regression in any of
+  -- the wrappers surfaces here, not just in `perCoreIrqCount`.
+  assertBool "perCoreTimerTickCount_returns_baseio_uint64_marker discharges on every CoreId"
+    (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
+      let _proof := SeLe4n.Kernel.Concurrency.perCoreTimerTickCount_returns_baseio_uint64_marker c
+      true))
+  assertBool "perCoreSgiCount_returns_baseio_uint64_marker discharges on every CoreId"
+    (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
+      let _proof := SeLe4n.Kernel.Concurrency.perCoreSgiCount_returns_baseio_uint64_marker c
+      true))
+  assertBool "perCoreSyscallCount_returns_baseio_uint64_marker discharges on every CoreId"
+    (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
+      let _proof := SeLe4n.Kernel.Concurrency.perCoreSyscallCount_returns_baseio_uint64_marker c
+      true))
+  -- Audit-pass-1: idle-wait marker theorems verified the same way.
+  let _proof_idle := SeLe4n.Kernel.Concurrency.idleWait_returns_baseio_unit_marker
+  assertBool "idleWait_returns_baseio_unit_marker reachable"
+    true
+  let _proof_idle_bounded := SeLe4n.Kernel.Concurrency.idleWaitBounded_returns_baseio_uint64_marker 0
+  assertBool "idleWaitBounded_returns_baseio_uint64_marker reachable on max_ticks=0"
+    true
+  let _proof_idle_bounded_default := SeLe4n.Kernel.Concurrency.idleWaitBounded_returns_baseio_uint64_marker 540_000
+  assertBool "idleWaitBounded_returns_baseio_uint64_marker reachable on default tick budget"
+    true
 
 private def runSgiFfiBindingChecks : IO Unit := do
   -- WS-SM SM1.F.6: SGI FFI binding structural checks.

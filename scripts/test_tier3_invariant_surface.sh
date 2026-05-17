@@ -1291,6 +1291,11 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Kernel.Concurrency.perCoreSgiCount
 #check @SeLe4n.Kernel.Concurrency.perCoreSyscallCount
 #check @SeLe4n.Kernel.Concurrency.perCoreIrqCount_returns_baseio_uint64_marker
+#check @SeLe4n.Kernel.Concurrency.perCoreTimerTickCount_returns_baseio_uint64_marker
+#check @SeLe4n.Kernel.Concurrency.perCoreSgiCount_returns_baseio_uint64_marker
+#check @SeLe4n.Kernel.Concurrency.perCoreSyscallCount_returns_baseio_uint64_marker
+#check @SeLe4n.Kernel.Concurrency.idleWait_returns_baseio_unit_marker
+#check @SeLe4n.Kernel.Concurrency.idleWaitBounded_returns_baseio_uint64_marker
 EOF'
 
 finalize_report

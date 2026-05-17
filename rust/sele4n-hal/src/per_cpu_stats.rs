@@ -213,18 +213,24 @@ pub fn current_per_cpu_stats() -> &'static PerCpuStats {
 /// **WS-SM SM1.I.4**: record a dispatched IRQ on the calling core.
 ///
 /// Increments [`PerCpuStats::irq_count`] for the current core.  Called
-/// from [`crate::trap::handle_irq_per_core`] for every non-spurious
-/// IRQ that reaches the dispatcher.
+/// from [`crate::trap::handle_irq_per_core`] from inside the
+/// `gic::dispatch_irq` closure, so the increment fires only for the
+/// `Handled(intid)` arm — spurious INTIDs (>= 1020) and out-of-range
+/// INTIDs (in `[MAX_SUPPORTED_INTID, SPURIOUS_THRESHOLD)`) do not
+/// advance the counter (they're acknowledged + EOI'd but not
+/// dispatched).  This makes the counter semantically equal to "actual
+/// IRQs the per-core handler routed" rather than "IAR reads", which
+/// is the more useful aggregate for SM5+ scheduler observability.
 ///
-/// Returns the post-increment value so test callers can verify the
-/// counter advanced (the production path does not consume the
-/// return; the IRQ handler discards it).
+/// Returns the post-increment value (wrapping at `u64::MAX`) so test
+/// callers can verify the counter advanced (the production path does
+/// not consume the return; the IRQ handler discards it).
 #[inline(always)]
 pub fn record_irq_dispatch() -> u64 {
     current_per_cpu_stats()
         .irq_count
         .fetch_add(1, Ordering::Relaxed)
-        + 1
+        .wrapping_add(1)
 }
 
 /// **WS-SM SM1.I.4**: record a timer tick on the calling core.
@@ -240,7 +246,7 @@ pub fn record_timer_tick() -> u64 {
     current_per_cpu_stats()
         .timer_tick_count
         .fetch_add(1, Ordering::Relaxed)
-        + 1
+        .wrapping_add(1)
 }
 
 /// **WS-SM SM1.I.4**: record an SGI dispatch on the calling core.
@@ -252,7 +258,7 @@ pub fn record_sgi_dispatch() -> u64 {
     current_per_cpu_stats()
         .sgi_count
         .fetch_add(1, Ordering::Relaxed)
-        + 1
+        .wrapping_add(1)
 }
 
 /// **WS-SM SM1.I.4**: record a syscall (SVC) dispatch on the calling
@@ -265,7 +271,7 @@ pub fn record_syscall() -> u64 {
     current_per_cpu_stats()
         .syscall_count
         .fetch_add(1, Ordering::Relaxed)
-        + 1
+        .wrapping_add(1)
 }
 
 /// **WS-SM SM1.I.4**: record a VM fault classification on the calling
@@ -278,7 +284,7 @@ pub fn record_vm_fault() -> u64 {
     current_per_cpu_stats()
         .vmfault_count
         .fetch_add(1, Ordering::Relaxed)
-        + 1
+        .wrapping_add(1)
 }
 
 /// **WS-SM SM1.I.4**: record a user-exception classification on the
@@ -291,7 +297,7 @@ pub fn record_user_exception() -> u64 {
     current_per_cpu_stats()
         .user_exception_count
         .fetch_add(1, Ordering::Relaxed)
-        + 1
+        .wrapping_add(1)
 }
 
 /// **WS-SM SM1.I.4**: read a specific core's IRQ count (Relaxed
@@ -410,7 +416,7 @@ pub fn record_irq_dispatch_in_slice(slots: &[PerCpuStats], core_id: usize) -> u6
     slots[core_id]
         .irq_count
         .fetch_add(1, Ordering::Relaxed)
-        + 1
+        .wrapping_add(1)
 }
 
 /// **WS-SM SM1.I.4** (testable inner form): record a timer tick on
@@ -425,7 +431,7 @@ pub fn record_timer_tick_in_slice(slots: &[PerCpuStats], core_id: usize) -> u64 
     slots[core_id]
         .timer_tick_count
         .fetch_add(1, Ordering::Relaxed)
-        + 1
+        .wrapping_add(1)
 }
 
 /// **WS-SM SM1.I.4** (testable inner form): record an SGI dispatch on
@@ -440,7 +446,7 @@ pub fn record_sgi_dispatch_in_slice(slots: &[PerCpuStats], core_id: usize) -> u6
     slots[core_id]
         .sgi_count
         .fetch_add(1, Ordering::Relaxed)
-        + 1
+        .wrapping_add(1)
 }
 
 // ============================================================================
@@ -659,5 +665,51 @@ mod tests {
     fn sm1i4_record_irq_dispatch_in_slice_panics_on_out_of_range() {
         let slots = fresh_stats_array();
         let _ = record_irq_dispatch_in_slice(&slots, 4);
+    }
+
+    // ------------------------------------------------------------------------
+    // SM1.I.4.G — Audit-pass-1: wrapping-add overflow defense
+    //
+    // The `record_*` functions return `fetch_add(1).wrapping_add(1)`.
+    // Audit-pass-1 changed the post-fetch arithmetic from `+ 1` (which
+    // would panic in debug builds on `u64::MAX + 1`) to
+    // `.wrapping_add(1)` so the counter behavior is well-defined at
+    // every input.  Practically a counter reaching u64::MAX would
+    // take >200 years at GHz frequency, but defensive coding requires
+    // a defined behavior at the boundary.
+    //
+    // These tests seed the counter near u64::MAX via the `pub`
+    // `AtomicU64` field, then verify the `record_*_in_slice`
+    // functions correctly wrap.
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn sm1i4_record_irq_dispatch_in_slice_wraps_at_u64_max() {
+        // Pre-seed the counter to u64::MAX - 1 and verify two
+        // increments produce u64::MAX then 0 (wrapping).
+        let slots = fresh_stats_array();
+        slots[0].irq_count.store(u64::MAX - 1, Ordering::Relaxed);
+        let v1 = record_irq_dispatch_in_slice(&slots, 0);
+        assert_eq!(v1, u64::MAX, "first increment should produce u64::MAX");
+        let v2 = record_irq_dispatch_in_slice(&slots, 0);
+        assert_eq!(v2, 0, "second increment must wrap to 0 (not panic)");
+        let v3 = record_irq_dispatch_in_slice(&slots, 0);
+        assert_eq!(v3, 1, "third increment after wrap should produce 1");
+    }
+
+    #[test]
+    fn sm1i4_record_timer_tick_in_slice_wraps_at_u64_max() {
+        let slots = fresh_stats_array();
+        slots[1].timer_tick_count.store(u64::MAX, Ordering::Relaxed);
+        let v = record_timer_tick_in_slice(&slots, 1);
+        assert_eq!(v, 0, "increment of u64::MAX counter must wrap");
+    }
+
+    #[test]
+    fn sm1i4_record_sgi_dispatch_in_slice_wraps_at_u64_max() {
+        let slots = fresh_stats_array();
+        slots[2].sgi_count.store(u64::MAX, Ordering::Relaxed);
+        let v = record_sgi_dispatch_in_slice(&slots, 2);
+        assert_eq!(v, 0, "increment of u64::MAX counter must wrap");
     }
 }

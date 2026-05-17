@@ -509,37 +509,63 @@ pub extern "C" fn ffi_idle_wait_bounded(max_ticks: u64) -> u64 {
 /// Returns a Relaxed snapshot of the per-core `irq_count` counter.
 /// Out-of-range `core_id` returns 0.
 ///
+/// **Defense-in-depth narrowing**: the FFI accepts `u64` but the
+/// inner accessor takes `usize`.  Sele4n's only target is aarch64
+/// (64-bit, `usize == u64`), so the cast is identity in practice;
+/// however, a hypothetical 32-bit port would truncate `core_id` to
+/// `u32` and could silently alias an out-of-range probe (e.g.,
+/// `core_id = 0x1_0000_0001` truncated to `1`) to an in-range slot.
+/// We perform the bound check in `u64` space FIRST so the
+/// out-of-range contract holds regardless of `usize` width.
+///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiPerCoreIrqCount`.
 #[no_mangle]
 pub extern "C" fn ffi_per_core_irq_count(core_id: u64) -> u64 {
+    if core_id >= crate::per_cpu_stats::PER_CPU_STATS.len() as u64 {
+        return 0;
+    }
     crate::per_cpu_stats::irq_count_for(core_id as usize)
 }
 
 /// **WS-SM SM1.I.4**: read a specific core's timer-tick count.
 ///
-/// Subset of `irq_count` (timer PPI INTID 30 only).
+/// Subset of `irq_count` (timer PPI INTID 30 only).  Same
+/// defense-in-depth `u64` bound check as `ffi_per_core_irq_count`.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiPerCoreTimerTickCount`.
 #[no_mangle]
 pub extern "C" fn ffi_per_core_timer_tick_count(core_id: u64) -> u64 {
+    if core_id >= crate::per_cpu_stats::PER_CPU_STATS.len() as u64 {
+        return 0;
+    }
     crate::per_cpu_stats::timer_tick_count_for(core_id as usize)
 }
 
 /// **WS-SM SM1.I.4**: read a specific core's SGI count.
 ///
-/// Subset of `irq_count` (SGI INTIDs 0..15 only).
+/// Subset of `irq_count` (SGI INTIDs 0..15 only).  Same
+/// defense-in-depth `u64` bound check as `ffi_per_core_irq_count`.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiPerCoreSgiCount`.
 #[no_mangle]
 pub extern "C" fn ffi_per_core_sgi_count(core_id: u64) -> u64 {
+    if core_id >= crate::per_cpu_stats::PER_CPU_STATS.len() as u64 {
+        return 0;
+    }
     crate::per_cpu_stats::sgi_count_for(core_id as usize)
 }
 
 /// **WS-SM SM1.I.4**: read a specific core's syscall (SVC) count.
 ///
+/// Same defense-in-depth `u64` bound check as
+/// `ffi_per_core_irq_count`.
+///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiPerCoreSyscallCount`.
 #[no_mangle]
 pub extern "C" fn ffi_per_core_syscall_count(core_id: u64) -> u64 {
+    if core_id >= crate::per_cpu_stats::PER_CPU_STATS.len() as u64 {
+        return 0;
+    }
     crate::per_cpu_stats::syscall_count_for(core_id as usize)
 }
 
@@ -1152,5 +1178,45 @@ mod tests {
         let _: extern "C" fn(u64) -> u64 = ffi_per_core_timer_tick_count;
         let _: extern "C" fn(u64) -> u64 = ffi_per_core_sgi_count;
         let _: extern "C" fn(u64) -> u64 = ffi_per_core_syscall_count;
+    }
+
+    // ----------------------------------------------------------------
+    // SM1.I.4 audit-pass-1: u64 truncation defense for FFI bound check.
+    //
+    // The FFI accepts `u64` but the inner accessor takes `usize`.  A
+    // hypothetical 32-bit port would truncate `core_id` to `u32` via
+    // `as usize`, so a probe like `0x1_0000_0001` would alias slot
+    // 1.  The defense-in-depth fix performs the bound check in u64
+    // space BEFORE the cast.  On the only target (aarch64, 64-bit),
+    // u64 == usize so the cast is identity; these tests still
+    // exercise the bound-check path for adversarial inputs.
+    // ----------------------------------------------------------------
+
+    #[test]
+    fn sm1i4_ffi_per_core_irq_count_rejects_u64_with_high_bits_aliasing_slot() {
+        // 0x1_0000_0001 on a 32-bit target would truncate to 1 (in-
+        // range).  On aarch64 the value is far out of range so the
+        // bound check returns 0.
+        assert_eq!(ffi_per_core_irq_count(0x1_0000_0001), 0);
+        assert_eq!(ffi_per_core_irq_count(0x1_0000_0000), 0);
+        assert_eq!(ffi_per_core_irq_count(0xFFFF_FFFF_0000_0000), 0);
+    }
+
+    #[test]
+    fn sm1i4_ffi_per_core_timer_tick_count_rejects_u64_with_high_bits_aliasing_slot() {
+        assert_eq!(ffi_per_core_timer_tick_count(0x1_0000_0001), 0);
+        assert_eq!(ffi_per_core_timer_tick_count(0xFFFF_FFFF_0000_0000), 0);
+    }
+
+    #[test]
+    fn sm1i4_ffi_per_core_sgi_count_rejects_u64_with_high_bits_aliasing_slot() {
+        assert_eq!(ffi_per_core_sgi_count(0x1_0000_0001), 0);
+        assert_eq!(ffi_per_core_sgi_count(0xFFFF_FFFF_0000_0000), 0);
+    }
+
+    #[test]
+    fn sm1i4_ffi_per_core_syscall_count_rejects_u64_with_high_bits_aliasing_slot() {
+        assert_eq!(ffi_per_core_syscall_count(0x1_0000_0001), 0);
+        assert_eq!(ffi_per_core_syscall_count(0xFFFF_FFFF_0000_0000), 0);
     }
 }

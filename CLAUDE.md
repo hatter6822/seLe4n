@@ -1723,6 +1723,48 @@ documentation lives under `docs/` and `docs/gitbook/`.
   the staged closure via `Platform.Staged` (SM1.B's earlier
   registration covers the file).  No additional staging required.
 
+  **Audit-pass-2 refinements** (post-audit-pass-1 deep audit;
+  also in v0.31.8):
+  - **CORRECTNESS**: moved `record_irq_dispatch()` from the
+    pre-dispatch path INTO the `gic::dispatch_irq` closure so
+    only `Handled(intid)` IRQs advance the counter (not spurious
+    INTIDs >= 1020 or out-of-range `[224, 1020)` INTIDs).  The
+    counter now matches its docstring claim of "non-spurious
+    IRQs that reach the dispatcher" rather than "every IAR
+    read".  More useful for SM5+ scheduler observability.
+  - **CODE-QUALITY**: simplified the SGI branch condition in
+    `handle_irq_per_core` from `(intid as u8) < MAX_SGI_INTID &&
+    intid < u32::from(MAX_SGI_INTID)` (redundant) to just
+    `intid < u32::from(MAX_SGI_INTID)`.
+  - **DEFENSE-IN-DEPTH**: every `record_*` function in
+    `per_cpu_stats.rs` switched from `fetch_add(1) + 1` to
+    `fetch_add(1).wrapping_add(1)`.  Counter wrap at `u64::MAX`
+    is practically unreachable (~200 years at GHz frequency) but
+    the wrapping form has defined behavior at every input,
+    avoiding a debug-build panic at the boundary.  3 new wrap
+    tests cover the boundary.
+  - **DEFENSE-IN-DEPTH**: every `ffi_per_core_*_count(core_id: u64)`
+    FFI export now performs the bound check in `u64` space
+    before the `as usize` cast.  Sele4n's only target is aarch64
+    (u64 == usize), so the cast is identity in practice; the
+    defense ensures a hypothetical 32-bit port wouldn't silently
+    truncate the high bits and alias an out-of-range probe (e.g.,
+    `core_id = 0x1_0000_0001` truncated to `1`) to an in-range
+    slot.  4 new truncation-defense tests cover the boundary.
+  - **TEST COVERAGE**: 2 new runtime invocation tests for
+    `handle_irq_per_core` (verify no panic, verify counter
+    advances).  5 new Lean marker theorems for sibling per-core
+    stats wrappers + idle-wait wrappers (`perCoreTimerTickCount`,
+    `perCoreSgiCount`, `perCoreSyscallCount`, `idleWait`,
+    `idleWaitBounded`) — surface-anchored in tier-3 +
+    SmpFoundationsSuite.
+
+  **Test coverage after audit-pass-2**: 592 HAL tests (+9 from
+  audit-pass-1; total +82 over SM1.E/F/G/H baseline of 510).
+  Zero clippy warnings workspace-wide.  Full Tier 0+1+2+3 still
+  green.  Stress-tested 10/10 runs of the full Rust suite with
+  `--features std`.
+
   **Items deferred past v1.0.0 with correctness impact**: NONE.
 
   **SM1 acceptance gate** (per
