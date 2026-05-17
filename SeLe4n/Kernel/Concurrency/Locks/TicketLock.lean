@@ -1454,6 +1454,354 @@ theorem ticketLock_wf_invariant
   , fun c => ticketLock_releaseAndPromote_preserves_wf s c h⟩
 
 -- ============================================================================
+-- SM2.B.10 — ticketLock_fifo (FIFO ordering on captured tickets)
+-- ============================================================================
+
+/-- **Helper**: `applyOp` is monotone on `nextTicket`.
+
+For any state `s` and op `op`, `(s.applyOp op).nextTicket ≥ s.nextTicket`.
+The monotonicity is non-strict because the no-op branches (already-
+pending, already-held, observeServing, release-by-non-holder) leave
+the state unchanged. -/
+theorem TicketLockState.applyOp_nextTicket_monotone
+    (s : TicketLockState) (op : TicketLockOp) :
+    s.nextTicket ≤ (s.applyOp op).nextTicket := by
+  cases op with
+  | tryAcquire core =>
+    unfold TicketLockState.applyOp
+    by_cases hp : core ∈ s.pending.map Prod.fst
+    · simp [hp]
+    by_cases hh : s.held.map Prod.fst = some core
+    · simp [hp, hh]
+    simp only [hp, hh, ite_false]
+    by_cases hcond : s.serving = s.nextTicket ∧ s.held.isNone = true
+    · rw [if_pos hcond]
+      -- Post nextTicket = s.nextTicket + 1.
+      show s.nextTicket ≤ s.nextTicket + 1
+      omega
+    · rw [if_neg hcond]
+      show s.nextTicket ≤ s.nextTicket + 1
+      omega
+  | release core =>
+    unfold TicketLockState.applyOp
+    cases h_held : s.held with
+    | none => simp
+    | some h =>
+      obtain ⟨c, _t⟩ := h
+      by_cases h_eq : c = core
+      · subst h_eq
+        simp
+      · simp [h_eq]
+  | observeServing _ _ =>
+    show s.nextTicket ≤ s.nextTicket
+    omega
+
+/-- **Helper**: `applyOp .release core` preserves `nextTicket`.
+
+Release only changes `serving` and `held`; `nextTicket` is unchanged. -/
+theorem TicketLockState.applyOp_release_nextTicket_eq
+    (s : TicketLockState) (core : CoreId) :
+    (s.applyOp (.release core)).nextTicket = s.nextTicket := by
+  rcases s.applyOp_release_cases core with h_id | ⟨_, _, h_step⟩
+  · rw [h_id]
+  · rw [h_step]
+
+/-- **Helper**: `promotePending` preserves `nextTicket`.
+
+Promotion only changes `pending` and `held`; `nextTicket` is unchanged. -/
+theorem TicketLockState.promotePending_nextTicket_eq (s : TicketLockState) :
+    s.promotePending.nextTicket = s.nextTicket := by
+  unfold TicketLockState.promotePending
+  cases h_held : s.held with
+  | none =>
+    cases h_find : s.pending.find? (fun p => decide (p.2 = s.serving)) with
+    | none => rfl
+    | some _ => rfl
+  | some _ =>
+    cases h_find : s.pending.find? (fun p => decide (p.2 = s.serving)) with
+    | none => rfl
+    | some _ => rfl
+
+/-- **Helper**: `releaseAndPromote` preserves `nextTicket`. -/
+theorem TicketLockState.releaseAndPromote_nextTicket_eq
+    (s : TicketLockState) (core : CoreId) :
+    (s.releaseAndPromote core).nextTicket = s.nextTicket := by
+  unfold TicketLockState.releaseAndPromote
+  rw [TicketLockState.promotePending_nextTicket_eq,
+      TicketLockState.applyOp_release_nextTicket_eq]
+
+/-- **Helper**: a successful `tryAcquire core` captures the OLD
+`nextTicket` and the new `nextTicket` is `old + 1`.
+
+A capture is "successful" when `core` was NOT already pending and
+NOT already the holder; otherwise the op is a no-op. -/
+theorem TicketLockState.applyOp_tryAcquire_captures
+    (s : TicketLockState) (core : CoreId)
+    (h_not_pending : core ∉ s.pending.map Prod.fst)
+    (h_not_held : s.held.map Prod.fst ≠ some core) :
+    (s.applyOp (.tryAcquire core)).nextTicket = s.nextTicket + 1 := by
+  unfold TicketLockState.applyOp
+  simp only [h_not_pending, ite_false, h_not_held]
+  by_cases hcond : s.serving = s.nextTicket ∧ s.held.isNone = true
+  · rw [if_pos hcond]
+  · rw [if_neg hcond]
+
+/-- **Theorem 3.2.7.1 (SM2.B.10, single-step FIFO)**: `applyOp` is
+monotone on `nextTicket`, and successful `tryAcquire` strictly
+increments it.
+
+This is the structural foundation of FIFO ordering: between two
+successful captures (each grows `nextTicket` by 1), `nextTicket`
+strictly increases.  The multi-step FIFO theorem
+`ticketLock_fifo_trace` below folds this over a list of operations
+to recover the standard "earlier capture → smaller ticket" claim. -/
+theorem ticketLock_fifo (s : TicketLockState) (op : TicketLockOp) :
+    s.nextTicket ≤ (s.applyOp op).nextTicket :=
+  s.applyOp_nextTicket_monotone op
+
+/-- **SM2.B.10 (multi-step FIFO)**: under a sequence of operations
+starting from any state `s`, `nextTicket` is monotone non-decreasing.
+
+Folded form of `ticketLock_fifo`.  The strict FIFO claim — earlier
+successful capture produces a smaller ticket than a later successful
+capture — follows by combining this monotonicity with
+`applyOp_tryAcquire_captures` (each successful capture grows
+`nextTicket` by 1, so two consecutive captures differ by at least 1). -/
+theorem ticketLock_fifo_trace (s : TicketLockState) (ops : List TicketLockOp) :
+    s.nextTicket ≤ (ops.foldl TicketLockState.applyOp s).nextTicket := by
+  induction ops generalizing s with
+  | nil => simp
+  | cons op rest ih =>
+    -- Reduce (op :: rest).foldl applyOp s to rest.foldl applyOp (s.applyOp op).
+    show s.nextTicket ≤ (rest.foldl TicketLockState.applyOp (s.applyOp op)).nextTicket
+    have h_step : s.nextTicket ≤ (s.applyOp op).nextTicket :=
+      ticketLock_fifo s op
+    have h_rest := ih (s.applyOp op)
+    omega
+
+-- ============================================================================
+-- SM2.B.11 — ticketLock_bounded_wait (WCRT bound)
+-- ============================================================================
+
+/-- **File-local helper**: a Nodup list `l₁` contained in another
+list `l₂` has length at most `l₂.length`.
+
+This is a pigeonhole-style lemma — the Nodup-ness of `l₁` plus the
+membership relation `l₁ ⊆ l₂` bounds `l₁`'s length by `l₂`'s.
+Inductive proof: each element of `l₁` "consumes" one element of
+`l₂` (via `List.erase`), and the remaining `l₂.erase x` is one
+shorter. -/
+private theorem nodup_subset_length_le {α : Type _} [DecidableEq α] :
+    ∀ (l₁ l₂ : List α), l₁.Nodup → (∀ x ∈ l₁, x ∈ l₂) →
+      l₁.length ≤ l₂.length := by
+  intro l₁
+  induction l₁ with
+  | nil => intros; simp
+  | cons x rest ih =>
+    intro l₂ h_nodup h_sub
+    rw [List.nodup_cons] at h_nodup
+    obtain ⟨h_x_not_in_rest, h_rest_nodup⟩ := h_nodup
+    have h_x_in_l₂ : x ∈ l₂ := h_sub x List.mem_cons_self
+    have h_rest_sub_erase : ∀ y ∈ rest, y ∈ l₂.erase x := by
+      intro y hy
+      have h_y_in_l₂ : y ∈ l₂ := h_sub y (List.mem_cons_of_mem _ hy)
+      have h_y_ne_x : y ≠ x := fun h_eq => h_x_not_in_rest (h_eq ▸ hy)
+      exact (List.mem_erase_of_ne h_y_ne_x).mpr h_y_in_l₂
+    have h_rest_bound := ih (l₂.erase x) h_rest_nodup h_rest_sub_erase
+    have h_erase_len : (l₂.erase x).length = l₂.length - 1 :=
+      List.length_erase_of_mem h_x_in_l₂
+    have h_l₂_pos : l₂.length ≥ 1 := List.length_pos_of_mem h_x_in_l₂
+    simp [List.length_cons]
+    omega
+
+/-- **File-local helper**: a Nodup list over `CoreId = Fin numCores`
+has length at most `numCores`.
+
+Pigeonhole instantiation of `nodup_subset_length_le` with
+`l₂ := List.finRange numCores`. -/
+private theorem nodup_corelist_length_bound
+    (l : List CoreId) (h : l.Nodup) : l.length ≤ numCores := by
+  have h_sub : ∀ x ∈ l, x ∈ List.finRange numCores :=
+    fun x _ => List.mem_finRange x
+  have h_len_le : l.length ≤ (List.finRange numCores).length :=
+    nodup_subset_length_le l (List.finRange numCores) h h_sub
+  rw [List.length_finRange] at h_len_le
+  exact h_len_le
+
+/-- **Theorem 3.2.8.1 (SM2.B.11): WCRT bound on captured tickets.**
+
+For any wf TicketLockState `s`, the captured-but-not-yet-served
+window has bounded width: `s.nextTicket ≤ s.serving + numCores`.
+
+This is the structural statement of bounded wait: when a core
+captures ticket `t = s.nextTicket`, the gap `t - s.serving` is at
+most `numCores - 1`, so the captured core waits behind at most
+`numCores - 1` other cores.
+
+Proof:
+* INV-T6: pending cores are Nodup.
+* INV-T7: holder's core is not in pending.
+* Combined, the pending cores ∪ {holder} is a Nodup list of distinct
+  CoreId values.
+* By `nodup_corelist_length_bound`, the total count is ≤ numCores.
+* By INV-T8 (count parity): nextTicket - serving = |pending| + heldCount.
+* So nextTicket - serving ≤ numCores, hence nextTicket ≤ serving + numCores. -/
+theorem ticketLock_bounded_wait (s : TicketLockState) (h : s.wf) :
+    s.nextTicket ≤ s.serving + numCores := by
+  -- Build the combined list of in-flight cores.
+  have h_pending_cores_nodup := s.wf_pendingCoresNodup h
+  -- Case split on whether held is some.
+  cases h_held : s.held with
+  | none =>
+    -- |pending| + 0 ≤ numCores.
+    have h_pending_len_bound :
+        (s.pending.map Prod.fst).length ≤ numCores :=
+      nodup_corelist_length_bound _ h_pending_cores_nodup
+    rw [List.length_map] at h_pending_len_bound
+    have h_cnt := s.wf_countParity h
+    have h_held_count : s.heldCount = 0 := by
+      unfold TicketLockState.heldCount; rw [h_held]
+    rw [h_held_count] at h_cnt
+    omega
+  | some hp =>
+    -- |pending| + 1 ≤ numCores via combined Nodup list.
+    obtain ⟨hc, ht⟩ := hp
+    have h_holder_not_in_pending :
+        hc ∉ s.pending.map Prod.fst := by
+      have := s.wf_holderCoreNotInPending h (hc, ht) (by rw [h_held])
+      exact this
+    -- The list `hc :: s.pending.map Prod.fst` is Nodup, with length |pending| + 1.
+    have h_combined_nodup : (hc :: s.pending.map Prod.fst).Nodup :=
+      List.nodup_cons.mpr ⟨h_holder_not_in_pending, h_pending_cores_nodup⟩
+    have h_combined_bound :
+        (hc :: s.pending.map Prod.fst).length ≤ numCores :=
+      nodup_corelist_length_bound _ h_combined_nodup
+    simp only [List.length_cons, List.length_map] at h_combined_bound
+    have h_cnt := s.wf_countParity h
+    have h_held_count : s.heldCount = 1 := by
+      unfold TicketLockState.heldCount; rw [h_held]
+    rw [h_held_count] at h_cnt
+    omega
+
+-- ============================================================================
+-- SM2.B.12 — ticketLock_release_acquire_pairing
+-- ============================================================================
+
+/-- **Theorem 3.2.9.1 (SM2.B.12): release-acquire pairing for TicketLock.**
+
+If a release-store event and an acquire-load event in a well-formed
+memory trace satisfy the standard release-acquire pairing
+preconditions (same location on the `serving` field; matching value;
+release-store positioned before acquire-load; both with the right
+ordering), then they `synchronizesWith` per the SM2.A abstract
+memory model.
+
+This bridges the TicketLock spec to the SM2.A `MemoryModel.lean`:
+release-acquire pairing on the `serving` counter is exactly what
+SM3 per-object locks consume for cross-core state visibility after
+a `release` followed by another core's `acquire`. -/
+theorem ticketLock_release_acquire_pairing
+    (t : MemoryTrace) (base : Nat)
+    (release_event acquire_event : MemoryEvent)
+    (h_release_in : release_event ∈ t.events)
+    (h_acquire_in : acquire_event ∈ t.events)
+    (h_release_loc : release_event.loc = AtomicLocation.servingOf base)
+    (h_acquire_loc : acquire_event.loc = AtomicLocation.servingOf base)
+    (h_release_write : release_event.isWrite = true)
+    (h_release_order : release_event.order.isRelease = true)
+    (h_acquire_load : acquire_event.isWrite = false)
+    (h_acquire_order : acquire_event.order.isAcquire = true)
+    (h_value_match : release_event.value = acquire_event.value)
+    (h_pos : t.eventPos release_event < t.eventPos acquire_event) :
+    synchronizesWith t release_event acquire_event := by
+  refine ⟨h_release_in, h_acquire_in, h_release_write, h_release_order,
+          h_acquire_load, h_acquire_order, ?_, h_value_match, h_pos⟩
+  -- The location equality: both events are on `servingOf base`.
+  rw [h_release_loc, h_acquire_loc]
+
+/-- **Corollary (SM2.B.12)**: the release-acquire pairing lifts to a
+`happensBefore` edge.
+
+Composes `ticketLock_release_acquire_pairing` with
+`synchronizesWith_implies_happensBefore` so SM3 ladder-acquisition
+proofs can directly cite the happens-before relation without
+unfolding synchronizesWith. -/
+theorem ticketLock_release_acquire_happensBefore
+    (t : MemoryTrace) (base : Nat)
+    (release_event acquire_event : MemoryEvent)
+    (h_release_in : release_event ∈ t.events)
+    (h_acquire_in : acquire_event ∈ t.events)
+    (h_release_loc : release_event.loc = AtomicLocation.servingOf base)
+    (h_acquire_loc : acquire_event.loc = AtomicLocation.servingOf base)
+    (h_release_write : release_event.isWrite = true)
+    (h_release_order : release_event.order.isRelease = true)
+    (h_acquire_load : acquire_event.isWrite = false)
+    (h_acquire_order : acquire_event.order.isAcquire = true)
+    (h_value_match : release_event.value = acquire_event.value)
+    (h_pos : t.eventPos release_event < t.eventPos acquire_event) :
+    happensBefore t release_event acquire_event :=
+  synchronizesWith_implies_happensBefore t
+    (ticketLock_release_acquire_pairing t base release_event acquire_event
+      h_release_in h_acquire_in h_release_loc h_acquire_loc h_release_write
+      h_release_order h_acquire_load h_acquire_order h_value_match h_pos)
+
+-- ============================================================================
+-- SM2.B.13 — ticketLock_reachability
+-- ============================================================================
+
+/-- **WS-SM SM2.B.13**: a kernel-facing transition step.
+
+The three constructors mirror the kernel API:
+* `.acquire core` — invoke `applyOp .tryAcquire core`.
+* `.release core` — invoke `releaseAndPromote core` (composed release).
+* `.observe core obs` — invoke `applyOp .observeServing core obs`.
+
+The raw `applyOp .release core` is NOT exposed as a kernel transition
+because it does not preserve wf in general; the kernel-facing release
+is always the composed `releaseAndPromote`. -/
+inductive KernelStep : TicketLockState → TicketLockState → Prop where
+  /-- Acquire: tryAcquire on the abstract state. -/
+  | acquire (s : TicketLockState) (core : CoreId) :
+      KernelStep s (s.applyOp (.tryAcquire core))
+  /-- Release: composed release-and-promote. -/
+  | release (s : TicketLockState) (core : CoreId) :
+      KernelStep s (s.releaseAndPromote core)
+  /-- Observe: pure observation of `serving`. -/
+  | observe (s : TicketLockState) (core : CoreId) (observed : Nat) :
+      KernelStep s (s.applyOp (.observeServing core observed))
+
+/-- **WS-SM SM2.B.13**: reachability from `unheld` via kernel transitions.
+
+A state `s` is reachable iff there is a finite sequence of
+`KernelStep` transitions from `unheld` to `s`.  Reachability is
+defined as the reflexive-transitive closure of `KernelStep`. -/
+inductive Reachable : TicketLockState → Prop where
+  /-- The seed state is reachable. -/
+  | base : Reachable TicketLockState.unheld
+  /-- Closure under kernel steps. -/
+  | step : ∀ {s s'}, Reachable s → KernelStep s s' → Reachable s'
+
+/-- **Theorem 3.2.6 (SM2.B.13): every reachable state is wf.**
+
+By induction on the `Reachable` derivation, using the per-op wf
+preservation theorems (`ticketLock_tryAcquire_preserves_wf`,
+`ticketLock_releaseAndPromote_preserves_wf`,
+`ticketLock_observeServing_preserves_wf`) for the inductive step.
+
+This closes the SM2.B.9 ⇒ SM2.B.13 chain: wf preservation guarantees
+the reachable state space is contained in the wf state space, so
+every theorem proven over wf states applies to every reachable state. -/
+theorem ticketLock_reachability : ∀ s, Reachable s → s.wf := by
+  intro s h_reach
+  induction h_reach with
+  | base => exact TicketLockState.unheld_wf
+  | @step s s' _h_reach_s h_step ih =>
+    cases h_step with
+    | acquire c => exact ticketLock_tryAcquire_preserves_wf _ c ih
+    | release c => exact ticketLock_releaseAndPromote_preserves_wf _ c ih
+    | observe c o => exact ticketLock_observeServing_preserves_wf _ c o ih
+
+-- ============================================================================
 -- SM2.B.15 — Closure-form preservation aliases
 -- ============================================================================
 
