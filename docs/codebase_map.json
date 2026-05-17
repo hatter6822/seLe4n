@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-ticketlock-tasks-2ca8a",
-      "commit_sha": "fb176245796d805fbc83aa198575ac8a01e57d4b",
-      "tree_sha": "8b86bbb912fb7e775cad1320a98e6a9890ddd010",
-      "committed_at_utc": "2026-05-17T19:04:01+00:00"
+      "commit_sha": "0bae58777ca43fb3cc31887e7f5d69e086df0202",
+      "tree_sha": "05dab88c5ee201314a1758d7acf0abcaba9bed87",
+      "committed_at_utc": "2026-05-17T19:30:33+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "91cfc9802d52a4a18f97b7461245b7a82e29b6fc7cc5a5fbe646aa16b84f960a"
+    "source_digest": "6260c9769ffd3de9252b00569a92f18eb6824ba619ead313d34bd0bfa0df7c11"
   },
   "summary": {
     "module_count": 212,
-    "declaration_count": 6870
+    "declaration_count": 6880
   },
   "readme_sync": {
     "version": "0.31.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 180,
-    "production_loc": 118950,
+    "production_loc": 119002,
     "test_files": 32,
-    "test_loc": 23091,
-    "proved_theorem_lemma_decls": 3460,
+    "test_loc": 23214,
+    "proved_theorem_lemma_decls": 3461,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -14057,7 +14057,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Locks.TicketLock",
       "path": "SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean",
-      "declaration_count": 68,
+      "declaration_count": 69,
       "declarations": [
         {
           "kind": "namespace",
@@ -14695,8 +14695,22 @@
         },
         {
           "kind": "theorem",
+          "name": "ticketLock_fifo_strict",
+          "line": 1612,
+          "called": [
+            "CoreId",
+            "TicketLockOp",
+            "TicketLockState",
+            "TicketLockState.applyOp",
+            "applyOp",
+            "applyOp_tryAcquire_captures",
+            "ticketLock_fifo_trace"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "nodup_subset_length_le",
-          "line": 1605,
+          "line": 1657,
           "called": [
             "erase",
             "length"
@@ -14705,7 +14719,7 @@
         {
           "kind": "theorem",
           "name": "nodup_corelist_length_bound",
-          "line": 1633,
+          "line": 1685,
           "called": [
             "CoreId",
             "length",
@@ -14716,7 +14730,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_bounded_wait",
-          "line": 1660,
+          "line": 1712,
           "called": [
             "TicketLockState",
             "TicketLockState.heldCount",
@@ -14734,7 +14748,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_release_acquire_pairing",
-          "line": 1714,
+          "line": 1766,
           "called": [
             "AtomicLocation.servingOf",
             "MemoryEvent",
@@ -14748,7 +14762,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_release_acquire_happensBefore",
-          "line": 1740,
+          "line": 1792,
           "called": [
             "AtomicLocation.servingOf",
             "MemoryEvent",
@@ -14764,7 +14778,7 @@
         {
           "kind": "inductive",
           "name": "KernelStep",
-          "line": 1773,
+          "line": 1825,
           "called": [
             "CoreId",
             "TicketLockState",
@@ -14776,7 +14790,7 @@
         {
           "kind": "inductive",
           "name": "Reachable",
-          "line": 1789,
+          "line": 1841,
           "called": [
             "KernelStep",
             "TicketLockState",
@@ -14786,7 +14800,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_reachability",
-          "line": 1805,
+          "line": 1857,
           "called": [
             "Reachable",
             "TicketLockState.unheld_wf",
@@ -14799,7 +14813,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_acquire_preserves_wf",
-          "line": 1824,
+          "line": 1876,
           "called": [
             "CoreId",
             "TicketLockState",
@@ -14811,7 +14825,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_release_preserves_wf",
-          "line": 1835,
+          "line": 1887,
           "called": [
             "CoreId",
             "TicketLockState",
@@ -88455,16 +88469,8 @@
     {
       "module": "tests.TicketLockSuite",
       "path": "tests/TicketLockSuite.lean",
-      "declaration_count": 43,
+      "declaration_count": 52,
       "declarations": [
-        {
-          "kind": "example",
-          "name": "<anonymous:example:170>",
-          "line": 170,
-          "called": [
-            "TicketLockState.unheld"
-          ]
-        },
         {
           "kind": "example",
           "name": "<anonymous:example:171>",
@@ -88486,6 +88492,14 @@
           "name": "<anonymous:example:173>",
           "line": 173,
           "called": [
+            "TicketLockState.unheld"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:174>",
+          "line": 174,
+          "called": [
             "CoreId",
             "TicketLockState.unheld",
             "none"
@@ -88493,18 +88507,10 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:176>",
-          "line": 176,
+          "name": "<anonymous:example:177>",
+          "line": 177,
           "called": [
             "wf"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:180>",
-          "line": 180,
-          "called": [
-            "heldCount"
           ]
         },
         {
@@ -88512,7 +88518,7 @@
           "name": "<anonymous:example:181>",
           "line": 181,
           "called": [
-            "pendingInRange"
+            "heldCount"
           ]
         },
         {
@@ -88520,7 +88526,7 @@
           "name": "<anonymous:example:182>",
           "line": 182,
           "called": [
-            "holderTicketIsServing"
+            "pendingInRange"
           ]
         },
         {
@@ -88528,7 +88534,7 @@
           "name": "<anonymous:example:183>",
           "line": 183,
           "called": [
-            "holderTicketDisjointFromPending"
+            "holderTicketIsServing"
           ]
         },
         {
@@ -88536,13 +88542,21 @@
           "name": "<anonymous:example:184>",
           "line": 184,
           "called": [
+            "holderTicketDisjointFromPending"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:185>",
+          "line": 185,
+          "called": [
             "holderCoreDisjointFromPending"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:190>",
-          "line": 190,
+          "name": "<anonymous:example:191>",
+          "line": 191,
           "called": [
             "applyOp",
             "bootCoreId"
@@ -88550,8 +88564,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:193>",
-          "line": 193,
+          "name": "<anonymous:example:194>",
+          "line": 194,
           "called": [
             "applyOp",
             "bootCoreId"
@@ -88559,8 +88573,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:196>",
-          "line": 196,
+          "name": "<anonymous:example:197>",
+          "line": 197,
           "called": [
             "applyOp",
             "bootCoreId"
@@ -88568,8 +88582,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:199>",
-          "line": 199,
+          "name": "<anonymous:example:200>",
+          "line": 200,
           "called": [
             "applyOp",
             "bootCoreId"
@@ -88577,8 +88591,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:204>",
-          "line": 204,
+          "name": "<anonymous:example:205>",
+          "line": 205,
           "called": [
             "applyOp",
             "bootCoreId",
@@ -88587,8 +88601,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:209>",
-          "line": 209,
+          "name": "<anonymous:example:210>",
+          "line": 210,
           "called": [
             "applyOp",
             "bootCoreId"
@@ -88596,8 +88610,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:214>",
-          "line": 214,
+          "name": "<anonymous:example:215>",
+          "line": 215,
           "called": [
             "applyOp",
             "bootCoreId"
@@ -88605,8 +88619,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:219>",
-          "line": 219,
+          "name": "<anonymous:example:220>",
+          "line": 220,
           "called": [
             "applyOp",
             "bootCoreId"
@@ -88614,8 +88628,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:224>",
-          "line": 224,
+          "name": "<anonymous:example:225>",
+          "line": 225,
           "called": [
             "applyOp",
             "bootCoreId"
@@ -88623,8 +88637,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:229>",
-          "line": 229,
+          "name": "<anonymous:example:230>",
+          "line": 230,
           "called": [
             "applyOp",
             "bootCoreId",
@@ -88633,8 +88647,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:236>",
-          "line": 236,
+          "name": "<anonymous:example:237>",
+          "line": 237,
           "called": [
             "applyOp",
             "bootCoreId",
@@ -88643,8 +88657,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:242>",
-          "line": 242,
+          "name": "<anonymous:example:243>",
+          "line": 243,
           "called": [
             "applyOp",
             "bootCoreId",
@@ -88653,8 +88667,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:248>",
-          "line": 248,
+          "name": "<anonymous:example:249>",
+          "line": 249,
           "called": [
             "applyOp",
             "bootCoreId",
@@ -88663,8 +88677,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:254>",
-          "line": 254,
+          "name": "<anonymous:example:255>",
+          "line": 255,
           "called": [
             "applyOp",
             "bootCoreId",
@@ -88673,8 +88687,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:260>",
-          "line": 260,
+          "name": "<anonymous:example:261>",
+          "line": 261,
           "called": [
             "applyOp",
             "bootCoreId",
@@ -88684,8 +88698,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:268>",
-          "line": 268,
+          "name": "<anonymous:example:269>",
+          "line": 269,
           "called": [
             "applyOp",
             "bootCoreId",
@@ -88694,8 +88708,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:271>",
-          "line": 271,
+          "name": "<anonymous:example:272>",
+          "line": 272,
           "called": [
             "TicketLockState.unheld",
             "applyOp",
@@ -88705,8 +88719,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:277>",
-          "line": 277,
+          "name": "<anonymous:example:278>",
+          "line": 278,
           "called": [
             "applyOp",
             "bootCoreId"
@@ -88714,8 +88728,81 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:285>",
-          "line": 285,
+          "name": "<anonymous:example:288>",
+          "line": 288,
+          "called": [
+            "applyOp",
+            "bootCoreId"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:298>",
+          "line": 298,
+          "called": [
+            "applyOp",
+            "bootCoreId"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:304>",
+          "line": 304,
+          "called": [
+            "TicketLockState.unheld",
+            "applyOp",
+            "bootCoreId"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:314>",
+          "line": 314,
+          "called": [
+            "TicketLockState.unheld",
+            "applyOp",
+            "bootCoreId",
+            "none",
+            "releaseAndPromote"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:327>",
+          "line": 327,
+          "called": [
+            "TicketLockState.unheld",
+            "applyOp",
+            "bootCoreId",
+            "releaseAndPromote",
+            "wf"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:338>",
+          "line": 338,
+          "called": [
+            "TicketLockState.unheld",
+            "applyOp",
+            "bootCoreId",
+            "releaseAndPromote"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:352>",
+          "line": 352,
+          "called": [
+            "applyOp",
+            "bootCoreId",
+            "observeServing"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:358>",
+          "line": 358,
           "called": [
             "applyOp",
             "bootCoreId"
@@ -88724,13 +88811,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.TicketLockSuite",
-          "line": 294,
+          "line": 367,
           "called": []
         },
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 296,
+          "line": 369,
           "called": [
             "throw"
           ]
@@ -88738,7 +88825,7 @@
         {
           "kind": "def",
           "name": "runUnheldChecks",
-          "line": 303,
+          "line": 376,
           "called": [
             "assertBool",
             "heldCount",
@@ -88753,7 +88840,7 @@
         {
           "kind": "def",
           "name": "runFastPathAcquireChecks",
-          "line": 326,
+          "line": 399,
           "called": [
             "applyOp",
             "assertBool",
@@ -88764,7 +88851,7 @@
         {
           "kind": "def",
           "name": "runSlowPathAcquireChecks",
-          "line": 341,
+          "line": 414,
           "called": [
             "CoreId",
             "applyOp",
@@ -88776,7 +88863,7 @@
         {
           "kind": "def",
           "name": "runReleaseAndPromoteChecks",
-          "line": 358,
+          "line": 431,
           "called": [
             "CoreId",
             "applyOp",
@@ -88789,7 +88876,7 @@
         {
           "kind": "def",
           "name": "runObserveServingChecks",
-          "line": 376,
+          "line": 449,
           "called": [
             "TicketLockState.unheld",
             "applyOp",
@@ -88801,7 +88888,7 @@
         {
           "kind": "def",
           "name": "runNoOpTryAcquireChecks",
-          "line": 383,
+          "line": 456,
           "called": [
             "CoreId",
             "applyOp",
@@ -88811,8 +88898,35 @@
         },
         {
           "kind": "def",
+          "name": "runNonHolderReleaseChecks",
+          "line": 471,
+          "called": [
+            "CoreId",
+            "TicketLockState.unheld",
+            "applyOp",
+            "assertBool",
+            "bootCoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runPromotionChainChecks",
+          "line": 487,
+          "called": [
+            "CoreId",
+            "TicketLockState.unheld",
+            "applyOp",
+            "assertBool",
+            "bootCoreId",
+            "none",
+            "releaseAndPromote",
+            "wf"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runDeterminismChecks",
-          "line": 393,
+          "line": 514,
           "called": [
             "TicketLockState.unheld",
             "applyOp",
@@ -88823,13 +88937,13 @@
         {
           "kind": "def",
           "name": "runReachabilityShapeChecks",
-          "line": 401,
+          "line": 522,
           "called": []
         },
         {
           "kind": "def",
           "name": "runBoundedWaitShapeChecks",
-          "line": 410,
+          "line": 531,
           "called": [
             "TicketLockState.unheld",
             "assertBool",
@@ -88839,7 +88953,7 @@
         {
           "kind": "def",
           "name": "runFifoChainChecks",
-          "line": 416,
+          "line": 537,
           "called": [
             "CoreId",
             "TicketLockState.unheld",
@@ -88851,14 +88965,16 @@
         {
           "kind": "def",
           "name": "runTicketLockChecks",
-          "line": 439,
+          "line": 560,
           "called": [
             "runBoundedWaitShapeChecks",
             "runDeterminismChecks",
             "runFastPathAcquireChecks",
             "runFifoChainChecks",
             "runNoOpTryAcquireChecks",
+            "runNonHolderReleaseChecks",
             "runObserveServingChecks",
+            "runPromotionChainChecks",
             "runReachabilityShapeChecks",
             "runReleaseAndPromoteChecks",
             "runSlowPathAcquireChecks",
@@ -88868,7 +88984,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 457,
+          "line": 580,
           "called": [
             "runTicketLockChecks"
           ]

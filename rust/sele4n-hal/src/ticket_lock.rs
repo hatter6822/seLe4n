@@ -109,6 +109,7 @@ impl TicketLock {
     /// The constructor is `const fn` so `TicketLock`s can be embedded
     /// in `static` declarations for global per-object locks (SM3).
     #[must_use]
+    #[inline]
     pub const fn new() -> Self {
         Self {
             next_ticket: AtomicU64::new(0),
@@ -160,6 +161,30 @@ impl TicketLock {
     /// `ticketLock_release_acquire_pairing`) propagates the prior
     /// holder's writes to the new holder before any critical-section
     /// code runs.
+    ///
+    /// # API contract
+    ///
+    /// The caller MUST pair each successful `acquire` with exactly
+    /// one matching `release`.  Failure modes when misused:
+    ///
+    /// * **Double-acquire without release on one core**: the second
+    ///   `acquire` captures a ticket strictly greater than the
+    ///   serving value (because the same core never advances
+    ///   `serving` without releasing).  The spin-loop will busy-wait
+    ///   forever (or, on a kernel that exits idle via timer, the
+    ///   timer ISR will not satisfy the condition either).  In
+    ///   practice this manifests as a hang.
+    /// * **Release without prior acquire**: see `release`'s contract.
+    /// * **Recommendation**: prefer [`Self::with_lock`] — the RAII
+    ///   guard makes both contracts unforgeable at the type level
+    ///   (Drop is the only path to `release`, and `with_lock` is
+    ///   the only path to acquire-then-execute).
+    ///
+    /// The returned ticket value is informational (for diagnostic /
+    /// logging use); the `release` method does not require it.
+    /// Discarding the return value (`let _ = lock.acquire();`) is
+    /// legal Rust but loses the diagnostic information.
+    #[inline]
     pub fn acquire(&self) -> u64 {
         // Step 1: capture ticket via atomic fetch-add with Acquire ordering.
         let my_ticket = self.next_ticket.fetch_add(1, Ordering::Acquire);
@@ -213,9 +238,59 @@ impl TicketLock {
     /// composition (the abstract observation is what makes the
     /// abstract promotion explicit; the concrete representation
     /// elides the explicit holder).
+    ///
+    /// # API contract
+    ///
+    /// The caller MUST be the current holder (i.e., the most recent
+    /// `acquire` call on this lock that has not yet been matched by
+    /// a `release` must be on the calling core).  Failure modes when
+    /// misused:
+    ///
+    /// * **Release without prior acquire**: `serving` advances past
+    ///   `next_ticket`, breaking the invariant
+    ///   `serving <= next_ticket` (Lean spec's INV-T1).  Subsequent
+    ///   `acquire` calls capture tickets that have already been
+    ///   "served" — they would think they're the holder immediately
+    ///   when in fact no exclusion is guaranteed.  This breaks the
+    ///   mutex property at the implementation level (the Lean spec's
+    ///   `applyOp .release` returns the state UNCHANGED when called
+    ///   by a non-holder, but the Rust impl cannot detect this
+    ///   without additional state).
+    /// * **Double-release on one acquire**: same effect — `serving`
+    ///   advances twice for one acquire, allowing two concurrent
+    ///   "holders" of subsequent tickets.
+    /// * **Recommendation**: prefer [`Self::with_lock`] — the RAII
+    ///   guard ensures release is paired with acquire (Drop runs
+    ///   exactly once, only via with_lock or guard scope).
+    ///
+    /// In debug builds, a `debug_assert!` checks that the
+    /// post-release `serving` does not exceed `next_ticket`, catching
+    /// the most common misuse (release-without-acquire) before the
+    /// invariant break propagates.  This is defensive: the assert
+    /// is racy under concurrent acquires (the check can observe a
+    /// post-acquire `next_ticket`), but for the static
+    /// release-without-acquire bug pattern it catches the misuse
+    /// reliably.
+    #[inline]
     pub fn release(&self) {
         // Step 1: release-store on `serving` to advance and publish writes.
-        self.serving.fetch_add(1, Ordering::Release);
+        let prev_serving = self.serving.fetch_add(1, Ordering::Release);
+        // Defensive: in debug builds, check that we didn't advance
+        // serving past next_ticket.  A release-without-acquire would
+        // increment serving from N to N+1 while next_ticket is still N,
+        // setting next_ticket - serving < 0 (the violation of
+        // INV-T1).  Loading next_ticket after the increment is racy
+        // against concurrent acquires (which could have advanced it),
+        // but the new_serving > observed_next case catches the most
+        // common static-bug pattern (release without any prior
+        // acquire on the lock).
+        debug_assert!(
+            prev_serving < self.next_ticket.load(Ordering::Acquire),
+            "TicketLock::release called without a matching acquire \
+             (serving was {} before increment, but next_ticket has not \
+             advanced past it)",
+            prev_serving
+        );
         // Step 2: SEV to wake any waiters parked on WFE.
         crate::cpu::sev();
     }
@@ -239,6 +314,7 @@ impl TicketLock {
     ///     // Lock is automatically released when this closure returns.
     /// });
     /// ```
+    #[inline]
     pub fn with_lock<F, R>(&self, f: F) -> R
     where
         F: FnOnce() -> R,
@@ -274,6 +350,7 @@ impl<'a> TicketLockGuard<'a> {
     ///
     /// Calls `lock.acquire()`; the returned guard holds the lock
     /// until dropped.
+    #[inline]
     pub fn acquire(lock: &'a TicketLock) -> Self {
         let ticket = lock.acquire();
         Self { lock, _ticket: ticket }
@@ -281,6 +358,7 @@ impl<'a> TicketLockGuard<'a> {
 
     /// **WS-SM SM2.B.16**: get the captured ticket for diagnostic use.
     #[must_use]
+    #[inline]
     pub fn ticket(&self) -> u64 {
         self._ticket
     }
@@ -292,12 +370,14 @@ impl<'a> Drop for TicketLockGuard<'a> {
     /// Calls `self.lock.release()`.  Drop semantics guarantee this
     /// runs on normal return AND on panic-unwind, so the lock is
     /// never permanently held even if the critical section panics.
+    #[inline]
     fn drop(&mut self) {
         self.lock.release();
     }
 }
 
 impl Default for TicketLock {
+    #[inline]
     fn default() -> Self {
         Self::new()
     }
@@ -691,7 +771,26 @@ mod tests {
                    NUM_THREADS, captured_tickets);
     }
 
-    /// **SM2.B.16 test**: u64 counter wrap-around documentation.
+    /// **SM2.B.16 test**: `release()` debug_assert catches
+    /// release-without-prior-acquire misuse.
+    ///
+    /// In debug builds, `release()` carries a `debug_assert!` that
+    /// verifies the post-release `serving` does not exceed
+    /// `next_ticket`.  A call to `release()` on a fresh (un-acquired)
+    /// lock advances `serving` from 0 to 1 while `next_ticket` is
+    /// still 0, triggering the assert.
+    ///
+    /// The test is gated on `debug_assertions` so it doesn't false-
+    /// fail in release builds (where `debug_assert!` is a no-op).
+    /// On debug builds, the assertion fires and the test passes via
+    /// `#[should_panic]`.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "release called without a matching acquire")]
+    fn sm2b16_release_without_acquire_panics_in_debug() {
+        let lock = TicketLock::new();
+        lock.release();
+    }
     ///
     /// At u64::MAX, the counter wraps to 0.  In practice unreachable
     /// (~580 years at 1 GHz of pure-acquire operations), but documented

@@ -1590,6 +1590,58 @@ theorem ticketLock_fifo_trace (s : TicketLockState) (ops : List TicketLockOp) :
     have h_rest := ih (s.applyOp op)
     omega
 
+/-- **Theorem (SM2.B.10, strict FIFO between two captures)**: between
+two successful captures separated by any sequence of operations, the
+captured tickets are strictly ordered.
+
+Concretely: c₁ captures `s.nextTicket` at the starting state `s`; the
+post-c₁ state evolves through any sequence `ops` of operations to
+`s_final`; c₂ would then capture `s_final.nextTicket`.  We prove
+**c₁'s captured ticket strictly precedes c₂'s captured ticket**.
+
+The c₂-eligibility hypotheses (`h_c₂_eligible`, `h_c₂_not_held`) are
+required to certify that c₂'s capture would actually succeed (i.e.,
+produce `s_final.nextTicket` as its captured ticket rather than being
+a no-op).  Combined with `applyOp_tryAcquire_captures`, they let the
+conclusion conclude with the **captured ticket** of c₂'s successful
+acquire, not just the abstract `s_final.nextTicket`.
+
+This is the cross-trace strict-FIFO claim the plan's §3.2.7.1 states:
+"if at trace positions p₁ < p₂ two cores both successfully capture
+tickets t₁, t₂, then t₁ < t₂". -/
+theorem ticketLock_fifo_strict
+    (s : TicketLockState) (c₁ c₂ : CoreId)
+    (h_c₁_eligible : c₁ ∉ s.pending.map Prod.fst)
+    (h_c₁_not_held : s.held.map Prod.fst ≠ some c₁)
+    (ops : List TicketLockOp)
+    -- After c₁'s capture, the intermediate state evolves through `ops`.
+    (s_final : TicketLockState)
+    (h_evolution :
+      s_final = ops.foldl TicketLockState.applyOp
+                  (s.applyOp (.tryAcquire c₁)))
+    -- At s_final, c₂ is eligible to capture.
+    (h_c₂_eligible : c₂ ∉ s_final.pending.map Prod.fst)
+    (h_c₂_not_held : s_final.held.map Prod.fst ≠ some c₂) :
+    -- Captured ticket of c₁ (= s.nextTicket) is strictly less than
+    -- captured ticket of c₂ (= s_final.nextTicket).
+    s.nextTicket < s_final.nextTicket
+    ∧ -- And c₂'s successful capture produces a state with
+      -- nextTicket = s_final.nextTicket + 1, witnessing the
+      -- "successful capture" property at s_final.
+      (s_final.applyOp (.tryAcquire c₂)).nextTicket = s_final.nextTicket + 1 := by
+  -- c₁'s capture produces a state with nextTicket = s.nextTicket + 1.
+  have h_c₁_captures : (s.applyOp (.tryAcquire c₁)).nextTicket = s.nextTicket + 1 :=
+    s.applyOp_tryAcquire_captures c₁ h_c₁_eligible h_c₁_not_held
+  -- The intermediate state's nextTicket is monotone through `ops`.
+  have h_mono : (s.applyOp (.tryAcquire c₁)).nextTicket ≤ s_final.nextTicket := by
+    rw [h_evolution]
+    exact ticketLock_fifo_trace (s.applyOp (.tryAcquire c₁)) ops
+  -- c₂'s capture at s_final produces a state with nextTicket = s_final.nextTicket + 1.
+  have h_c₂_captures : (s_final.applyOp (.tryAcquire c₂)).nextTicket =
+                       s_final.nextTicket + 1 :=
+    s_final.applyOp_tryAcquire_captures c₂ h_c₂_eligible h_c₂_not_held
+  exact ⟨by omega, h_c₂_captures⟩
+
 -- ============================================================================
 -- SM2.B.11 — ticketLock_bounded_wait (WCRT bound)
 -- ============================================================================

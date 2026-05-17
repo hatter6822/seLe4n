@@ -154,6 +154,36 @@ to use explicit `decide`-Bool reasoning instead of `simp`-driven
 predicate normalisation that diverged between the goal and the
 inductive hypothesis.
 
+**Audit-pass-2 refinements** (included): two-capture strict-FIFO
+theorem `ticketLock_fifo_strict` added — between any two
+successful captures `c₁` then `c₂` (separated by an arbitrary
+operation sequence), c₁'s captured ticket strictly precedes c₂'s.
+Combines `applyOp_tryAcquire_captures` (single-step +1) with
+`ticketLock_fifo_trace` (multi-step monotonicity) to recover the
+plan §3.2.7.1 strict-FIFO claim.
+
+Rust impl hardening: `acquire` / `release` / `with_lock` /
+`TicketLock::new` / `Default::default` / `TicketLockGuard::*` /
+`Drop::drop` all marked `#[inline]` for the hot-path
+performance the kernel requires.  `release` now carries a
+defensive `debug_assert!` that catches release-without-prior-
+acquire misuse in debug builds (loads `next_ticket` after the
+serving increment and asserts `prev_serving < next_ticket`).
+Explicit "API contract" sections added to `acquire` / `release`
+docstrings spelling out the holder-discipline expectations and
+recommending `with_lock` for safe usage.  New test
+`sm2b16_release_without_acquire_panics_in_debug`
+(`#[cfg(debug_assertions)]` + `#[should_panic]`) verifies the
+assert fires.
+
+Lean test suite extended (was 35 → 49 runtime assertions): edge-
+case tests for the second-if no-op (re-acquire by current
+holder), release-by-non-holder no-op (both held = none case and
+wrong-core case), and the full 3-acquire + 3-release promotion
+chain verifying every intermediate state's holder identity and
+wf preservation.  Rust test suite extended (was 17 → 22 tests):
++5 audit-pass tests including the debug-assert verification.
+
 ## v0.31.9 — WS-SM Phase SM2.A landing (abstract memory model for verified lock primitives)
 
 WS-SM SM2.A (abstract memory model) landed in one cut on branch

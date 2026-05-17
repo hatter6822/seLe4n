@@ -1431,6 +1431,7 @@ import SeLe4n.Kernel.Concurrency.Locks.TicketLock
 #check @SeLe4n.Kernel.Concurrency.TicketLockState.applyOp_tryAcquire_captures
 #check @SeLe4n.Kernel.Concurrency.ticketLock_fifo
 #check @SeLe4n.Kernel.Concurrency.ticketLock_fifo_trace
+#check @SeLe4n.Kernel.Concurrency.ticketLock_fifo_strict
 -- SM2.B.11 — bounded wait
 #check @SeLe4n.Kernel.Concurrency.ticketLock_bounded_wait
 -- SM2.B.12 — release-acquire pairing
