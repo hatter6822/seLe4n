@@ -112,4 +112,108 @@ wrapper is wired through. -/
 theorem currentCoreId_in_range_marker (c : CoreId) : c.val < numCores :=
   c.isLt
 
+-- ============================================================================
+-- WS-SM SM1.I.3 — Idle-wait typed wrappers
+-- ============================================================================
+
+/-- **WS-SM SM1.I.3**: typed wrapper for `Platform.FFI.ffiIdleWait`.
+
+    Pure pass-through that surfaces the idle-wait primitive under the
+    `Kernel.Concurrency` namespace.  At SM1.I.3 the Lean kernel has no
+    per-core idle TCB to call this from; SM5 will wire it as the body
+    of the verified idle-thread transition.
+
+    **Behaviour**: on hardware parks the calling core on `wfe` until
+    an event or interrupt arrives.  On host the stub returns
+    immediately. -/
+def idleWait : BaseIO Unit :=
+  Platform.FFI.ffiIdleWait
+
+/-- **WS-SM SM1.I.3**: typed wrapper for
+    `Platform.FFI.ffiIdleWaitBounded`.
+
+    `maxTicks` — counter-tick budget.  Returns elapsed ticks since the
+    call began (≥ 0; 0 on host).  The Lean caller compares
+    `elapsed >= maxTicks` to detect "did we time out without seeing an
+    event". -/
+def idleWaitBounded (maxTicks : UInt64) : BaseIO UInt64 :=
+  Platform.FFI.ffiIdleWaitBounded maxTicks
+
+-- ============================================================================
+-- WS-SM SM1.I.4 — Per-core stats typed wrappers
+-- ============================================================================
+
+/-- **WS-SM SM1.I.4**: typed wrapper for
+    `Platform.FFI.ffiPerCoreIrqCount`.
+
+    Takes a typed `CoreId` (so the bound check on `core.val < numCores`
+    is structural, not a runtime guard).  Returns the Relaxed snapshot
+    of the core's `irq_count` counter. -/
+def perCoreIrqCount (core : CoreId) : BaseIO UInt64 :=
+  Platform.FFI.ffiPerCoreIrqCount (UInt64.ofNat core.val)
+
+/-- **WS-SM SM1.I.4**: typed wrapper for
+    `Platform.FFI.ffiPerCoreTimerTickCount`. -/
+def perCoreTimerTickCount (core : CoreId) : BaseIO UInt64 :=
+  Platform.FFI.ffiPerCoreTimerTickCount (UInt64.ofNat core.val)
+
+/-- **WS-SM SM1.I.4**: typed wrapper for
+    `Platform.FFI.ffiPerCoreSgiCount`. -/
+def perCoreSgiCount (core : CoreId) : BaseIO UInt64 :=
+  Platform.FFI.ffiPerCoreSgiCount (UInt64.ofNat core.val)
+
+/-- **WS-SM SM1.I.4**: typed wrapper for
+    `Platform.FFI.ffiPerCoreSyscallCount`. -/
+def perCoreSyscallCount (core : CoreId) : BaseIO UInt64 :=
+  Platform.FFI.ffiPerCoreSyscallCount (UInt64.ofNat core.val)
+
+/-- **WS-SM SM1.I.4** structural marker: per-core stats accessors
+return `BaseIO UInt64`.
+
+A trivial witness used as a surface anchor — the four typed
+accessors above must return a `BaseIO UInt64` so downstream Tier-3
+scans verify the FFI bridge is wired through to the Rust counter
+snapshots. -/
+theorem perCoreIrqCount_returns_baseio_uint64_marker (core : CoreId) :
+    (perCoreIrqCount core : BaseIO UInt64) =
+      Platform.FFI.ffiPerCoreIrqCount (UInt64.ofNat core.val) := by
+  rfl
+
+/-- **WS-SM SM1.I.4** structural marker: `perCoreTimerTickCount` is a
+direct FFI pass-through.  Audit-pass-1: symmetry with
+`perCoreIrqCount_returns_baseio_uint64_marker`. -/
+theorem perCoreTimerTickCount_returns_baseio_uint64_marker (core : CoreId) :
+    (perCoreTimerTickCount core : BaseIO UInt64) =
+      Platform.FFI.ffiPerCoreTimerTickCount (UInt64.ofNat core.val) := by
+  rfl
+
+/-- **WS-SM SM1.I.4** structural marker: `perCoreSgiCount` is a
+direct FFI pass-through.  Audit-pass-1: symmetry. -/
+theorem perCoreSgiCount_returns_baseio_uint64_marker (core : CoreId) :
+    (perCoreSgiCount core : BaseIO UInt64) =
+      Platform.FFI.ffiPerCoreSgiCount (UInt64.ofNat core.val) := by
+  rfl
+
+/-- **WS-SM SM1.I.4** structural marker: `perCoreSyscallCount` is a
+direct FFI pass-through.  Audit-pass-1: symmetry. -/
+theorem perCoreSyscallCount_returns_baseio_uint64_marker (core : CoreId) :
+    (perCoreSyscallCount core : BaseIO UInt64) =
+      Platform.FFI.ffiPerCoreSyscallCount (UInt64.ofNat core.val) := by
+  rfl
+
+/-- **WS-SM SM1.I.3** structural marker: `idleWait` is a direct FFI
+pass-through.  Audit-pass-1: documenting the rfl pass-through that
+the smoke test in `SmpFoundationsSuite.lean` exercises informally
+deserves a proper theorem for Tier-3 surface scanning. -/
+theorem idleWait_returns_baseio_unit_marker :
+    (idleWait : BaseIO Unit) = Platform.FFI.ffiIdleWait := by
+  rfl
+
+/-- **WS-SM SM1.I.3** structural marker: `idleWaitBounded` is a
+direct FFI pass-through. -/
+theorem idleWaitBounded_returns_baseio_uint64_marker (maxTicks : UInt64) :
+    (idleWaitBounded maxTicks : BaseIO UInt64) =
+      Platform.FFI.ffiIdleWaitBounded maxTicks := by
+  rfl
+
 end SeLe4n.Kernel.Concurrency

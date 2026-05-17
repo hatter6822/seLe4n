@@ -159,6 +159,28 @@ open SeLe4n.Platform.RPi5
 #check @SeLe4n.Platform.FFI.ffiSendSgiToSelf
 #check @SeLe4n.Platform.FFI.ffiSendSgiToAllButSelf
 
+/-! ## SM1.I.3 — Idle-wait FFI bindings + typed wrappers -/
+#check @SeLe4n.Platform.FFI.ffiIdleWait
+#check @SeLe4n.Platform.FFI.ffiIdleWaitBounded
+#check @SeLe4n.Kernel.Concurrency.idleWait
+#check @SeLe4n.Kernel.Concurrency.idleWaitBounded
+
+/-! ## SM1.I.4 — Per-core stats FFI bindings + typed wrappers -/
+#check @SeLe4n.Platform.FFI.ffiPerCoreIrqCount
+#check @SeLe4n.Platform.FFI.ffiPerCoreTimerTickCount
+#check @SeLe4n.Platform.FFI.ffiPerCoreSgiCount
+#check @SeLe4n.Platform.FFI.ffiPerCoreSyscallCount
+#check @SeLe4n.Kernel.Concurrency.perCoreIrqCount
+#check @SeLe4n.Kernel.Concurrency.perCoreTimerTickCount
+#check @SeLe4n.Kernel.Concurrency.perCoreSgiCount
+#check @SeLe4n.Kernel.Concurrency.perCoreSyscallCount
+#check @SeLe4n.Kernel.Concurrency.perCoreIrqCount_returns_baseio_uint64_marker
+#check @SeLe4n.Kernel.Concurrency.perCoreTimerTickCount_returns_baseio_uint64_marker
+#check @SeLe4n.Kernel.Concurrency.perCoreSgiCount_returns_baseio_uint64_marker
+#check @SeLe4n.Kernel.Concurrency.perCoreSyscallCount_returns_baseio_uint64_marker
+#check @SeLe4n.Kernel.Concurrency.idleWait_returns_baseio_unit_marker
+#check @SeLe4n.Kernel.Concurrency.idleWaitBounded_returns_baseio_uint64_marker
+
 -- ============================================================================
 -- §2 — Decidable examples: ground-truth checks at the RPi5 default
 -- ============================================================================
@@ -721,6 +743,75 @@ private def runTlbiForSharingChecks : IO Unit := do
     (decide (SeLe4n.Kernel.Concurrency.SharingDomain.outer.toTag.toNat < 2 ∧
               (SeLe4n.Kernel.Architecture.TlbInvalidation.vale1 42 0x1000).toOpTag.toNat < 4))
 
+private def runIdleWaitChecks : IO Unit := do
+  -- WS-SM SM1.I.3: idle-wait typed wrappers.
+  --
+  -- Per the FFI link discipline (no Rust HAL linked into Lean test
+  -- executables), we cannot invoke `ffiIdleWait` / `ffiIdleWaitBounded`
+  -- at host runtime — the link would fail.  We exercise structural
+  -- properties:
+  --
+  --   1. The typed wrappers `idleWait` and `idleWaitBounded` exist
+  --      with the expected `BaseIO` signatures.
+  --   2. The pass-through equalities hold by `rfl`.
+  IO.println "--- §2.20 SM1.I.3 idle-wait typed wrappers ---"
+  -- Pass-through: `idleWait` is definitionally `ffiIdleWait`.
+  let _eq1 : (SeLe4n.Kernel.Concurrency.idleWait : BaseIO Unit) =
+              SeLe4n.Platform.FFI.ffiIdleWait := rfl
+  assertBool "idleWait = ffiIdleWait (rfl pass-through)" true
+  -- Pass-through: `idleWaitBounded` is definitionally `ffiIdleWaitBounded`.
+  let _eq2 : ∀ t : UInt64,
+      (SeLe4n.Kernel.Concurrency.idleWaitBounded t : BaseIO UInt64) =
+        SeLe4n.Platform.FFI.ffiIdleWaitBounded t :=
+    fun _ => rfl
+  assertBool "idleWaitBounded = ffiIdleWaitBounded (rfl pass-through)" true
+
+private def runPerCoreStatsChecks : IO Unit := do
+  -- WS-SM SM1.I.4: per-core stats typed wrappers.
+  --
+  -- Same FFI link discipline as runIdleWaitChecks: we exercise the
+  -- structural marker theorem and the typed-wrapper signatures, not
+  -- the runtime FFI calls.
+  IO.println "--- §2.21 SM1.I.4 per-core stats typed wrappers ---"
+  -- Marker theorem discharges by `rfl` for every CoreId input.
+  let _proof_boot := SeLe4n.Kernel.Concurrency.perCoreIrqCount_returns_baseio_uint64_marker
+                       SeLe4n.Kernel.Concurrency.bootCoreId
+  assertBool "perCoreIrqCount_returns_baseio_uint64_marker discharges on bootCoreId"
+    true
+  -- The marker theorem must discharge for every plausible CoreId
+  -- (`allCores` enumerates 0..numCores-1).  We can't decide `BaseIO`
+  -- equality, but the marker theorem's existence on every CoreId is
+  -- a per-input structural witness.
+  assertBool "perCoreIrqCount_returns_baseio_uint64_marker discharges on every CoreId"
+    (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
+      let _proof := SeLe4n.Kernel.Concurrency.perCoreIrqCount_returns_baseio_uint64_marker c
+      true))
+  -- Audit-pass-1: the three sibling marker theorems get the same
+  -- per-CoreId exercise so an inadvertent regression in any of
+  -- the wrappers surfaces here, not just in `perCoreIrqCount`.
+  assertBool "perCoreTimerTickCount_returns_baseio_uint64_marker discharges on every CoreId"
+    (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
+      let _proof := SeLe4n.Kernel.Concurrency.perCoreTimerTickCount_returns_baseio_uint64_marker c
+      true))
+  assertBool "perCoreSgiCount_returns_baseio_uint64_marker discharges on every CoreId"
+    (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
+      let _proof := SeLe4n.Kernel.Concurrency.perCoreSgiCount_returns_baseio_uint64_marker c
+      true))
+  assertBool "perCoreSyscallCount_returns_baseio_uint64_marker discharges on every CoreId"
+    (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
+      let _proof := SeLe4n.Kernel.Concurrency.perCoreSyscallCount_returns_baseio_uint64_marker c
+      true))
+  -- Audit-pass-1: idle-wait marker theorems verified the same way.
+  let _proof_idle := SeLe4n.Kernel.Concurrency.idleWait_returns_baseio_unit_marker
+  assertBool "idleWait_returns_baseio_unit_marker reachable"
+    true
+  let _proof_idle_bounded := SeLe4n.Kernel.Concurrency.idleWaitBounded_returns_baseio_uint64_marker 0
+  assertBool "idleWaitBounded_returns_baseio_uint64_marker reachable on max_ticks=0"
+    true
+  let _proof_idle_bounded_default := SeLe4n.Kernel.Concurrency.idleWaitBounded_returns_baseio_uint64_marker 540_000
+  assertBool "idleWaitBounded_returns_baseio_uint64_marker reachable on default tick budget"
+    true
+
 private def runSgiFfiBindingChecks : IO Unit := do
   -- WS-SM SM1.F.6: SGI FFI binding structural checks.
   --
@@ -751,7 +842,7 @@ private def runSgiFfiBindingChecks : IO Unit := do
       (fun k => decide (k.toIntid.val < 16)))
 
 def runFoundationsChecks : IO Unit := do
-  IO.println "WS-SM SM0.S + SM1.B + SM1.C + SM1.E + SM1.F — Foundations test suite"
+  IO.println "WS-SM SM0.S + SM1.B + SM1.C + SM1.E + SM1.F + SM1.I — Foundations test suite"
   IO.println "===================================="
   runCoreIdChecks
   runSharingDomainChecks
@@ -771,8 +862,10 @@ def runFoundationsChecks : IO Unit := do
   runSecondaryKernelMainChecks
   runTlbiForSharingChecks
   runSgiFfiBindingChecks
+  runIdleWaitChecks
+  runPerCoreStatsChecks
   IO.println "===================================="
-  IO.println "All SM0 + SM1.B + SM1.C + SM1.E + SM1.F foundation checks PASS."
+  IO.println "All SM0 + SM1.B + SM1.C + SM1.E + SM1.F + SM1.I foundation checks PASS."
 
 end SeLe4n.Testing.SmpFoundations
 

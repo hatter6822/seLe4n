@@ -473,6 +473,7 @@ WS-RC and WS-SM are merged. Opens immediately at v0.31.2 boundary.
 | Phase | Releases | Estimated calendar |
 |-------|----------|--------------------|
 | SM0 | v0.31.3 (LANDED) | single cut (compressed from the original v0.32.0..v0.32.x ~18-PR spread per maintainer redirection) |
+| SM1 | v0.31.3 → v0.31.8 (LANDED) | 9 sub-phases (SM1.A–SM1.I), all landed in compressed cadence; SM2 still pending |
 | SM1 ‖ SM2 | v0.33.0 → v0.45.x | 16-22 weeks (parallel) |
 | SM3 | v0.46.0 → v0.52.x | 8-12 weeks |
 | SM4 | v0.53.0 → v0.70.x | 20-26 weeks (largest phase) |

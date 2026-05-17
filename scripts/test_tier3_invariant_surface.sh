@@ -1276,6 +1276,26 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Platform.FFI.ffiSendSgi
 #check @SeLe4n.Platform.FFI.ffiSendSgiToSelf
 #check @SeLe4n.Platform.FFI.ffiSendSgiToAllButSelf
+-- SM1.I.3 — Per-core IDLE thread FFI bindings + typed wrappers
+#check @SeLe4n.Platform.FFI.ffiIdleWait
+#check @SeLe4n.Platform.FFI.ffiIdleWaitBounded
+#check @SeLe4n.Kernel.Concurrency.idleWait
+#check @SeLe4n.Kernel.Concurrency.idleWaitBounded
+-- SM1.I.4 — Per-core stats FFI bindings + typed wrappers
+#check @SeLe4n.Platform.FFI.ffiPerCoreIrqCount
+#check @SeLe4n.Platform.FFI.ffiPerCoreTimerTickCount
+#check @SeLe4n.Platform.FFI.ffiPerCoreSgiCount
+#check @SeLe4n.Platform.FFI.ffiPerCoreSyscallCount
+#check @SeLe4n.Kernel.Concurrency.perCoreIrqCount
+#check @SeLe4n.Kernel.Concurrency.perCoreTimerTickCount
+#check @SeLe4n.Kernel.Concurrency.perCoreSgiCount
+#check @SeLe4n.Kernel.Concurrency.perCoreSyscallCount
+#check @SeLe4n.Kernel.Concurrency.perCoreIrqCount_returns_baseio_uint64_marker
+#check @SeLe4n.Kernel.Concurrency.perCoreTimerTickCount_returns_baseio_uint64_marker
+#check @SeLe4n.Kernel.Concurrency.perCoreSgiCount_returns_baseio_uint64_marker
+#check @SeLe4n.Kernel.Concurrency.perCoreSyscallCount_returns_baseio_uint64_marker
+#check @SeLe4n.Kernel.Concurrency.idleWait_returns_baseio_unit_marker
+#check @SeLe4n.Kernel.Concurrency.idleWaitBounded_returns_baseio_uint64_marker
 EOF'
 
 finalize_report

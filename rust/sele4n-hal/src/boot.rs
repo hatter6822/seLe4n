@@ -14,7 +14,7 @@
 //! Phase 6: Handoff to Lean kernel (AG7 — FFI bridge)
 
 /// Kernel version string — matches Lean lakefile.toml version.
-const KERNEL_VERSION: &str = "0.31.7";
+const KERNEL_VERSION: &str = "0.31.8";
 
 /// Rust entry point called from assembly `_start` after BSS zeroing and
 /// stack setup. Receives the DTB pointer from U-Boot in x0.
@@ -66,6 +66,43 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
         "[boot] per-cpu data verified ({} cores)",
         crate::per_cpu::PER_CPU_DATA.len()
     );
+
+    // WS-SM SM1.I audit-pass-4 (defense-in-depth for early-boot EL1
+    // exceptions): set TPIDR_EL1 here in Phase 1 (immediately after
+    // `check_per_cpu_invariants` has verified the static array) so
+    // that any subsequent EL1-originated synchronous exception during
+    // Phase 2 (MMU) or Phase 3 (GIC + timer) — caused by a kernel
+    // bug like a misaligned access or instruction-abort on an
+    // unmapped kernel page — reaches `handle_synchronous_exception`
+    // with a valid TPIDR_EL1.  Pre-audit-pass-4 the write lived in
+    // Phase 4 (just before `enable_irq`); since SM1.I.4 wired the
+    // synchronous-exception handler to read TPIDR_EL1 via
+    // `per_cpu_stats::record_*` → `current_per_cpu_stats` →
+    // `current_per_cpu`, an early-boot EL1 fault would have
+    // dereferenced uninitialised TPIDR_EL1 = UB.
+    //
+    // Phase 4's `write_tpidr_el1` is retained (now idempotent on
+    // the boot core) as a defence-in-depth re-write, also providing
+    // the diagnostic kprintln line for the boot trace.  Secondaries
+    // continue to set their own TPIDR_EL1 in `boot.S::secondary_entry`
+    // before calling `rust_secondary_main`.
+    //
+    // Note: writing TPIDR_EL1 here does NOT enable IRQ delivery —
+    // that's still Phase 4's `enable_irq`.  Async exceptions (IRQ,
+    // FIQ, SError) remain masked from boot through Phase 3 so they
+    // cannot fire during Phases 1-3.  Only synchronous exceptions
+    // (caused by a kernel bug) could reach the handler during this
+    // window, and the early TPIDR_EL1 write makes that path safe.
+    #[cfg(target_arch = "aarch64")]
+    {
+        let boot_per_cpu = crate::per_cpu::per_cpu_slot_addr(0) as u64;
+        crate::registers::write_tpidr_el1(boot_per_cpu);
+        crate::barriers::isb();
+        crate::kprintln!(
+            "[boot] TPIDR_EL1 set early (Phase 1) to PER_CPU_DATA[0] = {:#x}",
+            boot_per_cpu
+        );
+    }
 
     // -----------------------------------------------------------------------
     // Phase 2: MMU initialization
@@ -125,19 +162,56 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // already been validated by the time we reach this write.
     //
     // Audit note: an earlier draft of this hook ran *after*
-    // `enable_irq()`.  Today's IRQ handlers never read TPIDR_EL1, so
-    // that ordering was functionally safe, but it was fragile against
-    // future per-core handler additions (e.g., SM5's per-core timer
-    // tick).  Moving the write here makes the discipline robust by
-    // construction.
+    // `enable_irq()`.  Pre-SM1.I the IRQ handler (`handle_irq`)
+    // never read TPIDR_EL1, so that ordering was functionally safe;
+    // moving the write here made the discipline robust against
+    // future per-core handler additions (e.g., SM5's per-core
+    // scheduler tick).
+    //
+    // WS-SM SM1.I.4 update: `handle_synchronous_exception` now reads
+    // TPIDR_EL1 via `crate::per_cpu_stats::record_*` (each branch
+    // increments a per-core counter through `current_per_cpu_stats`).
+    // This makes the Phase-4-before-enable_irq ordering MANDATORY,
+    // not merely defensive — any synchronous exception from EL0
+    // (SVC, page fault from a user-mode caller) lands in
+    // `handle_synchronous_exception` and would dereference an
+    // uninitialised TPIDR_EL1 if it fired before Phase 4.  EL0 code
+    // does not run until the Lean kernel handoff in Phase 6, which
+    // is well after Phase 4 — the ordering is safe by construction.
+    //
+    // EL1-originated synchronous exceptions (kernel bug: misaligned
+    // access, instruction abort on an unmapped kernel page) during
+    // Phases 1..3 would have read garbage TPIDR_EL1 → UB before
+    // the audit-pass-4 fix.
+    //
+    // **Audit-pass-4 (defense-in-depth)**: Phase 1 now ALSO writes
+    // TPIDR_EL1, immediately after `check_per_cpu_invariants`
+    // (which validates `PER_CPU_DATA[0]` is well-formed).  This
+    // closes the EL1-early-boot UB window structurally: any EL1
+    // synchronous exception from Phase 2 onward reads a valid
+    // TPIDR_EL1.  The Phase 4 write below is retained as an
+    // idempotent re-write (one extra `mrs tpidr_el1` cycle) so the
+    // SM5 landing seam contract (TPIDR_EL1 set immediately before
+    // the per-core handler swap) remains structurally visible at
+    // the Phase-4 site.
+    //
+    // WS-SM SM1.I.1 also adds `handle_irq_per_core` which reads
+    // TPIDR_EL1.  At SM1.I that function is NOT wired into the
+    // assembly entry vector (legacy `handle_irq` still is); SM5
+    // swaps the vector.  When SM5 lands, the IRQ path joins the
+    // synchronous-exception path in depending on TPIDR_EL1 — both
+    // are safe after the audit-pass-4 Phase 1 write.
     // -----------------------------------------------------------------------
     #[cfg(target_arch = "aarch64")]
     {
         let boot_per_cpu = crate::per_cpu::per_cpu_slot_addr(0) as u64;
+        // Idempotent re-write — Phase 1 (audit-pass-4) already wrote
+        // the same value.  This second write is harmless and emits
+        // the diagnostic kprintln for the Phase 4 boot-trace banner.
         crate::registers::write_tpidr_el1(boot_per_cpu);
         crate::barriers::isb();
         crate::kprintln!(
-            "[boot] TPIDR_EL1 set to PER_CPU_DATA[0] = {:#x}",
+            "[boot] TPIDR_EL1 re-confirmed at Phase 4: {:#x}",
             boot_per_cpu
         );
         let live_id = crate::per_cpu::current_core_id_from_tpidr();
@@ -403,11 +477,11 @@ mod tests {
     #[test]
     fn sm1d_kernel_version_string_matches_lakefile() {
         // SM1.D: Phase 5 banner uses `KERNEL_VERSION`; pin it at the
-        // current SM1.E/F/G/H landing version (v0.31.7).  A future
-        // bump must update this test in lockstep with `lakefile.toml`.
+        // current SM1.I landing version (v0.31.8).  A future bump must
+        // update this test in lockstep with `lakefile.toml`.
         // `scripts/check_version_sync.sh` (Tier 0) provides the
         // canonical drift check; this test is the local pin.
-        assert_eq!(KERNEL_VERSION, "0.31.7");
+        assert_eq!(KERNEL_VERSION, "0.31.8");
     }
 
     #[test]

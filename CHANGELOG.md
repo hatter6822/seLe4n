@@ -1,3 +1,361 @@
+## v0.31.8 — WS-SM Phase SM1.I landing (miscellaneous HAL improvements; closes SM1)
+
+WS-SM SM1.I (miscellaneous HAL improvements) landed in one cut on
+branch `claude/review-hal-improvements-jwTzB`, completing the SM1
+Rust HAL surface with the SM5 landing seams + cross-core test
+infrastructure required for the SM5+ per-core scheduler integration.
+
+**WS-SM SM1 CLOSED at v0.31.8** — all nine sub-phases LANDED
+(SM1.A through SM1.I; 61 total sub-tasks across SM1.A=8, SM1.B=7,
+SM1.C=12, SM1.D=6, SM1.E=5, SM1.F=8, SM1.G=4, SM1.H=5, SM1.I=6).
+
+### Six SM1.I sub-tasks
+
+#### SM1.I.1 — Per-core IRQ handler entry
+
+New function `trap.rs::handle_irq_per_core` is the SM5 landing
+seam.  Reads the calling core's id via TPIDR_EL1
+(`per_cpu::current_core_id_from_tpidr`), records per-core IRQ
+dispatch / timer-tick / SGI statistics via
+`per_cpu_stats::record_*`, then dispatches via `gic::dispatch_irq`
+with per-core attribution in the unhandled-INTID log line.
+
+At SM1.I the assembly entry still calls `handle_irq` (single-core
+legacy entry); both functions have identical
+`extern "C" fn(&mut TrapFrame)` signatures so SM5's swap of the
+assembly entry is a single function-pointer change.  SGI dispatch
+increments the per-core counter but does NOT route through the
+SGI handler table — `gic::dispatch_irq` discards the source-CPU
+bits of GICC_IAR; SM5 will refactor `dispatch_irq` to preserve
+the full IAR and route SGIs through `gic::dispatch_sgi`.
+
+New build-script regression scanner
+`scan_trap_rs_handle_irq_per_core_intact` in
+`rust/sele4n-hal/build.rs` pins the function's existence, the
+`#[no_mangle]` attribute, the `record_irq_dispatch` call, and the
+`current_core_id_from_tpidr` read at elaboration time so the SM5
+swap cannot regress silently.
+
+#### SM1.I.2 — Per-core IRQ priority masking
+
+GICC_PMR is banked per-core at hardware level (GIC-400 TRM
+§4.4.2 / §3.1.4) — each core's banked view is reached via the
+same MMIO base address.  No software lock or per-core MMIO
+address required.  Documentation in `gic.rs` module header
+covers: PMR per-core banking, distributor banking for INTIDs
+0..31 (GICD_IGROUPR0, GICD_IPRIORITYR0..7, GICD_ICPENDR0,
+GICD_ISENABLER0 — explains why `init_cpu_interface_secondary`
+must run on every secondary), and DAIF.I per-PE scoping (ARM ARM
+C5.2.5).  Cross-referenced in `interrupts.rs` covering DAIF +
+PMR composition (two layers of per-core IRQ masking, both
+inherently per-PE).
+
+#### SM1.I.3 — Per-core IDLE thread Rust stub
+
+Per-core idle-wait primitives at three layers:
+- Rust: `cpu::idle_wait()` (unbounded WFE) and
+  `cpu::idle_wait_bounded(max_ticks)` (bounded variant wrapping
+  `cpu::wfe_bounded`).
+- FFI: `ffi_idle_wait()` and
+  `ffi_idle_wait_bounded(max_ticks: u64) -> u64`.
+- Lean: `Concurrency.Runtime.idleWait : BaseIO Unit` and
+  `Concurrency.Runtime.idleWaitBounded : UInt64 → BaseIO UInt64`.
+
+At SM1.I.3 the Lean kernel has no per-core idle TCB to call
+these from; SM5 will wire the idle-thread body to invoke them.
+Tier-3 surface scanner pins both FFI exports and Lean typed
+wrappers so the SM5 wiring cannot regress.
+
+#### SM1.I.4 — Per-core exception statistics
+
+New module `rust/sele4n-hal/src/per_cpu_stats.rs` (~550 LoC)
+introducing `PerCpuStats` struct (`#[repr(C, align(64))]` — one
+cache line per slot, eliminates false sharing) with six AtomicU64
+counters (`irq_count`, `timer_tick_count`, `sgi_count`,
+`syscall_count`, `vmfault_count`, `user_exception_count`) +
+2-slot reserved tail for SM5+ growth.  Compile-time `const _: ()`
+assertions pin `size_of::<PerCpuStats>() == 64` and
+`align_of::<PerCpuStats>() == 64`.  `PER_CPU_STATS` global array
+with one slot per core.
+
+Write path: `record_*` functions (Relaxed atomics, wait-free)
+called from `handle_irq_per_core` (SM1.I.1) and from
+`handle_synchronous_exception` per EC branch.  Read path:
+`*_count_for(core_id)` Relaxed-snapshot accessors with defensive
+out-of-range return-0 contract.  Inner forms (`record_*_in_slice`)
+for unit-testing cross-core scenarios without racing on the
+global static.  Aggregate `total_irq_count` /
+`total_syscall_count` helpers.
+
+FFI exports: `ffi_per_core_irq_count(core_id)` + 3 siblings.
+Lean typed wrappers: `Concurrency.perCoreIrqCount(core : CoreId)`
++ 3 siblings.  Marker theorem
+`perCoreIrqCount_returns_baseio_uint64_marker` as Tier-3 surface
+anchor.
+
+The synchronous exception handler is also wired to advance the
+per-core counter per EC branch (SVC → syscall_count; DABT/IABT
+→ vmfault_count; alignment / unknown EC → user_exception_count).
+
+#### SM1.I.5 — SEV / WFE coordination documentation
+
+Comprehensive module-header section in `cpu.rs` (~140 lines)
+covering ARMv8-A local event register semantics (ARM ARM B2.10),
+`wfe` (C6.2.353) / `sev` (C6.2.243) / `sevl` (C6.2.244)
+instruction semantics, inner-shareable broadcast scope (BCM2712
+= single-cluster = one IS domain), kernel policy for emitting
+SEV (`bring_up_secondaries`, SM2+ lock release, cross-core SGI
+fallback), when NOT to use SEV (memory ordering, interrupt
+delivery, synchronisation primitive), bounded WFE interaction
+with the local event register.
+
+New `cpu::sev()` and `cpu::sevl()` wrappers around the underlying
+instructions for testability (the production SEV emission still
+lives inline in `smp.rs::bring_up_secondaries_inner` to keep it
+co-located with the AN9-J.4.d broadcast point).
+
+#### SM1.I.6 — Extended cargo tests
+
+8 new cross-core test scenarios in `smp::tests::sm1i6_*`
+exercising the SM1.I infrastructure:
+- `sm1i6_per_core_stats_no_cross_slot_aliasing` — slot-level
+  isolation of stats writes.
+- `sm1i6_validate_context_id_per_core_dispatch_no_aliasing` —
+  PSCI validator bijective dispatch.
+- `sm1i6_cross_core_init_helper_idempotent` — per-core init
+  helper composition is idempotent.
+- `sm1i6_core_ready_flag_monotonic_across_repeated_bringup` —
+  CORE_READY flags never false-revert.
+- `sm1i6_per_core_stats_total_equals_sum` — aggregate sum
+  matches per-slot deltas.
+- `sm1i6_per_core_sgi_dispatch_kernel_reserved_intids` — every
+  SM0.H reserved INTID dispatched per-core.
+- `sm1i6_cross_core_bring_up_with_limit_boundary_progression` —
+  limit boundary honoured at every value.
+- `sm1i6_full_cross_core_composition` — end-to-end bring-up +
+  validator + stats accumulation composes without
+  contamination.
+
+All tests use the existing `*_inner` / `*_in_slice` helpers so
+each test owns its own state.
+
+### Test coverage
+
+583 HAL tests at initial-landing snapshot (up from 510 at SM1.E/F/G/H close — +73 SM1.I
+tests):
+- 16 in `per_cpu_stats::tests` for the new module.
+- 11 in `trap::tests` for SM1.I.1 + per-core-stats wiring.
+- 8 in `cpu::tests` for SM1.I.3 + SM1.I.5 wrappers.
+- 17 in `ffi::tests` for the new FFI exports.
+- 8 in `smp::tests::sm1i6_*` cross-core scenarios.
+- 1 deferred (sm1g3 cross-core stress) in `uart::tests`.
+
+Lean-side: 12 new surface anchors + runtime decidable examples
+in `tests/SmpFoundationsSuite.lean` covering SM1.I.3 / SM1.I.4
+FFI binding well-formedness and Lean typed wrapper structural
+witnesses.
+
+Zero clippy warnings workspace-wide.  Full Tier 0+1+2+3 still
+green.
+
+### Audit-pass-1 refinements (post-initial-landing)
+
+Two pre-existing parallel-test races surfaced under the SM1.I
+expansion (more tests touching shared globals + more parallel
+cargo workers).  Both fixed with private `std::sync::Mutex`
+serialization within the test profile.  Stress-testing
+confirms failure rate drops from ~10–15% to 0% across both
+fixes:
+
+- **UART_LOCK observation tests** (`sm1g4_kprintln_core_*_acquires_lock_*`)
+  converted from the pre-SM1.I racy "observe global atomic
+  before/after" pattern to a deterministic re-acquire pattern:
+  after the macro returns, the test acquires the lock itself
+  via `with_boot_uart` — if the macro had failed to release,
+  this would deadlock-spin and cargo's test timeout surfaces
+  the regression.  Plus `SM1G4_OBSERVATION_MUTEX` serializes
+  the observation tests against each other.
+- **TIMER_INTERVAL / TICK_COUNT tests** wrapped in a private
+  `TIMER_GLOBAL_STATE_MUTEX` so concurrent timer tests don't
+  overwrite each other's pre-conditions.
+
+### Audit-pass-2 refinements (deep post-audit-pass-1 audit)
+
+Five defense-in-depth + correctness improvements landed
+after a thorough re-read of the SM1.I surface (no shortcuts,
+mathematically sound, security-aware):
+
+- **CORRECTNESS** (counter semantics): moved
+  `record_irq_dispatch()` from the pre-dispatch path INTO the
+  `gic::dispatch_irq` closure.  Pre-audit, the counter
+  advanced on every IAR read including spurious INTIDs
+  (>= 1020) and out-of-range INTIDs (`[224, 1020)`); post-
+  audit, only the `Handled(intid)` arm advances the counter.
+  This matches the docstring's "non-spurious IRQ" claim and
+  produces a more useful aggregate for SM5+ scheduler
+  observability.
+
+- **CODE-QUALITY**: simplified the SGI branch condition in
+  `handle_irq_per_core` from `(intid as u8) < MAX_SGI_INTID &&
+  intid < u32::from(MAX_SGI_INTID)` (redundant) to just
+  `intid < u32::from(MAX_SGI_INTID)`.  The truncation form was
+  defensible (u8 truncation of intid >= 256 plus the second
+  check correctly rejected the alias) but the simpler form is
+  more obviously correct.
+
+- **DEFENSE-IN-DEPTH** (overflow at boundary): every `record_*`
+  function in `per_cpu_stats.rs` switched from
+  `fetch_add(1) + 1` to `fetch_add(1).wrapping_add(1)`.
+  Counter wrap at `u64::MAX` is practically unreachable (~200
+  years at GHz frequency) but the wrapping form has defined
+  behavior at every input, avoiding a debug-build panic at the
+  boundary.  3 new wrap tests (`sm1i4_record_*_in_slice_wraps_at_u64_max`)
+  pre-seed the counter to `u64::MAX - 1` / `u64::MAX` and
+  verify the wraparound.
+
+- **DEFENSE-IN-DEPTH** (FFI portability): every
+  `ffi_per_core_*_count(core_id: u64)` FFI export now performs
+  the bound check in `u64` space before the `as usize` cast.
+  Sele4n's only target is aarch64 (u64 == usize), so the cast
+  is identity in practice; the defense ensures a hypothetical
+  32-bit port wouldn't silently truncate the high bits and
+  alias an out-of-range probe (e.g., `core_id = 0x1_0000_0001`
+  truncated to `1`) to an in-range slot.  4 new truncation-
+  defense tests
+  (`sm1i4_ffi_per_core_*_rejects_u64_with_high_bits_aliasing_slot`)
+  cover the boundary at every accessor.
+
+- **TEST COVERAGE**: 2 new runtime invocation tests for
+  `handle_irq_per_core` (`sm1i1_handle_irq_per_core_runtime_call_does_not_panic`,
+  `sm1i1_handle_irq_per_core_advances_per_core_irq_count`)
+  exercise the actual function call on host with the GIC
+  stub, verifying no panic and that the per-core IRQ counter
+  advances.
+
+- **LEAN MARKER SYMMETRY**: 5 new structural marker theorems
+  in `Concurrency.Runtime` for sibling FFI wrappers
+  (`perCoreTimerTickCount_returns_baseio_uint64_marker`,
+  `perCoreSgiCount_returns_baseio_uint64_marker`,
+  `perCoreSyscallCount_returns_baseio_uint64_marker`,
+  `idleWait_returns_baseio_unit_marker`,
+  `idleWaitBounded_returns_baseio_uint64_marker`).  All
+  discharge by `rfl` — the structural guarantee is that the
+  Lean wrapper is a direct FFI pass-through (no logic in
+  between).  Surface-anchored in
+  `scripts/test_tier3_invariant_surface.sh` +
+  `tests/SmpFoundationsSuite.lean` so a regression that
+  added logic between the wrapper and the FFI would fail
+  elaboration.
+
+### Test coverage after audit-pass-2
+
+592 HAL tests (+9 over audit-pass-1, +82 over SM1.E/F/G/H
+baseline of 510) + 1 ignored (`sm1g3_cross_core_kprintln_stress`
+placeholder).  Zero clippy warnings workspace-wide.  Full Tier
+0+1+2+3 still green.  Stress-tested 10/10 runs of the full Rust
+suite with `--features std`.
+
+### Audit-pass-3 refinement (external audit findings)
+
+A subsequent external audit pass surfaced one HIGH-severity
+test-race the audit-pass-1 / pass-2 mutex fixes had missed:
+
+- **HIGH (test reliability)**: the SM1.I.4 trap-handler tests
+  that observe `crate::per_cpu_stats::PER_CPU_STATS[0]`
+  counters were not serialised against each other under
+  cargo's parallel runner.  The
+  `sm1i4_per_core_counters_track_distinct_exception_branches`
+  test (which asserts `vm_after == vm_before` — strict
+  equality, no tolerance for parallel writers) had an observed
+  ~2% transient failure rate, surfacing whenever a sister
+  test (`sm1i4_handle_sync_dabt_*` / `sm1i4_handle_sync_iabt_*`)
+  incremented `vmfault_count` between the two snapshots.
+  Audit-pass-3 adds a private `SM1I4_OBSERVATION_MUTEX` in the
+  `trap.rs::tests` module and wraps all 7 SM1.I.4 trap-handler
+  tests that observe `PER_CPU_STATS[0]`.  Stress-test post-fix:
+  50/50 runs pass (previously ~1/50 transient failure).
+
+Audit-pass-3 also corrected documentation drift:
+- Test count "583 HAL tests" was an initial-landing snapshot,
+  now clarified as "583 HAL tests at initial-landing snapshot"
+  in the historical sections; the current count is 592 + 1
+  ignored = 593 (per the audit-pass-2 section above).
+- SM1.I.6 sub-task description "12 cross-core test scenarios"
+  was an overclaim; the actual count is 8.  Updated in plan
+  §5.9, CLAUDE.md, AGENTS.md, CHANGELOG.md,
+  docs/WORKSTREAM_HISTORY.md,
+  docs/gitbook/10-path-to-real-hardware-mobile-first.md, and
+  docs/spec/SELE4N_SPEC.md.
+
+### Audit-pass-4 refinements (second external audit pass)
+
+A second external audit pass found one HIGH-severity latent
+UB risk, one MEDIUM-severity log-tearing risk, one LOW doc
+overcount, and a defense-in-depth poisoning concern.  All
+addressed in this pass:
+
+- **HIGH (latent UB on early-boot EL1 exceptions)**:
+  `handle_synchronous_exception` reads TPIDR_EL1 via the
+  `per_cpu_stats::record_*` path (SM1.I.4 wiring), but the
+  Phase 4 TPIDR_EL1 write meant any EL1-originated synchronous
+  exception during Phases 1-3 (kernel bug: misaligned access,
+  instruction abort on unmapped kernel page) would dereference
+  uninitialised TPIDR_EL1 as a pointer — UB before the
+  defensive `assert!` could fire.
+
+  Fix: Phase 1 now writes TPIDR_EL1 immediately after
+  `check_per_cpu_invariants` has validated the static array.
+  Phase 4's write is retained as an idempotent re-write (one
+  extra `mrs tpidr_el1` cycle) so the SM5 landing-seam
+  contract remains structurally visible at the Phase-4 site.
+  No correctness change on the happy path; the
+  EL1-early-boot-exception window now reads valid TPIDR_EL1
+  instead of UB.
+
+- **MEDIUM (log tearing)**: `handle_irq_per_core` used
+  `kprintln!("[core {}] ...", core_id, ...)` for SGI and
+  unhandled-INTID log lines.  `kprintln!` expands to two
+  separate `kprint!` calls (body + `"\n"`), each acquiring
+  the UART lock separately; under SMP a concurrent writer
+  between the prefix and the body could tear the log line.
+  Fix: switched both lines to `kprintln_core!` which holds
+  the UART lock for the entire `[core N] <body>\n` sequence
+  per SM1.G.4 audit-pass-1 atomicity contract.
+
+- **LOW (doc overcount)**: one residual "12 new cross-core
+  test scenarios" in `docs/planning/SMP_RUST_HAL_PLAN.md`
+  §5.9 header was missed by the audit-pass-3 sed sweep.
+  Fixed to "8".
+
+- **DEFENSE-IN-DEPTH (mutex poisoning cascade)**: every
+  `MUTEX.lock().unwrap()` in the three audit-pass-1/2/3
+  observation mutexes (`SM1G4_OBSERVATION_MUTEX`,
+  `SM1I4_OBSERVATION_MUTEX`, `TIMER_GLOBAL_STATE_MUTEX`)
+  converted to `MUTEX.lock().unwrap_or_else(|e| e.into_inner())`.
+  Without this, a failed `assert!` inside any mutex holder
+  would poison the mutex and cascade-fail every subsequent
+  test with `PoisonError`, burying the diagnostic of the
+  *original* failure.  The recovery pattern lets subsequent
+  tests run normally and surface their own diagnostics.  21
+  occurrences converted across trap.rs / uart.rs / timer.rs.
+
+Stress-test post-audit-pass-4: 10/10 runs of the full Rust
+suite (`cargo test --all --features std`) pass.  All Tier
+0+1+2+3 still green.
+
+### Items deferred past v1.0.0 with correctness impact
+
+NONE.
+
+### SM1 acceptance gate
+
+Per [`docs/planning/SMP_RUST_HAL_PLAN.md`](docs/planning/SMP_RUST_HAL_PLAN.md)
+§8: all items checked.  WS-SM SM1 CLOSED at v0.31.8.  SM2
+(verified lock primitives) and SM3+ (per-object locks →
+per-core scheduler → cross-core IPC → TLB shootdown →
+info-flow → release closure) follow per the master overview
+([`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md)).
+
 ## v0.31.7 — WS-SM Phases SM1.E/F/G/H landing (cross-core HAL completion)
 
 ### Audit-pass-3 refinements (third deep audit pass)

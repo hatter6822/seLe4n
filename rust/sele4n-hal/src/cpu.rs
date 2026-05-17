@@ -7,6 +7,115 @@
 //!
 //! On non-AArch64 hosts, functions provide no-op stubs for compilation and
 //! testing.
+//!
+//! # WS-SM SM1.I.5 — SEV / WFE coordination
+//!
+//! ARMv8-A defines a "local event register" per PE that interacts with the
+//! `wfe` / `sev` / `sevl` instruction family to implement low-power
+//! synchronisation between cores:
+//!
+//! ## Local event register semantics (ARM ARM B2.10)
+//!
+//! Each PE has a one-bit local event register.  Its state is per-PE; one
+//! core's event register is independent of every other core's.
+//!
+//! - **`wfe`** (ARM ARM C6.2.353): If the local event register is set,
+//!   `wfe` immediately clears it and returns.  Otherwise the PE enters a
+//!   low-power state and suspends execution until *any* of:
+//!   1. The local event register becomes set (via `sev` on this PE, or
+//!      `sev` on another PE in the same inner-shareable domain — see
+//!      below).
+//!   2. An interrupt arrives at the PE (IRQ, FIQ, SError, or asynchronous
+//!      debug exception, masked or unmasked per `DAIF`).
+//!   3. A power-management event from the WIC fires.
+//!   4. The implementation-defined `wfe` timeout expires (FEAT_WFxT on
+//!      ARMv8.7+; not present on Cortex-A76).
+//!
+//!   On exit `wfe` clears the local event register.
+//!
+//! - **`sev`** (ARM ARM C6.2.243): Sets the local event register of every
+//!   PE in the inner-shareable domain (including the caller).  Hint
+//!   instruction; always returns immediately; has no side effects beyond
+//!   setting the event registers.  On RPi5 (BCM2712, single cluster) every
+//!   PE sees the wake.
+//!
+//! - **`sevl`** (ARM ARM C6.2.244): Sets the local event register of the
+//!   *calling* PE only.  Useful for "wake-me-once" patterns where the first
+//!   `wfe` after `sevl` falls through immediately, but subsequent `wfe`s
+//!   block until a real event arrives.  This is the right primitive for
+//!   ARMv8.0 spin-wait loops where the bookkeeping wants to do at least
+//!   one productive iteration before entering low-power sleep.
+//!
+//! ## Inner-shareable broadcast scope
+//!
+//! `sev` broadcasts to every PE in the calling PE's inner-shareable (IS)
+//! domain.  Per the BCM2712 device tree and Cortex-A76 datasheet, the
+//! single Cortex-A76 cluster constitutes one IS domain on RPi5.  All 4
+//! cores see each other's `sev`s.  A multi-cluster ARM SoC (e.g., a
+//! big.LITTLE design) would have to use `sev` carefully if the senders and
+//! receivers span clusters; an outer-shareable `sev` does not exist in
+//! ARMv8-A, so cross-cluster waking is generally done via SGI (see
+//! `crate::gic::send_sgi`).
+//!
+//! ## Kernel policy for emitting SEV
+//!
+//! The seLe4n kernel emits `sev` (via inline `asm!` blocks) at exactly the
+//! following sites:
+//!
+//! 1. **End of `bring_up_secondaries`** (`smp.rs::bring_up_secondaries_inner`,
+//!    AN9-J.4.d): after writing every secondary's `CORE_READY[i]` flag,
+//!    primary issues one final `sev` to wake any secondaries parked at the
+//!    `boot.S::secondary_entry` spin-wait.  This handles the common race
+//!    where a secondary enters `wfe` *before* the primary's `CORE_READY`
+//!    write becomes visible — the broadcast `sev` guarantees the secondary
+//!    re-checks the flag.
+//!
+//! 2. **Verified lock release (SM2.B, post-1.0)**: SM2's `TicketLock` will
+//!    emit `sev` from its release path so contended waiters parked on
+//!    `wfe` wake immediately rather than spinning the entire bounded-WFE
+//!    timeout.  Pre-SM2 the [`crate::uart::UartLock`] uses pure CAS and
+//!    does not benefit from `sev`.
+//!
+//! 3. **Cross-core SGI fallback**: an `sev` can substitute for a `send_sgi`
+//!    when the receiver is parked on `wfe` and the sender needs only the
+//!    wake signal (not the routing to a specific handler).  The kernel
+//!    currently uses SGI rather than `sev` for cross-core coordination
+//!    because SGIs carry an INTID that the receiver's handler can use to
+//!    classify the wake reason; `sev` is just a wake hint.
+//!
+//! ## When NOT to use SEV
+//!
+//! - **In place of memory ordering**: `sev` is a hint instruction.  It does
+//!   NOT enforce memory ordering on its own.  Pair `sev` with `dsb ish` if
+//!   the receiver must observe a prior memory store before the wake.  Per
+//!   ARM ARM B2.7.5, the canonical "wake the receiver and have them see
+//!   my state" pattern is: store-data → `dsb ish` → `sev`.
+//!
+//! - **For interrupt delivery**: `sev` does NOT generate an interrupt;
+//!   `wfe` returns "as if a normal completion" rather than via the
+//!   exception entry path.  If the receiver needs to run a specific
+//!   handler when woken, use `send_sgi`, not `sev`.
+//!
+//! - **As a memory barrier or synchronisation primitive**: neither `wfe`
+//!   nor `sev` participates in the memory consistency model on its own.
+//!   Use them only as efficiency hints over a pure spin-wait loop.
+//!
+//! ## Bounded WFE and the local event register
+//!
+//! [`wfe_bounded`] is the kernel's primary `wfe` user.  It pairs the
+//! instruction with a counter-tick budget so the caller can detect a lost
+//! wake (e.g., a primary's `sev` that arrived before the secondary's `wfe`
+//! and was already consumed).  The bounded form is used inside
+//! `rust_secondary_main`'s spin-wait on `CORE_READY[i]` — even if primary's
+//! `sev` is lost, the secondary's `wfe` returns within the bound and the
+//! flag is re-checked.
+//!
+//! ## Test-only sev emission
+//!
+//! [`sev`] (this module) provides a Rust wrapper around the `sev`
+//! instruction for unit-testing the wake-up semantics.  Production code
+//! emits `sev` directly inline in `smp.rs::bring_up_secondaries_inner` to
+//! keep the instruction co-located with the AN9-J broadcast point.
 
 /// Wait For Event — hint instruction that places the PE in a low-power state
 /// until an event is received (WFE wake-up event or interrupt).
@@ -100,6 +209,124 @@ pub fn wfe_bounded(max_ticks: u64) -> u64 {
         core::hint::spin_loop();
         0
     }
+}
+
+/// **WS-SM SM1.I.5**: Send Event — broadcasts a wake signal to every PE
+/// in the inner-shareable domain (including the caller).
+///
+/// Sets the local event register of every PE in the IS domain.  Any PE
+/// currently parked on `wfe` will return; PEs not in `wfe` will see
+/// their event register set and the next `wfe` will fall through
+/// immediately.
+///
+/// ARM ARM C6.2.243: SEV is a hint instruction with no side effects
+/// beyond setting the local event registers.  No memory ordering
+/// implications; pair with `dsb ish` if the receiver must observe a
+/// prior store before the wake (see the SEV/WFE coordination section
+/// in this module's docstring).
+///
+/// # When to call
+///
+/// Use `sev` after a state change that a `wfe`-parked PE is waiting
+/// to observe:
+///
+/// - **`bring_up_secondaries`** emits `sev` after writing
+///   `CORE_READY[i]` flags so secondaries parked at `boot.S` spin-wait
+///   wake immediately.
+/// - **Lock release** (SM2+): after releasing a `TicketLock` whose
+///   waiters parked on `wfe`.
+///
+/// Do NOT use `sev` as a substitute for `send_sgi` when the receiver
+/// needs an interrupt routed to a specific handler.  `sev` only wakes
+/// the receiver from `wfe`; the receiver runs whatever code follows its
+/// `wfe` instruction, not an interrupt handler.
+///
+/// # Host (non-aarch64) behaviour
+///
+/// No-op.  Host tests verify the function compiles and returns; the
+/// real semantics are only observable on aarch64 hardware.
+#[inline(always)]
+pub fn sev() {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: SEV is a hint instruction with no side effects beyond
+        // setting the local event register of every PE in the
+        // inner-shareable domain.  Always safe at any execution level.
+        // (ARM ARM C6.2.243)
+        unsafe { core::arch::asm!("sev", options(nomem, nostack, preserves_flags)) }
+    }
+}
+
+/// **WS-SM SM1.I.5**: Send Event Local — sets only the calling PE's
+/// local event register.
+///
+/// Useful for "first iteration falls through" patterns where the
+/// initial `wfe` after a spin-wait setup should observe a pre-set
+/// event so the loop runs at least one iteration before parking the
+/// PE.  Distinct from [`sev`], which broadcasts to every PE in the IS
+/// domain.
+///
+/// ARM ARM C6.2.244: SEVL sets only the local event register of the
+/// calling PE.
+///
+/// # Host (non-aarch64) behaviour
+///
+/// No-op.
+#[inline(always)]
+pub fn sevl() {
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: SEVL is a hint instruction that only affects the
+        // local PE's event register.  Always safe at any execution
+        // level.  (ARM ARM C6.2.244)
+        unsafe { core::arch::asm!("sevl", options(nomem, nostack, preserves_flags)) }
+    }
+}
+
+/// **WS-SM SM1.I.3** (per-core IDLE thread Rust stub): park the calling
+/// core on `wfe` waiting for an event or interrupt.
+///
+/// Lean callers invoke this from a per-core idle TCB context after
+/// completing their scheduling round with no runnable work.  The PE
+/// enters a low-power state and resumes when:
+///
+/// - Another core issues `sev` (e.g., scheduler reschedule SGI fallback,
+///   lock release).
+/// - An IRQ arrives at this PE (timer tick, cross-core SGI, device SPI).
+/// - An asynchronous debug exception or SError fires.
+///
+/// Equivalent to [`wfe`] without a timeout.  Use [`idle_wait_bounded`]
+/// for a bounded variant that returns elapsed counter ticks so a
+/// hand-rolled scheduler can implement a busy-poll fallback should
+/// `wfe` block on a stale wake signal.
+///
+/// # SM5 transition
+///
+/// At SM1.I the Lean kernel does not yet emit calls to this primitive
+/// (per-core idle TCB state is SM5+ work).  Once SM5 lands the
+/// per-core scheduler, the idle TCB body will call this through the
+/// `ffi_idle_wait` FFI export ([`crate::ffi::ffi_idle_wait`]).
+///
+/// # Host (non-aarch64) behaviour
+///
+/// Calls `core::hint::spin_loop` (same as [`wfe`]'s host stub).
+#[inline(always)]
+pub fn idle_wait() {
+    wfe();
+}
+
+/// **WS-SM SM1.I.3** (bounded variant): park the calling core on `wfe`
+/// for at most `max_ticks` counter ticks.
+///
+/// Wrapper around [`wfe_bounded`] with documentation tailored to the
+/// per-core idle path.  Returns the elapsed `CNTPCT_EL0` ticks so a
+/// caller's "did we time out" check can drive a retry or busy-poll
+/// fallback.
+///
+/// On host the stub returns 0.
+#[inline(always)]
+pub fn idle_wait_bounded(max_ticks: u64) -> u64 {
+    wfe_bounded(max_ticks)
 }
 
 /// Wait For Interrupt — hint instruction that places the PE in a low-power
@@ -358,5 +585,89 @@ mod tests {
         let from_constant: u64 = MPIDR_CORE_ID_MASK;
         assert_eq!(from_static, from_constant,
             "Shared static MPIDR_CORE_ID_MASK_SYM drifted from the constant");
+    }
+
+    // ========================================================================
+    // WS-SM SM1.I.3 — idle_wait + idle_wait_bounded tests
+    //
+    // The `idle_wait` family wraps `wfe` / `wfe_bounded` with documentation
+    // tailored to the per-core idle TCB path.  Tests confirm:
+    //   1. The functions are callable on host without panicking.
+    //   2. `idle_wait_bounded` returns 0 on host (matches `wfe_bounded`'s
+    //      host stub contract).
+    //   3. Function-pointer coercion succeeds — a future regression that
+    //      changed the signature would fail to compile.
+    // ========================================================================
+
+    #[test]
+    fn sm1i3_idle_wait_no_panic_on_host() {
+        // Host stub: single spin_loop iteration, returns.
+        idle_wait();
+    }
+
+    #[test]
+    fn sm1i3_idle_wait_bounded_no_panic_on_host() {
+        // Same range of tick budgets as wfe_bounded's tests.
+        let _ = idle_wait_bounded(0);
+        let _ = idle_wait_bounded(1);
+        let _ = idle_wait_bounded(WFE_DEFAULT_TIMEOUT_TICKS);
+    }
+
+    #[test]
+    fn sm1i3_idle_wait_bounded_returns_zero_on_host() {
+        // Host stub returns 0 elapsed ticks deterministically.  This is
+        // the same contract as `wfe_bounded`, so a caller using
+        // `elapsed >= max_ticks` to detect a missed wake sees a
+        // consistent "did not time out" result unless `max_ticks == 0`.
+        assert_eq!(idle_wait_bounded(WFE_DEFAULT_TIMEOUT_TICKS), 0);
+    }
+
+    #[test]
+    fn sm1i3_idle_wait_signatures_pinned() {
+        // ABI pin: a future regression that changed the signatures
+        // (e.g., to `fn idle_wait() -> bool`) would fail to coerce here.
+        let _: fn() = idle_wait;
+        let _: fn(u64) -> u64 = idle_wait_bounded;
+    }
+
+    // ========================================================================
+    // WS-SM SM1.I.5 — SEV / WFE coordination tests
+    //
+    // The `sev` and `sevl` wrappers exist primarily for unit-testing
+    // the wake-up semantics.  Production code emits `sev` inline in
+    // `smp.rs::bring_up_secondaries_inner`.  Tests confirm:
+    //   1. The wrappers compile and execute on host without panicking
+    //      (no-op stubs).
+    //   2. Function-pointer coercion succeeds.
+    // ========================================================================
+
+    #[test]
+    fn sm1i5_sev_no_panic_on_host() {
+        sev();
+    }
+
+    #[test]
+    fn sm1i5_sevl_no_panic_on_host() {
+        sevl();
+    }
+
+    #[test]
+    fn sm1i5_sev_signatures_pinned() {
+        // ABI pin: changes to the signatures break this coercion.
+        let _: fn() = sev;
+        let _: fn() = sevl;
+    }
+
+    #[test]
+    fn sm1i5_sev_and_wfe_compose_on_host() {
+        // Composition: after a `sev`, the next `wfe` should fall
+        // through (on hardware).  On host both are no-ops so the test
+        // verifies the wrappers can be sequenced without inter-call
+        // state corruption.
+        sev();
+        wfe();
+        sev();
+        sev();
+        wfe();
     }
 }

@@ -349,6 +349,82 @@ opaque ffiEnableInterrupts : BaseIO Unit
 opaque ffiCurrentCoreId : BaseIO UInt64
 
 -- ============================================================================
+-- WS-SM SM1.I.3 — Per-core IDLE thread FFI declarations
+-- ============================================================================
+
+/-- **WS-SM SM1.I.3**: park the calling core on `wfe` waiting for an
+    event or interrupt.
+
+    On hardware the Rust side issues `wfe` (ARM ARM C6.2.353), which
+    places the PE in a low-power state until any of: another core
+    issues `sev`, an IRQ arrives, a debug exception fires, or a
+    power-management event wakes the PE.  On host the stub returns
+    immediately.
+
+    **Production reachability**: at SM1.I.3 the Lean kernel does not
+    yet emit calls to this primitive (per-core idle TCB state is SM5+
+    work).  SM5 will wire the idle TCB body to this FFI symbol.
+
+    Rust: `ffi_idle_wait` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_idle_wait"]
+opaque ffiIdleWait : BaseIO Unit
+
+/-- **WS-SM SM1.I.3**: bounded variant of `ffiIdleWait`.
+
+    `maxTicks` — informational budget in `CNTPCT_EL0` counter ticks
+    (54 MHz on RPi5, so 540 000 ticks = 10 ms; see
+    `crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS`).  Returns elapsed ticks
+    since the call began so the caller can detect "did we time out
+    without seeing an event" via `elapsed >= maxTicks`.
+
+    On host the stub returns 0 deterministically.
+
+    Rust: `ffi_idle_wait_bounded` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_idle_wait_bounded"]
+opaque ffiIdleWaitBounded : UInt64 → BaseIO UInt64
+
+-- ============================================================================
+-- WS-SM SM1.I.4 — Per-core stats FFI declarations
+-- ============================================================================
+--
+-- Read accessors for the per-core `PerCpuStats` block.  All accessors
+-- return 0 for out-of-range `coreId`.  The `record_*` writers are
+-- not exposed via FFI because the production write path is the
+-- Rust-side `handle_irq_per_core` / `handle_synchronous_exception`.
+
+/-- **WS-SM SM1.I.4**: read a specific core's total IRQ count.
+
+    Returns a `Relaxed` snapshot of `PerCpuStats.irq_count` for the
+    named core.  Out-of-range `coreId` returns 0 (defensive — the
+    production callers always pass `coreId < PlatformBinding.coreCount`).
+
+    Rust: `ffi_per_core_irq_count` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_per_core_irq_count"]
+opaque ffiPerCoreIrqCount : UInt64 → BaseIO UInt64
+
+/-- **WS-SM SM1.I.4**: read a specific core's timer-tick count.
+
+    Subset of `irq_count` covering only timer PPI (INTID 30).
+
+    Rust: `ffi_per_core_timer_tick_count` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_per_core_timer_tick_count"]
+opaque ffiPerCoreTimerTickCount : UInt64 → BaseIO UInt64
+
+/-- **WS-SM SM1.I.4**: read a specific core's SGI count.
+
+    Subset of `irq_count` covering only SGI INTIDs 0..15.
+
+    Rust: `ffi_per_core_sgi_count` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_per_core_sgi_count"]
+opaque ffiPerCoreSgiCount : UInt64 → BaseIO UInt64
+
+/-- **WS-SM SM1.I.4**: read a specific core's syscall (SVC) count.
+
+    Rust: `ffi_per_core_syscall_count` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_per_core_syscall_count"]
+opaque ffiPerCoreSyscallCount : UInt64 → BaseIO UInt64
+
+-- ============================================================================
 -- WS-RC R2 — Hardware-mode kernel state + SVC bridge infrastructure
 -- ============================================================================
 --

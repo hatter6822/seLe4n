@@ -2562,49 +2562,228 @@ test handler.
 
 **Size**: L (~150 LoC).
 
-### 5.9 Miscellaneous HAL improvements (SM1.I, 3 PRs, 6 sub-tasks)
+### 5.9 Miscellaneous HAL improvements (SM1.I, 3 PRs, 6 sub-tasks) — **LANDED at v0.31.8**
 
-#### SM1.I.1 — Per-core IRQ handler entry
+> **Landed**: SM1.I.1 (per-core IRQ handler entry `handle_irq_per_core`
+> as SM5 landing seam, wired with per-core IRQ / timer-tick / SGI
+> stats), SM1.I.2 (per-core IRQ priority masking documented in
+> `gic.rs` + `interrupts.rs` covering GICC_PMR per-core banking and
+> DAIF per-PE scoping), SM1.I.3 (idle-wait Rust primitives `cpu::idle_wait`
+> + `cpu::idle_wait_bounded`, FFI exports `ffi_idle_wait` +
+> `ffi_idle_wait_bounded`, Lean typed wrappers
+> `Concurrency.Runtime.idleWait` + `idleWaitBounded`), SM1.I.4 (per-core
+> stats module `per_cpu_stats.rs` with `PerCpuStats` cache-line aligned
+> counters: `irq_count` / `timer_tick_count` / `sgi_count` /
+> `syscall_count` / `vmfault_count` / `user_exception_count`; FFI
+> exports `ffi_per_core_*_count(coreId)`; Lean typed wrappers
+> `Concurrency.perCore*Count(core)`; synchronous exception handler
+> wired to advance the appropriate counter per EC branch), SM1.I.5
+> (SEV/WFE coordination + local-event-register semantics + IS-domain
+> broadcast scope documented in `cpu.rs` module header; new wrappers
+> `cpu::sev` + `cpu::sevl` for testability), SM1.I.6 (8 new
+> cross-core test scenarios in `smp::tests::sm1i6_*`: per-core stats
+> no-aliasing, validator per-core dispatch, init helper idempotence,
+> CORE_READY monotonicity, SGI distribution, full composition).
 
-`trap.rs::handle_irq_perCore`: reads current core's ID, dispatches
-per-core handler. Details in SM5.
+#### SM1.I.1 — Per-core IRQ handler entry — **LANDED**
 
-**Size**: M.
+`trap.rs::handle_irq_per_core`: reads current core's ID via TPIDR_EL1
+(`per_cpu::current_core_id_from_tpidr`), records per-core IRQ
+dispatch / timer-tick / SGI statistics via `per_cpu_stats::record_*`,
+then dispatches via `gic::dispatch_irq` with per-core attribution in
+the unhandled-INTID log line.
 
-#### SM1.I.2 — Per-core IRQ priority masking
+**SM5 landing seam**: SM5 will swap the assembly entry vector from
+`handle_irq` to `handle_irq_per_core`.  At SM1.I the assembly entry
+still calls `handle_irq` (single-core legacy entry); both functions
+have identical `extern "C" fn(&mut TrapFrame)` signatures so SM5's
+swap is a single function-pointer change.
 
-GICC_PMR is per-CPU-interface, so already per-core. SM1.I.2
-documents this.
+**SGI dispatch**: at SM1.I.1 SGIs (INTID 0..15) increment the
+per-core counter but do NOT route through the SGI handler table —
+`gic::dispatch_irq` discards the source-CPU bits of GICC_IAR.  SM5
+will refactor `dispatch_irq` into `dispatch_irq_with_iar` and route
+SGIs through `gic::dispatch_sgi` with the correct source_cpu.
 
-**Size**: T.
+**Build-script regression scanner**:
+`scan_trap_rs_handle_irq_per_core_intact` in
+`rust/sele4n-hal/build.rs` pins the function's existence, the
+`#[no_mangle]` attribute, the `record_irq_dispatch` call, and the
+`current_core_id_from_tpidr` read.  A future refactor that broke
+any of these contracts fails the build with an actionable
+diagnostic before the SM5 swap could regress silently.
 
-#### SM1.I.3 — Per-core IDLE thread Rust stub
+**Size**: M (~120 LoC Rust + 4 new tests + build-script scanner).
 
-A small extern "C" function the Lean side can call to invoke
-WFE on this core. SM5 uses it.
+#### SM1.I.2 — Per-core IRQ priority masking — **LANDED**
 
-**Size**: T.
+GICC_PMR is **banked per-core** at the hardware level (GIC-400 TRM
+§4.4.2 / §3.1.4) even though every core's CPU interface lives at the
+same MMIO base.  Each core reads/writes its own banked view of
+GICC_PMR, so cross-core PMR isolation comes from hardware addressing
+— no software lock or per-core MMIO address required.
 
-#### SM1.I.4 — Per-core exception statistics
+Per the implement-the-improvement rule, the documentation now
+substantively documents:
 
-Optional informational counters per core. Useful for benchmarking;
-not required for correctness.
+1. PMR per-core banking + the implications for per-core IRQ handler
+   priority manipulation (no cross-core coordination required).
+2. Distributor banking (GICD_IGROUPR0, GICD_IPRIORITYR0..7,
+   GICD_ICPENDR0, GICD_ISENABLER0) for INTIDs 0..31 (SGIs + PPIs).
+   This is why `init_cpu_interface_secondary` must run on every
+   secondary — it programs that core's banked view.
+3. DAIF.I per-PE scoping (ARM ARM C5.2.5).  The kernel has two
+   layers of per-core IRQ masking: PMR (priority threshold,
+   persistent) + DAIF.I (master mask, cleared on exception return),
+   both inherently per-PE.
 
-**Size**: M.
+Documentation lives in `gic.rs` (module header) and `interrupts.rs`
+(module header).  Cross-referenced from both directions.
 
-#### SM1.I.5 — SEV / WFE coordination documentation
+**Size**: T (documentation-only; ~80 lines of module-header prose).
 
-Module-level docstring explaining how SEV broadcasts wakeup to
-WFE-parked cores.
+#### SM1.I.3 — Per-core IDLE thread Rust stub — **LANDED**
 
-**Size**: T.
+Per-core idle-wait primitives at three layers:
 
-#### SM1.I.6 — Extended cargo tests
+- **Rust primitives** in `cpu.rs`:
+  - `cpu::idle_wait()` — unbounded WFE.
+  - `cpu::idle_wait_bounded(max_ticks)` — bounded variant returning
+    elapsed counter ticks (wraps `cpu::wfe_bounded`).
+- **FFI exports** in `ffi.rs`:
+  - `ffi_idle_wait()` → `cpu::idle_wait()`.
+  - `ffi_idle_wait_bounded(max_ticks: u64) -> u64` →
+    `cpu::idle_wait_bounded(max_ticks)`.
+- **Lean typed wrappers** in `SeLe4n/Kernel/Concurrency/Runtime.lean`:
+  - `Concurrency.idleWait : BaseIO Unit`.
+  - `Concurrency.idleWaitBounded : UInt64 → BaseIO UInt64`.
 
-`cargo test -p sele4n-hal --lib smp` extends with cross-core
-scenarios where host stubs permit.
+The Lean side declares `@[extern]` opaques in
+`SeLe4n/Platform/FFI.lean` matching the Rust exports.  Tier-3
+invariant-surface scanner verifies both layers are wired through.
 
-**Size**: M.
+At SM1.I.3 the Lean kernel has no per-core idle TCB to call these
+from; SM5 will wire the idle-thread body to invoke these wrappers.
+The function-pointer-pinning tests catch any future regression
+that would silently break the SM5 wiring.
+
+**Size**: M (~80 LoC Rust primitives + FFI + Lean wrappers; 7 new
+tests across Rust + Lean).
+
+#### SM1.I.4 — Per-core exception statistics — **LANDED**
+
+New module `rust/sele4n-hal/src/per_cpu_stats.rs` (~550 LoC) provides
+per-core counters with the following discipline:
+
+- **`PerCpuStats`** struct: `#[repr(C, align(64))]` (one cache line
+  per slot, eliminates false sharing between cores' counters).
+  Six AtomicU64 counters + 2-slot reserved tail for SM5+
+  growth.  Compile-time `const _: ()` assertions pin
+  `size_of::<PerCpuStats>() == 64` and
+  `align_of::<PerCpuStats>() == 64`.
+- **`PER_CPU_STATS`** static array: one slot per core (= 4 on RPi5),
+  `#[no_mangle]` + `#[used]` for linker visibility.  Each slot
+  initialised by `PerCpuStats::zero()` (const fn).
+- **Counters**: `irq_count`, `timer_tick_count`, `sgi_count`,
+  `syscall_count`, `vmfault_count`, `user_exception_count`.  All
+  `AtomicU64` with `Relaxed` ordering (wait-free; not on any
+  correctness path; counters are purely informational).
+- **Write path**: `record_*` functions (`record_irq_dispatch`,
+  `record_timer_tick`, `record_sgi_dispatch`, `record_syscall`,
+  `record_vm_fault`, `record_user_exception`) called from the IRQ
+  handler (SM1.I.1's `handle_irq_per_core`) and from
+  `handle_synchronous_exception` (`SVC` → syscall_count; `DABT` /
+  `IABT` → vmfault_count; alignment / unknown EC → user_exception_count).
+- **Read path**: `*_count_for(core_id)` functions return Relaxed
+  snapshots.  Out-of-range `core_id` returns 0 (defensive contract).
+- **Inner forms**: `record_*_in_slice` helpers take an explicit
+  `&[PerCpuStats]` for unit-testing cross-core scenarios without
+  racing on the global static.
+- **Aggregates**: `total_irq_count()` and `total_syscall_count()`
+  sum every core's counter for single-line diagnostic display.
+- **FFI exports** in `ffi.rs`: `ffi_per_core_irq_count(core_id)`,
+  `ffi_per_core_timer_tick_count(core_id)`,
+  `ffi_per_core_sgi_count(core_id)`,
+  `ffi_per_core_syscall_count(core_id)`.  All return Relaxed
+  snapshots; out-of-range returns 0.
+- **Lean typed wrappers** in
+  `SeLe4n/Kernel/Concurrency/Runtime.lean`:
+  `Concurrency.perCoreIrqCount(core : CoreId) : BaseIO UInt64` and
+  three siblings.  Marker theorem
+  `perCoreIrqCount_returns_baseio_uint64_marker` discharges by
+  `rfl` and serves as the Tier-3 surface anchor.
+
+**Why a separate module instead of growing PerCpuData**: keeping
+`PerCpuData`'s reserved tail intact for SM5+ scheduler state (per
+the SM1.B docstring's reservation) means the per-core stats live
+in their own cache-line-aligned struct.  This:
+- Lets SM5 grow PerCpuData independently of stats.
+- Gives stats their own cache line per core (no contention with
+  scheduler state reads).
+- Keeps the module surface clean (one concern per file).
+
+**Size**: M (~550 LoC new module + 16 new tests + 4 FFI exports +
+4 Lean wrappers + marker theorem).
+
+#### SM1.I.5 — SEV / WFE coordination documentation — **LANDED**
+
+Comprehensive module-header section in `cpu.rs` covering:
+
+- ARMv8-A local event register semantics (one bit per PE; per ARM
+  ARM B2.10).
+- `wfe` (C6.2.353): clears event register and returns, or enters
+  low-power state until set.  Four wake conditions enumerated.
+- `sev` (C6.2.243): broadcasts to every PE in the IS domain.
+- `sevl` (C6.2.244): sets only the calling PE's event register.
+- Inner-shareable broadcast scope (BCM2712 = single cluster = one
+  IS domain).
+- Kernel policy for emitting SEV: enumerated three production sites
+  (`bring_up_secondaries`, SM2+ lock release, cross-core SGI
+  fallback).
+- When NOT to use SEV (memory ordering, interrupt delivery,
+  synchronisation primitive).
+- Bounded WFE and the local event register interaction.
+
+Plus testability:
+- New `cpu::sev()` wrapper around the ARMv8-A SEV instruction.
+- New `cpu::sevl()` wrapper around SEVL.
+- Both compile cleanly on host (no-op stubs) so unit tests can
+  exercise them.
+
+**Size**: M (~140 lines of module-header prose + 2 new wrappers +
+4 host tests).
+
+#### SM1.I.6 — Extended cargo tests — **LANDED**
+
+8 new cross-core test scenarios in `smp::tests::sm1i6_*` exercising
+the SM1.I infrastructure:
+
+- `sm1i6_per_core_stats_no_cross_slot_aliasing` — every core's
+  `record_*_in_slice` writes its own slot without contention.
+- `sm1i6_validate_context_id_per_core_dispatch_no_aliasing` —
+  PSCI context_id validator's per-core dispatch is bijective.
+- `sm1i6_cross_core_init_helper_idempotent` — `init_cpu_interface_secondary`
+  composition (MMU + VBAR + GIC + timer + IRQ) is idempotent under
+  repeated cross-core invocation.
+- `sm1i6_core_ready_flag_monotonic_across_repeated_bringup` —
+  CORE_READY flags advance monotonically (no false reverts).
+- `sm1i6_per_core_stats_total_equals_sum` — cumulative across
+  slots equals sum of inner-form record calls.
+- `sm1i6_per_core_sgi_dispatch_kernel_reserved_intids` — every
+  kernel-reserved SGI (SM0.H, INTIDs 0..4) per-core dispatch
+  recorded.
+- `sm1i6_cross_core_bring_up_with_limit_boundary_progression` —
+  `bring_up_secondaries_with_limit_inner` honours the limit
+  boundary for every `i in 0..MAX_SECONDARY_CORES+1`.
+- `sm1i6_full_cross_core_composition` — end-to-end: bring-up +
+  validator dispatch + per-core stats accumulation compose
+  without inter-test contamination.
+
+All tests use the existing `*_inner` / `*_in_slice` helpers so
+each test owns its own state and never depends on global mutable
+atomics that cargo's parallel test runner could race against.
+
+**Size**: M (~200 LoC tests in `smp.rs`; 8 new tests).
 
 ## 6. Verification strategy for SM1
 
@@ -2755,6 +2934,76 @@ SM1.I.1..I.6 (misc)         independent
 
 Critical path: SM1.B → SM1.C → SM1.D → SM1.H (with SM1.F as
 side-branch joining at SM1.H.5).
+
+---
+
+## SM1 closure summary
+
+**WS-SM SM1 CLOSED at v0.31.8** — all nine SM1 sub-phases landed:
+
+| Sub-phase | Status | Closure version | Sub-tasks |
+|-----------|--------|-----------------|-----------|
+| SM1.A — PSCI completion | LANDED | v0.31.3 | 8 |
+| SM1.B — Per-CPU data + TPIDR_EL1 | LANDED | v0.31.4 | 7 |
+| SM1.C — Secondary core full init | LANDED | v0.31.5 | 12 |
+| SM1.D — DTB cmdline + Phase 5 | LANDED | v0.31.6 | 6 |
+| SM1.E — IS-variant TLB instructions | LANDED | v0.31.7 | 5 |
+| SM1.F — SGI primitive | LANDED | v0.31.7 | 8 |
+| SM1.G — Cross-core kprintln synchronization | LANDED | v0.31.7 | 4 |
+| SM1.H — QEMU SMP integration | LANDED | v0.31.7 | 5 |
+| SM1.I — Miscellaneous HAL improvements | LANDED | v0.31.8 | 6 |
+| **Total** | **9 of 9 LANDED** | **v0.31.8** | **61** |
+
+**Acceptance gate** (§8) all items checked:
+
+- [x] All 8 PSCI primitives wrapped.
+- [x] PSCI function IDs pinned against ARM DEN0022D in unit test.
+- [x] `PerCpuData` struct + array, TPIDR_EL1 readable.
+- [x] `current_per_cpu()` + `current_core_id_from_tpidr()` work.
+- [x] FFI: `ffi_current_core_id` + `ffi_send_sgi_*` exported.
+- [x] `init_mmu_secondary`, `install_exception_vectors`,
+      `init_cpu_interface_secondary`, `init_timer_secondary`
+      all extracted as shared helpers.
+- [x] `rust_secondary_main` body implements full per-core init.
+- [x] DTB cmdline parser handles smp_enabled / smp_max_cores.
+- [x] Phase 5 in `rust_boot_main` calls `bring_up_secondaries`.
+- [x] SMP enabled by default; opt-out via `smp_enabled=false`.
+- [x] IS-variant TLB primitives added (`tlbi_*is`).
+- [x] OSH-variant TLB primitives added.
+- [x] `tlbi_for_sharing` dispatcher.
+- [x] Kernel callers migrated to dispatcher (post-SM7 cross-core
+      cycles will exercise these); tier-0 grep gate in plan
+      Appendix A.
+- [x] `gic::send_sgi`, `send_sgi_to_self`, `send_sgi_to_all_but_self`.
+- [x] SGI handler table + dispatch.
+- [x] UART lock audited; replaceable with TicketLock post-SM2.
+- [x] `kprintln_core!` macro.
+- [x] `test_qemu_smp_bringup.sh` boots 4 cores; verifies 4 banners.
+- [x] Wired into tier-4 nightly.
+- [x] SGI round-trip test (SKIP-only until SM5 wires kernel handlers).
+- [x] ~50+ new cargo tests pass (583 total at v0.31.8, up from
+      ~140 at SM1 start).
+- [x] CHANGELOG entries per PR; aggregate SM1 closure entry at
+      v0.31.8.
+
+**Items deferred past v1.0.0 with correctness impact**: NONE.
+
+**Items deferred to SM5+ (per-core scheduler state)** with no
+correctness impact at SM1:
+- `handle_irq_per_core` is added as the SM5 landing seam but the
+  assembly entry still calls `handle_irq`.  SM5 swaps the entry
+  vector.
+- SGI dispatch through the registered SGI handler table requires a
+  `dispatch_irq_with_iar` variant that preserves the full IAR (not
+  just the INTID).  SM5 wires this.
+- The Lean-side idle TCB consumes `ffi_idle_wait`; SM5 introduces
+  the per-core idle thread.
+- The Lean-side per-core stats consumers (read paths via
+  `Concurrency.perCore*Count`) are wired but not yet exercised by
+  the verified kernel.  SM5+ adds the verified read APIs.
+
+These deferrals are seam-only — the SM1 contract is complete and
+the SM5 follow-on is a wiring change, not a redesign.
 
 ---
 

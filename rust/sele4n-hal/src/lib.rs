@@ -200,3 +200,12 @@ pub mod per_cpu;
 // line.  See the module docstring in `cmdline.rs` for the option
 // inventory and the parser's robustness contract.
 pub mod cmdline;
+// WS-SM SM1.I.4: per-core exception / interrupt statistics.  Provides
+// `PerCpuStats` (cache-line aligned counters), the global
+// `PER_CPU_STATS` array, and `record_*` / `*_count_for(core_id)`
+// accessors.  Counters are wait-free (`AtomicU64` with `Relaxed`
+// ordering) and not on any correctness path — they are purely
+// informational, useful for benchmarking and post-mortem analysis.
+// See the module docstring in `per_cpu_stats.rs` for the counter
+// inventory.
+pub mod per_cpu_stats;

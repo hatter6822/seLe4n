@@ -80,6 +80,15 @@ fn main() {
     // DSB; this scanner ensures the source still honours it.
     scan_gic_rs_send_sgi_emits_dsb_ish();
 
+    // WS-SM SM1.I.1 (per-core IRQ handler contract): verify
+    // `trap.rs::handle_irq_per_core` exists and routes through the
+    // per-core stats record path.  SM5 will swap the assembly entry
+    // vector from `handle_irq` to `handle_irq_per_core`; if a future
+    // refactor removed or renamed the function, the SM5 swap would
+    // fail at link time.  This scanner forces the contract earlier
+    // (at elaboration) with an actionable diagnostic.
+    scan_trap_rs_handle_irq_per_core_intact();
+
     // Only build assembly for aarch64 targets
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     if target_arch != "aarch64" {
@@ -718,5 +727,106 @@ fn scan_gic_rs_send_sgi_emits_dsb_ish() {
                  and WS-SM SM1.F.8."
             );
         }
+    }
+}
+
+/// **WS-SM SM1.I.1**: verify `trap.rs::handle_irq_per_core` is intact.
+///
+/// SM1.I.1 adds the per-core IRQ handler entry as the SM5 landing seam
+/// — SM5 will redirect `trap.S`'s IRQ assembly entry from `handle_irq`
+/// to `handle_irq_per_core`.  This scanner forces the contract at
+/// elaboration time:
+///
+///   1. The function `pub extern "C" fn handle_irq_per_core` exists
+///      (a regression that removed or renamed it would fail SM5's
+///      assembly swap at link time; we catch it earlier).
+///   2. The `#[no_mangle]` attribute is preserved (otherwise the
+///      assembly entry cannot resolve the symbol at link time).
+///   3. The body invokes `crate::per_cpu_stats::record_irq_dispatch`
+///      so per-core IRQ attribution is wired (this is the
+///      substantive SM1.I.1 contract; a refactor that dropped the
+///      counter increment would silently break SM5+ per-core
+///      diagnostics).
+///   4. The body invokes
+///      `crate::per_cpu::current_core_id_from_tpidr` so the
+///      [core N] log prefix correctly identifies the calling core.
+fn scan_trap_rs_handle_irq_per_core_intact() {
+    let path = "src/trap.rs";
+    println!("cargo:rerun-if-changed={path}");
+    let contents = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => panic!("WS-SM SM1.I.1 scanner: failed to read {path}: {e}"),
+    };
+
+    // Strip `//` line comments so docstring mentions of these symbols
+    // don't satisfy the check spuriously.
+    let stripped: String = contents
+        .lines()
+        .map(|line| {
+            if let Some(idx) = line.find("//") {
+                &line[..idx]
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Check 1: the function signature is present.
+    let fn_sig = "pub extern \"C\" fn handle_irq_per_core(";
+    let Some(fn_start) = stripped.find(fn_sig) else {
+        panic!(
+            "WS-SM SM1.I.1 regression: `{path}` no longer defines \
+             `pub extern \"C\" fn handle_irq_per_core(...)`.  This is the \
+             SM5 landing seam — SM5 will redirect `trap.S`'s IRQ entry to \
+             this function.  Restore the function or update the scanner if \
+             SM5 has landed and the contract changed."
+        );
+    };
+
+    // Find the body — scan forward for the next `\npub ` (start of
+    // next public item) or end of file.
+    let body_start = fn_start;
+    let body_end = stripped[body_start + fn_sig.len()..]
+        .find("\npub ")
+        .map(|off| body_start + fn_sig.len() + off)
+        .unwrap_or(stripped.len());
+    let body = &stripped[body_start..body_end];
+
+    // Check 2: `#[no_mangle]` attribute precedes the function.  We
+    // look in the 200 bytes BEFORE `fn_start` for the attribute.
+    let preamble_start = fn_start.saturating_sub(200);
+    let preamble = &stripped[preamble_start..fn_start];
+    if !preamble.contains("#[no_mangle]") {
+        panic!(
+            "WS-SM SM1.I.1 regression: `{path}::handle_irq_per_core` no longer \
+             has the `#[no_mangle]` attribute.  Without it, the assembly entry \
+             vector (SM5 will redirect to this function) cannot resolve the \
+             symbol at link time.  Restore `#[no_mangle]` immediately above the \
+             function declaration."
+        );
+    }
+
+    // Check 3: per-core stats record path.
+    if !body.contains("crate::per_cpu_stats::record_irq_dispatch") {
+        panic!(
+            "WS-SM SM1.I.1 regression: `{path}::handle_irq_per_core` no longer \
+             invokes `crate::per_cpu_stats::record_irq_dispatch`.  Per-core IRQ \
+             attribution is the substantive SM1.I.1 contract — a refactor that \
+             dropped the counter increment would silently break SM5+ per-core \
+             diagnostics.  Restore the `record_irq_dispatch` call (it must run \
+             unconditionally for every dispatched IRQ)."
+        );
+    }
+
+    // Check 4: TPIDR_EL1 per-core identification.
+    if !body.contains("crate::per_cpu::current_core_id_from_tpidr") {
+        panic!(
+            "WS-SM SM1.I.1 regression: `{path}::handle_irq_per_core` no longer \
+             reads `crate::per_cpu::current_core_id_from_tpidr()`.  The per-core \
+             handler must identify its calling core for the [core N] log prefix \
+             and for SM5+ per-core scheduler dispatch.  Restore the TPIDR_EL1 \
+             read at the top of the function body."
+        );
     }
 }

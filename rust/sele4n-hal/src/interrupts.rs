@@ -15,6 +15,28 @@
 //! On ARM64, exception entry automatically sets PSTATE.I (masks IRQ).
 //! The kernel runs with IRQ masked throughout; this module provides
 //! explicit control for the few paths that may need to re-enable.
+//!
+//! ## WS-SM SM1.I.2 — Per-core scoping
+//!
+//! Every DAIF operation in this module affects **only the calling PE**.
+//! `DAIF` is part of `PSTATE` (ARM ARM C5.2.5), which is per-PE state;
+//! one core's `disable_interrupts` does not mask IRQ delivery on
+//! another core.  No coordination across cores is required when
+//! entering or leaving a critical section.
+//!
+//! Paired with the per-core scoping of `GICC_PMR` (see the SM1.I.2
+//! section in `gic.rs`), the kernel has two layers of IRQ control per
+//! PE:
+//!
+//! - **DAIF.I**: master IRQ mask; orthogonal to PMR; cleared on
+//!   exception return.
+//! - **GICC_PMR**: priority threshold; persistent across function
+//!   calls.
+//!
+//! A per-core IRQ handler may mask IRQs via `disable_interrupts` for
+//! the duration of a critical section without affecting any other
+//! core; other cores continue to deliver IRQs at their own DAIF + PMR
+//! thresholds.
 
 /// Disable all maskable interrupts (D, A, I, F).
 ///

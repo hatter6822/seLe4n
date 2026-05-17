@@ -30,6 +30,56 @@
 //! - GICC_BPR:       binary point
 //! - GICC_IAR:       interrupt acknowledge
 //! - GICC_EOIR:      end of interrupt
+//!
+//! # WS-SM SM1.I.2 — Per-core IRQ priority masking
+//!
+//! The GIC-400 priority mask register `GICC_PMR` (CPU interface, offset
+//! 0x004) is **banked per-core** at the hardware level even though every
+//! core's CPU interface lives at the same MMIO base ([`GICC_BASE`] on
+//! BCM2712).  Each core reads/writes its own banked view of `GICC_PMR`,
+//! so cross-core PMR isolation comes from hardware addressing — no
+//! software lock or per-core MMIO address is required.
+//!
+//! ## Implication for per-core IRQ handlers
+//!
+//! Because `GICC_PMR` is banked per-core:
+//!
+//! - A core's `GICC_PMR` change (e.g., a higher-priority critical section
+//!   raising PMR to 0x80) affects **only that core's** interrupt
+//!   delivery.
+//! - Other cores continue to deliver IRQs at their own PMR threshold
+//!   unchanged.
+//! - A per-core IRQ handler ([`crate::trap::handle_irq_per_core`]) does
+//!   not need to coordinate with other cores when changing PMR.
+//! - The kernel can implement per-core priority hierarchies without
+//!   global synchronisation — useful for SM5+ per-core scheduler state
+//!   that may mask lower-priority IRQs during scheduler-critical work.
+//!
+//! See GIC-400 TRM §3.1.5 ("Per-CPU interface registers"), §4.4.2
+//! ("GICC_PMR Priority Mask Register"), and §3.1.4 ("Banked registers").
+//!
+//! ## Implication for distributor priority registers
+//!
+//! Per GIC-400 TRM §4.3.4 / §4.3.11, `GICD_IGROUPR0` and `GICD_IPRIORITYR0..7`
+//! are also **banked per-core** for INTIDs 0..31 (SGIs + PPIs).  Every
+//! secondary core must therefore initialise its own banked view via
+//! [`init_cpu_interface_secondary`] — the primary's `init_distributor`
+//! only configures its own bank.
+//!
+//! ## Implication for `DAIF.I` masking
+//!
+//! `PSTATE.DAIF.I` (the AArch64 IRQ mask) is per-PE (ARM ARM C5.2.5),
+//! so [`crate::interrupts::disable_interrupts`] and friends affect only
+//! the calling core's delivery.  The PMR + DAIF combination gives the
+//! kernel two layers of per-core IRQ masking:
+//!
+//! - **PMR**: priority threshold; IRQs with priority >= PMR are not
+//!   delivered.  Stays set across function calls.
+//! - **DAIF.I**: master IRQ mask; orthogonal to PMR.  Cleared on
+//!   exception return.
+//!
+//! No global lock is required to coordinate per-core IRQ masking — both
+//! primitives are inherently scoped to the calling PE.
 
 // ============================================================================
 // Constants

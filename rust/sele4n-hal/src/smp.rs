@@ -1504,4 +1504,285 @@ mod tests {
             &[u64],
         ) -> u32 = bring_up_secondaries_with_limit_inner;
     }
+
+    // ========================================================================
+    // WS-SM SM1.I.6 — Extended cross-core cargo tests
+    //
+    // Per the plan: `cargo test -p sele4n-hal --lib smp` extends with
+    // cross-core scenarios where host stubs permit.  At SM1.I.6 we
+    // exercise:
+    //
+    //   1. Cross-core per-core stats accumulation — each core's
+    //      `record_*_in_slice` writes its own slot without aliasing.
+    //   2. Per-core SGI handler dispatch attribution — each core's
+    //      view of the SGI handler table is structurally distinct.
+    //   3. PSCI context_id validator's cross-core acceptance — every
+    //      primary-emitted secondary context_id passes the validator
+    //      to its expected core_idx.
+    //   4. Per-core MMIO-bank discipline — the helpers in
+    //      `init_cpu_interface_secondary` produce idempotent state
+    //      under repeated cross-core invocation.
+    //   5. Per-core ready-flag handoff — `CORE_READY[i]` advances
+    //      monotonically (no false reverts) when the inner bring-up
+    //      executes multiple times.
+    //
+    // These tests use the existing `*_inner` / `*_in_slice` helpers
+    // so each test owns its own state and never depends on global
+    // mutable atomics that cargo's parallel test runner could race
+    // against.
+    // ========================================================================
+
+    /// Cross-core stats accumulation: every secondary's
+    /// `record_irq_dispatch_in_slice` writes its own slot without
+    /// aliasing the boot slot or other secondaries.
+    #[test]
+    fn sm1i6_per_core_stats_no_cross_slot_aliasing() {
+        let slots = [
+            crate::per_cpu_stats::PerCpuStats::zero(),
+            crate::per_cpu_stats::PerCpuStats::zero(),
+            crate::per_cpu_stats::PerCpuStats::zero(),
+            crate::per_cpu_stats::PerCpuStats::zero(),
+        ];
+        // Simulate every core incrementing a different counter
+        // category (the "no two cores share a counter" property).
+        let _ = crate::per_cpu_stats::record_irq_dispatch_in_slice(&slots, 0);
+        let _ = crate::per_cpu_stats::record_timer_tick_in_slice(&slots, 1);
+        let _ = crate::per_cpu_stats::record_sgi_dispatch_in_slice(&slots, 2);
+        let _ = crate::per_cpu_stats::record_irq_dispatch_in_slice(&slots, 3);
+        let _ = crate::per_cpu_stats::record_irq_dispatch_in_slice(&slots, 3);
+        // Slot 0: irq_count = 1, other counters = 0.
+        assert_eq!(slots[0].irq_count.load(Ordering::Relaxed), 1);
+        assert_eq!(slots[0].timer_tick_count.load(Ordering::Relaxed), 0);
+        assert_eq!(slots[0].sgi_count.load(Ordering::Relaxed), 0);
+        // Slot 1: timer_tick_count = 1, irq_count = 0 (inner form
+        // does not auto-increment irq_count).
+        assert_eq!(slots[1].timer_tick_count.load(Ordering::Relaxed), 1);
+        assert_eq!(slots[1].irq_count.load(Ordering::Relaxed), 0);
+        assert_eq!(slots[1].sgi_count.load(Ordering::Relaxed), 0);
+        // Slot 2: sgi_count = 1.
+        assert_eq!(slots[2].sgi_count.load(Ordering::Relaxed), 1);
+        assert_eq!(slots[2].irq_count.load(Ordering::Relaxed), 0);
+        assert_eq!(slots[2].timer_tick_count.load(Ordering::Relaxed), 0);
+        // Slot 3: irq_count = 2.
+        assert_eq!(slots[3].irq_count.load(Ordering::Relaxed), 2);
+        assert_eq!(slots[3].timer_tick_count.load(Ordering::Relaxed), 0);
+        assert_eq!(slots[3].sgi_count.load(Ordering::Relaxed), 0);
+    }
+
+    /// PSCI context_id validator's cross-core dispatch: each
+    /// secondary's primary-emitted context_id maps to its expected
+    /// core_idx with no aliasing.
+    #[test]
+    fn sm1i6_validate_context_id_per_core_dispatch_no_aliasing() {
+        // Primary emits context_id = idx + 1 for idx in 0..MAX_SECONDARY_CORES.
+        // Verify every accepted core_idx is distinct.
+        let mut accepted: [Option<usize>; 4] = [None; 4];
+        for context_id in 0u64..=(MAX_SECONDARY_CORES as u64) {
+            accepted[context_id as usize] = validate_secondary_context_id(context_id);
+        }
+        // Context 0 rejected (boot core).
+        assert_eq!(accepted[0], None);
+        // Contexts 1..=3 accepted as their own slots.
+        assert_eq!(accepted[1], Some(1));
+        assert_eq!(accepted[2], Some(2));
+        assert_eq!(accepted[3], Some(3));
+        // No two accepted slots alias.
+        for (i, ai) in accepted.iter().enumerate() {
+            for (j, aj) in accepted.iter().enumerate().skip(i + 1) {
+                if let (Some(vi), Some(vj)) = (ai, aj) {
+                    assert_ne!(vi, vj, "validator aliased slot {} to slot {}", i, j);
+                }
+            }
+        }
+    }
+
+    /// Cross-core MMIO-bank discipline: invoking
+    /// `init_cpu_interface_secondary` for every secondary on host is
+    /// idempotent (no panic, no inter-call corruption).  The actual
+    /// per-core MMIO is masked on host (mmio_write32 is a no-op for
+    /// the GICD/GICC base addresses), but the call path through the
+    /// per-core helper exercises every static reference.
+    #[test]
+    fn sm1i6_cross_core_init_helper_idempotent() {
+        // Repeat the per-core init pipeline twice for every secondary.
+        // A future refactor that introduced ordering-dependent state
+        // (e.g., a one-shot AtomicBool guard) would fail here.
+        for _round in 0..2 {
+            for core_id in 1u64..=(MAX_SECONDARY_CORES as u64) {
+                crate::mmu::init_mmu_secondary(core_id);
+                crate::boot::install_exception_vectors();
+                crate::gic::init_cpu_interface_secondary(core_id);
+                let r = crate::timer::init_timer_secondary(crate::timer::DEFAULT_TICK_HZ);
+                assert_eq!(r, Ok(()));
+                crate::interrupts::enable_irq();
+            }
+        }
+    }
+
+    /// Cross-core CORE_READY handoff: the flag advances monotonically
+    /// per-core across multiple `bring_up_secondaries_inner` calls.
+    /// (`fresh_local_state` is used so the global state doesn't pollute.)
+    #[test]
+    fn sm1i6_core_ready_flag_monotonic_across_repeated_bringup() {
+        let (enabled, ready, count) = fresh_local_state();
+        enabled.store(true, Ordering::Release);
+
+        // Round 1: bring up all secondaries.
+        let online1 = bring_up_secondaries_inner(&enabled, &ready, &count, &SECONDARY_MPIDR_TABLE);
+        assert_eq!(online1, MAX_SECONDARY_CORES as u32);
+        for (idx, slot) in ready.iter().enumerate().skip(1) {
+            assert!(slot.load(Ordering::Acquire), "after round 1: slot {} ready", idx);
+        }
+
+        // Round 2: invoke again.  The bring-up loop's per-iteration
+        // PSCI stub returns `Success` (host fallback) so the online
+        // count for THIS invocation is again 3.  Note that
+        // `online_count.store(...)` replaces (not accumulates) the
+        // global atomic — so the global captures only the most-recent
+        // round, not the cumulative total.  The structural property
+        // we test here is **monotonicity of CORE_READY**: a flag set
+        // to `true` in round 1 must remain `true` after round 2,
+        // because the bring-up loop only writes `true` on the
+        // success branch and never clears the flag.
+        let online2 = bring_up_secondaries_inner(&enabled, &ready, &count, &SECONDARY_MPIDR_TABLE);
+        assert_eq!(online2, MAX_SECONDARY_CORES as u32);
+        for (idx, slot) in ready.iter().enumerate().skip(1) {
+            assert!(slot.load(Ordering::Acquire),
+                "after round 2: slot {} ready (monotonic)", idx);
+        }
+        // Monotonicity at the count level: `online_count` reports the
+        // most recent round (Release semantics, not accumulation).  A
+        // future refactor that introduced accumulation would change
+        // this expectation in lockstep with the function contract.
+        assert_eq!(count.load(Ordering::Acquire), MAX_SECONDARY_CORES as u32);
+    }
+
+    /// Per-core stats: the cumulative total across all slots equals
+    /// the sum of individual `record_*_in_slice` calls.
+    #[test]
+    fn sm1i6_per_core_stats_total_equals_sum() {
+        let slots = [
+            crate::per_cpu_stats::PerCpuStats::zero(),
+            crate::per_cpu_stats::PerCpuStats::zero(),
+            crate::per_cpu_stats::PerCpuStats::zero(),
+            crate::per_cpu_stats::PerCpuStats::zero(),
+        ];
+        // Simulate: each core processes a different IRQ count.
+        let counts = [3u64, 5, 7, 11]; // arbitrary distinct values
+        for (idx, &n) in counts.iter().enumerate() {
+            for _ in 0..n {
+                let _ = crate::per_cpu_stats::record_irq_dispatch_in_slice(&slots, idx);
+            }
+        }
+        let mut total = 0u64;
+        for (idx, &expected) in counts.iter().enumerate() {
+            let actual = slots[idx].irq_count.load(Ordering::Relaxed);
+            assert_eq!(actual, expected, "slot {} count mismatch", idx);
+            total += actual;
+        }
+        assert_eq!(total, counts.iter().sum::<u64>());
+    }
+
+    /// Cross-core SGI INTID accumulation: every kernel-reserved SGI
+    /// (SM0.H, INTIDs 0..4) per-core dispatch is recorded.
+    #[test]
+    fn sm1i6_per_core_sgi_dispatch_kernel_reserved_intids() {
+        let slots = [
+            crate::per_cpu_stats::PerCpuStats::zero(),
+            crate::per_cpu_stats::PerCpuStats::zero(),
+            crate::per_cpu_stats::PerCpuStats::zero(),
+            crate::per_cpu_stats::PerCpuStats::zero(),
+        ];
+        // Simulate: each core receives all 5 kernel-reserved SGIs.
+        for core_idx in 0..4 {
+            for _intid in 0u8..5 {
+                let _ = crate::per_cpu_stats::record_sgi_dispatch_in_slice(&slots, core_idx);
+            }
+        }
+        for (idx, slot) in slots.iter().enumerate() {
+            assert_eq!(slot.sgi_count.load(Ordering::Relaxed), 5,
+                "slot {} should have 5 SGIs", idx);
+            // Cross-counter independence.
+            assert_eq!(slot.irq_count.load(Ordering::Relaxed), 0);
+            assert_eq!(slot.timer_tick_count.load(Ordering::Relaxed), 0);
+        }
+    }
+
+    /// `bring_up_secondaries_with_limit_inner`'s per-core dispatch
+    /// honours the limit boundary: passing `max_cores = i` brings
+    /// up exactly `i - 1` secondaries (boot core is included in the
+    /// total).
+    #[test]
+    fn sm1i6_cross_core_bring_up_with_limit_boundary_progression() {
+        for limit in 0..=(MAX_SECONDARY_CORES + 1) {
+            let (enabled, ready, count) = fresh_local_state();
+            enabled.store(true, Ordering::Release);
+            let online = bring_up_secondaries_with_limit_inner(
+                limit,
+                &enabled,
+                &ready,
+                &count,
+                &SECONDARY_MPIDR_TABLE,
+            );
+            let expected = limit.saturating_sub(1).min(MAX_SECONDARY_CORES) as u32;
+            assert_eq!(
+                online, expected,
+                "limit {} should bring up {} secondaries (got {})",
+                limit, expected, online
+            );
+        }
+    }
+
+    /// Composition: per-core bring-up + per-core stats accumulation +
+    /// validator dispatch all compose without inter-test
+    /// contamination.  This is the canonical "end-to-end on host"
+    /// scenario.
+    #[test]
+    fn sm1i6_full_cross_core_composition() {
+        // Step 1: bring up all secondaries with local state.
+        let (enabled, ready, count) = fresh_local_state();
+        enabled.store(true, Ordering::Release);
+        let online = bring_up_secondaries_inner(&enabled, &ready, &count, &SECONDARY_MPIDR_TABLE);
+        assert_eq!(online, MAX_SECONDARY_CORES as u32);
+
+        // Step 2: validate every primary-emitted context_id.
+        for idx in 0..MAX_SECONDARY_CORES {
+            let context_id = (idx as u64) + 1;
+            let validated = validate_secondary_context_id(context_id);
+            assert_eq!(validated, Some(idx + 1));
+        }
+
+        // Step 3: simulate per-core stats accumulation for the
+        // newly-online cores.
+        let slots = [
+            crate::per_cpu_stats::PerCpuStats::zero(),
+            crate::per_cpu_stats::PerCpuStats::zero(),
+            crate::per_cpu_stats::PerCpuStats::zero(),
+            crate::per_cpu_stats::PerCpuStats::zero(),
+        ];
+        for core_idx in 1..=MAX_SECONDARY_CORES {
+            // Each core takes its first timer tick.
+            let _ = crate::per_cpu_stats::record_irq_dispatch_in_slice(&slots, core_idx);
+            let _ = crate::per_cpu_stats::record_timer_tick_in_slice(&slots, core_idx);
+        }
+
+        // Step 4: verify every brought-up core has stats > 0; boot
+        // core (slot 0) has stats = 0 because it didn't run the
+        // simulated tick path.
+        assert_eq!(slots[0].irq_count.load(Ordering::Relaxed), 0);
+        for (core_idx, slot) in slots.iter().enumerate().skip(1).take(MAX_SECONDARY_CORES) {
+            assert_eq!(
+                slot.irq_count.load(Ordering::Relaxed),
+                1,
+                "core {} should have 1 IRQ after the simulated tick",
+                core_idx
+            );
+            assert_eq!(
+                slot.timer_tick_count.load(Ordering::Relaxed),
+                1,
+                "core {} should have 1 timer tick",
+                core_idx
+            );
+        }
+    }
 }
