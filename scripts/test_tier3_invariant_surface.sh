@@ -1298,4 +1298,63 @@ import SeLe4n.Platform.RPi5.Contract
 #check @SeLe4n.Kernel.Concurrency.idleWaitBounded_returns_baseio_uint64_marker
 EOF'
 
+# WS-SM SM2.A — Abstract memory model surface anchors.  Covers every
+# public symbol exported by `Kernel.Concurrency.MemoryModel` so SM2.B
+# (TicketLock) and SM2.C (RwLock) consumers cannot break the upstream
+# release-acquire pairing foundation without surfacing here first.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.MemoryModel'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.MemoryModel
+
+-- SM2.A.1 — MemoryOrder
+#check @SeLe4n.Kernel.Concurrency.MemoryOrder
+#check @SeLe4n.Kernel.Concurrency.MemoryOrder.isAcquire
+#check @SeLe4n.Kernel.Concurrency.MemoryOrder.isRelease
+#check @SeLe4n.Kernel.Concurrency.MemoryOrder.acqRel_both
+#check @SeLe4n.Kernel.Concurrency.MemoryOrder.seqCst_both
+#check @SeLe4n.Kernel.Concurrency.MemoryOrder.relaxed_neither
+-- SM2.A.2 — AtomicLocation
+#check @SeLe4n.Kernel.Concurrency.AtomicLocation
+#check @SeLe4n.Kernel.Concurrency.AtomicLocation.nextTicketOf
+#check @SeLe4n.Kernel.Concurrency.AtomicLocation.servingOf
+#check @SeLe4n.Kernel.Concurrency.AtomicLocation.rwLockStateOf
+#check @SeLe4n.Kernel.Concurrency.AtomicLocation.ticketLock_fields_distinct
+-- SM2.A.3 — MemoryEvent
+#check @SeLe4n.Kernel.Concurrency.MemoryEvent
+-- SM2.A.4 — MemoryTrace
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace.empty
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace.append
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace.empty_events
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace.append_events
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace.append_length
+-- SM2.A.5 — wellFormed + eventPos
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace.wellFormed
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace.empty_wellFormed
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace.eventPos
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace.eventPos_lt_length
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace.eventPos_eq_length_of_not_mem
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace.eventPos_get_eq
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace.eventPos_inj
+-- SM2.A.6 — synchronizesWith
+#check @SeLe4n.Kernel.Concurrency.synchronizesWith
+#check @SeLe4n.Kernel.Concurrency.synchronizesWith_relaxed_load_rejected
+#check @SeLe4n.Kernel.Concurrency.synchronizesWith_relaxed_store_rejected
+-- SM2.A.7 — sequencedBefore + happensBefore
+#check @SeLe4n.Kernel.Concurrency.sequencedBefore
+#check @SeLe4n.Kernel.Concurrency.happensBefore
+#check @SeLe4n.Kernel.Concurrency.happensBefore.seq
+#check @SeLe4n.Kernel.Concurrency.happensBefore.sync
+#check @SeLe4n.Kernel.Concurrency.happensBefore.trans
+#check @SeLe4n.Kernel.Concurrency.happensBefore_in_trace
+#check @SeLe4n.Kernel.Concurrency.happensBefore_strict_positional
+-- SM2.A.8/.9/.10/.11 — Partial-order theorems (the four canonical witnesses)
+#check @SeLe4n.Kernel.Concurrency.happensBefore_irreflexive
+#check @SeLe4n.Kernel.Concurrency.happensBefore_transitive
+#check @SeLe4n.Kernel.Concurrency.happensBefore_antisymmetric
+#check @SeLe4n.Kernel.Concurrency.happens_before_partial_order
+#check @SeLe4n.Kernel.Concurrency.happens_before_strict_partial_order
+#check @SeLe4n.Kernel.Concurrency.happensBefore_no_cycle
+EOF'
+
 finalize_report

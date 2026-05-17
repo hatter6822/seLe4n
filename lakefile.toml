@@ -5,7 +5,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 
 name = "seLe4n"
-version = "0.31.8"
+version = "0.32.0"
 defaultTargets = ["sele4n"]
 
 [[lean_lib]]
@@ -164,3 +164,12 @@ root = "tests.SyscallDispatchSuite"
 [[lean_exe]]
 name = "smp_foundations_suite"
 root = "tests.SmpFoundationsSuite"
+
+# WS-SM SM2.A.12 — Memory Model test suite.  Surface anchors +
+# decidable examples for every SM2.A public symbol (MemoryOrder,
+# AtomicLocation, MemoryEvent, MemoryTrace, wellFormed, eventPos,
+# synchronizesWith, sequencedBefore, happensBefore, and the four
+# partial-order theorems).  Tier-3 wired.
+[[lean_exe]]
+name = "memory_model_suite"
+root = "tests.MemoryModelSuite"

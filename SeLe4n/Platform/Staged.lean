@@ -50,6 +50,13 @@ import SeLe4n.Kernel.SecondaryEntry
 -- `ffi_tlbi_for_sharing` dispatcher on every push.  Reachability:
 -- staged at SM1.E; SM7 (TLB shootdown) is the first runtime exerciser.
 import SeLe4n.Kernel.Architecture.TlbiForSharing
+-- WS-SM SM2.A: abstract memory model for verified lock primitives.
+-- Pulled into Staged so CI builds the operational ARMv8.1-A LSE memory
+-- model (MemoryOrder, MemoryEvent, MemoryTrace, synchronizesWith,
+-- happensBefore + partial-order theorems) on every push.  Reachability:
+-- staged at SM2.A; SM2.B (TicketLock) and SM2.C (RwLock) are the first
+-- runtime exercisers.
+import SeLe4n.Kernel.Concurrency.MemoryModel
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph
