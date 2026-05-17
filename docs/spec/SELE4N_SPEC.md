@@ -632,10 +632,10 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    (`irq_count`, `timer_tick_count`, `sgi_count`,
    `syscall_count`, `vmfault_count`, `user_exception_count`)
    wired to the synchronous-exception handler per EC branch;
-   SEV / WFE coordination documentation; 12 cross-core test
+   SEV / WFE coordination documentation; 8 cross-core test
    scenarios in `smp::tests::sm1i6_*`.  New build-script
    scanner `scan_trap_rs_handle_irq_per_core_intact` pins the
-   SM1.I.1 contract.  583 HAL tests at v0.31.8 (up from 510 at
+   SM1.I.1 contract.  593 HAL tests at v0.31.8 (510 at SM1.E/F/G/H close + 83 SM1.I including audit-pass refinements at
    v0.31.7).  WS-SM SM1 acceptance gate (per
    `docs/planning/SMP_RUST_HAL_PLAN.md` §8) all items checked.
 

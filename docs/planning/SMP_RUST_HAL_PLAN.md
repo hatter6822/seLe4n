@@ -2755,7 +2755,7 @@ Plus testability:
 
 #### SM1.I.6 — Extended cargo tests — **LANDED**
 
-12 new cross-core test scenarios in `smp::tests::sm1i6_*` exercising
+8 new cross-core test scenarios in `smp::tests::sm1i6_*` exercising
 the SM1.I infrastructure:
 
 - `sm1i6_per_core_stats_no_cross_slot_aliasing` — every core's

@@ -452,6 +452,9 @@ pub extern "C" fn handle_serror(_frame: &mut TrapFrame) -> ! {
 }
 
 #[cfg(test)]
+extern crate std;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -466,6 +469,33 @@ mod tests {
             far_el1: 0,
         }
     }
+
+    // ------------------------------------------------------------------------
+    // WS-SM SM1.I (audit-pass-3) — PER_CPU_STATS observation mutex.
+    //
+    // The SM1.I.4 trap-handler tests read+write the global
+    // `crate::per_cpu_stats::PER_CPU_STATS` array via
+    // `handle_synchronous_exception` and `*_count_for(0)` accessors.
+    //
+    // Most of these tests assert `after > before` (the per-EC-branch
+    // counter advances by AT LEAST 1).  That property tolerates
+    // concurrent parallel-test writers — even if another test also
+    // writes to the same counter, `after > before` still holds.
+    //
+    // But ONE test
+    // (`sm1i4_per_core_counters_track_distinct_exception_branches`)
+    // asserts `vm_after == vm_before` (the SVC branch does NOT touch
+    // `vmfault_count`).  Under cargo's parallel test execution, a
+    // concurrent test that calls `handle_synchronous_exception` with
+    // a DABT or IABT ESR would increment `vmfault_count` between our
+    // two reads, producing a transient failure even though the SVC
+    // branch correctly did not touch the counter.
+    //
+    // Audit-pass-3 (per the external audit's H2 finding): serialise
+    // every SM1.I.4 test that observes `PER_CPU_STATS[0]` via this
+    // private mutex.  The serialisation is invisible to other tests
+    // and adds no runtime cost in production.
+    static SM1I4_OBSERVATION_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn trap_frame_size_is_288_bytes() {
@@ -755,6 +785,9 @@ mod tests {
 
     #[test]
     fn sm1i4_handle_sync_svc_increments_per_core_syscall_count() {
+        // Audit-pass-3: serialise via SM1I4_OBSERVATION_MUTEX so concurrent
+        // trap-handler tests don't race on PER_CPU_STATS[0].syscall_count.
+        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap();
         let before = crate::per_cpu_stats::syscall_count_for(0);
         let mut frame = zero_frame();
         frame.esr_el1 = ec::SVC_AARCH64 << 26;
@@ -770,6 +803,8 @@ mod tests {
 
     #[test]
     fn sm1i4_handle_sync_dabt_increments_per_core_vm_fault_count() {
+        // Audit-pass-3: see SM1I4_OBSERVATION_MUTEX docstring.
+        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap();
         let before = crate::per_cpu_stats::vm_fault_count_for(0);
         let mut frame = zero_frame();
         frame.esr_el1 = ec::DABT_LOWER << 26;
@@ -785,6 +820,7 @@ mod tests {
 
     #[test]
     fn sm1i4_handle_sync_iabt_increments_per_core_vm_fault_count() {
+        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap();
         let before = crate::per_cpu_stats::vm_fault_count_for(0);
         let mut frame = zero_frame();
         frame.esr_el1 = ec::IABT_LOWER << 26;
@@ -800,6 +836,7 @@ mod tests {
 
     #[test]
     fn sm1i4_handle_sync_alignment_increments_per_core_user_exception_count() {
+        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap();
         let before = crate::per_cpu_stats::user_exception_count_for(0);
         let mut frame = zero_frame();
         frame.esr_el1 = ec::PC_ALIGN << 26;
@@ -815,6 +852,7 @@ mod tests {
 
     #[test]
     fn sm1i4_handle_sync_sp_alignment_increments_per_core_user_exception_count() {
+        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap();
         let before = crate::per_cpu_stats::user_exception_count_for(0);
         let mut frame = zero_frame();
         frame.esr_el1 = ec::SP_ALIGN << 26;
@@ -830,6 +868,7 @@ mod tests {
 
     #[test]
     fn sm1i4_handle_sync_unknown_ec_increments_per_core_user_exception_count() {
+        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap();
         let before = crate::per_cpu_stats::user_exception_count_for(0);
         let mut frame = zero_frame();
         // EC = 0x3F (RES1, not a valid known class) → unknown branch.
@@ -851,6 +890,12 @@ mod tests {
         //
         // We use the inner-form recorders' inverse property: an SVC
         // call must NOT increment vm_fault_count.
+        //
+        // Audit-pass-3 (per external audit H2): without the mutex this
+        // test races against `sm1i4_handle_sync_dabt_increments_...`
+        // and friends, producing a ~2% transient failure rate.
+        // The mutex ensures the `assert_eq!` snapshot pair is atomic.
+        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap();
         let vm_before = crate::per_cpu_stats::vm_fault_count_for(0);
         let mut frame = zero_frame();
         frame.esr_el1 = ec::SVC_AARCH64 << 26;

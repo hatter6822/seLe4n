@@ -724,12 +724,12 @@ scheduler integration:
   register semantics + kernel policy for SEV emission.  Plus
   new `cpu::sev()` / `cpu::sevl()` wrappers for testability.
 
-- **SM1.I.6**: 12 new cross-core test scenarios in
+- **SM1.I.6**: 8 new cross-core test scenarios in
   `smp::tests::sm1i6_*` exercising per-core stats no-aliasing,
   validator dispatch, init helper idempotence, CORE_READY
   monotonicity, SGI distribution, and full composition.
 
-Test coverage: 583 HAL tests (up from 510 at SM1.E/F/G/H close;
+Test coverage: 583 HAL tests at initial-landing snapshot (up from 510 at SM1.E/F/G/H close;
 +73 SM1.I tests).  Lean-side: 12 new surface anchors + runtime
 decidable examples in `tests/SmpFoundationsSuite.lean`.  Zero
 clippy warnings workspace-wide.  Full Tier 0+1+2+3 still green.

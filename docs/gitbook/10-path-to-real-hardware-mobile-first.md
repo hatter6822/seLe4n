@@ -193,13 +193,13 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
     semantics (ARM ARM B2.10 / C6.2.353 / C6.2.243 / C6.2.244)
     in `cpu.rs` module header.  Plus new `cpu::sev()` and
     `cpu::sevl()` wrappers for testability.
-  - **SM1.I.6** adds 12 cross-core test scenarios in
+  - **SM1.I.6** adds 8 cross-core test scenarios in
     `smp::tests::sm1i6_*` exercising the SM1.I infrastructure.
   - **Audit-pass-1** refinements: two pre-existing parallel-test
     races fixed (UART_LOCK observation via re-acquire pattern;
     TIMER_INTERVAL / TICK_COUNT via private `Mutex`); stress
     testing confirms failure rate drops from ~10–15% to 0%.
-  - **Test coverage**: 583 HAL tests (was 510 at SM1.E/F/G/H
+  - **Test coverage**: 583 HAL tests at initial-landing snapshot (was 510 at SM1.E/F/G/H
     close; +73 SM1.I tests).  Lean-side: +12 surface anchors +
     runtime decidable examples.  Zero clippy warnings
     workspace-wide.

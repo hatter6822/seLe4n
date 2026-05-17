@@ -1670,7 +1670,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
     testability (the production SEV emission still lives inline in
     `smp.rs::bring_up_secondaries_inner` to keep it co-located
     with the AN9-J.4.d broadcast point).
-  - **WS-SM SM1.I.6**: 12 new cross-core test scenarios in
+  - **WS-SM SM1.I.6**: 8 new cross-core test scenarios in
     `smp::tests::sm1i6_*` exercising the SM1.I infrastructure —
     per-core stats no-aliasing, validator per-core dispatch,
     init helper idempotence, CORE_READY monotonicity, SGI
@@ -1679,7 +1679,7 @@ documentation lives under `docs/` and `docs/gitbook/`.
     state and never depends on global mutable atomics that cargo's
     parallel test runner could race against.
 
-  **Test coverage**: 583 HAL tests (up from 510 at SM1.E/F/G/H
+  **Test coverage**: 583 HAL tests at initial-landing snapshot (up from 510 at SM1.E/F/G/H
   close — +73 SM1.I tests covering: 16 in `per_cpu_stats::tests`
   for the new module, 11 in `trap::tests` for SM1.I.1 +
   per-core-stats wiring, 8 in `cpu::tests` for SM1.I.3 + SM1.I.5
@@ -1760,10 +1760,35 @@ documentation lives under `docs/` and `docs/gitbook/`.
     SmpFoundationsSuite.
 
   **Test coverage after audit-pass-2**: 592 HAL tests (+9 from
-  audit-pass-1; total +82 over SM1.E/F/G/H baseline of 510).
+  audit-pass-1; total +82 over SM1.E/F/G/H baseline of 510)
+  + 1 ignored (`sm1g3_cross_core_kprintln_stress` placeholder).
   Zero clippy warnings workspace-wide.  Full Tier 0+1+2+3 still
   green.  Stress-tested 10/10 runs of the full Rust suite with
   `--features std`.
+
+  **Audit-pass-3 refinement** (post-audit-pass-2 external audit;
+  also in v0.31.8): closed one HIGH-severity test-race the
+  audit-pass-1 / pass-2 mutex fixes had missed.
+
+  - **HIGH (test reliability)**: the SM1.I.4 trap-handler tests
+    that observe `crate::per_cpu_stats::PER_CPU_STATS[0]`
+    counters were not serialised against each other under
+    cargo's parallel runner.  The
+    `sm1i4_per_core_counters_track_distinct_exception_branches`
+    test (which asserts `vm_after == vm_before` — strict
+    equality, no tolerance for parallel writers) had an observed
+    ~2% transient failure rate, surfacing whenever a sister test
+    (`sm1i4_handle_sync_dabt_*` / `sm1i4_handle_sync_iabt_*`)
+    incremented `vmfault_count` between the two snapshots.
+    Audit-pass-3 adds a private
+    `static SM1I4_OBSERVATION_MUTEX: std::sync::Mutex<()>` in the
+    trap-tests module and wraps all 7 SM1.I.4 trap-handler tests
+    that observe `PER_CPU_STATS[0]` via the mutex.  The 6 tests
+    using `after > before` don't strictly need it (they tolerate
+    parallel writers), but holding the mutex serialises them
+    against the `assert_eq!` test, ensuring all observations are
+    race-free.  Stress test post-fix: 50/50 runs pass (previously
+    ~1/50 transient failure).
 
   **Items deferred past v1.0.0 with correctness impact**: NONE.
 
