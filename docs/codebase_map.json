@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-codebase-memory-model-xxsh9",
-      "commit_sha": "4504406eb84f92c68b3a8c0da74b445eb58b9866",
-      "tree_sha": "40a3584cc1f7cd7b927dc4207cd633f42a553bfc",
-      "committed_at_utc": "2026-05-17T16:30:52+00:00"
+      "branch": "claude/review-ticketlock-tasks-2ca8a",
+      "commit_sha": "075902358c18684c377927571940c84b1839c8bc",
+      "tree_sha": "572c3c6bfdb161bb1ed1005b2bcb7449271bf503",
+      "committed_at_utc": "2026-05-17T13:14:08-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "f0925ec11146eed272da090e0a51c5f7ff6849f39e1d07b60bcc7651517a1907"
+    "source_digest": "fe25ed453d836692ea8ee3d485caeb97b2ae2cd90f4c4a24d27e8845ac70bcdf"
   },
   "summary": {
-    "module_count": 210,
-    "declaration_count": 6759
+    "module_count": 211,
+    "declaration_count": 6811
   },
   "readme_sync": {
     "version": "0.31.9",
     "lean_toolchain": "v4.28.0",
-    "production_files": 179,
-    "production_loc": 117102,
+    "production_files": 180,
+    "production_loc": 118583,
     "test_files": 31,
     "test_loc": 22633,
-    "proved_theorem_lemma_decls": 3410,
+    "proved_theorem_lemma_decls": 3446,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -14055,6 +14055,581 @@
       ]
     },
     {
+      "module": "SeLe4n.Kernel.Concurrency.Locks.TicketLock",
+      "path": "SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean",
+      "declaration_count": 52,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Concurrency",
+          "line": 81,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "TicketLockState",
+          "line": 111,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "TicketLockState.unheld",
+          "line": 131,
+          "called": [
+            "TicketLockState",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.unheld_nextTicket",
+          "line": 138,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.unheld_serving",
+          "line": 141,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.unheld_pending",
+          "line": 144,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.unheld_held",
+          "line": 147,
+          "called": [
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "TicketLockState.pendingInRange",
+          "line": 186,
+          "called": [
+            "TicketLockState",
+            "all"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "TicketLockState.heldCount",
+          "line": 192,
+          "called": [
+            "TicketLockState",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "TicketLockState.holderTicketIsServing",
+          "line": 199,
+          "called": [
+            "TicketLockState",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "TicketLockState.holderTicketDisjointFromPending",
+          "line": 207,
+          "called": [
+            "TicketLockState",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "TicketLockState.holderCoreDisjointFromPending",
+          "line": 215,
+          "called": [
+            "TicketLockState",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "TicketLockState.wf",
+          "line": 281,
+          "called": [
+            "TicketLockState",
+            "heldCount",
+            "holderCoreDisjointFromPending",
+            "holderTicketDisjointFromPending",
+            "holderTicketIsServing",
+            "length",
+            "pendingInRange"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.pendingInRange_iff",
+          "line": 309,
+          "called": [
+            "TicketLockState",
+            "TicketLockState.pendingInRange",
+            "pendingInRange"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.holderTicketIsServing_iff",
+          "line": 325,
+          "called": [
+            "TicketLockState",
+            "TicketLockState.holderTicketIsServing",
+            "holderTicketIsServing",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.holderTicketDisjointFromPending_iff",
+          "line": 342,
+          "called": [
+            "TicketLockState",
+            "TicketLockState.holderTicketDisjointFromPending",
+            "holderTicketDisjointFromPending",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.holderCoreDisjointFromPending_iff",
+          "line": 359,
+          "called": [
+            "TicketLockState",
+            "TicketLockState.holderCoreDisjointFromPending",
+            "holderCoreDisjointFromPending",
+            "none"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:392>",
+          "line": 392,
+          "called": [
+            "TicketLockState",
+            "TicketLockState.wf",
+            "wf"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.unheld_wf",
+          "line": 397,
+          "called": [
+            "TicketLockState.unheld",
+            "TicketLockState.wf",
+            "wf"
+          ]
+        },
+        {
+          "kind": "inductive",
+          "name": "TicketLockOp",
+          "line": 424,
+          "called": [
+            "CoreId",
+            "observeServing"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "TicketLockState.captureTicket",
+          "line": 449,
+          "called": [
+            "CoreId",
+            "TicketLockState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "TicketLockState.observeServing",
+          "line": 468,
+          "called": [
+            "TicketLockState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "TicketLockState.applyOp",
+          "line": 498,
+          "called": [
+            "TicketLockOp",
+            "TicketLockState",
+            "filter",
+            "none",
+            "observeServing"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "TicketLockState.promotePending",
+          "line": 542,
+          "called": [
+            "TicketLockState",
+            "filter",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "TicketLockState.releaseAndPromote",
+          "line": 557,
+          "called": [
+            "CoreId",
+            "TicketLockState",
+            "applyOp",
+            "promotePending"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.wf_servingLeNextTicket",
+          "line": 566,
+          "called": [
+            "TicketLockState",
+            "wf"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.wf_pendingInRange",
+          "line": 571,
+          "called": [
+            "TicketLockState",
+            "pendingInRange_iff",
+            "wf"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.wf_holderTicketIsServing",
+          "line": 577,
+          "called": [
+            "TicketLockState",
+            "holderTicketIsServing_iff",
+            "wf"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.wf_pendingTicketsNodup",
+          "line": 583,
+          "called": [
+            "TicketLockState",
+            "wf"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.wf_holderTicketNotInPending",
+          "line": 588,
+          "called": [
+            "TicketLockState",
+            "holderTicketDisjointFromPending_iff",
+            "wf"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.wf_pendingCoresNodup",
+          "line": 594,
+          "called": [
+            "TicketLockState",
+            "wf"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.wf_holderCoreNotInPending",
+          "line": 599,
+          "called": [
+            "TicketLockState",
+            "holderCoreDisjointFromPending_iff",
+            "wf"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.wf_countParity",
+          "line": 605,
+          "called": [
+            "TicketLockState",
+            "heldCount",
+            "length",
+            "wf"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.wf_serving_lt_nextTicket_of_held",
+          "line": 614,
+          "called": [
+            "TicketLockState",
+            "TicketLockState.heldCount",
+            "heldCount",
+            "none",
+            "wf",
+            "wf_countParity"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.wf_serving_lt_nextTicket_of_pending",
+          "line": 633,
+          "called": [
+            "TicketLockState",
+            "length",
+            "wf",
+            "wf_countParity"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ticketLock_mutex",
+          "line": 660,
+          "called": [
+            "CoreId",
+            "TicketLockState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ticketLock_observeServing_preserves_wf",
+          "line": 675,
+          "called": [
+            "CoreId",
+            "TicketLockState",
+            "TicketLockState.applyOp",
+            "applyOp",
+            "observeServing",
+            "wf"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.applyOp_release_cases",
+          "line": 684,
+          "called": [
+            "CoreId",
+            "TicketLockState",
+            "TicketLockState.applyOp",
+            "applyOp",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ticketLock_release_preserves_partial_wf",
+          "line": 737,
+          "called": [
+            "CoreId",
+            "TicketLockState",
+            "TicketLockState.holderCoreDisjointFromPending",
+            "TicketLockState.holderTicketDisjointFromPending",
+            "TicketLockState.holderTicketIsServing",
+            "applyOp",
+            "applyOp_release_cases",
+            "holderCoreDisjointFromPending",
+            "holderTicketDisjointFromPending",
+            "holderTicketIsServing",
+            "wf",
+            "wf_serving_lt_nextTicket_of_held"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.wf_pending_ticket_lt",
+          "line": 786,
+          "called": [
+            "CoreId",
+            "TicketLockState",
+            "wf",
+            "wf_pendingInRange"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.wf_pending_ticket_gt",
+          "line": 793,
+          "called": [
+            "CoreId",
+            "TicketLockState",
+            "wf",
+            "wf_pendingInRange"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "TicketLockState.wf_nextTicket_not_in_pending",
+          "line": 800,
+          "called": [
+            "TicketLockState",
+            "wf",
+            "wf_pending_ticket_lt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ticketLock_tryAcquire_preserves_wf",
+          "line": 830,
+          "called": [
+            "CoreId",
+            "TicketLockState",
+            "TicketLockState.applyOp",
+            "TicketLockState.heldCount",
+            "TicketLockState.holderCoreDisjointFromPending",
+            "TicketLockState.holderCoreDisjointFromPending_iff",
+            "TicketLockState.holderTicketDisjointFromPending",
+            "TicketLockState.holderTicketDisjointFromPending_iff",
+            "TicketLockState.holderTicketIsServing",
+            "TicketLockState.pendingInRange",
+            "TicketLockState.pendingInRange_iff",
+            "applyOp",
+            "heldCount",
+            "length",
+            "none",
+            "wf",
+            "wf_countParity",
+            "wf_holderCoreNotInPending",
+            "wf_holderTicketIsServing",
+            "wf_holderTicketNotInPending",
+            "wf_nextTicket_not_in_pending",
+            "wf_pendingCoresNodup",
+            "wf_pendingInRange",
+            "wf_pendingTicketsNodup",
+            "wf_serving_lt_nextTicket_of_held"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "nodup_snd_unique_entry",
+          "line": 996,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "nodup_fst_unique_entry",
+          "line": 1028,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "nodup_fst_filter_length",
+          "line": 1064,
+          "called": [
+            "CoreId",
+            "filter",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ticketLock_releaseAndPromote_preserves_wf",
+          "line": 1168,
+          "called": [
+            "CoreId",
+            "TicketLockState",
+            "TicketLockState.heldCount",
+            "TicketLockState.holderCoreDisjointFromPending",
+            "TicketLockState.holderCoreDisjointFromPending_iff",
+            "TicketLockState.holderTicketDisjointFromPending",
+            "TicketLockState.holderTicketDisjointFromPending_iff",
+            "TicketLockState.holderTicketIsServing",
+            "TicketLockState.pendingInRange",
+            "TicketLockState.pendingInRange_iff",
+            "TicketLockState.promotePending",
+            "TicketLockState.releaseAndPromote",
+            "applyOp_release_cases",
+            "filter",
+            "heldCount",
+            "length",
+            "nodup",
+            "nodup_fst_filter_length",
+            "nodup_snd_unique_entry",
+            "none",
+            "releaseAndPromote",
+            "wf",
+            "wf_countParity",
+            "wf_pendingCoresNodup",
+            "wf_pendingInRange",
+            "wf_pendingTicketsNodup",
+            "wf_pending_ticket_gt",
+            "wf_serving_lt_nextTicket_of_held"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ticketLock_applyOp_deterministic",
+          "line": 1404,
+          "called": [
+            "TicketLockOp",
+            "TicketLockState",
+            "applyOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ticketLock_promotePending_deterministic",
+          "line": 1417,
+          "called": [
+            "TicketLockState",
+            "promotePending"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ticketLock_wf_invariant",
+          "line": 1447,
+          "called": [
+            "TicketLockState",
+            "applyOp",
+            "observeServing",
+            "releaseAndPromote",
+            "ticketLock_observeServing_preserves_wf",
+            "ticketLock_releaseAndPromote_preserves_wf",
+            "ticketLock_tryAcquire_preserves_wf",
+            "wf"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ticketLock_acquire_preserves_wf",
+          "line": 1465,
+          "called": [
+            "CoreId",
+            "TicketLockState",
+            "applyOp",
+            "ticketLock_tryAcquire_preserves_wf",
+            "wf"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ticketLock_release_preserves_wf",
+          "line": 1476,
+          "called": [
+            "CoreId",
+            "TicketLockState",
+            "releaseAndPromote",
+            "ticketLock_releaseAndPromote_preserves_wf",
+            "wf"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Kernel.Concurrency.Locks",
       "path": "SeLe4n/Kernel/Concurrency/Locks.lean",
       "declaration_count": 10,
@@ -14070,7 +14645,8 @@
           "name": "BklState",
           "line": 54,
           "called": [
-            "CoreId"
+            "CoreId",
+            "unheld"
           ]
         },
         {
@@ -14107,7 +14683,8 @@
           "line": 86,
           "called": [
             "CoreId",
-            "bklHeldBy"
+            "bklHeldBy",
+            "unheld"
           ]
         },
         {
@@ -14134,7 +14711,8 @@
           "name": "bklRelease",
           "line": 99,
           "called": [
-            "BklState"
+            "BklState",
+            "unheld"
           ]
         },
         {
@@ -14142,7 +14720,8 @@
           "name": "bklRelease_unheld",
           "line": 102,
           "called": [
-            "bklRelease"
+            "bklRelease",
+            "unheld"
           ]
         }
       ]
@@ -86187,7 +86766,8 @@
           "line": 247,
           "called": [
             "bklHeldBy",
-            "bootCoreId"
+            "bootCoreId",
+            "unheld"
           ]
         },
         {
@@ -86518,7 +87098,8 @@
           "called": [
             "assertBool",
             "bklHeldBy",
-            "bootCoreId"
+            "bootCoreId",
+            "unheld"
           ]
         },
         {
@@ -86601,7 +87182,8 @@
             "bklAcquire",
             "bklHeldBy",
             "bklRelease",
-            "bootCoreId"
+            "bootCoreId",
+            "unheld"
           ]
         },
         {
