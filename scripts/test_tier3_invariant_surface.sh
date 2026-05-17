@@ -1355,6 +1355,13 @@ import SeLe4n.Kernel.Concurrency.MemoryModel
 #check @SeLe4n.Kernel.Concurrency.happens_before_partial_order
 #check @SeLe4n.Kernel.Concurrency.happens_before_strict_partial_order
 #check @SeLe4n.Kernel.Concurrency.happensBefore_no_cycle
+-- SM2.A helper lifters for SM2.B/SM2.C consumers
+#check @SeLe4n.Kernel.Concurrency.sequencedBefore_implies_happensBefore
+#check @SeLe4n.Kernel.Concurrency.synchronizesWith_implies_happensBefore
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace.wellFormed.nodup
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace.wellFormed.pairwise
+#check @SeLe4n.Kernel.Concurrency.happensBefore_eventPos_lt
+#check @SeLe4n.Kernel.Concurrency.happensBefore_endpoints_in_trace_with_pos
 EOF'
 
 finalize_report

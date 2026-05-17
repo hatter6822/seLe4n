@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-codebase-memory-model-xxsh9",
-      "commit_sha": "27e2a3bcba1ebd3c41db63e0628f67900e3fbc89",
-      "tree_sha": "06e7749494f5400d9e8871bcc1bd047da8de8a04",
-      "committed_at_utc": "2026-05-17T00:46:51-04:00"
+      "commit_sha": "3d881bc9c045d184a9d48df08c1b224c2fa3fedb",
+      "tree_sha": "54e4ddee9a3a60601f8d66fcc1c1df154e70ab7c",
+      "committed_at_utc": "2026-05-17T15:45:40+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "018da37bd2cdd1403d680210dc53a30d1ac285c084914e7b7016da1bbc81a028"
+    "source_digest": "bc737e6566e9dbd976fa34ea187a32e80cdcb234d391fb9fac444320da24b357"
   },
   "summary": {
     "module_count": 210,
-    "declaration_count": 6741
+    "declaration_count": 6755
   },
   "readme_sync": {
     "version": "0.32.0",
     "lean_toolchain": "v4.28.0",
     "production_files": 179,
-    "production_loc": 116936,
+    "production_loc": 117041,
     "test_files": 31,
-    "test_loc": 22416,
-    "proved_theorem_lemma_decls": 3402,
+    "test_loc": 22607,
+    "proved_theorem_lemma_decls": 3408,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -14150,7 +14150,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.MemoryModel",
       "path": "SeLe4n/Kernel/Concurrency/MemoryModel.lean",
-      "declaration_count": 43,
+      "declaration_count": 49,
       "declarations": [
         {
           "kind": "namespace",
@@ -14265,7 +14265,7 @@
         {
           "kind": "structure",
           "name": "MemoryEvent",
-          "line": 252,
+          "line": 254,
           "called": [
             "AtomicLocation",
             "CoreId",
@@ -14275,7 +14275,7 @@
         {
           "kind": "structure",
           "name": "MemoryTrace",
-          "line": 278,
+          "line": 282,
           "called": [
             "MemoryEvent"
           ]
@@ -14283,7 +14283,7 @@
         {
           "kind": "def",
           "name": "MemoryTrace.empty",
-          "line": 285,
+          "line": 289,
           "called": [
             "MemoryTrace"
           ]
@@ -14291,7 +14291,7 @@
         {
           "kind": "def",
           "name": "MemoryTrace.append",
-          "line": 293,
+          "line": 297,
           "called": [
             "MemoryEvent",
             "MemoryTrace"
@@ -14300,13 +14300,13 @@
         {
           "kind": "theorem",
           "name": "MemoryTrace.empty_events",
-          "line": 297,
+          "line": 301,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "MemoryTrace.append_events",
-          "line": 300,
+          "line": 304,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -14316,7 +14316,7 @@
         {
           "kind": "theorem",
           "name": "MemoryTrace.append_length",
-          "line": 304,
+          "line": 308,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -14328,15 +14328,15 @@
         {
           "kind": "def",
           "name": "MemoryTrace.wellFormed",
-          "line": 332,
+          "line": 353,
           "called": [
             "MemoryTrace"
           ]
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:347>",
-          "line": 347,
+          "name": "<anonymous:instance:368>",
+          "line": 368,
           "called": [
             "MemoryTrace",
             "MemoryTrace.wellFormed",
@@ -14346,7 +14346,7 @@
         {
           "kind": "theorem",
           "name": "MemoryTrace.empty_wellFormed",
-          "line": 353,
+          "line": 374,
           "called": [
             "MemoryTrace.empty",
             "wellFormed"
@@ -14355,7 +14355,7 @@
         {
           "kind": "theorem",
           "name": "pairwise_get_lt",
-          "line": 368,
+          "line": 389,
           "called": [
             "get",
             "length",
@@ -14365,7 +14365,7 @@
         {
           "kind": "def",
           "name": "MemoryTrace.eventPos",
-          "line": 410,
+          "line": 431,
           "called": [
             "MemoryEvent",
             "MemoryTrace"
@@ -14374,7 +14374,7 @@
         {
           "kind": "theorem",
           "name": "MemoryTrace.eventPos_lt_length",
-          "line": 415,
+          "line": 436,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -14385,7 +14385,7 @@
         {
           "kind": "theorem",
           "name": "MemoryTrace.eventPos_eq_length_of_not_mem",
-          "line": 422,
+          "line": 443,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -14396,7 +14396,7 @@
         {
           "kind": "theorem",
           "name": "MemoryTrace.eventPos_get_eq",
-          "line": 434,
+          "line": 455,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -14410,7 +14410,7 @@
         {
           "kind": "theorem",
           "name": "MemoryTrace.eventPos_inj",
-          "line": 454,
+          "line": 483,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -14424,7 +14424,7 @@
         {
           "kind": "def",
           "name": "synchronizesWith",
-          "line": 493,
+          "line": 522,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -14436,7 +14436,7 @@
         {
           "kind": "theorem",
           "name": "synchronizesWith_relaxed_load_rejected",
-          "line": 506,
+          "line": 535,
           "called": [
             "MemoryEvent",
             "MemoryOrder.isAcquire",
@@ -14448,7 +14448,7 @@
         {
           "kind": "theorem",
           "name": "synchronizesWith_relaxed_store_rejected",
-          "line": 516,
+          "line": 545,
           "called": [
             "MemoryEvent",
             "MemoryOrder.isRelease",
@@ -14460,7 +14460,7 @@
         {
           "kind": "def",
           "name": "sequencedBefore",
-          "line": 537,
+          "line": 566,
           "called": [
             "MemoryEvent",
             "MemoryTrace"
@@ -14469,7 +14469,7 @@
         {
           "kind": "inductive",
           "name": "happensBefore",
-          "line": 560,
+          "line": 589,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -14480,7 +14480,7 @@
         {
           "kind": "theorem",
           "name": "happensBefore_in_trace",
-          "line": 579,
+          "line": 608,
           "called": [
             "MemoryTrace",
             "happensBefore"
@@ -14489,7 +14489,7 @@
         {
           "kind": "theorem",
           "name": "happensBefore_strict_positional",
-          "line": 610,
+          "line": 639,
           "called": [
             "MemoryTrace",
             "eventPos",
@@ -14507,7 +14507,7 @@
         {
           "kind": "theorem",
           "name": "happensBefore_irreflexive",
-          "line": 653,
+          "line": 690,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -14519,7 +14519,7 @@
         {
           "kind": "theorem",
           "name": "happensBefore_transitive",
-          "line": 674,
+          "line": 711,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -14530,7 +14530,7 @@
         {
           "kind": "theorem",
           "name": "happensBefore_antisymmetric",
-          "line": 697,
+          "line": 734,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -14542,7 +14542,7 @@
         {
           "kind": "theorem",
           "name": "happens_before_partial_order",
-          "line": 721,
+          "line": 758,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -14556,7 +14556,7 @@
         {
           "kind": "theorem",
           "name": "happensBefore_no_cycle",
-          "line": 741,
+          "line": 778,
           "called": [
             "MemoryEvent",
             "MemoryTrace",
@@ -14568,13 +14568,80 @@
         {
           "kind": "theorem",
           "name": "happens_before_strict_partial_order",
-          "line": 750,
+          "line": 787,
           "called": [
             "MemoryTrace",
             "happensBefore",
             "happensBefore_irreflexive",
             "happensBefore_no_cycle",
             "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "sequencedBefore_implies_happensBefore",
+          "line": 811,
+          "called": [
+            "MemoryEvent",
+            "MemoryTrace",
+            "happensBefore",
+            "sequencedBefore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "synchronizesWith_implies_happensBefore",
+          "line": 822,
+          "called": [
+            "MemoryEvent",
+            "MemoryTrace",
+            "happensBefore",
+            "synchronizesWith"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "MemoryTrace.wellFormed.nodup",
+          "line": 832,
+          "called": [
+            "MemoryTrace",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "MemoryTrace.wellFormed.pairwise",
+          "line": 840,
+          "called": [
+            "MemoryTrace",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "happensBefore_eventPos_lt",
+          "line": 850,
+          "called": [
+            "MemoryEvent",
+            "MemoryTrace",
+            "eventPos",
+            "happensBefore",
+            "happensBefore_strict_positional",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "happensBefore_endpoints_in_trace_with_pos",
+          "line": 862,
+          "called": [
+            "MemoryEvent",
+            "MemoryTrace",
+            "eventPos",
+            "eventPos_lt_length",
+            "happensBefore",
+            "happensBefore_in_trace",
+            "length"
           ]
         }
       ]
@@ -79560,70 +79627,14 @@
     {
       "module": "tests.MemoryModelSuite",
       "path": "tests/MemoryModelSuite.lean",
-      "declaration_count": 42,
+      "declaration_count": 50,
       "declarations": [
-        {
-          "kind": "example",
-          "name": "<anonymous:example:139>",
-          "line": 139,
-          "called": [
-            "isAcquire"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:140>",
-          "line": 140,
-          "called": [
-            "isAcquire"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:141>",
-          "line": 141,
-          "called": [
-            "isAcquire"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:142>",
-          "line": 142,
-          "called": [
-            "isAcquire"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:143>",
-          "line": 143,
-          "called": [
-            "isAcquire"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:145>",
-          "line": 145,
-          "called": [
-            "isRelease"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:146>",
-          "line": 146,
-          "called": [
-            "isRelease"
-          ]
-        },
         {
           "kind": "example",
           "name": "<anonymous:example:147>",
           "line": 147,
           "called": [
-            "isRelease"
+            "isAcquire"
           ]
         },
         {
@@ -79631,7 +79642,7 @@
           "name": "<anonymous:example:148>",
           "line": 148,
           "called": [
-            "isRelease"
+            "isAcquire"
           ]
         },
         {
@@ -79639,7 +79650,23 @@
           "name": "<anonymous:example:149>",
           "line": 149,
           "called": [
-            "isRelease"
+            "isAcquire"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:150>",
+          "line": 150,
+          "called": [
+            "isAcquire"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:151>",
+          "line": 151,
+          "called": [
+            "isAcquire"
           ]
         },
         {
@@ -79647,7 +79674,7 @@
           "name": "<anonymous:example:153>",
           "line": 153,
           "called": [
-            "AtomicLocation.nextTicketOf"
+            "isRelease"
           ]
         },
         {
@@ -79655,7 +79682,7 @@
           "name": "<anonymous:example:154>",
           "line": 154,
           "called": [
-            "AtomicLocation.servingOf"
+            "isRelease"
           ]
         },
         {
@@ -79663,7 +79690,7 @@
           "name": "<anonymous:example:155>",
           "line": 155,
           "called": [
-            "AtomicLocation.nextTicketOf"
+            "isRelease"
           ]
         },
         {
@@ -79671,7 +79698,7 @@
           "name": "<anonymous:example:156>",
           "line": 156,
           "called": [
-            "AtomicLocation.servingOf"
+            "isRelease"
           ]
         },
         {
@@ -79679,17 +79706,15 @@
           "name": "<anonymous:example:157>",
           "line": 157,
           "called": [
-            "AtomicLocation.rwLockStateOf"
+            "isRelease"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:159>",
-          "line": 159,
+          "name": "<anonymous:example:161>",
+          "line": 161,
           "called": [
-            "AtomicLocation.nextTicketOf",
-            "AtomicLocation.servingOf",
-            "AtomicLocation.ticketLock_fields_distinct"
+            "AtomicLocation.nextTicketOf"
           ]
         },
         {
@@ -79697,23 +79722,41 @@
           "name": "<anonymous:example:162>",
           "line": 162,
           "called": [
-            "AtomicLocation.nextTicketOf",
-            "AtomicLocation.servingOf",
-            "AtomicLocation.ticketLock_fields_distinct"
+            "AtomicLocation.servingOf"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:163>",
+          "line": 163,
+          "called": [
+            "AtomicLocation.nextTicketOf"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:164>",
+          "line": 164,
+          "called": [
+            "AtomicLocation.servingOf"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:165>",
+          "line": 165,
+          "called": [
+            "AtomicLocation.rwLockStateOf"
           ]
         },
         {
           "kind": "example",
           "name": "<anonymous:example:167>",
           "line": 167,
-          "called": []
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:168>",
-          "line": 168,
           "called": [
-            "length"
+            "AtomicLocation.nextTicketOf",
+            "AtomicLocation.servingOf",
+            "AtomicLocation.ticketLock_fields_distinct"
           ]
         },
         {
@@ -79722,16 +79765,28 @@
           "line": 170,
           "called": [
             "AtomicLocation.nextTicketOf",
-            "MemoryEvent",
-            "append",
-            "bootCoreId",
-            "length"
+            "AtomicLocation.servingOf",
+            "AtomicLocation.ticketLock_fields_distinct"
           ]
         },
         {
           "kind": "example",
           "name": "<anonymous:example:175>",
           "line": 175,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:176>",
+          "line": 176,
+          "called": [
+            "length"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:178>",
+          "line": 178,
           "called": [
             "AtomicLocation.nextTicketOf",
             "MemoryEvent",
@@ -79742,28 +79797,28 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:185>",
-          "line": 185,
-          "called": [
-            "wellFormed"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:189>",
-          "line": 189,
+          "name": "<anonymous:example:183>",
+          "line": 183,
           "called": [
             "AtomicLocation.nextTicketOf",
             "MemoryEvent",
             "append",
             "bootCoreId",
+            "length"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:193>",
+          "line": 193,
+          "called": [
             "wellFormed"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:195>",
-          "line": 195,
+          "name": "<anonymous:example:197>",
+          "line": 197,
           "called": [
             "AtomicLocation.nextTicketOf",
             "MemoryEvent",
@@ -79786,11 +79841,10 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:212>",
-          "line": 212,
+          "name": "<anonymous:example:211>",
+          "line": 211,
           "called": [
             "AtomicLocation.nextTicketOf",
-            "CoreId",
             "MemoryEvent",
             "append",
             "bootCoreId",
@@ -79799,10 +79853,11 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:222>",
-          "line": 222,
+          "name": "<anonymous:example:220>",
+          "line": 220,
           "called": [
             "AtomicLocation.nextTicketOf",
+            "CoreId",
             "MemoryEvent",
             "append",
             "bootCoreId",
@@ -79818,31 +79873,19 @@
             "MemoryEvent",
             "append",
             "bootCoreId",
-            "eventPos"
+            "wellFormed"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:236>",
-          "line": 236,
+          "name": "<anonymous:example:242>",
+          "line": 242,
           "called": [
             "AtomicLocation.nextTicketOf",
             "MemoryEvent",
             "append",
             "bootCoreId",
-            "eventPos"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:244>",
-          "line": 244,
-          "called": [
-            "AtomicLocation.nextTicketOf",
-            "MemoryEvent",
-            "append",
-            "bootCoreId",
-            "eventPos"
+            "wellFormed"
           ]
         },
         {
@@ -79851,6 +79894,19 @@
           "line": 253,
           "called": [
             "AtomicLocation.nextTicketOf",
+            "AtomicLocation.servingOf",
+            "MemoryEvent",
+            "append",
+            "bootCoreId",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:266>",
+          "line": 266,
+          "called": [
+            "AtomicLocation.nextTicketOf",
             "MemoryEvent",
             "append",
             "bootCoreId",
@@ -79858,15 +79914,105 @@
           ]
         },
         {
+          "kind": "example",
+          "name": "<anonymous:example:272>",
+          "line": 272,
+          "called": [
+            "AtomicLocation.nextTicketOf",
+            "MemoryEvent",
+            "append",
+            "bootCoreId",
+            "eventPos"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:280>",
+          "line": 280,
+          "called": [
+            "AtomicLocation.nextTicketOf",
+            "MemoryEvent",
+            "append",
+            "bootCoreId",
+            "eventPos"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:289>",
+          "line": 289,
+          "called": [
+            "AtomicLocation.nextTicketOf",
+            "MemoryEvent",
+            "append",
+            "bootCoreId",
+            "eventPos"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:305>",
+          "line": 305,
+          "called": [
+            "AtomicLocation.servingOf",
+            "MemoryEvent",
+            "MemoryTrace",
+            "append",
+            "bootCoreId",
+            "synchronizesWith"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:321>",
+          "line": 321,
+          "called": [
+            "AtomicLocation.servingOf",
+            "MemoryEvent",
+            "MemoryTrace",
+            "append",
+            "bootCoreId",
+            "sequencedBefore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:336>",
+          "line": 336,
+          "called": [
+            "AtomicLocation.servingOf",
+            "MemoryEvent",
+            "MemoryTrace",
+            "append",
+            "bootCoreId",
+            "happensBefore",
+            "sequencedBefore_implies_happensBefore"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:350>",
+          "line": 350,
+          "called": [
+            "AtomicLocation.servingOf",
+            "MemoryEvent",
+            "MemoryTrace",
+            "append",
+            "bootCoreId",
+            "happensBefore",
+            "synchronizesWith_implies_happensBefore"
+          ]
+        },
+        {
           "kind": "namespace",
           "name": "SeLe4n.Testing.MemoryModelSuite",
-          "line": 265,
+          "line": 365,
           "called": []
         },
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 267,
+          "line": 367,
           "called": [
             "throw"
           ]
@@ -79874,7 +80020,7 @@
         {
           "kind": "def",
           "name": "runMemoryOrderChecks",
-          "line": 274,
+          "line": 374,
           "called": [
             "assertBool",
             "isAcquire",
@@ -79884,7 +80030,7 @@
         {
           "kind": "def",
           "name": "runAtomicLocationChecks",
-          "line": 297,
+          "line": 397,
           "called": [
             "AtomicLocation.nextTicketOf",
             "AtomicLocation.rwLockStateOf",
@@ -79895,7 +80041,7 @@
         {
           "kind": "def",
           "name": "runTraceShapeChecks",
-          "line": 313,
+          "line": 413,
           "called": [
             "AtomicLocation.nextTicketOf",
             "MemoryEvent",
@@ -79908,9 +80054,10 @@
         {
           "kind": "def",
           "name": "runWellFormedChecks",
-          "line": 326,
+          "line": 426,
           "called": [
             "AtomicLocation.nextTicketOf",
+            "AtomicLocation.servingOf",
             "MemoryEvent",
             "append",
             "assertBool",
@@ -79921,7 +80068,7 @@
         {
           "kind": "def",
           "name": "runCrossCoreWellFormedChecks",
-          "line": 368,
+          "line": 495,
           "called": [
             "AtomicLocation.nextTicketOf",
             "CoreId",
@@ -79935,7 +80082,7 @@
         {
           "kind": "def",
           "name": "runEventPosChecks",
-          "line": 384,
+          "line": 511,
           "called": [
             "AtomicLocation.nextTicketOf",
             "MemoryEvent",
@@ -79948,7 +80095,7 @@
         {
           "kind": "def",
           "name": "runPartialOrderShapeChecks",
-          "line": 415,
+          "line": 542,
           "called": [
             "AtomicLocation.nextTicketOf",
             "AtomicLocation.servingOf",
@@ -79962,14 +80109,46 @@
         },
         {
           "kind": "def",
+          "name": "runSynchronizesWithChecks",
+          "line": 570,
+          "called": [
+            "AtomicLocation.servingOf",
+            "MemoryEvent",
+            "MemoryTrace",
+            "append",
+            "assertBool",
+            "bootCoreId",
+            "eventPos",
+            "isAcquire",
+            "isRelease"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runSequencedBeforeChecks",
+          "line": 606,
+          "called": [
+            "AtomicLocation.servingOf",
+            "MemoryEvent",
+            "MemoryTrace",
+            "append",
+            "assertBool",
+            "bootCoreId",
+            "wellFormed"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runMemoryModelChecks",
-          "line": 443,
+          "line": 632,
           "called": [
             "runAtomicLocationChecks",
             "runCrossCoreWellFormedChecks",
             "runEventPosChecks",
             "runMemoryOrderChecks",
             "runPartialOrderShapeChecks",
+            "runSequencedBeforeChecks",
+            "runSynchronizesWithChecks",
             "runTraceShapeChecks",
             "runWellFormedChecks"
           ]
@@ -79977,7 +80156,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 458,
+          "line": 649,
           "called": [
             "runMemoryModelChecks"
           ]

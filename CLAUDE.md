@@ -1911,12 +1911,14 @@ documentation lives under `docs/` and `docs/gitbook/`.
     SM2.B / SM2.C release-acquire pairing.  Plus
     `happens_before_strict_partial_order` (kernel-convenient
     form) and `happensBefore_no_cycle` (smoke-test form).
-  - **SM2.A.12**: `tests/MemoryModelSuite.lean` (~460 LoC) —
-    56 surface-anchor `#check` lines covering every public
-    symbol, 31 decidable examples covering the data-type
-    constructors / `wellFormed` true and false cases / `eventPos`
-    behaviour / partial-order shape, and a runnable executable
-    (`lake exe memory_model_suite`) with 34 runtime assertions
+  - **SM2.A.12**: `tests/MemoryModelSuite.lean` (~650 LoC) —
+    62 surface-anchor `#check` lines covering every public
+    symbol, 37 decidable examples covering the data-type
+    constructors / `wellFormed` true and false cases / RMW
+    positive cases / `eventPos` behaviour / partial-order shape /
+    constructive `synchronizesWith` and `sequencedBefore`
+    witnesses / helper-theorem lifts, and a runnable executable
+    (`lake exe memory_model_suite`) with 50 runtime assertions
     via `assertBool`.  Wired into Tier 2 (negative) and Tier 3
     (invariant surface) per `scripts/test_tier2_negative.sh` and
     `scripts/test_tier3_invariant_surface.sh`.
@@ -1941,21 +1943,51 @@ documentation lives under `docs/` and `docs/gitbook/`.
   - The `eventPos_inj` proof uses `Fin.eq_of_val_eq` +
     `congrArg t.events.get` to avoid the "motive is not type
     correct" failure that a direct `rw` on the dependent Fin
-    index would hit.
+    index would hit.  The Nodup hypothesis is *not* required —
+    `eventPos` is a function (returning the FIRST occurrence
+    via `idxOf`), so equal positions yield equal events under
+    any list shape.
   - No `Classical.choose`, no `noncomputable`: `eventPos` uses
     the computable `List.idxOf` (Nat-valued, with sentinel
     `l.length` for out-of-list events).
+
+  **RMW design decision (audit-pass refinement)**: the
+  per-core seqNum monotonicity in `wellFormed` uses non-strict
+  `≤` (not strict `<`).  This deviates from the literal plan
+  pseudocode (which uses `<`) but is required to model ARMv8.1-A
+  LSE atomic Read-Modify-Write operations (`LDADDA`, `STADDL`,
+  `CASAL`, …) per the plan's own §3.1.3 commentary: RMW ops are
+  modelled as TWO events sharing one `seqNum` (load + store).
+  A strict `<` would reject all RMW traces, blocking SM2.B's
+  `next_ticket.fetch_add(1, Acquire)` proofs.  The non-strict
+  `≤` allows RMW pairs at one atomic op while still preventing
+  seqNum decrease within a core.  Strict ordering for
+  happens-before is recovered by the strict `<` in
+  `sequencedBefore` plus the `Nodup` clause.  Trade-off
+  documented in the `wellFormed` docstring.
+
+  **Helper theorems for SM2.B/SM2.C consumers**: in addition to
+  the four canonical partial-order witnesses, the module
+  exports six convenience lifters: `sequencedBefore_implies_
+  happensBefore`, `synchronizesWith_implies_happensBefore`,
+  `MemoryTrace.wellFormed.nodup`, `MemoryTrace.wellFormed.
+  pairwise`, `happensBefore_eventPos_lt`, and
+  `happensBefore_endpoints_in_trace_with_pos`.  These reduce
+  the tactic burden on SM2.B (TicketLock) and SM2.C (RwLock)
+  release-acquire pairing proofs.
 
   **Axiom budget for SM2.A**: 0 Lean axioms, 0 sorries.  All
   ARMv8.1-A LSE semantics enter operationally as constraints on
   the trace shape; no `axiom` or `sorry` declarations.
 
-  **Test coverage**: 34 new runtime assertions in
+  **Test coverage**: 50 new runtime assertions in
   `tests/MemoryModelSuite.lean` (full Tier 2 negative pass: every
-  `decide` example also runs at runtime); 41 new tier-3 surface
-  anchors in `scripts/test_tier3_invariant_surface.sh`; existing
-  592 HAL tests still pass; existing `smp_foundations_suite`
-  still passes.  Full Tier 0+1+2+3 smoke test green.
+  `decide` example also runs at runtime); 47 new tier-3 surface
+  anchors in `scripts/test_tier3_invariant_surface.sh` (covers
+  the four canonical theorems + six helper lifters + all data-
+  type and `eventPos` surfaces); existing 592 HAL tests still
+  pass; existing `smp_foundations_suite` still passes.  Full
+  Tier 0+1+2+3 smoke test green.
 
   **Items deferred past v1.0.0 with correctness impact**: NONE.
 

@@ -243,9 +243,11 @@ events in a well-formed trace.  Fields:
   the release-store / acquire-load pair (the acquire side observes
   the released value).
 * `seqNum` — per-core sequencing number.  Same-core events with
-  smaller `seqNum` happen-before same-core events with larger
-  `seqNum` (this is the `sequencedBefore` relation).  Each core
-  emits a monotonically increasing sequence.
+  strictly smaller `seqNum` happen-before same-core events with
+  larger `seqNum` (this is the `sequencedBefore` relation).  Each
+  core emits a monotonically non-decreasing sequence (equal seqNums
+  allowed for RMW load + store pairs at one atomic op; strict
+  inequality required for `sequencedBefore` to fire).
 
 `DecidableEq` is derived (all fields have `DecidableEq`) so events
 can be compared at decide-time and traces can carry `Nodup`. -/
@@ -260,8 +262,10 @@ structure MemoryEvent where
   order   : MemoryOrder
   /-- Written value (stores) or observed value (loads). -/
   value   : Nat
-  /-- Per-core sequencing number.  Strictly monotonic within a
-  single core; not comparable across cores. -/
+  /-- Per-core sequencing number.  Non-strictly monotonic within a
+  single core (allows RMW load + store at the same `seqNum`); not
+  comparable across cores.  Strict-`<` ordering between distinct
+  ops is implied by the `sequencedBefore` relation. -/
   seqNum  : Nat
   deriving DecidableEq, Repr, Inhabited
 
@@ -318,13 +322,30 @@ A trace is well-formed iff:
    case and lets every event have a unique position.
 2. **Per-core seqNum monotonicity** (`Pairwise`).  For any two
    events `e₁`, `e₂` that share a core, if `e₁` appears earlier in
-   the trace than `e₂`, then `e₁.seqNum < e₂.seqNum`.  Encodes
+   the trace than `e₂`, then `e₁.seqNum ≤ e₂.seqNum`.  Encodes
    ARM ARM K11.2's per-PE program order.
 
 The two clauses together imply that within a single core's view of
 the trace (the filtered subsequence of same-core events), the
-seqNums are strictly increasing — which in turn is the foundation
-of the happens-before partial order's irreflexivity.
+seqNums are monotonic non-decreasing — which in turn is the
+foundation of the happens-before partial order's irreflexivity (the
+strict `<` in `sequencedBefore` handles the strictness side).
+
+**Why `≤` (non-strict) and not `<` (strict)?**  ARMv8.1-A LSE atomic
+Read-Modify-Write operations (`LDADDA`, `STADDL`, `CASAL`, …) are
+modelled at the trace level as TWO events sharing one `seqNum`: a
+load with the pre-value and a store with the post-value.  Both
+events occur atomically on the same core, so the per-core trace
+necessarily contains pairs `(e_load, e_store)` with
+`e_load.seqNum = e_store.seqNum`.  A strict `<` would reject all
+RMW traces — including `TicketLock.acquire`'s
+`next_ticket.fetch_add(1, Acquire)` — which would block SM2.B's
+proofs.  The non-strict `≤` allows RMW pairs while still preventing
+seqNum DECREASE within a core (the property that drives the
+happens-before partial order).  The strict ordering for non-RMW
+event pairs is recovered by the per-event `Nodup` clause plus the
+strict `<` in `sequencedBefore` (which gates happens-before edges
+to genuinely distinct seqNums).
 
 `Pairwise` formulation: `List.Pairwise R l` holds iff for every
 pair of elements `(x, y)` with `x` appearing strictly before `y`
@@ -332,7 +353,7 @@ in `l`, `R x y` holds.  Decidable when `R` is decidable. -/
 def MemoryTrace.wellFormed (t : MemoryTrace) : Prop :=
   t.events.Nodup ∧
   List.Pairwise
-    (fun e₁ e₂ => e₁.core = e₂.core → e₁.seqNum < e₂.seqNum)
+    (fun e₁ e₂ => e₁.core = e₂.core → e₁.seqNum ≤ e₂.seqNum)
     t.events
 
 /-- **WS-SM SM2.A.5**: `wellFormed` is decidable.
@@ -444,14 +465,22 @@ theorem MemoryTrace.eventPos_get_eq {t : MemoryTrace} {e : MemoryEvent}
     exact List.findIdx_getElem (w := h_lt)
   exact LawfulBEq.eq_of_beq h_pred
 
-/-- Foundational property: `eventPos` is injective on in-trace events
-under `Nodup`.
+/-- Foundational property: `eventPos` is injective on in-trace events.
 
 Two in-trace events at the same position must be equal; equivalently,
 two distinct in-trace events have distinct positions.  This is the
 "position uniqueness" property that drives the irreflexivity of
-`happensBefore` (an event cannot precede itself). -/
-theorem MemoryTrace.eventPos_inj {t : MemoryTrace} (_h_nodup : t.events.Nodup)
+`happensBefore` (an event cannot precede itself).
+
+**Note on the Nodup hypothesis**: the lemma deliberately does NOT
+take a `Nodup` premise.  The proof relies only on `eventPos` being
+a *function* (`idxOf` returns the index of the FIRST occurrence) —
+so two events whose first occurrences are at the same index must be
+equal, because each index in the list refers to a single element.
+The Nodup property is a stronger consequence carried by
+`MemoryTrace.wellFormed`, but the position-uniqueness of `eventPos`
+holds for any list. -/
+theorem MemoryTrace.eventPos_inj {t : MemoryTrace}
     {e₁ e₂ : MemoryEvent} (h₁ : e₁ ∈ t.events) (h₂ : e₂ ∈ t.events)
     (h_eq : t.eventPos e₁ = t.eventPos e₂) : e₁ = e₂ := by
   -- Both events appear at their canonical positions.
@@ -615,7 +644,7 @@ theorem happensBefore_strict_positional {t : MemoryTrace}
   | @seq a b sb =>
       obtain ⟨ha, hb, hcore, hseq⟩ := sb
       have h_pairwise : List.Pairwise
-          (fun e₁ e₂ => e₁.core = e₂.core → e₁.seqNum < e₂.seqNum)
+          (fun e₁ e₂ => e₁.core = e₂.core → e₁.seqNum ≤ e₂.seqNum)
           t.events := h_wf.2
       have h_pa_lt : t.eventPos a < t.events.length := t.eventPos_lt_length ha
       have h_pb_lt : t.eventPos b < t.events.length := t.eventPos_lt_length hb
@@ -625,17 +654,25 @@ theorem happensBefore_strict_positional {t : MemoryTrace}
         t.eventPos_get_eq hb
       rcases Nat.lt_trichotomy (t.eventPos a) (t.eventPos b) with hlt | heq | hgt
       · exact hlt
-      · -- positions equal → a = b (by eventPos_inj), but seqNum < contradicts
-        have h_ab : a = b := t.eventPos_inj h_wf.1 ha hb heq
+      · -- positions equal → a = b (by eventPos_inj); but the strict
+        -- `hseq : a.seqNum < b.seqNum` then becomes `a.seqNum < a.seqNum`.
+        have h_ab : a = b := t.eventPos_inj ha hb heq
         rw [h_ab] at hseq
         exact absurd hseq (Nat.lt_irrefl _)
-      · -- p_b < p_a: apply Pairwise to get b.core = a.core → b.seqNum < a.seqNum
+      · -- p_b < p_a: applying the Pairwise relation at the swapped
+        -- positions (p_b earlier, p_a later) gives the non-strict
+        -- ordering `b.seqNum ≤ a.seqNum`.  Combined with the strict
+        -- `hseq : a.seqNum < b.seqNum`, transitivity yields
+        -- `a.seqNum < a.seqNum`, contradiction.
         have h_rel := pairwise_get_lt h_pairwise h_pb_lt h_pa_lt hgt
         rw [h_get_a, h_get_b] at h_rel
-        have h_lt_sym : b.seqNum < a.seqNum := h_rel hcore.symm
-        exact absurd (Nat.lt_trans hseq h_lt_sym) (Nat.lt_irrefl _)
-  | @sync r a sw =>
-      exact sw.2.2.2.2.2.2.2.2
+        have h_le_sym : b.seqNum ≤ a.seqNum := h_rel hcore.symm
+        exact absurd (Nat.lt_of_lt_of_le hseq h_le_sym) (Nat.lt_irrefl _)
+  | @sync _ _ sw =>
+      -- Destructure synchronizesWith to extract the positional clause
+      -- by name rather than the fragile `.2.2.2.2.2.2.2.2` chain.
+      obtain ⟨_, _, _, _, _, _, _, _, h_pos⟩ := sw
+      exact h_pos
   | @trans _ _ _ _ _ ih₁ ih₂ =>
       exact Nat.lt_trans ih₁ ih₂
 
@@ -760,5 +797,73 @@ theorem happens_before_strict_partial_order
   · intro e; exact happensBefore_irreflexive h_wf e
   · intro _ _ _ h₁ h₂; exact happensBefore.trans h₁ h₂
   · intro _ _ h₁ h₂; exact happensBefore_no_cycle h_wf h₁ h₂
+
+-- ============================================================================
+-- Convenience lifters for downstream SM2.B / SM2.C consumers
+-- ============================================================================
+
+/-- Surface anchor: any sequenced-before edge lifts to a happens-before
+edge.  The companion to `.seq` in a tactic-friendly form (the
+`.seq` constructor is also accessible directly).
+
+Useful for SM2.B/C proofs that need to show "two same-core events
+on the same core are happens-before related". -/
+theorem sequencedBefore_implies_happensBefore (t : MemoryTrace)
+    {e₁ e₂ : MemoryEvent} (h : sequencedBefore t e₁ e₂) :
+    happensBefore t e₁ e₂ :=
+  happensBefore.seq h
+
+/-- Surface anchor: any synchronizes-with edge lifts to a
+happens-before edge.  The companion to `.sync` in a tactic-friendly
+form.
+
+Useful for SM2.B/C release-acquire pairing proofs that need to
+invoke happens-before from a constructed sync edge. -/
+theorem synchronizesWith_implies_happensBefore (t : MemoryTrace)
+    {e_R e_A : MemoryEvent} (h : synchronizesWith t e_R e_A) :
+    happensBefore t e_R e_A :=
+  happensBefore.sync h
+
+/-- Surface anchor: `wellFormed` extracts to its `Nodup` clause.
+
+Useful for SM2.B/C proofs that need the trace's Nodup property
+explicitly (e.g., when reasoning about event uniqueness in a
+lock-state operational step). -/
+theorem MemoryTrace.wellFormed.nodup {t : MemoryTrace}
+    (h_wf : t.wellFormed) : t.events.Nodup := h_wf.1
+
+/-- Surface anchor: `wellFormed` extracts to its `Pairwise` monotonicity
+clause.
+
+Useful for SM2.B/C proofs that need to invoke per-core seqNum
+monotonicity directly. -/
+theorem MemoryTrace.wellFormed.pairwise {t : MemoryTrace}
+    (h_wf : t.wellFormed) :
+    List.Pairwise
+      (fun e₁ e₂ => e₁.core = e₂.core → e₁.seqNum ≤ e₂.seqNum)
+      t.events := h_wf.2
+
+/-- Surface anchor: positional ordering between two `happensBefore`-
+related events strictly increases.  Convenience form of
+`happensBefore_strict_positional` for downstream consumers that
+prefer the named theorem over the inductive proof. -/
+theorem happensBefore_eventPos_lt {t : MemoryTrace} (h_wf : t.wellFormed)
+    {e₁ e₂ : MemoryEvent} (h : happensBefore t e₁ e₂) :
+    t.eventPos e₁ < t.eventPos e₂ :=
+  happensBefore_strict_positional h_wf h
+
+/-- Surface anchor: positional ordering implies trace membership
+through `happensBefore_in_trace` plus `eventPos_lt_length`.
+Convenience form for SM2.B/C proofs that need both facts at once.
+
+The `wellFormed` hypothesis is NOT required for the trace-membership
+plus length-bound facts (those follow purely from the
+`happensBefore` inductive shape), so the signature omits it. -/
+theorem happensBefore_endpoints_in_trace_with_pos {t : MemoryTrace}
+    {e₁ e₂ : MemoryEvent} (h : happensBefore t e₁ e₂) :
+    e₁ ∈ t.events ∧ e₂ ∈ t.events ∧
+    t.eventPos e₁ < t.events.length ∧ t.eventPos e₂ < t.events.length := by
+  obtain ⟨h₁, h₂⟩ := happensBefore_in_trace t h
+  exact ⟨h₁, h₂, t.eventPos_lt_length h₁, t.eventPos_lt_length h₂⟩
 
 end SeLe4n.Kernel.Concurrency

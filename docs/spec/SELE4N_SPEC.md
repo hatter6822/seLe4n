@@ -682,13 +682,32 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      `happens_before_strict_partial_order` (kernel-convenient
      form) and `happensBefore_no_cycle` (smoke-test form).
 
-   **`tests/MemoryModelSuite.lean`** (NEW, ~460 LoC): 56
-   surface anchors + 31 decidable examples + 34 runtime
+   **`tests/MemoryModelSuite.lean`** (NEW, ~650 LoC): 62
+   surface anchors + 37 decidable examples + 50 runtime
    assertions via `lake exe memory_model_suite`, wired into
    Tier 2 (negative) and Tier 3 (invariant surface).  Module
    reachability: staged via `SeLe4n/Platform/Staged.lean`
    (allowlist entry per WS-RC R12.B partition gate); SM2.B
    (TicketLock) is the first runtime exerciser.
+
+   **Audit-pass refinements** (included in v0.32.0):
+
+   - Non-strict `≤` per-core seqNum monotonicity in `wellFormed`
+     (not strict `<` as in the plan pseudocode) to support
+     ARMv8.1-A LSE atomic RMW operations.  The plan §3.1.3
+     commentary explicitly says RMW ops are modelled as two
+     events sharing one `seqNum`; strict `<` would reject all
+     RMW traces (including `TicketLock.acquire`'s `next_ticket
+     .fetch_add(1, Acquire)`).  Strict ordering for
+     `happensBefore.seq` is preserved by the strict `<` in
+     `sequencedBefore`, so the partial-order theorems are
+     unchanged.
+   - Six helper-theorem lifters added for SM2.B/SM2.C consumers:
+     `sequencedBefore_implies_happensBefore`,
+     `synchronizesWith_implies_happensBefore`,
+     `MemoryTrace.wellFormed.nodup`, `MemoryTrace.wellFormed.pairwise`,
+     `happensBefore_eventPos_lt`,
+     `happensBefore_endpoints_in_trace_with_pos`.
 
    **Axiom budget for SM2.A**: 0 Lean axioms, 0 sorries.  All
    ARMv8.1-A LSE semantics enter operationally as constraints

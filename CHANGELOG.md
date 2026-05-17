@@ -7,6 +7,15 @@ landed in one cut, providing the operational ARMv8.1-A LSE memory
 model that SM2.B (TicketLock) and SM2.C (RwLock) release-acquire
 pairing proofs consume.
 
+**Audit-pass refinements** (included in v0.32.0): the per-core
+seqNum monotonicity in `wellFormed` uses non-strict `≤` (not
+strict `<` as in the plan pseudocode) to support ARMv8.1-A LSE
+atomic Read-Modify-Write operations (see SM2.A.5 below).  Six
+helper-theorem lifters added for SM2.B/SM2.C consumers.  Unused
+`Nodup` hypothesis removed from `eventPos_inj`.  Fragile
+projection chain replaced with destructuring in the
+`happensBefore_strict_positional` sync case.
+
 **Twelve sub-tasks**
 
 ### SM2.A.1 — `MemoryOrder` inductive
@@ -58,12 +67,25 @@ length by 1).
 
 1. `t.events.Nodup` (events appear at most once).
 2. `List.Pairwise (fun e₁ e₂ => e₁.core = e₂.core → e₁.seqNum
-    < e₂.seqNum) t.events` (per-core seqNum monotonicity).
+    ≤ e₂.seqNum) t.events` (per-core seqNum monotonicity, non-
+    strict to allow RMW pairs at the same seqNum).
 
 Auto-derived `Decidable` instance via the decidability of `Nodup`
 (under `DecidableEq`) and `Pairwise` (under decidable
 relation).  `empty_wellFormed` is the vacuously-true witness for
 the empty trace.
+
+**Note on non-strict `≤`**: ARMv8.1-A LSE atomic Read-Modify-
+Write operations (`LDADDA`, `STADDL`, `CASAL`, …) are modelled
+per the plan §3.1.3 commentary as TWO events with one shared
+`seqNum`: a load with the pre-value and a store with the post-
+value.  A strict `<` would reject all RMW traces — including
+`TicketLock.acquire`'s `next_ticket.fetch_add(1, Acquire)` —
+which would block SM2.B's proofs.  The non-strict `≤` allows
+RMW pairs while still preventing per-core seqNum DECREASE.  The
+strict ordering for `sequencedBefore` (and therefore `happensBefore.seq`
+edges) is preserved by the strict `<` in `sequencedBefore`
+itself, so the partial-order theorems are unchanged.
 
 `MemoryTrace.eventPos t e := t.events.idxOf e` gives the
 canonical position (with sentinel `t.events.length` for events
@@ -135,20 +157,41 @@ pairing.  Plus `happens_before_strict_partial_order`
 
 ### SM2.A.12 — `tests/MemoryModelSuite.lean`
 
-NEW FILE.  ~430 LoC carrying:
+NEW FILE.  ~650 LoC carrying:
 
-- 56 surface anchors (`#check` lines covering every public
-  symbol).
-- 31 decidable examples (`example : ... := by decide` / `rfl`)
+- 62 surface anchors (`#check` lines covering every public
+  symbol, including the six helper-theorem lifters).
+- 37 decidable examples (`example : ... := by decide` / `rfl`)
   exercising the data-type constructors, `wellFormed` true and
-  false cases, `eventPos` behaviour, partial-order shape.
-- Runnable executable `lake exe memory_model_suite` with 34
+  false cases, RMW positive cases (load + store at same seqNum),
+  `eventPos` behaviour, partial-order shape, and constructive
+  `synchronizesWith` / `sequencedBefore` witnesses.
+- Runnable executable `lake exe memory_model_suite` with 50
   runtime assertions via an `assertBool` helper that prints PASS
   / FAIL.
 
 Wired into Tier 2 (negative) via `scripts/test_tier2_negative.sh`
 and Tier 3 (invariant surface) via
 `scripts/test_tier3_invariant_surface.sh`.
+
+### Helper theorems for SM2.B / SM2.C consumers (audit-pass refinement)
+
+In addition to the four canonical partial-order witnesses, the
+module exports six convenience lifters that simplify downstream
+SM2.B (TicketLock) and SM2.C (RwLock) proofs:
+
+- `sequencedBefore_implies_happensBefore`: lifts a `sequencedBefore`
+  witness to `happensBefore` (the companion to `.seq` ctor).
+- `synchronizesWith_implies_happensBefore`: lifts a `synchronizesWith`
+  witness to `happensBefore` (the companion to `.sync` ctor).
+- `MemoryTrace.wellFormed.nodup`: extracts the Nodup component.
+- `MemoryTrace.wellFormed.pairwise`: extracts the Pairwise component.
+- `happensBefore_eventPos_lt`: convenience form of
+  `happensBefore_strict_positional` for callers preferring the
+  named theorem.
+- `happensBefore_endpoints_in_trace_with_pos`: combines
+  `happensBefore_in_trace` and `eventPos_lt_length` into one
+  4-conjunct witness.
 
 **File**: `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~700
 LoC).  Staged via `SeLe4n/Platform/Staged.lean` (entry added to
@@ -164,11 +207,21 @@ exerciser.
   direct induction on `Pairwise` (~30 LoC).
 - The strict-positional invariant uses `Nat.lt_trichotomy` on
   positions in the seq case to discharge the wellFormed
-  monotonicity against the sequenced-before hypothesis.
+  monotonicity against the sequenced-before hypothesis.  Under
+  the non-strict `≤` formulation, the trichotomy contradiction
+  uses `Nat.lt_of_lt_of_le` (combining the strict `hseq` with
+  the non-strict Pairwise relation).
 - The `eventPos_inj` proof uses `Fin.eq_of_val_eq` +
   `congrArg t.events.get` to avoid the "motive is not type
   correct" failure that a direct `rw` on the dependent Fin
-  index would hit.
+  index would hit.  The Nodup hypothesis is *not* required —
+  `eventPos` is a function (returning the FIRST occurrence
+  via `idxOf`), so equal positions yield equal events under
+  any list shape.
+- The `happensBefore_strict_positional` sync case uses an
+  explicit `obtain` destructuring on the 9-conjunct
+  `synchronizesWith` (rather than a fragile `.2.2.2.2.2.2.2.2`
+  projection chain) — robust against future re-orderings.
 - No `Classical.choose`, no `noncomputable`: `eventPos` uses the
   computable `List.idxOf` (Nat-valued, with sentinel
   `l.length` for out-of-list events).
@@ -177,11 +230,12 @@ exerciser.
 ARMv8.1-A LSE semantics enter operationally as constraints on
 the trace shape; no `axiom` or `sorry` declarations.
 
-**Test coverage**: 34 new runtime assertions in
-`tests/MemoryModelSuite.lean`; 41 new tier-3 surface anchors in
-`scripts/test_tier3_invariant_surface.sh`; existing 592 HAL
-tests + `smp_foundations_suite` still pass.  Full Tier 0+1+2+3
-smoke test green.
+**Test coverage**: 50 new runtime assertions in
+`tests/MemoryModelSuite.lean`; 47 new tier-3 surface anchors in
+`scripts/test_tier3_invariant_surface.sh` (covers the four
+canonical theorems + six helper lifters + all data-type and
+`eventPos` surfaces); existing 592 HAL tests + `smp_foundations_
+suite` still pass.  Full Tier 0+1+2+3 smoke test green.
 
 **Items deferred past v1.0.0 with correctness impact**: NONE.
 

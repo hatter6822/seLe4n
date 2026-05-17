@@ -130,6 +130,14 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.Concurrency.happens_before_strict_partial_order
 #check @SeLe4n.Kernel.Concurrency.happensBefore_no_cycle
 
+/-! ## Helper-theorem surface anchors for SM2.B / SM2.C consumers -/
+#check @SeLe4n.Kernel.Concurrency.sequencedBefore_implies_happensBefore
+#check @SeLe4n.Kernel.Concurrency.synchronizesWith_implies_happensBefore
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace.wellFormed.nodup
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace.wellFormed.pairwise
+#check @SeLe4n.Kernel.Concurrency.happensBefore_eventPos_lt
+#check @SeLe4n.Kernel.Concurrency.happensBefore_endpoints_in_trace_with_pos
+
 -- ============================================================================
 -- §2 — Decidable examples: behavioural pinning for every constructor
 -- ============================================================================
@@ -224,6 +232,34 @@ example :
       ⟨bootCoreId, AtomicLocation.nextTicketOf 0, true, .release, 1, 0⟩
     ¬ ((MemoryTrace.empty.append e).append e).wellFormed := by decide
 
+/-- **RMW pair**: two events on the same core at the SAME seqNum
+(a load and a store, modelling `fetch_add(1, Acquire)`) are
+well-formed under the non-strict `≤` Pairwise relation.
+
+This is the central design property that makes SM2.B / SM2.C
+proofs about LSE atomic RMW operations possible.  Under the
+strict `<` formulation, this trace would have been REJECTED. -/
+example :
+    let e_load : MemoryEvent :=
+      ⟨bootCoreId, AtomicLocation.nextTicketOf 0, false, .acqRel, 0, 7⟩
+    let e_store : MemoryEvent :=
+      ⟨bootCoreId, AtomicLocation.nextTicketOf 0, true, .acqRel, 1, 7⟩
+    ((MemoryTrace.empty.append e_load).append e_store).wellFormed := by decide
+
+/-- An RMW pair followed by a subsequent op with strictly greater
+seqNum is also well-formed.  This is the typical TicketLock pattern:
+RMW (fetch_add load + store at seqNum N), then a serving load at
+seqNum N+1. -/
+example :
+    let e_load : MemoryEvent :=
+      ⟨bootCoreId, AtomicLocation.nextTicketOf 0, false, .acqRel, 0, 7⟩
+    let e_store : MemoryEvent :=
+      ⟨bootCoreId, AtomicLocation.nextTicketOf 0, true, .acqRel, 1, 7⟩
+    let e_serv : MemoryEvent :=
+      ⟨bootCoreId, AtomicLocation.servingOf 0, false, .acquire, 1, 8⟩
+    (((MemoryTrace.empty.append e_load).append e_store).append e_serv).wellFormed :=
+  by decide
+
 /-! ## §2.5 — eventPos behavioural witnesses -/
 
 /-- Position of a single appended event in the resulting trace is 0. -/
@@ -257,6 +293,70 @@ example :
       ⟨bootCoreId, AtomicLocation.nextTicketOf 0, false, .acquire, 1, 1⟩
     let t := (MemoryTrace.empty.append e₁).append e₂
     t.eventPos e₁ < t.eventPos e₂ := by decide
+
+/-! ## §2.7 — Constructive `synchronizesWith` witness (positive case) -/
+
+/-- A release-store on the boot core, followed by an acquire-load
+on a different core observing the released value, constructively
+satisfies `synchronizesWith`.  Constructs the witness in tactic
+mode using the 9 conjuncts.  This is the canonical "TicketLock
+release → next-acquire spin-loop observation" pattern at the
+abstract memory-model level. -/
+example :
+    let release_store : MemoryEvent :=
+      ⟨bootCoreId, AtomicLocation.servingOf 0, true, .release, 42, 0⟩
+    let acquire_load : MemoryEvent :=
+      ⟨⟨1, by decide⟩, AtomicLocation.servingOf 0, false, .acquire, 42, 0⟩
+    let t : MemoryTrace :=
+      (MemoryTrace.empty.append release_store).append acquire_load
+    synchronizesWith t release_store acquire_load := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> decide
+
+/-! ## §2.8 — Constructive `sequencedBefore` witness (positive case) -/
+
+/-- Two same-core events with strictly increasing seqNums in a
+trace constructively satisfy `sequencedBefore`.  This is the
+canonical "spin-loop iteration" pattern at the abstract memory-
+model level. -/
+example :
+    let e_early : MemoryEvent :=
+      ⟨bootCoreId, AtomicLocation.servingOf 0, false, .acquire, 0, 100⟩
+    let e_late : MemoryEvent :=
+      ⟨bootCoreId, AtomicLocation.servingOf 0, false, .acquire, 1, 101⟩
+    let t : MemoryTrace :=
+      (MemoryTrace.empty.append e_early).append e_late
+    sequencedBefore t e_early e_late := by
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> decide
+
+/-! ## §2.9 — Helper-theorem lifts (positive cases) -/
+
+/-- `sequencedBefore_implies_happensBefore` lifts seq to hb in a
+single tactic step, used by SM2.B/C proofs that need to invoke
+happens-before from a sequencedBefore witness. -/
+example :
+    let e_early : MemoryEvent :=
+      ⟨bootCoreId, AtomicLocation.servingOf 0, false, .acquire, 0, 100⟩
+    let e_late : MemoryEvent :=
+      ⟨bootCoreId, AtomicLocation.servingOf 0, false, .acquire, 1, 101⟩
+    let t : MemoryTrace :=
+      (MemoryTrace.empty.append e_early).append e_late
+    happensBefore t e_early e_late := by
+  apply sequencedBefore_implies_happensBefore
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> decide
+
+/-- `synchronizesWith_implies_happensBefore` lifts sync to hb in
+a single tactic step, used by SM2.B/C proofs that need to invoke
+happens-before from a sync edge. -/
+example :
+    let release_store : MemoryEvent :=
+      ⟨bootCoreId, AtomicLocation.servingOf 0, true, .release, 42, 0⟩
+    let acquire_load : MemoryEvent :=
+      ⟨⟨1, by decide⟩, AtomicLocation.servingOf 0, false, .acquire, 42, 0⟩
+    let t : MemoryTrace :=
+      (MemoryTrace.empty.append release_store).append acquire_load
+    happensBefore t release_store acquire_load := by
+  apply synchronizesWith_implies_happensBefore
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> decide
 
 -- ============================================================================
 -- §3 — Runtime assertions: every above example also runs in `main`
@@ -364,6 +464,33 @@ private def runWellFormedChecks : IO Unit := do
     (SeLe4n.Kernel.Concurrency.MemoryTrace.empty.append e_bad₁).append e_bad₂
   assertBool "decreasing seqNum (same core) NOT wellFormed"
     (decide (¬ t_bad.wellFormed))
+  -- RMW positive case: two events on the same core at the SAME
+  -- seqNum (load + store) are wellFormed under the non-strict ≤
+  -- formulation.  This is the central design property that supports
+  -- SM2.B `fetch_add(1, Acquire)` proofs.
+  let rmw_load : SeLe4n.Kernel.Concurrency.MemoryEvent :=
+    ⟨SeLe4n.Kernel.Concurrency.bootCoreId,
+     SeLe4n.Kernel.Concurrency.AtomicLocation.nextTicketOf 0,
+     false, .acqRel, 0, 7⟩
+  let rmw_store : SeLe4n.Kernel.Concurrency.MemoryEvent :=
+    ⟨SeLe4n.Kernel.Concurrency.bootCoreId,
+     SeLe4n.Kernel.Concurrency.AtomicLocation.nextTicketOf 0,
+     true, .acqRel, 1, 7⟩
+  let t_rmw :=
+    (SeLe4n.Kernel.Concurrency.MemoryTrace.empty.append rmw_load).append rmw_store
+  assertBool "RMW pair (same core, same seqNum) IS wellFormed (≤ formulation)"
+    (decide t_rmw.wellFormed)
+  -- An RMW pair followed by a serving load with strictly greater
+  -- seqNum is also wellFormed (the typical TicketLock acquire
+  -- pattern at the abstract memory-model level).
+  let serv_load : SeLe4n.Kernel.Concurrency.MemoryEvent :=
+    ⟨SeLe4n.Kernel.Concurrency.bootCoreId,
+     SeLe4n.Kernel.Concurrency.AtomicLocation.servingOf 0,
+     false, .acquire, 1, 8⟩
+  let t_rmw_with_load :=
+    (t_rmw).append serv_load
+  assertBool "RMW pair + later strictly-greater seqNum op IS wellFormed"
+    (decide t_rmw_with_load.wellFormed)
 
 private def runCrossCoreWellFormedChecks : IO Unit := do
   IO.println "--- §3.5 Cross-core wellFormed (per-core, not global) ---"
@@ -440,6 +567,68 @@ private def runPartialOrderShapeChecks : IO Unit := do
   assertBool "eventPos e₂ < eventPos e₂ is false (irreflexivity)"
     (! decide (t.eventPos e₂ < t.eventPos e₂))
 
+private def runSynchronizesWithChecks : IO Unit := do
+  IO.println "--- §3.8 Constructive synchronizesWith witness ---"
+  -- A release-store followed by an acquire-load on the same loc,
+  -- with matching value and on different cores, constructively
+  -- satisfies synchronizesWith.  This is the abstract memory-model
+  -- form of the TicketLock release → next-acquire pattern.
+  let release_store : SeLe4n.Kernel.Concurrency.MemoryEvent :=
+    ⟨SeLe4n.Kernel.Concurrency.bootCoreId,
+     SeLe4n.Kernel.Concurrency.AtomicLocation.servingOf 0,
+     true, .release, 42, 0⟩
+  let acquire_load : SeLe4n.Kernel.Concurrency.MemoryEvent :=
+    ⟨⟨1, by decide⟩,
+     SeLe4n.Kernel.Concurrency.AtomicLocation.servingOf 0,
+     false, .acquire, 42, 0⟩
+  let t : SeLe4n.Kernel.Concurrency.MemoryTrace :=
+    (SeLe4n.Kernel.Concurrency.MemoryTrace.empty.append release_store).append acquire_load
+  -- All 9 conjuncts are decidable; check them as a single decide.
+  assertBool "release_store ∈ trace"
+    (decide (release_store ∈ t.events))
+  assertBool "acquire_load ∈ trace"
+    (decide (acquire_load ∈ t.events))
+  assertBool "release_store.isWrite = true"
+    (decide (release_store.isWrite = true))
+  assertBool "release_store.order.isRelease = true"
+    (decide (release_store.order.isRelease = true))
+  assertBool "acquire_load.isWrite = false"
+    (decide (acquire_load.isWrite = false))
+  assertBool "acquire_load.order.isAcquire = true"
+    (decide (acquire_load.order.isAcquire = true))
+  assertBool "release_store.loc = acquire_load.loc"
+    (decide (release_store.loc = acquire_load.loc))
+  assertBool "release_store.value = acquire_load.value"
+    (decide (release_store.value = acquire_load.value))
+  assertBool "eventPos release_store < eventPos acquire_load"
+    (decide (t.eventPos release_store < t.eventPos acquire_load))
+
+private def runSequencedBeforeChecks : IO Unit := do
+  IO.println "--- §3.9 Constructive sequencedBefore witness ---"
+  -- Two same-core same-location events with strictly increasing
+  -- seqNums constructively satisfy sequencedBefore.  The canonical
+  -- "spin-loop iteration" pattern.
+  let e_early : SeLe4n.Kernel.Concurrency.MemoryEvent :=
+    ⟨SeLe4n.Kernel.Concurrency.bootCoreId,
+     SeLe4n.Kernel.Concurrency.AtomicLocation.servingOf 0,
+     false, .acquire, 0, 100⟩
+  let e_late : SeLe4n.Kernel.Concurrency.MemoryEvent :=
+    ⟨SeLe4n.Kernel.Concurrency.bootCoreId,
+     SeLe4n.Kernel.Concurrency.AtomicLocation.servingOf 0,
+     false, .acquire, 1, 101⟩
+  let t : SeLe4n.Kernel.Concurrency.MemoryTrace :=
+    (SeLe4n.Kernel.Concurrency.MemoryTrace.empty.append e_early).append e_late
+  assertBool "e_early ∈ trace"
+    (decide (e_early ∈ t.events))
+  assertBool "e_late ∈ trace"
+    (decide (e_late ∈ t.events))
+  assertBool "e_early.core = e_late.core"
+    (decide (e_early.core = e_late.core))
+  assertBool "e_early.seqNum < e_late.seqNum (strict)"
+    (decide (e_early.seqNum < e_late.seqNum))
+  assertBool "trace is wellFormed"
+    (decide t.wellFormed)
+
 def runMemoryModelChecks : IO Unit := do
   IO.println "WS-SM SM2.A — Memory Model test suite"
   IO.println "====================================="
@@ -450,6 +639,8 @@ def runMemoryModelChecks : IO Unit := do
   runCrossCoreWellFormedChecks
   runEventPosChecks
   runPartialOrderShapeChecks
+  runSynchronizesWithChecks
+  runSequencedBeforeChecks
   IO.println "====================================="
   IO.println "All SM2.A memory model checks PASS."
 

@@ -775,7 +775,9 @@ cut:
   and three structural witnesses (`empty_events`, `append_events`,
   `append_length`).
 - **SM2.A.5**: `MemoryTrace.wellFormed` predicate (two conjuncts:
-  events `Nodup` + per-core `Pairwise` seqNum monotonicity) plus
+  events `Nodup` + per-core `Pairwise` seqNum monotonicity,
+  non-strict `≤` to support RMW load+store pairs at one atomic
+  op per ARMv8.1-A LSE — see audit-pass note below) plus
   auto-derived `Decidable` instance and the `empty_wellFormed`
   witness.  Plus `eventPos` (canonical position via
   `List.idxOf`) with four bridging properties:
@@ -798,10 +800,31 @@ cut:
   `happens_before_strict_partial_order` (kernel-convenient form)
   and `happensBefore_no_cycle`.  The canonical surface anchor
   for SM2.B / SM2.C release-acquire pairing.
-- **SM2.A.12**: `tests/MemoryModelSuite.lean` (~460 LoC) — 56
-  surface anchors + 31 decidable examples + 34 runtime
+- **SM2.A.12**: `tests/MemoryModelSuite.lean` (~650 LoC) — 62
+  surface anchors + 37 decidable examples + 50 runtime
   assertions via a runnable executable.  Wired into Tier 2
   (negative) and Tier 3 (invariant surface).
+
+**Audit-pass refinements (included in v0.32.0 landing)**:
+
+- Non-strict `≤` per-core seqNum monotonicity in `wellFormed`
+  (not strict `<` as in the plan pseudocode) to support
+  ARMv8.1-A LSE atomic RMW operations.  Plan §3.1.3 commentary
+  explicitly says RMW ops are modelled as two events sharing
+  one `seqNum`; strict `<` would reject all RMW traces.  See
+  the `wellFormed` docstring for the trade-off analysis.
+- Six helper-theorem lifters added for SM2.B/SM2.C consumers:
+  `sequencedBefore_implies_happensBefore`,
+  `synchronizesWith_implies_happensBefore`,
+  `MemoryTrace.wellFormed.nodup`, `MemoryTrace.wellFormed.pairwise`,
+  `happensBefore_eventPos_lt`,
+  `happensBefore_endpoints_in_trace_with_pos`.
+- Unused `Nodup` hypothesis removed from `eventPos_inj` (the
+  proof only requires `eventPos` being a function, which holds
+  for any list).
+- Fragile `.2.2.2.2.2.2.2.2` projection chain in the
+  `happensBefore_strict_positional` sync case replaced with
+  explicit `obtain` destructuring.
 
 **File**: `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~700
 LoC).  Staged via `SeLe4n/Platform/Staged.lean` (entry added to
@@ -810,7 +833,7 @@ partition gate); SM2.B (TicketLock) is the first runtime
 exerciser.
 
 **Axiom budget for SM2.A**: 0 Lean axioms, 0 sorries.  Test
-coverage: 34 new runtime assertions plus 41 tier-3 surface
+coverage: 50 new runtime assertions plus 47 tier-3 surface
 anchors; existing 592 HAL tests + `smp_foundations_suite` still
 pass.  Full Tier 0+1+2+3 smoke test green.
 
