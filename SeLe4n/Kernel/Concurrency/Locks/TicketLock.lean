@@ -117,7 +117,7 @@ structure TicketLockState where
   pending    : List (CoreId × Nat)
   /-- The current holder, if any.  At most one is admitted. -/
   held       : Option (CoreId × Nat)
-  deriving Repr, Inhabited
+  deriving Repr, Inhabited, DecidableEq
 
 -- ============================================================================
 -- SM2.B.2 — unheld constructor

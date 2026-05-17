@@ -209,3 +209,11 @@ pub mod cmdline;
 // See the module docstring in `per_cpu_stats.rs` for the counter
 // inventory.
 pub mod per_cpu_stats;
+// WS-SM SM2.B.16: Rust TicketLock implementation refining the Lean
+// operational spec at SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean.
+// FIFO spinlock with bounded wait, cache-line aligned.  Provides
+// `TicketLock::new` (const fn), `acquire` / `release`, `with_lock`
+// RAII combinator, and `TicketLockGuard` for explicit-lifetime
+// usage.  See the module docstring in `ticket_lock.rs` for the
+// operational mapping to the Lean spec and ARM ARM citations.
+pub mod ticket_lock;

@@ -173,3 +173,12 @@ root = "tests.SmpFoundationsSuite"
 [[lean_exe]]
 name = "memory_model_suite"
 root = "tests.MemoryModelSuite"
+
+# WS-SM SM2.B — TicketLock test suite.  Surface anchors + decidable
+# examples for every SM2.B public symbol (TicketLockState, applyOp,
+# promotePending, releaseAndPromote, all 8 wf invariants, plus the
+# substantive theorems mutex / FIFO / bounded-wait / RA-pairing /
+# reachability / determinism / closure-form aliases).  Tier-3 wired.
+[[lean_exe]]
+name = "ticket_lock_suite"
+root = "tests.TicketLockSuite"

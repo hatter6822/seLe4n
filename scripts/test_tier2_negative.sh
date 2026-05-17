@@ -92,5 +92,12 @@ run_check_with_timeout "TRACE" lake exe smp_foundations_suite
 # and the four partial-order theorems).  Runtime assertions (~36) plus
 # surface-anchor `#check`s of every public symbol.
 run_check_with_timeout "TRACE" lake exe memory_model_suite
+# WS-SM SM2.B — TicketLock test suite for the SM2.B abstract TicketLock
+# spec (TicketLockState, applyOp, promotePending, releaseAndPromote, all
+# 8 wf invariants, plus the substantive theorems mutex / FIFO /
+# bounded-wait / RA-pairing / reachability / determinism / closure-form
+# aliases).  Runtime assertions (~35) plus surface-anchor `#check`s of
+# every public symbol.
+run_check_with_timeout "TRACE" lake exe ticket_lock_suite
 
 finalize_report

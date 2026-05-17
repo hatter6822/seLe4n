@@ -1367,4 +1367,89 @@ import SeLe4n.Kernel.Concurrency.MemoryModel
 #check @SeLe4n.Kernel.Concurrency.MemoryTrace.wellFormed_append
 EOF'
 
+# WS-SM SM2.B — TicketLock surface anchors.  Covers every public symbol
+# exported by `Kernel.Concurrency.Locks.TicketLock` so SM3 ladder-
+# acquisition consumers cannot break the upstream wf-preservation /
+# FIFO / bounded-wait / RA-pairing foundation without surfacing here
+# first.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.TicketLock'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.Locks.TicketLock
+
+-- SM2.B.1 — TicketLockState
+#check @SeLe4n.Kernel.Concurrency.TicketLockState
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.nextTicket
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.serving
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.pending
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.held
+-- SM2.B.2 — unheld + witnesses
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.unheld
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.unheld_nextTicket
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.unheld_serving
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.unheld_pending
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.unheld_held
+-- SM2.B.3 — wf predicate + Bool helpers
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.pendingInRange
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.heldCount
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.holderTicketIsServing
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.holderTicketDisjointFromPending
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.holderCoreDisjointFromPending
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.wf
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.pendingInRange_iff
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.holderTicketIsServing_iff
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.holderTicketDisjointFromPending_iff
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.holderCoreDisjointFromPending_iff
+-- SM2.B.4 — unheld_wf
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.unheld_wf
+-- SM2.B.5 — TicketLockOp
+#check @SeLe4n.Kernel.Concurrency.TicketLockOp
+#check @SeLe4n.Kernel.Concurrency.TicketLockOp.tryAcquire
+#check @SeLe4n.Kernel.Concurrency.TicketLockOp.release
+#check @SeLe4n.Kernel.Concurrency.TicketLockOp.observeServing
+-- SM2.B.6 — Operational semantics
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.captureTicket
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.observeServing
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.applyOp
+-- SM2.B.7 — promotePending + releaseAndPromote
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.promotePending
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.releaseAndPromote
+-- SM2.B.8 — mutex
+#check @SeLe4n.Kernel.Concurrency.ticketLock_mutex
+-- SM2.B.9 — wf preservation (per-op + aggregate)
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.applyOp_release_cases
+#check @SeLe4n.Kernel.Concurrency.ticketLock_observeServing_preserves_wf
+#check @SeLe4n.Kernel.Concurrency.ticketLock_release_preserves_partial_wf
+#check @SeLe4n.Kernel.Concurrency.ticketLock_tryAcquire_preserves_wf
+#check @SeLe4n.Kernel.Concurrency.ticketLock_releaseAndPromote_preserves_wf
+#check @SeLe4n.Kernel.Concurrency.ticketLock_wf_invariant
+-- SM2.B.10 — FIFO
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.applyOp_nextTicket_monotone
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.applyOp_release_nextTicket_eq
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.promotePending_nextTicket_eq
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.releaseAndPromote_nextTicket_eq
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.applyOp_tryAcquire_captures
+#check @SeLe4n.Kernel.Concurrency.ticketLock_fifo
+#check @SeLe4n.Kernel.Concurrency.ticketLock_fifo_trace
+-- SM2.B.11 — bounded wait
+#check @SeLe4n.Kernel.Concurrency.ticketLock_bounded_wait
+-- SM2.B.12 — release-acquire pairing
+#check @SeLe4n.Kernel.Concurrency.ticketLock_release_acquire_pairing
+#check @SeLe4n.Kernel.Concurrency.ticketLock_release_acquire_happensBefore
+-- SM2.B.13 — reachability
+#check @SeLe4n.Kernel.Concurrency.KernelStep
+#check @SeLe4n.Kernel.Concurrency.KernelStep.acquire
+#check @SeLe4n.Kernel.Concurrency.KernelStep.release
+#check @SeLe4n.Kernel.Concurrency.KernelStep.observe
+#check @SeLe4n.Kernel.Concurrency.Reachable
+#check @SeLe4n.Kernel.Concurrency.Reachable.base
+#check @SeLe4n.Kernel.Concurrency.Reachable.step
+#check @SeLe4n.Kernel.Concurrency.ticketLock_reachability
+-- SM2.B.14 — determinism
+#check @SeLe4n.Kernel.Concurrency.ticketLock_applyOp_deterministic
+#check @SeLe4n.Kernel.Concurrency.ticketLock_promotePending_deterministic
+-- SM2.B.15 — closure-form preservation aliases
+#check @SeLe4n.Kernel.Concurrency.ticketLock_acquire_preserves_wf
+#check @SeLe4n.Kernel.Concurrency.ticketLock_release_preserves_wf
+EOF'
+
 finalize_report
