@@ -771,6 +771,11 @@ mod tests {
     // UART-touching tests still race; that's tolerated because the
     // observation pattern below uses an actual lock acquisition instead
     // of a state read.
+    //
+    // Audit-pass-4 (poisoning defence): every test that acquires this
+    // mutex uses `.lock().unwrap_or_else(|e| e.into_inner())` so a
+    // failed assert inside a holder does not cascade-fail every
+    // subsequent SM1.G.4 test with `PoisonError`.
     static SM1G4_OBSERVATION_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     // ========================================================================
@@ -832,7 +837,7 @@ mod tests {
         // lock held, this acquisition would spin forever and cargo's
         // test timeout would surface the regression.  See the
         // SM1G4_OBSERVATION_MUTEX docstring for the full rationale.
-        let _guard = SM1G4_OBSERVATION_MUTEX.lock().unwrap();
+        let _guard = SM1G4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         crate::kprintln_core!("SM1.G.4 lock-balance smoke");
         // Re-acquire: if the macro didn't release, this hangs.
         crate::uart::with_boot_uart(|_uart| {
@@ -851,7 +856,7 @@ mod tests {
         // SM1.I audit-pass-1: re-acquire pattern after every
         // iteration — same correctness argument as the single-call
         // test above.
-        let _guard = SM1G4_OBSERVATION_MUTEX.lock().unwrap();
+        let _guard = SM1G4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         for i in 0..16 {
             crate::kprintln_core!("SM1.G.4 iteration {}", i);
             crate::uart::with_boot_uart(|_uart| {
@@ -881,7 +886,7 @@ mod tests {
         // source-scan test `sm1g4_macro_expansion_text_uses_with_boot_uart_once`.
         //
         // SM1.I audit-pass-1: re-acquire pattern.
-        let _guard = SM1G4_OBSERVATION_MUTEX.lock().unwrap();
+        let _guard = SM1G4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         crate::kprintln_core!("SM1.G.4 per-line atomicity smoke");
         crate::uart::with_boot_uart(|_uart| { /* re-acquire proof */ });
     }
@@ -892,7 +897,7 @@ mod tests {
         // single-lock contract.
         //
         // SM1.I audit-pass-1: re-acquire pattern.
-        let _guard = SM1G4_OBSERVATION_MUTEX.lock().unwrap();
+        let _guard = SM1G4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         crate::kprint_core!("SM1.G.4 partial-line atomicity smoke");
         crate::uart::with_boot_uart(|_uart| { /* re-acquire proof */ });
         // Add a manual newline so subsequent test output isn't

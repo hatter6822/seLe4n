@@ -1790,6 +1790,53 @@ documentation lives under `docs/` and `docs/gitbook/`.
     race-free.  Stress test post-fix: 50/50 runs pass (previously
     ~1/50 transient failure).
 
+  **Audit-pass-4 refinements** (second external audit pass; also
+  in v0.31.8): closed one HIGH-severity latent UB risk, one
+  MEDIUM-severity log-tearing risk, and one LOW doc overcount.
+
+  - **HIGH (latent UB on early-boot EL1 exceptions)**:
+    `handle_synchronous_exception` reads TPIDR_EL1 via the
+    `per_cpu_stats::record_*` path (SM1.I.4 wiring), but the
+    Phase 4 TPIDR_EL1 write meant any EL1-originated synchronous
+    exception during Phases 1-3 (kernel bug: misaligned access,
+    instruction abort on unmapped kernel page) would dereference
+    uninitialised TPIDR_EL1 as a pointer — UB before the
+    defensive `assert!` could fire.  Fix: Phase 1 now writes
+    TPIDR_EL1 immediately after `check_per_cpu_invariants` has
+    validated the static array.  Phase 4's write is retained as
+    an idempotent re-write (one extra `mrs tpidr_el1` cycle) so
+    the SM5 landing-seam contract remains structurally visible
+    at the Phase-4 site.  No correctness change on the happy
+    path; the EL1-early-boot-exception window now reads valid
+    TPIDR_EL1 instead of UB.
+
+  - **MEDIUM (log tearing)**: `handle_irq_per_core` used
+    `kprintln!("[core {}] ...", core_id, ...)` for SGI and
+    unhandled-INTID log lines.  `kprintln!` expands to two
+    separate `kprint!` calls (body + `"\n"`), each acquiring the
+    UART lock separately; under SMP a concurrent writer between
+    the prefix and the body could tear the log line.  Fix:
+    switched both lines to `kprintln_core!` which holds the
+    UART lock for the entire `[core N] <body>\n` sequence per
+    SM1.G.4 audit-pass-1 atomicity contract.
+
+  - **LOW (doc overcount)**: one residual "12 new cross-core
+    test scenarios" in `docs/planning/SMP_RUST_HAL_PLAN.md`
+    §5.9 header was missed by the audit-pass-3 sed sweep.
+    Fixed to "8".
+
+  - **DEFENSE-IN-DEPTH (poisoning)**: every `MUTEX.lock().unwrap()`
+    in the three audit-pass-1/2/3 observation mutexes
+    (`SM1G4_OBSERVATION_MUTEX`, `SM1I4_OBSERVATION_MUTEX`,
+    `TIMER_GLOBAL_STATE_MUTEX`) converted to
+    `MUTEX.lock().unwrap_or_else(|e| e.into_inner())`.  Without
+    this, a failed `assert!` inside any mutex holder would
+    poison the mutex and cascade-fail every subsequent test
+    with `PoisonError`, burying the diagnostic of the *original*
+    failure.  The recovery pattern lets subsequent tests run
+    normally and surface their own diagnostics.  21 occurrences
+    converted across trap.rs / uart.rs / timer.rs.
+
   **Items deferred past v1.0.0 with correctness impact**: NONE.
 
   **SM1 acceptance gate** (per

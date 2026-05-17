@@ -375,7 +375,16 @@ pub extern "C" fn handle_irq_per_core(_frame: &mut TrapFrame) {
     // pre-set by `boot.rs::rust_boot_main` (boot core) or
     // `boot.S::secondary_entry` (secondaries) before any kernel-mode
     // code runs.  On host the stub returns 0.
-    let core_id = crate::per_cpu::current_core_id_from_tpidr();
+    //
+    // Audit-pass-4: this binding is retained as the SM5 landing-seam
+    // contract (verified by `build.rs::scan_trap_rs_handle_irq_per_core_intact`).
+    // The current closure body uses `kprintln_core!` (which reads
+    // TPIDR_EL1 internally) for log lines, so `core_id` is not
+    // directly consumed today; SM5 will use it as the per-core
+    // scheduler-state dispatch key.  The single redundant `mrs
+    // tpidr_el1` (one cycle on Cortex-A76) is the cost of pinning
+    // the SM5 contract at the structural level.
+    let _core_id = crate::per_cpu::current_core_id_from_tpidr();
 
     crate::gic::dispatch_irq(|intid| {
         // WS-SM SM1.I.4 audit-pass-1: record the IRQ dispatch only
@@ -418,9 +427,15 @@ pub extern "C" fn handle_irq_per_core(_frame: &mut TrapFrame) {
             // `dispatch_irq` into `dispatch_irq_with_iar` and route
             // SGIs through this branch with the correct source_cpu.
             let _ = crate::per_cpu_stats::record_sgi_dispatch();
-            crate::kprintln!(
-                "[core {}] SGI INTID {} (handler dispatch deferred to SM5)",
-                core_id,
+            // Audit-pass-4: `kprintln_core!` is per-line atomic
+            // (holds the UART lock for the entire `[core N] <body>\n`
+            // sequence per SM1.G.4 audit-pass-1).  The pre-audit-pass-4
+            // form used `kprintln!` with a manual `[core {core_id}]`
+            // prefix, which expanded to TWO `kprint!` calls — a
+            // concurrent writer between the prefix and the body would
+            // tear the log line.
+            crate::kprintln_core!(
+                "SGI INTID {} (handler dispatch deferred to SM5)",
                 intid
             );
         } else {
@@ -428,7 +443,10 @@ pub extern "C" fn handle_irq_per_core(_frame: &mut TrapFrame) {
             //
             // AG7 will additionally wire device interrupts (SPIs) to
             // notification signals via FFI; that's SM5+ work.
-            crate::kprintln!("[core {}] IRQ: unhandled INTID {}", core_id, intid);
+            //
+            // Audit-pass-4: per-line atomicity via `kprintln_core!`
+            // (see SGI branch above for rationale).
+            crate::kprintln_core!("IRQ: unhandled INTID {}", intid);
         }
     });
 }
@@ -495,6 +513,16 @@ mod tests {
     // every SM1.I.4 test that observes `PER_CPU_STATS[0]` via this
     // private mutex.  The serialisation is invisible to other tests
     // and adds no runtime cost in production.
+    //
+    // Audit-pass-4 (poisoning defence): every test that acquires this
+    // mutex uses `.lock().unwrap_or_else(|e| e.into_inner())` instead
+    // of `.lock().unwrap()`.  A failed `assert_eq!` / `assert!` inside
+    // a holder would otherwise poison the mutex and cascade-fail every
+    // subsequent SM1.I.4 test with `PoisonError`, burying the
+    // diagnostic of the *original* failure.  The recovery pattern
+    // bypasses poisoning so subsequent tests run normally and surface
+    // their own diagnostics (the original failure is already reported
+    // by cargo's test harness).
     static SM1I4_OBSERVATION_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
@@ -787,7 +815,7 @@ mod tests {
     fn sm1i4_handle_sync_svc_increments_per_core_syscall_count() {
         // Audit-pass-3: serialise via SM1I4_OBSERVATION_MUTEX so concurrent
         // trap-handler tests don't race on PER_CPU_STATS[0].syscall_count.
-        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap();
+        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let before = crate::per_cpu_stats::syscall_count_for(0);
         let mut frame = zero_frame();
         frame.esr_el1 = ec::SVC_AARCH64 << 26;
@@ -804,7 +832,7 @@ mod tests {
     #[test]
     fn sm1i4_handle_sync_dabt_increments_per_core_vm_fault_count() {
         // Audit-pass-3: see SM1I4_OBSERVATION_MUTEX docstring.
-        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap();
+        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let before = crate::per_cpu_stats::vm_fault_count_for(0);
         let mut frame = zero_frame();
         frame.esr_el1 = ec::DABT_LOWER << 26;
@@ -820,7 +848,7 @@ mod tests {
 
     #[test]
     fn sm1i4_handle_sync_iabt_increments_per_core_vm_fault_count() {
-        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap();
+        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let before = crate::per_cpu_stats::vm_fault_count_for(0);
         let mut frame = zero_frame();
         frame.esr_el1 = ec::IABT_LOWER << 26;
@@ -836,7 +864,7 @@ mod tests {
 
     #[test]
     fn sm1i4_handle_sync_alignment_increments_per_core_user_exception_count() {
-        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap();
+        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let before = crate::per_cpu_stats::user_exception_count_for(0);
         let mut frame = zero_frame();
         frame.esr_el1 = ec::PC_ALIGN << 26;
@@ -852,7 +880,7 @@ mod tests {
 
     #[test]
     fn sm1i4_handle_sync_sp_alignment_increments_per_core_user_exception_count() {
-        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap();
+        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let before = crate::per_cpu_stats::user_exception_count_for(0);
         let mut frame = zero_frame();
         frame.esr_el1 = ec::SP_ALIGN << 26;
@@ -868,7 +896,7 @@ mod tests {
 
     #[test]
     fn sm1i4_handle_sync_unknown_ec_increments_per_core_user_exception_count() {
-        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap();
+        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let before = crate::per_cpu_stats::user_exception_count_for(0);
         let mut frame = zero_frame();
         // EC = 0x3F (RES1, not a valid known class) → unknown branch.
@@ -895,7 +923,7 @@ mod tests {
         // test races against `sm1i4_handle_sync_dabt_increments_...`
         // and friends, producing a ~2% transient failure rate.
         // The mutex ensures the `assert_eq!` snapshot pair is atomic.
-        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap();
+        let _guard = SM1I4_OBSERVATION_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let vm_before = crate::per_cpu_stats::vm_fault_count_for(0);
         let mut frame = zero_frame();
         frame.esr_el1 = ec::SVC_AARCH64 << 26;

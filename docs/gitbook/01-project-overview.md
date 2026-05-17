@@ -94,12 +94,14 @@ v0.27.6 audit addressed (5 HIGH, 27 MEDIUM, 28 LOW).
 **Next major milestone**: WS-SM — multi-core SMP completion through v1.0.0.
 Phase SM0 (foundations & honesty patches) closed at v0.31.3 with the
 type-level scaffolding (CoreId, LockKind, LockId, SgiKind, SharingDomain,
-BklState).  Phase SM1 (Rust HAL) closes at v0.31.7 with the eight
+BklState).  Phase SM1 (Rust HAL) closes at v0.31.8 with the nine
 sub-phases all landed: SM1.A (PSCI completion) at v0.31.3, SM1.B
 (per-CPU data + TPIDR_EL1, closes SMP-M4) at v0.31.4, SM1.C
 (secondary-core full init, closes SMP-C2) at v0.31.5, SM1.D (DTB
-cmdline + Phase 5) at v0.31.6, and SM1.E/F/G/H (cross-core HAL
-completion) at v0.31.7.  SM1.C rewrites `rust_secondary_main`
+cmdline + Phase 5) at v0.31.6, SM1.E/F/G/H (cross-core HAL
+completion) at v0.31.7, and SM1.I (miscellaneous HAL improvements —
+SM5 landing seams + per-core stats + idle-wait + SEV/WFE docs +
+cross-core tests) at v0.31.8.  SM1.C rewrites `rust_secondary_main`
 into the full per-core boot sequence — MMU enable
 (`init_mmu_secondary` via shared `init_mmu_per_core`), exception
 vectors (`install_exception_vectors` shared with primary), GIC CPU

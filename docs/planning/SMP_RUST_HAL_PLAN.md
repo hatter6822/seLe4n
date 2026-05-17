@@ -2580,7 +2580,7 @@ test handler.
 > wired to advance the appropriate counter per EC branch), SM1.I.5
 > (SEV/WFE coordination + local-event-register semantics + IS-domain
 > broadcast scope documented in `cpu.rs` module header; new wrappers
-> `cpu::sev` + `cpu::sevl` for testability), SM1.I.6 (12 new
+> `cpu::sev` + `cpu::sevl` for testability), SM1.I.6 (8 new
 > cross-core test scenarios in `smp::tests::sm1i6_*`: per-core stats
 > no-aliasing, validator per-core dispatch, init helper idempotence,
 > CORE_READY monotonicity, SGI distribution, full composition).
