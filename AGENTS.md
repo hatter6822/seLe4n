@@ -1911,11 +1911,12 @@ documentation lives under `docs/` and `docs/gitbook/`.
     SM2.B / SM2.C release-acquire pairing.  Plus
     `happens_before_strict_partial_order` (kernel-convenient
     form) and `happensBefore_no_cycle` (smoke-test form).
-  - **SM2.A.12**: `tests/MemoryModelSuite.lean` (~650 LoC) —
-    62 surface-anchor `#check` lines covering every public
-    symbol, 37 decidable examples covering the data-type
+  - **SM2.A.12**: `tests/MemoryModelSuite.lean` (~675 LoC) —
+    64 surface-anchor `#check` lines covering every public
+    symbol, 39 decidable examples covering the data-type
     constructors / `wellFormed` true and false cases / RMW
-    positive cases / `eventPos` behaviour / partial-order shape /
+    positive cases / single-event and append-step wellFormed
+    cases / `eventPos` behaviour / partial-order shape /
     constructive `synchronizesWith` and `sequencedBefore`
     witnesses / helper-theorem lifts, and a runnable executable
     (`lake exe memory_model_suite`) with 50 runtime assertions
@@ -1968,13 +1969,21 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
   **Helper theorems for SM2.B/SM2.C consumers**: in addition to
   the four canonical partial-order witnesses, the module
-  exports six convenience lifters: `sequencedBefore_implies_
-  happensBefore`, `synchronizesWith_implies_happensBefore`,
-  `MemoryTrace.wellFormed.nodup`, `MemoryTrace.wellFormed.
-  pairwise`, `happensBefore_eventPos_lt`, and
-  `happensBefore_endpoints_in_trace_with_pos`.  These reduce
-  the tactic burden on SM2.B (TicketLock) and SM2.C (RwLock)
-  release-acquire pairing proofs.
+  exports eight convenience lifters:
+  `sequencedBefore_implies_happensBefore`,
+  `synchronizesWith_implies_happensBefore`,
+  `MemoryTrace.wellFormed.nodup`,
+  `MemoryTrace.wellFormed.pairwise`,
+  `happensBefore_eventPos_lt`,
+  `happensBefore_endpoints_in_trace_with_pos`,
+  `MemoryTrace.singleton_wellFormed` (base case for the
+  operational-semantics induction), and
+  `MemoryTrace.wellFormed_append` (inductive step: appending a
+  fresh event with monotone seqNum preserves wellFormed).
+  These reduce the tactic burden on SM2.B (TicketLock) and
+  SM2.C (RwLock) release-acquire pairing proofs, and let SM2.B/C
+  build long well-formed traces step-by-step via a structural
+  fold.
 
   **Axiom budget for SM2.A**: 0 Lean axioms, 0 sorries.  All
   ARMv8.1-A LSE semantics enter operationally as constraints on
@@ -1982,12 +1991,14 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
   **Test coverage**: 50 new runtime assertions in
   `tests/MemoryModelSuite.lean` (full Tier 2 negative pass: every
-  `decide` example also runs at runtime); 47 new tier-3 surface
+  `decide` example also runs at runtime); 49 new tier-3 surface
   anchors in `scripts/test_tier3_invariant_surface.sh` (covers
-  the four canonical theorems + six helper lifters + all data-
-  type and `eventPos` surfaces); existing 592 HAL tests still
-  pass; existing `smp_foundations_suite` still passes.  Full
-  Tier 0+1+2+3 smoke test green.
+  the four canonical theorems + eight helper lifters + all data-
+  type and `eventPos` surfaces); 32 public-exported theorems +
+  1 private helper in `MemoryModel.lean` (4 canonical partial-
+  order + 8 helper lifters + 20 supporting witnesses and bridges);
+  existing 592 HAL tests still pass; existing `smp_foundations_
+  suite` still passes.  Full Tier 0+1+2+3 smoke test green.
 
   **Items deferred past v1.0.0 with correctness impact**: NONE.
 

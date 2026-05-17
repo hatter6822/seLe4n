@@ -800,8 +800,8 @@ cut:
   `happens_before_strict_partial_order` (kernel-convenient form)
   and `happensBefore_no_cycle`.  The canonical surface anchor
   for SM2.B / SM2.C release-acquire pairing.
-- **SM2.A.12**: `tests/MemoryModelSuite.lean` (~650 LoC) — 62
-  surface anchors + 37 decidable examples + 50 runtime
+- **SM2.A.12**: `tests/MemoryModelSuite.lean` (~675 LoC) — 64
+  surface anchors + 39 decidable examples + 50 runtime
   assertions via a runnable executable.  Wired into Tier 2
   (negative) and Tier 3 (invariant surface).
 
@@ -813,18 +813,23 @@ cut:
   explicitly says RMW ops are modelled as two events sharing
   one `seqNum`; strict `<` would reject all RMW traces.  See
   the `wellFormed` docstring for the trade-off analysis.
-- Six helper-theorem lifters added for SM2.B/SM2.C consumers:
+- Eight helper-theorem lifters added for SM2.B/SM2.C consumers:
   `sequencedBefore_implies_happensBefore`,
   `synchronizesWith_implies_happensBefore`,
   `MemoryTrace.wellFormed.nodup`, `MemoryTrace.wellFormed.pairwise`,
   `happensBefore_eventPos_lt`,
-  `happensBefore_endpoints_in_trace_with_pos`.
+  `happensBefore_endpoints_in_trace_with_pos`,
+  `MemoryTrace.singleton_wellFormed` (operational-semantics
+  base case), `MemoryTrace.wellFormed_append` (inductive step:
+  append a fresh event with monotone seqNum, preserve wellFormed).
 - Unused `Nodup` hypothesis removed from `eventPos_inj` (the
   proof only requires `eventPos` being a function, which holds
   for any list).
-- Fragile `.2.2.2.2.2.2.2.2` projection chain in the
-  `happensBefore_strict_positional` sync case replaced with
-  explicit `obtain` destructuring.
+- Fragile projection chains replaced with explicit `obtain`
+  destructuring at three sites:
+  `happensBefore_strict_positional` sync case,
+  `synchronizesWith_relaxed_load_rejected`,
+  `synchronizesWith_relaxed_store_rejected`.
 
 **File**: `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~700
 LoC).  Staged via `SeLe4n/Platform/Staged.lean` (entry added to

@@ -1362,6 +1362,9 @@ import SeLe4n.Kernel.Concurrency.MemoryModel
 #check @SeLe4n.Kernel.Concurrency.MemoryTrace.wellFormed.pairwise
 #check @SeLe4n.Kernel.Concurrency.happensBefore_eventPos_lt
 #check @SeLe4n.Kernel.Concurrency.happensBefore_endpoints_in_trace_with_pos
+-- SM2.A operational-semantics base case + inductive step
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace.singleton_wellFormed
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace.wellFormed_append
 EOF'
 
 finalize_report

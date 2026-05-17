@@ -102,6 +102,8 @@ open SeLe4n.Kernel.Concurrency
 /-! ## SM2.A.5 — wellFormed + eventPos -/
 #check @SeLe4n.Kernel.Concurrency.MemoryTrace.wellFormed
 #check @SeLe4n.Kernel.Concurrency.MemoryTrace.empty_wellFormed
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace.singleton_wellFormed
+#check @SeLe4n.Kernel.Concurrency.MemoryTrace.wellFormed_append
 #check @SeLe4n.Kernel.Concurrency.MemoryTrace.eventPos
 #check @SeLe4n.Kernel.Concurrency.MemoryTrace.eventPos_lt_length
 #check @SeLe4n.Kernel.Concurrency.MemoryTrace.eventPos_eq_length_of_not_mem
@@ -259,6 +261,30 @@ example :
       ⟨bootCoreId, AtomicLocation.servingOf 0, false, .acquire, 1, 8⟩
     (((MemoryTrace.empty.append e_load).append e_store).append e_serv).wellFormed :=
   by decide
+
+/-- Constructive `singleton_wellFormed`: every single-event trace
+trivially satisfies `wellFormed`.  This is the start state of any
+operational-semantics fold. -/
+example :
+    let e : MemoryEvent :=
+      ⟨bootCoreId, AtomicLocation.nextTicketOf 0, true, .release, 1, 0⟩
+    (MemoryTrace.empty.append e).wellFormed :=
+  MemoryTrace.singleton_wellFormed _
+
+/-- Constructive `wellFormed_append`: appending a fresh event with
+seqNum ≥ all prior same-core events preserves wellFormed.  This is
+the inductive step SM2.B/SM2.C will fold over to build long
+well-formed traces from operational-semantics steps. -/
+example :
+    let e₁ : MemoryEvent :=
+      ⟨bootCoreId, AtomicLocation.nextTicketOf 0, true, .release, 1, 0⟩
+    let e₂ : MemoryEvent :=
+      ⟨bootCoreId, AtomicLocation.nextTicketOf 0, false, .acquire, 2, 1⟩
+    ((MemoryTrace.empty.append e₁).append e₂).wellFormed := by
+  apply MemoryTrace.wellFormed_append
+  · exact MemoryTrace.singleton_wellFormed _
+  · decide
+  · intro e' he' _; simp [MemoryTrace.empty, MemoryTrace.append] at he'; subst he'; decide
 
 /-! ## §2.5 — eventPos behavioural witnesses -/
 

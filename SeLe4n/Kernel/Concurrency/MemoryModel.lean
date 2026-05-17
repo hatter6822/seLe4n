@@ -363,7 +363,7 @@ Both conjuncts are decidable:
 * `Nodup` requires `DecidableEq MemoryEvent` (which we have via
   `deriving DecidableEq`).
 * `Pairwise R l` is decidable when `R` is decidable.  Our `R` is
-  `e₁.core = e₂.core → e₁.seqNum < e₂.seqNum`, which is the
+  `e₁.core = e₂.core → e₁.seqNum ≤ e₂.seqNum`, which is the
   implication of two decidable propositions, hence decidable. -/
 instance (t : MemoryTrace) : Decidable t.wellFormed := by
   unfold MemoryTrace.wellFormed
@@ -373,6 +373,59 @@ instance (t : MemoryTrace) : Decidable t.wellFormed := by
 vacuously. -/
 theorem MemoryTrace.empty_wellFormed : MemoryTrace.empty.wellFormed := by
   refine ⟨?_, ?_⟩ <;> simp [MemoryTrace.empty]
+
+/-- Witness: a single-event trace is trivially well-formed.
+
+Useful as a starting point for SM2.B/C operational-semantics proofs
+that begin a lock-primitive operation with a single ticket-capture
+event before chaining additional events via `wellFormed_append`. -/
+theorem MemoryTrace.singleton_wellFormed (e : MemoryEvent) :
+    (MemoryTrace.empty.append e).wellFormed := by
+  refine ⟨?_, ?_⟩ <;> simp [MemoryTrace.empty, MemoryTrace.append]
+
+/-- **Inductive step**: appending a fresh event to a well-formed
+trace, where the new event's seqNum is `≥` every prior same-core
+event's seqNum, preserves well-formedness.
+
+This is the central operational-semantics lemma that SM2.B
+(TicketLock) and SM2.C (RwLock) consume: each operation step
+appends one or more events to the trace, and the proof obligation
+"the new trace is well-formed" reduces to two side-conditions:
+
+1. The new event is fresh (not already in the trace) — enforced
+   by the operational semantics (each event has a unique seqNum
+   AND/OR unique location identity).
+2. The new event's seqNum is `≥` every prior same-core event's
+   seqNum — enforced by per-core sequential program order. -/
+theorem MemoryTrace.wellFormed_append (t : MemoryTrace) (e : MemoryEvent)
+    (h_wf : t.wellFormed)
+    (h_new : e ∉ t.events)
+    (h_mono : ∀ e' ∈ t.events, e'.core = e.core → e'.seqNum ≤ e.seqNum) :
+    (t.append e).wellFormed := by
+  refine ⟨?_, ?_⟩
+  · -- Nodup: t.events ++ [e] has no duplicates given t.events.Nodup
+    -- and e ∉ t.events.
+    show (t.events ++ [e]).Nodup
+    rw [List.nodup_append]
+    refine ⟨h_wf.1, ?_, ?_⟩
+    · -- [e].Nodup follows from Nodup of a singleton (just one element).
+      simp
+    · intro a ha_t b hb_singleton h_eq
+      rw [List.mem_singleton] at hb_singleton
+      subst hb_singleton; subst h_eq
+      exact h_new ha_t
+  · -- Pairwise: t.events.Pairwise R + (∀ e' ∈ t.events, R e' e)
+    -- gives (t.events ++ [e]).Pairwise R.
+    show List.Pairwise
+      (fun e₁ e₂ => e₁.core = e₂.core → e₁.seqNum ≤ e₂.seqNum)
+      (t.events ++ [e])
+    rw [List.pairwise_append]
+    refine ⟨h_wf.2, ?_, ?_⟩
+    · exact List.pairwise_singleton _ e
+    · intro a ha_t b hb_singleton
+      rw [List.mem_singleton] at hb_singleton
+      subst hb_singleton
+      exact h_mono a ha_t
 
 -- ============================================================================
 -- Foundational helper lemmas (private, file-local)
@@ -531,22 +584,30 @@ def synchronizesWith (t : MemoryTrace) (e_R e_A : MemoryEvent) : Prop :=
   t.eventPos e_R < t.eventPos e_A
 
 /-- Witness: relaxed loads cannot be the acquire side of a sync
-edge.  Demonstrates the gate on `order.isAcquire = true`. -/
+edge.  Demonstrates the gate on `order.isAcquire = true`.
+
+Uses explicit `obtain` destructuring (rather than a `.2.2.2.2.2.1`
+projection chain) to be robust against future re-orderings of the
+9-conjunct `synchronizesWith` shape. -/
 theorem synchronizesWith_relaxed_load_rejected (t : MemoryTrace)
     (e_R e_A : MemoryEvent) (h : synchronizesWith t e_R e_A) :
     e_A.order ≠ .relaxed := by
   intro h_relaxed
-  have h_acq : e_A.order.isAcquire = true := h.2.2.2.2.2.1
+  obtain ⟨_, _, _, _, _, h_acq, _, _, _⟩ := h
   rw [h_relaxed] at h_acq
   exact absurd h_acq (by simp [MemoryOrder.isAcquire])
 
 /-- Witness: relaxed stores cannot be the release side of a sync
-edge.  Demonstrates the gate on `order.isRelease = true`. -/
+edge.  Demonstrates the gate on `order.isRelease = true`.
+
+Uses explicit `obtain` destructuring (rather than a `.2.2.2.1`
+projection chain) to be robust against future re-orderings of the
+9-conjunct `synchronizesWith` shape. -/
 theorem synchronizesWith_relaxed_store_rejected (t : MemoryTrace)
     (e_R e_A : MemoryEvent) (h : synchronizesWith t e_R e_A) :
     e_R.order ≠ .relaxed := by
   intro h_relaxed
-  have h_rel : e_R.order.isRelease = true := h.2.2.2.1
+  obtain ⟨_, _, _, h_rel, _, _, _, _, _⟩ := h
   rw [h_relaxed] at h_rel
   exact absurd h_rel (by simp [MemoryOrder.isRelease])
 

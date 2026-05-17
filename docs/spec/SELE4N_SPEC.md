@@ -682,8 +682,8 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      `happens_before_strict_partial_order` (kernel-convenient
      form) and `happensBefore_no_cycle` (smoke-test form).
 
-   **`tests/MemoryModelSuite.lean`** (NEW, ~650 LoC): 62
-   surface anchors + 37 decidable examples + 50 runtime
+   **`tests/MemoryModelSuite.lean`** (NEW, ~675 LoC): 64
+   surface anchors + 39 decidable examples + 50 runtime
    assertions via `lake exe memory_model_suite`, wired into
    Tier 2 (negative) and Tier 3 (invariant surface).  Module
    reachability: staged via `SeLe4n/Platform/Staged.lean`
@@ -702,12 +702,17 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      `happensBefore.seq` is preserved by the strict `<` in
      `sequencedBefore`, so the partial-order theorems are
      unchanged.
-   - Six helper-theorem lifters added for SM2.B/SM2.C consumers:
-     `sequencedBefore_implies_happensBefore`,
+   - Eight helper-theorem lifters added for SM2.B/SM2.C
+     consumers: `sequencedBefore_implies_happensBefore`,
      `synchronizesWith_implies_happensBefore`,
-     `MemoryTrace.wellFormed.nodup`, `MemoryTrace.wellFormed.pairwise`,
+     `MemoryTrace.wellFormed.nodup`,
+     `MemoryTrace.wellFormed.pairwise`,
      `happensBefore_eventPos_lt`,
-     `happensBefore_endpoints_in_trace_with_pos`.
+     `happensBefore_endpoints_in_trace_with_pos`,
+     `MemoryTrace.singleton_wellFormed` (operational-semantics
+     base case), `MemoryTrace.wellFormed_append` (inductive
+     step that lets SM2.B/C build long well-formed traces from
+     per-operation steps via structural fold).
 
    **Axiom budget for SM2.A**: 0 Lean axioms, 0 sorries.  All
    ARMv8.1-A LSE semantics enter operationally as constraints

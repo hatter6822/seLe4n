@@ -10,11 +10,15 @@ pairing proofs consume.
 **Audit-pass refinements** (included in v0.32.0): the per-core
 seqNum monotonicity in `wellFormed` uses non-strict `≤` (not
 strict `<` as in the plan pseudocode) to support ARMv8.1-A LSE
-atomic Read-Modify-Write operations (see SM2.A.5 below).  Six
-helper-theorem lifters added for SM2.B/SM2.C consumers.  Unused
-`Nodup` hypothesis removed from `eventPos_inj`.  Fragile
-projection chain replaced with destructuring in the
-`happensBefore_strict_positional` sync case.
+atomic Read-Modify-Write operations (see SM2.A.5 below).  Eight
+helper-theorem lifters added for SM2.B/SM2.C consumers (six
+extraction/lift lemmas + `singleton_wellFormed` base case +
+`wellFormed_append` inductive step).  Unused `Nodup` hypothesis
+removed from `eventPos_inj`.  Fragile projection chains
+replaced with `obtain` destructuring throughout (three sites:
+`happensBefore_strict_positional` sync case,
+`synchronizesWith_relaxed_load_rejected`,
+`synchronizesWith_relaxed_store_rejected`).
 
 **Twelve sub-tasks**
 
@@ -157,13 +161,15 @@ pairing.  Plus `happens_before_strict_partial_order`
 
 ### SM2.A.12 — `tests/MemoryModelSuite.lean`
 
-NEW FILE.  ~650 LoC carrying:
+NEW FILE.  ~675 LoC carrying:
 
-- 62 surface anchors (`#check` lines covering every public
-  symbol, including the six helper-theorem lifters).
-- 37 decidable examples (`example : ... := by decide` / `rfl`)
+- 64 surface anchors (`#check` lines covering every public
+  symbol, including the eight helper-theorem lifters).
+- 39 decidable examples (`example : ... := by decide` / `rfl`)
   exercising the data-type constructors, `wellFormed` true and
   false cases, RMW positive cases (load + store at same seqNum),
+  single-event and append-step wellFormed cases (using the new
+  `singleton_wellFormed` and `wellFormed_append` lemmas),
   `eventPos` behaviour, partial-order shape, and constructive
   `synchronizesWith` / `sequencedBefore` witnesses.
 - Runnable executable `lake exe memory_model_suite` with 50
@@ -177,21 +183,31 @@ and Tier 3 (invariant surface) via
 ### Helper theorems for SM2.B / SM2.C consumers (audit-pass refinement)
 
 In addition to the four canonical partial-order witnesses, the
-module exports six convenience lifters that simplify downstream
+module exports eight convenience lifters that simplify downstream
 SM2.B (TicketLock) and SM2.C (RwLock) proofs:
 
 - `sequencedBefore_implies_happensBefore`: lifts a `sequencedBefore`
   witness to `happensBefore` (the companion to `.seq` ctor).
 - `synchronizesWith_implies_happensBefore`: lifts a `synchronizesWith`
   witness to `happensBefore` (the companion to `.sync` ctor).
-- `MemoryTrace.wellFormed.nodup`: extracts the Nodup component.
-- `MemoryTrace.wellFormed.pairwise`: extracts the Pairwise component.
+- `MemoryTrace.wellFormed.nodup`: extracts the Nodup component
+  (via dot notation: `h_wf.nodup`).
+- `MemoryTrace.wellFormed.pairwise`: extracts the Pairwise
+  component (via dot notation: `h_wf.pairwise`).
 - `happensBefore_eventPos_lt`: convenience form of
   `happensBefore_strict_positional` for callers preferring the
   named theorem.
 - `happensBefore_endpoints_in_trace_with_pos`: combines
   `happensBefore_in_trace` and `eventPos_lt_length` into one
   4-conjunct witness.
+- `MemoryTrace.singleton_wellFormed`: base case for
+  operational-semantics induction — a single-event trace is
+  trivially well-formed.
+- `MemoryTrace.wellFormed_append`: inductive step — appending a
+  fresh event with `seqNum ≥` all prior same-core events to a
+  well-formed trace preserves well-formedness.  This is the
+  central lemma SM2.B/C will fold over to build wellFormed
+  traces from operational-semantics steps.
 
 **File**: `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~700
 LoC).  Staged via `SeLe4n/Platform/Staged.lean` (entry added to
