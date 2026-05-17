@@ -490,9 +490,13 @@ The `tryAcquire core` arm fuses the capture and the immediate
 spin-loop's first iteration:
 
 * If `core` is already pending or held, the op is a no-op.
-  (Operationally this corresponds to the Rust impl's panic on
-  double-acquire; the abstract spec treats it as a no-op so the
-  state stays well-formed.)
+  (The Rust impl deadlocks on double-acquire — the second
+  `acquire()` call's spin-loop never terminates because the
+  same core never advances `serving` without releasing.  The
+  abstract spec models this conservatively as a no-op so the
+  state stays well-formed: kernel paths must avoid double-
+  acquire via ladder discipline rather than relying on the
+  spec to "handle" the misuse.)
 * Otherwise, the capture admits a new entry to `pending`; if the
   captured ticket equals `serving` and no holder is present, the
   core is immediately promoted to held (the fused fast-path).

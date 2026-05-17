@@ -132,11 +132,17 @@ exe), `Staged.lean` (build-closure import),
 `staged_module_allowlist.txt`, `test_tier2_negative.sh`
 (runtime), `test_tier3_invariant_surface.sh` (surface anchors).
 
-**Verification**:
+**Verification** (figures as of audit-pass-3 close):
 * Lean: `lake build` (314 jobs) clean; zero `sorry`, zero
   added axioms; module + all dependent suites green.
-* Rust: `cargo test -p sele4n-hal --lib` 613/613 PASS; `cargo
-  clippy` clean.
+  `lake exe ticket_lock_suite` 49 runtime assertions PASS.
+* Rust: `cargo test -p sele4n-hal --lib` 614 passed + 1 ignored
+  (pre-existing `sm1g3_cross_core_kprintln_stress` placeholder);
+  `cargo test -p sele4n-hal --lib ticket_lock` 22/22 PASS;
+  `cargo clippy --workspace --all-targets` clean (zero
+  warnings).
+* Smoke: `./scripts/test_smoke.sh` green; `test_full.sh` tier
+  0..3 green.
 * Smoke: `./scripts/test_smoke.sh` green; `test_full.sh` tier
   3 invariant surface green.
 
