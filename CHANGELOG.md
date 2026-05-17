@@ -1,3 +1,266 @@
+## v0.31.9 — WS-SM Phase SM2.A landing (abstract memory model for verified lock primitives)
+
+WS-SM SM2.A (abstract memory model) landed in one cut on branch
+`claude/review-codebase-memory-model-xxsh9`, opening Phase SM2 of
+the WS-SM SMP multi-core completion workstream.  Twelve sub-tasks
+landed in one cut, providing the operational ARMv8.1-A LSE memory
+model that SM2.B (TicketLock) and SM2.C (RwLock) release-acquire
+pairing proofs consume.
+
+**Audit-pass refinements** (included in v0.31.9): the per-core
+seqNum monotonicity in `wellFormed` uses non-strict `≤` (not
+strict `<` as in the plan pseudocode) to support ARMv8.1-A LSE
+atomic Read-Modify-Write operations (see SM2.A.5 below).  Eight
+helper-theorem lifters added for SM2.B/SM2.C consumers (six
+extraction/lift lemmas + `singleton_wellFormed` base case +
+`wellFormed_append` inductive step).  Unused `Nodup` hypothesis
+removed from `eventPos_inj`.  Fragile projection chains
+replaced with `obtain` destructuring throughout (three sites:
+`happensBefore_strict_positional` sync case,
+`synchronizesWith_relaxed_load_rejected`,
+`synchronizesWith_relaxed_store_rejected`).
+
+**Twelve sub-tasks**
+
+### SM2.A.1 — `MemoryOrder` inductive
+
+New inductive `SeLe4n.Kernel.Concurrency.MemoryOrder` with 5
+constructors mapping to the ARMv8.1-A / C++20 memory-order tags:
+`.relaxed`, `.acquire`, `.release`, `.acqRel`, `.seqCst`.  Two
+Bool selectors (`isAcquire`, `isRelease`) gate the
+`synchronizesWith` discipline.  Five lookup witnesses
+(`acquire_isAcquire`, `release_isRelease`, `acqRel_both`,
+`seqCst_both`, `relaxed_neither`) pin the per-constructor
+behaviour at `rfl`.
+
+`DecidableEq`, `Repr`, `Inhabited` derived.
+
+### SM2.A.2 — `AtomicLocation` struct
+
+New structure `SeLe4n.Kernel.Concurrency.AtomicLocation` (single
+`id : Nat` field, derived `DecidableEq`).  Three concrete
+encoding helpers reserve a small fixed set of slots per lock
+instance: `nextTicketOf base = ⟨base⟩`,
+`servingOf base = ⟨base + 1⟩` (two slots per TicketLock),
+`rwLockStateOf base = ⟨base⟩` (one slot per RwLock).  The
+`ticketLock_fields_distinct` witness proves the encoding is
+non-aliasing.
+
+### SM2.A.3 — `MemoryEvent` structure
+
+New structure `SeLe4n.Kernel.Concurrency.MemoryEvent` with 6
+fields: `core : CoreId`, `loc : AtomicLocation`, `isWrite : Bool`,
+`order : MemoryOrder`, `value : Nat`, `seqNum : Nat`.  All fields
+have `DecidableEq`, so the structure derives `DecidableEq`
+automatically (which in turn gives `LawfulBEq` via the standard
+Lean 4 instance).  RMW atomics are modelled as two events with
+the same `seqNum`.
+
+### SM2.A.4 — `MemoryTrace` + `empty` + `append`
+
+New structure `SeLe4n.Kernel.Concurrency.MemoryTrace` with a
+single field `events : List MemoryEvent`.  Two constructors:
+`.empty` (seed) and `.append e` (extension).  Three structural
+witnesses: `empty_events` (empty is `[]`), `append_events`
+(append extends at tail), `append_length` (append increments
+length by 1).
+
+### SM2.A.5 — `wellFormed` + `eventPos`
+
+`MemoryTrace.wellFormed` is the conjunction of two clauses:
+
+1. `t.events.Nodup` (events appear at most once).
+2. `List.Pairwise (fun e₁ e₂ => e₁.core = e₂.core → e₁.seqNum
+    ≤ e₂.seqNum) t.events` (per-core seqNum monotonicity, non-
+    strict to allow RMW pairs at the same seqNum).
+
+Auto-derived `Decidable` instance via the decidability of `Nodup`
+(under `DecidableEq`) and `Pairwise` (under decidable
+relation).  `empty_wellFormed` is the vacuously-true witness for
+the empty trace.
+
+**Note on non-strict `≤`**: ARMv8.1-A LSE atomic Read-Modify-
+Write operations (`LDADDA`, `STADDL`, `CASAL`, …) are modelled
+per the plan §3.1.3 commentary as TWO events with one shared
+`seqNum`: a load with the pre-value and a store with the post-
+value.  A strict `<` would reject all RMW traces — including
+`TicketLock.acquire`'s `next_ticket.fetch_add(1, Acquire)` —
+which would block SM2.B's proofs.  The non-strict `≤` allows
+RMW pairs while still preventing per-core seqNum DECREASE.  The
+strict ordering for `sequencedBefore` (and therefore `happensBefore.seq`
+edges) is preserved by the strict `<` in `sequencedBefore`
+itself, so the partial-order theorems are unchanged.
+
+`MemoryTrace.eventPos t e := t.events.idxOf e` gives the
+canonical position (with sentinel `t.events.length` for events
+not in the trace).  Four bridging properties:
+
+- `eventPos_lt_length`: in-trace events have a valid index.
+- `eventPos_eq_length_of_not_mem`: out-of-trace events return
+  the sentinel.
+- `eventPos_get_eq`: `events.get` at the canonical index returns
+  the original event (uses `LawfulBEq.eq_of_beq` to lift from
+  BEq to structural equality).
+- `eventPos_inj`: positions uniquely identify in-trace events.
+
+### SM2.A.6 — `synchronizesWith`
+
+`synchronizesWith t e_R e_A` is the 9-conjunct relation per ARM
+ARM B2.3.7 — both endpoints in the trace, `e_R` is a release-
+store (`isWrite=true ∧ order.isRelease=true`), `e_A` is an
+acquire-load (`isWrite=false ∧ order.isAcquire=true`), same
+location, observed value equals released value, and `e_R`
+precedes `e_A` in trace order (via `eventPos`).
+
+Two rejection witnesses (`_relaxed_load_rejected`,
+`_relaxed_store_rejected`) prove that relaxed-tagged events
+cannot participate in a sync edge.
+
+### SM2.A.7 — `sequencedBefore` + `happensBefore`
+
+`sequencedBefore t e₁ e₂` is the 4-conjunct relation — both
+endpoints in the trace, same core, `e₁.seqNum < e₂.seqNum`.
+
+`happensBefore t` is an inductive type with three constructors:
+`.seq` lifts sequenced-before to hb, `.sync` lifts
+synchronizes-with to hb, `.trans` composes two hb edges.
+
+Two foundational lemmas:
+
+- `happensBefore_in_trace`: every hb edge has both endpoints in
+  the trace.
+- `happensBefore_strict_positional`: every hb edge strictly
+  increases trace position under wellFormed.  This is the
+  inductive invariant that drives both irreflexivity and
+  antisymmetry.
+
+### SM2.A.8 — `happensBefore_irreflexive`
+
+Theorem 3.1.8.1: for any wellFormed trace and any event,
+`¬ happensBefore t e e`.  Proved via the strict-positional
+invariant and `Nat.lt_irrefl`.
+
+### SM2.A.9 — `happensBefore_transitive`
+
+Theorem 3.1.8.2: hb is closed under composition.  Immediate from
+the `.trans` constructor of `happensBefore`.
+
+### SM2.A.10 — `happensBefore_antisymmetric`
+
+Theorem 3.1.8.3: distinct events cannot be mutually hb-related.
+Proved via the strict-positional invariant and `Nat.lt_asymm`.
+
+### SM2.A.11 — `happens_before_partial_order` (aggregate)
+
+Theorem 3.1.8: hb is a partial order.  Combines irreflexivity,
+transitivity, antisymmetry into a single statement.  The
+canonical surface anchor for SM2.B / SM2.C release-acquire
+pairing.  Plus `happens_before_strict_partial_order`
+(kernel-convenient form) and `happensBefore_no_cycle`
+(smoke-test form).
+
+### SM2.A.12 — `tests/MemoryModelSuite.lean`
+
+NEW FILE.  ~675 LoC carrying:
+
+- 64 surface anchors (`#check` lines covering every public
+  symbol, including the eight helper-theorem lifters).
+- 39 decidable examples (`example : ... := by decide` / `rfl`)
+  exercising the data-type constructors, `wellFormed` true and
+  false cases, RMW positive cases (load + store at same seqNum),
+  single-event and append-step wellFormed cases (using the new
+  `singleton_wellFormed` and `wellFormed_append` lemmas),
+  `eventPos` behaviour, partial-order shape, and constructive
+  `synchronizesWith` / `sequencedBefore` witnesses.
+- Runnable executable `lake exe memory_model_suite` with 50
+  runtime assertions via an `assertBool` helper that prints PASS
+  / FAIL.
+
+Wired into Tier 2 (negative) via `scripts/test_tier2_negative.sh`
+and Tier 3 (invariant surface) via
+`scripts/test_tier3_invariant_surface.sh`.
+
+### Helper theorems for SM2.B / SM2.C consumers (audit-pass refinement)
+
+In addition to the four canonical partial-order witnesses, the
+module exports eight convenience lifters that simplify downstream
+SM2.B (TicketLock) and SM2.C (RwLock) proofs:
+
+- `sequencedBefore_implies_happensBefore`: lifts a `sequencedBefore`
+  witness to `happensBefore` (the companion to `.seq` ctor).
+- `synchronizesWith_implies_happensBefore`: lifts a `synchronizesWith`
+  witness to `happensBefore` (the companion to `.sync` ctor).
+- `MemoryTrace.wellFormed.nodup`: extracts the Nodup component
+  (via dot notation: `h_wf.nodup`).
+- `MemoryTrace.wellFormed.pairwise`: extracts the Pairwise
+  component (via dot notation: `h_wf.pairwise`).
+- `happensBefore_eventPos_lt`: convenience form of
+  `happensBefore_strict_positional` for callers preferring the
+  named theorem.
+- `happensBefore_endpoints_in_trace_with_pos`: combines
+  `happensBefore_in_trace` and `eventPos_lt_length` into one
+  4-conjunct witness.
+- `MemoryTrace.singleton_wellFormed`: base case for
+  operational-semantics induction — a single-event trace is
+  trivially well-formed.
+- `MemoryTrace.wellFormed_append`: inductive step — appending a
+  fresh event with `seqNum ≥` all prior same-core events to a
+  well-formed trace preserves well-formedness.  This is the
+  central lemma SM2.B/C will fold over to build wellFormed
+  traces from operational-semantics steps.
+
+**File**: `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~700
+LoC).  Staged via `SeLe4n/Platform/Staged.lean` (entry added to
+`scripts/staged_module_allowlist.txt` per the WS-RC R12.B
+partition gate); SM2.B (TicketLock) is the first runtime
+exerciser.
+
+**Mathematical correctness highlights**:
+
+- The proofs use a single foundational helper
+  (`pairwise_get_lt`, private) that lifts `List.Pairwise R l` to
+  per-position ordering `R l[i] l[j]` for `i < j`.  Proved by
+  direct induction on `Pairwise` (~30 LoC).
+- The strict-positional invariant uses `Nat.lt_trichotomy` on
+  positions in the seq case to discharge the wellFormed
+  monotonicity against the sequenced-before hypothesis.  Under
+  the non-strict `≤` formulation, the trichotomy contradiction
+  uses `Nat.lt_of_lt_of_le` (combining the strict `hseq` with
+  the non-strict Pairwise relation).
+- The `eventPos_inj` proof uses `Fin.eq_of_val_eq` +
+  `congrArg t.events.get` to avoid the "motive is not type
+  correct" failure that a direct `rw` on the dependent Fin
+  index would hit.  The Nodup hypothesis is *not* required —
+  `eventPos` is a function (returning the FIRST occurrence
+  via `idxOf`), so equal positions yield equal events under
+  any list shape.
+- The `happensBefore_strict_positional` sync case uses an
+  explicit `obtain` destructuring on the 9-conjunct
+  `synchronizesWith` (rather than a fragile `.2.2.2.2.2.2.2.2`
+  projection chain) — robust against future re-orderings.
+- No `Classical.choose`, no `noncomputable`: `eventPos` uses the
+  computable `List.idxOf` (Nat-valued, with sentinel
+  `l.length` for out-of-list events).
+
+**Axiom budget for SM2.A**: 0 Lean axioms, 0 sorries.  All
+ARMv8.1-A LSE semantics enter operationally as constraints on
+the trace shape; no `axiom` or `sorry` declarations.
+
+**Test coverage**: 50 new runtime assertions in
+`tests/MemoryModelSuite.lean`; 47 new tier-3 surface anchors in
+`scripts/test_tier3_invariant_surface.sh` (covers the four
+canonical theorems + six helper lifters + all data-type and
+`eventPos` surfaces); existing 592 HAL tests + `smp_foundations_
+suite` still pass.  Full Tier 0+1+2+3 smoke test green.
+
+**Items deferred past v1.0.0 with correctness impact**: NONE.
+
+Follow-on: SM2.B (TicketLock spec + Rust impl), SM2.C (RwLock
+spec + Rust impl), SM2.D (FFI bridge + integration), SM2.E
+(documentation).  See
+[`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+§§5.2..5.5.
+
 ## v0.31.8 — WS-SM Phase SM1.I landing (miscellaneous HAL improvements; closes SM1)
 
 WS-SM SM1.I (miscellaneous HAL improvements) landed in one cut on

@@ -197,8 +197,12 @@ SM1.C (Secondary core full init) — **LANDED v0.31.5**;
 SM1.D (DTB cmdline parsing) — **LANDED v0.31.6**;
 SM1.E (IS-variant TLBI), SM1.F (SGI primitive), SM1.G (Per-core
 UART), SM1.H (QEMU SMP integration test) — **all four LANDED v0.31.7**;
-SM1.I (Miscellaneous HAL improvements) — **LANDED v0.31.8 — closes SM1**.
+SM1.I (Miscellaneous HAL improvements) — **LANDED v0.31.8 — closes SM1**;
+SM2.A (Abstract memory model) — **LANDED v0.31.9** (the foundation
+that SM2.B TicketLock + SM2.C RwLock release-acquire pairing
+proofs consume).
 See [`docs/planning/SMP_RUST_HAL_PLAN.md`](planning/SMP_RUST_HAL_PLAN.md) §§5.2..5.9.
+See [`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) §5.1 for SM2.A.
 
 **WS-SM SM1.B LANDED at v0.31.4 on branch
 `claude/per-cpu-tpidr-el1-1OBHA`** (per-CPU data + TPIDR_EL1,
@@ -746,6 +750,105 @@ Items deferred past v1.0.0 with correctness impact: NONE.
 v0.31.8 with all nine sub-phases LANDED (SM1.A–SM1.I; 61 total
 sub-tasks).  Next: WS-SM SM2 (verified lock primitives) +
 SM3..SM9.
+
+**WS-SM SM2.A LANDED at v0.31.9 on branch
+`claude/review-codebase-memory-model-xxsh9`** (Abstract memory
+model — the foundation for SM2.B TicketLock + SM2.C RwLock
+release-acquire pairing proofs).  Twelve sub-tasks landed in one
+cut:
+
+- **SM2.A.1**: `MemoryOrder` inductive (5 ctors: `.relaxed`,
+  `.acquire`, `.release`, `.acqRel`, `.seqCst`) with `isAcquire`
+  / `isRelease` Bool selectors and 5 lookup witnesses
+  (`acquire_isAcquire`, `release_isRelease`, `acqRel_both`,
+  `seqCst_both`, `relaxed_neither`).  Maps to ARM ARM B2.3.7
+  release/acquire semantics.
+- **SM2.A.2**: `AtomicLocation` struct (single `id : Nat` field)
+  with three concrete encoding helpers (`nextTicketOf`,
+  `servingOf`, `rwLockStateOf`) and the
+  `ticketLock_fields_distinct` non-aliasing witness.
+- **SM2.A.3**: `MemoryEvent` structure (6 fields: `core`, `loc`,
+  `isWrite`, `order`, `value`, `seqNum`) with auto-derived
+  `DecidableEq` so traces carry `Nodup`.
+- **SM2.A.4**: `MemoryTrace` structure (single `events : List
+  MemoryEvent` field) plus `.empty` seed, `.append e` extension,
+  and three structural witnesses (`empty_events`, `append_events`,
+  `append_length`).
+- **SM2.A.5**: `MemoryTrace.wellFormed` predicate (two conjuncts:
+  events `Nodup` + per-core `Pairwise` seqNum monotonicity,
+  non-strict `≤` to support RMW load+store pairs at one atomic
+  op per ARMv8.1-A LSE — see audit-pass note below) plus
+  auto-derived `Decidable` instance and the `empty_wellFormed`
+  witness.  Plus `eventPos` (canonical position via
+  `List.idxOf`) with four bridging properties:
+  `eventPos_lt_length`, `eventPos_eq_length_of_not_mem`,
+  `eventPos_get_eq` (under `LawfulBEq`), and `eventPos_inj`.
+- **SM2.A.6**: `synchronizesWith` (9-conjunct relation per ARM
+  ARM B2.3.7) with two rejection witnesses for relaxed-load /
+  relaxed-store endpoints.
+- **SM2.A.7**: `sequencedBefore` (4-conjunct relation) and
+  `happensBefore` inductive (3 constructors: `.seq`, `.sync`,
+  `.trans`).  Plus `happensBefore_in_trace` and the foundational
+  `happensBefore_strict_positional` inductive invariant.
+- **SM2.A.8**: `happensBefore_irreflexive` — no event hb-precedes
+  itself.
+- **SM2.A.9**: `happensBefore_transitive` — immediate from
+  `.trans` ctor.
+- **SM2.A.10**: `happensBefore_antisymmetric` — distinct events
+  cannot be mutually hb-related.
+- **SM2.A.11**: `happens_before_partial_order` aggregate plus
+  `happens_before_strict_partial_order` (kernel-convenient form)
+  and `happensBefore_no_cycle`.  The canonical surface anchor
+  for SM2.B / SM2.C release-acquire pairing.
+- **SM2.A.12**: `tests/MemoryModelSuite.lean` (~675 LoC) — 64
+  surface anchors + 39 decidable examples + 50 runtime
+  assertions via a runnable executable.  Wired into Tier 2
+  (negative) and Tier 3 (invariant surface).
+
+**Audit-pass refinements (included in v0.31.9 landing)**:
+
+- Non-strict `≤` per-core seqNum monotonicity in `wellFormed`
+  (not strict `<` as in the plan pseudocode) to support
+  ARMv8.1-A LSE atomic RMW operations.  Plan §3.1.3 commentary
+  explicitly says RMW ops are modelled as two events sharing
+  one `seqNum`; strict `<` would reject all RMW traces.  See
+  the `wellFormed` docstring for the trade-off analysis.
+- Eight helper-theorem lifters added for SM2.B/SM2.C consumers:
+  `sequencedBefore_implies_happensBefore`,
+  `synchronizesWith_implies_happensBefore`,
+  `MemoryTrace.wellFormed.nodup`, `MemoryTrace.wellFormed.pairwise`,
+  `happensBefore_eventPos_lt`,
+  `happensBefore_endpoints_in_trace_with_pos`,
+  `MemoryTrace.singleton_wellFormed` (operational-semantics
+  base case), `MemoryTrace.wellFormed_append` (inductive step:
+  append a fresh event with monotone seqNum, preserve wellFormed).
+- Unused `Nodup` hypothesis removed from `eventPos_inj` (the
+  proof only requires `eventPos` being a function, which holds
+  for any list).
+- Fragile projection chains replaced with explicit `obtain`
+  destructuring at three sites:
+  `happensBefore_strict_positional` sync case,
+  `synchronizesWith_relaxed_load_rejected`,
+  `synchronizesWith_relaxed_store_rejected`.
+
+**File**: `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~700
+LoC).  Staged via `SeLe4n/Platform/Staged.lean` (entry added to
+`scripts/staged_module_allowlist.txt` per the WS-RC R12.B
+partition gate); SM2.B (TicketLock) is the first runtime
+exerciser.
+
+**Axiom budget for SM2.A**: 0 Lean axioms, 0 sorries.  Test
+coverage: 50 new runtime assertions plus 47 tier-3 surface
+anchors; existing 592 HAL tests + `smp_foundations_suite` still
+pass.  Full Tier 0+1+2+3 smoke test green.
+
+**Items deferred past v1.0.0 with correctness impact**: NONE.
+
+Follow-on: SM2.B (TicketLock spec + Rust impl), SM2.C (RwLock
+spec + Rust impl), SM2.D (FFI bridge + integration), SM2.E
+(documentation).  See
+[`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+§§5.2..5.5.
 
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple

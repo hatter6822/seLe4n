@@ -86,5 +86,11 @@ run_check_with_timeout "TRACE" lake exe syscall_dispatch_suite
 # AN12-B inventory hardening + ArchAssumption 6-way machinery.  Runtime
 # assertions (~41) plus surface-anchor `#check`s of every public symbol.
 run_check_with_timeout "TRACE" lake exe smp_foundations_suite
+# WS-SM SM2.A.12 — Memory model test suite for the SM2.A abstract memory
+# model (MemoryOrder, AtomicLocation, MemoryEvent, MemoryTrace,
+# wellFormed, eventPos, synchronizesWith, sequencedBefore, happensBefore,
+# and the four partial-order theorems).  Runtime assertions (~36) plus
+# surface-anchor `#check`s of every public symbol.
+run_check_with_timeout "TRACE" lake exe memory_model_suite
 
 finalize_report

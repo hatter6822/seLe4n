@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.31.8` (`lakefile.toml`) |
+| **Package version** | `0.31.9` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 115,963 across 178 Lean files |
 | **Test LoC** | 21,850 across 30 Lean test suites |
@@ -638,6 +638,85 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    SM1.I.1 contract.  593 HAL tests at v0.31.8 (510 at SM1.E/F/G/H close + 83 SM1.I including audit-pass refinements at
    v0.31.7).  WS-SM SM1 acceptance gate (per
    `docs/planning/SMP_RUST_HAL_PLAN.md` §8) all items checked.
+
+   **WS-SM Phase SM2.A (v0.31.9) opens SM2** — the **verification-
+   quality elevation** that distinguishes seLe4n from seL4: the
+   lock primitives themselves are formally specified in Lean
+   against an abstract operational semantics of ARMv8.1-A LSE
+   atomic operations.  SM2.A is the abstract memory model
+   foundation that SM2.B (TicketLock) and SM2.C (RwLock)
+   release-acquire pairing proofs consume.  Twelve sub-tasks
+   landed in one cut in `SeLe4n/Kernel/Concurrency/MemoryModel.lean`
+   (~700 LoC):
+
+   - `MemoryOrder` inductive with 5 constructors mapping to ARM
+     ARM B2.3.7 release/acquire semantics (`.relaxed`, `.acquire`,
+     `.release`, `.acqRel`, `.seqCst`) and `isAcquire` /
+     `isRelease` Bool selectors.
+   - `AtomicLocation` struct (single `id : Nat` field) with three
+     concrete encoding helpers (`nextTicketOf`, `servingOf`,
+     `rwLockStateOf`) reserving slot offsets per lock instance.
+   - `MemoryEvent` structure (6 fields capturing the per-event
+     observation: which core, which location, isWrite, memory-
+     order tag, value, per-core seqNum).
+   - `MemoryTrace` structure (event sequence) plus `.empty` seed,
+     `.append e` extension, and three structural witnesses.
+   - `MemoryTrace.wellFormed` predicate (events Nodup +
+     per-core Pairwise seqNum monotonicity) with auto-derived
+     `Decidable` instance; `eventPos` (canonical position via
+     `List.idxOf`) plus four bridging properties for
+     positional reasoning.
+   - `synchronizesWith` (9-conjunct relation per ARM ARM B2.3.7
+     — both endpoints in trace, release-store + acquire-load,
+     same location, observed=released value, positional
+     ordering) with two relaxed-rejection witnesses.
+   - `sequencedBefore` (4-conjunct relation — both endpoints in
+     trace, same core, smaller seqNum); `happensBefore`
+     inductive (3 constructors: `.seq`, `.sync`, `.trans`); the
+     `happensBefore_in_trace` and
+     `happensBefore_strict_positional` foundational lemmas.
+   - The four canonical partial-order theorems
+     (`happensBefore_irreflexive`, `happensBefore_transitive`,
+     `happensBefore_antisymmetric`, aggregate
+     `happens_before_partial_order`) plus
+     `happens_before_strict_partial_order` (kernel-convenient
+     form) and `happensBefore_no_cycle` (smoke-test form).
+
+   **`tests/MemoryModelSuite.lean`** (NEW, ~675 LoC): 64
+   surface anchors + 39 decidable examples + 50 runtime
+   assertions via `lake exe memory_model_suite`, wired into
+   Tier 2 (negative) and Tier 3 (invariant surface).  Module
+   reachability: staged via `SeLe4n/Platform/Staged.lean`
+   (allowlist entry per WS-RC R12.B partition gate); SM2.B
+   (TicketLock) is the first runtime exerciser.
+
+   **Audit-pass refinements** (included in v0.31.9):
+
+   - Non-strict `≤` per-core seqNum monotonicity in `wellFormed`
+     (not strict `<` as in the plan pseudocode) to support
+     ARMv8.1-A LSE atomic RMW operations.  The plan §3.1.3
+     commentary explicitly says RMW ops are modelled as two
+     events sharing one `seqNum`; strict `<` would reject all
+     RMW traces (including `TicketLock.acquire`'s `next_ticket
+     .fetch_add(1, Acquire)`).  Strict ordering for
+     `happensBefore.seq` is preserved by the strict `<` in
+     `sequencedBefore`, so the partial-order theorems are
+     unchanged.
+   - Eight helper-theorem lifters added for SM2.B/SM2.C
+     consumers: `sequencedBefore_implies_happensBefore`,
+     `synchronizesWith_implies_happensBefore`,
+     `MemoryTrace.wellFormed.nodup`,
+     `MemoryTrace.wellFormed.pairwise`,
+     `happensBefore_eventPos_lt`,
+     `happensBefore_endpoints_in_trace_with_pos`,
+     `MemoryTrace.singleton_wellFormed` (operational-semantics
+     base case), `MemoryTrace.wellFormed_append` (inductive
+     step that lets SM2.B/C build long well-formed traces from
+     per-operation steps via structural fold).
+
+   **Axiom budget for SM2.A**: 0 Lean axioms, 0 sorries.  All
+   ARMv8.1-A LSE semantics enter operationally as constraints
+   on the trace shape.
 
 3. **Sequential memory model**: Under single-core operation, all memory
    operations are sequentially ordered. DMB/DSB/ISB barriers are emitted in the
