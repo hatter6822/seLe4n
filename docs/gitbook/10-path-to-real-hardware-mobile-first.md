@@ -158,6 +158,52 @@ WS-AN Phase AN9 closes every hardware-binding deferred item from
     `tests/SmpFoundationsSuite.lean`.  Zero clippy warnings
     workspace-wide.
 
+- **Miscellaneous HAL improvements** (WS-SM SM1.I, landed at
+  v0.31.8): completes the SM1 Rust HAL with the SM5 landing
+  seams + cross-core test infrastructure.  **WS-SM SM1 CLOSED
+  at v0.31.8** with all nine sub-phases LANDED (SM1.A–SM1.I,
+  61 total sub-tasks).
+  - **SM1.I.1** adds `trap.rs::handle_irq_per_core` as the SM5
+    landing seam: reads TPIDR_EL1, records per-core IRQ /
+    timer-tick / SGI stats via `per_cpu_stats::record_*`, then
+    dispatches via `gic::dispatch_irq` with per-core attribution
+    in the unhandled-INTID log line.  SM5 swaps the assembly
+    entry vector to this function; both share an identical
+    `extern "C" fn(&mut TrapFrame)` signature.  New build-script
+    scanner `scan_trap_rs_handle_irq_per_core_intact` pins four
+    contract properties.
+  - **SM1.I.2** documents GICC_PMR per-core banking (per
+    GIC-400 TRM §4.4.2 / §3.1.4) and DAIF.I per-PE scoping
+    (per ARM ARM C5.2.5) in `gic.rs` + `interrupts.rs`.  The
+    kernel has two layers of per-core IRQ masking, both
+    inherently per-PE.
+  - **SM1.I.3** adds idle-wait primitives at three layers —
+    Rust (`cpu::idle_wait`, `cpu::idle_wait_bounded`), FFI
+    (`ffi_idle_wait`, `ffi_idle_wait_bounded`), Lean
+    (`Concurrency.idleWait`, `Concurrency.idleWaitBounded`).
+  - **SM1.I.4** introduces `per_cpu_stats.rs` (~550 LoC) with
+    `PerCpuStats` (`#[repr(C, align(64))]` cache-line aligned,
+    six AtomicU64 counters: irq, timer-tick, sgi, syscall,
+    vmfault, user-exception).  Write path wired into
+    `handle_irq_per_core` (SM1.I.1) and
+    `handle_synchronous_exception` per EC branch.  Read path
+    via FFI (`ffi_per_core_*_count`) and Lean
+    (`Concurrency.perCore*Count`).
+  - **SM1.I.5** documents the SEV / WFE coordination
+    semantics (ARM ARM B2.10 / C6.2.353 / C6.2.243 / C6.2.244)
+    in `cpu.rs` module header.  Plus new `cpu::sev()` and
+    `cpu::sevl()` wrappers for testability.
+  - **SM1.I.6** adds 12 cross-core test scenarios in
+    `smp::tests::sm1i6_*` exercising the SM1.I infrastructure.
+  - **Audit-pass-1** refinements: two pre-existing parallel-test
+    races fixed (UART_LOCK observation via re-acquire pattern;
+    TIMER_INTERVAL / TICK_COUNT via private `Mutex`); stress
+    testing confirms failure rate drops from ~10–15% to 0%.
+  - **Test coverage**: 583 HAL tests (was 510 at SM1.E/F/G/H
+    close; +73 SM1.I tests).  Lean-side: +12 surface anchors +
+    runtime decidable examples.  Zero clippy warnings
+    workspace-wide.
+
 The **runtime** validation that complements these static guarantees
 (QEMU virt boots, RPi 5 silicon validation) is documented in
 [`docs/HARDWARE_TESTING.md`](../HARDWARE_TESTING.md) with step-by-step

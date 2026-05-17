@@ -196,8 +196,9 @@ Follow-on: SM1.B (Per-CPU data + TPIDR_EL1) — **LANDED below**;
 SM1.C (Secondary core full init) — **LANDED v0.31.5**;
 SM1.D (DTB cmdline parsing) — **LANDED v0.31.6**;
 SM1.E (IS-variant TLBI), SM1.F (SGI primitive), SM1.G (Per-core
-UART), SM1.H (QEMU SMP integration test) — **all four LANDED v0.31.7**.
-See [`docs/planning/SMP_RUST_HAL_PLAN.md`](planning/SMP_RUST_HAL_PLAN.md) §§5.2..5.8.
+UART), SM1.H (QEMU SMP integration test) — **all four LANDED v0.31.7**;
+SM1.I (Miscellaneous HAL improvements) — **LANDED v0.31.8 — closes SM1**.
+See [`docs/planning/SMP_RUST_HAL_PLAN.md`](planning/SMP_RUST_HAL_PLAN.md) §§5.2..5.9.
 
 **WS-SM SM1.B LANDED at v0.31.4 on branch
 `claude/per-cpu-tpidr-el1-1OBHA`** (per-CPU data + TPIDR_EL1,
@@ -674,6 +675,77 @@ phases — see
 [`docs/planning/SMP_RUST_HAL_PLAN.md`](planning/SMP_RUST_HAL_PLAN.md)
 §5.9 and the master overview
 [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](planning/SMP_MULTICORE_COMPLETION_PLAN.md).
+
+**WS-SM SM1.I LANDED at v0.31.8 on branch
+`claude/review-hal-improvements-jwTzB`** (miscellaneous HAL
+improvements; **closes SM1**).  Six sub-tasks landed in one cut,
+completing the SM1 Rust HAL surface with the SM5 landing seams +
+cross-core test infrastructure required for the SM5+ per-core
+scheduler integration:
+
+- **SM1.I.1**: `trap.rs::handle_irq_per_core` — per-core IRQ
+  handler entry that reads the calling core's id via TPIDR_EL1
+  (`per_cpu::current_core_id_from_tpidr`), records per-core IRQ
+  dispatch / timer-tick / SGI statistics via
+  `per_cpu_stats::record_*`, then dispatches via
+  `gic::dispatch_irq` with per-core attribution in the
+  unhandled-INTID log line.  SM5 will redirect `trap.S`'s IRQ
+  entry from `handle_irq` to `handle_irq_per_core`; both functions
+  have identical `extern "C" fn(&mut TrapFrame)` signatures so
+  the SM5 swap is a single function-pointer change.  New
+  build-script scanner `scan_trap_rs_handle_irq_per_core_intact`
+  pins four contract properties (function existence,
+  `#[no_mangle]`, `record_irq_dispatch` call, TPIDR_EL1 read) at
+  elaboration time.
+
+- **SM1.I.2**: GICC_PMR per-core banking documentation in
+  `gic.rs` + `interrupts.rs` module headers.  GICC_PMR + DAIF.I
+  are both inherently per-PE (banked + PSTATE), so per-core IRQ
+  masking requires no software lock.
+
+- **SM1.I.3**: per-core idle-wait primitives at three layers —
+  Rust (`cpu::idle_wait`, `cpu::idle_wait_bounded`), FFI
+  (`ffi_idle_wait`, `ffi_idle_wait_bounded`), Lean
+  (`Concurrency.idleWait`, `Concurrency.idleWaitBounded`).  SM5
+  wires the per-core idle TCB to these symbols.
+
+- **SM1.I.4**: per-core exception statistics module
+  `rust/sele4n-hal/src/per_cpu_stats.rs` (~550 LoC).
+  `PerCpuStats` cache-line aligned struct (six AtomicU64
+  counters: `irq_count`, `timer_tick_count`, `sgi_count`,
+  `syscall_count`, `vmfault_count`, `user_exception_count`).
+  Global `PER_CPU_STATS` array, FFI exports
+  (`ffi_per_core_*_count`), Lean typed wrappers
+  (`Concurrency.perCore*Count`).  Synchronous exception handler
+  also wired to advance per-core counters per EC branch.
+
+- **SM1.I.5**: SEV / WFE coordination documentation in `cpu.rs`
+  module header (~140 lines) covering ARMv8-A local event
+  register semantics + kernel policy for SEV emission.  Plus
+  new `cpu::sev()` / `cpu::sevl()` wrappers for testability.
+
+- **SM1.I.6**: 12 new cross-core test scenarios in
+  `smp::tests::sm1i6_*` exercising per-core stats no-aliasing,
+  validator dispatch, init helper idempotence, CORE_READY
+  monotonicity, SGI distribution, and full composition.
+
+Test coverage: 583 HAL tests (up from 510 at SM1.E/F/G/H close;
++73 SM1.I tests).  Lean-side: 12 new surface anchors + runtime
+decidable examples in `tests/SmpFoundationsSuite.lean`.  Zero
+clippy warnings workspace-wide.  Full Tier 0+1+2+3 still green.
+
+Audit-pass-1 refinements (post-initial-landing): two pre-existing
+parallel-test races fixed.  UART_LOCK observation tests converted
+to a deterministic re-acquire pattern.  TIMER_INTERVAL / TICK_COUNT
+tests serialised via a private `std::sync::Mutex`.  Stress
+testing confirms failure rate drops from ~10–15% to 0%.
+
+Items deferred past v1.0.0 with correctness impact: NONE.
+
+**SM1 acceptance gate**: all items checked.  WS-SM SM1 CLOSED at
+v0.31.8 with all nine sub-phases LANDED (SM1.A–SM1.I; 61 total
+sub-tasks).  Next: WS-SM SM2 (verified lock primitives) +
+SM3..SM9.
 
 **WS-AN portfolio**: COMPLETE at v0.30.11 (archived under WS-AN entry
 below). 14 of 15 absorbed deferred items RESOLVED (DEF-F-L9 17-tuple

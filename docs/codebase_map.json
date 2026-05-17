@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/review-codebase-tlb-plan-L8PzR",
-      "commit_sha": "2ca2056f1ac07f2097908bf0ef8ec18ee05a7556",
-      "tree_sha": "62f23c1da7fd6560fe25631d551c1f29b4d17b6b",
-      "committed_at_utc": "2026-05-16T21:44:47+00:00"
+      "branch": "claude/review-hal-improvements-jwTzB",
+      "commit_sha": "5211ded6f3038b22e270036fbb576811370101f0",
+      "tree_sha": "f671a152be54f15e857e5be3f0b14984c9e6eeb3",
+      "committed_at_utc": "2026-05-16T20:14:44-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "17bc6748195caa56747f73291ccb73da0395a765264552f5f7132f1f3ffab03f"
+    "source_digest": "1b010d8e9ddcd9a9184bdd0f70833b58981d6cacb8f6ad11f05d96a2888bed0d"
   },
   "summary": {
     "module_count": 208,
-    "declaration_count": 6636
+    "declaration_count": 6651
   },
   "readme_sync": {
-    "version": "0.31.7",
+    "version": "0.31.8",
     "lean_toolchain": "v4.28.0",
     "production_files": 178,
-    "production_loc": 115985,
+    "production_loc": 116128,
     "test_files": 30,
-    "test_loc": 21864,
-    "proved_theorem_lemma_decls": 3371,
+    "test_loc": 21927,
+    "proved_theorem_lemma_decls": 3372,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -14150,7 +14150,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Runtime",
       "path": "SeLe4n/Kernel/Concurrency/Runtime.lean",
-      "declaration_count": 3,
+      "declaration_count": 10,
       "declarations": [
         {
           "kind": "namespace",
@@ -14177,6 +14177,73 @@
           "called": [
             "CoreId",
             "numCores"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "idleWait",
+          "line": 129,
+          "called": [
+            "ffiIdleWait"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "idleWaitBounded",
+          "line": 139,
+          "called": [
+            "ffiIdleWaitBounded"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "perCoreIrqCount",
+          "line": 152,
+          "called": [
+            "CoreId",
+            "ffiPerCoreIrqCount",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "perCoreTimerTickCount",
+          "line": 157,
+          "called": [
+            "CoreId",
+            "ffiPerCoreTimerTickCount",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "perCoreSgiCount",
+          "line": 162,
+          "called": [
+            "CoreId",
+            "ffiPerCoreSgiCount",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "perCoreSyscallCount",
+          "line": 167,
+          "called": [
+            "CoreId",
+            "ffiPerCoreSyscallCount",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "perCoreIrqCount_returns_baseio_uint64_marker",
+          "line": 177,
+          "called": [
+            "CoreId",
+            "ffiPerCoreIrqCount",
+            "ofNat",
+            "perCoreIrqCount"
           ]
         }
       ]
@@ -64664,7 +64731,7 @@
     {
       "module": "SeLe4n.Platform.FFI",
       "path": "SeLe4n/Platform/FFI.lean",
-      "declaration_count": 52,
+      "declaration_count": 58,
       "declarations": [
         {
           "kind": "namespace",
@@ -64814,9 +64881,45 @@
           "called": []
         },
         {
+          "kind": "opaque",
+          "name": "ffiIdleWait",
+          "line": 370,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiIdleWaitBounded",
+          "line": 384,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiPerCoreIrqCount",
+          "line": 403,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiPerCoreTimerTickCount",
+          "line": 411,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiPerCoreSgiCount",
+          "line": 419,
+          "called": []
+        },
+        {
+          "kind": "opaque",
+          "name": "ffiPerCoreSyscallCount",
+          "line": 425,
+          "called": []
+        },
+        {
           "kind": "def",
           "name": "KernelError.toUInt32",
-          "line": 379,
+          "line": 455,
           "called": [
             "KernelError"
           ]
@@ -64824,7 +64927,7 @@
         {
           "kind": "def",
           "name": "encodeError",
-          "line": 440,
+          "line": 516,
           "called": [
             "KernelError",
             "KernelError.toUInt32"
@@ -64833,13 +64936,13 @@
         {
           "kind": "def",
           "name": "encodeOk",
-          "line": 450,
+          "line": 526,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "encodeError_high_bit_set",
-          "line": 465,
+          "line": 541,
           "called": [
             "KernelError",
             "KernelError.toUInt32",
@@ -64849,7 +64952,7 @@
         {
           "kind": "theorem",
           "name": "encodeOk_high_bit_clear",
-          "line": 481,
+          "line": 557,
           "called": [
             "encodeOk"
           ]
@@ -64857,7 +64960,7 @@
         {
           "kind": "initialize",
           "name": "kernelStateRef",
-          "line": 505,
+          "line": 581,
           "called": [
             "SystemState",
             "default"
@@ -64866,7 +64969,7 @@
         {
           "kind": "initialize",
           "name": "kernelLabelingContextRef",
-          "line": 515,
+          "line": 591,
           "called": [
             "LabelingContext",
             "testLabelingContext"
@@ -64875,7 +64978,7 @@
         {
           "kind": "def",
           "name": "initialiseKernelState",
-          "line": 524,
+          "line": 600,
           "called": [
             "SystemState",
             "set"
@@ -64884,7 +64987,7 @@
         {
           "kind": "def",
           "name": "getKernelState",
-          "line": 531,
+          "line": 607,
           "called": [
             "SystemState",
             "get"
@@ -64893,7 +64996,7 @@
         {
           "kind": "def",
           "name": "updateKernelState",
-          "line": 536,
+          "line": 612,
           "called": [
             "SystemState",
             "modify"
@@ -64902,7 +65005,7 @@
         {
           "kind": "def",
           "name": "initialiseKernelLabelingContext",
-          "line": 543,
+          "line": 619,
           "called": [
             "LabelingContext",
             "set"
@@ -64911,7 +65014,7 @@
         {
           "kind": "def",
           "name": "getKernelLabelingContext",
-          "line": 547,
+          "line": 623,
           "called": [
             "LabelingContext",
             "get"
@@ -64920,7 +65023,7 @@
         {
           "kind": "def",
           "name": "bootAndInitialiseFromPlatform",
-          "line": 566,
+          "line": 642,
           "called": [
             "LabelingContext",
             "PlatformConfig",
@@ -64936,7 +65039,7 @@
         {
           "kind": "def",
           "name": "writeFfiRegistersToTcb",
-          "line": 603,
+          "line": 679,
           "called": [
             "SystemState",
             "ThreadId",
@@ -64950,7 +65053,7 @@
         {
           "kind": "def",
           "name": "readReturnValue",
-          "line": 650,
+          "line": 726,
           "called": [
             "SystemState",
             "ThreadId",
@@ -64960,7 +65063,7 @@
         {
           "kind": "def",
           "name": "syscallDispatchFromAbi",
-          "line": 689,
+          "line": 765,
           "called": [
             "Kernel",
             "LabelingContext",
@@ -64976,13 +65079,13 @@
         {
           "kind": "opaque",
           "name": "ffiSuspendThread",
-          "line": 726,
+          "line": 802,
           "called": []
         },
         {
           "kind": "def",
           "name": "suspendThreadInner",
-          "line": 756,
+          "line": 832,
           "called": [
             "KernelError.toUInt32",
             "getKernelState",
@@ -64998,7 +65101,7 @@
         {
           "kind": "def",
           "name": "syscallDispatchInner",
-          "line": 805,
+          "line": 881,
           "called": [
             "encodeError",
             "getKernelLabelingContext",
@@ -65011,19 +65114,19 @@
         {
           "kind": "opaque",
           "name": "ffiCacheCleanPagetableRange",
-          "line": 833,
+          "line": 909,
           "called": []
         },
         {
           "kind": "opaque",
           "name": "ffiIcIallu",
-          "line": 840,
+          "line": 916,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_total",
-          "line": 856,
+          "line": 932,
           "called": [
             "LabelingContext",
             "SystemState",
@@ -65040,7 +65143,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok",
-          "line": 899,
+          "line": 975,
           "called": [
             "LabelingContext",
             "SystemState",
@@ -65056,7 +65159,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_error_of_syscallEntryChecked_error",
-          "line": 920,
+          "line": 996,
           "called": [
             "KernelError",
             "LabelingContext",
@@ -65072,7 +65175,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_illegalState_when_no_current",
-          "line": 943,
+          "line": 1019,
           "called": [
             "LabelingContext",
             "SystemState",
@@ -65084,7 +65187,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchFromAbi_abiMismatch_rejected",
-          "line": 965,
+          "line": 1041,
           "called": [
             "LabelingContext",
             "SystemState",
@@ -65095,7 +65198,7 @@
         {
           "kind": "theorem",
           "name": "writeFfiRegistersToTcb_id_when_not_tcb",
-          "line": 986,
+          "line": 1062,
           "called": [
             "SystemState",
             "TCB",
@@ -65108,7 +65211,7 @@
         {
           "kind": "theorem",
           "name": "readReturnValue_zero_when_not_tcb",
-          "line": 1010,
+          "line": 1086,
           "called": [
             "SystemState",
             "TCB",
@@ -84715,90 +84818,20 @@
     {
       "module": "tests.SmpFoundationsSuite",
       "path": "tests/SmpFoundationsSuite.lean",
-      "declaration_count": 83,
+      "declaration_count": 85,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.SmpFoundations",
-          "line": 166,
+          "line": 183,
           "called": []
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:169>",
-          "line": 169,
-          "called": [
-            "numCores"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:170>",
-          "line": 170,
-          "called": [
-            "length"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:171>",
-          "line": 171,
-          "called": []
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:172>",
-          "line": 172,
-          "called": [
-            "numCores"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:175>",
-          "line": 175,
-          "called": [
-            "dsbForSharing"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:177>",
-          "line": 177,
-          "called": [
-            "dsbForSharing"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:179>",
-          "line": 179,
-          "called": [
-            "dsbStForSharing"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:181>",
-          "line": 181,
-          "called": [
-            "dsbStForSharing"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:185>",
-          "line": 185,
-          "called": [
-            "level"
-          ]
         },
         {
           "kind": "example",
           "name": "<anonymous:example:186>",
           "line": 186,
           "called": [
-            "level"
+            "numCores"
           ]
         },
         {
@@ -84806,39 +84839,21 @@
           "name": "<anonymous:example:187>",
           "line": 187,
           "called": [
-            "level"
+            "length"
           ]
         },
         {
           "kind": "example",
           "name": "<anonymous:example:188>",
           "line": 188,
-          "called": [
-            "level"
-          ]
+          "called": []
         },
         {
           "kind": "example",
           "name": "<anonymous:example:189>",
           "line": 189,
           "called": [
-            "level"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:190>",
-          "line": 190,
-          "called": [
-            "level"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:191>",
-          "line": 191,
-          "called": [
-            "level"
+            "numCores"
           ]
         },
         {
@@ -84846,15 +84861,7 @@
           "name": "<anonymous:example:192>",
           "line": 192,
           "called": [
-            "level"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:193>",
-          "line": 193,
-          "called": [
-            "level"
+            "dsbForSharing"
           ]
         },
         {
@@ -84862,16 +84869,23 @@
           "name": "<anonymous:example:194>",
           "line": 194,
           "called": [
-            "level"
+            "dsbForSharing"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:197>",
-          "line": 197,
+          "name": "<anonymous:example:196>",
+          "line": 196,
           "called": [
-            "LockId.mk'",
-            "ofNat"
+            "dsbStForSharing"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:198>",
+          "line": 198,
+          "called": [
+            "dsbStForSharing"
           ]
         },
         {
@@ -84879,8 +84893,39 @@
           "name": "<anonymous:example:202>",
           "line": 202,
           "called": [
-            "LockId.mk'",
-            "ofNat"
+            "level"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:203>",
+          "line": 203,
+          "called": [
+            "level"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:204>",
+          "line": 204,
+          "called": [
+            "level"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:205>",
+          "line": 205,
+          "called": [
+            "level"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:206>",
+          "line": 206,
+          "called": [
+            "level"
           ]
         },
         {
@@ -84888,81 +84933,97 @@
           "name": "<anonymous:example:207>",
           "line": 207,
           "called": [
+            "level"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:208>",
+          "line": 208,
+          "called": [
+            "level"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:209>",
+          "line": 209,
+          "called": [
+            "level"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:210>",
+          "line": 210,
+          "called": [
+            "level"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:211>",
+          "line": 211,
+          "called": [
+            "level"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:214>",
+          "line": 214,
+          "called": [
             "LockId.mk'",
             "ofNat"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:213>",
-          "line": 213,
-          "called": []
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:214>",
-          "line": 214,
-          "called": []
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:215>",
-          "line": 215,
-          "called": []
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:216>",
-          "line": 216,
-          "called": []
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:217>",
-          "line": 217,
-          "called": []
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:218>",
-          "line": 218,
+          "name": "<anonymous:example:219>",
+          "line": 219,
           "called": [
-            "length"
+            "LockId.mk'",
+            "ofNat"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:221>",
-          "line": 221,
+          "name": "<anonymous:example:224>",
+          "line": 224,
           "called": [
-            "bklHeldBy",
-            "bootCoreId"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:225>",
-          "line": 225,
-          "called": [
-            "bklHeldBy",
-            "bootCoreId"
+            "LockId.mk'",
+            "ofNat"
           ]
         },
         {
           "kind": "example",
           "name": "<anonymous:example:230>",
           "line": 230,
-          "called": [
-            "length"
-          ]
+          "called": []
         },
         {
           "kind": "example",
           "name": "<anonymous:example:231>",
           "line": 231,
-          "called": [
-            "assumptionInventory"
-          ]
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:232>",
+          "line": 232,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:233>",
+          "line": 233,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:234>",
+          "line": 234,
+          "called": []
         },
         {
           "kind": "example",
@@ -84977,15 +85038,7 @@
           "name": "<anonymous:example:238>",
           "line": 238,
           "called": [
-            "RPi5Platform"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:240>",
-          "line": 240,
-          "called": [
-            "RPi5Platform",
+            "bklHeldBy",
             "bootCoreId"
           ]
         },
@@ -84994,7 +85047,8 @@
           "name": "<anonymous:example:242>",
           "line": 242,
           "called": [
-            "RPi5Platform"
+            "bklHeldBy",
+            "bootCoreId"
           ]
         },
         {
@@ -85002,13 +85056,62 @@
           "name": "<anonymous:example:247>",
           "line": 247,
           "called": [
+            "length"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:248>",
+          "line": 248,
+          "called": [
+            "assumptionInventory"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:252>",
+          "line": 252,
+          "called": [
+            "length"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:255>",
+          "line": 255,
+          "called": [
+            "RPi5Platform"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:257>",
+          "line": 257,
+          "called": [
+            "RPi5Platform",
+            "bootCoreId"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:259>",
+          "line": 259,
+          "called": [
+            "RPi5Platform"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:264>",
+          "line": 264,
+          "called": [
             "SimPlatform"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:249>",
-          "line": 249,
+          "name": "<anonymous:example:266>",
+          "line": 266,
           "called": [
             "SimPlatform",
             "bootCoreId"
@@ -85016,8 +85119,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:256>",
-          "line": 256,
+          "name": "<anonymous:example:273>",
+          "line": 273,
           "called": [
             "CoreId",
             "default"
@@ -85025,8 +85128,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:257>",
-          "line": 257,
+          "name": "<anonymous:example:274>",
+          "line": 274,
           "called": [
             "CoreId",
             "bootCoreId",
@@ -85035,8 +85138,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:260>",
-          "line": 260,
+          "name": "<anonymous:example:277>",
+          "line": 277,
           "called": [
             "CoreId",
             "numCores"
@@ -85044,8 +85147,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:263>",
-          "line": 263,
+          "name": "<anonymous:example:280>",
+          "line": 280,
           "called": [
             "bootCoreId",
             "currentCoreId_in_range_marker",
@@ -85054,68 +85157,12 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:277>",
-          "line": 277,
+          "name": "<anonymous:example:294>",
+          "line": 294,
           "called": [
             "pure",
             "secondaryKernelMain",
             "secondaryKernelMain_returns_unit_marker"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:281>",
-          "line": 281,
-          "called": [
-            "pure",
-            "secondaryKernelMain",
-            "secondaryKernelMain_returns_unit_marker"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:284>",
-          "line": 284,
-          "called": [
-            "pure",
-            "secondaryKernelMain",
-            "secondaryKernelMain_returns_unit_marker"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:286>",
-          "line": 286,
-          "called": [
-            "pure",
-            "secondaryKernelMain",
-            "secondaryKernelMain_returns_unit_marker"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:288>",
-          "line": 288,
-          "called": [
-            "pure",
-            "secondaryKernelMain",
-            "secondaryKernelMain_returns_unit_marker"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:296>",
-          "line": 296,
-          "called": [
-            "toTag"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:297>",
-          "line": 297,
-          "called": [
-            "toTag"
           ]
         },
         {
@@ -85123,23 +85170,9 @@
           "name": "<anonymous:example:298>",
           "line": 298,
           "called": [
-            "toOpTag"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:299>",
-          "line": 299,
-          "called": [
-            "toOpTag"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:300>",
-          "line": 300,
-          "called": [
-            "toOpTag"
+            "pure",
+            "secondaryKernelMain",
+            "secondaryKernelMain_returns_unit_marker"
           ]
         },
         {
@@ -85147,15 +85180,19 @@
           "name": "<anonymous:example:301>",
           "line": 301,
           "called": [
-            "toOpTag"
+            "pure",
+            "secondaryKernelMain",
+            "secondaryKernelMain_returns_unit_marker"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:304>",
-          "line": 304,
+          "name": "<anonymous:example:303>",
+          "line": 303,
           "called": [
-            "toAsid"
+            "pure",
+            "secondaryKernelMain",
+            "secondaryKernelMain_returns_unit_marker"
           ]
         },
         {
@@ -85163,59 +85200,125 @@
           "name": "<anonymous:example:305>",
           "line": 305,
           "called": [
-            "toVaddr"
+            "pure",
+            "secondaryKernelMain",
+            "secondaryKernelMain_returns_unit_marker"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:306>",
-          "line": 306,
+          "name": "<anonymous:example:313>",
+          "line": 313,
           "called": [
-            "toAsid"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:307>",
-          "line": 307,
-          "called": [
-            "toVaddr"
+            "toTag"
           ]
         },
         {
           "kind": "example",
           "name": "<anonymous:example:314>",
           "line": 314,
-          "called": []
+          "called": [
+            "toTag"
+          ]
         },
         {
           "kind": "example",
           "name": "<anonymous:example:315>",
           "line": 315,
-          "called": []
+          "called": [
+            "toOpTag"
+          ]
         },
         {
           "kind": "example",
           "name": "<anonymous:example:316>",
           "line": 316,
-          "called": []
+          "called": [
+            "toOpTag"
+          ]
         },
         {
           "kind": "example",
           "name": "<anonymous:example:317>",
           "line": 317,
-          "called": []
+          "called": [
+            "toOpTag"
+          ]
         },
         {
           "kind": "example",
           "name": "<anonymous:example:318>",
           "line": 318,
+          "called": [
+            "toOpTag"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:321>",
+          "line": 321,
+          "called": [
+            "toAsid"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:322>",
+          "line": 322,
+          "called": [
+            "toVaddr"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:323>",
+          "line": 323,
+          "called": [
+            "toAsid"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:324>",
+          "line": 324,
+          "called": [
+            "toVaddr"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:331>",
+          "line": 331,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:332>",
+          "line": 332,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:333>",
+          "line": 333,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:334>",
+          "line": 334,
+          "called": []
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:335>",
+          "line": 335,
           "called": []
         },
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 324,
+          "line": 341,
           "called": [
             "throw"
           ]
@@ -85223,7 +85326,7 @@
         {
           "kind": "def",
           "name": "runCoreIdChecks",
-          "line": 331,
+          "line": 348,
           "called": [
             "assertBool",
             "length",
@@ -85233,7 +85336,7 @@
         {
           "kind": "def",
           "name": "runSharingDomainChecks",
-          "line": 341,
+          "line": 358,
           "called": [
             "assertBool",
             "dsbForSharing",
@@ -85243,7 +85346,7 @@
         {
           "kind": "def",
           "name": "runLockKindChecks",
-          "line": 356,
+          "line": 373,
           "called": [
             "all",
             "assertBool",
@@ -85253,7 +85356,7 @@
         {
           "kind": "def",
           "name": "runLockIdChecks",
-          "line": 383,
+          "line": 400,
           "called": [
             "LockId.mk'",
             "assertBool",
@@ -85263,7 +85366,7 @@
         {
           "kind": "def",
           "name": "runSgiKindChecks",
-          "line": 395,
+          "line": 412,
           "called": [
             "assertBool",
             "length"
@@ -85272,7 +85375,7 @@
         {
           "kind": "def",
           "name": "runBklStateChecks",
-          "line": 410,
+          "line": 427,
           "called": [
             "assertBool",
             "bklHeldBy",
@@ -85282,7 +85385,7 @@
         {
           "kind": "def",
           "name": "runArchAssumptionChecks",
-          "line": 422,
+          "line": 439,
           "called": [
             "assertBool",
             "assumptionInventory",
@@ -85292,7 +85395,7 @@
         {
           "kind": "def",
           "name": "runSmpInventoryChecks",
-          "line": 430,
+          "line": 447,
           "called": [
             "assertBool",
             "length"
@@ -85301,7 +85404,7 @@
         {
           "kind": "def",
           "name": "runPlatformBindingChecks",
-          "line": 435,
+          "line": 452,
           "called": [
             "RPi5Platform",
             "SimPlatform",
@@ -85313,7 +85416,7 @@
         {
           "kind": "def",
           "name": "runLockKindUniquenessChecks",
-          "line": 475,
+          "line": 492,
           "called": [
             "assertBool",
             "level"
@@ -85322,7 +85425,7 @@
         {
           "kind": "def",
           "name": "runLockIdAdditionalChecks",
-          "line": 508,
+          "line": 525,
           "called": [
             "LockId.mk'",
             "assertBool",
@@ -85332,7 +85435,7 @@
         {
           "kind": "def",
           "name": "runSgiKindAdditionalChecks",
-          "line": 527,
+          "line": 544,
           "called": [
             "all",
             "assertBool"
@@ -85341,7 +85444,7 @@
         {
           "kind": "def",
           "name": "runArchAssumptionAdditionalChecks",
-          "line": 546,
+          "line": 563,
           "called": [
             "all",
             "archAssumptionConsumer",
@@ -85352,7 +85455,7 @@
         {
           "kind": "def",
           "name": "runBklStateAdditionalChecks",
-          "line": 565,
+          "line": 582,
           "called": [
             "CoreId",
             "assertBool",
@@ -85365,7 +85468,7 @@
         {
           "kind": "def",
           "name": "runCurrentCoreIdChecks",
-          "line": 588,
+          "line": 605,
           "called": [
             "CoreId",
             "all",
@@ -85378,7 +85481,7 @@
         {
           "kind": "def",
           "name": "runSecondaryKernelMainChecks",
-          "line": 624,
+          "line": 641,
           "called": [
             "assertBool",
             "ofNat",
@@ -85389,7 +85492,7 @@
         {
           "kind": "def",
           "name": "runTlbiForSharingChecks",
-          "line": 675,
+          "line": 692,
           "called": [
             "assertBool",
             "toAsid",
@@ -85401,8 +85504,31 @@
         },
         {
           "kind": "def",
+          "name": "runIdleWaitChecks",
+          "line": 741,
+          "called": [
+            "assertBool",
+            "ffiIdleWait",
+            "ffiIdleWaitBounded",
+            "idleWait",
+            "idleWaitBounded"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runPerCoreStatsChecks",
+          "line": 764,
+          "called": [
+            "all",
+            "assertBool",
+            "bootCoreId",
+            "perCoreIrqCount_returns_baseio_uint64_marker"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runSgiFfiBindingChecks",
-          "line": 724,
+          "line": 785,
           "called": [
             "all",
             "assertBool"
@@ -85411,7 +85537,7 @@
         {
           "kind": "def",
           "name": "runFoundationsChecks",
-          "line": 753,
+          "line": 814,
           "called": [
             "runArchAssumptionAdditionalChecks",
             "runArchAssumptionChecks",
@@ -85419,10 +85545,12 @@
             "runBklStateChecks",
             "runCoreIdChecks",
             "runCurrentCoreIdChecks",
+            "runIdleWaitChecks",
             "runLockIdAdditionalChecks",
             "runLockIdChecks",
             "runLockKindChecks",
             "runLockKindUniquenessChecks",
+            "runPerCoreStatsChecks",
             "runPlatformBindingChecks",
             "runSecondaryKernelMainChecks",
             "runSgiFfiBindingChecks",
@@ -85436,7 +85564,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 779,
+          "line": 842,
           "called": [
             "runFoundationsChecks"
           ]

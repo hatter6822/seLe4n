@@ -441,6 +441,109 @@ pub extern "C" fn ffi_current_core_id() -> u64 {
 }
 
 // ============================================================================
+// WS-SM SM1.I.3 — Per-core IDLE thread FFI exports
+// ============================================================================
+//
+// The Lean kernel's per-core idle TCB (SM5+) parks its core via these
+// FFI entry points after completing a scheduling round with no
+// runnable work.  Two variants are exposed:
+//
+//   * `ffi_idle_wait` — unbounded `wfe`.  Returns when any event or
+//     interrupt arrives.
+//   * `ffi_idle_wait_bounded` — bounded `wfe` with a counter-tick
+//     budget.  Returns elapsed ticks so a hand-rolled scheduler can
+//     detect a lost wake (`elapsed >= max_ticks` indicates the timeout
+//     fired without an event).
+//
+// Both wrap the corresponding `cpu::*` primitives.  At SM1.I.3 no Lean
+// caller exists; SM5 wires the per-core idle TCB to these symbols.
+
+/// **WS-SM SM1.I.3**: park the calling core on `wfe` waiting for an
+/// event or interrupt.
+///
+/// Lean callers invoke this from a per-core idle TCB context after
+/// completing their scheduling round with no runnable work.  Returns
+/// when any of:
+///
+/// - Another core issues `sev` (cross-core wake hint).
+/// - An IRQ arrives at this PE (timer tick, cross-core SGI, device SPI).
+/// - An asynchronous debug exception or SError fires.
+///
+/// On host the stub spins once and returns.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiIdleWait`.
+#[no_mangle]
+pub extern "C" fn ffi_idle_wait() {
+    crate::cpu::idle_wait();
+}
+
+/// **WS-SM SM1.I.3**: bounded variant of [`ffi_idle_wait`].
+///
+/// `max_ticks` — informational budget (see [`crate::cpu::wfe_bounded`]
+/// for the bounded-WFE contract).  Returns elapsed `CNTPCT_EL0` ticks
+/// since the call began, so the caller can detect "did we time out
+/// without seeing an event" via `elapsed >= max_ticks`.
+///
+/// On host the stub returns 0 deterministically (matching the host
+/// behaviour of [`crate::cpu::wfe_bounded`]).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiIdleWaitBounded`.
+#[no_mangle]
+pub extern "C" fn ffi_idle_wait_bounded(max_ticks: u64) -> u64 {
+    crate::cpu::idle_wait_bounded(max_ticks)
+}
+
+// ============================================================================
+// WS-SM SM1.I.4 — Per-core stats FFI exports
+// ============================================================================
+//
+// Read accessors so a future hardware-side debug interface (or a
+// Lean-side verified read API) can sample per-core counters without
+// reaching into the static array directly.  All accessors return 0
+// for out-of-range `core_id`; the inner-form `record_*` writers are
+// not exposed via FFI because the production write path is the
+// `handle_irq_per_core` Rust-side entry.
+
+/// **WS-SM SM1.I.4**: read a specific core's total IRQ count.
+///
+/// Returns a Relaxed snapshot of the per-core `irq_count` counter.
+/// Out-of-range `core_id` returns 0.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiPerCoreIrqCount`.
+#[no_mangle]
+pub extern "C" fn ffi_per_core_irq_count(core_id: u64) -> u64 {
+    crate::per_cpu_stats::irq_count_for(core_id as usize)
+}
+
+/// **WS-SM SM1.I.4**: read a specific core's timer-tick count.
+///
+/// Subset of `irq_count` (timer PPI INTID 30 only).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiPerCoreTimerTickCount`.
+#[no_mangle]
+pub extern "C" fn ffi_per_core_timer_tick_count(core_id: u64) -> u64 {
+    crate::per_cpu_stats::timer_tick_count_for(core_id as usize)
+}
+
+/// **WS-SM SM1.I.4**: read a specific core's SGI count.
+///
+/// Subset of `irq_count` (SGI INTIDs 0..15 only).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiPerCoreSgiCount`.
+#[no_mangle]
+pub extern "C" fn ffi_per_core_sgi_count(core_id: u64) -> u64 {
+    crate::per_cpu_stats::sgi_count_for(core_id as usize)
+}
+
+/// **WS-SM SM1.I.4**: read a specific core's syscall (SVC) count.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiPerCoreSyscallCount`.
+#[no_mangle]
+pub extern "C" fn ffi_per_core_syscall_count(core_id: u64) -> u64 {
+    crate::per_cpu_stats::syscall_count_for(core_id as usize)
+}
+
+// ============================================================================
 // AN9-D (DEF-C-M04 / RESOLVED): suspendThread atomicity bracket
 // ============================================================================
 //
@@ -954,5 +1057,100 @@ mod tests {
             ffi_send_sgi_to_self(intid);
             ffi_send_sgi_to_all_but_self(intid);
         }
+    }
+
+    // ========================================================================
+    // WS-SM SM1.I.3 — idle-wait FFI export tests
+    // ========================================================================
+
+    #[test]
+    fn sm1i3_ffi_idle_wait_no_panic_on_host() {
+        // Host stub: cpu::idle_wait → cpu::wfe → spin_loop.  Returns
+        // immediately; no inter-test state corruption.
+        ffi_idle_wait();
+    }
+
+    #[test]
+    fn sm1i3_ffi_idle_wait_bounded_returns_zero_on_host() {
+        // Host stub: cpu::idle_wait_bounded → cpu::wfe_bounded which
+        // returns 0 elapsed ticks deterministically on host.
+        assert_eq!(ffi_idle_wait_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS), 0);
+    }
+
+    #[test]
+    fn sm1i3_ffi_idle_wait_bounded_accepts_zero_budget() {
+        // Edge case: max_ticks = 0 must not panic.  Caller's
+        // "did we time out" check (`elapsed >= max_ticks`) trivially
+        // succeeds on this input.  Host stub returns 0; verify
+        // explicit value rather than `elapsed >= 0` (which clippy's
+        // `absurd_extreme_comparisons` flags as a tautology because
+        // u64 is unsigned).
+        assert_eq!(ffi_idle_wait_bounded(0), 0);
+    }
+
+    #[test]
+    fn sm1i3_ffi_idle_wait_signatures_pinned() {
+        // Pin the FFI export signatures.
+        let _: extern "C" fn() = ffi_idle_wait;
+        let _: extern "C" fn(u64) -> u64 = ffi_idle_wait_bounded;
+    }
+
+    // ========================================================================
+    // WS-SM SM1.I.4 — per-core stats FFI export tests
+    // ========================================================================
+    //
+    // All four FFI exports forward to `per_cpu_stats::*_count_for(core_id)`.
+    // Tests verify:
+    //   1. Out-of-range `core_id` returns 0 (defensive contract).
+    //   2. In-range `core_id` returns a valid u64 (cannot panic).
+    //   3. FFI signatures are pinned.
+    //
+    // We do NOT exercise the WRITE path (record_*) via the FFI because
+    // the production write path is `handle_irq_per_core` /
+    // `handle_synchronous_exception`, not the FFI surface.
+
+    #[test]
+    fn sm1i4_ffi_per_core_irq_count_in_range_returns_snapshot() {
+        // The counter may have been advanced by other tests running
+        // in parallel; we just verify the call returns a u64 without
+        // panicking.
+        for core_id in 0..4u64 {
+            let _ = ffi_per_core_irq_count(core_id);
+        }
+    }
+
+    #[test]
+    fn sm1i4_ffi_per_core_irq_count_out_of_range_returns_zero() {
+        assert_eq!(ffi_per_core_irq_count(4), 0);
+        assert_eq!(ffi_per_core_irq_count(100), 0);
+        assert_eq!(ffi_per_core_irq_count(u64::MAX), 0);
+    }
+
+    #[test]
+    fn sm1i4_ffi_per_core_timer_tick_count_out_of_range_returns_zero() {
+        assert_eq!(ffi_per_core_timer_tick_count(4), 0);
+        assert_eq!(ffi_per_core_timer_tick_count(u64::MAX), 0);
+    }
+
+    #[test]
+    fn sm1i4_ffi_per_core_sgi_count_out_of_range_returns_zero() {
+        assert_eq!(ffi_per_core_sgi_count(4), 0);
+        assert_eq!(ffi_per_core_sgi_count(u64::MAX), 0);
+    }
+
+    #[test]
+    fn sm1i4_ffi_per_core_syscall_count_out_of_range_returns_zero() {
+        assert_eq!(ffi_per_core_syscall_count(4), 0);
+        assert_eq!(ffi_per_core_syscall_count(u64::MAX), 0);
+    }
+
+    #[test]
+    fn sm1i4_ffi_per_core_stats_signatures_pinned() {
+        // Pin every per-core stats FFI export signature.  A future
+        // ABI change that broke the Lean caller would surface here.
+        let _: extern "C" fn(u64) -> u64 = ffi_per_core_irq_count;
+        let _: extern "C" fn(u64) -> u64 = ffi_per_core_timer_tick_count;
+        let _: extern "C" fn(u64) -> u64 = ffi_per_core_sgi_count;
+        let _: extern "C" fn(u64) -> u64 = ffi_per_core_syscall_count;
     }
 }

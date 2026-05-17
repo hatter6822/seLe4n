@@ -49,7 +49,7 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.31.7` (`lakefile.toml`) |
+| **Package version** | `0.31.8` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
 | **Production LoC** | 115,963 across 178 Lean files |
 | **Test LoC** | 21,850 across 30 Lean test suites |
@@ -616,6 +616,28 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `test_qemu_smp_minimal.sh` for `-smp 2`,
    `test_qemu_smp_sgi_roundtrip.sh` for cross-core SGI) into the
    tier-4 nightly slot, replacing the SM0.T SKIP-only stub.
+
+   **WS-SM Phase SM1.I (v0.31.8) closes SM1**.  Six sub-tasks
+   complete the miscellaneous HAL improvements that act as
+   SM5 landing seams: `trap.rs::handle_irq_per_core` per-core
+   IRQ handler entry (reads TPIDR_EL1, records per-core stats,
+   dispatches via `gic::dispatch_irq` with per-core attribution
+   in the unhandled-INTID log line; SM5 will swap the assembly
+   entry vector to this function); per-core IRQ priority masking
+   documentation (GICC_PMR per-core banking + DAIF.I per-PE
+   scoping); per-core idle-wait primitives at three layers
+   (`cpu::idle_wait` / `ffi_idle_wait` / `Concurrency.idleWait`);
+   new `per_cpu_stats.rs` module with cache-line aligned
+   `PerCpuStats` cohabiting six AtomicU64 counters
+   (`irq_count`, `timer_tick_count`, `sgi_count`,
+   `syscall_count`, `vmfault_count`, `user_exception_count`)
+   wired to the synchronous-exception handler per EC branch;
+   SEV / WFE coordination documentation; 12 cross-core test
+   scenarios in `smp::tests::sm1i6_*`.  New build-script
+   scanner `scan_trap_rs_handle_irq_per_core_intact` pins the
+   SM1.I.1 contract.  583 HAL tests at v0.31.8 (up from 510 at
+   v0.31.7).  WS-SM SM1 acceptance gate (per
+   `docs/planning/SMP_RUST_HAL_PLAN.md` §8) all items checked.
 
 3. **Sequential memory model**: Under single-core operation, all memory
    operations are sequentially ordered. DMB/DSB/ISB barriers are emitted in the
