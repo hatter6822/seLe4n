@@ -54,10 +54,13 @@ if [[ ! -f "${KERNEL_IMAGE}" ]]; then
   exit 0
 fi
 
-# Detect the stress-test routine via .rodata strings.  The routine emits
-# a recognizable banner per core that the verifier greps for.
-STRESS_BANNER="\\[core [0-9]\\] stress iter "
-if ! strings "${KERNEL_IMAGE}" 2>/dev/null | grep -qE "stress iter"; then
+# Detect the stress-test routine via .rodata strings.  The routine
+# emits per-core banners matching the regex
+# `\[core [0-9]\] stress iter [0-9]+` — but `strings` outputs raw
+# bytes from .rodata, so we look for the literal substring "stress
+# iter" (the regex metacharacters and core_id placeholder are runtime
+# format-string content, not .rodata-resident).
+if ! strings "${KERNEL_IMAGE}" 2>/dev/null | grep -qF "stress iter"; then
   echo "[SKIP] WS-SM SM1.G.3: stress-test routine not yet wired in kernel image"
   echo ""
   echo "  Reason: the per-core kprintln stress loop runs from the Lean"
