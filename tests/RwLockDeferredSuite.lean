@@ -95,6 +95,16 @@ open SeLe4n.Kernel.Concurrency
 #check @reader_at_head_promoted
 #check @promote_noop_on_empty_waiters
 
+-- D-3.6 foundations (NEW — strict-FIFO closure)
+#check @writerWaitDepth_non_increase_step_queued
+#check @writerWaitDepth_strict_decrease_under_effective_release
+#check @queued_writer_persists_or_admitted
+
+-- D-3.6 main numerical bound (NEW)
+#check @rwLock_writer_liveness_existence
+#check @rwLock_writer_liveness_count_bound
+#check @rwLock_writer_liveness_bound_under_fairness
+
 -- D-4 concrete event model
 #check @ConcreteRwLockOp
 #check @concreteApplyOp

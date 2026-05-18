@@ -349,13 +349,12 @@ theorem rwLockSim_preserved_by_direct_acquire_read
     (abstract : RwLockState) (c : CoreId)
     (h_not_inv : ¬ abstract.coreInvolved c)
     (h_no_writer : abstract.writerHeld = none)
-    (h_waiters_safe :
-      abstract.waiters = [] ∨
-      ∃ c' rest, abstract.waiters = (c', AccessMode.read) :: rest) :
+    (h_waiters_empty : abstract.waiters = []) :
     let post := abstract.applyOp (.tryAcquireRead c)
     encodeRwLock post.writerHeld.isSome post.readers.length =
       encodeRwLock abstract.writerHeld.isSome abstract.readers.length + 1 := by
-  have h_shape := tryAcquireRead_direct_acquire_shape abstract c h_not_inv h_no_writer h_waiters_safe
+  have h_shape := tryAcquireRead_direct_acquire_shape abstract c h_not_inv h_no_writer
+    h_waiters_empty
   show encodeRwLock _ _ = encodeRwLock _ _ + 1
   rw [h_shape.1, h_shape.2.1]
   -- post.readers = c :: abstract.readers; post.writerHeld = abstract.writerHeld.
@@ -375,10 +374,12 @@ theorem rwLockSim_preserved_by_direct_acquire_write
     (abstract : RwLockState) (c : CoreId)
     (h_not_inv : ¬ abstract.coreInvolved c)
     (h_no_writer : abstract.writerHeld = none)
-    (h_no_readers : abstract.readers = []) :
+    (h_no_readers : abstract.readers = [])
+    (h_no_waiters : abstract.waiters = []) :
     let post := abstract.applyOp (.tryAcquireWrite c)
     encodeRwLock post.writerHeld.isSome post.readers.length = writerBit := by
-  have h_shape := tryAcquireWrite_direct_acquire_shape abstract c h_not_inv h_no_writer h_no_readers
+  have h_shape := tryAcquireWrite_direct_acquire_shape abstract c h_not_inv h_no_writer
+    h_no_readers h_no_waiters
   show encodeRwLock _ _ = writerBit
   rw [h_shape.1, h_shape.2.1, h_no_readers]
   unfold encodeRwLock

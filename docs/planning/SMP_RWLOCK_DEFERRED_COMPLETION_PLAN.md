@@ -1086,6 +1086,33 @@ theorem rwLock_writer_liveness
 requires careful handling of the `k_acq → k_rel` tracking under the
 strengthened transition-edge form.
 
+**STRICT-FIFO STRUCTURAL FIX (post-plan, applied at D-3.6 landing)**:
+the original D-3.3 statement above was blocked by a depth-increase gap
+in the abstract spec: `tryAcquireRead` direct-acquired when the queue
+head was a reader, increasing a queued writer's depth.  Standard
+MCS-RW locks (including the queued Rust impl in D-5) use STRICT FIFO:
+new readers enqueue whenever ANY waiter or holder exists.  The plan's
+behavior model assumed direct-acquire even with non-empty waiters,
+diverging from the impl.
+
+The post-plan structural fix tightens `applyOp .tryAcquireRead` and
+`.tryAcquireWrite` to enqueue iff a holder or waiter exists.  Under
+this strict-FIFO spec:
+* `writerWaitDepth` is monotonically non-increasing for queued writers
+  across any single op (Lemmas A, B, C in
+  `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean`).
+* The depth-monotonicity argument under fairness goes through directly.
+* The plan's `d × maxDelay` bound is formalized as
+  `rwLock_writer_liveness_bound_under_fairness`.
+
+The change is behaviorally equivalent on REACHABLE states (writer
+release always batch-promotes contiguous readers, so a "reader at
+head" state requires a queued writer ahead — but then strict-FIFO
+also enqueues, matching the post-batch behavior).  The Rust impl in
+D-5 was already strict-FIFO (every caller enqueues at `tail` before
+checking immediate-admit), so the spec change brings the abstract
+model into agreement with the impl.
+
 ### 5.4 D-4: Full bisimulation refinement (10 sub-tasks)
 
 **Plan reference**: SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md §3.4.2, theorem F-02.

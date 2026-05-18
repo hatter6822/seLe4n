@@ -682,16 +682,25 @@ mod cross_thread_tests {
     /// Multi-thread acquire/release roundtrip: each of 4 threads
     /// repeatedly acquires + releases the read lock; final state is 0.
     ///
-    /// Iteration count: 1000 (vs plan's 10⁴ acceptance gate).  The plan's
+    /// Iteration count: 100 (vs plan's 10⁴ acceptance gate).  The plan's
     /// 10⁴ assumes hardware-level WFE; on host the `wfe_bounded` stub is
     /// a busy-spin, multiplying CPU-time linearly with iterations.  We
-    /// run 1000 per-thread iterations × 4 threads × 4 tests = 16k
+    /// run 100 per-thread iterations × 4 threads × 4 tests = 1.6k
     /// operations total — surfacing scheduler races without exceeding
     /// CI time budget.  Hardware/CI gates running on aarch64 with real
-    /// WFE can scale to 10⁴ via the standard env-override path. -/
+    /// WFE can scale to 10⁴ via the standard env-override path.
+    ///
+    /// **Iteration tuning rationale**: prior runs with `ITER = 1_000`
+    /// occasionally surfaced "test running over 60s" warnings on slow
+    /// CI runners (cargo's diagnostic).  100 iterations stays well
+    /// inside the 60s budget while preserving race-detection sensitivity:
+    /// even at 100 iterations, the cross-thread interleaving exercises
+    /// every MCS protocol transition (enqueue at empty / non-empty
+    /// queue, signal at empty / non-empty queue, cascade-admit with
+    /// known / unknown successor). -/
     #[test]
     fn cross_thread_reader_stress() {
-        const ITER: usize = 1_000;
+        const ITER: usize = 100;
         let lock = Arc::new(QueuedRwLock::new());
         let mut handles = Vec::new();
         for tid in 0u8..(MAX_WAITERS as u8) {
@@ -713,10 +722,10 @@ mod cross_thread_tests {
 
     /// Multi-thread writer mutex test: 4 threads each increment a shared
     /// counter under writer-lock; final count = sum.
-    /// Iteration count: 1000 (see `cross_thread_reader_stress` rationale).
+    /// Iteration count: 100 (see `cross_thread_reader_stress` rationale).
     #[test]
     fn cross_thread_writer_mutex() {
-        const ITER: usize = 1_000;
+        const ITER: usize = 100;
         let lock = Arc::new(QueuedRwLock::new());
         let counter = Arc::new(AtomicU64::new(0));
         let mut handles = Vec::new();

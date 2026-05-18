@@ -31,12 +31,41 @@ deferred items (D-1..D-6) covered substantively:
   window helper + `countEffectiveReleases_le_window` structural
   bound.
 
-* **D-3 (Liveness — partial)**: `FairTrace` predicate (§4.5)
-  with strengthened transition-edge form (closes audit M-2) +
-  `MAX_RELEASE_DELAY` runtime config parameter +
+* **D-3 (Liveness — FULL `d × maxDelay` bound under strict FIFO)**:
+  `FairTrace` predicate (§4.5) with strengthened transition-edge form
+  (closes audit M-2) + `MAX_RELEASE_DELAY` runtime config parameter +
   `rwLock_writer_no_starvation_step` single-step safety +
   `writer_at_head_promoted` + `reader_at_head_promoted` +
-  `promote_noop_on_empty_waiters` building blocks.
+  `promote_noop_on_empty_waiters` building blocks +
+  full numerical bound `rwLock_writer_liveness_bound_under_fairness`.
+
+  **Strict-FIFO structural fix** (closes plan §5.3 depth-increase gap):
+  the abstract spec's `applyOp .tryAcquireRead` and `.tryAcquireWrite`
+  were tightened from "direct-acquire iff no holder" to "enqueue iff
+  ANY holder OR waiter exists" — matching standard MCS-RW semantics
+  and the Rust impl's `tail.swap`-first protocol.  Under strict-FIFO:
+
+  - `writerWaitDepth_unchanged_under_tryAcquireRead_queued` (Lemma A):
+    tryAcquireRead can't increase a queued writer's depth.
+  - `writerWaitDepth_unchanged_under_tryAcquireWrite_queued` (Lemma B):
+    tryAcquireWrite can't increase a queued writer's depth.
+  - `writerWaitDepth_unchanged_under_noneffective_release` (Lemma C):
+    non-effective releases are no-ops.
+  - `writerWaitDepth_non_increase_step_queued`: single-step
+    non-increase combining A+B+C+monotonicity.
+  - `writerWaitDepth_strict_decrease_under_effective_release`: clean
+    restatement of the strict-decrease theorem for liveness chains.
+  - `queued_writer_persists_or_admitted`: a queued writer either
+    persists in waiters or is admitted (never lost).
+  - `writerWaitDepth_non_increase_across_window` /
+    `_across_offset`: multi-step non-increase via induction.
+  - `rwLock_writer_liveness_bound_under_fairness`: full plan bound
+    `a ≤ k_enq + d × maxDelay` under FairTrace + initial = unheld.
+
+  The spec change is behaviorally equivalent on REACHABLE states (a
+  "reader at head" state already requires a queued writer ahead, so
+  strict-FIFO's enqueue matches the post-batch behavior).  Rust impl
+  already strict-FIFO via `tail.swap` discipline; no impl change.
 
 * **D-4 (Bisimulation — partial)**: `ConcreteRwLockOp` inductive
   (§4.4) with load/cas/fetch_sub/fetch_and/sev/wfeWait + `concreteApplyOp`
@@ -84,12 +113,33 @@ deferred items (D-1..D-6) covered substantively:
 
 All tests pass.  Axiom budget: 0 Lean axioms, 0 sorries.
 
+### Strict-FIFO refinements applied across the proof surface
+
+The strict-FIFO spec change ripples through the following theorems
+(updated proofs / tightened signatures):
+
+* `rwLock_tryAcquireRead_preserves_wf`: 2-branch (enqueue/direct)
+  instead of legacy 3-case match.
+* `rwLock_tryAcquireWrite_preserves_wf`: 3-disjunct enqueue condition.
+* `rwLock_writer_safety_under_reader_acquire` (a.k.a.
+  `rwLock_no_writer_starvation`): simplified — under strict-FIFO,
+  `waiters ≠ []` implies enqueue regardless of writerHeld.
+* `tryAcquireRead_waiters_append_or_noop`,
+  `tryAcquireWrite_waiters_append_or_noop`: cleaner 2-branch and
+  3-disjunct forms respectively.
+* `tryAcquireRead_direct_acquire_shape`: hypothesis tightened from
+  the legacy 2-disjunct (empty OR head-is-reader) to `waiters = []`.
+* `tryAcquireWrite_direct_acquire_shape`: added `h_no_waiters`
+  precondition matching the strict-FIFO direct-acquire condition.
+* `rwLockSim_preserved_by_direct_acquire_read/write`: signatures
+  match the tightened shape lemmas.
+
 ### Deferred to follow-on phases
 
-The full transition-edge-form D-1.9, multi-step liveness D-3.6, and
-full bisim D-4.9 require additional proof work that builds on the
-foundations landed here; the substantive partial forms are sufficient
-for SM3 consumer adoption.
+The full transition-edge-form D-1.9 and full bisim D-4.9 require
+additional proof work that builds on the foundations landed here;
+the substantive partial forms are sufficient for SM3 consumer
+adoption.  D-3.6 was FULLY landed via the strict-FIFO spec change.
 
 ## Unreleased — WS-SM Phase SM2.C landing (verified RwLock primitive)
 

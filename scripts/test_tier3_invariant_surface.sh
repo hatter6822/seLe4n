@@ -1604,6 +1604,13 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.rwLockSim_preserved_by_direct_acquire_read
 #check @SeLe4n.Kernel.Concurrency.rwLockSim_preserved_by_direct_acquire_write
 #check @SeLe4n.Kernel.Concurrency.rwLockSim_preserved_by_noop_chain
+-- D-3.6 strict-FIFO foundations and bound (NEW)
+#check @SeLe4n.Kernel.Concurrency.writerWaitDepth_non_increase_step_queued
+#check @SeLe4n.Kernel.Concurrency.writerWaitDepth_strict_decrease_under_effective_release
+#check @SeLe4n.Kernel.Concurrency.queued_writer_persists_or_admitted
+#check @SeLe4n.Kernel.Concurrency.rwLock_writer_liveness_existence
+#check @SeLe4n.Kernel.Concurrency.rwLock_writer_liveness_count_bound
+#check @SeLe4n.Kernel.Concurrency.rwLock_writer_liveness_bound_under_fairness
 EOF'
 
 finalize_report
