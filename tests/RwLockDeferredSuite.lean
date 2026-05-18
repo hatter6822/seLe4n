@@ -76,6 +76,9 @@ open SeLe4n.Kernel.Concurrency
 -- D-1.9 partial: structural sublist form
 #check @rwLock_fifo_admission_temporal_structural
 
+-- D-2.4 full substantive monotonicity (NEW)
+#check @writerWaitDepth_monotone_under_effective_release
+
 -- §4.5 FairTrace + D-3 liveness building blocks
 #check @FairTrace
 #check @MAX_RELEASE_DELAY
@@ -252,6 +255,31 @@ def runDeferredChecks : IO Unit := do
   IO.println "--- §4.5 FairTrace structure ---"
   assertBool "MAX_RELEASE_DELAY = 1024"
     (decide (MAX_RELEASE_DELAY = 1024))
+
+  IO.println "--- D-2.4 substantive monotonicity (concrete instance) ---"
+  -- writerWaitDepth_monotone_under_effective_release: depth decreases by ≥ 1
+  -- under any effective release op where the writer remains queued.
+  -- Concrete instance: pre = {writerHeld := some c0, readers := [],
+  --                          waiters := [(c1, .write), (c2, .write)]}.
+  --   pre depth(c1) = 0 (idxOf) + 0 (readers) + 1 (writer_bit) = 1.
+  -- Apply releaseWrite c0: post = {writerHeld := some c1, readers := [],
+  --                                waiters := [(c2, .write)]}.
+  --   post depth(c1) — c1 ∈ writerHeld, NOT in waiters.  Tests the
+  --   "c1 still queued" precondition: this case doesn't apply (c1 admitted).
+  -- Instead, test depth(c2):
+  --   pre depth(c2) = 1 + 0 + 1 = 2.
+  --   post depth(c2) = 0 + 0 + 1 = 1.
+  --   1 + 1 = 2 ≤ 2. ✓ (monotone with strict decrease.)
+  let pre_state : RwLockState :=
+    { writerHeld := some c0, readers := [],
+      waiters := [(c1, .write), (c2, .write)] }
+  let post_state := pre_state.applyOp (.releaseWrite c0)
+  assertBool "D-2.4: pre depth(c2) = 2"
+    (decide (writerWaitDepth pre_state c2 = 2))
+  assertBool "D-2.4: post depth(c2) = 1"
+    (decide (writerWaitDepth post_state c2 = 1))
+  assertBool "D-2.4: monotone: post(c2) + 1 ≤ pre(c2)"
+    (decide (writerWaitDepth post_state c2 + 1 ≤ writerWaitDepth pre_state c2))
 
   IO.println "==============================="
   IO.println "All SM2.C-defer D-1..D-4 checks PASS."
