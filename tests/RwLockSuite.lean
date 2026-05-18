@@ -96,8 +96,11 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.Concurrency.rwLock_writer_readers_exclusion
 #check @SeLe4n.Kernel.Concurrency.rwLock_reader_multiplicity
 
-/-! ## SM2.C.7 — FIFO admission -/
+/-! ## SM2.C.7 — FIFO admission (substantive drop-prefix claim) -/
 #check @SeLe4n.Kernel.Concurrency.rwLock_fifo_admission
+#check @SeLe4n.Kernel.Concurrency.rwLock_fifo_admission_readers_empty
+#check @SeLe4n.Kernel.Concurrency.rwLock_promote_subset_of_waiters
+#check @SeLe4n.Kernel.Concurrency.rwLock_promote_preserves_order
 
 /-! ## SM2.C.8..9 — Bounded wait -/
 #check @SeLe4n.Kernel.Concurrency.rwLock_bounded_wait_read
@@ -119,10 +122,18 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.Concurrency.rwLock_promoteWaitersOnWriterRelease_preserves_wf_partial
 #check @SeLe4n.Kernel.Concurrency.rwLock_promoteWaitersIfReadersEmpty_preserves_wf_partial
 
-/-! ## SM2.C.13 — Reader batching -/
+/-! ## SM2.C.13 — Reader batching (structural + strengthened bounds) -/
 #check @SeLe4n.Kernel.Concurrency.rwLock_reader_batching
+#check @SeLe4n.Kernel.Concurrency.rwLock_reader_batching_admits_at_least_one
+#check @SeLe4n.Kernel.Concurrency.rwLock_reader_batching_exact_count
 
-/-! ## SM2.C.14 — No writer starvation + determinism -/
+/-! ## SM2.C.14 — Writer safety under reader acquisition + determinism
+
+The H-2 audit rename: `rwLock_writer_safety_under_reader_acquire` is the
+honest description of the proven property (single-step safety, not
+multi-step liveness).  The alias `rwLock_no_writer_starvation` is
+retained for backwards compatibility. -/
+#check @SeLe4n.Kernel.Concurrency.rwLock_writer_safety_under_reader_acquire
 #check @SeLe4n.Kernel.Concurrency.rwLock_no_writer_starvation
 #check @SeLe4n.Kernel.Concurrency.rwLock_applyOp_deterministic
 #check @SeLe4n.Kernel.Concurrency.rwLock_promoteWaitersOnWriterRelease_deterministic
@@ -540,6 +551,55 @@ private def runBoundedWaitShapeChecks : IO Unit := do
   assertBool "full lock state: wf"
     (decide s_full.wf)
 
+private def runAuditFixesChecks : IO Unit := do
+  IO.println "--- §3.13 audit-fix evidence (H-1 / H-5 / H-2 strengthenings) ---"
+  let c1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let c2 : SeLe4n.Kernel.Concurrency.CoreId := ⟨2, by decide⟩
+  -- H-1: fifo_admission is a substantive drop-prefix claim.  After a
+  -- writer-head release-and-promote, the waiters list should be the
+  -- tail of the original.
+  let s_w :=
+    SeLe4n.Kernel.Concurrency.RwLockState.unheld
+      |>.applyOp (.tryAcquireWrite SeLe4n.Kernel.Concurrency.bootCoreId)
+      |>.applyOp (.tryAcquireWrite c1)
+      |>.applyOp (.tryAcquireWrite c2)
+  let s_w_post := s_w.promoteWaitersOnWriterRelease
+  assertBool "fifo: empty waiters case (post = s)"
+    (decide (SeLe4n.Kernel.Concurrency.RwLockState.unheld.promoteWaitersOnWriterRelease
+              = SeLe4n.Kernel.Concurrency.RwLockState.unheld))
+  -- s_w has writerHeld = some boot, waiters = [(c1,.write),(c2,.write)].
+  -- promote does nothing because writerHeld is some (it's a no-op from
+  -- this state — promoteWaitersOnWriterRelease assumes the writer has
+  -- already been cleared).  So we test the actual writer release path.
+  -- (Note: promoteWaitersOnWriterRelease on writerHeld=some is a structural
+  -- no-op because it pattern-matches on waiters.)
+  -- The strengthening: writer-release-then-promote on writer-head produces
+  -- waiters = original_waiters.drop 1.
+  let s_release := s_w.applyOp (.releaseWrite SeLe4n.Kernel.Concurrency.bootCoreId)
+  assertBool "fifo: writer-head promoted on release; waiters.drop 1"
+    (decide (s_release.waiters = [(c2, SeLe4n.Kernel.Concurrency.AccessMode.write)]))
+  -- H-5: reader_batching admits at least one + exact count.
+  let s_b :=
+    SeLe4n.Kernel.Concurrency.RwLockState.unheld
+      |>.applyOp (.tryAcquireWrite SeLe4n.Kernel.Concurrency.bootCoreId)
+      |>.applyOp (.tryAcquireRead c1)
+      |>.applyOp (.tryAcquireRead c2)
+  let s_b_release := s_b.applyOp (.releaseWrite SeLe4n.Kernel.Concurrency.bootCoreId)
+  assertBool "reader_batching: at least 1 reader admitted after release"
+    (decide (s_b_release.readers.length ≥ s_b.readers.length + 1))
+  assertBool "reader_batching: exact count = takeWhile + s.readers.length"
+    (decide (s_b_release.readers.length = 2 + s_b.readers.length))
+  -- H-2: writer_safety_under_reader_acquire.  Writer in waiters stays
+  -- in waiters after a fresh reader's tryAcquireRead.
+  let s_safety :=
+    SeLe4n.Kernel.Concurrency.RwLockState.unheld
+      |>.applyOp (.tryAcquireWrite SeLe4n.Kernel.Concurrency.bootCoreId)
+      |>.applyOp (.tryAcquireWrite c1)
+  let c3 : SeLe4n.Kernel.Concurrency.CoreId := ⟨3, by decide⟩
+  let s_safety_post := s_safety.applyOp (.tryAcquireRead c3)
+  assertBool "H-2: writer c1 still in waiters after fresh reader tryAcquireRead"
+    (decide ((c1, SeLe4n.Kernel.Concurrency.AccessMode.write) ∈ s_safety_post.waiters))
+
 def runRwLockChecks : IO Unit := do
   IO.println "WS-SM SM2.C — RwLock test suite"
   IO.println "==============================="
@@ -555,6 +615,7 @@ def runRwLockChecks : IO Unit := do
   runRefinementChecks
   runDeterminismChecks
   runBoundedWaitShapeChecks
+  runAuditFixesChecks
   IO.println "==============================="
   IO.println "All SM2.C RwLock checks PASS."
 

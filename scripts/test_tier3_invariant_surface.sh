@@ -1501,8 +1501,11 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLock
 -- SM2.C.5..6 — Exclusion + reader multiplicity
 #check @SeLe4n.Kernel.Concurrency.rwLock_writer_readers_exclusion
 #check @SeLe4n.Kernel.Concurrency.rwLock_reader_multiplicity
--- SM2.C.7 — FIFO admission
+-- SM2.C.7 — FIFO admission (substantive drop-prefix claim)
 #check @SeLe4n.Kernel.Concurrency.rwLock_fifo_admission
+#check @SeLe4n.Kernel.Concurrency.rwLock_fifo_admission_readers_empty
+#check @SeLe4n.Kernel.Concurrency.rwLock_promote_subset_of_waiters
+#check @SeLe4n.Kernel.Concurrency.rwLock_promote_preserves_order
 -- SM2.C.8..9 — Bounded wait
 #check @SeLe4n.Kernel.Concurrency.rwLock_bounded_wait_read
 #check @SeLe4n.Kernel.Concurrency.rwLock_bounded_wait_write
@@ -1520,9 +1523,12 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLock
 #check @SeLe4n.Kernel.Concurrency.rwLock_promoteWaitersIfReadersEmpty_preserves_wf
 #check @SeLe4n.Kernel.Concurrency.rwLock_promoteWaitersOnWriterRelease_preserves_wf_partial
 #check @SeLe4n.Kernel.Concurrency.rwLock_promoteWaitersIfReadersEmpty_preserves_wf_partial
--- SM2.C.13 — Reader batching
+-- SM2.C.13 — Reader batching (structural + strengthened bounds)
 #check @SeLe4n.Kernel.Concurrency.rwLock_reader_batching
--- SM2.C.14 — No writer starvation + determinism
+#check @SeLe4n.Kernel.Concurrency.rwLock_reader_batching_admits_at_least_one
+#check @SeLe4n.Kernel.Concurrency.rwLock_reader_batching_exact_count
+-- SM2.C.14 — Writer safety + determinism
+#check @SeLe4n.Kernel.Concurrency.rwLock_writer_safety_under_reader_acquire
 #check @SeLe4n.Kernel.Concurrency.rwLock_no_writer_starvation
 #check @SeLe4n.Kernel.Concurrency.rwLock_applyOp_deterministic
 #check @SeLe4n.Kernel.Concurrency.rwLock_promoteWaitersOnWriterRelease_deterministic

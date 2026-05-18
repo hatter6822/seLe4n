@@ -210,9 +210,69 @@ INV-T8 count parity strengthening), 6 substantive theorems
 cache-line aligned `TicketLock` + RAII `TicketLockGuard`, 21
 cargo unit tests including panic-safety + cross-thread stress,
 Lean test suite with 35 runtime assertions).
+SM2.C (Verified RwLock spec + Rust impl + refinement bridge) —
+**LANDED post-v0.31.9** on branch
+`claude/complete-rwlock-spec-UsPLt` (all 22 sub-tasks: abstract
+operational spec with 5-conjunct wf invariant (incl. INV-R5 FIFO
+admission discipline strengthening, the RwLock analog of SM2.B's
+INV-T8), AccessMode + RwLockState + RwLockOp inductives,
+`applyOp` / `promoteWaitersOnWriterRelease` /
+`promoteWaitersIfReadersEmpty` operational transitions with
+`coreInvolved` no-op gate (fixes a plan-pseudocode INV-R4
+violation), 10 substantive theorems (`writer_readers_exclusion`,
+`reader_multiplicity`, `fifo_admission` strengthened to a
+substantive drop-prefix structural claim with helper corollaries
+`promote_subset_of_waiters` + `promote_preserves_order`,
+`bounded_wait_read/write`, `release_acquire_pairing_read/write`,
+`wf_invariant` aggregate, `reader_batching` with strengthened
+`admits_at_least_one` / `exact_count` bounds, and
+`writer_safety_under_reader_acquire` (single-step safety form,
+honestly renamed from `no_writer_starvation` with backwards-compat
+alias; the full liveness claim is deferred since it requires
+infinite-trace temporal reasoning beyond v1.0.0's operational
+spec)), determinism for all three transition functions, 4 closure-
+form wf-preservation aliases, bit-packed encoding (`encodeRwLock`,
+`decodeRwLock`, 5 round-trip / writer-bit / overflow-bound lemmas),
+`RwLockRefinement` bridge with `rwLockSim` relation + 6 witness
+theorems documenting the FIFO divergence (Rust CAS-retry impl
+satisfies mutex + exclusion but not the spec's FIFO admission;
+SM3 review verifies kernel-path dependencies on FIFO).
+Rust impl at `rust/sele4n-hal/src/rw_lock.rs` cache-line aligned
+with bit-packed AtomicU64 state, `RwLockReadGuard` / `RwLockWriteGuard`
+panic-safe RAII guards.  Audit-pass fixes: H-3 `release_read` uses
+`fetch_sub(1, Release)` (was CAS-retry with `count - 1` arithmetic
+that could underflow to u64::MAX in release builds); H-4
+`release_write` uses `fetch_and(READER_MASK, Release)` (was
+`store(0)` that could wipe reader bits on misuse); M-3 SEV
+broadcast gated on `prev count = 1` (drops to zero); M-7 single
+load for debug asserts; deterministic reader-multiplicity stress
+test using two-phase Barrier (was non-deterministic timing-based).
+27 cargo unit tests covering single-thread acquire-release cycles,
+RAII, panic-safety, debug-assert misuse detection, cache-line
+alignment, const-fn pinning, signature pinning, bit-packed
+encoding round-trip, and 3 cross-thread stress tests (4-reader
+stress, mixed reader/writer, deterministic reader-multiplicity
+via Barrier).  Lean test suite at `tests/RwLockSuite.lean` with
+90+ surface anchors, 35+ decidable examples, 38 runtime assertions
+in `lake exe rw_lock_suite`).  Zero Lean axioms, zero sorries.
+Plan-pseudocode bugs caught and fixed: (1) INV-R5 reachability gap
+allowing INV-R4 violation in `tryAcquireWrite`; (2) missing
+`core ∈ waiters` checks in `tryAcquireRead`/`tryAcquireWrite`
+enqueue-and-acquire branches that allowed core-already-involved
+states to violate INV-R4.  Audit pass refinements: substantive
+`rwLock_fifo_admission` (was trivial tautology returning the
+hypothesis); honest rename of `no_writer_starvation` to
+`writer_safety_under_reader_acquire` with backwards-compat alias
+(was claiming liveness, only proves single-step safety);
+strengthened `rwLock_reader_batching` with `admits_at_least_one` /
+`exact_count` corollaries; corrected STLR ARM ARM citation across
+both TicketLock and RwLock files (C6.2.243 is SEV, STLR uses
+B2.3.7 release-ordering reference; the Rust `release_*` paths use
+LSE atomic ops LDADDL / LDCLRL with documented Cargo.toml-
+release-build hardening).
 See [`docs/planning/SMP_RUST_HAL_PLAN.md`](planning/SMP_RUST_HAL_PLAN.md) §§5.2..5.9.
-See [`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) §5.1 for SM2.A
-and §5.2 for SM2.B.
+See [`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) §5.1 for SM2.A,
+§5.2 for SM2.B, and §5.3 for SM2.C.
 
 **WS-SM SM1.B LANDED at v0.31.4 on branch
 `claude/per-cpu-tpidr-el1-1OBHA`** (per-CPU data + TPIDR_EL1,

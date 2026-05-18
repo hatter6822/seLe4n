@@ -56,9 +56,10 @@ the following hardware primitives:
   `nextTicket` location.  Captures the ticket atomically; on
   ARMv8.1-A LSE this is one instruction.  Modelled in the memory
   trace as an RMW (load + store at the same `seqNum`).
-* **`release`** — `STLR` (ARM ARM C6.2.243 / B2.3.7) on the `serving`
-  location.  Release-store ordering publishes every prior write on
-  the releasing core to any acquire-load that observes this value.
+* **`release`** — `STADDL` (ARM ARM C6.2.305) on the `serving` location
+  (matching the Rust impl's `fetch_add(1, Release)`).  B2.3.7 governs
+  the release-store ordering semantics: prior writes on the releasing
+  core are published to any acquire-load that observes the new value.
 * **`observeServing`** — `LDAR` (ARM ARM C6.2.142) on the `serving`
   location.  Acquire-load ordering synchronises-with the
   release-store that produced the observed value.
