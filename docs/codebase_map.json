@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-deferred-planning-f2VYX",
-      "commit_sha": "08cf0b56cd5f68ec16878137f15b84d107321e16",
-      "tree_sha": "8b42833a26e51498069e022e6f54af21c360d143",
-      "committed_at_utc": "2026-05-18T15:01:26-04:00"
+      "commit_sha": "45d17e5f28b5cbdff486f96af0ec46cc3669d035",
+      "tree_sha": "e465e3353b9a3802187bb293cc49629450887127",
+      "committed_at_utc": "2026-05-18T20:02:57+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "115bf7dc07bff1da32615c642fe07892d1bd086aa03268ac3b6c964a59626288"
+    "source_digest": "e586f09823338ed18405cd9db3889e5ba7e7c3a1a721e11a9266b611aab44a99"
   },
   "summary": {
     "module_count": 217,
-    "declaration_count": 7150
+    "declaration_count": 7153
   },
   "readme_sync": {
     "version": "0.31.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 182,
-    "production_loc": 123013,
+    "production_loc": 123083,
     "test_files": 35,
-    "test_loc": 24309,
-    "proved_theorem_lemma_decls": 3594,
+    "test_loc": 24312,
+    "proved_theorem_lemma_decls": 3597,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -15885,7 +15885,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement",
       "path": "SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean",
-      "declaration_count": 18,
+      "declaration_count": 21,
       "declarations": [
         {
           "kind": "namespace",
@@ -16071,6 +16071,52 @@
             "RwLockEncoded",
             "RwLockState",
             "rwLockSim"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rwLockSim_preserved_by_direct_acquire_read",
+          "line": 348,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "applyOp",
+            "coreInvolved",
+            "encodeRwLock",
+            "length",
+            "none",
+            "tryAcquireRead_direct_acquire_shape"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rwLockSim_preserved_by_direct_acquire_write",
+          "line": 374,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "applyOp",
+            "coreInvolved",
+            "encodeRwLock",
+            "length",
+            "none",
+            "tryAcquireWrite_direct_acquire_shape",
+            "writerBit"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rwLockSim_preserved_by_noop_chain",
+          "line": 394,
+          "called": [
+            "RwLockEncoded",
+            "RwLockOp",
+            "RwLockState",
+            "RwLockState.applyOp",
+            "applyOp",
+            "head",
+            "rwLockSim",
+            "tail"
           ]
         }
       ]
@@ -88826,6 +88872,9 @@
             "release_waiters_sublist",
             "rustImplementsRwLock",
             "rust_rwLock_refines_lean_nil",
+            "rwLockSim_preserved_by_direct_acquire_read",
+            "rwLockSim_preserved_by_direct_acquire_write",
+            "rwLockSim_preserved_by_noop_chain",
             "rwLock_bounded_wait_write_distinct_weak",
             "rwLock_fifo_admission_temporal_structural",
             "rwLock_writer_no_starvation_step",
@@ -88843,7 +88892,7 @@
         {
           "kind": "def",
           "name": "c0",
-          "line": 115,
+          "line": 118,
           "called": [
             "CoreId"
           ]
@@ -88851,7 +88900,7 @@
         {
           "kind": "def",
           "name": "c1",
-          "line": 116,
+          "line": 119,
           "called": [
             "CoreId"
           ]
@@ -88859,7 +88908,7 @@
         {
           "kind": "def",
           "name": "c2",
-          "line": 117,
+          "line": 120,
           "called": [
             "CoreId"
           ]
@@ -88867,15 +88916,15 @@
         {
           "kind": "def",
           "name": "c3",
-          "line": 118,
+          "line": 121,
           "called": [
             "CoreId"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:121>",
-          "line": 121,
+          "name": "<anonymous:example:124>",
+          "line": 124,
           "called": [
             "RwLockState",
             "c0",
@@ -88887,8 +88936,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:127>",
-          "line": 127,
+          "name": "<anonymous:example:130>",
+          "line": 130,
           "called": [
             "RwLockState",
             "c0",
@@ -88900,8 +88949,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:133>",
-          "line": 133,
+          "name": "<anonymous:example:136>",
+          "line": 136,
           "called": [
             "RwLockState",
             "c0",
@@ -88909,15 +88958,6 @@
             "c2",
             "c3",
             "writerWaitDepth"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:140>",
-          "line": 140,
-          "called": [
-            "applyOp",
-            "c0"
           ]
         },
         {
@@ -88931,8 +88971,17 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:147>",
-          "line": 147,
+          "name": "<anonymous:example:146>",
+          "line": 146,
+          "called": [
+            "applyOp",
+            "c0"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:150>",
+          "line": 150,
           "called": [
             "applyOp",
             "c0",
@@ -88941,8 +88990,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:152>",
-          "line": 152,
+          "name": "<anonymous:example:155>",
+          "line": 155,
           "called": [
             "RwLockState",
             "c0",
@@ -88951,8 +89000,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:159>",
-          "line": 159,
+          "name": "<anonymous:example:162>",
+          "line": 162,
           "called": [
             "RwLockState",
             "c0",
@@ -88960,15 +89009,6 @@
             "c2",
             "none",
             "promoteWaitersOnWriterRelease"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:167>",
-          "line": 167,
-          "called": [
-            "c0",
-            "concreteApplyOp"
           ]
         },
         {
@@ -89000,8 +89040,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:180>",
-          "line": 180,
+          "name": "<anonymous:example:179>",
+          "line": 179,
           "called": [
             "c0",
             "concreteApplyOp"
@@ -89009,8 +89049,17 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:184>",
-          "line": 184,
+          "name": "<anonymous:example:183>",
+          "line": 183,
+          "called": [
+            "c0",
+            "concreteApplyOp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:187>",
+          "line": 187,
           "called": [
             "MAX_RELEASE_DELAY"
           ]
@@ -89018,13 +89067,13 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 191,
+          "line": 194,
           "called": []
         },
         {
           "kind": "def",
           "name": "runDeferredChecks",
-          "line": 198,
+          "line": 201,
           "called": [
             "MAX_RELEASE_DELAY",
             "RwLockState",
@@ -89044,7 +89093,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 259,
+          "line": 262,
           "called": [
             "runDeferredChecks"
           ]

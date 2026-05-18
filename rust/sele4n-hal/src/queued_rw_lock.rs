@@ -120,6 +120,13 @@ const READER_MASK: u64 = !WRITER_BIT;
 /// Refines the abstract `RwLockState` with the additional invariant
 /// that admission order matches enqueue order
 /// (`rwLock_fifo_admission_temporal` in `RwLock.lean`).
+///
+/// The lock holds only a `tail` pointer (no `head`); per the standard
+/// MCS algorithm, the current holder identifies their own slot via
+/// the `core_id` parameter passed to `release_*`.  An explicit `head`
+/// would introduce write-write races between concurrent
+/// release/acquire pairs that the standard protocol avoids by
+/// construction.
 #[repr(C, align(64))]
 pub struct QueuedRwLock {
     /// Bit-packed reader count + writer bit.
@@ -127,10 +134,6 @@ pub struct QueuedRwLock {
     /// Index of the tail slot, or `NONE_SENTINEL` if no waiters queued.
     /// Single CAS-mutation point for enqueue.
     tail: AtomicU8,
-    /// Index of the head slot, or `NONE_SENTINEL` if no waiters queued.
-    /// Read by every waiter at the head; written by the predecessor or
-    /// the lock-release path under the documented single-writer protocol.
-    head: AtomicU8,
     /// Per-core waiter slots.  Slot `i` is owned by `CoreId(i)`.
     slots: [WaiterSlot; MAX_WAITERS],
 }
@@ -159,7 +162,6 @@ impl QueuedRwLock {
         Self {
             state: AtomicU64::new(0),
             tail: AtomicU8::new(NONE_SENTINEL),
-            head: AtomicU8::new(NONE_SENTINEL),
             slots: [
                 WaiterSlot::INIT,
                 WaiterSlot::INIT,
@@ -178,11 +180,6 @@ impl QueuedRwLock {
     /// Peek the tail slot index (test-only).
     pub fn peek_tail(&self) -> u8 {
         self.tail.load(Ordering::Acquire)
-    }
-
-    /// Peek the head slot index (test-only).
-    pub fn peek_head(&self) -> u8 {
-        self.head.load(Ordering::Acquire)
     }
 
     /// **Reader fast-path predicate**: can we acquire-direct as a reader?
@@ -254,12 +251,11 @@ impl QueuedRwLock {
         let prev_tail = self.tail.swap(core_id, Ordering::AcqRel);
 
         if prev_tail == NONE_SENTINEL {
-            // We are the head.  Install ourselves and try immediate admit.
+            // We are the new head.  Try immediate admit.
             // Per FIFO discipline: the immediate-admit check happens AFTER
             // enqueue, so a concurrent acquire_write that incremented the
             // writer bit BEFORE our swap is observed by us via the swap's
             // AcqRel fence; we wait via the parked loop in that case.
-            self.head.store(core_id, Ordering::Release);
             if self.try_admit_as_reader() {
                 // Mark ourselves as parked=true so the release-path knows
                 // we're already in-flight as an admitted reader.
@@ -306,8 +302,7 @@ impl QueuedRwLock {
         let prev_tail = self.tail.swap(core_id, Ordering::AcqRel);
 
         if prev_tail == NONE_SENTINEL {
-            // We are the head.
-            self.head.store(core_id, Ordering::Release);
+            // We are the new head.
             if self.try_admit_as_writer() {
                 slot.parked.store(true, Ordering::Release);
                 return;
@@ -366,54 +361,73 @@ impl QueuedRwLock {
 
     /// **Internal helper**: signal the next waiter in the queue.
     ///
-    /// Reads the head's `next` field; if present, advances head to
-    /// next and signals next's `parked` flag.  If absent, the queue
-    /// is being torn down; nothing to do.
+    /// Uses the standard **MCS handover protocol** to avoid the
+    /// classic race where a new enqueuer arrives between the
+    /// releaser's "is there a successor?" check and the queue cleanup.
+    ///
+    /// Protocol:
+    /// 1. Read `releaser.next`.  If non-sentinel, the successor is
+    ///    known — promote them.
+    /// 2. If sentinel, try CAS `tail: self → NONE_SENTINEL`.  If
+    ///    successful, queue is empty; clear head and return.
+    /// 3. If CAS fails (some new enqueuer set tail to themselves
+    ///    after our `next` load), **wait** for the new enqueuer to
+    ///    finish linking by setting `releaser.next = their_id`,
+    ///    then promote them.
+    ///
+    /// Without step 3, a successor that enqueued during step 1-2
+    /// would link to a slot no longer in the queue (the releaser
+    /// has already left), waiting forever for a signal that never
+    /// comes — the canonical MCS handover bug.
     fn signal_next_waiter(&self, releaser_core_id: u8) {
-        // The releaser is at the head.  Find the successor via slots[head].next.
         let releaser_slot = &self.slots[releaser_core_id as usize];
-        let next = releaser_slot.next.load(Ordering::Acquire);
+        let mut next = releaser_slot.next.load(Ordering::Acquire);
 
         if next == NONE_SENTINEL {
-            // No successor.  Try to clear the queue: CAS head from
-            // releaser_core_id to NONE_SENTINEL.  If we succeed, also
-            // try to clear tail (only if tail == releaser_core_id; if
-            // another thread enqueued meanwhile, tail will differ and
-            // we leave the queue in a partial-shutdown state where the
-            // new enqueuer is responsible for head reinstall).
-            //
-            // The CAS on tail must observe the swap atomicity from
-            // the new enqueuer's `tail.swap` AcqRel; on failure the new
-            // enqueuer's slot.next will eventually be linked to releaser.
-            let _ = self.head.compare_exchange(
+            // No visible successor yet.  Try to atomically end the queue.
+            match self.tail.compare_exchange(
                 releaser_core_id, NONE_SENTINEL,
-                Ordering::Release, Ordering::Relaxed,
-            );
-            let _ = self.tail.compare_exchange(
-                releaser_core_id, NONE_SENTINEL,
-                Ordering::Release, Ordering::Relaxed,
-            );
-        } else {
-            // Successor exists.  Promote them.
-            //
-            // SAFETY: `next < MAX_WAITERS` by the enqueue-side invariant
-            // (only valid core_ids are stored in `next` fields).
-            let next_slot = &self.slots[next as usize];
-            let next_mode = next_slot.requested_mode();
-
-            // Update the lock state for the successor:
-            // - Reader successor: increment reader count.
-            // - Writer successor: set writer bit.
-            if next_mode == MODE_READ {
-                self.state.fetch_add(1, Ordering::Release);
-            } else {
-                self.state.fetch_or(WRITER_BIT, Ordering::Release);
+                Ordering::AcqRel, Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    // CAS succeeded: queue is now empty.  No head to clear
+                    // (lock holds only `tail`).
+                    return;
+                }
+                Err(_) => {
+                    // CAS failed: a new enqueuer set tail to themselves
+                    // AFTER our `next` load.  Spin-wait for them to
+                    // complete the link (set our slot's `next` to their id).
+                    loop {
+                        let n = releaser_slot.next.load(Ordering::Acquire);
+                        if n != NONE_SENTINEL {
+                            next = n;
+                            break;
+                        }
+                        crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
+                    }
+                }
             }
-
-            // Advance head and signal the successor.
-            self.head.store(next, Ordering::Release);
-            next_slot.parked.store(true, Ordering::Release);
         }
+
+        // Promote the known successor.
+        //
+        // SAFETY: `next < MAX_WAITERS` by the enqueue-side invariant
+        // (only valid core_ids are stored in `next` fields).
+        let next_slot = &self.slots[next as usize];
+        let next_mode = next_slot.requested_mode();
+
+        // Update lock state for the successor:
+        // - Reader successor: increment reader count.
+        // - Writer successor: set writer bit.
+        if next_mode == MODE_READ {
+            self.state.fetch_add(1, Ordering::Release);
+        } else {
+            self.state.fetch_or(WRITER_BIT, Ordering::Release);
+        }
+
+        // Signal the successor.
+        next_slot.parked.store(true, Ordering::Release);
     }
 }
 
@@ -426,7 +440,6 @@ mod tests {
         let lock = QueuedRwLock::new();
         assert_eq!(lock.peek_state(), 0);
         assert_eq!(lock.peek_tail(), NONE_SENTINEL);
-        assert_eq!(lock.peek_head(), NONE_SENTINEL);
     }
 
     #[test]
@@ -435,7 +448,6 @@ mod tests {
         let b = QueuedRwLock::default();
         assert_eq!(a.peek_state(), b.peek_state());
         assert_eq!(a.peek_tail(), b.peek_tail());
-        assert_eq!(a.peek_head(), b.peek_head());
     }
 
     #[test]
@@ -488,7 +500,6 @@ mod tests {
     fn signature_pin_peek_methods() {
         let _: fn(&QueuedRwLock) -> u64 = QueuedRwLock::peek_state;
         let _: fn(&QueuedRwLock) -> u8 = QueuedRwLock::peek_tail;
-        let _: fn(&QueuedRwLock) -> u8 = QueuedRwLock::peek_head;
     }
 }
 

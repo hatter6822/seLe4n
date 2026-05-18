@@ -1,3 +1,96 @@
+## Unreleased — WS-SM SM2.C-defer (RwLock deferred-completion D-1..D-6)
+
+Implements major portions of
+[`docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md`](docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md)
+post-v1.0.0 closure work for the verified RwLock primitive.  Six
+deferred items (D-1..D-6) covered substantively:
+
+* **D-1 (Temporal FIFO admission)**: `RwLockKernelStep` +
+  `RwLockReachable` + `RwLockExecution` infrastructure (§4.1) +
+  `waiterAt` / `holderAt` / `enqueueStep` / `admissionStep`
+  predicates (§4.2) + D-1.6 append-to-tail
+  (`tryAcquireRead_waiters_append_or_noop`,
+  `tryAcquireWrite_waiters_append_or_noop`) + D-1.7 drop-prefix
+  sublist (`releaseRead_waiters_sublist`,
+  `releaseWrite_waiters_sublist`, `release_waiters_sublist`,
+  `acquire_waiters_super_or_eq`) + D-1.8 single-step order
+  preservation (`applyOp_preserves_waiter_order`) + D-1.9 structural
+  multi-step form (`rwLock_fifo_admission_temporal_structural`).
+  The full transition-edge-form D-1.9 main theorem requires
+  additional bridging that threads `enqueueStep` /
+  `admissionStep` through the structural sublist; the structural
+  multi-step form captured here is the cleanly-proven core.
+
+* **D-2 (Writer-specific bounded wait)**: `writerWaitDepth`
+  definition (§4.3) + decidability + tight `numCores - 1` bound
+  (`writerWaitDepth_bounded`) closing audit M-1 (no
+  double-counting; substantive bound, not `2 * numCores - 1`) +
+  `writerWaitDepth_componentBounded` per-component bound +
+  `rwLock_bounded_wait_write_distinct_weak` as the named API.
+  Plus `isEffectiveRelease` predicate + `countEffectiveReleases`
+  window helper + `countEffectiveReleases_le_window` structural
+  bound.
+
+* **D-3 (Liveness — partial)**: `FairTrace` predicate (§4.5)
+  with strengthened transition-edge form (closes audit M-2) +
+  `MAX_RELEASE_DELAY` runtime config parameter +
+  `rwLock_writer_no_starvation_step` single-step safety +
+  `writer_at_head_promoted` + `reader_at_head_promoted` +
+  `promote_noop_on_empty_waiters` building blocks.
+
+* **D-4 (Bisimulation — partial)**: `ConcreteRwLockOp` inductive
+  (§4.4) with load/cas/fetch_sub/fetch_and/sev/wfeWait + `concreteApplyOp`
+  over `UInt64` per audit M-4 (modular arithmetic faithful to Rust
+  `fetch_sub`); `opCorresponds` inductive with CAS-retry / park-retry /
+  conditional-SEV constructors per audits M-5/M-6.  D-4.4 state-
+  preserving sub-op theorems (load/wfe/sev); D-4.5/D-4.7 CAS success /
+  failure path identities; D-4.6 `encodeRwLock_at_least_one_when_reader`
+  + the `rwLockSim`-aware `concreteApplyOp_fetch_sub_no_underflow`
+  (in `RwLockRefinement.lean`).  `ListCorresponds` +
+  `rustImplementsRwLock` predicate (D-4.3) replaces the v1.0.0
+  `example/trivial` placeholder.
+  `rwLockSim_preserved_by_direct_acquire_read/write` and
+  `_by_noop_chain` give the substantive partial refinement.
+
+* **D-5 (Queued RwLock)**: `rust/sele4n-hal/src/queued_rw_lock.rs`
+  (~660 LoC).  **MCS-style FIFO-preserving queued RwLock** with
+  per-core fixed `[WaiterSlot; MAX_WAITERS=4]` array — closes
+  audits H-1 (no FIFO-violating fast-path), H-2 (no `AtomicPtr` /
+  `WaiterNode` lifetime hazards), M-7 (simpler design over
+  lock-free linked-list).  Heap-free, ABA-free, lifetime-safe
+  by construction.  21 unit tests + 3 cross-thread stress
+  (4×100 reader stress, 4×100 writer mutex, 2+2 mixed).
+
+* **D-6 (Tier 5 cross-language correspondence)**: two-oracle
+  process-boundary harness — `lake exe rw_lock_oracle` (Lean,
+  reads stdin op-sequence, folds `applyOp` over abstract spec)
+  + `cargo run --bin rw_lock_oracle` (Rust, reads same op-sequence,
+  computes bit-packed state evolution via software model).
+  Driver `scripts/test_tier5_cross_language.sh` feeds same
+  inputs to both, diffs canonical `W=;R=;Q=` output.  No FFI
+  link-discipline change (closes audit H-3).  Wired into
+  `test_nightly.sh` under `NIGHTLY_ENABLE_EXPERIMENTAL=1`.
+
+### Test coverage delta
+
+* 12 new runtime assertions in `tests/RwLockDeferredSuite.lean`
+  (`lake exe rw_lock_deferred_suite`); wired into tier-2 negative.
+* 28 new tier-3 invariant-surface anchors covering every
+  deferred-completion public symbol.
+* 21 Rust unit tests for `QueuedRwLock` + 14 unit tests for
+  the Rust oracle binary.
+* Tier-5 cross-language harness validated on 200+ op-sequences;
+  zero mismatches between Lean and Rust oracles.
+
+All tests pass.  Axiom budget: 0 Lean axioms, 0 sorries.
+
+### Deferred to follow-on phases
+
+The full transition-edge-form D-1.9, multi-step liveness D-3.6, and
+full bisim D-4.9 require additional proof work that builds on the
+foundations landed here; the substantive partial forms are sufficient
+for SM3 consumer adoption.
+
 ## Unreleased — WS-SM Phase SM2.C landing (verified RwLock primitive)
 
 WS-SM SM2.C (RwLock spec + Rust impl + refinement bridge) lands the

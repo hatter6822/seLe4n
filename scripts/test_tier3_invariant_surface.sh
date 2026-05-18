@@ -1596,6 +1596,9 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.ListCorresponds
 #check @SeLe4n.Kernel.Concurrency.rustImplementsRwLock
 #check @SeLe4n.Kernel.Concurrency.concreteApplyOp_fetch_sub_no_underflow
+#check @SeLe4n.Kernel.Concurrency.rwLockSim_preserved_by_direct_acquire_read
+#check @SeLe4n.Kernel.Concurrency.rwLockSim_preserved_by_direct_acquire_write
+#check @SeLe4n.Kernel.Concurrency.rwLockSim_preserved_by_noop_chain
 EOF'
 
 finalize_report

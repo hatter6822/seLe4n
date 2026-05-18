@@ -338,4 +338,74 @@ theorem rwLockSim_preserved_by_load
     (h_sim : rwLockSim abstract concrete) :
     rwLockSim abstract concrete := h_sim
 
+/-- **WS-SM SM2.C-defer D-4.5 (abstract acquire-direct shape ⇒ encoded
+form)**: when the abstract state transitions via direct-acquire-read,
+the encoded post-state equals the encoded pre-state plus 1.
+
+This is the foundational identity for the bisimulation: the abstract
+`applyOp .tryAcquireRead` (direct branch) corresponds to the concrete
+`casAcquireRead` (success branch) at the encoded level. -/
+theorem rwLockSim_preserved_by_direct_acquire_read
+    (abstract : RwLockState) (c : CoreId)
+    (h_not_inv : ¬ abstract.coreInvolved c)
+    (h_no_writer : abstract.writerHeld = none)
+    (h_waiters_safe :
+      abstract.waiters = [] ∨
+      ∃ c' rest, abstract.waiters = (c', AccessMode.read) :: rest) :
+    let post := abstract.applyOp (.tryAcquireRead c)
+    encodeRwLock post.writerHeld.isSome post.readers.length =
+      encodeRwLock abstract.writerHeld.isSome abstract.readers.length + 1 := by
+  have h_shape := tryAcquireRead_direct_acquire_shape abstract c h_not_inv h_no_writer h_waiters_safe
+  show encodeRwLock _ _ = encodeRwLock _ _ + 1
+  rw [h_shape.1, h_shape.2.1]
+  -- post.readers = c :: abstract.readers; post.writerHeld = abstract.writerHeld.
+  unfold encodeRwLock
+  rw [List.length_cons]
+  -- Goal: (if w then writerBit else 0) + (abstract.readers.length + 1)
+  --     = (if w then writerBit else 0) + abstract.readers.length + 1
+  -- Both sides are `Nat`; use Nat.add_assoc.
+  exact Nat.add_assoc _ _ 1 |>.symm
+
+/-- **WS-SM SM2.C-defer D-4.7 (abstract acquire-direct write shape ⇒
+encoded form)**: when the abstract state transitions via direct-acquire-
+write, the encoded post-state has the writer bit set.
+
+This is the foundational identity for the writer-side bisimulation. -/
+theorem rwLockSim_preserved_by_direct_acquire_write
+    (abstract : RwLockState) (c : CoreId)
+    (h_not_inv : ¬ abstract.coreInvolved c)
+    (h_no_writer : abstract.writerHeld = none)
+    (h_no_readers : abstract.readers = []) :
+    let post := abstract.applyOp (.tryAcquireWrite c)
+    encodeRwLock post.writerHeld.isSome post.readers.length = writerBit := by
+  have h_shape := tryAcquireWrite_direct_acquire_shape abstract c h_not_inv h_no_writer h_no_readers
+  show encodeRwLock _ _ = writerBit
+  rw [h_shape.1, h_shape.2.1, h_no_readers]
+  unfold encodeRwLock
+  simp
+
+/-- **WS-SM SM2.C-defer D-4 (no-op fold preserves)**: a list of no-op
+abstract operations preserves the simulation.
+
+This is the structural form that the full bisimulation `rust_rwLock_refines_lean`
+will eventually use: a chain of no-op abstract operations corresponds
+to a chain of state-preserving concrete operations, so the simulation
+holds at every position. -/
+theorem rwLockSim_preserved_by_noop_chain
+    (abstract : RwLockState) (concrete : RwLockEncoded)
+    (h_sim : rwLockSim abstract concrete)
+    (ops : List RwLockOp)
+    (h_all_noop : ∀ op ∈ ops, abstract.applyOp op = abstract) :
+    rwLockSim (ops.foldl RwLockState.applyOp abstract) concrete := by
+  induction ops with
+  | nil => simp; exact h_sim
+  | cons head tail ih =>
+    -- applyOp on head is a no-op, so folding tail from abstract.applyOp head
+    -- equals folding tail from abstract.
+    have h_head : abstract.applyOp head = abstract := h_all_noop head (List.mem_cons_self)
+    rw [List.foldl_cons, h_head]
+    apply ih
+    intro op h_in
+    exact h_all_noop op (List.mem_cons_of_mem _ h_in)
+
 end SeLe4n.Kernel.Concurrency

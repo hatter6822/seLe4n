@@ -107,6 +107,9 @@ open SeLe4n.Kernel.Concurrency
 #check @concreteApplyOp_wfeWait_preserves_state
 #check @concreteApplyOp_sev_preserves_state
 #check @concreteApplyOp_fetch_sub_no_underflow
+#check @rwLockSim_preserved_by_direct_acquire_read
+#check @rwLockSim_preserved_by_direct_acquire_write
+#check @rwLockSim_preserved_by_noop_chain
 
 -- ============================================================================
 -- Decidable examples (operational sanity checks)
