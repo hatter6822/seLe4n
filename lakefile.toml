@@ -182,3 +182,15 @@ root = "tests.MemoryModelSuite"
 [[lean_exe]]
 name = "ticket_lock_suite"
 root = "tests.TicketLockSuite"
+
+# WS-SM SM2.C — RwLock test suite.  Surface anchors + decidable examples
+# for every SM2.C public symbol (RwLockState, AccessMode, RwLockOp, applyOp,
+# promoteWaitersOnWriterRelease, promoteWaitersIfReadersEmpty, all 5 wf
+# invariants, plus the substantive theorems writer-readers-exclusion /
+# reader-multiplicity / FIFO admission / bounded-wait / RA-pairing /
+# reader-batching / no-writer-starvation / wf-preservation / determinism /
+# closure-form aliases / bit-packed encoding round-trip / refinement
+# bridge).  Tier-3 wired.
+[[lean_exe]]
+name = "rw_lock_suite"
+root = "tests.RwLockSuite"

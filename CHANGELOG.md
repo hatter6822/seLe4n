@@ -1,3 +1,179 @@
+## Unreleased — WS-SM Phase SM2.C landing (verified RwLock primitive)
+
+WS-SM SM2.C (RwLock spec + Rust impl + refinement bridge) lands the
+third sub-phase of SM2 ("Verified Lock Primitives"), completing the
+reader-writer lock primitive with bit-packed atomic state.  All
+**22 sub-tasks** in the workstream land in one cut.
+
+### Highlights
+
+* Abstract operational spec at
+  `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~2300 LoC).
+* 10 substantive theorems including the audit-strengthened
+  `rwLock_fifo_admission` (substantive drop-prefix claim, replacing
+  a trivial tautology), `rwLock_reader_batching_admits_at_least_one`
+  / `_exact_count` (strengthening the unfolding-style original), and
+  `rwLock_writer_safety_under_reader_acquire` (audit-honest rename of
+  `_no_writer_starvation`).
+* 5-conjunct `wf` invariant with INV-R5 (FIFO admission discipline)
+  closing a reachability gap analogous to SM2.B's INV-T8.
+* `coreInvolved` no-op gate consolidates the plan's three separate
+  membership checks (audit fix preventing INV-R4 violations).
+* Bit-packed encoding (`encodeRwLock` / `decodeRwLock`) with 5
+  round-trip lemmas.
+* SM2.C.20 refinement bridge at `RwLockRefinement.lean` (~230 LoC)
+  with `rwLockSim` relation documenting the Rust impl's FIFO
+  divergence.
+* Rust impl at `rust/sele4n-hal/src/rw_lock.rs` with audit-pass
+  release-build hardening: `fetch_sub` for reader release (replaces
+  CAS-retry with underflow-prone arithmetic), `fetch_and(READER_MASK)`
+  for writer release (replaces `store(0)` that wiped reader bits on
+  misuse), gated SEV broadcast (M-3), single-load debug asserts (M-7).
+* 27 Rust unit tests including 3 cross-thread stress tests with
+  deterministic reader-multiplicity via two-phase Barrier (M-5
+  audit fix).
+* 38 Lean runtime assertions in `lake exe rw_lock_suite`.
+
+### Plan-pseudocode bugs caught and fixed
+
+(per the `implement-the-improvement` rule):
+
+1. INV-R5 reachability gap allowing INV-R4 violation in
+   `tryAcquireWrite`.
+2. Missing no-op gate in `tryAcquireRead` / `tryAcquireWrite`
+   enqueue-and-acquire branches.
+
+### Audit-pass refinements (pass-1 + pass-2: 8 HIGH + 11 MEDIUM closed)
+
+**Pass-1 fixes** (initial deep audit):
+
+- H-1: `rwLock_fifo_admission` strengthened from trivial tautology
+  to substantive drop-prefix claim.
+- H-2: `rwLock_no_writer_starvation` honestly renamed to
+  `rwLock_writer_safety_under_reader_acquire` (single-step safety
+  form; full liveness deferred post-1.0 with backwards-compat alias).
+- H-3: Rust `release_read` uses `fetch_sub(1, Release)` to avoid
+  release-build state corruption.
+- H-4: Rust `release_write` uses `fetch_and(READER_MASK, Release)`
+  to preserve reader bits on misuse.
+- H-5: `rwLock_reader_batching` strengthened with
+  `admits_at_least_one` / `exact_count` corollaries.
+- M-3/M-4/M-5/M-6/M-7: SEV gating in `release_read`, STLR citation
+  correction (audit pass-1; further refined in pass-2), deterministic
+  reader-multiplicity test, SAFETY comments, single-load asserts.
+
+**Pass-2 fixes** (second deep audit on the pass-1 patches):
+
+- H-A: Self-contradictory ARM ARM citations within `rw_lock.rs` —
+  resolved by citing `fetch_sub` as `LDADDL` (C6.2.116, LDADD-family
+  with negated operand) rather than `STADDL` (C6.2.305, store-only).
+- H-B: Citation conflict between Lean spec and Rust impl — STLR
+  citation removed; CAS sequence cited as C6.2.135 / C6.2.323 with
+  LSE alternative C6.2.50.
+- H-C: `promoteWaitersOnWriterRelease` could silently overwrite a
+  held writer.  Documented as a contract requirement at the
+  function's docstring AND at the wf-preservation theorem (which
+  takes both `writerHeld = none` and `readers = []` as hypotheses,
+  forcing callers through the validated path).  Plus a
+  `_contract_witness` theorem exporting the contract for surface-
+  anchor visibility.
+- M-A: `rwLock_promote_preserves_order` renamed to
+  `rwLock_promote_pair_in_drop` (honest description of what the
+  theorem proves: both elements live in the same `drop k`, not
+  "relative order is preserved").  The new
+  `rwLock_promote_is_sublist_of_waiters` (added pass-1) captures
+  the actual order-preservation property via `List.Sublist`.
+  Backwards-compat alias retained.
+- M-B: `release_read` docstring "fail-noisy" claim corrected to
+  "fail-locked" (the misuse manifests as a permanent hang on the
+  next acquire, not an explicit failure signal).
+- M-C: Stale `release_write` algorithm docstring updated to match
+  the actual `fetch_and(READER_MASK, Release)` implementation.
+- M-D: `release_write` SEV gated on `prev & WRITER_BIT != 0`
+  (only emit when we actually cleared a held writer).
+- M-E: Deleted dead-code private theorem `writer_not_in_readers`
+  (duplicate of public `wf_writer_not_in_readers`).
+- M-F: Deleted dead-code private theorem `filter_ne_sublist`
+  (never referenced).
+- M-G: Cleaned up dead test variable `s_w_post`.
+- M-H: Added test exercising `rwLock_fifo_admission` with k > 1
+  (3-reader batch).
+- M-I: `cross_thread_mixed_stress` rewritten to semantically verify
+  exclusion via a "write sentinel" pattern: each writer writes its
+  thread_idx + 1 to a shared cell, then verifies under-lock that
+  the cell still holds ITS value (no concurrent writer).  Readers
+  verify count > 0 → last_writer_id ∈ 1..=NUM_THREADS.  Zero
+  detected exclusion violations across 4 threads × 250 ops.
+- M-J: `cross_thread_writer_excludes_readers` replaced fragile
+  `sleep(50ms)` with a deterministic signal-counter pattern
+  (`readers_entered_acquire` atomic counter) that waits for all
+  reader threads to enter `acquire_read` before the writer
+  releases.
+- M-K: Dropped unused `_h : s.wf` hypothesis from
+  `rwLock_writer_safety_under_reader_acquire` (theorem is true
+  without it, as a pure operational-semantics property).
+
+### Test coverage delta
+
+- Lean: +38 substantive theorems (32 in RwLock + 6 in
+  RwLockRefinement, including the audit-pass-2 strengthening
+  `rwLock_promote_is_sublist_of_waiters` and the audit-pass-3
+  `rwLock_refinement_preservation_noop`), +75 public
+  defs/structures/instances.
+- Rust HAL: 642 tests (was 613 baseline + 28 new + 1 panic-debug
+  test) all green; zero clippy warnings workspace-wide.  The
+  audit-pass-2 added `sm2c22_cross_thread_writer_excludes_readers`
+  — a best-effort grace-period exclusion test using a writer + 3
+  readers with signal-counter synchronization to verify the Lean
+  spec's `rwLock_writer_readers_exclusion` at runtime.
+- Tier 0+1+2+3 all green at HEAD.
+
+### Audit-pass-3 cleanup (LOW severity polish)
+
+- **LOW-1**: Added STLXR's distinct ARM ARM section C6.2.323 to the
+  Rust impl's docstring (Lean spec already cited both sections after
+  pass-2).
+- **LOW-2**: Replaced `rwLock_refinement_preservation_placeholder`
+  (a `True := trivial` fake theorem) with the substantive
+  `rwLock_refinement_preservation_noop` (proves no-op preservation
+  of `rwLockSim`).  The full bisimulation deferred-work note is
+  retained as an `example` block.
+- **LOW-3**: Removed unused `_h_nodup` hypothesis from
+  `rwLockSim_readers_only` (the theorem holds for any list, not
+  just Nodup).
+- **LOW-4**: Replaced stale "fail-noisy" body comment in
+  `release_read` with the M-B audit-pass-2-correct "fail-locked".
+- **LOW-5**: Documented the `state = WRITER_BIT` misuse pattern in
+  `release_read`'s docstring (the second misuse case beyond
+  `state = 0`).
+- **LOW-6**: Honest the "deterministic" claim in
+  `cross_thread_writer_excludes_readers` to "best-effort grace-
+  period" with explicit limitation note.
+- **LOW-7**: Replaced `Classical.not_not.mp` with constructive
+  `Decidable.byContradiction` (`s.readers = []` is decidable).
+- **LOW-8**: `_deterministic` theorems retained as documented
+  surface anchors (docstring is honest about their decorative
+  function-extensionality nature).
+
+Plus audit-pass-3 defensive improvements:
+
+- Defensive overflow check in `acquire_read`: `s == READER_MASK`
+  fail-closed gate prevents `s + 1 = WRITER_BIT` state corruption
+  (unreachable at numCores ≤ 4 but defense-in-depth).
+- Strengthened `release_read` debug_assert: now catches both
+  `prev & READER_MASK == 0` (release without acquire) AND
+  `prev & WRITER_BIT != 0` (INV-R1 violation pre-state).
+
+### Axiom budget
+
+0 Lean axioms, 0 sorries.  All ARMv8.1-A LSE atomic semantics enter
+operationally via the SM2.A abstract memory model.
+
+See [`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md) §5.3
+for the full plan and
+[`docs/WORKSTREAM_HISTORY.md`](docs/WORKSTREAM_HISTORY.md) for the
+combined SM2.A+B+C landing entry.
+
 ## Unreleased — WS-SM Phase SM2.B landing (verified TicketLock primitive)
 
 WS-SM SM2.B (TicketLock spec) lands the second sub-phase of SM2

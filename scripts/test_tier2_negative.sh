@@ -99,5 +99,15 @@ run_check_with_timeout "TRACE" lake exe memory_model_suite
 # aliases).  Runtime assertions (~35) plus surface-anchor `#check`s of
 # every public symbol.
 run_check_with_timeout "TRACE" lake exe ticket_lock_suite
+# WS-SM SM2.C — RwLock test suite for the SM2.C abstract RwLock spec
+# (RwLockState, AccessMode, RwLockOp, applyOp,
+# promoteWaitersOnWriterRelease, promoteWaitersIfReadersEmpty, all 5 wf
+# invariants, plus the substantive theorems writer-readers-exclusion /
+# reader-multiplicity / FIFO admission / bounded-wait / RA-pairing /
+# reader-batching / no-writer-starvation / wf-preservation / determinism
+# / closure-form aliases / bit-packed encoding / refinement bridge).
+# Runtime assertions (~40) plus surface-anchor `#check`s of every public
+# symbol.
+run_check_with_timeout "TRACE" lake exe rw_lock_suite
 
 finalize_report

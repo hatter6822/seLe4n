@@ -65,6 +65,20 @@ import SeLe4n.Kernel.Concurrency.MemoryModel
 -- push.  Reachability: staged at SM2.B; SM3 per-object lock proofs are
 -- the first runtime exercisers.
 import SeLe4n.Kernel.Concurrency.Locks.TicketLock
+-- WS-SM SM2.C: abstract RwLock specification.  Pulled into Staged so CI
+-- builds the operational RwLock spec (RwLockState, AccessMode, RwLockOp,
+-- applyOp, promoteWaitersOnWriterRelease, promoteWaitersIfReadersEmpty,
+-- the 5-conjunct wf invariant, plus the substantive theorems writer-
+-- readers-exclusion / reader-multiplicity / FIFO admission / bounded-
+-- wait / RA-pairing / reader-batching / no-writer-starvation / wf-
+-- preservation / determinism / closure-form / bit-packed encoding).
+-- Reachability: staged at SM2.C; SM3 per-object lock proofs are the
+-- first runtime exercisers.
+import SeLe4n.Kernel.Concurrency.Locks.RwLock
+-- WS-SM SM2.C.20: RwLock refinement bridge between the Lean abstract
+-- state and the Rust bit-packed AtomicU64 representation.  Documents
+-- the FIFO divergence and exports the simulation φ (`rwLockSim`).
+import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph
@@ -97,6 +111,10 @@ The staged modules are:
 16. `SeLe4n.Kernel.Concurrency.Runtime`        — WS-SM SM1.B.5 currentCoreId FFI wrapper
 17. `SeLe4n.Kernel.SecondaryEntry`             — WS-SM SM1.C.6 secondary-core kernel-entry placeholder
 18. `SeLe4n.Kernel.Architecture.TlbiForSharing` — WS-SM SM1.E.4 typed TLBI FFI dispatcher
+19. `SeLe4n.Kernel.Concurrency.MemoryModel`     — WS-SM SM2.A abstract memory model
+20. `SeLe4n.Kernel.Concurrency.Locks.TicketLock` — WS-SM SM2.B abstract TicketLock spec
+21. `SeLe4n.Kernel.Concurrency.Locks.RwLock`    — WS-SM SM2.C abstract RwLock spec
+22. `SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement` — WS-SM SM2.C.20 refinement bridge
 
 Per the plan (AN9-J will transition most of these from "SMP-latent" to
 "SMP-implemented, runtime-gated by smp_enabled=false at v1.0.0"), the

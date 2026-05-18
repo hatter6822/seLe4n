@@ -1454,4 +1454,117 @@ import SeLe4n.Kernel.Concurrency.Locks.TicketLock
 #check @SeLe4n.Kernel.Concurrency.ticketLock_release_preserves_wf
 EOF'
 
+# WS-SM SM2.C — RwLock surface anchors.  Covers every public symbol
+# exported by `Kernel.Concurrency.Locks.RwLock` so SM3 per-object lock
+# consumers cannot break the upstream wf-preservation / FIFO admission /
+# bounded-wait / RA-pairing / reader-batching foundation without
+# surfacing here first.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.RwLock'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.Locks.RwLock
+
+-- SM2.C.1 — AccessMode + RwLockState
+#check @SeLe4n.Kernel.Concurrency.AccessMode
+#check @SeLe4n.Kernel.Concurrency.AccessMode.read
+#check @SeLe4n.Kernel.Concurrency.AccessMode.write
+#check @SeLe4n.Kernel.Concurrency.RwLockState
+#check @SeLe4n.Kernel.Concurrency.RwLockState.writerHeld
+#check @SeLe4n.Kernel.Concurrency.RwLockState.readers
+#check @SeLe4n.Kernel.Concurrency.RwLockState.waiters
+#check @SeLe4n.Kernel.Concurrency.RwLockState.unheld
+#check @SeLe4n.Kernel.Concurrency.RwLockState.unheld_writerHeld
+#check @SeLe4n.Kernel.Concurrency.RwLockState.unheld_readers
+#check @SeLe4n.Kernel.Concurrency.RwLockState.unheld_waiters
+-- SM2.C.2 — wf predicate + Bool helpers + iff bridges + decidability
+#check @SeLe4n.Kernel.Concurrency.RwLockState.writerReadersExclusion
+#check @SeLe4n.Kernel.Concurrency.RwLockState.waitersDisjointFromHolders
+#check @SeLe4n.Kernel.Concurrency.RwLockState.fifoAdmissionDiscipline
+#check @SeLe4n.Kernel.Concurrency.RwLockState.wf
+#check @SeLe4n.Kernel.Concurrency.RwLockState.writerReadersExclusion_iff
+#check @SeLe4n.Kernel.Concurrency.RwLockState.waitersDisjointFromHolders_iff
+#check @SeLe4n.Kernel.Concurrency.RwLockState.fifoAdmissionDiscipline_iff
+#check @SeLe4n.Kernel.Concurrency.RwLockState.unheld_wf
+#check @SeLe4n.Kernel.Concurrency.RwLockState.wfPartial
+#check @SeLe4n.Kernel.Concurrency.RwLockState.wf_implies_wfPartial
+#check @SeLe4n.Kernel.Concurrency.RwLockState.wfPartial_to_wf
+-- SM2.C.3 — RwLockOp
+#check @SeLe4n.Kernel.Concurrency.RwLockOp
+#check @SeLe4n.Kernel.Concurrency.RwLockOp.tryAcquireRead
+#check @SeLe4n.Kernel.Concurrency.RwLockOp.releaseRead
+#check @SeLe4n.Kernel.Concurrency.RwLockOp.tryAcquireWrite
+#check @SeLe4n.Kernel.Concurrency.RwLockOp.releaseWrite
+-- SM2.C.4 — Operational semantics
+#check @SeLe4n.Kernel.Concurrency.RwLockState.coreInvolved
+#check @SeLe4n.Kernel.Concurrency.RwLockState.applyOp
+#check @SeLe4n.Kernel.Concurrency.RwLockState.promoteWaitersOnWriterRelease
+#check @SeLe4n.Kernel.Concurrency.RwLockState.promoteWaitersIfReadersEmpty
+-- SM2.C.5..6 — Exclusion + reader multiplicity
+#check @SeLe4n.Kernel.Concurrency.rwLock_writer_readers_exclusion
+#check @SeLe4n.Kernel.Concurrency.rwLock_reader_multiplicity
+-- SM2.C.7 — FIFO admission (substantive drop-prefix claim)
+#check @SeLe4n.Kernel.Concurrency.rwLock_fifo_admission
+#check @SeLe4n.Kernel.Concurrency.rwLock_fifo_admission_readers_empty
+#check @SeLe4n.Kernel.Concurrency.rwLock_promote_subset_of_waiters
+#check @SeLe4n.Kernel.Concurrency.rwLock_promote_is_sublist_of_waiters
+#check @SeLe4n.Kernel.Concurrency.rwLock_promote_preserves_order
+-- SM2.C.8..9 — Bounded wait
+#check @SeLe4n.Kernel.Concurrency.rwLock_bounded_wait_read
+#check @SeLe4n.Kernel.Concurrency.rwLock_bounded_wait_write
+-- SM2.C.10..11 — Release-acquire pairing
+#check @SeLe4n.Kernel.Concurrency.rwLock_release_acquire_pairing_read
+#check @SeLe4n.Kernel.Concurrency.rwLock_release_acquire_pairing_write
+#check @SeLe4n.Kernel.Concurrency.rwLock_release_acquire_happensBefore_read
+-- SM2.C.12 — wf preservation (per-op + aggregate)
+#check @SeLe4n.Kernel.Concurrency.rwLock_tryAcquireRead_preserves_wf
+#check @SeLe4n.Kernel.Concurrency.rwLock_releaseRead_preserves_wf
+#check @SeLe4n.Kernel.Concurrency.rwLock_tryAcquireWrite_preserves_wf
+#check @SeLe4n.Kernel.Concurrency.rwLock_releaseWrite_preserves_wf
+#check @SeLe4n.Kernel.Concurrency.rwLock_wf_invariant
+#check @SeLe4n.Kernel.Concurrency.rwLock_promoteWaitersOnWriterRelease_preserves_wf
+#check @SeLe4n.Kernel.Concurrency.rwLock_promoteWaitersIfReadersEmpty_preserves_wf
+#check @SeLe4n.Kernel.Concurrency.rwLock_promoteWaitersOnWriterRelease_preserves_wf_partial
+#check @SeLe4n.Kernel.Concurrency.rwLock_promoteWaitersIfReadersEmpty_preserves_wf_partial
+-- SM2.C.13 — Reader batching (structural + strengthened bounds)
+#check @SeLe4n.Kernel.Concurrency.rwLock_reader_batching
+#check @SeLe4n.Kernel.Concurrency.rwLock_reader_batching_admits_at_least_one
+#check @SeLe4n.Kernel.Concurrency.rwLock_reader_batching_exact_count
+-- SM2.C.14 — Writer safety + determinism
+#check @SeLe4n.Kernel.Concurrency.rwLock_writer_safety_under_reader_acquire
+#check @SeLe4n.Kernel.Concurrency.rwLock_no_writer_starvation
+#check @SeLe4n.Kernel.Concurrency.rwLock_applyOp_deterministic
+#check @SeLe4n.Kernel.Concurrency.rwLock_promoteWaitersOnWriterRelease_deterministic
+#check @SeLe4n.Kernel.Concurrency.rwLock_promoteWaitersIfReadersEmpty_deterministic
+-- SM2.C.15 — Closure-form preservation aliases
+#check @SeLe4n.Kernel.Concurrency.rwLock_tryAcquireRead_preserves_wf_alias
+#check @SeLe4n.Kernel.Concurrency.rwLock_releaseRead_preserves_wf_alias
+#check @SeLe4n.Kernel.Concurrency.rwLock_tryAcquireWrite_preserves_wf_alias
+#check @SeLe4n.Kernel.Concurrency.rwLock_releaseWrite_preserves_wf_alias
+-- SM2.C.16..18 — Bit-packed encoding
+#check @SeLe4n.Kernel.Concurrency.RwLockEncoded
+#check @SeLe4n.Kernel.Concurrency.writerBitPos
+#check @SeLe4n.Kernel.Concurrency.writerBit
+#check @SeLe4n.Kernel.Concurrency.readerMask
+#check @SeLe4n.Kernel.Concurrency.encodeRwLock
+#check @SeLe4n.Kernel.Concurrency.decodeRwLock
+#check @SeLe4n.Kernel.Concurrency.rwLock_encode_decode_roundtrip
+#check @SeLe4n.Kernel.Concurrency.rwLock_decode_encode_roundtrip
+#check @SeLe4n.Kernel.Concurrency.rwLock_encode_writer_bit_set
+#check @SeLe4n.Kernel.Concurrency.rwLock_encode_writer_bit_clear
+#check @SeLe4n.Kernel.Concurrency.rwLock_reader_count_no_overflow_under_numCores
+EOF'
+
+# WS-SM SM2.C.20 — RwLock refinement bridge surface anchors.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
+
+#check @SeLe4n.Kernel.Concurrency.rwLockSim
+#check @SeLe4n.Kernel.Concurrency.rwLockSim_unheld
+#check @SeLe4n.Kernel.Concurrency.rwLockSim_writer_only
+#check @SeLe4n.Kernel.Concurrency.rwLockSim_readers_only
+#check @SeLe4n.Kernel.Concurrency.rwLockSim_writer_bit_iff
+#check @SeLe4n.Kernel.Concurrency.rwLockSim_reader_count_iff
+#check @SeLe4n.Kernel.Concurrency.rwLock_refinement_preservation_noop
+EOF'
+
 finalize_report

@@ -804,6 +804,162 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    substantive proofs (wf-preservation across all transitions
    plus helper lemmas).
 
+2.6. **WS-SM Phase SM2.C (post-v0.31.9) completes SM2.C** — the
+   verified RwLock primitive (reader-writer lock with bit-packed
+   atomic state).  Closes the third sub-phase of SM2 with all 22
+   sub-tasks landed.  See
+   `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` §5.3 for
+   the full plan.
+
+   **Abstract spec** (`SeLe4n.Kernel.Concurrency.Locks.RwLock`):
+   `AccessMode` inductive (`.read` / `.write`).  `RwLockState`
+   3-field structure (`writerHeld : Option CoreId`, `readers :
+   List CoreId`, `waiters : List (CoreId × AccessMode)`).
+   `unheld` canonical seed.  `RwLockOp` 4-constructor inductive
+   (`tryAcquireRead`, `releaseRead`, `tryAcquireWrite`,
+   `releaseWrite`).  Operational semantics: `applyOp` with a
+   uniform `coreInvolved` top-level no-op gate (audit-fixed —
+   the plan's pseudocode had three separate "is core already
+   involved" checks that missed sub-cases, allowing INV-R4
+   violations; the consolidated check covers reader-set / writer-
+   held / waiter-list membership in one decidable predicate).
+   Promotion helpers: `promoteWaitersOnWriterRelease` (consumes
+   contiguous reader prefix via `takeWhile (·.2 = .read)`, or
+   the single writer head); `promoteWaitersIfReadersEmpty`
+   (same shape, called from `releaseRead` after the reader-
+   count drops to zero).
+
+   **5-conjunct well-formedness** (improvement over plan's 4):
+   INV-R1 (writer-readers exclusion: writerHeld.isSome → readers
+   = []), INV-R2 (readers Nodup), INV-R3 (waiters cores Nodup),
+   INV-R4 (waiters disjoint from current holders), and the new
+   **INV-R5 (FIFO admission discipline)**: `waiters ≠ [] →
+   writerHeld.isSome ∨ readers ≠ []`.  The 4-invariant form
+   admits unreachable-but-locally-wf states with non-empty
+   waiters and no holders, from which `tryAcquireWrite` could
+   produce an INV-R4 violation by acquiring for a core already
+   sitting in the waiters queue.  INV-R5 is the RwLock analog
+   of SM2.B's INV-T8 — both close reachability gaps.
+   Decidable via `unfold` + `inferInstance`, with Bool-encoded
+   helpers (`writerReadersExclusion`, `waitersDisjointFromHolders`,
+   `fifoAdmissionDiscipline`) plus 3 `*_iff` bridge theorems.
+
+   **10 substantive theorems** (plan §10 catalogue R-01..R-10):
+   * `rwLock_writer_readers_exclusion` — INV-R1 in extracted form.
+   * `rwLock_reader_multiplicity` — constructive existence
+     witness: ∃ s, s.wf ∧ s.readers.length ≥ 2 (built by two
+     sequential `tryAcquireRead` ops from `unheld`).
+   * `rwLock_fifo_admission` — **substantive structural drop-
+     prefix claim** (audit-fixed; the plan's pseudocode would
+     have been a trivial tautology).  The theorem states:
+     ∃ k, `s.promoteWaitersOnWriterRelease.waiters = s.waiters.drop k`.
+     Three cases (empty / writer head / reader head with
+     batch-promote) yield k = 0 / 1 / takeWhile-length
+     respectively.  Companion `rwLock_fifo_admission_readers_empty`
+     for the `releaseRead` promote path.  Corollaries
+     `rwLock_promote_subset_of_waiters` and
+     `rwLock_promote_preserves_order` derive order preservation.
+   * `rwLock_bounded_wait_read` / `rwLock_bounded_wait_write` —
+     `readers.length + waiters.length + (writerHeld ? 1 : 0) ≤
+     numCores` for any wf state.  Pigeonhole-style: all involved
+     cores are distinct (by INV-R2, INV-R3, INV-R4 + Nodup-fst
+     witness), so the combined Nodup CoreId list has length ≤
+     numCores.  `_write` is currently an alias of `_read` (the
+     structural bound is symmetric; a meaningful writer-specific
+     bound would require runtime critical-section duration
+     hypotheses outside the spec's scope).
+   * `rwLock_release_acquire_pairing_read` /
+     `rwLock_release_acquire_pairing_write` — bridge to SM2.A
+     `MemoryModel`.  Given matching events on the
+     `rwLockStateOf base` location with matching value +
+     positional ordering, the events `synchronizesWith` per the
+     abstract memory model.  Companion `_happensBefore_read`
+     lifts to happens-before.
+   * `rwLock_wf_invariant` — wf preserved by every kernel-facing
+     transition (`tryAcquireRead`, `releaseRead`,
+     `tryAcquireWrite`, `releaseWrite`).  Aggregates four
+     per-op preservation theorems.  The release-side
+     preservation uses a partial-wf intermediate
+     (`wfPartial` = 4 invariants without INV-R5) because
+     `releaseRead` / `releaseWrite` transiently violate INV-R5
+     (readers dropped to zero with non-empty waiters; writerHeld
+     cleared with non-empty waiters); the immediately-following
+     promote step restores INV-R5.  Helpers
+     `rwLock_promoteWaitersIfReadersEmpty_preserves_wf_partial`
+     and `rwLock_promoteWaitersOnWriterRelease_preserves_wf_partial`
+     take `wfPartial` to full `wf`.
+   * `rwLock_reader_batching` + strengthened bounds
+     `rwLock_reader_batching_admits_at_least_one`
+     (`post.readers.length ≥ s.readers.length + 1`) and
+     `rwLock_reader_batching_exact_count`
+     (`post.readers.length = takeWhile-length + s.readers.length`)
+     — audit-fixed.  The base structural theorem unfolds the
+     definition; the strengthened bounds formalise the
+     docstring's "many readers admitted at once" claim.
+   * `rwLock_writer_safety_under_reader_acquire` — single-step
+     safety form (audit-renamed from `no_writer_starvation` for
+     honesty; the backwards-compat alias is retained).  Proves
+     that a writer in the waiters queue is not displaced by a
+     fresh reader's `tryAcquireRead`.  The full liveness claim
+     ("writer eventually progresses under bounded reader / writer
+     release time") is deferred to post-1.0 temporal reasoning;
+     the bounded-wait theorem gives a structural bound on the
+     queue size that combined with bounded-critical-section
+     assumptions in the runtime is the v1.0.0 substitute.
+
+   Plus determinism witnesses for all three transition functions
+   (`rwLock_applyOp_deterministic`,
+   `rwLock_promoteWaitersOnWriterRelease_deterministic`,
+   `rwLock_promoteWaitersIfReadersEmpty_deterministic`),
+   4 closure-form preservation aliases
+   (`rwLock_tryAcquireRead_preserves_wf_alias`, etc.) matching
+   kernel-facing API names, and bit-packed encoding
+   (`encodeRwLock`, `decodeRwLock`, `writerBit = 2^63`,
+   `readerMask = writerBit - 1`) with 5 round-trip / writer-bit /
+   overflow-bound lemmas
+   (`rwLock_encode_decode_roundtrip`,
+   `rwLock_decode_encode_roundtrip`,
+   `rwLock_encode_writer_bit_set`,
+   `rwLock_encode_writer_bit_clear`,
+   `rwLock_reader_count_no_overflow_under_numCores`).
+
+   **Refinement bridge** (`SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement`):
+   `rwLockSim` relation between abstract `RwLockState` and the
+   bit-packed `AtomicU64` `RwLockEncoded`; 5 witness theorems
+   (`rwLockSim_unheld`, `rwLockSim_writer_only`,
+   `rwLockSim_readers_only`, `rwLockSim_writer_bit_iff`,
+   `rwLockSim_reader_count_iff`).  Documents the **FIFO
+   divergence**: the Rust CAS-retry impl satisfies the mutex +
+   exclusion invariants but not the spec's FIFO admission (no
+   explicit waiters queue in the Rust state).  SM3 review
+   verifies which kernel paths require strict FIFO.
+
+   **Rust impl** (`rust/sele4n-hal/src/rw_lock.rs`): bit-packed
+   `RwLock` `#[repr(C, align(64))]` with one `AtomicU64` `state`
+   field.  Public API: `acquire_read` / `release_read` /
+   `acquire_write` / `release_write`; RAII guards
+   `RwLockReadGuard<'a>` / `RwLockWriteGuard<'a>`;
+   `with_read` / `with_write` combinators.  Audit-pass
+   release-build hardening: `release_read` uses
+   `fetch_sub(1, Release)` (audit fix H-3: prior CAS-retry with
+   `count - 1` arithmetic could wrap to u64::MAX in release
+   builds, silently corrupting state); `release_write` uses
+   `fetch_and(READER_MASK, Release)` (audit fix H-4: prior
+   `store(0)` would wipe reader bits on misuse); SEV broadcast
+   gated on `prev count = 1` for reader-release (M-3: avoids
+   spurious wakeups under heavy reader contention); single-load
+   debug asserts (M-7: avoids torn observations).  28 unit
+   tests including panic-safety (`with_read/with_write_releases_on_panic`),
+   debug-assert misuse detection, cache-line alignment,
+   const-fn pinning, and 4 cross-thread stress tests (4-reader
+   stress, mixed reader/writer with counter, deterministic
+   reader-multiplicity via two-phase Barrier, deterministic
+   writer-readers exclusion verifying `rwLock_writer_readers_exclusion`
+   at runtime).  Zero clippy warnings.
+
+   **Axiom budget for SM2.C**: 0 Lean axioms, 0 sorries.
+   `RwLock.lean` ~2300 LoC; `RwLockRefinement.lean` ~230 LoC.
+
 3. **Sequential memory model**: Under single-core operation, all memory
    operations are sequentially ordered. DMB/DSB/ISB barriers are emitted in the
    Rust HAL (`sele4n-hal/src/cpu.rs`) for hardware correctness but are
