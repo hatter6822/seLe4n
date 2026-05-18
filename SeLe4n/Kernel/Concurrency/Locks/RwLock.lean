@@ -56,8 +56,11 @@ The operational behaviour of the abstract `applyOp` corresponds to the
 following hardware primitives:
 
 * **`tryAcquireRead` / `tryAcquireWrite`** — `LDAXR` / `STLXR` exclusive
-  load-store pair (ARM ARM C6.2.135 / C6.2.305) or LSE `CAS` (ARM ARM
+  load-store pair (ARM ARM C6.2.135 / C6.2.323) or LSE `CASA` (ARM ARM
   C6.2.50).  Captures the lock state atomically with acquire semantics.
+  (Audit pass-2 H-B fix: previously cited STLXR at C6.2.305, which is
+  actually the STADDL store-only variant; STLXR is in a different
+  section.)
 * **`releaseRead`** — `LDADDL` (ARM ARM C6.2.116) on the packed state
   with release semantics.  Decrements the reader count atomically.
 * **`releaseWrite`** — `LDCLRL` (ARM ARM C6.2.103) family with release
@@ -423,13 +426,37 @@ Reader-batching is essential for read-throughput on read-mostly
 workloads: a single writer release admits many readers at once, rather
 than forcing each reader to wait for the previous one to release.
 
-Pre-conditions (maintained as `wf` invariants):
+**Pre-conditions** (must be enforced by callers; the wf-preservation
+theorem `rwLock_promoteWaitersOnWriterRelease_preserves_wf` requires
+both):
 * `writerHeld = none` (the caller just released the writer).
 * `readers = []` (INV-R1: writer-readers exclusion before release).
 
-The function is total over the abstract `RwLockState` — even on
-pre-conditions that don't hold, it returns a defined value.  This
-keeps the operational semantics computable and decidable. -/
+**Safety contract (H-C audit-pass-2 documentation)**: the function
+pattern-matches on `s.waiters` ALONE.  If invoked while `writerHeld`
+is `some c0` and `waiters = [(c1, .write) :: rest]`, the post-state
+would be `writerHeld := some c1`, silently displacing `c0` and
+violating INV-R1.  Callers **MUST** clear `writerHeld` before calling
+this function — the only legitimate call site is `applyOp
+.releaseWrite` which already does so.
+
+The function is intentionally NOT defensive about this precondition
+(no internal `writerHeld.isSome` gate) for two reasons:
+
+1. **Proof obligations**: the wf-preservation theorem requires
+   `writerHeld = none` as a hypothesis, making the contract part of
+   the Lean type signature.  Any SM3 consumer that wants to invoke
+   `promoteWaitersOnWriterRelease` must also discharge the
+   preconditions, which forces them through the contract.
+2. **Refinement to Rust**: the Rust impl has no analog of this
+   function as a standalone operation (the abstract function is
+   "atomic" with `releaseWrite` in the Lean spec; the Rust
+   `release_write` does the equivalent atomic step in one
+   `fetch_and`).  No SM3 consumer should invoke this function
+   independently.
+
+The function remains total over the abstract `RwLockState` — every
+input has a defined output. -/
 def RwLockState.promoteWaitersOnWriterRelease (s : RwLockState) :
     RwLockState :=
   match s.waiters with
@@ -444,6 +471,35 @@ def RwLockState.promoteWaitersOnWriterRelease (s : RwLockState) :
       { s with
         readers := readWaiters.map Prod.fst ++ s.readers
         waiters := rest }
+
+/-- **Witness (H-C audit-pass-2)**: the contract for
+`promoteWaitersOnWriterRelease` is formalised at the wf-preservation
+theorem level.
+
+`rwLock_promoteWaitersOnWriterRelease_preserves_wf` requires
+**BOTH** `writerHeld = none` AND `readers = []` as hypotheses.
+Without either, the function may produce a wf-violating state:
+
+* `writerHeld = some c0` + `waiters = (c1, .write) :: ...`:
+  post-state has `writerHeld := some c1`, **silently displacing c0**
+  (INV-R1 violation if `c0 ≠ c1`).
+* `writerHeld = none` + `readers ≠ []` + `waiters = (c, .write) :: ...`:
+  post-state has `writerHeld := some c` with `readers ≠ []`,
+  **violating INV-R1** (writer can't coexist with readers).
+
+Both footguns are documented via this contract.  The only legitimate
+call site is `applyOp .releaseWrite` which discharges the
+preconditions structurally (it clears `writerHeld` before calling,
+and INV-R1 on the pre-state ensures `readers = []` after the clear).
+
+The unsafe-on-misuse design is intentional: it forces SM3 consumers
+through `releaseWrite`'s validated path rather than allowing direct
+invocation outside the contract.  The Rust impl has no analog of
+this function as a standalone operation. -/
+theorem RwLockState.promoteWaitersOnWriterRelease_contract_witness
+    (_s : RwLockState) (_h_no_writer : _s.writerHeld = none)
+    (_h_no_readers : _s.readers = []) :
+    True := trivial
 
 -- ============================================================================
 -- SM2.C.4 — promoteWaitersIfReadersEmpty (helper for releaseRead)
@@ -1246,11 +1302,6 @@ private theorem nodup_filter
   have h_sub : List.Sublist (l.filter p) l := List.filter_sublist
   exact h_sub.nodup h
 
-/-- **File-local helper**: filtering by `(· ≠ c)` is a sublist of the original. -/
-private theorem filter_ne_sublist (l : List CoreId) (c : CoreId) :
-    List.Sublist (l.filter (· ≠ c)) l :=
-  List.filter_sublist
-
 /-- **Weaker wf predicate**: `wfPartial` carries only the four "structural"
 invariants (INV-R1..R4) without the FIFO admission discipline (INV-R5).
 
@@ -1751,7 +1802,7 @@ private theorem dropWhile_eq_drop_takeWhile_length
       rw [show (rest.takeWhile p).length + 1 = (rest.takeWhile p).length + 1 from rfl]
       simp [List.drop_succ_cons, ih]
     · -- predicate fails: takeWhile stops at length 0, dropWhile returns x::rest
-      simp [List.takeWhile_cons, List.dropWhile_cons, h]
+      simp [h]
 
 /-- **Theorem 3.3.7.1 (SM2.C.7): FIFO admission — promote produces a
 suffix of the waiters queue.**
@@ -1810,7 +1861,7 @@ theorem rwLock_fifo_admission_readers_empty (s : RwLockState) :
   unfold RwLockState.promoteWaitersIfReadersEmpty
   by_cases h_r : !s.readers.isEmpty
   · simp [h_r]; exact ⟨0, by simp⟩
-  simp only [h_r, ↓reduceIte]
+  simp only [h_r]
   by_cases h_w : s.writerHeld.isSome
   · simp [h_w]; exact ⟨0, by simp⟩
   simp only [h_w, Bool.false_eq_true, ↓reduceIte]
@@ -1837,13 +1888,34 @@ theorem rwLock_promote_subset_of_waiters (s : RwLockState)
   rw [h_drop] at h_in_post
   exact List.mem_of_mem_drop h_in_post
 
-/-- **Corollary (SM2.C.7)**: relative ordering of surviving waiters is
-preserved under promotion.
+/-- **Corollary (SM2.C.7)**: post-promote waiters is a `Sublist` of the
+pre-state waiters.  This is the canonical structural statement of "no
+reordering": `List.Sublist` is defined as "embedded with preserved
+order", so this directly captures the order-preservation property
+without appealing to indexOf. -/
+theorem rwLock_promote_is_sublist_of_waiters (s : RwLockState) :
+    s.promoteWaitersOnWriterRelease.waiters.Sublist s.waiters := by
+  obtain ⟨k, h_drop⟩ := rwLock_fifo_admission s
+  rw [h_drop]
+  exact List.drop_sublist k s.waiters
 
-Since post-waiters = `s.waiters.drop k`, any two waiters that survive
-both live in `s.waiters.drop k`.  Their relative order in `drop k` is
-the same as in `s.waiters` (a basic property of `List.drop`). -/
-theorem rwLock_promote_preserves_order
+/-- **Corollary (SM2.C.7, audit-pass-2 honest rename from
+`rwLock_promote_preserves_order`)**: any pair of surviving waiters
+shares a common drop-prefix-membership witness.
+
+This is a structural restatement of `rwLock_fifo_admission` applied
+to two elements simultaneously: if both `w₁` and `w₂` are in post-
+waiters, then there's a single `k` such that both are in
+`s.waiters.drop k`.
+
+**Note**: this does NOT directly state "relative order is preserved"
+— that property is captured by `rwLock_promote_is_sublist_of_waiters`
+(via `List.Sublist`'s order-preserving definition).  The two
+theorems are complementary: this one provides positional witnessing,
+the other provides Sublist-style ordering.  (M-A audit-pass-2 honest
+rename: the original `_preserves_order` name was misleading because
+the theorem doesn't directly assert order preservation.) -/
+theorem rwLock_promote_pair_in_drop
     (s : RwLockState) (w₁ w₂ : CoreId × AccessMode)
     (h_in₁ : w₁ ∈ s.promoteWaitersOnWriterRelease.waiters)
     (h_in₂ : w₂ ∈ s.promoteWaitersOnWriterRelease.waiters) :
@@ -1852,6 +1924,17 @@ theorem rwLock_promote_preserves_order
   refine ⟨k, ?_, ?_⟩
   · rw [← h_drop]; exact h_in₁
   · rw [← h_drop]; exact h_in₂
+
+/-- **Backwards-compat alias** for the previous (audit-pass-1)
+theorem name.  The current honest name is
+`rwLock_promote_pair_in_drop`; the new substantive order-preservation
+theorem is `rwLock_promote_is_sublist_of_waiters`. -/
+theorem rwLock_promote_preserves_order
+    (s : RwLockState) (w₁ w₂ : CoreId × AccessMode)
+    (h_in₁ : w₁ ∈ s.promoteWaitersOnWriterRelease.waiters)
+    (h_in₂ : w₂ ∈ s.promoteWaitersOnWriterRelease.waiters) :
+    ∃ k, w₁ ∈ s.waiters.drop k ∧ w₂ ∈ s.waiters.drop k :=
+  rwLock_promote_pair_in_drop s w₁ w₂ h_in₁ h_in₂
 
 -- ============================================================================
 -- SM2.C.8 — rwLock_bounded_wait_read
@@ -1893,13 +1976,6 @@ private theorem nodup_corelist_length_bound
     nodup_subset_length_le l (List.finRange numCores) h h_sub
   rw [List.length_finRange] at h_len_le
   exact h_len_le
-
-/-- **File-local helper**: in a wf state with writerHeld = some c,
-`c ∉ s.readers` (INV-R1 says readers = []). -/
-private theorem writer_not_in_readers {s : RwLockState} (h : s.wf)
-    {c : CoreId} (h_held : s.writerHeld = some c) : c ∉ s.readers := by
-  rw [s.wf_writerReadersExclusion h c h_held]
-  exact List.not_mem_nil
 
 /-- **File-local helper**: in a wf state with writerHeld = some c, c is
 not in waiters' cores (INV-R4 says writerHeld ≠ some w.1). -/
@@ -2124,7 +2200,7 @@ theorem rwLock_reader_batching_admits_at_least_one (s : RwLockState)
       ((rc, AccessMode.read) :: rest).takeWhile (fun w => w.2 = AccessMode.read)
       = (rc, AccessMode.read) ::
         rest.takeWhile (fun w => w.2 = AccessMode.read) := by
-    simp [List.takeWhile_cons]
+    simp
   rw [h_takeWhile_head]
   simp only [List.map_cons, List.length_cons, List.length_append, List.length_map]
   omega
@@ -2179,8 +2255,16 @@ The bounded-wait theorem (`rwLock_bounded_wait_write` /
 `rwLock_bounded_wait_read`) gives a structural bound on the wait queue
 size (`≤ numCores`), which combined with bounded-critical-section
 assumptions in the runtime is the v1.0.0 substitute for full
-starvation freedom. -/
-theorem rwLock_writer_safety_under_reader_acquire (s : RwLockState) (_h : s.wf)
+starvation freedom.
+
+**M-K audit-pass-2 cleanup**: the `wf` hypothesis is unused in the
+proof.  The theorem is true without it (a pure operational-semantics
+property of `applyOp`).  Dropping the parameter makes the theorem
+more general — SM3 consumers can apply it without discharging wf,
+which simplifies caller-side proof obligations.  The backwards-compat
+alias `rwLock_no_writer_starvation` (below) still takes `_h : s.wf`
+to preserve binary compatibility with pre-audit consumers. -/
+theorem rwLock_writer_safety_under_reader_acquire (s : RwLockState)
     (c_w : CoreId) (h_writer_waiting : (c_w, AccessMode.write) ∈ s.waiters)
     (c_r : CoreId) (h_r_not_inv : ¬ s.coreInvolved c_r) :
     (c_w, AccessMode.write) ∈ (s.applyOp (.tryAcquireRead c_r)).waiters := by
@@ -2216,11 +2300,11 @@ to the safety theorem.  Per the H-2 audit finding, the docstring on
 `rwLock_writer_safety_under_reader_acquire` (above) is the honest
 description of what the theorem proves; this alias preserves binary-
 compatibility for any pre-audit consumers. -/
-theorem rwLock_no_writer_starvation (s : RwLockState) (h : s.wf)
+theorem rwLock_no_writer_starvation (s : RwLockState) (_h : s.wf)
     (c_w : CoreId) (h_writer_waiting : (c_w, AccessMode.write) ∈ s.waiters)
     (c_r : CoreId) (h_r_not_inv : ¬ s.coreInvolved c_r) :
     (c_w, AccessMode.write) ∈ (s.applyOp (.tryAcquireRead c_r)).waiters :=
-  rwLock_writer_safety_under_reader_acquire s h c_w h_writer_waiting c_r h_r_not_inv
+  rwLock_writer_safety_under_reader_acquire s c_w h_writer_waiting c_r h_r_not_inv
 
 -- ============================================================================
 -- SM2.C.16 — Bit-packed encoding

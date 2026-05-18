@@ -43,7 +43,9 @@ reader-writer lock primitive with bit-packed atomic state.  All
 2. Missing no-op gate in `tryAcquireRead` / `tryAcquireWrite`
    enqueue-and-acquire branches.
 
-### Audit-pass refinements (5 HIGH + several MEDIUM closed)
+### Audit-pass refinements (pass-1 + pass-2: 8 HIGH + 11 MEDIUM closed)
+
+**Pass-1 fixes** (initial deep audit):
 
 - H-1: `rwLock_fifo_admission` strengthened from trivial tautology
   to substantive drop-prefix claim.
@@ -56,16 +58,73 @@ reader-writer lock primitive with bit-packed atomic state.  All
   to preserve reader bits on misuse.
 - H-5: `rwLock_reader_batching` strengthened with
   `admits_at_least_one` / `exact_count` corollaries.
-- M-3/M-4/M-5/M-6/M-7: SEV gating, STLR citation correction,
-  deterministic reader-multiplicity test, SAFETY comments, single-
-  load asserts.
+- M-3/M-4/M-5/M-6/M-7: SEV gating in `release_read`, STLR citation
+  correction (audit pass-1; further refined in pass-2), deterministic
+  reader-multiplicity test, SAFETY comments, single-load asserts.
+
+**Pass-2 fixes** (second deep audit on the pass-1 patches):
+
+- H-A: Self-contradictory ARM ARM citations within `rw_lock.rs` —
+  resolved by citing `fetch_sub` as `LDADDL` (C6.2.116, LDADD-family
+  with negated operand) rather than `STADDL` (C6.2.305, store-only).
+- H-B: Citation conflict between Lean spec and Rust impl — STLR
+  citation removed; CAS sequence cited as C6.2.135 / C6.2.323 with
+  LSE alternative C6.2.50.
+- H-C: `promoteWaitersOnWriterRelease` could silently overwrite a
+  held writer.  Documented as a contract requirement at the
+  function's docstring AND at the wf-preservation theorem (which
+  takes both `writerHeld = none` and `readers = []` as hypotheses,
+  forcing callers through the validated path).  Plus a
+  `_contract_witness` theorem exporting the contract for surface-
+  anchor visibility.
+- M-A: `rwLock_promote_preserves_order` renamed to
+  `rwLock_promote_pair_in_drop` (honest description of what the
+  theorem proves: both elements live in the same `drop k`, not
+  "relative order is preserved").  The new
+  `rwLock_promote_is_sublist_of_waiters` (added pass-1) captures
+  the actual order-preservation property via `List.Sublist`.
+  Backwards-compat alias retained.
+- M-B: `release_read` docstring "fail-noisy" claim corrected to
+  "fail-locked" (the misuse manifests as a permanent hang on the
+  next acquire, not an explicit failure signal).
+- M-C: Stale `release_write` algorithm docstring updated to match
+  the actual `fetch_and(READER_MASK, Release)` implementation.
+- M-D: `release_write` SEV gated on `prev & WRITER_BIT != 0`
+  (only emit when we actually cleared a held writer).
+- M-E: Deleted dead-code private theorem `writer_not_in_readers`
+  (duplicate of public `wf_writer_not_in_readers`).
+- M-F: Deleted dead-code private theorem `filter_ne_sublist`
+  (never referenced).
+- M-G: Cleaned up dead test variable `s_w_post`.
+- M-H: Added test exercising `rwLock_fifo_admission` with k > 1
+  (3-reader batch).
+- M-I: `cross_thread_mixed_stress` rewritten to semantically verify
+  exclusion via a "write sentinel" pattern: each writer writes its
+  thread_idx + 1 to a shared cell, then verifies under-lock that
+  the cell still holds ITS value (no concurrent writer).  Readers
+  verify count > 0 → last_writer_id ∈ 1..=NUM_THREADS.  Zero
+  detected exclusion violations across 4 threads × 250 ops.
+- M-J: `cross_thread_writer_excludes_readers` replaced fragile
+  `sleep(50ms)` with a deterministic signal-counter pattern
+  (`readers_entered_acquire` atomic counter) that waits for all
+  reader threads to enter `acquire_read` before the writer
+  releases.
+- M-K: Dropped unused `_h : s.wf` hypothesis from
+  `rwLock_writer_safety_under_reader_acquire` (theorem is true
+  without it, as a pure operational-semantics property).
 
 ### Test coverage delta
 
-- Lean: +37 substantive theorems (31 in RwLock + 6 in
-  RwLockRefinement), +75 public defs/structures/instances.
-- Rust HAL: 641 tests (was 613 baseline + 27 new + 1 panic-debug
-  test) all green; zero clippy warnings workspace-wide.
+- Lean: +38 substantive theorems (32 in RwLock + 6 in
+  RwLockRefinement, including the audit-pass-2 strengthening
+  `rwLock_promote_is_sublist_of_waiters`), +75 public
+  defs/structures/instances.
+- Rust HAL: 642 tests (was 613 baseline + 28 new + 1 panic-debug
+  test) all green; zero clippy warnings workspace-wide.  The
+  audit-pass-2 added `sm2c22_cross_thread_writer_excludes_readers`
+  — a deterministic exclusion test using a writer + 3 readers
+  with Barrier synchronization to verify the Lean spec's
+  `rwLock_writer_readers_exclusion` at runtime.
 - Tier 0+1+2+3 all green at HEAD.
 
 ### Axiom budget

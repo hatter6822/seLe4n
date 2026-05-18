@@ -1505,6 +1505,7 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLock
 #check @SeLe4n.Kernel.Concurrency.rwLock_fifo_admission
 #check @SeLe4n.Kernel.Concurrency.rwLock_fifo_admission_readers_empty
 #check @SeLe4n.Kernel.Concurrency.rwLock_promote_subset_of_waiters
+#check @SeLe4n.Kernel.Concurrency.rwLock_promote_is_sublist_of_waiters
 #check @SeLe4n.Kernel.Concurrency.rwLock_promote_preserves_order
 -- SM2.C.8..9 — Bounded wait
 #check @SeLe4n.Kernel.Concurrency.rwLock_bounded_wait_read

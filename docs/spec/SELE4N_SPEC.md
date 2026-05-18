@@ -948,13 +948,14 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `store(0)` would wipe reader bits on misuse); SEV broadcast
    gated on `prev count = 1` for reader-release (M-3: avoids
    spurious wakeups under heavy reader contention); single-load
-   debug asserts (M-7: avoids torn observations).  27 unit
+   debug asserts (M-7: avoids torn observations).  28 unit
    tests including panic-safety (`with_read/with_write_releases_on_panic`),
    debug-assert misuse detection, cache-line alignment,
-   const-fn pinning, and 3 cross-thread stress tests (4-reader
+   const-fn pinning, and 4 cross-thread stress tests (4-reader
    stress, mixed reader/writer with counter, deterministic
-   reader-multiplicity via two-phase Barrier).  Zero clippy
-   warnings.
+   reader-multiplicity via two-phase Barrier, deterministic
+   writer-readers exclusion verifying `rwLock_writer_readers_exclusion`
+   at runtime).  Zero clippy warnings.
 
    **Axiom budget for SM2.C**: 0 Lean axioms, 0 sorries.
    `RwLock.lean` ~2300 LoC; `RwLockRefinement.lean` ~230 LoC.

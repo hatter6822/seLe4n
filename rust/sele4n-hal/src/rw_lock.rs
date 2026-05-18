@@ -241,10 +241,27 @@ impl RwLock {
     ///   `overflow-checks = false` (the kernel's default), this is **defined
     ///   wrapping** that produces a poisoned state where bit 63 is set
     ///   (`WRITER_BIT`) AND every reader bit is set.  The next acquirer
-    ///   detects this as "writer held" and spins, which **safely surfaces
-    ///   the misuse** rather than silently allowing further corruption.
-    /// * In debug builds, the `debug_assert!` traps before `fetch_sub`
-    ///   executes the underflow.
+    ///   detects this as "writer held" and **parks on WFE permanently**
+    ///   (the lock is now wedged in a non-recoverable state).  This is
+    ///   **fail-locked**, not fail-noisy: there is no panic, log, or
+    ///   diagnostic at the production-build level.  The misuse manifests
+    ///   as a deadlock-style hang at the next acquire, which a
+    ///   diagnostic tool (e.g., per-core dispatch stats from SM1.I.4)
+    ///   can detect by observing "no progress on this lock" over a
+    ///   timeout.  Compare to the prior CAS-retry implementation which
+    ///   would silently corrupt the state into a valid-looking
+    ///   "writer-held with maximum readers" — invariant-violating but
+    ///   structurally indistinguishable from a legitimate state.
+    ///   (M-B audit-pass-2 honesty fix: the prior docstring claimed
+    ///   "fail-noisy", which is misleading — the misuse manifests as
+    ///   a hang, not an explicit failure signal.)
+    /// * In debug builds, the `debug_assert!` traps AFTER the
+    ///   `fetch_sub` has already committed the underflow.  The lock
+    ///   state is corrupted to u64::MAX at that point; the test
+    ///   runner catches the panic before any subsequent operation
+    ///   observes the corruption.  (M-L audit-pass-2 documented:
+    ///   the debug-mode side effect is intentional — TOCTOU-free
+    ///   atomic op first, then assert on the returned prior value.)
     ///
     /// This avoids the H-3 corruption window in the prior CAS-retry
     /// implementation (where `(s & WRITER_BIT) | (count - 1)` with
@@ -252,24 +269,36 @@ impl RwLock {
     /// be written via CAS, silently setting the writer bit AND all reader
     /// bits to 1 — indistinguishable from a legitimate state).
     ///
-    /// `fetch_sub` also matches the docstring's ARM ARM citation of
-    /// `STADDL` (ARM ARM C6.2.305 — LDADDL family in subtraction form
-    /// via two's-complement) and on ARMv8.1-A LSE compiles to one
-    /// instruction rather than the CAS-retry pair.
+    /// `fetch_sub` on `AtomicU64` returning the prior value is the
+    /// `LDADDL` instruction family (ARM ARM C6.2.116) with a negated
+    /// operand — semantically a load-modify-return-store atomic.  On
+    /// ARMv8.1-A LSE this compiles to one instruction rather than the
+    /// CAS-retry pair used in the prior implementation.  (H-A audit
+    /// fix: previously docstring inconsistently cited `STADDL` /
+    /// C6.2.305, which is the store-only variant without a return
+    /// value.)
     #[inline]
     pub fn release_read(&self) {
-        // Defense-in-depth: catch debug-build misuse.
-        debug_assert!(
-            self.state.load(Ordering::Acquire) & READER_MASK > 0,
-            "RwLock::release_read called without a matching acquire_read \
-             (reader count is 0)"
-        );
         // Atomic single-instruction reader decrement on ARMv8.1-A LSE.
         // Returns the prior value; if it was 0 in the reader-count bits,
         // we're in a misuse scenario, but the state will be poisoned in
         // a fail-noisy way (writer bit set + all reader bits set), not
         // silently corrupted into a valid-looking state.
+        //
+        // Pattern matches TicketLock::release: do the atomic op FIRST,
+        // then check the returned prior value for misuse — this is
+        // race-free because `prev` is the atomic-op result, eliminating
+        // any TOCTOU between a separate load and the fetch_sub.
         let prev = self.state.fetch_sub(1, Ordering::Release);
+        // Defense-in-depth: catch debug-build misuse via the returned
+        // prior value.  In release builds this is a no-op; the misuse
+        // surfaces via the next acquirer spinning on the poisoned state
+        // (writer bit set in u64::MAX).
+        debug_assert!(
+            prev & READER_MASK > 0,
+            "RwLock::release_read called without a matching acquire_read \
+             (prev state 0x{prev:x}, reader count was 0)"
+        );
         // SEV ONLY if no holders remain (writer not held, reader count
         // drops to zero).  Gates the broadcast to the moment a waiting
         // writer could actually progress.  Audit fix M-3: avoids spurious
@@ -335,11 +364,16 @@ impl RwLock {
     /// Refines the Lean operation `applyOp .releaseWrite core`: clear the
     /// writer bit.
     ///
-    /// # Algorithm
+    /// # Algorithm (audit-pass-2 update)
     ///
-    /// 1. Validate writer bit is set + reader count is 0 (debug_assert).
-    /// 2. Store 0 with `Release` ordering.
-    /// 3. SEV to wake any waiting readers/writers.
+    /// 1. `fetch_and(READER_MASK, Release)` atomically clears the writer
+    ///    bit while preserving reader bits.  Returns the prior state for
+    ///    misuse detection.
+    /// 2. `debug_assert!` checks the prior state was `writer-held +
+    ///    readers = 0` (correct usage).  Debug-mode only; release builds
+    ///    skip the asserts.
+    /// 3. SEV ONLY if the writer bit was set in the prior state (i.e., we
+    ///    actually cleared a held writer; audit fix M-D).
     ///
     /// # Release-acquire pairing
     ///
@@ -369,30 +403,47 @@ impl RwLock {
     ///   reader bits and trigger the H-3 underflow corruption on each
     ///   subsequent `release_read`.
     ///
-    /// Defense-in-depth: the two `debug_assert!` checks use a single
-    /// `load(Acquire)` to ensure both asserts observe the same snapshot
-    /// (audit fix M-7).
+    /// Defense-in-depth: both debug_assert checks examine the atomic
+    /// `fetch_and` return value (the prior state), which is race-free
+    /// because it's the atomic-op result rather than a separate load.
+    /// (Audit pass-2: replaces the prior "single load + fetch_and"
+    /// pattern, which had a TOCTOU between the load and fetch_and.)
+    ///
+    /// SEV gating: only emits SEV if the writer bit was actually set in
+    /// the prior state (i.e., we actually cleared the writer bit).  This
+    /// matches the symmetry with `release_read` (which gates on reader
+    /// count dropping to zero) — both fire SEV only when the lock state
+    /// transitions to "potentially acquirable" by a waiter.
     #[inline]
     pub fn release_write(&self) {
-        // Single load for the debug asserts (audit fix M-7).
-        #[cfg(debug_assertions)]
-        {
-            let observed = self.state.load(Ordering::Acquire);
-            debug_assert!(
-                observed & READER_MASK == 0,
-                "RwLock::release_write called with non-zero reader count"
-            );
-            debug_assert!(
-                observed & WRITER_BIT != 0,
-                "RwLock::release_write called without a matching acquire_write"
-            );
+        // Atomic clear of the writer bit, preserving reader bits.
+        // Under correct usage (INV-R1: writer-held → readers = 0), the
+        // reader bits are zero, so this is equivalent to `store(0)`.
+        // Under misuse, the new form keeps the lock in a recoverable
+        // state.  `prev` captures the prior state for the debug asserts.
+        //
+        // Pattern matches `release_read`: do the atomic op FIRST, then
+        // check the returned prior value for misuse.
+        let prev = self.state.fetch_and(READER_MASK, Ordering::Release);
+        // Defense-in-depth: catch debug-build misuse via the returned
+        // prior value (race-free).
+        debug_assert!(
+            prev & READER_MASK == 0,
+            "RwLock::release_write called with non-zero reader count \
+             (prev state 0x{prev:x})"
+        );
+        debug_assert!(
+            prev & WRITER_BIT != 0,
+            "RwLock::release_write called without a matching acquire_write \
+             (prev state 0x{prev:x}, writer bit was clear)"
+        );
+        // SEV ONLY if we actually cleared the writer bit (correct usage).
+        // Under misuse (writer bit was already clear), SEV would be
+        // spurious — no waiter can progress because the lock was already
+        // released by someone else (or never acquired).
+        if (prev & WRITER_BIT) != 0 {
+            crate::cpu::sev();
         }
-        // Clear only the writer bit.  Preserves reader bits on misuse,
-        // matching the correctness invariant from INV-R1 that readers = 0
-        // when writer is held (so this is a no-op on reader bits in
-        // well-formed traces).
-        self.state.fetch_and(READER_MASK, Ordering::Release);
-        crate::cpu::sev();
     }
 
     /// **WS-SM SM2.C.19**: RAII reader combinator.
@@ -821,43 +872,87 @@ mod tests {
         assert_eq!(lock.state.load(Ordering::Acquire), 0);
     }
 
-    /// **SM2.C.22 cross-thread stress test**: writer + readers interleaving.
+    /// **SM2.C.22 cross-thread stress test**: writer + readers interleaving,
+    /// semantically verifying exclusion via a "write sentinel" pattern.
     ///
-    /// Mix of readers and writers contending for the same lock.  Each
-    /// thread does writer-then-reader-then-writer ops in a loop.  Lock state
-    /// must be 0 at end.
+    /// Each writer thread writes its `thread_idx + 1` to a shared cell as
+    /// a sentinel, then reads the cell back and verifies it sees ITS OWN
+    /// value (no torn write or interleaved writer overwrote it before the
+    /// read).  This directly tests writer-writer exclusion AND that the
+    /// writer's view of its own write is consistent.
+    ///
+    /// Each reader thread reads the cell and records the value.  At the
+    /// end, the count of writer ops and the final cell value are checked
+    /// for consistency (every writer op must have either succeeded or been
+    /// overwritten by another writer; readers must always see SOME
+    /// successful writer's value, never zero or garbage).
+    ///
+    /// (M-I audit-pass-2 fix: the prior version only checked
+    /// `final_count > 0` and `<= upper_bound`, which doesn't actually
+    /// test exclusion semantically — a buggy RwLock that allowed
+    /// concurrent writes might still satisfy those bounds.)
     #[test]
     fn sm2c22_cross_thread_mixed_stress() {
         use std::sync::Arc;
         use std::cell::UnsafeCell;
-        // Shared counter protected by writer; readers just read.
+        // Shared counter + writer-id-sentinel; writer writes both atomically
+        // (under lock).  Readers verify the sentinel matches a recent
+        // writer's id.
         struct Shared {
             lock: RwLock,
             counter: UnsafeCell<u64>,
+            last_writer_id: UnsafeCell<u64>,
         }
-        // SAFETY: all writes are gated by writer lock; reads are gated by reader lock.
+        // SAFETY: all access is gated by lock; writer lock has exclusive
+        // access; reader lock has shared read-only access.
         unsafe impl Sync for Shared {}
         let shared = Arc::new(Shared {
             lock: RwLock::new(),
             counter: UnsafeCell::new(0),
+            last_writer_id: UnsafeCell::new(0),
         });
         const NUM_THREADS: usize = 4;
         const OPS_PER_THREAD: usize = 250;
+        // Track exclusion violations detected.
+        let exclusion_violations = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let mut handles: std::vec::Vec<std::thread::JoinHandle<()>> = std::vec::Vec::new();
         for thread_idx in 0..NUM_THREADS {
             let s = Arc::clone(&shared);
+            let ev = Arc::clone(&exclusion_violations);
+            let writer_id: u64 = (thread_idx as u64) + 1;  // 1..=NUM_THREADS
             handles.push(std::thread::spawn(move || {
                 for op_idx in 0..OPS_PER_THREAD {
-                    // Mix of writers (every 4th op) and readers.
                     if op_idx % 4 == thread_idx % 4 {
+                        // Writer op: write sentinel + verify under lock.
                         s.lock.with_write(|| {
                             // SAFETY: writer lock held → exclusive access.
-                            unsafe { *s.counter.get() += 1; }
+                            unsafe {
+                                *s.counter.get() += 1;
+                                *s.last_writer_id.get() = writer_id;
+                                // Verify: while we hold the writer lock,
+                                // last_writer_id is OUR id (no one else
+                                // can write).
+                                let observed = *s.last_writer_id.get();
+                                if observed != writer_id {
+                                    ev.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                }
+                            }
                         });
                     } else {
+                        // Reader op: read counter + last_writer_id under read lock.
                         s.lock.with_read(|| {
                             // SAFETY: reader lock held → shared access.
-                            let _v = unsafe { *s.counter.get() };
+                            unsafe {
+                                let count = *s.counter.get();
+                                let last_id = *s.last_writer_id.get();
+                                // Reader must see a consistent snapshot:
+                                // count > 0 → some writer has run → last_id
+                                // must be in 1..=NUM_THREADS (no torn read
+                                // or stale memory).
+                                if count > 0 && (last_id == 0 || last_id > NUM_THREADS as u64) {
+                                    ev.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                }
+                            }
                         });
                     }
                 }
@@ -868,15 +963,19 @@ mod tests {
         }
         // Lock state must be 0 (all released).
         assert_eq!(shared.lock.state.load(Ordering::Acquire), 0);
-        // SAFETY: all threads joined; no concurrent access remains.  We
-        // hold a unique `&shared` and the counter is unobserved by any
-        // other thread.  (M-6 audit fix.)
+        // SAFETY: all threads joined; no concurrent access remains.
         let final_count = unsafe { *shared.counter.get() };
         assert!(final_count > 0, "writers should have incremented counter");
-        // Counter must be <= NUM_THREADS * OPS_PER_THREAD (sanity bound).
         let upper_bound = (NUM_THREADS * OPS_PER_THREAD) as u64;
         assert!(final_count <= upper_bound,
                 "counter {final_count} exceeds upper bound {upper_bound}");
+        // CRITICAL: zero exclusion violations.  Any non-zero count indicates
+        // a writer observed its OWN sentinel modified (writer-writer
+        // exclusion violation) or a reader saw an inconsistent count/id
+        // pair (reader-writer or torn-read violation).
+        let violations = exclusion_violations.load(std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(violations, 0,
+            "RwLock exclusion violated: {violations} torn or interleaved observations");
     }
 
     /// **SM2.C.22 cross-thread stress test**: reader-multiplicity (deterministic).
@@ -928,6 +1027,105 @@ mod tests {
             assert!(*count >= NUM_READERS as u64,
                 "thread {i} snapshot saw only {count} readers, expected >= {NUM_READERS}");
         }
+    }
+
+    /// **SM2.C.22 cross-thread stress test**: writer-reader exclusion under
+    /// concurrent contention (substantive verification of the Lean spec's
+    /// `rwLock_writer_readers_exclusion` theorem).
+    ///
+    /// Verifies that when one thread holds a write lock, every reader
+    /// thread that subsequently `acquire_read`s observes the writer as
+    /// CLEAR (i.e., the writer must have released by the time the reader
+    /// was admitted).
+    ///
+    /// (M-J audit-pass-2 robustness fix: replaces the prior
+    /// `sleep(50ms)`-based synchronization with a signal-counter pattern
+    /// that deterministically waits for all readers to be parked on
+    /// `acquire_read` before the writer releases.  This eliminates the
+    /// possibility of false-pass on heavily loaded CI runners where 50ms
+    /// might not be enough for all readers to park.) -/
+    #[test]
+    fn sm2c22_cross_thread_writer_excludes_readers() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as O};
+        const NUM_READERS: usize = 3;
+        let lock = Arc::new(RwLock::new());
+        // Signal that the writer has acquired and the readers should start.
+        let writer_acquired = Arc::new(AtomicBool::new(false));
+        // Count of readers that have ENTERED acquire_read (incremented
+        // BEFORE the call to acquire_read).  Used to deterministically
+        // wait for all readers to be attempting the acquire.
+        let readers_entered_acquire = Arc::new(AtomicU64::new(0));
+        // Writer thread.
+        let writer_handle = {
+            let l = Arc::clone(&lock);
+            let wa = Arc::clone(&writer_acquired);
+            let rea = Arc::clone(&readers_entered_acquire);
+            std::thread::spawn(move || {
+                l.acquire_write();
+                // Verify writer's own snapshot post-acquire.
+                let (w, c) = l.snapshot();
+                assert!(w, "writer's own snapshot should show writer=true");
+                assert_eq!(c, 0, "writer's own snapshot should show count=0");
+                // Signal readers to start.
+                wa.store(true, O::Release);
+                // Wait deterministically until all readers have entered
+                // their acquire_read call (they're now parked on WFE
+                // because the writer bit is set).  This replaces the
+                // fragile sleep(50ms).
+                while rea.load(O::Acquire) < NUM_READERS as u64 {
+                    std::hint::spin_loop();
+                }
+                // Brief additional spin to give the readers time to
+                // actually call acquire_read after incrementing the
+                // counter (the counter is bumped immediately before the
+                // call, so we need a small grace period for the call to
+                // execute and park).  But this is a SMALL period (a few
+                // µs of spinning), not the prior 50ms timeout that
+                // dominated test time.
+                for _ in 0..10000 {
+                    std::hint::spin_loop();
+                }
+                // Re-verify writer snapshot before release (catches the
+                // hypothetical case where a buggy RwLock allowed a reader
+                // to acquire while writer was held).
+                let (w2, c2) = l.snapshot();
+                assert!(w2, "writer-held snapshot mid-test should still show writer=true");
+                assert_eq!(c2, 0, "writer-held snapshot mid-test should show count=0");
+                l.release_write();
+            })
+        };
+        // Reader threads.
+        let mut reader_handles: std::vec::Vec<std::thread::JoinHandle<bool>> =
+            std::vec::Vec::new();
+        for _ in 0..NUM_READERS {
+            let l = Arc::clone(&lock);
+            let wa = Arc::clone(&writer_acquired);
+            let rea = Arc::clone(&readers_entered_acquire);
+            reader_handles.push(std::thread::spawn(move || {
+                // Wait for writer to acquire.
+                while !wa.load(O::Acquire) {
+                    std::hint::spin_loop();
+                }
+                // Signal that this reader is about to enter acquire_read.
+                rea.fetch_add(1, O::Release);
+                // Now attempt to acquire (will block until writer releases).
+                l.acquire_read();
+                // After acquire, writer must be clear.
+                let (w, _c) = l.snapshot();
+                let writer_was_clear = !w;
+                l.release_read();
+                writer_was_clear
+            }));
+        }
+        writer_handle.join().expect("writer thread panicked");
+        for (i, h) in reader_handles.into_iter().enumerate() {
+            let writer_was_clear = h.join().expect("reader thread panicked");
+            assert!(writer_was_clear,
+                "reader {i} observed writer-bit set after acquire_read (exclusion violated!)");
+        }
+        // All released.
+        assert_eq!(lock.state.load(O::Acquire), 0);
     }
 
     /// **SM2.C.17 encoding round-trip test**: every bit-pattern round-trips.

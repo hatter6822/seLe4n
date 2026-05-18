@@ -100,6 +100,7 @@ open SeLe4n.Kernel.Concurrency
 #check @SeLe4n.Kernel.Concurrency.rwLock_fifo_admission
 #check @SeLe4n.Kernel.Concurrency.rwLock_fifo_admission_readers_empty
 #check @SeLe4n.Kernel.Concurrency.rwLock_promote_subset_of_waiters
+#check @SeLe4n.Kernel.Concurrency.rwLock_promote_is_sublist_of_waiters
 #check @SeLe4n.Kernel.Concurrency.rwLock_promote_preserves_order
 
 /-! ## SM2.C.8..9 — Bounded wait -/
@@ -563,18 +564,16 @@ private def runAuditFixesChecks : IO Unit := do
       |>.applyOp (.tryAcquireWrite SeLe4n.Kernel.Concurrency.bootCoreId)
       |>.applyOp (.tryAcquireWrite c1)
       |>.applyOp (.tryAcquireWrite c2)
-  let s_w_post := s_w.promoteWaitersOnWriterRelease
   assertBool "fifo: empty waiters case (post = s)"
     (decide (SeLe4n.Kernel.Concurrency.RwLockState.unheld.promoteWaitersOnWriterRelease
               = SeLe4n.Kernel.Concurrency.RwLockState.unheld))
   -- s_w has writerHeld = some boot, waiters = [(c1,.write),(c2,.write)].
-  -- promote does nothing because writerHeld is some (it's a no-op from
-  -- this state — promoteWaitersOnWriterRelease assumes the writer has
-  -- already been cleared).  So we test the actual writer release path.
-  -- (Note: promoteWaitersOnWriterRelease on writerHeld=some is a structural
-  -- no-op because it pattern-matches on waiters.)
-  -- The strengthening: writer-release-then-promote on writer-head produces
-  -- waiters = original_waiters.drop 1.
+  -- Note: `promoteWaitersOnWriterRelease` pattern-matches on `s.waiters`
+  -- (NOT on writerHeld), so calling it directly on s_w would overwrite
+  -- writerHeld (an INV-R1 violation).  The function is only correct as
+  -- a follow-up to `releaseWrite` which has already cleared writerHeld.
+  -- So we test the actual writer-release path, which establishes:
+  -- writer-release-then-promote on writer-head waiters = original.drop 1.
   let s_release := s_w.applyOp (.releaseWrite SeLe4n.Kernel.Concurrency.bootCoreId)
   assertBool "fifo: writer-head promoted on release; waiters.drop 1"
     (decide (s_release.waiters = [(c2, SeLe4n.Kernel.Concurrency.AccessMode.write)]))
@@ -599,6 +598,22 @@ private def runAuditFixesChecks : IO Unit := do
   let s_safety_post := s_safety.applyOp (.tryAcquireRead c3)
   assertBool "H-2: writer c1 still in waiters after fresh reader tryAcquireRead"
     (decide ((c1, SeLe4n.Kernel.Concurrency.AccessMode.write) ∈ s_safety_post.waiters))
+  -- H-1 (M-H audit-pass-2): exercise fifo_admission with k > 1
+  -- (reader-batching prefix > 1).
+  let s_b2 :=
+    SeLe4n.Kernel.Concurrency.RwLockState.unheld
+      |>.applyOp (.tryAcquireWrite SeLe4n.Kernel.Concurrency.bootCoreId)
+      |>.applyOp (.tryAcquireRead c1)
+      |>.applyOp (.tryAcquireRead c2)
+      |>.applyOp (.tryAcquireRead c3)
+  -- s_b2.waiters = [(c1,.read),(c2,.read),(c3,.read)]; takeWhile reader = 3.
+  -- After writer release, post-waiters = drop 3 = [].
+  let s_b2_release := s_b2.applyOp (.releaseWrite SeLe4n.Kernel.Concurrency.bootCoreId)
+  assertBool "H-1 strong: writer-release with 3 reader-prefix → waiters.drop 3 = []"
+    (decide (s_b2_release.waiters = ([] : List (SeLe4n.Kernel.Concurrency.CoreId
+                                                × SeLe4n.Kernel.Concurrency.AccessMode))))
+  assertBool "H-1 strong: writer-release with 3 reader-prefix → readers.length = 3"
+    (decide (s_b2_release.readers.length = 3))
 
 def runRwLockChecks : IO Unit := do
   IO.println "WS-SM SM2.C — RwLock test suite"

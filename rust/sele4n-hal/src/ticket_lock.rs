@@ -32,7 +32,9 @@
 //!   that synchronises-with the release-store that produced the value.
 //!   The acquire-load establishes a happens-before edge from the prior
 //!   holder's critical section to the new holder.
-//! * `serving.fetch_add(1, Release)` — `STADDL` (ARM ARM C6.2.305):
+//! * `serving.fetch_add(1, Release)` — `LDADDL` (ARM ARM C6.2.116) with
+//!   the LDADD-family (load-modify-return-store) semantics matching
+//!   Rust's `fetch_add`-returning-prior contract:
 //!   release-store that publishes every prior write on the releasing
 //!   core to any acquire-load that observes the new value.
 //! * `sev` — `SEV` (ARM ARM C6.2.243): hint instruction that sets the
