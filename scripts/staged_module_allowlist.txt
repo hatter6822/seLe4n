@@ -17,10 +17,10 @@
 #   infra               — platform infrastructure (bridges, anchors, helpers)
 #   anchor              — the staging anchor file itself
 #
-# Last verified: WS-SM SM2.A landing (adds
-# `Kernel.Concurrency.MemoryModel` to the SM2-staged closure — the
-# SM2.A abstract memory model that SM2.B (TicketLock) and SM2.C
-# (RwLock) consume for release-acquire pairing).
+# Last verified: WS-SM SM2.C landing (adds
+# `Kernel.Concurrency.Locks.RwLock` and `RwLockRefinement` to the
+# SM2-staged closure — the SM2.C abstract RwLock spec and SM2.C.20
+# refinement bridge to the Rust bit-packed AtomicU64 representation).
 
 SeLe4n.Kernel.Architecture.CacheModel         # marker (STATUS: staged for H3)
 SeLe4n.Kernel.Architecture.ExceptionModel     # marker (STATUS: staged for H3)
@@ -32,6 +32,8 @@ SeLe4n.Kernel.Concurrency.Assumptions         # infra (SMP-latent assumption inv
 SeLe4n.Kernel.Concurrency.Anchors             # infra (WS-SM SM0.C inventory build anchor; SMP-H3 closure)
 SeLe4n.Kernel.Concurrency.Locks               # infra (WS-SM SM0.I BklState)
 SeLe4n.Kernel.Concurrency.Locks.Kind          # infra (WS-SM SM0.I LockKind + LockId total order)
+SeLe4n.Kernel.Concurrency.Locks.RwLock        # infra (WS-SM SM2.C abstract RwLock spec; SM3 first runtime exerciser)
+SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement # infra (WS-SM SM2.C.20 RwLock refinement bridge to Rust bit-packed state)
 SeLe4n.Kernel.Concurrency.Locks.TicketLock    # infra (WS-SM SM2.B abstract TicketLock spec; SM3 first runtime exerciser)
 SeLe4n.Kernel.Concurrency.MemoryModel         # infra (WS-SM SM2.A abstract memory model; SM2.B/SM2.C first runtime exercisers)
 SeLe4n.Kernel.Concurrency.Sgi                 # infra (WS-SM SM0.H SgiKind)

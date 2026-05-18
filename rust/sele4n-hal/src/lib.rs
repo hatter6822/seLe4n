@@ -217,3 +217,14 @@ pub mod per_cpu_stats;
 // usage.  See the module docstring in `ticket_lock.rs` for the
 // operational mapping to the Lean spec and ARM ARM citations.
 pub mod ticket_lock;
+// WS-SM SM2.C.19: Rust RwLock implementation refining the Lean
+// operational spec at SeLe4n/Kernel/Concurrency/Locks/RwLock.lean.
+// Reader-writer lock with bit-packed atomic state (bit 63 = writer-held,
+// bits 0..62 = reader count), cache-line aligned.  Provides `RwLock::new`
+// (const fn), `acquire_read` / `release_read` / `acquire_write` /
+// `release_write`, `with_read` / `with_write` RAII combinators, and
+// `RwLockReadGuard` / `RwLockWriteGuard` for explicit-lifetime usage.
+// See the module docstring in `rw_lock.rs` for the operational mapping
+// to the Lean spec, ARM ARM citations, and the FIFO-divergence
+// documentation (SM2.C.20 refinement bridge).
+pub mod rw_lock;
