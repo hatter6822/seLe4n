@@ -186,10 +186,24 @@ impl RwLock {
                 continue;
             }
             // Writer-bit clear.  Reader count is `s` (since bit 63 = 0).
-            // Attempt CAS to increment reader count.
+            // Audit-pass-3 defense: check for reader-count overflow BEFORE
+            // computing new_state.  Under `numCores ≤ 4` this is
+            // unreachable (4 ≪ 2^63), but defensive engineering: if the
+            // count somehow reached READER_MASK (= 2^63 - 1), `s + 1`
+            // would equal `WRITER_BIT`, and a successful CAS would
+            // corrupt the lock state to "writer held".  Fail-closed by
+            // parking on WFE instead of corrupting.
+            if s == READER_MASK {
+                debug_assert!(false,
+                    "RwLock reader count exhausted (impossible under numCores ≤ 4); \
+                     state was 0x{s:x}");
+                crate::cpu::wfe_bounded(crate::cpu::WFE_DEFAULT_TIMEOUT_TICKS);
+                continue;
+            }
             let new_state = s + 1;
-            // Defensive: check for reader-count overflow.  In practice
-            // unreachable (numCores = 4 << 2^63).
+            // After the explicit overflow check above, new_state cannot
+            // have the writer bit set (s < READER_MASK ⟹ s + 1 ≤ READER_MASK).
+            // The debug_assert is retained for defense-in-depth.
             debug_assert!(
                 new_state & WRITER_BIT == 0,
                 "RwLock reader count overflow (impossible under numCores ≤ 4)"
@@ -294,10 +308,19 @@ impl RwLock {
         // prior value.  In release builds this is a no-op; the misuse
         // surfaces via the next acquirer spinning on the poisoned state
         // (writer bit set in u64::MAX).
+        //
+        // Two misuse cases caught:
+        // 1. `prev & READER_MASK == 0`: release without prior acquire
+        //    (the original H-3 case).
+        // 2. `prev & WRITER_BIT != 0`: release_read called while writer
+        //    is held (INV-R1 violation; audit-pass-3 strengthening).
+        //    Even if the reader count is non-zero, this state is bogus
+        //    — under correct usage INV-R1 forbids writer + readers
+        //    coexisting.
         debug_assert!(
-            prev & READER_MASK > 0,
-            "RwLock::release_read called without a matching acquire_read \
-             (prev state 0x{prev:x}, reader count was 0)"
+            prev & WRITER_BIT == 0 && prev & READER_MASK > 0,
+            "RwLock::release_read called in invalid state \
+             (prev 0x{prev:x}, writer-bit must be 0 and reader-count must be > 0)"
         );
         // SEV ONLY if no holders remain (writer not held, reader count
         // drops to zero).  Gates the broadcast to the moment a waiting
@@ -830,7 +853,7 @@ mod tests {
     /// **SM2.C.19 test**: debug_assert catches release_read without acquire.
     #[cfg(debug_assertions)]
     #[test]
-    #[should_panic(expected = "called without a matching acquire_read")]
+    #[should_panic(expected = "RwLock::release_read called in invalid state")]
     fn sm2c19_release_read_without_acquire_panics_in_debug() {
         let lock = RwLock::new();
         lock.release_read();

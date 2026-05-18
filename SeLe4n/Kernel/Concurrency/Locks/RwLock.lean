@@ -472,13 +472,15 @@ def RwLockState.promoteWaitersOnWriterRelease (s : RwLockState) :
         readers := readWaiters.map Prod.fst ++ s.readers
         waiters := rest }
 
-/-- **Witness (H-C audit-pass-2)**: the contract for
-`promoteWaitersOnWriterRelease` is formalised at the wf-preservation
-theorem level.
+/- **Contract for `promoteWaitersOnWriterRelease` (H-C audit-pass-2)**:
+the function REQUIRES `writerHeld = none` AND `readers = []` for
+correctness.  This contract is formalised at the wf-preservation
+theorem level (`rwLock_promoteWaitersOnWriterRelease_preserves_wf`
+takes both as hypotheses) — see the theorem statement at the
+relevant section below.
 
-`rwLock_promoteWaitersOnWriterRelease_preserves_wf` requires
-**BOTH** `writerHeld = none` AND `readers = []` as hypotheses.
-Without either, the function may produce a wf-violating state:
+Without either precondition, the function may produce a wf-violating
+state:
 
 * `writerHeld = some c0` + `waiters = (c1, .write) :: ...`:
   post-state has `writerHeld := some c1`, **silently displacing c0**
@@ -487,19 +489,16 @@ Without either, the function may produce a wf-violating state:
   post-state has `writerHeld := some c` with `readers ≠ []`,
   **violating INV-R1** (writer can't coexist with readers).
 
-Both footguns are documented via this contract.  The only legitimate
-call site is `applyOp .releaseWrite` which discharges the
-preconditions structurally (it clears `writerHeld` before calling,
-and INV-R1 on the pre-state ensures `readers = []` after the clear).
+Both footguns are documented in the function docstring above.  The
+only legitimate call site is `applyOp .releaseWrite` which
+discharges the preconditions structurally (it clears `writerHeld`
+before calling, and INV-R1 on the pre-state ensures `readers = []`
+after the clear).
 
 The unsafe-on-misuse design is intentional: it forces SM3 consumers
 through `releaseWrite`'s validated path rather than allowing direct
 invocation outside the contract.  The Rust impl has no analog of
 this function as a standalone operation. -/
-theorem RwLockState.promoteWaitersOnWriterRelease_contract_witness
-    (_s : RwLockState) (_h_no_writer : _s.writerHeld = none)
-    (_h_no_readers : _s.readers = []) :
-    True := trivial
 
 -- ============================================================================
 -- SM2.C.4 — promoteWaitersIfReadersEmpty (helper for releaseRead)
