@@ -57,6 +57,14 @@ import SeLe4n.Kernel.Architecture.TlbiForSharing
 -- staged at SM2.A; SM2.B (TicketLock) and SM2.C (RwLock) are the first
 -- runtime exercisers.
 import SeLe4n.Kernel.Concurrency.MemoryModel
+-- WS-SM SM2.B: abstract TicketLock specification.  Pulled into Staged so
+-- CI builds the operational TicketLock spec (TicketLockState, applyOp,
+-- promotePending, releaseAndPromote, the 8-conjunct wf invariant, plus
+-- the substantive theorems mutex / FIFO / bounded-wait / RA-pairing /
+-- reachability / determinism / wf-preservation closure-form) on every
+-- push.  Reachability: staged at SM2.B; SM3 per-object lock proofs are
+-- the first runtime exercisers.
+import SeLe4n.Kernel.Concurrency.Locks.TicketLock
 
 /-!
 # AN7-D.6 (PLT-M07) — Staged-modules build graph

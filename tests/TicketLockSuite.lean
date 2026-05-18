@@ -1,0 +1,666 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+/-
+  seLe4n  - A Lean Microkernel
+  Copyright (C) 2026  Adam Hall
+  This program comes with ABSOLUTELY NO WARRANTY.
+  This is free software, and you are welcome to redistribute it
+  under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
+-/
+
+import SeLe4n.Kernel.Concurrency.Locks.TicketLock
+import SeLe4n.Kernel.Concurrency.Types
+
+/-!
+# WS-SM SM2.B (tests) — TicketLock test suite
+
+Tier-3 surface anchors plus decidable examples for every public
+symbol introduced in WS-SM Phase 2.B.  This file is the canonical
+regression gate that catches:
+
+* Renames or signature drift on the SM2.B.1..B.5 data types
+  (`#check` of every public symbol).
+* Decidability regressions on `TicketLockState.wf`.
+* Behavioural regressions on the operational semantics
+  (`captureTicket`, `observeServing`, `applyOp`, `promotePending`,
+  `releaseAndPromote`).
+* The substantive theorem surface (mutex, wf preservation, FIFO,
+  bounded wait, RA pairing, reachability, determinism, closure-form
+  aliases).
+
+The suite is a runnable executable (`lake exe ticket_lock_suite`)
+that performs every decidable check at runtime as well — every
+`example : ... := by decide` is also asserted as a runtime property
+inside `runTicketLockChecks`, so the assertions surface in the
+`run` output if they ever silently regress.
+
+## Coverage
+
+The suite carries:
+
+* **§1: Surface anchors** — 70+ `#check` lines covering every
+  public symbol exported by `TicketLock.lean`.
+* **§2: Decidable examples** — 25+ `example : ... := by decide` /
+  `rfl` examples covering the data-type constructors, the
+  `unheld` initial state, the wf predicate's decide-time behavior
+  on small concrete states, and operational-semantics behaviour
+  on canonical examples (fast-path acquire, slow-path acquire,
+  release-and-promote).
+* **§3: Runtime assertion suite** — `runTicketLockChecks`
+  exercises every decidable example at runtime via an
+  `assertBool` helper that prints PASS / FAIL.
+-/
+
+open SeLe4n.Kernel.Concurrency
+
+-- ============================================================================
+-- §1 — Surface anchors: every SM2.B.* public symbol resolves at elaboration
+-- ============================================================================
+
+/-! ## SM2.B.1 — TicketLockState -/
+#check @SeLe4n.Kernel.Concurrency.TicketLockState
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.nextTicket
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.serving
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.pending
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.held
+
+/-! ## SM2.B.2 — unheld + witnesses -/
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.unheld
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.unheld_nextTicket
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.unheld_serving
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.unheld_pending
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.unheld_held
+
+/-! ## SM2.B.3 — wf + Bool helpers -/
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.pendingInRange
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.heldCount
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.holderTicketIsServing
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.holderTicketDisjointFromPending
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.holderCoreDisjointFromPending
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.wf
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.pendingInRange_iff
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.holderTicketIsServing_iff
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.holderTicketDisjointFromPending_iff
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.holderCoreDisjointFromPending_iff
+
+/-! ## SM2.B.4 — Decidable + unheld_wf -/
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.unheld_wf
+
+/-! ## SM2.B.5 — TicketLockOp -/
+#check @SeLe4n.Kernel.Concurrency.TicketLockOp
+#check @SeLe4n.Kernel.Concurrency.TicketLockOp.tryAcquire
+#check @SeLe4n.Kernel.Concurrency.TicketLockOp.release
+#check @SeLe4n.Kernel.Concurrency.TicketLockOp.observeServing
+
+/-! ## SM2.B.6 — Operations -/
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.captureTicket
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.observeServing
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.observeServing_eq_serving
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.applyOp
+
+/-! ## SM2.B.7 — promotePending + releaseAndPromote -/
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.promotePending
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.releaseAndPromote
+
+/-! ## SM2.B.8 — mutex -/
+#check @SeLe4n.Kernel.Concurrency.ticketLock_mutex
+
+/-! ## SM2.B.9 — wf extractor lemmas (helpers) -/
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.wf_servingLeNextTicket
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.wf_pendingInRange
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.wf_holderTicketIsServing
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.wf_pendingTicketsNodup
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.wf_holderTicketNotInPending
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.wf_pendingCoresNodup
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.wf_holderCoreNotInPending
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.wf_countParity
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.wf_serving_lt_nextTicket_of_held
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.wf_serving_lt_nextTicket_of_pending
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.wf_pending_ticket_lt
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.wf_pending_ticket_gt
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.wf_nextTicket_not_in_pending
+
+/-! ## SM2.B.9 — wf preservation theorems -/
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.applyOp_release_cases
+#check @SeLe4n.Kernel.Concurrency.ticketLock_observeServing_preserves_wf
+#check @SeLe4n.Kernel.Concurrency.ticketLock_release_preserves_partial_wf
+#check @SeLe4n.Kernel.Concurrency.ticketLock_tryAcquire_preserves_wf
+#check @SeLe4n.Kernel.Concurrency.ticketLock_releaseAndPromote_preserves_wf
+#check @SeLe4n.Kernel.Concurrency.ticketLock_wf_invariant
+
+/-! ## SM2.B.10 — FIFO -/
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.applyOp_nextTicket_monotone
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.applyOp_release_nextTicket_eq
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.promotePending_nextTicket_eq
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.releaseAndPromote_nextTicket_eq
+#check @SeLe4n.Kernel.Concurrency.TicketLockState.applyOp_tryAcquire_captures
+#check @SeLe4n.Kernel.Concurrency.ticketLock_fifo
+#check @SeLe4n.Kernel.Concurrency.ticketLock_fifo_trace
+#check @SeLe4n.Kernel.Concurrency.ticketLock_fifo_strict
+
+/-! ## SM2.B.11 — bounded wait -/
+#check @SeLe4n.Kernel.Concurrency.ticketLock_bounded_wait
+
+/-! ## SM2.B.12 — release-acquire pairing -/
+#check @SeLe4n.Kernel.Concurrency.ticketLock_release_acquire_pairing
+#check @SeLe4n.Kernel.Concurrency.ticketLock_release_acquire_happensBefore
+
+/-! ## SM2.B.13 — reachability -/
+#check @SeLe4n.Kernel.Concurrency.KernelStep
+#check @SeLe4n.Kernel.Concurrency.KernelStep.acquire
+#check @SeLe4n.Kernel.Concurrency.KernelStep.release
+#check @SeLe4n.Kernel.Concurrency.KernelStep.observe
+#check @SeLe4n.Kernel.Concurrency.Reachable
+#check @SeLe4n.Kernel.Concurrency.Reachable.base
+#check @SeLe4n.Kernel.Concurrency.Reachable.step
+#check @SeLe4n.Kernel.Concurrency.ticketLock_reachability
+
+/-! ## SM2.B.14 — determinism -/
+#check @SeLe4n.Kernel.Concurrency.ticketLock_applyOp_deterministic
+#check @SeLe4n.Kernel.Concurrency.ticketLock_promotePending_deterministic
+
+/-! ## SM2.B.15 — closure-form aliases -/
+#check @SeLe4n.Kernel.Concurrency.ticketLock_acquire_preserves_wf
+#check @SeLe4n.Kernel.Concurrency.ticketLock_release_preserves_wf
+
+-- ============================================================================
+-- §2 — Decidable examples: behavioural pinning for canonical states
+-- ============================================================================
+
+/-! ## §2.1 — unheld state shape -/
+
+example : (TicketLockState.unheld).nextTicket = 0 := rfl
+example : (TicketLockState.unheld).serving = 0 := rfl
+example : (TicketLockState.unheld).pending = [] := rfl
+example : (TicketLockState.unheld).held = (none : Option (CoreId × Nat)) := rfl
+
+/-- The unheld state is wf. -/
+example : TicketLockState.unheld.wf := by decide
+
+/-! ## §2.2 — Bool encoding witnesses on unheld -/
+
+example : TicketLockState.unheld.heldCount = 0 := rfl
+example : TicketLockState.unheld.pendingInRange = true := by decide
+example : TicketLockState.unheld.holderTicketIsServing = true := by decide
+example : TicketLockState.unheld.holderTicketDisjointFromPending = true := by decide
+example : TicketLockState.unheld.holderCoreDisjointFromPending = true := by decide
+
+/-! ## §2.3 — First tryAcquire from unheld (fast-path immediate promote) -/
+
+/-- From unheld, tryAcquire of core 0 takes the fast path: serving = nextTicket = 0
+and held = none, so the captured ticket = 0 is immediately promoted to held. -/
+example :
+    (TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)).nextTicket = 1 := by decide
+
+example :
+    (TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)).serving = 0 := by decide
+
+example :
+    (TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)).pending = [] := by decide
+
+example :
+    (TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)).held = some (bootCoreId, 0) := by
+  decide
+
+/-- The post-acquire state is wf. -/
+example :
+    (TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)).wf := by decide
+
+/-! ## §2.4 — Second tryAcquire (slow-path: append to pending) -/
+
+example :
+    let s := TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)
+    let s' := s.applyOp (.tryAcquire ⟨1, by decide⟩)
+    s'.nextTicket = 2 := by decide
+
+example :
+    let s := TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)
+    let s' := s.applyOp (.tryAcquire ⟨1, by decide⟩)
+    s'.serving = 0 := by decide
+
+example :
+    let s := TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)
+    let s' := s.applyOp (.tryAcquire ⟨1, by decide⟩)
+    s'.pending = [(⟨1, by decide⟩, 1)] := by decide
+
+example :
+    let s := TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)
+    let s' := s.applyOp (.tryAcquire ⟨1, by decide⟩)
+    s'.held = some (bootCoreId, 0) := by decide
+
+example :
+    let s := TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)
+    let s' := s.applyOp (.tryAcquire ⟨1, by decide⟩)
+    s'.wf := by decide
+
+/-! ## §2.5 — Release-and-promote chains -/
+
+example :
+    let s := TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)
+    let s' := s.applyOp (.tryAcquire ⟨1, by decide⟩)
+    let s'' := s'.releaseAndPromote bootCoreId
+    s''.nextTicket = 2 := by decide
+
+example :
+    let s := TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)
+    let s' := s.applyOp (.tryAcquire ⟨1, by decide⟩)
+    let s'' := s'.releaseAndPromote bootCoreId
+    s''.serving = 1 := by decide
+
+example :
+    let s := TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)
+    let s' := s.applyOp (.tryAcquire ⟨1, by decide⟩)
+    let s'' := s'.releaseAndPromote bootCoreId
+    s''.pending = [] := by decide
+
+example :
+    let s := TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)
+    let s' := s.applyOp (.tryAcquire ⟨1, by decide⟩)
+    let s'' := s'.releaseAndPromote bootCoreId
+    s''.held = some (⟨1, by decide⟩, 1) := by decide
+
+example :
+    let s := TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)
+    let s' := s.applyOp (.tryAcquire ⟨1, by decide⟩)
+    let s'' := s'.releaseAndPromote bootCoreId
+    s''.wf := by decide
+
+/-! ## §2.6 — observeServing is identity -/
+
+example :
+    (TicketLockState.unheld.applyOp (.observeServing bootCoreId 0)).nextTicket = 0 := rfl
+
+example :
+    TicketLockState.unheld.applyOp (.observeServing bootCoreId 0)
+    = TicketLockState.unheld := rfl
+
+/-! ## §2.7 — No-op tryAcquire (already-pending core) -/
+
+example :
+    let s := TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)
+    let s' := s.applyOp (.tryAcquire ⟨1, by decide⟩)
+    -- Now core 1 is pending.  Re-acquiring is a no-op.
+    s'.applyOp (.tryAcquire ⟨1, by decide⟩) = s' := by decide
+
+/-! ## §2.7b — No-op tryAcquire (already-held core, second-if branch) -/
+
+/-- After a fast-path acquire, the holder re-acquiring is a no-op
+(distinct branch from already-pending). -/
+example :
+    let s := TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)
+    -- bootCoreId is now the holder.  Re-acquiring should be a no-op
+    -- via the second-if branch (`held.map fst = some core`).
+    s.applyOp (.tryAcquire bootCoreId) = s := by decide
+
+/-! ## §2.7c — Release-by-non-holder is no-op -/
+
+/-- After fast-path acquire by core 0, releasing by core 1 (not the
+holder) is a no-op. -/
+example :
+    let s := TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)
+    -- bootCoreId is holder.  Core 1 attempting release should be a no-op.
+    s.applyOp (.release ⟨1, by decide⟩) = s := by decide
+
+/-- Release-by-non-holder is no-op even on the unheld state. -/
+example :
+    -- unheld has held = none; any release is a no-op.
+    TicketLockState.unheld.applyOp (.release bootCoreId) = TicketLockState.unheld :=
+  by decide
+
+/-! ## §2.7d — Promotion chain (boot releases, c1 promoted, c1 releases) -/
+
+/-- Three sequential acquires (boot, c1, c2) followed by three
+releases produces a promotion chain: each release promotes the next
+pending core. -/
+example :
+    let s0 := TicketLockState.unheld
+    let s1 := s0.applyOp (.tryAcquire bootCoreId)             -- boot holds, ticket 0
+    let s2 := s1.applyOp (.tryAcquire ⟨1, by decide⟩)         -- c1 pending, ticket 1
+    let s3 := s2.applyOp (.tryAcquire ⟨2, by decide⟩)         -- c2 pending, ticket 2
+    let s4 := s3.releaseAndPromote bootCoreId                  -- c1 promoted (ticket 1)
+    let s5 := s4.releaseAndPromote ⟨1, by decide⟩              -- c2 promoted (ticket 2)
+    let s6 := s5.releaseAndPromote ⟨2, by decide⟩              -- empty
+    -- Final state: nextTicket = 3, serving = 3, pending = [], held = none.
+    s6.nextTicket = 3 ∧ s6.serving = 3 ∧ s6.pending = [] ∧ s6.held = none := by
+  decide
+
+/-- The promotion chain preserves wf at every step. -/
+example :
+    let s0 := TicketLockState.unheld
+    let s1 := s0.applyOp (.tryAcquire bootCoreId)
+    let s2 := s1.applyOp (.tryAcquire ⟨1, by decide⟩)
+    let s3 := s2.applyOp (.tryAcquire ⟨2, by decide⟩)
+    let s4 := s3.releaseAndPromote bootCoreId
+    let s5 := s4.releaseAndPromote ⟨1, by decide⟩
+    let s6 := s5.releaseAndPromote ⟨2, by decide⟩
+    s1.wf ∧ s2.wf ∧ s3.wf ∧ s4.wf ∧ s5.wf ∧ s6.wf := by decide
+
+/-- The mid-state s5 (after promoting c2) has c2 as holder. -/
+example :
+    let s0 := TicketLockState.unheld
+    let s1 := s0.applyOp (.tryAcquire bootCoreId)
+    let s2 := s1.applyOp (.tryAcquire ⟨1, by decide⟩)
+    let s3 := s2.applyOp (.tryAcquire ⟨2, by decide⟩)
+    let s4 := s3.releaseAndPromote bootCoreId
+    let s5 := s4.releaseAndPromote ⟨1, by decide⟩
+    s5.held = some (⟨2, by decide⟩, 2) := by decide
+
+/-! ## §2.7e — observeServing returns serving (refinement witness) -/
+
+/-- The abstract `observeServing` operation returns `serving` exactly.
+This is the refinement bridge to the Rust impl's
+`serving.load(Acquire)` in the spin-loop. -/
+example :
+    let s := TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)
+    s.observeServing = s.serving := rfl
+
+/-! ## §2.7f — Reachable / KernelStep constructive witnesses -/
+
+/-- The state after a successful `tryAcquire` from `unheld` is reachable
+via a single `KernelStep.acquire`.  This exercises the
+`Reachable` / `KernelStep` constructors and verifies they typecheck
+on a concrete witness. -/
+example : Reachable (TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)) :=
+  Reachable.step Reachable.base (KernelStep.acquire _ _)
+
+/-- The acquire-release cycle from `unheld` is reachable via two
+`KernelStep`s — `acquire` then `release` (composed via
+`releaseAndPromote`). -/
+example :
+    Reachable ((TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)).releaseAndPromote
+                 bootCoreId) :=
+  Reachable.step
+    (Reachable.step Reachable.base (KernelStep.acquire _ _))
+    (KernelStep.release _ _)
+
+/-- Any reachable state is wf — this is `ticketLock_reachability` applied
+to a concrete construction.  The conclusion `s.wf` is the runtime-
+checkable invariant the kernel relies on. -/
+example :
+    let s := (TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)).releaseAndPromote
+                bootCoreId
+    s.wf :=
+  ticketLock_reachability _
+    (Reachable.step
+      (Reachable.step Reachable.base (KernelStep.acquire _ _))
+      (KernelStep.release _ _))
+
+/-! ## §2.8 — Determinism (rfl-trivial) -/
+
+example :
+    let s := TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)
+    let s' := TicketLockState.unheld.applyOp (.tryAcquire bootCoreId)
+    s = s' := rfl
+
+-- ============================================================================
+-- §3 — Runtime assertions: every above example also runs in `main`
+-- ============================================================================
+
+namespace SeLe4n.Testing.TicketLockSuite
+
+private def assertBool (name : String) (b : Bool) : IO Unit := do
+  if b then
+    IO.println s!"  PASS: {name}"
+  else
+    IO.println s!"  FAIL: {name}"
+    throw (IO.userError s!"Assertion failed: {name}")
+
+private def runUnheldChecks : IO Unit := do
+  IO.println "--- §3.1 unheld state shape ---"
+  assertBool "unheld.nextTicket = 0"
+    (decide (SeLe4n.Kernel.Concurrency.TicketLockState.unheld.nextTicket = 0))
+  assertBool "unheld.serving = 0"
+    (decide (SeLe4n.Kernel.Concurrency.TicketLockState.unheld.serving = 0))
+  assertBool "unheld.pending = []"
+    (decide (SeLe4n.Kernel.Concurrency.TicketLockState.unheld.pending = []))
+  assertBool "unheld.held = none"
+    (decide (SeLe4n.Kernel.Concurrency.TicketLockState.unheld.held = none))
+  assertBool "unheld.wf"
+    (decide SeLe4n.Kernel.Concurrency.TicketLockState.unheld.wf)
+  assertBool "unheld.heldCount = 0"
+    (decide (SeLe4n.Kernel.Concurrency.TicketLockState.unheld.heldCount = 0))
+  assertBool "unheld.pendingInRange"
+    (decide (SeLe4n.Kernel.Concurrency.TicketLockState.unheld.pendingInRange = true))
+  assertBool "unheld.holderTicketIsServing"
+    (decide (SeLe4n.Kernel.Concurrency.TicketLockState.unheld.holderTicketIsServing = true))
+  assertBool "unheld.holderTicketDisjointFromPending"
+    (decide (SeLe4n.Kernel.Concurrency.TicketLockState.unheld.holderTicketDisjointFromPending = true))
+  assertBool "unheld.holderCoreDisjointFromPending"
+    (decide (SeLe4n.Kernel.Concurrency.TicketLockState.unheld.holderCoreDisjointFromPending = true))
+
+private def runFastPathAcquireChecks : IO Unit := do
+  IO.println "--- §3.2 fast-path acquire (unheld → held by core 0) ---"
+  let s := SeLe4n.Kernel.Concurrency.TicketLockState.unheld.applyOp
+            (.tryAcquire SeLe4n.Kernel.Concurrency.bootCoreId)
+  assertBool "fast-path: nextTicket = 1"
+    (decide (s.nextTicket = 1))
+  assertBool "fast-path: serving = 0"
+    (decide (s.serving = 0))
+  assertBool "fast-path: pending = []"
+    (decide (s.pending = []))
+  assertBool "fast-path: held = some (boot, 0)"
+    (decide (s.held = some (SeLe4n.Kernel.Concurrency.bootCoreId, 0)))
+  assertBool "fast-path: wf"
+    (decide s.wf)
+
+private def runSlowPathAcquireChecks : IO Unit := do
+  IO.println "--- §3.3 slow-path acquire (second tryAcquire appends to pending) ---"
+  let s := SeLe4n.Kernel.Concurrency.TicketLockState.unheld.applyOp
+            (.tryAcquire SeLe4n.Kernel.Concurrency.bootCoreId)
+  let c1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let s' := s.applyOp (.tryAcquire c1)
+  assertBool "slow-path: nextTicket = 2"
+    (decide (s'.nextTicket = 2))
+  assertBool "slow-path: serving = 0"
+    (decide (s'.serving = 0))
+  assertBool "slow-path: pending = [(c1, 1)]"
+    (decide (s'.pending = [(c1, 1)]))
+  assertBool "slow-path: held = some (boot, 0)"
+    (decide (s'.held = some (SeLe4n.Kernel.Concurrency.bootCoreId, 0)))
+  assertBool "slow-path: wf"
+    (decide s'.wf)
+
+private def runReleaseAndPromoteChecks : IO Unit := do
+  IO.println "--- §3.4 release-and-promote (boot releases; c1 promoted) ---"
+  let s := SeLe4n.Kernel.Concurrency.TicketLockState.unheld.applyOp
+            (.tryAcquire SeLe4n.Kernel.Concurrency.bootCoreId)
+  let c1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let s' := s.applyOp (.tryAcquire c1)
+  let s'' := s'.releaseAndPromote SeLe4n.Kernel.Concurrency.bootCoreId
+  assertBool "release+promote: nextTicket = 2"
+    (decide (s''.nextTicket = 2))
+  assertBool "release+promote: serving = 1"
+    (decide (s''.serving = 1))
+  assertBool "release+promote: pending = []"
+    (decide (s''.pending = []))
+  assertBool "release+promote: held = some (c1, 1)"
+    (decide (s''.held = some (c1, 1)))
+  assertBool "release+promote: wf"
+    (decide s''.wf)
+
+private def runObserveServingChecks : IO Unit := do
+  IO.println "--- §3.5 observeServing is identity ---"
+  let s := SeLe4n.Kernel.Concurrency.TicketLockState.unheld
+  let s' := s.applyOp (.observeServing SeLe4n.Kernel.Concurrency.bootCoreId 0)
+  assertBool "observeServing leaves state unchanged"
+    (decide (s = s'))
+
+private def runNoOpTryAcquireChecks : IO Unit := do
+  IO.println "--- §3.6 no-op tryAcquire (already-pending + already-held) ---"
+  let s := SeLe4n.Kernel.Concurrency.TicketLockState.unheld.applyOp
+            (.tryAcquire SeLe4n.Kernel.Concurrency.bootCoreId)
+  let c1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let s' := s.applyOp (.tryAcquire c1)
+  let s'' := s'.applyOp (.tryAcquire c1)
+  assertBool "re-acquiring already-pending core is a no-op (first-if branch)"
+    (decide (s' = s''))
+  -- Already-held: bootCoreId is holder of s; re-acquiring by bootCoreId is a no-op
+  -- via the second-if branch (held.map fst = some core).
+  let s_held_reacquire := s.applyOp (.tryAcquire SeLe4n.Kernel.Concurrency.bootCoreId)
+  assertBool "re-acquiring already-held core is a no-op (second-if branch)"
+    (decide (s = s_held_reacquire))
+
+private def runNonHolderReleaseChecks : IO Unit := do
+  IO.println "--- §3.6b non-holder release is a no-op ---"
+  -- Release on unheld state (held = none) is a no-op.
+  let unheld_after_release :=
+    SeLe4n.Kernel.Concurrency.TicketLockState.unheld.applyOp
+      (.release SeLe4n.Kernel.Concurrency.bootCoreId)
+  assertBool "release on unheld state is a no-op"
+    (decide (unheld_after_release = SeLe4n.Kernel.Concurrency.TicketLockState.unheld))
+  -- After fast-path acquire by boot, release by core 1 is a no-op.
+  let s := SeLe4n.Kernel.Concurrency.TicketLockState.unheld.applyOp
+            (.tryAcquire SeLe4n.Kernel.Concurrency.bootCoreId)
+  let c1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let s_after_wrong_release := s.applyOp (.release c1)
+  assertBool "release by non-holder is a no-op"
+    (decide (s = s_after_wrong_release))
+
+private def runPromotionChainChecks : IO Unit := do
+  IO.println "--- §3.6c promotion chain across 3 acquires + 3 releases ---"
+  let c1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let c2 : SeLe4n.Kernel.Concurrency.CoreId := ⟨2, by decide⟩
+  let s0 := SeLe4n.Kernel.Concurrency.TicketLockState.unheld
+  let s1 := s0.applyOp (.tryAcquire SeLe4n.Kernel.Concurrency.bootCoreId)
+  let s2 := s1.applyOp (.tryAcquire c1)
+  let s3 := s2.applyOp (.tryAcquire c2)
+  let s4 := s3.releaseAndPromote SeLe4n.Kernel.Concurrency.bootCoreId
+  let s5 := s4.releaseAndPromote c1
+  let s6 := s5.releaseAndPromote c2
+  assertBool "s1: boot acquires; holds ticket 0"
+    (decide (s1.held = some (SeLe4n.Kernel.Concurrency.bootCoreId, 0)))
+  assertBool "s2: c1 pending; ticket 1"
+    (decide (s2.pending = [(c1, 1)]))
+  assertBool "s3: c2 also pending; tickets [(c2,2), (c1,1)]"
+    (decide (s3.pending = [(c2, 2), (c1, 1)]))
+  assertBool "s4: boot releases; c1 promoted; ticket 1 held"
+    (decide (s4.held = some (c1, 1)))
+  assertBool "s5: c1 releases; c2 promoted; ticket 2 held"
+    (decide (s5.held = some (c2, 2)))
+  assertBool "s6: c2 releases; lock empty (nextTicket=3, serving=3)"
+    (decide (s6.held = none ∧ s6.nextTicket = 3 ∧ s6.serving = 3))
+  -- All intermediate states are wf.
+  assertBool "every state in the chain is wf"
+    (decide (s1.wf ∧ s2.wf ∧ s3.wf ∧ s4.wf ∧ s5.wf ∧ s6.wf))
+
+private def runDeterminismChecks : IO Unit := do
+  IO.println "--- §3.7 determinism (applyOp is a function) ---"
+  let s := SeLe4n.Kernel.Concurrency.TicketLockState.unheld
+  let s1 := s.applyOp (.tryAcquire SeLe4n.Kernel.Concurrency.bootCoreId)
+  let s2 := s.applyOp (.tryAcquire SeLe4n.Kernel.Concurrency.bootCoreId)
+  assertBool "two identical applyOp invocations produce equal states"
+    (decide (s1 = s2))
+
+private def runReachabilityShapeChecks : IO Unit := do
+  IO.println "--- §3.8 reachability witnesses (concrete chains satisfy wf) ---"
+  -- Reachable is a Prop (not Decidable in general because KernelStep is an
+  -- inductive over a possibly-infinite trace), but every concrete state we
+  -- construct via the operational semantics IS reachable by construction.
+  -- We verify the theorem `ticketLock_reachability` indirectly by checking
+  -- that every state produced by a known kernel-step chain is wf
+  -- (`decide` is decidable on closed states).
+  let c1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let c2 : SeLe4n.Kernel.Concurrency.CoreId := ⟨2, by decide⟩
+  let c3 : SeLe4n.Kernel.Concurrency.CoreId := ⟨3, by decide⟩
+  -- Chain 1: acquire + release (one cycle).
+  let chain1 :=
+    SeLe4n.Kernel.Concurrency.TicketLockState.unheld
+      |>.applyOp (.tryAcquire SeLe4n.Kernel.Concurrency.bootCoreId)
+      |>.releaseAndPromote SeLe4n.Kernel.Concurrency.bootCoreId
+  assertBool "chain 1 (acquire + release) is wf"
+    (decide chain1.wf)
+  -- Chain 2: acquire all 4 cores then release all 4.
+  let chain2 :=
+    SeLe4n.Kernel.Concurrency.TicketLockState.unheld
+      |>.applyOp (.tryAcquire SeLe4n.Kernel.Concurrency.bootCoreId)
+      |>.applyOp (.tryAcquire c1)
+      |>.applyOp (.tryAcquire c2)
+      |>.applyOp (.tryAcquire c3)
+      |>.releaseAndPromote SeLe4n.Kernel.Concurrency.bootCoreId
+      |>.releaseAndPromote c1
+      |>.releaseAndPromote c2
+      |>.releaseAndPromote c3
+  assertBool "chain 2 (4 acquires + 4 releases) is wf"
+    (decide chain2.wf)
+  -- Chain 3: interleaved (acquire boot, release boot, acquire c1, release c1, ...).
+  let chain3 :=
+    SeLe4n.Kernel.Concurrency.TicketLockState.unheld
+      |>.applyOp (.tryAcquire SeLe4n.Kernel.Concurrency.bootCoreId)
+      |>.releaseAndPromote SeLe4n.Kernel.Concurrency.bootCoreId
+      |>.applyOp (.tryAcquire c1)
+      |>.releaseAndPromote c1
+      |>.applyOp (.tryAcquire c2)
+      |>.releaseAndPromote c2
+  assertBool "chain 3 (interleaved acquire-release per core) is wf"
+    (decide chain3.wf)
+  -- Chain 4: only observeServing ops (identity transitions).
+  let chain4 :=
+    SeLe4n.Kernel.Concurrency.TicketLockState.unheld
+      |>.applyOp (.observeServing SeLe4n.Kernel.Concurrency.bootCoreId 0)
+      |>.applyOp (.observeServing c1 0)
+  assertBool "chain 4 (pure observation) is wf and equals unheld"
+    (decide (chain4 = SeLe4n.Kernel.Concurrency.TicketLockState.unheld
+             ∧ chain4.wf))
+  -- Chain 5: bounded-wait specific — fill all 4 slots (1 holder + 3 pending).
+  -- At this state, nextTicket = serving + numCores = 0 + 4 = 4 (tight bound).
+  let chain5 :=
+    SeLe4n.Kernel.Concurrency.TicketLockState.unheld
+      |>.applyOp (.tryAcquire SeLe4n.Kernel.Concurrency.bootCoreId)
+      |>.applyOp (.tryAcquire c1)
+      |>.applyOp (.tryAcquire c2)
+      |>.applyOp (.tryAcquire c3)
+  assertBool "chain 5 (all 4 cores in lock) is wf"
+    (decide chain5.wf)
+  assertBool "chain 5: nextTicket = serving + numCores (tight bound)"
+    (decide (chain5.nextTicket = chain5.serving + SeLe4n.Kernel.Concurrency.numCores))
+
+private def runBoundedWaitShapeChecks : IO Unit := do
+  IO.println "--- §3.9 bounded wait (nextTicket ≤ serving + numCores for unheld) ---"
+  let s := SeLe4n.Kernel.Concurrency.TicketLockState.unheld
+  assertBool "unheld: nextTicket = 0 ≤ serving + numCores = 0 + 4 = 4"
+    (decide (s.nextTicket ≤ s.serving + SeLe4n.Kernel.Concurrency.numCores))
+
+private def runFifoChainChecks : IO Unit := do
+  IO.println "--- §3.10 FIFO chain (3 acquires produce tickets 0, 1, 2) ---"
+  let s := SeLe4n.Kernel.Concurrency.TicketLockState.unheld
+  let s1 := s.applyOp (.tryAcquire SeLe4n.Kernel.Concurrency.bootCoreId)
+  -- After fast-path acquire: nextTicket = 1, captured = 0.
+  assertBool "first acquire captures ticket 0 (nextTicket-1)"
+    (decide (s1.nextTicket - 1 = 0))
+  -- Second acquire (different core) appends to pending.
+  let c1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let s2 := s1.applyOp (.tryAcquire c1)
+  assertBool "second acquire grows nextTicket to 2"
+    (decide (s2.nextTicket = 2))
+  -- Third acquire (third core).
+  let c2 : SeLe4n.Kernel.Concurrency.CoreId := ⟨2, by decide⟩
+  let s3 := s2.applyOp (.tryAcquire c2)
+  assertBool "third acquire grows nextTicket to 3"
+    (decide (s3.nextTicket = 3))
+  -- FIFO: each acquire grows nextTicket by 1.
+  assertBool "FIFO: nextTicket strictly increased across the chain"
+    (decide (s.nextTicket < s1.nextTicket ∧
+             s1.nextTicket < s2.nextTicket ∧
+             s2.nextTicket < s3.nextTicket))
+
+def runTicketLockChecks : IO Unit := do
+  IO.println "WS-SM SM2.B — TicketLock test suite"
+  IO.println "==================================="
+  runUnheldChecks
+  runFastPathAcquireChecks
+  runSlowPathAcquireChecks
+  runReleaseAndPromoteChecks
+  runObserveServingChecks
+  runNoOpTryAcquireChecks
+  runNonHolderReleaseChecks
+  runPromotionChainChecks
+  runDeterminismChecks
+  runReachabilityShapeChecks
+  runBoundedWaitShapeChecks
+  runFifoChainChecks
+  IO.println "==================================="
+  IO.println "All SM2.B TicketLock checks PASS."
+
+end SeLe4n.Testing.TicketLockSuite
+
+def main : IO Unit :=
+  SeLe4n.Testing.TicketLockSuite.runTicketLockChecks

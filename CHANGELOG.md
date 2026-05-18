@@ -1,3 +1,200 @@
+## Unreleased — WS-SM Phase SM2.B landing (verified TicketLock primitive)
+
+WS-SM SM2.B (TicketLock spec) lands the second sub-phase of SM2
+("Verified Lock Primitives"), refining the abstract memory model
+(SM2.A) into a fully-proven FIFO ticket-lock specification.  All
+**16 sub-tasks** in the workstream land:
+
+* **SM2.B.1–B.7** (state + operations): `TicketLockState`
+  4-field structure (`nextTicket`, `serving`, `pending`, `held`)
+  with `Repr`, `Inhabited`, `DecidableEq` derived.  `unheld`
+  canonical seed.  `TicketLockOp` 3-constructor inductive
+  (`tryAcquire`, `release`, `observeServing`).  Operational
+  semantics: `captureTicket`, `observeServing`, `applyOp`
+  (including the fast-path immediate-promote on tryAcquire),
+  `promotePending`, and the composed `releaseAndPromote`
+  kernel-facing release.
+
+* **SM2.B.3 (improvement)**: the `wf` predicate carries **8
+  conjuncts**, not 7 — INV-T1..T7 from the plan plus a new
+  **INV-T8 (count parity)**:
+  `nextTicket = serving + |pending| + heldCount`.
+  The 7-invariant form admits a non-reachable state
+  `(held = some _, serving = nextTicket)` that
+  `applyOp .tryAcquire` cannot exit via a wf-preserving step;
+  INV-T8 (the natural structural invariant for a FIFO ticket
+  lock — every issued ticket is accounted for) closes the gap
+  exactly.  Per the project's `implement-the-improvement` rule,
+  the spec is strengthened to match the reachable state space
+  exactly.
+
+* **SM2.B.4**: `Decidable s.wf` instance via `unfold` plus
+  `inferInstance`.  Bool-encoded helpers (`pendingInRange`,
+  `heldCount`, `holderTicketIsServing`,
+  `holderTicketDisjointFromPending`,
+  `holderCoreDisjointFromPending`) keep the decidability
+  elementary; 4 `*_iff` bridge theorems lift each Bool helper
+  to its natural Prop form for use in proofs.
+
+* **SM2.B.8 (theorem)**: `ticketLock_mutex` — at most one
+  holder per state.  Discharged by `Option.some` injectivity.
+
+* **SM2.B.9 (substantive)**: wf preservation for all
+  kernel-facing transitions.
+  - `ticketLock_tryAcquire_preserves_wf` (~150 LoC): 4-branch
+    case analysis × 8 invariants.  Both no-op cases
+    (already-pending, already-holder), fast-path
+    immediate-promote, slow-path append.
+  - `ticketLock_observeServing_preserves_wf`: trivial
+    (identity transition).
+  - `ticketLock_releaseAndPromote_preserves_wf` (~228 LoC):
+    4-branch case analysis × 8 invariants.  Both no-op release
+    cases (held = none or non-holder), active release with
+    find?=none (no pending entry promotes), active release
+    with find?=some (next pending entry promotes).
+  - `ticketLock_release_preserves_partial_wf`: weaker
+    preservation for the raw `applyOp .release`; the full wf
+    is restored by the composed `releaseAndPromote`.
+  - `ticketLock_wf_invariant`: aggregator combining the three
+    per-op preservation results.
+
+* **SM2.B.10 (theorem)**: `ticketLock_fifo` — `applyOp` is
+  monotone on `nextTicket`.  Multi-step `ticketLock_fifo_trace`
+  folds over a list of operations.  Helper:
+  `applyOp_tryAcquire_captures` (successful capture grows
+  `nextTicket` by exactly 1).  Three nextTicket-preservation
+  lemmas for release / promotePending / releaseAndPromote.
+
+* **SM2.B.11 (theorem)**: `ticketLock_bounded_wait` — for any
+  wf state, `nextTicket ≤ serving + numCores`.  This is the
+  structural WCRT bound: a captured ticket is at most
+  `numCores - 1` away from `serving`.  Proof: pending cores
+  (Nodup, INV-T6) plus optional holder (not in pending,
+  INV-T7) form a Nodup list bounded by `numCores`
+  (file-local `nodup_corelist_length_bound`, derived from the
+  pigeonhole helper `nodup_subset_length_le`).  Combined with
+  INV-T8 (count parity), the bound follows.
+
+* **SM2.B.12 (theorem)**:
+  `ticketLock_release_acquire_pairing` — bridges TicketLock to
+  the SM2.A `MemoryModel`.  Given matching events on the
+  `serving` location (release-store + acquire-load with
+  matching value and positional ordering), the events
+  `synchronizesWith` per the SM2.A abstract memory model.
+  Companion `ticketLock_release_acquire_happensBefore` lifts
+  to `happensBefore`.
+
+* **SM2.B.13 (theorem)**: `ticketLock_reachability` — every
+  state reachable from `unheld` via kernel transitions is wf.
+  Defines `KernelStep` (3-constructor inductive: `acquire` /
+  `release` / `observe` — raw `applyOp .release` excluded
+  because it doesn't preserve full wf) and `Reachable` (RT
+  closure of `KernelStep`).  Proof by induction on the
+  derivation, citing the per-op preservation theorems.
+
+* **SM2.B.14 (theorem)**: `ticketLock_applyOp_deterministic`
+  and `ticketLock_promotePending_deterministic`.  Function-
+  totality witnesses (`rfl`-trivial).
+
+* **SM2.B.15 (theorem)**: closure-form preservation aliases —
+  `ticketLock_acquire_preserves_wf` and
+  `ticketLock_release_preserves_wf` matching the kernel-facing
+  API names SM3 ladder-acquisition will cite.
+
+* **SM2.B.16 (Rust impl)**:
+  `rust/sele4n-hal/src/ticket_lock.rs` — structural refinement
+  of the Lean spec.  `TicketLock` struct with
+  `#[repr(C, align(64))]` (cache-line aligned), two
+  `AtomicU64` fields, three public methods (`acquire`,
+  `release`, `with_lock`), RAII `TicketLockGuard<'a>` with
+  Drop-based release.  ARM ARM citations
+  (LDADDA / LDAR / STADDL / SEV) in module docstring.
+  21 unit tests covering: initial state, fast-path acquire,
+  next_ticket/serving increments, full acquire-release cycle,
+  with_lock execute + release, nested distinct locks, guard
+  ticket accessor, cache-line alignment, const-fn-in-static,
+  Default impl, signature pinning, FIFO at sequential level,
+  100-cycle monotone counter, panic-safety
+  (`with_lock_releases_on_panic`), cross-thread mutex stress
+  (4 threads × 1000 ops, no lost updates), cross-thread FIFO
+  observation (captured tickets form a permutation of
+  0..NUM_THREADS), u64-wrap defensive documentation.  Zero
+  clippy warnings.
+
+**Lean test suite** (`tests/TicketLockSuite.lean`, 458 LoC):
+90+ surface anchors covering every public SM2.B symbol; 25+
+decidable examples for unheld, fast-path/slow-path/promote
+shapes; 35 runtime `assertBool` assertions in
+`lake exe ticket_lock_suite`.
+
+**Wiring**: registered in `lakefile.toml` (`ticket_lock_suite`
+exe), `Staged.lean` (build-closure import),
+`staged_module_allowlist.txt`, `test_tier2_negative.sh`
+(runtime), `test_tier3_invariant_surface.sh` (surface anchors).
+
+**Verification** (figures as of audit-pass-3 close):
+* Lean: `lake build` (314 jobs) clean; zero `sorry`, zero
+  added axioms; module + all dependent suites green.
+  `lake exe ticket_lock_suite` 49 runtime assertions PASS.
+* Rust: `cargo test -p sele4n-hal --lib` 614 passed + 1 ignored
+  (pre-existing `sm1g3_cross_core_kprintln_stress` placeholder);
+  `cargo test -p sele4n-hal --lib ticket_lock` 22/22 PASS;
+  `cargo clippy --workspace --all-targets` clean (zero
+  warnings).
+* Smoke: `./scripts/test_smoke.sh` green; `test_full.sh` tier
+  0..3 green.
+* Smoke: `./scripts/test_smoke.sh` green; `test_full.sh` tier
+  3 invariant surface green.
+
+**Items deferred past SM2.B with correctness impact**: NONE.
+All 16 sub-tasks landed.  Follow-on: SM2.C (RwLock spec),
+SM2.D (FFI bridge + integration), SM2.E (documentation).
+
+**Audit-pass refinements** (included): `observeServing_eq_serving`
+witness theorem added so the abstract observation primitive is
+not orphaned.  Panic-safety, cross-thread mutex-stress, and
+cross-thread FIFO-observation Rust tests added (require `std`
+in test builds; `extern crate std` declaration added under
+`#[cfg(test)]`).  `nodup_fst_filter_length` helper rewritten
+to use explicit `decide`-Bool reasoning instead of `simp`-driven
+predicate normalisation that diverged between the goal and the
+inductive hypothesis.
+
+**Audit-pass-2 refinements** (included): two-capture strict-FIFO
+theorem `ticketLock_fifo_strict` added — between any two
+successful captures `c₁` then `c₂` (separated by an arbitrary
+operation sequence), c₁'s captured ticket strictly precedes c₂'s.
+Combines `applyOp_tryAcquire_captures` (single-step +1) with
+`ticketLock_fifo_trace` (multi-step monotonicity) to recover the
+plan §3.2.7.1 strict-FIFO claim.
+
+Rust impl hardening: `acquire` / `release` / `with_lock` /
+`TicketLock::new` / `Default::default` / `TicketLockGuard::*` /
+`Drop::drop` all marked `#[inline]` for the hot-path
+performance the kernel requires.  `release` now carries a
+defensive `debug_assert!` that catches release-without-prior-
+acquire misuse in debug builds (loads `next_ticket` after the
+serving increment and asserts `prev_serving < next_ticket`).
+Explicit "API contract" sections added to `acquire` / `release`
+docstrings spelling out the holder-discipline expectations and
+recommending `with_lock` for safe usage.  New test
+`sm2b16_release_without_acquire_panics_in_debug`
+(`#[cfg(debug_assertions)]` + `#[should_panic]`) verifies the
+assert fires.
+
+Lean test suite extended (was 35 runtime assertions at audit-pass-1
+close → 49 at audit-pass-2 close): edge-case tests for the
+second-if no-op (re-acquire by current holder), release-by-non-
+holder no-op (both held = none case and wrong-core case), the full
+3-acquire + 3-release promotion chain verifying every intermediate
+state's holder identity and wf preservation, and 5 concrete
+reachability-chain tests (acquire-release cycle, 4-core acquire-
+release, interleaved, pure observation, all-4-slots-tight-bound)
+replacing the audit-pass-1 fake "verified at elaboration" PASS
+with real `decide`-checks on the wf invariant.  Rust test suite
+extended (was 17 → 22 tests): +5 audit-pass tests including the
+debug-assert verification.
+
 ## v0.31.9 — WS-SM Phase SM2.A landing (abstract memory model for verified lock primitives)
 
 WS-SM SM2.A (abstract memory model) landed in one cut on branch

@@ -2002,10 +2002,135 @@ documentation lives under `docs/` and `docs/gitbook/`.
 
   **Items deferred past v1.0.0 with correctness impact**: NONE.
 
-  Follow-on: SM2.B (TicketLock spec + Rust impl) — see
+  Follow-on: SM2.B (TicketLock spec + Rust impl) — **LANDED below**;
+  SM2.C (RwLock), SM2.D (FFI bridge + integration), SM2.E
+  (documentation) per
   [`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
-  §5.2; SM2.C (RwLock), SM2.D (FFI bridge + integration), SM2.E
-  (documentation) per §§5.3..5.5.
+  §§5.3..5.5.
+
+  **WS-SM SM2.B LANDED post-v0.31.9 on branch
+  `claude/review-ticketlock-tasks-2ca8a`** (verified TicketLock
+  spec + Rust impl; closes the second sub-phase of SM2 with all
+  16 sub-tasks landed).  Three commits across the branch:
+
+  - **SM2.B.1..B.9 + B.14 + B.15** (commit `ea4ea25`):
+    abstract spec + substantive wf-preservation.
+    `TicketLockState` 4-field structure (`nextTicket`,
+    `serving`, `pending`, `held`) with `Repr`, `Inhabited`,
+    `DecidableEq` derived; `unheld` canonical seed;
+    `TicketLockOp` 3-constructor inductive (`tryAcquire`,
+    `release`, `observeServing`).  Operational semantics:
+    `captureTicket`, `observeServing`, `applyOp` (with fast-
+    path immediate-promote), `promotePending`,
+    `releaseAndPromote`.
+
+    The `wf` predicate carries **8 conjuncts** (improvement
+    over the plan's 7) — INV-T1..T7 from the plan plus a new
+    **INV-T8 (count parity)**:
+    `nextTicket = serving + |pending| + heldCount`.  The
+    7-invariant form admits a non-reachable state
+    `(held = some _, serving = nextTicket)` that
+    `applyOp .tryAcquire` cannot exit via a wf-preserving
+    step; INV-T8 closes the gap exactly.  Per the project's
+    `implement-the-improvement` rule, the spec is strengthened
+    to match the reachable state space.  Documented in the
+    `wf` docstring with explicit counter-example.
+
+    Substantive theorems:
+    `ticketLock_mutex` (`Option.some` injectivity);
+    `ticketLock_tryAcquire_preserves_wf` (~150 LoC: 4-branch
+    case analysis × 8 invariants);
+    `ticketLock_observeServing_preserves_wf` (trivial);
+    `ticketLock_releaseAndPromote_preserves_wf` (~228 LoC:
+    4-branch case analysis × 8 invariants);
+    `ticketLock_release_preserves_partial_wf` (weaker form for
+    raw `applyOp .release`); `ticketLock_wf_invariant`
+    (aggregator); `ticketLock_applyOp_deterministic` +
+    `ticketLock_promotePending_deterministic` (function-
+    totality witnesses); `ticketLock_acquire_preserves_wf` +
+    `ticketLock_release_preserves_wf` (SM2.B.15 closure-form
+    aliases).
+
+    The Lean 4.28 record-projection iota-reduction issue
+    (where `omega` doesn't see through `{...}.field` projections
+    in goal contexts) is resolved via the rfl-equality +
+    explicit `rw` pattern: each preservation case introduces
+    `have h_n : {post}.nextTicket = s.nextTicket := rfl` etc.,
+    then `rw [h_n, h_s, h_p, h_hc]` rewrites the goal into a
+    form omega can solve directly.
+
+    File-local helpers: `nodup_snd_unique_entry`,
+    `nodup_fst_unique_entry`, `nodup_fst_filter_length` (the
+    third rewritten to avoid `simp`-driven predicate
+    normalisation that diverged between goal and IH).
+
+  - **SM2.B.10..B.13** (commit `9a18b83`): FIFO + bounded-wait
+    + RA-pairing + reachability.  Five nextTicket-monotonicity
+    helpers (`applyOp_nextTicket_monotone`,
+    `applyOp_release_nextTicket_eq`,
+    `promotePending_nextTicket_eq`,
+    `releaseAndPromote_nextTicket_eq`,
+    `applyOp_tryAcquire_captures`).  Pigeonhole helpers
+    (`nodup_subset_length_le` generic; `nodup_corelist_length_bound`
+    at Fin numCores).  Four theorems:
+    `ticketLock_fifo` + `ticketLock_fifo_trace` (single-step +
+    multi-step nextTicket monotonicity); `ticketLock_bounded_wait`
+    (`nextTicket ≤ serving + numCores`);
+    `ticketLock_release_acquire_pairing` +
+    `ticketLock_release_acquire_happensBefore` (bridge to
+    SM2.A `MemoryModel`); `ticketLock_reachability` (every
+    reachable state is wf, via `KernelStep` inductive +
+    `Reachable` RT closure).
+
+  - **SM2.B.16 + tests + wiring** (commit `fb17624`): Rust
+    impl + Lean test suite + build infrastructure.
+    `rust/sele4n-hal/src/ticket_lock.rs` (538 LoC including
+    tests): `TicketLock` `#[repr(C, align(64))]` with two
+    `AtomicU64` fields; three public methods (`acquire`,
+    `release`, `with_lock`); RAII `TicketLockGuard<'a>` with
+    Drop-based release.  ARM ARM citations
+    (LDADDA / LDAR / STADDL / SEV) in module docstring.
+
+    21 Rust unit tests: initial-state, fast-path acquire,
+    increment behaviour, full acquire-release cycle, with_lock
+    execute + release, nested distinct locks, guard ticket
+    accessor, cache-line alignment, const-fn-in-static, Default
+    impl, signature pinning, FIFO at sequential level,
+    100-cycle monotone counter, panic-safety
+    (`with_lock_releases_on_panic`), cross-thread mutex stress
+    (4 threads × 1000 ops, no lost updates), cross-thread FIFO
+    observation (captured tickets form a permutation of
+    0..NUM_THREADS), u64-wrap defensive documentation.  Zero
+    clippy warnings.
+
+    Lean test suite (`tests/TicketLockSuite.lean`, 458 LoC):
+    90+ surface anchors covering every public SM2.B symbol;
+    25+ decidable examples for unheld, fast-path/slow-path
+    acquire, release-and-promote, observeServing identity,
+    no-op tryAcquire, determinism, FIFO chain; 35 runtime
+    `assertBool` assertions in `lake exe ticket_lock_suite`.
+
+    Wiring: registered in `lakefile.toml` (`ticket_lock_suite`
+    exe), `Staged.lean`, `staged_module_allowlist.txt`,
+    `test_tier2_negative.sh` (runtime),
+    `test_tier3_invariant_surface.sh` (surface anchors).
+
+  **Audit-pass refinements** (included): `observeServing_eq_serving`
+  witness theorem added so the abstract observation primitive
+  is not orphaned.  Cross-thread Rust stress tests + panic-
+  safety test added.
+
+  **Test coverage**: 314 Lean jobs clean; 613 Rust HAL tests
+  (was 592 baseline + 21 new for TicketLock; zero ignored);
+  35 Lean runtime assertions in `ticket_lock_suite`.  Zero
+  clippy warnings.  Full Tier 0+1+2+3 smoke test green.
+
+  **Items deferred past v1.0.0 with correctness impact**: NONE.
+
+  Follow-on: SM2.C (RwLock spec), SM2.D (FFI bridge +
+  integration), SM2.E (documentation) per
+  [`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+  §§5.3..5.5.
 
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**
