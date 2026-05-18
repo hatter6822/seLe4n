@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-ticketlock-tasks-2ca8a",
-      "commit_sha": "259f675a715c3f6eeae10cf9fcb42729abbe9208",
-      "tree_sha": "7e69417d18766e3175acafdd13837933cac86a8b",
-      "committed_at_utc": "2026-05-17T19:43:53+00:00"
+      "commit_sha": "3f7e4a55005b5379725367096dfcf5e839f83266",
+      "tree_sha": "00ddde88a8ae1a48e77c18710f9fd3bcd22f6414",
+      "committed_at_utc": "2026-05-17T20:25:19+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "efb0313047761aea3b4acc60f3379e298eb72f87199425b81221ad1d2e265efe"
+    "source_digest": "97b7ace251bd88418f667b284d8eac8a1e11d1b0d2b3bce4437e7d469238e521"
   },
   "summary": {
     "module_count": 212,
@@ -27,7 +27,7 @@
     "version": "0.31.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 180,
-    "production_loc": 119002,
+    "production_loc": 119006,
     "test_files": 32,
     "test_loc": 23299,
     "proved_theorem_lemma_decls": 3461,
@@ -14268,7 +14268,7 @@
         {
           "kind": "def",
           "name": "TicketLockState.applyOp",
-          "line": 509,
+          "line": 513,
           "called": [
             "TicketLockOp",
             "TicketLockState",
@@ -14280,7 +14280,7 @@
         {
           "kind": "def",
           "name": "TicketLockState.promotePending",
-          "line": 553,
+          "line": 557,
           "called": [
             "TicketLockState",
             "filter",
@@ -14290,7 +14290,7 @@
         {
           "kind": "def",
           "name": "TicketLockState.releaseAndPromote",
-          "line": 568,
+          "line": 572,
           "called": [
             "CoreId",
             "TicketLockState",
@@ -14301,7 +14301,7 @@
         {
           "kind": "theorem",
           "name": "TicketLockState.wf_servingLeNextTicket",
-          "line": 577,
+          "line": 581,
           "called": [
             "TicketLockState",
             "wf"
@@ -14310,7 +14310,7 @@
         {
           "kind": "theorem",
           "name": "TicketLockState.wf_pendingInRange",
-          "line": 582,
+          "line": 586,
           "called": [
             "TicketLockState",
             "pendingInRange_iff",
@@ -14320,7 +14320,7 @@
         {
           "kind": "theorem",
           "name": "TicketLockState.wf_holderTicketIsServing",
-          "line": 588,
+          "line": 592,
           "called": [
             "TicketLockState",
             "holderTicketIsServing_iff",
@@ -14330,7 +14330,7 @@
         {
           "kind": "theorem",
           "name": "TicketLockState.wf_pendingTicketsNodup",
-          "line": 594,
+          "line": 598,
           "called": [
             "TicketLockState",
             "wf"
@@ -14339,7 +14339,7 @@
         {
           "kind": "theorem",
           "name": "TicketLockState.wf_holderTicketNotInPending",
-          "line": 599,
+          "line": 603,
           "called": [
             "TicketLockState",
             "holderTicketDisjointFromPending_iff",
@@ -14349,7 +14349,7 @@
         {
           "kind": "theorem",
           "name": "TicketLockState.wf_pendingCoresNodup",
-          "line": 605,
+          "line": 609,
           "called": [
             "TicketLockState",
             "wf"
@@ -14358,7 +14358,7 @@
         {
           "kind": "theorem",
           "name": "TicketLockState.wf_holderCoreNotInPending",
-          "line": 610,
+          "line": 614,
           "called": [
             "TicketLockState",
             "holderCoreDisjointFromPending_iff",
@@ -14368,7 +14368,7 @@
         {
           "kind": "theorem",
           "name": "TicketLockState.wf_countParity",
-          "line": 616,
+          "line": 620,
           "called": [
             "TicketLockState",
             "heldCount",
@@ -14379,7 +14379,7 @@
         {
           "kind": "theorem",
           "name": "TicketLockState.wf_serving_lt_nextTicket_of_held",
-          "line": 625,
+          "line": 629,
           "called": [
             "TicketLockState",
             "TicketLockState.heldCount",
@@ -14392,7 +14392,7 @@
         {
           "kind": "theorem",
           "name": "TicketLockState.wf_serving_lt_nextTicket_of_pending",
-          "line": 644,
+          "line": 648,
           "called": [
             "TicketLockState",
             "length",
@@ -14403,7 +14403,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_mutex",
-          "line": 671,
+          "line": 675,
           "called": [
             "CoreId",
             "TicketLockState"
@@ -14412,7 +14412,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_observeServing_preserves_wf",
-          "line": 686,
+          "line": 690,
           "called": [
             "CoreId",
             "TicketLockState",
@@ -14425,7 +14425,7 @@
         {
           "kind": "theorem",
           "name": "TicketLockState.applyOp_release_cases",
-          "line": 695,
+          "line": 699,
           "called": [
             "CoreId",
             "TicketLockState",
@@ -14437,7 +14437,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_release_preserves_partial_wf",
-          "line": 748,
+          "line": 752,
           "called": [
             "CoreId",
             "TicketLockState",
@@ -14456,7 +14456,7 @@
         {
           "kind": "theorem",
           "name": "TicketLockState.wf_pending_ticket_lt",
-          "line": 797,
+          "line": 801,
           "called": [
             "CoreId",
             "TicketLockState",
@@ -14467,7 +14467,7 @@
         {
           "kind": "theorem",
           "name": "TicketLockState.wf_pending_ticket_gt",
-          "line": 804,
+          "line": 808,
           "called": [
             "CoreId",
             "TicketLockState",
@@ -14478,7 +14478,7 @@
         {
           "kind": "theorem",
           "name": "TicketLockState.wf_nextTicket_not_in_pending",
-          "line": 811,
+          "line": 815,
           "called": [
             "TicketLockState",
             "wf",
@@ -14488,7 +14488,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_tryAcquire_preserves_wf",
-          "line": 841,
+          "line": 845,
           "called": [
             "CoreId",
             "TicketLockState",
@@ -14520,7 +14520,7 @@
         {
           "kind": "theorem",
           "name": "nodup_snd_unique_entry",
-          "line": 1007,
+          "line": 1011,
           "called": [
             "CoreId"
           ]
@@ -14528,7 +14528,7 @@
         {
           "kind": "theorem",
           "name": "nodup_fst_unique_entry",
-          "line": 1039,
+          "line": 1043,
           "called": [
             "CoreId"
           ]
@@ -14536,7 +14536,7 @@
         {
           "kind": "theorem",
           "name": "nodup_fst_filter_length",
-          "line": 1075,
+          "line": 1079,
           "called": [
             "CoreId",
             "filter",
@@ -14546,7 +14546,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_releaseAndPromote_preserves_wf",
-          "line": 1179,
+          "line": 1183,
           "called": [
             "CoreId",
             "TicketLockState",
@@ -14581,7 +14581,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_applyOp_deterministic",
-          "line": 1415,
+          "line": 1419,
           "called": [
             "TicketLockOp",
             "TicketLockState",
@@ -14591,7 +14591,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_promotePending_deterministic",
-          "line": 1428,
+          "line": 1432,
           "called": [
             "TicketLockState",
             "promotePending"
@@ -14600,7 +14600,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_wf_invariant",
-          "line": 1458,
+          "line": 1462,
           "called": [
             "TicketLockState",
             "applyOp",
@@ -14615,7 +14615,7 @@
         {
           "kind": "theorem",
           "name": "TicketLockState.applyOp_nextTicket_monotone",
-          "line": 1477,
+          "line": 1481,
           "called": [
             "TicketLockOp",
             "TicketLockState",
@@ -14628,7 +14628,7 @@
         {
           "kind": "theorem",
           "name": "TicketLockState.applyOp_release_nextTicket_eq",
-          "line": 1513,
+          "line": 1517,
           "called": [
             "CoreId",
             "TicketLockState",
@@ -14639,7 +14639,7 @@
         {
           "kind": "theorem",
           "name": "TicketLockState.promotePending_nextTicket_eq",
-          "line": 1523,
+          "line": 1527,
           "called": [
             "TicketLockState",
             "TicketLockState.promotePending",
@@ -14649,7 +14649,7 @@
         {
           "kind": "theorem",
           "name": "TicketLockState.releaseAndPromote_nextTicket_eq",
-          "line": 1537,
+          "line": 1541,
           "called": [
             "CoreId",
             "TicketLockState",
@@ -14662,7 +14662,7 @@
         {
           "kind": "theorem",
           "name": "TicketLockState.applyOp_tryAcquire_captures",
-          "line": 1549,
+          "line": 1553,
           "called": [
             "CoreId",
             "TicketLockState",
@@ -14673,7 +14673,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_fifo",
-          "line": 1569,
+          "line": 1573,
           "called": [
             "TicketLockOp",
             "TicketLockState",
@@ -14684,7 +14684,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_fifo_trace",
-          "line": 1581,
+          "line": 1585,
           "called": [
             "TicketLockOp",
             "TicketLockState",
@@ -14696,7 +14696,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_fifo_strict",
-          "line": 1612,
+          "line": 1616,
           "called": [
             "CoreId",
             "TicketLockOp",
@@ -14710,7 +14710,7 @@
         {
           "kind": "theorem",
           "name": "nodup_subset_length_le",
-          "line": 1657,
+          "line": 1661,
           "called": [
             "erase",
             "length"
@@ -14719,7 +14719,7 @@
         {
           "kind": "theorem",
           "name": "nodup_corelist_length_bound",
-          "line": 1685,
+          "line": 1689,
           "called": [
             "CoreId",
             "length",
@@ -14730,7 +14730,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_bounded_wait",
-          "line": 1712,
+          "line": 1716,
           "called": [
             "TicketLockState",
             "TicketLockState.heldCount",
@@ -14748,7 +14748,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_release_acquire_pairing",
-          "line": 1766,
+          "line": 1770,
           "called": [
             "AtomicLocation.servingOf",
             "MemoryEvent",
@@ -14762,7 +14762,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_release_acquire_happensBefore",
-          "line": 1792,
+          "line": 1796,
           "called": [
             "AtomicLocation.servingOf",
             "MemoryEvent",
@@ -14778,7 +14778,7 @@
         {
           "kind": "inductive",
           "name": "KernelStep",
-          "line": 1825,
+          "line": 1829,
           "called": [
             "CoreId",
             "TicketLockState",
@@ -14790,7 +14790,7 @@
         {
           "kind": "inductive",
           "name": "Reachable",
-          "line": 1841,
+          "line": 1845,
           "called": [
             "KernelStep",
             "TicketLockState",
@@ -14800,7 +14800,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_reachability",
-          "line": 1857,
+          "line": 1861,
           "called": [
             "Reachable",
             "TicketLockState.unheld_wf",
@@ -14813,7 +14813,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_acquire_preserves_wf",
-          "line": 1876,
+          "line": 1880,
           "called": [
             "CoreId",
             "TicketLockState",
@@ -14825,7 +14825,7 @@
         {
           "kind": "theorem",
           "name": "ticketLock_release_preserves_wf",
-          "line": 1887,
+          "line": 1891,
           "called": [
             "CoreId",
             "TicketLockState",
