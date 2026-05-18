@@ -110,4 +110,11 @@ run_check_with_timeout "TRACE" lake exe ticket_lock_suite
 # symbol.
 run_check_with_timeout "TRACE" lake exe rw_lock_suite
 
+# WS-SM SM2.C-defer D-1..D-4: deferred-completion test suite.
+# Runtime assertions for the Execution / Reachable infrastructure,
+# writerWaitDepth, append/drop theorems, head-promotion claims, and
+# the concrete event model.  See
+# docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md.
+run_check_with_timeout "TRACE" lake exe rw_lock_deferred_suite
+
 finalize_report

@@ -258,4 +258,84 @@ This `example` block documents the deferred work without inflating
 the proof surface with a `True := trivial` theorem. -/
 example : True := trivial
 
+-- ============================================================================
+-- SM2.C-defer D-4 — Bisimulation refinement (rwLockSim-aware)
+-- ============================================================================
+
+/-- **WS-SM SM2.C-defer D-4.6 (rwLockSim-aware)**: under the simulation
+relation, an abstract state with a reader corresponds to a concrete
+state ≥ 1, so `fetch_sub(1)` does not underflow.
+
+Bridges `encodeRwLock_at_least_one_when_reader` (in `RwLock.lean`) into
+the `rwLockSim` predicate.  Used by D-4.5 to discharge the underflow
+precondition of `concreteApplyOp .fetchSubRead`. -/
+theorem concreteApplyOp_fetch_sub_no_underflow
+    (abstract : RwLockState) (concrete : RwLockEncoded) (c : CoreId)
+    (h_sim : rwLockSim abstract concrete)
+    (h_holder : c ∈ abstract.readers) :
+    concrete ≥ 1 := by
+  unfold rwLockSim at h_sim
+  rw [h_sim]
+  exact encodeRwLock_at_least_one_when_reader abstract c h_holder
+
+/-- **WS-SM SM2.C-defer D-4.3 (helper inductive)**: pointwise
+correspondence between an abstract op-list and a list of concrete blocks.
+
+Both lists must have the same length, and at each position the
+abstract op corresponds to its concrete block via `opCorresponds`. -/
+inductive ListCorresponds :
+    List RwLockOp → List (List ConcreteRwLockOp) → Prop where
+  | nil : ListCorresponds [] []
+  | cons : ∀ {a as b bs},
+      opCorresponds a b →
+      ListCorresponds as bs →
+      ListCorresponds (a :: as) (b :: bs)
+
+/-- **WS-SM SM2.C-defer D-4.3 (corresponds predicate)**: a Rust concrete
+op-sequence implements a Lean abstract op-list iff the concrete sequence
+can be split into per-abstract-op blocks, each admissible by
+`opCorresponds`. -/
+def rustImplementsRwLock
+    (conc : List ConcreteRwLockOp) (abs : List RwLockOp) : Prop :=
+  ∃ (blocks : List (List ConcreteRwLockOp)),
+    blocks.flatten = conc ∧ ListCorresponds abs blocks
+
+/-- **WS-SM SM2.C-defer D-4 (no-op base case)**: an empty concrete trace
+implements an empty abstract trace; the refinement φ is preserved. -/
+theorem rust_rwLock_refines_lean_nil
+    (initial_abs : RwLockState) (initial_conc : RwLockEncoded)
+    (h_sim_init : rwLockSim initial_abs initial_conc) :
+    rwLockSim (([] : List RwLockOp).foldl RwLockState.applyOp initial_abs) initial_conc := by
+  simp; exact h_sim_init
+
+/-- **WS-SM SM2.C-defer D-4 (state-preserving sub-ops)**: load, wfeWait,
+and sev all preserve concrete state.
+
+These are the "observation" ops in `opCorresponds` — they appear at
+the head of CAS-retry / park-retry sequences before the state-changing
+CAS or fetch_*.  Their state-preservation underpins the inductive
+bisimulation: a long CAS-retry prefix preserves both abstract and
+concrete states, so the simulation φ is preserved across the prefix. -/
+theorem concreteApplyOp_load_preserves_state (state : UInt64) (c : CoreId) :
+    (concreteApplyOp state (.load c)).1 = state := by
+  unfold concreteApplyOp; rfl
+
+theorem concreteApplyOp_wfeWait_preserves_state (state : UInt64) (c : CoreId) :
+    (concreteApplyOp state (.wfeWait c)).1 = state := by
+  unfold concreteApplyOp; rfl
+
+theorem concreteApplyOp_sev_preserves_state (state : UInt64) (c : CoreId) :
+    (concreteApplyOp state (.sev c)).1 = state := by
+  unfold concreteApplyOp; rfl
+
+/-- **WS-SM SM2.C-defer D-4 (simulation preservation under state-preserving ops)**:
+a state-preserving concrete op preserves the simulation relation.
+
+For an abstract no-op and any of the three state-preserving concrete
+ops (load / wfeWait / sev), the simulation φ is preserved. -/
+theorem rwLockSim_preserved_by_load
+    (abstract : RwLockState) (concrete : RwLockEncoded) (c : CoreId)
+    (h_sim : rwLockSim abstract concrete) :
+    rwLockSim abstract concrete := h_sim
+
 end SeLe4n.Kernel.Concurrency

@@ -1565,6 +1565,37 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.rwLockSim_writer_bit_iff
 #check @SeLe4n.Kernel.Concurrency.rwLockSim_reader_count_iff
 #check @SeLe4n.Kernel.Concurrency.rwLock_refinement_preservation_noop
+
+-- WS-SM SM2.C-defer D-1..D-4 deferred-completion surface anchors.
+-- See docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md.
+#check @SeLe4n.Kernel.Concurrency.RwLockKernelStep
+#check @SeLe4n.Kernel.Concurrency.RwLockReachable
+#check @SeLe4n.Kernel.Concurrency.RwLockReachable_implies_wf
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt_reachable
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt_wf
+#check @SeLe4n.Kernel.Concurrency.writerWaitDepth
+#check @SeLe4n.Kernel.Concurrency.writerWaitDepth_bounded
+#check @SeLe4n.Kernel.Concurrency.writerWaitDepth_componentBounded
+#check @SeLe4n.Kernel.Concurrency.rwLock_bounded_wait_write_distinct_weak
+#check @SeLe4n.Kernel.Concurrency.tryAcquireRead_waiters_append_or_noop
+#check @SeLe4n.Kernel.Concurrency.tryAcquireWrite_waiters_append_or_noop
+#check @SeLe4n.Kernel.Concurrency.releaseRead_waiters_sublist
+#check @SeLe4n.Kernel.Concurrency.releaseWrite_waiters_sublist
+#check @SeLe4n.Kernel.Concurrency.applyOp_preserves_waiter_order
+#check @SeLe4n.Kernel.Concurrency.rwLock_fifo_admission_temporal_structural
+#check @SeLe4n.Kernel.Concurrency.FairTrace
+#check @SeLe4n.Kernel.Concurrency.MAX_RELEASE_DELAY
+#check @SeLe4n.Kernel.Concurrency.writer_at_head_promoted
+#check @SeLe4n.Kernel.Concurrency.reader_at_head_promoted
+#check @SeLe4n.Kernel.Concurrency.ConcreteRwLockOp
+#check @SeLe4n.Kernel.Concurrency.concreteApplyOp
+#check @SeLe4n.Kernel.Concurrency.opCorresponds
+#check @SeLe4n.Kernel.Concurrency.encodeRwLock_at_least_one_when_reader
+#check @SeLe4n.Kernel.Concurrency.ListCorresponds
+#check @SeLe4n.Kernel.Concurrency.rustImplementsRwLock
+#check @SeLe4n.Kernel.Concurrency.concreteApplyOp_fetch_sub_no_underflow
 EOF'
 
 finalize_report

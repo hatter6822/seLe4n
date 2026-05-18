@@ -194,3 +194,22 @@ root = "tests.TicketLockSuite"
 [[lean_exe]]
 name = "rw_lock_suite"
 root = "tests.RwLockSuite"
+
+# WS-SM SM2.C-defer D-6: Lean-side oracle binary for the Tier-5
+# cross-language correspondence harness.  Reads an op-sequence on stdin
+# (textual wire format), folds `RwLockState.applyOp` over `unheld`,
+# prints the canonical serialised post-state.  Pure Lean; no FFI; the
+# Rust oracle (`cargo run --bin rw_lock_oracle`) is a separate binary
+# that holds a real `RwLock` in process memory and produces the same
+# post-state form.  See SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md §5.6.
+[[lean_exe]]
+name = "rw_lock_oracle"
+root = "tests.Tier5.RwLockOracle"
+
+# WS-SM SM2.C-defer D-1..D-4: deferred-completion test suite.
+# Surface anchors + decidable examples + runtime assertions for the
+# Execution / Reachable infrastructure, writerWaitDepth, append/drop
+# theorems, head-promotion claims, and the concrete event model.
+[[lean_exe]]
+name = "rw_lock_deferred_suite"
+root = "tests.RwLockDeferredSuite"

@@ -2434,6 +2434,1209 @@ theorem rwLock_reader_count_no_overflow_under_numCores :
   unfold numCores writerBit writerBitPos
   decide
 
+-- ============================================================================
+-- SM2.C-defer §4.1 — RwLockExecution primitives (RwLockKernelStep + RwLockReachable)
+-- ============================================================================
+-- See docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md §4.1 for the
+-- motivation: D-1..D-4 quantify over executions whose initial state is
+-- reachable from `unheld`, NOT arbitrary wf states.  The wf state space
+-- admits non-reachable configurations (e.g. `readers = [r0],
+-- waiters = [(r1, .read), (w1, .write)], writerHeld = none`) from which
+-- the operational `applyOp` admits FIFO-inverting reader bypass via the
+-- reader-head fast-path.  Restricting to `RwLockReachable` closes the gap.
+--
+-- Naming: `RwLockKernelStep` / `RwLockReachable` / `RwLockExecution` are
+-- prefixed with `RwLock` to avoid namespace collision with TicketLock's
+-- `KernelStep` / `RwLockReachable` (both live in the same
+-- `SeLe4n.Kernel.Concurrency` namespace; SM2.B chose the unqualified
+-- names first, so SM2.C-defer takes the qualified form).
+
+/-- **WS-SM SM2.C-defer D-1.1**: one-step transition relation on
+`RwLockState`.
+
+Mirrors the SM2.B `KernelStep` template — one constructor per
+`RwLockOp` constructor, each tying the post-state to `applyOp`.
+
+This is the operational reachability witness: every kernel-level
+transition on an `RwLock` is one of these four constructors. -/
+inductive RwLockKernelStep : RwLockState → RwLockState → Prop where
+  /-- Reader-acquire (or no-op / enqueue, depending on state). -/
+  | tryAcquireRead  (s : RwLockState) (core : CoreId) :
+      RwLockKernelStep s (s.applyOp (.tryAcquireRead core))
+  /-- Reader-release (or no-op if `core` is not a reader). -/
+  | releaseRead     (s : RwLockState) (core : CoreId) :
+      RwLockKernelStep s (s.applyOp (.releaseRead core))
+  /-- Writer-acquire (or no-op / enqueue, depending on state). -/
+  | tryAcquireWrite (s : RwLockState) (core : CoreId) :
+      RwLockKernelStep s (s.applyOp (.tryAcquireWrite core))
+  /-- Writer-release (or no-op if `core` is not the current writer). -/
+  | releaseWrite    (s : RwLockState) (core : CoreId) :
+      RwLockKernelStep s (s.applyOp (.releaseWrite core))
+
+/-- **WS-SM SM2.C-defer D-1.1**: reflexive-transitive closure of
+`RwLockKernelStep` from `unheld`.
+
+A state `s` is `RwLockReachable` iff there is a finite chain of
+`RwLockKernelStep` transitions from `unheld` to `s`.
+
+(`RwLock`-prefixed to avoid collision with TicketLock's `RwLockReachable`.) -/
+inductive RwLockReachable : RwLockState → Prop where
+  /-- The seed state is reachable. -/
+  | base : RwLockReachable RwLockState.unheld
+  /-- Closure under kernel steps. -/
+  | step : ∀ {s s'}, RwLockReachable s → RwLockKernelStep s s' → RwLockReachable s'
+
+/-- **WS-SM SM2.C-defer D-1.2**: reachability implies wf.
+
+By induction on the `RwLockReachable` derivation, using the per-op
+preservation theorems for the inductive step.
+
+Mirror of SM2.B's `ticketLock_reachability`. -/
+theorem RwLockReachable_implies_wf {s : RwLockState} (h : RwLockReachable s) : s.wf := by
+  induction h with
+  | base => exact RwLockState.unheld_wf
+  | @step s s' _h_reach_s h_step ih =>
+    cases h_step with
+    | tryAcquireRead  c => exact rwLock_tryAcquireRead_preserves_wf  _ c ih
+    | releaseRead     c => exact rwLock_releaseRead_preserves_wf     _ c ih
+    | tryAcquireWrite c => exact rwLock_tryAcquireWrite_preserves_wf _ c ih
+    | releaseWrite    c => exact rwLock_releaseWrite_preserves_wf    _ c ih
+
+/-- **WS-SM SM2.C-defer D-1.1**: trace-based execution from a
+`RwLockReachable` initial state.
+
+Pairs an `initial` state with a list of operations and a proof
+`initial_reachable` that the initial state is reachable from `unheld`.
+
+RwLockExecution semantics: fold `applyOp` over `ops` starting from `initial`.
+All deferred-completion theorems quantify over `RwLockExecution` values.
+
+(`RwLock`-prefixed to avoid collision with potential SM2.B
+`RwLockExecution` if added.) -/
+structure RwLockExecution where
+  /-- The initial state of the execution. -/
+  initial            : RwLockState
+  /-- The sequence of operations applied to `initial`. -/
+  ops                : List RwLockOp
+  /-- Proof that `initial` is reachable from `unheld` via kernel steps. -/
+  initial_reachable  : RwLockReachable initial
+
+/-- **WS-SM SM2.C-defer D-1.2**: an RwLockExecution's initial state is wf. -/
+theorem RwLockExecution.initial_wf (e : RwLockExecution) : e.initial.wf :=
+  RwLockReachable_implies_wf e.initial_reachable
+
+/-- **WS-SM SM2.C-defer D-1.1**: the state after the first `k` operations
+of an execution. -/
+def RwLockExecution.stateAt (e : RwLockExecution) (k : Nat) : RwLockState :=
+  (e.ops.take k).foldl RwLockState.applyOp e.initial
+
+/-- **WS-SM SM2.C-defer D-1.1**: the final state of an execution. -/
+def RwLockExecution.finalState (e : RwLockExecution) : RwLockState :=
+  e.stateAt e.ops.length
+
+/-- Witness: `stateAt 0` is the initial state. -/
+@[simp]
+theorem RwLockExecution.stateAt_zero (e : RwLockExecution) :
+    e.stateAt 0 = e.initial := by
+  simp [RwLockExecution.stateAt]
+
+/-- Witness: `stateAt e.ops.length` is the final state. -/
+theorem RwLockExecution.stateAt_length (e : RwLockExecution) :
+    e.stateAt e.ops.length = e.finalState := rfl
+
+/-- **WS-SM SM2.C-defer D-1.2**: an RwLockExecution's state after k+1 operations
+equals applyOp on the kth state with the kth operation.
+
+Standard `foldl`/`take` identity, used in the foundational reachability
+proof and in every D-1 / D-3 inductive step. -/
+theorem RwLockExecution.stateAt_succ (e : RwLockExecution) {k : Nat}
+    (h : k < e.ops.length) :
+    e.stateAt (k + 1) = (e.stateAt k).applyOp (e.ops[k]'h) := by
+  unfold RwLockExecution.stateAt
+  -- ops.take (k+1) = ops.take k ++ [ops[k]] when k < length, then
+  -- List.foldl_append discharges.
+  rw [List.take_succ_eq_append_getElem h]
+  rw [List.foldl_append]
+  simp
+
+/-- **WS-SM SM2.C-defer D-1.2**: every RwLockExecution state is RwLockReachable.
+
+By induction on `k`.  Base: `stateAt 0 = initial`, reachable by
+hypothesis.  Inductive step: `stateAt (k+1) = applyOp (stateAt k) op`,
+witnessed by an `RwLockKernelStep` constructor. -/
+theorem RwLockExecution.stateAt_reachable (e : RwLockExecution) (k : Nat) :
+    RwLockReachable (e.stateAt k) := by
+  induction k with
+  | zero => rw [RwLockExecution.stateAt_zero]; exact e.initial_reachable
+  | succ k ih =>
+    by_cases h : k < e.ops.length
+    · -- k+1 ≤ length: extend the trace by one step.
+      rw [RwLockExecution.stateAt_succ e h]
+      apply RwLockReachable.step ih
+      -- `cases h_op` substitutes through the goal, so the constructor applies directly.
+      cases h_op : e.ops[k]'h with
+      | tryAcquireRead  c => exact RwLockKernelStep.tryAcquireRead  _ c
+      | releaseRead     c => exact RwLockKernelStep.releaseRead     _ c
+      | tryAcquireWrite c => exact RwLockKernelStep.tryAcquireWrite _ c
+      | releaseWrite    c => exact RwLockKernelStep.releaseWrite    _ c
+    · -- k ≥ length: stateAt (k+1) = stateAt k (truncation).
+      have h_eq : e.stateAt (k + 1) = e.stateAt k := by
+        unfold RwLockExecution.stateAt
+        have h_take_eq : e.ops.take (k + 1) = e.ops.take k := by
+          have h_ge : e.ops.length ≤ k := Nat.le_of_not_lt h
+          rw [List.take_of_length_le (by omega), List.take_of_length_le h_ge]
+        rw [h_take_eq]
+      rw [h_eq]; exact ih
+
+/-- **WS-SM SM2.C-defer D-1.2**: every RwLockExecution state is wf.
+
+Composition of `stateAt_reachable` and `RwLockReachable_implies_wf`. -/
+theorem RwLockExecution.stateAt_wf (e : RwLockExecution) (k : Nat) : (e.stateAt k).wf :=
+  RwLockReachable_implies_wf (e.stateAt_reachable k)
+
+-- ============================================================================
+-- SM2.C-defer §4.3 + D-2 — writerWaitDepth + writer-specific bounded wait
+-- ============================================================================
+
+/-- **WS-SM SM2.C-defer D-2.1**: the "wait depth" of a queued writer.
+
+Components:
+1. `queueDepth` = position of `c` in waiters (entries ahead in queue).
+2. `readerDepth` = number of readers currently held (each must release).
+3. `writerDepth` = 1 if a writer currently holds, else 0.
+
+Sum bounds the number of effective releases that must occur before
+`c` can be promoted to writerHeld.
+
+**Tight bound** (closes audit finding M-1): for a wf state with `c`
+queued as a writer, `writerWaitDepth s c ≤ numCores - 1`.  See
+`writerWaitDepth_bounded` below. -/
+def writerWaitDepth (s : RwLockState) (c : CoreId) : Nat :=
+  let queueDepth := s.waiters.idxOf (c, AccessMode.write)
+  let readerDepth := s.readers.length
+  let writerDepth := if s.writerHeld.isSome then 1 else 0
+  queueDepth + readerDepth + writerDepth
+
+/-- **WS-SM SM2.C-defer D-2.1**: unfolding lemma for `writerWaitDepth`.
+
+Stated as a `@[simp]` lemma so `decide`-based tests automatically
+expand the helper before computing the value. -/
+@[simp] theorem writerWaitDepth_simp (s : RwLockState) (c : CoreId) :
+    writerWaitDepth s c =
+      s.waiters.idxOf (c, AccessMode.write) +
+      s.readers.length +
+      (if s.writerHeld.isSome then 1 else 0) := rfl
+
+/-- **WS-SM SM2.C-defer D-2.2**: `writerWaitDepth` is decidable.
+
+All three components are decidable: `List.idxOf` returns a Nat,
+`List.length` returns a Nat, and `Option.isSome` is decidable.  The
+resulting `Nat` value can be compared via `decide` for test
+fixtures.
+
+Re-derives `DecidableEq RwLockState` from its `deriving` clause so
+the instance is available in the deferred-completion namespace
+unambiguously. -/
+instance : DecidableEq RwLockState := inferInstance
+
+/-- **WS-SM SM2.C-defer helper**: `List.idxOf` of a member is bounded by
+`length - 1`.
+
+Uses `List.idxOf_lt_length_of_mem` (a member's index is strictly less
+than the list length) and bridges to ≤ length - 1 via `length ≥ 1`. -/
+private theorem idxOf_le_length_sub_one_pair
+    (l : List (CoreId × AccessMode)) (x : CoreId × AccessMode) (h : x ∈ l) :
+    l.idxOf x ≤ l.length - 1 := by
+  have h_lt : l.idxOf x < l.length := List.idxOf_lt_length_of_mem h
+  have h_pos : 0 < l.length := by
+    cases l with
+    | nil => exact absurd h List.not_mem_nil
+    | cons _ _ => simp
+  omega
+
+/-- **WS-SM SM2.C-defer D-2.3**: writer wait depth is bounded by
+`numCores - 1` (tight).
+
+Closes audit finding M-1: the naive composition `idxOf ≤ numCores - 1`
++ `readers + writer_bit ≤ numCores` yields `2 * numCores - 1`,
+double-counting the wf bound by a factor of ~2.  Substituting
+`idxOf ≤ waiters.length - 1` (since `c ∈ waiters`) into
+`waiters.length + readers + writer_bit ≤ numCores` (the existing
+`rwLock_bounded_wait_read`) gives `idxOf + readers + writer_bit ≤
+numCores - 1`.
+
+Concrete instantiation: `numCores = 4` on RPi5 gives depth ≤ 3.
+
+Proof:
+1. By `rwLock_bounded_wait_read`:
+   `waiters.length + readers.length + writer_bit ≤ numCores`.
+2. Since `(c, .write) ∈ waiters`, `waiters.length ≥ 1`, and
+   `idxOf (c, .write) ≤ waiters.length - 1` by `idxOf_le_length_sub_one`.
+3. Adding 1 to both sides and substituting:
+   `idxOf + 1 + readers + writer_bit ≤ waiters.length + readers + writer_bit ≤ numCores`,
+   hence `idxOf + readers + writer_bit ≤ numCores - 1`. -/
+theorem writerWaitDepth_bounded
+    (s : RwLockState) (h : s.wf)
+    (c : CoreId) (h_queued : (c, AccessMode.write) ∈ s.waiters) :
+    writerWaitDepth s c ≤ numCores - 1 := by
+  unfold writerWaitDepth
+  simp only
+  have h_bounded := rwLock_bounded_wait_read s h
+  have h_idx_le : s.waiters.idxOf (c, AccessMode.write) ≤ s.waiters.length - 1 :=
+    idxOf_le_length_sub_one_pair s.waiters (c, AccessMode.write) h_queued
+  have h_waiters_pos : 0 < s.waiters.length := by
+    cases h_eq : s.waiters with
+    | nil => rw [h_eq] at h_queued; exact absurd h_queued List.not_mem_nil
+    | cons _ _ => simp
+  -- Bound chain: idxOf + readers + writer_bit
+  --   ≤ (waiters.length - 1) + readers + writer_bit  (by h_idx_le)
+  --   ≤ numCores - 1                                  (by h_bounded + waiters ≥ 1).
+  -- Case-split on writer_bit to discharge the if; bound's form must match.
+  by_cases h_w : s.writerHeld.isSome = true
+  · -- writer_bit = 1.  INV-R1: readers = [] when writer holds.
+    -- This means readers.length = 0, simplifying the chain.
+    have ⟨c', h_w'⟩ : ∃ c, s.writerHeld = some c := by
+      cases h_some : s.writerHeld with
+      | none => rw [h_some] at h_w; simp at h_w
+      | some c => exact ⟨c, rfl⟩
+    have h_r_empty : s.readers = [] := s.wf_writerReadersExclusion h c' h_w'
+    rw [h_r_empty] at h_bounded ⊢
+    simp [h_w, List.length_nil] at h_bounded ⊢
+    omega
+  · -- writer_bit = 0.
+    simp [h_w] at h_bounded ⊢
+    omega
+
+/-- **WS-SM SM2.C-defer D-2.4 (predicate)**: an op is an **effective
+release** for `s` if it actually transitions some holder out of
+`readers` or `writerHeld` (i.e., is not a no-op).
+
+This is the precise notion that D-2.4 needs (closing audit finding L-2:
+no more hand-waved `h_progress`). -/
+def RwLockState.isEffectiveRelease (s : RwLockState) (op : RwLockOp) : Prop :=
+  match op with
+  | .releaseRead  c => c ∈ s.readers
+  | .releaseWrite c => s.writerHeld = some c
+  | _               => False
+
+/-- **WS-SM SM2.C-defer D-2.4 (decidability)**: `isEffectiveRelease` is
+decidable for any `(s, op)` since membership/equality on the abstract
+state's fields are decidable. -/
+instance RwLockState.decidableIsEffectiveRelease
+    (s : RwLockState) (op : RwLockOp) : Decidable (s.isEffectiveRelease op) := by
+  unfold RwLockState.isEffectiveRelease
+  cases op <;> exact inferInstance
+
+/-- **WS-SM SM2.C-defer D-2.5 (helper, decidable predicate)**: at trace
+position `pos`, is the corresponding operation an effective release?
+
+Returns `false` if `pos ≥ e.ops.length` (out-of-range). -/
+def RwLockExecution.isEffectiveReleaseAt (e : RwLockExecution) (pos : Nat) : Bool :=
+  if h : pos < e.ops.length then
+    decide ((e.stateAt pos).isEffectiveRelease (e.ops[pos]'h))
+  else
+    false
+
+/-- **WS-SM SM2.C-defer D-2.5 (helper)**: count the effective releases
+in an execution between trace positions `k₁` (inclusive) and `k₂`
+(exclusive).
+
+Defined via `List.countP` so the structural upper bound (window size)
+follows directly from `List.countP_le_length`. -/
+def RwLockExecution.countEffectiveReleases (e : RwLockExecution) (k₁ k₂ : Nat) : Nat :=
+  ((List.range (k₂ - k₁)).map (k₁ + ·)).countP e.isEffectiveReleaseAt
+
+/-- **WS-SM SM2.C-defer D-2.5 (witness)**: count of effective releases is
+bounded by the window size.  Discharged by `List.countP_le_length`. -/
+theorem RwLockExecution.countEffectiveReleases_le_window
+    (e : RwLockExecution) (k₁ k₂ : Nat) :
+    e.countEffectiveReleases k₁ k₂ ≤ k₂ - k₁ := by
+  unfold RwLockExecution.countEffectiveReleases
+  rw [List.countP_map]
+  have h := List.countP_le_length (l := List.range (k₂ - k₁))
+              (p := e.isEffectiveReleaseAt ∘ (k₁ + ·))
+  simp [List.length_range] at h
+  exact h
+
+-- ============================================================================
+-- SM2.C-defer §4.2 — Waiter / Holder predicates + enqueueStep / admissionStep
+-- ============================================================================
+
+/-- **WS-SM SM2.C-defer D-1.3**: `(core, mode)` is in the waiters list at
+step `k` of the execution. -/
+def RwLockExecution.waiterAt (e : RwLockExecution) (k : Nat)
+    (core : CoreId) (mode : AccessMode) : Prop :=
+  (core, mode) ∈ (e.stateAt k).waiters
+
+/-- `waiterAt` is decidable. -/
+instance RwLockExecution.decidableWaiterAt (e : RwLockExecution) (k : Nat)
+    (core : CoreId) (mode : AccessMode) :
+    Decidable (e.waiterAt k core mode) := by
+  unfold RwLockExecution.waiterAt
+  exact inferInstance
+
+/-- **WS-SM SM2.C-defer D-1.3**: `core` is a holder (reader or writer) at
+step `k` of the execution. -/
+def RwLockExecution.holderAt (e : RwLockExecution) (k : Nat) (core : CoreId) : Prop :=
+  core ∈ (e.stateAt k).readers ∨ (e.stateAt k).writerHeld = some core
+
+/-- `holderAt` is decidable. -/
+instance RwLockExecution.decidableHolderAt (e : RwLockExecution) (k : Nat) (core : CoreId) :
+    Decidable (e.holderAt k core) := by
+  unfold RwLockExecution.holderAt
+  exact inferInstance
+
+/-- **WS-SM SM2.C-defer D-1.4**: the step at which `(core, mode)` is
+enqueued — the smallest `k ≥ 1` such that membership transitions from
+`false` to `true`.
+
+Strict-transition formulation: returns `none` for waiters present in
+`e.initial.waiters` (they were not enqueued during the trace).
+Combined with the `e.initial = unheld` precondition that D-1.9 adopts,
+`enqueueStep` is well-defined for every waiter that appears in any
+reachable state. -/
+def RwLockExecution.enqueueStep (e : RwLockExecution)
+    (core : CoreId) (mode : AccessMode) : Option Nat :=
+  (List.range (e.ops.length + 1)).find? fun k =>
+    decide (k ≥ 1) &&
+    decide (e.waiterAt k core mode) &&
+    decide (¬ e.waiterAt (k - 1) core mode)
+
+/-- **WS-SM SM2.C-defer D-1.4**: the step at which `core` is admitted as
+a holder — the smallest `k ≥ 1` such that `holderAt k core` AND
+`¬ holderAt (k-1) core`.  Same transition-edge rationale as `enqueueStep`. -/
+def RwLockExecution.admissionStep (e : RwLockExecution) (core : CoreId) : Option Nat :=
+  (List.range (e.ops.length + 1)).find? fun k =>
+    decide (k ≥ 1) &&
+    decide (e.holderAt k core) &&
+    decide (¬ e.holderAt (k - 1) core)
+
+/-- **WS-SM SM2.C-defer D-1.5**: characterization of `enqueueStep`.
+
+If `enqueueStep core mode = some k`, then `k ≥ 1`, `waiterAt k core mode`,
+and `¬ waiterAt (k-1) core mode`.
+
+Proved by `List.find?_eq_some` which gives the witness's properties. -/
+theorem RwLockExecution.enqueueStep_characterization (e : RwLockExecution)
+    (core : CoreId) (mode : AccessMode) (k : Nat)
+    (h : e.enqueueStep core mode = some k) :
+    1 ≤ k ∧ e.waiterAt k core mode ∧ ¬ e.waiterAt (k - 1) core mode := by
+  unfold RwLockExecution.enqueueStep at h
+  -- find?_eq_some_iff_append: xs.find? p = some b ↔ p b ∧ ∃ as bs, ...
+  have h_pred := List.find?_eq_some_iff_append.mp h
+  -- h_pred : (decide(k ≥ 1) && decide(...) && decide(...)) = true ∧ ∃ as bs, ...
+  obtain ⟨h_eq, _⟩ := h_pred
+  rw [Bool.and_eq_true, Bool.and_eq_true] at h_eq
+  obtain ⟨⟨h1, h2⟩, h3⟩ := h_eq
+  exact ⟨of_decide_eq_true h1, of_decide_eq_true h2, of_decide_eq_true h3⟩
+
+/-- **WS-SM SM2.C-defer**: characterization of `admissionStep` — analog
+of `enqueueStep_characterization`. -/
+theorem RwLockExecution.admissionStep_characterization (e : RwLockExecution)
+    (core : CoreId) (k : Nat)
+    (h : e.admissionStep core = some k) :
+    1 ≤ k ∧ e.holderAt k core ∧ ¬ e.holderAt (k - 1) core := by
+  unfold RwLockExecution.admissionStep at h
+  have h_pred := List.find?_eq_some_iff_append.mp h
+  obtain ⟨h_eq, _⟩ := h_pred
+  rw [Bool.and_eq_true, Bool.and_eq_true] at h_eq
+  obtain ⟨⟨h1, h2⟩, h3⟩ := h_eq
+  exact ⟨of_decide_eq_true h1, of_decide_eq_true h2, of_decide_eq_true h3⟩
+
+-- ============================================================================
+-- SM2.C-defer D-1.6 / D-1.7 — Append-to-tail / Drop-prefix theorems
+-- ============================================================================
+
+/-- **WS-SM SM2.C-defer D-1.6 (predicate helper)**: extract the `core`
+from an op (for tryAcquire / release ops). -/
+def RwLockOp.coreOfOp : RwLockOp → CoreId
+  | .tryAcquireRead  c => c
+  | .tryAcquireWrite c => c
+  | .releaseRead     c => c
+  | .releaseWrite    c => c
+
+/-- **WS-SM SM2.C-defer D-1.6 (predicate helper)**: extract the access
+mode from an acquire op (returns `.read` by convention for release ops;
+only called when guarded by an op-shape hypothesis in D-1.6). -/
+def RwLockOp.modeOfOp : RwLockOp → AccessMode
+  | .tryAcquireRead  _ => .read
+  | .tryAcquireWrite _ => .write
+  | _                  => .read
+
+/-- **WS-SM SM2.C-defer D-1.6**: `tryAcquireRead c` either is a no-op or
+appends EXACTLY `(c, .read)` at the tail.
+
+Concrete-witness form (NOT existential): the appended pair is the
+specific `(c, .read)` from the op.  This precision matters for D-1.8
+order-preservation reasoning. -/
+theorem tryAcquireRead_waiters_append_or_noop (s : RwLockState) (c : CoreId) :
+    (s.applyOp (.tryAcquireRead c)).waiters = s.waiters ∨
+    (s.applyOp (.tryAcquireRead c)).waiters = s.waiters ++ [(c, AccessMode.read)] := by
+  unfold RwLockState.applyOp
+  by_cases h_inv : s.coreInvolved c
+  · left; simp [h_inv]
+  by_cases h_w : s.writerHeld.isSome
+  · right; simp [h_inv, h_w]
+  simp only [h_inv, ↓reduceIte, h_w, Bool.false_eq_true]
+  cases h_wq : s.waiters with
+  | nil =>
+    -- waiters = [], match enters reader-head branch (= acquire-direct).
+    left; simp [h_wq]
+  | cons head rest =>
+    obtain ⟨_, wm⟩ := head
+    cases wm with
+    | write =>
+      -- Head is writer → enqueue.
+      right; simp [h_wq]
+    | read =>
+      -- Head is reader → acquire direct (waiters unchanged).
+      left; simp [h_wq]
+
+/-- **WS-SM SM2.C-defer D-1.6**: `tryAcquireWrite c` either is a no-op or
+appends EXACTLY `(c, .write)` at the tail. -/
+theorem tryAcquireWrite_waiters_append_or_noop (s : RwLockState) (c : CoreId) :
+    (s.applyOp (.tryAcquireWrite c)).waiters = s.waiters ∨
+    (s.applyOp (.tryAcquireWrite c)).waiters = s.waiters ++ [(c, AccessMode.write)] := by
+  unfold RwLockState.applyOp
+  by_cases h_inv : s.coreInvolved c
+  · left; simp [h_inv]
+  by_cases h_held : s.writerHeld.isSome ∨ s.readers ≠ []
+  · right; simp [h_inv, h_held]
+  · left; simp [h_inv, h_held]
+
+/-- **WS-SM SM2.C-defer D-1.7 (read variant)**: `releaseRead c` does not
+append to waiters; the post-state `waiters` is a `Sublist` of the pre-state.
+
+Proof strategy: apply `rwLock_fifo_admission_readers_empty` to the
+post-filter state.  Use a `generalize` over the filter predicate to
+avoid the simp-normalization mismatch between `decide (· ≠ c)` and
+`!decide (· = c)`. -/
+theorem releaseRead_waiters_sublist (s : RwLockState) (c : CoreId) :
+    (s.applyOp (.releaseRead c)).waiters.Sublist s.waiters := by
+  unfold RwLockState.applyOp
+  by_cases h_in : c ∈ s.readers
+  · have h_not_in : ¬ c ∉ s.readers := fun h => h h_in
+    simp only [h_not_in, ↓reduceIte]
+    -- post-state is `s'.promoteWaitersIfReadersEmpty`.  Generalize over
+    -- the filtered readers list to eliminate the predicate-form mismatch.
+    generalize h_filter : s.readers.filter _ = readers'
+    -- Now the goal is about an arbitrary state with `readers := readers'`
+    -- and `waiters := s.waiters`.  Apply the FIFO admission witness.
+    obtain ⟨k, h_drop⟩ := rwLock_fifo_admission_readers_empty
+      ({ writerHeld := s.writerHeld, readers := readers', waiters := s.waiters } :
+        RwLockState)
+    rw [h_drop]
+    exact List.drop_sublist k _
+  · -- c ∉ readers: applyOp is no-op; simp closes via Sublist.refl in default set.
+    simp [h_in]
+
+/-- **WS-SM SM2.C-defer D-1.7 (write variant)**: `releaseWrite c` does not
+append to waiters; the post-state `waiters` is a `Sublist` of the pre-state. -/
+theorem releaseWrite_waiters_sublist (s : RwLockState) (c : CoreId) :
+    (s.applyOp (.releaseWrite c)).waiters.Sublist s.waiters := by
+  unfold RwLockState.applyOp
+  by_cases h_eq : s.writerHeld = some c
+  · have h_not_ne : ¬ s.writerHeld ≠ some c := fun h => h h_eq
+    simp only [h_not_ne, ↓reduceIte]
+    obtain ⟨k, h_drop⟩ := rwLock_fifo_admission
+      ({ writerHeld := none, readers := s.readers, waiters := s.waiters } :
+        RwLockState)
+    rw [h_drop]
+    exact List.drop_sublist k _
+  · -- writerHeld ≠ some c: applyOp is no-op; simp closes via Sublist.refl.
+    simp [h_eq]
+
+/-- **WS-SM SM2.C-defer D-1.7 (combined corollary)**: any release op
+(read or write) produces a sublist of waiters. -/
+theorem release_waiters_sublist
+    (s : RwLockState) (op : RwLockOp)
+    (h_op : (∃ c, op = .releaseRead c) ∨ (∃ c, op = .releaseWrite c)) :
+    (s.applyOp op).waiters.Sublist s.waiters := by
+  rcases h_op with ⟨c, rfl⟩ | ⟨c, rfl⟩
+  · exact releaseRead_waiters_sublist s c
+  · exact releaseWrite_waiters_sublist s c
+
+/-- **WS-SM SM2.C-defer D-1.7 (acquire combined)**: any acquire op
+(read or write) produces a sublist relation in the OTHER direction:
+the pre-state waiters is a sublist of the post-state waiters.
+
+Either the post equals the pre (no-op), or post = pre ++ [(c, mode)],
+in which case pre is a sublist of post by `List.sublist_append_left`. -/
+theorem acquire_waiters_super_or_eq
+    (s : RwLockState) (op : RwLockOp)
+    (h_op : (∃ c, op = .tryAcquireRead c) ∨ (∃ c, op = .tryAcquireWrite c)) :
+    s.waiters.Sublist (s.applyOp op).waiters := by
+  rcases h_op with ⟨c, rfl⟩ | ⟨c, rfl⟩
+  · rcases tryAcquireRead_waiters_append_or_noop s c with h_eq | h_eq
+    · rw [h_eq]; exact List.Sublist.refl _
+    · rw [h_eq]; exact List.sublist_append_left s.waiters [(c, AccessMode.read)]
+  · rcases tryAcquireWrite_waiters_append_or_noop s c with h_eq | h_eq
+    · rw [h_eq]; exact List.Sublist.refl _
+    · rw [h_eq]; exact List.sublist_append_left s.waiters [(c, AccessMode.write)]
+
+-- ============================================================================
+-- SM2.C-defer D-1.8 — Single-step order preservation
+-- ============================================================================
+
+/-- **WS-SM SM2.C-defer helper**: `idxOf` after appending preserves the
+index of an existing element.
+
+If `w ∈ l`, then `(l ++ extra).idxOf w = l.idxOf w` — appending to the
+tail doesn't move existing elements' positions (since `idxOf` returns
+the first occurrence, which is in the original `l`). -/
+private theorem idxOf_append_of_mem
+    (l : List (CoreId × AccessMode)) (extra : List (CoreId × AccessMode))
+    (w : CoreId × AccessMode) (h_in : w ∈ l) :
+    (l ++ extra).idxOf w = l.idxOf w := by
+  rw [List.idxOf_append]
+  simp [h_in]
+
+/-- **WS-SM SM2.C-defer helper**: for a Nodup list, `idxOf` of a member
+of `l.drop k` plus `k` equals `idxOf` in `l`.
+
+This is the canonical positional relationship: dropping the first `k`
+elements shifts every remaining element's index downward by exactly `k`. -/
+private theorem drop_idxOf_eq_of_nodup
+    {α : Type _} [BEq α] [LawfulBEq α]
+    (l : List α) (h_nodup : l.Nodup) (k : Nat) (w : α) (h_in : w ∈ l.drop k) :
+    (l.drop k).idxOf w + k = l.idxOf w := by
+  induction k generalizing l with
+  | zero => simp
+  | succ k ih =>
+    cases l with
+    | nil => simp at h_in
+    | cons head rest =>
+      -- l.drop (k+1) = rest.drop k.  l.idxOf w = if w = head then 0 else 1 + rest.idxOf w.
+      simp only [List.drop_succ_cons] at h_in ⊢
+      have h_rest_nodup : rest.Nodup := h_nodup.of_cons
+      have h_w_ne_head : w ≠ head := by
+        intro h_eq
+        have : head ∈ rest.drop k := by rw [h_eq] at h_in; exact h_in
+        have h_head_in : head ∈ rest := List.mem_of_mem_drop this
+        have h_not := (List.nodup_cons.mp h_nodup).1
+        exact h_not h_head_in
+      have h_idx_cons : (head :: rest).idxOf w = rest.idxOf w + 1 := by
+        rw [List.idxOf_cons]
+        have h_beq : (head == w) = false := by
+          rw [beq_eq_false_iff_ne]; exact h_w_ne_head.symm
+        rw [h_beq]; rfl
+      rw [h_idx_cons]
+      have := ih rest h_rest_nodup h_in
+      omega
+
+/-- **WS-SM SM2.C-defer helper**: Nodup-fst implies Nodup on the full
+pair list (since equal pairs require equal fst components). -/
+private theorem nodup_of_nodup_map_fst
+    (l : List (CoreId × AccessMode)) (h : (l.map Prod.fst).Nodup) : l.Nodup := by
+  induction l with
+  | nil => exact List.Pairwise.nil
+  | cons head rest ih =>
+    rw [List.map_cons] at h
+    rw [List.nodup_cons] at h
+    rw [List.nodup_cons]
+    have h_rest := ih h.2
+    refine ⟨?_, h_rest⟩
+    intro h_in
+    -- head ∈ rest ⇒ head.fst ∈ rest.map fst, contradicting h.1.
+    have h_fst_in : head.fst ∈ rest.map Prod.fst := List.mem_map.mpr ⟨head, h_in, rfl⟩
+    exact h.1 h_fst_in
+
+/-- **WS-SM SM2.C-defer helper**: characterization of release-read
+post-state when `c ∈ readers` (the effective-release branch). -/
+private theorem releaseRead_effective_post (s : RwLockState) (c : CoreId)
+    (h_in : c ∈ s.readers) :
+    s.applyOp (.releaseRead c) =
+    ({ writerHeld := s.writerHeld,
+       readers := s.readers.filter (· ≠ c),
+       waiters := s.waiters } : RwLockState).promoteWaitersIfReadersEmpty := by
+  unfold RwLockState.applyOp
+  simp [h_in]
+
+/-- **WS-SM SM2.C-defer helper**: characterization of release-read
+post-state when `c ∉ readers` (the no-op branch). -/
+private theorem releaseRead_noop_post (s : RwLockState) (c : CoreId)
+    (h_not_in : c ∉ s.readers) :
+    s.applyOp (.releaseRead c) = s := by
+  unfold RwLockState.applyOp; simp [h_not_in]
+
+/-- **WS-SM SM2.C-defer helper**: characterization of release-write
+post-state when `writerHeld = some c` (the effective-release branch). -/
+private theorem releaseWrite_effective_post (s : RwLockState) (c : CoreId)
+    (h_eq : s.writerHeld = some c) :
+    s.applyOp (.releaseWrite c) =
+    ({ writerHeld := none, readers := s.readers, waiters := s.waiters } :
+      RwLockState).promoteWaitersOnWriterRelease := by
+  unfold RwLockState.applyOp; simp [h_eq]
+
+/-- **WS-SM SM2.C-defer helper**: characterization of release-write
+post-state when `writerHeld ≠ some c` (the no-op branch). -/
+private theorem releaseWrite_noop_post (s : RwLockState) (c : CoreId)
+    (h_ne : s.writerHeld ≠ some c) :
+    s.applyOp (.releaseWrite c) = s := by
+  unfold RwLockState.applyOp; simp [h_ne]
+
+/-- **WS-SM SM2.C-defer D-1.8**: for ANY single op, the relative order
+of two waiters present in both the pre- and post-state is preserved.
+
+Combining D-1.6 (acquire appends to tail) and D-1.7 (release drops
+prefix from head) — both witnesses give concrete shape, allowing
+positional reasoning via `idxOf_append_of_mem` and
+`drop_idxOf_eq_of_nodup`. -/
+theorem applyOp_preserves_waiter_order
+    (s : RwLockState) (h_wf : s.wf)
+    (op : RwLockOp)
+    (w₁ w₂ : CoreId × AccessMode)
+    (h_in₁_pre : w₁ ∈ s.waiters) (h_in₂_pre : w₂ ∈ s.waiters)
+    (h_in₁_post : w₁ ∈ (s.applyOp op).waiters)
+    (h_in₂_post : w₂ ∈ (s.applyOp op).waiters)
+    (h_order : s.waiters.idxOf w₁ < s.waiters.idxOf w₂) :
+    (s.applyOp op).waiters.idxOf w₁ < (s.applyOp op).waiters.idxOf w₂ := by
+  -- INV-R3 gives Nodup-fst on waiters; derive Nodup of waiters.
+  have h_nodup_fst := s.wf_waitersCoresNodup h_wf
+  have h_nodup : s.waiters.Nodup := nodup_of_nodup_map_fst s.waiters h_nodup_fst
+  cases op with
+  | tryAcquireRead c =>
+    rcases tryAcquireRead_waiters_append_or_noop s c with h_post | h_post
+    · rw [h_post]; exact h_order
+    · rw [h_post]
+      rw [idxOf_append_of_mem s.waiters _ w₁ h_in₁_pre]
+      rw [idxOf_append_of_mem s.waiters _ w₂ h_in₂_pre]
+      exact h_order
+  | tryAcquireWrite c =>
+    rcases tryAcquireWrite_waiters_append_or_noop s c with h_post | h_post
+    · rw [h_post]; exact h_order
+    · rw [h_post]
+      rw [idxOf_append_of_mem s.waiters _ w₁ h_in₁_pre]
+      rw [idxOf_append_of_mem s.waiters _ w₂ h_in₂_pre]
+      exact h_order
+  | releaseRead c =>
+    by_cases h_in : c ∈ s.readers
+    · -- Effective release path: post = ({s with readers := filter}).promote
+      rw [releaseRead_effective_post s c h_in] at h_in₁_post h_in₂_post ⊢
+      -- Generalize the filtered readers so the predicate-form mismatch
+      -- between `decide (· ≠ c)` and `!decide (· = c)` doesn't bite.
+      generalize h_fil : s.readers.filter (· ≠ c) = readers' at h_in₁_post h_in₂_post ⊢
+      obtain ⟨k, h_drop⟩ := rwLock_fifo_admission_readers_empty
+        ({ writerHeld := s.writerHeld, readers := readers', waiters := s.waiters } :
+          RwLockState)
+      -- Normalize the `.waiters` projection of the record-update form.
+      have h_w_proj : ({ writerHeld := s.writerHeld, readers := readers',
+                         waiters := s.waiters } : RwLockState).waiters = s.waiters := rfl
+      rw [h_w_proj] at h_drop
+      rw [h_drop] at h_in₁_post h_in₂_post ⊢
+      have h₁ := drop_idxOf_eq_of_nodup s.waiters h_nodup k w₁ h_in₁_post
+      have h₂ := drop_idxOf_eq_of_nodup s.waiters h_nodup k w₂ h_in₂_post
+      omega
+    · -- No-op path.
+      rw [releaseRead_noop_post s c h_in]; exact h_order
+  | releaseWrite c =>
+    by_cases h_eq : s.writerHeld = some c
+    · rw [releaseWrite_effective_post s c h_eq] at h_in₁_post h_in₂_post ⊢
+      obtain ⟨k, h_drop⟩ := rwLock_fifo_admission
+        ({ writerHeld := none, readers := s.readers, waiters := s.waiters } :
+          RwLockState)
+      have h_w_proj : ({ writerHeld := none, readers := s.readers,
+                         waiters := s.waiters } : RwLockState).waiters = s.waiters := rfl
+      rw [h_w_proj] at h_drop
+      rw [h_drop] at h_in₁_post h_in₂_post ⊢
+      have h₁ := drop_idxOf_eq_of_nodup s.waiters h_nodup k w₁ h_in₁_post
+      have h₂ := drop_idxOf_eq_of_nodup s.waiters h_nodup k w₂ h_in₂_post
+      omega
+    · rw [releaseWrite_noop_post s c h_eq]; exact h_order
+
+-- ============================================================================
+-- SM2.C-defer D-1.9 — Main temporal FIFO admission theorem (partial form)
+-- ============================================================================
+
+/-- **WS-SM SM2.C-defer D-1.9 (partial: structural sublist form)**:
+across an RwLockExecution starting from `unheld`, the relative order of two
+waiters is preserved across every kernel step (with both surviving).
+
+This is a multi-step composition of `applyOp_preserves_waiter_order`
+(D-1.8) — by induction on the trace length, every step preserves the
+relative order of surviving waiters.
+
+The full temporal claim (admission order ↔ enqueue order via the
+`enqueueStep` / `admissionStep` form) requires additional bridging that
+threads the strict-transition formulation through; the structural
+"order is preserved across the whole trace" property captured here is
+the cleanly-proven core of D-1.9. -/
+theorem rwLock_fifo_admission_temporal_structural
+    (e : RwLockExecution)
+    (k₁ k₂ : Nat) (h_le : k₁ ≤ k₂)
+    (w₁ w₂ : CoreId × AccessMode)
+    (h_in₁_at_k₁ : w₁ ∈ (e.stateAt k₁).waiters)
+    (h_in₂_at_k₁ : w₂ ∈ (e.stateAt k₁).waiters)
+    (h_in₁_at_k₂ : w₁ ∈ (e.stateAt k₂).waiters)
+    (h_in₂_at_k₂ : w₂ ∈ (e.stateAt k₂).waiters)
+    (h_order : (e.stateAt k₁).waiters.idxOf w₁ < (e.stateAt k₁).waiters.idxOf w₂)
+    (h_surviving : ∀ j, k₁ ≤ j → j ≤ k₂ →
+        w₁ ∈ (e.stateAt j).waiters ∧ w₂ ∈ (e.stateAt j).waiters) :
+    (e.stateAt k₂).waiters.idxOf w₁ < (e.stateAt k₂).waiters.idxOf w₂ := by
+  -- Induct on the gap (k₂ - k₁).
+  generalize h_gap : k₂ - k₁ = gap
+  induction gap generalizing k₂ with
+  | zero =>
+    -- k₂ = k₁: trivial.
+    have h_eq : k₂ = k₁ := by omega
+    subst h_eq
+    -- Need: (stateAt k₁).waiters.idxOf w₁ < (stateAt k₁).waiters.idxOf w₂.
+    -- This is exactly h_order.
+    exact h_order
+  | succ n ih =>
+    -- k₂ = k₁ + n + 1.  By IH at j = k₂ - 1 = k₁ + n, the order holds.
+    -- Then one more step from j to k₂ via applyOp_preserves_waiter_order.
+    have h_k_pos : k₂ ≥ 1 := by omega
+    have h_prev : k₂ - 1 ≥ k₁ := by omega
+    have h_le_prev : k₁ ≤ k₂ - 1 := h_prev
+    have h_gap_prev : k₂ - 1 - k₁ = n := by omega
+    -- Get the inductive hypothesis at k₂ - 1.
+    have h_surv_prev : w₁ ∈ (e.stateAt (k₂ - 1)).waiters ∧ w₂ ∈ (e.stateAt (k₂ - 1)).waiters :=
+      h_surviving (k₂ - 1) h_le_prev (by omega)
+    have h_surviving_prev : ∀ j, k₁ ≤ j → j ≤ k₂ - 1 →
+        w₁ ∈ (e.stateAt j).waiters ∧ w₂ ∈ (e.stateAt j).waiters := by
+      intro j h_lo h_hi
+      exact h_surviving j h_lo (by omega)
+    have h_ih := ih (k₂ - 1) h_le_prev h_surv_prev.1 h_surv_prev.2
+                    h_surviving_prev h_gap_prev
+    -- Now extend by one step.  Either k₂ - 1 < ops.length (real step)
+    -- or k₂ - 1 ≥ ops.length (state unchanged).
+    by_cases h_in_range : k₂ - 1 < e.ops.length
+    · -- stateAt k₂ = stateAt (k₂-1+1).
+      have h_k_eq : k₂ = (k₂ - 1) + 1 := by omega
+      rw [h_k_eq]
+      rw [RwLockExecution.stateAt_succ e h_in_range]
+      have h_wf_prev : (e.stateAt (k₂ - 1)).wf := e.stateAt_wf (k₂ - 1)
+      -- Apply D-1.8 single-step preservation.
+      apply applyOp_preserves_waiter_order
+        (e.stateAt (k₂ - 1)) h_wf_prev (e.ops[k₂ - 1]'h_in_range)
+        w₁ w₂ h_surv_prev.1 h_surv_prev.2
+      · -- w₁ ∈ post-state: rewrite the goal via h_k_eq and RwLockExecution.stateAt_succ
+        rw [← RwLockExecution.stateAt_succ e h_in_range, ← h_k_eq]; exact h_in₁_at_k₂
+      · rw [← RwLockExecution.stateAt_succ e h_in_range, ← h_k_eq]; exact h_in₂_at_k₂
+      · exact h_ih
+    · -- k₂ - 1 ≥ ops.length: stateAt k₂ = stateAt (k₂ - 1).
+      have h_eq : e.stateAt k₂ = e.stateAt (k₂ - 1) := by
+        unfold RwLockExecution.stateAt
+        have h_ge : e.ops.length ≤ k₂ - 1 := Nat.le_of_not_lt h_in_range
+        have h_take : e.ops.take k₂ = e.ops.take (k₂ - 1) := by
+          rw [List.take_of_length_le (by omega), List.take_of_length_le h_ge]
+        rw [h_take]
+      rw [h_eq]; exact h_ih
+
+-- ============================================================================
+-- SM2.C-defer D-2.5 — Bounded admission via effective-release events
+-- ============================================================================
+
+/-- **WS-SM SM2.C-defer D-2.5 (corollary, weak form)**: every queued
+writer's wait-depth is bounded by `numCores - 1` (independent of the
+trace), via `writerWaitDepth_bounded` (D-2.3).
+
+This is the structural bound that D-3 (liveness) consumes: under any
+fairness assumption with a `maxDelay` parameter, the writer is admitted
+within `(numCores - 1) × maxDelay` steps. -/
+theorem rwLock_bounded_wait_write_distinct_weak
+    (s : RwLockState) (h_wf : s.wf)
+    (c : CoreId) (h_queued : (c, AccessMode.write) ∈ s.waiters) :
+    writerWaitDepth s c ≤ numCores - 1 :=
+  writerWaitDepth_bounded s h_wf c h_queued
+
+/-- **WS-SM SM2.C-defer D-2.5 (alternate form)**: the writer-specific
+bound is symmetric to the reader bound at the structural level (both
+share `numCores - 1` as the worst-case admission window in terms of
+"distinct cores ahead of c").
+
+Concretely, the admission window for a queued writer `c` is bounded by:
+* `idxOf c ≤ numCores - 1 - readers - writer_bit`
+* but the sum `idxOf + readers + writer_bit ≤ numCores - 1` is the tight
+  composite bound (D-2.3).
+
+This theorem packages the writer-specific perspective for SM3 consumers
+in priority-inheritance reasoning. -/
+theorem writerWaitDepth_componentBounded
+    (s : RwLockState) (h_wf : s.wf)
+    (c : CoreId) (h_queued : (c, AccessMode.write) ∈ s.waiters) :
+    s.waiters.idxOf (c, AccessMode.write) ≤ numCores - 1 ∧
+    s.readers.length ≤ numCores - 1 ∧
+    (if s.writerHeld.isSome then 1 else 0) ≤ 1 := by
+  refine ⟨?_, ?_, ?_⟩
+  · -- idxOf ≤ numCores - 1.
+    have h_full := writerWaitDepth_bounded s h_wf c h_queued
+    unfold writerWaitDepth at h_full
+    simp only at h_full
+    omega
+  · -- readers.length ≤ numCores - 1.  From rwLock_bounded_wait_read:
+    -- readers + waiters + writer_bit ≤ numCores.
+    -- waiters.length ≥ 1 (c is in it).  So readers ≤ numCores - 1.
+    have h_bnd := rwLock_bounded_wait_read s h_wf
+    have h_w_pos : 0 < s.waiters.length := by
+      cases h : s.waiters with
+      | nil => rw [h] at h_queued; exact absurd h_queued List.not_mem_nil
+      | cons _ _ => simp
+    by_cases h_w : s.writerHeld.isSome <;> simp [h_w] at h_bnd <;> omega
+  · split <;> omega
+
+-- ============================================================================
+-- SM2.C-defer §4.5 + D-3 — FairTrace predicate + writer liveness (partial)
+-- ============================================================================
+
+/-- **WS-SM SM2.C-defer §4.5 (D-3 input)**: an execution is "release-fair"
+if every holder transitions out of holding within a bounded number of
+steps after acquiring.
+
+`maxDelay` is a parameter of the fairness assumption — it represents
+the kernel-level critical-section duration bound that SM3+ consumers
+must satisfy.  In the spec this is left as a parameter; in the runtime
+it's enforced by the scheduler.
+
+**Strengthened transition-edge form** (closes audit M-2): both
+fairness conjuncts require the release to be a real *transition* edge
+(`c ∈ readers` at `k_rel` AND `c ∉ readers` at `k_rel + 1`), not merely
+"c is not a reader at some later step".  This eliminates the
+vacuous-satisfiability concern. -/
+structure FairTrace (e : RwLockExecution) (maxDelay : Nat) where
+  /-- Every reader-acquire is paired with a reader-release transition
+  within `maxDelay` subsequent steps. -/
+  reader_fairness :
+    ∀ k_acq c,
+      1 ≤ k_acq →
+      c ∈ (e.stateAt k_acq).readers →
+      c ∉ (e.stateAt (k_acq - 1)).readers →
+      ∃ k_rel, k_acq ≤ k_rel ∧ k_rel ≤ k_acq + maxDelay ∧
+        c ∈ (e.stateAt k_rel).readers ∧
+        c ∉ (e.stateAt (k_rel + 1)).readers
+  /-- Every writer-acquire is paired with a writer-release transition
+  within `maxDelay` subsequent steps. -/
+  writer_fairness :
+    ∀ k_acq c,
+      1 ≤ k_acq →
+      (e.stateAt k_acq).writerHeld = some c →
+      (e.stateAt (k_acq - 1)).writerHeld ≠ some c →
+      ∃ k_rel, k_acq ≤ k_rel ∧ k_rel ≤ k_acq + maxDelay ∧
+        (e.stateAt k_rel).writerHeld = some c ∧
+        (e.stateAt (k_rel + 1)).writerHeld ≠ some c
+
+/-- **WS-SM SM2.C-defer D-3.7**: a runtime configuration symbol for the
+maximum release delay.  Set to a placeholder value of `1024` (steps);
+SM3 will tune this against actual kernel critical-section budgets. -/
+def MAX_RELEASE_DELAY : Nat := 1024
+
+/-- **WS-SM SM2.C-defer D-3 (single-step safety / building block)**:
+under a wf state where a writer `c` is queued, a tryAcquireRead from a
+different non-involved core does NOT promote `c` out of waiters.
+
+This is the v1.0.0 baseline single-step safety claim that the v1.0.0
+`rwLock_no_writer_starvation` already provides at the wf level — we
+restate here in the deferred-completion namespace for compositional
+reasoning with `FairTrace`. -/
+theorem rwLock_writer_no_starvation_step
+    (s : RwLockState) (h_wf : s.wf)
+    (c_w : CoreId) (h_w_waiting : (c_w, AccessMode.write) ∈ s.waiters)
+    (c_r : CoreId) (h_r_not_inv : ¬ s.coreInvolved c_r) :
+    (c_w, AccessMode.write) ∈ (s.applyOp (.tryAcquireRead c_r)).waiters :=
+  rwLock_writer_safety_under_reader_acquire s c_w h_w_waiting c_r h_r_not_inv
+
+/-- **WS-SM SM2.C-defer D-3.5 (head-of-queue writer admission)**: when
+a writer is at the head of the wait queue AND no holder exists, the
+next call to `promoteWaitersOnWriterRelease` admits the writer to
+`writerHeld`.
+
+This is the operational basis for D-3.4 (writer-eventually-at-head ⇒
+admitted): once the queue is in this configuration, the next release-
+and-promote step puts the writer into `writerHeld`. -/
+theorem writer_at_head_promoted
+    (s : RwLockState)
+    (c : CoreId) (h_head : s.waiters.head? = some (c, AccessMode.write)) :
+    s.promoteWaitersOnWriterRelease.writerHeld = some c := by
+  unfold RwLockState.promoteWaitersOnWriterRelease
+  cases h_w : s.waiters with
+  | nil => rw [h_w] at h_head; simp at h_head
+  | cons head rest =>
+    -- Destructure head into its components first.
+    obtain ⟨c', m⟩ := head
+    rw [h_w] at h_head
+    simp at h_head
+    -- h_head : c' = c ∧ m = .write
+    obtain ⟨h_c, h_m⟩ := h_head
+    subst h_c; subst h_m
+    rfl
+
+-- ============================================================================
+-- SM2.C-defer §4.4 + D-4 — Concrete event model + bisimulation infrastructure
+-- ============================================================================
+
+/-- **WS-SM SM2.C-defer D-4.1**: a concrete Rust-level operation on the
+lock state.
+
+Each constructor represents one atomic memory operation the Rust impl
+performs.  The abstract `RwLockOp` may map to multiple
+`ConcreteRwLockOp`s (e.g., a `tryAcquireRead` is a load + CAS sequence,
+possibly with CAS-retry under contention).
+
+All constructors carry a `core : CoreId` (the executing core) for
+fairness-reasoning compositionality (closes audit finding L-7). -/
+inductive ConcreteRwLockOp where
+  /-- Load(Acquire): observes current state. -/
+  | load            (core : CoreId)
+  /-- CAS s → s+1 (acquire-read success). -/
+  | casAcquireRead  (core : CoreId) (expected new : UInt64)
+  /-- `fetch_sub(1, Release)` for release-read. -/
+  | fetchSubRead    (core : CoreId)
+  /-- CAS 0 → WRITER_BIT (acquire-write success). -/
+  | casAcquireWrite (core : CoreId)
+  /-- `fetch_and(READER_MASK, Release)` for release-write. -/
+  | fetchAndWrite   (core : CoreId)
+  /-- SEV broadcast from `core`. -/
+  | sev             (core : CoreId)
+  /-- `wfe_bounded` park (no state change). -/
+  | wfeWait         (core : CoreId)
+  deriving Repr, DecidableEq
+
+/-- **WS-SM SM2.C-defer D-4.1**: apply a single concrete operation to the
+bit-packed state.
+
+Returns `(new_state, succeeded)`: the new state and whether the op
+succeeded (CAS may fail).  For non-CAS ops (load, fetch_sub, fetch_and,
+sev, wfe), `succeeded` is always `true`.
+
+`UInt64` arithmetic is modular over `2^64`, faithfully matching the
+Rust impl's `fetch_sub` / `fetch_and` behaviour on a `u64` field —
+including underflow (`0 - 1 = u64::MAX`) and bitmask composition
+(closes audit finding M-4). -/
+def concreteApplyOp (state : UInt64) (op : ConcreteRwLockOp) :
+    UInt64 × Bool :=
+  match op with
+  | .load _ => (state, true)
+  | .casAcquireRead _ expected new =>
+      if state = expected then (new, true) else (state, false)
+  | .fetchSubRead _ => (state - 1, true)
+  | .casAcquireWrite _ =>
+      if state = 0 then (writerBit.toUInt64, true) else (state, false)
+  | .fetchAndWrite _ => (state &&& readerMask.toUInt64, true)
+  | .sev _ => (state, true)
+  | .wfeWait _ => (state, true)
+
+/-- **WS-SM SM2.C-defer D-4.2**: admissible concrete sequences for each
+abstract op.
+
+A single abstract `RwLockOp` maps to a FAMILY of permissible concrete
+sequences (closes audits M-5 / M-6):
+1. **CAS-retry under contention** — `tryAcquireRead` loops on CAS failure.
+2. **Park-and-retry under writer held** — `wfe_bounded`-parks + reloads.
+3. **Conditional SEV emission** — `release_read` emits SEV only when
+   post-state would be empty; otherwise no SEV.
+
+The constructors below enumerate the base "success" shapes; the
+inductive `tryRead_cas_retry` / `tryRead_park_retry` /
+`tryWrite_cas_retry` / `tryWrite_park_retry` constructors close the
+family under contention-retry. -/
+inductive opCorresponds : RwLockOp → List ConcreteRwLockOp → Prop where
+  /-- tryAcquireRead success: load + CAS-success. -/
+  | tryRead_success (c : CoreId) (e n : UInt64) :
+      opCorresponds (.tryAcquireRead c) [.load c, .casAcquireRead c e n]
+  /-- tryAcquireRead CAS-retry: load + CAS-fail + recurse. -/
+  | tryRead_cas_retry (c : CoreId) (e n : UInt64) (tail : List ConcreteRwLockOp) :
+      opCorresponds (.tryAcquireRead c) tail →
+      opCorresponds (.tryAcquireRead c)
+        ([.load c, .casAcquireRead c e n] ++ tail)
+  /-- tryAcquireRead park-retry: load + wfeWait + recurse. -/
+  | tryRead_park_retry (c : CoreId) (tail : List ConcreteRwLockOp) :
+      opCorresponds (.tryAcquireRead c) tail →
+      opCorresponds (.tryAcquireRead c)
+        ([.load c, .wfeWait c] ++ tail)
+  /-- releaseRead: SEV-suppressed (post-state still has holders). -/
+  | releaseRead_no_sev (c : CoreId) :
+      opCorresponds (.releaseRead c) [.fetchSubRead c]
+  /-- releaseRead: SEV-emitted (post-state empty). -/
+  | releaseRead_with_sev (c : CoreId) :
+      opCorresponds (.releaseRead c) [.fetchSubRead c, .sev c]
+  /-- tryAcquireWrite success: load + CAS-success. -/
+  | tryWrite_success (c : CoreId) :
+      opCorresponds (.tryAcquireWrite c) [.load c, .casAcquireWrite c]
+  /-- tryAcquireWrite CAS-retry: load + CAS-fail + recurse. -/
+  | tryWrite_cas_retry (c : CoreId) (tail : List ConcreteRwLockOp) :
+      opCorresponds (.tryAcquireWrite c) tail →
+      opCorresponds (.tryAcquireWrite c)
+        ([.load c, .casAcquireWrite c] ++ tail)
+  /-- tryAcquireWrite park-retry: load + wfeWait + recurse. -/
+  | tryWrite_park_retry (c : CoreId) (tail : List ConcreteRwLockOp) :
+      opCorresponds (.tryAcquireWrite c) tail →
+      opCorresponds (.tryAcquireWrite c)
+        ([.load c, .wfeWait c] ++ tail)
+  /-- releaseWrite: SEV-suppressed. -/
+  | releaseWrite_no_sev (c : CoreId) :
+      opCorresponds (.releaseWrite c) [.fetchAndWrite c]
+  /-- releaseWrite: SEV-emitted. -/
+  | releaseWrite_with_sev (c : CoreId) :
+      opCorresponds (.releaseWrite c) [.fetchAndWrite c, .sev c]
+
+/-- **WS-SM SM2.C-defer D-4.4**: `load` doesn't modify state.
+
+This is the foundational "no-op state preservation" lemma for the
+bisimulation: a load operation is a pure observation that doesn't
+change the lock state. -/
+theorem concreteApplyOp_preserves_sim_load
+    (state : UInt64) (c : CoreId) :
+    (concreteApplyOp state (.load c)).1 = state := by
+  unfold concreteApplyOp
+  rfl
+
+/-- **WS-SM SM2.C-defer D-4.4**: `wfeWait` doesn't modify state.
+
+Same shape as `load`: parking on the WFE event register doesn't change
+the lock's bit-packed state. -/
+theorem concreteApplyOp_preserves_sim_wfe
+    (state : UInt64) (c : CoreId) :
+    (concreteApplyOp state (.wfeWait c)).1 = state := by
+  unfold concreteApplyOp
+  rfl
+
+/-- **WS-SM SM2.C-defer D-4.4**: `sev` doesn't modify state.
+
+SEV is a wake-broadcast signal; it doesn't touch the lock's state. -/
+theorem concreteApplyOp_preserves_sim_sev
+    (state : UInt64) (c : CoreId) :
+    (concreteApplyOp state (.sev c)).1 = state := by
+  unfold concreteApplyOp
+  rfl
+
+/-- **WS-SM SM2.C-defer D-4.5 (failed CAS path)**: a failed
+`casAcquireRead` doesn't modify state.
+
+When the observed value doesn't match `expected`, the CAS leaves state
+unchanged.  This is the building block for `tryRead_cas_retry`'s
+inductive step (the failure step preserves the simulation). -/
+theorem concreteApplyOp_preserves_sim_cas_acquire_read_fail
+    (state expected new : UInt64) (c : CoreId)
+    (h_ne : state ≠ expected) :
+    (concreteApplyOp state (.casAcquireRead c expected new)).1 = state := by
+  unfold concreteApplyOp
+  simp [h_ne]
+
+/-- **WS-SM SM2.C-defer D-4.5 (success CAS path)**: a successful
+`casAcquireRead` produces the new state.
+
+When `state = expected`, the CAS succeeds and returns `new`.  This is
+the building block for `tryRead_success`. -/
+theorem concreteApplyOp_cas_acquire_read_success
+    (state expected new : UInt64) (c : CoreId)
+    (h_eq : state = expected) :
+    (concreteApplyOp state (.casAcquireRead c expected new)).1 = new := by
+  unfold concreteApplyOp
+  simp [h_eq]
+
+/-- **WS-SM SM2.C-defer D-4.7 (failed CAS path)**: a failed
+`casAcquireWrite` doesn't modify state. -/
+theorem concreteApplyOp_preserves_sim_cas_acquire_write_fail
+    (state : UInt64) (c : CoreId)
+    (h_ne : state ≠ 0) :
+    (concreteApplyOp state (.casAcquireWrite c)).1 = state := by
+  unfold concreteApplyOp
+  simp [h_ne]
+
+/-- **WS-SM SM2.C-defer D-4.7 (success CAS path)**: a successful
+`casAcquireWrite` from state 0 produces `writerBit.toUInt64`. -/
+theorem concreteApplyOp_cas_acquire_write_success
+    (state : UInt64) (c : CoreId)
+    (h_eq : state = 0) :
+    (concreteApplyOp state (.casAcquireWrite c)).1 = writerBit.toUInt64 := by
+  unfold concreteApplyOp
+  simp [h_eq]
+
+/-- **WS-SM SM2.C-defer D-4.6 (abstract building block)**: when the
+abstract state has a reader, its encoded form is ≥ 1.
+
+This is the no-`rwLockSim`-dependency version of the underflow-corner
+lemma; the `rwLockSim`-aware form lives in `RwLockRefinement.lean`. -/
+theorem encodeRwLock_at_least_one_when_reader
+    (abstract : RwLockState) (c : CoreId) (h_holder : c ∈ abstract.readers) :
+    encodeRwLock abstract.writerHeld.isSome abstract.readers.length ≥ 1 := by
+  unfold encodeRwLock
+  have h_pos : abstract.readers.length ≥ 1 := by
+    cases h : abstract.readers with
+    | nil => rw [h] at h_holder; exact absurd h_holder List.not_mem_nil
+    | cons _ _ => simp
+  -- Goal: (if writerHeld.isSome then writerBit else 0) + readers.length ≥ 1.
+  -- Use Nat.le_add_left to bound from below by readers.length.
+  exact Nat.le_trans h_pos (Nat.le_add_left _ _)
+
+-- ============================================================================
+-- SM2.C-defer D-3.5 — head-of-queue ⇒ admitted (extended)
+-- ============================================================================
+
+/-- **WS-SM SM2.C-defer D-3.5 (reader-head batch promotion)**: when a
+reader is at the head of the wait queue AND no holder exists, the next
+call to `promoteWaitersOnWriterRelease` admits the reader to `readers`. -/
+theorem reader_at_head_promoted
+    (s : RwLockState)
+    (c : CoreId) (h_head : s.waiters.head? = some (c, AccessMode.read)) :
+    c ∈ s.promoteWaitersOnWriterRelease.readers := by
+  unfold RwLockState.promoteWaitersOnWriterRelease
+  cases h_w : s.waiters with
+  | nil => rw [h_w] at h_head; simp at h_head
+  | cons head rest =>
+    obtain ⟨c', m⟩ := head
+    rw [h_w] at h_head
+    simp at h_head
+    obtain ⟨h_c, h_m⟩ := h_head
+    subst h_c; subst h_m
+    -- head matches read pattern; the post-state's readers contains the
+    -- batch-promoted prefix.  simp closes via `List.mem_cons`.
+    simp
+
+/-- **WS-SM SM2.C-defer D-3.5 (queue-emptied)**: when waiters is empty
+AND no holder exists, `promoteWaitersOnWriterRelease` is a no-op
+(returns the same state).
+
+This is the structural complement to `writer_at_head_promoted` —
+when there's nothing to promote, the function preserves state. -/
+theorem promote_noop_on_empty_waiters (s : RwLockState)
+    (h_w : s.waiters = []) :
+    s.promoteWaitersOnWriterRelease = s := by
+  unfold RwLockState.promoteWaitersOnWriterRelease
+  rw [h_w]
+
+-- ============================================================================
+-- SM2.C-defer D-4.5 — Single-step CAS-success bisimulation (read variant)
+-- ============================================================================
+
+/-- **WS-SM SM2.C-defer D-4.5 (success branch identity)**: when the
+abstract state has no writer and no queued-writer-head, a
+`tryAcquireRead c` for a non-involved core c grows readers by 1.
+
+Concretely, this is the post-state shape for the "acquire-direct"
+branch of `applyOp .tryAcquireRead`. -/
+theorem tryAcquireRead_direct_acquire_shape
+    (s : RwLockState) (c : CoreId)
+    (h_not_inv : ¬ s.coreInvolved c)
+    (h_no_writer : s.writerHeld = none)
+    (h_waiters_safe :
+      s.waiters = [] ∨
+      ∃ c' rest, s.waiters = (c', AccessMode.read) :: rest) :
+    (s.applyOp (.tryAcquireRead c)).readers = c :: s.readers ∧
+    (s.applyOp (.tryAcquireRead c)).writerHeld = s.writerHeld ∧
+    (s.applyOp (.tryAcquireRead c)).waiters = s.waiters := by
+  unfold RwLockState.applyOp
+  simp [h_not_inv, h_no_writer]
+  -- Goal: now the inner `match s.waiters with` needs to be discharged.
+  rcases h_waiters_safe with h | ⟨c', rest, h⟩
+  · rw [h]; simp
+  · rw [h]; simp
+
+/-- **WS-SM SM2.C-defer D-4.7 (success branch identity for writer)**:
+when the abstract state has no holder, a `tryAcquireWrite c` for a
+non-involved core c sets `writerHeld := some c`. -/
+theorem tryAcquireWrite_direct_acquire_shape
+    (s : RwLockState) (c : CoreId)
+    (h_not_inv : ¬ s.coreInvolved c)
+    (h_no_writer : s.writerHeld = none)
+    (h_no_readers : s.readers = []) :
+    (s.applyOp (.tryAcquireWrite c)).writerHeld = some c ∧
+    (s.applyOp (.tryAcquireWrite c)).readers = s.readers ∧
+    (s.applyOp (.tryAcquireWrite c)).waiters = s.waiters := by
+  unfold RwLockState.applyOp
+  simp [h_not_inv, h_no_writer, h_no_readers]
+
 end SeLe4n.Kernel.Concurrency
 
 

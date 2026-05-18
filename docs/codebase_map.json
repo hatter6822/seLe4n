@@ -4,10 +4,10 @@
     "name": "hatter6822/seLe4n",
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
-      "branch": "claude/complete-rwlock-spec-UsPLt",
-      "commit_sha": "2093d0b45d93ab0eec58d26bf48bc34d53b3ed22",
-      "tree_sha": "b57b4d9452e1dcbee91badcb3ab63c8c5ae4a4fc",
-      "committed_at_utc": "2026-05-18T04:00:06+00:00"
+      "branch": "claude/review-deferred-planning-f2VYX",
+      "commit_sha": "08cf0b56cd5f68ec16878137f15b84d107321e16",
+      "tree_sha": "8b42833a26e51498069e022e6f54af21c360d143",
+      "committed_at_utc": "2026-05-18T15:01:26-04:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "aff96c9f05d04f304462d10620a41f818700b92c2b8f4a29f069979643992e7e"
+    "source_digest": "115bf7dc07bff1da32615c642fe07892d1bd086aa03268ac3b6c964a59626288"
   },
   "summary": {
-    "module_count": 215,
-    "declaration_count": 7045
+    "module_count": 217,
+    "declaration_count": 7150
   },
   "readme_sync": {
     "version": "0.31.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 182,
-    "production_loc": 121730,
-    "test_files": 33,
-    "test_loc": 23939,
-    "proved_theorem_lemma_decls": 3544,
+    "production_loc": 123013,
+    "test_files": 35,
+    "test_loc": 24309,
+    "proved_theorem_lemma_decls": 3594,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -14057,7 +14057,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Locks.RwLock",
       "path": "SeLe4n/Kernel/Concurrency/Locks/RwLock.lean",
-      "declaration_count": 93,
+      "declaration_count": 161,
       "declarations": [
         {
           "kind": "namespace",
@@ -14352,6 +14352,8 @@
             "RwLockState.unheld",
             "applyOp",
             "bootCoreId",
+            "c0",
+            "c1",
             "length",
             "wf"
           ]
@@ -15109,13 +15111,781 @@
             "writerBit",
             "writerBitPos"
           ]
+        },
+        {
+          "kind": "inductive",
+          "name": "RwLockKernelStep",
+          "line": 2462,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "applyOp"
+          ]
+        },
+        {
+          "kind": "inductive",
+          "name": "RwLockReachable",
+          "line": 2483,
+          "called": [
+            "RwLockKernelStep",
+            "RwLockState",
+            "RwLockState.unheld"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RwLockReachable_implies_wf",
+          "line": 2495,
+          "called": [
+            "RwLockReachable",
+            "RwLockState",
+            "RwLockState.unheld_wf",
+            "rwLock_releaseRead_preserves_wf",
+            "rwLock_releaseWrite_preserves_wf",
+            "rwLock_tryAcquireRead_preserves_wf",
+            "rwLock_tryAcquireWrite_preserves_wf",
+            "wf"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "RwLockExecution",
+          "line": 2516,
+          "called": [
+            "RwLockOp",
+            "RwLockReachable",
+            "RwLockState",
+            "initial"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RwLockExecution.initial_wf",
+          "line": 2525,
+          "called": [
+            "RwLockExecution",
+            "RwLockReachable_implies_wf",
+            "wf"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RwLockExecution.stateAt",
+          "line": 2530,
+          "called": [
+            "RwLockExecution",
+            "RwLockState",
+            "RwLockState.applyOp",
+            "initial"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RwLockExecution.finalState",
+          "line": 2534,
+          "called": [
+            "RwLockExecution",
+            "RwLockState",
+            "length",
+            "stateAt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RwLockExecution.stateAt_zero",
+          "line": 2539,
+          "called": [
+            "RwLockExecution",
+            "RwLockExecution.stateAt",
+            "initial",
+            "stateAt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RwLockExecution.stateAt_length",
+          "line": 2544,
+          "called": [
+            "RwLockExecution",
+            "finalState",
+            "length",
+            "stateAt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RwLockExecution.stateAt_succ",
+          "line": 2552,
+          "called": [
+            "RwLockExecution",
+            "RwLockExecution.stateAt",
+            "applyOp",
+            "length",
+            "stateAt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RwLockExecution.stateAt_reachable",
+          "line": 2567,
+          "called": [
+            "RwLockExecution",
+            "RwLockExecution.stateAt",
+            "RwLockExecution.stateAt_succ",
+            "RwLockExecution.stateAt_zero",
+            "RwLockReachable",
+            "length",
+            "stateAt",
+            "zero"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RwLockExecution.stateAt_wf",
+          "line": 2594,
+          "called": [
+            "RwLockExecution",
+            "RwLockReachable_implies_wf",
+            "stateAt",
+            "stateAt_reachable",
+            "wf"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "writerWaitDepth",
+          "line": 2614,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "writerWaitDepth_simp",
+          "line": 2624,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "length",
+            "writerWaitDepth"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "<anonymous:instance:2640>",
+          "line": 2640,
+          "called": [
+            "RwLockState"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "idxOf_le_length_sub_one_pair",
+          "line": 2647,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "writerWaitDepth_bounded",
+          "line": 2678,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "idxOf_le_length_sub_one_pair",
+            "length",
+            "none",
+            "numCores",
+            "rwLock_bounded_wait_read",
+            "wf",
+            "wf_writerReadersExclusion",
+            "writerWaitDepth"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RwLockState.isEffectiveRelease",
+          "line": 2716,
+          "called": [
+            "RwLockOp",
+            "RwLockState"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "RwLockState.decidableIsEffectiveRelease",
+          "line": 2725,
+          "called": [
+            "RwLockOp",
+            "RwLockState",
+            "RwLockState.isEffectiveRelease",
+            "isEffectiveRelease"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RwLockExecution.isEffectiveReleaseAt",
+          "line": 2734,
+          "called": [
+            "RwLockExecution",
+            "isEffectiveRelease",
+            "length",
+            "stateAt"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RwLockExecution.countEffectiveReleases",
+          "line": 2746,
+          "called": [
+            "RwLockExecution",
+            "isEffectiveReleaseAt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RwLockExecution.countEffectiveReleases_le_window",
+          "line": 2751,
+          "called": [
+            "RwLockExecution",
+            "RwLockExecution.countEffectiveReleases",
+            "countEffectiveReleases",
+            "isEffectiveReleaseAt"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RwLockExecution.waiterAt",
+          "line": 2767,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "RwLockExecution",
+            "stateAt"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "RwLockExecution.decidableWaiterAt",
+          "line": 2772,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "RwLockExecution",
+            "RwLockExecution.waiterAt",
+            "waiterAt"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RwLockExecution.holderAt",
+          "line": 2780,
+          "called": [
+            "CoreId",
+            "RwLockExecution",
+            "stateAt"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "RwLockExecution.decidableHolderAt",
+          "line": 2784,
+          "called": [
+            "CoreId",
+            "RwLockExecution",
+            "RwLockExecution.holderAt",
+            "holderAt"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RwLockExecution.enqueueStep",
+          "line": 2798,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "RwLockExecution",
+            "length",
+            "waiterAt"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RwLockExecution.admissionStep",
+          "line": 2808,
+          "called": [
+            "CoreId",
+            "RwLockExecution",
+            "holderAt",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RwLockExecution.enqueueStep_characterization",
+          "line": 2820,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "RwLockExecution",
+            "RwLockExecution.enqueueStep",
+            "enqueueStep",
+            "waiterAt"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "RwLockExecution.admissionStep_characterization",
+          "line": 2835,
+          "called": [
+            "CoreId",
+            "RwLockExecution",
+            "RwLockExecution.admissionStep",
+            "admissionStep",
+            "holderAt"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RwLockOp.coreOfOp",
+          "line": 2852,
+          "called": [
+            "CoreId",
+            "RwLockOp"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "RwLockOp.modeOfOp",
+          "line": 2861,
+          "called": [
+            "AccessMode",
+            "RwLockOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tryAcquireRead_waiters_append_or_noop",
+          "line": 2872,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "RwLockState.applyOp",
+            "applyOp",
+            "coreInvolved",
+            "head"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tryAcquireWrite_waiters_append_or_noop",
+          "line": 2897,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "RwLockState.applyOp",
+            "applyOp",
+            "coreInvolved"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "releaseRead_waiters_sublist",
+          "line": 2914,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "RwLockState.applyOp",
+            "applyOp",
+            "filter",
+            "rwLock_fifo_admission_readers_empty"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "releaseWrite_waiters_sublist",
+          "line": 2935,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "RwLockState.applyOp",
+            "applyOp",
+            "none",
+            "rwLock_fifo_admission"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "release_waiters_sublist",
+          "line": 2951,
+          "called": [
+            "RwLockOp",
+            "RwLockState",
+            "applyOp",
+            "releaseRead_waiters_sublist",
+            "releaseWrite_waiters_sublist"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "acquire_waiters_super_or_eq",
+          "line": 2965,
+          "called": [
+            "RwLockOp",
+            "RwLockState",
+            "applyOp",
+            "tryAcquireRead_waiters_append_or_noop",
+            "tryAcquireWrite_waiters_append_or_noop"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "idxOf_append_of_mem",
+          "line": 2987,
+          "called": [
+            "AccessMode",
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "drop_idxOf_eq_of_nodup",
+          "line": 2999,
+          "called": [
+            "head",
+            "zero"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "nodup_of_nodup_map_fst",
+          "line": 3029,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "head"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "releaseRead_effective_post",
+          "line": 3046,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "RwLockState.applyOp",
+            "applyOp",
+            "filter",
+            "promoteWaitersIfReadersEmpty"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "releaseRead_noop_post",
+          "line": 3057,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "RwLockState.applyOp",
+            "applyOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "releaseWrite_effective_post",
+          "line": 3064,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "RwLockState.applyOp",
+            "applyOp",
+            "none",
+            "promoteWaitersOnWriterRelease"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "releaseWrite_noop_post",
+          "line": 3073,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "RwLockState.applyOp",
+            "applyOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applyOp_preserves_waiter_order",
+          "line": 3085,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "RwLockOp",
+            "RwLockState",
+            "applyOp",
+            "drop_idxOf_eq_of_nodup",
+            "filter",
+            "idxOf_append_of_mem",
+            "nodup_of_nodup_map_fst",
+            "none",
+            "releaseRead_effective_post",
+            "releaseRead_noop_post",
+            "releaseWrite_effective_post",
+            "releaseWrite_noop_post",
+            "rwLock_fifo_admission",
+            "rwLock_fifo_admission_readers_empty",
+            "tryAcquireRead_waiters_append_or_noop",
+            "tryAcquireWrite_waiters_append_or_noop",
+            "wf",
+            "wf_waitersCoresNodup"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rwLock_fifo_admission_temporal_structural",
+          "line": 3164,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "RwLockExecution",
+            "RwLockExecution.stateAt",
+            "RwLockExecution.stateAt_succ",
+            "applyOp_preserves_waiter_order",
+            "length",
+            "stateAt",
+            "stateAt_wf",
+            "wf",
+            "zero"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rwLock_bounded_wait_write_distinct_weak",
+          "line": 3238,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "numCores",
+            "wf",
+            "writerWaitDepth",
+            "writerWaitDepth_bounded"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "writerWaitDepth_componentBounded",
+          "line": 3256,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "length",
+            "numCores",
+            "rwLock_bounded_wait_read",
+            "wf",
+            "writerWaitDepth",
+            "writerWaitDepth_bounded"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "FairTrace",
+          "line": 3297,
+          "called": [
+            "RwLockExecution",
+            "stateAt"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "MAX_RELEASE_DELAY",
+          "line": 3322,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "rwLock_writer_no_starvation_step",
+          "line": 3332,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "applyOp",
+            "coreInvolved",
+            "rwLock_writer_safety_under_reader_acquire",
+            "wf"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "writer_at_head_promoted",
+          "line": 3347,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "RwLockState.promoteWaitersOnWriterRelease",
+            "head"
+          ]
+        },
+        {
+          "kind": "inductive",
+          "name": "ConcreteRwLockOp",
+          "line": 3378,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "concreteApplyOp",
+          "line": 3406,
+          "called": [
+            "ConcreteRwLockOp"
+          ]
+        },
+        {
+          "kind": "inductive",
+          "name": "opCorresponds",
+          "line": 3433,
+          "called": [
+            "ConcreteRwLockOp",
+            "CoreId",
+            "RwLockOp",
+            "tail"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "concreteApplyOp_preserves_sim_load",
+          "line": 3478,
+          "called": [
+            "CoreId",
+            "concreteApplyOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "concreteApplyOp_preserves_sim_wfe",
+          "line": 3488,
+          "called": [
+            "CoreId",
+            "concreteApplyOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "concreteApplyOp_preserves_sim_sev",
+          "line": 3497,
+          "called": [
+            "CoreId",
+            "concreteApplyOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "concreteApplyOp_preserves_sim_cas_acquire_read_fail",
+          "line": 3509,
+          "called": [
+            "CoreId",
+            "concreteApplyOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "concreteApplyOp_cas_acquire_read_success",
+          "line": 3521,
+          "called": [
+            "CoreId",
+            "concreteApplyOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "concreteApplyOp_preserves_sim_cas_acquire_write_fail",
+          "line": 3530,
+          "called": [
+            "CoreId",
+            "concreteApplyOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "concreteApplyOp_cas_acquire_write_success",
+          "line": 3539,
+          "called": [
+            "CoreId",
+            "concreteApplyOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "encodeRwLock_at_least_one_when_reader",
+          "line": 3551,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "encodeRwLock",
+            "le_trans",
+            "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "reader_at_head_promoted",
+          "line": 3570,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "RwLockState.promoteWaitersOnWriterRelease",
+            "head"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "promote_noop_on_empty_waiters",
+          "line": 3593,
+          "called": [
+            "RwLockState",
+            "RwLockState.promoteWaitersOnWriterRelease",
+            "promoteWaitersOnWriterRelease"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tryAcquireRead_direct_acquire_shape",
+          "line": 3609,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "RwLockState.applyOp",
+            "applyOp",
+            "coreInvolved",
+            "none"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "tryAcquireWrite_direct_acquire_shape",
+          "line": 3629,
+          "called": [
+            "CoreId",
+            "RwLockState",
+            "RwLockState.applyOp",
+            "applyOp",
+            "coreInvolved",
+            "none"
+          ]
         }
       ]
     },
     {
       "module": "SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement",
       "path": "SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean",
-      "declaration_count": 10,
+      "declaration_count": 18,
       "declarations": [
         {
           "kind": "namespace",
@@ -15220,6 +15990,88 @@
           "name": "<anonymous:example:259>",
           "line": 259,
           "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "concreteApplyOp_fetch_sub_no_underflow",
+          "line": 272,
+          "called": [
+            "CoreId",
+            "RwLockEncoded",
+            "RwLockState",
+            "encodeRwLock_at_least_one_when_reader",
+            "rwLockSim"
+          ]
+        },
+        {
+          "kind": "inductive",
+          "name": "ListCorresponds",
+          "line": 286,
+          "called": [
+            "ConcreteRwLockOp",
+            "RwLockOp",
+            "opCorresponds"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "rustImplementsRwLock",
+          "line": 298,
+          "called": [
+            "ConcreteRwLockOp",
+            "ListCorresponds",
+            "RwLockOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rust_rwLock_refines_lean_nil",
+          "line": 305,
+          "called": [
+            "RwLockEncoded",
+            "RwLockOp",
+            "RwLockState",
+            "RwLockState.applyOp",
+            "rwLockSim"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "concreteApplyOp_load_preserves_state",
+          "line": 319,
+          "called": [
+            "CoreId",
+            "concreteApplyOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "concreteApplyOp_wfeWait_preserves_state",
+          "line": 323,
+          "called": [
+            "CoreId",
+            "concreteApplyOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "concreteApplyOp_sev_preserves_state",
+          "line": 327,
+          "called": [
+            "CoreId",
+            "concreteApplyOp"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rwLockSim_preserved_by_load",
+          "line": 336,
+          "called": [
+            "CoreId",
+            "RwLockEncoded",
+            "RwLockState",
+            "rwLockSim"
+          ]
         }
       ]
     },
@@ -60176,7 +61028,8 @@
           "called": [
             "CapDerivationEdge",
             "CapDerivationTree",
-            "CdtNodeId"
+            "CdtNodeId",
+            "c0"
           ]
         },
         {
@@ -60186,6 +61039,7 @@
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
+            "c0",
             "childMapConsistent",
             "parentMapConsistent",
             "removeEdge"
@@ -81837,6 +82691,8 @@
             "MemoryEvent",
             "append",
             "bootCoreId",
+            "c1",
+            "c2",
             "wellFormed"
           ]
         },
@@ -82081,6 +82937,8 @@
             "append",
             "assertBool",
             "bootCoreId",
+            "c1",
+            "c2",
             "wellFormed"
           ]
         },
@@ -84729,6 +85587,8 @@
             "RegValue",
             "RegisterFile",
             "arm64DefaultLayout",
+            "c1",
+            "c2",
             "decodeCSpaceCopyArgs",
             "decodeCSpaceDeleteArgs",
             "decodeCSpaceMintArgs",
@@ -87910,6 +88770,288 @@
       ]
     },
     {
+      "module": "tests.RwLockDeferredSuite",
+      "path": "tests/RwLockDeferredSuite.lean",
+      "declaration_count": 22,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Tests.RwLockDeferred",
+          "line": 22,
+          "called": [
+            "ConcreteRwLockOp",
+            "FairTrace",
+            "ListCorresponds",
+            "MAX_RELEASE_DELAY",
+            "RwLockExecution",
+            "RwLockExecution.admissionStep",
+            "RwLockExecution.admissionStep_characterization",
+            "RwLockExecution.countEffectiveReleases",
+            "RwLockExecution.countEffectiveReleases_le_window",
+            "RwLockExecution.enqueueStep",
+            "RwLockExecution.enqueueStep_characterization",
+            "RwLockExecution.holderAt",
+            "RwLockExecution.initial_wf",
+            "RwLockExecution.isEffectiveReleaseAt",
+            "RwLockExecution.stateAt",
+            "RwLockExecution.stateAt_reachable",
+            "RwLockExecution.stateAt_succ",
+            "RwLockExecution.stateAt_wf",
+            "RwLockExecution.stateAt_zero",
+            "RwLockExecution.waiterAt",
+            "RwLockKernelStep",
+            "RwLockReachable",
+            "RwLockReachable_implies_wf",
+            "RwLockState.isEffectiveRelease",
+            "acquire_waiters_super_or_eq",
+            "applyOp_preserves_waiter_order",
+            "concreteApplyOp",
+            "concreteApplyOp_cas_acquire_read_success",
+            "concreteApplyOp_cas_acquire_write_success",
+            "concreteApplyOp_fetch_sub_no_underflow",
+            "concreteApplyOp_load_preserves_state",
+            "concreteApplyOp_preserves_sim_cas_acquire_read_fail",
+            "concreteApplyOp_preserves_sim_cas_acquire_write_fail",
+            "concreteApplyOp_preserves_sim_load",
+            "concreteApplyOp_preserves_sim_sev",
+            "concreteApplyOp_preserves_sim_wfe",
+            "concreteApplyOp_sev_preserves_state",
+            "concreteApplyOp_wfeWait_preserves_state",
+            "encodeRwLock_at_least_one_when_reader",
+            "opCorresponds",
+            "promote_noop_on_empty_waiters",
+            "reader_at_head_promoted",
+            "releaseRead_waiters_sublist",
+            "releaseWrite_waiters_sublist",
+            "release_waiters_sublist",
+            "rustImplementsRwLock",
+            "rust_rwLock_refines_lean_nil",
+            "rwLock_bounded_wait_write_distinct_weak",
+            "rwLock_fifo_admission_temporal_structural",
+            "rwLock_writer_no_starvation_step",
+            "tryAcquireRead_direct_acquire_shape",
+            "tryAcquireRead_waiters_append_or_noop",
+            "tryAcquireWrite_direct_acquire_shape",
+            "tryAcquireWrite_waiters_append_or_noop",
+            "writerWaitDepth",
+            "writerWaitDepth_bounded",
+            "writerWaitDepth_componentBounded",
+            "writerWaitDepth_simp",
+            "writer_at_head_promoted"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "c0",
+          "line": 115,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "c1",
+          "line": 116,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "c2",
+          "line": 117,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "c3",
+          "line": 118,
+          "called": [
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:121>",
+          "line": 121,
+          "called": [
+            "RwLockState",
+            "c0",
+            "c1",
+            "c2",
+            "c3",
+            "writerWaitDepth"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:127>",
+          "line": 127,
+          "called": [
+            "RwLockState",
+            "c0",
+            "c1",
+            "c2",
+            "c3",
+            "writerWaitDepth"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:133>",
+          "line": 133,
+          "called": [
+            "RwLockState",
+            "c0",
+            "c1",
+            "c2",
+            "c3",
+            "writerWaitDepth"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:140>",
+          "line": 140,
+          "called": [
+            "applyOp",
+            "c0"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:143>",
+          "line": 143,
+          "called": [
+            "applyOp",
+            "c0"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:147>",
+          "line": 147,
+          "called": [
+            "applyOp",
+            "c0",
+            "c1"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:152>",
+          "line": 152,
+          "called": [
+            "RwLockState",
+            "c0",
+            "none"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:159>",
+          "line": 159,
+          "called": [
+            "RwLockState",
+            "c0",
+            "c1",
+            "c2",
+            "none",
+            "promoteWaitersOnWriterRelease"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:167>",
+          "line": 167,
+          "called": [
+            "c0",
+            "concreteApplyOp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:170>",
+          "line": 170,
+          "called": [
+            "c0",
+            "concreteApplyOp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:173>",
+          "line": 173,
+          "called": [
+            "c0",
+            "concreteApplyOp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:176>",
+          "line": 176,
+          "called": [
+            "c0",
+            "concreteApplyOp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:180>",
+          "line": 180,
+          "called": [
+            "c0",
+            "concreteApplyOp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:184>",
+          "line": 184,
+          "called": [
+            "MAX_RELEASE_DELAY"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "assertBool",
+          "line": 191,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "runDeferredChecks",
+          "line": 198,
+          "called": [
+            "MAX_RELEASE_DELAY",
+            "RwLockState",
+            "applyOp",
+            "assertBool",
+            "c0",
+            "c1",
+            "c2",
+            "concreteApplyOp",
+            "length",
+            "none",
+            "promoteWaitersOnWriterRelease",
+            "wf",
+            "writerWaitDepth"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 259,
+          "called": [
+            "runDeferredChecks"
+          ]
+        }
+      ]
+    },
+    {
       "module": "tests.RwLockSuite",
       "path": "tests/RwLockSuite.lean",
       "declaration_count": 59,
@@ -88356,6 +89498,7 @@
             "applyOp",
             "assertBool",
             "bootCoreId",
+            "c1",
             "length",
             "wf"
           ]
@@ -88384,6 +89527,8 @@
             "applyOp",
             "assertBool",
             "bootCoreId",
+            "c1",
+            "c2",
             "length",
             "wf"
           ]
@@ -88398,6 +89543,7 @@
             "applyOp",
             "assertBool",
             "bootCoreId",
+            "c1",
             "wf"
           ]
         },
@@ -88411,6 +89557,8 @@
             "applyOp",
             "assertBool",
             "bootCoreId",
+            "c1",
+            "c2",
             "wf"
           ]
         },
@@ -88444,6 +89592,7 @@
             "RwLockState.unheld",
             "assertBool",
             "bootCoreId",
+            "c1",
             "none",
             "rwLockSim",
             "writerBit"
@@ -88470,6 +89619,9 @@
             "applyOp",
             "assertBool",
             "bootCoreId",
+            "c1",
+            "c2",
+            "c3",
             "length",
             "numCores",
             "wf"
@@ -88486,6 +89638,9 @@
             "applyOp",
             "assertBool",
             "bootCoreId",
+            "c1",
+            "c2",
+            "c3",
             "length",
             "promoteWaitersOnWriterRelease"
           ]
@@ -89170,6 +90325,8 @@
             "bklHeldBy",
             "bklRelease",
             "bootCoreId",
+            "c0",
+            "c1",
             "unheld"
           ]
         },
@@ -90670,6 +91827,7 @@
             "applyOp",
             "assertBool",
             "bootCoreId",
+            "c1",
             "wf"
           ]
         },
@@ -90682,6 +91840,7 @@
             "applyOp",
             "assertBool",
             "bootCoreId",
+            "c1",
             "releaseAndPromote",
             "wf"
           ]
@@ -90706,7 +91865,8 @@
             "CoreId",
             "applyOp",
             "assertBool",
-            "bootCoreId"
+            "bootCoreId",
+            "c1"
           ]
         },
         {
@@ -90718,7 +91878,8 @@
             "TicketLockState.unheld",
             "applyOp",
             "assertBool",
-            "bootCoreId"
+            "bootCoreId",
+            "c1"
           ]
         },
         {
@@ -90731,6 +91892,8 @@
             "applyOp",
             "assertBool",
             "bootCoreId",
+            "c1",
+            "c2",
             "none",
             "releaseAndPromote",
             "wf"
@@ -90757,6 +91920,9 @@
             "applyOp",
             "assertBool",
             "bootCoreId",
+            "c1",
+            "c2",
+            "c3",
             "numCores",
             "observeServing",
             "releaseAndPromote",
@@ -90782,7 +91948,9 @@
             "TicketLockState.unheld",
             "applyOp",
             "assertBool",
-            "bootCoreId"
+            "bootCoreId",
+            "c1",
+            "c2"
           ]
         },
         {
@@ -90811,6 +91979,86 @@
           "called": [
             "runTicketLockChecks"
           ]
+        }
+      ]
+    },
+    {
+      "module": "tests.Tier5.RwLockOracle",
+      "path": "tests/Tier5/RwLockOracle.lean",
+      "declaration_count": 7,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Tier5.RwLockOracle",
+          "line": 50,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "parseCoreId",
+          "line": 56,
+          "called": [
+            "CoreId",
+            "none",
+            "numCores",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "parseOp",
+          "line": 63,
+          "called": [
+            "RwLockOp",
+            "bind",
+            "head",
+            "isEmpty",
+            "none",
+            "ofList",
+            "parseCoreId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "parseTrace",
+          "line": 79,
+          "called": [
+            "RwLockOp",
+            "bind",
+            "filter",
+            "foldr",
+            "isEmpty",
+            "parseOp"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "renderState",
+          "line": 90,
+          "called": [
+            "RwLockState",
+            "count",
+            "length"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 97,
+          "called": [
+            "RwLockState.applyOp",
+            "RwLockState.unheld",
+            "finalState",
+            "none",
+            "parseTrace",
+            "renderState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 111,
+          "called": []
         }
       ]
     },
