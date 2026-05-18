@@ -79,6 +79,14 @@ open SeLe4n.Kernel.Concurrency
 -- D-2.4 full substantive monotonicity (NEW)
 #check @writerWaitDepth_monotone_under_effective_release
 
+-- D-1.9 operational invariants (NEW — closes D-1.9 partial gap)
+#check @leave_waiters_implies_holder
+#check @promote_prefix_inclusion
+#check @c_in_waiters_through_admission
+
+-- D-1.9 FULL MAIN THEOREM (NEW)
+#check @rwLock_fifo_admission_temporal
+
 -- §4.5 FairTrace + D-3 liveness building blocks
 #check @FairTrace
 #check @MAX_RELEASE_DELAY

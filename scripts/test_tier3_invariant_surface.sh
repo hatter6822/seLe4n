@@ -1586,6 +1586,10 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.applyOp_preserves_waiter_order
 #check @SeLe4n.Kernel.Concurrency.rwLock_fifo_admission_temporal_structural
 #check @SeLe4n.Kernel.Concurrency.writerWaitDepth_monotone_under_effective_release
+#check @SeLe4n.Kernel.Concurrency.leave_waiters_implies_holder
+#check @SeLe4n.Kernel.Concurrency.promote_prefix_inclusion
+#check @SeLe4n.Kernel.Concurrency.c_in_waiters_through_admission
+#check @SeLe4n.Kernel.Concurrency.rwLock_fifo_admission_temporal
 #check @SeLe4n.Kernel.Concurrency.FairTrace
 #check @SeLe4n.Kernel.Concurrency.MAX_RELEASE_DELAY
 #check @SeLe4n.Kernel.Concurrency.writer_at_head_promoted

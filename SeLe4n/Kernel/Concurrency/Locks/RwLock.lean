@@ -2830,14 +2830,13 @@ private theorem filter_ne_length_of_nodup
       subst h_eq
       have h_filt : (head :: rest).filter (· ≠ head) = rest := by
         rw [List.filter_cons]
-        simp only [ne_eq, decide_not, decide_eq_true_eq, not_true_eq_false,
-                   Bool.not_false, cond_true, Bool.not_true, cond_false]
+        have h_dec : (decide (head ≠ head) : Bool) = false := by simp
+        rw [h_dec]
+        -- rest contains no head (Nodup); filter keeps all of rest.
         apply List.filter_eq_self.mpr
         intro y hy
-        simp only [ne_eq, decide_not, Bool.not_eq_true', decide_eq_false_iff_not]
-        intro h_y_eq
-        subst h_y_eq
-        exact h_head_notin hy
+        have h_y_ne : y ≠ head := fun h_eq => h_head_notin (h_eq ▸ hy)
+        simp [h_y_ne]
       rw [h_filt, List.length_cons]
     · -- head ≠ x: filter keeps head.  Recurse on rest.
       have h_filt : (head :: rest).filter (· ≠ x) = head :: rest.filter (· ≠ x) := by
@@ -2903,10 +2902,15 @@ private theorem releaseRead_post_no_promote
   omega
 
 /-- **WS-SM SM2.C-defer helper (sub-case A: releaseRead, readers.length ≥ 2)**:
-the depth strictly decreases by 1 in the no-promote release-read sub-case. -/
+the depth strictly decreases by 1 in the no-promote release-read sub-case.
+
+The `h_queued` parameter is named for clarity at the call-site (it
+documents the "writer c remains queued" precondition) but the proof
+itself doesn't need it — the depth calculation here doesn't depend on
+which waiter c is. -/
 private theorem writerWaitDepth_releaseRead_no_promote_decreases
     (s : RwLockState) (h_wf : s.wf)
-    (c : CoreId) (h_queued : (c, AccessMode.write) ∈ s.waiters)
+    (c : CoreId) (_h_queued : (c, AccessMode.write) ∈ s.waiters)
     (c' : CoreId) (h_in : c' ∈ s.readers) (h_size : s.readers.length ≥ 2) :
     writerWaitDepth (s.applyOp (.releaseRead c')) c + 1 ≤ writerWaitDepth s c := by
   rw [releaseRead_post_no_promote s h_wf c' h_in h_size]
@@ -2919,11 +2923,16 @@ private theorem writerWaitDepth_releaseRead_no_promote_decreases
 /-- **WS-SM SM2.C-defer helper**: under wf, if `releaseRead c'` is
 effective AND `readers.length = 1` (so c' is the only reader), the
 post-state has `readers := []` and then promotion fires based on
-waiters head. -/
+waiters head.
+
+`h_no_writer` is named for documentation at the call-site (an invariant
+captured under wf via INV-R1) but is implied by `h_size_one` since
+INV-R1 forces `readers = []` when writer is held.  We keep both for
+clarity; the proof doesn't use h_no_writer directly. -/
 private theorem releaseRead_post_with_promote_setup
     (s : RwLockState) (h_wf : s.wf) (c' : CoreId)
     (h_in : c' ∈ s.readers) (h_size_one : s.readers.length = 1)
-    (h_no_writer : s.writerHeld = none) :
+    (_h_no_writer : s.writerHeld = none) :
     s.applyOp (.releaseRead c') =
       ({ writerHeld := s.writerHeld, readers := [],
          waiters := s.waiters } : RwLockState).promoteWaitersIfReadersEmpty := by
@@ -2943,7 +2952,7 @@ private theorem releaseRead_post_with_promote_setup
 under wf (so INV-R1 gives readers = []), the post-state is
 `{writerHeld := none, readers := [], waiters := s.waiters}.promoteWaitersOnWriterRelease`. -/
 private theorem releaseWrite_post_with_promote_setup
-    (s : RwLockState) (h_wf : s.wf) (c' : CoreId)
+    (s : RwLockState) (_h_wf : s.wf) (c' : CoreId)
     (h_held : s.writerHeld = some c') :
     s.applyOp (.releaseWrite c') =
       ({ writerHeld := none, readers := s.readers,
@@ -3419,16 +3428,16 @@ theorem tryAcquireRead_waiters_append_or_noop (s : RwLockState) (c : CoreId) :
   cases h_wq : s.waiters with
   | nil =>
     -- waiters = [], match enters reader-head branch (= acquire-direct).
-    left; simp [h_wq]
-  | cons head rest =>
+    left; simp
+  | cons head _rest =>
     obtain ⟨_, wm⟩ := head
     cases wm with
     | write =>
       -- Head is writer → enqueue.
-      right; simp [h_wq]
+      right; simp
     | read =>
       -- Head is reader → acquire direct (waiters unchanged).
-      left; simp [h_wq]
+      left; simp
 
 /-- **WS-SM SM2.C-defer D-1.6**: `tryAcquireWrite c` either is a no-op or
 appends EXACTLY `(c, .write)` at the tail. -/
@@ -3562,22 +3571,12 @@ private theorem drop_idxOf_eq_of_nodup
       have := ih rest h_rest_nodup h_in
       omega
 
-/-- **WS-SM SM2.C-defer helper**: Nodup-fst implies Nodup on the full
-pair list (since equal pairs require equal fst components). -/
-private theorem nodup_of_nodup_map_fst
-    (l : List (CoreId × AccessMode)) (h : (l.map Prod.fst).Nodup) : l.Nodup := by
-  induction l with
-  | nil => exact List.Pairwise.nil
-  | cons head rest ih =>
-    rw [List.map_cons] at h
-    rw [List.nodup_cons] at h
-    rw [List.nodup_cons]
-    have h_rest := ih h.2
-    refine ⟨?_, h_rest⟩
-    intro h_in
-    -- head ∈ rest ⇒ head.fst ∈ rest.map fst, contradicting h.1.
-    have h_fst_in : head.fst ∈ rest.map Prod.fst := List.mem_map.mpr ⟨head, h_in, rfl⟩
-    exact h.1 h_fst_in
+/-- **WS-SM SM2.C-defer helper**: alias for the earlier `_local`-suffixed
+form (defined at line ~2796 for D-2 use).  Used by D-1.8 / D-1.9 below. -/
+@[inline]
+private def nodup_of_nodup_map_fst
+    (l : List (CoreId × AccessMode)) (h : (l.map Prod.fst).Nodup) : l.Nodup :=
+  nodup_of_nodup_map_fst_local l h
 
 /-- **WS-SM SM2.C-defer helper**: characterization of release-read
 post-state when `c ∈ readers` (the effective-release branch). -/
@@ -3868,7 +3867,7 @@ This is the v1.0.0 baseline single-step safety claim that the v1.0.0
 restate here in the deferred-completion namespace for compositional
 reasoning with `FairTrace`. -/
 theorem rwLock_writer_no_starvation_step
-    (s : RwLockState) (h_wf : s.wf)
+    (s : RwLockState) (_h_wf : s.wf)
     (c_w : CoreId) (h_w_waiting : (c_w, AccessMode.write) ∈ s.waiters)
     (c_r : CoreId) (h_r_not_inv : ¬ s.coreInvolved c_r) :
     (c_w, AccessMode.write) ∈ (s.applyOp (.tryAcquireRead c_r)).waiters :=
@@ -4274,34 +4273,802 @@ private theorem admissionStep_le_of_holder
   unfold RwLockExecution.admissionStep
   exact h_eq
 
--- WS-SM SM2.C-defer D-1.9 (full main theorem) — temporal FIFO admission.
---
--- For an execution `e` starting from `RwLockState.unheld` and two waiters
--- `(c₁, m₁)` and `(c₂, m₂)` enqueued at trace positions `p₁ < p₂`, if
--- `c₂` is admitted at step `a₂`, then `c₁` is admitted at some step
--- `a₁ ≤ a₂`.
---
--- The foundational helpers are landed: `admissionStep_le_of_holder`,
--- `range_find?_le_of_satisfies`, `find_smallest_le`, and the structural
--- multi-step form `rwLock_fifo_admission_temporal_structural`.
---
--- Consumers use the structural form for FIFO reasoning; the bridge
--- helper converts holder-existence claims to admissionStep bounds.
---
--- The complete formal D-1.9 main theorem requires three additional
--- operational invariants over the trace:
---
---   1. `c_in_waiters_through_admission`: queued waiters stay in waiters
---      until their FIRST admission step.
---   2. `leave_waiters_implies_holder`: leaving waiters always means
---      becoming a holder (via promote).
---   3. `promote_prefix_inclusion`: a waiter at lower idxOf in the
---      dropped prefix is also in the dropped prefix.
---
--- Each is mathematically straightforward (case-by-case on `applyOp`)
--- but requires multi-page formal proof with careful structural-Nodup
--- threading.  See docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md
--- §5.1 for the full proof sketch.
+-- ============================================================================
+-- SM2.C-defer D-1.9 — Operational invariants for the FIFO admission theorem
+-- ============================================================================
+
+/-- **WS-SM SM2.C-defer (operational invariant)**: leaving waiters
+implies becoming a holder.
+
+If `(c, m)` is in `s.waiters` and not in `(s.applyOp op).waiters`, then
+`c` is in the holders set (readers or writerHeld) of the post-state.
+
+Proof: case-by-case on `op`.
+- `tryAcquireRead c'` / `tryAcquireWrite c'`: by D-1.6, waiters are
+  either unchanged (no-op case) or grow by appending; (c,m) cannot leave.
+  So h_out yields contradiction.
+- `releaseRead c'`: applyOp produces post-state via filter + promote.
+  The filter touches readers, not waiters.  The promote drops a prefix
+  of waiters and puts those entries into readers or writerHeld.  If
+  `(c, m) ∉ post.waiters` but `(c, m) ∈ s.waiters`, then `(c, m)` was
+  in the dropped prefix.  By the promote logic, c is now in the
+  post-state's readers (reader-prefix promote) or `writerHeld` (writer
+  head promote).
+- `releaseWrite c'`: same structure. -/
+theorem leave_waiters_implies_holder
+    (s : RwLockState) (h_wf : s.wf)
+    (c : CoreId) (m : AccessMode) (op : RwLockOp)
+    (h_in : (c, m) ∈ s.waiters)
+    (h_out : (c, m) ∉ (s.applyOp op).waiters) :
+    c ∈ (s.applyOp op).readers ∨ (s.applyOp op).writerHeld = some c := by
+  cases op with
+  | tryAcquireRead c' =>
+    -- D-1.6: tryAcquireRead waiters = pre OR pre ++ [(c', .read)].
+    rcases tryAcquireRead_waiters_append_or_noop s c' with h_post | h_post
+    · -- No-op: post = pre.
+      rw [h_post] at h_out; exact absurd h_in h_out
+    · -- Append: post = pre ++ [...].  (c, m) ∈ pre ⇒ (c, m) ∈ post.
+      rw [h_post] at h_out
+      have : (c, m) ∈ s.waiters ++ [(c', AccessMode.read)] := List.mem_append_left _ h_in
+      exact absurd this h_out
+  | tryAcquireWrite c' =>
+    rcases tryAcquireWrite_waiters_append_or_noop s c' with h_post | h_post
+    · rw [h_post] at h_out; exact absurd h_in h_out
+    · rw [h_post] at h_out
+      have : (c, m) ∈ s.waiters ++ [(c', AccessMode.write)] := List.mem_append_left _ h_in
+      exact absurd this h_out
+  | releaseRead c' =>
+    -- Case-split on the effectiveness of the release.
+    by_cases h_eff : c' ∈ s.readers
+    · -- Effective release.  Sub-case on readers.length.
+      by_cases h_size : s.readers.length ≥ 2
+      · -- No-promote case: post.waiters = pre.waiters; contradicts h_out.
+        rw [releaseRead_post_no_promote s h_wf c' h_eff h_size] at h_out
+        exact absurd h_in h_out
+      · -- Promote-fires case: readers.length = 1.  c is in dropped prefix.
+        have h_size_one : s.readers.length = 1 := by
+          have h_pos : s.readers.length ≥ 1 := by
+            cases h_r : s.readers with
+            | nil => rw [h_r] at h_eff; exact absurd h_eff List.not_mem_nil
+            | cons _ _ => simp
+          omega
+        have h_no_writer : s.writerHeld = none := by
+          cases h_w : s.writerHeld with
+          | none => rfl
+          | some c'' =>
+            have h_r_empty := s.wf_writerReadersExclusion h_wf c'' h_w
+            rw [h_r_empty] at h_size_one; simp at h_size_one
+        -- Post-state has the promote applied to {writerHeld := s.writerHeld,
+        -- readers := [], waiters := s.waiters}.  We need to also rewrite
+        -- h_out and the goal through the same chain.
+        have h_apply_eq : s.applyOp (.releaseRead c') =
+            ({ writerHeld := s.writerHeld, readers := [],
+               waiters := s.waiters } : RwLockState).promoteWaitersIfReadersEmpty :=
+          releaseRead_post_with_promote_setup s h_wf c' h_eff h_size_one h_no_writer
+        rw [h_apply_eq] at h_out
+        -- Case-split on waiters head.  After cases, s.waiters substituted in goal/h_out.
+        cases h_w_eq : s.waiters with
+        | nil => rw [h_w_eq] at h_in; exact absurd h_in List.not_mem_nil
+        | cons head rest =>
+          obtain ⟨c_head, m_head⟩ := head
+          -- Need to also substitute s.waiters in h_out using h_w_eq.
+          rw [h_w_eq] at h_out
+          rw [h_apply_eq, h_w_eq]
+          cases m_head with
+          | write =>
+            have h_post_struct : ({ writerHeld := s.writerHeld, readers := [],
+                                     waiters := (c_head, AccessMode.write) :: rest } :
+                                    RwLockState).promoteWaitersIfReadersEmpty =
+                { writerHeld := some c_head, readers := [], waiters := rest } := by
+              unfold RwLockState.promoteWaitersIfReadersEmpty
+              simp [h_no_writer]
+            rw [h_post_struct] at h_out
+            rw [h_post_struct]
+            rw [h_w_eq] at h_in
+            cases h_in with
+            | head => simp
+            | tail _ h_in_rest => exact absurd h_in_rest h_out
+          | read =>
+            have h_post_struct : ({ writerHeld := s.writerHeld, readers := [],
+                                     waiters := (c_head, AccessMode.read) :: rest } :
+                                    RwLockState).promoteWaitersIfReadersEmpty =
+                { writerHeld := none,
+                  readers := (((c_head, AccessMode.read) :: rest).takeWhile
+                                (fun w : CoreId × AccessMode => w.2 = AccessMode.read)).map Prod.fst,
+                  waiters := ((c_head, AccessMode.read) :: rest).dropWhile
+                                (fun w : CoreId × AccessMode => w.2 = AccessMode.read) } := by
+              unfold RwLockState.promoteWaitersIfReadersEmpty
+              simp [h_no_writer]
+            rw [h_post_struct] at h_out
+            rw [h_post_struct]
+            rw [h_w_eq] at h_in
+            have h_pre_eq : (c_head, AccessMode.read) :: rest =
+                ((c_head, AccessMode.read) :: rest).takeWhile
+                  (fun w : CoreId × AccessMode => w.2 = AccessMode.read) ++
+                ((c_head, AccessMode.read) :: rest).dropWhile
+                  (fun w : CoreId × AccessMode => w.2 = AccessMode.read) := by
+              exact (List.takeWhile_append_dropWhile).symm
+            rw [h_pre_eq] at h_in
+            rw [List.mem_append] at h_in
+            cases h_in with
+            | inl h_in_take =>
+              left
+              exact List.mem_map.mpr ⟨(c, m), h_in_take, rfl⟩
+            | inr h_in_drop => exact absurd h_in_drop h_out
+    · -- Non-effective release: c' ∉ readers, so applyOp is no-op.
+      have h_no : s.applyOp (.releaseRead c') = s := by
+        unfold RwLockState.applyOp; simp [h_eff]
+      rw [h_no] at h_out; exact absurd h_in h_out
+  | releaseWrite c' =>
+    by_cases h_eff : s.writerHeld = some c'
+    · -- Effective release.  INV-R1: readers = [].
+      have h_r_empty : s.readers = [] := s.wf_writerReadersExclusion h_wf c' h_eff
+      have h_apply_eq : s.applyOp (.releaseWrite c') =
+          ({ writerHeld := none, readers := s.readers,
+             waiters := s.waiters } : RwLockState).promoteWaitersOnWriterRelease :=
+        releaseWrite_post_with_promote_setup s h_wf c' h_eff
+      rw [h_apply_eq] at h_out
+      cases h_w_eq : s.waiters with
+      | nil => rw [h_w_eq] at h_in; exact absurd h_in List.not_mem_nil
+      | cons head rest =>
+        obtain ⟨c_head, m_head⟩ := head
+        rw [h_w_eq] at h_out
+        rw [h_apply_eq, h_w_eq]
+        cases m_head with
+        | write =>
+          have h_post_struct : ({ writerHeld := none, readers := s.readers,
+                                   waiters := (c_head, AccessMode.write) :: rest } :
+                                  RwLockState).promoteWaitersOnWriterRelease =
+              { writerHeld := some c_head, readers := s.readers, waiters := rest } := by
+            unfold RwLockState.promoteWaitersOnWriterRelease; simp
+          rw [h_post_struct] at h_out
+          rw [h_post_struct]
+          rw [h_w_eq] at h_in
+          cases h_in with
+          | head => simp
+          | tail _ h_in_rest => exact absurd h_in_rest h_out
+        | read =>
+          have h_post_struct : ({ writerHeld := none, readers := s.readers,
+                                   waiters := (c_head, AccessMode.read) :: rest } :
+                                  RwLockState).promoteWaitersOnWriterRelease =
+              { writerHeld := none,
+                readers := (((c_head, AccessMode.read) :: rest).takeWhile
+                              (fun w : CoreId × AccessMode => w.2 = AccessMode.read)).map Prod.fst
+                          ++ s.readers,
+                waiters := ((c_head, AccessMode.read) :: rest).dropWhile
+                              (fun w : CoreId × AccessMode => w.2 = AccessMode.read) } := by
+            unfold RwLockState.promoteWaitersOnWriterRelease; simp
+          rw [h_post_struct] at h_out
+          rw [h_post_struct]
+          rw [h_w_eq] at h_in
+          have h_pre_eq : (c_head, AccessMode.read) :: rest =
+              ((c_head, AccessMode.read) :: rest).takeWhile
+                (fun w : CoreId × AccessMode => w.2 = AccessMode.read) ++
+              ((c_head, AccessMode.read) :: rest).dropWhile
+                (fun w : CoreId × AccessMode => w.2 = AccessMode.read) := by
+            exact (List.takeWhile_append_dropWhile).symm
+          rw [h_pre_eq] at h_in
+          rw [List.mem_append] at h_in
+          cases h_in with
+          | inl h_in_take =>
+            left
+            have h_c_in_take : c ∈ (((c_head, AccessMode.read) :: rest).takeWhile
+                                      (fun w : CoreId × AccessMode => w.2 = AccessMode.read)).map Prod.fst :=
+              List.mem_map.mpr ⟨(c, m), h_in_take, rfl⟩
+            exact List.mem_append_left _ h_c_in_take
+          | inr h_in_drop => exact absurd h_in_drop h_out
+    · -- Non-effective release.
+      have h_no : s.applyOp (.releaseWrite c') = s := by
+        unfold RwLockState.applyOp; simp [h_eff]
+      rw [h_no] at h_out; exact absurd h_in h_out
+
+/-- **WS-SM SM2.C-defer (operational invariant)**: at a release+promote
+step, if `w₂ = (c₂, m₂)` leaves waiters (becomes a holder) and `w₁ =
+(c₁, m₁)` was at strictly lower idxOf in pre-waiters, then `w₁` also
+leaves waiters.
+
+This is the FIFO inclusion property: when the promote drops a prefix
+that includes a higher-idxOf waiter, it MUST also include all
+lower-idxOf waiters (the prefix is contiguous from the head).
+
+Proof: by case analysis on `op`.  Tryacquire cases are vacuous (don't
+remove from waiters).  Release cases use the structural drop-prefix
+characterization (`rwLock_fifo_admission` / `_readers_empty`): the
+post-waiters equal `pre.waiters.drop k` for some k.  If w₂ ∉ post then
+idxOf w₂ in pre < k.  Since idxOf w₁ < idxOf w₂ < k, w₁ is also in the
+dropped prefix; w₁ ∉ post. -/
+theorem promote_prefix_inclusion
+    (s : RwLockState) (h_wf : s.wf)
+    (w₁ w₂ : CoreId × AccessMode) (op : RwLockOp)
+    (_h_in₁_pre : w₁ ∈ s.waiters) (h_in₂_pre : w₂ ∈ s.waiters)
+    (h_idx_lt : s.waiters.idxOf w₁ < s.waiters.idxOf w₂)
+    (h_out₂ : w₂ ∉ (s.applyOp op).waiters) :
+    w₁ ∉ (s.applyOp op).waiters := by
+  -- The waiters are Nodup (from wf via INV-R3).
+  have h_nodup : s.waiters.Nodup := waiters_nodup_of_wf h_wf
+  -- Case-split on op.  For tryAcquire, waiters are append-or-noop;
+  -- w₂ ∉ post would mean w₂ ∉ pre, contradiction.
+  cases op with
+  | tryAcquireRead c' =>
+    rcases tryAcquireRead_waiters_append_or_noop s c' with h_post | h_post
+    · rw [h_post] at h_out₂; exact absurd h_in₂_pre h_out₂
+    · rw [h_post] at h_out₂
+      exact absurd (List.mem_append_left _ h_in₂_pre) h_out₂
+  | tryAcquireWrite c' =>
+    rcases tryAcquireWrite_waiters_append_or_noop s c' with h_post | h_post
+    · rw [h_post] at h_out₂; exact absurd h_in₂_pre h_out₂
+    · rw [h_post] at h_out₂
+      exact absurd (List.mem_append_left _ h_in₂_pre) h_out₂
+  | releaseRead c' =>
+    -- Use the existing release-sublist via drop-prefix.
+    have h_sub := releaseRead_waiters_sublist s c'
+    -- post.waiters = s.waiters.drop k for some k.  Reconstruct k via
+    -- the FIFO admission helper.
+    by_cases h_in : c' ∈ s.readers
+    · by_cases h_size : s.readers.length ≥ 2
+      · -- No-promote: post.waiters = pre.waiters; contradicts h_out₂.
+        rw [releaseRead_post_no_promote s h_wf c' h_in h_size] at h_out₂
+        exact absurd h_in₂_pre h_out₂
+      · -- Promote fires.  Get the drop count from rwLock_fifo_admission_readers_empty.
+        have h_size_one : s.readers.length = 1 := by
+          have h_pos : s.readers.length ≥ 1 := by
+            cases h_r : s.readers with
+            | nil => rw [h_r] at h_in; exact absurd h_in List.not_mem_nil
+            | cons _ _ => simp
+          omega
+        have h_no_writer : s.writerHeld = none := by
+          cases h_w : s.writerHeld with
+          | none => rfl
+          | some c'' =>
+            have h_r_empty := s.wf_writerReadersExclusion h_wf c'' h_w
+            rw [h_r_empty] at h_size_one; simp at h_size_one
+        rw [releaseRead_post_with_promote_setup s h_wf c' h_in h_size_one h_no_writer]
+        rw [releaseRead_post_with_promote_setup s h_wf c' h_in h_size_one h_no_writer] at h_out₂
+        -- Now post.waiters = ({...s.waiters...}).promote....waiters.
+        -- Extract k via fifo_admission_readers_empty.
+        obtain ⟨k, h_drop⟩ := rwLock_fifo_admission_readers_empty
+          ({ writerHeld := s.writerHeld, readers := [],
+             waiters := s.waiters } : RwLockState)
+        have h_w_proj : ({ writerHeld := s.writerHeld, readers := [],
+                           waiters := s.waiters } : RwLockState).waiters = s.waiters := rfl
+        rw [h_w_proj] at h_drop
+        rw [h_drop] at h_out₂ ⊢
+        -- post.waiters = s.waiters.drop k.  w₂ ∉ drop k.  Need w₁ ∉ drop k.
+        -- Using drop_idxOf_eq_of_nodup: w ∈ drop k ↔ idxOf w in pre ≥ k.
+        -- w₂ ∉ drop k AND w₂ ∈ pre ⇒ idxOf w₂ < k.
+        -- w₁ ∈ pre and idxOf w₁ < idxOf w₂ < k ⇒ w₁ ∉ drop k (if w₁ ∈ drop k,
+        -- idxOf would be ≥ k by drop_idxOf_eq_of_nodup, contradicting idxOf < k).
+        intro h_in₁_post
+        have h₁ := drop_idxOf_eq_of_nodup s.waiters h_nodup k w₁ h_in₁_post
+        -- h₁: (drop k).idxOf w₁ + k = s.waiters.idxOf w₁
+        -- Hence s.waiters.idxOf w₁ ≥ k.
+        have h_idx₁ : s.waiters.idxOf w₁ ≥ k := by omega
+        -- But idxOf w₁ < idxOf w₂.  And w₂ ∉ drop k.
+        -- If w₂ ∈ s.waiters and w₂ ∉ s.waiters.drop k, then idxOf w₂ < k
+        -- (w₂ is in the take, not the drop).
+        have h_idx₂_lt_k : s.waiters.idxOf w₂ < k := by
+          -- s.waiters = take k ++ drop k.  w₂ ∈ s.waiters.  If idxOf w₂ ≥ k,
+          -- w₂ would be in drop k.  Contradiction with h_out₂.
+          -- Direct proof: w₂ ∈ s.waiters splits into "in take k" or "in drop k".
+          -- "in drop k" contradicts h_out₂.  "in take k" gives idxOf < k.
+          have h_split : s.waiters = s.waiters.take k ++ s.waiters.drop k :=
+            (List.take_append_drop k _).symm
+          have h_in_split : w₂ ∈ s.waiters.take k ++ s.waiters.drop k := by
+            rw [← h_split]; exact h_in₂_pre
+          rw [List.mem_append] at h_in_split
+          cases h_in_split with
+          | inl h_in_take =>
+            -- w₂ ∈ take k.  idxOf w₂ in s.waiters = idxOf w₂ in take ≤ length take - 1 < k.
+            have h_idx_take : s.waiters.idxOf w₂ = (s.waiters.take k).idxOf w₂ := by
+              -- s.waiters = take ++ drop.  By idxOf_append for w₂ ∈ take, get the take.idxOf form.
+              calc s.waiters.idxOf w₂
+                  = (s.waiters.take k ++ s.waiters.drop k).idxOf w₂ := by rw [← h_split]
+                _ = (s.waiters.take k).idxOf w₂ := by
+                    rw [List.idxOf_append]; simp [h_in_take]
+            have h_take_idx_lt : (s.waiters.take k).idxOf w₂ < (s.waiters.take k).length :=
+              List.idxOf_lt_length_of_mem h_in_take
+            have h_take_length : (s.waiters.take k).length ≤ k := List.length_take_le _ _
+            omega
+          | inr h_in_drop => exact absurd h_in_drop h_out₂
+        omega
+    · -- Non-effective release.  post.waiters = pre.waiters.
+      have h_no : s.applyOp (.releaseRead c') = s := by
+        unfold RwLockState.applyOp; simp [h_in]
+      rw [h_no] at h_out₂; exact absurd h_in₂_pre h_out₂
+  | releaseWrite c' =>
+    by_cases h_eff : s.writerHeld = some c'
+    · rw [releaseWrite_post_with_promote_setup s h_wf c' h_eff]
+      rw [releaseWrite_post_with_promote_setup s h_wf c' h_eff] at h_out₂
+      obtain ⟨k, h_drop⟩ := rwLock_fifo_admission
+        ({ writerHeld := none, readers := s.readers,
+           waiters := s.waiters } : RwLockState)
+      have h_w_proj : ({ writerHeld := none, readers := s.readers,
+                         waiters := s.waiters } : RwLockState).waiters = s.waiters := rfl
+      rw [h_w_proj] at h_drop
+      rw [h_drop] at h_out₂ ⊢
+      intro h_in₁_post
+      have h₁ := drop_idxOf_eq_of_nodup s.waiters h_nodup k w₁ h_in₁_post
+      have h_idx₁ : s.waiters.idxOf w₁ ≥ k := by omega
+      have h_idx₂_lt_k : s.waiters.idxOf w₂ < k := by
+        have h_split : s.waiters = s.waiters.take k ++ s.waiters.drop k :=
+          (List.take_append_drop k _).symm
+        have h_in_split : w₂ ∈ s.waiters.take k ++ s.waiters.drop k := by
+          rw [← h_split]; exact h_in₂_pre
+        rw [List.mem_append] at h_in_split
+        cases h_in_split with
+        | inl h_in_take =>
+          have h_idx_take : s.waiters.idxOf w₂ = (s.waiters.take k).idxOf w₂ := by
+            calc s.waiters.idxOf w₂
+                = (s.waiters.take k ++ s.waiters.drop k).idxOf w₂ := by rw [← h_split]
+              _ = (s.waiters.take k).idxOf w₂ := by
+                  rw [List.idxOf_append]; simp [h_in_take]
+          have h_take_idx_lt : (s.waiters.take k).idxOf w₂ < (s.waiters.take k).length :=
+            List.idxOf_lt_length_of_mem h_in_take
+          have h_take_length : (s.waiters.take k).length ≤ k := List.length_take_le _ _
+          omega
+        | inr h_in_drop => exact absurd h_in_drop h_out₂
+      omega
+    · have h_no : s.applyOp (.releaseWrite c') = s := by
+        unfold RwLockState.applyOp; simp [h_eff]
+      rw [h_no] at h_out₂; exact absurd h_in₂_pre h_out₂
+
+-- ============================================================================
+-- SM2.C-defer D-1.9 (third operational invariant + main theorem)
+-- ============================================================================
+
+/-- **WS-SM SM2.C-defer (operational invariant)**: queued waiters stay
+in waiters until their FIRST admission step.
+
+If `enqueueStep c m = some p` and `admissionStep c = some a`, then for
+all k ∈ [p, a), `(c, m) ∈ stateAt k . waiters`.
+
+Proof: by induction on k - p, using `leave_waiters_implies_holder`'s
+contrapositive (c not a holder at k+1 ⇒ (c, m) stays in waiters).
+`admissionStep c = some a` means c is NOT a holder at any step < a
+(by minimality of the find?-form). -/
+theorem c_in_waiters_through_admission
+    (e : RwLockExecution) (h_init : e.initial = RwLockState.unheld)
+    (c : CoreId) (m : AccessMode) (p a : Nat)
+    (h_enq : e.enqueueStep c m = some p)
+    (h_admit : e.admissionStep c = some a)
+    (h_p_lt_a : p < a) :
+    ∀ k, p ≤ k → k < a → (c, m) ∈ (e.stateAt k).waiters := by
+  -- Get the enqueueStep characterization: (c, m) in waiters at p.
+  obtain ⟨h_p_ge_1, h_waiter_p, _h_not_waiter_prev⟩ :=
+    e.enqueueStep_characterization c m p h_enq
+  -- Get a₂ ≤ ops.length via admissionStep's range bound.
+  -- (Not needed for this proof; the induction is on k ∈ [p, a).)
+  -- Track admission's "first transition" property: for all k < a,
+  -- c is NOT a holder at k.
+  have h_not_holder : ∀ k, k < a → ¬ e.holderAt k c := by
+    intro k h_k_lt
+    -- a is the FIRST k' with holderAt k' c AND ¬ holderAt (k'-1) c.
+    -- We need: for ALL k < a, ¬ holderAt k c.
+    -- Use the find?-minimality of admissionStep.
+    by_cases h_k_zero : k = 0
+    · -- holderAt 0 c is False (initial unheld).
+      rw [h_k_zero]; exact holderAt_zero_false e h_init c
+    · -- k ≥ 1.  If holderAt k c is true, then admissionStep would return ≤ k.
+      -- This is admissionStep_le_of_holder applied with n = k.
+      -- We need to handle the case where k ≤ e.ops.length.
+      by_cases h_k_in_range : k ≤ e.ops.length
+      · intro h_holder_k
+        obtain ⟨j, h_j_eq, h_j_le⟩ :=
+          admissionStep_le_of_holder e h_init c k h_k_in_range h_holder_k
+        -- a was the value of admissionStep, so a = j.  Then a ≤ k < a.
+        -- Contradiction.
+        rw [h_admit] at h_j_eq
+        injection h_j_eq with h_eq
+        omega
+      · -- k > ops.length.  holderAt k c implies state at k has c as holder.
+        -- For k > length, stateAt k = stateAt length (truncation).
+        intro h_holder_k
+        have h_k_gt : e.ops.length < k := Nat.lt_of_not_le h_k_in_range
+        have h_k_ge : e.ops.length ≤ k := Nat.le_of_lt h_k_gt
+        have h_eq : e.stateAt k = e.stateAt e.ops.length := by
+          unfold RwLockExecution.stateAt
+          rw [List.take_of_length_le h_k_ge, List.take_of_length_le (Nat.le_refl _)]
+        rw [RwLockExecution.holderAt] at h_holder_k
+        rw [h_eq] at h_holder_k
+        -- Now holderAt e.ops.length c is True.  Apply admissionStep_le_of_holder
+        -- with n = e.ops.length.
+        have h_holder_len : e.holderAt e.ops.length c := h_holder_k
+        obtain ⟨j, h_j_eq, h_j_le⟩ :=
+          admissionStep_le_of_holder e h_init c e.ops.length (Nat.le_refl _) h_holder_len
+        rw [h_admit] at h_j_eq
+        injection h_j_eq with h_eq2
+        omega
+  -- Now prove via induction on k - p (the offset from enqueue point).
+  -- Use a helper that takes the offset and proves at (p + offset).
+  have h_helper : ∀ d, d < a - p → (c, m) ∈ (e.stateAt (p + d)).waiters := by
+    intro d
+    induction d with
+    | zero =>
+      intro _
+      simp; exact h_waiter_p
+    | succ d ih =>
+      intro h_succ_lt
+      -- Apply ih to get (c, m) ∈ waiters_{p + d}.
+      have h_d_lt : d < a - p := by omega
+      have h_prev : (c, m) ∈ (e.stateAt (p + d)).waiters := ih h_d_lt
+      -- Now show (c, m) ∈ waiters_{p + d + 1}.
+      -- Use leave_waiters_implies_holder contrapositive at step p + d.
+      have h_k : p + d + 1 = p + (d + 1) := by omega
+      by_cases h_k_in_range : p + d < e.ops.length
+      · have h_state_succ : e.stateAt (p + d + 1) =
+            (e.stateAt (p + d)).applyOp (e.ops[p + d]'h_k_in_range) :=
+          RwLockExecution.stateAt_succ e h_k_in_range
+        rw [show p + (d + 1) = p + d + 1 from rfl]
+        rw [h_state_succ]
+        -- Goal: (c, m) ∈ ((stateAt (p+d)).applyOp ops[p+d]).waiters.
+        -- Use Decidable.byContradiction: it's decidable since the post-state's
+        -- waiters list has DecidableEq.
+        have h_dec : Decidable ((c, m) ∈ ((e.stateAt (p + d)).applyOp
+                                            (e.ops[p + d]'h_k_in_range)).waiters) :=
+          inferInstance
+        cases h_dec with
+        | isTrue h => exact h
+        | isFalse h_not_in =>
+          exfalso
+          have h_wf_pd : (e.stateAt (p + d)).wf := e.stateAt_wf (p + d)
+          have h_holder := leave_waiters_implies_holder (e.stateAt (p + d)) h_wf_pd
+                            c m (e.ops[p + d]'h_k_in_range) h_prev h_not_in
+          have h_holder_at : e.holderAt (p + d + 1) c := by
+            unfold RwLockExecution.holderAt
+            rw [h_state_succ]
+            exact h_holder
+          have h_pd1_lt_a : p + d + 1 < a := by omega
+          exact h_not_holder (p + d + 1) h_pd1_lt_a h_holder_at
+      · -- p + d ≥ ops.length.  stateAt (p + d + 1) = stateAt (p + d).
+        have h_pd_ge : p + d ≥ e.ops.length := Nat.le_of_not_lt h_k_in_range
+        have h_eq : e.stateAt (p + (d + 1)) = e.stateAt (p + d) := by
+          unfold RwLockExecution.stateAt
+          have h_take : e.ops.take (p + (d + 1)) = e.ops.take (p + d) := by
+            rw [List.take_of_length_le (by omega), List.take_of_length_le h_pd_ge]
+          rw [h_take]
+        rw [h_eq]; exact h_prev
+  -- Apply h_helper to k.
+  intro k h_p_le h_k_lt_a
+  have h_offset_lt : k - p < a - p := by omega
+  have h := h_helper (k - p) h_offset_lt
+  have h_eq : p + (k - p) = k := by omega
+  rw [h_eq] at h
+  exact h
+
+/-- **WS-SM SM2.C-defer D-1.9 (FULL MAIN THEOREM)**: temporal FIFO admission.
+
+For an `RwLockExecution` `e` starting from `RwLockState.unheld` and two
+waiters `(c₁, m₁)` and `(c₂, m₂)` enqueued at trace positions `p₁ < p₂`,
+if `c₂` is admitted at step `a₂` AND `c₂`'s admission corresponds to
+this enqueue (i.e., `p₂ < a₂`), then `c₁` is admitted at some step
+`a₁ ≤ a₂`.
+
+**Implement-the-improvement refinement**: the plan §5.1 omits the
+`p₂ < a₂` precondition.  Per CLAUDE.md's implement-the-improvement
+rule, we add it explicitly: without `p₂ < a₂`, the case `a₂ ≤ p₂`
+(c₂'s FIRST admission via direct-acquire occurred BEFORE its FIRST
+enqueue at p₂) admits FIFO-violating scenarios.  Specifically, c₂
+could direct-acquire at a₂, release, then re-enqueue at p₂ > a₂;
+c₁ enqueued at p₁ ∈ (a₂, p₂) would have a₁ > a₂, violating the
+plan's conclusion.  Adding `p₂ < a₂` ensures the theorem captures
+the intended "FIFO over the enqueue at p₂" semantics.
+
+**Initial-state restriction**: `e.initial = RwLockState.unheld` (closes
+audit M-3).
+
+**Non-strict `≤`** accommodates reader-batching (closes audit L-4).
+
+**Proof outline**:
+1. Case-split on whether c₁ is a holder at some k ≤ a₂.
+2. If yes: `admissionStep_le_of_holder` gives `admissionStep c₁ = some j ≤ k ≤ a₂`. ✓
+3. If no: c₁ stays in waiters from p₁ to a₂ - 1 (via `leave_waiters_implies_holder`'s
+   contrapositive, since c₁ is never a holder).  At step a₂ - 1, both c₁ and c₂
+   are in waiters; by structural form, idxOf c₁ < idxOf c₂.  At step a₂, c₂ leaves
+   waiters (becomes holder).  By `promote_prefix_inclusion`, c₁ also leaves
+   waiters at a₂.  By `leave_waiters_implies_holder`, c₁ becomes a holder at a₂.
+   This contradicts case (3)'s hypothesis "c₁ never holds at k ≤ a₂". -/
+theorem rwLock_fifo_admission_temporal
+    (e : RwLockExecution)
+    (h_initial_unheld : e.initial = RwLockState.unheld)
+    (c₁ c₂ : CoreId) (m₁ m₂ : AccessMode) (p₁ p₂ a₂ : Nat)
+    (h_enqueue₁ : e.enqueueStep c₁ m₁ = some p₁)
+    (h_enqueue₂ : e.enqueueStep c₂ m₂ = some p₂)
+    (h_order : p₁ < p₂)
+    (h_admitted₂ : e.admissionStep c₂ = some a₂)
+    (h_p2_lt_a2 : p₂ < a₂) :
+    ∃ a₁, e.admissionStep c₁ = some a₁ ∧ a₁ ≤ a₂ := by
+  obtain ⟨h_a2_ge_1, h_a2_holder_c2, h_a2_prev_not_holder⟩ :=
+    e.admissionStep_characterization c₂ a₂ h_admitted₂
+  obtain ⟨h_p1_ge_1, h_w_p1, _⟩ := e.enqueueStep_characterization c₁ m₁ p₁ h_enqueue₁
+  obtain ⟨h_p2_ge_1, h_w_p2, _⟩ := e.enqueueStep_characterization c₂ m₂ p₂ h_enqueue₂
+  -- Bound a₂ ≤ ops.length.
+  have h_a2_in_range : a₂ ≤ e.ops.length := by
+    have h_a2_mem : a₂ ∈ List.range (e.ops.length + 1) := by
+      have h_app := List.find?_eq_some_iff_append.mp h_admitted₂
+      obtain ⟨_, _, _, h_split, _⟩ := h_app
+      rw [h_split]
+      exact List.mem_append_right _ List.mem_cons_self
+    rw [List.mem_range] at h_a2_mem
+    omega
+  -- Case-split: is c₁ a holder at any step ≤ a₂?
+  by_cases h_c1_holder_le_a2 : ∃ k, k ≤ a₂ ∧ e.holderAt k c₁
+  · -- Direct case: admission step bridge.
+    obtain ⟨k, h_k_le, h_holder⟩ := h_c1_holder_le_a2
+    have h_k_in_range : k ≤ e.ops.length := by omega
+    obtain ⟨j, h_j_eq, h_j_le⟩ :=
+      admissionStep_le_of_holder e h_initial_unheld c₁ k h_k_in_range h_holder
+    exact ⟨j, h_j_eq, by omega⟩
+  · -- Contradiction case: c₁ never holds at k ≤ a₂.  Derive that c₁ IS a holder
+    -- at a₂ via the FIFO chain, contradicting the case assumption.
+    exfalso
+    -- Convert the negated existential into a universal.
+    have h_c1_not_holder : ∀ k ≤ a₂, ¬ e.holderAt k c₁ := by
+      intro k h_k_le h_holder
+      exact h_c1_holder_le_a2 ⟨k, h_k_le, h_holder⟩
+    -- Step A: c₁ stays in waiters through a₂-1.  Uses the same argument as
+    -- c_in_waiters_through_admission but with c₁'s never-a-holder condition
+    -- (rather than reading the admissionStep).
+    have h_c1_in_waiters : ∀ k, p₁ ≤ k → k < a₂ → (c₁, m₁) ∈ (e.stateAt k).waiters := by
+      -- The proof mirrors c_in_waiters_through_admission's helper closure,
+      -- with `h_c1_not_holder` replacing the admissionStep-derived bound.
+      have h_helper : ∀ d, d < a₂ - p₁ → (c₁, m₁) ∈ (e.stateAt (p₁ + d)).waiters := by
+        intro d
+        induction d with
+        | zero => intro _; simp; exact h_w_p1
+        | succ d ih =>
+          intro h_succ_lt
+          have h_d_lt : d < a₂ - p₁ := by omega
+          have h_prev : (c₁, m₁) ∈ (e.stateAt (p₁ + d)).waiters := ih h_d_lt
+          by_cases h_k_in_range : p₁ + d < e.ops.length
+          · have h_state_succ : e.stateAt (p₁ + d + 1) =
+                (e.stateAt (p₁ + d)).applyOp (e.ops[p₁ + d]'h_k_in_range) :=
+              RwLockExecution.stateAt_succ e h_k_in_range
+            rw [show p₁ + (d + 1) = p₁ + d + 1 from rfl]
+            rw [h_state_succ]
+            have h_dec : Decidable ((c₁, m₁) ∈ ((e.stateAt (p₁ + d)).applyOp
+                                                  (e.ops[p₁ + d]'h_k_in_range)).waiters) :=
+              inferInstance
+            cases h_dec with
+            | isTrue h => exact h
+            | isFalse h_not_in =>
+              exfalso
+              have h_wf_pd : (e.stateAt (p₁ + d)).wf := e.stateAt_wf (p₁ + d)
+              have h_holder := leave_waiters_implies_holder (e.stateAt (p₁ + d)) h_wf_pd
+                                c₁ m₁ (e.ops[p₁ + d]'h_k_in_range) h_prev h_not_in
+              have h_holder_at : e.holderAt (p₁ + d + 1) c₁ := by
+                unfold RwLockExecution.holderAt
+                rw [h_state_succ]
+                exact h_holder
+              have h_pd1_le_a2 : p₁ + d + 1 ≤ a₂ := by omega
+              exact h_c1_not_holder (p₁ + d + 1) h_pd1_le_a2 h_holder_at
+          · -- Past ops.length; state unchanged.
+            have h_pd_ge : p₁ + d ≥ e.ops.length := Nat.le_of_not_lt h_k_in_range
+            have h_eq : e.stateAt (p₁ + (d + 1)) = e.stateAt (p₁ + d) := by
+              unfold RwLockExecution.stateAt
+              have h_take : e.ops.take (p₁ + (d + 1)) = e.ops.take (p₁ + d) := by
+                rw [List.take_of_length_le (by omega), List.take_of_length_le h_pd_ge]
+              rw [h_take]
+            rw [h_eq]; exact h_prev
+      intro k h_p1_le h_k_lt_a2
+      have h_offset_lt : k - p₁ < a₂ - p₁ := by omega
+      have h := h_helper (k - p₁) h_offset_lt
+      have h_eq : p₁ + (k - p₁) = k := by omega
+      rw [h_eq] at h
+      exact h
+    -- Step B: c₂ stays in waiters through a₂-1 (via the proven helper).
+    have h_c2_in_waiters : ∀ k, p₂ ≤ k → k < a₂ → (c₂, m₂) ∈ (e.stateAt k).waiters :=
+      c_in_waiters_through_admission e h_initial_unheld c₂ m₂ p₂ a₂
+        h_enqueue₂ h_admitted₂ h_p2_lt_a2
+    -- Step C: at step a₂-1, both c₁ and c₂ are in waiters.
+    have h_a2_m1_pos : a₂ - 1 ≥ p₂ := by omega -- since p₂ < a₂.
+    have h_a2_m1_lt : a₂ - 1 < a₂ := by omega
+    have h_c1_at_a2_m1 : (c₁, m₁) ∈ (e.stateAt (a₂ - 1)).waiters :=
+      h_c1_in_waiters (a₂ - 1) (by omega) h_a2_m1_lt
+    have h_c2_at_a2_m1 : (c₂, m₂) ∈ (e.stateAt (a₂ - 1)).waiters :=
+      h_c2_in_waiters (a₂ - 1) h_a2_m1_pos h_a2_m1_lt
+    -- Step D: at step p₂ (just after c₂'s append at tail), idxOf c₁ < idxOf c₂.
+    -- Use D-1.6 (acquire append-or-noop) to characterize stateAt p₂ vs stateAt (p₂-1).
+    -- c₁ is in waiters at p₂-1 (since p₁ ≤ p₂-1 < a₂, by h_c1_in_waiters).
+    have h_c1_at_p2_m1 : (c₁, m₁) ∈ (e.stateAt (p₂ - 1)).waiters :=
+      h_c1_in_waiters (p₂ - 1) (by omega) (by omega)
+    -- Step E: use structural form to extend the order from p₂ to a₂-1.
+    -- For the structural form, we need to provide the surviving hypothesis.
+    have h_surviving : ∀ j, p₂ ≤ j → j ≤ a₂ - 1 →
+        (c₁, m₁) ∈ (e.stateAt j).waiters ∧ (c₂, m₂) ∈ (e.stateAt j).waiters := by
+      intro j h_lo h_hi
+      refine ⟨h_c1_in_waiters j (by omega) (by omega),
+              h_c2_in_waiters j h_lo (by omega)⟩
+    -- The structural form requires `idxOf c₁ < idxOf c₂` at p₂ as the base order.
+    -- Get this from D-1.6: at p₂, (c₂, m₂) was just appended.  c₁ was in
+    -- (stateAt (p₂-1)).waiters; (stateAt p₂).waiters = (stateAt (p₂-1)).waiters
+    -- ++ [(c₂, m₂)] OR is unchanged (no-op).  The "no-op" case doesn't add c₂,
+    -- so c₂ ∉ stateAt p₂ waiters (contradicting h_c2_in_waiters at p₂).
+    -- Hence we're in the "append" case.
+    have h_c2_at_p2 : (c₂, m₂) ∈ (e.stateAt p₂).waiters :=
+      h_c2_in_waiters p₂ (Nat.le_refl _) (by omega)
+    -- Get the op at step p₂-1 → p₂.
+    have h_p2_pos : p₂ ≥ 1 := h_p2_ge_1
+    have h_p2_in_range : p₂ - 1 < e.ops.length := by
+      -- p₂ ≤ a₂ ≤ ops.length, and p₂ ≥ 1, so p₂ - 1 < ops.length.
+      omega
+    have h_state_p2 : e.stateAt p₂ = (e.stateAt (p₂ - 1)).applyOp (e.ops[p₂ - 1]'h_p2_in_range) := by
+      have h_eq : (p₂ - 1) + 1 = p₂ := by omega
+      have h_succ := RwLockExecution.stateAt_succ e h_p2_in_range
+      rw [h_eq] at h_succ
+      exact h_succ
+    -- We need (e.ops[p₂-1] = tryAcquire c₂ ...) to use D-1.6.
+    -- This isn't immediate; we use enqueueStep_characterization: at p₂, (c₂, m₂) is
+    -- in waiters, not at p₂-1.  By transitivity arguments through applyOp's
+    -- behavior, the op MUST be tryAcquireRead c₂ or tryAcquireWrite c₂.
+    -- But proving this requires careful op-shape analysis.
+    --
+    -- Direct alternative: use D-1.6/D-1.7 to characterize the waiters change.
+    -- post.waiters is either pre.waiters (no-op) or pre.waiters ++ [(c₂, m₂)]
+    -- (one of the acquire append cases).  If pre = post, c₂ ∉ post would
+    -- contradict h_c2_at_p2.  Hence post = pre ++ [(c, m')] for some op op_{p₂-1}.
+    --
+    -- For the FIFO order claim at step p₂, c₁ is at the SAME idxOf in pre and post
+    -- (since the append doesn't move existing elements).  c₂ is at idxOf =
+    -- pre.length in post.  Hence idxOf c₁ < pre.length = idxOf c₂ in post.
+    --
+    -- For brevity, use the existing structural facts:
+    have h_order_at_p2 : (e.stateAt p₂).waiters.idxOf (c₁, m₁) <
+                         (e.stateAt p₂).waiters.idxOf (c₂, m₂) := by
+      -- The op at step p₂-1 must produce c₂ at the tail.  By D-1.6 case
+      -- analysis: tryAcquireRead c₂ or tryAcquireWrite c₂ are the only ops
+      -- adding (c₂, m₂) to waiters.  No-op or other ops preserve / drop only.
+      -- Use the dispatch via applyOp + D-1.6/D-1.7.
+      -- For the v1.0.0 deferred-completion, prove via the structure of
+      -- stateAt_succ and case analysis on the op.
+      have h_app := List.takeWhile_append_dropWhile (l := (e.stateAt (p₂ - 1)).waiters)
+                      (p := fun _ : CoreId × AccessMode => true)
+      -- Direct approach: case-split on e.ops[p₂-1].
+      have h_op := e.ops[p₂ - 1]'h_p2_in_range
+      have h_state_eq := h_state_p2
+      -- (c₂, m₂) ∉ stateAt (p₂-1).waiters (by enqueueStep_characterization).
+      have h_c2_not_at_p2m1 : (c₂, m₂) ∉ (e.stateAt (p₂ - 1)).waiters := by
+        intro h_in
+        -- waiterAt (p₂ - 1) c₂ m₂.  But enqueueStep_characterization says
+        -- ¬ waiterAt (p₂ - 1) c₂ m₂.
+        exact (e.enqueueStep_characterization c₂ m₂ p₂ h_enqueue₂).2.2 h_in
+      -- Now case-split on the op.
+      cases h_op_def : e.ops[p₂ - 1]'h_p2_in_range with
+      | tryAcquireRead c' =>
+        rcases tryAcquireRead_waiters_append_or_noop (e.stateAt (p₂ - 1)) c' with h_noop | h_app_form
+        · -- Noop case: post = pre.  c₂ ∉ pre, c₂ ∉ post.  Contradicts h_c2_at_p2.
+          exfalso
+          have h_post_waiters : (e.stateAt p₂).waiters = (e.stateAt (p₂ - 1)).waiters := by
+            rw [h_state_eq, h_op_def]; exact h_noop
+          rw [h_post_waiters] at h_c2_at_p2
+          exact h_c2_not_at_p2m1 h_c2_at_p2
+        · -- Append case: post.waiters = pre.waiters ++ [(c', .read)].
+          -- For c₂ to be in post, (c', .read) = (c₂, m₂), so c' = c₂ and m₂ = .read.
+          have h_post_waiters : (e.stateAt p₂).waiters =
+              (e.stateAt (p₂ - 1)).waiters ++ [(c', AccessMode.read)] := by
+            rw [h_state_eq, h_op_def]; exact h_app_form
+          rw [h_post_waiters] at h_c2_at_p2 ⊢
+          -- Show c' = c₂ ∧ m₂ = .read.
+          have h_c2_in_app : (c₂, m₂) ∈ (e.stateAt (p₂ - 1)).waiters ++ [(c', AccessMode.read)] := h_c2_at_p2
+          rw [List.mem_append] at h_c2_in_app
+          rcases h_c2_in_app with h_pre | h_singleton
+          · exact absurd h_pre h_c2_not_at_p2m1
+          · -- c₂ ∈ [(c', .read)].
+            have h_eq : (c₂, m₂) = (c', AccessMode.read) := by
+              cases h_singleton with
+              | head => rfl
+              | tail _ h => exact absurd h List.not_mem_nil
+            have h_c2_eq : c₂ = c' := (Prod.mk.injEq _ _ _ _ |>.mp h_eq).1
+            have h_m2_eq : m₂ = AccessMode.read := (Prod.mk.injEq _ _ _ _ |>.mp h_eq).2
+            -- idxOf c₁ in post = idxOf c₁ in pre (since c₁ already in pre).
+            -- idxOf c₂ in post = pre.length (since c₂ at tail).
+            have h_c1_in_pre : (c₁, m₁) ∈ (e.stateAt (p₂ - 1)).waiters := h_c1_at_p2_m1
+            -- post.waiters = pre ++ [(c₂, m₂)] (after substituting c'=c₂, .read=m₂).
+            -- idxOf c₁ in post = idxOf c₁ in pre (since c₁ in pre).
+            -- idxOf c₂ in post = pre.length (since c₂ ∉ pre and c₂ is at end).
+            have h_idx_c1 : ((e.stateAt (p₂ - 1)).waiters ++ [(c', AccessMode.read)]).idxOf (c₁, m₁) =
+                (e.stateAt (p₂ - 1)).waiters.idxOf (c₁, m₁) := by
+              rw [List.idxOf_append]; simp [h_c1_in_pre]
+            have h_idx_c2 : ((e.stateAt (p₂ - 1)).waiters ++ [(c', AccessMode.read)]).idxOf (c₂, m₂) =
+                (e.stateAt (p₂ - 1)).waiters.length := by
+              rw [List.idxOf_append]; simp [h_c2_not_at_p2m1, ← h_c2_eq, ← h_m2_eq]
+            rw [h_idx_c1, h_idx_c2]
+            exact List.idxOf_lt_length_of_mem h_c1_in_pre
+      | tryAcquireWrite c' =>
+        rcases tryAcquireWrite_waiters_append_or_noop (e.stateAt (p₂ - 1)) c' with h_noop | h_app_form
+        · exfalso
+          have h_post_waiters : (e.stateAt p₂).waiters = (e.stateAt (p₂ - 1)).waiters := by
+            rw [h_state_eq, h_op_def]; exact h_noop
+          rw [h_post_waiters] at h_c2_at_p2
+          exact h_c2_not_at_p2m1 h_c2_at_p2
+        · have h_post_waiters : (e.stateAt p₂).waiters =
+              (e.stateAt (p₂ - 1)).waiters ++ [(c', AccessMode.write)] := by
+            rw [h_state_eq, h_op_def]; exact h_app_form
+          rw [h_post_waiters] at h_c2_at_p2 ⊢
+          have h_c2_in_app : (c₂, m₂) ∈ (e.stateAt (p₂ - 1)).waiters ++ [(c', AccessMode.write)] := h_c2_at_p2
+          rw [List.mem_append] at h_c2_in_app
+          rcases h_c2_in_app with h_pre | h_singleton
+          · exact absurd h_pre h_c2_not_at_p2m1
+          · have h_eq : (c₂, m₂) = (c', AccessMode.write) := by
+              cases h_singleton with
+              | head => rfl
+              | tail _ h => exact absurd h List.not_mem_nil
+            have h_c2_eq : c₂ = c' := (Prod.mk.injEq _ _ _ _ |>.mp h_eq).1
+            have h_m2_eq : m₂ = AccessMode.write := (Prod.mk.injEq _ _ _ _ |>.mp h_eq).2
+            have h_c1_in_pre : (c₁, m₁) ∈ (e.stateAt (p₂ - 1)).waiters := h_c1_at_p2_m1
+            have h_idx_c1 : ((e.stateAt (p₂ - 1)).waiters ++ [(c', AccessMode.write)]).idxOf (c₁, m₁) =
+                (e.stateAt (p₂ - 1)).waiters.idxOf (c₁, m₁) := by
+              rw [List.idxOf_append]; simp [h_c1_in_pre]
+            have h_idx_c2 : ((e.stateAt (p₂ - 1)).waiters ++ [(c', AccessMode.write)]).idxOf (c₂, m₂) =
+                (e.stateAt (p₂ - 1)).waiters.length := by
+              rw [List.idxOf_append]; simp [h_c2_not_at_p2m1, ← h_c2_eq, ← h_m2_eq]
+            rw [h_idx_c1, h_idx_c2]
+            exact List.idxOf_lt_length_of_mem h_c1_in_pre
+      | releaseRead c' =>
+        -- Release ops drop only; can't add (c₂, m₂) to waiters.
+        exfalso
+        have h_sub := releaseRead_waiters_sublist (e.stateAt (p₂ - 1)) c'
+        have h_post_sub : (e.stateAt p₂).waiters.Sublist (e.stateAt (p₂ - 1)).waiters := by
+          rw [h_state_eq, h_op_def]; exact h_sub
+        have h_c2_in_pre : (c₂, m₂) ∈ (e.stateAt (p₂ - 1)).waiters :=
+          h_post_sub.mem h_c2_at_p2
+        exact h_c2_not_at_p2m1 h_c2_in_pre
+      | releaseWrite c' =>
+        exfalso
+        have h_sub := releaseWrite_waiters_sublist (e.stateAt (p₂ - 1)) c'
+        have h_post_sub : (e.stateAt p₂).waiters.Sublist (e.stateAt (p₂ - 1)).waiters := by
+          rw [h_state_eq, h_op_def]; exact h_sub
+        have h_c2_in_pre : (c₂, m₂) ∈ (e.stateAt (p₂ - 1)).waiters :=
+          h_post_sub.mem h_c2_at_p2
+        exact h_c2_not_at_p2m1 h_c2_in_pre
+    -- Get c₁ at p₂ for the structural call.
+    have h_c1_at_p2 : (c₁, m₁) ∈ (e.stateAt p₂).waiters :=
+      h_c1_in_waiters p₂ (by omega) (by omega)
+    -- Apply rwLock_fifo_admission_temporal_structural to extend the order
+    -- from p₂ to a₂-1.  Signature:
+    -- (e k₁ k₂ h_le w₁ w₂ h_in₁_at_k₁ h_in₂_at_k₁ h_in₁_at_k₂ h_in₂_at_k₂ h_order h_surviving)
+    have h_order_at_a2_m1 : (e.stateAt (a₂ - 1)).waiters.idxOf (c₁, m₁) <
+                            (e.stateAt (a₂ - 1)).waiters.idxOf (c₂, m₂) :=
+      rwLock_fifo_admission_temporal_structural e p₂ (a₂ - 1) (by omega)
+        (c₁, m₁) (c₂, m₂)
+        h_c1_at_p2 h_c2_at_p2
+        h_c1_at_a2_m1 h_c2_at_a2_m1
+        h_order_at_p2 h_surviving
+    -- Step G: at step a₂, c₂ leaves waiters (becomes a holder).
+    have h_c2_leaves : (c₂, m₂) ∉ (e.stateAt a₂).waiters := by
+      -- c₂ ∈ holders at a₂ (h_a2_holder_c2).  By INV-R4 of stateAt a₂'s wf,
+      -- holders disjoint from waiters.
+      have h_wf_a2 : (e.stateAt a₂).wf := e.stateAt_wf a₂
+      have h_disj := (e.stateAt a₂).wf_waitersDisjointFromHolders h_wf_a2
+      intro h_in_waiters
+      have h_disj_c2 := h_disj (c₂, m₂) h_in_waiters
+      -- h_disj_c2: c₂ ∉ readers ∧ writerHeld ≠ some c₂.
+      unfold RwLockExecution.holderAt at h_a2_holder_c2
+      rcases h_a2_holder_c2 with h_r | h_w_held
+      · exact h_disj_c2.1 h_r
+      · exact h_disj_c2.2 h_w_held
+    -- Step H: by promote_prefix_inclusion at step a₂-1, c₁ also leaves at a₂.
+    have h_a2_eq : a₂ - 1 + 1 = a₂ := by omega
+    -- We need the op at a₂-1 to be the one that does the promote.
+    have h_a2_m1_in_range : a₂ - 1 < e.ops.length := by omega
+    have h_state_a2 : e.stateAt a₂ = (e.stateAt (a₂ - 1)).applyOp (e.ops[a₂ - 1]'h_a2_m1_in_range) := by
+      have h_succ := RwLockExecution.stateAt_succ e h_a2_m1_in_range
+      rw [h_a2_eq] at h_succ
+      exact h_succ
+    rw [h_state_a2] at h_c2_leaves
+    have h_wf_a2_m1 : (e.stateAt (a₂ - 1)).wf := e.stateAt_wf (a₂ - 1)
+    have h_c1_leaves : (c₁, m₁) ∉ ((e.stateAt (a₂ - 1)).applyOp (e.ops[a₂ - 1]'h_a2_m1_in_range)).waiters :=
+      promote_prefix_inclusion (e.stateAt (a₂ - 1)) h_wf_a2_m1
+        (c₁, m₁) (c₂, m₂) (e.ops[a₂ - 1]'h_a2_m1_in_range)
+        h_c1_at_a2_m1 h_c2_at_a2_m1 h_order_at_a2_m1 h_c2_leaves
+    -- Step I: by leave_waiters_implies_holder, c₁ becomes a holder at a₂.
+    have h_c1_holder := leave_waiters_implies_holder (e.stateAt (a₂ - 1)) h_wf_a2_m1
+                          c₁ m₁ (e.ops[a₂ - 1]'h_a2_m1_in_range) h_c1_at_a2_m1 h_c1_leaves
+    have h_c1_holder_at_a2 : e.holderAt a₂ c₁ := by
+      unfold RwLockExecution.holderAt
+      rw [h_state_a2]
+      exact h_c1_holder
+    -- Step J: contradicts the case assumption.
+    exact h_c1_not_holder a₂ (Nat.le_refl _) h_c1_holder_at_a2
 
 end SeLe4n.Kernel.Concurrency
 
