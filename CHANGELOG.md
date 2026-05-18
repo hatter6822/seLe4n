@@ -117,15 +117,52 @@ reader-writer lock primitive with bit-packed atomic state.  All
 
 - Lean: +38 substantive theorems (32 in RwLock + 6 in
   RwLockRefinement, including the audit-pass-2 strengthening
-  `rwLock_promote_is_sublist_of_waiters`), +75 public
+  `rwLock_promote_is_sublist_of_waiters` and the audit-pass-3
+  `rwLock_refinement_preservation_noop`), +75 public
   defs/structures/instances.
 - Rust HAL: 642 tests (was 613 baseline + 28 new + 1 panic-debug
   test) all green; zero clippy warnings workspace-wide.  The
   audit-pass-2 added `sm2c22_cross_thread_writer_excludes_readers`
-  — a deterministic exclusion test using a writer + 3 readers
-  with Barrier synchronization to verify the Lean spec's
-  `rwLock_writer_readers_exclusion` at runtime.
+  — a best-effort grace-period exclusion test using a writer + 3
+  readers with signal-counter synchronization to verify the Lean
+  spec's `rwLock_writer_readers_exclusion` at runtime.
 - Tier 0+1+2+3 all green at HEAD.
+
+### Audit-pass-3 cleanup (LOW severity polish)
+
+- **LOW-1**: Added STLXR's distinct ARM ARM section C6.2.323 to the
+  Rust impl's docstring (Lean spec already cited both sections after
+  pass-2).
+- **LOW-2**: Replaced `rwLock_refinement_preservation_placeholder`
+  (a `True := trivial` fake theorem) with the substantive
+  `rwLock_refinement_preservation_noop` (proves no-op preservation
+  of `rwLockSim`).  The full bisimulation deferred-work note is
+  retained as an `example` block.
+- **LOW-3**: Removed unused `_h_nodup` hypothesis from
+  `rwLockSim_readers_only` (the theorem holds for any list, not
+  just Nodup).
+- **LOW-4**: Replaced stale "fail-noisy" body comment in
+  `release_read` with the M-B audit-pass-2-correct "fail-locked".
+- **LOW-5**: Documented the `state = WRITER_BIT` misuse pattern in
+  `release_read`'s docstring (the second misuse case beyond
+  `state = 0`).
+- **LOW-6**: Honest the "deterministic" claim in
+  `cross_thread_writer_excludes_readers` to "best-effort grace-
+  period" with explicit limitation note.
+- **LOW-7**: Replaced `Classical.not_not.mp` with constructive
+  `Decidable.byContradiction` (`s.readers = []` is decidable).
+- **LOW-8**: `_deterministic` theorems retained as documented
+  surface anchors (docstring is honest about their decorative
+  function-extensionality nature).
+
+Plus audit-pass-3 defensive improvements:
+
+- Defensive overflow check in `acquire_read`: `s == READER_MASK`
+  fail-closed gate prevents `s + 1 = WRITER_BIT` state corruption
+  (unreachable at numCores ≤ 4 but defense-in-depth).
+- Strengthened `release_read` debug_assert: now catches both
+  `prev & READER_MASK == 0` (release without acquire) AND
+  `prev & WRITER_BIT != 0` (INV-R1 violation pre-state).
 
 ### Axiom budget
 

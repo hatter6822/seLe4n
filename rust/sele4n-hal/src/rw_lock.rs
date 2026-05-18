@@ -38,9 +38,11 @@
 //!
 //! * `state.load(Acquire)` — `LDAR` (ARM ARM C6.2.142): acquire-load with
 //!   release-acquire synchronisation.
-//! * `state.compare_exchange(..., Acquire, ...)` — `LDAXR` / `STLXR`
-//!   exclusive monitor pair (ARM ARM C6.2.135) or LSE `CASA` (ARM ARM
-//!   C6.2.50): atomic compare-and-swap with acquire ordering on success.
+//! * `state.compare_exchange(..., Acquire, ...)` — `LDAXR` (ARM ARM
+//!   C6.2.135) / `STLXR` (ARM ARM C6.2.323) exclusive monitor pair, or
+//!   LSE `CASA` (ARM ARM C6.2.50): atomic compare-and-swap with acquire
+//!   ordering on success.  (Audit pass-3 LOW-1 fix: previously cited
+//!   the pair as C6.2.135 only, missing STLXR's distinct section.)
 //! * `state.fetch_and(READER_MASK, Release)` — `LDCLRL` family (ARM ARM
 //!   C6.2.103, LSE bit-clear with Release) or, pre-LSE, a CAS-retry
 //!   sequence: release-ordered atomic bit-clear that preserves the
@@ -269,6 +271,17 @@ impl RwLock {
     ///   (M-B audit-pass-2 honesty fix: the prior docstring claimed
     ///   "fail-noisy", which is misleading — the misuse manifests as
     ///   a hang, not an explicit failure signal.)
+    /// * Under misuse (`release_read` called while writer is held —
+    ///   INV-R1 violation pre-state with `state = WRITER_BIT`):
+    ///   `fetch_sub(1)` produces `state = WRITER_BIT - 1 = READER_MASK`
+    ///   (all reader bits set, writer bit clear).  The next
+    ///   `acquire_read` would see `s == READER_MASK` and trip the
+    ///   audit-pass-3 fail-closed gate (lines 196-202), parking on
+    ///   WFE rather than corrupting further.  The audit-pass-3
+    ///   strengthened debug_assert also catches this misuse in debug
+    ///   builds: `prev & WRITER_BIT == 0 && prev & READER_MASK > 0`
+    ///   rejects `prev = WRITER_BIT`.  (LOW-5 audit-pass-3 fix:
+    ///   previously only the state-0 case was documented.)
     /// * In debug builds, the `debug_assert!` traps AFTER the
     ///   `fetch_sub` has already committed the underflow.  The lock
     ///   state is corrupted to u64::MAX at that point; the test
@@ -296,8 +309,14 @@ impl RwLock {
         // Atomic single-instruction reader decrement on ARMv8.1-A LSE.
         // Returns the prior value; if it was 0 in the reader-count bits,
         // we're in a misuse scenario, but the state will be poisoned in
-        // a fail-noisy way (writer bit set + all reader bits set), not
-        // silently corrupted into a valid-looking state.
+        // a fail-locked way (writer bit set + all reader bits set,
+        // causing the next acquirer to park on WFE permanently — see
+        // the "Release-build robustness" docstring above), not silently
+        // corrupted into a valid-looking state.
+        //
+        // (Audit pass-3 LOW-4 fix: previously said "fail-noisy" — that
+        // was inconsistent with the docstring's M-B audit-pass-2
+        // honesty correction to "fail-locked".)
         //
         // Pattern matches TicketLock::release: do the atomic op FIRST,
         // then check the returned prior value for misuse — this is
@@ -1062,11 +1081,32 @@ mod tests {
     /// was admitted).
     ///
     /// (M-J audit-pass-2 robustness fix: replaces the prior
-    /// `sleep(50ms)`-based synchronization with a signal-counter pattern
-    /// that deterministically waits for all readers to be parked on
-    /// `acquire_read` before the writer releases.  This eliminates the
-    /// possibility of false-pass on heavily loaded CI runners where 50ms
-    /// might not be enough for all readers to park.) -/
+    /// `sleep(50ms)`-based synchronization with a signal-counter
+    /// pattern that uses a best-effort grace-period to give all
+    /// readers a chance to park on `acquire_read` before the writer
+    /// releases.
+    ///
+    /// **Limitation (LOW-6 audit-pass-3 honesty note)**: this is
+    /// **best-effort**, not strictly deterministic.  Readers signal
+    /// `readers_entered_acquire` BEFORE calling `acquire_read()`; the
+    /// signal indicates "about to acquire", not "parked on WFE".  If
+    /// a reader is preempted between its `fetch_add(1)` and its
+    /// `acquire_read()` call, the writer may release before that
+    /// reader actually attempts the acquire.  In that scenario, the
+    /// reader observes `writer_was_clear=true` post-acquire and the
+    /// test passes vacuously — a false pass that hides nothing
+    /// (the lock was correctly released by the time the reader
+    /// acquired).  The test would only FAIL if a reader saw
+    /// `writer_was_clear=false` post-acquire, which would only happen
+    /// if exclusion was violated.  So the best-effort timing doesn't
+    /// affect the soundness of the failing path, just the coverage of
+    /// the passing path.
+    ///
+    /// A true deterministic protocol would require readers to signal
+    /// "parked on WFE" (which the kernel-level lock doesn't expose),
+    /// or to invert the protocol (writer reads from readers' "I'm
+    /// blocked" signal).  Neither is implementable purely in user-
+    /// space on stable Rust.) -/
     #[test]
     fn sm2c22_cross_thread_writer_excludes_readers() {
         use std::sync::Arc;

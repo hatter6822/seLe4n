@@ -1046,7 +1046,12 @@ theorem rwLock_tryAcquireWrite_preserves_wf
     have h_neg_or : ¬ s.writerHeld.isSome ∧ ¬ s.readers ≠ [] := by
       refine ⟨fun h => h_locked (Or.inl h), fun h => h_locked (Or.inr h)⟩
     have h_none : s.writerHeld = none := Option.not_isSome_iff_eq_none.mp h_neg_or.1
-    have h_no_readers : s.readers = [] := Classical.not_not.mp h_neg_or.2
+    -- LOW-7 audit-pass-3 fix: use constructive Decidable.not_not_eq instead
+    -- of Classical.not_not.  `s.readers = []` is Decidable (List has DecidableEq),
+    -- so the constructive form suffices.  This keeps the spec free of
+    -- unnecessary Classical dependencies.
+    have h_no_readers : s.readers = [] :=
+      Decidable.byContradiction (fun h => h_neg_or.2 h)
     exact wf_after_direct_acquire_write s core h h_none h_no_readers h_not_in_w
 
 -- ============================================================================

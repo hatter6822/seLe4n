@@ -1564,7 +1564,7 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.rwLockSim_readers_only
 #check @SeLe4n.Kernel.Concurrency.rwLockSim_writer_bit_iff
 #check @SeLe4n.Kernel.Concurrency.rwLockSim_reader_count_iff
-#check @SeLe4n.Kernel.Concurrency.rwLock_refinement_preservation_placeholder
+#check @SeLe4n.Kernel.Concurrency.rwLock_refinement_preservation_noop
 EOF'
 
 finalize_report
