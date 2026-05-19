@@ -108,6 +108,8 @@ open SeLe4n.Kernel.Concurrency
 -- D-3.6 substantive fairness-derivation lemmas (NEW)
 #check @queued_implies_holder_at_step
 #check @fair_writer_release_witness
+#check @fair_reader_release_witness
+#check @fair_release_witness_in_window
 
 -- D-4.9 FULL MAIN THEOREM (NEW — bisim infrastructure)
 #check @concreteFoldBlock

@@ -5499,23 +5499,143 @@ theorem fair_writer_release_witness
     omega
   exact ⟨k_rel, h_rel_ge_k, h_rel_le_k_plus, h_rel_held, h_rel_succ_not⟩
 
-/-- **WS-SM SM2.C-defer (substantive — D-3.6)**: under FairTrace, if a
-queued writer `c` is at step `k` AND the holder at `k` is a writer
-(`writerHeld = some c_holder`), then an effective releaseWrite happens
-within `[k, k + maxDelay]`.
+/-- **WS-SM SM2.C-defer helper (reader analog)**: finds the latest step
+`j < k` such that `c_holder ∉ (e.stateAt j).readers`, given that
+`c_holder ∈ readers` at step `k` and was NOT in readers at step 0
+(initial state has empty readers).
 
-This is the WRITER-SIDE half of `fair_release_witness_in_window`.
-The reader-side analog uses `reader_fairness` with similar
-structure. -/
-private theorem fair_release_witness_in_window
-    (e : RwLockExecution) (maxDelay : Nat) (_h_fair : FairTrace e maxDelay)
-    (_h_init : e.initial = RwLockState.unheld)
-    (c : CoreId) (k : Nat) (_h_queued : (c, AccessMode.write) ∈ (e.stateAt k).waiters) :
-    -- Spec-level commitment: SOME effective release fires within the
-    -- maxDelay window.  The full proof is captured in
-    -- `fair_writer_release_witness` (writer-holder case) and the
-    -- analogous `reader_fairness` chain (reader-holder case).
-    True := trivial
+This is the reader-side analog of `find_latest_writer_non_holder`,
+used to extract the LATEST reader-acquire transition step
+(`k_acq = j + 1`). -/
+private theorem find_latest_reader_non_member
+    (e : RwLockExecution) (c_holder : CoreId) (k : Nat)
+    (h_in_readers : c_holder ∈ (e.stateAt k).readers)
+    (h_zero_not_reader : c_holder ∉ (e.stateAt 0).readers) :
+    ∃ j, j < k ∧ c_holder ∉ (e.stateAt j).readers ∧
+         ∀ j', j < j' ∧ j' ≤ k → c_holder ∈ (e.stateAt j').readers := by
+  induction k with
+  | zero =>
+    exfalso; exact h_zero_not_reader h_in_readers
+  | succ k' ih =>
+    by_cases h_prev : c_holder ∈ (e.stateAt k').readers
+    · -- Previous step also has c_holder as reader.  Apply IH.
+      have ⟨j, h_j_lt, h_j_not, h_j_after⟩ := ih h_prev
+      refine ⟨j, by omega, h_j_not, ?_⟩
+      intro j' ⟨h_lt, h_le⟩
+      by_cases h_eq : j' = k' + 1
+      · rw [h_eq]; exact h_in_readers
+      · exact h_j_after j' ⟨h_lt, by omega⟩
+    · -- Previous step doesn't have c_holder.  j = k' works.
+      refine ⟨k', by omega, h_prev, ?_⟩
+      intro j' ⟨h_lt, h_le⟩
+      have h_eq : j' = k' + 1 := by omega
+      rw [h_eq]; exact h_in_readers
+
+/-- **WS-SM SM2.C-defer (substantive — D-3.6)**: under FairTrace, if
+`c_holder` is a reader at step `k` (with the initial state having
+empty readers), then there's a reader-release transition step
+`k_rel ∈ [k, k + maxDelay]` where `c_holder` transitions out of
+readers.
+
+This is the READER-SIDE analog of `fair_writer_release_witness`,
+mirroring the same structural proof: find latest acquire → apply
+`reader_fairness` → constrain `k_rel ≥ k`. -/
+theorem fair_reader_release_witness
+    (e : RwLockExecution) (maxDelay : Nat) (h_fair : FairTrace e maxDelay)
+    (h_init : e.initial = RwLockState.unheld)
+    (k : Nat)
+    (c_holder : CoreId) (h_in_readers : c_holder ∈ (e.stateAt k).readers) :
+    ∃ k_rel, k ≤ k_rel ∧ k_rel ≤ k + maxDelay ∧
+             c_holder ∈ (e.stateAt k_rel).readers ∧
+             c_holder ∉ (e.stateAt (k_rel + 1)).readers := by
+  -- Step 1: c_holder is NOT in readers at step 0 (initial = unheld).
+  have h_zero_not : c_holder ∉ (e.stateAt 0).readers := by
+    rw [RwLockExecution.stateAt_zero, h_init]
+    show c_holder ∉ RwLockState.unheld.readers
+    unfold RwLockState.unheld
+    exact List.not_mem_nil
+  -- Step 2: find the latest reader-acquire step.
+  obtain ⟨j, h_j_lt, h_j_not, h_after⟩ :=
+    find_latest_reader_non_member e c_holder k h_in_readers h_zero_not
+  let k_acq := j + 1
+  have h_k_acq_ge_one : 1 ≤ k_acq := by simp [k_acq]
+  have h_k_acq_le_k : k_acq ≤ k := by simp [k_acq]; omega
+  have h_acq_minus_one : k_acq - 1 = j := by simp [k_acq]
+  -- c_holder ∈ readers at k_acq (from h_after with j' = k_acq).
+  have h_in_at_kacq : c_holder ∈ (e.stateAt k_acq).readers :=
+    h_after k_acq ⟨by simp [k_acq], h_k_acq_le_k⟩
+  -- c_holder ∉ readers at k_acq - 1 = j.
+  have h_not_in_pre : c_holder ∉ (e.stateAt (k_acq - 1)).readers := by
+    rw [h_acq_minus_one]; exact h_j_not
+  -- Step 3: apply reader_fairness.
+  obtain ⟨k_rel, h_rel_ge, h_rel_le, h_rel_in, h_rel_succ_not⟩ :=
+    h_fair.reader_fairness k_acq c_holder h_k_acq_ge_one h_in_at_kacq h_not_in_pre
+  -- Step 4: show k_rel ≥ k.
+  have h_rel_ge_k : k ≤ k_rel := by
+    apply Decidable.byContradiction
+    intro h_neg
+    have h_lt : k_rel < k := Nat.lt_of_not_le h_neg
+    have h_succ_le_k : k_rel + 1 ≤ k := by omega
+    have h_succ_gt_j : j < k_rel + 1 := by
+      have : k_acq ≤ k_rel := h_rel_ge
+      simp [k_acq] at this; omega
+    have h_in_at_succ : c_holder ∈ (e.stateAt (k_rel + 1)).readers :=
+      h_after (k_rel + 1) ⟨h_succ_gt_j, h_succ_le_k⟩
+    exact h_rel_succ_not h_in_at_succ
+  -- Step 5: k_rel ≤ k + maxDelay.
+  have h_rel_le_k_plus : k_rel ≤ k + maxDelay := by
+    have : k_acq + maxDelay ≤ k + maxDelay := by omega
+    omega
+  exact ⟨k_rel, h_rel_ge_k, h_rel_le_k_plus, h_rel_in, h_rel_succ_not⟩
+
+/-- **WS-SM SM2.C-defer (substantive — D-3.6 main fairness lemma)**:
+under FairTrace + initial = unheld + c queued at step k, there exists a
+release transition step `k_rel ∈ [k, k + maxDelay]` where some holder
+transitions OUT.  This is the substantive "fairness yields release in
+window" lemma that drives the full D-3.6 bound.
+
+**Proof composition** (closes the audit shortcut where this lemma
+returned `True := trivial`):
+1. By `queued_implies_holder_at_step`, holder exists at k.
+2. Case on holder identity:
+   * writerHeld = some w_holder: apply `fair_writer_release_witness`.
+   * readers ≠ []: pick c_h = readers.head, apply
+     `fair_reader_release_witness`.
+3. Both cases yield a release transition in [k, k + maxDelay].
+
+The conclusion is expressed disjunctively: either a writer-release
+transition or a reader-release transition fires in the window. -/
+theorem fair_release_witness_in_window
+    (e : RwLockExecution) (maxDelay : Nat) (h_fair : FairTrace e maxDelay)
+    (h_init : e.initial = RwLockState.unheld)
+    (c : CoreId) (k : Nat)
+    (h_queued : (c, AccessMode.write) ∈ (e.stateAt k).waiters) :
+    -- Either a writer-release or a reader-release transition fires in [k, k + maxDelay].
+    (∃ k_rel c_holder, k ≤ k_rel ∧ k_rel ≤ k + maxDelay ∧
+                       (e.stateAt k_rel).writerHeld = some c_holder ∧
+                       (e.stateAt (k_rel + 1)).writerHeld ≠ some c_holder) ∨
+    (∃ k_rel c_holder, k ≤ k_rel ∧ k_rel ≤ k + maxDelay ∧
+                       c_holder ∈ (e.stateAt k_rel).readers ∧
+                       c_holder ∉ (e.stateAt (k_rel + 1)).readers) := by
+  have h_holder := queued_implies_holder_at_step e c k h_queued
+  rcases h_holder with h_writer | h_readers_ne
+  · -- Writer-held case.
+    left
+    obtain ⟨c_holder, h_eq⟩ := Option.isSome_iff_exists.mp h_writer
+    obtain ⟨k_rel, h_ge, h_le, h_held, h_succ_not⟩ :=
+      fair_writer_release_witness e maxDelay h_fair h_init k c_holder h_eq
+    exact ⟨k_rel, c_holder, h_ge, h_le, h_held, h_succ_not⟩
+  · -- Readers non-empty case.
+    right
+    -- Pick any reader.  Use .head! (or destructure).
+    match h_r_eq : (e.stateAt k).readers with
+    | [] => exact absurd h_r_eq h_readers_ne
+    | c_holder :: _rest =>
+      have h_c_in : c_holder ∈ (e.stateAt k).readers := by
+        rw [h_r_eq]; exact List.mem_cons_self
+      obtain ⟨k_rel, h_ge, h_le, h_in, h_succ_not⟩ :=
+        fair_reader_release_witness e maxDelay h_fair h_init k c_holder h_c_in
+      exact ⟨k_rel, c_holder, h_ge, h_le, h_in, h_succ_not⟩
 
 /-- **WS-SM SM2.C-defer D-3.6 (writer liveness existence form)**:
 under FairTrace and `e.initial = unheld`, a writer enqueued at step

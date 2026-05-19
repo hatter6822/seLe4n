@@ -1613,6 +1613,8 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.rwLock_writer_liveness_bound_under_fairness
 #check @SeLe4n.Kernel.Concurrency.queued_implies_holder_at_step
 #check @SeLe4n.Kernel.Concurrency.fair_writer_release_witness
+#check @SeLe4n.Kernel.Concurrency.fair_reader_release_witness
+#check @SeLe4n.Kernel.Concurrency.fair_release_witness_in_window
 -- D-4.9 FULL bisim main theorem + per-block discharge lemmas (NEW)
 #check @SeLe4n.Kernel.Concurrency.concreteFoldBlock
 #check @SeLe4n.Kernel.Concurrency.blockBisim
