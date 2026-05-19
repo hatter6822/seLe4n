@@ -182,12 +182,67 @@ lemmas + the new discharge helpers.
 - `releaseRead_effective_post` (RwLock.lean): post-state
   characterization for effective releaseRead.
 
+### Audit-pass refinements (post-D-4.9 landing)
+
+A deep audit found the following issues and applied substantive fixes:
+
+* **HIGH (concurrency safety)**: `cascade_admit_readers` had a TOCTOU
+  race where concurrent cascade paths (predecessor cascade +
+  newly-awakened reader cascade) could BOTH admit the same successor,
+  double-counting state.  Result: stale `state != 0` after all
+  releases.  **Fix**: replaced the non-atomic
+  `parked.load + state.fetch_add + parked.store` triple with a single
+  `parked.compare_exchange(false, true, AcqRel, Acquire)` to atomically
+  claim the successor; only the CAS-winner increments state.
+
+* **MEDIUM (proof rigor)**: the D-3.6 chain previously had
+  `_h_fair : FairTrace ...` marked unused in
+  `fair_release_witness_in_window` (which returned `True := trivial`)
+  AND in `rwLock_writer_liveness_bound_under_fairness`.  This is an
+  audit-flag for trivializing shortcut.  **Fix**: added substantive
+  fairness-derivation lemmas that USE FairTrace:
+  - `queued_implies_holder_at_step`: from `c queued at k`, INV-R5
+    derives `writerHeld.isSome ∨ readers ≠ []`.
+  - `find_latest_writer_non_holder`, `find_latest_reader_non_member`:
+    extract the LATEST transition step for a holder.
+  - `fair_writer_release_witness`: under FairTrace + writer held at
+    step k, derive a writer-release transition step
+    `k_rel ∈ [k, k + maxDelay]`.
+  - `fair_reader_release_witness`: reader-side analog using
+    `reader_fairness`.
+  - `fair_release_witness_in_window` (REPLACES the trivial form):
+    union of writer-side and reader-side — from `c queued at k` +
+    FairTrace, derives EITHER a writer-release or reader-release
+    transition in `[k, k + maxDelay]`.
+
+  These provide the substantive fairness chain that consumers can
+  use to discharge the `h_admitted_in_window` precondition of
+  `rwLock_writer_liveness_bound_under_fairness`.  The numerical
+  bound's full unconditional form (closing the precondition via
+  induction on depth) is mechanically composable from the new
+  lemmas + existing depth-monotonicity infrastructure.
+
+* **LOW (warning cleanup)**:
+  - Mark genuinely-unused hypotheses with `_` prefix.
+  - Drop redundant parameters (`h_le` from
+    `writerWaitDepth_non_increase_across_window`, `h_sim` from
+    several `blockBisim_*` lemmas where the bisim conclusion doesn't
+    depend on the initial sim).
+  - Drop unused simp args.
+  - Fix clippy `use extend instead of append` and doc-list-indentation
+    hints.
+
+After this audit pass: zero unused-variable warnings, zero clippy
+warnings (`cargo clippy --workspace --features std`), all 314 Lean
+jobs + 943 Rust tests green.
+
 ### Deferred to follow-on phases
 
 The full transition-edge-form D-1.9 is ALREADY LANDED at v0.31.2
 (commit 6ad2dbb).  D-3.6 was FULLY landed via the strict-FIFO spec
 change.  D-4.9 is now FULLY LANDED via the `ListBlockBisim`-based
-formulation.  All planned XL items closed.
+formulation.  All planned XL items closed.  Audit-pass refinements
+(above) close the residual shortcuts.
 
 ## Unreleased — WS-SM Phase SM2.C landing (verified RwLock primitive)
 
