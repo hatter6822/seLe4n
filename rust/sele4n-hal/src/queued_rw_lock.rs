@@ -856,45 +856,29 @@ mod cross_thread_tests {
             core::hint::spin_loop();
         }
 
-        // Spawn followers T1, T2, T3 in order.  Use a per-thread
-        // "queued" flag to deterministically synchronize the enqueue
-        // order — each follower signals when it has called
-        // `acquire_write` (and thus performed `tail.swap`), and the
-        // parent waits for that signal before spawning the next
-        // follower.  This is robust against scheduler delays under
-        // heavy parallel test load (previous 10ms-sleep heuristic
-        // could fail under contention).
-        let queued_flags = Arc::new([
-            AtomicBool::new(false),
-            AtomicBool::new(false),
-            AtomicBool::new(false),
-            AtomicBool::new(false),
-        ]);
+        // Spawn followers T1, T2, T3 in order.  Audit-pass-8: switched
+        // from `queued_flags + 20ms sleep` heuristic to deterministic
+        // `peek_tail`-based polling — the parent waits until the
+        // follower's `tail.swap` is OBSERVABLE in the lock state
+        // (peek_tail returns the follower's id), guaranteeing the
+        // enqueue order regardless of OS scheduling delays.
         let mut handles = Vec::new();
         for tid in 1u8..=(NUM_FOLLOWERS as u8) {
             let lock_c = Arc::clone(&lock);
             let adm_ctr_c = Arc::clone(&admit_counter);
             let adm_ord_c = Arc::clone(&admit_order);
-            let qf_c = Arc::clone(&queued_flags);
             handles.push(thread::spawn(move || {
-                // Signal queued status JUST before tail.swap.  The
-                // signal-then-swap order means by the time the parent
-                // sees the signal, the swap has happened (the swap
-                // immediately follows the signal in program order).
-                qf_c[tid as usize].store(true, StdOrdering::SeqCst);
                 lock_c.acquire_write(tid);
                 let adm = adm_ctr_c.fetch_add(1, StdOrdering::SeqCst);
                 adm_ord_c[tid as usize].store(adm, StdOrdering::SeqCst);
                 lock_c.release_write(tid);
             }));
-            // Wait for the follower to signal "queued" — guarantees
-            // their tail.swap has fired by the time we spawn the next.
-            // (Plus a small extra sleep to cover the
-            // signal-then-swap window.)
-            while !queued_flags[tid as usize].load(StdOrdering::SeqCst) {
+            // Deterministic: wait for the follower's tail.swap to fire.
+            // peek_tail returns the latest enqueued slot id.  When it
+            // equals `tid`, this follower has finished its tail.swap.
+            while lock.peek_tail() != tid {
                 core::hint::spin_loop();
             }
-            std::thread::sleep(Duration::from_millis(20));
         }
 
         // Release T0; admission order should be T1, T2, T3.
@@ -959,6 +943,9 @@ mod cross_thread_tests {
         }
 
         // Spawn reader threads in sequence; they'll all enqueue.
+        // Audit-pass-8: switched from `thread::sleep(10ms)` heuristic to
+        // deterministic `peek_tail`-based polling to guarantee enqueue
+        // order under heavy parallel test load.
         let mut handles = Vec::new();
         for tid in 1u8..=(NUM_READERS as u8) {
             let lock_c = Arc::clone(&lock);
@@ -980,7 +967,10 @@ mod cross_thread_tests {
                 }
                 lock_c.release_read(tid);
             }));
-            std::thread::sleep(Duration::from_millis(10));
+            // Wait for this reader's tail.swap to fire deterministically.
+            while lock.peek_tail() != tid {
+                core::hint::spin_loop();
+            }
         }
 
         // Release the writer.  Cascade should admit all 3 readers.
@@ -1038,14 +1028,19 @@ mod cross_thread_tests {
 
     /// **D-5 acceptance gate (≥10 cross-thread tests)**: writer
     /// starvation prevention.  T0 holds writer.  T1 enqueues as
-    /// writer (FIFO position 1).  T2, T3 spawn as readers (FIFO
-    /// position 2, 3).  T0 releases.  T1 (writer) must admit
-    /// BEFORE T2, T3 (readers), enforcing FIFO and preventing
+    /// writer (FIFO position 1).  T2 spawns as reader (FIFO
+    /// position 2).  T0 releases.  T1 (writer) must admit
+    /// BEFORE T2 (reader), enforcing FIFO and preventing
     /// reader-induced writer starvation.
+    ///
+    /// **Deterministic synchronization** (audit-pass-8): use
+    /// `peek_tail`-based polling to wait for each thread's
+    /// `tail.swap` to actually fire before spawning the next.
+    /// The naive `store(true) + sleep(20ms)` heuristic could fail
+    /// under extreme OS scheduling delay since the program-order
+    /// store doesn't guarantee tail.swap has been observable.
     #[test]
     fn cross_thread_writer_no_starvation_under_readers() {
-        use std::sync::atomic::AtomicBool;
-        use std::time::Duration;
         let lock = Arc::new(QueuedRwLock::new());
         let release_signal = Arc::new(AtomicBool::new(false));
         let writer_admitted = Arc::new(AtomicBool::new(false));
@@ -1062,19 +1057,19 @@ mod cross_thread_tests {
             lock_c.release_write(0);
         });
 
-        // Wait for T0 admit.
+        // Wait for T0 admit: state has writer bit set.
         while lock.peek_state() == 0 {
             core::hint::spin_loop();
         }
+        // T0's tail.swap returned NONE_SENTINEL (T0 was head); tail unset
+        // from a queue-membership perspective.  Wait for that.
+        // (T0 just admitted itself; no tail member yet.)
 
-        // T1: writer (enqueues at position 1).
+        // T1: writer (enqueues at queue position 1).
         let lock_c = Arc::clone(&lock);
         let w_adm_c = Arc::clone(&writer_admitted);
         let r_adm_c = Arc::clone(&reader_admitted);
-        let t1_started = Arc::new(AtomicBool::new(false));
-        let t1_started_c = Arc::clone(&t1_started);
         let t1 = thread::spawn(move || {
-            t1_started_c.store(true, StdOrdering::SeqCst);
             lock_c.acquire_write(1);
             // Writer admitted.  Check that no reader was admitted before.
             assert!(!r_adm_c.load(StdOrdering::SeqCst),
@@ -1082,12 +1077,13 @@ mod cross_thread_tests {
             w_adm_c.store(true, StdOrdering::SeqCst);
             lock_c.release_write(1);
         });
-        while !t1_started.load(StdOrdering::SeqCst) {
+        // Deterministic wait: poll peek_tail until T1's id (1) appears,
+        // proving T1's tail.swap has fired.
+        while lock.peek_tail() != 1 {
             core::hint::spin_loop();
         }
-        std::thread::sleep(Duration::from_millis(20));
 
-        // T2: reader.
+        // T2: reader (enqueues at queue position 2).
         let lock_c = Arc::clone(&lock);
         let r_adm_c = Arc::clone(&reader_admitted);
         let w_adm_c = Arc::clone(&writer_admitted);
@@ -1099,8 +1095,12 @@ mod cross_thread_tests {
             r_adm_c.store(true, StdOrdering::SeqCst);
             lock_c.release_read(2);
         });
+        // Wait for T2's tail.swap to fire.
+        while lock.peek_tail() != 2 {
+            core::hint::spin_loop();
+        }
 
-        std::thread::sleep(Duration::from_millis(50));
+        // Now release T0; admission order MUST be T1 (writer) then T2 (reader).
         release_signal.store(true, StdOrdering::SeqCst);
 
         t0.join().unwrap();
