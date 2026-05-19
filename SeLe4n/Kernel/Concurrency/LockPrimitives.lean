@@ -224,21 +224,11 @@ theorem lockPrimitives_partition_sum :
     that's been deleted but still has an entry would pass the
     surface check via the duplicate).
 
-    Audit-pass-1 strengthening: after `rust_ticketLock_refines_lean`
-    was added in `Locks/TicketLockRefinement.lean`, every entry's
-    `Lean.Name` is unique across the whole 22-row inventory.  The
-    NoDup check now covers ALL identifiers (no exemption for the
-    refinement category). -/
+    With `rust_ticketLock_refines_lean` named substantively in
+    `Locks/TicketLockRefinement.lean` (no aliasing), every entry's
+    `Lean.Name` is unique across the whole 22-row inventory. -/
 theorem lockPrimitives_identifiers_nodup :
     (lockPrimitives.map (·.identifier)).Nodup := by
-  unfold lockPrimitives; decide
-
-/-- **WS-SM SM2.D.7** (alias): kept for backwards-compat with the
-    audit-pass-0 landing.  Equivalent to
-    `lockPrimitives_identifiers_nodup` restricted to the substantive
-    (non-refinement) entries. -/
-theorem lockPrimitives_substantive_identifiers_nodup :
-    ((lockPrimitives.filter (·.category ≠ .refinement)).map (·.identifier)).Nodup := by
   unfold lockPrimitives; decide
 
 /-- **WS-SM SM2.D.7**: descriptions are pair-wise distinct.  Even

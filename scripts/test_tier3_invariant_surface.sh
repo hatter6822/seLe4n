@@ -1742,7 +1742,6 @@ import SeLe4n.Kernel.Concurrency.LockPrimitives
 #check @SeLe4n.Kernel.Concurrency.lockPrimitives_refinement_count
 #check @SeLe4n.Kernel.Concurrency.lockPrimitives_partition_sum
 #check @SeLe4n.Kernel.Concurrency.lockPrimitives_identifiers_nodup
-#check @SeLe4n.Kernel.Concurrency.lockPrimitives_substantive_identifiers_nodup
 #check @SeLe4n.Kernel.Concurrency.lockPrimitives_descriptions_nodup
 EOF'
 

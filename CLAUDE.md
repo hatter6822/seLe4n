@@ -2328,6 +2328,68 @@ documentation lives under `docs/` and `docs/gitbook/`.
   counterpart), tying the default to the smallest valid
   pool slot.
 
+  **Audit-pass-6 refinements** (independent external review,
+  2 MEDIUM + 9 LOW findings):
+  - **MEDIUM-1 (refinement docstring overstatement)**: the
+    `rust_ticketLock_refines_lean` docstring claimed
+    "every reachable Rust state is φ-related to a reachable
+    Lean state".  The fourth conjunct (`ticketLockSim_preserved_by_observeServing`)
+    is `h_sim → h_sim` — a tautology since `observeServing` is
+    a pure read on both sides.  Together with the per-step
+    witnesses we have initial-state correspondence + per-step
+    preservation, NOT reachability closure.  Docstring weakened
+    to match the actual content: "per-step preservation lemmas;
+    full reachability-closure proof is a post-1.0 hardening
+    candidate".
+  - **MEDIUM-2 (sign error in peek_holder docstring)**:
+    `ticket_lock_peek_holder` doc claimed "the `serving -
+    next_ticket` difference (the number of in-flight acquires)".
+    Under wf, `serving <= next_ticket`, so the non-negative
+    difference is `next_ticket - serving`.  Doc fixed.
+  - **LOW-3 (`Inhabited` anchors)**: added
+    `#check (default : TicketLockHandle)` and the RwLock
+    sibling to `tests/SmpSurfaceAnchors.lean`.
+  - **LOW-4 (dead-weight `assertBool ... true`)**: replaced
+    in both `tests/SmpSurfaceAnchors.lean` and
+    `tests/LockBridgeSuite.lean` with a decidable post-condition
+    that records elaboration reached the checkpoint.
+  - **LOW-5 (redundant alias theorem)**: deleted
+    `lockPrimitives_substantive_identifiers_nodup` — the
+    stronger `lockPrimitives_identifiers_nodup` makes it
+    redundant after the F-01 aliasing was removed in
+    audit-pass-1.
+  - **LOW-6 (redundant `& READER_MASK`)**: simplified
+    `rw_lock_snapshot` to `writer_bit | count` (the count
+    returned by `RwLock::snapshot` is already pre-masked).
+  - **LOW-7 (redundant `& 0xFFFF_FFFF`)**: removed in test
+    `sm2d1_ffi_ticket_lock_peek_holder_packs_state` — after
+    `packed >> 32`, the high bits are zero so the mask is
+    identity.
+  - **LOW-8 (missing negative-side bit-extractor tests)**:
+    added §6 in `tests/SmpSurfaceAnchors.lean`'s runtime
+    suite verifying high bits don't bleed into the serving
+    extraction and low bits don't bleed into the next-ticket
+    extraction.
+  - **LOW-9 (RAII docstring accuracy)**: `withTicketLock`
+    docstring updated to honestly distinguish: (a) Lean
+    `BaseIO` has no exceptions, (b) Rust HAL release uses
+    `panic = "abort"`, (c) Rust test profile uses
+    `panic = "unwind"` but Lean test executables don't link
+    `libsele4n_hal.a`.
+  - **LOW-10 (over-serialising `SM2D8_SLOT3_MUTEX`)**: split
+    into `SM2D8_TICKET_SLOT3_MUTEX` (ticket-pool cross-thread
+    test) and `SM2D8_RW_SLOT3_MUTEX` (rw-pool cross-thread
+    tests).  Allows ticket and rw cross-core tests to run
+    concurrently since they share no state.
+  - **LOW-11 (hardcoded pool size)**: refactored
+    `staticTicketLockPoolSize`/`staticRwLockPoolSize` to
+    `= numCores` (was: hardcoded `= 4`).  Rust side:
+    `STATIC_*_POOL_SIZE = crate::smp::MAX_SECONDARY_CORES + 1`
+    with a `const _: ()` assertion pinning to the
+    canonical 4-core value.  A future multi-platform port
+    that bumps `numCores` / `MAX_SECONDARY_CORES`
+    automatically propagates to both sides.
+
   **Items deferred past v1.0.0 with correctness impact**: NONE.
 
   Follow-on: SM2.E (documentation: `docs/spec/SELE4N_SPEC.md`

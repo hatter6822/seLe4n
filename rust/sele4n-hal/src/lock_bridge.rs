@@ -117,16 +117,37 @@ pub(crate) static SM2D_TRACE_TEST_MUTEX: std::sync::Mutex<()> =
 
 /// **WS-SM SM2.D**: capacity of the static `TicketLock` pool.
 ///
-/// Matches `PlatformBinding.coreCount = 4` on RPi5 so the cross-core
-/// test (SM2.D.8) can exercise one lock per core.  Future SM3+
-/// per-object locks add capacity via a separate handle encoding; this
-/// constant pins the SM2.D static-pool size.
-pub const STATIC_TICKET_LOCK_POOL_SIZE: usize = 4;
+/// Defined as `crate::smp::MAX_SECONDARY_CORES + 1` so the pool size
+/// structurally tracks `PlatformBinding::coreCount` (= 4 on RPi5) —
+/// one lock per core for the cross-core test (SM2.D.8).  A future
+/// multi-platform port that bumps `MAX_SECONDARY_CORES` automatically
+/// propagates here; the Lean-side `staticTicketLockPoolSize` is
+/// defined as `numCores`, so both sides remain in lockstep.
+///
+/// **Audit-pass-6 robustness fix** (pool size hardcoding): previously
+/// hardcoded `= 4`; now derived structurally so the cross-language
+/// agreement is mechanical rather than convention.
+pub const STATIC_TICKET_LOCK_POOL_SIZE: usize = crate::smp::MAX_SECONDARY_CORES + 1;
 
 /// **WS-SM SM2.D**: capacity of the static `RwLock` pool.
 ///
 /// See [`STATIC_TICKET_LOCK_POOL_SIZE`] for the rationale.
-pub const STATIC_RW_LOCK_POOL_SIZE: usize = 4;
+pub const STATIC_RW_LOCK_POOL_SIZE: usize = crate::smp::MAX_SECONDARY_CORES + 1;
+
+// **WS-SM SM2.D audit-pass-6 compile-time assertion**: pin the pool
+// size to the canonical 4-core value.  A future PR that bumps
+// `MAX_SECONDARY_CORES` past 3 must also extend the pool arrays
+// below (which are sized via the constant) AND the Lean-side
+// `numCores` AND the cross-language symmetry script — this
+// assertion fails to elaborate if any side drifts, surfacing the
+// regression at build time.
+const _: () = {
+    assert!(STATIC_TICKET_LOCK_POOL_SIZE == 4,
+        "WS-SM SM2.D: STATIC_TICKET_LOCK_POOL_SIZE must equal 4 to match the RPi5 PlatformBinding.coreCount; \
+         a multi-platform port must update the pool arrays below in lockstep.");
+    assert!(STATIC_RW_LOCK_POOL_SIZE == 4,
+        "WS-SM SM2.D: STATIC_RW_LOCK_POOL_SIZE must equal 4 to match the RPi5 PlatformBinding.coreCount.");
+};
 
 // ============================================================================
 // SM2.D static lock pools
@@ -367,9 +388,10 @@ pub fn ticket_lock_release(handle: u64) {
 /// second — for diagnostic snapshots taken at human time scales the
 /// truncated values stay informative.  At 2^32 the `next_ticket` value
 /// rolls over in the high 32 bits relative to the snapshot, but the
-/// `serving - next_ticket` difference (the number of in-flight
-/// acquires) remains correct modulo 2^32, which is the diagnostic
-/// quantity callers care about.
+/// `next_ticket - serving` difference (the non-negative number of
+/// in-flight acquires under wf, since `serving <= next_ticket`)
+/// remains correct modulo 2^32, which is the diagnostic quantity
+/// callers care about.
 ///
 /// Panics if `handle` does not decode to a valid pool index.
 #[must_use]
@@ -523,9 +545,14 @@ pub fn rw_lock_snapshot(handle: u64) -> u64 {
             handle, STATIC_RW_LOCK_POOL_SIZE
         )
     });
+    // RwLock::snapshot returns ((s & WRITER_BIT) != 0, s & READER_MASK).
+    // The `count` value is already pre-masked, so re-masking would be
+    // a no-op.  Recompose by OR-ing the writer bit (encoded as
+    // WRITER_BIT or 0) with the count — matches the abstract
+    // `encodeRwLock` form documented at SM2.C.16.
     let (writer, count) = STATIC_RW_LOCK_POOL[idx].snapshot();
     let writer_bit = if writer { crate::rw_lock::WRITER_BIT } else { 0 };
-    writer_bit | (count & crate::rw_lock::READER_MASK)
+    writer_bit | count
 }
 
 /// **WS-SM SM2.D.4**: read the per-slot RwLock acquire-read counter.
@@ -862,7 +889,10 @@ mod runtime_tests {
         // potentially other tests in the future, we treat the
         // observed values as opaque baselines and verify the packing.
         let packed = ticket_lock_peek_holder(h);
-        let next_low = (packed >> 32) & 0xFFFF_FFFF;
+        // Audit-pass-6: `packed >> 32` already produces a u32-valued
+        // u64 (high bits cleared by the shift), so no extra mask
+        // needed.  `packed & 0xFFFF_FFFF` extracts the low 32 bits.
+        let next_low = packed >> 32;
         let srv_low = packed & 0xFFFF_FFFF;
         // Under wf: serving <= next_ticket.
         assert!(
@@ -873,7 +903,7 @@ mod runtime_tests {
         let _ = ticket_lock_acquire(h);
         ticket_lock_release(h);
         let packed2 = ticket_lock_peek_holder(h);
-        let next2 = (packed2 >> 32) & 0xFFFF_FFFF;
+        let next2 = packed2 >> 32;
         let srv2 = packed2 & 0xFFFF_FFFF;
         // Both counters advanced by 1.
         assert_eq!(next2, next_low + 1);
@@ -969,16 +999,25 @@ mod runtime_tests {
     // each pool exclusively.
     // --------------------------------------------------------------------
 
-    // Slot-3 dedicated mutex so the cross-core tests don't race against
-    // the other counter-observation tests above.  Each cross-core test
-    // owns slot 3 for its duration.
-    static SM2D8_SLOT3_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    // Slot-3 dedicated mutexes — split into ticket / rw pools because
+    // the two pools have no shared state, so over-serialising via a
+    // single mutex would be wasteful.  Each cross-core test owns its
+    // slot 3 for its duration; the per-pool split allows ticket-pool
+    // and rw-pool cross-core tests to run concurrently.
+    //
+    // Audit-pass-6 (LOW-10 finding): pre-audit had a single
+    // `SM2D8_SLOT3_MUTEX` covering both pools.  Test correctness was
+    // preserved (the single mutex over-serialised but didn't break
+    // anything), but the split makes the lock-discipline intent
+    // explicit and removes the spurious serialisation.
+    static SM2D8_TICKET_SLOT3_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static SM2D8_RW_SLOT3_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn sm2d8_ticket_lock_cross_thread_serializes_increments() {
         use std::sync::Arc;
         use std::cell::UnsafeCell;
-        let _guard = SM2D8_SLOT3_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SM2D8_TICKET_SLOT3_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
         // Use slot 3 exclusively.
         let h = ticket_lock_static_handle(3);
@@ -1045,7 +1084,7 @@ mod runtime_tests {
         // count is at least 1 (and at most NUM_THREADS) during their
         // critical section.
         use std::sync::Arc;
-        let _guard = SM2D8_SLOT3_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SM2D8_RW_SLOT3_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
         let h = rw_lock_static_handle(3);
         let pre_acq = rw_lock_acquire_read_count(h);
@@ -1111,7 +1150,7 @@ mod runtime_tests {
         // that during any moment, the snapshot is either (writer-held,
         // 0 readers) or (no writer, k readers).
         use std::sync::Arc;
-        let _guard = SM2D8_SLOT3_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SM2D8_RW_SLOT3_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
 
         let h = rw_lock_static_handle(3);
         let pre_aw = rw_lock_acquire_write_count(h);

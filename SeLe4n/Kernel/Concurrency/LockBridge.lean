@@ -78,38 +78,47 @@ namespace SeLe4n.Kernel.Concurrency
 /-- **WS-SM SM2.D**: capacity of the static TicketLock pool.
 
     Mirrors `rust/sele4n-hal/src/lock_bridge.rs::STATIC_TICKET_LOCK_POOL_SIZE`.
-    Sized to match `PlatformBinding.coreCount = 4` on RPi5 so the
-    cross-core test (SM2.D.8) can exercise one lock per core. -/
-def staticTicketLockPoolSize : Nat := 4
+    Sized to match `Concurrency.numCores = 4` on RPi5 so the
+    cross-core test (SM2.D.8) can exercise one lock per core.
+
+    **Structural definition** (audit-pass-6 robustness): defined as
+    `numCores` rather than a hardcoded `4`, so a future bump to
+    `numCores` automatically propagates here.  The Rust side's
+    `STATIC_TICKET_LOCK_POOL_SIZE: usize = 4` is pinned to
+    `PlatformBinding::coreCount` separately at the Rust-side
+    build-time pool-array declaration; the cross-language symmetry
+    script verifies both sides agree. -/
+def staticTicketLockPoolSize : Nat := numCores
 
 /-- **WS-SM SM2.D**: capacity of the static RwLock pool.
 
-    Mirrors `rust/sele4n-hal/src/lock_bridge.rs::STATIC_RW_LOCK_POOL_SIZE`. -/
-def staticRwLockPoolSize : Nat := 4
+    Mirrors `rust/sele4n-hal/src/lock_bridge.rs::STATIC_RW_LOCK_POOL_SIZE`.
+    Defined as `numCores` for the same rationale as
+    [`staticTicketLockPoolSize`]. -/
+def staticRwLockPoolSize : Nat := numCores
 
 /-- **WS-SM SM2.D**: structural witness that the TicketLock pool size
     is positive (so `Fin staticTicketLockPoolSize` is inhabited). -/
 theorem staticTicketLockPoolSize_pos : 0 < staticTicketLockPoolSize := by
-  unfold staticTicketLockPoolSize; decide
+  unfold staticTicketLockPoolSize; exact numCores_pos
 
 /-- **WS-SM SM2.D**: structural witness that the RwLock pool size
     is positive. -/
 theorem staticRwLockPoolSize_pos : 0 < staticRwLockPoolSize := by
-  unfold staticRwLockPoolSize; decide
+  unfold staticRwLockPoolSize; exact numCores_pos
 
 /-- **WS-SM SM2.D**: structural witness that the TicketLock pool size
-    matches `Concurrency.numCores`.  Confirms the pool dimensioning
-    decision documented in `lock_bridge.rs` (one TicketLock slot per
-    PlatformBinding core). -/
+    matches `Concurrency.numCores`.  Trivially `rfl` because the
+    pool size IS defined as `numCores` (audit-pass-6). -/
 theorem staticTicketLockPoolSize_eq_numCores :
     staticTicketLockPoolSize = numCores := by
-  unfold staticTicketLockPoolSize; rfl
+  rfl
 
 /-- **WS-SM SM2.D**: structural witness that the RwLock pool size
     matches `Concurrency.numCores`. -/
 theorem staticRwLockPoolSize_eq_numCores :
     staticRwLockPoolSize = numCores := by
-  unfold staticRwLockPoolSize; rfl
+  rfl
 
 -- ============================================================================
 -- §2 — Typed handles (SM2.D.1 / SM2.D.2)
@@ -293,13 +302,26 @@ def rwLockReleaseWriteCount (h : RwLockHandle) : BaseIO UInt64 :=
     TicketLock acquire / release.
 
     Refines the Rust-side `TicketLock::with_lock` combinator:
-    `acquire` the lock, run `action`, then `release` unconditionally.
+    `acquire` the lock, run `action`, then `release` on normal
+    return.
 
-    Under `BaseIO` the action cannot throw exceptions, so the
-    "unconditional release" is automatic.  Under `panic = "abort"`
-    a panic anywhere in `action` halts the kernel — at which point
-    "release" is moot.  This combinator therefore satisfies the
-    Rust-side RAII guarantee with a simpler implementation. -/
+    **Panic-safety contract**:
+    - Lean's `BaseIO` has no exception-throwing primitives, so a
+      well-typed Lean `action` can only complete normally — at
+      which point release is unconditional.
+    - On hardware (the Rust HAL's `panic = "abort"` release profile)
+      a panic anywhere in the underlying FFI call halts the kernel,
+      at which point "release" is moot — there is no kernel left
+      to deadlock.
+    - The Rust `cargo test` profile uses `panic = "unwind"` (so
+      `#[should_panic]` tests work), but Lean test executables do
+      NOT link against `libsele4n_hal.a`, so the unwinding path
+      is unreachable from a Lean caller.  See
+      `SeLe4n/Platform/FFI.lean` header docstring for the
+      FFI link discipline.
+
+    These three layers together discharge the RAII contract for
+    the simpler `do`-block implementation here. -/
 @[inline] def withTicketLock {α : Type} (h : TicketLockHandle)
     (action : BaseIO α) : BaseIO α := do
   let _ticket ← acquireTicketLock h

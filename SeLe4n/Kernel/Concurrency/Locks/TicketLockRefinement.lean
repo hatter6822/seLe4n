@@ -204,8 +204,10 @@ theorem ticketLockSim_preserved_by_observeServing
     (h_sim : ticketLockSim abs conc) :
     ticketLockSim abs conc := h_sim
 
-/-- **WS-SM SM2.D F-01** (refinement theorem): the Rust TicketLock
-    implementation refines the Lean operational specification.
+/-- **WS-SM SM2.D F-01** (refinement theorem anchor): the Rust
+    TicketLock implementation refines the Lean operational
+    specification at the **per-step** level — initial-state
+    correspondence plus per-operation preservation lemmas.
 
     The substantive content lives in the per-operation witnesses
     above:
@@ -214,21 +216,26 @@ theorem ticketLockSim_preserved_by_observeServing
       correspondence (both `TicketLock::new` and
       `TicketLockState.unheld` produce φ-related states).
     * `ticketLockSim_preserved_by_tryAcquire` proves the
-      `tryAcquire` step preserves φ.
+      `tryAcquire` step preserves φ (under a u64-no-overflow
+      hypothesis on the abstract counter).
     * `ticketLockSim_preserved_by_release` proves the `release`
-      step preserves φ.
+      step preserves φ (same hypothesis).
     * `ticketLockSim_preserved_by_observeServing` proves the
-      `observeServing` step preserves φ.
+      `observeServing` step preserves φ (trivially — `observeServing`
+      is a pure read on both sides, so the abstract+concrete state
+      pair is unchanged).
 
-    Together these witnesses establish that every reachable Rust
-    state is φ-related to a reachable Lean state, modulo the
-    structural u64 bound (no counter overflow at 2^64).  In
-    practical workloads the bound is unreachable
-    (~580 years@1GHz acquire rate).
+    **Scope at v1.0.0**: these four witnesses are the structural
+    backbone of a bisimulation argument.  The full reachability-
+    closure proof — i.e., a `Reachable abs → Reachable conc →
+    ticketLockSim abs conc` lemma threading the witnesses through
+    an inductive sequence of `applyOp` calls — is a post-1.0
+    hardening candidate (mirroring SM2.C-defer D-4.9
+    `blockBisim` for RwLock).  The aggregator below is
+    sufficient as the F-01 surface anchor at SM2.D.
 
-    The aggregator below proves the conjunction; the SM2.D.7
-    `lockPrimitives` aggregator references this theorem as the
-    F-01 refinement anchor. -/
+    The SM2.D.7 `lockPrimitives` aggregator references this
+    theorem as the F-01 refinement anchor. -/
 theorem rust_ticketLock_refines_lean :
     -- Initial-state correspondence.
     ticketLockSim TicketLockState.unheld TicketLockConcrete.unheld ∧
