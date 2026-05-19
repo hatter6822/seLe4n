@@ -105,6 +105,10 @@ open SeLe4n.Kernel.Concurrency
 #check @rwLock_writer_liveness_count_bound
 #check @rwLock_writer_liveness_bound_under_fairness
 
+-- D-3.6 substantive fairness-derivation lemmas (NEW)
+#check @queued_implies_holder_at_step
+#check @fair_writer_release_witness
+
 -- D-4.9 FULL MAIN THEOREM (NEW — bisim infrastructure)
 #check @concreteFoldBlock
 #check @blockBisim

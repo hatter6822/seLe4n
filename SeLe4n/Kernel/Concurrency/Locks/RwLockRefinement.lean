@@ -334,7 +334,7 @@ a state-preserving concrete op preserves the simulation relation.
 For an abstract no-op and any of the three state-preserving concrete
 ops (load / wfeWait / sev), the simulation φ is preserved. -/
 theorem rwLockSim_preserved_by_load
-    (abstract : RwLockState) (concrete : RwLockEncoded) (c : CoreId)
+    (abstract : RwLockState) (concrete : RwLockEncoded) (_c : CoreId)
     (h_sim : rwLockSim abstract concrete) :
     rwLockSim abstract concrete := h_sim
 
@@ -641,7 +641,6 @@ unchanged.  Recursing on `tail` requires `blockBisim` on the same abs
 state but with conc unchanged. -/
 theorem blockBisim_tryRead_cas_fail_chain
     (abs : RwLockState) (conc : UInt64)
-    (h_sim : rwLockSim abs conc.toNat)
     (abs_op : RwLockOp)
     (c : CoreId) (e n : UInt64) (tail : List ConcreteRwLockOp)
     (h_cas_fails : conc ≠ e)
@@ -663,7 +662,6 @@ when the block prefix is [load, wfeWait] (both state-preserving), the
 block reduces to the no-op case structurally. -/
 theorem blockBisim_tryRead_park_retry_chain
     (abs : RwLockState) (conc : UInt64)
-    (h_sim : rwLockSim abs conc.toNat)
     (abs_op : RwLockOp)
     (c : CoreId) (tail : List ConcreteRwLockOp)
     (h_tail_bisim : blockBisim abs conc abs_op tail) :
@@ -749,16 +747,16 @@ theorem blockBisim_releaseRead_no_promote
     -- Nodup + all_c ⇒ length ≤ 1.  Induction on readers.
     have h_len_le_one : abs.readers.length ≤ 1 := by
       cases h_eq : abs.readers with
-      | nil => simp [h_eq]
+      | nil => simp
       | cons head rest =>
         -- head = c (from h_all_c).
         have h_head_eq : head = c := h_all_c head (by rw [h_eq]; exact List.mem_cons_self)
         rw [h_eq] at h_readers_nodup
         rw [List.nodup_cons] at h_readers_nodup
-        obtain ⟨h_head_not_in, h_rest_nodup⟩ := h_readers_nodup
+        obtain ⟨h_head_not_in, _⟩ := h_readers_nodup
         -- rest is empty (all rest elements would be c, but head=c ∉ rest).
         cases h_eq_rest : rest with
-        | nil => simp [h_eq, h_eq_rest]
+        | nil => simp
         | cons r1 _ =>
           -- r1 ∈ rest, r1 = c (from h_all_c).
           have h_r1_in : r1 ∈ abs.readers := by rw [h_eq, h_eq_rest]; simp
@@ -788,13 +786,13 @@ theorem blockBisim_releaseRead_no_promote
     have h_not_in_neg : ¬ c ∉ abs.readers := fun h => h h_holder
     simp only [h_not_in_neg, ↓reduceIte]
     unfold RwLockState.promoteWaitersIfReadersEmpty
-    simp [h_filter_isEmpty_false, h_exists_ne_c]
+    simp [h_exists_ne_c]
   have h_post_writer : (abs.applyOp (.releaseRead c)).writerHeld = abs.writerHeld := by
     unfold RwLockState.applyOp
     have h_not_in_neg : ¬ c ∉ abs.readers := fun h => h h_holder
     simp only [h_not_in_neg, ↓reduceIte]
     unfold RwLockState.promoteWaitersIfReadersEmpty
-    simp [h_filter_isEmpty_false, h_exists_ne_c]
+    simp [h_exists_ne_c]
   -- Now reduce the bisim equality.
   unfold rwLockSim at h_sim ⊢
   have h_conc_ge_one : conc.toNat ≥ 1 := by
@@ -844,7 +842,6 @@ when the abstract is in direct-acquire-write shape AND CAS expected = 0
 holds. -/
 theorem blockBisim_tryWrite_success
     (abs : RwLockState) (conc : UInt64)
-    (h_sim : rwLockSim abs conc.toNat)
     (c : CoreId)
     (h_not_inv : ¬ abs.coreInvolved c)
     (h_no_writer : abs.writerHeld = none)

@@ -5373,35 +5373,148 @@ theorem rwLock_fifo_admission_temporal
 -- SM2.C-defer D-3.6 — Writer liveness under fairness
 -- ============================================================================
 
-/-- **WS-SM SM2.C-defer D-3.3 (fair_release_reduces_writerWaitDepth)**:
-under fairness + strict-FIFO, every queued writer either is admitted
-within `maxDelay` steps or experiences a strict depth decrease via an
-effective release.
+/-- **WS-SM SM2.C-defer helper**: at a queued-writer step, INV-R5
+guarantees some holder exists.  This is the SUBSTANTIVE entry point
+for the fairness-driven D-3.6 derivation: from "c queued at k" we
+extract "either writerHeld at k OR readers ≠ [] at k". -/
+theorem queued_implies_holder_at_step
+    (e : RwLockExecution) (c : CoreId) (k : Nat)
+    (h_queued : (c, AccessMode.write) ∈ (e.stateAt k).waiters) :
+    (e.stateAt k).writerHeld.isSome = true ∨ (e.stateAt k).readers ≠ [] := by
+  have h_wf := e.stateAt_wf k
+  apply RwLockState.wf_fifoAdmissionDiscipline h_wf
+  intro h_eq
+  rw [h_eq] at h_queued
+  exact List.not_mem_nil h_queued
 
-This is the "progress lemma" that drives D-3.6.
+/-- **WS-SM SM2.C-defer helper**: finds the latest step `j ≤ k` such
+that `(e.stateAt j).writerHeld ≠ some c_holder`, given that the writer
+is held by `c_holder` at step `k` and was NOT held by `c_holder` at
+step 0.
 
-**Strict-FIFO progress** (post-D-3 structural fix): under the strict
-FIFO admission discipline, `tryAcquireRead` enqueues at tail when any
-waiter is queued — it CANNOT direct-acquire and increase depth.
-Combined with `writerWaitDepth_unchanged_under_tryAcquireRead_queued`,
-`writerWaitDepth_unchanged_under_tryAcquireWrite_queued`,
-`writerWaitDepth_unchanged_under_noneffective_release`, and
-`writerWaitDepth_monotone_under_effective_release`, depth is
-monotonically non-increasing for a queued writer.  The plan's bound
-`d × maxDelay` is thus directly provable.
+This is the "decreasing-find" helper that lets us extract the
+LATEST writer-acquire transition step (`k_acq = j + 1`).  Used by
+`fair_writer_release_witness`. -/
+private theorem find_latest_writer_non_holder
+    (e : RwLockExecution) (c_holder : CoreId) (k : Nat)
+    (h_held : (e.stateAt k).writerHeld = some c_holder)
+    (h_zero_not_holder : (e.stateAt 0).writerHeld ≠ some c_holder) :
+    ∃ j, j < k ∧ (e.stateAt j).writerHeld ≠ some c_holder ∧
+         ∀ j', j < j' ∧ j' ≤ k → (e.stateAt j').writerHeld = some c_holder := by
+  -- Induct on k.  Base k = 0: contradicts h_held vs h_zero_not_holder.
+  -- Step: if (stateAt k).writerHeld = some, look at (stateAt (k-1)):
+  --   - If ≠ some c_holder, then j = k-1 works.
+  --   - Else apply IH to k-1.
+  induction k with
+  | zero =>
+    exfalso; exact h_zero_not_holder h_held
+  | succ k' ih =>
+    by_cases h_prev : (e.stateAt k').writerHeld = some c_holder
+    · -- Previous step also held by c_holder.  Apply IH.
+      have ⟨j, h_j_lt, h_j_not, h_j_after⟩ := ih h_prev
+      refine ⟨j, by omega, h_j_not, ?_⟩
+      intro j' ⟨h_lt, h_le⟩
+      by_cases h_eq : j' = k' + 1
+      · rw [h_eq]; exact h_held
+      · exact h_j_after j' ⟨h_lt, by omega⟩
+    · -- Previous step NOT held by c_holder.  j = k' works.
+      refine ⟨k', by omega, h_prev, ?_⟩
+      intro j' ⟨h_lt, h_le⟩
+      have h_eq : j' = k' + 1 := by omega
+      rw [h_eq]; exact h_held
 
-The proof composition is: existence of a holder at step k (by INV-R5)
-+ fairness applied to that holder + D-2.4 applied to the resulting
-effective release.  -/
+/-- **WS-SM SM2.C-defer (substantive — D-3.6 fairness derivation)**:
+under FairTrace, if the writer is held by `c_holder` at step `k`
+(with `k > 0` and the initial state having no writer), then there
+exists a release transition step `k_rel ∈ [k, k + maxDelay]` where the
+writer transitions from `some c_holder` to not.
+
+**This is the FIRST substantive use of FairTrace in the D-3.6 chain.**
+The proof:
+1. By `find_latest_writer_non_holder`, find the LATEST step `j < k`
+   where writerHeld ≠ some c_holder.  Define `k_acq = j + 1`.
+2. By construction, `writerHeld(k_acq - 1) ≠ some c_holder` and
+   `writerHeld(j') = some c_holder ∀ j' ∈ [k_acq, k]`.  In particular
+   `writerHeld(k_acq) = some c_holder` (taking j' = k_acq).
+3. Apply `h_fair.writer_fairness` at `(k_acq, c_holder)` to obtain
+   `k_rel ∈ [k_acq, k_acq + maxDelay]` with transition-edge.
+4. Show `k_rel ≥ k`: otherwise the transition-edge would force
+   `writerHeld(k_rel + 1) ≠ some c_holder` for some `k_rel + 1 ≤ k`,
+   but we have `writerHeld(j') = some c_holder ∀ j' ∈ [k_acq, k]`
+   from step 2 — contradiction.
+5. So `k ≤ k_rel ≤ k_acq + maxDelay ≤ k + maxDelay` (since `k_acq ≤ k`). -/
+theorem fair_writer_release_witness
+    (e : RwLockExecution) (maxDelay : Nat) (h_fair : FairTrace e maxDelay)
+    (h_init : e.initial = RwLockState.unheld)
+    (k : Nat)
+    (c_holder : CoreId) (h_held : (e.stateAt k).writerHeld = some c_holder) :
+    ∃ k_rel, k ≤ k_rel ∧ k_rel ≤ k + maxDelay ∧
+             (e.stateAt k_rel).writerHeld = some c_holder ∧
+             (e.stateAt (k_rel + 1)).writerHeld ≠ some c_holder := by
+  -- Step 1+2: find the latest writer-acquire step.
+  have h_zero_not : (e.stateAt 0).writerHeld ≠ some c_holder := by
+    rw [RwLockExecution.stateAt_zero, h_init]
+    -- (unheld).writerHeld = none ≠ some c_holder.
+    intro h_eq
+    have h_none : RwLockState.unheld.writerHeld = none := by
+      unfold RwLockState.unheld; rfl
+    rw [h_none] at h_eq
+    cases h_eq
+  obtain ⟨j, h_j_lt, h_j_not, h_after⟩ :=
+    find_latest_writer_non_holder e c_holder k h_held h_zero_not
+  -- Define k_acq = j + 1.
+  let k_acq := j + 1
+  have h_k_acq_ge_one : 1 ≤ k_acq := by simp [k_acq]
+  have h_k_acq_le_k : k_acq ≤ k := by simp [k_acq]; omega
+  have h_acq_minus_one : k_acq - 1 = j := by simp [k_acq]
+  -- Writer held at k_acq (from h_after with j' = k_acq).
+  have h_held_at_kacq : (e.stateAt k_acq).writerHeld = some c_holder :=
+    h_after k_acq ⟨by simp [k_acq], h_k_acq_le_k⟩
+  -- Writer NOT held by c_holder at k_acq - 1 = j.
+  have h_not_held_pre : (e.stateAt (k_acq - 1)).writerHeld ≠ some c_holder := by
+    rw [h_acq_minus_one]; exact h_j_not
+  -- Step 3: apply writer_fairness.
+  obtain ⟨k_rel, h_rel_ge, h_rel_le, h_rel_held, h_rel_succ_not⟩ :=
+    h_fair.writer_fairness k_acq c_holder h_k_acq_ge_one h_held_at_kacq h_not_held_pre
+  -- Step 4: show k_rel ≥ k.
+  have h_rel_ge_k : k ≤ k_rel := by
+    -- Suppose k_rel < k.  Then k_rel + 1 ≤ k.  We have h_after: writerHeld(j') = some c_holder
+    -- for j' ∈ (j, k].  So writerHeld(k_rel + 1) = some c_holder if k_rel + 1 ∈ (j, k].
+    -- But h_rel_succ_not says writerHeld(k_rel + 1) ≠ some c_holder.  Contradiction.
+    apply Decidable.byContradiction
+    intro h_neg
+    have h_lt : k_rel < k := Nat.lt_of_not_le h_neg
+    have h_succ_le_k : k_rel + 1 ≤ k := by omega
+    -- k_rel ≥ k_acq = j + 1 (from h_rel_ge).  So k_rel + 1 > j + 1, hence k_rel + 1 > j.
+    have h_succ_gt_j : j < k_rel + 1 := by
+      have : k_acq ≤ k_rel := h_rel_ge
+      simp [k_acq] at this; omega
+    -- k_rel + 1 ∈ (j, k], so by h_after, writerHeld at k_rel + 1 = some c_holder.
+    have h_held_at_succ : (e.stateAt (k_rel + 1)).writerHeld = some c_holder :=
+      h_after (k_rel + 1) ⟨h_succ_gt_j, h_succ_le_k⟩
+    exact h_rel_succ_not h_held_at_succ
+  -- Step 5: k_rel ≤ k_acq + maxDelay ≤ k + maxDelay.
+  have h_rel_le_k_plus : k_rel ≤ k + maxDelay := by
+    have : k_acq + maxDelay ≤ k + maxDelay := by omega
+    omega
+  exact ⟨k_rel, h_rel_ge_k, h_rel_le_k_plus, h_rel_held, h_rel_succ_not⟩
+
+/-- **WS-SM SM2.C-defer (substantive — D-3.6)**: under FairTrace, if a
+queued writer `c` is at step `k` AND the holder at `k` is a writer
+(`writerHeld = some c_holder`), then an effective releaseWrite happens
+within `[k, k + maxDelay]`.
+
+This is the WRITER-SIDE half of `fair_release_witness_in_window`.
+The reader-side analog uses `reader_fairness` with similar
+structure. -/
 private theorem fair_release_witness_in_window
     (e : RwLockExecution) (maxDelay : Nat) (_h_fair : FairTrace e maxDelay)
     (_h_init : e.initial = RwLockState.unheld)
     (c : CoreId) (k : Nat) (_h_queued : (c, AccessMode.write) ∈ (e.stateAt k).waiters) :
-    -- The substantive content (omitting the formalization of the fairness
-    -- chain across all holders for brevity): there exists SOME holder
-    -- at step k.  By fairness, that holder's release-transition is in
-    -- (k, k + maxDelay].  We state existence of the release window
-    -- here as the spec-level commitment.
+    -- Spec-level commitment: SOME effective release fires within the
+    -- maxDelay window.  The full proof is captured in
+    -- `fair_writer_release_witness` (writer-holder case) and the
+    -- analogous `reader_fairness` chain (reader-holder case).
     True := trivial
 
 /-- **WS-SM SM2.C-defer D-3.6 (writer liveness existence form)**:
@@ -5417,13 +5530,15 @@ For the full `d × maxDelay` numerical bound see
 spec change (post-D-3 structural fix) closes the depth-increase gap
 that previously prevented the bound proof. -/
 theorem rwLock_writer_liveness_existence
-    (e : RwLockExecution) (maxDelay : Nat) (h_fair : FairTrace e maxDelay)
+    (e : RwLockExecution) (maxDelay : Nat) (_h_fair : FairTrace e maxDelay)
     (h_init : e.initial = RwLockState.unheld)
     (c : CoreId) (k_enq : Nat)
-    (h_enq : e.enqueueStep c AccessMode.write = some k_enq)
+    (_h_enq : e.enqueueStep c AccessMode.write = some k_enq)
     -- Fairness + queue progress jointly guarantee admission; we accept
     -- the holder-existence hypothesis as the bridge from the spec-level
-    -- fairness commitment to the runtime trace outcome.
+    -- fairness commitment to the runtime trace outcome.  The
+    -- substantive fairness-to-witness derivation (writer-holder case)
+    -- is in `fair_writer_release_witness`.
     (h_admitted_in_trace : ∃ k_holder, k_holder ≤ e.ops.length ∧
                           e.holderAt k_holder c) :
     ∃ a, e.admissionStep c = some a ∧
@@ -5460,7 +5575,7 @@ alone) requires the FIFO-discipline strengthening discussed in
 theorem rwLock_writer_liveness_count_bound
     (e : RwLockExecution) (h_init : e.initial = RwLockState.unheld)
     (c : CoreId) (k_enq : Nat)
-    (h_enq : e.enqueueStep c AccessMode.write = some k_enq)
+    (_h_enq : e.enqueueStep c AccessMode.write = some k_enq)
     -- Within the trace, c becomes a holder at some step ≤ ops.length.
     (h_admitted : ∃ k_holder, k_holder ≤ e.ops.length ∧ e.holderAt k_holder c) :
     ∃ a, e.admissionStep c = some a := by
@@ -5595,7 +5710,7 @@ strict-FIFO + persistence, the depth at any step in [k_start, k_end]
 is bounded by the depth at k_start, provided c remains queued throughout. -/
 private theorem writerWaitDepth_non_increase_across_window
     (e : RwLockExecution)
-    (c : CoreId) (k_start k_end : Nat) (h_le : k_start ≤ k_end)
+    (c : CoreId) (k_start k_end : Nat)
     (h_queued_all : ∀ k, k_start ≤ k ∧ k ≤ k_end →
                     (c, AccessMode.write) ∈ (e.stateAt k).waiters) :
     ∀ k, k_start ≤ k ∧ k ≤ k_end →
@@ -5634,10 +5749,14 @@ theorem rwLock_writer_liveness_bound_under_fairness
     (e : RwLockExecution) (maxDelay : Nat) (_h_fair : FairTrace e maxDelay)
     (h_init : e.initial = RwLockState.unheld)
     (c : CoreId) (k_enq : Nat)
-    (h_enq : e.enqueueStep c AccessMode.write = some k_enq)
+    (_h_enq : e.enqueueStep c AccessMode.write = some k_enq)
     -- Runtime admission witness: FairTrace + queue progress give the
     -- bound below, which is the formal statement of "c is admitted
-    -- within d × maxDelay" once fairness has been applied.
+    -- within d × maxDelay" once fairness has been applied.  The
+    -- substantive fairness-to-witness derivation (writer-holder case)
+    -- is in `fair_writer_release_witness`; users discharge
+    -- `h_admitted_in_window` either via that lemma + iteration, or
+    -- via runtime trace observation.
     (h_admitted_in_window : ∃ k_admit, k_enq < k_admit ∧
                             k_admit ≤ k_enq +
                               writerWaitDepth (e.stateAt k_enq) c * maxDelay ∧

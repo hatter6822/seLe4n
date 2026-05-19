@@ -327,9 +327,19 @@ impl QueuedRwLock {
     ///
     /// Protocol: walk the slot chain via `next`.  For each contiguous
     /// reader successor:
-    ///   - Increment state's reader count (`fetch_add(1, AcqRel)`).
-    ///   - Set successor's `parked = true` (Release) so it exits its
-    ///     park loop.
+    ///   - **Atomically claim** the successor via CAS on `parked`
+    ///     (false → true).  This prevents the TOCTOU race where the
+    ///     predecessor's cascade and the newly-awakened reader's
+    ///     cascade both attempt to admit the SAME successor (closes
+    ///     audit-pass-4 finding: previously the `parked.load` check +
+    ///     `state.fetch_add` + `parked.store` had a non-atomic window
+    ///     that could double-count under high contention).
+    ///   - On CAS success: increment state's reader count
+    ///     (`fetch_add(1, AcqRel)`).  We are the unique admitter.
+    ///   - On CAS failure: another cascader already admitted this
+    ///     successor.  Return (they will handle the rest of the chain
+    ///     from their position).
+    ///
     /// Stop at the first writer (don't admit it), at sentinel, or at a
     /// successor whose `next` hasn't been linked yet (stay loose;
     /// future releaser propagation handles the rest).
@@ -342,25 +352,33 @@ impl QueuedRwLock {
             }
             // SAFETY: `next < MAX_WAITERS` by the enqueue-side invariant.
             let next_slot = &self.slots[next as usize];
-            // Check successor's mode BEFORE admitting.
+            // Check successor's mode BEFORE attempting admission.
             let next_mode = next_slot.requested_mode();
             if next_mode != MODE_READ {
                 return; // Stop at writer — leave for normal release-signal.
             }
-            // Only cascade-admit if the successor hasn't been admitted yet.
-            // (Defensive: if `parked` is already true, this is a no-op
-            // signal; safe but redundant.)
-            if next_slot.parked.load(Ordering::Acquire) {
-                return; // Already admitted; either cascade earlier or
-                        // by predecessor's release.  Stop to avoid
-                        // double-cascade racing.
+            // **Atomic claim via CAS** (audit-pass-4 race fix): only the
+            // CAS-winner is allowed to increment state and signal the
+            // successor.  This eliminates the TOCTOU race between
+            // concurrent cascade paths (predecessor cascade + newly-
+            // awakened reader cascade).
+            match next_slot.parked.compare_exchange(
+                false, true,
+                Ordering::AcqRel, Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    // We claimed the successor.  Increment state.
+                    // AcqRel on state to ensure the prior reader's CS data
+                    // is visible to the new admittee (D-5 H-4 audit).
+                    self.state.fetch_add(1, Ordering::AcqRel);
+                    current = next;
+                }
+                Err(_) => {
+                    // Another cascader admitted this successor already.
+                    // Stop — they will continue the chain.
+                    return;
+                }
             }
-            // Reader successor not yet admitted.  Admit it.
-            // AcqRel on state to ensure the prior reader's CS data is
-            // visible to the new admittee (closes D-5 H-4 audit).
-            self.state.fetch_add(1, Ordering::AcqRel);
-            next_slot.parked.store(true, Ordering::Release);
-            current = next;
         }
     }
 

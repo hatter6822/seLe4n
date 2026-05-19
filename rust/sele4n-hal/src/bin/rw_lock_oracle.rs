@@ -182,7 +182,7 @@ impl AbstractState {
                 }
                 // Prepend admitted readers to the readers list.
                 let mut new_readers = readers_to_admit;
-                new_readers.extend(self.readers.drain(..));
+                new_readers.append(&mut self.readers);
                 self.readers = new_readers;
             }
         }
