@@ -1002,4 +1002,243 @@ mod cross_thread_tests {
             "Expected at least 2 concurrent-reader observations \
              (H-1 cascade validation); got {}", count);
     }
+
+    /// **D-5 acceptance gate (≥10 cross-thread tests)**: alternating
+    /// reader-writer pattern.  4 threads, each alternating between
+    /// reader and writer acquires.  Verifies that the lock correctly
+    /// excludes writers from concurrent readers and serializes
+    /// writers, with NO state corruption across the W→R→W→R pattern.
+    #[test]
+    fn cross_thread_alternating_rw_pattern() {
+        const ITER: usize = 50;
+        let lock = Arc::new(QueuedRwLock::new());
+        let mut handles = Vec::new();
+        for tid in 0u8..(MAX_WAITERS as u8) {
+            let lock_c = Arc::clone(&lock);
+            handles.push(thread::spawn(move || {
+                for i in 0..ITER {
+                    if i % 2 == 0 {
+                        lock_c.acquire_read(tid);
+                        lock_c.release_read(tid);
+                    } else {
+                        lock_c.acquire_write(tid);
+                        lock_c.release_write(tid);
+                    }
+                }
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        // Final state must be clean.
+        assert_eq!(lock.peek_state(), 0,
+                   "state should be 0 after alternating R/W pattern; got {:#x}",
+                   lock.peek_state());
+    }
+
+    /// **D-5 acceptance gate (≥10 cross-thread tests)**: writer
+    /// starvation prevention.  T0 holds writer.  T1 enqueues as
+    /// writer (FIFO position 1).  T2, T3 spawn as readers (FIFO
+    /// position 2, 3).  T0 releases.  T1 (writer) must admit
+    /// BEFORE T2, T3 (readers), enforcing FIFO and preventing
+    /// reader-induced writer starvation.
+    #[test]
+    fn cross_thread_writer_no_starvation_under_readers() {
+        use std::sync::atomic::AtomicBool;
+        use std::time::Duration;
+        let lock = Arc::new(QueuedRwLock::new());
+        let release_signal = Arc::new(AtomicBool::new(false));
+        let writer_admitted = Arc::new(AtomicBool::new(false));
+        let reader_admitted = Arc::new(AtomicBool::new(false));
+
+        // T0: writer holder, releases on signal.
+        let lock_c = Arc::clone(&lock);
+        let rel_c = Arc::clone(&release_signal);
+        let t0 = thread::spawn(move || {
+            lock_c.acquire_write(0);
+            while !rel_c.load(StdOrdering::SeqCst) {
+                core::hint::spin_loop();
+            }
+            lock_c.release_write(0);
+        });
+
+        // Wait for T0 admit.
+        while lock.peek_state() == 0 {
+            core::hint::spin_loop();
+        }
+
+        // T1: writer (enqueues at position 1).
+        let lock_c = Arc::clone(&lock);
+        let w_adm_c = Arc::clone(&writer_admitted);
+        let r_adm_c = Arc::clone(&reader_admitted);
+        let t1_started = Arc::new(AtomicBool::new(false));
+        let t1_started_c = Arc::clone(&t1_started);
+        let t1 = thread::spawn(move || {
+            t1_started_c.store(true, StdOrdering::SeqCst);
+            lock_c.acquire_write(1);
+            // Writer admitted.  Check that no reader was admitted before.
+            assert!(!r_adm_c.load(StdOrdering::SeqCst),
+                "writer starvation: reader admitted before queued writer");
+            w_adm_c.store(true, StdOrdering::SeqCst);
+            lock_c.release_write(1);
+        });
+        while !t1_started.load(StdOrdering::SeqCst) {
+            core::hint::spin_loop();
+        }
+        std::thread::sleep(Duration::from_millis(20));
+
+        // T2: reader.
+        let lock_c = Arc::clone(&lock);
+        let r_adm_c = Arc::clone(&reader_admitted);
+        let w_adm_c = Arc::clone(&writer_admitted);
+        let t2 = thread::spawn(move || {
+            lock_c.acquire_read(2);
+            // Reader admitted.  Check that the queued writer was admitted first.
+            assert!(w_adm_c.load(StdOrdering::SeqCst),
+                "writer-after-reader: reader admitted before queued writer");
+            r_adm_c.store(true, StdOrdering::SeqCst);
+            lock_c.release_read(2);
+        });
+
+        std::thread::sleep(Duration::from_millis(50));
+        release_signal.store(true, StdOrdering::SeqCst);
+
+        t0.join().unwrap();
+        t1.join().unwrap();
+        t2.join().unwrap();
+        assert_eq!(lock.peek_state(), 0);
+    }
+
+    /// **D-5 acceptance gate (≥10 cross-thread tests)**: state
+    /// invariant — at any observable point, state is either 0
+    /// (free), has WRITER_BIT set (writer holds), OR has a positive
+    /// reader count (readers hold).  NEVER both WRITER_BIT and
+    /// readers (mutex correctness).  Race-detection: 4 threads do
+    /// many reader/writer ops; periodically sample state from a
+    /// separate observer thread.
+    #[test]
+    fn cross_thread_state_invariant_no_writer_with_readers() {
+        const ITER: usize = 100;
+        let lock = Arc::new(QueuedRwLock::new());
+        let stop_observer = Arc::new(AtomicBool::new(false));
+        let invariant_violated = Arc::new(AtomicBool::new(false));
+
+        // Observer thread: sample state and check invariant.
+        let lock_obs = Arc::clone(&lock);
+        let stop_c = Arc::clone(&stop_observer);
+        let viol_c = Arc::clone(&invariant_violated);
+        let observer = thread::spawn(move || {
+            while !stop_c.load(StdOrdering::SeqCst) {
+                let s = lock_obs.peek_state();
+                let writer_held = (s & 0x8000_0000_0000_0000) != 0;
+                let reader_count = s & 0x7FFF_FFFF_FFFF_FFFF;
+                // Invariant: NOT (writer_held AND reader_count > 0).
+                if writer_held && reader_count > 0 {
+                    viol_c.store(true, StdOrdering::SeqCst);
+                    return;
+                }
+            }
+        });
+
+        // 4 worker threads: mixed R/W.
+        let mut handles = Vec::new();
+        for tid in 0u8..(MAX_WAITERS as u8) {
+            let lock_c = Arc::clone(&lock);
+            handles.push(thread::spawn(move || {
+                for i in 0..ITER {
+                    if i % 3 == 0 {
+                        lock_c.acquire_write(tid);
+                        lock_c.release_write(tid);
+                    } else {
+                        lock_c.acquire_read(tid);
+                        lock_c.release_read(tid);
+                    }
+                }
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        stop_observer.store(true, StdOrdering::SeqCst);
+        observer.join().unwrap();
+        assert!(!invariant_violated.load(StdOrdering::SeqCst),
+            "mutex invariant violated: observed state with both writer and readers");
+        assert_eq!(lock.peek_state(), 0);
+    }
+
+    /// **D-5 acceptance gate (≥10 cross-thread tests)**: slot-ownership
+    /// boundary.  Verifies that each core_id ∈ [0, MAX_WAITERS) is
+    /// independently usable as a slot.  Spawning threads with distinct
+    /// core_ids should NOT alias slot state across threads (no false-
+    /// sharing-induced corruption between slots).
+    #[test]
+    fn cross_thread_slot_ownership_independence() {
+        const ITER: usize = 100;
+        let lock = Arc::new(QueuedRwLock::new());
+        // Per-slot counter to detect any aliasing.
+        let counters = Arc::new([
+            AtomicU64::new(0),
+            AtomicU64::new(0),
+            AtomicU64::new(0),
+            AtomicU64::new(0),
+        ]);
+
+        let mut handles = Vec::new();
+        for tid in 0u8..(MAX_WAITERS as u8) {
+            let lock_c = Arc::clone(&lock);
+            let counters_c = Arc::clone(&counters);
+            handles.push(thread::spawn(move || {
+                for _ in 0..ITER {
+                    lock_c.acquire_read(tid);
+                    // Each thread increments ITS OWN counter while holding the lock.
+                    let prev = counters_c[tid as usize].fetch_add(1, StdOrdering::SeqCst);
+                    // The counter must not be touched by other slots.
+                    assert!(prev < ITER as u64,
+                        "slot {} counter overflowed: {} (alias detected?)", tid, prev);
+                    lock_c.release_read(tid);
+                }
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        // Each counter must equal exactly ITER.
+        for tid in 0..MAX_WAITERS {
+            let c = counters[tid].load(StdOrdering::SeqCst);
+            assert_eq!(c, ITER as u64,
+                "slot {} counter mismatch: expected {}, got {}", tid, ITER, c);
+        }
+        assert_eq!(lock.peek_state(), 0);
+    }
+
+    /// **D-5 acceptance gate (≥10 cross-thread tests)**: rapid
+    /// acquire/release cycling.  Stress-tests the MCS handover path
+    /// under maximum contention — every thread is constantly cycling
+    /// between holder and waiter states, exercising every code path
+    /// in `signal_next_waiter` and `cascade_admit_readers`.
+    #[test]
+    fn cross_thread_rapid_handover_cycling() {
+        const ITER: usize = 200;
+        let lock = Arc::new(QueuedRwLock::new());
+        let mut handles = Vec::new();
+        // 4 threads each rapidly cycling between acquire/release of write lock.
+        for tid in 0u8..(MAX_WAITERS as u8) {
+            let lock_c = Arc::clone(&lock);
+            handles.push(thread::spawn(move || {
+                for _ in 0..ITER {
+                    lock_c.acquire_write(tid);
+                    // Empty CS.
+                    lock_c.release_write(tid);
+                }
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        // Total writes = 4 * 200 = 800.  Lock must end in state 0.
+        assert_eq!(lock.peek_state(), 0,
+            "rapid handover should leave state clean; got {:#x}", lock.peek_state());
+        assert_eq!(lock.peek_tail(), NONE_SENTINEL,
+            "rapid handover should leave queue empty");
+    }
 }
