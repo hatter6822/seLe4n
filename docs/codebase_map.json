@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-ffi-bridge-plan-traAL",
-      "commit_sha": "07a4f103dfdfc25ed7085c1cee80d7bdcb6131be",
-      "tree_sha": "a3b3e44212151f928cc2440fa7a43ccd6075a911",
-      "committed_at_utc": "2026-05-19T20:25:04+00:00"
+      "commit_sha": "57837ab3c39dd87f4836b70543a05d7a723f1c02",
+      "tree_sha": "0b25996e186a96dafa8006df4453393f61ded0e6",
+      "committed_at_utc": "2026-05-19T22:48:51+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "6d24afaea00f16f85cb270d921f1eb6754860bd4ee59fcc2e5c8a5c3a92722dd"
+    "source_digest": "b3980c5be344d04c3c661f45a633337cfdf74bcc9c189ce0f18c5b9d811ea057"
   },
   "summary": {
     "module_count": 222,
-    "declaration_count": 7376
+    "declaration_count": 7378
   },
   "readme_sync": {
     "version": "0.31.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 185,
-    "production_loc": 127817,
+    "production_loc": 127830,
     "test_files": 37,
     "test_loc": 25131,
     "proved_theorem_lemma_decls": 3708,
@@ -13884,7 +13884,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.LockBridge",
       "path": "SeLe4n/Kernel/Concurrency/LockBridge.lean",
-      "declaration_count": 52,
+      "declaration_count": 54,
       "declarations": [
         {
           "kind": "namespace",
@@ -13962,9 +13962,19 @@
           ]
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:162>",
+          "line": 162,
+          "called": [
+            "TicketLockHandle",
+            "mkTicketLockHandle",
+            "staticTicketLockPoolSize_pos"
+          ]
+        },
+        {
           "kind": "structure",
           "name": "RwLockHandle",
-          "line": 159,
+          "line": 168,
           "called": [
             "isValid",
             "staticRwLockPoolSize",
@@ -13974,7 +13984,7 @@
         {
           "kind": "def",
           "name": "mkRwLockHandle",
-          "line": 168,
+          "line": 177,
           "called": [
             "RwLockHandle",
             "isValid",
@@ -13985,9 +13995,19 @@
           ]
         },
         {
+          "kind": "instance",
+          "name": "<anonymous:instance:194>",
+          "line": 194,
+          "called": [
+            "RwLockHandle",
+            "mkRwLockHandle",
+            "staticRwLockPoolSize_pos"
+          ]
+        },
+        {
           "kind": "def",
           "name": "acquireTicketLock",
-          "line": 196,
+          "line": 209,
           "called": [
             "TicketLockHandle",
             "ffiTicketLockAcquire"
@@ -13996,7 +14016,7 @@
         {
           "kind": "def",
           "name": "releaseTicketLock",
-          "line": 202,
+          "line": 215,
           "called": [
             "TicketLockHandle",
             "ffiTicketLockRelease"
@@ -14005,7 +14025,7 @@
         {
           "kind": "def",
           "name": "peekTicketLockHolder",
-          "line": 210,
+          "line": 223,
           "called": [
             "TicketLockHandle",
             "ffiTicketLockPeekHolder"
@@ -14014,19 +14034,19 @@
         {
           "kind": "def",
           "name": "peekTicketLockNextTicket",
-          "line": 217,
+          "line": 230,
           "called": []
         },
         {
           "kind": "def",
           "name": "peekTicketLockServing",
-          "line": 222,
+          "line": 235,
           "called": []
         },
         {
           "kind": "def",
           "name": "ticketLockAcquireCount",
-          "line": 226,
+          "line": 239,
           "called": [
             "TicketLockHandle",
             "ffiTicketLockAcquireCount"
@@ -14035,7 +14055,7 @@
         {
           "kind": "def",
           "name": "ticketLockReleaseCount",
-          "line": 230,
+          "line": 243,
           "called": [
             "TicketLockHandle",
             "ffiTicketLockReleaseCount"
@@ -14044,7 +14064,7 @@
         {
           "kind": "def",
           "name": "acquireReadLock",
-          "line": 236,
+          "line": 249,
           "called": [
             "RwLockHandle",
             "ffiRwLockAcquireRead"
@@ -14053,7 +14073,7 @@
         {
           "kind": "def",
           "name": "releaseReadLock",
-          "line": 240,
+          "line": 253,
           "called": [
             "RwLockHandle",
             "ffiRwLockReleaseRead"
@@ -14062,7 +14082,7 @@
         {
           "kind": "def",
           "name": "acquireWriteLock",
-          "line": 245,
+          "line": 258,
           "called": [
             "RwLockHandle",
             "ffiRwLockAcquireWrite"
@@ -14071,7 +14091,7 @@
         {
           "kind": "def",
           "name": "releaseWriteLock",
-          "line": 249,
+          "line": 262,
           "called": [
             "RwLockHandle",
             "ffiRwLockReleaseWrite"
@@ -14080,7 +14100,7 @@
         {
           "kind": "def",
           "name": "snapshotRwLock",
-          "line": 256,
+          "line": 269,
           "called": [
             "RwLockHandle",
             "ffiRwLockSnapshot"
@@ -14089,7 +14109,7 @@
         {
           "kind": "def",
           "name": "rwLockAcquireReadCount",
-          "line": 260,
+          "line": 273,
           "called": [
             "RwLockHandle",
             "ffiRwLockAcquireReadCount"
@@ -14098,7 +14118,7 @@
         {
           "kind": "def",
           "name": "rwLockReleaseReadCount",
-          "line": 264,
+          "line": 277,
           "called": [
             "RwLockHandle",
             "ffiRwLockReleaseReadCount"
@@ -14107,7 +14127,7 @@
         {
           "kind": "def",
           "name": "rwLockAcquireWriteCount",
-          "line": 268,
+          "line": 281,
           "called": [
             "RwLockHandle",
             "ffiRwLockAcquireWriteCount"
@@ -14116,7 +14136,7 @@
         {
           "kind": "def",
           "name": "rwLockReleaseWriteCount",
-          "line": 272,
+          "line": 285,
           "called": [
             "RwLockHandle",
             "ffiRwLockReleaseWriteCount"
@@ -14125,7 +14145,7 @@
         {
           "kind": "def",
           "name": "withTicketLock",
-          "line": 290,
+          "line": 303,
           "called": [
             "TicketLockHandle",
             "acquireTicketLock",
@@ -14136,7 +14156,7 @@
         {
           "kind": "def",
           "name": "withReadLock",
-          "line": 301,
+          "line": 314,
           "called": [
             "RwLockHandle",
             "acquireReadLock",
@@ -14147,7 +14167,7 @@
         {
           "kind": "def",
           "name": "withWriteLock",
-          "line": 312,
+          "line": 325,
           "called": [
             "RwLockHandle",
             "acquireWriteLock",
@@ -14158,7 +14178,7 @@
         {
           "kind": "theorem",
           "name": "acquireTicketLock_eq_ffi",
-          "line": 330,
+          "line": 343,
           "called": [
             "TicketLockHandle",
             "acquireTicketLock",
@@ -14168,7 +14188,7 @@
         {
           "kind": "theorem",
           "name": "releaseTicketLock_eq_ffi",
-          "line": 337,
+          "line": 350,
           "called": [
             "TicketLockHandle",
             "ffiTicketLockRelease",
@@ -14178,7 +14198,7 @@
         {
           "kind": "theorem",
           "name": "peekTicketLockHolder_eq_ffi",
-          "line": 344,
+          "line": 357,
           "called": [
             "TicketLockHandle",
             "ffiTicketLockPeekHolder",
@@ -14188,7 +14208,7 @@
         {
           "kind": "theorem",
           "name": "acquireReadLock_eq_ffi",
-          "line": 351,
+          "line": 364,
           "called": [
             "RwLockHandle",
             "acquireReadLock",
@@ -14198,7 +14218,7 @@
         {
           "kind": "theorem",
           "name": "releaseReadLock_eq_ffi",
-          "line": 358,
+          "line": 371,
           "called": [
             "RwLockHandle",
             "ffiRwLockReleaseRead",
@@ -14208,7 +14228,7 @@
         {
           "kind": "theorem",
           "name": "acquireWriteLock_eq_ffi",
-          "line": 365,
+          "line": 378,
           "called": [
             "RwLockHandle",
             "acquireWriteLock",
@@ -14218,7 +14238,7 @@
         {
           "kind": "theorem",
           "name": "releaseWriteLock_eq_ffi",
-          "line": 372,
+          "line": 385,
           "called": [
             "RwLockHandle",
             "ffiRwLockReleaseWrite",
@@ -14228,7 +14248,7 @@
         {
           "kind": "theorem",
           "name": "snapshotRwLock_eq_ffi",
-          "line": 379,
+          "line": 392,
           "called": [
             "RwLockHandle",
             "ffiRwLockSnapshot",
@@ -14238,7 +14258,7 @@
         {
           "kind": "theorem",
           "name": "ticketLockAcquireCount_eq_ffi",
-          "line": 386,
+          "line": 399,
           "called": [
             "TicketLockHandle",
             "ffiTicketLockAcquireCount",
@@ -14248,7 +14268,7 @@
         {
           "kind": "theorem",
           "name": "ticketLockReleaseCount_eq_ffi",
-          "line": 393,
+          "line": 406,
           "called": [
             "TicketLockHandle",
             "ffiTicketLockReleaseCount",
@@ -14258,7 +14278,7 @@
         {
           "kind": "theorem",
           "name": "rwLockAcquireReadCount_eq_ffi",
-          "line": 400,
+          "line": 413,
           "called": [
             "RwLockHandle",
             "ffiRwLockAcquireReadCount",
@@ -14268,7 +14288,7 @@
         {
           "kind": "theorem",
           "name": "rwLockReleaseReadCount_eq_ffi",
-          "line": 407,
+          "line": 420,
           "called": [
             "RwLockHandle",
             "ffiRwLockReleaseReadCount",
@@ -14278,7 +14298,7 @@
         {
           "kind": "theorem",
           "name": "rwLockAcquireWriteCount_eq_ffi",
-          "line": 414,
+          "line": 427,
           "called": [
             "RwLockHandle",
             "ffiRwLockAcquireWriteCount",
@@ -14288,7 +14308,7 @@
         {
           "kind": "theorem",
           "name": "rwLockReleaseWriteCount_eq_ffi",
-          "line": 421,
+          "line": 434,
           "called": [
             "RwLockHandle",
             "ffiRwLockReleaseWriteCount",
@@ -14298,7 +14318,7 @@
         {
           "kind": "theorem",
           "name": "mkTicketLockHandle_raw_toNat",
-          "line": 436,
+          "line": 449,
           "called": [
             "mkTicketLockHandle",
             "ofNat",
@@ -14310,7 +14330,7 @@
         {
           "kind": "theorem",
           "name": "mkRwLockHandle_raw_toNat",
-          "line": 450,
+          "line": 463,
           "called": [
             "mkRwLockHandle",
             "ofNat",
@@ -14322,7 +14342,7 @@
         {
           "kind": "theorem",
           "name": "withTicketLock_unfold",
-          "line": 475,
+          "line": 488,
           "called": [
             "TicketLockHandle",
             "acquireTicketLock",
@@ -14334,7 +14354,7 @@
         {
           "kind": "theorem",
           "name": "withReadLock_unfold",
-          "line": 485,
+          "line": 498,
           "called": [
             "RwLockHandle",
             "acquireReadLock",
@@ -14346,7 +14366,7 @@
         {
           "kind": "theorem",
           "name": "withWriteLock_unfold",
-          "line": 495,
+          "line": 508,
           "called": [
             "RwLockHandle",
             "acquireWriteLock",
@@ -14358,7 +14378,7 @@
         {
           "kind": "theorem",
           "name": "peekTicketLockEncoding_roundtrip_u32_masked",
-          "line": 524,
+          "line": 537,
           "called": [
             "peekTicketLockNextTicket",
             "peekTicketLockServing"
@@ -14367,7 +14387,7 @@
         {
           "kind": "theorem",
           "name": "peekTicketLockNextTicket_is_high32",
-          "line": 542,
+          "line": 555,
           "called": [
             "peekTicketLockNextTicket"
           ]
@@ -14375,7 +14395,7 @@
         {
           "kind": "theorem",
           "name": "peekTicketLockServing_is_low32",
-          "line": 548,
+          "line": 561,
           "called": [
             "peekTicketLockServing"
           ]

@@ -2294,6 +2294,40 @@ documentation lives under `docs/` and `docs/gitbook/`.
     catching the case where a declaration is added on one side
     without updating the symbol list.
 
+  **Audit-pass-2 refinements** (post-audit-pass-1): added 6
+  missing `*Count_eq_ffi` marker theorems for SM2.D.4 trace-
+  counter accessors (`ticketLockAcquireCount_eq_ffi`,
+  `ticketLockReleaseCount_eq_ffi`,
+  `rwLockAcquireReadCount_eq_ffi`,
+  `rwLockReleaseReadCount_eq_ffi`,
+  `rwLockAcquireWriteCount_eq_ffi`,
+  `rwLockReleaseWriteCount_eq_ffi`).  Symmetry fix with the
+  SM2.D.1/2 pass-through markers — closes a Tier-3 surface
+  scanning gap.
+
+  **Audit-pass-3 refinements** (documentation sync): added
+  the SM2.D section to `docs/spec/SELE4N_SPEC.md` (§2.7)
+  mirroring the SM2.B/SM2.C structure.  Regenerated
+  `docs/codebase_map.json` to reflect the new modules.
+
+  **Audit-pass-4 refinements** (build-script hardening):
+  extended `scan_lock_bridge_rs_intact` in
+  `rust/sele4n-hal/build.rs` to also pin the textual presence
+  of the 6 SM2.D.4 trace-counter statics
+  (`TICKET_LOCK_*_COUNT`, `RW_LOCK_*_COUNT`) and the 2 handle
+  decoders (`decode_ticket_lock_handle`,
+  `decode_rw_lock_handle`).  Catches a wholesale refactor
+  that drops them entirely with a clearer diagnostic than
+  the downstream compile error.
+
+  **Audit-pass-5 refinements** (typed-handle ergonomics):
+  added `Inhabited` instances to `TicketLockHandle` and
+  `RwLockHandle` for consistency with the project's other
+  typed identifiers (e.g., `CoreId`).  The default value
+  uses `mkTicketLockHandle ⟨0, _⟩` (and its RwLock
+  counterpart), tying the default to the smallest valid
+  pool slot.
+
   **Items deferred past v1.0.0 with correctness impact**: NONE.
 
   Follow-on: SM2.E (documentation: `docs/spec/SELE4N_SPEC.md`

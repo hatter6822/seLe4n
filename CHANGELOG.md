@@ -76,6 +76,27 @@ per-object locks via a high-bit tag.  Decoders fail-closed:
 `*Count_eq_ffi` marker theorems for trace-counter accessors
 (symmetry with SM2.D.1/2 pass-through markers).
 
+**Audit-pass-3 refinements** (docs): added the SM2.D section
+to `docs/spec/SELE4N_SPEC.md` (§2.7) mirroring the SM2.B/SM2.C
+structure (Lean FFI layer, Rust FFI bridge, refinement bridge,
+aggregator, cross-language symmetry, test coverage,
+audit-pass refinements).  Regenerated `docs/codebase_map.json`.
+
+**Audit-pass-4 refinements** (build-script hardening): extended
+`scan_lock_bridge_rs_intact` to also pin the textual presence
+of the 6 SM2.D.4 trace-counter statics
+(`TICKET_LOCK_*_COUNT`, `RW_LOCK_*_COUNT`) and the 2 handle
+decoders (`decode_ticket_lock_handle`,
+`decode_rw_lock_handle`).  Catches a wholesale refactor that
+drops them entirely with a clearer diagnostic than the
+downstream compile error would give.
+
+**Audit-pass-5 refinements** (typed-handle ergonomics): added
+`Inhabited` instances to `TicketLockHandle` and `RwLockHandle`
+for consistency with the project's other typed identifiers
+(e.g., `CoreId`).  Default value uses
+`mkTicketLockHandle ⟨0, _⟩` — always a valid pool slot.
+
 Test coverage delta: +36 Rust tests in `lock_bridge.rs` +
 `ffi.rs::tests` (24 handle/decoder + 9 FFI export + 3
 cross-thread); +80 Lean surface anchors in
