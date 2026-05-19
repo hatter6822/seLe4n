@@ -960,6 +960,138 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    **Axiom budget for SM2.C**: 0 Lean axioms, 0 sorries.
    `RwLock.lean` ~2300 LoC; `RwLockRefinement.lean` ~230 LoC.
 
+2.7. **WS-SM Phase SM2.D (post-v0.31.9) completes SM2.D** — the
+   FFI bridge and integration layer.  Closes the fourth sub-phase
+   of SM2 with all 8 sub-tasks landed.  See
+   `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` §5.4 for
+   the full plan.
+
+   **Lean FFI layer** (`SeLe4n/Platform/FFI.lean` + new
+   `SeLe4n/Kernel/Concurrency/LockBridge.lean`):
+   - 16 `@[extern]` declarations expose the lock operations
+     (`ffiTicketLockStaticHandle`, `ffiTicketLockAcquire`,
+     `ffiTicketLockRelease`, `ffiTicketLockPeekHolder`,
+     `ffiTicketLockAcquireCount`, `ffiTicketLockReleaseCount`;
+     `ffiRwLockStaticHandle`, `ffiRwLockAcquireRead`,
+     `ffiRwLockReleaseRead`, `ffiRwLockAcquireWrite`,
+     `ffiRwLockReleaseWrite`, `ffiRwLockSnapshot`, plus four
+     per-counter trace accessors).
+   - Typed handles (`TicketLockHandle`, `RwLockHandle`) carrying
+     structural bound proofs (`raw.toNat < staticTicketLockPoolSize`)
+     so well-formed callers cannot trip the FFI's fail-closed
+     panic.
+   - Smart constructors (`mkTicketLockHandle` /
+     `mkRwLockHandle`) take a typed `Fin staticTicketLockPoolSize`
+     argument; round-trip witness theorems prove `raw.toNat`
+     equals the input `Fin.val`.
+   - Typed FFI wrappers (`acquireTicketLock`, `releaseTicketLock`,
+     `peekTicketLockHolder`, `acquireReadLock`, etc.) wrap the
+     raw FFI declarations.
+   - RAII combinators (`withTicketLock`, `withReadLock`,
+     `withWriteLock`) bracket a `BaseIO α` action with
+     acquire/release; three `*_unfold` marker theorems pin the
+     definitional unfolding for Tier-3 surface anchoring.
+   - 14 `*_eq_ffi` marker theorems prove each typed wrapper is a
+     direct FFI pass-through (`rfl`).
+
+   **Rust FFI bridge** (`rust/sele4n-hal/src/lock_bridge.rs`
+   ~1170 LoC + 16 exports in `ffi.rs`):
+   - Two static lock pools (`STATIC_TICKET_LOCK_POOL: [TicketLock;
+     4]`, `STATIC_RW_LOCK_POOL: [RwLock; 4]`) sized to match
+     `PlatformBinding.coreCount = 4` so cross-core tests can
+     exercise one lock per core.
+   - Always-on Relaxed atomic trace counters (6 arrays × 4
+     entries) recording acquire/release call counts per slot;
+     wait-free, off the correctness path.
+   - Fail-closed handle decoders (`decode_ticket_lock_handle` /
+     `decode_rw_lock_handle`) — `Option`-returning `const fn`s
+     that perform the bound check in `u64` space BEFORE the `as
+     usize` cast (audit-pass-1 defense-in-depth narrowing).
+   - 16 `#[no_mangle] pub extern "C"` FFI exports forwarding to
+     the helpers; panic on malformed handle under
+     `panic = "abort"` (fails-closed via clean kernel abort).
+   - Public `TicketLock::peek_next_ticket` and `peek_serving`
+     methods (audit-pass-1 fix) replace the pre-audit
+     raw-pointer cast against `repr(C)` layout.
+
+   **TicketLock refinement bridge** (NEW MODULE
+   `SeLe4n/Kernel/Concurrency/Locks/TicketLockRefinement.lean`):
+   defines `TicketLockConcrete` struct (two `UInt64` counters)
+   mirroring the Rust impl, `ticketLockSim` simulation relation
+   (φ : abstract `TicketLockState` ↔ concrete
+   `TicketLockConcrete` via `.toNat` on both counters), and four
+   per-operation preservation witnesses
+   (`ticketLockSim_unheld` initial-state correspondence;
+   `ticketLockSim_preserved_by_tryAcquire` /
+   `_release` / `_observeServing`).  The F-01 aggregator theorem
+   `rust_ticketLock_refines_lean` packages all four witnesses.
+   Mirrors the `Locks/RwLockRefinement.lean` structure.
+
+   **SM2.D.7 lockPrimitives aggregator** (NEW MODULE
+   `SeLe4n/Kernel/Concurrency/LockPrimitives.lean` ~250 LoC):
+   typed `LockPrimitiveTheorem` list aggregating all 22 SM2
+   theorems (4 memory-model + 6 TicketLock + 10 RwLock + 2
+   refinement) with size + per-category count + NoDup witnesses.
+   Cross-language symmetry: the Rust-side
+   `SM2_THEOREM_COUNT = 22` constant in `lock_bridge.rs` is
+   enforced equal via `scripts/check_lock_ffi_symmetry.sh`
+   (wired into Tier 0 hygiene).
+
+   **SM2.D.5 cross-language symmetry**:
+   `scripts/check_lock_ffi_symmetry.sh` verifies:
+   1. Every expected FFI symbol is declared on the Lean side
+      (`@[extern "ffi_*"]`).
+   2. Every expected FFI symbol is exported on the Rust side
+      (`#[no_mangle] pub extern "C"`).
+   3. Every expected FFI symbol has a corresponding helper in
+      `lock_bridge.rs`.
+   4. The Lean `lockPrimitives_count` value matches the Rust
+      `SM2_THEOREM_COUNT` constant.
+   5/6. Bidirectional orphan detection (no Rust export without
+      a matching Lean declaration; no Lean declaration without
+      a matching Rust export).
+   Plus two `build.rs` scanners
+   (`scan_lock_bridge_rs_intact`,
+   `scan_ffi_rs_exposes_lock_ffi_exports`) catch the
+   single-file case at elaboration time.
+
+   **Test coverage**: 36 SM2.D Rust tests (24 handle/layout
+   decoder + 9 FFI export pass-through + 3 cross-thread
+   serialization tests on slot 3); 80+ Lean surface anchors
+   in `tests/SmpSurfaceAnchors.lean`; 25+ decidable examples
+   plus ~35 runtime structural assertions across
+   `tests/LockBridgeSuite.lean` and `tests/SmpSurfaceAnchors.lean`.
+   Zero clippy warnings.  Stress-tested 10/10 runs of
+   `cargo test sm2d8` without flakiness; 10/10 runs of
+   `cargo test sm2d` (full SM2.D set) without flakiness.
+
+   **Audit-pass-1 refinements** (HIGH/MEDIUM/LOW):
+   - **HIGH (encapsulation)**: replaced raw-pointer `repr(C)`
+     cast with public `TicketLock::peek_*` accessors.
+   - **MEDIUM (32-bit truncation defense)**: bound checks in
+     `u64` space before `as usize` cast.
+   - **MEDIUM (test concurrency)**: unified
+     `SM2D_TRACE_TEST_MUTEX` across `lock_bridge::runtime_tests`
+     and `crate::ffi::tests` (was: distinct mutex instances
+     racing on shared pool slots).
+   - **HIGH (refinement-theorem aliasing)**: implemented
+     the missing F-01 `rust_ticketLock_refines_lean` theorem
+     in NEW MODULE `Locks/TicketLockRefinement.lean` (per
+     the implement-the-improvement rule); removed the
+     LockPrimitives alias.
+   - **LOW (cross-language symmetry)**: bidirectional orphan
+     checks added to `check_lock_ffi_symmetry.sh`.
+
+   **Audit-pass-2 refinements**: added 6 missing
+   `*Count_eq_ffi` marker theorems for SM2.D.4 trace-counter
+   accessors (symmetry with SM2.D.1/2 pass-through markers).
+
+   **Axiom budget for SM2.D**: 0 Lean axioms, 0 sorries.
+   `LockBridge.lean` ~552 LoC; `LockPrimitives.lean` ~252 LoC;
+   `TicketLockRefinement.lean` ~257 LoC.
+
+   **Items deferred past v1.0.0 with correctness impact**: NONE.
+
 3. **Sequential memory model**: Under single-core operation, all memory
    operations are sequentially ordered. DMB/DSB/ISB barriers are emitted in the
    Rust HAL (`sele4n-hal/src/cpu.rs`) for hardware correctness but are
