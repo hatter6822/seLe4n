@@ -1704,6 +1704,12 @@ import SeLe4n.Kernel.Concurrency.LockBridge
 #check @SeLe4n.Kernel.Concurrency.acquireWriteLock_eq_ffi
 #check @SeLe4n.Kernel.Concurrency.releaseWriteLock_eq_ffi
 #check @SeLe4n.Kernel.Concurrency.snapshotRwLock_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.ticketLockAcquireCount_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.ticketLockReleaseCount_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.rwLockAcquireReadCount_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.rwLockReleaseReadCount_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.rwLockAcquireWriteCount_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.rwLockReleaseWriteCount_eq_ffi
 #check @SeLe4n.Kernel.Concurrency.withTicketLock_unfold
 #check @SeLe4n.Kernel.Concurrency.withReadLock_unfold
 #check @SeLe4n.Kernel.Concurrency.withWriteLock_unfold

@@ -381,6 +381,48 @@ theorem snapshotRwLock_eq_ffi (h : RwLockHandle) :
       Platform.FFI.ffiRwLockSnapshot h.raw := by
   rfl
 
+/-- **WS-SM SM2.D.4** marker: `ticketLockAcquireCount` is a direct FFI
+    pass-through.  Audit-pass-1: symmetry with the SM2.D.1/2 markers. -/
+theorem ticketLockAcquireCount_eq_ffi (h : TicketLockHandle) :
+    (ticketLockAcquireCount h : BaseIO UInt64) =
+      Platform.FFI.ffiTicketLockAcquireCount h.raw := by
+  rfl
+
+/-- **WS-SM SM2.D.4** marker: `ticketLockReleaseCount` is a direct FFI
+    pass-through. -/
+theorem ticketLockReleaseCount_eq_ffi (h : TicketLockHandle) :
+    (ticketLockReleaseCount h : BaseIO UInt64) =
+      Platform.FFI.ffiTicketLockReleaseCount h.raw := by
+  rfl
+
+/-- **WS-SM SM2.D.4** marker: `rwLockAcquireReadCount` is a direct FFI
+    pass-through. -/
+theorem rwLockAcquireReadCount_eq_ffi (h : RwLockHandle) :
+    (rwLockAcquireReadCount h : BaseIO UInt64) =
+      Platform.FFI.ffiRwLockAcquireReadCount h.raw := by
+  rfl
+
+/-- **WS-SM SM2.D.4** marker: `rwLockReleaseReadCount` is a direct FFI
+    pass-through. -/
+theorem rwLockReleaseReadCount_eq_ffi (h : RwLockHandle) :
+    (rwLockReleaseReadCount h : BaseIO UInt64) =
+      Platform.FFI.ffiRwLockReleaseReadCount h.raw := by
+  rfl
+
+/-- **WS-SM SM2.D.4** marker: `rwLockAcquireWriteCount` is a direct FFI
+    pass-through. -/
+theorem rwLockAcquireWriteCount_eq_ffi (h : RwLockHandle) :
+    (rwLockAcquireWriteCount h : BaseIO UInt64) =
+      Platform.FFI.ffiRwLockAcquireWriteCount h.raw := by
+  rfl
+
+/-- **WS-SM SM2.D.4** marker: `rwLockReleaseWriteCount` is a direct FFI
+    pass-through. -/
+theorem rwLockReleaseWriteCount_eq_ffi (h : RwLockHandle) :
+    (rwLockReleaseWriteCount h : BaseIO UInt64) =
+      Platform.FFI.ffiRwLockReleaseWriteCount h.raw := by
+  rfl
+
 -- ============================================================================
 -- §6 — Handle well-formedness witnesses
 -- ============================================================================
