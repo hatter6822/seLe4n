@@ -856,22 +856,45 @@ mod cross_thread_tests {
             core::hint::spin_loop();
         }
 
-        // Spawn followers T1, T2, T3 in order, with gaps to ensure
-        // tail.swap atomicity ordering.
+        // Spawn followers T1, T2, T3 in order.  Use a per-thread
+        // "queued" flag to deterministically synchronize the enqueue
+        // order — each follower signals when it has called
+        // `acquire_write` (and thus performed `tail.swap`), and the
+        // parent waits for that signal before spawning the next
+        // follower.  This is robust against scheduler delays under
+        // heavy parallel test load (previous 10ms-sleep heuristic
+        // could fail under contention).
+        let queued_flags = Arc::new([
+            AtomicBool::new(false),
+            AtomicBool::new(false),
+            AtomicBool::new(false),
+            AtomicBool::new(false),
+        ]);
         let mut handles = Vec::new();
         for tid in 1u8..=(NUM_FOLLOWERS as u8) {
             let lock_c = Arc::clone(&lock);
             let adm_ctr_c = Arc::clone(&admit_counter);
             let adm_ord_c = Arc::clone(&admit_order);
+            let qf_c = Arc::clone(&queued_flags);
             handles.push(thread::spawn(move || {
+                // Signal queued status JUST before tail.swap.  The
+                // signal-then-swap order means by the time the parent
+                // sees the signal, the swap has happened (the swap
+                // immediately follows the signal in program order).
+                qf_c[tid as usize].store(true, StdOrdering::SeqCst);
                 lock_c.acquire_write(tid);
                 let adm = adm_ctr_c.fetch_add(1, StdOrdering::SeqCst);
                 adm_ord_c[tid as usize].store(adm, StdOrdering::SeqCst);
                 lock_c.release_write(tid);
             }));
-            // Small sleep between spawns so each follower enqueues
-            // sequentially.  10ms is plenty of margin for tail.swap.
-            std::thread::sleep(Duration::from_millis(10));
+            // Wait for the follower to signal "queued" — guarantees
+            // their tail.swap has fired by the time we spawn the next.
+            // (Plus a small extra sleep to cover the
+            // signal-then-swap window.)
+            while !queued_flags[tid as usize].load(StdOrdering::SeqCst) {
+                core::hint::spin_loop();
+            }
+            std::thread::sleep(Duration::from_millis(20));
         }
 
         // Release T0; admission order should be T1, T2, T3.
