@@ -32,6 +32,8 @@ SeLe4n.Kernel.Concurrency.Assumptions         # infra (SMP-latent assumption inv
 SeLe4n.Kernel.Concurrency.Anchors             # infra (WS-SM SM0.C inventory build anchor; SMP-H3 closure)
 SeLe4n.Kernel.Concurrency.Locks               # infra (WS-SM SM0.I BklState)
 SeLe4n.Kernel.Concurrency.Locks.Kind          # infra (WS-SM SM0.I LockKind + LockId total order)
+SeLe4n.Kernel.Concurrency.LockBridge          # infra (WS-SM SM2.D typed lock FFI wrappers + RAII combinators; SM3+ first runtime exerciser)
+SeLe4n.Kernel.Concurrency.LockPrimitives      # infra (WS-SM SM2.D.7 22-theorem aggregator; cross-language symmetry anchor)
 SeLe4n.Kernel.Concurrency.Locks.RwLock        # infra (WS-SM SM2.C abstract RwLock spec; SM3 first runtime exerciser)
 SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement # infra (WS-SM SM2.C.20 RwLock refinement bridge to Rust bit-packed state)
 SeLe4n.Kernel.Concurrency.Locks.TicketLock    # infra (WS-SM SM2.B abstract TicketLock spec; SM3 first runtime exerciser)

@@ -425,6 +425,169 @@ opaque ffiPerCoreSgiCount : UInt64 → BaseIO UInt64
 opaque ffiPerCoreSyscallCount : UInt64 → BaseIO UInt64
 
 -- ============================================================================
+-- WS-SM SM2.D — Verified-lock FFI declarations
+-- ============================================================================
+--
+-- The Lean kernel reaches the verified TicketLock (`SeLe4n.Kernel.
+-- Concurrency.Locks.TicketLock`) and RwLock (`SeLe4n.Kernel.Concurrency.
+-- Locks.RwLock`) implementations through these `@[extern]` declarations.
+-- Each resolves at link time to a corresponding `#[no_mangle] pub
+-- extern "C"` function in `rust/sele4n-hal/src/ffi.rs`.
+--
+-- Handle encoding (SM2.D version):
+--
+--   handle : UInt64 — opaque pointer into a static lock pool.
+--   At SM2.D, `handle = idx` for `idx ∈ [0, 4)` in each pool.
+--   SM5 will extend the encoding for per-object locks via a high-bit
+--   discriminator tag; the SM2.D-reserved low values remain
+--   source-compatible.
+--
+-- Fail-closed contract: every helper panics on a malformed handle.
+-- Well-formed Lean callers using the typed
+-- `Kernel.Concurrency.LockBridge` wrappers cannot construct an invalid
+-- handle because the smart constructors verify the bound at
+-- elaboration time.
+
+/-- **WS-SM SM2.D.1**: get a handle to a static TicketLock by pool
+    index.  Panics on out-of-range index.
+
+    Rust: `ffi_ticket_lock_static_handle` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_ticket_lock_static_handle"]
+opaque ffiTicketLockStaticHandle : (idx : UInt64) → BaseIO UInt64
+
+/-- **WS-SM SM2.D.1**: acquire the TicketLock identified by `handle`.
+
+    Returns the captured ticket as `UInt64`.  Panics on malformed
+    `handle`.
+
+    The captured ticket is informational (for diagnostics / logging);
+    the matching `ffiTicketLockRelease` does not require it.
+
+    Rust: `ffi_ticket_lock_acquire` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_ticket_lock_acquire"]
+opaque ffiTicketLockAcquire : (handle : UInt64) → BaseIO UInt64
+
+/-- **WS-SM SM2.D.1**: release the TicketLock identified by `handle`.
+
+    The caller MUST be the current holder.  Misuse (release without
+    prior acquire, or double-release) triggers a `debug_assert!` in
+    the underlying `TicketLock::release` on debug builds and is
+    undefined behavior at the abstract level.
+
+    Rust: `ffi_ticket_lock_release` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_ticket_lock_release"]
+opaque ffiTicketLockRelease : (handle : UInt64) → BaseIO Unit
+
+/-- **WS-SM SM2.D.1**: peek at the TicketLock's holder state.
+
+    Returns a packed `UInt64`:
+    - bits 63..32 = `next_ticket` (truncated to u32)
+    - bits 31..0  = `serving`     (truncated to u32)
+
+    Under the abstract wf invariant, `serving ≤ next_ticket` always.
+    If the lock is unheld, `serving = next_ticket`.
+
+    **NOT atomic with respect to other ops**: the snapshot may not
+    correspond to any single point in time under concurrent acquires
+    / releases.  Acceptable for diagnostic use; callers that need
+    atomic state observation must hold the lock around the read.
+
+    Rust: `ffi_ticket_lock_peek_holder` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_ticket_lock_peek_holder"]
+opaque ffiTicketLockPeekHolder : (handle : UInt64) → BaseIO UInt64
+
+/-- **WS-SM SM2.D.4**: read the per-slot TicketLock acquire counter.
+
+    Returns a Relaxed snapshot of the total number of FFI
+    `ffi_ticket_lock_acquire` calls for the slot identified by
+    `handle`.  Used by the cross-core test (SM2.D.8) to verify FFI
+    calls actually serialise.
+
+    Rust: `ffi_ticket_lock_acquire_count` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_ticket_lock_acquire_count"]
+opaque ffiTicketLockAcquireCount : (handle : UInt64) → BaseIO UInt64
+
+/-- **WS-SM SM2.D.4**: read the per-slot TicketLock release counter.
+
+    Rust: `ffi_ticket_lock_release_count` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_ticket_lock_release_count"]
+opaque ffiTicketLockReleaseCount : (handle : UInt64) → BaseIO UInt64
+
+/-- **WS-SM SM2.D.2**: get a handle to a static RwLock by pool index.
+    Panics on out-of-range index.
+
+    Rust: `ffi_rw_lock_static_handle` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_rw_lock_static_handle"]
+opaque ffiRwLockStaticHandle : (idx : UInt64) → BaseIO UInt64
+
+/-- **WS-SM SM2.D.2**: acquire a read lock on the RwLock identified by
+    `handle`.  Panics on malformed `handle`.
+
+    Rust: `ffi_rw_lock_acquire_read` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_rw_lock_acquire_read"]
+opaque ffiRwLockAcquireRead : (handle : UInt64) → BaseIO Unit
+
+/-- **WS-SM SM2.D.2**: release a read lock on the RwLock identified by
+    `handle`.
+
+    Rust: `ffi_rw_lock_release_read` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_rw_lock_release_read"]
+opaque ffiRwLockReleaseRead : (handle : UInt64) → BaseIO Unit
+
+/-- **WS-SM SM2.D.2**: acquire a write lock on the RwLock identified
+    by `handle`.
+
+    Rust: `ffi_rw_lock_acquire_write` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_rw_lock_acquire_write"]
+opaque ffiRwLockAcquireWrite : (handle : UInt64) → BaseIO Unit
+
+/-- **WS-SM SM2.D.2**: release a write lock on the RwLock identified
+    by `handle`.
+
+    Rust: `ffi_rw_lock_release_write` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_rw_lock_release_write"]
+opaque ffiRwLockReleaseWrite : (handle : UInt64) → BaseIO Unit
+
+/-- **WS-SM SM2.D.2**: snapshot of the RwLock state.
+
+    Returns a packed `UInt64` matching the abstract spec's
+    `encodeRwLock` / `RwLockEncoded` shape:
+    - bit 63 = writer-held flag
+    - bits 0..62 = reader count
+
+    See `SeLe4n.Kernel.Concurrency.RwLockEncoded` (SM2.C.16) for the
+    abstract refinement target.  **NOT atomic with respect to other
+    ops**; same caveat as `ffiTicketLockPeekHolder`.
+
+    Rust: `ffi_rw_lock_snapshot` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_rw_lock_snapshot"]
+opaque ffiRwLockSnapshot : (handle : UInt64) → BaseIO UInt64
+
+/-- **WS-SM SM2.D.4**: read the per-slot RwLock acquire-read counter.
+
+    Rust: `ffi_rw_lock_acquire_read_count` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_rw_lock_acquire_read_count"]
+opaque ffiRwLockAcquireReadCount : (handle : UInt64) → BaseIO UInt64
+
+/-- **WS-SM SM2.D.4**: read the per-slot RwLock release-read counter.
+
+    Rust: `ffi_rw_lock_release_read_count` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_rw_lock_release_read_count"]
+opaque ffiRwLockReleaseReadCount : (handle : UInt64) → BaseIO UInt64
+
+/-- **WS-SM SM2.D.4**: read the per-slot RwLock acquire-write counter.
+
+    Rust: `ffi_rw_lock_acquire_write_count` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_rw_lock_acquire_write_count"]
+opaque ffiRwLockAcquireWriteCount : (handle : UInt64) → BaseIO UInt64
+
+/-- **WS-SM SM2.D.4**: read the per-slot RwLock release-write counter.
+
+    Rust: `ffi_rw_lock_release_write_count` in `sele4n-hal/src/ffi.rs`. -/
+@[extern "ffi_rw_lock_release_write_count"]
+opaque ffiRwLockReleaseWriteCount : (handle : UInt64) → BaseIO UInt64
+
+-- ============================================================================
 -- WS-RC R2 — Hardware-mode kernel state + SVC bridge infrastructure
 -- ============================================================================
 --

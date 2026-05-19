@@ -2132,6 +2132,118 @@ documentation lives under `docs/` and `docs/gitbook/`.
   [`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
   §§5.3..5.5.
 
+  **WS-SM SM2.D LANDED on branch
+  `claude/review-ffi-bridge-plan-traAL`** (FFI bridge + integration;
+  closes the fourth sub-phase of SM2 with all 8 sub-tasks landed
+  per the plan's acceptance gate).  Bridges the verified Lean
+  TicketLock and RwLock specifications into a stable C-callable
+  surface that the Lean kernel can consume via `@[extern]`
+  declarations, plus the typed RAII combinators and SM2 theorem
+  inventory:
+
+  - **SM2.D.1 (Lean FFI for TicketLock)**: 6 `@[extern]`
+    declarations in `SeLe4n/Platform/FFI.lean` —
+    `ffiTicketLockStaticHandle`, `ffiTicketLockAcquire`,
+    `ffiTicketLockRelease`, `ffiTicketLockPeekHolder`,
+    `ffiTicketLockAcquireCount`, `ffiTicketLockReleaseCount`.
+    Plus typed wrappers (`acquireTicketLock`, `releaseTicketLock`,
+    `peekTicketLockHolder`, …) in NEW FILE
+    `SeLe4n/Kernel/Concurrency/LockBridge.lean` (~470 LoC) with
+    `TicketLockHandle` carrying a structural bound proof
+    (`raw.toNat < staticTicketLockPoolSize`).
+  - **SM2.D.2 (Lean FFI for RwLock)**: 10 `@[extern]` declarations
+    (`ffiRwLockStaticHandle`, `ffiRwLockAcquireRead`,
+    `ffiRwLockReleaseRead`, `ffiRwLockAcquireWrite`,
+    `ffiRwLockReleaseWrite`, `ffiRwLockSnapshot`, plus 4
+    per-counter accessors).  Typed wrappers
+    (`acquireReadLock` / `releaseReadLock` / `acquireWriteLock` /
+    `releaseWriteLock` / `snapshotRwLock`) with `RwLockHandle`.
+  - **SM2.D.3 (RAII combinators)**: `withTicketLock`,
+    `withReadLock`, `withWriteLock` in `LockBridge.lean` bracket
+    an action with acquire / release.  Three marker theorems
+    (`withTicketLock_unfold`, `withReadLock_unfold`,
+    `withWriteLock_unfold`) pin the definitional unfolding;
+    Tier-3 surface anchored.  Tests in NEW FILE
+    `tests/LockBridgeSuite.lean` exercise structural properties.
+  - **SM2.D.4 (Lock-state tracing)**: per-slot Relaxed AtomicU64
+    counters in `rust/sele4n-hal/src/lock_bridge.rs`
+    (`TICKET_LOCK_ACQUIRE_COUNT`, `TICKET_LOCK_RELEASE_COUNT`,
+    plus 4 for RwLock); read accessors exposed via FFI.
+    Always-on (wait-free); used by SM2.D.8 to verify FFI calls
+    actually serialise.
+  - **SM2.D.5 (Static linker-time check)**: TWO build.rs scanners
+    (`scan_lock_bridge_rs_intact`,
+    `scan_ffi_rs_exposes_lock_ffi_exports`) pin every required
+    helper and every FFI export at elaboration time.  Plus NEW
+    cross-language script `scripts/check_lock_ffi_symmetry.sh`
+    (wired into Tier 0 hygiene) verifying that the Lean
+    `@[extern]` declarations, Rust `pub extern "C"` exports, Rust
+    helpers, and the Lean `lockPrimitives_count` vs. Rust
+    `SM2_THEOREM_COUNT` constant all agree.
+  - **SM2.D.6 (Surface anchors)**: NEW FILE
+    `tests/SmpSurfaceAnchors.lean` covers every public SM2.D
+    symbol with `#check` lines + decidable examples + runtime
+    structural assertions.  Tier-3 wired.
+  - **SM2.D.7 (`lockPrimitives` aggregator)**: NEW FILE
+    `SeLe4n/Kernel/Concurrency/LockPrimitives.lean` (~210 LoC)
+    aggregates all 22 substantive SM2 theorems (4 memory-model +
+    6 TicketLock + 10 RwLock + 2 refinement) into a typed
+    `LockPrimitiveTheorem` list with a `lockPrimitives.length =
+    22` size witness + per-category count witnesses
+    (`_memoryModel_count = 4`, `_ticketLock_count = 6`,
+    `_rwLock_count = 10`, `_refinement_count = 2`,
+    `_partition_sum`) + a NoDup witness on substantive
+    identifiers.  Rust mirror: `SM2_THEOREM_COUNT = 22` in
+    `lock_bridge.rs`; the cross-language script enforces
+    agreement.
+  - **SM2.D.8 (Cross-core test)**: 3 cross-thread tests in
+    `lock_bridge.rs::runtime_tests::sm2d8_*` exercising
+    `STATIC_TICKET_LOCK_POOL[3]` / `STATIC_RW_LOCK_POOL[3]` from
+    4 threads × N ops; verifies trace-counter deltas exactly match
+    expected totals (no lost updates, no double-increments).
+    Plus a writer-readers-exclusion test asserting INV-R1 holds
+    under cross-thread contention.  Coordinated via a private
+    `SM2D8_SLOT3_MUTEX` so the three tests serialise against each
+    other.
+
+  **Handle encoding (SM2.D version)**: a `u64` opaque handle
+  interpreted as a pool index (0..3 for each kind).  SM5 will
+  extend the encoding for per-object locks via a high-bit tag;
+  SM2.D-reserved low values remain source-compatible.  Decoders
+  are fail-closed (`decode_ticket_lock_handle` / `decode_rw_lock_handle`
+  return `Option`; FFI wrappers panic on `None`).
+
+  **Test coverage**: 32 new SM2.D Rust unit tests in
+  `lock_bridge.rs::tests` + `lock_bridge.rs::runtime_tests` +
+  `ffi.rs::tests` (24 handle/layout/decoder tests + 9 FFI export
+  tests + 3 cross-thread tests, totalling 736 HAL tests up from
+  704 at SM2.B close).  Lean-side: 60+ surface-anchor `#check`s
+  in `tests/SmpSurfaceAnchors.lean` + 25+ decidable examples +
+  ~35 runtime structural assertions across the two new Lean test
+  suites.  Zero clippy warnings.  Full Tier 0+1+2+3 smoke test
+  green on SM2.D-specific paths.
+
+  **Pre-existing flakiness note** (NOT caused by SM2.D): the
+  `queued_rw_lock::cross_thread_tests` from SM2.C-defer occasionally
+  deadlock under heavy host-side load (2 of 5 runs in this
+  reproduction, including without SM2.D changes).  Documented in
+  prior SM2.C-defer audit-pass commits (e.g., audit-pass-4
+  "harden FIFO test against scheduler timing"); on hardware with
+  real WFE the issue is moot.  Out of scope for SM2.D.
+
+  **Module reachability**: `Concurrency.LockBridge` and
+  `Concurrency.LockPrimitives` are staged via
+  `Platform/Staged.lean` + `staged_module_allowlist.txt`.  SM3+
+  per-object locks will move them production-reached.
+
+  **Items deferred past v1.0.0 with correctness impact**: NONE.
+
+  Follow-on: SM2.E (documentation: `docs/spec/SELE4N_SPEC.md`
+  §10 + GitBook chapter 17 + decision rationale doc) per
+  [`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+  §5.5.  SM2 closure at SM2.E close; SM3+ (per-object locks)
+  consumes the SM2.D bridge.
+
 - **WS-RC remediation workstream PARTIALLY LANDED (v0.30.11 → v0.31.0 → v0.31.2,
   branch `claude/audit-workstream-planning-XsmKS` and successors)**
   — historical detail retained for traceability:

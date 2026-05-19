@@ -570,6 +570,174 @@ pub extern "C" fn ffi_per_core_syscall_count(core_id: u64) -> u64 {
 }
 
 // ============================================================================
+// WS-SM SM2.D — Verified-lock FFI exports
+// ============================================================================
+//
+// The Lean kernel reaches the verified TicketLock and RwLock implementations
+// through these FFI symbols.  Each forwards to a helper in `lock_bridge.rs`
+// that decodes the `u64` handle into a static-pool index, performs the
+// underlying lock operation, and updates the SM2.D.4 Relaxed trace counter.
+//
+// Fail-closed contract: every helper panics on a malformed handle.  Under
+// the workspace's `panic = "abort"` setting this halts the kernel cleanly
+// rather than corrupting state — the correct response to a Lean caller that
+// somehow forged a handle (which the typed `TicketLockHandle` / `RwLockHandle`
+// wrappers in `SeLe4n.Kernel.Concurrency.LockBridge` make impossible by
+// construction).
+//
+// The FFI surface intentionally takes raw `u64` handles rather than typed
+// Rust newtypes — the C ABI requires primitive types at the boundary, and
+// the Lean side wraps each value in a typed structure inside the kernel.
+//
+// **Linker-time symmetry** (SM2.D.5): every symbol declared here must have
+// a corresponding `@[extern]` declaration in `SeLe4n/Platform/FFI.lean`.
+// The cross-language check `scripts/check_lock_ffi_symmetry.sh` verifies
+// both sides agree on the symbol list.  A mismatched declaration would
+// produce a link error at the verified-kernel hardware build.
+
+/// **WS-SM SM2.D.1**: get a handle to a static `TicketLock` by pool index.
+///
+/// Returns a `u64` opaque handle.  Panics if `idx >= 4`.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiTicketLockStaticHandle`.
+#[no_mangle]
+pub extern "C" fn ffi_ticket_lock_static_handle(idx: u64) -> u64 {
+    crate::lock_bridge::ticket_lock_static_handle(idx)
+}
+
+/// **WS-SM SM2.D.1**: acquire the `TicketLock` identified by `handle`.
+///
+/// Returns the captured ticket.  Panics on malformed handle.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiTicketLockAcquire`.
+#[no_mangle]
+pub extern "C" fn ffi_ticket_lock_acquire(handle: u64) -> u64 {
+    crate::lock_bridge::ticket_lock_acquire(handle)
+}
+
+/// **WS-SM SM2.D.1**: release the `TicketLock` identified by `handle`.
+///
+/// Panics on malformed handle.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiTicketLockRelease`.
+#[no_mangle]
+pub extern "C" fn ffi_ticket_lock_release(handle: u64) {
+    crate::lock_bridge::ticket_lock_release(handle);
+}
+
+/// **WS-SM SM2.D.1**: peek at the `TicketLock`'s holder state.
+///
+/// Returns a packed `u64` with `(next_ticket_low32 << 32) | serving_low32`.
+/// Panics on malformed handle.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiTicketLockPeekHolder`.
+#[no_mangle]
+pub extern "C" fn ffi_ticket_lock_peek_holder(handle: u64) -> u64 {
+    crate::lock_bridge::ticket_lock_peek_holder(handle)
+}
+
+/// **WS-SM SM2.D.4**: read the per-slot TicketLock acquire counter.
+///
+/// Panics on malformed handle.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiTicketLockAcquireCount`.
+#[no_mangle]
+pub extern "C" fn ffi_ticket_lock_acquire_count(handle: u64) -> u64 {
+    crate::lock_bridge::ticket_lock_acquire_count(handle)
+}
+
+/// **WS-SM SM2.D.4**: read the per-slot TicketLock release counter.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiTicketLockReleaseCount`.
+#[no_mangle]
+pub extern "C" fn ffi_ticket_lock_release_count(handle: u64) -> u64 {
+    crate::lock_bridge::ticket_lock_release_count(handle)
+}
+
+/// **WS-SM SM2.D.2**: get a handle to a static `RwLock` by pool index.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockStaticHandle`.
+#[no_mangle]
+pub extern "C" fn ffi_rw_lock_static_handle(idx: u64) -> u64 {
+    crate::lock_bridge::rw_lock_static_handle(idx)
+}
+
+/// **WS-SM SM2.D.2**: acquire a read lock on the `RwLock` identified by `handle`.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockAcquireRead`.
+#[no_mangle]
+pub extern "C" fn ffi_rw_lock_acquire_read(handle: u64) {
+    crate::lock_bridge::rw_lock_acquire_read(handle);
+}
+
+/// **WS-SM SM2.D.2**: release a read lock on the `RwLock` identified by `handle`.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockReleaseRead`.
+#[no_mangle]
+pub extern "C" fn ffi_rw_lock_release_read(handle: u64) {
+    crate::lock_bridge::rw_lock_release_read(handle);
+}
+
+/// **WS-SM SM2.D.2**: acquire a write lock on the `RwLock` identified by `handle`.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockAcquireWrite`.
+#[no_mangle]
+pub extern "C" fn ffi_rw_lock_acquire_write(handle: u64) {
+    crate::lock_bridge::rw_lock_acquire_write(handle);
+}
+
+/// **WS-SM SM2.D.2**: release a write lock on the `RwLock` identified by `handle`.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockReleaseWrite`.
+#[no_mangle]
+pub extern "C" fn ffi_rw_lock_release_write(handle: u64) {
+    crate::lock_bridge::rw_lock_release_write(handle);
+}
+
+/// **WS-SM SM2.D.2**: snapshot of the `RwLock` state.
+///
+/// Returns packed `(writer_bit << 63) | reader_count`.  Bit layout
+/// matches the Lean spec's `encodeRwLock` (SM2.C.16).
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockSnapshot`.
+#[no_mangle]
+pub extern "C" fn ffi_rw_lock_snapshot(handle: u64) -> u64 {
+    crate::lock_bridge::rw_lock_snapshot(handle)
+}
+
+/// **WS-SM SM2.D.4**: read the per-slot RwLock acquire-read counter.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockAcquireReadCount`.
+#[no_mangle]
+pub extern "C" fn ffi_rw_lock_acquire_read_count(handle: u64) -> u64 {
+    crate::lock_bridge::rw_lock_acquire_read_count(handle)
+}
+
+/// **WS-SM SM2.D.4**: read the per-slot RwLock release-read counter.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockReleaseReadCount`.
+#[no_mangle]
+pub extern "C" fn ffi_rw_lock_release_read_count(handle: u64) -> u64 {
+    crate::lock_bridge::rw_lock_release_read_count(handle)
+}
+
+/// **WS-SM SM2.D.4**: read the per-slot RwLock acquire-write counter.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockAcquireWriteCount`.
+#[no_mangle]
+pub extern "C" fn ffi_rw_lock_acquire_write_count(handle: u64) -> u64 {
+    crate::lock_bridge::rw_lock_acquire_write_count(handle)
+}
+
+/// **WS-SM SM2.D.4**: read the per-slot RwLock release-write counter.
+///
+/// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockReleaseWriteCount`.
+#[no_mangle]
+pub extern "C" fn ffi_rw_lock_release_write_count(handle: u64) -> u64 {
+    crate::lock_bridge::rw_lock_release_write_count(handle)
+}
+
+// ============================================================================
 // AN9-D (DEF-C-M04 / RESOLVED): suspendThread atomicity bracket
 // ============================================================================
 //
@@ -689,6 +857,9 @@ extern "C" fn suspend_thread_inner(_tid: u64) -> u32 {
 // ============================================================================
 // Tests
 // ============================================================================
+
+#[cfg(test)]
+extern crate std;
 
 #[cfg(test)]
 mod tests {
@@ -1218,5 +1389,156 @@ mod tests {
     fn sm1i4_ffi_per_core_syscall_count_rejects_u64_with_high_bits_aliasing_slot() {
         assert_eq!(ffi_per_core_syscall_count(0x1_0000_0001), 0);
         assert_eq!(ffi_per_core_syscall_count(0xFFFF_FFFF_0000_0000), 0);
+    }
+
+    // ========================================================================
+    // WS-SM SM2.D — Verified-lock FFI export tests
+    //
+    // The FFI exports themselves are tested via two paths:
+    //   * Forwarding correctness: each FFI export must invoke the
+    //     corresponding `lock_bridge` helper.  We verify this by
+    //     calling the FFI export and observing the bridge-side trace
+    //     counter advances (the bridge increments the counter
+    //     unconditionally).
+    //   * Signature pinning: every `pub extern "C"` declaration
+    //     must keep its signature stable so the Lean side's
+    //     `@[extern]` resolution doesn't break.  A `fn`-pointer
+    //     binding test pins the signature at compile time.
+    // ========================================================================
+
+    static SM2D_FFI_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// **SM2.D.5 test**: every SM2.D FFI export's signature is pinned.
+    ///
+    /// A future refactor that changed a signature would fail to bind
+    /// here, surfacing the regression at compile time rather than at
+    /// link time on the verified-kernel hardware build.  We use
+    /// `extern "C" fn` pointers (not the plain Rust `fn` pointers) to
+    /// pin both the ABI tag and the signature shape — a regression
+    /// that accidentally dropped the `extern "C"` qualifier would
+    /// fail to bind here.
+    #[test]
+    fn sm2d_ffi_signatures_pinned() {
+        let _t_handle: extern "C" fn(u64) -> u64 = ffi_ticket_lock_static_handle;
+        let _t_acq: extern "C" fn(u64) -> u64 = ffi_ticket_lock_acquire;
+        let _t_rel: extern "C" fn(u64) = ffi_ticket_lock_release;
+        let _t_peek: extern "C" fn(u64) -> u64 = ffi_ticket_lock_peek_holder;
+        let _t_ac: extern "C" fn(u64) -> u64 = ffi_ticket_lock_acquire_count;
+        let _t_rc: extern "C" fn(u64) -> u64 = ffi_ticket_lock_release_count;
+
+        let _r_handle: extern "C" fn(u64) -> u64 = ffi_rw_lock_static_handle;
+        let _r_ar: extern "C" fn(u64) = ffi_rw_lock_acquire_read;
+        let _r_rr: extern "C" fn(u64) = ffi_rw_lock_release_read;
+        let _r_aw: extern "C" fn(u64) = ffi_rw_lock_acquire_write;
+        let _r_rw: extern "C" fn(u64) = ffi_rw_lock_release_write;
+        let _r_snap: extern "C" fn(u64) -> u64 = ffi_rw_lock_snapshot;
+        let _r_arc: extern "C" fn(u64) -> u64 = ffi_rw_lock_acquire_read_count;
+        let _r_rrc: extern "C" fn(u64) -> u64 = ffi_rw_lock_release_read_count;
+        let _r_awc: extern "C" fn(u64) -> u64 = ffi_rw_lock_acquire_write_count;
+        let _r_rwc: extern "C" fn(u64) -> u64 = ffi_rw_lock_release_write_count;
+    }
+
+    /// **SM2.D.1 test**: `ffi_ticket_lock_static_handle(0..3)` returns
+    /// the pool index unchanged.
+    ///
+    /// Out-of-range coverage is in `lock_bridge::tests::sm2d_ticket_lock_static_handle_out_of_range_panics`,
+    /// which targets the inner helper directly so the panic is caught
+    /// by `#[should_panic]` rather than becoming a non-unwinding
+    /// abort when it crosses the `extern "C"` FFI boundary (which
+    /// Rust edition 2021 converts to a process abort via SIGABRT).
+    #[test]
+    fn sm2d1_ffi_ticket_lock_static_handle_returns_index() {
+        for idx in 0..crate::lock_bridge::STATIC_TICKET_LOCK_POOL_SIZE as u64 {
+            assert_eq!(ffi_ticket_lock_static_handle(idx), idx);
+        }
+    }
+
+    /// **SM2.D.1 test**: `ffi_ticket_lock_acquire` followed by
+    /// `ffi_ticket_lock_release` increments both counters by 1.
+    #[test]
+    fn sm2d1_ffi_ticket_lock_acquire_release_increments_counters() {
+        let _guard = SM2D_FFI_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let h = ffi_ticket_lock_static_handle(0);
+        let pre_a = ffi_ticket_lock_acquire_count(h);
+        let pre_r = ffi_ticket_lock_release_count(h);
+        let _t = ffi_ticket_lock_acquire(h);
+        ffi_ticket_lock_release(h);
+        assert_eq!(ffi_ticket_lock_acquire_count(h), pre_a + 1);
+        assert_eq!(ffi_ticket_lock_release_count(h), pre_r + 1);
+    }
+
+    /// **SM2.D.1 test**: `ffi_ticket_lock_peek_holder` packs
+    /// `next_ticket` and `serving` into the same u64.
+    #[test]
+    fn sm2d1_ffi_ticket_lock_peek_holder_packs_state() {
+        let _guard = SM2D_FFI_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let h = ffi_ticket_lock_static_handle(1);
+        let pre = ffi_ticket_lock_peek_holder(h);
+        let pre_next = pre >> 32;
+        let pre_srv = pre & 0xFFFF_FFFF;
+        assert!(pre_srv <= pre_next, "wf: serving <= next_ticket");
+        // Acquire+release; both halves advance.
+        let _t = ffi_ticket_lock_acquire(h);
+        ffi_ticket_lock_release(h);
+        let post = ffi_ticket_lock_peek_holder(h);
+        assert_eq!(post >> 32, pre_next + 1);
+        assert_eq!(post & 0xFFFF_FFFF, pre_srv + 1);
+    }
+
+    /// **SM2.D.2 test**: `ffi_rw_lock_static_handle(0..3)` returns
+    /// the pool index unchanged.
+    ///
+    /// Out-of-range coverage is in `lock_bridge::tests::sm2d_rw_lock_static_handle_out_of_range_panics`
+    /// for the same reason as `sm2d1_ffi_ticket_lock_static_handle_returns_index`.
+    #[test]
+    fn sm2d2_ffi_rw_lock_static_handle_returns_index() {
+        for idx in 0..crate::lock_bridge::STATIC_RW_LOCK_POOL_SIZE as u64 {
+            assert_eq!(ffi_rw_lock_static_handle(idx), idx);
+        }
+    }
+
+    /// **SM2.D.2 test**: read-acquire/release cycle increments both
+    /// counters.
+    #[test]
+    fn sm2d2_ffi_rw_lock_read_cycle_increments_counters() {
+        let _guard = SM2D_FFI_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let h = ffi_rw_lock_static_handle(0);
+        let pre_a = ffi_rw_lock_acquire_read_count(h);
+        let pre_r = ffi_rw_lock_release_read_count(h);
+        ffi_rw_lock_acquire_read(h);
+        ffi_rw_lock_release_read(h);
+        assert_eq!(ffi_rw_lock_acquire_read_count(h), pre_a + 1);
+        assert_eq!(ffi_rw_lock_release_read_count(h), pre_r + 1);
+    }
+
+    /// **SM2.D.2 test**: write-acquire/release cycle increments both
+    /// counters.
+    #[test]
+    fn sm2d2_ffi_rw_lock_write_cycle_increments_counters() {
+        let _guard = SM2D_FFI_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let h = ffi_rw_lock_static_handle(1);
+        let pre_a = ffi_rw_lock_acquire_write_count(h);
+        let pre_r = ffi_rw_lock_release_write_count(h);
+        ffi_rw_lock_acquire_write(h);
+        ffi_rw_lock_release_write(h);
+        assert_eq!(ffi_rw_lock_acquire_write_count(h), pre_a + 1);
+        assert_eq!(ffi_rw_lock_release_write_count(h), pre_r + 1);
+    }
+
+    /// **SM2.D.2 test**: snapshot of an unheld lock has both fields
+    /// zero (assuming the slot is in the unheld baseline state); a
+    /// snapshot during a read-hold has bit 63 clear and at least
+    /// one reader bit set.
+    #[test]
+    fn sm2d2_ffi_rw_lock_snapshot_distinguishes_held() {
+        let _guard = SM2D_FFI_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let h = ffi_rw_lock_static_handle(2);
+        ffi_rw_lock_acquire_read(h);
+        let snap = ffi_rw_lock_snapshot(h);
+        let writer = (snap >> 63) & 1;
+        let count = snap & crate::rw_lock::READER_MASK;
+        assert_eq!(writer, 0, "writer bit must be clear during a read-hold");
+        assert!(count >= 1, "reader count must be at least 1 during read-hold");
+        ffi_rw_lock_release_read(h);
     }
 }

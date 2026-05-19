@@ -89,6 +89,19 @@ fn main() {
     // (at elaboration) with an actionable diagnostic.
     scan_trap_rs_handle_irq_per_core_intact();
 
+    // WS-SM SM2.D.5 (verified-lock FFI bridge contract): verify the
+    // SM2.D lock-bridge module is present and every required FFI
+    // export in `ffi.rs` resolves to a helper in `lock_bridge.rs`.
+    // A refactor that dropped one of the SM2.D FFI exports would
+    // silently break the Lean ↔ Rust bridge — the Lean side would
+    // emit `@[extern]` declarations that resolve to nothing at link
+    // time when the verified kernel hardware build pulls in the
+    // HAL library.  Pinning the call sites at build time forces the
+    // contract earlier (at elaboration) than the link-time failure
+    // would surface it.
+    scan_lock_bridge_rs_intact();
+    scan_ffi_rs_exposes_lock_ffi_exports();
+
     // Only build assembly for aarch64 targets
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     if target_arch != "aarch64" {
@@ -828,5 +841,139 @@ fn scan_trap_rs_handle_irq_per_core_intact() {
              and for SM5+ per-core scheduler dispatch.  Restore the TPIDR_EL1 \
              read at the top of the function body."
         );
+    }
+}
+
+/// WS-SM SM2.D.5: Verify `lock_bridge.rs` defines every required
+/// helper function with its expected `pub fn` declaration.
+///
+/// A regression that drops or renames any helper would silently break
+/// the Lean ↔ Rust bridge: the corresponding `ffi.rs` export would
+/// fail to resolve at compile time (caught), but if the export is
+/// also dropped concurrently the breakage would only surface at the
+/// verified kernel hardware build's link step.  This scanner forces
+/// the contract at elaboration time so contributors see the failure
+/// immediately during `cargo build`.
+fn scan_lock_bridge_rs_intact() {
+    let path = "src/lock_bridge.rs";
+    println!("cargo:rerun-if-changed={path}");
+    let contents = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => panic!("WS-SM SM2.D.5 scanner: failed to read {path}: {e}"),
+    };
+
+    // Strip line comments so docstring mentions don't satisfy checks.
+    let stripped: String = contents
+        .lines()
+        .map(|line| {
+            if let Some(idx) = line.find("//") {
+                &line[..idx]
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // The 16 required public helpers in `lock_bridge.rs` that the
+    // SM2.D FFI exports forward to.  Plus the build anchor constant.
+    let required = [
+        "pub const STATIC_TICKET_LOCK_POOL_SIZE: usize",
+        "pub const STATIC_RW_LOCK_POOL_SIZE: usize",
+        "pub static STATIC_TICKET_LOCK_POOL:",
+        "pub static STATIC_RW_LOCK_POOL:",
+        "pub fn ticket_lock_static_handle(",
+        "pub fn ticket_lock_acquire(",
+        "pub fn ticket_lock_release(",
+        "pub fn ticket_lock_peek_holder(",
+        "pub fn ticket_lock_acquire_count(",
+        "pub fn ticket_lock_release_count(",
+        "pub fn rw_lock_static_handle(",
+        "pub fn rw_lock_acquire_read(",
+        "pub fn rw_lock_release_read(",
+        "pub fn rw_lock_acquire_write(",
+        "pub fn rw_lock_release_write(",
+        "pub fn rw_lock_snapshot(",
+        "pub fn rw_lock_acquire_read_count(",
+        "pub fn rw_lock_release_read_count(",
+        "pub fn rw_lock_acquire_write_count(",
+        "pub fn rw_lock_release_write_count(",
+        "pub const SM2_THEOREM_COUNT: usize = 22",
+        "pub const SM2D_BUILD_ANCHOR:",
+    ];
+    for needle in required {
+        if !stripped.contains(needle) {
+            panic!(
+                "WS-SM SM2.D.5 regression: `{path}` no longer declares `{needle}`.  \
+                 The SM2.D FFI bridge expects every lock-bridge helper to remain \
+                 publicly available.  Restore the declaration or, if SM5+ has \
+                 landed an architectural shift, update this scanner in lockstep \
+                 with the `ffi.rs` exports and the Lean `@[extern]` declarations \
+                 in `SeLe4n/Platform/FFI.lean`."
+            );
+        }
+    }
+}
+
+/// WS-SM SM2.D.5: Verify `ffi.rs` exposes every required SM2.D FFI
+/// `#[no_mangle] pub extern "C" fn` export.
+///
+/// Symmetric to `scan_lock_bridge_rs_intact`: catches a regression
+/// where the helper exists in `lock_bridge.rs` but the FFI export
+/// got dropped from `ffi.rs`.
+fn scan_ffi_rs_exposes_lock_ffi_exports() {
+    let path = "src/ffi.rs";
+    println!("cargo:rerun-if-changed={path}");
+    let contents = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => panic!("WS-SM SM2.D.5 scanner: failed to read {path}: {e}"),
+    };
+
+    // Strip line comments.
+    let stripped: String = contents
+        .lines()
+        .map(|line| {
+            if let Some(idx) = line.find("//") {
+                &line[..idx]
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Every SM2.D FFI export.  Lean's `@[extern "<symbol>"]` declarations
+    // in `SeLe4n/Platform/FFI.lean` resolve against these exports at the
+    // verified kernel hardware build's link step.
+    let required_ffi_symbols = [
+        "pub extern \"C\" fn ffi_ticket_lock_static_handle(",
+        "pub extern \"C\" fn ffi_ticket_lock_acquire(",
+        "pub extern \"C\" fn ffi_ticket_lock_release(",
+        "pub extern \"C\" fn ffi_ticket_lock_peek_holder(",
+        "pub extern \"C\" fn ffi_ticket_lock_acquire_count(",
+        "pub extern \"C\" fn ffi_ticket_lock_release_count(",
+        "pub extern \"C\" fn ffi_rw_lock_static_handle(",
+        "pub extern \"C\" fn ffi_rw_lock_acquire_read(",
+        "pub extern \"C\" fn ffi_rw_lock_release_read(",
+        "pub extern \"C\" fn ffi_rw_lock_acquire_write(",
+        "pub extern \"C\" fn ffi_rw_lock_release_write(",
+        "pub extern \"C\" fn ffi_rw_lock_snapshot(",
+        "pub extern \"C\" fn ffi_rw_lock_acquire_read_count(",
+        "pub extern \"C\" fn ffi_rw_lock_release_read_count(",
+        "pub extern \"C\" fn ffi_rw_lock_acquire_write_count(",
+        "pub extern \"C\" fn ffi_rw_lock_release_write_count(",
+    ];
+    for needle in required_ffi_symbols {
+        if !stripped.contains(needle) {
+            panic!(
+                "WS-SM SM2.D.5 regression: `{path}` no longer declares `{needle}`.  \
+                 The verified-kernel hardware build expects every SM2.D FFI \
+                 export to remain reachable via `#[no_mangle] pub extern \"C\"`.  \
+                 If you removed the export deliberately, also remove the \
+                 corresponding `@[extern]` declaration in \
+                 `SeLe4n/Platform/FFI.lean`, the helper in \
+                 `src/lock_bridge.rs`, and the scanner entry above (in lockstep)."
+            );
+        }
     }
 }
