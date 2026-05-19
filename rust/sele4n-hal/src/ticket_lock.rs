@@ -324,6 +324,39 @@ impl TicketLock {
         let _guard = TicketLockGuard::acquire(self);
         f()
     }
+
+    /// **WS-SM SM2.D.1**: peek at the lock's `next_ticket` counter.
+    ///
+    /// Diagnostic-only accessor used by `lock_bridge::ticket_lock_peek_holder`
+    /// to expose the value to the Lean kernel via the SM2.D.1 FFI bridge.
+    /// The Acquire ordering matches the load used inside `acquire`'s spin
+    /// loop; the returned value is a snapshot at the moment of the call
+    /// and may not correspond to any single point in time under concurrent
+    /// `acquire` / `release`.
+    ///
+    /// Refines reading the abstract `TicketLockState.nextTicket : Nat`
+    /// counter from the Lean spec.
+    #[must_use]
+    #[inline]
+    pub fn peek_next_ticket(&self) -> u64 {
+        self.next_ticket.load(Ordering::Acquire)
+    }
+
+    /// **WS-SM SM2.D.1**: peek at the lock's `serving` counter.
+    ///
+    /// Diagnostic accessor with the same semantics as
+    /// [`Self::peek_next_ticket`].  Refines reading the abstract
+    /// `TicketLockState.serving : Nat` counter.
+    ///
+    /// Under wf the relation `serving <= next_ticket` holds; if the lock
+    /// is unheld, `serving == next_ticket`.  A caller observing
+    /// `next_ticket - serving > 0` knows the lock is contended at the
+    /// snapshot instant.
+    #[must_use]
+    #[inline]
+    pub fn peek_serving(&self) -> u64 {
+        self.serving.load(Ordering::Acquire)
+    }
 }
 
 /// **WS-SM SM2.B.16**: RAII guard for `TicketLock`.
@@ -515,6 +548,58 @@ mod tests {
         // Verify the static is usable.
         assert_eq!(GLOBAL_LOCK.next_ticket.load(Ordering::Acquire), 0);
         assert_eq!(GLOBAL_LOCK.serving.load(Ordering::Acquire), 0);
+    }
+
+    /// **SM2.D.1 test**: `peek_next_ticket` returns the current
+    /// `next_ticket` counter.  Verifies the accessor introduced for
+    /// the SM2.D FFI bridge.
+    #[test]
+    fn sm2d1_peek_next_ticket_matches_internal_counter() {
+        let lock = TicketLock::new();
+        assert_eq!(lock.peek_next_ticket(), 0);
+        let _t = lock.acquire();
+        assert_eq!(lock.peek_next_ticket(), 1);
+        lock.release();
+        assert_eq!(lock.peek_next_ticket(), 1, "release does not advance next_ticket");
+        for _ in 0..10u64 {
+            let _ = lock.acquire();
+            lock.release();
+        }
+        assert_eq!(lock.peek_next_ticket(), 11);
+    }
+
+    /// **SM2.D.1 test**: `peek_serving` returns the current
+    /// `serving` counter.
+    #[test]
+    fn sm2d1_peek_serving_matches_internal_counter() {
+        let lock = TicketLock::new();
+        assert_eq!(lock.peek_serving(), 0);
+        let _t = lock.acquire();
+        assert_eq!(lock.peek_serving(), 0, "acquire does not advance serving");
+        lock.release();
+        assert_eq!(lock.peek_serving(), 1, "release advances serving by 1");
+        for _ in 0..10u64 {
+            let _ = lock.acquire();
+            lock.release();
+        }
+        assert_eq!(lock.peek_serving(), 11);
+    }
+
+    /// **SM2.D.1 test**: under wf, `peek_serving() <= peek_next_ticket()`.
+    /// Mirrors the abstract Lean spec's INV-T1
+    /// (`s.serving <= s.nextTicket`) at the concrete observation level.
+    #[test]
+    fn sm2d1_peek_invariant_serving_le_next_ticket() {
+        let lock = TicketLock::new();
+        // Initially both 0; INV-T1 holds trivially.
+        assert!(lock.peek_serving() <= lock.peek_next_ticket());
+        // After acquire (before release), serving < next_ticket.
+        let _t = lock.acquire();
+        assert!(lock.peek_serving() < lock.peek_next_ticket(),
+                "after acquire-before-release, serving must be strictly < next_ticket");
+        lock.release();
+        // After balanced cycle, serving == next_ticket.
+        assert_eq!(lock.peek_serving(), lock.peek_next_ticket());
     }
 
     /// **SM2.B.16 test**: Default implementation matches new().

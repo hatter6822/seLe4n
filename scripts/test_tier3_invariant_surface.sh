@@ -1645,4 +1645,147 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.blockBisim_releaseWrite_with_sev_empty_queue
 EOF'
 
+# WS-SM SM2.D — LockBridge typed FFI wrapper + RAII combinator surface
+# anchors.  Covers every public symbol exported by
+# `Kernel.Concurrency.LockBridge` so a regression on the typed handle
+# carriers, FFI pass-through wrappers, RAII combinators, or marker
+# theorems fails the surface check.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.LockBridge'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.LockBridge
+
+-- SM2.D pool dimensions
+#check @SeLe4n.Kernel.Concurrency.staticTicketLockPoolSize
+#check @SeLe4n.Kernel.Concurrency.staticRwLockPoolSize
+#check @SeLe4n.Kernel.Concurrency.staticTicketLockPoolSize_pos
+#check @SeLe4n.Kernel.Concurrency.staticRwLockPoolSize_pos
+#check @SeLe4n.Kernel.Concurrency.staticTicketLockPoolSize_eq_numCores
+#check @SeLe4n.Kernel.Concurrency.staticRwLockPoolSize_eq_numCores
+-- SM2.D.1 — TicketLock typed handle + smart constructor
+#check @SeLe4n.Kernel.Concurrency.TicketLockHandle
+#check @SeLe4n.Kernel.Concurrency.TicketLockHandle.raw
+#check @SeLe4n.Kernel.Concurrency.TicketLockHandle.isValid
+#check @SeLe4n.Kernel.Concurrency.mkTicketLockHandle
+#check @SeLe4n.Kernel.Concurrency.mkTicketLockHandle_raw_toNat
+-- SM2.D.2 — RwLock typed handle + smart constructor
+#check @SeLe4n.Kernel.Concurrency.RwLockHandle
+#check @SeLe4n.Kernel.Concurrency.RwLockHandle.raw
+#check @SeLe4n.Kernel.Concurrency.RwLockHandle.isValid
+#check @SeLe4n.Kernel.Concurrency.mkRwLockHandle
+#check @SeLe4n.Kernel.Concurrency.mkRwLockHandle_raw_toNat
+-- SM2.D.1 — TicketLock typed FFI wrappers
+#check @SeLe4n.Kernel.Concurrency.acquireTicketLock
+#check @SeLe4n.Kernel.Concurrency.releaseTicketLock
+#check @SeLe4n.Kernel.Concurrency.peekTicketLockHolder
+#check @SeLe4n.Kernel.Concurrency.peekTicketLockNextTicket
+#check @SeLe4n.Kernel.Concurrency.peekTicketLockServing
+#check @SeLe4n.Kernel.Concurrency.ticketLockAcquireCount
+#check @SeLe4n.Kernel.Concurrency.ticketLockReleaseCount
+-- SM2.D.2 — RwLock typed FFI wrappers
+#check @SeLe4n.Kernel.Concurrency.acquireReadLock
+#check @SeLe4n.Kernel.Concurrency.releaseReadLock
+#check @SeLe4n.Kernel.Concurrency.acquireWriteLock
+#check @SeLe4n.Kernel.Concurrency.releaseWriteLock
+#check @SeLe4n.Kernel.Concurrency.snapshotRwLock
+#check @SeLe4n.Kernel.Concurrency.rwLockAcquireReadCount
+#check @SeLe4n.Kernel.Concurrency.rwLockReleaseReadCount
+#check @SeLe4n.Kernel.Concurrency.rwLockAcquireWriteCount
+#check @SeLe4n.Kernel.Concurrency.rwLockReleaseWriteCount
+-- SM2.D.3 — RAII combinators
+#check @SeLe4n.Kernel.Concurrency.withTicketLock
+#check @SeLe4n.Kernel.Concurrency.withReadLock
+#check @SeLe4n.Kernel.Concurrency.withWriteLock
+-- Marker theorems
+#check @SeLe4n.Kernel.Concurrency.acquireTicketLock_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.releaseTicketLock_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.peekTicketLockHolder_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.acquireReadLock_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.releaseReadLock_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.acquireWriteLock_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.releaseWriteLock_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.snapshotRwLock_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.ticketLockAcquireCount_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.ticketLockReleaseCount_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.rwLockAcquireReadCount_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.rwLockReleaseReadCount_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.rwLockAcquireWriteCount_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.rwLockReleaseWriteCount_eq_ffi
+#check @SeLe4n.Kernel.Concurrency.withTicketLock_unfold
+#check @SeLe4n.Kernel.Concurrency.withReadLock_unfold
+#check @SeLe4n.Kernel.Concurrency.withWriteLock_unfold
+#check @SeLe4n.Kernel.Concurrency.peekTicketLockEncoding_roundtrip_u32_masked
+#check @SeLe4n.Kernel.Concurrency.peekTicketLockNextTicket_is_high32
+#check @SeLe4n.Kernel.Concurrency.peekTicketLockServing_is_low32
+EOF'
+
+# WS-SM SM2.D.7 — Lock-primitive theorem aggregator surface anchors.
+# Covers the 22-theorem inventory + per-category counts + Nodup
+# witnesses.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.LockPrimitives'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.LockPrimitives
+
+#check @SeLe4n.Kernel.Concurrency.LockPrimitiveCategory
+#check @SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.memoryModel
+#check @SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.ticketLock
+#check @SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.rwLock
+#check @SeLe4n.Kernel.Concurrency.LockPrimitiveCategory.refinement
+#check @SeLe4n.Kernel.Concurrency.LockPrimitiveTheorem
+#check @SeLe4n.Kernel.Concurrency.LockPrimitiveTheorem.description
+#check @SeLe4n.Kernel.Concurrency.LockPrimitiveTheorem.identifier
+#check @SeLe4n.Kernel.Concurrency.LockPrimitiveTheorem.category
+#check @SeLe4n.Kernel.Concurrency.lockPrimitives
+#check @SeLe4n.Kernel.Concurrency.lockPrimitives_count
+#check @SeLe4n.Kernel.Concurrency.lockPrimitives_memoryModel_count
+#check @SeLe4n.Kernel.Concurrency.lockPrimitives_ticketLock_count
+#check @SeLe4n.Kernel.Concurrency.lockPrimitives_rwLock_count
+#check @SeLe4n.Kernel.Concurrency.lockPrimitives_refinement_count
+#check @SeLe4n.Kernel.Concurrency.lockPrimitives_partition_sum
+#check @SeLe4n.Kernel.Concurrency.lockPrimitives_identifiers_nodup
+#check @SeLe4n.Kernel.Concurrency.lockPrimitives_descriptions_nodup
+EOF'
+
+# WS-SM SM2.D TicketLockRefinement (F-01 refinement bridge anchor).
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement
+
+#check @SeLe4n.Kernel.Concurrency.TicketLockConcrete
+#check @SeLe4n.Kernel.Concurrency.TicketLockConcrete.nextTicket
+#check @SeLe4n.Kernel.Concurrency.TicketLockConcrete.serving
+#check @SeLe4n.Kernel.Concurrency.TicketLockConcrete.unheld
+#check @SeLe4n.Kernel.Concurrency.ticketLockSim
+#check @SeLe4n.Kernel.Concurrency.ticketLockSim_unheld
+#check @SeLe4n.Kernel.Concurrency.ticketLockSim_preserved_by_tryAcquire
+#check @SeLe4n.Kernel.Concurrency.ticketLockSim_preserved_by_release
+#check @SeLe4n.Kernel.Concurrency.ticketLockSim_preserved_by_observeServing
+#check @SeLe4n.Kernel.Concurrency.rust_ticketLock_refines_lean
+EOF'
+
+# WS-SM SM2.D — Lean-side FFI declarations.  Covers every SM2.D
+# @[extern] declaration in Platform/FFI.lean so a regression that
+# removed a declaration without updating the cross-language
+# symmetry script fails here first.
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Platform.FFI'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Platform.FFI
+
+#check @SeLe4n.Platform.FFI.ffiTicketLockStaticHandle
+#check @SeLe4n.Platform.FFI.ffiTicketLockAcquire
+#check @SeLe4n.Platform.FFI.ffiTicketLockRelease
+#check @SeLe4n.Platform.FFI.ffiTicketLockPeekHolder
+#check @SeLe4n.Platform.FFI.ffiTicketLockAcquireCount
+#check @SeLe4n.Platform.FFI.ffiTicketLockReleaseCount
+#check @SeLe4n.Platform.FFI.ffiRwLockStaticHandle
+#check @SeLe4n.Platform.FFI.ffiRwLockAcquireRead
+#check @SeLe4n.Platform.FFI.ffiRwLockReleaseRead
+#check @SeLe4n.Platform.FFI.ffiRwLockAcquireWrite
+#check @SeLe4n.Platform.FFI.ffiRwLockReleaseWrite
+#check @SeLe4n.Platform.FFI.ffiRwLockSnapshot
+#check @SeLe4n.Platform.FFI.ffiRwLockAcquireReadCount
+#check @SeLe4n.Platform.FFI.ffiRwLockReleaseReadCount
+#check @SeLe4n.Platform.FFI.ffiRwLockAcquireWriteCount
+#check @SeLe4n.Platform.FFI.ffiRwLockReleaseWriteCount
+EOF'
+
 finalize_report

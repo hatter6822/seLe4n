@@ -1,3 +1,163 @@
+## Unreleased — WS-SM SM2.D (FFI bridge + integration for verified lock primitives)
+
+Implements all 8 sub-tasks of
+[`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+§5.4: the FFI bridge connecting the verified Lean TicketLock and
+RwLock specifications to the Rust HAL implementations, plus the
+SM2.D.7 22-theorem lockPrimitives aggregator.
+
+* **SM2.D.1 / D.2** (Lean FFI declarations): 16 `@[extern]`
+  declarations in `SeLe4n/Platform/FFI.lean` covering
+  TicketLock (6) + RwLock (10) operations and trace counters.
+  Typed `TicketLockHandle` / `RwLockHandle` carriers with
+  structural bound proofs.
+* **SM2.D.3** (RAII combinators): `withTicketLock` /
+  `withReadLock` / `withWriteLock` bracket BaseIO actions with
+  acquire/release.  Marker theorems pin the definitional
+  unfolding for Tier-3 anchoring.
+* **SM2.D.4** (Lock-state tracing): per-pool-slot Relaxed
+  `AtomicU64` counters (6 arrays × 4 slots = 24 counters) for
+  acquire/release call counts; always-on, wait-free, off the
+  correctness path.  Used by SM2.D.8 cross-core tests to verify
+  FFI calls actually serialise.
+* **SM2.D.5** (Static linker-time check): two `build.rs`
+  scanners (`scan_lock_bridge_rs_intact`,
+  `scan_ffi_rs_exposes_lock_ffi_exports`) plus NEW cross-language
+  script `scripts/check_lock_ffi_symmetry.sh` (wired into Tier 0
+  hygiene).  Bidirectional orphan detection between
+  `@[extern]` declarations and `pub extern "C"` exports.
+* **SM2.D.6** (Surface anchors): NEW
+  `tests/SmpSurfaceAnchors.lean` covers every public SM2.D
+  symbol with `#check` lines + decidable examples + runtime
+  structural assertions.  Plus NEW `tests/LockBridgeSuite.lean`
+  focused on RAII combinator structural properties.
+* **SM2.D.7** (Aggregator): NEW
+  `SeLe4n/Kernel/Concurrency/LockPrimitives.lean` aggregates
+  all 22 SM2 theorems (4 memory-model + 6 TicketLock + 10
+  RwLock + 2 refinement) with `lockPrimitives.length = 22`
+  size witness + per-category counts + NoDup witnesses.  Rust
+  mirror: `SM2_THEOREM_COUNT = 22` in `lock_bridge.rs`;
+  cross-language script enforces agreement.
+* **SM2.D.8** (Cross-core tests): 3 cross-thread Rust tests on
+  `STATIC_*_POOL[3]` exercising 4 threads × N ops; verifies
+  trace-counter deltas exactly match expected totals (no lost
+  updates, no double-increments).  Plus a writer-readers
+  exclusion test asserting `rwLock_writer_readers_exclusion`
+  holds under cross-thread contention.
+
+Handle encoding (SM2.D version): `u64` opaque handle =
+pool index (0..3 for each kind).  SM5+ extends the encoding for
+per-object locks via a high-bit tag.  Decoders fail-closed:
+`Option`-returning helpers + panicking FFI wrappers under
+`panic = "abort"`.
+
+**Audit-pass-1 refinements** (HIGH/MEDIUM/LOW):
+* **HIGH (encapsulation)**: replaced raw-pointer `repr(C)` cast
+  in `ticket_lock_peek_holder` with proper public `TicketLock`
+  accessors `peek_next_ticket` / `peek_serving`.
+* **MEDIUM (32-bit truncation defense)**: refactored handle
+  decoders to do the bound check in `u64` space BEFORE the
+  `as usize` cast.  Mirrors the SM1.I.4 audit-pass-2 fix.
+* **MEDIUM (test concurrency)**: unified
+  `SM2D_TRACE_TEST_MUTEX` across `lock_bridge::runtime_tests`
+  and `crate::ffi::tests` so they don't race on shared pool
+  slots.
+* **HIGH (refinement-theorem aliasing)**: implemented the
+  missing F-01 `rust_ticketLock_refines_lean` theorem in NEW
+  MODULE `SeLe4n/Kernel/Concurrency/Locks/TicketLockRefinement.lean`
+  per the implement-the-improvement rule.  Defines
+  `TicketLockConcrete` struct, `ticketLockSim` simulation
+  relation, four per-operation preservation witnesses, and the
+  F-01 aggregator theorem.
+* **LOW (cross-language symmetry)**: bidirectional orphan
+  checks added to `check_lock_ffi_symmetry.sh`.
+
+**Audit-pass-2 refinements**: added 6 missing SM2.D.4
+`*Count_eq_ffi` marker theorems for trace-counter accessors
+(symmetry with SM2.D.1/2 pass-through markers).
+
+**Audit-pass-3 refinements** (docs): added the SM2.D section
+to `docs/spec/SELE4N_SPEC.md` (§2.7) mirroring the SM2.B/SM2.C
+structure (Lean FFI layer, Rust FFI bridge, refinement bridge,
+aggregator, cross-language symmetry, test coverage,
+audit-pass refinements).  Regenerated `docs/codebase_map.json`.
+
+**Audit-pass-4 refinements** (build-script hardening): extended
+`scan_lock_bridge_rs_intact` to also pin the textual presence
+of the 6 SM2.D.4 trace-counter statics
+(`TICKET_LOCK_*_COUNT`, `RW_LOCK_*_COUNT`) and the 2 handle
+decoders (`decode_ticket_lock_handle`,
+`decode_rw_lock_handle`).  Catches a wholesale refactor that
+drops them entirely with a clearer diagnostic than the
+downstream compile error would give.
+
+**Audit-pass-5 refinements** (typed-handle ergonomics): added
+`Inhabited` instances to `TicketLockHandle` and `RwLockHandle`
+for consistency with the project's other typed identifiers
+(e.g., `CoreId`).  Default value uses
+`mkTicketLockHandle ⟨0, _⟩` — always a valid pool slot.
+
+**Audit-pass-6 refinements** (independent external review,
+2 MEDIUM + 9 LOW findings):
+
+* MEDIUM-1 (refinement docstring overstatement): weakened
+  `rust_ticketLock_refines_lean` docstring to accurately
+  describe the per-step structure (initial-state + per-op
+  preservation), removing the inaccurate "every reachable
+  state φ-related" claim.
+* MEDIUM-2 (sign error): `peek_holder` docstring corrected
+  from `serving - next_ticket` to `next_ticket - serving`
+  (the non-negative in-flight-acquires count under wf).
+* LOW-3: added `Inhabited` surface anchors for both typed
+  handles.
+* LOW-4: replaced dead-weight `assertBool "...reachable" true`
+  placeholders with decidable post-conditions.
+* LOW-5: deleted redundant
+  `lockPrimitives_substantive_identifiers_nodup` theorem
+  (subsumed by `lockPrimitives_identifiers_nodup` after the
+  audit-pass-1 F-01 aliasing removal).
+* LOW-6: simplified `rw_lock_snapshot` by removing redundant
+  `& READER_MASK` (the count returned by `RwLock::snapshot`
+  is already pre-masked).
+* LOW-7: removed redundant `& 0xFFFF_FFFF` mask after
+  `packed >> 32` in `sm2d1_ffi_ticket_lock_peek_holder_packs_state`.
+* LOW-8: added negative-side bit-extractor cases in
+  `SmpSurfaceAnchors.lean` §6 — verify high bits don't bleed
+  into serving extraction, low bits don't bleed into
+  next-ticket extraction.
+* LOW-9: `withTicketLock` docstring rewritten to honestly
+  distinguish Lean `BaseIO`'s exception-freedom, Rust HAL
+  release `panic = "abort"`, and Rust test `panic = "unwind"`
+  (with the FFI-link-discipline rationale for why the
+  unwind asymmetry doesn't reach Lean callers).
+* LOW-10: split `SM2D8_SLOT3_MUTEX` into
+  `SM2D8_TICKET_SLOT3_MUTEX` and `SM2D8_RW_SLOT3_MUTEX` —
+  allows ticket and rw cross-core tests to run concurrently
+  (they share no state).
+* LOW-11: pool sizes structurally derive from `numCores`
+  (Lean) / `MAX_SECONDARY_CORES + 1` (Rust).  A future
+  multi-platform port automatically propagates to both
+  sides.  Rust-side `const _: ()` assertion pins to the
+  canonical 4-core value.
+
+Test coverage delta: +36 Rust tests in `lock_bridge.rs` +
+`ffi.rs::tests` (24 handle/decoder + 9 FFI export + 3
+cross-thread); +80 Lean surface anchors in
+`tests/SmpSurfaceAnchors.lean` + 25+ decidable examples + ~35
+runtime structural assertions across the two new Lean test
+suites.  Zero clippy warnings.  Stress-tested 10/10 SM2.D-only
+runs without flakiness.
+
+Axiom budget for SM2.D: 0 Lean axioms, 0 sorries.
+
+Items deferred past v1.0.0 with correctness impact: NONE.
+
+Follow-on: SM2.E (documentation) per
+[`docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md`](docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md)
+§5.5.
+
+---
+
 ## Unreleased — WS-SM SM2.C-defer (RwLock deferred-completion D-1..D-6)
 
 Implements major portions of

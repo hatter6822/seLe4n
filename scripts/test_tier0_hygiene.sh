@@ -163,4 +163,12 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_physical_address_width.sh"
 # older than one calendar year.
 run_check "HYGIENE" "${SCRIPT_DIR}/check_bcm2712_freshness.sh"
 
+# WS-SM SM2.D.5 (verified-lock FFI symmetry): verify the Lean side
+# (`SeLe4n/Platform/FFI.lean`) and the Rust side (`ffi.rs` +
+# `lock_bridge.rs`) agree on the SM2.D FFI symbol list, and that
+# the SM2 theorem count constant agrees between the Lean
+# `lockPrimitives.length` and Rust `SM2_THEOREM_COUNT`.  A drift
+# on either side without updating the other fails the gate.
+run_check "HYGIENE" "${SCRIPT_DIR}/check_lock_ffi_symmetry.sh"
+
 finalize_report

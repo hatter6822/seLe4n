@@ -235,3 +235,13 @@ pub mod rw_lock;
 // `queued_rw_lock.rs` for the design rationale (closes audit findings
 // H-1 / H-2 / M-7) and the WS-SM SM2.C.20 refinement update.
 pub mod queued_rw_lock;
+// WS-SM SM2.D (FFI bridge + integration): static lock pools + FFI
+// helpers exposing the verified TicketLock and RwLock implementations
+// to the Lean kernel via `@[extern]` declarations.  Provides
+// `STATIC_TICKET_LOCK_POOL` / `STATIC_RW_LOCK_POOL` static arrays,
+// handle-based addressing, always-on Relaxed atomic trace counters
+// (used by the SM2.D.8 cross-core serialisation test), and the
+// SM2_THEOREM_COUNT constant pinning the SM2 theorem inventory.  See
+// the module docstring in `lock_bridge.rs` for the handle encoding,
+// trace-counter rationale, and ARM ARM citations.
+pub mod lock_bridge;

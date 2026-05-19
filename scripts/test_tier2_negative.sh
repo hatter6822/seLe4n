@@ -117,4 +117,16 @@ run_check_with_timeout "TRACE" lake exe rw_lock_suite
 # docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md.
 run_check_with_timeout "TRACE" lake exe rw_lock_deferred_suite
 
+# WS-SM SM2.D.6 — Verified-lock-primitive surface anchor suite.
+# Surface anchors + decidable examples + runtime structural
+# assertions for the SM2.D LockBridge typed handles, FFI wrappers,
+# RAII combinators, and the SM2.D.7 22-theorem aggregator.
+run_check_with_timeout "TRACE" lake exe smp_surface_anchors
+
+# WS-SM SM2.D.3 — LockBridge RAII combinator suite.  Decidable
+# examples + runtime structural assertions for the RAII pattern
+# (acquire-action-release sequencing) plus the smart-constructor
+# round-trips and the peek decoder algebra.
+run_check_with_timeout "TRACE" lake exe lock_bridge_suite
+
 finalize_report

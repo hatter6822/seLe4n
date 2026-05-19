@@ -213,3 +213,22 @@ root = "tests.Tier5.RwLockOracle"
 [[lean_exe]]
 name = "rw_lock_deferred_suite"
 root = "tests.RwLockDeferredSuite"
+
+# WS-SM SM2.D.6 — Verified-lock-primitive surface anchor suite.
+# Surface anchors + decidable examples + runtime structural
+# assertions for every public symbol exported by `LockBridge`
+# (typed handles, FFI wrappers, RAII combinators) and
+# `LockPrimitives` (22-theorem aggregator + per-category counts).
+# Tier-3 wired.
+[[lean_exe]]
+name = "smp_surface_anchors"
+root = "tests.SmpSurfaceAnchors"
+
+# WS-SM SM2.D.3 — LockBridge RAII combinator suite.  Focuses on the
+# RAII pattern (acquire-action-release sequencing) plus the smart-
+# constructor round-trips and the peek decoder algebra.  Decidable
+# examples + runtime structural assertions; complements the broader
+# SmpSurfaceAnchors suite by exercising RAII unfolding witnesses.
+[[lean_exe]]
+name = "lock_bridge_suite"
+root = "tests.LockBridgeSuite"
