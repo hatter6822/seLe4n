@@ -1615,6 +1615,13 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.fair_writer_release_witness
 #check @SeLe4n.Kernel.Concurrency.fair_reader_release_witness
 #check @SeLe4n.Kernel.Concurrency.fair_release_witness_in_window
+#check @SeLe4n.Kernel.Concurrency.writerHeld_transition_implies_releaseWrite
+#check @SeLe4n.Kernel.Concurrency.reader_transition_implies_releaseRead
+#check @SeLe4n.Kernel.Concurrency.release_transition_implies_effective_release_at_step
+#check @SeLe4n.Kernel.Concurrency.fair_progress_one_step
+#check @SeLe4n.Kernel.Concurrency.rwLock_writer_liveness
+#check @SeLe4n.Kernel.Concurrency.rwLock_writer_admissionStep_bounded
+#check @SeLe4n.Kernel.Concurrency.FairTrace.decidable
 -- D-4.9 FULL bisim main theorem + per-block discharge lemmas (NEW)
 #check @SeLe4n.Kernel.Concurrency.concreteFoldBlock
 #check @SeLe4n.Kernel.Concurrency.blockBisim

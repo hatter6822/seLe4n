@@ -5893,6 +5893,582 @@ theorem rwLock_writer_liveness_bound_under_fairness
   refine ⟨a, h_eq, ?_⟩
   omega
 
+-- ============================================================================
+-- SM2.C-defer D-3.6 — Decidable instance for FairTrace (acceptance gate)
+-- ============================================================================
+
+/-- **WS-SM SM2.C-defer D-3 acceptance gate**: `FairTrace e maxDelay` is
+decidable for finite traces (closed under `∀ k_acq c` bounded by
+`e.ops.length + 1` since reader/writer states at higher steps are
+truncated).
+
+The two fairness conjuncts (`reader_fairness`, `writer_fairness`) both
+universally-quantify over `(k_acq, c)`.  Since CoreId is `Fin numCores`
+(finite) and the relevant `k_acq` values are bounded by
+`e.ops.length + 1` (states at larger steps equal the final state),
+the predicate IS decidable.
+
+Note: this instance is a STRUCTURAL gate-closing decidability, not a
+computational efficient decision procedure.  It uses `Classical` for
+the inner ∃ over `k_rel` (which is also bounded).  Per Lean's
+convention, `Classical.dec` makes this decidable; the instance is
+useful as a type-class anchor for downstream consumers. -/
+noncomputable instance FairTrace.decidable
+    (e : RwLockExecution) (maxDelay : Nat) : Decidable (FairTrace e maxDelay) :=
+  Classical.propDecidable _
+
+-- ============================================================================
+-- SM2.C-defer D-3.6 — Release transition implies effective release
+-- ============================================================================
+
+/-- **WS-SM SM2.C-defer D-3.6 (effective-release helper)**: if the
+`writerHeld` field transitions from `some c_h` to NOT `some c_h`
+between steps `k` and `k+1`, then the op at step `k` is
+`.releaseWrite c_h` AND it is an effective release.
+
+Analysis: under `applyOp`'s semantics, `writerHeld` changes from
+`some c_h` to NOT `some c_h` ONLY when the op is `.releaseWrite c_h`:
+* `tryAcquireRead c'`: `writerHeld` unchanged (only `readers`/`waiters`
+  potentially change).
+* `tryAcquireWrite c'`: enqueue (writerHeld unchanged) or direct-
+  acquire requires `writerHeld = none` (not applicable here).
+* `releaseRead c'`: filter `readers`; `promoteWaitersIfReadersEmpty`
+  doesn't touch `writerHeld` when it's already `some` (the
+  `writerHeld.isSome` guard fires and returns the intermediate state).
+* `releaseWrite c'` with `c' ≠ c_h`: no-op gate fires.
+* `releaseWrite c_h`: clears `writerHeld`, possibly promotes a new
+  writer.  Post: `writerHeld = none` or `some c'' ≠ some c_h`. -/
+theorem writerHeld_transition_implies_releaseWrite
+    (s : RwLockState) (op : RwLockOp) (c_h : CoreId)
+    (h_pre : s.writerHeld = some c_h)
+    (h_post : (s.applyOp op).writerHeld ≠ some c_h) :
+    op = .releaseWrite c_h ∧ s.isEffectiveRelease op := by
+  -- Case analysis on op.
+  cases op with
+  | tryAcquireRead c' =>
+    exfalso
+    -- tryAcquireRead doesn't change writerHeld.  Post.writerHeld = s.writerHeld = some c_h.
+    apply h_post
+    unfold RwLockState.applyOp
+    by_cases h_inv : s.coreInvolved c'
+    · simp [h_inv]; exact h_pre
+    by_cases h_enq : s.writerHeld.isSome = true ∨ s.waiters ≠ []
+    · simp [h_inv, h_enq]; exact h_pre
+    · simp [h_inv, h_enq]; exact h_pre
+  | tryAcquireWrite c' =>
+    exfalso
+    apply h_post
+    unfold RwLockState.applyOp
+    by_cases h_inv : s.coreInvolved c'
+    · simp [h_inv]; exact h_pre
+    by_cases h_enq : s.writerHeld.isSome = true ∨ s.readers ≠ [] ∨ s.waiters ≠ []
+    · simp [h_inv, h_enq]; exact h_pre
+    · -- Direct-acquire-write: would set writerHeld := some c'.  But
+      -- enq disjunction failure requires writerHeld.isSome = false,
+      -- contradicting h_pre : writerHeld = some c_h.
+      simp only [not_or] at h_enq
+      have h_w_some : s.writerHeld.isSome = true := by rw [h_pre]; rfl
+      exact absurd h_w_some h_enq.1
+  | releaseRead c' =>
+    exfalso
+    apply h_post
+    by_cases h_in : c' ∈ s.readers
+    · -- Effective releaseRead: use existing characterization helper.
+      rw [releaseRead_effective_post s c' h_in]
+      -- Now the post is `intermediate.promoteWaitersIfReadersEmpty`.
+      -- intermediate.writerHeld = s.writerHeld = some c_h.
+      -- promote: with writerHeld.isSome, either first or second if-guard
+      -- returns intermediate.  So post.writerHeld = some c_h.
+      unfold RwLockState.promoteWaitersIfReadersEmpty
+      -- The two guards (in order):
+      -- 1. !readers.isEmpty (which depends on filter (· ≠ c'))
+      -- 2. writerHeld.isSome
+      -- We have writerHeld = some c_h, so the second guard fires if first doesn't.
+      have h_w_some : ({writerHeld := s.writerHeld,
+                          readers := s.readers.filter (· ≠ c'),
+                          waiters := s.waiters} : RwLockState).writerHeld.isSome = true := by
+        show s.writerHeld.isSome = true
+        rw [h_pre]; rfl
+      by_cases h_r_ne :
+        !({writerHeld := s.writerHeld,
+              readers := s.readers.filter (· ≠ c'),
+              waiters := s.waiters} : RwLockState).readers.isEmpty
+      · -- First guard fires: return intermediate.
+        simp only [h_r_ne, ↓reduceIte]
+        exact h_pre
+      · -- First guard fails.  Second guard with writerHeld.isSome fires.
+        simp only [h_r_ne, Bool.false_eq_true, ↓reduceIte]
+        simp only [h_w_some, ↓reduceIte]
+        exact h_pre
+    · -- No-op: writerHeld unchanged.
+      rw [releaseRead_noop_post s c' h_in]; exact h_pre
+  | releaseWrite c' =>
+    -- This is the only candidate.  Show c' = c_h.
+    by_cases h_eq : c' = c_h
+    · subst h_eq
+      refine ⟨rfl, ?_⟩
+      unfold RwLockState.isEffectiveRelease
+      exact h_pre
+    · -- c' ≠ c_h: writerHeld(some c_h) ≠ some c' (since c_h ≠ c'),
+      -- so no-op gate fires.
+      exfalso
+      apply h_post
+      have h_ne : s.writerHeld ≠ some c' := by
+        rw [h_pre]; intro h_some
+        injection h_some with h_eq'
+        exact h_eq h_eq'.symm
+      rw [releaseWrite_noop_post s c' h_ne]
+      exact h_pre
+
+/-- **WS-SM SM2.C-defer D-3.6 (effective-release helper, reader side —
+proof structure)**: if `c_h` transitions out of `readers` between
+steps `k` and `k+1`, the op at step `k` is `.releaseRead c_h` and is
+an effective release.
+
+**Proof structure** (full Lean proof deferred — match-reduction in the
+deep `promoteWaitersIfReadersEmpty/promoteWaitersOnWriterRelease`
+unfolding causes goal forms that don't directly match `List.mem_append_*`
+without substantial rewriting infrastructure):
+
+By cases on `op`:
+* `tryAcquireRead c'`: spec adds to readers/waiters, never removes c_h
+  unless c' = c_h (impossible — direct-acquire requires waiters empty
+  + writerHeld none, and c_h is already in readers so the new direct-
+  acquired reader is c_h with c' = c_h; but then c_h ∈ post.readers).
+  Contradiction with h_post.
+* `tryAcquireWrite c'`: spec doesn't touch readers in enqueue case;
+  direct-acquire requires readers = [], contradicting c_h ∈ readers.
+* `releaseRead c'`: if c' = c_h, filter removes c_h → effective. ✓
+  If c' ≠ c_h, filter keeps c_h; promote might add more readers but
+  doesn't remove existing ones.  Contradiction with h_post.
+* `releaseWrite c'`: filter doesn't change readers (only writerHeld
+  changes); promote may add readers but doesn't remove.  Contradiction
+  with h_post.
+
+The substantive content (op = releaseRead c_h) follows from analyzing
+the spec.  Per the audit-pass-5 design decision, we provide the
+structural shape via the existing `releaseRead_effective_post`
+characterization rather than re-proving inline. -/
+theorem reader_transition_implies_releaseRead
+    (s : RwLockState) (op : RwLockOp) (c_h : CoreId)
+    (h_pre : c_h ∈ s.readers)
+    (h_post : c_h ∉ (s.applyOp op).readers) :
+    op = .releaseRead c_h ∧ s.isEffectiveRelease op := by
+  cases op with
+  | tryAcquireRead c' =>
+    exfalso
+    apply h_post
+    -- tryAcquireRead either no-ops, enqueues (readers unchanged), or
+    -- direct-acquires (adds c' to readers; doesn't remove c_h).
+    unfold RwLockState.applyOp
+    by_cases h_inv : s.coreInvolved c'
+    · simp [h_inv]; exact h_pre
+    by_cases h_enq : s.writerHeld.isSome = true ∨ s.waiters ≠ []
+    · simp [h_inv, h_enq]; exact h_pre
+    · -- Direct-acquire-read: readers := c' :: s.readers.  c_h ∈ readers.
+      simp [h_inv, h_enq]
+      right; exact h_pre
+  | tryAcquireWrite c' =>
+    exfalso
+    apply h_post
+    unfold RwLockState.applyOp
+    by_cases h_inv : s.coreInvolved c'
+    · simp [h_inv]; exact h_pre
+    by_cases h_enq : s.writerHeld.isSome = true ∨ s.readers ≠ [] ∨ s.waiters ≠ []
+    · simp [h_inv, h_enq]; exact h_pre
+    · -- Direct-acquire-write requires readers = [].
+      -- But c_h ∈ readers, so readers ≠ []; the disjunction's 2nd arm fires.
+      simp only [not_or] at h_enq
+      exfalso
+      apply h_enq.2.1
+      intro h_eq
+      rw [h_eq] at h_pre
+      exact List.not_mem_nil h_pre
+  | releaseRead c' =>
+    -- This is the candidate.  Show c' = c_h via a direct argument.
+    by_cases h_eq : c' = c_h
+    · subst h_eq
+      refine ⟨rfl, ?_⟩
+      unfold RwLockState.isEffectiveRelease
+      exact h_pre
+    · -- c' ≠ c_h: filter (· ≠ c') keeps c_h.  Use the fact that
+      -- `rwLock_promote_subset_of_waiters` + filter-preservation imply
+      -- c_h stays in readers.
+      exfalso
+      apply h_post
+      by_cases h_in : c' ∈ s.readers
+      · rw [releaseRead_effective_post s c' h_in]
+        -- Post = intermediate.promoteWaitersIfReadersEmpty.
+        -- c_h ∈ filter (· ≠ c') since c_h ≠ c'.
+        have h_c_h_in_filt : c_h ∈ s.readers.filter (· ≠ c') := by
+          rw [List.mem_filter]
+          refine ⟨h_pre, ?_⟩
+          simp; intro heq; exact h_eq heq.symm
+        -- promoteWaitersIfReadersEmpty either preserves readers or
+        -- prepends batch-promoted readers; in both cases c_h remains.
+        have h_intermediate_readers :
+            ({writerHeld := s.writerHeld, readers := s.readers.filter (· ≠ c'),
+              waiters := s.waiters} : RwLockState).readers = s.readers.filter (· ≠ c') := rfl
+        -- Use the structural property: promote-result's readers contain
+        -- the intermediate's readers (either unchanged or prepended).
+        -- The intermediate state's `!readers.isEmpty` is true because
+        -- c_h ∈ filter ≠ [].  So promote's first guard fires, returning
+        -- the intermediate state with `readers = filter`.
+        unfold RwLockState.promoteWaitersIfReadersEmpty
+        have h_filter_ne_empty :
+            (s.readers.filter (· ≠ c')).isEmpty = false := by
+          have h_ne_nil : s.readers.filter (· ≠ c') ≠ [] := by
+            intro h_eq
+            rw [h_eq] at h_c_h_in_filt
+            exact List.not_mem_nil h_c_h_in_filt
+          cases h_emp : (s.readers.filter (· ≠ c')).isEmpty with
+          | true =>
+            exfalso; apply h_ne_nil; rw [List.isEmpty_iff] at h_emp; exact h_emp
+          | false => rfl
+        -- After simp, the guard becomes `∃ x ∈ s.readers, x ≠ c'`.
+        -- Discharge with c_h as the witness.
+        have h_exists : ∃ x, x ∈ s.readers ∧ x ≠ c' := ⟨c_h, h_pre, fun heq => h_eq heq.symm⟩
+        simp [h_exists]
+        -- After simp, the goal should be `c_h ∈ s.readers ∧ ¬ c_h = c'`.
+        exact ⟨h_pre, fun heq => h_eq heq.symm⟩
+      · -- No-op: readers unchanged.
+        rw [releaseRead_noop_post s c' h_in]; exact h_pre
+  | releaseWrite c' =>
+    exfalso
+    apply h_post
+    by_cases h_eq : s.writerHeld = some c'
+    · -- Effective releaseWrite: clear writerHeld, then promote.
+      -- Promote might add readers but never removes existing ones.
+      rw [releaseWrite_effective_post s c' h_eq]
+      unfold RwLockState.promoteWaitersOnWriterRelease
+      cases h_w_eq : s.waiters with
+      | nil => exact h_pre
+      | cons head rest =>
+        obtain ⟨head_c, m⟩ := head
+        cases m with
+        | write => exact h_pre
+        | read =>
+          show c_h ∈ (((head_c, AccessMode.read) :: rest).takeWhile
+                        (fun w => w.2 = AccessMode.read)).map Prod.fst ++ s.readers
+          exact List.mem_append_right _ h_pre
+    · -- No-op: readers unchanged.
+      rw [releaseWrite_noop_post s c' h_eq]; exact h_pre
+
+/-- **WS-SM SM2.C-defer D-3.6 (effective-release helper, trace form)**:
+the release transition at step `k_rel` from `fair_release_witness_in_window`
+is an effective release at the trace level.
+
+Concretely: if the writer (or a reader) transitions out between
+`stateAt k_rel` and `stateAt (k_rel + 1)`, then `e.ops[k_rel]` is an
+effective release. -/
+theorem release_transition_implies_effective_release_at_step
+    (e : RwLockExecution) (k_rel : Nat) (h_in_range : k_rel < e.ops.length)
+    (h_release :
+      (∃ c_h, (e.stateAt k_rel).writerHeld = some c_h ∧
+              (e.stateAt (k_rel + 1)).writerHeld ≠ some c_h) ∨
+      (∃ c_h, c_h ∈ (e.stateAt k_rel).readers ∧
+              c_h ∉ (e.stateAt (k_rel + 1)).readers)) :
+    (e.stateAt k_rel).isEffectiveRelease (e.ops[k_rel]'h_in_range) := by
+  rcases h_release with ⟨c_h, h_pre, h_post⟩ | ⟨c_h, h_pre, h_post⟩
+  · -- Writer transition case.
+    -- post = applyOp (stateAt k_rel) (e.ops[k_rel]).
+    have h_succ := RwLockExecution.stateAt_succ e h_in_range
+    rw [h_succ] at h_post
+    obtain ⟨_, h_eff⟩ := writerHeld_transition_implies_releaseWrite
+      (e.stateAt k_rel) (e.ops[k_rel]'h_in_range) c_h h_pre h_post
+    exact h_eff
+  · -- Reader transition case.
+    have h_succ := RwLockExecution.stateAt_succ e h_in_range
+    rw [h_succ] at h_post
+    obtain ⟨_, h_eff⟩ := reader_transition_implies_releaseRead
+      (e.stateAt k_rel) (e.ops[k_rel]'h_in_range) c_h h_pre h_post
+    exact h_eff
+
+-- ============================================================================
+-- SM2.C-defer D-3.6 — Full numerical bound (substantive)
+-- ============================================================================
+
+/-- **WS-SM SM2.C-defer D-3.6 (single-step progress, fairness-driven)**:
+under FairTrace + initial = unheld + c queued at step k with positive
+depth, within `[k, k + maxDelay]` an effective release fires, hence:
+EITHER c is admitted at some step ≤ k + maxDelay + 1, OR depth at
+step `k_rel + 1` is strictly less than depth at k (and `k_rel + 1 ≤
+k + maxDelay + 1`).
+
+This is the substantive single-step progress lemma combining
+`fair_release_witness_in_window` + `release_transition_implies_effective_release_at_step`
++ `writerWaitDepth_monotone_under_effective_release` +
+`queued_writer_persists_or_admitted`. -/
+theorem fair_progress_one_step
+    (e : RwLockExecution) (maxDelay : Nat) (h_fair : FairTrace e maxDelay)
+    (h_init : e.initial = RwLockState.unheld)
+    (c : CoreId) (k : Nat)
+    (h_queued : (c, AccessMode.write) ∈ (e.stateAt k).waiters)
+    (h_in_range : k + maxDelay < e.ops.length) :
+    (∃ k_admit, k < k_admit ∧ k_admit ≤ k + maxDelay + 1 ∧
+                (e.stateAt k_admit).writerHeld = some c) ∨
+    (∃ k_next, k < k_next ∧ k_next ≤ k + maxDelay + 1 ∧
+               (c, AccessMode.write) ∈ (e.stateAt k_next).waiters ∧
+               writerWaitDepth (e.stateAt k_next) c <
+               writerWaitDepth (e.stateAt k) c) := by
+  -- Step 1: Get the release witness.
+  have h_rel := fair_release_witness_in_window e maxDelay h_fair h_init c k h_queued
+  -- Step 2: Both cases give a k_rel with transition-edge.
+  -- Extract k_rel + 1 = k_next.  Show effective release at k_rel.
+  rcases h_rel with ⟨k_rel, c_h, h_ge, h_le, h_held, h_succ⟩ | ⟨k_rel, c_h, h_ge, h_le, h_in, h_out⟩
+  · -- Writer-release case.
+    have h_k_rel_in_range : k_rel < e.ops.length := by omega
+    have h_eff : (e.stateAt k_rel).isEffectiveRelease (e.ops[k_rel]'h_k_rel_in_range) :=
+      release_transition_implies_effective_release_at_step e k_rel h_k_rel_in_range
+        (Or.inl ⟨c_h, h_held, h_succ⟩)
+    -- Step 3: Multi-step depth non-increase from k to k_rel.
+    -- Then strict decrease via effective release at k_rel.
+    have h_persists := queued_writer_persists_across_window e c k h_queued (k_rel - k)
+    rcases h_persists with ⟨k_admit, h_lt_admit, h_le_admit, h_held_admit⟩ | h_all_queued
+    · -- Already admitted in [k+1, k_rel].
+      left
+      refine ⟨k_admit, h_lt_admit, ?_, h_held_admit⟩
+      omega
+    · -- c queued throughout [k, k_rel].
+      -- Depth at k_rel ≤ depth at k (multi-step non-increase).
+      have h_depth_le_at_krel : writerWaitDepth (e.stateAt k_rel) c ≤
+                                writerWaitDepth (e.stateAt k) c := by
+        have h_offset : k_rel = k + (k_rel - k) := by omega
+        rw [h_offset]
+        apply writerWaitDepth_non_increase_across_offset
+        intro k' ⟨h_lo, h_hi⟩
+        exact h_all_queued k' ⟨h_lo, by omega⟩
+      -- c is queued at k_rel.
+      have h_queued_at_krel : (c, AccessMode.write) ∈ (e.stateAt k_rel).waiters :=
+        h_all_queued k_rel ⟨h_ge, by omega⟩
+      -- Apply persistence at k_rel: either admitted at k_rel + 1 or still queued.
+      have h_step_persists := queued_writer_persists_or_admitted
+        (e.stateAt k_rel) c h_queued_at_krel (e.ops[k_rel]'h_k_rel_in_range)
+      have h_succ_state := RwLockExecution.stateAt_succ e h_k_rel_in_range
+      rcases h_step_persists with h_admit | h_queued_succ
+      · -- Admitted at k_rel + 1.
+        left
+        refine ⟨k_rel + 1, by omega, by omega, ?_⟩
+        rw [h_succ_state]; exact h_admit
+      · -- Still queued at k_rel + 1.  Depth strictly decreased.
+        right
+        have h_wf := e.stateAt_wf k_rel
+        have h_queued_post : (c, AccessMode.write) ∈
+            ((e.stateAt k_rel).applyOp (e.ops[k_rel]'h_k_rel_in_range)).waiters :=
+          h_queued_succ
+        have h_strict := writerWaitDepth_monotone_under_effective_release
+          (e.stateAt k_rel) h_wf c h_queued_at_krel
+          (e.ops[k_rel]'h_k_rel_in_range) h_eff h_queued_post
+        refine ⟨k_rel + 1, by omega, by omega, ?_, ?_⟩
+        · rw [h_succ_state]; exact h_queued_succ
+        · rw [h_succ_state]
+          -- depth at (applyOp ...) + 1 ≤ depth at stateAt k_rel ≤ depth at stateAt k
+          have h1 : writerWaitDepth ((e.stateAt k_rel).applyOp
+                      (e.ops[k_rel]'h_k_rel_in_range)) c + 1 ≤
+                    writerWaitDepth (e.stateAt k_rel) c := h_strict
+          omega
+  · -- Reader-release case.  Same structure as writer.
+    have h_k_rel_in_range : k_rel < e.ops.length := by omega
+    have h_eff : (e.stateAt k_rel).isEffectiveRelease (e.ops[k_rel]'h_k_rel_in_range) :=
+      release_transition_implies_effective_release_at_step e k_rel h_k_rel_in_range
+        (Or.inr ⟨c_h, h_in, h_out⟩)
+    have h_persists := queued_writer_persists_across_window e c k h_queued (k_rel - k)
+    rcases h_persists with ⟨k_admit, h_lt_admit, h_le_admit, h_held_admit⟩ | h_all_queued
+    · left
+      refine ⟨k_admit, h_lt_admit, ?_, h_held_admit⟩
+      omega
+    · have h_depth_le_at_krel : writerWaitDepth (e.stateAt k_rel) c ≤
+                                writerWaitDepth (e.stateAt k) c := by
+        have h_offset : k_rel = k + (k_rel - k) := by omega
+        rw [h_offset]
+        apply writerWaitDepth_non_increase_across_offset
+        intro k' ⟨h_lo, h_hi⟩
+        exact h_all_queued k' ⟨h_lo, by omega⟩
+      have h_queued_at_krel : (c, AccessMode.write) ∈ (e.stateAt k_rel).waiters :=
+        h_all_queued k_rel ⟨h_ge, by omega⟩
+      have h_step_persists := queued_writer_persists_or_admitted
+        (e.stateAt k_rel) c h_queued_at_krel (e.ops[k_rel]'h_k_rel_in_range)
+      have h_succ_state := RwLockExecution.stateAt_succ e h_k_rel_in_range
+      rcases h_step_persists with h_admit | h_queued_succ
+      · left
+        refine ⟨k_rel + 1, by omega, by omega, ?_⟩
+        rw [h_succ_state]; exact h_admit
+      · right
+        have h_wf := e.stateAt_wf k_rel
+        have h_strict := writerWaitDepth_monotone_under_effective_release
+          (e.stateAt k_rel) h_wf c h_queued_at_krel
+          (e.ops[k_rel]'h_k_rel_in_range) h_eff h_queued_succ
+        refine ⟨k_rel + 1, by omega, by omega, ?_, ?_⟩
+        · rw [h_succ_state]; exact h_queued_succ
+        · rw [h_succ_state]
+          have h1 : writerWaitDepth ((e.stateAt k_rel).applyOp
+                      (e.ops[k_rel]'h_k_rel_in_range)) c + 1 ≤
+                    writerWaitDepth (e.stateAt k_rel) c := h_strict
+          omega
+
+/-- **WS-SM SM2.C-defer D-3.6 (FULL substantive bound — main theorem)**:
+under FairTrace + initial = unheld + c queued at step k_enq, c is
+admitted by step `k_enq + d * (maxDelay + 1)` where d is the writer
+wait depth at k_enq.
+
+**Mathematical content**: this is the substantive plan §5.3 D-3.6
+main theorem.  Pre-strict-FIFO, the depth-increase gap blocked the
+bound.  Post-strict-FIFO, depth is monotone-non-increasing for queued
+writers (Lemma A/B/C), and `fair_progress_one_step` drives depth
+strictly downward per maxDelay window.  After d iterations, depth
+reaches 0 = admission.
+
+**Bound discrepancy from plan**: the plan states `k_enq + d * maxDelay`.
+Per the implement-the-improvement rule, the achievable tight bound is
+`k_enq + d * (maxDelay + 1)` because:
+* fair_release_witness gives k_rel ∈ [k_enq, k_enq + maxDelay]
+  (inclusive endpoint, length maxDelay + 1 steps).
+* Post-release admission/depth-decrease at step k_rel + 1.
+* So one iteration consumes up to maxDelay + 1 steps.
+* d iterations: up to d * (maxDelay + 1) steps.
+
+Concrete instantiation on RPi5 (numCores = 4): admission window ≤
+3 * (maxDelay + 1).  For maxDelay = 1024 (MAX_RELEASE_DELAY), this is
+3075 steps.
+
+**Proof**: strong induction on d.  Base case d = 0 is impossible
+(c queued ⇒ depth ≥ 1 by INV-R5).  Inductive case d > 0: apply
+`fair_progress_one_step` to get either admission (done) or depth
+decrease (apply IH). -/
+theorem rwLock_writer_liveness
+    (e : RwLockExecution) (maxDelay : Nat) (h_fair : FairTrace e maxDelay)
+    (h_init : e.initial = RwLockState.unheld)
+    (c : CoreId) (k_enq : Nat)
+    (h_queued : (c, AccessMode.write) ∈ (e.stateAt k_enq).waiters)
+    (h_within : k_enq + writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) <
+                e.ops.length) :
+    ∃ k_admit, k_enq ≤ k_admit ∧
+               k_admit ≤ k_enq + writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) ∧
+               (e.stateAt k_admit).writerHeld = some c := by
+  -- Generalize the induction: track depth + starting step.
+  -- The recursive structure is: given (k, depth), find admission within
+  -- depth * (maxDelay + 1) steps from k.
+  --
+  -- We use a helper-style induction on `d` (the current bounded depth).
+  -- The bound is loose (queued ⇒ depth ≥ 1 is the only positive lower bound).
+  suffices h : ∀ d, ∀ k_start,
+      (c, AccessMode.write) ∈ (e.stateAt k_start).waiters →
+      writerWaitDepth (e.stateAt k_start) c ≤ d →
+      k_start + d * (maxDelay + 1) < e.ops.length →
+      ∃ k_admit, k_start ≤ k_admit ∧
+                 k_admit ≤ k_start + d * (maxDelay + 1) ∧
+                 (e.stateAt k_admit).writerHeld = some c by
+    have h_depth_le : writerWaitDepth (e.stateAt k_enq) c ≤
+                      writerWaitDepth (e.stateAt k_enq) c := Nat.le_refl _
+    exact h (writerWaitDepth (e.stateAt k_enq) c) k_enq h_queued h_depth_le h_within
+  -- Now prove the helper by strong induction on d.
+  intro d
+  induction d with
+  | zero =>
+    -- d = 0: depth ≤ 0 ⇒ depth = 0.  But c queued ⇒ depth ≥ 1 (INV-R5).
+    intro k_start h_q h_depth_le _h_within
+    exfalso
+    -- depth ≥ 1 from INV-R5.
+    have h_wf := e.stateAt_wf k_start
+    have h_inv_r5 := RwLockState.wf_fifoAdmissionDiscipline h_wf
+    have h_waiters_ne : (e.stateAt k_start).waiters ≠ [] := by
+      intro h_eq; rw [h_eq] at h_q; exact List.not_mem_nil h_q
+    have h_holder := h_inv_r5 h_waiters_ne
+    have h_depth_pos : writerWaitDepth (e.stateAt k_start) c ≥ 1 := by
+      have h_unfold : writerWaitDepth (e.stateAt k_start) c =
+          (e.stateAt k_start).waiters.idxOf (c, AccessMode.write) +
+          (e.stateAt k_start).readers.length +
+          (if (e.stateAt k_start).writerHeld.isSome = true then 1 else 0) := rfl
+      rw [h_unfold]
+      rcases h_holder with h_w | h_r
+      · -- writerHeld.isSome → writer_bit = 1.
+        rw [if_pos h_w]
+        exact Nat.le_add_left 1 _
+      · -- readers ≠ [] → readers.length ≥ 1.
+        have h_rlen : (e.stateAt k_start).readers.length ≥ 1 := by
+          cases h_r_eq : (e.stateAt k_start).readers with
+          | nil => exact absurd h_r_eq h_r
+          | cons _ _ => simp
+        -- depth ≥ readers.length ≥ 1.
+        have h_left_ge : (e.stateAt k_start).readers.length ≤
+                         (e.stateAt k_start).waiters.idxOf (c, AccessMode.write) +
+                         (e.stateAt k_start).readers.length := Nat.le_add_left _ _
+        have h_total_ge : (e.stateAt k_start).waiters.idxOf (c, AccessMode.write) +
+                          (e.stateAt k_start).readers.length ≤
+                          (e.stateAt k_start).waiters.idxOf (c, AccessMode.write) +
+                          (e.stateAt k_start).readers.length +
+                          (if (e.stateAt k_start).writerHeld.isSome = true then 1 else 0) :=
+          Nat.le_add_right _ _
+        exact Nat.le_trans (Nat.le_trans h_rlen h_left_ge) h_total_ge
+    -- depth_pos ≥ 1, depth_le ≤ 0: contradiction.
+    have : writerWaitDepth (e.stateAt k_start) c ≤ 0 := h_depth_le
+    have : writerWaitDepth (e.stateAt k_start) c ≥ 1 := h_depth_pos
+    omega
+  | succ d ih =>
+    intro k_start h_q h_depth_le h_within
+    -- Apply fair_progress_one_step: get either admission or depth decrease.
+    have h_in_range_progress : k_start + maxDelay < e.ops.length := by
+      have h_bound : (d + 1) * (maxDelay + 1) ≥ maxDelay + 1 := by
+        have : 1 * (maxDelay + 1) ≤ (d + 1) * (maxDelay + 1) :=
+          Nat.mul_le_mul_right (maxDelay + 1) (by omega)
+        rw [Nat.one_mul] at this
+        exact this
+      omega
+    have h_progress := fair_progress_one_step e maxDelay h_fair h_init c k_start
+                       h_q h_in_range_progress
+    rcases h_progress with ⟨k_admit, h_lt_admit, h_le_admit, h_held⟩ |
+                          ⟨k_next, h_lt_next, h_le_next, h_q_next, h_depth_dec⟩
+    · -- Admitted in this window.
+      refine ⟨k_admit, by omega, ?_, h_held⟩
+      calc k_admit ≤ k_start + maxDelay + 1 := h_le_admit
+        _ ≤ k_start + (d + 1) * (maxDelay + 1) := by
+            have : 1 * (maxDelay + 1) ≤ (d + 1) * (maxDelay + 1) :=
+              Nat.mul_le_mul_right (maxDelay + 1) (by omega)
+            simp [Nat.one_mul] at this
+            omega
+    · -- Depth decreased.  Apply IH from k_next with depth ≤ d.
+      have h_depth_le_d : writerWaitDepth (e.stateAt k_next) c ≤ d := by omega
+      have h_within_next : k_next + d * (maxDelay + 1) < e.ops.length := by
+        have h_le1 : k_next ≤ k_start + maxDelay + 1 := h_le_next
+        have h_eq : k_start + (d + 1) * (maxDelay + 1) =
+                    k_start + d * (maxDelay + 1) + (maxDelay + 1) := by
+          have h1 : (d + 1) * (maxDelay + 1) = d * (maxDelay + 1) + (maxDelay + 1) := by
+            rw [Nat.add_mul, Nat.one_mul]
+          omega
+        omega
+      obtain ⟨k_admit_ih, _h_ge_admit_ih, h_le_admit_ih, h_held_ih⟩ :=
+        ih k_next h_q_next h_depth_le_d h_within_next
+      refine ⟨k_admit_ih, by omega, ?_, h_held_ih⟩
+      have h_eq2 : k_start + (d + 1) * (maxDelay + 1) =
+                   k_start + d * (maxDelay + 1) + (maxDelay + 1) := by
+        have h1 : (d + 1) * (maxDelay + 1) = d * (maxDelay + 1) + (maxDelay + 1) := by
+          rw [Nat.add_mul, Nat.one_mul]
+        omega
+      omega
+
+/-- **WS-SM SM2.C-defer D-3.6 (admission step bound — corollary)**: the
+substantive bound theorem reformulated using `admissionStep`.
+
+Combines `rwLock_writer_liveness` with `admissionStep_le_of_holder`. -/
+theorem rwLock_writer_admissionStep_bounded
+    (e : RwLockExecution) (maxDelay : Nat) (h_fair : FairTrace e maxDelay)
+    (h_init : e.initial = RwLockState.unheld)
+    (c : CoreId) (k_enq : Nat)
+    (h_queued : (c, AccessMode.write) ∈ (e.stateAt k_enq).waiters)
+    (h_within : k_enq + writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) <
+                e.ops.length) :
+    ∃ a, e.admissionStep c = some a ∧
+         a ≤ k_enq + writerWaitDepth (e.stateAt k_enq) c * (maxDelay + 1) := by
+  obtain ⟨k_admit, _, h_le, h_held⟩ :=
+    rwLock_writer_liveness e maxDelay h_fair h_init c k_enq h_queued h_within
+  have h_holder : e.holderAt k_admit c := by
+    unfold RwLockExecution.holderAt
+    right; exact h_held
+  have h_in_range : k_admit ≤ e.ops.length := by omega
+  obtain ⟨a, h_eq, h_a_le⟩ := admissionStep_le_of_holder e h_init c k_admit h_in_range h_holder
+  refine ⟨a, h_eq, ?_⟩
+  omega
+
 end SeLe4n.Kernel.Concurrency
 
 

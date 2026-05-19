@@ -110,6 +110,15 @@ open SeLe4n.Kernel.Concurrency
 #check @fair_writer_release_witness
 #check @fair_reader_release_witness
 #check @fair_release_witness_in_window
+#check @writerHeld_transition_implies_releaseWrite
+#check @reader_transition_implies_releaseRead
+#check @release_transition_implies_effective_release_at_step
+#check @fair_progress_one_step
+#check @rwLock_writer_liveness
+#check @rwLock_writer_admissionStep_bounded
+
+-- D-3 acceptance gate (Decidable instance for FairTrace)
+#check @FairTrace.decidable
 
 -- D-4.9 FULL MAIN THEOREM (NEW — bisim infrastructure)
 #check @concreteFoldBlock
