@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-deferred-planning-f2VYX",
-      "commit_sha": "4074edafd3e2df045481550e61c3910ad881852c",
-      "tree_sha": "05af0f5e42dcdd27301d2a937b8247cd30a4ed71",
-      "committed_at_utc": "2026-05-19T04:00:39+00:00"
+      "commit_sha": "4c938c2c6ba809d21e1b545fe47b6b712e6da781",
+      "tree_sha": "d6f2b94ccd66adaa33b580ec9ac13b2e50724826",
+      "committed_at_utc": "2026-05-19T04:45:33+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "13eb6eaf8a0888342bfcf35e511f89b0fdf8b1b79f1a1bde1578d5589e395a7f"
+    "source_digest": "50e418aeff8b2e030b7473a9f30afff95a0395f7095e7275099da6f4ede05480"
   },
   "summary": {
     "module_count": 217,
-    "declaration_count": 7219
+    "declaration_count": 7232
   },
   "readme_sync": {
     "version": "0.31.9",
     "lean_toolchain": "v4.28.0",
     "production_files": 182,
-    "production_loc": 125871,
+    "production_loc": 126443,
     "test_files": 35,
-    "test_loc": 24403,
-    "proved_theorem_lemma_decls": 3659,
+    "test_loc": 24466,
+    "proved_theorem_lemma_decls": 3665,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -14057,7 +14057,7 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.Locks.RwLock",
       "path": "SeLe4n/Kernel/Concurrency/Locks/RwLock.lean",
-      "declaration_count": 209,
+      "declaration_count": 216,
       "declarations": [
         {
           "kind": "namespace",
@@ -16592,7 +16592,7 @@
         {
           "kind": "theorem",
           "name": "rwLock_writer_liveness_bound_under_fairness",
-          "line": 5868,
+          "line": 5864,
           "called": [
             "CoreId",
             "FairTrace",
@@ -16605,6 +16605,140 @@
             "holderAt",
             "initial",
             "length",
+            "stateAt",
+            "writerWaitDepth"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "FairTrace.decidable",
+          "line": 5912,
+          "called": [
+            "FairTrace",
+            "RwLockExecution"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "writerHeld_transition_implies_releaseWrite",
+          "line": 5937,
+          "called": [
+            "CoreId",
+            "RwLockOp",
+            "RwLockState",
+            "RwLockState.applyOp",
+            "RwLockState.isEffectiveRelease",
+            "RwLockState.promoteWaitersIfReadersEmpty",
+            "applyOp",
+            "coreInvolved",
+            "filter",
+            "isEffectiveRelease",
+            "isEmpty",
+            "releaseRead_effective_post",
+            "releaseRead_noop_post",
+            "releaseWrite_noop_post"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "reader_transition_implies_releaseRead",
+          "line": 6048,
+          "called": [
+            "CoreId",
+            "RwLockOp",
+            "RwLockState",
+            "RwLockState.applyOp",
+            "RwLockState.isEffectiveRelease",
+            "RwLockState.promoteWaitersIfReadersEmpty",
+            "RwLockState.promoteWaitersOnWriterRelease",
+            "applyOp",
+            "coreInvolved",
+            "filter",
+            "head",
+            "isEffectiveRelease",
+            "isEmpty",
+            "releaseRead_effective_post",
+            "releaseRead_noop_post",
+            "releaseWrite_effective_post",
+            "releaseWrite_noop_post"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "release_transition_implies_effective_release_at_step",
+          "line": 6160,
+          "called": [
+            "RwLockExecution",
+            "RwLockExecution.stateAt_succ",
+            "isEffectiveRelease",
+            "length",
+            "reader_transition_implies_releaseRead",
+            "stateAt",
+            "writerHeld_transition_implies_releaseWrite"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "fair_progress_one_step",
+          "line": 6198,
+          "called": [
+            "CoreId",
+            "FairTrace",
+            "RwLockExecution",
+            "RwLockExecution.stateAt_succ",
+            "RwLockState.unheld",
+            "applyOp",
+            "fair_release_witness_in_window",
+            "initial",
+            "isEffectiveRelease",
+            "length",
+            "queued_writer_persists_across_window",
+            "queued_writer_persists_or_admitted",
+            "release_transition_implies_effective_release_at_step",
+            "stateAt",
+            "stateAt_wf",
+            "writerWaitDepth",
+            "writerWaitDepth_monotone_under_effective_release",
+            "writerWaitDepth_non_increase_across_offset"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rwLock_writer_liveness",
+          "line": 6334,
+          "called": [
+            "CoreId",
+            "FairTrace",
+            "RwLockExecution",
+            "RwLockState.unheld",
+            "RwLockState.wf_fifoAdmissionDiscipline",
+            "fair_progress_one_step",
+            "initial",
+            "le_refl",
+            "le_trans",
+            "length",
+            "stateAt",
+            "stateAt_wf",
+            "writerWaitDepth",
+            "zero"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rwLock_writer_admissionStep_bounded",
+          "line": 6449,
+          "called": [
+            "CoreId",
+            "FairTrace",
+            "RwLockExecution",
+            "RwLockExecution.holderAt",
+            "RwLockState.unheld",
+            "admissionStep",
+            "admissionStep_le_of_holder",
+            "holderAt",
+            "initial",
+            "length",
+            "rwLock_writer_liveness",
             "stateAt",
             "writerWaitDepth"
           ]
@@ -89813,7 +89947,7 @@
     {
       "module": "tests.RwLockDeferredSuite",
       "path": "tests/RwLockDeferredSuite.lean",
-      "declaration_count": 22,
+      "declaration_count": 28,
       "declarations": [
         {
           "kind": "namespace",
@@ -89822,6 +89956,7 @@
           "called": [
             "ConcreteRwLockOp",
             "FairTrace",
+            "FairTrace.decidable",
             "ListBlockBisim",
             "ListCorresponds",
             "MAX_RELEASE_DELAY",
@@ -89875,6 +90010,7 @@
             "concreteFoldBlock_sev",
             "concreteFoldBlock_wfe",
             "encodeRwLock_at_least_one_when_reader",
+            "fair_progress_one_step",
             "fair_reader_release_witness",
             "fair_release_witness_in_window",
             "fair_writer_release_witness",
@@ -89885,8 +90021,10 @@
             "queued_implies_holder_at_step",
             "queued_writer_persists_or_admitted",
             "reader_at_head_promoted",
+            "reader_transition_implies_releaseRead",
             "releaseRead_waiters_sublist",
             "releaseWrite_waiters_sublist",
+            "release_transition_implies_effective_release_at_step",
             "release_waiters_sublist",
             "rustImplementsRwLock",
             "rust_rwLock_refines_lean",
@@ -89898,6 +90036,8 @@
             "rwLock_bounded_wait_write_distinct_weak",
             "rwLock_fifo_admission_temporal",
             "rwLock_fifo_admission_temporal_structural",
+            "rwLock_writer_admissionStep_bounded",
+            "rwLock_writer_liveness",
             "rwLock_writer_liveness_bound_under_fairness",
             "rwLock_writer_liveness_count_bound",
             "rwLock_writer_liveness_existence",
@@ -89906,6 +90046,7 @@
             "tryAcquireRead_waiters_append_or_noop",
             "tryAcquireWrite_direct_acquire_shape",
             "tryAcquireWrite_waiters_append_or_noop",
+            "writerHeld_transition_implies_releaseWrite",
             "writerWaitDepth",
             "writerWaitDepth_bounded",
             "writerWaitDepth_componentBounded",
@@ -89919,7 +90060,7 @@
         {
           "kind": "def",
           "name": "c0",
-          "line": 166,
+          "line": 175,
           "called": [
             "CoreId"
           ]
@@ -89927,7 +90068,7 @@
         {
           "kind": "def",
           "name": "c1",
-          "line": 167,
+          "line": 176,
           "called": [
             "CoreId"
           ]
@@ -89935,7 +90076,7 @@
         {
           "kind": "def",
           "name": "c2",
-          "line": 168,
+          "line": 177,
           "called": [
             "CoreId"
           ]
@@ -89943,15 +90084,15 @@
         {
           "kind": "def",
           "name": "c3",
-          "line": 169,
+          "line": 178,
           "called": [
             "CoreId"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:172>",
-          "line": 172,
+          "name": "<anonymous:example:181>",
+          "line": 181,
           "called": [
             "RwLockState",
             "c0",
@@ -89963,8 +90104,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:178>",
-          "line": 178,
+          "name": "<anonymous:example:187>",
+          "line": 187,
           "called": [
             "RwLockState",
             "c0",
@@ -89976,8 +90117,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:184>",
-          "line": 184,
+          "name": "<anonymous:example:193>",
+          "line": 193,
           "called": [
             "RwLockState",
             "c0",
@@ -89989,8 +90130,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:191>",
-          "line": 191,
+          "name": "<anonymous:example:200>",
+          "line": 200,
           "called": [
             "applyOp",
             "c0"
@@ -89998,8 +90139,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:194>",
-          "line": 194,
+          "name": "<anonymous:example:203>",
+          "line": 203,
           "called": [
             "applyOp",
             "c0"
@@ -90007,8 +90148,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:198>",
-          "line": 198,
+          "name": "<anonymous:example:207>",
+          "line": 207,
           "called": [
             "applyOp",
             "c0",
@@ -90017,8 +90158,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:203>",
-          "line": 203,
+          "name": "<anonymous:example:212>",
+          "line": 212,
           "called": [
             "RwLockState",
             "c0",
@@ -90027,8 +90168,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:210>",
-          "line": 210,
+          "name": "<anonymous:example:219>",
+          "line": 219,
           "called": [
             "RwLockState",
             "c0",
@@ -90036,33 +90177,6 @@
             "c2",
             "none",
             "promoteWaitersOnWriterRelease"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:218>",
-          "line": 218,
-          "called": [
-            "c0",
-            "concreteApplyOp"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:221>",
-          "line": 221,
-          "called": [
-            "c0",
-            "concreteApplyOp"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:224>",
-          "line": 224,
-          "called": [
-            "c0",
-            "concreteApplyOp"
           ]
         },
         {
@@ -90076,8 +90190,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:231>",
-          "line": 231,
+          "name": "<anonymous:example:230>",
+          "line": 230,
           "called": [
             "c0",
             "concreteApplyOp"
@@ -90085,22 +90199,125 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:235>",
-          "line": 235,
+          "name": "<anonymous:example:233>",
+          "line": 233,
+          "called": [
+            "c0",
+            "concreteApplyOp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:236>",
+          "line": 236,
+          "called": [
+            "c0",
+            "concreteApplyOp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:240>",
+          "line": 240,
+          "called": [
+            "c0",
+            "concreteApplyOp"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:244>",
+          "line": 244,
           "called": [
             "MAX_RELEASE_DELAY"
           ]
         },
         {
+          "kind": "example",
+          "name": "<anonymous:example:253>",
+          "line": 253,
+          "called": [
+            "AccessMode",
+            "CoreId"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:258>",
+          "line": 258,
+          "called": [
+            "RwLockState",
+            "c0",
+            "c1",
+            "c2",
+            "length",
+            "none",
+            "promoteWaitersOnWriterRelease"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:268>",
+          "line": 268,
+          "called": [
+            "RwLockState",
+            "c0",
+            "c1",
+            "c2",
+            "none",
+            "writerWaitDepth"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:279>",
+          "line": 279,
+          "called": [
+            "RwLockState",
+            "c0",
+            "c1",
+            "c2",
+            "c3",
+            "writerWaitDepth"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:287>",
+          "line": 287,
+          "called": [
+            "RwLockState",
+            "c0",
+            "c1",
+            "c2",
+            "c3",
+            "writerWaitDepth"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:294>",
+          "line": 294,
+          "called": [
+            "RwLockState",
+            "c0",
+            "c1",
+            "c2",
+            "c3",
+            "none",
+            "writerWaitDepth"
+          ]
+        },
+        {
           "kind": "def",
           "name": "assertBool",
-          "line": 242,
+          "line": 305,
           "called": []
         },
         {
           "kind": "def",
           "name": "runDeferredChecks",
-          "line": 249,
+          "line": 312,
           "called": [
             "ConcreteRwLockOp",
             "MAX_RELEASE_DELAY",
@@ -90122,7 +90339,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 353,
+          "line": 416,
           "called": [
             "runDeferredChecks"
           ]

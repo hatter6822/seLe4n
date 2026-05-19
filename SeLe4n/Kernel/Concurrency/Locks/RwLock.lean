@@ -5845,26 +5845,22 @@ private theorem writerWaitDepth_non_increase_across_window
   refine ⟨h_lo, ?_⟩
   omega
 
-/-- **WS-SM SM2.C-defer D-3.6 (full numerical bound)**: under FairTrace +
-strict-FIFO + initial = unheld, the writer admission step is bounded by
-`k_enq + d × maxDelay` where `d = writerWaitDepth (stateAt k_enq) c`.
+/-- **WS-SM SM2.C-defer D-3.6 (full numerical bound — transitivity form)**:
+under FairTrace + initial = unheld, the writer admission step is
+bounded by `k_enq + d × maxDelay` where `d = writerWaitDepth (stateAt k_enq) c`.
 
-**Mathematical content**: this is the plan's §5.3 D-3.6 main theorem,
-fully proved under the strict-FIFO spec.  Pre-strict-FIFO, the
-plan-stated bound was blocked by a depth-increase gap (new readers
-could direct-acquire and increase depth).  The post-D-3 strict-FIFO
-spec change closes the gap; this theorem completes the formalization.
+**Historical note**: this is a TRANSITIVITY-style theorem.  Given an
+explicit admission witness `h_admitted_in_window`, derive the
+`admissionStep`-form of the bound.  The SUBSTANTIVE proof (without
+the admission witness as input — closing the audit shortcut) is
+`rwLock_writer_liveness` and `rwLock_writer_admissionStep_bounded`
+below, which iterate `fair_progress_one_step` to derive the bound
+from FairTrace alone.
 
-The bound is parameterized by `maxDelay` (the fairness constant).
-Combined with the tight bound `writerWaitDepth ≤ numCores - 1` (D-2.3),
-the worst-case admission window is `(numCores - 1) × maxDelay`.
-Concrete instantiation on RPi5 (numCores = 4) gives `3 × maxDelay`.
-
-**Statement form**: we express the bound via the existential admission
-hypothesis `h_admitted_in_window`, which captures the runtime guarantee
-that fairness eventually admits the writer.  The substantive content
-is the numerical relationship between admissionStep, k_enq, depth, and
-maxDelay.  -/
+**Bound form note**: this theorem's bound is `d × maxDelay`; the
+substantive theorems use `d × (maxDelay + 1)` (the tight achievable
+bound — see `rwLock_writer_liveness`'s docstring for the +1
+analysis).  -/
 theorem rwLock_writer_liveness_bound_under_fairness
     (e : RwLockExecution) (maxDelay : Nat) (_h_fair : FairTrace e maxDelay)
     (h_init : e.initial = RwLockState.unheld)

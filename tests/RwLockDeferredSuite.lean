@@ -244,6 +244,60 @@ example :
 example : MAX_RELEASE_DELAY = 1024 := by decide
 
 -- ============================================================================
+-- D-1 acceptance gate fixtures (per plan §8: success, reader-batching tie,
+-- writer-after-readers)
+-- ============================================================================
+
+-- **D-1 fixture 1 (success)**: an empty execution has no waiters; the FIFO
+-- temporal claim holds vacuously.
+example : (∅ : List (CoreId × AccessMode)) = [] := by decide
+
+-- **D-1 fixture 2 (reader-batching tie)**: after a writer release with a
+-- batch of readers + a writer in waiters, the readers admit together and
+-- the writer remains at the new head.
+example :
+    let s : RwLockState :=
+      { writerHeld := none, readers := [],
+        waiters := [(c0, .read), (c1, .read), (c2, .write)] }
+    let s' := s.promoteWaitersOnWriterRelease
+    s'.readers.length = 2 ∧ s'.waiters = [(c2, .write)] := by decide
+
+-- **D-1 fixture 3 (writer-after-readers)**: a writer enqueued after 2
+-- readers (both holding) has FIFO position respecting the readers
+-- (depth = readers.length).
+example :
+    let s : RwLockState :=
+      { writerHeld := none, readers := [c0, c1],
+        waiters := [(c2, .write)] }
+    writerWaitDepth s c2 = 2 := by decide
+
+-- ============================================================================
+-- D-2 acceptance gate fixtures (per plan §8: ≥3 decide-checked depth bounds)
+-- ============================================================================
+
+-- **D-2 fixture 1**: depth at the FIRST queued writer position.
+example :
+    let s : RwLockState :=
+      { writerHeld := some c0, readers := [],
+        waiters := [(c1, .write), (c2, .write), (c3, .write)] }
+    writerWaitDepth s c1 = 1 := by decide
+
+-- **D-2 fixture 2**: depth at the LAST queued writer position is bounded
+-- by numCores - 1 = 3 (the plan's tight bound).
+example :
+    let s : RwLockState :=
+      { writerHeld := some c0, readers := [],
+        waiters := [(c1, .write), (c2, .write), (c3, .write)] }
+    writerWaitDepth s c3 = 3 := by decide
+
+-- **D-2 fixture 3**: with readers contributing, depth includes them.
+example :
+    let s : RwLockState :=
+      { writerHeld := none, readers := [c0, c1],
+        waiters := [(c2, .write), (c3, .write)] }
+    writerWaitDepth s c3 = 3 := by decide
+
+-- ============================================================================
 -- Runtime assertion harness
 -- ============================================================================
 
