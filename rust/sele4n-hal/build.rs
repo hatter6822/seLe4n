@@ -882,6 +882,21 @@ fn scan_lock_bridge_rs_intact() {
         "pub const STATIC_RW_LOCK_POOL_SIZE: usize",
         "pub static STATIC_TICKET_LOCK_POOL:",
         "pub static STATIC_RW_LOCK_POOL:",
+        // SM2.D.4 trace counters: per-pool-slot atomic counters used
+        // by the cross-core test (SM2.D.8) to verify FFI serialisation.
+        // Each is `pub static` so a removal would fail the build (the
+        // helper functions reference them).  Pinning the textual
+        // presence here catches a refactor that drops them entirely.
+        "pub static TICKET_LOCK_ACQUIRE_COUNT:",
+        "pub static TICKET_LOCK_RELEASE_COUNT:",
+        "pub static RW_LOCK_ACQUIRE_READ_COUNT:",
+        "pub static RW_LOCK_RELEASE_READ_COUNT:",
+        "pub static RW_LOCK_ACQUIRE_WRITE_COUNT:",
+        "pub static RW_LOCK_RELEASE_WRITE_COUNT:",
+        // SM2.D handle decoders.
+        "pub const fn decode_ticket_lock_handle(",
+        "pub const fn decode_rw_lock_handle(",
+        // SM2.D.1 / SM2.D.2 / SM2.D.4 FFI helpers.
         "pub fn ticket_lock_static_handle(",
         "pub fn ticket_lock_acquire(",
         "pub fn ticket_lock_release(",
@@ -898,6 +913,7 @@ fn scan_lock_bridge_rs_intact() {
         "pub fn rw_lock_release_read_count(",
         "pub fn rw_lock_acquire_write_count(",
         "pub fn rw_lock_release_write_count(",
+        // SM2.D.7 theorem-count constant + build anchor.
         "pub const SM2_THEOREM_COUNT: usize = 22",
         "pub const SM2D_BUILD_ANCHOR:",
     ];
