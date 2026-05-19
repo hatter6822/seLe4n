@@ -894,7 +894,6 @@ mod cross_thread_tests {
     #[test]
     fn cross_thread_writer_fifo_order() {
         use std::sync::atomic::AtomicBool;
-        use std::time::Duration;
         const NUM_FOLLOWERS: usize = 3;
         let lock = Arc::new(QueuedRwLock::new());
         let release_signal = Arc::new(AtomicBool::new(false));
@@ -991,11 +990,16 @@ mod cross_thread_tests {
     #[test]
     fn cross_thread_reader_concurrency_witness() {
         use std::sync::atomic::AtomicBool;
-        use std::time::Duration;
         const NUM_READERS: usize = 3;
         let lock = Arc::new(QueuedRwLock::new());
         let writer_release_signal = Arc::new(AtomicBool::new(false));
         let reader_release_signal = Arc::new(AtomicBool::new(false));
+        // Audit-pass-10: replaced 50ms sleep heuristic with a
+        // deterministic `readers_in_cs` counter.  Each reader signals
+        // entry into the CS, then waits for every other reader to
+        // signal before observing.  Removes timing dependency under
+        // heavy parallel test load.
+        let readers_in_cs = Arc::new(AtomicU64::new(0));
         let observed_concurrent = Arc::new(AtomicU64::new(0));
 
         // T0 acquires writer.
@@ -1021,9 +1025,18 @@ mod cross_thread_tests {
         for tid in 1u8..=(NUM_READERS as u8) {
             let lock_c = Arc::clone(&lock);
             let obs_c = Arc::clone(&observed_concurrent);
+            let in_cs_c = Arc::clone(&readers_in_cs);
             let rdr_rel_c = Arc::clone(&reader_release_signal);
             handles.push(thread::spawn(move || {
                 lock_c.acquire_read(tid);
+                // Signal entry to the CS.
+                in_cs_c.fetch_add(1, StdOrdering::SeqCst);
+                // Wait for ALL readers to enter their CS (deterministic
+                // — no sleep).  This guarantees the observation below
+                // sees the maximum concurrent reader count.
+                while in_cs_c.load(StdOrdering::SeqCst) < NUM_READERS as u64 {
+                    core::hint::spin_loop();
+                }
                 // Observe state during CS — multiple readers should
                 // be concurrent thanks to the cascade.
                 let state = lock_c.peek_state();
@@ -1031,8 +1044,7 @@ mod cross_thread_tests {
                 if readers > 1 {
                     obs_c.fetch_add(1, StdOrdering::Relaxed);
                 }
-                // Hold until told to release (allowing other readers
-                // to join concurrently).
+                // Hold until told to release.
                 while !rdr_rel_c.load(StdOrdering::SeqCst) {
                     core::hint::spin_loop();
                 }
@@ -1048,8 +1060,20 @@ mod cross_thread_tests {
         writer_release_signal.store(true, StdOrdering::SeqCst);
         t0.join().unwrap();
 
-        // Give readers a moment to all hold concurrently and observe.
-        std::thread::sleep(Duration::from_millis(50));
+        // Wait until all readers have completed their observation.
+        // The reader_release_signal can only fire after we've confirmed
+        // every reader has both entered AND made its observation, so
+        // we now wait on `observed_concurrent` to be stable (every
+        // reader has either incremented it or skipped).  Since each
+        // reader makes its observation BEFORE waiting on the release
+        // signal, the readers_in_cs counter reaching NUM_READERS
+        // implies every reader has either observed or is about to.
+        // We synchronize by waiting until readers_in_cs has been
+        // observed at the maximum value — at this point all readers
+        // have made their observation.
+        while readers_in_cs.load(StdOrdering::SeqCst) < NUM_READERS as u64 {
+            core::hint::spin_loop();
+        }
         // Now release readers.
         reader_release_signal.store(true, StdOrdering::SeqCst);
         for h in handles {

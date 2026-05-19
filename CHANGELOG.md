@@ -261,7 +261,8 @@ theorem:
     + `writerWaitDepth_monotone_under_effective_release`.
 
 * `FairTrace.decidable`: D-3 acceptance gate — `Decidable` instance
-  for FairTrace.
+  for FairTrace.  Made fully **computable** in audit-pass-10 (see
+  below); closes the plan §6.1 zero-noncomputable discipline.
 
 * `rwLock_writer_admissionStep_bounded`: corollary expressing the
   bound via `admissionStep`.
@@ -296,6 +297,62 @@ Added explicit decide-checked fixtures per plan §8:
 * D-1 fixture 2 (reader-batching tie): batch promote.
 * D-1 fixture 3 (writer-after-readers): depth = readers.length.
 * D-2 fixtures 1-3: writerWaitDepth bounded by numCores - 1.
+
+### Audit-pass-10 (FairTrace.decidable made computable; closes zero-noncomputable discipline)
+
+Two refinements landed in audit-pass-10:
+
+* **`FairTrace.decidable` is now COMPUTABLE** (closes the plan §6.1
+  zero-noncomputable discipline).  Previously the instance used
+  `Classical.propDecidable _` (the only `noncomputable` declaration
+  in the entire kernel), which satisfied the gate at the type-class
+  level but could not be `decide`d in practice.  Three new
+  definitions and a bridge theorem replace this:
+
+  - `RwLockExecution.stateAt_of_ge_length`: foundational truncation
+    lemma — for any `k ≥ ops.length`, `e.stateAt k = e.finalState`.
+  - `fairTraceReaderBody` / `fairTraceWriterBody`: named per-step
+    bodies with antecedents grouped as a single `∧`-conjunction
+    (Lean's type-class synthesizer can derive `Decidable` for these,
+    where the original deeply-nested form failed).
+  - `fairTraceBoundedProp`: bounded form quantifying
+    `k_acq ≤ e.ops.length + 1` (auto-decidable: outer `∀ k_acq ≤ N`
+    via `Nat.decidableBallLE`; nested `∀ c : CoreId` via
+    `Fin.decidableForall`; per-step body via the helpers).
+  - `fairTrace_iff_bounded`: bridge theorem.  Forward direction is
+    trivial.  Backward direction uses the truncation lemma: if
+    `k_acq > ops.length + 1`, the antecedents
+    `c ∈ readers_{k_acq} ∧ c ∉ readers_{k_acq - 1}` reduce (via
+    `stateAt_of_ge_length`) to a direct contradiction
+    (`c ∈ finalState.readers ∧ c ∉ finalState.readers`), so the
+    implication is vacuously true.
+  - `FairTrace.decidable`: wired via `decidable_of_iff` over the
+    bridge.  No `Classical`, no `noncomputable`.
+
+  Decision-procedure complexity:
+  `O((ops.length + 1) × numCores × (maxDelay + 1) × stateOps)` —
+  suitable for `decide` discharge in acceptance-gate test fixtures
+  and runtime introspection.
+
+  Verification: 3 new `decide` examples in
+  `tests/RwLockDeferredSuite.lean` exercise the computable instance
+  end-to-end (FairTrace on empty execution, fairTraceBoundedProp
+  on empty execution, stateAt truncation past ops.length).
+  Tier-3 surface anchors added in
+  `scripts/test_tier3_invariant_surface.sh` for the new symbols.
+
+  Project-wide `noncomputable` count: 0 (was 1).
+
+* **Deterministic test sync** for
+  `cross_thread_reader_concurrency_witness`: replaced the residual
+  `thread::sleep(50ms)` heuristic with a `readers_in_cs` atomic
+  counter.  Each reader signals entry, waits for all readers to
+  signal, then observes — eliminating timing dependency under
+  heavy parallel test load.  Stress-tested 10/10 runs pass.
+
+* **Cleanup**: removed unused `std::time::Duration` import in
+  `cross_thread_writer_fifo_order` (residual from audit-pass-8's
+  sleep removal).
 
 ### Deferred to follow-on phases
 

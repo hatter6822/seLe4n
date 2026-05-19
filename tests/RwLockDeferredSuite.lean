@@ -117,8 +117,19 @@ open SeLe4n.Kernel.Concurrency
 #check @rwLock_writer_liveness
 #check @rwLock_writer_admissionStep_bounded
 
--- D-3 acceptance gate (Decidable instance for FairTrace)
+-- D-3 acceptance gate (Decidable instance for FairTrace) — COMPUTABLE.
+-- Closes the project's zero-noncomputable discipline: the Decidable
+-- instance bridges the unbounded FairTrace Prop to a bounded form via
+-- `fairTrace_iff_bounded`, then exploits `RwLockExecution.stateAt`'s
+-- truncation to `finalState` past `ops.length` (vacuity argument).
 #check @FairTrace.decidable
+#check @fairTraceReaderBody
+#check @fairTraceWriterBody
+#check @fairTraceBoundedProp
+#check @fairTrace_iff_bounded
+
+-- D-3.2 supporting truncation lemma
+#check @RwLockExecution.stateAt_of_ge_length
 
 -- D-4.9 FULL MAIN THEOREM (NEW — bisim infrastructure)
 #check @concreteFoldBlock
@@ -242,6 +253,36 @@ example :
 
 -- §4.5: FairTrace placeholder constant.
 example : MAX_RELEASE_DELAY = 1024 := by decide
+
+-- **D-3.2 computable Decidable witness**: an empty execution has no
+-- acquisitions at all, so FairTrace is vacuously true.  This `decide`
+-- ONLY succeeds because the Decidable instance is computable (the
+-- previous `Classical.propDecidable` version could not be `decide`d).
+example :
+    let e : RwLockExecution :=
+      { initial := RwLockState.unheld
+        ops := []
+        initial_reachable := RwLockReachable.base }
+    FairTrace e 8 := by decide
+
+-- **D-3.2 bounded form `decide` example**: the bounded form is also
+-- decidable on its own (independent witness that the computability
+-- chain works end-to-end).
+example :
+    let e : RwLockExecution :=
+      { initial := RwLockState.unheld
+        ops := []
+        initial_reachable := RwLockReachable.base }
+    fairTraceBoundedProp e 8 := by decide
+
+-- **D-3.2 truncation lemma applied**: an empty trace's `stateAt 100`
+-- equals its `finalState` (both are `unheld`).
+example :
+    let e : RwLockExecution :=
+      { initial := RwLockState.unheld
+        ops := []
+        initial_reachable := RwLockReachable.base }
+    e.stateAt 100 = e.finalState := by decide
 
 -- ============================================================================
 -- D-1 acceptance gate fixtures (per plan §8: success, reader-batching tie,

@@ -1622,6 +1622,12 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.rwLock_writer_liveness
 #check @SeLe4n.Kernel.Concurrency.rwLock_writer_admissionStep_bounded
 #check @SeLe4n.Kernel.Concurrency.FairTrace.decidable
+-- D-3.2 bounded form + bridge (computable decidability)
+#check @SeLe4n.Kernel.Concurrency.fairTraceReaderBody
+#check @SeLe4n.Kernel.Concurrency.fairTraceWriterBody
+#check @SeLe4n.Kernel.Concurrency.fairTraceBoundedProp
+#check @SeLe4n.Kernel.Concurrency.fairTrace_iff_bounded
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt_of_ge_length
 -- D-4.9 FULL bisim main theorem + per-block discharge lemmas (NEW)
 #check @SeLe4n.Kernel.Concurrency.concreteFoldBlock
 #check @SeLe4n.Kernel.Concurrency.blockBisim

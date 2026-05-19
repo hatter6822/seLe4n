@@ -2513,6 +2513,17 @@ theorem RwLockExecution.stateAt_zero (e : RwLockExecution) :
 theorem RwLockExecution.stateAt_length (e : RwLockExecution) :
     e.stateAt e.ops.length = e.finalState := rfl
 
+/-- **WS-SM SM2.C-defer D-3.2 (truncation lemma)**: states past
+`ops.length` all equal the final state.  Foundation for the
+computable `FairTrace.decidable` instance: it bounds the universally-
+quantified step index to `[0, ops.length + 1]`, making the predicate
+genuinely decidable without `Classical`. -/
+theorem RwLockExecution.stateAt_of_ge_length (e : RwLockExecution)
+    {k : Nat} (h : e.ops.length ≤ k) : e.stateAt k = e.finalState := by
+  unfold RwLockExecution.finalState
+  unfold RwLockExecution.stateAt
+  rw [List.take_of_length_le h, List.take_of_length_le (Nat.le_refl _)]
+
 /-- **WS-SM SM2.C-defer D-1.2**: an RwLockExecution's state after k+1 operations
 equals applyOp on the kth state with the kth operation.
 
@@ -5893,25 +5904,146 @@ theorem rwLock_writer_liveness_bound_under_fairness
 -- SM2.C-defer D-3.6 — Decidable instance for FairTrace (acceptance gate)
 -- ============================================================================
 
-/-- **WS-SM SM2.C-defer D-3 acceptance gate**: `FairTrace e maxDelay` is
-decidable for finite traces (closed under `∀ k_acq c` bounded by
-`e.ops.length + 1` since reader/writer states at higher steps are
-truncated).
+/-- **WS-SM SM2.C-defer D-3.2 (per-step reader body)**: the inner
+fairness body for a fixed `(k_acq, c)` reader observation, with
+antecedents factored into a single `∧`-conjunction so Lean's instance
+synth can derive `Decidable`. -/
+def fairTraceReaderBody (e : RwLockExecution) (maxDelay : Nat)
+    (k_acq : Nat) (c : CoreId) : Prop :=
+  (1 ≤ k_acq ∧
+   c ∈ (e.stateAt k_acq).readers ∧
+   c ∉ (e.stateAt (k_acq - 1)).readers) →
+  ∃ k_rel ≤ k_acq + maxDelay,
+    k_acq ≤ k_rel ∧
+    c ∈ (e.stateAt k_rel).readers ∧
+    c ∉ (e.stateAt (k_rel + 1)).readers
 
-The two fairness conjuncts (`reader_fairness`, `writer_fairness`) both
-universally-quantify over `(k_acq, c)`.  Since CoreId is `Fin numCores`
-(finite) and the relevant `k_acq` values are bounded by
-`e.ops.length + 1` (states at larger steps equal the final state),
-the predicate IS decidable.
+instance fairTraceReaderBody.decidable
+    (e : RwLockExecution) (maxDelay k_acq : Nat) (c : CoreId) :
+    Decidable (fairTraceReaderBody e maxDelay k_acq c) := by
+  unfold fairTraceReaderBody; exact inferInstance
 
-Note: this instance is a STRUCTURAL gate-closing decidability, not a
-computational efficient decision procedure.  It uses `Classical` for
-the inner ∃ over `k_rel` (which is also bounded).  Per Lean's
-convention, `Classical.dec` makes this decidable; the instance is
-useful as a type-class anchor for downstream consumers. -/
-noncomputable instance FairTrace.decidable
+/-- **WS-SM SM2.C-defer D-3.2 (per-step writer body)**: the inner
+fairness body for a fixed `(k_acq, c)` writer observation. -/
+def fairTraceWriterBody (e : RwLockExecution) (maxDelay : Nat)
+    (k_acq : Nat) (c : CoreId) : Prop :=
+  (1 ≤ k_acq ∧
+   (e.stateAt k_acq).writerHeld = some c ∧
+   (e.stateAt (k_acq - 1)).writerHeld ≠ some c) →
+  ∃ k_rel ≤ k_acq + maxDelay,
+    k_acq ≤ k_rel ∧
+    (e.stateAt k_rel).writerHeld = some c ∧
+    (e.stateAt (k_rel + 1)).writerHeld ≠ some c
+
+instance fairTraceWriterBody.decidable
+    (e : RwLockExecution) (maxDelay k_acq : Nat) (c : CoreId) :
+    Decidable (fairTraceWriterBody e maxDelay k_acq c) := by
+  unfold fairTraceWriterBody; exact inferInstance
+
+/-- **WS-SM SM2.C-defer D-3.2 (bounded form)**: `FairTrace`'s
+`k_acq`-universal quantifier is bounded by `ops.length + 1` since any
+acquisition at step `k_acq > ops.length` would require a transition at
+step `k_acq - 1 ≥ ops.length`, which is impossible (states past
+`ops.length` all equal the final state per `stateAt_of_ge_length`).
+
+This bounded form quantifies `k_acq ≤ ops.length + 1`, making both
+fairness conjuncts genuinely decidable: the outer `∀ k_acq ≤ N` is
+auto-decidable via `Nat.decidableBallLE`; the nested `∀ c : CoreId` is
+decidable because `CoreId = Fin numCores`; the per-step bodies are
+decidable per the helper instances above.
+
+This is the computable witness that bridges `FairTrace` to a real
+`Decidable` instance — see `fairTrace_iff_bounded` and
+`FairTrace.decidable` below. -/
+def fairTraceBoundedProp (e : RwLockExecution) (maxDelay : Nat) : Prop :=
+  (∀ k_acq, k_acq ≤ e.ops.length + 1 → ∀ c : CoreId,
+    fairTraceReaderBody e maxDelay k_acq c) ∧
+  (∀ k_acq, k_acq ≤ e.ops.length + 1 → ∀ c : CoreId,
+    fairTraceWriterBody e maxDelay k_acq c)
+
+instance fairTraceBoundedProp.decidable (e : RwLockExecution) (maxDelay : Nat) :
+    Decidable (fairTraceBoundedProp e maxDelay) := by
+  unfold fairTraceBoundedProp
+  exact inferInstance
+
+/-- **WS-SM SM2.C-defer D-3.2 (bridge)**: `FairTrace e maxDelay` is
+logically equivalent to its bounded form.  Forward direction is
+trivial (any unbounded witness gives a bounded one).  Backward
+direction uses the truncation lemma `stateAt_of_ge_length`: if
+`k_acq > ops.length + 1`, the antecedents `c ∈ readers_{k_acq}` and
+`c ∉ readers_{k_acq - 1}` reduce to `c ∈ finalState.readers` and
+`c ∉ finalState.readers` — a direct contradiction, so the implication
+is vacuously true. -/
+theorem fairTrace_iff_bounded (e : RwLockExecution) (maxDelay : Nat) :
+    FairTrace e maxDelay ↔ fairTraceBoundedProp e maxDelay := by
+  constructor
+  · intro h_fair
+    refine ⟨?_, ?_⟩
+    · intro k_acq _h_k_acq_le c
+      unfold fairTraceReaderBody
+      intro ⟨h_k_acq_ge, h_c_in, h_c_not_prev⟩
+      obtain ⟨k_rel, h_kacq_le_krel, h_krel_le, h_c_in_rel, h_c_out_rel⟩ :=
+        h_fair.reader_fairness k_acq c h_k_acq_ge h_c_in h_c_not_prev
+      exact ⟨k_rel, h_krel_le, h_kacq_le_krel, h_c_in_rel, h_c_out_rel⟩
+    · intro k_acq _h_k_acq_le c
+      unfold fairTraceWriterBody
+      intro ⟨h_k_acq_ge, h_wh, h_wh_not_prev⟩
+      obtain ⟨k_rel, h_kacq_le_krel, h_krel_le, h_wh_rel, h_wh_out_rel⟩ :=
+        h_fair.writer_fairness k_acq c h_k_acq_ge h_wh h_wh_not_prev
+      exact ⟨k_rel, h_krel_le, h_kacq_le_krel, h_wh_rel, h_wh_out_rel⟩
+  · intro ⟨h_r, h_w⟩
+    refine ⟨?_, ?_⟩
+    · intro k_acq c h_k_acq_ge h_c_in h_c_not_prev
+      by_cases h_k : k_acq ≤ e.ops.length + 1
+      · have h_body := h_r k_acq h_k c
+        unfold fairTraceReaderBody at h_body
+        obtain ⟨k_rel, h_krel_le, h_kacq_le_krel, h_c_in_rel, h_c_out_rel⟩ :=
+          h_body ⟨h_k_acq_ge, h_c_in, h_c_not_prev⟩
+        exact ⟨k_rel, h_kacq_le_krel, h_krel_le, h_c_in_rel, h_c_out_rel⟩
+      · -- k_acq > ops.length + 1: contradiction via truncation.
+        exfalso
+        have h_k_gt : e.ops.length + 1 < k_acq := Nat.lt_of_not_le h_k
+        have h_ge1 : e.ops.length ≤ k_acq := by omega
+        have h_ge2 : e.ops.length ≤ k_acq - 1 := by omega
+        rw [RwLockExecution.stateAt_of_ge_length e h_ge1] at h_c_in
+        rw [RwLockExecution.stateAt_of_ge_length e h_ge2] at h_c_not_prev
+        exact h_c_not_prev h_c_in
+    · intro k_acq c h_k_acq_ge h_wh h_wh_not_prev
+      by_cases h_k : k_acq ≤ e.ops.length + 1
+      · have h_body := h_w k_acq h_k c
+        unfold fairTraceWriterBody at h_body
+        obtain ⟨k_rel, h_krel_le, h_kacq_le_krel, h_wh_rel, h_wh_out_rel⟩ :=
+          h_body ⟨h_k_acq_ge, h_wh, h_wh_not_prev⟩
+        exact ⟨k_rel, h_kacq_le_krel, h_krel_le, h_wh_rel, h_wh_out_rel⟩
+      · -- k_acq > ops.length + 1: contradiction via truncation.
+        exfalso
+        have h_k_gt : e.ops.length + 1 < k_acq := Nat.lt_of_not_le h_k
+        have h_ge1 : e.ops.length ≤ k_acq := by omega
+        have h_ge2 : e.ops.length ≤ k_acq - 1 := by omega
+        rw [RwLockExecution.stateAt_of_ge_length e h_ge1] at h_wh
+        rw [RwLockExecution.stateAt_of_ge_length e h_ge2] at h_wh_not_prev
+        exact h_wh_not_prev h_wh
+
+/-- **WS-SM SM2.C-defer D-3.2 (acceptance gate, computable)**:
+`FairTrace e maxDelay` is genuinely decidable for finite traces — no
+`Classical` axioms, no `noncomputable`.  Closes the project's
+zero-noncomputable discipline (the kernel has zero `noncomputable`
+declarations after this instance).
+
+The decision procedure walks the bounded form via
+`fairTrace_iff_bounded` ↔ `fairTraceBoundedProp.decidable`:
+* enumerate `k_acq ∈ [0, e.ops.length + 1]` (at most `ops.length + 2` values)
+* enumerate `c ∈ CoreId` (exactly `numCores` values)
+* check the antecedents (List membership / Option equality, all decidable)
+* if antecedents hold, enumerate `k_rel ∈ [k_acq, k_acq + maxDelay]`
+  and check existence of a transition.
+
+Worst-case complexity: `O((ops.length + 1) × numCores × (maxDelay + 1) × stateOps)`
+where `stateOps` is the cost of `stateAt`.  Suitable for `decide`
+discharge in acceptance-gate test fixtures and runtime introspection. -/
+instance FairTrace.decidable
     (e : RwLockExecution) (maxDelay : Nat) : Decidable (FairTrace e maxDelay) :=
-  Classical.propDecidable _
+  decidable_of_iff _ (fairTrace_iff_bounded e maxDelay).symm
 
 -- ============================================================================
 -- SM2.C-defer D-3.6 — Release transition implies effective release
