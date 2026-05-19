@@ -2783,8 +2783,12 @@ private theorem waiters_nodup_of_wf
   nodup_of_nodup_map_fst_local s.waiters (s.wf_waitersCoresNodup h)
 
 /-- **WS-SM SM2.C-defer helper**: for a Nodup list with member `x`, the
-filter `(· ≠ x)` reduces length by exactly 1. -/
-private theorem filter_ne_length_of_nodup
+filter `(· ≠ x)` reduces length by exactly 1.
+
+Promoted from `private` to `theorem` (D-4.9 follow-on): the lemma is
+consumed by `blockBisim_releaseRead_no_promote` in `RwLockRefinement.lean`
+for the bisim discharge. -/
+theorem filter_ne_length_of_nodup
     {α : Type _} [DecidableEq α] (l : List α) (h_nodup : l.Nodup)
     (x : α) (h_in : x ∈ l) :
     (l.filter (· ≠ x)).length + 1 = l.length := by
@@ -3540,7 +3544,7 @@ private def nodup_of_nodup_map_fst
 
 /-- **WS-SM SM2.C-defer helper**: characterization of release-read
 post-state when `c ∈ readers` (the effective-release branch). -/
-private theorem releaseRead_effective_post (s : RwLockState) (c : CoreId)
+theorem releaseRead_effective_post (s : RwLockState) (c : CoreId)
     (h_in : c ∈ s.readers) :
     s.applyOp (.releaseRead c) =
     ({ writerHeld := s.writerHeld,

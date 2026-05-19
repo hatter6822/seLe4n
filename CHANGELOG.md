@@ -134,12 +134,60 @@ The strict-FIFO spec change ripples through the following theorems
 * `rwLockSim_preserved_by_direct_acquire_read/write`: signatures
   match the tightened shape lemmas.
 
+### D-4.9 full bisim main theorem (NEW)
+
+Beyond the partial forms shipped at SM2.C-defer initial landing
+(`rwLockSim_preserved_by_direct_acquire_read/write`,
+`_by_noop_chain`), the FULL bisimulation main theorem
+`rust_rwLock_refines_lean` is now landed in
+`SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean`.
+
+**Statement**: for any abstract op-list and corresponding concrete
+block-list (via `ListCorresponds`), if every block satisfies the
+per-block bisim obligation (`ListBlockBisim`), then the abstract
+`applyOp` fold and the concrete `concreteApplyOp` fold produce
+sim-related states.
+
+**Why an explicit `ListBlockBisim` hypothesis**: the bare
+`opCorresponds` inductive in `RwLock.lean` permits CAS constructors
+with arbitrary `expected` / `new` parameters (e.g., `tryRead_success
+c e n` for any `e n : UInt64`).  Without state-awareness, a trace
+with `tryRead_success c 999 999` would have the abstract direct-
+acquire but the concrete CAS fail.  `ListBlockBisim` makes the
+state-consistency explicit at each block; an honest Rust trace
+satisfies it by construction (the impl's load-then-CAS-with-loaded-
+value protocol ensures `e = state`).
+
+**Per-block discharge lemmas landed** (12 total):
+- `blockBisim_of_noop`: abstract no-op + concrete state-preserving.
+- `blockBisim_tryRead_success`: load + CAS-success with valid params.
+- `blockBisim_tryRead_cas_fail_chain`: CAS-failure (state ≠ expected).
+- `blockBisim_tryRead_park_retry_chain`: load + wfeWait + recurse.
+- `blockBisim_tryWrite_success`: writer-acquire success.
+- `blockBisim_releaseRead_no_promote`: effective releaseRead with
+  readers.length ≥ 2 (wf-required for Nodup-based filter length).
+- `blockBisim_releaseRead_no_promote_with_sev`: SEV-emitted variant.
+- `blockBisim_releaseWrite_no_sev_empty_queue`: empty-queue release.
+- `blockBisim_releaseWrite_with_sev_empty_queue`: SEV-emitted variant.
+- `concreteFoldBlock_load/wfe/sev`: state-preserving op simplifiers.
+
+**Composition with existing partial forms**: the per-block
+obligations are discharged via the existing
+`rwLockSim_preserved_by_direct_acquire_read/write` + state-preservation
+lemmas + the new discharge helpers.
+
+**Helper lemmas exposed from `private` for D-4.9 consumers**:
+- `filter_ne_length_of_nodup` (RwLock.lean): filter (· ≠ x) on
+  Nodup list with member x has length pre-1.
+- `releaseRead_effective_post` (RwLock.lean): post-state
+  characterization for effective releaseRead.
+
 ### Deferred to follow-on phases
 
-The full transition-edge-form D-1.9 and full bisim D-4.9 require
-additional proof work that builds on the foundations landed here;
-the substantive partial forms are sufficient for SM3 consumer
-adoption.  D-3.6 was FULLY landed via the strict-FIFO spec change.
+The full transition-edge-form D-1.9 is ALREADY LANDED at v0.31.2
+(commit 6ad2dbb).  D-3.6 was FULLY landed via the strict-FIFO spec
+change.  D-4.9 is now FULLY LANDED via the `ListBlockBisim`-based
+formulation.  All planned XL items closed.
 
 ## Unreleased — WS-SM Phase SM2.C landing (verified RwLock primitive)
 

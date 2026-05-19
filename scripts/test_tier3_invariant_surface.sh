@@ -1611,6 +1611,21 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.rwLock_writer_liveness_existence
 #check @SeLe4n.Kernel.Concurrency.rwLock_writer_liveness_count_bound
 #check @SeLe4n.Kernel.Concurrency.rwLock_writer_liveness_bound_under_fairness
+-- D-4.9 FULL bisim main theorem + per-block discharge lemmas (NEW)
+#check @SeLe4n.Kernel.Concurrency.concreteFoldBlock
+#check @SeLe4n.Kernel.Concurrency.blockBisim
+#check @SeLe4n.Kernel.Concurrency.ListBlockBisim
+#check @SeLe4n.Kernel.Concurrency.rust_rwLock_refines_lean
+#check @SeLe4n.Kernel.Concurrency.rust_rwLock_refines_lean_via_rustImplementsRwLock
+#check @SeLe4n.Kernel.Concurrency.blockBisim_of_noop
+#check @SeLe4n.Kernel.Concurrency.blockBisim_tryRead_success
+#check @SeLe4n.Kernel.Concurrency.blockBisim_tryRead_cas_fail_chain
+#check @SeLe4n.Kernel.Concurrency.blockBisim_tryRead_park_retry_chain
+#check @SeLe4n.Kernel.Concurrency.blockBisim_tryWrite_success
+#check @SeLe4n.Kernel.Concurrency.blockBisim_releaseRead_no_promote
+#check @SeLe4n.Kernel.Concurrency.blockBisim_releaseRead_no_promote_with_sev
+#check @SeLe4n.Kernel.Concurrency.blockBisim_releaseWrite_no_sev_empty_queue
+#check @SeLe4n.Kernel.Concurrency.blockBisim_releaseWrite_with_sev_empty_queue
 EOF'
 
 finalize_report

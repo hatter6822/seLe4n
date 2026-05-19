@@ -1265,6 +1265,39 @@ acquire-write / release-write = ~16 cases).  Each case is mechanical
 once the invariant is set up; the work is in scripting the case
 analysis without exploding the proof term.
 
+**LANDED (post-plan v0.31.9)**: the FULL main theorem
+`rust_rwLock_refines_lean` is proven in
+`SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean`.  Per-block
+discharge follows a clean per-constructor pattern via the
+`ListBlockBisim` consistency hypothesis.
+
+**Refinement to the plan-stated theorem**: the plan's bare
+`opCorresponds` predicate is insufficient — it permits CAS
+constructors with arbitrary `expected` / `new` parameters that
+diverge from the abstract state evolution.  Per CLAUDE.md's
+implement-the-improvement rule, we introduce an explicit
+`ListBlockBisim` consistency hypothesis that pairs each block with
+the per-block bisim obligation `blockBisim abs conc abs_op
+conc_block`.  The Rust impl trace satisfies this by construction.
+The main theorem becomes:
+
+```lean
+theorem rust_rwLock_refines_lean
+    (initial_abs : RwLockState) (initial_conc : UInt64)
+    (h_sim_init : rwLockSim initial_abs initial_conc.toNat)
+    (abs_ops : List RwLockOp)
+    (conc_blocks : List (List ConcreteRwLockOp))
+    (h_blocks_bisim : ListBlockBisim initial_abs initial_conc abs_ops conc_blocks) :
+    rwLockSim
+      (abs_ops.foldl RwLockState.applyOp initial_abs)
+      (concreteFoldBlock initial_conc conc_blocks.flatten).toNat
+```
+
+**Per-block discharge lemmas landed**: 12 lemmas covering every
+opCorresponds constructor's state-evolution behavior (success +
+cas-retry + park-retry + release no-sev + release with-sev).
+All proven without `sorry` or `axiom`.
+
 ### 5.5 D-5: Queued RwLock variant (8 sub-tasks)
 
 **Plan reference**: SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md §5.3 note,

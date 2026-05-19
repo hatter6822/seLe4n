@@ -105,6 +105,27 @@ open SeLe4n.Kernel.Concurrency
 #check @rwLock_writer_liveness_count_bound
 #check @rwLock_writer_liveness_bound_under_fairness
 
+-- D-4.9 FULL MAIN THEOREM (NEW — bisim infrastructure)
+#check @concreteFoldBlock
+#check @blockBisim
+#check @ListBlockBisim
+#check @rust_rwLock_refines_lean
+#check @rust_rwLock_refines_lean_via_rustImplementsRwLock
+
+-- D-4.9 per-block discharge lemmas (NEW)
+#check @concreteFoldBlock_load
+#check @concreteFoldBlock_wfe
+#check @concreteFoldBlock_sev
+#check @blockBisim_of_noop
+#check @blockBisim_tryRead_success
+#check @blockBisim_tryRead_cas_fail_chain
+#check @blockBisim_tryRead_park_retry_chain
+#check @blockBisim_tryWrite_success
+#check @blockBisim_releaseRead_no_promote
+#check @blockBisim_releaseRead_no_promote_with_sev
+#check @blockBisim_releaseWrite_no_sev_empty_queue
+#check @blockBisim_releaseWrite_with_sev_empty_queue
+
 -- D-4 concrete event model
 #check @ConcreteRwLockOp
 #check @concreteApplyOp
@@ -298,6 +319,24 @@ def runDeferredChecks : IO Unit := do
     (decide (writerWaitDepth post_state c2 = 1))
   assertBool "D-2.4: monotone: post(c2) + 1 ≤ pre(c2)"
     (decide (writerWaitDepth post_state c2 + 1 ≤ writerWaitDepth pre_state c2))
+
+  IO.println "--- D-4.9 bisim (concrete trace) ---"
+  -- Verify concreteFoldBlock on a simple block.
+  -- Block: [.load c0, .casAcquireRead c0 0 1] from concrete state 0.
+  -- load doesn't change state; CAS-success with expected=0 returns 1.
+  let conc_block : List ConcreteRwLockOp := [.load c0, .casAcquireRead c0 0 1]
+  let conc_post : UInt64 := concreteFoldBlock 0 conc_block
+  assertBool "D-4.9: concreteFoldBlock [load, casAcquireRead 0 1] from state 0 = 1"
+    (decide (conc_post = 1))
+  -- Verify concreteFoldBlock on an empty block.
+  assertBool "D-4.9: concreteFoldBlock [] from state 42 = 42"
+    (decide (concreteFoldBlock 42 [] = 42))
+  -- Verify load is state-preserving.
+  assertBool "D-4.9: concreteFoldBlock_load preserves state"
+    (decide (concreteFoldBlock 0xFEEDBEEF [.load c0] = 0xFEEDBEEF))
+  -- Verify wfeWait is state-preserving.
+  assertBool "D-4.9: concreteFoldBlock_wfe preserves state"
+    (decide (concreteFoldBlock 0xCAFE [.wfeWait c0] = 0xCAFE))
 
   IO.println "==============================="
   IO.println "All SM2.C-defer D-1..D-4 checks PASS."
