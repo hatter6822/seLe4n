@@ -153,6 +153,15 @@ def mkTicketLockHandle (idx : Fin staticTicketLockPoolSize) : TicketLockHandle :
       rw [hUInt64]; exact h
   }
 
+/-- **WS-SM SM2.D.1**: `Inhabited` instance — default to slot 0.
+
+    Audit-pass-3: ties the default to the smallest valid index so a
+    `default : TicketLockHandle` is always a valid (non-fail-closed)
+    handle.  Useful for downstream consumers that need a placeholder
+    value during construction. -/
+instance : Inhabited TicketLockHandle :=
+  ⟨mkTicketLockHandle ⟨0, staticTicketLockPoolSize_pos⟩⟩
+
 /-- **WS-SM SM2.D.2**: typed handle to a static RwLock.
 
     Symmetric to [`TicketLockHandle`]. -/
@@ -180,6 +189,10 @@ def mkRwLockHandle (idx : Fin staticRwLockPoolSize) : RwLockHandle :=
         omega
       rw [hUInt64]; exact h
   }
+
+/-- **WS-SM SM2.D.2**: `Inhabited` instance — default to slot 0. -/
+instance : Inhabited RwLockHandle :=
+  ⟨mkRwLockHandle ⟨0, staticRwLockPoolSize_pos⟩⟩
 
 -- ============================================================================
 -- §3 — Typed FFI wrappers (SM2.D.1 / SM2.D.2)
