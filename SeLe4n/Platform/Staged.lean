@@ -79,6 +79,12 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLock
 -- state and the Rust bit-packed AtomicU64 representation.  Documents
 -- the FIFO divergence and exports the simulation φ (`rwLockSim`).
 import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
+-- WS-SM SM2.D: TicketLock refinement bridge between the Lean abstract
+-- state and the Rust two-u64 concrete representation.  Defines
+-- `ticketLockSim` and exports the F-01 anchor theorem
+-- `rust_ticketLock_refines_lean` for the SM2.D.7 lockPrimitives
+-- aggregator.
+import SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement
 -- WS-SM SM2.D: typed lock FFI wrappers + RAII combinators.  Wraps the
 -- raw `Platform.FFI.ffi*` lock declarations into typed Lean APIs
 -- (`TicketLockHandle`, `RwLockHandle`, `withTicketLock`, `withReadLock`,

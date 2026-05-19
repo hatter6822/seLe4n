@@ -133,7 +133,9 @@ else
 fi
 
 # Check 5: Detect orphan Rust exports — every `ffi_(ticket_lock|rw_lock)_*`
-# in ffi.rs must be in EXPECTED_SYMBOLS.
+# in ffi.rs must be in EXPECTED_SYMBOLS.  Catches the case where an
+# FFI export was added on the Rust side but the EXPECTED_SYMBOLS list
+# (and thus the Lean @[extern] declarations) was not updated.
 echo
 echo "[bonus] Checking for orphan Rust lock FFI exports..."
 mapfile -t actual_rust_symbols < <(
@@ -149,6 +151,29 @@ for actual in "${actual_rust_symbols[@]}"; do
   done
   if [[ ${found} -eq 0 ]]; then
     echo "  ORPHAN Rust export: ${actual} (not in EXPECTED_SYMBOLS)" >&2
+    failures=$((failures + 1))
+  fi
+done
+
+# Check 6: Detect orphan Lean @[extern] declarations — every
+# `@[extern "ffi_(ticket_lock|rw_lock)_*"]` in Platform/FFI.lean must
+# be in EXPECTED_SYMBOLS.  Catches the case where a Lean declaration
+# was added without the corresponding Rust export.
+echo
+echo "[bonus] Checking for orphan Lean @[extern] declarations..."
+mapfile -t actual_lean_symbols < <(
+  grep -oP '@\[extern "\Kffi_(ticket|rw)_lock_[a-z_]+(?=")' "${FFI_LEAN}" | sort -u
+)
+for actual in "${actual_lean_symbols[@]}"; do
+  found=0
+  for expected in "${EXPECTED_SYMBOLS[@]}"; do
+    if [[ "${actual}" == "${expected}" ]]; then
+      found=1
+      break
+    fi
+  done
+  if [[ ${found} -eq 0 ]]; then
+    echo "  ORPHAN Lean @[extern]: ${actual} (not in EXPECTED_SYMBOLS)" >&2
     failures=$((failures + 1))
   fi
 done

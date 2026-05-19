@@ -37,6 +37,7 @@ SeLe4n.Kernel.Concurrency.LockPrimitives      # infra (WS-SM SM2.D.7 22-theorem 
 SeLe4n.Kernel.Concurrency.Locks.RwLock        # infra (WS-SM SM2.C abstract RwLock spec; SM3 first runtime exerciser)
 SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement # infra (WS-SM SM2.C.20 RwLock refinement bridge to Rust bit-packed state)
 SeLe4n.Kernel.Concurrency.Locks.TicketLock    # infra (WS-SM SM2.B abstract TicketLock spec; SM3 first runtime exerciser)
+SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement # infra (WS-SM SM2.D TicketLock refinement bridge — F-01 anchor)
 SeLe4n.Kernel.Concurrency.MemoryModel         # infra (WS-SM SM2.A abstract memory model; SM2.B/SM2.C first runtime exercisers)
 SeLe4n.Kernel.Concurrency.Sgi                 # infra (WS-SM SM0.H SgiKind)
 SeLe4n.Kernel.Concurrency.Runtime             # infra (WS-SM SM1.B.5 currentCoreId FFI wrapper; SMP-M4 Lean side)

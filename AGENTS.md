@@ -2231,10 +2231,68 @@ documentation lives under `docs/` and `docs/gitbook/`.
   "harden FIFO test against scheduler timing"); on hardware with
   real WFE the issue is moot.  Out of scope for SM2.D.
 
-  **Module reachability**: `Concurrency.LockBridge` and
-  `Concurrency.LockPrimitives` are staged via
+  **Module reachability**: `Concurrency.LockBridge`,
+  `Concurrency.LockPrimitives`, and
+  `Concurrency.Locks.TicketLockRefinement` are staged via
   `Platform/Staged.lean` + `staged_module_allowlist.txt`.  SM3+
   per-object locks will move them production-reached.
+
+  **Audit-pass-1 refinements** (post-initial-landing deep audit):
+  - **HIGH (encapsulation)**: replaced the raw-pointer cast against
+    `TicketLock`'s `repr(C)` layout (used by
+    `lock_bridge.rs::ticket_lock_peek_holder` to read its private
+    fields) with proper public methods `TicketLock::peek_next_ticket`
+    and `peek_serving`.  The pre-audit pattern was a soft contract —
+    a future refactor adding a debug field at the start of
+    `TicketLock` would silently invalidate the assumed offsets.  Two
+    new direct tests
+    (`sm2d1_peek_next_ticket_matches_internal_counter`,
+    `sm2d1_peek_serving_matches_internal_counter`) plus one
+    cross-check (`sm2d1_peek_invariant_serving_le_next_ticket`)
+    pin the accessor semantics.
+  - **MEDIUM (32-bit truncation defense)**: refactored
+    `decode_ticket_lock_handle` / `decode_rw_lock_handle` to do the
+    bound check in `u64` space BEFORE the `as usize` cast.  Sele4n
+    targets aarch64 (64-bit) so `usize == u64` and the cast is
+    identity; a hypothetical 32-bit port however would truncate
+    `handle` to 32 bits if cast first, silently aliasing
+    `0x1_0000_0001` to slot 1.  Mirrors the audit-pass-2 fix in
+    `ffi_per_core_*_count` (SM1.I.4).  New test
+    `sm2d_decode_handles_reject_u64_with_high_bits_aliasing_slot`
+    pins the rejection.
+  - **MEDIUM (test concurrency)**: unified the `SM2D_TRACE_TEST_MUTEX`
+    across `lock_bridge::runtime_tests` and `crate::ffi::tests`
+    (previously distinct mutex instances).  Both test modules
+    observe the same pool slots (0..2) with strict-equality
+    counter-delta assertions; under cargo's default parallel test
+    runner they could race, breaking the assertion.  The new
+    shared mutex (defined at lock_bridge module scope, exposed via
+    `pub(crate)`) provides a single serialisation point.
+  - **HIGH (refinement-theorem aliasing)**: removed the
+    SM2.D.7 aggregator's inline alias where
+    `rust_ticketLock_refines_lean` (F-01 in the plan) was pointing
+    at `ticketLock_release_acquire_pairing` for lack of a named
+    refinement theorem.  Per the
+    implement-the-improvement rule, the missing theorem is now
+    substantively implemented in NEW FILE
+    `SeLe4n/Kernel/Concurrency/Locks/TicketLockRefinement.lean`
+    (mirroring `RwLockRefinement.lean`'s structure) with
+    `TicketLockConcrete` struct, `ticketLockSim` simulation
+    relation, four per-operation preservation witnesses
+    (`ticketLockSim_unheld`,
+    `ticketLockSim_preserved_by_tryAcquire`,
+    `ticketLockSim_preserved_by_release`,
+    `ticketLockSim_preserved_by_observeServing`), and the F-01
+    aggregator theorem `rust_ticketLock_refines_lean`.  The
+    `lockPrimitives_substantive_identifiers_nodup` theorem (which
+    formerly excluded the refinement category to permit aliasing)
+    gains a strengthened sibling
+    `lockPrimitives_identifiers_nodup` covering ALL 22 entries.
+  - **LOW (cross-language symmetry)**: the
+    `scripts/check_lock_ffi_symmetry.sh` orphan checks now run in
+    BOTH directions (Lean → EXPECTED and Rust → EXPECTED),
+    catching the case where a declaration is added on one side
+    without updating the symbol list.
 
   **Items deferred past v1.0.0 with correctness impact**: NONE.
 

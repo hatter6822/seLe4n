@@ -1406,7 +1406,16 @@ mod tests {
     //     binding test pins the signature at compile time.
     // ========================================================================
 
-    static SM2D_FFI_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    // **WS-SM SM2.D audit-pass**: the shared serialisation mutex
+    // for SM2.D counter-observation tests lives in
+    // `crate::lock_bridge::SM2D_TRACE_TEST_MUTEX`.  This re-export
+    // makes `SM2D_TRACE_TEST_MUTEX` resolve from the test bodies
+    // below WITHOUT a fully-qualified path, and — critically —
+    // ties FFI-side observations to the SAME mutex instance that
+    // `lock_bridge::runtime_tests` uses.  Without the shared
+    // instance the two test modules would race on the same pool
+    // slots (0..2) and break counter-delta assertions.
+    use crate::lock_bridge::SM2D_TRACE_TEST_MUTEX;
 
     /// **SM2.D.5 test**: every SM2.D FFI export's signature is pinned.
     ///
@@ -1457,7 +1466,7 @@ mod tests {
     /// `ffi_ticket_lock_release` increments both counters by 1.
     #[test]
     fn sm2d1_ffi_ticket_lock_acquire_release_increments_counters() {
-        let _guard = SM2D_FFI_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SM2D_TRACE_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let h = ffi_ticket_lock_static_handle(0);
         let pre_a = ffi_ticket_lock_acquire_count(h);
         let pre_r = ffi_ticket_lock_release_count(h);
@@ -1471,7 +1480,7 @@ mod tests {
     /// `next_ticket` and `serving` into the same u64.
     #[test]
     fn sm2d1_ffi_ticket_lock_peek_holder_packs_state() {
-        let _guard = SM2D_FFI_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SM2D_TRACE_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let h = ffi_ticket_lock_static_handle(1);
         let pre = ffi_ticket_lock_peek_holder(h);
         let pre_next = pre >> 32;
@@ -1501,7 +1510,7 @@ mod tests {
     /// counters.
     #[test]
     fn sm2d2_ffi_rw_lock_read_cycle_increments_counters() {
-        let _guard = SM2D_FFI_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SM2D_TRACE_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let h = ffi_rw_lock_static_handle(0);
         let pre_a = ffi_rw_lock_acquire_read_count(h);
         let pre_r = ffi_rw_lock_release_read_count(h);
@@ -1515,7 +1524,7 @@ mod tests {
     /// counters.
     #[test]
     fn sm2d2_ffi_rw_lock_write_cycle_increments_counters() {
-        let _guard = SM2D_FFI_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SM2D_TRACE_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let h = ffi_rw_lock_static_handle(1);
         let pre_a = ffi_rw_lock_acquire_write_count(h);
         let pre_r = ffi_rw_lock_release_write_count(h);
@@ -1531,7 +1540,7 @@ mod tests {
     /// one reader bit set.
     #[test]
     fn sm2d2_ffi_rw_lock_snapshot_distinguishes_held() {
-        let _guard = SM2D_FFI_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = SM2D_TRACE_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         let h = ffi_rw_lock_static_handle(2);
         ffi_rw_lock_acquire_read(h);
         let snap = ffi_rw_lock_snapshot(h);

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/review-ffi-bridge-plan-traAL",
-      "commit_sha": "6fc47653b66a325ffc19efafa98618ea64dd73c8",
-      "tree_sha": "a9ff542b21a02bc0ddb4db422128b902e4527220",
-      "committed_at_utc": "2026-05-19T10:23:51-04:00"
+      "commit_sha": "e8e4d29227e6f0e3403c3f31221ca4af7bfe8843",
+      "tree_sha": "ee3a1f7ccb30594af68b070c69ec9e4b65a595c7",
+      "committed_at_utc": "2026-05-19T16:18:31+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "264efd418b6cc2e7f38216a55f531ffd4c604f4d2dfe3ce4d1ab725d5be6f5bd"
+    "source_digest": "a6e3030e3d8bc7a95b5a0a2368ba81bcf8983ae64d795f087e7c54cf1f78e6e8"
   },
   "summary": {
-    "module_count": 221,
-    "declaration_count": 7359
+    "module_count": 222,
+    "declaration_count": 7370
   },
   "readme_sync": {
     "version": "0.31.9",
     "lean_toolchain": "v4.28.0",
-    "production_files": 184,
-    "production_loc": 127512,
+    "production_files": 185,
+    "production_loc": 127775,
     "test_files": 37,
-    "test_loc": 25111,
-    "proved_theorem_lemma_decls": 3696,
+    "test_loc": 25125,
+    "proved_theorem_lemma_decls": 3702,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -14325,24 +14325,24 @@
     {
       "module": "SeLe4n.Kernel.Concurrency.LockPrimitives",
       "path": "SeLe4n/Kernel/Concurrency/LockPrimitives.lean",
-      "declaration_count": 12,
+      "declaration_count": 13,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Concurrency",
-          "line": 65,
+          "line": 66,
           "called": []
         },
         {
           "kind": "inductive",
           "name": "LockPrimitiveCategory",
-          "line": 68,
+          "line": 69,
           "called": []
         },
         {
           "kind": "structure",
           "name": "LockPrimitiveTheorem",
-          "line": 83,
+          "line": 84,
           "called": [
             "LockPrimitiveCategory"
           ]
@@ -14350,7 +14350,7 @@
         {
           "kind": "def",
           "name": "lockPrimitives",
-          "line": 97,
+          "line": 98,
           "called": [
             "LockPrimitiveTheorem",
             "happensBefore_antisymmetric",
@@ -14358,6 +14358,7 @@
             "happensBefore_transitive",
             "happens_before_partial_order",
             "rust_rwLock_refines_lean",
+            "rust_ticketLock_refines_lean",
             "rwLock_bounded_wait_read",
             "rwLock_bounded_wait_write",
             "rwLock_fifo_admission",
@@ -14379,7 +14380,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_count",
-          "line": 186,
+          "line": 182,
           "called": [
             "length",
             "lockPrimitives"
@@ -14388,7 +14389,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_memoryModel_count",
-          "line": 191,
+          "line": 187,
           "called": [
             "filter",
             "length",
@@ -14398,7 +14399,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_ticketLock_count",
-          "line": 197,
+          "line": 193,
           "called": [
             "filter",
             "length",
@@ -14408,7 +14409,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_rwLock_count",
-          "line": 203,
+          "line": 199,
           "called": [
             "filter",
             "length",
@@ -14418,7 +14419,7 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_refinement_count",
-          "line": 209,
+          "line": 205,
           "called": [
             "filter",
             "length",
@@ -14428,10 +14429,18 @@
         {
           "kind": "theorem",
           "name": "lockPrimitives_partition_sum",
-          "line": 216,
+          "line": 212,
           "called": [
             "filter",
             "length"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "lockPrimitives_identifiers_nodup",
+          "line": 232,
+          "called": [
+            "lockPrimitives"
           ]
         },
         {
@@ -18690,6 +18699,114 @@
             "releaseAndPromote",
             "ticketLock_releaseAndPromote_preserves_wf",
             "wf"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement",
+      "path": "SeLe4n/Kernel/Concurrency/Locks/TicketLockRefinement.lean",
+      "declaration_count": 10,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel.Concurrency",
+          "line": 77,
+          "called": []
+        },
+        {
+          "kind": "structure",
+          "name": "TicketLockConcrete",
+          "line": 86,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "TicketLockConcrete.unheld",
+          "line": 95,
+          "called": [
+            "TicketLockConcrete"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "ticketLockSim",
+          "line": 111,
+          "called": [
+            "TicketLockConcrete",
+            "TicketLockState",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "instance",
+          "name": "decidableTicketLockSim",
+          "line": 119,
+          "called": [
+            "TicketLockConcrete",
+            "TicketLockState",
+            "ticketLockSim"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ticketLockSim_unheld",
+          "line": 132,
+          "called": [
+            "TicketLockConcrete.unheld",
+            "TicketLockState.unheld",
+            "ticketLockSim"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ticketLockSim_preserved_by_tryAcquire",
+          "line": 145,
+          "called": [
+            "TicketLockConcrete",
+            "TicketLockState",
+            "size",
+            "ticketLockSim",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ticketLockSim_preserved_by_release",
+          "line": 176,
+          "called": [
+            "TicketLockConcrete",
+            "TicketLockState",
+            "size",
+            "ticketLockSim",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ticketLockSim_preserved_by_observeServing",
+          "line": 202,
+          "called": [
+            "TicketLockConcrete",
+            "TicketLockState",
+            "ticketLockSim"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rust_ticketLock_refines_lean",
+          "line": 232,
+          "called": [
+            "TicketLockConcrete",
+            "TicketLockConcrete.unheld",
+            "TicketLockState",
+            "TicketLockState.unheld",
+            "size",
+            "ticketLockSim",
+            "ticketLockSim_preserved_by_observeServing",
+            "ticketLockSim_preserved_by_release",
+            "ticketLockSim_preserved_by_tryAcquire",
+            "ticketLockSim_unheld"
           ]
         }
       ]
@@ -72884,13 +73001,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Staged",
-          "line": 143,
+          "line": 149,
           "called": []
         },
         {
           "kind": "def",
           "name": "stagedBuildAnchor",
-          "line": 149,
+          "line": 155,
           "called": []
         }
       ]
@@ -92797,11 +92914,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.SmpSurfaceAnchors",
-          "line": 37,
+          "line": 38,
           "called": [
             "LockPrimitiveCategory",
             "LockPrimitiveTheorem",
             "RwLockHandle",
+            "TicketLockConcrete",
+            "TicketLockConcrete.unheld",
             "TicketLockHandle",
             "acquireReadLock",
             "acquireReadLock_eq_ffi",
@@ -92829,6 +92948,7 @@
             "lockPrimitives",
             "lockPrimitives_count",
             "lockPrimitives_descriptions_nodup",
+            "lockPrimitives_identifiers_nodup",
             "lockPrimitives_memoryModel_count",
             "lockPrimitives_partition_sum",
             "lockPrimitives_refinement_count",
@@ -92852,6 +92972,7 @@
             "releaseTicketLock_eq_ffi",
             "releaseWriteLock",
             "releaseWriteLock_eq_ffi",
+            "rust_ticketLock_refines_lean",
             "rwLockAcquireReadCount",
             "rwLockAcquireWriteCount",
             "rwLockReleaseReadCount",
@@ -92866,6 +92987,11 @@
             "staticTicketLockPoolSize_pos",
             "ticketLockAcquireCount",
             "ticketLockReleaseCount",
+            "ticketLockSim",
+            "ticketLockSim_preserved_by_observeServing",
+            "ticketLockSim_preserved_by_release",
+            "ticketLockSim_preserved_by_tryAcquire",
+            "ticketLockSim_unheld",
             "withReadLock",
             "withReadLock_unfold",
             "withTicketLock",
@@ -92876,66 +93002,48 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:168>",
-          "line": 168,
-          "called": [
-            "staticTicketLockPoolSize"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:169>",
-          "line": 169,
-          "called": [
-            "staticRwLockPoolSize"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:170>",
-          "line": 170,
-          "called": [
-            "staticTicketLockPoolSize"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:171>",
-          "line": 171,
-          "called": [
-            "staticRwLockPoolSize"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:175>",
-          "line": 175,
-          "called": [
-            "length"
-          ]
-        },
-        {
-          "kind": "example",
-          "name": "<anonymous:example:177>",
-          "line": 177,
-          "called": [
-            "filter",
-            "length"
-          ]
-        },
-        {
-          "kind": "example",
           "name": "<anonymous:example:182>",
           "line": 182,
           "called": [
-            "filter",
+            "staticTicketLockPoolSize"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:183>",
+          "line": 183,
+          "called": [
+            "staticRwLockPoolSize"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:184>",
+          "line": 184,
+          "called": [
+            "staticTicketLockPoolSize"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:185>",
+          "line": 185,
+          "called": [
+            "staticRwLockPoolSize"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:189>",
+          "line": 189,
+          "called": [
             "length"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:187>",
-          "line": 187,
+          "name": "<anonymous:example:191>",
+          "line": 191,
           "called": [
             "filter",
             "length"
@@ -92943,8 +93051,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:192>",
-          "line": 192,
+          "name": "<anonymous:example:196>",
+          "line": 196,
           "called": [
             "filter",
             "length"
@@ -92952,10 +93060,11 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:202>",
-          "line": 202,
+          "name": "<anonymous:example:201>",
+          "line": 201,
           "called": [
-            "peekTicketLockNextTicket"
+            "filter",
+            "length"
           ]
         },
         {
@@ -92963,29 +93072,46 @@
           "name": "<anonymous:example:206>",
           "line": 206,
           "called": [
-            "peekTicketLockServing"
+            "filter",
+            "length"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:210>",
-          "line": 210,
+          "name": "<anonymous:example:216>",
+          "line": 216,
           "called": [
             "peekTicketLockNextTicket"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:213>",
-          "line": 213,
+          "name": "<anonymous:example:220>",
+          "line": 220,
           "called": [
             "peekTicketLockServing"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:217>",
-          "line": 217,
+          "name": "<anonymous:example:224>",
+          "line": 224,
+          "called": [
+            "peekTicketLockNextTicket"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:227>",
+          "line": 227,
+          "called": [
+            "peekTicketLockServing"
+          ]
+        },
+        {
+          "kind": "example",
+          "name": "<anonymous:example:231>",
+          "line": 231,
           "called": [
             "peekTicketLockNextTicket",
             "peekTicketLockServing"
@@ -92994,7 +93120,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 228,
+          "line": 242,
           "called": [
             "pure",
             "throw"
@@ -93003,7 +93129,7 @@
         {
           "kind": "def",
           "name": "runSmpSurfaceAnchorChecks",
-          "line": 245,
+          "line": 259,
           "called": [
             "acquireReadLock_eq_ffi",
             "acquireTicketLock_eq_ffi",
@@ -93035,7 +93161,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 362,
+          "line": 376,
           "called": [
             "runSmpSurfaceAnchorChecks"
           ]

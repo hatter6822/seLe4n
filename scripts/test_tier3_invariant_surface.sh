@@ -1735,8 +1735,26 @@ import SeLe4n.Kernel.Concurrency.LockPrimitives
 #check @SeLe4n.Kernel.Concurrency.lockPrimitives_rwLock_count
 #check @SeLe4n.Kernel.Concurrency.lockPrimitives_refinement_count
 #check @SeLe4n.Kernel.Concurrency.lockPrimitives_partition_sum
+#check @SeLe4n.Kernel.Concurrency.lockPrimitives_identifiers_nodup
 #check @SeLe4n.Kernel.Concurrency.lockPrimitives_substantive_identifiers_nodup
 #check @SeLe4n.Kernel.Concurrency.lockPrimitives_descriptions_nodup
+EOF'
+
+# WS-SM SM2.D TicketLockRefinement (F-01 refinement bridge anchor).
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement'
+run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
+import SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement
+
+#check @SeLe4n.Kernel.Concurrency.TicketLockConcrete
+#check @SeLe4n.Kernel.Concurrency.TicketLockConcrete.nextTicket
+#check @SeLe4n.Kernel.Concurrency.TicketLockConcrete.serving
+#check @SeLe4n.Kernel.Concurrency.TicketLockConcrete.unheld
+#check @SeLe4n.Kernel.Concurrency.ticketLockSim
+#check @SeLe4n.Kernel.Concurrency.ticketLockSim_unheld
+#check @SeLe4n.Kernel.Concurrency.ticketLockSim_preserved_by_tryAcquire
+#check @SeLe4n.Kernel.Concurrency.ticketLockSim_preserved_by_release
+#check @SeLe4n.Kernel.Concurrency.ticketLockSim_preserved_by_observeServing
+#check @SeLe4n.Kernel.Concurrency.rust_ticketLock_refines_lean
 EOF'
 
 # WS-SM SM2.D — Lean-side FFI declarations.  Covers every SM2.D

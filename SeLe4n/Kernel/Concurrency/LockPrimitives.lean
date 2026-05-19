@@ -13,6 +13,7 @@
 
 import SeLe4n.Kernel.Concurrency.MemoryModel
 import SeLe4n.Kernel.Concurrency.Locks.TicketLock
+import SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement
 import SeLe4n.Kernel.Concurrency.Locks.RwLock
 import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 
@@ -158,18 +159,13 @@ def lockPrimitives : List LockPrimitiveTheorem := [
   { description := "RwLock no writer starvation under fair release",
     identifier  := `SeLe4n.Kernel.Concurrency.rwLock_no_writer_starvation,
     category    := .rwLock },
-  -- Refinement (2) — see `SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement`
-  --
-  -- The TicketLock refinement bridge is documented inline in
-  -- `SeLe4n.Kernel.Concurrency.Locks.TicketLock` via the
-  -- `ticketLock_release_acquire_pairing` / `ticketLock_reachability`
-  -- theorems; the post-1.0 SM2.B closure plan promotes the
-  -- structural witnesses to a named theorem.  At v1.0.0 we use the
-  -- pairing theorem as the refinement witness anchor; the refinement
-  -- theorem proper is `rust_rwLock_refines_lean` from the SM2.C-defer
-  -- D-4.9 closure.
-  { description := "TicketLock Rust impl refines Lean spec (via RA pairing)",
-    identifier  := `SeLe4n.Kernel.Concurrency.ticketLock_release_acquire_pairing,
+  -- Refinement (2) — see `SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement`
+  -- and `SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement`.  Both
+  -- substantive `rust_*_refines_lean` theorems exist as named
+  -- structural witnesses; aliasing is intentional and the entries
+  -- are distinct (different `Lean.Name`s).
+  { description := "TicketLock Rust impl refines Lean spec (operational simulation)",
+    identifier  := `SeLe4n.Kernel.Concurrency.rust_ticketLock_refines_lean,
     category    := .refinement },
   { description := "RwLock Rust impl refines Lean spec (with documented FIFO divergence; SM2.C-defer D-4.9)",
     identifier  := `SeLe4n.Kernel.Concurrency.rust_rwLock_refines_lean,
@@ -228,15 +224,19 @@ theorem lockPrimitives_partition_sum :
     that's been deleted but still has an entry would pass the
     surface check via the duplicate).
 
-    EXCEPTION: the refinement bridge entry for TicketLock currently
-    aliases `ticketLock_release_acquire_pairing` (as documented in
-    the inventory; the post-1.0 SM2.B closure plan promotes the
-    structural witnesses to a named refinement theorem).  This
-    aliasing is **intentional** and documented; the NoDup check
-    therefore covers identifiers EXCLUDING the refinement category
-    where intentional aliasing is permitted.
+    Audit-pass-1 strengthening: after `rust_ticketLock_refines_lean`
+    was added in `Locks/TicketLockRefinement.lean`, every entry's
+    `Lean.Name` is unique across the whole 22-row inventory.  The
+    NoDup check now covers ALL identifiers (no exemption for the
+    refinement category). -/
+theorem lockPrimitives_identifiers_nodup :
+    (lockPrimitives.map (·.identifier)).Nodup := by
+  unfold lockPrimitives; decide
 
-    The substantive 20 theorems (4 + 6 + 10) are all distinct. -/
+/-- **WS-SM SM2.D.7** (alias): kept for backwards-compat with the
+    audit-pass-0 landing.  Equivalent to
+    `lockPrimitives_identifiers_nodup` restricted to the substantive
+    (non-refinement) entries. -/
 theorem lockPrimitives_substantive_identifiers_nodup :
     ((lockPrimitives.filter (·.category ≠ .refinement)).map (·.identifier)).Nodup := by
   unfold lockPrimitives; decide

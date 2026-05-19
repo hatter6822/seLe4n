@@ -11,6 +11,7 @@ import SeLe4n.Kernel.Concurrency.LockBridge
 import SeLe4n.Kernel.Concurrency.LockPrimitives
 import SeLe4n.Kernel.Concurrency.MemoryModel
 import SeLe4n.Kernel.Concurrency.Locks.TicketLock
+import SeLe4n.Kernel.Concurrency.Locks.TicketLockRefinement
 import SeLe4n.Kernel.Concurrency.Locks.RwLock
 import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 import SeLe4n.Platform.FFI
@@ -156,8 +157,21 @@ namespace SeLe4n.Testing.SmpSurfaceAnchors
 #check @SeLe4n.Kernel.Concurrency.lockPrimitives_rwLock_count
 #check @SeLe4n.Kernel.Concurrency.lockPrimitives_refinement_count
 #check @SeLe4n.Kernel.Concurrency.lockPrimitives_partition_sum
+#check @SeLe4n.Kernel.Concurrency.lockPrimitives_identifiers_nodup
 #check @SeLe4n.Kernel.Concurrency.lockPrimitives_substantive_identifiers_nodup
 #check @SeLe4n.Kernel.Concurrency.lockPrimitives_descriptions_nodup
+
+-- SM2.D TicketLockRefinement (F-01)
+#check @SeLe4n.Kernel.Concurrency.TicketLockConcrete
+#check @SeLe4n.Kernel.Concurrency.TicketLockConcrete.nextTicket
+#check @SeLe4n.Kernel.Concurrency.TicketLockConcrete.serving
+#check @SeLe4n.Kernel.Concurrency.TicketLockConcrete.unheld
+#check @SeLe4n.Kernel.Concurrency.ticketLockSim
+#check @SeLe4n.Kernel.Concurrency.ticketLockSim_unheld
+#check @SeLe4n.Kernel.Concurrency.ticketLockSim_preserved_by_tryAcquire
+#check @SeLe4n.Kernel.Concurrency.ticketLockSim_preserved_by_release
+#check @SeLe4n.Kernel.Concurrency.ticketLockSim_preserved_by_observeServing
+#check @SeLe4n.Kernel.Concurrency.rust_ticketLock_refines_lean
 
 -- ============================================================================
 -- §7 — Decidable structural examples

@@ -29,15 +29,20 @@
 //!
 //! ## Handle encoding (SM2.D version)
 //!
-//! ```text
-//!   bit 63..2: reserved (zero at SM2.D)
-//!   bit  1..0: pool index (0..3)
-//! ```
+//! At SM2.D the handle is simply the pool index reinterpreted as `u64`.
+//! Valid values: `0..STATIC_*_POOL_SIZE` (= `0..4` at SM2.D).  Every
+//! other value is rejected by the decoder — including handles where
+//! high bits are non-zero but the low 2 bits happen to lie in 0..3.
 //!
-//! Future SM5+ encoding will use bits 63..62 to discriminate
-//! `static_pool` / `object_lock` and use lower bits for the object id.
-//! The decoder is fail-closed: any handle that doesn't decode to a valid
-//! pool index panics rather than silently aliasing to a different lock.
+//! Concretely the decoder checks `handle < POOL_SIZE`, so high bits
+//! MUST be zero today.  A future SM5+ encoding may use the high bits
+//! to discriminate `static_pool` / `object_lock`; the SM2.D-reserved
+//! low values (0..3) will remain source-compatible by staying in the
+//! `static_pool` discriminator space.
+//!
+//! The decoder is fail-closed: any handle that doesn't decode to a
+//! valid pool index panics rather than silently aliasing to a
+//! different lock.
 //!
 //! ## Tracing (SM2.D.4)
 //!
@@ -80,6 +85,31 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use crate::rw_lock::RwLock;
 use crate::ticket_lock::TicketLock;
+
+// ============================================================================
+// SM2.D audit-pass: cross-module test serialisation mutex
+// ============================================================================
+//
+// Tests in `lock_bridge::runtime_tests` and tests in `crate::ffi::tests`
+// both exercise the same `STATIC_*_POOL` slots (0..2) and observe
+// trace-counter deltas with strict equality.  Cargo's default parallel
+// test runner can interleave them, so a `lock_bridge`-side "counter
+// advances by 1" snapshot can witness concurrent ffi-side increments
+// and break the assertion.
+//
+// The mutex is defined at module scope (not inside `mod runtime_tests`)
+// so that `crate::ffi::tests` can reach it via `pub(crate)` — a single
+// source of truth for cross-module observation serialisation.
+
+/// **WS-SM SM2.D audit-pass**: shared serialisation mutex for SM2.D
+/// counter-observation tests across `lock_bridge::runtime_tests` and
+/// `crate::ffi::tests`.
+///
+/// Test-only; `#[cfg(test)]`-gated.  See the audit-pass commentary
+/// above for the rationale.
+#[cfg(test)]
+pub(crate) static SM2D_TRACE_TEST_MUTEX: std::sync::Mutex<()> =
+    std::sync::Mutex::new(());
 
 // ============================================================================
 // SM2.D pool dimensions
@@ -205,10 +235,21 @@ pub static RW_LOCK_RELEASE_WRITE_COUNT: [AtomicU64; STATIC_RW_LOCK_POOL_SIZE] = 
 /// boundary (which `panic = "abort"` would convert to a process
 /// abort).  The FFI wrappers in `ffi.rs` translate `None` into a
 /// `panic!` that aborts the kernel under the fail-closed convention.
+///
+/// **Defense-in-depth narrowing**: the bound check runs in `u64` space
+/// BEFORE the `as usize` cast.  Sele4n's only target is aarch64
+/// (64-bit, `usize == u64`), so the cast is identity in practice.  A
+/// hypothetical 32-bit port however would truncate the high bits of
+/// `handle` if cast first — e.g., `handle = 0x1_0000_0001` would
+/// truncate to `1` and silently alias to pool slot 1.  Performing the
+/// bound check in `u64` space first guarantees that handles outside
+/// `0..STATIC_TICKET_LOCK_POOL_SIZE` always reject, regardless of
+/// `usize` width.  Mirrors the pattern used in
+/// `ffi_per_core_*_count` (SM1.I.4 audit-pass-2).
 #[inline]
 #[must_use]
 pub const fn decode_ticket_lock_handle(handle: u64) -> Option<usize> {
-    if (handle as usize) < STATIC_TICKET_LOCK_POOL_SIZE {
+    if handle < STATIC_TICKET_LOCK_POOL_SIZE as u64 {
         Some(handle as usize)
     } else {
         None
@@ -217,11 +258,12 @@ pub const fn decode_ticket_lock_handle(handle: u64) -> Option<usize> {
 
 /// **WS-SM SM2.D**: decode a `u64` handle into a RwLock pool index.
 ///
-/// Symmetric to [`decode_ticket_lock_handle`].
+/// Symmetric to [`decode_ticket_lock_handle`], including the
+/// defense-in-depth narrowing comment.
 #[inline]
 #[must_use]
 pub const fn decode_rw_lock_handle(handle: u64) -> Option<usize> {
-    if (handle as usize) < STATIC_RW_LOCK_POOL_SIZE {
+    if handle < STATIC_RW_LOCK_POOL_SIZE as u64 {
         Some(handle as usize)
     } else {
         None
@@ -338,56 +380,22 @@ pub fn ticket_lock_peek_holder(handle: u64) -> u64 {
             handle, STATIC_TICKET_LOCK_POOL_SIZE
         )
     });
-    // Pack (next_ticket_low32, serving_low32) into one u64.  The
-    // private `peek_next_ticket` / `peek_serving` accessors below
-    // perform the underlying atomic loads with Acquire ordering.
-    let next = peek_ticket_lock_next_ticket(idx) & 0xFFFF_FFFF;
-    let srv = peek_ticket_lock_serving(idx) & 0xFFFF_FFFF;
-    (next << 32) | srv
-}
-
-/// **WS-SM SM2.D.1**: read the TicketLock's `next_ticket` directly.
-///
-/// Exposed as a separate accessor so callers that only need the
-/// counter (e.g. for "is the lock heavily contended?" diagnostics)
-/// don't have to decode the packed `peek_holder` result.
-#[inline]
-#[must_use]
-fn peek_ticket_lock_next_ticket(idx: usize) -> u64 {
-    use core::sync::atomic::Ordering;
-    // The TicketLock's fields are private; expose via a thin accessor.
-    // For SM2.D we read directly through a function that the
-    // `ticket_lock` module exposes.  To avoid extending TicketLock's
-    // public API, we use a raw pointer to the AtomicU64 inside the
-    // struct.  Defense: `repr(C)` on TicketLock guarantees the first
-    // field (`next_ticket`) is at offset 0 of the struct.
+    // Pack (next_ticket_low32, serving_low32) into one u64 via the
+    // public `peek_next_ticket` / `peek_serving` accessors on
+    // `TicketLock` (added in SM2.D for this purpose).  Both use
+    // Acquire ordering on the underlying atomic loads.
     //
-    // SAFETY: the static array's elements live for the program's
-    // lifetime, and `repr(C, align(64))` on TicketLock with
-    // `next_ticket` as the first field guarantees the cast is valid.
-    let lock_ptr: *const TicketLock = &STATIC_TICKET_LOCK_POOL[idx];
-    let next_ptr: *const AtomicU64 = lock_ptr as *const AtomicU64;
-    // SAFETY: see above; the pointer is to a valid AtomicU64 inside
-    // a `'static` array element, so dereferencing for a load is safe.
-    unsafe { (*next_ptr).load(Ordering::Acquire) }
-}
-
-/// **WS-SM SM2.D.1**: read the TicketLock's `serving` field directly.
-#[inline]
-#[must_use]
-fn peek_ticket_lock_serving(idx: usize) -> u64 {
-    use core::sync::atomic::Ordering;
-    // SAFETY: same as peek_ticket_lock_next_ticket; the `serving`
-    // field is at offset 8 (after the `next_ticket: AtomicU64` at
-    // offset 0).  We use `wrapping_add` on the pointer to compute
-    // the address.
-    let lock_ptr: *const TicketLock = &STATIC_TICKET_LOCK_POOL[idx];
-    let next_ptr: *const AtomicU64 = lock_ptr as *const AtomicU64;
-    // SAFETY: see above; the second AtomicU64 is at byte offset 8
-    // from the start of the struct.
-    let serving_ptr = unsafe { next_ptr.add(1) };
-    // SAFETY: same as above; the pointer is to a valid AtomicU64.
-    unsafe { (*serving_ptr).load(Ordering::Acquire) }
+    // Audit-pass safety note: previous revisions of this function
+    // used a raw-pointer cast against `TicketLock`'s `repr(C)` layout
+    // to access its private fields.  That was a soft contract — a
+    // future refactor adding a debug field at the start of TicketLock
+    // would silently invalidate the offsets.  The dedicated public
+    // accessors close this gap by making the access path explicit and
+    // checked by the compiler.
+    let lock = &STATIC_TICKET_LOCK_POOL[idx];
+    let next = lock.peek_next_ticket() & 0xFFFF_FFFF;
+    let srv = lock.peek_serving() & 0xFFFF_FFFF;
+    (next << 32) | srv
 }
 
 /// **WS-SM SM2.D.4**: read the per-slot TicketLock acquire counter.
@@ -642,6 +650,27 @@ mod tests {
         assert_eq!(decode_ticket_lock_handle(99), None);
     }
 
+    /// **WS-SM SM2.D**: 32-bit-truncation defense — handles where the
+    /// low 32 bits happen to land in the pool range but the high 32
+    /// bits are non-zero must reject.  Verifies the audit-pass fix
+    /// that moved the bound check into u64 space before the `as usize`
+    /// cast.
+    ///
+    /// On 64-bit targets `usize == u64` so the cast is identity; this
+    /// test passes structurally.  On a hypothetical 32-bit port, a
+    /// regression that re-introduced `(handle as usize) < POOL_SIZE`
+    /// would silently accept these inputs — failing this test.
+    #[test]
+    fn sm2d_decode_handles_reject_u64_with_high_bits_aliasing_slot() {
+        assert_eq!(decode_ticket_lock_handle(0x1_0000_0001), None);
+        assert_eq!(decode_ticket_lock_handle(0x1_0000_0002), None);
+        assert_eq!(decode_ticket_lock_handle(0x1_0000_0003), None);
+        assert_eq!(decode_ticket_lock_handle(0xFFFF_FFFF_0000_0000), None);
+        assert_eq!(decode_rw_lock_handle(0x1_0000_0001), None);
+        assert_eq!(decode_rw_lock_handle(0x1_0000_0002), None);
+        assert_eq!(decode_rw_lock_handle(0xFFFF_FFFF_0000_0000), None);
+    }
+
     #[test]
     fn sm2d_decode_rw_lock_handle_accepts_valid_indices() {
         for idx in 0..STATIC_RW_LOCK_POOL_SIZE as u64 {
@@ -705,30 +734,30 @@ mod tests {
     // --------------------------------------------------------------------
 
     #[test]
-    fn sm2d_ticket_lock_layout_matches_assumed_offsets() {
-        // The peek helpers assume `next_ticket` is at offset 0 and
-        // `serving` is at offset 8 within the TicketLock struct (i.e.,
-        // the first two fields are AtomicU64 in declaration order).
-        // We verify the layout invariant via a constructed lock and
-        // pointer arithmetic.
+    fn sm2d_ticket_lock_peek_accessors_match_runtime_state() {
+        // The SM2.D.1 `ticket_lock_peek_holder` FFI helper composes
+        // `peek_next_ticket` and `peek_serving` (added on TicketLock
+        // for this purpose).  Verify those accessors return the live
+        // values, not stale snapshots.
         let lock = TicketLock::new();
-        let lock_ptr = &lock as *const TicketLock as usize;
-        let serving_should_be_at = lock_ptr + 8;
-        // Use the public methods to advance both counters and observe
-        // them via the peek functions: if peek targeted the wrong
-        // offset, the observed value would be the wrong field.
+        assert_eq!(lock.peek_next_ticket(), 0);
+        assert_eq!(lock.peek_serving(), 0);
+        // After acquire: next_ticket = 1, serving = 0.
         let _ticket = lock.acquire();
+        assert_eq!(lock.peek_next_ticket(), 1, "next_ticket advanced");
+        assert_eq!(lock.peek_serving(), 0, "serving unchanged before release");
+        // After release: next_ticket = 1, serving = 1.
         lock.release();
-        // After acquire+release: next_ticket = 1, serving = 1.
-        // Observe through the same memory layout.
-        let next_ptr = lock_ptr as *const AtomicU64;
-        let srv_ptr = serving_should_be_at as *const AtomicU64;
-        // SAFETY: the lock is on the test's stack frame and the
-        // pointers are within its bounds.
-        unsafe {
-            assert_eq!((*next_ptr).load(Ordering::Acquire), 1, "next_ticket offset 0");
-            assert_eq!((*srv_ptr).load(Ordering::Acquire), 1, "serving offset 8");
+        assert_eq!(lock.peek_next_ticket(), 1);
+        assert_eq!(lock.peek_serving(), 1);
+        // Many cycles preserve the next == serving == count invariant
+        // when no contention.
+        for _ in 0..50u64 {
+            let _ = lock.acquire();
+            lock.release();
         }
+        assert_eq!(lock.peek_next_ticket(), 51);
+        assert_eq!(lock.peek_serving(), 51);
     }
 
     #[test]
@@ -796,7 +825,10 @@ mod runtime_tests {
     // each test's pre/post snapshot is meaningful.
     // --------------------------------------------------------------------
 
-    static SM2D_TRACE_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    // The shared serialisation mutex is defined at the module level
+    // below the test module (see `SM2D_TRACE_TEST_MUTEX` outside this
+    // `mod runtime_tests`) so it is reachable from
+    // `crate::ffi::tests` via `pub(crate)`.
 
     #[test]
     fn sm2d1_acquire_release_returns_ticket() {
