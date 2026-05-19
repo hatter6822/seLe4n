@@ -228,3 +228,10 @@ pub mod ticket_lock;
 // to the Lean spec, ARM ARM citations, and the FIFO-divergence
 // documentation (SM2.C.20 refinement bridge).
 pub mod rw_lock;
+// WS-SM SM2.C-defer D-5: MCS-style FIFO-preserving queued RwLock.
+// Refines the Lean spec WITH the additional FIFO admission property
+// (`rwLock_fifo_admission_temporal`).  Uses per-core fixed slots; no
+// heap, no ABA, no dangling pointers.  See the module docstring in
+// `queued_rw_lock.rs` for the design rationale (closes audit findings
+// H-1 / H-2 / M-7) and the WS-SM SM2.C.20 refinement update.
+pub mod queued_rw_lock;

@@ -1565,6 +1565,84 @@ import SeLe4n.Kernel.Concurrency.Locks.RwLockRefinement
 #check @SeLe4n.Kernel.Concurrency.rwLockSim_writer_bit_iff
 #check @SeLe4n.Kernel.Concurrency.rwLockSim_reader_count_iff
 #check @SeLe4n.Kernel.Concurrency.rwLock_refinement_preservation_noop
+
+-- WS-SM SM2.C-defer D-1..D-4 deferred-completion surface anchors.
+-- See docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md.
+#check @SeLe4n.Kernel.Concurrency.RwLockKernelStep
+#check @SeLe4n.Kernel.Concurrency.RwLockReachable
+#check @SeLe4n.Kernel.Concurrency.RwLockReachable_implies_wf
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt_reachable
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt_wf
+#check @SeLe4n.Kernel.Concurrency.writerWaitDepth
+#check @SeLe4n.Kernel.Concurrency.writerWaitDepth_bounded
+#check @SeLe4n.Kernel.Concurrency.writerWaitDepth_componentBounded
+#check @SeLe4n.Kernel.Concurrency.rwLock_bounded_wait_write_distinct_weak
+#check @SeLe4n.Kernel.Concurrency.tryAcquireRead_waiters_append_or_noop
+#check @SeLe4n.Kernel.Concurrency.tryAcquireWrite_waiters_append_or_noop
+#check @SeLe4n.Kernel.Concurrency.releaseRead_waiters_sublist
+#check @SeLe4n.Kernel.Concurrency.releaseWrite_waiters_sublist
+#check @SeLe4n.Kernel.Concurrency.applyOp_preserves_waiter_order
+#check @SeLe4n.Kernel.Concurrency.rwLock_fifo_admission_temporal_structural
+#check @SeLe4n.Kernel.Concurrency.writerWaitDepth_monotone_under_effective_release
+#check @SeLe4n.Kernel.Concurrency.leave_waiters_implies_holder
+#check @SeLe4n.Kernel.Concurrency.promote_prefix_inclusion
+#check @SeLe4n.Kernel.Concurrency.c_in_waiters_through_admission
+#check @SeLe4n.Kernel.Concurrency.rwLock_fifo_admission_temporal
+#check @SeLe4n.Kernel.Concurrency.FairTrace
+#check @SeLe4n.Kernel.Concurrency.MAX_RELEASE_DELAY
+#check @SeLe4n.Kernel.Concurrency.writer_at_head_promoted
+#check @SeLe4n.Kernel.Concurrency.reader_at_head_promoted
+#check @SeLe4n.Kernel.Concurrency.ConcreteRwLockOp
+#check @SeLe4n.Kernel.Concurrency.concreteApplyOp
+#check @SeLe4n.Kernel.Concurrency.opCorresponds
+#check @SeLe4n.Kernel.Concurrency.encodeRwLock_at_least_one_when_reader
+#check @SeLe4n.Kernel.Concurrency.ListCorresponds
+#check @SeLe4n.Kernel.Concurrency.rustImplementsRwLock
+#check @SeLe4n.Kernel.Concurrency.concreteApplyOp_fetch_sub_no_underflow
+#check @SeLe4n.Kernel.Concurrency.rwLockSim_preserved_by_direct_acquire_read
+#check @SeLe4n.Kernel.Concurrency.rwLockSim_preserved_by_direct_acquire_write
+#check @SeLe4n.Kernel.Concurrency.rwLockSim_preserved_by_noop_chain
+-- D-3.6 strict-FIFO foundations and bound (NEW)
+#check @SeLe4n.Kernel.Concurrency.writerWaitDepth_non_increase_step_queued
+#check @SeLe4n.Kernel.Concurrency.writerWaitDepth_strict_decrease_under_effective_release
+#check @SeLe4n.Kernel.Concurrency.queued_writer_persists_or_admitted
+#check @SeLe4n.Kernel.Concurrency.rwLock_writer_liveness_existence
+#check @SeLe4n.Kernel.Concurrency.rwLock_writer_liveness_count_bound
+#check @SeLe4n.Kernel.Concurrency.rwLock_writer_liveness_bound_under_fairness
+#check @SeLe4n.Kernel.Concurrency.queued_implies_holder_at_step
+#check @SeLe4n.Kernel.Concurrency.fair_writer_release_witness
+#check @SeLe4n.Kernel.Concurrency.fair_reader_release_witness
+#check @SeLe4n.Kernel.Concurrency.fair_release_witness_in_window
+#check @SeLe4n.Kernel.Concurrency.writerHeld_transition_implies_releaseWrite
+#check @SeLe4n.Kernel.Concurrency.reader_transition_implies_releaseRead
+#check @SeLe4n.Kernel.Concurrency.release_transition_implies_effective_release_at_step
+#check @SeLe4n.Kernel.Concurrency.fair_progress_one_step
+#check @SeLe4n.Kernel.Concurrency.rwLock_writer_liveness
+#check @SeLe4n.Kernel.Concurrency.rwLock_writer_admissionStep_bounded
+#check @SeLe4n.Kernel.Concurrency.FairTrace.decidable
+-- D-3.2 bounded form + bridge (computable decidability)
+#check @SeLe4n.Kernel.Concurrency.fairTraceReaderBody
+#check @SeLe4n.Kernel.Concurrency.fairTraceWriterBody
+#check @SeLe4n.Kernel.Concurrency.fairTraceBoundedProp
+#check @SeLe4n.Kernel.Concurrency.fairTrace_iff_bounded
+#check @SeLe4n.Kernel.Concurrency.RwLockExecution.stateAt_of_ge_length
+-- D-4.9 FULL bisim main theorem + per-block discharge lemmas (NEW)
+#check @SeLe4n.Kernel.Concurrency.concreteFoldBlock
+#check @SeLe4n.Kernel.Concurrency.blockBisim
+#check @SeLe4n.Kernel.Concurrency.ListBlockBisim
+#check @SeLe4n.Kernel.Concurrency.rust_rwLock_refines_lean
+#check @SeLe4n.Kernel.Concurrency.rust_rwLock_refines_lean_via_rustImplementsRwLock
+#check @SeLe4n.Kernel.Concurrency.blockBisim_of_noop
+#check @SeLe4n.Kernel.Concurrency.blockBisim_tryRead_success
+#check @SeLe4n.Kernel.Concurrency.blockBisim_tryRead_cas_fail_chain
+#check @SeLe4n.Kernel.Concurrency.blockBisim_tryRead_park_retry_chain
+#check @SeLe4n.Kernel.Concurrency.blockBisim_tryWrite_success
+#check @SeLe4n.Kernel.Concurrency.blockBisim_releaseRead_no_promote
+#check @SeLe4n.Kernel.Concurrency.blockBisim_releaseRead_no_promote_with_sev
+#check @SeLe4n.Kernel.Concurrency.blockBisim_releaseWrite_no_sev_empty_queue
+#check @SeLe4n.Kernel.Concurrency.blockBisim_releaseWrite_with_sev_empty_queue
 EOF'
 
 finalize_report
