@@ -466,8 +466,79 @@ impl QueuedRwLock {
         self.signal_next_waiter(core_id);
         crate::cpu::sev();
     }
+}
 
-    /// **Internal helper**: signal the next waiter in the queue.
+// ============================================================================
+// SM2.C-defer D-5 acceptance gate (panic-safety) — RAII guard wrappers
+// ============================================================================
+
+/// **WS-SM SM2.C-defer D-5 (panic-safety RAII)**: scoped read-lock guard.
+///
+/// Returned by `QueuedRwLock::acquire_read_guard`.  Calls `release_read`
+/// in `Drop`, ensuring the lock is released on any control-flow exit
+/// (normal return, panic-unwind, etc.).  This is the panic-safe API
+/// that satisfies the plan §5.5 D-5 acceptance gate's
+/// "panic-safety" criterion.
+///
+/// **Production note**: the seLe4n HAL uses `panic = abort` in
+/// production (see `rust/Cargo.toml`), so panic-safety is technically
+/// not required for the kernel-runtime profile.  The RAII guard is
+/// provided for the test profile (`panic = unwind` under `--features
+/// std`) to validate impl-level panic-safety properties.
+#[must_use = "this RAII guard must be held for the duration of the read CS"]
+pub struct QueuedRwLockReadGuard<'a> {
+    lock: &'a QueuedRwLock,
+    core_id: u8,
+}
+
+impl<'a> Drop for QueuedRwLockReadGuard<'a> {
+    fn drop(&mut self) {
+        self.lock.release_read(self.core_id);
+    }
+}
+
+/// **WS-SM SM2.C-defer D-5 (panic-safety RAII)**: scoped write-lock guard.
+///
+/// Returned by `QueuedRwLock::acquire_write_guard`.  Calls
+/// `release_write` in `Drop`. -/
+#[must_use = "this RAII guard must be held for the duration of the write CS"]
+pub struct QueuedRwLockWriteGuard<'a> {
+    lock: &'a QueuedRwLock,
+    core_id: u8,
+}
+
+impl<'a> Drop for QueuedRwLockWriteGuard<'a> {
+    fn drop(&mut self) {
+        self.lock.release_write(self.core_id);
+    }
+}
+
+impl QueuedRwLock {
+    /// **WS-SM SM2.C-defer D-5 (panic-safety RAII)**: scoped read-lock
+    /// acquire.  Returns a guard whose `Drop` releases the read-lock,
+    /// ensuring release on any control-flow exit (panic-safe).
+    ///
+    /// # Safety
+    ///
+    /// Same as `acquire_read` (each `core_id` MUST call only with its
+    /// own value; reentrance / cross-core slot use is UB).
+    pub fn acquire_read_guard(&self, core_id: u8) -> QueuedRwLockReadGuard<'_> {
+        self.acquire_read(core_id);
+        QueuedRwLockReadGuard { lock: self, core_id }
+    }
+
+    /// **WS-SM SM2.C-defer D-5 (panic-safety RAII)**: scoped write-lock
+    /// acquire.  Returns a guard whose `Drop` releases the write-lock.
+    ///
+    /// # Safety
+    ///
+    /// Same as `acquire_write`.
+    pub fn acquire_write_guard(&self, core_id: u8) -> QueuedRwLockWriteGuard<'_> {
+        self.acquire_write(core_id);
+        QueuedRwLockWriteGuard { lock: self, core_id }
+    }
+
+    /// Internal helper: signal the next waiter in the queue.
     ///
     /// Uses the standard **MCS handover protocol** to avoid the
     /// classic race where a new enqueuer arrives between the
@@ -1209,6 +1280,70 @@ mod cross_thread_tests {
                 "slot {} counter mismatch: expected {}, got {}", tid, ITER, c);
         }
         assert_eq!(lock.peek_state(), 0);
+    }
+
+    /// **D-5 acceptance gate (≥10 cross-thread tests)**: panic-safety
+    /// via RAII guard.  T0 acquires write via `acquire_write_guard`,
+    /// then panics.  The guard's `Drop` releases the lock on unwind.
+    /// T1 (after T0's panic) must be able to acquire normally.
+    ///
+    /// This validates the QueuedRwLock's panic-safe API (the RAII
+    /// guard pattern in `acquire_write_guard` / `acquire_read_guard`).
+    /// The seLe4n kernel runtime uses `panic = abort` (no unwind),
+    /// but the test profile uses `panic = unwind` and this test
+    /// exercises that code path.
+    #[test]
+    fn cross_thread_panic_safety_writer_releases_on_unwind() {
+        use std::panic;
+        let lock = Arc::new(QueuedRwLock::new());
+
+        // T0: acquire writer via RAII guard, then panic.
+        let lock_c = Arc::clone(&lock);
+        let t0 = thread::spawn(move || {
+            let _result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                let _guard = lock_c.acquire_write_guard(0);
+                panic!("simulated panic in writer CS — guard Drop should release");
+            }));
+            // catch_unwind returns Err; verify here.
+            assert!(_result.is_err(), "panic should have been caught");
+        });
+        t0.join().unwrap();
+
+        // Lock should be released (state = 0).  If the guard's Drop didn't
+        // fire on unwind, the writer bit would still be set and state ≠ 0.
+        assert_eq!(lock.peek_state(), 0,
+            "RAII guard Drop should release the lock on panic-unwind");
+
+        // T1: verify the lock is usable again post-panic.
+        let lock_c = Arc::clone(&lock);
+        let t1 = thread::spawn(move || {
+            let _guard = lock_c.acquire_write_guard(1);
+            // Normal CS; guard's Drop releases on return.
+        });
+        t1.join().unwrap();
+        assert_eq!(lock.peek_state(), 0,
+            "lock must be usable after a previous holder panicked");
+    }
+
+    /// **D-5 acceptance gate (≥10 cross-thread tests)**: panic-safety
+    /// for reader RAII.  Same as writer panic-safety but for the
+    /// reader path. -/
+    #[test]
+    fn cross_thread_panic_safety_reader_releases_on_unwind() {
+        use std::panic;
+        let lock = Arc::new(QueuedRwLock::new());
+
+        let lock_c = Arc::clone(&lock);
+        let t0 = thread::spawn(move || {
+            let _result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                let _guard = lock_c.acquire_read_guard(0);
+                panic!("simulated panic in reader CS");
+            }));
+            assert!(_result.is_err());
+        });
+        t0.join().unwrap();
+        assert_eq!(lock.peek_state(), 0,
+            "RAII guard Drop should release the read-lock on panic-unwind");
     }
 
     /// **D-5 acceptance gate (≥10 cross-thread tests)**: rapid
